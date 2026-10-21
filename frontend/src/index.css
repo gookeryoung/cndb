@@ -613,6 +613,187 @@ body.theme-oled {
     0 2px 10px rgb(var(--cn-shadow-color) / 0.03);
 }
 
+/* ── 顶栏工作区搜索（GitHub 风格）：范围选择器 + 分组结果面板 ──
+ * 盒子外形对齐 GitHub 的 header 搜索框：低对比底色 + 细边框，聚焦时收白并染色边框；
+ * 面板宽度跟随输入框，最小 320px 保证长标题可读。
+ * 尺寸一律走 --cn-text-* / --cn-space-* / --cn-radius-* 标尺（tokens.test.ts 会拦截游离字面量）。 */
+.cn-global-search {
+  position: relative;
+  flex: 1 1 auto;
+  max-width: 420px;
+  min-width: 180px;
+  margin-left: var(--cn-space-md);
+}
+
+.cn-gs-box {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-hairline);
+  height: 28px;
+  padding-inline: var(--cn-space-xs);
+  background: var(--cn-bg-subtle);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cn-gs-box:hover { background: var(--cn-bg-container); }
+
+.cn-gs-box-open,
+.cn-gs-box:focus-within {
+  background: var(--cn-bg-container);
+  border-color: var(--cn-brand-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cn-brand-color) 14%, transparent);
+}
+
+.cn-gs-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  height: 22px;
+  padding-inline: var(--cn-space-sm);
+  border: 0;
+  border-right: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm);
+  background: transparent;
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cn-gs-scope:hover {
+  color: var(--cn-text-primary);
+  background: var(--cn-bg-muted);
+}
+
+.cn-gs-scope-arrow { font-size: var(--cn-text-3xs); opacity: 0.7; }
+
+.cn-gs-scope-item { display: flex; flex-direction: column; }
+.cn-gs-scope-hint { font-size: var(--cn-text-2xs); color: var(--cn-text-muted); }
+
+.cn-gs-input { flex: 1 1 auto; min-width: 0; }
+.cn-gs-input.ant-input-affix-wrapper { padding-inline: var(--cn-space-sm) var(--cn-space-xs); }
+.cn-gs-input .ant-input { font-size: var(--cn-text-sm); }
+
+.cn-gs-icon { color: var(--cn-text-muted); font-size: var(--cn-text-xs); }
+
+.cn-gs-kbd {
+  font-family: inherit;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm);
+  padding-inline: var(--cn-space-xs);
+  line-height: 15px;
+  background: var(--cn-bg-container);
+}
+
+.cn-gs-panel {
+  position: absolute;
+  top: calc(100% + var(--cn-space-sm));
+  left: 0;
+  right: 0;
+  z-index: 1050;
+  min-width: 320px;
+  max-height: 440px;
+  overflow-y: auto;
+  padding: var(--cn-space-xs);
+  background: var(--cn-bg-elevated);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  box-shadow: 0 12px 32px rgb(var(--cn-shadow-color) / 0.14);
+}
+
+.cn-gs-group + .cn-gs-group {
+  margin-top: var(--cn-space-hairline);
+  padding-top: var(--cn-space-hairline);
+  border-top: 1px solid var(--cn-border-soft);
+}
+
+.cn-gs-group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-sm) var(--cn-space-md) var(--cn-space-xs);
+  font-size: var(--cn-text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--cn-text-muted);
+}
+
+.cn-gs-count { margin-left: auto; font-weight: 500; }
+
+.cn-gs-item {
+  display: flex;
+  gap: var(--cn-space-md);
+  width: 100%;
+  align-items: flex-start;
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border: 0;
+  border-radius: var(--cn-radius-base);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cn-gs-item-active { background: color-mix(in srgb, var(--cn-brand-color) 10%, transparent); }
+
+.cn-gs-item-icon { margin-top: 1px; font-size: var(--cn-text-xs); color: var(--cn-text-muted); }
+.cn-gs-item-active .cn-gs-item-icon { color: var(--cn-brand-color); }
+
+.cn-gs-item-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 1px;
+}
+
+.cn-gs-item-title,
+.cn-gs-item-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-gs-item-title { font-size: var(--cn-text-sm); color: var(--cn-text-primary); }
+.cn-gs-item-sub { font-size: var(--cn-text-2xs); color: var(--cn-text-muted); }
+
+.cn-gs-item mark {
+  padding-inline: 1px;
+  border-radius: var(--cn-radius-xs);
+  background: color-mix(in srgb, var(--cn-brand-color) 22%, transparent);
+  color: inherit;
+}
+
+.cn-gs-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-xl) var(--cn-space-md);
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-gs-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--cn-space-md);
+  margin-top: var(--cn-space-hairline);
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border-top: 1px solid var(--cn-border-soft);
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-gs-footer-keys { white-space: nowrap; }
+
+/* 移动端搜索抽屉：容器已提供横向内边距，搜索框铺满 */
+.cn-search-in-drawer .cn-global-search { margin-left: 0; max-width: none; }
+
 /* 表导航（桌面 Sider 与移动端抽屉共用 cn-table-nav）：
  * 菜单项过渡 + 激活项左侧品牌色圆角指示条；
  * 紧凑化：行高由 antd 默认 40px 收到 34px，纵向间距同步收紧，

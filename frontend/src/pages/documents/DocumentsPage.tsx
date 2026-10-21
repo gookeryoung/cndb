@@ -48,7 +48,6 @@ import { useResponsive } from '@/hooks/useResponsive'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
 import { buildSeriesStats, seriesStatsOf } from './seriesStats'
 import { formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
-import SearchDrawer from './SearchDrawer'
 import TrashDrawer from './TrashDrawer'
 import ObsidianImportModal from './ObsidianImportModal'
 import DocumentImportModal from './DocumentImportModal'
@@ -118,8 +117,6 @@ export default function DocumentsPage() {
   const [renameValue, setRenameValue] = useState('')
   const [moveOpen, setMoveOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState<number>(0)
-  // 全文搜索抽屉
-  const [searchOpen, setSearchOpen] = useState(false)
   // 回收站抽屉
   const [trashOpen, setTrashOpen] = useState(false)
   // Obsidian 文档库导入弹窗
@@ -427,9 +424,6 @@ export default function DocumentsPage() {
             value={titleKeyword}
             onChange={e => setTitleKeyword(e.target.value)}
           />
-          <Button icon={<SearchOutlined />} onClick={() => setSearchOpen(true)}>
-            全文搜索
-          </Button>
           <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
             回收站
           </Button>
@@ -873,8 +867,6 @@ export default function DocumentsPage() {
           data-testid="doc-series-move-target"
         />
       </Modal>
-
-      <SearchDrawer open={searchOpen} onClose={() => setSearchOpen(false)} wid={workspaceId} />
 
       <TrashDrawer open={trashOpen} onClose={() => setTrashOpen(false)} wid={workspaceId} />
 

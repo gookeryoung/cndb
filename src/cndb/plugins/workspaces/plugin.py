@@ -8,6 +8,7 @@ from fastapi import APIRouter
 
 from cndb.plugins.base import PluginBase
 from cndb.plugins.workspaces.routers.roles import router as roles_router
+from cndb.plugins.workspaces.routers.search import router as search_router
 from cndb.plugins.workspaces.routers.workspaces import router as workspaces_router
 
 
@@ -27,9 +28,10 @@ class WorkspacesPlugin(PluginBase):
 
     @override
     def register_routes(self, router: APIRouter) -> None:
-        """挂载 workspaces + roles 两组路由."""
+        """挂载 workspaces + roles + search 三组路由."""
         router.include_router(workspaces_router)
         router.include_router(roles_router)
+        router.include_router(search_router)
 
 
 __all__ = ["WorkspacesPlugin"]

@@ -55,6 +55,16 @@ export type {
 } from './datasource'
 export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
+export { searchApi } from './search'
+export type {
+  WorkspaceSearchParams,
+  WorkspaceSearchResult,
+  SearchScope,
+  SearchDocumentHit,
+  SearchTableHit,
+  SearchRowHit,
+  SearchViewScope,
+} from './search'
 
 // 领域类型统一从 types/ 聚合转发（types/index.ts 按资源域拆分并 re-export）；
 // 原先是逐个具名列出的 90 个类型清单，新增类型时容易漏改。
