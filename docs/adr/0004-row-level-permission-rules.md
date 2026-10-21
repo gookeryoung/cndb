@@ -292,12 +292,12 @@ def assert_row_rule_valid(db, table, operator, subject_type, subject_id, action)
 |---|---|---|---|---|
 | P0 模型 + 判定入口 | 已落地 | `src/cndb/plugins/tables/models.py`、`src/cndb/plugins/tables/services/core/row_access.py`、`src/cndb/alembic/versions/c8d9e0f1a2b3_add_rowpermission.py` | `tests/test_row_access_rules.py` | `1ae26783` |
 | P1 写路径接入 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/row_access.py` | `tests/test_row_write_dispatch.py` | `d8560007` |
-| P2 规则写入面 + 前端 | 已落地 | `src/cndb/plugins/tables/routers/row_permissions.py`、`src/cndb/plugins/tables/schemas/models.py`、`frontend/src/pages/grid/permissions/PermissionEditor.tsx`、`frontend/src/api/tables.ts`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/tables/services/core/audit.py` | `tests/test_row_permissions_api.py`、`tests/test_row_level_permissions_e2e.py`、`frontend/src/pages/grid/permissions/PermissionEditor.test.tsx` | `cde4130e` |
+| P2 规则写入面 + 前端 | 已落地 | `src/cndb/plugins/tables/routers/row_permissions.py`、`src/cndb/plugins/tables/schemas/models.py`、`frontend/src/pages/grid/permissions/PermissionEditor.tsx`、`frontend/src/api/tables.ts`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/tables/services/core/audit.py` | `tests/test_row_permissions_api.py`、`tests/test_row_level_permissions_e2e.py`、`frontend/src/pages/grid/permissions/PermissionEditor.test.tsx`、`frontend/tests/e2e/critical/row-permissions.spec.ts` | `cde4130e` |
 
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P2 已落地；ADR 仍为 `Proposed`，等待人工评审回填 `Accepted`
-- 已完成：P0（模型 + 读路径）、P1（写路径分派）、P2（CRUD / subjects / preview / 前端 / 审计 / 备份）
-- 下一步：评审 D1..D9 与测试清单；确认是否补行级权限的 Playwright 专项用例；评审通过后更新 `Status`
+- 已完成：P0（模型 + 读路径）、P1（写路径分派）、P2（CRUD / subjects / preview / 前端 / 审计 / 备份）；Playwright 专项用例已补（`frontend/tests/e2e/critical/row-permissions.spec.ts`，覆盖规则增删改与「可看不可改」转修改申请）
+- 下一步：评审 D1..D9 与测试清单；评审通过后更新 `Status`
 - 已知坑：`member_role` 按有效档位匹配（D5）；管理员豁免（D3）；读 ⊇ 写（I4）；批量端点不开放行级旁路（§7-6）；规则增删改后必须清记录缓存（§7-7）；规则 filters 引用隐藏字段时静默丢弃
-- 最近一次全绿：`make flow` 通过（2026-10-20，本地工作区）
+- 最近一次全绿：`make flow` 通过（2026-10-21，本地工作区）；新增 Playwright 专项用例本地单跑 2 passed（含 setup）
