@@ -209,6 +209,7 @@ def test_restore_legacy_backup_migrates_to_head(legacy_archive: Path, tmp_path: 
         conn.close()
 
 
+@pytest.mark.timeout(180)
 def test_seed_after_restore_regenerates_demo_data(
     legacy_archive: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -217,6 +218,10 @@ def test_seed_after_restore_regenerates_demo_data(
     seed() 通过 cndb.core.database 的模块级 engine/SessionLocal 取库，
     测试中 monkeypatch 指向恢复出的临时库；settings.DATABASE_URL 同步
     指向（stamp_head 无参调用走 settings）。
+
+    超时放宽到 180s：这是「恢复历史备份 + 全量 seed」的集成路径，seed 侧要写入
+    示例工作区的数据表与 10 标的 × 约 1,200 根 K 线 JSON（ADR 0013 扩样后单库
+    约 3.4 万行），本地 0.1.x 归档已逼近 30s，CI runner 上必然超时。
     """
     import cndb.core.database as database_mod
     from cndb.cli.seed import seed as seed_command
