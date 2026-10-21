@@ -11,12 +11,12 @@ async function gotoGrid(page: Page) {
   // 等待离开登录页
   await page.waitForURL(/\/w/);
 
-  // 如果停留在 /w（工作区列表），则点击第一个工作区卡片进入
+  // 如果停留在 /w（工作区列表），则点击第一个工作区行进入（GitHub 风格可折叠行列表）
   if (page.url().match(/\/w\/?$/)) {
-    // 等待工作区卡片加载
-    const workspaceCards = page.locator(".ant-card");
-    await expect(workspaceCards.first()).toBeVisible({ timeout: 10000 });
-    await workspaceCards.first().click();
+    // 等待工作区列表行加载
+    const firstRow = page.locator('[data-testid^="workspace-row-"]').first();
+    await expect(firstRow).toBeVisible({ timeout: 10000 });
+    await firstRow.locator(".cn-ws-row-main").first().click();
   }
 
   // 现在应该在某个工作区下

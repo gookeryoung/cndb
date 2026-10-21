@@ -148,6 +148,8 @@ test.describe("数据分析模块", () => {
   test("另存为副本：弹窗保存后生成新模板并进入编辑态", async ({ page, request }) => {
     const templateId = await getTemplateId(request, "批次合格率分布")
     await gotoAnalytics(page, `?template=${templateId}`)
+    // 深链模板列表异步加载：等模板名回填后再另存，否则默认名会落到「未命名分析」
+    await expect(page.getByTestId("analytics-template-meta")).toContainText("批次合格率分布")
 
     const copyName = `E2E 分析副本 ${Date.now()}`
     await page.getByTestId("analytics-saveas-btn").click()

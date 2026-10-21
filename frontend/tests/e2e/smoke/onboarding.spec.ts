@@ -12,9 +12,9 @@ async function gotoGrid(page: Page) {
   await page.waitForURL(/\/w/);
 
   if (page.url().match(/\/w\/?$/)) {
-    const workspaceCards = page.locator(".ant-card");
-    await expect(workspaceCards.first()).toBeVisible({ timeout: 10000 });
-    await workspaceCards.first().click();
+    const firstRow = page.locator('[data-testid^="workspace-row-"]').first();
+    await expect(firstRow).toBeVisible({ timeout: 10000 });
+    await firstRow.locator(".cn-ws-row-main").first().click();
   }
 
   await page.waitForURL(/\/w\/\d+/);

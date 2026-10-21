@@ -39,9 +39,10 @@ BACKUP_DIR = Path(__file__).resolve().parents[1] / "examples" / "backups"
 _ARCHIVES = sorted(BACKUP_DIR.glob("cndb-backup-*.tar.gz"))
 
 # 已被迁移删除的表：历史备份 manifest 仍记录其行数，但恢复到当前 head 时
-# 该表按迁移链被丢弃（reports_template 于 c2d3e4f5a6b7 删除），
+# 该表按迁移链被丢弃（reports_template 于 c2d3e4f5a6b7 删除；
+# documents_permission / accounts_notification 于 2c3d4e5f6a70 删除），
 # 因此行数一致性校验只覆盖当前 schema 仍存在的表。
-_DROPPED_TABLES = {"reports_template"}
+_DROPPED_TABLES = {"reports_template", "documents_permission", "accounts_notification"}
 pytestmark = pytest.mark.skipif(not _ARCHIVES, reason="examples/backups 下无历史备份归档")
 
 

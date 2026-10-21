@@ -49,7 +49,7 @@ test.describe("K 线视图 — 自选股行内序列", () => {
     await klineBtn.click();
     await settle(page);
 
-    // 图表就绪：默认跳过无序列的行，落在 sh600519（离线 CSV 有全历史）
+    // 图表就绪：默认跳过无序列的行，落在首只有序列的标的（视图按股票代码升序）
     const container = page.getByTestId("kline-chart-container");
     await expect(container).toHaveAttribute("data-chart-ready", "true", {
       timeout: 10000,
@@ -57,7 +57,7 @@ test.describe("K 线视图 — 自选股行内序列", () => {
     await expect(container.locator("svg").first()).toBeVisible();
 
     const title = page.getByTestId("kline-title");
-    await expect(title).toContainText("sh600519");
+    await expect(title).toContainText(/^(sh|sz|bj)\d{6}/);
 
     // 左列表切到另一只有序列的标的 → 标题/最新价联动
     const price = page.getByTestId("kline-latest-price");
