@@ -1,6 +1,6 @@
 """后端核心健壮性补充用例 —— 极端 / 边界情况（不改业务逻辑，仅锁定既有行为）.
 
-靶点（此前无专门单测，详见 docs/adr/0007-backend-robustness.md 的「测试缺口」节）：
+靶点（此前无专门单测）：
 - core/ratelimit：滑动窗口限流的阈值边界、窗口滑出、键归一化、configure 钳制、并发；
 - core/security：令牌哈希/刷新令牌的确定性与唯一性、access token 声明与失效分支；
 - core/cache：TTL/LRU 缓存的删除/清空/负 TTL/producer 异常与 None/全局失效；
