@@ -24,6 +24,16 @@ test.describe("匿名（chromium-anon only）", () => {
     await expect(page.getByRole("button", { name: /登 录/ })).toBeVisible();
   });
 
+  test("动态背景可见且不拦截表单点击", async ({ page }) => {
+    await page.goto("/login");
+    await expect(page.locator(".auth-bg-canvas")).toBeVisible();
+    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("aria-hidden", "true");
+    await expect(page.locator(".auth-bg-layer")).toHaveCSS("pointer-events", "none");
+
+    await page.getByPlaceholder("用户名或邮箱").click();
+    await expect(page.getByPlaceholder("用户名或邮箱")).toBeFocused();
+  });
+
   test("表单登录成功 → 进入工作区列表 /w", async ({ page }) => {
     await page.goto("/login");
     await page.getByPlaceholder("用户名或邮箱").fill("demo");
