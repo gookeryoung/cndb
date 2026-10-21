@@ -19,7 +19,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
 import { datasourceApi, tableApi } from '@/api'
 import { analyticsApi } from '@/api/analytics'
-import type { AnalyticsChart, AnalyticsFormula, AnalyticsSummary } from '@/api/analytics'
+import { materializeDomainTemplate } from './domainTemplate'
 import type {
   DatasourceProviderInfo, DatasourceSession, DomainTemplate, SyncJob, SyncJobPayload, SyncPreviewResult,
   SyncRun, SyncScheduleConfig,
@@ -159,25 +159,29 @@ export default function DatasourcePage() {
         message.warning('该任务未绑定目标表，无法套用分析模板')
         return
       }
+      // 模板字段名按 provider 默认输出；任务改过字段映射时要先对齐到目标字段名
+      const { config, skipped } = materializeDomainTemplate(template, job.field_mapping)
+      if (config.formulas.length === 0 && !config.chart && !config.summary) {
+        message.error(`套用失败：模板字段与「${tableName(job.table_id)}」的字段映射对不上，没有可用配置`)
+        return
+      }
       try {
         await analyticsApi.createTemplate(wid, {
           name: `${job.name} · ${template.name}`,
           description: template.description,
           table_id: job.table_id,
-          config: {
-            formulas: template.formulas as unknown as AnalyticsFormula[],
-            chart: (template.chart as unknown as AnalyticsChart | null) ?? null,
-            summary: (template.summary as unknown as AnalyticsSummary | null) ?? null,
-            fields: [],
-            limit: 1000,
-          },
+          config,
         })
         message.success('已创建分析模板，可在「数据分析」页签打开')
-      } catch {
-        message.error('套用失败：字段名可能与目标表不一致，请先对齐字段映射')
+        if (skipped.length > 0) {
+          message.warning(`已跳过：${skipped.join('、')}（相关字段在字段映射里被丢弃）`)
+        }
+      } catch (err) {
+        const detail = err instanceof Error && err.message ? err.message : '未知错误'
+        message.error(`套用失败：${detail}`)
       }
     },
-    [wid, message],
+    [wid, message, tableName],
   )
 
   const confirmRemove = (job: SyncJob) => {
