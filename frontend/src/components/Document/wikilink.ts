@@ -5,7 +5,8 @@
  *
  * 三种成分的分工（对齐后端 `parse.parse_wikilink`）：
  * - target：跳转依据（站内按标题匹配；库内路径前缀已在导入时剥掉）；
- * - anchor：无别名时显示为「标题 › 锚点」，跳转仍落在文档首屏（站内暂无标题级锚点路由）；
+ * - anchor：无别名时显示为「标题 › 锚点」；target 为空（`[[#小节]]`）时转为
+ *   本文内锚点链接，由预览侧滚动定位；
  * - alias：有别名时**只显示别名**，与原库阅读观感一致。
  */
 
@@ -36,9 +37,11 @@ export function parseWikilinkInner(inner: string): WikilinkParts {
   return { target, anchor, alias }
 }
 
-/** 展示文本：别名优先；无别名时带锚点后缀，让读者知道指向哪一节 */
+/** 展示文本：别名优先；无别名时带锚点后缀，让读者知道指向哪一节；
+ *  本文内锚点（target 为空）只显示锚点 / 别名 */
 export function wikilinkLabel(parts: WikilinkParts): string {
   if (parts.alias) return parts.alias
+  if (!parts.target) return parts.anchor
   if (parts.anchor) return `${parts.target} › ${parts.anchor}`
   return parts.target
 }
@@ -48,8 +51,9 @@ function replaceLine(line: string): string {
   return line.replace(WIKILINK_RE, (raw, inner: string) => {
     const parts = parseWikilinkInner(inner)
     if (!parts.target) {
-      // [[#本文锚点]]：站内没有本文锚点表达，按纯文本保留（去掉 # 更好读）
-      return parts.anchor || raw
+      // [[#本文锚点]]：转为文内锚点链接，预览侧滚动到同名标题
+      if (!parts.anchor) return raw
+      return `[${wikilinkLabel(parts)}](#${encodeURIComponent(parts.anchor)})`
     }
     return `[${wikilinkLabel(parts)}](${WIKILINK_HREF_PREFIX}${encodeURIComponent(parts.target)})`
   })

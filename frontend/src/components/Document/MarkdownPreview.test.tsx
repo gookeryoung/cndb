@@ -109,6 +109,52 @@ describe('MarkdownPreview 双向链接', () => {
   })
 })
 
+/** 目录 / 文内锚点：点击预览里的 # 链接滚动到对应标题（不再走浏览器 hash 跳转） */
+describe('MarkdownPreview 文内锚点跳转', () => {
+  /** jsdom 没有 scrollIntoView：给目标标题挂 spy 并断言被调用 */
+  function spyScroll(el: HTMLElement) {
+    const spy = vi.fn()
+    el.scrollIntoView = spy
+    return spy
+  }
+
+  it('目录链接按标题原文跳转', () => {
+    renderProviders(
+      <MarkdownPreview content={'## 安装指南\n\n- [去安装](#安装指南)\n'} />,
+    )
+    const spy = spyScroll(screen.getByRole('heading', { name: '安装指南' }))
+    fireEvent.click(screen.getByTestId('doc-anchor-link'))
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('目录链接省略标点 / 用已生成的锚点 id 也能命中', () => {
+    renderProviders(
+      <MarkdownPreview content={'## 一、概述\n\n[去概述](#一概述)\n\n[按 id](#doc-h-一、概述)'} />,
+    )
+    const spy = spyScroll(screen.getByRole('heading', { name: '一、概述' }))
+    const [byText, byId] = screen.getAllByTestId('doc-anchor-link')
+    fireEvent.click(byText)
+    fireEvent.click(byId)
+    expect(spy).toHaveBeenCalledTimes(2)
+  })
+
+  it('[[#标题]] 渲染为锚点链接并跳转', () => {
+    renderProviders(
+      <MarkdownPreview content={'## 小节标题\n\n见 [[#小节标题]]'} />,
+    )
+    const spy = spyScroll(screen.getByRole('heading', { name: '小节标题' }))
+    fireEvent.click(screen.getByTestId('doc-anchor-link'))
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('锚点未命中：点击不报错，不滚动', () => {
+    renderProviders(
+      <MarkdownPreview content={'[不存在](#没有这节)'} />,
+    )
+    expect(() => fireEvent.click(screen.getByTestId('doc-anchor-link'))).not.toThrow()
+  })
+})
+
 describe('MarkdownPreview 代码块', () => {
   it('围栏代码块交给 CodeBlock：语言标签 + 高亮，且不产生 pre>div 嵌套', () => {
     const { container } = renderProviders(

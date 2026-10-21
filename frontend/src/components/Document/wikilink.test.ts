@@ -34,8 +34,12 @@ describe('transformWikilinks', () => {
     expect(transformWikilinks('[[目标文档#第二章|二章]]')).toBe(`[二章](${href('目标文档')})`)
   })
 
-  it('本文内锚点 [[#小节]] 退化为纯文本（无文档可跳）', () => {
-    expect(transformWikilinks('先看 [[#小节]]')).toBe('先看 小节')
+  it('本文内锚点 [[#小节]] 转为文内锚点链接（预览侧滚动定位）', () => {
+    expect(transformWikilinks('先看 [[#小节]]')).toBe(`先看 [小节](#${encodeURIComponent('小节')})`)
+  })
+
+  it('本文内锚点 + 别名：显示别名，仍指向锚点', () => {
+    expect(transformWikilinks('[[#小节|这一节]]')).toBe(`[这一节](#${encodeURIComponent('小节')})`)
   })
 
   it('代码围栏内不转换', () => {
@@ -61,10 +65,11 @@ describe('parseWikilinkInner / wikilinkLabel', () => {
     expect(parseWikilinkInner('目标|别名')).toEqual({ target: '目标', anchor: '', alias: '别名' })
   })
 
-  it('展示文本优先级：别名 > 标题›锚点 > 标题', () => {
+  it('展示文本优先级：别名 > 标题›锚点 > 标题 / 本文锚点只显示锚点', () => {
     expect(wikilinkLabel({ target: 'T', anchor: 'H', alias: 'A' })).toBe('A')
     expect(wikilinkLabel({ target: 'T', anchor: 'H', alias: '' })).toBe('T › H')
     expect(wikilinkLabel({ target: 'T', anchor: '', alias: '' })).toBe('T')
+    expect(wikilinkLabel({ target: '', anchor: 'H', alias: '' })).toBe('H')
   })
 })
 

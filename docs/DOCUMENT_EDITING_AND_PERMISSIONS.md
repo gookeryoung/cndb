@@ -140,6 +140,21 @@
 - 单元格解析在 `components/Document/mdTable.ts`（`parseMdTable`，按未转义的 `|` 切分、列宽以表头为准）。
 - 大文档保护：单块 > 100 KB 不做词法高亮，单次重建的高亮总量预算 300 KB。
 
+### 4.7 大纲与文内锚点跳转
+
+- **大纲抽屉**（`OutlineDrawer.tsx` + `components/Document/outline.ts`）：从当前内容实时解析 ATX 标题
+  （跳过围栏内的 `#` 行），点击条目切到查看模式并滚动定位预览区标题。
+- **标题锚点 id**：`headingAnchor(text)` = 小写 → 去掉字母 / 数字 / 空白 / 连字符以外的字符 → 空白折叠为 `-`，
+  前缀 `doc-h-`（保留中文）；预览侧 `h1~h6` 与大纲解析共用同一算法，两边必然对齐。
+- **目录链接跳转**（`components/Document/docAnchor.ts`）：预览里 `[小节](#小节)` 这类文内链接由 `a` 组件拦截，
+  `preventDefault` 后原地滚动，**不走浏览器 hash 跳转**（SPA 下改 hash 会污染路由，且标题 id 带 `doc-h-` 前缀）。
+  锚点解析顺序为「id 精确匹配 → 标题文本生成的 id → 同文本标题兜底」，因此 `#一概述` 也能命中
+  `## 一、概述`（目录常省略标点），`#doc-h-一、概述` 同样有效。
+- **本文内双链 `[[#小节]]`**：`wikilink.ts` 转成锚点链接（有别名时显示别名），与目录链接走同一跳转逻辑；
+  锚点未命中时静默忽略，不报错。
+
+---
+
 ## 5. 修改申请生命周期
 
 表 `documents_change_request`（`documents/services/change_requests.py`）。状态 `open` / `merged` / `closed`。
