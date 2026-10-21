@@ -13,9 +13,9 @@
 要点：
 
 - 只支持最近 ``datalen`` 根（实测上限 1023，约 4 年交易日），不支持 start/end 区间；
-  长历史回填请用 ``baostock_kline`` 或 ``tencent_kline``。
+  长历史回填请用 ``tencent_kline``。
 - 无复权参数，返回的是不复权价；与表内前复权列混写会污染口径，务必分开落表。
-- ``volume`` 单位为股（与 baostock 一致，腾讯为手，已在腾讯 provider 内换算）。
+- ``volume`` 单位为股（腾讯为手，已在腾讯 provider 内换算）。
 - 响应不带 symbol：由管线按 ``entrant_param`` 自动补齐（``fill_entrant``）。
 
 继承 ``http_json`` 复用请求模板 / 分页 / 归一；覆写 ``parse``（平铺数组 + 字段改名）。
@@ -60,7 +60,7 @@ SINA_KLINE_PARAMS_SCHEMA: dict[str, Any] = {
         },
     ],
     "placeholders": ["symbol"],
-    "notes": "仅不复权 + 仅最近 1023 根；长历史/复权请用 baostock_kline / tencent_kline。",
+    "notes": "仅不复权 + 仅最近 1023 根；长历史/复权请用 tencent_kline。",
 }
 
 # 新浪日线的原始键 → 统一字段名（day 是日期，其余同名）

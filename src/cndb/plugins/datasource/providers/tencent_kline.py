@@ -56,7 +56,7 @@ TENCENT_KLINE_PARAMS_SCHEMA: dict[str, Any] = {
 # 单条 K 线的字段顺序（腾讯固定）
 _KLINE_FIELDS = ("trade_date", "open", "close", "high", "low", "volume")
 _SERIES_KEYS = ("qfqday", "hfqday", "day")
-# 腾讯成交量单位是「手」，baostock / 新浪是「股」；统一成股，避免同表口径打架
+# 腾讯成交量单位是「手」，新浪是「股」；统一成股，避免同表口径打架
 _LOT_TO_SHARE = 100
 
 

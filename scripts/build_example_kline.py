@@ -1,22 +1,21 @@
-"""生成「数据源示例」工作区的三源日线样本 CSV（可复现）.
+"""生成「数据源示例」工作区的两源日线样本 CSV（可复现）.
 
 示例表口径与 StockMaster 线上一致：10 只标的 × 近 5 年日线（单标的约 1,214 根）。
 
-三张表一源一表，避免复权口径互相覆盖：
+两张表一源一表，避免复权口径互相覆盖：
 
-===============  ================  ==========  ========  ==========
-表               provider          复权        成交额    行数
-===============  ================  ==========  ========  ==========
-股市日线         baostock_kline    前复权      有        10×1214
-股市日线-腾讯    tencent_kline     前复权      无        10×约1210
-股市日线-新浪    sina_kline        不复权      无        10×1023
-===============  ================  ==========  ========  ==========
+===============  ================  ==========  ==========
+表               provider          复权        行数
+===============  ================  ==========  ==========
+股市日线         tencent_kline     前复权      10×约1210
+股市日线-新浪    sina_kline        不复权      10×1023
+===============  ================  ==========  ==========
 
 用法::
 
-    uv run --extra market python scripts/build_example_kline.py --start 2021-10-18 --end 2026-10-20
+    uv run python scripts/build_example_kline.py --start 2021-10-18 --end 2026-10-20
 
-需要联网（baostock 走 TCP，腾讯 / 新浪走 HTTPS）。
+需要联网（腾讯 / 新浪走 HTTPS）。
 """
 
 from __future__ import annotations
@@ -30,7 +29,6 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cndb.plugins.datasource.providers.baostock_kline import BAOSTOCK_KLINE_URL_TEMPLATE
 from cndb.plugins.datasource.providers.base import (
     FieldTransform,
     RequestSpec,
@@ -57,7 +55,7 @@ SYMBOLS: dict[str, str] = {
     "sz000651": "格力电器",
 }
 
-# baostock / 腾讯的字段 → 表内中文列（新浪复用同一套，无成交额）
+# 腾讯 / 新浪的字段 → 表内中文列
 _MAPPING: dict[str, FieldTransform] = {
     "symbol": FieldTransform(name="股票代码", field_type="text"),
     "trade_date": FieldTransform(name="交易日", field_type="date"),
@@ -66,11 +64,9 @@ _MAPPING: dict[str, FieldTransform] = {
     "low": FieldTransform(name="最低价", field_type="float"),
     "close": FieldTransform(name="收盘价", field_type="float"),
     "volume": FieldTransform(name="成交量", field_type="int"),
-    "amount": FieldTransform(name="成交额", field_type="float"),
 }
 
-_COLUMNS_FULL = ("股票代码", "股票名称", "交易日", "开盘价", "最高价", "最低价", "收盘价", "成交量", "成交额")
-_COLUMNS_NO_AMOUNT = ("股票代码", "股票名称", "交易日", "开盘价", "最高价", "最低价", "收盘价", "成交量")
+_COLUMNS = ("股票代码", "股票名称", "交易日", "开盘价", "最高价", "最低价", "收盘价", "成交量")
 
 
 def _job(
@@ -143,7 +139,6 @@ def _write_csv(
                 "最低价": _round_price(row.get("最低价")),
                 "收盘价": _round_price(row.get("收盘价")),
                 "成交量": row.get("成交量") or "",
-                "成交额": _round_price(row.get("成交额")),
             }
             writer.writerow([record[column] for column in columns])
             count += 1
@@ -152,7 +147,7 @@ def _write_csv(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="生成三源 A 股日线示例 CSV")
+    parser = argparse.ArgumentParser(description="生成两源 A 股日线示例 CSV")
     parser.add_argument("--start", default="2021-10-18")
     parser.add_argument("--end", default="2026-10-20")
     parser.add_argument("--out", default=str(OUTPUT_DIR))
@@ -160,44 +155,25 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
-    # 腾讯单次最多 320 根（且语义为「截至 end 的最近 320 根」）→ 窗口按 440 自然日；
-    # baostock 一次可返回整段，不分片
-    window = TimeWindowSpec(mode="range", start=args.start, end=args.end)
+    # 腾讯单次最多 320 根（且语义为「截至 end 的最近 320 根」）→ 窗口按 440 自然日
     tencent_window = TimeWindowSpec(mode="range", start=args.start, end=args.end, chunk_days=440)
 
-    print(f"[1/3] baostock 前复权 {args.start}~{args.end}")
-    main_rows = _fetch(_job("baostock_kline", BAOSTOCK_KLINE_URL_TEMPLATE, window=window, mapping=dict(_MAPPING)))
-    if main_rows:
-        _write_csv(out_dir / "股市日线.csv", main_rows, _COLUMNS_FULL, start=args.start, end=args.end)
-    else:
-        print("  ! baostock 抓取为空，保留原文件", file=sys.stderr)
-
-    print(f"[2/3] 腾讯 前复权 {args.start}~{args.end}")
+    print(f"[1/2] 腾讯 前复权 {args.start}~{args.end}")
     tencent_rows = _fetch(
-        _job(
-            "tencent_kline",
-            TENCENT_KLINE_URL_TEMPLATE,
-            window=tencent_window,
-            mapping={key: value for key, value in _MAPPING.items() if key != "amount"},
-        ),
+        _job("tencent_kline", TENCENT_KLINE_URL_TEMPLATE, window=tencent_window, mapping=dict(_MAPPING)),
         rate_limit_ms=2000,
     )
     if tencent_rows:
-        _write_csv(out_dir / "股市日线-腾讯.csv", tencent_rows, _COLUMNS_NO_AMOUNT, start=args.start, end=args.end)
+        _write_csv(out_dir / "股市日线.csv", tencent_rows, _COLUMNS, start=args.start, end=args.end)
     else:
         print("  ! 腾讯抓取为空（可能被 WAF 限流），保留原文件", file=sys.stderr)
 
-    print("[3/3] 新浪 不复权（最近 1023 根）")
+    print("[2/2] 新浪 不复权（最近 1023 根）")
     sina_rows = _fetch(
-        _job(
-            "sina_kline",
-            SINA_KLINE_URL_TEMPLATE,
-            window=TimeWindowSpec(mode="none"),
-            mapping={key: value for key, value in _MAPPING.items() if key != "amount"},
-        )
+        _job("sina_kline", SINA_KLINE_URL_TEMPLATE, window=TimeWindowSpec(mode="none"), mapping=dict(_MAPPING))
     )
     if sina_rows:
-        _write_csv(out_dir / "股市日线-新浪.csv", sina_rows, _COLUMNS_NO_AMOUNT, start=args.start, end=args.end)
+        _write_csv(out_dir / "股市日线-新浪.csv", sina_rows, _COLUMNS, start=args.start, end=args.end)
     else:
         print("  ! 新浪抓取为空，保留原文件", file=sys.stderr)
     return 0

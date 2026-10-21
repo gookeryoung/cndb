@@ -100,10 +100,8 @@ class RequestSpec:
     def __post_init__(self) -> None:
         if not self.url_template:
             raise ProviderError("request.url_template 不能为空")
-        # baostock:// 是非 HTTP 传输（provider 自带 fetch_plan，不走 fetch_json），
-        # 只作为「任务声明入口」的占位协议，白名单显式列出，不放任意 scheme
-        if not self.url_template.startswith(("http://", "https://", "baostock://")):
-            raise ProviderError("request.url_template 必须是 http/https/baostock URL")
+        if not self.url_template.startswith(("http://", "https://")):
+            raise ProviderError("request.url_template 必须是 http/https URL")
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,12 +148,7 @@ class SyncJobSpec:
 
 @dataclass(frozen=True, slots=True)
 class RequestPlan:
-    """一次具体请求：已求值的 FetchConfig + 追溯标签（运行记录 / 错误定位用）.
-
-    ``variables`` 是本请求求值后的模板变量快照，供自带传输的 provider
-    （如 ``baostock_kline`` 走 TCP 而非 HTTP）在 ``fetch_plan`` 里取参，
-    避免再从 URL 字符串反解。
-    """
+    """一次具体请求：已求值的 FetchConfig + 追溯标签（运行记录 / 错误定位用）."""
 
     config: FetchConfig
     label: str
@@ -163,7 +156,6 @@ class RequestPlan:
     page: int | None = None
     window_start: str | None = None
     window_end: str | None = None
-    variables: Mapping[str, Any] = field(default_factory=dict)
 
 
 def normalize_field_mapping(
@@ -187,9 +179,6 @@ class SourceProvider(Protocol):
 
     实现只需三步中的一到两步：默认的 ``normalize`` 已能覆盖声明式场景，
     专用 provider 可覆写 ``parse``（特殊响应格式）或 ``build_requests``（特殊鉴权 / 分页）。
-
-    非 HTTP 数据源（如 baostock 的 TCP 会话）额外实现 ``fetch_plan(plan)``：
-    管线检测到该方法即优先调用它，不再执行 ``fetch_json(plan.config)``。
     """
 
     name: str

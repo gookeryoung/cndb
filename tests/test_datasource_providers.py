@@ -37,7 +37,7 @@ class TestTencentKline:
         }
         rows = KLINE.parse(json.dumps(payload), _job("tencent_kline"))
         assert len(rows) == 2
-        # volume 由「手」换算成「股」（×100），与 baostock / 新浪同表口径一致
+        # volume 由「手」换算成「股」（×100），与新浪同表口径一致
         assert rows[0] == {
             "symbol": "sh600519",
             "trade_date": "2024-01-02",

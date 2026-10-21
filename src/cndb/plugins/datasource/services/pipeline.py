@@ -77,8 +77,6 @@ def run_pipeline(
     active = provider or get_provider(job.provider)
     fetcher: FetchFn = fetch or fetch_json
     plans = active.build_requests(job)
-    # 非 HTTP provider（如 baostock）自带传输通道：有 fetch_plan 就优先它，不再走 fetch_json
-    provider_fetch = getattr(active, "fetch_plan", None) if fetch is None else None
 
     outcome = PipelineOutcome(plans=len(plans))
     raw_rows: list[dict[str, Any]] = []
@@ -95,7 +93,7 @@ def run_pipeline(
             waiter(rate_limit_ms / 1000.0)
         sent += 1
         try:
-            rows = provider_fetch(plan) if provider_fetch is not None else fetcher(plan.config)
+            rows = fetcher(plan.config)
         except Exception as exc:  # 单请求失败不中断整体（I3）
             logger.warning("数据源请求失败 [%s]: %s", plan.label, exc)
             outcome.failures.append(

@@ -1,5 +1,4 @@
 {
-  "_comment": "视图种子配置：数据源示例工作区。三张日线表一源一表（股市日线=baostock 前复权含成交额、股市日线-腾讯=腾讯前复权、股市日线-新浪=新浪不复权），每张表都配「全部」+ 单标的 K 线图，主表另有放量日过滤、最近一年、成交量图与量价散点图。示例数据为 10 只 A 股 × 2021-10-18 起约 1,200 根/标的（对齐 StockMaster 线上样本口径），故 K 线视图按股票代码收窄到单一标的，避免同轴多蜡烛重叠。自选股表一只股一行、kline 视图读取行内 JSON（静态示例，无同步任务）。字段名须与表头一致。",
   "天气每日": [
     {
       "name": "全部",
@@ -120,38 +119,6 @@
         "show_trend_line": true
       },
       "order": 5
-    }
-  ],
-  "股市日线-腾讯": [
-    {
-      "name": "全部",
-      "view_type": "grid",
-      "sortings": [
-        {"field_name": "交易日", "direction": "desc"},
-        {"field_name": "股票代码", "direction": "asc"}
-      ],
-      "is_default": true,
-      "order": 0
-    },
-    {
-      "name": "K线图（贵州茅台）",
-      "view_type": "chart",
-      "filter_type": "AND",
-      "filters": [
-        {"field_name": "股票代码", "op": "=", "value": "sh600519"}
-      ],
-      "sortings": [
-        {"field_name": "交易日", "direction": "asc"}
-      ],
-      "view_options": {
-        "chart_type": "candlestick",
-        "time_field": "交易日",
-        "open_field": "开盘价",
-        "high_field": "最高价",
-        "low_field": "最低价",
-        "close_field": "收盘价"
-      },
-      "order": 1
     }
   ],
   "股市日线-新浪": [
