@@ -12,13 +12,11 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import type { CSSProperties } from 'react'
-import { EditorState, Facet, type Range } from '@codemirror/state'
+import { EditorState, Facet, StateField, type Range } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
   EditorView,
-  ViewPlugin,
-  type ViewUpdate,
   WidgetType,
   drawSelection,
   keymap,
@@ -33,6 +31,7 @@ import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { loadFileObjectUrl } from '@/hooks/useFileObjectUrl'
 import { highlightCode } from './codeHighlight'
 import { parseImageRef } from './imageRef'
+import { parseMdTable, type MdTable, type MdTableAlign } from './mdTable'
 
 export type MarkdownEditorMode = 'live' | 'source'
 
@@ -116,6 +115,153 @@ class MarkdownImageWidget extends WidgetType {
   }
 }
 
+// ── 待办复选框：点击写回 `[ ]` ↔ `[x]` ────────────────
+
+class MarkdownTaskWidget extends WidgetType {
+  constructor(
+    private readonly checked: boolean,
+    private readonly from: number,
+    private readonly to: number,
+    private readonly onToggle: (from: number, to: number, checked: boolean) => void,
+  ) {
+    super()
+  }
+
+  /** 位置变化也要重建：否则点击时会用旧偏移改错文本 */
+  eq(other: MarkdownTaskWidget): boolean {
+    return other.checked === this.checked && other.from === this.from && other.to === this.to
+  }
+
+  toDOM(): HTMLElement {
+    const box = document.createElement('input')
+    box.type = 'checkbox'
+    box.className = 'cm-md-task'
+    box.checked = this.checked
+    // 阻止 CodeMirror 把 mousedown 当选区操作（否则光标落点错乱）
+    box.addEventListener('mousedown', e => e.preventDefault())
+    box.addEventListener('click', e => {
+      e.preventDefault()
+      this.onToggle(this.from, this.to, !this.checked)
+    })
+    return box
+  }
+
+  ignoreEvent(): boolean {
+    return false
+  }
+}
+
+// ── 无序列表符号：源码的 `-` / `*` / `+` 渲染成圆点 ─────────
+
+class MarkdownBulletWidget extends WidgetType {
+  constructor(private readonly glyph: string) {
+    super()
+  }
+
+  eq(other: MarkdownBulletWidget): boolean {
+    return other.glyph === this.glyph
+  }
+
+  toDOM(): HTMLElement {
+    const span = document.createElement('span')
+    span.className = 'cm-md-bullet'
+    span.textContent = this.glyph
+    return span
+  }
+}
+
+// ── 表格：光标不在表格内时整块渲染成 <table> ────────────────
+
+const INLINE_TOKEN_RE = /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3|`([^`]+)`|~~(.+?)~~/g
+
+/** 单元格内的行内语法（粗体 / 斜体 / 行内代码 / 删除线）渲染成 DOM */
+function appendInlineMarkdown(parent: HTMLElement, text: string): void {
+  let last = 0
+  INLINE_TOKEN_RE.lastIndex = 0
+  for (let m = INLINE_TOKEN_RE.exec(text); m; m = INLINE_TOKEN_RE.exec(text)) {
+    if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)))
+    if (m[2] !== undefined) {
+      const strong = document.createElement('strong')
+      strong.textContent = m[2]
+      parent.appendChild(strong)
+    } else if (m[4] !== undefined) {
+      const em = document.createElement('em')
+      em.textContent = m[4]
+      parent.appendChild(em)
+    } else if (m[5] !== undefined) {
+      const code = document.createElement('code')
+      code.textContent = m[5]
+      parent.appendChild(code)
+    } else {
+      const del = document.createElement('del')
+      del.textContent = m[6]
+      parent.appendChild(del)
+    }
+    last = m.index + m[0].length
+  }
+  if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)))
+}
+
+function alignStyle(align: MdTableAlign): string {
+  return align ? `text-align:${align}` : ''
+}
+
+class MarkdownTableWidget extends WidgetType {
+  constructor(
+    private readonly table: MdTable,
+    /** 位置 + 内容签名：任一变化都重建，保证 onEnter 闭包里的偏移是新的 */
+    private readonly key: string,
+    private readonly onEnter: () => void,
+  ) {
+    super()
+  }
+
+  eq(other: MarkdownTableWidget): boolean {
+    return other.key === this.key
+  }
+
+  toDOM(): HTMLElement {
+    const wrap = document.createElement('div')
+    wrap.className = 'cm-md-table'
+    // 点击渲染结果 → 光标落进表格首行，切回源码编辑（与 Obsidian 一致）
+    wrap.addEventListener('mousedown', e => {
+      e.preventDefault()
+      this.onEnter()
+    })
+
+    const table = document.createElement('table')
+    const thead = document.createElement('thead')
+    const headRow = document.createElement('tr')
+    this.table.header.forEach((cell, i) => {
+      const th = document.createElement('th')
+      th.style.cssText = alignStyle(this.table.align[i])
+      appendInlineMarkdown(th, cell)
+      headRow.appendChild(th)
+    })
+    thead.appendChild(headRow)
+    table.appendChild(thead)
+
+    const tbody = document.createElement('tbody')
+    for (const row of this.table.rows) {
+      const tr = document.createElement('tr')
+      row.forEach((cell, i) => {
+        const td = document.createElement('td')
+        td.style.cssText = alignStyle(this.table.align[i])
+        appendInlineMarkdown(td, cell)
+        tr.appendChild(td)
+      })
+      tbody.appendChild(tr)
+    }
+    table.appendChild(tbody)
+    wrap.appendChild(table)
+    return wrap
+  }
+
+  ignoreEvent(): boolean {
+    return false
+  }
+}
+
 // ── 实时预览装饰 ──────────────────────────────────────
 
 const HEADING_RE = /^(?:ATX|Setext)Heading(\d)$/
@@ -132,152 +278,205 @@ const MARK_NAMES: Record<string, string[]> = {
 const IMAGE_RE = /^!\[([^\]]*)\]\(([^)\s]+)(?:\s+"[^"]*")?\)$/
 /** 单块代码超过该长度不做词法高亮：避免超长贴入后每次按键全量 tokenize */
 const MAX_HIGHLIGHT_CHARS = 100_000
+/** 单次重建的词法高亮总预算：超出后其余代码块按纯文本显示，保证大文档按键不卡 */
+const HIGHLIGHT_BUDGET_CHARS = 300_000
 
 function hide(from: number, to: number): Range<Decoration> | null {
   return to > from ? Decoration.replace({}).range(from, to) : null
 }
 
-/** 构建可见范围的装饰：语法标记隐藏 + 元素样式 + 图片/分隔线渲染 */
-function buildDecorations(view: EditorView): DecorationSet {
+/** 构建装饰：语法标记隐藏 + 元素样式 + 图片 / 分隔线 / 表格 / 待办渲染.
+ *
+ * 表格要整块换成 <table>（块级替换），而 CodeMirror 不允许插件下发块装饰，
+ * 因此装饰改由 StateField 提供；`getView` 只在 widget 交互（点击 / 勾选）时用来派发事务。
+ */
+function buildDecorations(state: EditorState, getView: () => EditorView | null): DecorationSet {
   const ranges: Range<Decoration>[] = []
-  const doc = view.state.doc
-  const cursor = view.state.selection.main.head
+  const doc = state.doc
+  const cursor = state.selection.main.head
   const active = (from: number, to: number) => cursor >= from && cursor <= to
   const push = (deco: Range<Decoration> | null) => {
     if (deco) ranges.push(deco)
   }
+  /** 勾选待办：只改标记本身（`[ ]` ↔ `[x]`），其余字符不动 */
+  const toggleTask = (from: number, to: number, checked: boolean) => {
+    getView()?.dispatch({ changes: { from, to, insert: checked ? '[x]' : '[ ]' } })
+  }
+  let highlightBudget = HIGHLIGHT_BUDGET_CHARS
 
-  for (const { from, to } of view.visibleRanges) {
-    syntaxTree(view.state).iterate({
-      from,
-      to,
-      enter: node => {
-        const name = node.name
-        const nodeActive = active(node.from, node.to)
-        const heading = HEADING_RE.exec(name)
-        if (heading) {
-          const level = heading[1]
-          ranges.push(Decoration.line({ class: `cm-md-heading cm-md-h${level}` }).range(doc.lineAt(node.from).from))
-          const marks = node.node.getChildren('HeaderMark')
-          if (!nodeActive) {
-            for (const mark of marks) {
-              // setext 下划线连同换行一起隐藏，避免留下一行空白
-              const until = name.startsWith('Setext') ? Math.min(mark.to + 1, doc.length) : mark.to
-              push(hide(mark.from, until))
-            }
+  syntaxTree(state).iterate({
+    enter: node => {
+      const name = node.name
+      const nodeActive = active(node.from, node.to)
+      const heading = HEADING_RE.exec(name)
+      if (heading) {
+        const level = heading[1]
+        ranges.push(
+          Decoration.line({ class: `cm-md-heading cm-md-h${level}` }).range(doc.lineAt(node.from).from),
+        )
+        if (!nodeActive) {
+          for (const mark of node.node.getChildren('HeaderMark')) {
+            // setext 下划线连同换行一起隐藏，避免留下一行空白
+            const until = name.startsWith('Setext') ? Math.min(mark.to + 1, doc.length) : mark.to
+            push(hide(mark.from, until))
           }
-          return
         }
+        return
+      }
 
-        const emphasisClass = EMPHASIS_CLASS[name]
-        if (emphasisClass) {
-          if (!nodeActive) {
-            ranges.push(Decoration.mark({ class: emphasisClass }).range(node.from, node.to))
-            for (const markName of MARK_NAMES[name] ?? []) {
-              for (const mark of node.node.getChildren(markName)) push(hide(mark.from, mark.to))
-            }
-          }
-          return
-        }
-
-        if (name === 'InlineCode') {
-          ranges.push(Decoration.mark({ class: 'cm-md-code' }).range(node.from, node.to))
-          if (!nodeActive) {
-            for (const mark of node.node.getChildren('CodeMark')) push(hide(mark.from, mark.to))
-          }
-          return
-        }
-
-        if (name === 'Link') {
-          if (nodeActive) return
-          ranges.push(Decoration.mark({ class: 'cm-md-link' }).range(node.from, node.to))
-          for (const markName of ['LinkMark', 'URL', 'LinkTitle']) {
+      const emphasisClass = EMPHASIS_CLASS[name]
+      if (emphasisClass) {
+        if (!nodeActive) {
+          ranges.push(Decoration.mark({ class: emphasisClass }).range(node.from, node.to))
+          for (const markName of MARK_NAMES[name] ?? []) {
             for (const mark of node.node.getChildren(markName)) push(hide(mark.from, mark.to))
           }
-          return
         }
+        return
+      }
 
-        if (name === 'Image') {
-          if (nodeActive) return
-          const raw = doc.sliceString(node.from, node.to)
-          const parsed = IMAGE_RE.exec(raw)
-          if (parsed) {
-            ranges.push(
-              Decoration.replace({
-                widget: new MarkdownImageWidget(parsed[2], parsed[1], view.state.facet(imageContext)),
-              }).range(node.from, node.to),
-            )
-          }
-          return
+      if (name === 'InlineCode') {
+        ranges.push(Decoration.mark({ class: 'cm-md-code' }).range(node.from, node.to))
+        if (!nodeActive) {
+          for (const mark of node.node.getChildren('CodeMark')) push(hide(mark.from, mark.to))
         }
+        return
+      }
 
-        if (name === 'HorizontalRule') {
-          const line = doc.lineAt(node.from)
-          ranges.push(Decoration.line({ class: 'cm-md-hr' }).range(line.from))
-          if (!nodeActive) push(hide(node.from, node.to))
-          return
+      if (name === 'Link') {
+        if (nodeActive) return
+        ranges.push(Decoration.mark({ class: 'cm-md-link' }).range(node.from, node.to))
+        for (const markName of ['LinkMark', 'URL', 'LinkTitle']) {
+          for (const mark of node.node.getChildren(markName)) push(hide(mark.from, mark.to))
         }
+        return
+      }
 
-        if (name === 'Blockquote') {
-          let pos = node.from
-          while (pos <= node.to) {
+      if (name === 'Image') {
+        if (nodeActive) return
+        const raw = doc.sliceString(node.from, node.to)
+        const parsed = IMAGE_RE.exec(raw)
+        if (parsed) {
+          ranges.push(
+            Decoration.replace({
+              widget: new MarkdownImageWidget(parsed[2], parsed[1], state.facet(imageContext)),
+            }).range(node.from, node.to),
+          )
+        }
+        return
+      }
+
+      if (name === 'HorizontalRule') {
+        ranges.push(Decoration.line({ class: 'cm-md-hr' }).range(doc.lineAt(node.from).from))
+        if (!nodeActive) push(hide(node.from, node.to))
+        return
+      }
+
+      if (name === 'Blockquote') {
+        let pos = node.from
+        while (pos <= node.to) {
+          const line = doc.lineAt(pos)
+          ranges.push(Decoration.line({ class: 'cm-md-quote' }).range(line.from))
+          if (line.to >= node.to) break
+          pos = line.to + 1
+        }
+        if (!nodeActive) {
+          for (const mark of node.node.getChildren('QuoteMark')) push(hide(mark.from, mark.to))
+        }
+        return
+      }
+
+      if (name === 'FencedCode' || name === 'CodeBlock') {
+        const fenced = name === 'FencedCode'
+        const firstLine = doc.lineAt(node.from)
+        const lastLine = doc.lineAt(node.to)
+        // 闭合围栏行：与首行同为 ``` / ~~~ 且不是同一行（空代码块）
+        const closing =
+          fenced && lastLine.number > firstLine.number && /^\s*(?:`{3,}|~{3,})\s*$/.test(lastLine.text)
+        const contentFrom = fenced ? Math.min(firstLine.to + 1, doc.length) : node.from
+        const contentTo = closing ? lastLine.from : node.to
+
+        ranges.push(Decoration.line({ class: 'cm-md-codefence' }).range(firstLine.from))
+        if (closing) ranges.push(Decoration.line({ class: 'cm-md-codefence' }).range(lastLine.from))
+
+        if (contentTo > contentFrom) {
+          for (let pos = contentFrom; pos < contentTo; ) {
             const line = doc.lineAt(pos)
-            ranges.push(Decoration.line({ class: 'cm-md-quote' }).range(line.from))
-            if (line.to >= node.to) break
+            ranges.push(Decoration.line({ class: 'cm-md-codeblock' }).range(line.from))
+            if (line.to >= contentTo) break
             pos = line.to + 1
           }
-          if (!nodeActive) {
-            for (const mark of node.node.getChildren('QuoteMark')) push(hide(mark.from, mark.to))
-          }
-          return
-        }
-
-        if (name === 'FencedCode' || name === 'CodeBlock') {
-          const fenced = name === 'FencedCode'
-          const firstLine = doc.lineAt(node.from)
-          const lastLine = doc.lineAt(node.to)
-          // 闭合围栏行：与首行同为 ``` / ~~~ 且不是同一行（空代码块）
-          const closing =
-            fenced &&
-            lastLine.number > firstLine.number &&
-            /^\s*(?:`{3,}|~{3,})\s*$/.test(lastLine.text)
-          const contentFrom = fenced ? Math.min(firstLine.to + 1, doc.length) : node.from
-          const contentTo = closing ? lastLine.from : node.to
-
-          ranges.push(Decoration.line({ class: 'cm-md-codefence' }).range(firstLine.from))
-          if (closing) ranges.push(Decoration.line({ class: 'cm-md-codefence' }).range(lastLine.from))
-
-          if (contentTo > contentFrom) {
-            for (let pos = contentFrom; pos < contentTo; ) {
-              const line = doc.lineAt(pos)
-              ranges.push(Decoration.line({ class: 'cm-md-codeblock' }).range(line.from))
-              if (line.to >= contentTo) break
-              pos = line.to + 1
-            }
-            // 词法高亮：与预览共用 codeHighlight，围栏语言取自 CodeInfo（```ts）
-            const code = doc.sliceString(contentFrom, contentTo)
-            if (code.length <= MAX_HIGHLIGHT_CHARS) {
-              const info = node.node.getChild('CodeInfo')
-              const language = info ? doc.sliceString(info.from, info.to) : null
-              for (const token of highlightCode(code, language)) {
-                ranges.push(
-                  Decoration.mark({ class: `cn-tok-${token.type}` }).range(
-                    contentFrom + token.from,
-                    contentFrom + token.to,
-                  ),
-                )
-              }
+          // 词法高亮：与预览共用 codeHighlight，围栏语言取自 CodeInfo（```ts）
+          const code = doc.sliceString(contentFrom, contentTo)
+          if (code.length <= MAX_HIGHLIGHT_CHARS && highlightBudget >= code.length) {
+            highlightBudget -= code.length
+            const info = node.node.getChild('CodeInfo')
+            const language = info ? doc.sliceString(info.from, info.to) : null
+            for (const token of highlightCode(code, language)) {
+              ranges.push(
+                Decoration.mark({ class: `cn-tok-${token.type}` }).range(
+                  contentFrom + token.from,
+                  contentFrom + token.to,
+                ),
+              )
             }
           }
+        }
+        return
+      }
+
+      if (name === 'Table') {
+        // 顶层表格才整块替换（引用 / 列表内的表格保留源码，避免块装饰与行装饰冲突）
+        const topLevel = node.node.parent?.name === 'Document'
+        if (nodeActive || !topLevel) return
+        const firstLine = doc.lineAt(node.from)
+        const lastLine = doc.lineAt(node.to)
+        if (lastLine.from < firstLine.from) return
+        const parsed = parseMdTable(doc.sliceString(firstLine.from, lastLine.to))
+        if (!parsed) return
+        const anchor = Math.min(firstLine.from + 1, doc.length)
+        ranges.push(
+          Decoration.replace({
+            block: true,
+            widget: new MarkdownTableWidget(parsed, `${firstLine.from}:${lastLine.to}`, () => {
+              const view = getView()
+              if (!view) return
+              view.dispatch({ selection: { anchor }, scrollIntoView: true })
+              view.focus()
+            }),
+          }).range(firstLine.from, lastLine.to),
+        )
+        // 单元格已随整块替换隐藏，不必再下发内部装饰
+        return false
+      }
+
+      if (name === 'Task') {
+        const marker = node.node.getChild('TaskMarker')
+        if (!marker || nodeActive) return
+        const checked = /\[[xX]\]/.test(doc.sliceString(marker.from, marker.to))
+        ranges.push(
+          Decoration.replace({
+            widget: new MarkdownTaskWidget(checked, marker.from, marker.to, toggleTask),
+          }).range(marker.from, marker.to),
+        )
+        return
+      }
+
+      if (name === 'ListMark') {
+        const mark = doc.sliceString(node.from, node.to)
+        if (/^[-*+]$/.test(mark)) {
+          // 无序列表：`-` 换成圆点，按缩进层级换符号；顺带吃掉标记后的空格
+          const indent = node.from - doc.lineAt(node.from).from
+          const glyph = ['•', '◦', '▪'][Math.floor(indent / 2) % 3]
+          const end = doc.sliceString(node.to, node.to + 1) === ' ' ? node.to + 1 : node.to
+          ranges.push(Decoration.replace({ widget: new MarkdownBulletWidget(glyph) }).range(node.from, end))
           return
         }
-
-        if (name === 'ListMark') {
-          ranges.push(Decoration.mark({ class: 'cm-md-listmark' }).range(node.from, node.to))
-        }
-      },
-    })
-  }
+        // 有序列表保留序号，只做配色
+        ranges.push(Decoration.mark({ class: 'cm-md-listmark' }).range(node.from, node.to))
+      }
+    },
+  })
 
   return Decoration.set(ranges, true)
 }
@@ -287,22 +486,15 @@ const imageContext = Facet.define<number | string | undefined, number | string |
   combine: values => values[values.length - 1],
 })
 
-const livePreviewPlugin = ViewPlugin.fromClass(
-  class {
-    decorations: DecorationSet
-
-    constructor(view: EditorView) {
-      this.decorations = buildDecorations(view)
-    }
-
-    update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
-        this.decorations = buildDecorations(update.view)
-      }
-    }
-  },
-  { decorations: plugin => plugin.decorations },
-)
+/** 实时预览装饰的 StateField：块级装饰（表格）只能由 state 提供，插件不允许 */
+function livePreviewField(getView: () => EditorView | null) {
+  return StateField.define<DecorationSet>({
+    create: state => buildDecorations(state, getView),
+    update: (decos, tr) =>
+      tr.docChanged || tr.selection ? buildDecorations(tr.state, getView) : decos,
+    provide: field => EditorView.decorations.from(field),
+  })
+}
 
 // ── 主题（跟随应用 CSS 变量，明暗主题自动适配）────────
 
@@ -345,6 +537,37 @@ const editorTheme = EditorView.theme({
   },
   '.cm-md-link': { color: 'var(--cn-brand-color, #1677ff)', textDecoration: 'underline' },
   '.cm-md-listmark': { color: 'var(--cn-brand-color, #1677ff)' },
+  '.cm-md-bullet': {
+    display: 'inline-block',
+    width: '0.9em',
+    color: 'var(--cn-brand-color, #1677ff)',
+    fontWeight: '700',
+  },
+  '.cm-md-task': {
+    marginRight: '4px',
+    verticalAlign: 'middle',
+    cursor: 'pointer',
+    accentColor: 'var(--cn-brand-color, #1677ff)',
+  },
+  '.cm-md-table': { padding: '2px 0 8px', overflowX: 'auto', cursor: 'text' },
+  '.cm-md-table table': {
+    borderCollapse: 'collapse',
+    width: '100%',
+    fontSize: '13px',
+    lineHeight: '1.6',
+  },
+  '.cm-md-table th, .cm-md-table td': {
+    border: '1px solid var(--cn-border, #e5e7eb)',
+    padding: '5px 10px',
+    verticalAlign: 'top',
+  },
+  '.cm-md-table th': { background: 'var(--cn-bg-subtle, #fafafa)', fontWeight: '600' },
+  '.cm-md-table code': {
+    fontFamily: 'var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)',
+    background: 'var(--cn-bg-subtle, #fafafa)',
+    borderRadius: '3px',
+    padding: '1px 3px',
+  },
   '.cm-md-quote': {
     borderLeft: '3px solid var(--cn-border, #e5e7eb)',
     paddingLeft: '12px',
@@ -452,7 +675,7 @@ const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorPr
         drawSelection(),
         EditorView.lineWrapping,
         markdown({ base: markdownLanguage }),
-        livePreviewPlugin,
+        livePreviewField(() => viewRef.current),
         imageContext.of(workspaceId),
         cmPlaceholder(placeholder ?? ''),
         EditorView.updateListener.of(update => {
