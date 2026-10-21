@@ -35,6 +35,20 @@ test.describe("匿名（chromium-anon only）", () => {
     await expect(page.getByPlaceholder("用户名或邮箱")).toBeFocused();
   });
 
+  test("切换背景动效为宇宙星系并刷新保持", async ({ page }) => {
+    await page.goto("/login");
+    const switcher = page.getByTestId("auth-bg-switch");
+    await expect(switcher).toHaveAttribute("data-effect", "flowfield");
+
+    await switcher.click();
+    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "galaxy");
+    await expect(page.getByTestId("auth-bg-switch")).toContainText("宇宙星系");
+
+    await page.reload();
+    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "galaxy");
+    await expect(page.getByTestId("auth-bg-switch")).toContainText("宇宙星系");
+  });
+
   test("表单登录成功 → 进入工作区列表 /w", async ({ page }) => {
     await page.goto("/login");
     await page.getByPlaceholder("用户名或邮箱").fill("demo");
