@@ -12,8 +12,8 @@ import {
   Select, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import {
-  CloudDownloadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined, EyeOutlined, HistoryOutlined,
-  KeyOutlined, PlayCircleOutlined, PlusOutlined,
+  ApiOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined, EyeOutlined,
+  HistoryOutlined, KeyOutlined, PlayCircleOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
@@ -21,8 +21,8 @@ import { datasourceApi, tableApi } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import { materializeDomainTemplate } from './domainTemplate'
 import type {
-  DatasourceProviderInfo, DatasourceSession, DomainTemplate, SyncJob, SyncJobPayload, SyncPreviewResult,
-  SyncRun, SyncScheduleConfig,
+  DatasourceConnectionTestResult, DatasourceProviderInfo, DatasourceSession, DomainTemplate, SyncJob,
+  SyncJobPayload, SyncPreviewResult, SyncRequestSpec, SyncRun, SyncScheduleConfig,
 } from '@/api'
 
 const { Title, Text } = Typography
@@ -397,6 +397,8 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
   const [previewing, setPreviewing] = useState(false)
   const [preview, setPreview] = useState<SyncPreviewResult | null>(null)
   const [savedJob, setSavedJob] = useState<SyncJob | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<DatasourceConnectionTestResult | null>(null)
 
   const activeJob = job ?? savedJob
 
@@ -404,6 +406,7 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
     if (!open) return
     setPreview(null)
     setSavedJob(null)
+    setTestResult(null)
     if (job) {
       form.setFieldsValue({
         name: job.name,
@@ -411,6 +414,12 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
         table_id: job.table_id ?? undefined,
         url_template: job.request_spec?.url_template,
         data_path: job.request_spec?.data_path ?? undefined,
+        model: job.request_spec?.llm?.model ?? undefined,
+        temperature: job.request_spec?.llm?.temperature ?? undefined,
+        max_tokens: job.request_spec?.llm?.max_tokens ?? undefined,
+        json_mode: job.request_spec?.llm?.json_mode ?? true,
+        system_prompt: job.request_spec?.prompt?.system ?? undefined,
+        user_template: job.request_spec?.prompt?.user_template ?? undefined,
         entrant_param: job.entrant_param ?? undefined,
         entrant_keys: job.entrant_keys ?? [],
         match_keys: job.match_keys ?? [],
@@ -448,24 +457,48 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
     }
   }, [open, job, form, providers])
 
+  const buildRequestSpec = useCallback(
+    (values: Record<string, unknown>): SyncRequestSpec => {
+      const timeWindow = values.time_window_mode === 'none'
+        ? { mode: 'none' as const }
+        : { mode: 'range' as const, chunk_days: Number(values.chunk_days) || 0 }
+      if (values.provider === 'llm_prompt') {
+        // LLM 只有「一次提示词 → 一组行」，分页与响应数组路径不适用（ADR 0014）
+        return {
+          url_template: String(values.url_template ?? '').trim(),
+          prompt: {
+            system: String(values.system_prompt ?? '').trim(),
+            user_template: String(values.user_template ?? '').trim(),
+          },
+          llm: {
+            model: String(values.model ?? '').trim(),
+            temperature: Number(values.temperature ?? 0.2),
+            max_tokens: Number(values.max_tokens ?? 1024),
+            json_mode: Boolean(values.json_mode),
+          },
+          time_window: timeWindow,
+        }
+      }
+      const paging = values.paging_mode === 'none'
+        ? { mode: 'none' as const }
+        : { mode: values.paging_mode as 'page' | 'offset', page_size: Number(values.page_size) || 50, max_pages: 100 }
+      return {
+        url_template: String(values.url_template ?? '').trim(),
+        data_path: (values.data_path as string) || null,
+        paging,
+        time_window: timeWindow,
+      }
+    },
+    [],
+  )
+
   const buildPayload = useCallback(async (): Promise<SyncJobPayload> => {
     const values = await form.validateFields()
-    const paging = values.paging_mode === 'none'
-      ? { mode: 'none' as const }
-      : { mode: values.paging_mode as 'page' | 'offset', page_size: Number(values.page_size) || 50, max_pages: 100 }
-    const timeWindow = values.time_window_mode === 'none'
-      ? { mode: 'none' as const }
-      : { mode: 'range' as const, chunk_days: Number(values.chunk_days) || 0 }
     return {
       name: String(values.name).trim(),
       provider: String(values.provider),
       table_id: values.table_id == null ? null : Number(values.table_id),
-      request_spec: {
-        url_template: String(values.url_template).trim(),
-        data_path: values.data_path || null,
-        paging,
-        time_window: timeWindow,
-      },
+      request_spec: buildRequestSpec(values),
       entrant_param: values.entrant_param || null,
       entrant_keys: (values.entrant_keys ?? []).map(String),
       match_keys: (values.match_keys ?? []).map(String),
@@ -484,7 +517,7 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
       session_id: values.session_id == null ? null : Number(values.session_id),
       rate_limit_ms: Number(values.rate_limit_ms) || 0,
     }
-  }, [form])
+  }, [form, buildRequestSpec])
 
   const handleSave = async (thenPreview: boolean) => {
     setSaving(true)
@@ -516,10 +549,36 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
     }
   }
 
+  const handleTestConnection = async () => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      await form.validateFields(['url_template', 'model', 'user_template'])
+    } catch {
+      setTesting(false)
+      setTestResult({ ok: false, latency_ms: 0, model: '', message: '请先填写 API 地址、模型与用户提示词' })
+      return
+    }
+    try {
+      const values = form.getFieldsValue(true) as Record<string, unknown>
+      const result = await datasourceApi.testConnection(wid, {
+        request_spec: buildRequestSpec(values),
+        session_id: values.session_id == null ? null : Number(values.session_id),
+      })
+      setTestResult(result)
+    } catch {
+      setTestResult({ ok: false, latency_ms: 0, model: '', message: '连通测试请求失败，请检查网络或权限' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
   const providerOptions = providers.map(p => ({ value: p.name, label: p.label }))
   const activeProvider = Form.useWatch('provider', form) as string | undefined
   const providerInfo = providers.find(p => p.name === activeProvider)
-  const scheduleMode = Form.useWatch('schedule_mode', form) as string | undefined
+  const isLlm = activeProvider === 'llm_prompt'
+  // 折叠面板未展开时对应 Form.Item 尚未挂载，watch 拿不到值，回退到任务本身
+  const scheduleMode = (Form.useWatch('schedule_mode', form) as string | undefined) ?? activeJob?.schedule?.mode
   const cursorStrategy = Form.useWatch('cursor_strategy', form) as string | undefined
   const timeWindowMode = Form.useWatch('time_window_mode', form) as string | undefined
   const pagingMode = Form.useWatch('paging_mode', form) as string | undefined
@@ -528,8 +587,15 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
     const info = providers.find(p => p.name === value)
     if (!info) return
     form.setFieldValue('cursor_strategy', info.default_cursor)
-    const urlDefault = info.params_schema?.fields?.find(f => f.name === 'url_template')?.default
+    const fields = info.params_schema?.fields ?? []
+    const urlDefault = fields.find(f => f.name === 'url_template')?.default
     if (typeof urlDefault === 'string' && urlDefault) form.setFieldValue('url_template', urlDefault)
+    // 例如 llm_prompt 的 temperature / max_tokens / json_mode 默认值
+    const defaults = Object.fromEntries(
+      fields.filter(f => f.default !== undefined && f.name !== 'url_template').map(f => [f.name, f.default]),
+    )
+    if (Object.keys(defaults).length > 0) form.setFieldsValue(defaults)
+    if (value === 'llm_prompt' && !form.getFieldValue('json_mode')) form.setFieldValue('json_mode', true)
   }
 
   return (
@@ -623,25 +689,101 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
 
         <Form.Item
           name="url_template"
-          label="URL 模板"
-          rules={[{ required: true, message: '请输入 http/https URL 模板' }]}
+          label={isLlm ? 'API 地址' : 'URL 模板'}
+          rules={[{ required: true, message: isLlm ? '请输入模型 API 地址' : '请输入 http/https URL 模板' }]}
           extra={
-            providerInfo?.params_schema?.placeholders?.length
-              ? `可用占位符：${providerInfo.params_schema.placeholders.map(p => `{${p}}`).join(' ')}`
-              : '占位符用 {name}，只做字面替换'
+            isLlm
+              ? 'OpenAI 兼容 /chat/completions；只填 base_url 时自动补全路径'
+              : providerInfo?.params_schema?.placeholders?.length
+                ? `可用占位符：${providerInfo.params_schema.placeholders.map(p => `{${p}}`).join(' ')}`
+                : '占位符用 {name}，只做字面替换'
           }
         >
           <Input.TextArea
             data-testid="datasource-url-template"
             rows={2}
-            placeholder="https://api.example.com/data?city={city}&from={start}&to={end}"
+            placeholder={isLlm ? 'https://api.deepseek.com' : 'https://api.example.com/data?city={city}&from={start}&to={end}'}
           />
         </Form.Item>
 
+        {isLlm && (
+          <>
+            <Space size={12} style={{ display: 'flex' }}>
+              <Form.Item name="model" label="模型" rules={[{ required: true, message: '请输入模型名称' }]} style={{ flex: 1 }}>
+                <Input data-testid="datasource-llm-model" placeholder="deepseek-chat" />
+              </Form.Item>
+              <Form.Item name="temperature" label="temperature" style={{ width: 140 }}>
+                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="max_tokens" label="max_tokens" style={{ width: 140 }}>
+                <InputNumber min={1} max={32768} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item name="json_mode" label="JSON 模式" valuePropName="checked" style={{ width: 110 }}>
+                <Switch />
+              </Form.Item>
+            </Space>
+
+            <Form.Item
+              name="system_prompt"
+              label="系统提示词"
+              extra="留空时自动补「只输出 JSON，不要代码围栏」"
+            >
+              <Input.TextArea
+                data-testid="datasource-llm-system"
+                rows={2}
+                placeholder="你是数据抽取助手，只输出 JSON。"
+              />
+            </Form.Item>
+
+            <Form.Item
+              name="user_template"
+              label="用户提示词"
+              rules={[{ required: true, message: '请输入用户提示词' }]}
+              extra="可用占位符：{entrant} {start} {end} {today}；模型必须返回 JSON 对象或对象数组"
+            >
+              <Input.TextArea
+                data-testid="datasource-llm-user"
+                rows={3}
+                placeholder={'请生成 {today} 的天气摘要，地区：{entrant}'}
+              />
+            </Form.Item>
+
+            <Space size={8} style={{ marginBottom: 16 }}>
+              <Button
+                icon={<ApiOutlined />}
+                data-testid="datasource-test-connection"
+                loading={testing}
+                onClick={() => void handleTestConnection()}
+              >
+                连通测试
+              </Button>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                发一次真实模型请求（可能产生费用），不保存配置、不写运行记录
+              </Text>
+            </Space>
+            {testResult && (
+              <Alert
+                data-testid="datasource-test-result"
+                type={testResult.ok ? 'success' : 'error'}
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={
+                  testResult.ok
+                    ? `连通成功 · ${testResult.model || '模型'} · ${testResult.latency_ms} ms`
+                    : '连通失败'
+                }
+                description={testResult.ok ? undefined : testResult.message}
+              />
+            )}
+          </>
+        )}
+
         <Space size={12} style={{ display: 'flex' }}>
-          <Form.Item name="data_path" label="响应数组路径" style={{ flex: 1 }}>
-            <Input placeholder="data.items（留空自动探测 data / items / results）" />
-          </Form.Item>
+          {!isLlm && (
+            <Form.Item name="data_path" label="响应数组路径" style={{ flex: 1 }}>
+              <Input placeholder="data.items（留空自动探测 data / items / results）" />
+            </Form.Item>
+          )}
           <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 160 }}>
             <Input placeholder="city / symbol" />
           </Form.Item>
@@ -651,7 +793,15 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
           <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="输入后回车，如 北京" />
         </Form.Item>
 
-        <Form.Item name="match_keys" label="幂等键" extra="必须是目标表字段；留空则纯追加（仅快照类源适用）">
+        <Form.Item
+          name="match_keys"
+          label="幂等键"
+          extra={
+            isLlm && scheduleMode === 'cron'
+              ? '大模型任务使用 cron 调度时必须配置幂等键，避免每轮重复插入'
+              : '必须是目标表字段；留空则纯追加（仅快照类源适用）'
+          }
+        >
           <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 city, day" />
         </Form.Item>
 
@@ -710,16 +860,18 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
                   </Space>
 
                   <Space size={12} style={{ display: 'flex' }}>
-                    <Form.Item name="paging_mode" label="分页" style={{ width: 150 }}>
-                      <Select
-                        options={[
-                          { value: 'none', label: '不分页' },
-                          { value: 'page', label: '页码' },
-                          { value: 'offset', label: '偏移量' },
-                        ]}
-                      />
-                    </Form.Item>
-                    {pagingMode !== 'none' && (
+                    {!isLlm && (
+                      <Form.Item name="paging_mode" label="分页" style={{ width: 150 }}>
+                        <Select
+                          options={[
+                            { value: 'none', label: '不分页' },
+                            { value: 'page', label: '页码' },
+                            { value: 'offset', label: '偏移量' },
+                          ]}
+                        />
+                      </Form.Item>
+                    )}
+                    {!isLlm && pagingMode !== 'none' && (
                       <Form.Item name="page_size" label="每页条数" style={{ width: 150 }}>
                         <InputNumber min={1} max={1000} style={{ width: '100%' }} />
                       </Form.Item>

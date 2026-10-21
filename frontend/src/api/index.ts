@@ -36,6 +36,8 @@ export { systemApi } from './system'
 export type { SystemAbout } from './system'
 export { datasourceApi } from './datasource'
 export type {
+  DatasourceConnectionTestPayload,
+  DatasourceConnectionTestResult,
   DatasourceProviderInfo,
   DatasourceSession,
   DatasourceSessionPayload,
@@ -46,7 +48,9 @@ export type {
   SyncFieldMapping,
   SyncJob,
   SyncJobPayload,
+  SyncLlmConfig,
   SyncPreviewResult,
+  SyncPromptConfig,
   SyncRequestSpec,
   SyncRun,
   SyncRunStatus,

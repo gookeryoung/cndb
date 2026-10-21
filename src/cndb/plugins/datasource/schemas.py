@@ -230,6 +230,20 @@ class DomainTemplateListResponse(BaseModel):
     templates: list[DomainTemplate]
 
 
+class ConnectionTestRequest(BaseModel):
+    """大模型 API 连通测试：使用未保存的配置，不落库."""
+
+    request_spec: dict[str, Any] = Field(..., description="URL / model / 提示词等声明")
+    session_id: int | None = Field(default=None, description="凭证会话（提供 api_key）")
+
+
+class ConnectionTestResponse(BaseModel):
+    ok: bool
+    latency_ms: int = 0
+    model: str = ""
+    message: str = ""
+
+
 class PreviewRequest(BaseModel):
     limit: int = Field(default=50, ge=1, le=500, description="返回行数上限")
 
@@ -248,6 +262,8 @@ class PreviewResponse(BaseModel):
 
 
 __all__ = [
+    "ConnectionTestRequest",
+    "ConnectionTestResponse",
     "DomainTemplate",
     "DomainTemplateListResponse",
     "PreviewRequest",
