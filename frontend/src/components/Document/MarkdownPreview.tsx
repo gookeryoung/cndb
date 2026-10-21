@@ -13,6 +13,7 @@ import remarkGfm from 'remark-gfm'
 import TableEmbed from './TableEmbed'
 import { splitTableRefs } from './tableRef'
 import { headingAnchor } from './outline'
+import { scrollToHeading } from './docAnchor'
 import { parseWikilinkHref, transformWikilinks } from './wikilink'
 
 /** React 子节点提取纯文本（生成标题锚点用） */
@@ -173,7 +174,27 @@ function Md({
       },
       a: ({ href, children, ...rest }: React.ComponentProps<'a'>) => {
         const title = href != null ? parseWikilinkHref(href) : null
-        if (title === null) return <a href={href} {...rest}>{children}</a>
+        if (title === null) {
+          // 文内锚点（目录 `[小节](#小节)` / `[[#小节]]`）：预览区原地滚动，
+          // 不走浏览器 hash 跳转（SPA 下改 hash 会污染路由且找不到 doc-h-* 前缀的 id）
+          if (href?.startsWith('#') && href.length > 1) {
+            return (
+              <a
+                href={href}
+                data-testid="doc-anchor-link"
+                style={{ color: 'var(--cn-primary, #1890ff)', cursor: 'pointer' }}
+                {...rest}
+                onClick={e => {
+                  e.preventDefault()
+                  scrollToHeading(href)
+                }}
+              >
+                {children}
+              </a>
+            )
+          }
+          return <a href={href} {...rest}>{children}</a>
+        }
         return (
           <a
             href={href}
