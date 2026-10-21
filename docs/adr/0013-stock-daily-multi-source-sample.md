@@ -140,8 +140,8 @@ URL 模板 `.../CN_MarketData.getKLineData?symbol={symbol}&scale=240&ma=no&datal
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/sina_kline.py`、`src/cndb/plugins/datasource/providers/tencent_kline.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`pyproject.toml` | `tests/test_datasource_sina.py`、`tests/test_datasource_providers.py` | 984097c3 |
-| P1 | 已落地 | `scripts/build_example_kline.py`、`examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/views.json`、`examples/datasets/工作区-数据源示例/fields.json`、`examples/datasets/工作区-数据源示例/analytics.json`、`examples/datasets/工作区-数据源示例/股市日线.csv`、`examples/datasets/工作区-数据源示例/股市日线-新浪.csv` | `tests/test_seed_datasource.py` | 待提交 |
-| P2 | 已落地 | `docs/adr/0013-stock-daily-multi-source-sample.md`、`docs/requirements/0013-stock-daily-multi-source-sample.md`、`CHANGELOG.md`、`CONTEXT.md`、`docs/adr/README.md` | `tests/test_seed_datasource.py` | 待提交 |
+| P1 | 已落地 | `scripts/build_example_kline.py`、`examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/views.json`、`examples/datasets/工作区-数据源示例/fields.json`、`examples/datasets/工作区-数据源示例/analytics.json`、`examples/datasets/工作区-数据源示例/股市日线.csv`、`examples/datasets/工作区-数据源示例/股市日线-新浪.csv` | `tests/test_seed_datasource.py` | 5fcc5a6c |
+| P2 | 已落地 | `docs/adr/0013-stock-daily-multi-source-sample.md`、`docs/requirements/0013-stock-daily-multi-source-sample.md`、`CHANGELOG.md`、`CONTEXT.md`、`docs/adr/README.md` | `tests/test_seed_datasource.py` | 5fcc5a6c |
 
 ## 交接（会话结束更新）
 
