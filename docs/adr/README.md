@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|---|
 | [0002](0002-frontend-check-sharding.md) | Frontend Check 拆分并行 | Accepted | 静态链已落地；分片未采用 | `Makefile`、`.codeup/pipelines/ci.yml` | `frontend/scripts/check-coverage.mjs` | [未发布](../../CHANGELOG.md) |
 | [0003](0003-view-visibility-permission-model.md) | 视图可见性三档模型 | Implemented | P0-P3 + D6 已落地 | `src/cndb/plugins/tables/services/core/view_access.py` | `tests/test_view_share_p3.py` | [未发布](../../CHANGELOG.md) |
-| [0004](0004-row-level-permission-rules.md) | 行级权限规则 | Proposed | P0-P2 已落地（待评审） | `row_access.py`、`row_permissions.py` | `tests/test_row_*.py` | [未发布](../../CHANGELOG.md) |
+| [0004](0004-row-level-permission-rules.md) | 行级权限规则 | Implemented | P0-P2 已落地 | `row_access.py`、`row_permissions.py` | `tests/test_row_*.py`、`frontend/tests/e2e/critical/row-permissions.spec.ts` | [未发布](../../CHANGELOG.md) |
 | [0005](0005-change-request-row-merge-view.md) | 修改申请同行合并视图与冲突裁决 | Accepted | M1-M3 已落地；M4 待补前端用例 | `plugins/change_requests/services.py`、`routers/change_requests.py` | `tests/test_change_requests_merge_view.py` | [未发布](../../CHANGELOG.md) |
 | [0006](0006-periodic-datasource-sync.md) | 周期性外部数据同步框架 | Implemented | M1-M5 + 遗留项全部落地 | `plugins/datasource/`、`core/crypto.py`、`analytics/services/formula.py`、`frontend/src/pages/{datasource,analytics}/` | `tests/test_{datasource,core_crypto,analytics_window,analytics_scope}_*.py` | [未发布](../../CHANGELOG.md) |
 | [0007](0007-backend-robustness.md) | 后端健壮性加固与极端用例基线 | Proposed | P0 已落地；P1-P3 未开始 | `core/ratelimit.py`、`core/database.py` | `tests/test_backend_extreme_cases.py` | [未发布](../../CHANGELOG.md) |
@@ -20,7 +20,7 @@
 | [0013](0013-stock-daily-multi-source-sample.md) | 示例日线两源扩样（tencent / sina，一源一表） | Accepted | P0-P2 已落地 | `src/cndb/plugins/datasource/providers/sina_kline.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`scripts/build_example_kline.py` | `tests/test_datasource_sina.py`、`tests/test_seed_datasource.py` | [未发布](../../CHANGELOG.md) |
 | [0014](0014-llm-prompt-datasource-sync.md) | 数据源同步接入大模型（llm_prompt + 提示词 + cron + 连通测试） | Implemented | P0-P2 已落地 | `src/cndb/plugins/datasource/providers/llm_prompt.py`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0015](0015-search-cache-and-full-coverage.md) | 工作区搜索缓存与全表覆盖 | Accepted | P0 已落地；P1-P2 未开始 | `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/core/cache.py` | `tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx` | [未发布](../../CHANGELOG.md) |
-| [0016](0016-auth-background-animation.md) | 认证页 JS 动态背景（5 组风格，可切换） | Implemented | P0-P2 已落地 | `frontend/src/components/auth-background/`、`frontend/src/layouts/AuthLayout.tsx` | `frontend/src/components/auth-background/*.test.ts` | [未发布](../../CHANGELOG.md) |
+| [0016](0016-auth-background-animation.md) | 认证页 JS 数论动效背景（模乘万花筒，固定深色舞台） | Implemented | P0-P1 已落地 | `frontend/src/components/auth-background/`、`frontend/src/layouts/AuthLayout.tsx` | `frontend/src/components/auth-background/*.test.ts`、`frontend/tests/e2e/smoke/{login,register}.spec.ts` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 
