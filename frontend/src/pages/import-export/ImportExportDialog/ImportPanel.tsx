@@ -87,7 +87,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
     const [droppedColumns, setDroppedColumns] = useState<string[]>([])
     const [diffing, setDiffing] = useState(false)  // 执行 DIFF 的 loading
 
-    // ── AI 列映射建议（ADR 0020 P2）：只回填映射编辑态，不自动确认导入 ──
+    // ── AI 列映射建议（ADR 0020 P2）：回填映射编辑态，确认导入时按映射写目标字段 ──
     const [aiMappings, setAiMappings] = useState<AiMappingDraft[]>([])
     const [aiUnmapped, setAiUnmapped] = useState<string[]>([])
     const [aiMappingLoading, setAiMappingLoading] = useState(false)
@@ -247,7 +247,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         }
     }, [task, wid, tid, matchKeys, unknownColsStrategy, message])
 
-    /** 请求 AI 列映射建议：只回填映射编辑态，不触发确认导入、不改 ImportTask */
+    /** 请求 AI 列映射建议：回填映射编辑态，不触发确认导入、不改 ImportTask */
     const handleSuggestMapping = useCallback(async () => {
         if (!tid) {
             message.warning('请先选择目标表')
@@ -283,7 +283,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                 typeof res.usage?.total_tokens === 'number' ? `${res.usage.total_tokens} tokens` : '',
                 `留痕 #${res.run_id}`,
             ].filter(Boolean).join(' · '))
-            message.success(`已获取 ${mappings.length} 条列映射建议；不会自动导入，请确认后手动点击「确认导入」`)
+            message.success(`已获取 ${mappings.length} 条列映射建议；可在下方调整，点「确认导入」时按映射写入目标字段`)
         } catch (err) {
             setAiMappingError(normalizeLlmError(err, '获取列映射建议失败，请稍后重试'))
         } finally {
@@ -301,8 +301,22 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         if (!task) return
         const report = (task as ImportTaskInfo & { validation_report?: ValidationReport | null }).validation_report
         const headerRow = report?.header_detection?.row ?? report?.header_row ?? undefined
+        // ADR 0020：AI 列映射建议在确认导入时真正生效（源列 → 目标字段）
+        const columnMapping = Object.fromEntries(
+            aiMappings.filter(item => item.target).map(item => [item.source, item.target as string]),
+        ) as Record<string, string>
         try {
-            await importApi.confirmImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy, droppedColumns, selectedCleaningActions, headerRow)
+            await importApi.confirmImport(
+                wid,
+                tid,
+                task.task_id,
+                matchKeys,
+                unknownColsStrategy,
+                droppedColumns,
+                selectedCleaningActions,
+                headerRow,
+                Object.keys(columnMapping).length > 0 ? columnMapping : undefined,
+            )
             setPhase('importing')
             setPolling(true)
         } catch (err) {
@@ -532,7 +546,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         AI 建议列映射
                     </Button>
                     <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
-                        建议只回填到映射编辑态，不会自动确认导入；导入仍按下方「确认导入」执行
+                        建议可编辑；点「确认导入」时按映射把源列写入目标字段（留空 = 不映射）
                     </span>
                     {!hasTargetTable && (
                         <span data-testid="ai-mapping-need-table" style={{ fontSize: 12, color: '#f59e0b' }}>

@@ -136,6 +136,21 @@ describe('ImportPanel AI 列映射建议', () => {
     expect(confirmSpy).not.toHaveBeenCalled()
   })
 
+  it('确认导入时把 AI 映射作为 column_mapping 传给后端（映射真正生效）', async () => {
+    mockMappingSuggestion()
+    const confirmSpy = vi.spyOn(importApi, 'confirmImport')
+    await openPreview()
+
+    fireEvent.click(screen.getByTestId('ai-mapping-btn'))
+    await screen.findByTestId('ai-mapping-source-姓名')
+
+    fireEvent.click(screen.getByRole('button', { name: /确认导入/ }))
+
+    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    const args = confirmSpy.mock.calls[0]
+    // 第 9 个参数为 column_mapping（源列 → 目标字段）
+    expect(args[8]).toEqual({ 姓名: '姓名', 分数: '分数' })
+  })
   it('预览态没有目标表 id：按钮置灰并提示先选目标表，点击不发请求', async () => {
     const bodies = mockMappingSuggestion()
     await openPreview('')

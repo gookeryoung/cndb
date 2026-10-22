@@ -273,6 +273,12 @@ class TestPermissionsAndErrors:
 
 class TestActionCatalog:
     def test_document_actions_registered_in_platform_catalog(self, client, db, ai_user):
+        from cndb.plugins.documents.services import ai as ai_service
+        from cndb.plugins.llm.services import actions as action_registry
+
+        # 其它用例可能 reset 过全局动作注册表：这里按模块声明重新注册（幂等）
+        for spec in ai_service.DOCUMENT_ACTIONS.values():
+            action_registry.register(spec)
         headers = _login(client, "doc_ai_user")
         response = client.get("/api/v1/llm/actions", headers=headers)
         assert response.status_code == 200

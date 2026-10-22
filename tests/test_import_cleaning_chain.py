@@ -176,7 +176,7 @@ class TestExecuteImportTaskPassesCleaningActions:
         captured: dict = {}
 
         class FakeImporter:
-            def __init__(self, engine, session, table):
+            def __init__(self, engine, session, table, **kwargs):
                 pass
 
             def execute(self, content, fmt, **kwargs):
@@ -230,7 +230,7 @@ class TestExecuteImportTaskPassesCleaningActions:
         captured: dict = {}
 
         class FakeImporter:
-            def __init__(self, engine, session, table):
+            def __init__(self, engine, session, table, **kwargs):
                 pass
 
             def execute(self, content, fmt, **kwargs):

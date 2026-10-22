@@ -298,8 +298,19 @@ class TestGateway:
 # ── 动作注册表 / 接口 ─────────────────────────────────
 
 
+def _preserve_actions() -> list[action_registry.ActionSpec]:
+    return action_registry.list_actions()
+
+
+def _restore_actions(specs: list[action_registry.ActionSpec]) -> None:
+    action_registry.reset_registry()
+    for spec in specs:
+        action_registry.register(spec)
+
+
 class TestActionsRegistry:
     def test_register_get_catalog_and_reset(self):
+        before = _preserve_actions()
         action_registry.reset_registry()
         try:
             action_registry.register(action_registry.ActionSpec(name="doc.polish", label="润色", scope="document"))
@@ -307,9 +318,10 @@ class TestActionsRegistry:
             assert action_registry.get("missing") is None
             assert action_registry.catalog() == [{"name": "doc.polish", "label": "润色", "scope": "document"}]
         finally:
-            action_registry.reset_registry()
+            _restore_actions(before)
 
     def test_actions_endpoint_lists_registered(self, client, db):
+        before = _preserve_actions()
         action_registry.reset_registry()
         try:
             action_registry.register(action_registry.ActionSpec(name="doc.summarize", label="摘要"))
@@ -325,7 +337,7 @@ class TestActionsRegistry:
             assert response.status_code == 200
             assert response.json()["items"] == [{"name": "doc.summarize", "label": "摘要", "scope": "personal"}]
         finally:
-            action_registry.reset_registry()
+            _restore_actions(before)
 
 
 class TestRunsEndpoint:

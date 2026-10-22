@@ -523,7 +523,7 @@ def test_reanalyze_updates_params_and_runs(db, tmp_path: Path, monkeypatch):
             report = {"new_count": 2, "update_count": 0, "error_count": 0}
 
         class _FakeImporter:
-            def __init__(self, engine_, session_, table_):
+            def __init__(self, engine_, session_, table_, **kwargs):
                 pass
 
             def analyze(self, raw, fmt, match_keys=None, unknown_cols_strategy="drop", header_row=None):

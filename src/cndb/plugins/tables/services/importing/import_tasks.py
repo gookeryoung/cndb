@@ -198,7 +198,12 @@ def analyze_import_task(db_session: Session, task_id: int) -> None:
         raw = _decode_content(task)
         engine = db_session.get_bind()
 
-        imp = Importer(engine, db_session, table)
+        imp = Importer(
+            engine,
+            db_session,
+            table,
+            field_mapping=dict(task.column_mapping) if task.column_mapping else None,
+        )
         analysis = run_with_stage_timeout(
             lambda: imp.analyze(
                 raw,
@@ -352,7 +357,12 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
             from cndb.plugins.tables.services.fields.field_ops import sync_select_options_from_table
             from cndb.plugins.tables.services.importing.importer import Importer
 
-            importer = Importer(engine, db_session, table)
+            importer = Importer(
+                engine,
+                db_session,
+                table,
+                field_mapping=dict(task.column_mapping) if task.column_mapping else None,
+            )
 
             def _on_progress(percent: int, stage: str) -> None:
                 # 子步骤进度落库：卡住时能直接看出卡在解析/校验/写入/选项同步哪一步，
@@ -453,6 +463,7 @@ def create_import_task(
     match_keys: list[str] | None = None,
     unknown_cols_strategy: str = "drop",
     dropped_columns: list[str] | None = None,
+    column_mapping: dict[str, str | None] | None = None,
 ) -> ImportTask:
     """创建异步导入任务并入库."""
     from cndb.plugins.tables.services.transfer import decode_bytes_auto
@@ -484,6 +495,7 @@ def create_import_task(
         match_keys=list(match_keys) if match_keys else [],
         unknown_cols_strategy=unknown_cols_strategy or "drop",
         dropped_columns=list(dropped_columns) if dropped_columns else [],
+        column_mapping=dict(column_mapping) if column_mapping else {},
     )
     db.add(task)
     db.commit()
@@ -498,6 +510,7 @@ def reanalyze_import_task(
     match_keys: list[str] | None = None,
     unknown_cols_strategy: str | None = None,
     header_row: int | None = None,
+    column_mapping: dict[str, str | None] | None = None,
 ) -> None:
     """用新参数重新跑 analyze（让用户在 preview 阶段改参考列/未知列策略后重算 diff）.
 
@@ -521,6 +534,8 @@ def reanalyze_import_task(
         task.match_keys = list(match_keys)
     if unknown_cols_strategy is not None:
         task.unknown_cols_strategy = unknown_cols_strategy
+    if column_mapping is not None:
+        task.column_mapping = dict(column_mapping)
     _transition_status(task, "pending_validation")
     task.progress = 10
     task.error_message = ""
@@ -534,7 +549,12 @@ def reanalyze_import_task(
         raw = _decode_content(task)
         engine = db_session.get_bind()
 
-        imp = Importer(engine, db_session, table)
+        imp = Importer(
+            engine,
+            db_session,
+            table,
+            field_mapping=dict(task.column_mapping) if task.column_mapping else None,
+        )
         analysis = imp.analyze(
             raw,
             task.format,
