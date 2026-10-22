@@ -8,8 +8,10 @@ import pytest
 from sqlalchemy import MetaData, func, select
 from sqlalchemy.orm import Session
 
-from cndb.plugins.datasource.models import DatasourceSyncJob, DatasourceSyncRun
+from cndb.core.crypto import encrypt_secrets
+from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, DatasourceSyncRun
 from cndb.plugins.datasource.providers.base import FieldTransform
+from cndb.plugins.datasource.services import runner
 from cndb.plugins.datasource.services.runner import (
     build_job_spec,
     execute_job,
@@ -268,3 +270,157 @@ class TestCursorGuards:
         execution = execute_job(db, job, fetch=_fetch([]), now=NOW)
         assert execution.run.status == "failed"
         assert "游标策略" in execution.run.error_message
+
+
+# ── ADR 0019：llm_prompt 落表自动化 / 连接默认值 ─────────────────
+
+
+def _make_llm_job(
+    db: Session,
+    *,
+    table_id: int | None = None,
+    request_spec: dict[str, object] | None = None,
+    session: DatasourceSession | None = None,
+    match_keys: list[str] | None = None,
+) -> DatasourceSyncJob:
+    """建一个 llm_prompt 任务；缺省带 api_key 会话（provider 运行必需）."""
+    if session is None:
+        session = DatasourceSession(
+            workspace_id=1,
+            name="LLM",
+            headers={},
+            secrets=encrypt_secrets({"api_key": "sk-test"}),
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+    payload = {
+        "url_template": "https://llm.example.com/v1",
+        "prompt": {"system": "你是数据助手", "user_template": "生成 {today} 的摘要"},
+        "llm": {"model": "model-a"},
+    }
+    if request_spec:
+        payload.update(request_spec)
+    job = DatasourceSyncJob(
+        workspace_id=1,
+        name="LLM 同步",
+        provider="llm_prompt",
+        table_id=table_id,
+        request_spec=payload,
+        parser="json",
+        entrant_param=None,
+        entrant_keys=[],
+        match_keys=list(match_keys or []),
+        field_mapping={},
+        session_id=session.id,
+        cursor={"strategy": "none"},
+        schedule={"mode": "manual"},
+        enabled=True,
+        last_status="",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+class TestLlmAutoLandingDetail:
+    def test_run_detail_records_auto_fields_and_match_keys(self, db_engine, db, monkeypatch):
+        monkeypatch.setattr(runner, "_load_llm_connection", lambda _db, _wid: None)
+        job = _make_llm_job(db)
+        rows = [
+            {"date": "2024-07-01", "city": "北京"},
+            {"date": "2024-07-02", "city": "上海"},
+        ]
+        execution = execute_job(db, job, fetch=_fetch(rows), now=NOW)
+
+        assert execution.run.status == "success"
+        # 常规留痕字段仍在
+        assert {"plans", "succeeded", "failures", "normalize_failures"} <= set(execution.run.detail)
+        assert set(execution.run.detail["auto_fields"]) >= {"date", "city"}
+        assert execution.run.detail["auto_match_keys"] == ["date"]
+        db.refresh(job)
+        assert job.match_keys == ["date"]
+        assert job.table_id is not None
+
+    def test_non_llm_provider_detail_has_empty_auto_keys(self, db_engine, db):
+        table = _make_table(db, db_engine)
+        job = _make_job(db, table)
+        execution = execute_job(db, job, fetch=_fetch([{"city": "北京", "day": "2024-06-30"}]), now=NOW)
+        assert execution.run.detail["auto_fields"] == []
+        assert execution.run.detail["auto_match_keys"] == []
+
+
+class TestLlmPreviewSuggestedMatchKeys:
+    def test_preview_suggests_keys_for_unbound_table(self, db_engine, db, monkeypatch):
+        monkeypatch.setattr(runner, "_load_llm_connection", lambda _db, _wid: None)
+        job = _make_llm_job(db)
+        session = db.get(DatasourceSession, job.session_id)
+        rows = [
+            {"date": "2024-07-01", "city": "北京"},
+            {"date": "2024-07-02", "city": "上海"},
+        ]
+        preview = preview_job(job, db=db, session=session, fetch=_fetch(rows), now=NOW)
+
+        assert preview.suggested_match_keys == ["date"]
+        # 预览无副作用：不建表、不写运行记录、不回填 table_id
+        assert db.query(DataTable).count() == 0
+        assert db.query(DatasourceSyncRun).count() == 0
+        db.refresh(job)
+        assert job.table_id is None
+
+    def test_preview_uses_existing_table_fields_as_candidates(self, db_engine, db, monkeypatch):
+        monkeypatch.setattr(runner, "_load_llm_connection", lambda _db, _wid: None)
+        table = _make_table(db, db_engine)
+        job = _make_llm_job(db, table_id=table.id)
+        session = db.get(DatasourceSession, job.session_id)
+        rows = [
+            {"city": "北京", "day": "2024-07-01", "temp": 30},
+            {"city": "上海", "day": "2024-07-02", "temp": 31},
+        ]
+        preview = preview_job(job, db=db, session=session, fetch=_fetch(rows), now=NOW)
+
+        # city / day 都在表字段里且都唯一；city 先出现、权重相同 → 取 city
+        assert preview.suggested_match_keys == ["city"]
+
+    def test_preview_without_db_keeps_legacy_behavior(self, db_engine, db, monkeypatch):
+        monkeypatch.setattr(runner, "_load_llm_connection", lambda _db, _wid: None)
+        job = _make_llm_job(db)
+        session = db.get(DatasourceSession, job.session_id)
+        preview = preview_job(job, session=session, fetch=_fetch([{"date": "2024-07-01"}]), now=NOW)
+        # 没有 db 时按行 key 推断（无法读已有表字段），不落库
+        assert preview.suggested_match_keys == ["date"]
+
+
+class _FakeConnection:
+    """backend-llm 的 LlmConnection 契约替身（base_url/model/api_key/system_prompt/has_api_key）."""
+
+    base_url = "https://conn.example.com/v1"
+    model = "conn-model"
+    api_key = "sk-conn"
+    system_prompt = "连接默认系统提示词"
+    has_api_key = True
+
+
+class TestBuildJobSpecWithConnection:
+    def test_connection_fills_missing_url_model_and_key(self, db_engine, db, monkeypatch):
+        monkeypatch.setattr(runner, "_load_llm_connection", lambda _db, _wid: _FakeConnection())
+        job = _make_llm_job(db, request_spec={"url_template": "", "llm": {}})
+        spec = build_job_spec(job, cursor_from="", today="2024-07-01", db=db)
+
+        assert spec.request.url_template == "https://conn.example.com/v1"
+        assert spec.request.llm["model"] == "conn-model"
+        assert spec.extra_variables["api_key"] == "sk-conn"
+        assert spec.extra_variables["system_prompt_default"] == "连接默认系统提示词"
+        assert spec.extra_variables["today"] == "2024-07-01"
+
+    def test_session_api_key_wins_over_connection(self, db_engine, db, monkeypatch):
+        monkeypatch.setattr(runner, "_load_llm_connection", lambda _db, _wid: _FakeConnection())
+        job = _make_llm_job(db)
+        session = db.get(DatasourceSession, job.session_id)
+        spec = build_job_spec(job, cursor_from="", today="2024-07-01", session=session, db=db)
+
+        assert spec.extra_variables["api_key"] == "sk-test"
+        # 连接默认值只在 request_spec 缺项时补齐，已有配置不被覆盖
+        assert spec.request.url_template == "https://llm.example.com/v1"
+        assert spec.request.llm["model"] == "model-a"

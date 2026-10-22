@@ -244,6 +244,27 @@ class ConnectionTestResponse(BaseModel):
     message: str = ""
 
 
+class LlmConfigOut(BaseModel):
+    """工作区大模型连接（**不返回 api_key 明文**，只回 ``has_api_key``）."""
+
+    configured: bool = False
+    base_url: str
+    model: str
+    has_api_key: bool = False
+    system_prompt: str = ""
+    default_system_prompt: str = ""
+
+
+class LlmConfigUpdate(BaseModel):
+    """更新工作区大模型连接（局部更新；``api_key`` 非空才覆盖，``clear_api_key`` 可清除）."""
+
+    base_url: str | None = None
+    model: str | None = None
+    api_key: str | None = Field(default=None, description="非空才更新；留空保持原 Key 不变")
+    clear_api_key: bool = Field(default=False, description="显式清除已保存的 API Key")
+    system_prompt: str | None = Field(default=None, description="留空 / 空串表示使用内置默认系统提示词")
+
+
 class PreviewRequest(BaseModel):
     limit: int = Field(default=50, ge=1, le=500, description="返回行数上限")
 
@@ -259,6 +280,8 @@ class PreviewResponse(BaseModel):
     rows: list[dict[str, Any]] = Field(default_factory=list)
     failures: list[dict[str, Any]] = Field(default_factory=list)
     normalize_failures: list[dict[str, Any]] = Field(default_factory=list)
+    # 预览时自动识别的幂等键（ADR 0019）；空列表表示未识别出唯一键
+    suggested_match_keys: list[str] = Field(default_factory=list)
 
 
 __all__ = [
@@ -266,6 +289,8 @@ __all__ = [
     "ConnectionTestResponse",
     "DomainTemplate",
     "DomainTemplateListResponse",
+    "LlmConfigOut",
+    "LlmConfigUpdate",
     "PreviewRequest",
     "PreviewResponse",
     "ProviderInfo",

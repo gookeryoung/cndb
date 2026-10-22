@@ -8,9 +8,14 @@ from typing import Any
 import pytest
 from sqlalchemy import MetaData, func, select
 
-from cndb.core.crypto import encrypt_secrets
+from cndb.core.crypto import encrypt_secret, encrypt_secrets
 from cndb.plugins.accounts.models import User
-from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, DatasourceSyncRun
+from cndb.plugins.datasource.models import (
+    DatasourceLlmConfig,
+    DatasourceSession,
+    DatasourceSyncJob,
+    DatasourceSyncRun,
+)
 from cndb.plugins.datasource.providers.llm_prompt import LlmConnectionResult
 from cndb.plugins.datasource.routers import sync_jobs
 from cndb.plugins.datasource.services import runner
@@ -67,6 +72,23 @@ def table_with_fields(db, db_engine, workspace_with_auth) -> DataTable:
     db.refresh(table)
     ddl.create_table(db_engine, table)
     return table
+
+
+@pytest.fixture
+def llm_connection_config(db, workspace_with_auth):
+    """工作区级大模型连接（已配置 Key），供 llm_prompt 任务创建 / 连通测试用."""
+    wid, _ = workspace_with_auth
+    config = DatasourceLlmConfig(
+        workspace_id=wid,
+        base_url="https://llm.example.com",
+        model="model-a",
+        api_key=encrypt_secret("sk-conn"),
+        system_prompt="",
+    )
+    db.add(config)
+    db.commit()
+    db.refresh(config)
+    return config
 
 
 def _payload(**overrides: Any) -> dict[str, Any]:
@@ -321,7 +343,7 @@ class TestLlmPrompt:
         assert provider["default_cursor"] == "none"
         assert "user_template" in [field["name"] for field in provider["params_schema"]["fields"]]
 
-    def test_create_ok(self, client, workspace_with_auth):
+    def test_create_ok(self, client, workspace_with_auth, llm_connection_config):
         wid, headers = workspace_with_auth
         response = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=_llm_payload(), headers=headers)
         assert response.status_code == 201
@@ -329,34 +351,85 @@ class TestLlmPrompt:
         assert body["provider"] == "llm_prompt"
         assert body["request_spec"]["llm"]["model"] == "model-a"
 
-    def test_cron_requires_match_keys(self, client, workspace_with_auth):
+    def test_create_prompt_only_uses_connection_defaults(self, client, workspace_with_auth, llm_connection_config):
+        """ADR 0019：任务只填用户提示词，地址 / 模型从工作区连接补齐后落库."""
+        wid, headers = workspace_with_auth
+        payload = _llm_payload(
+            request_spec={"prompt": {"user_template": "生成 {today} 的市场摘要"}},
+            match_keys=[],
+            schedule={"mode": "manual"},
+        )
+        response = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=payload, headers=headers)
+        assert response.status_code == 201
+        spec = response.json()["request_spec"]
+        assert spec["url_template"] == llm_connection_config.base_url
+        assert spec["llm"]["model"] == llm_connection_config.model
+        assert "api_key" not in spec
+
+    def test_create_requires_api_key(self, client, workspace_with_auth):
+        wid, headers = workspace_with_auth
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/sync-jobs",
+            json=_llm_payload(match_keys=[], schedule={"mode": "manual"}),
+            headers=headers,
+        )
+        assert response.status_code == 400
+        assert "大模型连接" in response.json()["detail"]
+        assert "API Key" in response.json()["detail"]
+
+    def test_create_accepts_cron_without_match_keys(self, client, workspace_with_auth, llm_connection_config):
+        """ADR 0019：幂等键由运行期自动识别，cron 不再强制手填."""
         wid, headers = workspace_with_auth
         response = client.post(
             f"/api/v1/workspaces/{wid}/datasource/sync-jobs",
             json=_llm_payload(match_keys=[]),
             headers=headers,
         )
-        assert response.status_code == 400
-        assert "match_keys" in response.json()["detail"]
+        assert response.status_code == 201
+        assert response.json()["match_keys"] == []
 
-    @pytest.mark.parametrize(
-        ("prompt", "match"),
-        [
-            ({"system": "", "user_template": ""}, "user_template"),
-            ({"system": "", "user_template": "生成 {unknown}"}, "模板变量缺失"),
-        ],
-    )
-    def test_rejects_bad_prompt(self, client, workspace_with_auth, prompt, match):
+    def test_create_accepts_session_api_key(self, client, db, workspace_with_auth):
+        """存量任务口径：会话里带 api_key 时无需工作区连接也能保存."""
+        wid, headers = workspace_with_auth
+        session = DatasourceSession(
+            workspace_id=wid,
+            name="LLM",
+            headers={},
+            secrets=encrypt_secrets({"api_key": "sk-test"}),
+        )
+        db.add(session)
+        db.commit()
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/sync-jobs",
+            json=_llm_payload(session_id=session.id),
+            headers=headers,
+        )
+        assert response.status_code == 201
+
+    def test_rejects_empty_user_template(self, client, workspace_with_auth, llm_connection_config):
         wid, headers = workspace_with_auth
         spec = _llm_payload()["request_spec"]
-        spec["prompt"] = prompt
+        spec["prompt"] = {"system": "", "user_template": ""}
         response = client.post(
             f"/api/v1/workspaces/{wid}/datasource/sync-jobs",
             json=_llm_payload(request_spec=spec),
             headers=headers,
         )
         assert response.status_code == 400
-        assert match in response.json()["detail"]
+        assert "user_template" in response.json()["detail"]
+
+    def test_accepts_json_example_in_user_prompt(self, client, workspace_with_auth, llm_connection_config):
+        """ADR 0019：用户提示词直接写 JSON 示例（裸花括号）也能保存."""
+        wid, headers = workspace_with_auth
+        user_template = '请按 {"rows": [{"city": "北京", "date": "{today}"}]} 的格式输出数据'
+        payload = _llm_payload(
+            request_spec={"prompt": {"user_template": user_template}},
+            match_keys=[],
+            schedule={"mode": "manual"},
+        )
+        response = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=payload, headers=headers)
+        assert response.status_code == 201
+        assert response.json()["request_spec"]["prompt"]["user_template"] == user_template
 
     def test_connection_uses_session_key_and_has_no_side_effect(self, client, db, workspace_with_auth, monkeypatch):
         wid, headers = workspace_with_auth
@@ -421,10 +494,47 @@ class TestLlmPrompt:
         assert response.status_code == 400
         assert "凭证会话不存在" in response.json()["detail"]
 
+    def test_connection_falls_back_to_workspace_connection(
+        self, client, db, workspace_with_auth, llm_connection_config, monkeypatch
+    ):
+        """ADR 0019：不传 session 时用工作区连接 Key 与默认地址 / 模型."""
+        wid, headers = workspace_with_auth
+        captured: dict[str, Any] = {}
+
+        def fake(spec, *, api_key, session_headers=None, fetch=None):
+            captured.update(spec=spec, api_key=api_key, headers=session_headers)
+            return LlmConnectionResult(ok=True, latency_ms=9, model="model-a", message="连通成功")
+
+        monkeypatch.setattr(sync_jobs, "test_llm_connection", fake)
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/test-connection",
+            json={"request_spec": {"prompt": {"user_template": "ping"}}},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert captured["api_key"] == "sk-conn"
+        assert captured["headers"] is None
+        assert captured["spec"].url_template == llm_connection_config.base_url
+        assert captured["spec"].llm["model"] == llm_connection_config.model
+
+    def test_connection_without_any_key_reports_hint(self, client, workspace_with_auth):
+        """工作区连接与会话都没有 Key 时给出指向「大模型连接」的提示（不联网）."""
+        wid, headers = workspace_with_auth
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/test-connection",
+            json={"request_spec": {"prompt": {"user_template": "ping"}}},
+            headers=headers,
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["ok"] is False
+        assert "大模型连接" in body["message"]
+
     def test_connection_rejects_bad_url(self, client, workspace_with_auth):
         wid, headers = workspace_with_auth
         spec = _llm_payload()["request_spec"]
-        spec["url_template"] = ""
+        spec["url_template"] = "ftp://bad.example.com"
         response = client.post(
             f"/api/v1/workspaces/{wid}/datasource/test-connection",
             json={"request_spec": spec},

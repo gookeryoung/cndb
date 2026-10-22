@@ -1,7 +1,9 @@
-"""datasource 插件 ORM 模型：同步任务定义 + 运行记录.
+"""datasource 插件 ORM 模型：同步任务定义 + 运行记录 + 大模型连接.
 
-两张表（见 ADR 0006「数据模型」）：
+四张表（见 ADR 0006「数据模型」与 ADR 0019）：
 
+- ``datasource_session``    凭证会话：请求头 + 加密密钥（读接口只回显键名）
+- ``datasource_llm_config`` 工作区级大模型连接：地址 / 模型 / 加密 API Key / 系统提示词覆盖（每工作区一条）
 - ``datasource_sync_job``   任务定义：Provider 引用 + 目标表 + 标的集合 + 幂等键 + 游标 + 调度 + 租约
 - ``datasource_sync_run``   每次运行：状态 / 游标区间 / 增删改计数 / 逐请求明细
 
@@ -67,6 +69,34 @@ class DatasourceSession(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     headers: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     secrets: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
+class DatasourceLlmConfig(TimestampMixin, Base):
+    """工作区级「大模型连接」：配一次即可被该工作区所有 ``llm_prompt`` 任务复用（ADR 0019）.
+
+    - ``base_url``：OpenAI 兼容服务地址（默认 ``https://api.deepseek.com``）；
+    - ``model``：模型名（默认 ``deepseek-chat``）；
+    - ``api_key``：**Fernet 密文**，读接口只回 ``has_api_key``，不随备份导出；
+    - ``system_prompt``：可选覆盖系统提示词，空串表示使用内置默认值。
+    """
+
+    __tablename__ = "datasource_llm_config"
+    __table_args__ = {"extend_existing": True}
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    base_url: Mapped[str] = mapped_column(String(512), nullable=False)
+    model: Mapped[str] = mapped_column(String(128), nullable=False)
+    # 密文（core.crypto.encrypt_secret）；空串表示未配置
+    api_key: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
 
 
 class DatasourceSyncJob(TimestampMixin, Base):
@@ -159,6 +189,7 @@ class DatasourceSyncRun(TimestampMixin, Base):
 
 
 __all__ = [
+    "DatasourceLlmConfig",
     "DatasourceSession",
     "DatasourceSyncJob",
     "DatasourceSyncRun",

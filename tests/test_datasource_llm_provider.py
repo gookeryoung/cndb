@@ -1,4 +1,4 @@
-"""ADR 0014：llm_prompt provider 单测（请求构造 / JSON 解析 / 校验 / 连通测试）."""
+"""ADR 0014 / ADR 0019：llm_prompt provider 单测（请求构造 / JSON 解析 / 校验 / 连通测试）."""
 
 from __future__ import annotations
 
@@ -14,7 +14,9 @@ from cndb.plugins.datasource.providers.base import (
     TimeWindowSpec,
 )
 from cndb.plugins.datasource.providers.llm_prompt import (
+    DEFAULT_SYSTEM_PROMPT,
     JSON_INSTRUCTION,
+    LlmConfig,
     LlmPromptProvider,
     normalize_endpoint,
     strip_json_fences,
@@ -22,6 +24,12 @@ from cndb.plugins.datasource.providers.llm_prompt import (
 )
 from cndb.plugins.datasource.providers.llm_prompt import (
     test_llm_connection as run_connection_test,
+)
+from cndb.plugins.datasource.services.connection import (
+    DEFAULT_BASE_URL,
+    DEFAULT_MODEL,
+    LlmConnection,
+    resolve_request_spec_defaults,
 )
 from cndb.plugins.datasource.services.pipeline import run_pipeline
 from cndb.plugins.tables.services.importing.api_fetch import FetchConfig
@@ -107,10 +115,76 @@ class TestBuildRequests:
         plans = PROVIDER.build_requests(_job(request=spec))
         assert plans[0].config.body["messages"][1]["content"] == "区间 2024-01-01 ~ 2024-01-03，今天 2024-06-30"
 
-    def test_missing_variable_raises(self):
-        spec = _spec(prompt={"system": "", "user_template": "缺少 {unknown}"})
+    def test_unknown_placeholder_is_kept_literal(self):
+        """ADR 0019：提示词里的未知占位符原样保留，不再阻断运行."""
+        spec = _spec(prompt={"system": "系统 {unknown}", "user_template": "缺少 {unknown}"})
+        plan = PROVIDER.build_requests(_job(request=spec))[0]
+        assert "{unknown}" in plan.config.body["messages"][0]["content"]
+        assert plan.config.body["messages"][1]["content"] == "缺少 {unknown}"
+
+    def test_json_example_in_user_prompt_is_kept(self):
+        """用户提示词直接写 JSON 示例（裸花括号）不再报模板错误."""
+        spec = _spec(
+            prompt={
+                "system": "",
+                "user_template": '请按 {"rows": [{"city": "北京", "date": "{today}"}]} 的格式输出',
+            }
+        )
+        content = PROVIDER.build_requests(_job(request=spec))[0].config.body["messages"][1]["content"]
+        assert '{"rows": [{"city": "北京", "date": "2024-06-30"}]}' in content
+
+    def test_escaped_braces_still_unescape(self):
+        """{{ / }} 转义口径不变（前端推荐提示词无需修改）."""
+        spec = _spec(prompt={"system": "", "user_template": '输出 {{"ok": true}}，今天 {today}'})
+        content = PROVIDER.build_requests(_job(request=spec))[0].config.body["messages"][1]["content"]
+        assert content == '输出 {"ok": true}，今天 2024-06-30'
+
+    def test_headers_still_strict(self):
+        """其它请求模板保持严格语义：未知占位符照旧报错."""
+        spec = _spec(headers_template={"X-Test": "{unknown}"})
         with pytest.raises(ProviderError, match="模板变量缺失"):
             PROVIDER.build_requests(_job(request=spec))
+
+    def test_default_system_prompt_is_used_when_not_configured(self):
+        """ADR 0019：任务不填系统提示词时用内置默认（用户只配用户提示词）."""
+        spec = _spec(prompt={"user_template": "生成 {today} 的摘要"})
+        plans = PROVIDER.build_requests(_job(request=spec))
+        system = plans[0].config.body["messages"][0]["content"]
+        assert system.startswith(DEFAULT_SYSTEM_PROMPT)
+        assert JSON_INSTRUCTION in system
+
+    def test_connection_system_prompt_overrides_builtin_default(self):
+        """工作区连接的系统提示词覆盖优先于内置默认，但仍低于任务显式配置."""
+        spec = _spec(prompt={"user_template": "生成 {today} 的摘要"})
+        job = _job(
+            request=spec,
+            extra_variables={
+                "api_key": "sk-test",
+                "today": "2024-06-30",
+                "system_prompt_default": "工作区自定义系统提示词",
+            },
+        )
+        system = PROVIDER.build_requests(job)[0].config.body["messages"][0]["content"]
+        assert system.startswith("工作区自定义系统提示词")
+
+    def test_task_system_prompt_beats_connection_override(self):
+        spec = _spec(prompt={"system": "任务系统提示词", "user_template": "生成 {today}"})
+        job = _job(
+            request=spec,
+            extra_variables={
+                "api_key": "sk-test",
+                "today": "2024-06-30",
+                "system_prompt_default": "工作区自定义系统提示词",
+            },
+        )
+        system = PROVIDER.build_requests(job)[0].config.body["messages"][0]["content"]
+        assert system.startswith("任务系统提示词")
+
+    def test_missing_url_and_model_fall_back_to_defaults(self):
+        """ADR 0019：config 层允许地址 / 模型缺省，补内置默认值（路由层在构造 RequestSpec 前补齐）."""
+        config = LlmConfig.from_payload(url_template="", prompt={"user_template": "ping"}, llm={})
+        assert config.url == f"{DEFAULT_BASE_URL}/chat/completions"
+        assert config.model == DEFAULT_MODEL
 
 
 class TestParse:
@@ -193,7 +267,6 @@ class TestValidation:
         ("payload", "match"),
         [
             ({"url_template": "https://x", "prompt": {"user_template": ""}, "llm": {"model": "m"}}, "user_template"),
-            ({"url_template": "https://x", "prompt": {"user_template": "x"}, "llm": {"model": ""}}, "model"),
             ({"url_template": "ftp://x", "prompt": {"user_template": "x"}, "llm": {"model": "m"}}, "http"),
             (
                 {
@@ -207,45 +280,57 @@ class TestValidation:
                 {"url_template": "https://x", "prompt": {"user_template": "x"}, "llm": {"model": "m", "max_tokens": 0}},
                 "max_tokens",
             ),
-            (
-                {"url_template": "https://x", "prompt": {"user_template": "{unknown}"}, "llm": {"model": "m"}},
-                "模板变量缺失",
-            ),
         ],
     )
     def test_invalid_payload(self, payload, match):
         with pytest.raises(ProviderError, match=match):
             validate_llm_request_spec(payload, entrant_param="city")
 
-    def test_cron_requires_match_keys(self):
+    def test_missing_url_and_model_use_defaults(self):
+        """ADR 0019：地址 / 模型缺省时补内置默认值，不再报「不能为空」."""
+        config = validate_llm_request_spec({"prompt": {"user_template": "生成 {today}"}})
+        assert config.url == f"{DEFAULT_BASE_URL}/chat/completions"
+        assert config.model == DEFAULT_MODEL
+
+    def test_cron_does_not_require_match_keys(self):
+        """ADR 0019：幂等键由运行期自动识别，cron 不再强制手填 match_keys."""
         payload = {
             "url_template": "https://x",
             "prompt": {"user_template": "生成 {today}"},
             "llm": {"model": "m"},
         }
-        with pytest.raises(ProviderError, match="match_keys"):
-            validate_llm_request_spec(payload, schedule={"mode": "cron"}, match_keys=[])
+        config = validate_llm_request_spec(payload, schedule={"mode": "cron"}, match_keys=[])
+        assert config.model == "m"
 
-    def test_start_end_require_range_window(self):
+    def test_start_end_placeholders_kept_without_range_window(self):
+        """未配置时间区间时 {start} / {end} 原样保留，保存不再失败."""
         payload = {
             "url_template": "https://x",
             "prompt": {"user_template": "区间 {start} ~ {end}"},
             "llm": {"model": "m"},
         }
-        with pytest.raises(ProviderError, match="模板变量缺失"):
-            validate_llm_request_spec(payload)
-        config = validate_llm_request_spec({**payload, "time_window": {"mode": "range"}})
-        assert config.model == "m"
+        config = validate_llm_request_spec(payload)
+        assert config.user_template == "区间 {start} ~ {end}"
+        assert validate_llm_request_spec({**payload, "time_window": {"mode": "range"}}).model == "m"
 
-    def test_entrant_requires_entrant_param(self):
+    def test_entrant_placeholder_kept_without_entrant_param(self):
         payload = {
             "url_template": "https://x",
             "prompt": {"user_template": "生成 {entrant}"},
             "llm": {"model": "m"},
         }
-        with pytest.raises(ProviderError, match="模板变量缺失"):
-            validate_llm_request_spec(payload)
+        assert "{entrant}" in validate_llm_request_spec(payload).user_template
         assert validate_llm_request_spec(payload, entrant_param="city").model == "m"
+
+    def test_json_in_system_prompt_validates(self):
+        """系统提示词含 JSON 裸花括号也能保存（宽松模板）."""
+        config = validate_llm_request_spec(
+            {
+                "prompt": {"system": '返回 {"rows": []}', "user_template": "x"},
+                "llm": {"model": "m"},
+            }
+        )
+        assert config.system == '返回 {"rows": []}'
 
 
 def test_pipeline_collects_response_metadata():
@@ -305,6 +390,7 @@ class TestConnection:
         result = run_connection_test(_spec(), api_key="")
         assert result.ok is False
         assert "api_key" in result.message
+        assert "大模型连接" in result.message
 
     def test_fetch_error_is_returned(self):
         def fetch(_config: FetchConfig):
@@ -315,6 +401,30 @@ class TestConnection:
         assert "401" in result.message
 
     def test_invalid_config_is_returned(self):
-        result = run_connection_test(_spec(llm={"model": ""}), api_key="sk-test")
+        result = run_connection_test(_spec(llm={"model": "m", "max_tokens": 0}), api_key="sk-test")
         assert result.ok is False
-        assert "model" in result.message
+        assert "max_tokens" in result.message
+
+
+class TestResolveDefaults:
+    """ADR 0019：任务 request_spec 的连接默认值补全（api_key 永不写入）."""
+
+    def test_fills_missing_url_and_model(self):
+        conn = LlmConnection(base_url="https://proxy.example.com/v1", model="deepseek-chat", api_key="sk-secret")
+        filled = resolve_request_spec_defaults({"prompt": {"user_template": "生成 {today}"}}, conn)
+        assert filled["url_template"] == "https://proxy.example.com/v1"
+        assert filled["llm"]["model"] == "deepseek-chat"
+        assert "api_key" not in json.dumps(filled)
+
+    def test_keeps_explicit_values(self):
+        conn = LlmConnection(base_url="https://proxy.example.com", model="deepseek-chat")
+        spec = {"url_template": "https://custom.example.com", "llm": {"model": "custom-model", "temperature": 0.5}}
+        filled = resolve_request_spec_defaults(spec, conn)
+        assert filled["url_template"] == "https://custom.example.com"
+        assert filled["llm"] == {"model": "custom-model", "temperature": 0.5}
+
+    def test_does_not_mutate_input(self):
+        conn = LlmConnection()
+        spec: dict[str, object] = {"prompt": {"user_template": "x"}}
+        resolve_request_spec_defaults(spec, conn)
+        assert spec == {"prompt": {"user_template": "x"}}

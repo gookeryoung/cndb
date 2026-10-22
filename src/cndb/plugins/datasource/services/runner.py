@@ -36,6 +36,12 @@ from cndb.plugins.datasource.providers.base import (
     SyncJobSpec,
     TimeWindowSpec,
 )
+from cndb.plugins.datasource.services.auto_table import (
+    candidate_names,
+    ensure_job_table,
+    infer_match_keys,
+    is_table_empty,
+)
 from cndb.plugins.datasource.services.cursor import CursorConfig, advance, window_start
 from cndb.plugins.datasource.services.pipeline import PipelineOutcome, run_pipeline
 from cndb.plugins.datasource.services.write import WriteOutcome, upsert_rows
@@ -71,6 +77,8 @@ class PreviewResult:
     normalize_failures: list[dict[str, Any]] = field(default_factory=list)
     cursor_from: str = ""
     cursor_to: str = ""
+    # 建议的幂等键（ADR 0019；仅 llm_prompt 计算，供前端向导回填 match_keys）
+    suggested_match_keys: list[str] = field(default_factory=list)
 
 
 def execute_job(
@@ -116,9 +124,25 @@ def execute_job(
         cursor_config = CursorConfig.from_dict(job.cursor)
         cursor_from = window_start(cursor_config, today=today) or ""
         session = db.get(DatasourceSession, job.session_id) if job.session_id else None
-        spec = build_job_spec(job, cursor_from=cursor_from, today=today, session=session)
+        spec = build_job_spec(job, cursor_from=cursor_from, today=today, session=session, db=db)
         outcome = run_pipeline(spec, fetch=fetch, rate_limit_ms=max(0, int(job.rate_limit_ms or 0)))
-        write_outcome = _persist_rows(db, job, outcome.rows, user=user)
+
+        # ADR 0019：仅 llm_prompt 自动建表 / 补字段 / 推断幂等键，其它 provider 行为不变
+        auto_landing = job.provider == "llm_prompt"
+        if auto_landing and outcome.rows and job.table_id is None:
+            ensure_job_table(db, job)
+        write_outcome = _persist_rows(
+            db,
+            job,
+            outcome.rows,
+            user=user,
+            auto_add_fields=auto_landing,
+            auto_match_keys=auto_landing,
+        )
+        # 推断出幂等键时回填并持久化，后续运行沿用同一组键（重复运行只更新）
+        if auto_landing and not [key for key in (job.match_keys or []) if key] and write_outcome.match_keys:
+            job.match_keys = list(write_outcome.match_keys)
+            db.add(job)
         cursor_to = advance(cursor_config, outcome.rows) or ""
         _finalize(
             run,
@@ -128,6 +152,8 @@ def execute_job(
             cursor_to=cursor_to,
             started_clock=started_clock,
             now=started,
+            auto_fields=write_outcome.auto_fields if auto_landing else [],
+            auto_match_keys=write_outcome.match_keys if auto_landing else [],
         )
         _update_job_state(db, job, status=run.status, run_at=started, cursor=cursor_config, cursor_to=cursor_to)
         _record_event(db, job, run, user=user)
@@ -153,14 +179,19 @@ def preview_job(
     now: dt.datetime | None = None,
     limit: int = PREVIEW_LIMIT,
     session: DatasourceSession | None = None,
+    db: Session | None = None,
 ) -> PreviewResult:
-    """抓一次做预览：不落库、不推进游标、不写运行记录."""
+    """抓一次做预览：不落库、不推进游标、不写运行记录.
+
+    ``db`` 用于读取已有目标表的字段名（推断建议幂等键的候选）与补充 llm_prompt
+    连接默认值；缺省时按行 key 推断，其它预览行为与旧接口一致。
+    """
     current = now or dt.datetime.now(dt.UTC)
     today = _as_utc(current).date().isoformat()
     cursor_config = CursorConfig.from_dict(job.cursor)
     cursor_from = window_start(cursor_config, today=today) or ""
 
-    spec = build_job_spec(job, cursor_from=cursor_from, today=today, session=session)
+    spec = build_job_spec(job, cursor_from=cursor_from, today=today, session=session, db=db)
     outcome = run_pipeline(spec, fetch=fetch, rate_limit_ms=max(0, int(job.rate_limit_ms or 0)))
     normalized = outcome.normalize
     columns: list[str] = []
@@ -184,6 +215,7 @@ def preview_job(
         ),
         cursor_from=cursor_from,
         cursor_to=advance(cursor_config, outcome.rows) or "",
+        suggested_match_keys=_suggested_match_keys(job, outcome.rows, db),
     )
 
 
@@ -196,11 +228,17 @@ def build_job_spec(
     cursor_from: str,
     today: str,
     session: DatasourceSession | None = None,
+    db: Session | None = None,
 ) -> SyncJobSpec:
     """把 DB 里的 JSON 声明还原成 ``SyncJobSpec``，注入时间窗口与会话凭证.
 
     会话（M5）贡献两部分：``headers`` 作为请求头**铺底**（job 自己的同名头优先），
     ``secrets`` 作为模板变量（请求模板里写 ``{api_key}`` 即可）。
+
+    llm_prompt（ADR 0019）额外从工作区大模型连接补默认值：会话 secrets 的
+    ``api_key`` 优先，其次连接配置的 Key；``request_spec`` 缺 ``url_template`` /
+    ``llm.model`` 时用连接默认值补齐；连接的系统提示词作为
+    ``extra_variables["system_prompt_default"]`` 交给 provider 使用。
     """
     payload = dict(job.request_spec or {})
     extra_variables: dict[str, Any] = {}
@@ -211,6 +249,10 @@ def build_job_spec(
         # 密钥列在库里是密文（core.crypto）；解密失败直接抛 SecretDecryptError，
         # 由外层 try 落成 failed 运行记录 —— 静默降级成空密钥只会变成难查的 401
         extra_variables = decrypt_secrets(session.secrets)
+    if job.provider == "llm_prompt":
+        connection = _load_llm_connection(db, job.workspace_id)
+        if connection is not None:
+            _apply_llm_connection(payload, extra_variables, connection)
     # 内置提示词变量（ADR 0014）：today 由本次运行时钟统一给出，保证重放一致
     extra_variables["today"] = today
     request = request_spec_from_payload(payload, cursor_from=cursor_from, today=today)
@@ -224,6 +266,58 @@ def build_job_spec(
         parser=job.parser,
         extra_variables=extra_variables,
     )
+
+
+def _load_llm_connection(db: Session | None, workspace_id: int) -> Any:
+    """读取工作区大模型连接配置（ADR 0019）；未注入 db（旧调用方）时返回 None."""
+    if db is None:
+        return None
+    from cndb.plugins.datasource.services.connection import load_llm_connection
+
+    return load_llm_connection(db, workspace_id)
+
+
+def _apply_llm_connection(
+    payload: dict[str, Any],
+    extra_variables: dict[str, Any],
+    connection: Any,
+) -> None:
+    """用工作区连接配置补齐 llm_prompt 的请求声明与模板变量（原地修改）."""
+    api_key = str(getattr(connection, "api_key", "") or "").strip()
+    if api_key and not str(extra_variables.get("api_key") or "").strip():
+        # 会话 secrets 优先；没有会话 Key 时回退到连接配置
+        extra_variables["api_key"] = api_key
+    system_prompt = str(getattr(connection, "system_prompt", "") or "").strip()
+    if system_prompt:
+        extra_variables["system_prompt_default"] = system_prompt
+    if not str(payload.get("url_template") or "").strip():
+        base_url = str(getattr(connection, "base_url", "") or "").strip()
+        if base_url:
+            payload["url_template"] = base_url
+    llm = dict(payload.get("llm") or {})
+    if not str(llm.get("model") or "").strip():
+        model = str(getattr(connection, "model", "") or "").strip()
+        if model:
+            llm["model"] = model
+            payload["llm"] = llm
+
+
+def _suggested_match_keys(
+    job: DatasourceSyncJob,
+    rows: list[dict[str, Any]],
+    db: Session | None,
+) -> list[str]:
+    """预览阶段建议幂等键（ADR 0019）：仅 llm_prompt 计算，其它 provider 恒为空."""
+    if job.provider != "llm_prompt" or not rows:
+        return []
+    field_names: list[str] = []
+    if db is not None and job.table_id is not None:
+        from cndb.plugins.tables.models import DataTable
+
+        table = db.get(DataTable, job.table_id)
+        if table is not None:
+            field_names = [item.name for item in table.active_fields()]
+    return infer_match_keys(rows, candidate_names(rows, field_names))
 
 
 def request_spec_from_payload(
@@ -300,8 +394,14 @@ def _persist_rows(
     rows: list[dict[str, Any]],
     *,
     user: Any,
+    auto_add_fields: bool = False,
+    auto_match_keys: bool = False,
 ) -> WriteOutcome:
-    """写入目标表；未绑定表时跳过（只留抓取结果）."""
+    """写入目标表；未绑定表时跳过（只留抓取结果）.
+
+    ``auto_add_fields`` / ``auto_match_keys`` 仅 llm_prompt 打开（ADR 0019）：
+    前者只在目标表为空时生效（空表才允许补字段）。
+    """
     if not rows or job.table_id is None:
         return WriteOutcome(fetched=len(rows))
     from cndb.plugins.tables.models import DataTable
@@ -309,6 +409,7 @@ def _persist_rows(
     table = db.get(DataTable, job.table_id)
     if table is None:
         raise ValueError(f"目标表不存在: table_id={job.table_id}")
+    empty = is_table_empty(db, table) if auto_add_fields else False
     return upsert_rows(
         db.get_bind(),
         db,
@@ -316,6 +417,8 @@ def _persist_rows(
         rows,
         match_keys=job.match_keys or (),
         user=user,
+        auto_add_fields=empty,
+        auto_match_keys=auto_match_keys,
     )
 
 
@@ -328,6 +431,8 @@ def _finalize(
     cursor_to: str,
     started_clock: float,
     now: dt.datetime,
+    auto_fields: list[str] | None = None,
+    auto_match_keys: list[str] | None = None,
 ) -> None:
     normalized = outcome.normalize
     run.status = outcome.status
@@ -353,6 +458,9 @@ def _finalize(
         ),
         "dropped_fields": normalized.dropped if normalized is not None else 0,
         "response_metadata": outcome.metadata[:50],
+        # ADR 0019 留痕：自动补字段与自动推断出的幂等键（非 llm_prompt 恒为空）
+        "auto_fields": list(auto_fields or []),
+        "auto_match_keys": list(auto_match_keys or []),
     }
     if outcome.status == RunStatus.FAILED.value and outcome.failures:
         run.error_message = "; ".join(f"{item.label}: {item.error}" for item in outcome.failures[:3])[:1000]

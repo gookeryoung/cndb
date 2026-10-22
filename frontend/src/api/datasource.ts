@@ -41,6 +41,30 @@ export interface DatasourceProviderInfo {
   supports_paging: boolean
 }
 
+/** 工作区级「大模型连接」配置（api_key 只写不回显） */
+export interface LlmConfig {
+  /** 是否已完成配置（有 API 地址 + 模型 + API Key） */
+  configured: boolean
+  base_url: string
+  model: string
+  /** 是否已保存 API Key（值不回显） */
+  has_api_key: boolean
+  /** 工作区自定义系统提示词；留空表示使用内置默认 */
+  system_prompt: string
+  /** 后端内置默认系统提示词全文（前端只读展示） */
+  default_system_prompt: string
+}
+
+/** 更新大模型连接：字段均可选，api_key 留空表示保持不变 */
+export interface LlmConfigPayload {
+  base_url?: string
+  model?: string
+  api_key?: string
+  /** 显式清除已保存的 API Key */
+  clear_api_key?: boolean
+  system_prompt?: string
+}
+
 /** 大模型提示词配置（`llm_prompt` provider） */
 export interface SyncPromptConfig {
   /** 系统提示词；留空时后端补「只输出 JSON」约束 */
@@ -59,7 +83,8 @@ export interface SyncLlmConfig {
 
 /** 请求声明（与后端 RequestSpec 对齐） */
 export interface SyncRequestSpec {
-  url_template: string
+  /** `llm_prompt` 可省略：后端按工作区「大模型连接」补齐 */
+  url_template?: string
   method?: string
   headers_template?: Record<string, string>
   params_template?: Record<string, unknown>
@@ -232,6 +257,8 @@ export interface SyncPreviewResult {
   rows: Array<Record<string, unknown>>
   failures: Array<{ label: string; entrant?: string | null; page?: number | null; error: string }>
   normalize_failures: Array<{ row_index: number; field: string; reason: string }>
+  /** `llm_prompt`：后端从结果行自动识别的幂等键（用于提示，不落库） */
+  suggested_match_keys?: string[]
 }
 
 const base = (wid: number | string) => `/v1/workspaces/${wid}/datasource`
@@ -253,6 +280,11 @@ export const datasourceApi = {
     api.post<SyncPreviewResult>(`${base(wid)}/sync-jobs/${id}/preview`, { limit }).then(r => r.data),
   testConnection: (wid: number | string, data: DatasourceConnectionTestPayload) =>
     api.post<DatasourceConnectionTestResult>(`${base(wid)}/test-connection`, data).then(r => r.data),
+  /** 工作区级大模型连接（viewer 可读 / editor 可写） */
+  getLlmConfig: (wid: number | string) =>
+    api.get<LlmConfig>(`${base(wid)}/llm-config`).then(r => r.data),
+  updateLlmConfig: (wid: number | string, data: LlmConfigPayload) =>
+    api.put<LlmConfig>(`${base(wid)}/llm-config`, data).then(r => r.data),
   runs: (wid: number | string, id: number | string, params?: { limit?: number; offset?: number }) =>
     api
       .get<{ total: number; runs: SyncRun[] }>(`${base(wid)}/sync-jobs/${id}/runs`, { params })
