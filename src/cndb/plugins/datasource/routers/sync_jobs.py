@@ -338,8 +338,9 @@ def test_connection(
         secrets: dict[str, str] = decrypt_secrets(session.secrets) if session is not None else {}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    # 会话 Key 优先，其次工作区连接 Key（都不是则 test_llm_connection 返回明确提示）
-    api_key = str(secrets.get("api_key") or "").strip() or connection.api_key
+    # Key 优先级：本次请求传入的未保存 Key > 会话 Key > 工作区连接 Key
+    # （连接弹窗填完 Key 可直接测试，无需先保存；都不是则 test_llm_connection 返回明确提示）
+    api_key = str(payload.api_key or "").strip() or str(secrets.get("api_key") or "").strip() or connection.api_key
 
     result = test_llm_connection(
         spec,

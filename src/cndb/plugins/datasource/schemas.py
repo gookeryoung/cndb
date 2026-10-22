@@ -235,6 +235,10 @@ class ConnectionTestRequest(BaseModel):
 
     request_spec: dict[str, Any] = Field(..., description="URL / model / 提示词等声明")
     session_id: int | None = Field(default=None, description="凭证会话（提供 api_key）")
+    api_key: str | None = Field(
+        default=None,
+        description="未保存的 API Key：仅用于本次连通测试，不落库（填写后无需先保存即可测试）",
+    )
 
 
 class ConnectionTestResponse(BaseModel):

@@ -200,6 +200,8 @@ export interface DatasourceSessionPayload {
 export interface DatasourceConnectionTestPayload {
   request_spec: SyncRequestSpec
   session_id?: number | null
+  /** 未保存的 API Key：仅用于本次连通测试、不落库；填写后无需先保存即可测试 */
+  api_key?: string
 }
 
 /** 连通测试结果：失败也返回 200，前端按 `ok` 展示 */

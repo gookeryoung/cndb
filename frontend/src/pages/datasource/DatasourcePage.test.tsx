@@ -637,10 +637,13 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(await screen.findByText('大模型连接已保存')).toBeInTheDocument()
   })
 
-  it('连接弹窗的连通测试用当前 base_url / model', async () => {
+  it('连接弹窗的连通测试用当前 base_url / model，并带上未保存的 API Key', async () => {
     const calls = setupHandlers([makeLlmJob()])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: /大模型连接/ }))
+    fireEvent.change(await screen.findByTestId('datasource-llm-config-api-key'), {
+      target: { value: 'sk-unsaved' },
+    })
     fireEvent.click(await screen.findByTestId('datasource-llm-config-test'))
 
     await waitFor(() => expect(calls).toContain('test-connection'))
@@ -650,7 +653,18 @@ describe('DatasourcePage · 大模型提示词', () => {
       url_template: 'https://api.deepseek.com',
       llm: { model: 'deepseek-chat' },
     })
+    expect(connectionBodies[0]).toMatchObject({ api_key: 'sk-unsaved' })
     expect(connectionBodies[0]).not.toHaveProperty('session_id')
+  })
+
+  it('连接弹窗未填写 API Key 时不发送 api_key，回退已保存 Key', async () => {
+    const calls = setupHandlers([makeLlmJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /大模型连接/ }))
+    fireEvent.click(await screen.findByTestId('datasource-llm-config-test'))
+
+    await waitFor(() => expect(calls).toContain('test-connection'))
+    expect(connectionBodies[0].api_key).toBeUndefined()
   })
 
   it('连通测试失败展示后端原因', async () => {
