@@ -10,7 +10,10 @@ import {
   BoldOutlined,
   BlockOutlined,
   CodeOutlined,
+  CompressOutlined,
+  ExpandAltOutlined,
   FontSizeOutlined,
+  HighlightOutlined,
   ItalicOutlined,
   LinkOutlined,
   MessageOutlined,
@@ -18,6 +21,8 @@ import {
   TableOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
+
+import type { DocumentAiInstruction } from '@/api/documents'
 
 import {
   insertLink,
@@ -39,6 +44,10 @@ interface MarkdownToolbarProps {
   /** 插入 Markdown 表格骨架（列数 / 行数） */
   onInsertTable?: (cols: number, rows: number) => void
   disabled?: boolean
+  /** AI 选区改写入口；不传时完全不渲染 AI 按钮（既有页面 / 测试无需感知） */
+  onAiAction?: (instruction: DocumentAiInstruction) => void
+  /** AI 请求中：只禁用 AI 按钮，不影响普通 Markdown 操作 */
+  aiDisabled?: boolean
 }
 
 interface ToolbarItem {
@@ -65,6 +74,18 @@ export const MARKDOWN_TABLE_PRESETS: { key: string; label: string; cols: number;
   { key: '4x4', label: '4 列 × 4 行', cols: 4, rows: 4 },
 ]
 
+/** AI 选区改写入口（润色 / 精简 / 扩写）：仅当页面传入 onAiAction 时渲染 */
+export const MARKDOWN_AI_ITEMS: {
+  key: DocumentAiInstruction
+  icon: ReactNode
+  title: string
+  label: string
+}[] = [
+  { key: 'polish', icon: <HighlightOutlined />, title: 'AI 润色选中文本', label: '润色' },
+  { key: 'shorten', icon: <CompressOutlined />, title: 'AI 精简选中文本', label: '精简' },
+  { key: 'expand', icon: <ExpandAltOutlined />, title: 'AI 扩写选中文本', label: '扩写' },
+]
+
 /** 工具栏按钮定义（顺序即渲染顺序；快捷键在编辑器侧统一处理） */
 export const MARKDOWN_TOOLBAR_ITEMS: ToolbarItem[] = [
   { key: 'bold', icon: <BoldOutlined />, title: '加粗（Ctrl+B）', action: (v, s, e) => wrapSelection(v, s, e, '**') },
@@ -79,7 +100,13 @@ export const MARKDOWN_TOOLBAR_ITEMS: ToolbarItem[] = [
   { key: 'link', icon: <LinkOutlined />, title: '链接（Ctrl+K）', action: (v, s, e) => insertLink(v, s, e) },
 ]
 
-export default function MarkdownToolbar({ onAction, onInsertTable, disabled }: MarkdownToolbarProps) {
+export default function MarkdownToolbar({
+  onAction,
+  onInsertTable,
+  disabled,
+  onAiAction,
+  aiDisabled,
+}: MarkdownToolbarProps) {
   const triggerProps = {
     type: 'text' as const,
     size: 'small' as const,
@@ -147,6 +174,36 @@ export default function MarkdownToolbar({ onAction, onInsertTable, disabled }: M
           </Tooltip>
         )
       })}
+
+      {/* AI 选区改写：只有页面传入 onAiAction 时才出现，默认完全不渲染 */}
+      {onAiAction && (
+        <>
+          <span
+            aria-hidden
+            style={{
+              display: 'inline-block',
+              width: 1,
+              height: 16,
+              margin: '0 4px',
+              background: 'var(--cn-border, #e8e8e8)',
+            }}
+          />
+          {MARKDOWN_AI_ITEMS.map(item => (
+            <Tooltip key={item.key} title={item.title}>
+              <Button
+                {...triggerProps}
+                disabled={disabled || aiDisabled}
+                icon={item.icon}
+                aria-label={item.title}
+                data-testid={`md-toolbar-ai-${item.key}`}
+                onClick={() => onAiAction(item.key)}
+              >
+                {item.label}
+              </Button>
+            </Tooltip>
+          ))}
+        </>
+      )}
     </div>
   )
 }

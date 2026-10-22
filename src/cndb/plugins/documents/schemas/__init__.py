@@ -32,6 +32,23 @@ class DocumentUpdate(BaseModel):
     tag_ids: list[int] | None = None  # None=不变；[] = 清空
 
 
+class DocumentAiActionRequest(BaseModel):
+    """文档 AI 动作请求（ADR 0020 P1）.
+
+    ``polish`` 用 ``selection`` / ``instruction`` / ``language`` / ``context``；
+    ``summarize`` / ``suggest_tags`` 忽略这些字段、直接读文档最新正文。
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    selection: str | None = Field(default=None, max_length=8000, description="待改写片段（polish 必填）")
+    instruction: str = Field(
+        default="polish", max_length=32, description="polish / shorten / expand / formal / translate"
+    )
+    language: str | None = Field(default=None, max_length=16, description="translate 的目标语言")
+    context: str | None = Field(default=None, max_length=500, description="可选的上下文（标题 / 所在小节）")
+
+
 class DocumentBatchRequest(BaseModel):
     """文档批量操作（移动 / 删除）."""
 

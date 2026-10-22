@@ -1131,6 +1131,187 @@ describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
     })
 })
 
+describe('DocumentEditorPage AI 能力（ADR 0020 P1）', () => {
+    const AI_HEADERS = {
+        'Content-Type': 'application/json',
+    }
+
+    /** 统一的 AI 动作响应壳 */
+    function aiResponse(action: string, result: unknown, extra: Record<string, unknown> = {}) {
+        return HttpResponse.json(
+            {
+                action,
+                run_id: 8891,
+                model: 'deepseek-chat',
+                usage: { prompt_tokens: 20, completion_tokens: 10, total_tokens: 30 },
+                result,
+                ...extra,
+            },
+            { headers: AI_HEADERS },
+        )
+    }
+
+    it('选区润色：请求携带选区与指令，应用后只改内存态正文、不触发保存', async () => {
+        const bodies: Record<string, unknown>[] = []
+        let draftCalls = 0
+        let submitCalls = 0
+        server.use(
+            http.post('/api/v1/workspaces/:wid/documents/:docId/ai/actions/polish', async ({ request }) => {
+                bodies.push(await request.json() as Record<string, unknown>)
+                return aiResponse('document.polish', { text: '该方案需重新梳理现有流程。' })
+            }),
+            http.put('/api/v1/workspaces/:wid/documents/:docId/draft', () => {
+                draftCalls += 1
+                return HttpResponse.json({ draft: null })
+            }),
+            http.post('/api/v1/workspaces/:wid/documents/:docId/submit', () => {
+                submitCalls += 1
+                return HttpResponse.json({ mode: 'direct', message: 'x', version_number: 2 })
+            }),
+        )
+
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('正文段落。'))
+
+        const target = '正文段落。'
+        const start = ta.value.indexOf(target)
+        ta.setSelectionRange(start, start + target.length)
+        fireEvent.click(screen.getByTestId('md-toolbar-ai-polish'))
+
+        await waitFor(() => expect(bodies).toHaveLength(1))
+        expect(bodies[0]).toMatchObject({ selection: target, instruction: 'polish' })
+
+        // 结果抽屉展示原文与 AI 结果；点击「应用到编辑器」
+        expect(await screen.findByTestId('ai-result-original')).toHaveTextContent(target)
+        expect(screen.getByTestId('ai-result-text')).toHaveTextContent('该方案需重新梳理现有流程。')
+        fireEvent.click(screen.getByTestId('ai-result-apply'))
+
+        await waitFor(() => {
+            expect(ta.value).toContain('该方案需重新梳理现有流程。')
+        })
+        expect(ta.value).not.toContain(target)
+        // AI 只改编辑器内存态：不自动保存草稿 / 不生成版本
+        await new Promise(r => setTimeout(r, 100))
+        expect(draftCalls).toBe(0)
+        expect(submitCalls).toBe(0)
+    })
+
+    it('未选中文本时提示「请先选中文本」且不发请求', async () => {
+        let calls = 0
+        const warningSpy = vi
+            .spyOn(message, 'warning')
+            .mockImplementation((() => {}) as unknown as typeof message.warning)
+        server.use(
+            http.post('/api/v1/workspaces/:wid/documents/:docId/ai/actions/polish', () => {
+                calls += 1
+                return aiResponse('document.polish', { text: '不应返回' })
+            }),
+        )
+
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value.length).toBeGreaterThan(0))
+        ta.setSelectionRange(0, 0)
+
+        fireEvent.click(screen.getByTestId('md-toolbar-ai-polish'))
+
+        await waitFor(() => expect(warningSpy).toHaveBeenCalledWith('请先选中文本'))
+        expect(calls).toBe(0)
+        expect(screen.queryByTestId('ai-result-drawer')).toBeNull()
+    })
+
+    it('选区超长时提示分段改写，不发请求', async () => {
+        let calls = 0
+        const warningSpy = vi
+            .spyOn(message, 'warning')
+            .mockImplementation((() => {}) as unknown as typeof message.warning)
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    content: `# 长文\n\n${'长'.repeat(4100)}\n`,
+                    version_number: 1,
+                    draft: null,
+                    write_mode: 'direct',
+                })),
+            http.post('/api/v1/workspaces/:wid/documents/:docId/ai/actions/polish', () => {
+                calls += 1
+                return aiResponse('document.polish', { text: '不应返回' })
+            }),
+        )
+
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value.length).toBeGreaterThan(4100))
+        ta.setSelectionRange(0, ta.value.length)
+
+        fireEvent.click(screen.getByTestId('md-toolbar-ai-polish'))
+
+        await waitFor(() => expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining('请分段改写')))
+        expect(calls).toBe(0)
+    })
+
+    it('整篇摘要：顶栏 AI 入口请求 summarize，抽屉展示摘要与要点（不改正文）', async () => {
+        const bodies: Record<string, unknown>[] = []
+        server.use(
+            http.post('/api/v1/workspaces/:wid/documents/:docId/ai/actions/summarize', async ({ request }) => {
+                bodies.push(await request.json() as Record<string, unknown>)
+                return aiResponse(
+                    'document.summarize',
+                    {
+                        summary: '本文给出流程优化的三步方案。',
+                        key_points: ['现状有 5 个审批节点', '建议收敛到 3 个'],
+                        suggested_tags: ['流程优化', '审批效率'],
+                    },
+                    { truncated: true },
+                )
+            }),
+        )
+
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value.length).toBeGreaterThan(0))
+        const before = ta.value
+
+        fireEvent.click(await screen.findByTestId('doc-ai-entry'))
+        fireEvent.click(await screen.findByText('AI 摘要'))
+
+        expect(await screen.findByTestId('ai-summary')).toHaveTextContent('本文给出流程优化的三步方案。')
+        expect(screen.getByTestId('ai-summary-points-chips-item-现状有 5 个审批节点')).toBeInTheDocument()
+        expect(screen.getByTestId('ai-summary-tags-chips-item-流程优化')).toBeInTheDocument()
+        // 后端 truncated=true：提示只基于截断后的正文生成
+        expect(screen.getByTestId('ai-result-hint')).toHaveTextContent('仅基于正文前 12000 字生成')
+        // 摘要类没有「应用到编辑器」（P1 不改文档元数据、不改正文）
+        expect(screen.queryByTestId('ai-result-apply')).toBeNull()
+        expect(ta.value).toBe(before)
+        expect(bodies[0]).toEqual({})
+    })
+
+    it('标签建议：只展示建议 chips 与手动添加提示，不改文档元数据', async () => {
+        let patchCalls = 0
+        server.use(
+            http.post('/api/v1/workspaces/:wid/documents/:docId/ai/actions/suggest_tags', () =>
+                aiResponse('document.suggest_tags', { suggested_tags: ['流程优化', '指标看板'] })),
+            http.patch('/api/v1/workspaces/:wid/documents/:docId', () => {
+                patchCalls += 1
+                return HttpResponse.json(mockDocuments[1])
+            }),
+        )
+
+        renderEditor()
+        await screen.findByText('需求说明')
+        fireEvent.click(await screen.findByTestId('doc-ai-entry'))
+        fireEvent.click(await screen.findByText('AI 标签建议'))
+
+        expect(await screen.findByTestId('ai-suggest-tags-chips-item-流程优化')).toBeInTheDocument()
+        expect(screen.getByText(/本期只展示建议，不会自动修改文档标签/)).toBeInTheDocument()
+
+        await new Promise(r => setTimeout(r, 100))
+        expect(patchCalls).toBe(0)
+    })
+})
+
 describe('DocumentEditorPage 分享入口（ADR 0017）', () => {
     beforeEach(() => {
         server.resetHandlers()

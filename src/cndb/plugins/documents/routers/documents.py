@@ -42,12 +42,13 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
-from cndb.core.errors import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
+from cndb.core.errors import BadRequestError, CndbError, ConflictError, NotFoundError, PermissionDeniedError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
 from cndb.plugins.documents.schemas import (
     ContentUpdate,
+    DocumentAiActionRequest,
     DocumentBatchRequest,
     DocumentCreate,
     DocumentDraftSave,
@@ -57,6 +58,9 @@ from cndb.plugins.documents.schemas import (
     RollbackRequest,
     TagIdsRequest,
 )
+from cndb.plugins.llm.services import gateway as llm_gateway
+from cndb.plugins.llm.services.errors import LlmError
+from cndb.plugins.llm.services.gateway import LlmContext
 from cndb.plugins.workspaces.permissions import get_member_role
 
 # 文档树缓存 TTL（秒）
@@ -545,6 +549,77 @@ def submit_document_content(
     if result.get("mode") == "change_request":
         response.status_code = 202
     return result
+
+
+@router.post("/{doc_id}/ai/actions/{action}")
+def run_document_ai_action(
+    workspace_id: int,
+    doc_id: int,
+    action: str,
+    payload: DocumentAiActionRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """文档 AI 动作（ADR 0020 P1）：选区改写 / 摘要 / 标签建议.
+
+    - 只读动作：工作区成员即可（viewer 用自己的个人 Key）；
+    - 不写文档：改写结果由前端写回编辑器内存态，摘要 / 标签仅返回建议；
+    - 模型输出不合 schema → 422（零副作用），未配置 Key → 400，上游失败 → 502。
+    """
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    spec = services.ai.DOCUMENT_ACTIONS.get(action)
+    if spec is None:
+        raise NotFoundError(f"未知 AI 动作: {action}")
+    if doc.is_folder:
+        raise BadRequestError("文件夹不支持 AI 操作")
+
+    truncated = False
+    if action == "polish":
+        selection = (payload.selection or "").strip()
+        if not selection:
+            raise BadRequestError("请先选中要改写的文本")
+        if len(selection) > services.ai.MAX_SELECTION_CHARS:
+            raise BadRequestError(
+                f"选中文本过长（{len(selection)} > {services.ai.MAX_SELECTION_CHARS} 字），请分段改写"
+            )
+        if payload.instruction not in services.ai.POLISH_INSTRUCTIONS:
+            raise BadRequestError(f"不支持的改写指令: {payload.instruction}")
+        user_content = services.ai.build_polish_content(
+            selection,
+            payload.instruction,
+            language=payload.language,
+            context=payload.context,
+        )
+    else:
+        version = services.content.latest_version(db, doc.id)
+        body = services.content.load_content(version, doc) if version is not None else ""
+        user_content, truncated = services.ai.prepare_document_content(body)
+        if not user_content:
+            raise BadRequestError("文档正文为空，无法生成")
+
+    try:
+        result = llm_gateway.invoke(
+            db,
+            current_user,
+            spec,
+            user_content=user_content,
+            context=LlmContext(workspace_id=workspace_id, target_type="document", target_id=doc.id),
+        )
+    except LlmError as exc:
+        # 平台错误分类 → 统一业务异常（保留 400/422/429/502 语义与中文文案）
+        raise CndbError(str(exc), status_code=exc.status_code, code=exc.code) from exc
+
+    parsed = result.parsed
+    result_payload = parsed.model_dump() if hasattr(parsed, "model_dump") else {"text": str(parsed)}
+    return {
+        "action": spec.name,
+        "run_id": result.run_id,
+        "model": result.model,
+        "usage": result.usage,
+        "result": result_payload,
+        "truncated": truncated,
+    }
 
 
 @router.get("/{doc_id}/export")
