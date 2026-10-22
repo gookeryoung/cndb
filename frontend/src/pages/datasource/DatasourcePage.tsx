@@ -1666,11 +1666,14 @@ function LlmConfigModal({
     setTesting(true)
     setTestResult(null)
     try {
+      const typedKey = String(form.getFieldValue('api_key') ?? '').trim()
       const result = await datasourceApi.testConnection(wid, {
         request_spec: {
           url_template: String(values.base_url ?? '').trim(),
           llm: { model: String(values.model ?? '').trim() },
         },
+        // 未保存的 Key 直接随请求带上，后端只用于本次测试、不落库
+        api_key: typedKey || undefined,
       })
       setTestResult(result)
     } catch {
@@ -1721,8 +1724,8 @@ function LlmConfigModal({
           label="API Key"
           extra={
             config?.has_api_key
-              ? '已配置 API Key：留空保持不变，填写则整体替换'
-              : '尚未配置：保存后加密存储，读接口只回显是否已配置'
+              ? '已配置 API Key：留空保持不变，填写则整体替换；填写后可直接点「测试连接」'
+              : '填写后可直接点「测试连接」验证；保存后加密存储，读接口只回显是否已配置'
           }
         >
           <Input.Password
@@ -1772,7 +1775,7 @@ function LlmConfigModal({
             测试连接
           </Button>
           <Text type="secondary" style={{ fontSize: 12 }}>
-            发一次真实模型请求（可能产生费用）；使用已保存的 API Key，修改后请先保存再测试
+            发一次真实模型请求（可能产生费用）；可直接用当前填写的 API Key 测试，无需先保存
           </Text>
         </Space>
         {testResult && (

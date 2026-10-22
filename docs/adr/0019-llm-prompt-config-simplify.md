@@ -128,7 +128,7 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 | `GET /llm-config` | 新增：返回 `configured / base_url / model / has_api_key / system_prompt / default_system_prompt`；**不回显 api_key**；VIEWER 可读 |
 | `PUT /llm-config` | 新增：保存连接（EDITOR）；`base_url` 必须 http(s)、`model` 非空；`api_key` 非空才更新、`clear_api_key=true` 清除；密钥 Fernet 加密 |
 | `POST /sync-jobs`、`PUT /sync-jobs/{id}` | `llm_prompt` 只强制 `prompt.user_template`；缺省 `url_template` / `llm.model` 由连接补齐；cron 不再强制 `match_keys`；目标表可留空；无可用 Key（会话 + 连接都没有）时 400 并提示去配置大模型连接 |
-| `POST /test-connection` | `session_id` 可省略：回退工作区连接的 Key 与默认 url/model；未配置连接时返回明确提示 |
+| `POST /test-connection` | `session_id` 可省略：回退工作区连接的 Key 与默认 url/model；未配置连接时返回明确提示；可传 `api_key` 用**未保存的 Key** 直接测试（仅本次请求，不落库） |
 | `POST /sync-jobs/{id}/preview` | 响应新增 `suggested_match_keys`（预览阶段建议的幂等键），供前端展示 |
 
 ### 4. 边界与例外
@@ -143,6 +143,7 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 8. 模型输出不可解析 / 为空时运行记 `failed`，不建表、不写行。
 9. `system_prompt` 三层优先级：任务显式配置 > 工作区连接 > 内置默认；页面可查看内置默认全文。
 10. 提示词模板宽松求值仅限 `llm_prompt` 的 system / user 提示词：用户可直接在提示词里写 `{"rows": [...]}` 这类 JSON 示例，不需要手动转义；`{{` / `}}` 仍等价于字面花括号（前端推荐提示词已按转义写法提供，两种都能用）。`llm_prompt` 的 URL / headers 模板仍严格；其它 provider 的 URL / headers / body 模板也保持严格模式，缺参仍报错。
+11. 连接弹窗支持未保存 Key 的连通测试：`POST /test-connection` 的可选 `api_key` 只用于本次请求（不落库、不回显）；优先级为 请求 `api_key` > 会话 Key > 工作区连接 Key，未填写时回退已保存 Key，用户填完 Key 无需先保存即可验证。
 
 ### 5. 迁移
 
@@ -173,7 +174,7 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 **接口层**：
 - `GET / PUT llm-config`：CRUD、viewer 读 / editor 写、密钥不回显、`clear_api_key`、非法 base_url 400。
 - `sync-jobs`：只填用户提示词可保存；缺 Key 400；cron 不配 `match_keys` 可保存；显式 match_keys 仍校验目标表字段。
-- `test-connection`：未传 session 回退工作区连接；未配置连接返回明确提示。
+- `test-connection`：未传 session 回退工作区连接；未配置连接返回明确提示；请求体可选 `api_key` 优先级最高且不落库。
 - `preview`：响应含 `suggested_match_keys`。
 - CLI `sync preview` / `sync run --dry-run`：传入 `db` 后使用工作区连接默认值，JSON 输出含 `suggested_match_keys`（`tests/test_datasource_cli.py` 回归）。
 - 既有 `llm_prompt` 任务与其它 provider 回归。

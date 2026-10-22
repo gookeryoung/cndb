@@ -518,6 +518,34 @@ class TestLlmPrompt:
         assert captured["spec"].url_template == llm_connection_config.base_url
         assert captured["spec"].llm["model"] == llm_connection_config.model
 
+    def test_connection_uses_unsaved_api_key(self, client, db, workspace_with_auth, monkeypatch):
+        """ADR 0019：连接弹窗未保存的 Key 可直接用于连通测试，不落库."""
+        wid, headers = workspace_with_auth
+        captured: dict[str, Any] = {}
+
+        def fake(spec, *, api_key, session_headers=None, fetch=None):
+            captured.update(spec=spec, api_key=api_key, headers=session_headers)
+            return LlmConnectionResult(ok=True, latency_ms=8, model="model-a", message="连通成功")
+
+        monkeypatch.setattr(sync_jobs, "test_llm_connection", fake)
+        response = client.post(
+            f"/api/v1/workspaces/{wid}/datasource/test-connection",
+            json={
+                "request_spec": {
+                    "url_template": "https://api.deepseek.com",
+                    "llm": {"model": "deepseek-chat"},
+                    "prompt": {"user_template": "ping"},
+                },
+                "api_key": "sk-unsaved",
+            },
+            headers=headers,
+        )
+        assert response.status_code == 200
+        assert response.json()["ok"] is True
+        assert captured["api_key"] == "sk-unsaved"
+        # 未保存的 Key 只用于本次请求，不产生任何连接配置
+        assert db.query(DatasourceLlmConfig).count() == 0
+
     def test_connection_without_any_key_reports_hint(self, client, workspace_with_auth):
         """工作区连接与会话都没有 Key 时给出指向「大模型连接」的提示（不联网）."""
         wid, headers = workspace_with_auth
