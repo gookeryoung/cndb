@@ -290,6 +290,32 @@ describe('DatasourcePage', () => {
     expect(await screen.findByText('新建同步任务', { selector: '.ant-drawer-title' })).toBeInTheDocument()
   })
 
+  it('新建时任务名称默认填好，可直接保存', async () => {
+    setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /新建同步任务/ }))
+    const nameInput = (await screen.findByTestId('datasource-name-input')) as HTMLInputElement
+    expect(nameInput.value).toMatch(/^同步任务 \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)
+  })
+
+  it('保存并预览后再次保存复用已创建任务，不重复建', async () => {
+    const calls = setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: /新建同步任务/ }))
+    fireEvent.change(await screen.findByTestId('datasource-url-template'), {
+      target: { value: 'https://api.example.com/w?city={city}' },
+    })
+
+    fireEvent.click(screen.getByTestId('datasource-save-preview-btn'))
+    await waitFor(() => expect(calls).toContain('preview'))
+    expect(calls.filter(call => call === 'create-job')).toHaveLength(1)
+
+    // 抽屉未关闭，再次保存应更新刚创建的任务，而不是再建一条
+    fireEvent.click(screen.getByTestId('datasource-save-btn'))
+    await waitFor(() => expect(calls).toContain('update-job'))
+    expect(calls.filter(call => call === 'create-job')).toHaveLength(1)
+  })
+
   it('点击「编辑」打开抽屉并回填名称', async () => {
     setupHandlers([makeJob()])
     renderPage()
@@ -488,21 +514,29 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(await screen.findByTestId('datasource-llm-system')).toHaveValue('你是数据抽取助手')
   })
 
-  it('推荐提示词（8 组）可一键填入并显示建议字段 / 幂等键', async () => {
+  it('推荐提示词（8 组）默认收起，展开后显示详情并可一键填入', async () => {
     setupHandlers([makeLlmJob()])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
     fireEvent.click(await screen.findByTestId('datasource-llm-presets-btn'))
 
-    const card = await screen.findByTestId('datasource-llm-preset-daily_news')
-    const modal = card.closest('.ant-modal-content') as HTMLElement
+    const first = await screen.findByTestId('datasource-llm-preset-daily_news')
+    const modal = first.closest('.ant-modal-content') as HTMLElement
     expect(within(modal).getAllByTestId(/^datasource-llm-preset-/)).toHaveLength(LLM_PROMPT_PRESETS.length)
     for (const preset of LLM_PROMPT_PRESETS) {
       expect(within(modal).getByText(preset.name)).toBeInTheDocument()
     }
+    // 默认收起：详情（适用场景 / 建议字段 / 建议幂等键）不渲染
+    expect(within(modal).queryByText(LLM_PROMPT_PRESETS[0].description)).not.toBeInTheDocument()
+    expect(within(modal).queryByText(/建议字段：/)).not.toBeInTheDocument()
 
-    // antd 会在两个汉字的按钮文案里插入空格（「使 用」），这里只按唯一按钮定位
-    fireEvent.click(within(card).getByRole('button'))
+    // 点击场景名展开详情
+    fireEvent.click(first)
+    expect(await within(modal).findByText(LLM_PROMPT_PRESETS[0].description)).toBeInTheDocument()
+    expect(within(modal).getByText(`建议字段：${LLM_PROMPT_PRESETS[0].target_fields.join(', ')}`)).toBeInTheDocument()
+    expect(within(modal).getByText(`建议幂等键：${LLM_PROMPT_PRESETS[0].match_keys.join(', ')}`)).toBeInTheDocument()
+
+    fireEvent.click(within(modal).getByTestId('llm-preset-use-daily_news'))
     expect(await screen.findByTestId('datasource-llm-user')).toHaveValue(LLM_PROMPT_PRESETS[0].prompt)
     expect(await screen.findByTestId('datasource-llm-preset-hint')).toHaveTextContent(
       '建议幂等键：date、category、title',
