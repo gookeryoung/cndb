@@ -207,6 +207,12 @@ class TestFillField:
 
 class TestCatalog:
     def test_table_actions_registered(self, client, db, fill_ctx):
+        from cndb.plugins.llm.services import actions as action_registry
+        from cndb.plugins.tables.services import ai as tables_ai
+
+        # 其它用例可能 reset 过全局动作注册表：这里重新注册（幂等）
+        action_registry.register(tables_ai.FILL_FIELD)
+        action_registry.register(tables_ai.MAPPING_SUGGESTION)
         _ws, _tid, _rows, headers, _owner = fill_ctx
         response = client.get("/api/v1/llm/actions", headers=headers)
         names = {item["name"] for item in response.json()["items"]}

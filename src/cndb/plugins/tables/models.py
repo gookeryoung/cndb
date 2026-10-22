@@ -585,6 +585,8 @@ class ImportTask(TimestampMixin, Base):
     unknown_cols_strategy: Mapped[str] = mapped_column(String(16), nullable=False, default="drop")
     # 用户在预览阶段勾选丢弃的未知字段名列表（planned_columns 里被取消勾选的那些）
     dropped_columns: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    # 列映射（ADR 0020 P2/P3）：{源列名: 目标字段名}；确认导入时按映射写入目标字段
+    column_mapping: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     # 用户在确认导入时勾选的清洗动作列表（来自 analyze 阶段的 cleaning_suggestions）
     # 每条格式：{column, action, strategy?, on_fail?}
     cleaning_actions: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)

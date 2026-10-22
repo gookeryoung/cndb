@@ -115,7 +115,7 @@ describe('ImportPanel 导入面板', () => {
     chooseFile(csvFile)
     fireEvent.click(await screen.findByRole('button', { name: '确认导入（新增 3 / 更新 1）' }, { timeout: 3000 }))
 
-    expect(confirmSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', [], [], undefined)
+    expect(confirmSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', [], [], undefined, undefined)
     // 切换轮询返回值为 done，下一个 tick（约 800ms）触发完成分支
     getTaskSpy.mockResolvedValue(doneTask)
     expect(await screen.findByText('导入完成：5 行', {}, { timeout: 3000 })).toBeInTheDocument()
@@ -252,7 +252,7 @@ describe('ImportPanel 表头行自动识别与人工改选', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: '确认导入（新增 3 / 更新 1）' }, { timeout: 3000 }))
 
-    expect(confirmSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', [], [], 2)
+    expect(confirmSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', [], [], 2, undefined)
   })
 })
 

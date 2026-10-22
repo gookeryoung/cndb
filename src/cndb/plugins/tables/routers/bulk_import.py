@@ -28,6 +28,28 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _parse_column_mapping(raw: str | None) -> dict[str, str | None] | None:
+    """解析 ``column_mapping``（JSON：{源列名: 目标字段名 | null}）.
+
+    非法 JSON / 非对象直接 400，避免把坏映射静默带进落库流程。
+    """
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"column_mapping JSON 格式错误: {exc}") from exc
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="column_mapping 必须是对象")
+    mapping: dict[str, str | None] = {}
+    for source, target in parsed.items():
+        key = str(source).strip()
+        if not key:
+            continue
+        mapping[key] = None if target is None else str(target).strip() or None
+    return mapping
+
+
 def _normalize_cleaning_actions(
     raw: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
@@ -222,6 +244,7 @@ async def import_table_analyze(
     match_keys: Annotated[str | None, Form()] = None,
     unknown_cols_strategy: Annotated[str, Form()] = "drop",
     dropped_columns: Annotated[str | None, Form()] = None,
+    column_mapping: Annotated[str | None, Form()] = None,
 ) -> dict[str, Any]:
     """提交文件仅做解析+校验，返回 task_id（不写库）.
 
@@ -266,6 +289,8 @@ async def import_table_analyze(
         except _json.JSONDecodeError:
             parsed_dropped = [k.strip() for k in dropped_columns.split(",") if k.strip()]
 
+    parsed_mapping = _parse_column_mapping(column_mapping)
+
     strategy = unknown_cols_strategy or "drop"
     if strategy not in ("drop", "add_text_field"):
         raise HTTPException(status_code=400, detail=f"无效的 unknown_cols_strategy: {strategy}")
@@ -281,6 +306,7 @@ async def import_table_analyze(
         match_keys=parsed_keys,
         unknown_cols_strategy=strategy,
         dropped_columns=parsed_dropped,
+        column_mapping=parsed_mapping,
     )
 
     # 后台跑 analyze 阶段
@@ -313,6 +339,7 @@ def import_table_confirm(
     dropped_columns: str | None = None,
     cleaning_actions: list[dict[str, Any]] | None = Body(default=None, embed=True),
     header_row: int | None = None,
+    column_mapping: str | None = None,
 ) -> dict[str, Any]:
     """确认导入 — 把 pending_confirm 状态的任务推进到 running → done.
 
@@ -373,6 +400,11 @@ def import_table_confirm(
     if cleaning_actions is not None:
         task.cleaning_actions = _normalize_cleaning_actions(cleaning_actions)  # type: ignore[assignment]
 
+    # V6（ADR 0020）：列映射 —— 源列名 → 目标字段名（AI 建议 / 用户编辑后确认）
+    if column_mapping is not None:
+        parsed_mapping = _parse_column_mapping(column_mapping)
+        task.column_mapping = parsed_mapping or {}
+
     # V5: 覆盖表头行（用户在预览阶段改选后确认）：写回 analyze 产出的报告，
     # execute 阶段从 validation_report 读取该行，保证按新行解析
     if header_row is not None:
@@ -414,6 +446,7 @@ def import_table_reanalyze(
     match_keys: str | None = None,
     unknown_cols_strategy: str | None = None,
     header_row: int | None = None,
+    column_mapping: str | None = None,
 ) -> dict[str, Any]:
     """用新参数重新跑 analyze（让用户在 preview 阶段改参考列/未知列策略后重算 diff）.
 
@@ -447,6 +480,8 @@ def import_table_reanalyze(
 
     if unknown_cols_strategy is not None and unknown_cols_strategy in ("drop", "add_text_field"):
         task.unknown_cols_strategy = unknown_cols_strategy
+    if column_mapping is not None:
+        task.column_mapping = _parse_column_mapping(column_mapping) or {}
 
     # V5: 用户改选表头行后重算（1 基行号）：写入种子报告供后台 reanalyze 读取；
     # 未指定表头行则清空旧报告，由 analyze 重新自动识别

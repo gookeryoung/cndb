@@ -125,6 +125,7 @@ export const importApi = {
     droppedColumns?: string[],
     cleaningActions?: Array<{ column?: string | null; action: string; strategy?: string; on_fail?: string }>,
     headerRow?: number,
+    columnMapping?: Record<string, string | null>,
   ) =>
     api.post<{ task_id: number; status: string; message: string }>(
       `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/confirm`,
@@ -136,6 +137,9 @@ export const importApi = {
           ...(unknownColsStrategy ? { unknown_cols_strategy: unknownColsStrategy } : {}),
           ...(droppedColumns && droppedColumns.length > 0 ? { dropped_columns: JSON.stringify(droppedColumns) } : {}),
           ...(headerRow != null ? { header_row: headerRow } : {}),
+          ...(columnMapping && Object.keys(columnMapping).length > 0
+            ? { column_mapping: JSON.stringify(columnMapping) }
+            : {}),
         },
       }
     ).then(r => r.data),

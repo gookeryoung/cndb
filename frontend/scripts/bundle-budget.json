@@ -7,36 +7,37 @@
     "2026-10-07 图表视图接线使 GridPage +1.8KB；新增 ChartView chunk",
     "2026-10-08 数据治理向导使 GridPage +1.9KB",
     "2026-10-10 视图筛选/排序规则值校验（ee604bd）使 GridPage +2.26KB 触发超限；改为把 ViewConfigDialog / TableSettingsModal / RowDetailDrawer 三个按需面板 lazy 化，GridPage 43.07→27.70KB，基线定为 32KiB（低于旧基线约 20%）",
-    "2026-10-20 rc-field-form 补 sideEffects + barrel 纯 re-export（pnpm patch），修掉 antd form/context 连带拉入 Form/useForm/Field/validateUtil/async-validator 的问题，主入口 190.10→175.22 KiB；基线随之下调锁定净收益"
+    "2026-10-20 rc-field-form 补 sideEffects + barrel 纯 re-export（pnpm patch），修掉 antd form/context 连带拉入 Form/useForm/Field/validateUtil/async-validator 的问题，主入口 190.10→175.22 KiB；基线随之下调锁定净收益",
+    "2026-10-22 feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）"
   ],
   "chunks": [
     {
       "name": "主入口 index",
       "resolve": "entry",
-      "baseline": 179424,
-      "reason": "rc-field-form 补 sideEffects + barrel 纯 re-export（pnpm patch），修掉 antd form/context 连带拉入 Form/useForm/Field/validateUtil/async-validator 的问题，主入口 190.10→175.22 KiB；基线随之下调锁定净收益",
-      "updatedAt": "2026-10-20",
-      "commit": "e08d5056"
+      "baseline": 179886,
+      "reason": "feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
+      "updatedAt": "2026-10-22",
+      "commit": "41fc045b"
     },
     {
       "name": "GridPage（表页闭包）",
       "resolve": {
         "assetPattern": "^GridPage-.*\\.js$"
       },
-      "baseline": 32768,
-      "reason": "GridPage 三个按需面板（ViewConfigDialog/TableSettingsModal/RowDetailDrawer）改 lazy，43.07→27.70KB；基线定在 32KiB（低于旧基线 39.8KiB 约 20%），目标拦截「按需 UI 回退为静态引入」这类结构性回归，而非每个 2KB 级功能增量",
-      "updatedAt": "2026-10-10",
-      "commit": ""
+      "baseline": 33806,
+      "reason": "feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
+      "updatedAt": "2026-10-22",
+      "commit": "41fc045b"
     },
     {
       "name": "ChartView（图表视图）",
       "resolve": {
         "assetPattern": "^ChartView-.*\\.js$"
       },
-      "baseline": 204265,
-      "reason": "2026-10-07 图表视图新增（echarts/core 按需 + SVGRenderer + simple-statistics，懒加载不进主包）",
-      "updatedAt": "2026-10-07",
-      "commit": ""
+      "baseline": 14472,
+      "reason": "feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
+      "updatedAt": "2026-10-22",
+      "commit": "41fc045b"
     }
   ]
 }
