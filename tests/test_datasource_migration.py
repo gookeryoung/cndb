@@ -15,6 +15,10 @@ SYNC_REVISION = "0a1b2c3d4e5f"
 JOB_TABLE = "datasource_sync_job"
 RUN_TABLE = "datasource_sync_run"
 SESSION_TABLE = "datasource_session"
+# ADR 0019：工作区级大模型连接（当前提交基线 head 是 2c3d4e5f6a70）
+LLM_CONFIG_REVISION = "5e6f7a8b9c01"
+LLM_CONFIG_DOWN = "2c3d4e5f6a70"
+LLM_CONFIG_TABLE = "datasource_llm_config"
 
 
 def _upgrade(url: str, revision: str = REVISION) -> None:
@@ -156,3 +160,60 @@ class TestSessionMigration:
         command.stamp(_build_config(url), SYNC_REVISION)
         _upgrade(url)
         assert SESSION_TABLE in _tables(db_path)
+
+
+class TestLlmConfigMigration:
+    """ADR 0019：datasource_llm_config 迁移（建表 / 唯一索引 / downgrade / 幂等）."""
+
+    def test_upgrade_creates_table_and_indexes(self, tmp_path: Path):
+        db_path = tmp_path / "mig_llm.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, LLM_CONFIG_REVISION)
+
+        assert LLM_CONFIG_TABLE in _tables(db_path)
+        indexes = _indexes(db_path, LLM_CONFIG_TABLE)
+        assert f"ix_{LLM_CONFIG_TABLE}_workspace_id" in indexes
+        assert f"ix_{LLM_CONFIG_TABLE}_created_by" in indexes
+
+    def test_schema_matches_models(self, tmp_path: Path):
+        from cndb.plugins.datasource.models import DatasourceLlmConfig
+
+        db_path = tmp_path / "mig_llm_model.db"
+        _upgrade(f"sqlite:///{db_path}", LLM_CONFIG_REVISION)
+        assert _columns(db_path, LLM_CONFIG_TABLE) == {column.name for column in DatasourceLlmConfig.__table__.columns}
+
+    def test_downgrade_removes_table(self, tmp_path: Path):
+        db_path = tmp_path / "mig_llm_down.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, LLM_CONFIG_REVISION)
+        _downgrade(url, LLM_CONFIG_DOWN)
+        assert LLM_CONFIG_TABLE not in _tables(db_path)
+
+    def test_reupgrade_after_downgrade(self, tmp_path: Path):
+        db_path = tmp_path / "mig_llm_round.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, LLM_CONFIG_REVISION)
+        _downgrade(url, LLM_CONFIG_DOWN)
+        _upgrade(url, LLM_CONFIG_REVISION)
+        assert LLM_CONFIG_TABLE in _tables(db_path)
+
+    def test_upgrade_idempotent_after_create_all(self, tmp_path: Path):
+        """create_all 时代已建过表的库：stamp 到上一版再 upgrade，迁移跳过建表不报错."""
+        from sqlalchemy import create_engine
+
+        import cndb.core.events
+        import cndb.plugins.accounts.models
+        import cndb.plugins.datasource.models
+        import cndb.plugins.tables.models
+        import cndb.plugins.workspaces.models  # noqa: F401
+        from cndb.models.base import Base
+
+        db_path = tmp_path / "mig_llm_idempotent.db"
+        url = f"sqlite:///{db_path}"
+        engine = create_engine(url)
+        Base.metadata.create_all(engine)
+        engine.dispose()
+
+        command.stamp(_build_config(url), LLM_CONFIG_DOWN)
+        _upgrade(url, LLM_CONFIG_REVISION)
+        assert LLM_CONFIG_TABLE in _tables(db_path)

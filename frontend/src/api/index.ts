@@ -42,6 +42,8 @@ export type {
   DatasourceSession,
   DatasourceSessionPayload,
   DomainTemplate,
+  LlmConfig,
+  LlmConfigPayload,
   ProviderField,
   SyncCursorConfig,
   SyncCursorStrategy,

@@ -37,6 +37,10 @@ from cndb.plugins.datasource.schemas import (
     SyncRunListResponse,
     SyncRunOut,
 )
+from cndb.plugins.datasource.services.connection import (
+    load_llm_connection,
+    resolve_request_spec_defaults,
+)
 from cndb.plugins.datasource.services.cursor import CursorConfig
 from cndb.plugins.datasource.services.runner import (
     execute_job,
@@ -72,6 +76,16 @@ def _validate_table(db: Session, workspace_id: int, table_id: int | None) -> Dat
     return table
 
 
+def _session_api_key(session: DatasourceSession | None) -> str:
+    """读取会话里的 api_key（解密失败按未配置处理，交给上层给出配置提示）."""
+    if session is None:
+        return ""
+    try:
+        return str(decrypt_secrets(session.secrets).get("api_key") or "").strip()
+    except ValueError:
+        return ""
+
+
 def _validate_job_config(
     db: Session,
     workspace_id: int,
@@ -84,16 +98,32 @@ def _validate_job_config(
     match_keys: list[str],
     entrant_param: str | None = None,
     session_id: int | None = None,
-) -> None:
-    """创建 / 更新时逐项校验，把配置错误挡在运行期之前（错误信息直接给前端）."""
+) -> dict[str, Any]:
+    """创建 / 更新时逐项校验，返回补齐连接默认值后的 ``request_spec``.
+
+    ADR 0019：``llm_prompt`` 任务的地址 / 模型从工作区「大模型连接」继承，
+    因此先补默认值再走既有 RequestSpec / LLM 校验；API Key 允许来自会话或工作区连接。
+    """
+    session: DatasourceSession | None = None
+    if session_id is not None:
+        session = db.get(DatasourceSession, session_id)
+        if session is None or session.workspace_id != workspace_id:
+            raise HTTPException(status_code=400, detail=f"凭证会话不存在: {session_id}")
+
+    filled = dict(request_spec or {})
+    connection = None
+    if provider == "llm_prompt":
+        connection = load_llm_connection(db, workspace_id)
+        filled = resolve_request_spec_defaults(filled, connection)
+
     try:
         get_provider(provider)
-        validate_request_spec(request_spec)
+        validate_request_spec(filled)
         CursorConfig.from_dict(cursor)
         ScheduleConfig.from_dict(schedule)
         if provider == "llm_prompt":
             validate_llm_request_spec(
-                request_spec,
+                filled,
                 entrant_param=entrant_param,
                 schedule=schedule,
                 match_keys=match_keys,
@@ -101,10 +131,11 @@ def _validate_job_config(
     except (ProviderError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    if session_id is not None:
-        session = db.get(DatasourceSession, session_id)
-        if session is None or session.workspace_id != workspace_id:
-            raise HTTPException(status_code=400, detail=f"凭证会话不存在: {session_id}")
+    if provider == "llm_prompt" and not _session_api_key(session) and not (connection and connection.has_api_key):
+        raise HTTPException(
+            status_code=400,
+            detail="请先在「大模型连接」配置 API Key",
+        )
 
     table = _validate_table(db, workspace_id, table_id)
     if table is not None and match_keys:
@@ -115,6 +146,7 @@ def _validate_job_config(
                 status_code=400,
                 detail=f"幂等键必须是目标表字段，未找到: {', '.join(missing)}",
             )
+    return filled
 
 
 # ── CRUD ─────────────────────────────────────────
@@ -147,7 +179,7 @@ def create_sync_job(
 ) -> SyncJobOut:
     """新建同步任务（可带 ``run_immediately`` 立刻跑一次）."""
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
-    _validate_job_config(
+    request_spec = _validate_job_config(
         db,
         workspace_id,
         provider=payload.provider,
@@ -165,7 +197,7 @@ def create_sync_job(
         name=payload.name,
         provider=payload.provider,
         table_id=payload.table_id,
-        request_spec=payload.request_spec,
+        request_spec=request_spec,
         parser=payload.parser,
         entrant_param=payload.entrant_param,
         entrant_keys=payload.entrant_keys,
@@ -218,7 +250,7 @@ def update_sync_job(
     entrant_param = payload.entrant_param if payload.entrant_param is not None else job.entrant_param
     table_id = payload.table_id if payload.table_id is not None else job.table_id
     session_id = payload.session_id if payload.session_id is not None else job.session_id
-    _validate_job_config(
+    request_spec = _validate_job_config(
         db,
         workspace_id,
         provider=provider,
@@ -235,7 +267,6 @@ def update_sync_job(
         "name",
         "provider",
         "table_id",
-        "request_spec",
         "parser",
         "entrant_param",
         "entrant_keys",
@@ -250,6 +281,8 @@ def update_sync_job(
         value = getattr(payload, field_name)
         if value is not None:
             setattr(job, field_name, value)
+    # 连接默认值补齐后的 request_spec 一并持久化（llm_prompt 任务只保留提示词也能运行）
+    job.request_spec = request_spec
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -281,13 +314,11 @@ def test_connection(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ConnectionTestResponse:
-    """大模型 API 连通测试：用未保存的配置发一次最小请求，不落库、不写运行记录."""
+    """大模型 API 连通测试：用未保存的配置发一次最小请求，不落库、不写运行记录.
+
+    ADR 0019：地址 / 模型 / Key 缺省时回退工作区「大模型连接」，因此不传凭证会话也能测。
+    """
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
-    try:
-        validate_request_spec(payload.request_spec)
-        spec = request_spec_from_payload(payload.request_spec)
-    except (ProviderError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     session: DatasourceSession | None = None
     if payload.session_id is not None:
@@ -295,14 +326,24 @@ def test_connection(
         if session is None or session.workspace_id != workspace_id:
             raise HTTPException(status_code=400, detail=f"凭证会话不存在: {payload.session_id}")
 
+    connection = load_llm_connection(db, workspace_id)
+    filled = resolve_request_spec_defaults(payload.request_spec, connection)
     try:
-        secrets = decrypt_secrets(session.secrets) if session is not None else {}
+        validate_request_spec(filled)
+        spec = request_spec_from_payload(filled)
+    except (ProviderError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    try:
+        secrets: dict[str, str] = decrypt_secrets(session.secrets) if session is not None else {}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # 会话 Key 优先，其次工作区连接 Key（都不是则 test_llm_connection 返回明确提示）
+    api_key = str(secrets.get("api_key") or "").strip() or connection.api_key
 
     result = test_llm_connection(
         spec,
-        api_key=secrets.get("api_key", ""),
+        api_key=api_key,
         session_headers=session.headers if session is not None else None,
     )
     return ConnectionTestResponse(
@@ -347,7 +388,7 @@ def preview_sync_job(
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
     job = _job_or_404(db, workspace_id, job_id)
     session = db.get(DatasourceSession, job.session_id) if job.session_id else None
-    result = preview_job(job, limit=payload.limit, session=session)
+    result = preview_job(job, limit=payload.limit, session=session, db=db)
     return PreviewResponse(
         status=result.status,
         total=result.total,
@@ -359,6 +400,7 @@ def preview_sync_job(
         rows=result.rows,
         failures=result.failures,
         normalize_failures=result.normalize_failures,
+        suggested_match_keys=result.suggested_match_keys,
     )
 
 

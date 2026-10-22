@@ -1,14 +1,17 @@
-"""内置 provider：``llm_prompt`` —— 用大模型提示词生成数据行（ADR 0014）.
+"""内置 provider：``llm_prompt`` —— 用大模型提示词生成数据行（ADR 0014 / ADR 0019）.
 
 协议限定为 OpenAI 兼容 ``POST {base_url}/chat/completions``：
 
-- 请求：``system`` / ``user_template`` 经 ``render_text`` 求值后组成 messages，
+- 请求：``system`` / ``user_template`` 经 ``render_text_lenient`` 宽松求值后组成 messages
+  （未知占位符 / JSON 裸花括号原样保留，ADR 0019），
   ``json_mode=true`` 时附带 ``response_format={"type":"json_object"}``；
+  系统提示词优先级：任务显式 system > 工作区连接覆盖 > 内置 :data:`DEFAULT_SYSTEM_PROMPT`；
 - 响应：取 ``choices[0].message.content``，去掉 Markdown 代码围栏后解析 JSON；
   对象 → 1 行，对象数组 → N 行，``{"rows": [...]}`` → 取 rows；
 - 落表：复用 ``apply_field_mapping`` + 既有 ``upsert_rows``（按 ``match_keys`` 幂等）。
 
-API Key 只从凭证会话的 ``api_key`` 模板变量取，缺失直接报错，不发出请求。
+API Key 只从运行期模板变量 ``api_key`` 取（凭证会话或工作区「大模型连接」），缺失直接报错，不发出请求。
+地址 / 模型的缺省值来自 :mod:`cndb.plugins.datasource.services.connection`，任务配置可只写用户提示词。
 """
 
 from __future__ import annotations
@@ -29,7 +32,8 @@ from cndb.plugins.datasource.providers.base import (
     SourceProvider,
     SyncJobSpec,
 )
-from cndb.plugins.datasource.providers.template import render_text
+from cndb.plugins.datasource.providers.template import render_text, render_text_lenient
+from cndb.plugins.datasource.services.connection import DEFAULT_BASE_URL, DEFAULT_MODEL
 from cndb.plugins.datasource.services.normalize import NormalizeResult, apply_field_mapping
 from cndb.plugins.tables.services.importing.api_fetch import (
     DEFAULT_TIMEOUT,
@@ -44,12 +48,33 @@ TEST_MAX_TOKENS = 64
 TEST_PROMPT = '只返回 JSON：{"ok": true}'
 JSON_INSTRUCTION = "只输出 JSON，不要输出 Markdown 代码围栏或解释文字。"
 
-# 供前端动态渲染的表单描述；前端当前按 provider 条件渲染固定字段，此处仍对外暴露
+# 内置系统提示词（ADR 0019）：用户只写业务提示词，系统侧约束由这里兜底。
+# 约束按「输出形态 → 命名 / 类型约定 → 数据真实性」组织，便于模型稳定产出可落表的结构化行。
+DEFAULT_SYSTEM_PROMPT = """你是一个数据抽取助手，负责把用户的业务需求转换为结构化的数据行。
+
+【输出要求】
+1. 只输出一个 JSON 对象或 JSON 数组，禁止输出 Markdown 代码围栏、解释文字、前后缀说明。
+2. 推荐使用 {"rows": [ {...}, {...} ]} 形式返回多行数据；只有一行时可返回单个对象。
+3. 每行必须是 JSON 对象，键为字段名，值为标量（字符串 / 数字 / 布尔 / null），禁止嵌套对象或数组。
+
+【字段命名与类型约定】
+4. 字段名统一使用英文 snake_case（如 city、trade_date、close_price），不要使用中文或空格。
+5. 日期统一用 YYYY-MM-DD，时间统一用 YYYY-MM-DD HH:MM:SS；不确定时不要猜。
+6. 数值字段只输出数字本身，不带单位、千分位、货币符号或百分号（百分比输出小数，如 0.032）。
+7. 同一字段在不同行中保持相同类型；缺失或无法确认的值用 null，不要填「暂无」「N/A」等占位文本。
+8. 每行都应包含稳定可识别的键（如 date、city、symbol、id），便于重复抓取时更新而不是新增。
+
+【真实性约束】
+9. 只根据用户任务与可用上下文生成内容，禁止编造无法核实的事实、数字或链接。
+10. 若无法产出符合上述要求的数据，返回 {"rows": []}，不要编造占位行。"""
+
+# 供前端动态渲染的表单描述；前端当前按 provider 条件渲染固定字段，此处仍对外暴露。
+# ADR 0019 起地址 / 模型从工作区「大模型连接」继承，任务侧留空即可，因此 required=False。
 LLM_PROMPT_PARAMS_SCHEMA: dict[str, Any] = {
     "fields": [
-        {"name": "url_template", "type": "text", "required": True, "label": "API 地址"},
-        {"name": "model", "type": "text", "required": True, "label": "模型"},
-        {"name": "system_prompt", "type": "textarea", "label": "系统提示词"},
+        {"name": "url_template", "type": "text", "required": False, "label": "API 地址（留空用工作区连接）"},
+        {"name": "model", "type": "text", "required": False, "label": "模型（留空用工作区连接）"},
+        {"name": "system_prompt", "type": "textarea", "label": "系统提示词（留空用内置默认）"},
         {"name": "user_template", "type": "textarea", "required": True, "label": "用户提示词"},
         {"name": "temperature", "type": "number", "default": DEFAULT_TEMPERATURE},
         {"name": "max_tokens", "type": "number", "default": DEFAULT_MAX_TOKENS},
@@ -81,12 +106,11 @@ class LlmConfig:
         llm: Mapping[str, Any] | None,
         timeout: Any = None,
     ) -> LlmConfig:
-        url = normalize_endpoint(str(url_template or ""))
+        url = normalize_endpoint(str(url_template or "").strip() or DEFAULT_BASE_URL)
         prompt_data = dict(prompt or {})
         llm_data = dict(llm or {})
-        model = str(llm_data.get("model") or "").strip()
-        if not model:
-            raise ProviderError("llm.model 不能为空")
+        # ADR 0019：地址 / 模型可从工作区「大模型连接」继承，任务配置允许缺省。
+        model = str(llm_data.get("model") or "").strip() or DEFAULT_MODEL
         user_template = str(prompt_data.get("user_template") or "").strip()
         if not user_template:
             raise ProviderError("prompt.user_template 不能为空")
@@ -175,14 +199,14 @@ class LlmPromptProvider:
         }
         if not any(key.lower() == "authorization" for key in headers):
             headers["Authorization"] = f"Bearer {api_key}"
-        system = config.system or JSON_INSTRUCTION
-        if JSON_INSTRUCTION not in system:
-            system = f"{system}\n{JSON_INSTRUCTION}"
+        # 提示词用宽松模板（ADR 0019）：用户提示词里的 JSON 裸花括号 / 未注册占位符原样保留，
+        # 但 headers 等请求模板仍走严格 render_text，语义不变。
+        system = render_text_lenient(_system_prompt(config, job), variables)
         body: dict[str, Any] = {
             "model": config.model,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": render_text(config.user_template, variables)},
+                {"role": "user", "content": render_text_lenient(config.user_template, variables)},
             ],
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
@@ -237,7 +261,12 @@ def validate_llm_request_spec(
     schedule: Mapping[str, Any] | None = None,
     match_keys: Sequence[str] = (),
 ) -> LlmConfig:
-    """创建 / 更新时的 LLM 配置校验（错误信息直接返回前端）."""
+    """创建 / 更新时的 LLM 配置校验（错误信息直接返回前端）.
+
+    ADR 0019 起不再强制「cron 必须手填 match_keys」：幂等键由运行期根据数据自动识别，
+    ``schedule`` / ``match_keys`` 参数仅为兼容既有调用方保留。
+    """
+    del schedule, match_keys
     data = dict(payload or {})
     config = LlmConfig.from_payload(
         url_template=data.get("url_template"),
@@ -255,10 +284,9 @@ def validate_llm_request_spec(
         for key in ("start", "end", str(window.get("start_param") or ""), str(window.get("end_param") or "")):
             if key:
                 allowed[key] = "2020-01-01"
-    render_text(config.system, allowed)
-    render_text(config.user_template, allowed)
-    if str(dict(schedule or {}).get("mode") or "") == "cron" and not [key for key in match_keys if key]:
-        raise ProviderError("llm_prompt 使用 cron 调度时必须配置 match_keys")
+    # 提示词宽松求值（ADR 0019）：未知占位符 / JSON 裸花括号原样保留，不阻断保存
+    render_text_lenient(config.system, allowed)
+    render_text_lenient(config.user_template, allowed)
     return config
 
 
@@ -272,7 +300,11 @@ def test_llm_connection(
     """发一次最小模型请求验证地址 / Key / 模型；不落库、不写运行记录."""
     started = time.perf_counter()
     if not api_key.strip():
-        return LlmConnectionResult(ok=False, latency_ms=0, message="未配置 api_key")
+        return LlmConnectionResult(
+            ok=False,
+            latency_ms=0,
+            message="未配置 api_key：请先在「大模型连接」或凭证会话中配置 API Key",
+        )
     try:
         prompt = dict(spec.prompt or {})
         prompt.setdefault("user_template", TEST_PROMPT)
@@ -290,11 +322,15 @@ def test_llm_connection(
         }
         if not any(key.lower() == "authorization" for key in headers):
             headers["Authorization"] = f"Bearer {api_key}"
+        # 连通测试仍用最小请求（固定用户提示、限制 max_tokens），避免真实提示词被截断误判；
+        # system / user 的求值同样走宽松模板，含 JSON 裸花括号也不会报错。
+        variables: dict[str, Any] = {"api_key": api_key, "today": _today()}
+        system_content = render_text_lenient(config.system, variables) if config.system else JSON_INSTRUCTION
         body: dict[str, Any] = {
             "model": config.model,
             "messages": [
-                {"role": "system", "content": JSON_INSTRUCTION},
-                {"role": "user", "content": TEST_PROMPT},
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": render_text_lenient(TEST_PROMPT, variables)},
             ],
             "temperature": 0,
             "max_tokens": min(config.max_tokens, TEST_MAX_TOKENS),
@@ -329,6 +365,15 @@ def test_llm_connection(
 
 
 # ── 内部 ──────────────────────────────────────────
+
+
+def _system_prompt(config: LlmConfig, job: SyncJobSpec) -> str:
+    """系统提示词优先级：任务显式 > 工作区连接覆盖 > 内置默认；始终追加 JSON 指令."""
+    override = str(job.extra_variables.get("system_prompt_default") or "").strip()
+    system = config.system or override or DEFAULT_SYSTEM_PROMPT
+    if JSON_INSTRUCTION not in system:
+        system = f"{system}\n{JSON_INSTRUCTION}"
+    return system
 
 
 def _parse_response(
@@ -451,6 +496,7 @@ def _today() -> str:
 
 __all__ = [
     "DEFAULT_MAX_TOKENS",
+    "DEFAULT_SYSTEM_PROMPT",
     "DEFAULT_TEMPERATURE",
     "JSON_INSTRUCTION",
     "LLM_PROMPT_PARAMS_SCHEMA",

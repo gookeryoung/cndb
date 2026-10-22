@@ -20,12 +20,16 @@ import { useParams } from 'react-router-dom'
 import { datasourceApi, tableApi } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import { materializeDomainTemplate } from './domainTemplate'
+import { LLM_PROMPT_PRESETS, type LlmPromptPreset } from './llmPromptPresets'
 import type {
-  DatasourceConnectionTestResult, DatasourceProviderInfo, DatasourceSession, DomainTemplate, SyncJob,
-  SyncJobPayload, SyncPreviewResult, SyncRequestSpec, SyncRun, SyncScheduleConfig,
+  DatasourceConnectionTestResult, DatasourceProviderInfo, DatasourceSession, DomainTemplate, LlmConfig,
+  LlmConfigPayload, SyncJob, SyncJobPayload, SyncPreviewResult, SyncRequestSpec, SyncRun, SyncScheduleConfig,
 } from '@/api'
 
-const { Title, Text } = Typography
+const { Title, Text, Paragraph } = Typography
+
+/** 大模型连接 / 任务的高级参数默认值（与后端 llm_prompt provider 对齐） */
+const LLM_DEFAULTS = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', temperature: 0.2, maxTokens: 1024 }
 
 const STATUS_META: Record<string, { color: string; label: string }> = {
   success: { color: 'green', label: '成功' },
@@ -73,6 +77,7 @@ export default function DatasourcePage() {
   const [editing, setEditing] = useState<SyncJob | null>(null)
   const [historyJob, setHistoryJob] = useState<SyncJob | null>(null)
   const [sessionModalOpen, setSessionModalOpen] = useState(false)
+  const [llmConfigOpen, setLlmConfigOpen] = useState(false)
 
   const providersQuery = useQuery({
     queryKey: ['datasource', 'providers', wid],
@@ -101,12 +106,19 @@ export default function DatasourcePage() {
     enabled: !!wid,
     staleTime: 300_000,
   })
+  const llmConfigQuery = useQuery({
+    queryKey: ['datasource', 'llm-config', wid],
+    queryFn: () => datasourceApi.getLlmConfig(wid),
+    enabled: !!wid,
+    staleTime: 300_000,
+  })
 
   const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data])
   const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data])
   const tables = useMemo(() => tablesQuery.data ?? [], [tablesQuery.data])
   const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data])
   const domainTemplates = useMemo(() => domainTemplatesQuery.data ?? [], [domainTemplatesQuery.data])
+  const llmConfig = llmConfigQuery.data ?? null
 
   const providerLabel = useCallback(
     (name: string) => providers.find(p => p.name === name)?.label ?? name,
@@ -322,9 +334,23 @@ export default function DatasourcePage() {
           </Title>
           <Text type="secondary">定期抓取外部数据并按幂等键写入数据表</Text>
         </Space>
-        <Button type="primary" data-testid="datasource-create-btn" icon={<PlusOutlined />} onClick={openCreate}>
-          新建同步任务
-        </Button>
+        <Space size={8}>
+          <Tooltip title="工作区级大模型 API 地址 / 模型 / API Key，创建提示词任务前先配置一次">
+            <Button icon={<ApiOutlined />} data-testid="datasource-llm-config-btn" onClick={() => setLlmConfigOpen(true)}>
+              大模型连接
+            </Button>
+          </Tooltip>
+          <Tag
+            color={llmConfig?.configured ? 'green' : 'default'}
+            data-testid="datasource-llm-config-tag"
+            style={{ marginInlineEnd: 4 }}
+          >
+            {llmConfig?.configured ? '已配置' : '未配置'}
+          </Tag>
+          <Button type="primary" data-testid="datasource-create-btn" icon={<PlusOutlined />} onClick={openCreate}>
+            新建同步任务
+          </Button>
+        </Space>
       </Space>
 
       <Table<SyncJob>
@@ -356,12 +382,22 @@ export default function DatasourcePage() {
         providers={providers}
         tables={tables}
         sessions={sessions}
+        llmConfig={llmConfig}
         onManageSessions={() => setSessionModalOpen(true)}
+        onOpenLlmConfig={() => setLlmConfigOpen(true)}
         onClose={() => setDrawerOpen(false)}
-        onSaved={() => {
+        onSaved={close => {
           invalidate()
-          setDrawerOpen(false)
+          if (close) setDrawerOpen(false)
         }}
+      />
+
+      <LlmConfigModal
+        wid={wid}
+        open={llmConfigOpen}
+        config={llmConfig}
+        onClose={() => setLlmConfigOpen(false)}
+        onSaved={() => void queryClient.invalidateQueries({ queryKey: ['datasource', 'llm-config', wid] })}
       />
 
       <SessionModal
@@ -384,21 +420,37 @@ interface JobDrawerProps {
   providers: DatasourceProviderInfo[]
   tables: Array<{ id: number | string; name: string }>
   sessions: DatasourceSession[]
+  /** 工作区级大模型连接（llm_prompt 任务只做引用，不再逐任务填地址 / 模型 / Key） */
+  llmConfig: LlmConfig | null
   onManageSessions: () => void
+  onOpenLlmConfig: () => void
   onClose: () => void
-  onSaved: () => void
+  /** close=true 关闭抽屉；false 仅刷新列表（保存并预览时保留抽屉展示预览结果） */
+  onSaved: (close: boolean) => void
 }
 
 /** 新建 / 编辑抽屉：Provider 驱动 + 保存后抓取预览（预览不落库） */
-function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessions, onClose, onSaved }: JobDrawerProps) {
+function JobDrawer({
+  wid,
+  open,
+  job,
+  providers,
+  tables,
+  sessions,
+  llmConfig,
+  onManageSessions,
+  onOpenLlmConfig,
+  onClose,
+  onSaved,
+}: JobDrawerProps) {
   const [form] = Form.useForm()
   const { message } = AntApp.useApp()
   const [saving, setSaving] = useState(false)
   const [previewing, setPreviewing] = useState(false)
   const [preview, setPreview] = useState<SyncPreviewResult | null>(null)
   const [savedJob, setSavedJob] = useState<SyncJob | null>(null)
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<DatasourceConnectionTestResult | null>(null)
+  const [presetOpen, setPresetOpen] = useState(false)
+  const [appliedPreset, setAppliedPreset] = useState<LlmPromptPreset | null>(null)
 
   const activeJob = job ?? savedJob
 
@@ -406,7 +458,8 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
     if (!open) return
     setPreview(null)
     setSavedJob(null)
-    setTestResult(null)
+    setAppliedPreset(null)
+    setPresetOpen(false)
     if (job) {
       form.setFieldsValue({
         name: job.name,
@@ -415,8 +468,8 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
         url_template: job.request_spec?.url_template,
         data_path: job.request_spec?.data_path ?? undefined,
         model: job.request_spec?.llm?.model ?? undefined,
-        temperature: job.request_spec?.llm?.temperature ?? undefined,
-        max_tokens: job.request_spec?.llm?.max_tokens ?? undefined,
+        temperature: job.request_spec?.llm?.temperature ?? LLM_DEFAULTS.temperature,
+        max_tokens: job.request_spec?.llm?.max_tokens ?? LLM_DEFAULTS.maxTokens,
         json_mode: job.request_spec?.llm?.json_mode ?? true,
         system_prompt: job.request_spec?.prompt?.system ?? undefined,
         user_template: job.request_spec?.prompt?.user_template ?? undefined,
@@ -449,6 +502,9 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
         time_window_mode: 'none',
         page_size: 50,
         chunk_days: 0,
+        temperature: LLM_DEFAULTS.temperature,
+        max_tokens: LLM_DEFAULTS.maxTokens,
+        json_mode: true,
         entrant_keys: [],
         match_keys: [],
         enabled: true,
@@ -463,21 +519,26 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
         ? { mode: 'none' as const }
         : { mode: 'range' as const, chunk_days: Number(values.chunk_days) || 0 }
       if (values.provider === 'llm_prompt') {
-        // LLM 只有「一次提示词 → 一组行」，分页与响应数组路径不适用（ADR 0014）
-        return {
-          url_template: String(values.url_template ?? '').trim(),
-          prompt: {
-            system: String(values.system_prompt ?? '').trim(),
-            user_template: String(values.user_template ?? '').trim(),
-          },
-          llm: {
-            model: String(values.model ?? '').trim(),
-            temperature: Number(values.temperature ?? 0.2),
-            max_tokens: Number(values.max_tokens ?? 1024),
-            json_mode: Boolean(values.json_mode),
-          },
-          time_window: timeWindow,
+        // 极简口径（ADR 0019）：API 地址 / 模型 / Key 由工作区「大模型连接」提供，
+        // request_spec 只带提示词与可选的模型参数覆盖；分页与响应路径不适用。
+        const prompt: SyncRequestSpec['prompt'] = {
+          user_template: String(values.user_template ?? '').trim(),
         }
+        const system = String(values.system_prompt ?? '').trim()
+        if (system) prompt.system = system
+        const spec: SyncRequestSpec = { prompt, time_window: timeWindow }
+        const temperature = Number(values.temperature ?? LLM_DEFAULTS.temperature)
+        const maxTokens = Number(values.max_tokens ?? LLM_DEFAULTS.maxTokens)
+        const jsonMode = values.json_mode == null ? true : Boolean(values.json_mode)
+        // 仅在用户动过高级参数时显式覆盖，默认交给工作区连接 / 后端默认值
+        if (
+          temperature !== LLM_DEFAULTS.temperature
+          || maxTokens !== LLM_DEFAULTS.maxTokens
+          || jsonMode !== true
+        ) {
+          spec.llm = { temperature, max_tokens: maxTokens, json_mode: jsonMode }
+        }
+        return spec
       }
       const paging = values.paging_mode === 'none'
         ? { mode: 'none' as const }
@@ -493,7 +554,13 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
   )
 
   const buildPayload = useCallback(async (): Promise<SyncJobPayload> => {
-    const values = await form.validateFields()
+    const validated = await form.validateFields()
+    // LLM 的主表单极简，调度 / 幂等键 / 模型参数都在收起的「高级设置」里，
+    // 未挂载字段不会出现在 validateFields 结果里，需要用 store 值兜底；
+    // 非 LLM 任务保持原有口径（只用已挂载字段），避免默认 provider 行为变化。
+    const values = form.getFieldValue('provider') === 'llm_prompt'
+      ? { ...(form.getFieldsValue(true) as Record<string, unknown>), ...validated }
+      : validated
     return {
       name: String(values.name).trim(),
       provider: String(values.provider),
@@ -519,7 +586,17 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
     }
   }, [form, buildRequestSpec])
 
+  /** llm_prompt 依赖工作区级连接；未配置时保存 / 预览先引导去配置，不发请求 */
+  const ensureLlmReady = useCallback((): boolean => {
+    if (form.getFieldValue('provider') !== 'llm_prompt') return true
+    if (llmConfig?.configured && llmConfig.has_api_key) return true
+    message.warning('请先配置工作区的大模型连接（API 地址 / 模型 / API Key）')
+    onOpenLlmConfig()
+    return false
+  }, [form, llmConfig, message, onOpenLlmConfig])
+
   const handleSave = async (thenPreview: boolean) => {
+    if (!ensureLlmReady()) return
     setSaving(true)
     try {
       const payload = await buildPayload()
@@ -529,7 +606,7 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
       setSavedJob(saved)
       message.success(job ? '已保存' : '已创建')
       if (!thenPreview) {
-        onSaved()
+        onSaved(true)
         return
       }
       setPreviewing(true)
@@ -540,7 +617,8 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
       } finally {
         setPreviewing(false)
       }
-      onSaved()
+      // 保存并预览：只刷新列表，不关闭抽屉，方便对照 suggested_match_keys
+      onSaved(false)
     } catch (error) {
       const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       message.error(detail || '保存失败，请检查表单')
@@ -549,34 +627,11 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
     }
   }
 
-  const handleTestConnection = async () => {
-    setTesting(true)
-    setTestResult(null)
-    try {
-      await form.validateFields(['url_template', 'model', 'user_template'])
-    } catch {
-      setTesting(false)
-      setTestResult({ ok: false, latency_ms: 0, model: '', message: '请先填写 API 地址、模型与用户提示词' })
-      return
-    }
-    try {
-      const values = form.getFieldsValue(true) as Record<string, unknown>
-      const result = await datasourceApi.testConnection(wid, {
-        request_spec: buildRequestSpec(values),
-        session_id: values.session_id == null ? null : Number(values.session_id),
-      })
-      setTestResult(result)
-    } catch {
-      setTestResult({ ok: false, latency_ms: 0, model: '', message: '连通测试请求失败，请检查网络或权限' })
-    } finally {
-      setTesting(false)
-    }
-  }
-
   const providerOptions = providers.map(p => ({ value: p.name, label: p.label }))
   const activeProvider = Form.useWatch('provider', form) as string | undefined
   const providerInfo = providers.find(p => p.name === activeProvider)
   const isLlm = activeProvider === 'llm_prompt'
+  const llmReady = Boolean(llmConfig?.configured && llmConfig.has_api_key)
   // 折叠面板未展开时对应 Form.Item 尚未挂载，watch 拿不到值，回退到任务本身
   const scheduleMode = (Form.useWatch('schedule_mode', form) as string | undefined) ?? activeJob?.schedule?.mode
   const cursorStrategy = Form.useWatch('cursor_strategy', form) as string | undefined
@@ -596,333 +651,504 @@ function JobDrawer({ wid, open, job, providers, tables, sessions, onManageSessio
     )
     if (Object.keys(defaults).length > 0) form.setFieldsValue(defaults)
     if (value === 'llm_prompt' && !form.getFieldValue('json_mode')) form.setFieldValue('json_mode', true)
+    if (value !== 'llm_prompt') setAppliedPreset(null)
+  }
+
+  const applyPreset = (preset: LlmPromptPreset) => {
+    form.setFieldValue('user_template', preset.prompt)
+    setAppliedPreset(preset)
+    setPresetOpen(false)
+    message.success(`已填入「${preset.name}」提示词，可按需修改`)
   }
 
   return (
-    <Drawer
-      title={job ? `编辑同步任务 · ${job.name}` : '新建同步任务'}
-      width={720}
-      open={open}
-      onClose={onClose}
-      forceRender
-      destroyOnClose
-      extra={
-        <Space>
-          <Button onClick={onClose}>取消</Button>
-          <Button data-testid="datasource-save-btn" loading={saving} onClick={() => void handleSave(false)}>
-            保存
-          </Button>
-          <Button
-            type="primary"
-            data-testid="datasource-save-preview-btn"
-            loading={saving || previewing}
-            onClick={() => void handleSave(true)}
-          >
-            保存并预览
-          </Button>
-        </Space>
-      }
-    >
-      <Form form={form} layout="vertical" size="small">
-        <Space size={12} style={{ display: 'flex' }}>
-          <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]} style={{ flex: 1 }}>
-            <Input data-testid="datasource-name-input" placeholder="例如：北京天气日报" />
-          </Form.Item>
-          <Form.Item name="provider" label="适配器" rules={[{ required: true }]} style={{ width: 220 }}>
-            <Select options={providerOptions} onChange={onProviderChange} />
-          </Form.Item>
-        </Space>
-
-        <Space size={12} style={{ display: 'flex' }}>
-          <Form.Item name="table_id" label="目标表（留空则只抓不写）" style={{ flex: 1 }}>
-            <Select
-              allowClear
-              showSearch
-              optionFilterProp="label"
-              placeholder="选择数据表"
-              options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
-            />
-          </Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
-            <Switch />
-          </Form.Item>
-        </Space>
-
-        <Space size={12} style={{ display: 'flex' }}>
-          <Form.Item
-            name="session_id"
-            label={
-              <Space size={4}>
-                凭证会话
-                <Button
-                  type="link"
-                  size="small"
-                  data-testid="datasource-session-create"
-                  icon={<KeyOutlined />}
-                  onClick={onManageSessions}
-                >
-                  新建
-                </Button>
-              </Space>
-            }
-            style={{ flex: 1 }}
-            extra="会话提供请求头与密钥；请求模板里可用 {密钥名} 占位"
-          >
-            <Select
-              allowClear
-              placeholder="不使用会话（凭据内联在请求模板里）"
-              options={sessions.map(item => ({
-                value: item.id,
-                label: item.secret_keys.length ? `${item.name}（密钥: ${item.secret_keys.join(', ')}）` : item.name,
-              }))}
-            />
-          </Form.Item>
-          <Form.Item
-            name="rate_limit_ms"
-            label="请求间隔（毫秒）"
-            style={{ width: 190 }}
-            extra="同一任务相邻请求最小间隔，0 = 不限速"
-          >
-            <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} />
-          </Form.Item>
-        </Space>
-
-        <Form.Item
-          name="url_template"
-          label={isLlm ? 'API 地址' : 'URL 模板'}
-          rules={[{ required: true, message: isLlm ? '请输入模型 API 地址' : '请输入 http/https URL 模板' }]}
-          extra={
-            isLlm
-              ? 'OpenAI 兼容 /chat/completions；只填 base_url 时自动补全路径'
-              : providerInfo?.params_schema?.placeholders?.length
-                ? `可用占位符：${providerInfo.params_schema.placeholders.map(p => `{${p}}`).join(' ')}`
-                : '占位符用 {name}，只做字面替换'
-          }
-        >
-          <Input.TextArea
-            data-testid="datasource-url-template"
-            rows={2}
-            placeholder={isLlm ? 'https://api.deepseek.com' : 'https://api.example.com/data?city={city}&from={start}&to={end}'}
-          />
-        </Form.Item>
-
-        {isLlm && (
-          <>
-            <Space size={12} style={{ display: 'flex' }}>
-              <Form.Item name="model" label="模型" rules={[{ required: true, message: '请输入模型名称' }]} style={{ flex: 1 }}>
-                <Input data-testid="datasource-llm-model" placeholder="deepseek-chat" />
-              </Form.Item>
-              <Form.Item name="temperature" label="temperature" style={{ width: 140 }}>
-                <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item name="max_tokens" label="max_tokens" style={{ width: 140 }}>
-                <InputNumber min={1} max={32768} style={{ width: '100%' }} />
-              </Form.Item>
-              <Form.Item name="json_mode" label="JSON 模式" valuePropName="checked" style={{ width: 110 }}>
-                <Switch />
-              </Form.Item>
-            </Space>
-
-            <Form.Item
-              name="system_prompt"
-              label="系统提示词"
-              extra="留空时自动补「只输出 JSON，不要代码围栏」"
+    <>
+      <Drawer
+        title={job ? `编辑同步任务 · ${job.name}` : '新建同步任务'}
+        width={720}
+        open={open}
+        onClose={onClose}
+        forceRender
+        destroyOnClose
+        extra={
+          <Space>
+            <Button onClick={onClose}>取消</Button>
+            <Button data-testid="datasource-save-btn" loading={saving} onClick={() => void handleSave(false)}>
+              保存
+            </Button>
+            <Button
+              type="primary"
+              data-testid="datasource-save-preview-btn"
+              loading={saving || previewing}
+              onClick={() => void handleSave(true)}
             >
-              <Input.TextArea
-                data-testid="datasource-llm-system"
-                rows={2}
-                placeholder="你是数据抽取助手，只输出 JSON。"
-              />
+              保存并预览
+            </Button>
+          </Space>
+        }
+      >
+        <Form form={form} layout="vertical" size="small">
+          <Space size={12} style={{ display: 'flex' }}>
+            <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]} style={{ flex: 1 }}>
+              <Input data-testid="datasource-name-input" placeholder="例如：北京天气日报" />
             </Form.Item>
-
-            <Form.Item
-              name="user_template"
-              label="用户提示词"
-              rules={[{ required: true, message: '请输入用户提示词' }]}
-              extra="可用占位符：{entrant} {start} {end} {today}；模型必须返回 JSON 对象或对象数组"
-            >
-              <Input.TextArea
-                data-testid="datasource-llm-user"
-                rows={3}
-                placeholder={'请生成 {today} 的天气摘要，地区：{entrant}'}
-              />
+            <Form.Item name="provider" label="适配器" rules={[{ required: true }]} style={{ width: 220 }}>
+              <Select options={providerOptions} onChange={onProviderChange} />
             </Form.Item>
+          </Space>
 
-            <Space size={8} style={{ marginBottom: 16 }}>
-              <Button
-                icon={<ApiOutlined />}
-                data-testid="datasource-test-connection"
-                loading={testing}
-                onClick={() => void handleTestConnection()}
-              >
-                连通测试
-              </Button>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                发一次真实模型请求（可能产生费用），不保存配置、不写运行记录
-              </Text>
-            </Space>
-            {testResult && (
-              <Alert
-                data-testid="datasource-test-result"
-                type={testResult.ok ? 'success' : 'error'}
-                showIcon
-                style={{ marginBottom: 16 }}
-                message={
-                  testResult.ok
-                    ? `连通成功 · ${testResult.model || '模型'} · ${testResult.latency_ms} ms`
-                    : '连通失败'
-                }
-                description={testResult.ok ? undefined : testResult.message}
-              />
-            )}
-          </>
-        )}
-
-        <Space size={12} style={{ display: 'flex' }}>
-          {!isLlm && (
-            <Form.Item name="data_path" label="响应数组路径" style={{ flex: 1 }}>
-              <Input placeholder="data.items（留空自动探测 data / items / results）" />
-            </Form.Item>
-          )}
-          <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 160 }}>
-            <Input placeholder="city / symbol" />
-          </Form.Item>
-        </Space>
-
-        <Form.Item name="entrant_keys" label="标的取值" extra="每个取值各抓一次；留空表示只抓一次">
-          <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="输入后回车，如 北京" />
-        </Form.Item>
-
-        <Form.Item
-          name="match_keys"
-          label="幂等键"
-          extra={
-            isLlm && scheduleMode === 'cron'
-              ? '大模型任务使用 cron 调度时必须配置幂等键，避免每轮重复插入'
-              : '必须是目标表字段；留空则纯追加（仅快照类源适用）'
-          }
-        >
-          <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 city, day" />
-        </Form.Item>
-
-        <Collapse
-          size="small"
-          ghost
-          items={[
-            {
-              key: 'advanced',
-              label: '增量与调度',
-              children: (
-                <>
-                  <Space size={12} style={{ display: 'flex' }}>
-                    <Form.Item name="cursor_strategy" label="增量策略" style={{ width: 180 }}>
-                      <Select
-                        options={Object.entries(CURSOR_LABEL).map(([value, label]) => ({ value, label }))}
-                      />
-                    </Form.Item>
-                    <Form.Item name="cursor_field" label="增量字段" style={{ flex: 1 }}>
-                      <Input disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'} placeholder="day / published_at" />
-                    </Form.Item>
-                    <Form.Item name="backfill_start" label="回填起点" style={{ width: 150 }}>
-                      <Input
-                        disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'}
-                        placeholder="2024-01-01"
-                      />
-                    </Form.Item>
-                  </Space>
-
-                  <Space size={12} style={{ display: 'flex' }}>
-                    <Form.Item name="schedule_mode" label="调度" style={{ width: 150 }}>
-                      <Select
-                        options={[
-                          { value: 'manual', label: '手动' },
-                          { value: 'daily', label: '每天定时' },
-                          { value: 'interval', label: '固定间隔' },
-                          { value: 'cron', label: 'cron' },
-                        ]}
-                      />
-                    </Form.Item>
-                    {scheduleMode === 'daily' && (
-                      <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 150 }}>
-                        <Input placeholder="17:10" />
-                      </Form.Item>
-                    )}
-                    {scheduleMode === 'interval' && (
-                      <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 150 }}>
-                        <InputNumber min={1} style={{ width: '100%' }} />
-                      </Form.Item>
-                    )}
-                    {scheduleMode === 'cron' && (
-                      <Form.Item name="schedule_expr" label="cron 表达式" style={{ flex: 1 }}>
-                        <Input placeholder="0 7 * * *" />
-                      </Form.Item>
-                    )}
-                  </Space>
-
-                  <Space size={12} style={{ display: 'flex' }}>
-                    {!isLlm && (
-                      <Form.Item name="paging_mode" label="分页" style={{ width: 150 }}>
-                        <Select
-                          options={[
-                            { value: 'none', label: '不分页' },
-                            { value: 'page', label: '页码' },
-                            { value: 'offset', label: '偏移量' },
-                          ]}
-                        />
-                      </Form.Item>
-                    )}
-                    {!isLlm && pagingMode !== 'none' && (
-                      <Form.Item name="page_size" label="每页条数" style={{ width: 150 }}>
-                        <InputNumber min={1} max={1000} style={{ width: '100%' }} />
-                      </Form.Item>
-                    )}
-                    <Form.Item name="time_window_mode" label="时间区间" style={{ width: 150 }}>
-                      <Select
-                        options={[
-                          { value: 'none', label: '不注入' },
-                          { value: 'range', label: '按游标区间' },
-                        ]}
-                      />
-                    </Form.Item>
-                    {timeWindowMode === 'range' && (
-                      <Form.Item name="chunk_days" label="切片天数（0=不切）" style={{ width: 160 }}>
-                        <InputNumber min={0} max={3650} style={{ width: '100%' }} />
-                      </Form.Item>
-                    )}
-                  </Space>
-                </>
-              ),
-            },
-          ]}
-        />
-      </Form>
-
-      {preview && (
-        <PreviewPanel
-          preview={preview}
-          onRefresh={
-            activeJob
-              ? async () => {
-                  setPreviewing(true)
-                  try {
-                    setPreview(await datasourceApi.previewJob(wid, activeJob.id, 20))
-                  } catch {
-                    message.error('抓取预览失败')
-                  } finally {
-                    setPreviewing(false)
+          {isLlm ? (
+            <>
+              {llmConfig && !llmReady && (
+                <Alert
+                  data-testid="datasource-llm-unconfigured"
+                  type="warning"
+                  showIcon
+                  style={{ marginBottom: 16 }}
+                  message="尚未配置工作区的大模型连接"
+                  description="API 地址 / 模型 / API Key 在「大模型连接」里配置一次即可，所有提示词任务共用。"
+                  action={
+                    <Button size="small" data-testid="datasource-llm-goto-config" onClick={onOpenLlmConfig}>
+                      去配置
+                    </Button>
                   }
+                />
+              )}
+              {llmConfig && llmReady && (
+                <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 12 }}>
+                  使用工作区大模型连接：{llmConfig.model} · {llmConfig.base_url}（可在页头「大模型连接」修改）
+                </Text>
+              )}
+
+              <Form.Item name="table_id" label="目标表（留空则按任务名自动建表）" style={{ flex: 1 }}>
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder="留空自动建表"
+                  options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
+                />
+              </Form.Item>
+
+              <Form.Item
+                name="user_template"
+                label="用户提示词"
+                rules={[{ required: true, message: '请输入用户提示词' }]}
+                extra="描述要抓取的数据，并强制模型只输出 JSON（对象数组或 rows 包裹）；可用 {today} 占位符，JSON 花括号可直接书写。"
+              >
+                <Input.TextArea
+                  data-testid="datasource-llm-user"
+                  rows={6}
+                  placeholder={'例如：请汇总 {today} 的每日新闻摘要，只输出 JSON 对象数组，字段用英文 snake_case。'}
+                />
+              </Form.Item>
+
+              <Space size={8} style={{ marginBottom: 16 }} wrap>
+                <Button
+                  icon={<ExperimentOutlined />}
+                  data-testid="datasource-llm-presets-btn"
+                  onClick={() => setPresetOpen(true)}
+                >
+                  推荐提示词（5 组）
+                </Button>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  选择典型场景一键填入，再按需修改；每组含建议目标表字段与幂等键
+                </Text>
+              </Space>
+
+              {appliedPreset && (
+                <Alert
+                  data-testid="datasource-llm-preset-hint"
+                  type="info"
+                  showIcon
+                  closable
+                  style={{ marginBottom: 16 }}
+                  onClose={() => setAppliedPreset(null)}
+                  message={`已套用推荐场景：${appliedPreset.name}`}
+                  description={`建议目标表字段：${appliedPreset.target_fields.join('、')}；建议幂等键：${appliedPreset.match_keys.join('、')}`}
+                />
+              )}
+
+              <Collapse
+                size="small"
+                ghost
+                items={[
+                  {
+                    key: 'advanced',
+                    label: '高级设置（系统提示词 / 幂等键 / 调度 / 时间区间 / 凭证会话 / 模型参数）',
+                    children: (
+                      <>
+                        <Form.Item
+                          name="system_prompt"
+                          label="系统提示词覆盖"
+                          extra="留空使用工作区内置默认；内置默认全文可在「大模型连接」里查看"
+                        >
+                          <Input.TextArea
+                            data-testid="datasource-llm-system"
+                            rows={2}
+                            placeholder="留空即为内置默认（强制只输出 JSON）"
+                          />
+                        </Form.Item>
+
+                        <Form.Item
+                          name="match_keys"
+                          label="幂等键（留空自动识别）"
+                          extra={
+                            scheduleMode === 'cron'
+                              ? '留空由后端自动识别；cron 任务建议预览后确认自动识别的幂等键，避免每轮重复插入'
+                              : '留空由后端按返回字段自动识别；配置后按目标表字段去重'
+                          }
+                        >
+                          <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 date, city" />
+                        </Form.Item>
+
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 160 }}>
+                            <Input placeholder="city / symbol" />
+                          </Form.Item>
+                          <Form.Item
+                            name="entrant_keys"
+                            label="标的取值"
+                            style={{ flex: 1 }}
+                            extra="每个取值各抓一次；留空表示只抓一次"
+                          >
+                            <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="输入后回车，如 北京" />
+                          </Form.Item>
+                        </Space>
+
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item name="schedule_mode" label="调度" style={{ width: 150 }}>
+                            <Select
+                              options={[
+                                { value: 'manual', label: '手动' },
+                                { value: 'daily', label: '每天定时' },
+                                { value: 'interval', label: '固定间隔' },
+                                { value: 'cron', label: 'cron' },
+                              ]}
+                            />
+                          </Form.Item>
+                          {scheduleMode === 'daily' && (
+                            <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 150 }}>
+                              <Input placeholder="17:10" />
+                            </Form.Item>
+                          )}
+                          {scheduleMode === 'interval' && (
+                            <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 150 }}>
+                              <InputNumber min={1} style={{ width: '100%' }} />
+                            </Form.Item>
+                          )}
+                          {scheduleMode === 'cron' && (
+                            <Form.Item name="schedule_expr" label="cron 表达式" style={{ flex: 1 }}>
+                              <Input placeholder="0 7 * * *" />
+                            </Form.Item>
+                          )}
+                        </Space>
+
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item name="cursor_strategy" label="增量策略" style={{ width: 180 }}>
+                            <Select options={Object.entries(CURSOR_LABEL).map(([value, label]) => ({ value, label }))} />
+                          </Form.Item>
+                          <Form.Item name="cursor_field" label="增量字段" style={{ flex: 1 }}>
+                            <Input
+                              disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'}
+                              placeholder="day / published_at"
+                            />
+                          </Form.Item>
+                          <Form.Item name="backfill_start" label="回填起点" style={{ width: 150 }}>
+                            <Input
+                              disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'}
+                              placeholder="2024-01-01"
+                            />
+                          </Form.Item>
+                        </Space>
+
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item name="time_window_mode" label="时间区间" style={{ width: 150 }}>
+                            <Select
+                              options={[
+                                { value: 'none', label: '不注入' },
+                                { value: 'range', label: '按游标区间' },
+                              ]}
+                            />
+                          </Form.Item>
+                          {timeWindowMode === 'range' && (
+                            <Form.Item name="chunk_days" label="切片天数（0=不切）" style={{ width: 160 }}>
+                              <InputNumber min={0} max={3650} style={{ width: '100%' }} />
+                            </Form.Item>
+                          )}
+                        </Space>
+
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item
+                            name="session_id"
+                            label={
+                              <Space size={4}>
+                                凭证会话（可选覆盖）
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  data-testid="datasource-session-create"
+                                  icon={<KeyOutlined />}
+                                  onClick={onManageSessions}
+                                >
+                                  新建
+                                </Button>
+                              </Space>
+                            }
+                            style={{ flex: 1 }}
+                            extra="默认使用工作区大模型连接；留空即可"
+                          >
+                            <Select
+                              allowClear
+                              placeholder="默认使用工作区大模型连接"
+                              options={sessions.map(item => ({
+                                value: item.id,
+                                label: item.secret_keys.length
+                                  ? `${item.name}（密钥: ${item.secret_keys.join(', ')}）`
+                                  : item.name,
+                              }))}
+                            />
+                          </Form.Item>
+                          <Form.Item name="rate_limit_ms" label="请求间隔（毫秒）" style={{ width: 190 }}>
+                            <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} />
+                          </Form.Item>
+                        </Space>
+
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item name="temperature" label="temperature" style={{ width: 140 }}>
+                            <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item name="max_tokens" label="max_tokens" style={{ width: 140 }}>
+                            <InputNumber min={1} max={32768} style={{ width: '100%' }} />
+                          </Form.Item>
+                          <Form.Item name="json_mode" label="JSON 模式" valuePropName="checked" style={{ width: 110 }}>
+                            <Switch />
+                          </Form.Item>
+                          <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
+                            <Switch data-testid="datasource-enabled" />
+                          </Form.Item>
+                        </Space>
+                      </>
+                    ),
+                  },
+                ]}
+              />
+            </>
+          ) : (
+            <>
+              <Space size={12} style={{ display: 'flex' }}>
+                <Form.Item name="table_id" label="目标表（留空则只抓不写）" style={{ flex: 1 }}>
+                  <Select
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="选择数据表"
+                    options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
+                  />
+                </Form.Item>
+                <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
+                  <Switch />
+                </Form.Item>
+              </Space>
+
+              <Space size={12} style={{ display: 'flex' }}>
+                <Form.Item
+                  name="session_id"
+                  label={
+                    <Space size={4}>
+                      凭证会话
+                      <Button
+                        type="link"
+                        size="small"
+                        data-testid="datasource-session-create"
+                        icon={<KeyOutlined />}
+                        onClick={onManageSessions}
+                      >
+                        新建
+                      </Button>
+                    </Space>
+                  }
+                  style={{ flex: 1 }}
+                  extra="会话提供请求头与密钥；请求模板里可用 {密钥名} 占位"
+                >
+                  <Select
+                    allowClear
+                    placeholder="不使用会话（凭据内联在请求模板里）"
+                    options={sessions.map(item => ({
+                      value: item.id,
+                      label: item.secret_keys.length ? `${item.name}（密钥: ${item.secret_keys.join(', ')}）` : item.name,
+                    }))}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="rate_limit_ms"
+                  label="请求间隔（毫秒）"
+                  style={{ width: 190 }}
+                  extra="同一任务相邻请求最小间隔，0 = 不限速"
+                >
+                  <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} />
+                </Form.Item>
+              </Space>
+
+              <Form.Item
+                name="url_template"
+                label="URL 模板"
+                rules={[{ required: true, message: '请输入 http/https URL 模板' }]}
+                extra={
+                  providerInfo?.params_schema?.placeholders?.length
+                    ? `可用占位符：${providerInfo.params_schema.placeholders.map(p => `{${p}}`).join(' ')}`
+                    : '占位符用 {name}，只做字面替换'
                 }
-              : undefined
-          }
-          refreshing={previewing}
-        />
-      )}
-      {!preview && activeJob && (
-        <Button icon={<EyeOutlined />} loading={previewing} onClick={() => void handleSave(true)}>
-          抓取预览（不落库）
-        </Button>
-      )}
-    </Drawer>
+              >
+                <Input.TextArea
+                  data-testid="datasource-url-template"
+                  rows={2}
+                  placeholder="https://api.example.com/data?city={city}&from={start}&to={end}"
+                />
+              </Form.Item>
+
+              <Space size={12} style={{ display: 'flex' }}>
+                <Form.Item name="data_path" label="响应数组路径" style={{ flex: 1 }}>
+                  <Input placeholder="data.items（留空自动探测 data / items / results）" />
+                </Form.Item>
+                <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 160 }}>
+                  <Input placeholder="city / symbol" />
+                </Form.Item>
+              </Space>
+
+              <Form.Item name="entrant_keys" label="标的取值" extra="每个取值各抓一次；留空表示只抓一次">
+                <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="输入后回车，如 北京" />
+              </Form.Item>
+
+              <Form.Item
+                name="match_keys"
+                label="幂等键"
+                extra="必须是目标表字段；留空则纯追加（仅快照类源适用）"
+              >
+                <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 city, day" />
+              </Form.Item>
+
+              <Collapse
+                size="small"
+                ghost
+                items={[
+                  {
+                    key: 'advanced',
+                    label: '增量与调度',
+                    children: (
+                      <>
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item name="cursor_strategy" label="增量策略" style={{ width: 180 }}>
+                            <Select
+                              options={Object.entries(CURSOR_LABEL).map(([value, label]) => ({ value, label }))}
+                            />
+                          </Form.Item>
+                          <Form.Item name="cursor_field" label="增量字段" style={{ flex: 1 }}>
+                            <Input disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'} placeholder="day / published_at" />
+                          </Form.Item>
+                          <Form.Item name="backfill_start" label="回填起点" style={{ width: 150 }}>
+                            <Input
+                              disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'}
+                              placeholder="2024-01-01"
+                            />
+                          </Form.Item>
+                        </Space>
+
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item name="schedule_mode" label="调度" style={{ width: 150 }}>
+                            <Select
+                              options={[
+                                { value: 'manual', label: '手动' },
+                                { value: 'daily', label: '每天定时' },
+                                { value: 'interval', label: '固定间隔' },
+                                { value: 'cron', label: 'cron' },
+                              ]}
+                            />
+                          </Form.Item>
+                          {scheduleMode === 'daily' && (
+                            <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 150 }}>
+                              <Input placeholder="17:10" />
+                            </Form.Item>
+                          )}
+                          {scheduleMode === 'interval' && (
+                            <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 150 }}>
+                              <InputNumber min={1} style={{ width: '100%' }} />
+                            </Form.Item>
+                          )}
+                          {scheduleMode === 'cron' && (
+                            <Form.Item name="schedule_expr" label="cron 表达式" style={{ flex: 1 }}>
+                              <Input placeholder="0 7 * * *" />
+                            </Form.Item>
+                          )}
+                        </Space>
+
+                        <Space size={12} style={{ display: 'flex' }}>
+                          <Form.Item name="paging_mode" label="分页" style={{ width: 150 }}>
+                            <Select
+                              options={[
+                                { value: 'none', label: '不分页' },
+                                { value: 'page', label: '页码' },
+                                { value: 'offset', label: '偏移量' },
+                              ]}
+                            />
+                          </Form.Item>
+                          {pagingMode !== 'none' && (
+                            <Form.Item name="page_size" label="每页条数" style={{ width: 150 }}>
+                              <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+                            </Form.Item>
+                          )}
+                          <Form.Item name="time_window_mode" label="时间区间" style={{ width: 150 }}>
+                            <Select
+                              options={[
+                                { value: 'none', label: '不注入' },
+                                { value: 'range', label: '按游标区间' },
+                              ]}
+                            />
+                          </Form.Item>
+                          {timeWindowMode === 'range' && (
+                            <Form.Item name="chunk_days" label="切片天数（0=不切）" style={{ width: 160 }}>
+                              <InputNumber min={0} max={3650} style={{ width: '100%' }} />
+                            </Form.Item>
+                          )}
+                        </Space>
+                      </>
+                    ),
+                  },
+                ]}
+              />
+            </>
+          )}
+        </Form>
+
+        {preview && (
+          <PreviewPanel
+            preview={preview}
+            onRefresh={
+              activeJob
+                ? async () => {
+                    setPreviewing(true)
+                    try {
+                      setPreview(await datasourceApi.previewJob(wid, activeJob.id, 20))
+                    } catch {
+                      message.error('抓取预览失败')
+                    } finally {
+                      setPreviewing(false)
+                    }
+                  }
+                : undefined
+            }
+            refreshing={previewing}
+          />
+        )}
+        {!preview && activeJob && (
+          <Button icon={<EyeOutlined />} loading={previewing} onClick={() => void handleSave(true)}>
+            抓取预览（不落库）
+          </Button>
+        )}
+      </Drawer>
+
+      <LlmPresetModal open={presetOpen} onClose={() => setPresetOpen(false)} onUse={applyPreset} />
+    </>
   )
 }
 
@@ -958,6 +1184,16 @@ function PreviewPanel({
           </Button>
         )}
       </Space>
+      {preview.suggested_match_keys && preview.suggested_match_keys.length > 0 && (
+        <Alert
+          data-testid="datasource-preview-match-keys"
+          type="success"
+          showIcon
+          style={{ marginBottom: 8 }}
+          message={`自动识别幂等键：${preview.suggested_match_keys.join(', ')}`}
+          description="可在「高级设置 → 幂等键」里采用，或直接保存由后端按此去重。"
+        />
+      )}
       {preview.failures.length > 0 && (
         <Alert
           type="warning"
@@ -1308,6 +1544,251 @@ function SessionFormModal({
         >
           <Input.TextArea data-testid="datasource-session-secrets" rows={2} />
         </Form.Item>
+      </Form>
+    </Modal>
+  )
+}
+
+/** 推荐提示词弹窗：5 组典型场景，点「使用」把 prompt 填入用户提示词（ADR 0019 P2） */
+function LlmPresetModal({
+  open,
+  onClose,
+  onUse,
+}: {
+  open: boolean
+  onClose: () => void
+  onUse: (preset: LlmPromptPreset) => void
+}) {
+  return (
+    <Modal
+      title="推荐提示词"
+      open={open}
+      width={760}
+      onCancel={onClose}
+      destroyOnHidden
+      footer={<Button onClick={onClose}>关闭</Button>}
+    >
+      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          选一个典型场景一键填入用户提示词，再按需修改；下文的建议字段与幂等键可对照目标表使用。
+          提示词里的 {'{{ }}'} 是 JSON 花括号的模板转义，运行时会还原为 {'{ }'}。
+        </Text>
+        {LLM_PROMPT_PRESETS.map(preset => (
+          <div
+            key={preset.id}
+            data-testid={`datasource-llm-preset-${preset.id}`}
+            style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}
+          >
+            <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
+              <Text strong>{preset.name}</Text>
+              <Button size="small" type="primary" onClick={() => onUse(preset)}>
+                使用
+              </Button>
+            </Space>
+            <Paragraph type="secondary" style={{ margin: '6px 0', fontSize: 12 }}>
+              {preset.description}
+            </Paragraph>
+            <Space size={[16, 4]} wrap>
+              <Text style={{ fontSize: 12 }}>建议字段：{preset.target_fields.join(', ')}</Text>
+              <Text style={{ fontSize: 12 }}>建议幂等键：{preset.match_keys.join(', ')}</Text>
+            </Space>
+          </div>
+        ))}
+      </Space>
+    </Modal>
+  )
+}
+
+/** 工作区级「大模型连接」弹窗：API 地址 / 模型 / API Key / 系统提示词（ADR 0019 P1/P2） */
+function LlmConfigModal({
+  wid,
+  open,
+  config,
+  onClose,
+  onSaved,
+}: {
+  wid: string
+  open: boolean
+  config: LlmConfig | null
+  onClose: () => void
+  onSaved: () => void
+}) {
+  const [form] = Form.useForm()
+  const { message } = AntApp.useApp()
+  const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<DatasourceConnectionTestResult | null>(null)
+  const [clearKey, setClearKey] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    setTestResult(null)
+    setClearKey(false)
+    form.setFieldsValue({
+      base_url: config?.base_url || LLM_DEFAULTS.baseUrl,
+      model: config?.model || LLM_DEFAULTS.model,
+      api_key: '',
+      system_prompt: config?.system_prompt ?? '',
+    })
+  }, [open, config, form])
+
+  const submit = async () => {
+    const values = await form.validateFields()
+    const payload: LlmConfigPayload = {
+      base_url: String(values.base_url ?? '').trim(),
+      model: String(values.model ?? '').trim(),
+      system_prompt: String(values.system_prompt ?? ''),
+    }
+    const apiKey = String(values.api_key ?? '').trim()
+    if (apiKey) payload.api_key = apiKey
+    if (clearKey) payload.clear_api_key = true
+    setSaving(true)
+    try {
+      await datasourceApi.updateLlmConfig(wid, payload)
+      message.success('大模型连接已保存')
+      onSaved()
+      onClose()
+    } catch (error) {
+      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      message.error(detail || '保存失败（需编辑者及以上权限）')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const testConnection = async () => {
+    let values: Record<string, unknown>
+    try {
+      values = (await form.validateFields(['base_url', 'model'])) as Record<string, unknown>
+    } catch {
+      return
+    }
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const result = await datasourceApi.testConnection(wid, {
+        request_spec: {
+          url_template: String(values.base_url ?? '').trim(),
+          llm: { model: String(values.model ?? '').trim() },
+        },
+      })
+      setTestResult(result)
+    } catch {
+      setTestResult({ ok: false, latency_ms: 0, model: '', message: '连通测试请求失败，请检查网络或权限' })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  return (
+    <Modal
+      title="大模型连接"
+      open={open}
+      width={640}
+      onCancel={onClose}
+      forceRender
+      destroyOnHidden
+      footer={
+        <Space>
+          <Button onClick={onClose}>取消</Button>
+          <Button type="primary" loading={saving} data-testid="datasource-llm-config-save" onClick={() => void submit()}>
+            保存
+          </Button>
+        </Space>
+      }
+    >
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="工作区级配置，所有「大模型提示词」任务共用"
+        description="API Key 只写不回显；保存后任务里不再需要逐条填写地址 / 模型 / Key。"
+      />
+      <Form form={form} layout="vertical" size="small">
+        <Form.Item
+          name="base_url"
+          label="API 地址（base_url）"
+          rules={[{ required: true, message: '请输入 API 地址' }]}
+          extra="OpenAI 兼容；只填 base_url 时自动补全 /chat/completions"
+        >
+          <Input data-testid="datasource-llm-config-base-url" placeholder={LLM_DEFAULTS.baseUrl} />
+        </Form.Item>
+        <Form.Item name="model" label="模型" rules={[{ required: true, message: '请输入模型名称' }]}>
+          <Input data-testid="datasource-llm-config-model" placeholder={LLM_DEFAULTS.model} />
+        </Form.Item>
+        <Form.Item
+          name="api_key"
+          label="API Key"
+          extra={
+            config?.has_api_key
+              ? '已配置 API Key：留空保持不变，填写则整体替换'
+              : '尚未配置：保存后加密存储，读接口只回显是否已配置'
+          }
+        >
+          <Input.Password
+            data-testid="datasource-llm-config-api-key"
+            autoComplete="new-password"
+            placeholder={config?.has_api_key ? '已配置，留空保持不变' : 'sk-...'}
+          />
+        </Form.Item>
+        {config?.has_api_key && (
+          <Form.Item style={{ marginBottom: 12 }}>
+            <Button
+              size="small"
+              danger={!clearKey}
+              type={clearKey ? 'primary' : 'default'}
+              data-testid="datasource-llm-config-clear-key"
+              onClick={() => setClearKey(value => !value)}
+            >
+              {clearKey ? '取消清除 API Key' : '清除已保存的 API Key'}
+            </Button>
+          </Form.Item>
+        )}
+        <Form.Item
+          name="system_prompt"
+          label="系统提示词（可选）"
+          extra="留空使用内置默认；填写后覆盖当前工作区的系统提示词"
+        >
+          <Input.TextArea data-testid="datasource-llm-config-system" rows={3} placeholder="留空使用内置默认" />
+        </Form.Item>
+        <div
+          data-testid="datasource-llm-default-system"
+          style={{ padding: 8, background: 'rgba(0,0,0,0.03)', borderRadius: 6, marginBottom: 16 }}
+        >
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            内置默认系统提示词（system_prompt 留空时使用）
+          </Text>
+          <Paragraph style={{ marginBottom: 0, marginTop: 4, whiteSpace: 'pre-wrap', fontSize: 12 }}>
+            {config?.default_system_prompt || '只输出 JSON，不要输出 Markdown 代码围栏或解释文字。'}
+          </Paragraph>
+        </div>
+        <Space size={8} wrap>
+          <Button
+            icon={<ApiOutlined />}
+            data-testid="datasource-llm-config-test"
+            loading={testing}
+            onClick={() => void testConnection()}
+          >
+            测试连接
+          </Button>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            发一次真实模型请求（可能产生费用）；使用已保存的 API Key，修改后请先保存再测试
+          </Text>
+        </Space>
+        {testResult && (
+          <Alert
+            data-testid="datasource-llm-config-test-result"
+            type={testResult.ok ? 'success' : 'error'}
+            showIcon
+            style={{ marginTop: 12 }}
+            message={
+              testResult.ok
+                ? `连通成功 · ${testResult.model || '模型'} · ${testResult.latency_ms} ms`
+                : '连通失败'
+            }
+            description={testResult.ok ? undefined : testResult.message}
+          />
+        )}
       </Form>
     </Modal>
   )

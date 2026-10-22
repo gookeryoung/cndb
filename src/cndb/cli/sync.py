@@ -185,7 +185,7 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
         for job in jobs:
             if getattr(args, "dry_run", False):
                 session = db.get(DatasourceSession, job.session_id) if job.session_id else None
-                preview = preview_job(job, limit=int(getattr(args, "limit", 20) or 20), session=session)
+                preview = preview_job(job, limit=int(getattr(args, "limit", 20) or 20), session=session, db=db)
                 results.append(
                     {
                         "job_id": job.id,
@@ -196,9 +196,12 @@ def cmd_run(args: argparse.Namespace) -> dict[str, Any]:
                         "columns": preview.columns,
                         "failures": preview.failures,
                         "rows": preview.rows,
+                        # ADR 0019：llm_prompt 预览会给出自动识别的幂等键
+                        "suggested_match_keys": preview.suggested_match_keys,
                     }
                 )
                 continue
+
             if not acquire_lease(db, job.id, owner, now=_now(), ttl_seconds=LEASE_TTL_SECONDS):
                 results.append({"job_id": job.id, "name": job.name, "skipped": "租约已被占用"})
                 continue
@@ -255,7 +258,7 @@ def cmd_preview(args: argparse.Namespace) -> dict[str, Any]:
         if job is None:
             raise SystemExit(f"[error] 同步任务不存在: {args.job_id}")
         session = db.get(DatasourceSession, job.session_id) if job.session_id else None
-        preview = preview_job(job, limit=int(getattr(args, "limit", 20) or 20), session=session)
+        preview = preview_job(job, limit=int(getattr(args, "limit", 20) or 20), session=session, db=db)
         return {
             "job_id": job.id,
             "name": job.name,
@@ -268,6 +271,8 @@ def cmd_preview(args: argparse.Namespace) -> dict[str, Any]:
             "cursor_to": preview.cursor_to,
             "failures": preview.failures,
             "normalize_failures": preview.normalize_failures,
+            # ADR 0019：llm_prompt 预览会给出自动识别的幂等键
+            "suggested_match_keys": preview.suggested_match_keys,
             "rows": preview.rows,
         }
     finally:
