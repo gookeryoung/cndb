@@ -221,9 +221,9 @@ requires_review = confidence < 0.6 或无后续数据行
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `plugins/tables/services/transfer/header_detect.py` | `tests/test_import_header_detection.py` | `（本轮）` |
-| P1 | 已落地 | `plugins/tables/services/transfer/spreadsheet.py`、`plugins/tables/services/importing/importer.py`、`plugins/tables/services/importing/import_tasks.py` | `tests/test_import_header_detection.py` | `（本轮）` |
-| P2 | 已落地 | `plugins/tables/routers/import_csv.py`、`plugins/tables/routers/bulk_import.py`、`frontend/src/pages/import-export/FileImportPreview.tsx`、`frontend/src/pages/import-export/ImportExportDialog/ImportPanel.tsx` | `tests/test_import_header_detection.py`、`frontend/src/pages/import-export/FileImportPreview.test.tsx`、`frontend/src/pages/import-export/ImportExportDialog/ImportPanel.test.tsx` | `（本轮）` |
+| P0 | 已落地 | `plugins/tables/services/transfer/header_detect.py` | `tests/test_import_header_detection.py` | `3162f66b` |
+| P1 | 已落地 | `plugins/tables/services/transfer/spreadsheet.py`、`plugins/tables/services/importing/importer.py`、`plugins/tables/services/importing/import_tasks.py` | `tests/test_import_header_detection.py` | `3162f66b` |
+| P2 | 已落地 | `plugins/tables/routers/import_csv.py`、`plugins/tables/routers/bulk_import.py`、`frontend/src/pages/import-export/FileImportPreview.tsx`、`frontend/src/pages/import-export/ImportExportDialog/ImportPanel.tsx` | `tests/test_import_header_detection.py`、`frontend/src/pages/import-export/FileImportPreview.test.tsx`、`frontend/src/pages/import-export/ImportExportDialog/ImportPanel.test.tsx` | `3162f66b` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -233,4 +233,4 @@ requires_review = confidence < 0.6 或无后续数据行
 - 已完成：P0 判定入口与概率校准；P1 两条解析链路接入 + `validation_report` 跨阶段携带表头行；P2 端点 / 前端 / 判定层·接口层·前端单测
 - 下一步：人工评审后按需补 e2e（带合并标题行的真实文件导入）；若后续要做多级表头合并列名，另立 ADR
 - 已知坑：`header_row` 坐标是「非空行序号」，无空行时等于 Excel 行号；人工指定行只允许前 20 个非空行；全文本表格概率天然中等（会提示人工确认）属预期
-- 最近一次全绿：`make flow` @ `（本轮）`（2026-10-22）
+- 最近一次全绿：`make flow` @ `3162f66b`（2026-10-22）
