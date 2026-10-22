@@ -228,7 +228,7 @@ class TestFetchJson:
 
     # ── 幂等 GET 瞬时失败重试 ─────────────────────
 
-    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("cndb.core.http.time.sleep", lambda *_: None)
     @patch("httpx2.Client")
     def test_get_transient_failure_retries_then_succeeds(self, MockClient):
         """GET 瞬时失败 → 有限重试后成功返回."""
@@ -250,7 +250,7 @@ class TestFetchJson:
         assert rows == [{"ok": 1}]
         assert client.request.call_count == 2
 
-    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("cndb.core.http.time.sleep", lambda *_: None)
     @patch("httpx2.Client")
     def test_get_retry_exhausted_raises_valueerror(self, MockClient):
         """GET 重试耗尽 → 请求失败 ValueError."""
@@ -266,7 +266,7 @@ class TestFetchJson:
         # 1 次初始 + MAX_RETRIES 次重试
         assert client.request.call_count == af.MAX_RETRIES + 1
 
-    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("cndb.core.http.time.sleep", lambda *_: None)
     @patch("httpx2.Client")
     def test_post_never_retried(self, MockClient):
         """非幂等 POST 瞬时失败 → 不重试，直接失败."""
@@ -281,7 +281,7 @@ class TestFetchJson:
             af.fetch_json(af.FetchConfig(url="https://example.com/api", method="POST"))
         assert client.request.call_count == 1
 
-    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("cndb.core.http.time.sleep", lambda *_: None)
     @patch("httpx2.Client")
     def test_retry_zero_disables(self, MockClient):
         """max_retries=0 → GET 也只请求一次."""
@@ -298,7 +298,7 @@ class TestFetchJson:
 
     # ── 连接被对端掐断（疑似限流）的长退避 ─────────────
 
-    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep")
+    @patch("cndb.core.http.time.sleep")
     @patch("httpx2.Client")
     def test_throttle_error_uses_long_backoff(self, MockClient, mock_sleep):
         """RemoteProtocolError → 2s / 8s 长退避后报“疑似限流”而不是“请求失败”."""
@@ -314,7 +314,7 @@ class TestFetchJson:
         assert client.request.call_count == af.MAX_RETRIES + 1
         assert [call.args[0] for call in mock_sleep.call_args_list] == [2.0, 8.0]
 
-    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep", lambda *_: None)
+    @patch("cndb.core.http.time.sleep", lambda *_: None)
     @patch("httpx2.Client")
     def test_throttle_error_retries_then_succeeds(self, MockClient):
         """连接被掐断一次 → 长退避后重试成功."""
@@ -336,7 +336,7 @@ class TestFetchJson:
         assert rows == [{"ok": 1}]
         assert client.request.call_count == 2
 
-    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep")
+    @patch("cndb.core.http.time.sleep")
     @patch("httpx2.Client")
     def test_connect_reset_message_uses_long_backoff(self, MockClient, mock_sleep):
         """ConnectError 文案带 connection reset → 同样走长退避 + 限流提示."""
@@ -351,7 +351,7 @@ class TestFetchJson:
             af.fetch_json(af.FetchConfig(url="https://example.com/api"))
         assert [call.args[0] for call in mock_sleep.call_args_list] == [2.0, 8.0]
 
-    @patch("cndb.plugins.tables.services.importing.api_fetch.time.sleep")
+    @patch("cndb.core.http.time.sleep")
     @patch("httpx2.Client")
     def test_plain_transient_error_keeps_short_backoff(self, MockClient, mock_sleep):
         """普通瞬时失败（如 DNS 失败）仍用 0.5s / 1s 短退避."""

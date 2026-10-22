@@ -2,7 +2,7 @@
 
 Status: Implemented（需求方 2026-10-21 确认提案并落地）
 Date: 2026-10-21
-Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/core/crypto.py`、`frontend/src/pages/datasource/DatasourcePage.tsx`；上游框架见 ADR 0006
+Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/core/crypto.py`、`src/cndb/core/http.py`、`src/cndb/plugins/llm/services/client.py`、`src/cndb/plugins/llm/services/parsing.py`、`src/cndb/plugins/llm/services/prompts.py`、`frontend/src/pages/datasource/DatasourcePage.tsx`；上游框架见 ADR 0006，平台层抽层见 ADR 0020 P0
 需求卡片: `docs/requirements/0014-llm-prompt-datasource-sync.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -12,12 +12,12 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 | C # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
 | C1 | 数据源同步功能增强 | 新增 `llm_prompt` provider 并登记进 `PROVIDERS`；既有 provider 与其配置结构不变 |
-| C2 | 需支持大模型 api 调用 | `LlmPromptProvider` 按 OpenAI 兼容协议请求 `{base_url}/chat/completions`；复用 `api_fetch` 的超时 / 体积上限 / SSRF / 错误留痕 |
-| C3 | 配置 api 和 key | `request_spec.url_template` 存 API 地址、`prompt` / `llm` 存提示词与模型参数；Key 只存 `datasource_session.secrets.api_key`（Fernet 加密），运行期渲染 `Authorization: Bearer {api_key}` |
-| C4 | 能够设置特定特示词（提示词） | `request_spec.prompt.system + user_template`，经 `render_text` 求值；内置变量 `entrant / start / end / today`，未知占位符保存即 400；`system` 可省略，未配置时使用内置默认系统提示词（简化口径见 ADR 0019） |
+| C2 | 需支持大模型 api 调用 | `LlmPromptProvider` 按 OpenAI 兼容协议请求 `{base_url}/chat/completions`；请求经 `RequestPlan.fetcher` 注入的 `llm/services/client.py`（重试 + SSRF 白名单），HTTP 传输复用 `core/http.py` 的超时 / 体积上限 / SSRF / 错误留痕（`api_fetch.py` 保留 re-export shim） |
+| C3 | 配置 api 和 key | `request_spec.url_template` 存 API 地址、`prompt` / `llm` 存提示词与模型参数；Key 优先取 `datasource_session.secrets.api_key`（Fernet 加密），缺省取个人大模型连接 `llm_user_config`（ADR 0019 / 0020），运行期渲染 `Authorization: Bearer {api_key}` |
+| C4 | 能够设置特定特示词（提示词） | `request_spec.prompt.system + user_template`，经 `render_text` 求值；内置变量 `entrant / start / end / today`，未知占位符保存即 400；`system` 可省略，未配置时使用内置默认系统提示词（定义在 `src/cndb/plugins/llm/services/prompts.py`，`llm_prompt` 复用；简化口径见 ADR 0019） |
 | C5 | 和 cron 定时任务 | 复用 `ScheduleMode.CRON` 与 `is_due`；`llm_prompt` + cron 的幂等键改由自动识别（简化口径见 ADR 0019），不再强制手填 `match_keys` |
 | C6 | 将得到的结果更新到数据表当中 | 模型回复必须是 JSON（对象 / 对象数组 / `{"rows": [...]}`）；解析后经 `field_mapping` 归一，按 `match_keys` 走 `upsert_rows`；解析失败 → `run=failed` 且不落库 |
-| C7 | api 增加连通测试 | `POST /{wid}/datasource/test-connection`：接收未保存的 `request_spec` + `session_id`，发一次最小模型请求，返回 `ok / latency_ms / model / message`；不落库、不写运行记录 |
+| C7 | api 增加连通测试 | 连通测试现由平台端点 `POST /api/v1/llm/config/test` 承接（ADR 0019 / 0020）：用未保存的地址 / 模型 / Key 发一次最小模型请求，返回 `ok / latency_ms / model / message`；不落库、不写运行记录 |
 
 ## Context
 
@@ -26,9 +26,9 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 | # | 现状 | 位置 | 影响 | 与卡片的关系 |
 |---|---|---|---|---|
 | 1 | Provider 注册表集中登记内置适配器，`GET /providers` 自动暴露 | `src/cndb/plugins/datasource/providers/registry.py:61-77` | 新 provider 只需登记，前端无需硬编码发现 | 确认 |
-| 2 | Provider 协议含 `build_requests / parse / normalize`，且 `FetchConfig.response_handler` 支持 callable | `providers/base.py:177-200`、`providers/http_json.py:86-108`、`tables/services/importing/api_fetch.py:493-506` | 可在 parse 阶段把 `choices[0].message.content` 转成行，无需改抓取内核 | 确认 |
+| 2 | Provider 协议含 `build_requests / parse / normalize`，且 `FetchConfig.response_handler` 支持 callable | `providers/base.py:177-200`、`providers/http_json.py:86-108`、`src/cndb/core/http.py`（`FetchConfig.response_handler` / `fetch_json`；`api_fetch.py` 保留 re-export shim） | 可在 parse 阶段把 `choices[0].message.content` 转成行，无需改抓取内核 | 确认 |
 | 3 | `RequestSpec` 只认 `url_template / headers / params / body / data_path / paging / time_window`；`request_spec_from_payload` 也是白名单还原 | `providers/base.py:80-104`、`services/runner.py:227-254` | 提示词与模型参数当前无处可放，需扩展 `RequestSpec` 与还原白名单 | 确认 |
-| 4 | 管线是「Provider 展开请求 → fetch → parse → normalize」，单请求失败记 failure | `services/pipeline.py:60-110` | 可原样复用；LLM 响应解析放在 provider 内 | 确认 |
+| 4 | 管线是「Provider 展开请求 → fetch → parse → normalize」，单请求失败记 failure | `services/pipeline.py:60-110` | 可原样复用；LLM 响应解析经平台 `parsing.py` 复用（ADR 0020） | 确认 |
 | 5 | 会话 headers 铺底、secrets 解密为模板变量；密钥 Fernet 加密、读接口只回显键名 | `services/runner.py:205-213`、`core/crypto.py:79-84`、`models.py:50-69` | Key 复用会话即可满足「配置 api 和 key」且不新增存储 | 确认 |
 | 6 | cron 已有 5 段解析、到期判定与失败退避 | `services/schedule.py:123-143`、`models.py:24-31` | 无需新调度器，只需任务级校验 | 确认 |
 | 7 | `upsert_rows` 已按 `match_keys` 先查后写，`partial=True` 保留未提供列 | `services/write.py:39-84`、`services/runner.py:293-315` | 模型结果可直接走同一落表路径 | 确认 |
@@ -44,7 +44,7 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 
 - **I1 领域无关**：调度 / 游标 / 分页 / 幂等 / 重试代码不新增任何 LLM 领域词，模型差异只在 `llm_prompt` provider 内。
 - **I2 零迁移**：不新增表 / 列 / 迁移；配置全部进既有 `request_spec` JSON，备份格式不变。
-- **I3 密钥不落地明文**：API Key 只存会话密文，读接口与导出不含明文。
+- **I3 密钥不落地明文**：API Key 只存会话密文或个人连接密文（ADR 0019），读接口与导出不含明文。
 - **I4 结构化才落库**：模型输出不能解析成对象行时不写任何数据，运行记 `failed`。
 - **I5 单飞与幂等不变**：仍由 DB 租约保证单飞；重复运行只更新不重复插入，cron 任务的幂等键由自动识别承接（简化口径见 ADR 0019）。
 - **I6 连通测试无副作用**：测试不写运行记录、不落表、不推进游标。
@@ -67,7 +67,7 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
   "llm": {
     "model": "deepseek-chat",
     "temperature": 0.2,
-    "max_tokens": 1024,
+    "max_tokens": 4096,
     "json_mode": true
   }
 }
@@ -96,10 +96,10 @@ class LlmPromptProvider:
 
 判定顺序：
 
-1. **Key 校验**：`build_requests` 要求 `job.extra_variables["api_key"]` 非空；缺失抛 `ProviderError("llm_prompt 需要绑定包含 api_key 的凭证会话")`，运行落 `failed`，不发出请求（简化口径见 ADR 0019：Key 可由工作区「大模型连接」提供，会话 Key 优先）。
+1. **Key 校验**：`build_requests` 要求 `job.extra_variables["api_key"]` 非空；缺失抛 `ProviderError("llm_prompt 需要绑定包含 api_key 的凭证会话")`，运行落 `failed`，不发出请求（简化口径见 ADR 0019：Key 可由个人「大模型连接」（`llm_user_config`）提供，会话 Key 优先）。
 2. **提示词求值**：内置变量 `entrant / start / end / today` 与 `extra_variables` 合并后交给 `render_text`；未知占位符直接报错（保存阶段用同一函数预校验）。
-3. **请求构造**：`messages = [system?, user]`；`response_format={"type":"json_object"}` 在 `json_mode=true` 时加入；`temperature / max_tokens` 取 `llm` 配置并夹取合法范围。
-4. **结果解析**：取 `choices[0].message.content`（兼容 content 为文本片段数组），去掉 Markdown 代码围栏后 `json.loads`；对象 → 1 行，对象数组 → N 行，`{"rows":[...]}` → 取 `rows`；其它形态抛 `ProviderError`。
+3. **请求构造**：`messages = [system?, user]`；`response_format={"type":"json_object"}` 在 `json_mode=true` 时加入；`temperature / max_tokens` 取 `llm` 配置并夹取合法范围；实际 HTTP 调用经 `RequestPlan.fetcher` 注入的 `llm/services/client.py` 发出（pipeline 默认行为仍走 `fetch_json`，其它 provider 不变）。
+4. **结果解析**：取 `choices[0].message.content`（兼容 content 为文本片段数组），去掉 Markdown 代码围栏后 `json.loads`（去围栏 / 截断识别实现在 `llm/services/parsing.py`，provider 复用后把错误转回既有 `ProviderError`，文案逐字不变）；对象 → 1 行，对象数组 → N 行，`{"rows":[...]}` → 取 `rows`；其它形态抛 `ProviderError`。
 5. **落表**：`normalize` 复用 `apply_field_mapping`，随后由既有 `upsert_rows` 按 `match_keys` 写入。
 
 连通测试复用同一构造逻辑，但使用固定提示词「只返回 `{"ok": true}`」，单次请求、不走管线落库。
@@ -160,12 +160,12 @@ class LlmPromptProvider:
 | D1 | LLM 在同步链路中的角色 | 独立数据源 provider `llm_prompt` | 与既有 Provider × SyncJob × Cursor × Normalizer 同构，调度 / 落表 / 留痕零改动 | 抓取后处理器（需改管线中间阶段）；两者都做（范围翻倍） | `providers/llm_prompt.py`、`providers/registry.py` |
 | D2 | API 协议与端点范围 | OpenAI 兼容 `/chat/completions`，首期仅公网 | 覆盖主流厂商；复用现有 SSRF 防护 | 内网 / 本机端点（需 SSRF 白名单）；任意 HTTP JSON（配置复杂、可校验性差） | `providers/llm_prompt.py`、`tables/services/importing/api_fetch.py` |
 | D3 | 模型输出形态 | 强制 JSON，解析失败即 failed | 可字段映射、可幂等、不写脏数据 | 单列文本（不可分析 / 不可幂等）；任务级可选（两套口径） | `providers/llm_prompt.py`、`services/pipeline.py` |
-| D4 | API Key 存储 | 复用 `datasource_session.secrets.api_key`（Fernet 加密）；后续新增工作区级「大模型连接」作为默认 Key 来源，会话 Key 优先（简化口径见 ADR 0019） | 已有加密、只写不回显、不随导出；避免第二套凭证入口 | 任务内联字段；全局环境变量 | `services/runner.py`、`core/crypto.py`、`routers/sessions.py` |
+| D4 | API Key 存储 | 复用 `datasource_session.secrets.api_key`（Fernet 加密）；后续新增个人级「大模型连接」（`llm_user_config`）作为默认 Key 来源，会话 Key 优先（简化口径见 ADR 0019 / 0020） | 已有加密、只写不回显、不随导出；避免第二套凭证入口 | 任务内联字段；全局环境变量 | `services/runner.py`、`core/crypto.py`、`routers/sessions.py` |
 | D5 | 提示词上下文 | 仅内置变量 `entrant / start / end / today` | 首期最小闭环，不引入读表权限与行数上限问题 | 拼目标表 / 其它表已有行（需新取数路径） | `providers/llm_prompt.py`、`providers/template.py` |
 | D6 | cron 与幂等 | 复用 `ScheduleMode.CRON`；`llm_prompt` + cron 的 `match_keys` 由自动识别承接（简化口径见 ADR 0019），不再强制手填 | 防止每轮追加重复行；调度器零改动 | 无键追加；新建 LLM 专用调度器 | `services/schedule.py`、`routers/sync_jobs.py` |
 | D7 | 连通测试入口 | 独立 `POST /test-connection`，用未保存配置，无副作用 | 现有预览必须先保存任务，无法在表单阶段验证 Key / 模型 | 复用预览端点（有落库 / 运行记录副作用） | `routers/sync_jobs.py`、`providers/llm_prompt.py` |
 | D8 | 用量留痕 | `run.detail.response_metadata` 记录 model 与 usage | 便于排查模型 / 计费问题，不做费用估算 | 不记录；单独建表 | `services/pipeline.py`、`services/runner.py` |
-| D9 | 是否新增表 / 迁移 | 本 ADR 范围内不新增，配置进 `request_spec` JSON（后续 ADR 0019 改为按用户的个人级连接表 `datasource_user_llm_config`） | 与既有半结构化配置口径一致，备份零改动 | 新建 `llm_config` 表（无必要抽象） | `services/runner.py`、`services/schemas` |
+| D9 | 是否新增表 / 迁移 | 本 ADR 范围内不新增，配置进 `request_spec` JSON（后续 ADR 0019 改为个人级连接表 `llm_user_config`，ADR 0020 P0 迁到 `plugins/llm/`） | 与既有半结构化配置口径一致，备份零改动 | 新建 `llm_config` 表（无必要抽象） | `services/runner.py`、`services/schemas` |
 
 门禁：本表无「待定」；需求方已于 2026-10-21 确认提案并要求实现，Status 定稿 `Accepted`。
 
@@ -173,16 +173,17 @@ class LlmPromptProvider:
 
 - **正向**：数据源同步从「抓 HTTP」扩展到「提示词生成」，复用调度、游标、幂等、落表、留痕与凭证加密；新增数据源只需一个 Provider。
 - **负向**：模型输出质量不可控，提示词与结构化约束成为主要维护面；连通测试与预览会产生真实调用费用。
-- **风险与缓解**：模型返回非 JSON → 解析失败即 failed，不落脏数据；Key 泄露 → 只存密文、只回显键名、不随备份导出；cron 重复行 → 强制 `match_keys`；上游不支持 `response_format` → 错误信息透传，必要时关闭 `json_mode`。
+- **风险与缓解**：模型返回非 JSON → 解析失败即 failed，不落脏数据；Key 泄露 → 只存密文、只回显键名、不随备份导出；cron 重复行 → 幂等键自动识别（ADR 0019）；上游不支持 `response_format` → 错误信息透传，必要时关闭 `json_mode`。
 
 ## 与既有 ADR 的关系（可选）
 
 | 轴 | 载体 | 决定 | 由谁 |
 |---|---|---|---|
 | 数据同步框架 | Provider × SyncJob × Cursor × Normalizer | `llm_prompt` 作为新 Provider 接入，不改框架 | ADR 0006 |
-| 凭证管理 | `datasource_session` | 复用加密会话；ADR 0019 另增个人级连接 Key，会话 Key 优先 | ADR 0006 D6、ADR 0019 D4 |
+| 凭证管理 | `datasource_session` | 复用加密会话；ADR 0019 另增个人级连接 Key（`llm_user_config`），会话 Key 优先 | ADR 0006 D6、ADR 0019 D4 |
 | 调度 | `ScheduleMode.CRON` | 复用 cron 判定与租约单飞 | ADR 0006 D3 |
-| 配置复杂度简化 | 工作区级「大模型连接」+ 空表自动落表 | llm_prompt 的连接 / 幂等键 / 目标表配置下沉或自动化，provider 协议不变 | ADR 0019 |
+| 配置复杂度简化 | 个人级「大模型连接」（`llm_user_config`）+ 空表自动落表 | llm_prompt 的连接 / 幂等键 / 目标表配置下沉或自动化，provider 协议不变 | ADR 0019 |
+| LLM 能力归属 | `src/cndb/plugins/llm/`（ADR 0020 P0 抽层） | 连接 / 调用 / 解析 / 留痕由平台插件提供；`llm_prompt` 保留消息构造与「提示词 → 行 → 幂等落表」领域语义，provider 协议不变 | ADR 0020 |
 
 ## 落地状态（随实现更新）
 
@@ -192,10 +193,13 @@ class LlmPromptProvider:
 | P1 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/api/index.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | f8b79dba |
 | P2 | 已落地 | `CHANGELOG.md`、`docs/adr/0014-llm-prompt-datasource-sync.md` | `tests/test_datasource_llm_provider.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | f8b79dba |
 
+> ADR 0020 P0 把连接 / HTTP 调用 / JSON 解析抽到 `src/cndb/plugins/llm/`（`llm/services/connection.py`、`client.py`、`parsing.py`）与 `src/cndb/core/http.py`；`llm_prompt` 只保留消息构造与领域落表语义，provider 协议不变。本表提交列仍指向各期实现提交。
+
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地并提交（`f8b79dba`），`Status=Implemented`；配置复杂度的简化已由 **ADR 0019** 承接（工作区级「大模型连接」、内置默认系统提示词、空表自动建表 / 补字段 / 自动幂等键、5 组推荐提示词），本 ADR 保留为 `llm_prompt` provider 的原始设计与口径来源，不标 Superseded
+- 当前阶段：P0-P2 已落地并提交（`f8b79dba`），`Status=Implemented`；配置复杂度的简化已由 **ADR 0019** 承接（个人级「大模型连接」、内置默认系统提示词、空表自动建表 / 补字段 / 自动幂等键、8 组推荐提示词），连接 / 调用 / 解析已由 **ADR 0020 P0** 抽到平台插件 `plugins/llm/`；本 ADR 保留为 `llm_prompt` provider 的原始设计与口径来源，不标 Superseded
+- 追加（2026-10-22，ADR 0020 P0）：连接来自 `src/cndb/plugins/llm/services/connection.py`，模型 HTTP 调用走 `RequestPlan.fetcher` 注入的 `llm/services/client.py`（重试 + SSRF 白名单），JSON 围栏 / 截断识别走 `llm/services/parsing.py`，HTTP 传输层上移 `core/http.py`（`api_fetch.py` 保留 re-export shim）；消息构造与落表语义不变
 - 已完成：`llm_prompt` provider、创建 / 更新校验、`POST /test-connection`；前端按 `provider=llm_prompt` 条件渲染提示词 / 模型表单与连通测试按钮；单测、接口测试与页面测试同轮补齐
-- 下一步：本 ADR 范围内无待办；`llm_prompt` 后续演进（连接 / 空表自动化 / 提示词预设）一律在 ADR 0019 上继续，流式响应 / 多轮对话等增强按使用反馈另立 ADR
-- 已知坑：`api_fetch` 对非 2xx 直接抛 `ValueError`（错误信息含上游响应片段）；`render_text` 对未知占位符直接报错；cron 幂等键现由自动识别承接（见 ADR 0019），不再强制手填；抽屉里调度项位于折叠面板，未展开时 `Form.useWatch` 取不到值（已回退到任务配置）
-- 最近一次全绿：`make check-docs`（2026-10-22，ADR 0019 文档对齐）；代码门禁以提交 `f8b79dba` 为准
+- 下一步：本 ADR 范围内无待办；`llm_prompt` 后续演进（连接 / 空表自动化 / 提示词预设）一律在 ADR 0019 上继续，平台能力演进（网关 / 动作目录 / 应用地图）在 ADR 0020 上继续；流式响应 / 多轮对话等增强按使用反馈另立 ADR
+- 已知坑：`api_fetch` 对非 2xx 直接抛 `ValueError`（错误信息含上游响应片段），但 LLM 请求已不直连 `api_fetch`，重试 / 白名单 / 超时排查看 `llm/services/client.py` 与 `core/http.py`；`render_text` 对未知占位符直接报错；cron 幂等键现由自动识别承接（见 ADR 0019），不再强制手填；抽屉里调度项位于折叠面板，未展开时 `Form.useWatch` 取不到值（已回退到任务配置）
+- 最近一次全绿：`make check-docs`（2026-10-22，ADR 0020 P0 文档同步）；代码门禁以提交 `f8b79dba` 为准

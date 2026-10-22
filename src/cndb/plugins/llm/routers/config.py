@@ -1,18 +1,16 @@
-"""个人「大模型连接」路由（ADR 0019）—— 挂在 accounts 插件下，按登录用户隔离.
+"""个人「大模型连接」路由（ADR 0020 P0；原 ``/api/v1/accounts/llm-config`` 迁入）.
 
-- ``GET  /llm-config``：读取当前用户的连接；**不返回 api_key 明文**，只给 ``has_api_key``；
+- ``GET  /config``：读取当前用户连接；**不返回 api_key 明文**，只给 ``has_api_key``；
   未配置时返回内置默认地址 / 模型与内置默认系统提示词。
-- ``PUT  /llm-config``：创建或更新当前用户的连接；``api_key`` 非空才覆盖，
+- ``PUT  /config``：创建或更新当前用户连接；``api_key`` 非空才覆盖，
   ``clear_api_key=true`` 可显式清除；API Key 用 :func:`cndb.core.crypto.encrypt_secret` 加密入库。
-- ``POST /llm-config/test``：用当前用户连接 + 请求体里可选的未保存配置发一次最小模型请求，
+- ``POST /config/test``：用当前用户连接 + 请求体里可选的未保存配置发一次最小模型请求，
   **不落库**；用于「个人设置 → 大模型」填完 Key 先测后存。
-
-任务侧只需填写用户提示词，地址 / 模型 / Key / 系统提示词默认值都从这里继承。
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -22,17 +20,18 @@ from cndb.api.deps import get_current_user
 from cndb.core.crypto import encrypt_secret
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.datasource.models import UserLlmConfig
-from cndb.plugins.datasource.providers.llm_prompt import DEFAULT_SYSTEM_PROMPT, test_llm_connection
-from cndb.plugins.datasource.services.connection import (
+from cndb.plugins.llm.models import LlmUserConfig
+from cndb.plugins.llm.services import client
+from cndb.plugins.llm.services.connection import (
     DEFAULT_BASE_URL,
     DEFAULT_MODEL,
-    find_user_llm_config,
-    load_llm_connection,
+    LlmConnection,
+    find_user_config,
+    load_connection,
 )
-from cndb.plugins.datasource.services.runner import request_spec_from_payload
+from cndb.plugins.llm.services.prompts import DEFAULT_SYSTEM_PROMPT
 
-router = APIRouter(prefix="/llm-config", tags=["accounts"])
+router = APIRouter(prefix="/config", tags=["llm"])
 
 
 # ── Schema ───────────────────────────────────────
@@ -78,7 +77,7 @@ class ConnectionTestResponse(BaseModel):
 # ── 辅助 ─────────────────────────────────────────
 
 
-def _to_out(config: UserLlmConfig | None) -> LlmConfigOut:
+def _to_out(config: LlmUserConfig | None) -> LlmConfigOut:
     """连接 → 响应；未配置时回内置默认值（前端可直接展示 / 编辑）."""
     if config is None:
         return LlmConfigOut(
@@ -130,7 +129,7 @@ def get_llm_config(
     db: Annotated[Session, Depends(get_db)],
 ) -> LlmConfigOut:
     """读取当前用户的个人大模型连接（API Key 只回「是否已配置」）."""
-    return _to_out(find_user_llm_config(db, current_user.id))
+    return _to_out(find_user_config(db, current_user.id))
 
 
 @router.put("", response_model=LlmConfigOut)
@@ -143,9 +142,9 @@ def update_llm_config(
     base_url = _validated_base_url(payload.base_url)
     model = _validated_model(payload.model)
 
-    config = find_user_llm_config(db, current_user.id)
+    config = find_user_config(db, current_user.id)
     if config is None:
-        config = UserLlmConfig(
+        config = LlmUserConfig(
             user_id=current_user.id,
             base_url=base_url or DEFAULT_BASE_URL,
             model=model or DEFAULT_MODEL,
@@ -180,35 +179,20 @@ def test_connection(
 ) -> ConnectionTestResponse:
     """用当前用户连接 + 请求体未保存的覆盖项测一次模型连通性（不落库、不写运行记录）.
 
-    Key 优先级：请求体 ``api_key`` > 当前用户已保存 Key；都没有时返回 ``ok=false`` 与配置提示。
+    Key 优先级：请求体 ``api_key`` > 当前用户已保存 Key；都没有时不发请求、直接给配置提示。
     """
     base_url = _validated_base_url(payload.base_url)
     model = _validated_model(payload.model)
-    connection = load_llm_connection(db, current_user.id)
+    saved = load_connection(db, current_user.id)
 
-    spec_payload: dict[str, Any] = {
-        "url_template": base_url or connection.base_url,
-        "llm": {"model": model or connection.model},
-    }
-    system_prompt = payload.system_prompt if payload.system_prompt is not None else connection.system_prompt
-    if system_prompt.strip():
-        spec_payload["prompt"] = {"system": system_prompt.strip()}
-    try:
-        spec = request_spec_from_payload(spec_payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    # 请求体未保存的 Key 优先；其次当前用户已保存的 Key
-    api_key = str(payload.api_key or "").strip() or connection.api_key
-    if not api_key:
-        # 不发起网络请求：直接给出指向个人配置的明确提示（避免被误判为网络故障）
-        return ConnectionTestResponse(
-            ok=False,
-            latency_ms=0,
-            model=model or connection.model,
-            message="未配置 api_key：请先在「个人设置 → 大模型」配置 API Key",
-        )
-    result = test_llm_connection(spec, api_key=api_key)
+    effective = LlmConnection(
+        base_url=base_url or saved.base_url,
+        model=model or saved.model,
+        api_key=(payload.api_key or "").strip() or saved.api_key,
+        system_prompt=payload.system_prompt if payload.system_prompt is not None else saved.system_prompt,
+        has_api_key=saved.has_api_key,
+    )
+    result = client.test_connection(effective)
     return ConnectionTestResponse(
         ok=result.ok,
         latency_ms=result.latency_ms,

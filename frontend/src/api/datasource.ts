@@ -3,7 +3,7 @@
  * - providers：可用适配器 + 参数表单描述（Provider 驱动的新建向导）
  * - sync-jobs：任务 CRUD / 立即运行 / 抓取预览 / 运行历史
  *
- * 个人级「大模型」配置（`/api/v1/accounts/llm-config`）见 `api/llmConfig.ts`；
+ * 个人级「大模型」配置（`/api/v1/llm/config`）见 `api/llm.ts`（ADR 0020 P0 迁移）；
  * 工作区级连接端点已删除，本文件不再提供 getLlmConfig / updateLlmConfig / testConnection。
  *
  * 类型内联在本文件（与 analytics 同口径），不再拆 types 子目录。

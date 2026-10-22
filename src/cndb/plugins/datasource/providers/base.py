@@ -17,7 +17,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol
 
-from cndb.plugins.tables.services.importing.api_fetch import DEFAULT_TIMEOUT, FetchConfig
+from cndb.core.http import DEFAULT_TIMEOUT, FetchConfig
 
 # 增量策略（M2 落地实现，M1 仅作为 provider 元信息对外暴露）
 CursorStrategy = Literal["date", "datetime", "key_set", "none"]
@@ -161,6 +161,9 @@ class RequestPlan:
     window_end: str | None = None
     # 响应元信息（模型名 / token 用量等），由 provider 的响应处理器写入，随运行记录留痕
     metadata: dict[str, Any] = field(default_factory=dict)
+    # ADR 0020：plan 级抓取器；None = 走全局 fetch / fetch_json。LLM 请求经平台客户端注入，
+    # 使重试 / SSRF 白名单只作用于该 provider，其它 provider 行为不变
+    fetcher: FetchFn | None = None
 
 
 def normalize_field_mapping(

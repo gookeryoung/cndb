@@ -13,12 +13,12 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.datasource.models import (
     DatasourceSession,
     DatasourceSyncRun,
-    UserLlmConfig,
 )
 from cndb.plugins.datasource.services import runner
 from cndb.plugins.datasource.services.normalize import NormalizeResult
 from cndb.plugins.datasource.services.pipeline import FetchFailure, PipelineOutcome
 from cndb.plugins.datasource.services.scheduler import acquire_lease
+from cndb.plugins.llm.models import LlmUserConfig as UserLlmConfig
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
@@ -348,8 +348,8 @@ class TestLlmPrompt:
         assert body["provider"] == "llm_prompt"
         assert body["request_spec"]["llm"]["model"] == "model-a"
 
-    def test_create_prompt_only_uses_connection_defaults(self, client, workspace_with_auth, llm_connection_config):
-        """ADR 0019：任务只填用户提示词，地址 / 模型从工作区连接补齐后落库."""
+    def test_create_prompt_only_uses_connection_defaults(self, client, db, workspace_with_auth, llm_connection_config):
+        """ADR 0020 P0：任务只填用户提示词，保存成功但个人地址 / 模型**不落库**（运行期解析）."""
         wid, headers = workspace_with_auth
         payload = _llm_payload(
             request_spec={"prompt": {"user_template": "生成 {today} 的市场摘要"}},
@@ -359,9 +359,18 @@ class TestLlmPrompt:
         response = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=payload, headers=headers)
         assert response.status_code == 201
         spec = response.json()["request_spec"]
-        assert spec["url_template"] == llm_connection_config.base_url
-        assert spec["llm"]["model"] == llm_connection_config.model
+        # 连接默认值不写回任务配置（C10：不随备份外泄、改个人配置对存量任务生效）
+        assert "url_template" not in spec
+        assert "model" not in (spec.get("llm") or {})
         assert "api_key" not in spec
+        # 运行期仍能继承个人连接
+        from cndb.plugins.datasource.models import DatasourceSyncJob
+        from cndb.plugins.datasource.services.runner import build_job_spec
+
+        job = db.get(DatasourceSyncJob, response.json()["id"])
+        spec_built = build_job_spec(job, cursor_from="", today="2026-10-22", db=db, llm_user_id=job.created_by)
+        assert spec_built.request.url_template == llm_connection_config.base_url
+        assert spec_built.request.llm["model"] == llm_connection_config.model
 
     def test_create_requires_api_key(self, client, workspace_with_auth):
         wid, headers = workspace_with_auth

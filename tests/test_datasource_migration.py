@@ -274,7 +274,7 @@ class TestUserLlmConfigMigration:
         assert indexes.get(f"ix_{USER_LLM_TABLE}_user_id") == 1
 
     def test_schema_matches_models(self, tmp_path: Path):
-        from cndb.plugins.datasource.models import UserLlmConfig
+        from cndb.plugins.llm.models import LlmUserConfig as UserLlmConfig
 
         db_path = tmp_path / "mig_user_llm_model.db"
         _upgrade(f"sqlite:///{db_path}", USER_LLM_REVISION)

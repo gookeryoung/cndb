@@ -9,7 +9,6 @@ import pytest
 
 from cndb.core.crypto import decrypt_secret, encrypt_secret, is_encrypted
 from cndb.plugins.accounts.models import User
-from cndb.plugins.datasource.models import UserLlmConfig
 from cndb.plugins.datasource.providers.llm_prompt import DEFAULT_SYSTEM_PROMPT, LlmConnectionResult
 from cndb.plugins.datasource.services.connection import (
     DEFAULT_BASE_URL,
@@ -17,6 +16,7 @@ from cndb.plugins.datasource.services.connection import (
     find_user_llm_config,
     load_llm_connection,
 )
+from cndb.plugins.llm.models import LlmUserConfig as UserLlmConfig
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def personal_user(client, db):
 
 
 def _url() -> str:
-    return "/api/v1/accounts/llm-config"
+    return "/api/v1/llm/config"
 
 
 def _make_user(db, username: str) -> User:
@@ -176,32 +176,33 @@ class TestConnectionTest:
         )
         captured: dict[str, Any] = {}
 
-        def fake(spec, *, api_key, session_headers=None, fetch=None):
-            captured.update(spec=spec, api_key=api_key)
+        def fake(connection):
+            captured["connection"] = connection
             return LlmConnectionResult(ok=True, latency_ms=12, model="model-a", message="连通成功")
 
-        # 路由模块直接 import 了函数，替换其命名空间
-        from cndb.plugins.accounts.routers import llm_config as llm_config_router
+        # ADR 0020：连通测试由平台客户端执行，替换其命名空间
+        from cndb.plugins.llm.routers import config as llm_config_router
 
-        monkeypatch.setattr(llm_config_router, "test_llm_connection", fake)
+        monkeypatch.setattr(llm_config_router.client, "test_connection", fake)
         response = client.post(_url() + "/test", json={}, headers=headers)
         assert response.status_code == 200
         assert response.json() == {"ok": True, "latency_ms": 12, "model": "model-a", "message": "连通成功"}
-        assert captured["api_key"] == "sk-saved"
-        assert captured["spec"].url_template == "https://llm.example.com"
-        assert captured["spec"].llm["model"] == "model-a"
+        connection = captured["connection"]
+        assert connection.api_key == "sk-saved"
+        assert connection.base_url == "https://llm.example.com"
+        assert connection.model == "model-a"
 
     def test_unsaved_overrides_used_and_not_persisted(self, client, db, personal_user, monkeypatch):
         user, headers = personal_user
         captured: dict[str, object] = {}
 
-        def fake(spec, *, api_key, session_headers=None, fetch=None):
-            captured.update(spec=spec, api_key=api_key)
+        def fake(connection):
+            captured["connection"] = connection
             return LlmConnectionResult(ok=True, latency_ms=8, model="model-b", message="连通成功")
 
-        from cndb.plugins.accounts.routers import llm_config as llm_config_router
+        from cndb.plugins.llm.routers import config as llm_config_router
 
-        monkeypatch.setattr(llm_config_router, "test_llm_connection", fake)
+        monkeypatch.setattr(llm_config_router.client, "test_connection", fake)
         response = client.post(
             _url() + "/test",
             json={
@@ -214,9 +215,10 @@ class TestConnectionTest:
         )
         assert response.status_code == 200
         assert response.json()["ok"] is True
-        assert captured["api_key"] == "sk-unsaved"
-        assert captured["spec"].llm["model"] == "model-b"
-        assert captured["spec"].prompt["system"] == "临时系统提示词"
+        connection = captured["connection"]
+        assert connection.api_key == "sk-unsaved"
+        assert connection.model == "model-b"
+        assert connection.system_prompt == "临时系统提示词"
         # 未保存的配置只用于本次请求，不产生任何连接
         assert db.query(UserLlmConfig).count() == 0
         assert find_user_llm_config(db, user.id) is None

@@ -14,7 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -164,6 +164,14 @@ def execute_job(
         )
         _update_job_state(db, job, status=run.status, run_at=started, cursor=cursor_config, cursor_to=cursor_to)
         _record_event(db, job, run, user=user)
+        _record_llm_run(
+            db,
+            job,
+            user=user,
+            status=run.status,
+            metadata=outcome.metadata,
+            latency_ms=run.duration_ms,
+        )
         return JobExecution(run=run, outcome=outcome, write=write_outcome, cursor_from=cursor_from, cursor_to=cursor_to)
     except Exception as exc:  # 运行失败不抛给调度器，落记录后继续
         logger.warning("同步任务 %s 执行失败: %s", job.id, exc, exc_info=True)
@@ -176,6 +184,14 @@ def execute_job(
         db.add(run)
         _update_job_state(db, job, status=RunStatus.FAILED.value, run_at=started, cursor=cursor_config, cursor_to="")
         _record_event(db, job, run, user=user)
+        _record_llm_run(
+            db,
+            job,
+            user=user,
+            status=RunStatus.FAILED.value,
+            latency_ms=run.duration_ms,
+            error=run.error_message,
+        )
         return JobExecution(run=run, cursor_from=cursor_from)
 
 
@@ -290,7 +306,7 @@ def _load_llm_connection(db: Session | None, user_id: int | None) -> Any:
     """读取**个人**大模型连接配置（ADR 0019）；未注入 db（旧调用方）时返回 None."""
     if db is None:
         return None
-    from cndb.plugins.datasource.services.connection import load_llm_connection
+    from cndb.plugins.llm.services.connection import load_llm_connection
 
     if user_id is None:
         return None
@@ -533,6 +549,58 @@ def _record_event(db: Session, job: DatasourceSyncJob, run: DatasourceSyncRun, *
             "cursor_to": run.cursor_to,
         },
     )
+
+
+def _record_llm_run(
+    db: Session,
+    job: DatasourceSyncJob,
+    *,
+    user: Any,
+    status: str,
+    metadata: Sequence[dict[str, Any]] = (),
+    latency_ms: int = 0,
+    error: str = "",
+) -> None:
+    """llm_prompt 运行写一条 ``llm_run`` 留痕（ADR 0020 C7；仅元数据，不存正文）.
+
+    一次任务运行可能包含多组 entrant 请求，这里按运行汇总 token 用量；逐请求留痕随平台动作
+    在 P1 起补（届时数据源 provider 也可改为直接经 gateway 执行）。
+    """
+    if job.provider != "llm_prompt":
+        return
+    user_id = getattr(user, "id", None) or job.created_by
+    if user_id is None:
+        return
+    usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    model = ""
+    for item in metadata or ():
+        if not isinstance(item, Mapping):
+            continue
+        if not model and item.get("model"):
+            model = str(item.get("model"))
+        raw_usage = item.get("usage")
+        if isinstance(raw_usage, Mapping):
+            for key in usage:
+                value = raw_usage.get(key)
+                if isinstance(value, int):
+                    usage[key] += value
+    try:
+        from cndb.plugins.llm.services.gateway import record_run
+
+        record_run(
+            db,
+            user_id=int(user_id),
+            action="datasource.llm_prompt",
+            workspace_id=job.workspace_id,
+            model=model,
+            status="failed" if status == RunStatus.FAILED.value else "success",
+            latency_ms=latency_ms,
+            usage=usage,
+            error=error,
+            detail={"job_id": job.id, "status": status},
+        )
+    except Exception:  # pragma: no cover - 留痕失败不影响同步结果
+        logger.debug("写入 llm_run 失败 job=%s", job.id, exc_info=True)
 
 
 def _failure_dict(item: Any) -> dict[str, Any]:

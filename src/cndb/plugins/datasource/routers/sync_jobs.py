@@ -177,7 +177,7 @@ def create_sync_job(
 ) -> SyncJobOut:
     """新建同步任务（可带 ``run_immediately`` 立刻跑一次）."""
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
-    request_spec = _validate_job_config(
+    _validate_job_config(
         db,
         workspace_id,
         user=current_user,
@@ -196,7 +196,8 @@ def create_sync_job(
         name=payload.name,
         provider=payload.provider,
         table_id=payload.table_id,
-        request_spec=request_spec,
+        # ADR 0020 P0：只持久化任务自身配置，不写连接默认值
+        request_spec=dict(payload.request_spec or {}),
         parser=payload.parser,
         entrant_param=payload.entrant_param,
         entrant_keys=payload.entrant_keys,
@@ -249,7 +250,7 @@ def update_sync_job(
     entrant_param = payload.entrant_param if payload.entrant_param is not None else job.entrant_param
     table_id = payload.table_id if payload.table_id is not None else job.table_id
     session_id = payload.session_id if payload.session_id is not None else job.session_id
-    request_spec = _validate_job_config(
+    _validate_job_config(
         db,
         workspace_id,
         user=current_user,
@@ -281,8 +282,9 @@ def update_sync_job(
         value = getattr(payload, field_name)
         if value is not None:
             setattr(job, field_name, value)
-    # 连接默认值补齐后的 request_spec 一并持久化（llm_prompt 任务只保留提示词也能运行）
-    job.request_spec = request_spec
+    # ADR 0020 P0：只持久化任务自身配置；连接默认值运行期解析，不随备份导出
+    if payload.request_spec is not None:
+        job.request_spec = dict(payload.request_spec or {})
     db.add(job)
     db.commit()
     db.refresh(job)

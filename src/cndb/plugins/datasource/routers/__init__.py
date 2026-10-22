@@ -1,7 +1,7 @@
 """datasource 路由：providers（适配器清单） + sync-jobs（任务 / 运行 / 预览）.
 
-大模型连接已改为**个人配置**（ADR 0019），端点挂在 accounts 插件下：
-``/api/v1/accounts/llm-config``。
+大模型连接已改为**个人配置**（ADR 0019），端点由平台插件 ``llm`` 提供：
+``/api/v1/llm/config``（ADR 0020 P0）。
 """
 
 from __future__ import annotations
