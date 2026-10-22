@@ -12,6 +12,41 @@ import type {
     RowRuleCreatePayload, RowRuleUpdatePayload,
 } from './types'
 
+// ─────────────────── AI 动作（ADR 0020 P2）：只生成建议，不写库 ───────────────────
+
+/** 表格字段批量填充的模型用量（与平台 `usage` 结构一致） */
+export interface TableAiUsage {
+    prompt_tokens: number
+    completion_tokens: number
+    total_tokens: number
+}
+
+/** 单行字段填充建议值；`row_id` 由后端按请求行集合过滤，多余行丢弃 */
+export interface TableAiFieldFillValue {
+    row_id: number
+    value: string | number | boolean | null
+}
+
+/** 字段批量填充请求：单字段、最多 20 行；`instruction` 为可选的生成要求 */
+export interface TableAiFillFieldPayload {
+    field_name: string
+    row_ids: number[]
+    instruction?: string
+}
+
+/** 字段批量填充响应（只读建议，不写任何行；确认后由前端逐行走既有更新接口） */
+export interface TableAiFillFieldResponse {
+    action: 'table.fill_field'
+    run_id: number
+    model: string
+    usage: TableAiUsage
+    result: { values: TableAiFieldFillValue[] }
+    /** 不存在 / 已软删 / 行级权限外的行（未进入模型输入） */
+    skipped_row_ids: number[]
+    /** 实际进入模型输入的行数 */
+    row_count: number
+}
+
 export const tableApi = {
     list: (wid: number | string, includeTrashed = false) =>
         api.get<TableSummary[]>(`/v1/workspaces/${wid}/tables`, { params: { include_trashed: includeTrashed } }).then(r => r.data),
@@ -40,6 +75,9 @@ export const tableApi = {
         api.post<TableSummary[]>(`/v1/workspaces/${wid}/tables/reorder`, tableIds).then(r => r.data),
     references: (wid: number | string, tid: number | string, recordId: number | string) =>
         api.get<Reference[]>(`/v1/workspaces/${wid}/tables/${tid}/records/${recordId}/references`).then(r => r.data),
+    /** AI 字段批量填充建议（只生成建议，不写库；确认后由前端逐行走既有更新接口） */
+    aiFillField: (wid: number | string, tid: number | string, payload: TableAiFillFieldPayload) =>
+        api.post<TableAiFillFieldResponse>(`/v1/workspaces/${wid}/tables/${tid}/ai/actions/fill_field`, payload).then(r => r.data),
 }
 
 export const fieldApi = {

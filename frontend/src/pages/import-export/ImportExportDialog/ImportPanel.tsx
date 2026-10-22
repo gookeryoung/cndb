@@ -11,9 +11,11 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Progress, App as AntApp, Space, Select, Alert, Empty, Upload, Table, Tabs, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
-import { InboxOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons'
+import { InboxOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined, SwapOutlined, RobotOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { ImportTaskInfo, Field, ValidationReport } from '@/api'
+import type { ImportAiMappingItem } from '@/api/importExport'
+import { normalizeLlmError } from '@/hooks/useLlmAction'
 import HelpTip from '@/components/HelpTip'
 import { ACCEPTED_EXT, type Phase } from './importPreview'
 import { scrollActiveTabIntoViewNextFrame } from '@/layouts/tabScroll'
@@ -22,6 +24,43 @@ import ImportDiffTable from './ImportDiffTable'
 import ImportQualityPanel from './ImportQualityPanel'
 
 const { Dragger } = Upload
+
+/** 一条映射建议的前端编辑态：`target === null` 表示该源列不映射 */
+export interface AiMappingDraft {
+    source: string
+    target: string | null
+    confidence: number
+    reason: string
+}
+
+/** 从预览报告收集 AI 映射建议的输入（源表头 + ≤20 行抽样）。
+ *
+ * 源表头优先取列画像（含类型推断，顺序最稳定）；旧报告没有 column_profiles 时退化为
+ * 预览行 `field_sample` 的 key（保持首次出现顺序）。
+ */
+export function collectImportMappingInput(report: any | null | undefined): { headers: string[]; sample_rows: unknown[][] } {
+    if (!report) return { headers: [], sample_rows: [] }
+    const headers: string[] = []
+    const seen = new Set<string>()
+    const push = (raw: unknown) => {
+        const name = String(raw ?? '').trim()
+        if (!name || seen.has(name)) return
+        seen.add(name)
+        headers.push(name)
+    }
+    for (const profile of report.column_profiles ?? []) push(profile?.name)
+    const previews = [...(report.new_preview ?? []), ...(report.update_preview ?? [])]
+    if (headers.length === 0) {
+        for (const row of previews) {
+            for (const key of Object.keys(row?.field_sample ?? {})) push(key)
+        }
+    }
+    const limitedHeaders = headers.slice(0, 50)
+    const sampleRows = previews.slice(0, 20).map((row: any) =>
+        limitedHeaders.map(header => row?.field_sample?.[header] ?? null),
+    )
+    return { headers: limitedHeaders, sample_rows: sampleRows }
+}
 
 interface ImportPanelProps {
     /** 外层 Modal 打开时才轮询；关闭时由容器传入 false 触发状态清理 */
@@ -47,6 +86,13 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
     // V3: 用户勾选丢弃的 planned_columns 字段名列表（默认全创建）
     const [droppedColumns, setDroppedColumns] = useState<string[]>([])
     const [diffing, setDiffing] = useState(false)  // 执行 DIFF 的 loading
+
+    // ── AI 列映射建议（ADR 0020 P2）：只回填映射编辑态，不自动确认导入 ──
+    const [aiMappings, setAiMappings] = useState<AiMappingDraft[]>([])
+    const [aiUnmapped, setAiUnmapped] = useState<string[]>([])
+    const [aiMappingLoading, setAiMappingLoading] = useState(false)
+    const [aiMappingError, setAiMappingError] = useState<string | null>(null)
+    const [aiMappingMeta, setAiMappingMeta] = useState<string | null>(null)
 
     // V3: 数据质量面板 —— 用户勾选的清洗建议列表（完整 suggestion 对象）
     const [selectedCleaningActions, setSelectedCleaningActions] = useState<any[]>([])
@@ -79,6 +125,11 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
             setUnknownColsStrategy('add_text_field')
             setDroppedColumns([])
             setDiffing(false)
+            setAiMappings([])
+            setAiUnmapped([])
+            setAiMappingLoading(false)
+            setAiMappingError(null)
+            setAiMappingMeta(null)
         }
     }, [open])
 
@@ -196,6 +247,55 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         }
     }, [task, wid, tid, matchKeys, unknownColsStrategy, message])
 
+    /** 请求 AI 列映射建议：只回填映射编辑态，不触发确认导入、不改 ImportTask */
+    const handleSuggestMapping = useCallback(async () => {
+        if (!tid) {
+            message.warning('请先选择目标表')
+            return
+        }
+        const report = (task as (ImportTaskInfo & { validation_report?: any }) | null)?.validation_report
+        const { headers, sample_rows } = collectImportMappingInput(report)
+        if (headers.length === 0) {
+            message.warning('预览数据就绪后才能获取列映射建议')
+            return
+        }
+        setAiMappingLoading(true)
+        setAiMappingError(null)
+        try {
+            const existingMapping: Record<string, string | null> = {}
+            for (const item of aiMappings) existingMapping[item.source] = item.target
+            const res = await importApi.aiMappingSuggestion(wid, {
+                target_table_id: Number(tid),
+                headers,
+                sample_rows,
+                ...(aiMappings.length > 0 ? { existing_mapping: existingMapping } : {}),
+            })
+            const mappings = res.result.mappings ?? []
+            setAiMappings(mappings.map((item: ImportAiMappingItem) => ({
+                source: item.source,
+                target: item.target,
+                confidence: item.confidence,
+                reason: item.reason,
+            })))
+            setAiUnmapped(res.result.unmapped ?? [])
+            setAiMappingMeta([
+                res.model ? `模型 ${res.model}` : '',
+                typeof res.usage?.total_tokens === 'number' ? `${res.usage.total_tokens} tokens` : '',
+                `留痕 #${res.run_id}`,
+            ].filter(Boolean).join(' · '))
+            message.success(`已获取 ${mappings.length} 条列映射建议；不会自动导入，请确认后手动点击「确认导入」`)
+        } catch (err) {
+            setAiMappingError(normalizeLlmError(err, '获取列映射建议失败，请稍后重试'))
+        } finally {
+            setAiMappingLoading(false)
+        }
+    }, [tid, task, aiMappings, wid, message])
+
+    /** 映射编辑态的 target 调整（source 保持不变） */
+    const handleAiMappingTargetChange = useCallback((source: string, target: string | null) => {
+        setAiMappings(prev => prev.map(item => (item.source === source ? { ...item, target } : item)))
+    }, [])
+
     // 确认导入（当前 matchKeys + unknownColsStrategy + droppedColumns + 清洗建议 + 表头行）
     const handleConfirm = async () => {
         if (!task) return
@@ -223,6 +323,11 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         setDroppedColumns([])
         setDiffing(false)
         setSelectedCleaningActions([])
+        setAiMappings([])
+        setAiUnmapped([])
+        setAiMappingLoading(false)
+        setAiMappingError(null)
+        setAiMappingMeta(null)
     }
 
     const handleDownloadFailed = async () => {
@@ -404,6 +509,85 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         )
     }
 
+    // ── 渲染：AI 列映射建议（只回填映射编辑态；仍需用户确认导入） ──
+    const renderAiMapping = () => {
+        const report = (task as (ImportTaskInfo & { validation_report?: any }) | null)?.validation_report
+        const { headers } = collectImportMappingInput(report)
+        const hasTargetTable = Boolean(tid)
+        const canRequest = hasTargetTable && headers.length > 0 && !diffing
+        const fieldOptions = fields.filter(f => !f.hidden).map(f => ({ value: f.name, label: f.name }))
+        return (
+            <div
+                data-testid="ai-mapping-panel"
+                style={{ marginBottom: 12, padding: 12, background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}
+            >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Button
+                        data-testid="ai-mapping-btn"
+                        icon={<RobotOutlined />}
+                        loading={aiMappingLoading}
+                        disabled={!canRequest}
+                        onClick={() => { void handleSuggestMapping() }}
+                    >
+                        AI 建议列映射
+                    </Button>
+                    <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
+                        建议只回填到映射编辑态，不会自动确认导入；导入仍按下方「确认导入」执行
+                    </span>
+                    {!hasTargetTable && (
+                        <span data-testid="ai-mapping-need-table" style={{ fontSize: 12, color: '#f59e0b' }}>
+                            请先选择目标表
+                        </span>
+                    )}
+                </div>
+                {aiMappingError && (
+                    <Alert data-testid="ai-mapping-error" type="error" showIcon style={{ marginTop: 8 }} message={aiMappingError} />
+                )}
+                {aiUnmapped.length > 0 && (
+                    <Alert
+                        data-testid="ai-mapping-unmapped"
+                        type="warning"
+                        showIcon
+                        style={{ marginTop: 8 }}
+                        message={`未映射的源列：${aiUnmapped.join('、')}（可手动调整目标字段；AI 不会自动导入）`}
+                    />
+                )}
+                {aiMappings.length > 0 && (
+                    <div data-testid="ai-mapping-list" style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {aiMappings.map(item => (
+                            <div key={item.source} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Tag color="blue" style={{ marginInlineEnd: 0 }} data-testid={`ai-mapping-source-${item.source}`}>{item.source}</Tag>
+                                <span style={{ color: 'var(--cn-text-muted)' }}>→</span>
+                                <Select
+                                    size="small"
+                                    style={{ minWidth: 220 }}
+                                    data-testid={`ai-mapping-target-${item.source}`}
+                                    value={item.target ?? undefined}
+                                    allowClear
+                                    placeholder="不映射"
+                                    options={fieldOptions}
+                                    onChange={(value: string | undefined) => handleAiMappingTargetChange(item.source, value ?? null)}
+                                />
+                                <Tooltip title={item.reason || '模型未给出理由'}>
+                                    <Tag
+                                        data-testid={`ai-mapping-confidence-${item.source}`}
+                                        color={item.confidence >= 0.8 ? 'green' : item.confidence >= 0.5 ? 'gold' : 'default'}
+                                        style={{ marginInlineEnd: 0 }}
+                                    >
+                                        {Math.round(item.confidence * 100)}%
+                                    </Tag>
+                                </Tooltip>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {aiMappingMeta && (
+                    <div data-testid="ai-mapping-meta" style={{ marginTop: 8, fontSize: 11, color: 'var(--cn-text-muted)' }}>{aiMappingMeta}</div>
+                )}
+            </div>
+        )
+    }
+
     // ── 渲染：数据质量面板 ──
 
     // ── 渲染：Diff 表格（更新行红/绿 chip 字段对比 + 变更汇总列；空态区分提示） ──
@@ -502,6 +686,9 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
 
                 {/* Diff 控制区 */}
                 {renderDiffControls()}
+
+                {/* AI 列映射建议（只回填映射编辑态） */}
+                {renderAiMapping()}
 
                 {/* 未知列提示 / 规划 —— 可勾选逐个决定是否创建 */}
                 {(report.skipped_columns?.length > 0 || report.missing_required?.length > 0 || plannedColumns.length > 0) && (

@@ -56,6 +56,8 @@ const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDi
 // 走 lazy 后其代码移出 GridPage，仅在首次打开时下载独立 chunk。
 const ViewConfigDialog = lazy(() => import('./view-config/ViewConfigDialog'))
 const RowDetailDrawer = lazy(() => import('./layout/RowDetailDrawer'))
+// AI 字段填充抽屉：入口在列头，点击后才下载（不进 GridPage chunk，见 bundle-budget 注释）
+const AiFillFieldDrawer = lazy(() => import('./aiFillField/AiFillFieldDrawer'))
 // 非 grid 视图按 mode 懒加载：默认表格视图不下载看板/甘特/日历等代码
 const KanbanView = lazy(() => import('./views/KanbanView'))
 const CalendarView = lazy(() => import('./views/CalendarView'))
@@ -237,6 +239,8 @@ export default function GridPage() {
   /** 新建行 drawer 预填值（非 grid 视图下新增卡片时把分组字段预填好） */
   const [createInitialValues, setCreateInitialValues] = useState<RowValues | undefined>(undefined)
   const [fieldMgrOpen, setFieldMgrOpen] = useState(false)
+  /** 列头「AI 填充本列」当前目标字段（null = 抽屉关闭）；RowDetailDrawer 同款按需 lazy 挂载 */
+  const [aiFillField, setAiFillField] = useState<Field | null>(null)
   const [importExportOpen, setImportExportOpen] = useState(false)
   const [governanceOpen, setGovernanceOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
@@ -987,6 +991,8 @@ export default function GridPage() {
       rowIndexBase: offset,
       rowIndexTotal: rowList.total ?? 0,
       newRowKey: NEW_ROW_KEY,
+      // 列头 AI 填充入口：只对当前可见字段（隐藏字段不参与 buildColumns）渲染
+      onAiFillField: setAiFillField,
     },
   ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds, isMobile, offset, rowList.total, tid])
 
@@ -1213,6 +1219,20 @@ export default function GridPage() {
             setCreateInitialValues(undefined)
           }}
         />
+        </Suspense>
+      )}
+      {/* AI 字段填充：只生成建议；应用时逐行走既有更新接口（202 修改申请沿用既有提示） */}
+      {aiFillField && (
+        <Suspense fallback={<ModalFallback />}>
+          <AiFillFieldDrawer
+            open
+            wid={wid!}
+            tid={tid!}
+            field={aiFillField}
+            rows={(rowList.items || []).filter(r => !isPendingRowId(r.id))}
+            rowIndexBase={offset}
+            onClose={() => setAiFillField(null)}
+          />
         </Suspense>
       )}
       <Suspense fallback={<ModalFallback />}>
