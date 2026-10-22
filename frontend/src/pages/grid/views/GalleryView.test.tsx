@@ -38,6 +38,9 @@ function renderGallery(props?: {
   fields?: Field[]
   view?: View | null
   onRowClick?: (r: RowResponse) => void
+  loading?: boolean
+  error?: boolean
+  onRetry?: () => void
 }) {
   return renderProviders(
     <GalleryView
@@ -45,6 +48,9 @@ function renderGallery(props?: {
       fields={props?.fields ?? FIELDS}
       view={props?.view !== undefined ? props.view : VIEW}
       onRowClick={props?.onRowClick}
+      loading={props?.loading}
+      error={props?.error}
+      onRetry={props?.onRetry}
     />,
   )
 }
@@ -150,10 +156,31 @@ describe('GalleryView 分批渲染', () => {
   })
 })
 
-describe('GalleryView 空态', () => {
+describe('GalleryView 空态 / 加载态 / 失败态', () => {
   it('空数据显示暂无数据', () => {
     renderGallery({ rows: [] })
     expect(screen.getByTestId('gallery-view')).toHaveTextContent('暂无数据')
     expect(screen.queryAllByTestId('gallery-card')).toHaveLength(0)
+  })
+
+  it('加载中（无缓存行）显示骨架卡而不是「暂无数据」', () => {
+    renderGallery({ rows: [], loading: true })
+    expect(screen.getByTestId('gallery-loading')).toBeInTheDocument()
+    expect(screen.queryByText('暂无数据')).toBeNull()
+  })
+
+  it('已有缓存行时即便在请求中也不显示骨架', () => {
+    renderGallery({ loading: true })
+    expect(screen.getAllByTestId('gallery-card')).toHaveLength(2)
+    expect(screen.queryByTestId('gallery-loading')).toBeNull()
+  })
+
+  it('请求失败显示失败态与重试按钮，点击触发 onRetry', () => {
+    const onRetry = vi.fn()
+    renderGallery({ rows: [], error: true, onRetry })
+    expect(screen.getByTestId('gallery-view')).toHaveAttribute('data-state', 'error')
+    expect(screen.getByText('数据加载失败')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('gallery-retry'))
+    expect(onRetry).toHaveBeenCalledTimes(1)
   })
 })

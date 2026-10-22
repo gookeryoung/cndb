@@ -115,6 +115,9 @@ export function TableSkeleton({ columnCount }: { columnCount?: number }) {
 
 const MODE_STORAGE_KEY = 'cndb_current_mode'
 
+/** 空规则数组的稳定引用 —— 视图状态未归属当前表时占位，避免每渲染新建数组导致 useMemo 失效 */
+const EMPTY_RULES: unknown[] = []
+
 /** 右侧模式按钮配置 —— 顺序即显示顺序；仅当数据表存在对应 view_type 的视图时才渲染. */
 interface ModeBtn {
   mode: ViewMode
@@ -158,6 +161,9 @@ export default function GridPage() {
   const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
   const settings = { density, defaultPageSize }
 
+  /** 表标识（`wid/tid`）—— store 里的视图状态以它为归属校验，跨表首帧不得沿用上表参数 */
+  const tableKey = `${wid}/${tid}`
+
   // —— 视图状态从 GridViewStore 订阅 ——
   const mode = useGridViewStore(s => s.mode)
   const setMode = useGridViewStore(s => s.setMode)
@@ -183,10 +189,15 @@ export default function GridPage() {
   const setLimit = useGridViewStore(s => s.setLimit)
   const patchView = useGridViewStore(s => s.patch)
   const resetView = useGridViewStore(s => s.reset)
+  const storeTableKey = useGridViewStore(s => s.tableKey)
+  /** store 状态是否属于当前表：离开表页再返回时 store 仍残留上一轮的视图状态，
+   *  在 reset effect 生效前的那一帧必须按「空状态」取值，否则会用上表的 filters/sorts
+   *  发一次脏请求（字段在新表不存在时后端 400 → 视图空态）。 */
+  const viewStateOwned = storeTableKey === tableKey
 
   // wid/tid 变化时重置 store + 初始化 mode
   useEffect(() => {
-    resetView()
+    resetView(tableKey)
     // 行内编辑状态重置
     setEditingRowId(null)
     setNewRowActive(false)
@@ -212,6 +223,7 @@ export default function GridPage() {
   useEffect(() => {
     const preload = () => {
       void import('./views/KanbanView')
+      void import('./views/GalleryView')
       void import('./views/CalendarView')
       void import('./views/GanttView')
       void import('./views/WbsView')
@@ -253,7 +265,6 @@ export default function GridPage() {
   const [importFileContent, setImportFileContent] = useState('')
   const [moveOpen, setMoveOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState<ID | null>(null)
-  const tableKey = `${wid}/${tid}`
 
   // ── 行内编辑（新增行 / 整行编辑）状态 ──
   /** 整行编辑模式下的行 id（null 表示无行处于整行编辑） */
@@ -435,11 +446,16 @@ export default function GridPage() {
     // 两侧统一 String 化比较：activeViewId 由 loadView 存的是 number（v.id），
     // 裸比较 `number !== '1'` 恒真，会导致每次 views refetch 都重新 loadView、
     // 用服务器旧 view_options 覆盖用户未持久化的草稿（重置布局被回灌的根因）
+    //
+    // 取 store 实时值而非渲染闭包：上面的 reset effect 与本 effect 在同一 commit 内先后执行，
+    // reset 已把 activeViewId 清空，闭包值仍是上一轮（如 30）→ 会误判「目标已就位」跳过 loadView，
+    // 结果离开表页再返回时视图状态为空、mode 回落 grid，默认画廊不渲染（画廊空白根因）。
+    const liveActiveViewId = useGridViewStore.getState().activeViewId
     if (target) {
-      if (String(activeViewId) !== String(target.id)) {
+      if (String(liveActiveViewId) !== String(target.id)) {
         loadView(target, false, false)
       }
-    } else if (activeViewId !== null) {
+    } else if (liveActiveViewId !== null) {
       loadView(null, false, false)
     }
   }, [views, searchParams, wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
@@ -456,8 +472,17 @@ export default function GridPage() {
   }, [searchQuery])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // 当前生效的筛选/排序/分页参数 + 行数据（装配逻辑在 useGridData）
-  const { effectiveFilters, sortsParam, rowList, isFetching: rowsFetching } = useGridData({
-    wid, tid, mode, limit, offset, viewFilters, viewSortings, viewFilterLogic, searchQuery,
+  // 首帧 store 尚未归属当前表（跨表 / 离开再返回）时按空状态取值，避免脏参数请求
+  const { effectiveFilters, sortsParam, rowList, isFetching: rowsFetching, isError: rowsError, refetch: refetchRows } = useGridData({
+    wid,
+    tid,
+    mode: viewStateOwned ? mode : 'grid',
+    limit,
+    offset: viewStateOwned ? offset : 0,
+    viewFilters: viewStateOwned ? viewFilters : EMPTY_RULES,
+    viewSortings: viewStateOwned ? viewSortings : EMPTY_RULES,
+    viewFilterLogic: viewStateOwned ? viewFilterLogic : 'AND',
+    searchQuery: viewStateOwned ? searchQuery : '',
   })
 
   // 当前用户在本表的权限（来自后端 current_user_actions）
@@ -1164,7 +1189,15 @@ export default function GridPage() {
                 canEdit={canEditRecords}
               />
             ) : mode === 'gallery' ? (
-              <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} onRowClick={openDetailWithPrefetch} />
+              <GalleryView
+                rows={rowList.items || []}
+                fields={table?.fields || []}
+                view={activeView}
+                onRowClick={openDetailWithPrefetch}
+                loading={rowsFetching && !rowList.items?.length}
+                error={rowsError}
+                onRetry={() => { void refetchRows() }}
+              />
             ) : mode === 'gantt' ? (
               <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} pdfExporting={pdfExporting} />
             ) : mode === 'wbs' ? (

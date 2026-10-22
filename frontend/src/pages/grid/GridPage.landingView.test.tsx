@@ -7,11 +7,12 @@
  */
 
 import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest'
-import { waitFor } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { renderProviders } from '@/test/render-providers'
 import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store/tableSettings'
+import { useGridViewStore } from '@/store/gridView'
 import GridPage from './GridPage'
 
 beforeAll(async () => {
@@ -33,6 +34,12 @@ const VIEWS_NO_DEFAULT = [
     { id: 21, name: '次个视图', view_type: 'grid', is_default: false, filters: [], sortings: [], filter_type: 'AND', field_order: [], view_options: {} },
 ] as any
 
+/** 默认视图为画廊（对应「国际形势发展动态」的资讯画廊） */
+const VIEWS_GALLERY = [
+    { id: 30, name: '资讯画廊', view_type: 'gallery', is_default: true, filters: [], sortings: [], filter_type: 'AND', field_order: [], view_options: {} },
+    { id: 31, name: '全部资讯', view_type: 'grid', is_default: false, filters: [], sortings: [], filter_type: 'AND', field_order: [], view_options: {} },
+] as any
+
 /** hoisted 持有可变 views，供 mock 工厂在调用时读取（避免 TDZ） */
 const viewsRef = vi.hoisted(() => ({ current: [] as any[] }))
 
@@ -48,7 +55,12 @@ vi.mock('@/api/hooks', async (importOriginal) => {
             isLoading: false,
         }),
         useTableViews: () => ({ data: viewsRef.current }),
-        useTableRecords: () => ({ data: { items: [], total: 0, offset: 0, limit: 20 } }),
+        useTableRecords: () => ({
+            data: { items: [{ id: 1, 姓名: '张三' }], total: 1, offset: 0, limit: 20 },
+            isFetching: false,
+            isError: false,
+            refetch: vi.fn(),
+        }),
         useUpdateRowOptimistic: () => ({ mutate: vi.fn(), isPending: false }),
         useDeleteRowsOptimistic: () => ({ mutate: vi.fn(), isPending: false }),
     }
@@ -67,6 +79,8 @@ vi.mock('@/api', () => ({
 beforeEach(() => {
     viewsRef.current = VIEWS
     useTableSettingsStore.setState({ density: 'comfortable', defaultPageSize: 20 })
+    // store 单例：用例间与「离开表页再返回」都靠 tableKey 归属校验，起点必须是未归属状态
+    useGridViewStore.getState().reset()
     // 模拟「上次访问留下的 mode 记忆」，验证它不再抢跑默认视图
     localStorage.setItem('cndb_current_mode', 'grid')
 })
@@ -77,7 +91,7 @@ function selectedViewName(): string {
 }
 
 function renderGrid(route = '/w/1/tables/1') {
-    renderProviders(
+    return renderProviders(
         <Routes>
             <Route path="w/:wid/tables/:tid" element={<GridPage />} />
         </Routes>,
@@ -106,5 +120,21 @@ describe('GridPage 落地视图 — 默认视图优先', () => {
         viewsRef.current = VIEWS_NO_DEFAULT
         renderGrid()
         await waitFor(() => expect(selectedViewName()).toContain('首个视图'))
+    })
+
+    it('离开表页再返回（store 残留上一轮视图状态）仍落默认画廊，不回落 grid', async () => {
+        viewsRef.current = VIEWS_GALLERY
+
+        // 第一次进入：默认视图是画廊
+        const first = renderGrid()
+        await screen.findByTestId('gallery-view')
+        // 卸载时 store 不清空（跨页导航的真实行为）
+        first.unmount()
+        expect(useGridViewStore.getState().activeViewId).toBe(30)
+
+        // 返回表页：reset effect 与视图匹配 effect 同批执行，不得因闭包旧值跳过 loadView
+        renderGrid()
+        await screen.findByTestId('gallery-view')
+        expect(selectedViewName()).toContain('资讯画廊')
     })
 })

@@ -11,6 +11,8 @@ import type { FilterRule, SortRule } from '@/pages/grid/view-config/ViewConfigDi
 import type { ViewMode } from '@/pages/grid/views/viewModes'
 
 interface GridViewState {
+  /** 当前状态所属的表（`wid/tid`）—— 跨表/跨页重挂载时用于识别残留状态 */
+  tableKey: string | null
   /** 视图模式 */
   mode: ViewMode
   /** 当前激活的视图 ID（null = 默认视图） */
@@ -46,13 +48,14 @@ interface GridViewState {
   setOffset: (offset: number) => void
   setLimit: (limit: number) => void
   /** 批量更新部分字段 —— loadView 一次性设置 6+ 个状态时使用 */
-  patch: (partial: Partial<Omit<GridViewState, 'patch' | 'reset'>>) => void
-  /** 跨表导航时重置所有视图状态 */
-  reset: () => void
+  patch: (partial: Partial<Omit<GridViewState, 'patch' | 'reset' | 'tableKey'>>) => void
+  /** 跨表导航时重置所有视图状态，并登记新归属表（tableKey 缺省表示未归属任何表） */
+  reset: (tableKey?: string | null) => void
 }
 
 const INITIAL_STATE: Pick<
   GridViewState,
+  | 'tableKey'
   | 'mode'
   | 'activeViewId'
   | 'viewFilters'
@@ -63,6 +66,7 @@ const INITIAL_STATE: Pick<
   | 'offset'
   | 'limit'
 > = {
+  tableKey: null,
   mode: 'grid',
   activeViewId: null,
   viewFilters: [],
@@ -90,5 +94,5 @@ export const useGridViewStore = create<GridViewState>()((set) => ({
   setLimit: (limit) => set({ limit }),
 
   patch: (partial) => set(partial),
-  reset: () => set(INITIAL_STATE),
+  reset: (tableKey = null) => set({ ...INITIAL_STATE, tableKey }),
 }))
