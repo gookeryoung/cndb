@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Button, Empty, Space, Table, Tag, Tooltip } from 'antd'
-import { DownloadOutlined, LineChartOutlined, PictureOutlined, TableOutlined } from '@ant-design/icons'
+import { DownloadOutlined, LineChartOutlined, PictureOutlined, RobotOutlined, TableOutlined } from '@ant-design/icons'
 import * as echarts from 'echarts/core'
 import type { Field } from '@/api'
 import type { AnalyticsChart, AnalyticsComputeResponse } from '@/api/analytics'
@@ -37,6 +37,10 @@ interface Props {
   fields: Field[]
   /** 模板名或图表标题，用于导出文件名 */
   title: string
+  /** AI 结论解读入口：不传时不渲染按钮（解读只读，由页面用 useLlmAction 发起） */
+  onAiExplain?: () => void
+  /** AI 解读请求中（按钮 loading） */
+  aiExplainLoading?: boolean
 }
 
 /** 数值列排序器（空值排最后） */
@@ -58,7 +62,15 @@ function textSorter(key: string) {
 }
 
 /** 分析结果：图表、汇总表、统计表、数据预览与导出 */
-export function AnalyticsResultView({ result, chart, formulas, fields, title }: Props) {
+export function AnalyticsResultView({
+  result,
+  chart,
+  formulas,
+  fields,
+  title,
+  onAiExplain,
+  aiExplainLoading = false,
+}: Props) {
   const { message } = AntApp.useApp()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0])
@@ -177,6 +189,20 @@ export function AnalyticsResultView({ result, chart, formulas, fields, title }: 
                 导出图表
               </Button>
             </Tooltip>
+            {onAiExplain && (
+              <Tooltip title="根据当前汇总 / 统计结果生成文字解读（只读，不修改模板与数据）">
+                <Button
+                  size="small"
+                  icon={<RobotOutlined />}
+                  loading={aiExplainLoading}
+                  disabled={aiExplainLoading}
+                  data-testid="analytics-ai-explain"
+                  onClick={onAiExplain}
+                >
+                  AI 解读
+                </Button>
+              </Tooltip>
+            )}
           </>
         }
       >

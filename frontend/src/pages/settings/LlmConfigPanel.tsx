@@ -1,32 +1,73 @@
-/** 个人设置「大模型」页签 — 个人级连接配置（ADR 0019 个人级迁移 / ADR 0020 P0 平台归位）.
+/** 个人设置「大模型」页签 — 个人级连接配置 + 本人调用记录（ADR 0019 / ADR 0020 P0/P3）.
  *
  * 后端接口（当前登录用户，不依赖工作区）：
  * - `GET  /api/v1/llm/config`：读取配置（不回显 api_key，附带内置默认系统提示词）
  * - `PUT  /api/v1/llm/config`：保存配置（api_key 非空才更新、clear_api_key 清除）
  * - `POST /api/v1/llm/config/test`：连通测试（可用未保存的地址 / 模型 / Key，不落库）
+ * - `GET  /api/v1/llm/runs`：本人 AI 调用记录（最近 20 条；只含元数据与失败摘要）
  *
  * 交互要点：
  * - 面板内独立「保存」按钮（个人设置 Modal 的 footer 仍只有关闭）；
  * - API Key 密码框只写不回显，已保存时显示「清除」入口；
  * - 测试连接直接用当前输入（含未保存 Key），无需先保存；
- * - 系统提示词留空使用后端内置默认，并把内置默认全文展示在面板内。
+ * - 系统提示词留空使用后端内置默认，并把内置默认全文展示在面板内；
+ * - 调用记录只读：动作 / 状态 / 模型 / token / 耗时 / 时间；失败摘要截断展示，
+ *   完整 error 放 Tooltip（不把模型错误全文铺在设置页）。
  */
 
 import { useEffect, useState } from 'react'
-import { Alert, App, Button, Form, Input, Space, Tag, Typography } from 'antd'
-import { ApiOutlined } from '@ant-design/icons'
+import {
+  Alert, App, Button, Divider, Empty, Form, Input, Space, Table, Tag, Tooltip, Typography,
+} from 'antd'
+import { ApiOutlined, HistoryOutlined, ReloadOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   llmApi,
   type LlmConfigPayload,
   type LlmConnectionTestResult,
+  type LlmRun,
 } from '@/api'
+import { SPACE, TEXT } from '@/theme/tokens'
 
 const { Text, Paragraph } = Typography
 
 /** 与后端 `plugins/llm/services/connection.py` 的内置默认值对齐 */
 const DEFAULT_BASE_URL = 'https://api.deepseek.com'
 const DEFAULT_MODEL = 'deepseek-chat'
+
+/** 调用记录查询条数（ADR 0020 P3：个人设置只展示最近 20 条） */
+const RUNS_LIMIT = 20
+
+/** 已知动作名 → 中文展示名（未知动作回退原始动作名，避免后端新增动作时前端空白） */
+const ACTION_LABELS: Record<string, string> = {
+  'datasource.llm_prompt': '大模型提示词',
+  'document.polish': 'AI 润色',
+  'document.summarize': 'AI 摘要',
+  'document.suggest_tags': 'AI 标签建议',
+  'table.fill_field': 'AI 字段填充',
+  'import.mapping_suggestion': 'AI 列映射',
+  'analytics.suggest_template': 'AI 生成分析',
+  'analytics.explain': 'AI 结论解读',
+  'search.rewrite_query': 'AI 搜索改写',
+}
+
+/** 动作名展示文案 */
+function actionLabel(action: string): string {
+  return ACTION_LABELS[action] ?? action
+}
+
+/** token 文案：上游未返回时各字段为 0，展示「—」避免误读成真实用量 */
+function tokenText(run: LlmRun): string {
+  const total = run.total_tokens || run.prompt_tokens + run.completion_tokens
+  return total > 0 ? `${total} tokens` : '—'
+}
+
+/** 失败摘要截断（完整 error 只放 Tooltip，不铺在表里） */
+function truncateError(error: string, max = 24): string {
+  const text = (error ?? '').trim()
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
 
 interface LlmConfigFormValues {
   base_url: string
@@ -59,6 +100,20 @@ export default function LlmConfigPanel() {
     staleTime: 300_000,
   })
   const config = configQuery.data ?? null
+
+  // 调用记录（最近 20 条）：与连接配置分区独立，失败只降级本区、不影响配置编辑
+  const runsQuery = useQuery({
+    queryKey: ['llm-runs', RUNS_LIMIT],
+    queryFn: () => llmApi.listRuns({ limit: RUNS_LIMIT }),
+    staleTime: 30_000,
+    retry: false,
+  })
+  const runs = runsQuery.data?.items ?? []
+  const runsError = runsQuery.isError
+    ? errorDetail(runsQuery.error)
+      || (runsQuery.error instanceof Error && runsQuery.error.message)
+      || '调用记录加载失败，请稍后重试'
+    : null
 
   // 读取到配置后回填表单；api_key 永远从空开始，只写不回显
   useEffect(() => {
@@ -140,6 +195,90 @@ export default function LlmConfigPanel() {
   const configuredTag = config?.has_api_key
     ? <Tag color="green" data-testid="llm-config-status">已配置</Tag>
     : <Tag data-testid="llm-config-status">未配置 API Key</Tag>
+
+  /** 调用记录列：动作 / 状态 / 模型 / token / 耗时 / 时间（不再展示提示词与输出） */
+  const runColumns = [
+    {
+      key: 'action',
+      title: '动作',
+      dataIndex: 'action',
+      width: 160,
+      render: (action: string, run: LlmRun) => (
+        <Tooltip title={`${action}（留痕 #${run.id}）`}>
+          <Text data-testid={`llm-run-action-${run.id}`}>{actionLabel(action)}</Text>
+        </Tooltip>
+      ),
+    },
+    {
+      key: 'status',
+      title: '状态',
+      dataIndex: 'status',
+      width: 120,
+      render: (status: LlmRun['status'], run: LlmRun) => {
+        const ok = status === 'success'
+        const error = (run.error ?? '').trim()
+        return (
+          <Space direction="vertical" size={0}>
+            <Tag
+              color={ok ? 'green' : 'red'}
+              data-testid={`llm-run-status-${run.id}`}
+              style={{ marginInlineEnd: 0 }}
+            >
+              {ok ? '成功' : '失败'}
+            </Tag>
+            {!ok && error && (
+              <Tooltip title={<span style={{ whiteSpace: 'pre-wrap' }}>{error}</span>}>
+                <Text
+                  type="secondary"
+                  data-testid={`llm-run-error-${run.id}`}
+                  style={{ fontSize: TEXT['2xs'], maxWidth: 110 }}
+                  ellipsis
+                >
+                  {truncateError(error)}
+                </Text>
+              </Tooltip>
+            )}
+          </Space>
+        )
+      },
+    },
+    {
+      key: 'model',
+      title: '模型',
+      dataIndex: 'model',
+      width: 150,
+      ellipsis: true,
+      render: (model: string) => model || '—',
+    },
+    {
+      key: 'tokens',
+      title: 'Token',
+      width: 120,
+      render: (_value: unknown, run: LlmRun) => (
+        <Tooltip title={`prompt ${run.prompt_tokens} / completion ${run.completion_tokens}`}>
+          <Text style={{ fontSize: TEXT.xs }}>{tokenText(run)}</Text>
+        </Tooltip>
+      ),
+    },
+    {
+      key: 'latency',
+      title: '耗时',
+      dataIndex: 'latency_ms',
+      width: 100,
+      render: (latency: number) => (typeof latency === 'number' ? `${latency} ms` : '—'),
+    },
+    {
+      key: 'created_at',
+      title: '时间',
+      dataIndex: 'created_at',
+      width: 150,
+      render: (createdAt: string) => (
+        <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+          {createdAt ? dayjs(createdAt).format('YYYY-MM-DD HH:mm') : '—'}
+        </Text>
+      ),
+    },
+  ]
 
   return (
     <div style={{ padding: '12px 0' }} data-testid="llm-config-panel">
@@ -254,6 +393,85 @@ export default function LlmConfigPanel() {
           />
         )}
       </Form>
+
+      {/* ── 调用记录：本人最近 20 条（只读，不展示提示词 / 输出全文） ── */}
+      <Divider style={{ margin: `${SPACE.lg}px 0 ${SPACE.md}px` }} />
+      <div data-testid="llm-runs">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: SPACE.md,
+            marginBottom: SPACE.md,
+          }}
+        >
+          <Space size={SPACE.md} wrap>
+            <HistoryOutlined />
+            <Text strong>调用记录</Text>
+            <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+              最近 {RUNS_LIMIT} 条（仅本人）
+            </Text>
+          </Space>
+          <Button
+            size="small"
+            icon={<ReloadOutlined />}
+            data-testid="llm-runs-refresh"
+            loading={runsQuery.isFetching}
+            onClick={() => void runsQuery.refetch()}
+          >
+            刷新
+          </Button>
+        </div>
+
+        {runsError ? (
+          <div data-testid="llm-runs-error">
+            <Alert
+              type="error"
+              showIcon
+              message="调用记录加载失败"
+              description={runsError}
+              action={(
+                <Button
+                  size="small"
+                  data-testid="llm-runs-retry"
+                  onClick={() => void runsQuery.refetch()}
+                >
+                  重试
+                </Button>
+              )}
+            />
+          </div>
+        ) : (
+          <Table<LlmRun>
+            data-testid="llm-runs-table"
+            size="small"
+            rowKey="id"
+            loading={runsQuery.isLoading}
+            dataSource={runs}
+            columns={runColumns}
+            pagination={false}
+            scroll={{ x: 'max-content' }}
+            locale={{
+              emptyText: (
+                <Empty
+                  data-testid="llm-runs-empty"
+                  image={Empty.PRESENTED_IMAGE_SIMPLE}
+                  description="还没有大模型调用记录；使用 AI 功能后会在这里留下用量与状态。"
+                />
+              ),
+            }}
+          />
+        )}
+
+        <Text
+          type="secondary"
+          style={{ display: 'block', marginTop: SPACE.md, fontSize: TEXT['2xs'] }}
+        >
+          记录只保存动作、模型、用量、耗时与失败摘要，不保存提示词与模型输出全文；失败摘要悬停可看完整错误，动作列悬停可看留痕 id。
+        </Text>
+      </div>
     </div>
   )
 }

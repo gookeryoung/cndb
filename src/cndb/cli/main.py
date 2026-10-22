@@ -8,6 +8,7 @@
 - service            Windows 开机自启后台服务管理（enable/disable/status/stop/run）
 - docs               文档数据运维（gc：外存孤儿文件体检与回收）
 - views              视图运维（prune-orphans：孤儿视图体检与回收）
+- llm                大模型能力运维（test / runs / prune）
 
 实现策略：argparse 标准库（避免引入 typer/click），子命令通过函数分发。
 """
@@ -372,6 +373,11 @@ def main() -> None:
 
     register_sync_subparser(sub)
 
+    # llm 子命令组（大模型运维：test / runs / prune —— ADR 0020 P3）
+    from cndb.cli.llm import register_llm_subparser
+
+    register_llm_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -417,6 +423,10 @@ def main() -> None:
         from cndb.cli.sync import sync_command
 
         sync_command(args)
+    elif args.command == "llm":
+        from cndb.cli.llm import llm_command
+
+        llm_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)

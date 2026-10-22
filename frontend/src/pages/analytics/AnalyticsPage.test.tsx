@@ -149,8 +149,50 @@ let createBodies: Array<Record<string, unknown>> = []
 let updateBodies: Array<Record<string, unknown>> = []
 let duplicateBodies: Array<Record<string, unknown>> = []
 let deleteIds: number[] = []
+/** AI 生成分析 / 结论解读的请求体（ADR 0020 P3） */
+let aiSuggestBodies: Array<Record<string, unknown>> = []
+let aiExplainBodies: Array<Record<string, unknown>> = []
 /** 后端内存态模板列表：复制 / 删除后刷新能读到新状态 */
 let templateList: AnalyticsTemplate[] = []
+
+/** AI 生成的模板配置（表达式与已有模板不同，便于断言真的回填了编辑态） */
+const AI_FORMULA_EXPR = 'round([合格数] / [产量] * 100, 1)'
+
+const AI_TEMPLATE_SUGGESTION = {
+  action: 'analytics.suggest_template',
+  run_id: 8895,
+  model: 'deepseek-chat',
+  usage: { prompt_tokens: 120, completion_tokens: 90, total_tokens: 210 },
+  result: {
+    name: 'AI 各产品合格率对比',
+    description: '按产品看平均合格率',
+    config: {
+      formulas: [{ key: 'pass_rate_ai', label: '合格率AI', expr: AI_FORMULA_EXPR }],
+      chart: { type: 'line', x: '产品', y: 'pass_rate_ai', aggregation: 'avg', title: 'AI 合格率趋势' },
+      summary: {
+        group_by: '产品',
+        metrics: [{ field: 'pass_rate_ai', agg: 'avg', label: 'AI 平均合格率' }],
+        sort_by: null,
+        sort_order: 'desc',
+        top_n: 3,
+      },
+      fields: [],
+      limit: 1000,
+    },
+    warnings: ['表中无 month 字段，已按日期截断月份，请确认'],
+  },
+}
+
+const AI_EXPLAIN_RESPONSE = {
+  action: 'analytics.explain',
+  run_id: 8896,
+  model: 'deepseek-chat',
+  usage: { prompt_tokens: 80, completion_tokens: 60, total_tokens: 140 },
+  result: {
+    insight: '产品 A 的合格率最高（96%），产品 B 为 89%。',
+    caveats: ['样本仅覆盖 2 个产品'],
+  },
+}
 
 function setupHandlers() {
   computeBodies = []
@@ -158,6 +200,8 @@ function setupHandlers() {
   updateBodies = []
   duplicateBodies = []
   deleteIds = []
+  aiSuggestBodies = []
+  aiExplainBodies = []
   templateList = [TPL_MAIN, TPL_OTHER, TPL_BROKEN]
   server.use(
     http.get('/api/v1/workspaces/1/tables', () =>
@@ -180,6 +224,15 @@ function setupHandlers() {
     http.post('/api/v1/workspaces/1/analytics/compute', async ({ request }) => {
       computeBodies.push((await request.json()) as Record<string, unknown>)
       return HttpResponse.json(COMPUTE_RESPONSE)
+    }),
+    // AI 生成分析模板 / 结论解读（ADR 0020 P3；不触真实模型）
+    http.post('/api/v1/workspaces/1/analytics/ai/suggest-template', async ({ request }) => {
+      aiSuggestBodies.push((await request.json()) as Record<string, unknown>)
+      return HttpResponse.json(AI_TEMPLATE_SUGGESTION)
+    }),
+    http.post('/api/v1/workspaces/1/analytics/ai/explain', async ({ request }) => {
+      aiExplainBodies.push((await request.json()) as Record<string, unknown>)
+      return HttpResponse.json(AI_EXPLAIN_RESPONSE)
     }),
     http.post('/api/v1/workspaces/1/analytics/templates', async ({ request }) => {
       const body = (await request.json()) as Record<string, unknown>
@@ -498,5 +551,126 @@ describe('AnalyticsPage', () => {
     await waitFor(() => expect(deleteIds).toEqual([8]))
     expect(await screen.findByText('模板已删除')).toBeInTheDocument()
     await waitFor(() => expect(screen.queryByTestId('analytics-manager-item-8')).not.toBeInTheDocument())
+  })
+  // ── AI 生成分析模板 / 结论解读（ADR 0020 P3） ──
+
+  it('AI 生成分析：成功回填公式 / 图表 / 汇总与模板名，展示 warnings 且不自动保存', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+
+    fireEvent.change(screen.getByTestId('analytics-ai-question'), {
+      target: { value: '按产品看平均合格率，并标出最低的三个产品' },
+    })
+    fireEvent.click(screen.getByTestId('analytics-ai-generate'))
+
+    // 已填入编辑态（成功提示 + 名称）
+    expect(await screen.findByTestId('analytics-ai-applied')).toHaveTextContent('AI 各产品合格率对比')
+    await waitFor(() => expect(screen.getByTestId('analytics-formula-expr-0')).toHaveValue(AI_FORMULA_EXPR))
+    expect(screen.getByTestId('analytics-chart-title')).toHaveValue('AI 合格率趋势')
+    // 分组汇总指标标签被回填（与已有模板不同的标签）
+    await waitFor(() =>
+      expect(screen.getByTestId('analytics-summary-metric-label-0')).toHaveValue('AI 平均合格率'))
+    // warnings 用 Alert 展示
+    expect(screen.getByTestId('analytics-ai-warnings')).toHaveTextContent('表中无 month 字段')
+    // 只填编辑态：不自动创建 / 更新模板，且请求体带当前表 id
+    expect(createBodies).toHaveLength(0)
+    expect(updateBodies).toHaveLength(0)
+    expect(aiSuggestBodies).toEqual([{ table_id: TID, question: '按产品看平均合格率，并标出最低的三个产品' }])
+    // 生成后进入「未保存」态
+    expect(await screen.findByTestId('analytics-dirty')).toBeInTheDocument()
+  })
+
+  it('AI 生成分析：有未保存修改时先确认，确认后才覆盖编辑态', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+
+    fireEvent.change(screen.getByTestId('analytics-formula-expr-0'), { target: { value: '[产量] * 2' } })
+    expect(await screen.findByTestId('analytics-dirty')).toBeInTheDocument()
+
+    fireEvent.change(screen.getByTestId('analytics-ai-question'), { target: { value: '按产品看合格率' } })
+    fireEvent.click(screen.getByTestId('analytics-ai-generate'))
+
+    const confirm = await screen.findByRole('dialog')
+    expect(confirm.querySelector('.ant-modal-confirm-title')).toHaveTextContent('覆盖当前编辑中的分析配置？')
+    // 确认前不覆盖
+    expect(screen.getByTestId('analytics-formula-expr-0')).toHaveValue('[产量] * 2')
+
+    fireEvent.click(within(confirm).getByRole('button', { name: '覆盖并填入' }))
+    await waitFor(() =>
+      expect(screen.getByTestId('analytics-formula-expr-0')).toHaveValue(AI_FORMULA_EXPR))
+    expect(createBodies).toHaveLength(0)
+    expect(updateBodies).toHaveLength(0)
+  })
+
+  it('AI 生成分析 422：展示后端 detail，且不改动当前配置', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    server.use(
+      http.post('/api/v1/workspaces/1/analytics/ai/suggest-template', () =>
+        HttpResponse.json({ detail: 'AI 生成的配置未通过校验：公式引用字段不存在' }, { status: 422 })),
+    )
+
+    fireEvent.change(screen.getByTestId('analytics-ai-question'), { target: { value: '按不存在的字段分析' } })
+    fireEvent.click(screen.getByTestId('analytics-ai-generate'))
+
+    expect(await screen.findByTestId('analytics-ai-error'))
+      .toHaveTextContent('AI 生成的配置未通过校验：公式引用字段不存在')
+    // 失败不改编辑态
+    expect(screen.getByTestId('analytics-formula-expr-0')).toHaveValue(MAIN_FORMULA.expr)
+    expect(screen.queryByTestId('analytics-dirty')).not.toBeInTheDocument()
+  })
+
+  it('未选择分析表时 AI 生成入口禁用', async () => {
+    renderPage('/w/1/analytics')
+    expect(screen.getByTestId('analytics-ai-question')).toBeDisabled()
+    expect(screen.getByTestId('analytics-ai-generate')).toBeDisabled()
+  })
+
+  it('AI 解读：把汇总结果行（≤50）传给 explain，抽屉展示结论与口径提醒，且不写模板', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('analytics-run-btn'))
+    await screen.findByTestId('analytics-summary-table')
+
+    fireEvent.click(screen.getByTestId('analytics-ai-explain'))
+
+    const drawer = await screen.findByTestId('analytics-ai-explain-drawer')
+    await waitFor(() => expect(drawer).toHaveTextContent('产品 A 的合格率最高（96%）'))
+    expect(screen.getByTestId('analytics-ai-caveats')).toHaveTextContent('样本仅覆盖 2 个产品')
+
+    // 请求体：当前分组汇总行 + 图表类型 + 模板 id
+    expect(aiExplainBodies).toHaveLength(1)
+    expect(aiExplainBodies[0]).toMatchObject({
+      summary_rows: [
+        { group: 'A', 'avg(pass_rate)': 96 },
+        { group: 'B', 'avg(pass_rate)': 89 },
+      ],
+      chart_type: 'bar',
+      template_id: 7,
+    })
+    expect((aiExplainBodies[0].summary_rows as unknown[]).length).toBeLessThanOrEqual(50)
+    // 只读：不写模板、不改数据
+    expect(createBodies).toHaveLength(0)
+    expect(updateBodies).toHaveLength(0)
+    expect(computeBodies).toHaveLength(1)
+  })
+
+  it('AI 解读失败：抽屉展示后端 detail，可重新解读', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('analytics-run-btn'))
+    await screen.findByTestId('analytics-summary-table')
+
+    server.use(
+      http.post('/api/v1/workspaces/1/analytics/ai/explain', () =>
+        HttpResponse.json({ detail: '上游模型服务不可用（502）' }, { status: 502 })),
+    )
+
+    fireEvent.click(screen.getByTestId('analytics-ai-explain'))
+    expect(await screen.findByTestId('analytics-ai-explain-error'))
+      .toHaveTextContent('上游模型服务不可用（502）')
+    expect(screen.getByTestId('analytics-ai-explain-regenerate')).toBeInTheDocument()
   })
 })

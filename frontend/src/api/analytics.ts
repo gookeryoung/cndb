@@ -248,6 +248,72 @@ export interface AnalyticsTemplateDuplicate {
   name?: string
 }
 
+// ── 分析 AI 能力（ADR 0020 P3） ──
+//
+// 端点：
+// - POST /api/v1/workspaces/{wid}/analytics/ai/suggest-template
+// - POST /api/v1/workspaces/{wid}/analytics/ai/explain
+// 两个动作都只返回建议 / 解读：生成配置只填前端编辑态、保存仍走模板接口；
+// 解读只读，不写模板与数据。后端已分别过 normalize_config 与只读校验。
+
+/** AI 用量（上游未返回时字段缺失 / 记 0，前端展示需容错） */
+export interface AnalyticsAiUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+}
+
+/** 分析 AI 动作统一响应：动作名 / 调用留痕 id / 实际模型 / 用量 / 动作结果 */
+export interface AnalyticsAiResponse<R> {
+  /** 后端动作名，如 `analytics.suggest_template` */
+  action: string
+  /** `llm_run` 留痕 id（排查与用量核对） */
+  run_id: number
+  /** 实际使用的模型 */
+  model: string
+  usage: AnalyticsAiUsage
+  result: R
+}
+
+/** 自然语言生成分析模板请求 */
+export interface AnalyticsAiSuggestTemplatePayload {
+  /** 分析目标表 id（必须是当前编辑态已选的数据源表） */
+  table_id: number
+  /** 一句话描述想看的分析（≤500 字） */
+  question: string
+}
+
+/**
+ * 自然语言生成分析模板结果。
+ * `config` 已通过后端 `normalize_config`（公式 / 字段引用 / 聚合）校验，但仍只是建议：
+ * 前端填入编辑态后由用户自行保存，不自动落库。
+ */
+export interface AnalyticsAiTemplateSuggestion {
+  name: string
+  description: string
+  config: AnalyticsTemplateConfig
+  /** 模型对字段假设 / 口径限制的提醒，前端用 Alert 展示 */
+  warnings: string[]
+}
+
+/** 分析结论解读请求：只传汇总结果行（≤50），不传整表数据 */
+export interface AnalyticsAiExplainPayload {
+  /** 分组汇总 / 统计结果行（后端上限 50 行） */
+  summary_rows: Array<Record<string, unknown>>
+  /** 当前图表类型，帮助模型对齐口径 */
+  chart_type?: string
+  /** 当前模板 id（仅用于后端校验模板归属，可空） */
+  template_id?: number
+}
+
+/** 分析结论解读结果（只读建议，不修改模板 / 数据） */
+export interface AnalyticsAiExplainResult {
+  /** 2-4 句中文结论 */
+  insight: string
+  /** 解读口径提醒（可折叠展示） */
+  caveats: string[]
+}
+
 export const analyticsApi = {
   listTemplates: (wid: number | string) =>
     api.get<AnalyticsTemplate[]>(`/v1/workspaces/${wid}/analytics/templates`).then(r => r.data),
@@ -279,4 +345,20 @@ export const analyticsApi = {
     }).then(r => r.data),
   compute: (wid: number | string, data: AnalyticsComputeRequest) =>
     api.post<AnalyticsComputeResponse>(`/v1/workspaces/${wid}/analytics/compute`, data).then(r => r.data),
+  /** 自然语言生成分析模板建议（只返回建议，不保存模板；用户确认后才走模板保存） */
+  aiSuggestTemplate: (wid: number | string, payload: AnalyticsAiSuggestTemplatePayload) =>
+    api
+      .post<AnalyticsAiResponse<AnalyticsAiTemplateSuggestion>>(
+        `/v1/workspaces/${wid}/analytics/ai/suggest-template`,
+        payload,
+      )
+      .then(r => r.data),
+  /** 分析结论解读（只读：不写模板、不改数据；汇总行 ≤50） */
+  aiExplain: (wid: number | string, payload: AnalyticsAiExplainPayload) =>
+    api
+      .post<AnalyticsAiResponse<AnalyticsAiExplainResult>>(
+        `/v1/workspaces/${wid}/analytics/ai/explain`,
+        payload,
+      )
+      .then(r => r.data),
 }
