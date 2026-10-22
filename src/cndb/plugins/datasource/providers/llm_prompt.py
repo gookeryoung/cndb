@@ -42,7 +42,9 @@ from cndb.plugins.tables.services.importing.api_fetch import (
 )
 
 DEFAULT_TEMPERATURE = 0.2
-DEFAULT_MAX_TOKENS = 1024
+# 4096 起步：推荐 / 新闻类提示词要输出多行结构化 JSON，1024 会在长文本中途截断（实机复现过
+# `Unterminated string`），而截断后既无法解析也无法说明原因，用户很难自查。
+DEFAULT_MAX_TOKENS = 4096
 MAX_TOKENS_LIMIT = 32768
 TEST_MAX_TOKENS = 64
 TEST_PROMPT = '只返回 JSON：{"ok": true}'
@@ -65,8 +67,10 @@ DEFAULT_SYSTEM_PROMPT = """你是一个数据抽取助手，负责把用户的�
 8. 每行都应包含稳定可识别的键（如 date、city、symbol、id），便于重复抓取时更新而不是新增。
 
 【真实性约束】
-9. 只根据用户任务与可用上下文生成内容，禁止编造无法核实的事实、数字或链接。
-10. 若无法产出符合上述要求的数据，返回 {"rows": []}，不要编造占位行。"""
+9. 综述 / 摘要 / 推荐类任务（如新闻汇总、行业观察、美食做法、形势分析）不依赖实时数据库，必须基于你已掌握的公开知识尽力输出结构化结果；不要因为无法联网或无法逐条核实就返回空数组。
+10. 无法确认的实时事实（最新行情、今日要闻、实时价格、最新政策原文等）：在 summary / source 中标注「综合整理」，url 等无法确认的字段用空字符串；不要编造看似真实的原文链接。
+11. 禁止编造可核实的精确统计数字（如具体成交额、精确百分比、精确发布日期）；概括性的趋势与常识性描述可以输出。
+12. 只有在确实无法生成任何符合上述要求的数据时，才返回 {"rows": []}；不要用它规避本可完成的综述 / 摘要 / 推荐任务。"""
 
 # 供前端动态渲染的表单描述；前端当前按 provider 条件渲染固定字段，此处仍对外暴露。
 # ADR 0019 起地址 / 模型从工作区「大模型连接」继承，任务侧留空即可，因此 required=False。
@@ -399,11 +403,33 @@ def _parse_response(
         raise ProviderError("模型响应 content 为空")
     if metadata is not None:
         metadata.update(_response_metadata(payload))
+    content_text = strip_json_fences(content)
     try:
-        parsed = json.loads(strip_json_fences(content))
+        parsed = json.loads(content_text)
     except json.JSONDecodeError as exc:
+        if _looks_truncated(exc, content_text):
+            raise ProviderError(
+                f"模型输出可能被截断：请提高 max_tokens（当前默认 {DEFAULT_MAX_TOKENS}）"
+                f"或精简提示词输出（本次返回 {len(content_text)} 字符）；原始错误: {exc}"
+            ) from exc
         raise ProviderError(f"模型返回内容不是合法 JSON: {exc}") from exc
     return _rows_from_payload(parsed)
+
+
+# 判断 JSON 解析失败是否更像「输出被 max_tokens 截断」而不是模型返回了别的东西：
+# - ``Unterminated string``：字符串没有闭合，说明内容在字符串中途结束；
+# - ``Expecting ...``：缺少分隔符 / 值，只有错误位置落在内容末尾附近才按截断处理，
+#   模型输出中间语法错误（如漏逗号）仍保留原来的「不是合法 JSON」文案。
+_TRUNCATION_MESSAGE_PREFIXES = ("Unterminated string", "Expecting")
+_TRUNCATION_TAIL_TOLERANCE = 2
+
+
+def _looks_truncated(exc: json.JSONDecodeError, content: str) -> bool:
+    if not exc.msg.startswith(_TRUNCATION_MESSAGE_PREFIXES):
+        return False
+    if exc.msg.startswith("Unterminated string"):
+        return True
+    return exc.pos >= max(0, len(content) - _TRUNCATION_TAIL_TOLERANCE)
 
 
 def _rows_from_payload(payload: Any) -> list[dict[str, Any]]:

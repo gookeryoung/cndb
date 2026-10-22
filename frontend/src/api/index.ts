@@ -36,14 +36,10 @@ export { systemApi } from './system'
 export type { SystemAbout } from './system'
 export { datasourceApi } from './datasource'
 export type {
-  DatasourceConnectionTestPayload,
-  DatasourceConnectionTestResult,
   DatasourceProviderInfo,
   DatasourceSession,
   DatasourceSessionPayload,
   DomainTemplate,
-  LlmConfig,
-  LlmConfigPayload,
   ProviderField,
   SyncCursorConfig,
   SyncCursorStrategy,
@@ -59,6 +55,13 @@ export type {
   SyncScheduleConfig,
   SyncScheduleMode,
 } from './datasource'
+export { llmConfigApi } from './llmConfig'
+export type {
+  LlmConfig,
+  LlmConfigPayload,
+  LlmConnectionTestPayload,
+  LlmConnectionTestResult,
+} from './llmConfig'
 export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
 export { searchApi } from './search'

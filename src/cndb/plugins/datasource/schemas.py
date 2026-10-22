@@ -230,45 +230,6 @@ class DomainTemplateListResponse(BaseModel):
     templates: list[DomainTemplate]
 
 
-class ConnectionTestRequest(BaseModel):
-    """大模型 API 连通测试：使用未保存的配置，不落库."""
-
-    request_spec: dict[str, Any] = Field(..., description="URL / model / 提示词等声明")
-    session_id: int | None = Field(default=None, description="凭证会话（提供 api_key）")
-    api_key: str | None = Field(
-        default=None,
-        description="未保存的 API Key：仅用于本次连通测试，不落库（填写后无需先保存即可测试）",
-    )
-
-
-class ConnectionTestResponse(BaseModel):
-    ok: bool
-    latency_ms: int = 0
-    model: str = ""
-    message: str = ""
-
-
-class LlmConfigOut(BaseModel):
-    """工作区大模型连接（**不返回 api_key 明文**，只回 ``has_api_key``）."""
-
-    configured: bool = False
-    base_url: str
-    model: str
-    has_api_key: bool = False
-    system_prompt: str = ""
-    default_system_prompt: str = ""
-
-
-class LlmConfigUpdate(BaseModel):
-    """更新工作区大模型连接（局部更新；``api_key`` 非空才覆盖，``clear_api_key`` 可清除）."""
-
-    base_url: str | None = None
-    model: str | None = None
-    api_key: str | None = Field(default=None, description="非空才更新；留空保持原 Key 不变")
-    clear_api_key: bool = Field(default=False, description="显式清除已保存的 API Key")
-    system_prompt: str | None = Field(default=None, description="留空 / 空串表示使用内置默认系统提示词")
-
-
 class PreviewRequest(BaseModel):
     limit: int = Field(default=50, ge=1, le=500, description="返回行数上限")
 
@@ -289,12 +250,8 @@ class PreviewResponse(BaseModel):
 
 
 __all__ = [
-    "ConnectionTestRequest",
-    "ConnectionTestResponse",
     "DomainTemplate",
     "DomainTemplateListResponse",
-    "LlmConfigOut",
-    "LlmConfigUpdate",
     "PreviewRequest",
     "PreviewResponse",
     "ProviderInfo",

@@ -77,10 +77,10 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4", "5", "6"):
+    if version not in ("1", "2", "3", "4", "5", "6", "7"):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6）。请升级程序后再导入。",
+            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7）。请升级程序后再导入。",
         )
 
     imported_tables = 0
@@ -392,8 +392,8 @@ def _import_backup_into_workspace(
         imported_sync_jobs += job_imported
         errors.extend(job_errors)
 
-        # ── v6：工作区级大模型连接（旧备份无该键时跳过；api_key 永不导入） ──
-        _import_llm_config(workspace_id, json_data, current_user, db)
+        # v7（ADR 0019）：大模型连接是个人配置，不随工作区备份导出；
+        # 旧 v6 备份里可能残留的 ``llm_config`` 键按未知键忽略。
     except HTTPException:
         db.rollback()
         raise
@@ -584,43 +584,8 @@ def _import_sync_jobs(
     return imported, errors
 
 
-def _import_llm_config(
-    workspace_id: int,
-    json_data: dict[str, Any],
-    current_user: User,
-    db: Session,
-) -> bool:
-    """还原工作区级大模型连接（v6 起），返回是否新建.
-
-    - 旧备份无 ``llm_config`` 键时跳过；
-    - 备份不含 API Key（绝不导出密文），还原后 Key 留空，需用户重新填写；
-    - 目标工作区已有连接时保留现有配置（与表 / 任务的幂等口径一致）。
-    """
-    from cndb.plugins.datasource.models import DatasourceLlmConfig
-    from cndb.plugins.datasource.services.connection import DEFAULT_BASE_URL, DEFAULT_MODEL
-
-    data = json_data.get("llm_config")
-    if not isinstance(data, dict):
-        return False
-    existing = db.query(DatasourceLlmConfig).filter(DatasourceLlmConfig.workspace_id == workspace_id).first()
-    if existing is not None:
-        return False
-    config = DatasourceLlmConfig(
-        workspace_id=workspace_id,
-        created_by=current_user.id,
-        base_url=str(data.get("base_url") or "").strip() or DEFAULT_BASE_URL,
-        model=str(data.get("model") or "").strip() or DEFAULT_MODEL,
-        api_key="",
-        system_prompt=str(data.get("system_prompt") or "").strip(),
-    )
-    db.add(config)
-    db.commit()
-    return True
-
-
 __all__ = [
     "_coerce_row_value_types",
     "_import_backup_into_workspace",
-    "_import_llm_config",
     "_import_sync_jobs",
 ]

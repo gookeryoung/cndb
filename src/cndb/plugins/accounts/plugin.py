@@ -2,8 +2,9 @@
 
 功能：
 - 用户注册 / JWT 登录 / 当前用户查询
+- 用户偏好 / 个人大模型连接
 
-路由挂载：/api/v1/auth/*
+路由挂载：/api/v1/accounts/*
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from typing import override
 from fastapi import APIRouter
 
 from cndb.plugins.accounts.routers.auth import router as auth_router
+from cndb.plugins.accounts.routers.llm_config import router as llm_config_router
 from cndb.plugins.accounts.routers.preferences import router as preferences_router
 from cndb.plugins.accounts.routers.users import router as users_router
 from cndb.plugins.base import PluginBase
@@ -23,7 +25,7 @@ class AccountsPlugin(PluginBase):
 
     name = "accounts"
     version = "0.1.0"
-    description = "用户注册 / JWT 登录 / 用户偏好"
+    description = "用户注册 / JWT 登录 / 用户偏好 / 个人大模型连接"
     icon = "UserOutlined"
 
     @override
@@ -33,7 +35,8 @@ class AccountsPlugin(PluginBase):
 
     @override
     def register_routes(self, router: APIRouter) -> None:
-        """注册 auth + preferences + users 路由."""
+        """注册 auth + preferences + users + llm-config 路由."""
         router.include_router(auth_router)
         router.include_router(preferences_router)
         router.include_router(users_router)
+        router.include_router(llm_config_router)

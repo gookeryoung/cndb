@@ -4,6 +4,7 @@
  * - 列表列：名称 / 适配器 / 目标表 / 调度 / 上次运行 / 操作
  * - 编辑抽屉：Provider 选择 → 请求模板 → 游标 → 调度 →（保存后）抓取预览
  * - 历史抽屉：每次运行的状态 / 游标区间 / 新增·更新 / 失败原因
+ * - 大模型连接是个人级配置（「个人设置 → 大模型」），本页不再提供工作区级连接入口
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -12,7 +13,7 @@ import {
   Select, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import {
-  ApiOutlined, CloudDownloadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined, EyeOutlined,
+  CloudDownloadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined, EyeOutlined,
   HistoryOutlined, KeyOutlined, PlayCircleOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -22,14 +23,17 @@ import { analyticsApi } from '@/api/analytics'
 import { materializeDomainTemplate } from './domainTemplate'
 import { LLM_PROMPT_PRESETS, type LlmPromptPreset } from './llmPromptPresets'
 import type {
-  DatasourceConnectionTestResult, DatasourceProviderInfo, DatasourceSession, DomainTemplate, LlmConfig,
-  LlmConfigPayload, SyncJob, SyncJobPayload, SyncPreviewResult, SyncRequestSpec, SyncRun, SyncScheduleConfig,
+  DatasourceProviderInfo, DatasourceSession, DomainTemplate, SyncJob, SyncJobPayload, SyncPreviewResult,
+  SyncRequestSpec, SyncRun, SyncScheduleConfig,
 } from '@/api'
 
 const { Title, Text, Paragraph } = Typography
 
-/** 大模型连接 / 任务的高级参数默认值（与后端 llm_prompt provider 对齐） */
-const LLM_DEFAULTS = { baseUrl: 'https://api.deepseek.com', model: 'deepseek-chat', temperature: 0.2, maxTokens: 1024 }
+/** llm_prompt 任务高级参数的默认值（与后端 llm_prompt provider 对齐；长提示词输出默认 4096） */
+const LLM_DEFAULTS = { temperature: 0.2, maxTokens: 4096 }
+
+/** 个人级大模型连接入口（工作区级连接已删除） */
+const LLM_PERSONAL_HINT = '使用「个人设置 → 大模型」中的连接配置；未配置请先到个人设置填写 API Key'
 
 const STATUS_META: Record<string, { color: string; label: string }> = {
   success: { color: 'green', label: '成功' },
@@ -77,7 +81,6 @@ export default function DatasourcePage() {
   const [editing, setEditing] = useState<SyncJob | null>(null)
   const [historyJob, setHistoryJob] = useState<SyncJob | null>(null)
   const [sessionModalOpen, setSessionModalOpen] = useState(false)
-  const [llmConfigOpen, setLlmConfigOpen] = useState(false)
 
   const providersQuery = useQuery({
     queryKey: ['datasource', 'providers', wid],
@@ -106,19 +109,12 @@ export default function DatasourcePage() {
     enabled: !!wid,
     staleTime: 300_000,
   })
-  const llmConfigQuery = useQuery({
-    queryKey: ['datasource', 'llm-config', wid],
-    queryFn: () => datasourceApi.getLlmConfig(wid),
-    enabled: !!wid,
-    staleTime: 300_000,
-  })
 
   const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data])
   const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data])
   const tables = useMemo(() => tablesQuery.data ?? [], [tablesQuery.data])
   const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data])
   const domainTemplates = useMemo(() => domainTemplatesQuery.data ?? [], [domainTemplatesQuery.data])
-  const llmConfig = llmConfigQuery.data ?? null
 
   const providerLabel = useCallback(
     (name: string) => providers.find(p => p.name === name)?.label ?? name,
@@ -335,18 +331,6 @@ export default function DatasourcePage() {
           <Text type="secondary">定期抓取外部数据并按幂等键写入数据表</Text>
         </Space>
         <Space size={8}>
-          <Tooltip title="工作区级大模型 API 地址 / 模型 / API Key，创建提示词任务前先配置一次">
-            <Button icon={<ApiOutlined />} data-testid="datasource-llm-config-btn" onClick={() => setLlmConfigOpen(true)}>
-              大模型连接
-            </Button>
-          </Tooltip>
-          <Tag
-            color={llmConfig?.has_api_key ? 'green' : llmConfig?.configured ? 'gold' : 'default'}
-            data-testid="datasource-llm-config-tag"
-            style={{ marginInlineEnd: 4 }}
-          >
-            {llmConfig?.has_api_key ? '已配置' : llmConfig?.configured ? '待填 API Key' : '未配置'}
-          </Tag>
           <Button type="primary" data-testid="datasource-create-btn" icon={<PlusOutlined />} onClick={openCreate}>
             新建同步任务
           </Button>
@@ -382,22 +366,12 @@ export default function DatasourcePage() {
         providers={providers}
         tables={tables}
         sessions={sessions}
-        llmConfig={llmConfig}
         onManageSessions={() => setSessionModalOpen(true)}
-        onOpenLlmConfig={() => setLlmConfigOpen(true)}
         onClose={() => setDrawerOpen(false)}
         onSaved={close => {
           invalidate()
           if (close) setDrawerOpen(false)
         }}
-      />
-
-      <LlmConfigModal
-        wid={wid}
-        open={llmConfigOpen}
-        config={llmConfig}
-        onClose={() => setLlmConfigOpen(false)}
-        onSaved={() => void queryClient.invalidateQueries({ queryKey: ['datasource', 'llm-config', wid] })}
       />
 
       <SessionModal
@@ -420,10 +394,7 @@ interface JobDrawerProps {
   providers: DatasourceProviderInfo[]
   tables: Array<{ id: number | string; name: string }>
   sessions: DatasourceSession[]
-  /** 工作区级大模型连接（llm_prompt 任务只做引用，不再逐任务填地址 / 模型 / Key） */
-  llmConfig: LlmConfig | null
   onManageSessions: () => void
-  onOpenLlmConfig: () => void
   onClose: () => void
   /** close=true 关闭抽屉；false 仅刷新列表（保存并预览时保留抽屉展示预览结果） */
   onSaved: (close: boolean) => void
@@ -437,9 +408,7 @@ function JobDrawer({
   providers,
   tables,
   sessions,
-  llmConfig,
   onManageSessions,
-  onOpenLlmConfig,
   onClose,
   onSaved,
 }: JobDrawerProps) {
@@ -519,8 +488,8 @@ function JobDrawer({
         ? { mode: 'none' as const }
         : { mode: 'range' as const, chunk_days: Number(values.chunk_days) || 0 }
       if (values.provider === 'llm_prompt') {
-        // 极简口径（ADR 0019）：API 地址 / 模型 / Key 由工作区「大模型连接」提供，
-        // request_spec 只带提示词与可选的模型参数覆盖；分页与响应路径不适用。
+        // 极简口径（ADR 0019）：API 地址 / 模型 / Key 由当前用户的「个人设置 → 大模型」
+        // 连接配置提供，request_spec 只带提示词与可选的模型参数覆盖；分页与响应路径不适用。
         const prompt: SyncRequestSpec['prompt'] = {
           user_template: String(values.user_template ?? '').trim(),
         }
@@ -586,17 +555,8 @@ function JobDrawer({
     }
   }, [form, buildRequestSpec])
 
-  /** llm_prompt 依赖工作区级连接；未配置时保存 / 预览先引导去配置，不发请求 */
-  const ensureLlmReady = useCallback((): boolean => {
-    if (form.getFieldValue('provider') !== 'llm_prompt') return true
-    if (llmConfig?.configured && llmConfig.has_api_key) return true
-    message.warning('请先配置工作区的大模型连接（API 地址 / 模型 / API Key）')
-    onOpenLlmConfig()
-    return false
-  }, [form, llmConfig, message, onOpenLlmConfig])
-
+  /** llm_prompt 依赖当前用户的个人大模型连接；未配置时由后端返回 400 detail（已在保存错误里 toast） */
   const handleSave = async (thenPreview: boolean) => {
-    if (!ensureLlmReady()) return
     setSaving(true)
     try {
       const payload = await buildPayload()
@@ -631,7 +591,6 @@ function JobDrawer({
   const activeProvider = Form.useWatch('provider', form) as string | undefined
   const providerInfo = providers.find(p => p.name === activeProvider)
   const isLlm = activeProvider === 'llm_prompt'
-  const llmReady = Boolean(llmConfig?.configured && llmConfig.has_api_key)
   // 折叠面板未展开时对应 Form.Item 尚未挂载，watch 拿不到值，回退到任务本身
   const scheduleMode = (Form.useWatch('schedule_mode', form) as string | undefined) ?? activeJob?.schedule?.mode
   const cursorStrategy = Form.useWatch('cursor_strategy', form) as string | undefined
@@ -699,26 +658,14 @@ function JobDrawer({
 
           {isLlm ? (
             <>
-              {llmConfig && !llmReady && (
-                <Alert
-                  data-testid="datasource-llm-unconfigured"
-                  type="warning"
-                  showIcon
-                  style={{ marginBottom: 16 }}
-                  message="尚未配置工作区的大模型连接"
-                  description="API 地址 / 模型 / API Key 在「大模型连接」里配置一次即可，所有提示词任务共用。"
-                  action={
-                    <Button size="small" data-testid="datasource-llm-goto-config" onClick={onOpenLlmConfig}>
-                      去配置
-                    </Button>
-                  }
-                />
-              )}
-              {llmConfig && llmReady && (
-                <Text type="secondary" style={{ display: 'block', marginBottom: 16, fontSize: 12 }}>
-                  使用工作区大模型连接：{llmConfig.model} · {llmConfig.base_url}（可在页头「大模型连接」修改）
-                </Text>
-              )}
+              <Alert
+                data-testid="datasource-llm-personal-hint"
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={LLM_PERSONAL_HINT}
+                description="API 地址 / 模型 / API Key 在个人设置里配置一次即可，所有提示词任务共用你的个人配置。"
+              />
 
               <Form.Item name="table_id" label="目标表（留空则按任务名自动建表）" style={{ flex: 1 }}>
                 <Select
@@ -781,7 +728,7 @@ function JobDrawer({
                         <Form.Item
                           name="system_prompt"
                           label="系统提示词覆盖"
-                          extra="留空使用工作区内置默认；内置默认全文可在「大模型连接」里查看"
+                          extra="留空使用内置默认；内置默认全文可在「个人设置 → 大模型」里查看"
                         >
                           <Input.TextArea
                             data-testid="datasource-llm-system"
@@ -896,11 +843,11 @@ function JobDrawer({
                               </Space>
                             }
                             style={{ flex: 1 }}
-                            extra="默认使用工作区大模型连接；留空即可"
+                            extra="默认使用你在「个人设置 → 大模型」中配置的 Key；留空即可"
                           >
                             <Select
                               allowClear
-                              placeholder="默认使用工作区大模型连接"
+                              placeholder="默认使用个人设置中的大模型配置"
                               options={sessions.map(item => ({
                                 value: item.id,
                                 label: item.secret_keys.length
@@ -1599,200 +1546,3 @@ function LlmPresetModal({
   )
 }
 
-/** 工作区级「大模型连接」弹窗：API 地址 / 模型 / API Key / 系统提示词（ADR 0019 P1/P2） */
-function LlmConfigModal({
-  wid,
-  open,
-  config,
-  onClose,
-  onSaved,
-}: {
-  wid: string
-  open: boolean
-  config: LlmConfig | null
-  onClose: () => void
-  onSaved: () => void
-}) {
-  const [form] = Form.useForm()
-  const { message } = AntApp.useApp()
-  const [saving, setSaving] = useState(false)
-  const [testing, setTesting] = useState(false)
-  const [testResult, setTestResult] = useState<DatasourceConnectionTestResult | null>(null)
-  const [clearKey, setClearKey] = useState(false)
-
-  useEffect(() => {
-    if (!open) return
-    setTestResult(null)
-    setClearKey(false)
-    form.setFieldsValue({
-      base_url: config?.base_url || LLM_DEFAULTS.baseUrl,
-      model: config?.model || LLM_DEFAULTS.model,
-      api_key: '',
-      system_prompt: config?.system_prompt ?? '',
-    })
-  }, [open, config, form])
-
-  const submit = async () => {
-    const values = await form.validateFields()
-    const payload: LlmConfigPayload = {
-      base_url: String(values.base_url ?? '').trim(),
-      model: String(values.model ?? '').trim(),
-      system_prompt: String(values.system_prompt ?? ''),
-    }
-    const apiKey = String(values.api_key ?? '').trim()
-    if (apiKey) payload.api_key = apiKey
-    if (clearKey) payload.clear_api_key = true
-    setSaving(true)
-    try {
-      await datasourceApi.updateLlmConfig(wid, payload)
-      message.success('大模型连接已保存')
-      onSaved()
-      onClose()
-    } catch (error) {
-      const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      message.error(detail || '保存失败（需编辑者及以上权限）')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const testConnection = async () => {
-    let values: Record<string, unknown>
-    try {
-      values = (await form.validateFields(['base_url', 'model'])) as Record<string, unknown>
-    } catch {
-      return
-    }
-    setTesting(true)
-    setTestResult(null)
-    try {
-      const typedKey = String(form.getFieldValue('api_key') ?? '').trim()
-      const result = await datasourceApi.testConnection(wid, {
-        request_spec: {
-          url_template: String(values.base_url ?? '').trim(),
-          llm: { model: String(values.model ?? '').trim() },
-        },
-        // 未保存的 Key 直接随请求带上，后端只用于本次测试、不落库
-        api_key: typedKey || undefined,
-      })
-      setTestResult(result)
-    } catch {
-      setTestResult({ ok: false, latency_ms: 0, model: '', message: '连通测试请求失败，请检查网络或权限' })
-    } finally {
-      setTesting(false)
-    }
-  }
-
-  return (
-    <Modal
-      title="大模型连接"
-      open={open}
-      width={640}
-      onCancel={onClose}
-      forceRender
-      destroyOnHidden
-      footer={
-        <Space>
-          <Button onClick={onClose}>取消</Button>
-          <Button type="primary" loading={saving} data-testid="datasource-llm-config-save" onClick={() => void submit()}>
-            保存
-          </Button>
-        </Space>
-      }
-    >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="工作区级配置，所有「大模型提示词」任务共用"
-        description="API Key 只写不回显；保存后任务里不再需要逐条填写地址 / 模型 / Key。"
-      />
-      <Form form={form} layout="vertical" size="small">
-        <Form.Item
-          name="base_url"
-          label="API 地址（base_url）"
-          rules={[{ required: true, message: '请输入 API 地址' }]}
-          extra="OpenAI 兼容；只填 base_url 时自动补全 /chat/completions"
-        >
-          <Input data-testid="datasource-llm-config-base-url" placeholder={LLM_DEFAULTS.baseUrl} />
-        </Form.Item>
-        <Form.Item name="model" label="模型" rules={[{ required: true, message: '请输入模型名称' }]}>
-          <Input data-testid="datasource-llm-config-model" placeholder={LLM_DEFAULTS.model} />
-        </Form.Item>
-        <Form.Item
-          name="api_key"
-          label="API Key"
-          extra={
-            config?.has_api_key
-              ? '已配置 API Key：留空保持不变，填写则整体替换；填写后可直接点「测试连接」'
-              : '填写后可直接点「测试连接」验证；保存后加密存储，读接口只回显是否已配置'
-          }
-        >
-          <Input.Password
-            data-testid="datasource-llm-config-api-key"
-            autoComplete="new-password"
-            placeholder={config?.has_api_key ? '已配置，留空保持不变' : 'sk-...'}
-          />
-        </Form.Item>
-        {config?.has_api_key && (
-          <Form.Item style={{ marginBottom: 12 }}>
-            <Button
-              size="small"
-              danger={!clearKey}
-              type={clearKey ? 'primary' : 'default'}
-              data-testid="datasource-llm-config-clear-key"
-              onClick={() => setClearKey(value => !value)}
-            >
-              {clearKey ? '取消清除 API Key' : '清除已保存的 API Key'}
-            </Button>
-          </Form.Item>
-        )}
-        <Form.Item
-          name="system_prompt"
-          label="系统提示词（可选）"
-          extra="留空使用内置默认；填写后覆盖当前工作区的系统提示词"
-        >
-          <Input.TextArea data-testid="datasource-llm-config-system" rows={3} placeholder="留空使用内置默认" />
-        </Form.Item>
-        <div
-          data-testid="datasource-llm-default-system"
-          style={{ padding: 8, background: 'rgba(0,0,0,0.03)', borderRadius: 6, marginBottom: 16 }}
-        >
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            内置默认系统提示词（system_prompt 留空时使用）
-          </Text>
-          <Paragraph style={{ marginBottom: 0, marginTop: 4, whiteSpace: 'pre-wrap', fontSize: 12 }}>
-            {config?.default_system_prompt || '只输出 JSON，不要输出 Markdown 代码围栏或解释文字。'}
-          </Paragraph>
-        </div>
-        <Space size={8} wrap>
-          <Button
-            icon={<ApiOutlined />}
-            data-testid="datasource-llm-config-test"
-            loading={testing}
-            onClick={() => void testConnection()}
-          >
-            测试连接
-          </Button>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            发一次真实模型请求（可能产生费用）；可直接用当前填写的 API Key 测试，无需先保存
-          </Text>
-        </Space>
-        {testResult && (
-          <Alert
-            data-testid="datasource-llm-config-test-result"
-            type={testResult.ok ? 'success' : 'error'}
-            showIcon
-            style={{ marginTop: 12 }}
-            message={
-              testResult.ok
-                ? `连通成功 · ${testResult.model || '模型'} · ${testResult.latency_ms} ms`
-                : '连通失败'
-            }
-            description={testResult.ok ? undefined : testResult.message}
-          />
-        )}
-      </Form>
-    </Modal>
-  )
-}

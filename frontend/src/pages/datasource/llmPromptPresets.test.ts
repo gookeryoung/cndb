@@ -100,4 +100,38 @@ describe('LLM_PROMPT_PRESETS', () => {
       expect(preset.prompt).toContain('{today}')
     }
   })
+
+  it('每日新闻摘要基于已有公开信息输出，不因无法联网返回空数组', () => {
+    const news = LLM_PROMPT_PRESETS.find(preset => preset.id === 'daily_news')
+    expect(news).toBeDefined()
+    expect(news?.prompt).toContain('基于你已掌握的近期公开信息')
+    expect(news?.prompt).toContain('不要因为无法联网就返回空数组')
+    expect(news?.prompt).toContain('综合整理')
+    // url 无法确认时留空，不编造链接
+    expect(news?.prompt).toContain('空字符串')
+  })
+
+  it('美食推荐做法限制输出规模，避免长文本被 max_tokens 截断', () => {
+    const food = LLM_PROMPT_PRESETS.find(preset => preset.id === 'food_recipes')
+    expect(food).toBeDefined()
+    expect(food?.prompt).toContain('每类 2 道，共 8 道')
+    expect(food?.prompt).toContain('每步不超过 60 字')
+    expect(food?.prompt).toContain('避免输出过长被截断')
+  })
+
+  it('实时数据类预设统一要求标注综合整理 / 留空且不返回空数组', () => {
+    const realtimeIds = [
+      'market_snapshot',
+      'ecommerce_price',
+      'policy_tracker',
+      'commercial_aerospace',
+      'global_affairs',
+    ]
+    for (const id of realtimeIds) {
+      const preset = LLM_PROMPT_PRESETS.find(item => item.id === id)
+      expect(preset, `缺少预设 ${id}`).toBeDefined()
+      expect(preset?.prompt, `${preset?.name} 未加实时数据真实性约束`).toContain('综合整理')
+      expect(preset?.prompt, `${preset?.name} 未要求避免空数组`).toContain('不要返回空数组')
+    }
+  })
 })
