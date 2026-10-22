@@ -54,6 +54,10 @@ vi.mock('@/api', () => ({
   },
   viewApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), reorder: vi.fn() },
   auditApi: { list: vi.fn() },
+  // GridViewBar 读取收藏态（ADR 0021）
+  preferencesApi: {
+    get: vi.fn().mockResolvedValue({ active_views: {}, workspace_order: [], favorite_view_ids: [] }),
+  },
   // 移动表的候选来源：唯一工作区 id=10 与当前工作区（wid=1）不同，可作为目标
   workspaceApi: { list: vi.fn().mockResolvedValue([{ id: 10, name: '测试工作区' }]) },
 }))

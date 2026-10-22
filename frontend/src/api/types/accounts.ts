@@ -136,3 +136,28 @@ export interface ProfileUpdateRequest { nickname?: string; email?: string }
 export interface RegisterRequest { username: string; email?: string | null; password: string; nickname?: string }
 /** 管理员创建用户请求体 —— role 必填（三员 + user 任意）. */
 export interface AdminRegisterRequest extends Omit<RegisterRequest, 'password'> { password: string; role: UserRole }
+/** 当前用户偏好（对齐后端 PreferencesResponse，ADR 0021） */
+export interface UserPreferences {
+  /** 每张表的激活视图映射: table_id -> view_id */
+  active_views: Record<string, number>
+  /** 主页工作区的自定义顺序（同组内生效） */
+  workspace_order: number[]
+  /** 收藏视图 id，顺序即「我的视图」展示顺序 */
+  favorite_view_ids: number[]
+}
+
+/** 「我的视图」面板行摘要（对齐后端 FavoriteViewSummary） */
+export interface FavoriteViewSummary {
+  view_id: number
+  name: string
+  view_type: string
+  is_default: boolean
+  visibility: 'table' | 'shared' | 'private' | string
+  filter_count: number
+  sort_count: number
+  table_id: number
+  table_name: string
+  workspace_id: number
+  workspace_name: string
+  updated_at: string | null
+}

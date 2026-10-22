@@ -59,6 +59,9 @@ vi.mock('@/api', () => ({
     recordApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), bulkDelete: vi.fn(), bulkCreate: vi.fn().mockResolvedValue({ ids: [] }) },
     viewApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), reorder: vi.fn() },
     auditApi: { list: vi.fn() },
+    preferencesApi: {
+        get: vi.fn().mockResolvedValue({ active_views: {}, workspace_order: [], favorite_view_ids: [] }),
+    },
 }))
 
 beforeEach(() => {

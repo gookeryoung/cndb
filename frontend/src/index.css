@@ -1374,6 +1374,236 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   }
 }
 
+/* ─────────────── 主页双列：「我的工作区」+「我的视图」（ADR 0021） ─────────────── */
+
+.cn-home-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: var(--cn-space-xl);
+  align-items: start;
+}
+
+.cn-home-main {
+  min-width: 0;
+}
+
+/* 窄屏 / 平板：右侧面板堆叠到工作区下方，避免 340px 固定栏挤压行列表 */
+@media (max-width: 991.98px) {
+  .cn-home-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 工作区行首拖拽把手 —— 只此一处绑定拖拽监听，行点击不受影响 */
+.cn-ws-row-drag.ant-btn {
+  flex: none;
+  width: 18px;
+  min-width: 18px;
+  height: 20px;
+  padding: 0;
+  color: var(--cn-text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.cn-ws-row-drag.ant-btn:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.cn-myviews-panel {
+  min-width: 0;
+  padding: var(--cn-space-lg);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container);
+}
+
+.cn-myviews-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  margin-bottom: var(--cn-space-md);
+}
+
+.cn-myviews-title {
+  font-size: var(--cn-text-md);
+  font-weight: 600;
+  color: var(--cn-text-primary);
+}
+
+.cn-myviews-count {
+  margin-left: auto;
+  padding: 0 var(--cn-space-sm);
+  border-radius: var(--cn-radius-pill);
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--cn-text-muted);
+  background: var(--cn-bg-subtle);
+  border: 1px solid var(--cn-border-soft);
+}
+
+.cn-myviews-empty {
+  padding: var(--cn-space-md) 0;
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-secondary);
+}
+
+.cn-myviews-empty-hint {
+  margin-top: var(--cn-space-xs);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-myviews-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+}
+
+.cn-myviews-row {
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.cn-myviews-row:hover {
+  border-color: color-mix(in srgb, var(--cn-brand-color) 40%, var(--cn-border));
+}
+
+.cn-myviews-row.is-expanded {
+  border-color: color-mix(in srgb, var(--cn-brand-color) 46%, var(--cn-border));
+  box-shadow: 0 2px 10px rgb(var(--cn-shadow-color) / 0.06);
+}
+
+.cn-myviews-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  min-height: 40px;
+  padding: var(--cn-space-xs) var(--cn-space-sm);
+  cursor: pointer;
+}
+
+.cn-myviews-drag.ant-btn,
+.cn-myviews-toggle.ant-btn {
+  flex: none;
+  width: 20px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0;
+  color: var(--cn-text-muted);
+}
+
+.cn-myviews-drag.ant-btn {
+  cursor: grab;
+  touch-action: none;
+}
+
+.cn-myviews-toggle.ant-btn .anticon {
+  transition: transform 0.15s ease;
+}
+
+.cn-myviews-type-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--cn-radius-base);
+  font-size: var(--cn-text-sm);
+  color: var(--cn-brand-color);
+  background: color-mix(in srgb, var(--cn-brand-color) 10%, transparent);
+}
+
+.cn-myviews-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.cn-myviews-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-sm);
+  font-weight: 500;
+  color: var(--cn-text-primary);
+}
+
+.cn-myviews-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-myviews-row-tag.ant-tag {
+  margin-inline-end: 0;
+  font-size: var(--cn-text-2xs);
+  line-height: 16px;
+  padding-inline: var(--cn-space-xs);
+}
+
+.cn-myviews-detail {
+  padding: var(--cn-space-md);
+  border-top: 1px dashed var(--cn-border-soft);
+  background: var(--cn-bg-subtle);
+  animation: cn-rise-in 0.18s ease-out both;
+}
+
+.cn-myviews-detail-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  margin-bottom: var(--cn-space-sm);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-myviews-detail-row .ant-tag {
+  margin-inline-end: 0;
+  font-size: var(--cn-text-2xs);
+  line-height: 16px;
+  padding-inline: var(--cn-space-xs);
+}
+
+.cn-myviews-detail-label {
+  flex: none;
+  color: var(--cn-text-muted);
+}
+
+.cn-myviews-detail-value {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-myviews-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  margin-top: var(--cn-space-md);
+  padding-top: var(--cn-space-md);
+  border-top: 1px solid var(--cn-border-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cn-myviews-detail {
+    animation: none;
+  }
+
+  .cn-myviews-toggle.ant-btn .anticon {
+    transition: none;
+  }
+}
+
 /* 数据表列表（TablesList）：行高收紧。
  * AntD size="small" 的单元格上下 padding 是 8px，行内又有 Tag / Avatar（20~24px），
  * 实测行高 48px 左右；压到 6px 后一屏能多出约两行。表头同步压缩并弱化字号。 */

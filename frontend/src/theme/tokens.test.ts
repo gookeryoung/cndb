@@ -107,12 +107,15 @@ describe('index.css 不出现游离字面量', () => {
 })
 
 describe('断点口径', () => {
-  it('移动端断点统一为 767.98px（antd mobile 口径 - 0.02）', () => {
+  it('max-width 断点只允许 mobile / tablet 口径 - 0.02', () => {
     expect(BREAKPOINT.mobile).toBe(768)
+    expect(BREAKPOINT.tablet).toBe(992)
     const widths = [...css.matchAll(/@media[^{]*max-width:\s*([0-9.]+)px/g)].map(m => Number(m[1]))
     expect(widths.length).toBeGreaterThan(0)
+    // 991.98 = tablet(992) - 0.02，对应「窄屏单列堆叠」；575.98 为 antd xs 例外
+    const allowed = [BREAKPOINT.mobile - 0.02, BREAKPOINT.tablet - 0.02, 575.98]
     for (const w of widths) {
-      expect([BREAKPOINT.mobile - 0.02, 575.98], `出现未登记断点 ${w}px`).toContain(w)
+      expect(allowed, `出现未登记断点 ${w}px`).toContain(w)
     }
   })
 })

@@ -6,11 +6,13 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import { AppstoreOutlined, ColumnHeightOutlined, CalendarOutlined } from '@ant-design/icons'
 
 import type { ResponsiveState } from '@/hooks/useResponsive'
 import type { View } from '@/api'
 import { renderProviders } from '@/test/render-providers'
+import { server } from '@/test/msw'
 import GridViewBar from './gridViewBar'
 import type { ViewMode } from './views/viewModes'
 
@@ -217,5 +219,87 @@ describe('GridViewBar 移动端', () => {
     renderBar({ views: ownViews, activeViewId: 3, canManageViews: false })
     fireEvent.click(screen.getByTestId('view-more-btn'))
     expect((await screen.findByText('视图权限')).closest('li')).not.toHaveClass('ant-dropdown-menu-item-disabled')
+  })
+})
+
+// ─────────────── 收藏入口（ADR 0021） ───────────────
+
+/** 默认偏好：未收藏任何视图 */
+function mockPreferences(favoriteViewIds: number[] = []) {
+  return http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+    active_views: {}, workspace_order: [], favorite_view_ids: favoriteViewIds,
+  }))
+}
+
+/** 收藏全量替换端点：记录请求体并回显 */
+function mockFavoritePut(onSave: (ids: number[]) => void) {
+  return http.put('/api/v1/accounts/preferences/favorite-views', async ({ request }) => {
+    const body = (await request.json()) as { view_ids: number[] }
+    onSave(body.view_ids)
+    return HttpResponse.json({ view_ids: body.view_ids })
+  })
+}
+
+describe('GridViewBar 收藏入口', () => {
+  it('桌面星标按钮反映收藏状态，点击后全量写入收藏 id', async () => {
+    let saved: number[] | undefined
+    server.use(mockPreferences(), mockFavoritePut(ids => { saved = ids }))
+    renderBar()
+
+    const btn = await screen.findByTestId('view-favorite-btn')
+    await waitFor(() => expect(btn).toHaveAttribute('aria-pressed', 'false'))
+    fireEvent.click(btn)
+
+    await waitFor(() => expect(saved).toEqual([1]))
+  })
+
+  it('已收藏时 aria-pressed=true，再次点击从收藏中移除', async () => {
+    let saved: number[] | undefined
+    server.use(mockPreferences([1]), mockFavoritePut(ids => { saved = ids }))
+    renderBar()
+
+    const btn = await screen.findByTestId('view-favorite-btn')
+    await waitFor(() => expect(btn).toHaveAttribute('aria-pressed', 'true'))
+    fireEvent.click(btn)
+
+    await waitFor(() => expect(saved).toEqual([]))
+  })
+
+  it('移动端「更多」菜单提供收藏入口并显示当前状态', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    let saved: number[] | undefined
+    server.use(mockPreferences(), mockFavoritePut(ids => { saved = ids }))
+    renderBar()
+
+    fireEvent.click(screen.getByTestId('view-more-btn'))
+    const item = await screen.findByTestId('view-favorite-menu-item')
+    expect(item).toHaveTextContent('收藏当前视图')
+    fireEvent.click(item)
+
+    await waitFor(() => expect(saved).toEqual([1]))
+  })
+
+  it('达到收藏上限时提示且不发起写入', async () => {
+    let putCalls = 0
+    const fullIds = Array.from({ length: 50 }, (_, i) => 1000 + i)
+    server.use(
+      mockPreferences(fullIds),
+      http.put('/api/v1/accounts/preferences/favorite-views', async ({ request }) => {
+        putCalls += 1
+        const body = (await request.json()) as { view_ids: number[] }
+        return HttpResponse.json({ view_ids: body.view_ids })
+      }),
+    )
+    renderBar()
+
+    const btn = await screen.findByTestId('view-favorite-btn')
+    await waitFor(() => expect(btn).toHaveAttribute('aria-pressed', 'false'))
+    fireEvent.click(btn)
+
+    expect(await screen.findByText('最多收藏 50 个视图')).toBeInTheDocument()
+    expect(putCalls).toBe(0)
   })
 })

@@ -58,6 +58,9 @@ vi.mock('@/api', () => ({
   recordApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), bulkDelete: vi.fn(), bulkCreate: vi.fn() },
   viewApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), reorder: vi.fn() },
   auditApi: { list: vi.fn() },
+  preferencesApi: {
+    get: vi.fn().mockResolvedValue({ active_views: {}, workspace_order: [], favorite_view_ids: [] }),
+  },
   changeRequestsApi: { listGrouped: vi.fn().mockResolvedValue({ groups: [], ungrouped: [], total: 0 }) },
   isChangeRequestResponse: () => false,
 }))
