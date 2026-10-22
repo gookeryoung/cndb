@@ -252,6 +252,26 @@ class TestInferMatchKeys:
         # 两列都唯一 → 名称像键的 date 优先
         assert infer_match_keys(rows, ["date", "value"]) == ["date"]
 
+    def test_chinese_field_names_are_weighted_as_keys(self):
+        """中文键名同样参与「像键」加权（大模型默认输出中文字段，2026-10-23）."""
+        rows = [
+            {"日期": "2026-10-22", "摘要": "a"},
+            {"日期": "2026-10-23", "摘要": "b"},
+        ]
+        # 两列都唯一 → 名称像键的「日期」优先
+        assert infer_match_keys(rows, ["日期", "摘要"]) == ["日期"]
+
+    def test_chinese_three_column_combination(self):
+        """无单列 / 两列唯一时，中文三列组合仍能推断出来."""
+        rows = [
+            {"日期": "1", "地区": "1", "标题": "1"},
+            {"日期": "1", "地区": "1", "标题": "2"},
+            {"日期": "1", "地区": "2", "标题": "1"},
+            {"日期": "2", "地区": "1", "标题": "1"},
+        ]
+        # 组合内顺序按「像键」权重排（日期 / 标题 命中中文提示词片段，排在 地区 之前）
+        assert sorted(infer_match_keys(rows, ["日期", "地区", "标题"])) == sorted(["日期", "地区", "标题"])
+
     def test_all_empty_column_is_ignored(self):
         rows = [
             {"date": "", "code": "sh600519"},

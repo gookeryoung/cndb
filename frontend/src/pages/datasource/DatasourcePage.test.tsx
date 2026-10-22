@@ -539,7 +539,7 @@ describe('DatasourcePage · 大模型提示词', () => {
     fireEvent.click(within(modal).getByTestId('llm-preset-use-daily_news'))
     expect(await screen.findByTestId('datasource-llm-user')).toHaveValue(LLM_PROMPT_PRESETS[0].prompt)
     expect(await screen.findByTestId('datasource-llm-preset-hint')).toHaveTextContent(
-      '建议幂等键：date、category、title',
+      `建议幂等键：${LLM_PROMPT_PRESETS[0].match_keys.join('、')}`,
     )
   })
 

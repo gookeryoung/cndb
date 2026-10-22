@@ -66,20 +66,32 @@ describe('LLM_PROMPT_PRESETS', () => {
     }
   })
 
-  it('字段名使用英文 snake_case，幂等键是建议字段的子集', () => {
-    const snakeCase = /^[a-z][a-z0-9_]*$/
+  it('字段名用中文（或英文 snake_case），不含空格与标点；幂等键是建议字段的子集', () => {
+    // 中文字段是默认口径（2026-10-23），英文 snake_case 仍兼容；两者都不允许空格 / 标点
+    const validName = /^[\u4e00-\u9fa5A-Za-z0-9_]+$/
     for (const preset of LLM_PROMPT_PRESETS) {
       for (const field of preset.target_fields) {
-        expect(field, `${preset.name} 的字段 ${field}`).toMatch(snakeCase)
+        expect(field, `${preset.name} 的字段 ${field}`).toMatch(validName)
       }
       for (const key of preset.match_keys) {
-        expect(key, `${preset.name} 的幂等键 ${key}`).toMatch(snakeCase)
+        expect(key, `${preset.name} 的幂等键 ${key}`).toMatch(validName)
         expect(preset.target_fields, `${preset.name} 的幂等键 ${key} 应在建议字段里`).toContain(key)
       }
       // 提示词里要逐字段点名，模型才知道输出什么
       for (const field of preset.target_fields) {
         expect(preset.prompt, `${preset.name} 未在提示词里说明字段 ${field}`).toContain(field)
       }
+    }
+  })
+
+  it('字段说明为中文口径：8 组预设默认使用中文字段名', () => {
+    for (const preset of LLM_PROMPT_PRESETS) {
+      expect(preset.prompt, `${preset.name} 缺少中文字段口径说明`).toContain('字段名用中文')
+      // 至少一半字段是中文，避免悄悄退回英文命名
+      const chineseFields = preset.target_fields.filter(field => /[\u4e00-\u9fa5]/.test(field))
+      expect(chineseFields.length, `${preset.name} 中文字段过少`).toBeGreaterThanOrEqual(
+        Math.ceil(preset.target_fields.length / 2),
+      )
     }
   })
 

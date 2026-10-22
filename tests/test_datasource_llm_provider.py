@@ -201,6 +201,29 @@ class TestBuildRequests:
         assert '{"rows": []}' in DEFAULT_SYSTEM_PROMPT
         assert "编造" in DEFAULT_SYSTEM_PROMPT
 
+    def test_default_system_prompt_supports_chinese_field_names(self):
+        """字段命名支持中文：不再强制英文 snake_case，指定字段名必须逐字沿用（2026-10-23）."""
+        assert "字段名支持中文" in DEFAULT_SYSTEM_PROMPT
+        assert "逐字沿用" in DEFAULT_SYSTEM_PROMPT
+        # 旧口径整句已移除，避免模型继续把中文字段翻译成英文
+        assert "不要使用中文" not in DEFAULT_SYSTEM_PROMPT
+        assert "统一使用英文 snake_case" not in DEFAULT_SYSTEM_PROMPT
+
+    def test_chinese_field_mapping_is_preserved(self):
+        """中文字段名走归一链路时原样保留（映射键与目标名均为中文）."""
+        job = _job(
+            field_mapping={
+                "菜名": {"name": "菜名", "field_type": "text"},
+                "烹饪时长": {"name": "烹饪时长", "field_type": "int"},
+            }
+        )
+        rows = PROVIDER.parse(
+            _model_response('{"rows": [{"菜名": "宫保鸡丁", "烹饪时长": "30"}]}'),
+            job,
+        )
+        result = PROVIDER.normalize(rows, job)
+        assert result.rows == [{"菜名": "宫保鸡丁", "烹饪时长": 30}]
+
 
 class TestParse:
     def test_object_becomes_single_row(self):

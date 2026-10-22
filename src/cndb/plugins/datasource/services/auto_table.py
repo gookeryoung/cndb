@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 MAX_COMBO_CANDIDATES = 15
 
 # 「像键」的名称片段：命中越多越优先（ADR 0019 决策 D2）
+# 中英并列：大模型默认输出中文字段（见 llm/services/prompts.py），两套命名都要能识别
 KEY_NAME_HINTS = (
     "date",
     "day",
@@ -61,6 +62,17 @@ KEY_NAME_HINTS = (
     "month",
     "year",
     "week",
+    "日期",
+    "时间",
+    "编号",
+    "代码",
+    "名称",
+    "城市",
+    "标题",
+    "主题",
+    "年份",
+    "月份",
+    "周",
 )
 
 
