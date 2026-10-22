@@ -239,6 +239,7 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P2 已落地并提交（`d0e2841e`）（后端连接 / 系统提示词 / 自动落表 + 前端极简表单与 8 组预设）
+- 追加（2026-10-22）：推荐提示词由 5 组扩为 8 组（新增商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），提交 `c39a8f6d`；页面按钮按预设数量动态显示，工作区「大模型连接」已按 DeepSeek 默认（`https://api.deepseek.com` / `deepseek-chat`）预置，API Key 留空待用户填写
 - 已完成：P0 工作区级大模型连接 + 内置默认系统提示词 + prompt-only 校验 / 连通测试回退 + 备份 v6 + 提示词宽松模板（`render_text_lenient`，JSON 裸花括号可直接写）；P1 自动建表 / 空表补字段 / 自动幂等键 + 预览建议键 + CLI `preview` / `run --dry-run` 同步输出 `suggested_match_keys`；P2 前端极简表单 + 8 组推荐提示词 + 测试与文档
 - 下一步：人工确认后保持 `Status: Implemented`；如后续要支持「自动幂等键人工纠错入口 / 多连接」另立 ADR
 - 已知坑：自动幂等键只在结果行内可判定，无唯一组合时退化为追加（看 `run.detail.auto_match_keys`）；自动补字段只在空表启用，已有表未知列按原策略；备份不导出 Key，导入后需重填；工作区连接未配置时运行错误文案指向「大模型连接」而非 401；宽松模板只作用于 `llm_prompt` 的 system / user 提示词，URL 与 headers 仍严格；CLI 预览需传 `db` 才会应用连接默认值并给出 `suggested_match_keys`
