@@ -1977,6 +1977,32 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: var(--cn-space-xs) var(--cn-space-xl) var(--cn-space-xl) var(--cn-space-xs);
 }
 
+/* ─────────────── 个人设置 Modal — Tab 内容区独立滚动 ───────────────
+ * 大模型页签内容最长（连接表单 + 调用记录），整对话框滚动会把页签栏和底部「关闭」推出视口；
+ * 把滚动限制在 Tab 内容区，页签栏与底部按钮保持可见。细滚动条与 .cevf-modal / .vcvd-modal 一致。 */
+.settings-modal .ant-tabs-content-holder {
+  max-height: min(62vh, 560px);
+  overflow-y: auto;
+  padding-right: var(--cn-space-sm);
+}
+
+.settings-modal .ant-tabs-content-holder::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-modal .ant-tabs-content-holder::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.settings-modal .ant-tabs-content-holder::-webkit-scrollbar-thumb {
+  background: var(--cn-border);
+  border-radius: var(--cn-radius-sm);
+}
+
+.settings-modal .ant-tabs-content-holder::-webkit-scrollbar-thumb:hover {
+  background: var(--cn-text-muted);
+}
+
 .table-settings-tabs>.ant-tabs-nav {
   min-width: 112px;
   padding: var(--cn-space-md) 0;

@@ -3,7 +3,7 @@
  *
  * 覆盖：从个人设置打开「大模型」页签 / 默认值预填 / 内置默认系统提示词展示 /
  * 保存调用个人配置 PUT（含未保存 Key、系统提示词覆盖、清除 Key）/
- * 测试连接使用当前输入与未保存 Key（无需先保存）。
+ * 测试连接使用当前输入与未保存 Key（无需先保存）/ 调用记录分页（每页 5 条）。
  */
 
 import { describe, expect, it } from 'vitest'
@@ -246,6 +246,19 @@ describe('个人设置 · 大模型', () => {
     const summary = await screen.findByTestId('llm-run-error-2')
     expect(summary).toHaveTextContent('…')
     expect(screen.queryByText(RUN_FAILED.error)).not.toBeInTheDocument()
+  })
+
+  it('调用记录分页：20 条记录只渲染当前页 5 行，不把设置页撑长', async () => {
+    const runs = Array.from({ length: 20 }, (_, i) => ({ ...RUN_SUCCESS, id: 100 + i }))
+    setupHandlers({ runs })
+    await openLlmTab()
+
+    await screen.findByTestId('llm-run-action-100')
+    // data-testid 落在内层 table 上，分页器在同一个调用记录区块内、table 之外
+    const section = screen.getByTestId('llm-runs')
+    expect(section.querySelectorAll('.ant-table-row')).toHaveLength(5)
+    // 20 条 / 每页 5 条 = 4 页
+    expect(section.querySelectorAll('.ant-pagination-item')).toHaveLength(4)
   })
 
   it('调用记录：无记录时展示空态文案', async () => {

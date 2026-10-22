@@ -10,14 +10,15 @@
  * - 面板内独立「保存」按钮（个人设置 Modal 的 footer 仍只有关闭）；
  * - API Key 密码框只写不回显，已保存时显示「清除」入口；
  * - 测试连接直接用当前输入（含未保存 Key），无需先保存；
- * - 系统提示词留空使用后端内置默认，并把内置默认全文展示在面板内；
+ * - 系统提示词留空使用后端内置默认，内置默认全文收在折叠区；
+ * - 布局紧凑：地址 / 模型同行，调用记录分页（每页 5 条），页签内容区独立滚动；
  * - 调用记录只读：动作 / 状态 / 模型 / token / 耗时 / 时间；失败摘要截断展示，
  *   完整 error 放 Tooltip（不把模型错误全文铺在设置页）。
  */
 
 import { useEffect, useState } from 'react'
 import {
-  Alert, App, Button, Divider, Empty, Form, Input, Space, Table, Tag, Tooltip, Typography,
+  Alert, App, Button, Collapse, Divider, Empty, Form, Input, Space, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import { ApiOutlined, HistoryOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -202,7 +203,7 @@ export default function LlmConfigPanel() {
       key: 'action',
       title: '动作',
       dataIndex: 'action',
-      width: 160,
+      width: 140,
       render: (action: string, run: LlmRun) => (
         <Tooltip title={`${action}（留痕 #${run.id}）`}>
           <Text data-testid={`llm-run-action-${run.id}`}>{actionLabel(action)}</Text>
@@ -246,14 +247,14 @@ export default function LlmConfigPanel() {
       key: 'model',
       title: '模型',
       dataIndex: 'model',
-      width: 150,
+      width: 130,
       ellipsis: true,
       render: (model: string) => model || '—',
     },
     {
       key: 'tokens',
       title: 'Token',
-      width: 120,
+      width: 88,
       render: (_value: unknown, run: LlmRun) => (
         <Tooltip title={`prompt ${run.prompt_tokens} / completion ${run.completion_tokens}`}>
           <Text style={{ fontSize: TEXT.xs }}>{tokenText(run)}</Text>
@@ -264,14 +265,14 @@ export default function LlmConfigPanel() {
       key: 'latency',
       title: '耗时',
       dataIndex: 'latency_ms',
-      width: 100,
+      width: 80,
       render: (latency: number) => (typeof latency === 'number' ? `${latency} ms` : '—'),
     },
     {
       key: 'created_at',
       title: '时间',
       dataIndex: 'created_at',
-      width: 150,
+      width: 128,
       render: (createdAt: string) => (
         <Text type="secondary" style={{ fontSize: TEXT.xs }}>
           {createdAt ? dayjs(createdAt).format('YYYY-MM-DD HH:mm') : '—'}
@@ -285,9 +286,16 @@ export default function LlmConfigPanel() {
       <Alert
         type="info"
         showIcon
-        style={{ marginBottom: 16 }}
-        message={<Space size={8}>个人级配置，所有「大模型提示词」任务共用{configuredTag}</Space>}
-        description="API Key 只加密保存在你的账号下、只写不回显；其他成员不会读取你的配置。保存 / 运行提示词任务时按当前登录用户的配置解析。"
+        style={{ marginBottom: SPACE.lg }}
+        message={(
+          <Space size={SPACE.md} wrap>
+            <span>个人级配置，所有「大模型提示词」任务共用</span>
+            {configuredTag}
+            <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+              仅本人可见，其他成员读不到你的地址与 Key
+            </Text>
+          </Space>
+        )}
       />
       <Form
         form={form}
@@ -295,25 +303,51 @@ export default function LlmConfigPanel() {
         size="small"
         initialValues={{ base_url: DEFAULT_BASE_URL, model: DEFAULT_MODEL, api_key: '', system_prompt: '' }}
       >
-        <Form.Item
-          name="base_url"
-          label="API 地址（base_url）"
-          rules={[{ required: true, message: '请输入 API 地址' }]}
-          extra="OpenAI 兼容；只填 base_url 时自动补全 /chat/completions"
-        >
-          <Input data-testid="llm-config-base-url" placeholder={DEFAULT_BASE_URL} />
-        </Form.Item>
-        <Form.Item name="model" label="模型" rules={[{ required: true, message: '请输入模型名称' }]}>
-          <Input data-testid="llm-config-model" placeholder={DEFAULT_MODEL} />
-        </Form.Item>
+        {/* 地址与模型同行：760px 弹窗里各占一半，窄屏按 minWidth 自动换行 */}
+        <div style={{ display: 'flex', gap: SPACE.lg, flexWrap: 'wrap' }}>
+          <Form.Item
+            name="base_url"
+            label="API 地址（base_url）"
+            rules={[{ required: true, message: '请输入 API 地址' }]}
+            extra="OpenAI 兼容接口；只填 base_url 时自动补全 /chat/completions"
+            style={{ flex: '1.6 1 300px', minWidth: 0, marginBottom: SPACE.lg }}
+          >
+            <Input data-testid="llm-config-base-url" placeholder={DEFAULT_BASE_URL} />
+          </Form.Item>
+          <Form.Item
+            name="model"
+            label="模型"
+            rules={[{ required: true, message: '请输入模型名称' }]}
+            style={{ flex: '1 1 200px', minWidth: 0, marginBottom: SPACE.lg }}
+          >
+            <Input data-testid="llm-config-model" placeholder={DEFAULT_MODEL} />
+          </Form.Item>
+        </div>
         <Form.Item
           name="api_key"
           label="API Key"
-          extra={
-            config?.has_api_key
-              ? '已配置 API Key：留空保持不变，填写则整体替换；填写后可直接点「测试连接」验证'
-              : '填写后可直接点「测试连接」验证；保存后加密存储，读接口只回显是否已配置'
-          }
+          extra={(
+            <Space size={SPACE.md} wrap>
+              <span>
+                {config?.has_api_key
+                  ? '已配置：留空保持不变，填写则整体替换，填写后可直接测试连接'
+                  : '保存后加密存储，读接口只回显是否已配置；填写后可直接测试连接'}
+              </span>
+              {config?.has_api_key && (
+                <Button
+                  type="link"
+                  size="small"
+                  aria-pressed={clearKey}
+                  data-testid="llm-config-clear-key"
+                  style={{ height: 'auto', padding: 0, fontSize: TEXT.xs }}
+                  onClick={() => setClearKey(value => !value)}
+                >
+                  {clearKey ? '取消清除已保存的 Key' : '清除已保存的 Key'}
+                </Button>
+              )}
+              {clearKey && <Tag color="red" style={{ marginInlineEnd: 0 }}>保存后清除</Tag>}
+            </Space>
+          )}
         >
           <Input.Password
             data-testid="llm-config-api-key"
@@ -321,43 +355,43 @@ export default function LlmConfigPanel() {
             placeholder={config?.has_api_key ? '已配置，留空保持不变' : 'sk-...'}
           />
         </Form.Item>
-        {config?.has_api_key && (
-          <Form.Item style={{ marginBottom: 12 }}>
-            <Space size={8}>
-              <Button
-                size="small"
-                danger={!clearKey}
-                type={clearKey ? 'primary' : 'default'}
-                data-testid="llm-config-clear-key"
-                onClick={() => setClearKey(value => !value)}
-              >
-                {clearKey ? '取消清除 API Key' : '清除已保存的 API Key'}
-              </Button>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                保存后清除
-              </Text>
-            </Space>
-          </Form.Item>
-        )}
         <Form.Item
           name="system_prompt"
           label="系统提示词（可选）"
-          extra="留空使用内置默认；填写后覆盖你的内置默认系统提示词"
+          style={{ marginBottom: SPACE.md }}
         >
-          <Input.TextArea data-testid="llm-config-system" rows={3} placeholder="留空使用内置默认" />
+          <Input.TextArea
+            data-testid="llm-config-system"
+            autoSize={{ minRows: 2, maxRows: 6 }}
+            placeholder="留空使用内置默认"
+          />
         </Form.Item>
-        <div
+        {/* 内置默认全文较长，收进折叠区；默认收起，避免把连接配置挤到首屏之外 */}
+        <Collapse
+          ghost
+          size="small"
           data-testid="llm-config-default-system"
-          style={{ padding: 8, background: 'rgba(0,0,0,0.03)', borderRadius: 6, marginBottom: 16 }}
-        >
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            内置默认系统提示词（系统提示词留空时使用）
-          </Text>
-          <Paragraph style={{ marginBottom: 0, marginTop: 4, whiteSpace: 'pre-wrap', fontSize: 12 }}>
-            {config?.default_system_prompt || '（内置默认系统提示词加载中…）'}
-          </Paragraph>
-        </div>
-        <Space size={8} wrap>
+          style={{ marginBottom: SPACE.md }}
+          items={[
+            {
+              key: 'default-system-prompt',
+              label: (
+                <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+                  查看内置默认系统提示词（留空时使用；填写后覆盖）
+                </Text>
+              ),
+              forceRender: true,
+              children: (
+                <Paragraph
+                  style={{ marginBottom: 0, whiteSpace: 'pre-wrap', fontSize: TEXT.xs }}
+                >
+                  {config?.default_system_prompt || '（内置默认系统提示词加载中…）'}
+                </Paragraph>
+              ),
+            },
+          ]}
+        />
+        <Space size={SPACE.md} wrap>
           <Button
             type="primary"
             loading={saveMutation.isPending}
@@ -374,8 +408,8 @@ export default function LlmConfigPanel() {
           >
             测试连接
           </Button>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            测试连接会发一次真实模型请求（可能产生费用）；可直接用当前填写的 API Key 测试，无需先保存
+          <Text type="secondary" style={{ fontSize: TEXT['2xs'] }}>
+            测试连接会发一次真实模型请求（可能产生费用），可用未保存的 Key 直接测试
           </Text>
         </Space>
         {testResult && (
@@ -451,7 +485,13 @@ export default function LlmConfigPanel() {
             loading={runsQuery.isLoading}
             dataSource={runs}
             columns={runColumns}
-            pagination={false}
+            pagination={{
+              // 20 条记录不再铺满整页：每页 5 条，高度固定且保留翻页追溯
+              pageSize: 5,
+              size: 'small',
+              showSizeChanger: false,
+              hideOnSinglePage: true,
+            }}
             scroll={{ x: 'max-content' }}
             locale={{
               emptyText: (
