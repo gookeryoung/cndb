@@ -14,7 +14,7 @@
  * round/abs/sqrt/pow/ceil/floor、整列聚合 sum/avg/count/min/max。
  */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import {
   App as AntApp, Alert, Button, Empty, Input, Modal, Select,
@@ -29,10 +29,15 @@ import { tableApi } from '@/api'
 import type { Field } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import type {
+  AnalyticsAiExplainPayload,
+  AnalyticsAiSuggestTemplatePayload,
+  AnalyticsAiTemplateSuggestion,
   AnalyticsChart, AnalyticsComputeResponse, AnalyticsFilter, AnalyticsFormula,
   AnalyticsRecommendationExample, AnalyticsSummary, AnalyticsTemplate, AnalyticsTemplateCreate,
   AnalyticsTemplateUpdate,
 } from '@/api/analytics'
+import { useLlmAction } from '@/hooks/useLlmAction'
+import { AnalyticsAiPanel } from './AnalyticsAiPanel'
 import { AnalyticsBox } from './AnalyticsBox'
 import { FormulaPanel } from './FormulaPanel'
 import { ChartPanel } from './ChartPanel'
@@ -40,6 +45,7 @@ import { SummaryPanel } from './SummaryPanel'
 import { AnalyticsResultView } from './AnalyticsResultView'
 import { RecommendationPanel } from './RecommendationPanel'
 import { AnalyticsManagerDrawer } from './AnalyticsManagerDrawer'
+import { applySuggestionConfig, buildExplainPayload, suggestionName } from './analyticsAi'
 import {
   DEFAULT_CHART,
   EMPTY_SUMMARY,
@@ -57,6 +63,9 @@ import {
 } from './analyticsModel'
 
 const { Text } = Typography
+
+/** AI 解读抽屉只在点击「AI 解读」后才需要，lazy 挂载避免进入分析页首屏 chunk */
+const AnalyticsAiExplainDrawer = lazy(() => import('./AnalyticsAiExplainDrawer'))
 
 const DEFAULT_TEMPLATE_NAME = '未命名分析'
 /** 数值型字段：用于公式示例 / 分组汇总默认指标候选 */
@@ -337,6 +346,106 @@ export default function AnalyticsPage() {
     message.success(`已应用典型示例「${example.name}」`)
   }, [message])
 
+  // ── AI：用一句话生成分析模板 / 结论解读（ADR 0020 P3）──
+  // 生成结果只填编辑态，不自动保存；解读只读，不写模板与数据。
+  const [aiAppliedName, setAiAppliedName] = useState<string | null>(null)
+
+  const suggestAi = useLlmAction(
+    (payload: AnalyticsAiSuggestTemplatePayload) => analyticsApi.aiSuggestTemplate(wid!, payload),
+    { fallbackError: 'AI 生成分析失败，请稍后重试' },
+  )
+  const explainAi = useLlmAction(
+    (payload: AnalyticsAiExplainPayload) => analyticsApi.aiExplain(wid!, payload),
+    { fallbackError: 'AI 解读失败，请稍后重试' },
+  )
+  const suggestRun = suggestAi.run
+  const suggestReset = suggestAi.reset
+  const explainRun = explainAi.run
+  const explainReset = explainAi.reset
+
+  /** 覆盖风险：已保存模板的未保存修改，或（无模板时）编辑区已有用户配置 */
+  const aiOverwriteRisk = useMemo(() => {
+    if (activeTemplateId != null) return dirty
+    return (
+      formulas.some(f => f.expr.trim() !== '')
+      || !!chart.x
+      || !!chart.y
+      || summary.metrics.length > 0
+      || templateName.trim() !== ''
+    )
+  }, [activeTemplateId, dirty, formulas, chart.x, chart.y, summary.metrics.length, templateName])
+
+  /** 把 AI 生成的配置填入编辑态（不落库；保存仍由用户点「保存 / 保存为模板」） */
+  const applyAiSuggestion = useCallback((suggestion: AnalyticsAiTemplateSuggestion) => {
+    const next = applySuggestionConfig(suggestion.config)
+    const name = suggestionName(suggestion, DEFAULT_TEMPLATE_NAME)
+    setFormulas(next.formulas)
+    setChart(next.chart)
+    setSummary(next.summary)
+    setTemplateName(name)
+    setTemplateDesc(suggestion.description ?? '')
+    setServerErrors({})
+    setTableMissing(false)
+    setAiAppliedName(name)
+    message.success(`已填入 AI 生成的分析「${name}」，尚未保存，确认后点保存`)
+  }, [message])
+
+  const generateAnalysis = useCallback(async (question: string) => {
+    if (!wid || tableId == null) {
+      message.warning('请先选择分析表')
+      return
+    }
+    setAiAppliedName(null)
+    const data = await suggestRun({ table_id: tableId, question })
+    if (!data) return
+    const apply = () => applyAiSuggestion(data.result)
+    if (!aiOverwriteRisk) {
+      apply()
+      return
+    }
+    modal.confirm({
+      title: '覆盖当前编辑中的分析配置？',
+      content: dirty
+        ? '当前模板有未保存的修改，AI 生成结果将替换公式 / 图表 / 分组汇总；保存仍需你手动确认。'
+        : 'AI 生成结果将替换当前编辑中的公式 / 图表 / 分组汇总；保存仍需你手动确认。',
+      okText: '覆盖并填入',
+      cancelText: '保留当前配置',
+      onOk: apply,
+    })
+  }, [wid, tableId, suggestRun, aiOverwriteRisk, dirty, applyAiSuggestion, message, modal])
+
+  /** 解读当前结果：有分组汇总用汇总行，否则退回派生数据行（后端再截断 50 行） */
+  const requestExplain = useCallback(() => {
+    if (!result) {
+      message.warning('请先运行分析，再让 AI 解读结果')
+      return
+    }
+    const payload = buildExplainPayload({ result, chartType: chart.type, templateId: activeTemplateId })
+    if (payload.summary_rows.length === 0) {
+      message.warning('当前没有可解读的结果行')
+      return
+    }
+    void explainRun(payload)
+  }, [result, chart.type, activeTemplateId, explainRun, message])
+
+  const explainOpen = explainAi.loading || explainAi.error != null || explainAi.data != null
+  const explainMeta = explainAi.data
+    ? [
+      explainAi.data.model ? `模型 ${explainAi.data.model}` : '',
+      typeof explainAi.data.usage?.total_tokens === 'number'
+        ? `${explainAi.data.usage.total_tokens} tokens`
+        : '',
+      `留痕 #${explainAi.data.run_id}`,
+    ].filter(Boolean).join(' · ')
+    : undefined
+  const explainBasis = result
+    ? `解读依据：${
+      result.summary
+        ? `分组汇总 ${Math.min(result.summary.rows.length, 50)} 行`
+        : `派生数据 ${Math.min(result.rows.length, 50)} 行`
+    } · 图表 ${chart.type}`
+    : undefined
+
   // ── 深链：?template=<id> 刷新/分享后自动载入 ──
   // 注意：URL 更新走 React Router 的 transition，可能晚于模板列表刷新一个渲染；
   // 这里用「已处理参数」ref 记录真正处理过的值，避免保存模板后的过渡态把旧模板再载入一次。
@@ -477,7 +586,11 @@ export default function AnalyticsPage() {
         summary: summary.metrics.length ? summary : null,
         filters: scopeFilters,
       }),
-    onSuccess: data => setResult(data),
+    onSuccess: data => {
+      setResult(data)
+      // 结果已刷新：旧解读不再对应当前数据，关闭解读抽屉
+      explainReset()
+    },
     onError: (error: unknown) => {
       const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
       message.error(detail ? `计算失败：${detail}` : '计算失败，请检查公式与分组汇总配置')
@@ -680,8 +793,16 @@ export default function AnalyticsPage() {
       )}
 
       <div className="cn-an-workbench">
-        {/* 左栏：配置（数据源 → 智能推荐 → 公式 → 可视化 → 分组汇总） */}
+        {/* 左栏：配置（AI 生成 → 数据源 → 智能推荐 → 公式 → 可视化 → 分组汇总） */}
         <div className="cn-an-col cn-an-col--config">
+          <AnalyticsAiPanel
+            tableReady={tableId != null}
+            loading={suggestAi.loading}
+            error={suggestAi.error}
+            suggestion={suggestAi.data?.result ?? null}
+            appliedName={aiAppliedName}
+            onGenerate={question => { void generateAnalysis(question) }}
+          />
           <AnalyticsBox
             title="数据源"
             icon={<DatabaseOutlined />}
@@ -705,6 +826,10 @@ export default function AnalyticsPage() {
                     setTableMissing(false)
                     setResult(null)
                     setServerErrors({})
+                    // 换表后 AI 生成结果 / 解读都不再对应当前数据源，清空避免误用
+                    setAiAppliedName(null)
+                    suggestReset()
+                    explainReset()
                     // 范围字段属于旧表，换表后必须清空，否则会带着不存在的字段去过滤
                     setScopeField(null)
                     setScopeFrom('')
@@ -803,6 +928,8 @@ export default function AnalyticsPage() {
               }))}
               fields={syntheticFields}
               title={templateName || chart.title || '分析结果'}
+              onAiExplain={requestExplain}
+              aiExplainLoading={explainAi.loading}
             />
           ) : (
             <AnalyticsBox title="分析结果" icon={<TableOutlined />} testId="analytics-result-empty">
@@ -855,6 +982,23 @@ export default function AnalyticsPage() {
           </Text>
         </Space>
       </Modal>
+
+      {/* ── AI 结论解读抽屉：只读，只展示结论 + 口径提醒（lazy 挂载） ── */}
+      {explainOpen && (
+        <Suspense fallback={null}>
+          <AnalyticsAiExplainDrawer
+            open
+            onClose={explainReset}
+            loading={explainAi.loading}
+            error={explainAi.error}
+            result={explainAi.data?.result ?? null}
+            meta={explainMeta}
+            basis={explainBasis}
+            onRegenerate={requestExplain}
+            testId="analytics-ai-explain-drawer"
+          />
+        </Suspense>
+      )}
 
       {/* ── 分析列表 Drawer：打开 / 复制 / 删除 / 新建 ── */}
       <AnalyticsManagerDrawer

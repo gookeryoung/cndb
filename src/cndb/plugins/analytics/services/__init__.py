@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from cndb.plugins.analytics.services import compute, formula, recommend, templates
+from cndb.plugins.analytics.services import ai, compute, formula, recommend, templates
 
-__all__ = ["compute", "formula", "recommend", "templates"]
+__all__ = ["ai", "compute", "formula", "recommend", "templates"]

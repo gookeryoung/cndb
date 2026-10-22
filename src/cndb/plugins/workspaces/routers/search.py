@@ -9,13 +9,18 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.llm.services import gateway as llm_gateway
+from cndb.plugins.llm.services.errors import LlmError
+from cndb.plugins.llm.services.gateway import LlmContext
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
+from cndb.plugins.workspaces.services import ai as search_ai
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/search", tags=["search"])
 
@@ -50,3 +55,41 @@ def search(
         view_id=view_id,
         limit=limit,
     )
+
+
+class RewriteQueryRequest(BaseModel):
+    """搜索意图改写请求."""
+
+    query: str = Field(min_length=1, max_length=200, description="用户原始查询")
+
+
+@router.post("/ai/rewrite")
+def rewrite_query(
+    workspace_id: int,
+    payload: RewriteQueryRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """AI 改写搜索查询（失败回退原查询，保证搜索始终可用）."""
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    original = payload.query.strip()
+    if not original:
+        return {"query": "", "rewritten": False}
+    try:
+        result = llm_gateway.invoke(
+            db,
+            current_user,
+            search_ai.REWRITE_QUERY,
+            user_content=f"用户查询：{original}",
+            context=LlmContext(workspace_id=workspace_id, target_type="workspace", target_id=workspace_id),
+        )
+    except LlmError as exc:
+        # 未配置 Key / 上游失败时不阻断搜索：回退原查询并带回可展示原因
+        return {"query": original, "rewritten": False, "reason": str(exc)[:200]}
+    rewritten = result.parsed.query.strip()[: search_ai.MAX_REWRITTEN_QUERY]
+    if not rewritten:
+        return {"query": original, "rewritten": False}
+    return {"query": rewritten, "rewritten": rewritten != original}
+
+
+__all__ = ["RewriteQueryRequest", "router"]

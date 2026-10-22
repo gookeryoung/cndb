@@ -33,10 +33,12 @@ class AnalyticsPlugin(PluginBase):
     @override
     def register_routes(self, router: APIRouter) -> None:
         """挂载 analytics 路由（模板 CRUD + 求值 + 智能推荐）."""
+        from cndb.plugins.analytics.routers.ai import router as ai_router
         from cndb.plugins.analytics.routers.recommend import router as recommend_router
         from cndb.plugins.analytics.routers.run import router as run_router
         from cndb.plugins.analytics.routers.templates import router as templates_router
 
+        router.include_router(ai_router)
         router.include_router(templates_router)
         router.include_router(run_router)
         router.include_router(recommend_router)
