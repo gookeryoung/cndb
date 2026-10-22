@@ -97,7 +97,8 @@ const mdComponents = {
     return (
       <code
         style={{
-          background: 'var(--cn-bg-secondary, #f0f0f0)',
+          background: 'var(--cn-bg-subtle, #f0f0f0)',
+          border: '1px solid var(--cn-border, transparent)',
           padding: '2px 6px',
           borderRadius: 4,
           fontSize: '0.9em',
@@ -117,7 +118,7 @@ const mdComponents = {
       style={{
         margin: '0.8em 0',
         padding: '4px 16px',
-        borderLeft: '4px solid var(--cn-border-strong, #d0d0d0)',
+        borderLeft: '4px solid var(--cn-border, #d0d0d0)',
         color: 'var(--cn-text-secondary, #666)',
       }}
       {...props}
@@ -136,7 +137,12 @@ const mdComponents = {
   ),
   th: (props: React.ComponentProps<'th'>) => (
     <th
-      style={{ border: '1px solid var(--cn-border, #e0e0e0)', padding: '6px 12px', background: 'var(--cn-bg-secondary, #fafafa)' }}
+      style={{
+        border: '1px solid var(--cn-border, #e0e0e0)',
+        padding: '6px 12px',
+        background: 'var(--cn-bg-subtle, #fafafa)',
+        color: 'var(--cn-text-primary, #1f2937)',
+      }}
       {...props}
     />
   ),
