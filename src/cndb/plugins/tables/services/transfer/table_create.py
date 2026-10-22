@@ -31,11 +31,12 @@ from cndb.plugins.tables.services.transfer.options import (
     _options_strings_to_dicts,
 )
 from cndb.plugins.tables.services.transfer.spreadsheet import (
+    HeaderDetection,
     _check_csv_row_overflow,
     _check_xlsx_row_overflow,
     _validate_csv_structure,
     _validate_xlsx_header,
-    parse_file_to_rows,
+    parse_file_to_rows_with_detection,
 )
 
 logger = logging.getLogger(__name__)
@@ -487,6 +488,7 @@ def analyze_file_columns(
     format: str | None = None,
     filename: str | None = None,
     rows: list[dict[str, Any]] | None = None,
+    header_row: int | None = None,
 ) -> tuple[list[dict[str, Any]], int, str]:
     """通用列类型推断 — 自动识别格式，复用 csv / json 分析器.
 
@@ -495,14 +497,40 @@ def analyze_file_columns(
         format: 显式指定格式（csv / tsv / delimited / json / xlsx）.
         filename: 文件名（用于格式推断）.
         rows: 已解析好的对象数组 — 直接走 JSON 路径推断.
+        header_row: 可选，1 基表头行号（为空时自动识别表头所在行）.
 
     Returns:
         (columns_info, total_rows, actual_format) — columns_info 每项同 analyze_csv_columns.
     """
+    columns, total_rows, actual_fmt, _detection = analyze_file_columns_with_detection(
+        content,
+        format=format,
+        filename=filename,
+        rows=rows,
+        header_row=header_row,
+    )
+    return columns, total_rows, actual_fmt
+
+
+def analyze_file_columns_with_detection(
+    content: bytes | str | None = None,
+    *,
+    format: str | None = None,
+    filename: str | None = None,
+    rows: list[dict[str, Any]] | None = None,
+    header_row: int | None = None,
+) -> tuple[list[dict[str, Any]], int, str, HeaderDetection | None]:
+    """:func:`analyze_file_columns` 的增强版：额外返回表头行识别结果."""
+    detection: HeaderDetection | None = None
     if rows is None:
         if content is None:
             raise ValueError("必须提供 content 或 rows")
-        rows, _cols, actual_fmt = parse_file_to_rows(content, format, filename=filename)
+        rows, _cols, actual_fmt, detection = parse_file_to_rows_with_detection(
+            content,
+            format,
+            filename=filename,
+            header_row=header_row,
+        )
     else:
         # rows 由调用方提供 —— 无法推断 format，默认 json 路径
         actual_fmt = format or "json"
@@ -515,7 +543,7 @@ def analyze_file_columns(
         # 或直接把 dict 的值转字符串后复用 analyze_csv_columns 的逻辑
         columns = _analyze_dict_rows_as_csv(rows)
 
-    return columns, len(rows), actual_fmt
+    return columns, len(rows), actual_fmt, detection
 
 
 def _apply_column_overrides(
@@ -557,6 +585,7 @@ def create_table_from_file(
     filename: str | None = None,
     owner_id: int | None = None,
     column_overrides: dict[str, dict[str, Any]] | None = None,
+    header_row: int | None = None,
 ) -> tuple[DataTable, list[int], list[dict[str, Any]]]:
     """从任意支持的文件自动建表 + 导入数据 + 返回列信息（一站式入口）.
 
@@ -564,6 +593,7 @@ def create_table_from_file(
         column_overrides: 前端回传的字段调整映射 —— 格式为
             ``{列名: {field_type, options?}}``，覆盖自动推断结果.
             例如 ``{"状态": {"field_type": "select", "options": ["进行中", "已完成"]}}``
+        header_row: 可选，1 基表头行号（用户改选结果）；为空时自动识别。
 
     Returns:
         (DataTable, 新行 id 列表, 最终采用的列信息 —— 含 overrides 结果)
@@ -574,13 +604,43 @@ def create_table_from_file(
     WPS 带图片单元格的 xlsx：DISPLIMG 公式单元格解析为图片元数据列表并
     落盘到本工作区上传目录（列类型推断为 image）。
     """
+    dt, ids, columns, _detection = create_table_from_file_with_detection(
+        engine,
+        db,
+        workspace_id,
+        table_name,
+        content,
+        format=format,
+        filename=filename,
+        owner_id=owner_id,
+        column_overrides=column_overrides,
+        header_row=header_row,
+    )
+    return dt, ids, columns
+
+
+def create_table_from_file_with_detection(
+    engine: Any,
+    db: Any,
+    workspace_id: int,
+    table_name: str,
+    content: bytes | str,
+    *,
+    format: str | None = None,
+    filename: str | None = None,
+    owner_id: int | None = None,
+    column_overrides: dict[str, dict[str, Any]] | None = None,
+    header_row: int | None = None,
+) -> tuple[DataTable, list[int], list[dict[str, Any]], HeaderDetection | None]:
+    """:func:`create_table_from_file` 的增强版：额外返回表头行识别结果."""
     from cndb.plugins.tables.services.transfer.wps_images import make_workspace_image_saver
 
-    rows, _file_cols, actual_fmt = parse_file_to_rows(
+    rows, _file_cols, actual_fmt, detection = parse_file_to_rows_with_detection(
         content,
         format,
         filename=filename,
         image_saver=make_workspace_image_saver(workspace_id),
+        header_row=header_row,
     )
     columns = analyze_json_columns(rows) if actual_fmt in ("json", "xlsx") else _analyze_dict_rows_as_csv(rows)
     if not columns:
@@ -617,4 +677,4 @@ def create_table_from_file(
     except Exception:
         _cleanup_partial_table(engine, db, dt)
         raise
-    return dt, ids, columns
+    return dt, ids, columns, detection

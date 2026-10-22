@@ -126,6 +126,130 @@ describe('FileImportPreview 文件导入预览', () => {
     expect(onClose).not.toHaveBeenCalled()
     expect(onSuccess).not.toHaveBeenCalled()
   })
+
+  it('header_detection 为 null（JSON 文件）时不渲染表头识别区域', () => {
+    setup()
+
+    expect(screen.queryByTestId('header-detection-alert')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('header-row-select')).not.toBeInTheDocument()
+  })
+})
+
+/** 顶部有合并标题行的文件：第 1 行为标题，第 2 行才是真正表头 */
+const titleRowResult: FileAnalyzeResult = {
+  filename: '客户数据.csv',
+  format: 'csv',
+  total_rows: 3,
+  columns: [
+    { name: '姓名', field_type: 'text', sample_values: ['张三'], null_ratio: 0 },
+    { name: '分数', field_type: 'float', sample_values: ['90'], null_ratio: 0 },
+  ],
+  sample_rows: [
+    { 姓名: '张三', 分数: '90' },
+    { 姓名: '李四', 分数: '85' },
+    { 姓名: '王五', 分数: '80' },
+  ],
+  header_detection: {
+    row: 2,
+    confidence: 0.93,
+    requires_review: false,
+    skipped_rows: 1,
+    message: '已自动识别第 2 行为表头（置信度 93%，已跳过上方 1 行标题/合并行）',
+    candidates: [
+      { row: 2, confidence: 0.93, values: ['姓名', '分数'] },
+      { row: 1, confidence: 0.31, values: ['2024年客户数据', ''] },
+    ],
+  },
+  header_row: 2,
+}
+
+/** 人工改选第 1 行作为表头后后端返回的新分析结果（低置信度 → 建议人工确认） */
+const row1Result: FileAnalyzeResult = {
+  filename: '客户数据.csv',
+  format: 'csv',
+  total_rows: 4,
+  columns: [
+    { name: '2024年客户数据', field_type: 'text', sample_values: ['姓名'], null_ratio: 0 },
+    { name: 'Unnamed: 1', field_type: 'text', sample_values: ['分数'], null_ratio: 0 },
+  ],
+  sample_rows: [
+    { '2024年客户数据': '姓名', 'Unnamed: 1': '分数' },
+    { '2024年客户数据': '张三', 'Unnamed: 1': '90' },
+  ],
+  header_detection: {
+    row: 1,
+    confidence: 0.55,
+    requires_review: true,
+    skipped_rows: 0,
+    message: '已自动识别第 1 行为表头（置信度 55%，请人工确认）',
+    candidates: [
+      { row: 1, confidence: 0.55, values: ['2024年客户数据', ''] },
+      { row: 2, confidence: 0.52, values: ['姓名', '分数'] },
+    ],
+  },
+  header_row: 1,
+}
+
+describe('FileImportPreview 表头行自动识别与人工改选', () => {
+  function setupTitleRow() {
+    const onClose = vi.fn()
+    const onSuccess = vi.fn()
+    renderProviders(
+      <FileImportPreview
+        open
+        wid={10}
+        file={file}
+        analyzeResult={titleRowResult}
+        onClose={onClose}
+        onSuccess={onSuccess}
+      />,
+    )
+    return { onClose, onSuccess }
+  }
+
+  it('展示识别结果提示、置信度与表头行下拉（默认当前识别行）', () => {
+    setupTitleRow()
+
+    expect(screen.getByTestId('header-detection-alert')).toBeInTheDocument()
+    expect(screen.getByText(titleRowResult.header_detection!.message)).toBeInTheDocument()
+    expect(screen.getByText('置信度 93%')).toBeInTheDocument()
+    const select = screen.getByTestId('header-row-select')
+    expect(select).toBeInTheDocument()
+    // 下拉当前值 = header_detection.row（选中的标签文本包含候选预览）
+    expect(select.textContent).toContain('第 2 行 · 93% · 姓名 / 分数')
+  })
+
+  it('改选表头行触发重新 analyze，并用新结果刷新字段列表与预览', async () => {
+    setupTitleRow()
+    const analyzeSpy = vi.spyOn(importApi, 'analyzeFile').mockResolvedValue(row1Result)
+
+    fireEvent.mouseDown(screen.getByTestId('header-row-select').querySelector('.ant-select-selector')!)
+    fireEvent.click(await screen.findByText(/^第 1 行 · 31%/, { selector: '.ant-select-item-option-content' }))
+
+    expect(analyzeSpy).toHaveBeenCalledWith(10, file, 1)
+    // 用新分析结果渲染：新列名出现在左侧字段列表与右侧表头，统计行数同步更新
+    expect((await screen.findAllByText('2024年客户数据')).length).toBeGreaterThan(0)
+    expect(await screen.findByText('CSV · 4 行')).toBeInTheDocument()
+    // 新结果的提示与 warning 态（requires_review=true）生效
+    expect(await screen.findByText(row1Result.header_detection!.message)).toBeInTheDocument()
+    expect(screen.getByTestId('header-detection-alert').className).toContain('ant-alert-warning')
+    expect(screen.getByText('置信度 55%')).toBeInTheDocument()
+  })
+
+  it('建表并导入时把当前选中的 header_row 传给后端', async () => {
+    setupTitleRow()
+    const createSpy = vi.spyOn(importApi, 'createFromFile').mockResolvedValue({
+      table_id: 2,
+      table_name: '客户数据',
+      imported_rows: 3,
+      field_count: 2,
+    } as FileImportResult)
+
+    fireEvent.click(screen.getByRole('button', { name: /建表并导入$/ }))
+
+    expect(await screen.findByText('已创建表 "客户数据"，导入 3 行')).toBeInTheDocument()
+    expect(createSpy).toHaveBeenCalledWith(10, file, '客户数据', {}, 2)
+  })
 })
 
 describe('FileImportPreview 推断提示展示（timestamp/longtext）', () => {

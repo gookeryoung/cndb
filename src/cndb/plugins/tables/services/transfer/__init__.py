@@ -30,6 +30,14 @@ from cndb.plugins.tables.services.transfer.exporting import (
     export_rows_to_json,
     export_rows_to_xlsx,
 )
+from cndb.plugins.tables.services.transfer.header_detect import (
+    HEADER_SCAN_ROWS,
+    MAX_CANDIDATES,
+    REVIEW_CONFIDENCE,
+    HeaderCandidate,
+    HeaderDetection,
+    detect_header_row,
+)
 from cndb.plugins.tables.services.transfer.normalize import (
     _CN_DATE_RE,
     _GENERIC_DATE_RE,
@@ -84,6 +92,7 @@ from cndb.plugins.tables.services.transfer.spreadsheet import (
     decode_bytes_auto,
     guess_format_from_filename,
     parse_file_to_rows,
+    parse_file_to_rows_with_detection,
     sniff_csv_delimiter,
 )
 from cndb.plugins.tables.services.transfer.table_create import (
@@ -94,9 +103,11 @@ from cndb.plugins.tables.services.transfer.table_create import (
     _sync_after_bulk,
     analyze_csv_columns,
     analyze_file_columns,
+    analyze_file_columns_with_detection,
     analyze_json_columns,
     create_table_from_csv,
     create_table_from_file,
+    create_table_from_file_with_detection,
     create_table_from_json_data,
     import_rows_from_csv,
     import_rows_from_json,
@@ -112,10 +123,15 @@ from cndb.plugins.tables.services.transfer.wps_images import (
 )
 
 __all__ = [
+    "HEADER_SCAN_ROWS",
+    "MAX_CANDIDATES",
+    "REVIEW_CONFIDENCE",
     "_CN_DATE_RE",
     "_GENERIC_DATE_RE",
     "_ISO_DATETIME_RE",
     "_ISO_DATE_RE",
+    "HeaderCandidate",
+    "HeaderDetection",
     "WpsCellImage",
     "_analyze_dict_rows_as_csv",
     "_apply_column_overrides",
@@ -169,11 +185,14 @@ __all__ = [
     "_validate_xlsx_header",
     "analyze_csv_columns",
     "analyze_file_columns",
+    "analyze_file_columns_with_detection",
     "analyze_json_columns",
     "create_table_from_csv",
     "create_table_from_file",
+    "create_table_from_file_with_detection",
     "create_table_from_json_data",
     "decode_bytes_auto",
+    "detect_header_row",
     "ephemeral_image_saver",
     "export_rows_to_csv",
     "export_rows_to_json",
@@ -188,6 +207,7 @@ __all__ = [
     "make_workspace_image_saver",
     "match_displimg_formula",
     "parse_file_to_rows",
+    "parse_file_to_rows_with_detection",
     "parse_wps_cell_images",
     "promote_inferred_column_type",
     "sniff_csv_delimiter",

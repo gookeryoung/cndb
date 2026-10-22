@@ -17,20 +17,22 @@ export const importApi = {
     api.post<CsvImportResult>(`/v1/workspaces/${wid}/import-csv`, { table_name: tableName, csv_text: csvText }).then(r => r.data),
 
   // ── 通用文件导入建表（支持 csv / tsv / json / xlsx） ──
-  /** 上传文件 + 分析列类型（不写库） */
-  analyzeFile: (wid: number | string, file: File) => {
+  /** 上传文件 + 分析列类型（不写库）；headerRow 为人工指定的表头行（1-based，可选） */
+  analyzeFile: (wid: number | string, file: File, headerRow?: number) => {
     const fd = new FormData()
     fd.append('file', file)
+    if (headerRow != null) fd.append('header_row', String(headerRow))
     return api.post<FileAnalyzeResult>(`/v1/workspaces/${wid}/import-file/analyze`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
   /** 上传文件 + 自动建表 + 导入数据（tableName 留空则用文件名推断；columnOverrides 为可选字段类型覆盖） */
-  createFromFile: (wid: number | string, file: File, tableName?: string, columnOverrides?: Record<string, { field_type: string; options?: string[] }>) => {
+  createFromFile: (wid: number | string, file: File, tableName?: string, columnOverrides?: Record<string, { field_type: string; options?: string[] }>, headerRow?: number) => {
     const fd = new FormData()
     fd.append('file', file)
     if (tableName) fd.append('table_name', tableName)
     if (columnOverrides) fd.append('column_overrides', JSON.stringify(columnOverrides))
+    if (headerRow != null) fd.append('header_row', String(headerRow))
     return api.post<FileImportResult>(`/v1/workspaces/${wid}/import-file`, fd, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
@@ -80,7 +82,7 @@ export const importApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }).then(r => r.data)
   },
-  /** 确认导入：把 pending_confirm 任务推进到 running → done */
+  /** 确认导入：把 pending_confirm 任务推进到 running → done；headerRow 为用户选定的表头行（1-based，可选） */
   confirmImport: (
     wid: number | string,
     tid: number | string,
@@ -89,26 +91,29 @@ export const importApi = {
     unknownColsStrategy?: 'drop' | 'add_text_field',
     droppedColumns?: string[],
     cleaningActions?: Array<{ column?: string | null; action: string; strategy?: string; on_fail?: string }>,
+    headerRow?: number,
   ) =>
     api.post<{ task_id: number; status: string; message: string }>(
       `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/confirm`,
-      // 后端 Body 参数：cleaning_actions 走 JSON body；match_keys / unknown_cols_strategy / dropped_columns 仍走 query params
+      // 后端 Body 参数：cleaning_actions 走 JSON body；match_keys / unknown_cols_strategy / dropped_columns / header_row 仍走 query params
       cleaningActions && cleaningActions.length > 0 ? { cleaning_actions: cleaningActions } : {},
       {
         params: {
           ...(matchKeys && matchKeys.length > 0 ? { match_keys: JSON.stringify(matchKeys) } : {}),
           ...(unknownColsStrategy ? { unknown_cols_strategy: unknownColsStrategy } : {}),
           ...(droppedColumns && droppedColumns.length > 0 ? { dropped_columns: JSON.stringify(droppedColumns) } : {}),
+          ...(headerRow != null ? { header_row: headerRow } : {}),
         },
       }
     ).then(r => r.data),
-  /** 重新 analyze — 用户在 preview 阶段改参考列后重算 diff，返回新的 task 状态 */
+  /** 重新 analyze — 用户在 preview 阶段改参考列 / 表头行后重算 diff，返回新的 task 状态 */
   reanalyzeImport: (
     wid: number | string,
     tid: number | string,
     taskId: number | string,
     matchKeys?: string[],
     unknownColsStrategy?: 'drop' | 'add_text_field',
+    headerRow?: number,
   ) =>
     api.post<ImportTaskInfo>(
       `/v1/workspaces/${wid}/tables/${tid}/import/${taskId}/reanalyze`,
@@ -117,6 +122,7 @@ export const importApi = {
         params: {
           ...(matchKeys && matchKeys.length > 0 ? { match_keys: JSON.stringify(matchKeys) } : {}),
           ...(unknownColsStrategy && unknownColsStrategy !== 'drop' ? { unknown_cols_strategy: unknownColsStrategy } : {}),
+          ...(headerRow != null ? { header_row: headerRow } : {}),
         },
       }
     ).then(r => r.data),

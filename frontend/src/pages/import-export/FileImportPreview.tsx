@@ -17,11 +17,11 @@
  * - 数值/日期/boolean 等类型在右侧显示转换结果与失败警示
  */
 
-import { useCallback, useMemo, useState } from 'react'
-import { Modal, Input, Tag, Button, Popover, App as AntApp } from 'antd'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Modal, Input, Tag, Button, Popover, Select, Alert, App as AntApp } from 'antd'
 import { CheckOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, WarningOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
-import type { FileAnalyzeResult, FileImportResult } from '@/api'
+import type { FileAnalyzeResult, FileImportResult, HeaderDetectionCandidate } from '@/api'
 
 
 interface Props {
@@ -54,25 +54,58 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
   const [tableName, setTableName] = useState('')
   const [creating, setCreating] = useState(false)
   const [selectedField, setSelectedField] = useState<string | null>(null)
+  /** 当前生效的分析结果：初值来自 analyzeResult prop，用户改选表头行后由重新 analyze 的结果替换 */
+  const [currentResult, setCurrentResult] = useState<FileAnalyzeResult | null>(analyzeResult)
+  /** 当前选中的表头行（1-based）；header_detection 为 null 时不使用 */
+  const [headerRow, setHeaderRow] = useState<number | null>(null)
+  const [headerLoading, setHeaderLoading] = useState(false)
 
-  // 重置内部状态（open 变化时）
-  useMemo(() => {
-    if (open && analyzeResult) {
-      setOverrides({})
-      // 默认表名 = 文件名去扩展名
-      const fn = analyzeResult.filename || ''
-      const name = fn.replace(/\.[^.]+$/, '') || '导入数据表'
-      setTableName(name)
-      // 默认选中第一个列
-      const firstCol = analyzeResult.columns.find(c => c.name.trim())
-      setSelectedField(firstCol?.name ?? null)
+  /** 把一次 analyze 结果同步为内部状态（列/表头/样本预览都基于它渲染） */
+  const applyAnalyzeResult = useCallback((result: FileAnalyzeResult) => {
+    setCurrentResult(result)
+    setHeaderRow(result.header_detection?.row ?? result.header_row ?? null)
+    setOverrides({})
+    const firstCol = result.columns.find(c => c.name.trim())
+    setSelectedField(firstCol?.name ?? null)
+  }, [])
+
+  // 重置内部状态（open / prop 分析结果变化时）
+  useEffect(() => {
+    if (!open || !analyzeResult) return
+    applyAnalyzeResult(analyzeResult)
+    // 默认表名 = 文件名去扩展名
+    const fn = analyzeResult.filename || ''
+    setTableName(fn.replace(/\.[^.]+$/, '') || '导入数据表')
+  }, [open, analyzeResult, applyAnalyzeResult])
+
+  /** 用户改选表头行：重新 analyze，成功后整体替换内部结果并重置字段 overrides. */
+  const handleHeaderRowChange = async (row: number) => {
+    if (!file || headerLoading) return
+    setHeaderLoading(true)
+    try {
+      const result = await importApi.analyzeFile(wid, file, row)
+      applyAnalyzeResult(result)
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '重新识别表头失败')
+    } finally {
+      setHeaderLoading(false)
     }
-  }, [open, analyzeResult])
+  }
+
+  /** 表头行下拉选项：第 N 行 · 置信度 · 前几个单元格文本预览 */
+  const headerDetection = currentResult?.header_detection ?? null
+  const headerCandidateOptions = useMemo(
+    () => (headerDetection?.candidates ?? []).map((c: HeaderDetectionCandidate) => ({
+      value: c.row,
+      label: `第 ${c.row} 行 · ${Math.round(c.confidence * 100)}% · ${c.values.filter(Boolean).slice(0, 3).join(' / ')}`,
+    })),
+    [headerDetection],
+  )
 
   /** 当前生效的列定义 = 后端原始 + 用户 overrides. */
   const effectiveColumns: AnalyzeColumn[] = useMemo(() => {
-    if (!analyzeResult) return []
-    return analyzeResult.columns.map(col => {
+    if (!currentResult) return []
+    return currentResult.columns.map(col => {
       const ov = overrides[col.name]
       if (!ov) return col
       return {
@@ -81,14 +114,14 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         options: ov.options ?? col.options,
       }
     })
-  }, [analyzeResult, overrides])
+  }, [currentResult, overrides])
 
-  const sampleRows = useMemo(() => analyzeResult?.sample_rows ?? [], [analyzeResult])
+  const sampleRows = useMemo(() => currentResult?.sample_rows ?? [], [currentResult])
 
   /** 某列的类型转换失败计数 —— 用于左侧字段卡片上的警示. */
   const columnFailCounts = useMemo(() => {
     const res: Record<string, number> = {}
-    if (!analyzeResult) return res
+    if (!currentResult) return res
     for (const col of effectiveColumns) {
       let fail = 0
       for (const row of sampleRows) {
@@ -98,11 +131,11 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       res[col.name] = fail
     }
     return res
-  }, [effectiveColumns, sampleRows, analyzeResult])
+  }, [effectiveColumns, sampleRows, currentResult])
 
   /** 判断 override 是否与后端原始完全一致 —— 一致则应清除. */
   const isOverrideRedundant = useCallback((colName: string, ov: ColumnOverride): boolean => {
-    const original = analyzeResult?.columns.find(c => c.name === colName)
+    const original = currentResult?.columns.find(c => c.name === colName)
     if (!original) return false
     if (ov.field_type !== original.field_type) return false
     // 非 select 类型，options 总是 undefined，与原始的空数组/undefined 视为一致
@@ -113,12 +146,12 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     const origOpts = original.options ?? []
     const ovOpts = ov.options ?? []
     return JSON.stringify([...origOpts].sort()) === JSON.stringify([...ovOpts].sort())
-  }, [analyzeResult])
+  }, [currentResult])
 
   /** 改变字段类型 —— 自动填 options 如果是 select. */
   const changeFieldType = useCallback((colName: string, newType: string) => {
     setOverrides(prev => {
-      const baseCol = analyzeResult?.columns.find(c => c.name === colName)
+      const baseCol = currentResult?.columns.find(c => c.name === colName)
       const prevOv = prev[colName]
       const base: ColumnOverride = prevOv ?? {
         field_type: baseCol?.field_type ?? 'text',
@@ -138,7 +171,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       }
       return { ...prev, [colName]: next }
     })
-  }, [analyzeResult, sampleRows, isOverrideRedundant])
+  }, [currentResult, sampleRows, isOverrideRedundant])
 
   /** 更新某列的 options（select/multiselect 场景）. */
   const updateOptions = useCallback((colName: string, options: string[]) => {
@@ -158,8 +191,8 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
   /** 组装 column_overrides payload —— 与后端同结构. */
   const buildColumnOverrides = (): Record<string, ColumnOverride> => {
     const out: Record<string, ColumnOverride> = {}
-    if (!analyzeResult) return out
-    for (const col of analyzeResult.columns) {
+    if (!currentResult) return out
+    for (const col of currentResult.columns) {
       const ov = overrides[col.name]
       if (!ov) continue
       // 只有与后端原始推断不同才提交
@@ -178,7 +211,10 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     setCreating(true)
     try {
       const ov = buildColumnOverrides()
-      const result = await importApi.createFromFile(wid, file, tableName.trim(), ov)
+      // 表头行仅在自动识别可用时提交（JSON 无表头概念，不传该参数）
+      const result = headerDetection
+        ? await importApi.createFromFile(wid, file, tableName.trim(), ov, headerRow ?? undefined)
+        : await importApi.createFromFile(wid, file, tableName.trim(), ov)
       message.success(`已创建表 "${result.table_name}"，导入 ${result.imported_rows} 行`)
       onSuccess?.(result)
       onClose()
@@ -242,9 +278,48 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
         <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>表名：</span>
         <Input value={tableName} onChange={e => setTableName(e.target.value)} style={{ flex: 1 }} placeholder="自动使用文件名" />
         <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
-          {analyzeResult?.format?.toUpperCase() ?? '-'} · {analyzeResult?.total_rows ?? 0} 行
+          {currentResult?.format?.toUpperCase() ?? '-'} · {currentResult?.total_rows ?? 0} 行
         </span>
       </div>
+
+      {/* 表头行自动识别结果（JSON 无表头概念时不渲染） */}
+      {headerDetection && (
+        <div style={{ flexShrink: 0, marginBottom: 8, display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+          <Alert
+            data-testid="header-detection-alert"
+            type={headerDetection.requires_review ? 'warning' : 'info'}
+            showIcon
+            style={{ flex: '1 1 480px', minWidth: 280, padding: '4px 10px' }}
+            message={
+              <span>
+                {headerDetection.message}
+                {headerDetection.requires_review && (
+                  <span style={{ marginLeft: 6 }}>建议人工确认识别到的表头行</span>
+                )}
+              </span>
+            }
+          />
+          <Tag
+            color={headerDetection.requires_review ? 'orange' : 'blue'}
+            style={{ margin: '2px 0 0', flexShrink: 0 }}
+          >
+            置信度 {Math.round(headerDetection.confidence * 100)}%
+          </Tag>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)', whiteSpace: 'nowrap' }}>表头行：</span>
+            <Select
+              data-testid="header-row-select"
+              size="small"
+              style={{ minWidth: 260 }}
+              value={headerRow ?? headerDetection.row}
+              options={headerCandidateOptions}
+              loading={headerLoading}
+              disabled={headerLoading || headerCandidateOptions.length === 0}
+              onChange={(row: number) => { void handleHeaderRowChange(row) }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* 主体：左右 flex 等高分栏，两栏共享父容器高度 */}
       <div style={{ display: 'flex', gap: 10, flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -264,7 +339,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           </div>
           {/* 字段列表（滚动） */}
           <FieldsList
-        analyzeResult={analyzeResult}
+        analyzeResult={currentResult}
         effectiveColumns={effectiveColumns}
         overrides={overrides}
         columnFailCounts={columnFailCounts}
@@ -345,7 +420,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
 
           {/* 数据预览（内部 flex:1 撑满） */}
           <DataPreviewTable
-        analyzeResult={analyzeResult}
+        analyzeResult={currentResult}
         effectiveColumns={effectiveColumns}
         columnFailCounts={columnFailCounts}
         sampleRows={sampleRows}

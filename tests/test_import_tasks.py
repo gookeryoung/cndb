@@ -527,7 +527,8 @@ def test_importer_parse_xlsx_roundtrip():
     wb.save(buf)
     xlsx_bytes = buf.getvalue()
 
-    rows, cols = Importer._parse_xlsx(xlsx_bytes)
+    rows, cols, detection = Importer._parse_xlsx(xlsx_bytes)
+    assert detection is not None and detection.row == 1
     assert cols == ["姓名", "年龄"]
     assert len(rows) == 1
     assert rows[0]["姓名"] == "孙七"

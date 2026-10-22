@@ -460,7 +460,7 @@ class TestImporterInternals:
             Importer(db.get_bind(), db, kv_table)._parse_xlsx(raw)
 
     def test_parse_xlsx_with_images_empty_sheet(self, kv_table, db):
-        assert Importer(db.get_bind(), db, kv_table)._parse_xlsx_with_images(_empty_xlsx_bytes()) == ([], [])
+        assert Importer(db.get_bind(), db, kv_table)._parse_xlsx_with_images(_empty_xlsx_bytes()) == ([], [], None)
 
     def test_resolve_original_rows_returns_rows(self, kv_table, db):
         imp = Importer(db.get_bind(), db, kv_table)

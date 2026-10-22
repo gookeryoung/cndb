@@ -367,7 +367,7 @@ class TestCorruptFileParsing:
 
     def test_parse_csv_duplicate_headers(self):
         """重复表头列名 → file_columns 保留两个 name，行值后列覆盖."""
-        rows, file_columns = Importer._parse_csv("name,name\na,b\n")
+        rows, file_columns, _detection = Importer._parse_csv("name,name\na,b\n")
         assert file_columns == ["name", "name"]
         assert len(rows) == 1
         assert rows[0]["name"] == "b"

@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Progress, App as AntApp, Space, Select, Alert, Empty, Upload, Table, Tabs, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
 import { InboxOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined, SwapOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
-import type { ImportTaskInfo, Field } from '@/api'
+import type { ImportTaskInfo, Field, ValidationReport } from '@/api'
 import HelpTip from '@/components/HelpTip'
 import { ACCEPTED_EXT, type Phase } from './importPreview'
 import { scrollActiveTabIntoViewNextFrame } from '@/layouts/tabScroll'
@@ -183,11 +183,26 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         }
     }, [task, wid, tid, unknownColsStrategy, message])
 
-    // 确认导入（当前 matchKeys + unknownColsStrategy + droppedColumns + 清洗建议）
-    const handleConfirm = async () => {
+    // 改选表头行 — 重新 analyze，报告回来后（轮询）UI 跟随更新
+    const handleHeaderRowChange = useCallback(async (headerRow: number) => {
         if (!task) return
         try {
-            await importApi.confirmImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy, droppedColumns, selectedCleaningActions)
+            setDiffing(true)
+            await importApi.reanalyzeImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy, headerRow)
+            setPolling(true)
+        } catch (err) {
+            setDiffing(false)
+            message.error(err instanceof Error ? err.message : '重新识别表头失败')
+        }
+    }, [task, wid, tid, matchKeys, unknownColsStrategy, message])
+
+    // 确认导入（当前 matchKeys + unknownColsStrategy + droppedColumns + 清洗建议 + 表头行）
+    const handleConfirm = async () => {
+        if (!task) return
+        const report = (task as ImportTaskInfo & { validation_report?: ValidationReport | null }).validation_report
+        const headerRow = report?.header_detection?.row ?? report?.header_row ?? undefined
+        try {
+            await importApi.confirmImport(wid, tid, task.task_id, matchKeys, unknownColsStrategy, droppedColumns, selectedCleaningActions, headerRow)
             setPhase('importing')
             setPolling(true)
         } catch (err) {
@@ -392,6 +407,50 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
     // ── 渲染：数据质量面板 ──
 
     // ── 渲染：Diff 表格（更新行红/绿 chip 字段对比 + 变更汇总列；空态区分提示） ──
+    // ── 渲染：表头行自动识别结果（JSON 无表头概念时不渲染） ──
+    const renderHeaderDetection = (report: ValidationReport) => {
+        const hd = report.header_detection
+        if (!hd) return null
+        const headerRowOptions = hd.candidates.map(c => ({
+            value: c.row,
+            label: `第 ${c.row} 行 · ${Math.round(c.confidence * 100)}% · ${c.values.filter(Boolean).slice(0, 3).join(' / ')}`,
+        }))
+        return (
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                <Alert
+                    data-testid="header-detection-alert"
+                    type={hd.requires_review ? 'warning' : 'info'}
+                    showIcon
+                    style={{ flex: '1 1 480px', minWidth: 280, padding: '4px 10px' }}
+                    message={
+                        <span>
+                            {hd.message}
+                            {hd.requires_review && (
+                                <span style={{ marginLeft: 6 }}>建议人工确认识别到的表头行</span>
+                            )}
+                        </span>
+                    }
+                />
+                <Tag color={hd.requires_review ? 'orange' : 'blue'} style={{ margin: '2px 0 0', flexShrink: 0 }}>
+                    置信度 {Math.round(hd.confidence * 100)}%
+                </Tag>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                    <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)', whiteSpace: 'nowrap' }}>表头行：</span>
+                    <Select
+                        data-testid="header-row-select"
+                        size="small"
+                        style={{ minWidth: 260 }}
+                        value={hd.row}
+                        options={headerRowOptions}
+                        loading={diffing}
+                        disabled={diffing || headerRowOptions.length === 0}
+                        onChange={(row: number) => { void handleHeaderRowChange(row) }}
+                    />
+                </div>
+            </div>
+        )
+    }
+
     // ── 渲染：预览面板（V3 四卡片 + Diff 控制 + Diff 表格） ──
     const renderPreview = () => {
         if (!task || phase !== 'preview') return null
@@ -410,6 +469,9 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
         return (
             <div style={{ marginTop: 16 }}>
                 {/* 进度 + 统计已整合至上方进度面板 */}
+
+                {/* 表头行自动识别结果 + 人工改选（放在 Diff 控件上方） */}
+                {renderHeaderDetection(report as ValidationReport)}
 
                 {multiConflict > 0 && (
                     <Alert

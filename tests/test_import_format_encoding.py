@@ -104,11 +104,13 @@ class TestGuessFormatFromContent:
 def _make_rows(content: bytes | str, fmt: str) -> tuple[list[dict], list[str]]:
     """用 Importer 的静态 parse 方法直接解析."""
     if fmt in ("csv", "tsv", "delimited"):
-        return Importer._parse_csv(content)
+        rows, cols, _detection = Importer._parse_csv(content)
+        return rows, cols
     if fmt == "json":
         return Importer._parse_json(content)
     if fmt == "xlsx":
-        return Importer._parse_xlsx(content)
+        rows, cols, _detection = Importer._parse_xlsx(content)
+        return rows, cols
     raise ValueError(f"不支持的格式: {fmt}")
 
 
