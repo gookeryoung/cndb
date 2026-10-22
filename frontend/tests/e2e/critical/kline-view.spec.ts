@@ -31,7 +31,9 @@ async function gotoTable(
 
   await page.goto(`/w/${wid}/tables/${tid}`);
   await page.waitForURL(/\/tables\/\d+/);
-  await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible({
+  // 自选股表的 seed 默认视图就是「K线图」（kline），grid 专属的「新增行」按钮不会渲染；
+  // 以视图模式切换中的 kline 按钮作为页面就绪信号，避免依赖初始 grid 渲染的竞态。
+  await expect(page.locator('[data-mode="kline"]')).toBeVisible({
     timeout: 10000,
   });
 }

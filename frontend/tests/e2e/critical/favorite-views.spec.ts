@@ -43,9 +43,13 @@ test.describe("主页「我的视图」收藏面板", () => {
       await expect(favoriteBtn).toHaveAttribute("aria-pressed", "false", {
         timeout: 10000,
       });
+      // 选中项是 inline-flex：innerText 会把视图名与「默认 / 我的」等标签拆成多行
+      //（如「全部\n默认」），而面板行里名称和标签分属不同元素，故只取第一行的视图名。
       const activeViewName = (
         await page.locator(".ant-segmented-item-selected").first().innerText()
-      ).trim();
+      )
+        .split("\n")[0]
+        .trim();
 
       await favoriteBtn.click();
       await expect(favoriteBtn).toHaveAttribute("aria-pressed", "true", {
