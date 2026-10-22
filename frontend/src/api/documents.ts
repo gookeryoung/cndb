@@ -164,6 +164,81 @@ export interface PurgeResult {
 /** 文档导出格式：Markdown / Word / PDF */
 export type DocumentExportFormat = 'md' | 'docx' | 'pdf'
 
+// ── 文档 AI 能力（ADR 0020 P1） ──
+//
+// 端点：POST /api/v1/workspaces/{wid}/documents/{doc_id}/ai/actions/{action}
+// 权限与写回都在后端领域路由内完成；前端只负责「建议 → 预览 → 确认」，
+// 改写结果仅改编辑器内存态，保存仍走既有草稿 / 提交（不自动保存）。
+
+/** 文档 AI 动作名（与后端 documents/services/ai.py 注册的 ActionSpec 一一对应） */
+export type DocumentAiAction = 'polish' | 'summarize' | 'suggest_tags'
+
+/** 选区改写指令（polish 动作 instruction 白名单） */
+export type DocumentAiInstruction = 'polish' | 'shorten' | 'expand' | 'formal' | 'translate'
+
+/** AI 用量（上游未返回时各字段缺失 / 记 0，前端展示时需容错） */
+export interface DocumentAiUsage {
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+}
+
+/** AI 动作统一响应：动作名 / 调用留痕 id / 实际模型 / 用量 / 动作结果 */
+export interface DocumentAiResponse<R> {
+  /** 后端动作名，如 `document.polish` */
+  action: string
+  /** `llm_run` 留痕 id（排查与用量核对） */
+  run_id: number
+  /** 实际使用的模型 */
+  model: string
+  usage: DocumentAiUsage
+  result: R
+  /** 仅 summarize / suggest_tags：正文超过模型输入上限、只用了前 N 字（留痕 detail 同源） */
+  truncated?: boolean
+}
+
+/** 选区改写请求体 */
+export interface DocumentAiPolishPayload {
+  /** 选中的原文片段（由前端从编辑器内存态读取，不来自已保存版本） */
+  selection: string
+  instruction: DocumentAiInstruction
+  /** translate 时的目标语言 */
+  language?: string
+  /** 可选上下文（标题 / 位置），帮助模型保持术语一致 */
+  context?: string
+}
+
+/** 选区改写结果：纯文本，由用户确认后替换编辑器选区 */
+export interface DocumentAiPolishResult {
+  text: string
+}
+
+/** 整篇摘要结果（摘要 / 要点 / 标签建议） */
+export interface DocumentAiSummarizeResult {
+  summary: string
+  key_points: string[]
+  suggested_tags: string[]
+}
+
+/** 标签建议结果（P1 只展示建议，不自动改文档元数据） */
+export interface DocumentAiSuggestTagsResult {
+  suggested_tags: string[]
+}
+
+/** 动作名 → 结果类型 */
+export interface DocumentAiResults {
+  polish: DocumentAiPolishResult
+  summarize: DocumentAiSummarizeResult
+  suggest_tags: DocumentAiSuggestTagsResult
+}
+
+/** 动作名 → 请求体类型（摘要 / 标签建议无请求体） */
+export interface DocumentAiPayloads {
+  polish: DocumentAiPolishPayload
+  summarize: Record<string, never>
+  suggest_tags: Record<string, never>
+}
+
 // ── Obsidian 文档库（vault）导入 / 导出 ──
 
 /** 导入冲突策略：跳过同名 / 自动改名（追加「 (2)」）/ 覆盖生成新版本 */
@@ -459,6 +534,24 @@ export const documentsApi = {
     data: { content?: string; change_summary?: string; base_version_number?: number | null },
   ) =>
     api.post<DocumentSubmitResult>(`${base(wid)}/${docId}/submit`, data).then(r => r.data),
+
+  /** 文档 AI 动作（ADR 0020 P1）：选区改写 / 整篇摘要 / 标签建议.
+   *
+   * 结果只作为「建议」返回，不写文档；改写由前端应用到编辑器内存态，
+   * 摘要 / 标签建议由用户手动决定是否落到元数据（P1 不自动应用）。
+   */
+  aiAction: <A extends DocumentAiAction>(
+    wid: number | string,
+    docId: number | string,
+    action: A,
+    payload?: DocumentAiPayloads[A],
+  ) =>
+    api
+      .post<DocumentAiResponse<DocumentAiResults[A]>>(
+        `${base(wid)}/${docId}/ai/actions/${action}`,
+        payload ?? {},
+      )
+      .then(r => r.data),
 
   // 文档修改申请（双轨制写入的待审载体）
   changeRequests: (wid: number | string, params?: { document_id?: number; scope?: string }) =>

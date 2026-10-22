@@ -5,6 +5,7 @@ import { fireEvent, screen } from '@testing-library/react'
 
 import { renderProviders } from '@/test/render-providers'
 import MarkdownToolbar, {
+  MARKDOWN_AI_ITEMS,
   MARKDOWN_HEADING_LEVELS,
   MARKDOWN_TABLE_PRESETS,
   MARKDOWN_TOOLBAR_ITEMS,
@@ -79,5 +80,48 @@ describe('MarkdownToolbar', () => {
 
     expect(onInsertTable).toHaveBeenCalledWith(3, 3)
     expect(onAction).not.toHaveBeenCalled()
+  })
+
+  it('未传 onAiAction 时完全不渲染 AI 按钮（既有页面行为不变）', () => {
+    renderProviders(<MarkdownToolbar onAction={() => { }} />)
+
+    for (const item of MARKDOWN_AI_ITEMS) {
+      expect(screen.queryByTestId(`md-toolbar-ai-${item.key}`)).toBeNull()
+    }
+  })
+
+  it('传入 onAiAction 时渲染润色 / 精简 / 扩写三个入口', () => {
+    renderProviders(<MarkdownToolbar onAction={() => { }} onAiAction={() => { }} />)
+
+    expect(MARKDOWN_AI_ITEMS.map(i => i.key)).toEqual(['polish', 'shorten', 'expand'])
+    for (const item of MARKDOWN_AI_ITEMS) {
+      expect(screen.getByTestId(`md-toolbar-ai-${item.key}`)).toBeInTheDocument()
+    }
+    expect(screen.getByLabelText('AI 润色选中文本')).toBeInTheDocument()
+  })
+
+  it('AI 入口点击回传指令，且 mousedown 阻止默认行为（不丢选区）', () => {
+    const onAiAction = vi.fn()
+    renderProviders(<MarkdownToolbar onAction={() => { }} onAiAction={onAiAction} />)
+
+    const btn = screen.getByTestId('md-toolbar-ai-shorten')
+    // fireEvent 返回 false 表示事件被 preventDefault —— 选区因此不会丢
+    expect(fireEvent.mouseDown(btn)).toBe(false)
+    fireEvent.click(btn)
+    expect(onAiAction).toHaveBeenCalledWith('shorten')
+  })
+
+  it('aiDisabled 只禁用 AI 入口，普通 Markdown 按钮仍可用', () => {
+    const onAiAction = vi.fn()
+    const onAction = vi.fn()
+    renderProviders(
+      <MarkdownToolbar onAction={onAction} onAiAction={onAiAction} aiDisabled />,
+    )
+
+    expect(screen.getByTestId('md-toolbar-ai-polish')).toBeDisabled()
+    expect(screen.getByTestId('md-toolbar-bold')).toBeEnabled()
+
+    fireEvent.click(screen.getByTestId('md-toolbar-ai-polish'))
+    expect(onAiAction).not.toHaveBeenCalled()
   })
 })

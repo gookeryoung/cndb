@@ -1,6 +1,6 @@
 /** 文档页 — 查看/编辑双模式 + Obsidian 风格实时预览 + 个人草稿（保存与提交解耦） */
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
@@ -28,6 +28,7 @@ import {
   MoreOutlined,
   PictureOutlined,
   PullRequestOutlined,
+  ReadOutlined,
   SaveOutlined,
   SearchOutlined,
   SendOutlined,
@@ -53,9 +54,13 @@ import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Docu
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
 import { fileApi, tableApi, workspaceApi } from '@/api'
+import { useLlmAction } from '@/hooks/useLlmAction'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
+import type { AiResultSection } from '@/components/Ai/AiResultDrawer'
 import type {
+  DocumentAiInstruction,
+  DocumentAiPolishPayload,
   DocumentDraftPayload,
   DocumentExportFormat,
   DocumentItem,
@@ -74,6 +79,23 @@ import LinksDrawer from './LinksDrawer'
 import OutlineDrawer from './OutlineDrawer'
 import VersionsDrawer from './VersionsDrawer'
 import TagEditor from './TagEditor'
+
+// 文档 AI 面全部懒加载：结果抽屉 / 顶栏入口只在点击后才进入加载队列（ADR 0020 C11）。
+// 页面本身已是路由级 lazy chunk，这里再拆一层是为了不让 AI 弹层代码进文档页首帧。
+const AiDocEntry = lazy(() => import('@/components/Ai/AiDocEntry'))
+const AiResultDrawer = lazy(() => import('@/components/Ai/AiResultDrawer'))
+
+/** 选区改写指令 → 中文标签（抽屉标题 / 结果分区用） */
+const AI_INSTRUCTION_LABELS: Record<DocumentAiInstruction, string> = {
+  polish: '润色',
+  shorten: '精简',
+  expand: '扩写',
+  formal: '书面化',
+  translate: '翻译',
+}
+
+/** 单次选区改写上限（与后端 documents/services/ai.py 的 MAX_SELECTION_CHARS 对齐，超限先提示分段） */
+const MAX_AI_SELECTION_CHARS = 4000
 
 export default function DocumentEditorPage() {
   const { wid, docId } = useParams<{ wid: string; docId: string }>()
@@ -130,6 +152,39 @@ export default function DocumentEditorPage() {
   const [insertOpen, setInsertOpen] = useState(false)
   const [insertTableId, setInsertTableId] = useState<number | null>(null)
   const [insertLimit, setInsertLimit] = useState<number | null>(null)
+
+  // ── 文档 AI（ADR 0020 P1）：结果只做「建议 → 预览 → 确认」，不自动保存 ──
+  const [aiOpen, setAiOpen] = useState(false)
+  /** 当前展示的动作：选区改写 / 整篇摘要 / 标签建议 */
+  const [aiKind, setAiKind] = useState<'polish' | 'summarize' | 'suggest_tags'>('polish')
+  const [aiInstruction, setAiInstruction] = useState<DocumentAiInstruction>('polish')
+  /** 改写选区（字符偏移）：请求时的快照，应用时按它替换内存态正文 */
+  const [aiRange, setAiRange] = useState<{ start: number; end: number } | null>(null)
+  /** 改写请求对应的原文片段（抽屉左侧展示） */
+  const [aiOriginal, setAiOriginal] = useState('')
+  /** 标签建议选中项：仅作阅读辅助，P1 不写回文档元数据 */
+  const [aiSelectedTags, setAiSelectedTags] = useState<string[]>([])
+
+  const polishAi = useLlmAction(
+    (payload: DocumentAiPolishPayload) => documentsApi.aiAction(workspaceId, id, 'polish', payload),
+    { fallbackError: 'AI 润色失败，请稍后重试' },
+  )
+  const summarizeAi = useLlmAction(
+    () => documentsApi.aiAction(workspaceId, id, 'summarize'),
+    { fallbackError: 'AI 摘要失败，请稍后重试' },
+  )
+  const suggestTagsAi = useLlmAction(
+    () => documentsApi.aiAction(workspaceId, id, 'suggest_tags'),
+    { fallbackError: 'AI 标签建议失败，请稍后重试' },
+  )
+
+  // run / reset 在 hook 内是 useCallback 稳定引用：拆出来让事件回调的依赖数组保持干净
+  const runPolish = polishAi.run
+  const runSummarize = summarizeAi.run
+  const runSuggestTags = suggestTagsAi.run
+  const resetPolish = polishAi.reset
+  const resetSummarize = summarizeAi.reset
+  const resetSuggestTags = suggestTagsAi.reset
 
   // 当前用户在工作区的角色：决定修改申请抽屉里的审核入口
   const { data: wsDetail } = useQuery({
@@ -512,6 +567,85 @@ export default function DocumentEditorPage() {
     })
   }, [content])
 
+  // ── 文档 AI：入口 / 应用 / 重新生成（结果只改内存态，绝不自动保存） ──
+
+  /** 打开选区改写：从编辑器读当前选区，空选区给中文提示且不发请求 */
+  const openAiRewrite = useCallback((instruction: DocumentAiInstruction) => {
+    const selection = editorRef.current?.getSelection()
+    const start = selection?.start ?? 0
+    const end = selection?.end ?? 0
+    const selected = end > start ? content.slice(start, end) : ''
+    if (!selected.trim()) {
+      message.warning('请先选中文本')
+      return
+    }
+    if (selected.length > MAX_AI_SELECTION_CHARS) {
+      message.warning(`选中文本过长（${selected.length} 字，最多 ${MAX_AI_SELECTION_CHARS} 字），请分段改写`)
+      return
+    }
+    setAiKind('polish')
+    setAiInstruction(instruction)
+    setAiRange({ start, end })
+    setAiOriginal(selected)
+    setAiSelectedTags([])
+    setAiOpen(true)
+    void runPolish({ selection: selected, instruction })
+  }, [content, runPolish])
+
+  /** 打开整篇摘要：后端读取文档最新版本正文，与编辑器未保存改动无关 */
+  const openAiSummary = useCallback(() => {
+    setAiKind('summarize')
+    setAiRange(null)
+    setAiOriginal('')
+    setAiSelectedTags([])
+    setAiOpen(true)
+    void runSummarize({})
+  }, [runSummarize])
+
+  /** 打开标签建议：只展示建议，不自动改文档元数据 */
+  const openAiSuggestTags = useCallback(() => {
+    setAiKind('suggest_tags')
+    setAiRange(null)
+    setAiOriginal('')
+    setAiSelectedTags([])
+    setAiOpen(true)
+    void runSuggestTags({})
+  }, [runSuggestTags])
+
+  /** 关闭抽屉：丢弃在途请求结果，避免关闭后延迟到达的状态再弹回来 */
+  const closeAi = useCallback(() => {
+    setAiOpen(false)
+    setAiRange(null)
+    setAiOriginal('')
+    setAiSelectedTags([])
+    resetPolish()
+    resetSummarize()
+    resetSuggestTags()
+  }, [resetPolish, resetSummarize, resetSuggestTags])
+
+  /** 重新生成：沿用同一动作与同一选区 */
+  const regenerateAi = useCallback(() => {
+    if (aiKind === 'polish') {
+      if (!aiRange || !aiOriginal) return
+      void runPolish({ selection: aiOriginal, instruction: aiInstruction })
+      return
+    }
+    if (aiKind === 'summarize') void runSummarize({})
+    else void runSuggestTags({})
+  }, [aiKind, aiRange, aiOriginal, aiInstruction, runPolish, runSummarize, runSuggestTags])
+
+  /** 应用改写：只替换编辑器内存态选区并恢复光标；保存仍走既有草稿 / 提交 */
+  const applyAiRewrite = useCallback(() => {
+    const text = polishAi.data?.result.text
+    if (!text || !aiRange) return
+    const { start, end } = aiRange
+    setContent(prev => `${prev.slice(0, start)}${text}${prev.slice(end)}`)
+    const caret = start + text.length
+    setAiOpen(false)
+    requestAnimationFrame(() => editorRef.current?.setSelection(caret, caret))
+    message.success('已应用到编辑器（尚未保存，请记得保存草稿或提交修改）')
+  }, [polishAi.data, aiRange])
+
   /** 在光标处插入独占段落的片段（前后自动补空行）；图片 / 数据表引用共用.
    *
    * 用函数式更新：连续插入（如一次粘贴多张图片）时各自基于最新正文计算，不会互相覆盖。
@@ -658,11 +792,87 @@ export default function DocumentEditorPage() {
 
   const editable = true // viewer 保存转修改申请（202），无需在前端隐藏编辑入口
 
+  // ── AI 抽屉展示数据：按当前动作从对应 hook 取 loading / error / 结果 ──
+  const aiLoading =
+    aiKind === 'polish' ? polishAi.loading : aiKind === 'summarize' ? summarizeAi.loading : suggestTagsAi.loading
+  const aiError =
+    aiKind === 'polish' ? polishAi.error : aiKind === 'summarize' ? summarizeAi.error : suggestTagsAi.error
+  const aiTitle =
+    aiKind === 'summarize'
+      ? 'AI 摘要'
+      : aiKind === 'suggest_tags'
+        ? 'AI 标签建议'
+        : `AI ${AI_INSTRUCTION_LABELS[aiInstruction]}`
+  const aiSummaryResult = summarizeAi.data?.result
+  const aiTagResult = suggestTagsAi.data?.result
+  const aiSections: AiResultSection[] =
+    aiKind === 'summarize' && aiSummaryResult
+      ? [
+          { key: 'summary', title: '摘要', text: aiSummaryResult.summary || '模型未给出摘要', testId: 'ai-summary' },
+          {
+            key: 'points',
+            title: '要点',
+            items: aiSummaryResult.key_points,
+            emptyText: '模型未给出要点',
+            testId: 'ai-summary-points',
+          },
+          {
+            key: 'tags',
+            title: '建议标签',
+            items: aiSummaryResult.suggested_tags,
+            emptyText: '模型未给出标签建议',
+            selectable: true,
+            selected: aiSelectedTags,
+            onSelect: setAiSelectedTags,
+            hint: '建议标签不会自动写入文档；可在文档设置（顶栏「标签」抽屉）中手动添加。',
+            testId: 'ai-summary-tags',
+          },
+        ]
+      : aiKind === 'suggest_tags' && aiTagResult
+        ? [
+            {
+              key: 'tags',
+              title: '建议标签',
+              items: aiTagResult.suggested_tags,
+              emptyText: '模型未给出标签建议',
+              selectable: true,
+              selected: aiSelectedTags,
+              onSelect: setAiSelectedTags,
+              hint: '本期只展示建议，不会自动修改文档标签；可在文档设置（顶栏「标签」抽屉）中手动添加。',
+              testId: 'ai-suggest-tags',
+            },
+          ]
+        : []
+  const aiMetaSource =
+    aiKind === 'polish' ? polishAi.data : aiKind === 'summarize' ? summarizeAi.data : suggestTagsAi.data
+  const aiTotalTokens = aiMetaSource?.usage.total_tokens
+  const aiMeta = aiMetaSource
+    ? [
+        aiMetaSource.model ? `模型 ${aiMetaSource.model}` : '',
+        typeof aiTotalTokens === 'number' ? `本次 ${aiTotalTokens} tokens` : '',
+        `留痕 #${aiMetaSource.run_id}`,
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : undefined
+  /** 摘要 / 标签建议基于截断后的正文生成（后端 truncated 标记） */
+  const aiTruncated = aiKind !== 'polish' && Boolean(aiMetaSource?.truncated)
+  const aiHint =
+    aiKind === 'polish'
+      ? '应用只修改编辑器内容，不会自动保存；请用「保存草稿」或「提交修改」落库。'
+      : `${
+          aiKind === 'summarize'
+            ? '摘要与要点由模型根据文档最新版本生成，仅供参考。'
+            : '标签建议不会自动修改文档元数据，可在文档设置（顶栏「标签」抽屉）中手动添加。'
+        }${aiTruncated ? '（文档较长，本次仅基于正文前 12000 字生成）' : ''}`
+
   /** 窄屏：次级入口（反向链接 / 文档链接 / 插入表格引用 / 标签 / 修改申请 / 版本 / 导出）
    *  收进「更多」，只保留「大纲」（导航）与「保存」（主操作），
    *  避免 9 个按钮在 390px 屏上折成三行挤掉正文。 */
   const docMoreItems = [
     { key: 'find', icon: <SearchOutlined />, label: '查找替换', onClick: openFind },
+    { key: 'ai-summarize', icon: <ReadOutlined />, label: 'AI 摘要', onClick: openAiSummary },
+    { key: 'ai-suggest-tags', icon: <TagsOutlined />, label: 'AI 标签建议', onClick: openAiSuggestTags },
     { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
     { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
     { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
@@ -798,6 +1008,10 @@ export default function DocumentEditorPage() {
           <Button icon={<TableOutlined />} onClick={() => setInsertOpen(true)}>
             插入表格引用
           </Button>
+          {/* AI 入口（懒加载）：整篇摘要 / 标签建议；选区改写入口在 MarkdownToolbar */}
+          <Suspense fallback={null}>
+            <AiDocEntry onSummarize={openAiSummary} onSuggestTags={openAiSuggestTags} />
+          </Suspense>
           <Button icon={<TagsOutlined />} onClick={() => setTagsOpen(true)}>
             标签{doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}
           </Button>
@@ -930,6 +1144,8 @@ export default function DocumentEditorPage() {
               <MarkdownToolbar
                 onAction={applyMarkdownAction}
                 onInsertTable={(cols, rows) => insertSnippetAtCursor(buildTableSkeleton(cols, rows))}
+                onAiAction={openAiRewrite}
+                aiDisabled={polishAi.loading}
               />
               <Segmented
                 size="small"
@@ -1037,6 +1253,28 @@ export default function DocumentEditorPage() {
           onChange={ids => setDocTagsMut.mutate(ids)}
         />
       </Drawer>
+
+      {/* AI 结果抽屉：懒加载；结果只作预览，应用只改编辑器内存态（不自动保存） */}
+      {aiOpen && (
+        <Suspense fallback={null}>
+          <AiResultDrawer
+            open
+            title={aiTitle}
+            onClose={closeAi}
+            loading={aiLoading}
+            error={aiError}
+            originalText={aiKind === 'polish' ? aiOriginal : undefined}
+            resultText={aiKind === 'polish' ? polishAi.data?.result.text : undefined}
+            resultLabel={aiKind === 'polish' ? `AI ${AI_INSTRUCTION_LABELS[aiInstruction]}结果` : 'AI 结果'}
+            sections={aiSections}
+            meta={aiMeta}
+            hint={aiHint}
+            applyText="应用到编辑器"
+            onApply={aiKind === 'polish' ? applyAiRewrite : undefined}
+            onRegenerate={regenerateAi}
+          />
+        </Suspense>
+      )}
 
       {/* 修改申请抽屉：待审列表 + 内容 DIFF + 通过/驳回/删除草稿 */}
       <DocumentChangeRequestsDrawer

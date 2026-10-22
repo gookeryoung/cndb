@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from . import (
+    ai,
     change_requests,
     content,
     drafts,
@@ -17,6 +18,7 @@ from . import (
 )
 
 __all__ = [
+    "ai",
     "change_requests",
     "content",
     "drafts",
