@@ -20,7 +20,7 @@
  */
 
 import { memo, useEffect, useMemo, useState } from 'react'
-import { Button, Empty, Tag } from 'antd'
+import { Button, Empty, Skeleton, Tag } from 'antd'
 
 import type { Field, RowResponse, View } from '@/api'
 import { resolveTagColor } from '@/utils/tagColors'
@@ -192,11 +192,19 @@ export default memo(function GalleryView({
   fields,
   view,
   onRowClick,
+  loading = false,
+  error = false,
+  onRetry,
 }: {
   rows: RowResponse[]
   fields: Field[]
   view?: View | null
   onRowClick?: (r: RowResponse) => void
+  /** 数据请求进行中（且暂无缓存行）—— 显示骨架卡而不是「暂无数据」 */
+  loading?: boolean
+  /** 数据请求失败 —— 显示失败态与重试，不能伪装成空表 */
+  error?: boolean
+  onRetry?: () => void
 }) {
   const opts = useMemo(
     () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, GALLERY_OPTIONS),
@@ -210,13 +218,55 @@ export default memo(function GalleryView({
     setVisibleCount(GALLERY_BATCH_SIZE)
   }, [rows, view?.id])
 
+  const minColPx = GALLERY_COLUMN_MIN_PX[config.cardSize]
+
+  if (error) {
+    return (
+      <div data-testid="gallery-view" data-state="error" style={{ padding: 48 }}>
+        <Empty description="数据加载失败">
+          {onRetry && <Button data-testid="gallery-retry" onClick={onRetry}>重试</Button>}
+        </Empty>
+      </div>
+    )
+  }
+
   if (rows.length === 0) {
-    return <Empty data-testid="gallery-view" description="暂无数据" style={{ padding: 48 }} />
+    // 加载态与空态必须区分：否则切表 / 返回表页的首帧永远显示「暂无数据」，看起来像数据没了
+    if (loading) {
+      return (
+        <div
+          data-testid="gallery-loading"
+          style={{
+            flex: 1,
+            minHeight: 300,
+            overflow: 'hidden',
+            padding: '0 2px 8px',
+            display: 'grid',
+            gridTemplateColumns: `repeat(auto-fill, minmax(${minColPx}px, 1fr))`,
+            gap: 16,
+          }}
+        >
+          {Array.from({ length: 6 }, (_, i) => (
+            <div
+              key={i}
+              style={{
+                padding: 14,
+                background: 'var(--cn-bg-container)',
+                border: '1px solid var(--cn-border)',
+                borderRadius: 'var(--cn-radius-lg)',
+              }}
+            >
+              <Skeleton active title={{ width: '70%' }} paragraph={{ rows: 3 }} />
+            </div>
+          ))}
+        </div>
+      )
+    }
+    return <Empty data-testid="gallery-view" data-state="empty" description="暂无数据" style={{ padding: 48 }} />
   }
 
   const visibleRows = rows.slice(0, visibleCount)
   const remaining = rows.length - visibleRows.length
-  const minColPx = GALLERY_COLUMN_MIN_PX[config.cardSize]
 
   return (
     <div

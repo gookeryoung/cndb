@@ -113,4 +113,12 @@ describe('reset 回初值', () => {
     expect(st.offset).toBe(0)
     expect(st.limit).toBe(50)
   })
+
+  it('tableKey 记录状态归属，缺省表示未归属任何表', () => {
+    useGridViewStore.getState().reset('10/100')
+    expect(useGridViewStore.getState().tableKey).toBe('10/100')
+
+    useGridViewStore.getState().reset()
+    expect(useGridViewStore.getState().tableKey).toBeNull()
+  })
 })

@@ -196,7 +196,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 - 当前阶段：P0-P1 已落地（gallery 类型 + 组件 + 配置 schema + 注册清单 + 后端/seed 校验；两表 CSV + 12 个 seed 视图）
 - 追加（2026-10-23，ADR 0019 C9）：两表字段随 ADR 0019 中文化（`日期,地区,来源,摘要,标题,主题,趋势判断,链接` / `烹饪时长,菜系,难度,菜名,主要食材,分步做法,小贴士`），`views.json` 的 12 个视图字段引用、`fields.json` 必填设置、`datasource.json` 新增的两条 `llm_prompt` 任务（中文映射 / 幂等键，`manual` 调度）同轮改完；e2e 只按卡片数与文案断言，不依赖字段名
-- 已完成：前端 `172` 个测试文件 / `2109` 例全绿（核心集合 lines 97.69% / branches 100%，全局 lines 82.06%）；后端 `make test` 5367 passed / 8 skipped；`make check-fast` 全绿；e2e `gallery-view.spec.ts` 本地实跑 3 passed（setup + 两表用例）；`bundle:budget` 全绿（GridPage +1.2%，在 5% 容差内 warn）
+- 已完成：前端 `172` 个测试文件 / `2115` 例全绿；后端 `make test` 通过；`make check-fast` 全绿；e2e `gallery-view.spec.ts` 本地实跑通过；`bundle:budget` 全绿
 - 下一步：合并后由人确认 `Status`；如需超 2000 行全量画廊另立行虚拟化 ADR；观察默认画廊视图下「新增行」入口的发现性反馈
-- 已知坑：① CSV 首列 `id` 必须删（`_row_to_dict` 用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部资讯 / 全部菜谱」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在
-- 最近一次全绿：2026-10-22（`make check-fast` + `make test` 5367 passed + 前端全量 vitest 2109 passed + e2e `gallery-view.spec.ts` 3 passed + `bundle:budget`）
+- 已知坑：① CSV 首列 `id` 必须删（`_row_to_dict` 用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部资讯 / 全部菜谱」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在；⑥ **视图状态是单例 store，离开表页不清理**：`reset()` 与「视图匹配」effect 在同一 commit 内先后执行，匹配逻辑必须读 `useGridViewStore.getState()` 的实时值（用渲染闭包会误判「目标已就位」跳过 `loadView`，返回表页时默认画廊退化成空表格）；跨表首帧由 `store.tableKey` 归属校验兜住脏 `filters` / `sortings`。回归用例：`GridPage.landingView.test.tsx`、e2e `gallery-view.spec.ts`
+- 最近一次全绿：2026-10-23（`make check-fast` + 前端全量 vitest 2115 passed + 画廊切页往返浏览器实测）

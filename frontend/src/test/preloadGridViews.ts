@@ -9,6 +9,7 @@
 export async function preloadGridViews(): Promise<void> {
     await Promise.all([
         import('@/pages/grid/views/KanbanView'),
+        import('@/pages/grid/views/GalleryView'),
         import('@/pages/grid/views/CalendarView'),
         import('@/pages/grid/views/GanttView'),
         import('@/pages/grid/views/WbsView'),

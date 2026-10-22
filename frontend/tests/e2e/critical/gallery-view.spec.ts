@@ -67,4 +67,20 @@ test.describe("gallery 卡片画廊 — seed 注入视图渲染", () => {
     await expect(page.getByTestId("gallery-tag").first()).toBeVisible();
     await expect(page.getByTestId("gallery-summary").first()).toBeVisible();
   });
+
+  test("切到工作区其它页签再返回，画廊仍按默认视图渲染（不回落表格）", async ({ page, request }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    await openGalleryTable(page, request, "国际形势发展动态");
+    await expect(page.getByTestId("gallery-card")).toHaveCount(12);
+
+    // 工作区页签「数据源同步」→ 左侧表列表点回本表（真实用户路径）
+    await page.locator(".ant-tabs-tab", { hasText: "数据源同步" }).first().click();
+    await expect(page).toHaveURL(/\/datasource/);
+    await page.getByRole("menuitem", { name: /国际形势发展动态/ }).first().click();
+
+    // 返回后必须仍是画廊，且卡片齐全（回归：视图状态被 reset 后未重新匹配，mode 回落 grid）
+    await expect(page.getByTestId("gallery-view")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByTestId("gallery-card")).toHaveCount(12);
+  });
 });

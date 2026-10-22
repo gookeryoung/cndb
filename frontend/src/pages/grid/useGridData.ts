@@ -37,7 +37,7 @@ export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSo
   const effectiveLimit = mode === 'grid' ? limit : VIEW_FETCH_ALL_LIMIT
   const effectiveOffset = mode === 'grid' ? offset : 0
 
-  const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 }, isFetching } = useTableRecords(
+  const { data: rowList = { items: [], total: 0, offset: 0, limit: 0 }, isFetching, isError, refetch } = useTableRecords(
     wid!, tid!, mode,
     {
       offset: effectiveOffset,
@@ -48,7 +48,7 @@ export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSo
     },
   )
 
-  return { effectiveFilters, sortsParam, effectiveLimit, effectiveOffset, rowList, isFetching }
+  return { effectiveFilters, sortsParam, effectiveLimit, effectiveOffset, rowList, isFetching, isError, refetch }
 }
 
 /**
