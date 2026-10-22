@@ -10,6 +10,7 @@ import {
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, FileTextOutlined, BarChartOutlined, CloudDownloadOutlined,
+  RobotOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, workspaceApi } from '@/api'
@@ -297,6 +298,10 @@ export default function MainLayout() {
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
     { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => openSettings() },
+    // 大模型设置：桌面端顶栏有常驻图标入口，移动端顶栏放不下，收进用户菜单直达页签
+    ...(isMobile
+      ? [{ key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') }]
+      : []),
     // 关于系统：普通用户与管理员均可见，查看版本等基本信息
     { key: 'about', icon: <InfoCircleOutlined />, label: '关于系统', onClick: () => setAboutOpen(true) },
     { type: 'divider' },
@@ -427,6 +432,19 @@ export default function MainLayout() {
         {isMobile ? searchNode : <div className="cn-header-search">{searchNode}</div>}
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+          {/* 大模型设置入口 —— 个人级连接与调用记录；桌面端常驻图标（帮助左侧），
+              移动端顶栏空间紧张，入口收进用户菜单（见 userMenuItems） */}
+          {!isMobile && (
+            <Tooltip title="大模型设置：连接配置与调用记录">
+              <Button
+                type="text"
+                size="small"
+                icon={<RobotOutlined />}
+                data-testid="llm-settings-btn"
+                onClick={() => openSettings('llm')}
+              />
+            </Tooltip>
+          )}
           {/* 帮助中心入口 —— 所有登录用户可见 */}
           <Tooltip title="帮助中心与新手引导">
             <Button
@@ -448,7 +466,7 @@ export default function MainLayout() {
             </Tooltip>
           )}
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-            <Space style={{ cursor: 'pointer' }}>
+            <Space style={{ cursor: 'pointer' }} data-testid="user-menu-trigger">
               <Avatar size="small" icon={<UserOutlined />} />
               {/* 右上角优先展示昵称，无昵称时回退账号名 */}
               {!isMobile && <span>{user?.nickname || user?.username || ''}</span>}

@@ -1,4 +1,4 @@
-/** 用户设置面板 — 用户资料 + 大模型（个人连接配置）+ 主题（配色/字体）+ 表格（显示/操作）. */
+/** 用户设置面板 — 用户资料 + 主题（配色/字体）+ 表格（显示/操作）+ 大模型（个人连接配置）. */
 
 import { useEffect } from 'react'
 import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
@@ -368,15 +368,17 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
       width={760}
+      className="settings-modal"
       destroyOnHidden
     >
       <Tabs
         defaultActiveKey={initialTab ?? 'profile'}
         items={[
           { key: 'profile', label: '用户资料', children: <ProfilePanel /> },
-          { key: 'llm', label: '大模型', children: <LlmConfigPanel /> },
           { key: 'theme', label: '主题', children: <ThemePanel /> },
           { key: 'table', label: '表格', children: <TablePanel /> },
+          // 大模型入口已在顶栏常驻（桌面图标 / 移动端用户菜单），设置内排在「表格」右侧，避免与高频的资料 / 主题争前排
+          { key: 'llm', label: '大模型', children: <LlmConfigPanel /> },
         ]}
       />
     </Modal>

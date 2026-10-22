@@ -1,5 +1,5 @@
 /**
- * SettingsModal 组件测试 —— 个人设置（用户资料 + 大模型 + 主题/字体 + 表格）.
+ * SettingsModal 组件测试 —— 个人设置（用户资料 + 主题/字体 + 表格 + 大模型）.
  *
  * 覆盖：Tab 结构与 initialTab 定位 / 用户资料紧凑表单（用户名只读）保存 /
  * 大模型页签入口 / 主题卡片选择持久化 / 字体设置（字号/加粗）持久化 /
@@ -62,10 +62,8 @@ describe('SettingsModal 个人设置', () => {
   it('渲染四个 Tab 与全部主题卡片（10 张），主题页含配色与字体两节', () => {
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
-    expect(screen.getByRole('tab', { name: '用户资料' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '大模型' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '主题' })).toBeInTheDocument()
-    expect(screen.getByRole('tab', { name: '表格' })).toBeInTheDocument()
+    // 页签顺序：大模型排在「表格」右侧（顶栏已有直达入口，设置内靠后）
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['用户资料', '主题', '表格', '大模型'])
     // 主题卡片惰性渲染，切到主题 Tab 后才能查到
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     const grid = document.querySelector('[data-testid="theme-grid"]')

@@ -23,6 +23,13 @@ vi.mock('@/hooks/useResponsive', async () => {
     return { ...actual, useResponsive: () => responsiveState }
 })
 
+// 个人设置弹窗桩：真实面板会请求 llm 接口且依赖内部状态；
+// 桩只暴露 open 与 initialTab，用于验证入口直达「大模型」页签
+vi.mock('@/pages/settings/SettingsModal', () => ({
+    default: ({ open, initialTab }: { open: boolean; initialTab?: string }) =>
+        open ? <div data-testid="settings-modal-stub">{initialTab ?? 'profile'}</div> : null,
+}))
+
 /** 管理台路由桩 —— 展示当前 pathname 供断言 */
 function AdminStub() {
     const loc = useLocation()
@@ -250,6 +257,54 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.getByText('应用名称')).toBeInTheDocument()
         expect(screen.getByText('服务器时间')).toBeInTheDocument()
         expect(screen.queryByText('database_url')).toBeNull()
+    })
+})
+
+describe('MainLayout 大模型入口', () => {
+    it('桌面端顶栏在「帮助」左侧提供大模型图标入口，点击直达个人设置「大模型」页签', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
+        })
+
+        const llmBtn = screen.getByTestId('llm-settings-btn')
+        // DOM 顺序：大模型 → 帮助（位于帮助左侧）
+        expect(
+            llmBtn.compareDocumentPosition(screen.getByTestId('help-btn'))
+            & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy()
+
+        fireEvent.click(llmBtn)
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-modal-stub')).toHaveTextContent('llm')
+        })
+    })
+
+    it('移动端顶栏不常驻，入口收进用户菜单「大模型设置」并直达页签', async () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 375, height: 667,
+        }
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByTestId('mobile-nav-btn')).toBeVisible()
+        })
+        // 顶栏不放常驻按钮，避免挤压本就紧张的移动端空间
+        expect(screen.queryByTestId('llm-settings-btn')).toBeNull()
+
+        // 移动端右上角不显示昵称文字，经头像容器触发下拉
+        fireEvent.mouseEnter(screen.getByTestId('user-menu-trigger'))
+        fireEvent.click(await screen.findByText('大模型设置'))
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-modal-stub')).toHaveTextContent('llm')
+        })
+
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
     })
 })
 
