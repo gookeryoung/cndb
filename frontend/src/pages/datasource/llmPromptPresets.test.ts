@@ -1,4 +1,4 @@
-/** 推荐提示词预设校验：5 组齐全、字段合法、占位符符合后端模板语法.
+/** 推荐提示词预设校验：8 组齐全、字段合法、占位符符合后端模板语法.
  *
  * 占位符规则对齐 `src/cndb/plugins/datasource/providers/template.py`：
  * `{name}` 是占位符（缺变量即保存失败），`{{` / `}}` 是字面花括号。
@@ -37,12 +37,21 @@ function collectPlaceholders(text: string): string[] {
   return names
 }
 
-const REQUIRED_NAMES = ['每日新闻摘要', '城市天气预报', '股票 / 基金行情快照', '电商竞品价格监控', '行业政策公告跟踪']
+const REQUIRED_NAMES = [
+  '每日新闻摘要',
+  '城市天气预报',
+  '股票 / 基金行情快照',
+  '电商竞品价格监控',
+  '行业政策公告跟踪',
+  '商业航天新闻动态',
+  '美食推荐做法',
+  '国际形势发展动态',
+]
 
 describe('LLM_PROMPT_PRESETS', () => {
-  it('提供 5 组场景且 id 唯一', () => {
-    expect(LLM_PROMPT_PRESETS).toHaveLength(5)
-    expect(new Set(LLM_PROMPT_PRESETS.map(p => p.id)).size).toBe(5)
+  it('提供 8 组场景且 id 唯一', () => {
+    expect(LLM_PROMPT_PRESETS).toHaveLength(8)
+    expect(new Set(LLM_PROMPT_PRESETS.map(p => p.id)).size).toBe(8)
     expect(LLM_PROMPT_PRESETS.map(p => p.name)).toEqual(REQUIRED_NAMES)
   })
 

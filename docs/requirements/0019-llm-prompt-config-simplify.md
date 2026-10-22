@@ -19,7 +19,7 @@
 | C2 | 尽可能只配置提示词项即可确保抓取到合适的数据 | 工作区级「大模型连接」配置一次（`base_url` / `model` / `api_key` 加密 / 可选 `system_prompt` 覆盖）；任务 `request_spec` 允许缺省 `url_template` 与 `llm.model`，保存与运行时由连接配置 / 默认值补齐；未配置 `system` 时自动使用内置默认系统提示词 | `src/cndb/plugins/datasource/services/connection.py`、`routers/llm_config.py`、`providers/llm_prompt.py`、`services/runner.py` | 单测：连接解析补 `url_template` / `llm.model`、缺省 url/model 的 `request_spec` 可通过校验；提示词模板宽松求值（未知 `{xxx}` / JSON 裸花括号原样保留、`{today}` 仍替换）；接口测试：只填用户提示词创建任务成功，运行期使用连接配置 |
 | C3 | 支持空数据表自动新增和更新数据的能力 | 目标表留空 → 按任务名称自动建表并回填 `table_id`；目标表存在但为空 → 自动新增缺失字段；幂等键留空 → 从结果行自动识别（单列 / 最多 3 列组合）；重复运行更新既有行、不重复插入 | `src/cndb/plugins/datasource/services/auto_table.py`、`services/write.py`、`services/runner.py` | 集成测试：首轮自动建表 + inserted，次轮 updated 且行数不增；已有空表自动补字段；无唯一列时退化为追加并留痕 |
 | C4 | 系统提示词请默认配置好 | 内置高质量中文 `DEFAULT_SYSTEM_PROMPT`（角色 / 只输出 JSON / `rows` 结构 / 字段命名与类型约定 / 不得编造 / 日期口径）；未显式配置时自动使用，前端可查看默认全文并可覆盖 | `src/cndb/plugins/datasource/providers/llm_prompt.py`、`routers/llm_config.py` | 单测：未配置 system 时请求体 system 为内置默认；接口测试：`GET llm-config` 返回 `default_system_prompt` |
-| C5 | 提供5组典型可用的推荐用户提示词参考示例 | 内置 5 组预设（每日新闻摘要 / 城市天气 / 股票行情快照 / 电商竞品价格 / 行业政策公告），每组含名称、说明、建议目标表字段、建议幂等键与 prompt 示例；前端一键套用 | `frontend/src/pages/datasource/llmPromptPresets.ts`、`DatasourcePage.tsx` | 前端单测：预设恰好 5 组、字段齐全、占位符合法、一键填入表单 |
+| C5 | 提供5组典型可用的推荐用户提示词参考示例 | 内置 8 组预设（首批 5 组：每日新闻摘要 / 城市天气 / 股票行情快照 / 电商竞品价格 / 行业政策公告；2026-10-22 追加 3 组：商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），每组含名称、说明、建议目标表字段、建议幂等键与 prompt 示例；前端一键套用 | `frontend/src/pages/datasource/llmPromptPresets.ts`、`DatasourcePage.tsx` | 前端单测：预设恰好 5 组、字段齐全、占位符合法、一键填入表单 |
 | C6 | 并给出说明 | 每组预设给出「适用场景 / 建议目标表字段 / 建议幂等键 / prompt 示例」说明，页面在套用时展示，文档附录保留同一份说明 | `frontend/src/pages/datasource/llmPromptPresets.ts`、`docs/adr/0019-llm-prompt-config-simplify.md` | 前端单测：套用后展示该组说明；文档：ADR 附录 5 组说明齐全可对照 |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。
@@ -48,7 +48,7 @@
 - [x] **API Key 存储与导出** → 工作区连接内 Fernet 加密、只写不回显；不随备份导出（2026-10-22 确认）
 - [x] **系统提示词默认值** → 内置完整默认系统提示词，未配置时自动使用；连接配置可覆盖（2026-10-22 确认）
 - [x] **空表自动化范围** → 目标表留空自动建表 / 已有空表自动补字段 / 自动识别幂等键；仅对 `llm_prompt` 生效，其它 provider 不变（2026-10-22 确认）
-- [x] **5 组推荐提示词清单** → 每日新闻摘要、城市天气、股票行情快照、电商竞品价格、行业政策公告（2026-10-22 确认）
+- [x] **推荐提示词清单** → 首批 5 组：每日新闻摘要、城市天气、股票行情快照、电商竞品价格、行业政策公告（2026-10-22 确认）；追加 3 组：商业航天新闻动态、美食推荐做法、国际形势发展动态（2026-10-22 用户追加，共 8 组）
 - [x] **兼容与备份** → 既有 `llm_prompt` 任务（会话 + url/model）与其它 provider 行为不变；备份升 v6，导入端兼容 1-5（2026-10-22 确认）
 
 ## 卡点

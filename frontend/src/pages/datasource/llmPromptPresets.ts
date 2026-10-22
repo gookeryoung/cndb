@@ -1,4 +1,4 @@
-/** 大模型提示词任务 —— 5 组典型场景的推荐用户提示词.
+/** 大模型提示词任务 —— 8 组典型场景的推荐用户提示词（首批 5 组 + 2026-10-22 追加 3 组：商业航天 / 美食做法 / 国际形势）.
  *
  * 设计口径（ADR 0019 P2）：
  * - 只描述业务任务，不依赖任何具体数据源；API 地址 / 模型 / API Key 由工作区级
@@ -94,6 +94,48 @@ export const LLM_PROMPT_PRESETS: LlmPromptPreset[] = [
       '每条记录给出：发布日期、发文机构、政策标题、政策摘要（不超过 200 字）、政策类型、生效日期、原文链接。',
       '字段要求（全部使用英文 snake_case）：date（发布日期 YYYY-MM-DD）、agency（发文机构）、title（政策标题）、summary（摘要）、policy_type（政策类型：通知 / 征求意见 / 办法 / 规划等）、effective_date（生效日期 YYYY-MM-DD，暂无则空字符串）、url（原文链接）。',
       '同一机构同一日期同一标题只能有一条记录，date + agency + title 为稳定键。',
+      '只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。不要输出 Markdown 代码围栏或解释文字。',
+    ].join('\n'),
+  },
+  {
+    id: 'commercial_aerospace',
+    name: '商业航天新闻动态',
+    description: '跟踪商业航天公司的发射、融资、政策与订单动态，date + company + title 去重，适合行业情报看板。输出对象数组（或 rows 包裹对象）。',
+    target_fields: ['date', 'company', 'event_type', 'title', 'summary', 'source', 'url', 'importance'],
+    match_keys: ['date', 'company', 'title'],
+    prompt: [
+      '请汇总 {today} 商业航天领域的新闻动态，覆盖国内外主要商业航天公司（如 SpaceX、Blue Origin、Rocket Lab、蓝箭航天、星际荣耀、星河动力等）以及监管机构与发射场。',
+      '重点收集：发射任务与结果、融资与并购、政策与监管、订单与合作协议、关键技术进展；同一天同一公司同一标题只保留一条。',
+      '字段要求（全部使用英文 snake_case）：date（日期 YYYY-MM-DD）、company（公司或机构）、event_type（事件类型：发射/融资/政策/订单/技术）、title（标题）、summary（一句话摘要，不超过 150 字）、source（来源媒体）、url（原文链接）、importance（重要度 1-5 的整数）。',
+      '同一天同一公司同一标题只能有一条记录，date + company + title 为稳定键。',
+      '只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。不要输出 Markdown 代码围栏或解释文字。',
+    ].join('\n'),
+  },
+  {
+    id: 'food_recipes',
+    name: '美食推荐做法',
+    description: '按菜名 + 菜系整理家庭可操作的美食做法，适合菜谱库与每日菜单推荐；dish_name + cuisine 即天然幂等键。输出对象数组（或 rows 包裹对象）。',
+    target_fields: ['dish_name', 'cuisine', 'difficulty', 'cook_time_min', 'ingredients', 'steps', 'tips'],
+    match_keys: ['dish_name', 'cuisine'],
+    prompt: [
+      '请推荐 {today} 适合家庭制作的美食做法，覆盖家常菜、汤羹、主食、甜点四类，每类 2-3 道，优先当季食材。',
+      '每道菜给出：菜名、菜系、难度、烹饪时长、主要食材、分步做法、关键小贴士。',
+      '字段要求（全部使用英文 snake_case）：dish_name（菜名）、cuisine（菜系，如 川菜/粤菜/西餐）、difficulty（难度：简单/中等/困难）、cook_time_min（烹饪时长，分钟，整数）、ingredients（主要食材，用顿号分隔的文本）、steps（分步做法，用编号与分号分隔的文本）、tips（关键小贴士，无则空字符串）。',
+      '同一菜名同一菜系只能有一条记录，dish_name + cuisine 为稳定键。',
+      '只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。不要输出 Markdown 代码围栏或解释文字。',
+    ].join('\n'),
+  },
+  {
+    id: 'global_affairs',
+    name: '国际形势发展动态',
+    description: '梳理大国关系、地区冲突、全球经济与多边机制等国际动态，date + region + title 去重，适合形势研判与每日晨报。输出对象数组（或 rows 包裹对象）。',
+    target_fields: ['date', 'region', 'topic', 'title', 'summary', 'source', 'url', 'trend'],
+    match_keys: ['date', 'region', 'title'],
+    prompt: [
+      '请梳理 {today} 的国际形势发展动态，覆盖大国关系、地区冲突、全球经济与贸易、多边机制与外交活动等主题，覆盖主要地区（亚太、欧洲、中东、北美、非洲、拉美）。',
+      '每条记录给出：日期、地区/国家、主题、标题、摘要、来源、原文链接、趋势判断。',
+      '字段要求（全部使用英文 snake_case）：date（日期 YYYY-MM-DD）、region（地区或国家）、topic（主题分类）、title（标题）、summary（摘要，不超过 150 字）、source（来源媒体）、url（原文链接）、trend（趋势判断：缓和/升温/僵持/不确定）。',
+      '同一天同一地区同一标题只能有一条记录，date + region + title 为稳定键。',
       '只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。不要输出 Markdown 代码围栏或解释文字。',
     ].join('\n'),
   },

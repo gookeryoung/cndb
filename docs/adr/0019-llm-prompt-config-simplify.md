@@ -19,7 +19,7 @@ Related: `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/
 | C2 | 尽可能只配置提示词项即可确保抓取到合适的数据 | 新增工作区级「大模型连接」（`base_url` / `model` / `api_key` / 可选 `system_prompt`），`connection.resolve_request_spec_defaults` 在保存与运行时补齐 `url_template` / `llm.model`；未配置 system 时使用内置默认系统提示词；提示词模板用宽松求值（`render_text_lenient`）：JSON 裸花括号与未知 `{xxx}` 原样保留，仅替换已注册变量，`{{`/`}}` 仍转义为字面花括号 |
 | C3 | 支持空数据表自动新增和更新数据的能力 | `auto_table.ensure_job_table`（留空目标表 → 按任务名建表）、`is_table_empty` + `upsert_rows(auto_add_fields=True)`（空表补字段）、`infer_match_keys` + `upsert_rows(auto_match_keys=True)`（自动幂等键）；重复运行只更新不重复插入 |
 | C4 | 系统提示词请默认配置好 | `providers/llm_prompt.py` 新增完整 `DEFAULT_SYSTEM_PROMPT`；请求构造在未配置 system 时使用它；`GET llm-config` 返回 `default_system_prompt` 供前端查看 / 覆盖 |
-| C5 | 提供5组典型可用的推荐用户提示词参考示例 | `frontend/src/pages/datasource/llmPromptPresets.ts` 内置 5 组预设（每日新闻摘要 / 城市天气 / 股票行情快照 / 电商竞品价格 / 行业政策公告），任务抽屉「推荐提示词」一键套用 |
+| C5 | 提供5组典型可用的推荐用户提示词参考示例 | `frontend/src/pages/datasource/llmPromptPresets.ts` 内置 8 组预设（首批 5 组：每日新闻摘要 / 城市天气 / 股票行情快照 / 电商竞品价格 / 行业政策公告；2026-10-22 追加 3 组：商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），任务抽屉「推荐提示词」一键套用 |
 | C6 | 并给出说明 | 每组预设带 `description / target_fields / match_keys / prompt`，套用时在页面展示「适用场景 + 建议目标表字段 + 建议幂等键」；同一份说明写入本 ADR 附录，页面与文档同源 |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
@@ -155,7 +155,7 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 | 层 | 文件 | 改动 |
 |---|---|---|
 | API 类型 / 封装 | `frontend/src/api/datasource.ts` | 新增 `LlmConfig` 类型、`getLlmConfig` / `updateLlmConfig`；`TestConnection` 的 `session_id` 可省略；`PreviewResult` 增 `suggested_match_keys` |
-| 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 5 组预设（名称 / 说明 / 建议目标表字段 / 建议幂等键 / prompt 示例），独立单测校验 |
+| 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 8 组预设（名称 / 说明 / 建议目标表字段 / 建议幂等键 / prompt 示例），独立单测校验 |
 | 连接配置弹窗 | `frontend/src/pages/datasource/DatasourcePage.tsx` | 页头「大模型连接」按钮 + 已配置 / 未配置 Tag；弹窗配置 base_url / model / api_key（只写不回显）/ 可选 system_prompt（留空用内置默认并展示默认全文），支持「测试连接」 |
 | 任务抽屉 | `frontend/src/pages/datasource/DatasourcePage.tsx` | `llm_prompt` 主表单只留任务名称 / 用户提示词 / 目标表（留空自动建表）；系统提示词、幂等键、调度、时间区间、凭证会话、temperature / max_tokens / json_mode 收进高级设置；「推荐提示词」一键套用并展示说明；预览展示自动识别的幂等键 |
 | 页面测试 | `frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | 极简表单、预设套用、保存 payload、连接弹窗保存 / 测试、预览幂等键、非 LLM 任务回归 |
@@ -190,7 +190,7 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 |---|---|---|
 | **P0** | 工作区级大模型连接（模型 / 迁移 / GET·PUT 端点 / 连接解析）+ 内置系统提示词 + prompt-only 校验 / 连通测试回退 / 备份 v6 | 中（模型 + 迁移 + 备份格式） |
 | **P1** | 自动建表、空表补字段、自动幂等键（`auto_table` + `write` + `runner` + 预览建议键） | 中（写路径改动，需既有落表回归） |
-| **P2** | 前端极简表单 + 5 组推荐提示词 + 测试与文档 | 中（跨前后端契约） |
+| **P2** | 前端极简表单 + 8 组推荐提示词 + 测试与文档 | 中（跨前后端契约） |
 
 ## 决策记录（唯一决策台账）
 
@@ -238,13 +238,13 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地并提交（`d0e2841e`）（后端连接 / 系统提示词 / 自动落表 + 前端极简表单与 5 组预设）
-- 已完成：P0 工作区级大模型连接 + 内置默认系统提示词 + prompt-only 校验 / 连通测试回退 + 备份 v6 + 提示词宽松模板（`render_text_lenient`，JSON 裸花括号可直接写）；P1 自动建表 / 空表补字段 / 自动幂等键 + 预览建议键 + CLI `preview` / `run --dry-run` 同步输出 `suggested_match_keys`；P2 前端极简表单 + 5 组推荐提示词 + 测试与文档
+- 当前阶段：P0-P2 已落地并提交（`d0e2841e`）（后端连接 / 系统提示词 / 自动落表 + 前端极简表单与 8 组预设）
+- 已完成：P0 工作区级大模型连接 + 内置默认系统提示词 + prompt-only 校验 / 连通测试回退 + 备份 v6 + 提示词宽松模板（`render_text_lenient`，JSON 裸花括号可直接写）；P1 自动建表 / 空表补字段 / 自动幂等键 + 预览建议键 + CLI `preview` / `run --dry-run` 同步输出 `suggested_match_keys`；P2 前端极简表单 + 8 组推荐提示词 + 测试与文档
 - 下一步：人工确认后保持 `Status: Implemented`；如后续要支持「自动幂等键人工纠错入口 / 多连接」另立 ADR
 - 已知坑：自动幂等键只在结果行内可判定，无唯一组合时退化为追加（看 `run.detail.auto_match_keys`）；自动补字段只在空表启用，已有表未知列按原策略；备份不导出 Key，导入后需重填；工作区连接未配置时运行错误文案指向「大模型连接」而非 401；宽松模板只作用于 `llm_prompt` 的 system / user 提示词，URL 与 headers 仍严格；CLI 预览需传 `db` 才会应用连接默认值并给出 `suggested_match_keys`
 - 最近一次全绿：`make check`（2026-10-22，后端 5262 passed / 覆盖率 97.74%，前端静态与覆盖率门槛通过）；提交 `d0e2841e`
 
-## 附录：5 组推荐用户提示词说明
+## 附录：8 组推荐用户提示词说明（2026-10-22 追加 3 组）
 
 页面「推荐提示词」与本节保持同一份口径（预设定义见 `frontend/src/pages/datasource/llmPromptPresets.ts`；prompt 中的 `{{` / `}}` 是后端模板语法里的字面花括号，运行时还原为 `{` / `}`）。
 
@@ -255,6 +255,9 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 | `market_snapshot` | 股票 / 基金行情快照 | `trade_date`、`symbol`、`name`、`close`、`change_pct`、`volume`、`amount`、`turnover_rate` | `trade_date` + `symbol` |
 | `ecommerce_price` | 电商竞品价格监控 | `date`、`platform`、`product_id`、`title`、`price`、`list_price`、`promotion`、`sales` | `date` + `platform` + `product_id` |
 | `policy_tracker` | 行业政策公告跟踪 | `date`、`agency`、`title`、`summary`、`policy_type`、`effective_date`、`url` | `date` + `agency` + `title` |
+| `commercial_aerospace` | 商业航天新闻动态 | `date`、`company`、`event_type`、`title`、`summary`、`source`、`url`、`importance` | `date` + `company` + `title` |
+| `food_recipes` | 美食推荐做法 | `dish_name`、`cuisine`、`difficulty`、`cook_time_min`、`ingredients`、`steps`、`tips` | `dish_name` + `cuisine` |
+| `global_affairs` | 国际形势发展动态 | `date`、`region`、`topic`、`title`、`summary`、`source`、`url`、`trend` | `date` + `region` + `title` |
 
 ### 1. 每日新闻摘要（`daily_news`）
 
@@ -329,3 +332,49 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 同一机构同一日期同一标题只能有一条记录，date + agency + title 为稳定键。
 只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。
 ```
+
+### 6. 商业航天新闻动态（`commercial_aerospace`）
+
+- **适用场景**：跟踪商业航天公司的发射任务、融资并购、政策监管、订单合作与技术进展，适合行业情报看板；`date + company + title` 去重。
+- **建议目标表字段**：`date`（日期 `YYYY-MM-DD`）、`company`（公司或机构）、`event_type`（发射 / 融资 / 政策 / 订单 / 技术）、`title`、`summary`（≤150 字）、`source`、`url`、`importance`（重要度 1-5 整数）。
+- **建议幂等键**：`date` + `company` + `title`。
+- **prompt 示例**（节选）：
+
+```text
+请汇总 {today} 商业航天领域的新闻动态，覆盖国内外主要商业航天公司以及监管机构与发射场。
+重点收集：发射任务与结果、融资与并购、政策与监管、订单与合作协议、关键技术进展。
+字段要求（全部使用英文 snake_case）：date、company、event_type、title、summary、source、url、importance。
+同一天同一公司同一标题只能有一条记录，date + company + title 为稳定键。
+只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。
+```
+
+### 7. 美食推荐做法（`food_recipes`）
+
+- **适用场景**：按菜名 + 菜系整理家庭可操作的美食做法，适合菜谱库、每日菜单与美食内容推荐；`dish_name + cuisine` 即天然幂等键。
+- **建议目标表字段**：`dish_name`（菜名）、`cuisine`（菜系）、`difficulty`（简单 / 中等 / 困难）、`cook_time_min`（分钟，整数）、`ingredients`（主要食材文本）、`steps`（分步做法文本）、`tips`（小贴士，无则空串）。
+- **建议幂等键**：`dish_name` + `cuisine`。
+- **prompt 示例**（节选）：
+
+```text
+请推荐 {today} 适合家庭制作的美食做法，覆盖家常菜、汤羹、主食、甜点四类，每类 2-3 道，优先当季食材。
+每道菜给出：菜名、菜系、难度、烹饪时长、主要食材、分步做法、关键小贴士。
+字段要求（全部使用英文 snake_case）：dish_name、cuisine、difficulty、cook_time_min、ingredients、steps、tips。
+同一菜名同一菜系只能有一条记录，dish_name + cuisine 为稳定键。
+只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。
+```
+
+### 8. 国际形势发展动态（`global_affairs`）
+
+- **适用场景**：梳理大国关系、地区冲突、全球经济与多边机制等国际动态，适合形势研判与每日晨报；`date + region + title` 去重。
+- **建议目标表字段**：`date`（日期 `YYYY-MM-DD`）、`region`（地区或国家）、`topic`（主题分类）、`title`、`summary`（≤150 字）、`source`、`url`、`trend`（缓和 / 升温 / 僵持 / 不确定）。
+- **建议幂等键**：`date` + `region` + `title`。
+- **prompt 示例**（节选）：
+
+```text
+请梳理 {today} 的国际形势发展动态，覆盖大国关系、地区冲突、全球经济与贸易、多边机制与外交活动等主题。
+每条记录给出：日期、地区/国家、主题、标题、摘要、来源、原文链接、趋势判断。
+字段要求（全部使用英文 snake_case）：date、region、topic、title、summary、source、url、trend。
+同一天同一地区同一标题只能有一条记录，date + region + title 为稳定键。
+只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。
+```
+
