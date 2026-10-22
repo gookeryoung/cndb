@@ -16,7 +16,7 @@ import {
   SaveOutlined, EditOutlined, PlusOutlined, DeleteOutlined, StarOutlined,
   ColumnHeightOutlined, CalendarOutlined, LineChartOutlined, PartitionOutlined,
   ApartmentOutlined,
-  HolderOutlined, TableOutlined, BarChartOutlined, NodeIndexOutlined,
+  HolderOutlined, TableOutlined, BarChartOutlined, NodeIndexOutlined, PictureOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -39,6 +39,7 @@ const VIEW_MODE_META: Record<string, { label: string; icon: ReactNode }> = {
   grid: { label: '表格 (Grid)', icon: <ColumnHeightOutlined /> },
   tree: { label: '树 (Tree)', icon: <ApartmentOutlined /> },
   kanban: { label: '看板 (Kanban)', icon: <AppstoreOutlined /> },
+  gallery: { label: '卡片画廊 (Gallery)', icon: <PictureOutlined /> },
   calendar: { label: '日历 (Calendar)', icon: <CalendarOutlined /> },
   gantt: { label: '甘特图 (Gantt)', icon: <LineChartOutlined /> },
   wbs: { label: '工作分解 (WBS)', icon: <PartitionOutlined /> },

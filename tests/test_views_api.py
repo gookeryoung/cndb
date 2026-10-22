@@ -121,6 +121,71 @@ class TestViewsAPI:
         assert r.status_code == 400
         assert "column_field" in r.json()["detail"]
 
+    def test_create_gallery_view_ok(self, client, ws, table, auth_owner):
+        """画廊视图：7 项配置引用存在字段时应创建成功."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "资讯画廊",
+                "view_type": "gallery",
+                "view_options": {
+                    "title_field": "姓名",
+                    "summary_field": "姓名",
+                    "tag_fields": ["姓名"],
+                    "meta_fields": ["姓名"],
+                    "card_size": "medium",
+                    "summary_lines": 3,
+                },
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 201
+        data = r.json()
+        assert data["view_type"] == "gallery"
+        assert data["view_options"]["tag_fields"] == ["姓名"]
+
+    def test_create_gallery_view_invalid_summary_field(self, client, ws, table, auth_owner):
+        """画廊视图：summary_field 引用不存在字段时应返回 400."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏摘要画廊",
+                "view_type": "gallery",
+                "view_options": {"summary_field": "不存在字段"},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "summary_field" in r.json()["detail"]
+
+    def test_create_gallery_view_invalid_tag_field(self, client, ws, table, auth_owner):
+        """画廊视图：tag_fields 含不存在字段时应返回 400 并带下标."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "坏标签画廊",
+                "view_type": "gallery",
+                "view_options": {"tag_fields": ["姓名", "不存在字段"]},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "tag_fields[1]" in r.json()["detail"]
+
+    def test_create_gallery_view_non_string_meta_field(self, client, ws, table, auth_owner):
+        """画廊视图：列表含非字符串项时应返回 400 而非 500."""
+        r = client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
+            json={
+                "name": "脏元信息画廊",
+                "view_type": "gallery",
+                "view_options": {"meta_fields": ["姓名", 42]},
+            },
+            headers=auth_owner,
+        )
+        assert r.status_code == 400
+        assert "meta_fields[1]" in r.json()["detail"]
+
     def test_create_tree_view_ok(self, client, ws, table, auth_owner):
         """树视图：父节点字段引用存在字段时应创建成功."""
         r = client.post(

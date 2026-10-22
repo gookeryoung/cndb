@@ -40,7 +40,7 @@ const quickStartContent = (
         <div>
             <Text strong>4. 按需切换视图</Text>
             <br />
-            <Text type="secondary">同一份数据可以用表格、看板、日历、画廊、甘特图、工作分解六种视图查看。点击视图栏左侧的 + 新建视图，每个视图可单独配置筛选和排序。</Text>
+            <Text type="secondary">同一份数据可以用表格、看板、日历、画廊、甘特图、矩阵、图表等多种视图查看。点击视图栏左侧的 + 新建视图，每个视图可单独配置筛选和排序。</Text>
         </div>
         <div>
             <Text strong>5. 设置权限并协作</Text>
@@ -63,6 +63,11 @@ const viewModeContent = (
             <Text strong>看板视图（Kanban）</Text>
             <br />
             <Text type="secondary">按某个单选/多选字段分组，卡片式拖拽流转，适合任务管理、销售漏斗等状态跟踪场景。创建看板视图时需选择「分组字段」。</Text>
+        </div>
+        <div>
+            <Text strong>卡片画廊视图（Gallery）</Text>
+            <br />
+            <Text type="secondary">卡片墙阅读态：标题 + 摘要 + 彩色标签 + 日期徽章，适合资讯、菜谱等内容型数据浏览与分享。可配置标题/摘要/标签/元信息/日期字段与卡片尺寸；只读，点击卡片打开行详情。</Text>
         </div>
         <div>
             <Text strong>日历视图（Calendar）</Text>

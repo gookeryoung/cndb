@@ -57,6 +57,22 @@ describe('getOptionSchema 四种视图 + 未知类型', () => {
     expect(opts.show_numbering).toBe(false)
   })
 
+  it('gallery 返回 7 项，默认 medium / 3 行，title 回退 id', () => {
+    const schema = getOptionSchema('gallery')
+    expect(schema).toHaveLength(7)
+    expect(schema.map((o) => o.key)).toEqual([
+      'title_field', 'summary_field', 'tag_fields', 'meta_fields', 'date_field', 'card_size', 'summary_lines',
+    ])
+    const title = schema.find((o) => o.key === 'title_field')!
+    expect(title.kind).toBe('field_select')
+    expect(title.literalFallback).toBe('id')
+    expect(schema.find((o) => o.key === 'tag_fields')?.kind).toBe('field_multi_select')
+    expect(schema.find((o) => o.key === 'meta_fields')?.kind).toBe('field_multi_select')
+    const opts = resolveOpts({}, schema)
+    expect(opts.card_size).toBe('medium')
+    expect(opts.summary_lines).toBe(3)
+  })
+
   it('未知视图类型返回空数组', () => {
     expect(getOptionSchema('unknown_type')).toEqual([])
   })
@@ -227,8 +243,8 @@ describe('optionColSpan 两列网格列宽', () => {
 })
 
 describe('schema group 完整性', () => {
-  it('四种视图的每个 option 都标注了 group（漏标即失败）', () => {
-    for (const vt of ['kanban', 'calendar', 'gantt', 'wbs']) {
+  it('五种视图的每个 option 都标注了 group（漏标即失败）', () => {
+    for (const vt of ['kanban', 'calendar', 'gantt', 'wbs', 'gallery']) {
       for (const opt of getOptionSchema(vt)) {
         expect(opt.group, `${vt}.${opt.key} 缺 group`).toBeTruthy()
       }
@@ -237,7 +253,7 @@ describe('schema group 完整性', () => {
 
   it('默认收起的分区名都是实际存在的分区', () => {
     const allLabels = new Set(
-      ['kanban', 'calendar', 'gantt', 'wbs']
+      ['kanban', 'calendar', 'gantt', 'wbs', 'gallery']
         .flatMap((vt) => groupOptionSchema(getOptionSchema(vt)).map((s) => s.label)),
     )
     for (const label of COLLAPSED_BY_DEFAULT_GROUPS) {

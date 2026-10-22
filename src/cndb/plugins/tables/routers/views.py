@@ -97,10 +97,25 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         "month_qfq_field",
         # Flow 流程视图（流程节点字段 + 卡片标题字段，标题字段已在上方）
         "node_field",
+        # Gallery 卡片画廊（摘要字段；标题/日期字段已在上方）
+        "summary_field",
     ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:
             return False, f"view_options.{opt_key}='{opt_val}' 不存在"
+    # Gallery 卡片画廊：列表型字段引用逐项校验（兼容历史脏值把字符串当单元素列表）
+    for list_key in ("tag_fields", "meta_fields"):
+        list_val = vo.get(list_key)
+        if list_val is None:
+            continue
+        items = [list_val] if isinstance(list_val, str) else list_val
+        if not isinstance(items, list):
+            return False, f"view_options.{list_key} 不是数组"
+        for i, item in enumerate(items):
+            if not isinstance(item, str):
+                return False, f"view_options.{list_key}[{i}] 不是字符串"
+            if item and item not in valid_fields:
+                return False, f"view_options.{list_key}[{i}]='{item}' 不存在"
     # chart 多图形态：charts[] 逐条目校验字段引用（detail 定位到 charts[i].<key>）
     charts = vo.get("charts")
     if isinstance(charts, list):
