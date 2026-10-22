@@ -181,7 +181,7 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 | API 封装 | `frontend/src/api/datasource.ts`、`frontend/src/api/index.ts` | 删除工作区级 `getLlmConfig` / `updateLlmConfig` / `testConnection` 与对应类型；导出 `llmApi`；旧 `frontend/src/api/llmConfig.ts` 删除，端点迁入 `llm.ts` |
 | 个人设置页签 | `frontend/src/pages/settings/LlmConfigPanel.tsx`、`SettingsModal.tsx`、`frontend/src/store/ui.ts` | 「个人设置」新增「大模型」页签：地址 / 模型 / Key（只写不回显，已保存可清除）/ 系统提示词覆盖 / 内置默认全文 / 「测试连接」（可用未保存 Key）；`SettingsTab` 增加 `llm` |
 | 数据源页 | `frontend/src/pages/datasource/DatasourcePage.tsx` | 删除页头「大模型连接」按钮 / 状态 Tag / 连接弹窗与未配置引导；`llm_prompt` 抽屉改为提示去「个人设置 → 大模型」；高级设置 `max_tokens` 默认 4096 |
-| 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 8 组预设；「每日新闻摘要」改为基于已掌握近期公开信息、允许标注「综合整理」；「美食推荐做法」控制单次输出规模；其余预设补充实时数据口径说明 |
+| 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 8 组预设；「每日新闻摘要」改为基于已掌握近期公开信息、允许标注「综合整理」；「美食推荐做法」控制单次输出规模；其余预设补充实时数据口径说明；弹窗列表默认收起（手风琴，一次展开一组），点击场景名才展示适用场景 / 建议字段 / 建议幂等键 |
 | 页面测试 | `frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`SettingsModal.test.tsx`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`llmPromptPresets.test.ts` | 个人页签保存 / 测试 / 清除 Key / 用户隔离提示；数据源页无连接入口、提示文案；预设文案与数量 |
 
 ### 7. 测试清单
@@ -276,6 +276,7 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 - 追加（2026-10-22）：连接测试支持未保存 Key（现为 `POST /api/v1/llm/config/test`），提交 `f2bf92bc`
 - 追加（2026-10-22）：大模型配置改为个人级（「个人设置 → 大模型」，表 `llm_user_config`；迁移 `7b8c9d0e1f2a` 把 `datasource_user_llm_config` 搬入后删旧表；备份升 v7 不再导出个人配置）+ 提示词可靠性修复（默认 max_tokens 4096、截断错误提示、新闻 / 美食预设重写）；真机验证新闻 rows=12、美食 rows=8 且 JSON 可解析（响应 model 显示 deepseek-flash）
 - 追加（2026-10-22，ADR 0020 P0）：大模型连接 / 调用 / 解析 / 留痕抽到平台插件 `plugins/llm/`；HTTP 传输层上移到 `core/http.py`（`api_fetch.py` 保留 re-export shim）；`llm_prompt` 经 `RequestPlan.fetcher` 走平台客户端；保存任务不再把个人 `base_url` / `model` 写回 `request_spec`；端点迁到 `/api/v1/llm/config`，旧 `/api/v1/accounts/llm-config*` 删除
+- 追加（2026-10-22）：推荐提示词弹窗改为手风琴折叠列表 —— 8 组默认收起，点击场景名展开适用场景 / 建议字段 / 建议幂等键，详情随展开挂载、收起即卸载；「使用」按钮留在折叠头右侧（阻止冒泡）；内容区限高 `min(60vh, 480px)` 内部滚动，避免对话框被详情撑高
 - 已完成：P0 大模型连接 + 内置默认系统提示词 + prompt-only 校验 + 备份格式 + 提示词宽松模板（`render_text_lenient`）；P1 自动建表 / 空表补字段 / 自动幂等键 + 预览建议键 + CLI 输出；P2 前端极简表单 + 8 组推荐提示词；P3 个人级迁移 + 提示词可靠性
 - 下一步：人工确认后保持 `Status: Implemented`；`docs/adr/README.md` 索引由本轮 Lead 同步；如后续要支持「自动幂等键人工纠错入口 / 多连接 / 个人配置随账号导出」另立 ADR
 - 已知坑：自动幂等键只在结果行内可判定，无唯一组合时退化为追加（看 `run.detail.auto_match_keys`）；自动补字段只在空表启用；个人配置不随工作区备份导出，导入备份后每人需各自配置；任务运行按 `job.created_by` 解析个人连接，创建者离职 / 换 Key 后任务需改由他人重建或用会话 Key 兜底；旧工作区配置 `created_by` 为空时迁移会丢弃；`6a7b8c9d0e1f` / `7b8c9d0e1f2a` 的 downgrade 都不恢复数据；推荐类任务长输出仍可能超过 `max_tokens`，错误文案会提示调大或精简；无联网模型无法取实时新闻 / 行情，只能基于已掌握信息并标注「综合整理」；宽松模板只作用于 `llm_prompt` 的 system / user 提示词，URL 与 headers 仍严格；CLI 预览按任务创建者解析个人连接；`make adr-check` 会校验已落地期的代码 / 测试路径，接口或迁移改名时必须同步本表

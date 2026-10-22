@@ -400,6 +400,15 @@ interface JobDrawerProps {
   onSaved: (close: boolean) => void
 }
 
+/** 新建时的默认任务名：精确到秒，避免连续新建出现同名任务 */
+function defaultJobName(): string {
+  const now = new Date()
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+  const time = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+  return `同步任务 ${date} ${time}`
+}
+
 /** 新建 / 编辑抽屉：Provider 驱动 + 保存后抓取预览（预览不落库） */
 function JobDrawer({
   wid,
@@ -421,7 +430,9 @@ function JobDrawer({
   const [presetOpen, setPresetOpen] = useState(false)
   const [appliedPreset, setAppliedPreset] = useState<LlmPromptPreset | null>(null)
 
+  // 保存并预览后抽屉保持打开（不关闭），此时任务已落库；后续保存必须走更新而不是再建一条
   const activeJob = job ?? savedJob
+  const watchedName = Form.useWatch('name', form) as string | undefined
 
   useEffect(() => {
     if (!open) return
@@ -464,6 +475,7 @@ function JobDrawer({
       form.resetFields()
       const defaultProvider = providers[0]
       form.setFieldsValue({
+        name: defaultJobName(),
         provider: defaultProvider?.name,
         cursor_strategy: defaultProvider?.default_cursor ?? 'date',
         schedule_mode: 'manual',
@@ -560,11 +572,13 @@ function JobDrawer({
     setSaving(true)
     try {
       const payload = await buildPayload()
-      const saved = job
-        ? await datasourceApi.updateJob(wid, job.id, payload)
+      // 新建后「保存并预览」不关闭抽屉，第二次保存要复用已创建的任务，避免重复建
+      const target = job ?? savedJob
+      const saved = target
+        ? await datasourceApi.updateJob(wid, target.id, payload)
         : await datasourceApi.createJob(wid, payload)
       setSavedJob(saved)
-      message.success(job ? '已保存' : '已创建')
+      message.success(target ? '已保存' : '已创建')
       if (!thenPreview) {
         onSaved(true)
         return
@@ -623,7 +637,7 @@ function JobDrawer({
   return (
     <>
       <Drawer
-        title={job ? `编辑同步任务 · ${job.name}` : '新建同步任务'}
+        title={activeJob ? `编辑同步任务 · ${watchedName?.trim() || activeJob.name}` : '新建同步任务'}
         width={720}
         open={open}
         onClose={onClose}
@@ -1496,7 +1510,9 @@ function SessionFormModal({
   )
 }
 
-/** 推荐提示词弹窗：8 组典型场景，点「使用」把 prompt 填入用户提示词（ADR 0019 P2） */
+/** 推荐提示词弹窗：8 组典型场景默认收起（手风琴，一次只展开一组详情），
+ *  点「使用」把 prompt 填入用户提示词（ADR 0019 P2）。
+ *  详情（适用场景 / 建议字段 / 建议幂等键）随展开挂载，避免 8 组铺开把弹窗撑高。 */
 function LlmPresetModal({
   open,
   onClose,
@@ -1514,33 +1530,49 @@ function LlmPresetModal({
       onCancel={onClose}
       destroyOnHidden
       footer={<Button onClick={onClose}>关闭</Button>}
+      styles={{ body: { maxHeight: 'min(60vh, 480px)', overflowY: 'auto' } }}
     >
       <Space direction="vertical" size={12} style={{ width: '100%' }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
-          选一个典型场景一键填入用户提示词，再按需修改；下文的建议字段与幂等键可对照目标表使用。
+          选一个典型场景一键填入用户提示词，再按需修改；点击场景名可展开适用场景与建议字段 / 幂等键。
           提示词里的 {'{{ }}'} 是 JSON 花括号的模板转义，运行时会还原为 {'{ }'}。
         </Text>
-        {LLM_PROMPT_PRESETS.map(preset => (
-          <div
-            key={preset.id}
-            data-testid={`datasource-llm-preset-${preset.id}`}
-            style={{ border: '1px solid #f0f0f0', borderRadius: 8, padding: 12 }}
-          >
-            <Space style={{ width: '100%', justifyContent: 'space-between' }} align="start">
-              <Text strong>{preset.name}</Text>
-              <Button size="small" type="primary" onClick={() => onUse(preset)}>
+        <Collapse
+          accordion
+          size="small"
+          destroyOnHidden
+          items={LLM_PROMPT_PRESETS.map(preset => ({
+            key: preset.id,
+            label: (
+              <Text strong data-testid={`datasource-llm-preset-${preset.id}`}>
+                {preset.name}
+              </Text>
+            ),
+            extra: (
+              <Button
+                size="small"
+                type="primary"
+                data-testid={`llm-preset-use-${preset.id}`}
+                onClick={event => {
+                  // 按钮在折叠头内部，阻止冒泡避免顺带展开 / 收起
+                  event.stopPropagation()
+                  onUse(preset)
+                }}
+              >
                 使用
               </Button>
-            </Space>
-            <Paragraph type="secondary" style={{ margin: '6px 0', fontSize: 12 }}>
-              {preset.description}
-            </Paragraph>
-            <Space size={[16, 4]} wrap>
-              <Text style={{ fontSize: 12 }}>建议字段：{preset.target_fields.join(', ')}</Text>
-              <Text style={{ fontSize: 12 }}>建议幂等键：{preset.match_keys.join(', ')}</Text>
-            </Space>
-          </div>
-        ))}
+            ),
+            children: (
+              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
+                  {preset.description}
+                </Paragraph>
+                <Text style={{ fontSize: 12 }}>建议字段：{preset.target_fields.join(', ')}</Text>
+                <Text style={{ fontSize: 12 }}>建议幂等键：{preset.match_keys.join(', ')}</Text>
+              </Space>
+            ),
+          }))}
+        />
       </Space>
     </Modal>
   )
