@@ -1,0 +1,70 @@
+/** Critical — gallery 卡片画廊视图基于 seed 注入视图的端到端渲染（ADR 0022）.
+ *
+ * 背景：数据源示例工作区新增两张 LLM 抓取内容表，默认视图均为 gallery：
+ *   - 国际形势发展动态「资讯画廊」：标题 / 摘要 / 彩色标签 / 日期徽章 / 元信息，12 张卡；
+ *   - 美食推荐做法「菜谱画廊」：标题 / 步骤摘要，8 张卡。
+ *
+ * 断言锚点（GalleryView.tsx）：gallery-view / gallery-count / gallery-card /
+ * gallery-card-title / gallery-summary / gallery-tag / gallery-meta。
+ */
+import { test, expect } from "../fixtures/auth";
+import { getAdminToken, getTableId, getWorkspaceId } from "../helpers/api";
+import type { APIRequestContext, Page } from "@playwright/test";
+import { settle } from "../fixtures/settle";
+
+const ANON = ["setup", "chromium-anon"];
+
+async function openGalleryTable(
+  page: Page,
+  request: APIRequestContext,
+  tableName: string,
+) {
+  const wid = await getWorkspaceId(request, "数据源示例");
+  const tid = await getTableId(request, wid, tableName);
+  const token = await getAdminToken(request);
+  // 清用户激活视图偏好，让默认视图（seed 的 gallery）生效
+  await request
+    .put(`/api/v1/accounts/preferences/tables/${tid}/active-view`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { active_view_id: null },
+    })
+    .catch(() => { });
+
+  await page.goto(`/w/${wid}/tables/${tid}`);
+  await page.waitForURL(/\/tables\/\d+/);
+  await expect(page.getByTestId("gallery-view")).toBeVisible({ timeout: 10000 });
+  await settle(page);
+}
+
+test.describe("gallery 卡片画廊 — seed 注入视图渲染", () => {
+  test("国际形势发展动态 → 默认落资讯画廊，12 张卡 + 标签/摘要 + 点击开行详情", async ({ page, request }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    await openGalleryTable(page, request, "国际形势发展动态");
+
+    await expect(page.getByTestId("gallery-count")).toHaveText("共 12 条");
+    await expect(page.getByTestId("gallery-card")).toHaveCount(12);
+    // 标题 / 摘要 / 彩色标签 / 元信息
+    await expect(page.getByTestId("gallery-card-title").first()).toBeVisible();
+    await expect(page.getByTestId("gallery-summary").first()).toBeVisible();
+    await expect(page.getByTestId("gallery-tag").first()).toBeVisible();
+    await expect(page.getByTestId("gallery-meta").first()).toBeVisible();
+    // 日期徽章：seed 数据日期为 2026-10-22，12 张卡均显示
+    await expect(page.getByText("2026-10-22").first()).toBeVisible();
+
+    // 点击整卡打开行详情抽屉
+    await page.getByTestId("gallery-card").first().click();
+    await expect(page.getByText(/行详情 #\d+/)).toBeVisible({ timeout: 10000 });
+  });
+
+  test("美食推荐做法 → 菜谱画廊 8 张卡", async ({ page, request }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 跳过");
+
+    await openGalleryTable(page, request, "美食推荐做法");
+
+    await expect(page.getByTestId("gallery-count")).toHaveText("共 8 条");
+    await expect(page.getByTestId("gallery-card")).toHaveCount(8);
+    await expect(page.getByTestId("gallery-tag").first()).toBeVisible();
+    await expect(page.getByTestId("gallery-summary").first()).toBeVisible();
+  });
+});

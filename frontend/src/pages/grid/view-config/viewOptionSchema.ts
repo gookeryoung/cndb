@@ -529,6 +529,48 @@ export const KLINE_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** Gallery 卡片画廊的专属配置字段（7 项）— 资讯 / 菜谱等内容型表的阅读态 */
+export const GALLERY_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'title_field', label: '卡片标题字段', group: '卡片内容', tooltip: '留空自动取首个文本字段，再退回主键 id',
+    kind: 'field_select', fieldTypes: ['text', 'longtext'], literalFallback: 'id',
+  },
+  {
+    key: 'summary_field', label: '摘要字段', group: '卡片内容', tooltip: '卡片正文；留空自动取首个长文本字段',
+    kind: 'field_select', fieldTypes: ['longtext', 'text'],
+  },
+  {
+    key: 'tag_fields', label: '标签字段', group: '卡片内容', tooltip: '以彩色标签展示；单卡最多 6 个，超出以 +N 表示',
+    kind: 'field_multi_select', fieldTypes: ['select', 'multiselect', 'text'],
+  },
+  {
+    key: 'meta_fields', label: '元信息字段', group: '卡片内容', tooltip: '卡片底部以「字段名：值」展示；空值跳过，最多 4 项',
+    kind: 'field_multi_select',
+    fieldTypes: ['select', 'multiselect', 'number', 'float', 'percentage', 'date', 'datetime', 'text'],
+  },
+  {
+    key: 'date_field', label: '日期徽章字段', group: '卡片内容', tooltip: '卡片右上角显示日期（取前 10 位）',
+    kind: 'field_select', fieldTypes: ['date', 'datetime'],
+  },
+  {
+    key: 'card_size', label: '卡片尺寸', group: '布局', tooltip: '控制栅格最小列宽：小 220 / 中 280 / 大 360 像素',
+    kind: 'enum_select', defaultValue: 'medium',
+    enumOptions: [
+      { value: 'small', label: '小（220px）' },
+      { value: 'medium', label: '中（280px）' },
+      { value: 'large', label: '大（360px）' },
+    ],
+  },
+  {
+    key: 'summary_lines', label: '摘要行数', group: '布局', tooltip: '摘要最多显示几行，超出省略',
+    kind: 'number_enum', defaultValue: 3,
+    enumOptions: [
+      { value: 2, label: '2 行' }, { value: 3, label: '3 行' },
+      { value: 4, label: '4 行' }, { value: 6, label: '6 行' },
+    ],
+  },
+]
+
 /** 按 view_type 名返回 option schema 列表 */
 export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
@@ -541,6 +583,7 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'chart': return CHART_OPTIONS
     case 'kline': return KLINE_OPTIONS
     case 'flow': return FLOW_OPTIONS
+    case 'gallery': return GALLERY_OPTIONS
     default: return []
   }
 }

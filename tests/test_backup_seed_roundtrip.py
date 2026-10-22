@@ -338,15 +338,27 @@ class TestSeedViewsIntegrity:
     保证视图种子配置与数据集字段持续对齐，防止视图在 seed 时被
     _validate_view_fields 静默跳过：
 
-    - view_type 均为 10 种合法视图模式；
+    - view_type 均为 11 种合法视图模式；
     - 同表内视图名与 order 不重复；
     - filters/sortings/view_options/charts[] 引用的字段均可在建表来源中解析
       （CSV 表头 + fields.json link_lookups 引入字段 / 硬编码业务表字段；
       API 建表等无法静态解析的来源仅校验 view_type）；
-    - 10 种视图模式在全部工作区中均有覆盖。
+    - 11 种视图模式在全部工作区中均有覆盖。
     """
 
-    VALID_VIEW_TYPES = {"grid", "tree", "kanban", "calendar", "gantt", "wbs", "matrix", "chart", "flow", "kline"}
+    VALID_VIEW_TYPES = {
+        "grid",
+        "tree",
+        "kanban",
+        "gallery",
+        "calendar",
+        "gantt",
+        "wbs",
+        "matrix",
+        "chart",
+        "flow",
+        "kline",
+    }
 
     # 与 seed._seed_sales_tables 保持一致的硬编码业务表字段
     HARDCODED_TABLE_FIELDS: dict[str, dict[str, set[str]]] = {
@@ -420,6 +432,10 @@ class TestSeedViewsIntegrity:
         "day_none_field",
         "week_qfq_field",
         "month_qfq_field",
+        # Gallery 卡片画廊（摘要单值 + 标签/元信息列表）
+        "summary_field",
+        "tag_fields",
+        "meta_fields",
     )
 
     @pytest.fixture(scope="class")
@@ -442,8 +458,12 @@ class TestSeedViewsIntegrity:
         refs |= {s.get("field_name") for s in vc.get("sortings", [])}
         vo = vc.get("view_options", {})
         for key in cls._OPTION_FIELD_KEYS:
-            if vo.get(key):
-                refs.add(vo[key])
+            value = vo.get(key)
+            if isinstance(value, str) and value:
+                refs.add(value)
+            elif isinstance(value, list):
+                # 列表型 option（Gallery 的 tag_fields / meta_fields）逐项展开
+                refs.update(v for v in value if isinstance(v, str) and v)
         charts = vo.get("charts")
         if isinstance(charts, list):
             for entry in charts:
@@ -539,7 +559,7 @@ class TestSeedViewsIntegrity:
             if isinstance(view_list, list)  # 跳过 _comment 等元数据字符串
             for vc in view_list
         }
-        assert types == self.VALID_VIEW_TYPES, f"10 种视图模式应全部覆盖，实际: {types}"
+        assert types == self.VALID_VIEW_TYPES, f"11 种视图模式应全部覆盖，实际: {types}"
 
 
 class TestCoerceRowValueTypes:

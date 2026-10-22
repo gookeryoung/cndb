@@ -75,6 +75,8 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
         "month_qfq_field",
         # flow 流程视图（流程节点字段；title_field 已在上方）
         "node_field",
+        # gallery 卡片画廊（摘要字段；标题/日期字段已在上方）
+        "summary_field",
     ):
         opt_val = vo.get(opt_key)
         if opt_val and opt_val not in valid_fields:
@@ -83,6 +85,28 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
                 f"的 view_options.{opt_key}='{opt_val}' 不存在"
             )
             return False
+    # gallery 卡片画廊：列表型字段引用逐项校验（兼容字符串当单元素列表）
+    for list_key in ("tag_fields", "meta_fields"):
+        list_val = vo.get(list_key)
+        if list_val is None:
+            continue
+        items = [list_val] if isinstance(list_val, str) else list_val
+        if not isinstance(items, list):
+            print(f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 view_options.{list_key} 不是数组")
+            return False
+        for i, item in enumerate(items):
+            if not isinstance(item, str):
+                print(
+                    f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' "
+                    f"的 view_options.{list_key}[{i}] 不是字符串"
+                )
+                return False
+            if item and item not in valid_fields:
+                print(
+                    f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' "
+                    f"的 view_options.{list_key}[{i}]='{item}' 不存在"
+                )
+                return False
     # chart 多图形态：charts[] 逐条目校验字段引用（打印定位到 charts[i].<key>）
     charts = vo.get("charts")
     if isinstance(charts, list):

@@ -186,5 +186,172 @@
       "is_default": true,
       "order": 0
     }
+  ],
+  "国际形势发展动态": [
+    {
+      "name": "资讯画廊",
+      "view_type": "gallery",
+      "view_options": {
+        "title_field": "title",
+        "summary_field": "summary",
+        "tag_fields": ["region", "topic", "trend"],
+        "meta_fields": ["source"],
+        "date_field": "date",
+        "card_size": "medium",
+        "summary_lines": 3
+      },
+      "sortings": [
+        {"field_name": "date", "direction": "desc"},
+        {"field_name": "title", "direction": "asc"}
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "全部资讯",
+      "view_type": "grid",
+      "sortings": [
+        {"field_name": "date", "direction": "desc"},
+        {"field_name": "title", "direction": "asc"}
+      ],
+      "order": 1
+    },
+    {
+      "name": "态势看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "trend",
+        "title_field": "title",
+        "priority_field": "topic",
+        "card_fields": ["region", "date"]
+      },
+      "order": 2
+    },
+    {
+      "name": "地区议题矩阵",
+      "view_type": "matrix",
+      "view_options": {
+        "row_field": "region",
+        "column_field": "topic",
+        "title_field": "title"
+      },
+      "order": 3
+    },
+    {
+      "name": "每日简报日历",
+      "view_type": "calendar",
+      "view_options": {
+        "start_field": "date",
+        "title_field": "title",
+        "group_field": "topic"
+      },
+      "order": 4
+    },
+    {
+      "name": "议题与态势分布",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "pie",
+            "dimension_field": "topic",
+            "measure_field": "title",
+            "aggregation": "count"
+          },
+          {
+            "chart_type": "bar",
+            "dimension_field": "trend",
+            "measure_field": "title",
+            "aggregation": "count"
+          }
+        ]
+      },
+      "order": 5
+    },
+    {
+      "name": "升温议题",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "trend", "op": "=", "value": "升温"}
+      ],
+      "sortings": [
+        {"field_name": "date", "direction": "desc"},
+        {"field_name": "title", "direction": "asc"}
+      ],
+      "order": 6
+    }
+  ],
+  "美食推荐做法": [
+    {
+      "name": "菜谱画廊",
+      "view_type": "gallery",
+      "view_options": {
+        "title_field": "dish_name",
+        "summary_field": "steps",
+        "tag_fields": ["cuisine", "difficulty"],
+        "meta_fields": ["cook_time_min"],
+        "card_size": "medium",
+        "summary_lines": 4
+      },
+      "sortings": [
+        {"field_name": "cook_time_min", "direction": "asc"},
+        {"field_name": "dish_name", "direction": "asc"}
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "全部菜谱",
+      "view_type": "grid",
+      "sortings": [
+        {"field_name": "cook_time_min", "direction": "asc"},
+        {"field_name": "dish_name", "direction": "asc"}
+      ],
+      "order": 1
+    },
+    {
+      "name": "按菜系看板",
+      "view_type": "kanban",
+      "view_options": {
+        "group_field": "cuisine",
+        "title_field": "dish_name",
+        "priority_field": "difficulty",
+        "card_fields": ["cook_time_min"]
+      },
+      "order": 2
+    },
+    {
+      "name": "快手菜（≤40分钟）",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "cook_time_min", "op": "<=", "value": 40}
+      ],
+      "sortings": [
+        {"field_name": "cook_time_min", "direction": "asc"},
+        {"field_name": "dish_name", "direction": "asc"}
+      ],
+      "order": 3
+    },
+    {
+      "name": "菜系与时长概览",
+      "view_type": "chart",
+      "view_options": {
+        "charts": [
+          {
+            "chart_type": "histogram",
+            "measure_field": "cook_time_min"
+          },
+          {
+            "chart_type": "pie",
+            "dimension_field": "cuisine",
+            "measure_field": "dish_name",
+            "aggregation": "count"
+          }
+        ]
+      },
+      "order": 4
+    }
   ]
 }

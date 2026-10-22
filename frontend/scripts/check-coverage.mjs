@@ -45,6 +45,7 @@ const CORE_FILES = [
   'src/pages/grid/view-config/viewOptionSchema.ts',
   'src/pages/grid/views/ganttTimeline.ts',
   'src/pages/grid/views/kanbanBoard.ts',
+  'src/pages/grid/views/galleryBoard.ts',
   // 通用
   'src/utils/tagColors.ts',
   'src/hooks/useResponsive.ts',

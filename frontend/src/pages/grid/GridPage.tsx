@@ -22,7 +22,7 @@ import { Modal, Empty, App as AntApp, Skeleton } from 'antd'
 import {
   ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
-  TableOutlined, BarChartOutlined, NodeIndexOutlined, ApartmentOutlined, StockOutlined,
+  TableOutlined, BarChartOutlined, NodeIndexOutlined, ApartmentOutlined, StockOutlined, PictureOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
@@ -60,6 +60,7 @@ const RowDetailDrawer = lazy(() => import('./layout/RowDetailDrawer'))
 const AiFillFieldDrawer = lazy(() => import('./aiFillField/AiFillFieldDrawer'))
 // 非 grid 视图按 mode 懒加载：默认表格视图不下载看板/甘特/日历等代码
 const KanbanView = lazy(() => import('./views/KanbanView'))
+const GalleryView = lazy(() => import('./views/GalleryView'))
 const CalendarView = lazy(() => import('./views/CalendarView'))
 const GanttView = lazy(() => import('./views/GanttView'))
 const WbsView = lazy(() => import('./views/WbsView'))
@@ -126,6 +127,7 @@ const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'grid', label: '表格', tooltip: '表格 (Grid)：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
   { mode: 'tree', label: '树', tooltip: '树 (Tree)：按父子字段组织为可折叠层级，适合目录与分类', icon: <ApartmentOutlined /> },
   { mode: 'kanban', label: '看板', tooltip: '看板 (Kanban)：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
+  { mode: 'gallery', label: '画廊', tooltip: '卡片画廊 (Gallery)：标题/摘要/标签/日期卡片墙，适合资讯阅读与分享', icon: <PictureOutlined /> },
   { mode: 'calendar', label: '日历', tooltip: '日历 (Calendar)：按日期字段排布在月历上', icon: <CalendarOutlined /> },
   { mode: 'gantt', label: '甘特图', tooltip: '甘特图 (Gantt)：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
   { mode: 'wbs', label: 'WBS', tooltip: '工作分解 (WBS)：树状层级组织任务', icon: <PartitionOutlined /> },
@@ -343,7 +345,7 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const MODE_VIEW_TYPES = new Set<string>(['tree', 'kanban', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'kline', 'flow'])
+      const MODE_VIEW_TYPES = new Set<string>(['tree', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'kline', 'flow'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = MODE_VIEW_TYPES.has(vt) ? (vt as ViewMode) : 'grid'
 
@@ -1161,6 +1163,8 @@ export default function GridPage() {
                 onToggleDone={handleToggleDone}
                 canEdit={canEditRecords}
               />
+            ) : mode === 'gallery' ? (
+              <GalleryView rows={rowList.items || []} fields={table?.fields || []} view={activeView} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'gantt' ? (
               <GanttView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} sortings={viewSortings} onRowClick={openDetailWithPrefetch} pdfExporting={pdfExporting} />
             ) : mode === 'wbs' ? (
