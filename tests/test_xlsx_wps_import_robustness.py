@@ -91,7 +91,7 @@ class TestInflatedDimension:
         from cndb.plugins.tables.services.importing.importer import Importer
 
         raw = build_xlsx(workdir / "wps.xlsx", rows=2, declared_max_row=1_048_576)
-        rows, columns = Importer._parse_xlsx(raw)
+        rows, columns, _detection = Importer._parse_xlsx(raw)
         assert columns[:2] == ["列1", "列2"]
         assert len(rows) == 2
         assert rows[0]["列1"] == "值1-1"
@@ -195,7 +195,7 @@ class TestWpsImagesStillWork:
         from cndb.plugins.tables.services.importing.importer import Importer
 
         raw = self._wps_xlsx_with_cellimage(workdir)
-        rows, columns = Importer._parse_xlsx(raw)
+        rows, columns, _detection = Importer._parse_xlsx(raw)
         assert columns[0] == "列1"
         assert "DISPIMG" in str(rows[0]["列2"])
 

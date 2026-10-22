@@ -25,10 +25,10 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.tables.services.transfer import (
     analyze_csv_columns,
-    analyze_file_columns,
+    analyze_file_columns_with_detection,
     create_table_from_csv,
-    create_table_from_file,
-    parse_file_to_rows,
+    create_table_from_file_with_detection,
+    parse_file_to_rows_with_detection,
 )
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
@@ -66,6 +66,7 @@ async def import_file_analyze(
     file: Annotated[UploadFile, File(..., description="上传的数据文件（csv/tsv/json/xlsx）")],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    header_row: Annotated[int | None, Form(description="表头行号（1 基）；留空则自动识别")] = None,
 ) -> dict[str, Any]:
     """上传文件 + 分析列类型（不写库）.
 
@@ -93,12 +94,19 @@ async def import_file_analyze(
     # 解析一次：列分析（全量，保证 total_rows / 空值率精确）与样本预览共用
     # 全量解析为重 CPU 操作，放线程池避免阻塞事件循环
     try:
-        rows, _cols, actual_fmt = await run_in_threadpool(parse_file_to_rows, content, filename=filename)
+        rows, _cols, actual_fmt, header_detection = await run_in_threadpool(
+            parse_file_to_rows_with_detection,
+            content,
+            filename=filename,
+            header_row=header_row,
+        )
     except ValueError as exc:
         # 文件结构守卫（XLSX 空列名/重复列名、JSON 非数组、无法识别格式等）→ 400
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
-        columns, total_rows, _ = await run_in_threadpool(analyze_file_columns, rows=rows, format=actual_fmt)
+        columns, total_rows, _, _detection = await run_in_threadpool(
+            analyze_file_columns_with_detection, rows=rows, format=actual_fmt
+        )
     except ValueError as exc:
         # CSV 结构守卫（空列名/重复列名/行值溢出）等客户端输入缺陷 → 400
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -117,6 +125,8 @@ async def import_file_analyze(
         "format": actual_fmt,
         "filename": filename,
         "sample_rows": sample_rows_preview,
+        "header_detection": header_detection.to_dict() if header_detection else None,
+        "header_row": header_detection.row if header_detection else None,
     }
 
 
@@ -132,6 +142,7 @@ async def import_file_create_table(
         description="前端回传的字段类型覆盖映射（JSON 字符串），"
         '格式 {"列名": {"field_type": "select", "options": [...]}}',
     ),
+    header_row: Optional[int] = Form(default=None, description="表头行号（1 基）；留空则自动识别"),
 ) -> dict[str, Any]:
     """上传文件 + 自动建表 + 导入数据（通用入口）."""
     _check_workspace_permission(workspace_id, current_user, db, WorkspaceRole.EDITOR)
@@ -166,8 +177,8 @@ async def import_file_create_table(
     try:
         engine = db.get_bind()
         # 解析 + DDL + 全量入库为重 CPU/IO 操作，放线程池避免阻塞事件循环
-        dt, ids, columns = await run_in_threadpool(
-            create_table_from_file,
+        dt, ids, columns, header_detection = await run_in_threadpool(
+            create_table_from_file_with_detection,
             engine,
             db,
             workspace_id,
@@ -176,6 +187,7 @@ async def import_file_create_table(
             filename=filename,
             owner_id=current_user.id,
             column_overrides=overrides,
+            header_row=header_row,
         )
     except ValueError as exc:
         # CSV 结构守卫等客户端输入缺陷 → 400（区别于服务端故障的 500）
@@ -190,6 +202,8 @@ async def import_file_create_table(
         "field_count": len(dt.fields),
         "format": dt.name,  # 后端暂未持久化 format，占位
         "columns": columns,
+        "header_detection": header_detection.to_dict() if header_detection else None,
+        "header_row": header_detection.row if header_detection else None,
     }
 
 

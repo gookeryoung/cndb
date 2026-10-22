@@ -115,7 +115,7 @@ describe('ImportPanel 导入面板', () => {
     chooseFile(csvFile)
     fireEvent.click(await screen.findByRole('button', { name: '确认导入（新增 3 / 更新 1）' }, { timeout: 3000 }))
 
-    expect(confirmSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', [], [])
+    expect(confirmSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', [], [], undefined)
     // 切换轮询返回值为 done，下一个 tick（约 800ms）触发完成分支
     getTaskSpy.mockResolvedValue(doneTask)
     expect(await screen.findByText('导入完成：5 行', {}, { timeout: 3000 })).toBeInTheDocument()
@@ -171,6 +171,88 @@ describe('ImportPanel 导入面板', () => {
     // 等待超过一个轮询周期，确认轮询已被清理（getTask 一次都没轮询到）
     await new Promise(r => setTimeout(r, 1000))
     expect(getTaskSpy).not.toHaveBeenCalled()
+  })
+})
+
+/** 表头行自动识别结果：顶部 1 行合并标题 + 第 2 行真正表头 */
+const headerDetection = {
+  row: 2,
+  confidence: 0.93,
+  requires_review: false,
+  skipped_rows: 1,
+  message: '已自动识别第 2 行为表头（置信度 93%，已跳过上方 1 行标题/合并行）',
+  candidates: [
+    { row: 2, confidence: 0.93, values: ['姓名', '分数'] },
+    { row: 1, confidence: 0.28, values: ['2024年客户数据', ''] },
+  ],
+}
+
+const headerPreviewReport = { ...previewReport, header_detection: headerDetection, header_row: 2 }
+const headerPreviewTask = makeTask({ status: 'pending_confirm', progress: 60, validation_report: headerPreviewReport })
+
+/** 人工改选第 1 行后重新 analyze 返回的报告（低置信度 → 建议人工确认） */
+const row1Report = {
+  ...previewReport,
+  header_detection: {
+    row: 1,
+    confidence: 0.55,
+    requires_review: true,
+    skipped_rows: 0,
+    message: '已自动识别第 1 行为表头（置信度 55%，建议人工确认）',
+    candidates: [
+      { row: 1, confidence: 0.55, values: ['2024年客户数据', ''] },
+      { row: 2, confidence: 0.52, values: ['姓名', '分数'] },
+    ],
+  },
+  header_row: 1,
+}
+const row1Task = makeTask({ status: 'pending_confirm', progress: 60, validation_report: row1Report })
+
+/** 打开预览阶段的表头识别区域：上传 → 首轮轮询进入 preview */
+async function openHeaderPreview(task = headerPreviewTask) {
+  vi.spyOn(importApi, 'previewAnalyze').mockResolvedValue(makeTask())
+  const getTaskSpy = vi.spyOn(importApi, 'getTask').mockResolvedValue(task)
+  setup()
+  chooseFile(csvFile)
+  await screen.findByText(/选择参考列/, {}, { timeout: 3000 })
+  return { getTaskSpy }
+}
+
+describe('ImportPanel 表头行自动识别与人工改选', () => {
+  it('report 含 header_detection 时展示识别提示、置信度与表头行下拉', async () => {
+    await openHeaderPreview()
+
+    expect(screen.getByTestId('header-detection-alert')).toBeInTheDocument()
+    expect(screen.getByText(headerDetection.message)).toBeInTheDocument()
+    expect(screen.getByText('置信度 93%')).toBeInTheDocument()
+    const select = screen.getByTestId('header-row-select')
+    expect(select).toBeInTheDocument()
+    expect(select.textContent).toContain('第 2 行 · 93% · 姓名 / 分数')
+  })
+
+  it('改选表头行触发 reanalyzeImport 并带上 header_row，报告回来后展示新结果', async () => {
+    const { getTaskSpy } = await openHeaderPreview()
+    const reanalyzeSpy = vi.spyOn(importApi, 'reanalyzeImport').mockResolvedValue(makeTask())
+
+    fireEvent.mouseDown(screen.getByTestId('header-row-select').querySelector('.ant-select-selector')!)
+    fireEvent.click(await screen.findByText(/^第 1 行 · 28%/, { selector: '.ant-select-item-option-content' }))
+
+    expect(reanalyzeSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', 1)
+
+    // 重新 analyze 后轮询返回的报告携带新识别结果，UI 跟随更新
+    getTaskSpy.mockResolvedValue(row1Task)
+    expect(await screen.findByText(row1Report.header_detection.message, {}, { timeout: 3000 })).toBeInTheDocument()
+    expect(screen.getByText('置信度 55%')).toBeInTheDocument()
+    expect(screen.getByTestId('header-detection-alert').className).toContain('ant-alert-warning')
+  })
+
+  it('确认导入把 report.header_detection.row 作为 header_row 传给后端', async () => {
+    await openHeaderPreview()
+    const confirmSpy = vi.spyOn(importApi, 'confirmImport').mockResolvedValue({ task_id: 77, status: 'running', message: 'ok' })
+
+    fireEvent.click(await screen.findByRole('button', { name: '确认导入（新增 3 / 更新 1）' }, { timeout: 3000 }))
+
+    expect(confirmSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', [], [], 2)
   })
 })
 

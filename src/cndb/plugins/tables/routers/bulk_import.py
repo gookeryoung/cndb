@@ -231,6 +231,8 @@ async def import_table_analyze(
 
     V2: 接受 match_keys (JSON 字符串, list[str]) 和 unknown_cols_strategy ("drop" / "add_text_field").
     V3: 接受 dropped_columns (JSON 字符串, list[str])，前端在预览阶段勾选丢弃的字段名.
+    V5: analyze 阶段自动识别表头行（兼容顶部标题/合并行），结果写入 validation_report，
+    reanalyze / confirm 可传 header_row 覆盖.
     """
     import json as _json
 
@@ -310,6 +312,7 @@ def import_table_confirm(
     unknown_cols_strategy: str | None = None,
     dropped_columns: str | None = None,
     cleaning_actions: list[dict[str, Any]] | None = Body(default=None, embed=True),
+    header_row: int | None = None,
 ) -> dict[str, Any]:
     """确认导入 — 把 pending_confirm 状态的任务推进到 running → done.
 
@@ -319,6 +322,7 @@ def import_table_confirm(
         cleaning_suggestions 中被勾选的条目（每条含 column, action, strategy 等），
         后端原样存入 task.cleaning_actions，execute 阶段在 RowValidator 之前应用.
     V4: 支持 dropped_columns（用户勾选丢弃的未知字段名列表）。
+    V5: 支持 header_row（1 基表头行号）覆盖 analyze 阶段的自动识别结果。
     """
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
 
@@ -369,6 +373,19 @@ def import_table_confirm(
     if cleaning_actions is not None:
         task.cleaning_actions = _normalize_cleaning_actions(cleaning_actions)  # type: ignore[assignment]
 
+    # V5: 覆盖表头行（用户在预览阶段改选后确认）：写回 analyze 产出的报告，
+    # execute 阶段从 validation_report 读取该行，保证按新行解析
+    if header_row is not None:
+        if header_row < 1:
+            raise HTTPException(status_code=400, detail="header_row 必须是从 1 开始的行号")
+        try:
+            _report: dict[str, Any] = _json.loads(task.validation_report) if task.validation_report else {}
+        except _json.JSONDecodeError:
+            _report = {}
+        if isinstance(_report, dict):
+            _report["header_row"] = header_row
+            task.validation_report = _json.dumps(_report, ensure_ascii=False, default=str)
+
     # 始终 commit 以确保当前事务结束，避免后台线程在同一连接上的 session
     # 操作导致当前 session 的 identity map 被破坏（StaticPool 场景下的竞争条件）
     db.commit()
@@ -396,6 +413,7 @@ def import_table_reanalyze(
     db: Annotated[Session, Depends(get_db)],
     match_keys: str | None = None,
     unknown_cols_strategy: str | None = None,
+    header_row: int | None = None,
 ) -> dict[str, Any]:
     """用新参数重新跑 analyze（让用户在 preview 阶段改参考列/未知列策略后重算 diff）.
 
@@ -430,7 +448,14 @@ def import_table_reanalyze(
     if unknown_cols_strategy is not None and unknown_cols_strategy in ("drop", "add_text_field"):
         task.unknown_cols_strategy = unknown_cols_strategy
 
-    task.validation_report = ""  # 清空旧报告
+    # V5: 用户改选表头行后重算（1 基行号）：写入种子报告供后台 reanalyze 读取；
+    # 未指定表头行则清空旧报告，由 analyze 重新自动识别
+    if header_row is not None:
+        if header_row < 1:
+            raise HTTPException(status_code=400, detail="header_row 必须是从 1 开始的行号")
+        task.validation_report = _json.dumps({"header_row": header_row})
+    else:
+        task.validation_report = ""  # 清空旧报告
     task.progress = 0
     task.error_message = ""
     db.commit()

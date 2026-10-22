@@ -861,7 +861,7 @@ class TestImporter:
         wb.save(buf)
         buf.seek(0)
 
-        rows, cols = Importer._parse_xlsx(buf.read())
+        rows, cols, _detection = Importer._parse_xlsx(buf.read())
         assert rows == []
         assert cols == []
 

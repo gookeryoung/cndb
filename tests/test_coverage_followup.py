@@ -365,7 +365,7 @@ def test_import_file_create_table_fails_500(client, ws_fixture, monkeypatch):
 
     from cndb.plugins.tables.routers import import_csv as mod
 
-    monkeypatch.setattr(mod, "create_table_from_file", _boom)
+    monkeypatch.setattr(mod, "create_table_from_file_with_detection", _boom)
     r = client.post(
         f"/api/v1/workspaces/{ws_id}/import-file",
         data={"table_name": "boom"},
@@ -526,7 +526,7 @@ def test_reanalyze_updates_params_and_runs(db, tmp_path: Path, monkeypatch):
             def __init__(self, engine_, session_, table_):
                 pass
 
-            def analyze(self, raw, fmt, match_keys=None, unknown_cols_strategy="drop"):
+            def analyze(self, raw, fmt, match_keys=None, unknown_cols_strategy="drop", header_row=None):
                 return _FakeAnalysis()
 
         from cndb.plugins.tables.services.importing import import_tasks as mod

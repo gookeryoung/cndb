@@ -1,6 +1,7 @@
 /** 异步导入任务、校验报告与表级权限. */
 
 import type { ID } from './common'
+import type { HeaderDetection } from './files'
 
 export type ImportTaskStatus =
   | 'pending'
@@ -16,6 +17,10 @@ export interface ValidationReport {
   valid_count: number
   warning_count: number
   error_count: number
+  /** 表头行自动识别结果；JSON 格式为 null */
+  header_detection?: HeaderDetection | null
+  /** 本次校验实际使用的表头行（1-based）；JSON 格式为 null */
+  header_row?: number | null
   /** V2: 待新增行数（未指定 match_keys 时等于 valid_count） */
   new_count?: number
   /** V2: 待更新行数 */

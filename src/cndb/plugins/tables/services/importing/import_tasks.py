@@ -292,6 +292,25 @@ def _parse_to_rows(
 # ── Execute 阶段 ──────────────────────────────────
 
 
+def _header_row_from_report(task: ImportTask) -> int | None:
+    """从 analyze 产出的 ``validation_report`` 读取本次采用的表头行.
+
+    execute 在独立线程 / 独立 Session 中重新解析文件，必须按 analyze 时同一行
+    切分才能保证「预览看到的表头 = 实际落库的表头」。历史任务与 JSON 导入没有
+    ``header_row`` 键，返回 None（auto 识别 / JSON 不涉及表头）。
+    """
+    if not task.validation_report:
+        return None
+    try:
+        report = json.loads(task.validation_report)
+    except (TypeError, ValueError):
+        return None
+    value = report.get("header_row") if isinstance(report, dict) else None
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        return None
+    return value
+
+
 def execute_import_task(db_session: Session, task_id: int) -> None:
     """执行导入任务（在线程中调用，独立 Session 安全）.
 
@@ -351,6 +370,7 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
                     dropped_columns=list(task.dropped_columns) if task.dropped_columns else None,
                     cleaning_actions=list(task.cleaning_actions) if task.cleaning_actions else None,
                     progress_cb=_on_progress,
+                    header_row=_header_row_from_report(task),
                 ),
                 stage="执行",
             )
@@ -477,6 +497,7 @@ def reanalyze_import_task(
     *,
     match_keys: list[str] | None = None,
     unknown_cols_strategy: str | None = None,
+    header_row: int | None = None,
 ) -> None:
     """用新参数重新跑 analyze（让用户在 preview 阶段改参考列/未知列策略后重算 diff）.
 
@@ -492,12 +513,14 @@ def reanalyze_import_task(
     if task.status not in ("pending_confirm", "pending_validation"):
         raise ValueError(f"当前状态 {task.status} 不允许重新分析（需 pending_confirm）")
 
-    # 更新任务参数
+    # 更新任务参数；表头行优先用本次参数，其次沿用 endpoint 写入的种子报告，
+    # 都没有则由 analyze 自动识别（确定性，同一文件同一结果）
+    if header_row is None:
+        header_row = _header_row_from_report(task)
     if match_keys is not None:
         task.match_keys = list(match_keys)
     if unknown_cols_strategy is not None:
         task.unknown_cols_strategy = unknown_cols_strategy
-
     _transition_status(task, "pending_validation")
     task.progress = 10
     task.error_message = ""
@@ -517,6 +540,7 @@ def reanalyze_import_task(
             task.format,
             match_keys=list(task.match_keys) if task.match_keys else None,
             unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+            header_row=header_row,
         )
 
         task.total_rows = len(analysis.results)

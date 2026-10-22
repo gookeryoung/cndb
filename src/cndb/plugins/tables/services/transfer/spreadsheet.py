@@ -9,6 +9,11 @@ import logging
 from collections.abc import Sequence
 from typing import Any
 
+from cndb.plugins.tables.services.transfer.header_detect import (
+    HEADER_SCAN_ROWS,
+    HeaderDetection,
+    detect_header_row,
+)
 from cndb.plugins.tables.services.transfer.normalize import _coerce_long_numeric_to_text
 
 logger = logging.getLogger(__name__)
@@ -204,18 +209,44 @@ def parse_file_to_rows(
     *,
     filename: str | None = None,
     image_saver: Any = None,
+    header_row: int | None = None,
 ) -> tuple[list[dict[str, Any]], list[str], str]:
     """把任意支持的文件内容转为 (行列表, 文件列名, 实际使用的 format).
 
     支持：csv / tsv / delimited / json / xlsx / xls（拒绝）.
-    format 未指定时：优先用 filename 推断，退化到内容特征推断.
+    format 未指定时：优先用 filename 推断，退化到内容特征推断。
 
     Args:
         image_saver: WPS 单元格图片解析器（img → 元数据 dict | None）；
             None 时用 ephemeral（不落盘，仅保证类型推断与样本可用）。
+        header_row: 可选，1 基表头行号（按文件中的非空行序号）。为空时自动识别
+            （兼容表格顶部有标题行 / 合并行的情况）；传入时按用户选择切分。
 
     Returns:
         (rows, file_columns, actual_format)
+    """
+    rows, cols, actual_fmt, _detection = parse_file_to_rows_with_detection(
+        content,
+        format,
+        filename=filename,
+        image_saver=image_saver,
+        header_row=header_row,
+    )
+    return rows, cols, actual_fmt
+
+
+def parse_file_to_rows_with_detection(
+    content: bytes | str,
+    format: str | None = None,
+    *,
+    filename: str | None = None,
+    image_saver: Any = None,
+    header_row: int | None = None,
+) -> tuple[list[dict[str, Any]], list[str], str, HeaderDetection | None]:
+    """:func:`parse_file_to_rows` 的增强版：额外返回表头行识别结果.
+
+    仅表格类格式（csv / tsv / delimited / xlsx）有 ``HeaderDetection``；
+    JSON 对象数组没有表头概念，第四项恒为 ``None``。
     """
     from cndb.plugins.tables.services.importing.importer import guess_format_from_content
 
@@ -233,8 +264,8 @@ def parse_file_to_rows(
     if actual_fmt == "xlsx":
         # openpyxl 只吃 bytes
         raw = content if isinstance(content, bytes) else content.encode("utf-8")
-        rows, cols = _parse_xlsx_bytes(raw, image_saver=image_saver)
-        return rows, cols, "xlsx"
+        rows, cols, detection = _parse_xlsx_detailed(raw, image_saver=image_saver, header_row=header_row)
+        return rows, cols, "xlsx", detection
 
     if actual_fmt == "json":
         if isinstance(content, bytes):
@@ -242,7 +273,7 @@ def parse_file_to_rows(
         else:
             text = content
         rows, cols = _parse_json_text(text)
-        return rows, cols, "json"
+        return rows, cols, "json", None
 
     # csv / tsv / delimited — 统一走分隔符文本解析
     if isinstance(content, bytes):
@@ -250,8 +281,80 @@ def parse_file_to_rows(
     else:
         text = content
     delim = "\t" if actual_fmt == "tsv" else None
-    rows, cols = _parse_delimited_text(text, delimiter=delim)
-    return rows, cols, actual_fmt
+    rows, cols, detection = _parse_delimited_detailed(text, delimiter=delim, header_row=header_row)
+    return rows, cols, actual_fmt, detection
+
+
+def _resolve_header_detection(
+    raw_rows: list[list[Any]],
+    header_row: int | None,
+) -> tuple[int, HeaderDetection | None]:
+    """运行表头识别 / 校验用户指定行，返回 (表头下标, 识别结果).
+
+    用户指定行优先；自动识别只在前 ``HEADER_SCAN_ROWS`` 个非空行内进行。
+    """
+    if not raw_rows:
+        return 0, None
+    preferred: int | None = None
+    if header_row is not None:
+        if not isinstance(header_row, int) or isinstance(header_row, bool) or header_row < 1:
+            raise ValueError("表头行号必须是从 1 开始的整数")
+        preferred = header_row - 1
+        if preferred >= HEADER_SCAN_ROWS:
+            raise ValueError(f"表头行只在前 {HEADER_SCAN_ROWS} 个非空行内识别或指定（收到第 {header_row} 行）")
+        if preferred >= len(raw_rows):
+            raise ValueError(f"指定的表头行 {header_row} 超出文件非空行数 {len(raw_rows)}")
+    detection = detect_header_row(raw_rows, preferred_index=preferred)
+    return (detection.index if detection is not None else 0), detection
+
+
+def _parse_delimited_detailed(
+    text: str,
+    *,
+    delimiter: str | None = None,
+    header_row: int | None = None,
+) -> tuple[list[dict[str, Any]], list[str], HeaderDetection | None]:
+    """解析分隔符文本：先识别表头行，再按表头切出数据行（单次流式读取）."""
+    delim = delimiter or sniff_csv_delimiter(text)
+    reader = csv.reader(io.StringIO(text), delimiter=delim)
+    buffered: list[tuple[list[str], int]] = []
+    for record in reader:
+        if not any((field or "").strip() for field in record):
+            continue
+        buffered.append((record, reader.line_num))
+        if len(buffered) >= HEADER_SCAN_ROWS:
+            break
+    if not buffered:
+        return [], [], None
+
+    index, detection = _resolve_header_detection([record for record, _ln in buffered], header_row)
+    header = [(field or "").strip() for field in buffered[index][0]]
+    _validate_csv_structure(header)
+
+    rows: list[dict[str, Any]] = []
+
+    def _append(record: list[str], line_num: int) -> None:
+        if len(record) > len(header):
+            raise ValueError(
+                f"CSV 第 {line_num} 行有 {len(record)} 个值，超出表头列数 {len(header)}，请检查值中未转义的逗号或换行"
+            )
+        cleaned: dict[str, Any] = {}
+        for i, key in enumerate(header):
+            raw_value = record[i] if i < len(record) else None
+            if isinstance(raw_value, str):
+                stripped = raw_value.strip()
+                cleaned[key] = None if stripped == "" else stripped
+            else:
+                cleaned[key] = raw_value
+        rows.append(cleaned)
+
+    for record, line_num in buffered[index + 1 :]:
+        _append(record, line_num)
+    for record in reader:
+        if not any((field or "").strip() for field in record):
+            continue
+        _append(record, reader.line_num)
+    return rows, header, detection
 
 
 def _parse_delimited_text(
@@ -260,20 +363,8 @@ def _parse_delimited_text(
     delimiter: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """解析分隔符文本（逗号/分号/pipe/tab 自动 sniff）."""
-    delim = delimiter or sniff_csv_delimiter(text)
-    reader = csv.DictReader(io.StringIO(text), delimiter=delim)
-    file_columns = list(reader.fieldnames or [])
-    rows: list[dict[str, Any]] = []
-    for r in reader:
-        cleaned = {}
-        for k, v in r.items():
-            if isinstance(v, str):
-                stripped = v.strip()
-                cleaned[k] = None if stripped == "" else stripped
-            else:
-                cleaned[k] = v
-        rows.append(cleaned)
-    return rows, file_columns
+    rows, cols, _detection = _parse_delimited_detailed(text, delimiter=delimiter)
+    return rows, cols
 
 
 def _parse_json_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
@@ -292,12 +383,13 @@ def _parse_json_text(text: str) -> tuple[list[dict[str, Any]], list[str]]:
     return [r for r in data if isinstance(r, dict)], file_columns
 
 
-def _parse_xlsx_bytes(
+def _parse_xlsx_detailed(
     xlsx_bytes: bytes,
     *,
     image_saver: Any = None,
-) -> tuple[list[dict[str, Any]], list[str]]:
-    """解析 XLSX 字节串（表头空列名/重复列名/行溢出明确报错）.
+    header_row: int | None = None,
+) -> tuple[list[dict[str, Any]], list[str], HeaderDetection | None]:
+    """解析 XLSX 字节串：识别表头行后切出数据行（表头空列名/重复列名/行溢出明确报错）.
 
     WPS 单元格图片：单元格值为 ``=DISPLIMG("ID_xxx",1)`` 公式时，按
     ``xl/cellimages.xml`` 映射取出图片，经 image_saver（默认 ephemeral，
@@ -308,35 +400,58 @@ def _parse_xlsx_bytes(
 
     resolve_image = make_displimg_resolver(xlsx_bytes, image_saver)
 
-    # 有界流式读取：WPS 导出文件常声明到 1048576 行（仅样式），全量物化会卡死（历史线上问题）
-    file_columns: list[str] = []
+    # 有界流式读取：WPS 导出文件常声明到 1048576 行（仅样式），全量物化会卡死（历史线上问题）。
+    # 先缓冲前 HEADER_SCAN_ROWS 个非空行做表头识别，再继续流式消费剩余行。
+    stream = read_xlsx_rows(xlsx_bytes)
+    buffered: list[tuple[int, tuple[Any, ...]]] = []
+    for item in stream:
+        buffered.append(item)
+        if len(buffered) >= HEADER_SCAN_ROWS:
+            break
+    if not buffered:
+        return [], [], None
+
+    raw_rows = [list(values) for _sheet_row, values in buffered]
+    index, detection = _resolve_header_detection(raw_rows, header_row)
+    header = [str(c) if c is not None else "" for c in raw_rows[index]]
+    _validate_xlsx_header(header)
+
     rows: list[dict[str, Any]] = []
-    has_rows = False
-    for sheet_row, r in read_xlsx_rows(xlsx_bytes):
-        has_rows = True
-        if not file_columns:
-            file_columns = [str(c) if c is not None else "" for c in r]
-            _validate_xlsx_header(file_columns)
-            continue
+
+    def _append(sheet_row: int, values: Sequence[Any]) -> None:
+        nonlocal header
         # 与旧实现（openpyxl 补齐到最大列宽）一致：更宽的行 → 表头出现空列名并报错
-        if len(r) > len(file_columns):
-            file_columns = [*file_columns, *([""] * (len(r) - len(file_columns)))]
-            _validate_xlsx_header(file_columns)
-        _check_xlsx_row_overflow(r, sheet_row, len(file_columns))
+        if len(values) > len(header):
+            header = [*header, *([""] * (len(values) - len(header)))]
+            _validate_xlsx_header(header)
+        _check_xlsx_row_overflow(values, sheet_row, len(header))
         row_dict: dict[str, Any] = {}
-        for i, key in enumerate(file_columns):
-            v = r[i] if i < len(r) else None
-            if isinstance(v, str):
-                displimg_id = match_displimg_formula(v)
+        for i, key in enumerate(header):
+            value = values[i] if i < len(values) else None
+            if isinstance(value, str):
+                displimg_id = match_displimg_formula(value)
                 if displimg_id is not None:
                     row_dict[key] = resolve_image(displimg_id)
                     continue
-                stripped = v.strip()
+                stripped = value.strip()
                 row_dict[key] = None if stripped == "" else stripped
             else:
                 # 长数字保护：避免 Excel 数值精度经 JSON/JS 链路进一步丢失
-                row_dict[key] = _coerce_long_numeric_to_text(v)
+                row_dict[key] = _coerce_long_numeric_to_text(value)
         rows.append(row_dict)
-    if not has_rows:
-        return [], []
-    return rows, file_columns
+
+    for sheet_row, values in buffered[index + 1 :]:
+        _append(sheet_row, values)
+    for sheet_row, values in stream:
+        _append(sheet_row, values)
+    return rows, header, detection
+
+
+def _parse_xlsx_bytes(
+    xlsx_bytes: bytes,
+    *,
+    image_saver: Any = None,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """解析 XLSX 字节串（表头空列名/重复列名/行溢出明确报错）."""
+    rows, cols, _detection = _parse_xlsx_detailed(xlsx_bytes, image_saver=image_saver)
+    return rows, cols

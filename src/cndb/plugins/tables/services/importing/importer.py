@@ -51,6 +51,8 @@ from cndb.plugins.tables.services.transfer import (
     decode_bytes_auto,
     sniff_csv_delimiter,
 )
+from cndb.plugins.tables.services.transfer.header_detect import HEADER_SCAN_ROWS, HeaderDetection
+from cndb.plugins.tables.services.transfer.spreadsheet import _resolve_header_detection
 
 logger = logging.getLogger(__name__)
 
@@ -175,15 +177,19 @@ class Importer:
         rows: list[dict[str, Any]] | None = None,
         match_keys: list[str] | None = None,
         unknown_cols_strategy: str = "drop",
+        header_row: int | None = None,
     ) -> ImportAnalysisResult:
         """仅做解析 + 校验 + 报告 + upsert 匹配 + 字段规划，不写库.
 
-        传入已解析的 ``rows`` 可跳过解析阶段（比如前端直接传 JSON 对象数组）.
+        传入已解析的 ``rows`` 可跳过解析阶段（比如前端直接传 JSON 对象数组）。
+        ``header_row`` 为用户指定的表头行号（1 基）；为空时自动识别表头所在行，
+        识别结果（行号 + 概率 + 候选）写入 ``report["header_detection"]``。
         """
+        detection: HeaderDetection | None = None
         if rows is None:
             if format is None:
                 raise ValueError("必须提供 format 或 rows")
-            rows, file_columns = self._parse(content, format)
+            rows, file_columns, detection = self._parse(content, format, header_row=header_row)
         else:
             file_columns = self._collect_columns(rows)
 
@@ -251,6 +257,10 @@ class Importer:
         # ── Task 4: 清洗建议生成 ─────────────────────
         report["cleaning_suggestions"] = generate_cleaning_suggestions(column_profiles, data_quality_summary)
 
+        # ── 表头行识别结果（前端提示 + 允许改选后重算） ──
+        report["header_detection"] = detection.to_dict() if detection is not None else None
+        report["header_row"] = detection.row if detection is not None else None
+
         return ImportAnalysisResult(
             report=report,
             results=results,
@@ -273,6 +283,7 @@ class Importer:
         dropped_columns: list[str] | None = None,
         cleaning_actions: list[dict[str, Any]] | None = None,
         progress_cb: Callable[[int, str], None] | None = None,
+        header_row: int | None = None,
     ) -> ImportExecuteResult:
         """完整流水线：解析 → （可选）清洗 → 校验 → 报告 → upsert → 落库.
 
@@ -299,7 +310,7 @@ class Importer:
         if analysis is not None:
             # 若需清洗，必须回退到原始 rows 重新跑 analyze
             if cleaning_actions:
-                orig_rows = self._resolve_original_rows(content, format, rows, analysis)
+                orig_rows = self._resolve_original_rows(content, format, rows, analysis, header_row=header_row)
                 cleaned_rows, applied = apply_cleaning_actions(
                     orig_rows, analysis.report.get("column_profiles", []), cleaning_actions
                 )
@@ -320,7 +331,7 @@ class Importer:
             if rows is None:
                 if format is None:
                     raise ValueError("必须提供 format 或 rows")
-                rows, _orig_cols = self._parse(content or "", format)
+                rows, _orig_cols, _detection = self._parse(content or "", format, header_row=header_row)
             if cleaning_actions:
                 # 需要列画像来做 IQR / fill_null，先快速跑一次 analyze 拿 profiles
                 tmp = self.analyze(content or "", format, rows=rows)
@@ -911,14 +922,21 @@ class Importer:
 
     # ── 内部：解析 ──────────────────────────────
 
-    def _parse(self, content: bytes | str, format: _Format) -> tuple[list[dict[str, Any]], list[str]]:
-        """把文件内容转为 (行列表, 文件列名)."""
+    def _parse(
+        self,
+        content: bytes | str,
+        format: _Format,
+        *,
+        header_row: int | None = None,
+    ) -> tuple[list[dict[str, Any]], list[str], HeaderDetection | None]:
+        """把文件内容转为 (行列表, 文件列名, 表头识别结果)."""
         if format in ("csv", "tsv", "delimited"):
-            return self._parse_csv(content, delimiter=None)
+            return self._parse_csv(content, delimiter=None, header_row=header_row)
         if format == "json":
-            return self._parse_json(content)
+            rows, file_columns = self._parse_json(content)
+            return rows, file_columns, None
         if format == "xlsx":
-            return self._parse_xlsx_with_images(content)
+            return self._parse_xlsx_with_images(content, header_row=header_row)
         raise ValueError(f"不支持的格式: {format}")
 
     @staticmethod
@@ -926,17 +944,40 @@ class Importer:
         content: bytes | str,
         *,
         delimiter: str | None = None,
-    ) -> tuple[list[dict[str, Any]], list[str]]:
-        """解析分隔符文本，自动 sniff 分隔符（逗号/分号/pipe/tab）."""
+        header_row: int | None = None,
+    ) -> tuple[list[dict[str, Any]], list[str], HeaderDetection | None]:
+        """解析分隔符文本，自动 sniff 分隔符（逗号/分号/pipe/tab）并识别表头行."""
         if isinstance(content, bytes):
             text, _enc, _conf = decode_bytes_auto(content)
         else:
             text = content
         delim = delimiter or sniff_csv_delimiter(text)
-        reader = csv.DictReader(io.StringIO(text), delimiter=delim)
-        file_columns = list(reader.fieldnames or [])
-        rows = [dict(row) for row in reader]
-        return rows, file_columns
+        reader = csv.reader(io.StringIO(text), delimiter=delim)
+        buffered: list[list[str]] = []
+        for record in reader:
+            if not any((field or "").strip() for field in record):
+                continue
+            buffered.append(record)
+            if len(buffered) >= HEADER_SCAN_ROWS:
+                break
+        if not buffered:
+            return [], [], None
+
+        index, detection = _resolve_header_detection(buffered, header_row)
+        file_columns = list(buffered[index])
+        rows: list[dict[str, Any]] = []
+
+        def _append(record: list[str]) -> None:
+            # DictReader 语义：短行缺列补 None，超出表头的列丢弃
+            rows.append({key: (record[i] if i < len(record) else None) for i, key in enumerate(file_columns)})
+
+        for record in buffered[index + 1 :]:
+            _append(record)
+        for record in reader:
+            if not any((field or "").strip() for field in record):
+                continue
+            _append(record)
+        return rows, file_columns, detection
 
     @staticmethod
     def _parse_json(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
@@ -958,7 +999,11 @@ class Importer:
         return [r for r in data if isinstance(r, dict)], file_columns
 
     @staticmethod
-    def _parse_xlsx(content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
+    def _parse_xlsx(
+        content: bytes | str,
+        *,
+        header_row: int | None = None,
+    ) -> tuple[list[dict[str, Any]], list[str], HeaderDetection | None]:
         from cndb.plugins.tables.services.transfer import _check_xlsx_row_overflow, _validate_xlsx_header
         from cndb.plugins.tables.services.transfer.xlsx_rows import read_xlsx_rows
 
@@ -966,26 +1011,42 @@ class Importer:
         # 有界流式读取：WPS 导出的文件常声明到 1048576 行（仅样式），
         # 旧写法 list(iter_rows()) 会把百万空行物化 → 进度卡 5% 且无报错（甚至 OOM）。
         stream = read_xlsx_rows(raw)
-        header_row: tuple[Any, ...] | None = None
-        file_columns: list[str] = []
-        rows: list[dict[str, Any]] = []
-        for sheet_row, r in stream:
-            if header_row is None:
-                header_row = r
-                file_columns = [str(c) if c is not None else "" for c in r]
-                # 表头空列名/重复列名明确报错（与 transfer XLSX 守卫同语义）
-                _validate_xlsx_header(file_columns)
-                continue
-            # 与旧实现一致：更宽的数据行会让表头出现"缺失列" → 空列名守卫报错
-            if len(r) > len(file_columns):
-                file_columns = [*file_columns, *([""] * (len(r) - len(file_columns)))]
-                _validate_xlsx_header(file_columns)
-            _check_xlsx_row_overflow(r, sheet_row, len(file_columns))
-            # 长数字保护：对每个单元格值做精度保护转换
-            rows.append({k: _coerce_long_numeric_to_text(v) for k, v in zip(file_columns, r, strict=False)})
-        return rows, file_columns
+        buffered: list[tuple[int, tuple[Any, ...]]] = []
+        for item in stream:
+            buffered.append(item)
+            if len(buffered) >= HEADER_SCAN_ROWS:
+                break
+        if not buffered:
+            return [], [], None
 
-    def _parse_xlsx_with_images(self, content: bytes | str) -> tuple[list[dict[str, Any]], list[str]]:
+        index, detection = _resolve_header_detection([list(values) for _sheet_row, values in buffered], header_row)
+        file_columns = [str(c) if c is not None else "" for c in buffered[index][1]]
+        # 表头空列名/重复列名明确报错（与 transfer XLSX 守卫同语义）
+        _validate_xlsx_header(file_columns)
+        rows: list[dict[str, Any]] = []
+
+        def _append(sheet_row: int, values: tuple[Any, ...]) -> None:
+            nonlocal file_columns
+            # 与旧实现一致：更宽的数据行会让表头出现"缺失列" → 空列名守卫报错
+            if len(values) > len(file_columns):
+                file_columns = [*file_columns, *([""] * (len(values) - len(file_columns)))]
+                _validate_xlsx_header(file_columns)
+            _check_xlsx_row_overflow(values, sheet_row, len(file_columns))
+            # 长数字保护：对每个单元格值做精度保护转换
+            rows.append({k: _coerce_long_numeric_to_text(v) for k, v in zip(file_columns, values, strict=False)})
+
+        for sheet_row, values in buffered[index + 1 :]:
+            _append(sheet_row, values)
+        for sheet_row, values in stream:
+            _append(sheet_row, values)
+        return rows, file_columns, detection
+
+    def _parse_xlsx_with_images(
+        self,
+        content: bytes | str,
+        *,
+        header_row: int | None = None,
+    ) -> tuple[list[dict[str, Any]], list[str], HeaderDetection | None]:
         """解析 XLSX 并把 WPS 单元格图片落盘到目标表所属工作区.
 
         Importer 的 execute(analysis=...) 复用 analyze 阶段解析出的行值，
@@ -999,15 +1060,15 @@ class Importer:
 
         raw = content if isinstance(content, bytes) else content.encode()
         resolve_image = make_displimg_resolver(raw, make_workspace_image_saver(self.table.workspace_id))
-        rows, file_columns = self._parse_xlsx(raw)
+        rows, file_columns, detection = self._parse_xlsx(raw, header_row=header_row)
         if not rows:
-            return rows, file_columns
+            return rows, file_columns, detection
         for row in rows:
             for key, val in list(row.items()):
                 displimg_id = match_displimg_formula(val)
                 if displimg_id is not None:
                     row[key] = resolve_image(displimg_id)
-        return rows, file_columns
+        return rows, file_columns, detection
 
     @staticmethod
     def _collect_columns(rows: list[dict[str, Any]]) -> list[str]:
@@ -1024,6 +1085,8 @@ class Importer:
         fmt: _Format | None,
         rows: list[dict[str, Any]] | None,
         analysis: ImportAnalysisResult,
+        *,
+        header_row: int | None = None,
     ) -> list[dict[str, Any]]:
         """在 execute 清洗分支里拿到"原始未解析前"的 rows.
 
@@ -1034,7 +1097,7 @@ class Importer:
         if rows is not None:
             return rows
         if content is not None and fmt is not None:
-            return self._parse(content, fmt)[0]
+            return self._parse(content, fmt, header_row=header_row)[0]
         # 兜底：从 analysis.results 反推
         return [r.values for r in analysis.results]
 
