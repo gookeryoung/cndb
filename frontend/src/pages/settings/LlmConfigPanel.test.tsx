@@ -42,8 +42,8 @@ function setupHandlers(options: {
   putBodies = []
   testBodies = []
   server.use(
-    http.get('/api/v1/accounts/llm-config', () => HttpResponse.json(config)),
-    http.put('/api/v1/accounts/llm-config', async ({ request }) => {
+    http.get('/api/v1/llm/config', () => HttpResponse.json(config)),
+    http.put('/api/v1/llm/config', async ({ request }) => {
       const body = (await request.json()) as Record<string, unknown>
       putBodies.push(body)
       config = {
@@ -56,7 +56,7 @@ function setupHandlers(options: {
       }
       return HttpResponse.json(config)
     }),
-    http.post('/api/v1/accounts/llm-config/test', async ({ request }) => {
+    http.post('/api/v1/llm/config/test', async ({ request }) => {
       testBodies.push((await request.json()) as Record<string, unknown>)
       return HttpResponse.json(
         options.testResult ?? { ok: true, latency_ms: 120, model: 'deepseek-chat', message: '连通成功' },

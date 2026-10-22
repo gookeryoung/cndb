@@ -1,28 +1,33 @@
-"""内置 provider：``llm_prompt`` —— 用大模型提示词生成数据行（ADR 0014 / ADR 0019）.
+"""内置 provider：``llm_prompt`` —— 用大模型提示词生成数据行（ADR 0014 / ADR 0019 / ADR 0020）.
+
+ADR 0020 P0 起，模型调用 / 连接解析 / JSON 解析已抽到平台插件 ``cndb.plugins.llm``；
+本模块只保留数据源领域语义：提示词变量求值、请求体组装、行解析与落表（``auto_table``）。
+因此这里不出现任何 HTTP 细节，``provider.build_requests`` 产出的 ``RequestPlan`` 通过
+``fetcher`` 指回平台客户端（重试 / SSRF 白名单统一在 ``llm.services.client``）。
 
 协议限定为 OpenAI 兼容 ``POST {base_url}/chat/completions``：
 
 - 请求：``system`` / ``user_template`` 经 ``render_text_lenient`` 宽松求值后组成 messages
-  （未知占位符 / JSON 裸花括号原样保留，ADR 0019），
-  ``json_mode=true`` 时附带 ``response_format={"type":"json_object"}``；
-  系统提示词优先级：任务显式 system > 工作区连接覆盖 > 内置 :data:`DEFAULT_SYSTEM_PROMPT`；
+  （未知占位符 / JSON 裸花括号原样保留，ADR 0019），``json_mode=true`` 时附带
+  ``response_format={"type":"json_object"}``；
+  系统提示词优先级：任务显式 system > 个人连接覆盖 > 内置 :data:`DEFAULT_SYSTEM_PROMPT`；
 - 响应：取 ``choices[0].message.content``，去掉 Markdown 代码围栏后解析 JSON；
   对象 → 1 行，对象数组 → N 行，``{"rows": [...]}`` → 取 rows；
 - 落表：复用 ``apply_field_mapping`` + 既有 ``upsert_rows``（按 ``match_keys`` 幂等）。
 
-API Key 只从运行期模板变量 ``api_key`` 取（凭证会话或工作区「大模型连接」），缺失直接报错，不发出请求。
-地址 / 模型的缺省值来自 :mod:`cndb.plugins.datasource.services.connection`，任务配置可只写用户提示词。
+API Key 只从运行期模板变量 ``api_key`` 取（凭证会话或个人连接），缺失直接报错，不发出请求。
 """
 
 from __future__ import annotations
 
 import datetime as dt
-import json
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from cndb.core.http import DEFAULT_TIMEOUT as HTTP_DEFAULT_TIMEOUT
+from cndb.core.http import FetchConfig, fetch_json
 from cndb.plugins.datasource.providers.base import (
     CursorStrategy,
     FetchFn,
@@ -33,51 +38,35 @@ from cndb.plugins.datasource.providers.base import (
     SyncJobSpec,
 )
 from cndb.plugins.datasource.providers.template import render_text, render_text_lenient
-from cndb.plugins.datasource.services.connection import DEFAULT_BASE_URL, DEFAULT_MODEL
 from cndb.plugins.datasource.services.normalize import NormalizeResult, apply_field_mapping
-from cndb.plugins.tables.services.importing.api_fetch import (
-    DEFAULT_TIMEOUT,
-    FetchConfig,
-    fetch_json,
+from cndb.plugins.llm.services.client import (
+    LlmConnectionResult,
+    as_fetcher,
+    build_chat_body,
+)
+from cndb.plugins.llm.services.client import (
+    normalize_endpoint as _normalize_endpoint,
+)
+from cndb.plugins.llm.services.connection import DEFAULT_BASE_URL, DEFAULT_MODEL
+from cndb.plugins.llm.services.parsing import parse_chat_response, strip_json_fences
+from cndb.plugins.llm.services.prompts import (
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_SYSTEM_PROMPT,
+    DEFAULT_TEMPERATURE,
+    JSON_INSTRUCTION,
+    MAX_TOKENS_LIMIT,
+    TEST_MAX_TOKENS,
+    TEST_PROMPT,
 )
 
-DEFAULT_TEMPERATURE = 0.2
-# 4096 起步：推荐 / 新闻类提示词要输出多行结构化 JSON，1024 会在长文本中途截断（实机复现过
-# `Unterminated string`），而截断后既无法解析也无法说明原因，用户很难自查。
-DEFAULT_MAX_TOKENS = 4096
-MAX_TOKENS_LIMIT = 32768
-TEST_MAX_TOKENS = 64
-TEST_PROMPT = '只返回 JSON：{"ok": true}'
-JSON_INSTRUCTION = "只输出 JSON，不要输出 Markdown 代码围栏或解释文字。"
-
-# 内置系统提示词（ADR 0019）：用户只写业务提示词，系统侧约束由这里兜底。
-# 约束按「输出形态 → 命名 / 类型约定 → 数据真实性」组织，便于模型稳定产出可落表的结构化行。
-DEFAULT_SYSTEM_PROMPT = """你是一个数据抽取助手，负责把用户的业务需求转换为结构化的数据行。
-
-【输出要求】
-1. 只输出一个 JSON 对象或 JSON 数组，禁止输出 Markdown 代码围栏、解释文字、前后缀说明。
-2. 推荐使用 {"rows": [ {...}, {...} ]} 形式返回多行数据；只有一行时可返回单个对象。
-3. 每行必须是 JSON 对象，键为字段名，值为标量（字符串 / 数字 / 布尔 / null），禁止嵌套对象或数组。
-
-【字段命名与类型约定】
-4. 字段名统一使用英文 snake_case（如 city、trade_date、close_price），不要使用中文或空格。
-5. 日期统一用 YYYY-MM-DD，时间统一用 YYYY-MM-DD HH:MM:SS；不确定时不要猜。
-6. 数值字段只输出数字本身，不带单位、千分位、货币符号或百分号（百分比输出小数，如 0.032）。
-7. 同一字段在不同行中保持相同类型；缺失或无法确认的值用 null，不要填「暂无」「N/A」等占位文本。
-8. 每行都应包含稳定可识别的键（如 date、city、symbol、id），便于重复抓取时更新而不是新增。
-
-【真实性约束】
-9. 综述 / 摘要 / 推荐类任务（如新闻汇总、行业观察、美食做法、形势分析）不依赖实时数据库，必须基于你已掌握的公开知识尽力输出结构化结果；不要因为无法联网或无法逐条核实就返回空数组。
-10. 无法确认的实时事实（最新行情、今日要闻、实时价格、最新政策原文等）：在 summary / source 中标注「综合整理」，url 等无法确认的字段用空字符串；不要编造看似真实的原文链接。
-11. 禁止编造可核实的精确统计数字（如具体成交额、精确百分比、精确发布日期）；概括性的趋势与常识性描述可以输出。
-12. 只有在确实无法生成任何符合上述要求的数据时，才返回 {"rows": []}；不要用它规避本可完成的综述 / 摘要 / 推荐任务。"""
+DEFAULT_TIMEOUT = HTTP_DEFAULT_TIMEOUT
 
 # 供前端动态渲染的表单描述；前端当前按 provider 条件渲染固定字段，此处仍对外暴露。
-# ADR 0019 起地址 / 模型从工作区「大模型连接」继承，任务侧留空即可，因此 required=False。
+# ADR 0019 起地址 / 模型从个人「大模型连接」继承，任务侧留空即可，因此 required=False。
 LLM_PROMPT_PARAMS_SCHEMA: dict[str, Any] = {
     "fields": [
-        {"name": "url_template", "type": "text", "required": False, "label": "API 地址（留空用工作区连接）"},
-        {"name": "model", "type": "text", "required": False, "label": "模型（留空用工作区连接）"},
+        {"name": "url_template", "type": "text", "required": False, "label": "API 地址（留空用个人连接）"},
+        {"name": "model", "type": "text", "required": False, "label": "模型（留空用个人连接）"},
         {"name": "system_prompt", "type": "textarea", "label": "系统提示词（留空用内置默认）"},
         {"name": "user_template", "type": "textarea", "required": True, "label": "用户提示词"},
         {"name": "temperature", "type": "number", "default": DEFAULT_TEMPERATURE},
@@ -110,10 +99,13 @@ class LlmConfig:
         llm: Mapping[str, Any] | None,
         timeout: Any = None,
     ) -> LlmConfig:
-        url = normalize_endpoint(str(url_template or "").strip() or DEFAULT_BASE_URL)
+        try:
+            url = _normalize_endpoint(str(url_template or "").strip() or DEFAULT_BASE_URL)
+        except ValueError as exc:  # 平台层抛 ValueError，保持既有 ProviderError 语义
+            raise ProviderError(str(exc)) from exc
         prompt_data = dict(prompt or {})
         llm_data = dict(llm or {})
-        # ADR 0019：地址 / 模型可从工作区「大模型连接」继承，任务配置允许缺省。
+        # ADR 0019：地址 / 模型可从个人「大模型连接」继承，任务配置允许缺省。
         model = str(llm_data.get("model") or "").strip() or DEFAULT_MODEL
         user_template = str(prompt_data.get("user_template") or "").strip()
         if not user_template:
@@ -146,16 +138,6 @@ class LlmConfig:
         )
 
 
-@dataclass(slots=True)
-class LlmConnectionResult:
-    """连通测试结果（不落库、不写运行记录）."""
-
-    ok: bool
-    latency_ms: int
-    model: str = ""
-    message: str = ""
-
-
 class LlmPromptProvider:
     """大模型提示词 provider：一次请求生成一组行."""
 
@@ -169,6 +151,8 @@ class LlmPromptProvider:
     def build_requests(self, job: SyncJobSpec) -> list[RequestPlan]:
         config = LlmConfig.from_request_spec(job.request)
         api_key = _api_key(job)
+        # ADR 0020：LLM 请求经平台客户端执行（重试 / SSRF 白名单 / 错误分类统一）
+        fetcher: FetchFn = as_fetcher()
         plans: list[RequestPlan] = []
         for entrant in job.entrant_values or (None,):
             variables = self._variables(job, entrant)
@@ -178,6 +162,7 @@ class LlmPromptProvider:
                 label=f"entrant={entrant}" if entrant is not None else "single",
                 entrant=entrant,
                 metadata=metadata,
+                fetcher=fetcher,
             )
             plans.append(plan)
         return plans
@@ -206,17 +191,16 @@ class LlmPromptProvider:
         # 提示词用宽松模板（ADR 0019）：用户提示词里的 JSON 裸花括号 / 未注册占位符原样保留，
         # 但 headers 等请求模板仍走严格 render_text，语义不变。
         system = render_text_lenient(_system_prompt(config, job), variables)
-        body: dict[str, Any] = {
-            "model": config.model,
-            "messages": [
+        body = build_chat_body(
+            model=config.model,
+            messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": render_text_lenient(config.user_template, variables)},
             ],
-            "temperature": config.temperature,
-            "max_tokens": config.max_tokens,
-        }
-        if config.json_mode:
-            body["response_format"] = {"type": "json_object"}
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+            json_mode=config.json_mode,
+        )
 
         def handler(text: str, _config: FetchConfig) -> list[dict[str, Any]]:
             return _parse_response(text, metadata)
@@ -247,15 +231,11 @@ class LlmPromptProvider:
 
 
 def normalize_endpoint(url: str) -> str:
-    """把 base_url 归一为 ``.../chat/completions`` 端点；已带路径则原样保留."""
-    value = url.strip().rstrip("/")
-    if not value:
-        raise ProviderError("request_spec.url_template 不能为空")
-    if not value.startswith(("http://", "https://")):
-        raise ProviderError("request_spec.url_template 必须是 http/https URL")
-    if not value.endswith("/chat/completions"):
-        value = f"{value}/chat/completions"
-    return value
+    """把 base_url 归一为 ``.../chat/completions`` 端点（平台实现 + 既有错误类型）."""
+    try:
+        return _normalize_endpoint(url)
+    except ValueError as exc:
+        raise ProviderError(str(exc)) from exc
 
 
 def validate_llm_request_spec(
@@ -301,7 +281,11 @@ def test_llm_connection(
     session_headers: Mapping[str, str] | None = None,
     fetch: FetchFn | None = None,
 ) -> LlmConnectionResult:
-    """发一次最小模型请求验证地址 / Key / 模型；不落库、不写运行记录."""
+    """发一次最小模型请求验证地址 / Key / 模型；不落库、不写运行记录.
+
+    ADR 0020：连通测试只用于「个人设置 → 大模型」，接口层已迁到
+    ``POST /api/v1/llm/config/test``；本函数保留给数据源侧诊断与既有测试。
+    """
     started = time.perf_counter()
     if not api_key.strip():
         return LlmConnectionResult(
@@ -330,17 +314,16 @@ def test_llm_connection(
         # system / user 的求值同样走宽松模板，含 JSON 裸花括号也不会报错。
         variables: dict[str, Any] = {"api_key": api_key, "today": _today()}
         system_content = render_text_lenient(config.system, variables) if config.system else JSON_INSTRUCTION
-        body: dict[str, Any] = {
-            "model": config.model,
-            "messages": [
+        body = build_chat_body(
+            model=config.model,
+            messages=[
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": render_text_lenient(TEST_PROMPT, variables)},
             ],
-            "temperature": 0,
-            "max_tokens": min(config.max_tokens, TEST_MAX_TOKENS),
-        }
-        if config.json_mode:
-            body["response_format"] = {"type": "json_object"}
+            temperature=0,
+            max_tokens=min(config.max_tokens, TEST_MAX_TOKENS),
+            json_mode=config.json_mode,
+        )
 
         def handler(text: str, _config: FetchConfig) -> list[dict[str, Any]]:
             return _parse_response(text, metadata)
@@ -372,7 +355,7 @@ def test_llm_connection(
 
 
 def _system_prompt(config: LlmConfig, job: SyncJobSpec) -> str:
-    """系统提示词优先级：任务显式 > 工作区连接覆盖 > 内置默认；始终追加 JSON 指令."""
+    """系统提示词优先级：任务显式 > 个人连接覆盖 > 内置默认；始终追加 JSON 指令."""
     override = str(job.extra_variables.get("system_prompt_default") or "").strip()
     system = config.system or override or DEFAULT_SYSTEM_PROMPT
     if JSON_INSTRUCTION not in system:
@@ -384,112 +367,11 @@ def _parse_response(
     text: str,
     metadata: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
+    """OpenAI 兼容响应 → 行数组（解析实现已迁到 ``llm.services.parsing``）."""
     try:
-        payload = json.loads(text)
-    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-        raise ProviderError(f"模型响应不是合法 JSON: {exc}") from exc
-    if not isinstance(payload, Mapping):
-        raise ProviderError("模型响应必须是 JSON 对象")
-    if "choices" not in payload and payload.get("error"):
-        raise ProviderError(f"模型接口错误: {_error_message(payload.get('error'))}")
-    choices = payload.get("choices")
-    if not isinstance(choices, list) or not choices:
-        raise ProviderError("模型响应缺少 choices")
-    first: Mapping[str, Any] = choices[0] if isinstance(choices[0], Mapping) else {}
-    raw_message = first.get("message")
-    message: Mapping[str, Any] = raw_message if isinstance(raw_message, Mapping) else {}
-    content = _content_text(message.get("content"))
-    if not content:
-        raise ProviderError("模型响应 content 为空")
-    if metadata is not None:
-        metadata.update(_response_metadata(payload))
-    content_text = strip_json_fences(content)
-    try:
-        parsed = json.loads(content_text)
-    except json.JSONDecodeError as exc:
-        if _looks_truncated(exc, content_text):
-            raise ProviderError(
-                f"模型输出可能被截断：请提高 max_tokens（当前默认 {DEFAULT_MAX_TOKENS}）"
-                f"或精简提示词输出（本次返回 {len(content_text)} 字符）；原始错误: {exc}"
-            ) from exc
-        raise ProviderError(f"模型返回内容不是合法 JSON: {exc}") from exc
-    return _rows_from_payload(parsed)
-
-
-# 判断 JSON 解析失败是否更像「输出被 max_tokens 截断」而不是模型返回了别的东西：
-# - ``Unterminated string``：字符串没有闭合，说明内容在字符串中途结束；
-# - ``Expecting ...``：缺少分隔符 / 值，只有错误位置落在内容末尾附近才按截断处理，
-#   模型输出中间语法错误（如漏逗号）仍保留原来的「不是合法 JSON」文案。
-_TRUNCATION_MESSAGE_PREFIXES = ("Unterminated string", "Expecting")
-_TRUNCATION_TAIL_TOLERANCE = 2
-
-
-def _looks_truncated(exc: json.JSONDecodeError, content: str) -> bool:
-    if not exc.msg.startswith(_TRUNCATION_MESSAGE_PREFIXES):
-        return False
-    if exc.msg.startswith("Unterminated string"):
-        return True
-    return exc.pos >= max(0, len(content) - _TRUNCATION_TAIL_TOLERANCE)
-
-
-def _rows_from_payload(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, list):
-        return [_as_row(item) for item in payload]
-    if isinstance(payload, Mapping):
-        rows = payload.get("rows")
-        if isinstance(rows, list):
-            return [_as_row(item) for item in rows]
-        return [dict(payload)]
-    raise ProviderError("模型返回的 JSON 必须是对象或对象数组")
-
-
-def _as_row(item: Any) -> dict[str, Any]:
-    if not isinstance(item, Mapping):
-        raise ProviderError("模型返回的数组元素必须是对象")
-    return dict(item)
-
-
-def _content_text(content: Any) -> str:
-    if isinstance(content, str):
-        return content.strip()
-    if isinstance(content, list):
-        parts: list[str] = []
-        for part in content:
-            if isinstance(part, Mapping) and isinstance(part.get("text"), str):
-                parts.append(part["text"])
-        return "".join(parts).strip()
-    return ""
-
-
-def strip_json_fences(content: str) -> str:
-    """去掉模型常见的 ```json ... ``` 代码围栏."""
-    text = content.strip()
-    if not text.startswith("```"):
-        return text
-    lines = text.splitlines()
-    if lines and lines[0].startswith("```"):
-        lines = lines[1:]
-    if lines and lines[-1].strip() == "```":
-        lines = lines[:-1]
-    return "\n".join(lines).strip()
-
-
-def _response_metadata(payload: Mapping[str, Any]) -> dict[str, Any]:
-    metadata: dict[str, Any] = {"model": str(payload.get("model") or "")}
-    usage = payload.get("usage")
-    if isinstance(usage, Mapping):
-        metadata["usage"] = {
-            key: int(value)
-            for key, value in usage.items()
-            if key in ("prompt_tokens", "completion_tokens", "total_tokens") and isinstance(value, int)
-        }
-    return metadata
-
-
-def _error_message(error: Any) -> str:
-    if isinstance(error, Mapping):
-        return str(error.get("message") or error)
-    return str(error)
+        return parse_chat_response(text, metadata)
+    except ValueError as exc:  # 平台层 LlmOutputInvalid → 数据源既有 ProviderError
+        raise ProviderError(str(exc)) from exc
 
 
 def _api_key(job: SyncJobSpec) -> str:

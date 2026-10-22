@@ -1,9 +1,9 @@
-/** 个人设置「大模型」页签 — 个人级连接配置（ADR 0019 个人级迁移）.
+/** 个人设置「大模型」页签 — 个人级连接配置（ADR 0019 个人级迁移 / ADR 0020 P0 平台归位）.
  *
  * 后端接口（当前登录用户，不依赖工作区）：
- * - `GET  /api/v1/accounts/llm-config`：读取配置（不回显 api_key，附带内置默认系统提示词）
- * - `PUT  /api/v1/accounts/llm-config`：保存配置（api_key 非空才更新、clear_api_key 清除）
- * - `POST /api/v1/accounts/llm-config/test`：连通测试（可用未保存的地址 / 模型 / Key，不落库）
+ * - `GET  /api/v1/llm/config`：读取配置（不回显 api_key，附带内置默认系统提示词）
+ * - `PUT  /api/v1/llm/config`：保存配置（api_key 非空才更新、clear_api_key 清除）
+ * - `POST /api/v1/llm/config/test`：连通测试（可用未保存的地址 / 模型 / Key，不落库）
  *
  * 交互要点：
  * - 面板内独立「保存」按钮（个人设置 Modal 的 footer 仍只有关闭）；
@@ -17,14 +17,14 @@ import { Alert, App, Button, Form, Input, Space, Tag, Typography } from 'antd'
 import { ApiOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  llmConfigApi,
+  llmApi,
   type LlmConfigPayload,
   type LlmConnectionTestResult,
 } from '@/api'
 
 const { Text, Paragraph } = Typography
 
-/** 与后端 `services/connection.py` 的内置默认值对齐 */
+/** 与后端 `plugins/llm/services/connection.py` 的内置默认值对齐 */
 const DEFAULT_BASE_URL = 'https://api.deepseek.com'
 const DEFAULT_MODEL = 'deepseek-chat'
 
@@ -55,7 +55,7 @@ export default function LlmConfigPanel() {
 
   const configQuery = useQuery({
     queryKey: ['llm-config'],
-    queryFn: llmConfigApi.get,
+    queryFn: llmApi.get,
     staleTime: 300_000,
   })
   const config = configQuery.data ?? null
@@ -73,7 +73,7 @@ export default function LlmConfigPanel() {
   }, [config, form])
 
   const saveMutation = useMutation({
-    mutationFn: (payload: LlmConfigPayload) => llmConfigApi.update(payload),
+    mutationFn: (payload: LlmConfigPayload) => llmApi.update(payload),
     onSuccess: saved => {
       queryClient.setQueryData(['llm-config'], saved)
       form.setFieldValue('api_key', '')
@@ -117,7 +117,7 @@ export default function LlmConfigPanel() {
       const apiKey = String(form.getFieldValue('api_key') ?? '').trim()
       const systemPrompt = String(form.getFieldValue('system_prompt') ?? '').trim()
       setTestResult(
-        await llmConfigApi.testConnection({
+        await llmApi.testConnection({
           base_url: String(values.base_url ?? '').trim(),
           model: String(values.model ?? '').trim(),
           // 未保存的 Key / 系统提示词直接随请求带上，后端只用于本次测试、不落库

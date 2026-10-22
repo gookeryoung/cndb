@@ -317,7 +317,7 @@ def test_fetch_json_redirect_missing_location():
     fake_client.__exit__.return_value = False
 
     with (
-        patch("cndb.plugins.tables.services.importing.api_fetch.httpx2.Client", return_value=fake_client),
+        patch("cndb.core.http.httpx2.Client", return_value=fake_client),
         pytest.raises(ValueError, match="缺少 Location"),
     ):
         fetch_json(FetchConfig(url="http://x.example.com"))
@@ -351,7 +351,7 @@ def test_fetch_json_301_post_downgrades_to_get():
     fake_client.__enter__.return_value.request.side_effect = fake_request
     fake_client.__exit__.return_value = False
 
-    with patch("cndb.plugins.tables.services.importing.api_fetch.httpx2.Client", return_value=fake_client):
+    with patch("cndb.core.http.httpx2.Client", return_value=fake_client):
         fetch_json(FetchConfig(url="http://x.example.com/api", method="POST", body={"k": "v"}))
 
     assert call_records[1]["method"] == "GET"

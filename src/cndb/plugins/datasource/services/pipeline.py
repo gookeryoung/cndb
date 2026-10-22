@@ -77,7 +77,6 @@ def run_pipeline(
         sleep: 注入的等待函数（测试用，缺省 ``time.sleep``）。
     """
     active = provider or get_provider(job.provider)
-    fetcher: FetchFn = fetch or fetch_json
     plans = active.build_requests(job)
 
     outcome = PipelineOutcome(plans=len(plans))
@@ -94,8 +93,10 @@ def run_pipeline(
         if rate_limit_ms > 0 and sent > 0:
             waiter(rate_limit_ms / 1000.0)
         sent += 1
+        # ADR 0020：plan 级抓取器优先（LLM 请求走平台客户端）；显式注入的 fetch 最高优先
+        plan_fetcher: FetchFn = fetch or plan.fetcher or fetch_json
         try:
-            rows = fetcher(plan.config)
+            rows = plan_fetcher(plan.config)
         except Exception as exc:  # 单请求失败不中断整体（I3）
             logger.warning("数据源请求失败 [%s]: %s", plan.label, exc)
             outcome.failures.append(

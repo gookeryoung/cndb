@@ -184,9 +184,17 @@ class Settings(BaseSettings):
     SLOW_REQUEST_MS: int = 500
     SLOW_QUERY_MS: int = 200
 
+    # ── 大模型能力平台（ADR 0020 P0）─────────────────────────
+    # 单用户每分钟调用上限（进程内滑窗；多副本部署时按副本独立限流）
+    LLM_CALLS_PER_MINUTE: int = 20
+    # SSRF 白名单：显式放行的主机名（内网 / 本机模型网关），默认空 = 严格拦截；
+    # 仅作用于大模型客户端，不影响数据源 / 导入的 SSRF 语义
+    LLM_PRIVATE_HOST_ALLOWLIST: list[str] = []
+    # llm_run 调用记录保留天数（`cndb llm prune` 使用；本期不自动清理）
+    LLM_RUN_RETENTION_DAYS: int = 90
+
     # API 前缀
     API_V1_PREFIX: str = "/api/v1"
-
     # 运行时文件目录（全部位于 ~/.cndb 下）
     DATA_DIR: Path = DATA_DIR
     CONFIG_DIR: Path = CONFIG_DIR

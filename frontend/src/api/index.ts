@@ -55,13 +55,17 @@ export type {
   SyncScheduleConfig,
   SyncScheduleMode,
 } from './datasource'
-export { llmConfigApi } from './llmConfig'
+export { llmApi } from './llm'
 export type {
+  LlmAction,
   LlmConfig,
   LlmConfigPayload,
   LlmConnectionTestPayload,
   LlmConnectionTestResult,
-} from './llmConfig'
+  LlmRun,
+  LlmRunPage,
+  LlmRunQuery,
+} from './llm'
 export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
 export { searchApi } from './search'

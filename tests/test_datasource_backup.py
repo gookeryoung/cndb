@@ -7,7 +7,8 @@ import json
 import pytest
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.datasource.models import DatasourceSyncJob, UserLlmConfig
+from cndb.plugins.datasource.models import DatasourceSyncJob
+from cndb.plugins.llm.models import LlmUserConfig as UserLlmConfig
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
 
