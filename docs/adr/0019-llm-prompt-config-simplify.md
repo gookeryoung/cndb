@@ -230,19 +230,19 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/connection.py`、`src/cndb/plugins/datasource/routers/llm_config.py`、`src/cndb/plugins/datasource/routers/__init__.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/plugins/datasource/schemas.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/alembic/versions/5e6f7a8b9c01_add_datasource_llm_config.py` | `tests/test_datasource_llm_config.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py`、`tests/test_migration_missing_model_columns.py` | TBD |
-| P1 | 已落地 | `src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/cli/sync.py` | `tests/test_datasource_auto_table.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_cli.py` | TBD |
-| P2 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | TBD |
+| P0 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/connection.py`、`src/cndb/plugins/datasource/routers/llm_config.py`、`src/cndb/plugins/datasource/routers/__init__.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/plugins/datasource/schemas.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/alembic/versions/5e6f7a8b9c01_add_datasource_llm_config.py` | `tests/test_datasource_llm_config.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py`、`tests/test_migration_missing_model_columns.py` | d0e2841e |
+| P1 | 已落地 | `src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/cli/sync.py` | `tests/test_datasource_auto_table.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_cli.py` | d0e2841e |
+| P2 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | d0e2841e |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系；提交列由 Lead 在提交后回填 sha。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地（后端连接 / 系统提示词 / 自动落表 + 前端极简表单与 5 组预设），等待提交回填 sha
+- 当前阶段：P0-P2 已落地并提交（`d0e2841e`）（后端连接 / 系统提示词 / 自动落表 + 前端极简表单与 5 组预设）
 - 已完成：P0 工作区级大模型连接 + 内置默认系统提示词 + prompt-only 校验 / 连通测试回退 + 备份 v6 + 提示词宽松模板（`render_text_lenient`，JSON 裸花括号可直接写）；P1 自动建表 / 空表补字段 / 自动幂等键 + 预览建议键 + CLI `preview` / `run --dry-run` 同步输出 `suggested_match_keys`；P2 前端极简表单 + 5 组推荐提示词 + 测试与文档
-- 下一步：Lead 回填三期提交 sha；人工确认后保持 `Status: Implemented`；如后续要支持「自动幂等键人工纠错入口 / 多连接」另立 ADR
+- 下一步：人工确认后保持 `Status: Implemented`；如后续要支持「自动幂等键人工纠错入口 / 多连接」另立 ADR
 - 已知坑：自动幂等键只在结果行内可判定，无唯一组合时退化为追加（看 `run.detail.auto_match_keys`）；自动补字段只在空表启用，已有表未知列按原策略；备份不导出 Key，导入后需重填；工作区连接未配置时运行错误文案指向「大模型连接」而非 401；宽松模板只作用于 `llm_prompt` 的 system / user 提示词，URL 与 headers 仍严格；CLI 预览需传 `db` 才会应用连接默认值并给出 `suggested_match_keys`
-- 最近一次全绿：`make check-docs`（2026-10-22，文档检查）；代码门禁以本轮提交为准
+- 最近一次全绿：`make check`（2026-10-22，后端 5262 passed / 覆盖率 97.74%，前端静态与覆盖率门槛通过）；提交 `d0e2841e`
 
 ## 附录：5 组推荐用户提示词说明
 
