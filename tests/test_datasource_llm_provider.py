@@ -14,8 +14,10 @@ from cndb.plugins.datasource.providers.base import (
     TimeWindowSpec,
 )
 from cndb.plugins.datasource.providers.llm_prompt import (
+    DEFAULT_MAX_TOKENS,
     DEFAULT_SYSTEM_PROMPT,
     JSON_INSTRUCTION,
+    LLM_PROMPT_PARAMS_SCHEMA,
     LlmConfig,
     LlmPromptProvider,
     normalize_endpoint,
@@ -145,6 +147,11 @@ class TestBuildRequests:
         with pytest.raises(ProviderError, match="模板变量缺失"):
             PROVIDER.build_requests(_job(request=spec))
 
+    def test_default_max_tokens_is_used_when_not_configured(self):
+        """默认 max_tokens 提到 4096，避免长 JSON 输出被截断（实机故障回归）."""
+        plan = PROVIDER.build_requests(_job(request=_spec(llm={"model": "model-a"})))[0]
+        assert plan.config.body["max_tokens"] == 4096
+
     def test_default_system_prompt_is_used_when_not_configured(self):
         """ADR 0019：任务不填系统提示词时用内置默认（用户只配用户提示词）."""
         spec = _spec(prompt={"user_template": "生成 {today} 的摘要"})
@@ -185,6 +192,14 @@ class TestBuildRequests:
         config = LlmConfig.from_payload(url_template="", prompt={"user_template": "ping"}, llm={})
         assert config.url == f"{DEFAULT_BASE_URL}/chat/completions"
         assert config.model == DEFAULT_MODEL
+
+    def test_default_system_prompt_requires_synthesis_tasks_output(self):
+        """系统提示词新口径：综述 / 摘要 / 推荐类必须尽力输出，不能因无法联网返回空."""
+        assert "综合整理" in DEFAULT_SYSTEM_PROMPT
+        assert "不要因为无法联网" in DEFAULT_SYSTEM_PROMPT
+        assert "综述 / 摘要 / 推荐类任务" in DEFAULT_SYSTEM_PROMPT
+        assert '{"rows": []}' in DEFAULT_SYSTEM_PROMPT
+        assert "编造" in DEFAULT_SYSTEM_PROMPT
 
 
 class TestParse:
@@ -242,6 +257,29 @@ class TestParse:
         with pytest.raises(ProviderError, match="模型接口错误"):
             PROVIDER.parse('{"error": {"message": "invalid key"}}', _job())
 
+    def test_truncated_content_reports_max_tokens_hint(self):
+        """实机故障：长输出在字符串中途结束（Unterminated string）→ 提示提高 max_tokens."""
+        content = '{"rows": [{"dish_name": "宫保鸡丁", "steps": "第一步 准备鸡腿肉与花生米'
+        with pytest.raises(ProviderError, match="截断") as excinfo:
+            PROVIDER.parse(_model_response(content), _job())
+        message = str(excinfo.value)
+        assert "max_tokens" in message
+        assert "4096" in message
+        assert f"本次返回 {len(content)} 字符" in message
+
+    def test_truncated_expecting_error_at_tail_is_classified(self):
+        """截断也可能表现为末尾缺分隔符（Expecting），同样按截断提示."""
+        content = '{"rows": [{"date": "2026-10-22"}'
+        with pytest.raises(ProviderError, match="截断"):
+            PROVIDER.parse(_model_response(content), _job())
+
+    def test_syntax_error_inside_content_keeps_original_message(self):
+        """内容中间的语法错误（漏逗号）不是截断，保留原「不是合法 JSON」文案."""
+        content = '{"a": 1 "b": 2}'
+        with pytest.raises(ProviderError, match="模型返回内容不是合法 JSON") as excinfo:
+            PROVIDER.parse(_model_response(content), _job())
+        assert "截断" not in str(excinfo.value)
+
     def test_normalize_uses_field_mapping(self):
         job = _job(field_mapping={"summary": FieldTransform(name="摘要", field_type="text")})
         result = PROVIDER.normalize([{"summary": "晴"}], job)
@@ -291,6 +329,14 @@ class TestValidation:
         config = validate_llm_request_spec({"prompt": {"user_template": "生成 {today}"}})
         assert config.url == f"{DEFAULT_BASE_URL}/chat/completions"
         assert config.model == DEFAULT_MODEL
+
+    def test_default_max_tokens_is_4096(self):
+        """默认 max_tokens 4096（1024 会截断长 JSON），schema 默认值同步."""
+        assert DEFAULT_MAX_TOKENS == 4096
+        config = validate_llm_request_spec({"prompt": {"user_template": "生成 {today}"}})
+        assert config.max_tokens == 4096
+        fields = {field["name"]: field for field in LLM_PROMPT_PARAMS_SCHEMA["fields"]}
+        assert fields["max_tokens"]["default"] == 4096
 
     def test_cron_does_not_require_match_keys(self):
         """ADR 0019：幂等键由运行期自动识别，cron 不再强制手填 match_keys."""

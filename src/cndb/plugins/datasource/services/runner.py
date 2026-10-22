@@ -124,7 +124,14 @@ def execute_job(
         cursor_config = CursorConfig.from_dict(job.cursor)
         cursor_from = window_start(cursor_config, today=today) or ""
         session = db.get(DatasourceSession, job.session_id) if job.session_id else None
-        spec = build_job_spec(job, cursor_from=cursor_from, today=today, session=session, db=db)
+        spec = build_job_spec(
+            job,
+            cursor_from=cursor_from,
+            today=today,
+            session=session,
+            db=db,
+            llm_user_id=getattr(user, "id", None) or job.created_by,
+        )
         outcome = run_pipeline(spec, fetch=fetch, rate_limit_ms=max(0, int(job.rate_limit_ms or 0)))
 
         # ADR 0019：仅 llm_prompt 自动建表 / 补字段 / 推断幂等键，其它 provider 行为不变
@@ -180,18 +187,27 @@ def preview_job(
     limit: int = PREVIEW_LIMIT,
     session: DatasourceSession | None = None,
     db: Session | None = None,
+    user: Any = None,
 ) -> PreviewResult:
     """抓一次做预览：不落库、不推进游标、不写运行记录.
 
     ``db`` 用于读取已有目标表的字段名（推断建议幂等键的候选）与补充 llm_prompt
-    连接默认值；缺省时按行 key 推断，其它预览行为与旧接口一致。
+    个人连接默认值；``user`` 用于解析个人连接（无则回退 ``job.created_by``）。
+    缺省时按行 key 推断，其它预览行为与旧接口一致。
     """
     current = now or dt.datetime.now(dt.UTC)
     today = _as_utc(current).date().isoformat()
     cursor_config = CursorConfig.from_dict(job.cursor)
     cursor_from = window_start(cursor_config, today=today) or ""
 
-    spec = build_job_spec(job, cursor_from=cursor_from, today=today, session=session, db=db)
+    spec = build_job_spec(
+        job,
+        cursor_from=cursor_from,
+        today=today,
+        session=session,
+        db=db,
+        llm_user_id=getattr(user, "id", None) or job.created_by,
+    )
     outcome = run_pipeline(spec, fetch=fetch, rate_limit_ms=max(0, int(job.rate_limit_ms or 0)))
     normalized = outcome.normalize
     columns: list[str] = []
@@ -229,14 +245,15 @@ def build_job_spec(
     today: str,
     session: DatasourceSession | None = None,
     db: Session | None = None,
+    llm_user_id: int | None = None,
 ) -> SyncJobSpec:
     """把 DB 里的 JSON 声明还原成 ``SyncJobSpec``，注入时间窗口与会话凭证.
 
     会话（M5）贡献两部分：``headers`` 作为请求头**铺底**（job 自己的同名头优先），
     ``secrets`` 作为模板变量（请求模板里写 ``{api_key}`` 即可）。
 
-    llm_prompt（ADR 0019）额外从工作区大模型连接补默认值：会话 secrets 的
-    ``api_key`` 优先，其次连接配置的 Key；``request_spec`` 缺 ``url_template`` /
+    llm_prompt（ADR 0019）额外从**个人**大模型连接补默认值：会话 secrets 的
+    ``api_key`` 优先，其次该用户个人连接配置的 Key；``request_spec`` 缺 ``url_template`` /
     ``llm.model`` 时用连接默认值补齐；连接的系统提示词作为
     ``extra_variables["system_prompt_default"]`` 交给 provider 使用。
     """
@@ -250,7 +267,8 @@ def build_job_spec(
         # 由外层 try 落成 failed 运行记录 —— 静默降级成空密钥只会变成难查的 401
         extra_variables = decrypt_secrets(session.secrets)
     if job.provider == "llm_prompt":
-        connection = _load_llm_connection(db, job.workspace_id)
+        user_id = llm_user_id if llm_user_id is not None else job.created_by
+        connection = _load_llm_connection(db, user_id)
         if connection is not None:
             _apply_llm_connection(payload, extra_variables, connection)
     # 内置提示词变量（ADR 0014）：today 由本次运行时钟统一给出，保证重放一致
@@ -268,13 +286,15 @@ def build_job_spec(
     )
 
 
-def _load_llm_connection(db: Session | None, workspace_id: int) -> Any:
-    """读取工作区大模型连接配置（ADR 0019）；未注入 db（旧调用方）时返回 None."""
+def _load_llm_connection(db: Session | None, user_id: int | None) -> Any:
+    """读取**个人**大模型连接配置（ADR 0019）；未注入 db（旧调用方）时返回 None."""
     if db is None:
         return None
     from cndb.plugins.datasource.services.connection import load_llm_connection
 
-    return load_llm_connection(db, workspace_id)
+    if user_id is None:
+        return None
+    return load_llm_connection(db, user_id)
 
 
 def _apply_llm_connection(
@@ -282,7 +302,7 @@ def _apply_llm_connection(
     extra_variables: dict[str, Any],
     connection: Any,
 ) -> None:
-    """用工作区连接配置补齐 llm_prompt 的请求声明与模板变量（原地修改）."""
+    """用个人连接配置补齐 llm_prompt 的请求声明与模板变量（原地修改）."""
     api_key = str(getattr(connection, "api_key", "") or "").strip()
     if api_key and not str(extra_variables.get("api_key") or "").strip():
         # 会话 secrets 优先；没有会话 Key 时回退到连接配置

@@ -8,18 +8,9 @@ import DatasourcePage from './DatasourcePage'
 import { LLM_PROMPT_PRESETS } from './llmPromptPresets'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
-import type { LlmConfig, SyncJob } from '@/api'
+import type { SyncJob } from '@/api'
 
 const WID = 1
-
-const DEFAULT_LLM_CONFIG: LlmConfig = {
-  configured: true,
-  base_url: 'https://api.deepseek.com',
-  model: 'deepseek-chat',
-  has_api_key: true,
-  system_prompt: '',
-  default_system_prompt: '你是数据抽取助手，只输出 JSON，不要输出 Markdown 代码围栏或解释文字。',
-}
 
 const PROVIDERS = [
   {
@@ -44,7 +35,7 @@ const PROVIDERS = [
         { name: 'url_template', type: 'text', required: true, label: 'API 地址' },
         { name: 'model', type: 'text', required: true, label: '模型' },
         { name: 'temperature', type: 'number', default: 0.2 },
-        { name: 'max_tokens', type: 'number', default: 1024 },
+        { name: 'max_tokens', type: 'number', default: 4096 },
         { name: 'json_mode', type: 'boolean', default: true },
       ],
       placeholders: ['entrant', 'start', 'end', 'today'],
@@ -83,16 +74,12 @@ const TABLES = [{ id: 20, name: '天气日表' }]
 let sessionBodies: Array<Record<string, unknown>> = []
 let templateBodies: Array<Record<string, unknown>> = []
 let jobBodies: Array<Record<string, unknown>> = []
-let connectionBodies: Array<Record<string, unknown>> = []
-let llmConfigBodies: Array<Record<string, unknown>> = []
 
 function setupHandlers(
   jobs: SyncJob[],
   options: {
     runStatus?: 'success' | 'failed'
     createTemplateError?: string
-    connectionResult?: { ok: boolean; latency_ms: number; model: string; message: string }
-    llmConfig?: Partial<LlmConfig>
     previewResult?: Record<string, unknown>
   } = {},
 ) {
@@ -100,28 +87,11 @@ function setupHandlers(
   sessionBodies = []
   templateBodies = []
   jobBodies = []
-  connectionBodies = []
-  llmConfigBodies = []
-  const llmConfig: LlmConfig = { ...DEFAULT_LLM_CONFIG, ...options.llmConfig }
   server.use(
     http.get(`/api/v1/workspaces/${WID}/datasource/providers`, () => HttpResponse.json({ providers: PROVIDERS })),
     http.get(`/api/v1/workspaces/${WID}/datasource/sync-jobs`, () =>
       HttpResponse.json({ total: jobs.length, jobs }),
     ),
-    http.get(`/api/v1/workspaces/${WID}/datasource/llm-config`, () => HttpResponse.json(llmConfig)),
-    http.put(`/api/v1/workspaces/${WID}/datasource/llm-config`, async ({ request }) => {
-      calls.push('update-llm-config')
-      const body = (await request.json()) as Record<string, unknown>
-      llmConfigBodies.push(body)
-      return HttpResponse.json({
-        ...llmConfig,
-        configured: true,
-        has_api_key: true,
-        base_url: (body.base_url as string | undefined) ?? llmConfig.base_url,
-        model: (body.model as string | undefined) ?? llmConfig.model,
-        system_prompt: (body.system_prompt as string | undefined) ?? llmConfig.system_prompt,
-      })
-    }),
     http.post(`/api/v1/workspaces/${WID}/datasource/sync-jobs/:id/preview`, () => {
       calls.push('preview')
       return HttpResponse.json(
@@ -151,13 +121,6 @@ function setupHandlers(
       const body = (await request.json()) as Record<string, unknown>
       jobBodies.push(body)
       return HttpResponse.json({ ...jobs[0], id: Number(params.id), ...body })
-    }),
-    http.post(`/api/v1/workspaces/${WID}/datasource/test-connection`, async ({ request }) => {
-      calls.push('test-connection')
-      connectionBodies.push((await request.json()) as Record<string, unknown>)
-      return HttpResponse.json(
-        options.connectionResult ?? { ok: true, latency_ms: 120, model: 'deepseek-chat', message: '连通成功' },
-      )
     }),
     http.get(`/api/v1/workspaces/${WID}/tables`, () => HttpResponse.json(TABLES)),
     http.get(`/api/v1/workspaces/${WID}/datasource/sessions`, () =>
@@ -483,7 +446,7 @@ function makeLlmJob(overrides: Partial<SyncJob> = {}): SyncJob {
     request_spec: {
       url_template: 'https://api.deepseek.com',
       prompt: { system: '你是数据抽取助手', user_template: '请生成 {today} 的天气摘要，地区：{entrant}' },
-      llm: { model: 'deepseek-chat', temperature: 0.2, max_tokens: 1024, json_mode: true },
+      llm: { model: 'deepseek-chat', temperature: 0.2, max_tokens: 4096, json_mode: true },
       time_window: { mode: 'none' },
     },
     entrant_param: null,
@@ -495,19 +458,6 @@ function makeLlmJob(overrides: Partial<SyncJob> = {}): SyncJob {
 }
 
 describe('DatasourcePage · 大模型提示词', () => {
-  it('页头展示「大模型连接」按钮与已配置标签', async () => {
-    setupHandlers([makeLlmJob()])
-    renderPage()
-    expect(screen.getByRole('button', { name: /大模型连接/ })).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByTestId('datasource-llm-config-tag')).toHaveTextContent('已配置'))
-  })
-
-  it('未配置大模型连接时页头标签为「未配置」', async () => {
-    setupHandlers([makeLlmJob()], { llmConfig: { configured: false, has_api_key: false } })
-    renderPage()
-    await waitFor(() => expect(screen.getByTestId('datasource-llm-config-tag')).toHaveTextContent('未配置'))
-  })
-
   it('极简表单只保留提示词相关项，系统提示词收进高级设置', async () => {
     setupHandlers([makeLlmJob()])
     renderPage()
@@ -518,7 +468,10 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(userInput).toHaveValue('请生成 {today} 的天气摘要，地区：{entrant}')
     expect(within(drawer).getByText('用户提示词')).toBeInTheDocument()
     expect(within(drawer).getByText('目标表（留空则按任务名自动建表）')).toBeInTheDocument()
-    // API 地址 / 模型来自工作区连接，不再逐任务填写
+    // 连接配置改由「个人设置 → 大模型」提供，表单内只做提示
+    expect(within(drawer).getByTestId('datasource-llm-personal-hint')).toHaveTextContent(
+      '使用「个人设置 → 大模型」中的连接配置；未配置请先到个人设置填写 API Key',
+    )
     expect(within(drawer).queryByText('API 地址')).not.toBeInTheDocument()
     expect(within(drawer).queryByTestId('datasource-llm-model')).not.toBeInTheDocument()
     expect(within(drawer).queryByText('响应数组路径')).not.toBeInTheDocument()
@@ -577,21 +530,6 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(spec).not.toHaveProperty('data_path')
   })
 
-  it('未配置大模型连接时保存先引导去配置，不发保存请求', async () => {
-    const calls = setupHandlers([makeLlmJob()], { llmConfig: { configured: false, has_api_key: false } })
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
-    expect(await screen.findByTestId('datasource-llm-unconfigured')).toBeInTheDocument()
-
-    fireEvent.click(screen.getByTestId('datasource-save-btn'))
-    expect(
-      await screen.findByText('请先配置工作区的大模型连接（API 地址 / 模型 / API Key）'),
-    ).toBeInTheDocument()
-    expect(calls).not.toContain('update-job')
-    // 同时打开连接弹窗，方便直接配置
-    expect(await screen.findByTestId('datasource-llm-config-base-url')).toBeInTheDocument()
-  })
-
   it('保存并预览展示后端自动识别的幂等键', async () => {
     const calls = setupHandlers([makeLlmJob()])
     renderPage()
@@ -602,81 +540,6 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(await screen.findByText('自动识别幂等键：date, city')).toBeInTheDocument()
     // 预览时抽屉保持打开（便于对照建议幂等键）
     expect(screen.getByTestId('datasource-llm-user')).toBeInTheDocument()
-  })
-
-  it('连接弹窗预填默认值、展示内置默认系统提示词并可保存', async () => {
-    const calls = setupHandlers([makeLlmJob()])
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: /大模型连接/ }))
-
-    const baseUrl = await screen.findByTestId('datasource-llm-config-base-url')
-    const modal = baseUrl.closest('.ant-modal-content') as HTMLElement
-    expect(baseUrl).toHaveValue('https://api.deepseek.com')
-    expect(within(modal).getByTestId('datasource-llm-config-model')).toHaveValue('deepseek-chat')
-    // API Key 只写不回显
-    expect(within(modal).getByTestId('datasource-llm-config-api-key')).toHaveValue('')
-    expect(within(modal).getByTestId('datasource-llm-default-system')).toHaveTextContent(
-      '你是数据抽取助手，只输出 JSON，不要输出 Markdown 代码围栏或解释文字。',
-    )
-
-    fireEvent.change(within(modal).getByTestId('datasource-llm-config-model'), {
-      target: { value: 'deepseek-reasoner' },
-    })
-    fireEvent.change(within(modal).getByTestId('datasource-llm-config-api-key'), {
-      target: { value: 'sk-test' },
-    })
-    fireEvent.click(within(modal).getByTestId('datasource-llm-config-save'))
-
-    await waitFor(() => expect(calls).toContain('update-llm-config'))
-    expect(llmConfigBodies[0]).toMatchObject({
-      base_url: 'https://api.deepseek.com',
-      model: 'deepseek-reasoner',
-      api_key: 'sk-test',
-      system_prompt: '',
-    })
-    expect(await screen.findByText('大模型连接已保存')).toBeInTheDocument()
-  })
-
-  it('连接弹窗的连通测试用当前 base_url / model，并带上未保存的 API Key', async () => {
-    const calls = setupHandlers([makeLlmJob()])
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: /大模型连接/ }))
-    fireEvent.change(await screen.findByTestId('datasource-llm-config-api-key'), {
-      target: { value: 'sk-unsaved' },
-    })
-    fireEvent.click(await screen.findByTestId('datasource-llm-config-test'))
-
-    await waitFor(() => expect(calls).toContain('test-connection'))
-    expect(await screen.findByText('连通成功 · deepseek-chat · 120 ms')).toBeInTheDocument()
-    const requestSpec = connectionBodies[0].request_spec as Record<string, unknown>
-    expect(requestSpec).toMatchObject({
-      url_template: 'https://api.deepseek.com',
-      llm: { model: 'deepseek-chat' },
-    })
-    expect(connectionBodies[0]).toMatchObject({ api_key: 'sk-unsaved' })
-    expect(connectionBodies[0]).not.toHaveProperty('session_id')
-  })
-
-  it('连接弹窗未填写 API Key 时不发送 api_key，回退已保存 Key', async () => {
-    const calls = setupHandlers([makeLlmJob()])
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: /大模型连接/ }))
-    fireEvent.click(await screen.findByTestId('datasource-llm-config-test'))
-
-    await waitFor(() => expect(calls).toContain('test-connection'))
-    expect(connectionBodies[0].api_key).toBeUndefined()
-  })
-
-  it('连通测试失败展示后端原因', async () => {
-    setupHandlers([makeLlmJob()], {
-      connectionResult: { ok: false, latency_ms: 80, model: '', message: '401 Unauthorized' },
-    })
-    renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: /大模型连接/ }))
-    fireEvent.click(await screen.findByTestId('datasource-llm-config-test'))
-
-    expect(await screen.findByText('连通失败')).toBeInTheDocument()
-    expect(screen.getByText('401 Unauthorized')).toBeInTheDocument()
   })
 
   it('cron 调度时高级设置提示确认自动识别的幂等键', async () => {

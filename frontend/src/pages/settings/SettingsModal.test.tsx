@@ -1,10 +1,12 @@
 /**
- * SettingsModal 组件测试 —— 个人设置（用户资料 + 主题/字体 + 表格）.
+ * SettingsModal 组件测试 —— 个人设置（用户资料 + 大模型 + 主题/字体 + 表格）.
  *
  * 覆盖：Tab 结构与 initialTab 定位 / 用户资料紧凑表单（用户名只读）保存 /
- * 主题卡片选择持久化 / 字体设置（字号/加粗）持久化 /
+ * 大模型页签入口 / 主题卡片选择持久化 / 字体设置（字号/加粗）持久化 /
  * 表格页签：显示模式（间距/每页）即时生效写 store /
  * 操作风格（新增行位置）写入 store / 恢复默认。
+ *
+ * 「大模型」页签的表单与接口细节见 `LlmConfigPanel.test.tsx`。
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -57,10 +59,11 @@ describe('SettingsModal 个人设置', () => {
     useTableSettingsStore.setState({ ...rest, ...DEFAULT_TABLE_SETTINGS })
   })
 
-  it('渲染三个 Tab 与全部主题卡片（10 张），主题页含配色与字体两节', () => {
+  it('渲染四个 Tab 与全部主题卡片（10 张），主题页含配色与字体两节', () => {
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
     expect(screen.getByRole('tab', { name: '用户资料' })).toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: '大模型' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '主题' })).toBeInTheDocument()
     expect(screen.getByRole('tab', { name: '表格' })).toBeInTheDocument()
     // 主题卡片惰性渲染，切到主题 Tab 后才能查到

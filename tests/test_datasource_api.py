@@ -11,13 +11,10 @@ from sqlalchemy import MetaData, func, select
 from cndb.core.crypto import encrypt_secret, encrypt_secrets
 from cndb.plugins.accounts.models import User
 from cndb.plugins.datasource.models import (
-    DatasourceLlmConfig,
     DatasourceSession,
-    DatasourceSyncJob,
     DatasourceSyncRun,
+    UserLlmConfig,
 )
-from cndb.plugins.datasource.providers.llm_prompt import LlmConnectionResult
-from cndb.plugins.datasource.routers import sync_jobs
 from cndb.plugins.datasource.services import runner
 from cndb.plugins.datasource.services.normalize import NormalizeResult
 from cndb.plugins.datasource.services.pipeline import FetchFailure, PipelineOutcome
@@ -76,10 +73,10 @@ def table_with_fields(db, db_engine, workspace_with_auth) -> DataTable:
 
 @pytest.fixture
 def llm_connection_config(db, workspace_with_auth):
-    """工作区级大模型连接（已配置 Key），供 llm_prompt 任务创建 / 连通测试用."""
-    wid, _ = workspace_with_auth
-    config = DatasourceLlmConfig(
-        workspace_id=wid,
+    """当前登录用户的**个人**大模型连接（已配置 Key），供 llm_prompt 任务创建校验用."""
+    user = db.query(User).filter(User.username == "ds_user").one()
+    config = UserLlmConfig(
+        user_id=user.id,
         base_url="https://llm.example.com",
         model="model-a",
         api_key=encrypt_secret("sk-conn"),
@@ -374,7 +371,7 @@ class TestLlmPrompt:
             headers=headers,
         )
         assert response.status_code == 400
-        assert "大模型连接" in response.json()["detail"]
+        assert "个人设置" in response.json()["detail"]
         assert "API Key" in response.json()["detail"]
 
     def test_create_accepts_cron_without_match_keys(self, client, workspace_with_auth, llm_connection_config):
@@ -389,7 +386,7 @@ class TestLlmPrompt:
         assert response.json()["match_keys"] == []
 
     def test_create_accepts_session_api_key(self, client, db, workspace_with_auth):
-        """存量任务口径：会话里带 api_key 时无需工作区连接也能保存."""
+        """存量任务口径：会话里带 api_key 时无需个人连接也能保存."""
         wid, headers = workspace_with_auth
         session = DatasourceSession(
             workspace_id=wid,
@@ -430,142 +427,3 @@ class TestLlmPrompt:
         response = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=payload, headers=headers)
         assert response.status_code == 201
         assert response.json()["request_spec"]["prompt"]["user_template"] == user_template
-
-    def test_connection_uses_session_key_and_has_no_side_effect(self, client, db, workspace_with_auth, monkeypatch):
-        wid, headers = workspace_with_auth
-        session = DatasourceSession(
-            workspace_id=wid,
-            name="LLM",
-            headers={"X-Tenant": "t1"},
-            secrets=encrypt_secrets({"api_key": "sk-test"}),
-        )
-        db.add(session)
-        db.commit()
-        captured: dict[str, Any] = {}
-
-        def fake(spec, *, api_key, session_headers=None, fetch=None):
-            captured.update(spec=spec, api_key=api_key, headers=session_headers)
-            return LlmConnectionResult(ok=True, latency_ms=12, model="model-a", message="连通成功")
-
-        monkeypatch.setattr(sync_jobs, "test_llm_connection", fake)
-        response = client.post(
-            f"/api/v1/workspaces/{wid}/datasource/test-connection",
-            json={"request_spec": _llm_payload()["request_spec"], "session_id": session.id},
-            headers=headers,
-        )
-        assert response.status_code == 200
-        assert response.json() == {"ok": True, "latency_ms": 12, "model": "model-a", "message": "连通成功"}
-        assert captured["api_key"] == "sk-test"
-        assert captured["headers"] == {"X-Tenant": "t1"}
-        assert db.query(DatasourceSyncRun).count() == 0
-        assert db.query(DatasourceSyncJob).count() == 0
-
-    def test_connection_failure_is_reported(self, client, db, workspace_with_auth, monkeypatch):
-        wid, headers = workspace_with_auth
-        session = DatasourceSession(
-            workspace_id=wid,
-            name="LLM",
-            headers={},
-            secrets=encrypt_secrets({"api_key": "bad"}),
-        )
-        db.add(session)
-        db.commit()
-        monkeypatch.setattr(
-            sync_jobs,
-            "test_llm_connection",
-            lambda *args, **kwargs: LlmConnectionResult(ok=False, latency_ms=3, message="API 返回 401"),
-        )
-        response = client.post(
-            f"/api/v1/workspaces/{wid}/datasource/test-connection",
-            json={"request_spec": _llm_payload()["request_spec"], "session_id": session.id},
-            headers=headers,
-        )
-        assert response.status_code == 200
-        assert response.json()["ok"] is False
-        assert "401" in response.json()["message"]
-
-    def test_connection_rejects_missing_session(self, client, workspace_with_auth):
-        wid, headers = workspace_with_auth
-        response = client.post(
-            f"/api/v1/workspaces/{wid}/datasource/test-connection",
-            json={"request_spec": _llm_payload()["request_spec"], "session_id": 9999},
-            headers=headers,
-        )
-        assert response.status_code == 400
-        assert "凭证会话不存在" in response.json()["detail"]
-
-    def test_connection_falls_back_to_workspace_connection(
-        self, client, db, workspace_with_auth, llm_connection_config, monkeypatch
-    ):
-        """ADR 0019：不传 session 时用工作区连接 Key 与默认地址 / 模型."""
-        wid, headers = workspace_with_auth
-        captured: dict[str, Any] = {}
-
-        def fake(spec, *, api_key, session_headers=None, fetch=None):
-            captured.update(spec=spec, api_key=api_key, headers=session_headers)
-            return LlmConnectionResult(ok=True, latency_ms=9, model="model-a", message="连通成功")
-
-        monkeypatch.setattr(sync_jobs, "test_llm_connection", fake)
-        response = client.post(
-            f"/api/v1/workspaces/{wid}/datasource/test-connection",
-            json={"request_spec": {"prompt": {"user_template": "ping"}}},
-            headers=headers,
-        )
-        assert response.status_code == 200
-        assert response.json()["ok"] is True
-        assert captured["api_key"] == "sk-conn"
-        assert captured["headers"] is None
-        assert captured["spec"].url_template == llm_connection_config.base_url
-        assert captured["spec"].llm["model"] == llm_connection_config.model
-
-    def test_connection_uses_unsaved_api_key(self, client, db, workspace_with_auth, monkeypatch):
-        """ADR 0019：连接弹窗未保存的 Key 可直接用于连通测试，不落库."""
-        wid, headers = workspace_with_auth
-        captured: dict[str, Any] = {}
-
-        def fake(spec, *, api_key, session_headers=None, fetch=None):
-            captured.update(spec=spec, api_key=api_key, headers=session_headers)
-            return LlmConnectionResult(ok=True, latency_ms=8, model="model-a", message="连通成功")
-
-        monkeypatch.setattr(sync_jobs, "test_llm_connection", fake)
-        response = client.post(
-            f"/api/v1/workspaces/{wid}/datasource/test-connection",
-            json={
-                "request_spec": {
-                    "url_template": "https://api.deepseek.com",
-                    "llm": {"model": "deepseek-chat"},
-                    "prompt": {"user_template": "ping"},
-                },
-                "api_key": "sk-unsaved",
-            },
-            headers=headers,
-        )
-        assert response.status_code == 200
-        assert response.json()["ok"] is True
-        assert captured["api_key"] == "sk-unsaved"
-        # 未保存的 Key 只用于本次请求，不产生任何连接配置
-        assert db.query(DatasourceLlmConfig).count() == 0
-
-    def test_connection_without_any_key_reports_hint(self, client, workspace_with_auth):
-        """工作区连接与会话都没有 Key 时给出指向「大模型连接」的提示（不联网）."""
-        wid, headers = workspace_with_auth
-        response = client.post(
-            f"/api/v1/workspaces/{wid}/datasource/test-connection",
-            json={"request_spec": {"prompt": {"user_template": "ping"}}},
-            headers=headers,
-        )
-        assert response.status_code == 200
-        body = response.json()
-        assert body["ok"] is False
-        assert "大模型连接" in body["message"]
-
-    def test_connection_rejects_bad_url(self, client, workspace_with_auth):
-        wid, headers = workspace_with_auth
-        spec = _llm_payload()["request_spec"]
-        spec["url_template"] = "ftp://bad.example.com"
-        response = client.post(
-            f"/api/v1/workspaces/{wid}/datasource/test-connection",
-            json={"request_spec": spec},
-            headers=headers,
-        )
-        assert response.status_code == 400

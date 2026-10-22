@@ -521,7 +521,7 @@ class TestWorkspaceExportImport:
         r = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=_headers(token))
         assert r.status_code == 200
         data = r.json()
-        assert data["version"] == "6"
+        assert data["version"] == "7"
         assert "exported_at" in data
         assert "workspace" in data
         assert "tables" in data
@@ -719,7 +719,7 @@ class TestWorkspaceExportImport:
         r_export = client.get(f"/api/v1/workspaces/{ws_id}/export", headers=headers)
         assert r_export.status_code == 200
         backup = r_export.json()
-        assert backup["version"] == "6"
+        assert backup["version"] == "7"
 
         # ── 从备份创建全新工作区（不传 name，应取备份中的 workspace.name） ──
         r_restore = client.post("/api/v1/workspaces/import", json={"json_data": backup}, headers=headers)

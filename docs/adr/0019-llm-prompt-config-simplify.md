@@ -1,187 +1,205 @@
-# ADR 0019: 大模型提示词配置简化（工作区连接 + 内置系统提示词 + 空表自动落表）
+# ADR 0019: 大模型提示词配置简化（个人级连接 + 内置系统提示词 + 空表自动落表 + 提示词可靠性）
 
 Status: Implemented
 Date: 2026-10-22
-Related: `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/schemas.py`、`src/cndb/plugins/datasource/services/connection.py`、`src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/cli/sync.py`、`src/cndb/plugins/datasource/routers/llm_config.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/routers/__init__.py`、`src/cndb/alembic/versions/5e6f7a8b9c01_add_datasource_llm_config.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`；上游见 ADR 0006 / ADR 0014
+Related: `src/cndb/plugins/accounts/plugin.py`、`src/cndb/plugins/accounts/routers/llm_config.py`、`src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/schemas.py`、`src/cndb/plugins/datasource/services/connection.py`、`src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/cli/sync.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/routers/__init__.py`、`src/cndb/alembic/versions/6a7b8c9d0e1f_add_user_llm_config.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/api/llmConfig.ts`、`frontend/src/api/datasource.ts`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`；上游见 ADR 0006 / ADR 0014
 需求卡片: `docs/requirements/0019-llm-prompt-config-simplify.md`（需求原文与约束编号的唯一副本）
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」段落；ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档。
+>
+> 2026-10-22 用户追加需求：① 大模型相关配置移到个人配置；② 推荐提示词（新闻摘要 / 美食推荐）获取失败。本 ADR 就地改写为「个人级连接 + 提示词可靠性」口径，C7/C8 见需求卡片。
 
 ## 口径（需求 → 设计落点）
 
 需求原文：见需求卡片 §需求原句（逐字，ADR 不复制第二份）。
 
-卡片约束沿用各自编号（C1..C6），本表只补「设计怎么落地」，不重新拆句：
+卡片约束沿用各自编号（C1..C8），本表只补「设计怎么落地」，不重新拆句：
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 大模型提示词抓取功能配置项过于复杂，需要进行简化 | 任务抽屉 `llm_prompt` 分支主表单只留「任务名称 / 用户提示词 / 目标表（可留空）」；API 地址、模型、系统提示词、幂等键、调度、温度等收进高级设置或工作区级连接；后端 `_validate_job_config` 对 `llm_prompt` 只强制用户提示词 |
-| C2 | 尽可能只配置提示词项即可确保抓取到合适的数据 | 新增工作区级「大模型连接」（`base_url` / `model` / `api_key` / 可选 `system_prompt`），`connection.resolve_request_spec_defaults` 在保存与运行时补齐 `url_template` / `llm.model`；未配置 system 时使用内置默认系统提示词；提示词模板用宽松求值（`render_text_lenient`）：JSON 裸花括号与未知 `{xxx}` 原样保留，仅替换已注册变量，`{{`/`}}` 仍转义为字面花括号 |
+| C1 | 大模型提示词抓取功能配置项过于复杂，需要进行简化 | 任务抽屉 `llm_prompt` 分支主表单只留「任务名称 / 用户提示词 / 目标表（可留空）」；API 地址、模型、系统提示词、幂等键、调度、温度等收进高级设置或个人级连接；后端 `_validate_job_config` 对 `llm_prompt` 只强制用户提示词 |
+| C2 | 尽可能只配置提示词项即可确保抓取到合适的数据 | 个人级「大模型连接」（`base_url` / `model` / `api_key` / 可选 `system_prompt`，按 `user_id` 隔离）配置一次；`connection.resolve_request_spec_defaults` 在保存与运行时补齐 `url_template` / `llm.model`；未配置 system 时使用内置默认系统提示词；提示词模板用宽松求值（`render_text_lenient`）：JSON 裸花括号与未知 `{xxx}` 原样保留，仅替换已注册变量，`{{`/`}}` 仍转义为字面花括号 |
 | C3 | 支持空数据表自动新增和更新数据的能力 | `auto_table.ensure_job_table`（留空目标表 → 按任务名建表）、`is_table_empty` + `upsert_rows(auto_add_fields=True)`（空表补字段）、`infer_match_keys` + `upsert_rows(auto_match_keys=True)`（自动幂等键）；重复运行只更新不重复插入 |
-| C4 | 系统提示词请默认配置好 | `providers/llm_prompt.py` 新增完整 `DEFAULT_SYSTEM_PROMPT`；请求构造在未配置 system 时使用它；`GET llm-config` 返回 `default_system_prompt` 供前端查看 / 覆盖 |
+| C4 | 系统提示词请默认配置好 | `providers/llm_prompt.py` 维护完整 `DEFAULT_SYSTEM_PROMPT`（输出格式 / 字段命名 / 真实性约束）；请求构造在未配置 system 时使用它；个人配置或任务高级设置可层层覆盖 |
 | C5 | 提供5组典型可用的推荐用户提示词参考示例 | `frontend/src/pages/datasource/llmPromptPresets.ts` 内置 8 组预设（首批 5 组：每日新闻摘要 / 城市天气 / 股票行情快照 / 电商竞品价格 / 行业政策公告；2026-10-22 追加 3 组：商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），任务抽屉「推荐提示词」一键套用 |
 | C6 | 并给出说明 | 每组预设带 `description / target_fields / match_keys / prompt`，套用时在页面展示「适用场景 + 建议目标表字段 + 建议幂等键」；同一份说明写入本 ADR 附录，页面与文档同源 |
+| C7 | 大模型相关配置移到个人配置里（2026-10-22 追加） | 连接归属改为**个人级**：新表 `datasource_user_llm_config`（`user_id` 唯一，级联删除）；接口迁到 `GET/PUT /api/v1/accounts/llm-config` + `POST /api/v1/accounts/llm-config/test`；工作区级 `llm-config` / `test-connection` 端点删除；任务保存校验与运行按当前用户 / `job.created_by` 解析个人连接；前端入口改为「个人设置 → 大模型」，数据源页不再配置；备份升 v7 且不导出个人配置 |
+| C8 | 推荐提示词开箱可用（2026-10-22 追加） | 默认 `max_tokens` 1024 → 4096；JSON 解析失败且疑似截断时给出「提高 max_tokens / 精简输出」提示；默认系统提示词要求综述 / 推荐类任务尽力输出，不因无法联网返回空数组，无法核实的事实标注「综合整理」、`url` 可空；「每日新闻摘要」「美食推荐做法」预设按此调整 |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
 
 ## Context
 
-现状逐条核对（沿用需求卡片「现状影响面」编号，以代码为准）：
+现状逐条核对（以代码为准，本轮变更后口径）：
 
 | # | 现状 | 位置 | 影响 | 与卡片的关系 |
 |---|---|---|---|---|
-| 1 | `llm_prompt` 任务表单逐任务填写 API 地址 / 模型 / 系统提示词 / 用户提示词 / 幂等键 | `frontend/src/pages/datasource/DatasourcePage.tsx:465-520`、`:556` | 想「只写一句提示词」必须理解并填完连接与模型参数，是配置复杂的直接来源 | 确认（C1/C2） |
-| 2 | Provider 校验强制 `url_template` / `llm.model` / `prompt.user_template` 非空 | `src/cndb/plugins/datasource/providers/llm_prompt.py:75-109`（`LlmConfig.from_payload`） | 没有连接默认值时无法只填提示词 | 确认（C2） |
-| 3 | `llm_prompt` + cron 强制 `match_keys` | `src/cndb/plugins/datasource/providers/llm_prompt.py`（`validate_llm_request_spec`）、`routers/sync_jobs.py:94-100` | 与「自动识别幂等键」冲突，用户必须先懂目标表字段 | 确认（C3） |
-| 4 | 任务保存 / 更新只校验目标表字段存在，无「目标表留空」语义 | `src/cndb/plugins/datasource/routers/sync_jobs.py:66-118` | 目标表必须预先存在，空表 / 新场景不可用 | 确认（C1/C3） |
-| 5 | 运行落表要求 `table_id` 非空；`match_keys` 为空退化为纯追加 | `src/cndb/plugins/datasource/services/runner.py:297-317`、`services/write.py:39-67` | 空表不能自动建表 / 补字段，重复运行会追加重复行 | 确认（C3） |
-| 6 | API Key 只走 `datasource_session.secrets.api_key` | `services/runner.py:205-213`、`core/crypto.py:79-84` | 每任务绑定会话对「一次性提示词任务」仍然偏重；但加密与不回显口径要保留 | 确认（C2/C4） |
-| 7 | 备份版本 v5，不含 LLM 连接配置 | `src/cndb/plugins/workspaces/services/backup_io.py:80` | 连接配置不随备份迁移；导入端需接受 v6 且不导出 Key | 新增（C2） |
-| 8 | 前端 `datasourceApi` 无工作区级连接类型与端点封装 | `frontend/src/api/datasource.ts` | 连接配置无处可读写 | 新增（C1/C2） |
-| 9 | 内置系统提示词仅一句 `JSON_INSTRUCTION` | `providers/llm_prompt.py:45` | 用户不写 system 时缺少结构化输出、字段命名、禁止编造等约束 | 确认（C4） |
-| 10 | 测试覆盖 provider / API / 备份 / 迁移 / 页面 | `tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | 新连接、自动落表、极简表单需同轮补测试 | 确认（C1-C6） |
-| 11 | 模板求值严格模式把未注册占位符与裸 `}` 当错误 | `src/cndb/plugins/datasource/providers/template.py`（`render_text`） | 用户在提示词里直接写 JSON 示例（`{"rows": [...]}`）会被判「模板变量缺失 / 未转义 }」而保存失败 | 新增（C1/C2） |
+| 1 | 连接配置按用户存放：一个用户至多一条，不再跟随工作区 | `src/cndb/plugins/datasource/models.py`（`UserLlmConfig`）、`src/cndb/plugins/accounts/routers/llm_config.py` | 同一用户跨工作区共用一份配置；共享工作区里各成员的 Key 相互隔离 | 确认（C7） |
+| 2 | 个人接口 `GET/PUT /api/v1/accounts/llm-config`（登录即可，无需工作区权限）与 `POST /api/v1/accounts/llm-config/test`（可用未保存 Key，不落库） | `src/cndb/plugins/accounts/routers/llm_config.py`、`src/cndb/plugins/accounts/plugin.py` | 配置入口与工作区解耦，任何页面/任务都能复用 | 确认（C7） |
+| 3 | 工作区级端点 `GET|PUT /{wid}/datasource/llm-config` 与 `POST /{wid}/datasource/test-connection` 已删除 | `src/cndb/plugins/datasource/routers/__init__.py`、`routers/sync_jobs.py` | 不会再有「工作区连接」与「个人配置」两份配置并存 | 确认（C7） |
+| 4 | 迁移 `6a7b8c9d0e1f` 建个人表、把旧工作区配置按 `created_by` 迁给用户、随后删除旧表 | `src/cndb/alembic/versions/6a7b8c9d0e1f_add_user_llm_config.py` | 存量配置不丢（无 `created_by` / 同用户多行按首个保留），旧表不再出现在 schema | 确认（C7） |
+| 5 | 任务保存时的连接校验、运行 / 预览时的连接解析都按**用户**：当前登录用户或 `job.created_by` | `src/cndb/plugins/datasource/routers/sync_jobs.py`、`services/runner.py`、`services/connection.py` | 任务由谁创建就用谁的 Key；管理员代跑不会误用他人配置 | 确认（C7/C2） |
+| 6 | 工作区备份 v7 不再导出大模型配置，导入接受 1-7；旧 v6 备份里的 `llm_config` 键按未知键忽略 | `src/cndb/plugins/workspaces/routers/workspaces.py`、`services/backup_io.py` | 个人 Key 不随工作区交付给其他成员 / 其他环境 | 确认（C7） |
+| 7 | 前端入口在「个人设置 → 大模型」页签；数据源页无连接按钮 / Tag / 弹窗 | `frontend/src/pages/settings/SettingsModal.tsx`、`LlmConfigPanel.tsx`、`frontend/src/pages/datasource/DatasourcePage.tsx` | 配置位置符合「个人配置」直觉，数据源页只保留任务本身 | 确认（C7） |
+| 8 | `llm_prompt` 任务主表单只留任务名称 / 用户提示词 / 目标表，其余收高级设置 | `frontend/src/pages/datasource/DatasourcePage.tsx` | 「只写一句提示词」可保存，地址 / 模型 / Key 从个人配置继承 | 确认（C1/C2） |
+| 9 | 默认 `max_tokens` 曾为 1024，长新闻 / 美食 JSON 在中途被截断（`Unterminated string`） | `src/cndb/plugins/datasource/providers/llm_prompt.py`（`DEFAULT_MAX_TOKENS`） | 推荐提示词开箱即失败，且错误文案看不出是 token 不足 | 确认（C8） |
+| 10 | 截断后的 JSON 解析错误与普通非法 JSON 使用同一文案，无修复指引 | `providers/llm_prompt.py`（`_parse_response` / `_looks_truncated`） | 用户无法自查是「输出太长」还是「模型没按要求输出」 | 确认（C8） |
+| 11 | 默认系统提示词旧版要求「无法产出就返回 `{"rows": []}`」，模型面对实时性要求时倾向返回空 | `providers/llm_prompt.py`（`DEFAULT_SYSTEM_PROMPT` 真实性约束） | 新闻摘要 / 美食推荐这类不依赖实时库的综述任务直接拿到空数据 | 确认（C8） |
+| 12 | 「每日新闻摘要」「美食推荐做法」预设旧文案按实时抓取口径写，且美食一次要求四类多道菜，输出过长 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 与新的系统提示词口径不一致，长输出仍可能截断 | 确认（C8） |
+| 13 | 空表自动建表 / 补字段 / 自动幂等键保持原实现 | `services/auto_table.py`、`services/write.py`、`services/runner.py` | 本轮不改写路径语义，只换连接来源 | 确认（C3） |
+| 14 | 测试覆盖个人接口 / 迁移 / 备份 / 运行解析 / 提示词可靠性 / 前端页签与预设 | `tests/test_datasource_llm_config.py`、`tests/test_datasource_migration.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | 新行为同轮补测试 | 确认（C1-C8） |
 
-**核心缺陷（需求要补的）**：现有模型把「连接参数 + 模型参数 + 幂等键 + 目标表结构」全部压到每个任务上，任务必须先有目标表并显式配置 `match_keys`，导致「只想写一句提示词、交给系统自己建表并幂等更新」这条路走不通。
+**核心缺陷（需求要补的）**：连接配置挂在**工作区**上，无法表达「这是某个人的模型账号」——同一用户跨工作区要重复配置，共享工作区下配置归属与 Key 可见性也说不清；同时默认 token 上限与系统提示词的「宁可返回空」倾向，让已内置的新闻 / 美食推荐提示词开箱即失败。
 
 设计目标（不变量）：
 
-- **I1 最少必填**：`llm_prompt` 任务只要求「任务名称 + 用户提示词」；其余配置由工作区连接、内置默认或自动推断补齐。
-- **I2 默认系统提示词恒有效**：任何 `llm_prompt` 请求都必须带系统提示词（任务覆盖 > 连接覆盖 > 内置默认），不允许空 system 直接调模型。
+- **I1 最少必填**：`llm_prompt` 任务只要求「任务名称 + 用户提示词」；其余配置由个人连接、内置默认或自动推断补齐。
+- **I2 默认系统提示词恒有效**：任何 `llm_prompt` 请求都必须带系统提示词（任务覆盖 > 个人覆盖 > 内置默认），不允许空 system 直接调模型；内置默认须支持综述 / 推荐类任务尽力输出并标注「综合整理」。
 - **I3 自动化仅限 `llm_prompt`**：其它 provider 的校验、落表、调度语义完全不变；不在通用框架层引入隐式建表。
 - **I4 自动幂等键可回退**：推断出的键必须来自结果行且行内唯一；无唯一组合时返回空并退化为追加，同时在 `run.detail` 留痕，不伪造幂等键。
-- **I5 密钥不落地明文**：连接 `api_key` 只存 Fernet 密文，读接口不回显，备份导出不含 Key。
+- **I5 密钥不落地明文**：个人连接 `api_key` 只存 Fernet 密文，读接口不回显，备份导出不含 Key；工作区备份不含个人配置。
 - **I6 失败不写脏数据**：模型输出不可解析或没有行时，不建表、不补字段、不落库，运行记 `failed`。
-- **I7 既有任务向后兼容**：旧 `llm_prompt` 任务（会话 + 显式 url/model）与 v1-v5 备份继续可用；显式配置优先于连接默认值。
+- **I7 存量兼容**：旧 `llm_prompt` 任务（会话 + 显式 url/model）继续可用；旧工作区连接按 `created_by` 迁移；v1-v7 备份继续可导入。
+- **I8 个人配置按 user 隔离**：一条记录对应用户，读写只作用当前登录用户；任务按创建者解析，不复用他人的 Key。
+- **I9 长输出不被静默截断**：默认 `max_tokens` 足够覆盖推荐类任务，截断时错误信息必须指向可执行的修复动作（提高 max_tokens / 精简输出）。
 
 ## Decision
 
 ### 1. 数据模型
 
-新增工作区级连接表 `datasource_llm_config`（模型 `DatasourceLlmConfig`）：
+新增个人级连接表 `datasource_user_llm_config`（模型 `UserLlmConfig`）：
 
 | 列 | 类型 | 约束 / 说明 |
 |---|---|---|
-| `workspace_id` | int | 唯一键，一个工作区至多一条连接；随工作区级联删除 |
+| `user_id` | int | 唯一键（`ix_datasource_user_llm_config_user_id`），一个用户至多一条连接；随用户级联删除 |
 | `base_url` | varchar | OpenAI 兼容端点，保存时校验必须是 http(s) |
 | `model` | varchar | 非空，默认 `deepseek-chat` |
 | `api_key` | text | Fernet 密文（`enc:v1:` 前缀），空表示未配置；只写不回显 |
 | `system_prompt` | text | 可选，留空表示使用内置默认系统提示词 |
-| `created_by` / 时间戳 | — | 沿用审计时间戳 mixin |
+| `created_at` / `updated_at` | — | 沿用审计时间戳 mixin |
 
-- `datasource_sync_job` 不加列：目标表仍用 `table_id`（可空），显式幂等键仍用 `match_keys`（可空），自动推断结果回填 `match_keys` 持久化，便于复用与排查。
-- `request_spec` 结构不变：连接信息不再要求写进任务，任务可只保留 `{"prompt": {"user_template": "..."}}`；显式 `url_template` / `llm.model` 仍允许（高级覆盖）。
-- 工作区备份升 **v6**：导出 `llm_config`（`base_url` / `model` / `system_prompt`，**不含 `api_key`**），导入端接受版本 1-6 并按缺省还原。
+- 删除旧工作区表 `datasource_llm_config`（由迁移 `6a7b8c9d0e1f` 在搬迁后删除），不再有 `workspace_id` / `created_by` 列。
+- `datasource_sync_job` 不加列：目标表仍用 `table_id`（可空），显式幂等键仍用 `match_keys`（可空），自动推断结果回填 `match_keys` 持久化。
+- `request_spec` 结构不变：任务可只保留 `{"prompt": {"user_template": "..."}}`；显式 `url_template` / `llm.model` 仍允许（高级覆盖）。
+- 工作区备份升 **v7**：**不导出**个人大模型配置（个人数据不随工作区备份），导入端接受版本 1-7；v6 备份里可能残留的 `llm_config` 键忽略。
 
 ### 2. 判定入口（唯一实现）
 
-**连接解析** `services/connection.py`：
+**个人连接解析** `services/connection.py`：
 
 ```python
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class LlmConnection:
-    base_url: str
-    model: str
+    base_url: str = DEFAULT_BASE_URL
+    model: str = DEFAULT_MODEL
     api_key: str = ""        # 解密后的明文，仅运行期使用
     system_prompt: str = ""
     has_api_key: bool = False
 
-def load_llm_connection(db: Session, workspace_id: int) -> LlmConnection: ...
+def find_user_llm_config(db: Session, user_id: int) -> UserLlmConfig | None: ...
+def load_llm_connection(db: Session, user_id: int) -> LlmConnection: ...
 def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 ```
 
-- `load_llm_connection`：查询工作区连接，缺失时返回默认值（`DEFAULT_BASE_URL` / `DEFAULT_MODEL` / 空 Key）；解密失败按「未配置 Key」处理。
+- `find_user_llm_config` / `load_llm_connection`：按 `user_id` 查询，缺失时返回默认值（`DEFAULT_BASE_URL` / `DEFAULT_MODEL` / 空 Key）；解密失败按「未配置 Key」处理。
 - `resolve_request_spec_defaults`：只在 `url_template` / `llm.model` 缺省时补默认值，**不写 `api_key`**（Key 由运行期注入），显式值优先。
-- Key 解析优先级：任务绑定会话的 `secrets.api_key` > 工作区连接的 `api_key`；两处都没有时运行与连通测试给出「请先配置大模型连接」的明确错误。
+- Key 解析优先级：任务绑定会话的 `secrets.api_key` > 个人连接的 `api_key`；两处都没有时保存 / 连通测试给出「请先在「个人设置 → 大模型」配置 API Key」的明确错误。
 
-**空表自动化** `services/auto_table.py`：
+**任务侧用户解析** `routers/sync_jobs.py` / `services/runner.py`：
 
-```python
-def ensure_job_table(db: Session, job: DatasourceSyncJob) -> DataTable: ...
-def is_table_empty(db: Session, table: DataTable) -> bool: ...
-def candidate_names(rows: Sequence[Mapping[str, Any]], field_names: Sequence[str]) -> list[str]: ...
-def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequence[str]) -> list[str]: ...
-```
+- 保存 / 更新任务：`_validate_job_config(..., user=current_user)`，用当前登录用户的连接补齐默认值并校验 Key。
+- 运行 / 预览：`runner.build_job_spec(..., llm_user_id=...)`，手动运行 / 预览传当前操作人 `user.id`，未传时回退 `job.created_by`；`preview_job` 新增 `user` 参数并透传。
+- 自动建表 / 补字段 / 自动幂等键逻辑不变（见 `auto_table.py` / `write.py` / `runner.py`），仅连接来源从工作区换成用户。
 
-- `ensure_job_table`：`job.table_id` 为空时按 `job.name` 建表（同名未删除表复用；否则建 `DataTable` + `ensure_db_name` + `ddl_create` + `ensure_default_view`），回填 `job.table_id` 并提交，失效表列表缓存；建表失败回滚并清理半初始化元数据。
-- `is_table_empty`：无未删除字段，或表内没有任何未删除数据行（回收站行不计）→ 视为空表；物理表缺失也按空表处理。
-- `candidate_names`：候选列 = 结果行键 ∩ 目标表字段名（目标表无字段时直接用行键），保持行内首次出现顺序。
-- `infer_match_keys`：只考虑有非空值的候选列；优先单列唯一（多列唯一时按名称含 `date/day/id/code/symbol/city/name/title` 等片段加权）；无单列唯一时枚举 2 列、再 3 列组合（候选封顶 15 列避免组合爆炸），组合需在全部行上唯一且非空；最多返回 3 列，无唯一组合返回 `[]`。
-- `DEFAULT_SYSTEM_PROMPT`（`providers/llm_prompt.py`）：角色、只输出 JSON / `{"rows": [...]}`、字段英文 snake_case、日期与数值格式、缺失用 null、每行带稳定键、禁止编造；未配置时自动使用并追加既有 `JSON_INSTRUCTION`。
-- **提示词模板求值**：`llm_prompt` 的 system / user 模板统一走 `providers/template.py` 新增的 `render_text_lenient` —— `{name}` 仅在命中内置 / 任务变量（`today` / `entrant` / `start` / `end` 等）时替换；未知 `{xxx}`、JSON 裸花括号、孤立 `}`、未闭合 `{` 一律原样保留；`{{` / `}}` 仍转义为字面花括号。保存校验（`validate_llm_request_spec`）同样走宽松求值，提示词含 JSON 裸花括号可直接保存。**`llm_prompt` 的 URL / headers 模板仍用严格 `render_text`**（缺参继续报错）；其它 provider 的全部模板求值保持严格，不受影响。
+**提示词可靠性** `providers/llm_prompt.py`：
 
-**写路径** `services/write.py` / `services/runner.py`：
+- `DEFAULT_MAX_TOKENS = 4096`（上限仍为 32768；连通测试仍用 `min(config.max_tokens, 64)` 的小请求）。
+- `_parse_response`：JSON 解析失败时用 `_looks_truncated` 区分「疑似截断」（`Unterminated string`，或 `Expecting ...` 且错误位置贴近内容末尾）与普通非法 JSON；截断文案为「模型输出可能被截断：请提高 max_tokens（当前默认 4096）或精简提示词输出（本次返回 N 字符）；原始错误: …」。
+- `DEFAULT_SYSTEM_PROMPT` 真实性约束改为：综述 / 摘要 / 推荐类任务基于已掌握公开知识尽力输出、不因无法联网返回空数组；无法确认的实时事实在 `summary` / `source` 标注「综合整理」、`url` 用空串；禁止编造可核实的精确统计数字；只有确实无法生成时才返回 `{"rows": []}`。
+- 提示词模板宽松求值（`render_text_lenient`）与 URL / headers 严格模板保持不变。
 
-- `upsert_rows` 新增 `auto_add_fields: bool = False`、`auto_match_keys: bool = False`；空表时以 `unknown_cols_strategy="add_text_field"` 执行自动补字段；`match_keys` 为空且 `auto_match_keys=True` 时先 analyze 取数、用 `infer_match_keys` 推断键后重新 analyze + execute。
-- `WriteOutcome` 增加 `auto_fields: list[str]`、`match_keys: list[str]`（实际使用 / 推断的键），写入 `run.detail` 留痕。
-- `runner.execute_job` 仅在 `provider=llm_prompt` 且 `rows` 非空时：`table_id` 为空 → `ensure_job_table`；`_persist_rows` 传 `auto_add_fields=is_table_empty(...)`、`auto_match_keys=not job.match_keys`；推断出键后回填 `job.match_keys` 持久化；`run.detail` 增加 `auto_fields` / `auto_match_keys`。
-- 判定顺序：Key 解析 →（可选）自动建表 → 提示词求值 / 模型请求 → JSON 解析 → 字段与幂等键推断 → upsert → 留痕。
-- **CLI** `src/cndb/cli/sync.py`：`sync preview` 与 `sync run --dry-run` 也传 `db`，同样应用工作区连接默认值 / Key，并在 JSON 输出里带 `suggested_match_keys`（终端预览可直接看到自动识别建议）。
+**CLI** `src/cndb/cli/sync.py`：`sync preview` 与 `sync run --dry-run` 同样按任务的 `created_by` 解析个人连接默认值 / Key，并在 JSON 输出里带 `suggested_match_keys`。
 
-### 3. API 变更清单（`/api/v1/workspaces/{wid}/datasource`）
+### 3. API 变更清单
+
+**个人级（`/api/v1/accounts`）**：
 
 | 端点 | 变更 |
 |---|---|
-| `GET /llm-config` | 新增：返回 `configured / base_url / model / has_api_key / system_prompt / default_system_prompt`；**不回显 api_key**；VIEWER 可读 |
-| `PUT /llm-config` | 新增：保存连接（EDITOR）；`base_url` 必须 http(s)、`model` 非空；`api_key` 非空才更新、`clear_api_key=true` 清除；密钥 Fernet 加密 |
-| `POST /sync-jobs`、`PUT /sync-jobs/{id}` | `llm_prompt` 只强制 `prompt.user_template`；缺省 `url_template` / `llm.model` 由连接补齐；cron 不再强制 `match_keys`；目标表可留空；无可用 Key（会话 + 连接都没有）时 400 并提示去配置大模型连接 |
-| `POST /test-connection` | `session_id` 可省略：回退工作区连接的 Key 与默认 url/model；未配置连接时返回明确提示；可传 `api_key` 用**未保存的 Key** 直接测试（仅本次请求，不落库） |
-| `POST /sync-jobs/{id}/preview` | 响应新增 `suggested_match_keys`（预览阶段建议的幂等键），供前端展示 |
+| `GET /llm-config` | 新增：读取当前用户连接，返回 `configured / base_url / model / has_api_key / system_prompt / default_system_prompt`；**不回显 api_key**；登录即可读 |
+| `PUT /llm-config` | 新增：保存当前用户连接；`base_url` 必须 http(s)、`model` 非空；`api_key` 非空才更新、`clear_api_key=true` 清除；密钥 Fernet 加密；局部更新 |
+| `POST /llm-config/test` | 新增：用当前用户连接 + 请求体可选 `base_url` / `model` / `api_key` / `system_prompt` 发一次最小请求，**不落库**；Key 优先级 请求体 > 已保存个人 Key |
+
+**工作区级（`/api/v1/workspaces/{wid}/datasource`）**：
+
+| 端点 | 变更 |
+|---|---|
+| `GET|PUT /llm-config` | **删除**（配置迁到个人接口） |
+| `POST /test-connection` | **删除**（连通测试迁到 `POST /api/v1/accounts/llm-config/test`） |
+| `POST /sync-jobs`、`PUT /sync-jobs/{id}` | `llm_prompt` 只强制 `prompt.user_template`；缺省 `url_template` / `llm.model` 由**当前用户**的个人连接补齐；cron 不再强制 `match_keys`；目标表可留空；无可用 Key 时 400 并提示「个人设置 → 大模型」 |
+| `POST /sync-jobs/{id}/preview` | 响应含 `suggested_match_keys`；预览按当前用户解析个人连接 |
 
 ### 4. 边界与例外
 
-1. 自动建表只在模型返回非空行后触发；同名未删除表直接复用，不重复建表；任务失败不留下空表。
-2. 自动补字段只在目标表为空（无字段或无数据行）时启用；已有数据表不自动加字段，未知列按既有策略处理。
-3. 自动幂等键基于本轮结果行推断：显式 `match_keys` 优先；无唯一组合时退化为追加，`run.detail.auto_match_keys=[]` 留痕，不静默覆盖。
-4. 工作区连接未配置或没有可用 API Key（会话与连接都没有）时：保存 / 更新任务直接 400「请先在「大模型连接」配置 API Key」，前端在保存 / 预览前先弹连接配置引导；避免把配置缺失误判为 401 / 网络故障。
-5. 连接配置是工作区级唯一记录；任务的高级设置可显式覆盖 `url_template` / `llm.model` / `system_prompt`（兼容旧任务与特殊模型）。
-6. 仅 `llm_prompt` 触发自动建表 / 补字段 / 自动幂等键；`http_json`、行情、RSS 等 provider 行为不变。
-7. 备份不导出 API Key；导入 v6 备份后连接配置恢复但 Key 留空，需重新填写。导入端继续接受 v1-v5（无连接配置按默认值还原）。
-8. 模型输出不可解析 / 为空时运行记 `failed`，不建表、不写行。
-9. `system_prompt` 三层优先级：任务显式配置 > 工作区连接 > 内置默认；页面可查看内置默认全文。
-10. 提示词模板宽松求值仅限 `llm_prompt` 的 system / user 提示词：用户可直接在提示词里写 `{"rows": [...]}` 这类 JSON 示例，不需要手动转义；`{{` / `}}` 仍等价于字面花括号（前端推荐提示词已按转义写法提供，两种都能用）。`llm_prompt` 的 URL / headers 模板仍严格；其它 provider 的 URL / headers / body 模板也保持严格模式，缺参仍报错。
-11. 连接弹窗支持未保存 Key 的连通测试：`POST /test-connection` 的可选 `api_key` 只用于本次请求（不落库、不回显）；优先级为 请求 `api_key` > 会话 Key > 工作区连接 Key，未填写时回退已保存 Key，用户填完 Key 无需先保存即可验证。
+1. 个人配置严格按用户隔离：`GET` 只返回本人记录，`PUT` 只写本人记录；任务运行时按 `job.created_by` 解析，管理员代跑不会使用自己的 Key。
+2. 自动建表只在模型返回非空行后触发；同名未删除表直接复用，不重复建表；任务失败不留下空表。
+3. 自动补字段只在目标表为空（无字段或无数据行）时启用；已有数据表不自动加字段，未知列按既有策略处理。
+4. 自动幂等键基于本轮结果行推断：显式 `match_keys` 优先；无唯一组合时退化为追加，`run.detail.auto_match_keys=[]` 留痕，不静默覆盖。
+5. 个人连接未配置或没有可用 API Key（会话与个人连接都没有）时：保存 / 更新任务直接 400「请先在「个人设置 → 大模型」配置 API Key」；前端数据源页提示去个人设置配置，不再弹工作区连接弹窗。
+6. 任务的高级设置可显式覆盖 `url_template` / `llm.model` / `system_prompt`（兼容旧任务与特殊模型）；显式值优先于个人连接。
+7. 仅 `llm_prompt` 触发自动建表 / 补字段 / 自动幂等键；`http_json`、行情、RSS 等 provider 行为不变。
+8. 备份 v7 不导出个人大模型配置；v6 及更早备份可导入，其中 `llm_config` 键按未知键忽略，导入后用户的个人配置保持不变。
+9. 模型输出不可解析 / 为空时运行记 `failed`，不建表、不写行；疑似截断时错误文案显式引导提高 `max_tokens` 或精简输出，普通语法错误仍报「模型返回内容不是合法 JSON」。
+10. `system_prompt` 三层优先级：任务显式配置 > 个人连接覆盖 > 内置默认；页面可查看内置默认全文。
+11. 提示词模板宽松求值仅限 `llm_prompt` 的 system / user 提示词；`{{` / `}}` 仍等价于字面花括号。`llm_prompt` 的 URL / headers 模板仍严格；其它 provider 的 URL / headers / body 模板也保持严格模式。
+12. 连通测试支持未保存配置：`POST /llm-config/test` 的 `api_key` 只用于本次请求（不落库、不回显）；未填写的字段回退当前用户已保存配置 / 内置默认。
+13. 内置默认系统提示词对实时数据（行情 / 今日要闻）要求「无法确认就用 null 或标注综合整理」，不鼓励编造；推荐类任务不能以「无法联网」为由返回空数组。
+14. 旧工作区配置迁移：同一用户多条只保留 id 最小的一条；`created_by` 为空的记录无处归属，直接丢弃；downgrade 重建旧表但**不恢复数据**。
 
 ### 5. 迁移
 
-- 单条 alembic 迁移 `5e6f7a8b9c01_add_datasource_llm_config.py` 新建 `datasource_llm_config`（`workspace_id` 唯一、外键级联删除）：upgrade 幂等建表 / 索引，downgrade 幂等删表，目标表缺失时跳过；存量零迁移。
-- 备份格式 v5 → v6：导出（`workspaces/routers/workspaces.py`）新增 `llm_config` 键（不含 Key）；导入端版本白名单扩到 `"1"`-`"6"`，旧备份按空连接还原，已有连接保留现有配置。
-- 迁移 head 同步：`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 已更新为 `5e6f7a8b9c01`，与 alembic head 一致。
+单条 alembic 迁移 `6a7b8c9d0e1f_add_user_llm_config.py`（`down_revision = 5e6f7a8b9c01`）：
+
+- upgrade：建 `datasource_user_llm_config`（`user_id` 唯一索引 + 级联删除）→ 把旧 `datasource_llm_config` 记录按 `created_by` 搬到新表（同一用户取 id 最小一条，`created_by` 为空丢弃）→ 删除旧表；表 / 索引已存在、旧表已不存在时跳过，可重复执行。
+- downgrade：重建旧 `datasource_llm_config`（空表，数据不恢复）并删除新表；可重复执行。
+- 旧迁移 `5e6f7a8b9c01_add_datasource_llm_config.py` 作为历史保留：新库先建旧表、再由本迁移搬迁并删除，head 处 schema 只剩个人表。
+- 迁移 head 同步：`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 更新为 `6a7b8c9d0e1f`。
 
 ### 6. 前端
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| API 类型 / 封装 | `frontend/src/api/datasource.ts` | 新增 `LlmConfig` 类型、`getLlmConfig` / `updateLlmConfig`；`TestConnection` 的 `session_id` 可省略；`PreviewResult` 增 `suggested_match_keys` |
-| 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 8 组预设（名称 / 说明 / 建议目标表字段 / 建议幂等键 / prompt 示例），独立单测校验 |
-| 连接配置弹窗 | `frontend/src/pages/datasource/DatasourcePage.tsx` | 页头「大模型连接」按钮 + 已配置 / 未配置 Tag；弹窗配置 base_url / model / api_key（只写不回显）/ 可选 system_prompt（留空用内置默认并展示默认全文），支持「测试连接」 |
-| 任务抽屉 | `frontend/src/pages/datasource/DatasourcePage.tsx` | `llm_prompt` 主表单只留任务名称 / 用户提示词 / 目标表（留空自动建表）；系统提示词、幂等键、调度、时间区间、凭证会话、temperature / max_tokens / json_mode 收进高级设置；「推荐提示词」一键套用并展示说明；预览展示自动识别的幂等键 |
-| 页面测试 | `frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | 极简表单、预设套用、保存 payload、连接弹窗保存 / 测试、预览幂等键、非 LLM 任务回归 |
+| API 封装 | `frontend/src/api/llmConfig.ts` | 新增 `llmConfigApi.get / update / testConnection`（`/v1/accounts/llm-config`）与类型 `LlmConfig` / `LlmConfigPayload` / `LlmConnectionTestPayload` / `LlmConnectionTestResult` |
+| API 封装 | `frontend/src/api/datasource.ts`、`frontend/src/api/index.ts` | 删除工作区级 `getLlmConfig` / `updateLlmConfig` / `testConnection` 与对应类型；导出 `llmConfigApi` |
+| 个人设置页签 | `frontend/src/pages/settings/LlmConfigPanel.tsx`、`SettingsModal.tsx`、`frontend/src/store/ui.ts` | 「个人设置」新增「大模型」页签：地址 / 模型 / Key（只写不回显，已保存可清除）/ 系统提示词覆盖 / 内置默认全文 / 「测试连接」（可用未保存 Key）；`SettingsTab` 增加 `llm` |
+| 数据源页 | `frontend/src/pages/datasource/DatasourcePage.tsx` | 删除页头「大模型连接」按钮 / 状态 Tag / 连接弹窗与未配置引导；`llm_prompt` 抽屉改为提示去「个人设置 → 大模型」；高级设置 `max_tokens` 默认 4096 |
+| 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 8 组预设；「每日新闻摘要」改为基于已掌握近期公开信息、允许标注「综合整理」；「美食推荐做法」控制单次输出规模；其余预设补充实时数据口径说明 |
+| 页面测试 | `frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`SettingsModal.test.tsx`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`llmPromptPresets.test.ts` | 个人页签保存 / 测试 / 清除 Key / 用户隔离提示；数据源页无连接入口、提示文案；预设文案与数量 |
 
 ### 7. 测试清单
 
 **判定层（单测）**：
-- 连接默认值 / 显式值优先 / Key 解密失败按未配置；缺省 url/model 的 `request_spec` 可解析。
-- `infer_match_keys`：单列唯一、组合唯一、无唯一返回空、空行 / 空候选、不超过 3 列、名称启发式排序。
-- `ensure_job_table`：留空建表、同名复用、回填 `table_id`；`is_table_empty`：无字段 / 无行 / 有行。
-- `upsert_rows`：空表自动补字段、自动幂等键首轮 inserted / 次轮 updated、无键追加；显式 `match_keys` 优先。
-- 未配置 system 时请求体使用内置默认系统提示词。
-- 宽松模板：提示词含 JSON 裸花括号可原样保存 / 运行；`{"date": "{today}"}` 的内层变量仍被替换；未注册 `{xxx}`、孤立 `}` 原样保留；`{{` / `}}` 转义为字面花括号；严格 `render_text` 对未知占位符仍报错（非 llm_prompt 回归）。
+- 个人连接：未配置返回默认值、按 `user_id` 查询、解密失败按未配置；显式 url/model 优先。
+- `infer_match_keys` / `ensure_job_table` / `is_table_empty` / `upsert_rows` 自动补字段与自动幂等键（沿用既有用例）。
+- 提示词可靠性：默认 `max_tokens=4096`；截断 JSON（`Unterminated string` / 末尾 `Expecting`）报错包含「max_tokens」引导；普通非法 JSON 文案不变；`DEFAULT_SYSTEM_PROMPT` 含「综合整理」与「不要因为无法联网…返回空数组」约束。
+- 宽松模板：JSON 裸花括号可原样保存 / 运行；`{"date": "{today}"}` 内层变量仍替换；`{{` / `}}` 转义；严格 `render_text` 回归。
 
 **接口层**：
-- `GET / PUT llm-config`：CRUD、viewer 读 / editor 写、密钥不回显、`clear_api_key`、非法 base_url 400。
-- `sync-jobs`：只填用户提示词可保存；缺 Key 400；cron 不配 `match_keys` 可保存；显式 match_keys 仍校验目标表字段。
-- `test-connection`：未传 session 回退工作区连接；未配置连接返回明确提示；请求体可选 `api_key` 优先级最高且不落库。
-- `preview`：响应含 `suggested_match_keys`。
-- CLI `sync preview` / `sync run --dry-run`：传入 `db` 后使用工作区连接默认值，JSON 输出含 `suggested_match_keys`（`tests/test_datasource_cli.py` 回归）。
+- 个人 `GET / PUT / POST /test /llm-config`：默认值、加密不回显、`clear_api_key`、非法 base_url 400、未登录 401、用户间隔离（A 的配置 B 读不到）、test 使用未保存 Key 不落库。
+- 工作区级 `llm-config` / `test-connection` 端点已删除（404）。
+- `sync-jobs`：只填用户提示词可保存；缺 Key 400 且文案指向「个人设置 → 大模型」；cron 不配 `match_keys` 可保存；任务按创建者 / 当前用户解析个人连接（含预览、运行）。
+- CLI `sync preview` / `sync run --dry-run` 使用任务创建者的个人连接并输出 `suggested_match_keys`。
 - 既有 `llm_prompt` 任务与其它 provider 回归。
 
-**迁移 / 备份**：新迁移 upgrade / downgrade / 重复执行幂等；`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 同步到 `5e6f7a8b9c01`；备份 v6 往返（连接配置保留、Key 不导出）；v1-v5 旧备份可导入。
+**迁移 / 备份**：
+- `6a7b8c9d0e1f` upgrade / downgrade / 重复执行幂等；旧表数据按 `created_by` 迁移、无归属丢弃、同用户多行取一条；downgrade 重建旧表（空）。
+- `HEAD_REVISION` = `6a7b8c9d0e1f`。
+- 备份 v7 导出不含任何个人大模型配置；v1-v7 均可导入；v6 备份的 `llm_config` 键被忽略。
 
-**前端（单测）**：`tests` 对应 `frontend/src/pages/datasource/DatasourcePage.test.tsx`、`llmPromptPresets.test.ts` 覆盖 C1/C5/C6 与连接弹窗。
+**前端（单测）**：`LlmConfigPanel.test.tsx`（读取 / 保存 / 测试 / 清除 / 默认系统提示词展示）、`SettingsModal.test.tsx`（「大模型」页签）、`DatasourcePage.test.tsx`（无连接入口、个人配置提示、保存 payload、预览幂等键、非 LLM 任务回归）、`llmPromptPresets.test.ts`（8 组、新闻 / 美食文案）。
 
 **e2e（前端）**：既有 `datasource.spec.ts` 默认 provider 流程保持通过；LLM 流程只校验保存与表单，不触发真实模型调用。
 
@@ -189,67 +207,71 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 
 | 期 | 内容 | 风险 |
 |---|---|---|
-| **P0** | 工作区级大模型连接（模型 / 迁移 / GET·PUT 端点 / 连接解析）+ 内置系统提示词 + prompt-only 校验 / 连通测试回退 / 备份 v6 | 中（模型 + 迁移 + 备份格式） |
+| **P0** | 大模型连接（模型 / 迁移 / GET·PUT 端点 / 连接解析）+ 内置系统提示词 + prompt-only 校验 / 连通测试 + 备份格式 | 中（模型 + 迁移 + 备份格式） |
 | **P1** | 自动建表、空表补字段、自动幂等键（`auto_table` + `write` + `runner` + 预览建议键） | 中（写路径改动，需既有落表回归） |
 | **P2** | 前端极简表单 + 8 组推荐提示词 + 测试与文档 | 中（跨前后端契约） |
+| **P3** | 连接迁移到个人级（个人表 / 个人接口 / 任务按用户解析 / 个人设置页签 / 备份 v7）+ 提示词可靠性（`max_tokens` / 截断提示 / 系统提示词 / 新闻美食预设） | 中（数据迁移不可逆 + 前后端入口切换） |
 
 ## 决策记录（唯一决策台账）
 
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
 |---|---|---|---|---|---|
-| D1 | 整体方案 | 工作区级连接一次配置 + 任务只填用户提示词 + 空表自动落表 | 配置复杂度集中在「每个任务都要重复填连接和模型」；把不变的部分上提、把可推断的部分交给系统（I1） | 继续逐任务全量配置（C1 未解决）；只做提示词模板但字段不减（换皮不减压） | `services/connection.py`、`routers/llm_config.py` |
-| D2 | 连接归属层级 | 工作区级唯一记录，任务可在高级设置显式覆盖 url/model | 同一工作区的模型端点通常一致；工作区隔离符合多租户与权限模型 | 全局环境变量（多工作区不可分别配置）；任务级复用连接（仍需逐任务选） | `models.DatasourceLlmConfig`、`routers/llm_config.py` |
-| D3 | 系统提示词默认值 | 内置完整默认 + 连接覆盖 + 任务高级覆盖三层优先级 | 用户不写 system 也要保证 JSON 结构、命名与「不得编造」（I2） | 要求用户每条任务填写（C1 未解决）；只保留一句 JSON 指令（缺字段与日期约束） | `providers/llm_prompt.py`、`routers/llm_config.py` |
-| D4 | API Key 存储 | 连接内 Fernet 加密、只写不回显、不随备份导出；运行期会话 Key 优先 | 复用既有加密能力与保密口径（I5）；保留会话以兼容旧任务 | 明文入库；导出备份带 Key；只保留会话（每任务绑定偏重） | `services/connection.py`、`routers/llm_config.py`、`workspaces/services/backup_io.py` |
+| D1 | 整体方案 | 个人级连接一次配置 + 任务只填用户提示词 + 空表自动落表 | 配置复杂度集中在「每个任务都要重复填连接和模型」；把不变的部分上提、把可推断的部分交给系统（I1） | 继续逐任务全量配置（C1 未解决）；只做提示词模板但字段不减（换皮不减压） | `services/connection.py`、`accounts/routers/llm_config.py` |
+| D2 | 连接归属层级 | **个人级**：`datasource_user_llm_config` 以 `user_id` 唯一；任务可在高级设置显式覆盖 url/model | 模型账号属于个人（Key 计费 / 配额 / 保密都归人）；跨工作区复用同一份配置，共享工作区下天然隔离（I8） | 工作区级唯一记录（同一用户跨工作区重复配置、共享工作区下归属与 Key 可见性说不清）；全局环境变量（个人无法配置）；任务级复用连接（仍需逐任务选） | `models.UserLlmConfig`、`accounts/routers/llm_config.py` |
+| D3 | 系统提示词默认值 | 内置完整默认 + 个人覆盖 + 任务高级覆盖三层优先级；内置默认要求综述 / 推荐类尽力输出、无法核实标注「综合整理」 | 用户不写 system 也要保证 JSON 结构、命名与「不得编造」（I2）；推荐类任务不能因无法联网返回空（C8） | 要求用户每条任务填写（C1 未解决）；只保留一句 JSON 指令（缺字段与真实性约束）；继续鼓励「无法产出就返回空数组」（新闻 / 美食开箱即空） | `providers/llm_prompt.py`、`accounts/routers/llm_config.py` |
+| D4 | API Key 存储 | 个人连接内 Fernet 加密、只写不回显、不随备份导出；运行期会话 Key 优先 | 复用既有加密能力与保密口径（I5）；保留会话以兼容旧任务 | 明文入库；导出备份带 Key；只保留会话（每任务绑定偏重） | `accounts/routers/llm_config.py`、`services/connection.py`、`workspaces/services/backup_io.py` |
 | D5 | 目标表自动化 | 留空按任务名建表（同名复用）；已有空表自动补字段 | 「空数据表自动新增和更新」的直接落点；同名复用避免重复建表 | 强制先手建表（C3 未解决）；每次运行重建表（丢历史与幂等基础） | `services/auto_table.py`、`services/runner.py` |
 | D6 | 幂等键来源 | 显式配置优先；缺省时从结果行自动识别（单列唯一优先，最多 3 列组合）；无唯一组合退化为追加并留痕 | 去掉 cron 强制手填（C3），同时不伪造键（I4） | cron 强制手填（原 ADR 0014 D6 口径，复杂且易错）；固定取首列（可能不唯一）；为 match_keys 建复合唯一索引（ADR 0006 D8 已否决） | `services/auto_table.py`、`services/write.py`、`services/runner.py` |
 | D7 | 自动化触发范围 | 仅 `provider=llm_prompt` | 其它 provider 有确定的目标表与字段语义，隐式建表是意外副作用（I3） | 所有 provider 统一自动建表（改变既有行为，回归面不可控） | `services/runner.py` |
-| D8 | 备份版本 | 升 v6 导出 `llm_config`（不含 Key）；导入接受 1-6 | 连接配置属于工作区配置，不导出则迁移工作区后需重配；Key 导出违反保密口径 | 不进备份（迁移丢配置）；复用 v5 原地加键（版本号不再可信） | `workspaces/services/backup_io.py`、`workspaces/schemas/models.py` |
-| D9 | 旧任务兼容 | 显式 url/model/api_key 优先级高于连接默认值；旧备份按空连接还原 | 不强制迁移存量任务（I7） | 批量重写旧任务 `request_spec`（不可逆、风险高） | `services/connection.py`、`services/runner.py` |
+| D8 | 备份版本 | 升 v7，**不导出**个人大模型配置；导入接受 1-7（v6 的 `llm_config` 键忽略） | 个人 Key / 模型选择属于用户私有数据，导出给他人即越权；工作区备份只承载工作区数据（I5/I8） | 继续导出（个人配置随工作区泄露给协作者 / 其他环境）；保留 v6 并加个人键（版本号不再可信） | `workspaces/services/backup_io.py`、`workspaces/routers/workspaces.py` |
+| D9 | 旧任务 / 旧配置兼容 | 显式 url/model/api_key 优先于个人连接；旧工作区连接按 `created_by` 迁移；v1-v6 备份可导入 | 不强制重写存量任务（I7）；迁移后用户无需重配 | 批量重写旧任务 `request_spec`（不可逆、风险高）；保留旧工作区表双写（两份配置并存） | `services/connection.py`、`accounts/routers/llm_config.py`、`alembic/versions/6a7b8c9d0e1f_add_user_llm_config.py` |
 | D10 | 提示词模板求值严格度 | `llm_prompt` 专用宽松入口 `render_text_lenient`：仅替换已注册变量，未知 `{xxx}` / 裸花括号原样保留；其它 provider 仍用严格 `render_text` | 用户会直接在提示词里写 JSON 示例，要求先转义违背「只配提示词即可」（C1/C2）；宽松只作用于提示词，不影响 URL / body 的缺参保护 | 全链路放宽（其它 provider 的 URL / body 模板失去缺参保护）；要求用户手动转义（C1 未解决） | `providers/template.py`、`providers/llm_prompt.py` |
+| D11 | 提示词可靠性 | 默认 `max_tokens` 1024 → 4096；截断错误识别并提示调大 / 精简；系统提示词支持综述 / 推荐类尽力输出与「综合整理」；新闻 / 美食预设同步 | 用户的失败是可复现的 token 截断与「无实时数据即返回空」，必须在默认配置层解决而不是让用户自查（C8/I9） | 继续 1024 并要求用户手动调（开箱失败）；把截断当普通 JSON 错误（无可执行指引）；新闻 / 美食预设保持实时抓取口径（模型无法满足） | `providers/llm_prompt.py`、`frontend/src/pages/datasource/llmPromptPresets.ts` |
 
-门禁：本表无「待定」；需求方已于 2026-10-22 确认简化方案并要求实现，Status 定稿 `Implemented`。
+门禁：本表无「待定」；需求方已于 2026-10-22 确认简化方案与个人级迁移 / 提示词可靠性追加，Status 定稿 `Implemented`。
 
 ## Consequences
 
-- **正向**：新建 `llm_prompt` 任务只需「任务名 + 一句提示词」，系统自动建表、补字段、识别幂等键并持续更新；连接与模型参数只维护一份；系统提示词默认可用，模型输出结构更稳定；旧任务与旧备份不受影响。
-- **负向**：新增一张连接表与一条迁移；写路径多一层自动建表 / 补字段 / 推断键的分支，runner 与 write 的复杂度上升；自动推断幂等键存在「推断错误」的小概率，需要 `run.detail` 留痕排查。
-- **风险与缓解**：自动建表产生非预期表 → 仅 `llm_prompt` 且行非空时触发，任务失败不建表；推断键不唯一 → 退化为追加并留痕，不静默更新错误行；连接 Key 泄露 → 加密、不回显、不导出；旧任务回归 → 显式配置优先 + 既有测试全跑。
+- **正向**：新建 `llm_prompt` 任务只需「任务名 + 一句提示词」，系统自动建表、补字段、识别幂等键并持续更新；模型账号跟人走，跨工作区复用同一份配置，共享工作区下互不读取他人 Key；系统提示词默认可用且支持综述 / 推荐类任务；推荐提示词开箱可用，长输出不再默认被截断。
+- **负向**：个人配置迁移不可逆（downgrade 不恢复旧数据）；工作区接管 / 移交后，任务的模型调用仍归创建者的个人配置，需要交接 Key；备份不再携带模型配置，换环境后每人各自重配。
+- **风险与缓解**：旧工作区配置无 `created_by` 时丢弃 → 迁移日志 / 文档说明，用户可重填；个人配置随账号删除级联清除 → 删除用户前确认任务归属；截断仍可能发生在超大输出 → 错误文案给出 `max_tokens` 调整建议；模型对「综合整理」的理解差异 → 预设 prompt 明确要求标注并与系统提示词一致；旧客户端仍调工作区端点 → 端点已删除（404），前端同轮切换到个人接口。
 
 ## 与既有 ADR 的关系
 
 | 轴 | 载体 | 决定 | 由谁 |
 |---|---|---|---|
 | 数据同步框架（Provider × SyncJob × Cursor × Normalizer） | `plugins/datasource/` | 自动化只在 `llm_prompt` 内实现，框架层不动 | ADR 0006 |
-| 凭证管理 | `datasource_session` → 新增 `datasource_llm_config` | 会话 Key 保留并优先，工作区连接作为默认来源 | ADR 0006 D6、本 ADR D4 |
+| 凭证管理 | `datasource_session` → 新增 `datasource_user_llm_config` | 会话 Key 保留并优先，个人连接作为默认来源 | ADR 0006 D6、本 ADR D2/D4 |
 | 幂等落库 | `upsert_rows` 应用层先查后写 | 沿用应用层 upsert，不引入复合唯一索引；新增自动键推断 | ADR 0006 D8、本 ADR D6 |
-| 备份格式 | 工作区备份 v5 → v6 | 追加 `llm_config`（不含 Key），导入端向下兼容 1-5 | ADR 0006、本 ADR D8 |
-| `llm_prompt` provider | `providers/llm_prompt.py` | 本 ADR 简化其配置门槛并新增默认系统提示词 / 空表自动化；provider 协议不变 | ADR 0014 |
+| 备份格式 | 工作区备份 v5 → v7 | v6 曾导出工作区连接；v7 起不再导出大模型配置（个人数据），导入端向下兼容 1-7 | ADR 0006、本 ADR D8 |
+| `llm_prompt` provider | `providers/llm_prompt.py` | 本 ADR 简化其配置门槛、新增默认系统提示词 / 空表自动化 / 提示词可靠性；provider 协议不变 | ADR 0014 |
 | cron 与幂等键 | `ScheduleMode.CRON` | **简化口径见 ADR 0019**：`llm_prompt` + cron 不再强制 `match_keys`，改为自动识别 | ADR 0014 D6 → 本 ADR D6 |
 
 ## 落地状态（随实现更新）
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/connection.py`、`src/cndb/plugins/datasource/routers/llm_config.py`、`src/cndb/plugins/datasource/routers/__init__.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/plugins/datasource/schemas.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/alembic/versions/5e6f7a8b9c01_add_datasource_llm_config.py` | `tests/test_datasource_llm_config.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py`、`tests/test_migration_missing_model_columns.py` | d0e2841e |
+| P0 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/connection.py`、`src/cndb/plugins/accounts/routers/llm_config.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/providers/template.py`、`src/cndb/plugins/datasource/schemas.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/alembic/versions/6a7b8c9d0e1f_add_user_llm_config.py` | `tests/test_datasource_llm_config.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_migration.py`、`tests/test_migration_missing_model_columns.py` | d0e2841e |
 | P1 | 已落地 | `src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/cli/sync.py` | `tests/test_datasource_auto_table.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_cli.py` | d0e2841e |
-| P2 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | d0e2841e |
+| P2 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/api/llmConfig.ts`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/pages/settings/SettingsModal.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts`、`frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx` | d0e2841e |
+| P3 | 已落地 | `src/cndb/plugins/accounts/plugin.py`、`src/cndb/plugins/accounts/routers/llm_config.py`、`src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/connection.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/alembic/versions/6a7b8c9d0e1f_add_user_llm_config.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/api/llmConfig.ts`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/pages/datasource/llmPromptPresets.ts` | `tests/test_datasource_llm_config.py`、`tests/test_datasource_migration.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_datasource_backup.py`、`frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | TBD |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系；提交列由 Lead 在提交后回填 sha。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地并提交（`d0e2841e`）（后端连接 / 系统提示词 / 自动落表 + 前端极简表单与 8 组预设）
-- 追加（2026-10-22）：推荐提示词由 5 组扩为 8 组（新增商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），提交 `c39a8f6d`；页面按钮按预设数量动态显示，工作区「大模型连接」已按 DeepSeek 默认（`https://api.deepseek.com` / `deepseek-chat`）预置，API Key 留空待用户填写
-- 追加（2026-10-22）：连接弹窗支持输入 API Key 后直接测试（`POST /test-connection` 可选 `api_key`，仅本次请求、不落库；优先级 请求 Key > 会话 Key > 工作区连接 Key），提交 `f2bf92bc`
-- 已完成：P0 工作区级大模型连接 + 内置默认系统提示词 + prompt-only 校验 / 连通测试回退 + 备份 v6 + 提示词宽松模板（`render_text_lenient`，JSON 裸花括号可直接写）；P1 自动建表 / 空表补字段 / 自动幂等键 + 预览建议键 + CLI `preview` / `run --dry-run` 同步输出 `suggested_match_keys`；P2 前端极简表单 + 8 组推荐提示词 + 测试与文档
-- 下一步：人工确认后保持 `Status: Implemented`；如后续要支持「自动幂等键人工纠错入口 / 多连接」另立 ADR
-- 已知坑：自动幂等键只在结果行内可判定，无唯一组合时退化为追加（看 `run.detail.auto_match_keys`）；自动补字段只在空表启用，已有表未知列按原策略；备份不导出 Key，导入后需重填；工作区连接未配置时运行错误文案指向「大模型连接」而非 401；宽松模板只作用于 `llm_prompt` 的 system / user 提示词，URL 与 headers 仍严格；CLI 预览需传 `db` 才会应用连接默认值并给出 `suggested_match_keys`
-- 最近一次全绿：`make check`（2026-10-22，后端 5263 passed / 覆盖率 97.74%，前端静态与覆盖率门槛通过）；提交 `d0e2841e`
+- 当前阶段：P0-P3 已落地（本轮 P3：个人级大模型配置 + 提示词可靠性），提交 sha 待 Lead 回填
+- 追加（2026-10-22）：推荐提示词由 5 组扩为 8 组（新增商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），提交 `c39a8f6d`；页面按钮按预设数量动态显示
+- 追加（2026-10-22）：连接测试支持未保存 Key（现为 `POST /api/v1/accounts/llm-config/test`），提交 `f2bf92bc`
+- 追加（2026-10-22，本轮 P3，提交待回填）：大模型连接从工作区级改为**个人级**（`datasource_user_llm_config` + 迁移 `6a7b8c9d0e1f` + 个人接口 + 个人设置页签 + 备份 v7 不导出）；提示词可靠性（`max_tokens` 4096 / 截断提示 / 系统提示词「综合整理」/ 新闻美食预设调整）
+- 已完成：P0 大模型连接 + 内置默认系统提示词 + prompt-only 校验 + 备份格式 + 提示词宽松模板（`render_text_lenient`）；P1 自动建表 / 空表补字段 / 自动幂等键 + 预览建议键 + CLI 输出；P2 前端极简表单 + 8 组推荐提示词；P3 个人级迁移 + 提示词可靠性
+- 下一步：人工确认后保持 `Status: Implemented`；`docs/adr/README.md` 索引第 0019 行的标题仍写作「工作区连接」，需随本轮同步；如后续要支持「自动幂等键人工纠错入口 / 多连接 / 个人配置随账号导出」另立 ADR
+- 已知坑：自动幂等键只在结果行内可判定，无唯一组合时退化为追加（看 `run.detail.auto_match_keys`）；自动补字段只在空表启用；个人配置不随工作区备份导出，导入备份后每人需各自配置；任务运行按 `job.created_by` 解析个人连接，创建者离职 / 换 Key 后任务需改由他人重建或用会话 Key 兜底；旧工作区配置 `created_by` 为空时迁移会丢弃；迁移 downgrade 不恢复旧数据；推荐类任务长输出仍可能超过 `max_tokens`，错误文案会提示调大或精简；无联网模型无法取实时新闻 / 行情，只能基于已掌握信息并标注「综合整理」；宽松模板只作用于 `llm_prompt` 的 system / user 提示词，URL 与 headers 仍严格；CLI 预览按任务创建者解析个人连接
+- 最近一次全绿：`make check`（2026-10-22，后端 5263 passed / 覆盖率 97.74%，前端静态与覆盖率门槛通过）；提交 `d0e2841e`（本轮 P3 全量门禁待提交后回填）
 
 ## 附录：8 组推荐用户提示词说明（2026-10-22 追加 3 组）
 
-页面「推荐提示词」与本节保持同一份口径（预设定义见 `frontend/src/pages/datasource/llmPromptPresets.ts`；prompt 中的 `{{` / `}}` 是后端模板语法里的字面花括号，运行时还原为 `{` / `}`）。
+页面「推荐提示词」与本节保持同一份口径（预设定义见 `frontend/src/pages/datasource/llmPromptPresets.ts`；prompt 中的 `{{` / `}}` 是后端模板语法里的字面花括号，运行时还原为 `{` / `}`）。「每日新闻摘要」「美食推荐做法」两组已按提示词可靠性口径调整（基于已掌握信息 / 标注综合整理 / 控制输出规模），其余组保持原说明。
 
 | 预设 id | 场景 | 建议目标表字段 | 建议幂等键 |
 |---|---|---|---|
@@ -264,15 +286,17 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 
 ### 1. 每日新闻摘要（`daily_news`）
 
-- **适用场景**：每天汇总国内要闻 / 财经 / 科技三个板块的重点新闻，按 `date + category + title` 去重，适合资讯看板。
-- **建议目标表字段**：`date`（日期 `YYYY-MM-DD`）、`category`（板块）、`title`（标题）、`summary`（摘要 ≤120 字）、`source`（来源媒体）、`url`（原文链接）、`importance`（重要度 1-5 整数）。
+- **适用场景**：每天汇总国内要闻 / 财经 / 科技三个板块的重点新闻，按 `date + category + title` 去重，适合资讯看板；基于模型已掌握的近期公开信息整理，不因无法联网返回空数组，无法核实的来源标注「综合整理」。
+- **建议目标表字段**：`date`（日期 `YYYY-MM-DD`）、`category`（板块）、`title`（标题）、`summary`（摘要 ≤120 字）、`source`（来源媒体，无法确认写「综合整理」）、`url`（原文链接，无法确认用空串）、`importance`（重要度 1-5 整数）。
 - **建议幂等键**：`date` + `category` + `title`。
 - **prompt 示例**（节选，实际含完整字段说明）：
 
 ```text
-请汇总 {today} 的每日新闻摘要，覆盖国内要闻、财经、科技三个板块。
+请基于你已掌握的近期公开信息，汇总 {today} 前后的每日新闻摘要，覆盖国内要闻、财经、科技三个板块。
 每个板块挑选最重要的 3-5 条，按重要度从高到低排列；每条给出一句话摘要（不超过 120 字）。
-字段要求（全部使用英文 snake_case）：date、category、title、summary、source、url、importance。
+字段要求（全部使用英文 snake_case）：date（日期 YYYY-MM-DD）、category（板块）、title（标题）、summary（摘要）、source（来源媒体）、url（原文链接）、importance（重要度 1-5 的整数）。
+source 无法确认具体媒体时写「综合整理」；url 无法确认时用空字符串，不要编造链接；不要因为无法联网就返回空数组。
+同一天同一板块下的标题应稳定，date + category + title 组合用于去重。
 只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。不要输出 Markdown 代码围栏或任何解释文字。
 ```
 
@@ -353,17 +377,18 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 
 ### 7. 美食推荐做法（`food_recipes`）
 
-- **适用场景**：按菜名 + 菜系整理家庭可操作的美食做法，适合菜谱库、每日菜单与美食内容推荐；`dish_name + cuisine` 即天然幂等键。
+- **适用场景**：按菜名 + 菜系整理家庭可操作的美食做法，适合菜谱库、每日菜单与美食内容推荐；`dish_name + cuisine` 即天然幂等键。不依赖实时数据，模型基于已掌握知识输出；单次输出控制在 8 道菜以内，避免长 JSON 被截断。
 - **建议目标表字段**：`dish_name`（菜名）、`cuisine`（菜系）、`difficulty`（简单 / 中等 / 困难）、`cook_time_min`（分钟，整数）、`ingredients`（主要食材文本）、`steps`（分步做法文本）、`tips`（小贴士，无则空串）。
 - **建议幂等键**：`dish_name` + `cuisine`。
 - **prompt 示例**（节选）：
 
 ```text
-请推荐 {today} 适合家庭制作的美食做法，覆盖家常菜、汤羹、主食、甜点四类，每类 2-3 道，优先当季食材。
+请推荐 {today} 适合家庭制作的美食做法，覆盖家常菜、汤羹、主食、甜点四类，每类 2 道，共 8 道，优先当季食材。
 每道菜给出：菜名、菜系、难度、烹饪时长、主要食材、分步做法、关键小贴士。
-字段要求（全部使用英文 snake_case）：dish_name、cuisine、difficulty、cook_time_min、ingredients、steps、tips。
-同一菜名同一菜系只能有一条记录，dish_name + cuisine 为稳定键。
-只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。
+控制输出规模：每道菜的 ingredients 不超过 6 种主要食材；steps 用编号与分号分隔，每步不超过 60 字；tips 一句话即可，避免输出过长被截断。
+字段要求（全部使用英文 snake_case）：dish_name（菜名）、cuisine（菜系，如 川菜/粤菜/西餐）、difficulty（难度：简单/中等/困难）、cook_time_min（烹饪时长，分钟，整数）、ingredients（主要食材，用顿号分隔的文本）、steps（分步做法，用编号与分号分隔的文本）、tips（关键小贴士，无则空字符串）。
+同一菜名同一菜系只能有一条记录，dish_name + cuisine 为稳定键；不要返回空数组。
+只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。不要输出 Markdown 代码围栏或解释文字。
 ```
 
 ### 8. 国际形势发展动态（`global_affairs`）
@@ -380,4 +405,3 @@ def infer_match_keys(rows: Sequence[Mapping[str, Any]], candidate_names: Sequenc
 同一天同一地区同一标题只能有一条记录，date + region + title 为稳定键。
 只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。
 ```
-

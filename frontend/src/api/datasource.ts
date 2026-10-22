@@ -3,6 +3,9 @@
  * - providers：可用适配器 + 参数表单描述（Provider 驱动的新建向导）
  * - sync-jobs：任务 CRUD / 立即运行 / 抓取预览 / 运行历史
  *
+ * 个人级「大模型」配置（`/api/v1/accounts/llm-config`）见 `api/llmConfig.ts`；
+ * 工作区级连接端点已删除，本文件不再提供 getLlmConfig / updateLlmConfig / testConnection。
+ *
  * 类型内联在本文件（与 analytics 同口径），不再拆 types 子目录。
  */
 
@@ -41,30 +44,6 @@ export interface DatasourceProviderInfo {
   supports_paging: boolean
 }
 
-/** 工作区级「大模型连接」配置（api_key 只写不回显） */
-export interface LlmConfig {
-  /** 是否已完成配置（有 API 地址 + 模型 + API Key） */
-  configured: boolean
-  base_url: string
-  model: string
-  /** 是否已保存 API Key（值不回显） */
-  has_api_key: boolean
-  /** 工作区自定义系统提示词；留空表示使用内置默认 */
-  system_prompt: string
-  /** 后端内置默认系统提示词全文（前端只读展示） */
-  default_system_prompt: string
-}
-
-/** 更新大模型连接：字段均可选，api_key 留空表示保持不变 */
-export interface LlmConfigPayload {
-  base_url?: string
-  model?: string
-  api_key?: string
-  /** 显式清除已保存的 API Key */
-  clear_api_key?: boolean
-  system_prompt?: string
-}
-
 /** 大模型提示词配置（`llm_prompt` provider） */
 export interface SyncPromptConfig {
   /** 系统提示词；留空时后端补「只输出 JSON」约束 */
@@ -83,7 +62,7 @@ export interface SyncLlmConfig {
 
 /** 请求声明（与后端 RequestSpec 对齐） */
 export interface SyncRequestSpec {
-  /** `llm_prompt` 可省略：后端按工作区「大模型连接」补齐 */
+  /** `llm_prompt` 可省略：后端按当前用户的「个人设置 → 大模型」配置补齐 */
   url_template?: string
   method?: string
   headers_template?: Record<string, string>
@@ -196,22 +175,6 @@ export interface DatasourceSessionPayload {
   secrets?: Record<string, string>
 }
 
-/** 连通测试请求：用未保存的配置，不落库、不写运行记录 */
-export interface DatasourceConnectionTestPayload {
-  request_spec: SyncRequestSpec
-  session_id?: number | null
-  /** 未保存的 API Key：仅用于本次连通测试、不落库；填写后无需先保存即可测试 */
-  api_key?: string
-}
-
-/** 连通测试结果：失败也返回 200，前端按 `ok` 展示 */
-export interface DatasourceConnectionTestResult {
-  ok: boolean
-  latency_ms: number
-  model: string
-  message: string
-}
-
 /** 领域模板包：按 provider 预置的分析配置 */
 export interface DomainTemplate {
   id: string
@@ -280,13 +243,6 @@ export const datasourceApi = {
     api.post<{ job: SyncJob; run: SyncRun }>(`${base(wid)}/sync-jobs/${id}/run`).then(r => r.data),
   previewJob: (wid: number | string, id: number | string, limit = 20) =>
     api.post<SyncPreviewResult>(`${base(wid)}/sync-jobs/${id}/preview`, { limit }).then(r => r.data),
-  testConnection: (wid: number | string, data: DatasourceConnectionTestPayload) =>
-    api.post<DatasourceConnectionTestResult>(`${base(wid)}/test-connection`, data).then(r => r.data),
-  /** 工作区级大模型连接（viewer 可读 / editor 可写） */
-  getLlmConfig: (wid: number | string) =>
-    api.get<LlmConfig>(`${base(wid)}/llm-config`).then(r => r.data),
-  updateLlmConfig: (wid: number | string, data: LlmConfigPayload) =>
-    api.put<LlmConfig>(`${base(wid)}/llm-config`, data).then(r => r.data),
   runs: (wid: number | string, id: number | string, params?: { limit?: number; offset?: number }) =>
     api
       .get<{ total: number; runs: SyncRun[] }>(`${base(wid)}/sync-jobs/${id}/runs`, { params })

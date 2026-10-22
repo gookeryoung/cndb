@@ -165,7 +165,7 @@ class LlmPromptProvider:
 | D6 | cron 与幂等 | 复用 `ScheduleMode.CRON`；`llm_prompt` + cron 的 `match_keys` 由自动识别承接（简化口径见 ADR 0019），不再强制手填 | 防止每轮追加重复行；调度器零改动 | 无键追加；新建 LLM 专用调度器 | `services/schedule.py`、`routers/sync_jobs.py` |
 | D7 | 连通测试入口 | 独立 `POST /test-connection`，用未保存配置，无副作用 | 现有预览必须先保存任务，无法在表单阶段验证 Key / 模型 | 复用预览端点（有落库 / 运行记录副作用） | `routers/sync_jobs.py`、`providers/llm_prompt.py` |
 | D8 | 用量留痕 | `run.detail.response_metadata` 记录 model 与 usage | 便于排查模型 / 计费问题，不做费用估算 | 不记录；单独建表 | `services/pipeline.py`、`services/runner.py` |
-| D9 | 是否新增表 / 迁移 | 本 ADR 范围内不新增，配置进 `request_spec` JSON（后续 ADR 0019 新增工作区级连接表 `datasource_llm_config`） | 与既有半结构化配置口径一致，备份零改动 | 新建 `llm_config` 表（无必要抽象） | `services/runner.py`、`services/schemas` |
+| D9 | 是否新增表 / 迁移 | 本 ADR 范围内不新增，配置进 `request_spec` JSON（后续 ADR 0019 改为按用户的个人级连接表 `datasource_user_llm_config`） | 与既有半结构化配置口径一致，备份零改动 | 新建 `llm_config` 表（无必要抽象） | `services/runner.py`、`services/schemas` |
 
 门禁：本表无「待定」；需求方已于 2026-10-21 确认提案并要求实现，Status 定稿 `Accepted`。
 
@@ -180,7 +180,7 @@ class LlmPromptProvider:
 | 轴 | 载体 | 决定 | 由谁 |
 |---|---|---|---|
 | 数据同步框架 | Provider × SyncJob × Cursor × Normalizer | `llm_prompt` 作为新 Provider 接入，不改框架 | ADR 0006 |
-| 凭证管理 | `datasource_session` | 复用加密会话；ADR 0019 另增工作区级连接 Key，会话 Key 优先 | ADR 0006 D6、ADR 0019 D4 |
+| 凭证管理 | `datasource_session` | 复用加密会话；ADR 0019 另增个人级连接 Key，会话 Key 优先 | ADR 0006 D6、ADR 0019 D4 |
 | 调度 | `ScheduleMode.CRON` | 复用 cron 判定与租约单飞 | ADR 0006 D3 |
 | 配置复杂度简化 | 工作区级「大模型连接」+ 空表自动落表 | llm_prompt 的连接 / 幂等键 / 目标表配置下沉或自动化，provider 协议不变 | ADR 0019 |
 

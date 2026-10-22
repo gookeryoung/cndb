@@ -563,8 +563,8 @@ def export_workspace(
 
     # v5：外部数据同步任务（ADR 0006）。跨工作区 table_id 不可移植，
     # 导出用「目标表名」引用，导入端按同名表映射；找不到同名表则任务不绑定表。
-    # v6（ADR 0019）：额外导出工作区级「大模型连接」——**绝不含 api_key**。
-    from cndb.plugins.datasource.models import DatasourceLlmConfig, DatasourceSession, DatasourceSyncJob
+    # v7（ADR 0019）：大模型连接已改为**个人配置**，属于用户私有数据，不随工作区备份导出。
+    from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
 
     table_name_by_id = {tbl.id: tbl.name for tbl in tables}
     session_name_by_id = {
@@ -600,28 +600,14 @@ def export_workspace(
         for job in sync_jobs
     ]
 
-    # v6：工作区级大模型连接（ADR 0019）。API Key 只存密文且不随备份导出，
-    # 导入端还原地址 / 模型 / 系统提示词后需要用户重新填写 Key。
-    llm_config_row = db.query(DatasourceLlmConfig).filter(DatasourceLlmConfig.workspace_id == workspace_id).first()
-    llm_config_data = (
-        {
-            "base_url": llm_config_row.base_url,
-            "model": llm_config_row.model,
-            "system_prompt": llm_config_row.system_prompt,
-        }
-        if llm_config_row is not None
-        else None
-    )
-
     return {
-        "version": "6",
+        "version": "7",
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
         "tables": tables_data,
         "document_tags": document_tags_data,
         "documents": documents_data,
         "sync_jobs": sync_jobs_data,
-        "llm_config": llm_config_data,
     }
 
 

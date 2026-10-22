@@ -1,4 +1,4 @@
-/** 用户设置面板 — 用户资料 + 主题（配色/字体）+ 表格（显示/操作）. */
+/** 用户设置面板 — 用户资料 + 大模型（个人连接配置）+ 主题（配色/字体）+ 表格（显示/操作）. */
 
 import { useEffect } from 'react'
 import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
@@ -12,6 +12,7 @@ import { useTableSettingsStore, useAuthStore, type SettingsTab } from '@/store'
 import { authApi } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { Density, NewRowPosition } from '@/theme/tableSettings'
+import LlmConfigPanel from './LlmConfigPanel'
 
 interface Props {
   open: boolean
@@ -366,13 +367,14 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
       open={open}
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
-      width={660}
+      width={760}
       destroyOnHidden
     >
       <Tabs
         defaultActiveKey={initialTab ?? 'profile'}
         items={[
           { key: 'profile', label: '用户资料', children: <ProfilePanel /> },
+          { key: 'llm', label: '大模型', children: <LlmConfigPanel /> },
           { key: 'theme', label: '主题', children: <ThemePanel /> },
           { key: 'table', label: '表格', children: <TablePanel /> },
         ]}

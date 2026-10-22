@@ -7,7 +7,7 @@
 import { create } from 'zustand'
 
 /** 个人设置页签 key（与 SettingsModal 的 Tabs items 对应） */
-export type SettingsTab = 'profile' | 'theme' | 'table'
+export type SettingsTab = 'profile' | 'llm' | 'theme' | 'table'
 
 interface UiState {
     /** 个人设置 Modal 是否打开 */
