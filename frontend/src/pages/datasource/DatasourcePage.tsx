@@ -341,11 +341,11 @@ export default function DatasourcePage() {
             </Button>
           </Tooltip>
           <Tag
-            color={llmConfig?.configured ? 'green' : 'default'}
+            color={llmConfig?.has_api_key ? 'green' : llmConfig?.configured ? 'gold' : 'default'}
             data-testid="datasource-llm-config-tag"
             style={{ marginInlineEnd: 4 }}
           >
-            {llmConfig?.configured ? '已配置' : '未配置'}
+            {llmConfig?.has_api_key ? '已配置' : llmConfig?.configured ? '待填 API Key' : '未配置'}
           </Tag>
           <Button type="primary" data-testid="datasource-create-btn" icon={<PlusOutlined />} onClick={openCreate}>
             新建同步任务
@@ -749,7 +749,7 @@ function JobDrawer({
                   data-testid="datasource-llm-presets-btn"
                   onClick={() => setPresetOpen(true)}
                 >
-                  推荐提示词（5 组）
+                  推荐提示词（{LLM_PROMPT_PRESETS.length} 组）
                 </Button>
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   选择典型场景一键填入，再按需修改；每组含建议目标表字段与幂等键
@@ -1549,7 +1549,7 @@ function SessionFormModal({
   )
 }
 
-/** 推荐提示词弹窗：5 组典型场景，点「使用」把 prompt 填入用户提示词（ADR 0019 P2） */
+/** 推荐提示词弹窗：8 组典型场景，点「使用」把 prompt 填入用户提示词（ADR 0019 P2） */
 function LlmPresetModal({
   open,
   onClose,

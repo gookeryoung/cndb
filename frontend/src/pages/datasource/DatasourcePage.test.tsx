@@ -535,7 +535,7 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(await screen.findByTestId('datasource-llm-system')).toHaveValue('你是数据抽取助手')
   })
 
-  it('5 组推荐提示词可一键填入并显示建议字段 / 幂等键', async () => {
+  it('推荐提示词（8 组）可一键填入并显示建议字段 / 幂等键', async () => {
     setupHandlers([makeLlmJob()])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
