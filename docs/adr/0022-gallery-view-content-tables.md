@@ -187,8 +187,8 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/grid/views/GalleryView.tsx`、`frontend/src/pages/grid/views/galleryBoard.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py` | `frontend/src/pages/grid/views/GalleryView.test.tsx`、`frontend/src/pages/grid/views/galleryBoard.test.ts`、`tests/test_views_api.py` | `<待提交>` |
-| P1 | 已落地 | `examples/datasets/工作区-数据源示例/views.json`、`src/cndb/cli/seed/views.py` | `tests/test_backup_seed_roundtrip.py`、`frontend/tests/e2e/critical/gallery-view.spec.ts` | `<待提交>` |
+| P0 | 已落地 | `frontend/src/pages/grid/views/GalleryView.tsx`、`frontend/src/pages/grid/views/galleryBoard.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py` | `frontend/src/pages/grid/views/GalleryView.test.tsx`、`frontend/src/pages/grid/views/galleryBoard.test.ts`、`tests/test_views_api.py` | 1da65a0f |
+| P1 | 已落地 | `examples/datasets/工作区-数据源示例/views.json`、`src/cndb/cli/seed/views.py` | `tests/test_backup_seed_roundtrip.py`、`frontend/tests/e2e/critical/gallery-view.spec.ts` | 1da65a0f |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
