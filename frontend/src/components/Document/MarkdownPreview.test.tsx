@@ -237,6 +237,17 @@ describe('MarkdownPreview GFM 元素', () => {
     expect(container.querySelector('.doc-md-preview td')?.textContent).toBe('苹果')
   })
 
+  it('表格头背景与文字都走主题变量（深色主题下不出现白底白字）', () => {
+    const { container } = renderProviders(
+      <MarkdownPreview content={'| 名称 |\n| --- |\n| 苹果 |'} />,
+    )
+    const th = container.querySelector('.doc-md-preview th') as HTMLTableCellElement
+    const style = th.getAttribute('style') ?? ''
+    // 回归：曾引用未定义的 --cn-bg-secondary，深色主题回退到 #fafafa 白底 + 亮色文字
+    expect(style).toContain('var(--cn-bg-subtle')
+    expect(style).toContain('var(--cn-text-primary')
+  })
+
   it('无序 / 有序列表渲染为 ul / ol', () => {
     const { container } = renderProviders(
       <MarkdownPreview content={'- 一\n- 二\n\n1. 甲\n2. 乙'} workspaceId={WID} />,
