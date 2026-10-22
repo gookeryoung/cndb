@@ -21,10 +21,10 @@ import { ThemeProvider } from '@/theme/ThemeProvider'
 import { useAuthStore } from '@/store/auth'
 import type { Workspace } from '@/api'
 
-/** Location 探针 —— 读取当前 pathname 供断言跳转 */
+/** Location 探针 —— 读取当前 pathname + search 供断言跳转 / 深链 */
 function LocationProbe() {
   const loc = useLocation()
-  return <span data-testid="location">{loc.pathname}</span>
+  return <span data-testid="location">{loc.pathname}{loc.search}</span>
 }
 
 /** 构造完整 Provider 栈 + 路由 */
@@ -485,5 +485,135 @@ describe('WorkspaceList 工作区类型', () => {
     await user.click(await screen.findByText('纯文档区'))
 
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/documents'))
+  })
+})
+
+// ─────────────── 主页「我的视图」面板与自定义顺序（ADR 0021） ───────────────
+
+/** 「我的视图」默认 fixture：一个私有看板视图 */
+const FAVORITE_VIEW = {
+  view_id: 300,
+  name: '本月进行中',
+  view_type: 'kanban',
+  is_default: false,
+  visibility: 'private',
+  filter_count: 2,
+  sort_count: 1,
+  table_id: 100,
+  table_name: '客户表',
+  workspace_id: 10,
+  workspace_name: '测试工作区',
+  updated_at: null,
+}
+
+describe('WorkspaceList 我的视图面板', () => {
+  it('渲染收藏视图行、计数与「工作区 › 数据表」路径', async () => {
+    server.use(
+      http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+        active_views: {}, workspace_order: [], favorite_view_ids: [300],
+      })),
+      http.get('/api/v1/accounts/preferences/favorite-views', () => HttpResponse.json([FAVORITE_VIEW])),
+    )
+    renderWorkspaceList()
+
+    const row = await screen.findByTestId('my-view-row-300')
+    expect(row).toHaveTextContent('本月进行中')
+    expect(row).toHaveTextContent('测试工作区 › 客户表')
+    expect(screen.getByTestId('my-views-count')).toHaveTextContent('1')
+  })
+
+  it('无收藏时展示引导空态（指向视图栏星标）', async () => {
+    renderWorkspaceList()
+
+    expect(await screen.findByTestId('my-views-empty')).toHaveTextContent('还没有收藏的视图')
+    expect(screen.getByText('在数据表的视图栏点击星标即可收藏')).toBeInTheDocument()
+  })
+
+  it('展开行显示详情，点击「打开视图」跳到带 view 参数的深链', async () => {
+    server.use(
+      http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+        active_views: {}, workspace_order: [], favorite_view_ids: [300],
+      })),
+      http.get('/api/v1/accounts/preferences/favorite-views', () => HttpResponse.json([FAVORITE_VIEW])),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('my-view-expand-300'))
+
+    const detail = await screen.findByTestId('my-view-detail-300')
+    expect(detail).toHaveTextContent('筛选 2 条 · 排序 1 条')
+    expect(detail).toHaveTextContent('看板')
+    expect(detail).toHaveTextContent('仅本人')
+
+    await user.click(screen.getByTestId('my-view-open-300'))
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables/100?view=300')
+    })
+  })
+
+  it('详情内取消收藏：PUT 全量替换为空并移除该行', async () => {
+    let favoriteIds: number[] = [300]
+    let saved: number[] | undefined
+    server.use(
+      http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+        active_views: {}, workspace_order: [], favorite_view_ids: favoriteIds,
+      })),
+      http.get('/api/v1/accounts/preferences/favorite-views', () =>
+        HttpResponse.json(favoriteIds.includes(300) ? [FAVORITE_VIEW] : [])),
+      http.put('/api/v1/accounts/preferences/favorite-views', async ({ request }) => {
+        const body = (await request.json()) as { view_ids: number[] }
+        favoriteIds = body.view_ids
+        saved = body.view_ids
+        return HttpResponse.json({ view_ids: body.view_ids })
+      }),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('my-view-expand-300'))
+    await user.click(await screen.findByTestId('my-view-unfavorite-300'))
+
+    await waitFor(() => expect(saved).toEqual([]))
+    await waitFor(() => expect(screen.queryByTestId('my-view-row-300')).not.toBeInTheDocument())
+    expect(await screen.findByTestId('my-views-empty')).toBeInTheDocument()
+  })
+})
+
+describe('WorkspaceList 自定义顺序', () => {
+  it('按 preferences.workspace_order 调整同组内顺序，未登记 id 按原 id 兜底', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () => HttpResponse.json([
+        makeWs({ id: 10, name: '工作区A' }),
+        makeWs({ id: 11, name: '工作区B' }),
+        makeWs({ id: 12, name: '工作区C' }),
+      ])),
+      http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+        active_views: {}, workspace_order: [12, 10], favorite_view_ids: [],
+      })),
+    )
+    renderWorkspaceList()
+
+    const others = await screen.findByTestId('workspace-group-others')
+    await waitFor(() => {
+      const ids = within(others).getAllByTestId(/^workspace-row-/).map(el => el.getAttribute('data-testid'))
+      expect(ids).toEqual(['workspace-row-12', 'workspace-row-10', 'workspace-row-11'])
+    })
+  })
+
+  it('搜索过滤时禁用拖拽把手，避免只保存过滤子集', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([
+          makeWs({ id: 10, name: '产品研发' }),
+          makeWs({ id: 11, name: '市场运营' }),
+        ])),
+    )
+    renderWorkspaceList()
+
+    expect(await screen.findByTestId('workspace-drag-10')).not.toBeDisabled()
+
+    await userEvent.type(screen.getByPlaceholderText('搜索工作区名称/标签...'), '产品')
+    await waitFor(() => expect(screen.getByTestId('workspace-drag-10')).toBeDisabled())
   })
 })

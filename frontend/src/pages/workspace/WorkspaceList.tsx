@@ -15,11 +15,17 @@ import {
   PlusOutlined, StarOutlined, StarFilled, CaretRightOutlined, TeamOutlined, TableOutlined,
   DownloadOutlined, SettingOutlined, SearchOutlined, GlobalOutlined, LockOutlined,
   SafetyCertificateOutlined, UploadOutlined, InboxOutlined, FileTextOutlined,
-  FolderOpenOutlined, DatabaseOutlined, LoginOutlined, ArrowRightOutlined,
+  FolderOpenOutlined, DatabaseOutlined, LoginOutlined, ArrowRightOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import {
+  DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core'
+import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { useResponsive } from '@/hooks/useResponsive'
+import { usePreferences, useSetWorkspaceOrder } from '@/hooks/useFavoriteViews'
 import { workspaceApi, tableApi } from '@/api'
 import type {
   Workspace, WorkspaceRole, WorkspaceType, WorkspaceVisibility, TableSummary,
@@ -28,8 +34,10 @@ import {
   WORKSPACE_TYPE_HINT, WORKSPACE_TYPE_LABEL, WORKSPACE_TYPE_OPTIONS,
   workspaceLandingSegment, workspaceTypeFeatures,
 } from '@/utils/workspaceType'
+import { flattenWorkspaceOrder, sortWorkspaces } from '@/utils/homeOrder'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
 import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
+import MyViewsPanel from './MyViewsPanel'
 
 const { Title, Text } = Typography
 
@@ -98,6 +106,13 @@ export default function WorkspaceList() {
     queryFn: () => workspaceApi.list(),
   })
 
+  // 主页自定义顺序（ADR 0021）：偏好缺失 / 读取失败时按 pinned → id 兜底
+  const { data: prefs } = usePreferences()
+  const setWorkspaceOrder = useSetWorkspaceOrder()
+  const workspaceDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  )
+
   const create = useMutation({
     mutationFn: (v: {
       name: string; description?: string;
@@ -137,11 +152,9 @@ export default function WorkspaceList() {
     })
   }
 
-  // 排序 + 搜索过滤
+  // 排序（pinned 分组优先 → 自定义顺序 → id）+ 搜索过滤
   const filteredWorkspaces = useMemo(() => {
-    const ordered = [...workspaces].sort(
-      (a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || Number(a.id) - Number(b.id),
-    )
+    const ordered = sortWorkspaces(workspaces, prefs?.workspace_order)
     const q = search.trim().toLowerCase()
     if (!q) return ordered
     return ordered.filter(w =>
@@ -149,100 +162,50 @@ export default function WorkspaceList() {
       (w.description ?? '').toLowerCase().includes(q) ||
       (w.tags ?? []).some(t => t.toLowerCase().includes(q)),
     )
-  }, [workspaces, search])
+  }, [workspaces, search, prefs?.workspace_order])
 
   const starred = filteredWorkspaces.filter(w => w.pinned)
   const others = filteredWorkspaces.filter(w => !w.pinned)
+  /** 搜索过滤时禁止拖拽：保存的是当前展示顺序，只提交过滤子集会误伤未展示工作区的名次 */
+  const dragEnabled = !search.trim()
 
-  /** 渲染单个工作区行：收起态只有「收藏 + 展开」两个图标 */
-  const renderRow = (w: WSWithStats) => {
-    const vis = VISIBILITY_META[(w.visibility ?? 'member') as WorkspaceVisibility]
-      ?? VISIBILITY_META.member
-    const role = w.current_user_role ?? null
-    const type = (w.workspace_type ?? 'data_doc') as WorkspaceType
-    const expanded = expandedIds.has(String(w.id))
-    const landing = `/w/${w.id}/${workspaceLandingSegment(type)}`
+  /** 组内拖拽结束：跨分组不生效；保存时按展示顺序扁平化「已收藏组 + 其他组」 */
+  const handleWorkspaceDragEnd = (event: DragEndEvent) => {
+    if (!dragEnabled) return
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const byId = new Map(workspaces.map(w => [String(w.id), w]))
+    const activeWs = byId.get(String(active.id))
+    const overWs = byId.get(String(over.id))
+    if (!activeWs || !overWs || !!activeWs.pinned !== !!overWs.pinned) return
 
-    return (
-      <div
-        key={w.id}
-        className={`cn-ws-row${expanded ? ' is-expanded' : ''}`}
-        data-testid={`workspace-row-${w.id}`}
-      >
-        <div className="cn-ws-row-main" onClick={() => navigate(landing)}>
-          <Tooltip title={expanded ? '收起详情' : '展开详情'}>
-            <Button
-              type="text"
-              size="small"
-              className="cn-ws-row-toggle"
-              aria-expanded={expanded}
-              aria-label={`${expanded ? '收起' : '展开'}「${w.name}」`}
-              data-testid={`workspace-expand-${w.id}`}
-              icon={<CaretRightOutlined rotate={expanded ? 90 : 0} />}
-              onClick={(e) => { e.stopPropagation(); toggleExpand(w.id) }}
-            />
-          </Tooltip>
-
-          <span className="cn-ws-row-icon" aria-hidden>{TYPE_ICON[type]}</span>
-
-          <div className="cn-ws-row-title">
-            <span className="cn-ws-row-name" title={w.name}>{w.name}</span>
-            <Tooltip title={vis.label}>
-              <span className="cn-ws-row-vis" style={{ color: 'var(--cn-text-muted)' }} aria-label={vis.label}>
-                {vis.icon}
-              </span>
-            </Tooltip>
-            <Tag color={TYPE_TAG_COLOR[type]} className="cn-ws-row-tag">
-              {WORKSPACE_TYPE_LABEL[type]}
-            </Tag>
-            {role && (
-              <Tag color={ROLE_BADGE_COLOR[role]} className="cn-ws-row-tag">
-                {ROLE_LABEL[role]}
-              </Tag>
-            )}
-          </div>
-
-          {!isMobile && (
-            <div className="cn-ws-row-meta">
-              <span><TableOutlined /> {w.table_count ?? 0}</span>
-              <span><TeamOutlined /> {w.member_count ?? 1}</span>
-              {w.allow_edit === false && (
-                <Tooltip title="编辑已关闭：仅所有者可编辑数据">
-                  <span className="cn-ws-row-locked"><LockOutlined /> 只读</span>
-                </Tooltip>
-              )}
-              {w.updated_at && (
-                <span className="cn-ws-row-time">{formatListTime(w.updated_at)}</span>
-              )}
-            </div>
-          )}
-
-          <div className="cn-ws-row-actions">
-            <Tooltip title={w.pinned ? '取消收藏' : '收藏'}>
-              <Button
-                type="text"
-                size="small"
-                aria-pressed={!!w.pinned}
-                aria-label={w.pinned ? `取消收藏「${w.name}」` : `收藏「${w.name}」`}
-                data-testid={`star-btn-${w.id}`}
-                icon={w.pinned ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />}
-                onClick={(e) => { e.stopPropagation(); pin.mutate(w) }}
-              />
-            </Tooltip>
-          </div>
-        </div>
-
-        {expanded && (
-          <WorkspaceRowDetail
-            ws={w}
-            onOpen={() => navigate(landing)}
-            onSettings={() => setSettingsOpen(w)}
-            onBackup={() => setBackupOpen(w)}
-          />
-        )}
-      </div>
-    )
+    const group = activeWs.pinned ? starred : others
+    const groupIds = group.map(w => String(w.id))
+    const from = groupIds.indexOf(String(active.id))
+    const to = groupIds.indexOf(String(over.id))
+    if (from < 0 || to < 0) return
+    const nextGroup = arrayMove(groupIds, from, to)
+    const starredIds = activeWs.pinned ? nextGroup : starred.map(w => String(w.id))
+    const otherIds = activeWs.pinned ? others.map(w => String(w.id)) : nextGroup
+    setWorkspaceOrder.mutate(flattenWorkspaceOrder(starredIds, otherIds), {
+      onError: (err) => message.error(err instanceof Error ? err.message : '保存排序失败，请重试'),
+    })
   }
+
+  /** 行渲染：拖拽把手 + 收起态图标 + 展开详情（拖拽只在把手生效） */
+  const renderRow = (w: WSWithStats) => (
+    <WorkspaceRow
+      key={w.id}
+      ws={w}
+      expanded={expandedIds.has(String(w.id))}
+      draggable={dragEnabled}
+      isMobile={isMobile}
+      onToggle={() => toggleExpand(w.id)}
+      onPin={() => pin.mutate(w)}
+      onSettings={() => setSettingsOpen(w)}
+      onBackup={() => setBackupOpen(w)}
+    />
+  )
 
   return (
     <div style={{ padding: isMobile ? 12 : 16 }} data-testid="workspace-list">
@@ -292,50 +255,75 @@ export default function WorkspaceList() {
         </div>
       </div>
 
-      {isLoading ? (
-        /* 骨架屏占位 —— 行式布局，sr-only 文本保留给屏幕阅读器与既有测试断言 */
-        <div data-testid="workspace-list-skeleton" role="status">
-          <span style={{
-            position: 'absolute', width: 1, height: 1, overflow: 'hidden',
-            clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
-          }}>加载中...</span>
-          <div className="cn-ws-list">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div className="cn-ws-row" key={i}>
-                <div className="cn-ws-row-main">
-                  <Skeleton active title={false} paragraph={{ rows: 1, width: '60%' }} />
-                </div>
+      <div className="cn-home-split" data-testid="workspace-home-split">
+        <div className="cn-home-main">
+          {isLoading ? (
+            /* 骨架屏占位 —— 行式布局，sr-only 文本保留给屏幕阅读器与既有测试断言 */
+            <div data-testid="workspace-list-skeleton" role="status">
+              <span style={{
+                position: 'absolute', width: 1, height: 1, overflow: 'hidden',
+                clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap',
+              }}>加载中...</span>
+              <div className="cn-ws-list">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div className="cn-ws-row" key={i}>
+                    <div className="cn-ws-row-main">
+                      <Skeleton active title={false} paragraph={{ rows: 1, width: '60%' }} />
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
-      ) : filteredWorkspaces.length === 0 ? (
-        <Empty description={search ? `没有匹配「${search}」的工作区` : '还没有工作区，创建一个吧！'} />
-      ) : (
-        <div className="cn-ws-groups">
-          {starred.length > 0 && (
-            <section className="cn-ws-group" data-testid="workspace-group-starred">
-              <div className="cn-ws-group-head">
-                <StarFilled style={{ color: '#f59e0b' }} />
-                <span>已收藏</span>
-                <span className="cn-ws-group-count">{starred.length}</span>
+            </div>
+          ) : filteredWorkspaces.length === 0 ? (
+            <Empty description={search ? `没有匹配「${search}」的工作区` : '还没有工作区，创建一个吧！'} />
+          ) : (
+            <DndContext
+              sensors={workspaceDragSensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleWorkspaceDragEnd}
+            >
+              <div className="cn-ws-groups">
+                {starred.length > 0 && (
+                  <section className="cn-ws-group" data-testid="workspace-group-starred">
+                    <div className="cn-ws-group-head">
+                      <StarFilled style={{ color: '#f59e0b' }} />
+                      <span>已收藏</span>
+                      <span className="cn-ws-group-count">{starred.length}</span>
+                    </div>
+                    <SortableContext
+                      items={starred.map(w => String(w.id))}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="cn-ws-list">{starred.map(renderRow)}</div>
+                    </SortableContext>
+                  </section>
+                )}
+                {others.length > 0 && (
+                  <section className="cn-ws-group" data-testid="workspace-group-others">
+                    {starred.length > 0 && (
+                      <div className="cn-ws-group-head">
+                        <span>其他工作区</span>
+                        <span className="cn-ws-group-count">{others.length}</span>
+                      </div>
+                    )}
+                    <SortableContext
+                      items={others.map(w => String(w.id))}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="cn-ws-list">{others.map(renderRow)}</div>
+                    </SortableContext>
+                  </section>
+                )}
               </div>
-              <div className="cn-ws-list">{starred.map(renderRow)}</div>
-            </section>
-          )}
-          {others.length > 0 && (
-            <section className="cn-ws-group" data-testid="workspace-group-others">
-              {starred.length > 0 && (
-                <div className="cn-ws-group-head">
-                  <span>其他工作区</span>
-                  <span className="cn-ws-group-count">{others.length}</span>
-                </div>
-              )}
-              <div className="cn-ws-list">{others.map(renderRow)}</div>
-            </section>
+            </DndContext>
           )}
         </div>
-      )}
+
+        {/* 右侧「我的视图」：桌面固定宽分栏，<992px 由 CSS 堆叠到工作区下方 */}
+        <aside className="cn-home-aside" data-testid="workspace-home-aside">
+          <MyViewsPanel />
+        </aside>
+      </div>
 
       {/* 新建工作区 Modal — 扩展字段；条件渲染避免 Form.useForm 在未挂载时触发 warning */}
       {createOpen && (
@@ -431,6 +419,136 @@ export default function WorkspaceList() {
         }}
         onError={(err) => message.error(err instanceof Error ? err.message : '导入失败')}
       />}
+    </div>
+  )
+}
+
+/** 单个工作区行 —— 拖拽把手独立于行点击区域.
+ *
+ * 拖拽监听只挂在把手上（PointerSensor 距离阈值 4px），避免拖拽释放后误触进入工作区；
+ * 搜索过滤时 `draggable=false`，把手降级为普通图标，防止只提交过滤后的子集顺序。
+ */
+function WorkspaceRow({
+  ws, expanded, draggable, isMobile, onToggle, onPin, onSettings, onBackup,
+}: {
+  ws: WSWithStats
+  expanded: boolean
+  draggable: boolean
+  isMobile: boolean
+  onToggle: () => void
+  onPin: () => void
+  onSettings: () => void
+  onBackup: () => void
+}) {
+  const navigate = useNavigate()
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: String(ws.id),
+    disabled: !draggable,
+  })
+  const vis = VISIBILITY_META[(ws.visibility ?? 'member') as WorkspaceVisibility]
+    ?? VISIBILITY_META.member
+  const role = ws.current_user_role ?? null
+  const type = (ws.workspace_type ?? 'data_doc') as WorkspaceType
+  const landing = `/w/${ws.id}/${workspaceLandingSegment(type)}`
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={`cn-ws-row${expanded ? ' is-expanded' : ''}`}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.6 : 1,
+        zIndex: isDragging ? 2 : undefined,
+      }}
+      data-testid={`workspace-row-${ws.id}`}
+    >
+      <div className="cn-ws-row-main" onClick={() => navigate(landing)}>
+        <Tooltip title={draggable ? '拖拽调整顺序' : '搜索过滤时不可拖拽'}>
+          <Button
+            type="text"
+            size="small"
+            className="cn-ws-row-drag"
+            aria-label={`拖拽排序「${ws.name}」`}
+            data-testid={`workspace-drag-${ws.id}`}
+            icon={<HolderOutlined />}
+            disabled={!draggable}
+            onClick={(e) => e.stopPropagation()}
+            {...attributes}
+            {...(draggable ? listeners : undefined)}
+          />
+        </Tooltip>
+
+        <Tooltip title={expanded ? '收起详情' : '展开详情'}>
+          <Button
+            type="text"
+            size="small"
+            className="cn-ws-row-toggle"
+            aria-expanded={expanded}
+            aria-label={`${expanded ? '收起' : '展开'}「${ws.name}」`}
+            data-testid={`workspace-expand-${ws.id}`}
+            icon={<CaretRightOutlined rotate={expanded ? 90 : 0} />}
+            onClick={(e) => { e.stopPropagation(); onToggle() }}
+          />
+        </Tooltip>
+
+        <span className="cn-ws-row-icon" aria-hidden>{TYPE_ICON[type]}</span>
+
+        <div className="cn-ws-row-title">
+          <span className="cn-ws-row-name" title={ws.name}>{ws.name}</span>
+          <Tooltip title={vis.label}>
+            <span className="cn-ws-row-vis" style={{ color: 'var(--cn-text-muted)' }} aria-label={vis.label}>
+              {vis.icon}
+            </span>
+          </Tooltip>
+          <Tag color={TYPE_TAG_COLOR[type]} className="cn-ws-row-tag">
+            {WORKSPACE_TYPE_LABEL[type]}
+          </Tag>
+          {role && (
+            <Tag color={ROLE_BADGE_COLOR[role]} className="cn-ws-row-tag">
+              {ROLE_LABEL[role]}
+            </Tag>
+          )}
+        </div>
+
+        {!isMobile && (
+          <div className="cn-ws-row-meta">
+            <span><TableOutlined /> {ws.table_count ?? 0}</span>
+            <span><TeamOutlined /> {ws.member_count ?? 1}</span>
+            {ws.allow_edit === false && (
+              <Tooltip title="编辑已关闭：仅所有者可编辑数据">
+                <span className="cn-ws-row-locked"><LockOutlined /> 只读</span>
+              </Tooltip>
+            )}
+            {ws.updated_at && (
+              <span className="cn-ws-row-time">{formatListTime(ws.updated_at)}</span>
+            )}
+          </div>
+        )}
+
+        <div className="cn-ws-row-actions">
+          <Tooltip title={ws.pinned ? '取消收藏' : '收藏'}>
+            <Button
+              type="text"
+              size="small"
+              aria-pressed={!!ws.pinned}
+              aria-label={ws.pinned ? `取消收藏「${ws.name}」` : `收藏「${ws.name}」`}
+              data-testid={`star-btn-${ws.id}`}
+              icon={ws.pinned ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />}
+              onClick={(e) => { e.stopPropagation(); onPin() }}
+            />
+          </Tooltip>
+        </div>
+      </div>
+
+      {expanded && (
+        <WorkspaceRowDetail
+          ws={ws}
+          onOpen={() => navigate(landing)}
+          onSettings={onSettings}
+          onBackup={onBackup}
+        />
+      )}
     </div>
   )
 }

@@ -43,8 +43,12 @@ class UserRole(StrEnum):
 
 
 def _default_preferences() -> dict[str, Any]:
-    """用户偏好默认值：空的激活视图映射."""
-    return {"active_views": {}}
+    """用户偏好默认值：激活视图映射 + 主页自定义顺序与收藏视图（ADR 0021）."""
+    return {
+        "active_views": {},
+        "workspace_order": [],
+        "favorite_views": [],
+    }
 
 
 def _default_role() -> str:

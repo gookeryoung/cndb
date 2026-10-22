@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -13,6 +14,13 @@ from sqlalchemy.orm.attributes import flag_modified
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
+from cndb.plugins.accounts.services.preferences import (
+    ensure_preferences,
+    load_favorite_view_summaries,
+    read_ordered_ids,
+    set_favorite_views,
+    set_workspace_order,
+)
 from cndb.plugins.tables.models import DataTable, DataView
 from cndb.plugins.tables.services.core.view_access import visible_view_filter
 
@@ -38,6 +46,53 @@ class PreferencesResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     active_views: dict[str, int] = Field(default_factory=dict, description="每张表的激活视图映射: table_id -> view_id")
+    workspace_order: list[int] = Field(default_factory=list, description="主页工作区的自定义顺序（同组内生效）")
+    favorite_view_ids: list[int] = Field(default_factory=list, description="收藏视图 id，顺序即「我的视图」展示顺序")
+
+
+class FavoriteViewSummary(BaseModel):
+    """「我的视图」面板行摘要（视图 + 所属表 / 工作区）."""
+
+    view_id: int
+    name: str
+    view_type: str
+    is_default: bool
+    visibility: str
+    filter_count: int
+    sort_count: int
+    table_id: int
+    table_name: str
+    workspace_id: int
+    workspace_name: str
+    updated_at: datetime | None = None
+
+
+class FavoriteViewsReplace(BaseModel):
+    """全量替换收藏视图（顺序即展示顺序）."""
+
+    model_config = ConfigDict(strict=True)
+
+    view_ids: list[int] = Field(default_factory=list, description="收藏视图 id 列表；无效 / 不可见 id 静默丢弃")
+
+
+class FavoriteViewsResponse(BaseModel):
+    """收藏视图规范化后的 id 列表."""
+
+    view_ids: list[int] = Field(default_factory=list)
+
+
+class WorkspaceOrderReplace(BaseModel):
+    """全量替换工作区自定义顺序."""
+
+    model_config = ConfigDict(strict=True)
+
+    workspace_ids: list[int] = Field(default_factory=list, description="工作区 id 列表；非成员 id 静默丢弃")
+
+
+class WorkspaceOrderResponse(BaseModel):
+    """工作区顺序规范化后的 id 列表."""
+
+    workspace_ids: list[int] = Field(default_factory=list)
 
 
 class ActiveViewResponse(BaseModel):
@@ -61,12 +116,7 @@ def _ensure_authenticated(current_user: object | None) -> User:
 
 def _ensure_preferences(user: User) -> None:
     """确保 user.preferences 字段包含基础结构，缺失时自动补齐."""
-    if not isinstance(user.preferences, dict):
-        user.preferences = {"active_views": dict[str, int]()}
-        flag_modified(user, "preferences")
-    if "active_views" not in user.preferences:
-        user.preferences["active_views"] = dict[str, int]()
-        flag_modified(user, "preferences")
+    ensure_preferences(user)
 
 
 def _readable_table_or_404(db: Session, table_id: int, user: Any) -> DataTable:
@@ -86,11 +136,50 @@ def _readable_table_or_404(db: Session, table_id: int, user: Any) -> DataTable:
 def get_preferences(
     current_user: Annotated[object | None, Depends(get_current_user)],
 ) -> dict[str, Any]:
-    """获取当前用户所有偏好设置（含每张表的激活视图映射）."""
+    """获取当前用户所有偏好设置（激活视图映射 + 主页顺序 / 收藏视图）."""
     user = _ensure_authenticated(current_user)
     _ensure_preferences(user)
     active_views = {str(k): int(v) for k, v in (user.preferences.get("active_views") or {}).items()}
-    return {"active_views": active_views}
+    return {
+        "active_views": active_views,
+        "workspace_order": read_ordered_ids(user, "workspace_order"),
+        "favorite_view_ids": read_ordered_ids(user, "favorite_views"),
+    }
+
+
+# ── 主页：收藏视图 / 工作区自定义顺序（ADR 0021） ──
+
+
+@router.get("/favorite-views", response_model=list[FavoriteViewSummary])
+def list_favorite_views(
+    current_user: Annotated[object | None, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[dict[str, Any]]:
+    """按收藏顺序返回视图摘要；读取时剪枝失效收藏（删除 / 失权 / 表软删）."""
+    user = _ensure_authenticated(current_user)
+    return load_favorite_view_summaries(db, user)
+
+
+@router.put("/favorite-views", response_model=FavoriteViewsResponse)
+def replace_favorite_views(
+    payload: FavoriteViewsReplace,
+    current_user: Annotated[object | None, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """全量替换收藏视图；不可见 / 不可读 id 静默丢弃，超过上限返回 400."""
+    user = _ensure_authenticated(current_user)
+    return {"view_ids": set_favorite_views(db, user, payload.view_ids)}
+
+
+@router.put("/workspace-order", response_model=WorkspaceOrderResponse)
+def replace_workspace_order(
+    payload: WorkspaceOrderReplace,
+    current_user: Annotated[object | None, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """全量替换主页工作区顺序；非成员工作区 id 静默丢弃."""
+    user = _ensure_authenticated(current_user)
+    return {"workspace_ids": set_workspace_order(db, user, payload.workspace_ids)}
 
 
 @router.get("/tables/{table_id}/active-view", response_model=ActiveViewResponse)

@@ -152,6 +152,19 @@ export const handlers = [
     HttpResponse.json({ access_token: 'fake-token', token_type: 'bearer' })),
   http.get('/api/v1/accounts/auth/me', () => HttpResponse.json(mockUser)),
 
+  // 用户偏好（ADR 0021：主页自定义顺序 / 收藏视图）——默认空，单用例 server.use 覆盖
+  http.get('/api/v1/accounts/preferences', () =>
+    HttpResponse.json({ active_views: {}, workspace_order: [], favorite_view_ids: [] })),
+  http.get('/api/v1/accounts/preferences/favorite-views', () => HttpResponse.json([])),
+  http.put('/api/v1/accounts/preferences/favorite-views', async ({ request }) => {
+    const body = await request.json() as { view_ids?: number[] }
+    return HttpResponse.json({ view_ids: body.view_ids ?? [] })
+  }),
+  http.put('/api/v1/accounts/preferences/workspace-order', async ({ request }) => {
+    const body = await request.json() as { workspace_ids?: number[] }
+    return HttpResponse.json({ workspace_ids: body.workspace_ids ?? [] })
+  }),
+
   // 工作区
   http.get('/api/v1/workspaces', () => HttpResponse.json([mockWorkspace])),
   // 工作区详情（文档编辑器 / 修改申请页读取当前用户角色）

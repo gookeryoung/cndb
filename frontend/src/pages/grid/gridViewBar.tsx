@@ -12,6 +12,7 @@ import {
   PlusOutlined, DeleteOutlined, FilterOutlined, MoreOutlined,
   SearchOutlined, SettingOutlined, EditOutlined, ImportOutlined, ExportOutlined,
   HolderOutlined, LeftOutlined, RightOutlined, DownOutlined, SafetyOutlined,
+  StarOutlined, StarFilled,
 } from '@ant-design/icons'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -20,6 +21,7 @@ import { viewApi } from '@/api'
 import type { View } from '@/api'
 import { Tag, App as AntApp } from 'antd'
 import { useResponsive } from '@/hooks/useResponsive'
+import { MAX_FAVORITE_VIEWS, usePreferences, useToggleFavoriteView } from '@/hooks/useFavoriteViews'
 import TooltipDropdown from '@/components/TooltipDropdown'
 import type { ViewMode } from './views/viewModes'
 import ViewPermissionDrawer from './ViewPermissionDrawer'
@@ -112,6 +114,13 @@ export default function GridViewBar({
   const [permOpen, setPermOpen] = useState(false)
   const viewDragSensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
+
+  // 收藏状态（ADR 0021）：读当前用户偏好；收藏 / 取消收藏走全量替换端点
+  const { data: prefs } = usePreferences()
+  const toggleFavorite = useToggleFavoriteView()
+  const favoriteIds = (prefs?.favorite_view_ids ?? []).map(Number)
+  const isFavorite = activeView != null && favoriteIds.includes(Number(activeView.id))
+  const favoriteLimitReached = favoriteIds.length >= MAX_FAVORITE_VIEWS
 
   // 移动端搜索折叠态：默认收起，搜索词非空时保持展开（避免用户看不到已生效的过滤条件）
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
@@ -259,6 +268,24 @@ export default function GridViewBar({
     && (activeView.can_manage !== undefined ? activeView.can_manage : !activeIsTableTier || canManageViews)
   const currentModeBtn = modeButtons.find(b => b.mode === mode)
 
+  /** 收藏 / 取消收藏当前视图（桌面星标按钮与移动端菜单共用） */
+  const handleToggleFavorite = useCallback(() => {
+    if (!activeView) return
+    if (!isFavorite && favoriteLimitReached) {
+      message.warning(`最多收藏 ${MAX_FAVORITE_VIEWS} 个视图`)
+      return
+    }
+    toggleFavorite.mutate(
+      { viewId: activeView.id, favorited: !isFavorite },
+      {
+        onSuccess: () => message.success(
+          isFavorite ? `已取消收藏「${activeView.name}」` : `已收藏「${activeView.name}」`,
+        ),
+        onError: (err) => message.error(err instanceof Error ? err.message : '收藏失败，请稍后重试'),
+      },
+    )
+  }, [activeView, isFavorite, favoriteLimitReached, toggleFavorite, message])
+
   const desktopMoreItems: MenuProps['items'] = [
     { key: 'permission', icon: <SafetyOutlined />, label: '视图权限', disabled: !canManageActive, onClick: () => setPermOpen(true) },
     { type: 'divider' },
@@ -272,6 +299,17 @@ export default function GridViewBar({
   const mobileMoreItems: MenuProps['items'] = [
     { key: 'create', icon: <PlusOutlined />, label: '新建视图', onClick: onCreate },
     { key: 'edit', icon: <EditOutlined />, label: '编辑当前视图', disabled: editDisabled, onClick: onEdit },
+    {
+      key: 'favorite',
+      icon: isFavorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />,
+      label: (
+        <span data-testid="view-favorite-menu-item">
+          {isFavorite ? '取消收藏当前视图' : '收藏当前视图'}
+        </span>
+      ),
+      disabled: !activeView,
+      onClick: handleToggleFavorite,
+    },
     { key: 'permission', icon: <SafetyOutlined />, label: '视图权限', disabled: !canManageActive, onClick: () => setPermOpen(true) },
     { key: 'delete', icon: <DeleteOutlined />, danger: true, label: '删除当前视图', disabled: !activeView, onClick: confirmDeleteView },
     { type: 'divider' },
@@ -415,6 +453,18 @@ export default function GridViewBar({
             <Tooltip title="编辑当前视图">
               {/* 编辑按钮：公共视图需 EDIT_VIEWS；个人视图本人可改（筛选/排序） */}
               <Button size="small" type="text" icon={<EditOutlined />} onClick={onEdit} disabled={editDisabled} />
+            </Tooltip>
+            <Tooltip title={isFavorite ? '取消收藏当前视图' : '收藏当前视图（显示在主页「我的视图」）'}>
+              <Button
+                size="small"
+                type="text"
+                aria-pressed={isFavorite}
+                aria-label={isFavorite ? '取消收藏当前视图' : '收藏当前视图'}
+                data-testid="view-favorite-btn"
+                icon={isFavorite ? <StarFilled style={{ color: '#f59e0b' }} /> : <StarOutlined />}
+                onClick={handleToggleFavorite}
+                disabled={!activeView}
+              />
             </Tooltip>
             <TooltipDropdown title="视图更多操作" menu={{ items: desktopMoreItems }}>
               <Button size="small" type="text" icon={<MoreOutlined />} />
