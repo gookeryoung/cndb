@@ -92,6 +92,8 @@ export interface ColumnOptions {
   rowIndexTotal?: number
   /** 当前表 id：附件上传登记归属用（透传到 GridCell → EditCell） */
   tableId?: number | string
+  /** 列头「AI 填充本列」入口回调；不传则不渲染入口（隐藏字段 / 视图隐藏列本就无列头） */
+  onAiFillField?: (field: Field) => void
   /** 草稿行（新增行）的 id：该行序号显示为「—」，避免与已保存行混淆 */
   newRowKey?: string
 }
@@ -218,6 +220,26 @@ export function buildColumns(
             )}
             {currentFilter && (
               <FilterOutlined style={{ fontSize: 11, color: '#1677ff' }} />
+            )}
+
+            {/* AI 填充本列入口：仅在提供回调时渲染；点击不冒泡到 th（否则会同时触发排序） */}
+            {options?.onAiFillField && (
+              <Tooltip title="AI 填充本列（先预览建议，确认后逐行应用）">
+                <Button
+                  type="text"
+                  size="small"
+                  aria-label={`AI 填充本列：${f.name}`}
+                  data-testid={`header-ai-fill-${f.id}`}
+                  style={{ height: 20, minWidth: 20, padding: '0 4px', marginInlineStart: 2, fontSize: 11 }}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    options.onAiFillField?.(f)
+                  }}
+                  onMouseDown={(event) => event.stopPropagation()}
+                >
+                  AI
+                </Button>
+              </Tooltip>
             )}
           </span>
         ),

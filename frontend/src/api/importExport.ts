@@ -10,6 +10,39 @@ import type {
   AttachmentFile,
 } from './types'
 
+// ─────────────────── AI 动作（ADR 0020 P2）：只生成建议，不修改导入任务 ───────────────────
+
+/** 一条列映射建议：`target` 必为目标表真实字段名（后端已按字段集合过滤） */
+export interface ImportAiMappingItem {
+  source: string
+  target: string
+  /** 模型置信度 0~1，可作 tooltip / 标记 */
+  confidence: number
+  reason: string
+}
+
+/** 列映射建议请求：目标表 + 源表头 + 少量抽样行（不含整表数据） */
+export interface ImportAiMappingSuggestionPayload {
+  target_table_id: number
+  headers: string[]
+  sample_rows: unknown[][]
+  /** 用户已手工确认的映射（源表头 → 目标字段；null 表示跳过） */
+  existing_mapping?: Record<string, string | null>
+}
+
+/** 列映射建议响应（只读建议，不修改 `ImportTask`；仍需用户确认导入） */
+export interface ImportAiMappingSuggestionResponse {
+  action: 'import.mapping_suggestion'
+  run_id: number
+  model: string
+  usage: { prompt_tokens: number; completion_tokens: number; total_tokens: number }
+  result: {
+    mappings: ImportAiMappingItem[]
+    /** 模型无法映射的源表头 */
+    unmapped: string[]
+  }
+}
+
 export const importApi = {
   analyzeCsv: (wid: number | string, csvText: string) =>
     api.post<CsvAnalyzeResult>(`/v1/workspaces/${wid}/import-csv/analyze`, { csv_text: csvText }).then(r => r.data),
@@ -161,6 +194,10 @@ export const importApi = {
       config_json: configJson,
       stop_on_error: stopOnError,
     }).then(r => r.data),
+
+  /** AI 列映射建议（只读建议：不修改导入任务、不写数据；回填前端映射编辑态后仍需用户确认导入） */
+  aiMappingSuggestion: (wid: number | string, payload: ImportAiMappingSuggestionPayload) =>
+    api.post<ImportAiMappingSuggestionResponse>(`/v1/workspaces/${wid}/import-file/ai/mapping-suggestion`, payload).then(r => r.data),
 }
 
 export const exportApi = {
