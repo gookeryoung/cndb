@@ -13,7 +13,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 针对这两种通过LLM抓取的数据表 | 两张 CSV 去掉系统 `id` 列后放入 `examples/datasets/工作区-数据源示例/`，seed 按文件名建表；字段名保持英文原样，视图配置可直接复用到用户同结构表 |
+| C1 | 针对这两种通过LLM抓取的数据表 | 两张 CSV 去掉系统 `id` 列后放入 `examples/datasets/工作区-数据源示例/`，seed 按文件名建表；字段名按 ADR 0019 C9 统一用中文（菜名 / 菜系 / 日期 / 地区…），视图配置可直接复用到用户同结构表；同轮补两条 `llm_prompt` 同步任务（`schedule.mode=manual`） |
 | C2 | 设计合适的视图 | 新增 `view_type=gallery`：卡片栅格（标题 / 摘要 / 彩色标签 / 日期 / 元信息），点击卡片打开行详情；`view_options` 七项由 `GALLERY_OPTIONS` 定义 |
 | C3 | 用于用户查看资讯 | 两表各 5-7 个视图（画廊默认 + grid + kanban + matrix / calendar + chart + 过滤视图），配置见 §Decision 9 |
 | C4 | 用于分享资讯 | 视图仍走 ADR 0003 三档可见性；seed `scope=global` → `ViewVisibility.TABLE`，表内成员均可见；分享用深链与收藏，不扩匿名公开分享（ADR 0003 D5） |
@@ -38,7 +38,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | 6 | seed 视图默认 `scope=global` → `owner_id=None` + `ViewVisibility.TABLE`；`is_default` 仅 table 档生效 | `src/cndb/cli/seed/views.py:199-244` | 默认画廊对表内全员可见，符合「工作区内共享」 | 确认 |
 | 7 | 非 grid 视图一次拉取上限 `VIEW_FETCH_ALL_LIMIT = 2000`，排序由服务端按视图 `sortings` 应用 | `frontend/src/pages/grid/useGridData.ts:21-38` | 画廊无需客户端排序；2000 卡片需分批挂载 | 确认 |
 | 8 | 视图匿名公开分享已明确不复活（ADR 0003 D5）；文档分享（ADR 0017）不适用于表 / 视图 | `docs/adr/0003-view-visibility-permission-model.md` | 分享范围限定工作区内 | 确认 |
-| 9 | seed CSV 建表时低基数文本自动提升 select（`region/topic/trend/cuisine/difficulty`），日期 / 数字按值推断 | `src/cndb/plugins/tables/services/transfer/normalize/promote.py:21-79` | 彩色标签、看板分组、矩阵轴可直接使用 | 新增 |
+| 9 | seed CSV 建表时低基数文本自动提升 select（`地区/主题/趋势判断/菜系/难度`），日期 / 数字按值推断 | `src/cndb/plugins/tables/services/transfer/normalize/promote.py:21-79` | 彩色标签、看板分组、矩阵轴可直接使用 | 新增 |
 | 10 | `_row_to_dict` 把物理列 `id` 映射为 `result["id"]`；CSV 导出的首列 `id` 是系统行 ID | `src/cndb/plugins/tables/services/core/records.py:834-851` | 示例 CSV 必须去掉 `id` 列，否则建出同名业务字段并覆盖行 ID | 新增 |
 | 11 | seed 完整性测试静态解析 CSV 表头 + `valid view types` 白名单 | `tests/test_backup_seed_roundtrip.py:349`、`:439-455`、`:533-542` | 新表无需硬编码字段；类型集合与引用提取需同步 | 新增 |
 
@@ -131,27 +131,27 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 ### 9. 示例视图配置（种子落地值）
 
-**国际形势发展动态**（`date,region,source,summary,title,topic,trend,url`）：
+**国际形势发展动态**（`日期,地区,来源,摘要,标题,主题,趋势判断,链接`）：
 
 | order | 视图 | 类型 | 配置摘要 |
 |---|---|---|---|
-| 0 | 资讯画廊（默认） | gallery | `title_field=title`、`summary_field=summary`、`tag_fields=[region,topic,trend]`、`meta_fields=[source]`、`date_field=date`、`summary_lines=3`；sortings `[date desc, title asc]` |
-| 1 | 全部资讯 | grid | sortings `[date desc, title asc]` |
-| 2 | 态势看板 | kanban | `group_field=trend`、`title_field=title`、`priority_field=topic`、`card_fields=[region,date]` |
-| 3 | 地区议题矩阵 | matrix | `row_field=region`、`column_field=topic`、`title_field=title` |
-| 4 | 每日简报日历 | calendar | `start_field=date`、`title_field=title`、`group_field=topic` |
-| 5 | 议题与态势分布 | chart | `charts[]`：饼图 `topic`（measure=`title`, count）+ 柱图 `trend`（measure=`title`, count） |
-| 6 | 升温议题 | grid | filters `trend = 升温`；sortings `[date desc, title asc]` |
+| 0 | 资讯画廊（默认） | gallery | `title_field=标题`、`summary_field=摘要`、`tag_fields=[地区,主题,趋势判断]`、`meta_fields=[来源]`、`date_field=日期`、`summary_lines=3`；sortings `[日期 desc, 标题 asc]` |
+| 1 | 全部资讯 | grid | sortings `[日期 desc, 标题 asc]` |
+| 2 | 态势看板 | kanban | `group_field=趋势判断`、`title_field=标题`、`priority_field=主题`、`card_fields=[地区,日期]` |
+| 3 | 地区议题矩阵 | matrix | `row_field=地区`、`column_field=主题`、`title_field=标题` |
+| 4 | 每日简报日历 | calendar | `start_field=日期`、`title_field=标题`、`group_field=主题` |
+| 5 | 议题与态势分布 | chart | `charts[]`：饼图 `主题`（measure=`标题`, count）+ 柱图 `趋势判断`（measure=`标题`, count） |
+| 6 | 升温议题 | grid | filters `趋势判断 = 升温`；sortings `[日期 desc, 标题 asc]` |
 
-**美食推荐做法**（`cook_time_min,cuisine,difficulty,dish_name,ingredients,steps,tips`）：
+**美食推荐做法**（`烹饪时长,菜系,难度,菜名,主要食材,分步做法,小贴士`）：
 
 | order | 视图 | 类型 | 配置摘要 |
 |---|---|---|---|
-| 0 | 菜谱画廊（默认） | gallery | `title_field=dish_name`、`summary_field=steps`、`tag_fields=[cuisine,difficulty]`、`meta_fields=[cook_time_min]`、`summary_lines=4`；sortings `[cook_time_min asc, dish_name asc]` |
-| 1 | 全部菜谱 | grid | sortings `[cook_time_min asc, dish_name asc]` |
-| 2 | 按菜系看板 | kanban | `group_field=cuisine`、`title_field=dish_name`、`priority_field=difficulty`、`card_fields=[cook_time_min]` |
-| 3 | 快手菜（≤40分钟） | grid | filters `cook_time_min <= 40`；sortings `[cook_time_min asc, dish_name asc]` |
-| 4 | 菜系与时长概览 | chart | `charts[]`：直方图 `cook_time_min` + 饼图 `cuisine`（measure=`dish_name`, count） |
+| 0 | 菜谱画廊（默认） | gallery | `title_field=菜名`、`summary_field=分步做法`、`tag_fields=[菜系,难度]`、`meta_fields=[烹饪时长]`、`summary_lines=4`；sortings `[烹饪时长 asc, 菜名 asc]` |
+| 1 | 全部菜谱 | grid | sortings `[烹饪时长 asc, 菜名 asc]` |
+| 2 | 按菜系看板 | kanban | `group_field=菜系`、`title_field=菜名`、`priority_field=难度`、`card_fields=[烹饪时长]` |
+| 3 | 快手菜（≤40分钟） | grid | filters `烹饪时长 <= 40`；sortings `[烹饪时长 asc, 菜名 asc]` |
+| 4 | 菜系与时长概览 | chart | `charts[]`：直方图 `烹饪时长` + 饼图 `菜系`（measure=`菜名`, count） |
 
 ## 决策记录（唯一决策台账）
 
@@ -162,7 +162,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | D3 | 大数据量渲染 | 每批 48 张 +「加载更多」 | 非 grid 上限 2000，一并挂载会明显卡顿；分批实现简单、可测、无额外依赖 | 全量渲染（2000 卡片 DOM 过重）；行虚拟化（画廊为栅格，需自算列数，成本高于收益） | `views/GalleryView.tsx` |
 | D4 | 示例表默认视图 | 两表默认均为 gallery | 需求场景是「查看 / 分享资讯」；进入即阅读态，grid 一键可达 | 默认 grid（首屏仍是表格，新能力不可见） | `examples/datasets/工作区-数据源示例/views.json` |
 | D5 | 分享范围 | 工作区内共享：`ViewVisibility.TABLE` + 深链 + 收藏 | 复用 ADR 0003 三档可见性与 ADR 0021 收藏，零新增权限面 | 表 / 视图匿名公开链接（ADR 0003 D5 明确不复活，需新权限与脱敏设计） | `cli/seed/views.py`、`pages/workspace/MyViewsPanel.tsx` |
-| D6 | 示例数据来源 | 只种静态 CSV + 视图，不种 `llm_prompt` 任务 | 保存 / 运行 LLM 任务需个人连接与 API Key（`routers/sync_jobs.py` 强制校验），种子无法代持 | 种子内置 llm 任务（开箱即失败，且把个人配置带入工作区） | `examples/datasets/工作区-数据源示例/` |
+| D6 | 示例数据来源 | 静态 CSV + 视图 + 两条 `llm_prompt` 同步任务（`schedule.mode=manual`，中文 `field_mapping` / `match_keys`） | 需求要求「典型示例数据带数据源同步配置」（ADR 0019 C9）；`manual` 不自动触发，种子仍不代持个人 Key 与地址（`request_spec` 只留提示词与模型参数） | 只种静态 CSV + 视图（同步配置缺失，用户无从参考）；种 `daily` / `cron` 任务（无 Key 时每天产生失败运行记录） | `examples/datasets/工作区-数据源示例/` |
 | D7 | CSV 首列 `id` | 种入前删除 | 会建出名为 `id` 的业务字段；`_row_to_dict` 用物理行 ID 覆盖同名字段，数据不可读 | 保留并改名 `source_id`（语义变成抓取侧 ID，与本需求无关） | `examples/datasets/工作区-数据源示例/*.csv` |
 | D8 | 列表型 option 校验 | `tag_fields` / `meta_fields` 逐项校验，非字符串 400 | 现有 `opt_val not in valid_fields` 对 list 抛 TypeError → 500；逐项校验报错可定位 | 不校验（脏引用到渲染期才静默丢字段）；只校验首项（漏检） | `routers/views.py`、`cli/seed/views.py` |
 
@@ -195,6 +195,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P1 已落地（gallery 类型 + 组件 + 配置 schema + 注册清单 + 后端/seed 校验；两表 CSV + 12 个 seed 视图）
+- 追加（2026-10-23，ADR 0019 C9）：两表字段随 ADR 0019 中文化（`日期,地区,来源,摘要,标题,主题,趋势判断,链接` / `烹饪时长,菜系,难度,菜名,主要食材,分步做法,小贴士`），`views.json` 的 12 个视图字段引用、`fields.json` 必填设置、`datasource.json` 新增的两条 `llm_prompt` 任务（中文映射 / 幂等键，`manual` 调度）同轮改完；e2e 只按卡片数与文案断言，不依赖字段名
 - 已完成：前端 `172` 个测试文件 / `2109` 例全绿（核心集合 lines 97.69% / branches 100%，全局 lines 82.06%）；后端 `make test` 5367 passed / 8 skipped；`make check-fast` 全绿；e2e `gallery-view.spec.ts` 本地实跑 3 passed（setup + 两表用例）；`bundle:budget` 全绿（GridPage +1.2%，在 5% 容差内 warn）
 - 下一步：合并后由人确认 `Status`；如需超 2000 行全量画廊另立行虚拟化 ADR；观察默认画廊视图下「新增行」入口的发现性反馈
 - 已知坑：① CSV 首列 `id` 必须删（`_row_to_dict` 用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部资讯 / 全部菜谱」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在

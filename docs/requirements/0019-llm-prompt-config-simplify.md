@@ -11,6 +11,10 @@
 
 > 大模型提示词抓取功能配置项过于复杂，需要进行简化，尽可能只配置提示词项即可确保抓取到合适的数据，并且支持空数据表自动新增和更新数据的能力。系统提示词请默认配置好，提供5组典型可用的推荐用户提示词参考示例，并给出说明。
 
+### 追加需求（2026-10-23，逐字）
+
+> 典型示例数据，数据源同步应当提供数据源同步的配置，包括美食推荐做法和国际形势发展动态。大模型动态拉取的字段能否支持中文，请解决。
+
 ## 可实施约束（C1..Cn）
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
@@ -23,6 +27,7 @@
 | C6 | 并给出说明 | 每组预设给出「适用场景 / 建议目标表字段 / 建议幂等键 / prompt 示例」说明，页面在套用时展示，文档附录保留同一份说明 | `frontend/src/pages/datasource/llmPromptPresets.ts`、`docs/adr/0019-llm-prompt-config-simplify.md` | 前端单测：套用后展示该组说明；文档：ADR 附录 8 组说明齐全可对照 |
 | C7 | 大模型相关配置移到个人配置里（2026-10-22 追加） | 连接配置由工作区级改为**个人级**：新表 `datasource_user_llm_config`（`user_id` 唯一，地址 / 模型 / 加密 Key / 系统提示词覆盖）；迁移把旧工作区配置按 `created_by` 迁给用户并删除旧表；个人接口 `GET|PUT /api/v1/accounts/llm-config`（只操作当前用户，Key 只写不回显）与 `POST /api/v1/accounts/llm-config/test`（可用未保存 Key 测试、不落库）；工作区级 `llm-config` / `test-connection` 端点删除；任务保存校验与运行按当前用户 / `job.created_by` 的个人配置解析；前端入口改为「个人设置 → 大模型」，数据源页不再配置连接；工作区备份升 v7 且**不再导出个人配置**，导入兼容 1-7 | `src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/6a7b8c9d0e1f_add_user_llm_config.py`、`src/cndb/plugins/accounts/routers/llm_config.py`、`src/cndb/plugins/datasource/services/connection.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/api/llmConfig.ts` | 接口测试：个人 GET/PUT 只影响当前用户、他人配置互不可见、Key 不回显、test 用未保存 Key 不落库；任务运行按用户解析（job 创建者）；迁移：旧工作区配置迁给 `created_by` 并删旧表、无 `created_by` 时丢弃；备份：v7 不含个人配置、v1-v7 均可导入；前端：个人设置「大模型」页签可编辑并测试，数据源页无连接入口 |
 | C8 | 推荐提示词开箱可用：长输出不截断、新闻 / 美食返回结构化数据（2026-10-22 追加） | 默认 `max_tokens` 1024 → 4096；JSON 解析失败且疑似截断时给出「提高 max_tokens / 精简输出」的可执行提示（保留普通非法 JSON 文案）；默认系统提示词对综述 / 摘要 / 推荐类任务要求尽力输出，不因无法联网返回空数组，无法核实的事实标注「综合整理」、`url` 可空；「每日新闻摘要」「美食推荐做法」预设据此调整（新闻基于已掌握近期公开信息、允许标注综合整理；美食控制输出规模） | `src/cndb/plugins/datasource/providers/llm_prompt.py`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | 单测：默认 `max_tokens=4096`；截断 JSON 报错含「max_tokens」引导、普通非法 JSON 文案不变；默认系统提示词含「综合整理」与尽力输出约束；预设单测校验新闻 / 美食 prompt 文案；真机验收：新闻摘要与美食推荐两组预设能返回可解析 JSON 并落表 |
+| C9 | 典型示例数据要带数据源同步配置（含美食推荐做法 / 国际形势发展动态）；大模型动态拉取的字段要支持中文（2026-10-23 追加） | ① 内置系统提示词字段命名改中文优先（中文短名 / 英文 snake_case 均可，不含空格标点；提示词已指定字段名必须逐字沿用）；② 8 组推荐提示词的 `target_fields` / `match_keys` / 字段说明改中文；③ 自动幂等键「像键」加权补中文片段；④ 示例工作区两张 LLM 内容表的 CSV 表头、`views.json`、`fields.json` 改中文字段；⑤ `datasource.json` 补两条 `llm_prompt` 任务（中文 `field_mapping` / `match_keys`、只配提示词与模型参数、`schedule.mode=manual`）；⑥ 示例数据种子与前端预设测试同步 | `src/cndb/plugins/llm/services/prompts.py`、`src/cndb/plugins/datasource/services/auto_table.py`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`examples/datasets/工作区-数据源示例/` | 单测：默认系统提示词含中文字段口径且不再出现「不要使用中文」；中文字段映射归一保留原名；中文列参与幂等键推断；种子测试校验 4 条任务、中文 `match_keys` 存在且与 CSV 表头一致、LLM 任务为 `manual`；前端预设单测校验中文字段命名与「字段名用中文」说明 |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。
 
@@ -54,6 +59,7 @@
 - [x] **兼容与备份** → 既有 `llm_prompt` 任务（会话 + url/model）与其它 provider 行为不变；备份升 v7 且导入端兼容 1-7（2026-10-22 确认；同日追加个人级配置后 v7 不再导出个人大模型配置）
 - [x] **个人配置的隔离与备份边界（2026-10-22 追加）** → 连接配置属于个人数据：一人一条（`user_id` 唯一）、只对本人可见 / 可改，任务按创建者解析；旧工作区配置按 `created_by` 迁移给用户后删除旧表；个人配置不随工作区备份导出（v7 起），避免把 A 的 Key 带给 B
 - [x] **推荐提示词失败原因与修复口径（2026-10-22 追加）** → 美食失败为输出被 `max_tokens=1024` 截断（`Unterminated string`），新闻失败为模型面对实时性要求直接返回空；口径改为默认 `max_tokens=4096`、截断错误提示引导调大或精简、系统提示词要求综述 / 推荐类尽力输出且无法核实处标注「综合整理」、预设 prompt 同步调整（新闻基于已掌握近期公开信息、美食控制单次输出规模）
+- [x] **中文字段范围（2026-10-23 追加）** → **全面中文**：默认系统提示词 + 8 组预设 + 示例工作区两张 LLM 内容表（CSV 表头 / `views.json` / `fields.json` / 同步任务映射与幂等键）统一中文字段；英文 snake_case 仍兼容（用户改回英文也可落表）；示例 LLM 任务默认 `manual`，避免无个人 Key 时 cron 空跑失败（2026-10-23 用户确认）
 
 ## 卡点
 

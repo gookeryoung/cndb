@@ -192,17 +192,17 @@
       "name": "资讯画廊",
       "view_type": "gallery",
       "view_options": {
-        "title_field": "title",
-        "summary_field": "summary",
-        "tag_fields": ["region", "topic", "trend"],
-        "meta_fields": ["source"],
-        "date_field": "date",
+        "title_field": "标题",
+        "summary_field": "摘要",
+        "tag_fields": ["地区", "主题", "趋势判断"],
+        "meta_fields": ["来源"],
+        "date_field": "日期",
         "card_size": "medium",
         "summary_lines": 3
       },
       "sortings": [
-        {"field_name": "date", "direction": "desc"},
-        {"field_name": "title", "direction": "asc"}
+        {"field_name": "日期", "direction": "desc"},
+        {"field_name": "标题", "direction": "asc"}
       ],
       "is_default": true,
       "order": 0
@@ -211,8 +211,8 @@
       "name": "全部资讯",
       "view_type": "grid",
       "sortings": [
-        {"field_name": "date", "direction": "desc"},
-        {"field_name": "title", "direction": "asc"}
+        {"field_name": "日期", "direction": "desc"},
+        {"field_name": "标题", "direction": "asc"}
       ],
       "order": 1
     },
@@ -220,10 +220,10 @@
       "name": "态势看板",
       "view_type": "kanban",
       "view_options": {
-        "group_field": "trend",
-        "title_field": "title",
-        "priority_field": "topic",
-        "card_fields": ["region", "date"]
+        "group_field": "趋势判断",
+        "title_field": "标题",
+        "priority_field": "主题",
+        "card_fields": ["地区", "日期"]
       },
       "order": 2
     },
@@ -231,9 +231,9 @@
       "name": "地区议题矩阵",
       "view_type": "matrix",
       "view_options": {
-        "row_field": "region",
-        "column_field": "topic",
-        "title_field": "title"
+        "row_field": "地区",
+        "column_field": "主题",
+        "title_field": "标题"
       },
       "order": 3
     },
@@ -241,9 +241,9 @@
       "name": "每日简报日历",
       "view_type": "calendar",
       "view_options": {
-        "start_field": "date",
-        "title_field": "title",
-        "group_field": "topic"
+        "start_field": "日期",
+        "title_field": "标题",
+        "group_field": "主题"
       },
       "order": 4
     },
@@ -254,14 +254,14 @@
         "charts": [
           {
             "chart_type": "pie",
-            "dimension_field": "topic",
-            "measure_field": "title",
+            "dimension_field": "主题",
+            "measure_field": "标题",
             "aggregation": "count"
           },
           {
             "chart_type": "bar",
-            "dimension_field": "trend",
-            "measure_field": "title",
+            "dimension_field": "趋势判断",
+            "measure_field": "标题",
             "aggregation": "count"
           }
         ]
@@ -273,11 +273,11 @@
       "view_type": "grid",
       "filter_type": "AND",
       "filters": [
-        {"field_name": "trend", "op": "=", "value": "升温"}
+        {"field_name": "趋势判断", "op": "=", "value": "升温"}
       ],
       "sortings": [
-        {"field_name": "date", "direction": "desc"},
-        {"field_name": "title", "direction": "asc"}
+        {"field_name": "日期", "direction": "desc"},
+        {"field_name": "标题", "direction": "asc"}
       ],
       "order": 6
     }
@@ -287,16 +287,16 @@
       "name": "菜谱画廊",
       "view_type": "gallery",
       "view_options": {
-        "title_field": "dish_name",
-        "summary_field": "steps",
-        "tag_fields": ["cuisine", "difficulty"],
-        "meta_fields": ["cook_time_min"],
+        "title_field": "菜名",
+        "summary_field": "分步做法",
+        "tag_fields": ["菜系", "难度"],
+        "meta_fields": ["烹饪时长"],
         "card_size": "medium",
         "summary_lines": 4
       },
       "sortings": [
-        {"field_name": "cook_time_min", "direction": "asc"},
-        {"field_name": "dish_name", "direction": "asc"}
+        {"field_name": "烹饪时长", "direction": "asc"},
+        {"field_name": "菜名", "direction": "asc"}
       ],
       "is_default": true,
       "order": 0
@@ -305,8 +305,8 @@
       "name": "全部菜谱",
       "view_type": "grid",
       "sortings": [
-        {"field_name": "cook_time_min", "direction": "asc"},
-        {"field_name": "dish_name", "direction": "asc"}
+        {"field_name": "烹饪时长", "direction": "asc"},
+        {"field_name": "菜名", "direction": "asc"}
       ],
       "order": 1
     },
@@ -314,10 +314,10 @@
       "name": "按菜系看板",
       "view_type": "kanban",
       "view_options": {
-        "group_field": "cuisine",
-        "title_field": "dish_name",
-        "priority_field": "difficulty",
-        "card_fields": ["cook_time_min"]
+        "group_field": "菜系",
+        "title_field": "菜名",
+        "priority_field": "难度",
+        "card_fields": ["烹饪时长"]
       },
       "order": 2
     },
@@ -326,11 +326,11 @@
       "view_type": "grid",
       "filter_type": "AND",
       "filters": [
-        {"field_name": "cook_time_min", "op": "<=", "value": 40}
+        {"field_name": "烹饪时长", "op": "<=", "value": 40}
       ],
       "sortings": [
-        {"field_name": "cook_time_min", "direction": "asc"},
-        {"field_name": "dish_name", "direction": "asc"}
+        {"field_name": "烹饪时长", "direction": "asc"},
+        {"field_name": "菜名", "direction": "asc"}
       ],
       "order": 3
     },
@@ -341,12 +341,12 @@
         "charts": [
           {
             "chart_type": "histogram",
-            "measure_field": "cook_time_min"
+            "measure_field": "烹饪时长"
           },
           {
             "chart_type": "pie",
-            "dimension_field": "cuisine",
-            "measure_field": "dish_name",
+            "dimension_field": "菜系",
+            "measure_field": "菜名",
             "aggregation": "count"
           }
         ]

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -168,33 +169,53 @@ def test_validate_job_fields_accepts_drop_and_detects_missing():
 
 
 def test_real_datasource_json_is_valid():
-    """真实 examples 配置：两源一源一表、目标表与映射列引用自洽."""
+    """真实 examples 配置：股票两源一源一表 + 两条大模型动态拉取任务，引用自洽."""
     base = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例"
     cfg = json.loads((base / "datasource.json").read_text(encoding="utf-8-sig"))
     jobs = cfg["jobs"]
-    assert len(jobs) == 2
-    assert [j["provider"] for j in jobs] == ["tencent_kline", "sina_kline"]
+    assert len(jobs) == 4
+    stock_jobs = [job for job in jobs if job["provider"] in ("tencent_kline", "sina_kline")]
+    llm_jobs = [job for job in jobs if job["provider"] == "llm_prompt"]
+    assert [j["provider"] for j in stock_jobs] == ["tencent_kline", "sina_kline"]
+    assert [j["table"] for j in llm_jobs] == ["美食推荐做法", "国际形势发展动态"]
+
+    # 所有任务：目标表的示例数据文件必须存在，映射目标列与幂等键必须真实存在于 CSV 表头
+    for job in jobs:
+        assert (base / f"{job['table']}.csv").is_file(), f"缺少示例数据文件 {job['table']}.csv"
+        header = (base / f"{job['table']}.csv").read_text(encoding="utf-8-sig").splitlines()[0].split(",")
+        targets = {t["name"] for t in job["field_mapping"].values() if t}
+        assert targets <= set(header), f"{job['name']} 映射到不存在的列 {targets - set(header)}"
+        assert set(job["match_keys"]) <= set(header), f"{job['name']} 幂等键不在表内"
 
     # 一源一表：表名与 CSV 文件名一致（seed 按 CSV 文件建表）
     expected = {
         "tencent_kline": "股市日线",
         "sina_kline": "股市日线-新浪",
     }
-    for job in jobs:
+    for job in stock_jobs:
         assert job["table"] == expected[job["provider"]]
-        assert (base / f"{job['table']}.csv").is_file(), f"缺少示例数据文件 {job['table']}.csv"
         assert job["match_keys"] == ["股票代码", "交易日"]
         assert job["entrant_param"] == "symbol"
         # 10 只标的，前缀与 CSV 表内取值口径一致（sh/sz）
         assert len(job["entrant_keys"]) == 10
         assert len(set(job["entrant_keys"])) == 10
         assert all(k[:2] in ("sh", "sz") for k in job["entrant_keys"])
-        # 映射目标列必须真实存在于 CSV 表头（否则 seed 建表后写入会失败）
-        header = (base / f"{job['table']}.csv").read_text(encoding="utf-8-sig").splitlines()[0].split(",")
-        targets = {t["name"] for t in job["field_mapping"].values() if t}
-        assert targets <= set(header), f"{job['name']} 映射到不存在的列 {targets - set(header)}"
 
-    by_provider = {job["provider"]: job for job in jobs}
+    # 大模型动态拉取：中文字段 + 中文幂等键，只配提示词与模型参数，手动触发
+    for job in llm_jobs:
+        request_spec = job["request_spec"]
+        assert request_spec["prompt"]["user_template"].strip()
+        assert "{today}" in request_spec["prompt"]["user_template"]
+        assert "字段名用中文" in request_spec["prompt"]["user_template"]
+        assert request_spec["llm"]["json_mode"] is True
+        assert "url_template" not in request_spec, "地址应由个人大模型连接提供"
+        assert job["cursor"] == {"strategy": "none"}
+        assert job["schedule"] == {"mode": "manual"}, "示例任务不自动触发，避免无 Key 时空跑失败"
+        assert job["entrant_keys"] == []
+        # 字段映射与幂等键全中文（与表内字段、视图一致）
+        assert all(re.search(r"[\u4e00-\u9fa5]", name) for name in job["match_keys"])
+
+    by_provider = {job["provider"]: job for job in stock_jobs}
 
     # 腾讯（主表，前复权）：单次约 320 根 → chunk_days 必须 >= 320，否则相邻窗口重复抓取
     tencent = by_provider["tencent_kline"]
@@ -210,5 +231,5 @@ def test_real_datasource_json_is_valid():
     assert sina["cursor"] == {"strategy": "none"}
 
     # 两源调度错峰，避免同一时刻撞同一出口 IP 的限流
-    schedules = [job["schedule"]["at"] for job in jobs]
+    schedules = [job["schedule"]["at"] for job in stock_jobs]
     assert len(set(schedules)) == len(schedules), f"任务必须错峰调度，实际 {schedules}"
