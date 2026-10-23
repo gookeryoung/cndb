@@ -84,6 +84,21 @@ class TestFormulaEdges:
         assert formula.evaluate_column("ceil(1.2)", rows, ["a"]) == [2.0]
         assert formula.evaluate_column("floor(1.8)", rows, ["a"]) == [1.0]
 
+    def test_pow_domain_error_returns_none_instead_of_raising(self) -> None:
+        # 负底数 + 非整数指数：Python 返回 complex，不能穿透成 TypeError/500
+        assert formula.evaluate_column("pow(-1, 0.5)", [{"a": 1}], ["a"]) == [None]
+        rows = [{"v": -4}, {"v": 9}]
+        assert formula.evaluate_column("pow([v], 0.5)", rows, ["v"]) == [None, 3.0]
+        # 溢出同样按「无有效数值」处理
+        assert formula.evaluate_column("pow(10, 400)", [{"a": 1}], ["a"]) == [None]
+
+    def test_overdeep_nesting_rejected_as_formula_error(self) -> None:
+        # 长度上限内仍可能因递归下降栈帧耗尽；必须转成 FormulaError 而不是 500
+        expr = "(" * 200 + "1" + ")" * 200
+        assert len(expr) <= formula.MAX_EXPR_LENGTH
+        with pytest.raises(formula.FormulaError):
+            formula.parse(expr)
+
     def test_evaluate_value(self) -> None:
         assert formula.evaluate_value("sum([n])", [{"n": 1}, {"n": 2}, {"n": 3}], ["n"]) == 6.0
         assert formula.evaluate_value("[a] * 2", [{"a": 3}], ["a"]) == 6.0

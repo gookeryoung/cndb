@@ -244,7 +244,12 @@ def parse(expr: str) -> Node:
         raise FormulaError("公式不能为空")
     if len(expr) > MAX_EXPR_LENGTH:
         raise FormulaError(f"公式过长（上限 {MAX_EXPR_LENGTH} 字符）")
-    return _Parser(_tokenize(expr)).parse()
+    try:
+        return _Parser(_tokenize(expr)).parse()
+    except RecursionError as exc:
+        # 递归下降每层嵌套消耗多个栈帧；超长括号串会在长度上限内触发 RecursionError，
+        # 必须转成 FormulaError（400），否则穿透成 500 且无法被路由层捕获。
+        raise FormulaError("公式嵌套层级过深") from exc
 
 
 def referenced_fields(node: Node) -> set[str]:
@@ -604,9 +609,14 @@ def _apply_scalar(func: str, argv: list[float]) -> float | None:
         return math.sqrt(argv[0]) if argv[0] >= 0 else None
     if func == "pow":
         try:
-            return float(argv[0] ** argv[1])
-        except (OverflowError, ValueError):  # pragma: no cover - 极端指数
+            result = argv[0] ** argv[1]
+        except (OverflowError, ValueError, TypeError):
             return None
+        # 负底数 + 非整数指数在 Python 返回 complex，float(complex) 会抛 TypeError；
+        # 与 sqrt 的定义域口径一致，直接按「无有效数值」输出 None。
+        if isinstance(result, complex):
+            return None
+        return float(result)
     if func == "ceil":
         return float(math.ceil(argv[0]))
     if func == "floor":
