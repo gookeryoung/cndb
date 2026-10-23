@@ -18,7 +18,7 @@
 | C1 | 主页，我的工作区右侧增加我的视图面板 | `/w` 主页保持「我的工作区」列，桌面端（≥992px）右侧新增固定宽「我的视图」面板；<992px 上下堆叠，不横向溢出 | `frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/index.css` | 组件测试 + 视口截图 |
 | C2 | 展示个人收藏的视图列表 | 「我的视图」只展示当前用户**手动收藏**的视图，跨工作区 / 跨表聚合；不自动收录私有视图全集、不按最近访问生成 | `src/cndb/plugins/accounts/`、`frontend/src/api/preferences.ts` | 接口层用例 |
 | C3 | （收藏入口） | 数据表视图栏提供「收藏 / 取消收藏当前视图」入口（桌面图标按钮 + 移动端「更多」菜单项），收藏状态按当前用户持久化 | `frontend/src/pages/grid/gridViewBar.tsx`、`src/cndb/plugins/accounts/routers/preferences.py` | 前端单测 + 接口层用例 |
-| C4 | 同样允许展开看详情 | 「我的视图」每行可展开，详情含视图类型、所属工作区 › 数据表、可见性档位 / 是否默认、筛选与排序条件数量，并提供「打开视图」深链 `/w/{wid}/tables/{tid}?view={vid}` | `frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/api/preferences.ts` | 组件测试 |
+| C4 | 同样允许展开看详情 | 「我的视图」每行可展开，详情含视图类型、所属工作区 › 数据表、可见性档位 / 是否默认、筛选与排序条件数量，并提供「打开视图」深链 `/w/{wid}/tables/{tid}?view={vid}`；**收起态行尾同时提供打开入口**（图标按钮），打开视图不需要先展开——一步直达 | `frontend/src/pages/workspace/MyViewsPanel.tsx`、`frontend/src/api/preferences.ts` | 组件测试（收起态点击直达深链） |
 | C5 | 我的工作区和我的视图允许调整排序 | 两个面板均支持拖拽调整顺序：工作区在「已收藏 / 其他工作区」分组内拖拽，收藏视图整列拖拽；顺序按当前用户持久化，刷新 / 换设备保持 | `frontend/src/pages/workspace/WorkspaceList.tsx`、`src/cndb/plugins/accounts/services/preferences.py` | 前端单测（排序纯函数 + API 调用）+ 接口层用例 |
 | C6 | （空态与失效清理） | 无收藏时展示空态并指引「在数据表视图栏点 ☆ 收藏」；视图被删除、转为不可见、所在表软删或用户失去表读权限后，面板不再展示且后端读取时剪枝失效 id | `src/cndb/plugins/accounts/services/preferences.py`、`frontend/src/pages/workspace/WorkspaceList.tsx` | 接口层用例（删除 / 失权后读取）+ 组件测试 |
 | C7 | （权限边界） | 收藏只允许当前用户**可见且可读**的视图；收藏动作不改变视图配置、可见性、默认视图或表数据 | `src/cndb/plugins/tables/services/core/view_access.py` 复用、`src/cndb/plugins/accounts/services/preferences.py` | 接口层用例（私有视图 / 他人私有 / 不可读表） |

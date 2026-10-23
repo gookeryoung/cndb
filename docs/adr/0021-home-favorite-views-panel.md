@@ -14,7 +14,7 @@ Related: `frontend/src/pages/workspace/WorkspaceList.tsx`, `frontend/src/pages/g
 | C1 | 主页，我的工作区右侧增加我的视图面板 | `/w` 页改为双列：左列工作区（`minmax(0, 1fr)`），右列「我的视图」固定 340px；`<992px` 单列堆叠。面板独立卡片，含标题 / 计数 / 空态 |
 | C2 | 展示个人收藏的视图列表 | 新增 per-user `favorite_views`（有序 view_id 列表），主页经 `GET /preferences/favorite-views` 聚合视图 + 表 + 工作区名，只展示手动收藏项 |
 | C3 | （收藏入口） | 视图栏新增「收藏 / 取消收藏」：桌面端星标图标按钮，移动端「更多」菜单项；收藏走 `PUT /preferences/favorite-views` 全量替换 |
-| C4 | 同样允许展开看详情 | 行内展开：视图类型、`工作区 › 数据表`、可见性档位 / 默认标记、筛选与排序条数；「打开视图」跳 `/w/{wid}/tables/{tid}?view={vid}` |
+| C4 | 同样允许展开看详情 | 行内展开：视图类型、`工作区 › 数据表`、可见性档位 / 默认标记、筛选与排序条数；「打开视图」跳 `/w/{wid}/tables/{tid}?view={vid}`。**收起态行尾常驻打开图标按钮**（D8），打开视图无需先展开 |
 | C5 | 我的工作区和我的视图允许调整排序 | 两个面板均用 `@dnd-kit` 拖拽把手排序；工作区在「已收藏 / 其他工作区」组内拖拽，保存时按展示顺序扁平化；收藏视图整列拖拽。顺序写 `User.preferences`，跨设备保持 |
 | C6 | （空态与失效清理） | 后端读取收藏时按可见性 + 表可读 + 表未软删剪枝并回写；前端空态文案指向视图栏星标 |
 | C7 | （权限边界） | 收藏判定复用 `visible_view_filter` + `get_table_or_404(TableAction.READ)`；收藏不改 `DataView` 任何列，也不触发视图保存 |
@@ -163,7 +163,7 @@ sortWorkspaces(list, order) =>
 - `gridViewBar.test.tsx`：桌面星标按钮 `aria-pressed` 随收藏态变化；移动端「更多」菜单项；点击调用收藏 API 并失效缓存。
 - `useFavoriteViews.test.tsx`（可选）：查询 / mutation 缓存失效。
 
-**e2e（前端）**：`frontend/tests/e2e/critical/favorite-views.spec.ts`——登录后在数据表视图栏收藏一个视图 → 打开 `/w` 看到「我的视图」该行 → 展开详情 → 点击「打开视图」落回同一视图；取消收藏后列表消失。
+**e2e（前端）**：`frontend/tests/e2e/critical/favorite-views.spec.ts`——登录后在数据表视图栏收藏一个视图 → 打开 `/w` 看到「我的视图」该行（收起态行尾打开入口可见）→ 展开详情 → 点击「打开视图」落回同一视图；取消收藏后列表消失。
 
 ### 8. 分期
 
@@ -184,6 +184,7 @@ sortWorkspaces(list, order) =>
 | D5 | 写入语义 | `PUT` 全量替换列表；无效 id 静默丢弃；超 50 返回 400；多端 last-write-wins | 与拖拽排序天然契合（一次提交完整顺序）；剪枝不泄露他人视图存在性 | ① 逐条 POST/DELETE：排序仍需另一端点，且多端并发更难合并；② 无效 id 返回 404：会形成存在性提示（ADR 0003 I6） | `services/preferences.py` |
 | D6 | 收藏摘要的数据来源 | 服务端一次返回视图 + 表 + 工作区名称与筛选 / 排序条数 | 避免主页按收藏行逐个请求表 / 视图（N+1） | 前端逐行 `viewApi.get`：≤50 行时请求数不可控，首屏抖动 | `GET /preferences/favorite-views` |
 | D7 | 收藏动作的权限 | 只校验「可见 ∧ 表可读」；不改视图、不触发保存 | I4；收藏是个人 UI 状态，不构成视图配置变更 | 复用 `VIEW_EDIT`：会把收藏误当编辑权限，个人视图与非管理用户无法收藏 | `services/preferences.py` |
+| D8 | 收藏视图行的「打开」入口位置 | 收起态行尾常驻图标按钮直达深链；展开区的「打开视图」按钮保留给「先看详情再进入」 | 打开是首要用例，不能要求「展开 → 再点」两次操作；行点击仍保持「展开详情」既有语义，两个动作各有明确入口 | ① 行点击改为直接打开：详情入口只剩小箭头，与紧邻的工作区行「点行进工作区」相比少一层保护，误点即离页；② 仅展开区按钮（原状）：两次操作 | `MyViewsPanel.tsx`、`index.css` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」。
 
@@ -205,15 +206,15 @@ sortWorkspaces(list, order) =>
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/accounts/services/preferences.py`（判定层：normalize_ids / visible_favorite_views / set_favorite_views / set_workspace_order）、`src/cndb/plugins/accounts/routers/preferences.py`（4 个端点）、`src/cndb/plugins/accounts/models.py`（默认偏好补两键） | `tests/test_user_preferences.py`（判定 / 剪枝 / 上限 / 端点权限） | 95da1938 |
-| P1 | 已落地 | `frontend/src/api/preferences.ts`、`frontend/src/hooks/useFavoriteViews.ts`、`frontend/src/pages/workspace/MyViewsPanel.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx`（双列 + 面板挂载）、`frontend/src/pages/grid/gridViewBar.tsx`（桌面星标 / 移动菜单）、`frontend/src/index.css`（cn-home-split / cn-myviews-* 样式） | `frontend/src/pages/workspace/WorkspaceList.test.tsx`（面板渲染 / 展开详情 / 深链 / 取消收藏 / 空态）、`frontend/src/pages/grid/gridViewBar.test.tsx`（收藏入口 / 上限）、`frontend/src/test/msw.ts`（偏好 handler） | 95da1938 |
+| P1 | 已落地 | `frontend/src/api/preferences.ts`、`frontend/src/hooks/useFavoriteViews.ts`、`frontend/src/pages/workspace/MyViewsPanel.tsx`（行列表 + 收起态打开入口 D8）、`frontend/src/pages/workspace/WorkspaceList.tsx`（双列 + 面板挂载）、`frontend/src/pages/grid/gridViewBar.tsx`（桌面星标 / 移动菜单）、`frontend/src/index.css`（cn-home-split / cn-myviews-* 样式） | `frontend/src/pages/workspace/WorkspaceList.test.tsx`（面板渲染 / 收起态一步直达 / 展开详情 / 深链 / 取消收藏 / 空态）、`frontend/src/pages/grid/gridViewBar.test.tsx`（收藏入口 / 上限）、`frontend/src/test/msw.ts`（偏好 handler） | 95da1938 |
 | P2 | 已落地 | `frontend/src/utils/homeOrder.ts`（buildRankMap / sortWorkspaces / flattenWorkspaceOrder）、`frontend/src/pages/workspace/WorkspaceList.tsx`（工作区拖拽 + 搜索时禁用）、`frontend/src/pages/workspace/MyViewsPanel.tsx`（收藏视图拖拽）、`frontend/src/hooks/useFavoriteViews.ts`（乐观更新 / 回滚 / 上限） | `frontend/src/utils/homeOrder.test.ts`（8 例）、`frontend/src/pages/workspace/WorkspaceList.test.tsx`（自定义顺序 / 搜索禁用拖拽）、`frontend/src/pages/grid/gridViewBar.test.tsx`、`frontend/tests/e2e/critical/favorite-views.spec.ts` | 95da1938 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地（后端判定层 + 4 端点、主页双列面板、两列拖拽排序）
+- 当前阶段：P0-P2 已落地（后端判定层 + 4 端点、主页双列面板、两列拖拽排序、收藏行收起态打开入口）
 - 已完成：前端 `170` 个测试文件 / `2079` 例全绿（含 `tokens.test.ts` 断点口径扩到 `tablet - 0.02`）；后端偏好测试全绿；`pnpm typecheck` / `eslint` 无报错；e2e `favorite-views.spec.ts` 已修正断言（Segmented 选中项 `innerText` 会把视图名与「默认」标签拆成多行，只取第一行名称匹配面板行），本地实跑通过，待 CI shard 复跑确认
 - 下一步：观察主页新增的偏好 + 摘要两次查询对首屏耗时的影响，必要时合并为单个聚合端点
-- 已知坑：① 拖拽监听只挂把手，否则行点击 / 星标误触；② 搜索过滤期间禁用拖拽，避免保存过滤后的子集；③ 收藏读取必须复用 `visible_view_filter` + `get_table_or_404`，不能直接按 id 查 `DataView`；④ msw `onUnhandledRequest: 'error'`——任何渲染 `GridViewBar` / `WorkspaceList` 的测试都必须有偏好 handler 或 api mock；⑤ e2e 取当前视图名不能直接用 `.ant-segmented-item-selected` 的 `innerText` 整串——它是 inline-flex，名称与「默认 / 我的」标签会变成多行，而面板行里名称和标签分属不同元素
+- 已知坑：① 拖拽监听只挂把手，否则行点击 / 星标误触；② 搜索过滤期间禁用拖拽，避免保存过滤后的子集；③ 收藏读取必须复用 `visible_view_filter` + `get_table_or_404`，不能直接按 id 查 `DataView`；④ msw `onUnhandledRequest: 'error'`——任何渲染 `GridViewBar` / `WorkspaceList` 的测试都必须有偏好 handler 或 api mock；⑤ e2e 取当前视图名不能直接用 `.ant-segmented-item-selected` 的 `innerText` 整串——它是 inline-flex，名称与「默认 / 我的」标签会变成多行，而面板行里名称和标签分属不同元素；⑥ 收藏行有两个「打开」按钮，testid 前缀相同：收起态是 `my-view-open-{vid}`、展开区是 `my-view-open-detail-{vid}`，e2e 用 `[data-testid^=...]` 匹配时必须选对前缀，`my-view-open-` 的 `.first()` 命中收起态按钮
 - 最近一次全绿：2026-10-22（前端全量 vitest + 后端 `make flow` + e2e `favorite-views` / `kline-view` 单跑）

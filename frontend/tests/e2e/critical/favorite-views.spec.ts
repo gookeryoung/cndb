@@ -1,7 +1,7 @@
 /** Critical — 主页「我的视图」收藏面板（ADR 0021）.
  *
- * 端到端链路：数据表视图栏星标收藏 → 主页右侧面板出现该视图 → 展开详情 →
- * 「打开视图」落回同一视图深链 → 取消收藏后面板回到空态。
+ * 端到端链路：数据表视图栏星标收藏 → 主页右侧面板出现该视图（收起态行尾即有打开入口）→
+ * 展开详情 →「打开视图」落回同一视图深链 → 取消收藏后面板回到空态。
  *
  * 用例开始 / 结束都清空收藏，避免 admin 偏好跨用例残留。
  */
@@ -67,13 +67,16 @@ test.describe("主页「我的视图」收藏面板", () => {
       await expect(row).toBeVisible({ timeout: 10000 });
       await expect(panel.getByText(activeViewName, { exact: true })).toBeVisible();
 
-      // 3. 展开详情 → 打开视图落回同一视图深链
+      // 3. 收起态行尾已有一键入口；展开详情后走「打开视图」落回同一视图深链
+      const openEntry = row.locator('[data-testid^="my-view-open-"]').first();
+      await expect(openEntry).toBeVisible();
+
       await row.locator('[data-testid^="my-view-expand-"]').click();
       const detail = panel.locator('[data-testid^="my-view-detail-"]').first();
       await expect(detail).toBeVisible();
       await expect(detail.getByText(/筛选 \d+ 条 · 排序 \d+ 条/)).toBeVisible();
 
-      await panel.locator('[data-testid^="my-view-open-"]').first().click();
+      await panel.locator('[data-testid^="my-view-open-detail-"]').first().click();
       await page.waitForURL(new RegExp(`/w/${wid}/tables/${tid}\\?view=\\d+`));
       await settle(page);
 
