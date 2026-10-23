@@ -8,6 +8,8 @@
  *
  * 交互要点：
  * - 面板内独立「保存」按钮（个人设置 Modal 的 footer 仍只有关闭）；
+ * - 服务商预设（`llmProviders.ts`）：选服务商自动填好 base_url + 默认模型，模型字段可选可填；
+ *   选「自定义」清空地址回到手填，手改地址后服务商自动回落「自定义」，预设不限制自由输入；
  * - API Key 密码框只写不回显，已保存时显示「清除」入口；
  * - 测试连接直接用当前输入（含未保存 Key），无需先保存；
  * - 系统提示词留空使用后端内置默认，内置默认全文收在折叠区；
@@ -18,7 +20,8 @@
 
 import { useEffect, useState } from 'react'
 import {
-  Alert, App, Button, Collapse, Divider, Empty, Form, Input, Space, Table, Tag, Tooltip, Typography,
+  Alert, App, AutoComplete, Button, Collapse, Divider, Empty, Form, Input, Select, Space, Table, Tag,
+  Tooltip, Typography,
 } from 'antd'
 import { ApiOutlined, HistoryOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -30,6 +33,7 @@ import {
   type LlmRun,
 } from '@/api'
 import { SPACE, TEXT } from '@/theme/tokens'
+import { CUSTOM_PROVIDER_ID, LLM_PROVIDERS, findProviderByBaseUrl } from './llmProviders'
 
 const { Text, Paragraph } = Typography
 
@@ -95,6 +99,17 @@ export default function LlmConfigPanel() {
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<LlmConnectionTestResult | null>(null)
 
+  /** 服务商由当前 base_url 反查（不额外存状态），手改地址后自动回落「自定义」 */
+  const watchedBaseUrl = Form.useWatch('base_url', form)
+  // 首帧尚未回填（undefined）时按默认地址展示，避免闪一下「自定义」；用户清空地址（''）仍算自定义
+  const activeProvider = findProviderByBaseUrl(watchedBaseUrl ?? DEFAULT_BASE_URL)
+  const providerValue = activeProvider?.id ?? CUSTOM_PROVIDER_ID
+  const providerOptions = [
+    ...LLM_PROVIDERS.map(provider => ({ value: provider.id, label: provider.label })),
+    { value: CUSTOM_PROVIDER_ID, label: '自定义' },
+  ]
+  const modelOptions = (activeProvider?.models ?? []).map(model => ({ value: model }))
+
   const configQuery = useQuery({
     queryKey: ['llm-config'],
     queryFn: llmApi.get,
@@ -141,6 +156,19 @@ export default function LlmConfigPanel() {
       message.error(errorDetail(error) || (error instanceof Error && error.message) || '保存失败，请稍后重试')
     },
   })
+
+  /** 选服务商：自动填入该服务商的 base_url 与默认模型；「自定义」清空地址交回手填 */
+  const applyProvider = (id: string) => {
+    setTestResult(null)
+    if (id === CUSTOM_PROVIDER_ID) {
+      form.setFieldValue('base_url', '')
+      return
+    }
+    const preset = LLM_PROVIDERS.find(provider => provider.id === id)
+    if (!preset) return
+    // 地址与模型一起覆盖：服务商之间模型名不通用，保留旧模型大概率不可用
+    form.setFieldsValue({ base_url: preset.baseUrl, model: preset.models[0] })
+  }
 
   const submit = async () => {
     let values: LlmConfigFormValues
@@ -303,26 +331,45 @@ export default function LlmConfigPanel() {
         size="small"
         initialValues={{ base_url: DEFAULT_BASE_URL, model: DEFAULT_MODEL, api_key: '', system_prompt: '' }}
       >
-        {/* 地址与模型同行：760px 弹窗里各占一半，窄屏按 minWidth 自动换行 */}
+        {/* 服务商 + 模型同行，地址单独一行：选服务商即自动填好地址与模型，也可直接手填 */}
         <div style={{ display: 'flex', gap: SPACE.lg, flexWrap: 'wrap' }}>
           <Form.Item
-            name="base_url"
-            label="API 地址（base_url）"
-            rules={[{ required: true, message: '请输入 API 地址' }]}
-            extra="OpenAI 兼容接口；只填 base_url 时自动补全 /chat/completions"
-            style={{ flex: '1.6 1 300px', minWidth: 0, marginBottom: SPACE.lg }}
+            label="服务商"
+            extra="选中即填入地址与模型；自定义可手填任意 OpenAI 兼容地址"
+            style={{ flex: '1 1 220px', minWidth: 0, marginBottom: SPACE.lg }}
           >
-            <Input data-testid="llm-config-base-url" placeholder={DEFAULT_BASE_URL} />
+            <Select
+              value={providerValue}
+              options={providerOptions}
+              data-testid="llm-config-provider"
+              onChange={applyProvider}
+            />
           </Form.Item>
           <Form.Item
             name="model"
             label="模型"
             rules={[{ required: true, message: '请输入模型名称' }]}
-            style={{ flex: '1 1 200px', minWidth: 0, marginBottom: SPACE.lg }}
+            extra={activeProvider ? '可从列表选，也可直接输入' : '自定义模型名'}
+            style={{ flex: '1 1 240px', minWidth: 0, marginBottom: SPACE.lg }}
           >
-            <Input data-testid="llm-config-model" placeholder={DEFAULT_MODEL} />
+            <AutoComplete
+              options={modelOptions}
+              data-testid="llm-config-model"
+              placeholder={DEFAULT_MODEL}
+              filterOption={(input, option) =>
+                String(option?.value ?? '').toLowerCase().includes(input.toLowerCase())}
+            />
           </Form.Item>
         </div>
+        <Form.Item
+          name="base_url"
+          label="API 地址（base_url）"
+          rules={[{ required: true, message: '请输入 API 地址' }]}
+          extra="OpenAI 兼容接口；只填 base_url 时自动补全 /chat/completions"
+          style={{ marginBottom: SPACE.lg }}
+        >
+          <Input data-testid="llm-config-base-url" placeholder={DEFAULT_BASE_URL} />
+        </Form.Item>
         <Form.Item
           name="api_key"
           label="API Key"
