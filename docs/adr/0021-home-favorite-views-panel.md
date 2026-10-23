@@ -217,4 +217,5 @@ sortWorkspaces(list, order) =>
 - 已完成：前端 `170` 个测试文件 / `2079` 例全绿（含 `tokens.test.ts` 断点口径扩到 `tablet - 0.02`）；后端偏好测试全绿；`pnpm typecheck` / `eslint` 无报错；e2e `favorite-views.spec.ts` 已修正断言（Segmented 选中项 `innerText` 会把视图名与「默认」标签拆成多行，只取第一行名称匹配面板行），本地实跑通过，待 CI shard 复跑确认
 - 下一步：观察主页新增的偏好 + 摘要两次查询对首屏耗时的影响，必要时合并为单个聚合端点
 - 已知坑：① 拖拽监听只挂把手，否则行点击 / 星标误触；② 搜索过滤期间禁用拖拽，避免保存过滤后的子集；③ 收藏读取必须复用 `visible_view_filter` + `get_table_or_404`，不能直接按 id 查 `DataView`；④ msw `onUnhandledRequest: 'error'`——任何渲染 `GridViewBar` / `WorkspaceList` 的测试都必须有偏好 handler 或 api mock；⑤ e2e 取当前视图名不能直接用 `.ant-segmented-item-selected` 的 `innerText` 整串——它是 inline-flex，名称与「默认 / 我的」标签会变成多行，而面板行里名称和标签分属不同元素；⑥ 收藏行有两个「打开」按钮，testid 前缀相同：收起态是 `my-view-open-{vid}`、展开区是 `my-view-open-detail-{vid}`，e2e 用 `[data-testid^=...]` 匹配时必须选对前缀，`my-view-open-` 的 `.first()` 命中收起态按钮
-- 最近一次全绿：2026-10-22（前端全量 vitest + 后端 `make flow` + e2e `favorite-views` / `kline-view` 单跑）
+- 最近一次全绿：2026-10-23（前端全量 vitest + `make check-fast` + 后端 `pytest -m "not slow"`）
+- D8（收起态打开入口）提交：`2b8718cf`（样式 `.cn-myviews-open` 与 CHANGELOG 条目随 `7a1bd2fa` 一并入库）
