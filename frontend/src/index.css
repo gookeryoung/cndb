@@ -1488,13 +1488,20 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 }
 
 .cn-myviews-drag.ant-btn,
-.cn-myviews-toggle.ant-btn {
+.cn-myviews-toggle.ant-btn,
+.cn-myviews-open.ant-btn {
   flex: none;
   width: 20px;
   min-width: 20px;
   height: 20px;
   padding: 0;
   color: var(--cn-text-muted);
+}
+
+/* 收起态直达入口：默认低调，悬停 / 聚焦时点明「可打开」 */
+.cn-myviews-open.ant-btn:hover,
+.cn-myviews-open.ant-btn:focus-visible {
+  color: var(--cn-brand-color);
 }
 
 .cn-myviews-drag.ant-btn {
@@ -1628,6 +1635,18 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   margin-inline-end: 0;
   line-height: 18px;
   padding-inline: var(--cn-space-sm);
+}
+
+/* 拖拽中的行：tr 自身的背景 / 阴影在 table-row 上不生效，落到单元格上；
+ * 抬高 z-index 让浮动行压在相邻行之上，配合 DragHandle 的 grab 光标形成「拎起来」的反馈。 */
+.cn-table-list .ant-table-tbody > tr[data-dragging='true'] > td {
+  background: var(--cn-bg-subtle);
+  box-shadow: 0 6px 16px rgba(0 0 0 / 14%);
+}
+
+.cn-table-list .ant-table-tbody > tr[data-dragging='true'] {
+  position: relative;
+  z-index: 2;
 }
 
 /* 非虚拟模式兜底：标准 tr > td */

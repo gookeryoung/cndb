@@ -13,11 +13,48 @@ import { delay, http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import type { ReactNode } from 'react'
 import TablesList from './TablesList'
 import { renderProviders } from '@/test/render-providers'
 import { server, mockUser } from '@/test/msw'
 import type { TableSummary } from '@/api'
 import type { ResponsiveState } from '@/hooks/useResponsive'
+
+/** dnd-kit mock 共享状态：DndContext 挂载时捕获 onDragEnd，用例直接驱动拖拽完成回调
+ *  （jsdom 无布局，碰撞检测永远命中不到 over，指针/键盘拖拽都无法走完真实链路） */
+const dnd = vi.hoisted(() => ({
+  dragEnd: null as ((event: { active: { id: unknown }; over: { id: unknown } | null }) => void) | null,
+}))
+
+vi.mock('@dnd-kit/core', () => ({
+  DndContext: ({ children, onDragEnd }: { children: ReactNode; onDragEnd?: (e: unknown) => void }) => {
+    dnd.dragEnd = onDragEnd ?? null
+    return <>{children}</>
+  },
+  closestCenter: () => null,
+  PointerSensor: class { },
+  TouchSensor: class { },
+  KeyboardSensor: class { },
+  useSensor: () => ({}),
+  useSensors: (...sensors: unknown[]) => sensors,
+}))
+
+vi.mock('@dnd-kit/sortable', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>()
+  return {
+    ...actual, // 保留 arrayMove / verticalListSortingStrategy 真实现
+    SortableContext: ({ children }: { children: ReactNode }) => <>{children}</>,
+    useSortable: () => ({
+      attributes: {},
+      listeners: {},
+      setNodeRef: () => { },
+      setActivatorNodeRef: () => { },
+      transform: null,
+      transition: undefined,
+      isDragging: false,
+    }),
+  }
+})
 
 // 可控 useResponsive mock：默认桌面端，移动端用例在 beforeEach 中切换
 let responsiveState: ResponsiveState = {
@@ -512,4 +549,113 @@ describe('表列表受限标记', () => {
         fireEvent.mouseEnter(screen.getByTestId('table-restricted-42'))
         expect(await screen.findByText(/读取门槛：所有者及以上；普通成员不可见/)).toBeInTheDocument()
     })
+})
+
+/**
+ * 表顺序拖拽 —— 拖动入口只在把手上（避免与「点击进表」抢手势）。
+ * jsdom 下指针拖拽不可靠，用 dnd-kit 的 KeyboardSensor 驱动同一条 dragEnd 链路。
+ */
+describe('TablesList 表顺序拖拽', () => {
+  /** 四张表：owner 两张（100/102）夹着 read 两张（101/103），用于验证「筛选态下合并回全量顺序」 */
+  const MIXED: TableSummary[] = [
+    { id: 100, name: '表一', record_count: 0, field_count: 0, view_count: 0, my_access: 'owner' },
+    { id: 101, name: '表二', record_count: 0, field_count: 0, view_count: 0, my_access: 'read' },
+    { id: 102, name: '表三', record_count: 0, field_count: 0, view_count: 0, my_access: 'owner' },
+    { id: 103, name: '表四', record_count: 0, field_count: 0, view_count: 0, my_access: 'read' },
+  ]
+
+  function setupMixed() {
+    const bodies: unknown[] = []
+    setupWorkspace()
+    server.use(
+      http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(MIXED)),
+      http.post('/api/v1/workspaces/10/tables/reorder', async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json([])
+      }),
+    )
+    return bodies
+  }
+
+  it('桌面端每行渲染拖拽把手', async () => {
+    setupMixed()
+    renderPage()
+
+    expect(await screen.findByTestId('table-drag-100')).toBeInTheDocument()
+    expect(screen.getByTestId('table-drag-103')).toBeInTheDocument()
+  })
+
+  it('只读角色（viewer）不提供拖拽入口', async () => {
+    setupMixed()
+    server.use(
+      http.get('/api/v1/workspaces/10', () => HttpResponse.json({ ...WORKSPACE, current_user_role: 'viewer' })),
+    )
+    renderPage()
+
+    expect(await screen.findByText('表一')).toBeInTheDocument()
+    expect(screen.queryByTestId('table-drag-100')).toBeNull()
+  })
+
+  /** 驱动 dnd-kit onDragEnd（真实拖拽手势在 jsdom 走不通，直接触发完成回调） */
+  function fireDragEnd(activeId: number, overId: number | null) {
+    expect(dnd.dragEnd).not.toBeNull()
+    dnd.dragEnd!({ active: { id: String(activeId) }, over: overId === null ? null : { id: String(overId) } })
+  }
+
+  it('把第一行下移一位：提交全量顺序 [101,100,102,103]', async () => {
+    const bodies = setupMixed()
+    renderPage()
+
+    await screen.findByText('表一')
+    fireDragEnd(100, 101)
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toEqual([101, 100, 102, 103])
+  })
+
+  it('筛选态下拖动：只重排命中项，未命中表保持原位', async () => {
+    const bodies = setupMixed()
+    renderPage()
+
+    expect(await screen.findByText('表三')).toBeInTheDocument()
+    // 「我拥有的」只留 100 / 102，把 102 拖到 100 之前
+    fireEvent.click(screen.getByRole('radio', { name: '我拥有的' }))
+    expect(await screen.findByText('共 2 / 4 张表')).toBeInTheDocument()
+
+    fireDragEnd(102, 100)
+
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    // 101 / 103 原位不动，100 / 102 交换
+    expect(bodies[0]).toEqual([102, 101, 100, 103])
+  })
+
+  it('拖回原位或拖出列表时不提交；排序失败时提示错误', async () => {
+    const bodies = setupMixed()
+    renderPage()
+
+    await screen.findByText('表一')
+    fireDragEnd(100, 100)
+    fireDragEnd(100, null)
+    expect(bodies).toHaveLength(0)
+
+    server.use(
+      http.post('/api/v1/workspaces/10/tables/reorder', () =>
+        HttpResponse.json({ detail: '无权限' }, { status: 403 })),
+    )
+    fireDragEnd(100, 101)
+    expect(await screen.findByText(/无权限|排序失败/)).toBeInTheDocument()
+  })
+
+  it('窄屏卡片同样提供把手（长按拖动）', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    setupMixed()
+    renderPage()
+
+    expect(await screen.findByTestId('table-card-100')).toBeInTheDocument()
+    expect(screen.getByTestId('table-drag-100')).toBeInTheDocument()
+    expect(screen.getByTestId('table-drag-103')).toBeInTheDocument()
+  })
 })
