@@ -121,19 +121,75 @@ async function openLlmTab(initialTab?: 'llm') {
   return screen.getByTestId('llm-config-panel') as HTMLElement
 }
 
+/** 打开服务商下拉（rc-select 需要 mousedown 在 combobox 输入元素上才能展开） */
+function openProviderSelect() {
+  const container = screen.getByTestId('llm-config-provider')
+  fireEvent.mouseDown(container.querySelector('input') as HTMLInputElement)
+}
+
+/** 模型是「可选可填」的 AutoComplete，data-testid 落在容器上，这里取内部输入框 */
+function modelInput(): HTMLInputElement {
+  return screen.getByTestId('llm-config-model').querySelector('input') as HTMLInputElement
+}
+
 describe('个人设置 · 大模型', () => {
   it('从个人设置打开「大模型」页签：默认值预填、API Key 不回显、展示内置默认系统提示词', async () => {
     setupHandlers()
     await openLlmTab()
 
     expect(screen.getByTestId('llm-config-base-url')).toHaveValue('https://api.deepseek.com')
-    expect(screen.getByTestId('llm-config-model')).toHaveValue('deepseek-chat')
+    expect(modelInput()).toHaveValue('deepseek-chat')
+    // 服务商按已保存地址反查：默认地址命中 DeepSeek，用户不用再选一次
+    expect(screen.getByTestId('llm-config-provider')).toHaveTextContent('DeepSeek 深度求索')
     // API Key 只写不回显：即使已保存也始终为空
     expect(screen.getByTestId('llm-config-api-key')).toHaveValue('')
     expect(screen.getByTestId('llm-config-status')).toHaveTextContent('已配置')
     // 内置默认系统提示词全文展示（多行文本在 DOM 里会做空白归一，按关键片段断言）
     expect(screen.getByTestId('llm-config-default-system')).toHaveTextContent('只输出一个 JSON 对象数组')
     expect(screen.getByTestId('llm-config-default-system')).toHaveTextContent('不得编造无法核实的数据。')
+  })
+
+  it('选择服务商后自动填好 API 地址与默认模型', async () => {
+    setupHandlers()
+    await openLlmTab()
+
+    openProviderSelect()
+    fireEvent.click(
+      await screen.findByText('阿里云百炼（通义千问）', { selector: '.ant-select-item-option-content' }),
+    )
+
+    expect(screen.getByTestId('llm-config-base-url'))
+      .toHaveValue('https://dashscope.aliyuncs.com/compatible-mode/v1')
+    expect(modelInput()).toHaveValue('qwen-plus')
+  })
+
+  it('选「自定义」清空地址交回手填；手填非预设地址时服务商回落「自定义」', async () => {
+    setupHandlers()
+    await openLlmTab()
+
+    openProviderSelect()
+    fireEvent.click(
+      await screen.findByText('自定义', { selector: '.ant-select-item-option-content' }),
+    )
+
+    expect(screen.getByTestId('llm-config-base-url')).toHaveValue('')
+    expect(screen.getByTestId('llm-config-provider')).toHaveTextContent('自定义')
+
+    fireEvent.change(screen.getByTestId('llm-config-base-url'), {
+      target: { value: 'https://llm.internal.example.com/v1' },
+    })
+    expect(screen.getByTestId('llm-config-provider')).toHaveTextContent('自定义')
+  })
+
+  it('模型可直接输入预设列表外的名称', async () => {
+    setupHandlers()
+    await openLlmTab()
+
+    fireEvent.change(modelInput(), { target: { value: 'deepseek-v3-private' } })
+    fireEvent.click(screen.getByTestId('llm-config-save'))
+
+    await waitFor(() => expect(putBodies).toHaveLength(1))
+    expect(putBodies[0]).toMatchObject({ model: 'deepseek-v3-private' })
   })
 
   it('initialTab="llm" 打开时直接定位大模型页签', async () => {
@@ -148,7 +204,7 @@ describe('个人设置 · 大模型', () => {
     setupHandlers()
     await openLlmTab()
 
-    fireEvent.change(screen.getByTestId('llm-config-model'), { target: { value: 'deepseek-reasoner' } })
+    fireEvent.change(modelInput(), { target: { value: 'deepseek-reasoner' } })
     fireEvent.change(screen.getByTestId('llm-config-api-key'), { target: { value: 'sk-unsaved' } })
     fireEvent.change(screen.getByTestId('llm-config-system'), { target: { value: '自定义系统提示词' } })
     fireEvent.click(screen.getByTestId('llm-config-save'))
@@ -178,7 +234,7 @@ describe('个人设置 · 大模型', () => {
     setupHandlers()
     await openLlmTab()
 
-    fireEvent.change(screen.getByTestId('llm-config-model'), { target: { value: 'deepseek-reasoner' } })
+    fireEvent.change(modelInput(), { target: { value: 'deepseek-reasoner' } })
     fireEvent.change(screen.getByTestId('llm-config-api-key'), { target: { value: 'sk-unsaved' } })
     fireEvent.click(screen.getByTestId('llm-config-test'))
 
