@@ -2,7 +2,9 @@
  *
  * 交互口径：
  *  - 行内展开详情：视图类型、`工作区 › 数据表`、可见性 / 默认标记、筛选与排序条数；
- *  - 「打开视图」走深链 `/w/{wid}/tables/{tid}?view={vid}`，与 GridPage 的 `?view=` 激活逻辑一致；
+ *  - 打开视图不要求先展开：收起态行尾即有「打开」图标按钮，深链
+ *    `/w/{wid}/tables/{tid}?view={vid}` 一步直达（与 GridPage 的 `?view=` 激活逻辑一致），
+ *    展开区内的「打开视图」按钮保留给读完详情再进入的场景；
  *  - 行首把手拖拽调整顺序，顺序即 `preferences.favorite_views`（全量替换，乐观更新）；
  *  - 取消收藏走 `useToggleFavoriteView`（先读最新偏好再替换，避免用过期列表覆盖其他标签页的写入）。
  */
@@ -11,7 +13,7 @@ import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Empty, Skeleton, Tag, Tooltip, App as AntApp } from 'antd'
 import {
-  ApartmentOutlined, AppstoreOutlined, BarChartOutlined, CalendarOutlined,
+  ApartmentOutlined, AppstoreOutlined, ArrowRightOutlined, BarChartOutlined, CalendarOutlined,
   CaretRightOutlined, HolderOutlined, LineChartOutlined, NodeIndexOutlined,
   PictureOutlined, StarFilled, StockOutlined, TableOutlined,
 } from '@ant-design/icons'
@@ -122,6 +124,19 @@ function MyViewRow({
         </div>
 
         {view.is_default && <Tag color="blue" className="cn-myviews-row-tag">默认</Tag>}
+
+        {/* 收起态的直达入口：无需先展开详情再点「打开视图」 */}
+        <Tooltip title="打开视图">
+          <Button
+            type="text"
+            size="small"
+            className="cn-myviews-open"
+            aria-label={`打开「${view.name}」`}
+            data-testid={`my-view-open-${view.view_id}`}
+            icon={<ArrowRightOutlined />}
+            onClick={(e) => { e.stopPropagation(); onOpen() }}
+          />
+        </Tooltip>
       </div>
 
       {expanded && (
@@ -148,7 +163,7 @@ function MyViewRow({
             </span>
           </div>
           <div className="cn-myviews-detail-actions">
-            <Button type="primary" size="small" onClick={onOpen} data-testid={`my-view-open-${view.view_id}`}>
+            <Button type="primary" size="small" onClick={onOpen} data-testid={`my-view-open-detail-${view.view_id}`}>
               打开视图
             </Button>
             <Button

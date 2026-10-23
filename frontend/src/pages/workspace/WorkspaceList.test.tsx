@@ -529,6 +529,26 @@ describe('WorkspaceList 我的视图面板', () => {
     expect(screen.getByText('在数据表的视图栏点击星标即可收藏')).toBeInTheDocument()
   })
 
+  it('收起态行尾「打开」按钮一步直达深链，不需要先展开详情', async () => {
+    server.use(
+      http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+        active_views: {}, workspace_order: [], favorite_view_ids: [300],
+      })),
+      http.get('/api/v1/accounts/preferences/favorite-views', () => HttpResponse.json([FAVORITE_VIEW])),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await screen.findByTestId('my-view-row-300')
+    // 未展开时详情区块不存在，确认走的是收起态入口
+    expect(screen.queryByTestId('my-view-detail-300')).not.toBeInTheDocument()
+
+    await user.click(screen.getByTestId('my-view-open-300'))
+    await waitFor(() => {
+      expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables/100?view=300')
+    })
+  })
+
   it('展开行显示详情，点击「打开视图」跳到带 view 参数的深链', async () => {
     server.use(
       http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
@@ -546,7 +566,7 @@ describe('WorkspaceList 我的视图面板', () => {
     expect(detail).toHaveTextContent('看板')
     expect(detail).toHaveTextContent('仅本人')
 
-    await user.click(screen.getByTestId('my-view-open-300'))
+    await user.click(screen.getByTestId('my-view-open-detail-300'))
     await waitFor(() => {
       expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables/100?view=300')
     })
