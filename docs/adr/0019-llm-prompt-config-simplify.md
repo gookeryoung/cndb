@@ -287,6 +287,7 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P4 已落地；ADR 0020 P0 已把连接 / 调用 / 解析 / 留痕抽到平台插件 `plugins/llm/`（表 `llm_user_config`、端点 `/api/v1/llm/config`），本 ADR 落点已就地改写
+- C10（服务商预设）提交：`89cbc348`（CHANGELOG 条目随 `7a1bd2fa` 一并入库，该提交同时含数据表拖拽排序）
 - 追加（2026-10-23，C10）：个人设置「大模型」加服务商预设 —— `llmProviders.ts` 8 家（DeepSeek 默认 / 百炼 / 智谱 / Kimi / 火山方舟 / 硅基流动 / OpenRouter / OpenAI），选服务商自动填 `base_url` + 默认模型，模型字段改 AutoComplete（可选可填），「自定义」清空地址、手改地址按地址反查回落自定义；前端 `check-fast` + `test` + 前端全量 `vitest` 全绿
 - 追加（2026-10-23，C9）：字段命名中文化 + 示例同步配置 —— 默认系统提示词放开中文并禁止翻译指定字段名；8 组预设改中文字段；`KEY_NAME_HINTS` 中英并列；示例工作区「美食推荐做法 / 国际形势发展动态」CSV 表头、`views.json`、`fields.json` 改中文字段，`datasource.json` 新增两条 `llm_prompt` 任务（中文 `match_keys` / `field_mapping`，`schedule.mode=manual`）
 - 追加（2026-10-22）：推荐提示词由 5 组扩为 8 组（新增商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），提交 `c39a8f6d`；页面按钮按预设数量动态显示
