@@ -4,11 +4,12 @@
  * 展示 Owner / MyAccess / MemberCount 三个权限元信息列, 并提供按访问级别筛选.
  */
 
-import { Suspense, lazy, useCallback, useMemo, useState } from 'react'
+import { Suspense, createContext, lazy, useCallback, useContext, useMemo, useState } from 'react'
 import {
   Button, Modal, Form, Input, Table, Typography, Empty, App as AntApp, Space, Tag, Upload, Dropdown,
   Avatar, Segmented, Badge, Tooltip,
 } from 'antd'
+import type { MenuProps } from 'antd'
 import {
   PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
   UploadOutlined, ApiOutlined, TeamOutlined, UserOutlined,
@@ -17,9 +18,13 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  DndContext, DragEndEvent, PointerSensor, closestCenter, useSensor, useSensors,
+  DndContext, DragEndEvent, KeyboardSensor, PointerSensor, TouchSensor, closestCenter,
+  useSensor, useSensors,
 } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import type { DraggableAttributes, DraggableSyntheticListeners } from '@dnd-kit/core'
+import {
+  SortableContext, verticalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates,
+} from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
@@ -66,28 +71,136 @@ const ACCESS_TAG: Record<string, { color: string; label: string }> = {
   none: { color: 'default', label: '默认' },
 }
 
-/** AntD Table 可拖拽行 —— 配合 DndContext + SortableContext 使用. */
+/** 拖拽把手的控制对象 —— 由行/卡片组件通过 context 下发，避免整行可拖与「点击进表」抢手势. */
+type DragHandleState = {
+  attributes: DraggableAttributes
+  listeners?: DraggableSyntheticListeners
+  setActivatorNodeRef?: (node: HTMLElement | null) => void
+}
+
+const DragHandleContext = createContext<DragHandleState | null>(null)
+
+/** AntD Table 可拖拽行 —— 配合 DndContext + SortableContext 使用.
+ *
+ * 行本身只接管 transform / 拖拽态样式，拖动仅由把手（DragHandle）激活：
+ * 此前 listeners 挂整行，按下即开始拖动，导致「点一下进表」与拖动互相抢手势。
+ */
 function DraggableRow({
   style,
   ...rest
 }: React.HTMLAttributes<HTMLTableRowElement>) {
   // 从 data-row-key 读取排序 id（AntD Table 自动传入），统一转 string 与 SortableContext items 对齐
   const rowKey = String((rest as Record<string, unknown>)['data-row-key'])
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: rowKey })
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: rowKey })
   return (
-    <tr
-      ref={setNodeRef}
-      style={{
-        ...style,
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.6 : undefined,
-        cursor: 'grab',
-      }}
-      {...attributes}
-      {...listeners}
-      {...rest}
-    />
+    <DragHandleContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>
+      <tr
+        ref={setNodeRef}
+        style={{
+          ...style,
+          transform: CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.6 : undefined,
+        }}
+        data-dragging={isDragging ? 'true' : undefined}
+        {...rest}
+      />
+    </DragHandleContext.Provider>
+  )
+}
+
+/** 排序把手：桌面表格行与窄屏卡片共用.
+ *
+ * 键盘可用（Space 提起 / ↑↓ 移动 / Space 放下），也是 e2e 与单测唯一可靠的拖拽入口。
+ */
+function DragHandle({ enabled, testId }: { enabled: boolean; testId: string }) {
+  const ctx = useContext(DragHandleContext)
+  // 无排序权限（只读角色）时保留占位，避免列宽抖动
+  if (!enabled || !ctx) return <span aria-hidden style={{ display: 'inline-block', width: 16 }} />
+  return (
+    <Tooltip title="上下拖动调整顺序（松手即保存）">
+      <span
+        ref={ctx.setActivatorNodeRef}
+        data-testid={testId}
+        {...ctx.attributes}
+        {...ctx.listeners}
+        aria-label="拖动调整数据表顺序"
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          cursor: 'grab',
+          color: 'var(--cn-text-muted)',
+          // 触摸设备上把手手势不参与页面滚动，否则按住就滚走了
+          touchAction: 'none',
+        }}
+      >
+        <HolderOutlined />
+      </span>
+    </Tooltip>
+  )
+}
+
+/** 窄屏卡片：一屏一表，把手在卡片头右侧，点击卡身进表. */
+function SortableTableCard({
+  record,
+  canReorder,
+  menu,
+  onOpen,
+  onPrefetch,
+}: {
+  record: TableSummary
+  canReorder: boolean
+  menu: MenuProps['items']
+  onOpen: () => void
+  onPrefetch: () => void
+}) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
+    useSortable({ id: String(record.id) })
+  const access = ACCESS_TAG[record.my_access ?? 'none'] ?? ACCESS_TAG.none
+  return (
+    <DragHandleContext.Provider value={{ attributes, listeners, setActivatorNodeRef }}>
+      <div
+        ref={setNodeRef}
+        className="cn-table-list-card"
+        data-testid={`table-card-${record.id}`}
+        style={{
+          transform: CSS.Transform.toString(transform),
+          transition,
+          opacity: isDragging ? 0.6 : undefined,
+          boxShadow: isDragging ? '0 8px 20px rgba(0, 0, 0, 0.16)' : undefined,
+          position: 'relative',
+          zIndex: isDragging ? 2 : undefined,
+        }}
+        onClick={onOpen}
+        onMouseEnter={onPrefetch}
+      >
+        <div className="cn-table-list-card-head">
+          <TableOutlined style={{ color: '#3b82f6' }} />
+          <span className="cn-table-list-card-name">{record.name}</span>
+          <Tag color={access.color} style={{ marginInlineEnd: 0 }}>{access.label}</Tag>
+          <DragHandle enabled={canReorder} testId={`table-drag-${record.id}`} />
+        </div>
+        {record.description && <div className="cn-table-list-card-desc">{record.description}</div>}
+        <div className="cn-table-list-card-meta">
+          <span>{record.record_count ?? 0} 条记录 · {record.field_count ?? 0} 字段 · {record.member_count ?? 0} 成员</span>
+          {record.updated_at && <span>更新于 {formatListTime(record.updated_at)}</span>}
+        </div>
+        <div className="cn-table-list-card-actions">
+          <Button size="small" type="link" icon={<LoginOutlined />} data-testid={`open-table-${record.id}`}>打开</Button>
+          {/* 触摸设备没有 hover，卡片内菜单用 click 触发 */}
+          <Dropdown trigger={['click']} menu={{ items: menu }}>
+            <Button
+              type="text"
+              size="small"
+              icon={<MoreOutlined />}
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`more-table-${record.id}`}
+            />
+          </Dropdown>
+        </div>
+      </div>
+    </DragHandleContext.Provider>
   )
 }
 
@@ -198,26 +311,57 @@ export default function TablesList() {
   })
 
   // ── 表顺序拖拽 ──
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
+  // 桌面用指针（移动 4px 才激活，避免误触）；触摸端用长按（180ms）激活，
+  // 且只有把手带 touch-action: none，不会与页面滚动抢手势。
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
+  // 只有 owner / editor 能改顺序（后端 reorder 要求 EDITOR 及以上）
+  const canReorder = workspace?.current_user_role !== 'viewer'
   const reorderTables = useMutation({
     mutationFn: (ids: Array<number | string>) => tableApi.reorder(wid!, ids),
-    onSuccess: () => {
+    // 乐观重排：不先动本地列表的话，请求返回前松手的那一行会「弹回原位」，
+    // 看起来像没生效；失败时用快照回滚。
+    onMutate: async (ids) => {
+      const key = ['workspaces', wid, 'tables']
+      await queryClient.cancelQueries({ queryKey: key })
+      const prev = queryClient.getQueryData<TableSummary[]>(key)
+      if (prev) {
+        const byId = new Map(prev.map(t => [String(t.id), t]))
+        const next = ids
+          .map(id => byId.get(String(id)))
+          .filter((t): t is TableSummary => !!t)
+        // 提交序列可能不含全部表（并发新增等），缺失的按原顺序补到尾部，避免本地丢行
+        prev.forEach(t => { if (!ids.map(String).includes(String(t.id))) next.push(t) })
+        queryClient.setQueryData(key, next)
+      }
+      return { prev }
+    },
+    onError: (err, _ids, ctx) => {
+      if (ctx?.prev) queryClient.setQueryData(['workspaces', wid, 'tables'], ctx.prev)
+      message.error(err instanceof Error ? err.message : '排序失败')
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
     },
-    onError: (err) => message.error(err instanceof Error ? err.message : '排序失败'),
   })
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event
     if (!over || active.id === over.id) return
-    // tables 已按后端 order, id 排序，这里用 findIndex 定位
-    const srcId = String(active.id)
-    const dstId = String(over.id)
-    const ids = tables.map(t => String(t.id))
-    const oldIndex = ids.indexOf(srcId)
-    const newIndex = ids.indexOf(dstId)
+    // 定位必须在**可见列表**里做：筛选态下 filteredTables 与 tables 的索引不同，
+    // 用全量索引换位置会把表错插到别的筛选档位里。
+    const oldIndex = filteredTables.findIndex(t => String(t.id) === String(active.id))
+    const newIndex = filteredTables.findIndex(t => String(t.id) === String(over.id))
     if (oldIndex < 0 || newIndex < 0) return
-    const reorderedIds = arrayMove(ids, oldIndex, newIndex)
-    reorderTables.mutate(reorderedIds)
+    const moved = arrayMove(filteredTables, oldIndex, newIndex)
+    // 合并回全量序列：未命中筛选的表保持原位，命中表按新顺序依次填空
+    const visibleSet = new Set(filteredTables.map(t => String(t.id)))
+    let cursor = 0
+    const merged = tables.map(t => (visibleSet.has(String(t.id)) ? moved[cursor++].id : t.id))
+    if (merged.every((id, i) => String(id) === String(tables[i].id))) return
+    reorderTables.mutate(merged)
   }
 
   /** 表行操作菜单（表格操作列与窄屏卡片共用一套入口） */
@@ -280,10 +424,8 @@ export default function TablesList() {
       title: '',
       key: 'drag',
       width: 36,
-      render: () => (
-        <Tooltip title="拖动调整表的显示顺序（顺序会保存）">
-          <HolderOutlined style={{ color: '#bfbfbf', cursor: 'grab' }} />
-        </Tooltip>
+      render: (_: unknown, record: TableSummary) => (
+        <DragHandle enabled={canReorder} testId={`table-drag-${record.id}`} />
       ),
     },
     {
@@ -541,49 +683,23 @@ export default function TablesList() {
         >
           {isMobile ? (
             /* 窄屏卡片列表：一屏一表，表名/描述/记录·字段·成员/更新时间/操作同卡片可见；
-               拖拽排序仅在桌面端提供（触摸端拖拽手势不可靠） */
+               排序入口为卡片头右侧把手（长按拖动），卡身点击仍是进表 */
             <div className="cn-table-list-cards" data-testid="tables-mobile-list">
               {filteredTables.length === 0 ? (
                 <Empty
                   description={filter !== 'all' ? '当前筛选条件下没有表' : '还没有表 —— 点击「新建表」或「导入数据表」开始'}
                   style={{ padding: 32 }}
                 />
-              ) : filteredTables.map(record => {
-                const access = ACCESS_TAG[record.my_access ?? 'none'] ?? ACCESS_TAG.none
-                return (
-                  <div
-                    key={record.id}
-                    className="cn-table-list-card"
-                    data-testid={`table-card-${record.id}`}
-                    onClick={() => navigate(`/w/${wid}/tables/${record.id}`)}
-                    onMouseEnter={() => prefetchTable(record.id)}
-                  >
-                    <div className="cn-table-list-card-head">
-                      <TableOutlined style={{ color: '#3b82f6' }} />
-                      <span className="cn-table-list-card-name">{record.name}</span>
-                      <Tag color={access.color} style={{ marginInlineEnd: 0 }}>{access.label}</Tag>
-                    </div>
-                    {record.description && <div className="cn-table-list-card-desc">{record.description}</div>}
-                    <div className="cn-table-list-card-meta">
-                      <span>{record.record_count ?? 0} 条记录 · {record.field_count ?? 0} 字段 · {record.member_count ?? 0} 成员</span>
-                      {record.updated_at && <span>更新于 {formatListTime(record.updated_at)}</span>}
-                    </div>
-                    <div className="cn-table-list-card-actions">
-                      <Button size="small" type="link" icon={<LoginOutlined />} data-testid={`open-table-${record.id}`}>打开</Button>
-                      {/* 触摸设备没有 hover，卡片内菜单用 click 触发 */}
-                      <Dropdown trigger={['click']} menu={{ items: buildTableMenu(record) }}>
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<MoreOutlined />}
-                          onClick={(e) => e.stopPropagation()}
-                          data-testid={`more-table-${record.id}`}
-                        />
-                      </Dropdown>
-                    </div>
-                  </div>
-                )
-              })}
+              ) : filteredTables.map(record => (
+                <SortableTableCard
+                  key={record.id}
+                  record={record}
+                  canReorder={canReorder}
+                  menu={buildTableMenu(record)}
+                  onOpen={() => navigate(`/w/${wid}/tables/${record.id}`)}
+                  onPrefetch={() => prefetchTable(record.id)}
+                />
+              ))}
             </div>
           ) : (
           <div className="cn-grid-card">
