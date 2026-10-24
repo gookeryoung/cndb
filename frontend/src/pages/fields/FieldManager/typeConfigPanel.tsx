@@ -272,8 +272,9 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
 /** link 字段配置区：目标表 + 多选 + 业务键（显示字段 / 匹配字段）+ 引用字段.
  *
  * 业务键是关联字段对外的读写口径，替代数据库行主键：
- *  - 显示字段（display_field_id）：单元格展示与导出该字段值，让导出文件可读；
- *  - 匹配字段（match_field_id）：导入时按该字段值匹配目标行，让导出文件可回灌。
+ *  - 显示字段（display_field_id）：仅用于单元格展示，让关联关系可读；
+ *  - 匹配字段（match_field_id）：导出时输出该字段值、导入时按该值匹配目标行，
+ *    保证「导出 → 修改 → 导入」按同一业务键回灌。
  *
  * 引用字段（reference_fields）：除显示/匹配字段外，额外从目标表实时引用（投影）的
  * 目标字段 ID 列表，按列表顺序在字段列表中以 lookup 形式挂在该关联字段下 ——
@@ -373,7 +374,7 @@ function LinkConfigFields({ form, wid, tables, editTargetId }: { form: ReturnTyp
       </Row>
       <Row gutter={12}>
         <Col span={12}>
-          <Form.Item name={['config', 'display_field_id']} label="显示字段" extra="单元格显示与导出所用的目标表字段，留空回退首个非空字段" style={{ marginBottom: 8 }}>
+          <Form.Item name={['config', 'display_field_id']} label="显示字段" extra="仅单元格显示所用的目标表字段，留空回退首个非空字段" style={{ marginBottom: 8 }}>
             <Select
               showSearch
               allowClear
@@ -386,7 +387,7 @@ function LinkConfigFields({ form, wid, tables, editTargetId }: { form: ReturnTyp
           </Form.Item>
         </Col>
         <Col span={12}>
-          <Form.Item name={['config', 'match_field_id']} label="匹配字段" extra="导入时按该字段值匹配目标行（留空回退显示字段）" style={{ marginBottom: 8 }}>
+          <Form.Item name={['config', 'match_field_id']} label="匹配字段" extra="导出内容与导入匹配均用该字段值（留空回退显示字段）" style={{ marginBottom: 8 }}>
             <Select
               showSearch
               allowClear

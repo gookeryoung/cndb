@@ -146,10 +146,10 @@ export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, 
           onChange={setSelectedFormat}
           style={{ width: 180 }}
           options={[
-            { value: 'csv', label: 'CSV（Excel 兼容）' },
-            { value: 'json', label: 'JSON' },
             { value: 'xlsx', label: 'XLSX' },
+            { value: 'csv', label: 'CSV（Excel 兼容）' },
             { value: 'pdf', label: 'PDF（当前视图画面）' },
+            { value: 'json', label: 'JSON' },
           ]}
           disabled={exporting}
         />
