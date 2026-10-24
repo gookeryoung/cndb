@@ -29,6 +29,7 @@ import type {
   MemberUserBrief,
 } from '@/api'
 import { useAuthStore } from '@/store'
+import { useResponsive } from '@/hooks/useResponsive'
 import HelpTip from '@/components/HelpTip'
 import { formatSize } from '@/utils/formatSize'
 import { WORKSPACE_TYPE_HINT, WORKSPACE_TYPE_LABEL, WORKSPACE_TYPE_OPTIONS } from '@/utils/workspaceType'
@@ -54,6 +55,7 @@ export default function WorkspaceSettingsContent({
   const { message } = AntApp.useApp()
   const navigate = useNavigate()
   const currentUser = useAuthStore(s => s.user)
+  const { isMobile } = useResponsive()
   const [form] = Form.useForm()
   const [activeTab, setActiveTab] = useState(initialTab)
   const [candidatesSearch, setCandidatesSearch] = useState('')
@@ -434,12 +436,12 @@ export default function WorkspaceSettingsContent({
       children: (
         <div>
           {/* 统计卡片 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
+          <div data-testid="ws-stats-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
             {statItems.map(item => (
               <div
                 key={item.label}
                 style={{
-                  padding: 16,
+                  padding: isMobile ? 12 : 16,
                   ...subtleBoxStyle,
                   borderLeft: `3px solid ${item.color}`,
                 }}
@@ -447,7 +449,7 @@ export default function WorkspaceSettingsContent({
                 <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
                   {item.icon} {item.label}
                 </div>
-                <div style={{ fontSize: 24, fontWeight: 600, marginTop: 4, color: 'var(--cn-text-primary)' }}>
+                <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 600, marginTop: 4, color: 'var(--cn-text-primary)' }}>
                   {item.value}
                 </div>
               </div>
@@ -475,7 +477,14 @@ export default function WorkspaceSettingsContent({
           </div>
 
           {/* 当前角色 + 拥有者 */}
-          <Descriptions title="角色信息" size="small" bordered column={2} style={{ marginBottom: 16 }}>
+          <Descriptions
+            title="角色信息"
+            size="small"
+            bordered
+            column={isMobile ? 1 : 2}
+            layout={isMobile ? 'vertical' : 'horizontal'}
+            style={{ marginBottom: 16 }}
+          >
             <Descriptions.Item label="您的角色">
               {myRole
                 ? <Tag color={myRole === 'owner' ? 'gold' : 'default'}>{ROLE_LABEL[myRole]}</Tag>
@@ -490,7 +499,13 @@ export default function WorkspaceSettingsContent({
           </Descriptions>
 
           {/* 创建信息（只读） */}
-          <Descriptions title="工作区信息（只读）" size="small" bordered column={2}>
+          <Descriptions
+            title="工作区信息（只读）"
+            size="small"
+            bordered
+            column={isMobile ? 1 : 2}
+            layout={isMobile ? 'vertical' : 'horizontal'}
+          >
             <Descriptions.Item label="ID">{detail?.id}</Descriptions.Item>
             <Descriptions.Item label="创建时间">
               {detail?.created_at ? new Date(detail.created_at).toLocaleString() : '-'}
@@ -547,6 +562,7 @@ export default function WorkspaceSettingsContent({
       <Button
         key="save"
         type="primary"
+        block={isMobile}
         onClick={() => form.submit()}
         loading={save.isPending}
       >保存设置</Button>,
@@ -559,6 +575,7 @@ export default function WorkspaceSettingsContent({
         activeKey={activeTab}
         onChange={(k) => setActiveTab(k as typeof initialTab)}
         items={tabs}
+        size={isMobile ? 'small' : 'middle'}
       />
       {footerButtons.length > 0 && (
         <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>

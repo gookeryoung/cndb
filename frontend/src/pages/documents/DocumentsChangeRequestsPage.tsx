@@ -54,8 +54,8 @@ export default function DocumentsChangeRequestsPage() {
   const items = data?.items ?? []
 
   return (
-    <div style={{ padding: '16px 24px', maxWidth: 960, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
+    <div className="cn-subpage" style={{ maxWidth: 960, margin: '0 auto' }}>
+      <div className="cn-subpage-head">
         <Space size={8} align="center">
           <Title level={5} style={{ margin: 0 }}>
             文档修改申请

@@ -1,6 +1,6 @@
 /** 文档管理页 — 顶层系列卡片总览 + 文件夹列表 / 树 / 搜索入口. */
 
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Checkbox,
@@ -9,6 +9,7 @@ import {
   Button,
   Card,
   Col,
+  Dropdown,
   Empty,
   Input,
   List,
@@ -24,6 +25,7 @@ import {
   message,
 } from 'antd'
 import type { DataNode } from 'antd/es/tree'
+import type { MenuProps } from 'antd'
 import {
   LockOutlined,
   ClockCircleOutlined,
@@ -36,6 +38,7 @@ import {
   FolderAddOutlined,
   FolderOutlined,
   ImportOutlined,
+  MoreOutlined,
   SearchOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -395,98 +398,149 @@ export default function DocumentsPage() {
     return <Alert type="error" message="无效的工作区" />
   }
 
+  /** 返回上级：以当前面包屑末项的 parent_id 为目标 */
+  const goUp = () => {
+    const parentDoc = breadcrumbItems[breadcrumbItems.length - 1]
+    setParentId(parentDoc?.parent_id ?? null)
+  }
+
+  const upButton = parentId !== null && (
+    <Button icon={<ArrowLeftOutlined />} onClick={goUp}>上一级</Button>
+  )
+  const breadcrumbNode = (
+    <Breadcrumb
+      items={[
+        { title: <a onClick={() => setParentId(null)}>文档</a> },
+        ...breadcrumbItems.map(b => ({ title: b.title })),
+      ]}
+    />
+  )
+  const renderSearchInput = (style: CSSProperties) => (
+    <Input
+      allowClear
+      prefix={<SearchOutlined />}
+      placeholder="本页标题过滤"
+      style={style}
+      value={titleKeyword}
+      onChange={e => setTitleKeyword(e.target.value)}
+    />
+  )
+  const renderOrderSelect = (style: CSSProperties) => (
+    <Select
+      style={style}
+      value={orderBy}
+      data-testid="doc-order-select"
+      onChange={(v: DocumentOrder) => updateParams({ order: v })}
+      options={DOCUMENT_ORDER_OPTIONS}
+    />
+  )
+  const renderTagSelect = (style: CSSProperties) => (
+    <Select
+      allowClear
+      placeholder="标签"
+      style={style}
+      value={tagFilter}
+      data-testid="doc-tag-filter"
+      onChange={(v?: number) => updateParams({ tag: v ?? null })}
+      options={(tagsQuery.data ?? []).map(tag => ({ value: tag.id, label: tag.name }))}
+    />
+  )
+  const renderStatusSelect = (style: CSSProperties) => (
+    <Select
+      allowClear
+      placeholder="状态"
+      style={style}
+      value={statusFilter}
+      onChange={setStatusFilter}
+      options={[
+        { value: 'draft', label: '草稿' },
+        { value: 'published', label: '已发布' },
+        { value: 'archived', label: '归档' },
+      ]}
+    />
+  )
+  /** 窄屏次级操作：收录进「更多」菜单，避免顶栏折成三行 */
+  const mobileToolbarMenu: MenuProps['items'] = [
+    { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
+    { key: 'import', icon: <ImportOutlined />, label: '导入文件', onClick: () => setFileImportOpen(true) },
+    { key: 'vault-import', icon: <ImportOutlined />, label: '导入 Obsidian 库', onClick: () => setVaultImportOpen(true) },
+    { key: 'export', icon: <ExportOutlined />, label: '导出 Obsidian 库', onClick: () => vaultExportMut.mutate() },
+    { type: 'divider' },
+    { key: 'trash', icon: <DeleteOutlined />, label: '回收站', onClick: () => setTrashOpen(true) },
+  ]
+
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: isMobile ? 12 : 16 }}>
       {/* 工具栏 */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-        <Space wrap>
-          {parentId !== null && (
-            <Button icon={<ArrowLeftOutlined />} onClick={() => {
-              const parentDoc = breadcrumbItems[breadcrumbItems.length - 1]
-              setParentId(parentDoc?.parent_id ?? null)
-            }}>
-              上一级
+      {isMobile ? (
+        <div data-testid="doc-toolbar-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+          {/* 第一行：返回 + 面包屑 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            {upButton}
+            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>{breadcrumbNode}</div>
+          </div>
+          {/* 第二行：过滤 + 更多 + 新建 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {renderSearchInput({ flex: 1, minWidth: 0 })}
+            <Dropdown menu={{ items: mobileToolbarMenu }} trigger={['click']} placement="bottomRight">
+              <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
+            </Dropdown>
+            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建</Button>
+          </div>
+          {/* 第三行：排序 / 标签 / 状态三等分 */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
+            {renderOrderSelect({ width: '100%' })}
+            {renderTagSelect({ width: '100%' })}
+            {renderStatusSelect({ width: '100%' })}
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+          <Space wrap>
+            {upButton}
+            {breadcrumbNode}
+          </Space>
+          <Space wrap>
+            {renderSearchInput({ width: 180 })}
+            <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
+              回收站
             </Button>
-          )}
-          <Breadcrumb
-            items={[
-              { title: <a onClick={() => setParentId(null)}>文档</a> },
-              ...breadcrumbItems.map(b => ({ title: b.title })),
-            ]}
-          />
-        </Space>
-        <Space wrap>
-          <Input
-            allowClear
-            prefix={<SearchOutlined />}
-            placeholder="本页标题过滤"
-            style={{ width: 180 }}
-            value={titleKeyword}
-            onChange={e => setTitleKeyword(e.target.value)}
-          />
-          <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
-            回收站
-          </Button>
-          <Select
-            style={{ width: 120 }}
-            value={orderBy}
-            data-testid="doc-order-select"
-            onChange={(v: DocumentOrder) => updateParams({ order: v })}
-            options={DOCUMENT_ORDER_OPTIONS}
-          />
-          <Select
-            allowClear
-            placeholder="标签"
-            style={{ width: 140 }}
-            value={tagFilter}
-            data-testid="doc-tag-filter"
-            onChange={(v?: number) => updateParams({ tag: v ?? null })}
-            options={(tagsQuery.data ?? []).map(tag => ({ value: tag.id, label: tag.name }))}
-          />
-          <Select
-            allowClear
-            placeholder="状态"
-            style={{ width: 110 }}
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={[
-              { value: 'draft', label: '草稿' },
-              { value: 'published', label: '已发布' },
-              { value: 'archived', label: '归档' },
-            ]}
-          />
-          <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
-          <Tooltip title="导入本地文件（Markdown / Word / HTML）：单文件或整个文件夹，自动转 Markdown 并清理排版">
-            <Button
-              icon={<ImportOutlined />}
-              data-testid="doc-file-import"
-              onClick={() => setFileImportOpen(true)}
-            >
-              导入
-            </Button>
-          </Tooltip>
-          <Tooltip title="导入 Obsidian 库（.zip）：保留目录结构、front-matter 标签与附件">
-            <Button
-              icon={<ImportOutlined />}
-              data-testid="doc-vault-import"
-              onClick={() => setVaultImportOpen(true)}
-            >
-              导入库
-            </Button>
-          </Tooltip>
-          <Tooltip title="把当前工作区文档树导出为 Obsidian 库（.zip）">
-            <Button
-              icon={<ExportOutlined />}
-              data-testid="doc-vault-export"
-              loading={vaultExportMut.isPending}
-              onClick={() => vaultExportMut.mutate()}
-            >
-              导出
-            </Button>
-          </Tooltip>
-          <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
-        </Space>
-      </div>
+            {renderOrderSelect({ width: 120 })}
+            {renderTagSelect({ width: 140 })}
+            {renderStatusSelect({ width: 110 })}
+            <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
+            <Tooltip title="导入本地文件（Markdown / Word / HTML）：单文件或整个文件夹，自动转 Markdown 并清理排版">
+              <Button
+                icon={<ImportOutlined />}
+                data-testid="doc-file-import"
+                onClick={() => setFileImportOpen(true)}
+              >
+                导入
+              </Button>
+            </Tooltip>
+            <Tooltip title="导入 Obsidian 库（.zip）：保留目录结构、front-matter 标签与附件">
+              <Button
+                icon={<ImportOutlined />}
+                data-testid="doc-vault-import"
+                onClick={() => setVaultImportOpen(true)}
+              >
+                导入库
+              </Button>
+            </Tooltip>
+            <Tooltip title="把当前工作区文档树导出为 Obsidian 库（.zip）">
+              <Button
+                icon={<ExportOutlined />}
+                data-testid="doc-vault-export"
+                loading={vaultExportMut.isPending}
+                onClick={() => vaultExportMut.mutate()}
+              >
+                导出
+              </Button>
+            </Tooltip>
+            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
+          </Space>
+        </div>
+      )}
 
       {/* 最近打开：本地历史，仅在根层展示；点标题直接进编辑器 */}
       {parentId === null && recentDocs.length > 0 && (

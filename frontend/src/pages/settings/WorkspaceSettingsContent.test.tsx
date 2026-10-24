@@ -9,7 +9,7 @@
  * viewer 只读权限分支 / editor 只读边界（管理操作收敛为 owner）。
  */
 
-import { describe, expect, it, beforeEach, vi } from 'vitest'
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { screen, waitFor, fireEvent, render } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -22,6 +22,17 @@ import { server } from '@/test/msw'
 import { ThemeProvider } from '@/theme/ThemeProvider'
 import { useAuthStore } from '@/store/auth'
 import { workspaceApi } from '@/api'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，移动端用例在内部切换（验证统计卡片与保存按钮布局）
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 /** Location 探针 —— 读取当前 pathname 供断言跳转 */
 function LocationProbe() {
@@ -411,5 +422,34 @@ describe('WorkspaceSettingsContent 权限分支', () => {
     fireEvent.click(screen.getByText('统计信息'))
     await waitFor(() => expect(screen.getByText('角色信息')).toBeVisible())
     expect(screen.queryByText('危险操作')).not.toBeInTheDocument()
+  })
+})
+
+describe('WorkspaceSettingsContent 移动端布局', () => {
+  beforeEach(() => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+  })
+
+  afterEach(() => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+  })
+
+  it('保存按钮整行，统计卡片两列', async () => {
+    renderContent('owner')
+    await waitDetailLoaded()
+
+    // 窄屏保存按钮占满整行，避免右下角小按钮难点
+    expect(screen.getByRole('button', { name: '保存设置' })).toHaveClass('ant-btn-block')
+
+    fireEvent.click(screen.getByText('统计信息'))
+    const grid = await screen.findByTestId('ws-stats-grid')
+    // 窄屏固定两列，不再按 minmax(140px) 自适应收缩
+    expect(grid.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))')
   })
 })

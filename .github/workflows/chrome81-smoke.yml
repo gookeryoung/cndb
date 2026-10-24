@@ -65,7 +65,9 @@ jobs:
           set -euo pipefail
           uv run python frontend/scripts/e2e-server.py > /tmp/e2e-server.log 2>&1 &
           for _ in $(seq 1 90); do
-            if curl -fsS http://127.0.0.1:8000/ >/dev/null 2>&1; then
+            # 用 /api/health 探测：/ 依赖 Accept: text/html 的 SPA fallback，
+            # curl 默认 Accept: */* 会拿到 404，导致误判未就绪。
+            if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
               echo "backend ready"
               exit 0
             fi

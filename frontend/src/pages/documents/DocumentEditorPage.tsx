@@ -915,7 +915,8 @@ export default function DocumentEditorPage() {
       {/* 顶栏 */}
       <div
         style={{
-          padding: '12px 24px',
+          // 窄屏收窄留白：顶栏与正文左右对齐（12px），把横向空间还给标题与操作
+          padding: isMobile ? '10px 12px' : '12px 24px',
           borderBottom: '1px solid var(--cn-border, #e8e8e8)',
           display: 'flex',
           justifyContent: 'space-between',
@@ -933,9 +934,10 @@ export default function DocumentEditorPage() {
             />
           )}
           <Space wrap>
-            <Title level={4} style={{ margin: 0 }}>{doc.title}</Title>
+            <Title level={4} style={{ margin: 0, fontSize: isMobile ? 18 : undefined }}>{doc.title}</Title>
             <Tag color={doc.status === 'published' ? 'green' : 'default'}>
-              {doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : '草稿（仅自己可见）'}
+              {/* 窄屏：长文案占宽过多，草稿态收敛为「草稿」 */}
+              {doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : (isMobile ? '草稿' : '草稿（仅自己可见）')}
             </Tag>
             {serverDraft && (
               <Tag color="orange" data-testid="doc-draft-tag">
@@ -1126,7 +1128,7 @@ export default function DocumentEditorPage() {
           description="你的编辑内容仍在页面上；个人草稿不会丢失，可重试或刷新后继续编辑。"
           closable
           onClose={() => setSaveError(null)}
-          style={{ margin: '8px 24px 0' }}
+          style={{ margin: isMobile ? '8px 12px 0' : '8px 24px 0' }}
         />
       )}
 
@@ -1139,7 +1141,7 @@ export default function DocumentEditorPage() {
           description="正文尚未落库；可打开「修改申请」查看内容差异，由编辑者及以上角色通过后生效。"
           closable
           onClose={() => setPendingNotice(null)}
-          style={{ margin: '8px 24px 0' }}
+          style={{ margin: isMobile ? '8px 12px 0' : '8px 24px 0' }}
         />
       )}
 

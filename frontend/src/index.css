@@ -5641,4 +5641,121 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   .cn-an-metric-label {
     grid-column: span 2;
   }
+
+  /* 数据分析页头：模板选择独占一行，操作按钮紧凑换行，避免 200px 下拉挤压图标组 */
+  .cn-an-head-actions .ant-select {
+    flex: 1 1 100%;
+    width: 100% !important;
+  }
+}
+
+/* ─────────────── 工作区设置页（/w/:wid/settings） ───────────────
+ * 外层留白 + 卡片内留白统一；窄屏同步收到 12px，把宽度让给表单与统计卡片。 */
+.cn-ws-settings-page {
+  padding: var(--cn-space-xl);
+}
+
+.cn-ws-settings-card {
+  background: var(--cn-bg-container);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  padding: var(--cn-space-xl);
+}
+
+/* ─────────────── 文档子页（问题清单 / 修改申请） ───────────────
+ * 页头在窄屏纵向堆叠：说明文字整行，筛选与主操作整行，避免挤成多段折行。 */
+.cn-subpage {
+  padding: var(--cn-space-xl) var(--cn-space-3xl);
+}
+
+.cn-subpage-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--cn-space-lg);
+  gap: var(--cn-space-lg);
+  flex-wrap: wrap;
+}
+
+.cn-subpage-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+}
+
+/* ─────────────── 数据源同步页 ─────────────── */
+.cn-datasource-page {
+  padding: var(--cn-space-xl);
+}
+
+@media (max-width: 767.98px) {
+  .cn-ws-settings-page {
+    padding: var(--cn-space-lg);
+  }
+
+  .cn-ws-settings-card {
+    padding: var(--cn-space-lg);
+    border-radius: var(--cn-radius-base);
+  }
+
+  .cn-subpage {
+    padding: var(--cn-space-lg);
+  }
+
+  .cn-subpage-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cn-subpage-head .ant-segmented {
+    width: 100%;
+  }
+
+  .cn-subpage-head .ant-segmented-group {
+    display: flex;
+  }
+
+  .cn-subpage-head .ant-segmented-item {
+    flex: 1;
+    text-align: center;
+  }
+
+  .cn-subpage-head-actions {
+    width: 100%;
+  }
+
+  /* 问题清单：筛选分段占满剩余宽度，主操作保持内容宽度 */
+  .cn-subpage-head-actions.ant-space {
+    width: 100%;
+  }
+
+  .cn-subpage-head-actions .ant-space-item:first-child {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cn-subpage-head-actions .ant-segmented {
+    width: 100%;
+  }
+
+  .cn-datasource-page {
+    padding: var(--cn-space-lg);
+  }
+
+  .cn-datasource-head.ant-space {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .cn-datasource-head-text.ant-space {
+    flex-wrap: wrap;
+  }
+
+  .cn-datasource-head-actions.ant-space {
+    width: 100%;
+  }
+
+  .cn-datasource-head-actions .ant-btn {
+    width: 100%;
+  }
 }

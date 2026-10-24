@@ -3,7 +3,7 @@
  * 纯函数聚合（buildSeriesStats）+ 顶层卡片网格渲染与导航 + 系列级操作（重命名/移动/删除）。
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { message } from 'antd'
@@ -12,6 +12,17 @@ import DocumentsPage, { buildSeriesStats } from './DocumentsPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, server } from '@/test/msw'
 import type { DocumentItem } from '@/api/documents'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+
+// 可控 useResponsive mock：默认桌面端，移动端用例在内部切换（验证工具栏收敛）
+let responsiveState: ResponsiveState = {
+  deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+  width: 1280, height: 800,
+}
+vi.mock('@/hooks/useResponsive', async () => {
+  const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+  return { ...actual, useResponsive: () => responsiveState }
+})
 
 describe('buildSeriesStats 纯函数', () => {
   it('空列表返回空数组', () => {
@@ -554,4 +565,46 @@ describe('列表可见性提示', () => {
         // 已发布文档不显示提示（成员均可见）
         expect(screen.queryByTestId('doc-list-visibility-1')).toBeNull()
     })
+})
+
+describe('DocumentsPage 移动端顶部工具栏', () => {
+  beforeEach(() => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+  })
+
+  afterEach(() => {
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+  })
+
+  it('次级操作收进「更多」菜单，主操作与筛选保持可用', async () => {
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    const toolbar = await screen.findByTestId('doc-toolbar-mobile')
+    expect(toolbar).toBeVisible()
+    // 桌面常显的次级按钮不再直接渲染
+    expect(screen.queryByTestId('doc-trash-open')).toBeNull()
+    expect(screen.queryByTestId('doc-file-import')).toBeNull()
+    // 搜索、排序/标签/状态筛选与新建仍可用
+    expect(within(toolbar).getByPlaceholderText('本页标题过滤')).toBeVisible()
+    expect(within(toolbar).getByTestId('doc-order-select')).toBeVisible()
+    expect(within(toolbar).getByTestId('doc-tag-filter')).toBeVisible()
+    expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
+
+    // 「更多」菜单承载回收站与导入入口
+    fireEvent.click(within(toolbar).getByTestId('doc-toolbar-more'))
+    expect(await screen.findByText('回收站')).toBeInTheDocument()
+    expect(screen.getByText('导入文件')).toBeInTheDocument()
+    expect(screen.getByText('新建文件夹')).toBeInTheDocument()
+  })
 })
