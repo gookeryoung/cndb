@@ -184,9 +184,9 @@ def request_refresh(workspace_ids=None) -> list[int]                 # 接口层
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/alembic/versions/c9f1a2b3d4e5_add_workspace_storage_snapshot.py`、`src/cndb/plugins/workspaces/services/storage_snapshot.py`、`src/cndb/core/storage_refresh.py`、`src/cndb/app.py`、`src/cndb/core/system_api.py` | `tests/test_workspace_storage_snapshot.py` | 待提交 |
-| P1 | 已落地 | `frontend/src/api/admin.ts`、`frontend/src/pages/admin/StoragePage.tsx`、`frontend/src/index.css` | `frontend/src/pages/admin/StoragePage.test.tsx` | 待提交 |
-| P2 | 已落地 | `src/cndb/plugins/workspaces/routers/workspaces.py`（详情读快照）、`src/cndb/plugins/tables/routers/files.py`（上传预判 + 乐观累加）、`src/cndb/core/system_api.py`（配额调整返回） | `tests/test_workspace_storage_usage.py`、`tests/test_workspace_storage_snapshot.py` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/alembic/versions/c9f1a2b3d4e5_add_workspace_storage_snapshot.py`、`src/cndb/plugins/workspaces/services/storage_snapshot.py`、`src/cndb/core/storage_refresh.py`、`src/cndb/app.py`、`src/cndb/core/system_api.py` | `tests/test_workspace_storage_snapshot.py` | 53b7b56b |
+| P1 | 已落地 | `frontend/src/api/admin.ts`、`frontend/src/pages/admin/StoragePage.tsx`、`frontend/src/index.css` | `frontend/src/pages/admin/StoragePage.test.tsx` | 53b7b56b |
+| P2 | 已落地 | `src/cndb/plugins/workspaces/routers/workspaces.py`（详情读快照）、`src/cndb/plugins/tables/routers/files.py`（上传预判 + 乐观累加）、`src/cndb/core/system_api.py`（配额调整返回） | `tests/test_workspace_storage_usage.py`、`tests/test_workspace_storage_snapshot.py` | 53b7b56b |
 | P3 | 未开始 | — | — | — |
 
 ## 交接（会话结束更新）
