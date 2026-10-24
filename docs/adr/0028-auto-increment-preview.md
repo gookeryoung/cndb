@@ -1,9 +1,9 @@
-# ADR 0027: 新增行展示自动编号的预览数值（按库内已有数据往后排）
+# ADR 0028: 新增行展示自动编号的预览数值（按库内已有数据往后排）
 
 Status: Proposed
 Date: 2026-10-24
-Related: `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.tsx`、`frontend/src/utils/fieldIncrement.ts`、`frontend/src/api/records.ts`、`docs/requirements/0027-auto-increment-preview.md`
-需求卡片: `docs/requirements/0027-auto-increment-preview.md`（需求原文与约束编号的唯一副本）
+Related: `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.tsx`、`frontend/src/utils/fieldIncrement.ts`、`frontend/src/api/records.ts`、`docs/requirements/0028-auto-increment-preview.md`
+需求卡片: `docs/requirements/0028-auto-increment-preview.md`（需求原文与约束编号的唯一副本）
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」段落；ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档。
 
