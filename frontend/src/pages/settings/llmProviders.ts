@@ -61,18 +61,6 @@ export const LLM_PROVIDERS: LlmProviderPreset[] = [
     baseUrl: 'https://api.siliconflow.cn/v1',
     models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'],
   },
-  {
-    id: 'openrouter',
-    label: 'OpenRouter（聚合）',
-    baseUrl: 'https://openrouter.ai/api/v1',
-    models: ['deepseek/deepseek-chat', 'openai/gpt-4o-mini', 'anthropic/claude-3.5-sonnet'],
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI',
-    baseUrl: 'https://api.openai.com/v1',
-    models: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini'],
-  },
 ]
 
 /** 地址归一化：忽略大小写、末尾斜杠与空白，用于反查服务商 */

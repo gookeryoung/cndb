@@ -31,7 +31,7 @@ Related: `src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/plugin.py`、`
 | C8 | 推荐提示词开箱可用（2026-10-22 追加） | 默认 `max_tokens` 1024 → 4096；JSON 解析失败且疑似截断时给出「提高 max_tokens / 精简输出」提示；默认系统提示词要求综述 / 推荐类任务尽力输出，不因无法联网返回空数组，无法核实的事实标注「综合整理」、`url` 可空；「每日新闻摘要」「美食推荐做法」预设按此调整 |
 | C9 | 大模型动态拉取的字段能否支持中文（2026-10-23 追加） | 字段命名默认中文化：内置系统提示词改为「字段名支持中文（中文短名 / 英文 snake_case 均可）、提示词已指定的字段名必须逐字沿用」；8 组推荐提示词的 `target_fields` / `match_keys` / 字段说明全部改中文；自动幂等键的「像键」加权补中文片段（日期 / 编号 / 名称 / 城市 / 标题 / 主题…）；示例工作区两张 LLM 内容表（美食推荐做法 / 国际形势发展动态）的 CSV 表头、视图引用、字段设置、同步任务映射与幂等键同步改中文，并补齐两条 `llm_prompt` 同步配置 |
 
-| C10 | 大模型设置提供典型服务商及其模型对应列表，选后自动填好 API 地址和模型，保留自定义入口（2026-10-23 追加） | `frontend/src/pages/settings/llmProviders.ts` 维护 8 家服务商预设（DeepSeek / 阿里云百炼 / 智谱 GLM / 月之暗面 Kimi / 火山方舟 / 硅基流动 / OpenRouter / OpenAI）：每条只带 OpenAI 兼容 `base_url`（不含 `/chat/completions`，前端保存 / 测试时仍由后端补全）与常用模型列表，`models[0]` 为默认模型；面板「服务商」下拉选中即写入 `base_url` + 默认模型，模型字段是「可选可填」AutoComplete（列表外可直接输入）；「自定义（自行填写地址与模型）」清空地址回到手填，手改地址后按 `base_url` 反查自动回落「自定义」；预设只在前端，不落库、不参与后端校验（后端默认值 `DEFAULT_BASE_URL` / `DEFAULT_MODEL` 不变），新增服务商只改这一个文件 |
+| C10 | 大模型设置提供典型服务商及其模型对应列表，选后自动填好 API 地址和模型，保留自定义入口（2026-10-23 追加；2026-10-24 移除国外服务商） | `frontend/src/pages/settings/llmProviders.ts` 维护 6 家国内服务商预设（DeepSeek / 阿里云百炼 / 智谱 GLM / 月之暗面 Kimi / 火山方舟 / 硅基流动）：每条只带 OpenAI 兼容 `base_url`（不含 `/chat/completions`，前端保存 / 测试时仍由后端补全）与常用模型列表，`models[0]` 为默认模型；面板「服务商」下拉选中即写入 `base_url` + 默认模型，模型字段是「可选可填」AutoComplete（列表外可直接输入）；「自定义（自行填写地址与模型）」清空地址回到手填，手改地址后按 `base_url` 反查自动回落「自定义」；预设只在前端，不落库、不参与后端校验（后端默认值 `DEFAULT_BASE_URL` / `DEFAULT_MODEL` 不变），新增服务商只改这一个文件 |
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
 
 ## Context
@@ -192,7 +192,7 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 | API 封装 | `frontend/src/api/llm.ts` | 新增 `llmApi.get / update / testConnection / listActions / listRuns`（`/v1/llm/*`）与类型 `LlmConfig` / `LlmConfigPayload` / `LlmConnectionTestPayload` / `LlmConnectionTestResult` / `LlmAction` / `LlmRun` |
 | API 封装 | `frontend/src/api/datasource.ts`、`frontend/src/api/index.ts` | 删除工作区级 `getLlmConfig` / `updateLlmConfig` / `testConnection` 与对应类型；导出 `llmApi`；旧 `frontend/src/api/llmConfig.ts` 删除，端点迁入 `llm.ts` |
 | 个人设置页签 | `frontend/src/pages/settings/LlmConfigPanel.tsx`、`SettingsModal.tsx`、`frontend/src/store/ui.ts` | 「个人设置」新增「大模型」页签：服务商预设 / 地址 / 模型（可选可填）/ Key（只写不回显，已保存可清除）/ 系统提示词覆盖 / 内置默认全文 / 「测试连接」（可用未保存 Key）；`SettingsTab` 增加 `llm` |
-| 服务商预设 | `frontend/src/pages/settings/llmProviders.ts` | 8 家 OpenAI 兼容服务商（`base_url` + 常用模型，`models[0]` 默认）+ `findProviderByBaseUrl` 地址反查（忽略末尾斜杠 / 大小写 / 空白）；前端专用，不落库、不改后端默认值 |
+| 服务商预设 | `frontend/src/pages/settings/llmProviders.ts` | 6 家国内 OpenAI 兼容服务商（`base_url` + 常用模型，`models[0]` 默认）+ `findProviderByBaseUrl` 地址反查（忽略末尾斜杠 / 大小写 / 空白）；前端专用，不落库、不改后端默认值 |
 | 数据源页 | `frontend/src/pages/datasource/DatasourcePage.tsx` | 删除页头「大模型连接」按钮 / 状态 Tag / 连接弹窗与未配置引导；`llm_prompt` 抽屉改为提示去「个人设置 → 大模型」；高级设置 `max_tokens` 默认 4096 |
 | 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 8 组预设；「每日新闻摘要」改为基于已掌握近期公开信息、允许标注「综合整理」；「美食推荐做法」控制单次输出规模；其余预设补充实时数据口径说明；弹窗列表默认收起（手风琴，一次展开一组），点击场景名才展示适用场景 / 建议字段 / 建议幂等键 |
 | 页面测试 | `frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`SettingsModal.test.tsx`、`llmProviders.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`llmPromptPresets.test.ts` | 个人页签保存 / 测试 / 清除 Key / 用户隔离提示 / 选服务商自动填地址与模型 / 选自定义清空地址 / 模型可手填；数据源页无连接入口、提示文案；预设文案与数量 |
@@ -288,7 +288,8 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 
 - 当前阶段：P0-P4 已落地；ADR 0020 P0 已把连接 / 调用 / 解析 / 留痕抽到平台插件 `plugins/llm/`（表 `llm_user_config`、端点 `/api/v1/llm/config`），本 ADR 落点已就地改写
 - C10（服务商预设）提交：`89cbc348`（CHANGELOG 条目随 `7a1bd2fa` 一并入库，该提交同时含数据表拖拽排序）
-- 追加（2026-10-23，C10）：个人设置「大模型」加服务商预设 —— `llmProviders.ts` 8 家（DeepSeek 默认 / 百炼 / 智谱 / Kimi / 火山方舟 / 硅基流动 / OpenRouter / OpenAI），选服务商自动填 `base_url` + 默认模型，模型字段改 AutoComplete（可选可填），「自定义」清空地址、手改地址按地址反查回落自定义；前端 `check-fast` + `test` + 前端全量 `vitest` 全绿
+- 追加（2026-10-23，C10）：个人设置「大模型」加服务商预设 —— `llmProviders.ts` 6 家国内服务商（DeepSeek 默认 / 百炼 / 智谱 / Kimi / 火山方舟 / 硅基流动），选服务商自动填 `base_url` + 默认模型，模型字段改 AutoComplete（可选可填），「自定义」清空地址、手改地址按地址反查回落自定义；前端 `check-fast` + `test` + 前端全量 `vitest` 全绿
+- 追加（2026-10-24，C10）：服务商预设移除国外选项（OpenRouter / OpenAI），只保留国内服务商 6 家；已保存的国外地址不受影响，仍按 `base_url` 反查未命中回落「自定义」
 - 追加（2026-10-23，C9）：字段命名中文化 + 示例同步配置 —— 默认系统提示词放开中文并禁止翻译指定字段名；8 组预设改中文字段；`KEY_NAME_HINTS` 中英并列；示例工作区「美食推荐做法 / 国际形势发展动态」CSV 表头、`views.json`、`fields.json` 改中文字段，`datasource.json` 新增两条 `llm_prompt` 任务（中文 `match_keys` / `field_mapping`，`schedule.mode=manual`）
 - 追加（2026-10-22）：推荐提示词由 5 组扩为 8 组（新增商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），提交 `c39a8f6d`；页面按钮按预设数量动态显示
 - 追加（2026-10-22）：连接测试支持未保存 Key（现为 `POST /api/v1/llm/config/test`），提交 `f2bf92bc`
