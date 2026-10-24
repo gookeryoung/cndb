@@ -219,6 +219,42 @@ class TestBulkAPI:
         assert r.text.splitlines()[0] == "姓名,年龄"
         assert "张三" in r.text
 
+    def test_export_keeps_business_id_field(self, client, db, ws, auth_owner):
+        """业务字段名为 ``id``（如导入带 id 列的 CSV）时导出不得静默丢列."""
+        from cndb.plugins.tables.services.core import ddl as core_ddl
+        from cndb.plugins.tables.services.core import records as rec
+
+        engine = db.get_bind()
+        dt = DataTable(workspace_id=ws.id, name="业务ID表")
+        dt.ensure_db_name()
+        db.add(dt)
+        db.flush()
+        f_id = DataField(table_id=dt.id, name="id", field_type="text", order=0)
+        f_id.ensure_db_name()
+        f_name = DataField(table_id=dt.id, name="名称", field_type="text", order=1)
+        f_name.ensure_db_name()
+        db.add_all([f_id, f_name])
+        db.commit()
+        db.refresh(dt)
+        core_ddl.create_table(engine, dt)
+        rec.create_row(engine, dt, {"id": "业务-001", "名称": "A"})
+
+        r_csv = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{dt.id}/export?format=csv",
+            headers=auth_owner,
+        )
+        assert r_csv.status_code == 200
+        lines = [line.strip("\r") for line in r_csv.text.strip().split("\n") if line.strip()]
+        assert lines[0] == "id,名称"
+        assert "业务-001" in r_csv.text
+
+        r_json = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{dt.id}/export?format=json",
+            headers=auth_owner,
+        )
+        assert r_json.status_code == 200
+        assert json.loads(r_json.text)[0]["id"] == "业务-001"
+
     def test_export_link_uses_match_field_value(self, client, db, ws, auth_owner):
         """关联列导出匹配字段值（而非显示字段或行 id），便于修改后按匹配字段直接回灌."""
         from cndb.plugins.tables.services.core import ddl as core_ddl

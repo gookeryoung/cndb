@@ -39,7 +39,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | 7 | 非 grid 视图一次拉取上限 `VIEW_FETCH_ALL_LIMIT = 2000`，排序由服务端按视图 `sortings` 应用 | `frontend/src/pages/grid/useGridData.ts:21-38` | 画廊无需客户端排序；2000 卡片需分批挂载 | 确认 |
 | 8 | 视图匿名公开分享已明确不复活（ADR 0003 D5）；文档分享（ADR 0017）不适用于表 / 视图 | `docs/adr/0003-view-visibility-permission-model.md` | 分享范围限定工作区内 | 确认 |
 | 9 | seed CSV 建表时低基数文本自动提升 select（`地区/主题/趋势判断/菜系/难度`），日期 / 数字按值推断 | `src/cndb/plugins/tables/services/transfer/normalize/promote.py:21-79` | 彩色标签、看板分组、矩阵轴可直接使用 | 新增 |
-| 10 | `_row_to_dict` 把物理列 `id` 映射为 `result["id"]`；数据表导出在 `routers/bulk_export.py` 统一剔除该列（JSON / CSV / XLSX 均不含 `id`） | `src/cndb/plugins/tables/services/core/records.py:834-851`、`src/cndb/plugins/tables/routers/bulk_export.py:118-119` | 手工构造 / 旧版导出的 CSV 仍须去掉 `id` 列，否则建出同名业务字段并覆盖行 ID | 新增 |
+| 10 | `_row_to_dict` 把物理列 `id` 映射为 `result["id"]`；数据表导出在 `routers/bulk_export.py` 剔除系统行 ID（JSON / CSV / XLSX 均不含），但表内存在名为 `id` 的有效业务字段时保留该列（否则字段名覆盖同名系统 id 会导致整列业务数据丢失） | `src/cndb/plugins/tables/services/core/records.py:860-877`、`src/cndb/plugins/tables/routers/bulk_export.py:118-123` | 手工构造 / 旧版导出的 CSV 仍须去掉 `id` 列，否则建出同名业务字段并覆盖行 ID | 新增 |
 | 11 | seed 完整性测试静态解析 CSV 表头 + `valid view types` 白名单 | `tests/test_backup_seed_roundtrip.py:349`、`:439-455`、`:533-542` | 新表无需硬编码字段；类型集合与引用提取需同步 | 新增 |
 
 **核心缺陷（需求要补的）**：现有 10 种视图没有「阅读态」——grid 长文本截断、kanban 卡片只显示标题与少量标签、chart 只做聚合，LLM 抓取的资讯 / 菜谱类内容缺少可浏览、可分享的卡片墙。
