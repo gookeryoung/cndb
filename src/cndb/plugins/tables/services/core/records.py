@@ -150,19 +150,23 @@ def _normalize_values(
                 # 默认值配置非法时不阻塞建行，跳过并留调试日志
                 logger.debug("字段 %s 默认值 %r 校验失败，跳过: %s", f.name, dv, exc)
 
-    # 检查缺失的必填字段（link 字段无物理列，不参与）
-    if not for_update:
-        for f in table.fields:
-            if f.trashed or not f.required or is_link_field(f):
-                continue
-            ftype = default_registry.get(f.field_type)
-            if ftype is None or not ftype.has_physical_column:
-                # lookup 等无物理列的只读字段不参与必填校验
-                continue
-            if f.db_column_name not in result:
-                raise ValueError(f"必填字段 {f.name} 不能为空")
-
     return result, link_values
+
+
+def _ensure_required_fields_provided(table: DataTable, normalized: dict[str, Any]) -> None:
+    """创建路径校验：required 物理列字段必须在 normalized 中有值.
+
+    须在自动编号 / 自动填充之后调用 —— 这些值由后端生成，不能作为「用户漏填」处理.
+    """
+    for f in table.fields:
+        if f.trashed or not f.required or is_link_field(f):
+            continue
+        ftype = default_registry.get(f.field_type)
+        if ftype is None or not ftype.has_physical_column:
+            # lookup 等无物理列的只读字段不参与必填校验
+            continue
+        if f.db_column_name not in normalized:
+            raise ValueError(f"必填字段 {f.name} 不能为空")
 
 
 # ── 单表 sa.Table 获取（带缓存） ─────────────────────
@@ -239,6 +243,7 @@ def create_row(
     sa_table = _get_sa_table(engine, table)
     normalized, link_values = _normalize_values(table, values)
     _apply_auto_increment_defaults(engine, table, values, normalized)
+    _ensure_required_fields_provided(table, normalized)
 
     # 主行提交前预校验 link 目标存在，避免主行已入库但 link 写入失败返回 500
     if db is not None:
@@ -671,6 +676,7 @@ def bulk_create(
     for r in rows:
         normalized, link_values = _normalize_values(table, r)
         _apply_auto_increment_defaults(engine, table, r, normalized, assigned)
+        _ensure_required_fields_provided(table, normalized)
         split_rows.append((normalized, link_values))
 
     # 所有主行提交前预校验全部 link 目标存在，避免部分主行已入库但后续 link 写入失败

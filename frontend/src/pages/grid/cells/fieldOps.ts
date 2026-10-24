@@ -1,15 +1,16 @@
 import type { Field } from '@/api'
 import dayjs from 'dayjs'
+import { isAutoIncrementField } from '@/utils/fieldIncrement'
 
 /** 新增行草稿预填值：default_value 优先，其次 date/datetime 的 auto_fill 规则，否则 undefined.
  *
- * text 字段启用自动编号（config.default_mode=auto_increment）时返回 undefined：
+ * 单行文本自动编号（config.default_mode=auto_increment）返回 undefined：
  * 编号由后端建行时按库内已有数据推算（客户端猜测与库内 max 可能不一致），不预填.
  *
  * 供 GridPage 行内新增 和 RowDetailDrawer 抽屉新建行共用 —— 两处必须保持相同的预填语义.
  */
 export function defaultValueForNewRow(f: Field): unknown {
-  if (f.field_type === 'text' && (f.config?.default_mode as string) === 'auto_increment') {
+  if (isAutoIncrementField(f)) {
     return undefined
   }
   if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {

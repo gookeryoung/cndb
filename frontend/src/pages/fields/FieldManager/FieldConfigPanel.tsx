@@ -13,7 +13,7 @@ import dayjs from 'dayjs'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import HelpTip from '@/components/HelpTip'
 import { ConfigEditor } from './typeConfigPanel'
-import { formatIncrementExample } from './FieldList'
+import { formatIncrementExample } from '@/utils/fieldIncrement'
 
 interface FieldConfigPanelProps {
   /** 当前选中的字段类型（决定默认值控件与类型专属配置区） */

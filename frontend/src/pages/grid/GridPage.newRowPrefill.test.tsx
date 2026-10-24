@@ -109,8 +109,11 @@ describe('GridPage 新增行预填（default_value / auto_fill）', () => {
         expect(within(newRow!).getByDisplayValue('待办')).toBeInTheDocument()
         // auto_fill=on_create 的 date 字段预填今天（DatePicker 输入框显示 YYYY-MM-DD）
         expect(within(newRow!).getByDisplayValue(dayjs().format('YYYY-MM-DD'))).toBeInTheDocument()
-        // 未配置默认的「姓名」与自动编号「编号」保持空白（编号由后端建行时生成，不预填）
+        // 未配置默认的「姓名」保持空白
         const blanks = within(newRow!).getAllByDisplayValue('')
-        expect(blanks.length).toBeGreaterThanOrEqual(2)
+        expect(blanks.length).toBeGreaterThanOrEqual(1)
+        // 自动编号不预填、也不渲染输入框，改为展示「保存时自动生成」提示
+        expect(within(newRow!).getByTestId('cell-auto-increment-4')).toHaveTextContent('保存时自动生成（如 PRJ-0001）')
+        expect(within(newRow!).queryByDisplayValue('PRJ-0001')).not.toBeInTheDocument()
     })
 })
