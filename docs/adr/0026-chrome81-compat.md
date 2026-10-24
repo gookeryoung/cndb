@@ -115,7 +115,7 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 | 浏览器声明 | `frontend/.browserslistrc` | 新增：`chrome >= 81`、`edge >= 81` |
 | 依赖 | `frontend/package.json` | 新增 `core-js`、`@ant-design/cssinjs`、`@formatjs/intl-segmenter`；devDependency 新增 `puppeteer-core`、`postcss-logical` |
 | 入口 | `frontend/src/main.tsx` | 渲染后调用 `initCompat()`；不常驻 polyfill |
-| 运行时 API | `frontend/src/compat/polyfills.ts` | `core-js/actual/array/at`、`core-js/actual/object/has-own`；由消费模块静态导入 |
+| 运行时 API | `frontend/src/compat/polyfills.ts` | `core-js/actual/array/at`、`core-js/actual/object/has-own`、`core-js/actual/string/replace-all`；由消费模块静态导入 |
 | 文档渲染 | `frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | 静态导入 polyfill，覆盖依赖链的 `Object.hasOwn` |
 | 能力探测 / 垫片 | `frontend/src/compat/flexGap.ts`、`frontend/src/compat/index.ts` | `isFlexGapSupported()`、flex-gap shim、`initCompat()` 唯一装载入口 |
 | 主题 | `frontend/src/theme/ThemeProvider.tsx` | `ConfigProvider` 外包裹 `StyleProvider`（`hashPriority="high"` + `legacyLogicalPropertiesTransformer`）；body class 与 mix 变量移到 `useLayoutEffect` |
@@ -135,7 +135,8 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 - **`color-mix` 双层声明**：保留原生声明为主，前一条写兜底变量；Chrome 81 丢弃第二条，现代浏览器用第二条，视觉不变。22 处静态 TSX 表达式再改写为 `var(--cn-mix-*)`；6 处动态表达式（`FlowView` / `MatrixView` / `ImportPanel` / `kanbanVisuals` 等）在渲染时调 `mixColor()` 解析 CSS 变量。
 - **flex-gap shim**：读取 `getComputedStyle` 的 `display` / `flexDirection` / `flexWrap` / `rowGap` / `columnGap`（Chrome 81 的 CSSOM 会返回声明值，即使布局不消费）。单行横向用 `> * + *` 补 `margin-left`，单列纵向补 `margin-top`，换行时子元素加 margin、容器加等量负 margin 抵消首尾空隙。`MutationObserver` + `requestIdleCallback` 分批处理新增节点，`WeakMap` 去重。该机制同时覆盖业务内联 `gap` 与 antd Space / Grid 的运行时 `rowGap` / `columnGap`，无需改造 333 处调用点。
 - **`:focus-visible`**：5 条规则改为 `:focus`；Chrome 81 上鼠标点击也会出现焦点样式，作为可接受降级，不引入额外 polyfill。
-- **polyfill 采用定向模块且按消费方加载**：不使用全量 `core-js/stable`，也不用 `plugin-legacy` 的 `modernPolyfills`（后者会把 Babel polyfill 链引入构建）。实测入口常驻 `structured-clone` 会让主入口超预算 10 KiB（连带 Map/Set internals），而它的唯一调用点已被 `typeof` 守卫，故移除；`at` / `has-own` 下沉到懒加载消费模块，入口回到预算内。`reportError` 同样已由 `typeof reportError === 'function'` 守卫，不补。
+- **polyfill 采用定向模块且按消费方加载**：不使用全量 `core-js/stable`，也不用 `plugin-legacy` 的 `modernPolyfills`（后者会把 Babel polyfill 链引入构建）。实测入口常驻 `structured-clone` 会让主入口超预算 10 KiB（连带 Map/Set internals），而它的唯一调用点已被 `typeof` 守卫，故移除；`at` / `has-own` / `replace-all` 下沉到懒加载消费模块，入口回到预算内。`reportError` 同样已由 `typeof reportError === 'function'` 守卫，不补。
+- **`replace-all` 是导出链的隐性依赖**：`@formatjs/intl-segmenter` 内部调用 `String.prototype.replaceAll`（Chrome 85+）。真机 Chromium 81 冒烟实测：只补 `Intl.Segmenter` 时 html2canvas 能完成渲染，但此后导出静默失败、无 toast —— 缺 `replaceAll` 时抛错发生在 jsPDF 生成阶段且被链路吞掉。故 `polyfills.ts` 必须包含 `core-js/actual/string/replace-all`。
 
 ### 7. 测试清单
 
@@ -144,7 +145,7 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 - `themeMix`：77 类表达式的计算结果；`transparent` 的预乘 alpha；RGB 三元组；`var(--x, fallback)` 与嵌套 `var()`；主题切换后变量重算。
 - `flexGap`：特性探测（含「grid gap 为真但 flex gap 为假」的用例）、`gap` / `rowGap` / `columnGap` 解析、行 / 列 / wrap 三类间距规则、已有 margin 叠加、grid 跳过、kill switch。
 - `ThemeProvider`：`StyleProvider` 包裹关系、body class 与 mix 变量在首帧前写入。
-- polyfill 边界：`polyfills.ts` 只含 `at` / `has-own`，不含 `structured-clone`；四个消费模块都必须静态导入它，入口 `main.tsx` 不得常驻导入。
+- polyfill 边界：`polyfills.ts` 只含 `at` / `has-own` / `replace-all`，不含 `structured-clone`；四个消费模块都必须静态导入它，入口 `main.tsx` 不得常驻导入。
 - 导出垫片：`ensureIntlSegmenter()` 在原生 `Intl.Segmenter` 存在时零加载，缺失时才加载 `@formatjs/intl-segmenter`。
 
 **构建层**：
@@ -216,17 +217,20 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 
 ## 交接（会话结束更新）
 
-- 当前阶段：全期落地（P0-P2），等待人工确认是否把 `Status` 改为 `Implemented`
+- 当前阶段：全期落地（P0-P2），并已在真机 Chromium 81 冒烟通过
 - 已完成：
   - P0：构建基线常量 / target / `.browserslistrc` / 定向 polyfill / `StyleProvider` 降级 / `:focus-visible` 替换 / 静态门禁并挂到 `pnpm build`
   - P1：`themeMix.ts` 77 项注册表 + `index.css` 94 处 `--cn-mix-*` 兜底 + 22 处静态 TSX 色改变量 + 动态色走 `mixColor()`；flex-gap 探测与 shim（汇总于 `initCompat()`）；静态门禁切 `--strict`
   - P2：`chrome81-smoke.mjs`（`puppeteer-core` + 固定 Chromium 81 r737027，覆盖登录 / 表 / 视图 / 文档 / PDF 导出 / 10 套主题截图）与每日定时 CI；导出路径 Intl.Segmenter 按需垫片；现代 Chromium 反向断言 e2e；README / CONTEXT 浏览器基线声明
-- 下一步：无代码项。首次真实 Chromium 81 冒烟依赖 `.github/workflows/chrome81-smoke.yml` 的定时或手动触发（本地可 `CNDB_CHROME81_PATH=… pnpm e2e:chrome81`）
+  - 真机验证（Windows + Chromium 81 r737027，本地 `CNDB_CHROME81_PATH`）：24 项全绿，含 6 种视图切换、PDF 导出产出 `%PDF-`（4.3 MB）、10 套主题 body class 与截图
+- 下一步：无代码项。定时 CI 首次运行由 `chrome81-smoke.yml` 自动触发（每日 02:00 UTC）
 - 已知坑：
-  - polyfill 不能回退成入口常驻：`structured-clone` 连带 Map/Set internals 会让主入口超预算 10 KiB；`at` / `has-own` 已下沉到懒加载消费模块（D3）。
-  - 主入口当前 +2.9%（180.77 KiB / 上限 184.45 KiB，容差内），增量含 target 降级 helper 与兼容层；`GridPage` +3.7% 同属慢涨，后续若超限仍按 D10 先拆 lazy。
+  - polyfill 不能回退成入口常驻：`structured-clone` 连带 Map/Set internals 会让主入口超预算 10 KiB；`at` / `has-own` / `replace-all` 已下沉到懒加载消费模块（D3）。
+  - 只补 `Intl.Segmenter` 不够：`@formatjs/intl-segmenter` 依赖 `String.prototype.replaceAll`（Chrome 85+），缺它时 PDF 导出在 html2canvas 渲染完成后静默失败（真机 Chromium 81 复现后定位，已补 `core-js/actual/string/replace-all`）。
+  - 主入口当前 +2.9%（180.77 KiB / 上限 184.45 kB，容差内），增量含 target 降级 helper 与兼容层；`GridPage` +3.7% 同属慢涨，后续若超限仍按 D10 先拆 lazy。
   - `hashPriority="high"` 提升了 antd 选择器特异性，P1 视觉核对时重点看 `index.css` 里对 `.ant-*` 的覆盖是否被反压。
-  - flex gap 是最大成本项；Chrome 81 支持 grid gap，不能用 `@supports (gap: 1px)` 判断；Playwright 对老内核兼容性未知，P2 使用 `puppeteer-core` + CDP；Chromium 81 下载需外网，放定时 CI（快照按 revision 缓存）。
+  - flex gap 是最大成本项；Chrome 81 支持 grid gap，不能用 `@supports (gap: 1px)` 判断；Playwright 老内核不兼容，故用 `puppeteer-core@3.0.4`（最后一代支持 Chromium 81）+ 固定 revision 快照。
   - 老内核冒烟的主题列表由 `check-browser-compat.mjs` 与 `src/theme/meta.ts` 对表，新增主题必须同步 `chrome81-smoke.mjs`，否则构建期报错。
-  - 本机下载 Chromium 81 快照走 Google 存储，研发网络可能卡在 TLS（实测本次未完成下载）；本地可复用已有安装 `CNDB_CHROME81_PATH=… pnpm e2e:chrome81`，否则以定时 CI 结果为准。
-- 最近一次全绿：`make flow`（check-fast + 后端 5315 passed / 8 skipped）、前端 `pnpm test`（181 files / 2187 tests）、`make frontend-coverage`（核心集合 lines 97.69% / branches 100%，全局 82.80%）、`pnpm build`（含 `check-browser-compat --strict`）、`pnpm bundle:budget`（全部关键 chunk 在预算内）、`pnpm e2e --project=chromium-authed tests/e2e/critical/browser-compat.spec.ts` @ 2026-10-24
+  - Chromium 81 的传统 `--headless` 不落盘下载，冒烟改为拦 `URL.createObjectURL` 读 PDF Blob；antd Tabs / Select 在该内核上只认 `element.click()` + `mousedown/mouseup` 三连，真实鼠标点击会因命中测试落空。
+  - 快照从 Google 存储下载在国内网络可能极慢，可用 `https://cdn.npmmirror.com/binaries/chromium-browser-snapshots/...` 镜像（内容一致）。
+- 最近一次全绿：`make flow`（check-fast + 后端 5315 passed / 8 skipped）、前端 `pnpm test`、`make frontend-coverage`、`pnpm build`（含 `check-browser-compat --strict`）、`pnpm bundle:budget`、`pnpm e2e --project=chromium-authed tests/e2e/critical/browser-compat.spec.ts`、真机 Chromium 81 冒烟 24/24 @ 2026-10-24

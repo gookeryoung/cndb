@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global document, window, MouseEvent, getComputedStyle, fetch, setTimeout */
+/* global document, window, navigator, MouseEvent, getComputedStyle, fetch, setTimeout, URL */
 /**
  * chrome81-smoke.mjs — 真实 Chromium 81 冒烟（ADR 0026 C1 / C5 / D9）.
  *
@@ -54,6 +54,9 @@ const failures = []
 const notes = []
 const pageErrors = []
 const consoleErrors = []
+let activePage = null
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const check = (name, ok, detail = '') => {
   if (ok) {
@@ -66,7 +69,33 @@ const check = (name, ok, detail = '') => {
   return false
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+/** 失败现场快照：URL、可见文本、页面异常，避免只看到一句 timeout */
+async function dumpDiagnostics() {
+  if (!activePage) return
+  mkdirSync(shotDir, { recursive: true })
+  const shot = path.join(shotDir, 'failure.png')
+  try {
+    await activePage.screenshot({ path: shot })
+  } catch {
+    /* 页面已崩溃时截图会失败，忽略 */
+  }
+  let url = ''
+  let text = ''
+  let ua = ''
+  try {
+    url = activePage.url()
+    ua = await activePage.evaluate(() => navigator.userAgent)
+    text = await activePage.evaluate(() => document.body?.innerText?.slice(0, 800) ?? '')
+  } catch {
+    /* 上下文已丢失 */
+  }
+  console.error(`[chrome81] 失败页面: ${url}`)
+  console.error(`[chrome81] UA: ${ua}`)
+  console.error(`[chrome81] 可见文本: ${text.replace(/\n/g, ' ⏎ ').slice(0, 800)}`)
+  console.error(`[chrome81] pageerror: ${pageErrors.join(' | ') || '无'}`)
+  console.error(`[chrome81] console.error: ${consoleErrors.slice(0, 5).join(' | ') || '无'}`)
+  console.error(`[chrome81] 截图: ${shot}`)
+}
 
 async function fetchJson(pathname, init) {
   const resp = await fetch(`${baseUrl}${pathname}`, init)
@@ -139,6 +168,7 @@ async function main() {
 
   try {
     const page = await browser.newPage()
+    activePage = page
     page.on('pageerror', (err) => pageErrors.push(err.message))
     page.on('console', (msg) => {
       if (msg.type() === 'error') consoleErrors.push(msg.text())
@@ -242,27 +272,28 @@ async function main() {
     await page.waitForFunction(() => Boolean(document.querySelector('[data-row-key], .ant-table-tbody')), {
       timeout: 30_000,
     })
-    const client = await page.createCDPSession()
+    // puppeteer-core 3.x（兼容 Chromium 81 的最后一代）只有 target().createCDPSession()
+    const client = await page.target().createCDPSession()
     await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloadDir })
+    // 等待表头与导出入口同时就绪，避免弹窗在表格渲染前被打开
     await page.waitForSelector('[data-testid="import-export-btn"]', { timeout: 20_000 })
     await page.click('[data-testid="import-export-btn"]')
     await page.waitForFunction(
       () => Array.from(document.querySelectorAll('.ant-modal-title')).some((el) => el.textContent?.includes('更新 / 导出')),
       { timeout: 20_000 },
     )
+    // antd Tabs / Select 在 Chrome 81 上只吃原生 click 事件链：真实鼠标点击会因
+    // 顶部 Tab 的命中测试落空，故统一走 element.click() + mousedown/mouseup 三连。
     await page.evaluate(() => {
-      const tab = Array.from(document.querySelectorAll('.ant-tabs-tab'))
-        .find((el) => (el.textContent || '').trim() === '导出')
-      if (!tab) throw new Error('未找到导出 Tab')
-      tab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      const tabs = document.querySelectorAll('.ant-modal .ant-tabs-tab-btn')
+      if (tabs.length < 2) throw new Error('未找到导出 Tab')
+      tabs[1].click()
     })
-    await sleep(300)
+    await page.waitForSelector('.ant-modal .ant-tabs-tabpane-active .ant-select-selector', { timeout: 15_000 })
     await page.evaluate(() => {
-      // Tabs 不会卸载非激活面板，选择器必须限定在激活的 tabpane 内
-      const active = document.querySelector('.ant-modal .ant-tabs-tabpane-active')
-      const selector = active?.querySelector('.ant-select-selector')
-      if (!selector) throw new Error('未找到导出格式选择器')
+      const selector = document.querySelector('.ant-modal .ant-tabs-tabpane-active .ant-select-selector')
       selector.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+      selector.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
       selector.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await page.waitForFunction(
@@ -271,25 +302,65 @@ async function main() {
     )
     await page.evaluate(() => {
       const option = Array.from(document.querySelectorAll('.ant-select-item-option'))
-        .find((el) => el.textContent?.includes('PDF'))
-      option?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        .find((el) => (el.textContent || '').includes('PDF'))
+      option.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+      option.click()
     })
-    await sleep(300)
+    await page.waitForFunction(
+      () => (document.querySelector('.ant-modal .ant-tabs-tabpane-active .ant-select-selection-item')?.textContent ?? '')
+        .includes('PDF'),
+      { timeout: 10_000 },
+    )
+    // 传统 headless（Chromium 81 只有 --headless）不支持下载落盘，故在页面内
+    // 拦 URL.createObjectURL 的 PDF Blob 回读字节，用产物 magic 判真伪。
+    await page.evaluate(() => {
+      window.__cndbDownloads = []
+      const originalCreate = URL.createObjectURL
+      URL.createObjectURL = function patchedCreate(blob) {
+        if (blob && String(blob.type).includes('pdf')) {
+          blob.arrayBuffer()
+            .then((buf) => {
+              const head = new Uint8Array(buf.slice(0, 5))
+              window.__cndbDownloads.push({
+                size: buf.byteLength,
+                magic: String.fromCharCode.apply(null, head),
+              })
+            })
+            .catch((err) => window.__cndbDownloads.push({ size: 0, magic: '', error: String(err) }))
+        }
+        return originalCreate.call(URL, blob)
+      }
+    })
     await page.evaluate(() => {
       const active = document.querySelector('.ant-modal .ant-tabs-tabpane-active')
-      const buttons = Array.from(active?.querySelectorAll('button') ?? [])
-      const download = buttons.find((el) => (el.textContent || '').trim() === '下载')
-      if (!download) throw new Error('未找到下载按钮')
-      download.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      const button = Array.from(active?.querySelectorAll('button') ?? [])
+        .find((el) => (el.textContent || '').trim() === '下载')
+      if (!button) throw new Error('未找到下载按钮')
+      button.click()
     })
-
     let pdfFile = null
-    for (let i = 0; i < 60; i += 1) {
+    let exported = null
+    for (let i = 0; i < 90; i += 1) {
+      const downloads = await page.evaluate(() => window.__cndbDownloads ?? [])
+      if (downloads.length) {
+        exported = downloads[0]
+        break
+      }
       pdfFile = readdirSync(downloadDir).find((name) => name.toLowerCase().endsWith('.pdf')) ?? null
       if (pdfFile) break
       await sleep(1000)
     }
-    check('PDF 导出落盘', Boolean(pdfFile), pdfFile || '60s 内未生成 PDF（Intl.Segmenter / html2canvas 失败）')
+    const toast = await page.evaluate(
+      () => Array.from(document.querySelectorAll('.ant-message-notice-content'))
+        .map((el) => el.textContent || '').join(' | '),
+    )
+    check(
+      'PDF 导出产出',
+      Boolean(exported?.magic.startsWith('%PDF') || pdfFile),
+      exported
+        ? `拦截到 blob ${exported.size}B，magic=${exported.magic || '空'}${exported.error ? ` err=${exported.error}` : ''}`
+        : pdfFile || `未产出（toast: ${toast || '无'}）`,
+    )
 
     // ── 6. 10 套主题截图（C3）────────────────────────────────────
     for (const theme of THEME_MODES) {
@@ -320,6 +391,7 @@ try {
   await main()
 } catch (err) {
   console.error(`[chrome81] 冒烟失败：${err instanceof Error ? err.message : String(err)}`)
+  await dumpDiagnostics()
   process.exitCode = 1
 }
 
