@@ -185,6 +185,32 @@ class TestResolvePublicShare:
         assert r.status_code == 409
 
 
+class TestShareManagementScope:
+    def test_cannot_revoke_share_of_another_workspace(self, client, db, ws, auth):
+        """路径里的 doc_id 必须属于路径工作区：持有 A 区编辑权限不得撤销 B 区分享."""
+        outsider = _make_user(db, "guest_outsider")
+        outsider_auth = _login(client, outsider.username)
+        other_ws = Workspace(name="OtherWS", created_by_id=outsider.id)
+        db.add(other_ws)
+        db.flush()
+        db.add(WorkspaceMember(workspace_id=other_ws.id, user_id=outsider.id, role=WorkspaceRole.OWNER))
+        db.commit()
+        db.refresh(other_ws)
+
+        doc = _create_doc(client, other_ws, outsider_auth)
+        share = client.post(f"{DOCS.format(ws=other_ws.id)}/{doc['id']}/share", json={}, headers=outsider_auth)
+        assert share.status_code == 201, share.text
+        share_id = share.json()["id"]
+
+        # 当前用户只在 ws 里有权限，却用 ws 的路径指向 other_ws 的文档
+        r = client.delete(f"{DOCS.format(ws=ws.id)}/{doc['id']}/share/{share_id}", headers=auth)
+        assert r.status_code == 404
+        db.expire_all()
+        row = db.get(DocumentShare, share_id)
+        assert row is not None and row.is_active is True
+        assert client.get(f"{SHARE_API}/{share.json()['token']}").status_code == 200
+
+
 class TestPasswordShare:
     def test_password_flow_and_masked_hash(self, client, db, ws, auth):
         doc = _create_doc(client, ws, auth, content="secret-password-body")

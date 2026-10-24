@@ -21,7 +21,7 @@ from cndb.core.database import get_db
 from cndb.core.errors import ConflictError, NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
-from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, DocumentShare
+from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document, DocumentShare
 from cndb.plugins.documents.schemas import ShareCreate
 
 share_router = APIRouter(prefix="/{workspace_id}/documents", tags=["documents"])
@@ -93,6 +93,13 @@ def revoke_share(
 ) -> dict[str, Any]:
     """撤销分享链接（editor+）。"""
     services.content.require_editor(db, workspace_id, current_user)
+    # doc_id 来自路径而非分享记录：先确认文档属于该工作区，避免持有任一工作区
+    # 编辑权限的人按 id 撤销其它工作区的分享链接（跨租户越权写）。
+    doc = db.execute(
+        select(Document).where(Document.id == doc_id, Document.workspace_id == workspace_id)
+    ).scalar_one_or_none()
+    if doc is None:
+        raise NotFoundError("文档不存在")
     share = db.get(DocumentShare, share_id)
     if share is None or share.document_id != doc_id:
         raise NotFoundError("分享不存在")
