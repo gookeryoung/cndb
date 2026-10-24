@@ -24,8 +24,8 @@ sz000001,平安银行,2026-07-01,11.97,12.09,11.56,11.6,85098000
 """
 
 STOCK_JOB = {
-    "name": "股市日线同步（腾讯前复权）",
-    "provider": "tencent_kline",
+    "name": "股市日线同步（通用 HTTP）",
+    "provider": "http_json",
     "table": "股市日线",
     "request_spec": {"url_template": "https://example/param={symbol},day,{start},{end},320,qfq"},
     "entrant_param": "symbol",
@@ -90,7 +90,7 @@ def test_seed_datasource_injects_multi_entrant_job(stocked_seed, db):
     job = db.query(DatasourceSyncJob).filter(DatasourceSyncJob.name == STOCK_JOB["name"]).one()
     target = tables_map["数据源示例"]["股市日线"]
     assert job.table_id == target.id
-    assert job.provider == "tencent_kline"
+    assert job.provider == "http_json"
     assert job.entrant_param == "symbol"
     assert job.entrant_keys == ["sh600519", "sz000001", "sz300750"]
     assert job.match_keys == ["股票代码", "交易日"]
@@ -169,15 +169,13 @@ def test_validate_job_fields_accepts_drop_and_detects_missing():
 
 
 def test_real_datasource_json_is_valid():
-    """真实 examples 配置：股票两源一源一表 + 两条大模型动态拉取任务，引用自洽."""
+    """真实 examples 配置：只保留通用适配器（http_json / llm_prompt），引用自洽."""
     base = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例"
     cfg = json.loads((base / "datasource.json").read_text(encoding="utf-8-sig"))
     jobs = cfg["jobs"]
-    assert len(jobs) == 4
-    stock_jobs = [job for job in jobs if job["provider"] in ("tencent_kline", "sina_kline")]
-    llm_jobs = [job for job in jobs if job["provider"] == "llm_prompt"]
-    assert [j["provider"] for j in stock_jobs] == ["tencent_kline", "sina_kline"]
-    assert [j["table"] for j in llm_jobs] == ["美食推荐做法", "国际形势发展动态"]
+    assert len(jobs) == 2
+    assert {job["provider"] for job in jobs} == {"llm_prompt"}
+    assert [job["table"] for job in jobs] == ["美食推荐做法", "国际形势发展动态"]
 
     # 所有任务：目标表的示例数据文件必须存在，映射目标列与幂等键必须真实存在于 CSV 表头
     for job in jobs:
@@ -187,22 +185,8 @@ def test_real_datasource_json_is_valid():
         assert targets <= set(header), f"{job['name']} 映射到不存在的列 {targets - set(header)}"
         assert set(job["match_keys"]) <= set(header), f"{job['name']} 幂等键不在表内"
 
-    # 一源一表：表名与 CSV 文件名一致（seed 按 CSV 文件建表）
-    expected = {
-        "tencent_kline": "股市日线",
-        "sina_kline": "股市日线-新浪",
-    }
-    for job in stock_jobs:
-        assert job["table"] == expected[job["provider"]]
-        assert job["match_keys"] == ["股票代码", "交易日"]
-        assert job["entrant_param"] == "symbol"
-        # 10 只标的，前缀与 CSV 表内取值口径一致（sh/sz）
-        assert len(job["entrant_keys"]) == 10
-        assert len(set(job["entrant_keys"])) == 10
-        assert all(k[:2] in ("sh", "sz") for k in job["entrant_keys"])
-
     # 大模型动态拉取：中文字段 + 中文幂等键，只配提示词与模型参数，手动触发
-    for job in llm_jobs:
+    for job in jobs:
         request_spec = job["request_spec"]
         assert request_spec["prompt"]["user_template"].strip()
         assert "{today}" in request_spec["prompt"]["user_template"]
@@ -214,22 +198,3 @@ def test_real_datasource_json_is_valid():
         assert job["entrant_keys"] == []
         # 字段映射与幂等键全中文（与表内字段、视图一致）
         assert all(re.search(r"[\u4e00-\u9fa5]", name) for name in job["match_keys"])
-
-    by_provider = {job["provider"]: job for job in stock_jobs}
-
-    # 腾讯（主表，前复权）：单次约 320 根 → chunk_days 必须 >= 320，否则相邻窗口重复抓取
-    tencent = by_provider["tencent_kline"]
-    assert tencent["request_spec"]["time_window"]["chunk_days"] >= 320
-    assert "320,qfq" in tencent["request_spec"]["url_template"]
-    assert "成交额" not in {t["name"] for t in tencent["field_mapping"].values() if t}
-    assert tencent["cursor"]["backfill_start"] == "2021-10-18"
-
-    # 新浪：仅最近 1023 根，无时间窗口 / 无游标
-    sina = by_provider["sina_kline"]
-    assert "datalen=1023" in sina["request_spec"]["url_template"]
-    assert "time_window" not in sina["request_spec"]
-    assert sina["cursor"] == {"strategy": "none"}
-
-    # 两源调度错峰，避免同一时刻撞同一出口 IP 的限流
-    schedules = [job["schedule"]["at"] for job in stock_jobs]
-    assert len(set(schedules)) == len(schedules), f"任务必须错峰调度，实际 {schedules}"

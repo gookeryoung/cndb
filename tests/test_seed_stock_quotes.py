@@ -361,7 +361,7 @@ class TestSeedTable:
         assert views[0].is_default is True
 
     def test_selected_field_defaults_to_false_for_discovered_rows(self, db: Session, db_engine, tmp_path: Path):
-        """全市场发现（eastmoney_symbols）只写代码/名称/市场时，新行的「是否自选」由默认值落 false."""
+        """标的发现类同步任务只写代码/名称/市场时，新行的「是否自选」由默认值落 false."""
         from cndb.plugins.tables.services.core.records import bulk_create
 
         datasets_dir = _make_datasets_dir(

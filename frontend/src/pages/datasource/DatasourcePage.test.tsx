@@ -21,13 +21,6 @@ const PROVIDERS = [
     supports_paging: true,
   },
   {
-    name: 'rss_atom',
-    label: 'RSS / Atom 订阅',
-    params_schema: { fields: [], placeholders: [] },
-    default_cursor: 'datetime',
-    supports_paging: false,
-  },
-  {
     name: 'llm_prompt',
     label: '大模型提示词',
     params_schema: {
@@ -160,11 +153,11 @@ function setupHandlers(
       HttpResponse.json({
         templates: [
           {
-            id: 'kline_trend',
+            id: 'weather_daily',
             provider: 'http_json',
-            name: '股票日线趋势',
-            description: '收盘价 + 均线',
-            reason: '时序首选',
+            name: '天气日趋势',
+            description: '气温 + 温差',
+            reason: '气温类时序首选',
             formulas: [
               {
                 key: 'ma5',
@@ -430,7 +423,7 @@ describe('DatasourcePage · 凭证会话与领域模板', () => {
     const calls = setupHandlers([makeJob()])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '套用分析模板 北京天气日报' }))
-    fireEvent.click(await screen.findByText('股票日线趋势'))
+    fireEvent.click(await screen.findByText('天气日趋势'))
     await waitFor(() => expect(calls).toContain('create-template'))
     expect(await screen.findByText(/已创建分析模板/)).toBeInTheDocument()
   })
@@ -441,7 +434,7 @@ describe('DatasourcePage · 凭证会话与领域模板', () => {
     ])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '套用分析模板 北京天气日报' }))
-    fireEvent.click(await screen.findByText('股票日线趋势'))
+    fireEvent.click(await screen.findByText('天气日趋势'))
     await waitFor(() => expect(calls).toContain('create-template'))
 
     const config = templateBodies[0].config as {
@@ -460,7 +453,7 @@ describe('DatasourcePage · 凭证会话与领域模板', () => {
     setupHandlers([makeJob()], { createTemplateError: '公式 ma5 引用了不存在的字段: close' })
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '套用分析模板 北京天气日报' }))
-    fireEvent.click(await screen.findByText('股票日线趋势'))
+    fireEvent.click(await screen.findByText('天气日趋势'))
     expect(await screen.findByText(/套用失败：公式 ma5 引用了不存在的字段: close/)).toBeInTheDocument()
   })
 })
@@ -514,7 +507,7 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(await screen.findByTestId('datasource-llm-system')).toHaveValue('你是数据抽取助手')
   })
 
-  it('推荐提示词（8 组）默认收起，展开后显示详情并可一键填入', async () => {
+  it('推荐提示词默认收起，展开后显示详情并可一键填入', async () => {
     setupHandlers([makeLlmJob()])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))

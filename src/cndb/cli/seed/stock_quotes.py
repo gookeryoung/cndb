@@ -11,7 +11,7 @@
 - 手动建表（而不是 ``create_table_from_json_data``），确保 K 线列是 ``json`` 类型；
   自动推断会把 list 值提升成 multiselect，导致物理列无法存 JSON 数组。
 - seed 全量重建，函数内仍做同名表存在性检查，便于单测重复调用。
-- 后复权 / 不复权列留空，由 ``eastmoney_kline`` 同步任务按 job 分列填充（部分列 upsert）。
+- 后复权 / 不复权列留空，由通用 ``http_json`` 同步任务按字段映射分列填充（部分列 upsert）。
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ _DEFAULT_FOLDER = "工作区-数据源示例"
 _CSV_NAME = "股市日线.csv"
 _META_NAME = "自选股.json"
 
-# 字段级默认值：全市场标的发现（eastmoney_symbols）只提供代码/名称/市场，
+# 字段级默认值：标的发现类同步任务（通用 http_json 适配器）只提供代码/名称/市场，
 # 新行的「是否自选」由默认值落 false；已存在的行在部分列 upsert 下保持原值，
 # 不会被重新发现时把用户手动勾选的 true 覆盖掉。
 _FIELD_DEFAULTS: dict[str, Any] = {"是否自选": False}
