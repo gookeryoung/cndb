@@ -163,6 +163,75 @@ class TestNextIncrementValue:
         rec.trash_row(db_engine, dt, row["id"])
         assert TextFieldType().next_increment_value(db_engine, dt, df) == "PRJ-0043"
 
+    def test_whitespace_padded_values_counted(self, db, db_engine, ws):
+        """历史 / 导入值带首尾空白也要计入 max，避免从头开始编号。"""
+        dt, df = _make_table_with_increment(
+            db, db_engine, ws, "AIWhitespace", {"default_mode": "auto_increment", "increment_prefix": "PRJ-"}
+        )
+        rec.create_row(db_engine, dt, {"编号": " PRJ-0041 "})
+        assert TextFieldType().next_increment_value(db_engine, dt, df) == "PRJ-0042"
+
+
+# ── 自动编号预览（新增行只读展示） ─────────────────────
+
+
+class TestPreviewAutoIncrementValues:
+    def test_empty_table_returns_start(self, db, db_engine, ws):
+        """空表预览返回起始编号。"""
+        dt, _df = _make_table_with_increment(
+            db, db_engine, ws, "AIPreviewEmpty", {"default_mode": "auto_increment", "increment_prefix": "PRJ-"}
+        )
+        assert rec.preview_auto_increment_values(db_engine, dt) == {"编号": "PRJ-0001"}
+
+    def test_uses_existing_max(self, db, db_engine, ws):
+        """已有数据时按库内 max + 1 往后排。"""
+        dt, _df = _make_table_with_increment(
+            db, db_engine, ws, "AIPreviewMax", {"default_mode": "auto_increment", "increment_prefix": "PRJ-"}
+        )
+        rec.create_row(db_engine, dt, {})
+        rec.create_row(db_engine, dt, {})
+        assert rec.preview_auto_increment_values(db_engine, dt) == {"编号": "PRJ-0003"}
+
+    def test_soft_deleted_row_counted(self, db, db_engine, ws):
+        """软删行仍占用编号，预览跳过它往后排。"""
+        dt, _df = _make_table_with_increment(
+            db, db_engine, ws, "AIPreviewSoftDel", {"default_mode": "auto_increment", "increment_prefix": "PRJ-"}
+        )
+        row = rec.create_row(db_engine, dt, {"编号": "PRJ-0009"})
+        rec.trash_row(db_engine, dt, row["id"])
+        assert rec.preview_auto_increment_values(db_engine, dt) == {"编号": "PRJ-0010"}
+
+    def test_skips_non_increment_and_trashed_fields(self, db, db_engine, ws):
+        """未启用自动编号的字段与已删除字段不出现在预览结果里。"""
+        dt, _df = _make_table_with_increment(
+            db, db_engine, ws, "AIPreviewSkip", {"default_mode": "auto_increment", "increment_prefix": "PRJ-"}
+        )
+        plain = DataField(table_id=dt.id, name="备注", field_type="text", order=1)
+        plain.ensure_db_name()
+        removed = DataField(
+            table_id=dt.id,
+            name="旧编号",
+            field_type="text",
+            order=2,
+            trashed=True,
+            config={"default_mode": "auto_increment", "increment_prefix": "OLD-"},
+        )
+        removed.ensure_db_name()
+        db.add_all([plain, removed])
+        db.commit()
+        db.refresh(dt)
+
+        assert rec.preview_auto_increment_values(db_engine, dt) == {"编号": "PRJ-0001"}
+
+    def test_preview_matches_created_value(self, db, db_engine, ws):
+        """预览值与随后建行实际生成值一致。"""
+        dt, _df = _make_table_with_increment(
+            db, db_engine, ws, "AIPreviewMatch", {"default_mode": "auto_increment", "increment_prefix": "PRJ-"}
+        )
+        rec.create_row(db_engine, dt, {})
+        previewed = rec.preview_auto_increment_values(db_engine, dt)["编号"]
+        assert rec.create_row(db_engine, dt, {})["编号"] == previewed
+
 
 # ── 建行路径自动填充 ──────────────────────────────────
 
@@ -319,3 +388,68 @@ class TestAutoIncrementApiRoundtrip:
             json={"name": "编号", "field_type": "text", "order": 0, "config": {"default_mode": "nonsense"}},
         )
         assert r.status_code == 400
+
+
+# ── 自动编号预览接口 ─────────────────────────────────
+
+
+class TestAutoIncrementPreviewApi:
+    @staticmethod
+    def _make_table(client, auth_headers, name: str) -> tuple[int, int]:
+        ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": f"ws_{name}"})
+        wid = ws.json()["id"]
+        t = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": name})
+        tid = t.json()["id"]
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+            headers=auth_headers,
+            json={
+                "name": "编号",
+                "field_type": "text",
+                "order": 0,
+                "config": {"default_mode": "auto_increment", "increment_prefix": "PRJ-"},
+            },
+        )
+        assert r.status_code == 201, r.text
+        return wid, tid
+
+    def test_empty_table_preview(self, client, auth_headers):
+        """空表预览返回起始编号。"""
+        wid, tid = self._make_table(client, auth_headers, "t_ai_preview_empty")
+        r = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/records/auto-increment-preview", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert r.json() == {"values": {"编号": "PRJ-0001"}}
+
+    def test_preview_follows_existing_rows(self, client, auth_headers):
+        """已有两行时预览为第三号；同时验证路由未被 /{record_id} 吞掉（否则 422）。"""
+        wid, tid = self._make_table(client, auth_headers, "t_ai_preview_rows")
+        for _ in range(2):
+            created = client.post(
+                f"/api/v1/workspaces/{wid}/tables/{tid}/records", headers=auth_headers, json={"values": {}}
+            )
+            assert created.status_code == 201, created.text
+
+        r = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/records/auto-increment-preview", headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["values"]["编号"] == "PRJ-0003"
+
+    def test_missing_table_returns_404(self, client, auth_headers):
+        """表不存在 → 404。"""
+        wid, _tid = self._make_table(client, auth_headers, "t_ai_preview_404")
+        r = client.get(f"/api/v1/workspaces/{wid}/tables/999999/records/auto-increment-preview", headers=auth_headers)
+        assert r.status_code == 404
+
+    def test_non_member_forbidden(self, client, auth_headers):
+        """非工作区成员 → 403。"""
+        wid, tid = self._make_table(client, auth_headers, "t_ai_preview_403")
+        reg = client.post(
+            "/api/v1/accounts/auth/register",
+            json={"username": "outsider_ai", "email": "outsider_ai@example.com", "password": "passw0rd"},
+        )
+        assert reg.status_code in (200, 201), reg.text
+        login = client.post("/api/v1/accounts/auth/login", json={"login": "outsider_ai", "password": "passw0rd"})
+        assert login.status_code == 200, login.text
+        other_headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+        r = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/records/auto-increment-preview", headers=other_headers)
+        assert r.status_code == 403

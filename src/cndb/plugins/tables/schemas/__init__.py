@@ -11,6 +11,7 @@ from cndb.plugins.tables.schemas.governance import (
     MergeRequest,
 )
 from cndb.plugins.tables.schemas.models import (
+    AutoIncrementPreviewResponse,
     BulkDeleteRequest,
     FieldCreate,
     FieldDetectOptionsRequest,
@@ -55,6 +56,7 @@ from cndb.plugins.tables.schemas.models import (
 )
 
 __all__ = [
+    "AutoIncrementPreviewResponse",
     "BulkDeleteRequest",
     "CleanAction",
     "CleanRequest",

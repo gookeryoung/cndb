@@ -21,6 +21,7 @@ from cndb.plugins.change_requests.models import (
 )
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.schemas import (
+    AutoIncrementPreviewResponse,
     RecordCreate,
     RecordListRequest,
     RecordListResponse,
@@ -33,6 +34,7 @@ from cndb.plugins.tables.services.core.records import (
     delete_row,
     get_row,
     list_rows,
+    preview_auto_increment_values,
     restore_row,
     trash_row,
     update_row,
@@ -249,6 +251,23 @@ def list_records(
     )
     list_cache.set(ck, result, RECORD_LIST_TTL_SECONDS)
     return result
+
+
+@router.get("/auto-increment-preview", response_model=AutoIncrementPreviewResponse)
+def auto_increment_preview(
+    workspace_id: int,
+    table_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> AutoIncrementPreviewResponse:
+    """预览本表所有自动编号字段的下一个值（新增行只读展示；不落库）.
+
+    必须注册在 ``/{record_id}`` 之前 —— 否则会被按 int 解析成 422。
+    与建行路径共用 ``next_increment_value``：按库内已有数据（含软删行）取
+    max + 1，并受 ``increment_start`` 下限约束，展示值与保存后生成值同口径。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    return AutoIncrementPreviewResponse(values=preview_auto_increment_values(db.get_bind(), dt))
 
 
 @router.get("/{record_id}")

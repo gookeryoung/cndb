@@ -1,7 +1,7 @@
 /** 行记录 API — /api/v1/workspaces/{wid}/tables/{tid}/records/*（含批量操作） */
 
 import api from './client'
-import type { RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams, ChangeRequestBatchResponse } from './types'
+import type { RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams, ChangeRequestBatchResponse, AutoIncrementPreview } from './types'
 
 export const recordApi = {
   list: (wid: number | string, tid: number | string, params?: RecordListParams) => {
@@ -17,6 +17,9 @@ export const recordApi = {
     api.post<RowResponse | ChangeRequestBatchResponse>(`/v1/workspaces/${wid}/tables/${tid}/records`, data).then(r => r.data),
   get: (wid: number | string, tid: number | string, rid: number | string) =>
     api.get<RowResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}`).then(r => r.data),
+  /** 自动编号预览：新增行只读展示「即将生成的编号」，按库内已有数据 max+1 推算 */
+  nextIncrementPreview: (wid: number | string, tid: number | string) =>
+    api.get<AutoIncrementPreview>(`/v1/workspaces/${wid}/tables/${tid}/records/auto-increment-preview`).then(r => r.data),
   /** 更新行：直编直存（200 RowResponse）；查看者/关闭直编时提交 update 修改申请（202 ChangeRequestDispatchResponse） */
   update: (wid: number | string, tid: number | string, rid: number | string, data: RowUpdate): Promise<RowResponse | ChangeRequestBatchResponse> =>
     api.patch<RowResponse | ChangeRequestBatchResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}`, data).then(r => r.data),

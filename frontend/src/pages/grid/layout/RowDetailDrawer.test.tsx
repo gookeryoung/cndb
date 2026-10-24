@@ -232,8 +232,10 @@ describe('RowDetailDrawer 新建行模式', () => {
         expect(onClose).not.toHaveBeenCalled()
     })
 
-    it('自动编号字段在新建模式只读展示生成提示，不要求用户填写', async () => {
+    it('自动编号字段在新建模式只读展示即将生成的编号，不要求用户填写', async () => {
         setup()
+        server.use(http.get('/api/v1/workspaces/10/tables/20/records/auto-increment-preview', () =>
+            HttpResponse.json({ values: { 编号: 'PRJ-0008' } })))
         const captured: Array<{ values: Record<string, unknown> }> = []
         server.use(http.post('/api/v1/workspaces/10/tables/20/records', async ({ request }) => {
             captured.push(await request.clone().json() as { values: Record<string, unknown> })
@@ -258,7 +260,9 @@ describe('RowDetailDrawer 新建行模式', () => {
 
         const input = screen.getByTestId('drawer-auto-increment-7')
         expect(input).toBeDisabled()
-        expect(input).toHaveAttribute('placeholder', '保存时自动生成（如 PRJ-0001）')
+        // 预览值由后端按库内已有数据推算（max+1），只展示编号数值，不带解释文案
+        await waitFor(() => expect(input).toHaveValue('PRJ-0008'))
+        expect(input).not.toHaveAttribute('placeholder', '保存时自动生成（如 PRJ-0001）')
 
         // 提交体不带该字段 —— 传空值会让后端跳过编号生成
         fireEvent.click(screen.getByRole('button', { name: /创\s*建$/ }))
