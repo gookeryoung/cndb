@@ -4278,6 +4278,86 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   margin-inline: var(--cn-space-xs);
 }
 
+/* 空间分配：顶部说明条（配额 / 合计 / 新鲜度 + 立即刷新） */
+.cn-storage-head {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.cn-storage-head-text {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  min-width: 0;
+}
+
+.cn-storage-head-sub {
+  color: var(--cn-text-muted);
+}
+
+.cn-storage-refresh {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* 空间分配：按拥有者分组的折叠组头（拥有者 / 工作区数 / 合计已用 / 合计使用率） */
+.cn-owner-groups .ant-collapse-item {
+  border-bottom: 1px solid var(--cn-border-soft);
+}
+
+.cn-owner-groups .ant-collapse-item:last-child {
+  border-bottom: none;
+}
+
+.cn-owner-groups .ant-collapse-header {
+  align-items: center !important;
+  padding: var(--cn-space-sm) 0 !important;
+}
+
+.cn-owner-groups .ant-collapse-content-box {
+  padding: 0 0 var(--cn-space-lg) !important;
+}
+
+.cn-owner-group-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-md);
+  row-gap: var(--cn-space-xs);
+  width: 100%;
+  min-width: 0;
+}
+
+.cn-owner-group-icon {
+  color: var(--cn-text-muted);
+}
+
+.cn-owner-group-name,
+.cn-owner-group-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.cn-owner-group-meta {
+  font-size: var(--cn-text-xs);
+}
+
+.cn-owner-group-usage {
+  flex: 0 0 140px;
+  max-width: 140px;
+  margin-left: auto;
+}
+
+/* 窄屏：合计使用率换行占满，避免与拥有者名 / 合计体积挤在一行 */
+@media (max-width: 767.98px) {
+  .cn-owner-group-usage {
+    flex: 1 1 100%;
+    max-width: none;
+    margin-left: 0;
+  }
+}
+
 /* 备份包表清单：系统表 / 用户表分组，标签换行排列 */
 .cn-manifest-tables {
   margin-top: var(--cn-space-lg);

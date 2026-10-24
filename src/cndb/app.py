@@ -70,7 +70,24 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     except Exception:
         logger.warning("启动时回收导入任务失败（忽略）", exc_info=True)
 
+    # 工作区存储用量快照的后台刷新线程（ADR 0024）：管理台「空间分配」等入口
+    # 只读快照，用量改由后台按周期重算，避免请求内逐表逐行统计把页面拖住。
+    try:
+        from cndb.core.storage_refresh import start_storage_refresher
+
+        start_storage_refresher()
+    except Exception:
+        logger.warning("启动存储用量快照刷新线程失败（管理台将退化为懒计算）", exc_info=True)
+
     yield
+
+    # 关闭阶段：先停后台刷新线程，再回收导入任务（两者都可能有未完成的事务）。
+    try:
+        from cndb.core.storage_refresh import stop_storage_refresher
+
+        stop_storage_refresher()
+    except Exception:
+        logger.warning("停止存储用量快照刷新线程失败（忽略）", exc_info=True)
 
     # 关闭阶段：把仍在"进行中"的导入任务标记为中断。
     # 部署/重启会重建容器并杀掉进程内后台线程；任务行若不管就永远停在"运行中 5%"，

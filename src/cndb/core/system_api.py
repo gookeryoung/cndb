@@ -58,6 +58,12 @@ class WorkspaceStorageQuotaUpdate(BaseModel):
     quota_bytes: int
 
 
+class WorkspaceStorageRefreshRequest(BaseModel):
+    """触发用量快照重算（缺省 = 全部工作区）."""
+
+    workspace_ids: list[int] | None = None
+
+
 def register_system_routes(app: FastAPI) -> None:
     """将系统管理路由挂载到 FastAPI app.
 
@@ -114,18 +120,30 @@ def register_system_routes(app: FastAPI) -> None:
         current_user: User | None = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> dict[str, Any]:
-        """工作区空间分配总览 —— 列出全部工作区的已用空间与配额（仅系统管理员）."""
+        """工作区空间分配总览 —— 只读用量快照，请求内不做统计（仅系统管理员）.
+
+        用量由后台刷新线程按周期重算（ADR 0024）；本端点一次 JOIN 取齐快照与配额，
+        响应时间不再随工作区数据量增长。`used_bytes` 为 null 表示该工作区尚未统计。
+        """
         _require_superuser(current_user)
+        from cndb.core.config import settings
+        from cndb.core.storage_refresh import get_storage_refresher
         from cndb.plugins.workspaces.models import (
             DEFAULT_STORAGE_QUOTA_BYTES,
             Workspace,
             WorkspaceMember,
             WorkspaceRole,
         )
-        from cndb.plugins.workspaces.services.storage import (
-            workspace_quota_bytes,
-            workspace_storage_bytes,
+        from cndb.plugins.workspaces.services.storage import workspace_quota_bytes
+        from cndb.plugins.workspaces.services.storage_snapshot import (
+            read_snapshots,
+            snapshot_age_seconds,
+            snapshot_computed_at,
         )
+
+        interval = settings.STORAGE_SNAPSHOT_INTERVAL_SECONDS
+        # 「过期」阈值：两个同步周期（关掉定时轮次时按 1 小时兜底）
+        stale_after = max(60, interval * 2) if interval > 0 else 3600
 
         workspaces = db.query(Workspace).order_by(Workspace.id).all()
         # 拥有者用户名：一次性查出，避免逐工作区查询
@@ -139,21 +157,63 @@ def register_system_routes(app: FastAPI) -> None:
             row[0]: row[1]
             for row in db.query(User.id, User.username).filter(User.id.in_(set(owner_ids.values()) or {-1})).all()
         }
-        items = [
-            {
-                "workspace_id": ws.id,
-                "name": ws.name,
-                "owner_username": usernames.get(owner_ids.get(ws.id)),
-                "used_bytes": workspace_storage_bytes(db, ws.id),
-                "quota_bytes": workspace_quota_bytes(ws),
-                "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
-            }
-            for ws in workspaces
-        ]
+        snapshots = read_snapshots(db, [ws.id for ws in workspaces])
+        items: list[dict[str, Any]] = []
+        for ws in workspaces:
+            snapshot = snapshots.get(ws.id)
+            age = snapshot_age_seconds(snapshot)
+            items.append(
+                {
+                    "workspace_id": ws.id,
+                    "name": ws.name,
+                    "owner_username": usernames.get(owner_ids.get(ws.id)),
+                    "used_bytes": None if snapshot is None else snapshot.used_bytes,
+                    "quota_bytes": workspace_quota_bytes(ws),
+                    "computed_at": snapshot_computed_at(snapshot),
+                    "age_seconds": age,
+                    "is_stale": age is None or age > stale_after,
+                    "updated_at": ws.updated_at.isoformat() if ws.updated_at else None,
+                }
+            )
+        refresher = get_storage_refresher()
+        ages = [item["age_seconds"] for item in items if item["age_seconds"] is not None]
         return {
             "default_quota_bytes": DEFAULT_STORAGE_QUOTA_BYTES,
             "items": items,
+            # 最新一份快照有多旧（全部未统计时为 null）→ 页面「数据更新于 X 前」
+            "snapshot_age_seconds": min(ages) if ages else None,
+            "refresh_interval_seconds": interval,
+            "refreshing": bool(refresher is not None and refresher.is_refreshing()),
+            "pending_workspace_count": sum(1 for item in items if item["used_bytes"] is None),
         }
+
+    @router.post("/workspaces/storage/refresh", status_code=202)
+    def admin_refresh_workspace_storage(
+        payload: WorkspaceStorageRefreshRequest | None = Body(default=None),
+        current_user: User | None = Depends(get_current_user),
+        db: Session = Depends(get_db),
+    ) -> dict[str, Any]:
+        """投递用量重算请求（异步，立即返回 202）——仅系统管理员.
+
+        body 省略或 `workspace_ids` 为空 = 全部工作区。实际统计由后台刷新线程执行，
+        接口本身不做任何扫描；前端据 `computed_at` 变化判断是否完成。
+        """
+        _require_superuser(current_user)
+        from cndb.plugins.workspaces.models import Workspace
+        from cndb.plugins.workspaces.services.storage_snapshot import request_refresh
+
+        requested = payload.workspace_ids if payload is not None else None
+        accepted: list[int] = []
+        if requested:
+            existing = {row[0] for row in db.query(Workspace.id).filter(Workspace.id.in_(requested)).all()}
+            missing = sorted(set(requested) - existing)
+            if missing:
+                raise HTTPException(status_code=404, detail=f"工作区不存在: {missing}")
+            accepted = sorted(existing)
+            request_refresh(accepted)
+        else:
+            request_refresh(None)
+        return {"status": "accepted", "workspace_ids": accepted, "all": not accepted}
 
     @router.patch("/workspaces/{workspace_id}/storage-quota")
     def admin_update_workspace_quota(
@@ -162,10 +222,13 @@ def register_system_routes(app: FastAPI) -> None:
         current_user: User | None = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> dict[str, Any]:
-        """调整某个工作区的存储配额（仅系统管理员）."""
+        """调整某个工作区的存储配额（仅系统管理员）.
+
+        配额不影响用量口径，因此不触发重算：`used_bytes` 读快照（缺失时懒计算一次）。
+        """
         _require_superuser(current_user)
         from cndb.plugins.workspaces.models import Workspace
-        from cndb.plugins.workspaces.services.storage import workspace_storage_bytes
+        from cndb.plugins.workspaces.services.storage_snapshot import snapshot_used_bytes
 
         if payload.quota_bytes < 0:
             raise HTTPException(status_code=400, detail="配额不能为负数")
@@ -177,7 +240,7 @@ def register_system_routes(app: FastAPI) -> None:
         db.refresh(ws)
         return {
             "workspace_id": ws.id,
-            "used_bytes": workspace_storage_bytes(db, ws.id),
+            "used_bytes": snapshot_used_bytes(db, ws.id, lazy=True),
             "quota_bytes": ws.storage_quota_bytes,
         }
 

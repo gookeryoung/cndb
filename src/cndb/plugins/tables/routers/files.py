@@ -25,6 +25,7 @@ from cndb.plugins.files import services as files_service
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import DEFAULT_STORAGE_QUOTA_BYTES, Workspace, WorkspaceRole
 from cndb.plugins.workspaces.services.storage import workspace_quota_bytes, workspace_storage_bytes
+from cndb.plugins.workspaces.services.storage_snapshot import bump_used_bytes, snapshot_used_bytes
 
 router = APIRouter(prefix="/{workspace_id}/files", tags=["files"])
 
@@ -276,9 +277,13 @@ async def upload_file(
 
     # 工作区存储配额：管理员在管理台「空间分配」设定上限（默认 100MB）。
     # 上传前按「已用 + 本次」预判，避免写盘后再回滚。
+    # 已用读用量快照（ADR 0024），不在此现算整工作区；快照缺失时懒计算一次，
+    # 懒计算失败才退化为现算 —— 配额预判宁慢也不能漏判。
     ws = db.get(Workspace, workspace_id)
     quota = workspace_quota_bytes(ws) if ws is not None else DEFAULT_STORAGE_QUOTA_BYTES
-    used = workspace_storage_bytes(db, workspace_id)
+    used = snapshot_used_bytes(db, workspace_id, lazy=True)
+    if used is None:
+        used = workspace_storage_bytes(db, workspace_id)
     if used + size > quota:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
@@ -304,6 +309,11 @@ async def upload_file(
         document_id=document_id,
         uploaded_by_id=current_user.id if current_user else None,
     )
+
+    # 用量快照乐观累加（ADR 0024）：连续上传时配额预判立刻反映本次写入，
+    # 后台下一轮会重算校正；同时置脏，让该工作区优先进入刷新队列。
+    bump_used_bytes(db, workspace_id, size)
+    db.commit()
 
     return {
         "file_key": file_key,

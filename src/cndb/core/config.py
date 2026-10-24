@@ -230,6 +230,15 @@ class Settings(BaseSettings):
     PLUGINS_AUTO_DISCOVER: bool = True
     PLUGINS_DIR: Path = PLUGINS_DIR
 
+    # ── 工作区存储用量快照（ADR 0024）─────────────────────────
+    # 用量统计成本随「工作区 × 表 × 行」线性增长，管理台 / 工作区详情 / 上传预判
+    # 都不在请求内现算：后台线程按周期重算并落库，读路径只读快照。
+    STORAGE_SNAPSHOT_ENABLED: bool = True
+    # 定时同步周期（秒）；0 = 关闭定时轮次（仍保留脏唤醒与手动刷新）
+    STORAGE_SNAPSHOT_INTERVAL_SECONDS: int = 300
+    # 启动后首轮延迟（秒）：避开迁移与静态资源预热的 IO 争抢
+    STORAGE_SNAPSHOT_STARTUP_DELAY_SECONDS: int = 3
+
     # ── 配置文件加载 ─────────────────────────────────────
     model_config = {"env_file": str(CONFIG_DIR / ".env"), "env_file_encoding": "utf-8"}
 

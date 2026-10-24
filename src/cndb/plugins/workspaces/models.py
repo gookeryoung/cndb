@@ -5,10 +5,22 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
-from sqlalchemy import JSON, BigInteger, Boolean, Enum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from cndb.models.base import Base, TimestampMixin
@@ -217,6 +229,46 @@ class Role(TimestampMixin, Base):
         self.permissions = perms
 
 
+class WorkspaceStorageSnapshot(Base):
+    """工作区存储用量快照（ADR 0024）.
+
+    由后台刷新器按周期重算 ``workspace_storage_bytes`` 后 upsert；管理台
+    「空间分配」、工作区详情与上传配额预判只读本表，不在请求内做全量统计。
+
+    缺行 = 该工作区**尚未统计**（前端显示「统计中」，不拿 0 冒充）。
+    """
+
+    __tablename__ = "workspaces_storage_snapshot"
+    __table_args__ = {"extend_existing": True}
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    used_bytes: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="快照用量（字节）：附件 + 文档外存/内联正文 + 数据表记录",
+    )
+    computed_at: Mapped[dt.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        index=True,
+        comment="计算完成时刻（UTC）",
+    )
+    duration_ms: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment="本次统计耗时（毫秒），用于排障与调参",
+    )
+
+    @override
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"WorkspaceStorageSnapshot(workspace_id={self.workspace_id}, used_bytes={self.used_bytes})"
+
+
 __all__ = [
     "ACTION_KEYS",
     "ACTION_LABELS",
@@ -228,6 +280,7 @@ __all__ = [
     "Workspace",
     "WorkspaceMember",
     "WorkspaceRole",
+    "WorkspaceStorageSnapshot",
     "WorkspaceType",
     "WorkspaceVisibility",
 ]

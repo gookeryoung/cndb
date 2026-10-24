@@ -163,10 +163,17 @@ class TestStorageSurfaces:
             headers=superuser_headers,
         )
 
+        # 管理台列表只读用量快照（ADR 0024）：先让后台刷新跑一轮再取
+        from cndb.plugins.workspaces.services.storage_snapshot import refresh_all
+
+        refresh_all(db)
+
         r = client.get("/api/v1/admin/workspaces/storage", headers=superuser_headers)
         assert r.status_code == 200, r.text
         item = next(it for it in r.json()["items"] if it["workspace_id"] == ws_id)
         assert item["used_bytes"] > 0
+        assert item["computed_at"], "快照应带计算时间，供页面展示新鲜度"
+        assert item["is_stale"] is False
 
     def test_workspace_detail_reports_usage(self, client: TestClient, auth_headers: dict[str, str], db):
         ws_id = _create_workspace(client, auth_headers, "detail-usage-ws")
