@@ -98,9 +98,9 @@ export default function DataPreviewTable({
           {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, analyzeResult.total_rows, '总行数')}
           {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, cols.length, '字段数')}
           {statBox('var(--cn-bg-muted)', 'var(--cn-text-primary)', null, sampleRows.length, '预览行')}
-          {statBox(okFieldCount > 0 ? 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))' : 'var(--cn-bg-muted)', okFieldCount > 0 ? '#22c55e' : 'var(--cn-text-primary)', <CheckOutlined style={{ marginRight: 1 }} />, okFieldCount, '正常')}
-          {statBox(errorFieldCount > 0 ? 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))' : 'var(--cn-bg-muted)', errorFieldCount > 0 ? '#ef4444' : 'var(--cn-text-primary)', <WarningOutlined style={{ marginRight: 1 }} />, errorFieldCount, '异常')}
-          {statBox(failedRows.length > 0 ? 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))' : 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))', failedRows.length > 0 ? '#ef4444' : '#22c55e', null, failedRows.length, '异常行')}
+          {statBox(okFieldCount > 0 ? 'var(--cn-mix-green-10-bg-container)' : 'var(--cn-bg-muted)', okFieldCount > 0 ? '#22c55e' : 'var(--cn-text-primary)', <CheckOutlined style={{ marginRight: 1 }} />, okFieldCount, '正常')}
+          {statBox(errorFieldCount > 0 ? 'var(--cn-mix-red-10-bg-container)' : 'var(--cn-bg-muted)', errorFieldCount > 0 ? '#ef4444' : 'var(--cn-text-primary)', <WarningOutlined style={{ marginRight: 1 }} />, errorFieldCount, '异常')}
+          {statBox(failedRows.length > 0 ? 'var(--cn-mix-red-10-bg-container)' : 'var(--cn-mix-green-10-bg-container)', failedRows.length > 0 ? '#ef4444' : '#22c55e', null, failedRows.length, '异常行')}
         </div>
 
         {/* Table 容器 —— 用 flex 撑满剩余空间，通过注入样式让 antd 内层 body 滚动 */}

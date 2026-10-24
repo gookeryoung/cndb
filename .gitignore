@@ -32,6 +32,8 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 frontend/coverage/
+# 老内核冒烟脚本的 Chromium 快照与截图（按需下载，不入库，ADR 0026）
+frontend/.cache/
 frontend/.eslintcache
 *.tsbuildinfo
 package-lock.json

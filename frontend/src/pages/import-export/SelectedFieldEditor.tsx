@@ -29,8 +29,8 @@ export default function SelectedFieldEditor({
     const options = overrides[col.name]?.options ?? col.options ?? []
 
     return (
-      <div style={{ marginTop: 8, padding: 12, background: 'var(--cn-bg-warning-subtle)', border: '1px solid color-mix(in srgb, #f59e0b 45%, transparent)', borderRadius: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'color-mix(in srgb, #f59e0b 70%, var(--cn-text-primary))', marginBottom: 8 }}>
+      <div style={{ marginTop: 8, padding: 12, background: 'var(--cn-bg-warning-subtle)', border: '1px solid var(--cn-mix-amber-45-transparent)', borderRadius: 6 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cn-mix-amber-70-text-primary)', marginBottom: 8 }}>
           <SwapOutlined /> 编辑 {col.name} 的选项（{options.length} 个）
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>

@@ -8,6 +8,9 @@
 
 > **Python 支持矩阵**：3.12 ~ 3.14。其中 Windows 仅 3.12（Win7/8 兼容的依赖钉版只在该版本验证）；Linux / macOS 无平台钉版。
 
+> **浏览器基线**：Chrome / Edge **81+**（Chromium 81+ 内核；360、QQ 等按内核版本对齐）。不承诺 Firefox / Safari。
+> 构建目标、静态门禁与老内核冒烟共用同一常量（`frontend/scripts/browser-baseline.mjs`），口径见 [ADR 0026](docs/adr/0026-chrome81-compat.md)。
+
 ## 特性
 
 - **插件化架构**：accounts / workspaces / tables / documents / issues / change_requests / analytics / files，可独立部署

@@ -19,6 +19,7 @@ import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, FLOW_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
 import { formatFieldDisplayValue } from '../cells/fieldValueFormat'
 import { buildFlowGraph, FLOW_UNGROUPED_LABEL, type FlowNode } from './flowBoard'
+import { mixColor } from '@/theme/themeMix'
 
 // ── 配色与密度 ────────────────────────────────────────
 
@@ -28,7 +29,7 @@ const NODE_COLORS: readonly string[] = [
 ]
 const nodeColor = (index: number): string => NODE_COLORS[index % NODE_COLORS.length]
 const NODE_BG = (hex: string) => `${hex}14`
-const NODE_HEADER_BG = (hex: string) => `color-mix(in srgb, ${hex} 16%, var(--cn-bg-subtle))`
+const NODE_HEADER_BG = (hex: string) => mixColor(hex, 16, 'var(--cn-bg-subtle)')
 
 /** 密度 → 节点宽度 / 卡片间距 / 字号 */
 function densityStyle(density: Density) {

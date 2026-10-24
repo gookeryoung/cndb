@@ -515,7 +515,7 @@ const editorTheme = EditorView.theme({
   '.cm-line': { padding: '0' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--cn-text-primary, #1f2937)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-    backgroundColor: 'color-mix(in srgb, var(--cn-brand-color, #1677ff) 22%, transparent)',
+    backgroundColor: 'var(--cn-mix-brand-color-22-transparent)',
   },
   '.cm-placeholder': { color: 'var(--cn-text-muted, #9ca3af)' },
   '.cm-md-heading': { fontWeight: '700', lineHeight: '1.4' },

@@ -15,8 +15,8 @@ interface ImportDiffTableProps {
 export default function ImportDiffTable({ preview, mode, report, matchKeys }: ImportDiffTableProps) {
     const isNew = mode === 'new'
     const rowBg = isNew
-        ? 'color-mix(in srgb, #22c55e 8%, var(--cn-bg-container))'   // 新增绿
-        : 'color-mix(in srgb, #3b82f6 8%, var(--cn-bg-container))'   // 更新蓝
+        ? 'var(--cn-mix-green-8-bg-container)'   // 新增绿
+        : 'var(--cn-mix-blue-8-bg-container)'   // 更新蓝
     const rowBorder = isNew ? '#22c55e' : '#3b82f6'       // 左侧竖条颜色
     const badgeColor = isNew ? 'green' : 'blue'
     const BadgeIcon = isNew ? PlusCircleOutlined : EditOutlined
@@ -60,10 +60,10 @@ export default function ImportDiffTable({ preview, mode, report, matchKeys }: Im
         const chipBase: CSSProperties = diffChipStyle()
         return (
             <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
-                <span style={{ ...chipBase, background: 'color-mix(in srgb, #ef4444 12%, var(--cn-bg-container))', color: '#ef4444', textDecoration: 'line-through' }}>
+                <span style={{ ...chipBase, background: 'var(--cn-mix-red-12-bg-container)', color: '#ef4444', textDecoration: 'line-through' }}>
                     − {oldText || '(空)'}
                 </span>
-                <span style={{ ...chipBase, background: 'color-mix(in srgb, #22c55e 12%, var(--cn-bg-container))', color: '#22c55e', fontWeight: 500 }}>
+                <span style={{ ...chipBase, background: 'var(--cn-mix-green-12-bg-container)', color: '#22c55e', fontWeight: 500 }}>
                     + {newText || '(清空)'}
                 </span>
             </div>

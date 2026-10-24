@@ -28,6 +28,7 @@ import {
   cellKey,
   type MatrixDateGranularity,
 } from './matrixBoard'
+import { mixColor } from '@/theme/themeMix'
 
 // ── 配色与密度 ────────────────────────────────────────
 
@@ -52,7 +53,7 @@ const axisColor = (index: number): string => AXIS_COLORS[index % AXIS_COLORS.len
 //   浓度档位：甘特 `${color}15`（≈8%）是小面积行背景，整列长带需更高浓度才能区分相邻色相
 //   （8% 下蓝/青、绿/青 ΔRGB<6 不可辨）——数据格 `hex26`（≈15%）、列头 20% 保持表头深一档
 // - 行方向区分：行间 1px 细实线（数据格 borderBottom，行头 borderBottom 贯通）
-const COL_HEADER_BG = (hex: string) => `color-mix(in srgb, ${hex} 20%, var(--cn-bg-subtle))`
+const COL_HEADER_BG = (hex: string) => mixColor(hex, 20, 'var(--cn-bg-subtle)')
 const CELL_BG = (hex: string) => `${hex}26`
 
 /** 密度 → 单元格卡片间距/字号 */
@@ -151,7 +152,7 @@ function MatrixCornerAxis({ axis, name }: { axis: '行' | '列'; name: string })
           flexShrink: 0, fontSize: 11, fontWeight: 600, lineHeight: '18px',
           padding: '0 6px', borderRadius: 4,
           color: 'var(--cn-brand-color)',
-          background: 'color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container))',
+          background: 'var(--cn-mix-brand-color-12-bg-container)',
         }}
       >
         {axis}

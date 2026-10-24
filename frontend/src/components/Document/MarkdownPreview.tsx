@@ -4,6 +4,8 @@
  * 标题元素渲染锚点 id（与大纲面板解析同算法），支持大纲点击定位。
  */
 
+// react-markdown / hast 依赖链使用 Object.hasOwn（Chrome 93+），在懒加载 chunk 内补齐
+import '@/compat/polyfills'
 import { memo, useMemo } from 'react'
 import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
 import CodeBlock from './CodeBlock'

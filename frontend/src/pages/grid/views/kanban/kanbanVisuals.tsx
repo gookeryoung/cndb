@@ -6,6 +6,7 @@ import type { Field } from '@/api'
 import { resolveTagColor } from '@/utils/tagColors'
 import { formatFieldDisplayValue } from '../../cells/fieldValueFormat'
 import { fmtDate } from '../../cells/dateUtils'
+import { mixColor } from '@/theme/themeMix'
 
 // ── 严重程度分级（逾期/紧急按天数细分背景浓度） ──────────
 
@@ -34,7 +35,7 @@ export function getUrgencyVisual(
     // 逾期：橙红 volcano + 65% danger-subtle 背景（浓度不低于当天）
     return {
       borderLeft: `${borderLeftWidth}px solid #ff7a45`,
-      background: `color-mix(in srgb, var(--cn-bg-danger-subtle) 65%, var(--cn-bg-container))`,
+      background: `var(--cn-mix-bg-danger-subtle-65-bg-container)`,
     }
   }
 
@@ -42,7 +43,7 @@ export function getUrgencyVisual(
     // 当天截止：金橙色边框 + 55% 金黄背景
     return {
       borderLeft: `${borderLeftWidth}px solid #fa8c16`,
-      background: `color-mix(in srgb, #faad14 55%, var(--cn-bg-container))`,
+      background: `var(--cn-mix-gold-55-bg-container)`,
     }
   }
 
@@ -51,7 +52,7 @@ export function getUrgencyVisual(
     const intensity = daysLeft <= 1 ? 60 : 30
     return {
       borderLeft: `${borderLeftWidth}px solid #faad14`,
-      background: `color-mix(in srgb, var(--cn-bg-warning-subtle) ${intensity}%, var(--cn-bg-container))`,
+      background: mixColor('var(--cn-bg-warning-subtle)', intensity, 'var(--cn-bg-container)'),
     }
   }
 

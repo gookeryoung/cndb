@@ -1,8 +1,9 @@
 /** 主题切换 Provider — 维护多主题状态并注入 antd ConfigProvider. */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { App as AntApp, ConfigProvider, theme as antdTheme } from 'antd'
+import { StyleProvider, legacyLogicalPropertiesTransformer } from '@ant-design/cssinjs'
 import zhCN from 'antd/locale/zh_CN'
 import {
   getThemeConfig, themeCssVars, loadThemeMode, saveThemeMode,
@@ -10,6 +11,7 @@ import {
   FONT_SCALE_META, THEME_META,
   type ThemeMode, type FontScale, type FontSettings,
 } from '@/theme/theme'
+import { applyThemeMixVars } from '@/theme/themeMix'
 
 interface ThemeContextValue {
   mode: ThemeMode
@@ -77,9 +79,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  useEffect(() => {
+  // 用 layout effect：Chrome 81 的首帧必须已挂好主题 class 与变量，避免闪一下默认主题
+  useLayoutEffect(() => {
     applyBodyClass(mode)
     applyThemeVars(mode)
+    // Chrome 81 没有 color-mix()：按刚挂好的主题变量重算 --cn-mix-* 兜底（现代内核直接跳过）
+    applyThemeMixVars()
   }, [mode])
 
   // 字体设置：注入 body 基础字号与加粗（antd 组件字号经 ConfigProvider token 下发）
@@ -99,22 +104,29 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   return (
     <ThemeContext.Provider value={value}>
-      <ConfigProvider
-        locale={zhCN}
-        theme={{
-          ...baseConfig,
-          algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-          // 字体设置覆盖主题 token 的字号/字重，其余 token（配色等）保持主题原值
-          token: {
-            ...baseConfig.token,
-            fontSize: FONT_SCALE_META[font.scale].px,
-            // 加粗时同步抬升 antd 强调字重，否则保持组件默认
-            ...(font.bold ? { fontWeightStrong: 700 } : {}),
-          },
-        }}
+      {/* Chrome 81 不支持 :where() / 逻辑属性 / inset：
+          hashPriority="high" 去掉 :where() 包裹，transformer 把逻辑属性转物理属性（ADR 0026 D2） */}
+      <StyleProvider
+        hashPriority="high"
+        transformers={[legacyLogicalPropertiesTransformer]}
       >
-        <AntApp>{children}</AntApp>
-      </ConfigProvider>
+        <ConfigProvider
+          locale={zhCN}
+          theme={{
+            ...baseConfig,
+            algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+            // 字体设置覆盖主题 token 的字号/字重，其余 token（配色等）保持主题原值
+            token: {
+              ...baseConfig.token,
+              fontSize: FONT_SCALE_META[font.scale].px,
+              // 加粗时同步抬升 antd 强调字重，否则保持组件默认
+              ...(font.bold ? { fontWeightStrong: 700 } : {}),
+            },
+          }}
+        >
+          <AntApp>{children}</AntApp>
+        </ConfigProvider>
+      </StyleProvider>
     </ThemeContext.Provider>
   )
 }

@@ -39,3 +39,6 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 // Web Vitals 动态加载，独立 chunk，不占用首屏关键路径
 void import('./utils/webVitals').then((m) => m.reportWebVitals())
+
+// 运行时垫片：首次渲染后探测，只有旧内核才下载 flex-gap shim
+void import('@/compat').then((m) => m.initCompat())
