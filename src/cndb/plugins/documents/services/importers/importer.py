@@ -34,6 +34,7 @@ from cndb.plugins.files.models import FileOwner
 
 from . import reader
 from .errors import UnsupportedImport
+from .formats import ASSET_CONTENT_TYPES
 from .reader import ImportedDoc, UploadedItem
 
 
@@ -47,12 +48,27 @@ class _UploadStore:
         self.enabled = enabled
         self.written = 0
         self.bytes_written = 0
+        self.asset_written = 0
+        self.asset_bytes = 0
         self._pending: list[str] = []
 
     def store(self, data: bytes, name: str) -> str | None:
         """落盘一个内嵌图片，返回站点文件 key（未启用返回 None）."""
         if not self.enabled or not data:
             return None
+        return self._write(data, name)
+
+    def store_asset(self, data: bytes, name: str) -> str:
+        """落盘原件（PDF / Office / 图片），返回站点文件 key.
+
+        与 `import_attachments` 开关无关：原件是文档本体，必须落盘（ADR 0025 D4）。
+        """
+        key = self._write(data, name)
+        self.asset_written += 1
+        self.asset_bytes += len(data)
+        return key
+
+    def _write(self, data: bytes, name: str) -> str:
         suffix = Path(name).suffix.lower()
         key = f"{uuid.uuid4().hex}{suffix}"
         directory = Path(settings.UPLOAD_DIR) / str(self.workspace_id)
@@ -143,6 +159,8 @@ def analyze_files(
                     "title": doc.title,
                     "folder": "/".join(folder),
                     "suffix": doc.suffix,
+                    "format": doc.content_type,
+                    "is_asset": doc.asset,
                     "status": "conflict" if existing is not None else "new",
                     "existing_document_id": existing.id if existing is not None else None,
                     "warnings": doc.warnings[:5],
@@ -154,6 +172,7 @@ def analyze_files(
         "total_files": len(items),
         "total_documents": len(docs),
         "total_folders": len(folders),
+        "assets": sum(1 for doc in docs if doc.asset),
         "conflicts": conflicts,
         "skipped": skipped[:DETAIL_LIMIT],
         "warnings": warnings[:DETAIL_LIMIT],
@@ -228,6 +247,7 @@ def import_files(
         "folders_created": 0,
         "attachments": 0,
         "attachment_bytes": 0,
+        "assets": 0,
         "documents": [],
         "skipped_files": [],
         "warnings": [],
@@ -263,7 +283,18 @@ def import_files(
             title = _next_title(siblings, parent, title)
             existing = None
 
-        if existing is not None:
+        if doc.asset:
+            # 原件族：同名 Markdown 文档不被覆盖（避免把可编辑正文换成只读原件），按改名处理
+            if existing is not None and existing.content_type not in ASSET_CONTENT_TYPES:
+                title = _next_title(siblings, parent, title)
+                existing = None
+            saved = _save_asset(db, workspace_id, user, store, item, doc, existing, parent, title, status, siblings)
+            stats["assets"] += 1
+            if existing is not None:
+                stats["updated"] += 1
+            else:
+                stats["created"] += 1
+        elif existing is not None:
             saved = content_service.update_content(
                 db,
                 workspace_id,
@@ -292,13 +323,74 @@ def import_files(
 
         store.bind_pending(saved.id)
         if len(stats["documents"]) < RESULT_DOCS_LIMIT:
-            stats["documents"].append({"id": saved.id, "title": saved.title, "path": item.path})
+            stats["documents"].append(
+                {"id": saved.id, "title": saved.title, "path": item.path, "format": saved.content_type}
+            )
 
     stats["folders_created"] = created_folders
-    stats["attachments"] = store.written
-    stats["attachment_bytes"] = store.bytes_written
+    stats["attachments"] = store.written - store.asset_written
+    stats["attachment_bytes"] = store.bytes_written - store.asset_bytes
     stats["total"] = stats["created"] + stats["updated"] + stats["skipped"]
     return stats
+
+
+def _save_asset(
+    db: Session,
+    workspace_id: int,
+    user: Any,
+    store: _UploadStore,
+    item: UploadedItem,
+    doc: reader.ImportedDoc,
+    existing: Document | None,
+    parent: int,
+    title: str,
+    status: str,
+    siblings: dict[int, dict[str, Document]],
+) -> Document:
+    """原件族落库：写原件 + 建/替换文档节点（复用既有身份证与归属登记）."""
+    key = store.store_asset(item.data, item.path)
+    size = len(item.data)
+    if existing is not None:
+        previous = existing.asset_file_key
+        saved = content_service.replace_document_asset(
+            db,
+            workspace_id,
+            existing.id,
+            user,
+            asset_file_key=key,
+            asset_mime=doc.mime,
+            content_size=size,
+        )
+        if previous and previous != key:
+            _drop_previous_asset(db, workspace_id, previous)
+        return saved
+
+    order = len(siblings.get(parent, {}))
+    saved = content_service.create_document(
+        db,
+        workspace_id,
+        user,
+        title=title,
+        content="",
+        parent_id=(parent or None),
+        status=status,
+        sort_order=order,
+        change_type=CHANGE_TYPE_IMPORT,
+        content_type=doc.content_type,
+        asset_file_key=key,
+        asset_mime=doc.mime,
+        content_size=size,
+    )
+    siblings.setdefault(parent, {})[title.strip().lower()] = saved
+    return saved
+
+
+def _drop_previous_asset(db: Session, workspace_id: int, file_key: str) -> None:
+    """覆盖导入后清理旧原件（文件 + 归属登记），避免孤儿占用存储配额."""
+    from cndb.plugins.files.services import forget_owner, remove_workspace_file
+
+    forget_owner(db, file_key)
+    remove_workspace_file(workspace_id, file_key)
 
 
 __all__ = ["analyze_files", "import_files"]

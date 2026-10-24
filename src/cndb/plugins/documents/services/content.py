@@ -29,6 +29,7 @@ from cndb.plugins.documents.models import (
     CHANGE_TYPE_MANUAL,
     CHANGE_TYPE_ROLLBACK,
     CONTENT_TYPE_FOLDER,
+    CONTENT_TYPE_MARKDOWN,
     DOC_STATUS_PUBLISHED,
     EXTERNAL_MIN_SIZE,
     INLINE_MAX_SIZE,
@@ -240,25 +241,36 @@ def create_document(
     tag_ids: list[int] | None = None,
     sort_order: int = 0,
     change_type: str = CHANGE_TYPE_MANUAL,
+    content_type: str = CONTENT_TYPE_MARKDOWN,
+    asset_file_key: str | None = None,
+    asset_mime: str = "",
+    content_size: int | None = None,
 ) -> Document:
-    """创建文档（或文件夹），自动解析元数据并创建 v1 版本."""
+    """创建文档（或文件夹），自动解析元数据并创建 v1 版本.
+
+    ``asset_file_key`` 非空表示原件族文档（PDF / Office / 图片，ADR 0025）：
+    跳过 Markdown 元数据解析，正文为空版本，不建 TOC / 摘要，只按标题进检索。
+    """
     if parent_id is not None:
         parent = get_document_or_404(db, workspace_id, parent_id)
         if not parent.is_folder:
             raise ConflictError("父节点必须是文件夹")
 
+    asset = bool(asset_file_key)
     doc = Document(
         workspace_id=workspace_id,
         parent_id=parent_id,
         title=title,
-        content_type=CONTENT_TYPE_FOLDER if is_folder else "markdown",
+        content_type=CONTENT_TYPE_FOLDER if is_folder else (content_type if asset else CONTENT_TYPE_MARKDOWN),
         is_folder=is_folder,
         status=status,
         sort_order=sort_order,
+        asset_file_key=asset_file_key,
+        asset_mime=asset_mime if asset else "",
         created_by_id=user.id,
         updated_by_id=user.id,
     )
-    if not is_folder:
+    if not is_folder and not asset:
         meta, _ = parse.parse_front_matter(content)
         doc.author = meta.get("author", "")[:200] or parse.extract_author(content)
         doc.summary = parse.extract_summary(content)
@@ -272,15 +284,15 @@ def create_document(
         _apply_tags(db, doc, tag_ids, user)
 
     if not is_folder:
-        raw_size = len(content.encode("utf-8"))
-        stored = _store_content_bytes(doc, 1, content, raw_size)
+        raw_size = content_size if asset and content_size is not None else len(content.encode("utf-8"))
+        stored = "" if asset else _store_content_bytes(doc, 1, content, raw_size)
         version = DocumentVersion(
             document_id=doc.id,
             version_number=1,
             content=stored,
             content_size=raw_size,
             content_hash=parse.content_hash(content),
-            change_summary="创建文档",
+            change_summary="上传文件" if asset else "创建文档",
             change_type=change_type,
             created_by_id=user.id,
         )
@@ -291,6 +303,45 @@ def create_document(
     db.commit()
     db.refresh(doc)
     return doc
+
+
+def replace_document_asset(
+    db: Session,
+    workspace_id: int,
+    doc_id: int,
+    user: User,
+    *,
+    asset_file_key: str,
+    asset_mime: str,
+    content_size: int,
+) -> Document:
+    """替换原件族文档的原件（导入覆盖策略用）：不产生新版本，正文保持为空.
+
+    旧原件由调用方在事务提交后删除（DB 先落新值，避免「文件删了事务回滚」）。
+    """
+    doc = get_document_or_404(db, workspace_id, doc_id)
+    require_editor(db, workspace_id, user)
+    if doc.is_folder:
+        raise ConflictError("文件夹没有原件")
+    if not doc.asset_file_key:
+        raise ConflictError("目标文档不是原件类型，无法覆盖", code="doc_not_asset")
+
+    doc.asset_file_key = asset_file_key
+    doc.asset_mime = asset_mime
+    doc.content_size = content_size
+    doc.updated_by_id = user.id
+    db.commit()
+    db.refresh(doc)
+    return doc
+
+
+def ensure_text_document(doc: Document) -> None:
+    """原件族文档不接受 Markdown 写操作（ADR 0025 I2：原件即事实）.
+
+    保存正文 / 草稿 / 提交 / 回滚都经由此守卫；前端对这类文档隐藏编辑入口。
+    """
+    if doc.asset_file_key:
+        raise ConflictError("该文档是上传的原件（只读），不支持编辑正文；可下载后另行处理", code="doc_read_only")
 
 
 def update_content(
@@ -314,6 +365,7 @@ def update_content(
 
     if doc.is_folder:
         raise ConflictError("文件夹没有内容")
+    ensure_text_document(doc)
 
     if base_updated_at is not None and _normalize_ts(base_updated_at) != _normalize_ts(
         doc.updated_at.isoformat() if doc.updated_at else ""
@@ -646,6 +698,11 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
         _sync_fts_delete(db, target.id)
     db.execute(delete(Document).where(Document.id.in_(ids)))
     _refresh_tag_counts(db, workspace_id)
+    # 原件族（ADR 0025）：原件文件与归属记录随文档一并清理，避免残留占用配额
+    from cndb.plugins.files.models import FileOwner
+
+    asset_keys = [t.asset_file_key for t in targets if t.asset_file_key]
+    db.execute(delete(FileOwner).where(FileOwner.document_id.in_(ids)))
     db.commit()
 
     # 外存文件在事务提交后删除：DB 侧已作废，避免"文件已删但事务回滚"
@@ -655,7 +712,15 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
         if external.is_dir():
             shutil.rmtree(external, ignore_errors=True)
             files_removed += 1
+    files_removed += _remove_asset_files(workspace_id, asset_keys)
     return {"purged_count": len(ids), "files_removed": files_removed, "detached": detached}
+
+
+def _remove_asset_files(workspace_id: int, keys: list[str]) -> int:
+    """删原件落盘文件（路径非法 / 已不存在时静默跳过），返回删除数."""
+    from cndb.plugins.files.services import remove_workspace_file
+
+    return sum(1 for key in keys if remove_workspace_file(workspace_id, key))
 
 
 def _collect_purge_targets(db: Session, node: Document, targets: list[Document], visited: set[int]) -> int:
@@ -1048,6 +1113,7 @@ def _serialize_document(
         "title": doc.title,
         "slug": doc.slug,
         "content_type": doc.content_type,
+        "asset_mime": doc.asset_mime or "",
         "author": doc.author,
         "summary": doc.summary,
         "toc_json": doc.toc_json or [],

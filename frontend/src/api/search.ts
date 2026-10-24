@@ -15,6 +15,8 @@ export interface SearchDocumentHit {
   title_hit: string
   summary_hit: string
   status: string
+  /** 文档格式（markdown / pdf / image / …），用于结果区按格式显示图标（ADR 0025） */
+  content_type: string
   updated_at: string
 }
 

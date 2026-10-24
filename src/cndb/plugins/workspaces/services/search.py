@@ -267,6 +267,7 @@ def _search_documents(
             "title_hit": item.get("title_hit"),
             "summary_hit": item.get("summary_hit"),
             "status": item.get("status"),
+            "content_type": item.get("content_type"),
             "updated_at": item.get("updated_at"),
         }
         for item in items

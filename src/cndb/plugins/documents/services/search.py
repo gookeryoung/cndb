@@ -240,7 +240,7 @@ def search_documents(
         rows = db.execute(
             text(
                 f"""
-                SELECT d.id, d.title, d.workspace_id, d.status, d.updated_at,
+                SELECT d.id, d.title, d.workspace_id, d.status, d.content_type, d.updated_at,
                        highlight(documents_fts, 1, '<mark>', '</mark>') AS content_hit,
                        highlight(documents_fts, 2, '<mark>', '</mark>') AS summary_hit,
                        bm25(documents_fts) AS rank
@@ -286,6 +286,7 @@ def search_documents(
                 "summary_hit": row.summary_hit or snippet,
                 "workspace_id": row.workspace_id,
                 "status": row.status,
+                "content_type": row.content_type,
                 "updated_at": row.updated_at,
                 "rank": float(row.rank) if row.rank is not None else 0.0,
             }
@@ -381,7 +382,7 @@ def _search_by_substring(
     rows = db.execute(
         text(
             f"""
-            SELECT d.id, d.title, d.workspace_id, d.status, d.updated_at,
+            SELECT d.id, d.title, d.workspace_id, d.status, d.content_type, d.updated_at,
                    f.summary AS summary_raw, f.content AS content_raw,
                    {title_hit_sql} AS title_hit_rank,
                    {summary_hit_sql} AS summary_hit_rank
@@ -409,6 +410,7 @@ def _search_by_substring(
                 "summary_hit": _mark(query, summary) if summary else _mark(query, snippet),
                 "workspace_id": row.workspace_id,
                 "status": row.status,
+                "content_type": row.content_type,
                 "updated_at": row.updated_at,
                 # 兜底通道无 bm25：用「标题命中 / 摘要命中」映射为负分值，保持「越小越靠前」的既有语义
                 "rank": float(-int(row.title_hit_rank) * 2 - int(row.summary_hit_rank)),

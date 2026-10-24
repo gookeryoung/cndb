@@ -2,12 +2,13 @@
 
 import { useCallback } from 'react'
 import { App as AntApp, Button, Drawer, Empty, List, Popconfirm, Space, Typography } from 'antd'
-import { FileTextOutlined, FolderOutlined } from '@ant-design/icons'
+import { FolderOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { documentsApi } from '@/api/documents'
 import type { TrashItem } from '@/api/documents'
 import { useResponsive } from '@/hooks/useResponsive'
 import { formatTime } from './documentDisplay'
+import { formatMeta } from '@/components/Document/docFormat'
 
 const { Text } = Typography
 
@@ -108,7 +109,15 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
                   <List.Item.Meta
                     title={
                       <Space size={6}>
-                        {item.is_folder ? <FolderOutlined /> : <FileTextOutlined />}
+                        {item.is_folder ? (
+                          <FolderOutlined />
+                        ) : (
+                          (() => {
+                            const fmt = formatMeta(item.content_type)
+                            const FormatIcon = fmt.Icon
+                            return <FormatIcon aria-label={`格式：${fmt.label}`} style={{ color: fmt.color }} />
+                          })()
+                        )}
                         <Text strong>{item.title}</Text>
                       </Space>
                     }

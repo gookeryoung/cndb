@@ -95,6 +95,7 @@ def save_draft(
     doc = visibility_service.get_visible_document_or_404(db, workspace_id, doc_id, user)
     if doc.is_folder:
         raise ConflictError("文件夹没有内容")
+    content_service.ensure_text_document(doc)
 
     latest_text, latest_num = _latest_content(db, doc)
     base = latest_num if base_version_number is None else base_version_number
@@ -166,6 +167,7 @@ def submit_draft(
     doc = visibility_service.get_visible_document_or_404(db, workspace_id, doc_id, user)
     if doc.is_folder:
         raise ConflictError("文件夹没有内容")
+    content_service.ensure_text_document(doc)
 
     draft = get_draft(db, doc.id, user.id)
     incoming = content if content is not None else (draft.content if draft is not None else None)

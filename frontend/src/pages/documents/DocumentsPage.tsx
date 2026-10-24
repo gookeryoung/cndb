@@ -33,7 +33,6 @@ import {
   EditOutlined,
   ExportOutlined,
   FileAddOutlined,
-  FileTextOutlined,
   FolderAddOutlined,
   FolderOutlined,
   ImportOutlined,
@@ -48,6 +47,7 @@ import { useResponsive } from '@/hooks/useResponsive'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
 import { buildSeriesStats, seriesStatsOf } from './seriesStats'
 import { formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
+import { formatMeta } from '@/components/Document/docFormat'
 import TrashDrawer from './TrashDrawer'
 import ObsidianImportModal from './ObsidianImportModal'
 import DocumentImportModal from './DocumentImportModal'
@@ -726,7 +726,17 @@ export default function DocumentsPage() {
                     {doc.is_folder ? (
                       <FolderOutlined style={{ fontSize: 22, color: '#faad14' }} />
                     ) : (
-                      <FileTextOutlined style={{ fontSize: 22, color: '#1890ff' }} />
+                      (() => {
+                        const fmt = formatMeta(doc.content_type)
+                        const FormatIcon = fmt.Icon
+                        return (
+                          <FormatIcon
+                            aria-label={`格式：${fmt.label}`}
+                            data-testid={`doc-list-format-${doc.id}`}
+                            style={{ fontSize: 22, color: fmt.color }}
+                          />
+                        )
+                      })()
                     )}
                   </Space>
                 }

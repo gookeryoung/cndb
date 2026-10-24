@@ -97,6 +97,8 @@ class DocumentOut(BaseModel):
     title: str
     slug: str | None
     content_type: str
+    # 原件族（ADR 0025）的 MIME；纯 Markdown 文档为空串
+    asset_mime: str = ""
     author: str
     summary: str
     toc_json: list[dict[str, Any]]
