@@ -115,6 +115,9 @@ def export_table(
             detail=f"当前表有 {total} 行，超过导出上限 {_EXPORT_ROW_CAP} 行，请分批导出或联系管理员.",
         )
 
+    # 系统行 ID 仅供内部定位，不属于业务数据：所有格式都不导出该列
+    rows = [{k: v for k, v in row.items() if k != "id"} for row in rows]
+
     fmt = format.lower()
     ext_map = {"json": "json", "csv": "csv", "xlsx": "xlsx"}
     if fmt not in ext_map:

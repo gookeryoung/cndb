@@ -207,6 +207,8 @@ class TestBulkAPI:
         assert r.headers["content-type"].startswith("application/json")
         data = json.loads(r.text)
         assert len(data) == 3
+        # 系统行 ID 不属于业务数据，JSON 导出同样不带
+        assert all("id" not in row for row in data)
 
     def test_export_csv(self, client, ws, table, auth_owner):
         r = client.get(
@@ -214,7 +216,7 @@ class TestBulkAPI:
             headers=auth_owner,
         )
         assert r.status_code == 200
-        assert "姓名" in r.text
+        assert r.text.splitlines()[0] == "姓名,年龄"
         assert "张三" in r.text
 
     def test_export_invalid_format(self, client, ws, table, auth_owner):
@@ -263,6 +265,15 @@ class TestBulkAPI:
         assert r.status_code == 200
         assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
         assert len(r.content) > 0
+        import io
+
+        from openpyxl import load_workbook
+
+        wb = load_workbook(io.BytesIO(r.content))
+        ws_wb = wb.active
+        assert ws_wb is not None
+        headers = [cell.value for cell in ws_wb[1]]
+        assert headers == ["姓名", "年龄"]
 
     def test_import_csv(self, client, ws, table, auth_owner):
         import io
@@ -368,10 +379,10 @@ class TestBulkAPI:
             headers=auth_owner,
         )
         assert r.status_code == 200
-        # CSV 含 id 列，换行符可能是 \r\n
+        # 换行符可能是 \r\n
         lines = [line.strip("\r") for line in r.text.strip().split("\n") if line.strip()]
-        # 第一行表头（id,姓名,年龄），然后应按王五 40 → 李四 30 → 张三 20 降序
-        assert "姓名" in lines[0] and "年龄" in lines[0] and "id" in lines[0]
+        # 表头只有业务字段（不含系统 id），随后应按王五 40 → 李四 30 → 张三 20 降序
+        assert lines[0] == "姓名,年龄"
         # 找到姓名列和年龄列的索引
         headers = lines[0].split(",")
         name_idx = headers.index("姓名")

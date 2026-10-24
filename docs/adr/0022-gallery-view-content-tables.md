@@ -39,7 +39,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | 7 | 非 grid 视图一次拉取上限 `VIEW_FETCH_ALL_LIMIT = 2000`，排序由服务端按视图 `sortings` 应用 | `frontend/src/pages/grid/useGridData.ts:21-38` | 画廊无需客户端排序；2000 卡片需分批挂载 | 确认 |
 | 8 | 视图匿名公开分享已明确不复活（ADR 0003 D5）；文档分享（ADR 0017）不适用于表 / 视图 | `docs/adr/0003-view-visibility-permission-model.md` | 分享范围限定工作区内 | 确认 |
 | 9 | seed CSV 建表时低基数文本自动提升 select（`地区/主题/趋势判断/菜系/难度`），日期 / 数字按值推断 | `src/cndb/plugins/tables/services/transfer/normalize/promote.py:21-79` | 彩色标签、看板分组、矩阵轴可直接使用 | 新增 |
-| 10 | `_row_to_dict` 把物理列 `id` 映射为 `result["id"]`；CSV 导出的首列 `id` 是系统行 ID | `src/cndb/plugins/tables/services/core/records.py:834-851` | 示例 CSV 必须去掉 `id` 列，否则建出同名业务字段并覆盖行 ID | 新增 |
+| 10 | `_row_to_dict` 把物理列 `id` 映射为 `result["id"]`；数据表导出在 `routers/bulk_export.py` 统一剔除该列（JSON / CSV / XLSX 均不含 `id`） | `src/cndb/plugins/tables/services/core/records.py:834-851`、`src/cndb/plugins/tables/routers/bulk_export.py:118-119` | 手工构造 / 旧版导出的 CSV 仍须去掉 `id` 列，否则建出同名业务字段并覆盖行 ID | 新增 |
 | 11 | seed 完整性测试静态解析 CSV 表头 + `valid view types` 白名单 | `tests/test_backup_seed_roundtrip.py:349`、`:439-455`、`:533-542` | 新表无需硬编码字段；类型集合与引用提取需同步 | 新增 |
 
 **核心缺陷（需求要补的）**：现有 10 种视图没有「阅读态」——grid 长文本截断、kanban 卡片只显示标题与少量标签、chart 只做聚合，LLM 抓取的资讯 / 菜谱类内容缺少可浏览、可分享的卡片墙。
@@ -198,5 +198,5 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 - 追加（2026-10-23，ADR 0019 C9）：两表字段随 ADR 0019 中文化（`日期,地区,来源,摘要,标题,主题,趋势判断,链接` / `烹饪时长,菜系,难度,菜名,主要食材,分步做法,小贴士`），`views.json` 的 12 个视图字段引用、`fields.json` 必填设置、`datasource.json` 新增的两条 `llm_prompt` 任务（中文映射 / 幂等键，`manual` 调度）同轮改完；e2e 只按卡片数与文案断言，不依赖字段名
 - 已完成：前端 `172` 个测试文件 / `2115` 例全绿；后端 `make test` 通过；`make check-fast` 全绿；e2e `gallery-view.spec.ts` 本地实跑通过；`bundle:budget` 全绿
 - 下一步：合并后由人确认 `Status`；如需超 2000 行全量画廊另立行虚拟化 ADR；观察默认画廊视图下「新增行」入口的发现性反馈
-- 已知坑：① CSV 首列 `id` 必须删（`_row_to_dict` 用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部资讯 / 全部菜谱」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在；⑥ **视图状态是单例 store，离开表页不清理**：`reset()` 与「视图匹配」effect 在同一 commit 内先后执行，匹配逻辑必须读 `useGridViewStore.getState()` 的实时值（用渲染闭包会误判「目标已就位」跳过 `loadView`，返回表页时默认画廊退化成空表格）；跨表首帧由 `store.tableKey` 归属校验兜住脏 `filters` / `sortings`。回归用例：`GridPage.landingView.test.tsx`、e2e `gallery-view.spec.ts`
+- 已知坑：① 手工构造 / 旧版导出的 CSV 若首列是 `id` 必须先删（数据表导出已不带 `id`；带 `id` 建表会生成同名业务字段，`_row_to_dict` 又用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部资讯 / 全部菜谱」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在；⑥ **视图状态是单例 store，离开表页不清理**：`reset()` 与「视图匹配」effect 在同一 commit 内先后执行，匹配逻辑必须读 `useGridViewStore.getState()` 的实时值（用渲染闭包会误判「目标已就位」跳过 `loadView`，返回表页时默认画廊退化成空表格）；跨表首帧由 `store.tableKey` 归属校验兜住脏 `filters` / `sortings`。回归用例：`GridPage.landingView.test.tsx`、e2e `gallery-view.spec.ts`
 - 最近一次全绿：2026-10-23（`make check-fast` + 前端全量 vitest 2115 passed + 画廊切页往返浏览器实测）
