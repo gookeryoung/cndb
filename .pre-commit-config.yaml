@@ -17,15 +17,17 @@ repos:
       # lock / sync 副作用。否则 `uv run` 会因 pyproject 版本变化重写 uv.lock，
       # pre-commit 判成「hook 修改了文件」→ 提交被中止，`make bump` 必然失败。
       # ruff linter（--fix 后仍有改动则失败，提示重新提交）
+      # --force-exclude：pre-commit 传入的是显式文件路径，默认会绕过 ruff.toml 的
+      # extend-exclude（alembic / examples）；加上后排除规则对显式路径同样生效。
       - id: ruff
         name: ruff check
-        entry: uv run --frozen --no-sync ruff check --fix --exit-non-zero-on-fix --cache-dir .ruff_cache
+        entry: uv run --frozen --no-sync ruff check --fix --exit-non-zero-on-fix --force-exclude --cache-dir .ruff_cache
         language: system
         types_or: [python]
       # ruff 格式化
       - id: ruff-format
         name: ruff format
-        entry: uv run --frozen --no-sync ruff format
+        entry: uv run --frozen --no-sync ruff format --force-exclude
         language: system
         types_or: [python]
 

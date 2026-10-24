@@ -233,7 +233,7 @@ export default function StoragePage() {
                 precision={1}
                 value={draftMb}
                 onChange={(v) => setDraftMb(v ?? 0)}
-                addonAfter="MB"
+                suffix="MB"
                 style={{ width: 120 }}
                 data-testid={`quota-input-${row.workspace_id}`}
               />

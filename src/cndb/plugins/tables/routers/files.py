@@ -199,7 +199,7 @@ def _validate_against_field(
 
     if config.max_size_mb and size > config.max_size_mb * 1024 * 1024:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"文件超过字段「{field.name}」限制（{config.max_size_mb} MB）",
         )
 
@@ -257,7 +257,7 @@ async def upload_file(
     size = len(content)
     if size > _MAX_UPLOAD_BYTES:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=f"文件过大（{size} > {_MAX_UPLOAD_BYTES}）",
         )
 
@@ -286,7 +286,7 @@ async def upload_file(
         used = workspace_storage_bytes(db, workspace_id)
     if used + size > quota:
         raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE,
             detail=(
                 f"工作区存储空间不足：已用 {used / (1024 * 1024):.1f} MB / "
                 f"配额 {quota / (1024 * 1024):.1f} MB，本次需 {size / (1024 * 1024):.1f} MB"

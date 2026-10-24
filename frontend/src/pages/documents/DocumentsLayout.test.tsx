@@ -30,6 +30,7 @@ function renderLayout(route = '/w/10/documents') {
         <Routes>
             <Route path="/w/:wid/documents" element={<DocumentsLayout />}>
                 <Route index element={<ContentStub />} />
+                <Route path=":docId" element={<ContentStub />} />
             </Route>
         </Routes>,
         { route, initialAuth: { user: mockUser, token: 'fake-token' } },

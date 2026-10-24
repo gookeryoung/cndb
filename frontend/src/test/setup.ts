@@ -71,6 +71,25 @@ if (typeof window !== 'undefined') {
   if (!Range.prototype.getBoundingClientRect) {
     Range.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 0, 0)
   }
+  // jsdom 未实现 canvas 2D 上下文：zrender 仅用它测量文本（SVG renderer 不绘制 canvas），
+  // 缺失时 jsdom 会打印 "Not implemented: getContext"，而 zrender 本就有内置换算回退。
+  // 返回 null 保留回退路径，同时消除 jsdomError。
+  if (typeof HTMLCanvasElement !== 'undefined') {
+    HTMLCanvasElement.prototype.getContext = (() => null) as unknown as typeof HTMLCanvasElement.prototype.getContext
+  }
+  // jsdom 没有布局引擎，所有元素 clientWidth/clientHeight 恒为 0，ECharts init 会告警
+  // "Can't get DOM width or height"。仅给图表容器返回非零尺寸，让初始化走正常路径；
+  // 其他元素维持 0，避免影响依赖真实测量值的组件（虚拟滚动等）。
+  if (typeof HTMLElement !== 'undefined') {
+    for (const [prop, value] of [['clientWidth', 640], ['clientHeight', 320]] as const) {
+      Object.defineProperty(HTMLElement.prototype, prop, {
+        configurable: true,
+        get(this: HTMLElement) {
+          return this.dataset?.testid === 'chart-container' ? value : 0
+        },
+      })
+    }
+  }
   // jsdom 未实现 URL.createObjectURL/revokeObjectURL（useFileObjectUrl 把鉴权 blob
   // 转成 object URL 后交给 <img>；测试只需拿到可断言的假 URL）
   if (!URL.createObjectURL) {
