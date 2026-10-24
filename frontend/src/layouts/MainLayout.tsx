@@ -300,7 +300,10 @@ export default function MainLayout() {
     { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => openSettings() },
     // 大模型设置：桌面端顶栏有常驻图标入口，移动端顶栏放不下，收进用户菜单直达页签
     ...(isMobile
-      ? [{ key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') }]
+      ? [
+        { key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') },
+        { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助中心', onClick: () => setHelpOpen(true) },
+      ]
       : []),
     // 关于系统：普通用户与管理员均可见，查看版本等基本信息
     { key: 'about', icon: <InfoCircleOutlined />, label: '关于系统', onClick: () => setAboutOpen(true) },
@@ -386,8 +389,10 @@ export default function MainLayout() {
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       <Header className="cn-app-header" style={{
-        padding: '0 var(--cn-space-lg)', height: 44, lineHeight: '44px', flexShrink: 0,
-        display: 'flex', alignItems: 'center', gap: 8,
+        // 移动端收窄左右留白与控件间距，给搜索/导航留出横向空间
+        padding: isMobile ? '0 var(--cn-space-md)' : '0 var(--cn-space-lg)',
+        height: 44, lineHeight: '44px', flexShrink: 0,
+        display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
       }}>
         {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航 */}
         {isMobile && (
@@ -445,16 +450,18 @@ export default function MainLayout() {
               />
             </Tooltip>
           )}
-          {/* 帮助中心入口 —— 所有登录用户可见 */}
-          <Tooltip title="帮助中心与新手引导">
-            <Button
-              type="text"
-              size="small"
-              icon={<QuestionCircleOutlined />}
-              data-testid="help-btn"
-              onClick={() => setHelpOpen(true)}
-            >{!isMobile && '帮助'}</Button>
-          </Tooltip>
+          {/* 帮助中心入口 —— 桌面端常驻图标；移动端收进用户菜单，避免顶栏控件过多 */}
+          {!isMobile && (
+            <Tooltip title="帮助中心与新手引导">
+              <Button
+                type="text"
+                size="small"
+                icon={<QuestionCircleOutlined />}
+                data-testid="help-btn"
+                onClick={() => setHelpOpen(true)}
+              >帮助</Button>
+            </Tooltip>
+          )}
           {/* 系统管理台入口 —— 仅管理员可见，置于用户头像左侧以区别于常规导航 */}
           {isAdmin && (
             <Tooltip title="系统管理台">

@@ -30,6 +30,12 @@ vi.mock('@/pages/settings/SettingsModal', () => ({
         open ? <div data-testid="settings-modal-stub">{initialTab ?? 'profile'}</div> : null,
 }))
 
+/** 帮助中心抽屉桩 —— 懒加载真实抽屉含异步内容，桩只验证入口被触发 */
+vi.mock('@/components/HelpCenterDrawer', () => ({
+    default: ({ open }: { open: boolean }) =>
+        open ? <div data-testid="help-drawer-stub">帮助中心</div> : null,
+}))
+
 /** 管理台路由桩 —— 展示当前 pathname 供断言 */
 function AdminStub() {
     const loc = useLocation()
@@ -293,12 +299,34 @@ describe('MainLayout 大模型入口', () => {
         })
         // 顶栏不放常驻按钮，避免挤压本就紧张的移动端空间
         expect(screen.queryByTestId('llm-settings-btn')).toBeNull()
+        expect(screen.queryByTestId('help-btn')).toBeNull()
 
         // 移动端右上角不显示昵称文字，经头像容器触发下拉
         fireEvent.mouseEnter(screen.getByTestId('user-menu-trigger'))
         fireEvent.click(await screen.findByText('大模型设置'))
         await waitFor(() => {
             expect(screen.getByTestId('settings-modal-stub')).toHaveTextContent('llm')
+        })
+        // 帮助中心同样收进用户菜单，避免顶栏第二个图标
+        expect(screen.getByText('帮助中心')).toBeInTheDocument()
+
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
+    })
+
+    it('移动端点击用户菜单「帮助中心」打开帮助抽屉', async () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 375, height: 667,
+        }
+        renderLayout(mockUser)
+
+        fireEvent.mouseEnter(screen.getByTestId('user-menu-trigger'))
+        fireEvent.click(await screen.findByText('帮助中心'))
+        await waitFor(() => {
+            expect(screen.getByTestId('help-drawer-stub')).toBeVisible()
         })
 
         responsiveState = {

@@ -140,15 +140,15 @@ export default function DocumentsIssuesPage() {
     !!current && (canReview || (current.created_by_id != null && String(current.created_by_id) === String(user?.id)))
 
   return (
-    <div style={{ padding: '16px 24px', maxWidth: 960, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 12, flexWrap: 'wrap' }}>
+    <div className="cn-subpage" style={{ maxWidth: 960, margin: '0 auto' }}>
+      <div className="cn-subpage-head">
         <Space size={8} align="center">
           <Title level={5} style={{ margin: 0 }}>
             文档问题清单
           </Title>
           <Text type="secondary">工作区成员均可提交与评论，owner/editor 或创建者可关闭</Text>
         </Space>
-        <Space size={8}>
+        <Space size={8} className="cn-subpage-head-actions">
           <Segmented options={STATUS_OPTIONS} value={status} onChange={v => setStatus(v as StatusFilter)} />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)} data-testid="doc-issue-create">
             新建问题

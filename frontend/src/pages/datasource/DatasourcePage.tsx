@@ -321,16 +321,16 @@ export default function DatasourcePage() {
   )
 
   return (
-    <div style={{ padding: 16 }} data-testid="datasource-page">
-      <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
-        <Space size={8}>
+    <div className="cn-datasource-page" data-testid="datasource-page">
+      <Space className="cn-datasource-head" style={{ width: '100%', justifyContent: 'space-between', marginBottom: 12 }}>
+        <Space size={8} className="cn-datasource-head-text">
           <CloudDownloadOutlined />
           <Title level={4} style={{ margin: 0 }}>
             数据源同步
           </Title>
           <Text type="secondary">定期抓取外部数据并按幂等键写入数据表</Text>
         </Space>
-        <Space size={8}>
+        <Space size={8} className="cn-datasource-head-actions">
           <Button type="primary" data-testid="datasource-create-btn" icon={<PlusOutlined />} onClick={openCreate}>
             新建同步任务
           </Button>
