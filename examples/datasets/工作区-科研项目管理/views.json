@@ -987,5 +987,37 @@
       },
       "order": 3
     }
+  ],
+  "技术体系": [
+    {
+      "name": "全部",
+      "view_type": "grid",
+      "sortings": [
+        {
+          "field_name": "技术编号",
+          "direction": "asc"
+        }
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "技术脉络",
+      "view_type": "tree",
+      "sortings": [
+        {
+          "field_name": "技术编号",
+          "direction": "asc"
+        }
+      ],
+      "view_options": {
+        "parent_field": "父技术编号",
+        "title_field": "技术名称",
+        "status_field": "成熟度",
+        "show_numbering": false,
+        "expand_all": true
+      },
+      "order": 1
+    }
   ]
 }
