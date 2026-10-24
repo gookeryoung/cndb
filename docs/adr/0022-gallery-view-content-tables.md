@@ -2,7 +2,7 @@
 
 Status: Implemented（P0-P1 已落地，2026-10-22）
 Date: 2026-10-22
-Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/0003-view-visibility-permission-model.md`、`docs/adr/0011-stock-kline-enhanced.md`、`docs/adr/0021-home-favorite-views-panel.md`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/views/viewModes.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/cli/seed/views.py`、`examples/datasets/工作区-数据源示例/views.json`
+Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/0003-view-visibility-permission-model.md`、`docs/adr/0021-home-favorite-views-panel.md`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/views/viewModes.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/cli/seed/views.py`、`examples/datasets/工作区-数据源示例/views.json`
 需求卡片: `docs/requirements/0022-gallery-view-content-tables.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -17,7 +17,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | C2 | 设计合适的视图 | 新增 `view_type=gallery`：卡片栅格（标题 / 摘要 / 彩色标签 / 日期 / 元信息），点击卡片打开行详情；`view_options` 七项由 `GALLERY_OPTIONS` 定义 |
 | C3 | 用于用户查看资讯 | 两表各 5-7 个视图（画廊默认 + grid + kanban + matrix / calendar + chart + 过滤视图），配置见 §Decision 9 |
 | C4 | 用于分享资讯 | 视图仍走 ADR 0003 三档可见性；seed `scope=global` → `ViewVisibility.TABLE`，表内成员均可见；分享用深链与收藏，不扩匿名公开分享（ADR 0003 D5） |
-| C5 | （兼容既有视图） | `ViewMode` / `VALID_MODES` / `MODE_BUTTONS` / `MODE_VIEW_TYPES` 扩为 11 种；`view_type` 无枚举约束，零迁移 |
+| C5 | （兼容既有视图） | `ViewMode` / `VALID_MODES` / `MODE_BUTTONS` / `MODE_VIEW_TYPES` 扩为 10 种；`view_type` 无枚举约束，零迁移 |
 | C6 | （配置可编辑） | `GALLERY_OPTIONS` 同时供创建表单与视图设置对话框；默认值由 `resolveOpts` 回退 |
 | C7 | （数据量边界） | 沿用 `VIEW_FETCH_ALL_LIMIT = 2000`；画廊前端每批 48 张 + 「加载更多」 |
 | C8 | （字段引用校验） | 后端 / seed 两处 `_validate_view_fields` 增加 `summary_field` 单值与 `tag_fields` / `meta_fields` 列表逐项校验 |
@@ -30,7 +30,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 | # | 现状 | 位置 | 影响 | 与卡片的关系 |
 |---|---|---|---|---|
-| 1 | 视图模式注册为 10 种：`grid/tree/kanban/calendar/gantt/wbs/matrix/chart/kline/flow`；`ViewMode` 与 `VALID_MODES` 为白名单，URL / localStorage 校验共用 | `frontend/src/pages/grid/views/viewModes.ts:11-14` | 新模式不进白名单会被过滤，`?mode=gallery` 无效 | 确认 |
+| 1 | 视图模式注册为 9 种：`grid/tree/kanban/calendar/gantt/wbs/matrix/chart/flow`；`ViewMode` 与 `VALID_MODES` 为白名单，URL / localStorage 校验共用 | `frontend/src/pages/grid/views/viewModes.ts:11-14` | 新模式不进白名单会被过滤，`?mode=gallery` 无效 | 确认 |
 | 2 | 视图栏模式按钮 `MODE_BUTTONS` 与「视图类型 → 模式」推导 `MODE_VIEW_TYPES` 各自硬编码类型集合 | `frontend/src/pages/grid/GridPage.tsx:125-136`、`GridPage.tsx:346` | 新增类型需两处同步，否则按钮不出现 / 视图打开落回 grid | 确认 |
 | 3 | 视图专属配置唯一真相源为 `viewOptionSchema.ts`（创建表单与 ViewConfigDialog 共用） | `frontend/src/pages/grid/view-config/viewOptionSchema.ts:50-545` | 新视图类型只需新增 schema + `getOptionSchema` 分支 | 确认 |
 | 4 | `DataView.view_type` 为自由 `String(32)`，无枚举 / 无迁移 | `src/cndb/plugins/tables/models.py`（`DataView`） | 新类型零 DDL | 确认 |
@@ -90,7 +90,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 1. gallery 不做内联编辑、拖拽、行选中与批量操作；编辑入口仍为 grid / 行详情。
 2. 不配置 `date_field` 时卡片不显示日期徽章；`meta_fields` / `tag_fields` 为空或值全空时整块省略。
-3. 非 grid 模式最多 2000 行；超出部分需通过视图 `filters` 收窄（与 kanban / kline 同口径），不做分页拉取。
+3. 非 grid 模式最多 2000 行；超出部分需通过视图 `filters` 收窄（与 kanban 同口径），不做分页拉取。
 4. 卡片点击走 `onRowClick`（行详情 Drawer），不直接跳转外链；`url` 这类外链字段可放进 `meta_fields` 展示。
 5. 视图分享沿用三档可见性 + 深链 + 收藏；不新增「复制公开链接」。
 
@@ -114,11 +114,11 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 ### 7. 测试清单
 
-**判定层（单测）**：`galleryBoard.test.ts`（回退链 / 非法值回退 / 标签归一与上限 / 元信息跳过空值 / 列宽映射）、`GalleryView.test.tsx`（渲染 / 点击与键盘 / 分批与重置 / 空态）、`viewModes.test.ts`（11 种）、`viewOptionSchema.test.ts`（7 项 schema 与默认值）。
+**判定层（单测）**：`galleryBoard.test.ts`（回退链 / 非法值回退 / 标签归一与上限 / 元信息跳过空值 / 列宽映射）、`GalleryView.test.tsx`（渲染 / 点击与键盘 / 分批与重置 / 空态）、`viewModes.test.ts`（10 种）、`viewOptionSchema.test.ts`（7 项 schema 与默认值）。
 
 **接口层**：`tests/test_views_api.py`（gallery 合法 201；`summary_field` 非法 400；`tag_fields` 含非法项 400 带下标；非字符串项 400 不 500）。
 
-**迁移 / 备份**：`tests/test_backup_seed_roundtrip.py`（11 种类型全覆盖、列表型字段引用可解析、CSV 表头静态校验通过）。
+**迁移 / 备份**：`tests/test_backup_seed_roundtrip.py`（10 种类型全覆盖、列表型字段引用可解析、CSV 表头静态校验通过）。
 
 **e2e（前端）**：`frontend/tests/e2e/critical/gallery-view.spec.ts`（默认落画廊、卡片数与标签、点击展开行详情、第二张表同样渲染）。
 
@@ -179,7 +179,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | 轴 | 载体 | 决定 | 由谁 |
 |---|---|---|---|
 | 视图可见性 | `DataView.visibility` / `scope_key` | gallery 沿用三档，不新增档位 | ADR 0003 |
-| 模式注册清单 | `viewModes.ts` / `GridPage.tsx` | 新增类型必须同步全部注册点 | ADR 0011「已知坑」 |
+| 模式注册清单 | `viewModes.ts` / `GridPage.tsx` | 新增类型必须同步全部注册点（`ViewMode` / `VALID_MODES` / `MODE_BUTTONS` / `MODE_VIEW_TYPES` / 中文标签表） | 本 ADR |
 | 收藏与深链 | `accounts_user.preferences.favorite_views` | 分享入口沿用主页收藏面板 | ADR 0021 |
 | 匿名分享 | 文档公开链接 | 只覆盖文档，不扩表 / 视图 | ADR 0017 / ADR 0003 D5 |
 

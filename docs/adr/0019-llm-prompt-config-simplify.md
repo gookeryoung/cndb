@@ -54,9 +54,9 @@ Related: `src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/plugin.py`、`
 | 12 | 「每日新闻摘要」「美食推荐做法」预设旧文案按实时抓取口径写，且美食一次要求四类多道菜，输出过长 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 与新的系统提示词口径不一致，长输出仍可能截断 | 确认（C8） |
 | 13 | 空表自动建表 / 补字段 / 自动幂等键保持原实现 | `src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py` | 本轮不改写路径语义，只换连接来源（`llm/services/connection.py`） | 确认（C3） |
 | 14 | 测试覆盖个人接口 / 迁移 / 备份 / 运行解析 / 提示词可靠性 / 前端页签与预设；平台层（client / parsing / 连接搬表）用例见 ADR 0020 P0 | `tests/test_datasource_llm_config.py`、`tests/test_datasource_migration.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_migration_missing_model_columns.py`、`frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | 新行为同轮补测试 | 确认（C1-C8） |
-| 15 | 字段命名只能英文：内置系统提示词第 4 条要求「统一使用英文 snake_case，不要使用中文」，8 组预设的字段说明也照抄该约束 | `src/cndb/plugins/llm/services/prompts.py`（`DEFAULT_SYSTEM_PROMPT`）、`frontend/src/pages/datasource/llmPromptPresets.ts` | 模型把中文业务语义翻成英文键，落表后表内是 `dish_name` / `region`，与示例工作区其余表（天气每日 / 股市日线全中文字段）不一致；用户要中文字段只能改写系统提示词 | 确认（C9） |
+| 15 | 字段命名只能英文：内置系统提示词第 4 条要求「统一使用英文 snake_case，不要使用中文」，8 组预设的字段说明也照抄该约束 | `src/cndb/plugins/llm/services/prompts.py`（`DEFAULT_SYSTEM_PROMPT`）、`frontend/src/pages/datasource/llmPromptPresets.ts` | 模型把中文业务语义翻成英文键，落表后表内是 `dish_name` / `region`，与示例工作区其余表（天气每日等全中文字段）不一致；用户要中文字段只能改写系统提示词 | 确认（C9） |
 | 16 | 自动幂等键的「像键」加权只认英文片段（`date` / `city` / `title`…） | `src/cndb/plugins/datasource/services/auto_table.py`（`KEY_NAME_HINTS`） | 中文字段（日期 / 城市 / 标题）权重恒为 0，多列唯一时按候选顺序取，推断结果不稳定 | 确认（C9） |
-| 17 | 示例工作区只有股票两条同步任务；食品 / 国际形势两张 LLM 内容表只有 CSV 与视图，没有同步配置 | `examples/datasets/工作区-数据源示例/datasource.json` | 示例数据无法演示「提示词 → 中文字段 → 落表」的完整链路，用户无从参考配置 | 确认（C9） |
+| 17 | 食品 / 国际形势两张 LLM 内容表只有 CSV 与视图，没有同步配置 | `examples/datasets/工作区-数据源示例/datasource.json` | 示例数据无法演示「提示词 → 中文字段 → 落表」的完整链路，用户无从参考配置 | 确认（C9） |
 
 **核心缺陷（需求要补的）**：连接配置挂在**工作区**上，无法表达「这是某个人的模型账号」——同一用户跨工作区要重复配置，共享工作区下配置归属与 Key 可见性也说不清；同时默认 token 上限与系统提示词的「宁可返回空」倾向，让已内置的新闻 / 美食推荐提示词开箱即失败。
 

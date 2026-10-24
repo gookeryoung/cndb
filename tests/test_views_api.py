@@ -286,25 +286,14 @@ class TestViewsAPI:
         assert r2.status_code == 400
         assert "x_field" in r2.json()["detail"]
 
-    @pytest.mark.parametrize("ct", ["pie", "histogram", "boxplot", "line", "candlestick"])
+    @pytest.mark.parametrize("ct", ["pie", "histogram", "boxplot", "line"])
     def test_create_chart_various_types_ok(self, client, ws, table, auth_owner, ct):
-        """所有 7 种 chart_type 都能通过 API 创建（pie / histogram / boxplot / line / candlestick 分支）."""
-        # pie / line：dimension_field + measure_field；histogram 只需 measure_field；boxplot 同 pie；
-        # candlestick：时间轴 + 开/高/低/收四价字段
-        if ct == "candlestick":
-            opts: dict[str, Any] = {
-                "chart_type": ct,
-                "time_field": "姓名",
-                "open_field": "姓名",
-                "high_field": "姓名",
-                "low_field": "姓名",
-                "close_field": "姓名",
-            }
-        else:
-            opts = {"chart_type": ct, "measure_field": "姓名"}
-            if ct in ("pie", "line", "boxplot"):
-                opts["dimension_field"] = "姓名"
-                opts["aggregation"] = "sum"
+        """所有 6 种 chart_type 都能通过 API 创建（pie / histogram / boxplot / line 分支）."""
+        # pie / line：dimension_field + measure_field；histogram 只需 measure_field；boxplot 同 pie
+        opts: dict[str, Any] = {"chart_type": ct, "measure_field": "姓名"}
+        if ct in ("pie", "line", "boxplot"):
+            opts["dimension_field"] = "姓名"
+            opts["aggregation"] = "sum"
         r = client.post(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
             json={"name": f"{ct}_chart", "view_type": "chart", "view_options": opts},
@@ -312,53 +301,6 @@ class TestViewsAPI:
         )
         assert r.status_code == 201, f"{ct} chart 创建失败: {r.status_code} {r.json()}"
         assert r.json()["view_options"]["chart_type"] == ct
-
-    def test_create_chart_candlestick_invalid_close_field(self, client, ws, table, auth_owner):
-        """K 线视图：收盘价字段引用不存在字段时应返回 400，detail 定位到 close_field."""
-        r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={
-                "name": "坏K线",
-                "view_type": "chart",
-                "view_options": {
-                    "chart_type": "candlestick",
-                    "time_field": "姓名",
-                    "open_field": "姓名",
-                    "high_field": "姓名",
-                    "low_field": "姓名",
-                    "close_field": "不存在字段",
-                },
-            },
-            headers=auth_owner,
-        )
-        assert r.status_code == 400
-        assert "close_field" in r.json()["detail"]
-
-    def test_create_chart_multi_charts_candlestick_invalid(self, client, ws, table, auth_owner):
-        """多图形态：K 线条目字段越界时 detail 定位到 charts[i].<key>."""
-        r = client.post(
-            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/views",
-            json={
-                "name": "多图含坏K线",
-                "view_type": "chart",
-                "view_options": {
-                    "charts": [
-                        {"chart_type": "bar", "dimension_field": "姓名", "measure_field": "姓名"},
-                        {
-                            "chart_type": "candlestick",
-                            "time_field": "姓名",
-                            "open_field": "不存在字段",
-                            "high_field": "姓名",
-                            "low_field": "姓名",
-                            "close_field": "姓名",
-                        },
-                    ],
-                },
-            },
-            headers=auth_owner,
-        )
-        assert r.status_code == 400
-        assert "charts[1].open_field" in r.json()["detail"]
 
     def test_create_chart_group_field_invalid(self, client, ws, table, auth_owner):
         """chart bar/line 引用不存在的 group_field 也应返回 400."""
@@ -439,7 +381,7 @@ class TestViewsAPI:
         assert "charts[0]" in r2.json()["detail"]
 
     def test_seed_all_chart_types_create_ok(self, client, ws, table, auth_owner):
-        """覆盖 seed 全部 7 种 chart_type（bar / line / pie / scatter / histogram / boxplot / candlestick）
+        """覆盖 seed 全部 6 种 chart_type（bar / line / pie / scatter / histogram / boxplot）
         在真实表上连续创建都通过校验，模拟 seed.py 批量注入场景."""
         specs: list[tuple[str, dict[str, Any]]] = [
             ("bar", {"dimension_field": "姓名", "measure_field": "姓名", "aggregation": "sum"}),
@@ -448,16 +390,6 @@ class TestViewsAPI:
             ("scatter", {"x_field": "姓名", "y_field": "姓名", "show_trend_line": True}),
             ("histogram", {"measure_field": "姓名", "bin_policy": "sturges"}),
             ("boxplot", {"dimension_field": "姓名", "measure_field": "姓名"}),
-            (
-                "candlestick",
-                {
-                    "time_field": "姓名",
-                    "open_field": "姓名",
-                    "high_field": "姓名",
-                    "low_field": "姓名",
-                    "close_field": "姓名",
-                },
-            ),
         ]
         created: list[dict[str, Any]] = []
         for ct, extra in specs:

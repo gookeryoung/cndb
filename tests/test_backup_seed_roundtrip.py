@@ -338,12 +338,12 @@ class TestSeedViewsIntegrity:
     保证视图种子配置与数据集字段持续对齐，防止视图在 seed 时被
     _validate_view_fields 静默跳过：
 
-    - view_type 均为 11 种合法视图模式；
+    - view_type 均为 10 种合法视图模式；
     - 同表内视图名与 order 不重复；
     - filters/sortings/view_options/charts[] 引用的字段均可在建表来源中解析
       （CSV 表头 + fields.json link_lookups 引入字段 / 硬编码业务表字段；
       API 建表等无法静态解析的来源仅校验 view_type）；
-    - 11 种视图模式在全部工作区中均有覆盖。
+    - 10 种视图模式在全部工作区中均有覆盖。
     """
 
     VALID_VIEW_TYPES = {
@@ -357,7 +357,6 @@ class TestSeedViewsIntegrity:
         "matrix",
         "chart",
         "flow",
-        "kline",
     }
 
     # 与 seed._seed_sales_tables 保持一致的硬编码业务表字段
@@ -375,27 +374,6 @@ class TestSeedViewsIntegrity:
                 "手机号",
                 "邮箱",
                 "是否在职",
-            },
-        },
-        # 自选股由 cli/seed/stock_quotes.py 手动建表，无 CSV 可静态解析，字段列表与其 _STOCK_FIELDS 对齐
-        "数据源示例": {
-            "自选股": {
-                "股票代码",
-                "股票名称",
-                "市场",
-                "行业",
-                "是否自选",
-                "最新价",
-                "涨跌幅",
-                "最新交易日",
-                "成交量",
-                "成交额",
-                "日线前复权",
-                "日线后复权",
-                "日线不复权",
-                "周线前复权",
-                "月线前复权",
-                "更新时间",
             },
         },
     }
@@ -419,20 +397,8 @@ class TestSeedViewsIntegrity:
         "measure_field",
         "x_field",
         "y_field",
-        # Kline 行内 K 线视图（标的 / 行情字段 + 多周期复权序列字段）
-        "symbol_field",
-        "name_field",
-        "price_field",
-        "change_pct_field",
-        "volume_field",
-        "amount_field",
+        # Gallery 卡片画廊（标题字段已在上方；日期 + 摘要单值 + 标签/元信息列表）
         "date_field",
-        "day_qfq_field",
-        "day_hfq_field",
-        "day_none_field",
-        "week_qfq_field",
-        "month_qfq_field",
-        # Gallery 卡片画廊（摘要单值 + 标签/元信息列表）
         "summary_field",
         "tag_fields",
         "meta_fields",
@@ -559,7 +525,7 @@ class TestSeedViewsIntegrity:
             if isinstance(view_list, list)  # 跳过 _comment 等元数据字符串
             for vc in view_list
         }
-        assert types == self.VALID_VIEW_TYPES, f"11 种视图模式应全部覆盖，实际: {types}"
+        assert types == self.VALID_VIEW_TYPES, f"10 种视图模式应全部覆盖，实际: {types}"
 
 
 class TestCoerceRowValueTypes:

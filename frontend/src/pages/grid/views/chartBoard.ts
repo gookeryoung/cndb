@@ -38,7 +38,7 @@ import {
 // ── 类型与常量 ────────────────────────────────────────
 
 /** 图表类型 */
-export type ChartType = 'bar' | 'line' | 'pie' | 'scatter' | 'histogram' | 'boxplot' | 'candlestick'
+export type ChartType = 'bar' | 'line' | 'pie' | 'scatter' | 'histogram' | 'boxplot'
 
 /** 聚合方式 */
 export type ChartAggregation = 'sum' | 'avg' | 'count' | 'min' | 'max'
@@ -54,13 +54,6 @@ export interface ChartConfig {
   x_field?: string
   y_field?: string
   group_field?: string
-  /** candlestick 时间轴字段（日期/时间列，类目轴） */
-  time_field?: string
-  /** candlestick 开/高/低/收四价字段 */
-  open_field?: string
-  high_field?: string
-  low_field?: string
-  close_field?: string
   aggregation?: ChartAggregation
   date_granularity?: MatrixDateGranularity
   bin_policy?: BinPolicy
@@ -156,21 +149,12 @@ export interface BoxplotChartData {
   outliers: Array<[number, number]>
 }
 
-/** candlestick 数据（类目=时间轴；values 为 ECharts 口径 [open, close, low, high]；rowIds 平行供点击定位） */
-export interface CandlestickChartData {
-  kind: 'candlestick'
-  categories: string[]
-  values: Array<[number, number, number, number]>
-  rowIds: Array<RowResponse['id']>
-}
-
 export type ChartData =
   | CategoryChartData
   | PieChartData
   | ScatterChartData
   | HistogramChartData
   | BoxplotChartData
-  | CandlestickChartData
 
 /** 按聚合方式归并桶内数值 */
 function aggregateValues(values: number[], agg: ChartAggregation): number {
@@ -338,38 +322,6 @@ function buildBoxplotData(rows: RowResponse[], fields: Field[], cfg: ChartConfig
   return { kind: 'boxplot', categories, boxes, outliers }
 }
 
-/** candlestick：按时间轴取开/高/低/收四价（任一非数值整行剔除；同时间键重复取首行）.
- *
- * 单标的语义：同一时间轴上的多标的蜡烛会重叠，故以视图 filters 收窄到单一标的；
- * 此处对同时间键的行取首行（不去聚合），避免同轴多蜡烛堆叠。
- */
-function buildCandlestickData(rows: RowResponse[], fields: Field[], cfg: ChartConfig): CandlestickChartData {
-  const timeDef = fields.find((f) => f.name === cfg.time_field)
-  const byKey = new Map<string, { ohlc: [number, number, number, number]; rowId: RowResponse['id'] }>()
-  for (const r of rows) {
-    const rawTime = cfg.time_field ? r[cfg.time_field] : undefined
-    if (isEmptyValue(rawTime)) continue
-    const open = toNumber(cfg.open_field ? r[cfg.open_field] : undefined)
-    const close = toNumber(cfg.close_field ? r[cfg.close_field] : undefined)
-    const low = toNumber(cfg.low_field ? r[cfg.low_field] : undefined)
-    const high = toNumber(cfg.high_field ? r[cfg.high_field] : undefined)
-    if (open === null || close === null || low === null || high === null) continue
-    const key = String(rawTime)
-    if (byKey.has(key)) continue
-    byKey.set(key, { ohlc: [open, close, low, high], rowId: r.id })
-  }
-  const categories = sortAxisKeys([...byKey.keys()], isDateAxis(timeDef))
-  const values: Array<[number, number, number, number]> = []
-  const rowIds: Array<RowResponse['id']> = []
-  for (const k of categories) {
-    const entry = byKey.get(k)
-    if (!entry) continue
-    values.push(entry.ohlc)
-    rowIds.push(entry.rowId)
-  }
-  return { kind: 'candlestick', categories, values, rowIds }
-}
-
 /** 统一入口：按 chart_type 把行集合变换为图表数据（调用前须已配置必填字段） */
 export function buildChartData(rows: RowResponse[], fields: Field[], cfg: ChartConfig): ChartData {
   switch (cfg.chart_type) {
@@ -377,7 +329,6 @@ export function buildChartData(rows: RowResponse[], fields: Field[], cfg: ChartC
     case 'scatter': return buildScatterData(rows, cfg)
     case 'histogram': return { kind: 'histogram', bins: histogramBins(extractNumbers(rows, cfg.measure_field), cfg.bin_policy) }
     case 'boxplot': return buildBoxplotData(rows, fields, cfg)
-    case 'candlestick': return buildCandlestickData(rows, fields, cfg)
     case 'bar':
     case 'line':
     default: return buildCategoryData(rows, fields, cfg)

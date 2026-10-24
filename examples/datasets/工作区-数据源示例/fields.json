@@ -4,14 +4,6 @@
       "城市": {"required": true},
       "日期": {"required": true}
     },
-    "股市日线": {
-      "股票代码": {"required": true},
-      "交易日": {"required": true}
-    },
-    "股市日线-新浪": {
-      "股票代码": {"required": true},
-      "交易日": {"required": true}
-    },
     "美食推荐做法": {
       "菜名": {"required": true},
       "菜系": {"required": true}

@@ -1,8 +1,7 @@
 /** 图表视图组件 — ECharts adapter + 统计面板.
  *
- * - 7 种图表：bar/line（维度聚合，group_field 多系列）/ pie / scatter（双数值轴 + OLS 趋势线）
+ * - 6 种图表：bar/line（维度聚合，group_field 多系列）/ pie / scatter（双数值轴 + OLS 趋势线）
  *   / histogram（chartBoard 预计算分箱 + bar 呈现）/ boxplot（五数概括 + IQR 离群点散列）
- *   / candlestick（K 线：时间轴 + 开/高/低/收蜡烛，单标的语义）
  * - 纯逻辑全部在 chartBoard.ts（聚合/分箱/统计），本组件只做 ECharts option 装配与生命周期管理
  * - 生命周期：init(SVGRenderer) → setOption(notMerge 覆盖式更新) → ResizeObserver → dispose
  * - 主题桥接：主题切换经 useTheme() 触发重渲染，重新 getComputedStyle 读 var(--cn-*) 注入 option；
@@ -17,7 +16,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { Empty, Tooltip } from 'antd'
 import * as echarts from 'echarts/core'
-import { BarChart, BoxplotChart, CandlestickChart, LineChart, PieChart, ScatterChart } from 'echarts/charts'
+import { BarChart, BoxplotChart, LineChart, PieChart, ScatterChart } from 'echarts/charts'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
 import { SVGRenderer } from 'echarts/renderers'
 import type { EChartsCoreOption, EChartsType } from 'echarts/core'
@@ -36,7 +35,7 @@ import {
 
 // 按需注册（tree-shaking 控体积；SVGRenderer 无 canvas 依赖，jsdom 可跑）
 echarts.use([
-  BarChart, LineChart, PieChart, ScatterChart, BoxplotChart, CandlestickChart,
+  BarChart, LineChart, PieChart, ScatterChart, BoxplotChart,
   GridComponent, TooltipComponent, LegendComponent, SVGRenderer,
 ])
 
@@ -237,33 +236,6 @@ function buildOption(data: ChartData, cfg: ChartConfig, colors: ThemeColors): EC
           },
         ],
       }
-    case 'candlestick':
-      return {
-        tooltip: { trigger: 'axis', ...tooltipStyle(colors) },
-        grid: { left: 56, right: 24, top: 24, bottom: 40 },
-        xAxis: {
-          ...categoryAxis(colors, data.categories),
-          name: cfg.time_field ?? '',
-          nameTextStyle: { color: colors.secondary },
-        },
-        yAxis: {
-          ...valueAxis(colors),
-          name: cfg.close_field ?? '',
-          nameTextStyle: { color: colors.secondary },
-        },
-        series: [{
-          name: cfg.close_field ?? 'K 线',
-          type: 'candlestick',
-          // ECharts 口径：color 为阳线（收 ≥ 开）、color0 为阴线；中国市场惯例红涨绿跌
-          data: data.values,
-          itemStyle: {
-            color: '#ef5350',
-            color0: '#26a69a',
-            borderColor: '#ef5350',
-            borderColor0: '#26a69a',
-          },
-        }],
-      }
   }
 }
 
@@ -390,12 +362,6 @@ function missingFieldLabels(cfg: ChartConfig, fields: Field[]): string[] {
   if (cfg.chart_type === 'scatter') {
     if (!has(cfg.x_field)) out.push('X 数值字段')
     if (!has(cfg.y_field)) out.push('Y 数值字段')
-  } else if (cfg.chart_type === 'candlestick') {
-    if (!has(cfg.time_field)) out.push('时间轴字段')
-    if (!has(cfg.open_field)) out.push('开盘价字段')
-    if (!has(cfg.high_field)) out.push('最高价字段')
-    if (!has(cfg.low_field)) out.push('最低价字段')
-    if (!has(cfg.close_field)) out.push('收盘价字段')
   } else if (cfg.chart_type === 'histogram') {
     if (!has(cfg.measure_field)) out.push('度量字段')
   } else {
@@ -412,13 +378,10 @@ const CHART_TYPE_LABELS: Record<string, string> = Object.fromEntries(
   ),
 )
 
-/** 卡片头关键字段名（纯展示；scatter 取双轴，K 线取时间轴，直方图/箱线图取度量，其余取维度） */
+/** 卡片头关键字段名（纯展示；scatter 取双轴，直方图/箱线图取度量，其余取维度） */
 function chartKeyFieldLabel(cfg: ChartConfig): string {
   if (cfg.chart_type === 'scatter') {
     return [cfg.x_field, cfg.y_field].filter(Boolean).join(' × ') || '未配置'
-  }
-  if (cfg.chart_type === 'candlestick') {
-    return cfg.time_field || '未配置'
   }
   if (cfg.chart_type === 'histogram' || cfg.chart_type === 'boxplot') {
     return cfg.measure_field || '未配置'
@@ -505,12 +468,8 @@ export function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTes
     chartRef.current.setOption(option, true)
   }, [option])
 
-  // 统计面板数据：度量字段原始值（散点取 Y 字段，K 线取收盘价字段 + 相关回归摘要）
-  const statsField = cfg.chart_type === 'scatter'
-    ? cfg.y_field
-    : cfg.chart_type === 'candlestick'
-      ? cfg.close_field
-      : cfg.measure_field
+  // 统计面板数据：度量字段原始值（散点取 Y 字段）
+  const statsField = cfg.chart_type === 'scatter' ? cfg.y_field : cfg.measure_field
   const stats = useMemo(
     () => computeStats(extractNumbers(rows, statsField)),
     [rows, statsField],

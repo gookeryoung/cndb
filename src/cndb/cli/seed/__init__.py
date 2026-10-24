@@ -70,7 +70,6 @@ from cndb.cli.seed.sqlite import (
     _remove_seed_sqlite_pragmas,
     _set_seed_sqlite_pragmas,
 )
-from cndb.cli.seed.stock_quotes import _seed_stock_quotes
 from cndb.cli.seed.templates import _seed_sales_tables
 from cndb.cli.seed.views import _seed_demo_personal_views, _seed_views, _validate_view_fields
 
@@ -106,7 +105,6 @@ __all__ = [
     "_seed_demo_personal_views",
     "_seed_documents",
     "_seed_sales_tables",
-    "_seed_stock_quotes",
     "_seed_views",
     "_seed_xlsx_table",
     "_set_seed_sqlite_pragmas",

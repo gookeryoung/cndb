@@ -489,35 +489,8 @@ class TestPureFunctionBranches:
         assert example["summary"]["group_by"] == "城市"
         assert example["chart"]["series"] == "城市"
 
-    def test_examples_stock_profile_appends_swing_example(self) -> None:
-        """同表存在最高 / 最低 / 收盘价 + 时间字段 → 追加振幅与量价领域示例."""
-        profiles = [
-            _profile("股票代码", "partition_dimension"),
-            _profile("股票名称", "dimension"),
-            _profile("交易日", "time", "date"),
-            _profile("最高价", "metric", "float"),
-            _profile("最低价", "metric", "float"),
-            _profile("收盘价", "metric", "float"),
-            _profile("成交量", "metric", "int"),
-        ]
-        examples = recommend_service.build_examples(profiles)
-        ids = [example["id"] for example in examples]
-        assert "stock_swing" in ids
-        assert "weather_range" not in ids  # 天气示例不误触发
-        example = next(e for e in examples if e["id"] == "stock_swing")
-        exprs = [spec["expr"] for spec in example["formulas"]]
-        assert exprs == [
-            "round(([最高价] - [最低价]) / [收盘价] * 100, 2)",
-            "round(ma([成交量], 5), 2)",
-        ]
-        for spec in example["formulas"]:
-            formula_service.parse(spec["expr"])
-            assert spec["partition_by"] == "股票代码"
-            assert spec["order_by"] == "交易日"
-        assert example["summary"]["group_by"] == "股票代码"
-
     def test_examples_generic_profile_skips_domain_examples(self) -> None:
-        """通用业务表（无气温 / K 线字段名）不追加任何领域示例."""
+        """通用业务表（无气温字段名）不追加任何领域示例."""
         profiles = [
             _profile("订单编号", "identifier"),
             _profile("产品分类", "dimension", "select"),
@@ -527,22 +500,6 @@ class TestPureFunctionBranches:
         ]
         ids = [example["id"] for example in recommend_service.build_examples(profiles)]
         assert "weather_range" not in ids
-        assert "stock_swing" not in ids
-
-    def test_examples_stock_example_without_volume_or_partition(self) -> None:
-        """缺成交量 / 分区列时领域示例降级：无量能均线公式、汇总退化为全局均值."""
-        profiles = [
-            _profile("交易日", "time", "date"),
-            _profile("最高价", "metric", "float"),
-            _profile("最低价", "metric", "float"),
-            _profile("收盘价", "metric", "float"),
-        ]
-        examples = recommend_service.build_examples(profiles)
-        example = next(e for e in examples if e["id"] == "stock_swing")
-        assert [spec["expr"] for spec in example["formulas"]] == ["round(([最高价] - [最低价]) / [收盘价] * 100, 2)"]
-        assert "partition_by" not in example["formulas"][0]
-        assert example["summary"]["group_by"] is None
-        assert example["summary"]["top_n"] is None
 
     def test_formulas_single_metric_skips_ratio(self) -> None:
         formulas = recommend_service.recommend_formulas([_profile("销售额", "metric", "number")])

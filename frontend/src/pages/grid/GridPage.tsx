@@ -22,7 +22,7 @@ import { Modal, Empty, App as AntApp, Skeleton } from 'antd'
 import {
   ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
-  TableOutlined, BarChartOutlined, NodeIndexOutlined, ApartmentOutlined, StockOutlined, PictureOutlined,
+  TableOutlined, BarChartOutlined, NodeIndexOutlined, ApartmentOutlined, PictureOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
@@ -68,7 +68,6 @@ const WbsView = lazy(() => import('./views/WbsView'))
 const TreeView = lazy(() => import('./views/TreeView'))
 const MatrixView = lazy(() => import('./views/MatrixView'))
 const ChartView = lazy(() => import('./views/ChartView'))
-const KlineView = lazy(() => import('./views/KlineView'))
 const FlowView = lazy(() => import('./views/FlowView'))
 
 function ModalFallback() {
@@ -137,7 +136,6 @@ const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'wbs', label: 'WBS', tooltip: '工作分解 (WBS)：树状层级组织任务', icon: <PartitionOutlined /> },
   { mode: 'matrix', label: '矩阵', tooltip: '矩阵 (Matrix)：行列分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
   { mode: 'chart', label: '图表', tooltip: '图表 (Chart)：柱状/折线/饼图/散点/直方图/箱线图与统计分析', icon: <BarChartOutlined /> },
-  { mode: 'kline', label: 'K线', tooltip: 'K线 (Kline)：一只标的一行，行内 K 线序列按选中行切换，支持周期/复权/均线/成交量', icon: <StockOutlined /> },
   { mode: 'flow', label: '流程', tooltip: '流程 (Flow)：按流程节点字段平铺为「从节点到节点」的流转管线', icon: <NodeIndexOutlined /> },
 ]
 
@@ -231,7 +229,6 @@ export default function GridPage() {
       void import('./views/TreeView')
       void import('./views/MatrixView')
       void import('./views/ChartView')
-      void import('./views/KlineView')
       void import('./views/FlowView')
     }
     if (typeof requestIdleCallback === 'function') {
@@ -357,7 +354,7 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const MODE_VIEW_TYPES = new Set<string>(['tree', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'kline', 'flow'])
+      const MODE_VIEW_TYPES = new Set<string>(['tree', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'flow'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = MODE_VIEW_TYPES.has(vt) ? (vt as ViewMode) : 'grid'
 
@@ -1221,15 +1218,6 @@ export default function GridPage() {
               <MatrixView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'chart' ? (
               <ChartView rows={rowList.items || []} fields={table?.fields || []} view={activeView} total={rowList.total} onRowClick={openDetailWithPrefetch} />
-            ) : mode === 'kline' ? (
-              <KlineView
-                rows={rowList.items || []}
-                fields={table?.fields || []}
-                view={activeView}
-                total={rowList.total}
-                initialSelectedRowId={(selectedRowKeys[0] as ID | undefined) ?? null}
-                onSelectRow={(id) => setSelectedRowKeys([id])}
-              />
             ) : mode === 'flow' ? (
               <FlowView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : (

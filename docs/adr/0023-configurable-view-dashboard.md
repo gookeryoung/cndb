@@ -26,11 +26,11 @@ Related: `frontend/src/pages/grid/views/ChartView.tsx`、`frontend/src/pages/gri
 
 | # | 现状 | 位置 | 影响 | 与需求的关系 |
 |---|---|---|---|---|
-| 1 | `view_type` 为自由 `String(32)`，后端只对 `kline` 做语义校验；前端类型下拉硬编码 11 项 | `src/cndb/plugins/tables/models.py:253`、`src/cndb/plugins/tables/routers/views.py:141`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx:218` | 新增视图类型零迁移，但也没有类型白名单，写错类型要等前端渲染时才暴露 | C4 前置 |
-| 2 | 图表视图已支持 7 类图（bar/line/pie/scatter/histogram/boxplot/candlestick），option 装配集中在 130 行 `switch` | `frontend/src/pages/grid/views/ChartView.tsx:137` | 每加一类图要改 `buildOption` + `missingFieldLabels` + `CHART_OPTIONS` 三处，易漏 | C1 确认（需注册表化） |
+| 1 | `view_type` 为自由 `String(32)`，后端只对 `view_options` 做字段引用校验；前端类型下拉硬编码 10 项 | `src/cndb/plugins/tables/models.py:253`、`src/cndb/plugins/tables/routers/views.py:141`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx:218` | 新增视图类型零迁移，但也没有类型白名单，写错类型要等前端渲染时才暴露 | C4 前置 |
+| 2 | 图表视图已支持 6 类图（bar/line/pie/scatter/histogram/boxplot），option 装配集中在 130 行 `switch` | `frontend/src/pages/grid/views/ChartView.tsx:137` | 每加一类图要改 `buildOption` + `missingFieldLabels` + `CHART_OPTIONS` 三处，易漏 | C1 确认（需注册表化） |
 | 3 | 图表配置靠在 `CHART_OPTIONS` 的 16 项扁平键 + `visibleWhen` 条件显隐 | `frontend/src/pages/grid/view-config/viewOptionSchema.ts:285` | 单图语义清晰；多图/多 widget 时扁平键无法表达「每个 widget 一套配置」 | C2 排除（需要嵌套结构） |
 | 4 | 已有 `charts[]` 多图形态（`normalizeChartList` / `serializeChartList`），渲染为 `auto-fill minmax(420px,1fr)` 自适应网格 | `viewOptionSchema.ts:700`、`ChartView.tsx:632` | 只能等宽换行排列，不能指定位置 / 跨列 / 混排 KPI；且所有图共用一个数据集 | C2 排除（需要显式坐标） |
-| 5 | 非 grid 视图统一拉 `VIEW_FETCH_ALL_LIMIT = 2000` 行，聚合在前端做 | `frontend/src/pages/grid/useGridData.ts:22`、`chartBoard.ts` | 示例工作区日线约 1.2 万行，超过 2000 只能看截断样本；多 widget 各拉一次会造成 N 倍网络与聚合开销 | C1 风险（需服务端聚合） |
+| 5 | 非 grid 视图统一拉 `VIEW_FETCH_ALL_LIMIT = 2000` 行，聚合在前端做 | `frontend/src/pages/grid/useGridData.ts:22`、`chartBoard.ts` | 大表超过 2000 行只能看截断样本；多 widget 各拉一次会造成 N 倍网络与聚合开销 | C1 风险（需服务端聚合） |
 | 6 | 数据分析模块已有服务端聚合链路：`scan_rows`（含行级权限 / 字段隐藏）+ `compute_summary`（分组 × 聚合 × TopN） | `src/cndb/plugins/analytics/services/compute.py:120`、`:220`、`:310` | 画布 widget 的聚合可直接复用，不必新写一套 SQL | C1 确认（复用） |
 | 7 | `ChartCard` 已抽出为可复用组件，接受 `cfg/rows/fields/total`，并被分析页直接复用 | `ChartView.tsx:446` | 画布只需把「聚合结果」转成同样的入参形态即可复用渲染，避免第二套图表实现 | C1 确认（复用） |
 | 8 | 关键 chunk 有 gzip 预算门禁，`ChartView` 基线 14.4 KiB | `frontend/scripts/bundle-budget.json`、`docs/BUNDLE_BUDGET.md` | 新增画布与图表类型必须走 lazy + 独立 chunk，否则 CI 红 | C4 约束 |
@@ -183,7 +183,6 @@ export interface ChartTypeDef {
 | 散点 / 气泡 `scatter` | 双数值（+ 尺寸） | x, y | 可选 | — | 相关性 | ✓ P0 |
 | 直方 `histogram` | 单数值分布 | y | — | 分箱 | 分布形态 | ✓ P0 |
 | 箱线 `boxplot` | 类目 × 数值 | x, y | — | 五数概括 | 离群与离散度 | ✓ P0 |
-| K 线 `candlestick` | 时间 × 开高低收 | x, y[4] | — | — | 行情 | ✓ P0 |
 | 雷达 `radar` | 维度 → 多指标 | x, y[] | 可选 | ✓ | 多维评分 | ＋ P2 |
 | 漏斗 `funnel` | 阶段 → 数值 | x, y | — | ✓ | 转化 | ＋ P2 |
 | 仪表 `gauge` | 单值 + 目标 | y, target | — | ✓ | 达成率 | ＋ P2 |
@@ -195,13 +194,12 @@ export interface ChartTypeDef {
 | 分组 | 配置项 |
 |---|---|
 | 数据角色 | `x` / `y[]`（多度量）/ `series`（长表转宽表）/ `target`（仪表） |
-| 聚合 | `sum / avg / count / min / max / median / none`（`none` = 明细不聚合，仅散点 / K 线 / 小表） |
+| 聚合 | `sum / avg / count / min / max / median / none`（`none` = 明细不聚合，仅散点 / 小表） |
 | 排序与截断 | `sort: none / x_asc / x_desc / y_asc / y_desc`、`top_n`（≤100，其余并「其他」）、时间分桶粒度 |
 | 轴 | 左/右轴分配、对数轴、范围（min/max）、单位 / 小数位 / 千分位 / 百分比 |
 | 标记 | 数据标签（显示 / 位置 / 阈值着色）、面积平滑、堆叠模式、趋势线（散点） |
 | 图例与提示 | 位置、滚动模式、统一 tooltip（数值格式化与轴一致） |
-| 配色 | 默认 8 色板（现状 `SERIES_COLORS`）/ 按维度值映射（复用 `tagColors`）/ 阈值色阶；红涨绿跌只用于金融类 |
-| 金融扩展 | 周期（日/周/月）、复权、MA、成交量（P3 接 `KlineView` 的序列派生逻辑） |
+| 配色 | 默认 8 色板（现状 `SERIES_COLORS`）/ 按维度值映射（复用 `tagColors`）/ 阈值色阶 |
 
 **KPI 卡**：主值（`field + agg`）+ 对比（`prev_period` / `prev_year`，需时间字段）+ 12 点 sparkline + 单位/小数位/前缀；对比缺基准时显「—」而不是 0%。
 
@@ -214,7 +212,7 @@ export interface ChartTypeDef {
 | 客户端聚合 | 单表可读行 ≤ 2000（`VIEW_FETCH_ALL_LIMIT`） | `useGridData` 已有行集 → `chartBoard.buildChartData` | 2000 行 |
 | 服务端聚合 | 行数 > 2000 或用户显式选「全量统计」 | 新批量端点，复用 `scan_rows` + `compute_summary`，返回 `categories/series/points` | 扫描上限沿用 `ANALYTICS_MAX_SCAN_ROWS` |
 
-两种来源都归一到同一 `Dataset`（`{kind:'category'|'pie'|'scatter'|'histogram'|'boxplot'|'candlestick', categories, series, points, meta}`），`ChartWidget` 只认 `Dataset`。卡壳右上角统一显示「样本 N / 总行数 M」的口径提示（沿用 `StatsPanel` 的表述），避免「图看着对、其实只算了 2000 行」的误判。
+两种来源都归一到同一 `Dataset`（`{kind:'category'|'pie'|'scatter'|'histogram'|'boxplot', categories, series, points, meta}`），`ChartWidget` 只认 `Dataset`。卡壳右上角统一显示「样本 N / 总行数 M」的口径提示（沿用 `StatsPanel` 的表述），避免「图看着对、其实只算了 2000 行」的误判。
 
 **批量化取数（关键）**：画布一次请求带上所有 widget 的查询，服务端对同一 `(table, 全局筛选)` **只扫描一次**，多 widget 共享行集后各自聚合 —— 既省往返，也避免 N 次全表扫描。单 widget 失败只影响该卡片（`errors[]` 带 `widget_id`），不整页报错。
 
@@ -339,7 +337,6 @@ export interface ChartTypeDef {
 | 视图可见性 | `tables_dataview.visibility` + 授权名单 | 画布沿用三档模型，不新增权限维度 | ADR 0003 |
 | 行级权限 / 字段隐藏 | `list_rows`、`scan_rows` | widget 取数不得绕过，跨表逐表判定 | ADR 0004 |
 | 分析聚合 | `plugins/analytics/services/compute.py` | 复用 `scan_rows` + `compute_summary`，不另写 SQL 聚合 | ADR 0006 |
-| K 线能力 | `klineBoard.ts`、`KlineView.tsx` | P3 的金融扩展接其周期/复权/MA 派生，不复制算法 | ADR 0011 |
 | 视图配置 schema | `viewOptionSchema.ts` | 画布沿用 `ViewOptionSchema` 的 `kind/group/visibleWhen` 约定 | ADR 0022 |
 
 ## 落地状态（随实现更新）

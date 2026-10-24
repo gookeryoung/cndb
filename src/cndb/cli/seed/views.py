@@ -54,25 +54,6 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
         "measure_field",
         "x_field",
         "y_field",
-        # chart K线蜡烛图（时间轴 + 开/高/低/收四价字段）
-        "time_field",
-        "open_field",
-        "high_field",
-        "low_field",
-        "close_field",
-        # kline 行内 K 线视图（标的/行情字段 + 多周期复权 JSON 序列字段）
-        "symbol_field",
-        "name_field",
-        "price_field",
-        "change_pct_field",
-        "volume_field",
-        "amount_field",
-        "date_field",
-        "day_qfq_field",
-        "day_hfq_field",
-        "day_none_field",
-        "week_qfq_field",
-        "month_qfq_field",
         # flow 流程视图（流程节点字段；title_field 已在上方）
         "node_field",
         # gallery 卡片画廊（摘要字段；标题/日期字段已在上方）
@@ -122,11 +103,6 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
                 "x_field",
                 "y_field",
                 "group_field",
-                "time_field",
-                "open_field",
-                "high_field",
-                "low_field",
-                "close_field",
             ):
                 opt_val = entry.get(opt_key)
                 if opt_val and opt_val not in valid_fields:
@@ -135,38 +111,6 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
                         f"的 view_options.charts[{i}].{opt_key}='{opt_val}' 不存在"
                     )
                     return False
-    # kline 语义校验：标的字段必填、至少一个序列字段、默认复权/周期有可用序列
-    if vc.get("view_type") == "kline":
-        if not vo.get("symbol_field"):
-            print(f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 kline 视图缺少 symbol_field")
-            return False
-        series_keys = (
-            "day_qfq_field",
-            "day_hfq_field",
-            "day_none_field",
-            "week_qfq_field",
-            "month_qfq_field",
-        )
-        if not any(vo.get(key) for key in series_keys):
-            print(f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 kline 视图未配置序列字段")
-            return False
-        adjust = str(vo.get("default_adjust") or "qfq")
-        adjust_field = {"qfq": "day_qfq_field", "hfq": "day_hfq_field", "none": "day_none_field"}.get(adjust)
-        if adjust_field and not vo.get(adjust_field):
-            print(
-                f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 kline 视图 "
-                f"default_adjust={adjust} 需配置 {adjust_field}"
-            )
-            return False
-        period = str(vo.get("default_period") or "day")
-        if period in ("week", "month"):
-            period_field = "week_qfq_field" if period == "week" else "month_qfq_field"
-            if not vo.get(period_field) and not vo.get("day_qfq_field"):
-                print(
-                    f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 kline 视图 "
-                    f"default_period={period} 需配置 {period_field} 或 day_qfq_field"
-                )
-                return False
     return True
 
 
@@ -245,8 +189,7 @@ def _seed_views(
                     # 默认视图必须为 table 档（让所有成员进入时都看得到）
                     is_default = bool(vc.get("is_default", False)) and visibility == ViewVisibility.TABLE
                     if is_default:
-                        # 与 views API 同口径：每张表只保留一个默认视图；
-                        # 自选股表用 kline 视图取代自动生成的「全部」默认位
+                        # 与 views API 同口径：每张表只保留一个默认视图
                         db.query(DataView).filter(DataView.table_id == dt.id).update(
                             {"is_default": False}, synchronize_session=False
                         )

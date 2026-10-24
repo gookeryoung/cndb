@@ -281,11 +281,11 @@ export const MATRIX_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
-/** Chart 图表视图的专属配置字段（共 16 项）— 各项按 chart_type 条件显隐（visibleWhen） */
+/** Chart 图表视图的专属配置字段（共 11 项）— 各项按 chart_type 条件显隐（visibleWhen） */
 export const CHART_OPTIONS: ViewOptionSchema[] = [
   {
     key: 'chart_type', label: '图表类型', group: '图表配置',
-    tooltip: '柱状图/折线图/饼图适合维度聚合；散点图看两变量关系；直方图/箱线图看分布；K 线图看开高低收',
+    tooltip: '柱状图/折线图/饼图适合维度聚合；散点图看两变量关系；直方图/箱线图看分布',
     kind: 'enum_select', defaultValue: 'bar',
     enumOptions: [
       { value: 'bar', label: '柱状图' },
@@ -294,7 +294,6 @@ export const CHART_OPTIONS: ViewOptionSchema[] = [
       { value: 'scatter', label: '散点图' },
       { value: 'histogram', label: '直方图' },
       { value: 'boxplot', label: '箱线图' },
-      { value: 'candlestick', label: 'K 线图' },
     ],
   },
   {
@@ -332,41 +331,6 @@ export const CHART_OPTIONS: ViewOptionSchema[] = [
     tooltip: '按此字段的值拆分为多个系列（如各产品线各一条折线）',
     kind: 'field_select', fieldTypes: ['select', 'multiselect', 'link'],
     visibleWhen: (o) => ['bar', 'line'].includes(String(o.chart_type ?? 'bar')),
-  },
-  {
-    key: 'time_field', label: '时间轴字段', group: '图表配置',
-    tooltip: 'K 线图横轴的时间字段（日期/时间列）；同一标的按此字段的时间顺序排列蜡烛',
-    kind: 'field_select', fieldTypes: ['date', 'datetime'],
-    required: true,
-    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
-  },
-  {
-    key: 'open_field', label: '开盘价字段', group: '图表配置',
-    tooltip: 'K 线蜡烛的开盘价数值字段',
-    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
-    required: true,
-    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
-  },
-  {
-    key: 'high_field', label: '最高价字段', group: '图表配置',
-    tooltip: 'K 线蜡烛的最高价数值字段',
-    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
-    required: true,
-    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
-  },
-  {
-    key: 'low_field', label: '最低价字段', group: '图表配置',
-    tooltip: 'K 线蜡烛的最低价数值字段',
-    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
-    required: true,
-    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
-  },
-  {
-    key: 'close_field', label: '收盘价字段', group: '图表配置',
-    tooltip: 'K 线蜡烛的收盘价数值字段；统计面板以该列计算描述统计',
-    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage', 'timestamp'],
-    required: true,
-    visibleWhen: (o) => String(o.chart_type ?? 'bar') === 'candlestick',
   },
   {
     key: 'aggregation', label: '聚合方式', group: '聚合与分箱',
@@ -437,98 +401,6 @@ export const FLOW_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
-/** Kline 行内 K 线视图的专属配置字段（17 项）— 一只标的（一行）内嵌多周期复权 JSON 序列 */
-export const KLINE_OPTIONS: ViewOptionSchema[] = [
-  {
-    key: 'symbol_field', label: '标的代码字段', group: '标的与行情',
-    tooltip: '每行一只标的的代码（如 sh600519 / hk00700 / usAAPL），左侧列表与图表标题使用',
-    kind: 'field_select', fieldTypes: ['text', 'longtext'], required: true,
-  },
-  {
-    key: 'name_field', label: '标的名称字段', group: '标的与行情',
-    tooltip: '左侧列表与图表标题显示的标的名称',
-    kind: 'field_select', fieldTypes: ['text', 'longtext'],
-  },
-  {
-    key: 'price_field', label: '最新价字段', group: '标的与行情',
-    tooltip: '列表与图表头部显示的最新收盘价（行级字段，缺省回退到 K 线末根收盘）',
-    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
-  },
-  {
-    key: 'change_pct_field', label: '涨跌幅字段', group: '标的与行情',
-    tooltip: '存百分数（5.2 表示 5.2%），红涨绿跌着色',
-    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
-  },
-  {
-    key: 'volume_field', label: '成交量字段', group: '标的与行情',
-    kind: 'field_select', fieldTypes: ['number', 'float'],
-  },
-  {
-    key: 'amount_field', label: '成交额字段', group: '标的与行情',
-    kind: 'field_select', fieldTypes: ['number', 'float'],
-  },
-  {
-    key: 'date_field', label: '最新交易日字段', group: '标的与行情',
-    kind: 'field_select', fieldTypes: ['date', 'datetime'],
-  },
-  {
-    key: 'day_qfq_field', label: '日线前复权序列', group: 'K 线序列（JSON 列）',
-    tooltip: 'JSON 数组列：[{date,open,close,high,low,volume,amount,...}, ...]，按日期升序',
-    kind: 'field_select', fieldTypes: ['json'],
-  },
-  {
-    key: 'day_hfq_field', label: '日线后复权序列', group: 'K 线序列（JSON 列）',
-    kind: 'field_select', fieldTypes: ['json'],
-  },
-  {
-    key: 'day_none_field', label: '日线不复权序列', group: 'K 线序列（JSON 列）',
-    kind: 'field_select', fieldTypes: ['json'],
-  },
-  {
-    key: 'week_qfq_field', label: '周线前复权序列', group: 'K 线序列（JSON 列）',
-    tooltip: '留空时由日线前复权派生（首开末收、最高最低、量额求和）',
-    kind: 'field_select', fieldTypes: ['json'],
-  },
-  {
-    key: 'month_qfq_field', label: '月线前复权序列', group: 'K 线序列（JSON 列）',
-    tooltip: '留空时由日线前复权派生',
-    kind: 'field_select', fieldTypes: ['json'],
-  },
-  {
-    key: 'default_period', label: '默认周期', group: '显示',
-    kind: 'enum_select', defaultValue: 'day',
-    enumOptions: [
-      { value: 'day', label: '日线' },
-      { value: 'week', label: '周线' },
-      { value: 'month', label: '月线' },
-    ],
-  },
-  {
-    key: 'default_adjust', label: '默认复权', group: '显示',
-    kind: 'enum_select', defaultValue: 'qfq',
-    enumOptions: [
-      { value: 'qfq', label: '前复权' },
-      { value: 'hfq', label: '后复权' },
-      { value: 'none', label: '不复权' },
-    ],
-  },
-  {
-    key: 'show_ma', label: '显示均线', group: '显示',
-    tooltip: '叠加 MA 均线（默认 MA5/10/20/60，可用下方「均线周期」覆盖）',
-    kind: 'switch', defaultValue: true,
-  },
-  {
-    key: 'show_volume', label: '显示成交量', group: '显示',
-    tooltip: '价格下方显示成交量副图，与价格图共享 dataZoom',
-    kind: 'switch', defaultValue: true,
-  },
-  {
-    key: 'ma_periods', label: '均线周期', group: '显示',
-    tooltip: '逗号分隔的均线周期（如 5,10,20,60）；留空使用默认',
-    kind: 'text_list',
-  },
-]
-
 /** Gallery 卡片画廊的专属配置字段（7 项）— 资讯 / 菜谱等内容型表的阅读态 */
 export const GALLERY_OPTIONS: ViewOptionSchema[] = [
   {
@@ -581,7 +453,6 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'tree': return TREE_OPTIONS
     case 'matrix': return MATRIX_OPTIONS
     case 'chart': return CHART_OPTIONS
-    case 'kline': return KLINE_OPTIONS
     case 'flow': return FLOW_OPTIONS
     case 'gallery': return GALLERY_OPTIONS
     default: return []
