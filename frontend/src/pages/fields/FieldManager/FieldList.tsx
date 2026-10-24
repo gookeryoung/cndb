@@ -28,6 +28,10 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import type { Field, FieldType } from '@/api'
 import { getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
+import { formatIncrementExample, isAutoIncrementField } from '@/utils/fieldIncrement'
+
+// 历史导出面：FieldManager 与测试从这里取用；实现已收敛到 @/utils/fieldIncrement
+export { formatIncrementExample } from '@/utils/fieldIncrement'
 
 /** 字段类型 → 图标（字段行卡片等场景共用；历史别名类型走 TagOutlined 兜底） */
 export const FIELD_TYPE_ICONS: Partial<Record<FieldType, ReactNode>> = {
@@ -54,8 +58,7 @@ export function fieldNoteText(f: Field): string {
   const parts: string[] = []
   if (f.required) parts.push('必填')
   if (f.is_unique) parts.push('唯一')
-  const defaultMode = (f.config?.default_mode as string) ?? ''
-  if (f.field_type === 'text' && defaultMode === 'auto_increment') {
+  if (isAutoIncrementField(f)) {
     parts.push(`自动编号：${formatIncrementExample(f.config)} 起`)
   } else if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {
     parts.push(`默认值：${String(f.default_value)}`)
@@ -65,16 +68,6 @@ export function fieldNoteText(f: Field): string {
     parts.push(autoFill === 'on_create' ? '创建时自动填充' : '更新时自动填充')
   }
   return parts.join(' · ')
-}
-
-/** 由自动编号 config 拼出示例编号（如 PRJ-0001），供备注与默认值编辑器共用 */
-export function formatIncrementExample(config: Record<string, unknown> | undefined): string {
-  const prefix = String(config?.increment_prefix ?? '')
-  const paddingNum = Number(config?.increment_padding ?? 4)
-  const padding = Number.isFinite(paddingNum) ? Math.max(0, Math.min(10, Math.trunc(paddingNum))) : 4
-  const startNum = Number(config?.increment_start ?? 1)
-  const start = Number.isFinite(startNum) ? Math.max(0, Math.trunc(startNum)) : 1
-  return `${prefix}${String(start).padStart(padding, '0')}`
 }
 
 interface FieldListProps {

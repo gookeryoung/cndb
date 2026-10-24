@@ -36,6 +36,7 @@ import { buildColumns, type RowInlineOps, type InlineEditCellProps } from './cel
 import { useNewRowAutoScroll, type TableScrollTarget } from './cells/useNewRowAutoScroll'
 import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCellValueForEdit } from './cells/GridCell'
 import { defaultValueForNewRow } from './cells/fieldOps'
+import { isAutoIncrementField } from '@/utils/fieldIncrement'
 import { type ViewMode, VALID_MODES, deriveModeSwitch } from './views/viewModes'
 import { useTableSettingsStore, useGridViewStore, useUiStore } from '@/store'
 import { useElementSize, useDebouncedCallback } from '@/hooks'
@@ -575,6 +576,12 @@ export default function GridPage() {
 
   const gridFields = useMemo(() => (table?.fields || []) as Field[], [table?.fields])
 
+  /** 自动编号字段名集合 —— 新增行里这些列只读展示生成提示，不渲染输入框 */
+  const autoIncrementFieldNames = useMemo(
+    () => new Set(gridFields.filter(isAutoIncrementField).map(f => f.name)),
+    [gridFields],
+  )
+
   /** 视图级隐藏字段（view_options.hidden_fields 黑名单，元素为字段 id 字符串） */
   const hiddenFieldIds = useMemo(() => {
     const raw = viewOptionsDraft?.hidden_fields
@@ -629,7 +636,10 @@ export default function GridPage() {
     setEditingRowId(null)
 
     // 防护：必填字段被视图隐藏时，隐藏列无法输入，新增行必然无法通过必填校验——提前预警
-    const hiddenRequired = gridFields.filter(f => f.required && hiddenFieldIds.has(String(f.id)))
+    // （自动编号必填字段由后端生成，无需填写，不参与本警示）
+    const hiddenRequired = gridFields.filter(
+      f => f.required && hiddenFieldIds.has(String(f.id)) && !isAutoIncrementField(f),
+    )
     if (hiddenRequired.length > 0) {
       message.warning(`必填字段「${hiddenRequired.map(f => f.name).join('、')}」在本视图被隐藏，无法在此填写；请先在视图配置的字段显示中恢复显示`)
     }
@@ -689,7 +699,8 @@ export default function GridPage() {
     // 必填校验：可编辑必填字段最终值非空；被视图隐藏的必填字段给出可行动提示
     // （隐藏列无输入框，用户没有「忘记填写」而是「无处填写」，报错须指向恢复显示）
     for (const f of gridFields) {
-      if (!f.required || !isEditableInlineField(f)) continue
+      // 自动编号由后端建行时生成，前端无法预填也不应要求用户填写
+      if (!f.required || !isEditableInlineField(f) || isAutoIncrementField(f)) continue
       if (isBlankCellValue(finalizeCellValue(draft[f.name], f))) {
         if (hiddenFieldIds.has(String(f.id))) {
           message.error(`必填字段「${f.name}」在本视图被隐藏，无法填写；请先在视图配置的字段显示中恢复显示`)
@@ -738,8 +749,10 @@ export default function GridPage() {
       onFieldCancel: () => { if (isNew) setNewRowActive(false); else setEditingRowId(null) },
       // 仅新增行应用自动填充锁定；存量行整行编辑不受锁定限制
       lockedFields: isNew ? newRowLockedFields : new Set<string>(),
+      // 仅新增行把自动编号列替换为生成提示；存量行照常展示已保存的编号
+      autoIncrementFields: isNew ? autoIncrementFieldNames : undefined,
     }
-  }, [newRowActive, editingRowId, rowDrafts, gridFields, newRowLockedFields]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [newRowActive, editingRowId, rowDrafts, gridFields, newRowLockedFields, autoIncrementFieldNames]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 行内编辑桥接：最新操作集每次渲染同步写入 ref，对外只暴露引用稳定的 inlineOps。
   // 这样 buildColumns 的 useMemo 不会持有陈旧闭包（旧实现 deps 漏掉 inlineOps，

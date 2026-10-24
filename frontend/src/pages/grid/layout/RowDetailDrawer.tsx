@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, Select, DatePicker, InputNumber, Switch, Upload, Tooltip } from 'antd'
-import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined } from '@ant-design/icons'
+import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined, NumberOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { recordApi, fileApi, fieldApi, isChangeRequestResponse } from '@/api'
@@ -11,6 +11,7 @@ import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
 import { extractSelectOptions, defaultValueForNewRow } from '../cells/fieldOps'
 import { pickLinkLabelFieldName, buildLinkRowLabel } from '../cells/fieldValueFormat'
 import { ImageFieldEditor } from '../cells/ImageFieldEditor'
+import { autoIncrementHint, isAutoIncrementField } from '@/utils/fieldIncrement'
 import { useTableSettingsStore } from '@/store'
 import { AuthedFileLink, AuthedImage } from '@/components/AuthedFile'
 
@@ -132,6 +133,10 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
       }
     }
     if (isCreate) {
+      // 自动编号由后端生成：即便表单控件回传空串也必须剔除，否则后端会把它当作用户显式传值而跳过编号
+      for (const f of fields) {
+        if (isAutoIncrementField(f)) delete values[f.name]
+      }
       createRow.mutate(values)
     } else if (row) {
       updateRow.mutate(
@@ -163,6 +168,8 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
       <Form form={form} layout="vertical">
         {fields.map(f => {
           const locked = lockedFieldNames.has(f.name)
+          // 新建行里自动编号由后端生成：不给输入框，避免用户以为要自己填
+          const autoIncrement = isCreate && isAutoIncrementField(f)
           return (
             <Form.Item
               key={String(f.id)}
@@ -174,12 +181,19 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
                       <LockOutlined style={{ fontSize: 11, color: '#bfbfbf' }} />
                     </Tooltip>
                   )}
+                  {autoIncrement && (
+                    <Tooltip title={`「${f.name}」为自动编号字段：创建行时由后端生成编号，无需填写`}>
+                      <NumberOutlined style={{ fontSize: 11, color: '#94a3b8' }} />
+                    </Tooltip>
+                  )}
                 </span>
               }
               name={f.name}
               style={{ marginBottom: 12 }}
             >
-              <FieldEditor field={f} wid={wid} tableId={tid} rowId={row?.id} disabled={locked || !!readOnly} />
+              {autoIncrement
+                ? <Input disabled placeholder={autoIncrementHint(f)} data-testid={`drawer-auto-increment-${f.id}`} />
+                : <FieldEditor field={f} wid={wid} tableId={tid} rowId={row?.id} disabled={locked || !!readOnly} />}
             </Form.Item>
           )
         })}

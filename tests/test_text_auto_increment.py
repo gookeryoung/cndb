@@ -239,6 +239,43 @@ class TestCreateRowAutoIncrement:
         rows = [rec.create_row(db_engine, dt, {}) for _ in range(3)]
         assert [r["编号"] for r in rows] == ["PRJ-0001", "PRJ-0002", "PRJ-0003"]
 
+    def test_required_auto_increment_field_filled_on_create(self, db, db_engine, ws):
+        """必填的自动编号字段不需要用户填值 —— 编号在校验前生成。"""
+        dt, _df = self._fixture(db, db_engine, ws, "AIRequired")
+        df = next(f for f in dt.fields if f.name == "编号")
+        df.required = True
+        db.commit()
+
+        assert rec.create_row(db_engine, dt, {})["编号"] == "PRJ-0001"
+
+    def test_required_auto_increment_field_filled_in_bulk(self, db, db_engine, ws):
+        """bulk_create 同样先生成编号再校验必填。"""
+        dt, _df = self._fixture(db, db_engine, ws, "AIBulkRequired")
+        df = next(f for f in dt.fields if f.name == "编号")
+        df.required = True
+        db.commit()
+
+        ids = rec.bulk_create(db_engine, dt, [{}, {}])
+        rows, _total = rec.list_rows(db_engine, dt)
+        values = {r["id"]: r["编号"] for r in rows}
+        assert [values[i] for i in ids] == ["PRJ-0001", "PRJ-0002"]
+
+    def test_required_plain_field_still_raises(self, db, db_engine, ws):
+        """非自动编号的必填字段仍然拦截（必填校验没有被整体放宽）。"""
+        dt = DataTable(workspace_id=ws.id, name="AIRequiredPlain")
+        dt.ensure_db_name()
+        db.add(dt)
+        db.flush()
+        df = DataField(table_id=dt.id, name="标题", field_type="text", order=0, required=True)
+        df.ensure_db_name()
+        db.add(df)
+        db.commit()
+        db.refresh(dt)
+        ddl.create_table(db_engine, dt)
+
+        with pytest.raises(ValueError, match="必填字段 标题 不能为空"):
+            rec.create_row(db_engine, dt, {})
+
 
 # ── API 往返（config 键完整） ─────────────────────────
 

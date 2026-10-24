@@ -231,6 +231,40 @@ describe('RowDetailDrawer 新建行模式', () => {
         expect(onCreated).not.toHaveBeenCalled()
         expect(onClose).not.toHaveBeenCalled()
     })
+
+    it('自动编号字段在新建模式只读展示生成提示，不要求用户填写', async () => {
+        setup()
+        const captured: Array<{ values: Record<string, unknown> }> = []
+        server.use(http.post('/api/v1/workspaces/10/tables/20/records', async ({ request }) => {
+            captured.push(await request.clone().json() as { values: Record<string, unknown> })
+            return HttpResponse.json({ id: 9 })
+        }))
+        const autoField = makeField({
+            id: 7,
+            name: '编号',
+            field_type: 'text',
+            config: { default_mode: 'auto_increment', increment_prefix: 'PRJ-' },
+        })
+        renderProviders(
+            <RowDetailDrawer
+                open
+                row={null}
+                fields={[...FIELDS, autoField]}
+                wid="10"
+                tid="20"
+                onClose={() => { }}
+            />,
+        )
+
+        const input = screen.getByTestId('drawer-auto-increment-7')
+        expect(input).toBeDisabled()
+        expect(input).toHaveAttribute('placeholder', '保存时自动生成（如 PRJ-0001）')
+
+        // 提交体不带该字段 —— 传空值会让后端跳过编号生成
+        fireEvent.click(screen.getByRole('button', { name: /创\s*建$/ }))
+        await waitFor(() => expect(captured).toHaveLength(1))
+        expect(captured[0]!.values).not.toHaveProperty('编号')
+    })
 })
 
 // ─────────────── lookup 只读引用字段 ───────────────
