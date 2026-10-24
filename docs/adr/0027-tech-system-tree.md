@@ -1,6 +1,6 @@
 # ADR 0027: 科研项目管理新增技术体系表与「技术脉络」树形视图
 
-Status: Proposed（待评审）
+Status: Accepted（已评审；P0-P1 已落地）
 Date: 2026-10-24
 Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/seed/datasets.py`、`src/cndb/cli/seed/fields.py`、`src/cndb/cli/seed/views.py`、`frontend/src/pages/grid/views/TreeView.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`examples/datasets/工作区-科研项目管理/views.json`、`examples/datasets/工作区-科研项目管理/fields.json`
 需求卡片: `docs/requirements/0027-research-tech-system-tree.md`（需求原文与约束编号的唯一副本）
@@ -155,15 +155,15 @@ Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/s
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py` | — |
-| P1 | 未开始 | 同上 | `tests/test_seed_tech_system.py`、`tests/test_backup_seed_roundtrip.py` | — |
+| P0 | 已落地 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py` | — |
+| P1 | 已落地 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py`、`tests/test_backup_seed_roundtrip.py` | — |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 未开始（ADR 待评审）
-- 已完成：需求卡片与现状核对
-- 下一步：评审通过后按 P0 新建 CSV / fields / views 并补静态测试，再跑 P1 集成测试与 `make flow`
+- 当前阶段：P0-P1 已落地（Status 已定 Accepted）
+- 已完成：`技术体系.csv`（43 行 / 6 方向 / 4 层）、`fields.json` 设置、`views.json` 双视图、`tests/test_seed_tech_system.py` 9 例；真实数据集完整性回归随 `make flow` 全量通过
+- 下一步：提交后把落地表「提交」列回填 sha；如需 `Status=Implemented` 由人确认
 - 已知坑：视图种子对字段名逐字校验，CSV 表头与 `views.json` 必须完全一致；`ROOT` 不是合法技术编号，仅作为根标记；低基数 select 推断依赖行数与唯一值比例，新增行时勿让 `技术方向 / 技术层级 / 成熟度` 变成高基数列
-- 最近一次全绿：未执行（ADR 阶段）
+- 最近一次全绿：`make flow`（2026-10-24，5329 passed / 3 skipped）
