@@ -17,6 +17,9 @@ describe('Chromium 81 定向 polyfill', () => {
     const source = read('./polyfills.ts')
     expect(source).toContain("'core-js/actual/array/at'")
     expect(source).toContain("'core-js/actual/object/has-own'")
+    // @formatjs/intl-segmenter 内部依赖 String.prototype.replaceAll（Chrome 85+），
+    // 缺它会让 PDF 导出在 html2canvas 渲染完成后静默失败（真机 Chromium 81 已复现）
+    expect(source).toContain("'core-js/actual/string/replace-all'")
     // 唯一调用点自带 typeof 守卫与 JSON 回退，补它会把 Map/Set internals 拖进包体
     expect(source).not.toContain("'core-js/web/structured-clone'")
     // Segmenter 只在导出路径按需加载，不得进这里
