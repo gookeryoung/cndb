@@ -147,9 +147,9 @@ Related: `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/table
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 后端推算 + 预览端点 | 已落地 | `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`src/cndb/plugins/tables/schemas/__init__.py` | `tests/test_text_auto_increment.py` | 待回填 |
-| P1 网格新增行只读展示 | 已落地 | `frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/api/records.ts`、`frontend/src/api/types/records.ts` | `frontend/src/pages/grid/GridPage.newRowPrefill.test.tsx` | 待回填 |
-| P2 行抽屉新建只读展示 | 已落地 | `frontend/src/pages/grid/layout/RowDetailDrawer.tsx`、`frontend/src/utils/fieldIncrement.ts` | `frontend/src/pages/grid/layout/RowDetailDrawer.test.tsx`、`frontend/src/utils/fieldIncrement.test.ts` | 待回填 |
+| P0 后端推算 + 预览端点 | 已落地 | `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`src/cndb/plugins/tables/schemas/__init__.py` | `tests/test_text_auto_increment.py` | `08c922c` |
+| P1 网格新增行只读展示 | 已落地 | `frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/api/records.ts`、`frontend/src/api/types/records.ts` | `frontend/src/pages/grid/GridPage.newRowPrefill.test.tsx` | `08c922c` |
+| P2 行抽屉新建只读展示 | 已落地 | `frontend/src/pages/grid/layout/RowDetailDrawer.tsx`、`frontend/src/utils/fieldIncrement.ts` | `frontend/src/pages/grid/layout/RowDetailDrawer.test.tsx`、`frontend/src/utils/fieldIncrement.test.ts` | `08c922c` |
 
 ## 交接（会话结束更新）
 
@@ -157,4 +157,4 @@ Related: `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/table
 - 已完成：`strip()` 推算增强、`preview_auto_increment_values`、`GET /records/auto-increment-preview`、网格与抽屉的新增行只读数值展示、冗余提示文案删除、建行后预览缓存失效
 - 下一步：人工评审通过后把 `Status` 改为 `Accepted` / `Implemented` 并回填提交 sha
 - 已知坑：预览端点必须保持在 `/{record_id}` 之前；预览是只读提示，并发窗口可能同号，以保存结果为准；前端预览查询键为 `['auto-increment-preview', wid, tid]`，新增建行路径时要同步失效
-- 最近一次全绿：`make flow` @ 待回填（2026-10-24）
+- 最近一次全绿：`make check-fast` + `make test`（5330 passed / 3 skipped）+ 前端全量 `pnpm test`（181 文件 / 2186 用例）+ `make cov` 97.26% + `make frontend-coverage`（核心行 97.69% / branches 100%，全局 82.80%）@ 2026-10-24
