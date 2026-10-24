@@ -24,7 +24,7 @@ import {
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
   TableOutlined, BarChartOutlined, NodeIndexOutlined, ApartmentOutlined, StockOutlined, PictureOutlined,
 } from '@ant-design/icons'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
@@ -568,6 +568,7 @@ export default function GridPage() {
       setRowDrafts(prev => { const next = { ...prev }; delete next[NEW_ROW_KEY]; return next })
       queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
       queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+      queryClient.invalidateQueries({ queryKey: ['auto-increment-preview', wid, tid] })
     },
     onError: (err) => {
       message.error(err instanceof Error ? err.message : '新增行失败')
@@ -576,11 +577,20 @@ export default function GridPage() {
 
   const gridFields = useMemo(() => (table?.fields || []) as Field[], [table?.fields])
 
-  /** 自动编号字段名集合 —— 新增行里这些列只读展示生成提示，不渲染输入框 */
+  /** 自动编号字段名集合 —— 新增行里这些列只读展示即将生成的编号，不渲染输入框 */
   const autoIncrementFieldNames = useMemo(
     () => new Set(gridFields.filter(isAutoIncrementField).map(f => f.name)),
     [gridFields],
   )
+
+  /** 自动编号预览 —— 新增行激活时按库内已有数据（max+1）取下一编号；
+   *  与建行时的后端推算同源，保证展示值即保存后生成值 */
+  const autoIncrementPreview = useQuery({
+    queryKey: ['auto-increment-preview', wid, tid],
+    queryFn: () => recordApi.nextIncrementPreview(wid!, tid!),
+    enabled: newRowActive && canEditRecords && autoIncrementFieldNames.size > 0 && !!wid && !!tid,
+    staleTime: 0,
+  })
 
   /** 视图级隐藏字段（view_options.hidden_fields 黑名单，元素为字段 id 字符串） */
   const hiddenFieldIds = useMemo(() => {
@@ -749,10 +759,11 @@ export default function GridPage() {
       onFieldCancel: () => { if (isNew) setNewRowActive(false); else setEditingRowId(null) },
       // 仅新增行应用自动填充锁定；存量行整行编辑不受锁定限制
       lockedFields: isNew ? newRowLockedFields : new Set<string>(),
-      // 仅新增行把自动编号列替换为生成提示；存量行照常展示已保存的编号
+      // 仅新增行把自动编号列替换为只读编号；存量行照常展示已保存的编号
       autoIncrementFields: isNew ? autoIncrementFieldNames : undefined,
+      autoIncrementValues: isNew ? autoIncrementPreview.data?.values : undefined,
     }
-  }, [newRowActive, editingRowId, rowDrafts, gridFields, newRowLockedFields, autoIncrementFieldNames]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [newRowActive, editingRowId, rowDrafts, gridFields, newRowLockedFields, autoIncrementFieldNames, autoIncrementPreview.data]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // 行内编辑桥接：最新操作集每次渲染同步写入 ref，对外只暴露引用稳定的 inlineOps。
   // 这样 buildColumns 的 useMemo 不会持有陈旧闭包（旧实现 deps 漏掉 inlineOps，

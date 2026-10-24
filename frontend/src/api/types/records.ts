@@ -25,6 +25,8 @@ export interface RowCreate { values: RowValues }
 /** 更新行的请求体：values 字段承载待更新的业务值子集 */
 export interface RowUpdate { values: RowValues }
 export interface RowListResponse { items: RowResponse[]; total: number; offset: number; limit: number }
+/** 自动编号预览：字段名 → 建行时将生成的编号值（只读，不落库） */
+export interface AutoIncrementPreview { values: Record<string, string> }
 export interface RecordListParams {
   offset?: number; limit?: number
   filters?: string | Record<string, unknown> | Array<Record<string, unknown>>
