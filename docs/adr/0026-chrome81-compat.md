@@ -208,9 +208,9 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/scripts/browser-baseline.mjs`、`frontend/vite.config.ts`、`frontend/.browserslistrc`、`frontend/src/compat/polyfills.ts`、`frontend/src/main.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/index.css`、`frontend/scripts/check-browser-compat.mjs`、`frontend/package.json` | `frontend/src/compat/polyfills.test.ts`、`frontend/src/theme/ThemeProvider.compat.test.tsx` | 待提交 |
-| P1 | 已落地 | `frontend/src/theme/themeMix.ts`、`frontend/src/compat/flexGap.ts`、`frontend/src/compat/flexGapSupport.ts`、`frontend/src/compat/index.ts`、`frontend/src/index.css`、`frontend/src/pages/`（22 处静态色改为 cn-mix 变量） | `frontend/src/theme/themeMix.test.ts`、`frontend/src/compat/flexGap.test.ts` | 待提交 |
-| P2 | 已落地 | `frontend/scripts/chrome81-smoke.mjs`、`.github/workflows/chrome81-smoke.yml`、`frontend/scripts/check-browser-compat.mjs`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts`、`README.md` | `frontend/src/pages/import-export/ImportExportDialog/exportPdf.test.ts`、`frontend/tests/e2e/critical/browser-compat.spec.ts` | 待提交 |
+| P0 | 已落地 | `frontend/scripts/browser-baseline.mjs`、`frontend/vite.config.ts`、`frontend/.browserslistrc`、`frontend/src/compat/polyfills.ts`、`frontend/src/main.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/index.css`、`frontend/scripts/check-browser-compat.mjs`、`frontend/package.json` | `frontend/src/compat/polyfills.test.ts`、`frontend/src/theme/ThemeProvider.compat.test.tsx` | 5496668a |
+| P1 | 已落地 | `frontend/src/theme/themeMix.ts`、`frontend/src/compat/flexGap.ts`、`frontend/src/compat/flexGapSupport.ts`、`frontend/src/compat/index.ts`、`frontend/src/index.css`、`frontend/src/pages/`（22 处静态色改为 cn-mix 变量） | `frontend/src/theme/themeMix.test.ts`、`frontend/src/compat/flexGap.test.ts` | 5496668a |
+| P2 | 已落地 | `frontend/scripts/chrome81-smoke.mjs`、`.github/workflows/chrome81-smoke.yml`、`frontend/scripts/check-browser-compat.mjs`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts`、`README.md` | `frontend/src/pages/import-export/ImportExportDialog/exportPdf.test.ts`、`frontend/tests/e2e/critical/browser-compat.spec.ts` | 5496668a |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。
 
@@ -229,4 +229,4 @@ flex-gap 判定规则（`isFlexGapSupported`）：
   - flex gap 是最大成本项；Chrome 81 支持 grid gap，不能用 `@supports (gap: 1px)` 判断；Playwright 对老内核兼容性未知，P2 使用 `puppeteer-core` + CDP；Chromium 81 下载需外网，放定时 CI（快照按 revision 缓存）。
   - 老内核冒烟的主题列表由 `check-browser-compat.mjs` 与 `src/theme/meta.ts` 对表，新增主题必须同步 `chrome81-smoke.mjs`，否则构建期报错。
   - 本机下载 Chromium 81 快照走 Google 存储，研发网络可能卡在 TLS（实测本次未完成下载）；本地可复用已有安装 `CNDB_CHROME81_PATH=… pnpm e2e:chrome81`，否则以定时 CI 结果为准。
-- 最近一次全绿：`make flow`（check-fast + 后端 5315 passed / 8 skipped）、前端 `pnpm test`（181 files / 2187 tests）、`make frontend-coverage`（核心集合 lines 97.69% / branches 100%，全局 82.80%）、`pnpm build`（含 `check-browser-compat --strict`）、`pnpm bundle:budget`（全部关键 chunk 在预算内）、`pnpm e2e --project=chromium-authed tests/e2e/critical/browser-compat.spec.ts` @ 2026-10-24（待提交）
+- 最近一次全绿：`make flow`（check-fast + 后端 5315 passed / 8 skipped）、前端 `pnpm test`（181 files / 2187 tests）、`make frontend-coverage`（核心集合 lines 97.69% / branches 100%，全局 82.80%）、`pnpm build`（含 `check-browser-compat --strict`）、`pnpm bundle:budget`（全部关键 chunk 在预算内）、`pnpm e2e --project=chromium-authed tests/e2e/critical/browser-compat.spec.ts` @ 2026-10-24
