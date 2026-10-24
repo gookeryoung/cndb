@@ -128,7 +128,7 @@ Normalizer（落表）                          清洗 + 类型归一 → 按 ma
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
 |---|---|---|---|---|---|
 | D1 | 插件命名 | `datasource`（概念：数据源同步），路由前缀挂 workspaces | 与 tables / documents 同层级；语义覆盖「数据源」而非只服务股票 | `stock` / `sync`（领域化或过泛） | `src/cndb/plugins/datasource/plugin.py` |
-| D2 | 通用优先还是专用优先 | **只保留通用适配器**：`http_json`（声明式 HTTP + JSON）与 `llm_prompt`（大模型提示词）；领域专用只做领域模板 / 参数预设，不进适配器层 | 绝大多数数据源都是 HTTP + JSON，声明式覆盖主路径；一源一适配器会让适配器层随领域线性膨胀，且模板可直接套用 | 一源一适配器（K 线 / RSS 等专用 provider，代码量与维护面线性膨胀；换个站点就要再写一个）；`RssAtomProvider`（RSS/Atom 本质是 XML 解析，用 `http_json` + 字段映射即可覆盖） | `providers/http_json.py`、`providers/llm_prompt.py`、`providers/registry.py` |
+| D2 | 通用优先还是专用优先 | **只保留通用适配器**：`http_json`（声明式 HTTP + JSON）与 `llm_prompt`（大模型提示词）；领域专用只做领域模板 / 参数预设，不进适配器层 | 绝大多数数据源都是 HTTP + JSON，声明式覆盖主路径；一源一适配器会让适配器层随领域线性膨胀，且模板可直接套用 | 一源一适配器（行情 / RSS 等专用 provider，代码量与维护面线性膨胀；换个站点就要再写一个）；`RssAtomProvider`（RSS/Atom 本质是 XML 解析，用 `http_json` + 字段映射即可覆盖） | `providers/http_json.py`、`providers/llm_prompt.py`、`providers/registry.py` |
 | D3 | 调度形态 | 生产 CLI + 系统 cron；开发 / 单机用内置调度器；统一 DB 租约互斥 | 与既有 `deploy/backup.sh` 的 cron 模式一致；避免多副本重复执行 | 纯内置必守单副本 / 引入外部队列（部署成本高） | `src/cndb/plugins/datasource/services/scheduler.py`、`src/cndb/cli/sync.py`、`deploy/sync.sh` |
 | D4 | 增量游标 | 内置 `date` / `datetime` / `key_set` / `none` 四策略，job 级可选 | 覆盖按日、按时刻、无时序、快照四类源 | 只做 date（新闻 / 榜单接不了） | `src/cndb/plugins/datasource/services/cursor.py` |
 | D5 | 分析实现 | 扩展公式引擎补窗口函数（分区分序）为主 + 通用模板 | 引擎已有逐行 / 整列聚合，加分区排序上下文改动集中 | 另建时序计算引擎（重复实现、两套口径） | `src/cndb/plugins/analytics/services/formula.py` |

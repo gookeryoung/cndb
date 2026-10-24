@@ -205,55 +205,6 @@ describe('buildChartData — scatter', () => {
   })
 })
 
-describe('buildChartData — candlestick（K 线）', () => {
-  const priceFields: Field[] = [
-    makeField({ id: 20, name: '交易日', field_type: 'date' }),
-    makeField({ id: 21, name: '开盘价', field_type: 'float' }),
-    makeField({ id: 22, name: '最高价', field_type: 'float' }),
-    makeField({ id: 23, name: '最低价', field_type: 'float' }),
-    makeField({ id: 24, name: '收盘价', field_type: 'float' }),
-  ]
-  const candleRows: RowResponse[] = [
-    row({ id: 1, 交易日: '2026-01-03', 开盘价: 10, 最高价: 12, 最低价: 9.5, 收盘价: 11 }),
-    row({ id: 2, 交易日: '2026-01-02', 开盘价: 8, 最高价: 10, 最低价: 7.5, 收盘价: 9 }),
-    row({ id: 3, 交易日: '2026-01-06', 开盘价: 11, 最高价: 13, 最低价: 10.5, 收盘价: 12 }),
-    row({ id: 4, 交易日: '2026-01-07', 开盘价: 12, 最高价: 12.5, 最低价: null, 收盘价: 12.2 }), // 缺低价剔除
-    row({ id: 5, 交易日: null, 开盘价: 1, 最高价: 2, 最低价: 0.5, 收盘价: 1.5 }), // 缺时间剔除
-  ]
-  const candleCfg: Partial<ChartConfig> & Pick<ChartConfig, 'chart_type'> = {
-    chart_type: 'candlestick', time_field: '交易日',
-    open_field: '开盘价', high_field: '最高价', low_field: '最低价', close_field: '收盘价',
-  }
-
-  it('类目=时间轴升序，values=[open,close,low,high]，无效行剔除，rowIds 平行', () => {
-    const data = buildChartData(candleRows, priceFields, cfg(candleCfg))
-    expect(data.kind).toBe('candlestick')
-    if (data.kind !== 'candlestick') return
-    expect(data.categories).toEqual(['2026-01-02', '2026-01-03', '2026-01-06'])
-    expect(data.values).toEqual([[8, 9, 7.5, 10], [10, 11, 9.5, 12], [11, 12, 10.5, 13]])
-    expect(data.rowIds).toEqual([2, 1, 3])
-  })
-
-  it('同一时间键重复行取首行（单标的语义，不去聚合）', () => {
-    const rows: RowResponse[] = [
-      row({ id: 1, 交易日: '2026-01-02', 开盘价: 8, 最高价: 10, 最低价: 7, 收盘价: 9 }),
-      row({ id: 2, 交易日: '2026-01-02', 开盘价: 100, 最高价: 110, 最低价: 90, 收盘价: 105 }),
-    ]
-    const data = buildChartData(rows, priceFields, cfg(candleCfg))
-    if (data.kind !== 'candlestick') throw new Error('kind !== candlestick')
-    expect(data.values).toEqual([[8, 9, 7, 10]])
-    expect(data.rowIds).toEqual([1])
-  })
-
-  it('未配置时间轴/四价字段 → 空类目数组，不抛异常', () => {
-    const data = buildChartData(candleRows, priceFields, cfg({ chart_type: 'candlestick' }))
-    if (data.kind !== 'candlestick') throw new Error('kind !== candlestick')
-    expect(data.categories).toEqual([])
-    expect(data.values).toEqual([])
-    expect(data.rowIds).toEqual([])
-  })
-})
-
 describe('buildChartData — boxplot', () => {
   it('每组五数概括（线性插值分位）+ IQR 离群点（[类目索引, 值]）', () => {
     const rows: RowResponse[] = [

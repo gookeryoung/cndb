@@ -15,7 +15,7 @@ import { Button, Empty, Skeleton, Tag, Tooltip, App as AntApp } from 'antd'
 import {
   ApartmentOutlined, AppstoreOutlined, ArrowRightOutlined, BarChartOutlined, CalendarOutlined,
   CaretRightOutlined, HolderOutlined, LineChartOutlined, NodeIndexOutlined,
-  PictureOutlined, StarFilled, StockOutlined, TableOutlined,
+  PictureOutlined, StarFilled, TableOutlined,
 } from '@ant-design/icons'
 import {
   DndContext, KeyboardSensor, PointerSensor, closestCenter,
@@ -33,7 +33,7 @@ import type { FavoriteViewSummary } from '@/api'
 /** 视图类型 → 中文名（与视图栏 `viewModes` 的 ViewMode 集合对齐） */
 const VIEW_TYPE_LABEL: Record<string, string> = {
   grid: '表格', tree: '树形', kanban: '看板', gallery: '画廊', calendar: '日历', gantt: '甘特图',
-  wbs: 'WBS', matrix: '矩阵', chart: '图表', kline: 'K 线图', flow: '流程图',
+  wbs: 'WBS', matrix: '矩阵', chart: '图表', flow: '流程图',
 }
 
 /** 视图类型 → 行首图标 */
@@ -47,7 +47,6 @@ const VIEW_TYPE_ICON: Record<string, ReactNode> = {
   wbs: <ApartmentOutlined />,
   matrix: <TableOutlined />,
   chart: <LineChartOutlined />,
-  kline: <StockOutlined />,
   flow: <NodeIndexOutlined />,
 }
 
