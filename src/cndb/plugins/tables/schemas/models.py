@@ -252,6 +252,12 @@ class RecordListResponse(BaseModel):
         return self.rows
 
 
+class AutoIncrementPreviewResponse(BaseModel):
+    """自动编号预览：字段名 → 建行时将生成的编号值（只读，不落库）."""
+
+    values: dict[str, str] = Field(default_factory=dict)
+
+
 class BulkDeleteRequest(BaseModel):
     row_ids: list[int]
 

@@ -1,8 +1,8 @@
-/** 单行文本自动编号 —— 字段判定 / 示例编号 / 新增行提示的单一真相源.
+/** 单行文本自动编号 —— 字段判定 / 示例编号的单一真相源.
  *
  * 自动编号（config.default_mode=auto_increment）的值由后端建行时按库内
- * 已有数据推算，前端不预填；新增行里必须以只读提示展示，避免用户误以为
- * 该字段需要手填或字段丢失.
+ * 已有数据推算，前端不预填；新增行里以只读数值展示（预览值由
+ * `recordApi.nextIncrementPreview` 提供，与建行口径同源）。
  */
 
 import type { Field } from '@/api'
@@ -14,7 +14,7 @@ export function isAutoIncrementField(field: IncrementField): boolean {
   return field.field_type === 'text' && field.config?.default_mode === 'auto_increment'
 }
 
-/** 由自动编号 config 拼出示例编号（如 PRJ-0001），供字段列表备注 / 新增行提示共用 */
+/** 由自动编号 config 拼出起始编号示例（如 PRJ-0001），供字段列表备注 / 字段配置示例共用 */
 export function formatIncrementExample(config: Record<string, unknown> | undefined): string {
   const prefix = String(config?.increment_prefix ?? '')
   const paddingNum = Number(config?.increment_padding ?? 4)
@@ -22,9 +22,4 @@ export function formatIncrementExample(config: Record<string, unknown> | undefin
   const startNum = Number(config?.increment_start ?? 1)
   const start = Number.isFinite(startNum) ? Math.max(0, Math.trunc(startNum)) : 1
   return `${prefix}${String(start).padStart(padding, '0')}`
-}
-
-/** 新增行 / 新建行抽屉里自动编号字段的提示文案（不预填，保存后由后端生成） */
-export function autoIncrementHint(field: IncrementField): string {
-  return `保存时自动生成（如 ${formatIncrementExample(field.config)}）`
 }

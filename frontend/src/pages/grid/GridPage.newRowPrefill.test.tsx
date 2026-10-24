@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest'
-import { screen, fireEvent, within } from '@testing-library/react'
+import { screen, fireEvent, within, waitFor } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import dayjs from 'dayjs'
 import { renderProviders } from '@/test/render-providers'
@@ -70,6 +70,8 @@ vi.mock('@/api', () => ({
         update: vi.fn(),
         bulkDelete: vi.fn(),
         bulkCreate: vi.fn().mockResolvedValue({ ids: [] }),
+        // 自动编号预览：按库内已有数据（max+1）返回下一个编号
+        nextIncrementPreview: vi.fn().mockResolvedValue({ values: { '编号': 'PRJ-0008' } }),
     },
     viewApi: { list: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), reorder: vi.fn() },
     auditApi: { list: vi.fn() },
@@ -88,8 +90,8 @@ beforeEach(() => {
     })
 })
 
-describe('GridPage 新增行预填（default_value / auto_fill）', () => {
-    it('点击新增行后：default_value 字段预填「待办」，auto_fill date 字段预填今天，其余为空', () => {
+describe('GridPage 新增行预填（default_value / auto_fill / 自动编号）', () => {
+    it('点击新增行后：default_value 字段预填「待办」，auto_fill date 字段预填今天，其余为空', async () => {
         useTableSettingsStore.getState().updateSettings({ newRowPosition: 'page' })
         renderProviders(
             <Routes>
@@ -112,8 +114,10 @@ describe('GridPage 新增行预填（default_value / auto_fill）', () => {
         // 未配置默认的「姓名」保持空白
         const blanks = within(newRow!).getAllByDisplayValue('')
         expect(blanks.length).toBeGreaterThanOrEqual(1)
-        // 自动编号不预填、也不渲染输入框，改为展示「保存时自动生成」提示
-        expect(within(newRow!).getByTestId('cell-auto-increment-4')).toHaveTextContent('保存时自动生成（如 PRJ-0001）')
-        expect(within(newRow!).queryByDisplayValue('PRJ-0001')).not.toBeInTheDocument()
+        // 自动编号不预填、也不渲染输入框，只读展示按库内已有数据推算的下一个编号
+        const autoCell = within(newRow!).getByTestId('cell-auto-increment-4')
+        await waitFor(() => expect(autoCell).toHaveTextContent('PRJ-0008'))
+        expect(autoCell).not.toHaveTextContent('保存时自动生成')
+        expect(within(newRow!).queryByDisplayValue('PRJ-0008')).not.toBeInTheDocument()
     })
 })

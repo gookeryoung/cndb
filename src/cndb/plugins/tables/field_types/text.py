@@ -50,7 +50,9 @@ class TextFieldType(FieldType):
         扫描物理列全部非 NULL 值（含软删行，与唯一索引口径一致），按
         ``^{前缀转义}(\\d+)$`` 提取已有编号取最大值，下一编号为
         ``max(最大值 + 1, increment_start)``，按补零位数格式化；
-        ``extra_seen``（本批次已分配未落库值）同样参与取最大.
+        ``extra_seen``（本批次已分配未落库值）同样参与取最大。
+        取值先 strip 首尾空白，兼容导入数据里带空格的历史值，避免因格式细节
+        错过已有编号而从头开始.
         """
         from cndb.plugins.tables.services.core.ddl import table_exists
 
@@ -68,13 +70,13 @@ class TextFieldType(FieldType):
         )
         with engine.connect() as conn:
             for (value,) in conn.execute(sql):
-                m = prefix_re.fullmatch(str(value))
+                m = prefix_re.fullmatch(str(value).strip())
                 if m:
                     num = int(m.group(1))
                     if max_seen is None or num > max_seen:
                         max_seen = num
         for value in extra_seen:
-            m = prefix_re.fullmatch(str(value))
+            m = prefix_re.fullmatch(str(value).strip())
             if m:
                 num = int(m.group(1))
                 if max_seen is None or num > max_seen:

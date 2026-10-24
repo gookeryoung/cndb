@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { autoIncrementHint, formatIncrementExample, isAutoIncrementField } from './fieldIncrement'
+import { formatIncrementExample, isAutoIncrementField } from './fieldIncrement'
 
 describe('isAutoIncrementField', () => {
   it('仅单行文本 + default_mode=auto_increment 判定为自动编号', () => {
@@ -20,13 +20,5 @@ describe('formatIncrementExample', () => {
     expect(formatIncrementExample(undefined)).toBe('0001')
     expect(formatIncrementExample({ increment_padding: 99 })).toBe('0000000001')
     expect(formatIncrementExample({ increment_start: -3 })).toBe('0000')
-  })
-})
-
-describe('autoIncrementHint', () => {
-  it('提示文案包含示例编号', () => {
-    expect(
-      autoIncrementHint({ field_type: 'text', config: { default_mode: 'auto_increment', increment_prefix: 'PRJ-' } }),
-    ).toBe('保存时自动生成（如 PRJ-0001）')
   })
 })

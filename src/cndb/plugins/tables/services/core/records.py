@@ -217,6 +217,26 @@ def _apply_auto_increment_defaults(
             assigned.setdefault(f.id, []).append(next_val)
 
 
+def preview_auto_increment_values(engine: Any, table: DataTable) -> dict[str, str]:
+    """预览所有自动编号字段的下一个值（只读，不写库）.
+
+    与建行时 ``_apply_auto_increment_defaults`` 共用 ``next_increment_value``，
+    保证新增行展示的编号与保存后生成的编号口径一致；未启用 auto_increment
+    或没有物理列的字段不出现在结果中。
+    """
+    values: dict[str, str] = {}
+    for f in table.fields:
+        if f.trashed:
+            continue
+        ft = default_registry.get(f.field_type)
+        if ft is None or not ft.has_physical_column:
+            continue
+        next_val = ft.next_increment_value(engine, table, f)
+        if next_val is not None:
+            values[f.name] = next_val
+    return values
+
+
 def _get_sa_table(engine: Any, table: DataTable) -> Table:
     """获取已存在的物理表 sa.Table 对象（带反射缓存）.
 
