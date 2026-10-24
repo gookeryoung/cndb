@@ -18,6 +18,18 @@
  * - 位图以 JPEG（PDF_IMAGE_QUALITY）写入：jsPDF 对 JPEG 走 DCTDecode 原样嵌入、
  *   不做二次压缩；PNG 在 jsPDF 4 下会退化成未压缩流（实测同一页 1.4MB → 32MB），不可用。
  */
+// jspdf 内部使用 Array.prototype.at（Chrome 92+），导出路径内先于动态导入补齐
+import '@/compat/polyfills'
+
+/** Chrome 81 没有 Intl.Segmenter（Chrome 87+），而 html2canvas-pro 无条件构造它。
+ * 只在导出路径按需加载垫片，不进入首屏 chunk（ADR 0026 D3）。 */
+export async function ensureIntlSegmenter(): Promise<void> {
+  const hasSegmenter = typeof Intl !== 'undefined'
+    && typeof (Intl as unknown as Record<string, unknown>).Segmenter === 'function'
+  if (hasSegmenter) return
+  await import('@formatjs/intl-segmenter/polyfill.js')
+}
+
 /** A4 纵向页面尺寸（pt） */
 export const A4_PAGE_PT = { width: 595.28, height: 841.89 } as const
 /** 页边距（pt），约 10mm */
@@ -195,6 +207,8 @@ export function measureContentBounds(target: HTMLElement): { width: number; heig
  * @throws 渲染或 PDF 生成失败时向上抛出原始错误，由调用方提示
  */
 export async function exportViewToPdf(target: HTMLElement, filename: string): Promise<void> {
+  // html2canvas-pro 内部无条件 new Intl.Segmenter：旧内核必须先补垫片再加载它
+  await ensureIntlSegmenter()
   const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
     import('html2canvas-pro'),
     import('jspdf'),

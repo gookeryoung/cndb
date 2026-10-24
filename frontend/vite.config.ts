@@ -1,9 +1,11 @@
 import { defineConfig, type Plugin } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { visualizer } from 'rollup-plugin-visualizer'
+import postcssLogical from 'postcss-logical'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { BROWSER_BASELINE } from './scripts/browser-baseline.mjs'
 
 // ── 构建产物同步到 src/cndb/static（保留 .gitkeep 哨兵）────────────────
 // 直接用 outDir=static 且 emptyOutDir 会抹掉 .gitkeep 导致 hatchling 打包失败，
@@ -135,6 +137,23 @@ export default defineConfig(({ mode }) => ({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  // 作者手写的逻辑属性（padding-inline / margin-inline / inset 等）转物理属性；
+  // antd 运行时生成的逻辑属性由 ThemeProvider 的 cssinjs transformer 处理（ADR 0026 D2）。
+  css: {
+    postcss: {
+      // 默认即 block=top-to-bottom / inline=left-to-right，与项目固定 zh-CN（无 RTL）一致
+      plugins: [postcssLogical()],
+    },
+  },
+  // dev 预构建与生产构建同口径，避免「dev 能跑、build 报错」的语法差异（ADR 0026 D1）
+  esbuild: {
+    target: BROWSER_BASELINE,
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: BROWSER_BASELINE,
+    },
+  },
   server: {
     port: 5173,
     proxy: {
@@ -150,8 +169,9 @@ export default defineConfig(({ mode }) => ({
     // 中间构建目录（由 syncStaticPlugin 在 closeBundle 后同步到 src/cndb/static）
     outDir: path.resolve(__dirname, 'dist'),
     emptyOutDir: true,
-    // 现代浏览器目标：去掉 asyncIterator/Map/Set/Proxy 等老 polyfill
-    target: 'es2022',
+    // 浏览器基线：Chromium 81（ADR 0026）。语法由 esbuild 降级，缺失 API 由 compat/polyfills 补齐
+    target: BROWSER_BASELINE,
+    cssTarget: BROWSER_BASELINE,
     chunkSizeWarningLimit: 1500,
     rollupOptions: {
       output: {

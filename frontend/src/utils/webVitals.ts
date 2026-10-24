@@ -9,24 +9,9 @@
  *
  * 本模块经由动态 import() 加载（见 main.tsx），web-vitals 不会进入主入口 chunk。
  */
+// web-vitals v6 内部使用 Array.prototype.at（如 this.o.at(-1)），Chrome 81 缺失会抛 TypeError
+import '@/compat/polyfills'
 import { onCLS, onFCP, onINP, onLCP, onTTFB, type Metric } from 'web-vitals'
-
-// web-vitals v6 内部使用 ES2022 的 Array.prototype.at（如 this.o.at(-1)），
-// 旧内核预览浏览器不支持会导致 LayoutShiftManager 抛 TypeError，这里按规范补齐 polyfill.
-// 类型上用 untyped 补丁避免污染全局声明。
-if (!Array.prototype.at) {
-  Object.defineProperty(Array.prototype, 'at', {
-    value(index: number): unknown {
-      const len = (this as unknown[]).length
-      // 负索引从末尾倒数；越界返回 undefined
-      const i = index < 0 ? len + index : index
-      return i >= 0 && i < len ? (this as unknown[])[i] : undefined
-    },
-    writable: true,
-    enumerable: false,
-    configurable: true,
-  })
-}
 
 interface WebVitalsWindow extends Window {
   __cndWebVitals?: Metric[]

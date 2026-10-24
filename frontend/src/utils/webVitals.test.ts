@@ -118,29 +118,3 @@ describe('sendBeacon 上报', () => {
         expect(() => callbacks.INP(makeMetric('INP', 100))).not.toThrow()
     })
 })
-
-describe('Array.prototype.at polyfill（模块内置）', () => {
-    it('缺 at 的数组走 polyfill 路径：负索引与越界', async () => {
-        vi.resetModules()
-        const originalAt = Array.prototype.at
-        // 模拟旧内核：删除 at 再加载模块
-        delete (Array.prototype as unknown as Record<string, unknown>).at
-        try {
-            await import('./webVitals')
-            const arr = [1, 2, 3]
-            expect(arr.at(-1)).toBe(3)
-            expect(arr.at(-3)).toBe(1)
-            expect(arr.at(1)).toBe(2)
-            expect(arr.at(-4)).toBeUndefined()
-            expect(arr.at(3)).toBeUndefined()
-            // 不可枚举、可写可配置（符合规范描述）
-            const desc = Object.getOwnPropertyDescriptor(Array.prototype, 'at')!
-            expect(desc.enumerable).toBe(false)
-            expect(desc.writable).toBe(true)
-            expect(desc.configurable).toBe(true)
-        } finally {
-            Object.defineProperty(Array.prototype, 'at', originalAt as never)
-            vi.resetModules()
-        }
-    })
-})

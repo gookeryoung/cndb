@@ -22,6 +22,7 @@ import {
   TARGET_RENDER_DPI,
   computePageSize,
   computeRenderScale,
+  ensureIntlSegmenter,
   expandScrollContainers,
   exportViewToPdf,
   measureContentBounds,
@@ -36,6 +37,31 @@ const toDataURLMock = vi.hoisted(() => vi.fn(() => 'data:image/jpeg;base64,fake'
 
 vi.mock('html2canvas-pro', () => ({ default: html2canvasMock }))
 vi.mock('jspdf', () => ({ jsPDF: jsPDFMock }))
+/** Intl.Segmenter 垫片只应在旧内核按需加载；用计数器断言加载时机 */
+const segmenterPolyfill = vi.hoisted(() => ({ loads: 0 }))
+vi.mock('@formatjs/intl-segmenter/polyfill.js', () => {
+  segmenterPolyfill.loads += 1
+  return {}
+})
+
+describe('ensureIntlSegmenter 按需加载垫片', () => {
+  const original = (Intl as unknown as Record<string, unknown>).Segmenter
+  afterEach(() => {
+    (Intl as unknown as Record<string, unknown>).Segmenter = original
+  })
+
+  it('已有原生 Intl.Segmenter 时完全不加载垫片（现代浏览器零成本）', async () => {
+    expect(typeof (Intl as unknown as Record<string, unknown>).Segmenter).toBe('function')
+    await ensureIntlSegmenter()
+    expect(segmenterPolyfill.loads).toBe(0)
+  })
+
+  it('缺失时（模拟 Chrome 81）先加载垫片，再进入导出', async () => {
+    delete (Intl as unknown as Record<string, unknown>).Segmenter
+    await ensureIntlSegmenter()
+    expect(segmenterPolyfill.loads).toBe(1)
+  })
+})
 
 describe('pickOrientation 纸张方向自适应', () => {
   it('内容宽 > 高用横版（landscape）', () => {

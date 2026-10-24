@@ -22,6 +22,7 @@ import { scrollActiveTabIntoViewNextFrame } from '@/layouts/tabScroll'
 import MiniStat from './MiniStat'
 import ImportDiffTable from './ImportDiffTable'
 import ImportQualityPanel from './ImportQualityPanel'
+import { mixColor } from '@/theme/themeMix'
 
 const { Dragger } = Upload
 
@@ -731,9 +732,9 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                                             display: 'flex', alignItems: 'center', gap: 8,
                                                             padding: '4px 8px',
                                                             background: isDropped
-                                                                ? 'color-mix(in srgb, #ef4444 8%, var(--cn-bg-container))'
-                                                                : 'color-mix(in srgb, #22c55e 8%, var(--cn-bg-container))',
-                                                            border: `1px solid color-mix(in srgb, ${isDropped ? '#ef4444' : '#22c55e'} 40%, transparent)`,
+                                                                ? 'var(--cn-mix-red-8-bg-container)'
+                                                                : 'var(--cn-mix-green-8-bg-container)',
+                                                            border: `1px solid ${mixColor(isDropped ? '#ef4444' : '#22c55e', 40, 'transparent')}`,
                                                             borderRadius: 4,
                                                             cursor: unknownColsStrategy === 'add_text_field' ? 'pointer' : 'not-allowed',
                                                             opacity: unknownColsStrategy === 'add_text_field' ? 1 : 0.55,

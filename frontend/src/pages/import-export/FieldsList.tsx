@@ -45,14 +45,14 @@ export default function FieldsList({
         let cardBg = 'var(--cn-bg-muted)'
         let cardBorder = 'var(--cn-border-soft)'
         if (selectedField === col.name) {
-          cardBg = 'color-mix(in srgb, #3b82f6 10%, var(--cn-bg-container))'
-          cardBorder = 'color-mix(in srgb, #3b82f6 45%, transparent)'
+          cardBg = 'var(--cn-mix-blue-10-bg-container)'
+          cardBorder = 'var(--cn-mix-blue-45-transparent)'
         } else if (hasError) {
-          cardBg = 'color-mix(in srgb, #ef4444 10%, var(--cn-bg-container))'
-          cardBorder = 'color-mix(in srgb, #ef4444 40%, transparent)'
+          cardBg = 'var(--cn-mix-red-10-bg-container)'
+          cardBorder = 'var(--cn-mix-red-40-transparent)'
         } else {
-          cardBg = 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))'
-          cardBorder = 'color-mix(in srgb, #22c55e 40%, transparent)'
+          cardBg = 'var(--cn-mix-green-10-bg-container)'
+          cardBorder = 'var(--cn-mix-green-40-transparent)'
         }
         return (
           <div

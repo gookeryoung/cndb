@@ -781,7 +781,7 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
       {importResult && !importing && (
         <div style={{
           padding: 16,
-          background: 'color-mix(in srgb, #22c55e 10%, var(--cn-bg-container))',
+          background: 'var(--cn-mix-green-10-bg-container)',
           borderRadius: 8,
           textAlign: 'center',
         }}>

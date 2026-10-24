@@ -1,5 +1,6 @@
 /** 文档页 — 查看/编辑双模式 + Obsidian 风格实时预览 + 个人草稿（保存与提交解耦） */
 
+import '@/compat/polyfills'
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {

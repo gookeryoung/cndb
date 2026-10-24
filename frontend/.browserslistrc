@@ -1,0 +1,3 @@
+# 浏览器基线见 ADR 0026：Chromium 81+ 内核，不承诺 Firefox / Safari。
+chrome >= 81
+edge >= 81

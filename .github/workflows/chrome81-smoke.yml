@@ -1,0 +1,87 @@
+name: Chrome 81 Smoke
+
+# 真实 Chromium 81 冒烟（ADR 0026 C5 / C7 / D9）：
+# 需要外网下载固定 revision 的 Chromium 快照，故只做定时 + 手动触发，
+# 不做每次提交的必跑门禁；每次提交由 frontend-build 内的 check-browser-compat 静态兜底。
+on:
+  schedule:
+    - cron: "0 2 * * *"  # 每日 02:00 UTC（北京时间 10:00）
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  chrome81-smoke:
+    name: Chromium 81 smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6.1.0
+        with:
+          version: 12.4.2
+
+      - name: Setup Node
+        uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Sync backend deps
+        env:
+          UV_DEFAULT_INDEX: https://pypi.org/simple
+        run: uv sync --frozen --extra dev
+
+      - name: Install frontend deps
+        env:
+          npm_config_registry: https://registry.npmjs.org/
+        run: cd frontend && pnpm install --frozen-lockfile
+
+      # 构建产物同时跑 check-browser-compat --strict；产物供后端 static 直接分发
+      - name: Build frontend
+        run: cd frontend && pnpm build
+
+      # 快照约 100MB：按 revision 缓存，命中后冒烟只跑浏览器用例
+      - name: Cache Chromium 81 snapshot
+        uses: actions/cache@v6
+        with:
+          path: frontend/.cache/chrome81
+          key: chromium81-${{ runner.os }}-737027
+
+      # 隔离数据 + seed + :8000，与 Playwright e2e 同一套后端脚本
+      - name: Start isolated backend
+        run: |
+          set -euo pipefail
+          uv run python frontend/scripts/e2e-server.py > /tmp/e2e-server.log 2>&1 &
+          for _ in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8000/ >/dev/null 2>&1; then
+              echo "backend ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "backend 未在 180s 内就绪"
+          cat /tmp/e2e-server.log
+          exit 1
+
+      - name: Run Chromium 81 smoke
+        run: cd frontend && pnpm e2e:chrome81
+
+      - name: Upload theme screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: chrome81-theme-screenshots
+          path: frontend/.cache/chrome81-screenshots
+          retention-days: 7
