@@ -127,6 +127,32 @@ function renderTree(route = '/w/10/documents') {
 }
 
 describe('DocumentTree 组件', () => {
+    it('文档节点按格式渲染图标：PDF / 图片 / Markdown 形状与配色不同（ADR 0025）', async () => {
+        // 覆盖默认 mock：根级三个不同格式的文档
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/tree', () =>
+                HttpResponse.json({
+                    items: [
+                        { ...mockDocuments[1], id: 21, title: '报告', content_type: 'pdf', asset_mime: 'application/pdf' },
+                        { ...mockDocuments[1], id: 22, title: '封面', content_type: 'image', asset_mime: 'image/png' },
+                        { ...mockDocuments[1], id: 23, title: '笔记', content_type: 'markdown' },
+                    ],
+                }),
+            ),
+        )
+        renderTree()
+
+        const pdf = await screen.findByTestId('doc-tree-format-21')
+        const image = screen.getByTestId('doc-tree-format-22')
+        const md = screen.getByTestId('doc-tree-format-23')
+        expect(pdf).toHaveAttribute('aria-label', '格式：PDF')
+        expect(image).toHaveAttribute('aria-label', '格式：图片')
+        expect(md).toHaveAttribute('aria-label', '格式：Markdown')
+        // 格式专属色：三者配色互不相同
+        const colors = [pdf, image, md].map(node => node.getAttribute('style'))
+        expect(new Set(colors).size).toBe(3)
+    })
+
     it('渲染根级文件夹，点击展开后显示子节点，点击文档导航到编辑页', async () => {
         renderTree()
 

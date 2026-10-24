@@ -18,7 +18,6 @@ import {
   ApartmentOutlined,
   DeleteOutlined,
   FileAddOutlined,
-  FileTextOutlined,
   FolderAddOutlined,
   FolderOpenOutlined,
   FolderOutlined,
@@ -32,6 +31,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { documentsApi } from '@/api/documents'
 import type { DocumentItem } from '@/api/documents'
 import TooltipDropdown from '@/components/TooltipDropdown'
+import { formatMeta } from '@/components/Document/docFormat'
 import {
   DOC_SORT_OPTIONS,
   describeSort,
@@ -371,9 +371,16 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
     // 状态图标：图标形态区分草稿 / 已发布 / 归档，颜色沿用状态色，避免只靠色点导致色弱用户难以分辨
     const status = STATUS_META[node.status] ?? STATUS_META.draft
     const StatusIcon = status.Icon
+    // 格式图标：PDF / 图片 / Excel / PPT 与 Markdown 形状 + 配色都不同（ADR 0025）
+    const fmt = formatMeta(node.content_type, node.is_folder)
+    const FormatIcon = fmt.Icon
     return (
       <span data-testid={`doc-tree-doc-${node.id}`}>
-        <FileTextOutlined style={{ marginRight: 6, color: 'var(--cn-primary, #1890ff)' }} />
+        <FormatIcon
+          aria-label={`格式：${fmt.label}`}
+          data-testid={`doc-tree-format-${node.id}`}
+          style={{ marginRight: 6, color: fmt.color }}
+        />
         {node.title}
         {pinMark}
         {moreButton(node)}

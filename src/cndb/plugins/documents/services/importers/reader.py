@@ -18,6 +18,12 @@ from . import docx as docx_converter
 from . import html as html_converter
 from . import markdown as markdown_converter
 from .errors import UnsupportedImport
+from .formats import (
+    MAX_ASSET_BYTES,
+    SUPPORTED_SUFFIXES,
+    asset_format,
+    normalize_suffix,
+)
 from .normalize import clean_title, normalize_markdown
 
 #: 图片落盘回调：(字节, 建议文件名) → 站点文件 key；None 表示不落盘
@@ -26,13 +32,11 @@ ImageSink = Callable[[bytes, str], str | None]
 MARKDOWN_SUFFIXES = (".md", ".markdown")
 DOCX_SUFFIXES = (".docx",)
 HTML_SUFFIXES = (".html", ".htm")
-#: 支持导入的源格式（需求 C4）
-SUPPORTED_SUFFIXES = MARKDOWN_SUFFIXES + DOCX_SUFFIXES + HTML_SUFFIXES
 
 MB = 1024 * 1024
 #: 单批次文件数上限
 MAX_FILES = 500
-#: 单文件上限
+#: 单文件上限（可转换格式）
 MAX_FILE_BYTES = 8 * MB
 #: 批次总体积上限
 MAX_TOTAL_BYTES = 128 * MB
@@ -48,18 +52,25 @@ class UploadedItem:
 
 @dataclass
 class ImportedDoc:
-    """转换结果：标题 + 规整后的 Markdown 正文."""
+    """转换结果：标题 + 规整后的 Markdown 正文，或原件族标记（ADR 0025）.
+
+    ``asset=True`` 表示该条不做 Markdown 转换：正文为空，原件由调用方落盘，
+    文档节点按 ``content_type`` / ``mime`` 标记格式。
+    """
 
     path: str
     title: str
     body: str
     suffix: str
     warnings: list[str] = field(default_factory=list)
+    asset: bool = False
+    content_type: str = "markdown"
+    mime: str = ""
 
 
 def is_supported(path: str) -> bool:
-    """扩展名是否在支持清单内（md / markdown / docx / html / htm）."""
-    return Path(path).suffix.lower() in SUPPORTED_SUFFIXES
+    """扩展名是否在支持清单内（可转换 + 原件族，见 ``formats``）."""
+    return normalize_suffix(path) in SUPPORTED_SUFFIXES
 
 
 def normalize_path(raw: str) -> str | None:
@@ -88,12 +99,20 @@ def validate_batch(items: Iterable[UploadedItem]) -> int:
 
 
 def convert_file(item: UploadedItem, *, image_sink: ImageSink | None = None) -> ImportedDoc:
-    """转换单个文件为 ``ImportedDoc``；不支持 / 损坏 / 超限时抛 ``UnsupportedImport``."""
-    suffix = Path(item.path).suffix.lower()
+    """分派单个文件；不支持 / 损坏 / 超限时抛 ``UnsupportedImport``.
+
+    原件族（PDF / Office / 图片）不转换，返回 ``asset=True`` 的结果，由 importer 落盘。
+    """
+    suffix = normalize_suffix(item.path)
     if suffix not in SUPPORTED_SUFFIXES:
         raise UnsupportedImport(f"不支持的格式：{suffix or '无扩展名'}")
     if not item.data:
         raise UnsupportedImport("文件为空")
+
+    fmt = asset_format(item.path)
+    if fmt is not None:
+        return _convert_asset(item, suffix, fmt.content_type, fmt.mime)
+
     if len(item.data) > MAX_FILE_BYTES:
         raise UnsupportedImport(f"文件超过 {MAX_FILE_BYTES // MB}MB")
     try:
@@ -113,6 +132,21 @@ def convert_file(item: UploadedItem, *, image_sink: ImageSink | None = None) -> 
         body=normalize_markdown(body),
         suffix=suffix,
         warnings=warnings,
+    )
+
+
+def _convert_asset(item: UploadedItem, suffix: str, content_type: str, mime: str) -> ImportedDoc:
+    """原件族：只做体积校验，标题取文件名（原件不解析、不转换）."""
+    if len(item.data) > MAX_ASSET_BYTES:
+        raise UnsupportedImport(f"文件超过 {MAX_ASSET_BYTES // MB}MB")
+    return ImportedDoc(
+        path=item.path,
+        title=clean_title(Path(item.path).stem),
+        body="",
+        suffix=suffix,
+        asset=True,
+        content_type=content_type,
+        mime=mime,
     )
 
 

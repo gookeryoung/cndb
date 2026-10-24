@@ -31,11 +31,12 @@ from __future__ import annotations
 
 import io
 import re
+from pathlib import Path
 from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
@@ -681,6 +682,46 @@ def _export_filename(title: str, ext: str) -> str:
     """构造导出文件名：``{标题}.{ext}``，剔除文件系统非法字符."""
     safe = re.sub(r'[\\/:*?"<>|]', "_", title).strip() or "document"
     return f"{safe}.{ext}"
+
+
+@router.get("/{doc_id}/asset")
+def download_document_asset(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    download: Annotated[bool, Query(description="true = 附件下载；默认内联（预览）")] = False,
+) -> Response:
+    """读取原件族文档的原件（PDF / Office / 图片，ADR 0025）.
+
+    - 权限与正文同源：工作区成员 + 文档可见性（未发布草稿对非创建者 404）；
+    - 默认内联返回（PDF / 图片可被浏览器直接渲染），``?download=true`` 走附件下载；
+    - ``asset_file_key`` 不外露，避免绕过本端点直取文件。
+    """
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    if not doc.asset_file_key:
+        raise NotFoundError("该文档没有原件")
+
+    from cndb.plugins.files.services import resolve_workspace_file
+
+    path = resolve_workspace_file(workspace_id, doc.asset_file_key)
+    if not path.is_file():
+        raise NotFoundError("原件不存在或已被清理")
+
+    media_type = doc.asset_mime or "application/octet-stream"
+    extension = Path(doc.asset_file_key).suffix
+    filename = _export_filename(doc.title, extension.lstrip(".") or "bin")
+    disposition = "attachment" if download or media_type == "application/octet-stream" else "inline"
+    headers = {
+        "Content-Disposition": f"{disposition}; filename=\"document{extension}\"; filename*=UTF-8''{quote(filename)}",
+        # 原件同样参与文档权限：禁止被当作可执行页面渲染
+        "X-Content-Type-Options": "nosniff",
+    }
+    if media_type == "image/svg+xml":
+        # SVG 可内嵌脚本：加 sandbox 头，直接打开该 URL 时也不执行脚本
+        headers["Content-Security-Policy"] = "sandbox"
+    return FileResponse(path, media_type=media_type, headers=headers)
 
 
 @router.post("/batch")

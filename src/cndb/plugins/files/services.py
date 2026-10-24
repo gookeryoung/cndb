@@ -77,6 +77,21 @@ def forget_owner(db: Session, file_key: str) -> None:
         db.commit()
 
 
+def remove_workspace_file(workspace_id: int, file_key: str) -> bool:
+    """删除工作区上传目录中的文件（非法 key / 已不存在 / 占用时返回 False，不抛错）."""
+    try:
+        path = resolve_workspace_file(workspace_id, file_key)
+    except BadRequestError:
+        return False
+    if not path.is_file():
+        return False
+    try:
+        path.unlink()
+    except OSError:  # pragma: no cover - 文件被占用时保留，交由后续清理
+        return False
+    return True
+
+
 def assert_can_access(db: Session, *, workspace_id: int, file_key: str, user: User) -> None:
     """按归属校验访问权；无归属记录时视为工作区级文件（调用方已校验成员身份）."""
     owner = owner_of(db, file_key)
@@ -141,5 +156,6 @@ __all__ = [
     "forget_owner",
     "owner_of",
     "record_owner",
+    "remove_workspace_file",
     "resolve_workspace_file",
 ]

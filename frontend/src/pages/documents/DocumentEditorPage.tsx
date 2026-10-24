@@ -71,7 +71,9 @@ import type {
 const { Text, Title } = Typography
 
 
+import { isAssetContentType } from '@/components/Document/docFormat'
 import BacklinksDrawer from './BacklinksDrawer'
+import DocumentAssetView from './DocumentAssetView'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
 import DocumentShareModal from './DocumentShareModal'
 import InsertTableModal from './InsertTableModal'
@@ -791,6 +793,8 @@ export default function DocumentEditorPage() {
   }
 
   const editable = true // viewer 保存转修改申请（202），无需在前端隐藏编辑入口
+  // 原件族（PDF / Office / 图片，ADR 0025）：只读，正文区换成阅读器，编辑类入口全部隐藏
+  const isAssetDoc = !doc.is_folder && isAssetContentType(doc.content_type)
 
   // ── AI 抽屉展示数据：按当前动作从对应 hook 取 loading / error / 结果 ──
   const aiLoading =
@@ -870,31 +874,39 @@ export default function DocumentEditorPage() {
    *  收进「更多」，只保留「大纲」（导航）与「保存」（主操作），
    *  避免 9 个按钮在 390px 屏上折成三行挤掉正文。 */
   const docMoreItems = [
-    { key: 'find', icon: <SearchOutlined />, label: '查找替换', onClick: openFind },
-    { key: 'ai-summarize', icon: <ReadOutlined />, label: 'AI 摘要', onClick: openAiSummary },
-    { key: 'ai-suggest-tags', icon: <TagsOutlined />, label: 'AI 标签建议', onClick: openAiSuggestTags },
-    { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
-    { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
-    { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
-    { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
+    ...(isAssetDoc
+      ? []
+      : [
+          { key: 'find', icon: <SearchOutlined />, label: '查找替换', onClick: openFind },
+          { key: 'ai-summarize', icon: <ReadOutlined />, label: 'AI 摘要', onClick: openAiSummary },
+          { key: 'ai-suggest-tags', icon: <TagsOutlined />, label: 'AI 标签建议', onClick: openAiSuggestTags },
+          { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
+          { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
+          { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
+          { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
+        ]),
     // 仅 owner / editor 且非文件夹可分享（viewer 由后端 require_editor 拒绝）
     ...((myRole === 'owner' || myRole === 'editor') && !doc.is_folder
       ? [{ key: 'share', icon: <ShareAltOutlined />, label: '分享', onClick: () => setShareOpen(true) }]
       : []),
     { key: 'tags', icon: <TagsOutlined />, label: `标签${(doc.tag_ids?.length ?? 0) > 0 ? ` (${doc.tag_ids?.length})` : ''}`, onClick: () => setTagsOpen(true) },
-    { key: 'change-requests', icon: <PullRequestOutlined />, label: `修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`, onClick: () => setCrOpen(true) },
-    { key: 'versions', icon: <HistoryOutlined />, label: `版本${(doc.version_count ?? 0) > 0 ? ` (${doc.version_count})` : ''}`, onClick: () => setVersionsOpen(true) },
-    { type: 'divider' as const },
-    {
-      key: 'export',
-      icon: <DownloadOutlined />,
-      label: '导出',
-      children: [
-        { key: 'docx', icon: <FileWordOutlined />, label: '导出 Word (.docx)', onClick: () => exportMut.mutate('docx') },
-        { key: 'pdf', icon: <FilePdfOutlined />, label: '导出 PDF (.pdf)', onClick: () => exportMut.mutate('pdf') },
-        { key: 'md', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)', onClick: () => exportMut.mutate('md') },
-      ],
-    },
+    ...(isAssetDoc
+      ? []
+      : [
+          { key: 'change-requests', icon: <PullRequestOutlined />, label: `修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`, onClick: () => setCrOpen(true) },
+          { key: 'versions', icon: <HistoryOutlined />, label: `版本${(doc.version_count ?? 0) > 0 ? ` (${doc.version_count})` : ''}`, onClick: () => setVersionsOpen(true) },
+          { type: 'divider' as const },
+          {
+            key: 'export',
+            icon: <DownloadOutlined />,
+            label: '导出',
+            children: [
+              { key: 'docx', icon: <FileWordOutlined />, label: '导出 Word (.docx)', onClick: () => exportMut.mutate('docx') },
+              { key: 'pdf', icon: <FilePdfOutlined />, label: '导出 PDF (.pdf)', onClick: () => exportMut.mutate('pdf') },
+              { key: 'md', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)', onClick: () => exportMut.mutate('md') },
+            ],
+          },
+        ]),
   ]
 
   return (
@@ -929,7 +941,7 @@ export default function DocumentEditorPage() {
                 草稿待提交
               </Tag>
             )}
-            {!doc.is_folder && doc.status !== 'archived' && (
+            {!doc.is_folder && !isAssetDoc && doc.status !== 'archived' && (
               <Segmented
                 size="small"
                 value={viewMode}
@@ -951,7 +963,7 @@ export default function DocumentEditorPage() {
                 发布
               </Button>
             )}
-            {hasUnsaved && (
+            {hasUnsaved && !isAssetDoc && (
               <Text type="warning" style={{ fontSize: 12 }} data-testid="doc-unsaved-hint">
                 未保存
               </Text>
@@ -960,37 +972,46 @@ export default function DocumentEditorPage() {
         </div>
         {isMobile ? (
           <Space size={8}>
+            {!isAssetDoc && (
             <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
               大纲{outline.length > 0 ? ` (${outline.length})` : ''}
             </Button>
+            )}
             <Dropdown trigger={['click']} menu={{ items: docMoreItems }}>
               <Button icon={<MoreOutlined />} data-testid="doc-more-actions">更多</Button>
             </Dropdown>
+            {!isAssetDoc && (
+              <>
             <Button
-              icon={<SaveOutlined />}
-              loading={draftMut.isPending}
-              disabled={!hasChanges}
-              data-testid="doc-save-btn"
-              onClick={handleSave}
-            >
-              草稿
-            </Button>
-            <Button
-              type="primary"
-              icon={<SendOutlined />}
-              loading={submitMut.isPending}
-              disabled={!hasChanges}
-              data-testid="doc-submit-btn"
-              onClick={openSubmit}
-            >
-              提交
-            </Button>
+                icon={<SaveOutlined />}
+                loading={draftMut.isPending}
+                disabled={!hasChanges}
+                data-testid="doc-save-btn"
+                onClick={handleSave}
+              >
+                草稿
+              </Button>
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                loading={submitMut.isPending}
+                disabled={!hasChanges}
+                data-testid="doc-submit-btn"
+                onClick={openSubmit}
+              >
+                提交
+              </Button>
+              </>
+            )}
           </Space>
         ) : (
         <Space wrap>
+          {!isAssetDoc && (
           <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
             大纲{outline.length > 0 ? ` (${outline.length})` : ''}
           </Button>
+          )}
+          {!isAssetDoc && (
           <Button
             icon={<PictureOutlined />}
             loading={imageMut.isPending}
@@ -999,22 +1020,32 @@ export default function DocumentEditorPage() {
           >
             图片
           </Button>
+          )}
+          {!isAssetDoc && (
           <Button icon={<LinkOutlined />} onClick={() => setBacklinksOpen(true)}>
             反链
           </Button>
+          )}
+          {!isAssetDoc && (
           <Button icon={<BranchesOutlined />} data-testid="doc-links-open" onClick={() => setLinksOpen(true)}>
             链接
           </Button>
+          )}
+          {!isAssetDoc && (
           <Button icon={<TableOutlined />} onClick={() => setInsertOpen(true)}>
             插入表格引用
           </Button>
+          )}
           {/* AI 入口（懒加载）：整篇摘要 / 标签建议；选区改写入口在 MarkdownToolbar */}
-          <Suspense fallback={null}>
-            <AiDocEntry onSummarize={openAiSummary} onSuggestTags={openAiSuggestTags} />
-          </Suspense>
+          {!isAssetDoc && (
+            <Suspense fallback={null}>
+              <AiDocEntry onSummarize={openAiSummary} onSuggestTags={openAiSuggestTags} />
+            </Suspense>
+          )}
           <Button icon={<TagsOutlined />} onClick={() => setTagsOpen(true)}>
             标签{doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}
           </Button>
+          {!isAssetDoc && (
           <Button
             icon={<PullRequestOutlined />}
             data-testid="doc-cr-open"
@@ -1022,15 +1053,19 @@ export default function DocumentEditorPage() {
           >
             修改申请{pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}
           </Button>
+          )}
           {/* 分享入口仅 owner / editor 且非文件夹（viewer 由后端 require_editor 拒绝） */}
           {(myRole === 'owner' || myRole === 'editor') && !doc.is_folder && (
             <Button icon={<ShareAltOutlined />} data-testid="doc-share-open" onClick={() => setShareOpen(true)}>
               分享
             </Button>
           )}
+          {!isAssetDoc && (
           <Button icon={<HistoryOutlined />} onClick={() => setVersionsOpen(true)}>
             版本{doc.version_count > 0 ? ` (${doc.version_count})` : ''}
           </Button>
+          )}
+          {!isAssetDoc && (
           <Dropdown
             trigger={['click']}
             menu={{
@@ -1046,33 +1081,38 @@ export default function DocumentEditorPage() {
               导出
             </Button>
           </Dropdown>
+          )}
+          {!isAssetDoc && (
+            <>
           <Button
-            icon={<SaveOutlined />}
-            loading={draftMut.isPending}
-            disabled={!hasChanges}
-            data-testid="doc-save-btn"
-            onClick={handleSave}
-            title={hasChanges ? '保存为个人草稿，不生成版本' : '内容与当前版本一致，无需保存'}
-          >
-            保存草稿 (Ctrl+S)
-          </Button>
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            loading={submitMut.isPending}
-            disabled={!hasChanges}
-            data-testid="doc-submit-btn"
-            onClick={openSubmit}
-            title={
-              !hasChanges
-                ? '文档未发生修改，无需提交'
-                : writeMode === 'change_request'
-                  ? '提交后生成修改申请，审核通过后生效'
-                  : '提交后生成新版本'
-            }
-          >
-            提交修改
-          </Button>
+              icon={<SaveOutlined />}
+              loading={draftMut.isPending}
+              disabled={!hasChanges}
+              data-testid="doc-save-btn"
+              onClick={handleSave}
+              title={hasChanges ? '保存为个人草稿，不生成版本' : '内容与当前版本一致，无需保存'}
+            >
+              保存草稿 (Ctrl+S)
+            </Button>
+            <Button
+              type="primary"
+              icon={<SendOutlined />}
+              loading={submitMut.isPending}
+              disabled={!hasChanges}
+              data-testid="doc-submit-btn"
+              onClick={openSubmit}
+              title={
+                !hasChanges
+                  ? '文档未发生修改，无需提交'
+                  : writeMode === 'change_request'
+                    ? '提交后生成修改申请，审核通过后生效'
+                    : '提交后生成新版本'
+              }
+            >
+              提交修改
+            </Button>
+            </>
+          )}
         </Space>
         )}
       </div>
@@ -1104,7 +1144,9 @@ export default function DocumentEditorPage() {
 
       {/* 分屏编辑/预览 —— 窄屏改为「编辑 / 预览」页签切换，桌面保持左右分屏 */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {viewMode === 'view' ? (
+        {isAssetDoc ? (
+          <DocumentAssetView workspaceId={workspaceId} doc={doc} />
+        ) : viewMode === 'view' ? (
           <div
             style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 16 : '20px 24px' }}
             data-testid="doc-view-mode"

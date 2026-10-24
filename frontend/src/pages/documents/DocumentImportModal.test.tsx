@@ -18,9 +18,10 @@ import {
 const WID = 7
 
 const ANALYSIS: FileImportAnalyzeResult = {
-  total_files: 3,
-  total_documents: 2,
+  total_files: 4,
+  total_documents: 3,
   total_folders: 1,
+  assets: 1,
   conflicts: 1,
   skipped: [{ path: 'bad.txt', reason: '不支持的格式：.txt' }],
   warnings: [{ path: '笔记.md', message: '标题取自正文首个一级标题，已从正文剥离' }],
@@ -31,6 +32,8 @@ const ANALYSIS: FileImportAnalyzeResult = {
       title: '设计',
       folder: '笔记',
       suffix: '.docx',
+      format: 'markdown',
+      is_asset: false,
       status: 'conflict',
       existing_document_id: 9,
       warnings: [],
@@ -40,9 +43,22 @@ const ANALYSIS: FileImportAnalyzeResult = {
       title: '说明',
       folder: '',
       suffix: '.md',
+      format: 'markdown',
+      is_asset: false,
       status: 'new',
       existing_document_id: null,
       warnings: ['标题取自文件名'],
+    },
+    {
+      path: '报告.pdf',
+      title: '报告',
+      folder: '',
+      suffix: '.pdf',
+      format: 'pdf',
+      is_asset: true,
+      status: 'new',
+      existing_document_id: null,
+      warnings: [],
     },
   ],
   preview_truncated: false,
@@ -56,6 +72,7 @@ const RESULT: FileImportResult = {
   folders_created: 1,
   attachments: 2,
   attachment_bytes: 2048,
+  assets: 1,
   documents: [{ id: 11, title: '说明', path: '说明.md' }],
   skipped_files: [{ path: 'bad.txt', reason: '不支持的格式：.txt' }],
   warnings: [{ path: '设计.docx', message: '内嵌图片未导入：image1.png' }],
@@ -88,8 +105,9 @@ describe('通用文件导入弹窗', () => {
     pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
 
     const summary = await screen.findByTestId('file-import-summary')
-    expect(summary).toHaveTextContent('3 个') // 文件数
-    expect(summary).toHaveTextContent('2 篇') // 可导入文档
+    expect(summary).toHaveTextContent('4 个') // 文件数
+    expect(summary).toHaveTextContent('3 篇') // 可导入文档
+    expect(summary).toHaveTextContent('原样存档1 个')
     expect(summary).toHaveTextContent('1 篇') // 同名冲突
     expect(screen.getByTestId('file-import-conflict')).toBeInTheDocument()
     expect(screen.getByTestId('file-import-preview')).toHaveTextContent('笔记/设计.docx')
@@ -99,6 +117,18 @@ describe('通用文件导入弹窗', () => {
       entries: [{ file: expect.any(File), path: '说明.md' }],
       parentId: null,
     })
+  })
+
+  it('预览把 PDF / Office / 图片标为原样存档，accept 覆盖新格式', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    expect(fileInput().getAttribute('accept')).toContain('.pdf')
+    expect(fileInput().getAttribute('accept')).toContain('.xlsx')
+    expect(fileInput().getAttribute('accept')).toContain('.png')
+
+    pick([new File(['%PDF-1.4'], '报告.pdf', { type: 'application/pdf' })])
+    const preview = await screen.findByTestId('file-import-preview')
+    expect(preview).toHaveTextContent('报告.pdf')
+    expect(screen.getAllByTestId('file-import-asset-tag')[0]).toHaveTextContent('原样存档')
   })
 
   it('文件夹模式按相对路径提交批次', async () => {
@@ -159,6 +189,7 @@ describe('通用文件导入弹窗', () => {
     expect(result).toHaveTextContent('新增 1 篇')
     expect(result).toHaveTextContent('更新 1 篇')
     expect(result).toHaveTextContent('新建文件夹 1 个')
+    expect(result).toHaveTextContent('原样存档 1 个')
     expect(result).toHaveTextContent('设计.docx：内嵌图片未导入：image1.png')
     expect(result).toHaveTextContent('bad.txt（不支持的格式：.txt）')
     // 结果态下不再展示上传区

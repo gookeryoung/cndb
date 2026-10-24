@@ -10,6 +10,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
 import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
+import { documentsApi } from '@/api/documents'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, mockWorkspace, server } from '@/test/msw'
 import type { ResponsiveState } from '@/hooks/useResponsive'
@@ -1340,5 +1341,47 @@ describe('DocumentEditorPage 分享入口（ADR 0017）', () => {
         expect(await screen.findByText('需求说明')).toBeInTheDocument()
 
         expect(screen.queryByTestId('doc-share-open')).toBeNull()
+    })
+})
+
+describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/2/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    id: 2,
+                    title: '季度报告',
+                    content_type: 'pdf',
+                    asset_mime: 'application/pdf',
+                    content: '',
+                    version_number: 1,
+                    version_count: 1,
+                    draft: null,
+                    write_mode: 'direct',
+                })),
+        )
+        vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(
+            new Blob(['%PDF-1.4'], { type: 'application/pdf' }),
+        )
+    })
+
+    afterEach(() => {
+        vi.restoreAllMocks()
+    })
+
+    it('正文区换成阅读器，编辑类入口全部隐藏', async () => {
+        renderEditor()
+
+        expect(await screen.findByTestId('doc-asset-view')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-asset-pdf')).toBeInTheDocument()
+        // 原件只读：没有查看/编辑切换、保存/提交、导出与版本入口
+        expect(screen.queryByTestId('doc-mode-switch')).toBeNull()
+        expect(screen.queryByTestId('doc-save-btn')).toBeNull()
+        expect(screen.queryByTestId('doc-submit-btn')).toBeNull()
+        expect(screen.queryByTestId('doc-export-btn')).toBeNull()
+        // 标签与分享仍可用
+        expect(screen.getByRole('button', { name: /标签/ })).toBeInTheDocument()
     })
 })

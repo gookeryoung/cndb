@@ -53,7 +53,25 @@ const CONFLICT_OPTIONS: { value: VaultConflictPolicy; label: string; hint: strin
   { value: 'skip', label: '跳过同名文档', hint: '只导入新增的文件' },
 ]
 
-const FORMAT_LABEL: Record<string, string> = { '.md': 'Markdown', '.markdown': 'Markdown', '.docx': 'Word', '.html': 'HTML', '.htm': 'HTML' }
+const FORMAT_LABEL: Record<string, string> = {
+  '.md': 'Markdown',
+  '.markdown': 'Markdown',
+  '.docx': 'Word',
+  '.html': 'HTML',
+  '.htm': 'HTML',
+  '.pdf': 'PDF',
+  '.xlsx': 'Excel',
+  '.xls': 'Excel',
+  '.pptx': 'PPT',
+  '.ppt': 'PPT',
+  '.png': '图片',
+  '.jpg': '图片',
+  '.jpeg': '图片',
+  '.gif': '图片',
+  '.webp': '图片',
+  '.svg': '图片',
+  '.bmp': '图片',
+}
 
 /** 把浏览器选中的文件整理为批次条目：文件夹模式取相对路径，单文件模式取文件名 */
 function toEntries(files: FileList | null, mode: ImportMode): FileImportEntry[] {
@@ -98,7 +116,9 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     },
     onError: (err: unknown) => {
       reset()
-      message.error(err instanceof Error ? err.message : '解析失败，请确认文件格式为 md / docx / html')
+      message.error(
+        err instanceof Error ? err.message : '解析失败，请确认文件格式在支持范围内（md / docx / html / pdf / Office / 图片）',
+      )
     },
   })
 
@@ -157,8 +177,20 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         title: '格式',
         dataIndex: 'suffix',
         key: 'suffix',
-        width: 110,
-        render: (value: string) => <AntTag color="blue">{FORMAT_LABEL[value] ?? value}</AntTag>,
+        width: 160,
+        render: (value: string, record: FileImportPreviewItem) => {
+          const label = FORMAT_LABEL[value] ?? value
+          return (
+            <Space size={4} wrap>
+              <AntTag color="blue">{label}</AntTag>
+              {record.is_asset && (
+                <AntTag color="default" data-testid="file-import-asset-tag">
+                  原样存档
+                </AntTag>
+              )}
+            </Space>
+          )
+        },
       },
       {
         title: '状态',
@@ -219,7 +251,10 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
             type="success"
             showIcon
             message={`已导入到${targetText}`}
-            description={`新增 ${result.created} 篇 · 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 个 · 新建文件夹 ${result.folders_created} 个 · 内嵌图片 ${result.attachments} 个`}
+            description={
+              `新增 ${result.created} 篇 · 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 个 · ` +
+              `新建文件夹 ${result.folders_created} 个 · 原样存档 ${result.assets ?? 0} 个 · 内嵌图片 ${result.attachments} 个`
+            }
           />
           {result.warnings.map(item => (
             <Alert key={`${item.path}:${item.message}`} type="warning" showIcon message={`${item.path}：${item.message}`} />
@@ -288,8 +323,9 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               {mode === 'folder' ? '选择文件夹' : '选择文件'}
             </Button>
             <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--cn-text-muted)' }}>
-              支持 Markdown（.md）、Word（.docx）、HTML（.html）；导入时会自动转换为 Markdown，
-              自动识别标题与正文，并清理多余空白。导入到{targetText}。
+              支持 Markdown（.md）、Word（.docx）、HTML（.html）——导入时自动转换为 Markdown 并清理空白；
+              PDF、Excel（.xlsx/.xls）、PowerPoint（.pptx/.ppt）与图片（png/jpg/gif/webp/svg/bmp）
+              原样存档，导入后在阅读器里预览、可下载原件（不参与编辑）。导入到{targetText}。
             </p>
             {entries.length > 0 && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
@@ -311,6 +347,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                   { key: 'files', label: '文件', children: `${analysis.total_files} 个` },
                   { key: 'docs', label: '可导入文档', children: `${analysis.total_documents} 篇` },
                   { key: 'folders', label: '新建文件夹', children: `${analysis.total_folders} 个` },
+                  { key: 'assets', label: '原样存档', children: `${analysis.assets ?? 0} 个` },
                   { key: 'conflicts', label: '同名冲突', children: `${analysis.conflicts} 篇` },
                   { key: 'skipped', label: '跳过', children: `${analysis.skipped.length} 个` },
                   { key: 'warnings', label: '告警', children: `${analysis.warnings.length} 条` },

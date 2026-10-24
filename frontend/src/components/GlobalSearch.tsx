@@ -19,6 +19,7 @@ import {
   TableOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
+import { formatMeta } from '@/components/Document/docFormat'
 import { searchApi } from '@/api'
 import type { SearchScope, WorkspaceSearchResult } from '@/api'
 import { parseHitHighlight } from '@/components/Document/outline'
@@ -345,7 +346,17 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
                     onMouseEnter={() => setActiveIndex(i)}
                     onClick={() => openItem({ kind: 'doc', key: `doc-${d.id}`, id: d.id })}
                   >
-                    <FileTextOutlined className="cn-gs-item-icon" />
+                    {(() => {
+                      const fmt = formatMeta(d.content_type)
+                      const FormatIcon = fmt.Icon
+                      return (
+                        <FormatIcon
+                          className="cn-gs-item-icon"
+                          aria-label={`格式：${fmt.label}`}
+                          style={{ color: fmt.color }}
+                        />
+                      )
+                    })()}
                     <span className="cn-gs-item-main">
                       <span className="cn-gs-item-title"><Highlight text={d.title_hit || d.title} /></span>
                       <span className="cn-gs-item-sub"><Highlight text={d.summary_hit || ''} /></span>

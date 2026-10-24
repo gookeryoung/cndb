@@ -16,7 +16,10 @@ export interface DocumentItem {
   parent_id: number | null
   title: string
   slug: string | null
+  /** 渲染族：markdown / folder / pdf / image / xlsx / pptx（ADR 0025） */
   content_type: string
+  /** 原件族文档的 MIME（纯 Markdown 文档为空串），决定阅读器形态 */
+  asset_mime?: string
   author: string
   summary: string
   toc_json: TocItem[]
@@ -323,7 +326,8 @@ export interface VaultImportOptions {
 // ── 通用文件导入（md / docx / html）──
 
 /** 支持导入的源文件后缀（与后端 SUPPORTED_SUFFIXES 对齐） */
-export const FILE_IMPORT_ACCEPT = '.md,.markdown,.docx,.html,.htm'
+export const FILE_IMPORT_ACCEPT =
+  '.md,.markdown,.docx,.html,.htm,.pdf,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.gif,.webp,.svg,.bmp'
 
 /** 一条待上传文件：浏览器 File + 批次内相对路径（文件夹模式取 webkitRelativePath） */
 export interface FileImportEntry {
@@ -346,6 +350,10 @@ export interface FileImportPreviewItem {
   folder: string
   /** 源格式后缀，如 .md / .docx / .html */
   suffix: string
+  /** 落库后的渲染族：markdown / pdf / image / xlsx / pptx */
+  format: string
+  /** true = 原样存档（只读，可预览 / 下载） */
+  is_asset: boolean
   status: 'new' | 'conflict'
   existing_document_id: number | null
   warnings: string[]
@@ -375,6 +383,8 @@ export interface FileImportAnalyzeResult {
   total_documents: number
   /** 待新建文件夹数 */
   total_folders: number
+  /** 原样存档（PDF / Office / 图片）的文件数 */
+  assets: number
   conflicts: number
   skipped: FileImportSkip[]
   warnings: FileImportMessage[]
@@ -392,7 +402,9 @@ export interface FileImportResult {
   folders_created: number
   attachments: number
   attachment_bytes: number
-  documents: { id: number; title: string; path: string }[]
+  /** 原样存档（PDF / Office / 图片）的文件数 */
+  assets: number
+  documents: { id: number; title: string; path: string; format?: string }[]
   skipped_files: FileImportSkip[]
   warnings: FileImportMessage[]
 }
@@ -782,4 +794,10 @@ export const documentsApi = {
       })
       .then(r => r.data)
   },
+
+  // ── 原件族（PDF / Office / 图片，ADR 0025）──
+
+  /** 取原件二进制（前端用 blob + objectURL 走阅读器，避免裸链接绕过鉴权） */
+  assetBlob: (wid: number | string, docId: number) =>
+    api.get<Blob>(`${base(wid)}/${docId}/asset`, { responseType: 'blob' }).then(r => r.data),
 }

@@ -42,6 +42,13 @@ DOC_STATUSES = (DOC_STATUS_DRAFT, DOC_STATUS_PUBLISHED, DOC_STATUS_ARCHIVED)
 
 CONTENT_TYPE_MARKDOWN = "markdown"
 CONTENT_TYPE_FOLDER = "folder"
+# 原件族（ADR 0025）：PDF / 图片 / Excel / PowerPoint 原样存档，正文只读
+CONTENT_TYPE_PDF = "pdf"
+CONTENT_TYPE_IMAGE = "image"
+CONTENT_TYPE_XLSX = "xlsx"
+CONTENT_TYPE_PPTX = "pptx"
+#: 原件族集合：这些文档不参与 Markdown 写路径
+ASSET_CONTENT_TYPES = (CONTENT_TYPE_PDF, CONTENT_TYPE_IMAGE, CONTENT_TYPE_XLSX, CONTENT_TYPE_PPTX)
 
 CHANGE_TYPE_MANUAL = "manual"
 CHANGE_TYPE_IMPORT = "auto_import"
@@ -100,6 +107,10 @@ class Document(TimestampMixin, Base):
     # 大文件外存路径（NULL = 内容内联在 document_versions）
     content_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     content_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # 原件（ADR 0025）：非 Markdown 格式的文件原样存档，file_key 指向工作区上传目录
+    asset_file_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    asset_mime: Mapped[str] = mapped_column(String(128), nullable=False, default="")
 
     created_by_id: Mapped[int | None] = mapped_column(
         ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
@@ -386,12 +397,17 @@ class DocumentIssueEvent(Base):
 
 
 __all__ = [
+    "ASSET_CONTENT_TYPES",
     "CHANGE_TYPES",
     "CHANGE_TYPE_IMPORT",
     "CHANGE_TYPE_MANUAL",
     "CHANGE_TYPE_ROLLBACK",
     "CONTENT_TYPE_FOLDER",
+    "CONTENT_TYPE_IMAGE",
     "CONTENT_TYPE_MARKDOWN",
+    "CONTENT_TYPE_PDF",
+    "CONTENT_TYPE_PPTX",
+    "CONTENT_TYPE_XLSX",
     "DCR_STATUSES",
     "DCR_STATUS_CLOSED",
     "DCR_STATUS_MERGED",
