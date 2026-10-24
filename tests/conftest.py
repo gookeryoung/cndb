@@ -21,6 +21,11 @@ from cndb.api.deps import get_db
 from cndb.core.config import settings
 from cndb.models.base import Base
 
+# 测试不启动「用量快照」后台刷新线程（ADR 0024）：它用独立 SessionLocal 连真实
+# 数据库文件，而测试库是进程内内存 SQLite（StaticPool 单连接），跨线程写会污染。
+# 需要验证线程行为的用例自行构造 StorageSnapshotRefresher。
+settings.STORAGE_SNAPSHOT_ENABLED = False
+
 
 @pytest.fixture(scope="session")
 def db_engine():

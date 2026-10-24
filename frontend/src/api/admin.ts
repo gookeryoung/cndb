@@ -43,13 +43,20 @@ export interface BackupManifest {
   }
 }
 
-/** 工作区空间分配条目（对齐后端 /admin/workspaces/storage） */
+/** 工作区空间分配条目（对齐后端 /admin/workspaces/storage，ADR 0024） */
 export interface WorkspaceStorageItem {
   workspace_id: number
   name: string
   owner_username: string | null
-  used_bytes: number
+  /** 用量快照（字节）：null = 该工作区尚未统计（前端显示「统计中」） */
+  used_bytes: number | null
   quota_bytes: number
+  /** 快照计算时刻（ISO UTC）：null = 尚未统计 */
+  computed_at: string | null
+  /** 快照年龄（秒）：null = 尚未统计 */
+  age_seconds: number | null
+  /** 是否超过两个同步周期未更新 */
+  is_stale: boolean
   updated_at: string | null
 }
 
@@ -57,6 +64,14 @@ export interface WorkspaceStorageOverview {
   /** 默认配额（字节），新建工作区未单独分配时使用 */
   default_quota_bytes: number
   items: WorkspaceStorageItem[]
+  /** 最近一次统计距今（秒）：null = 全部尚未统计 */
+  snapshot_age_seconds: number | null
+  /** 后台定时同步周期（秒）：0 = 只手动 / 变更触发 */
+  refresh_interval_seconds: number
+  /** 后台是否正在执行一轮统计 */
+  refreshing: boolean
+  /** 尚未统计的工作区数量 */
+  pending_workspace_count: number
 }
 
 export const adminApi = {
@@ -95,12 +110,18 @@ export const adminApi = {
   },
 
   // ── 工作区空间分配（/api/v1/admin/workspaces/storage，仅系统管理员） ──
-  /** 列出全部工作区的已用空间与配额 */
+  /** 列出全部工作区的用量快照与配额（只读快照，不触发统计） */
   workspaceStorage: () =>
     api.get<WorkspaceStorageOverview>('/v1/admin/workspaces/storage').then(r => r.data),
+  /** 投递用量重算（异步，立即返回 202）：缺省 = 全部工作区 */
+  refreshWorkspaceStorage: (workspaceIds?: number[]) =>
+    api.post<{ status: string; workspace_ids: number[]; all: boolean }>(
+      '/v1/admin/workspaces/storage/refresh',
+      workspaceIds && workspaceIds.length ? { workspace_ids: workspaceIds } : {},
+    ).then(r => r.data),
   /** 调整某个工作区的存储配额（字节） */
   updateWorkspaceQuota: (workspaceId: number, quotaBytes: number) =>
-    api.patch<{ workspace_id: number; used_bytes: number; quota_bytes: number }>(
+    api.patch<{ workspace_id: number; used_bytes: number | null; quota_bytes: number }>(
       `/v1/admin/workspaces/${workspaceId}/storage-quota`,
       { quota_bytes: quotaBytes },
     ).then(r => r.data),
