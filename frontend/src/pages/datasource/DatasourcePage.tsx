@@ -1129,6 +1129,8 @@ function PreviewPanel({
     ellipsis: true,
     render: (value: unknown) => (value == null ? '—' : String(value)),
   }))
+  // 预览行没有业务主键，补一个合成 key，避免 Table 用行下标作 rowKey（该用法已废弃）
+  const rows = preview.rows.map((row, index) => ({ ...row, __previewKey: index }))
   return (
     <div style={{ marginTop: 8 }}>
       <Space style={{ marginBottom: 8 }}>
@@ -1177,9 +1179,9 @@ function PreviewPanel({
         />
       )}
       <Table
-        rowKey={(_, index) => String(index)}
+        rowKey="__previewKey"
         size="small"
-        dataSource={preview.rows}
+        dataSource={rows}
         columns={columns}
         pagination={false}
         scroll={{ x: 'max-content' }}

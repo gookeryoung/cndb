@@ -501,7 +501,7 @@ export default function WorkspaceSettingsContent({
             <Descriptions.Item label="公开性">
               {VISIBILITY_LABEL[detail?.visibility ?? 'member']}
             </Descriptions.Item>
-            <Descriptions.Item label="工作区类型">
+            <Descriptions.Item label="工作区类型" span={2}>
               {WORKSPACE_TYPE_LABEL[detail?.workspace_type ?? 'data_doc']}
             </Descriptions.Item>
             <Descriptions.Item label="标签" span={2}>

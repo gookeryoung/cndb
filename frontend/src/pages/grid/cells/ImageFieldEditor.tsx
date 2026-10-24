@@ -97,14 +97,17 @@ function MetaTile({
       {...listeners}
     >
       <Tooltip title={metaTitle}>
-        <AuthedImage
-          wid={wid}
-          fileKey={meta.file_key}
-          width={thumbSize}
-          height={thumbSize}
-          alt={meta.filename}
-          style={{ objectFit: 'cover', width: '100%', height: '100%' }}
-        />
+        {/* Tooltip 需要可挂 ref 的宿主节点；AuthedImage 是普通函数组件，用 span 包一层避免 findDOMNode */}
+        <span style={{ display: 'block', width: '100%', height: '100%' }}>
+          <AuthedImage
+            wid={wid}
+            fileKey={meta.file_key}
+            width={thumbSize}
+            height={thumbSize}
+            alt={meta.filename}
+            style={{ objectFit: 'cover', width: '100%', height: '100%' }}
+          />
+        </span>
       </Tooltip>
       {!disabled && (
         <div className="cn-image-field__ops">

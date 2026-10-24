@@ -8,7 +8,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 
 import { renderProviders } from '@/test/render-providers'
@@ -138,7 +138,8 @@ describe('ImportPanel AI 列映射建议', () => {
 
   it('确认导入时把 AI 映射作为 column_mapping 传给后端（映射真正生效）', async () => {
     mockMappingSuggestion()
-    const confirmSpy = vi.spyOn(importApi, 'confirmImport')
+    // 只校验请求体；让确认请求成功返回，避免用例结束时错误 toast 落到已卸载的 message holder
+    const confirmSpy = vi.spyOn(importApi, 'confirmImport').mockResolvedValue({ task_id: 77, status: 'running', message: '' })
     await openPreview()
 
     fireEvent.click(screen.getByTestId('ai-mapping-btn'))
@@ -146,7 +147,7 @@ describe('ImportPanel AI 列映射建议', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /确认导入/ }))
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1)
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledTimes(1))
     const args = confirmSpy.mock.calls[0]
     // 第 9 个参数为 column_mapping（源列 → 目标字段）
     expect(args[8]).toEqual({ 姓名: '姓名', 分数: '分数' })

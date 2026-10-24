@@ -23,6 +23,7 @@ Create Date: 2026-10-13 08:00:00.000000
 
 """
 
+import contextlib
 from typing import Any, Sequence, Union
 
 from alembic import op
@@ -291,7 +292,7 @@ def upgrade() -> None:
     for table_fn, indexes in _NEW_TABLES:
         table = table_fn()
         if not _table_exists(table.name):
-            op.create_table(table.name, *[c.copy() for c in table.columns], *table.constraints)
+            op.create_table(table.name, *table.columns, *table.constraints)
             for ix_name, ix_col in indexes:
                 op.create_index(ix_name, table.name, [ix_col], unique=False)
 
@@ -319,10 +320,8 @@ def downgrade() -> None:
         table = table_fn()
         if _table_exists(table.name):
             for ix_name, _ in indexes:
-                try:
+                with contextlib.suppress(Exception):
                     op.drop_index(ix_name, table_name=table.name)
-                except Exception:  # noqa: S110 - 索引可能已随表删除
-                    pass
             op.drop_table(table.name)
 
     # 2. 回退角色：无法区分「原 admin」与迁移后的 editor，仅恢复枚举兼容（no-op 数据回退）
