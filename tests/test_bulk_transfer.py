@@ -219,6 +219,74 @@ class TestBulkAPI:
         assert r.text.splitlines()[0] == "姓名,年龄"
         assert "张三" in r.text
 
+    def test_export_link_uses_match_field_value(self, client, db, ws, auth_owner):
+        """关联列导出匹配字段值（而非显示字段或行 id），便于修改后按匹配字段直接回灌."""
+        from cndb.plugins.tables.services.core import ddl as core_ddl
+        from cndb.plugins.tables.services.core import records as rec
+
+        engine = db.get_bind()
+        target = DataTable(workspace_id=ws.id, name="导出目标表")
+        target.ensure_db_name()
+        db.add(target)
+        db.flush()
+        name_field = DataField(table_id=target.id, name="名称", field_type="text", order=0)
+        name_field.ensure_db_name()
+        code_field = DataField(table_id=target.id, name="编号", field_type="text", order=1)
+        code_field.ensure_db_name()
+        db.add_all([name_field, code_field])
+        source = DataTable(workspace_id=ws.id, name="导出来源表")
+        source.ensure_db_name()
+        db.add(source)
+        db.flush()
+        title_field = DataField(table_id=source.id, name="标题", field_type="text", order=0)
+        title_field.ensure_db_name()
+        link_field = DataField(
+            table_id=source.id,
+            name="关联",
+            field_type="link",
+            order=1,
+            config={
+                "target_table_id": target.id,
+                "display_field_id": name_field.id,
+                "match_field_id": code_field.id,
+            },
+        )
+        link_field.ensure_db_name()
+        db.add_all([title_field, link_field])
+        db.commit()
+        core_ddl.create_table(engine, target)
+        core_ddl.create_table(engine, source)
+        target_row = rec.create_row(engine, target, {"名称": "显示名", "编号": "KEY-01"}, db=db)
+        rec.create_row(engine, source, {"标题": "S1", "关联": [target_row["id"]]}, db=db)
+
+        json_resp = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{source.id}/export?format=json",
+            headers=auth_owner,
+        )
+        assert json_resp.status_code == 200
+        assert json.loads(json_resp.text)[0]["关联"] == "KEY-01"
+
+        csv_resp = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{source.id}/export?format=csv",
+            headers=auth_owner,
+        )
+        assert csv_resp.status_code == 200
+        assert "KEY-01" in csv_resp.text
+        assert "显示名" not in csv_resp.text
+
+        import io
+
+        from openpyxl import load_workbook
+
+        xlsx_resp = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{source.id}/export?format=xlsx",
+            headers=auth_owner,
+        )
+        assert xlsx_resp.status_code == 200
+        sheet = load_workbook(io.BytesIO(xlsx_resp.content)).active
+        headers = [cell.value for cell in sheet[1]]
+        assert sheet.cell(row=2, column=headers.index("关联") + 1).value == "KEY-01"
+
     def test_export_invalid_format(self, client, ws, table, auth_owner):
         r = client.get(
             f"/api/v1/workspaces/{ws.id}/tables/{table.id}/export?format=pdf",
