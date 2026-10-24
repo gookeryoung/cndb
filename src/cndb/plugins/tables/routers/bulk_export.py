@@ -115,8 +115,12 @@ def export_table(
             detail=f"当前表有 {total} 行，超过导出上限 {_EXPORT_ROW_CAP} 行，请分批导出或联系管理员.",
         )
 
-    # 系统行 ID 仅供内部定位，不属于业务数据：所有格式都不导出该列
-    rows = [{k: v for k, v in row.items() if k != "id"} for row in rows]
+    # 系统行 ID 仅供内部定位，不属于业务数据：所有格式都不导出该列。
+    # 但用户可能建了名为 "id" 的业务字段（如导入带 id 列的 CSV）：``_row_to_dict``
+    # 会用字段名覆盖同名的系统 id，此时按 key 名剔除会静默丢掉整列业务数据。
+    has_business_id = any(f.name == "id" for f in table.active_fields())
+    if not has_business_id:
+        rows = [{k: v for k, v in row.items() if k != "id"} for row in rows]
 
     fmt = format.lower()
     ext_map = {"json": "json", "csv": "csv", "xlsx": "xlsx"}
