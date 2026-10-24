@@ -21,6 +21,10 @@
     },
     "科研资源排期": {
       "排期编号": {"required": true, "unique": true}
+    },
+    "技术体系": {
+      "技术编号": {"required": true, "unique": true},
+      "技术名称": {"required": true}
     }
   },
   "link_lookups": [
