@@ -1,9 +1,7 @@
 """Provider 注册表 —— 内置适配器在此登记，UI 由 ``params_schema`` 自动发现.
 
-内置七个：``http_json``（声明式通用）/
-``tencent_kline``（A 股日线）/ ``sina_kline``（A 股日线，不复权）/
-``eastmoney_kline``（多市场多周期复权 K 线）/ ``eastmoney_symbols``（全市场标的列表）/
-``rss_atom``（订阅源）/ ``llm_prompt``（大模型提示词，OpenAI 兼容）。
+内置两个通用适配器：``http_json``（声明式任意 HTTP/JSON 接口）/
+``llm_prompt``（大模型提示词，OpenAI 兼容）。
 新增 provider 只需实现 ``SourceProvider`` 协议并在此 ``register_provider``。
 """
 
@@ -13,13 +11,8 @@ from collections.abc import Iterable
 from typing import Any
 
 from cndb.plugins.datasource.providers.base import ProviderError, SourceProvider
-from cndb.plugins.datasource.providers.eastmoney_kline import EastmoneyKlineProvider
-from cndb.plugins.datasource.providers.eastmoney_symbols import EastmoneySymbolsProvider
 from cndb.plugins.datasource.providers.http_json import HttpJsonProvider
 from cndb.plugins.datasource.providers.llm_prompt import LlmPromptProvider
-from cndb.plugins.datasource.providers.rss_atom import RssAtomProvider
-from cndb.plugins.datasource.providers.sina_kline import SinaKlineProvider
-from cndb.plugins.datasource.providers.tencent_kline import TencentKlineProvider
 
 PROVIDERS: dict[str, SourceProvider] = {}
 
@@ -61,19 +54,7 @@ def list_providers() -> list[dict[str, Any]]:
 
 def register_builtins(providers: Iterable[SourceProvider] | None = None) -> None:
     """登记内置 provider（幂等，重复调用不报错）."""
-    for provider in (
-        providers
-        if providers is not None
-        else (
-            HttpJsonProvider(),
-            TencentKlineProvider(),
-            SinaKlineProvider(),
-            EastmoneyKlineProvider(),
-            EastmoneySymbolsProvider(),
-            RssAtomProvider(),
-            LlmPromptProvider(),
-        )
-    ):
+    for provider in providers if providers is not None else (HttpJsonProvider(), LlmPromptProvider()):
         if provider.name in PROVIDERS:
             continue
         register_provider(provider)

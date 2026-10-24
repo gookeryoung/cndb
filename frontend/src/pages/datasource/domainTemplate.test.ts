@@ -7,7 +7,7 @@ import type { DomainTemplate } from '@/api'
 function template(overrides: Partial<DomainTemplate> = {}): DomainTemplate {
   return {
     id: 'tpl',
-    provider: 'tencent_kline',
+    provider: 'http_json',
     name: '趋势',
     description: '',
     formulas: [
@@ -81,9 +81,9 @@ describe('materializeDomainTemplate', () => {
     expect(config.summary).toBeNull()
   })
 
-  it('无公式模板（新闻类）只翻译图表与汇总字段', () => {
+  it('无公式模板只翻译图表与汇总字段', () => {
     const tpl = template({
-      provider: 'rss_atom',
+      provider: 'http_json',
       formulas: [],
       chart: { type: 'bar', x: 'source', y: 'link', series: null, title: '来源', aggregation: 'count' },
       summary: { group_by: 'source', metrics: [{ field: 'link', agg: 'count', label: '条数' }], sort_by: 'count(link)' },

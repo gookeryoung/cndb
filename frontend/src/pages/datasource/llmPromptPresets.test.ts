@@ -1,4 +1,4 @@
-/** 推荐提示词预设校验：8 组齐全、字段合法、占位符符合后端模板语法.
+/** 推荐提示词预设校验：7 组齐全、字段合法、占位符符合后端模板语法.
  *
  * 占位符规则对齐 `src/cndb/plugins/datasource/providers/template.py`：
  * `{name}` 是占位符（缺变量即保存失败），`{{` / `}}` 是字面花括号。
@@ -40,7 +40,6 @@ function collectPlaceholders(text: string): string[] {
 const REQUIRED_NAMES = [
   '每日新闻摘要',
   '城市天气预报',
-  '股票 / 基金行情快照',
   '电商竞品价格监控',
   '行业政策公告跟踪',
   '商业航天新闻动态',
@@ -49,9 +48,9 @@ const REQUIRED_NAMES = [
 ]
 
 describe('LLM_PROMPT_PRESETS', () => {
-  it('提供 8 组场景且 id 唯一', () => {
-    expect(LLM_PROMPT_PRESETS).toHaveLength(8)
-    expect(new Set(LLM_PROMPT_PRESETS.map(p => p.id)).size).toBe(8)
+  it('提供 7 组场景且 id 唯一', () => {
+    expect(LLM_PROMPT_PRESETS).toHaveLength(7)
+    expect(new Set(LLM_PROMPT_PRESETS.map(p => p.id)).size).toBe(7)
     expect(LLM_PROMPT_PRESETS.map(p => p.name)).toEqual(REQUIRED_NAMES)
   })
 
@@ -84,7 +83,7 @@ describe('LLM_PROMPT_PRESETS', () => {
     }
   })
 
-  it('字段说明为中文口径：8 组预设默认使用中文字段名', () => {
+  it('字段说明为中文口径：7 组预设默认使用中文字段名', () => {
     for (const preset of LLM_PROMPT_PRESETS) {
       expect(preset.prompt, `${preset.name} 缺少中文字段口径说明`).toContain('字段名用中文')
       // 至少一半字段是中文，避免悄悄退回英文命名
@@ -133,7 +132,6 @@ describe('LLM_PROMPT_PRESETS', () => {
 
   it('实时数据类预设统一要求标注综合整理 / 留空且不返回空数组', () => {
     const realtimeIds = [
-      'market_snapshot',
       'ecommerce_price',
       'policy_tracker',
       'commercial_aerospace',

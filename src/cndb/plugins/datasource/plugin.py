@@ -2,7 +2,7 @@
 
 M1：领域无关的抓取管线（providers / services）。
 M2：同步任务表、四种游标、调度器（DB 租约）、CLI 与 run / preview 端点。
-M3 待补：专用 provider（tencent_kline / rss_atom）与前端任务页 / 向导。
+M3：前端任务页（适配器仅保留通用项：http_json / llm_prompt）。
 
 端点（``/api/v1/workspaces/{wid}/datasource``）：
 

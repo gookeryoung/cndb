@@ -375,7 +375,8 @@ class TestPipelineRateLimit:
 
 class TestDomainTemplates:
     def test_filter_by_provider(self):
-        assert {item.provider for item in list_domain_templates("tencent_kline")} == {"tencent_kline"}
+        assert {item.provider for item in list_domain_templates("http_json")} == {"http_json"}
+        assert list_domain_templates("llm_prompt") == []
         assert len(list_domain_templates()) == len(DOMAIN_TEMPLATES) > 0
 
     @pytest.mark.parametrize("template", DOMAIN_TEMPLATES, ids=lambda item: item.id)
@@ -396,9 +397,9 @@ class TestDomainTemplates:
     def test_endpoint_returns_templates(self, client, owner_env):
         wid, headers = owner_env
         response = client.get(
-            f"/api/v1/workspaces/{wid}/datasource/domain-templates?provider=rss_atom", headers=headers
+            f"/api/v1/workspaces/{wid}/datasource/domain-templates?provider=http_json", headers=headers
         )
         assert response.status_code == 200
         templates = response.json()["templates"]
-        assert [item["id"] for item in templates] == ["news_digest"]
-        assert templates[0]["summary"]["group_by"] == "source"
+        assert [item["id"] for item in templates] == ["weather_daily"]
+        assert templates[0]["summary"]["group_by"] == "city"

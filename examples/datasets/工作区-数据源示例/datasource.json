@@ -1,82 +1,6 @@
 {
-  "_comment": "数据源同步任务种子：数据源示例工作区。一源一表，避免复权口径互相覆盖：tencent（前复权，单次约 320 根，按 440 自然日分片）→「股市日线」；sina（不复权，仅最近 1023 根）→「股市日线-新浪」。两表标的集合与时间范围一致（2021-10-18 起 10 只 A 股，单标的约 1,200 根），与 StockMaster 线上样本口径对齐。seed 只注入配置（enabled=true）不联网抓取，示例 CSV 由 scripts/build_example_kline.py 生成。股票代码带市场前缀（sh/sz），volume 统一为「股」（腾讯内部由手×100 换算）。各源复权算法不同，跨表比较只看形态不看绝对值。另有两组大模型动态拉取任务（provider=llm_prompt）→「美食推荐做法」「国际形势发展动态」：表内字段与视图、示例 CSV 全部为中文，字段映射/幂等键也用中文；调度为 manual（需先配置个人「大模型连接」的 API Key，演示时点「立即运行」，也可改成 daily/cron）。",
+  "_comment": "数据源同步任务种子：数据源示例工作区。适配器只保留通用项（http_json / llm_prompt）：「美食推荐做法」「国际形势发展动态」两组大模型动态拉取任务（provider=llm_prompt，调度 manual，需先配置个人「大模型连接」的 API Key，演示时点「立即运行」，也可改成 daily/cron）；表内字段与视图、示例 CSV 全部为中文，字段映射/幂等键也用中文。示例表「股市日线」「股市日线-新浪」「自选股」与 K 线视图仅作为静态数据示例保留，不再配同步任务。",
   "jobs": [
-    {
-      "name": "股市日线同步（腾讯前复权）",
-      "provider": "tencent_kline",
-      "table": "股市日线",
-      "request_spec": {
-        "url_template": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={symbol},day,{start},{end},320,qfq",
-        "time_window": {
-          "mode": "range",
-          "start_param": "start",
-          "end_param": "end",
-          "chunk_days": 440
-        }
-      },
-      "entrant_param": "symbol",
-      "entrant_keys": [
-        "sh600519",
-        "sz000858",
-        "sz000001",
-        "sh600036",
-        "sh601318",
-        "sz300750",
-        "sz002594",
-        "sh601899",
-        "sh600900",
-        "sz000651"
-      ],
-      "match_keys": ["股票代码", "交易日"],
-      "field_mapping": {
-        "symbol": { "name": "股票代码", "field_type": "text" },
-        "trade_date": { "name": "交易日", "field_type": "date" },
-        "open": { "name": "开盘价", "field_type": "float" },
-        "high": { "name": "最高价", "field_type": "float" },
-        "low": { "name": "最低价", "field_type": "float" },
-        "close": { "name": "收盘价", "field_type": "float" },
-        "volume": { "name": "成交量", "field_type": "int" }
-      },
-      "cursor": { "strategy": "date", "field": "交易日", "backfill_start": "2021-10-18" },
-      "schedule": { "mode": "daily", "at": "17:30", "timezone": "Asia/Shanghai" },
-      "enabled": true,
-      "rate_limit_ms": 2000
-    },
-    {
-      "name": "股市日线同步（新浪不复权）",
-      "provider": "sina_kline",
-      "table": "股市日线-新浪",
-      "request_spec": {
-        "url_template": "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={symbol}&scale=240&ma=no&datalen=1023"
-      },
-      "entrant_param": "symbol",
-      "entrant_keys": [
-        "sh600519",
-        "sz000858",
-        "sz000001",
-        "sh600036",
-        "sh601318",
-        "sz300750",
-        "sz002594",
-        "sh601899",
-        "sh600900",
-        "sz000651"
-      ],
-      "match_keys": ["股票代码", "交易日"],
-      "field_mapping": {
-        "symbol": { "name": "股票代码", "field_type": "text" },
-        "trade_date": { "name": "交易日", "field_type": "date" },
-        "open": { "name": "开盘价", "field_type": "float" },
-        "high": { "name": "最高价", "field_type": "float" },
-        "low": { "name": "最低价", "field_type": "float" },
-        "close": { "name": "收盘价", "field_type": "float" },
-        "volume": { "name": "成交量", "field_type": "int" }
-      },
-      "cursor": { "strategy": "none" },
-      "schedule": { "mode": "daily", "at": "17:45", "timezone": "Asia/Shanghai" },
-      "enabled": true,
-      "rate_limit_ms": 1000
-    },
     {
       "name": "美食推荐做法（大模型动态拉取）",
       "provider": "llm_prompt",
@@ -85,21 +9,53 @@
         "prompt": {
           "user_template": "请推荐 {today} 适合家庭制作的美食做法，覆盖家常菜、汤羹、主食、甜点四类，每类 2 道，共 8 道，优先当季食材。\n每道菜给出：菜名、菜系、难度、烹饪时长、主要食材、分步做法、关键小贴士。\n字段名用中文，不要翻译或改写：菜名、菜系（如 川菜/粤菜/西餐）、难度（简单/中等/困难）、烹饪时长（分钟，整数）、主要食材（用顿号分隔）、分步做法（编号与分号分隔，每步不超过 60 字）、小贴士（无则空字符串）。\n同一菜名同一菜系只保留一条记录（菜名 + 菜系 为去重键）。\n只输出 JSON：一个行对象数组；如需包裹，使用 {\"rows\": [行对象, ...]}。不要输出 Markdown 代码围栏或解释文字。"
         },
-        "llm": { "temperature": 0.7, "max_tokens": 4096, "json_mode": true }
+        "llm": {
+          "temperature": 0.7,
+          "max_tokens": 4096,
+          "json_mode": true
+        }
       },
       "entrant_keys": [],
-      "match_keys": ["菜名", "菜系"],
+      "match_keys": [
+        "菜名",
+        "菜系"
+      ],
       "field_mapping": {
-        "菜名": { "name": "菜名", "field_type": "text" },
-        "菜系": { "name": "菜系", "field_type": "text" },
-        "难度": { "name": "难度", "field_type": "text" },
-        "烹饪时长": { "name": "烹饪时长", "field_type": "int" },
-        "主要食材": { "name": "主要食材", "field_type": "text" },
-        "分步做法": { "name": "分步做法", "field_type": "text" },
-        "小贴士": { "name": "小贴士", "field_type": "text" }
+        "菜名": {
+          "name": "菜名",
+          "field_type": "text"
+        },
+        "菜系": {
+          "name": "菜系",
+          "field_type": "text"
+        },
+        "难度": {
+          "name": "难度",
+          "field_type": "text"
+        },
+        "烹饪时长": {
+          "name": "烹饪时长",
+          "field_type": "int"
+        },
+        "主要食材": {
+          "name": "主要食材",
+          "field_type": "text"
+        },
+        "分步做法": {
+          "name": "分步做法",
+          "field_type": "text"
+        },
+        "小贴士": {
+          "name": "小贴士",
+          "field_type": "text"
+        }
       },
-      "cursor": { "strategy": "none" },
-      "schedule": { "mode": "manual" },
+      "cursor": {
+        "strategy": "none"
+      },
+      "schedule": {
+        "mode": "manual"
+      },
       "enabled": true,
       "rate_limit_ms": 0
     },
@@ -111,22 +67,58 @@
         "prompt": {
           "user_template": "请梳理 {today} 的国际形势发展动态，覆盖大国关系、地区冲突、全球经济与贸易、多边机制与外交活动，地区覆盖亚太、欧洲、中东、北美、非洲、拉美。\n每条记录给出：日期、地区、主题、标题、摘要、来源、链接、趋势判断。\n字段名用中文，不要翻译或改写：日期（YYYY-MM-DD）、地区（地区或国家）、主题（主题分类）、标题、摘要（不超过 150 字）、来源（来源媒体）、链接（原文链接，无法确认用空字符串）、趋势判断（缓和/升温/僵持/不确定）。\n无法核实的摘要与来源标注「综合整理」，不要编造链接，不要返回空数组。\n同一天同一地区同一标题只保留一条记录（日期 + 地区 + 标题 为去重键）。\n只输出 JSON：一个行对象数组；如需包裹，使用 {\"rows\": [行对象, ...]}。不要输出 Markdown 代码围栏或解释文字。"
         },
-        "llm": { "temperature": 0.5, "max_tokens": 4096, "json_mode": true }
+        "llm": {
+          "temperature": 0.5,
+          "max_tokens": 4096,
+          "json_mode": true
+        }
       },
       "entrant_keys": [],
-      "match_keys": ["日期", "地区", "标题"],
+      "match_keys": [
+        "日期",
+        "地区",
+        "标题"
+      ],
       "field_mapping": {
-        "日期": { "name": "日期", "field_type": "date" },
-        "地区": { "name": "地区", "field_type": "text" },
-        "主题": { "name": "主题", "field_type": "text" },
-        "标题": { "name": "标题", "field_type": "text" },
-        "摘要": { "name": "摘要", "field_type": "text" },
-        "来源": { "name": "来源", "field_type": "text" },
-        "链接": { "name": "链接", "field_type": "text" },
-        "趋势判断": { "name": "趋势判断", "field_type": "text" }
+        "日期": {
+          "name": "日期",
+          "field_type": "date"
+        },
+        "地区": {
+          "name": "地区",
+          "field_type": "text"
+        },
+        "主题": {
+          "name": "主题",
+          "field_type": "text"
+        },
+        "标题": {
+          "name": "标题",
+          "field_type": "text"
+        },
+        "摘要": {
+          "name": "摘要",
+          "field_type": "text"
+        },
+        "来源": {
+          "name": "来源",
+          "field_type": "text"
+        },
+        "链接": {
+          "name": "链接",
+          "field_type": "text"
+        },
+        "趋势判断": {
+          "name": "趋势判断",
+          "field_type": "text"
+        }
       },
-      "cursor": { "strategy": "none" },
-      "schedule": { "mode": "manual" },
+      "cursor": {
+        "strategy": "none"
+      },
+      "schedule": {
+        "mode": "manual"
+      },
       "enabled": true,
       "rate_limit_ms": 0
     }
