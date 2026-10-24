@@ -152,6 +152,20 @@ describe('ImportExportDialog 导入/导出对话框', () => {
     expect(screen.getByText('点击或拖拽文件到此处')).toBeInTheDocument()
   })
 
+  it('导出格式下拉按 XLSX / CSV / PDF / JSON 排序', async () => {
+    renderProviders(<ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
+    fireEvent.mouseDown(screen.getByRole('combobox'))
+    await screen.findByText('PDF（当前视图画面）')
+
+    const labels = Array.from(
+      document.querySelectorAll('.ant-select-item-option-content'),
+      el => el.textContent,
+    )
+    expect(labels).toEqual(['XLSX', 'CSV（Excel 兼容）', 'PDF（当前视图画面）', 'JSON'])
+  })
+
   it('上传非法扩展名文件被拒绝', async () => {
     renderProviders(<ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
 

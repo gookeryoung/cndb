@@ -122,7 +122,7 @@ export default function GridToolbar({
                 表设置
               </Button>
             </Tooltip>
-            <Tooltip title="导入 / 导出：批量新增或更新数据、导出 CSV / Excel / JSON">
+            <Tooltip title="导入 / 导出：批量新增或更新数据、导出 XLSX / CSV / PDF / JSON">
               <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>更新/导出</Button>
             </Tooltip>
             <Tooltip title="数据治理：重复检测、合并与清洗">

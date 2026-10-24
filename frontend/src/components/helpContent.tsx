@@ -112,7 +112,7 @@ const importExportContent = (
         <div>
             <Text strong>导出数据</Text>
             <br />
-            <Text type="secondary">在表格页点击「导入 / 导出」按钮，可将当前表导出为 CSV / Excel / JSON 文件；视图配置也可以导出为 JSON 备份，并可在其他表中导入复用。</Text>
+            <Text type="secondary">在表格页点击「导入 / 导出」按钮，可将当前表导出为 XLSX / CSV / PDF / JSON 文件；视图配置也可以导出为 JSON 备份，并可在其他表中导入复用。</Text>
         </div>
         <div>
             <Text strong>字段类型推断规则摘要</Text>
