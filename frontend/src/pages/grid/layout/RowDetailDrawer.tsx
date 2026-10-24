@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, Select, DatePicker, InputNumber, Switch, Upload, Tooltip } from 'antd'
-import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined, NumberOutlined } from '@ant-design/icons'
+import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { recordApi, fileApi, fieldApi, isChangeRequestResponse } from '@/api'
@@ -11,7 +11,7 @@ import type { RowResponse, Field, AttachmentFile, RowValues } from '@/api'
 import { extractSelectOptions, defaultValueForNewRow } from '../cells/fieldOps'
 import { pickLinkLabelFieldName, buildLinkRowLabel } from '../cells/fieldValueFormat'
 import { ImageFieldEditor } from '../cells/ImageFieldEditor'
-import { autoIncrementHint, isAutoIncrementField } from '@/utils/fieldIncrement'
+import { isAutoIncrementField } from '@/utils/fieldIncrement'
 import { useTableSettingsStore } from '@/store'
 import { AuthedFileLink, AuthedImage } from '@/components/AuthedFile'
 
@@ -77,6 +77,15 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
   const { data: audit = [] } = useRowAudit(wid, tid, row?.id, open && !!row)
   const { data: references = [] } = useRowReferences(wid, tid, row?.id, open && !!row)
 
+  /** 自动编号预览 —— 新建模式下只读展示「即将生成的编号」（与网格新增行同源） */
+  const hasAutoIncrement = React.useMemo(() => fields.some(isAutoIncrementField), [fields])
+  const { data: incrementPreview } = useQuery({
+    queryKey: ['auto-increment-preview', wid, tid],
+    queryFn: () => recordApi.nextIncrementPreview(wid, tid),
+    enabled: open && isCreate && hasAutoIncrement,
+    staleTime: 0,
+  })
+
   // 编辑模式 —— 乐观更新
   const updateRow = useUpdateRowOptimistic(wid, tid)
 
@@ -93,6 +102,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
       }
       queryClient.invalidateQueries({ queryKey: ['table-records', `${wid}/${tid}`] })
       queryClient.invalidateQueries({ queryKey: ['table', `${wid}/${tid}`] })
+      queryClient.invalidateQueries({ queryKey: ['auto-increment-preview', wid, tid] })
       onClose()
       onCreated?.()
     },
@@ -168,8 +178,19 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
       <Form form={form} layout="vertical">
         {fields.map(f => {
           const locked = lockedFieldNames.has(f.name)
-          // 新建行里自动编号由后端生成：不给输入框，避免用户以为要自己填
+          // 新建行里自动编号由后端生成：只读展示即将生成的编号，无输入框
           const autoIncrement = isCreate && isAutoIncrementField(f)
+          if (autoIncrement) {
+            return (
+              <Form.Item key={String(f.id)} label={f.name} style={{ marginBottom: 12 }}>
+                <Input
+                  disabled
+                  value={incrementPreview?.values[f.name] ?? '自动'}
+                  data-testid={`drawer-auto-increment-${f.id}`}
+                />
+              </Form.Item>
+            )
+          }
           return (
             <Form.Item
               key={String(f.id)}
@@ -181,19 +202,12 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
                       <LockOutlined style={{ fontSize: 11, color: '#bfbfbf' }} />
                     </Tooltip>
                   )}
-                  {autoIncrement && (
-                    <Tooltip title={`「${f.name}」为自动编号字段：创建行时由后端生成编号，无需填写`}>
-                      <NumberOutlined style={{ fontSize: 11, color: '#94a3b8' }} />
-                    </Tooltip>
-                  )}
                 </span>
               }
               name={f.name}
               style={{ marginBottom: 12 }}
             >
-              {autoIncrement
-                ? <Input disabled placeholder={autoIncrementHint(f)} data-testid={`drawer-auto-increment-${f.id}`} />
-                : <FieldEditor field={f} wid={wid} tableId={tid} rowId={row?.id} disabled={locked || !!readOnly} />}
+              <FieldEditor field={f} wid={wid} tableId={tid} rowId={row?.id} disabled={locked || !!readOnly} />
             </Form.Item>
           )
         })}

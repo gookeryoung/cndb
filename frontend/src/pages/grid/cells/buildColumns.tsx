@@ -3,10 +3,9 @@
 import { Space, Tooltip, Tag } from 'antd'
 import { Button } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, SaveOutlined, CloseOutlined, EditOutlined, LinkOutlined, KeyOutlined, BulbOutlined, NumberOutlined } from '@ant-design/icons'
+import { FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, SaveOutlined, CloseOutlined, EditOutlined, LinkOutlined, KeyOutlined, BulbOutlined } from '@ant-design/icons'
 import type { ReactNode } from 'react'
 import type { RowResponse, Field, RowValues, ID } from '@/api'
-import { autoIncrementHint } from '@/utils/fieldIncrement'
 import GridCell from './GridCell'
 import ColumnFilterDropdown from '../layout/ColumnFilterDropdown'
 
@@ -29,8 +28,10 @@ export interface InlineEditCellProps {
   onFieldCancel: () => void
   /** 自动填充锁定时，预填字段名集合 —— 这些字段在受控编辑态下只读 */
   lockedFields?: Set<string>
-  /** 自动编号字段名集合 —— 新增行里只读展示「保存时自动生成」，不渲染编辑器 */
+  /** 自动编号字段名集合 —— 新增行里只读展示即将生成的编号，不渲染编辑器 */
   autoIncrementFields?: Set<string>
+  /** 自动编号预览值（字段名 → 编号）；缺省或未加载时显示最简占位 */
+  autoIncrementValues?: Record<string, string>
 }
 
 /** 字段类型 → 基础列宽（px）。未命中类型回退 DEFAULT_COLUMN_WIDTH */
@@ -267,19 +268,16 @@ export function buildColumns(
           // 行内编辑 override：优先渲染受控编辑态，非编辑行回退到普通 GridCell
           const inline = inlineOps?.getInlineEdit(record)
           if (inline) {
-            // 自动编号：编号由后端建行时生成，前端不预填也不允许手填，
-            // 以提示替代空白输入框（否则用户会以为字段缺失或需要自己编号）
+            // 自动编号：编号由后端建行时生成，前端只读展示预览值（按库内已有数据 max+1），
+            // 不渲染编辑器、不预填草稿，避免用户误以为需要自己编号
             if (inline.autoIncrementFields?.has(f.name)) {
               return (
-                <Tooltip title={`「${f.name}」为自动编号字段：保存新行时由后端生成编号，无需填写`}>
-                  <span
-                    data-testid={`cell-auto-increment-${f.id}`}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#94a3b8', fontSize: 12, whiteSpace: 'nowrap' }}
-                  >
-                    <NumberOutlined style={{ fontSize: 11 }} />
-                    {autoIncrementHint(f)}
-                  </span>
-                </Tooltip>
+                <span
+                  data-testid={`cell-auto-increment-${f.id}`}
+                  style={{ color: '#64748b', fontSize: 12, whiteSpace: 'nowrap' }}
+                >
+                  {inline.autoIncrementValues?.[f.name] ?? '自动'}
+                </span>
               )
             }
             const locked = inline.lockedFields?.has(f.name) ?? false
