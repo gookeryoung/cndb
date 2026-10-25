@@ -13,6 +13,7 @@ import { authApi } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { Density, NewRowPosition } from '@/theme/tableSettings'
 import LlmConfigPanel from './LlmConfigPanel'
+import { WEIGHT } from '@/theme/tokens'
 
 interface Props {
   open: boolean
@@ -79,7 +80,7 @@ function ThemeCard({ mode, selected, onSelect }: {
         <div style={{ width: 12, height: 10, borderRadius: 4, background: s.border }} />
       </div>
       <div>
-        <div style={{ fontWeight: selected ? 600 : 500, fontSize: 13 }}>{meta.label}</div>
+        <div style={{ fontWeight: selected ? WEIGHT.semibold : WEIGHT.medium, fontSize: 13 }}>{meta.label}</div>
         <div style={{
           fontSize: 11,
           color: meta.isDark ? '#8b949e' : '#8c8c8c',

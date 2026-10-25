@@ -20,6 +20,7 @@ import { resolveOpts, FLOW_OPTIONS, resolveAutoField, findOptionSchema } from '.
 import { formatFieldDisplayValue } from '../cells/fieldValueFormat'
 import { buildFlowGraph, FLOW_UNGROUPED_LABEL, type FlowNode } from './flowBoard'
 import { mixColor } from '@/theme/themeMix'
+import { WEIGHT } from '@/theme/tokens'
 
 // ── 配色与密度 ────────────────────────────────────────
 
@@ -220,7 +221,7 @@ export default function FlowView({ rows, fields, view, density, onRowClick }: Fl
           borderBottom: '1px solid var(--cn-border)', background: 'var(--cn-bg-container)',
         }}
       >
-        <div style={{ fontWeight: 600, fontSize: ds.fontSize + 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ fontWeight: WEIGHT.semibold, fontSize: ds.fontSize + 1, display: 'flex', alignItems: 'center', gap: 6 }}>
           <NodeIndexOutlined style={{ color: 'var(--cn-brand-color)' }} />
           流程视图
         </div>

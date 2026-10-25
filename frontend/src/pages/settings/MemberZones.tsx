@@ -10,6 +10,7 @@ import { PlusOutlined, UserDeleteOutlined, UserOutlined } from '@ant-design/icon
 import type { WorkspaceMember, WorkspaceRole } from '@/api'
 
 import { ROLE_HINTS, ROLE_LABEL } from './workspaceRoles'
+import { WEIGHT } from '@/theme/tokens'
 
 export default function MemberZones({
   members,
@@ -69,7 +70,7 @@ export default function MemberZones({
                       const isMe = currentMemberId === m.id
                       return (
                         <div>
-                          <div style={{ fontWeight: 500 }}>
+                          <div style={{ fontWeight: WEIGHT.medium }}>
                             {u.username}
                             {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({u.nickname})</span>}
                             {isMe && <Tag color="blue" style={{ marginLeft: 8 }}>我</Tag>}

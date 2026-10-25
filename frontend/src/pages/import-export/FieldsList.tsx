@@ -11,6 +11,7 @@ import { getFieldTypeColor } from '@/utils/fieldTypeMeta'
 
 import { PREVIEW_TYPE_OPTIONS } from './importPreviewOptions'
 import type { AnalyzeColumn, ColumnOverride } from './importPreviewTypes'
+import { WEIGHT } from '@/theme/tokens'
 
 
 export default function FieldsList({
@@ -69,7 +70,7 @@ export default function FieldsList({
           >
             {/* 字段名 + 类型选择 + 置信度 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-              <div style={{ fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontWeight: WEIGHT.semibold, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {col.name}
                 {!isAutoType && <Tag color="purple" style={{ marginLeft: 4 }}>已调</Tag>}
               </div>

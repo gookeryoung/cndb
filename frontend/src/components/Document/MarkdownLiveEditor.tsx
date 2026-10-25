@@ -32,6 +32,7 @@ import { loadFileObjectUrl } from '@/hooks/useFileObjectUrl'
 import { highlightCode } from './codeHighlight'
 import { parseImageRef } from './imageRef'
 import { parseMdTable, type MdTable, type MdTableAlign } from './mdTable'
+import { WEIGHT } from '@/theme/tokens'
 
 export type MarkdownEditorMode = 'live' | 'source'
 
@@ -518,7 +519,7 @@ const editorTheme = EditorView.theme({
     backgroundColor: 'var(--cn-mix-brand-color-22-transparent)',
   },
   '.cm-placeholder': { color: 'var(--cn-text-muted, #9ca3af)' },
-  '.cm-md-heading': { fontWeight: '700', lineHeight: '1.4' },
+  '.cm-md-heading': { fontWeight: WEIGHT.bold, lineHeight: '1.4' },
   '.cm-md-h1': { fontSize: '1.75em' },
   '.cm-md-h2': { fontSize: '1.45em' },
   '.cm-md-h3': { fontSize: '1.25em' },
@@ -526,10 +527,10 @@ const editorTheme = EditorView.theme({
   '.cm-md-h5': { fontSize: '1em' },
   '.cm-md-h6': { fontSize: '0.95em', color: 'var(--cn-text-secondary, #6b7280)' },
   '.cm-md-em': { fontStyle: 'italic' },
-  '.cm-md-strong': { fontWeight: '700' },
+  '.cm-md-strong': { fontWeight: WEIGHT.bold },
   '.cm-md-strike': { textDecoration: 'line-through' },
   '.cm-md-code': {
-    fontFamily: 'var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)',
+    fontFamily: 'var(--cn-font-mono)',
     backgroundColor: 'var(--cn-bg-subtle, #fafafa)',
     borderRadius: '4px',
     padding: '1px 4px',
@@ -541,7 +542,7 @@ const editorTheme = EditorView.theme({
     display: 'inline-block',
     width: '0.9em',
     color: 'var(--cn-brand-color, #1677ff)',
-    fontWeight: '700',
+    fontWeight: WEIGHT.bold,
   },
   '.cm-md-task': {
     marginRight: '4px',
@@ -561,9 +562,9 @@ const editorTheme = EditorView.theme({
     padding: '5px 10px',
     verticalAlign: 'top',
   },
-  '.cm-md-table th': { background: 'var(--cn-bg-subtle, #fafafa)', fontWeight: '600' },
+  '.cm-md-table th': { background: 'var(--cn-bg-subtle, #fafafa)', fontWeight: WEIGHT.semibold },
   '.cm-md-table code': {
-    fontFamily: 'var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)',
+    fontFamily: 'var(--cn-font-mono)',
     background: 'var(--cn-bg-subtle, #fafafa)',
     borderRadius: '3px',
     padding: '1px 3px',
@@ -575,14 +576,14 @@ const editorTheme = EditorView.theme({
   },
   '.cm-md-hr': { borderTop: '1px solid var(--cn-border, #e5e7eb)' },
   '.cm-md-codeblock': {
-    fontFamily: 'var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)',
+    fontFamily: 'var(--cn-font-mono)',
     backgroundColor: 'var(--cn-code-block-bg, #f6f8fa)',
     borderLeft: '3px solid var(--cn-code-block-border, #d0d7de)',
     paddingLeft: 'var(--cn-space-lg, 12px)',
     fontSize: '0.92em',
   },
   '.cm-md-codefence': {
-    fontFamily: 'var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace)',
+    fontFamily: 'var(--cn-font-mono)',
     color: 'var(--cn-text-muted, #9ca3af)',
     fontSize: '0.85em',
   },
@@ -771,7 +772,7 @@ const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorPr
           border: 'none',
           boxShadow: 'none',
           borderRadius: 0,
-          fontFamily: 'var(--cn-mono, monospace)',
+          fontFamily: 'var(--cn-font-mono)',
           fontSize: 14,
           lineHeight: 1.7,
           padding: 16,

@@ -37,6 +37,7 @@ import AddMemberModal from './AddMemberModal'
 import MemberZones from './MemberZones'
 import TransferOwnerModal from './TransferOwnerModal'
 import { ROLE_LABEL, VISIBILITY_LABEL, getAssignableRoles } from './workspaceRoles'
+import { WEIGHT } from '@/theme/tokens'
 
 interface Props {
   wid: string
@@ -273,7 +274,7 @@ export default function WorkspaceSettingsContent({
           <Space>
             <Avatar icon={<UserOutlined />} />
             <div>
-              <div style={{ fontWeight: 500 }}>
+              <div style={{ fontWeight: WEIGHT.medium }}>
                 {detail.owner.username}
                 {detail.owner.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({detail.owner.nickname})</span>}
                 {myRole === 'owner' && <Tag color="blue" style={{ marginLeft: 8 }}>就是您</Tag>}
@@ -449,7 +450,7 @@ export default function WorkspaceSettingsContent({
                 <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
                   {item.icon} {item.label}
                 </div>
-                <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: 600, marginTop: 4, color: 'var(--cn-text-primary)' }}>
+                <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: WEIGHT.semibold, marginTop: 4, color: 'var(--cn-text-primary)' }}>
                   {item.value}
                 </div>
               </div>
@@ -531,7 +532,7 @@ export default function WorkspaceSettingsContent({
             <>
               <Divider />
               <div style={{ padding: 16, ...dangerBoxStyle }}>
-                <div style={{ fontWeight: 600, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontWeight: WEIGHT.semibold, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <DeleteOutlined /> 危险操作
                 </div>
                 <div style={{ color: '#991b1b', fontSize: 13, marginBottom: 12 }}>

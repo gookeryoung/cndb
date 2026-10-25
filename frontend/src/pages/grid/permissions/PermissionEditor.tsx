@@ -28,6 +28,7 @@ import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import FilterConditionEditor from '@/pages/grid/view-config/FilterConditionEditor'
 import type { FilterRule } from '@/pages/grid/view-config/FilterConditionEditor'
+import { WEIGHT } from '@/theme/tokens'
 
 interface PermissionEditorProps {
   fields: Field[]
@@ -372,7 +373,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
           <Space>
             <Avatar icon={<UserOutlined />} />
             <div>
-              <div style={{ fontWeight: 500 }}>{owner.username}</div>
+              <div style={{ fontWeight: WEIGHT.medium }}>{owner.username}</div>
               <div style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
                 {isOwner ? '（就是您）' : ''}拥有者对该表负全责, 可管理成员与转让所有权
               </div>
@@ -427,7 +428,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
       })}
 
       {/* ─────────────── 隐藏字段（受控 Checkbox.Group，状态由父组件持有） ─────────────── */}
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, marginTop: 4 }}>
+      <div style={{ fontSize: 13, fontWeight: WEIGHT.semibold, marginBottom: 8, marginTop: 4 }}>
         隐藏字段（勾选后用户不可见）
       </div>
       {fields.filter(f => !f.hidden).length === 0 ? (

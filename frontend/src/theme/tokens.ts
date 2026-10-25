@@ -93,6 +93,19 @@ export const CONTROL = {
   lg: 36,
 } as const
 
+/* ─────────────── 字重（四档，CSS 与 TSX 共用） ─────────────── */
+
+export const WEIGHT = {
+  /** 400 — 正文、表格单元格、表单值 */
+  regular: 400,
+  /** 500 — 表头、行名、实体名、计数 */
+  medium: 500,
+  /** 600 — 页面/分区/卡片标题、激活态 */
+  semibold: 600,
+  /** 700 — 大标题、品牌字、语义符号 */
+  bold: 700,
+} as const
+
 /* ─────────────── 行高 / 断点 ─────────────── */
 
 export const LINE = {
@@ -102,6 +115,21 @@ export const LINE = {
   base: 1.5714,
   /** 长文阅读（文档正文） */
   relaxed: 1.75,
+} as const
+
+/** 字体族：正文 / 展示 / 等宽。CSS 与 antd token 共用同一份，避免组件与正文分叉。 */
+export const FONT = {
+  /** 正文与 UI */
+  sans: "'Inter', 'Noto Sans SC', sans-serif",
+  /** 展示位（品牌字、KPI 数字、纯拉丁大标题）；中文自动回退 Noto Sans SC */
+  display: "'Outfit', 'Noto Sans SC', sans-serif",
+  /** 代码、编号列、等宽场景 */
+  mono: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+} as const
+
+/** 字距：仅用于展示位的纯拉丁 / 纯数字内容，中文不加负字距 */
+export const TRACKING = {
+  display: '-0.02em',
 } as const
 
 /** 断点（px）— CSS 侧 media query 用 `B - 0.02px` 的写法避免边界重叠。 */
@@ -141,4 +169,12 @@ export const CSS_VARS: Readonly<Record<string, string>> = {
   '--cn-radius-lg': px(radiusFamily(RADIUS.base).lg),
   '--cn-radius-xl': px(RADIUS.xl),
   '--cn-radius-pill': px(RADIUS.pill),
+  '--cn-weight-regular': String(WEIGHT.regular),
+  '--cn-weight-medium': String(WEIGHT.medium),
+  '--cn-weight-semibold': String(WEIGHT.semibold),
+  '--cn-weight-bold': String(WEIGHT.bold),
+  '--cn-font-sans': FONT.sans,
+  '--cn-font-display': FONT.display,
+  '--cn-font-mono': FONT.mono,
+  '--cn-tracking-display': TRACKING.display,
 }

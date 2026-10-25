@@ -6,6 +6,7 @@ import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import MiniStat from './MiniStat'
 
 import type { Dispatch, SetStateAction } from 'react'
+import { WEIGHT } from '@/theme/tokens'
 
 interface ImportQualityPanelProps {
   report: any
@@ -39,7 +40,7 @@ export default function ImportQualityPanel({
             {/* 清洗建议（如果有） */}
             {suggestions.length > 0 && (
                 <div style={{ marginBottom: 16, padding: 12, background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}>
-                    <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>
+                    <div style={{ fontWeight: WEIGHT.semibold, marginBottom: 8, fontSize: 13 }}>
                         <SettingOutlined /> 清洗建议（勾选后将在确认导入时执行）
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -74,7 +75,7 @@ export default function ImportQualityPanel({
                     key: p.name,
                     label: (
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <span style={{ fontWeight: 500 }}>{p.name}</span>
+                            <span style={{ fontWeight: WEIGHT.medium }}>{p.name}</span>
                             <Tag color="blue">{getFieldTypeLabel(p.inferred_type)}</Tag>
                             <Tag color={p.confidence >= 0.9 ? 'green' : p.confidence >= 0.7 ? 'orange' : 'red'} style={{ margin: 0 }}>
                                 自动识别 {Math.round(p.confidence * 100)}%

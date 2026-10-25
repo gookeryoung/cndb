@@ -26,6 +26,7 @@ import {
   formatRecommendationRole,
   recommendationRoleColor,
 } from './analyticsModel'
+import { WEIGHT } from '@/theme/tokens'
 
 interface Props {
   /** 推荐结果（未加载 / 失败时为 null） */
@@ -205,7 +206,7 @@ export function RecommendationPanel({
                         data-testid={`analytics-recommend-example-${example.id}`}
                         style={{ maxWidth: 340, padding: '2px 0' }}
                       >
-                        <div style={{ fontWeight: 500 }}>{example.name}</div>
+                        <div style={{ fontWeight: WEIGHT.medium }}>{example.name}</div>
                         <div style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'normal' }}>
                           {example.description || example.reason}
                         </div>

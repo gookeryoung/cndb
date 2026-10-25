@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react'
 import { Alert, Empty, Table, Tag } from 'antd'
 import { PlusCircleOutlined, EditOutlined } from '@ant-design/icons'
 import { changedCountOf, collectDiffColumnKeys, diffChipStyle, fmtValue } from './importPreview'
+import { WEIGHT } from '@/theme/tokens'
 
 interface ImportDiffTableProps {
   preview: any[] | undefined
@@ -63,7 +64,7 @@ export default function ImportDiffTable({ preview, mode, report, matchKeys }: Im
                 <span style={{ ...chipBase, background: 'var(--cn-mix-red-12-bg-container)', color: '#ef4444', textDecoration: 'line-through' }}>
                     − {oldText || '(空)'}
                 </span>
-                <span style={{ ...chipBase, background: 'var(--cn-mix-green-12-bg-container)', color: '#22c55e', fontWeight: 500 }}>
+                <span style={{ ...chipBase, background: 'var(--cn-mix-green-12-bg-container)', color: '#22c55e', fontWeight: WEIGHT.medium }}>
                     + {newText || '(清空)'}
                 </span>
             </div>

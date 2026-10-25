@@ -11,6 +11,7 @@ import { daysFromToday, parseDate } from '../../cells/dateUtils'
 import { buildDoneToggleValue, isDoneRow, resolveDoneCtx } from '../kanbanBoard'
 import { densityCardStyle } from './kanbanDensity'
 import { AutoTag, DueDateBadge, PriorityBadge, getUrgencyVisual } from './kanbanVisuals'
+import { WEIGHT } from '@/theme/tokens'
 
 // ── 看板卡片 ──────────────────────────────────────────
 
@@ -158,7 +159,7 @@ export const KanbanCard = memo(function KanbanCard({ row, fields, opts, density,
           style={{
             flex: 1,
             minWidth: 0,
-            fontWeight: 600,
+            fontWeight: WEIGHT.semibold,
             fontSize: cs.titleFontSize,
             lineHeight: cs.titleLineHeight,
             wordBreak: 'break-word',

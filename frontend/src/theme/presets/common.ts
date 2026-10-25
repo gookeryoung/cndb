@@ -12,7 +12,7 @@
 
 import type { ThemeConfig } from 'antd'
 
-import { CONTROL, LINE, RADIUS, SPACE, TEXT } from '../tokens'
+import { CONTROL, FONT, LINE, RADIUS, SPACE, TEXT } from '../tokens'
 
 /* ─────────────── Switch 组件统一 token ─────────────── */
 const switchTokens = {
@@ -24,8 +24,8 @@ const switchTokens = {
   handleSizeSM: 14,
 }
 
-const commonFont =
-  "system-ui, -apple-system, 'Segoe UI', Roboto, 'PingFang SC', 'Microsoft YaHei', sans-serif"
+// antd 组件与 body 共用同一字体栈，避免组件与正文中英混排时字形跳变
+const commonFont = FONT.sans
 
 /* ─────────────── 全局标尺 ───────────────
  * 字号档位：正文 14 / 小号 12 / 大号 16，与 --cn-text-* 同一把尺子。

@@ -144,7 +144,7 @@ describe('SettingsModal 个人设置', () => {
   })
 
   it('字体节：开启全局加粗持久化到 localStorage 并同步 body 字重', async () => {
-    // 默认已开启加粗（commit 5c60ef2），先持久化关闭态再点击验证「开启」路径
+    // 默认不加粗，先持久化关闭态再点击验证「开启」路径
     localStorage.setItem('cndb_font', JSON.stringify({ scale: 'standard', bold: false }))
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
@@ -220,7 +220,7 @@ describe('SettingsModal 个人设置', () => {
     fireEvent.click(screen.getByRole('button', { name: '恢复默认' }))
 
     expect(localStorage.getItem('cndb_theme')).toBe('modern')
-    expect(JSON.parse(localStorage.getItem('cndb_font') ?? '{}')).toEqual({ scale: 'standard', bold: true })
+    expect(JSON.parse(localStorage.getItem('cndb_font') ?? '{}')).toEqual({ scale: 'standard', bold: false })
     expect(screen.getByText('标准')).toBeInTheDocument()
     expect(screen.queryByText('特大')).not.toBeInTheDocument()
   })

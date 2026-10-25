@@ -23,6 +23,7 @@ import MiniStat from './MiniStat'
 import ImportDiffTable from './ImportDiffTable'
 import ImportQualityPanel from './ImportQualityPanel'
 import { mixColor } from '@/theme/themeMix'
+import { WEIGHT } from '@/theme/tokens'
 
 const { Dragger } = Upload
 
@@ -402,7 +403,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     <div style={{ flex: 1, minWidth: 280 }}>
                         <div style={{ fontSize: 13, color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <FileTextOutlined />
-                            <span style={{ fontWeight: 500 }}>{task.filename}</span>
+                            <span style={{ fontWeight: WEIGHT.medium }}>{task.filename}</span>
                             <span style={{ color: 'var(--cn-text-muted)' }}>· {(task.format || '').toUpperCase()}</span>
                             <span style={{ color: 'var(--cn-text-muted)' }}>·</span>
                             <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
@@ -460,7 +461,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
             <div style={{ marginBottom: 12 }}>
                 {/* 参考列选择 */}
                 <div style={{ padding: 12, background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cn-text-secondary)', marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: WEIGHT.semibold, color: 'var(--cn-text-secondary)', marginBottom: 8 }}>
                         <SwapOutlined style={{ marginRight: 6 }} />
                         选择参考列（按此匹配已有行做更新 / 新增）
                         <HelpTip title="参考列即匹配键：导入时用这些列的值在表中查找同值行，找到则更新该行，找不到则新增一行" />
@@ -715,7 +716,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                             <div style={{ fontSize: 12 }}>
                                 {plannedColumns.length > 0 && (
                                     <div>
-                                        <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                                        <div style={{ fontWeight: WEIGHT.semibold, marginBottom: 6 }}>
                                             <Tag color="blue" style={{ marginRight: 6 }}>新字段</Tag>
                                             检测到 {plannedColumns.length} 个文件里有、但表中尚未建立的字段
                                             {unknownColsStrategy === 'add_text_field'
@@ -751,7 +752,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                                                 }
                                                             }}
                                                         />
-                                                        <span style={{ fontWeight: 500 }}>{pc.name}</span>
+                                                        <span style={{ fontWeight: WEIGHT.medium }}>{pc.name}</span>
                                                         <Tag color={isDropped ? 'default' : 'blue'} style={{ margin: 0 }}>{pc.field_type}</Tag>
                                                         {pc.sample_values?.length > 0 && (
                                                             <span style={{ color: 'var(--cn-text-muted)', fontSize: 11 }}>

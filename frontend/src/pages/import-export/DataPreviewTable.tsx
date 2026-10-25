@@ -12,6 +12,7 @@ import { getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 
 import { tryConvert } from './importPreviewConvert'
 import type { AnalyzeColumn } from './importPreviewTypes'
+import { WEIGHT } from '@/theme/tokens'
 
 export default function DataPreviewTable({
   analyzeResult,
@@ -33,7 +34,7 @@ export default function DataPreviewTable({
       return {
         title: (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap' }}>
-            <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.name}</span>
+            <span style={{ fontWeight: WEIGHT.semibold, overflow: 'hidden', textOverflow: 'ellipsis' }}>{col.name}</span>
             <Tag color={getFieldTypeColor(col.field_type)} style={{ margin: 0 }}>{getFieldTypeLabel(col.field_type)}</Tag>
             {failCnt > 0 && (
               <Tooltip title={`有 ${failCnt} 行无法转换`}>
@@ -65,7 +66,7 @@ export default function DataPreviewTable({
             return (
               <span>
                 <span style={{ color: 'var(--cn-text-muted)', textDecoration: 'line-through', fontSize: 11 }}>{t.rawText}</span>
-                <span style={{ color: '#22c55e', marginLeft: 4, fontWeight: 500 }}>→ {t.convertedText}</span>
+                <span style={{ color: '#22c55e', marginLeft: 4, fontWeight: WEIGHT.medium }}>→ {t.convertedText}</span>
               </span>
             )
           }
@@ -84,7 +85,7 @@ export default function DataPreviewTable({
     // 统计卡片公共样式
     const statBox = (bg: string, numColor = 'var(--cn-text-primary)', icon: any = null, num: any = 0, label = '') => (
       <div style={{ padding: '4px 6px', background: bg, borderRadius: 4, textAlign: 'center' }}>
-        <div style={{ fontSize: 14, fontWeight: 700, color: numColor, lineHeight: 1.2 }}>
+        <div style={{ fontSize: 14, fontWeight: WEIGHT.bold, color: numColor, lineHeight: 1.2 }}>
           {icon}{num}
         </div>
         <div style={{ fontSize: 10, color: 'var(--cn-text-muted)', marginTop: 1 }}>{label}</div>

@@ -9,6 +9,7 @@ import type { Density } from '@/theme/tableSettings'
 import type { KanbanColumnData } from '../kanbanBoard'
 import { densityColumnStyle, estimateCardHeight } from './kanbanDensity'
 import { KanbanCard } from './KanbanCard'
+import { WEIGHT } from '@/theme/tokens'
 
 export interface KanbanColumnProps {
   col: KanbanColumnData
@@ -94,7 +95,7 @@ export const KanbanColumnInner = memo(function KanbanColumnInner({ col, fields, 
           marginBottom: colStyle.colHeaderMarginBottom,
         }}
       >
-        <span style={{ fontWeight: 600, fontSize: colStyle.colHeaderFontSize, color: 'var(--cn-text-primary)' }}>
+        <span style={{ fontWeight: WEIGHT.semibold, fontSize: colStyle.colHeaderFontSize, color: 'var(--cn-text-primary)' }}>
           {col.title}
         </span>
         <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>

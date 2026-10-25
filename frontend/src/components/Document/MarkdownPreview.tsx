@@ -104,7 +104,7 @@ const mdComponents = {
           padding: '2px 6px',
           borderRadius: 4,
           fontSize: '0.9em',
-          fontFamily: 'var(--cn-mono, monospace)',
+          fontFamily: 'var(--cn-font-mono)',
         }}
         {...rest}
       >

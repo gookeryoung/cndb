@@ -5,6 +5,7 @@ import type { RowResponse } from '@/api'
 import { fmtDate } from '../../cells/dateUtils'
 import type { GanttTask } from '../ganttTimeline'
 import { daysBetween } from '../ganttTimeline'
+import { WEIGHT } from '@/theme/tokens'
 
 export interface GanttBarProps {
   task: GanttTask
@@ -104,7 +105,7 @@ export const GanttBar = memo(function GanttBar({ task, range, pxPerDay, barHeigh
             transform: 'translateY(-50%)',
             fontSize: 10,
             color: task.progress > 50 ? '#fff' : barColor,
-            fontWeight: 500,
+            fontWeight: WEIGHT.medium,
             whiteSpace: 'nowrap',
             lineHeight: 1,
           }}

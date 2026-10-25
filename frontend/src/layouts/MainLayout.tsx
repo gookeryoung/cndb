@@ -20,6 +20,7 @@ import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import { workspaceLandingSegment, workspaceTypeFeatures } from '@/utils/workspaceType'
 import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
+import { WEIGHT } from '@/theme/tokens'
 
 // Modal 组件 lazy import：点击打开时才加载
 const SettingsModal = lazy(() => import('@/pages/settings/SettingsModal'))
@@ -355,7 +356,7 @@ export default function MainLayout() {
         }}>
           <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
         </div>
-        <div style={{ padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: 600, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+        <div style={{ padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
           数据表 ({orderedTables.length})
         </div>
         {tables.length === 0 ? (
@@ -415,9 +416,7 @@ export default function MainLayout() {
               c
             </span>
             {!isMobile && (
-              <span style={{ fontWeight: 700, fontSize: 15, color: 'var(--cn-text-primary)', letterSpacing: '-0.2px' }}>
-                cndb
-              </span>
+              <span className="cn-brand-word">cndb</span>
             )}
           </div>
         </Tooltip>

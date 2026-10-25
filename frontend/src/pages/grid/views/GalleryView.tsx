@@ -37,6 +37,7 @@ import {
   resolveGalleryConfig,
   type GalleryConfig,
 } from './galleryBoard'
+import { WEIGHT } from '@/theme/tokens'
 
 // ── 单卡 ──────────────────────────────────────────────
 
@@ -128,7 +129,7 @@ function GalleryCard({
         data-testid="gallery-card-title"
         style={{
           fontSize: 15,
-          fontWeight: 600,
+          fontWeight: WEIGHT.semibold,
           lineHeight: 1.45,
           color: 'var(--cn-text-primary)',
           display: '-webkit-box',

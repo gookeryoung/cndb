@@ -42,6 +42,30 @@
 - 用户的「字体大小」设置只驱动 antd token（`FONT_SCALE_META`）；
   样式表里的字号是页面骨架，按固定档位走，不跟着缩放
 
+### 字重
+
+`--cn-weight-regular 400` / `--cn-weight-medium 500` / `--cn-weight-semibold 600` / `--cn-weight-bold 700`
+
+- 正文、表格单元格、表单值：`regular`(400)。「全局加粗」是用户可选偏好，默认关闭
+- 表头、行名、实体名、计数：`medium`(500)
+- 页面 / 分区 / 卡片标题、激活态：`semibold`(600)
+- 大标题、品牌字、语义符号（+/-）：`bold`(700)
+- CSS 写 `var(--cn-weight-*)`，TSX 写 `WEIGHT.*`；只有 `@font-face` 允许字面量，
+  由 `tokens.test.ts` 守卫
+
+### 字体族
+
+| 变量 | 值 | 用途 |
+| --- | --- | --- |
+| `--cn-font-sans` | Inter + Noto Sans SC | 正文与全部 antd 组件（同一栈，避免混排跳变） |
+| `--cn-font-display` | Outfit + Noto Sans SC | 品牌字、KPI 数字、纯拉丁大标题；中文回退 Noto |
+| `--cn-font-mono` | JetBrains Mono + 系统等宽 | 代码块、行内代码、树 / 甘特 / WBS 编号列 |
+
+- 展示与等宽字体走 npm 运行时依赖 `@fontsource/outfit` 与 `@fontsource/jetbrains-mono`，
+  **只导入 latin 子集四档字重**（`main.tsx`），不引 CDN，离线部署随依赖安装
+- 展示位负字距 `--cn-tracking-display: -0.02em` 只用于 `.cn-display-tight`；
+  中文标题不加负字距（CJK 收紧伤可读性）
+
 ### 圆角
 
 主题的 `borderRadius` 是基准，运行时由 `ThemeProvider` 下发：

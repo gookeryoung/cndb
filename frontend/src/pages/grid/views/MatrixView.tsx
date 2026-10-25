@@ -29,6 +29,7 @@ import {
   type MatrixDateGranularity,
 } from './matrixBoard'
 import { mixColor } from '@/theme/themeMix'
+import { WEIGHT } from '@/theme/tokens'
 
 // ── 配色与密度 ────────────────────────────────────────
 
@@ -133,7 +134,7 @@ function MatrixAxisHeader({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
       <span aria-hidden style={{ flexShrink: 0, width: 4, height: 14, borderRadius: 2, background: color }} />
-      <span style={{ fontWeight: bold ? 600 : 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+      <span style={{ fontWeight: bold ? WEIGHT.semibold : WEIGHT.medium, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {title}
       </span>
       {count !== undefined && (
@@ -149,7 +150,7 @@ function MatrixCornerAxis({ axis, name }: { axis: '行' | '列'; name: string })
     <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
       <span
         style={{
-          flexShrink: 0, fontSize: 11, fontWeight: 600, lineHeight: '18px',
+          flexShrink: 0, fontSize: 11, fontWeight: WEIGHT.semibold, lineHeight: '18px',
           padding: '0 6px', borderRadius: 4,
           color: 'var(--cn-brand-color)',
           background: 'var(--cn-mix-brand-color-12-bg-container)',
@@ -159,7 +160,7 @@ function MatrixCornerAxis({ axis, name }: { axis: '行' | '列'; name: string })
       </span>
       <span
         style={{
-          fontSize: 12.5, fontWeight: 600, color: 'var(--cn-text-primary)',
+          fontSize: 12.5, fontWeight: WEIGHT.semibold, color: 'var(--cn-text-primary)',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
         }}
       >

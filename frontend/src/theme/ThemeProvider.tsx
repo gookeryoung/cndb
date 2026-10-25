@@ -12,6 +12,7 @@ import {
   type ThemeMode, type FontScale, type FontSettings,
 } from '@/theme/theme'
 import { applyThemeMixVars } from '@/theme/themeMix'
+import { WEIGHT } from '@/theme/tokens'
 
 interface ThemeContextValue {
   mode: ThemeMode
@@ -87,10 +88,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyThemeMixVars()
   }, [mode])
 
-  // 字体设置：注入 body 基础字号与加粗（antd 组件字号经 ConfigProvider token 下发）
+  // 字体设置：注入 body 基础字号与字重（antd 组件字号经 ConfigProvider token 下发）
+  // 未开启加粗时显式写 400，避免 body 继承其他样式抬到 600
   useEffect(() => {
     document.body.style.fontSize = `${FONT_SCALE_META[font.scale].px}px`
-    document.body.style.fontWeight = font.bold ? '600' : ''
+    document.body.style.fontWeight = String(font.bold ? WEIGHT.semibold : WEIGHT.regular)
   }, [font])
 
   const isDark = THEME_META[mode].isDark
@@ -119,8 +121,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
             token: {
               ...baseConfig.token,
               fontSize: FONT_SCALE_META[font.scale].px,
-              // 加粗时同步抬升 antd 强调字重，否则保持组件默认
-              ...(font.bold ? { fontWeightStrong: 700 } : {}),
+              // 强调字重默认 600，开启全局加粗时抬升一档到 700
+              fontWeightStrong: font.bold ? WEIGHT.bold : WEIGHT.semibold,
             },
           }}
         >

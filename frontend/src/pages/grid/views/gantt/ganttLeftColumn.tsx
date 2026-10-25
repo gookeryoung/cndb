@@ -5,6 +5,7 @@ import type { VirtualItem } from '@tanstack/react-virtual'
 import type { RowResponse } from '@/api'
 import { densityStyle } from '../gantt/ganttDensity'
 import { GanttFlatItem } from '../gantt/ganttTypes'
+import { WEIGHT } from '@/theme/tokens'
 
 export interface LeftColBodyProps {
   items: GanttFlatItem[]
@@ -78,7 +79,7 @@ export function LeftColBody({ items, virtualItems, totalSize, hasGroup, ds, onRo
                   alignItems: 'center',
                   gap: 8,
                   fontSize: ds.metaFontSize,
-                  fontWeight: 600,
+                  fontWeight: WEIGHT.semibold,
                   color: group.color,
                 }}
               >
@@ -97,8 +98,8 @@ export function LeftColBody({ items, virtualItems, totalSize, hasGroup, ds, onRo
                   style={{
                     fontSize: ds.metaFontSize - 1,
                     color: 'var(--cn-text-muted)',
-                    fontWeight: 500,
-                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                    fontWeight: WEIGHT.medium,
+                    fontFamily: 'var(--cn-font-mono)',
                   }}
                 >
                   G{group.index}
@@ -106,7 +107,7 @@ export function LeftColBody({ items, virtualItems, totalSize, hasGroup, ds, onRo
                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {group.label}
                 </span>
-                <span style={{ color: 'var(--cn-text-muted)', fontWeight: 400, marginLeft: 'auto' }}>
+                <span style={{ color: 'var(--cn-text-muted)', fontWeight: WEIGHT.regular, marginLeft: 'auto' }}>
                   ({group.tasks.length})
                 </span>
               </div>
@@ -143,7 +144,7 @@ export function LeftColBody({ items, virtualItems, totalSize, hasGroup, ds, onRo
                 style={{
                   fontSize: ds.metaFontSize - 1,
                   color: 'var(--cn-text-muted)',
-                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+                  fontFamily: 'var(--cn-font-mono)',
                   flexShrink: 0,
                   minWidth: hasGroup ? 36 : 28,
                 }}
@@ -171,7 +172,7 @@ export function LeftColBody({ items, virtualItems, totalSize, hasGroup, ds, onRo
                   textOverflow: 'ellipsis',
                   whiteSpace: 'nowrap',
                   fontSize: ds.titleFontSize,
-                  fontWeight: 500,
+                  fontWeight: WEIGHT.medium,
                 }}
               >
                 {task.title}
