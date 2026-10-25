@@ -254,9 +254,7 @@ def _table_markdown(node: _Node, ctx: _Ctx) -> str:
     for child in _walk(node):
         if child.tag != "tr":
             continue
-        cells = [
-            _cell_markdown(cell, ctx) for cell in child.children if isinstance(cell, _Node) and cell.tag in _CELL_TAGS
-        ]
+        cells = [_cell_markdown(cell, ctx) for cell in child.children if isinstance(cell, _Node) and cell.tag in _CELL_TAGS]
         if cells:
             rows.append(cells)
     if not rows:
