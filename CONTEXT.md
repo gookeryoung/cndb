@@ -27,7 +27,9 @@
 | 字段数值缩放（field_mapping.scale） | 归一前对数值类型字段乘缩放系数，统一同一目标列的量纲 | 如腾讯成交量以「手」返回、表内存「股」则声明 100；按**目标类型**判定，文本 / 日期 / 布尔忽略；可转数值的字符串同样换算 |
 | 按标的回补水位（cursor=backfill_date） | 游标策略：每个 entrant 在 `datasource_entrant_cursor` 表独立记「已回补到的最早日期」，请求按水位生成 end 锚点，响应内最早日期推进水位（只向更早前移、不后退） | 见 ADR 0034；`backfill_start` 截断收敛，达标标的自动跳过；多轮 run 断点续跑，适合「end 锚点 + 取前 N 根」类接口的历史回补 |
 | 标的动态来源（entrant_source） | 同步任务声明的 entrant 集合来源：`{"table","field","prefix_in"?}` 运行时查同工作区数据表目标字段 distinct 值（可按前缀过滤），与静态 `entrant_keys` 并集 | 见 ADR 0034；新标的随来源表自动纳入；来源表 / 字段缺失时 run 落 failed 不静默空跑；`prefix_in` 用于量纲等口径分组拆任务 |
-| 全局请求间隔（rate_limit_ms） | 并发抓取时任意相邻两个请求出发时刻的最小间隔（全局锁 + 下一允许时间戳保证，workers 并发下同样成立） | 见 ADR 0034；`workers=1` 时退化为顺序 sleep，与旧行为一致；防第三方接口限流（如腾讯 fqkline 密集请求 501） |
+| 全局请求间隔（rate_limit_ms） | 并发抓取时任意相邻两个请求出发时刻的最小间隔（全局锁 + 下一允许时间戳保证，workers 并发下同样成立） | 见 ADR 0034；`workers=1` 时退化为顺序 sleep，与旧行为一致；防第三方接口限流（如腾讯 fqkline 密集请求 501）；示例任务取 `workers` 10（回补）/ 4（分页）与 `rate_limit_ms` 50（ADR 0035 D3） |
+| 选项值集合缓存（Allowed Values Cache） | `select` / `multiselect` 校验时按 `(config 标识, options 长度)` 复用已构建的允许值 frozenset，避免逐行重建大集合 | 见 ADR 0035 D1；有界（256 条，超出整表清空）+ 身份校验防 id 复用误命中；options 被原地追加（批内预填充 / 全表同步）后长度变化即重建 |
+| 轻量落表模式（Light Upsert） | 数据源同步等大吞吐链路的落表变体：保留校验、幂等匹配、未知列规划与一次报告构建，跳过列画像 / 参考列推荐 / 清洗建议 / 全表选项同步 | 见 ADR 0035 D2；入口 `Importer.analyze(light=True)` 与 `Importer.execute(sync_options=False)`，由 `upsert_rows(light=True)` 透传；人工导入默认全量，行为不变 |
 | 分析范围（Scan Scope） | 分析请求的 `filters`（`{field_name, op, value}` × `filter_logic`）：扫描前先收窄，统计 / 汇总 / 窗口都基于过滤后的行 | 时序表用「时间 >= 起点」绕开单次扫描行数上限（上限 `ANALYTICS_MAX_SCAN_ROWS` 仅兜底）；未知过滤字段直接 400；前端入口在分析页「分析范围」 |
 | 时序窗口函数（Window Formula） | 公式里按「分区 + 排序」计算的一类函数：`prev/lag/lead/diff/pct_change/cumsum/rank/ma/rolling_sum/rolling_std` | 公式带 `partition_by` / `order_by` / `order_desc`；第一参数必须是字段引用，聚合仍按整列；`rolling_*` 不满窗返回空；`rank` 也接受时间 / 文本列（全列可数值化按数值，否则按字符串） |
 | 字段智能推荐（Analytics Recommendation） | 选表后按字段类型与抽样画像给出角色（metric/dimension/time/identifier/ignored）、基数、非空率、推荐公式/图表/分组汇总与典型示例 | 端点 `GET /{wid}/analytics/recommendations?table_id=`；只读成员即可用，取数复用行级权限与字段隐藏；结果确定性、一次抽样 1000 行 |

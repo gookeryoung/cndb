@@ -8,7 +8,7 @@
       "request_spec": {
         "url_template": "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num=100&sort=symbol&asc=1&node={entrant}&symbol=&_s_r_a=page",
         "paging": {"mode": "page", "page_size": 100, "max_pages": 80},
-        "workers": 2,
+        "workers": 4,
         "row_defaults": {"类型": "{entrant}", "更新日期": "{today}"}
       },
       "entrant_param": "node",
@@ -25,7 +25,7 @@
       "cursor": {"strategy": "none"},
       "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 100
+      "rate_limit_ms": 50
     },
     {
       "name": "股市日线（新浪快照 · 当日）",
@@ -34,7 +34,7 @@
       "request_spec": {
         "url_template": "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num=100&sort=symbol&asc=1&node={entrant}&symbol=&_s_r_a=page",
         "paging": {"mode": "page", "page_size": 100, "max_pages": 80},
-        "workers": 2,
+        "workers": 4,
         "row_defaults": {"日期": "{today}", "来源": "新浪快照", "复权方式": "不复权"},
         "row_filter": {"field": "收盘", "op": ">", "value": 0}
       },
@@ -53,7 +53,7 @@
       "cursor": {"strategy": "none"},
       "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 100
+      "rate_limit_ms": 50
     },
     {
       "name": "股市日线（腾讯回补 · 主板创业板ETF）",
@@ -61,7 +61,7 @@
       "table": "股市日线",
       "request_spec": {
         "url_template": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={entrant},day,,{end},800,qfq",
-        "workers": 6,
+        "workers": 10,
         "record_mode": "rows_array",
         "data_path": "data.{entrant}.qfqday",
         "record_layout": {
@@ -90,7 +90,7 @@
       "cursor": {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"},
       "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 150
+      "rate_limit_ms": 50
     },
     {
       "name": "股市日线（腾讯回补 · 科创板）",
@@ -98,7 +98,7 @@
       "table": "股市日线",
       "request_spec": {
         "url_template": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={entrant},day,,{end},800,qfq",
-        "workers": 6,
+        "workers": 10,
         "record_mode": "rows_array",
         "data_path": "data.{entrant}.qfqday",
         "record_layout": {
@@ -127,7 +127,7 @@
       "cursor": {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"},
       "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 150
+      "rate_limit_ms": 50
     },
     {
       "name": "行业政策与合规台账（大模型动态拉取）",

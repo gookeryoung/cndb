@@ -307,6 +307,22 @@ class TestRunnerInternals:
         assert injected.entrant_ends == {"sz000001": "2020-05-31", "sh601318": TODAY}
 
 
+def test_persist_rows_uses_light_mode(db_engine, db, monkeypatch):
+    """同步落表走轻量模式（ADR 0035 D2）：upsert_rows 收到 light=True."""
+    table = _make_kline_table(db, db_engine)
+    job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
+    captured: dict[str, object] = {}
+
+    def fake_upsert(*_args, **kwargs):
+        captured.update(kwargs)
+        return runner.WriteOutcome(fetched=1, inserted=1)
+
+    monkeypatch.setattr(runner, "upsert_rows", fake_upsert)
+    runner._persist_rows(db, job, [{"日期": "2026-10-24", "收盘": 1.0}], user=None)
+    assert captured["light"] is True
+    assert captured["match_keys"] == ["代码", "日期"]
+
+
 def test_streaming_state_not_leaked_into_llm_path(db_engine, db, monkeypatch):
     """llm_prompt 仍走全量路径：不注入 on_batch（回归保护）."""
     table = _make_kline_table(db, db_engine)

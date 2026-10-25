@@ -19,6 +19,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from cndb.plugins.tables.field_types import select as select_field_type
+from cndb.plugins.tables.field_types.select import MultiSelectFieldType, SelectFieldType
 from cndb.plugins.tables.models import Base, DataField, DataTable
 from cndb.plugins.tables.services.core import ddl
 from cndb.plugins.tables.services.fields.field_ops import sync_select_options_from_table
@@ -66,6 +68,82 @@ def _add_field(
     session.add(f)
     session.flush()
     return f
+
+
+@pytest.fixture(autouse=True)
+def _clear_allowed_cache():
+    """每个用例独占选项集合缓存，避免跨用例串味."""
+    select_field_type._ALLOWED_CACHE.clear()
+    yield
+    select_field_type._ALLOWED_CACHE.clear()
+
+
+# ── 选项值集合缓存（ADR 0035 D1）──────────────
+
+
+class TestAllowedValuesCache:
+    """校验路径的选项集合缓存：命中、失效与防误命中."""
+
+    def test_repeated_validation_reuses_cached_set(self):
+        """同一 config 反复校验只构建一次集合（返回同一 frozenset 对象）."""
+        cfg = {"options": [{"label": "贵州茅台", "value": "sh600519"}, {"label": "平安银行", "value": "sz000001"}]}
+        first = select_field_type._allowed_values_from_config(cfg)
+        second = select_field_type._allowed_values_from_config(cfg)
+        assert first is second
+        assert first == frozenset({"sh600519", "sz000001"})
+        assert len(select_field_type._ALLOWED_CACHE) == 1
+
+    def test_select_validate_many_rows_hits_cache(self):
+        """批量校验同一字段：值全部通过且缓存只留一条."""
+        ft = SelectFieldType()
+        cfg = {"options": [{"label": "腾讯前复权", "value": "腾讯前复权"}]}
+        for _ in range(200):
+            assert ft.validate_value("腾讯前复权", cfg) == "腾讯前复权"
+        assert len(select_field_type._ALLOWED_CACHE) == 1
+
+    def test_appended_option_takes_effect_immediately(self):
+        """options 原地追加后长度变化换键重建，新值不再被判非法."""
+        ft = SelectFieldType()
+        cfg = {"options": [{"label": "sh600519", "value": "sh600519"}]}
+        with pytest.raises(ValueError):
+            ft.validate_value("sz000001", cfg)
+        # 模拟批内选项预填充 / 全表选项同步的原地追加
+        cfg["options"].append({"label": "sz000001", "value": "sz000001"})
+        assert ft.validate_value("sz000001", cfg) == "sz000001"
+
+    def test_multiselect_shares_cache_semantics(self):
+        """multiselect 每个值走同一缓存；非法值仍报错."""
+        ft = MultiSelectFieldType()
+        cfg = {"options": [{"label": "a", "value": "a"}, {"label": "b", "value": "b"}]}
+        assert ft.validate_value(["a", "b"], cfg) == "a,b"
+        assert ft.validate_value("a,b", cfg) == "a,b"
+        with pytest.raises(ValueError):
+            ft.validate_value("a,c", cfg)
+        assert len(select_field_type._ALLOWED_CACHE) == 1
+
+    def test_identity_guard_rejects_stale_cache_entry(self):
+        """同键但 config 对象不同（id 复用场景）→ 不采信旧集合，重建."""
+        cfg = {"options": [{"label": "x", "value": "x"}]}
+        select_field_type._ALLOWED_CACHE[(id(cfg), 1)] = ({"options": []}, frozenset({"stale"}))
+        values = select_field_type._allowed_values_from_config(cfg)
+        assert values == frozenset({"x"})
+
+    def test_cache_is_bounded(self, monkeypatch):
+        """超过上限时整表清空，不无界增长."""
+        monkeypatch.setattr(select_field_type, "_ALLOWED_CACHE_LIMIT", 2)
+        first = {"options": ["a"]}
+        second = {"options": ["b"]}
+        third = {"options": ["c"]}
+        for cfg in (first, second):
+            select_field_type._allowed_values_from_config(cfg)
+        assert len(select_field_type._ALLOWED_CACHE) == 2
+        select_field_type._allowed_values_from_config(third)
+        assert len(select_field_type._ALLOWED_CACHE) == 1
+
+    def test_empty_options_returns_none_without_cache(self):
+        """无 options → 返回 None（放行），且不写入缓存."""
+        assert select_field_type._allowed_values_from_config({"options": []}) is None
+        assert select_field_type._ALLOWED_CACHE == {}
 
 
 # ── sync_select_options_from_table 核心逻辑 ────────

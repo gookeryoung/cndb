@@ -228,6 +228,12 @@ def test_real_datasource_json_is_valid():
     assert "trade" in snapshot["field_mapping"]
     assert all("scale" not in t for t in snapshot["field_mapping"].values())
 
+    # ①② 快照类：4 线程串行分页 + 50ms 全局间隔（ADR 0035 D3）
+    snapshots = jobs[:2]
+    for job in snapshots:
+        assert job["request_spec"]["workers"] == 4
+        assert job["rate_limit_ms"] == 50
+
     # ③④ 历史回补：backfill_date 水位 + 清单动态标的 + prefix 按板块互斥
     backfills = jobs[2:4]
     prefixes = [job["entrant_source"]["prefix_in"] for job in backfills]
@@ -249,8 +255,9 @@ def test_real_datasource_json_is_valid():
             "成交量": 5,
         }
         assert job["request_spec"]["row_defaults"]["来源"] == "腾讯前复权"
-        assert job["request_spec"]["workers"] == 6
-        assert job["rate_limit_ms"] == 150
+        # 并发与限速取值（ADR 0035 D3）：10 线程 + 50ms 全局间隔（20 req/s 天花板）
+        assert job["request_spec"]["workers"] == 10
+        assert job["rate_limit_ms"] == 50
         assert "{end}" in job["request_spec"]["url_template"], "回补请求须带 end 锚点占位"
     # 量纲拆分：主板/创业板/ETF 手→股 scale=100，科创板腾讯原值即股
     assert backfills[0]["field_mapping"]["成交量"]["scale"] == 100
