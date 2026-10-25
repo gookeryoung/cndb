@@ -239,7 +239,7 @@ export const WEIGHT = {
 | P1 | 已落地 | `frontend/src/theme/tokens.ts`、`frontend/src/index.css`、`frontend/src/pages/**` | `frontend/src/theme/tokens.test.ts` | cb2eacfb |
 | P2 | 已落地 | `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme/presets/common.ts`、`frontend/src/index.css`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/theme/fontAssets.test.ts` | cb2eacfb |
 | P3 | 已落地 | `frontend/src/index.css`、`frontend/src/components/Document/MarkdownLiveEditor.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/pages/grid/views/TreeView.tsx`、`frontend/src/pages/grid/views/WbsView.tsx`、`frontend/src/pages/grid/views/gantt/ganttLeftColumn.tsx`、`docs/DESIGN_SYSTEM.md` | `frontend/tests/e2e/critical/typography.spec.ts` | cb2eacfb |
-| P4 | 已落地 | `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/index.css`、`frontend/src/theme/tokens.ts`、`frontend/src/theme/fontAssets.test.ts` | `frontend/src/theme/fontAssets.test.ts` | — |
+| P4 | 已落地 | `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/index.css`、`frontend/src/theme/tokens.ts`、`frontend/src/theme/fontAssets.test.ts` | `frontend/src/theme/fontAssets.test.ts` | 0e7eaae7 |
 
 ## 交接（会话结束更新）
 
