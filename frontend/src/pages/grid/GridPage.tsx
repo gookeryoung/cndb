@@ -718,7 +718,7 @@ export default function GridPage() {
       }
     }
 
-    // 仅提交非空的编辑字段
+    // 仅提交非空的编辑字段（新增行的手动改号也走这里：草稿为空则保持后端自动生成）
     const values: RowValues = {}
     for (const f of gridFields) {
       if (!isEditableInlineField(f)) continue

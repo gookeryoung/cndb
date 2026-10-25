@@ -7,6 +7,7 @@ import { FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, SaveOutl
 import type { ReactNode } from 'react'
 import type { RowResponse, Field, RowValues, ID } from '@/api'
 import GridCell from './GridCell'
+import AutoIncrementCell from './AutoIncrementCell'
 import ColumnFilterDropdown from '../layout/ColumnFilterDropdown'
 import { WEIGHT } from '@/theme/tokens'
 
@@ -269,16 +270,17 @@ export function buildColumns(
           // 行内编辑 override：优先渲染受控编辑态，非编辑行回退到普通 GridCell
           const inline = inlineOps?.getInlineEdit(record)
           if (inline) {
-            // 自动编号：编号由后端建行时生成，前端只读展示预览值（按库内已有数据 max+1），
-            // 不渲染编辑器、不预填草稿，避免用户误以为需要自己编号
+            // 自动编号：默认只读展示后端推算的编号；点击编辑图标可手动改号，
+            // 手动值随建行提交，未编辑或清空时仍由后端自动生成
             if (inline.autoIncrementFields?.has(f.name)) {
               return (
-                <span
-                  data-testid={`cell-auto-increment-${f.id}`}
-                  style={{ color: '#64748b', fontSize: 12, whiteSpace: 'nowrap' }}
-                >
-                  {inline.autoIncrementValues?.[f.name] ?? '自动'}
-                </span>
+                <AutoIncrementCell
+                  field={f}
+                  value={inline.values[f.name]}
+                  previewValue={inline.autoIncrementValues?.[f.name]}
+                  readOnly={inline.lockedFields?.has(f.name) ?? false}
+                  onChange={(v) => inline.onFieldChange(f.name, v)}
+                />
               )
             }
             const locked = inline.lockedFields?.has(f.name) ?? false
