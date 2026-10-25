@@ -194,13 +194,13 @@ SUPPORTED_SUFFIXES = CONVERTIBLE_SUFFIXES + tuple(ASSET_FORMATS)
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 模型 + 格式注册表 + 导入落库 | 已落地 | `src/cndb/plugins/documents/services/importers/formats.py`、`src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/alembic/versions/d0c1b2a3f4e5_add_document_asset_columns.py` | `tests/test_documents_asset_import.py` | 待回填 |
-| P1 原件端点 + 清理 | 已落地 | `src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/files/services.py` | `tests/test_documents_asset_import.py` | 待回填 |
-| P2 前端图标 + 阅读器 | 已落地 | `frontend/src/components/Document/docFormat.ts`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/DocumentImportModal.tsx` | `frontend/src/components/Document/docFormat.test.ts`、`frontend/src/pages/documents/DocumentAssetView.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` | 待回填 |
+| P0 模型 + 格式注册表 + 导入落库 | 已落地 | `src/cndb/plugins/documents/services/importers/formats.py`、`src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/alembic/versions/d0c1b2a3f4e5_add_document_asset_columns.py` | `tests/test_documents_asset_import.py` | 2a8ff3fd |
+| P1 原件端点 + 清理 | 已落地 | `src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/files/services.py` | `tests/test_documents_asset_import.py` | 2a8ff3fd |
+| P2 前端图标 + 阅读器 | 已落地 | `frontend/src/components/Document/docFormat.ts`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/DocumentImportModal.tsx` | `frontend/src/components/Document/docFormat.test.ts`、`frontend/src/pages/documents/DocumentAssetView.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` | 2a8ff3fd |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 均已落地，功能与测试完成，待收尾提交
+- 当前阶段：P0 / P1 / P2 均已落地并提交（`2a8ff3fd`），功能完结
 - 已完成：格式注册表（PDF / Office / 图片）与原件落盘、两列迁移、原件端点（inline / attachment、SVG sandbox）、只读守卫（正文 / 草稿 / 提交 / 回滚 409）、purge 清理原件；前端格式映射（树 / 列表 / 回收站 / 搜索）+ 阅读器（PDF iframe / 图片 img / Office 下载卡）+ 编辑器页只读分支 + 导入弹窗扩展
 - 测试：后端 `tests/test_documents_asset_import.py` 28 例（注册表 / 分派 / 预览 / 导入 / 冲突 / 权限 / 下载 / 只读 / 清理）；前端 4 个文件（格式映射 / 阅读器 / 树图标 / 编辑器只读分支）与导入弹窗回归
 - 已知坑：`importers` 包名不能用 `import`（Python 保留字）；原件端点用 `FileResponse` 流式返回（不整块读入内存）；迁移链挂在 `c9f1a2b3d4e5`（工作区存储快照）之后，同步提交时不要漏
