@@ -120,9 +120,9 @@ export const LINE = {
 /** 字体族：正文 / 展示 / 等宽。CSS 与 antd token 共用同一份，避免组件与正文分叉。 */
 export const FONT = {
   /** 正文与 UI */
-  sans: "'Inter', 'Noto Sans SC', sans-serif",
-  /** 展示位（品牌字、KPI 数字、纯拉丁大标题）；中文自动回退 Noto Sans SC */
-  display: "'Outfit', 'Noto Sans SC', sans-serif",
+  sans: "'Inter', system-ui, sans-serif",
+  /** 展示位（品牌字、KPI 数字、纯拉丁大标题）；中文由系统字体回退 */
+  display: "'Outfit', system-ui, sans-serif",
   /** 代码、编号列、等宽场景 */
   mono: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
 } as const

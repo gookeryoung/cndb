@@ -1,110 +1,17 @@
 /* cndb - FastAPI 插件模板 全局样式 */
 
 /* ═══════════════════════════════════════════════════════════════════════════
- * 本地托管字体（全部 SIL Open Font License — 允许商用、允许分发）
- *   Inter        — 拉丁/UI 无衬线（现代、干净、数字支持 tabular-nums）
- *   Noto Sans SC — 中文覆盖（思源黑体，Google/Adobe 共同开发）
+ * 字体（全部 SIL Open Font License — 允许商用、允许分发）
+ *   Inter          — 拉丁/UI 无衬线（@fontsource/inter，只导 latin 子集）
+ *   Outfit         — 展示位（品牌字 / KPI / 纯拉丁大标题）
+ *   JetBrains Mono — 等宽（代码块 / 编号列）
  *
- * 跨平台显示统一策略：
- *   1. 三字重全覆盖（400/500/600/700），所有 font-weight 命中 web font，
- *      不触发 Win7→微软雅黑 / Win11→微软雅黑 / Ubuntu→文泉驿 的系统 fallback
- *   2. unicode-range 精确切分：Inter 只管拉丁 + ASCII，Noto Sans SC 只管 CJK + 全角标点
- *      避免中英混排时在不同 family 间跳变 metrics
- *   3. 字体栈极简兜底：'Inter', 'Noto Sans SC', sans-serif —— 去掉过多系统字体名，
- *      统一交给 sans-serif 关键字（各平台自动选最佳系统字体），减少 fallback 链
- *   4. font-display: swap — 首屏先用系统字体显示，web font 加载完自动切换
+ * 策略：
+ *   1. 三族字体都由 npm 运行时依赖打进产物，零外链（离线部署随依赖安装）
+ *   2. Inter 只覆盖 latin，中文由浏览器按系统字体逐字回退（苹方 / 微软雅黑 / 文泉驿）
+ *   3. 字体栈保持极简：'Inter', system-ui, sans-serif —— 减少 fallback 链跳变
+ *   4. @font-face 由 @fontsource/*\/latin-*.css 提供（font-display: swap）
  * ═══════════════════════════════════════════════════════════════════════════ */
-
-/* ── Inter（拉丁/拉丁扩展） ── */
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/inter/inter-latin-400-normal.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('/fonts/inter/inter-latin-500-normal.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('/fonts/inter/inter-latin-600-normal.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-@font-face {
-  font-family: 'Inter';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('/fonts/inter/inter-latin-700-normal.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
-    U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
-
-/* ── Noto Sans SC（中文 CJK + 全角标点 + 几何符号） ──
- * unicode-range 覆盖：
- *   CJK 统一汉字 + 扩展 A/B/C/D/E + 兼容汉字 + 表意文字扩展
- *   U+2500-257F 几何图形（菱形 ◇ ◎ 等，用于看板/标签图标）
- *   U+3000-303F CJK 标点符号（书名号《》、顿号、间隔号 等）
- *   U+FF00-FFEF 半角/全角形式（全角逗号，。全角句号，"" 全角引号 等） */
-@font-face {
-  font-family: 'Noto Sans SC';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/noto-sans-sc/noto-sans-sc-101-400-normal.woff2') format('woff2');
-  unicode-range: U+2500-257F, U+3000-303F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
-    U+FF00-FFEF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F, U+2B820-2CEAF,
-    U+2CEB0-2EBEF, U+30000-3134F;
-}
-
-@font-face {
-  font-family: 'Noto Sans SC';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('/fonts/noto-sans-sc/noto-sans-sc-101-500-normal.woff2') format('woff2');
-  unicode-range: U+2500-257F, U+3000-303F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
-    U+FF00-FFEF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F, U+2B820-2CEAF,
-    U+2CEB0-2EBEF, U+30000-3134F;
-}
-
-@font-face {
-  font-family: 'Noto Sans SC';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('/fonts/noto-sans-sc/noto-sans-sc-101-600-normal.woff2') format('woff2');
-  unicode-range: U+2500-257F, U+3000-303F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
-    U+FF00-FFEF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F, U+2B820-2CEAF,
-    U+2CEB0-2EBEF, U+30000-3134F;
-}
-
-@font-face {
-  font-family: 'Noto Sans SC';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('/fonts/noto-sans-sc/noto-sans-sc-101-700-normal.woff2') format('woff2');
-  unicode-range: U+2500-257F, U+3000-303F, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF,
-    U+FF00-FFEF, U+20000-2A6DF, U+2A700-2B73F, U+2B740-2B81F, U+2B820-2CEAF,
-    U+2CEB0-2EBEF, U+30000-3134F;
-}
 
 *,
 *::before,
@@ -135,7 +42,7 @@ body {
 }
 
 /* 展示字体（Outfit）：只用于品牌字、KPI 数字、纯拉丁大标题；
-   中文会回退 Noto Sans SC，因此不要套在中文标题上 */
+   中文由系统字体回退，因此不要套在中文标题上 */
 .cn-display {
   font-family: var(--cn-font-display);
 }
@@ -236,8 +143,8 @@ body {
   --cn-weight-semibold: 600;
   --cn-weight-bold: 700;
 
-  --cn-font-sans: 'Inter', 'Noto Sans SC', sans-serif;
-  --cn-font-display: 'Outfit', 'Noto Sans SC', sans-serif;
+  --cn-font-sans: 'Inter', system-ui, sans-serif;
+  --cn-font-display: 'Outfit', system-ui, sans-serif;
   --cn-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --cn-tracking-display: -0.02em;
 }
