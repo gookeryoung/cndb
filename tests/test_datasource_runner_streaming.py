@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from cndb.plugins.datasource.models import DatasourceEntrantCursor, DatasourceSyncJob
 from cndb.plugins.datasource.services import runner
-from cndb.plugins.datasource.services.runner import execute_job
+from cndb.plugins.datasource.services.runner import execute_job, preview_job
 from cndb.plugins.datasource.services.scheduler import LeaseHandle, acquire_lease
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core import ddl
@@ -138,6 +138,19 @@ class TestBackfillExecution:
         }
         assert watermarks == {"sh600519": "2020-06-30"}
 
+    def test_preview_injects_watermark_anchor(self, db_engine, db):
+        """预览与执行同口径：按标的水位注入 end 锚点（只读，不写水位）."""
+        table = _make_kline_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
+        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="sh600519", cursor_value="2020-06-30"))
+        db.commit()
+        seen: list[str] = []
+        fetch = _capture_fetch(seen, {"sh600519": [{"日期": "2020-06-29", "close": 1400.0}]})
+
+        preview = preview_job(job, db=db, fetch=fetch, now=NOW)
+        assert preview.status == "success"
+        assert seen == ["https://api.example.com/k?sym=sh600519&end=2020-06-29"]
+
     def test_finished_entrant_makes_zero_requests(self, db_engine, db):
         """水位已达 backfill_start 的标的剔除出标的集合 → 零请求."""
         table = _make_kline_table(db, db_engine)
@@ -167,8 +180,11 @@ class TestBackfillExecution:
 
         execute_job(db, job, fetch=fetch, now=NOW)
         seen.clear()
-        execute_job(db, job, fetch=fetch, now=NOW)  # 截断后达标 → 零请求
+        execution = execute_job(db, job, fetch=fetch, now=NOW)  # 截断后达标 → 零请求
         assert seen == []
+        # 达标后标的集合为空：整轮零请求且落 success（不得退回空标的伪请求而失败）
+        assert execution.run.status == "success"
+        assert execution.outcome is not None and execution.outcome.plans == 0
         cursor = db.query(DatasourceEntrantCursor).filter_by(job_id=job.id, entrant="sh600519").one()
         assert cursor.cursor_value == "2016-01-01"
 
