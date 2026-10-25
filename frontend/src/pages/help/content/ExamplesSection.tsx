@@ -1,7 +1,10 @@
-/** 帮助文档 · 典型示例（ADR 0029 P1）.
+/** 帮助文档 · 典型示例（ADR 0029 P1 / ADR 0035）.
  *
  * 场景内容完全由后端 `/api/v1/help/examples` 清单驱动：表格、亮点、步骤与
  * CSV 下载都来自接口，前端不维护第二份示例清单。
+ *
+ * 四个 L3 小节各自只渲染自己那一块，标题与锚点由 `HelpDoc` 统一生成 ——
+ * 因此「页内目录里的标题」与正文标题必然一致。
  */
 
 import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -28,40 +31,63 @@ function triggerDownload(filename: string, blob: Blob) {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-export default function ExamplesSection({ scenarioKey }: { scenarioKey: string }) {
-    const { message } = App.useApp()
-    const [downloading, setDownloading] = useState<string | null>(null)
+/** 清单查询：四个小节共用同一 queryKey，TanStack Query 只发一次请求。 */
+function useExample(scenarioKey: string) {
     const query = useQuery({
         queryKey: ['help', 'examples'],
         queryFn: helpApi.listExamples,
         staleTime: 5 * 60 * 1000,
     })
+    const example = query.data?.items.find((item) => item.key === scenarioKey)
+    return { query, example }
+}
+
+function ExampleError({ onRetry, message }: { onRetry: () => void; message: string }) {
+    return (
+        <Alert
+            type="error"
+            showIcon
+            message="示例清单加载失败"
+            description={message}
+            action={
+                <Button size="small" icon={<ReloadOutlined />} onClick={onRetry}>
+                    重试
+                </Button>
+            }
+            data-testid="help-examples-error"
+        />
+    )
+}
+
+/** L3-1 场景说明：一句话说清这套示例练什么。 */
+export function ExampleSummary({ scenarioKey }: { scenarioKey: string }) {
+    const { query, example } = useExample(scenarioKey)
 
     if (query.isPending) {
-        return <Skeleton active paragraph={{ rows: 6 }} data-testid="help-examples-loading" />
+        return <Skeleton active title={false} paragraph={{ rows: 2 }} data-testid="help-examples-loading" />
     }
-
     if (query.isError) {
-        return (
-            <Alert
-                type="error"
-                showIcon
-                message="示例清单加载失败"
-                description={query.error.message}
-                action={
-                    <Button size="small" icon={<ReloadOutlined />} onClick={() => void query.refetch()}>
-                        重试
-                    </Button>
-                }
-                data-testid="help-examples-error"
-            />
-        )
+        return <ExampleError message={query.error.message} onRetry={() => void query.refetch()} />
     }
-
-    const example = query.data.items.find((item) => item.key === scenarioKey)
     if (!example) {
         return <Alert type="warning" showIcon message="示例清单中未找到该场景" data-testid="help-examples-missing" />
     }
+    return (
+        <div data-testid="help-examples-section">
+            <Paragraph type="secondary" style={{ margin: 0 }}>
+                {example.summary}
+            </Paragraph>
+        </div>
+    )
+}
+
+/** L3-2 数据表清单与 CSV 下载。 */
+export function ExampleTables({ scenarioKey }: { scenarioKey: string }) {
+    const { message } = App.useApp()
+    const [downloading, setDownloading] = useState<string | null>(null)
+    const { example } = useExample(scenarioKey)
+
+    if (!example) return null
 
     const handleDownload = async (table: HelpExampleTable) => {
         setDownloading(table.file)
@@ -122,58 +148,58 @@ export default function ExamplesSection({ scenarioKey }: { scenarioKey: string }
     ]
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }} data-testid="help-examples-section">
-            <Paragraph type="secondary" style={{ margin: 0 }}>
-                {example.summary}
+        <Table<HelpExampleTable>
+            rowKey="file"
+            size="small"
+            pagination={false}
+            columns={columns}
+            dataSource={example.tables}
+            scroll={{ x: 640 }}
+        />
+    )
+}
+
+/** L3-3 数据预览：每张示例表一张图，取自真实 CSV。 */
+export function ExamplePreviews({ scenarioKey }: { scenarioKey: string }) {
+    const { example } = useExample(scenarioKey)
+
+    if (!example) return null
+
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
+                预览取自示例 CSV 的真实表头与首批行，文件更新后图示自动重建。
             </Paragraph>
-
-            <div>
-                <Text strong>包含的数据表</Text>
-                <Table<HelpExampleTable>
-                    style={{ marginTop: 8 }}
-                    rowKey="file"
-                    size="small"
-                    pagination={false}
-                    columns={columns}
-                    dataSource={example.tables}
-                    scroll={{ x: 640 }}
+            {example.tables.map((table, index) => (
+                <HelpFigure
+                    key={table.file}
+                    id={`example-${scenarioKey}-table-${index + 1}`}
+                    caption={`${table.title} · ${table.description}`}
                 />
-            </div>
+            ))}
+        </div>
+    )
+}
 
-            <div>
-                <Text strong>数据预览</Text>
-                <Paragraph type="secondary" style={{ margin: '4px 0 8px', fontSize: 12 }}>
-                    预览取自示例 CSV 的真实表头与首批行，文件更新后图示自动重建。
-                </Paragraph>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    {example.tables.map((table, index) => (
-                        <HelpFigure
-                            key={table.file}
-                            id={`example-${scenarioKey}-table-${index + 1}`}
-                            caption={`${table.title} · ${table.description}`}
-                        />
-                    ))}
-                </div>
-            </div>
+/** L3-4 可以怎么练 + 导入步骤。 */
+export function ExamplePractice({ scenarioKey }: { scenarioKey: string }) {
+    const { example } = useExample(scenarioKey)
 
-            <div>
-                <Text strong>可以怎么练</Text>
-                <ul style={{ margin: '8px 0 0', paddingInlineStart: 20 }}>
-                    {example.highlights.map((item) => (
-                        <li key={item}>
-                            <Text type="secondary">{item}</Text>
-                        </li>
-                    ))}
-                </ul>
-            </div>
+    if (!example) return null
 
-            <div>
-                <Text strong>导入步骤</Text>
-                <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {example.steps.map((step, index) => (
-                        <Tag key={step}>{`${index + 1}. ${step}`}</Tag>
-                    ))}
-                </div>
+    return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <ul style={{ margin: 0, paddingInlineStart: 20 }}>
+                {example.highlights.map((item) => (
+                    <li key={item}>
+                        <Text type="secondary">{item}</Text>
+                    </li>
+                ))}
+            </ul>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {example.steps.map((step, index) => (
+                    <Tag key={step}>{`${index + 1}. ${step}`}</Tag>
+                ))}
             </div>
         </div>
     )

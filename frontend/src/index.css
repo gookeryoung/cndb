@@ -3879,9 +3879,17 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-size: var(--cn-text-sm);
 }
 
+.cn-help-docs-content {
+  display: flex;
+  align-items: flex-start;
+  min-width: 0;
+}
+
 .cn-help-docs-body {
+  flex: 1;
   width: 100%;
   max-width: 920px;
+  min-width: 0;
   padding: var(--cn-space-xl);
 }
 
@@ -3890,6 +3898,169 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-size: var(--cn-text-xl);
   font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
+}
+
+/* 页内目录（L3 小节 + L4 条目，ADR 0035） */
+.cn-help-docs-toc {
+  flex: 0 0 208px;
+  width: 208px;
+  padding: var(--cn-space-xl) var(--cn-space-lg) var(--cn-space-xl) var(--cn-space-md);
+  border-left: 1px solid var(--cn-border);
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  max-height: 100vh;
+  overflow: auto;
+}
+
+.cn-help-docs-toc-title {
+  margin-bottom: var(--cn-space-md);
+  font-size: var(--cn-text-xs);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-muted);
+}
+
+.cn-help-docs-toc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cn-help-docs-toc-sub {
+  margin-top: 2px;
+  padding-left: var(--cn-space-lg);
+}
+
+.cn-help-docs-toc-link {
+  display: block;
+  width: 100%;
+  padding: 3px var(--cn-space-md);
+  border: 0;
+  border-radius: var(--cn-radius-sm);
+  background: transparent;
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-sm);
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cn-help-docs-toc-link:hover {
+  background: var(--cn-bg-subtle);
+  color: var(--cn-text-primary);
+}
+
+.cn-help-docs-toc-link.is-active {
+  background: var(--cn-bg-subtle);
+  color: var(--cn-brand-color);
+  font-weight: var(--cn-weight-medium);
+}
+
+/* 正文层级（L2 标题 / L3 小节 / L4 条目） */
+.cn-help-docs-lead {
+  margin-bottom: var(--cn-space-lg);
+  padding-bottom: var(--cn-space-lg);
+  border-bottom: 1px solid var(--cn-border-soft);
+}
+
+.cn-help-docs-text {
+  margin: 0 0 var(--cn-space-md);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-md);
+  line-height: 1.75;
+}
+
+.cn-help-docs-lead .cn-help-docs-text {
+  margin-bottom: 0;
+  color: var(--cn-text-primary);
+}
+
+.cn-help-docs-section + .cn-help-docs-section {
+  margin-top: var(--cn-space-xl);
+}
+
+.cn-help-docs-h2 {
+  margin: 0 0 var(--cn-space-md);
+  padding-top: var(--cn-space-lg);
+  border-top: 1px solid var(--cn-border-soft);
+  font-size: var(--cn-text-lg);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-primary);
+  scroll-margin-top: 64px;
+}
+
+.cn-help-docs-lead + .cn-help-docs-section .cn-help-docs-h2 {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.cn-help-docs-h3 {
+  margin: var(--cn-space-lg) 0 var(--cn-space-xs);
+  font-size: var(--cn-text-md);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-primary);
+  scroll-margin-top: 64px;
+}
+
+.cn-help-docs-item:first-of-type .cn-help-docs-h3 {
+  margin-top: var(--cn-space-md);
+}
+
+.cn-help-docs-summary {
+  margin: 0 0 var(--cn-space-md);
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-sm);
+  line-height: 1.7;
+}
+
+.cn-help-docs-list {
+  margin: 0 0 var(--cn-space-md);
+  padding-inline-start: var(--cn-space-xl);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-md);
+  line-height: 1.75;
+}
+
+.cn-help-docs-list li + li {
+  margin-top: var(--cn-space-xs);
+}
+
+.cn-help-docs-steps {
+  padding-inline-start: var(--cn-space-xl);
+}
+
+.cn-help-docs-note {
+  margin: 0 0 var(--cn-space-md);
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border-left: 2px solid var(--cn-brand-color);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-subtle);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-sm);
+  line-height: 1.7;
+}
+
+.cn-help-docs-note-warn {
+  border-left-color: var(--cn-text-secondary);
+  background: var(--cn-bg-warning-subtle);
+  color: var(--cn-text-primary);
+}
+
+.cn-help-docs-strong {
+  color: var(--cn-text-primary);
+  font-weight: var(--cn-weight-medium);
+}
+
+.cn-help-docs-link {
+  color: var(--cn-brand-color);
+  text-decoration: none;
+}
+
+.cn-help-docs-link:hover {
+  text-decoration: underline;
 }
 
 /* ─────────────── 帮助文档 · 图示例（ADR 0030）─────────────── */

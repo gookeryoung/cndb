@@ -1,97 +1,14 @@
-/** 帮助文档 · 教程&最佳实践内容（ADR 0029 P0）.
+/** 帮助文档 · 教程&最佳实践（ADR 0035）.
  *
- * 迁入原「视图类型 / 数据导入导出 / 权限与角色 / 字段类型」四个主题，补充视图配置实践。
- * 字段类型与角色等事实与代码保持一致（16 主类型、owner/editor/viewer 三角色）。
+ * 八个主题按「对象 / 任务族」切：视图类型、字段类型、导入导出、权限与角色、
+ * 文档、数据分析、搜索与收藏、视图配置实践。事实与代码保持一致（视图 10 种模式、
+ * 字段类型由注册表生成图示、workspace 三角色、视图可见性三档）。
  */
 
-import { Table, Typography } from 'antd'
+import { Table } from 'antd'
 import HelpFigure from '../HelpFigure'
 import type { HelpTopic } from '../helpNav'
-
-const { Text } = Typography
-
-function ViewTypesContent() {
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-                <Text strong>表格视图（Grid）</Text>
-                <br />
-                <Text type="secondary">默认视图，类 Excel 的行列结构，适合数据录入、编辑与批量管理。</Text>
-            </div>
-            <div>
-                <Text strong>看板视图（Kanban）</Text>
-                <br />
-                <Text type="secondary">
-                    按某个单选/多选字段分组，卡片式拖拽流转，适合任务管理、销售漏斗等状态跟踪场景。创建看板视图时需选择「分组字段」。
-                </Text>
-            </div>
-            <div>
-                <Text strong>卡片画廊视图（Gallery）</Text>
-                <br />
-                <Text type="secondary">
-                    卡片墙阅读态：标题 + 摘要 + 彩色标签 + 日期徽章，适合政策、情报、简报等长文本业务数据的阅读与分享。可配置标题/摘要/标签/元信息/日期字段与卡片尺寸；只读，点击卡片打开行详情。
-                </Text>
-            </div>
-            <div>
-                <Text strong>日历视图（Calendar）</Text>
-                <br />
-                <Text type="secondary">按日期字段把每行数据显示在月历上，适合排期、日程类数据。创建时需选择「开始时间字段」。</Text>
-            </div>
-            <div>
-                <Text strong>甘特图视图（Gantt）</Text>
-                <br />
-                <Text type="secondary">时间轴上展示任务的起止时间与进度，适合项目排期。需表中含日期类型字段。</Text>
-            </div>
-            <div>
-                <Text strong>工作分解视图</Text>
-                <br />
-                <Text type="secondary">树状层级组织任务（1 / 1.1 / 1.1.1 编号），需配置「父任务关联字段」指定层级关系。</Text>
-            </div>
-            <div>
-                <Text type="secondary">提示：筛选规则与排序规则保存在每个视图里，切换视图互不影响；在「表设置 → 视图」中可重命名、编辑或删除视图。</Text>
-            </div>
-        </div>
-    )
-}
-
-function ImportExportContent() {
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-                <Text strong>支持的文件格式</Text>
-                <br />
-                <Text type="secondary">CSV（推荐 UTF-8 编码）、Excel（.xlsx）、JSON。导入时系统会自动推断每列的字段类型，也可以在预览页面手动修改。</Text>
-            </div>
-            <div>
-                <Text strong>导入流程</Text>
-                <br />
-                <Text type="secondary">「导入数据」→ 上传文件 → 预览列类型与数据质量 → 确认导入。导入完成后可在报告页查看错误行明细。</Text>
-            </div>
-            <HelpFigure id="import-flow" />
-            <div>
-                <Text strong>更新已有数据</Text>
-                <br />
-                <Text type="secondary">
-                    导入时选择「更新已有数据」模式，并指定一个或多个「参考列」字段（如工号、邮箱）。系统按参考列查找已有行：找到则更新，找不到则新增。参考列推荐选择唯一性高的字段（带 ★ 推荐标记）。
-                </Text>
-            </div>
-            <div>
-                <Text strong>导出数据</Text>
-                <br />
-                <Text type="secondary">
-                    在表格页点击「导入 / 导出」按钮，可将当前表导出为 XLSX / CSV / PDF / JSON 文件；视图配置也可以导出为 JSON 备份，并可在其他表中导入复用。
-                </Text>
-            </div>
-            <div>
-                <Text strong>字段类型推断规则摘要</Text>
-                <br />
-                <Text type="secondary">
-                    识别「2024-01-01」等格式为日期；「是/否、true/false」为布尔；带 % 的数值为百分比；少量重复值（≤30 个选项）自动提升为单选/多选。推断结果可在预览页逐列调整。
-                </Text>
-            </div>
-        </div>
-    )
-}
+import { Bullets, HelpLink, P, Steps } from './primitives'
 
 const roleColumns = [
     { title: '角色', dataIndex: 'role', key: 'role', width: 90 },
@@ -105,98 +22,789 @@ const roleData = [
     { key: 'viewer', role: '查看者', ws: '只读查看（编辑自动生成修改申请）', tbl: '只读查看' },
 ]
 
-function RolesContent() {
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-                <Text strong>角色从高到低：所有者 &gt; 编辑者 &gt; 查看者</Text>
-                <br />
-                <Text type="secondary">
-                    成员角色在工作区设置的「成员管理」中分配；单张表可在「表设置 → 权限」中对成员/角色做显式授权，未显式授权时遵循工作区角色。
-                </Text>
-            </div>
-            <Table size="small" columns={roleColumns} dataSource={roleData} pagination={false} />
-            <div>
-                <Text strong>工作区可见性</Text>
-                <br />
-                <Text type="secondary">公开（public）：登录用户均可查看；仅成员（member-only）：仅工作区成员可见；私有（private）：仅拥有者与管理员可见。</Text>
-            </div>
-            <HelpFigure id="permission-model" />
-        </div>
-    )
+const viewTypes: HelpTopic = {
+    key: 'view-types',
+    label: '视图类型',
+    intro: (
+        <P>
+            视图是「同一份数据的不同呈现」：一份数据可以建多个视图，筛选、排序与显示配置各自独立。
+            本页按用途分类介绍 10 种视图模式，怎么选见 <HelpLink section="tutorials" topic="view-config" anchor="choose">视图配置实践 · 按用途选视图</HelpLink>。
+        </P>
+    ),
+    subsections: [
+        {
+            key: 'switch',
+            label: '切换与新建',
+            summary: '视图栏是切换视图的唯一入口。',
+            body: (
+                <Bullets
+                    items={[
+                        '表页顶部视图栏列出全部可见视图，点击即切换；同一张表的不同视图共享同一批行数据。',
+                        '点击视图栏左侧的 + 新建视图，先选模式，再填必备配置项（如看板的分组字段）。',
+                        '重命名、改配置、删除在「表设置 → 视图」中完成；需要按人授权时用视图权限抽屉。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'edit',
+            label: '录入与编辑',
+            items: [
+                {
+                    key: 'grid',
+                    label: '表格（Grid）',
+                    body: (
+                        <P>
+                            默认视图，类 Excel 的行列结构，适合数据录入、编辑与批量管理。
+                            点单元格直接编辑，回车保存；列宽、隐藏列等显示配置随视图保存。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'flow',
+            label: '状态流转',
+            items: [
+                {
+                    key: 'kanban',
+                    label: '看板（Kanban）',
+                    body: (
+                        <P>
+                            按某个单选 / 多选字段分组，卡片式拖拽流转，适合任务管理、销售漏斗等状态跟踪场景。
+                            创建时需选「分组字段」，可再配负责人、优先级、进度、截止日期与完成标志；
+                            逾期与临近截止的卡片可置顶并高亮。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'reading',
+            label: '内容阅读',
+            items: [
+                {
+                    key: 'gallery',
+                    label: '卡片画廊（Gallery）',
+                    body: (
+                        <P>
+                            卡片墙阅读态：标题 + 摘要 + 彩色标签 + 日期徽章，适合政策、情报、简报等长文本业务数据的阅读与分享。
+                            可配置标题 / 摘要 / 标签 / 元信息 / 日期字段与卡片尺寸；只读，点击卡片打开行详情。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'time',
+            label: '时间与排期',
+            items: [
+                {
+                    key: 'calendar',
+                    label: '日历（Calendar）',
+                    body: (
+                        <P>
+                            按日期字段把每行数据显示在月历上，适合排期、日程类数据。创建时需选「日期字段」，
+                            可配事件标题、分组颜色、默认打开的日历层级与完成标志。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'gantt',
+                    label: '甘特图（Gantt）',
+                    body: (
+                        <P>
+                            时间轴上展示任务的起止时间与进度，适合项目排期。需配开始 / 结束日期字段，
+                            可选实际完成日期、进度、负责人、分组着色与时间刻度，并用今日标线定位当前时间。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'hierarchy',
+            label: '层级与分类',
+            items: [
+                {
+                    key: 'tree',
+                    label: '树（Tree）',
+                    body: (
+                        <P>
+                            按父子字段组织为可折叠层级，适合目录、分类与知识体系（如「技术脉络」树）。
+                            父字段可以是关联本表的关联字段，也可以是存父 ID 的文本 / 数字字段。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'wbs',
+                    label: '工作分解（WBS）',
+                    body: (
+                        <P>
+                            树状层级组织任务（1 / 1.1 / 1.1.1 编号），需配置「父任务字段」指定层级关系；
+                            父节点进度按子节点平均自动计算，适合课题 / 任务 / 子任务这类分解结构。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'stats',
+            label: '交叉与统计',
+            items: [
+                {
+                    key: 'matrix',
+                    label: '矩阵（Matrix）',
+                    body: <P>行列各取一个分类字段交叉，数据按类别填入单元格，适合交叉分析与对照表。</P>,
+                },
+                {
+                    key: 'chart',
+                    label: '图表（Chart）',
+                    body: (
+                        <P>
+                            柱状 / 折线 / 饼图 / 散点 / 直方图 / 箱线图与描述统计一体的看图方式，适合趋势与构成。
+                            需要多指标、公式与分组汇总时改用
+                            <HelpLink section="tutorials" topic="analytics" anchor="entry"> 数据分析 </HelpLink>。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'flow-mode',
+                    label: '流程（Flow）',
+                    body: <P>按流程节点字段平铺为「从节点到节点」的流转管线，适合审批、状态机类数据的整体概览。</P>,
+                },
+            ],
+        },
+        {
+            key: 'manage',
+            label: '视图管理与授权',
+            summary: '视图是独立对象：有创建者、有可见性、可以只给自己看。',
+            body: (
+                <Bullets
+                    items={[
+                        <>
+                            新建视图默认「仅自己可见」，主动开放才扩大范围；三档口径见
+                            <HelpLink section="tutorials" topic="roles" anchor="view">
+                                {' '}
+                                权限与角色 · 视图可见性{' '}
+                            </HelpLink>
+                            。
+                        </>,
+                        '放宽视图可见性只增加「谁能看」，不改变「谁能改」：改他人视图需要表的编辑视图权限。',
+                        '看不到的表必然看不到它的视图；视图权限永不超过表权限。',
+                    ]}
+                />
+            ),
+        },
+    ],
 }
 
-function FieldTypesContent() {
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <Text type="secondary">字段类型按类别分组；完整清单见下方图示（随版本自动更新，不写死数量）。</Text>
-            <div>
-                <Text strong>基础：</Text>
-                <Text type="secondary">单行文本、多行文本、是/否（勾选框）。</Text>
-            </div>
-            <div>
-                <Text strong>数字：</Text>
-                <Text type="secondary">整数、小数、百分比（可输入「85%」或 0.85）。</Text>
-            </div>
-            <div>
-                <Text strong>日期：</Text>
-                <Text type="secondary">日期（仅年月日）、日期时间、时间戳。</Text>
-            </div>
-            <div>
-                <Text strong>选择：</Text>
-                <Text type="secondary">单选（下拉选一个，自动配色）、多选（可选多个，支持逗号/顿号分隔）。</Text>
-            </div>
-            <div>
-                <Text strong>高级：</Text>
-                <Text type="secondary">邮箱（自动校验格式）、链接、电话、附件（上传文件）。</Text>
-            </div>
-            <div>
-                <Text strong>关联：</Text>
-                <Text type="secondary">关联其他表的一行或多行数据（如下拉选择员工表中的员工），支持搜索选择与空值清空。</Text>
-            </div>
-            <Text type="secondary">提示：唯一值约束可防止重复值；默认值会在新增行时自动填入；修改默认值会触发表重建，数据量大时稍慢。</Text>
-            <HelpFigure id="field-types" />
-        </div>
-    )
+const fieldTypes: HelpTopic = {
+    key: 'field-types',
+    label: '字段类型',
+    intro: (
+        <P>
+            字段类型决定录入控件、校验规则与可用的视图能力。类型清单随版本变化，本页只讲分类与选型，
+            完整清单见下方图示（由图示服务按字段类型注册表自动生成）。
+        </P>
+    ),
+    subsections: [
+        {
+            key: 'overview',
+            label: '分类总览',
+            summary: '六类：基础、数字、日期、选择、高级、关联。',
+            body: <HelpFigure id="field-types" />,
+        },
+        {
+            key: 'basic',
+            label: '基础与数字',
+            items: [
+                {
+                    key: 'text',
+                    label: '文本类',
+                    body: (
+                        <P>
+                            单行文本用于名称、编号、短描述；多行文本用于备注与长段落。是 / 否字段渲染为勾选框，
+                            适合「已归档」「已回访」这类二值标记。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'number',
+                    label: '数字类',
+                    body: (
+                        <P>
+                            整数与小数用于金额、数量、评分；百分比可直接输入「85%」或 0.85，展示与计算统一按比例处理。
+                            数字字段是公式、分组汇总与图表指标的候选来源。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'date',
+                    label: '日期与时间',
+                    body: (
+                        <P>
+                            日期只保存年月日；日期时间精确到分；时间戳用于记录创建 / 更新时刻。日历、甘特图与时间窗口分析都依赖日期类字段。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'choice',
+            label: '选择类',
+            items: [
+                {
+                    key: 'select',
+                    label: '单选',
+                    body: <P>下拉选一个值，系统自动配色。看板分组、日历着色、图表维度通常用单选字段。</P>,
+                },
+                {
+                    key: 'multi-select',
+                    label: '多选',
+                    body: <P>可选多个值，支持逗号 / 顿号分隔输入；用于标签、能力清单这类「一行多个归属」。</P>,
+                },
+            ],
+        },
+        {
+            key: 'advanced',
+            label: '高级类型',
+            items: [
+                { key: 'email', label: '邮箱', body: <P>保存时自动校验格式，避免脏数据进入通讯录类表。</P> },
+                { key: 'url', label: '链接', body: <P>点击直接打开，适合把外部页面、文件地址挂到行上。</P> },
+                { key: 'phone', label: '电话', body: <P>纯展示 + 轻校验，不做区号格式化。</P> },
+                { key: 'attachment', label: '附件', body: <P>上传文件到工作区存储；附件计入存储配额，单文件大小受限。</P> },
+            ],
+        },
+        {
+            key: 'relation',
+            label: '关联字段',
+            items: [
+                {
+                    key: 'link',
+                    label: '关联其他表',
+                    body: (
+                        <P>
+                            关联另一张表的一行或多行（如下拉选择员工表中的员工），支持搜索选择与清空。
+                            配置时先选目标表，再选引用字段；树 / 工作分解视图可以用「关联本表」的字段做层级。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'constraint',
+            label: '约束与默认值',
+            body: (
+                <Bullets
+                    items={[
+                        '唯一值约束防止重复（如工号、邮箱），导入时重复值会作为错误行报告。',
+                        '默认值在新增行时自动填入；修改默认值会触发表重建，数据量大时稍慢。',
+                        '自动编号在保存时按库内已有最大值往后排，新增行会预览将要生成的编号。',
+                        '必填字段在保存前校验；批量导入时缺失必填值同样计入错误行。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'choose',
+            label: '选型建议',
+            body: (
+                <Bullets
+                    items={[
+                        '能不用文本就不用文本：日期用日期字段、状态用单选，否则排序、筛选与图表都不可用。',
+                        '要跨表取引用数据用关联字段，不要复制一份名称文本（副本会漂移）。',
+                        '同一含义不要在多个字段重复保存；需要派生结果用公式或分析，不新建冗余列。',
+                        '把唯一性约束加在真正的业务主键上，而不只是「看起来不重复」的字段。',
+                    ]}
+                />
+            ),
+        },
+    ],
 }
 
-function ViewConfigContent() {
-    return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-                <Text strong>按用途选视图</Text>
-                <br />
-                <Text type="secondary">
-                    录入与批量编辑用表格；状态流转用看板；内容阅读用画廊；排期用日历 / 甘特图；层级任务用工作分解；趋势与构成用图表或数据分析。
-                </Text>
-            </div>
-            <div>
-                <Text strong>筛选与排序放在视图里</Text>
-                <br />
-                <Text type="secondary">
-                    同一张表可以建多个视图，各自保存筛选与排序；不要为了不同筛选复制数据表。视图配置在「表设置 → 视图」中维护。
-                </Text>
-            </div>
-            <div>
-                <Text strong>命名与职责</Text>
-                <br />
-                <Text type="secondary">
-                    视图名写清用途（如「本周待办」「客户流失回访」），让成员从视图栏就能理解该看什么；共享视图前确认可见性设置。
-                </Text>
-            </div>
-            <div>
-                <Text strong>只读视图优先</Text>
-                <br />
-                <Text type="secondary">面向汇报与浏览的场景优先用画廊 / 图表等只读视图，减少误编辑；需要录入时再切回表格。</Text>
-            </div>
-        </div>
-    )
+const importExport: HelpTopic = {
+    key: 'import-export',
+    label: '数据导入导出',
+    intro: <P>导入不是「上传即入库」：表头识别、类型推断与预览确认都会影响落表结果；导出则用于备份、交付与复用视图配置。</P>,
+    subsections: [
+        {
+            key: 'formats',
+            label: '支持的文件格式',
+            body: (
+                <Bullets
+                    items={[
+                        'CSV：推荐 UTF-8 编码，最稳的批量导入格式。',
+                        'Excel（.xlsx）：读取首个工作表，公式按计算值读取。',
+                        'JSON：数组形式的对象集合，键名即列名。',
+                        '导入时系统自动推断每列类型，也可在预览页逐列改。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'flow',
+            label: '导入流程',
+            body: (
+                <>
+                    <Steps
+                        items={[
+                            '选择文件（单个文件或整文件夹批量）。',
+                            '预览：确认表头行、列类型与抽样数据。',
+                            '选择落表方式：新建表，或更新已有表的已有行。',
+                            '确认导入，进入导入报告查看成功 / 失败行明细。',
+                        ]}
+                    />
+                    <HelpFigure id="import-flow" />
+                </>
+            ),
+        },
+        {
+            key: 'header',
+            label: '表头识别',
+            summary: '首行常被标题、说明行或合并单元格占据，识别错了列名就全错。',
+            body: (
+                <P>
+                    预览页会自动识别表头行，兼容顶部合并标题；置信度低时会提示人工确认，此时点列头即可改选表头所在行。
+                    识别结果直接决定列名与后续类型推断，导入前务必看一眼。
+                </P>
+            ),
+        },
+        {
+            key: 'typing',
+            label: '类型推断与调整',
+            body: (
+                <P>
+                    识别「2024-01-01」等格式为日期；「是 / 否、true / false」为布尔；带 % 的数值为百分比；
+                    少量重复值（≤30 个选项）自动提升为单选 / 多选。推断结果可在预览页逐列调整，
+                    调整后再导入，避免日期被存成文本。
+                </P>
+            ),
+        },
+        {
+            key: 'upsert',
+            label: '更新已有数据',
+            body: (
+                <P>
+                    选择「更新已有数据」模式，并指定一个或多个「参考列」（如工号、邮箱）。系统按参考列查找已有行：找到则更新，找不到则新增。
+                    参考列推荐唯一性高的字段（界面带 ★ 推荐标记）；多列组合可提高匹配精度。
+                </P>
+            ),
+        },
+        {
+            key: 'errors',
+            label: '错误行处理',
+            body: (
+                <P>
+                    导入报告按行列出失败原因（必填缺失、类型不匹配、唯一约束冲突、参考列未命中）。
+                    建议先修数据再重导：失败行不会写入，已成功行不会回滚，重导时用参考列模式避免重复新增。
+                </P>
+            ),
+        },
+        {
+            key: 'export',
+            label: '导出数据',
+            body: (
+                <P>
+                    在表格页点击「导入 / 导出」，可将当前表导出为 XLSX / CSV / JSON / PDF：XLSX 便于二次加工，CSV 便于交换，
+                    JSON 保留嵌套结构，PDF 适合汇报。导出范围遵循当前视图的筛选与行级权限。
+                </P>
+            ),
+        },
+        {
+            key: 'view-transfer',
+            label: '视图配置迁移',
+            body: (
+                <P>
+                    视图配置可以导出为 JSON 备份，并在其他表中导入复用；字段名不一致时按名称匹配，缺失字段的配置项会被跳过。
+                    跨表复用前先核对字段名，否则会得到「空视图」。
+                </P>
+            ),
+        },
+    ],
+}
+
+const roles: HelpTopic = {
+    key: 'roles',
+    label: '权限与角色',
+    intro: (
+        <P>
+            权限分三层：工作区角色决定基础读写，表级授权与视图可见性在其上收窄，
+            写不进去的操作统一走修改申请。判定顺序与口径以本页为准，其它主题只引用。
+        </P>
+    ),
+    subsections: [
+        {
+            key: 'model',
+            label: '角色模型',
+            summary: '角色从高到低：所有者 > 编辑者 > 查看者。',
+            body: (
+                <>
+                    <P>
+                        成员角色在工作区设置的「成员管理」中分配；单张表可在「表设置 → 权限」中对成员 / 角色做显式授权，
+                        未显式授权时遵循工作区角色。
+                    </P>
+                    <Table size="small" columns={roleColumns} dataSource={roleData} pagination={false} />
+                    <HelpFigure id="permission-model" />
+                </>
+            ),
+        },
+        {
+            key: 'visibility',
+            label: '工作区可见性',
+            body: (
+                <Bullets
+                    items={[
+                        '公开：登录用户均可查看。',
+                        '仅成员：只有工作区成员可以访问。',
+                        '私有：仅拥有者与管理员可见。',
+                        '修改后立即生效；可见性只影响「能不能进」，不改变成员角色。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'table-level',
+            label: '表级授权',
+            body: (
+                <P>
+                    「表设置 → 权限」包含三件事：我在本表的权限（只读 / 编辑 / 管理数据等动作清单）、
+                    数据治理权限的最低角色阈值（合并 / 清洗这类高风险动作）、按角色隐藏字段。
+                    隐藏字段对查看者不可见，也不出现在导出与搜索里。
+                </P>
+            ),
+        },
+        {
+            key: 'row-level',
+            label: '行级权限规则',
+            body: (
+                <P>
+                    行级权限决定「同一张表里能看到哪些行」：读范围 = 默认档 + 命中规则的并集，
+                    可写规则命中的行一定可读。规则按主体（用户 / 角色档位）与过滤条件表达，
+                    由服务端统一合成，读、导出、分析与修改申请都走同一份范围，不会出现「列表看不到、导出拿得到」。
+                </P>
+            ),
+        },
+        {
+            key: 'view',
+            label: '视图可见性',
+            body: (
+                <Bullets
+                    items={[
+                        '继承表权限：表内所有能看这张表的人都能看到该视图。',
+                        '指定成员可见：仅共享名单内的成员可见，名单可随时调整。',
+                        '仅自己可见：默认档，对一切非创建者视同不存在。',
+                        '看不到的视图一律按「不存在」处理（不暴露存在性）；能看不能改时才是权限不足。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'approval',
+            label: '修改申请兜底',
+            body: (
+                <P>
+                    查看者，或工作区关闭「允许编辑」时的编辑者，保存会转成修改申请：正文 / 数据不直接落库，
+                    由所有者 / 编辑者审批后生效。审批口径见
+                    <HelpLink section="tutorials" topic="documents" anchor="change-request"> 文档 · 修改申请 </HelpLink>
+                    与工作区设置里的「允许编辑」开关。
+                </P>
+            ),
+        },
+    ],
+}
+
+const documents: HelpTopic = {
+    key: 'documents',
+    label: '文档：编辑、导入与分享',
+    intro: <P>文档与数据表同属一个工作区：结构目录 + Markdown 正文 + 版本历史 + 只读分享，写入同样受角色与「允许编辑」约束。</P>,
+    subsections: [
+        {
+            key: 'tree',
+            label: '文档结构树',
+            summary: '文件夹与文档同在一棵树里，文件夹只是组织手段，不单独授权。',
+            body: (
+                <Bullets
+                    items={[
+                        '左侧结构树支持按名称 / 创建时间 / 编辑时间排序，折叠状态按用户保存。',
+                        '文件夹本身不单独授权：只要有任一可见后代可见，就会补链展示其祖先路径，树里不会出现孤儿节点。',
+                        '回收站里的文档不参与检索与反链；恢复后回到原位置。',
+                        '文档支持标签与反向链接（谁引用了这篇），用于交叉引用与梳理知识关系。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'edit',
+            label: '编辑与版本历史',
+            items: [
+                {
+                    key: 'editor',
+                    label: '编辑模式',
+                    body: (
+                        <P>
+                            Markdown 编辑，左写右预览；支持标题、表格、待办、代码块与图片。
+                            正文里可以用锚点跳转到本文章节，也支持「[[文档]]」形式引用其它文档。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'status',
+                    label: '草稿与发布',
+                    body: (
+                        <P>
+                            文档有草稿 / 已发布 / 已归档三态。草稿只有创建者本人与工作区所有者可见；
+                            已发布对工作区全体成员可见；已归档等同草稿口径，不再向普通成员扩散。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'versions',
+                    label: '版本与回滚',
+                    body: (
+                        <P>
+                            每次保存生成一个版本，可查看历史时间线、原地对比差异并回滚到指定版本；
+                            回滚本身也生成新版本，不会删除历史。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'upload',
+            label: '上传与多格式文件',
+            body: (
+                <P>
+                    除 Markdown 外，还可以把 PDF、Office 文档与图片作为「文档资产」上传，按格式显示不同图标，在线只读预览，
+                    原文件可直接下载。资产计入工作区存储配额，不做在线编辑。
+                </P>
+            ),
+        },
+        {
+            key: 'import',
+            label: '导入文档库',
+            body: (
+                <P>
+                    支持从本地文件夹或 Obsidian 风格库批量导入 Markdown：按相对路径还原目录结构，
+                    保留相对链接与图片引用（图片作为资产入工作区）。导入前预览目录与冲突处理方式，
+                    重复标题可跳过或另存为新文档。
+                </P>
+            ),
+        },
+        {
+            key: 'share',
+            label: '分享与游客访问',
+            body: (
+                <P>
+                    对单篇已发布文档可创建匿名只读分享链接：游客无需登录即可阅读，但不能编辑、不能看到工作区其它内容。
+                    链接可随时撤销，撤销后立刻失效；分享范围是「这一篇」，不是整个工作区。
+                </P>
+            ),
+        },
+        {
+            key: 'change-request',
+            label: '修改申请',
+            body: (
+                <P>
+                    没有直接编辑权限时（查看者，或工作区关闭「允许编辑」），保存会生成修改申请，
+                    记录提交人、改动内容与差异；审批通过才落库为新版本。同一文档的申请集中在文档页的申请入口查看。
+                </P>
+            ),
+        },
+    ],
+}
+
+const analytics: HelpTopic = {
+    key: 'analytics',
+    label: '数据分析与图表',
+    intro: <P>分析页把「公式 + 分组汇总 + 图表 + 描述统计」放在同一屏：数据源是工作区内任意数据表，结果可存成模板复用。</P>,
+    subsections: [
+        {
+            key: 'entry',
+            label: '入口与数据范围',
+            body: (
+                <Bullets
+                    items={[
+                        '工作区页签「数据分析」进入；同一工作区可保存多个分析模板。',
+                        '先选数据表，再选字段；只统计你有权读取的行（行级权限与分析共用同一范围）。',
+                        '「分析范围」是运行时参数，只影响本次扫描，不写入模板。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'formula',
+            label: '公式与指标',
+            body: (
+                <P>
+                    公式用字段名与函数表达（如金额 / 数量、四舍五入、条件判断），支持多行与实时校验；
+                    计算出错会指出具体字段或语法位置。公式结果既可以进图表，也可以作为分组汇总的指标。
+                </P>
+            ),
+        },
+        {
+            key: 'summary',
+            label: '分组汇总与统计',
+            body: (
+                <P>
+                    选分组字段 + 指标（字段或公式 × 聚合方式），可排序、取 Top N；
+                    另有描述统计（方差、极差、非空率）用于快速判断数据质量与分布。
+                </P>
+            ),
+        },
+        {
+            key: 'chart',
+            label: '图表可视化',
+            body: (
+                <P>
+                    选图表类型与维度 / 指标 / 系列，结果图可导出 PNG。趋势看折线、构成看饼图 / 柱状、
+                    分布看直方图 / 箱线图。只做「看一张表」时用表格的图表视图更轻，见
+                    <HelpLink section="tutorials" topic="view-types" anchor="stats"> 视图类型 · 交叉与统计 </HelpLink>。
+                </P>
+            ),
+        },
+        {
+            key: 'ai',
+            label: '大模型辅助',
+            body: (
+                <P>
+                    可以用一句话生成分析配置，或让模型解读当前结论。生成结果只填进编辑态，不会自动保存；
+                    模型读到的仍是你的权限范围内的数据。使用前需先完成
+                    <HelpLink section="configuration" topic="personal" anchor="llm"> 个人设置 · 大模型连接 </HelpLink>。
+                </P>
+            ),
+        },
+        {
+            key: 'reuse',
+            label: '保存与复用',
+            body: (
+                <P>
+                    分析可保存为模板，支持另存为副本、重命名与删除；`?template=&lt;id&gt;` 深链可直接打开某个模板。
+                    模板只保存配置，不保存结果，数据更新后重新运行即可。
+                </P>
+            ),
+        },
+    ],
+}
+
+const search: HelpTopic = {
+    key: 'search',
+    label: '搜索与收藏',
+    intro: <P>顶栏搜索是跨文档与数据表的统一入口；收藏与排序决定首页「我的视图」里先看到什么。</P>,
+    subsections: [
+        {
+            key: 'global',
+            label: '全局搜索范围',
+            body: (
+                <Bullets
+                    items={[
+                        '范围可切三档：全部（工作区内的文档 + 数据表内容）、数据表、文档；选择会被记住。',
+                        '「全部」不按当前视图收敛，工作区内所有可读表都会参与检索。',
+                        '「数据表」范围才收敛到当前表与当前激活视图，适合在表内快速定位。',
+                        '检索结果永远先按可见性过滤：草稿、私有视图与他人无权访问的数据不会出现。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'result',
+            label: '结果与跳转',
+            body: (
+                <P>
+                    结果按文档 / 数据表分组，显示命中片段与所在位置；点结果直接进入对应文档或表（数据表会带上所在视图）。
+                    关键词命中标题的排在内容命中之前，同一张表的多行命中聚合展示。
+                </P>
+            ),
+        },
+        {
+            key: 'favorite',
+            label: '我的视图收藏',
+            body: (
+                <P>
+                    首页的「我的视图」面板汇总你常看的视图：在表页视图栏把视图加入收藏后即出现在首页，
+                    用于跳过「找表 → 切视图」的两步操作。
+                </P>
+            ),
+        },
+        {
+            key: 'order',
+            label: '自定义排序',
+            body: (
+                <P>
+                    工作区列表与收藏视图都支持拖拽排序：排序结果按用户保存，不影响其他成员的视图。
+                    条目多时先按最近访问排序，再手动调整常用项。
+                </P>
+            ),
+        },
+    ],
+}
+
+const viewConfig: HelpTopic = {
+    key: 'view-config',
+    label: '视图配置实践',
+    intro: <P>视图配置的目标是「让成员打开就知道该看什么」：选对模式、把规则放在视图里、命名写清用途。</P>,
+    subsections: [
+        {
+            key: 'choose',
+            label: '按用途选视图',
+            body: (
+                <Bullets
+                    items={[
+                        '录入与批量编辑 → 表格；状态流转 → 看板；内容阅读与分享 → 画廊。',
+                        '排期看时间 → 日历 / 甘特图；层级任务与分类 → 工作分解 / 树；交叉对照 → 矩阵。',
+                        '趋势与构成 → 图表视图；需要公式、多指标或分组汇总 → 数据分析。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'filter',
+            label: '筛选与排序归位',
+            body: (
+                <P>
+                    同一张表可以建多个视图，各自保存筛选与排序；不要为了不同筛选复制数据表 ——
+                    复制出来的数据会立刻开始漂移。视图配置在「表设置 → 视图」中维护。
+                </P>
+            ),
+        },
+        {
+            key: 'naming',
+            label: '命名与职责',
+            body: (
+                <P>
+                    视图名写清用途（如「本周待办」「客户流失回访」），让成员从视图栏就能理解该看什么；
+                    共享视图前确认可见性设置，汇报类视图优先用「继承表权限」而不是逐个授权。
+                </P>
+            ),
+        },
+        {
+            key: 'readonly',
+            label: '只读优先',
+            body: <P>面向汇报与浏览的场景优先用画廊 / 图表等只读视图，减少误编辑；需要录入时再切回表格。</P>,
+        },
+        {
+            key: 'antipattern',
+            label: '常见反模式',
+            body: (
+                <Bullets
+                    items={[
+                        '一张表几十个视图，每个只差一个筛选条件 → 合成一个视图 + 常用筛选条件更清晰。',
+                        '把「只给自己看的临时筛选」设成继承表权限 → 团队视图栏被临时视图污染。',
+                        '用文本字段存状态再靠颜色区分 → 应改为单选字段，看板与统计才能用。',
+                        '在视图里隐藏关键列来「收权」→ 隐藏字段才是权限手段，视图列配置只是显示偏好。',
+                    ]}
+                />
+            ),
+        },
+    ],
 }
 
 export const tutorialTopics: HelpTopic[] = [
-    { key: 'view-types', label: '视图类型', content: <ViewTypesContent /> },
-    { key: 'import-export', label: '数据导入导出', content: <ImportExportContent /> },
-    { key: 'roles', label: '权限与角色', content: <RolesContent /> },
-    { key: 'field-types', label: '字段类型', content: <FieldTypesContent /> },
-    { key: 'view-config', label: '视图配置实践', content: <ViewConfigContent /> },
+    viewTypes,
+    fieldTypes,
+    importExport,
+    roles,
+    documents,
+    analytics,
+    search,
+    viewConfig,
 ]

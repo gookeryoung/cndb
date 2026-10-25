@@ -1,19 +1,31 @@
-/** 典型示例区（ADR 0029 P1）—— 清单渲染、CSV 下载、失败重试与缺省场景. */
+/** 典型示例（ADR 0029 P1 / ADR 0035）—— 四个 L3 小节渲染、CSV 下载、失败重试与缺省场景. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
-import ExamplesSection from './ExamplesSection'
+import { ExamplePractice, ExamplePreviews, ExampleSummary, ExampleTables } from './ExamplesSection'
 
 afterEach(() => {
     vi.restoreAllMocks()
 })
 
+/** 四个小节在真实页面里由 `HelpDoc` 拆开渲染，这里拼回同一页便于断言。 */
+function Scenario({ scenarioKey }: { scenarioKey: string }) {
+    return (
+        <div>
+            <ExampleSummary scenarioKey={scenarioKey} />
+            <ExampleTables scenarioKey={scenarioKey} />
+            <ExamplePreviews scenarioKey={scenarioKey} />
+            <ExamplePractice scenarioKey={scenarioKey} />
+        </div>
+    )
+}
+
 describe('ExamplesSection', () => {
     it('按清单渲染场景说明、数据表、亮点与导入步骤', async () => {
-        renderProviders(<ExamplesSection scenarioKey="sales" />)
+        renderProviders(<Scenario scenarioKey="sales" />)
 
         expect(await screen.findByTestId('help-examples-section')).toBeVisible()
         expect(screen.getByText('从销售明细、客户流失到营销活动与日常待办的完整销售运营示例。')).toBeVisible()
@@ -28,7 +40,7 @@ describe('ExamplesSection', () => {
         const createObjectURL = vi.fn(() => 'blob:mock-csv')
         Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectURL })
 
-        renderProviders(<ExamplesSection scenarioKey="research" />)
+        renderProviders(<Scenario scenarioKey="research" />)
 
         fireEvent.click(await screen.findByTestId('help-example-download-科研项目.csv'))
         await waitFor(() => expect(createObjectURL).toHaveBeenCalledTimes(1))
@@ -40,7 +52,7 @@ describe('ExamplesSection', () => {
                 HttpResponse.json({ detail: '示例清单暂不可用' }, { status: 500 }), { once: true }),
         )
 
-        renderProviders(<ExamplesSection scenarioKey="sales" />)
+        renderProviders(<Scenario scenarioKey="sales" />)
 
         expect(await screen.findByTestId('help-examples-error')).toBeVisible()
         expect(screen.getByText('示例清单暂不可用')).toBeVisible()
@@ -50,7 +62,7 @@ describe('ExamplesSection', () => {
     })
 
     it('场景不在清单中时给出提示而不是空白', async () => {
-        renderProviders(<ExamplesSection scenarioKey="nope" />)
+        renderProviders(<ExampleSummary scenarioKey="nope" />)
 
         expect(await screen.findByTestId('help-examples-missing')).toBeVisible()
     })

@@ -1,4 +1,4 @@
-/** 帮助文档页（ADR 0029 P0）—— 默认落点、深链选中、回落纠正、移动端目录与引导重放。 */
+/** 帮助文档页（ADR 0029 P0 / ADR 0035）—— 默认落点、深链选中、回落纠正、页内目录、移动端与引导重放。 */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -84,8 +84,57 @@ describe('HelpDocsPage 桌面端', () => {
     })
 })
 
+describe('HelpDocsPage 页内目录（L3 / L4）', () => {
+    it('正文按 L3 小节渲染二级标题，并出现在本页目录里', async () => {
+        renderHelp('/help/tutorials/roles')
+
+        // L3 小节渲染为 h2，与目录项一一对应
+        const h2 = await screen.findByRole('heading', { name: '角色模型', level: 2 })
+        expect(h2).toBeVisible()
+        const toc = screen.getByTestId('help-docs-toc')
+        expect(within(toc).getByTestId('help-toc-model')).toBeVisible()
+        expect(within(toc).getByText('行级权限规则')).toBeVisible()
+    })
+
+    it('L4 条目渲染为三级标题，并随所属小节进入目录', async () => {
+        renderHelp('/help/troubleshooting/guide')
+
+        expect(await screen.findByRole('heading', { name: '登录已过期', level: 3 })).toBeVisible()
+        const toc = screen.getByTestId('help-docs-toc')
+        expect(within(toc).getByTestId('help-toc-login')).toBeVisible()
+        expect(within(toc).getByText('登录已过期')).toBeVisible()
+    })
+
+    it('只有正文的小节不产生 L4 层级', async () => {
+        renderHelp('/help/tutorials/roles')
+
+        expect(await screen.findByRole('heading', { name: '视图可见性', level: 2 })).toBeVisible()
+        expect(screen.queryByRole('heading', { name: '视图可见性', level: 3 })).toBeNull()
+        expect(within(screen.getByTestId('help-docs-toc')).getAllByText('视图可见性')).toHaveLength(1)
+    })
+
+    it('点击目录项把锚点写回地址栏并高亮', async () => {
+        renderHelp('/help/tutorials/roles')
+
+        fireEvent.click(await screen.findByTestId('help-toc-row-level'))
+        await waitFor(() => {
+            expect(window.location.hash).toBe('#help-row-level')
+        })
+        expect(screen.getByTestId('help-toc-row-level').className).toContain('is-active')
+    })
+
+    it('带锚点的深链直接高亮对应小节', async () => {
+        renderHelp('/help/tutorials/roles#help-row-level')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('help-toc-row-level').className).toContain('is-active')
+        })
+        expect(document.getElementById('help-row-level')).toBeTruthy()
+    })
+})
+
 describe('HelpDocsPage 窄屏', () => {
-    it('侧栏收进抽屉，选中主题后自动关闭', async () => {
+    it('侧栏收进抽屉、页内目录不占用正文宽度，选中主题后抽屉自动关闭', async () => {
         responsiveState = {
             deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
             width: 375, height: 667,
@@ -93,6 +142,7 @@ describe('HelpDocsPage 窄屏', () => {
         renderHelp('/help')
 
         expect(screen.queryByTestId('help-docs-aside')).toBeNull()
+        expect(screen.queryByTestId('help-docs-toc')).toBeNull()
         expect(await screen.findByRole('heading', { name: '认识 cndb' })).toBeVisible()
 
         fireEvent.click(screen.getByTestId('help-docs-menu-btn'))
