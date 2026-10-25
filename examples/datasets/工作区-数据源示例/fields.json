@@ -4,9 +4,9 @@
       "城市": {"required": true},
       "日期": {"required": true}
     },
-    "美食推荐做法": {
-      "菜名": {"required": true},
-      "菜系": {"required": true}
+    "行业政策与合规台账": {
+      "日期": {"required": true},
+      "标题": {"required": true}
     },
     "国际形势发展动态": {
       "日期": {"required": true},

@@ -401,7 +401,7 @@ export const FLOW_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
-/** Gallery 卡片画廊的专属配置字段（7 项）— 资讯 / 菜谱等内容型表的阅读态 */
+/** Gallery 卡片画廊的专属配置字段（7 项）— 长文本业务数据（政策 / 情报 / 简报）的阅读态 */
 export const GALLERY_OPTIONS: ViewOptionSchema[] = [
   {
     key: 'title_field', label: '卡片标题字段', group: '卡片内容', tooltip: '留空自动取首个文本字段，再退回主键 id',

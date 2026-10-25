@@ -2,7 +2,7 @@
  *
  * 背景：数据源示例工作区新增两张 LLM 抓取内容表，默认视图均为 gallery：
  *   - 国际形势发展动态「资讯画廊」：标题 / 摘要 / 彩色标签 / 日期徽章 / 元信息，12 张卡；
- *   - 美食推荐做法「菜谱画廊」：标题 / 步骤摘要，8 张卡。
+ *   - 行业政策与合规台账「政策台账画廊」：标题 / 摘要 / 彩色标签 / 元信息，8 张卡。
  *
  * 断言锚点（GalleryView.tsx）：gallery-view / gallery-count / gallery-card /
  * gallery-card-title / gallery-summary / gallery-tag / gallery-meta。
@@ -57,13 +57,14 @@ test.describe("gallery 卡片画廊 — seed 注入视图渲染", () => {
     await expect(page.getByText(/行详情 #\d+/)).toBeVisible({ timeout: 10000 });
   });
 
-  test("美食推荐做法 → 菜谱画廊 8 张卡", async ({ page, request }) => {
+  test("行业政策与合规台账 → 政策台账画廊 8 张卡", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
-    await openGalleryTable(page, request, "美食推荐做法");
+    await openGalleryTable(page, request, "行业政策与合规台账");
 
     await expect(page.getByTestId("gallery-count")).toHaveText("共 8 条");
     await expect(page.getByTestId("gallery-card")).toHaveCount(8);
+    await expect(page.getByTestId("gallery-card-title").first()).toBeVisible();
     await expect(page.getByTestId("gallery-tag").first()).toBeVisible();
     await expect(page.getByTestId("gallery-summary").first()).toBeVisible();
   });

@@ -33,6 +33,7 @@
 | [0029](0029-help-docs-refactor.md) | 帮助功能重构为独立「帮助文档」路由（两级导航 + 典型示例下载） | Accepted | P0 进行中；P1-P2 未开始 | `frontend/src/pages/help/`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/pages/help/*.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0030](0030-help-figures.md) | 帮助文档图示例（服务端生成 SVG + 后台定期重建） | Accepted | P0-P1 已落地 | `src/cndb/plugins/help/services/figures/`、`src/cndb/plugins/help/routers/figures.py`、`frontend/src/pages/help/HelpFigure.tsx` | `tests/test_help_figures.py`、`frontend/src/pages/help/HelpFigure.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0031](0031-font-and-css-typography.md) | 全站字体与 CSS 排版口径（默认标准字号 / 正文常规字重 / Outfit + JetBrains Mono） | Accepted | P0-P3 已落地 | `frontend/src/theme/`、`frontend/src/index.css`、`frontend/src/main.tsx` | `frontend/src/theme/tokens.test.ts`、`frontend/src/theme/fontAssets.test.ts`、`frontend/tests/e2e/critical/typography.spec.ts` | [未发布](../../CHANGELOG.md) |
+| [0032](0032-serious-content-cleanup.md) | 平台内容严肃化（移除菜谱类示例与「内容型浏览」文案） | Accepted | P0-P2 已落地 | `examples/datasets/工作区-数据源示例/`、`src/cndb/plugins/help/services/examples.py`、`frontend/src/pages/datasource/llmPromptPresets.ts` | `tests/test_seed_datasource.py`、`tests/test_datasource_llm_provider.py`、`frontend/src/pages/datasource/llmPromptPresets.test.ts`、`frontend/tests/e2e/critical/gallery-view.spec.ts` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

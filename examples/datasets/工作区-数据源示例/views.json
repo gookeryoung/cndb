@@ -130,71 +130,74 @@
       "order": 6
     }
   ],
-  "美食推荐做法": [
+  "行业政策与合规台账": [
     {
-      "name": "菜谱画廊",
+      "name": "政策台账画廊",
       "view_type": "gallery",
       "view_options": {
-        "title_field": "菜名",
-        "summary_field": "分步做法",
-        "tag_fields": ["菜系", "难度"],
-        "meta_fields": ["烹饪时长"],
+        "title_field": "标题",
+        "summary_field": "摘要",
+        "tag_fields": ["政策类型", "风险等级"],
+        "meta_fields": ["发文机构"],
+        "date_field": "日期",
         "card_size": "medium",
         "summary_lines": 4
       },
       "sortings": [
-        {"field_name": "烹饪时长", "direction": "asc"},
-        {"field_name": "菜名", "direction": "asc"}
+        {"field_name": "日期", "direction": "desc"},
+        {"field_name": "标题", "direction": "asc"}
       ],
       "is_default": true,
       "order": 0
     },
     {
-      "name": "全部菜谱",
+      "name": "全部政策",
       "view_type": "grid",
       "sortings": [
-        {"field_name": "烹饪时长", "direction": "asc"},
-        {"field_name": "菜名", "direction": "asc"}
+        {"field_name": "日期", "direction": "desc"},
+        {"field_name": "标题", "direction": "asc"}
       ],
       "order": 1
     },
     {
-      "name": "按菜系看板",
+      "name": "按发文机构看板",
       "view_type": "kanban",
       "view_options": {
-        "group_field": "菜系",
-        "title_field": "菜名",
-        "priority_field": "难度",
-        "card_fields": ["烹饪时长"]
+        "group_field": "发文机构",
+        "title_field": "标题",
+        "priority_field": "风险等级",
+        "card_fields": ["政策类型", "生效日期"]
       },
       "order": 2
     },
     {
-      "name": "快手菜（≤40分钟）",
+      "name": "待落实政策",
       "view_type": "grid",
       "filter_type": "AND",
       "filters": [
-        {"field_name": "烹饪时长", "op": "<=", "value": 40}
+        {"field_name": "落实状态", "op": "=", "value": "待落实"}
       ],
       "sortings": [
-        {"field_name": "烹饪时长", "direction": "asc"},
-        {"field_name": "菜名", "direction": "asc"}
+        {"field_name": "生效日期", "direction": "asc"},
+        {"field_name": "标题", "direction": "asc"}
       ],
       "order": 3
     },
     {
-      "name": "菜系与时长概览",
+      "name": "政策类型与风险概览",
       "view_type": "chart",
       "view_options": {
         "charts": [
           {
-            "chart_type": "histogram",
-            "measure_field": "烹饪时长"
+            "chart_type": "bar",
+            "dimension_field": "政策类型",
+            "measure_field": "标题",
+            "aggregation": "count"
           },
           {
             "chart_type": "pie",
-            "dimension_field": "菜系",
-            "measure_field": "菜名",
+            "dimension_field": "风险等级",
+            "measure_field": "标题",
             "aggregation": "count"
           }
         ]

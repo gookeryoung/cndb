@@ -43,7 +43,7 @@ const REQUIRED_NAMES = [
   '电商竞品价格监控',
   '行业政策公告跟踪',
   '商业航天新闻动态',
-  '美食推荐做法',
+  '行业政策与合规台账',
   '国际形势发展动态',
 ]
 
@@ -122,18 +122,20 @@ describe('LLM_PROMPT_PRESETS', () => {
     expect(news?.prompt).toContain('空字符串')
   })
 
-  it('美食推荐做法限制输出规模，避免长文本被 max_tokens 截断', () => {
-    const food = LLM_PROMPT_PRESETS.find(preset => preset.id === 'food_recipes')
-    expect(food).toBeDefined()
-    expect(food?.prompt).toContain('每类 2 道，共 8 道')
-    expect(food?.prompt).toContain('每步不超过 60 字')
-    expect(food?.prompt).toContain('避免输出过长被截断')
+  it('行业政策与合规台账输出合规要求与落实状态，并明确去重键', () => {
+    const policy = LLM_PROMPT_PRESETS.find(preset => preset.id === 'policy_compliance')
+    expect(policy).toBeDefined()
+    expect(policy?.prompt).toContain('合规要求')
+    expect(policy?.prompt).toContain('落实状态')
+    expect(policy?.prompt).toContain('至少 8 条')
+    expect(policy?.match_keys).toEqual(['日期', '发文机构', '标题'])
   })
 
   it('实时数据类预设统一要求标注综合整理 / 留空且不返回空数组', () => {
     const realtimeIds = [
       'ecommerce_price',
       'policy_tracker',
+      'policy_compliance',
       'commercial_aerospace',
       'global_affairs',
     ]
