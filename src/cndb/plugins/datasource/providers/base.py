@@ -177,6 +177,9 @@ class SyncJobSpec:
     provider: str = "http_json"
     entrant_param: str | None = None
     entrant_values: tuple[str, ...] = ()
+    # 标的集合已显式解析但为空（backfill_date 全部达 ``backfill_start`` / 来源清单尚无行）：
+    # build_requests 应返回零请求，而不是回退成单条 entrant 为空的伪请求
+    entrants_exhausted: bool = False
     # 按标的 end 锚点（ADR 0034 D2，backfill_date 游标）：entrant → 锚点日期串；
     # 非空时注入模板变量 {end}（该标的水位 − 1 天），达 backfill_start 的标的不出现在这里
     entrant_ends: Mapping[str, str] = field(default_factory=dict)
