@@ -145,9 +145,7 @@ def _table_markdown(table: Any) -> str:
     return "\n".join(lines)
 
 
-def convert_docx(
-    data: bytes, path: str, *, image_sink: ImageSink | None = None
-) -> tuple[str, str, list[str]]:
+def convert_docx(data: bytes, path: str, *, image_sink: ImageSink | None = None) -> tuple[str, str, list[str]]:
     """把 ``.docx`` 字节流转换为 ``(标题, 正文 Markdown, 告警)``.
 
     标题优先级：core properties ``title`` → 首个一级标题（并从正文剥离）→ 文件名。
