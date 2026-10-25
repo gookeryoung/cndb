@@ -170,8 +170,8 @@ Related: `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/table
 | P0 后端推算 + 预览端点 | 已落地 | `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`src/cndb/plugins/tables/schemas/__init__.py` | `tests/test_text_auto_increment.py` | `08c922c` |
 | P1 网格新增行只读展示 | 已落地 | `frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/api/records.ts`、`frontend/src/api/types/records.ts` | `frontend/src/pages/grid/GridPage.newRowPrefill.test.tsx` | `08c922c` |
 | P2 行抽屉新建只读展示 | 已落地 | `frontend/src/pages/grid/layout/RowDetailDrawer.tsx`、`frontend/src/utils/fieldIncrement.ts` | `frontend/src/pages/grid/layout/RowDetailDrawer.test.tsx`、`frontend/src/utils/fieldIncrement.test.ts` | `08c922c` |
-| P3 网格新增行手动修改 | 已落地 | `frontend/src/pages/grid/cells/AutoIncrementCell.tsx`、`frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx` | `frontend/src/pages/grid/GridPage.newRowPrefill.test.tsx` | `—` |
-| P4 抽屉新建手动修改 | 已落地 | `frontend/src/pages/grid/layout/RowDetailDrawer.tsx` | `frontend/src/pages/grid/layout/RowDetailDrawer.test.tsx` | `—` |
+| P3 网格新增行手动修改 | 已落地 | `frontend/src/pages/grid/cells/AutoIncrementCell.tsx`、`frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx` | `frontend/src/pages/grid/GridPage.newRowPrefill.test.tsx` | `2286cce5` |
+| P4 抽屉新建手动修改 | 已落地 | `frontend/src/pages/grid/layout/RowDetailDrawer.tsx` | `frontend/src/pages/grid/layout/RowDetailDrawer.test.tsx` | `2286cce5` |
 
 ## 交接（会话结束更新）
 
