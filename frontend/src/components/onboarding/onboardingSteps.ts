@@ -82,7 +82,7 @@ export function buildSteps(): TourStep[] {
       element: TOUR_SELECTORS.helpBtn,
       popover: {
         title: '随时查看帮助',
-        description: '右上角的问号按钮打开帮助中心：快速上手、视图说明、权限角色、常见问题都在里面。完成本引导后也可从这里重新播放。',
+        description: '右上角的问号按钮进入帮助文档：快速入门、教程&最佳实践、典型示例、系统配置、问题排查都在里面。完成本引导后也可从帮助文档重新播放。',
       },
     },
   ]

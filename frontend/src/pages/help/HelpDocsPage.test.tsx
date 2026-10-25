@@ -1,0 +1,109 @@
+/** 帮助文档页（ADR 0029 P0）—— 默认落点、深链选中、回落纠正、移动端目录与引导重放。 */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { Route, Routes } from 'react-router-dom'
+import { renderProviders } from '@/test/render-providers'
+import { useOnboardingStore } from '@/store/onboarding'
+import type { ResponsiveState } from '@/hooks/useResponsive'
+import HelpDocsPage from './HelpDocsPage'
+import { HELP_SECTIONS } from './helpNav'
+
+let responsiveState: ResponsiveState = {
+    deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+    width: 1280, height: 800,
+}
+
+vi.mock('@/hooks/useResponsive', async () => {
+    const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
+    return { ...actual, useResponsive: () => responsiveState }
+})
+
+function renderHelp(route: string) {
+    return renderProviders(
+        <Routes>
+            <Route path="/help" element={<HelpDocsPage />} />
+            <Route path="/help/:sectionKey/:topicKey" element={<HelpDocsPage />} />
+        </Routes>,
+        { route },
+    )
+}
+
+beforeEach(() => {
+    responsiveState = {
+        deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+        width: 1280, height: 800,
+    }
+    useOnboardingStore.setState({ tourRequested: false })
+})
+
+describe('HelpDocsPage 桌面端', () => {
+    it('/help 默认落到首个主题，并渲染两级导航', async () => {
+        renderHelp('/help')
+
+        expect(await screen.findByRole('heading', { name: '认识 cndb' })).toBeVisible()
+        const aside = screen.getByTestId('help-docs-aside')
+        expect(aside).toBeVisible()
+        for (const section of HELP_SECTIONS) {
+            // 面包屑会重复一级标题，故限定在侧栏内断言
+            expect(within(aside).getByText(section.label)).toBeInTheDocument()
+        }
+        // 二级主题也能展开看到；当前主题选中
+        const current = screen.getByRole('menuitem', { name: '认识 cndb' })
+        expect(current.className).toContain('ant-menu-item-selected')
+    })
+
+    it('深链 /help/tutorials/roles 渲染对应主题并选中二级项', async () => {
+        renderHelp('/help/tutorials/roles')
+
+        expect(await screen.findByRole('heading', { name: '权限与角色' })).toBeVisible()
+        expect(screen.getByRole('menuitem', { name: '权限与角色' }).className).toContain('ant-menu-item-selected')
+        expect(within(screen.getByTestId('help-docs-aside')).getByText('教程&最佳实践')).toBeInTheDocument()
+    })
+
+    it('点击二级主题切换内容', async () => {
+        renderHelp('/help')
+
+        fireEvent.click(await screen.findByRole('menuitem', { name: '字段类型' }))
+        await waitFor(() => {
+            expect(screen.getByRole('heading', { name: '字段类型' })).toBeVisible()
+        })
+    })
+
+    it('未知 section / topic 回落到首个主题', async () => {
+        renderHelp('/help/nope/nope')
+
+        expect(await screen.findByRole('heading', { name: '认识 cndb' })).toBeVisible()
+    })
+
+    it('「重新播放新手引导」发出 requestTour 信号', async () => {
+        renderHelp('/help')
+
+        fireEvent.click(await screen.findByTestId('help-docs-replay-tour'))
+        expect(useOnboardingStore.getState().tourRequested).toBe(true)
+    })
+})
+
+describe('HelpDocsPage 窄屏', () => {
+    it('侧栏收进抽屉，选中主题后自动关闭', async () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 375, height: 667,
+        }
+        renderHelp('/help')
+
+        expect(screen.queryByTestId('help-docs-aside')).toBeNull()
+        expect(await screen.findByRole('heading', { name: '认识 cndb' })).toBeVisible()
+
+        fireEvent.click(screen.getByTestId('help-docs-menu-btn'))
+        expect(await screen.findByTestId('help-docs-nav-drawer')).toBeVisible()
+
+        fireEvent.click(screen.getByRole('menuitem', { name: '常见问题' }))
+        await waitFor(() => {
+            expect(screen.getByRole('heading', { name: '常见问题' })).toBeVisible()
+        })
+        await waitFor(() => {
+            expect(screen.getByTestId('help-docs-nav-drawer')).not.toBeVisible()
+        })
+    })
+})

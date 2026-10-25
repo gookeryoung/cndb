@@ -17,7 +17,7 @@ export const VISIBILITY_LABEL: Record<WorkspaceVisibility, string> = {
   private: '私有（仅所有者可见）',
 }
 
-/** 角色一句话说明（成员角色 Select 下拉展示，与帮助中心「权限角色」主题对齐） */
+/** 角色一句话说明（成员角色 Select 下拉展示，与帮助文档「权限与角色」主题对齐） */
 export const ROLE_HINTS: Record<WorkspaceRole, string> = {
   owner: '全部权限，可转让与删除工作区',
   editor: '可查看并编辑数据，不可管理成员与设置',

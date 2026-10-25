@@ -30,16 +30,16 @@ vi.mock('@/pages/settings/SettingsModal', () => ({
         open ? <div data-testid="settings-modal-stub">{initialTab ?? 'profile'}</div> : null,
 }))
 
-/** 帮助中心抽屉桩 —— 懒加载真实抽屉含异步内容，桩只验证入口被触发 */
-vi.mock('@/components/HelpCenterDrawer', () => ({
-    default: ({ open }: { open: boolean }) =>
-        open ? <div data-testid="help-drawer-stub">帮助中心</div> : null,
-}))
-
 /** 管理台路由桩 —— 展示当前 pathname 供断言 */
 function AdminStub() {
     const loc = useLocation()
     return <div data-testid="admin-panel-stub">{loc.pathname}</div>
+}
+
+/** 帮助文档路由桩 —— 展示当前 pathname 供断言（ADR 0029：整页路由，非抽屉） */
+function HelpStub() {
+    const loc = useLocation()
+    return <div data-testid="help-page-stub">{loc.pathname}</div>
 }
 
 /** 表列表路由桩 */
@@ -94,6 +94,8 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/documents/issues" element={<DocumentsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="admin" element={<AdminStub />} />
+                <Route path="help" element={<HelpStub />} />
+                <Route path="help/:sectionKey/:topicKey" element={<HelpStub />} />
             </Route>
         </Routes>,
         {
@@ -267,7 +269,7 @@ describe('MainLayout 顶部导航', () => {
 })
 
 describe('MainLayout 大模型入口', () => {
-    it('桌面端顶栏在「帮助」左侧提供大模型图标入口，点击直达个人设置「大模型」页签', async () => {
+    it('桌面端顶栏在「帮助文档」左侧提供大模型图标入口，点击直达个人设置「大模型」页签', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
@@ -275,7 +277,7 @@ describe('MainLayout 大模型入口', () => {
         })
 
         const llmBtn = screen.getByTestId('llm-settings-btn')
-        // DOM 顺序：大模型 → 帮助（位于帮助左侧）
+        // DOM 顺序：大模型 → 帮助文档（位于帮助左侧）
         expect(
             llmBtn.compareDocumentPosition(screen.getByTestId('help-btn'))
             & Node.DOCUMENT_POSITION_FOLLOWING,
@@ -284,6 +286,20 @@ describe('MainLayout 大模型入口', () => {
         fireEvent.click(llmBtn)
         await waitFor(() => {
             expect(screen.getByTestId('settings-modal-stub')).toHaveTextContent('llm')
+        })
+    })
+
+    it('桌面端点击「帮助文档」进入整页 /help，不再弹出抽屉', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
+        })
+        expect(screen.getByTestId('help-btn')).toHaveTextContent('帮助文档')
+
+        fireEvent.click(screen.getByTestId('help-btn'))
+        await waitFor(() => {
+            expect(screen.getByTestId('help-page-stub')).toHaveTextContent('/help')
         })
     })
 
@@ -307,8 +323,8 @@ describe('MainLayout 大模型入口', () => {
         await waitFor(() => {
             expect(screen.getByTestId('settings-modal-stub')).toHaveTextContent('llm')
         })
-        // 帮助中心同样收进用户菜单，避免顶栏第二个图标
-        expect(screen.getByText('帮助中心')).toBeInTheDocument()
+        // 帮助文档同样收进用户菜单，避免顶栏第二个图标
+        expect(screen.getByText('帮助文档')).toBeInTheDocument()
 
         responsiveState = {
             deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
@@ -316,7 +332,7 @@ describe('MainLayout 大模型入口', () => {
         }
     })
 
-    it('移动端点击用户菜单「帮助中心」打开帮助抽屉', async () => {
+    it('移动端点击用户菜单「帮助文档」跳转整页 /help', async () => {
         responsiveState = {
             deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
             width: 375, height: 667,
@@ -324,9 +340,9 @@ describe('MainLayout 大模型入口', () => {
         renderLayout(mockUser)
 
         fireEvent.mouseEnter(screen.getByTestId('user-menu-trigger'))
-        fireEvent.click(await screen.findByText('帮助中心'))
+        fireEvent.click(await screen.findByText('帮助文档'))
         await waitFor(() => {
-            expect(screen.getByTestId('help-drawer-stub')).toBeVisible()
+            expect(screen.getByTestId('help-page-stub')).toHaveTextContent('/help')
         })
 
         responsiveState = {

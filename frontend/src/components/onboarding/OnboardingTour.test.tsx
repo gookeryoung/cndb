@@ -78,7 +78,7 @@ describe('OnboardingTour', () => {
     expect(useOnboardingStore.getState().tourDone).toBe(true)
   })
 
-  it('帮助中心重放信号（tourRequested）→ 立即启动并清除信号', () => {
+  it('帮助文档重放信号（tourRequested）→ 立即启动并清除信号', () => {
     setWindowWidth(1280)
     useOnboardingStore.setState({ tourRequested: true })
     renderProviders(<OnboardingTour />, { route: '/w' })
