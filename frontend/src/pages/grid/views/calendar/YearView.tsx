@@ -5,6 +5,7 @@ import type { Density } from '@/theme/tableSettings'
 import { fmtDate } from '../../cells/dateUtils'
 import { CalendarEvent } from './calendarTypes'
 import { densityStyle, getEventDates, getMonthGrid, getYearMonths } from './calendarUtils'
+import { WEIGHT } from '@/theme/tokens'
 
 export function YearView({
   year,
@@ -57,7 +58,7 @@ export function YearView({
               {/* 月份标题 */}
               <div
                 style={{
-                  fontWeight: 600,
+                  fontWeight: WEIGHT.semibold,
                   fontSize: ds.cellFontSize,
                   color: isCurrentMonth ? 'var(--cn-brand-color)' : 'var(--cn-text-primary)',
                   marginBottom: 4,

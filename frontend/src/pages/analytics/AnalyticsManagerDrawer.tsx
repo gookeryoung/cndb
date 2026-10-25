@@ -10,6 +10,7 @@ import { App as AntApp, Button, Drawer, Empty, List, Space, Tag, Tooltip, Typogr
 import { CopyOutlined, DeleteOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons'
 import type { AnalyticsTemplate } from '@/api/analytics'
 import { templateTableName } from './analyticsModel'
+import { WEIGHT } from '@/theme/tokens'
 
 const { Text } = Typography
 
@@ -76,7 +77,7 @@ export function AnalyticsManagerDrawer({
       title={
         <Space>
           <span>分析列表</span>
-          <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>共 {templates.length} 个</Text>
+          <Text type="secondary" style={{ fontSize: 12, fontWeight: WEIGHT.regular }}>共 {templates.length} 个</Text>
         </Space>
       }
       width={560}

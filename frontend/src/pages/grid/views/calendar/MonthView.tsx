@@ -7,6 +7,7 @@ import type { Density } from '@/theme/tableSettings'
 import { fmtDate } from '../../cells/dateUtils'
 import { CalendarEvent } from './calendarTypes'
 import { densityStyle, eventBadgeStyle, getMonthGrid, groupEventsByDay } from './calendarUtils'
+import { WEIGHT } from '@/theme/tokens'
 
 export function MonthView({
   year,
@@ -49,7 +50,7 @@ export function MonthView({
             key={h}
             style={{
               textAlign: 'center',
-              fontWeight: 600,
+              fontWeight: WEIGHT.semibold,
               fontSize: ds.cellFontSize,
               padding: '4px 0',
               color: idx === 0 || idx === 6 ? '#ff4d4f' : 'var(--cn-text-primary)',

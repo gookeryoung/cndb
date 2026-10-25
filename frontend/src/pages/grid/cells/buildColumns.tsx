@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import type { RowResponse, Field, RowValues, ID } from '@/api'
 import GridCell from './GridCell'
 import ColumnFilterDropdown from '../layout/ColumnFilterDropdown'
+import { WEIGHT } from '@/theme/tokens'
 
 /** 表头状态标识配色（与 FIELD_TYPE_META 色系对齐、避免冲突） */
 const HEADER_FLAG = {
@@ -197,7 +198,7 @@ export function buildColumns(
             {/* 必填 —— 红 * 号 */}
             {f.required && (
               <Tooltip title="必填">
-                <span style={{ color: HEADER_FLAG.required, fontWeight: 600, lineHeight: 1 }} data-testid="header-flag-required">*</span>
+                <span style={{ color: HEADER_FLAG.required, fontWeight: WEIGHT.semibold, lineHeight: 1 }} data-testid="header-flag-required">*</span>
               </Tooltip>
             )}
 

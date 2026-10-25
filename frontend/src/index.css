@@ -123,7 +123,7 @@ body {
   width: 100%;
   height: 100%;
   overflow-x: hidden;
-  font-family: 'Inter', 'Noto Sans SC', sans-serif;
+  font-family: var(--cn-font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--cn-bg-page);
@@ -136,6 +136,17 @@ body {
 .font-num {
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
+}
+
+/* 展示字体（Outfit）：只用于品牌字、KPI 数字、纯拉丁大标题；
+   中文会回退 Noto Sans SC，因此不要套在中文标题上 */
+.cn-display {
+  font-family: var(--cn-font-display);
+}
+
+/* 展示位的拉丁负字距；仅用于确定是拉丁 / 数字的内容 */
+.cn-display-tight {
+  letter-spacing: var(--cn-tracking-display);
 }
 
 /* ─────────────── 全局细节打磨：滚动条 / 文本选区 ───────────────
@@ -223,6 +234,16 @@ body {
   --cn-radius-lg: 8px;
   --cn-radius-xl: 12px;
   --cn-radius-pill: 999px;
+
+  --cn-weight-regular: 400;
+  --cn-weight-medium: 500;
+  --cn-weight-semibold: 600;
+  --cn-weight-bold: 700;
+
+  --cn-font-sans: 'Inter', 'Noto Sans SC', sans-serif;
+  --cn-font-display: 'Outfit', 'Noto Sans SC', sans-serif;
+  --cn-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --cn-tracking-display: -0.02em;
 }
 
 /* ─────────────── 主题 CSS 变量 ─────────────── */
@@ -501,7 +522,7 @@ body.theme-oled {
 
 .cn-codeblock-lang {
   font-size: var(--cn-text-xs);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   letter-spacing: 0.02em;
   color: var(--cn-text-secondary);
 }
@@ -542,7 +563,7 @@ body.theme-oled {
   margin: 0;
   padding: var(--cn-space-lg) var(--cn-space-xl);
   overflow-x: auto;
-  font-family: var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-family: var(--cn-font-mono);
   font-size: var(--cn-text-sm);
   line-height: 1.65;
   tab-size: 2;
@@ -751,12 +772,12 @@ body.theme-oled {
   gap: var(--cn-space-sm);
   padding: var(--cn-space-sm) var(--cn-space-md) var(--cn-space-xs);
   font-size: var(--cn-text-2xs);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   letter-spacing: 0.04em;
   color: var(--cn-text-muted);
 }
 
-.cn-gs-count { margin-left: auto; font-weight: 500; }
+.cn-gs-count { margin-left: auto; font-weight: var(--cn-weight-medium); }
 
 .cn-gs-item {
   display: flex;
@@ -944,7 +965,7 @@ body.theme-oled {
   text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
-  font-weight: 600;
+  font-weight: var(--cn-weight-medium);
 }
 
 /* 表名前缀图标：品牌色作为「数据表级」导航段的视觉标识 */
@@ -994,7 +1015,7 @@ body.theme-oled {
 .cn-table-tab-active {
   color: var(--cn-mix-brand-color-78-text-primary);
   color: color-mix(in srgb, var(--cn-brand-color) 78%, var(--cn-text-primary));
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   background: var(--cn-mix-brand-color-12-bg-container);
   background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
 }
@@ -1097,7 +1118,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   padding: var(--cn-space-hairline) var(--cn-space-md);
   border-radius: var(--cn-radius-pill);
   font-size: var(--cn-text-xs);
-  font-weight: 600;
+  font-weight: var(--cn-weight-medium);
   font-variant-numeric: tabular-nums;
   color: var(--cn-brand-color);
   background: var(--cn-mix-brand-color-12-transparent);
@@ -1128,7 +1149,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   margin-bottom: var(--cn-space-md);
   padding-left: var(--cn-space-hairline);
   font-size: var(--cn-text-xs);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   letter-spacing: 0.02em;
   color: var(--cn-text-secondary);
 }
@@ -1213,7 +1234,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 
 .cn-ws-row-name {
   font-size: var(--cn-text-md);
-  font-weight: 600;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1320,12 +1341,12 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   gap: var(--cn-space-sm);
   margin-bottom: var(--cn-space-sm);
   font-size: var(--cn-text-xs);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-secondary);
 }
 
 .cn-ws-detail-section-count {
-  font-weight: 400;
+  font-weight: var(--cn-weight-regular);
   color: var(--cn-text-muted);
 }
 
@@ -1453,7 +1474,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 
 .cn-myviews-title {
   font-size: var(--cn-text-md);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
 }
 
@@ -1565,7 +1586,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: var(--cn-text-sm);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-primary);
 }
 
@@ -1650,7 +1671,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 
 .cn-table-list .ant-table-thead > tr > th {
   font-size: var(--cn-text-xs);
-  font-weight: 600;
+  font-weight: var(--cn-weight-medium);
 }
 
 /* 行内元素统一 20px 行高：内容高度不再由最胖的子元素决定，行高稳定 */
@@ -2320,8 +2341,10 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .ts-stat-num {
+  font-family: var(--cn-font-display);
   font-size: var(--cn-text-lg);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
+  font-variant-numeric: tabular-nums;
   line-height: 1.3;
   color: var(--cn-text-primary);
 }
@@ -2329,7 +2352,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 /* 日期类统计值（字符串较长，字号缩小对齐视觉） */
 .ts-stat-num-sm {
   font-size: var(--cn-text-sm);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   padding-top: var(--cn-space-xs);
 }
 
@@ -2447,7 +2470,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .fm-row-name {
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-primary);
   min-width: 0;
   overflow: hidden;
@@ -2516,7 +2539,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   justify-content: space-between;
   margin-bottom: var(--cn-space-md);
   font-size: var(--cn-text-xs);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-secondary);
 }
 
@@ -2527,7 +2550,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 .fm-section .ant-form-item-label>label {
   font-size: var(--cn-text-xs);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-secondary);
 }
 
@@ -2557,7 +2580,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   gap: var(--cn-space-sm);
   margin-bottom: var(--cn-space-md);
   font-size: var(--cn-text-xs);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-secondary);
 }
 
@@ -2579,7 +2602,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .driver-popover.cn-driver-theme .driver-popover-title {
   color: var(--cn-text-primary);
   font-size: var(--cn-text-md);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
 }
 
 .driver-popover.cn-driver-theme .driver-popover-description {
@@ -2908,7 +2931,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   cursor: pointer;
   font: inherit;
   font-size: var(--cn-text-xs);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-secondary);
   text-align: left;
 }
@@ -3479,6 +3502,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 /* 品牌标识座：品牌色渐变圆角方块（认证页大号 / 顶栏小号复用） */
 .cn-brand-mark {
+  font-family: var(--cn-font-display);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3490,11 +3514,20 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     color-mix(in srgb, var(--cn-brand-color) 88%, #ffffff),
     color-mix(in srgb, var(--cn-brand-color) 72%, #000000));
   color: #fff;
-  font-weight: 700;
+  font-weight: var(--cn-weight-bold);
   box-shadow: 0 4px 14px var(--cn-mix-brand-color-32-transparent);
   box-shadow: 0 4px 14px color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
   flex-shrink: 0;
   user-select: none;
+}
+
+/* 顶栏品牌字：展示字体 + 拉丁负字距（内容固定为拉丁，不涉及中文） */
+.cn-brand-word {
+  font-family: var(--cn-font-display);
+  font-size: var(--cn-text-lg);
+  font-weight: var(--cn-weight-bold);
+  letter-spacing: var(--cn-tracking-display);
+  color: var(--cn-text-primary);
 }
 
 @keyframes cn-rise-in {
@@ -3593,7 +3626,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   border: 1px solid var(--cn-border-soft);
   border-radius: var(--cn-radius-pill);
   background: var(--cn-bg-container);
-  font-family: var(--cn-mono, monospace);
+  font-family: var(--cn-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -3613,7 +3646,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-diff-stat {
   padding: 0 var(--cn-space-md);
   border-radius: var(--cn-radius-pill);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
 }
 
 .cn-diff-stat--add {
@@ -3631,7 +3664,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-diff-body {
   max-height: 460px;
   overflow: auto;
-  font-family: var(--cn-mono, monospace);
+  font-family: var(--cn-font-mono);
   font-size: var(--cn-text-xs);
   line-height: 1.65;
 }
@@ -3773,7 +3806,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   background: var(--cn-bg-muted);
   color: var(--cn-text-secondary);
   font-size: var(--cn-text-xs);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   text-align: left;
 }
 
@@ -3794,7 +3827,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 .cn-fielddiff-field {
   color: var(--cn-text-primary);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
 }
 
 .cn-fielddiff-conflict {
@@ -3809,7 +3842,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   max-width: 100%;
   padding: 0 var(--cn-space-sm);
   border-radius: var(--cn-radius-sm);
-  font-family: var(--cn-mono, monospace);
+  font-family: var(--cn-font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -3845,13 +3878,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-fielddiff-sign-add {
   margin-right: var(--cn-space-xs);
   color: #16a34a;
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
 }
 
 .cn-fielddiff-sign-del {
   margin-right: var(--cn-space-xs);
   color: #dc2626;
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
 }
 
 /* ── 文档修改申请抽屉（待审列表 + 内容 DIFF） ── */
@@ -3918,7 +3951,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-help-docs-brand {
   padding: 0 var(--cn-space-xl) var(--cn-space-md);
   font-size: var(--cn-text-lg);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
 }
 
@@ -3952,7 +3985,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-help-docs-heading {
   margin: 0 0 var(--cn-space-lg);
   font-size: var(--cn-text-xl);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
 }
 
@@ -4029,7 +4062,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-user-card-name {
-  font-weight: 600;
+  font-weight: var(--cn-weight-medium);
   font-size: var(--cn-text-md);
   color: var(--cn-text-primary);
   overflow: hidden;
@@ -4046,7 +4079,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-user-card-nickname {
-  font-weight: 400;
+  font-weight: var(--cn-weight-regular);
   color: var(--cn-text-muted);
   font-size: var(--cn-text-xs);
 }
@@ -4084,7 +4117,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-table-list-card-name {
   flex: 1;
   min-width: 0;
-  font-weight: 600;
+  font-weight: var(--cn-weight-medium);
   font-size: var(--cn-text-md);
   color: var(--cn-text-primary);
   overflow: hidden;
@@ -4157,7 +4190,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-admin-rail-title {
   padding: var(--cn-space-xs) var(--cn-space-md);
   font-size: var(--cn-text-xs);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   letter-spacing: 0.06em;
   color: var(--cn-text-muted);
 }
@@ -4202,7 +4235,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: color-mix(in srgb, var(--cn-brand-color) 82%, var(--cn-text-primary));
   background: var(--cn-mix-brand-color-12-bg-container);
   background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
 }
 
 /* 选中项左侧品牌色指示条：与 .cn-table-nav 侧栏选中态同一语言 */
@@ -4274,7 +4307,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-admin-title {
   margin: 0;
   font-size: var(--cn-text-xl);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   line-height: 1.4;
   color: var(--cn-text-primary);
 }
@@ -4326,7 +4359,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
   color: var(--cn-mix-brand-color-82-text-primary);
   color: color-mix(in srgb, var(--cn-brand-color) 82%, var(--cn-text-primary));
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
 }
 
 /* 分区内容：卡片 / 提示条 / 操作区之间统一的纵向节奏 */
@@ -4369,7 +4402,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 .cn-selection-count {
   font-size: var(--cn-text-sm);
-  font-weight: 600;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-primary);
 }
 
@@ -5185,9 +5218,9 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-vh-ver {
-  font-family: var(--cn-mono, monospace);
+  font-family: var(--cn-font-mono);
   font-size: var(--cn-text-sm);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
   font-variant-numeric: tabular-nums;
 }
@@ -5233,7 +5266,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-vh-size {
-  font-family: var(--cn-mono, monospace);
+  font-family: var(--cn-font-mono);
   font-size: var(--cn-text-2xs);
   color: var(--cn-text-muted);
   font-variant-numeric: tabular-nums;
@@ -5364,7 +5397,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-an-head-title {
   margin: 0;
   font-size: var(--cn-text-lg);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   line-height: 1.4;
   color: var(--cn-text-primary);
 }
@@ -5455,7 +5488,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-an-box-title {
   margin: 0;
   font-size: var(--cn-text-sm);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
   white-space: nowrap;
 }
@@ -5522,7 +5555,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 .cn-an-label {
   font-size: var(--cn-text-2xs);
-  font-weight: 500;
+  font-weight: var(--cn-weight-medium);
   color: var(--cn-text-secondary);
 }
 
@@ -5581,7 +5614,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 .cn-an-muted {
   font-size: var(--cn-text-2xs);
-  font-weight: 400;
+  font-weight: var(--cn-weight-regular);
   color: var(--cn-text-muted);
 }
 
@@ -5617,11 +5650,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-an-frow-key.ant-input {
-  font-family: var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-family: var(--cn-font-mono);
 }
 
 .cn-an-frow-expr.ant-input {
-  font-family: var(--cn-mono, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-family: var(--cn-font-mono);
   font-size: var(--cn-text-xs);
 }
 

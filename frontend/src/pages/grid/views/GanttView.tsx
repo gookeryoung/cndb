@@ -38,6 +38,7 @@ import { GanttFlatItem, GanttGroup } from './gantt/ganttTypes'
 import { RightBoundaryLine, TodayLine } from './gantt/ganttBars'
 import { LeftColBody } from './gantt/ganttLeftColumn'
 import { VirtualGroupHeader, VirtualTaskRow } from './gantt/ganttVirtualRows'
+import { WEIGHT } from '@/theme/tokens'
 
 interface GanttViewProps {
   rows: RowResponse[]
@@ -298,7 +299,7 @@ export default function GanttView({
           flexShrink: 0,
         }}
       >
-        <div style={{ fontWeight: 600, fontSize: ds.headerFontSize + 2, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, whiteSpace: 'nowrap' }}>
+        <div style={{ fontWeight: WEIGHT.semibold, fontSize: ds.headerFontSize + 2, display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, whiteSpace: 'nowrap' }}>
           <CalendarOutlined style={{ color: 'var(--cn-brand-color)' }} />
           甘特图视图
         </div>
@@ -346,7 +347,7 @@ export default function GanttView({
             onClick={() => setZoomLevel(finalLevel - 1)}
             title="缩小"
           />
-          <span style={{ minWidth: 44, textAlign: 'center', fontWeight: 500, color: 'var(--cn-text)' }}>
+          <span style={{ minWidth: 44, textAlign: 'center', fontWeight: WEIGHT.medium, color: 'var(--cn-text)' }}>
             {levelDef.name}
           </span>
           <Button
@@ -388,7 +389,7 @@ export default function GanttView({
               display: 'flex',
               alignItems: 'center',
               padding: '0 12px',
-              fontWeight: 600,
+              fontWeight: WEIGHT.semibold,
               fontSize: ds.headerFontSize,
               borderBottom: '1px solid var(--cn-border)',
               background: 'var(--cn-bg-subtle)',
@@ -451,7 +452,7 @@ export default function GanttView({
                       justifyContent: 'flex-start',
                       borderRight: '1px solid var(--cn-border)',
                       fontSize: ds.headerFontSize,
-                      fontWeight: 600,
+                      fontWeight: WEIGHT.semibold,
                       color: 'var(--cn-text)',
                       whiteSpace: 'nowrap',
                       overflow: 'hidden',

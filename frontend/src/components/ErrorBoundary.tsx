@@ -16,6 +16,7 @@ import {
 } from 'react-error-boundary'
 import { Button } from 'antd'
 import { ReloadOutlined, RedoOutlined, WarningOutlined } from '@ant-design/icons'
+import { WEIGHT } from '@/theme/tokens'
 
 /** 降级 UI —— 与 PageFallback 同风格，居中卡片 + 操作按钮 */
 function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
@@ -31,7 +32,7 @@ function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
       }}
     >
       <WarningOutlined style={{ fontSize: 40, color: 'var(--cn-text-muted)' }} aria-hidden />
-      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: 'var(--cn-text-primary)' }}>
+      <h2 style={{ margin: 0, fontSize: 18, fontWeight: WEIGHT.semibold, color: 'var(--cn-text-primary)' }}>
         页面出现异常
       </h2>
       <p style={{ margin: 0, color: 'var(--cn-text-secondary)', fontSize: 13, maxWidth: 480 }}>

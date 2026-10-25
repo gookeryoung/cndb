@@ -15,6 +15,7 @@ import { getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
 import FieldList from './FieldList'
 import FieldEditor from './FieldEditor'
 import { defaultConfigForType } from './typeConfigPanel'
+import { WEIGHT } from '@/theme/tokens'
 
 // 保持既有公开 API：测试与外部调用方仍从本入口导入这两个工具函数
 export { fieldNoteText, formatIncrementExample } from './FieldList'
@@ -415,7 +416,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       >
         {/* 源字段 */}
         <div style={{ width: 160, flexShrink: 0 }}>
-          <div style={{ fontWeight: 500 }}>{s.source}</div>
+          <div style={{ fontWeight: WEIGHT.medium }}>{s.source}</div>
           <div style={{ fontSize: 11, color: '#999' }}>
             {getFieldTypeLabel(sourceFields.find(f => f.name === s.source)?.field_type ?? 'unknown')}
           </div>
@@ -509,7 +510,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
 
       {/* 引入模式选择 */}
       <div style={{ marginBottom: 12 }}>
-        <div style={{ marginBottom: 4, fontWeight: 500 }}>引入方式</div>
+        <div style={{ marginBottom: 4, fontWeight: WEIGHT.medium }}>引入方式</div>
         <Radio.Group
           value={importMode}
           onChange={(e) => { setImportMode(e.target.value as 'copy' | 'link'); setImportPreview(null); setImportMapping({}) }}
@@ -521,7 +522,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
 
       {/* 源工作区 + 源表级联选择（支持跨工作区） */}
       <div style={{ marginBottom: 12 }}>
-        <div style={{ marginBottom: 4, fontWeight: 500 }}>选择源工作区</div>
+        <div style={{ marginBottom: 4, fontWeight: WEIGHT.medium }}>选择源工作区</div>
         <Select
           style={{ width: '100%' }}
           placeholder="请选择来源工作区"
@@ -536,7 +537,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         />
       </div>
       <div style={{ marginBottom: 12 }}>
-        <div style={{ marginBottom: 4, fontWeight: 500 }}>选择源表</div>
+        <div style={{ marginBottom: 4, fontWeight: WEIGHT.medium }}>选择源表</div>
         <Select
           style={{ width: '100%' }}
           placeholder={sourceWid ? '请选择要引入字段的来源表' : '请先选择来源工作区'}
@@ -559,7 +560,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           ) : (
             <div>
               <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontWeight: 500 }}>选择要引入的字段</span>
+                <span style={{ fontWeight: WEIGHT.medium }}>选择要引入的字段</span>
                 <span style={{ color: '#999', fontSize: 12 }}>
                   已选 {importSelectedIds.length}/{sourceFields.length}（不选 = 全部引入）
                 </span>
@@ -629,7 +630,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             {(importPreview.gap_analysis?.planned_fields ?? []).map((p, i) => (
               <div key={i} style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CheckCircleOutlined style={{ color: 'var(--cn-success, #52c41a)' }} />
-                <span style={{ fontWeight: 500 }}>{p.name}</span>
+                <span style={{ fontWeight: WEIGHT.medium }}>{p.name}</span>
                 <Tag color={getFieldTypeColor(p.field_type)} style={{ marginLeft: 4 }}>{getFieldTypeLabel(p.field_type)}</Tag>
               </div>
             ))}

@@ -125,14 +125,14 @@ describe('字体设置常量结构', () => {
     expect([...pxList].sort((a, b) => a - b)).toEqual(pxList)
   })
 
-  it('默认字体设置为标准字号且全局加粗', () => {
-    expect(DEFAULT_FONT_SETTINGS).toEqual({ scale: 'standard', bold: true })
+  it('默认字体设置为标准字号且不加粗', () => {
+    expect(DEFAULT_FONT_SETTINGS).toEqual({ scale: 'standard', bold: false })
   })
 })
 
 describe('loadFontSettings', () => {
   it('无存储值时返回默认设置', () => {
-    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: true })
+    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: false })
   })
 
   it('合法持久化值原样返回', () => {
@@ -140,21 +140,21 @@ describe('loadFontSettings', () => {
     expect(loadFontSettings()).toEqual({ scale: 'large', bold: true })
   })
 
-  it('非法字号档位回退标准，bold 仅接受 true', () => {
+  it('非法字号档位回退标准，bold 非布尔值回退默认', () => {
     localStorage.setItem('cndb_font', JSON.stringify({ scale: 'giant', bold: 'yes' }))
-    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: true })
+    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: false })
   })
 
   it('JSON 损坏时回退默认设置', () => {
     localStorage.setItem('cndb_font', '{broken')
-    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: true })
+    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: false })
   })
 
   it('localStorage 抛异常时回退默认设置', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('storage unavailable')
     })
-    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: true })
+    expect(loadFontSettings()).toEqual({ scale: 'standard', bold: false })
   })
 })
 

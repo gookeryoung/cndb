@@ -32,6 +32,7 @@ import {
   type ChartData,
   type StatsResult,
 } from './chartBoard'
+import { WEIGHT } from '@/theme/tokens'
 
 // 按需注册（tree-shaking 控体积；SVGRenderer 无 canvas 依赖，jsdom 可跑）
 echarts.use([
@@ -296,7 +297,7 @@ function StatsPanel({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
-        <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--cn-text-primary)' }}>
+        <span style={{ fontWeight: WEIGHT.semibold, fontSize: 13, color: 'var(--cn-text-primary)' }}>
           描述统计（{fieldName}）
         </span>
         <Tooltip
@@ -608,7 +609,7 @@ export default function ChartView({ rows, fields, view, total, onRowClick }: Cha
         >
           <div
             data-testid={`chart-card-title-${i}`}
-            style={{ fontWeight: 600, fontSize: 13, color: 'var(--cn-text-primary)' }}
+            style={{ fontWeight: WEIGHT.semibold, fontSize: 13, color: 'var(--cn-text-primary)' }}
           >
             {CHART_TYPE_LABELS[cfg.chart_type] ?? cfg.chart_type} · {chartKeyFieldLabel(cfg)}
           </div>

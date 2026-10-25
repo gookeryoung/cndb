@@ -8,6 +8,7 @@ import type { Density } from '@/theme/tableSettings'
 import { fmtDate } from '../../cells/dateUtils'
 import { CalendarEvent } from './calendarTypes'
 import { densityStyle, eventBadgeStyle, getWeekDays, groupEventsByDay } from './calendarUtils'
+import { WEIGHT } from '@/theme/tokens'
 
 export function WeekView({
   baseDate,
@@ -71,7 +72,7 @@ export function WeekView({
                 <div style={{ fontSize: ds.cellFontSize - 2, opacity: isToday ? 0.9 : 0.7 }}>
                   {DAY_LABELS[idx]}
                 </div>
-                <div style={{ fontWeight: 600, fontSize: ds.cellFontSize + 2 }}>
+                <div style={{ fontWeight: WEIGHT.semibold, fontSize: ds.cellFontSize + 2 }}>
                   {d.getMonth() + 1}/{d.getDate()}
                 </div>
               </div>

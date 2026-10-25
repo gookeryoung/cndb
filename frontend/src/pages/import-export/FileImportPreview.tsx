@@ -47,6 +47,7 @@ import DataPreviewTable from './DataPreviewTable'
 import FieldsList from './FieldsList'
 import SelectedFieldEditor from './SelectedFieldEditor'
 import type { AnalyzeColumn, ColumnOverride } from './importPreviewTypes'
+import { WEIGHT } from '@/theme/tokens'
 
 export default function FileImportPreview({ open, wid, file, analyzeResult, onClose, onSuccess }: Props) {
   const { message } = AntApp.useApp()
@@ -275,7 +276,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
     >
       {/* 表名输入（固定，不随主体滚动） */}
       <div style={{ flexShrink: 0, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>表名：</span>
+        <span style={{ fontWeight: WEIGHT.medium, whiteSpace: 'nowrap' }}>表名：</span>
         <Input value={tableName} onChange={e => setTableName(e.target.value)} style={{ flex: 1 }} placeholder="自动使用文件名" />
         <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
           {currentResult?.format?.toUpperCase() ?? '-'} · {currentResult?.total_rows ?? 0} 行
@@ -334,7 +335,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           paddingRight: 10,
         }}>
           {/* 左栏标题（固定） */}
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cn-text-secondary)', marginBottom: 6, flexShrink: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: WEIGHT.semibold, color: 'var(--cn-text-secondary)', marginBottom: 6, flexShrink: 0 }}>
             字段与类型（{effectiveColumns.length}）
           </div>
           {/* 字段列表（滚动） */}
@@ -363,7 +364,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
           {/* 右栏标题（固定） */}
           <div style={{
             fontSize: 13,
-            fontWeight: 600,
+            fontWeight: WEIGHT.semibold,
             color: 'var(--cn-text-secondary)',
             marginBottom: 6,
             display: 'flex',
@@ -379,7 +380,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
                 <div style={{ maxWidth: 360, display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {/* 数据类型颜色图例 */}
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 6, fontWeight: 600 }}>数据类型颜色</div>
+                    <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 6, fontWeight: WEIGHT.semibold }}>数据类型颜色</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                       {PREVIEW_TYPE_OPTIONS.map(t => (
                         <Tag key={t.value} color={getFieldTypeColor(t.value)} style={{ margin: 0 }}>
@@ -390,7 +391,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
                   </div>
                   {/* 转换状态图例 */}
                   <div>
-                    <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 6, fontWeight: 600 }}>转换状态</div>
+                    <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 6, fontWeight: WEIGHT.semibold }}>转换状态</div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: 'var(--cn-text-secondary)' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <Tag color="success" icon={<CheckOutlined />} style={{ margin: 0 }} />

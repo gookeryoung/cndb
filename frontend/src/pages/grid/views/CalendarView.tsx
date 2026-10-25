@@ -15,6 +15,7 @@ import { buildEvents, densityStyle, getWeekDays } from './calendar/calendarUtils
 import { YearView } from './calendar/YearView'
 import { MonthView } from './calendar/MonthView'
 import { WeekView } from './calendar/WeekView'
+import { WEIGHT } from '@/theme/tokens'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -143,7 +144,7 @@ export default function CalendarView({ rows, fields, view, density, onRowClick }
         />
 
         {/* 标题 */}
-        <div style={{ fontWeight: 600, fontSize: ds.navFontSize + 2, marginLeft: 8, minWidth: 160 }}>
+        <div style={{ fontWeight: WEIGHT.semibold, fontSize: ds.navFontSize + 2, marginLeft: 8, minWidth: 160 }}>
           <CalendarOutlined style={{ marginRight: 6, color: 'var(--cn-brand-color)' }} />
           {titleText}
         </div>

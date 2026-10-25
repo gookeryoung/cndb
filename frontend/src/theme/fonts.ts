@@ -27,7 +27,7 @@ export interface FontSettings {
   bold: boolean
 }
 
-export const DEFAULT_FONT_SETTINGS: FontSettings = { scale: 'standard', bold: true }
+export const DEFAULT_FONT_SETTINGS: FontSettings = { scale: 'standard', bold: false }
 
 const FONT_KEY = 'cndb_font'
 

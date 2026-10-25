@@ -30,6 +30,7 @@ import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
+import { WEIGHT } from '@/theme/tokens'
 
 const ApiImportDialog = lazy(() => import('@/pages/import-export/ApiImportDialog'))
 
@@ -434,7 +435,7 @@ export default function TablesList() {
       key: 'name',
       render: (name: string, record: TableSummary) => (
         <span>
-          <a onClick={() => navigate(`/w/${wid}/tables/${record.id}`)} style={{ fontWeight: 500 }}>
+          <a onClick={() => navigate(`/w/${wid}/tables/${record.id}`)} style={{ fontWeight: WEIGHT.medium }}>
             <TableOutlined style={{ marginRight: 8, color: '#3b82f6' }} />
             {name}
           </a>

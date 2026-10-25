@@ -17,9 +17,12 @@ import { describe, expect, it } from 'vitest'
 import {
   BREAKPOINT,
   CSS_VARS,
+  FONT,
   RADIUS,
   SPACE,
   TEXT,
+  TRACKING,
+  WEIGHT,
   radiusFamily,
 } from './tokens'
 
@@ -75,11 +78,27 @@ describe('tokens ↔ index.css 同步', () => {
     for (let i = 1; i < sizes.length; i++) expect(sizes[i]).toBeGreaterThan(sizes[i - 1])
     expect(sizes[0]).toBeGreaterThanOrEqual(10)
   })
+
+  it('字重四档递增，字体栈覆盖正文 / 展示 / 等宽', () => {
+    expect([WEIGHT.regular, WEIGHT.medium, WEIGHT.semibold, WEIGHT.bold]).toEqual([400, 500, 600, 700])
+    expect(FONT.sans).toContain('Inter')
+    expect(FONT.display).toContain('Outfit')
+    expect(FONT.mono).toContain('JetBrains Mono')
+    expect(TRACKING.display).toBe('-0.02em')
+  })
 })
 
 describe('index.css 不出现游离字面量', () => {
   it('字号只走 --cn-text-*（9/15/17px 等离散步长已废弃）', () => {
     const offenders = [...css.matchAll(/font-size:\s*([0-9.]+px)/g)].map(m => m[1])
+    expect(offenders).toEqual([])
+  })
+
+  it('字重只走 --cn-weight-*（@font-face 的字面量例外）', () => {
+    const withoutFontFaces = css.replace(/@font-face\s*\{[^}]*\}/g, '')
+    const offenders = [...withoutFontFaces.matchAll(/font-weight:\s*([^;]+);/g)]
+      .map(m => m[1].trim())
+      .filter(v => !v.includes('var(--cn-weight'))
     expect(offenders).toEqual([])
   })
 

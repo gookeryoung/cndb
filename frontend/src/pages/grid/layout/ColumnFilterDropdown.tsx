@@ -10,6 +10,7 @@ import {
   type FieldOp,
 } from '../cells/fieldOps'
 import type { Field } from '@/api'
+import { WEIGHT } from '@/theme/tokens'
 
 interface ColumnFilterDropdownProps {
   field: Field
@@ -58,7 +59,7 @@ export default function ColumnFilterDropdown({
 
   return (
     <div style={{ padding: 12, width: 280 }}>
-      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#1f2937' }}>
+      <div style={{ fontSize: 13, fontWeight: WEIGHT.semibold, marginBottom: 8, color: '#1f2937' }}>
         筛选「{field.name}」
       </div>
       <div style={{ marginBottom: 8 }}>

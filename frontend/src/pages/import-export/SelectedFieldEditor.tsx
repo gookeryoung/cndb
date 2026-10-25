@@ -7,6 +7,7 @@ import { Button, Tag } from 'antd'
 import { PlusOutlined, SwapOutlined } from '@ant-design/icons'
 
 import type { AnalyzeColumn, ColumnOverride } from './importPreviewTypes'
+import { WEIGHT } from '@/theme/tokens'
 
 export default function SelectedFieldEditor({
   effectiveColumns,
@@ -30,7 +31,7 @@ export default function SelectedFieldEditor({
 
     return (
       <div style={{ marginTop: 8, padding: 12, background: 'var(--cn-bg-warning-subtle)', border: '1px solid var(--cn-mix-amber-45-transparent)', borderRadius: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--cn-mix-amber-70-text-primary)', marginBottom: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: WEIGHT.semibold, color: 'var(--cn-mix-amber-70-text-primary)', marginBottom: 8 }}>
           <SwapOutlined /> 编辑 {col.name} 的选项（{options.length} 个）
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>

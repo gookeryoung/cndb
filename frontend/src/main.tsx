@@ -4,6 +4,15 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/theme/ThemeProvider'
 import App from './App'
+// 展示字体与等宽字体走 npm 运行时依赖（本地打包，不引 CDN）；只取 latin 子集四个字重
+import '@fontsource/outfit/latin-400.css'
+import '@fontsource/outfit/latin-500.css'
+import '@fontsource/outfit/latin-600.css'
+import '@fontsource/outfit/latin-700.css'
+import '@fontsource/jetbrains-mono/latin-400.css'
+import '@fontsource/jetbrains-mono/latin-500.css'
+import '@fontsource/jetbrains-mono/latin-600.css'
+import '@fontsource/jetbrains-mono/latin-700.css'
 import './index.css'
 
 // React Query 全局配置 —— 默认 30s staleTime，下方 setQueryDefaults 按 queryKey 前缀差异化覆盖

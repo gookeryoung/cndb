@@ -7,6 +7,7 @@ import { resolveTagColor } from '@/utils/tagColors'
 import { formatFieldDisplayValue } from '../../cells/fieldValueFormat'
 import { fmtDate } from '../../cells/dateUtils'
 import { mixColor } from '@/theme/themeMix'
+import { WEIGHT } from '@/theme/tokens'
 
 // ── 严重程度分级（逾期/紧急按天数细分背景浓度） ──────────
 
@@ -66,7 +67,7 @@ export function PriorityBadge({ field, value }: { field?: Field; value: unknown 
   if (!label) return null
   const options = field?.config?.options
   const color = resolveTagColor(label, options)
-  return <Tag color={color} style={{ margin: 0, fontWeight: 500 }}>{label}</Tag>
+  return <Tag color={color} style={{ margin: 0, fontWeight: WEIGHT.medium }}>{label}</Tag>
 }
 
 export function DueDateBadge({
@@ -93,7 +94,7 @@ export function DueDateBadge({
 
   return (
     <Tooltip title={fmtDate(dueDate)}>
-      <Tag color={color} icon={<ClockCircleOutlined />} style={{ margin: 0, marginLeft: 6, verticalAlign: 'middle', fontWeight: 400 }}>{daysLeft}天</Tag>
+      <Tag color={color} icon={<ClockCircleOutlined />} style={{ margin: 0, marginLeft: 6, verticalAlign: 'middle', fontWeight: WEIGHT.regular }}>{daysLeft}天</Tag>
     </Tooltip>
   )
 }

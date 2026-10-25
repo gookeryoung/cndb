@@ -118,7 +118,7 @@ describe('ThemeProvider', () => {
 })
 
 describe('ThemeProvider 字体设置', () => {
-  it('默认字体设置：standard / 全局加粗，body 基础字号 14px 字重 600', () => {
+  it('默认字体设置：standard / 不加粗，body 基础字号 14px 字重 400', () => {
     localStorage.clear()
     render(
       <ThemeProvider>
@@ -127,9 +127,9 @@ describe('ThemeProvider 字体设置', () => {
     )
 
     expect(screen.getByTestId('font-scale')).toHaveTextContent('standard')
-    expect(screen.getByTestId('font-bold')).toHaveTextContent('true')
+    expect(screen.getByTestId('font-bold')).toHaveTextContent('false')
     expect(document.body.style.fontSize).toBe('14px')
-    expect(document.body.style.fontWeight).toBe('600')
+    expect(document.body.style.fontWeight).toBe('400')
   })
 
   it('切换字号档位：body 字号同步更新并持久化到 localStorage', () => {
@@ -146,7 +146,7 @@ describe('ThemeProvider 字体设置', () => {
     expect(document.body.style.fontSize).toBe('16px')
     const persisted = JSON.parse(localStorage.getItem('cndb_font') ?? '{}') as { scale?: string; bold?: boolean }
     expect(persisted.scale).toBe('large')
-    expect(persisted.bold).toBe(true)
+    expect(persisted.bold).toBe(false)
   })
 
   it('开启全局加粗：body 字重同步更新并持久化', () => {

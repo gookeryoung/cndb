@@ -20,6 +20,7 @@ import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, WBS_OPTIONS, resolveAutoField, findOptionSchema } from '../view-config/viewOptionSchema'
 import { formatFieldDisplayValue, getSelectLabel } from '../cells/fieldValueFormat'
 import { pickPaletteColor } from '@/utils/paletteColor'
+import { WEIGHT } from '@/theme/tokens'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -439,7 +440,7 @@ export default function WbsView({
               color: 'var(--cn-text-muted)',
               fontSize: ds.metaFontSize,
               marginRight: 6,
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+              fontFamily: 'var(--cn-font-mono)',
               flexShrink: 0,
               minWidth: node.depth > 0 ? 28 : 16,
             }}
@@ -451,7 +452,7 @@ export default function WbsView({
         {/* 任务标题 */}
         <span
           style={{
-            fontWeight: node.hasChildren ? 600 : 400,
+            fontWeight: node.hasChildren ? WEIGHT.semibold : WEIGHT.regular,
             flex: 1,
             color: 'var(--cn-text-primary)',
             overflow: 'hidden',
@@ -559,7 +560,7 @@ export default function WbsView({
           background: 'var(--cn-bg-container)',
         }}
       >
-        <div style={{ fontWeight: 600, fontSize: ds.titleFontSize + 1, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ fontWeight: WEIGHT.semibold, fontSize: ds.titleFontSize + 1, display: 'flex', alignItems: 'center', gap: 6 }}>
           <PartitionOutlined style={{ color: 'var(--cn-brand-color)' }} />
           工作分解视图
         </div>
