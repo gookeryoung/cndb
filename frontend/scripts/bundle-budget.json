@@ -9,7 +9,8 @@
     "2026-10-10 视图筛选/排序规则值校验（ee604bd）使 GridPage +2.26KB 触发超限；改为把 ViewConfigDialog / TableSettingsModal / RowDetailDrawer 三个按需面板 lazy 化，GridPage 43.07→27.70KB，基线定为 32KiB（低于旧基线约 20%）",
     "2026-10-20 rc-field-form 补 sideEffects + barrel 纯 re-export（pnpm patch），修掉 antd form/context 连带拉入 Form/useForm/Field/validateUtil/async-validator 的问题，主入口 190.10→175.22 KiB；基线随之下调锁定净收益",
     "2026-10-22 feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
-    "2026-10-24 fix(ci): 移除 KlineView 后 echarts/simple-statistics 共享 chunk 合并进 ChartView（lazy chunk，首屏不变，总量未增），按实测收口基线"
+    "2026-10-24 fix(ci): 移除 KlineView 后 echarts/simple-statistics 共享 chunk 合并进 ChartView（lazy chunk，首屏不变，总量未增），按实测收口基线",
+    "2026-10-25 feat(help): 帮助文档整页为独立 lazy chunk（ADR 0029 P2），锁定体积防回归"
   ],
   "chunks": [
     {
@@ -39,6 +40,16 @@
       "reason": "fix(ci): 移除 KlineView 后 echarts/simple-statistics 共享 chunk 合并进 ChartView（lazy chunk，首屏不变，总量未增），按实测收口基线",
       "updatedAt": "2026-10-24",
       "commit": "ad6a2ff4"
+    },
+    {
+      "name": "HelpDocsPage（帮助文档整页）",
+      "resolve": {
+        "assetPattern": "^HelpDocsPage-.*\\.js$"
+      },
+      "baseline": 10297,
+      "reason": "feat(help): 帮助文档整页为独立 lazy chunk（ADR 0029 P2），锁定体积防回归",
+      "updatedAt": "2026-10-25",
+      "commit": "a09a88c7"
     }
   ]
 }
