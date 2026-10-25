@@ -15,6 +15,7 @@ import { renderProviders } from '@/test/render-providers'
 import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store/tableSettings'
 import GridPage from './GridPage'
+import { recordApi } from '@/api'
 
 beforeAll(async () => {
     await preloadGridViews()
@@ -119,5 +120,39 @@ describe('GridPage 新增行预填（default_value / auto_fill / 自动编号）
         await waitFor(() => expect(autoCell).toHaveTextContent('PRJ-0008'))
         expect(autoCell).not.toHaveTextContent('保存时自动生成')
         expect(within(newRow!).queryByDisplayValue('PRJ-0008')).not.toBeInTheDocument()
+    })
+
+    it('新增行自动编号：点击编辑图标后可手动改号，保存时随建行提交', async () => {
+        useTableSettingsStore.getState().updateSettings({ newRowPosition: 'page' })
+        const createSpy = vi.mocked(recordApi.create)
+        createSpy.mockClear()
+        renderProviders(
+            <Routes>
+                <Route path="w/:wid/tables/:tid" element={<GridPage />} />
+            </Routes>,
+            {
+                route: '/w/1/tables/1',
+                initialAuth: { user: { id: 1, username: 'admin', role: 'admin' } as any, token: 'tok' },
+            },
+        )
+        fireEvent.click(screen.getByTestId('add-row-btn'))
+
+        const newRow = document.querySelector('[data-row-key="__new__"]') as HTMLElement
+        const autoCell = within(newRow).getByTestId('cell-auto-increment-4')
+        await waitFor(() => expect(autoCell).toHaveTextContent('PRJ-0008'))
+
+        // 点编辑图标 → 切换为可编辑输入框，初值为当前预览编号
+        fireEvent.click(within(newRow).getByTestId('auto-increment-edit-4'))
+        const input = within(newRow).getByTestId('auto-increment-input-4')
+        expect(input).toHaveValue('PRJ-0008')
+
+        fireEvent.change(input, { target: { value: '手工-0001' } })
+        // 填写必填的「姓名」（首列）
+        fireEvent.change(within(newRow).getAllByRole('textbox')[0]!, { target: { value: '小明' } })
+        fireEvent.click(within(newRow).getByTestId('row-save-btn'))
+
+        await waitFor(() => expect(createSpy).toHaveBeenCalled())
+        const payload = createSpy.mock.calls.at(-1)![2] as { values: Record<string, unknown> }
+        expect(payload.values['编号']).toBe('手工-0001')
     })
 })

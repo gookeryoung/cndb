@@ -269,6 +269,84 @@ describe('RowDetailDrawer 新建行模式', () => {
         await waitFor(() => expect(captured).toHaveLength(1))
         expect(captured[0]!.values).not.toHaveProperty('编号')
     })
+
+    it('自动编号点击编辑图标后可手动改号，改号后随创建提交', async () => {
+        setup()
+        server.use(http.get('/api/v1/workspaces/10/tables/20/records/auto-increment-preview', () =>
+            HttpResponse.json({ values: { 编号: 'PRJ-0008' } })))
+        const captured: Array<{ values: Record<string, unknown> }> = []
+        server.use(http.post('/api/v1/workspaces/10/tables/20/records', async ({ request }) => {
+            captured.push(await request.clone().json() as { values: Record<string, unknown> })
+            return HttpResponse.json({ id: 9 })
+        }))
+        const autoField = makeField({
+            id: 7,
+            name: '编号',
+            field_type: 'text',
+            config: { default_mode: 'auto_increment', increment_prefix: 'PRJ-' },
+        })
+        renderProviders(
+            <RowDetailDrawer
+                open
+                row={null}
+                fields={[...FIELDS, autoField]}
+                wid="10"
+                tid="20"
+                onClose={() => { }}
+            />,
+        )
+
+        const input = screen.getByTestId('drawer-auto-increment-7')
+        await waitFor(() => expect(input).toHaveValue('PRJ-0008'))
+        expect(input).toBeDisabled()
+
+        // 编辑图标存在；点击后解除禁用并预填当前预览编号
+        fireEvent.click(screen.getByTestId('drawer-auto-increment-edit-7'))
+        expect(input).not.toBeDisabled()
+        expect(input).toHaveValue('PRJ-0008')
+
+        fireEvent.change(input, { target: { value: '手工-0001' } })
+        fireEvent.click(screen.getByRole('button', { name: /创\s*建$/ }))
+
+        await waitFor(() => expect(captured).toHaveLength(1))
+        expect(captured[0]!.values['编号']).toBe('手工-0001')
+    })
+
+    it('自动编号手动编辑后清空：不提交该字段，仍由后端自动生成', async () => {
+        setup()
+        server.use(http.get('/api/v1/workspaces/10/tables/20/records/auto-increment-preview', () =>
+            HttpResponse.json({ values: { 编号: 'PRJ-0008' } })))
+        const captured: Array<{ values: Record<string, unknown> }> = []
+        server.use(http.post('/api/v1/workspaces/10/tables/20/records', async ({ request }) => {
+            captured.push(await request.clone().json() as { values: Record<string, unknown> })
+            return HttpResponse.json({ id: 9 })
+        }))
+        const autoField = makeField({
+            id: 7,
+            name: '编号',
+            field_type: 'text',
+            config: { default_mode: 'auto_increment', increment_prefix: 'PRJ-' },
+        })
+        renderProviders(
+            <RowDetailDrawer
+                open
+                row={null}
+                fields={[...FIELDS, autoField]}
+                wid="10"
+                tid="20"
+                onClose={() => { }}
+            />,
+        )
+
+        const input = screen.getByTestId('drawer-auto-increment-7')
+        await waitFor(() => expect(input).toHaveValue('PRJ-0008'))
+        fireEvent.click(screen.getByTestId('drawer-auto-increment-edit-7'))
+        fireEvent.change(input, { target: { value: '' } })
+        fireEvent.click(screen.getByRole('button', { name: /创\s*建$/ }))
+
+        await waitFor(() => expect(captured).toHaveLength(1))
+        expect(captured[0]!.values).not.toHaveProperty('编号')
+    })
 })
 
 // ─────────────── lookup 只读引用字段 ───────────────

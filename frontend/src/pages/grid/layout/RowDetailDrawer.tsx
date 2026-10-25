@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, Select, DatePicker, InputNumber, Switch, Upload, Tooltip } from 'antd'
-import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined } from '@ant-design/icons'
+import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { recordApi, fileApi, fieldApi, isChangeRequestResponse } from '@/api'
@@ -59,6 +59,8 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
   const queryClient = useQueryClient()
   const [form] = Form.useForm()
   const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
+  // 新建模式下用户手动改过的自动编号：键存在即视为手动值（空串表示清空）
+  const [autoIncrementEdits, setAutoIncrementEdits] = React.useState<Record<string, string>>({})
 
   // 模式：row 存在 → 编辑；否则 → 新建
   const isCreate = !row
@@ -114,6 +116,7 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
       form.setFieldsValue(row)
     } else {
       form.resetFields()
+      setAutoIncrementEdits({})
       // 先按 fields 生成所有字段的自动预填值（default_value + auto_fill=on_create/on_update）
       const prefilled: RowValues = {}
       for (const f of fields) {
@@ -143,9 +146,13 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
       }
     }
     if (isCreate) {
-      // 自动编号由后端生成：即便表单控件回传空串也必须剔除，否则后端会把它当作用户显式传值而跳过编号
+      // 自动编号：仅当用户手动修改且值非空时提交；未编辑 / 清空一律剔除，
+      // 否则后端会把它当作用户显式传值而跳过编号生成
       for (const f of fields) {
-        if (isAutoIncrementField(f)) delete values[f.name]
+        if (!isAutoIncrementField(f)) continue
+        const manual = autoIncrementEdits[f.name]
+        if (manual !== undefined && manual.trim() !== '') values[f.name] = manual
+        else delete values[f.name]
       }
       createRow.mutate(values)
     } else if (row) {
@@ -181,13 +188,32 @@ export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, 
           // 新建行里自动编号由后端生成：只读展示即将生成的编号，无输入框
           const autoIncrement = isCreate && isAutoIncrementField(f)
           if (autoIncrement) {
+            // 默认只读展示即将生成的编号；点编辑图标后解除禁用，手动值随创建提交
+            const edited = Object.prototype.hasOwnProperty.call(autoIncrementEdits, f.name)
             return (
               <Form.Item key={String(f.id)} label={f.name} style={{ marginBottom: 12 }}>
-                <Input
-                  disabled
-                  value={incrementPreview?.values[f.name] ?? '自动'}
-                  data-testid={`drawer-auto-increment-${f.id}`}
-                />
+                <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                  <Input
+                    disabled={!edited || !!readOnly}
+                    value={edited ? autoIncrementEdits[f.name] : (incrementPreview?.values[f.name] ?? '自动')}
+                    onChange={e => setAutoIncrementEdits(prev => ({ ...prev, [f.name]: e.target.value }))}
+                    data-testid={`drawer-auto-increment-${f.id}`}
+                  />
+                  {!edited && (
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<EditOutlined />}
+                      aria-label="手动修改编号"
+                      data-testid={`drawer-auto-increment-edit-${f.id}`}
+                      disabled={!!readOnly}
+                      onClick={() => setAutoIncrementEdits(prev => ({
+                        ...prev,
+                        [f.name]: incrementPreview?.values[f.name] ?? '',
+                      }))}
+                    />
+                  )}
+                </div>
               </Form.Item>
             )
           }
