@@ -160,9 +160,9 @@ Related: `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugin
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py` | `tests/test_datasource_http_json.py` | `—` |
-| P1 | 已落地 | `examples/datasets/工作区-数据源示例/`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | `—` |
-| P2 | 已落地 | `CHANGELOG.md`、`CONTEXT.md`、`src/cndb/plugins/help/services/examples.py` | `tests/test_help_examples_api.py` | `—` |
+| P0 | 已落地 | `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py` | `tests/test_datasource_http_json.py` | `bfbefb33` |
+| P1 | 已落地 | `examples/datasets/工作区-数据源示例/`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | `bfbefb33` |
+| P2 | 已落地 | `CHANGELOG.md`、`CONTEXT.md`、`src/cndb/plugins/help/services/examples.py` | `tests/test_help_examples_api.py` | `bfbefb33` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -172,4 +172,4 @@ Related: `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugin
 - 已完成：需求卡片 0033（四个未决问题已由需求方逐项拍板）、ADR 评审通过（2026-10-25）、P0 `http_json` 四项通用声明能力 + 判定层单测、P1 示例 CSV / 双源任务 / 字段 / 视图 / seed 结构测试 / 端到端落表集成测试、P2 CHANGELOG / CONTEXT / 帮助示例清单；真实 `cndb seed` 到临时库核查通过（21 张表、4 条同步任务、9 字段类型推断正确）
 - 下一步：无（后续如需恢复 K 线可视化或移植质量检查引擎，按 D7 另开 ADR）
 - 已知坑：① 腾讯接口必须走 `proxy.finance.qq.com`（`web.ifzq` 对脚本流量 WAF 拦截）；② 标的代码必须带市场前缀（sh600519），无前缀会 upsert 不命中产生重复行；③ 新浪接口上限 1023 根且仅不复权；④ `field_mapping.scale` 按**目标类型**判定，测试表 float 字段须配 `config={"decimals": 2}`，否则 `NumberFieldConfig.decimals` 默认 0 会把价格四舍五入；⑤ `make check -j4` 偶发前端 coverage 目录锁，单跑 `make frontend-coverage` 重跑即可
-- 最近一次全绿：`make check` @ 本次提交（2026-10-25）
+- 最近一次全绿：`make check` @ bfbefb33（2026-10-25，后端 5345 passed / 3 skipped，覆盖率 97.03%）
