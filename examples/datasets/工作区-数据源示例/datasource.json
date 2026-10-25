@@ -1,73 +1,67 @@
 {
-  "_comment": "数据源同步任务种子：数据源示例工作区。适配器只保留通用项（http_json / llm_prompt）：「股市日线」为新浪（不复权）+ 腾讯（前复权）双源同步到同一张本地表（provider=http_json，按「股票代码 + 日期 + 来源」幂等，腾讯成交量由手换算为股）；「行业政策与合规台账」「国际形势发展动态」为两组大模型动态拉取任务（provider=llm_prompt）。全部任务调度的 manual，演示时点「立即运行」；llm_prompt 需先配置个人「大模型连接」的 API Key。表内字段与视图、示例 CSV 全部为中文，字段映射/幂等键也用中文。",
+  "_comment": "数据源同步任务种子：数据源示例工作区。适配器只保留通用项（http_json / llm_prompt）。股市链路为「新浪全市场快照 + 腾讯日线回补」双轨（ADR 0034）：①清单任务拉 hs_a + etf_hq_fund 两节点快照维护「股票清单」（幂等键 [代码]）；②当日快照把全市场行情直写成当日 K 线（row_defaults 日期={today}，row_filter 剔除停牌零值行）；③④历史回补走腾讯 fqkline，标的来自「股票清单」动态 distinct（prefix_in 按板块拆分以表达成交量单位差异：主板/创业板/ETF 为手需 scale=100，腾讯对科创板直接返回股），backfill_date 游标按标的记水位增量前推，多轮运行收敛到 backfill_start。「行业政策与合规台账」「国际形势发展动态」为两组大模型动态拉取任务（provider=llm_prompt）。全部任务调度为 manual，演示时点「立即运行」（清单任务需先跑一次，③④才有标的）；llm_prompt 需先配置个人「大模型连接」的 API Key。表内字段与视图、示例 CSV 全部为中文，字段映射/幂等键也用中文。",
   "jobs": [
     {
-      "name": "股市日线（新浪 · 不复权）",
+      "name": "股票清单（全市场快照）",
       "provider": "http_json",
-      "table": "股市日线",
+      "table": "股票清单",
       "request_spec": {
-        "url_template": "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={entrant}&scale=240&ma=no&datalen=1023",
-        "record_mode": "rows",
-        "row_defaults": {
-          "来源": "新浪",
-          "复权方式": "不复权"
-        }
+        "url_template": "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num=100&sort=symbol&asc=1&node={entrant}&symbol=&_s_r_a=page",
+        "paging": {"mode": "page", "page_size": 100, "max_pages": 80},
+        "workers": 2,
+        "row_defaults": {"类型": "{entrant}", "更新日期": "{today}"}
       },
-      "entrant_param": "symbol",
-      "entrant_keys": [
-        "sh600519",
-        "sz000001"
-      ],
-      "match_keys": [
-        "股票代码",
-        "日期",
-        "来源"
-      ],
+      "entrant_param": "node",
+      "entrant_keys": ["hs_a", "etf_hq_fund"],
+      "match_keys": ["代码"],
       "field_mapping": {
-        "symbol": {
-          "name": "股票代码",
-          "field_type": "text"
-        },
-        "day": {
-          "name": "日期",
-          "field_type": "date"
-        },
-        "open": {
-          "name": "开盘",
-          "field_type": "float"
-        },
-        "close": {
-          "name": "收盘",
-          "field_type": "float"
-        },
-        "high": {
-          "name": "最高",
-          "field_type": "float"
-        },
-        "low": {
-          "name": "最低",
-          "field_type": "float"
-        },
-        "volume": {
-          "name": "成交量",
-          "field_type": "number"
-        }
+        "symbol": {"name": "代码", "field_type": "text"},
+        "name": {"name": "名称", "field_type": "text"},
+        "trade": {"name": "最新价", "field_type": "float"},
+        "amount": {"name": "成交额", "field_type": "float"},
+        "mktcap": {"name": "市值", "field_type": "float"},
+        "turnoverratio": {"name": "换手率", "field_type": "float"}
       },
-      "cursor": {
-        "strategy": "none"
-      },
-      "schedule": {
-        "mode": "manual"
-      },
+      "cursor": {"strategy": "none"},
+      "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 200
+      "rate_limit_ms": 100
     },
     {
-      "name": "股市日线（腾讯 · 前复权）",
+      "name": "股市日线（新浪快照 · 当日）",
       "provider": "http_json",
       "table": "股市日线",
       "request_spec": {
-        "url_template": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={entrant},day,{start},{end},320,qfq",
+        "url_template": "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData?page={page}&num=100&sort=symbol&asc=1&node={entrant}&symbol=&_s_r_a=page",
+        "paging": {"mode": "page", "page_size": 100, "max_pages": 80},
+        "workers": 2,
+        "row_defaults": {"日期": "{today}", "来源": "新浪快照", "复权方式": "不复权"},
+        "row_filter": {"field": "收盘", "op": ">", "value": 0}
+      },
+      "entrant_param": "node",
+      "entrant_keys": ["hs_a", "etf_hq_fund"],
+      "match_keys": ["股票代码", "日期", "来源"],
+      "field_mapping": {
+        "symbol": {"name": "股票代码", "field_type": "text"},
+        "open": {"name": "开盘", "field_type": "float"},
+        "trade": {"name": "收盘", "field_type": "float"},
+        "high": {"name": "最高", "field_type": "float"},
+        "low": {"name": "最低", "field_type": "float"},
+        "volume": {"name": "成交量", "field_type": "number"},
+        "amount": {"name": "成交额", "field_type": "float"}
+      },
+      "cursor": {"strategy": "none"},
+      "schedule": {"mode": "manual"},
+      "enabled": true,
+      "rate_limit_ms": 100
+    },
+    {
+      "name": "股市日线（腾讯回补 · 主板创业板ETF）",
+      "provider": "http_json",
+      "table": "股市日线",
+      "request_spec": {
+        "url_template": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={entrant},day,,{end},800,qfq",
+        "workers": 6,
         "record_mode": "rows_array",
         "data_path": "data.{entrant}.qfqday",
         "record_layout": {
@@ -78,66 +72,62 @@
           "最低": 4,
           "成交量": 5
         },
-        "row_defaults": {
-          "来源": "腾讯",
-          "复权方式": "前复权"
-        },
-        "time_window": {
-          "mode": "range",
-          "chunk_days": 0
-        }
+        "row_defaults": {"来源": "腾讯前复权", "复权方式": "前复权"}
       },
       "entrant_param": "symbol",
-      "entrant_keys": [
-        "sh600519",
-        "sz000001"
-      ],
-      "match_keys": [
-        "股票代码",
-        "日期",
-        "来源"
-      ],
+      "entrant_keys": [],
+      "entrant_source": {"table": "股票清单", "field": "代码", "prefix_in": ["sh60", "sz00", "sz30", "sh5", "sz1"]},
+      "match_keys": ["股票代码", "日期", "来源"],
       "field_mapping": {
-        "symbol": {
-          "name": "股票代码",
-          "field_type": "text"
-        },
-        "日期": {
-          "name": "日期",
-          "field_type": "date"
-        },
-        "开盘": {
-          "name": "开盘",
-          "field_type": "float"
-        },
-        "收盘": {
-          "name": "收盘",
-          "field_type": "float"
-        },
-        "最高": {
-          "name": "最高",
-          "field_type": "float"
-        },
-        "最低": {
-          "name": "最低",
-          "field_type": "float"
-        },
-        "成交量": {
-          "name": "成交量",
-          "field_type": "number",
-          "scale": 100
-        }
+        "symbol": {"name": "股票代码", "field_type": "text"},
+        "日期": {"name": "日期", "field_type": "date"},
+        "开盘": {"name": "开盘", "field_type": "float"},
+        "收盘": {"name": "收盘", "field_type": "float"},
+        "最高": {"name": "最高", "field_type": "float"},
+        "最低": {"name": "最低", "field_type": "float"},
+        "成交量": {"name": "成交量", "field_type": "number", "scale": 100}
       },
-      "cursor": {
-        "strategy": "date",
-        "field": "日期",
-        "backfill_start": "2026-01-01"
-      },
-      "schedule": {
-        "mode": "manual"
-      },
+      "cursor": {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"},
+      "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 200
+      "rate_limit_ms": 150
+    },
+    {
+      "name": "股市日线（腾讯回补 · 科创板）",
+      "provider": "http_json",
+      "table": "股市日线",
+      "request_spec": {
+        "url_template": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={entrant},day,,{end},800,qfq",
+        "workers": 6,
+        "record_mode": "rows_array",
+        "data_path": "data.{entrant}.qfqday",
+        "record_layout": {
+          "日期": 0,
+          "开盘": 1,
+          "收盘": 2,
+          "最高": 3,
+          "最低": 4,
+          "成交量": 5
+        },
+        "row_defaults": {"来源": "腾讯前复权", "复权方式": "前复权"}
+      },
+      "entrant_param": "symbol",
+      "entrant_keys": [],
+      "entrant_source": {"table": "股票清单", "field": "代码", "prefix_in": ["sh68", "sh69"]},
+      "match_keys": ["股票代码", "日期", "来源"],
+      "field_mapping": {
+        "symbol": {"name": "股票代码", "field_type": "text"},
+        "日期": {"name": "日期", "field_type": "date"},
+        "开盘": {"name": "开盘", "field_type": "float"},
+        "收盘": {"name": "收盘", "field_type": "float"},
+        "最高": {"name": "最高", "field_type": "float"},
+        "最低": {"name": "最低", "field_type": "float"},
+        "成交量": {"name": "成交量", "field_type": "number"}
+      },
+      "cursor": {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"},
+      "schedule": {"mode": "manual"},
+      "enabled": true,
+      "rate_limit_ms": 150
     },
     {
       "name": "行业政策与合规台账（大模型动态拉取）",

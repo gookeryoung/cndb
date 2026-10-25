@@ -102,6 +102,36 @@ def release_lease(db: Session, job_id: int, owner: str) -> None:
     db.commit()
 
 
+@dataclass(slots=True)
+class LeaseHandle:
+    """执行期租约句柄（ADR 0034 D10）：长任务批间续期，防止 TTL 内未完成遭抢占."""
+
+    job_id: int
+    owner: str
+    ttl_seconds: int = LEASE_TTL_SECONDS
+
+
+def renew_lease(db: Session, lease: LeaseHandle, *, now: dt.datetime) -> bool:
+    """续期自己持有的租约；已易主（被抢占）返回 ``False``（调用方应终止运行）.
+
+    续期是「校验持有者 + 顺延 TTL」的原子 UPDATE，不依赖进程内状态。
+    """
+    current = _as_utc(now)
+    until = current + dt.timedelta(seconds=lease.ttl_seconds)
+    result = cast(
+        "CursorResult[Any]",
+        db.execute(
+            update(DatasourceSyncJob)
+            .where(DatasourceSyncJob.id == lease.job_id)
+            .where(DatasourceSyncJob.lease_owner == lease.owner)
+            .values(lease_until=until)
+            .execution_options(synchronize_session=False)
+        ),
+    )
+    db.commit()
+    return bool(result.rowcount)
+
+
 def due_jobs(
     db: Session,
     *,
@@ -151,8 +181,9 @@ def tick(
             report.skipped_leased += 1
             logger.info("同步任务 %s 已被其他执行者持有租约，跳过", job.id)
             continue
+        lease = LeaseHandle(job_id=job.id, owner=holder)
         try:
-            execution = execute_job(db, job, trigger=RunTrigger.SCHEDULER, fetch=fetch, now=current)
+            execution = execute_job(db, job, trigger=RunTrigger.SCHEDULER, fetch=fetch, now=current, lease=lease)
             report.executed += 1
             report.job_ids.append(job.id)
             if execution.run.status == RunStatus.FAILED.value:
@@ -171,10 +202,12 @@ def _as_utc(value: dt.datetime) -> dt.datetime:
 __all__ = [
     "DEFAULT_TICK_LIMIT",
     "LEASE_TTL_SECONDS",
+    "LeaseHandle",
     "TickReport",
     "acquire_lease",
     "default_owner",
     "due_jobs",
     "release_lease",
+    "renew_lease",
     "tick",
 ]

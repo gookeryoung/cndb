@@ -9,12 +9,16 @@ from alembic import command
 
 from cndb.core.migrations import _build_config
 
-REVISION = "1b2c3d4e5f60"
+REVISION = "a9d4e8f1c2b6"
 PREVIOUS = "e7f8a9b0c1d2"
 SYNC_REVISION = "0a1b2c3d4e5f"
 JOB_TABLE = "datasource_sync_job"
 RUN_TABLE = "datasource_sync_run"
 SESSION_TABLE = "datasource_session"
+# ADR 0034：按标的回补水位表 + 任务标的动态来源列
+ENTRANT_CURSOR_REVISION = "a9d4e8f1c2b6"
+ENTRANT_CURSOR_DOWN = "d0c1b2a3f4e5"
+ENTRANT_CURSOR_TABLE = "datasource_entrant_cursor"
 # ADR 0019：大模型连接（工作区级 → 个人级，当前提交基线 head 是 5e6f7a8b9c01）
 LLM_CONFIG_REVISION = "5e6f7a8b9c01"
 LLM_CONFIG_DOWN = "2c3d4e5f6a70"
@@ -363,3 +367,68 @@ class TestUserLlmConfigMigration:
         command.stamp(_build_config(url), LLM_CONFIG_REVISION)
         _upgrade(url, USER_LLM_REVISION)
         assert USER_LLM_TABLE in _tables(db_path)
+
+
+class TestEntrantCursorMigration:
+    """ADR 0034 D2/D3：按标的回补水位表 + 任务标的动态来源列（建表 / 加列 / downgrade / 幂等）."""
+
+    def test_upgrade_creates_table_and_job_column(self, tmp_path: Path):
+        db_path = tmp_path / "mig_entrant_cursor.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, ENTRANT_CURSOR_REVISION)
+
+        assert ENTRANT_CURSOR_TABLE in _tables(db_path)
+        assert "entrant_source" in _columns(db_path, JOB_TABLE)
+        assert f"ix_{ENTRANT_CURSOR_TABLE}_job_id" in _indexes(db_path, ENTRANT_CURSOR_TABLE)
+        # (job_id, entrant) 唯一约束落库
+        uniques = _unique_indexes(db_path, ENTRANT_CURSOR_TABLE)
+        assert uniques.get(f"uq_{ENTRANT_CURSOR_TABLE}_job_entrant") == 1
+
+    def test_schema_matches_models(self, tmp_path: Path):
+        from cndb.plugins.datasource.models import DatasourceEntrantCursor
+
+        db_path = tmp_path / "mig_entrant_cursor_model.db"
+        _upgrade(f"sqlite:///{db_path}", ENTRANT_CURSOR_REVISION)
+        assert _columns(db_path, ENTRANT_CURSOR_TABLE) == {
+            column.name for column in DatasourceEntrantCursor.__table__.columns
+        }
+
+    def test_downgrade_removes_table_and_column(self, tmp_path: Path):
+        db_path = tmp_path / "mig_entrant_cursor_down.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, ENTRANT_CURSOR_REVISION)
+        _downgrade(url, ENTRANT_CURSOR_DOWN)
+
+        assert ENTRANT_CURSOR_TABLE not in _tables(db_path)
+        assert "entrant_source" not in _columns(db_path, JOB_TABLE)
+
+    def test_reupgrade_after_downgrade(self, tmp_path: Path):
+        db_path = tmp_path / "mig_entrant_cursor_round.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, ENTRANT_CURSOR_REVISION)
+        _downgrade(url, ENTRANT_CURSOR_DOWN)
+        _upgrade(url, ENTRANT_CURSOR_REVISION)
+        assert ENTRANT_CURSOR_TABLE in _tables(db_path)
+        assert "entrant_source" in _columns(db_path, JOB_TABLE)
+
+    def test_upgrade_idempotent_after_create_all(self, tmp_path: Path):
+        """create_all 时代已建过新表的库：stamp 到上一版再 upgrade，迁移跳过建表加列不报错."""
+        from sqlalchemy import create_engine
+
+        import cndb.core.events
+        import cndb.plugins.accounts.models
+        import cndb.plugins.datasource.models
+        import cndb.plugins.tables.models
+        import cndb.plugins.workspaces.models  # noqa: F401
+        from cndb.models.base import Base
+
+        db_path = tmp_path / "mig_entrant_cursor_idempotent.db"
+        url = f"sqlite:///{db_path}"
+        engine = create_engine(url)
+        Base.metadata.create_all(engine)
+        engine.dispose()
+
+        command.stamp(_build_config(url), ENTRANT_CURSOR_DOWN)
+        _upgrade(url, ENTRANT_CURSOR_REVISION)
+        assert ENTRANT_CURSOR_TABLE in _tables(db_path)
+        assert "entrant_source" in _columns(db_path, JOB_TABLE)

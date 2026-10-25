@@ -20,7 +20,9 @@ from typing import Any, Literal, Protocol
 from cndb.core.http import DEFAULT_TIMEOUT, FetchConfig
 
 # 增量策略（M2 落地实现，M1 仅作为 provider 元信息对外暴露）
-CursorStrategy = Literal["date", "datetime", "key_set", "none"]
+# backfill_date（ADR 0034 D2）：按标的回补水位——每 entrant 独立记「已回补到的最早日期」，
+# 请求按水位生成 end 锚点，响应内最早日期推进水位（只向更早前移、不后退），backfill_start 截断收敛
+CursorStrategy = Literal["date", "datetime", "key_set", "none", "backfill_date"]
 # 分页方式：none / page（页码递增）/ offset（偏移量递增）
 PagingMode = Literal["none", "page", "offset"]
 # 时间区间方式：none / range（按 start/end 参数注入，可再按 chunk_days 切片）
@@ -101,8 +103,14 @@ class RequestSpec:
     # 缺省（columns）把 data_path 对象下的所有数组键当列
     record_layout: Mapping[str, str | int] = field(default_factory=dict)
     # 行级常量列（响应不回显来源维度时使用，如多源同表补「来源 / 复权方式」）；
-    # 语义为 setdefault：响应自带同名值优先，不被配置覆盖
+    # 语义为 setdefault：响应自带同名值优先，不被配置覆盖；
+    # 值支持 {today} 等模板变量（ADR 0034 D4，快照写当日行用）
     row_defaults: Mapping[str, Any] = field(default_factory=dict)
+    # 行过滤（ADR 0034 D4）：{"field","op","value"} 单个数值条件，归一后剔除不满足的行
+    # （如停牌标的零值快照行）；None = 不过滤
+    row_filter: Mapping[str, Any] | None = None
+    # 请求并发数（ADR 0034 D5）：>1 时 plans 组间并发抓取；默认 1 行为与串行一致
+    workers: int = 1
     encoding: str = "utf-8"
     timeout: float = DEFAULT_TIMEOUT
     paging: PagingSpec = field(default_factory=PagingSpec)
@@ -116,6 +124,23 @@ class RequestSpec:
             raise ProviderError("request.url_template 不能为空")
         if not self.url_template.startswith(("http://", "https://")):
             raise ProviderError("request.url_template 必须是 http/https URL")
+        if self.workers < 1:
+            raise ProviderError("request.workers 必须 >= 1")
+        if self.row_filter is not None:
+            _validate_row_filter(self.row_filter)
+
+
+def _validate_row_filter(row_filter: Mapping[str, Any]) -> None:
+    """校验行过滤声明：``{"field","op","value"}``，op 限数值比较六种（ADR 0034 D4）."""
+    field = str(row_filter.get("field") or "")
+    if not field:
+        raise ProviderError("row_filter.field 不能为空")
+    op = str(row_filter.get("op") or "")
+    if op not in (">", ">=", "<", "<=", "==", "!="):
+        raise ProviderError(f"row_filter.op 非法: {op!r}")
+    value = row_filter.get("value")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ProviderError("row_filter.value 必须是数值")
 
 
 @dataclass(frozen=True, slots=True)
@@ -152,6 +177,9 @@ class SyncJobSpec:
     provider: str = "http_json"
     entrant_param: str | None = None
     entrant_values: tuple[str, ...] = ()
+    # 按标的 end 锚点（ADR 0034 D2，backfill_date 游标）：entrant → 锚点日期串；
+    # 非空时注入模板变量 {end}（该标的水位 − 1 天），达 backfill_start 的标的不出现在这里
+    entrant_ends: Mapping[str, str] = field(default_factory=dict)
     match_keys: tuple[str, ...] = ()
     field_mapping: Mapping[str, FieldTransform | None] = field(default_factory=dict)
     # 行级常量列（setdefault 语义），由 run_pipeline 并入每行；缺省取 request.row_defaults

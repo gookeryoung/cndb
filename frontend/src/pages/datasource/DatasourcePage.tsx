@@ -46,6 +46,7 @@ const CURSOR_LABEL: Record<string, string> = {
   date: '按日增量',
   datetime: '按时刻增量',
   key_set: '按幂等键去重',
+  backfill_date: '按标的回补（水位前推）',
   none: '每次全量',
 }
 
@@ -542,13 +543,22 @@ function JobDrawer({
     const values = form.getFieldValue('provider') === 'llm_prompt'
       ? { ...(form.getFieldsValue(true) as Record<string, unknown>), ...validated }
       : validated
+    // 表单只覆盖它管理的键；编辑既有任务时以原 request_spec 铺底，
+    // 保留表单未挂载的声明（record_mode / record_layout / row_defaults /
+    // row_filter / workers 等，ADR 0008/0034），避免一保存就静默丢配置。
+    // llm_prompt 例外：极简口径（ADR 0019）须剥离 url_template 等抓取声明，不铺底。
+    const builtSpec = buildRequestSpec(values)
+    const mergeBase = job?.request_spec && values.provider !== 'llm_prompt' ? job.request_spec : undefined
+    const requestSpec = mergeBase ? { ...mergeBase, ...builtSpec } : builtSpec
     return {
       name: String(values.name).trim(),
       provider: String(values.provider),
       table_id: values.table_id == null ? null : Number(values.table_id),
-      request_spec: buildRequestSpec(values),
+      request_spec: requestSpec,
       entrant_param: values.entrant_param || null,
       entrant_keys: (values.entrant_keys ?? []).map(String),
+      // 标的动态来源（ADR 0034 D3）表单不可编辑，原样回传保留
+      entrant_source: job?.entrant_source ?? undefined,
       match_keys: (values.match_keys ?? []).map(String),
       cursor: {
         strategy: values.cursor_strategy,
@@ -565,7 +575,7 @@ function JobDrawer({
       session_id: values.session_id == null ? null : Number(values.session_id),
       rate_limit_ms: Number(values.rate_limit_ms) || 0,
     }
-  }, [form, buildRequestSpec])
+  }, [form, buildRequestSpec, job])
 
   /** llm_prompt 依赖当前用户的个人大模型连接；未配置时由后端返回 400 detail（已在保存错误里 toast） */
   const handleSave = async (thenPreview: boolean) => {

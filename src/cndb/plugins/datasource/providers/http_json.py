@@ -63,14 +63,20 @@ class HttpJsonProvider:
     uses_custom_parse = False
 
     def build_requests(self, job: SyncJobSpec) -> list[RequestPlan]:
-        """展开为具体请求列表（entrant × 窗口 × 页码，顺序稳定便于断言）."""
+        """展开为具体请求列表（entrant × 窗口 × 页码，顺序稳定便于断言）.
+
+        ``job.entrant_ends``（backfill_date 游标，ADR 0034 D2）非空时，
+        该标的的 ``{end}`` 模板变量注入其专属锚点（水位 − 1 天），
+        不出现在映射里的标的无锚点（历史配置零影响）。
+        """
         spec = job.request
         handler = self.response_handler_for(job)
         plans: list[RequestPlan] = []
         for entrant in job.entrant_values or (None,):
+            entrant_end = job.entrant_ends.get(entrant) if (job.entrant_ends and entrant is not None) else None
             for window_start, window_end in iter_windows(spec.time_window):
                 for page in iter_pages(spec.paging):
-                    variables = self._variables(job, entrant, window_start, window_end, page)
+                    variables = self._variables(job, entrant, window_start, window_end, page, entrant_end)
                     plans.append(
                         RequestPlan(
                             config=self._build_config(spec, variables, handler),
@@ -78,7 +84,7 @@ class HttpJsonProvider:
                             entrant=entrant,
                             page=page,
                             window_start=window_start,
-                            window_end=window_end,
+                            window_end=window_end or entrant_end,
                         )
                     )
         return plans
@@ -128,6 +134,7 @@ class HttpJsonProvider:
         window_start: str | None,
         window_end: str | None,
         page: int | None,
+        entrant_end: str | None = None,
     ) -> dict[str, Any]:
         spec = job.request
         # 会话密钥等额外变量先铺底，内置变量（entrant / 窗口 / 分页）随后覆盖
@@ -140,6 +147,10 @@ class HttpJsonProvider:
             variables[spec.time_window.end_param] = window_end
             variables["start"] = window_start
             variables["end"] = window_end
+        elif entrant_end is not None:
+            # backfill_date 锚点（ADR 0034 D2）：无窗口区间时只注入 end（start 位由模板留空）
+            variables[spec.time_window.end_param] = entrant_end
+            variables["end"] = entrant_end
         if page is not None:
             paging = spec.paging
             offset = (page - paging.start_page) * paging.page_size

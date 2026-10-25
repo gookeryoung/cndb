@@ -101,6 +101,7 @@ def _seed_datasource(
                 parser=jc.get("parser", "json"),
                 entrant_param=jc.get("entrant_param"),
                 entrant_keys=jc.get("entrant_keys", []),
+                entrant_source=jc.get("entrant_source"),
                 match_keys=jc.get("match_keys", []),
                 field_mapping=jc.get("field_mapping", {}),
                 rate_limit_ms=jc.get("rate_limit_ms", 0),
@@ -111,7 +112,13 @@ def _seed_datasource(
             db.add(job)
             db.flush()
             created += 1
-            print(f"[seed-数据源] {ws_name}/{table_name} → {job_name} ({job.provider}, {len(job.entrant_keys)} 标的)")
+            source_note = ""
+            if job.entrant_source:
+                source_note = f"+动态来源 {job.entrant_source.get('table', '')}"
+            print(
+                f"[seed-数据源] {ws_name}/{table_name} → {job_name} "
+                f"({job.provider}, {len(job.entrant_keys)} 标的{source_note})"
+            )
 
     db.commit()
     return created
