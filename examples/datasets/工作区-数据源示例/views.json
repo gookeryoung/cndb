@@ -1,4 +1,42 @@
 {
+  "股市日线": [
+    {
+      "name": "全部日线",
+      "view_type": "grid",
+      "sortings": [
+        {"field_name": "股票代码", "direction": "asc"},
+        {"field_name": "日期", "direction": "desc"}
+      ],
+      "is_default": true,
+      "order": 0
+    },
+    {
+      "name": "新浪（不复权）",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "来源", "op": "=", "value": "新浪"}
+      ],
+      "sortings": [
+        {"field_name": "股票代码", "direction": "asc"},
+        {"field_name": "日期", "direction": "desc"}
+      ],
+      "order": 1
+    },
+    {
+      "name": "腾讯（前复权）",
+      "view_type": "grid",
+      "filter_type": "AND",
+      "filters": [
+        {"field_name": "来源", "op": "=", "value": "腾讯"}
+      ],
+      "sortings": [
+        {"field_name": "股票代码", "direction": "asc"},
+        {"field_name": "日期", "direction": "desc"}
+      ],
+      "order": 2
+    }
+  ],
   "天气每日": [
     {
       "name": "全部",

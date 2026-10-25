@@ -86,12 +86,23 @@ class RequestSpec:
     headers_template: Mapping[str, str] = field(default_factory=dict)
     params_template: Mapping[str, Any] = field(default_factory=dict)
     body_template: Any = None
+    # 响应路径：支持 {entrant} 等模板占位符（按标的嵌套的响应，如 data.{entrant}.qfqday）
     data_path: str | None = None
-    # 记录形态：rows = 响应里直接是对象数组；columns = 响应是「列名 → 数组」的对象
-    # （Open-Meteo / 部分行情接口的 daily.time[] / daily.temp[] 形态），需按列拼行
-    record_mode: Literal["rows", "columns"] = "rows"
-    # 列式映射：{目标列名: 源键}；缺省把 data_path 对象下的所有数组键当列
-    record_layout: Mapping[str, str] = field(default_factory=dict)
+    # 记录形态：
+    # - rows        响应里直接是对象数组
+    # - columns     响应是「列名 → 数组」的对象（Open-Meteo / 部分行情接口的
+    #               daily.time[] / daily.temp[] 形态），需按列拼行
+    # - rows_array  响应数组的每一项是**行数组**（如腾讯日线 [["日期","开","收",...]]），
+    #               需按 record_layout 的位置索引拼成对象
+    record_mode: Literal["rows", "columns", "rows_array"] = "rows"
+    # 列式映射：
+    # - columns 模式 {目标列名: 源键}
+    # - rows_array 模式 {目标列名: 位置索引(int)}
+    # 缺省（columns）把 data_path 对象下的所有数组键当列
+    record_layout: Mapping[str, str | int] = field(default_factory=dict)
+    # 行级常量列（响应不回显来源维度时使用，如多源同表补「来源 / 复权方式」）；
+    # 语义为 setdefault：响应自带同名值优先，不被配置覆盖
+    row_defaults: Mapping[str, Any] = field(default_factory=dict)
     encoding: str = "utf-8"
     timeout: float = DEFAULT_TIMEOUT
     paging: PagingSpec = field(default_factory=PagingSpec)
@@ -109,14 +120,21 @@ class RequestSpec:
 
 @dataclass(frozen=True, slots=True)
 class FieldTransform:
-    """字段归一指令：改名 + 目标类型."""
+    """字段归一指令：改名 + 目标类型 + 可选数值缩放.
+
+    ``scale`` 用于统一同一目标列的量纲（如腾讯成交量以「手」返回，表内存「股」则填 100）。
+    只对 int / float 生效，其它类型原样归一（见 ``services/normalize.py``）。
+    """
 
     name: str
     field_type: str = "text"
+    scale: float | None = None
 
     def __post_init__(self) -> None:
         if not self.name:
             raise ProviderError("field_mapping 的目标字段名不能为空")
+        if self.scale is not None and not isinstance(self.scale, (int, float)):
+            raise ProviderError("field_mapping.scale 必须是数值")
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +154,8 @@ class SyncJobSpec:
     entrant_values: tuple[str, ...] = ()
     match_keys: tuple[str, ...] = ()
     field_mapping: Mapping[str, FieldTransform | None] = field(default_factory=dict)
+    # 行级常量列（setdefault 语义），由 run_pipeline 并入每行；缺省取 request.row_defaults
+    row_defaults: Mapping[str, Any] = field(default_factory=dict)
     parser: str = "json"
     # 额外模板变量（M5：凭证会话的密钥，如 {"api_key": "..."}）；内置变量优先，避免被配置覆盖
     extra_variables: Mapping[str, Any] = field(default_factory=dict)
@@ -143,6 +163,9 @@ class SyncJobSpec:
     def __post_init__(self) -> None:
         if self.entrant_values and not self.entrant_param:
             raise ProviderError("配置了 entrant_values 时必须同时给出 entrant_param")
+        # 常量列未显式给出时，回落到 request 声明（build_job_spec 无需二次搬运）
+        if not self.row_defaults and self.request.row_defaults:
+            object.__setattr__(self, "row_defaults", dict(self.request.row_defaults))
         # 容忍 {"字段": {"name": .., "field_type": ..}} 这种 JSON 形态（DB / API 直传），
         # 统一规范成 FieldTransform，避免下游拿到 dict 才炸
         if self.field_mapping:
@@ -178,8 +201,21 @@ def normalize_field_mapping(
         normalized[source] = FieldTransform(
             name=str(transform.get("name") or source),
             field_type=str(transform.get("field_type") or "text"),
+            scale=_optional_float(transform.get("scale")),
         )
     return normalized
+
+
+def _optional_float(value: Any) -> float | None:
+    """把 JSON 里的可选数值声明转成 float；``None`` / 空串视为未声明."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ProviderError("field_mapping.scale 必须是数值")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ProviderError(f"field_mapping.scale 必须是数值: {value!r}") from exc
 
 
 class SourceProvider(Protocol):

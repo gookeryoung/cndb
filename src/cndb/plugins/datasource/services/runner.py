@@ -370,6 +370,9 @@ def request_spec_from_payload(
     if cursor_from and today and time_window.get("mode", "none") != "none":
         time_window["start"] = cursor_from
         time_window["end"] = today
+    record_mode = str(data.get("record_mode") or "rows")
+    if record_mode not in ("rows", "columns", "rows_array"):
+        raise ValueError(f"request_spec.record_mode 非法: {record_mode!r}")
     return RequestSpec(
         url_template=str(data["url_template"]),
         method=str(data.get("method") or "GET"),
@@ -377,8 +380,9 @@ def request_spec_from_payload(
         params_template=dict(data.get("params_template") or {}),
         body_template=data.get("body_template"),
         data_path=data.get("data_path") or None,
-        record_mode="columns" if data.get("record_mode") == "columns" else "rows",
+        record_mode=record_mode,
         record_layout=dict(data.get("record_layout") or {}),
+        row_defaults=dict(data.get("row_defaults") or {}),
         encoding=str(data.get("encoding") or "utf-8"),
         timeout=float(data.get("timeout") or 15.0),
         paging=PagingSpec(**dict(data.get("paging") or {})),
@@ -400,10 +404,26 @@ def field_mapping_from_payload(payload: Mapping[str, Any] | None) -> dict[str, F
             continue
         if isinstance(value, Mapping):
             name = value.get("name") or source
-            mapping[source] = FieldTransform(name=str(name), field_type=str(value.get("field_type") or "text"))
+            mapping[source] = FieldTransform(
+                name=str(name),
+                field_type=str(value.get("field_type") or "text"),
+                scale=_scale_from_payload(value.get("scale")),
+            )
             continue
         raise ValueError(f"field_mapping[{source!r}] 必须是对象 / 字符串 / null")
     return mapping
+
+
+def _scale_from_payload(value: Any) -> float | None:
+    """解析 ``field_mapping.scale``（数值缩放）；``None`` / 空串表示未声明."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError("field_mapping.scale 必须是数值")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"field_mapping.scale 必须是数值: {value!r}") from exc
 
 
 def validate_request_spec(payload: Mapping[str, Any] | None) -> RequestSpec:

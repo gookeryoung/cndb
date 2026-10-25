@@ -1,6 +1,144 @@
 {
-  "_comment": "数据源同步任务种子：数据源示例工作区。适配器只保留通用项（http_json / llm_prompt）：「行业政策与合规台账」「国际形势发展动态」两组大模型动态拉取任务（provider=llm_prompt，调度 manual，需先配置个人「大模型连接」的 API Key，演示时点「立即运行」，也可改成 daily/cron）；表内字段与视图、示例 CSV 全部为中文，字段映射/幂等键也用中文。",
+  "_comment": "数据源同步任务种子：数据源示例工作区。适配器只保留通用项（http_json / llm_prompt）：「股市日线」为新浪（不复权）+ 腾讯（前复权）双源同步到同一张本地表（provider=http_json，按「股票代码 + 日期 + 来源」幂等，腾讯成交量由手换算为股）；「行业政策与合规台账」「国际形势发展动态」为两组大模型动态拉取任务（provider=llm_prompt）。全部任务调度的 manual，演示时点「立即运行」；llm_prompt 需先配置个人「大模型连接」的 API Key。表内字段与视图、示例 CSV 全部为中文，字段映射/幂等键也用中文。",
   "jobs": [
+    {
+      "name": "股市日线（新浪 · 不复权）",
+      "provider": "http_json",
+      "table": "股市日线",
+      "request_spec": {
+        "url_template": "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData?symbol={entrant}&scale=240&ma=no&datalen=1023",
+        "record_mode": "rows",
+        "row_defaults": {
+          "来源": "新浪",
+          "复权方式": "不复权"
+        }
+      },
+      "entrant_param": "symbol",
+      "entrant_keys": [
+        "sh600519",
+        "sz000001"
+      ],
+      "match_keys": [
+        "股票代码",
+        "日期",
+        "来源"
+      ],
+      "field_mapping": {
+        "symbol": {
+          "name": "股票代码",
+          "field_type": "text"
+        },
+        "day": {
+          "name": "日期",
+          "field_type": "date"
+        },
+        "open": {
+          "name": "开盘",
+          "field_type": "float"
+        },
+        "close": {
+          "name": "收盘",
+          "field_type": "float"
+        },
+        "high": {
+          "name": "最高",
+          "field_type": "float"
+        },
+        "low": {
+          "name": "最低",
+          "field_type": "float"
+        },
+        "volume": {
+          "name": "成交量",
+          "field_type": "number"
+        }
+      },
+      "cursor": {
+        "strategy": "none"
+      },
+      "schedule": {
+        "mode": "manual"
+      },
+      "enabled": true,
+      "rate_limit_ms": 200
+    },
+    {
+      "name": "股市日线（腾讯 · 前复权）",
+      "provider": "http_json",
+      "table": "股市日线",
+      "request_spec": {
+        "url_template": "https://proxy.finance.qq.com/ifzqgtimg/appstock/app/newfqkline/get?param={entrant},day,{start},{end},320,qfq",
+        "record_mode": "rows_array",
+        "data_path": "data.{entrant}.qfqday",
+        "record_layout": {
+          "日期": 0,
+          "开盘": 1,
+          "收盘": 2,
+          "最高": 3,
+          "最低": 4,
+          "成交量": 5
+        },
+        "row_defaults": {
+          "来源": "腾讯",
+          "复权方式": "前复权"
+        },
+        "time_window": {
+          "mode": "range",
+          "chunk_days": 0
+        }
+      },
+      "entrant_param": "symbol",
+      "entrant_keys": [
+        "sh600519",
+        "sz000001"
+      ],
+      "match_keys": [
+        "股票代码",
+        "日期",
+        "来源"
+      ],
+      "field_mapping": {
+        "symbol": {
+          "name": "股票代码",
+          "field_type": "text"
+        },
+        "日期": {
+          "name": "日期",
+          "field_type": "date"
+        },
+        "开盘": {
+          "name": "开盘",
+          "field_type": "float"
+        },
+        "收盘": {
+          "name": "收盘",
+          "field_type": "float"
+        },
+        "最高": {
+          "name": "最高",
+          "field_type": "float"
+        },
+        "最低": {
+          "name": "最低",
+          "field_type": "float"
+        },
+        "成交量": {
+          "name": "成交量",
+          "field_type": "number",
+          "scale": 100
+        }
+      },
+      "cursor": {
+        "strategy": "date",
+        "field": "日期",
+        "backfill_start": "2026-01-01"
+      },
+      "schedule": {
+        "mode": "manual"
+      },
+      "enabled": true,
+      "rate_limit_ms": 200
+    },
     {
       "name": "行业政策与合规台账（大模型动态拉取）",
       "provider": "llm_prompt",

@@ -96,7 +96,8 @@ def apply_field_mapping(
             if transform is None:
                 normalized[key] = value
                 continue
-            coerced, reason = coerce_value(value, transform.field_type)
+            scaled = _apply_scale(value, transform.scale, transform.field_type)
+            coerced, reason = coerce_value(scaled, transform.field_type)
             if reason is not None:
                 result.failures.append(
                     NormalizeFailure(row_index=row_index, field=transform.name, raw=value, reason=reason)
@@ -104,6 +105,26 @@ def apply_field_mapping(
             normalized[transform.name] = coerced
         result.rows.append(normalized)
     return result
+
+
+def _apply_scale(value: Any, scale: float | None, field_type: str) -> Any:
+    """数值缩放（按**目标类型**判定：仅 int / float / number 等数值类型生效）.
+
+    用于统一同一目标列的量纲（如「手」→「股」乘 100）。接口多以字符串返回数值，
+    因此这里对可转数值的字符串同样换算；布尔 / 日期 / 文本忽略 ``scale``，
+    无法转数值的字符串原样透传，由 ``coerce_value`` 按既有口径记录失败。
+    """
+    if scale is None or value is None or isinstance(value, bool):
+        return value
+    kind = (field_type or "text").strip().lower()
+    if kind not in ("int", "integer", "number", "float", "decimal"):
+        return value
+    if isinstance(value, (int, float)):
+        return value * scale
+    try:
+        return float(str(value).strip().replace(",", "")) * scale
+    except (TypeError, ValueError):
+        return value
 
 
 def coerce_value(value: Any, field_type: FieldType) -> tuple[Any, str | None]:

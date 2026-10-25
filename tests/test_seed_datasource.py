@@ -172,9 +172,9 @@ def test_real_datasource_json_is_valid():
     base = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例"
     cfg = json.loads((base / "datasource.json").read_text(encoding="utf-8-sig"))
     jobs = cfg["jobs"]
-    assert len(jobs) == 2
-    assert {job["provider"] for job in jobs} == {"llm_prompt"}
-    assert [job["table"] for job in jobs] == ["行业政策与合规台账", "国际形势发展动态"]
+    assert len(jobs) == 4
+    assert {job["provider"] for job in jobs} == {"http_json", "llm_prompt"}
+    assert [job["table"] for job in jobs] == ["股市日线", "股市日线", "行业政策与合规台账", "国际形势发展动态"]
 
     # 所有任务：目标表的示例数据文件必须存在，映射目标列与幂等键必须真实存在于 CSV 表头
     for job in jobs:
@@ -184,8 +184,34 @@ def test_real_datasource_json_is_valid():
         assert targets <= set(header), f"{job['name']} 映射到不存在的列 {targets - set(header)}"
         assert set(job["match_keys"]) <= set(header), f"{job['name']} 幂等键不在表内"
 
+    # 股市日线：双源写同一张表，来源 / 复权方式由 row_defaults 补齐（响应不回显来源维度）
+    day_jobs = [job for job in jobs if job["table"] == "股市日线"]
+    assert [job["request_spec"]["row_defaults"]["来源"] for job in day_jobs] == ["新浪", "腾讯"]
+    assert {job["request_spec"]["row_defaults"]["复权方式"] for job in day_jobs} == {"不复权", "前复权"}
+    assert all(job["match_keys"] == ["股票代码", "日期", "来源"] for job in day_jobs)
+    assert all(job["entrant_keys"] == ["sh600519", "sz000001"] for job in day_jobs), "标的须带市场前缀"
+    assert all(job["schedule"] == {"mode": "manual"} for job in day_jobs), "示例任务不自动触发"
+    assert all("{entrant}" in job["request_spec"]["url_template"] for job in day_jobs)
+    # 腾讯日线响应是「数组的数组」，必须声明 rows_array + 位置索引
+    tencent = day_jobs[1]
+    assert tencent["request_spec"]["record_mode"] == "rows_array"
+    assert tencent["request_spec"]["data_path"] == "data.{entrant}.qfqday"
+    assert tencent["request_spec"]["record_layout"] == {
+        "日期": 0,
+        "开盘": 1,
+        "收盘": 2,
+        "最高": 3,
+        "最低": 4,
+        "成交量": 5,
+    }
+    assert tencent["field_mapping"]["成交量"]["scale"] == 100, "腾讯成交量单位为手，落表统一为股"
+    assert day_jobs[0]["request_spec"]["record_mode"] == "rows"
+    # 旧的「股市日线-新浪」按源分表结构不再回归
+    assert not (base / "股市日线-新浪.csv").exists()
+
     # 大模型动态拉取：中文字段 + 中文幂等键，只配提示词与模型参数，手动触发
-    for job in jobs:
+    llm_jobs = [job for job in jobs if job["provider"] == "llm_prompt"]
+    for job in llm_jobs:
         request_spec = job["request_spec"]
         assert request_spec["prompt"]["user_template"].strip()
         assert "{today}" in request_spec["prompt"]["user_template"]
