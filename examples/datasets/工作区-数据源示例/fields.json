@@ -4,6 +4,10 @@
       "城市": {"required": true},
       "日期": {"required": true}
     },
+    "股市日线": {
+      "股票代码": {"required": true},
+      "日期": {"required": true}
+    },
     "行业政策与合规台账": {
       "日期": {"required": true},
       "标题": {"required": true}

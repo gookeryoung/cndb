@@ -84,24 +84,37 @@ class HttpJsonProvider:
         return plans
 
     def response_handler_for(self, job: SyncJobSpec) -> ResponseHandler | None:
-        """返回响应处理器：专用 provider 用自己的 ``parse`` 处理原始文本."""
-        if not self.uses_custom_parse:
+        """返回响应处理器：专用 provider 用自己的 ``parse`` 处理原始文本.
+
+        ``rows_array`` 模式也必须走自定义 handler——通用 ``fetch_json`` 的数组探测
+        会把「数组的数组」过滤成空行。
+        """
+        if not (self.uses_custom_parse or job.request.record_mode == "rows_array"):
             return None
 
-        def handler(text: str, _config: FetchConfig) -> list[dict[str, Any]]:
-            return self.parse(text, job)
+        def handler(text: str, config: FetchConfig) -> list[dict[str, Any]]:
+            # data_path 已在 _build_config 按标的渲染，交给 parse 覆盖原始模板
+            return self.parse(text, job, data_path=config.data_path)
 
         return handler
 
-    def parse(self, text: str, job: SyncJobSpec) -> list[dict[str, Any]]:
-        """响应文本 → 对象数组（JSON 解析失败即 ProviderError，不静默返回空）."""
+    def parse(self, text: str, job: SyncJobSpec, *, data_path: str | None = None) -> list[dict[str, Any]]:
+        """响应文本 → 对象数组（JSON 解析失败即 ProviderError，不静默返回空）.
+
+        ``data_path`` 显式给出时优先（请求构造阶段已把 ``{entrant}`` 等模板求值），
+        否则用 job 声明里的原样路径。
+        """
         try:
             payload = json.loads(text)
         except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             raise ProviderError(f"响应不是合法 JSON: {exc}") from exc
-        if job.request.record_mode == "columns":
-            return columns_to_rows(payload, job.request.data_path, job.request.record_layout)
-        return _extract_array(payload, job.request.data_path, True)
+        spec = job.request
+        path = data_path if data_path is not None else spec.data_path
+        if spec.record_mode == "columns":
+            return columns_to_rows(payload, path, spec.record_layout)
+        if spec.record_mode == "rows_array":
+            return rows_array_to_rows(payload, path, spec.record_layout)
+        return _extract_array(payload, path, True)
 
     def normalize(self, rows: Sequence[Mapping[str, Any]], job: SyncJobSpec) -> NormalizeResult:
         """字段映射 + 类型归一."""
@@ -152,7 +165,7 @@ class HttpJsonProvider:
             params=render_value(dict(spec.params_template), variables),
             body=render_value(spec.body_template, variables),
             timeout=spec.timeout,
-            data_path=spec.data_path,
+            data_path=render_text(spec.data_path, variables) if spec.data_path else None,
             encoding=spec.encoding,
             response_handler=response_handler or "json",
         )
@@ -161,7 +174,7 @@ class HttpJsonProvider:
 def columns_to_rows(
     payload: Any,
     data_path: str | None = None,
-    layout: Mapping[str, str] | None = None,
+    layout: Mapping[str, str | int] | None = None,
 ) -> list[dict[str, Any]]:
     """把「列名 → 数组」的响应拼成行（逐索引 zip，缺值补 None）.
 
@@ -173,7 +186,7 @@ def columns_to_rows(
     columns: dict[str, list[Any]] = {}
     if layout:
         for target, source in layout.items():
-            series = node.get(source)
+            series = node.get(str(source))
             if not isinstance(series, list):
                 raise ProviderError(f"列式记录缺少数组列: {source}")
             columns[target] = series
@@ -188,6 +201,52 @@ def columns_to_rows(
     for index in range(width):
         rows.append({name: (series[index] if index < len(series) else None) for name, series in columns.items()})
     return rows
+
+
+def rows_array_to_rows(
+    payload: Any,
+    data_path: str | None = None,
+    layout: Mapping[str, str | int] | None = None,
+) -> list[dict[str, Any]]:
+    """把「行数组的数组」响应拼成对象数组（按 ``layout`` 的位置索引取值）.
+
+    ``layout`` 形如 ``{"日期": 0, "开盘": 1}``：目标列名 → 行内元素下标。
+    行长度不足最大下标时该字段补 ``None``（不丢行）；``data_path`` 未命中数组即报错。
+
+    Raises:
+        ProviderError: ``data_path`` 未指向数组、行不是数组、下标非法.
+    """
+    node: Any = _resolve_path(payload, data_path) if data_path else payload
+    if not isinstance(node, list):
+        raise ProviderError("行数组记录要求 data_path 指向一个数组")
+    positions = _layout_positions(layout)
+    rows: list[dict[str, Any]] = []
+    for item in node:
+        if not isinstance(item, list):
+            raise ProviderError(f"行数组记录的元素必须是数组，实际为 {type(item).__name__}")
+        rows.append({name: (item[index] if index < len(item) else None) for name, index in positions.items()})
+    return rows
+
+
+def _layout_positions(layout: Mapping[str, str | int] | None) -> dict[str, int]:
+    """把 ``rows_array`` 的布局声明规范为 ``{目标列名: 位置索引}``（接受数字字符串）."""
+    if not layout:
+        raise ProviderError("rows_array 模式必须声明 record_layout（目标列名 → 位置索引）")
+    positions: dict[str, int] = {}
+    for name, raw in layout.items():
+        if isinstance(raw, bool):
+            raise ProviderError(f"record_layout[{name!r}] 的位置索引不能是布尔值")
+        if isinstance(raw, int):
+            index = raw
+        else:
+            try:
+                index = int(raw.strip())
+            except (TypeError, ValueError) as exc:
+                raise ProviderError(f"record_layout[{name!r}] 的位置索引必须是整数: {raw!r}") from exc
+        if index < 0:
+            raise ProviderError(f"record_layout[{name!r}] 的位置索引不能为负: {index}")
+        positions[name] = index
+    return positions
 
 
 def iter_windows(spec: TimeWindowSpec) -> list[tuple[str | None, str | None]]:
@@ -245,7 +304,14 @@ def _format_day(value: date, fmt: str) -> str:
     return value.strftime(fmt)
 
 
-__all__ = ["HTTP_JSON_PARAMS_SCHEMA", "HttpJsonProvider", "columns_to_rows", "iter_pages", "iter_windows"]
+__all__ = [
+    "HTTP_JSON_PARAMS_SCHEMA",
+    "HttpJsonProvider",
+    "columns_to_rows",
+    "iter_pages",
+    "iter_windows",
+    "rows_array_to_rows",
+]
 
 if TYPE_CHECKING:
     # 类型检查期验证实现满足 SourceProvider 协议（运行期零开销）

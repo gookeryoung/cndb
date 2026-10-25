@@ -108,7 +108,12 @@ def run_pipeline(
             outcome.metadata.append({"label": plan.label, **plan.metadata})
         if plan.page is not None and not rows:
             stop_pages[group] = plan.page
-        raw_rows.extend(fill_entrant(to_records(rows), job.entrant_param, plan.entrant))
+        raw_rows.extend(
+            apply_row_defaults(
+                fill_entrant(to_records(rows), job.entrant_param, plan.entrant),
+                job.row_defaults,
+            )
+        )
 
     outcome.normalize = active.normalize(raw_rows, job)
     outcome.rows = list(outcome.normalize.rows)
@@ -139,4 +144,23 @@ def fill_entrant(
     return filled
 
 
-__all__ = ["FetchFailure", "PipelineOutcome", "fill_entrant", "run_pipeline", "to_records"]
+def apply_row_defaults(
+    rows: Sequence[Mapping[str, Any]],
+    defaults: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    """行级常量列（``setdefault`` 语义，响应自带同名值优先）.
+
+    用于响应不回显来源维度的场景：多源写同一张表时补「来源 / 复权方式」等列。
+    """
+    if not defaults:
+        return [dict(row) for row in rows]
+    filled: list[dict[str, Any]] = []
+    for row in rows:
+        record = dict(row)
+        for key, value in defaults.items():
+            record.setdefault(key, value)
+        filled.append(record)
+    return filled
+
+
+__all__ = ["FetchFailure", "PipelineOutcome", "apply_row_defaults", "fill_entrant", "run_pipeline", "to_records"]

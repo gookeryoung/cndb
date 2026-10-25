@@ -424,3 +424,192 @@ class TestBuildJobSpecWithConnection:
         # 连接默认值只在 request_spec 缺项时补齐，已有配置不被覆盖
         assert spec.request.url_template == "https://llm.example.com/v1"
         assert spec.request.llm["model"] == "model-a"
+
+
+# ── ADR 0033：股市日线双源同步到同一张本地表 ─────────────────
+
+
+def _make_stock_table(session: Session, engine) -> DataTable:
+    """建「股市日线」表：与示例 CSV 表头一致."""
+    table = DataTable(workspace_id=1, name="股市日线")
+    table.ensure_db_name()
+    session.add(table)
+    session.commit()
+    session.refresh(table)
+    specs = (
+        ("股票代码", "text"),
+        ("日期", "date"),
+        ("开盘", "float"),
+        ("收盘", "float"),
+        ("最高", "float"),
+        ("最低", "float"),
+        ("成交量", "number"),
+        ("来源", "text"),
+        ("复权方式", "text"),
+    )
+    for order, (name, field_type) in enumerate(specs):
+        # 小数位与 CSV 建表推断一致（NumberFieldConfig.decimals 默认 0 会四舍五入）
+        config = {"decimals": 2} if field_type == "float" else {}
+        field = DataField(table_id=table.id, name=name, field_type=field_type, order=order, config=config)
+        field.ensure_db_name()
+        session.add(field)
+    session.commit()
+    session.refresh(table)
+    ddl.create_table(engine, table)
+    return table
+
+
+def _make_stock_job(db: Session, table: DataTable, source: str, **request_spec: object) -> DatasourceSyncJob:
+    """按示例配置的形态建双源任务（只保留影响落表口径的声明）."""
+    cursor: dict[str, object] = {"strategy": "none"}
+    if source == "腾讯":
+        cursor = {"strategy": "date", "field": "日期", "backfill_start": "2024-01-01"}
+    job = DatasourceSyncJob(
+        workspace_id=1,
+        name=f"股市日线（{source}）",
+        provider="http_json",
+        table_id=table.id,
+        request_spec={
+            "url_template": f"https://api.example.com/{source}?symbol={{entrant}}",
+            **request_spec,
+            "row_defaults": {
+                "来源": source,
+                "复权方式": "前复权" if source == "腾讯" else "不复权",
+            },
+        },
+        parser="json",
+        entrant_param="symbol",
+        entrant_keys=["sh600519", "sz000001"],
+        match_keys=["股票代码", "日期", "来源"],
+        field_mapping={
+            "symbol": {"name": "股票代码", "field_type": "text"},
+            "day": {"name": "日期", "field_type": "date"},
+            "open": {"name": "开盘", "field_type": "float"},
+            "close": {"name": "收盘", "field_type": "float"},
+            "high": {"name": "最高", "field_type": "float"},
+            "low": {"name": "最低", "field_type": "float"},
+            "volume": {"name": "成交量", "field_type": "number"},
+        },
+        cursor=cursor,
+        schedule={"mode": "manual"},
+        enabled=True,
+        last_status="",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _make_tencent_job(db: Session, table: DataTable) -> DatasourceSyncJob:
+    """腾讯任务：rows_array 形态 + 成交量手→股缩放."""
+    job = _make_stock_job(
+        db,
+        table,
+        "腾讯",
+        record_mode="rows_array",
+        data_path="data.{entrant}.qfqday",
+        record_layout={"日期": 0, "开盘": 1, "收盘": 2, "最高": 3, "最低": 4, "成交量": 5},
+        time_window={"mode": "range"},
+    )
+    job.field_mapping = {
+        **{key: value for key, value in job.field_mapping.items() if key != "volume"},
+        "成交量": {"name": "成交量", "field_type": "number", "scale": 100},
+    }
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return job
+
+
+def _read_all(engine, table: DataTable) -> list[dict[str, object]]:
+    metadata = MetaData()
+    sa_table = ddl.build_sa_table(metadata, table)
+    fields = [f for f in table.active_fields() if f.db_column_name]
+    with engine.connect() as conn:
+        raw = conn.execute(select(*[sa_table.c[f.db_column_name] for f in fields])).all()
+    return [{field.name: value for field, value in zip(fields, row, strict=True)} for row in raw]
+
+
+SINA_ROWS = [
+    {
+        "day": "2024-06-28",
+        "open": "1502.00",
+        "close": "1518.50",
+        "high": "1523.00",
+        "low": "1495.00",
+        "volume": "3125400",
+    },
+    {
+        "day": "2024-07-01",
+        "open": "1518.50",
+        "close": "1525.30",
+        "high": "1531.00",
+        "low": "1512.00",
+        "volume": "2871900",
+    },
+]
+TENCENT_RAW = [
+    ["2024-06-28", "1503.00", "1519.60", "1524.10", "1496.30", "31005"],
+    ["2024-07-01", "1519.60", "1526.10", "1531.80", "1513.20", "28563"],
+]
+
+
+class TestStockDailyDualSourceExample:
+    """双源写同一张表：来源 / 复权方式补齐、成交量单位统一、幂等可重跑."""
+
+    def test_sina_job_fills_source_and_is_idempotent(self, db_engine, db):
+        table = _make_stock_table(db, db_engine)
+        job = _make_stock_job(db, table, "新浪", record_mode="rows")
+
+        first = execute_job(db, job, fetch=_fetch(SINA_ROWS), now=NOW)
+        assert first.run.status == "success"
+        assert (first.run.inserted, first.run.updated) == (4, 0)
+        rows = _read_all(db_engine, table)
+        assert {row["来源"] for row in rows} == {"新浪"}
+        assert {row["复权方式"] for row in rows} == {"不复权"}
+        assert {row["股票代码"] for row in rows} == {"sh600519", "sz000001"}
+        assert {row["成交量"] for row in rows} == {3125400, 2871900}
+
+        second = execute_job(db, job, fetch=_fetch(SINA_ROWS), now=NOW)
+        assert second.run.inserted == 0
+        assert second.run.updated == 4
+        assert _row_count(db_engine, table) == 4
+
+    def test_tencent_job_converts_lot_to_share_and_parses_rows_array(self, db_engine, db):
+        table = _make_stock_table(db, db_engine)
+        job = _make_tencent_job(db, table)
+        # 假源模拟 parse 之后的形态：data_path / record_layout 由单测覆盖，这里验证落表口径
+        parsed = [
+            dict(zip(("日期", "开盘", "收盘", "最高", "最低", "成交量"), item, strict=True)) for item in TENCENT_RAW
+        ]
+
+        execution = execute_job(db, job, fetch=_fetch(parsed), now=NOW)
+        assert execution.run.status == "success"
+        assert execution.run.inserted == 4
+        rows = _read_all(db_engine, table)
+        assert {row["来源"] for row in rows} == {"腾讯"}
+        assert {row["复权方式"] for row in rows} == {"前复权"}
+        assert {row["成交量"] for row in rows} == {3100500, 2856300}, "成交量须由手换算为股"
+        db.refresh(job)
+        assert job.cursor["value"] == "2024-07-01"
+
+    def test_both_sources_coexist_without_overwrite(self, db_engine, db):
+        table = _make_stock_table(db, db_engine)
+        sina = _make_stock_job(db, table, "新浪", record_mode="rows")
+        tencent = _make_tencent_job(db, table)
+        parsed = [
+            dict(zip(("日期", "开盘", "收盘", "最高", "最低", "成交量"), item, strict=True)) for item in TENCENT_RAW
+        ]
+
+        execute_job(db, sina, fetch=_fetch(SINA_ROWS), now=NOW)
+        execute_job(db, tencent, fetch=_fetch(parsed), now=NOW)
+
+        rows = _read_all(db_engine, table)
+        assert len(rows) == 8, "两源同标的同日应并存（幂等键含来源）"
+        assert {row["来源"] for row in rows} == {"新浪", "腾讯"}
+        assert _row_count(db_engine, table) == 8
+        # 同一天同标的两行价格口径不同，互不覆盖
+        moutai = [row for row in rows if row["股票代码"] == "sh600519" and str(row["日期"]).startswith("2024-06-28")]
+        assert len(moutai) == 2
+        assert {float(row["收盘"]) for row in moutai} == {1518.5, 1519.6}
