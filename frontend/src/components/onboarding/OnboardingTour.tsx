@@ -2,7 +2,7 @@
  *
  * 挂载在 MainLayout：
  * - 自动触发：首次进入数据表格页（/w/:wid/tables/:tid）且未完成过引导
- * - 重放触发：帮助中心「重新播放新手引导」发出 tourRequested 信号
+ * - 重放触发：帮助文档「重新播放新手引导」发出 tourRequested 信号
  * - 移动端降级：引导基于桌面布局，移动端直接标记完成不弹出
  * - 完成或中途关闭（onDestroyed）→ 写入完成标记，之后不再自动弹出
  */
@@ -69,7 +69,7 @@ export default function OnboardingTour() {
     }
   }, [location.pathname, isMobile, tourDone, markTourDone, startTour])
 
-  // 帮助中心重放：收到信号即启动，并立即消费掉信号（避免 effect 重复触发）
+  // 帮助文档重放：收到信号即启动，并立即消费掉信号（避免 effect 重复触发）
   useEffect(() => {
     if (tourRequested && !isMobile) {
       clearTourRequest()

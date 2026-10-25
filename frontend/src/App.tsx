@@ -36,6 +36,7 @@ const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPa
 const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 const DatasourcePage = lazy(() => import('@/pages/datasource/DatasourcePage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
+const HelpDocsPage = lazy(() => import('@/pages/help/HelpDocsPage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -131,6 +132,9 @@ function AuthenticatedApp() {
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
           } />
+          {/* 帮助文档（ADR 0029）：整页两级导航，选中态由 URL 驱动 */}
+          <Route path="help" element={<HelpDocsPage />} />
+          <Route path="help/:sectionKey/:topicKey" element={<HelpDocsPage />} />
         </Route>
 
         <Route path="*" element={<Navigate to="/w" replace />} />

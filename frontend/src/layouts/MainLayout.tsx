@@ -23,8 +23,6 @@ import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
 
 // Modal 组件 lazy import：点击打开时才加载
 const SettingsModal = lazy(() => import('@/pages/settings/SettingsModal'))
-// 帮助中心抽屉 lazy import：点击打开时才加载
-const HelpCenterDrawer = lazy(() => import('@/components/HelpCenterDrawer'))
 // 关于系统弹窗 lazy import：点击打开时才加载
 const AboutModal = lazy(() => import('@/components/AboutModal'))
 // 新手引导：MainLayout 挂载一次，内部自行判定触发时机
@@ -77,7 +75,6 @@ export default function MainLayout() {
   const settingsTab = useUiStore(s => s.settingsTab)
   const openSettings = useUiStore(s => s.openSettings)
   const closeSettings = useUiStore(s => s.closeSettings)
-  const [helpOpen, setHelpOpen] = useState(false)
   // 关于系统弹窗开关 —— 所有登录用户可见
   const [aboutOpen, setAboutOpen] = useState(false)
   /** 顶部导航横滑容器（工作区页签 + 二级页签）—— 窄屏下把激活项滚入可视区 */
@@ -302,7 +299,7 @@ export default function MainLayout() {
     ...(isMobile
       ? [
         { key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') },
-        { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助中心', onClick: () => setHelpOpen(true) },
+        { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助文档', onClick: () => navigate('/help') },
       ]
       : []),
     // 关于系统：普通用户与管理员均可见，查看版本等基本信息
@@ -317,6 +314,8 @@ export default function MainLayout() {
    * 导航栏承担导航，内容区拿到整幅宽度（页头/分区栏/内容列三者的左边界因此对齐）。
    */
   const inAdminConsole = location.startsWith('/admin')
+  /** 帮助文档页（/help）：无工作区语义，侧栏由帮助页自带的两级导航承担 */
+  const inHelpDocs = location.startsWith('/help')
 
   if (!wid) {
     if (wsLoading) {
@@ -450,16 +449,16 @@ export default function MainLayout() {
               />
             </Tooltip>
           )}
-          {/* 帮助中心入口 —— 桌面端常驻图标；移动端收进用户菜单，避免顶栏控件过多 */}
+          {/* 帮助文档入口（ADR 0029）—— 桌面端常驻图标，整页路由；移动端收进用户菜单 */}
           {!isMobile && (
-            <Tooltip title="帮助中心与新手引导">
+            <Tooltip title="帮助文档与新手引导">
               <Button
                 type="text"
                 size="small"
                 icon={<QuestionCircleOutlined />}
                 data-testid="help-btn"
-                onClick={() => setHelpOpen(true)}
-              >帮助</Button>
+                onClick={() => navigate('/help')}
+              >帮助文档</Button>
             </Tooltip>
           )}
           {/* 系统管理台入口 —— 仅管理员可见，置于用户头像左侧以区别于常规导航 */}
@@ -485,8 +484,9 @@ export default function MainLayout() {
       <Layout style={{ flex: 1, minHeight: 0 }}>
         {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
             管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
+            帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
             文档类工作区无数据表功能 → 不渲染表导航 Sider，内容区拿到整幅宽度 */}
-        {!isMobile && !inAdminConsole && wsFeatures.tables && (
+        {!isMobile && !inAdminConsole && !inHelpDocs && wsFeatures.tables && (
           <Sider
             collapsible collapsed={collapsed} onCollapse={setCollapsed}
             width={240} collapsedWidth={60}
@@ -636,9 +636,6 @@ export default function MainLayout() {
 
       <Suspense fallback={<ModalFallback />}>
         <SettingsModal open={settingsOpen} initialTab={settingsTab} onClose={closeSettings} />
-      </Suspense>
-      <Suspense fallback={<ModalFallback />}>
-        {helpOpen && <HelpCenterDrawer open onClose={() => setHelpOpen(false)} />}
       </Suspense>
 
       <Suspense fallback={<ModalFallback />}>

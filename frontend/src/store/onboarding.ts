@@ -1,7 +1,7 @@
 /** 新手引导 onboarding store — localStorage 持久化.
  *
  * tourDone：用户已完成（或跳过）过引导，刷新后不再自动弹出。
- * tourRequested：帮助中心「重新播放新手引导」按钮发出的信号，
+ * tourRequested：帮助文档「重新播放新手引导」按钮发出的信号，
  * OnboardingTour 组件监听到 true 后启动引导并清除该标记。
  */
 
@@ -14,11 +14,11 @@ export const TOUR_STORAGE_KEY = 'cndb_onboarding_done_v1'
 interface OnboardingState {
     /** 引导是否已完成（含跳过），true 后不再自动触发 */
     tourDone: boolean
-    /** 帮助中心请求重放引导的信号 */
+    /** 帮助文档请求重放引导的信号 */
     tourRequested: boolean
     /** 标记引导已完成（点击关闭/跳过/走完最后一步） */
     markTourDone: () => void
-    /** 帮助中心请求重放引导 */
+    /** 帮助文档请求重放引导 */
     requestTour: () => void
     /** 引导启动后清除重放请求 */
     clearTourRequest: () => void

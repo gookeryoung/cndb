@@ -41,3 +41,5 @@
 | 用量快照（Storage Snapshot） | 工作区存储用量（附件 + 文档外存/内联正文 + 数据表记录）的持久化结果：后台刷新器按周期重算后 upsert `workspaces_storage_snapshot`，管理台「空间分配」与工作区详情 / 上传配额预判只读快照，不在请求内全量统计 | 见 ADR 0024；缺行即「尚未统计」（前端显示统计中，不显示 0）；脏集合（配额调整 / 上传）由 `mark_dirty` 唤醒立即重算，上传按 `bump_used_bytes` 乐观累加；周期由 `STORAGE_SNAPSHOT_INTERVAL_SECONDS`（默认 300s，0 关闭）控制 |
 | Chrome 81 兼容基线 | 生产构建与关键流程在 Chrome / Edge 81+（Chromium 81 内核）上可正常打开且视觉一致；更低版本与 Firefox / Safari 不承诺 | 见 ADR 0026；构建目标 `chrome81`、`.browserslistrc` 固定 `chrome >= 81` / `edge >= 81`；兼容缺口由构建后静态检查与定时 Chromium 81 冒烟兜底 |
 | 兼容垫片（Compat Shim） | 仅在特性探测失败时加载的运行时降级层，现代浏览器零开销 | 见 ADR 0026；`--cn-mix-*` 兜底变量（color-mix）、flex-gap shim、入口定向 polyfill；实现位于 `frontend/src/compat/` 与 `frontend/src/theme/themeMix.ts` |
+| 帮助文档（Help Docs） | 登录用户可访问的独立帮助路由 `/help`：一级 5 个部分（快速入门 / 教程&最佳实践 / 典型示例 / 系统配置 / 问题排查）→ 二级主题，选中态由 URL 驱动；窄屏侧栏收为抽屉 | 见 ADR 0029；替代原「帮助中心」抽屉；正文为前端静态 TSX，不落库、不备份 |
+| 帮助示例（Help Example） | 帮助文档「典型示例」部分的后端只读清单：场景说明 + 表清单 + 推荐视图 / 分析 + CSV 下载，资产复用 `examples/datasets`（wheel 内 `cndb/datasets`） | 见 ADR 0029；清单与下载端点在 `plugins/help/`，不依赖 `cndb seed` 与演示库；不提供一键导入工作区 |
