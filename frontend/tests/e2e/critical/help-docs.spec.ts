@@ -51,6 +51,11 @@ test.describe("帮助文档整页", () => {
     await expect(section).toBeVisible({ timeout: 10000 });
     await expect(section.getByText("电商销售", { exact: true })).toBeVisible();
 
+    // 图示例（ADR 0030）：后端按真实 CSV 生成的预览图能内联渲染出来
+    const preview = page.getByTestId("help-figure-canvas-example-sales-table-1");
+    await expect(preview).toBeVisible({ timeout: 15000 });
+    await expect(preview.locator("svg")).toHaveCount(1);
+
     const downloadPromise = page.waitForEvent("download");
     await page.getByTestId("help-example-download-电商销售.csv").click();
     const download = await downloadPromise;

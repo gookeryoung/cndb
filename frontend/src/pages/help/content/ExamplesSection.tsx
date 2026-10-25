@@ -10,6 +10,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { helpApi, type HelpExampleTable } from '@/api/help'
+import HelpFigure from '../HelpFigure'
 
 const { Paragraph, Text } = Typography
 
@@ -137,6 +138,22 @@ export default function ExamplesSection({ scenarioKey }: { scenarioKey: string }
                     dataSource={example.tables}
                     scroll={{ x: 640 }}
                 />
+            </div>
+
+            <div>
+                <Text strong>数据预览</Text>
+                <Paragraph type="secondary" style={{ margin: '4px 0 8px', fontSize: 12 }}>
+                    预览取自示例 CSV 的真实表头与首批行，文件更新后图示自动重建。
+                </Paragraph>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {example.tables.map((table, index) => (
+                        <HelpFigure
+                            key={table.file}
+                            id={`example-${scenarioKey}-table-${index + 1}`}
+                            caption={`${table.title} · ${table.description}`}
+                        />
+                    ))}
+                </div>
             </div>
 
             <div>

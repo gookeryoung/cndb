@@ -79,7 +79,25 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     except Exception:
         logger.warning("启动存储用量快照刷新线程失败（管理台将退化为懒计算）", exc_info=True)
 
+    # 帮助文档图示例的后台重建线程（ADR 0030）：图示由「构建代码 + 真实数据源」
+    # 生成 SVG，请求期按指纹即时重建，后台再按周期全量重建一次兜底 ——
+    # 代码 / 示例数据更新后图示不会停留在旧版本。
+    try:
+        from cndb.plugins.help.services.figures import start_figure_refresher
+
+        start_figure_refresher()
+    except Exception:
+        logger.warning("启动帮助图示刷新线程失败（图示退化为请求期懒重建）", exc_info=True)
+
     yield
+
+    # 关闭阶段：先停帮助图示线程（无事务），再停快照线程、回收导入任务。
+    try:
+        from cndb.plugins.help.services.figures import stop_figure_refresher
+
+        stop_figure_refresher()
+    except Exception:
+        logger.warning("停止帮助图示刷新线程失败（忽略）", exc_info=True)
 
     # 关闭阶段：先停后台刷新线程，再回收导入任务（两者都可能有未完成的事务）。
     try:

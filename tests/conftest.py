@@ -25,6 +25,9 @@ from cndb.models.base import Base
 # 数据库文件，而测试库是进程内内存 SQLite（StaticPool 单连接），跨线程写会污染。
 # 需要验证线程行为的用例自行构造 StorageSnapshotRefresher。
 settings.STORAGE_SNAPSHOT_ENABLED = False
+# 同理不进「帮助图示」后台重建线程（ADR 0030）：图示走请求期懒生成，
+# 线程行为由 tests/test_help_figures.py 直接构造 FigureRefresher 验证。
+settings.HELP_FIGURES_ENABLED = False
 
 
 @pytest.fixture(scope="session")
