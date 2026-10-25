@@ -15,6 +15,12 @@
 
 > 引入 docs.trae.cn 的展示字体（Outfit）与等宽字体（JetBrains Mono），继续完善ADR
 
+补充决策（2026-10-25，用户评审）：
+
+> `/root/cndb/frontend/public/fonts`还有无用途，是否可移除。
+>
+> 结论：改用 `@fontsource/inter` 运行时依赖后删除整个目录（Latin 字形不变，中文改用系统字体）。
+
 ## 可实施约束（C1..Cn）
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
@@ -25,6 +31,7 @@
 | C4 | 制定字体和CSS改进计划 | 输出分期计划（默认口径 → 字重与字体族标尺 → 字体资产与展示字体 → 等宽与阅读打磨），每期含改动文件、测试与验收；计划评审通过前不改代码 | `docs/adr/0031-font-and-css-typography.md` | ADR 评审 + `make check-docs` |
 | C5 | （隐含）保留用户可选偏好 | 「全局加粗」开关与字号档位仍可手动切换并持久化；已显式选择加粗的用户不被迁移为不加粗 | `frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/theme/ThemeProvider.tsx` | 单测覆盖开 / 关双向持久化；`loadFontSettings` 旧值兼容 |
 | C6 | 引入 Outfit 与 JetBrains Mono | 两套字体以 npm 运行时依赖引入（`@fontsource/outfit`、`@fontsource/jetbrains-mono`），入口按 latin 子集四档字重（400/500/600/700）导入 CSS；不引 CDN、不用变量字体 | `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/index.css` | `fontAssets.test.ts`（依赖声明 / 安装文件非空 / 入口字重导入）+ e2e `document.fonts.check` |
+| C7 | `public/fonts` 是否可移除 | Inter 同样改为 `@fontsource/inter` 运行时依赖（latin 四档），删除 `frontend/public/fonts` 整个目录；中文不再由 web font 覆盖，改由浏览器按系统字体逐字回退；字体栈同步去掉 Noto Sans SC | `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/index.css`、`frontend/src/theme/tokens.ts` | `fontAssets.test.ts`（三依赖声明 / 入口导入 / 目录不存在）+ `make frontend-build` 产物无 `/fonts/` 引用 |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。
 
@@ -44,10 +51,11 @@
 
 - [x] 是否引入 docs.trae.cn 的展示字体（Outfit）与等宽字体（JetBrains Mono）？结论：引入（用户 2026-10-25 决策）；本地托管静态子集，附 OFL 1.1，详见 ADR D6 / D9。
 - [x] 引入后是否新增运行时依赖？结论：新增 `@fontsource/outfit` 与 `@fontsource/jetbrains-mono` 两个运行时依赖（用户 2026-10-25 决策），只导入 latin 子集，版本随 lock 锁定。
+- [x] `frontend/public/fonts` 是否仍有用途？结论：无。Inter 迁到 `@fontsource/inter`，Noto Sans SC 实测仅覆盖 177 个字符，整个目录删除，中文改走系统字体（用户 2026-10-25 决策）。
 
 ## 卡点
 
-- [x] 每条需求句都有 C 编号约束（C1..C6）
+- [x] 每条需求句都有 C 编号约束（C1..C7）
 - [x] 未决问题全部有结论，待需求方确认卡片
 
 > 「决策记录表无待定」是 ADR 的卡点，不在本卡片判定。

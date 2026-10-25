@@ -57,12 +57,13 @@
 
 | 变量 | 值 | 用途 |
 | --- | --- | --- |
-| `--cn-font-sans` | Inter + Noto Sans SC | 正文与全部 antd 组件（同一栈，避免混排跳变） |
-| `--cn-font-display` | Outfit + Noto Sans SC | 品牌字、KPI 数字、纯拉丁大标题；中文回退 Noto |
+| `--cn-font-sans` | Inter + 系统字体 | 正文与全部 antd 组件（同一栈，避免混排跳变；中文按系统字体逐字回退） |
+| `--cn-font-display` | Outfit + 系统字体 | 品牌字、KPI 数字、纯拉丁大标题；中文回退系统字体 |
 | `--cn-font-mono` | JetBrains Mono + 系统等宽 | 代码块、行内代码、树 / 甘特 / WBS 编号列 |
 
-- 展示与等宽字体走 npm 运行时依赖 `@fontsource/outfit` 与 `@fontsource/jetbrains-mono`，
-  **只导入 latin 子集四档字重**（`main.tsx`），不引 CDN，离线部署随依赖安装
+- 正文字体与展示 / 等宽字体统一走 npm 运行时依赖 `@fontsource/inter`、
+  `@fontsource/outfit` 与 `@fontsource/jetbrains-mono`，**只导入 latin 子集四档字重**（`main.tsx`），
+  不引 CDN、不保留 `public/fonts` 本地字体，离线部署随依赖安装
 - 展示位负字距 `--cn-tracking-display: -0.02em` 只用于 `.cn-display-tight`；
   中文标题不加负字距（CJK 收紧伤可读性）
 

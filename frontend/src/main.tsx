@@ -4,7 +4,12 @@ import { BrowserRouter } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ThemeProvider } from '@/theme/ThemeProvider'
 import App from './App'
-// 展示字体与等宽字体走 npm 运行时依赖（本地打包，不引 CDN）；只取 latin 子集四个字重
+// 字体全部走 npm 运行时依赖（本地打包，不引 CDN）；只取 latin 子集四个字重
+// 中文不由 web font 覆盖，交由浏览器按系统字体逐字回退
+import '@fontsource/inter/latin-400.css'
+import '@fontsource/inter/latin-500.css'
+import '@fontsource/inter/latin-600.css'
+import '@fontsource/inter/latin-700.css'
 import '@fontsource/outfit/latin-400.css'
 import '@fontsource/outfit/latin-500.css'
 import '@fontsource/outfit/latin-600.css'
