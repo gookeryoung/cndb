@@ -12,16 +12,13 @@ import { mixColor } from '@/theme/themeMix'
 
 /** 根据 daysLeft 返回卡片边框与背景色 style.
  *
- * 逾期（daysLeft < 0）：橙红（volcano）左边框 + 65% danger-subtle 背景，
- * 与逾期天数无关，浓度不低于"当天"。
- *
- * 当天截止（pinToday=true && daysLeft === 0）：金橙色左边框 + 55% 金黄背景，
- * 视觉上低于逾期、高于普通紧急。
- *
- * 紧急（0 ≤ daysLeft ≤ urgentThreshold）：深红左边框 + 透明红色背景。
+ * 三档紧急态统一为红色系（透明红背景 + 深红左边框），靠浓度区分轻重：
+ * - 逾期（daysLeft < 0）：最深红边框 `#a8071a` + 28% 透明红背景；
+ * - 当天截止（pinToday=true && daysLeft === 0）：`#cf1322` 边框 + 24% 透明红背景；
+ * - 紧急（0 ≤ daysLeft ≤ urgentThreshold）：`#cf1322` 边框 + 20% 透明红背景。
  *
  * 正常或无截止日期返回 null（不设置背景/边框覆盖）.
- * 颜色用 color-mix 混合主题 CSS 变量，自动适配 10 种主题。
+ * 背景用 color-mix 与 transparent 混合，主题下都是半透明红覆盖层。
  */
 export function getUrgencyVisual(
   daysLeft: number | null,
@@ -32,26 +29,26 @@ export function getUrgencyVisual(
   if (daysLeft === null) return null
 
   if (daysLeft < 0) {
-    // 逾期：橙红 volcano + 65% danger-subtle 背景（浓度不低于当天）
+    // 逾期：最深红边框 + 透明红背景（浓度最高）
     return {
-      borderLeft: `${borderLeftWidth}px solid #ff7a45`,
-      background: `var(--cn-mix-bg-danger-subtle-65-bg-container)`,
+      borderLeft: `${borderLeftWidth}px solid #a8071a`,
+      background: mixColor('#ef4444', 28, 'transparent'),
     }
   }
 
   if (pinToday && daysLeft === 0) {
-    // 当天截止：金橙色边框 + 55% 金黄背景
+    // 当天截止：深红边框 + 透明红背景（介于逾期和普通紧急之间）
     return {
-      borderLeft: `${borderLeftWidth}px solid #fa8c16`,
-      background: `var(--cn-mix-gold-55-bg-container)`,
+      borderLeft: `${borderLeftWidth}px solid #cf1322`,
+      background: mixColor('#ef4444', 24, 'transparent'),
     }
   }
 
   if (daysLeft <= urgentThreshold) {
-    // 紧急：深红边框 + 透明红色背景（与逾期橙红、当天金橙区分）
+    // 紧急：深红边框 + 透明红背景（与逾期/当天靠背景浓度区分）
     return {
       borderLeft: `${borderLeftWidth}px solid #cf1322`,
-      background: mixColor('#ef4444', 12, 'transparent'),
+      background: mixColor('#ef4444', 20, 'transparent'),
     }
   }
 

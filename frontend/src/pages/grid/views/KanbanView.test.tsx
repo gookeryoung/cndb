@@ -311,42 +311,53 @@ describe('KanbanView 大数据量渲染性能', () => {
 })
 
 describe('KanbanView 严重程度分级背景色', () => {
-  /** 任务 fixture —— 同一天、不同截止日期偏移，覆盖 5 个严重程度档位 */
+  /** 任务 fixture —— 同一天、不同截止日期偏移，覆盖各严重程度档位 */
   const tierRows: RowResponse[] = [
-    { id: 1, 名称: '逾期-10天', 状态: '进行中', 截止: offsetDate(-10) },   // 逾期（统一一档 85% danger）
-    { id: 2, 名称: '逾期-5天', 状态: '进行中', 截止: offsetDate(-5) },    // 逾期（同上，与逾期天数无关）
+    { id: 1, 名称: '逾期-10天', 状态: '进行中', 截止: offsetDate(-10) },   // 逾期（统一一档，与逾期天数无关）
+    { id: 2, 名称: '逾期-5天', 状态: '进行中', 截止: offsetDate(-5) },    // 逾期（同上）
     { id: 3, 名称: '逾期-2天', 状态: '进行中', 截止: offsetDate(-2) },    // 逾期（同上）
-    { id: 4, 名称: '紧急-明天', 状态: '进行中', 截止: offsetDate(1) },     // 剩 0-1 天 → 60% warning
-    { id: 5, 名称: '紧急-后天', 状态: '进行中', 截止: offsetDate(3) },     // 剩 2-3 天 → 30% warning
-    { id: 6, 名称: '正常-10天', 状态: '进行中', 截止: offsetDate(10) },    // 正常 → 无背景
+    { id: 4, 名称: '当天', 状态: '进行中', 截止: offsetDate(0) },        // 当天截止（pin_today）
+    { id: 5, 名称: '紧急-明天', 状态: '进行中', 截止: offsetDate(1) },     // 阈值内紧急
+    { id: 6, 名称: '紧急-后天', 状态: '进行中', 截止: offsetDate(3) },     // 阈值内紧急
+    { id: 7, 名称: '正常-10天', 状态: '进行中', 截止: offsetDate(10) },    // 正常 → 无背景
   ]
   const tierView: View = {
     id: 1, name: '看板', view_type: 'kanban', is_default: false,
     view_options: { group_field: '状态', title_field: '名称', due_date_field: '截止' },
   }
-  /** 取卡片根容器 style.background */
-  const cardBgOf = (title: string): string => {
+  /** 取卡片根容器元素 */
+  const cardOf = (title: string): HTMLElement => {
     const titleEl = screen.getByText(title)
-    const cardEl = titleEl.parentElement?.parentElement as HTMLElement
-    return cardEl.style.background || ''
+    return titleEl.parentElement?.parentElement as HTMLElement
   }
+  /** 取卡片根容器 style.background */
+  const cardBgOf = (title: string): string => cardOf(title).style.background || ''
 
-  it('逾期（无论多少天）→ 统一一档橙红 volcano 边框 + 65% danger 背景', () => {
+  it('逾期（无论多少天）→ 最深红边框 + 28% 透明红背景', () => {
     renderKanban({ rows: tierRows, view: tierView })
-    // 三种逾期天数的卡片共享同一背景样式（Chrome 81 兼容：静态混色走 --cn-mix-* 兜底变量）
-    expect(cardBgOf('逾期-10天')).toBe('var(--cn-mix-bg-danger-subtle-65-bg-container)')
-    expect(cardBgOf('逾期-5天')).toBe('var(--cn-mix-bg-danger-subtle-65-bg-container)')
-    expect(cardBgOf('逾期-2天')).toBe('var(--cn-mix-bg-danger-subtle-65-bg-container)')
+    for (const title of ['逾期-10天', '逾期-5天', '逾期-2天']) {
+      expect(cardBgOf(title)).toContain('rgb(239, 68, 68)')
+      expect(cardBgOf(title)).toContain('28%')
+      expect(cardBgOf(title)).toContain('transparent')
+      expect(cardOf(title).style.borderLeft).toContain('rgb(168, 7, 26)')
+    }
   })
 
-  it('紧急（阈值内）→ 透明红色背景 + 深红左边框', () => {
+  it('当天截止 → 24% 透明红背景 + 深红左边框', () => {
     renderKanban({ rows: tierRows, view: tierView })
-    expect(cardBgOf('紧急-明天')).toContain('rgb(239, 68, 68)')
-    expect(cardBgOf('紧急-明天')).toContain('transparent')
-    expect(cardBgOf('紧急-后天')).toContain('rgb(239, 68, 68)')
-    expect(cardBgOf('紧急-后天')).toContain('transparent')
-    const urgentCard = screen.getByText('紧急-明天').parentElement?.parentElement as HTMLElement
-    expect(urgentCard.style.borderLeft).toContain('rgb(207, 19, 34)')
+    expect(cardBgOf('当天')).toContain('24%')
+    expect(cardBgOf('当天')).toContain('transparent')
+    expect(cardOf('当天').style.borderLeft).toContain('rgb(207, 19, 34)')
+  })
+
+  it('紧急（阈值内）→ 20% 透明红背景 + 深红左边框', () => {
+    renderKanban({ rows: tierRows, view: tierView })
+    for (const title of ['紧急-明天', '紧急-后天']) {
+      expect(cardBgOf(title)).toContain('rgb(239, 68, 68)')
+      expect(cardBgOf(title)).toContain('20%')
+      expect(cardBgOf(title)).toContain('transparent')
+      expect(cardOf(title).style.borderLeft).toContain('rgb(207, 19, 34)')
+    }
   })
 
   it('正常截止 → 不设置自定义背景 (style.background 为空)', () => {
