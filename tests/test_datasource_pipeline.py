@@ -100,6 +100,12 @@ class TestBuildRequests:
         assert config.headers["X-Key"] == "abc"
         assert config.body == {"query": "abc", "n": 1}
 
+    def test_exhausted_entrants_make_zero_plans(self):
+        """标的集合解析为空（回补全达标 / 清单尚无行）→ 零请求，不发明 entrant 伪请求."""
+        spec = RequestSpec(url_template="https://api.example.com/q?sym={entrant}&end={end}")
+        job = _job(request=spec, entrant_param="symbol", entrant_values=(), entrants_exhausted=True)
+        assert PROVIDER.build_requests(job) == []
+
     def test_missing_placeholder_surfaces_at_build_time(self):
         spec = RequestSpec(url_template="https://api.example.com/q?k={k}")
         with pytest.raises(ProviderError, match="模板变量缺失"):
