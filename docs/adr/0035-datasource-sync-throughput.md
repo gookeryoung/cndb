@@ -151,9 +151,9 @@ Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/field_types/select.py` | `tests/test_sync_select_options.py` | — |
-| P1 | 已落地 | `src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_import_light_mode_equivalence.py`、`tests/test_datasource_runner_streaming.py` | — |
-| P2 | 已落地 | `examples/datasets/工作区-数据源示例/datasource.json` | `tests/test_seed_datasource.py` | — |
+| P0 | 已落地 | `src/cndb/plugins/tables/field_types/select.py` | `tests/test_sync_select_options.py` | 5bdf927c |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_import_light_mode_equivalence.py`、`tests/test_datasource_runner_streaming.py` | 5bdf927c |
+| P2 | 已落地 | `examples/datasets/工作区-数据源示例/datasource.json` | `tests/test_seed_datasource.py` | 5bdf927c |
 
 ## 交接（会话结束更新）
 
