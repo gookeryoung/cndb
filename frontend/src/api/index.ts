@@ -35,6 +35,8 @@ export type {
 } from './admin'
 export { systemApi } from './system'
 export type { SystemAbout } from './system'
+export { helpApi } from './help'
+export type { HelpExample, HelpExampleList, HelpExampleTable } from './help'
 export { datasourceApi } from './datasource'
 export type {
   DatasourceProviderInfo,

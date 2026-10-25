@@ -12,6 +12,7 @@ import type {
   Field, RowListResponse, TableSummary, UserResponse, View, Workspace,
 } from '@/api'
 import type { DocumentItem } from '@/api/documents'
+import type { HelpExampleList } from '@/api/help'
 
 // 1x1 透明 PNG —— 附件端点默认响应体（内容不断言，只需是合法二进制）
 const _PNG_1PX = Uint8Array.from(
@@ -144,6 +145,43 @@ export const mockDocuments: DocumentItem[] = [
   },
 ]
 
+/** 帮助文档典型示例清单 fixture（ADR 0029 P1）：结构与后端接口一致 */
+export const mockHelpExamples: HelpExampleList = {
+  items: [
+    {
+      key: 'sales',
+      name: '某企业销售管理',
+      summary: '从销售明细、客户流失到营销活动与日常待办的完整销售运营示例。',
+      tables: [
+        { file: '电商销售.csv', title: '电商销售', description: '订单级销售明细', rows: 500 },
+        { file: '客户流失.csv', title: '客户流失', description: '客户维度的流失状态', rows: 500 },
+      ],
+      highlights: ['图表视图看月度销售额', '看板视图跟踪客户流失回访状态'],
+      steps: ['下载 CSV', '新建数据表并导入', '按字段类型核对后创建视图'],
+    },
+    {
+      key: 'research',
+      name: '科研项目管理',
+      summary: '围绕课题立项、任务分解、经费与资源排期组织数据。',
+      tables: [
+        { file: '科研项目.csv', title: '科研项目', description: '课题主数据', rows: 40 },
+      ],
+      highlights: ['工作分解视图组织层级'],
+      steps: ['下载 CSV', '导入为数据表'],
+    },
+    {
+      key: 'datasource',
+      name: '数据源示例',
+      summary: '把外部数据按计划写入数据表。',
+      tables: [
+        { file: '天气每日.csv', title: '天气每日', description: '天气观测', rows: 276 },
+      ],
+      highlights: ['画廊视图阅读资讯'],
+      steps: ['下载示例 CSV', '配置数据源同步'],
+    },
+  ],
+}
+
 // ─────────────── 默认 handlers ───────────────
 
 export const handlers = [
@@ -151,6 +189,14 @@ export const handlers = [
   http.post('/api/v1/accounts/auth/login', () =>
     HttpResponse.json({ access_token: 'fake-token', token_type: 'bearer' })),
   http.get('/api/v1/accounts/auth/me', () => HttpResponse.json(mockUser)),
+
+  // 帮助文档示例清单 / CSV 下载（ADR 0029 P1）
+  http.get('/api/v1/help/examples', () => HttpResponse.json(mockHelpExamples)),
+  http.get('/api/v1/help/examples/:scenario/files/:filename', () =>
+    new HttpResponse('订单号,销售额\nA-1,100\n', {
+      status: 200,
+      headers: { 'Content-Type': 'text/csv; charset=utf-8' },
+    })),
 
   // 用户偏好（ADR 0021：主页自定义顺序 / 收藏视图）——默认空，单用例 server.use 覆盖
   http.get('/api/v1/accounts/preferences', () =>
