@@ -234,10 +234,10 @@ export const WEIGHT = {
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/theme/fonts.ts`、`frontend/src/theme/ThemeProvider.tsx` | `frontend/src/theme/theme.test.ts`、`frontend/src/theme/ThemeProvider.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx` | — |
-| P1 | 已落地 | `frontend/src/theme/tokens.ts`、`frontend/src/index.css`、`frontend/src/pages/**` | `frontend/src/theme/tokens.test.ts` | — |
-| P2 | 已落地 | `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme/presets/common.ts`、`frontend/src/index.css`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/theme/fontAssets.test.ts` | — |
-| P3 | 已落地 | `frontend/src/index.css`、`frontend/src/components/Document/MarkdownLiveEditor.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/pages/grid/views/TreeView.tsx`、`frontend/src/pages/grid/views/WbsView.tsx`、`frontend/src/pages/grid/views/gantt/ganttLeftColumn.tsx`、`docs/DESIGN_SYSTEM.md` | `frontend/tests/e2e/critical/typography.spec.ts` | — |
+| P0 | 已落地 | `frontend/src/theme/fonts.ts`、`frontend/src/theme/ThemeProvider.tsx` | `frontend/src/theme/theme.test.ts`、`frontend/src/theme/ThemeProvider.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx` | cb2eacfb |
+| P1 | 已落地 | `frontend/src/theme/tokens.ts`、`frontend/src/index.css`、`frontend/src/pages/**` | `frontend/src/theme/tokens.test.ts` | cb2eacfb |
+| P2 | 已落地 | `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme/presets/common.ts`、`frontend/src/index.css`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/theme/fontAssets.test.ts` | cb2eacfb |
+| P3 | 已落地 | `frontend/src/index.css`、`frontend/src/components/Document/MarkdownLiveEditor.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/pages/grid/views/TreeView.tsx`、`frontend/src/pages/grid/views/WbsView.tsx`、`frontend/src/pages/grid/views/gantt/ganttLeftColumn.tsx`、`docs/DESIGN_SYSTEM.md` | `frontend/tests/e2e/critical/typography.spec.ts` | cb2eacfb |
 
 ## 交接（会话结束更新）
 
@@ -245,4 +245,4 @@ export const WEIGHT = {
 - 已完成：默认口径改为「标准字号 + 不加粗」；字重四档标尺与门禁；CSS 51 条 + 行内 64 处字面量收敛；antd 与 body 字体族统一；Outfit / JetBrains Mono 以运行时依赖引入并落地品牌字 / KPI / 等宽场景；`DESIGN_SYSTEM.md` 同步
 - 下一步：无（后续如需中文等宽，或为 Outfit 增加中文子集字体，另立 ADR）
 - 已知坑：`@fontsource` latin 子集不含中文，中文代码注释会回退系统等宽，属预期；`tokens.test.ts` 禁字面量前会剥离 `@font-face`，新增字体样式不要绕开变量；依赖版本锁在 `pnpm-lock.yaml`（5.3.0），升级需目检字形
-- 最近一次全绿：`make check`（本 ADR 收尾时执行）
+- 最近一次全绿：`make check`（后端 5303 passed / 覆盖率 97.02%，前端 2154 passed / 双门槛达标，前端静态含 Chrome 81 兼容检查 0 warning），提交 `cb2eacfb`
