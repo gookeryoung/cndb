@@ -104,7 +104,7 @@ export function topicPath(sectionKey: string, topicKey: string): string   // `/h
 | 教程&最佳实践 | `tutorials` | 视图类型 / 数据导入导出 / 权限与角色 / 字段类型 / 视图配置实践 | 现有 4 个主题迁入，补 1 个视图配置实践主题 |
 | 典型示例 | `examples` | 某企业销售管理 / 科研项目管理 / 数据源示例 | 后端清单驱动（§1、§3） |
 | 系统配置 | `configuration` | 工作区设置 / 个人设置与大模型 / 数据源同步 / 存储、备份与部署 | 新增内容，事实与设置页 / 文档一致 |
-| 问题排查 | `troubleshooting` | 常见问题 / 导入与权限排障 | 现有 `faq` 迁入，补导入失败、权限不足、登录过期、同步失败 |
+| 问题排查 | `troubleshooting` | 常见问题 / 使用与故障排查 | 现有 `faq` 迁入，补导入失败、权限不足、登录过期、同步失败 |
 
 路由与默认落点：
 
@@ -226,16 +226,16 @@ export function topicPath(sectionKey: string, topicKey: string): string   // `/h
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/content/`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/pages/help/HelpDocsPage.test.tsx`、`frontend/src/pages/help/helpNav.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | 待提交 |
-| P1 | 已落地 | `src/cndb/plugins/help/plugin.py`、`src/cndb/plugins/help/schemas.py`、`src/cndb/plugins/help/routers/examples.py`、`src/cndb/plugins/help/services/examples.py`、`src/cndb/plugins/help/services/assets.py`、`frontend/src/api/help.ts`、`frontend/src/pages/help/content/ExamplesSection.tsx` | `tests/test_help_examples_api.py`、`frontend/src/pages/help/content/ExamplesSection.test.tsx` | 待提交 |
-| P2 | 未开始 | — | — | — |
+| P0 | 已落地 | `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/content/`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/pages/help/HelpDocsPage.test.tsx`、`frontend/src/pages/help/helpNav.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | 65418bce |
+| P1 | 已落地 | `src/cndb/plugins/help/plugin.py`、`src/cndb/plugins/help/schemas.py`、`src/cndb/plugins/help/routers/examples.py`、`src/cndb/plugins/help/services/examples.py`、`src/cndb/plugins/help/services/assets.py`、`frontend/src/api/help.ts`、`frontend/src/pages/help/content/ExamplesSection.tsx` | `tests/test_help_examples_api.py`、`frontend/src/pages/help/content/ExamplesSection.test.tsx` | a09a88c7 |
+| P2 | 已落地 | `frontend/tests/e2e/critical/help-docs.spec.ts`、`frontend/scripts/bundle-budget.json` | `frontend/tests/e2e/critical/help-docs.spec.ts` | 1994c57c |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0、P1 已落地（待提交）；P2 未开工
-- 已完成：P0 —— `/help` 与深链路由、两级侧栏（桌面常驻 / 窄屏抽屉）、5 部分导航与内容迁移、名称统一、删除抽屉与旧测试、重放引导迁移、`/help` 不渲染工作区 Sider。P1 —— `plugins/help`（`HELP_EXAMPLE_MANIFEST` 三套场景 + 白名单 CSV 下载，`get_current_user` 鉴权、RFC 5987 文件名、资产包内优先 / 仓库兜底、目录缺失清单仍可读下载 404）、`frontend/src/api/help.ts`、`ExamplesSection`（TanStack Query `['help','examples']`，表格 / 亮点 / 步骤 / 鉴权 blob 下载 / 失败重试 / 场景缺失提示）
-- 下一步：P2 —— 系统配置与问题排查正文补齐、移动端与 e2e（下载断言、窄屏目录）、bundle 预算与 seed 解耦守卫；seed 删除另行立项
-- 已知坑：`/help` 不在 `/w` 下，`MainLayout` 无 wid 分支会先等 `wsLoading`；深链纠正依赖 `findTopic`，新增主题必须同时挂到 `HELP_SECTIONS`；示例文件在 wheel 中位于 `cndb/datasets`、源码态位于 `examples/datasets`，`assets.py` 按此两处探测且**不得 import seed**；下载需登录，前端必须走 axios blob（`<a href>` 带不上 Authorization）；`HelpTip` 与本次重构无关，勿动
-- 最近一次全绿：`make check-fast` + `make test`（后端 5283 passed / 13 skipped）+ `make cov`（后端 95% 门槛达标）+ `pnpm vitest run`（180 文件 / 2141 例）+ `make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.40%）
+- 当前阶段：P0 / P1 / P2 全部落地；待人工评审决定是否把 `Status` 改为 `Implemented`
+- 已完成：P0 —— `/help` 与深链路由、两级侧栏（桌面常驻 / 窄屏抽屉）、5 部分导航与内容迁移（含系统配置 4 主题、问题排查 2 主题）、名称统一、删除抽屉与旧测试、重放引导迁移、`/help` 不渲染工作区 Sider。P1 —— `plugins/help`（`HELP_EXAMPLE_MANIFEST` 三套场景 + 白名单 CSV 下载，`get_current_user` 鉴权、RFC 5987 文件名、资产包内优先 / 仓库兜底、目录缺失清单仍可读下载 404）、`frontend/src/api/help.ts`、`ExamplesSection`（TanStack Query `['help','examples']`，表格 / 亮点 / 步骤 / 鉴权 blob 下载 / 失败重试 / 场景缺失提示）。P2 —— `frontend/tests/e2e/critical/help-docs.spec.ts`（入口 → 两级导航 → 刷新 / 后退 → 示例清单 → CSV 下载 → 窄屏目录）与 `HelpDocsPage` 独立 lazy chunk 的体积基线（10.06 KiB gzip）
+- 下一步：seed 内容移除另行立需求（`cndb seed` 与帮助已解耦，移除不影响帮助）
+- 已知坑：`/help` 不在 `/w` 下，`MainLayout` 无 wid 分支会先等 `wsLoading`；深链纠正依赖 `findTopic`，新增主题必须同时挂到 `HELP_SECTIONS`；示例文件在 wheel 中位于 `cndb/datasets`、源码态位于 `examples/datasets`，`assets.py` 按此两处探测且**不得 import seed**；下载需登录，前端必须走 axios blob（`<a href>` 带不上 Authorization）；e2e 需独占 `:8000`，本地开着 `cndb serve` 时先停掉；`HelpTip` 与本次重构无关，勿动
+- 最近一次全绿：`make flow`（`check-fast` + 后端 5283 passed / 8 skipped）+ `make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.40%）+ `make e2e`（71 passed / 21 skipped）+ `pnpm build` 与 `bundle-budget`（全部关键 chunk 在预算内）
