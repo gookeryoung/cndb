@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 import pytest
@@ -275,9 +276,19 @@ class TestSessionInjection:
         captured: dict[str, Any] = {}
         real = runner.run_pipeline
 
-        def spy(spec: SyncJobSpec, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None):
+        def spy(
+            spec: SyncJobSpec, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None, on_batch=None, batch_size=5000
+        ):
             captured["rate_limit_ms"] = rate_limit_ms
-            return real(spec, provider=provider, fetch=fetch, rate_limit_ms=0, sleep=sleep)
+            return real(
+                spec,
+                provider=provider,
+                fetch=fetch,
+                rate_limit_ms=0,
+                sleep=sleep,
+                on_batch=on_batch,
+                batch_size=batch_size,
+            )
 
         monkeypatch.setattr(runner, "run_pipeline", spy)
         job.rate_limit_ms = 250
@@ -329,17 +340,24 @@ class TestSessionInjection:
 
 
 class TestPipelineRateLimit:
-    def test_waits_between_requests_only(self):
+    def test_waits_between_requests_only(self, monkeypatch):
         rows = [{"a": 1}]
         sleeps: list[float] = []
+        clock = {"now": 100.0}
 
+        def fake_sleep(delay: float) -> None:
+            sleeps.append(round(delay, 6))
+            clock["now"] += delay
+
+        # 全局限速器按真实时钟预约出发时刻（ADR 0034 D5）；假 sleep 不推进时间，须一起假造时钟
+        monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
         job = SyncJobSpec(
             request=RequestSpec(
                 url_template="https://api.example.com/w?p={page}",
                 paging=PagingSpec(mode="page", max_pages=3),
             )
         )
-        run_pipeline(job, fetch=lambda _cfg: rows, rate_limit_ms=200, sleep=sleeps.append)
+        run_pipeline(job, fetch=lambda _cfg: rows, rate_limit_ms=200, sleep=fake_sleep)
         # 3 个请求 → 只在第 2、3 次之前等待
         assert sleeps == [0.2, 0.2]
 

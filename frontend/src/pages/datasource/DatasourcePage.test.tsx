@@ -586,4 +586,37 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(screen.queryByTestId('datasource-llm-user')).not.toBeInTheDocument()
     expect(screen.queryByTestId('datasource-llm-model')).not.toBeInTheDocument()
   })
+
+  it('编辑 http 任务保留表单未挂载的声明键（record_mode / row_defaults / workers / entrant_source）', async () => {
+    // ADR 0008/0034：种子任务的 rows_array / 常量列 / 并发 / 动态标的声明不在表单里，
+    // 编辑保存必须原样回传，避免一保存就静默丢配置
+    setupHandlers([
+      makeJob({
+        request_spec: {
+          url_template: 'https://api.example.com/w?city={city}',
+          record_mode: 'rows_array',
+          record_layout: { 日期: 0, 收盘: 2 },
+          row_defaults: { 来源: '新浪快照' },
+          row_filter: { field: '收盘', op: '>', value: 0 },
+          workers: 6,
+          paging: { mode: 'none' },
+        },
+        entrant_source: { table: '股票清单', field: '代码', prefix_in: ['sh60'] },
+      }),
+    ])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    fireEvent.click(await screen.findByTestId('datasource-save-btn'))
+    await waitFor(() => expect(jobBodies).toHaveLength(1))
+    const body = jobBodies[0] as Record<string, unknown>
+    const spec = body.request_spec as Record<string, unknown>
+    expect(spec.record_mode).toBe('rows_array')
+    expect(spec.record_layout).toEqual({ 日期: 0, 收盘: 2 })
+    expect(spec.row_defaults).toEqual({ 来源: '新浪快照' })
+    expect(spec.row_filter).toEqual({ field: '收盘', op: '>', value: 0 })
+    expect(spec.workers).toBe(6)
+    // 表单管理的键仍以表单值为准（URL 模板可改）
+    expect(spec.url_template).toContain('api.example.com')
+    expect(body.entrant_source).toEqual({ table: '股票清单', field: '代码', prefix_in: ['sh60'] })
+  })
 })

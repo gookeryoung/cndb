@@ -11,11 +11,11 @@
       "order": 0
     },
     {
-      "name": "新浪（不复权）",
+      "name": "新浪快照（当日）",
       "view_type": "grid",
       "filter_type": "AND",
       "filters": [
-        {"field_name": "来源", "op": "=", "value": "新浪"}
+        {"field_name": "来源", "op": "=", "value": "新浪快照"}
       ],
       "sortings": [
         {"field_name": "股票代码", "direction": "asc"},
@@ -24,11 +24,11 @@
       "order": 1
     },
     {
-      "name": "腾讯（前复权）",
+      "name": "腾讯回补（前复权）",
       "view_type": "grid",
       "filter_type": "AND",
       "filters": [
-        {"field_name": "来源", "op": "=", "value": "腾讯"}
+        {"field_name": "来源", "op": "=", "value": "腾讯前复权"}
       ],
       "sortings": [
         {"field_name": "股票代码", "direction": "asc"},

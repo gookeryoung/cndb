@@ -45,8 +45,11 @@ def fake_pipeline(monkeypatch):
     """替换 runner.run_pipeline，避免端点测试真实联网."""
     rows = [{"city": "北京", "day": "2024-06-30", "temp": 30.0}]
 
-    def fake(job, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None):
+    def fake(job, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None, on_batch=None, batch_size=5000):
         normalize = NormalizeResult(rows=[dict(row) for row in rows])
+        if on_batch is not None:
+            # 流式路径（非 llm_prompt，ADR 0034 D1）：行经回调交付，落库计数走 state.write
+            on_batch([dict(row) for row in rows])
         return PipelineOutcome(rows=[dict(row) for row in rows], plans=1, succeeded=1, failures=[], normalize=normalize)
 
     monkeypatch.setattr(runner, "run_pipeline", fake)
@@ -298,7 +301,7 @@ class TestRunPreview:
         wid, headers = workspace_with_auth
         created = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=_payload(), headers=headers).json()
 
-        def fake(job, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None):
+        def fake(job, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None, on_batch=None, batch_size=5000):
             outcome = PipelineOutcome(rows=[], plans=2, succeeded=1, failures=[], normalize=NormalizeResult())
             outcome.failures.append(FetchFailure(label="city=上海", error="HTTP 500"))
             return outcome

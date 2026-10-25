@@ -99,6 +99,20 @@ function DatasourceSettingsContent() {
                     生产环境由后台调度触发；可在任务详情查看最近运行状态与错误摘要。首次接入建议先「预览」确认字段映射，再启用周期调度。
                 </Text>
             </div>
+            <div>
+                <Text strong>大规模同步与增量</Text>
+                <br />
+                <Text type="secondary">
+                    全市场级别的任务（如数千只股票的日线）通过三项声明接入：标的动态来源（entrant_source，从清单表按前缀取值，新标的自动纳入）、按标的回补水位的增量游标（backfill_date，每轮只补缺口，补满自动跳过）、并发与全局限速（workers + rate_limit_ms，防止打爆对方接口）。历史回补是长任务，建议用命令行 cndb sync tick 驱动，中断后重跑会从水位断点继续，不会重复已补数据。
+                </Text>
+            </div>
+            <div>
+                <Text strong>大表与库体积维护</Text>
+                <br />
+                <Text type="secondary">
+                    千万行级目标表会在首次同步时按幂等键自动建复合索引，写入与去重性能不受影响。库体积随数据自然增长（十年日线约数百 MB），三点维护口径：SQLite 默认 WAL 模式下删除行不即时回收空间，可在低峰期对库执行 VACUUM 压实；WAL 文件在checkpoint 后自动收缩，异常增长时检查是否有长事务未提交；系统备份按整库打包，大表会使备份体积同步增长，属预期现象，建议错开大表回补与备份的时间窗。
+                </Text>
+            </div>
             <HelpFigure id="datasource-sync" />
         </div>
     )

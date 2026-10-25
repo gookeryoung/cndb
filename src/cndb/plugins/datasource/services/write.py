@@ -7,6 +7,11 @@
 幂等由应用层「先查后写」保证（ADR 0006 已确认不引入复合唯一索引）：
 同一 ``match_keys`` 组合重复运行只会更新既有行，不会新增重复行。
 
+ADR 0034 D6 扩展：为目标表按 ``match_keys`` 建**非唯一**复合索引（幂等
+``CREATE INDEX IF NOT EXISTS``）——千万行级大表上「先查后写」的批量 OR
+查询没有索引会退化为全表扫描。非唯一不改变应用层幂等口径（0006 否决的
+是唯一约束，普通索引只加速查找）。
+
 多 job 分列写同一行时使用 ``partial=True``：只更新本次 job 实际提供的列，
 未提供的列保持原值，避免不同周期/复权任务互相把对方的 JSON 列清空。
 
@@ -22,6 +27,8 @@ import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
+
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +82,7 @@ def upsert_rows(
     from cndb.plugins.tables.services.importing.importer import Importer
 
     keys = [key for key in match_keys if key]
+    ensure_match_keys_index(db, table, keys)
     importer = Importer(engine, db, table, user=user, partial=True)
     # content 占位为空串：行已解析好，走 rows 入口（与 import_api 的 JSON 数组导入同口径）
     analysis = importer.analyze("", rows=list(rows), match_keys=keys or None)
@@ -120,4 +128,26 @@ def upsert_rows(
     return outcome
 
 
-__all__ = ["WriteOutcome", "upsert_rows"]
+def ensure_match_keys_index(db: Any, table: Any, match_keys: Sequence[str]) -> None:
+    """为目标表按 ``match_keys`` 建非唯一复合索引（幂等，ADR 0034 D6）.
+
+    列序 = 幂等键声明顺序，列名取各 ``DataField.db_column_name``；
+    缺字段的键跳过（auto 推断键尚未建列等场景），全部缺失则不建。
+    """
+    if not match_keys:
+        return
+    columns: list[str] = []
+    fields = {item.name: item for item in table.active_fields()}
+    for key in match_keys:
+        item = fields.get(key)
+        if item is not None:
+            columns.append(f'"{item.db_column_name}"')
+    if not columns:
+        return
+    index_name = f"ix_{table.db_table_name}_match"
+    statement = text(f'CREATE INDEX IF NOT EXISTS "{index_name}" ON "{table.db_table_name}" ({", ".join(columns)})')
+    db.execute(statement)
+    db.commit()
+
+
+__all__ = ["WriteOutcome", "ensure_match_keys_index", "upsert_rows"]

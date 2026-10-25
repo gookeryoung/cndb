@@ -16,7 +16,7 @@ export type SyncScheduleMode = 'manual' | 'daily' | 'interval' | 'cron'
 /** 运行状态 */
 export type SyncRunStatus = 'running' | 'success' | 'partial' | 'failed'
 /** 增量游标策略 */
-export type SyncCursorStrategy = 'date' | 'datetime' | 'key_set' | 'none'
+export type SyncCursorStrategy = 'date' | 'datetime' | 'key_set' | 'backfill_date' | 'none'
 
 /** 适配器参数表单中的一个字段 */
 export interface ProviderField {
@@ -69,10 +69,16 @@ export interface SyncRequestSpec {
   params_template?: Record<string, unknown>
   body_template?: unknown
   data_path?: string | null
-  /** rows：响应即对象数组；columns：响应是「列名 → 数组」，需按列拼行 */
-  record_mode?: 'rows' | 'columns'
-  /** 列式映射：{目标列名: 源键} */
-  record_layout?: Record<string, string>
+  /** rows：响应即对象数组；columns：响应是「列名 → 数组」按列拼行；rows_array：数组的数组按位置拼行（ADR 0008/0034） */
+  record_mode?: 'rows' | 'columns' | 'rows_array'
+  /** 列式 / 行数组映射：{目标列名: 源键或位置索引} */
+  record_layout?: Record<string, string | number>
+  /** 并发抓取线程数（按标的×窗口分组，组内保持串行；ADR 0034 D5） */
+  workers?: number
+  /** 数值行过滤（如快照零值行剔除，作用于归一后的目标字段；ADR 0034 D4） */
+  row_filter?: { field: string; op: string; value: number }
+  /** 行级常量列（值支持 {today} / {entrant} 模板；ADR 0034 D4） */
+  row_defaults?: Record<string, string | number>
   encoding?: string
   timeout?: number
   paging?: {
@@ -125,6 +131,12 @@ export interface SyncJob {
   parser: string
   entrant_param: string | null
   entrant_keys: string[]
+  /** 标的动态来源：从同工作区某表某字段 distinct 取值（ADR 0034 D3） */
+  entrant_source?: {
+    table: string
+    field: string
+    prefix_in?: string[]
+  } | null
   match_keys: string[]
   field_mapping: SyncFieldMapping
   cursor: SyncCursorConfig
@@ -148,6 +160,8 @@ export interface SyncJobPayload {
   parser?: string
   entrant_param?: string | null
   entrant_keys?: string[]
+  /** 标的动态来源（ADR 0034 D3）；编辑既有任务时原样回传以保留声明 */
+  entrant_source?: SyncJob['entrant_source']
   match_keys?: string[]
   field_mapping?: SyncFieldMapping
   cursor?: SyncCursorConfig
