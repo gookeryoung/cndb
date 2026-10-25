@@ -176,7 +176,7 @@ export const mockHelpExamples: HelpExampleList = {
       tables: [
         { file: '天气每日.csv', title: '天气每日', description: '天气观测', rows: 276 },
       ],
-      highlights: ['画廊视图阅读资讯'],
+      highlights: ['画廊视图阅读政策与情报简报'],
       steps: ['下载示例 CSV', '配置数据源同步'],
     },
   ],

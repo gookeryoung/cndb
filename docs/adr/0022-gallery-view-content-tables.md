@@ -13,7 +13,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 针对这两种通过LLM抓取的数据表 | 两张 CSV 去掉系统 `id` 列后放入 `examples/datasets/工作区-数据源示例/`，seed 按文件名建表；字段名按 ADR 0019 C9 统一用中文（菜名 / 菜系 / 日期 / 地区…），视图配置可直接复用到用户同结构表；同轮补两条 `llm_prompt` 同步任务（`schedule.mode=manual`） |
+| C1 | 针对这两种通过LLM抓取的数据表 | 两张 CSV 去掉系统 `id` 列后放入 `examples/datasets/工作区-数据源示例/`，seed 按文件名建表；字段名按 ADR 0019 C9 统一用中文（日期 / 地区 / 标题 / 发文机构…），视图配置可直接复用到用户同结构表；同轮补两条 `llm_prompt` 同步任务（`schedule.mode=manual`） |
 | C2 | 设计合适的视图 | 新增 `view_type=gallery`：卡片栅格（标题 / 摘要 / 彩色标签 / 日期 / 元信息），点击卡片打开行详情；`view_options` 七项由 `GALLERY_OPTIONS` 定义 |
 | C3 | 用于用户查看资讯 | 两表各 5-7 个视图（画廊默认 + grid + kanban + matrix / calendar + chart + 过滤视图），配置见 §Decision 9 |
 | C4 | 用于分享资讯 | 视图仍走 ADR 0003 三档可见性；seed `scope=global` → `ViewVisibility.TABLE`，表内成员均可见；分享用深链与收藏，不扩匿名公开分享（ADR 0003 D5） |
@@ -38,11 +38,11 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | 6 | seed 视图默认 `scope=global` → `owner_id=None` + `ViewVisibility.TABLE`；`is_default` 仅 table 档生效 | `src/cndb/cli/seed/views.py:199-244` | 默认画廊对表内全员可见，符合「工作区内共享」 | 确认 |
 | 7 | 非 grid 视图一次拉取上限 `VIEW_FETCH_ALL_LIMIT = 2000`，排序由服务端按视图 `sortings` 应用 | `frontend/src/pages/grid/useGridData.ts:21-38` | 画廊无需客户端排序；2000 卡片需分批挂载 | 确认 |
 | 8 | 视图匿名公开分享已明确不复活（ADR 0003 D5）；文档分享（ADR 0017）不适用于表 / 视图 | `docs/adr/0003-view-visibility-permission-model.md` | 分享范围限定工作区内 | 确认 |
-| 9 | seed CSV 建表时低基数文本自动提升 select（`地区/主题/趋势判断/菜系/难度`），日期 / 数字按值推断 | `src/cndb/plugins/tables/services/transfer/normalize/promote.py:21-79` | 彩色标签、看板分组、矩阵轴可直接使用 | 新增 |
+| 9 | seed CSV 建表时低基数文本自动提升 select（`地区/主题/趋势判断/政策类型/风险等级`），日期 / 数字按值推断 | `src/cndb/plugins/tables/services/transfer/normalize/promote.py:21-79` | 彩色标签、看板分组、矩阵轴可直接使用 | 新增 |
 | 10 | `_row_to_dict` 把物理列 `id` 映射为 `result["id"]`；数据表导出在 `routers/bulk_export.py` 剔除系统行 ID（JSON / CSV / XLSX 均不含），但表内存在名为 `id` 的有效业务字段时保留该列（否则字段名覆盖同名系统 id 会导致整列业务数据丢失） | `src/cndb/plugins/tables/services/core/records.py:860-877`、`src/cndb/plugins/tables/routers/bulk_export.py:118-123` | 手工构造 / 旧版导出的 CSV 仍须去掉 `id` 列，否则建出同名业务字段并覆盖行 ID | 新增 |
 | 11 | seed 完整性测试静态解析 CSV 表头 + `valid view types` 白名单 | `tests/test_backup_seed_roundtrip.py:349`、`:439-455`、`:533-542` | 新表无需硬编码字段；类型集合与引用提取需同步 | 新增 |
 
-**核心缺陷（需求要补的）**：现有 10 种视图没有「阅读态」——grid 长文本截断、kanban 卡片只显示标题与少量标签、chart 只做聚合，LLM 抓取的资讯 / 菜谱类内容缺少可浏览、可分享的卡片墙。
+**核心缺陷（需求要补的）**：现有 10 种视图没有「阅读态」——grid 长文本截断、kanban 卡片只显示标题与少量标签、chart 只做聚合，LLM 抓取的政策 / 情报类长文本缺少可浏览、可分享的卡片墙。
 
 设计目标（不变量）：
 
@@ -143,15 +143,15 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | 5 | 议题与态势分布 | chart | `charts[]`：饼图 `主题`（measure=`标题`, count）+ 柱图 `趋势判断`（measure=`标题`, count） |
 | 6 | 升温议题 | grid | filters `趋势判断 = 升温`；sortings `[日期 desc, 标题 asc]` |
 
-**美食推荐做法**（`烹饪时长,菜系,难度,菜名,主要食材,分步做法,小贴士`）：
+**行业政策与合规台账**（`日期,发文机构,政策类型,标题,摘要,合规要求,适用部门,风险等级,落实状态,生效日期,链接`）：
 
 | order | 视图 | 类型 | 配置摘要 |
 |---|---|---|---|
-| 0 | 菜谱画廊（默认） | gallery | `title_field=菜名`、`summary_field=分步做法`、`tag_fields=[菜系,难度]`、`meta_fields=[烹饪时长]`、`summary_lines=4`；sortings `[烹饪时长 asc, 菜名 asc]` |
-| 1 | 全部菜谱 | grid | sortings `[烹饪时长 asc, 菜名 asc]` |
-| 2 | 按菜系看板 | kanban | `group_field=菜系`、`title_field=菜名`、`priority_field=难度`、`card_fields=[烹饪时长]` |
-| 3 | 快手菜（≤40分钟） | grid | filters `烹饪时长 <= 40`；sortings `[烹饪时长 asc, 菜名 asc]` |
-| 4 | 菜系与时长概览 | chart | `charts[]`：直方图 `烹饪时长` + 饼图 `菜系`（measure=`菜名`, count） |
+| 0 | 政策台账画廊（默认） | gallery | `title_field=标题`、`summary_field=摘要`、`tag_fields=[政策类型,风险等级]`、`meta_fields=[发文机构]`、`date_field=日期`、`summary_lines=4`；sortings `[日期 desc, 标题 asc]` |
+| 1 | 全部政策 | grid | sortings `[日期 desc, 标题 asc]` |
+| 2 | 按发文机构看板 | kanban | `group_field=发文机构`、`title_field=标题`、`priority_field=风险等级`、`card_fields=[政策类型,生效日期]` |
+| 3 | 待落实政策 | grid | filters `落实状态 = 待落实`；sortings `[生效日期 asc, 标题 asc]` |
+| 4 | 政策类型与风险概览 | chart | `charts[]`：柱图 `政策类型` + 饼图 `风险等级`（measure=`标题`, count） |
 
 ## 决策记录（唯一决策台账）
 
@@ -172,7 +172,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 - **正向**：内容型数据表获得阅读态入口；新增类型零迁移、零新端点；分享复用既有可见性，权限面不变；配置 schema 同时服务创建表单与设置对话框。
 - **负向**：视图模式注册清单再增一处硬编码（`ViewMode` / `VALID_MODES` / `MODE_BUTTONS` / `MODE_VIEW_TYPES` / 中文标签表）；非 grid 的 2000 行上限在画廊场景更易被感知（靠筛选收窄）。
-- **风险与缓解**：默认画廊使 grid 工具栏的「新增行」不在首屏（切「全部资讯 / 全部菜谱」一键可达，属有意取舍）；画廊组件保持 lazy，避免 GridPage 体积预算超限（超限用 `bundle:budget:update` 收口）。
+- **风险与缓解**：默认画廊使 grid 工具栏的「新增行」不在首屏（切「全部情报 / 全部政策」一键可达，属有意取舍）；画廊组件保持 lazy，避免 GridPage 体积预算超限（超限用 `bundle:budget:update` 收口）。
 
 ## 与既有 ADR 的关系
 
@@ -195,8 +195,8 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P1 已落地（gallery 类型 + 组件 + 配置 schema + 注册清单 + 后端/seed 校验；两表 CSV + 12 个 seed 视图）
-- 追加（2026-10-23，ADR 0019 C9）：两表字段随 ADR 0019 中文化（`日期,地区,来源,摘要,标题,主题,趋势判断,链接` / `烹饪时长,菜系,难度,菜名,主要食材,分步做法,小贴士`），`views.json` 的 12 个视图字段引用、`fields.json` 必填设置、`datasource.json` 新增的两条 `llm_prompt` 任务（中文映射 / 幂等键，`manual` 调度）同轮改完；e2e 只按卡片数与文案断言，不依赖字段名
+- 追加（2026-10-23，ADR 0019 C9）：两表字段随 ADR 0019 C9 中文化（`日期,地区,来源,摘要,标题,主题,趋势判断,链接` / `日期,发文机构,政策类型,标题,摘要,合规要求,适用部门,风险等级,落实状态,生效日期,链接`；后者由 ADR 0032 替换原生活类示例而来），`views.json` 的 12 个视图字段引用、`fields.json` 必填设置、`datasource.json` 新增的两条 `llm_prompt` 任务（中文映射 / 幂等键，`manual` 调度）同轮改完；e2e 只按卡片数与文案断言，不依赖字段名
 - 已完成：前端 `172` 个测试文件 / `2115` 例全绿；后端 `make test` 通过；`make check-fast` 全绿；e2e `gallery-view.spec.ts` 本地实跑通过；`bundle:budget` 全绿
 - 下一步：合并后由人确认 `Status`；如需超 2000 行全量画廊另立行虚拟化 ADR；观察默认画廊视图下「新增行」入口的发现性反馈
-- 已知坑：① 手工构造 / 旧版导出的 CSV 若首列是 `id` 必须先删（数据表导出已不带 `id`；带 `id` 建表会生成同名业务字段，`_row_to_dict` 又用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部资讯 / 全部菜谱」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在；⑥ **视图状态是单例 store，离开表页不清理**：`reset()` 与「视图匹配」effect 在同一 commit 内先后执行，匹配逻辑必须读 `useGridViewStore.getState()` 的实时值（用渲染闭包会误判「目标已就位」跳过 `loadView`，返回表页时默认画廊退化成空表格）；跨表首帧由 `store.tableKey` 归属校验兜住脏 `filters` / `sortings`。回归用例：`GridPage.landingView.test.tsx`、e2e `gallery-view.spec.ts`
+- 已知坑：① 手工构造 / 旧版导出的 CSV 若首列是 `id` 必须先删（数据表导出已不带 `id`；带 `id` 建表会生成同名业务字段，`_row_to_dict` 又用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部情报 / 全部政策」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在；⑥ **视图状态是单例 store，离开表页不清理**：`reset()` 与「视图匹配」effect 在同一 commit 内先后执行，匹配逻辑必须读 `useGridViewStore.getState()` 的实时值（用渲染闭包会误判「目标已就位」跳过 `loadView`，返回表页时默认画廊退化成空表格）；跨表首帧由 `store.tableKey` 归属校验兜住脏 `filters` / `sortings`。回归用例：`GridPage.landingView.test.tsx`、e2e `gallery-view.spec.ts`
 - 最近一次全绿：2026-10-23（`make check-fast` + 前端全量 vitest 2115 passed + 画廊切页往返浏览器实测）

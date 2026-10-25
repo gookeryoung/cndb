@@ -213,16 +213,16 @@ class TestBuildRequests:
         """中文字段名走归一链路时原样保留（映射键与目标名均为中文）."""
         job = _job(
             field_mapping={
-                "菜名": {"name": "菜名", "field_type": "text"},
-                "烹饪时长": {"name": "烹饪时长", "field_type": "int"},
+                "标题": {"name": "标题", "field_type": "text"},
+                "适用部门": {"name": "适用部门", "field_type": "text"},
             }
         )
         rows = PROVIDER.parse(
-            _model_response('{"rows": [{"菜名": "宫保鸡丁", "烹饪时长": "30"}]}'),
+            _model_response('{"rows": [{"标题": "数据出境安全评估申报指引", "适用部门": "法务合规部"}]}'),
             job,
         )
         result = PROVIDER.normalize(rows, job)
-        assert result.rows == [{"菜名": "宫保鸡丁", "烹饪时长": 30}]
+        assert result.rows == [{"标题": "数据出境安全评估申报指引", "适用部门": "法务合规部"}]
 
 
 class TestParse:

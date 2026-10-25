@@ -174,7 +174,7 @@ def test_real_datasource_json_is_valid():
     jobs = cfg["jobs"]
     assert len(jobs) == 2
     assert {job["provider"] for job in jobs} == {"llm_prompt"}
-    assert [job["table"] for job in jobs] == ["美食推荐做法", "国际形势发展动态"]
+    assert [job["table"] for job in jobs] == ["行业政策与合规台账", "国际形势发展动态"]
 
     # 所有任务：目标表的示例数据文件必须存在，映射目标列与幂等键必须真实存在于 CSV 表头
     for job in jobs:

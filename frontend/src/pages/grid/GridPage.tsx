@@ -130,7 +130,7 @@ const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'grid', label: '表格', tooltip: '表格 (Grid)：行列结构，适合录入与批量管理', icon: <ColumnHeightOutlined /> },
   { mode: 'tree', label: '树', tooltip: '树 (Tree)：按父子字段组织为可折叠层级，适合目录与分类', icon: <ApartmentOutlined /> },
   { mode: 'kanban', label: '看板', tooltip: '看板 (Kanban)：按选择字段分组拖拽流转，适合任务跟踪', icon: <AppstoreOutlined /> },
-  { mode: 'gallery', label: '画廊', tooltip: '卡片画廊 (Gallery)：标题/摘要/标签/日期卡片墙，适合资讯阅读与分享', icon: <PictureOutlined /> },
+  { mode: 'gallery', label: '画廊', tooltip: '卡片画廊 (Gallery)：标题/摘要/标签/日期卡片墙，适合政策 / 情报 / 简报等长文本业务数据的阅读与分享', icon: <PictureOutlined /> },
   { mode: 'calendar', label: '日历', tooltip: '日历 (Calendar)：按日期字段排布在月历上', icon: <CalendarOutlined /> },
   { mode: 'gantt', label: '甘特图', tooltip: '甘特图 (Gantt)：时间轴展示任务起止与进度', icon: <LineChartOutlined /> },
   { mode: 'wbs', label: 'WBS', tooltip: '工作分解 (WBS)：树状层级组织任务', icon: <PartitionOutlined /> },

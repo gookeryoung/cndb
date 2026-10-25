@@ -7,11 +7,11 @@ Related: `src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/plugin.py`、`
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」段落；ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档。
 >
-> 2026-10-22 用户追加需求：① 大模型相关配置移到个人配置；② 推荐提示词（新闻摘要 / 美食推荐）获取失败。本 ADR 就地改写为「个人级连接 + 提示词可靠性」口径，C7/C8 见需求卡片。
+> 2026-10-22 用户追加需求：① 大模型相关配置移到个人配置；② 推荐提示词（新闻摘要 / 政策台账）获取失败。本 ADR 就地改写为「个人级连接 + 提示词可靠性」口径，C7/C8 见需求卡片。
 >
 > 2026-10-23 用户追加需求：大模型设置要提供典型服务商及其模型对应列表，选后自动填好 API 地址与模型，同时保留自定义入口。本 ADR 追加 C10 口径（服务商预设），代码落点见 `frontend/src/pages/settings/llmProviders.ts`、`frontend/src/pages/settings/LlmConfigPanel.tsx`。
 
-> 2026-10-23 用户追加需求：典型示例数据要带「美食推荐做法 / 国际形势发展动态」的数据源同步配置，且大模型动态拉取的字段要支持中文。本 ADR 追加 C9 口径（字段命名中文化 + 示例同步任务），代码落点见 `llm/services/prompts.py`、`auto_table.py`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`examples/datasets/工作区-数据源示例/`。
+> 2026-10-23 用户追加需求：典型示例数据要带「行业政策与合规台账 / 国际形势发展动态」的数据源同步配置，且大模型动态拉取的字段要支持中文。本 ADR 追加 C9 口径（字段命名中文化 + 示例同步任务），代码落点见 `llm/services/prompts.py`、`auto_table.py`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`examples/datasets/工作区-数据源示例/`。
 
 ## 口径（需求 → 设计落点）
 
@@ -25,11 +25,11 @@ Related: `src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/plugin.py`、`
 | C2 | 尽可能只配置提示词项即可确保抓取到合适的数据 | 个人级「大模型连接」（`base_url` / `model` / `api_key` / 可选 `system_prompt`，按 `user_id` 隔离，表 `llm_user_config`）配置一次；`llm/services/connection.py` 的 `resolve_request_spec_defaults` 在运行 / 预览期补齐 `url_template` / `llm.model`（保存时仅在内存中补齐用于校验），均不写回 `request_spec`；未配置 system 时使用内置默认系统提示词；提示词模板用宽松求值（`render_text_lenient`）：JSON 裸花括号与未知 `{xxx}` 原样保留，仅替换已注册变量，`{{`/`}}` 仍转义为字面花括号 |
 | C3 | 支持空数据表自动新增和更新数据的能力 | `auto_table.ensure_job_table`（留空目标表 → 按任务名建表）、`is_table_empty` + `upsert_rows(auto_add_fields=True)`（空表补字段）、`infer_match_keys` + `upsert_rows(auto_match_keys=True)`（自动幂等键）；重复运行只更新不重复插入 |
 | C4 | 系统提示词请默认配置好 | `src/cndb/plugins/llm/services/prompts.py` 维护完整 `DEFAULT_SYSTEM_PROMPT`（输出格式 / 字段命名 / 真实性约束，`providers/llm_prompt.py` 复用导出）；请求构造在未配置 system 时使用它；个人配置或任务高级设置可层层覆盖 |
-| C5 | 提供5组典型可用的推荐用户提示词参考示例 | `frontend/src/pages/datasource/llmPromptPresets.ts` 内置 8 组预设（首批 5 组：每日新闻摘要 / 城市天气 / 股票行情快照 / 电商竞品价格 / 行业政策公告；2026-10-22 追加 3 组：商业航天新闻动态 / 美食推荐做法 / 国际形势发展动态），任务抽屉「推荐提示词」一键套用 |
+| C5 | 提供5组典型可用的推荐用户提示词参考示例 | `frontend/src/pages/datasource/llmPromptPresets.ts` 内置 7 组预设（每日新闻摘要 / 城市天气 / 股票行情快照 / 电商竞品价格 / 行业政策公告 / 商业航天新闻动态 / 行业政策与合规台账 / 国际形势发展动态中的 7 组，其中「行业政策与合规台账」由 ADR 0032 替换原生活类场景而来），任务抽屉「推荐提示词」一键套用 |
 | C6 | 并给出说明 | 每组预设带 `description / target_fields / match_keys / prompt`，套用时在页面展示「适用场景 + 建议目标表字段 + 建议幂等键」；同一份说明写入本 ADR 附录，页面与文档同源 |
 | C7 | 大模型相关配置移到个人配置里（2026-10-22 追加） | 连接归属为**个人级**：新表 `llm_user_config`（`user_id` 唯一，级联删除；模型 `LlmUserConfig`）；接口在 `GET|PUT /api/v1/llm/config` + `POST /api/v1/llm/config/test`（旧 `GET|PUT /api/v1/accounts/llm-config` / `POST /api/v1/accounts/llm-config/test` 删除）；工作区级 `llm-config` / `test-connection` 端点删除；任务保存只校验、运行 / 预览按当前用户 / `job.created_by` 解析个人连接（不把默认值写回任务）；前端入口改为「个人设置 → 大模型」，数据源页不再配置；备份升 v7 且不导出个人配置 |
-| C8 | 推荐提示词开箱可用（2026-10-22 追加） | 默认 `max_tokens` 1024 → 4096；JSON 解析失败且疑似截断时给出「提高 max_tokens / 精简输出」提示；默认系统提示词要求综述 / 推荐类任务尽力输出，不因无法联网返回空数组，无法核实的事实标注「综合整理」、`url` 可空；「每日新闻摘要」「美食推荐做法」预设按此调整 |
-| C9 | 大模型动态拉取的字段能否支持中文（2026-10-23 追加） | 字段命名默认中文化：内置系统提示词改为「字段名支持中文（中文短名 / 英文 snake_case 均可）、提示词已指定的字段名必须逐字沿用」；8 组推荐提示词的 `target_fields` / `match_keys` / 字段说明全部改中文；自动幂等键的「像键」加权补中文片段（日期 / 编号 / 名称 / 城市 / 标题 / 主题…）；示例工作区两张 LLM 内容表（美食推荐做法 / 国际形势发展动态）的 CSV 表头、视图引用、字段设置、同步任务映射与幂等键同步改中文，并补齐两条 `llm_prompt` 同步配置 |
+| C8 | 推荐提示词开箱可用（2026-10-22 追加） | 默认 `max_tokens` 1024 → 4096；JSON 解析失败且疑似截断时给出「提高 max_tokens / 精简输出」提示；默认系统提示词要求综述 / 推荐类任务尽力输出，不因无法联网返回空数组，无法核实的事实标注「综合整理」、`url` 可空；「每日新闻摘要」「行业政策与合规台账」预设按此调整 |
+| C9 | 大模型动态拉取的字段能否支持中文（2026-10-23 追加） | 字段命名默认中文化：内置系统提示词改为「字段名支持中文（中文短名 / 英文 snake_case 均可）、提示词已指定的字段名必须逐字沿用」；7 组推荐提示词的 `target_fields` / `match_keys` / 字段说明全部改中文；自动幂等键的「像键」加权补中文片段（日期 / 编号 / 名称 / 城市 / 标题 / 主题…）；示例工作区两张 LLM 内容表（行业政策与合规台账 / 国际形势发展动态）的 CSV 表头、视图引用、字段设置、同步任务映射与幂等键同步改中文，并补齐两条 `llm_prompt` 同步配置 |
 
 | C10 | 大模型设置提供典型服务商及其模型对应列表，选后自动填好 API 地址和模型，保留自定义入口（2026-10-23 追加；2026-10-24 移除国外服务商） | `frontend/src/pages/settings/llmProviders.ts` 维护 6 家国内服务商预设（DeepSeek / 阿里云百炼 / 智谱 GLM / 月之暗面 Kimi / 火山方舟 / 硅基流动）：每条只带 OpenAI 兼容 `base_url`（不含 `/chat/completions`，前端保存 / 测试时仍由后端补全）与常用模型列表，`models[0]` 为默认模型；面板「服务商」下拉选中即写入 `base_url` + 默认模型，模型字段是「可选可填」AutoComplete（列表外可直接输入）；「自定义（自行填写地址与模型）」清空地址回到手填，手改地址后按 `base_url` 反查自动回落「自定义」；预设只在前端，不落库、不参与后端校验（后端默认值 `DEFAULT_BASE_URL` / `DEFAULT_MODEL` 不变），新增服务商只改这一个文件 |
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
@@ -48,17 +48,17 @@ Related: `src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/plugin.py`、`
 | 6 | 工作区备份 v7 不再导出大模型配置，导入接受 1-7；旧 v6 备份里的 `llm_config` 键按未知键忽略；任务 `request_spec` 也不再持久化个人 `base_url` / `model` | `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py` | 个人 Key / 地址 / 模型不随工作区交付给其他成员 / 其他环境 | 确认（C7） |
 | 7 | 前端入口在「个人设置 → 大模型」页签，API 封装走 `frontend/src/api/llm.ts` 的 `llmApi`（`/v1/llm/config`）；数据源页无连接按钮 / Tag / 弹窗 | `frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/pages/datasource/DatasourcePage.tsx` | 配置位置符合「个人配置」直觉，数据源页只保留任务本身 | 确认（C7） |
 | 8 | `llm_prompt` 任务主表单只留任务名称 / 用户提示词 / 目标表，其余收高级设置 | `frontend/src/pages/datasource/DatasourcePage.tsx` | 「只写一句提示词」可保存，地址 / 模型 / Key 从个人配置继承 | 确认（C1/C2） |
-| 9 | 默认 `max_tokens` 曾为 1024，长新闻 / 美食 JSON 在中途被截断（`Unterminated string`） | `src/cndb/plugins/llm/services/prompts.py`（`DEFAULT_MAX_TOKENS`，`llm_prompt` 复用） | 推荐提示词开箱即失败，且错误文案看不出是 token 不足 | 确认（C8） |
+| 9 | 默认 `max_tokens` 曾为 1024，长文本 JSON 在中途被截断（`Unterminated string`） | `src/cndb/plugins/llm/services/prompts.py`（`DEFAULT_MAX_TOKENS`，`llm_prompt` 复用） | 推荐提示词开箱即失败，且错误文案看不出是 token 不足 | 确认（C8） |
 | 10 | 截断后的 JSON 解析错误与普通非法 JSON 使用同一文案，无修复指引 | `src/cndb/plugins/llm/services/parsing.py`（`parse_chat_response` / `looks_truncated` 迁入，`llm_prompt` 薄封装复用） | 用户无法自查是「输出太长」还是「模型没按要求输出」 | 确认（C8） |
-| 11 | 默认系统提示词旧版要求「无法产出就返回 `{"rows": []}`」，模型面对实时性要求时倾向返回空 | `src/cndb/plugins/llm/services/prompts.py`（`DEFAULT_SYSTEM_PROMPT` 真实性约束） | 新闻摘要 / 美食推荐这类不依赖实时库的综述任务直接拿到空数据 | 确认（C8） |
-| 12 | 「每日新闻摘要」「美食推荐做法」预设旧文案按实时抓取口径写，且美食一次要求四类多道菜，输出过长 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 与新的系统提示词口径不一致，长输出仍可能截断 | 确认（C8） |
+| 11 | 默认系统提示词旧版要求「无法产出就返回 `{"rows": []}`」，模型面对实时性要求时倾向返回空 | `src/cndb/plugins/llm/services/prompts.py`（`DEFAULT_SYSTEM_PROMPT` 真实性约束） | 新闻摘要 / 政策台账这类不依赖实时库的综述任务直接拿到空数据 | 确认（C8） |
+| 12 | 「每日新闻摘要」「行业政策与合规台账」预设旧文案按实时抓取口径写，且长文本一次要求整批 8 条以上，输出过长 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 与新的系统提示词口径不一致，长输出仍可能截断 | 确认（C8） |
 | 13 | 空表自动建表 / 补字段 / 自动幂等键保持原实现 | `src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py` | 本轮不改写路径语义，只换连接来源（`llm/services/connection.py`） | 确认（C3） |
 | 14 | 测试覆盖个人接口 / 迁移 / 备份 / 运行解析 / 提示词可靠性 / 前端页签与预设；平台层（client / parsing / 连接搬表）用例见 ADR 0020 P0 | `tests/test_datasource_llm_config.py`、`tests/test_datasource_migration.py`、`tests/test_datasource_backup.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_migration_missing_model_columns.py`、`frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | 新行为同轮补测试 | 确认（C1-C8） |
-| 15 | 字段命名只能英文：内置系统提示词第 4 条要求「统一使用英文 snake_case，不要使用中文」，8 组预设的字段说明也照抄该约束 | `src/cndb/plugins/llm/services/prompts.py`（`DEFAULT_SYSTEM_PROMPT`）、`frontend/src/pages/datasource/llmPromptPresets.ts` | 模型把中文业务语义翻成英文键，落表后表内是 `dish_name` / `region`，与示例工作区其余表（天气每日等全中文字段）不一致；用户要中文字段只能改写系统提示词 | 确认（C9） |
+| 15 | 字段命名只能英文：内置系统提示词第 4 条要求「统一使用英文 snake_case，不要使用中文」，7 组预设的字段说明也照抄该约束 | `src/cndb/plugins/llm/services/prompts.py`（`DEFAULT_SYSTEM_PROMPT`）、`frontend/src/pages/datasource/llmPromptPresets.ts` | 模型把中文业务语义翻成英文键，落表后表内是 `policy_title` / `region`，与示例工作区其余表（天气每日等全中文字段）不一致；用户要中文字段只能改写系统提示词 | 确认（C9） |
 | 16 | 自动幂等键的「像键」加权只认英文片段（`date` / `city` / `title`…） | `src/cndb/plugins/datasource/services/auto_table.py`（`KEY_NAME_HINTS`） | 中文字段（日期 / 城市 / 标题）权重恒为 0，多列唯一时按候选顺序取，推断结果不稳定 | 确认（C9） |
-| 17 | 食品 / 国际形势两张 LLM 内容表只有 CSV 与视图，没有同步配置 | `examples/datasets/工作区-数据源示例/datasource.json` | 示例数据无法演示「提示词 → 中文字段 → 落表」的完整链路，用户无从参考配置 | 确认（C9） |
+| 17 | 政策 / 国际形势两张 LLM 内容表只有 CSV 与视图，没有同步配置 | `examples/datasets/工作区-数据源示例/datasource.json` | 示例数据无法演示「提示词 → 中文字段 → 落表」的完整链路，用户无从参考配置 | 确认（C9） |
 
-**核心缺陷（需求要补的）**：连接配置挂在**工作区**上，无法表达「这是某个人的模型账号」——同一用户跨工作区要重复配置，共享工作区下配置归属与 Key 可见性也说不清；同时默认 token 上限与系统提示词的「宁可返回空」倾向，让已内置的新闻 / 美食推荐提示词开箱即失败。
+**核心缺陷（需求要补的）**：连接配置挂在**工作区**上，无法表达「这是某个人的模型账号」——同一用户跨工作区要重复配置，共享工作区下配置归属与 Key 可见性也说不清；同时默认 token 上限与系统提示词的「宁可返回空」倾向，让已内置的新闻 / 政策台账提示词开箱即失败。
 
 设计目标（不变量）：
 
@@ -194,7 +194,7 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 | 个人设置页签 | `frontend/src/pages/settings/LlmConfigPanel.tsx`、`SettingsModal.tsx`、`frontend/src/store/ui.ts` | 「个人设置」新增「大模型」页签：服务商预设 / 地址 / 模型（可选可填）/ Key（只写不回显，已保存可清除）/ 系统提示词覆盖 / 内置默认全文 / 「测试连接」（可用未保存 Key）；`SettingsTab` 增加 `llm` |
 | 服务商预设 | `frontend/src/pages/settings/llmProviders.ts` | 6 家国内 OpenAI 兼容服务商（`base_url` + 常用模型，`models[0]` 默认）+ `findProviderByBaseUrl` 地址反查（忽略末尾斜杠 / 大小写 / 空白）；前端专用，不落库、不改后端默认值 |
 | 数据源页 | `frontend/src/pages/datasource/DatasourcePage.tsx` | 删除页头「大模型连接」按钮 / 状态 Tag / 连接弹窗与未配置引导；`llm_prompt` 抽屉改为提示去「个人设置 → 大模型」；高级设置 `max_tokens` 默认 4096 |
-| 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 8 组预设；「每日新闻摘要」改为基于已掌握近期公开信息、允许标注「综合整理」；「美食推荐做法」控制单次输出规模；其余预设补充实时数据口径说明；弹窗列表默认收起（手风琴，一次展开一组），点击场景名才展示适用场景 / 建议字段 / 建议幂等键 |
+| 推荐提示词 | `frontend/src/pages/datasource/llmPromptPresets.ts` | 7 组预设；「每日新闻摘要」改为基于已掌握近期公开信息、允许标注「综合整理」；「行业政策与合规台账」控制单次输出规模；其余预设补充实时数据口径说明；弹窗列表默认收起（手风琴，一次展开一组），点击场景名才展示适用场景 / 建议字段 / 建议幂等键 |
 | 页面测试 | `frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`SettingsModal.test.tsx`、`llmProviders.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`llmPromptPresets.test.ts` | 个人页签保存 / 测试 / 清除 Key / 用户隔离提示 / 选服务商自动填地址与模型 / 选自定义清空地址 / 模型可手填；数据源页无连接入口、提示文案；预设文案与数量 |
 
 ### 7. 测试清单
@@ -220,7 +220,7 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 - 备份 v7 导出不含任何个人大模型配置，任务配置不再含个人 `base_url` / `model`；v1-v7 均可导入；v6 备份的 `llm_config` 键被忽略。
 - 平台层（客户端重试 / JSON 解析 / 连接搬表 / `llm_run` 留痕）用例见 ADR 0020 P0 测试清单。
 
-**前端（单测）**：`LlmConfigPanel.test.tsx`（读取 / 保存 / 测试 / 清除 / 默认系统提示词展示）、`SettingsModal.test.tsx`（「大模型」页签）、`DatasourcePage.test.tsx`（无连接入口、个人配置提示、保存 payload、预览幂等键、非 LLM 任务回归）、`llmPromptPresets.test.ts`（8 组、新闻 / 美食文案）。
+**前端（单测）**：`LlmConfigPanel.test.tsx`（读取 / 保存 / 测试 / 清除 / 默认系统提示词展示）、`SettingsModal.test.tsx`（「大模型」页签）、`DatasourcePage.test.tsx`（无连接入口、个人配置提示、保存 payload、预览幂等键、非 LLM 任务回归）、`llmPromptPresets.test.ts`（7 组、新闻 / 政策合规文案）。
 
 **e2e（前端）**：既有 `datasource.spec.ts` 默认 provider 流程保持通过；LLM 流程只校验保存与表单，不触发真实模型调用。
 
@@ -230,8 +230,8 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 |---|---|---|
 | **P0** | 大模型连接（模型 / 迁移 / GET·PUT 端点 / 连接解析）+ 内置系统提示词 + prompt-only 校验 / 连通测试 + 备份格式 | 中（模型 + 迁移 + 备份格式） |
 | **P1** | 自动建表、空表补字段、自动幂等键（`auto_table` + `write` + `runner` + 预览建议键） | 中（写路径改动，需既有落表回归） |
-| **P2** | 前端极简表单 + 8 组推荐提示词 + 测试与文档 | 中（跨前后端契约） |
-| **P3** | 连接迁移到个人级（个人表 / 个人接口 / 任务按用户解析 / 个人设置页签 / 备份 v7）+ 提示词可靠性（`max_tokens` / 截断提示 / 系统提示词 / 新闻美食预设） | 中（数据迁移不可逆 + 前后端入口切换） |
+| **P2** | 前端极简表单 + 7 组推荐提示词 + 测试与文档 | 中（跨前后端契约） |
+| **P3** | 连接迁移到个人级（个人表 / 个人接口 / 任务按用户解析 / 个人设置页签 / 备份 v7）+ 提示词可靠性（`max_tokens` / 截断提示 / 系统提示词 / 新闻政策预设） | 中（数据迁移不可逆 + 前后端入口切换） |
 
 ## 决策记录（唯一决策台账）
 
@@ -278,7 +278,7 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 | P1 | 已落地 | `src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/cli/sync.py` | `tests/test_datasource_auto_table.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_cli.py` | d0e2841e |
 | P2 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/api/llm.ts`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/pages/settings/SettingsModal.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts`、`frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx` | d0e2841e |
 | P3 | 已落地 | `src/cndb/plugins/llm/plugin.py`、`src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/services/connection.py`、`src/cndb/plugins/llm/routers/config.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/alembic/versions/7b8c9d0e1f2a_add_llm_plugin.py`、`src/cndb/alembic/versions/6a7b8c9d0e1f_add_user_llm_config.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/api/llm.ts`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/pages/datasource/llmPromptPresets.ts` | `tests/test_datasource_llm_config.py`、`tests/test_datasource_migration.py`、`tests/test_datasource_llm_provider.py`、`tests/test_datasource_api.py`、`tests/test_datasource_backup.py`、`frontend/src/pages/settings/LlmConfigPanel.test.tsx`、`frontend/src/pages/settings/SettingsModal.test.tsx`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | dba416e5 |
-| P4 | 已落地 | `src/cndb/plugins/llm/services/prompts.py`、`src/cndb/plugins/datasource/services/auto_table.py`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/views.json`、`examples/datasets/工作区-数据源示例/fields.json`、`examples/datasets/工作区-数据源示例/美食推荐做法.csv`、`examples/datasets/工作区-数据源示例/国际形势发展动态.csv` | `tests/test_datasource_llm_provider.py`、`tests/test_datasource_auto_table.py`、`tests/test_seed_datasource.py`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | a544d5a |
+| P4 | 已落地 | `src/cndb/plugins/llm/services/prompts.py`、`src/cndb/plugins/datasource/services/auto_table.py`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/views.json`、`examples/datasets/工作区-数据源示例/fields.json`、`examples/datasets/工作区-数据源示例/行业政策与合规台账.csv`、`examples/datasets/工作区-数据源示例/国际形势发展动态.csv` | `tests/test_datasource_llm_provider.py`、`tests/test_datasource_auto_table.py`、`tests/test_seed_datasource.py`、`frontend/src/pages/datasource/llmPromptPresets.test.ts` | a544d5a |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系；提交列由 Lead 在提交后回填 sha。
 >
@@ -301,9 +301,9 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 - 已知坑：自动幂等键只在结果行内可判定，无唯一组合时退化为追加（看 `run.detail.auto_match_keys`）；自动补字段只在空表启用；个人配置不随工作区备份导出，导入备份后每人需各自配置；任务运行按 `job.created_by` 解析个人连接，创建者离职 / 换 Key 后任务需改由他人重建或用会话 Key 兜底；旧工作区配置 `created_by` 为空时迁移会丢弃；`6a7b8c9d0e1f` / `7b8c9d0e1f2a` 的 downgrade 都不恢复数据；推荐类任务长输出仍可能超过 `max_tokens`，错误文案会提示调大或精简；无联网模型无法取实时新闻 / 行情，只能基于已掌握信息并标注「综合整理」；宽松模板只作用于 `llm_prompt` 的 system / user 提示词，URL 与 headers 仍严格；CLI 预览按任务创建者解析个人连接；`make adr-check` 会校验已落地期的代码 / 测试路径，接口或迁移改名时必须同步本表；中文字段名不含空格与标点（导出 CSV 与公式引用才无歧义），已有英文表不会被自动改名，需要中文时就新建任务 / 表；示例两条 LLM 任务为 `manual`，缺少个人 Key 时不会自动跑
 - 最近一次全绿：`make check-docs`（2026-10-23，P4 中文字段口径与示例同步配置文档同步）
 
-## 附录：8 组推荐用户提示词说明（2026-10-22 追加 3 组；2026-10-23 字段改中文）
+## 附录：7 组推荐用户提示词说明
 
-页面「推荐提示词」与本节保持同一份口径（预设定义见 `frontend/src/pages/datasource/llmPromptPresets.ts`；prompt 中的 `{{` / `}}` 是后端模板语法里的字面花括号，运行时还原为 `{` / `}`）。「每日新闻摘要」「美食推荐做法」两组已按提示词可靠性口径调整（基于已掌握信息 / 标注综合整理 / 控制输出规模）；C9 起全部字段名改中文，英文 snake_case 仍兼容（用户自行改回英文也能落表）。
+页面「推荐提示词」与本节保持同一份口径（预设定义见 `frontend/src/pages/datasource/llmPromptPresets.ts`；prompt 中的 `{{` / `}}` 是后端模板语法里的字面花括号，运行时还原为 `{` / `}`）。「每日新闻摘要」「行业政策与合规台账」两组已按提示词可靠性口径调整（基于已掌握信息 / 标注综合整理 / 控制输出规模）；字段名全部为中文，英文 snake_case 仍兼容（用户自行改回英文也能落表）。
 
 | 预设 id | 场景 | 建议目标表字段 | 建议幂等键 |
 |---|---|---|---|
@@ -313,7 +313,7 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 | `ecommerce_price` | 电商竞品价格监控 | 日期、平台、商品编号、商品标题、售价、划线价、优惠信息、销量 | 日期 + 平台 + 商品编号 |
 | `policy_tracker` | 行业政策公告跟踪 | 日期、发文机构、标题、摘要、政策类型、生效日期、链接 | 日期 + 发文机构 + 标题 |
 | `commercial_aerospace` | 商业航天新闻动态 | 日期、公司、事件类型、标题、摘要、来源、链接、重要度 | 日期 + 公司 + 标题 |
-| `food_recipes` | 美食推荐做法 | 菜名、菜系、难度、烹饪时长、主要食材、分步做法、小贴士 | 菜名 + 菜系 |
+| `policy_compliance` | 行业政策与合规台账 | 日期、发文机构、政策类型、标题、摘要、合规要求、适用部门、风险等级、落实状态、生效日期、链接 | 日期 + 发文机构 + 标题 |
 | `global_affairs` | 国际形势发展动态 | 日期、地区、主题、标题、摘要、来源、链接、趋势判断 | 日期 + 地区 + 标题 |
 
 ### 1. 每日新闻摘要（`daily_news`）
@@ -407,19 +407,19 @@ def resolve_request_spec_defaults(spec: dict, conn: LlmConnection) -> dict: ...
 只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。
 ```
 
-### 7. 美食推荐做法（`food_recipes`）
+### 7. 行业政策与合规台账（`policy_compliance`）
 
-- **适用场景**：按菜名 + 菜系整理家庭可操作的美食做法，适合菜谱库、每日菜单与美食内容推荐；`菜名 + 菜系` 即天然幂等键。不依赖实时数据，模型基于已掌握知识输出；单次输出控制在 8 道菜以内，避免长 JSON 被截断。
-- **建议目标表字段**：菜名、菜系、难度（简单 / 中等 / 困难）、烹饪时长（分钟，整数）、主要食材（文本）、分步做法（文本）、小贴士（无则空串）。
-- **建议幂等键**：菜名 + 菜系。
+- **适用场景**：梳理政策公告中的合规要求与落实状态，适合合规台账与整改跟踪；`日期 + 发文机构 + 标题` 即稳定幂等键；与「行业政策公告跟踪」互补（后者跟踪发布，本预设跟踪落地）。政策属于实时信息，无法核实处标注「综合整理」、链接留空。
+- **建议目标表字段**：日期（`YYYY-MM-DD`）、发文机构、政策类型（办法 / 通知 / 规划 / 征求意见）、标题、摘要（≤150 字）、合规要求、适用部门、风险等级（高 / 中 / 低）、落实状态（已落实 / 推进中 / 待落实）、生效日期（`YYYY-MM-DD`）、链接。
+- **建议幂等键**：日期 + 发文机构 + 标题。
 - **prompt 示例**（节选）：
 
 ```text
-请推荐 {today} 适合家庭制作的美食做法，覆盖家常菜、汤羹、主食、甜点四类，每类 2 道，共 8 道，优先当季食材。
-每道菜给出：菜名、菜系、难度、烹饪时长、主要食材、分步做法、关键小贴士。
-控制输出规模：每道菜的主要食材不超过 6 种；分步做法用编号与分号分隔，每步不超过 60 字；小贴士一句话即可，避免输出过长被截断。
-字段要求（字段名用中文）：菜名、菜系（如 川菜/粤菜/西餐）、难度（简单/中等/困难）、烹饪时长（分钟，整数）、主要食材（用顿号分隔的文本）、分步做法（用编号与分号分隔的文本）、小贴士（无则空字符串）。
-同一菜名同一菜系只能有一条记录，菜名 + 菜系 为稳定键；不要返回空数组。
+请梳理 {today} 前后的行业政策与合规要求，覆盖数据安全、个人信息保护、财务合规、市场监管、人力资源与生态环境等主题，至少 8 条。
+每条记录给出：日期、发文机构、政策类型、标题、摘要、合规要求、适用部门、风险等级、落实状态、生效日期、链接。
+字段要求（字段名用中文）：日期（YYYY-MM-DD）、发文机构、政策类型（办法/通知/规划/征求意见）、标题、摘要（不超过 150 字）、合规要求（一句话说明企业需要做什么）、适用部门、风险等级（高/中/低）、落实状态（已落实/推进中/待落实）、生效日期（YYYY-MM-DD）、链接（原文链接）。
+政策属于实时信息：无法确认的摘要 / 来源标注「综合整理」、链接用空字符串，不要编造链接，也不要返回空数组。
+同一天同一发文机构同一标题只能有一条记录，日期 + 发文机构 + 标题 为稳定键。
 只输出 JSON：一个行对象数组；如需包裹，使用 {{"rows": [行对象, ...]}}。不要输出 Markdown 代码围栏或解释文字。
 ```
 
