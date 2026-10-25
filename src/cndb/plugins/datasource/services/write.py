@@ -62,6 +62,7 @@ def upsert_rows(
     user: Any = None,
     auto_add_fields: bool = False,
     auto_match_keys: bool = False,
+    light: bool = False,
 ) -> WriteOutcome:
     """按 ``match_keys`` 幂等落表.
 
@@ -74,6 +75,8 @@ def upsert_rows(
         user: 触发同步的用户，用于行级写范围判定；定时任务传 ``None``。
         auto_add_fields: 目标表为空时自动补字段（ADR 0019；仅 llm_prompt 打开）。
         auto_match_keys: ``match_keys`` 为空时自动推断幂等键（ADR 0019）。
+        light: 轻量落表（ADR 0035 D2）：跳过列画像 / 参考列推荐 / 清洗建议 /
+            全表选项同步。校验、幂等匹配、未知列规划与写入结果不变。
     """
     if not rows:
         return WriteOutcome()
@@ -85,7 +88,7 @@ def upsert_rows(
     ensure_match_keys_index(db, table, keys)
     importer = Importer(engine, db, table, user=user, partial=True)
     # content 占位为空串：行已解析好，走 rows 入口（与 import_api 的 JSON 数组导入同口径）
-    analysis = importer.analyze("", rows=list(rows), match_keys=keys or None)
+    analysis = importer.analyze("", rows=list(rows), match_keys=keys or None, light=light)
 
     # ── ADR 0019：自动幂等键 —— upsert 分类依赖 match_keys，推断出键后需重新 analyze ──
     if auto_match_keys and not keys:
@@ -93,7 +96,7 @@ def upsert_rows(
         inferred = infer_match_keys(rows, candidate_names(rows, field_names))
         if inferred:
             keys = inferred
-            analysis = importer.analyze("", rows=list(rows), match_keys=keys)
+            analysis = importer.analyze("", rows=list(rows), match_keys=keys, light=light)
 
     # 自动补字段必须走 execute 的 add_text_field 策略：由 Importer 建 DataField + DDL
     existing_names = {item.name for item in table.active_fields()}
@@ -101,6 +104,7 @@ def upsert_rows(
         analysis=analysis,
         match_keys=keys or None,
         unknown_cols_strategy="add_text_field" if auto_add_fields else "drop",
+        sync_options=not light,
     )
     auto_fields: list[str] = []
     if auto_add_fields:

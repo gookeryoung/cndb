@@ -178,12 +178,17 @@ class Importer:
         match_keys: list[str] | None = None,
         unknown_cols_strategy: str = "drop",
         header_row: int | None = None,
+        light: bool = False,
     ) -> ImportAnalysisResult:
         """仅做解析 + 校验 + 报告 + upsert 匹配 + 字段规划，不写库.
 
         传入已解析的 ``rows`` 可跳过解析阶段（比如前端直接传 JSON 对象数组）。
         ``header_row`` 为用户指定的表头行号（1 基）；为空时自动识别表头所在行，
         识别结果（行号 + 概率 + 候选）写入 ``report["header_detection"]``。
+
+        ``light=True`` 为数据源同步等大吞吐链路（ADR 0035 D2）跳过「报告类」计算：
+        列画像、参考列推荐、清洗建议，以及第二次报告组装；校验、upsert 匹配、
+        未知列规划与一次报告构建保持不变（报告键集合与默认模式一致，值为空）。
         """
         detection: HeaderDetection | None = None
         if rows is None:
@@ -219,6 +224,28 @@ class Importer:
         upsert_result: dict[str, Any] | None = None
         if match_keys:
             upsert_result = self._build_upsert_result(results, match_keys)
+
+        if light:
+            # 轻量模式：只组装一次报告，未知列规划后原位补写（不再二次聚合）
+            report = DiffReporter.build(
+                results,
+                self.table.active_fields(),
+                file_columns,
+                upsert_result=upsert_result,
+            )
+            planned_columns = self._plan_unknown_columns(rows, report.get("skipped_columns", []))
+            report["planned_columns"] = planned_columns
+            # 键集合与默认模式一致（值留空），免得下游按 key 取值时 KeyError
+            report["cleaning_suggestions"] = cast(list[dict[str, Any]], [])
+            report["header_detection"] = detection.to_dict() if detection is not None else None
+            report["header_row"] = detection.row if detection is not None else None
+            return ImportAnalysisResult(
+                report=report,
+                results=results,
+                file_columns=file_columns,
+                upsert_result=upsert_result,
+                planned_columns=planned_columns,
+            )
 
         # ── V2: 未知列规划（始终返回，让前端总能预览到有哪些新字段） ─────
         default_report = DiffReporter.build(results, self.table.active_fields(), file_columns)
@@ -284,6 +311,7 @@ class Importer:
         cleaning_actions: list[dict[str, Any]] | None = None,
         progress_cb: Callable[[int, str], None] | None = None,
         header_row: int | None = None,
+        sync_options: bool = True,
     ) -> ImportExecuteResult:
         """完整流水线：解析 → （可选）清洗 → 校验 → 报告 → upsert → 落库.
 
@@ -294,6 +322,10 @@ class Importer:
         ``progress_cb(percent, stage)``：子步骤进度回调（写任务进度 + 日志）。
         没有它时执行阶段只能显示一个 5%，任何子步骤卡住都看不出卡在哪里
         —— 线上"卡 5% 且无报错"难排查正是这么来的。
+
+        ``sync_options=False`` 跳过末尾的全表选项同步（ADR 0035 D2，数据源同步
+        大吞吐链路用）：批内 prefill 已把本批新选项写回 config，全表 distinct
+        对逐批落表是重复计算；人工导入保持默认 True。
         """
 
         def _report(percent: int, stage: str) -> None:
@@ -427,13 +459,14 @@ class Importer:
         report["actually_imported"] = len(new_ids) + updated_count
 
         # 导入完成后自动补全 select/multiselect options（覆盖新旧字段 + 存量数据）
-        _report(85, "同步字段选项")
-        try:
-            from cndb.plugins.tables.services.fields.field_ops import sync_select_options_from_table
+        if sync_options:
+            _report(85, "同步字段选项")
+            try:
+                from cndb.plugins.tables.services.fields.field_ops import sync_select_options_from_table
 
-            sync_select_options_from_table(self.db, self.table)
-        except Exception:
-            logger.debug("导入后同步 select options 失败，跳过", exc_info=True)
+                sync_select_options_from_table(self.db, self.table)
+            except Exception:
+                logger.debug("导入后同步 select options 失败，跳过", exc_info=True)
 
         return ImportExecuteResult(
             imported_ids=new_ids,

@@ -631,6 +631,9 @@ def _persist_rows(
 
     ``auto_add_fields`` / ``auto_match_keys`` 仅 llm_prompt 打开（ADR 0019）：
     前者只在目标表为空时生效（空表才允许补字段）。
+
+    落表走轻量模式（ADR 0035 D2）：同步任务每批都付列画像 / 参考列推荐 /
+    全表选项同步的固定开销，而报表产物无人消费；校验与幂等匹配不变。
     """
     if not rows or job.table_id is None:
         return WriteOutcome(fetched=len(rows))
@@ -649,6 +652,7 @@ def _persist_rows(
         user=user,
         auto_add_fields=empty,
         auto_match_keys=auto_match_keys,
+        light=True,
     )
 
 

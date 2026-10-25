@@ -158,6 +158,12 @@ def split_multi_select_string(value: str) -> list[str]:
     return [p.strip() for p in MULTI_SELECT_SPLIT_RE.split(value) if p.strip()]
 
 
+# 选项值集合缓存上限：配置对象数量通常远小于该值，超出时整表清空（ADR 0035 D1）
+_ALLOWED_CACHE_LIMIT = 256
+# 键 = (config 对象标识, options 长度)；值 = (config 引用, 集合)，引用用于防止 id 复用误命中
+_ALLOWED_CACHE: dict[tuple[int, int], tuple[dict[str, Any], frozenset[str]]] = {}
+
+
 def _allowed_values_from_config(_config: dict[str, Any]) -> frozenset[str] | None:
     """从原始 config 提取选项值集合（None 表示无 options，校验放行）.
 
@@ -165,10 +171,18 @@ def _allowed_values_from_config(_config: dict[str, Any]) -> frozenset[str] | Non
     批量导入逐行重建会重复触发 _normalize_options 校验器与智能配色，
     纯开销且结果不变（value 提取语义与 _normalize_options 的 val 一致：
     dict 取 value 缺省回退 label）。
+
+    结果按 ``(id(config), len(options))`` 缓存（ADR 0035 D1）：批量校验同一
+    字段的成千上万行时只构建一次集合；options 被原地追加（批内选项预填充 /
+    全表选项同步）后长度变化即换键重建，新值不会被旧集合拒绝。
     """
     options = _config.get("options")
     if not options:
         return None
+    key = (id(_config), len(options))
+    cached = _ALLOWED_CACHE.get(key)
+    if cached is not None and cached[0] is _config:
+        return cached[1]
     result: set[str] = set()
     for item in options:
         if isinstance(item, dict):
@@ -177,7 +191,11 @@ def _allowed_values_from_config(_config: dict[str, Any]) -> frozenset[str] | Non
             result.add(str(item.value))
         else:
             result.add(str(item))
-    return frozenset(result)
+    values = frozenset(result)
+    if len(_ALLOWED_CACHE) >= _ALLOWED_CACHE_LIMIT:
+        _ALLOWED_CACHE.clear()
+    _ALLOWED_CACHE[key] = (_config, values)
+    return values
 
 
 class MultiSelectFieldType(FieldType):
