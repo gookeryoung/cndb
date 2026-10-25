@@ -4,6 +4,7 @@
  */
 
 import { Typography } from 'antd'
+import HelpFigure from '../HelpFigure'
 import type { HelpTopic } from '../helpNav'
 
 const { Text } = Typography
@@ -98,6 +99,7 @@ function DatasourceSettingsContent() {
                     生产环境由后台调度触发；可在任务详情查看最近运行状态与错误摘要。首次接入建议先「预览」确认字段映射，再启用周期调度。
                 </Text>
             </div>
+            <HelpFigure id="datasource-sync" />
         </div>
     )
 }

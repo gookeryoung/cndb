@@ -5,6 +5,7 @@
  */
 
 import { Typography } from 'antd'
+import HelpFigure from '../HelpFigure'
 import type { HelpTopic } from '../helpNav'
 
 const { Text } = Typography
@@ -42,6 +43,7 @@ function OverviewContent() {
                     左侧按「快速入门 / 教程&最佳实践 / 典型示例 / 系统配置 / 问题排查」组织；每个主题都有独立地址，可直接分享或收藏。
                 </Text>
             </div>
+            <HelpFigure id="workspace-structure" />
         </div>
     )
 }
@@ -49,6 +51,7 @@ function OverviewContent() {
 function WorkflowContent() {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <HelpFigure id="quick-start-flow" caption="五步上手：每一步在下面都有对应说明。" />
             <div>
                 <Text strong>1. 创建工作区</Text>
                 <br />

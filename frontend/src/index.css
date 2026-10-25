@@ -3956,6 +3956,53 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-primary);
 }
 
+/* ─────────────── 帮助文档 · 图示例（ADR 0030）─────────────── */
+/* 图示由后端生成 SVG 并内联渲染：这里只管外框、留白与图注。
+   颜色全部来自 SVG 内部的 var(--cn-*) 令牌，随主题自动切换。 */
+.cn-help-figure {
+  margin: 0;
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-subtle);
+  overflow: hidden;
+}
+
+.cn-help-figure-canvas {
+  padding: var(--cn-space-lg);
+  overflow-x: auto;
+}
+
+.cn-help-figure-canvas svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+.cn-help-figure-fallback {
+  padding: var(--cn-space-xl);
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-muted);
+  text-align: center;
+}
+
+.cn-help-figure-caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--cn-space-xs) var(--cn-space-lg);
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border-top: 1px solid var(--cn-border);
+  background: var(--cn-bg-container);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-help-figure-stamp {
+  flex: 0 0 auto;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
 /* ─────────────── 管理台用户管理 · 窄屏卡片列表 ─────────────── */
 .cn-user-cards {
   display: flex;

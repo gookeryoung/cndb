@@ -5,6 +5,7 @@
  */
 
 import { Table, Typography } from 'antd'
+import HelpFigure from '../HelpFigure'
 import type { HelpTopic } from '../helpNav'
 
 const { Text } = Typography
@@ -66,6 +67,7 @@ function ImportExportContent() {
                 <br />
                 <Text type="secondary">「导入数据」→ 上传文件 → 预览列类型与数据质量 → 确认导入。导入完成后可在报告页查看错误行明细。</Text>
             </div>
+            <HelpFigure id="import-flow" />
             <div>
                 <Text strong>更新已有数据</Text>
                 <br />
@@ -119,6 +121,7 @@ function RolesContent() {
                 <br />
                 <Text type="secondary">公开（public）：登录用户均可查看；仅成员（member-only）：仅工作区成员可见；私有（private）：仅拥有者与管理员可见。</Text>
             </div>
+            <HelpFigure id="permission-model" />
         </div>
     )
 }
@@ -126,7 +129,7 @@ function RolesContent() {
 function FieldTypesContent() {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <Text type="secondary">共 16 种字段类型，按类别分组：</Text>
+            <Text type="secondary">字段类型按类别分组；完整清单见下方图示（随版本自动更新，不写死数量）。</Text>
             <div>
                 <Text strong>基础：</Text>
                 <Text type="secondary">单行文本、多行文本、是/否（勾选框）。</Text>
@@ -152,6 +155,7 @@ function FieldTypesContent() {
                 <Text type="secondary">关联其他表的一行或多行数据（如下拉选择员工表中的员工），支持搜索选择与空值清空。</Text>
             </div>
             <Text type="secondary">提示：唯一值约束可防止重复值；默认值会在新增行时自动填入；修改默认值会触发表重建，数据量大时稍慢。</Text>
+            <HelpFigure id="field-types" />
         </div>
     )
 }

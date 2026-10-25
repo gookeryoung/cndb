@@ -12,7 +12,7 @@ import type {
   Field, RowListResponse, TableSummary, UserResponse, View, Workspace,
 } from '@/api'
 import type { DocumentItem } from '@/api/documents'
-import type { HelpExampleList } from '@/api/help'
+import type { HelpExampleList, HelpFigureList } from '@/api/help'
 
 // 1x1 透明 PNG —— 附件端点默认响应体（内容不断言，只需是合法二进制）
 const _PNG_1PX = Uint8Array.from(
@@ -182,6 +182,30 @@ export const mockHelpExamples: HelpExampleList = {
   ],
 }
 
+/** 帮助图示清单 fixture（ADR 0030）：覆盖帮助正文里引用的全部 key */
+const HELP_FIGURE_KEYS = [
+  'quick-start-flow',
+  'workspace-structure',
+  'field-types',
+  'permission-model',
+  'import-flow',
+  'datasource-sync',
+  ...['sales', 'research', 'datasource'].flatMap((scenario) =>
+    [1, 2, 3, 4].map((index) => `example-${scenario}-table-${index}`)),
+]
+
+export const mockHelpFigures: HelpFigureList = {
+  items: HELP_FIGURE_KEYS.map((key) => ({
+    key,
+    title: `图示 ${key}`,
+    caption: `图示说明 ${key}`,
+    section: 'quick-start',
+    fingerprint: 'f1e2d3c4b5a69788',
+    generatedAt: 1761300000,
+  })),
+  generatedAt: 1761300000,
+}
+
 // ─────────────── 默认 handlers ───────────────
 
 export const handlers = [
@@ -197,6 +221,14 @@ export const handlers = [
       status: 200,
       headers: { 'Content-Type': 'text/csv; charset=utf-8' },
     })),
+
+  // 帮助文档图示清单 / SVG（ADR 0030）
+  http.get('/api/v1/help/figures', () => HttpResponse.json(mockHelpFigures)),
+  http.get('/api/v1/help/figures/:key', ({ params }) =>
+    new HttpResponse(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" data-help-figure="1"><title>${String(params.key)}</title></svg>`,
+      { status: 200, headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' } },
+    )),
 
   // 用户偏好（ADR 0021：主页自定义顺序 / 收藏视图）——默认空，单用例 server.use 覆盖
   http.get('/api/v1/accounts/preferences', () =>

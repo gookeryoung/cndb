@@ -31,4 +31,35 @@ class HelpExampleListResponse(BaseModel):
     items: list[HelpExampleResponse] = Field(description="全部示例场景")
 
 
-__all__ = ["HelpExampleListResponse", "HelpExampleResponse", "HelpExampleTableResponse"]
+class HelpFigureResponse(BaseModel):
+    """一张帮助图示的元信息（ADR 0030）."""
+
+    key: str = Field(description="图示 key（SVG 端点路径参数）")
+    title: str = Field(description="图示标题")
+    caption: str = Field(description="图示说明")
+    section: str = Field(description="所属帮助部分 key")
+    fingerprint: str = Field(description="内容指纹；源码或数据源变化即变")
+    generatedAt: float = Field(description="生成时间（Unix 秒）")
+
+
+class HelpFigureListResponse(BaseModel):
+    """图示清单响应."""
+
+    items: list[HelpFigureResponse] = Field(description="全部图示")
+    generatedAt: float = Field(description="本响应中最新一张图的生成时间（Unix 秒）")
+
+
+class HelpFigureRefreshResponse(BaseModel):
+    """手动重建结果."""
+
+    rebuilt: int = Field(description="本次实际重建的张数")
+
+
+__all__ = [
+    "HelpExampleListResponse",
+    "HelpExampleResponse",
+    "HelpExampleTableResponse",
+    "HelpFigureListResponse",
+    "HelpFigureRefreshResponse",
+    "HelpFigureResponse",
+]

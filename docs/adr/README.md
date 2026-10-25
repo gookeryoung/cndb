@@ -31,6 +31,7 @@
 | [0027](0027-tech-system-tree.md) | 科研项目管理新增技术体系表与「技术脉络」树形视图 | Accepted | P0-P1 已落地；零迁移 / 零接口 / 零前端改动 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py` | [未发布](../../CHANGELOG.md) |
 | [0028](0028-auto-increment-preview.md) | 新增行展示自动编号预览值（按库内已有数据往后排） | Proposed | P0-P2 已落地；待人工评审 | `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.tsx` | `tests/test_text_auto_increment.py`、`frontend/src/pages/grid/GridPage.newRowPrefill.test.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0029](0029-help-docs-refactor.md) | 帮助功能重构为独立「帮助文档」路由（两级导航 + 典型示例下载） | Accepted | P0 进行中；P1-P2 未开始 | `frontend/src/pages/help/`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/pages/help/*.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | [未发布](../../CHANGELOG.md) |
+| [0030](0030-help-figures.md) | 帮助文档图示例（服务端生成 SVG + 后台定期重建） | Accepted | P0-P1 已落地 | `src/cndb/plugins/help/services/figures/`、`src/cndb/plugins/help/routers/figures.py`、`frontend/src/pages/help/HelpFigure.tsx` | `tests/test_help_figures.py`、`frontend/src/pages/help/HelpFigure.test.tsx` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

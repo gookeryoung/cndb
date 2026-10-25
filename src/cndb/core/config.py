@@ -239,6 +239,16 @@ class Settings(BaseSettings):
     # 启动后首轮延迟（秒）：避开迁移与静态资源预热的 IO 争抢
     STORAGE_SNAPSHOT_STARTUP_DELAY_SECONDS: int = 3
 
+    # ── 帮助文档图示例（ADR 0030）────────────────────────────
+    # 图示由后端按「代码 + 数据源」生成 SVG 并快照到 CACHE_DIR/help-figures。
+    # 请求期按指纹即时重建，后台再按周期全量重建一次兜底 —— 代码更新后
+    # 图示不会停留在旧版本，也不需要人工重截图。
+    HELP_FIGURES_ENABLED: bool = True
+    # 定时重建周期（秒）；0 = 关闭定时轮次（请求期指纹校验仍然生效）
+    HELP_FIGURES_INTERVAL_SECONDS: int = 1800
+    # 启动后首轮延迟（秒）：让首屏与迁移先跑完
+    HELP_FIGURES_STARTUP_DELAY_SECONDS: int = 5
+
     # ── 配置文件加载 ─────────────────────────────────────
     model_config = {"env_file": str(CONFIG_DIR / ".env"), "env_file_encoding": "utf-8"}
 
