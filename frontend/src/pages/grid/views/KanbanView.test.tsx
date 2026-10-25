@@ -339,16 +339,14 @@ describe('KanbanView 严重程度分级背景色', () => {
     expect(cardBgOf('逾期-2天')).toBe('var(--cn-mix-bg-danger-subtle-65-bg-container)')
   })
 
-  it('紧急剩 0-1 天 → 高浓度警告背景 (60%)', () => {
+  it('紧急（阈值内）→ 透明红色背景 + 深红左边框', () => {
     renderKanban({ rows: tierRows, view: tierView })
-    expect(cardBgOf('紧急-明天')).toContain('60%')
-    expect(cardBgOf('紧急-明天')).toContain('--cn-bg-warning-subtle')
-  })
-
-  it('紧急剩 2-N 天 → 低浓度警告背景 (30%)', () => {
-    renderKanban({ rows: tierRows, view: tierView })
-    expect(cardBgOf('紧急-后天')).toContain('30%')
-    expect(cardBgOf('紧急-后天')).toContain('--cn-bg-warning-subtle')
+    expect(cardBgOf('紧急-明天')).toContain('rgb(239, 68, 68)')
+    expect(cardBgOf('紧急-明天')).toContain('transparent')
+    expect(cardBgOf('紧急-后天')).toContain('rgb(239, 68, 68)')
+    expect(cardBgOf('紧急-后天')).toContain('transparent')
+    const urgentCard = screen.getByText('紧急-明天').parentElement?.parentElement as HTMLElement
+    expect(urgentCard.style.borderLeft).toContain('rgb(207, 19, 34)')
   })
 
   it('正常截止 → 不设置自定义背景 (style.background 为空)', () => {

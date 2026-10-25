@@ -18,7 +18,7 @@ import { mixColor } from '@/theme/themeMix'
  * 当天截止（pinToday=true && daysLeft === 0）：金橙色左边框 + 55% 金黄背景，
  * 视觉上低于逾期、高于普通紧急。
  *
- * 紧急（0 ≤ daysLeft ≤ urgentThreshold）：橙色左边框 + 低浓度警告色背景。
+ * 紧急（0 ≤ daysLeft ≤ urgentThreshold）：深红左边框 + 透明红色背景。
  *
  * 正常或无截止日期返回 null（不设置背景/边框覆盖）.
  * 颜色用 color-mix 混合主题 CSS 变量，自动适配 10 种主题。
@@ -48,11 +48,10 @@ export function getUrgencyVisual(
   }
 
   if (daysLeft <= urgentThreshold) {
-    // 紧急：橙色边框 + 低浓度警告色背景
-    const intensity = daysLeft <= 1 ? 60 : 30
+    // 紧急：深红边框 + 透明红色背景（与逾期橙红、当天金橙区分）
     return {
-      borderLeft: `${borderLeftWidth}px solid #faad14`,
-      background: mixColor('var(--cn-bg-warning-subtle)', intensity, 'var(--cn-bg-container)'),
+      borderLeft: `${borderLeftWidth}px solid #cf1322`,
+      background: mixColor('#ef4444', 12, 'transparent'),
     }
   }
 
