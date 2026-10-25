@@ -72,7 +72,9 @@ class HttpJsonProvider:
         spec = job.request
         handler = self.response_handler_for(job)
         plans: list[RequestPlan] = []
-        for entrant in job.entrant_values or (None,):
+        # 标的集合已解析为空（回补全达标 / 清单尚无行）→ 零请求；未声明标的才发单条请求
+        values: tuple[str | None, ...] = () if job.entrants_exhausted else (job.entrant_values or (None,))
+        for entrant in values:
             entrant_end = job.entrant_ends.get(entrant) if (job.entrant_ends and entrant is not None) else None
             for window_start, window_end in iter_windows(spec.time_window):
                 for page in iter_pages(spec.paging):

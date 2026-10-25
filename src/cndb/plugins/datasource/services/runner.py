@@ -264,6 +264,9 @@ def preview_job(
         db=db,
         llm_user_id=getattr(user, "id", None) or job.created_by,
     )
+    # backfill_date 预览与执行同口径：按标的水位注入 end 锚点（只读水位，不推进）
+    if cursor_config.is_backfill and db is not None:
+        spec = _inject_backfill_ends(db, job, spec, cursor_config, today=today)
     outcome = run_pipeline(spec, fetch=fetch, rate_limit_ms=max(0, int(job.rate_limit_ms or 0)))
     normalized = outcome.normalize
     columns: list[str] = []
@@ -518,7 +521,9 @@ def _inject_backfill_ends(
         if anchor is not None:
             ends[entrant] = anchor
             pending.append(entrant)
-    return replace(spec, entrant_ends=ends, entrant_values=tuple(pending))
+    # 声明过标的（静态 keys / 动态来源）却全部达标 → 零请求；未声明标的则保持旧行为
+    exhausted = bool(job.entrant_keys or job.entrant_source) and not pending
+    return replace(spec, entrant_ends=ends, entrant_values=tuple(pending), entrants_exhausted=exhausted)
 
 
 class _StreamingState:
