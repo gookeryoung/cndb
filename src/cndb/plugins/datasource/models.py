@@ -158,6 +158,12 @@ class DatasourceSyncRun(TimestampMixin, Base):
     updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # ── 运行中进度（ADR 0037 D4） ──
+    # 本轮计划请求数（0 = 尚未展开）；已完成请求数（成功 + 失败）；最近完成的标的
+    progress_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    progress_entrant: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+
     error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
     # {"plans":N,"succeeded":N,"failures":[{"label","entrant","page","error"}],
     #  "normalize_failures":[{"row_index","field","reason"}],"dropped_fields":N}

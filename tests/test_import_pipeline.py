@@ -12,7 +12,7 @@ from datetime import date, datetime, time
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from cndb.plugins.tables.models import DataField, DataTable
@@ -1854,6 +1854,105 @@ class TestFindRowsByKey:
         exact_map, _conf = rec.find_rows_by_key(engine, table, ["code"], [{"code": None}])
         assert (None,) in exact_map
         assert exact_map[(None,)] == created_ids[0]
+
+    def test_mixed_null_and_plain_keys(self, test_session):
+        """ADR 0037 D2：同批含 None 与非 None 键时，两条路径都要命中（IN 块 + OR 回退）."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "lang", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables.services.core import records as rec
+
+        ids = rec.bulk_create(
+            engine,
+            table,
+            [{"code": "A", "lang": "EN"}, {"code": None, "lang": None}],
+            db=session,
+        )
+        # 捕获 SQL：非空键必须走单条行值 IN，含 None 键必须回退 IS NULL（跨方言安全）
+        statements: list[str] = []
+
+        def _capture(_conn, _cursor, statement, _parameters, _context, _executemany):
+            if "SELECT" in statement.upper():
+                statements.append(statement)
+
+        event.listen(engine, "before_cursor_execute", _capture)
+        try:
+            exact_map, _conf = rec.find_rows_by_key(
+                engine,
+                table,
+                ["code", "lang"],
+                [{"code": "A", "lang": "EN"}, {"code": None, "lang": None}],
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", _capture)
+        assert any(" IN " in stmt.upper() for stmt in statements), statements
+        assert any(" IS NULL " in stmt.upper() for stmt in statements), statements
+        assert exact_map[("A", "EN")] == ids[0]
+        assert exact_map[(None, None)] == ids[1]
+        assert len(exact_map) == 2
+
+    def test_bulk_update_rows_grouped_heterogeneous_columns(self, test_session):
+        """ADR 0037 D3：列集合不同的行分组合并执行，结果与逐行写一致."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        _add_field(session, table, "note", "text", order=2)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables.services.core import records as rec
+
+        ids = rec.bulk_create(
+            engine,
+            table,
+            [{"code": "A", "name": "N1"}, {"code": "B", "name": "N2"}, {"code": "C", "name": "N3"}],
+            db=session,
+        )
+        count = rec.bulk_update_rows(
+            engine,
+            table,
+            [
+                {"row_id": ids[0], "values": {"name": "N1b"}},
+                {"row_id": ids[1], "values": {"name": "N2b", "note": "x"}},
+                {"row_id": ids[2], "values": {"note": "y"}},
+            ],
+            db=session,
+        )
+        assert count == 3
+        rows_list, _total = rec.list_rows(engine, table, db=session, limit=100)
+        rows = {row["code"]: row for row in rows_list}
+        assert rows["A"]["name"] == "N1b" and rows["A"]["note"] in (None, "")
+        assert rows["B"]["name"] == "N2b" and rows["B"]["note"] == "x"
+        assert rows["C"]["name"] == "N3" and rows["C"]["note"] == "y"
+
+    def test_bulk_update_rows_group_skips_trashed(self, test_session):
+        """ADR 0037 D3：分组 executemany 仍按 _trashed=0 过滤，软删行不计入更新数."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables.services.core import records as rec
+
+        ids = rec.bulk_create(engine, table, [{"code": "A", "name": "N1"}, {"code": "B", "name": "N2"}], db=session)
+        assert rec.trash_row(engine, table, ids[1], db=session)
+        count = rec.bulk_update_rows(
+            engine,
+            table,
+            [
+                {"row_id": ids[0], "values": {"name": "N1b"}},
+                {"row_id": ids[1], "values": {"name": "N2b"}},
+            ],
+            db=session,
+        )
+        assert count == 1
+        assert rec.get_row(engine, table, ids[0], db=session)["name"] == "N1b"
+        trashed_rows, _ = rec.list_rows(engine, table, db=session, include_trashed=True, limit=100)
+        assert {row["code"]: row["name"] for row in trashed_rows}["B"] == "N2"
 
     def test_bulk_update_rows_each_different_values(self, test_session):
         """bulk_update_rows: 每条 row_id 对应独立 values（Task 1 TR-1.2）."""

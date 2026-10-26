@@ -40,16 +40,40 @@ def workspace_with_auth(client, db):
     return ws.id, {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
+@pytest.fixture(autouse=True)
+def sync_background_spawn(monkeypatch):
+    """把「立即运行」的后台线程替换为同步执行，端点返回时运行已结束（ADR 0037 D1）."""
+
+    def run_now(factory, run_id, job_id, user_id, lease, trigger):
+        runner.execute_run_in_background(factory, run_id, job_id, user_id, lease, trigger)
+
+    monkeypatch.setattr(runner, "_spawn_execution", run_now)
+
+
 @pytest.fixture
 def fake_pipeline(monkeypatch):
     """替换 runner.run_pipeline，避免端点测试真实联网."""
     rows = [{"city": "北京", "day": "2024-06-30", "temp": 30.0}]
 
-    def fake(job, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None, on_batch=None, batch_size=5000):
+    def fake(
+        job,
+        *,
+        provider=None,
+        fetch=None,
+        rate_limit_ms=0,
+        sleep=None,
+        on_batch=None,
+        batch_size=5000,
+        progress=None,
+    ):
         normalize = NormalizeResult(rows=[dict(row) for row in rows])
+        if progress is not None:
+            progress.set_total(1)
         if on_batch is not None:
             # 流式路径（非 llm_prompt，ADR 0034 D1）：行经回调交付，落库计数走 state.write
             on_batch([dict(row) for row in rows])
+        if progress is not None:
+            progress.tick("beijing")
         return PipelineOutcome(rows=[dict(row) for row in rows], plans=1, succeeded=1, failures=[], normalize=normalize)
 
     monkeypatch.setattr(runner, "run_pipeline", fake)
@@ -282,6 +306,36 @@ class TestRunPreview:
         assert runs.status_code == 200
         assert runs.json()["total"] == 1
         assert runs.json()["runs"][0]["trigger"] == "manual"
+
+    def test_run_reports_progress(self, client, workspace_with_auth, fake_pipeline):
+        """ADR 0037 C2：运行结束后的进度字段与计划/完成请求数一致."""
+        wid, headers = workspace_with_auth
+        created = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=_payload(), headers=headers).json()
+        body = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs/{created['id']}/run", headers=headers).json()
+        assert body["run"]["progress_total"] == 1
+        assert body["run"]["progress_done"] == 1
+        assert body["run"]["progress_entrant"] == "beijing"
+
+        runs = client.get(f"/api/v1/workspaces/{wid}/datasource/sync-jobs/{created['id']}/runs", headers=headers)
+        assert runs.json()["runs"][0]["progress_done"] == 1
+
+    def test_run_returns_immediately_with_running_record(self, client, db, workspace_with_auth, monkeypatch):
+        """ADR 0037 C3：端点不等待执行完成，返回 running 记录（后台执行由线程负责）."""
+        wid, headers = workspace_with_auth
+        created = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs", json=_payload(), headers=headers).json()
+
+        launched: list[tuple[int, int]] = []
+
+        def capture(factory, run_id, job_id, user_id, lease, trigger):
+            launched.append((run_id, job_id))
+
+        monkeypatch.setattr(runner, "_spawn_execution", capture)
+        response = client.post(f"/api/v1/workspaces/{wid}/datasource/sync-jobs/{created['id']}/run", headers=headers)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["run"]["status"] == "running"
+        assert body["job"]["last_status"] == "running"
+        assert launched == [(body["run"]["id"], created["id"])]
 
     def test_preview_does_not_write(self, client, db, workspace_with_auth, fake_pipeline):
         wid, headers = workspace_with_auth

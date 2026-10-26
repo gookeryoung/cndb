@@ -71,7 +71,7 @@ let jobBodies: Array<Record<string, unknown>> = []
 function setupHandlers(
   jobs: SyncJob[],
   options: {
-    runStatus?: 'success' | 'failed'
+    runStatus?: 'success' | 'failed' | 'running'
     createTemplateError?: string
     previewResult?: Record<string, unknown>
   } = {},
@@ -209,6 +209,9 @@ function setupHandlers(
           inserted: 2,
           updated: 0,
           skipped: 0,
+          progress_total: 2,
+          progress_done: 2,
+          progress_entrant: 'beijing',
           error_message: options.runStatus === 'failed' ? '源故障' : '',
           detail: {},
         },
@@ -221,18 +224,21 @@ function setupHandlers(
           {
             id: 11,
             job_id: 3,
-            status: 'success',
+            status: options.runStatus ?? 'success',
             trigger: 'manual',
             started_at: '2026-10-20T02:00:00Z',
-            finished_at: '2026-10-20T02:00:01Z',
-            duration_ms: 1000,
+            finished_at: options.runStatus === 'running' ? null : '2026-10-20T02:00:01Z',
+            duration_ms: options.runStatus === 'running' ? null : 1000,
             cursor_from: '2024-01-01',
             cursor_to: '2026-10-20',
-            fetched: 2,
-            inserted: 2,
+            fetched: options.runStatus === 'running' ? 500 : 2,
+            inserted: options.runStatus === 'running' ? 480 : 2,
             updated: 0,
             skipped: 0,
-            error_message: '',
+            progress_total: options.runStatus === 'running' ? 10 : 2,
+            progress_done: options.runStatus === 'running' ? 4 : 2,
+            progress_entrant: 'sh600519',
+            error_message: options.runStatus === 'failed' ? '源故障' : '',
             detail: {},
           },
         ],
@@ -329,6 +335,17 @@ describe('DatasourcePage', () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '立即运行 北京天气日报' }))
     expect(await screen.findByText(/同步失败：源故障/)).toBeInTheDocument()
+  })
+
+  it('运行中展示请求进度与当前标的（ADR 0037 C2）', async () => {
+    setupHandlers([makeJob({ last_status: 'running' })], { runStatus: 'running' })
+    renderPage()
+
+    const panel = await screen.findByTestId('datasource-sync-progress')
+    expect(within(panel).getByText(/4\/10 请求/)).toBeInTheDocument()
+    expect(within(panel).getByText(/当前标的 sh600519/)).toBeInTheDocument()
+    expect(within(panel).getByText(/已写入 500 行/)).toBeInTheDocument()
+    expect(within(panel).getByText('40%')).toBeInTheDocument()
   })
 
   it('打开运行历史抽屉', async () => {

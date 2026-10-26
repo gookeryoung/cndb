@@ -215,6 +215,12 @@ export interface SyncRun {
   inserted: number
   updated: number
   skipped: number
+  /** 本轮计划请求数（0 = 尚未展开） */
+  progress_total: number
+  /** 已完成请求数（成功 + 失败） */
+  progress_done: number
+  /** 最近完成的标的（运行中展示） */
+  progress_entrant: string
   error_message: string
   detail: {
     plans?: number

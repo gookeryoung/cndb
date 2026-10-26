@@ -7,10 +7,10 @@
  * - 大模型连接是个人级配置（「个人设置 → 大模型」），本页不再提供工作区级连接入口
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, App as AntApp, Button, Collapse, Drawer, Dropdown, Empty, Form, Input, InputNumber, Modal,
-  Select, Space, Switch, Table, Tag, Tooltip, Typography,
+  Progress, Select, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import {
   CloudDownloadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined, EyeOutlined,
@@ -82,6 +82,9 @@ export default function DatasourcePage() {
   const [editing, setEditing] = useState<SyncJob | null>(null)
   const [historyJob, setHistoryJob] = useState<SyncJob | null>(null)
   const [sessionModalOpen, setSessionModalOpen] = useState(false)
+  // 正在盯进度的任务（手动触发后置位；刷新页面时按 last_status 自动恢复，ADR 0037 D4）
+  const [watchingJobId, setWatchingJobId] = useState<number | null>(null)
+  const notifiedRunRef = useRef<number | null>(null)
 
   const providersQuery = useQuery({
     queryKey: ['datasource', 'providers', wid],
@@ -93,6 +96,9 @@ export default function DatasourcePage() {
     queryKey: ['datasource', 'jobs', wid],
     queryFn: () => datasourceApi.listJobs(wid),
     enabled: !!wid,
+    // 运行中轮询任务列表，刷新页面后也能据 last_status 恢复进度（ADR 0037 D4/D5）
+    refetchInterval: query =>
+      (query.state.data?.jobs ?? []).some(job => job.last_status === 'running') ? 2000 : false,
   })
   const tablesQuery = useQuery({
     queryKey: ['workspaces', wid, 'tables'],
@@ -130,17 +136,46 @@ export default function DatasourcePage() {
     void queryClient.invalidateQueries({ queryKey: ['datasource', 'jobs', wid] })
   }, [queryClient, wid])
 
+  // 运行进度：优先盯手动触发的任务，否则盯任务列表里处于 running 的任务（页面刷新后恢复）
+  const runningJob = useMemo(() => jobs.find(job => job.last_status === 'running') ?? null, [jobs])
+  const watchedJobId = watchingJobId ?? runningJob?.id ?? null
+  const watchRunQuery = useQuery({
+    queryKey: ['datasource', 'watch-run', wid, watchedJobId],
+    queryFn: () => datasourceApi.runs(wid, watchedJobId as number, { limit: 1 }),
+    enabled: !!wid && watchedJobId != null,
+    // 运行中每 2 秒拉一次进度；结束即停（ADR 0037 D5）
+    refetchInterval: query => (query.state.data?.runs[0]?.status === 'running' ? 2000 : false),
+  })
+  const runningRun = watchRunQuery.data?.runs[0] ?? null
+  const progressTotal = runningRun?.progress_total ?? 0
+  const progressDone = runningRun?.progress_done ?? 0
+  const progressPercent = progressTotal > 0 ? Math.min(100, Math.round((progressDone / progressTotal) * 100)) : 0
+
+  // 运行收尾：状态离开 running 时提示一次最终结果并刷新列表
+  useEffect(() => {
+    if (watchedJobId == null || !runningRun || runningRun.status === 'running') return
+    if (notifiedRunRef.current === runningRun.id) return
+    notifiedRunRef.current = runningRun.id
+    invalidate()
+    setWatchingJobId(null)
+    const jobName = jobs.find(job => job.id === watchedJobId)?.name ?? `#${watchedJobId}`
+    if (runningRun.status === 'failed') {
+      message.error(`「${jobName}」同步失败：${runningRun.error_message || '未知错误'}`)
+    } else {
+      message.success(
+        `「${jobName}」${STATUS_META[runningRun.status]?.label ?? runningRun.status}：新增 ${runningRun.inserted} / 更新 ${runningRun.updated}`,
+      )
+    }
+  }, [invalidate, jobs, message, runningRun, watchedJobId])
+
   const runMutation = useMutation({
     mutationFn: (job: SyncJob) => datasourceApi.runJob(wid, job.id),
     onSuccess: result => {
+      // 端点立即返回 running 记录，后续进度由轮询负责（ADR 0037 C3）
+      notifiedRunRef.current = null
+      setWatchingJobId(result.job.id)
       invalidate()
-      if (result.run.status === 'failed') {
-        message.error(`「${result.job.name}」同步失败：${result.run.error_message || '未知错误'}`)
-      } else {
-        message.success(
-          `「${result.job.name}」${STATUS_META[result.run.status]?.label ?? result.run.status}：新增 ${result.run.inserted} / 更新 ${result.run.updated}`,
-        )
-      }
+      message.info(`「${result.job.name}」已在后台开始运行`)
     },
     onError: () => message.error('运行失败（任务可能正在执行，请稍后再试）'),
   })
@@ -337,6 +372,32 @@ export default function DatasourcePage() {
           </Button>
         </Space>
       </Space>
+
+      {runningRun?.status === 'running' && (
+        <Alert
+          type="info"
+          showIcon
+          data-testid="datasource-sync-progress"
+          style={{ marginBottom: 12 }}
+          message={
+            <Space size={8} wrap>
+              <Text strong>「{jobs.find(job => job.id === watchedJobId)?.name ?? `#${watchedJobId}`}」运行中</Text>
+              <Text type="secondary">
+                {progressDone}/{progressTotal || '?'} 请求 · 当前标的 {runningRun.progress_entrant || '—'} · 已写入{' '}
+                {runningRun.fetched} 行
+              </Text>
+            </Space>
+          }
+          description={
+            <Progress
+              percent={progressPercent}
+              status="active"
+              size="small"
+              format={() => (progressTotal > 0 ? `${progressPercent}%` : '准备中')}
+            />
+          }
+        />
+      )}
 
       <Table<SyncJob>
         data-testid="datasource-jobs-table"

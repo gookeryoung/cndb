@@ -9,7 +9,7 @@ from alembic import command
 
 from cndb.core.migrations import _build_config
 
-REVISION = "a9d4e8f1c2b6"
+REVISION = "c4d5e6f7a8b9"  # 当前 head（ADR 0037：运行记录进度列）
 PREVIOUS = "e7f8a9b0c1d2"
 SYNC_REVISION = "0a1b2c3d4e5f"
 JOB_TABLE = "datasource_sync_job"
@@ -19,6 +19,10 @@ SESSION_TABLE = "datasource_session"
 ENTRANT_CURSOR_REVISION = "a9d4e8f1c2b6"
 ENTRANT_CURSOR_DOWN = "d0c1b2a3f4e5"
 ENTRANT_CURSOR_TABLE = "datasource_entrant_cursor"
+# ADR 0037：运行记录请求级进度列
+RUN_PROGRESS_REVISION = "c4d5e6f7a8b9"
+RUN_PROGRESS_DOWN = "a9d4e8f1c2b6"
+RUN_PROGRESS_COLUMNS = {"progress_total", "progress_done", "progress_entrant"}
 # ADR 0019：大模型连接（工作区级 → 个人级，当前提交基线 head 是 5e6f7a8b9c01）
 LLM_CONFIG_REVISION = "5e6f7a8b9c01"
 LLM_CONFIG_DOWN = "2c3d4e5f6a70"
@@ -432,3 +436,58 @@ class TestEntrantCursorMigration:
         _upgrade(url, ENTRANT_CURSOR_REVISION)
         assert ENTRANT_CURSOR_TABLE in _tables(db_path)
         assert "entrant_source" in _columns(db_path, JOB_TABLE)
+
+
+class TestRunProgressMigration:
+    """ADR 0037 D4：运行记录进度列（加列 / downgrade / 幂等）."""
+
+    def test_upgrade_adds_progress_columns(self, tmp_path: Path):
+        db_path = tmp_path / "mig_run_progress.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, RUN_PROGRESS_REVISION)
+
+        assert _columns(db_path, RUN_TABLE) >= RUN_PROGRESS_COLUMNS
+
+    def test_schema_matches_models(self, tmp_path: Path):
+        from cndb.plugins.datasource.models import DatasourceSyncRun
+
+        db_path = tmp_path / "mig_run_progress_model.db"
+        _upgrade(f"sqlite:///{db_path}", RUN_PROGRESS_REVISION)
+        assert _columns(db_path, RUN_TABLE) == {column.name for column in DatasourceSyncRun.__table__.columns}
+
+    def test_downgrade_removes_progress_columns(self, tmp_path: Path):
+        db_path = tmp_path / "mig_run_progress_down.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, RUN_PROGRESS_REVISION)
+        _downgrade(url, RUN_PROGRESS_DOWN)
+
+        assert not (RUN_PROGRESS_COLUMNS & _columns(db_path, RUN_TABLE))
+
+    def test_reupgrade_after_downgrade(self, tmp_path: Path):
+        db_path = tmp_path / "mig_run_progress_round.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, RUN_PROGRESS_REVISION)
+        _downgrade(url, RUN_PROGRESS_DOWN)
+        _upgrade(url, RUN_PROGRESS_REVISION)
+        assert _columns(db_path, RUN_TABLE) >= RUN_PROGRESS_COLUMNS
+
+    def test_upgrade_idempotent_after_create_all(self, tmp_path: Path):
+        """create_all 时代已建过新列的库：stamp 到上一版再 upgrade，迁移跳过加列不报错."""
+        from sqlalchemy import create_engine
+
+        import cndb.core.events
+        import cndb.plugins.accounts.models
+        import cndb.plugins.datasource.models
+        import cndb.plugins.tables.models
+        import cndb.plugins.workspaces.models  # noqa: F401
+        from cndb.models.base import Base
+
+        db_path = tmp_path / "mig_run_progress_idempotent.db"
+        url = f"sqlite:///{db_path}"
+        engine = create_engine(url)
+        Base.metadata.create_all(engine)
+        engine.dispose()
+
+        command.stamp(_build_config(url), RUN_PROGRESS_DOWN)
+        _upgrade(url, RUN_PROGRESS_REVISION)
+        assert _columns(db_path, RUN_TABLE) >= RUN_PROGRESS_COLUMNS

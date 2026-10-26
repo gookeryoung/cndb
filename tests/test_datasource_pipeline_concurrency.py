@@ -20,6 +20,7 @@ import pytest
 
 from cndb.plugins.datasource.providers.base import PagingSpec, RequestSpec, SyncJobSpec
 from cndb.plugins.datasource.services.pipeline import (
+    RequestProgress,
     apply_row_defaults,
     apply_row_filter,
     fill_entrant,
@@ -153,6 +154,71 @@ class TestGlobalRateLimit:
         assert len(ordered) == 4
         gaps = [second - first for first, second in itertools.pairwise(ordered)]
         assert all(gap >= 0.0995 for gap in gaps), (ordered, gaps)
+
+
+class TestRequestProgress:
+    """ADR 0037 D4：请求级进度计数器与管线回传."""
+
+    def test_snapshot_counts_success_and_failure(self):
+        """成功与失败请求都计入 done；entrant 取最近完成者；total 为计划数."""
+        calls = {"n": 0}
+
+        def fetch(config: Any) -> list[dict[str, Any]]:
+            calls["n"] += 1
+            if "b" in config.url:
+                raise RuntimeError("boom")
+            return [{"v": 1}]
+
+        progress = RequestProgress()
+        outcome = run_pipeline(_job(entrants=("a", "b")), fetch=fetch, progress=progress)
+        assert outcome.succeeded == 1
+        assert outcome.failed == 1
+        total, done, entrant = progress.snapshot()
+        assert total == 2
+        assert done == 2
+        assert entrant in {"a", "b"}
+
+    def test_stopped_pages_leave_done_below_total(self):
+        """空页提前停止：未发出的请求不计入 done，保证 done <= total."""
+        pages = {"n": 0}
+
+        def fetch(_config: Any) -> list[dict[str, Any]]:
+            pages["n"] += 1
+            return [] if pages["n"] > 1 else [{"v": 1}]
+
+        progress = RequestProgress()
+        run_pipeline(
+            SyncJobSpec(
+                request=RequestSpec(
+                    url_template="https://api.example.com/w",
+                    paging=PagingSpec(mode="page", start_page=1, max_pages=30),
+                )
+            ),
+            fetch=fetch,
+            progress=progress,
+        )
+        total, done, _entrant = progress.snapshot()
+        assert total == 30
+        assert done == 2
+
+    def test_counter_is_thread_safe_and_clamped(self):
+        """并发 tick 不丢计数；set_total 负数按 0 处理."""
+        progress = RequestProgress()
+        progress.set_total(-5)
+        assert progress.snapshot() == (0, 0, "")
+
+        def worker() -> None:
+            for _ in range(1000):
+                progress.tick("sh600519")
+
+        threads = [threading.Thread(target=worker) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        _total, done, entrant = progress.snapshot()
+        assert done == 4000
+        assert entrant == "sh600519"
 
 
 class TestStreamingBatches:

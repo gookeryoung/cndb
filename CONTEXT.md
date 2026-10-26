@@ -51,3 +51,5 @@
 | 兼容垫片（Compat Shim） | 仅在特性探测失败时加载的运行时降级层，现代浏览器零开销 | 见 ADR 0026；`--cn-mix-*` 兜底变量（color-mix）、flex-gap shim、入口定向 polyfill；实现位于 `frontend/src/compat/` 与 `frontend/src/theme/themeMix.ts` |
 | 帮助文档（Help Docs） | 登录用户可访问的独立帮助路由 `/help`：一级 5 个部分（快速入门 / 教程&最佳实践 / 典型示例 / 系统配置 / 问题排查）→ 二级主题，选中态由 URL 驱动；窄屏侧栏收为抽屉 | 见 ADR 0029；替代原「帮助中心」抽屉；正文为前端静态 TSX，不落库、不备份 |
 | 帮助示例（Help Example） | 帮助文档「典型示例」部分的后端只读清单：场景说明 + 表清单 + 推荐视图 / 分析 + CSV 下载，资产复用 `examples/datasets`（wheel 内 `cndb/datasets`） | 见 ADR 0029；清单与下载端点在 `plugins/help/`，不依赖 `cndb seed` 与演示库；不提供一键导入工作区 |
+| 运行请求进度（Sync Run Progress） | `datasource_sync_run` 的三列运行期计数：`progress_total`（本轮计划请求数）/ `progress_done`（已完成请求数）/ `progress_entrant`（最近完成的标的）；每批落库后回写并提交 | 见 ADR 0037 D4；`GET /sync-jobs/{id}/runs` 返回，前端运行期每 2s 轮询，结束即停；`progress_done <= progress_total`，批间隔最多滞后一批（≤5000 行） |
+| 同步后台运行（Background Sync Run） | `POST /sync-jobs/{id}/run` 建 `running` 运行记录后立即返回，实际执行在守护线程中完成 | 见 ADR 0037 D1；后台线程用绑定同一 engine 的新 session 工厂，沿用 DB 租约单飞与批间续期，`finally` 释放；`job.last_status=running` 让刷新页面后可恢复轮询 |

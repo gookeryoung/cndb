@@ -88,6 +88,69 @@ def _fetch(rows: list[dict[str, object]]):
     return fetch
 
 
+class TestStartJob:
+    """ADR 0037 D1：建记录后转后台执行（测试用同步桩），进度与终态都落库."""
+
+    def test_start_job_runs_in_background_and_records_progress(self, db_engine, db, monkeypatch):
+        table = _make_table(db, db_engine)
+        job = _make_job(db, table)
+        rows = [{"city": "北京", "day": "2024-06-30", "temp": "31.5"}]
+
+        from cndb.plugins.datasource.services.normalize import NormalizeResult
+        from cndb.plugins.datasource.services.pipeline import PipelineOutcome
+
+        def fake_pipeline(spec, *, progress=None, on_batch=None, **kwargs):
+            if progress is not None:
+                progress.set_total(1)
+                progress.tick("北京")
+            if on_batch is not None:
+                on_batch([dict(row) for row in rows])
+            normalize = NormalizeResult(rows=rows)
+            return PipelineOutcome(rows=[], plans=1, succeeded=1, failures=[], normalize=normalize)
+
+        monkeypatch.setattr(runner, "run_pipeline", fake_pipeline)
+        launched: list[tuple[int, int]] = []
+
+        def sync_spawn(factory, run_id, job_id, user_id, lease, trigger):
+            launched.append((run_id, job_id))
+            runner.execute_run_in_background(factory, run_id, job_id, user_id, lease, trigger)
+
+        monkeypatch.setattr(runner, "_spawn_execution", sync_spawn)
+        run = runner.start_job(db, job, now=NOW)
+
+        assert launched == [(run.id, job.id)]
+        db.refresh(run)
+        assert run.status == "success"
+        assert run.progress_total == 1
+        assert run.progress_done == 1
+        db.refresh(job)
+        assert job.last_status == "success"
+        assert _row_count(db_engine, table) == 1
+
+    def test_start_job_marks_job_running_before_spawn(self, db_engine, db, monkeypatch):
+        """释放请求时任务状态已是 running（前端据此立即开始轮询，C2/C3）."""
+        table = _make_table(db, db_engine)
+        job = _make_job(db, table)
+        seen: list[str] = []
+
+        def noop_spawn(factory, run_id, job_id, user_id, lease, trigger):
+            db.refresh(job)
+            seen.append(job.last_status)
+
+        monkeypatch.setattr(runner, "_spawn_execution", noop_spawn)
+        run = runner.start_job(db, job, now=NOW)
+
+        assert seen == ["running"]
+        assert run.status == "running"
+        assert run.progress_total == 0
+
+    def test_background_missing_job_logs_and_returns(self, db, caplog):
+        """后台线程找不到任务/运行记录时只告警返回，不抛异常."""
+        factory = runner.session_factory(db)
+        runner.execute_run_in_background(factory, 9999, 9999, None, None, "manual")
+        assert any("后台同步跳过" in record.message for record in caplog.records)
+
+
 class TestExecuteJob:
     def test_inserts_and_advances_cursor(self, db_engine, db):
         table = _make_table(db, db_engine)
@@ -119,6 +182,31 @@ class TestExecuteJob:
         assert _row_count(db_engine, table) == 1
         # 第二次的窗口起点取自上一轮推进后的游标
         assert second.cursor_from == "2024-06-30"
+
+    def test_run_records_request_progress(self, db_engine, db):
+        """ADR 0037 C2：运行记录落计划/完成请求数与当前标的."""
+        table = _make_table(db, db_engine)
+        job = _make_job(db, table)
+        execution = execute_job(db, job, fetch=_fetch([{"city": "北京", "day": "2024-06-30", "temp": "31.5"}]), now=NOW)
+        db.refresh(execution.run)
+        assert execution.run.progress_total == 1
+        assert execution.run.progress_done == 1
+        assert execution.run.progress_entrant == "北京"
+        assert _row_count(db_engine, table) == 1
+
+    def test_failed_run_keeps_progress_snapshot(self, db_engine, db):
+        """失败也落进度快照：前端能看到跑到第几个请求（ADR 0037 D4 边界 1）."""
+        table = _make_table(db, db_engine)
+        job = _make_job(db, table)
+
+        def boom(_config: FetchConfig) -> list[dict[str, object]]:
+            raise ValueError("HTTP 500: 源故障")
+
+        execution = execute_job(db, job, fetch=boom, now=NOW)
+        db.refresh(execution.run)
+        assert execution.run.status == "failed"
+        assert execution.run.progress_total == 1
+        assert execution.run.progress_done == 1
 
     def test_failure_recorded_without_raising(self, db_engine, db):
         table = _make_table(db, db_engine)

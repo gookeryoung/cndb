@@ -112,6 +112,39 @@ class _NormalizeAggregate:
     failures: list[Any] = field(default_factory=list)
 
 
+class RequestProgress:
+    """线程安全的请求级进度计数器（ADR 0037 D4）.
+
+    ``total`` = 本轮展开的计划请求数；``done`` = 已结束的请求数（成功 + 失败，
+    空页提前停止后未发出的请求不计）。``entrant`` = 最近完成的标的，供运行记录展示。
+    """
+
+    __slots__ = ("_done", "_entrant", "_lock", "_total")
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._total = 0
+        self._done = 0
+        self._entrant = ""
+
+    def set_total(self, total: int) -> None:
+        """设置本轮计划请求数（展开后调用一次；允许并发线程读取）."""
+        with self._lock:
+            self._total = max(0, total)
+
+    def tick(self, entrant: str | None) -> None:
+        """完成一个请求（成功或失败）后调用."""
+        with self._lock:
+            self._done += 1
+            if entrant:
+                self._entrant = entrant[:64]
+
+    def snapshot(self) -> tuple[int, int, str]:
+        """返回 ``(total, done, entrant)`` 的一致快照."""
+        with self._lock:
+            return self._total, self._done, self._entrant
+
+
 class _RateLimiter:
     """全局请求限速器：任意相邻两个请求的出发间隔 ≥ ``rate_limit_ms``（ADR 0034 D5）.
 
@@ -148,6 +181,7 @@ def run_pipeline(
     sleep: Callable[[float], None] | None = None,
     on_batch: Callable[[Sequence[Mapping[str, Any]]], None] | None = None,
     batch_size: int = DEFAULT_BATCH_SIZE,
+    progress: RequestProgress | None = None,
 ) -> PipelineOutcome:
     """执行一次同步抓取（不落库；流式模式下逐批回调 ``on_batch``）.
 
@@ -160,10 +194,13 @@ def run_pipeline(
         on_batch: 流式回调：归一 + 过滤后的行攒满 ``batch_size`` 即调用（内存不攒全量）；
             回调异常会终止整轮并向外抛出。缺省为全量攒进 ``outcome.rows``（旧行为）。
         batch_size: 流式批大小（行）。
+        progress: 请求级进度计数器（ADR 0037 D4）；缺省不统计。
     """
     active = provider or get_provider(job.provider)
     plans = active.build_requests(job)
     outcome = PipelineOutcome(plans=len(plans))
+    if progress is not None:
+        progress.set_total(len(plans))
     groups = _group_plans(plans)
     limiter = _RateLimiter(rate_limit_ms, sleep)
     cancel = threading.Event()
@@ -180,10 +217,10 @@ def run_pipeline(
         for group in groups:
             if cancel.is_set():
                 break
-            absorb(_run_group(group, job, fetch, limiter, cancel))
+            absorb(_run_group(group, job, fetch, limiter, cancel, progress))
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(_run_group, group, job, fetch, limiter, cancel) for group in groups]
+            futures = [pool.submit(_run_group, group, job, fetch, limiter, cancel, progress) for group in groups]
             try:
                 for future in as_completed(futures):
                     absorb(future.result())
@@ -219,6 +256,7 @@ def _run_group(
     fetch: FetchFn | None,
     limiter: _RateLimiter,
     cancel: threading.Event,
+    progress: RequestProgress | None = None,
 ) -> _GroupResult:
     """串行执行一个分组内的全部请求（空页停止；取消标记只在请求间检查）."""
     result = _GroupResult()
@@ -233,7 +271,11 @@ def _run_group(
         except Exception as exc:  # 单请求失败不中断整体（I3）
             logger.warning("数据源请求失败 [%s]: %s", plan.label, exc)
             result.failures.append(FetchFailure(label=plan.label, entrant=plan.entrant, page=plan.page, error=str(exc)))
+            if progress is not None:
+                progress.tick(plan.entrant)
             continue
+        if progress is not None:
+            progress.tick(plan.entrant)
         result.succeeded += 1
         if plan.metadata:
             result.metadata.append({"label": plan.label, **plan.metadata})
@@ -406,6 +448,7 @@ __all__ = [
     "DEFAULT_BATCH_SIZE",
     "FetchFailure",
     "PipelineOutcome",
+    "RequestProgress",
     "apply_row_defaults",
     "apply_row_filter",
     "fill_entrant",
