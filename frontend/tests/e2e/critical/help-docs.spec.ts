@@ -35,6 +35,12 @@ test.describe("帮助文档整页", () => {
       page.getByRole("heading", { name: "权限与角色", exact: true }),
     ).toBeVisible({ timeout: 10000 });
 
+    // 页内目录（L3）：点击小节写入锚点，地址可直接分享
+    await expect(page.getByTestId("help-docs-toc")).toBeVisible();
+    await page.getByTestId("help-toc-row-level").click();
+    await expect(page).toHaveURL(/#help-row-level$/);
+    await expect(page.locator("#help-row-level")).toBeVisible();
+
     // 浏览器后退回到上一主题
     await page.goBack();
     await expect(page).toHaveURL(/\/help\/quick-start\/overview$/);
