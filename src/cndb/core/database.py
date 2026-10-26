@@ -112,6 +112,42 @@ def _after_cursor_execute(
         )
 
 
+def checkpoint_wal(target_engine: Any, *, mode: str = "TRUNCATE") -> bool:
+    """把 WAL 落回主库并截断 WAL 文件（ADR 0043 D4，同步收尾用）.
+
+    只在「SQLite + 当前连接 journal_mode=wal」时执行；非 SQLite、非 WAL 直接返回
+    ``False``。``PRAGMA wal_checkpoint`` 在写锁竞争时返回 ``busy`` 位而不抛错，
+    因此必须读第一列判断；任何异常都吞掉并记 warning（收尾动作不得影响已落库批次
+    与运行记录状态）。
+
+    Args:
+        target_engine: SQLAlchemy engine。
+        mode: ``TRUNCATE``（默认，重置 WAL 文件）/ ``PASSIVE`` / ``FULL`` / ``RESTART``。
+
+    Returns:
+        真正执行了 checkpoint 且未因忙跳过时为 ``True``。
+    """
+    if mode.upper() not in {"TRUNCATE", "PASSIVE", "FULL", "RESTART"}:
+        logger.warning("WAL checkpoint 模式非法: %r，跳过", mode)
+        return False
+    try:
+        if getattr(getattr(target_engine, "dialect", None), "name", "") != "sqlite":
+            return False
+        with target_engine.connect() as conn:
+            journal_mode = conn.exec_driver_sql("PRAGMA journal_mode").scalar()
+            if str(journal_mode or "").lower() != "wal":
+                return False
+            row = conn.exec_driver_sql(f"PRAGMA wal_checkpoint({mode.upper()})").first()
+        busy = int(row[0]) if row is not None and row[0] is not None else 0
+        if busy:
+            logger.info("WAL checkpoint(%s) 因写锁忙跳过（busy=%s）", mode, busy)
+            return False
+        return True
+    except Exception:
+        logger.warning("WAL checkpoint(%s) 失败，跳过", mode, exc_info=True)
+        return False
+
+
 def db_readiness() -> dict[str, Any]:
     """就绪探测快照：DB ping + 迁移版本.
 
