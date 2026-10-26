@@ -1304,3 +1304,47 @@ class TestCrossWorkspacePermission:
         )
         assert r.status_code == 400, r.text
         assert "未知" in r.json()["detail"]
+
+
+class TestRequiredFieldImportGuard:
+    """非空目标表无法引入必填字段：提前 400，不落 DDL 异常."""
+
+    def test_import_required_field_into_non_empty_table_rejected(self, client, auth_headers):
+        wid, src_tid = _create_table_with_field(client, auth_headers, "WS_REQ_SRC", "ReqSrc", "编号")
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{src_tid}/fields/{_field_id(client, auth_headers, wid, src_tid, '编号')}",
+            headers=auth_headers,
+            json={"required": True},
+        )
+        assert r.status_code == 200, r.text
+
+        r = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "ReqDst"})
+        dst_tid = r.json()["id"]
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields",
+            headers=auth_headers,
+            json={"name": "姓名", "field_type": "text", "order": 0},
+        )
+        assert r.status_code == 201, r.text
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records",
+            headers=auth_headers,
+            json={"values": {"姓名": "张三"}},
+        )
+        assert r.status_code == 201, r.text
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": src_tid, "import_all_fields": True},
+        )
+        assert r.status_code == 400, r.text
+        assert "已有数据" in r.json()["detail"]
+
+        fields = client.get(f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields", headers=auth_headers).json()
+        assert {f["name"] for f in fields} == {"姓名"}
+
+
+def _field_id(client, headers: dict, wid: int, tid: int, name: str) -> int:
+    fields = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/fields", headers=headers).json()
+    return next(f["id"] for f in fields if f["name"] == name)

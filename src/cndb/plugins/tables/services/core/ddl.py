@@ -157,6 +157,25 @@ def table_exists(engine: Any, db_table_name: str) -> bool:
     return db_table_name in insp.get_table_names()
 
 
+def column_exists(engine: Any, db_table_name: str, column_name: str) -> bool:
+    """检查物理表是否存在指定列；表不存在时返回 False.
+
+    用于识别历史 DDL 失败残留（有字段 metadata、无物理列）的场景，让删除等
+    幂等操作可以继续执行而不是卡在「no such column」。
+    """
+    if not table_exists(engine, db_table_name):
+        return False
+    return column_name in {col["name"] for col in inspect(engine).get_columns(db_table_name)}
+
+
+def table_has_rows(engine: Any, db_table_name: str) -> bool:
+    """检查物理表是否存在任意行（含软删除行，物理 NOT NULL 对全表生效）；表不存在返回 False."""
+    if not table_exists(engine, db_table_name):
+        return False
+    with engine.connect() as conn:
+        return conn.execute(text(f'SELECT 1 FROM "{db_table_name}" LIMIT 1')).first() is not None  # nosec B608
+
+
 # ── CREATE TABLE ─────────────────────────────────────
 
 
@@ -489,6 +508,7 @@ __all__ = [
     "add_column",
     "add_unique_constraint",
     "build_sa_table",
+    "column_exists",
     "create_link_table",
     "create_table",
     "drop_column",
@@ -502,4 +522,5 @@ __all__ = [
     "invalidate_reflected_table",
     "rebuild_column",
     "table_exists",
+    "table_has_rows",
 ]

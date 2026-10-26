@@ -213,6 +213,28 @@ def plan_field_import(
 # ── 执行 ─────────────────────────────────────────────
 
 
+def _ensure_required_fields_addable(engine: Any, dst_table: DataTable, plan: list[DataField]) -> None:
+    """非空表无法新增 NOT NULL 物理列：提前抛 ValueError（路由层转 400），不落到 DDL 异常.
+
+    SQLite / PostgreSQL 都要求 ADD COLUMN NOT NULL 自带非 NULL 默认值；克隆字段无法为
+    存量行提供真实取值，用占位默认值会污染必填语义，因此明确拒绝并提示可空路径。
+    """
+    from cndb.plugins.tables.field_types import default_registry
+
+    blocked = []
+    for f in plan:
+        ft = default_registry.get(f.field_type)
+        if f.required and ft is not None and ft.has_physical_column:
+            blocked.append(f.name)
+    if not blocked:
+        return
+    if not _ddl.table_has_rows(engine, dst_table.db_table_name):
+        return
+    raise ValueError(
+        f"目标表「{dst_table.name}」已有数据，无法引入必填字段（{'、'.join(blocked)}）；请先改为可空后再补齐数据"
+    )
+
+
 def execute_field_import(
     engine: Any,
     db: Session,
@@ -254,6 +276,8 @@ def execute_field_import(
     if not plan:
         logger.info("[field_ops] 没有可克隆的字段，跳过")
         return []
+
+    _ensure_required_fields_addable(engine, dst_table, plan)
 
     # 阶段一：全部 DDL 先成功，再 ORM commit —— 避免孤儿 DataField（importer._auto_add_fields 同款事务策略）
     from cndb.plugins.tables.services.core.ddl import drop_column
@@ -330,6 +354,8 @@ def clone_fields_between_tables(
 
     if not plan:
         return [], skipped
+
+    _ensure_required_fields_addable(engine, dst_table, plan)
 
     # 阶段一：全部 DDL 先成功，再 ORM commit —— 避免孤儿 DataField
     from cndb.plugins.tables.services.core.ddl import drop_column

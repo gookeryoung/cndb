@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
@@ -26,6 +27,7 @@ from cndb.plugins.tables.services.core.ddl import (
     _column_needs_rebuild,
     add_column,
     add_unique_constraint,
+    column_exists,
     create_link_table,
     drop_column,
     drop_link_table,
@@ -33,6 +35,7 @@ from cndb.plugins.tables.services.core.ddl import (
     find_duplicate_values,
     find_null_rows,
     rebuild_column,
+    table_has_rows,
 )
 from cndb.plugins.tables.services.core.links import (
     find_duplicate_link_values,
@@ -158,6 +161,7 @@ def create_field(
         raise HTTPException(status_code=400, detail="字段名已存在")
 
     # 存量兜底：历史软删除字段仍占用同名唯一约束时改名让位，释放名字供复用
+    # （改名与新增字段同事务提交，物理 DDL 失败时不会留下已让位却无新字段的状态）
     trashed_dups = (
         db.query(DataField)
         .filter(
@@ -167,13 +171,19 @@ def create_field(
         )
         .all()
     )
-    if trashed_dups:
-        for dup in trashed_dups:
-            dup.name = rename_trashed_field_aside(db, dup)
-        db.commit()
 
     # 用字段类型专属 schema 校验并归一化 config
     config = _validate_field_config(payload.field_type, payload.config or {}, db)
+
+    engine = db.get_bind()
+
+    # 物理 NOT NULL 列要求 ADD COLUMN 自带非 NULL 默认值（SQLite / PostgreSQL 一致）；
+    # 新字段无法为存量行提供真实值，用占位默认值会污染必填语义，故直接拒绝并给出可操作路径。
+    if payload.required and ft.has_physical_column and table_has_rows(engine, dt.db_table_name):
+        raise HTTPException(
+            status_code=400,
+            detail=f"表「{dt.name}」已有数据，无法直接新增必填字段；请先新增可空字段并补齐数据，再设为必填",
+        )
 
     df = DataField(
         table_id=table_id,
@@ -187,19 +197,40 @@ def create_field(
         hidden=payload.hidden,
     )
     df.ensure_db_name()
-    db.add(df)
-    db.commit()
-    db.refresh(df)
 
-    # 物理加列
+    # ── 物理 DDL 先行：失败时物理表保持原状，不产生「有 metadata、无物理列」的孤儿字段 ──
+    db.rollback()  # 结束前面的只读事务，避免与物理 DDL 事务交织
     try:
-        add_column(db.get_bind(), dt, df)
+        add_column(engine, dt, df)
         # is_unique：创建后同步加物理唯一索引
         if df.is_unique:
-            add_unique_constraint(db.get_bind(), dt, df)
+            add_unique_constraint(engine, dt, df)
     except Exception as exc:
+        # 逆向清理本次请求已建成的物理对象（唯一索引需先删，否则 SQLite 不允许删被索引列）
+        with contextlib.suppress(Exception):
+            if df.is_unique:
+                drop_unique_constraint(engine, dt, df)
+        with contextlib.suppress(Exception):
+            drop_column(engine, dt, df)
         db.rollback()
         raise HTTPException(status_code=500, detail=f"物理加列失败: {exc}") from exc
+
+    # ── 物理变更全部成功后再提交 metadata（与字段克隆同一事务策略） ──
+    db.add(df)
+    try:
+        for dup in trashed_dups:
+            dup.name = rename_trashed_field_aside(db, dup)
+        db.commit()
+    except Exception as exc:
+        # metadata 落库失败（如让位名冲突）同样需要撤销刚建成的物理对象，否则反向留下孤儿列
+        db.rollback()
+        with contextlib.suppress(Exception):
+            if df.is_unique:
+                drop_unique_constraint(engine, dt, df)
+        with contextlib.suppress(Exception):
+            drop_column(engine, dt, df)
+        raise HTTPException(status_code=500, detail=f"字段创建失败: {exc}") from exc
+    db.refresh(df)
 
     # link 字段的引用字段在关联配置内管理：按 config.reference_fields 同步其名下 lookup
     if is_link_field(df):
@@ -290,6 +321,22 @@ def update_field(
     ):
         raise HTTPException(status_code=400, detail=f"引用字段「{df.name}」的值由关联解析决定，不支持设置必填/唯一约束")
 
+    # link → 物理列且必填：等价于「为非空表新增 NOT NULL 列」，物理层无法为存量行补值，
+    # 直接给出可操作路径而不是让 DDL 抛 OperationalError 后靠回退收拾残局。
+    new_ft = default_registry.get(update_data.get("field_type", old_field_type))
+    if (
+        is_link_field(old_field)
+        and new_ft is not None
+        and new_ft.has_physical_column
+        and effective_required
+        and table_has_rows(engine, dt.db_table_name)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=f"字段「{df.name}」从关联改为必填物理列失败：表「{dt.name}」已有数据，无法为存量行补充取值；"
+            "请先改为可空字段，补齐数据后再启用必填",
+        )
+
     if effective_required and not old_required:
         if is_link_field(df):
             null_ids = find_null_link_rows(engine, dt, df)
@@ -353,16 +400,17 @@ def update_field(
             raise HTTPException(status_code=500, detail=f"物理列重建失败: {exc}") from exc
 
     # 1b. 物理列 ↔ link 互转：无物理列重建路径，需显式切换物理结构 ——
-    #     改为 link 时删旧物理列并创建关联表；改回物理列时删关联表并补物理列。
-    #     缺失任一步都会让后续行写入因反射不到关联表/物理列而 500。
+    #     改为 link 时创建关联表再删旧物理列；改回物理列时补物理列再删关联表。
+    #     先建后删保证失败时原结构（数据/关联）仍在：metadata 回退后不会出现
+    #     「metadata 说关联/物理列存在，但物理对象已丢」的半成品状态。
     elif old_is_link != new_is_link:
         try:
             if new_is_link:
-                drop_column(engine, dt, old_field)
                 create_link_table(engine, df)
+                drop_column(engine, dt, old_field)
             else:
-                drop_link_table(engine, old_field)
                 add_column(engine, dt, df)
+                drop_link_table(engine, old_field)
         except Exception as exc:
             _revert_metadata()
             raise HTTPException(status_code=500, detail=f"字段类型切换物理结构变更失败: {exc}") from exc
@@ -476,19 +524,25 @@ def delete_field(
     df.name = rename_trashed_field_aside(db, df)
     db.commit()
 
-    # 引用该字段的 lookup 字段标记失效
-    from cndb.plugins.tables.services.core.lookups import mark_dependent_lookups_broken
-
-    mark_dependent_lookups_broken(db, df.id)
-
     # 物理删列（失败则回滚 metadata，含让位名）
+    engine = db.get_bind()
+    ft = default_registry.get(df.field_type)
+    needs_physical_drop = ft is not None and ft.has_physical_column
     try:
-        drop_column(db.get_bind(), dt, df)
+        # 历史 DDL 失败残留的字段可能本就没有物理列：按已删除处理，保证可以清理
+        if not needs_physical_drop or column_exists(engine, dt.db_table_name, df.db_column_name):
+            drop_column(engine, dt, df)
     except Exception as exc:
         df.trashed = False
         df.name = original_name
         db.commit()
         raise HTTPException(status_code=500, detail=f"物理删列失败: {exc}") from exc
+
+    # 引用该字段的 lookup 字段标记失效（物理删列成功后再标记，
+    # 避免删列失败、字段回滚后遗留错误的失效状态）
+    from cndb.plugins.tables.services.core.lookups import mark_dependent_lookups_broken
+
+    mark_dependent_lookups_broken(db, df.id)
 
 
 @router.post("/import", response_model=FieldImportResponse, status_code=status.HTTP_201_CREATED)
