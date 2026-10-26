@@ -230,9 +230,7 @@ def _ensure_required_fields_addable(engine: Any, dst_table: DataTable, plan: lis
         return
     if not _ddl.table_has_rows(engine, dst_table.db_table_name):
         return
-    raise ValueError(
-        f"目标表「{dst_table.name}」已有数据，无法引入必填字段（{'、'.join(blocked)}）；请先改为可空后再补齐数据"
-    )
+    raise ValueError(f"目标表「{dst_table.name}」已有数据，无法引入必填字段（{'、'.join(blocked)}）；请先改为可空后再补齐数据")
 
 
 def execute_field_import(
