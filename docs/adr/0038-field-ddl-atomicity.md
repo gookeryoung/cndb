@@ -1,6 +1,6 @@
 # ADR 0038: 字段物理 DDL 的原子回退（新增必填字段 / 建表 / 类型切换）
 
-Status: Proposed（待评审；全部阶段已落地）
+Status: Implemented（2026-10-27 人工评审通过）
 Date: 2026-10-26
 Related: `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/services/fields/field_import.py`、`src/cndb/plugins/tables/services/importing/importer.py`
 需求卡片: `docs/requirements/0038-field-ddl-atomicity.md`（需求原文与约束编号的唯一副本）
@@ -126,14 +126,14 @@ Related: `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/services/core/ddl.py` | `tests/test_field_edit_validation.py`、`tests/test_cov_links_ddl.py` | — |
-| P1 | 已落地 | `src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py` | `tests/test_tables_coverage.py`、`tests/test_field_edit_validation.py` | — |
-| P2 | 已落地 | `src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_fields_import.py` | — |
+| P0 | 已落地 | `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/services/core/ddl.py` | `tests/test_field_edit_validation.py`、`tests/test_cov_links_ddl.py` | 4d9456f8 |
+| P1 | 已落地 | `src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py` | `tests/test_tables_coverage.py`、`tests/test_field_edit_validation.py` | 4d9456f8 |
+| P2 | 已落地 | `src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_fields_import.py` | 4d9456f8 |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：全部期已落地，待人工评审 Status
+- 当前阶段：全部期已落地，`Status` 已于 2026-10-27 经人工评审确认改 `Implemented`
 - 已完成：P0 / P1 / P2
-- 下一步：人工评审后把 Status 改为 Accepted；提交后回填落地表 sha
+- 下一步：无（功能完结）
 - 已知坑：SQLite 空表 `ADD COLUMN NOT NULL` 合法、非空表不合法；物理 DDL 事务与 ORM Session 事务相互独立，`db.rollback()` 撤销不了已提交的 metadata；测试须用真实非空物理表复现
 - 最近一次全绿：`make cov`（5449 passed / 3 skipped，覆盖率 96.98%）@ 2026-10-26

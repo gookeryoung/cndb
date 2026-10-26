@@ -1,6 +1,6 @@
 # ADR 0043: 数据源同步落库剩余开销削减（行拷贝收敛 / 幂等匹配分片 / WAL 收尾 / 失败明细有界）
 
-Status: Accepted（2026-10-26 需求方评审通过，进入实现）
+Status: Implemented（2026-10-27 人工审核通过）
 Date: 2026-10-26
 Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/core/database.py`、`docs/adr/0039-datasource-daily-sync-reliability.md`、ADR 0006 / 0034 / 0035 / 0040
 需求卡片: `docs/requirements/0043-datasource-write-path-overhead.md`（需求原文与约束编号的唯一副本）
@@ -197,8 +197,8 @@ Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/
 
 ## 交接（会话结束更新）
 
-- 当前阶段：已实现完成（P0 与 P2 落地、P1 实测后不做），待 `make flow` 全绿后提交
+- 当前阶段：全部落地并提交（P0 与 P2 落地、P1 实测后不做），`Status` 已于 2026-10-27 经人工审核确认改 `Implemented`
 - 已完成：需求卡片 0043、ADR 方案与决策记录、P0 行拷贝收敛（-31%）、P2 WAL 收尾（3.0MB → 0.0MB）与失败明细有界、帮助文档一行
-- 下一步：`make check-fast` → `make test` → `make cov` → 提交；真源 3.83M 行端到端复测（ADR 0040 遗留）单独安排
+- 下一步：无（功能完结）；真源 3.83M 行端到端复测按 ADR 0040 遗留单独安排
 - 已知坑：① `inplace=True` 只可在已拥有行对象处启用，外部共享行必须先经 `to_records` / `apply_field_mapping`；② `wal_checkpoint(TRUNCATE)` 忙时返回结果行而非异常，必须读 `busy` 位；③ 本 ADR 不改 `preview_job` 的 `[:50]` 截断，别把两处截断混改；④ 分片项已否决，别再顺手把 `chunk_size` 调大；⑤ `detail` 只落前 100 条，失败总量只在日志里
 - 最近一次全绿：`make check-fast` / `make test` @ 2026-10-26

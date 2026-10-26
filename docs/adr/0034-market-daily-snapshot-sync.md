@@ -1,6 +1,6 @@
 # ADR 0034: 全市场股票日线增量同步（快照秒级增量 + 按标的回补水位）
 
-Status: Proposed
+Status: Implemented（2026-10-27 人工评审通过）
 Date: 2026-10-25
 Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / scheduler / providers）、`src/cndb/plugins/tables/services/core/`（ddl / records）、`src/cndb/alembic/`、`src/cndb/cli/seed/datasource.py`、`examples/datasets/工作区-数据源示例/`；上游 ADR 0006（适配器收敛）、0033（http_json 通用解析扩展）、0008 邻例（分期与迁移范式）
 需求卡片: `docs/requirements/0034-market-daily-incremental-sync.md`（需求原文与约束编号的唯一副本）
@@ -229,10 +229,10 @@ Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / 
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P1–P3 全部落地，待人工确认 `Status` 改 `Implemented`
+- 当前阶段：P1–P3 全部落地，`Status` 已于 2026-10-27 经人工评审确认改 `Implemented`
 - 已完成：引擎全量能力（backfill_date 水位 / entrant_source 动态标的 / 流式落表 / workers 并发 + 全局限速 / row_filter + {today} 模板 / 幂等键复合索引 / 批间续租）；种子 4 条全市场任务替换旧 2 条；前端只读兼容 + 编辑保留声明键；帮助文档「大规模同步与增量」「大表与库体积维护」两节
 - 真源演练结论（2026-10-25，3 只股 + 全市场快照）：清单单轮 7289 只入库；动态标的拆分 6319（主板/创业板/ETF）+ 617（科创板）；当日快照 7286 行、停牌零值 3 行被 `row_filter` 剔除、二轮重跑 0 新增全 update（幂等）；腾讯回补每轮每标的 800 根，水位 2023-07-05 → 2020-03-18 逐轮前推，断点续跑语义验证通过
 - 已知坑：① `_advance_backfill` 取标的列必须用 field_mapping 映射后的**目标列名**（源键归一后已被重命名，测试须覆盖映射路径）；② 回补前缀必须精确到板块段（`sh6` 会误吞科创板 sh68x，正确为 `sh60`）；③ 新浪 hs_a 节点含北交所（bj 前缀），回补前缀天然排除，快照当日行会包含（可接受口径）；④ `make check` 的 ruff format 是全仓扫描，他人未格式化文件会挡 lint（本次 documents/importers/docx.py、html.py 属并发会话，只 stage 自己文件提交）
-- 下一步：人工确认 ADR `Status`；存量实例需清理旧 2 条任务后重跑 `cndb seed`（口径同 0033 C4）；全量十年回补首跑约 30~60 分钟（CLI `cndb sync tick` 驱动，多轮收敛）
+- 下一步：无（功能完结）；存量实例需清理旧 2 条任务后重跑 `cndb seed`（口径同 0033 C4）；全量十年回补首跑约 30~60 分钟（CLI `cndb sync tick` 驱动，多轮收敛）
 - 已修复（提交后检查 @ 2026-10-26）：全部标的补满后 `entrant_values` 为空，`build_requests` 的 `or (None,)` 回退会发一条空标的伪请求，`{end}` 无锚点注入 → `ProviderError` → 每次运行落 `failed`（违背 D2「补满自动零请求」）。现由 `SyncJobSpec.entrants_exhausted` 显式区分「解析后为空」与「未声明标的」，`preview_job` 同时补上水位锚点注入（预览与执行同口径）。回归锚点：`tests/test_datasource_pipeline.py::test_exhausted_entrants_make_zero_plans`、`tests/test_datasource_runner_streaming.py::test_preview_injects_watermark_anchor` / `test_watermark_truncated_to_backfill_start`
 - 最近一次全绿：`make test` 5422 passed / 3 skipped、`make cov` 97.03%（门槛 95%）@ 2026-10-26；前端门禁本沙箱因 corepack 缓存缺失（`pnpm@12.4.2`）无法执行，非本次改动引起

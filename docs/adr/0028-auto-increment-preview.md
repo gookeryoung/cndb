@@ -1,6 +1,6 @@
 # ADR 0028: 新增行自动编号：预览数值与手动修改（按库内已有数据往后排）
 
-Status: Proposed
+Status: Implemented（2026-10-27 人工评审通过）
 Date: 2026-10-24（追加 2026-10-25）
 Related: `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`frontend/src/pages/grid/cells/AutoIncrementCell.tsx`、`frontend/src/pages/grid/cells/buildColumns.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.tsx`、`frontend/src/utils/fieldIncrement.ts`、`frontend/src/api/records.ts`、`docs/requirements/0028-auto-increment-preview.md`
 需求卡片: `docs/requirements/0028-auto-increment-preview.md`（需求原文与约束编号的唯一副本）
@@ -175,8 +175,8 @@ Related: `src/cndb/plugins/tables/field_types/text.py`、`src/cndb/plugins/table
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P4 全部落地，待人工评审转 Accepted
+- 当前阶段：P0-P4 全部落地，`Status` 已于 2026-10-27 经人工评审确认改 `Implemented`
 - 已完成：`strip()` 推算增强、`preview_auto_increment_values`、`GET /records/auto-increment-preview`、网格与抽屉的新增行只读数值展示、冗余提示文案删除、建行后预览缓存失效、P3/P4 手动改号（网格 `AutoIncrementCell` + 抽屉编辑图标，手动值仅显式提交）
-- 下一步：人工评审通过后把 Status 转 Accepted
+- 下一步：无（功能完结）
 - 已知坑：预览端点必须保持在 `/{record_id}` 之前；预览是只读提示，并发窗口可能同号，以保存结果为准；前端预览查询键为 `['auto-increment-preview', wid, tid]`，新增建行路径时要同步失效；手动值只有在用户实际编辑后才允许进入提交体（D6）
 - 最近一次全绿：`make check`（lint + typecheck + cov + frontend-coverage）@ 2026-10-25
