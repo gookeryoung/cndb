@@ -529,3 +529,33 @@ class TestFetchConfig:
 
 
 __all__ = []
+
+
+# ── fetch_json 连接复用（ADR 0040 D3） ─────────────────
+
+
+class TestFetchJsonClientReuse:
+    def test_injected_client_is_reused_without_creating_or_closing(self):
+        """传入 client 时只复用连接：不新建 Client，也不关闭调用方的 Client."""
+        client = _mock_client(200, json.dumps([{"v": 1}]).encode())
+        with patch("httpx2.Client") as MockClient:
+            rows = af.fetch_json(af.FetchConfig(url="https://example.com/api"), client=client)
+        assert rows == [{"v": 1}]
+        MockClient.assert_not_called()
+        client.__exit__.assert_not_called()
+        assert client.request.call_args.kwargs["headers"]["User-Agent"] == af.USER_AGENT
+
+    def test_default_path_creates_and_closes_client(self):
+        """不传 client 时保持旧行为：新建并在返回前关闭."""
+        client = _mock_client(200, json.dumps([{"v": 2}]).encode())
+        with patch("httpx2.Client", return_value=client):
+            rows = af.fetch_json(af.FetchConfig(url="https://example.com/api"))
+        assert rows == [{"v": 2}]
+        client.__exit__.assert_called_once()
+
+    def test_injected_client_still_validates_every_url(self):
+        """连接复用不绕过 SSRF 校验：非法 URL 在请求前即报错."""
+        client = _mock_client(200, b"[]")
+        with pytest.raises(ValueError, match="保留 IP"):
+            af.fetch_json(af.FetchConfig(url="http://127.0.0.1/x"), client=client)
+        client.request.assert_not_called()

@@ -315,9 +315,14 @@ class TestRunPreview:
         assert body["run"]["progress_total"] == 1
         assert body["run"]["progress_done"] == 1
         assert body["run"]["progress_entrant"] == "beijing"
+        # ADR 0040 C1：终态耗时取 duration_ms，速度与已写入行数自洽
+        assert body["run"]["elapsed_ms"] == body["run"]["duration_ms"]
+        assert body["run"]["rows_per_second"] >= 0
 
         runs = client.get(f"/api/v1/workspaces/{wid}/datasource/sync-jobs/{created['id']}/runs", headers=headers)
         assert runs.json()["runs"][0]["progress_done"] == 1
+        assert runs.json()["runs"][0]["elapsed_ms"] == body["run"]["duration_ms"]
+        assert runs.json()["runs"][0]["rows_per_second"] == body["run"]["rows_per_second"]
 
     def test_run_returns_immediately_with_running_record(self, client, db, workspace_with_auth, monkeypatch):
         """ADR 0037 C3：端点不等待执行完成，返回 running 记录（后台执行由线程负责）."""

@@ -212,6 +212,8 @@ function setupHandlers(
           progress_total: 2,
           progress_done: 2,
           progress_entrant: 'beijing',
+          elapsed_ms: 1000,
+          rows_per_second: 2,
           error_message: options.runStatus === 'failed' ? '源故障' : '',
           detail: {},
         },
@@ -238,6 +240,8 @@ function setupHandlers(
             progress_total: options.runStatus === 'running' ? 10 : 2,
             progress_done: options.runStatus === 'running' ? 4 : 2,
             progress_entrant: 'sh600519',
+            elapsed_ms: options.runStatus === 'running' ? 100_000 : 1000,
+            rows_per_second: options.runStatus === 'running' ? 5 : 2,
             error_message: options.runStatus === 'failed' ? '源故障' : '',
             detail: {},
           },
@@ -345,6 +349,8 @@ describe('DatasourcePage', () => {
     expect(within(panel).getByText(/4\/10 请求/)).toBeInTheDocument()
     expect(within(panel).getByText(/当前标的 sh600519/)).toBeInTheDocument()
     expect(within(panel).getByText(/已写入 500 行/)).toBeInTheDocument()
+    expect(within(panel).getByText(/5\.0 行\/秒/)).toBeInTheDocument()
+    expect(within(panel).getByText(/已用时 1分40秒/)).toBeInTheDocument()
     expect(within(panel).getByText('40%')).toBeInTheDocument()
   })
 

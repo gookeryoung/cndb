@@ -82,6 +82,8 @@ def upsert_rows(
         auto_match_keys: ``match_keys`` 为空时自动推断幂等键（ADR 0019）。
         light: 轻量落表（ADR 0035 D2）：跳过列画像 / 参考列推荐 / 清洗建议 /
             全表选项同步。校验、幂等匹配、未知列规划与写入结果不变。
+            同时跳过同步链路不消费的预览构建，并复用校验产出的归一值
+            （ADR 0040 D5），逐格校验语义不变。
     """
     if not rows:
         return WriteOutcome()
@@ -93,7 +95,7 @@ def upsert_rows(
     ensure_match_keys_index(db, table, keys)
     importer = Importer(engine, db, table, user=user, partial=True)
     # content 占位为空串：行已解析好，走 rows 入口（与 import_api 的 JSON 数组导入同口径）
-    analysis = importer.analyze("", rows=list(rows), match_keys=keys or None, light=light)
+    analysis = importer.analyze("", rows=list(rows), match_keys=keys or None, light=light, preview=not light)
 
     # ── ADR 0019：自动幂等键 —— upsert 分类依赖 match_keys，推断出键后需重新 analyze ──
     if auto_match_keys and not keys:
@@ -101,7 +103,7 @@ def upsert_rows(
         inferred = infer_match_keys(rows, candidate_names(rows, field_names))
         if inferred:
             keys = inferred
-            analysis = importer.analyze("", rows=list(rows), match_keys=keys, light=light)
+            analysis = importer.analyze("", rows=list(rows), match_keys=keys, light=light, preview=not light)
 
     # 自动补字段必须走 execute 的 add_text_field 策略：由 Importer 建 DataField + DDL
     existing_names = {item.name for item in table.active_fields()}
@@ -110,6 +112,7 @@ def upsert_rows(
         match_keys=keys or None,
         unknown_cols_strategy="add_text_field" if auto_add_fields else "drop",
         sync_options=not light,
+        preview=not light,
     )
     auto_fields: list[str] = []
     if auto_add_fields:
