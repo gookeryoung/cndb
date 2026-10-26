@@ -22,7 +22,8 @@
 | 数据分析（Analytics） | 工作区级分析模块：分析模板（公式 + 图表 + 分组汇总配置，存后端）→ 受限公式引擎逐行派生指标 → 分组汇总（维度 × 聚合，可排序 Top N）与 ChartCard 可视化 | 页面 `/w/:wid/analytics`，支持 `?template=<id>` 深链；统计/数据/汇总可导出 CSV，图表可导出 PNG |
 | 凭证会话（DatasourceSession） | 工作区级的请求头 + 密钥集合：任务以 `session_id` 引用，运行期 headers 铺底、密钥作模板变量（`{api_key}`） | **密钥值加密入库**（Fernet / `enc:v1:` 前缀，键名明文，历史明文兼容），只写不回显、不随工作区导出；删除会话会解绑任务；入口在数据源同步页「凭证会话」弹窗（列表 / 新建 / 编辑 / 删除） |
 | 列式记录（record_mode=columns） | 响应是「列名 → 数组」而非对象数组时，按 `record_layout` 的 `{目标列: 源键}` 逐索引拼行 | 用于 Open-Meteo 等 `daily.time[]` / `daily.temp[]` 形态；长度不齐补空值 |
-| 行数组记录（record_mode=rows_array） | 响应数组的每一项是**行数组**（如腾讯日线 `[["日期","开","收","高","低","成交量"]]`）时，按 `record_layout` 的 `{目标列: 位置索引}` 拼成对象 | `data_path` 同时支持 `{entrant}` 等模板占位符（`data.{entrant}.qfqday`）；行长度不足补空值；声明缺失或类型不符报 `ProviderError` |
+| 行数组记录（record_mode=rows_array） | 响应数组的每一项是**行数组**（如腾讯日线 `[["日期","开","收","高","低","成交量"]]`）时，按 `record_layout` 的 `{目标列: 位置索引}` 拼成对象 | `data_path` 同时支持 `{entrant}` 等模板占位符（`data.{entrant}.qfqday`）与候选列表（见「候选响应路径」）；行长度不足补空值；声明缺失或类型不符报 `ProviderError` |
+| 候选响应路径（data_path 候选） | `rows_array` 的 `data_path` 可写 `a.b\|a.c`：按声明顺序取第一个命中数组的候选，命中空数组也继续试下一候选，全部未命中才报错、全部为空按无数据返回 `[]` | 见 ADR 0039 D1/D3；腾讯日线用 `data.{entrant}.qfqday\|data.{entrant}.day` 兼容只返回 `day` 的基金/ETF；单路径配置行为不变 |
 | 行级常量列（row_defaults） | 响应不回显来源维度时，把常量列按 `setdefault` 语义并入每行 | 多源写同一张表补「来源 / 复权方式」；响应自带同名值优先，不被配置覆盖 |
 | 字段数值缩放（field_mapping.scale） | 归一前对数值类型字段乘缩放系数，统一同一目标列的量纲 | 如腾讯成交量以「手」返回、表内存「股」则声明 100；按**目标类型**判定，文本 / 日期 / 布尔忽略；可转数值的字符串同样换算 |
 | 按标的回补水位（cursor=backfill_date） | 游标策略：每个 entrant 在 `datasource_entrant_cursor` 表独立记「已回补到的最早日期」，请求按水位生成 end 锚点，响应内最早日期推进水位（只向更早前移、不后退） | 见 ADR 0034；`backfill_start` 截断收敛，达标标的自动跳过；多轮 run 断点续跑，适合「end 锚点 + 取前 N 根」类接口的历史回补 |
@@ -51,5 +52,5 @@
 | 兼容垫片（Compat Shim） | 仅在特性探测失败时加载的运行时降级层，现代浏览器零开销 | 见 ADR 0026；`--cn-mix-*` 兜底变量（color-mix）、flex-gap shim、入口定向 polyfill；实现位于 `frontend/src/compat/` 与 `frontend/src/theme/themeMix.ts` |
 | 帮助文档（Help Docs） | 登录用户可访问的独立帮助路由 `/help`：一级 5 个部分（快速入门 / 教程&最佳实践 / 典型示例 / 系统配置 / 问题排查）→ 二级主题，选中态由 URL 驱动；窄屏侧栏收为抽屉 | 见 ADR 0029；替代原「帮助中心」抽屉；正文为前端静态 TSX，不落库、不备份 |
 | 帮助示例（Help Example） | 帮助文档「典型示例」部分的后端只读清单：场景说明 + 表清单 + 推荐视图 / 分析 + CSV 下载，资产复用 `examples/datasets`（wheel 内 `cndb/datasets`） | 见 ADR 0029；清单与下载端点在 `plugins/help/`，不依赖 `cndb seed` 与演示库；不提供一键导入工作区 |
-| 运行请求进度（Sync Run Progress） | `datasource_sync_run` 的三列运行期计数：`progress_total`（本轮计划请求数）/ `progress_done`（已完成请求数）/ `progress_entrant`（最近完成的标的）；每批落库后回写并提交 | 见 ADR 0037 D4；`GET /sync-jobs/{id}/runs` 返回，前端运行期每 2s 轮询，结束即停；`progress_done <= progress_total`，批间隔最多滞后一批（≤5000 行） |
-| 同步后台运行（Background Sync Run） | `POST /sync-jobs/{id}/run` 建 `running` 运行记录后立即返回，实际执行在守护线程中完成 | 见 ADR 0037 D1；后台线程用绑定同一 engine 的新 session 工厂，沿用 DB 租约单飞与批间续期，`finally` 释放；`job.last_status=running` 让刷新页面后可恢复轮询 |
+| 运行请求进度（Sync Run Progress） | `datasource_sync_run` 的三列运行期计数：`progress_total`（本轮计划请求数）/ `progress_done`（已完成请求数）/ `progress_entrant`（最近完成的标的）；每批落库后回写并提交 | 见 ADR 0036 D4；`GET /sync-jobs/{id}/runs` 返回，前端运行期每 2s 轮询，结束即停；`progress_done <= progress_total`，批间隔最多滞后一批（≤5000 行） |
+| 同步后台运行（Background Sync Run） | `POST /sync-jobs/{id}/run` 建 `running` 运行记录后立即返回，实际执行在守护线程中完成 | 见 ADR 0036 D1；后台线程用绑定同一 engine 的新 session 工厂，沿用 DB 租约单飞与批间续期，`finally` 释放；`job.last_status=running` 让刷新页面后可恢复轮询 |
