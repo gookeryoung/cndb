@@ -14,7 +14,7 @@ classifiers = [
 # 非 Windows 只保留下限。同名依赖重复合法（PEP 508 标记互斥），解析器各取所需。
 dependencies = [
     # 0.126+ 要求 pydantic>=2.7，与 Windows 上 pydantic<2.7 冲突
-    "fastapi>=0.115.0,<0.126.0; sys_platform == 'win32'",
+    "fastapi>=0.115.0,<0.162.0; sys_platform == 'win32'",
     "fastapi>=0.115.0; sys_platform != 'win32'",
     "fastapi-offline>=1.7.0",
     # 与 pydantic <2.7 对齐（Win7 兼容）
