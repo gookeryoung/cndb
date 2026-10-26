@@ -708,7 +708,7 @@ class _StreamingState:
         self.cursor_to = cursor_config.value if cursor_config.is_windowed and cursor_config.value else ""
 
     def on_batch(self, rows: Sequence[Mapping[str, Any]]) -> None:
-        """流式回调：落库 → 进度回写 → 推进游标 / 水位 → 续租；异常向外抛（终止整轮）."""
+        """流式回调：落库 → 推进游标 / 水位 → 进度回写并统一提交 → 续租；异常向外抛（终止整轮）."""
         batch = [dict(row) for row in rows]
         outcome = _persist_rows(self._db, self._job, batch, user=self._user)
         self.write.fetched += outcome.fetched
@@ -727,22 +727,22 @@ class _StreamingState:
         self._renew_lease()
 
     def _publish_progress(self) -> None:
-        """把本轮累计计数与请求级进度提交到运行记录（ADR 0037 D4）.
+        """把本轮累计计数与请求级进度提交到运行记录（ADR 0037 D4、ADR 0039 D5）.
 
-        只在管线主线程按批调用，进度最多滞后一个批次；租约续期在提交之后。
+        只在管线主线程按批调用，进度最多滞后一个批次；本批的水位 / 游标变更
+        与进度在**同一次提交**里落库（提交次数每批一次），随后租约续期。
         """
-        if self._run is None:
-            return
-        self._run.fetched = self.write.fetched
-        self._run.inserted = self.write.inserted
-        self._run.updated = self.write.updated
-        self._run.skipped = self.write.skipped
-        if self._progress is not None:
-            total, done, entrant = self._progress.snapshot()
-            self._run.progress_total = total
-            self._run.progress_done = done
-            self._run.progress_entrant = entrant
-        self._db.add(self._run)
+        if self._run is not None:
+            self._run.fetched = self.write.fetched
+            self._run.inserted = self.write.inserted
+            self._run.updated = self.write.updated
+            self._run.skipped = self.write.skipped
+            if self._progress is not None:
+                total, done, entrant = self._progress.snapshot()
+                self._run.progress_total = total
+                self._run.progress_done = done
+                self._run.progress_entrant = entrant
+            self._db.add(self._run)
         self._db.commit()
 
     def _advance_backfill(self, rows: Sequence[Mapping[str, Any]]) -> None:
@@ -750,6 +750,9 @@ class _StreamingState:
 
         标的列名取 ``field_mapping`` 映射后的目标字段名（如 symbol → 股票代码）：
         on_batch 收到的行已完成归一，源键已被重命名。
+
+        只写 session、不自行提交：水位与进度由 :meth:`_publish_progress` 统一提交
+        （ADR 0039 D5），保证「落库成功才推进水位」在同一事务内生效。
         """
         if not self._job.entrant_param:
             logger.warning("backfill_date 任务 %s 未声明 entrant_param，无法按标的推进水位", self._job.id)
@@ -773,7 +776,6 @@ class _StreamingState:
             if updated is not None and updated != self._watermarks.get(entrant):
                 save_backfill_cursor(self._db, self._job.id, entrant, updated)
                 self._watermarks[entrant] = updated
-        self._db.commit()
 
     def _renew_lease(self) -> None:
         """批间续期租约（ADR 0034 D10）；易主即抛错终止（外层落 failed 留痕）."""
