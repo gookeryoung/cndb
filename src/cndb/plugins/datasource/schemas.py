@@ -132,6 +132,10 @@ class SyncRunOut(BaseModel):
     inserted: int
     updated: int
     skipped: int
+    # 运行中进度（ADR 0037 D4）：计划请求数 / 已完成请求数 / 最近完成的标的
+    progress_total: int = 0
+    progress_done: int = 0
+    progress_entrant: str = ""
     error_message: str
     detail: dict[str, Any]
 
@@ -151,6 +155,9 @@ class SyncRunOut(BaseModel):
             inserted=run.inserted,
             updated=run.updated,
             skipped=run.skipped,
+            progress_total=run.progress_total,
+            progress_done=run.progress_done,
+            progress_entrant=run.progress_entrant,
             error_message=run.error_message,
             detail=run.detail or {},
         )

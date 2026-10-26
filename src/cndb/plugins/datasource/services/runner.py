@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from cndb.core.crypto import decrypt_secrets
 from cndb.plugins.datasource.models import (
@@ -61,7 +62,12 @@ from cndb.plugins.datasource.services.entrant_state import (
     resolve_entrant_values,
     save_backfill_cursor,
 )
-from cndb.plugins.datasource.services.pipeline import DEFAULT_BATCH_SIZE, PipelineOutcome, run_pipeline
+from cndb.plugins.datasource.services.pipeline import (
+    DEFAULT_BATCH_SIZE,
+    PipelineOutcome,
+    RequestProgress,
+    run_pipeline,
+)
 from cndb.plugins.datasource.services.write import WriteOutcome, upsert_rows
 
 if TYPE_CHECKING:
@@ -112,6 +118,7 @@ def execute_job(
     fetch: FetchFn | None = None,
     now: dt.datetime | None = None,
     lease: LeaseHandle | None = None,
+    existing_run: DatasourceSyncRun | None = None,
 ) -> JobExecution:
     """执行一次同步并写入运行记录.
 
@@ -123,20 +130,30 @@ def execute_job(
         fetch: 注入的抓取函数（测试用假源）。
         now: 注入的当前时刻（测试用）。
         lease: 调度器持有的租约句柄（ADR 0034 D10）；批间续期，易主即终止。
+        existing_run: 预先建好的运行记录（后台运行路径，ADR 0037 D1）；
+            缺省时本次新建（调度 / CLI 旧行为）。
     """
     started = now or dt.datetime.now(dt.UTC)
     started_clock = time.perf_counter()
     trigger_value = str(trigger)
 
-    run = DatasourceSyncRun(
-        job_id=job.id,
-        status=RunStatus.RUNNING.value,
-        trigger=trigger_value,
-        started_at=started,
-    )
-    db.add(run)
+    run = existing_run
+    if run is None:
+        run = DatasourceSyncRun(
+            job_id=job.id,
+            status=RunStatus.RUNNING.value,
+            trigger=trigger_value,
+            started_at=started,
+        )
+        db.add(run)
+        # 运行开始即写 running，前端刷新后可据任务状态恢复进度轮询（ADR 0037 D4）
+        job.last_status = RunStatus.RUNNING.value
+        job.last_run_at = _as_utc(started)
+        db.add(job)
     db.commit()
     db.refresh(run)
+
+    progress = RequestProgress()
 
     # 游标配置解析放在 try 内：坏配置要落成 failed 运行记录，而不是炸掉调度器
     cursor_config = CursorConfig(strategy="none")
@@ -163,7 +180,12 @@ def execute_job(
         # llm_prompt 保持全量路径（auto landing 依赖整批行）；其余 provider 流式分批落表（D1）
         auto_landing = job.provider == "llm_prompt"
         if auto_landing:
-            outcome = run_pipeline(spec, fetch=fetch, rate_limit_ms=max(0, job.rate_limit_ms or 0))
+            outcome = run_pipeline(
+                spec,
+                fetch=fetch,
+                rate_limit_ms=max(0, job.rate_limit_ms or 0),
+                progress=progress,
+            )
             if outcome.rows and job.table_id is None:
                 ensure_job_table(db, job)
             write_outcome = _persist_rows(
@@ -180,13 +202,14 @@ def execute_job(
                 db.add(job)
             cursor_to = advance(cursor_config, outcome.rows) or ""
         else:
-            state = _StreamingState(db, job, cursor_config, user=user, lease=lease)
+            state = _StreamingState(db, job, cursor_config, user=user, lease=lease, run=run, progress=progress)
             outcome = run_pipeline(
                 spec,
                 fetch=fetch,
                 rate_limit_ms=max(0, job.rate_limit_ms or 0),
                 on_batch=state.on_batch,
                 batch_size=DEFAULT_BATCH_SIZE,
+                progress=progress,
             )
             write_outcome = state.write
             cursor_to = state.cursor_to
@@ -201,6 +224,7 @@ def execute_job(
             now=started,
             auto_fields=write_outcome.auto_fields if auto_landing else [],
             auto_match_keys=write_outcome.match_keys if auto_landing else [],
+            progress=progress,
         )
         _update_job_state(db, job, status=run.status, run_at=started, cursor=cursor_config, cursor_to=cursor_to)
         _record_event(db, job, run, user=user)
@@ -221,6 +245,8 @@ def execute_job(
         run.finished_at = _as_utc(started)
         run.duration_ms = int((time.perf_counter() - started_clock) * 1000)
         run.cursor_from = cursor_from
+        # 失败也落一次进度快照，前端可看到「跑到第几个请求」
+        run.progress_total, run.progress_done, run.progress_entrant = progress.snapshot()
         db.add(run)
         _update_job_state(db, job, status=RunStatus.FAILED.value, run_at=started, cursor=cursor_config, cursor_to="")
         _record_event(db, job, run, user=user)
@@ -233,6 +259,116 @@ def execute_job(
             error=run.error_message,
         )
         return JobExecution(run=run, cursor_from=cursor_from)
+
+
+def create_run(
+    db: Session,
+    job: DatasourceSyncJob,
+    *,
+    trigger: RunTrigger | str = RunTrigger.MANUAL,
+    now: dt.datetime | None = None,
+) -> DatasourceSyncRun:
+    """建一条 running 运行记录并同步任务状态（ADR 0037 D1）.
+
+    后台运行路径先落记录再释放请求，前端可立即拿到 run_id 并轮询进度；
+    调度 / CLI 不经过本函数（由 :func:`execute_job` 内部建记录，行为不变）。
+    """
+    started = _as_utc(now or dt.datetime.now(dt.UTC))
+    run = DatasourceSyncRun(
+        job_id=job.id,
+        status=RunStatus.RUNNING.value,
+        trigger=str(trigger),
+        started_at=started,
+    )
+    db.add(run)
+    job.last_status = RunStatus.RUNNING.value
+    job.last_run_at = started
+    db.add(job)
+    db.commit()
+    db.refresh(run)
+    return run
+
+
+def session_factory(db: Session) -> Any:
+    """按现会话的 engine 新建 session 工厂（后台线程独立连接）."""
+    return sessionmaker(bind=db.get_bind(), autoflush=False, autocommit=False)
+
+
+def start_job(
+    db: Session,
+    job: DatasourceSyncJob,
+    *,
+    trigger: RunTrigger | str = RunTrigger.MANUAL,
+    user: Any = None,
+    lease: LeaseHandle | None = None,
+    now: dt.datetime | None = None,
+    spawn: Any = None,
+) -> DatasourceSyncRun:
+    """建运行记录后转后台线程执行，立即返回该记录（ADR 0037 D1）.
+
+    ``spawn`` 供测试注入同步执行器（默认起守护线程）；后台执行使用同一 engine
+    新建 session，不与请求期 session 共享连接。
+    """
+    run = create_run(db, job, trigger=trigger, now=now)
+    launcher = spawn or _spawn_execution
+    launcher(session_factory(db), run.id, job.id, getattr(user, "id", None), lease, str(trigger))
+    # 刷新一次：后台线程尚未跑完时仍为 running；测试同步桩跑完时直接拿到最终状态
+    db.refresh(run)
+    return run
+
+
+def execute_run_in_background(
+    factory: Any,
+    run_id: int,
+    job_id: int,
+    user_id: int | None,
+    lease: LeaseHandle | None,
+    trigger: str,
+) -> None:
+    """后台执行入口：新 session 重载 job/user/run 后复用 :func:`execute_job`.
+
+    异常在 ``execute_job`` 内已落 failed 记录；这里只保证租约释放与 session 关闭。
+    """
+    from cndb.plugins.accounts.models import User  # 延迟导入避免插件耦合
+
+    db = factory()
+    try:
+        job = db.get(DatasourceSyncJob, job_id)
+        run = db.get(DatasourceSyncRun, run_id)
+        user = db.get(User, user_id) if user_id is not None else None
+        if job is None or run is None:
+            logger.warning("后台同步跳过：任务 %s 或运行 %s 已不存在", job_id, run_id)
+            return
+        execute_job(db, job, trigger=trigger, user=user, lease=lease, existing_run=run)
+    except Exception as exc:  # 兜底：单次运行的意外异常不向外抛
+        logger.exception("后台同步执行异常 [job=%s run=%s]: %s", job_id, run_id, exc)
+    finally:
+        if lease is not None:
+            from cndb.plugins.datasource.services.scheduler import release_lease
+
+            try:
+                release_lease(db, job_id, lease.owner)
+            except Exception:  # 释放失败不掩盖主异常
+                logger.exception("后台同步释放租约失败 [job=%s]", job_id)
+        db.close()
+
+
+def _spawn_execution(
+    factory: Any,
+    run_id: int,
+    job_id: int,
+    user_id: int | None,
+    lease: LeaseHandle | None,
+    trigger: str,
+) -> None:
+    """默认后台执行器：守护线程（进程退出即回收，不阻塞关闭）."""
+    thread = threading.Thread(
+        target=execute_run_in_background,
+        args=(factory, run_id, job_id, user_id, lease, trigger),
+        name=f"datasource-sync-{run_id}",
+        daemon=True,
+    )
+    thread.start()
 
 
 def preview_job(
@@ -539,6 +675,8 @@ class _StreamingState:
         "_db",
         "_job",
         "_lease",
+        "_progress",
+        "_run",
         "_user",
         "_watermarks",
         "cursor_to",
@@ -553,12 +691,16 @@ class _StreamingState:
         *,
         user: Any,
         lease: LeaseHandle | None,
+        run: DatasourceSyncRun | None = None,
+        progress: RequestProgress | None = None,
     ) -> None:
         self._db = db
         self._job = job
         self._cursor = cursor_config
         self._user = user
         self._lease = lease
+        self._run = run
+        self._progress = progress
         self._backfill = cursor_config.is_backfill
         self._watermarks = load_backfill_cursors(db, job.id) if self._backfill else {}
         self.write = WriteOutcome()
@@ -566,7 +708,7 @@ class _StreamingState:
         self.cursor_to = cursor_config.value if cursor_config.is_windowed and cursor_config.value else ""
 
     def on_batch(self, rows: Sequence[Mapping[str, Any]]) -> None:
-        """流式回调：落库 → 推进游标 / 水位 → 续租；异常向外抛（终止整轮）."""
+        """流式回调：落库 → 进度回写 → 推进游标 / 水位 → 续租；异常向外抛（终止整轮）."""
         batch = [dict(row) for row in rows]
         outcome = _persist_rows(self._db, self._job, batch, user=self._user)
         self.write.fetched += outcome.fetched
@@ -581,7 +723,27 @@ class _StreamingState:
             candidate = advance(self._cursor, batch)
             if candidate and (not self.cursor_to or candidate > self.cursor_to):
                 self.cursor_to = candidate
+        self._publish_progress()
         self._renew_lease()
+
+    def _publish_progress(self) -> None:
+        """把本轮累计计数与请求级进度提交到运行记录（ADR 0037 D4）.
+
+        只在管线主线程按批调用，进度最多滞后一个批次；租约续期在提交之后。
+        """
+        if self._run is None:
+            return
+        self._run.fetched = self.write.fetched
+        self._run.inserted = self.write.inserted
+        self._run.updated = self.write.updated
+        self._run.skipped = self.write.skipped
+        if self._progress is not None:
+            total, done, entrant = self._progress.snapshot()
+            self._run.progress_total = total
+            self._run.progress_done = done
+            self._run.progress_entrant = entrant
+        self._db.add(self._run)
+        self._db.commit()
 
     def _advance_backfill(self, rows: Sequence[Mapping[str, Any]]) -> None:
         """按标的推进回补水位：行内标的列（归一后目标名）分组的最早日期.
@@ -672,6 +834,7 @@ def _finalize(
     now: dt.datetime,
     auto_fields: list[str] | None = None,
     auto_match_keys: list[str] | None = None,
+    progress: RequestProgress | None = None,
 ) -> None:
     normalized = outcome.normalize
     run.status = outcome.status
@@ -679,6 +842,11 @@ def _finalize(
     run.inserted = write.inserted
     run.updated = write.updated
     run.skipped = write.skipped
+    if progress is not None:
+        total, done, entrant = progress.snapshot()
+        run.progress_total = total
+        run.progress_done = done
+        run.progress_entrant = entrant
     run.cursor_from = cursor_from
     run.cursor_to = cursor_to
     run.finished_at = _as_utc(now)

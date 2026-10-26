@@ -43,10 +43,11 @@ from cndb.plugins.datasource.services.cursor import CursorConfig
 from cndb.plugins.datasource.services.runner import (
     execute_job,
     preview_job,
+    start_job,
     validate_request_spec,
 )
 from cndb.plugins.datasource.services.schedule import ScheduleConfig
-from cndb.plugins.datasource.services.scheduler import LEASE_TTL_SECONDS, acquire_lease, release_lease
+from cndb.plugins.datasource.services.scheduler import LEASE_TTL_SECONDS, LeaseHandle, acquire_lease
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
@@ -316,19 +317,26 @@ def run_sync_job(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> RunResponse:
-    """立即运行一次（同步执行；单飞由 DB 租约保证，抢占失败返回 409）."""
+    """立即运行一次：建运行记录后转后台执行，立即返回 running 记录（ADR 0037 D1）.
+
+    单飞由 DB 租约保证（抢占失败 409）；长任务不再占用请求，前端轮询运行历史看进度。
+    """
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
     job = _job_or_404(db, workspace_id, job_id)
     owner = f"api:{current_user.id}:{job_id}"
     now = dt.datetime.now(dt.UTC)
     if not acquire_lease(db, job.id, owner, now=now, ttl_seconds=LEASE_TTL_SECONDS):
         raise HTTPException(status_code=409, detail="该任务正在运行中（租约被占用），请稍后再试")
-    try:
-        execution = execute_job(db, job, trigger=RunTrigger.MANUAL, user=current_user, now=now)
-    finally:
-        release_lease(db, job.id, owner)
+    run = start_job(
+        db,
+        job,
+        trigger=RunTrigger.MANUAL,
+        user=current_user,
+        lease=LeaseHandle(job_id=job.id, owner=owner),
+        now=now,
+    )
     db.refresh(job)
-    return RunResponse(job=SyncJobOut.from_model(job), run=SyncRunOut.from_model(execution.run))
+    return RunResponse(job=SyncJobOut.from_model(job), run=SyncRunOut.from_model(run))
 
 
 @router.post("/sync-jobs/{job_id}/preview", response_model=PreviewResponse)

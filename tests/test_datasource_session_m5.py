@@ -277,7 +277,15 @@ class TestSessionInjection:
         real = runner.run_pipeline
 
         def spy(
-            spec: SyncJobSpec, *, provider=None, fetch=None, rate_limit_ms=0, sleep=None, on_batch=None, batch_size=5000
+            spec: SyncJobSpec,
+            *,
+            provider=None,
+            fetch=None,
+            rate_limit_ms=0,
+            sleep=None,
+            on_batch=None,
+            batch_size=5000,
+            progress=None,
         ):
             captured["rate_limit_ms"] = rate_limit_ms
             return real(
@@ -288,6 +296,7 @@ class TestSessionInjection:
                 sleep=sleep,
                 on_batch=on_batch,
                 batch_size=batch_size,
+                progress=progress,
             )
 
         monkeypatch.setattr(runner, "run_pipeline", spy)

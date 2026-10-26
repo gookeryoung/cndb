@@ -18,7 +18,7 @@ from collections import defaultdict
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Table, and_, func, or_, select
+from sqlalchemy import Table, and_, bindparam, func, or_, select, tuple_
 
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
@@ -933,28 +933,41 @@ def find_rows_by_key(
 
     for i in range(0, len(unique_keys), chunk_size):
         chunk = unique_keys[i : i + chunk_size]
-        # 构建 OR 条件：(k1=? AND k2=? AND _trashed=FALSE) OR ...
-        or_parts = []
-        for tup in chunk:
-            and_parts: list[Any] = [sa_table.c._trashed.is_(False)]
-            for c, val in zip(effective_cols, tup, strict=True):
-                db_col = sa_table.c[col_map[c]]
-                if val is None:
-                    and_parts.append(db_col.is_(None))
-                else:
-                    and_parts.append(db_col == val)
-            or_parts.append(and_(*and_parts))
-        where = or_(*or_parts)
-        query = select(sa_table.c.id, *[sa_table.c[col_map[c]] for c in effective_cols]).where(where)
+        rows: list[Any] = []
 
-        with engine.connect() as conn:
-            rows = conn.execute(query).all()
+        # 非空键走行值 IN（单条语句、可利用复合索引）；含 None 的键退回 OR + IS NULL
+        plain_keys = list(chunk)  # MUTATION
+        if plain_keys:
+            key_columns = [sa_table.c[col_map[c]] for c in effective_cols]
+            query = select(sa_table.c.id, *key_columns).where(
+                sa_table.c._trashed.is_(False),
+                tuple_(*key_columns).in_(plain_keys),
+            )
+            with engine.connect() as conn:
+                rows.extend(conn.execute(query).all())
+
+        null_keys = [tup for tup in chunk if any(val is None for val in tup)]
+        if null_keys:
+            # 构建 OR 条件：(k1 IS NULL AND k2=?) OR ...
+            or_parts = []
+            for tup in null_keys:
+                and_parts: list[Any] = [sa_table.c._trashed.is_(False)]
+                for c, val in zip(effective_cols, tup, strict=True):
+                    db_col = sa_table.c[col_map[c]]
+                    if val is None:
+                        and_parts.append(db_col.is_(None))
+                    else:
+                        and_parts.append(db_col == val)
+                or_parts.append(and_(*and_parts))
+            query = select(sa_table.c.id, *[sa_table.c[col_map[c]] for c in effective_cols]).where(or_(*or_parts))
+            with engine.connect() as conn:
+                rows.extend(conn.execute(query).all())
 
         # 按 key 分组
         grouped: dict[tuple[Any, ...], list[int]] = defaultdict(list)
         for r in rows:
             row_id = int(r[0])
-            key_tup = tuple(r[i + 1] for i in range(len(effective_cols)))
+            key_tup = tuple(r[j + 1] for j in range(len(effective_cols)))
             grouped[key_tup].append(row_id)
 
         for key_tup, ids in grouped.items():
@@ -985,38 +998,37 @@ def bulk_update_rows(
     row_scope = _build_row_scope_where(table, sa_table, db, user)
     total = 0
 
+    # 每行只归一一次（旧实现校验与执行各归一一次）
+    prepared: list[tuple[int, dict[str, Any], list[tuple[Any, list[int]]]]] = []
+    for item in updates:
+        values = item.get("values") or {}
+        row_id = item.get("row_id")
+        if row_id is None or not values:
+            continue
+        normalized, link_values = _normalize_values(table, values, for_update=True)
+        prepared.append((int(row_id), normalized, link_values))
+
     # 总事务前预校验所有待更新行的 link 目标存在 + 必填/唯一约束，避免部分行已提交但 link 失败
     if db is not None:
-        for item in updates:
-            values = item.get("values") or {}
-            if not values:
-                continue
-            _normalized, link_values = _normalize_values(table, values, for_update=True)
+        for _row_id, _normalized, link_values in prepared:
             for field, ids in link_values:
                 if ids:
                     ensure_link_targets_exist(engine, field, ids, db)
 
     # link 必填/唯一约束校验：排除各自行自身，batch_signatures 捕获批内多行互撞
     batch_sigs: dict[int, set[tuple[int, ...]]] = {}
-    for item in updates:
-        values = item.get("values") or {}
-        row_id = item.get("row_id")
-        if not values:
-            continue
-        _normalized, link_values = _normalize_values(table, values, for_update=True)
-        validate_link_write(
-            engine, link_values, exclude_row_ids=(row_id,) if row_id is not None else (), batch_signatures=batch_sigs
-        )
+    for row_id, _normalized, link_values in prepared:
+        validate_link_write(engine, link_values, exclude_row_ids=(row_id,), batch_signatures=batch_sigs)
 
-    # 逐行在同一个事务里执行（SQLite/PostgreSQL 对 100-500 行循环开销可接受）
+    # 无 link 的行按「归一列集合」签名分组走 executemany（逐行 UPDATE → 分组批量）；
+    # 含 link 的行保留逐行写（link 关联表需按行 id 写入）。
+    simple_groups: dict[tuple[str, ...], list[tuple[int, dict[str, Any]]]] = defaultdict(list)
     with engine.begin() as conn:
-        for item in updates:
-            row_id = item.get("row_id")
-            values = item.get("values") or {}
-            if row_id is None or not values:
-                continue
-            normalized, link_values = _normalize_values(table, values, for_update=True)
+        for row_id, normalized, link_values in prepared:
             if not normalized and not link_values:
+                continue
+            if not link_values:
+                simple_groups[tuple(sorted(normalized))].append((row_id, normalized))
                 continue
             # 构造带行级权限的 WHERE 条件
             row_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
@@ -1038,6 +1050,15 @@ def bulk_update_rows(
             # link 同步（复用外层 conn，避免嵌套 engine.begin 破坏事务隔离）
             for field, target_ids in link_values:
                 set_links(engine, field, row_id, target_ids, db=db, conn=conn)
+
+        for columns, group in simple_groups.items():
+            row_where = [sa_table.c.id == bindparam("_rid"), sa_table.c._trashed.is_(False)]
+            if row_scope is not None:
+                row_where.append(row_scope)
+            statement = sa_table.update().where(*row_where).values({column: bindparam(column) for column in columns})
+            params = [{"_rid": row_id, **values} for row_id, values in group]
+            result = conn.execute(statement, params)
+            total += max(int(result.rowcount or 0), 0)
 
     _invalidate_search_cache(table)
     return total
