@@ -11,6 +11,7 @@ import {
   BlockOutlined,
   CodeOutlined,
   CompressOutlined,
+  DatabaseOutlined,
   ExpandAltOutlined,
   FontSizeOutlined,
   HighlightOutlined,
@@ -18,6 +19,7 @@ import {
   LinkOutlined,
   MessageOutlined,
   OrderedListOutlined,
+  PictureOutlined,
   TableOutlined,
   UnorderedListOutlined,
 } from '@ant-design/icons'
@@ -48,6 +50,12 @@ interface MarkdownToolbarProps {
   onAiAction?: (instruction: DocumentAiInstruction) => void
   /** AI 请求中：只禁用 AI 按钮，不影响普通 Markdown 操作 */
   aiDisabled?: boolean
+  /** 插入图片（上传并写入站内引用）；不传时不渲染该按钮（ADR 0042） */
+  onInsertImage?: () => void
+  /** 插入图片上传中：图片按钮 loading / 禁用，防重复触发上传队列 */
+  imageInsertLoading?: boolean
+  /** 插入数据表引用（打开选表弹窗）；不传时不渲染该按钮（ADR 0042） */
+  onInsertTableRef?: () => void
 }
 
 interface ToolbarItem {
@@ -106,6 +114,9 @@ export default function MarkdownToolbar({
   disabled,
   onAiAction,
   aiDisabled,
+  onInsertImage,
+  imageInsertLoading,
+  onInsertTableRef,
 }: MarkdownToolbarProps) {
   const triggerProps = {
     type: 'text' as const,
@@ -174,6 +185,34 @@ export default function MarkdownToolbar({
           </Tooltip>
         )
       })}
+
+      {/* 插入图片 / 插入表格引用（数据表）：可选入口，页面编辑模式传入回调才渲染；
+          数据表引用用数据库图标，与上方 table（Markdown 表格骨架）形状区分（ADR 0042 D2） */}
+      {onInsertImage && (
+        <Tooltip title="插入图片">
+          <Button
+            {...triggerProps}
+            icon={<PictureOutlined />}
+            aria-label="插入图片"
+            data-testid="md-toolbar-image"
+            // 上传中禁用（loading 只加类不落 disabled 属性，显式置灰防重复触发上传队列）
+            disabled={disabled || imageInsertLoading}
+            loading={imageInsertLoading}
+            onClick={onInsertImage}
+          />
+        </Tooltip>
+      )}
+      {onInsertTableRef && (
+        <Tooltip title="插入表格引用（数据表）">
+          <Button
+            {...triggerProps}
+            icon={<DatabaseOutlined />}
+            aria-label="插入表格引用（数据表）"
+            data-testid="md-toolbar-table-ref"
+            onClick={onInsertTableRef}
+          />
+        </Tooltip>
+      )}
 
       {/* AI 选区改写：只有页面传入 onAiAction 时才出现，默认完全不渲染 */}
       {onAiAction && (
