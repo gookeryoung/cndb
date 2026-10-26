@@ -68,10 +68,41 @@ let sessionBodies: Array<Record<string, unknown>> = []
 let templateBodies: Array<Record<string, unknown>> = []
 let jobBodies: Array<Record<string, unknown>> = []
 
+type RunStatus = 'success' | 'failed' | 'running'
+
+function makeRun(jobId: number, status: RunStatus, overrides: Record<string, unknown> = {}) {
+  const running = status === 'running'
+  return {
+    id: 10 + jobId,
+    job_id: jobId,
+    status,
+    trigger: 'manual',
+    started_at: '2026-10-20T02:00:00Z',
+    finished_at: running ? null : '2026-10-20T02:00:01Z',
+    duration_ms: running ? null : 1000,
+    cursor_from: '2024-01-01',
+    cursor_to: '2026-10-20',
+    fetched: running ? 500 : 2,
+    inserted: running ? 480 : 2,
+    updated: 0,
+    skipped: 0,
+    progress_total: running ? 10 : 2,
+    progress_done: running ? 4 : 2,
+    progress_entrant: running ? 'sh600519' : 'beijing',
+    elapsed_ms: running ? 100_000 : 1000,
+    rows_per_second: running ? 5 : 2,
+    error_message: status === 'failed' ? '源故障' : '',
+    detail: {},
+    ...overrides,
+  }
+}
+
 function setupHandlers(
   jobs: SyncJob[],
   options: {
-    runStatus?: 'success' | 'failed' | 'running'
+    runStatus?: RunStatus
+    runStatusByJob?: Record<number, RunStatus>
+    runOverridesByJob?: Record<number, Record<string, unknown>>
     createTemplateError?: string
     previewResult?: Record<string, unknown>
   } = {},
@@ -192,62 +223,21 @@ function setupHandlers(
     }),
     http.post(`/api/v1/workspaces/${WID}/datasource/sync-jobs/:id/run`, ({ params }) => {
       calls.push(`run:${params.id}`)
-      const job = jobs[0]
+      const job = jobs.find(item => item.id === Number(params.id)) ?? jobs[0]
+      const status = options.runStatusByJob?.[job.id] ?? options.runStatus ?? 'success'
       return HttpResponse.json({
         job,
-        run: {
-          id: 11,
-          job_id: job.id,
-          status: options.runStatus ?? 'success',
-          trigger: 'manual',
-          started_at: '2026-10-20T02:00:00Z',
-          finished_at: '2026-10-20T02:00:01Z',
-          duration_ms: 1000,
-          cursor_from: '2024-01-01',
-          cursor_to: '2026-10-20',
-          fetched: 2,
-          inserted: 2,
-          updated: 0,
-          skipped: 0,
-          progress_total: 2,
-          progress_done: 2,
-          progress_entrant: 'beijing',
-          elapsed_ms: 1000,
-          rows_per_second: 2,
-          error_message: options.runStatus === 'failed' ? '源故障' : '',
-          detail: {},
-        },
+        run: makeRun(job.id, status, options.runOverridesByJob?.[job.id]),
       })
     }),
-    http.get(`/api/v1/workspaces/${WID}/datasource/sync-jobs/:id/runs`, () =>
-      HttpResponse.json({
+    http.get(`/api/v1/workspaces/${WID}/datasource/sync-jobs/:id/runs`, ({ params }) => {
+      const jobId = Number(params.id)
+      const status = options.runStatusByJob?.[jobId] ?? options.runStatus ?? 'success'
+      return HttpResponse.json({
         total: 1,
-        runs: [
-          {
-            id: 11,
-            job_id: 3,
-            status: options.runStatus ?? 'success',
-            trigger: 'manual',
-            started_at: '2026-10-20T02:00:00Z',
-            finished_at: options.runStatus === 'running' ? null : '2026-10-20T02:00:01Z',
-            duration_ms: options.runStatus === 'running' ? null : 1000,
-            cursor_from: '2024-01-01',
-            cursor_to: '2026-10-20',
-            fetched: options.runStatus === 'running' ? 500 : 2,
-            inserted: options.runStatus === 'running' ? 480 : 2,
-            updated: 0,
-            skipped: 0,
-            progress_total: options.runStatus === 'running' ? 10 : 2,
-            progress_done: options.runStatus === 'running' ? 4 : 2,
-            progress_entrant: 'sh600519',
-            elapsed_ms: options.runStatus === 'running' ? 100_000 : 1000,
-            rows_per_second: options.runStatus === 'running' ? 5 : 2,
-            error_message: options.runStatus === 'failed' ? '源故障' : '',
-            detail: {},
-          },
-        ],
-      }),
-    ),
+        runs: [makeRun(jobId, status, options.runOverridesByJob?.[jobId])],
+      })
+    }),
   )
   return calls
 }
@@ -352,6 +342,110 @@ describe('DatasourcePage', () => {
     expect(within(panel).getByText(/5\.0 行\/秒/)).toBeInTheDocument()
     expect(within(panel).getByText(/已用时 1分40秒/)).toBeInTheDocument()
     expect(within(panel).getByText('40%')).toBeInTheDocument()
+  })
+
+  it('多个运行中任务在顶部各占一行且字段独立（ADR 0041 C1/C2）', async () => {
+    setupHandlers(
+      [
+        makeJob({ id: 3, name: '北京天气日报', last_status: 'running', last_run_at: '2026-10-20T01:00:00Z' }),
+        makeJob({ id: 4, name: '上海天气日报', last_status: 'running', last_run_at: '2026-10-20T02:00:00Z' }),
+      ],
+      {
+        runStatus: 'running',
+        runOverridesByJob: {
+          3: { progress_total: 10, progress_done: 4, fetched: 500, rows_per_second: 5, elapsed_ms: 100_000 },
+          4: {
+            progress_total: 20,
+            progress_done: 5,
+            progress_entrant: 'sh000001',
+            fetched: 800,
+            rows_per_second: 8,
+            elapsed_ms: 200_000,
+          },
+        },
+      },
+    )
+    renderPage()
+
+    const beijing = await screen.findByTestId('datasource-sync-progress-3')
+    const shanghai = await screen.findByTestId('datasource-sync-progress-4')
+    expect(within(beijing).getByText('「北京天气日报」运行中')).toBeInTheDocument()
+    expect(within(beijing).getByText(/4\/10 请求/)).toBeInTheDocument()
+    expect(within(beijing).getByText(/5\.0 行\/秒/)).toBeInTheDocument()
+    expect(within(shanghai).getByText('「上海天气日报」运行中')).toBeInTheDocument()
+    expect(within(shanghai).getByText(/5\/20 请求/)).toBeInTheDocument()
+    expect(within(shanghai).getByText(/当前标的 sh000001/)).toBeInTheDocument()
+    expect(within(shanghai).getByText(/8\.0 行\/秒/)).toBeInTheDocument()
+    expect(within(shanghai).getByText(/已用时 3分20秒/)).toBeInTheDocument()
+  })
+
+  it('超过 5 个运行任务折叠并可展开（ADR 0041 C3）', async () => {
+    const jobs = Array.from({ length: 6 }, (_, index) =>
+      makeJob({
+        id: 10 + index,
+        name: `多任务 ${index + 1}`,
+        last_status: 'running',
+        last_run_at: `2026-10-20T0${index}:00:00Z`,
+      }),
+    )
+    setupHandlers(jobs, { runStatus: 'running' })
+    renderPage()
+
+    const panel = await screen.findByTestId('datasource-sync-progress')
+    await waitFor(() => expect(within(panel).getAllByTestId(/^datasource-sync-progress-\d+$/)).toHaveLength(5))
+    const toggle = within(panel).getByTestId('datasource-sync-progress-toggle')
+    expect(toggle).toHaveTextContent('还有 1 个任务运行中')
+
+    fireEvent.click(toggle)
+    await waitFor(() => expect(within(panel).getAllByTestId(/^datasource-sync-progress-\d+$/)).toHaveLength(6))
+    expect(within(panel).getByTestId('datasource-sync-progress-toggle')).toHaveTextContent('收起')
+  })
+
+  it('无运行中任务时不渲染顶部运行区（ADR 0041 C1）', async () => {
+    setupHandlers([makeJob({ last_status: 'success' })], { runStatus: 'success' })
+    renderPage()
+
+    await screen.findByText('北京天气日报')
+    expect(screen.queryByTestId('datasource-sync-progress')).not.toBeInTheDocument()
+  })
+
+  it('并发收尾各自提示一次并移除已完成行（ADR 0041 C5）', async () => {
+    setupHandlers(
+      [
+        makeJob({ id: 3, name: '北京天气日报', last_status: 'running', last_run_at: '2026-10-20T01:00:00Z' }),
+        makeJob({ id: 4, name: '上海天气日报', last_status: 'running', last_run_at: '2026-10-20T02:00:00Z' }),
+      ],
+      { runStatusByJob: { 3: 'success', 4: 'success' } },
+    )
+    renderPage()
+
+    expect(await screen.findByText(/「北京天气日报」成功：新增 2 \/ 更新 0/, {}, { timeout: 10_000 })).toBeInTheDocument()
+    expect(await screen.findByText(/「上海天气日报」成功：新增 2 \/ 更新 0/, {}, { timeout: 10_000 })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('datasource-sync-progress')).not.toBeInTheDocument())
+  })
+
+  it('一个任务先结束只移除该行，其他任务继续展示（ADR 0041 C5）', async () => {
+    setupHandlers(
+      [
+        makeJob({ id: 3, name: '北京天气日报', last_status: 'running', last_run_at: '2026-10-20T01:00:00Z' }),
+        makeJob({ id: 4, name: '上海天气日报', last_status: 'running', last_run_at: '2026-10-20T02:00:00Z' }),
+      ],
+      { runStatusByJob: { 3: 'success', 4: 'running' } },
+    )
+    renderPage()
+
+    expect(await screen.findByText(/「北京天气日报」成功：新增 2 \/ 更新 0/, {}, { timeout: 10_000 })).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('datasource-sync-progress-3')).not.toBeInTheDocument())
+    expect(screen.getByTestId('datasource-sync-progress-4')).toBeInTheDocument()
+  })
+
+  it('手动触发后立即出现运行行（ADR 0041 D5）', async () => {
+    setupHandlers([makeJob({ last_status: 'success' })], { runStatus: 'running' })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '立即运行 北京天气日报' }))
+    const row = await screen.findByTestId('datasource-sync-progress-3')
+    expect(within(row).getByText(/4\/10 请求/)).toBeInTheDocument()
   })
 
   it('打开运行历史抽屉', async () => {

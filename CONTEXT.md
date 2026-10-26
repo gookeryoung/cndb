@@ -54,3 +54,4 @@
 | 帮助示例（Help Example） | 帮助文档「典型示例」部分的后端只读清单：场景说明 + 表清单 + 推荐视图 / 分析 + CSV 下载，资产复用 `examples/datasets`（wheel 内 `cndb/datasets`） | 见 ADR 0029；清单与下载端点在 `plugins/help/`，不依赖 `cndb seed` 与演示库；不提供一键导入工作区 |
 | 运行请求进度（Sync Run Progress） | `datasource_sync_run` 的三列运行期计数：`progress_total`（本轮计划请求数）/ `progress_done`（已完成请求数）/ `progress_entrant`（最近完成的标的）；每批落库后回写并提交 | 见 ADR 0036 D4；`GET /sync-jobs/{id}/runs` 返回，前端运行期每 2s 轮询，结束即停；`progress_done <= progress_total`，批间隔最多滞后一批（≤5000 行） |
 | 同步后台运行（Background Sync Run） | `POST /sync-jobs/{id}/run` 建 `running` 运行记录后立即返回，实际执行在守护线程中完成 | 见 ADR 0036 D1；后台线程用绑定同一 engine 的新 session 工厂，沿用 DB 租约单飞与批间续期，`finally` 释放；`job.last_status=running` 让刷新页面后可恢复轮询 |
+| 运行中同步任务列表（Running Sync Tasks） | 数据源同步页顶部的并发运行视图：每个运行中任务一行，展示任务名 / 请求进度 / 当前标的 / 已写入 / 行每秒 / 已用时 / 进度条；常显最多 5 行，超出可展开 | 见 ADR 0041；数据来自任务列表 `last_status=running` + 每任务最新 run（2s 轮询，终态即停），不再维护单一「正在盯」任务；完成即移除并每个 run 提示一次；同一任务仍由 DB 租约单飞（409），不同任务可并行 |
