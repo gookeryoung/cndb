@@ -212,9 +212,9 @@ L1 部分（5）          侧栏分组，无独立地址
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/content/HelpDoc.tsx`、`frontend/src/pages/help/content/primitives.tsx`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`frontend/src/pages/help/content/configuration.tsx`、`frontend/src/pages/help/content/troubleshooting.tsx`、`frontend/src/index.css` | `frontend/src/pages/help/helpNav.test.tsx`、`frontend/src/pages/help/HelpDocsPage.test.tsx` | 待提交 |
-| P1 | 已落地 | `frontend/src/pages/help/content/examples.tsx`、`frontend/src/pages/help/content/ExamplesSection.tsx` | `frontend/src/pages/help/content/ExamplesSection.test.tsx` | 待提交 |
-| P2 | 已落地 | `frontend/tests/e2e/critical/help-docs.spec.ts`、`frontend/src/index.css` | `frontend/tests/e2e/critical/help-docs.spec.ts` | 待提交 |
+| P0 | 已落地 | `frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/content/HelpDoc.tsx`、`frontend/src/pages/help/content/primitives.tsx`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`frontend/src/pages/help/content/configuration.tsx`、`frontend/src/pages/help/content/troubleshooting.tsx`、`frontend/src/index.css` | `frontend/src/pages/help/helpNav.test.tsx`、`frontend/src/pages/help/HelpDocsPage.test.tsx` | 851481d3 |
+| P1 | 已落地 | `frontend/src/pages/help/content/examples.tsx`、`frontend/src/pages/help/content/ExamplesSection.tsx` | `frontend/src/pages/help/content/ExamplesSection.test.tsx` | 851481d3 |
+| P2 | 已落地 | `frontend/tests/e2e/critical/help-docs.spec.ts`、`frontend/src/index.css` | `frontend/tests/e2e/critical/help-docs.spec.ts` | 16eea08b |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
