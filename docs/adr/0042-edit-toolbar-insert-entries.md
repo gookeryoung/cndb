@@ -147,15 +147,16 @@ Related: `frontend/src/components/Document/MarkdownToolbar.tsx`、`frontend/src/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 工具栏可选按钮 | 未开始 | `frontend/src/components/Document/MarkdownToolbar.tsx` | `frontend/src/components/Document/MarkdownToolbar.test.tsx` | — |
-| P1 页面接入与门禁 | 未开始 | `frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentEditorPage.test.tsx` | — |
+| P0 工具栏可选按钮 | 已落地 | `frontend/src/components/Document/MarkdownToolbar.tsx` | `frontend/src/components/Document/MarkdownToolbar.test.tsx` | 14d182f1 |
+| P1 页面接入与门禁 | 已落地 | `frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentEditorPage.test.tsx` | 1c48163b |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：ADR 评审中（Proposed，未进入实现）
-- 已完成：需求卡片确认（4 个未决问题均由需求方 2026-10-26 拍板）；现状核对（9 条，含测试默认编辑模式、e2e 无引用的事实）
-- 下一步：人工评审通过后 `Status` 改 `Accepted`，交 `implementer` 按 P0 → P1 实现（纯前端，无迁移 / 接口）
-- 已知坑：测试文档 2（`需求说明`）为 draft，默认进入编辑模式——既有插入用例的定位迁移要意识到这一点，勿假设初始是查看模式；窄屏分支靠 mockMatchMedia 之类既有手段（参考 `:453` 所在用例的前置）
-- 最近一次全绿：`make check-docs` @ 本 ADR 提交前（2026-10-26）
+- 当前阶段：P0 / P1 均已落地并提交，功能完结（`Status` 待全绿后由人确认是否改 `Implemented`）
+- 已完成：P0 `MarkdownToolbar` 三个可选 props + 两个按钮（`md-toolbar-image` / `md-toolbar-table-ref`，图片按钮 loading 态显式 `disabled`——antd loading 只加类不落 disabled 属性）；P1 顶栏两按钮删除、桌面编辑模式工具栏接入、窄屏「更多」菜单 `viewMode === 'edit'` 才注入插入项、隐藏 file input / `InsertTableModal` 未动
+- 测试：`MarkdownToolbar.test.tsx` 13 例（不传不渲染 / 点击透传 / loading 只禁图片按钮）；`DocumentEditorPage.test.tsx` 57 例（新增：桌面查看模式无插入入口、窄屏编辑模式菜单含并可打开选表弹窗、窄屏查看模式菜单不含；既有插入表格引用 / 插入图片链路用例经新入口回归通过）
+- 下一步：无（功能已完结；ADR 已登记 CHANGELOG「未发布 · 变更」）
+- 已知坑：测试文档 2（`需求说明`）为 draft，默认进入编辑模式——查看模式用例需先点 `doc-mode-switch` 的「查看」；antd Button `loading` 不落 `disabled` 属性，断言禁用要显式传 `disabled`
+- 最近一次全绿：`make check-fast` + `make test` @ 1c48163b（2026-10-26）
