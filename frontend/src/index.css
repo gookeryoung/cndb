@@ -1789,10 +1789,12 @@ body.theme-dark .ant-segmented {
   background: var(--cn-bg-container) !important;
 }
 
-body.theme-midnight .ant-segmented-item-label,
-body.theme-oled .ant-segmented-item-label,
-body.theme-github-dark .ant-segmented-item-label,
-body.theme-dark .ant-segmented-item-label {
+/* 仅未激活项使用次要文字色 —— 激活项若也被兜底覆盖，会变成「灰字压主题色滑块」，
+ * 深色主题下（浅亮主题色底 + 中灰字）几乎看不清。 */
+body.theme-midnight .ant-segmented-item:not(.ant-segmented-item-selected) .ant-segmented-item-label,
+body.theme-oled .ant-segmented-item:not(.ant-segmented-item-selected) .ant-segmented-item-label,
+body.theme-github-dark .ant-segmented-item:not(.ant-segmented-item-selected) .ant-segmented-item-label,
+body.theme-dark .ant-segmented-item:not(.ant-segmented-item-selected) .ant-segmented-item-label {
   color: var(--cn-text-secondary) !important;
 }
 

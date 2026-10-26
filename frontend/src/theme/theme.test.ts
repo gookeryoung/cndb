@@ -5,6 +5,8 @@
  * loadThemeMode（默认/legacy/合法/非法/异常）/ saveThemeMode / getThemeConfig。
  */
 
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   THEMES,
@@ -109,6 +111,20 @@ describe('saveThemeMode / getThemeConfig', () => {
       itemSelectedColor: '#0a0a0a',
     })
     expect(oled.components?.Switch).toEqual(THEMES.oled.components?.Switch)
+  })
+})
+
+describe('深色主题 Segmented 激活项可读性', () => {
+  it('标签文字色兜底不得命中激活项，避免灰字压主题色滑块', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf-8')
+    const offenders = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)]
+      .flatMap(([, selector, body]) => {
+        if (!/color\s*:\s*var\(--cn-text-secondary\)/.test(body)) return []
+        return selector.split(',')
+          .map(s => s.trim())
+          .filter(s => s.includes('.ant-segmented-item-label') && !s.includes(':not(.ant-segmented-item-selected)'))
+      })
+    expect(offenders).toEqual([])
   })
 })
 
