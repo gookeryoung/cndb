@@ -124,4 +124,58 @@ describe('MarkdownToolbar', () => {
     fireEvent.click(screen.getByTestId('md-toolbar-ai-polish'))
     expect(onAiAction).not.toHaveBeenCalled()
   })
+
+  it('未传插入 props 时完全不渲染插入图片 / 插入表格引用按钮（既有调用方零感知）', () => {
+    renderProviders(<MarkdownToolbar onAction={() => { }} />)
+
+    expect(screen.queryByTestId('md-toolbar-image')).toBeNull()
+    expect(screen.queryByTestId('md-toolbar-table-ref')).toBeNull()
+    expect(screen.queryByLabelText('插入图片')).toBeNull()
+    expect(screen.queryByLabelText('插入表格引用（数据表）')).toBeNull()
+  })
+
+  it('传入插入 props 时渲染两个入口，点击透传回调且不触发 onAction', () => {
+    const onAction = vi.fn()
+    const onInsertImage = vi.fn()
+    const onInsertTableRef = vi.fn()
+    renderProviders(
+      <MarkdownToolbar
+        onAction={onAction}
+        onInsertImage={onInsertImage}
+        onInsertTableRef={onInsertTableRef}
+      />,
+    )
+
+    // 与既有 table（Markdown 表格骨架）并存且可区分
+    expect(screen.getByTestId('md-toolbar-table')).toBeInTheDocument()
+    expect(screen.getByTestId('md-toolbar-table-ref')).toBeInTheDocument()
+    expect(screen.getByLabelText('插入图片')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('md-toolbar-image'))
+    fireEvent.click(screen.getByTestId('md-toolbar-table-ref'))
+    expect(onInsertImage).toHaveBeenCalledTimes(1)
+    expect(onInsertTableRef).toHaveBeenCalledTimes(1)
+    expect(onAction).not.toHaveBeenCalled()
+  })
+
+  it('imageInsertLoading 只禁用插入图片按钮，插入表格引用与普通按钮仍可用', () => {
+    const onInsertImage = vi.fn()
+    const onInsertTableRef = vi.fn()
+    const onAction = vi.fn()
+    renderProviders(
+      <MarkdownToolbar
+        onAction={onAction}
+        onInsertImage={onInsertImage}
+        imageInsertLoading
+        onInsertTableRef={onInsertTableRef}
+      />,
+    )
+
+    expect(screen.getByTestId('md-toolbar-image')).toBeDisabled()
+    expect(screen.getByTestId('md-toolbar-table-ref')).toBeEnabled()
+    expect(screen.getByTestId('md-toolbar-bold')).toBeEnabled()
+
+    fireEvent.click(screen.getByTestId('md-toolbar-image'))
+    expect(onInsertImage).not.toHaveBeenCalled()
+  })
 })
