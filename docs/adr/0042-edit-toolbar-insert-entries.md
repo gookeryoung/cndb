@@ -1,6 +1,6 @@
 # ADR 0042: 文档插入图片 / 插入表格引用入口收进编辑模式工具栏
 
-Status: Accepted
+Status: Implemented
 Date: 2026-10-26
 Related: `frontend/src/components/Document/MarkdownToolbar.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertTableModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`、`frontend/src/components/Document/MarkdownToolbar.test.tsx`、`docs/adr/0025-document-asset-formats.md`
 需求卡片: `docs/requirements/0042-edit-toolbar-insert-entries.md`（需求原文与约束编号的唯一副本）
@@ -154,7 +154,7 @@ Related: `frontend/src/components/Document/MarkdownToolbar.tsx`、`frontend/src/
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 均已落地并提交，功能完结（`Status` 待全绿后由人确认是否改 `Implemented`）
+- 当前阶段：P0 / P1 均已落地并提交，功能完结（`Status` 已于 2026-10-26 由人确认改 `Implemented`）
 - 已完成：P0 `MarkdownToolbar` 三个可选 props + 两个按钮（`md-toolbar-image` / `md-toolbar-table-ref`，图片按钮 loading 态显式 `disabled`——antd loading 只加类不落 disabled 属性）；P1 顶栏两按钮删除、桌面编辑模式工具栏接入、窄屏「更多」菜单 `viewMode === 'edit'` 才注入插入项、隐藏 file input / `InsertTableModal` 未动
 - 测试：`MarkdownToolbar.test.tsx` 13 例（不传不渲染 / 点击透传 / loading 只禁图片按钮）；`DocumentEditorPage.test.tsx` 57 例（新增：桌面查看模式无插入入口、窄屏编辑模式菜单含并可打开选表弹窗、窄屏查看模式菜单不含；既有插入表格引用 / 插入图片链路用例经新入口回归通过）
 - 下一步：无（功能已完结；ADR 已登记 CHANGELOG「未发布 · 变更」）
