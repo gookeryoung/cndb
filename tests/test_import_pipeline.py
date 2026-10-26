@@ -1954,6 +1954,53 @@ class TestFindRowsByKey:
         trashed_rows, _ = rec.list_rows(engine, table, db=session, include_trashed=True, limit=100)
         assert {row["code"]: row["name"] for row in trashed_rows}["B"] == "N2"
 
+    def test_bulk_update_rows_group_with_row_scope_in_filter(self, test_session):
+        """行级权限默认档含 ``in``（expanding 参数）时，分组更新仍按权限过滤且不抛错."""
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        _add_field(session, table, "name", "text", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        from cndb.plugins.tables.models import TablePermission
+        from cndb.plugins.tables.services.core import records as rec
+
+        ids = rec.bulk_create(
+            engine,
+            table,
+            [{"code": "A", "name": "N1"}, {"code": "B", "name": "N2"}, {"code": "C", "name": "N3"}],
+            db=session,
+        )
+        session.add(
+            TablePermission(
+                table_id=table.id,
+                row_filters=[{"field_name": "code", "op": "in", "value": ["A", "C"]}],
+            )
+        )
+        session.commit()
+
+        count = rec.bulk_update_rows(
+            engine,
+            table,
+            [
+                {"row_id": ids[0], "values": {"name": "N1b"}},
+                {"row_id": ids[1], "values": {"name": "N2b"}},
+                {"row_id": ids[2], "values": {"name": "N3b"}},
+            ],
+            db=session,
+        )
+        # B 不在行级权限范围内 → 不更新、不计数
+        assert count == 2
+
+        fields = {f.name: f.db_column_name for f in table.fields}
+        sa_table = rec._get_sa_table(engine, table)
+        with engine.connect() as conn:
+            db_rows = conn.execute(
+                select(sa_table.c["id"], sa_table.c[fields["code"]], sa_table.c[fields["name"]])
+            ).all()
+        by_code = {row[1]: row[2] for row in db_rows}
+        assert by_code["A"] == "N1b" and by_code["C"] == "N3b" and by_code["B"] == "N2"
+
     def test_bulk_update_rows_each_different_values(self, test_session):
         """bulk_update_rows: 每条 row_id 对应独立 values（Task 1 TR-1.2）."""
         engine, session = test_session
