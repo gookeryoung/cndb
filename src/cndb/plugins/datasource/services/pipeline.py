@@ -26,7 +26,7 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from cndb.plugins.datasource.providers.base import FetchFn, NormalizeLike, RequestPlan, SourceProvider, SyncJobSpec
 from cndb.plugins.datasource.providers.registry import get_provider
@@ -106,11 +106,28 @@ class _GroupResult:
 
 @dataclass(slots=True)
 class _NormalizeAggregate:
-    """流式模式下跨批聚合的归一明细（行不落地，只累计 dropped / failures）."""
+    """流式模式下跨批聚合的归一明细（行不落地，只累计 dropped / failures）.
+
+    失败明细只保留前 ``MAX_KEPT_FAILURES`` 条，另记 ``failed_total`` 全量计数
+    （ADR 0043 D5）：海量失败源下内存不随行数线性增长，``detail`` 口径不变。
+    """
+
+    MAX_KEPT_FAILURES = 100
 
     rows: list[dict[str, Any]] = field(default_factory=list)
     dropped: int = 0
     failures: list[Any] = field(default_factory=list)
+    failed_total: int = 0
+
+    def add_failures(self, failures: Sequence[Any]) -> None:
+        """累计一批归一失败：计数全量累加，明细只在额度内保留（超出丢弃不报错）."""
+        if not failures:
+            return
+        self.failed_total += len(failures)
+        room = self.MAX_KEPT_FAILURES - len(self.failures)
+        if room <= 0:
+            return
+        self.failures.extend(failures[:room])
 
 
 class RequestProgress:
@@ -298,9 +315,10 @@ def _run_group(
             break
         result.rows.extend(
             apply_row_defaults(
-                fill_entrant(to_records(rows), job.entrant_param, plan.entrant),
+                fill_entrant(to_records(rows), job.entrant_param, plan.entrant, inplace=True),
                 job.row_defaults,
                 variables=_row_variables(job, plan),
+                inplace=True,
             )
         )
     return result
@@ -364,8 +382,8 @@ class _BatchSink:
     def _process(self, chunk: list[dict[str, Any]]) -> None:
         normalized = self._active.normalize(chunk, self._job)
         self._aggregate.dropped += normalized.dropped
-        self._aggregate.failures.extend(normalized.failures)
-        kept, removed = apply_row_filter(normalized.rows, getattr(self._job.request, "row_filter", None))
+        self._aggregate.add_failures(normalized.failures)
+        kept, removed = apply_row_filter(normalized.rows, getattr(self._job.request, "row_filter", None), inplace=True)
         self._outcome.filtered += removed
         if self._on_batch is not None:
             if kept:
@@ -384,14 +402,23 @@ def fill_entrant(
     rows: Sequence[Mapping[str, Any]],
     entrant_param: str | None,
     entrant: str | None,
+    *,
+    inplace: bool = False,
 ) -> list[dict[str, Any]]:
     """行内缺标的列时用请求维度补齐（响应体不带 symbol 的源，如新浪日线）.
 
     ``setdefault`` 语义：响应自带标的字段的一律保留，不被请求参数覆盖。
+    ``inplace=True`` 时就地改写传入行（调用方须已拥有行对象，见 ADR 0043 D2），
+    返回的仍是新列表；默认仍返回新 dict 列表，公共语义不变。
     """
     if not entrant_param or entrant is None:
-        return [dict(row) for row in rows]
+        return cast("list[dict[str, Any]]", list(rows)) if inplace else [dict(row) for row in rows]
     filled: list[dict[str, Any]] = []
+    if inplace:
+        for row in rows:
+            row.setdefault(entrant_param, entrant)  # type: ignore[attr-defined]
+            filled.append(row)  # type: ignore[arg-type]
+        return filled
     for row in rows:
         record = dict(row)
         record.setdefault(entrant_param, entrant)
@@ -404,20 +431,28 @@ def apply_row_defaults(
     defaults: Mapping[str, Any],
     *,
     variables: Mapping[str, Any] | None = None,
+    inplace: bool = False,
 ) -> list[dict[str, Any]]:
     """行级常量列（``setdefault`` 语义，响应自带同名值优先）.
 
     用于响应不回显来源维度的场景：多源写同一张表时补「来源 / 复权方式」等列。
     ``variables`` 给出时常量值先经模板渲染（``{today}`` / ``{entrant}`` 等，
     ADR 0034 D4——快照写当日行的日期列用）；非字符串值原样使用。
+    ``inplace=True`` 就地 ``setdefault``（ADR 0043 D2），默认仍返回新 dict 列表。
     """
     if not defaults:
-        return [dict(row) for row in rows]
+        return cast("list[dict[str, Any]]", list(rows)) if inplace else [dict(row) for row in rows]
     rendered = {
         key: (render_text(value, dict(variables)) if variables and isinstance(value, str) else value)
         for key, value in defaults.items()
     }
     filled: list[dict[str, Any]] = []
+    if inplace:
+        for row in rows:
+            for key, value in rendered.items():
+                row.setdefault(key, value)  # type: ignore[attr-defined]
+            filled.append(row)  # type: ignore[arg-type]
+        return filled
     for row in rows:
         record = dict(row)
         for key, value in rendered.items():
@@ -429,19 +464,23 @@ def apply_row_defaults(
 def apply_row_filter(
     rows: Sequence[Mapping[str, Any]],
     row_filter: Mapping[str, Any] | None,
+    *,
+    inplace: bool = False,
 ) -> tuple[list[dict[str, Any]], int]:
     """按数值条件过滤行（ADR 0034 D4）：返回 ``(保留行, 剔除数)``.
 
     字段缺失 / 非数值（不可转 float）的行一律剔除（如停牌标的零值快照行）；
     ``row_filter`` 为 ``None`` 时原样返回（零剔除）。
+    ``inplace=True`` 时保留行沿用入参对象（只挑引用、不复制）；默认仍复制。
     """
+    copy = (lambda row: row) if inplace else dict  # type: ignore[arg-type]
     if not row_filter:
-        return [dict(row) for row in rows], 0
+        return [copy(row) for row in rows], 0
     field = str(row_filter.get("field") or "")
     op = _FILTER_OPS.get(str(row_filter.get("op") or ""))
     threshold = row_filter.get("value")
     if not field or op is None or threshold is None:
-        return [dict(row) for row in rows], 0
+        return [copy(row) for row in rows], 0
     kept: list[dict[str, Any]] = []
     removed = 0
     for row in rows:
@@ -452,7 +491,7 @@ def apply_row_filter(
             removed += 1
             continue
         if op(number, float(threshold)):
-            kept.append(dict(row))
+            kept.append(copy(row))  # type: ignore[arg-type]
         else:
             removed += 1
     return kept, removed

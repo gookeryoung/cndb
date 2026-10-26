@@ -258,6 +258,46 @@ class TestExecuteJob:
         assert "datasource.sync" in actions
 
 
+class TestWalCheckpointOnRunEnd:
+    """ADR 0043 D4：每轮收尾（成功 / 失败）都做一次 WAL 截断，失败不影响运行结果."""
+
+    def test_success_path_checks_wal_once(self, db_engine, db, monkeypatch):
+        table = _make_table(db, db_engine)
+        job = _make_job(db, table)
+        binds: list[object] = []
+        monkeypatch.setattr(runner, "checkpoint_wal", lambda bind, **_kw: binds.append(bind))
+        execution = execute_job(db, job, fetch=_fetch([{"city": "北京", "day": "2024-06-30", "temp": "31.5"}]), now=NOW)
+        assert execution.run.status == "success"
+        assert binds == [db_engine]
+
+    def test_failure_path_checks_wal_once(self, db_engine, db, monkeypatch):
+        table = _make_table(db, db_engine)
+        job = _make_job(db, table)
+        binds: list[object] = []
+        monkeypatch.setattr(runner, "checkpoint_wal", lambda bind, **_kw: binds.append(bind))
+
+        def boom(_config: FetchConfig) -> list[dict[str, object]]:
+            raise ValueError("HTTP 500")
+
+        execution = execute_job(db, job, fetch=boom, now=NOW)
+        assert execution.run.status == "failed"
+        assert binds == [db_engine]
+
+    def test_checkpoint_error_keeps_run_status_and_counts(self, db_engine, db, monkeypatch):
+        table = _make_table(db, db_engine)
+        job = _make_job(db, table)
+
+        def boom_checkpoint(_bind, **_kw):
+            raise RuntimeError("database is locked")
+
+        monkeypatch.setattr(runner, "checkpoint_wal", boom_checkpoint)
+        execution = execute_job(db, job, fetch=_fetch([{"city": "北京", "day": "2024-06-30", "temp": "31.5"}]), now=NOW)
+        db.refresh(execution.run)
+        assert execution.run.status == "success"
+        assert (execution.run.fetched, execution.run.inserted) == (1, 1)
+        assert _row_count(db_engine, table) == 1
+
+
 class TestPreviewJob:
     def test_preview_does_not_persist(self, db_engine, db):
         table = _make_table(db, db_engine)

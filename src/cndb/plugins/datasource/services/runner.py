@@ -24,11 +24,12 @@ import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
 from cndb.core.crypto import decrypt_secrets
+from cndb.core.database import checkpoint_wal
 from cndb.plugins.datasource.models import (
     DatasourceSession,
     DatasourceSyncJob,
@@ -236,6 +237,7 @@ def execute_job(
             metadata=outcome.metadata,
             latency_ms=run.duration_ms,
         )
+        _checkpoint_wal(db)
         return JobExecution(run=run, outcome=outcome, write=write_outcome, cursor_from=cursor_from, cursor_to=cursor_to)
     except Exception as exc:  # 运行失败不抛给调度器，落记录后继续
         logger.warning("同步任务 %s 执行失败: %s", job.id, exc, exc_info=True)
@@ -258,6 +260,7 @@ def execute_job(
             latency_ms=run.duration_ms,
             error=run.error_message,
         )
+        _checkpoint_wal(db)
         return JobExecution(run=run, cursor_from=cursor_from)
 
 
@@ -708,8 +711,12 @@ class _StreamingState:
         self.cursor_to = cursor_config.value if cursor_config.is_windowed and cursor_config.value else ""
 
     def on_batch(self, rows: Sequence[Mapping[str, Any]]) -> None:
-        """流式回调：落库 → 推进游标 / 水位 → 进度回写并统一提交 → 续租；异常向外抛（终止整轮）."""
-        batch = [dict(row) for row in rows]
+        """流式回调：落库 → 推进游标 / 水位 → 进度回写并统一提交 → 续租；异常向外抛（终止整轮）.
+
+        ``rows`` 已由管线归一（每行是全新独立 dict，ADR 0043 D2 行所有权边界），
+        这里只做浅列表拷贝保留 ``list`` 契约，不再复制行对象。
+        """
+        batch = cast("list[dict[str, Any]]", list(rows))
         outcome = _persist_rows(self._db, self._job, batch, user=self._user)
         self.write.fetched += outcome.fetched
         self.write.inserted += outcome.inserted
@@ -874,6 +881,29 @@ def _finalize(
     }
     if outcome.status == RunStatus.FAILED.value and outcome.failures:
         run.error_message = "; ".join(f"{item.label}: {item.error}" for item in outcome.failures[:3])[:1000]
+    if normalized is not None:
+        # 明细有界（ADR 0043 D5）：总量只进日志，detail 口径保持「前 100 条」
+        failed_total = int(getattr(normalized, "failed_total", len(normalized.failures)))
+        if failed_total > len(normalized.failures):
+            logger.info(
+                "运行 %s 归一失败 %d 条，detail 只保留前 %d 条",
+                getattr(run, "id", None),
+                failed_total,
+                len(normalized.failures),
+            )
+
+
+def _checkpoint_wal(db: Session) -> None:
+    """运行收尾的 WAL 截断（ADR 0043 D4）：best-effort，任何失败都不影响运行结果."""
+    try:
+        bind = db.get_bind()
+    except Exception:  # pragma: no cover - 会话已关闭属异常路径
+        logger.debug("读取运行会话的引擎失败，跳过 WAL checkpoint", exc_info=True)
+        return
+    try:
+        checkpoint_wal(bind)
+    except Exception:  # pragma: no cover - checkpoint_wal 自身已吞错，此处兜底
+        logger.warning("WAL checkpoint 异常，跳过（不影响运行记录）", exc_info=True)
 
 
 def _update_job_state(
