@@ -33,6 +33,7 @@ import { highlightCode } from './codeHighlight'
 import { parseImageRef } from './imageRef'
 import { parseMdTable, type MdTable, type MdTableAlign } from './mdTable'
 import { WEIGHT } from '@/theme/tokens'
+import { mixColor } from '@/theme/themeMix'
 
 export type MarkdownEditorMode = 'live' | 'source'
 
@@ -516,7 +517,7 @@ const editorTheme = EditorView.theme({
   '.cm-line': { padding: '0' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--cn-text-primary, #1f2937)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection': {
-    backgroundColor: 'var(--cn-mix-brand-color-22-transparent)',
+    backgroundColor: mixColor('var(--cn-brand-color)', 22, 'transparent'),
   },
   '.cm-placeholder': { color: 'var(--cn-text-muted, #9ca3af)' },
   '.cm-md-heading': { fontWeight: WEIGHT.bold, lineHeight: '1.4' },
