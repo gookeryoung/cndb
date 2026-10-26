@@ -582,7 +582,7 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     }
   })
 
-  it('次级操作收进「更多」菜单，主操作与筛选保持可用', async () => {
+  it('顶部收为两行：筛选默认收起，展开后可筛选，更多菜单承载次级操作', async () => {
     renderProviders(
       <Routes>
         <Route path="/w/:wid/documents" element={<DocumentsPage />} />
@@ -595,16 +595,50 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     // 桌面常显的次级按钮不再直接渲染
     expect(screen.queryByTestId('doc-trash-open')).toBeNull()
     expect(screen.queryByTestId('doc-file-import')).toBeNull()
-    // 搜索、排序/标签/状态筛选与新建仍可用
+    // 默认只有导航行 + 操作行，排序 / 标签 / 状态不常驻
+    expect(toolbar.children).toHaveLength(2)
+    expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
+    expect(screen.queryByTestId('doc-order-select')).toBeNull()
+    expect(screen.queryByTestId('doc-tag-filter')).toBeNull()
+    // 搜索、筛选、更多、新建仍可用
     expect(within(toolbar).getByPlaceholderText('本页标题过滤')).toBeVisible()
+    const filterBtn = within(toolbar).getByTestId('doc-toolbar-filter')
+    expect(filterBtn).toHaveAttribute('aria-expanded', 'false')
+    expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
+
+    // 展开筛选行：三个控件恢复可见
+    fireEvent.click(filterBtn)
+    expect(await screen.findByTestId('doc-toolbar-filters')).toBeVisible()
+    expect(filterBtn).toHaveAttribute('aria-expanded', 'true')
     expect(within(toolbar).getByTestId('doc-order-select')).toBeVisible()
     expect(within(toolbar).getByTestId('doc-tag-filter')).toBeVisible()
-    expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
+
+    // 再次点击收起，纵向空间收回
+    fireEvent.click(filterBtn)
+    await waitFor(() => expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull())
 
     // 「更多」菜单承载回收站与导入入口
     fireEvent.click(within(toolbar).getByTestId('doc-toolbar-more'))
     expect(await screen.findByText('回收站')).toBeInTheDocument()
     expect(screen.getByText('导入文件')).toBeInTheDocument()
     expect(screen.getByText('新建文件夹')).toBeInTheDocument()
+  })
+
+  it('收起态仍能看出已应用筛选：计数徽标写入 aria-label', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/documents/tags', () =>
+        HttpResponse.json({ items: [{ id: 7, name: '季度', doc_count: 2, color: null }] })),
+    )
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1&tag=7', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    const filterBtn = await screen.findByTestId('doc-toolbar-filter')
+    expect(filterBtn).toHaveAttribute('aria-label', '筛选（已应用 1 项）')
+    // 深链筛选不自动展开（不重新占用第三行）
+    expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
   })
 })

@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
+  Badge,
   Checkbox,
   Alert,
   Breadcrumb,
@@ -35,6 +36,7 @@ import {
   EditOutlined,
   ExportOutlined,
   FileAddOutlined,
+  FilterOutlined,
   FolderAddOutlined,
   FolderOutlined,
   ImportOutlined,
@@ -111,6 +113,8 @@ export default function DocumentsPage() {
 
   const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [titleKeyword, setTitleKeyword] = useState('')
+  // 移动端：排序 / 标签 / 状态低频筛选默认收起，避免顶部常驻三行
+  const [filterOpen, setFilterOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createType, setCreateType] = useState<'doc' | 'folder'>('doc')
   const [newTitle, setNewTitle] = useState('')
@@ -407,6 +411,13 @@ export default function DocumentsPage() {
   const upButton = parentId !== null && (
     <Button icon={<ArrowLeftOutlined />} onClick={goUp}>上一级</Button>
   )
+  /** 移动端返回：纯图标，把横向空间让给面包屑 */
+  const mobileUpButton = parentId !== null && (
+    <Button icon={<ArrowLeftOutlined />} aria-label="上一级" onClick={goUp} />
+  )
+  /** 已应用筛选计数：排序非默认 / 标签 / 状态各计 1 项（收起态徽标与 aria-label 共用） */
+  const activeFilterCount =
+    (orderBy !== 'sort' ? 1 : 0) + (tagFilter !== undefined ? 1 : 0) + (statusFilter ? 1 : 0)
   const breadcrumbNode = (
     <Breadcrumb
       items={[
@@ -473,26 +484,41 @@ export default function DocumentsPage() {
     <div style={{ padding: isMobile ? 12 : 16 }}>
       {/* 工具栏 */}
       {isMobile ? (
-        <div data-testid="doc-toolbar-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-          {/* 第一行：返回 + 面包屑 */}
+        <div data-testid="doc-toolbar-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          {/* 第一行：返回 + 面包屑 + 更多（导航行常驻） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            {upButton}
+            {mobileUpButton}
             <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>{breadcrumbNode}</div>
-          </div>
-          {/* 第二行：过滤 + 更多 + 新建 */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {renderSearchInput({ flex: 1, minWidth: 0 })}
             <Dropdown menu={{ items: mobileToolbarMenu }} trigger={['click']} placement="bottomRight">
               <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
             </Dropdown>
+          </div>
+          {/* 第二行：搜索 + 筛选 + 新建（操作行常驻） */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {renderSearchInput({ flex: 1, minWidth: 0 })}
+            <Badge count={activeFilterCount} size="small" offset={[-2, 2]}>
+              <Button
+                icon={<FilterOutlined />}
+                aria-label={activeFilterCount > 0 ? `筛选（已应用 ${activeFilterCount} 项）` : '筛选'}
+                aria-expanded={filterOpen}
+                data-testid="doc-toolbar-filter"
+                onClick={() => setFilterOpen(v => !v)}
+                type={filterOpen ? 'primary' : 'default'}
+              />
+            </Badge>
             <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建</Button>
           </div>
-          {/* 第三行：排序 / 标签 / 状态三等分 */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}>
-            {renderOrderSelect({ width: '100%' })}
-            {renderTagSelect({ width: '100%' })}
-            {renderStatusSelect({ width: '100%' })}
-          </div>
+          {/* 第三行：排序 / 标签 / 状态三等分 —— 仅在展开时渲染，收起后不占纵向空间 */}
+          {filterOpen && (
+            <div
+              data-testid="doc-toolbar-filters"
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}
+            >
+              {renderOrderSelect({ width: '100%' })}
+              {renderTagSelect({ width: '100%' })}
+              {renderStatusSelect({ width: '100%' })}
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
@@ -666,7 +692,7 @@ export default function DocumentsPage() {
 
       {/* 系列详情头部：图标 + 名称 + 递归统计 + 系列级操作（重命名/移动/删除） */}
       {parentId !== null && currentSeries && (
-        <Card size="small" data-testid="doc-series-detail" styles={{ body: { padding: isMobile ? 12 : 16 } }} style={{ marginBottom: 16 }}>
+        <Card size="small" data-testid="doc-series-detail" styles={{ body: { padding: isMobile ? 12 : 16 } }} style={{ marginBottom: isMobile ? 12 : 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <FolderOutlined style={{ fontSize: 24, color: 'var(--cn-warning, #faad14)' }} />
             <div style={{ flex: 1, minWidth: 180 }}>

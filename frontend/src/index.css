@@ -4866,6 +4866,14 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   overflow-x: auto;
 }
 
+/* 窄屏顶部区段与工具栏一起收紧，避免「最近打开」条自带一层宽松留白 */
+@media (max-width: 767.98px) {
+  .cn-doc-recent {
+    margin-bottom: var(--cn-space-md);
+    padding: var(--cn-space-xs) var(--cn-space-sm);
+  }
+}
+
 /* ─────────────── 图片字段（展示 / 编辑） ───────────────
  * 编辑态只占一行瓦片：本地预览 + 进度 / 失败重试 + 显式「+ / 替换」按钮。
  * 点击字段本体只聚焦（成为 Ctrl+V 粘贴目标），不再直接弹系统文件选择框。 */

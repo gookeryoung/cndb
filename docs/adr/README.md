@@ -45,6 +45,7 @@
 | [0041](0041-datasource-running-tasks-list.md) | 数据源同步顶部运行中任务多行列表 | Accepted | P0-P1 已落地 | `frontend/src/pages/datasource/syncProgress.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/syncProgress.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0042](0042-edit-toolbar-insert-entries.md) | 文档插入图片 / 插入表格引用入口收进编辑模式工具栏 | Implemented | P0-P1 已落地 | `frontend/src/components/Document/MarkdownToolbar.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/components/Document/MarkdownToolbar.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0043](0043-datasource-write-path-overhead.md) | 数据源同步落库剩余开销削减（行拷贝收敛 / 幂等匹配分片 / WAL 收尾 / 失败明细有界） | Accepted | P0/P2 已落地（P1 实测后不做） | `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/core/database.py` | `tests/test_datasource_row_ownership.py`、`tests/test_core_database_wal_checkpoint.py`、`tests/test_datasource_normalize_failures_bound.py`、`tests/test_datasource_runner.py` | [未发布](../../CHANGELOG.md) |
+| [0044](0044-documents-mobile-toolbar-compact.md) | 文档列表页移动端顶部工具栏紧凑化（两行常驻 + 筛选收起 + 返回图标化） | Proposed | P0-P1 已落地；待人工评审 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 
