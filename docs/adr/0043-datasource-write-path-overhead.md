@@ -190,8 +190,8 @@ Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/services/pipeline.py`（add_failures / 三 helper inplace / _run_group / _BatchSink._process）、`src/cndb/plugins/datasource/services/runner.py`（on_batch 去行复制） | `tests/test_datasource_row_ownership.py` | 待提交 |
-| P2 | 已落地 | `src/cndb/core/database.py`（checkpoint_wal）、`src/cndb/plugins/datasource/services/runner.py`（_checkpoint_wal + 成功 / 失败两条收尾路径、失败总量日志）、`frontend/src/pages/help/content/configuration.tsx`（WAL 收尾一行） | `tests/test_core_database_wal_checkpoint.py`、`tests/test_datasource_normalize_failures_bound.py`、`tests/test_datasource_runner.py` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/datasource/services/pipeline.py`（add_failures / 三 helper inplace / _run_group / _BatchSink._process）、`src/cndb/plugins/datasource/services/runner.py`（on_batch 去行复制） | `tests/test_datasource_row_ownership.py` | 2dde49a7 |
+| P2 | 已落地 | `src/cndb/core/database.py`（checkpoint_wal）、`src/cndb/plugins/datasource/services/runner.py`（_checkpoint_wal + 成功 / 失败两条收尾路径、失败总量日志）、`frontend/src/pages/help/content/configuration.tsx`（WAL 收尾一行） | `tests/test_core_database_wal_checkpoint.py`、`tests/test_datasource_normalize_failures_bound.py`、`tests/test_datasource_runner.py` | 2dde49a7 |
 
 > P1（幂等匹配分片）已由 D3 判定「实测后不做」，不在本表登记。
 
