@@ -31,7 +31,7 @@ from typing import Any
 from cndb.plugins.datasource.providers.base import FetchFn, NormalizeLike, RequestPlan, SourceProvider, SyncJobSpec
 from cndb.plugins.datasource.providers.registry import get_provider
 from cndb.plugins.datasource.providers.template import render_text
-from cndb.plugins.tables.services.importing.api_fetch import fetch_json
+from cndb.plugins.tables.services.importing.api_fetch import fetch_json, open_http_client
 
 logger = logging.getLogger(__name__)
 
@@ -190,6 +190,7 @@ def run_pipeline(
         job: 同步任务声明。
         provider: 显式指定适配器；缺省按 ``job.provider`` 从注册表取。
         fetch: 注入的抓取函数（测试用假源）；缺省走 ``api_fetch.fetch_json``。
+            缺省抓取器在单次运行内共享一个 HTTP 客户端（连接复用，ADR 0040 D3）。
         rate_limit_ms: 全局相邻请求的最小出发间隔（毫秒，0 = 不限速）。
         sleep: 注入的等待函数（测试用，缺省 ``time.sleep``）。
         on_batch: 流式回调：归一 + 过滤后的行攒满 ``batch_size`` 即调用（内存不攒全量）；
@@ -213,22 +214,33 @@ def run_pipeline(
         outcome.metadata.extend(result.metadata)
         sink.add(result.rows)
 
-    workers = _resolve_workers(job)
-    if workers <= 1 or len(groups) <= 1:
-        for group in groups:
-            if cancel.is_set():
-                break
-            absorb(_run_group(group, job, fetch, limiter, cancel, progress))
+    def execute(default_fetch: FetchFn) -> None:
+        workers = _resolve_workers(job)
+        if workers <= 1 or len(groups) <= 1:
+            for group in groups:
+                if cancel.is_set():
+                    break
+                absorb(_run_group(group, job, fetch, limiter, cancel, progress, default_fetch))
+        else:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [
+                    pool.submit(_run_group, group, job, fetch, limiter, cancel, progress, default_fetch)
+                    for group in groups
+                ]
+                try:
+                    for future in as_completed(futures):
+                        absorb(future.result())
+                except BaseException:
+                    # on_batch（sink.add 内）失败：停掉未开始的组，等运行中的组自然结束
+                    cancel.set()
+                    raise
+
+    if fetch is None:
+        # 缺省抓取器：整轮运行共用一个客户端（TLS 会话复用），退出即关闭
+        with open_http_client() as client:
+            execute(lambda config: fetch_json(config, client=client))
     else:
-        with ThreadPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(_run_group, group, job, fetch, limiter, cancel, progress) for group in groups]
-            try:
-                for future in as_completed(futures):
-                    absorb(future.result())
-            except BaseException:
-                # on_batch（sink.add 内）失败：停掉未开始的组，等运行中的组自然结束
-                cancel.set()
-                raise
+        execute(fetch_json)
 
     sink.flush()
     return outcome
@@ -258,6 +270,7 @@ def _run_group(
     limiter: _RateLimiter,
     cancel: threading.Event,
     progress: RequestProgress | None = None,
+    default_fetch: FetchFn = fetch_json,
 ) -> _GroupResult:
     """串行执行一个分组内的全部请求（空页停止；取消标记只在请求间检查）."""
     result = _GroupResult()
@@ -266,7 +279,7 @@ def _run_group(
             break
         limiter.wait()
         # ADR 0020：plan 级抓取器优先（LLM 请求走平台客户端）；显式注入的 fetch 最高优先
-        plan_fetcher: FetchFn = fetch or plan.fetcher or fetch_json
+        plan_fetcher: FetchFn = fetch or plan.fetcher or default_fetch
         try:
             rows = plan_fetcher(plan.config)
         except Exception as exc:  # 单请求失败不中断整体（I3）

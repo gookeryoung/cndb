@@ -221,6 +221,10 @@ export interface SyncRun {
   progress_done: number
   /** 最近完成的标的（运行中展示） */
   progress_entrant: string
+  /** 已用毫秒（运行中由服务端按当前时间计算，ADR 0040 D1） */
+  elapsed_ms: number
+  /** 累计平均写入速度（行/秒，服务端计算，ADR 0040 D1） */
+  rows_per_second: number
   error_message: string
   detail: {
     plans?: number

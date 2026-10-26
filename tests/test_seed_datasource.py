@@ -256,9 +256,9 @@ def test_real_datasource_json_is_valid():
             "最低": 4,
             "成交量": 5,
         }
-        # 并发与限速取值（ADR 0035 D3）：10 线程 + 50ms 全局间隔（20 req/s 天花板）
+        # 并发与限速取值（ADR 0035 D3 / ADR 0040 D4）：10 线程 + 10ms 全局间隔（100 req/s 天花板）
         assert job["request_spec"]["workers"] == 10
-        assert job["rate_limit_ms"] == 50
+        assert job["rate_limit_ms"] == 10
         assert "{end}" in job["request_spec"]["url_template"], "回补请求须带 end 锚点占位"
 
     # 股票任务前复权并允许回退 day（腾讯对无除权事件的品种只回 day）

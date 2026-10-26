@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -46,6 +47,146 @@ logger = logging.getLogger(__name__)
 # ── 值规范化 ──────────────────────────────────────────
 
 
+@dataclass(frozen=True, slots=True)
+class _FieldSpec:
+    """单字段的归一化规格（批级预编译，避免逐行解析配置 / 建 map）."""
+
+    name: str
+    field: DataField
+    field_type: Any
+    is_link: bool
+    has_physical: bool
+    db_column: str
+
+
+@dataclass(slots=True)
+class _NormalizePlan:
+    """一次批量写入的归一化计划：字段表 + 自动填充 / 默认值规格（ADR 0040 D5）.
+
+    同一批内所有行共用，逐行只做取值与 ``validate_value``，不再重建字段 map、
+    逐行解析 ``DateFieldConfig``；语义与旧的逐行实现保持一致。
+    """
+
+    field_map: dict[str, _FieldSpec]
+    # (db_column, field_type, config, mode)：mode ∈ {on_update, on_create}，逐行取 now
+    auto_fill: list[tuple[str, Any, dict[str, Any], str]]
+    # (field_name, db_column, field_type, config, default_value)：仅创建路径
+    defaults: list[tuple[str, str, Any, dict[str, Any], Any]]
+
+
+def _build_normalize_plan(table: DataTable, *, for_update: bool) -> _NormalizePlan:
+    """构建批级归一化计划（字段存在性 / 类型 / link / 自动填充一次解析）."""
+    from cndb.plugins.tables.field_types import DateFieldConfig
+
+    field_map: dict[str, _FieldSpec] = {}
+    auto_fill: list[tuple[str, Any, dict[str, Any], str]] = []
+    defaults: list[tuple[str, str, Any, dict[str, Any], Any]] = []
+
+    for f in table.fields:
+        if f.trashed:
+            continue
+        ft = default_registry.get(f.field_type)
+        link = is_link_field(f)
+        has_physical = ft is not None and ft.has_physical_column and not link
+        field_map[f.name] = _FieldSpec(
+            name=f.name,
+            field=f,
+            field_type=ft,
+            is_link=link,
+            has_physical=has_physical,
+            db_column=f.db_column_name,
+        )
+        if not has_physical:
+            continue
+
+        if f.field_type in ("date", "datetime"):
+            try:
+                cfg = DateFieldConfig(**(f.config or {}))
+            except Exception:
+                logger.debug("日期字段配置解析失败，跳过自动填充", exc_info=True)
+            else:
+                if cfg.auto_fill in ("on_update", "on_create") and cfg.should_auto_fill(for_update=for_update):
+                    auto_fill.append((f.db_column_name, ft, f.config or {}, cfg.auto_fill))
+
+        if not for_update:
+            dv = f.default_value
+            if dv is not None and dv != "":
+                defaults.append((f.name, f.db_column_name, ft, f.config or {}, dv))
+
+    return _NormalizePlan(field_map=field_map, auto_fill=auto_fill, defaults=defaults)
+
+
+def _normalize_row_with_plan(
+    plan: _NormalizePlan,
+    values: dict[str, Any],
+    validated: dict[str, Any] | None = None,
+    *,
+    for_update: bool = False,
+) -> tuple[dict[str, Any], list[tuple[DataField, list[int]]]]:
+    """按预编译计划归一一行（``validated`` 为已校验的 db_column → 值，可选复用）."""
+    result: dict[str, Any] = {}
+    link_values: list[tuple[DataField, list[int]]] = []
+
+    for field_name, raw in values.items():
+        spec = plan.field_map.get(field_name)
+        if spec is None:
+            logger.debug("未知字段 %s，跳过", field_name)
+            continue
+        ft = spec.field_type
+        if ft is None:
+            raise ValueError(f"未知字段类型: {spec.field.field_type}")
+        if spec.is_link:
+            ids = ft.validate_value(raw, spec.field.config) if raw is not None else []
+            link_values.append((spec.field, ids))
+            continue
+        if not spec.has_physical:
+            # lookup 等只读虚拟字段无物理列：整行表单可能原样回传其值，
+            # 写入时必须忽略（值由读取阶段实时解析），否则 INSERT/UPDATE
+            # 编译会因反射表缺少该列报 CompileError（路由层表现为 500）
+            logger.debug("只读虚拟字段 %s（%s）无物理列，忽略写入值", field_name, spec.field.field_type)
+            continue
+        if raw is None:
+            if not for_update:
+                # 创建路径：None 表示未提供该字段值，依赖 default_value 填充；
+                # 必填字段在此 raise，交由上层报错
+                if spec.field.required:  # pragma: no cover - 必填校验分支
+                    raise ValueError(f"必填字段 {field_name} 不能为空")
+                continue
+            # 更新路径：None 是前端显式清空意图，写入数据库 NULL
+            result[spec.db_column] = None
+            continue
+        if validated is not None and spec.db_column in validated:
+            # 校验阶段已归一过同一份原始值，直接复用（ADR 0040 D5）
+            result[spec.db_column] = validated[spec.db_column]
+            continue
+        try:
+            result[spec.db_column] = ft.validate_value(raw, spec.field.config)
+        except Exception as exc:
+            raise ValueError(f"字段 {field_name}({spec.field.field_type}) 值校验失败: {exc}") from exc
+
+    # ── date/datetime auto_fill 自动填充（on_update 覆盖用户值；on_create 仅在未提供时补）──
+    for db_col, ft, config, mode in plan.auto_fill:
+        auto_val = ft.default_value(config)
+        if auto_val is None:
+            continue
+        if mode == "on_update" or db_col not in result:
+            result[db_col] = auto_val
+
+    # ── DataField.default_value 默认值填充（仅创建、用户未传该字段时）──
+    if not for_update:
+        for name, db_col, ft, config, dv in plan.defaults:
+            if name in values:
+                # 用户显式传过（含 None 清空意图）则不覆盖
+                continue
+            try:
+                result[db_col] = ft.validate_value(dv, config)
+            except Exception as exc:
+                # 默认值配置非法时不阻塞建行，跳过并留调试日志
+                logger.debug("字段 %s 默认值 %r 校验失败，跳过: %s", name, dv, exc)
+
+    return result, link_values
+
+
 def _normalize_values(
     table: DataTable,
     values: dict[str, Any],
@@ -62,95 +203,11 @@ def _normalize_values(
     - date/datetime 字段的 auto_fill 自动填充（on_create 创建时补、on_update 每次都覆盖）
     - DataField.default_value 默认值填充（仅创建路径、用户未传该字段时；校验失败跳过）
 
-    返回 (物理列值, 关联值列表)。
+    返回 (物理列值, 关联值列表)。批量场景请复用 :func:`_build_normalize_plan`，
+    避免逐行重建字段表与日期配置（ADR 0040 D5）。
     """
-    from cndb.plugins.tables.field_types import DateFieldConfig
-
-    field_map: dict[str, DataField] = {f.name: f for f in table.fields}
-    result: dict[str, Any] = {}
-    link_values: list[tuple[DataField, list[int]]] = []
-
-    for field_name, raw in values.items():
-        f = field_map.get(field_name)
-        if f is None or f.trashed:
-            logger.debug("未知字段 %s，跳过", field_name)
-            continue
-        ft = default_registry.get(f.field_type)
-        if ft is None:
-            raise ValueError(f"未知字段类型: {f.field_type}")
-        if is_link_field(f):
-            ids = ft.validate_value(raw, f.config) if raw is not None else []
-            link_values.append((f, ids))
-            continue
-        if not ft.has_physical_column:
-            # lookup 等只读虚拟字段无物理列：整行表单可能原样回传其值，
-            # 写入时必须忽略（值由读取阶段实时解析），否则 INSERT/UPDATE
-            # 编译会因反射表缺少该列报 CompileError（路由层表现为 500）
-            logger.debug("只读虚拟字段 %s（%s）无物理列，忽略写入值", field_name, f.field_type)
-            continue
-        if raw is None:
-            if not for_update:
-                # 创建路径：None 表示未提供该字段值，依赖 default_value 填充；
-                # 必填字段在此 raise，交由上层报错
-                if f.required:  # pragma: no cover - 必填校验分支
-                    raise ValueError(f"必填字段 {field_name} 不能为空")
-                continue
-            # 更新路径：None 是前端显式清空意图，写入数据库 NULL
-            result[f.db_column_name] = None
-            continue
-        try:
-            result[f.db_column_name] = ft.validate_value(raw, f.config)
-        except Exception as exc:
-            raise ValueError(f"字段 {field_name}({f.field_type}) 值校验失败: {exc}") from exc
-
-    # ── date/datetime auto_fill 自动填充 ──
-    for f in table.fields:
-        if f.trashed or is_link_field(f):
-            continue
-        if f.field_type not in ("date", "datetime"):
-            continue
-        ft = default_registry.get(f.field_type)
-        if ft is None:
-            continue
-        try:
-            cfg = DateFieldConfig(**(f.config or {}))
-        except Exception:
-            logger.debug("日期字段配置解析失败，跳过自动填充", exc_info=True)
-            continue
-        if not cfg.should_auto_fill(for_update=for_update):
-            continue
-        auto_val = ft.default_value(f.config or {})
-        if auto_val is None:
-            continue
-        if cfg.auto_fill == "on_update":
-            # 更新时间戳：强制覆盖（即使用户传了值也覆盖）
-            result[f.db_column_name] = auto_val
-        elif cfg.auto_fill == "on_create" and f.db_column_name not in result:
-            # 创建时间戳：仅当用户未传入时补值
-            result[f.db_column_name] = auto_val
-
-    # ── DataField.default_value 默认值填充（仅创建、用户未传该字段时）──
-    if not for_update:
-        for f in table.fields:
-            if f.trashed or is_link_field(f):
-                continue
-            if f.name in values:
-                # 用户显式传过（含 None 清空意图）则不覆盖
-                continue
-            dv = f.default_value
-            if dv is None or dv == "":
-                continue
-            ft = default_registry.get(f.field_type)
-            if ft is None or not ft.has_physical_column:
-                # lookup 等无物理列字段的默认值无法落库，跳过
-                continue
-            try:
-                result[f.db_column_name] = ft.validate_value(dv, f.config or {})
-            except Exception as exc:
-                # 默认值配置非法时不阻塞建行，跳过并留调试日志
-                logger.debug("字段 %s 默认值 %r 校验失败，跳过: %s", f.name, dv, exc)
-
-    return result, link_values
+    plan = _build_normalize_plan(table, for_update=for_update)
+    return _normalize_row_with_plan(plan, values, for_update=for_update)
 
 
 def _ensure_required_fields_provided(table: DataTable, normalized: dict[str, Any]) -> None:
@@ -985,11 +1042,16 @@ def bulk_update_rows(
     db: Any = None,
     *,
     user: Any = None,
+    reuse_normalized: bool = False,
 ) -> int:
     """批量单行更新 — 每条 row_id 对应独立 values（upsert 分流时用）.
 
     与 bulk_update 不同：bulk_update 是 "N 行共用一组 values"，这里是 "N 行各有自己的 values"。
     批量导入场景不逐条记 audit log（避免海量 audit 行）。返回成功更新的行数。
+
+    ``reuse_normalized=True``（ADR 0040 D5）：``updates`` 条目可带 ``normalized``
+    （校验阶段产出的 db_column → 已校验值），命中时跳过二次逐格校验；未命中的
+    字段仍按原语义校验。仅数据源同步等已校验链路打开，导入默认路径不变。
     """
     if not updates:
         return 0
@@ -998,14 +1060,18 @@ def bulk_update_rows(
     row_scope = _build_row_scope_where(table, sa_table, db, user)
     total = 0
 
-    # 每行只归一一次（旧实现校验与执行各归一一次）
+    # 批级预编译归一化计划（ADR 0040 D5）：字段表 / 自动填充规格只解析一次
+    plan = _build_normalize_plan(table, for_update=True)
     prepared: list[tuple[int, dict[str, Any], list[tuple[Any, list[int]]]]] = []
     for item in updates:
         values = item.get("values") or {}
         row_id = item.get("row_id")
         if row_id is None or not values:
             continue
-        normalized, link_values = _normalize_values(table, values, for_update=True)
+        validated = item.get("normalized") if reuse_normalized else None
+        normalized, link_values = _normalize_row_with_plan(
+            plan, values, validated if isinstance(validated, dict) else None, for_update=True
+        )
         prepared.append((int(row_id), normalized, link_values))
 
     # 总事务前预校验所有待更新行的 link 目标存在 + 必填/唯一约束，避免部分行已提交但 link 失败

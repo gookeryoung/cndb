@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import threading
 import time
@@ -19,6 +20,7 @@ from typing import Any
 import pytest
 
 from cndb.plugins.datasource.providers.base import PagingSpec, RequestSpec, SyncJobSpec
+from cndb.plugins.datasource.services import pipeline
 from cndb.plugins.datasource.services.pipeline import (
     RequestProgress,
     apply_row_defaults,
@@ -354,3 +356,62 @@ class TestRowFilterValidation:
     def test_rejects_zero_workers(self):
         with pytest.raises(Exception, match="workers"):
             RequestSpec(url_template="https://api.example.com/w", workers=0)
+
+
+class TestSharedHttpClient:
+    """ADR 0040 D3：缺省抓取器整轮运行共用一个客户端，显式注入时不新建."""
+
+    def test_one_client_shared_by_all_requests(self, monkeypatch):
+        opened: list[object] = []
+        closed: list[object] = []
+        used: list[object] = []
+
+        @contextlib.contextmanager
+        def fake_open():
+            client = object()
+            opened.append(client)
+            try:
+                yield client
+            finally:
+                closed.append(client)
+
+        def fake_fetch(_config: Any, *, client: object | None = None) -> list[dict[str, Any]]:
+            used.append(client)
+            return [{"v": 1}]
+
+        monkeypatch.setattr(pipeline, "open_http_client", fake_open)
+        monkeypatch.setattr(pipeline, "fetch_json", fake_fetch)
+
+        outcome = run_pipeline(_job(entrants=("a", "b", "c"), workers=3))
+        assert outcome.succeeded == 3
+        assert len(opened) == 1
+        assert closed == opened
+        assert used == opened * 3
+
+    def test_client_closed_even_on_failure(self, monkeypatch):
+        closed: list[object] = []
+
+        @contextlib.contextmanager
+        def fake_open():
+            client = object()
+            try:
+                yield client
+            finally:
+                closed.append(client)
+
+        def fake_fetch(_config: Any, *, client: object | None = None) -> list[dict[str, Any]]:
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(pipeline, "open_http_client", fake_open)
+        monkeypatch.setattr(pipeline, "fetch_json", fake_fetch)
+        outcome = run_pipeline(_job(entrants=("a",)))
+        assert outcome.status == "failed"
+        assert len(closed) == 1
+
+    def test_injected_fetch_does_not_open_client(self, monkeypatch):
+        def forbidden():  # pragma: no cover - 被调用即失败
+            raise AssertionError("显式注入 fetch 时不应新建客户端")
+
+        monkeypatch.setattr(pipeline, "open_http_client", forbidden)
+        outcome = run_pipeline(_job(entrants=("a", "b")), fetch=lambda _config: [{"v": 1}])
+        assert outcome.succeeded == 2

@@ -541,8 +541,21 @@ def _get_response_handler(name_or_callable: str | ResponseHandler) -> ResponseHa
 # ── 主入口 ────────────────────────────────────────
 
 
-def fetch_json(config: FetchConfig) -> list[dict[str, Any]]:
+def open_http_client(*, timeout: float | httpx2.Timeout | None = None) -> httpx2.Client:
+    """创建可复用的 HTTP 客户端（单次同步运行内共享连接，ADR 0040 D3）.
+
+    调用方负责用 ``with`` 关闭；重定向仍由 ``fetch_json`` 手动跟随并逐跳校验。
+    """
+    return httpx2.Client(timeout=timeout, follow_redirects=False)
+
+
+def fetch_json(config: FetchConfig, *, client: httpx2.Client | None = None) -> list[dict[str, Any]]:
     """按配置发起 HTTP 请求并返回对象数组.
+
+    Args:
+        config: 单次请求的完整配置（URL / 方法 / 头 / 超时 / 重试 / 解析方式）。
+        client: 可选复用客户端；传入时只复用连接，不改 SSRF / 超时 / 重试 / 重定向语义。
+            不传时新建并在返回前关闭（与历史行为一致）。
 
     Returns:
         对象数组（空数组代表响应未包含有效数据）
@@ -551,6 +564,14 @@ def fetch_json(config: FetchConfig) -> list[dict[str, Any]]:
         ValueError: URL 非法 / SSRF / 响应解析失败
         httpx2.HTTPError: 网络层错误
     """
+    if client is None:
+        with open_http_client(timeout=config.timeout) as owned:
+            return _fetch_json_with_client(config, owned)
+    return _fetch_json_with_client(config, client)
+
+
+def _fetch_json_with_client(config: FetchConfig, client: httpx2.Client) -> list[dict[str, Any]]:
+    """用给定客户端完成一次抓取（连接由调用方管理）."""
     validate_url(config.url, allow_hosts=config.allow_hosts)
 
     method = config.method.upper()
@@ -578,107 +599,104 @@ def fetch_json(config: FetchConfig) -> list[dict[str, Any]]:
     retryable = set(config.retry_on_status)
     max_attempts = config.max_retries + 1 if (method == "GET" or retryable) else 1
     resp: httpx2.Response | None = None
-    with httpx2.Client(
-        timeout=config.timeout,
-        follow_redirects=False,
-        headers=headers,
-    ) as client:
-        for attempt in range(max_attempts):
-            try:
-                current_url = config.url
-                params_value = config.params or None
-                redirect_count = 0
-                while True:
-                    resp = client.request(
-                        method=method,
-                        url=current_url,
-                        params=params_value,
-                        content=content,
-                        json=json_body,
-                    )
-                    # 3xx 重定向：手动跟随 + 每步 validate_url（防 SSRF via open redirect）
-                    if resp.status_code in (301, 302, 303, 307, 308):
-                        redirect_count += 1
-                        if redirect_count > config.max_redirects:
-                            raise ValueError(f"重定向次数过多（>{config.max_redirects}）")
-                        location = resp.headers.get("location")
-                        if not location:
-                            raise ValueError(f"重定向响应缺少 Location 头（status={resp.status_code}）")
-                        # 相对 URL 转绝对
-                        next_url = urljoin(current_url, location)
-                        validate_url(next_url, allow_hosts=config.allow_hosts)
-                        current_url = next_url
-                        # 303 一律降级为 GET；301/302 多数客户端也降级为 GET（兼容）
-                        if resp.status_code == 303 or (
-                            resp.status_code in (301, 302) and method in ("POST", "PUT", "PATCH", "DELETE")
-                        ):
-                            method = "GET"
-                            content = None
-                            json_body = None
-                        continue
-                    break
-                if resp.status_code in retryable and attempt + 1 < max_attempts:
-                    backoff = _retry_after_seconds(resp) or _retry_backoff_seconds(
-                        attempt, throttled=resp.status_code == 429
-                    )
-                    logger.warning(
-                        "HTTP %d（第 %d/%d 次尝试），%.1fs 后重试",
-                        resp.status_code,
-                        attempt + 1,
-                        max_attempts,
-                        backoff,
-                    )
-                    time.sleep(backoff)
-                    continue
-            except httpx2.RequestError as exc:
-                # 幂等 GET 的瞬时失败（连接中断/超时）做有限重试；重试语义：
-                # 仅重试请求本身，重定向循环从头开始（每步重新过 SSRF 校验）
-                throttled = _is_throttle_like_error(exc)
-                if attempt + 1 < max_attempts:
-                    backoff = _retry_backoff_seconds(attempt, throttled=throttled)
-                    logger.warning(
-                        "请求失败（第 %d/%d 次尝试），%.1fs 后重试: %s",
-                        attempt + 1,
-                        max_attempts,
-                        backoff,
-                        exc,
-                    )
-                    time.sleep(backoff)
-                    continue
-                # 连接被对端直接掐断时，绝大多数不是本地配置写错了，
-                # 直接把"疑似限流"告诉用户，省得去查 URL / 字段映射
-                if throttled:
-                    raise ValueError(f"{THROTTLE_HINT}：{exc}") from exc
-                raise ValueError(f"请求失败: {exc}") from exc
-            break
-        # resp 经上方 while True 循环至少赋值一次并 break，必非空
-        if resp is None:  # pragma: no cover - 防御性收窄，静态分析兜底
-            raise ValueError("请求未获得响应")
-        # 检查状态码
-        if resp.status_code >= 400:
-            raise ValueError(f"API 返回 {resp.status_code}: {resp.text[:200]}")
-
-        # 检查响应大小
-        body = resp.content
-        if len(body) > config.max_bytes:
-            raise ValueError(f"响应体过大 ({len(body)} bytes > {config.max_bytes})")
-
-        # 按指定编码解码（腾讯股票用 gbk）
-        text = body.decode(config.encoding, errors="replace")
-
-        # 根据 response_handler 选择解析策略
-        handler = _get_response_handler(config.response_handler)
-        if handler is not None:
-            # 自定义处理器（如腾讯股票）
-            return handler(text, config)
-
-        # 默认 JSON 解析
+    for attempt in range(max_attempts):
         try:
-            payload = json.loads(text)
-        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
-            raise ValueError(f"响应不是合法 JSON: {exc}") from exc
+            current_url = config.url
+            params_value = config.params or None
+            redirect_count = 0
+            while True:
+                resp = client.request(
+                    method=method,
+                    url=current_url,
+                    params=params_value,
+                    headers=headers,
+                    timeout=config.timeout,
+                    content=content,
+                    json=json_body,
+                )
+                # 3xx 重定向：手动跟随 + 每步 validate_url（防 SSRF via open redirect）
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    redirect_count += 1
+                    if redirect_count > config.max_redirects:
+                        raise ValueError(f"重定向次数过多（>{config.max_redirects}）")
+                    location = resp.headers.get("location")
+                    if not location:
+                        raise ValueError(f"重定向响应缺少 Location 头（status={resp.status_code}）")
+                    # 相对 URL 转绝对
+                    next_url = urljoin(current_url, location)
+                    validate_url(next_url, allow_hosts=config.allow_hosts)
+                    current_url = next_url
+                    # 303 一律降级为 GET；301/302 多数客户端也降级为 GET（兼容）
+                    if resp.status_code == 303 or (
+                        resp.status_code in (301, 302) and method in ("POST", "PUT", "PATCH", "DELETE")
+                    ):
+                        method = "GET"
+                        content = None
+                        json_body = None
+                    continue
+                break
+            if resp.status_code in retryable and attempt + 1 < max_attempts:
+                backoff = _retry_after_seconds(resp) or _retry_backoff_seconds(
+                    attempt, throttled=resp.status_code == 429
+                )
+                logger.warning(
+                    "HTTP %d（第 %d/%d 次尝试），%.1fs 后重试",
+                    resp.status_code,
+                    attempt + 1,
+                    max_attempts,
+                    backoff,
+                )
+                time.sleep(backoff)
+                continue
+        except httpx2.RequestError as exc:
+            # 幂等 GET 的瞬时失败（连接中断/超时）做有限重试；重试语义：
+            # 仅重试请求本身，重定向循环从头开始（每步重新过 SSRF 校验）
+            throttled = _is_throttle_like_error(exc)
+            if attempt + 1 < max_attempts:
+                backoff = _retry_backoff_seconds(attempt, throttled=throttled)
+                logger.warning(
+                    "请求失败（第 %d/%d 次尝试），%.1fs 后重试: %s",
+                    attempt + 1,
+                    max_attempts,
+                    backoff,
+                    exc,
+                )
+                time.sleep(backoff)
+                continue
+            # 连接被对端直接掐断时，绝大多数不是本地配置写错了，
+            # 直接把"疑似限流"告诉用户，省得去查 URL / 字段映射
+            if throttled:
+                raise ValueError(f"{THROTTLE_HINT}：{exc}") from exc
+            raise ValueError(f"请求失败: {exc}") from exc
+        break
+    # resp 经上方 while True 循环至少赋值一次并 break，必非空
+    if resp is None:  # pragma: no cover - 防御性收窄，静态分析兜底
+        raise ValueError("请求未获得响应")
+    # 检查状态码
+    if resp.status_code >= 400:
+        raise ValueError(f"API 返回 {resp.status_code}: {resp.text[:200]}")
 
-        return _extract_array(payload, config.data_path, config.try_candidate_paths)
+    # 检查响应大小
+    body = resp.content
+    if len(body) > config.max_bytes:
+        raise ValueError(f"响应体过大 ({len(body)} bytes > {config.max_bytes})")
+
+    # 按指定编码解码（腾讯股票用 gbk）
+    text = body.decode(config.encoding, errors="replace")
+
+    # 根据 response_handler 选择解析策略
+    handler = _get_response_handler(config.response_handler)
+    if handler is not None:
+        # 自定义处理器（如腾讯股票）
+        return handler(text, config)
+
+    # 默认 JSON 解析
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ValueError(f"响应不是合法 JSON: {exc}") from exc
+
+    return _extract_array(payload, config.data_path, config.try_candidate_paths)
 
 
 def validate_query_interval(interval: float | int) -> float:
@@ -725,6 +743,7 @@ __all__ = [
     "_resolve_path",
     "_retry_backoff_seconds",
     "fetch_json",
+    "open_http_client",
     "validate_query_interval",
     "validate_url",
 ]

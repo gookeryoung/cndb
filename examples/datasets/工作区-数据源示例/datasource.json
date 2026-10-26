@@ -90,7 +90,7 @@
       "cursor": {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"},
       "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 50
+      "rate_limit_ms": 10
     },
     {
       "name": "股市日线（腾讯回补 · 科创板）",
@@ -127,7 +127,7 @@
       "cursor": {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"},
       "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 50
+      "rate_limit_ms": 10
     },
     {
       "name": "股市日线（腾讯回补 · 基金ETF）",
@@ -164,7 +164,7 @@
       "cursor": {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"},
       "schedule": {"mode": "manual"},
       "enabled": true,
-      "rate_limit_ms": 50
+      "rate_limit_ms": 10
     },
     {
       "name": "行业政策与合规台账（大模型动态拉取）",

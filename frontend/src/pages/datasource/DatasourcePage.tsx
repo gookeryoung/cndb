@@ -22,6 +22,7 @@ import { datasourceApi, tableApi } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import { materializeDomainTemplate } from './domainTemplate'
 import { LLM_PROMPT_PRESETS, type LlmPromptPreset } from './llmPromptPresets'
+import { formatElapsed, formatRate } from './syncProgress'
 import type {
   DatasourceProviderInfo, DatasourceSession, DomainTemplate, SyncJob, SyncJobPayload, SyncPreviewResult,
   SyncRequestSpec, SyncRun, SyncScheduleConfig,
@@ -385,6 +386,8 @@ export default function DatasourcePage() {
               <Text type="secondary">
                 {progressDone}/{progressTotal || '?'} 请求 · 当前标的 {runningRun.progress_entrant || '—'} · 已写入{' '}
                 {runningRun.fetched} 行
+                {progressTotal > 0 ? ` · ${formatRate(runningRun.rows_per_second)}` : ''}
+                {runningRun.elapsed_ms > 0 ? ` · 已用时 ${formatElapsed(runningRun.elapsed_ms)}` : ''}
               </Text>
             </Space>
           }

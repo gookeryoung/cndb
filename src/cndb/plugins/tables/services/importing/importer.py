@@ -179,6 +179,7 @@ class Importer:
         unknown_cols_strategy: str = "drop",
         header_row: int | None = None,
         light: bool = False,
+        preview: bool = True,
     ) -> ImportAnalysisResult:
         """仅做解析 + 校验 + 报告 + upsert 匹配 + 字段规划，不写库.
 
@@ -189,6 +190,10 @@ class Importer:
         ``light=True`` 为数据源同步等大吞吐链路（ADR 0035 D2）跳过「报告类」计算：
         列画像、参考列推荐、清洗建议，以及第二次报告组装；校验、upsert 匹配、
         未知列规划与一次报告构建保持不变（报告键集合与默认模式一致，值为空）。
+
+        ``preview=False``（ADR 0040 D5）跳过同步链路从不消费的预览构建：旧行回查、
+        字段级 diff、new/update 预览条目；upsert 分类、计数与写入行不变，且 update
+        行会附带校验产出的 ``normalized`` 供落库复用。人工导入保持默认 True。
         """
         detection: HeaderDetection | None = None
         if rows is None:
@@ -223,7 +228,7 @@ class Importer:
         # ── V2: upsert 匹配 ─────────────────────
         upsert_result: dict[str, Any] | None = None
         if match_keys:
-            upsert_result = self._build_upsert_result(results, match_keys)
+            upsert_result = self._build_upsert_result(results, match_keys, preview=preview)
 
         if light:
             # 轻量模式：只组装一次报告，未知列规划后原位补写（不再二次聚合）
@@ -312,6 +317,7 @@ class Importer:
         progress_cb: Callable[[int, str], None] | None = None,
         header_row: int | None = None,
         sync_options: bool = True,
+        preview: bool = True,
     ) -> ImportExecuteResult:
         """完整流水线：解析 → （可选）清洗 → 校验 → 报告 → upsert → 落库.
 
@@ -326,6 +332,9 @@ class Importer:
         ``sync_options=False`` 跳过末尾的全表选项同步（ADR 0035 D2，数据源同步
         大吞吐链路用）：批内 prefill 已把本批新选项写回 config，全表 distinct
         对逐批落表是重复计算；人工导入保持默认 True。
+
+        ``preview=False``（ADR 0040 D5）透传给 ``analyze``：跳过同步链路不消费的
+        预览构建，人工导入保持默认 True。
         """
 
         def _report(percent: int, stage: str) -> None:
@@ -352,6 +361,7 @@ class Importer:
                     rows=cleaned_rows,
                     match_keys=match_keys,
                     unknown_cols_strategy=unknown_cols_strategy,
+                    preview=preview,
                 )
                 analysis.report["cleaning_applied"] = applied
             results = analysis.results
@@ -374,6 +384,7 @@ class Importer:
                     rows=rows,
                     match_keys=match_keys,
                     unknown_cols_strategy=unknown_cols_strategy,
+                    preview=preview,
                 )
                 analysis.report["cleaning_applied"] = applied
             else:
@@ -383,6 +394,7 @@ class Importer:
                     rows=rows,
                     match_keys=match_keys,
                     unknown_cols_strategy=unknown_cols_strategy,
+                    preview=preview,
                 )
             results = analysis.results
             report = analysis.report
@@ -436,7 +448,14 @@ class Importer:
             valid_new_vals: list[dict[str, Any]] = []
             if update_list:
                 valid_update = [item for item in update_list if id(item["values"]) in to_import_ids]
-                updated_count = rec.bulk_update_rows(self.engine, self.table, valid_update, db=self.db, user=self.user)
+                updated_count = rec.bulk_update_rows(
+                    self.engine,
+                    self.table,
+                    valid_update,
+                    db=self.db,
+                    user=self.user,
+                    reuse_normalized=not preview,
+                )
             if new_list:
                 valid_new_vals = [v for v in new_list if id(v) in to_import_ids]
             # skip_errors=False 场景下，error 行也进 to_import 但 upsert 里没匹配到 → 一并创建
@@ -526,6 +545,8 @@ class Importer:
         self,
         results: list[ValidationResult],
         match_keys: list[str],
+        *,
+        preview: bool = True,
     ) -> dict[str, Any]:
         """对 valid + warning 行做 upsert 匹配，产出 new/update 分类 + 预览 + 字段级 diff.
 
@@ -573,9 +594,11 @@ class Importer:
             match_views,
         )
 
-        # ── 批量查出旧行全部业务字段（供字段级 diff） ──
+        # ── 批量查出旧行全部业务字段（供字段级 diff；preview=False 时跳过） ──
         existing_row_ids = list({int(rid) for rid in exact_map.values()})
-        old_rows_by_id = self._fetch_old_rows_by_ids(existing_row_ids) if existing_row_ids else {}
+        old_rows_by_id: dict[int, dict[str, Any]] = {}
+        if preview and existing_row_ids:
+            old_rows_by_id = self._fetch_old_rows_by_ids(existing_row_ids)
 
         # 更新路径：先查库拿到 reference columns 做 preview
         # exact_map 的 key 是 tuple，和文件行里 match_keys 的值一一对应
@@ -596,28 +619,32 @@ class Importer:
             field_sample = self._sample_fields(view, key_cols_set)
 
             if existing_row_id is not None:
-                # 落库仍用原始 values（bulk_update_rows 内部有 _normalize_values）
-                update_rows.append({"row_id": existing_row_id, "values": values})
-                # 对全部命中行算 diff（供无变化统计），预览条目同样携带
-                old_values = old_rows_by_id.get(int(existing_row_id), cast(dict[str, Any], {}))
-                field_diffs = self._build_field_diffs(old_values, view, key_cols_set)
-                if field_diffs:
-                    update_changed_count += 1
-                else:
-                    update_no_change_count += 1
-                if len(update_preview) < self.PREVIEW_LIMIT:
-                    update_preview.append(
-                        {
-                            "row_number": r.row_number,
-                            "match_key_values": match_key_values,
-                            "existing_row_id": existing_row_id,
-                            "field_sample": field_sample,
-                            "field_diffs": field_diffs,
-                        }
-                    )
+                # 落库仍用原始 values；preview=False 时带上校验产出的归一值（复用以省二次校验）
+                update_item: dict[str, Any] = {"row_id": existing_row_id, "values": values}
+                if not preview:
+                    update_item["normalized"] = r.normalized
+                update_rows.append(update_item)
+                if preview:
+                    # 对全部命中行算 diff（供无变化统计），预览条目同样携带
+                    old_values = old_rows_by_id.get(int(existing_row_id), cast(dict[str, Any], {}))
+                    field_diffs = self._build_field_diffs(old_values, view, key_cols_set)
+                    if field_diffs:
+                        update_changed_count += 1
+                    else:
+                        update_no_change_count += 1
+                    if len(update_preview) < self.PREVIEW_LIMIT:
+                        update_preview.append(
+                            {
+                                "row_number": r.row_number,
+                                "match_key_values": match_key_values,
+                                "existing_row_id": existing_row_id,
+                                "field_sample": field_sample,
+                                "field_diffs": field_diffs,
+                            }
+                        )
             else:
                 new_rows.append(values)
-                if len(new_preview) < self.PREVIEW_LIMIT:
+                if preview and len(new_preview) < self.PREVIEW_LIMIT:
                     new_preview.append(
                         {
                             "row_number": r.row_number,
