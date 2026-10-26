@@ -871,9 +871,10 @@ export default function DocumentEditorPage() {
             : '标签建议不会自动修改文档元数据，可在文档设置（顶栏「标签」抽屉）中手动添加。'
         }${aiTruncated ? '（文档较长，本次仅基于正文前 12000 字生成）' : ''}`
 
-  /** 窄屏：次级入口（反向链接 / 文档链接 / 插入表格引用 / 标签 / 修改申请 / 版本 / 导出）
+  /** 窄屏：次级入口（反向链接 / 文档链接 / 插入图片 / 插入表格引用 / 标签 / 修改申请 / 版本 / 导出）
    *  收进「更多」，只保留「大纲」（导航）与「保存」（主操作），
-   *  避免 9 个按钮在 390px 屏上折成三行挤掉正文。 */
+   *  避免 9 个按钮在 390px 屏上折成三行挤掉正文。
+   *  插入图片 / 插入表格引用仅编辑模式注入：查看模式只读，不出现写入口（ADR 0042）。 */
   const docMoreItems = [
     ...(isAssetDoc
       ? []
@@ -883,8 +884,12 @@ export default function DocumentEditorPage() {
           { key: 'ai-suggest-tags', icon: <TagsOutlined />, label: 'AI 标签建议', onClick: openAiSuggestTags },
           { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
           { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
-          { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
-          { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
+          ...(viewMode === 'edit'
+            ? [
+                { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
+                { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
+              ]
+            : []),
         ]),
     // 仅 owner / editor 且非文件夹可分享（viewer 由后端 require_editor 拒绝）
     ...((myRole === 'owner' || myRole === 'editor') && !doc.is_folder
@@ -1015,16 +1020,6 @@ export default function DocumentEditorPage() {
           </Button>
           )}
           {!isAssetDoc && (
-          <Button
-            icon={<PictureOutlined />}
-            loading={imageMut.isPending}
-            data-testid="doc-image-insert"
-            onClick={() => imageInputRef.current?.click()}
-          >
-            图片
-          </Button>
-          )}
-          {!isAssetDoc && (
           <Button icon={<LinkOutlined />} onClick={() => setBacklinksOpen(true)}>
             反链
           </Button>
@@ -1034,11 +1029,7 @@ export default function DocumentEditorPage() {
             链接
           </Button>
           )}
-          {!isAssetDoc && (
-          <Button icon={<TableOutlined />} onClick={() => setInsertOpen(true)}>
-            插入表格引用
-          </Button>
-          )}
+          {/* 插入图片 / 插入表格引用已移入编辑模式 Markdown 工具栏（ADR 0042）：查看模式不出现写入口 */}
           {/* AI 入口（懒加载）：整篇摘要 / 标签建议；选区改写入口在 MarkdownToolbar */}
           {!isAssetDoc && (
             <Suspense fallback={null}>
@@ -1191,6 +1182,10 @@ export default function DocumentEditorPage() {
                 onInsertTable={(cols, rows) => insertSnippetAtCursor(buildTableSkeleton(cols, rows))}
                 onAiAction={openAiRewrite}
                 aiDisabled={polishAi.loading}
+                // 插入图片 / 插入表格引用：桌面编辑模式走工具栏；窄屏收进「更多」菜单（ADR 0042 D4）
+                onInsertImage={isMobile ? undefined : () => imageInputRef.current?.click()}
+                imageInsertLoading={imageMut.isPending}
+                onInsertTableRef={isMobile ? undefined : () => setInsertOpen(true)}
               />
               <Segmented
                 size="small"
