@@ -180,9 +180,9 @@ Related: `src/cndb/plugins/datasource/schemas.py`、`src/cndb/core/http.py`、`s
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/schemas.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/syncProgress.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_sync_speed.py`、`tests/test_datasource_api.py`、`frontend/src/pages/datasource/syncProgress.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `待回填` |
-| P1 | 已落地 | `src/cndb/core/http.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`examples/datasets/工作区-数据源示例/datasource.json` | `tests/test_api_fetch.py`、`tests/test_datasource_pipeline_concurrency.py`、`tests/test_seed_datasource.py` | `待回填` |
-| P2 | 已落地 | `src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/datasource/services/write.py` | `tests/test_import_preview_and_reuse.py`、`tests/test_datasource_write_throughput.py`、`tests/test_import_light_mode_equivalence.py` | `待回填` |
+| P0 | 已落地 | `src/cndb/plugins/datasource/schemas.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/syncProgress.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_sync_speed.py`、`tests/test_datasource_api.py`、`frontend/src/pages/datasource/syncProgress.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `5cc0a440` |
+| P1 | 已落地 | `src/cndb/core/http.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`examples/datasets/工作区-数据源示例/datasource.json` | `tests/test_api_fetch.py`、`tests/test_datasource_pipeline_concurrency.py`、`tests/test_seed_datasource.py` | `5cc0a440` |
+| P2 | 已落地 | `src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/datasource/services/write.py` | `tests/test_import_preview_and_reuse.py`、`tests/test_datasource_write_throughput.py`、`tests/test_import_light_mode_equivalence.py` | `5cc0a440` |
 
 ## 交接（会话结束更新）
 
@@ -190,4 +190,4 @@ Related: `src/cndb/plugins/datasource/schemas.py`、`src/cndb/core/http.py`、`s
 - 已完成：P0 速度字段与前端展示、P1 共享客户端与示例任务限速 10ms、P2 预览关闭与归一复用；写路径实测 10,000 行更新批 16.4-17.5k → 24.8-26.8k 行/秒
 - 下一步（待人工）：① 在存量实例重跑腾讯日线回补，按 D8 口径记录端到端耗时并回填「行业对照」；② 观察限速 10ms 是否触发对端风控，必要时把任务 `rate_limit_ms` 调回
 - 已知坑：基准为同机单次测量，绝对吞吐受网络与机器负载影响，只做同机横向对比；`preview=False` / 归一复用只能由数据源同步链路传入，防止导入预览回归；共享 Client 必须在异常路径也关闭；`bulk_update_rows(reuse_normalized=True)` 对 `updates` 条目里没有 `normalized` 的字段仍走逐格校验，不改变数据质量
-- 最近一次全绿：`make check` @ 本次提交（2026-10-26，后端 5482 passed / 覆盖率 96.99%）
+- 最近一次全绿：`make check` @ `5cc0a440`（2026-10-26，后端 5482 passed / 覆盖率 96.99%）
