@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           cache-suffix: release
           enable-cache: true
@@ -106,7 +106,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           # 与 pypi job 分别缓存，避免同一 key 抢占（Failed to save: Unable to reserve cache）
           cache-suffix: release-build
@@ -205,7 +205,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
         with:
           cache-suffix: release-publish
           enable-cache: true

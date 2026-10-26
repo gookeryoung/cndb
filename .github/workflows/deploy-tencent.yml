@@ -70,7 +70,7 @@ jobs:
 
       # 安装 uv：后面的 uv export 直接用（不再经 uvx 额外下载一份）
       - name: Install uv
-        uses: astral-sh/setup-uv@v10.3.0
+        uses: astral-sh/setup-uv@v10.3.2
 
       - name: Resolve version
         id: meta
