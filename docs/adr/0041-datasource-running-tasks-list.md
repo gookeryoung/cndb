@@ -152,8 +152,8 @@ Related: `frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/page
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/datasource/syncProgress.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/syncProgress.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `待回填` |
-| P1 | 已落地 | `frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | `待回填` |
+| P0 | 已落地 | `frontend/src/pages/datasource/syncProgress.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/syncProgress.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `d65568a4` |
+| P1 | 已落地 | `frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | `d65568a4` |
 
 ## 交接（会话结束更新）
 
