@@ -32,6 +32,11 @@ from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
+# 进程内已建索引缓存（ADR 0039 D5）：键 = (物理表名, 建索引的列名元组)。
+# 流式落表每批都会调用 ensure_match_keys_index，重复执行 DDL + 提交属固定开销；
+# 索引本身仍是 CREATE INDEX IF NOT EXISTS，多进程 / 重启各自首轮建一次，幂等无冲突。
+_INDEXED_KEY_SETS: set[tuple[str, tuple[str, ...]]] = set()
+
 
 @dataclass(slots=True)
 class WriteOutcome:
@@ -137,6 +142,10 @@ def ensure_match_keys_index(db: Any, table: Any, match_keys: Sequence[str]) -> N
 
     列序 = 幂等键声明顺序，列名取各 ``DataField.db_column_name``；
     缺字段的键跳过（auto 推断键尚未建列等场景），全部缺失则不建。
+
+    进程内按 ``(物理表名, 列名元组)`` 缓存已建结果（ADR 0039 D5）：流式落表
+    每批都会调用，重复 DDL 与提交是可避免的固定开销；缓存只活在本进程，
+    重启或多进程各自首轮重建，``CREATE INDEX IF NOT EXISTS`` 保证幂等。
     """
     if not match_keys:
         return
@@ -148,10 +157,14 @@ def ensure_match_keys_index(db: Any, table: Any, match_keys: Sequence[str]) -> N
             columns.append(f'"{item.db_column_name}"')
     if not columns:
         return
+    cache_key = (str(table.db_table_name), tuple(columns))
+    if cache_key in _INDEXED_KEY_SETS:
+        return
     index_name = f"ix_{table.db_table_name}_match"
     statement = text(f'CREATE INDEX IF NOT EXISTS "{index_name}" ON "{table.db_table_name}" ({", ".join(columns)})')
     db.execute(statement)
     db.commit()
+    _INDEXED_KEY_SETS.add(cache_key)
 
 
 __all__ = ["WriteOutcome", "ensure_match_keys_index", "upsert_rows"]

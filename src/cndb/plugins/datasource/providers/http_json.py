@@ -43,7 +43,7 @@ HTTP_JSON_PARAMS_SCHEMA: dict[str, Any] = {
         {"name": "headers_template", "type": "json", "label": "请求头模板"},
         {"name": "params_template", "type": "json", "label": "查询参数模板"},
         {"name": "body_template", "type": "json", "label": "请求体模板"},
-        {"name": "data_path", "type": "text", "label": "响应数组路径（a.b.c）"},
+        {"name": "data_path", "type": "text", "label": "响应数组路径（a.b.c，可用 | 分隔候选）"},
         {"name": "encoding", "type": "text", "default": "utf-8"},
     ],
     "placeholders": ["entrant", "start", "end", "page", "page_size", "offset"],
@@ -121,7 +121,7 @@ class HttpJsonProvider:
         if spec.record_mode == "columns":
             return columns_to_rows(payload, path, spec.record_layout)
         if spec.record_mode == "rows_array":
-            return rows_array_to_rows(payload, path, spec.record_layout)
+            return _rows_array_from_candidates(payload, path, spec.record_layout)
         return _extract_array(payload, path, True)
 
     def normalize(self, rows: Sequence[Mapping[str, Any]], job: SyncJobSpec) -> NormalizeResult:
@@ -239,6 +239,41 @@ def rows_array_to_rows(
             raise ProviderError(f"行数组记录的元素必须是数组，实际为 {type(item).__name__}")
         rows.append({name: (item[index] if index < len(item) else None) for name, index in positions.items()})
     return rows
+
+
+def _rows_array_from_candidates(
+    payload: Any,
+    data_path: str | None,
+    layout: Mapping[str, str | int] | None,
+) -> list[dict[str, Any]]:
+    """按候选路径（``|`` 分隔）取第一个命中数组的响应节点，再拼成行（ADR 0039 D1/D3）.
+
+    同一接口对不同品种可能返回不同键（腾讯日线：有除权事件回 ``qfqday``、否则只回 ``day``），
+    因此声明可写 ``data.{entrant}.qfqday|data.{entrant}.day``：
+
+    - 依声明顺序取第一个**非空**数组；
+    - 命中空数组记为「已命中但无数据」，继续尝试下一候选；
+    - 全部候选都未命中数组才报错（单候选保持原有错误文案）；
+    - 全部候选都为空数组时返回 ``[]``（合法无数据响应）。
+
+    单路径（无 ``|``）直接委托 :func:`rows_array_to_rows`，行为与扩展前完全一致。
+    """
+    candidates: list[str] = [part.strip() for part in data_path.split("|")] if data_path else []
+    candidates = [candidate for candidate in candidates if candidate]
+    if len(candidates) <= 1:
+        return rows_array_to_rows(payload, candidates[0] if candidates else None, layout)
+    empty_hit = False
+    for candidate in candidates:
+        node = _resolve_path(payload, candidate)
+        if not isinstance(node, list):
+            continue
+        if not node:
+            empty_hit = True
+            continue
+        return rows_array_to_rows(node, None, layout)
+    if empty_hit:
+        return []
+    raise ProviderError(f"行数组记录要求 data_path 指向一个数组（候选均未命中: {', '.join(candidates)}）")
 
 
 def _layout_positions(layout: Mapping[str, str | int] | None) -> dict[str, int]:

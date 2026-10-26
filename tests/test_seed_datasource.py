@@ -189,14 +189,15 @@ def test_validate_job_fields_accepts_drop_and_detects_missing():
 
 
 def test_real_datasource_json_is_valid():
-    """真实 examples 配置（ADR 0034 4 条 http_json + 2 条 llm_prompt），引用自洽."""
+    """真实 examples 配置（ADR 0034 5 条 http_json + 2 条 llm_prompt），引用自洽."""
     base = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例"
     cfg = json.loads((base / "datasource.json").read_text(encoding="utf-8-sig"))
     jobs = cfg["jobs"]
-    assert len(jobs) == 6
-    assert [job["provider"] for job in jobs] == ["http_json"] * 4 + ["llm_prompt"] * 2
+    assert len(jobs) == 7
+    assert [job["provider"] for job in jobs] == ["http_json"] * 5 + ["llm_prompt"] * 2
     assert [job["table"] for job in jobs] == [
         "股票清单",
+        "股市日线",
         "股市日线",
         "股市日线",
         "股市日线",
@@ -234,18 +235,19 @@ def test_real_datasource_json_is_valid():
         assert job["request_spec"]["workers"] == 4
         assert job["rate_limit_ms"] == 50
 
-    # ③④ 历史回补：backfill_date 水位 + 清单动态标的 + prefix 按板块互斥
-    backfills = jobs[2:4]
+    # ③④⑤ 历史回补：backfill_date 水位 + 清单动态标的 + prefix 按板块互斥（ADR 0039 拆分基金/ETF）
+    backfills = jobs[2:5]
     prefixes = [job["entrant_source"]["prefix_in"] for job in backfills]
-    assert prefixes[0] == ["sh60", "sz00", "sz30", "sh5", "sz1"]
+    assert prefixes[0] == ["sh60", "sz00", "sz30"]
     assert prefixes[1] == ["sh68", "sh69"]
-    assert not set(prefixes[0]) & set(prefixes[1]), "回补任务前缀必须互斥"
+    assert prefixes[2] == ["sh5", "sz1"]
+    all_prefixes = [prefix for job in backfills for prefix in job["entrant_source"]["prefix_in"]]
+    assert len(all_prefixes) == len(set(all_prefixes)) == 7, "回补任务前缀必须互斥"
     for job in backfills:
         assert job["entrant_source"]["table"] == "股票清单"
         assert job["entrant_source"]["field"] == "代码"
         assert job["cursor"] == {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"}
         assert job["request_spec"]["record_mode"] == "rows_array"
-        assert job["request_spec"]["data_path"] == "data.{entrant}.qfqday"
         assert job["request_spec"]["record_layout"] == {
             "日期": 0,
             "开盘": 1,
@@ -254,14 +256,26 @@ def test_real_datasource_json_is_valid():
             "最低": 4,
             "成交量": 5,
         }
-        assert job["request_spec"]["row_defaults"]["来源"] == "腾讯前复权"
         # 并发与限速取值（ADR 0035 D3）：10 线程 + 50ms 全局间隔（20 req/s 天花板）
         assert job["request_spec"]["workers"] == 10
         assert job["rate_limit_ms"] == 50
         assert "{end}" in job["request_spec"]["url_template"], "回补请求须带 end 锚点占位"
-    # 量纲拆分：主板/创业板/ETF 手→股 scale=100，科创板腾讯原值即股
+
+    # 股票任务前复权并允许回退 day（腾讯对无除权事件的品种只回 day）
+    for job in backfills[:2]:
+        assert job["request_spec"]["data_path"] == "data.{entrant}.qfqday|data.{entrant}.day"
+        assert job["request_spec"]["row_defaults"]["来源"] == "腾讯前复权"
+        assert job["request_spec"]["row_defaults"]["复权方式"] == "前复权"
+    # 基金/ETF 无前复权序列：只读 day，标注不复权（ADR 0039 D2）
+    fund_job = backfills[2]
+    assert fund_job["name"] == "股市日线（腾讯回补 · 基金ETF）"
+    assert fund_job["request_spec"]["data_path"] == "data.{entrant}.day"
+    assert "qfqday" not in fund_job["request_spec"]["data_path"]
+    assert fund_job["request_spec"]["row_defaults"] == {"来源": "腾讯不复权", "复权方式": "不复权"}
+    # 量纲拆分：主板/创业板/基金ETF 手→股 scale=100，科创板腾讯原值即股
     assert backfills[0]["field_mapping"]["成交量"]["scale"] == 100
     assert "scale" not in backfills[1]["field_mapping"]["成交量"]
+    assert backfills[2]["field_mapping"]["成交量"]["scale"] == 100
 
     # 股市日线 / 股票清单 CSV 表头与新任务口径一致
     day_header = (base / "股市日线.csv").read_text(encoding="utf-8-sig").splitlines()[0].split(",")

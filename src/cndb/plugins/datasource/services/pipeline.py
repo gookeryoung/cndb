@@ -36,7 +36,8 @@ from cndb.plugins.tables.services.importing.api_fetch import fetch_json
 logger = logging.getLogger(__name__)
 
 # 流式落表的默认批大小（行）：足够摊薄单行开销，又不至于单批过大撑爆事务
-DEFAULT_BATCH_SIZE = 5000
+# ADR 0039 D4：实测 10,000 行/批比 5,000 行/批吞吐高约 40%，更大批次无进一步收益
+DEFAULT_BATCH_SIZE = 10000
 
 # row_filter 支持的数值比较符
 _FILTER_OPS: Mapping[str, Callable[[float, float], bool]] = {

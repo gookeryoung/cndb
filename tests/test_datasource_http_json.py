@@ -149,6 +149,94 @@ class TestProviderDispatch:
             PROVIDER.parse("not-json", job)
 
 
+class TestDataPathCandidates:
+    """``data_path`` 候选回退（ADR 0039 D1/D3）：同一资源可能只回 qfqday 或 day."""
+
+    DAY_ONLY_PAYLOAD = {
+        "code": 0,
+        "data": {
+            "sh562550": {
+                "day": [
+                    ["2026-10-20", "1.100", "1.120", "1.130", "1.090", "1234"],
+                    ["2026-10-21", "1.120", "1.130", "1.140", "1.110", "2345"],
+                ]
+            }
+        },
+    }
+
+    @staticmethod
+    def _mk_job(data_path: str) -> SyncJobSpec:
+        return _job(
+            request=RequestSpec(
+                url_template="https://proxy.example.com/kline?param={symbol}",
+                record_mode="rows_array",
+                data_path=data_path,
+                record_layout={"日期": 0, "收盘": 2},
+            ),
+            entrant_param="symbol",
+            entrant_values=("sh562550",),
+        )
+
+    def test_falls_back_to_day_when_qfqday_absent(self):
+        job = self._mk_job("data.{entrant}.qfqday|data.{entrant}.day")
+        config = PROVIDER.build_requests(job)[0].config
+        # 候选串整体渲染，分隔符保留
+        assert config.data_path == "data.sh562550.qfqday|data.sh562550.day"
+        rows = PROVIDER.parse(json.dumps(self.DAY_ONLY_PAYLOAD), job, data_path=config.data_path)
+        assert rows == [
+            {"日期": "2026-10-20", "收盘": "1.120"},
+            {"日期": "2026-10-21", "收盘": "1.130"},
+        ]
+
+    def test_prefers_first_non_empty_candidate(self):
+        payload = {"data": {"sh562550": {"qfqday": TENCENT_PAYLOAD["data"]["sh600519"]["qfqday"], "day": []}}}
+        rows = PROVIDER.parse(
+            json.dumps(payload),
+            self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
+            data_path="data.sh562550.qfqday|data.sh562550.day",
+        )
+        assert rows[0]["日期"] == "2026-10-20"
+
+    def test_empty_first_candidate_tries_next(self):
+        payload = {"data": {"sh562550": {"qfqday": [], "day": [["2026-10-20", "1.100", "1.120"]]}}}
+        rows = PROVIDER.parse(
+            json.dumps(payload),
+            self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
+            data_path="data.sh562550.qfqday|data.sh562550.day",
+        )
+        assert rows == [{"日期": "2026-10-20", "收盘": "1.120"}]
+
+    def test_all_candidates_empty_returns_empty(self):
+        payload = {"data": {"sh562550": {"qfqday": [], "day": []}}}
+        rows = PROVIDER.parse(
+            json.dumps(payload),
+            self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
+            data_path="data.sh562550.qfqday|data.sh562550.day",
+        )
+        assert rows == []
+
+    def test_all_candidates_missing_lists_candidates(self):
+        payload = {"data": {"sh562550": {"qt": {}}}}
+        with pytest.raises(ProviderError) as excinfo:
+            PROVIDER.parse(
+                json.dumps(payload),
+                self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
+                data_path="data.sh562550.qfqday|data.sh562550.day",
+            )
+        message = str(excinfo.value)
+        assert "指向一个数组" in message
+        assert "data.sh562550.qfqday" in message
+        assert "data.sh562550.day" in message
+
+    def test_single_path_message_unchanged(self):
+        with pytest.raises(ProviderError, match=r"^行数组记录要求 data_path 指向一个数组$"):
+            PROVIDER.parse(
+                json.dumps(self.DAY_ONLY_PAYLOAD),
+                self._mk_job("data.sh562550.qfqday"),
+                data_path="data.sh562550.qfqday",
+            )
+
+
 class TestRowDefaults:
     def test_setdefault_semantics(self):
         rows = apply_row_defaults([{"a": 1, "来源": "响应自带"}], {"来源": "新浪"})
