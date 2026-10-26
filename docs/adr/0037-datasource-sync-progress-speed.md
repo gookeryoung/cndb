@@ -131,9 +131,9 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/services/core/records.py` | `tests/test_import_pipeline.py` | — |
-| P1 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/alembic/versions/c4d5e6f7a8b9_add_datasource_sync_run_progress.py` | `tests/test_datasource_runner.py`、`tests/test_datasource_migration.py`、`tests/test_datasource_pipeline_concurrency.py` | — |
-| P2 | 已落地 | `src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/schemas.py`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_api.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | — |
+| P0 | 已落地 | `src/cndb/plugins/tables/services/core/records.py` | `tests/test_import_pipeline.py` | `e0a8d242` |
+| P1 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/alembic/versions/c4d5e6f7a8b9_add_datasource_sync_run_progress.py` | `tests/test_datasource_runner.py`、`tests/test_datasource_migration.py`、`tests/test_datasource_pipeline_concurrency.py` | `e0a8d242` |
+| P2 | 已落地 | `src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/schemas.py`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_api.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `e0a8d242` |
 
 ## 交接（会话结束更新）
 
