@@ -770,3 +770,215 @@ class TestLinkBusinessKeyConfigValidation:
         )
         assert r.status_code == 400, r.text
         assert "无物理列" in r.json()["detail"]
+
+
+# ── 新增字段的物理 DDL 原子性 ──────────────────────────
+
+
+class TestCreateFieldAtomicity:
+    """新增字段必须「物理 DDL 成功后才提交 metadata」：失败不得留下孤儿字段/半成品列."""
+
+    def _physical_columns(self, db, tid: int) -> set[str]:
+        dt = db.get(DataTable, tid)
+        return {c["name"] for c in inspect(db.get_bind()).get_columns(dt.db_table_name)}
+
+    def test_required_unique_field_on_non_empty_table_rejected(self, client, auth_headers, db):
+        """已有数据的表新增唯一非空字段 → 400，且不创建 metadata（用户上报场景）."""
+        wid, tid = _make_table(client, auth_headers, "t_atomic1")
+        _add_field(client, auth_headers, wid, tid, {"name": "姓名", "field_type": "text", "order": 0})
+        _add_record(client, auth_headers, wid, tid, {"姓名": "张三"})
+        before_cols = self._physical_columns(db, tid)
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+            headers=auth_headers,
+            json={"name": "编号", "field_type": "text", "order": 1, "required": True, "is_unique": True},
+        )
+        assert r.status_code == 400, r.text
+        assert "已有数据" in r.json()["detail"]
+
+        fields = client.get(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields?include_trashed=true", headers=auth_headers
+        ).json()
+        assert all(f["name"] != "编号" for f in fields), "物理 DDL 未执行却残留了 metadata"
+        assert self._physical_columns(db, tid) == before_cols
+
+        # 原表仍可正常读写（无孤儿字段导致的 500）
+        rows = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/records", headers=auth_headers)
+        assert rows.status_code == 200, rows.text
+        row_id = rows.json()["rows"][0]["id"]
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/records/{row_id}",
+            headers=auth_headers,
+            json={"values": {"姓名": "李四"}},
+        )
+        assert r.status_code == 200, r.text
+
+    def test_optional_unique_field_on_non_empty_table_allowed(self, client, auth_headers, db):
+        """可空唯一字段不受预检拦截：存量行 NULL 不参与唯一判重."""
+        wid, tid = _make_table(client, auth_headers, "t_atomic2")
+        _add_field(client, auth_headers, wid, tid, {"name": "姓名", "field_type": "text", "order": 0})
+        _add_record(client, auth_headers, wid, tid, {"姓名": "张三"})
+        _add_record(client, auth_headers, wid, tid, {"姓名": "李四"})
+
+        f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            {"name": "编号", "field_type": "text", "order": 1, "is_unique": True},
+        )
+        assert _get_field(client, auth_headers, wid, tid, f["id"])["is_unique"] is True
+        assert any(name.startswith("idx_u_") for name in _physical_indexes(db, tid))
+
+    def test_add_column_failure_leaves_no_orphan_metadata(self, client, auth_headers, db, monkeypatch):
+        """物理加列失败 → 500，且 metadata / 物理列均不残留."""
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("disk full")
+
+        wid, tid = _make_table(client, auth_headers, "t_atomic3")
+        _add_field(client, auth_headers, wid, tid, {"name": "姓名", "field_type": "text", "order": 0})
+        before_cols = self._physical_columns(db, tid)
+
+        monkeypatch.setattr(fields_router, "add_column", _boom)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+            headers=auth_headers,
+            json={"name": "坏列", "field_type": "text", "order": 1},
+        )
+        assert r.status_code == 500
+        assert "物理加列失败" in r.json()["detail"]
+
+        fields = client.get(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields?include_trashed=true", headers=auth_headers
+        ).json()
+        assert all(f["name"] != "坏列" for f in fields)
+        assert self._physical_columns(db, tid) == before_cols
+
+    def test_unique_index_failure_rolls_back_added_column(self, client, auth_headers, db, monkeypatch):
+        """唯一索引创建失败 → 撤销本次已加的物理列，且不提交 metadata."""
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("index boom")
+
+        monkeypatch.setattr(fields_router, "add_unique_constraint", _boom)
+        wid, tid = _make_table(client, auth_headers, "t_atomic4")
+        before_cols = self._physical_columns(db, tid)
+
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+            headers=auth_headers,
+            json={"name": "编号", "field_type": "text", "order": 0, "is_unique": True},
+        )
+        assert r.status_code == 500
+        fields = client.get(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields?include_trashed=true", headers=auth_headers
+        ).json()
+        assert all(f["name"] != "编号" for f in fields)
+        assert self._physical_columns(db, tid) == before_cols, "唯一索引失败后物理列未回缩"
+
+    def test_delete_field_tolerates_missing_physical_column(self, client, auth_headers, db):
+        """历史 DDL 失败残留（有 metadata、无物理列）的字段仍可删除，便于用户清理."""
+        from sqlalchemy import text
+
+        from cndb.plugins.tables.models import DataField
+
+        wid, tid = _make_table(client, auth_headers, "t_atomic5")
+        f = _add_field(client, auth_headers, wid, tid, {"name": "残留列", "field_type": "text", "order": 0})
+        dt = db.get(DataTable, tid)
+        df = db.get(DataField, f["id"])
+        with db.get_bind().begin() as conn:
+            conn.execute(text(f'ALTER TABLE "{dt.db_table_name}" DROP COLUMN "{df.db_column_name}"'))
+
+        r = client.delete(f"/api/v1/workspaces/{wid}/tables/{tid}/fields/{f['id']}", headers=auth_headers)
+        assert r.status_code == 204, r.text
+
+    def test_link_to_physical_add_column_failure_keeps_link_structure(self, client, auth_headers, db, monkeypatch):
+        """link 改物理列时补列失败 → metadata 回退且原关联表仍在（先建后删的顺序保证）."""
+        from cndb.plugins.tables.models import DataField
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("add boom")
+
+        wid, tid = _make_table(client, auth_headers, "t_atomic6")
+        link_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            {"name": "关联目标", "field_type": "link", "order": 0, "config": {"target_table_id": tid}},
+        )
+
+        monkeypatch.setattr(fields_router, "add_column", _boom)
+        r = _patch_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            link_f["id"],
+            {"field_type": "text", "config": {}},
+        )
+        assert r.status_code == 500, r.text
+        assert _get_field(client, auth_headers, wid, tid, link_f["id"])["field_type"] == "link"
+
+        db.expire_all()
+        df = db.get(DataField, link_f["id"])
+        assert df.link_table_name in inspect(db.get_bind()).get_table_names()
+
+    def test_link_to_physical_required_rejected_on_non_empty_table(self, client, auth_headers, db):
+        """关联字段改为必填物理列且表已有数据 → 400（等价于新增 NOT NULL 列无法补值）."""
+        wid, tid = _make_table(client, auth_headers, "t_atomic7")
+        _add_field(client, auth_headers, wid, tid, {"name": "姓名", "field_type": "text", "order": 0})
+        link_f = _add_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            {"name": "关联目标", "field_type": "link", "order": 1, "config": {"target_table_id": tid}},
+        )
+        _add_record(client, auth_headers, wid, tid, {"姓名": "张三"})
+
+        r = _patch_field(
+            client,
+            auth_headers,
+            wid,
+            tid,
+            link_f["id"],
+            {"field_type": "text", "required": True, "config": {}},
+        )
+        assert r.status_code == 400, r.text
+        assert "已有数据" in r.json()["detail"]
+
+        db.expire_all()
+        field = _get_field(client, auth_headers, wid, tid, link_f["id"])
+        assert field["field_type"] == "link"
+        assert field["required"] is False
+
+    def test_metadata_commit_failure_rolls_back_physical_column(self, client, auth_headers, db, monkeypatch):
+        """metadata 落库失败 → 撤销已建物理列，不反向留下孤儿列."""
+        from cndb.plugins.tables.models import DataField
+
+        wid, tid = _make_table(client, auth_headers, "t_atomic8")
+        # 直接造一条同名软删字段记录（回收站字段仍占名字位，新增时走让位分支）
+        stale = DataField(table_id=tid, name="编号", field_type="text", order=0, trashed=True)
+        stale.ensure_db_name()
+        db.add(stale)
+        db.commit()
+
+        before_cols = self._physical_columns(db, tid)
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("commit boom")
+
+        monkeypatch.setattr(fields_router, "rename_trashed_field_aside", _boom)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{tid}/fields",
+            headers=auth_headers,
+            json={"name": "编号", "field_type": "text", "order": 1},
+        )
+        assert r.status_code == 500, r.text
+        assert "字段创建失败" in r.json()["detail"]
+        assert self._physical_columns(db, tid) == before_cols
+        fields = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/fields", headers=auth_headers).json()
+        assert all(f["name"] != "编号" for f in fields)

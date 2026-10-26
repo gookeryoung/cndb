@@ -204,7 +204,14 @@ def create_table(
     db.refresh(dt)
 
     # 执行物理建表
-    ddl_create(db.get_bind(), dt)
+    try:
+        ddl_create(db.get_bind(), dt)
+    except Exception as exc:
+        # 物理建表失败时回退 metadata，避免「有表记录、无物理表」的孤儿表
+        db.delete(dt)
+        db.commit()
+        _invalidate_table_list_cache(workspace_id)
+        raise HTTPException(status_code=500, detail=f"物理建表失败: {exc}") from exc
 
     # 自动生成默认视图「全部」（grid，is_default=True，order=0）
     ensure_default_view(db, dt, owner_id=current_user.id, commit=True)
@@ -584,7 +591,14 @@ def copy_table(
     # 写成功后失效数据表列表缓存（读-写一致性）
     _invalidate_table_list_cache(workspace_id)
     db.refresh(dst)
-    ddl_create(db.get_bind(), dst)
+    try:
+        ddl_create(db.get_bind(), dst)
+    except Exception as exc:
+        # 物理建表失败时回退 metadata，避免残留半初始化的副本表
+        db.delete(dst)
+        db.commit()
+        _invalidate_table_list_cache(workspace_id)
+        raise HTTPException(status_code=500, detail=f"物理建表失败: {exc}") from exc
 
     # 克隆全部非回收字段
     src_active = src.active_fields()

@@ -88,6 +88,22 @@ class TestDDLBuildSaTable:
         assert eng is not None
         eng.dispose()
 
+    def test_table_has_rows_handles_missing_table_and_empty_table(self, db_engine, db):
+        """物理表不存在 → False；空表 → False；有行 → True."""
+        assert ddl.table_has_rows(db_engine, "t_never_created") is False
+
+        tbl = _make_table(db, 1, "t_ddl_rows")
+        db.commit()
+        db.refresh(tbl)
+        ddl.create_table(db_engine, tbl)
+        assert ddl.table_has_rows(db_engine, tbl.db_table_name) is False
+
+        from sqlalchemy import text
+
+        with db_engine.begin() as conn:
+            conn.execute(text(f'INSERT INTO "{tbl.db_table_name}" DEFAULT VALUES'))
+        assert ddl.table_has_rows(db_engine, tbl.db_table_name) is True
+
 
 def _create_link_scenario(client, auth_headers):
     ws = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "ws_links"})

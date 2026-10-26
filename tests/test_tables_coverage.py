@@ -492,3 +492,46 @@ class TestTablesAPIErrors:
 
 
 __all__ = []
+
+
+# ── 物理建表失败的 metadata 原子回退 ───────────────────
+
+
+class TestCreateTableAtomicity:
+    def test_create_table_ddl_failure_rolls_back_metadata(self, client, workspace, auth_owner, monkeypatch):
+        """物理建表失败 → 500，且不残留「有表记录、无物理表」的孤儿表."""
+        import cndb.plugins.tables.routers.tables as tables_router
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("create boom")
+
+        monkeypatch.setattr(tables_router, "ddl_create", _boom)
+        r = client.post(
+            f"/api/v1/workspaces/{workspace.id}/tables",
+            headers=auth_owner,
+            json={"name": "半成品表"},
+        )
+        assert r.status_code == 500
+        assert "物理建表失败" in r.json()["detail"]
+
+        tables = client.get(f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner).json()
+        assert all(t["name"] != "半成品表" for t in tables)
+
+    def test_copy_table_ddl_failure_rolls_back_metadata(self, client, workspace, auth_owner, monkeypatch):
+        """复制表时物理建表失败 → 500，且不残留副本表 metadata."""
+        import cndb.plugins.tables.routers.tables as tables_router
+
+        src = client.post(f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner, json={"name": "复制源表"})
+        assert src.status_code == 201, src.text
+        src_tid = src.json()["id"]
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("copy boom")
+
+        monkeypatch.setattr(tables_router, "ddl_create", _boom)
+        r = client.post(f"/api/v1/workspaces/{workspace.id}/tables/{src_tid}/copy", headers=auth_owner)
+        assert r.status_code == 500
+        assert "物理建表失败" in r.json()["detail"]
+
+        tables = client.get(f"/api/v1/workspaces/{workspace.id}/tables", headers=auth_owner).json()
+        assert all(t["name"] != "复制源表 (副本)" for t in tables)
