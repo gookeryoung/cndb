@@ -126,9 +126,9 @@ Related: `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/services/core/ddl.py` | `tests/test_field_edit_validation.py`、`tests/test_cov_links_ddl.py` | — |
-| P1 | 已落地 | `src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py` | `tests/test_tables_coverage.py`、`tests/test_field_edit_validation.py` | — |
-| P2 | 已落地 | `src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_fields_import.py` | — |
+| P0 | 已落地 | `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/services/core/ddl.py` | `tests/test_field_edit_validation.py`、`tests/test_cov_links_ddl.py` | 4d9456f8 |
+| P1 | 已落地 | `src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py` | `tests/test_tables_coverage.py`、`tests/test_field_edit_validation.py` | 4d9456f8 |
+| P2 | 已落地 | `src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_fields_import.py` | 4d9456f8 |
 
 ## 交接（会话结束更新）
 
