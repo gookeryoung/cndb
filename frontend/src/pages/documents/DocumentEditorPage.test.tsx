@@ -107,6 +107,23 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         const okBtn = await screen.findByRole('button', { name: /^插\s*入$/ })
         expect(okBtn).toBeDisabled()
     })
+
+    it('查看模式不出现插入图片 / 插入表格引用入口（只读，ADR 0042）', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        // 默认编辑模式（draft 文档）：两个插入入口在编辑工具栏
+        expect(screen.getByTestId('md-toolbar-image')).toBeInTheDocument()
+        expect(screen.getByTestId('md-toolbar-table-ref')).toBeInTheDocument()
+
+        // 切到查看模式：编辑工具栏连同插入入口一起消失，顶栏也不再出现
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
+        expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
+        expect(screen.queryByTestId('md-toolbar')).toBeNull()
+        expect(screen.queryByTestId('md-toolbar-image')).toBeNull()
+        expect(screen.queryByTestId('md-toolbar-table-ref')).toBeNull()
+        expect(screen.queryByRole('button', { name: /插入表格引用/ })).toBeNull()
+        expect(screen.queryByRole('button', { name: /图片/ })).toBeNull()
+    })
 })
 
 describe('DocumentEditorPage 大纲面板', () => {
@@ -454,6 +471,33 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
             // 标签/修改申请/版本可能带数量后缀，用前缀正则匹配
             expect(await screen.findByText(new RegExp(`^${label}`))).toBeInTheDocument()
         }
+    })
+
+    it('编辑模式「更多」菜单含插入入口，点「插入表格引用」打开选表弹窗（ADR 0042）', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        // 默认编辑模式（draft 文档）：窄屏不渲染工具栏插入按钮，入口在菜单
+        expect(screen.queryByTestId('md-toolbar-image')).toBeNull()
+        expect(screen.queryByTestId('md-toolbar-table-ref')).toBeNull()
+
+        fireEvent.click(screen.getByTestId('doc-more-actions'))
+        expect(await screen.findByText('插入图片')).toBeInTheDocument()
+        fireEvent.click(screen.getByText('插入表格引用'))
+        expect(await screen.findByText('选择要引用的数据表')).toBeInTheDocument()
+    })
+
+    it('查看模式「更多」菜单不含插入入口（只读，ADR 0042）', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
+        expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-more-actions'))
+        // 次级入口仍在，写入口不出现
+        expect(await screen.findByText(new RegExp('^反向链接'))).toBeInTheDocument()
+        expect(screen.queryByText('插入图片')).toBeNull()
+        expect(screen.queryByText('插入表格引用')).toBeNull()
     })
 
     it('更多菜单里的「文档链接」打开链接抽屉', async () => {
