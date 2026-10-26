@@ -1,4 +1,4 @@
-/** 典型示例（ADR 0029 P1 / ADR 0035）—— 四个 L3 小节渲染、CSV 下载、失败重试与缺省场景. */
+/** 典型示例（ADR 0029 P1 / ADR 0036）—— 四个 L3 小节渲染、CSV 下载、失败重试与缺省场景. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'

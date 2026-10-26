@@ -3900,7 +3900,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-primary);
 }
 
-/* 页内目录（L3 小节 + L4 条目，ADR 0035） */
+/* 页内目录（L3 小节 + L4 条目，ADR 0036） */
 .cn-help-docs-toc {
   flex: 0 0 208px;
   width: 208px;
@@ -3926,18 +3926,18 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--cn-space-xs);
 }
 
 .cn-help-docs-toc-sub {
-  margin-top: 2px;
+  margin-top: var(--cn-space-xs);
   padding-left: var(--cn-space-lg);
 }
 
 .cn-help-docs-toc-link {
   display: block;
   width: 100%;
-  padding: 3px var(--cn-space-md);
+  padding: var(--cn-space-xs) var(--cn-space-md);
   border: 0;
   border-radius: var(--cn-radius-sm);
   background: transparent;
@@ -3989,7 +3989,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-size: var(--cn-text-lg);
   font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
-  scroll-margin-top: 64px;
+  scroll-margin-top: var(--cn-space-4xl);
 }
 
 .cn-help-docs-lead + .cn-help-docs-section .cn-help-docs-h2 {
@@ -4002,7 +4002,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-size: var(--cn-text-md);
   font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
-  scroll-margin-top: 64px;
+  scroll-margin-top: var(--cn-space-4xl);
 }
 
 .cn-help-docs-item:first-of-type .cn-help-docs-h3 {

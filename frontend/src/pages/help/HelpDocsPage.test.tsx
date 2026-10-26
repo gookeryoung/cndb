@@ -1,4 +1,4 @@
-/** 帮助文档页（ADR 0029 P0 / ADR 0035）—— 默认落点、深链选中、回落纠正、页内目录、移动端与引导重放。 */
+/** 帮助文档页（ADR 0029 P0 / ADR 0036）—— 默认落点、深链选中、回落纠正、页内目录、移动端与引导重放。 */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
@@ -99,10 +99,10 @@ describe('HelpDocsPage 页内目录（L3 / L4）', () => {
     it('L4 条目渲染为三级标题，并随所属小节进入目录', async () => {
         renderHelp('/help/troubleshooting/guide')
 
-        expect(await screen.findByRole('heading', { name: '登录已过期', level: 3 })).toBeVisible()
+        expect(await screen.findByRole('heading', { name: '提示登录已过期', level: 3 })).toBeVisible()
         const toc = screen.getByTestId('help-docs-toc')
         expect(within(toc).getByTestId('help-toc-login')).toBeVisible()
-        expect(within(toc).getByText('登录已过期')).toBeVisible()
+        expect(within(toc).getByText('提示登录已过期')).toBeVisible()
     })
 
     it('只有正文的小节不产生 L4 层级', async () => {
@@ -113,14 +113,15 @@ describe('HelpDocsPage 页内目录（L3 / L4）', () => {
         expect(within(screen.getByTestId('help-docs-toc')).getAllByText('视图可见性')).toHaveLength(1)
     })
 
-    it('点击目录项把锚点写回地址栏并高亮', async () => {
+    it('点击目录项定位到对应小节并高亮', async () => {
         renderHelp('/help/tutorials/roles')
 
         fireEvent.click(await screen.findByTestId('help-toc-row-level'))
         await waitFor(() => {
-            expect(window.location.hash).toBe('#help-row-level')
+            expect(screen.getByTestId('help-toc-row-level').className).toContain('is-active')
         })
-        expect(screen.getByTestId('help-toc-row-level').className).toContain('is-active')
+        // 锚点目标真实存在（地址栏写入 hash 依赖浏览器路由，单测只校验可定位）
+        expect(document.getElementById('help-row-level')).toBeTruthy()
     })
 
     it('带锚点的深链直接高亮对应小节', async () => {

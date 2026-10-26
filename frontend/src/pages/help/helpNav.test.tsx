@@ -1,4 +1,4 @@
-/** 帮助文档导航（ADR 0029 / ADR 0035）单测 —— 四层层级、归属唯一性、锚点与 URL 解析。 */
+/** 帮助文档导航（ADR 0029 / ADR 0036）单测 —— 四层层级、归属唯一性、锚点与 URL 解析。 */
 
 import { describe, expect, it } from 'vitest'
 import {
@@ -45,7 +45,7 @@ describe('helpNav 一级 / 二级结构', () => {
     })
 })
 
-describe('helpNav 三级 / 四级层级规则（ADR 0035 §2）', () => {
+describe('helpNav 三级 / 四级层级规则（ADR 0036 §2）', () => {
     it('每个主题至少 2 个 L3 小节', () => {
         for (const { section, topic } of ALL_TOPICS) {
             expect(topic.subsections.length, `${section.key}/${topic.key}`).toBeGreaterThanOrEqual(2)
