@@ -58,8 +58,8 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 ### 2. 判定算法（唯一入口）
 
 - 落库批量化入口仍是 `records.find_rows_by_key` / `records.bulk_update_rows`，不新增旁路：
-  - `find_rows_by_key`：每块先按「无 None 键值」分块用 `tuple_(*cols).in_(chunk)`；含 None 的键回退旧的 `OR` 形态（`IS NULL` 语义不变）；块大小 1000。
-  - `bulk_update_rows`：进入事务前一次性 `_normalize_values` 并缓存；无 link 值的行按归一列集合签名分组，`UPDATE … WHERE id = :_rid AND _trashed = 0 [AND row_scope]` 走 `executemany`，`result.rowcount` 累加（SQLite 的 executemany rowcount 为实际影响行数之和）；有 link 值的行保持逐行写（link 需按行 id 写关联表）。
+  - `find_rows_by_key`：每块先对全部键走行值 `tuple_(*cols).in_(chunk)`；SQLite 行值 IN 对 NULL 永不命中，含 None 的键再由 `OR + IS NULL` 兜底（`IS NULL` 语义不变）；块大小 500。
+  - `bulk_update_rows`：进入事务前一次性 `_normalize_values` 并缓存；无 link 值且无行级写范围的行按归一列集合签名分组，`UPDATE … WHERE id = :_rid AND _trashed = 0` 走 `executemany`，`result.rowcount` 累加（SQLite 的 executemany rowcount 为实际影响行数之和）；有 link 值的行保持逐行写（link 需按行 id 写关联表）；`row_scope` 非空时整组退回逐行 `UPDATE`——行级过滤条件可能含 `in` / `not_in` 的 expanding 参数，SQLAlchemy 不允许与 `executemany` 同用。
 - 运行入口：
   - 新增 `runner.create_run` / `runner.start_job`（建记录 + `job.last_status=running` + 提交后 `spawn` 后台）；`runner.execute_run_in_background` 用绑定同一 engine 的 session 工厂重载 job/user/run，调 `execute_job(..., existing_run=run, lease=lease)`，`finally` 释放租约。
   - `execute_job` 新增可选 `existing_run` 参数（后台路径复用已建记录；调度 / CLI 不传时行为不变）。
@@ -140,5 +140,5 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 - 当前阶段：P0-P2 全部落地
 - 已完成：需求卡片、ADR、批量化落库、运行进度三列与迁移、`POST /run` 转后台、前端进度轮询
 - 下一步：无（真实数据源全量回补的提速与进度可观测性由人工演练验收）
-- 已知坑：测试库为 StaticPool 单连接内存库，后台执行必须在测试中同步化（`tests/test_datasource_api.py` 的 `sync_background_spawn` fixture）；新增迁移后同步 `test_migration_missing_model_columns.HEAD_REVISION`
+- 已知坑：测试库为 StaticPool 单连接内存库，后台执行必须在测试中同步化（`tests/test_datasource_api.py` 的 `sync_background_spawn` fixture）；新增迁移后同步 `test_migration_missing_model_columns.HEAD_REVISION`；`bulk_update_rows` 的 `executemany` 不能叠加 `row_scope`（`in` / `not_in` 为 expanding 参数），带权限时必须逐行更新，见判定算法一节
 - 最近一次全绿：`make check` @ 2026-10-26（后端 5440 passed / 覆盖率 96.98%，前端覆盖率达标）

@@ -1118,9 +1118,19 @@ def bulk_update_rows(
                 set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
         for columns, group in simple_groups.items():
-            row_where = [sa_table.c.id == bindparam("_rid"), sa_table.c._trashed.is_(False)]
             if row_scope is not None:
-                row_where.append(row_scope)
+                # 行级权限条件可能含 expanding 参数（in / not_in），executemany 不支持
+                # （SQLAlchemy: 'expanding' parameters can't be used with executemany）；
+                # 带权限时退回逐行 UPDATE，过滤语义与计数口径不变。
+                for row_id, values in group:
+                    statement = (
+                        sa_table.update()
+                        .where(sa_table.c.id == row_id, sa_table.c._trashed.is_(False), row_scope)
+                        .values({column: values[column] for column in columns})
+                    )
+                    total += max(int(conn.execute(statement).rowcount or 0), 0)
+                continue
+            row_where = [sa_table.c.id == bindparam("_rid"), sa_table.c._trashed.is_(False)]
             statement = sa_table.update().where(*row_where).values({column: bindparam(column) for column in columns})
             params = [{"_rid": row_id, **values} for row_id, values in group]
             result = conn.execute(statement, params)
