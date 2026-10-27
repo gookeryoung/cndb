@@ -14,8 +14,8 @@ Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
 | C1 | 参照 stock-strategy 的同步架构 | 复刻其两条路径为声明式配置：①新浪全市场快照（`getHQNodeData` 翻页）承担标的清单与当日行情；②腾讯日线（end 锚点 + 800 根/页）承担历史回补；全程 `http_json` 既有与新增声明能力，不新增 provider、不引入依赖 |
-| C2 | 全市场约 7044 只拉取到本地（10 年） | 「数据源示例」工作区 4 条 seed 任务：标的清单（快照翻页）+ 当日快照（增量主路径）+ 历史回补 ×2（主板/创业板/ETF 与科创板，量纲不同拆配置）；回补至 2016-01-01，约 1700 万行 / 372MB |
-| C3 | 增量拉取，并非每次全量 | 双层增量：日常 = 快照只写当日 K 线（`row_defaults` 的 `{today}` 模板），秒级完成、无逐股请求；回补 = 按标的回补水位（新游标 `backfill_date`），已补满标的自动跳过，多轮 run 断点收敛 |
+| C2 | 全市场约 7044 只拉取到本地（10 年） | 「数据源示例」工作区 3 条 seed 任务：标的清单（快照翻页）+ 当日快照（增量主路径）+ 历史回补 ×1（全市场，单轮翻页，ADR 0053 D5）；回补至 2016-01-01，约 1700 万行 / 372MB |
+| C3 | 增量拉取，并非每次全量 | 双层增量：日常 = 快照只写当日 K 线（`row_defaults` 的 `{today}` 模板），秒级完成、无逐股请求；回补 = 按标的回补水位（新游标 `backfill_date`），已补满标的自动跳过，单轮翻页断点续跑（ADR 0053 D2/D3） |
 | C4 | 数据库膨胀给出更好方式 | 结论：372MB（含索引约 500MB）直存 SQLite 宽表可承受，配套幂等键复合索引（修写入性能）、WAL checkpoint / 低峰 VACUUM / 备份体积说明（帮助文档）；不换存储引擎（否决项见决策记录 D7） |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
@@ -81,7 +81,7 @@ Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / 
 1. **准备**（run 开始）：对每个 entrant 读 `datasource_entrant_cursor`，得 `watermark(e)`；无水位标的初值 = 「今天」的昨日（即首轮只拉最近一段）；`watermark(e) <= backfill_start` 的标的**跳过**（零请求）。
 2. **请求展开**：`build_requests` 对每个活跃 entrant 生成 1 个请求，模板变量 `end = watermark(e) − 1 天`（`n=800` 固定在 URL/param 里）；`SyncJobSpec` 新增 `entrant_ends: Mapping[str, str]`。
 3. **响应→水位推进**：该 entrant 返回行中**最早日期** `d_min(e)`；新水位 = `max(d_min(e), backfill_start)`，且**只前移不后退**（`min(旧, 新)` 向更早方向）；空响应不推进（该标的已到头或停牌）。落库与水位推进**同批事务边界**（先 persist 批次，成功后写水位）。
-4. **收敛**：多轮 run（手动或 interval 调度）水位逐轮向 `backfill_start` 前推，全部达标后 run 变零请求空转（记 `skipped`）。
+4. **收敛**：单轮翻页到顶（ADR 0053 D2/D3）：一轮运行内按标的水位逐页前推，遇空响应 / 短页 / 水位不前移 / 达 `backfill_start` 即剔除该标的；全部达标后 run 变零请求空转（记 `skipped`）。
 
 **流式落表**（`services/pipeline.py` + `services/runner.py`）：
 
@@ -120,24 +120,23 @@ Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / 
 1. 腾讯接口 `start` 参数不生效（stock-strategy 实测），回补请求 param 的 start 位**留空**，仅 end 锚点 + 800 根生效；水位推进依赖响应内最早日期。
 2. 腾讯返回空序列（标的已退市 / 停牌超窗口）：不报错、不推进水位，行数 0 记 `skipped`——避免每轮空转重试同一请求由水位卡住（`backfill_date` 达 `backfill_start` 才跳过；长期停牌标的每轮 1 次空请求属可接受开销）。
 3. 新浪快照零值行（停牌）：`row_filter`（如「最新价 > 0」）剔除；被剔除行计入 run 的 `filtered` 计数（新增计数字段值，落 `stats` JSON，不改表结构——`datasource_sync_run` 的计数列既有口径沿用，过滤数进 `detail`/`stats` 留痕）。
-4. 快照（不复权原价）与回补（腾讯 qfq 前复权）当日口径天然不同：幂等键含「来源」，两口径并存不互覆；已知局限——腾讯 qfq 为等差前复权，超长期高分红标的历史价可能失真（与 stock-strategy 全市场回补同口径，其仅对自选股做 hfq+等比修复，全市场不做）。
-5. 成交量单位：目标表统一**股**；新浪快照原值（股）、腾讯主板/创业板/ETF `scale=100`（手→股）、科创板（sh68/sh69）腾讯原值即股（`scale` 不声明）——量纲差异用两条回补任务（`prefix_in` 互斥）表达，不引入启发式换算。
+4. 快照与回补同口径（均不复权，ADR 0053 D7）：幂等键 `[股票代码, 日期]`，同日同一行、后写者覆盖；不做价格换算（换算需除权因子，超职责）。
+5. 成交量单位：示例不声明 `scale`，存数据源原值（新浪快照=股；腾讯主板/创业板/ETF=手、科创板=股），属已知局限（ADR 0053 D8）；`field_mapping.scale` 能力仍可用，但合并任务无法按板块取不同系数。
 6. `row_filter` 仅数值比较、单个条件；复杂过滤属分析层职责（分析范围 Scan Scope 已有），同步层只做最小剔除。
 7. `entrant_source` 指向的表无行（如清单尚未首拉）：并集后为空 → run 零请求记 skipped（清单任务先行，属正常启动顺序，不判 failed）。
-8. ETF 的腾讯成交量单位与个股不同属潜在口径风险（stock-strategy 未对 ETF 特判）：首轮回补后抽样核对，若不一致按 §5 同款拆任务修正（配置级改动）。
+8. ETF 的腾讯成交量单位与个股不同：单任务下不再拆任务修正（ADR 0053 D5/D8 已拍板原值口径），核对结论记录在运行明细。
 
 ### 5. 种子任务设计（examples/datasets/工作区-数据源示例/datasource.json）
 
-移除旧 2 条股市日线任务（新浪 2 只 / 腾讯 2 只，0033 产物；引擎能力保留，示例任务演进），新增 4 条：
+移除旧 2 条股市日线任务（新浪 2 只 / 腾讯 2 只，0033 产物；引擎能力保留，示例任务演进），新增 3 条（板块按量纲拆分的两条已由 ADR 0053 C5/D5 合并为一条）：
 
 | 任务 | 接口 / 形态 | 目标表 / 幂等键 | 关键声明 |
 |---|---|---|---|
 | ① 全市场标的清单 | 新浪 `getHQNodeData`（`node={entrant}`，hs_a + etf_hq_fund 两 entrant，page 翻页 num=100 空页停） | 「股票清单」/ `[代码]` | `entrant_keys=["hs_a","etf_hq_fund"]`；映射 symbol→代码、name→名称等；`schedule=manual`（文档指导改 daily） |
-| ② 股市日线·当日快照 | 同①（快照行情写当日 bar） | 「股市日线」/ `[股票代码, 日期, 来源]` | `row_defaults={"日期":"{today}","来源":"新浪快照"}`；`row_filter` 收盘>0（归一后目标字段）；`fill_entrant` 补股票代码；`cursor=none`；`workers=2`（两节点组间并发） |
-| ③ 股市日线·历史回补（主板/创业板/ETF） | 腾讯 `proxy.finance.qq.com` fqkline（`param={entrant},day,,{end},800,qfq`，`data.{entrant}.qfqday`，rows_array） | 同上 | `entrant_source={"table":"股票清单","field":"代码","prefix_in":["sh60","sz00","sz30","sh5","sz1"]}`（与④的 sh68/sh69 互斥，前缀精确到板块段——`sh6` 会误吞科创板）；`cursor={"strategy":"backfill_date","field":"日期","backfill_start":"2016-01-01"}`；`row_defaults={"来源":"腾讯前复权"}`；成交量 `scale=100`；`workers=6`、`rate_limit_ms=150`；`schedule=manual` |
-| ④ 股市日线·历史回补（科创板） | 同③ | 同上 | `prefix_in=["sh68","sh69"]`；无 `scale`（腾讯对科创板返回股）；其余同③ |
+| ② 股市日线·当日快照 | 同①（快照行情写当日 bar） | 「股市日线」/ `[股票代码, 日期]` | `row_defaults={"日期":"{today}"}`；`row_filter` 收盘>0（归一后目标字段）；`fill_entrant` 补股票代码；`cursor=none`；`workers=2`（两节点组间并发） |
+| ③ 股市日线·历史回补（全市场） | 腾讯 fqkline（`{host}/ifzqgtimg/appstock/app/newfqkline/get?param={entrant},day,,{end},800`，`data.{entrant}.day`，rows_array；`url_hosts=["https://web.ifzq.gtimg.cn","https://proxy.finance.qq.com"]`，浏览器 UA / Referer） | 同上 | `entrant_source={"table":"股票清单","field":"代码"}`（无前缀过滤）；`cursor={"strategy":"backfill_date","field":"日期","backfill_start":"2016-01-01","page_to_start":true,"page_size":800}`（单轮翻页到顶，ADR 0053 D2/D3）；成交量不声明 `scale`（原值，已知局限见 ADR 0053 D8）；`workers=10`、`rate_limit_ms=10`；`schedule=manual` |
 
-配套：`fields.json` 新增「股票清单」表（代码/名称/类型/最新价/成交额/市值/换手率/更新日期）、「股市日线」表补「成交额」字段；`views.json` 「股市日线」两条来源筛选视图对齐新来源值（新浪快照 / 腾讯前复权，既有 filter 形态，不动白名单）；「股市日线.csv」「股票清单.csv」示例行与新任务来源口径一致，保持 seed 幂等。
+配套：`fields.json` 新增「股票清单」表（代码/名称/类型/最新价/成交额/市值/换手率/更新日期）、「股市日线」表补「成交额」字段，并删「来源 / 复权方式」两列（ADR 0053 D6）；`views.json` 「股市日线」视图不再按来源分组；「股市日线.csv」「股票清单.csv」示例行为单序列口径，保持 seed 幂等。
 
 ### 6. 迁移
 
@@ -166,7 +165,7 @@ Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / 
 - 流式：batch_size=小值注入，断言多批 upsert、批间续租被调用、中途失败已落批保留
 - `entrant_source`：清单表 distinct + prefix 过滤 + 静态并集；表缺失 → failed run
 - 迁移：upgrade/downgrade 往返 + job 级联清理水位行
-- seed：`test_seed_datasource.py` 改锁 4 条新任务（2 llm_prompt + 4 http_json）；清单/日线表字段与任务声明自洽校验
+- seed：`test_seed_datasource.py` 改锁 5 条新任务（2 llm_prompt + 3 http_json）；清单/日线表字段与任务声明自洽校验
 
 **e2e（前端）**：无新增（只读展示兼容由单测覆盖；不新增页面/视图形态）
 
@@ -176,22 +175,22 @@ Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / 
 |---|---|---|
 | **P0** | 本 ADR + 需求卡片评审（人工卡点） | 低 |
 | **P1** | 引擎能力：迁移 + `backfill_date` + `entrant_source` + 流式落表 + 并发限速 + `row_filter`/`{today}` + 复合索引 + 续租 + 判定层/集成单测 | 高（流式与并发改造触及管线主干，须保 I4/I5 兼容） |
-| **P2** | 种子落地：4 条任务 + fields/views/CSV + 前端只读兼容 + seed 测试 | 中（配置与 seed 校验口径逐项对齐；真实接口格式验证） |
-| **P3** | 真源 smoke（3 只标的）→ 全量回补演练（轮数/耗时/库体积记录）+ 帮助文档大表维护节 + `make flow` 全绿收尾 | 中（第三方接口限流 / 格式漂移；演练须真实联网） |
+| **P2** | 种子落地：3 条任务 + fields/views/CSV + 前端只读兼容 + seed 测试 | 中（配置与 seed 校验口径逐项对齐；真实接口格式验证） |
+| **P3** | 真源 smoke（3 只标的）→ 全市场回补演练（轮数/耗时/库体积记录）+ 帮助文档大表维护节 + `make flow` 全绿收尾 | 中（第三方接口限流 / 格式漂移；演练须真实联网） |
 
 ## 决策记录（唯一决策台账）
 
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
 |---|---|---|---|---|---|
 | D1 | 大规模回补的内存形态 | 流式分批落表（batch 5000）：抓取与落库交错，批粒度推进水位 + 续租，中途失败已落批保留 | 1700 万行全量攒内存不可行；批粒度 = 最小安全断点 | ① 分 run 全量（单轮太长、失败全弃）；② 响应驱动无限流式生成器（分页语义复杂化，收益小） | `services/pipeline.py`、`services/runner.py` |
-| D2 | 按标的增量表达 | 新游标 `backfill_date` + 新表 `datasource_entrant_cursor`；腾讯「end 锚点 + n 根」语义与水位天然对齐，多轮 run 收敛 | job 级单值游标表达不了 per-entrant 水位；stock-strategy 同构（end 锚点前推 + cursor 断点） | ① 每标的独立 job（7000+ job 管理不可接受）；② 响应内日期推导窗口（腾讯 start 不生效，无法表达） | `services/cursor.py`、`models.py`、迁移 |
-| D3 | 标的集合维护 | `entrant_source` 动态来源（查清单表 distinct + prefix 过滤）与静态 `entrant_keys` 并集 | 7044 只硬编码不可维护；新上市自动纳入；prefix 过滤承载量纲分组（科创板拆任务） | ① 全静态列表（更新靠人工）；② 引擎内置全市场清单（领域词进引擎，违反 I1） | `models.py`（新列）、`services/runner.py` |
-| D4 | 当日增量路径 | 快照直写当日 bar：`row_defaults={"日期":"{today}"}` + `row_filter` 滤零值，非逐股请求 | stock-strategy 实测秒级（75 页并发 vs 7000 请求）；停牌零值行必须剔除 | ① 逐股拉当日（7044 请求，违背 C3 初衷）；② 快照另建当日表（同表幂等键含来源已可并存，多表徒增复杂度） | `services/pipeline.py`（模板/过滤）、种子② |
+| D2 | 按标的增量表达 | 新游标 `backfill_date` + 新表 `datasource_entrant_cursor`；腾讯「end 锚点 + n 根」语义与水位天然对齐；收敛方式由 ADR 0053 D2/D3 的单轮翻页承载 | job 级单值游标表达不了 per-entrant 水位；stock-strategy 同构（end 锚点前推 + cursor 断点） | ① 每标的独立 job（7000+ job 管理不可接受）；② 响应内日期推导窗口（腾讯 start 不生效，无法表达） | `services/cursor.py`、`models.py`、迁移 |
+| D3 | 标的集合维护 | `entrant_source` 动态来源（查清单表 distinct，可选 `prefix_in` 过滤）与静态 `entrant_keys` 并集；示例不使用 `prefix_in`（ADR 0053 C5） | 7044 只硬编码不可维护；新上市自动纳入；`prefix_in` 作为通用过滤能力保留 | ① 全静态列表（更新靠人工）；② 引擎内置全市场清单（领域词进引擎，违反 I1） | `models.py`（新列）、`services/runner.py` |
+| D4 | 当日增量路径 | 快照直写当日 bar：`row_defaults={"日期":"{today}"}` + `row_filter` 滤零值，非逐股请求 | stock-strategy 实测秒级（75 页并发 vs 7000 请求）；停牌零值行必须剔除 | ① 逐股拉当日（7044 请求，违背 C3 初衷）；② 快照另建当日表（同日同键已可覆盖，多表徒增复杂度） | `services/pipeline.py`（模板/过滤）、种子② |
 | D5 | 请求提速 | `request_spec.workers` 并发 + `rate_limit_ms` 升级全局最小出发间隔 | 回补 2.1 万请求 / 快照 75 页，串行过慢；stock-strategy 10 线程先例；限流是腾讯 501 防线 | ① 保持串行（全量回补小时级不可接受）；② 无限并发（必被限流封禁） | `services/pipeline.py` |
 | D6 | 大表写入性能 | 按 `match_keys` 建非唯一复合索引（任务首跑幂等创建） | 无索引时千万行表批量 OR 查询全表扫描；非唯一不改变应用层幂等口径（ADR 0006 否决的是唯一约束） | ① 唯一索引 + `ON CONFLICT`（改写幂等路径，动摇 0006 口径）；② 不建索引（落表性能不可接受） | `services/write.py` |
 | D7 | 372MB 存储结论 | 直存 SQLite 宽表；配套 D6 索引 + WAL checkpoint / 低峰 VACUUM / 备份体积文档 | SQLite 单库 TB 级容量，372MB（含索引~500MB）远在安全区；保住表格/视图/K 线全链路能力 | ① 外部文件（CSV/parquet + 路径引用，丧失全部表格能力）；② 按年分表（DataTable 无分区语义）；③ 独立库文件（连接层架构改动） | 帮助文档（P3） |
-| D8 | 旧示例任务处置 | 移除 0033 的 2 条 2 只股示例任务，演进为 4 条全量任务；引擎能力全保留；存量库旧任务残留由需求方清理（口径同 0033 C4） | 示例要示范的就是全量形态；2 只股示例已被覆盖无保留价值 | 保留旧任务（4+2 并存徒增演示噪音） | `examples/datasets/工作区-数据源示例/datasource.json` |
-| D9 | 双口径并存与量纲 | 幂等键含「来源」；快照=不复权原价、腾讯=前复权并存；成交量统一股（主板 scale=100 / 科创板无 scale 拆任务） | 沿用 0033 D5 先例；腾讯 qfq 等差复权局限记录在案；量纲拆任务是纯配置表达 | ① 同步层价格换算（需除权因子，超职责）；② 启发式按代码段换算（引擎进领域词，违反 I1） | 种子③④ |
+| D8 | 旧示例任务处置 | 移除 0033 的 2 条 2 只股示例任务，演进为全量任务（当前 3 条，见 §5）；引擎能力全保留；存量库旧任务残留由需求方清理（口径同 0033 C4） | 示例要示范的就是全量形态；2 只股示例已被覆盖无保留价值 | 保留旧任务（并存徒增演示噪音） | `examples/datasets/工作区-数据源示例/datasource.json` |
+| D9 | 双口径并存与量纲 | 由 ADR 0053 D6-D8 修订：幂等键 `[股票代码, 日期]`、两源同一不复权口径、成交量存原值（不声明 `scale`） | 单序列口径与最优同步形态一致；量纲拆任务已撤销 | ① 来源入键 + 前复权并存（ADR 0053 否定）；② 拆任务保量纲（ADR 0053 C5 否定） | 见 ADR 0053 |
 | D10 | 长任务执行方式 | 回补走 CLI `cndb sync tick`（或 interval 调度），批间 `renew_lease`；「立即运行」HTTP 入口保留但不承诺长任务 | HTTP 同步等待必超时；租约 300s 无续期会被误抢占 | ① 调大 TTL（治标，仍有无界长任务）；② 后台任务队列（新基建，超出本卡范围） | `services/scheduler.py`、`services/runner.py` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
@@ -214,7 +213,7 @@ Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / 
 |---|---|---|---|
 | 适配器边界 | `providers/registry.py` 仅两 provider | 本 ADR 不触碰注册表；全部能力落在引擎服务层与 `http_json` 声明键 | ADR 0006 D2 |
 | http_json 声明能力 | `rows_array` / `data_path` / `row_defaults` / `scale` | 全部复用；本 ADR 只加 `{end}` per-entrant 变量与 `{today}` 模板 | ADR 0033 |
-| 股市示例口径 | 「数据源示例」工作区 | 2 只股双源示例演进为全市场 4 任务；幂等键「来源入键」口径不变 | ADR 0033 D5/D8 |
+| 股市示例口径 | 「数据源示例」工作区 | 2 只股双源示例演进为全市场 3 任务；单序列幂等键 `[股票代码, 日期]`（ADR 0053 D5/D6/D7） | ADR 0033 D8、ADR 0053 |
 
 ## 落地状态（随实现更新）
 
@@ -230,9 +229,9 @@ Related: `src/cndb/plugins/datasource/`（models / runner / pipeline / cursor / 
 ## 交接（会话结束更新）
 
 - 当前阶段：P1–P3 全部落地，`Status` 已于 2026-10-27 经人工评审确认改 `Implemented`
-- 已完成：引擎全量能力（backfill_date 水位 / entrant_source 动态标的 / 流式落表 / workers 并发 + 全局限速 / row_filter + {today} 模板 / 幂等键复合索引 / 批间续租）；种子 4 条全市场任务替换旧 2 条；前端只读兼容 + 编辑保留声明键；帮助文档「大规模同步与增量」「大表与库体积维护」两节
-- 真源演练结论（2026-10-25，3 只股 + 全市场快照）：清单单轮 7289 只入库；动态标的拆分 6319（主板/创业板/ETF）+ 617（科创板）；当日快照 7286 行、停牌零值 3 行被 `row_filter` 剔除、二轮重跑 0 新增全 update（幂等）；腾讯回补每轮每标的 800 根，水位 2023-07-05 → 2020-03-18 逐轮前推，断点续跑语义验证通过
-- 已知坑：① `_advance_backfill` 取标的列必须用 field_mapping 映射后的**目标列名**（源键归一后已被重命名，测试须覆盖映射路径）；② 回补前缀必须精确到板块段（`sh6` 会误吞科创板 sh68x，正确为 `sh60`）；③ 新浪 hs_a 节点含北交所（bj 前缀），回补前缀天然排除，快照当日行会包含（可接受口径）；④ `make check` 的 ruff format 是全仓扫描，他人未格式化文件会挡 lint（本次 documents/importers/docx.py、html.py 属并发会话，只 stage 自己文件提交）
-- 下一步：无（功能完结）；存量实例需清理旧 2 条任务后重跑 `cndb seed`（口径同 0033 C4）；全量十年回补首跑约 30~60 分钟（CLI `cndb sync tick` 驱动，多轮收敛）
+- 已完成：引擎全量能力（backfill_date 水位 / entrant_source 动态标的 / 流式落表 / workers 并发 + 全局限速 / row_filter + {today} 模板 / 幂等键复合索引 / 批间续租）；种子全市场任务替换旧 2 条（当前 3 条，板块拆分按 ADR 0053 撤销）；前端只读兼容 + 编辑保留声明键；帮助文档「大规模同步与增量」「大表与库体积维护」两节
+- 真源演练结论（2026-10-25，3 只股 + 全市场快照）：清单单轮 7289 只入库；动态标的覆盖全市场 6936 只；当日快照 7286 行、停牌零值 3 行被 `row_filter` 剔除、二轮重跑 0 新增全 update（幂等）；腾讯回补每轮每标的 800 根，水位 2023-07-05 → 2020-03-18 逐轮前推，断点续跑语义验证通过
+- 已知坑：① `_advance_backfill` 取标的列必须用 field_mapping 映射后的**目标列名**（源键归一后已被重命名，测试须覆盖映射路径）；② 示例已不用 `prefix_in`（合并为全市场任务）；③ 新浪 hs_a 节点含北交所（bj 前缀），回补会为北交所标的发请求（腾讯多返回空，按 D3 终止条件剔除）；④ `make check` 的 ruff format 是全仓扫描，他人未格式化文件会挡 lint（本次 documents/importers/docx.py、html.py 属并发会话，只 stage 自己文件提交）
+- 下一步：无（功能完结）；存量实例需清理旧 2 条 + 板块拆分任务后重跑 `cndb seed`（口径同 0033 C4）；全量十年回补由 ADR 0053 的单轮翻页承担（单轮 ~15 分钟，不再多轮人工重跑）
 - 已修复（提交后检查 @ 2026-10-26）：全部标的补满后 `entrant_values` 为空，`build_requests` 的 `or (None,)` 回退会发一条空标的伪请求，`{end}` 无锚点注入 → `ProviderError` → 每次运行落 `failed`（违背 D2「补满自动零请求」）。现由 `SyncJobSpec.entrants_exhausted` 显式区分「解析后为空」与「未声明标的」，`preview_job` 同时补上水位锚点注入（预览与执行同口径）。回归锚点：`tests/test_datasource_pipeline.py::test_exhausted_entrants_make_zero_plans`、`tests/test_datasource_runner_streaming.py::test_preview_injects_watermark_anchor` / `test_watermark_truncated_to_backfill_start`
 - 最近一次全绿：`make test` 5422 passed / 3 skipped、`make cov` 97.03%（门槛 95%）@ 2026-10-26；前端门禁本沙箱因 corepack 缓存缺失（`pnpm@12.4.2`）无法执行，非本次改动引起

@@ -24,12 +24,14 @@
 | 数据分析（Analytics） | 工作区级分析模块：分析模板（公式 + 图表 + 分组汇总配置，存后端）→ 受限公式引擎逐行派生指标 → 分组汇总（维度 × 聚合，可排序 Top N）与 ChartCard 可视化 | 页面 `/w/:wid/analytics`，支持 `?template=<id>` 深链；统计/数据/汇总可导出 CSV，图表可导出 PNG |
 | 凭证会话（DatasourceSession） | 工作区级的请求头 + 密钥集合：任务以 `session_id` 引用，运行期 headers 铺底、密钥作模板变量（`{api_key}`） | **密钥值加密入库**（Fernet / `enc:v1:` 前缀，键名明文，历史明文兼容），只写不回显、不随工作区导出；删除会话会解绑任务；入口在数据源同步页「凭证会话」弹窗（列表 / 新建 / 编辑 / 删除） |
 | 列式记录（record_mode=columns） | 响应是「列名 → 数组」而非对象数组时，按 `record_layout` 的 `{目标列: 源键}` 逐索引拼行 | 用于 Open-Meteo 等 `daily.time[]` / `daily.temp[]` 形态；长度不齐补空值 |
-| 行数组记录（record_mode=rows_array） | 响应数组的每一项是**行数组**（如腾讯日线 `[["日期","开","收","高","低","成交量"]]`）时，按 `record_layout` 的 `{目标列: 位置索引}` 拼成对象 | `data_path` 同时支持 `{entrant}` 等模板占位符（`data.{entrant}.qfqday`）与候选列表（见「候选响应路径」）；行长度不足补空值；声明缺失或类型不符报 `ProviderError` |
-| 候选响应路径（data_path 候选） | `rows_array` 的 `data_path` 可写 `a.b\|a.c`：按声明顺序取第一个命中数组的候选，命中空数组也继续试下一候选，全部未命中才报错、全部为空按无数据返回 `[]` | 见 ADR 0039 D1/D3；腾讯日线用 `data.{entrant}.qfqday\|data.{entrant}.day` 兼容只返回 `day` 的基金/ETF；单路径配置行为不变 |
-| 行级常量列（row_defaults） | 响应不回显来源维度时，把常量列按 `setdefault` 语义并入每行 | 多源写同一张表补「来源 / 复权方式」；响应自带同名值优先，不被配置覆盖 |
-| 字段数值缩放（field_mapping.scale） | 归一前对数值类型字段乘缩放系数，统一同一目标列的量纲 | 如腾讯成交量以「手」返回、表内存「股」则声明 100；按**目标类型**判定，文本 / 日期 / 布尔忽略；可转数值的字符串同样换算 |
-| 按标的回补水位（cursor=backfill_date） | 游标策略：每个 entrant 在 `datasource_entrant_cursor` 表独立记「已回补到的最早日期」，请求按水位生成 end 锚点，响应内最早日期推进水位（只向更早前移、不后退） | 见 ADR 0034；`backfill_start` 截断收敛，达标标的自动跳过；多轮 run 断点续跑，适合「end 锚点 + 取前 N 根」类接口的历史回补 |
-| 标的动态来源（entrant_source） | 同步任务声明的 entrant 集合来源：`{"table","field","prefix_in"?}` 运行时查同工作区数据表目标字段 distinct 值（可按前缀过滤），与静态 `entrant_keys` 并集 | 见 ADR 0034；新标的随来源表自动纳入；来源表 / 字段缺失时 run 落 failed 不静默空跑；`prefix_in` 用于量纲等口径分组拆任务 |
+| 行数组记录（record_mode=rows_array） | 响应数组的每一项是**行数组**（如腾讯日线 `[["日期","开","收","高","低","成交量"]]`）时，按 `record_layout` 的 `{目标列: 位置索引}` 拼成对象 | `data_path` 同时支持 `{entrant}` 等模板占位符（`data.{entrant}.day`）与候选列表（见「候选响应路径」）；行长度不足补空值；声明缺失或类型不符报 `ProviderError` |
+| 候选响应路径（data_path 候选） | `rows_array` 的 `data_path` 可写 `a.b\|a.c`：按声明顺序取第一个命中数组的候选，命中空数组也继续试下一候选，全部未命中才报错、全部为空按无数据返回 `[]` | 见 ADR 0039 D1/D2；通用能力（示例回补任务已改不复权单路径 `data.{entrant}.day`，不再声明候选）；单路径配置行为不变 |
+| 行级常量列（row_defaults） | 响应不回显某维度时，把常量列按 `setdefault` 语义并入每行 | 如快照任务补「日期: {today}」；响应自带同名值优先，不被配置覆盖 |
+| 字段数值缩放（field_mapping.scale） | 归一前对数值类型字段乘缩放系数，统一同一目标列的量纲 | 如某源以「手」返回、表内存「股」则声明 100；按**目标类型**判定，文本 / 日期 / 布尔忽略；可转数值的字符串同样换算；示例已不声明（跨市场单位不可统一，ADR 0053 D8） |
+| 按标的回补水位（cursor=backfill_date） | 游标策略：每个 entrant 在 `datasource_entrant_cursor` 表独立记「已回补到的最早日期」，请求按水位生成 end 锚点，响应内最早日期推进水位（只向更早前移、不后退） | 见 ADR 0034；`backfill_start` 作下界；单轮翻页（见「单轮翻页回补」）一轮内即补到起点，断点续跑语义不变 |
+| 单轮翻页回补（cursor.page_to_start） | `backfill_date` 游标的新声明键：一轮运行内按标的水位反复翻页（每页重建请求、复用同一运行状态），遇空响应 / 抓取行数 < `page_size` / 水位未前移 / 达 `backfill_start` 即剔除该标的，全部剔除或达 200 pass 上限退出 | 见 ADR 0053 D2/D3；未声明该键的任务行为完全不变（单 pass）；进度总数为整轮累计 |
+| 主机回退（request_spec.url_hosts） | 声明候选主机列表，`url_template` 用 `{host}` 占位；请求按序尝试主机，仅网络错误或 429/5xx 切下一主机，每候选都过 SSRF 校验 | 见 ADR 0053 D4/D11；示例回补首选直连 `web.ifzq.gtimg.cn`（浏览器 UA / Referer），`proxy.finance.qq.com` 作 failover；单 URL 任务行为不变 |
+| 标的动态来源（entrant_source） | 同步任务声明的 entrant 集合来源：`{"table","field","prefix_in"?}` 运行时查同工作区数据表目标字段 distinct 值（可按前缀过滤），与静态 `entrant_keys` 并集 | 见 ADR 0034；新标的随来源表自动纳入；来源表 / 字段缺失时 run 落 failed 不静默空跑；示例回补不声明 `prefix_in`（全市场单任务，ADR 0053 C5） |
 | 全局请求间隔（rate_limit_ms） | 并发抓取时任意相邻两个请求出发时刻的最小间隔（全局锁 + 下一允许时间戳保证，workers 并发下同样成立） | 见 ADR 0034；`workers=1` 时退化为顺序 sleep，与旧行为一致；防第三方接口限流（如腾讯 fqkline 密集请求 501）；示例任务取 `workers` 10（回补）/ 4（分页）与 `rate_limit_ms` 50（ADR 0035 D3） |
 | 选项值集合缓存（Allowed Values Cache） | `select` / `multiselect` 校验时按 `(config 标识, options 长度)` 复用已构建的允许值 frozenset，避免逐行重建大集合 | 见 ADR 0035 D1；有界（256 条，超出整表清空）+ 身份校验防 id 复用误命中；options 被原地追加（批内预填充 / 全表同步）后长度变化即重建 |
 | 轻量落表模式（Light Upsert） | 数据源同步等大吞吐链路的落表变体：保留校验、幂等匹配、未知列规划与一次报告构建，跳过列画像 / 参考列推荐 / 清洗建议 / 全表选项同步 | 见 ADR 0035 D2；入口 `Importer.analyze(light=True)` 与 `Importer.execute(sync_options=False)`，由 `upsert_rows(light=True)` 透传；人工导入默认全量，行为不变 |
