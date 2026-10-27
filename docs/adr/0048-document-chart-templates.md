@@ -224,7 +224,7 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 后端地基 | 未开始 | — | — | — |
+| P0 后端地基 | 已落地 | `src/cndb/plugins/documents/models.py`、`src/cndb/alembic/versions/e0f1a2b3c4d5_add_documents_chart.py`、`src/cndb/plugins/documents/services/charts/registry.py`、`src/cndb/plugins/documents/services/charts/render.py`、`src/cndb/plugins/documents/services/charts/svg.py`、`src/cndb/plugins/documents/services/charts/raster.py`、`src/cndb/plugins/documents/routers/charts.py`、`src/cndb/plugins/documents/schemas/__init__.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/routers/workspaces.py` | `tests/test_documents_charts_registry.py`、`tests/test_documents_charts_render.py`、`tests/test_documents_charts_api.py`、`tests/test_documents_charts_migration.py`、`tests/test_documents_charts_backup.py` | `dd6d6e5c` |
 | P1 前端引用与设计器 | 未开始 | — | — | — |
 | P2 导出与收尾 | 未开始 | — | — | — |
 
@@ -232,8 +232,8 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 
 ## 交接（会话结束更新）
 
-- 当前阶段：Accepted（2026-10-27 需求方确认三个未决问题：手工录入不联动 / 游客免登录可见 / 暂不扩模板），开始 P0
-- 已完成：需求卡片 0048（C1–C9，未决问题全部有结论）；本 ADR（口径 / 现状核对 12 条 / 决策 D1–D12 / 三期分期）
-- 下一步：P0 后端地基（模型 + 迁移 + 注册表 + 渲染管线 + API + 测试）→ P1 前端引用与设计器 → P2 导出与游客分享
-- 已知坑：实现时必须先跑 `make check-fast` 基线；`chartRef.ts` 与 `chart_refs.py` 的解析样例要同一批；Markdown 归档顺序须「图表改写 → 表格改写 → 归档」与 ADR 0045 叠加时保持无占位符残留；PNG 写端 CJK 字体复用 `export/pdf_fonts.py`，避免第三条字体链
-- 最近一次全绿：不适用（本轮仅文档，`make check-docs` 通过）
+- 当前阶段：P0 已落地（commit `dd6d6e5c`），进行 P1 前端引用与设计器
+- 已完成：模型 + 迁移 e0f1a2b3c4d5（幂等 + downgrade）、两级注册表（3 类 × 3 模板含默认配置）、渲染管线（图元层 + SVG/PNG 双写端 + 空行回退默认）、7 个 API（预览不落库 / ETag 304 / 模板下线降级）、备份 v8（导出 charts 键 + `_import_charts` 严格校验跳过记错误）
+- 下一步：P1 前端（chartRef.ts / ChartEmbed / MarkdownPreview 切片 / 工具栏入口 / InsertChartModal + ChartDesignerModal 防抖预览 / api + msw fixtures + 单测）→ P2 导出与游客分享
+- 已知坑：`chartRef.ts` 与 `chart_refs.py` 的解析样例要同一批；Markdown 归档顺序须「图表改写 → 表格改写 → 归档」与 ADR 0045 叠加时保持无占位符残留；`require_valid_config` 抛 `BadRequestError`（不是 `BadRequestTemplateError`），备份导入捕获前者；`resolve_color` 对 3 位短 hex 不转大写；归一把 actualCount 钳制到有效行数
+- 最近一次全绿：`make check-fast` + `make test`（5678 passed）于 P0 提交时
