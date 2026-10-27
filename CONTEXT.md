@@ -60,3 +60,5 @@
 | 视图排序索引（Sort Index） | 动态物理表上按某视图 `sortings` 的「字段 + 方向」建的复合索引（尾补 `id ASC`），命名 `ix_{表}_sort_{n}`，每表上限 3 个 | 见 ADR 0046 D4；入口 `ensure_sort_index`，视图保存与记录列表首查惰性建，幂等可 DROP 还原；与数据源幂等 `match` 索引互不复用 |
 | 选项截断（Options Truncation） | select / multiselect 字段在表详情与字段列表序列化时 options > 500 截断为前 500，并带 `options_truncated: true` 与 `options_total` | 见 ADR 0046 D6；`GET /fields?full=1` 返回全量（字段编辑 / 筛选配置专用）；截断字段 Tag 颜色 fallback 由「选项位置」改「值稳定哈希」 |
 | 记录计数分离缓存（Records Count Cache） | 行列表的 `total` 计数与行数据分开缓存：按（表, 用户, 过滤签名）5s `list_cache`，offset 不参与签名（翻页不重算计数），写事件失效 | 见 ADR 0046 D3；`count_rows` 独立入口，`list_rows` 可传入 total 跳过内部计数；GET /records 读缓存与其同事件失效 |
+| 图表模板（Chart Template） | 代码内置注册表里的图形模板：类别（趋势 / 构成 / 对比，一级）→ 模板 key（二级，如 `bar-line-dual-axis`），随代码版本演进，用户不可创建 / 修改 | 见 ADR 0048；每个模板声明 data schema（数据矩阵 + 派生开关）与默认 config（caption / labels / theme），渲染分派唯一入口 `render_chart` |
+| 图表实例（Chart Instance） | 用户基于某模板的定制产物：`documents_chart` 行（workspace 级），存 `template_key + config`，不存渲染结果；正文以独占段落占位符 `{{chart:<id>}}` 引用 | 见 ADR 0048；预览与导出同源（后端唯一渲染器：共享图元层 → SVG / PNG 双写端）；失效引用降级占位文字，游客分享页本期不渲染 |
