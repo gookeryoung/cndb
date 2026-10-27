@@ -587,7 +587,8 @@ class TestHtmlConvertEdges:
             "<body><ul><li>a<script>x</script>b</li><li><b></b></li><li>x<br>y</li><li><del>删</del></li></ul></body>"
         )
         _, body, _ = html_converter.convert_html(html.encode(), "x.html")
-        assert "- a b" in body
+        # <script> 内容被跳过，且相邻行内文本按源码原样拼合（不额外插空格）
+        assert "- ab" in body
         assert "- ~~删~~" in body
         assert "\n-\n" in body
 
@@ -595,6 +596,69 @@ class TestHtmlConvertEdges:
         html = "<body><table><tr><th>a|b</th></tr><tr><td>1</td></tr></table></body>"
         _, body, _ = html_converter.convert_html(html.encode(), "x.html")
         assert "a\\|b" in body
+
+    def test_table_rowspan_and_colspan_expanded(self):
+        html = (
+            "<body><table>"
+            "<tr><th>类别</th><th>指标</th><th>值</th></tr>"
+            "<tr><td rowspan='2'>规模</td><td>甲</td><td>1</td></tr>"
+            "<tr><td>乙</td><td>2</td></tr>"
+            "<tr><td>结构</td><td colspan='2'>合并</td></tr>"
+            "</table></body>"
+        )
+        _, body, _ = html_converter.convert_html(html.encode(), "x.html")
+        assert body.splitlines()[2:] == ["| 规模 | 甲 | 1 |", "| 规模 | 乙 | 2 |", "| 结构 | 合并 |  |"]
+
+    def test_list_items_join_inline_without_added_spaces(self):
+        html = "<body><ol><li><strong>格局</strong>：解释</li><li>甲 <em>乙</em></li></ol></body>"
+        _, body, _ = html_converter.convert_html(html.encode(), "x.html")
+        assert body == "1. **格局**：解释\n2. 甲 *乙*"
+
+    def test_same_document_link_rewritten_to_heading_anchor(self):
+        html = (
+            "<body><nav><a href='file:///C:/docs/page.html#s01'>导言</a>"
+            "<a href='other.html#x'>外部</a><a href='page.html#nope'>未知</a>"
+            "<a href='#s01'>纯锚点</a></nav>"
+            "<section id='s01'><h2>导言：先看结论</h2></section></body>"
+        )
+        _, body, _ = html_converter.convert_html(html.encode(), "dir/page.html", base_url="file:///C:/docs/page.html")
+        # 章节 id 映射到预览标题锚点（与前端 outline.headingAnchor 同算法），跳转才生效
+        assert "[导言](#doc-h-导言先看结论)" in body
+        assert "[纯锚点](#doc-h-导言先看结论)" in body
+        assert "[外部](other.html#x)" in body
+        # 原文没有对应标题时保留原 fragment
+        assert "[未知](#nope)" in body
+
+    def test_anchor_index_falls_back_for_non_heading_and_skipped_targets(self):
+        html = (
+            "<body><h1 id='top'>文档标题</h1><h2>资料</h2>"
+            "<ol><li id='cite-1'>[1] 来源</li></ol>"
+            "<p><a href='p.html#cite-1'>1</a><a href='p.html#top'>顶</a></p></body>"
+        )
+        title, body, _ = html_converter.convert_html(html.encode(), "p.html")
+        assert title == "文档标题"
+        # 引注等无标题锚点退化到最近标题；被剥离为标题的 h1 不产生死锚点
+        assert "](#doc-h-资料)" in body
+        assert "](#top)" in body
+
+    def test_rendered_svg_in_pre_drops_style_and_warns(self):
+        html = (
+            "<body><pre class='mermaid'><svg><style>#mermaid-1{fill:#000}</style>"
+            "<text>步骤一</text></svg></pre><p>正文</p></body>"
+        )
+        _, body, warnings = html_converter.convert_html(html.encode(), "x.html")
+        assert body == "正文"
+        assert "font-family" not in body
+        assert any("SVG" in warning for warning in warnings)
+
+    def test_chart_figure_svg_keeps_caption_and_warns(self):
+        html = (
+            "<body><figure><figcaption>图1-1 占比</figcaption>"
+            "<div><svg><style>.x{}</style><text>柱状</text></svg></div></figure></body>"
+        )
+        _, body, warnings = html_converter.convert_html(html.encode(), "x.html")
+        assert body == "图1-1 占比"
+        assert any("SVG" in warning for warning in warnings)
 
     def test_data_uri_invalid_base64(self):
         _, body, warnings = html_converter.convert_html(b"<p><img src='data:image/png;base64,A' alt='x'></p>", "x.html")
@@ -953,6 +1017,18 @@ class TestMhtmlConvert:
         _title, _body, _, assets = mhtml_converter.convert_mhtml(data, "page.mhtml", image_sink=sink)
         assert sorted(names) == ["a-2.png", "a.png"]
         assert dict(assets)["_assets/a-2.png"] == b"2"
+
+    def test_mhtml_same_document_links_use_fragments(self):
+        html = (
+            "<html><head><title>锚点页</title></head><body>"
+            '<nav><a href="https://example.com/page#s01">导言</a>'
+            '<a href="https://example.com/other#x">外部</a></nav>'
+            "<section id='s01'><h2>导言</h2></section></body></html>"
+        )
+        _, body, warnings, _ = mhtml_converter.convert_mhtml(_make_mhtml(html), "page.mhtml")
+        assert "[导言](#doc-h-导言)" in body
+        assert "[外部](https://example.com/other#x)" in body
+        assert warnings == []
 
     def test_empty_and_broken_rejected(self):
         with pytest.raises(UnsupportedImport):

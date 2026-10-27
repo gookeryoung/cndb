@@ -4,7 +4,9 @@
 - 图片素材：``Content-Type: image/*`` 的 part，``get_payload(decode=True)`` 解 base64 / quoted-printable；
 - 匹配顺序：``Content-Location`` 精确 → ``cid:<Content-ID>`` → 唯一 basename 兜底；未命中由
   html 转换器降级占位 + 告警；未打包进 MHTML 的外链保留原 URL（决策 D2/D3）；
-- 非图片素材（CSS 等）丢弃（D6）；不保留 MHTML 原件（D7）。
+- 非图片素材（CSS 等）丢弃（D6）；不保留 MHTML 原件（D7）；
+- 指向根 HTML 自身的绝对链接（快照目录 / 引注的 ``file:///...#s01``）改写为文内锚点
+  ``#s01``，跨文档链接原样保留（D9）。
 """
 
 from __future__ import annotations
@@ -68,17 +70,19 @@ def _part_payload(part: Message) -> bytes | None:
     return bytes(payload)
 
 
-def parse_mhtml(data: bytes) -> tuple[str, list[tuple[str, str, str, bytes]]]:
-    """解析 MHTML 字节流 → ``(根 HTML 文本, 图片素材[(素材名, Content-Location, Content-ID, 字节)])``.
+def parse_mhtml(data: bytes) -> tuple[str, str, list[tuple[str, str, str, bytes]]]:
+    """解析 MHTML 字节流 → ``(根 HTML 文本, 根 HTML 的 Content-Location, 图片素材)``.
 
-    非 ``image/*`` part（CSS 等）直接丢弃；无 ``text/html`` part 或解析失败抛
-    ``UnsupportedImport``（调用方按「单条跳过」处理）。
+    图片素材为 ``[(素材名, Content-Location, Content-ID, 字节)]``；非 ``image/*`` part
+    （CSS 等）直接丢弃；无 ``text/html`` part 或解析失败抛 ``UnsupportedImport``
+    （调用方按「单条跳过」处理）。
     """
     try:
         message = BytesParser().parsebytes(data)
     except Exception as exc:
         raise UnsupportedImport("无法解析 MHTML 文件") from exc
     html_text = ""
+    html_location = ""
     resources: list[tuple[str, str, str, bytes]] = []
     seen: set[str] = set()
     for part in message.walk():
@@ -87,6 +91,7 @@ def parse_mhtml(data: bytes) -> tuple[str, list[tuple[str, str, str, bytes]]]:
             payload = _part_payload(part)
             if payload is not None:
                 html_text = decode_text(payload)
+                html_location = (part.get("Content-Location") or "").strip()
             continue
         if ctype.startswith("image/"):
             payload = _part_payload(part)
@@ -97,7 +102,7 @@ def parse_mhtml(data: bytes) -> tuple[str, list[tuple[str, str, str, bytes]]]:
             resources.append((_resource_name(location, ctype, seen), location, content_id, payload))
     if not html_text.strip():
         raise UnsupportedImport("MHTML 文件中没有 HTML 内容")
-    return html_text, resources
+    return html_text, html_location, resources
 
 
 def _location_basename(location: str) -> str:
@@ -153,9 +158,15 @@ def convert_mhtml(
     - 未被正文引用的图片素材在 ``image_sink`` 可用时直接落盘；
     - 素材清单为全部图片素材 ``(相对路径, 字节)``，供关态展开为批次条目。
     """
-    html_text, resources = parse_mhtml(data)
+    html_text, html_location, resources = parse_mhtml(data)
     index = _build_index(resources)
-    title, body, warnings = convert_html(html_text.encode("utf-8"), path, image_sink=image_sink, mhtml_resources=index)
+    title, body, warnings = convert_html(
+        html_text.encode("utf-8"),
+        path,
+        image_sink=image_sink,
+        mhtml_resources=index,
+        base_url=html_location,
+    )
     referenced = _referenced_names(html_text, index)
     for name, _, _, payload in resources:
         if name in referenced or image_sink is None:

@@ -138,7 +138,7 @@ def _expand_mhtml_resources(items: list[UploadedItem]) -> list[UploadedItem]:
         if Path(item.path).suffix.lower() not in reader.MHTML_SUFFIXES:
             continue
         try:
-            _, resources = mhtml_converter.parse_mhtml(item.data)
+            _, _, resources = mhtml_converter.parse_mhtml(item.data)
         except UnsupportedImport:
             continue
         folder = posixpath.dirname(item.path)

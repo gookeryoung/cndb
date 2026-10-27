@@ -120,6 +120,8 @@ class _Ctx:
 
     ``mhtml_resources``：MHTML 素材索引（``正文 src → (相对引用, 字节)``，ADR 0049），
     仅 MHTML 转换传入；命中时引用改写为 ``_assets/<名>`` 相对路径。
+    ``base_url``：根 HTML 的原始地址（MHTML 取 ``Content-Location``），用于把指向自身的
+    绝对链接改写为文内锚点（ADR 0049 D9）。
     """
 
     path: str = ""
@@ -128,6 +130,8 @@ class _Ctx:
     warnings: list[str] = field(default_factory=list)
     images: int = 0
     mhtml_resources: Mapping[str, tuple[str, bytes]] | None = None
+    base_url: str = ""
+    anchors: dict[str, str] = field(default_factory=dict)
     _local_keys: dict[str, str] = field(default_factory=dict)
 
 
@@ -139,9 +143,13 @@ def _walk(node: _Node) -> Iterator[_Node]:
 
 
 def _node_text(node: _Node) -> str:
+    """节点纯文本：跳过脚本 / 样式 / 内联 SVG 等非正文子树（避免 CSS / JS 泄进正文）."""
     parts: list[str] = []
     for child in node.children:
-        parts.append(child if isinstance(child, str) else _node_text(child))
+        if isinstance(child, str):
+            parts.append(child)
+        elif child.tag not in _SKIP_TAGS:
+            parts.append(_node_text(child))
     return "".join(parts)
 
 
@@ -150,6 +158,52 @@ def _find_first(root: _Node, tag: str) -> _Node | None:
         if node.tag == tag:
             return node
     return None
+
+
+def _first_heading(root: _Node) -> _Node | None:
+    for node in _walk(root):
+        if node.tag in _HEADING_TAGS:
+            return node
+    return None
+
+
+def _heading_anchor(text: str) -> str:
+    """标题文本 → 预览区锚点 id（与前端 ``outline.headingAnchor`` 同算法）.
+
+    小写 → 只保留 Unicode 字母数字 / 空白 / 连字符 → 空白折叠为连字符，前缀 ``doc-h-``。
+    """
+    kept = "".join(char for char in text.strip().lower() if char.isalnum() or char.isspace() or char == "-")
+    return f"doc-h-{'-'.join(kept.split()) or 'empty'}"
+
+
+def _anchor_index(root: _Node, skip: set[_Node]) -> dict[str, str]:
+    """``id → 预览标题锚点``（ADR 0049 D9）：章节 / 标题自带 id 时改指向其所属标题.
+
+    原文档的目录链接是 ``#s01``，但 Markdown 不保留元素 id；预览区标题 id 由标题文本生成，
+    因此把已知 id 映射到同算法产出的 ``doc-h-…``，文内跳转才真正生效。被当作文档标题剥离
+    的标题不入索引（否则锚点指向不存在的标题）。
+    """
+    anchors: dict[str, str] = {}
+    latest: list[_Node | None] = [None]
+
+    def visit(node: _Node) -> None:
+        if node.tag in _HEADING_TAGS and node not in skip:
+            latest[0] = node
+        key = (node.attrs.get("id") or "").strip()
+        if key and key not in anchors:
+            heading = node if node.tag in _HEADING_TAGS else _first_heading(node)
+            if heading is None or heading in skip:
+                # 引注等无标题的锚点退化到所在位置之前最近的标题（点击可落到该节）
+                heading = latest[0]
+            text = collapse_whitespace(_node_text(heading)).strip() if heading is not None else ""
+            if text:
+                anchors[key] = _heading_anchor(text)
+        for child in node.children:
+            if isinstance(child, _Node):
+                visit(child)
+
+    visit(root)
+    return anchors
 
 
 def _decode_data_uri(uri: str) -> tuple[bytes, str] | None:
@@ -283,6 +337,39 @@ def _image_markdown(node: _Node, ctx: _Ctx) -> str:
     return _local_image_markdown(ctx, src, alt)
 
 
+def _same_document_fragment(ctx: _Ctx, href: str) -> str | None:
+    """指向「本文档自身」的链接 → 文内锚点；其余返回 None（ADR 0049 D9）.
+
+    快照类 HTML / MHTML 的目录与引注链接多是 ``file:///.../同一文件.html#s01``，入库后该
+    路径不存在；命中自身时优先映射到对应标题锚点（``#doc-h-…``），无对应标题则保留
+    ``#fragment``。跨文档链接不动。
+    """
+    try:
+        parts = urlsplit(href)
+    except ValueError:  # pragma: no cover - 与 _is_external 同一非法 URL 分支
+        return None
+    if not parts.fragment:
+        return None
+    mapped = f"#{ctx.anchors.get(unquote(parts.fragment), parts.fragment)}"
+    if not parts.scheme and not parts.netloc and not parts.path:
+        # 纯 fragment（`#s01`）本就指向本文档
+        return mapped
+    if parts.scheme or parts.netloc:
+        if not ctx.base_url:
+            return None
+        try:
+            base = urlsplit(ctx.base_url)
+        except ValueError:  # pragma: no cover - base_url 来自解析后的 Content-Location
+            return None
+        if (parts.scheme, parts.netloc, unquote(parts.path)) != (base.scheme, base.netloc, unquote(base.path)):
+            return None
+        return mapped
+    name = unquote(parts.path).replace("\\", "/").rsplit("/", 1)[-1]
+    if name and name == posixpath.basename(ctx.path.replace("\\", "/")):
+        return mapped
+    return None
+
+
 def _inline(node: _Node | str, ctx: _Ctx) -> str:
     """行内渲染：返回单行 Markdown 片段（块级元素在此处退化为纯文本）."""
     if isinstance(node, str):
@@ -309,7 +396,10 @@ def _inline(node: _Node | str, ctx: _Ctx) -> str:
         return f"~~{stripped}~~"
     if tag == "a":
         href = (node.attrs.get("href") or "").strip()
-        return f"[{stripped}]({href})" if href else stripped
+        if not href:
+            return stripped
+        anchor = _same_document_fragment(ctx, href)
+        return f"[{stripped}]({anchor or href})"
     return inner
 
 
@@ -328,7 +418,7 @@ def _render_list(node: _Node, ctx: _Ctx, *, ordered: bool, indent: int = 0) -> l
                 nested.append(sub)
             else:
                 parts.append(_inline(sub, ctx))
-        text = " ".join(part.strip() for part in parts if part.strip())
+        text = collapse_whitespace("".join(parts)).strip()
         marker = f"{index}." if ordered else "-"
         lines.append("  " * indent + marker + (f" {text}" if text else ""))
         for sub in nested:
@@ -336,11 +426,19 @@ def _render_list(node: _Node, ctx: _Ctx, *, ordered: bool, indent: int = 0) -> l
     return lines
 
 
-def _code_block(node: _Node) -> str:
-    """``<pre>`` → 围栏代码块（语言取自 ``<code class="language-x">``）."""
+def _code_block(node: _Node, ctx: _Ctx) -> str:
+    """``<pre>`` → 围栏代码块（语言取自 ``<code class="language-x">``）.
+
+    内联 SVG（mermaid / ECharts 等渲染后图表）在 ``_node_text`` 中被跳过；若 ``<pre>``
+    只剩图表而无源码，则整块丢弃并告警，避免把 SVG 内的 ``<style>`` 当代码输出（D10）。
+    """
     code = _find_first(node, "code")
     source = code if code is not None else node
     raw = _node_text(source).strip("\n")
+    if not raw.strip():
+        if _find_first(node, "svg") is not None:
+            ctx.warnings.append("内联 SVG 图表无法转换为文本，已跳过")
+        return ""
     language = ""
     if code is not None:
         for token in (code.attrs.get("class") or "").split():
@@ -354,23 +452,55 @@ def _cell_markdown(cell: _Node, ctx: _Ctx) -> str:
     return text.replace("|", "\\|")
 
 
+def _span(node: _Node, name: str) -> int:
+    """读取 ``rowspan`` / ``colspan``：非法值按 1，上限 1000（防御恶意超宽表）."""
+    try:
+        value = int(node.attrs.get(name) or "1")
+    except ValueError:
+        return 1
+    return max(1, min(value, 1000))
+
+
 def _table_markdown(node: _Node, ctx: _Ctx) -> str:
-    rows: list[list[str]] = []
+    """``<table>`` → Markdown 表格；``rowspan`` / ``colspan`` 展开为普通网格（D11）.
+
+    Markdown 没有合并单元格：被 ``rowspan`` 覆盖的下方行重复该单元格文本，``colspan``
+    多出的列留空，保证每一行的列数与表头一致、逐列语义不错位。
+    """
+    rows: list[list[tuple[str, int, int]]] = []
     for child in _walk(node):
         if child.tag != "tr":
             continue
         cells = [
-            _cell_markdown(cell, ctx) for cell in child.children if isinstance(cell, _Node) and cell.tag in _CELL_TAGS
+            (_cell_markdown(cell, ctx), _span(cell, "rowspan"), _span(cell, "colspan"))
+            for cell in child.children
+            if isinstance(cell, _Node) and cell.tag in _CELL_TAGS
         ]
         if cells:
             rows.append(cells)
     if not rows:
         return ""
-    width = max(len(row) for row in rows)
-    lines = ["| " + " | ".join(rows[0] + [""] * (width - len(rows[0]))) + " |"]
-    lines.append("| " + " | ".join(["---"] * width) + " |")
-    for row in rows[1:]:
-        lines.append("| " + " | ".join(row + [""] * (width - len(row))) + " |")
+    grid: dict[tuple[int, int], str] = {}
+    width = 0
+    for row_index, cells in enumerate(rows):
+        column = 0
+        for text, rowspan, colspan in cells:
+            while (row_index, column) in grid:
+                column += 1
+            for offset in range(rowspan):
+                for extra in range(colspan):
+                    # 同一合并单元格的文字在每行首列重复，多列留空
+                    grid[(row_index + offset, column + extra)] = text if extra == 0 else ""
+            column += colspan
+            width = max(width, column)
+    if not width:
+        return ""
+
+    def line(row_index: int) -> list[str]:
+        return [grid.get((row_index, column), "") for column in range(width)]
+
+    lines = ["| " + " | ".join(line(0)) + " |", "| " + " | ".join(["---"] * width) + " |"]
+    lines.extend("| " + " | ".join(line(row_index)) + " |" for row_index in range(1, len(rows)))
     return "\n".join(lines)
 
 
@@ -405,7 +535,10 @@ def _blocks(node: _Node, ctx: _Ctx, *, skip: set[_Node]) -> list[str]:
                 out.append(text)
         elif tag in ("ul", "ol"):
             flush()
-            out.extend(_render_list(child, ctx, ordered=tag == "ol"))
+            lines = _render_list(child, ctx, ordered=tag == "ol")
+            if lines:
+                # 同一列表渲染为一个块：块间空行会让 Markdown 变成「松散列表」
+                out.append("\n".join(lines))
         elif tag == "blockquote":
             flush()
             inner = _blocks(child, ctx, skip=skip)
@@ -413,7 +546,9 @@ def _blocks(node: _Node, ctx: _Ctx, *, skip: set[_Node]) -> list[str]:
                 out.append("\n".join("> " + line if line else ">" for block in inner for line in block.split("\n")))
         elif tag == "pre":
             flush()
-            out.append(_code_block(child))
+            code = _code_block(child, ctx)
+            if code:
+                out.append(code)
         elif tag == "hr":
             flush()
             out.append("---")
@@ -424,6 +559,13 @@ def _blocks(node: _Node, ctx: _Ctx, *, skip: set[_Node]) -> list[str]:
                 out.append(markdown)
         elif tag == "br":
             buffer.append("\n")
+        elif tag == "figure":
+            flush()
+            # 图表（ECharts / mermaid）渲染为内联 SVG，当前无图像化能力：占位由 figcaption 承担，
+            # 这里只做一次告警提示内容缺失（D10）；<pre> 内的图表由 _code_block 自行告警。
+            if _find_first(child, "svg") is not None and _find_first(child, "pre") is None:
+                ctx.warnings.append("内联 SVG 图表无法转换为文本，已跳过")
+            out.extend(_blocks(child, ctx, skip=skip))
         elif tag in _BLOCK_CONTAINERS or tag in ("li", "td", "th", "tr"):
             flush()
             out.extend(_blocks(child, ctx, skip=skip))
@@ -440,6 +582,7 @@ def convert_html(
     image_sink: ImageSink | None = None,
     local_images: LocalImages | None = None,
     mhtml_resources: Mapping[str, tuple[str, bytes]] | None = None,
+    base_url: str = "",
 ) -> tuple[str, str, list[str]]:
     """把 ``.html`` / ``.htm`` 字节流转换为 ``(标题, 正文 Markdown, 告警)``.
 
@@ -447,6 +590,8 @@ def convert_html(
     ``local_images`` 为同批上传图片（批次相对路径 → 字节），用于把 HTML 相对
     ``<img src>`` 内联为站内附件；不传时保持原相对 URL。
     ``mhtml_resources`` 为 MHTML 素材索引（ADR 0049），仅 MHTML 转换传入。
+    ``base_url`` 为根 HTML 的原始地址（MHTML 取根 part 的 ``Content-Location``），用于
+    把指向本文档的绝对链接改写为文内锚点；缺省时按文件名匹配退化处理。
     """
     text = decode_text(data)
     if not text.strip():
@@ -458,7 +603,13 @@ def convert_html(
     except Exception as exc:  # 交由调用方按「单条跳过」处理
         raise UnsupportedImport("无法解析 HTML 文件") from exc
 
-    ctx = _Ctx(path=path, local_images=local_images, sink=image_sink, mhtml_resources=mhtml_resources)
+    ctx = _Ctx(
+        path=path,
+        local_images=local_images,
+        sink=image_sink,
+        mhtml_resources=mhtml_resources,
+        base_url=base_url,
+    )
     skip: set[_Node] = set()
     title = ""
     title_node = _find_first(parser.root, "title")
@@ -478,6 +629,7 @@ def convert_html(
         ctx.warnings.append("标题取自文件名")
 
     scope = _find_first(parser.root, "body") or parser.root
+    ctx.anchors = _anchor_index(parser.root, skip)
     blocks = _blocks(scope, ctx, skip=skip)
     body = "\n\n".join(block for block in blocks if block.strip())
     return title, body, ctx.warnings
