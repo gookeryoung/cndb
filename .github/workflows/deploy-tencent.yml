@@ -129,10 +129,15 @@ jobs:
           suffix = ""
           if "/packages/" in url:
               suffix = url.split("/packages/", 1)[1].split("#", 1)[0].split("?", 1)[0]
+          # 各镜像同步新版本的时间不同（实测同一版本发布后，清华 / 中科大 / 华为
+          # 往往先同步，腾讯 / 阿里滞后数分钟），多列几家能显著降低「全部 404 →
+          # 只能走跨境官方源」的概率；服务器侧还会按轮重试（见 build_tat_command.py）。
           mirror_bases = [
               "https://mirrors.cloud.tencent.com/pypi",
               "https://mirrors.aliyun.com/pypi",
               "https://pypi.tuna.tsinghua.edu.cn",
+              "https://mirrors.ustc.edu.cn/pypi",
+              "https://repo.huaweicloud.com/repository/pypi",
           ]
           mirrors = [f"{base}/packages/{suffix}" for base in mirror_bases] if suffix else []
 

@@ -65,3 +65,30 @@ class TestTatCommandSources:
 
         assert result.returncode == 0, result.stderr
         assert "上限 65536" in result.stdout
+
+
+class TestTatWheelFallback:
+    """镜像同步滞后时按轮重试，而不是立刻掉到跨境官方源。"""
+
+    def test_mirrors_retry_in_window_before_official(self, tmp_path: Path) -> None:
+        result = _run(
+            tmp_path,
+            WHEEL_MIRROR_URLS="https://mirror.example/packages/aa/cndb.whl",
+        )
+
+        assert result.returncode == 0, result.stderr
+        command = (tmp_path / "cmd.sh").read_text(encoding="utf-8")
+        # 有重试窗口与轮次，且窗口在官方源兜底之前结束
+        assert "MIRROR_DEADLINE=" in command
+        assert command.index('while [ "$WHEEL_OK" != "1" ]') < command.index("回退 PyPI 官方源")
+        # 官方源仍在镜像全部落空后兜底
+        assert "https://pypi.org/packages/aa/cndb-0.3.0.whl" in command
+
+    def test_no_mirrors_skips_retry_loop(self, tmp_path: Path) -> None:
+        result = _run(tmp_path)
+
+        assert result.returncode == 0, result.stderr
+        command = (tmp_path / "cmd.sh").read_text(encoding="utf-8")
+        # 没有镜像时不生成重试循环，否则会空转整个重试窗口
+        assert "MIRROR_DEADLINE=" not in command
+        assert "回退 PyPI 官方源" in command

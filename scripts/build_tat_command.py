@@ -38,6 +38,11 @@ MAX_CONTENT_BYTES = 64 * 1024
 # 载荷 heredoc 的定界符：不能与命令里任何一行重复
 PAYLOAD_HEREDOC = "CNDB_DEPLOY_PAYLOAD_EOF"
 
+# 国内镜像重试窗口：发布后镜像同步有分钟级延迟，窗口内按轮重试（每轮间隔若干秒），
+# 超窗后才回退跨境官方源。总时长受此窗口约束，不会把部署拖到超时。
+MIRROR_WINDOW_SECONDS = 420
+MIRROR_RETRY_SLEEP_SECONDS = 20
+
 
 def env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
@@ -100,10 +105,10 @@ def build_command(payload_b64: str) -> str:
         "fi",
         "",
         "# ── 3. 取 wheel（原 scp 同步构建产物）──────────────────────────",
-        "# 发布刚完成时国内镜像往往还没同步到新版本，旧逻辑只有「腾讯镜像 → 官方源」",
-        "# 两跳，镜像一滞后就落到 files.pythonhosted.org（实测跨境仅 ~14KB/s，3MB 要",
-        "# 200s+）。这里改为「多个国内镜像快速失败 → 官方源长超时兜底」，任一源落盘",
-        "# 后都必须过 sha256 校验，校验不过继续换源。",
+        "# 发布刚完成时国内镜像往往还没同步到新版本（同步滞后数分钟），旧逻辑一滞后就",
+        "# 直接落到 files.pythonhosted.org（实测跨境仅 ~14KB/s，3MB 要 200s+，且常被",
+        "# reset）。这里先在时间窗内按轮重试多家国内镜像（等同步追上），全部落空才用",
+        "# 官方源长超时兜底；任一源落盘后都必须过 sha256 校验，校验不过继续换源。",
         "mkdir -p dist",
         "WHEEL_OK=0",
         "try_wheel() {",
@@ -129,11 +134,27 @@ def build_command(payload_b64: str) -> str:
     ]
     # 没有可用镜像时生成空串占位，让循环体里的 [ -n "$src" ] 兜住
     mirror_list = " ".join(f"'{url}'" for url in mirror_urls) or "''"
+    if mirror_urls:
+        lines += [
+            # 国内镜像同步新版本有分钟级延迟：发布后立刻部署时，全部镜像可能同时 404，
+            # 此时如果直接落到官方源，就会因跨境链路被 reset / 超时而整轮失败（实测
+            # 0.4.19 发布 2 分钟后部署即如此）。改为在时间窗内按轮重试镜像，等同步追上来。
+            f"MIRROR_DEADLINE=$(( $(date +%s) + {MIRROR_WINDOW_SECONDS} ))",
+            "ROUND=0",
+            'while [ "$WHEEL_OK" != "1" ] && [ "$(date +%s)" -lt "$MIRROR_DEADLINE" ]; do',
+            "  ROUND=$((ROUND + 1))",
+            '  if [ "$ROUND" -gt 1 ]; then',
+            '    echo "[deploy] 第 ${ROUND} 轮重试（镜像可能仍在同步新版本，等待 '
+            f'{MIRROR_RETRY_SLEEP_SECONDS}s）..." >&2',
+            f"    sleep {MIRROR_RETRY_SLEEP_SECONDS}",
+            "  fi",
+            f"  for src in {mirror_list}; do",
+            '    [ -n "$src" ] || continue',
+            "    try_wheel \"$src\" 45 '--retry 1 --retry-delay 2' && break",
+            "  done",
+            "done",
+        ]
     lines += [
-        f"for src in {mirror_list}; do",
-        '  [ -n "$src" ] || continue',
-        "  try_wheel \"$src\" 90 '' && break",
-        "done",
         'if [ "$WHEEL_OK" != "1" ]; then',
         '  echo "[deploy] 国内镜像均未命中，回退 PyPI 官方源（跨境可能较慢）..." >&2',
         f"  try_wheel '{wheel_url}' 900 '--retry 2 --retry-delay 3' || true",
