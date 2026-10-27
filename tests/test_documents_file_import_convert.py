@@ -20,6 +20,7 @@ from cndb.core.errors import BadRequestError
 from cndb.plugins.documents.services.importers import docx as docx_converter
 from cndb.plugins.documents.services.importers import html as html_converter
 from cndb.plugins.documents.services.importers import markdown as markdown_converter
+from cndb.plugins.documents.services.importers import mhtml as mhtml_converter
 from cndb.plugins.documents.services.importers import normalize as normalize_module
 from cndb.plugins.documents.services.importers import reader
 from cndb.plugins.documents.services.importers.errors import UnsupportedImport
@@ -735,3 +736,267 @@ class TestReader:
         assert [doc.path for doc in docs] == ["ok.md"]
         assert {entry["path"] for entry in skipped} == {"bad.txt", "broken.docx"}
         assert all(entry["reason"] for entry in skipped)
+
+
+# ── mhtml 转换（ADR 0049）──
+
+
+def _qp(payload: bytes) -> str:
+    import quopri
+
+    return quopri.encodestring(payload).decode("ascii")
+
+
+def _b64(payload: bytes) -> str:
+    return base64.encodebytes(payload).decode("ascii")
+
+
+def _make_mhtml(
+    html: str,
+    parts: list[dict] | None = None,
+    *,
+    boundary: str = "----MultipartBoundary--mht49----",
+) -> bytes:
+    """构造 Chrome 风格 MHTML 字节流。
+
+    ``parts`` 每项：``{"location": str, "content_id": str | "", "mime": str,
+    "data": bytes, "encoding": "base64" | "quoted-printable"}``。
+    """
+    lines = [
+        "From: <Saved by Blink>",
+        "Snapshot-Content-Location: https://example.com/page",
+        "MIME-Version: 1.0",
+        f'Content-Type: multipart/related; type="text/html"; boundary="{boundary}"',
+        "",
+        f"--{boundary}",
+        "Content-Type: text/html; charset=UTF-8",
+        "Content-Transfer-Encoding: quoted-printable",
+        "Content-Location: https://example.com/page",
+        "",
+        _qp(html.encode("utf-8")),
+        "",
+    ]
+    for part in parts or []:
+        lines += [
+            f"--{boundary}",
+            f"Content-Type: {part['mime']}",
+            f"Content-Transfer-Encoding: {part.get('encoding', 'base64')}",
+        ]
+        if part.get("content_id"):
+            lines.append(f"Content-ID: <{part['content_id']}>")
+        if part.get("location"):
+            lines.append(f"Content-Location: {part['location']}")
+        lines += ["", _b64(part["data"]) if part.get("encoding") != "quoted-printable" else _qp(part["data"]), ""]
+    lines.append(f"--{boundary}--")
+    return "\r\n".join(lines).encode("ascii")
+
+
+class TestMhtmlConvert:
+    def test_basic_convert_title_and_body(self):
+        data = _make_mhtml("<html><head><title>页面标题</title></head><body><h2>小节</h2><p>正文内容</p></body></html>")
+        title, body, warnings, assets = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert title == "页面标题"
+        assert "## 小节" in body
+        assert "正文内容" in body
+        assert warnings == []
+        assert assets == []
+
+    def test_images_sunk_as_file_refs(self):
+        html = (
+            "<html><head><title>图文页</title></head><body>"
+            '<p><img src="https://example.com/img/a.png" alt="甲"></p>'
+            '<p><img src="./b.jpg" alt="乙"></p>'
+            "</body></html>"
+        )
+        parts = [
+            {"location": "https://example.com/img/a.png", "mime": "image/png", "data": PNG_BYTES},
+            {"location": "https://example.com/img/b.jpg", "mime": "image/jpeg", "data": b"JPGDATA"},
+        ]
+        data = _make_mhtml(html, parts)
+        sunk: list[tuple[bytes, str]] = []
+
+        def sink(payload: bytes, name: str) -> str:
+            sunk.append((payload, name))
+            return f"K{len(sunk)}"
+
+        _title, body, warnings, assets = mhtml_converter.convert_mhtml(data, "page.mhtml", image_sink=sink)
+        assert "![甲](file:K1)" in body
+        assert "![乙](file:K2)" in body
+        assert sunk[0] == (PNG_BYTES, "a.png")
+        assert sunk[1] == (b"JPGDATA", "b.jpg")
+        assert warnings == []
+        assert {rel for rel, _ in assets} == {"_assets/a.png", "_assets/b.jpg"}
+        assert dict(assets)["_assets/a.png"] == PNG_BYTES
+
+    def test_sink_none_keeps_relative_refs_without_warnings(self):
+        html = '<html><head><title>无告警页</title></head><body><p><img src="https://example.com/img/a.png" alt="甲"></p></body></html>'
+        parts = [{"location": "https://example.com/img/a.png", "mime": "image/png", "data": PNG_BYTES}]
+        data = _make_mhtml(html, parts)
+        _, body, warnings, assets = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert "![甲](_assets/a.png)" in body
+        assert "图片未导入" not in body
+        assert warnings == []
+        assert dict(assets)["_assets/a.png"] == PNG_BYTES
+
+    def test_cid_reference_matches(self):
+        html = (
+            '<html><head><title>.cid页</title></head><body><p><img src="cid:logo@example" alt="标"></p></body></html>'
+        )
+        parts = [
+            {
+                "location": "https://example.com/logo.png",
+                "content_id": "logo@example",
+                "mime": "image/png",
+                "data": PNG_BYTES,
+            }
+        ]
+        data = _make_mhtml(html, parts)
+        sunk: list[bytes] = []
+        _, body, warnings, _ = mhtml_converter.convert_mhtml(
+            data, "page.mhtml", image_sink=lambda payload, name: sunk.append(payload) or "CID1"
+        )
+        assert "![标](file:CID1)" in body
+        assert sunk == [PNG_BYTES]
+        assert warnings == []
+
+    def test_relative_src_basename_fallback(self):
+        html = (
+            '<html><head><title>相对图</title></head><body><p><img src="images/图片 名.png" alt="图"></p></body></html>'
+        )
+        parts = [
+            {
+                "location": "https://example.com/assets/%E5%9B%BE%E7%89%87%20%E5%90%8D.png",
+                "mime": "image/png",
+                "data": b"P",
+            }
+        ]
+        data = _make_mhtml(html, parts)
+        _, body, warnings, assets = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert "![图](_assets/" in body
+        assert "图片未导入" not in body
+        assert warnings == []
+        assert len(assets) == 1
+
+    def test_quoted_printable_html_with_cjk(self):
+        # QP 编码的真实用途是文本 part（HTML）；图片素材生产者一律 base64
+        html = "<html><head><title>中文页</title></head><body><h1>标题行</h1><p>中文正文与「标点」</p></body></html>"
+        parts = [{"location": "https://example.com/a.png", "mime": "image/png", "data": PNG_BYTES}]
+        data = _make_mhtml(html, parts)
+        title, body, warnings, assets = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert title == "中文页"
+        assert "中文正文与「标点」" in body
+        assert warnings == []
+        assert dict(assets)["_assets/a.png"] == PNG_BYTES
+
+    def test_missing_resource_placeholder_with_warning(self):
+        html = '<html><body><p><img src="cid:missing@x" alt="失"></p></body></html>'
+        data = _make_mhtml(html)
+        _, body, warnings, _ = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert "图片未导入" in body
+        assert any("missing@x" in w for w in warnings)
+
+    def test_ambiguous_basename_not_matched(self):
+        html = '<html><body><p><img src="same.png" alt="重"></p></body></html>'
+        parts = [
+            {"location": "https://a.com/x/same.png", "mime": "image/png", "data": b"1"},
+            {"location": "https://b.com/y/same.png", "mime": "image/png", "data": b"2"},
+        ]
+        data = _make_mhtml(html, parts)
+        _, body, warnings, _ = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert "图片未导入" in body
+        assert warnings
+
+    def test_external_image_kept_as_url(self):
+        html = '<html><head><title>外链</title></head><body><p><img src="https://cdn.example.com/away.png" alt="外"></p></body></html>'
+        data = _make_mhtml(html)
+        _, body, warnings, assets = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert "![外](https://cdn.example.com/away.png)" in body
+        assert warnings == []
+        assert assets == []
+
+    def test_css_part_discarded(self):
+        html = '<html><head><link rel="stylesheet" href="style.css"></head><body><p>正文</p></body></html>'
+        parts = [{"location": "https://example.com/style.css", "mime": "text/css", "data": b"body{}"}]
+        data = _make_mhtml(html, parts)
+        _, _, _, assets = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert assets == []
+
+    def test_unreferenced_image_still_sunk(self):
+        html = "<html><body><p>无图正文</p></body></html>"
+        parts = [{"location": "https://example.com/extra.png", "mime": "image/png", "data": b"EXTRA"}]
+        data = _make_mhtml(html, parts)
+        sunk: list[str] = []
+        _, _, _, assets = mhtml_converter.convert_mhtml(
+            data, "page.mhtml", image_sink=lambda payload, name: sunk.append(name) or "U1"
+        )
+        assert sunk == ["extra.png"]
+        assert assets == [("_assets/extra.png", b"EXTRA")]
+
+    def test_duplicate_names_deduped(self):
+        html = (
+            "<html><body>"
+            '<p><img src="https://a.com/x/a.png" alt="一"></p>'
+            '<p><img src="https://b.com/y/a.png" alt="二"></p>'
+            "</body></html>"
+        )
+        parts = [
+            {"location": "https://a.com/x/a.png", "mime": "image/png", "data": b"1"},
+            {"location": "https://b.com/y/a.png", "mime": "image/png", "data": b"2"},
+        ]
+        data = _make_mhtml(html, parts)
+        names: list[str] = []
+
+        def sink(payload: bytes, name: str) -> str:
+            names.append(name)
+            return f"K{name}"
+
+        _title, _body, _, assets = mhtml_converter.convert_mhtml(data, "page.mhtml", image_sink=sink)
+        assert sorted(names) == ["a-2.png", "a.png"]
+        assert dict(assets)["_assets/a-2.png"] == b"2"
+
+    def test_empty_and_broken_rejected(self):
+        with pytest.raises(UnsupportedImport):
+            mhtml_converter.convert_mhtml(_make_mhtml(""), "page.mhtml")
+        with pytest.raises(UnsupportedImport):
+            mhtml_converter.convert_mhtml(b"not a mime message", "page.mhtml")
+
+    def test_no_html_part_rejected(self):
+        with pytest.raises(UnsupportedImport):
+            mhtml_converter.convert_mhtml(b"From: x\r\nMIME-Version: 1.0\r\n\r\nno multipart here", "page.mhtml")
+
+
+class TestReaderMhtml:
+    def test_convert_file_mhtml(self):
+        data = _make_mhtml("<html><head><title>T</title></head><body><p>正文</p></body></html>")
+        doc = reader.convert_file(reader.UploadedItem("page.mhtml", data))
+        assert doc.title == "T"
+        assert doc.suffix == ".mhtml"
+        assert doc.body == "正文"
+
+    def test_convert_file_mht_suffix(self):
+        data = _make_mhtml("<html><body><p>存档</p></body></html>")
+        doc = reader.convert_file(reader.UploadedItem("page.mht", data))
+        assert doc.title == "page"
+        assert doc.suffix == ".mht"
+
+    def test_mhtml_over_8mb_but_under_32mb_accepted(self, monkeypatch):
+        data = _make_mhtml("<html><body><p>大文件</p></body></html>")
+        assert len(data) <= reader.MAX_FILE_BYTES  # 本例不必真造 8MB，用monkeypatch 缩阈值验证分派
+        monkeypatch.setattr(reader, "MAX_FILE_BYTES", 4)
+        doc = reader.convert_file(reader.UploadedItem("page.mhtml", data))
+        assert doc.body == "大文件"
+
+    def test_mhtml_over_32mb_skipped(self, monkeypatch):
+        data = _make_mhtml("<html><body><p>超大</p></body></html>")
+        monkeypatch.setattr(reader, "MHTML_MAX_FILE_BYTES", 4)
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("page.mhtml", data))
+
+    def test_batch_isolates_broken_mhtml(self):
+        items = [
+            reader.UploadedItem("ok.mhtml", _make_mhtml("<html><body><p>好</p></body></html>")),
+            reader.UploadedItem("bad.mhtml", b"junk"),
+        ]
+        docs, skipped = reader.convert_batch(items)
+        assert [doc.path for doc in docs] == ["ok.mhtml"]
+        assert {entry["path"] for entry in skipped} == {"bad.mhtml"}

@@ -116,13 +116,18 @@ class _Builder(HTMLParser):
 
 @dataclass
 class _Ctx:
-    """渲染上下文：HTML 路径 + 本地图片索引 + 落盘回调 + 告警收集 + 图片计数."""
+    """渲染上下文：HTML 路径 + 本地图片索引 + 落盘回调 + 告警收集 + 图片计数.
+
+    ``mhtml_resources``：MHTML 素材索引（``正文 src → (相对引用, 字节)``，ADR 0049），
+    仅 MHTML 转换传入；命中时引用改写为 ``_assets/<名>`` 相对路径。
+    """
 
     path: str = ""
     local_images: LocalImages | None = None
     sink: ImageSink | None = None
     warnings: list[str] = field(default_factory=list)
     images: int = 0
+    mhtml_resources: Mapping[str, tuple[str, bytes]] | None = None
     _local_keys: dict[str, str] = field(default_factory=dict)
 
 
@@ -219,6 +224,40 @@ def _local_image_markdown(ctx: _Ctx, src: str, alt: str) -> str:
     return f"_[图片未导入：{name}]_"
 
 
+def _mhtml_entry(resources: Mapping[str, tuple[str, bytes]], src: str) -> tuple[str, bytes] | None:
+    """MHTML 素材查找唯一入口（ADR 0049 D3）：src 精确 → URL 解码 → 唯一 basename."""
+    entry = resources.get(src)
+    if entry is None:
+        entry = resources.get(unquote(src))
+    if entry is None:
+        try:
+            path = unquote(urlsplit(src).path)
+        except ValueError:  # pragma: no cover - 与 _is_external 同一非法 URL 分支
+            path = ""
+        basename = path.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if basename:
+            entry = resources.get(basename)
+    return entry
+
+
+def _mhtml_image_markdown(ctx: _Ctx, src: str, alt: str) -> str:
+    """MHTML 素材命中：改写为 ``_assets/<名>`` 相对引用，sink 可用则落盘为 ``file:``（ADR 0049 D4）."""
+    entry = _mhtml_entry(ctx.mhtml_resources or {}, src)
+    if entry is None:
+        if src.lower().startswith("cid:") or not _is_external(src):
+            # 打包内应含而未匹配到的素材：占位 + 告警（外链除外，保留原 URL）
+            ctx.warnings.append(f"MHTML 素材未包含，已跳过：{src}")
+            return f"_[图片未导入：{alt or src}]_"
+        return f"![{alt}]({src})"
+    rel, payload = entry
+    name = Path(rel).name
+    ctx.images += 1
+    key = _sunk_image(ctx, payload, name)
+    if key:
+        return f"![{alt or name}](file:{key})"
+    return f"![{alt or name}]({rel})"
+
+
 def _image_markdown(node: _Node, ctx: _Ctx) -> str:
     """``<img>`` → Markdown：data URI / 批次内本地图片落盘，外链保留原 URL."""
     src = (node.attrs.get("src") or "").strip()
@@ -237,6 +276,8 @@ def _image_markdown(node: _Node, ctx: _Ctx) -> str:
             return f"![{alt or name}](file:{key})"
         ctx.warnings.append(f"内嵌图片未导入：{name}")
         return f"_[图片未导入：{name}]_"
+    if ctx.mhtml_resources is not None:
+        return _mhtml_image_markdown(ctx, src, alt)
     if _is_external(src) or ctx.local_images is None:
         return f"![{alt}]({src})"
     return _local_image_markdown(ctx, src, alt)
@@ -398,12 +439,14 @@ def convert_html(
     *,
     image_sink: ImageSink | None = None,
     local_images: LocalImages | None = None,
+    mhtml_resources: Mapping[str, tuple[str, bytes]] | None = None,
 ) -> tuple[str, str, list[str]]:
     """把 ``.html`` / ``.htm`` 字节流转换为 ``(标题, 正文 Markdown, 告警)``.
 
     标题优先级：``<title>`` → 首个 ``<h1>``（并从正文剥离）→ 文件名。
     ``local_images`` 为同批上传图片（批次相对路径 → 字节），用于把 HTML 相对
     ``<img src>`` 内联为站内附件；不传时保持原相对 URL。
+    ``mhtml_resources`` 为 MHTML 素材索引（ADR 0049），仅 MHTML 转换传入。
     """
     text = decode_text(data)
     if not text.strip():
@@ -415,7 +458,7 @@ def convert_html(
     except Exception as exc:  # 交由调用方按「单条跳过」处理
         raise UnsupportedImport("无法解析 HTML 文件") from exc
 
-    ctx = _Ctx(path=path, local_images=local_images, sink=image_sink)
+    ctx = _Ctx(path=path, local_images=local_images, sink=image_sink, mhtml_resources=mhtml_resources)
     skip: set[_Node] = set()
     title = ""
     title_node = _find_first(parser.root, "title")

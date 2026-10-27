@@ -22,8 +22,8 @@ from cndb.plugins.documents.models import (
     CONTENT_TYPE_XLSX,
 )
 
-#: 一次能可靠转成 Markdown 的源格式（ADR 0010）
-CONVERTIBLE_SUFFIXES = (".md", ".markdown", ".docx", ".html", ".htm")
+#: 一次能可靠转成 Markdown 的源格式（ADR 0010；MHTML 见 ADR 0049）
+CONVERTIBLE_SUFFIXES = (".md", ".markdown", ".docx", ".html", ".htm", ".mhtml", ".mht")
 
 
 @dataclass(frozen=True)

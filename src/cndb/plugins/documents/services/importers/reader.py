@@ -17,6 +17,7 @@ from cndb.plugins.documents.services.obsidian import _is_skipped_path, _normaliz
 from . import docx as docx_converter
 from . import html as html_converter
 from . import markdown as markdown_converter
+from . import mhtml as mhtml_converter
 from .errors import UnsupportedImport
 from .formats import (
     CONTENT_TYPE_IMAGE,
@@ -35,12 +36,15 @@ LocalImages = html_converter.LocalImages
 MARKDOWN_SUFFIXES = (".md", ".markdown")
 DOCX_SUFFIXES = (".docx",)
 HTML_SUFFIXES = (".html", ".htm")
+MHTML_SUFFIXES = (".mhtml", ".mht")
 
 MB = 1024 * 1024
 #: 单批次文件数上限
 MAX_FILES = 500
 #: 单文件上限（可转换格式）
 MAX_FILE_BYTES = 8 * MB
+#: MHTML 单文件上限（图片打包进单文件，放宽到与原件族一致；ADR 0049 D5）
+MHTML_MAX_FILE_BYTES = 32 * MB
 #: 批次总体积上限
 MAX_TOTAL_BYTES = 128 * MB
 
@@ -59,6 +63,7 @@ class ImportedDoc:
 
     ``asset=True`` 表示该条不做 Markdown 转换：正文为空，原件由调用方落盘，
     文档节点按 ``content_type`` / ``mime`` 标记格式。
+    ``resources``：MHTML 图片素材 ``[(相对路径, 字节)]``（ADR 0049），关态由调用方展开。
     """
 
     path: str
@@ -69,6 +74,7 @@ class ImportedDoc:
     asset: bool = False
     content_type: str = "markdown"
     mime: str = ""
+    resources: list[tuple[str, bytes]] = field(default_factory=list)
 
 
 def is_supported(path: str) -> bool:
@@ -131,6 +137,27 @@ def convert_file(
     fmt = asset_format(item.path)
     if fmt is not None:
         return _convert_asset(item, suffix, fmt.content_type, fmt.mime)
+
+    if suffix in MHTML_SUFFIXES:
+        # MHTML 单独放宽到 32MB（图片打包进单文件，ADR 0049 D5），先于通用 8MB 检查
+        if len(item.data) > MHTML_MAX_FILE_BYTES:
+            raise UnsupportedImport(f"MHTML 文件超过 {MHTML_MAX_FILE_BYTES // MB}MB")
+        try:
+            title, body, warnings, resources = mhtml_converter.convert_mhtml(
+                item.data, item.path, image_sink=image_sink
+            )
+        except UnsupportedImport:
+            raise
+        except Exception as exc:
+            raise UnsupportedImport(f"解析失败：{exc}") from exc
+        return ImportedDoc(
+            path=item.path,
+            title=clean_title(title or Path(item.path).stem),
+            body=normalize_markdown(body),
+            suffix=suffix,
+            warnings=warnings,
+            resources=resources,
+        )
 
     if len(item.data) > MAX_FILE_BYTES:
         raise UnsupportedImport(f"文件超过 {MAX_FILE_BYTES // MB}MB")
@@ -196,6 +223,8 @@ __all__ = [
     "MARKDOWN_SUFFIXES",
     "MAX_FILES",
     "MAX_TOTAL_BYTES",
+    "MHTML_MAX_FILE_BYTES",
+    "MHTML_SUFFIXES",
     "SUPPORTED_SUFFIXES",
     "ImageSink",
     "ImportedDoc",
