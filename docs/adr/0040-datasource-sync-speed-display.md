@@ -1,6 +1,6 @@
 # ADR 0040: 数据源同步实时写入速度展示与端到端速度补齐
 
-Status: Accepted（2026-10-26 需求方评审通过，按「完全补齐差距」执行）
+Status: Implemented（2026-10-26 需求方评审通过，按「完全补齐差距」执行；2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-26
 Related: `src/cndb/plugins/datasource/schemas.py`、`src/cndb/core/http.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/services/core/records.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`examples/datasets/工作区-数据源示例/datasource.json`、`tests/test_api_fetch.py`、`tests/test_datasource_pipeline_concurrency.py`、`tests/test_datasource_api.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、ADR 0006 / 0034 / 0037 / 0039
 需求卡片: `docs/requirements/0040-datasource-sync-speed-display.md`

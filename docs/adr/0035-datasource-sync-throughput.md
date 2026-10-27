@@ -1,6 +1,6 @@
 # ADR 0035: 数据源同步吞吐优化（对标 stock-strategy 全市场日线同步）
 
-Status: Accepted
+Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-25
 Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/field_types/select.py`、`src/cndb/plugins/tables/services/fields/select_options.py`、`examples/datasets/工作区-数据源示例/datasource.json`、ADR 0006、ADR 0034
 需求卡片: `docs/requirements/0035-datasource-sync-throughput.md`（需求原文与约束编号的唯一副本）

@@ -1,6 +1,6 @@
 # ADR 0032: 平台内容严肃化（移除菜谱类示例与「内容型浏览」文案）
 
-Status: Accepted
+Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-25
 Related: `docs/requirements/0032-serious-content-cleanup.md`、`examples/datasets/工作区-数据源示例/views.json`、`examples/datasets/工作区-数据源示例/fields.json`、`examples/datasets/工作区-数据源示例/datasource.json`、`src/cndb/plugins/help/services/examples.py`、`src/cndb/plugins/help/services/figures/registry.py`、`frontend/src/pages/help/content/tutorials.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/views/GalleryView.tsx`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`src/cndb/plugins/llm/services/prompts.py`、`tests/test_seed_datasource.py`、`tests/test_help_examples_api.py`、`frontend/tests/e2e/critical/gallery-view.spec.ts`、`CONTEXT.md`、`docs/adr/0019-llm-prompt-config-simplify.md`、`docs/adr/0022-gallery-view-content-tables.md`
 需求卡片: `docs/requirements/0032-serious-content-cleanup.md`（需求原文与约束编号的唯一副本）

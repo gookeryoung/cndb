@@ -1,6 +1,6 @@
 # ADR 0036: 帮助文档四级层级（部分 / 主题 / 小节 / 条目）与内容补全
 
-Status: Accepted（已评审）
+Status: Implemented（已评审；2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-26
 Related: `frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/helpNav.test.tsx`、`frontend/src/pages/help/HelpDocsPage.test.tsx`、`frontend/src/pages/help/content/HelpDoc.tsx`、`frontend/src/pages/help/content/primitives.tsx`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`frontend/src/pages/help/content/configuration.tsx`、`frontend/src/pages/help/content/troubleshooting.tsx`、`frontend/src/pages/help/content/examples.tsx`、`frontend/src/pages/help/content/ExamplesSection.tsx`、`frontend/src/index.css`、`frontend/tests/e2e/critical/help-docs.spec.ts`
 需求卡片: `docs/requirements/0036-help-docs-hierarchy.md`（需求原文与约束编号的唯一副本）

@@ -1,6 +1,6 @@
 # ADR 0050: 用户自助修改密码与管理员重置他人密码
 
-Status: Accepted（已评审，2026-10-27）
+Status: Implemented（已评审，2026-10-27；同日人工确认 P0-P2 全期落地）
 Date: 2026-10-27
 Related: `src/cndb/plugins/accounts/routers/auth.py`、`src/cndb/plugins/accounts/routers/users.py`、`src/cndb/plugins/accounts/services/users.py`、`src/cndb/plugins/accounts/services/sessions.py`、`src/cndb/plugins/accounts/services/user_bulk.py`、`src/cndb/core/events.py`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/pages/admin/UsersPage.tsx`
 需求卡片: `docs/requirements/0050-user-password-management.md`（需求原文与约束编号的唯一副本）
@@ -213,7 +213,7 @@ class UserPasswordResetResponse(BaseModel):
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 全部落地（`Status` 保持 `Accepted`，实现已合入 `82d9a539`）
+- 当前阶段：P0-P2 全部落地，`Status` 已置 `Implemented`（实现合入 `82d9a539`，2026-10-27 人工确认）
 - 已完成：管理重置端点 + 服务层 + schema + 审计 / 事件 + 接口测试；个人设置「安全」页签 + 强制重新登录；用户管理重置入口 / 一次性密码展示 / 日志标签；e2e 用例已编写
 - 下一步：无（本期范围已完成）；e2e 交由 CI 执行
 - 已知坑：自助改密端点已存在，勿重复新增；管理重置不得复用 `PATCH /users/{id}`；自动生成的密码只在本次响应中出现一次，审计 detail 不得落密码或哈希；e2e 需 Chromium 系统依赖（本机缺 `libatk-1.0.so.0`，未能在本机跑通，交给 CI）

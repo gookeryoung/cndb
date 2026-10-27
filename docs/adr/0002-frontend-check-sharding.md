@@ -1,6 +1,6 @@
 # ADR 0002: Frontend Check 拆分并行（分片 + 覆盖率合并）
 
-Status: Accepted（静态链拆分已落地；分片方案未采用）
+Status: Implemented（静态链拆分已落地；分片方案未采用）
 Date: 2026-10-16
 Related: `frontend/vite.config.ts`、`frontend/scripts/check-coverage.mjs`、`Makefile`、`.codeup/pipelines/ci.yml`
 

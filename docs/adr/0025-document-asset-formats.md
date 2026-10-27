@@ -1,6 +1,6 @@
 # ADR 0025: 文档多格式上传（PDF / Office / 图片原样存档）与按格式区分图标
 
-Status: Accepted
+Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-24
 Related: `plugins/documents/models.py`、`plugins/documents/services/importers/`、`plugins/documents/services/content.py`、`plugins/documents/routers/file_import.py`、`plugins/documents/routers/documents.py`、`plugins/files/services.py`、`frontend/src/pages/documents/`、`docs/adr/0010-document-file-import.md`
 需求卡片: `docs/requirements/0025-document-asset-formats.md`（需求原文与约束编号的唯一副本）

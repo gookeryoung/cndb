@@ -1,6 +1,6 @@
 # ADR 0010: 文档通用文件导入（md / docx / html，单文件与文件夹模式）
 
-Status: Accepted（已评审）
+Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-20
 Related: `plugins/documents/routers/vault.py`、`plugins/documents/services/obsidian.py`、`plugins/documents/services/parse.py`、`plugins/documents/services/content.py`、`plugins/documents/services/export/docx.py`、`frontend/src/pages/documents/ObsidianImportModal.tsx`
 需求卡片: `docs/requirements/0010-document-file-import.md`（需求原文与约束编号的唯一副本）
@@ -232,7 +232,7 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0/P1/P2 均已落地，功能与测试完成，待收尾提交
+- 当前阶段：P0/P1/P2 均已落地并提交（`a322f993`），功能完结
 - 已完成：转换管线（md/docx/html → Markdown，标题三级识别 + 剥离，保守空白规整）；两段式端点（analyze/import）+ 落库编排（文件夹层级 / 冲突三策略 / 附件登记）；前端弹窗（单文件 / 文件夹模式）+ Page 入口
 - 测试：后端新模块覆盖率 99%（整体 98.12% ≥ 95%）；前端单测 6 例；e2e 单文件 / 文件夹 2 例通过
 - 已知坑：模块名为 `importers`（`import` 是 Python 保留字，无法作为包名）；antd `Radio.Group optionType="button"` 的可点击目标是 label，`getByRole("radio")` 命中的是隐藏 input；本环境浏览器不支持给 webkitdirectory input 注入目录，e2e 文件夹模式在页面内合成含 `webkitRelativePath` 的 FileList 后走真实 UI/后端

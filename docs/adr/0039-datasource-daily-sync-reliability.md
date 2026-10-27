@@ -1,6 +1,6 @@
 # ADR 0039: 股市日线同步失败修复（data_path 候选回退 + 基金/ETF 拆任务）与落库吞吐提升
 
-Status: Accepted（2026-10-26 需求方评审通过）
+Status: Implemented（2026-10-26 需求方评审通过；2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-26
 Related: `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py`、`examples/datasets/工作区-数据源示例/datasource.json`、ADR 0033、ADR 0034、ADR 0035、ADR 0037
 需求卡片: `docs/requirements/0039-datasource-daily-sync-reliability.md`（需求原文与约束编号的唯一副本）

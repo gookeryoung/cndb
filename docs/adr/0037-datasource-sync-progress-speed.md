@@ -1,6 +1,6 @@
 # ADR 0037: 数据源同步拉取提速与运行进度
 
-Status: Accepted（已评审）
+Status: Implemented（已评审；2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-26
 Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/datasource/{models,schemas,routers,services}`、`frontend/src/pages/datasource/`、ADR 0006 / 0034 / 0035
 需求卡片: `docs/requirements/0037-datasource-sync-progress-speed.md`

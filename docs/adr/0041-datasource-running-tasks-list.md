@@ -1,6 +1,6 @@
 # ADR 0041: 数据源同步顶部运行中任务多行列表
 
-Status: Accepted（2026-10-26 需求方评审通过）
+Status: Implemented（2026-10-26 需求方评审通过；2026-10-27 人工确认 P0-P1 全期落地）
 Date: 2026-10-26
 Related: `frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/pages/datasource/syncProgress.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx`、`frontend/src/pages/datasource/syncProgress.test.ts`、`frontend/src/api/datasource.ts`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/services/runner.py`、ADR 0006 / 0034 / 0037 / 0040
 需求卡片: `docs/requirements/0041-datasource-running-tasks-list.md`

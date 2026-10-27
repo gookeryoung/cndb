@@ -1,6 +1,6 @@
 # ADR 0046: 网页性能瓶颈识别与读路径优化（大表页面切换卡滞）
 
-Status: Accepted（需求方已确认卡片与方案，P0-P2 已落地）
+Status: Implemented（需求方已确认卡片与方案，2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-27
 Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/datasource/services/write.py`、`frontend/src/api/records.ts`、`frontend/src/pages/grid/useGridData.ts`、`frontend/src/pages/workspace/TablesList.tsx`、`frontend/src/utils/tagColors.ts`
 需求卡片: `docs/requirements/0046-web-performance-bottlenecks.md`（需求原文与约束编号的唯一副本）
@@ -181,9 +181,9 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 全部落地，等待人工终验（复测指标 + 是否改 `Implemented`）
+- 当前阶段：P0-P2 全部落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：瓶颈实测（Context 表，2026-10-27 本地 4.29M 行股市日线表）、需求卡片、本 ADR、P0/P1/P2 代码与测试
-- 下一步：在真实大库复测「分期」表指标（网格冷请求 / 复访 / 翻页 / 目录页 / 表详情体积），确认后由人决定 Status → `Implemented`；如需更深的翻页体验再单独立项 keyset（本 ADR D8 已否决按现状）
+- 下一步：在真实大库复测「分期」表指标（网格冷请求 / 复访 / 翻页 / 目录页 / 表详情体积）作为后续基线；如需更深的翻页体验再单独立项 keyset（本 ADR D8 已否决按现状）
 - 已知坑：dev 服务（Vite + uvicorn --reload）放大前端卡滞，复测须固定同一环境；排序索引首查有一次性建索引耗时（4.29M 行 ~2s），生产建议在视图保存 / seed 预建；`GET /records` 缓存 key 含 engine 身份与 user_id（行级权限按人隔离）；options 截断字段的 Tag 颜色改用值哈希，颜色与历史渲染不完全一致（D6 已声明）
 - 最近一次全绿：`make flow`（5582 passed / 3 skipped）+ `make cov`（96.97%，门槛 95%）+ `make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.85%）+ Playwright e2e 全量（73 passed / 21 skipped / 2 重试通过）@ 2026-10-27
 - 环境坑（本机）：`:8000` 被无关项目 `stock-strategy` 的 dev 服务长期占用，`make e2e` 的 webServer 会因端口冲突失败；本次以临时配置（`E2E_PORT=8010` + 复制 `playwright.config.ts` 把 url/baseURL 指向 8010，跑完即删）完成等价全量验证，未改动仓库配置。另需 `LD_LIBRARY_PATH=$HOME/.local/share/pw-libs/usr/lib/x86_64-linux-gnu` 才能启动 Chromium（系统缺 `libatk-1.0.so.0`）

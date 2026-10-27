@@ -1,6 +1,6 @@
 # ADR 0026: Chrome 81 兼容基线（生产构建与视觉一致）
 
-Status: Accepted
+Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-24
 Related: `frontend/vite.config.ts`、`frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/index.css`、`frontend/src/utils/webVitals.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts`、`frontend/scripts/check-browser-compat.mjs`、`frontend/scripts/chrome81-smoke.mjs`、`frontend/playwright.config.ts`、`.github/workflows/chrome81-smoke.yml`
 需求卡片: `docs/requirements/0026-chrome81-compat.md`（需求原文与约束编号的唯一副本）

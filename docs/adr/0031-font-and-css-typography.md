@@ -1,6 +1,6 @@
 # ADR 0031: 全站字体与 CSS 排版口径（默认标准字号 / 正文常规字重 / Outfit + JetBrains Mono）
 
-Status: Accepted
+Status: Implemented（2026-10-27 人工确认 P0-P4 全期落地）
 Date: 2026-10-25
 Related: `frontend/src/theme/fonts.ts`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/theme/tokens.ts`、`frontend/src/theme/theme.ts`、`frontend/src/theme/presets/common.ts`、`frontend/src/index.css`、`frontend/src/main.tsx`、`frontend/package.json`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/theme/tokens.test.ts`、`frontend/src/theme/ThemeProvider.test.tsx`、`frontend/src/theme/fontAssets.test.ts`、`frontend/tests/e2e/critical/typography.spec.ts`、`frontend/index.html`
 需求卡片: `docs/requirements/0031-typography-defaults.md`
@@ -243,7 +243,7 @@ export const WEIGHT = {
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P4 全部落地，ADR 已 Accept
+- 当前阶段：P0-P4 全部落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：默认口径改为「标准字号 + 不加粗」；字重四档标尺与门禁；CSS 51 条 + 行内 64 处字面量收敛；antd 与 body 字体族统一；Inter / Outfit / JetBrains Mono 全部以运行时依赖引入（`@fontsource/*`，只导 latin 四档），`frontend/public/fonts` 整体删除、中文改走系统字体回退；`DESIGN_SYSTEM.md` 同步
 - 下一步：无（后续如需完整中文 web font 子集或中文等宽，另立 ADR）
 - 已知坑：`@fontsource` latin 子集不含中文，中文与中文代码注释回退系统字体，属预期；`tokens.test.ts` 禁字面量前会剥离 `@font-face`，新增字体样式不要绕开变量；依赖版本锁在 `pnpm-lock.yaml`（5.3.0），升级需目检字形；`public/fonts` 已删，不要再往里放字体文件（`fontAssets.test.ts` 会失败）

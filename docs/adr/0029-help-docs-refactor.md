@@ -1,6 +1,6 @@
 # ADR 0029: 帮助功能重构为独立「帮助文档」路由（两级导航 + 典型示例下载）
 
-Status: Accepted（已评审）
+Status: Implemented（已评审；2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-25
 Related: `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/helpNav.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx`、`frontend/src/components/HelpTip.tsx`、`frontend/src/components/onboarding/OnboardingTour.tsx`、`src/cndb/cli/seed/runner.py`、`src/cndb/cli/seed/paths.py`、`pyproject.toml`、`docs/adr/README.md`
 需求卡片: `docs/requirements/0029-help-docs-refactor.md`（需求原文与约束编号的唯一副本）
@@ -239,7 +239,7 @@ export function topicPath(sectionKey: string, topicKey: string): string   // `/h
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 全部落地；待人工评审决定是否把 `Status` 改为 `Implemented`
+- 当前阶段：P0 / P1 / P2 全部落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：P0 —— `/help` 与深链路由、两级侧栏（桌面常驻 / 窄屏抽屉）、5 部分导航与内容迁移（含系统配置 4 主题、问题排查 2 主题）、名称统一、删除抽屉与旧测试、重放引导迁移、`/help` 不渲染工作区 Sider。P1 —— `plugins/help`（`HELP_EXAMPLE_MANIFEST` 三套场景 + 白名单 CSV 下载，`get_current_user` 鉴权、RFC 5987 文件名、资产包内优先 / 仓库兜底、目录缺失清单仍可读下载 404）、`frontend/src/api/help.ts`、`ExamplesSection`（TanStack Query `['help','examples']`，表格 / 亮点 / 步骤 / 鉴权 blob 下载 / 失败重试 / 场景缺失提示）。P2 —— `frontend/tests/e2e/critical/help-docs.spec.ts`（入口 → 两级导航 → 刷新 / 后退 → 示例清单 → CSV 下载 → 窄屏目录）与 `HelpDocsPage` 独立 lazy chunk 的体积基线（10.06 KiB gzip）
 - 下一步：seed 内容移除另行立需求（`cndb seed` 与帮助已解耦，移除不影响帮助）
 - 已知坑：`/help` 不在 `/w` 下，`MainLayout` 无 wid 分支会先等 `wsLoading`；深链纠正依赖 `findTopic`，新增主题必须同时挂到 `HELP_SECTIONS`；示例文件在 wheel 中位于 `cndb/datasets`、源码态位于 `examples/datasets`，`assets.py` 按此两处探测且**不得 import seed**；下载需登录，前端必须走 axios blob（`<a href>` 带不上 Authorization）；e2e 需独占 `:8000`，本地开着 `cndb serve` 时先停掉；`HelpTip` 与本次重构无关，勿动

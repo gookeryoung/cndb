@@ -1,6 +1,6 @@
 # ADR 0008: 离线部署镜像导出
 
-Status: Accepted
+Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-20
 Related: `docs/DEPLOY_TENCENT.md`、`README.md`（`deploy/Dockerfile.base`、`deploy/Dockerfile.prod`、`docker-compose.prod.yml`、`deploy/deploy.sh`、`deploy/.env.prod.example`）
 需求卡片: `docs/requirements/0008-offline-docker-image-export.md`（需求原文与约束编号的唯一副本）
@@ -135,7 +135,7 @@ Related: `docs/DEPLOY_TENCENT.md`、`README.md`（`deploy/Dockerfile.base`、`de
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地，ADR 已由需求方评审通过（`Accepted`）
+- 当前阶段：P0-P2 已落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：需求卡片与本 ADR；`deploy/build-image.sh`（本地构建）、`deploy/export-image.sh`（导出离线交付包）、`deploy/deploy.sh` 的 `OFFLINE=1` 离线加载；`Makefile` 的 `docker-build` / `docker-export`；`docs/DEPLOY_TENCENT.md` 第八节「离线部署」；`.dockerignore` 排除 `dist/offline`；脚本回归测试 `tests/test_deploy_scripts.py`
 - 下一步：人工在联网机执行一次「构建 → 导出 → 解包 → 离线 `OFFLINE=1` 部署」端到端演练并回填提交 sha
 - 已知坑：脚本不在 cndb 包覆盖率口径内（`make cov` 只统计 `cndb` 包），由 `bash -n` 静态检查 + `tests/test_deploy_scripts.py` 假 docker 桩 + 人工演练把关；导出镜像受构建机架构限制（跨架构需在目标架构机重建）；离线机磁盘需容纳数百 MB 交付包

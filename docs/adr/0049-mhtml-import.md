@@ -1,6 +1,6 @@
 # ADR 0049: MHTML 导入（内嵌素材入库，图片不丢失）
 
-Status: Accepted
+Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-27
 Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/documents/routers/file_import.py`、`frontend/src/api/documents.ts`、`frontend/src/pages/documents/DocumentImportModal.tsx`；上游 ADR 0010 / 0025
 需求卡片: `docs/requirements/0049-mhtml-import.md`（需求原文与约束编号的唯一副本）

@@ -1,6 +1,6 @@
 # ADR 0045: 文档数据表引用支持视图过滤与导出真实渲染
 
-Status: Accepted（2026-10-27 人工评审通过）
+Status: Implemented（2026-10-27 人工评审通过并确认 P0-P1 全期落地）
 Date: 2026-10-27
 Related: `frontend/src/pages/documents/InsertTableModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/components/Document/tableRef.ts`、`frontend/src/components/Document/TableEmbed.tsx`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/view_access.py`
 需求卡片: `docs/requirements/0045-document-table-ref-view-and-export.md`（需求原文与约束编号的唯一副本）
@@ -207,8 +207,8 @@ Related: `frontend/src/pages/documents/InsertTableModal.tsx`、`frontend/src/pag
 
 ## 交接（会话结束更新）
 
-- 当前阶段：Accepted，P0 / P1 均已落地（全部期完成，待人工确认 Status 是否改 `Implemented`）
+- 当前阶段：P0 / P1 均已落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：需求卡片 0045（C1–C6 与四项口径经需求方确认）；P0 后端导出解释器 `export/table_refs.py` + DOCX / PDF / Markdown 接入 + 导出路由接线；P1 前端 `InsertTableModal` 视图下拉 + `DocumentEditorPage` 状态 / 查询 / 拼参
-- 下一步：人工确认后 Status 改 `Implemented`；按需在真实大表上抽查导出耗时
+- 下一步：按需在真实大表上抽查导出耗时
 - 已知坑：导出解析必须与 `tableRef.ts` 保持段落级同构；Markdown 归档需先改写表格再打包；`list_rows` 仅在同时传 `db` 与 `user` 时才做角色字段隐藏；DOCX / PDF 渲染器签名扩展后 `tables` 必须保持可选（既有调用方零破坏）
 - 最近一次全绿：`make check-fast`（ruff check / format、pyrefly 0 error、前端 tsc + eslint）；`tests/test_document_export_table_refs.py` 24 例、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` 60 例、`tests/test_document_export_images.py` + `tests/test_documents_plugin.py` 77 例全绿

@@ -1,6 +1,6 @@
 # ADR 0027: 科研项目管理新增技术体系表与「技术脉络」树形视图
 
-Status: Accepted（已评审；P0-P1 已落地）
+Status: Implemented（已评审；2026-10-27 人工确认 P0-P1 全期落地）
 Date: 2026-10-24
 Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/seed/datasets.py`、`src/cndb/cli/seed/fields.py`、`src/cndb/cli/seed/views.py`、`frontend/src/pages/grid/views/TreeView.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`examples/datasets/工作区-科研项目管理/views.json`、`examples/datasets/工作区-科研项目管理/fields.json`
 需求卡片: `docs/requirements/0027-research-tech-system-tree.md`（需求原文与约束编号的唯一副本）
@@ -162,8 +162,8 @@ Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/s
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P1 已落地（Status 已定 Accepted）
+- 当前阶段：P0-P1 已落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：`技术体系.csv`（43 行 / 6 方向 / 4 层）、`fields.json` 设置、`views.json` 双视图、`tests/test_seed_tech_system.py` 9 例；真实数据集完整性回归随 `make flow` 全量通过
-- 下一步：无（落地表「提交」列已回填 `0dc2e12f`）；如需 `Status=Implemented` 由人确认
+- 下一步：无（落地表「提交」列已回填 `0dc2e12f`）
 - 已知坑：视图种子对字段名逐字校验，CSV 表头与 `views.json` 必须完全一致；`ROOT` 不是合法技术编号，仅作为根标记；低基数 select 推断依赖行数与唯一值比例，新增行时勿让 `技术方向 / 技术层级 / 成熟度` 变成高基数列
 - 最近一次全绿：`make flow`（2026-10-24，5329 passed / 3 skipped）

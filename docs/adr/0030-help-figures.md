@@ -1,6 +1,6 @@
 # ADR 0030: 帮助文档图示例（服务端生成 SVG + 后台定期重建）
 
-Status: Accepted（已评审）
+Status: Implemented（已评审；2026-10-27 人工确认 P0-P1 全期落地）
 Date: 2026-10-25
 Related: `src/cndb/plugins/help/services/figures/`、`src/cndb/plugins/help/routers/figures.py`、`src/cndb/plugins/help/schemas.py`、`src/cndb/plugins/help/plugin.py`、`src/cndb/core/config.py`、`src/cndb/app.py`、`frontend/src/pages/help/HelpFigure.tsx`、`frontend/src/pages/help/content/`、`frontend/src/api/help.ts`、`frontend/src/index.css`、`frontend/src/test/msw.ts`、`tests/test_help_figures.py`、`tests/conftest.py`
 需求卡片: `docs/requirements/0030-help-figures.md`（需求原文与约束编号的唯一副本）
@@ -216,7 +216,7 @@ fingerprint = sha1(inspect.getsource(build), data_digest())
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 已落地并提交（`9668a42f`），`Status` 为 `Accepted`；如需改 `Implemented` 由人确认
+- 当前阶段：P0 / P1 已落地并提交（`9668a42f`），`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：后端图示引擎（`svg.py` 图元、`builders.py` 六类构建器 + 真实 CSV 预览、`registry.py` 17 条 `FIGURE_SPECS` + 指纹、`store.py` 快照与 `FigureRefresher` 线程、`routers/figures.py` 三端点含 ETag/304）；配置项 `HELP_FIGURES_*` 与 lifespan 启停；前端 `HelpFigure`（指纹缓存 + 清洗 + 三种降级）、`api/help.ts` 三方法、四部分正文插入图示例、示例区逐表数据预览、`.cn-help-figure*` 样式、msw 桩；字段类型主题删除「共 16 种」硬编码
 - 下一步：seed 内容移除另行立需求（与图示无关）；若后续要给图示加「导出 PNG」，需评估新增依赖（当前刻意只做 SVG）
 - 已知坑：图示快照在 `CACHE_DIR/help-figures`，**不要**把它当业务数据备份；新增图必须同时登记 `FIGURE_SPECS` 并在正文引用，否则前端显示「图示未登记」；预览图 key 由 `example-{scenario}-table-{n}` 序号生成，**调整清单里 tables 顺序会让图换名**（前端是按 index 引用的，顺序即契约）；`FigureStore` 的 `get` 会持锁重建，批量调用请走 `refresh()`；测试环境必须保持 `HELP_FIGURES_ENABLED=False`，否则线程会跨测试写同一缓存目录；SVG 内联渲染前必须保留 `sanitizeSvg`，不要为省一次正则直接塞 `dangerouslySetInnerHTML`
