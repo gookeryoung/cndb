@@ -13,14 +13,25 @@ from cndb.plugins.documents.services.export.markdown_style import (
     _MD_HEADING_RE,
     _MD_TABLE_SEP_RE,
 )
+from cndb.plugins.documents.services.export.table_refs import (
+    ResolvedTable,
+    TableResolver,
+    parse_table_ref_line,
+)
 from cndb.plugins.documents.services.export.theme import DEFAULT_THEME
 
 logger = logging.getLogger(__name__)
 
 
-def _render_docx(markdown_text: str, title: str = "", images: ImageResolver | None = None) -> bytes:
+def _render_docx(
+    markdown_text: str,
+    title: str = "",
+    images: ImageResolver | None = None,
+    tables: TableResolver | None = None,
+) -> bytes:
     # images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片，
     # 解析失败写占位文字，避免导出物静默丢图
+    # tables：数据表引用解析器；``{{table:…}}`` 独占一行时渲染为真实表格
     """把文档 Markdown 正文渲染为 .docx 字节流.
 
     支持标题 / 加粗 / 行内代码 / GFM 表格 / ``---PAGE---`` 换页，
@@ -73,34 +84,51 @@ def _render_docx(markdown_text: str, title: str = "", images: ImageResolver | No
         s = line.strip()
         return s.startswith("|") and s.endswith("|")
 
+    def _write_table(rows: list[list[str]]) -> None:
+        """把二维文本写入 docx 表格对象（首行加粗 + 主题底纹）."""
+        if not rows:
+            return
+        max_cols = max(len(r) for r in rows)
+        norm_rows = [r + [""] * (max_cols - len(r)) for r in rows]
+        t = doc.add_table(rows=len(norm_rows), cols=max_cols)
+        t.style = "Table Grid"
+        for i, row_cells in enumerate(norm_rows):
+            for j, cell_text in enumerate(row_cells):
+                cell = t.cell(i, j)
+                p = cell.paragraphs[0]
+                if i == 0:
+                    run = p.add_run(cell_text)
+                    run.bold = True
+                    # 表头主题：底纹 + 文字色
+                    shd = cell._tc.get_or_add_tcPr().makeelement(qn("w:shd"), {})
+                    shd.set(qn("w:val"), "clear")
+                    shd.set(qn("w:fill"), preset.table_header_bg.lstrip("#"))
+                    cell._tc.get_or_add_tcPr().append(shd)
+                    _apply_run_font(run, preset.body_font, color=preset.table_header_color)
+                else:
+                    _add_rich_runs(p, cell_text, preset.table_body_font, preset.code_font)
+
     def _flush_table() -> None:
-        """把缓冲的 markdown 表格行写入 docx 表格对象（跳过分隔行，首行加粗 + 主题底纹）."""
+        """把缓冲的 markdown 表格行写入 docx 表格对象（跳过分隔行）."""
         nonlocal in_table, table_buffer
         rows = [[c.strip() for c in raw.strip().strip("|").split("|")] for raw in table_buffer if raw.strip()]
         # 跳过 markdown 分隔行（| --- | :---: |）
         rows = [r for r in rows if not all(_MD_TABLE_SEP_RE.match(c or "-") for c in r)]
-        if rows:
-            max_cols = max(len(r) for r in rows)
-            norm_rows = [r + [""] * (max_cols - len(r)) for r in rows]
-            t = doc.add_table(rows=len(norm_rows), cols=max_cols)
-            t.style = "Table Grid"
-            for i, row_cells in enumerate(norm_rows):
-                for j, cell_text in enumerate(row_cells):
-                    cell = t.cell(i, j)
-                    p = cell.paragraphs[0]
-                    if i == 0:
-                        run = p.add_run(cell_text)
-                        run.bold = True
-                        # 表头主题：底纹 + 文字色
-                        shd = cell._tc.get_or_add_tcPr().makeelement(qn("w:shd"), {})
-                        shd.set(qn("w:val"), "clear")
-                        shd.set(qn("w:fill"), preset.table_header_bg.lstrip("#"))
-                        cell._tc.get_or_add_tcPr().append(shd)
-                        _apply_run_font(run, preset.body_font, color=preset.table_header_color)
-                    else:
-                        _add_rich_runs(p, cell_text, preset.table_body_font, preset.code_font)
+        _write_table(rows)
         in_table = False
         table_buffer = []
+
+    def _add_table_ref(resolved: ResolvedTable) -> None:
+        """渲染数据表引用：坏引用降级为占位段落，正常引用输出说明行 + 表格."""
+        if resolved.error:
+            doc.add_paragraph(resolved.error)
+            return
+        caption = doc.add_paragraph()
+        run = caption.add_run(resolved.caption)
+        run.italic = True
+        caption_size = preset.body_size - 1
+        _apply_run_font(run, preset.body_font, caption_size)
+        _write_table([resolved.header or [], *(resolved.rows or [])])
 
     for raw_line in markdown_text.split("\n"):
         line = raw_line.rstrip()
@@ -113,6 +141,13 @@ def _render_docx(markdown_text: str, title: str = "", images: ImageResolver | No
             continue
         if in_table:
             _flush_table()
+
+        # 数据表引用：独占一行时渲染为真实表格
+        if tables is not None:
+            spec = parse_table_ref_line(line)
+            if spec is not None:
+                _add_table_ref(tables(spec))
+                continue
 
         if not line.strip():
             doc.add_paragraph("")

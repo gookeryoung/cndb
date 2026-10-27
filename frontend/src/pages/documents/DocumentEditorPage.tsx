@@ -54,7 +54,7 @@ import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
 import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
-import { fileApi, tableApi, workspaceApi } from '@/api'
+import { fileApi, tableApi, viewApi, workspaceApi } from '@/api'
 import { useLlmAction } from '@/hooks/useLlmAction'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { WorkspaceRole } from '@/api'
@@ -154,6 +154,8 @@ export default function DocumentEditorPage() {
   // 插入数据表引用辅助
   const [insertOpen, setInsertOpen] = useState(false)
   const [insertTableId, setInsertTableId] = useState<number | null>(null)
+  /** 按视图过滤 / 排序取数；null = 整表 */
+  const [insertViewId, setInsertViewId] = useState<number | null>(null)
   const [insertLimit, setInsertLimit] = useState<number | null>(null)
 
   // ── 文档 AI（ADR 0020 P1）：结果只做「建议 → 预览 → 确认」，不自动保存 ──
@@ -209,6 +211,13 @@ export default function DocumentEditorPage() {
     queryKey: ['tables', workspaceId, 'embed-options'],
     queryFn: () => tableApi.list(workspaceId),
     enabled: insertOpen,
+  })
+
+  // 插入弹窗的视图下拉：仅在已选表时加载（后端已按可见性收敛）
+  const viewsQuery = useQuery({
+    queryKey: ['views', workspaceId, insertTableId],
+    queryFn: () => viewApi.list(workspaceId, insertTableId as number),
+    enabled: insertOpen && insertTableId !== null,
   })
 
   const docQuery = useQuery({
@@ -686,12 +695,19 @@ export default function DocumentEditorPage() {
   }, [findOpen, closeFind, openFind, applyMarkdownAction])
 
   // 在光标位置插入数据表引用占位符（前后自动补空行保证独占段落）
+  const resetInsertState = () => {
+    setInsertTableId(null)
+    setInsertViewId(null)
+    setInsertLimit(null)
+  }
+
   const insertTableRef = () => {
     if (insertTableId === null) return
-    insertSnippetAtCursor(`{{table:${insertTableId}${insertLimit ? `|limit=${insertLimit}` : ''}}}`)
+    const view = insertViewId ? `|view=${insertViewId}` : ''
+    const limit = insertLimit ? `|limit=${insertLimit}` : ''
+    insertSnippetAtCursor(`{{table:${insertTableId}${view}${limit}}}`)
     setInsertOpen(false)
-    setInsertTableId(null)
-    setInsertLimit(null)
+    resetInsertState()
   }
 
   // ── 插入图片：上传到工作区文件存储，正文写入站内引用 `![alt](file:<key>)` ──
@@ -1329,13 +1345,24 @@ export default function DocumentEditorPage() {
       <InsertTableModal
         open={insertOpen}
         onOk={insertTableRef}
-        onCancel={() => setInsertOpen(false)}
+        onCancel={() => {
+          setInsertOpen(false)
+          resetInsertState()
+        }}
         tableId={insertTableId}
-        onTableIdChange={v => setInsertTableId(v)}
+        onTableIdChange={v => {
+          setInsertTableId(v)
+          // 换表后旧视图失效，清空已选视图
+          setInsertViewId(null)
+        }}
+        viewId={insertViewId}
+        onViewIdChange={setInsertViewId}
         limit={insertLimit}
         onLimitChange={v => setInsertLimit(v)}
         tables={tablesQuery.data ?? []}
         tablesLoading={tablesQuery.isLoading}
+        views={viewsQuery.data ?? []}
+        viewsLoading={viewsQuery.isLoading}
       />
 
       {/* 分享弹层：匿名只读链接的创建 / 复制 / 访问次数 / 撤销（ADR 0017） */}
