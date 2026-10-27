@@ -7,7 +7,9 @@
 
 from __future__ import annotations
 
+import base64
 import io
+import quopri
 import struct
 import zlib
 
@@ -17,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
+from cndb.plugins.documents.models import Document
 from cndb.plugins.documents.services import importers
 from cndb.plugins.documents.services.importers import reader
 from cndb.plugins.files.models import FileOwner
@@ -643,3 +646,131 @@ class TestImportFiles:
         stats = r.json()
         assert stats["skipped"] == 2
         assert len(stats["skipped_files"]) == 1
+
+
+# ── MHTML 导入（ADR 0049）──
+
+MHTML_BOUNDARY = "----MultipartBoundary--api49----"
+
+
+def _make_mhtml(html: str, images: list[tuple[str, bytes]] | None = None) -> bytes:
+    """构造 Chrome 风格 MHTML：根 HTML 走 QP，images 每项为 (Content-Location, 字节)."""
+    lines = [
+        "From: <Saved by Blink>",
+        "MIME-Version: 1.0",
+        f'Content-Type: multipart/related; type="text/html"; boundary="{MHTML_BOUNDARY}"',
+        "",
+        f"--{MHTML_BOUNDARY}",
+        "Content-Type: text/html; charset=UTF-8",
+        "Content-Transfer-Encoding: quoted-printable",
+        "Content-Location: https://example.com/page",
+        "",
+        quopri.encodestring(html.encode("utf-8")).decode("ascii"),
+        "",
+    ]
+    for location, data in images or []:
+        lines += [
+            f"--{MHTML_BOUNDARY}",
+            "Content-Type: image/png",
+            "Content-Transfer-Encoding: base64",
+            f"Content-Location: {location}",
+            "",
+            base64.encodebytes(data).decode("ascii"),
+            "",
+        ]
+    lines.append(f"--{MHTML_BOUNDARY}--")
+    return "\n".join(lines).encode("ascii")
+
+
+class TestMhtmlImport:
+    """MHTML 导入：开态站内附件 / 关态 _assets 素材文档 / 预览口径（ADR 0049 D4/D8）."""
+
+    LOCATION = "https://example.com/a.png"
+
+    def _payload(self, *srcs: str) -> bytes:
+        imgs = "".join(f'<img src="{src}" alt="图">' for src in srcs)
+        html = f"<html><head><title>网页存档</title></head><body><p>正文</p>{imgs}</body></html>"
+        return _make_mhtml(html, [(self.LOCATION, PNG_BYTES)])
+
+    def test_on_mode_binds_file_attachments(self, client, db, ws, auth):
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(("页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
+            data={"paths": ["页面.mhtml"], "import_attachments": "true"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["created"] == 1
+        assert stats["attachments"] == 1
+        assert stats["assets"] == 0
+        page = _flat(_tree(client, ws.id, auth))[0]
+        assert page["title"] == "网页存档"
+        content = _content(client, ws.id, page["id"], auth)
+        assert "file:" in content
+        assert "_assets/" not in content
+        owners = (
+            db.execute(select(FileOwner).where(FileOwner.workspace_id == ws.id, FileOwner.document_id == page["id"]))
+            .scalars()
+            .all()
+        )
+        assert len(owners) == 1
+
+    def test_off_mode_expands_assets_folder(self, client, db, ws, auth):
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(("笔记/页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
+            data={"paths": ["笔记/页面.mhtml"], "import_attachments": "false"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["created"] == 2
+        assert stats["folders_created"] == 2  # 笔记/、笔记/_assets/
+        assert stats["assets"] == 1
+        assert stats["attachments"] == 0
+        assert stats["warnings"] == []
+        nodes = {node["title"]: node for node in _flat(_tree(client, ws.id, auth))}
+        assert set(nodes) == {"笔记", "_assets", "网页存档", "a"}
+        page = nodes["网页存档"]
+        content = _content(client, ws.id, page["id"], auth)
+        assert "![图](_assets/a.png)" in content
+        assert "file:" not in content
+        assert db.execute(select(FileOwner).where(FileOwner.document_id == page["id"])).scalars().all() == []
+        # 素材文档为图片原件族：原件可取回，归属绑定到素材文档而非 Markdown 正文
+        image_doc = (
+            db.execute(select(Document).where(Document.workspace_id == ws.id, Document.title == "a")).scalars().one()
+        )
+        assert image_doc.content_type == "image"
+        assert image_doc.asset_file_key
+        asset = client.get(f"{DOCS.format(ws=ws.id)}/{image_doc.id}/asset", headers=auth)
+        assert asset.status_code == 200, asset.text
+        assert asset.content == PNG_BYTES
+        image_owners = db.execute(select(FileOwner).where(FileOwner.document_id == image_doc.id)).scalars().all()
+        assert len(image_owners) == 1
+
+    def test_analyze_preview_no_expansion_no_false_warnings(self, client, ws, auth):
+        r = client.post(
+            ANALYZE.format(ws=ws.id),
+            files=_files(("页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
+            data={"paths": ["页面.mhtml"]},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["total_documents"] == 1  # 预览不展开 _assets 条目（ADR 0049 边界 5）
+        assert data["items"][0]["suffix"] == ".mhtml"
+        assert data["warnings"] == []
+
+    def test_broken_mhtml_skipped(self, client, ws, auth):
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(("坏.mhtml", b"not a mime payload", "application/octet-stream")),
+            data={"paths": ["坏.mhtml"], "import_attachments": "true"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["skipped"] == 1
+        assert stats["skipped_files"][0]["path"] == "坏.mhtml"
+        assert _tree(client, ws.id, auth) == []

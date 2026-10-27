@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import posixpath
 import uuid
 from collections.abc import Iterable
 from pathlib import Path
@@ -32,6 +33,7 @@ from cndb.plugins.documents.services.obsidian import (
 )
 from cndb.plugins.files.models import FileOwner
 
+from . import mhtml as mhtml_converter
 from . import reader
 from .errors import UnsupportedImport
 from .formats import ASSET_CONTENT_TYPES
@@ -123,6 +125,26 @@ def _preview_folders(
             preview.append({"path": "/".join(chain), "title": chain[-1], "status": "new"})
             parent = fake
     return preview, folder_ids
+
+
+def _expand_mhtml_resources(items: list[UploadedItem]) -> list[UploadedItem]:
+    """OFF 态预扫描：把每个 MHTML 的图片素材追加为批次图片条目（ADR 0049 D4）.
+
+    素材路径为 ``<md目录>/_assets/<素材名>``，走原件族路径落为 `_assets` 文件夹下的
+    图片文档；坏例不在此处理（留给 ``convert_file`` 统一计 skipped）。
+    """
+    expanded = list(items)
+    for item in items:
+        if Path(item.path).suffix.lower() not in reader.MHTML_SUFFIXES:
+            continue
+        try:
+            _, resources = mhtml_converter.parse_mhtml(item.data)
+        except UnsupportedImport:
+            continue
+        folder = posixpath.dirname(item.path)
+        for name, _, _, payload in resources:
+            expanded.append(UploadedItem(path=posixpath.join(folder, mhtml_converter.ASSET_DIR, name), data=payload))
+    return expanded
 
 
 def analyze_files(
@@ -252,6 +274,10 @@ def import_files(
         "skipped_files": [],
         "warnings": [],
     }
+
+    if not import_attachments:
+        # 关态：素材展开为批次图片条目，落为 _assets 文件夹图片文档（ADR 0049 D4）
+        items = _expand_mhtml_resources(items)
 
     local_images = reader.build_local_image_index(items)
     for item in sorted(items, key=lambda entry: entry.path):
