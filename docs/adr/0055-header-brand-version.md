@@ -153,15 +153,15 @@ Related: `frontend/src/layouts/MainLayout.tsx`、`frontend/src/layouts/MainLayou
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 进行中 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/layouts/MainLayout.test.tsx` | 待提交 |
-| P1 | 进行中 | `frontend/src/layouts/MainLayout.test.tsx` | `frontend/src/layouts/MainLayout.test.tsx` | 待提交 |
+| P0 | 已落地 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/layouts/MainLayout.test.tsx` | `30e775d1` |
+| P1 | 已落地 | `frontend/src/layouts/MainLayout.test.tsx` | `frontend/src/layouts/MainLayout.test.tsx` | `30e775d1` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0/P1 已实现并通过前端单测 / 类型检查 / lint，等待提交与回填提交号
+- 当前阶段：P0/P1 已落地并提交（`30e775d1`），等待人工确认是否将 `Status` 转 `Implemented`
 - 已完成：需求卡片与 ADR 评审确认；顶栏版本查询、版本小字与 `.cn-brand-version` 样式；桌面 / 移动 / 失败态单测
-- 下一步：提交后回填落地状态提交号，跑 `make flow` 收口（当前 `make test` 存在与本次无关的既有失败：`tests/test_seed_datasource.py::test_real_datasource_json_is_valid`）
-- 已知坑：头部查询与 `AboutModal` 共用 `['system-about']`，修改 queryKey / staleTime 需两处同步；msw 默认版本为 `0.3.0`，单测断言需跟随该 mock；移动端依赖 `useResponsive` mock 切换；后端全量测试被示例 `views.json` 缺少「全部日线」视图阻塞（HEAD 既有问题）
+- 下一步：处理与本次无关的既有后端测试失败后跑 `make flow` 收口；确认后转 `Implemented`
+- 已知坑：头部查询与 `AboutModal` 共用 `['system-about']`，修改 queryKey / staleTime 需两处同步；msw 默认版本为 `0.3.0`，单测断言需跟随该 mock；移动端依赖 `useResponsive` mock 切换；后端全量测试被 `examples/datasets/工作区-数据源示例/views.json` 缺少「全部日线」视图阻塞（HEAD `4fa9c947` 既有问题，与本次改动无关）
 - 最近一次全绿：`make check-fast`、`pnpm test`（2300 passed）、`make frontend-coverage`（2026-10-28）
