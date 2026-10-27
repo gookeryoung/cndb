@@ -171,8 +171,17 @@ class HttpJsonProvider:
         response_handler: ResponseHandler | None = None,
     ) -> FetchConfig:
         headers = {key: render_text(value, variables) for key, value in spec.headers_template.items()}
+        # 主机回退（ADR 0053 D4）：{host} 逐候选求值，首个为主 URL，其余进 fallback_urls；
+        # 未声明 url_hosts 时 {host} 不参与渲染，行为与单 URL 完全一致
+        urls = []
+        for host in spec.url_hosts or [None]:
+            host_variables = dict(variables)
+            if host is not None:
+                host_variables["host"] = host
+            urls.append(render_text(spec.url_template, host_variables))
         return FetchConfig(
-            url=render_text(spec.url_template, variables),
+            url=urls[0],
+            fallback_urls=tuple(urls[1:]),
             method=spec.method,
             headers=headers,
             params=render_value(dict(spec.params_template), variables),

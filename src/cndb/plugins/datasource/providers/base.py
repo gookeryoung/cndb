@@ -85,6 +85,9 @@ class RequestSpec:
 
     url_template: str
     method: str = "GET"
+    # 候选主机（ADR 0053 D4）：声明后 url_template 用 {host} 占位，按序尝试，
+    # 主主机网络错误 / 429 / 5xx 时切下一个；空 = 单 URL 旧行为
+    url_hosts: tuple[str, ...] = ()
     headers_template: Mapping[str, str] = field(default_factory=dict)
     params_template: Mapping[str, Any] = field(default_factory=dict)
     body_template: Any = None
@@ -122,12 +125,29 @@ class RequestSpec:
     def __post_init__(self) -> None:
         if not self.url_template:
             raise ProviderError("request.url_template 不能为空")
-        if not self.url_template.startswith(("http://", "https://")):
-            raise ProviderError("request.url_template 必须是 http/https URL")
+        _validate_url_hosts(self.url_template, self.url_hosts)
         if self.workers < 1:
             raise ProviderError("request.workers 必须 >= 1")
         if self.row_filter is not None:
             _validate_row_filter(self.row_filter)
+
+
+def _validate_url_hosts(url_template: str, url_hosts: tuple[str, ...]) -> None:
+    """校验 URL 模板与候选主机声明（ADR 0053 D4）.
+
+    单 URL：模板本身必须是 http(s) 地址；
+    声明 ``url_hosts``：模板须含 ``{host}``，每个候选必须是 http(s) 基地址。
+    """
+    if not url_hosts:
+        if not url_template.startswith(("http://", "https://")):
+            raise ProviderError("request.url_template 必须是 http/https URL")
+        return
+    if "{host}" not in url_template:
+        raise ProviderError("声明 url_hosts 时 request.url_template 必须含 {host} 占位符")
+    for host in url_hosts:
+        text = str(host or "").strip()
+        if not text.startswith(("http://", "https://")):
+            raise ProviderError(f"request.url_hosts 中的主机必须是 http/https 基地址: {host!r}")
 
 
 def _validate_row_filter(row_filter: Mapping[str, Any]) -> None:

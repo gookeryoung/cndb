@@ -22,7 +22,7 @@ import datetime as dt
 import logging
 import threading
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, cast
 
@@ -79,6 +79,10 @@ logger = logging.getLogger(__name__)
 
 # 预览默认返回行数（前端表格一屏足够）
 PREVIEW_LIMIT = 50
+
+# 单轮翻页回补的 pass 上限（ADR 0053 D3）：配置错误时防止无界请求；
+# 历史 10 年按 800 根/页约 4 页，200 留足余量
+MAX_BACKFILL_PASSES = 200
 
 
 @dataclass(slots=True)
@@ -204,12 +208,14 @@ def execute_job(
             cursor_to = advance(cursor_config, outcome.rows) or ""
         else:
             state = _StreamingState(db, job, cursor_config, user=user, lease=lease, run=run, progress=progress)
-            outcome = run_pipeline(
+            outcome = _run_streaming_passes(
                 spec,
+                db=db,
+                job=job,
+                cursor_config=cursor_config,
+                today=today,
+                state=state,
                 fetch=fetch,
-                rate_limit_ms=max(0, job.rate_limit_ms or 0),
-                on_batch=state.on_batch,
-                batch_size=DEFAULT_BATCH_SIZE,
                 progress=progress,
             )
             write_outcome = state.write
@@ -565,6 +571,7 @@ def request_spec_from_payload(
     return RequestSpec(
         url_template=str(data["url_template"]),
         method=str(data.get("method") or "GET"),
+        url_hosts=_url_hosts_from_payload(data.get("url_hosts")),
         headers_template=dict(data.get("headers_template") or {}),
         params_template=dict(data.get("params_template") or {}),
         body_template=data.get("body_template"),
@@ -605,6 +612,18 @@ def field_mapping_from_payload(payload: Mapping[str, Any] | None) -> dict[str, F
     return mapping
 
 
+def _url_hosts_from_payload(value: Any) -> tuple[str, ...]:
+    """解析 ``request_spec.url_hosts``（ADR 0053 D4）：字符串数组，空 / 缺省 = 单 URL."""
+    if value in (None, "", []):
+        return ()
+    if isinstance(value, str) or not isinstance(value, Sequence):
+        raise ValueError("request_spec.url_hosts 必须是 URL 字符串数组")
+    hosts = tuple(str(item or "").strip() for item in value if str(item or "").strip())
+    if not hosts:
+        raise ValueError("request_spec.url_hosts 不能为空数组")
+    return hosts
+
+
 def _scale_from_payload(value: Any) -> float | None:
     """解析 ``field_mapping.scale``（数值缩放）；``None`` / 空串表示未声明."""
     if value is None or value == "":
@@ -642,16 +661,22 @@ def _inject_backfill_ends(
     cursor_config: CursorConfig,
     *,
     today: str,
+    skip: Collection[str] = (),
 ) -> SyncJobSpec:
     """按标的回补水位算 end 锚点并注入 spec（ADR 0034 D2）.
 
     无水位（首轮）锚点为 ``today``；水位 − 1 天为后续锚点；
     锚点早于 ``backfill_start`` 的标的**剔除出标的集合**（该标的零请求，回补已完成）。
+
+    ``skip`` 为单轮翻页中本轮已判定到头的标的（ADR 0053 D3），一并剔除。
     """
     watermarks = load_backfill_cursors(db, job.id)
+    skipped = set(skip)
     ends: dict[str, str] = {}
     pending: list[str] = []
     for entrant in spec.entrant_values:
+        if entrant in skipped:
+            continue
         anchor = backfill_anchor(
             watermarks.get(entrant),
             backfill_start=cursor_config.backfill_start,
@@ -663,6 +688,75 @@ def _inject_backfill_ends(
     # 声明过标的（静态 keys / 动态来源）却全部达标 → 零请求；未声明标的则保持旧行为
     exhausted = bool(job.entrant_keys or job.entrant_source) and not pending
     return replace(spec, entrant_ends=ends, entrant_values=tuple(pending), entrants_exhausted=exhausted)
+
+
+def _run_streaming_passes(
+    spec: SyncJobSpec,
+    *,
+    db: Session,
+    job: DatasourceSyncJob,
+    cursor_config: CursorConfig,
+    today: str,
+    state: _StreamingState,
+    fetch: FetchFn | None,
+    progress: RequestProgress | None,
+) -> PipelineOutcome:
+    """流式路径的轮次编排：单轮翻页回补时一轮内反复翻页，其它形态单 pass（ADR 0053 D2/D3）.
+
+    每 pass 重建 spec（水位已由上一 pass 提交，锚点自然前移），并复用同一个
+    :class:`_StreamingState`：已落批次的计数 / 水位 / 租约跨 pass 单调累积。
+    """
+    rate_limit_ms = max(0, job.rate_limit_ms or 0)
+    if not (cursor_config.page_to_start and cursor_config.is_backfill):
+        return run_pipeline(
+            spec,
+            fetch=fetch,
+            rate_limit_ms=rate_limit_ms,
+            on_batch=state.on_batch,
+            batch_size=DEFAULT_BATCH_SIZE,
+            progress=progress,
+        )
+
+    total = PipelineOutcome()
+    finished: set[str] = set()
+    universe = set(spec.entrant_values)
+    exhausted_range = True
+    for _ in range(MAX_BACKFILL_PASSES):
+        pass_spec = _inject_backfill_ends(db, job, spec, cursor_config, today=today, skip=finished)
+        if not pass_spec.entrant_values:
+            exhausted_range = False
+            break
+        before = {entrant: state.watermark(entrant) for entrant in pass_spec.entrant_values}
+        outcome = run_pipeline(
+            pass_spec,
+            fetch=fetch,
+            rate_limit_ms=rate_limit_ms,
+            on_batch=state.on_batch,
+            batch_size=DEFAULT_BATCH_SIZE,
+            progress=progress,
+        )
+        total.plans += outcome.plans
+        total.succeeded += outcome.succeeded
+        total.failures.extend(outcome.failures)
+        total.metadata.extend(outcome.metadata)
+        total.passes += 1
+        failed_entrants = {failure.entrant for failure in outcome.failures}
+        for entrant in pass_spec.entrant_values:
+            rows = outcome.entrant_rows.get(entrant, 0)
+            stalled = state.watermark(entrant) == before[entrant]
+            if (
+                entrant in failed_entrants
+                or rows == 0
+                or (cursor_config.page_size > 0 and rows < cursor_config.page_size)
+                or stalled
+            ):
+                # 到头 / 失败 / 短页 / 水位不前移：本轮不再请求该标的（ADR 0053 D3）
+                finished.add(entrant)
+    if exhausted_range and universe - finished:
+        # 触顶：仍有未到头标的，按 partial 留痕而不是静默成功
+        total.truncated = True
+        logger.warning("回补任务 %s 达到单轮翻页上限 %d，仍有标的未补到起点", job.id, MAX_BACKFILL_PASSES)
+    return total
 
 
 class _StreamingState:
@@ -732,6 +826,10 @@ class _StreamingState:
                 self.cursor_to = candidate
         self._publish_progress()
         self._renew_lease()
+
+    def watermark(self, entrant: str) -> str | None:
+        """该标的当前回补水位（单轮翻页判定「本轮是否前移」用，ADR 0053 D3）."""
+        return self._watermarks.get(entrant)
 
     def _publish_progress(self) -> None:
         """把本轮累计计数与请求级进度提交到运行记录（ADR 0037 D4、ADR 0039 D5）.
@@ -874,6 +972,9 @@ def _finalize(
         ),
         "dropped_fields": normalized.dropped if normalized is not None else 0,
         "filtered": outcome.filtered,
+        # ADR 0053 D3：单轮翻页轮数与触顶留痕（未触顶时 passes=1 / truncated=False）
+        "passes": outcome.passes,
+        "truncated": outcome.truncated,
         "response_metadata": outcome.metadata[:50],
         # ADR 0019 留痕：自动补字段与自动推断出的幂等键（非 llm_prompt 恒为空）
         "auto_fields": list(auto_fields or []),
@@ -918,12 +1019,8 @@ def _update_job_state(
     job.last_run_at = _as_utc(run_at)
     job.last_status = status
     if cursor.is_windowed and cursor_to:
-        job.cursor = CursorConfig(
-            strategy=cursor.strategy,
-            field=cursor.field,
-            backfill_start=cursor.backfill_start,
-            value=cursor_to,
-        ).to_dict()
+        # 用 replace 而非重建：新增的声明键（page_to_start / page_size）不能被静默丢掉
+        job.cursor = replace(cursor, value=cursor_to).to_dict()
     db.add(job)
     db.commit()
     db.refresh(job)

@@ -92,6 +92,8 @@ class TestFinalizeDetailUnchanged:
             "response_metadata",
             "auto_fields",
             "auto_match_keys",
+            "passes",
+            "truncated",
         }
         assert len(run.detail["normalize_failures"]) == 100
         assert "归一失败 150 条" in caplog.text

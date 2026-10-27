@@ -39,7 +39,7 @@ from cndb.plugins.datasource.services.connection import (
     load_llm_connection,
     resolve_request_spec_defaults,
 )
-from cndb.plugins.datasource.services.cursor import CursorConfig
+from cndb.plugins.datasource.services.cursor import CursorConfig, validate_page_to_start
 from cndb.plugins.datasource.services.runner import (
     execute_job,
     preview_job,
@@ -118,7 +118,9 @@ def _validate_job_config(
     try:
         get_provider(provider)
         validate_request_spec(filled)
-        CursorConfig.from_dict(cursor)
+        cursor_config = CursorConfig.from_dict(cursor)
+        # 单轮翻页回补要求模板带 {end} 锚点，否则每页请求同一区间（ADR 0053 D2）
+        validate_page_to_start(cursor_config, str(filled.get("url_template") or ""))
         ScheduleConfig.from_dict(schedule)
         if provider == "llm_prompt":
             validate_llm_request_spec(

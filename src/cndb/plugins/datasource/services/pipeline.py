@@ -79,6 +79,12 @@ class PipelineOutcome:
     filtered: int = 0
     # 流式模式下已交给回调的行数（与非流式的 len(rows) 口径对应）
     flushed: int = 0
+    # 每标的**抓取行数**（归一 / 过滤之前）：单轮翻页的短页判定用（ADR 0053 D3）
+    entrant_rows: dict[str, int] = field(default_factory=dict)
+    # 实际执行的轮数（单轮翻页回补 >1；其它形态恒为 1，运行记录留痕用）
+    passes: int = 0
+    # 达到单轮翻页上限而提前退出（ADR 0053 D3）：按 partial 留痕，不静默成功
+    truncated: bool = False
 
     @property
     def failed(self) -> int:
@@ -89,7 +95,7 @@ class PipelineOutcome:
         """``success`` / ``partial`` / ``failed``."""
         if self.plans and self.succeeded == 0:
             return "failed"
-        if self.failures:
+        if self.failures or self.truncated:
             return "partial"
         return "success"
 
@@ -102,6 +108,8 @@ class _GroupResult:
     succeeded: int = 0
     failures: list[FetchFailure] = field(default_factory=list)
     metadata: list[dict[str, Any]] = field(default_factory=list)
+    # 该组每标的抓取行数（原始响应行数，归一 / 过滤之前）
+    entrant_rows: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -149,6 +157,14 @@ class RequestProgress:
         """设置本轮计划请求数（展开后调用一次；允许并发线程读取）."""
         with self._lock:
             self._total = max(0, total)
+
+    def add_total(self, extra: int) -> None:
+        """累加计划请求数（单轮翻页回补多轮展开时用，ADR 0053 D3）.
+
+        ``run_pipeline`` 每轮调用一次；单轮任务下与 :meth:`set_total` 结果相同。
+        """
+        with self._lock:
+            self._total = max(0, self._total + max(0, extra))
 
     def tick(self, entrant: str | None) -> None:
         """完成一个请求（成功或失败）后调用."""
@@ -217,9 +233,9 @@ def run_pipeline(
     """
     active = provider or get_provider(job.provider)
     plans = active.build_requests(job)
-    outcome = PipelineOutcome(plans=len(plans))
+    outcome = PipelineOutcome(plans=len(plans), passes=1)
     if progress is not None:
-        progress.set_total(len(plans))
+        progress.add_total(len(plans))
     groups = _group_plans(plans)
     limiter = _RateLimiter(rate_limit_ms, sleep)
     cancel = threading.Event()
@@ -229,6 +245,8 @@ def run_pipeline(
         outcome.succeeded += result.succeeded
         outcome.failures.extend(result.failures)
         outcome.metadata.extend(result.metadata)
+        for entrant, count in result.entrant_rows.items():
+            outcome.entrant_rows[entrant] = outcome.entrant_rows.get(entrant, 0) + count
         sink.add(result.rows)
 
     def execute(default_fetch: FetchFn) -> None:
@@ -313,6 +331,9 @@ def _run_group(
         if plan.page is not None and not rows:
             # 空页即停该组（ADR 0006 I3）：后续页码不再请求
             break
+        if plan.entrant is not None:
+            # 抓取行数按标的累计（归一 / 过滤之前）：单轮翻页的短页判定依据（ADR 0053 D3）
+            result.entrant_rows[plan.entrant] = result.entrant_rows.get(plan.entrant, 0) + len(rows)
         result.rows.extend(
             apply_row_defaults(
                 fill_entrant(to_records(rows), job.entrant_param, plan.entrant, inplace=True),

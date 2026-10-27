@@ -38,6 +38,11 @@ class CursorConfig:
     field: str = ""
     backfill_start: str = ""
     value: str | None = None
+    # 单轮翻页回补（ADR 0053 D2）：一轮运行内按标的水位反复翻页，直到该标的
+    # 到头；未声明时仍是「一轮一页」的旧行为（I4）
+    page_to_start: bool = False
+    # 单页预期根数（ADR 0053 D3）：抓取行数小于它即判定该标的已到头；0 = 不按短页判定
+    page_size: int = 0
 
     def __post_init__(self) -> None:
         if self.strategy in _WINDOWED and not self.field:
@@ -48,6 +53,10 @@ class CursorConfig:
             raise ProviderError("游标策略 backfill_date 必须指定回补起点 backfill_start")
         if self.strategy not in _STRATEGIES:
             raise ProviderError(f"未知游标策略: {self.strategy}")
+        if self.page_to_start and self.strategy != "backfill_date":
+            raise ProviderError("page_to_start 只能与游标策略 backfill_date 搭配使用")
+        if self.page_size < 0:
+            raise ProviderError("page_size 不能为负")
 
     @property
     def is_windowed(self) -> bool:
@@ -60,12 +69,18 @@ class CursorConfig:
         return self.strategy == "backfill_date"
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "strategy": self.strategy,
             "field": self.field,
             "backfill_start": self.backfill_start,
             "value": self.value,
         }
+        # 单轮翻页声明只在启用时写入：未启用任务的游标 JSON 保持旧形态（I4 存量兼容）
+        if self.page_to_start:
+            payload["page_to_start"] = True
+        if self.page_size:
+            payload["page_size"] = self.page_size
+        return payload
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> CursorConfig:
@@ -81,6 +96,8 @@ class CursorConfig:
             field=str(data.get("field") or ""),
             backfill_start=str(data.get("backfill_start") or ""),
             value=str(raw_value) if raw_value else None,
+            page_to_start=bool(data.get("page_to_start") or False),
+            page_size=_as_int(data.get("page_size"), 0),
         )
 
 
@@ -186,6 +203,30 @@ def _previous_day(value: str) -> str:
     return (day - dt.timedelta(days=1)).isoformat()
 
 
+def _as_int(value: Any, default: int) -> int:
+    """宽容解析整型声明（JSON 里可能是字符串）；非法值报配置错误而非静默归零."""
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        raise ProviderError("page_size 必须是整数")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ProviderError(f"page_size 必须是整数: {value!r}") from exc
+
+
+def validate_page_to_start(config: CursorConfig, url_template: str) -> None:
+    """单轮翻页回补的前置校验（ADR 0053 D2）：必须能按 ``{end}`` 锚点翻页.
+
+    ``CursorConfig`` 看不到请求模板，故这项校验放在创建 / 更新入口单独调用；
+    缺 ``{end}`` 时每一页都会请求同一区间，翻页永不前进（配置错误须尽早报）。
+    """
+    if not config.page_to_start:
+        return
+    if "{end}" not in (url_template or ""):
+        raise ProviderError("page_to_start 要求 url_template 含 {end} 锚点占位符")
+
+
 __all__ = [
     "CursorConfig",
     "advance",
@@ -193,5 +234,6 @@ __all__ = [
     "backfill_anchor",
     "max_field_value",
     "min_field_value",
+    "validate_page_to_start",
     "window_start",
 ]
