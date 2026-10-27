@@ -12,7 +12,7 @@ import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
 import { documentsApi } from '@/api/documents'
 import { renderProviders } from '@/test/render-providers'
-import { mockDocuments, mockUser, mockWorkspace, server } from '@/test/msw'
+import { mockDocuments, mockTable, mockUser, mockWorkspace, server } from '@/test/msw'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
 // 可控 useResponsive mock：默认桌面端，窄屏用例在其内部切换
@@ -32,6 +32,11 @@ function renderEditor(route = '/w/10/documents/2') {
         </Routes>,
         { route, initialAuth: { user: mockUser, token: 'fake-token' } },
     )
+}
+
+/** 打开 antd Select 的下拉：须在内部 combobox 上触发 mousedown（root 上不生效） */
+function openSelect(select: HTMLElement) {
+    fireEvent.mouseDown(within(select).getByRole('combobox'))
 }
 
 /** 切到「源码」模式：既有断言基于 textarea（实时预览用 CodeMirror，无法直接读写 value） */
@@ -79,8 +84,8 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         expect(await screen.findByText('选择要引用的数据表')).toBeInTheDocument()
 
         // 选择「客户表」（下拉选项）：等表列表 query 就绪后打开下拉
-        const combo = await screen.findByRole('combobox')
-        fireEvent.mouseDown(combo)
+        const combo = await screen.findByTestId('insert-table-select')
+        openSelect(combo)
         fireEvent.click(await screen.findByText('客户表'))
 
         // 确认插入（「插入」按钮）
@@ -107,6 +112,80 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         const okBtn = await screen.findByRole('button', { name: /^插\s*入$/ })
         expect(okBtn).toBeDisabled()
     })
+
+    it('选表后可选视图，插入带 view 参数的占位符（ADR 0045）', async () => {
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
+
+        fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
+        const tableCombo = await screen.findByTestId('insert-table-select')
+        const viewCombo = screen.getByTestId('insert-table-view')
+        // 未选表时视图下拉禁用
+        expect(viewCombo.className).toContain('ant-select-disabled')
+
+        openSelect(tableCombo)
+        fireEvent.click(await screen.findByText('客户表'))
+        await waitFor(() => expect(viewCombo.className).not.toContain('ant-select-disabled'))
+
+        // 视图选项来自 viewApi.list（mockViews：全部数据 / id=200）
+        openSelect(viewCombo)
+        fireEvent.click(await screen.findByText('全部数据'))
+
+        fireEvent.click(screen.getByRole('button', { name: /^插\s*入$/ }))
+        await waitFor(() => {
+            expect(ta.value.startsWith('{{table:100|view=200}}')).toBe(true)
+        })
+    }, 30_000)
+
+    it('切换数据表后清空已选视图（ADR 0045）', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/tables', () =>
+                HttpResponse.json([
+                    mockTable,
+                    { ...mockTable, id: 101, name: '订单表' },
+                ])),
+        )
+        renderEditor()
+        await enterSourceMode()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
+        const tableCombo = await screen.findByTestId('insert-table-select')
+        openSelect(tableCombo)
+        fireEvent.click(await screen.findByText('客户表'))
+
+        const viewCombo = screen.getByTestId('insert-table-view')
+        openSelect(viewCombo)
+        fireEvent.click(await screen.findByText('全部数据'))
+        await waitFor(() =>
+            expect(viewCombo.querySelector('.ant-select-selection-item')?.textContent).toContain('全部数据'))
+
+        // 换表：已选视图应被清空
+        openSelect(tableCombo)
+        fireEvent.click(await screen.findByText('订单表'))
+        await waitFor(() => expect(viewCombo.querySelector('.ant-select-selection-item')).toBeNull())
+    }, 30_000)
+
+    it('关闭弹窗后重开不残留已选表（ADR 0045）', async () => {
+        renderEditor()
+        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+
+        fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
+        const tableCombo = await screen.findByTestId('insert-table-select')
+        openSelect(tableCombo)
+        fireEvent.click(await screen.findByText('客户表'))
+        fireEvent.click(screen.getByRole('button', { name: /^取\s*消$/ }))
+
+        fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
+        expect(await screen.findByText('选择要引用的数据表')).toBeInTheDocument()
+        // 重开后不残留已选表 / 视图
+        await waitFor(() =>
+            expect(
+                screen.getAllByTestId('insert-table-select').filter(el => el.querySelector('.ant-select-selection-item')),
+            ).toHaveLength(0))
+        expect(screen.getByRole('button', { name: /^插\s*入$/ })).toBeDisabled()
+    }, 30_000)
 
     it('查看模式不出现插入图片 / 插入表格引用入口（只读，ADR 0042）', async () => {
         renderEditor()

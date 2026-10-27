@@ -8,6 +8,7 @@ from typing import Any
 from cndb.plugins.documents.services.export.images import IMAGE_LINE_RE, ImageResolver
 from cndb.plugins.documents.services.export.markdown_style import _MD_BOLD_RE, _MD_CODE_RE, _MD_HEADING_RE
 from cndb.plugins.documents.services.export.pdf_fonts import _ensure_pdf_font
+from cndb.plugins.documents.services.export.table_refs import TableResolver, parse_table_ref_line
 from cndb.plugins.documents.services.export.theme import DEFAULT_THEME, ExportTheme
 
 # 图片最大宽度 = A4 宽（595.27pt）减左右各 50pt 页边距
@@ -36,8 +37,14 @@ def _make_pdf_image(resolved: tuple[bytes, str] | None) -> Any:
         return None
 
 
-def _render_pdf(markdown_text: str, title: str = "", images: ImageResolver | None = None) -> bytes:
+def _render_pdf(
+    markdown_text: str,
+    title: str = "",
+    images: ImageResolver | None = None,
+    tables: TableResolver | None = None,
+) -> bytes:
     # images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片
+    # tables：数据表引用解析器；``{{table:…}}`` 独占一行时渲染为真实表格
     """把文档 Markdown 正文渲染为 .pdf 字节流.
 
     Platypus 框架 + 自动分页 + 页眉页脚；中文字符依赖 ``_ensure_pdf_font``
@@ -103,6 +110,19 @@ def _render_pdf(markdown_text: str, title: str = "", images: ImageResolver | Non
             in_table = False
             table_buffer = []
             # 继续处理当前这行
+
+        # 数据表引用：独占一行时渲染为真实表格（坏引用降级为占位文字）
+        if tables is not None:
+            spec = parse_table_ref_line(line)
+            if spec is not None:
+                resolved = tables(spec)
+                if resolved.error:
+                    story.append(Paragraph(_pdf_escape(resolved.error), body_style))
+                else:
+                    story.append(Paragraph(f"<i>{_pdf_escape(resolved.caption)}</i>", body_style))
+                    story.append(_make_pdf_table([resolved.header or [], *(resolved.rows or [])], preset, cjk_font))
+                    story.append(Spacer(1, 6))
+                continue
 
         # 空行
         if not line.strip():

@@ -649,7 +649,14 @@ def export_document(
     # 站内图片（``![alt](file:<key>)``）在 Word / PDF 导出中嵌入真实文件；
     # 解析器限定在该工作区上传目录内，非法 / 缺失的引用降级为占位文字
     images = services.export.make_image_resolver(settings.UPLOAD_DIR, workspace_id)
-    file_bytes = services.export.render_export(content, normalized, doc.title, images=images)
+    # 数据表引用（``{{table:<id>|view=<vid>}}``）按当前导出用户权限解析为真实表格；
+    # Markdown 先改写成静态表格再落盘 / 打包，保证归档 zip 内也不含占位符
+    tables = services.export.make_table_resolver(db, workspace_id, current_user)
+    if normalized == services.export.FORMAT_MARKDOWN:
+        content = services.export.rewrite_markdown_table_refs(content, tables)
+        file_bytes = services.export.render_export(content, normalized, doc.title, images=images)
+    else:
+        file_bytes = services.export.render_export(content, normalized, doc.title, images=images, tables=tables)
 
     # Markdown 带站内图片时打包为 zip（<标题>.md + assets/<file_key>），否则维持单文件 .md
     media_type = services.export.FORMAT_CONTENT_TYPES[normalized]
