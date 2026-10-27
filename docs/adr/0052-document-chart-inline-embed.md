@@ -135,7 +135,7 @@ Related: `frontend/src/components/Document/chartBlock.ts`、`frontend/src/compon
 7. **分级存储**：迁移必须按 `content.py` 的三种存储形态（内联 / `gz:` / 外存 `.md.gz`）解码并回写，并同步 `content_size` / `content_hash`；外存文件原地替换（D5）。
 8. **FTS**：迁移结束时对被改写的文档执行与 `content.py:993` 同形的 `INSERT OR REPLACE`，保持检索快照与最新正文一致。
 9. **草稿 / 修改申请**：迁移覆盖 `documents_draft.content` 与 `documents_change_request.proposed_content`；迁移后它们的哈希与最新版本哈希可能变化，`stale` 判定按新哈希重算（不额外改业务规则）。
-10. **宽度作用域**：图表宽度随块（默认 75）；数据表宽度仍是 ADR 0051 的占位符 `width` 参数，二者互不影响（D8）。
+10. **宽度作用域**：图表宽度随块（新插入默认 50，缺省 / 非法回退 75）；数据表宽度仍是 ADR 0051 的占位符 `width` 参数，二者互不影响（D8）。图表块工具栏提供「保存图片」，按当前渲染 SVG 导出 PNG / JPEG / SVG（纯前端，不上传）
 11. **体积上限的执行点**：设计器保存 / 工具栏插入 / Markdown 导入；既有超限文档仍可只读渲染（不截断、不丢块）。
 12. **不落渲染结果**：SVG / PNG 只在请求期生成；正文只存定义（I3 / ADR 0048 D10 延续）。
 
@@ -219,7 +219,7 @@ Related: `frontend/src/components/Document/chartBlock.ts`、`frontend/src/compon
 | D5 | 存量引用迁移 | **一次性 alembic 数据迁移**：可解析引用展开为块（含 `legacy_id`），失效引用写降级文字；覆盖历史版本 / 草稿 / 修改申请；迁移后运行期单一语法 | C5；I2；历史版本与待审申请也不能显示裸占位符（#15）；回滚经 `legacy_id` 可部分还原 | ① 双语法长期并存（渲染 / 导出 / 白名单三处分叉）；② 不迁移、旧内容显示原始文本（历史回归）；③ 只迁移最新版本（历史版本仍坏） | `alembic/versions/..._embed_document_charts.py` |
 | D6 | Markdown 导出形态 | **保留定义块 + 追加 `![标题](assets/chart-<指纹>.svg)`**；DOCX / PDF 从块渲染 PNG | C3；Q4；第三方查看器可看图，平台重导入可还原定义；指纹命名不依赖 ID | ① 只输出静态图（可编辑性丢失）；② 只输出块（GitHub 等看不到图）；③ SVG data URI 内联（体积大、查看器兼容不一） | `export/inline_chart.py`、`export/images.py`、`docx.py`、`pdf.py` |
 | D7 | 导入去重与容错 | 配对静态图按「紧邻块 + 指纹匹配」剥离；坏块 / 未知模板保留原文 + 导入告警，不阻断、不静默改写 | C4；Q5；保留修复能力；指纹匹配避免误删用户图片 | ① 导入时把所有图表块转成纯文本（丢定义）；② 不剥离配对图（重导入出现图 + 块双份）；③ 按任意 `assets/chart-*.svg` 删除（误删风险） | `importers/markdown.py`、`export/inline_chart.py` |
-| D8 | 宽度归属 | 图表宽度写入块 `width`（默认 75 / 25–100）；表引用宽度维持 ADR 0051 占位符参数 | C6 / C8；Q6；随正文分发、按块独立；不动表引用成熟逻辑 | ① 存素材库（全局同宽）；② 图表也保留占位符参数（双处来源）；③ 仅 CSS 偏好（不随文档分发） | `inline.py`、`chartBlock.ts` |
+| D8 | 宽度归属 | 图表宽度写入块 `width`（新插入默认 50，缺省 / 非法回退 75 / 25–100）；表引用宽度维持 ADR 0051 占位符参数；编辑态提供「保存图片」导出 PNG / JPEG / SVG | C6 / C8；Q6；随正文分发、按块独立；不动表引用成熟逻辑 | ① 存素材库（全局同宽）；② 图表也保留占位符参数（双处来源）；③ 仅 CSS 偏好（不随文档分发） | `inline.py`、`chartBlock.ts`、`chartImageSave.ts` |
 | D9 | 编辑链路 | 图表编辑 = 正文编辑：设计器 `editBlock` 只回传新定义，编辑器按出现序号整块替换；create 仍写素材库并插入副本；进草稿 / 版本 / 修改申请 | C7；Q7；消除「实例改了正文未变」的旁路 | ① 继续编辑素材库实例（正文副本不更新，用户困惑）；② 引入独立图表版本表（与文档版本双轨） | `ChartDesignerModal.tsx`、`DocumentEditorPage.tsx`、`chartBlock.ts` |
 | D10 | 游客分享 | 新增 token 鉴权的 `POST .../charts/render-preview`；**删除**按图表 ID 的匿名端点与白名单 | C6；I6；定义已在分享正文中，无需 ID 白名单；攻击面只剩「合法 token + 合法模板 + ≤32KB 配置」 | ① 保留 ID 白名单（内嵌后无 ID 可查）；② 分享页预渲染整页 SVG（体积 / 缓存 / 主题问题） | `routers/public.py`、`PublicSharePage.tsx`、`publicShare.ts` |
 | D11 | 失效降级 | 单块降级：预览 Alert、DOCX / PDF 占位段落、Markdown 导出保留原块 + 导入告警；不阻断整篇 | C4 / C8；I5；与 ADR 0048 D7 / ADR 0045 口径一致 | ① 导出 4xx（一块坏导致整篇失败）；② 静默丢块（读者不知缺失） | `inline.py`、`ChartEmbed.tsx`、`docx.py`、`pdf.py` |

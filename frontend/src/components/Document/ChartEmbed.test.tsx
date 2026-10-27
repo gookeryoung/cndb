@@ -1,7 +1,7 @@
 /** ChartEmbed 组件测试 — 正文定义渲染 / 失败降级 / 坏块降级 / 编辑与宽度入口可选（ADR 0052）. */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
@@ -102,6 +102,37 @@ describe('ChartEmbed', () => {
     await screen.findByTestId('chart-embed-svg')
     fireEvent.click(screen.getByTestId('chart-embed-edit-2'))
     expect(onEditChart).toHaveBeenCalledWith(expect.objectContaining({ templateKey: 'bar-line-dual-axis' }), 2)
+  })
+
+  it('保存图片：编辑入口存在时渲染下拉，SVG 格式直接触发下载', async () => {
+    const createObjectURL = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock')
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const clicked: string[] = []
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push(this.download)
+    })
+
+    try {
+      renderProviders(<ChartEmbed workspaceId={10} block={block()} refOrdinal={0} onEditChart={vi.fn()} />)
+      await screen.findByTestId('chart-embed-svg')
+
+      const saveBtn = screen.getByTestId('chart-embed-save-0')
+      expect(saveBtn.textContent).toContain('保存图片')
+
+      fireEvent.click(saveBtn)
+      fireEvent.click(await screen.findByText('SVG 矢量图'))
+      await waitFor(() => expect(clicked).toEqual(['样例图表.svg']))
+      expect(createObjectURL).toHaveBeenCalled()
+      expect(revokeObjectURL).toHaveBeenCalled()
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
+  it('未传 onEditChart 时不渲染保存图片入口', async () => {
+    renderProviders(<ChartEmbed workspaceId={10} block={block()} />)
+    await screen.findByTestId('chart-embed-svg')
+    expect(screen.queryByTestId('chart-embed-save-0')).toBeNull()
   })
 
   it('游客分享模式：走 token 免登录渲染端点，失败同样降级', async () => {

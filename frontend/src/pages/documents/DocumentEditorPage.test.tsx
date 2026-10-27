@@ -1638,7 +1638,7 @@ describe('DocumentEditorPage 图表内嵌块（ADR 0052）', () => {
         fireEvent.click(screen.getByTestId('chart-designer-save'))
         await waitFor(() => expect(ta.value).toContain('```chart'))
         expect(ta.value).toContain('"template": "bar-line-dual-axis"')
-        expect(ta.value).toContain('"width": 75')
+        expect(ta.value).toContain('"width": 50')
     }, 30_000)
 
     it('查看模式：按块宽度渲染，owner 调整宽度后写入块字段', async () => {

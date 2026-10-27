@@ -6,13 +6,14 @@
  * 一律**单块降级**为提示，不阻断整篇（I5）。
  */
 
-import { useMemo } from 'react'
-import { Alert, Button, Skeleton, Space } from 'antd'
-import { EditOutlined } from '@ant-design/icons'
+import { useMemo, useState } from 'react'
+import { Alert, App as AntApp, Button, Dropdown, Skeleton, Space } from 'antd'
+import { DownOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { chartApi } from '@/api/charts'
 import publicShareApi from '@/api/publicShare'
 import RefWidthControl from './RefWidthControl'
+import { saveChartImage, CHART_IMAGE_FORMATS, type ChartImageFormat } from './chartImageSave'
 import { chartBlockErrorText, type ChartBlock, type ChartBlockSpec } from './chartBlock'
 import { DEFAULT_REF_WIDTH, parseRefWidth } from './refWidth'
 
@@ -29,6 +30,9 @@ function specCacheKey(spec: ChartBlockSpec | null): string {
   if (!spec) return ''
   return JSON.stringify([spec.templateKey, spec.width, spec.config])
 }
+
+/** 保存图片下拉菜单项（PNG / JPEG / SVG） */
+const CHART_SAVE_ITEMS = CHART_IMAGE_FORMATS.map(f => ({ key: f.value, label: f.label }))
 
 export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart, width, refOrdinal, onWidthChange }: {
   /** 工作区 ID（成员模式）；游客分享模式（shareToken）下不传 */
@@ -50,6 +54,17 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
   const pct = parseRefWidth(width ?? spec?.width ?? DEFAULT_REF_WIDTH)
   const isPublic = Boolean(shareToken)
   const cacheKey = specCacheKey(spec)
+  const { message: toast } = AntApp.useApp()
+  const [saving, setSaving] = useState(false)
+
+  const handleSaveImage = async (format: ChartImageFormat) => {
+    if (!svg || !spec || saving) return
+    setSaving(true)
+    const ok = await saveChartImage(svg, format, spec.title)
+    setSaving(false)
+    if (ok) toast.success('图片已保存')
+    else toast.error('保存图片失败，请重试')
+  }
 
   const svgQuery = useQuery({
     queryKey: isPublic
@@ -126,6 +141,25 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
             >
               编辑图表
             </Button>
+          )}
+          {onEditChart && (
+            <Dropdown
+              menu={{
+                items: CHART_SAVE_ITEMS,
+                onClick: ({ key }) => handleSaveImage(key as ChartImageFormat),
+              }}
+              trigger={['click']}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                loading={saving}
+                data-testid={`chart-embed-save-${refOrdinal ?? 0}`}
+              >
+                保存图片 <DownOutlined style={{ fontSize: 10 }} />
+              </Button>
+            </Dropdown>
           )}
         </Space>
       )}

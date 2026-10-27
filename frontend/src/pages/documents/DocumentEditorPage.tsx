@@ -57,6 +57,7 @@ import { parseOutline } from '@/components/Document/outline'
 import { DEFAULT_REF_WIDTH, rewriteRefWidth, type RefWidthChange } from '@/components/Document/refWidth'
 import {
   chartBlockBytes,
+  DEFAULT_CHART_WIDTH,
   MAX_BLOCK_BYTES,
   MAX_BLOCKS_PER_DOC,
   rewriteChartBlock,
@@ -1478,7 +1479,7 @@ export default function DocumentEditorPage() {
         onCancel={() => setChartInsertOpen(false)}
         onPickExisting={chart => {
           setChartInsertOpen(false)
-          insertChartSpec({ version: 1, templateKey: chart.template_key, title: chart.title, width: DEFAULT_REF_WIDTH, config: chart.config })
+          insertChartSpec({ version: 1, templateKey: chart.template_key, title: chart.title, width: DEFAULT_CHART_WIDTH, config: chart.config })
         }}
         onPickTemplate={templateKey => {
           setChartInsertOpen(false)
@@ -1501,7 +1502,7 @@ export default function DocumentEditorPage() {
               version: 1,
               templateKey: result.chart.template_key,
               title: result.chart.title,
-              width: DEFAULT_REF_WIDTH,
+              width: DEFAULT_CHART_WIDTH,
               config: result.chart.config,
             })
             message.success('图表已创建并插入（提交后生效）')

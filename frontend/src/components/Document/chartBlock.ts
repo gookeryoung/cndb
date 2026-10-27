@@ -10,6 +10,8 @@ import { DEFAULT_REF_WIDTH, parseRefWidth } from './refWidth'
 
 export const INLINE_CHART_LANG = 'chart'
 export const INLINE_CHART_VERSION = 1
+/** 新插入图表块的默认显示宽度（与全局回退 75 解耦：仅影响插入初值，不影响旧内容渲染） */
+export const DEFAULT_CHART_WIDTH = 50
 /** 单块定义上限（与后端一致） */
 export const MAX_BLOCK_BYTES = 32 * 1024
 /** 单篇正文图表块上限（与后端一致） */

@@ -5,6 +5,10 @@
 ## [未发布]
 
 ### 新增
+- **文档图表块支持「保存图片」导出**：编辑模式下图表块「编辑图表」右侧新增「保存图片」下拉，可把当前后端渲染 SVG 存为 PNG / JPEG（2x 栅格化、JPEG 垫白底）或 SVG 矢量图，文件按图表标题命名（非法字符清洗）；纯浏览器本地完成（Blob + canvas），不新增端点、不上传。工具：`frontend/src/components/Document/chartImageSave.ts`；测试：`chartImageSave.test.ts`、`ChartEmbed.test.tsx`。
+
+### 变更
+- **新插入文档图表块默认宽度 75% → 50%**：仅改插入初值（`chartBlock.ts` 新增 `DEFAULT_CHART_WIDTH = 50`，素材库复制与设计器创建两条插入链路生效）；数据表引用默认宽度与缺省 / 非法回退 75% 口径不变，旧内容渲染不受影响。
 - **主页顶栏品牌字右侧常驻显示应用版本小字**（ADR 0055 P0-P1）：`MainLayout` 顶栏在 `cndb` 品牌字右侧展示 `v{APP_VERSION}`，数据复用 `GET /api/v1/system/about` 并与「关于系统」弹窗共享 `['system-about']` 缓存；新增 `.cn-brand-version` 小号次要色样式；加载 / 失败静默不渲染，移动端随品牌字隐藏；不新增端点、字段与迁移。测试：`frontend/src/layouts/MainLayout.test.tsx`（桌面位置与文案 / 移动端隐藏 / 接口失败静默）。
 - **数据源同步对齐 lmstock：单轮翻页回补与主机回退**（ADR 0053 P0-P2）：`backfill_date` 游标新增 `page_to_start` / `page_size`，一轮内按标的水位反复翻页（空响应 / 短页 / 水位不前移 / 达 `backfill_start` 任一即停，200 pass 上限记 `partial`），历史回补从多轮 run 收敛为单轮；`request_spec` 新增 `url_hosts` + `{host}` 模板，抓取层 `FetchConfig.fallback_urls` 在网络错误 / 429·5xx 时逐个切换候选主机（逐候选过 SSRF），JSON 解析失败与 4xx 不切换。示例收敛为单序列三任务：三条板块回补合并为「腾讯回补 · 全市场」，回补改不复权（`data.{entrant}.day`），直连 `web.ifzq.gtimg.cn` 优先、proxy failover；「股市日线」删「来源 / 复权方式」两列与两条来源筛选视图，幂等键统一 `[股票代码, 日期]`。
 - **文档图表 / 数据表引用宽度与设计器预览占比**（ADR 0051 P0-P2）：数据表引用支持 `width` 参数（`{{table:<id>|view=…|limit=…|width=75}}`），图表宽度写入正文内嵌块 `width` 字段（ADR 0052），默认 75%、可调 25–100%，按引用独立、随正文分发；编辑模式嵌入块提供宽度控件，查看 / 游客只读不出现入口；DOCX / PDF 导出按正文可用宽度 × 百分比，Markdown 导出保留图表块宽度字段与表引用原语法；存量无 `width` 引用统一按 75% 呈现。图表设计器弹窗 1080→1200px，实时预览列由固定 400px（约 37%）提升到 ≥56%，窄屏上下堆叠。新增 `refWidth.ts` / `RefWidthControl.tsx` 与后端 `ref_width.py` 作为跨端唯一宽度口径。
