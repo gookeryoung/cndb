@@ -11,6 +11,8 @@ PYTEST_JOBS ?= 8
 # dev 目标绑定地址/端口，可在命令行覆盖：make dev DEV_HOST=127.0.0.1 DEV_PORT=8000
 DEV_HOST ?= 0.0.0.0
 DEV_PORT ?= 8772
+# `make dev` 启动前释放的端口：后端 DEV_PORT + Vite 固定 5173（见 cli/main.py dev()）
+DEV_PORTS ?= $(DEV_PORT) 5173
 
 # uvx 临时环境不受项目 [tool.uv.index] 约束，显式指定镜像源
 UVX_INDEX := --default-index https://mirrors.cloud.tencent.com/pypi/simple
@@ -18,7 +20,7 @@ UVX_INDEX := --default-index https://mirrors.cloud.tencent.com/pypi/simple
 # 前端依赖 stamp：pnpm install 成功后由 make 刷新，lock / package.json 未变时零开销跳过
 FRONTEND_DEPS := frontend/node_modules/.make-sync
 
-.PHONY: help sync dev seed frontend-sync frontend-static frontend-coverage frontend-build \
+.PHONY: help sync free-dev-ports dev seed frontend-sync frontend-static frontend-coverage frontend-build \
         build clean test cov lint typecheck e2e e2e-dev gitkeep-check adr-check \
         check-fast check-docs flow check bump pub push pack-doctor pack pack-cache-clean \
         docker-dev docker-dev-down docker-build docker-export dd ddd db de \
@@ -33,7 +35,10 @@ sync: ## 安装后端开发依赖 + git pre-commit 钩子 (prek)
 	uv sync --extra dev
 	uv run prek install --force
 
-dev: $(FRONTEND_DEPS) ## 开发模式：同时启动前后端（uvicorn + Vite，Ctrl+C 一起停）
+free-dev-ports: ## 结束占用开发端口的旧进程（后端 DEV_PORT=8772、前端 5173；可用 DEV_PORTS 覆盖）
+	@uv run python scripts/free_ports.py $(DEV_PORTS)
+
+dev: free-dev-ports $(FRONTEND_DEPS) ## 开发模式：先释放旧端口，再启动前后端（uvicorn + Vite，Ctrl+C 一起停）
 	uv run cndb dev --host $(DEV_HOST) --port $(DEV_PORT)
 
 seed: ## 注入演示数据（幂等：重建工作区/表/视图/文档并创建演示账号）

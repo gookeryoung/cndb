@@ -1,15 +1,5 @@
 {
   "股市日线": [
-    {
-      "name": "全部日线",
-      "view_type": "grid",
-      "sortings": [
-        {"field_name": "股票代码", "direction": "asc"},
-        {"field_name": "日期", "direction": "desc"}
-      ],
-      "is_default": true,
-      "order": 0
-    }
   ],
   "天气每日": [
     {
