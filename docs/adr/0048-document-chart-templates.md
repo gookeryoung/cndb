@@ -1,6 +1,6 @@
 # ADR 0048: 文档可视化图形（类别 → 图形模板 → 用户图表实例）
 
-Status: Accepted（2026-10-27 人工评审通过：手工录入不联动 / 游客免登录可见 / 暂不扩模板）
+Status: Implemented（2026-10-27 人工评审通过：手工录入不联动 / 游客免登录可见 / 暂不扩模板；同日确认 P0-P2 全期落地）
 Date: 2026-10-27
 Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/components/Document/TableEmbed.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/MarkdownToolbar.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertTableModal.tsx`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/images.py`、`src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/help/services/figures/registry.py`、ADR 0008（离线依赖约束）、ADR 0017（游客分享）、ADR 0026（Chrome 81 基线）、ADR 0042（插入入口）、ADR 0045（导出占位符解释范式）、ADR 0030（服务端 SVG 先例）
 需求卡片: `docs/requirements/0048-document-chart-templates.md`（需求原文与约束编号的唯一副本）
@@ -232,8 +232,8 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 全部落地（commit `dd6d6e5c` / `dea91e46` / `358864b8`）；待人工确认 `Status` 是否改 `Implemented`
+- 当前阶段：P0 / P1 / P2 全部落地（commit `dd6d6e5c` / `dea91e46` / `358864b8`），`Status` 已人工确认改 `Implemented`
 - 已完成：模型 + 迁移 e0f1a2b3c4d5（幂等 + downgrade）、两级注册表（3 类 × 3 模板含默认配置）、渲染管线（图元层 + SVG/PNG 双写端 + 空行回退默认）、实例 API（预览不落库 / ETag 304 / 模板下线降级）、备份 v8（导出 charts 键 + `_import_charts` 严格校验跳过记错误）；前端 chartRef 切片解析（与 table 语法互不干扰）、ChartEmbed 内联渲染（ETag 304 模块级复用 + sanitizeSvg + 失败单段降级）、MarkdownPreview 切 chart 段、工具栏「插入图表」入口、InsertChartModal 两级模板浏览与已有实例列表、ChartDesignerModal 按模板 schema 生成表单 + 300ms 防抖实时预览、编辑器接线；P2 —— 导出解释器 `export/chart_refs.py`（与前端同构解析 + `(chart_id)` 记忆化 + 降级文本）、DOCX / PDF 渲 PNG 2x 走既有图片通道、Markdown 改写 `assets/chart-<id>.svg` 并入归档（顺序「图表 → 表格 → 图片」，与 ADR 0045 叠加无占位符残留）、游客免登录渲染端点（token 有效 + 正文引用集合白名单，密码分享免密渲染）、ChartEmbed `shareToken` 匿名模式 + PublicSharePage 接线（`chartsOnly` 保持数据表引用不渲染）、帮助文档「插入图表」条目、CHANGELOG 全期条目
-- 下一步：无（全期落地；`Status` 改 `Implemented` 属人工卡点，待确认）
+- 下一步：无（全期已落地并确认 `Implemented`；后续需求变更按文件头说明先改本 ADR 再改代码）
 - 已知坑：`chartRef.ts` 与 `chart_refs.py` 的解析样例要同一批；Markdown 归档顺序须「图表改写 → 表格改写 → 归档」与 ADR 0045 叠加时保持无占位符残留；`require_valid_config` 抛 `BadRequestError`（不是 `BadRequestTemplateError`），备份导入捕获前者；`resolve_color` 对 3 位短 hex 不转大写；归一把 actualCount 钳制到有效行数；ChartEmbed 的 ETag 缓存是模块级 Map（跨用例持续），单测各用例须用不同 chartId 规避 304 串扰；antd 双汉字按钮自动插空格，测试断言用 `/^取\s*消$/`；e2e 跑前须 `pnpm build` 重建 `src/cndb/static`，8000 端口被其它项目占用时用 `E2E_PORT=8010` 外部起服务器 + 临时 playwright config（`webServer: undefined`）
 - 最近一次全绿：`make check-docs` + `make check-fast` + `make test`（5725 passed / 3 skipped）+ e2e `document-chart-embed.spec.ts`（两次复跑稳定）于 P2 提交时
