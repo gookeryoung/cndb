@@ -34,6 +34,12 @@
 #   tar -xzf cndb-0.3.0-offline-bundle.tar.gz && cd cndb-0.3.0-offline
 #   cp deploy/.env.prod.example .env && vim .env        # CNDB_IMAGE=cndb:0.3.0
 #   OFFLINE=1 ./deploy/deploy.sh 0.3.0
+#
+# 磁盘回收（只在部署成功后执行；失败路径保留现场与回滚镜像）：
+#   · 应用镜像保留最近 KEEP_APP_IMAGES 个（默认 5）、依赖基础镜像保留 KEEP_BASE_IMAGES 个（默认 3）
+#   · 另清悬空镜像、限制 buildkit 缓存（BUILD_CACHE_KEEP，默认 3GB），
+#     并打印系统盘使用率（超 DISK_WARN_PCT 默认 80% 告警）
+#   · 正在运行镜像与本次目标镜像永不删除，保证回滚落点始终可用
 # ═══════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
 
@@ -51,6 +57,22 @@ log()  { printf '\033[0;36m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 ok()   { printf '\033[0;32m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 warn() { printf '\033[0;33m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 die()  { printf '\033[0;31m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*" >&2; exit 1; }
+
+# 磁盘水位检查：系统盘写满会让 build、日志与 SQLite 写入一起失败，提前告警比事后救火便宜。
+# 阈值可用 DISK_WARN_PCT 覆盖（默认 80）。
+check_disk_usage() {
+  local threshold="${DISK_WARN_PCT:-80}" use_pct
+  use_pct="$(df -P / 2>/dev/null | awk 'NR==2 {gsub(/%/, "", $5); print $5}' || true)"
+  if ! [[ "$use_pct" =~ ^[0-9]+$ ]]; then
+    warn "读取磁盘使用率失败，跳过水位检查"
+    return 0
+  fi
+  if (( use_pct >= threshold )); then
+    warn "系统盘使用率 ${use_pct}% 已达告警阈值 ${threshold}%，请检查镜像/构建缓存/日志占用"
+  else
+    log "系统盘使用率 ${use_pct}%（阈值 ${threshold}%，余量正常）"
+  fi
+}
 
 # ── 前置检查 ───────────────────────────────────────────────────
 command -v docker >/dev/null || die "未找到 docker，请先在服务器安装 Docker"
@@ -534,25 +556,74 @@ if [[ "$ENABLE_PROXY" == "1" ]]; then
   esac
 fi
 
-# 5. 成功：清理悬空镜像 + 打印版本
+# 5. 成功：回收磁盘 + 打印版本
 VERSION_JSON="$(health_body 2>/dev/null || echo '{}')"
 ok "部署成功！版本信息: ${VERSION_JSON}"
 
-# 保留最近 5 个镜像，其余清理，防止磁盘被旧镜像占满
-# 当前运行中的镜像 tag 会被排除，不会误删正在用的版本
-log "清理悬空镜像（保留最近 5 个）..."
-docker images --filter "reference=${BASE_REPO}:*" --format '{{.CreatedAt}} {{.ID}} {{.Repository}}:{{.Tag}}' \
-  | sort -r | tail -n +6 \
-  | awk '{print $3}' \
-  | xargs -r docker rmi -f >/dev/null 2>&1 || true
+# ── 磁盘回收（只在成功路径执行；失败已由 rollback 保留现场与回滚镜像）──
+# 四层缺一层都会在系统盘上慢慢累积：
+#   ① 应用镜像按 tag 保留窗口裁剪（保住多个历史回滚点）
+#   ② 依赖基础镜像同理（仓库名是 <应用仓库>-base，不被 ① 命中）
+#   ③ 悬空镜像：同一版本重跑部署、latest 每次被覆盖都会留下 <none> 层，
+#      按 tag 遍历永远取不到它们，必须单独回收
+#   ④ buildkit 构建缓存：服务器端构建（SERVER_BUILD=1）每次都会新增中间层
+KEEP_APP_IMAGES="${KEEP_APP_IMAGES:-5}"
+KEEP_BASE_IMAGES="${KEEP_BASE_IMAGES:-3}"
+BUILD_CACHE_KEEP="${BUILD_CACHE_KEEP:-3GB}"
 
-# 依赖基础镜像单独清理（仓库名是 <应用仓库>-base，不会被上面的规则命中）。
-# 保留最近 3 个指纹；被应用镜像引用的层不会真正删除，磁盘占用仍可控。
-log "清理旧依赖基础镜像（保留最近 3 个）..."
-docker images --filter "reference=${BASE_IMAGE_REPO}:*" --format '{{.CreatedAt}} {{.ID}} {{.Repository}}:{{.Tag}}' \
-  | sort -r | tail -n +4 \
-  | awk '{print $3}' \
-  | xargs -r docker rmi -f >/dev/null 2>&1 || true
+# 删除某仓库中超出保留窗口的镜像（按创建时间倒序，保留最新 keep 个）。
+# 显式跳过本次目标镜像与当前运行镜像：即便窗口算错也不会碰线上 ——
+# docker rmi -f 会把 tag 一并摘掉，回滚时就找不到落点了。
+prune_repo_images() {
+  local repo="$1" keep="$2" ref removed=0
+  while IFS= read -r ref; do
+    [[ -n "$ref" ]] || continue
+    # latest 是移动 tag，每次构建与真实版本同 ID：留着不占额外空间，
+    # 但若让它参与窗口计数，会白占一个名额（实际只保住 keep-1 个版本）。
+    if [[ "$ref" == *:latest ]]; then
+      continue
+    fi
+    if [[ "$ref" == "$TARGET_IMAGE" ]]; then
+      continue
+    fi
+    if [[ -n "$CURRENT_IMAGE" && "$ref" == "$CURRENT_IMAGE" ]]; then
+      continue
+    fi
+    if docker image rm -f "$ref" >/dev/null 2>&1; then
+      log "已清理旧镜像 ${ref}"
+      removed=$((removed + 1))
+    else
+      warn "旧镜像 ${ref} 删除失败（可能被容器或其它 tag 引用），已跳过"
+    fi
+  done < <(
+    docker images --filter "reference=${repo}:*" \
+      --format '{{.CreatedAt}}|{{.Repository}}:{{.Tag}}' \
+      | { grep -v '|.*:latest$' || true; } \
+      | sort -r | cut -d'|' -f2- | tail -n +$((keep + 1))
+  )
+  log "${repo} 清理完成：删除 ${removed} 个，保留最近 ${keep} 个"
+}
+
+log "回收镜像（应用保留 ${KEEP_APP_IMAGES} 个 / 依赖基础镜像保留 ${KEEP_BASE_IMAGES} 个）..."
+prune_repo_images "$BASE_REPO" "$KEEP_APP_IMAGES"
+prune_repo_images "$BASE_IMAGE_REPO" "$KEEP_BASE_IMAGES"
+
+# 不带 filter 时 image prune 的默认语义就是「只删无 tag 且无容器引用的悬空镜像」，
+# 不会碰任何带 tag 的镜像，同机其他项目（stock-strategy 等）的运行镜像不受影响。
+if docker image prune -f >/dev/null 2>&1; then
+  log "悬空镜像已清理"
+else
+  warn "悬空镜像清理失败（不影响本次部署）"
+fi
+
+# 依赖基础镜像按指纹 tag 持久化，不靠 buildkit 缓存命中，这里限制缓存上限即可。
+if docker builder prune -f --keep-storage "$BUILD_CACHE_KEEP" >/dev/null 2>&1; then
+  log "构建缓存已清理（保留 ${BUILD_CACHE_KEEP} 以内）"
+else
+  warn "构建缓存清理失败或当前 Docker 不支持 --keep-storage，已跳过"
+fi
+
+check_disk_usage
 
 if [[ "$ENABLE_PROXY" == "1" ]]; then
   ok "完成。访问地址：http://<服务器IP>:${CNDB_HTTP_BIND:-80}（经容器 nginx 反代；配好证书后可用 HTTPS）"

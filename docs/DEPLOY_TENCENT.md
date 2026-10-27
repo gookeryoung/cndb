@@ -639,7 +639,7 @@ cd /opt/cndb && SERVER_BUILD=1 IMAGE_REPO_OVERRIDE=ccr.ccs.tencentyun.com/pydev/
 | 应用镜像构建报依赖缺失 / `--no-index` 失败     | 基础镜像与锁定清单不一致（极少见）。删掉对应 `cndb-base:deps-*` 镜像后重跑，会重新构建基础镜像 |
 | `缺少 dist/cndb-*.whl`                     | wheel 没下载下来。看 TAT 日志里「下载 wheel」那几行：国内镜像与官方源都失败通常是网络或版本未发布 |
 | 构建 OOM（进程被 kill 137）                 | 服务器内存 <2G。加 swap 或升配                                   |
-| 磁盘不足                                   | `docker system df` 看占用；deploy.sh 已保留最近 5 个应用镜像 / 3 个基础镜像，必要时 `docker image prune -a` |
+| 磁盘不足                                   | `docker system df` 看占用；deploy.sh 成功后自动回收：应用镜像保留最近 5 个 / 依赖基础镜像 3 个（`KEEP_APP_IMAGES`、`KEEP_BASE_IMAGES` 可调），另清悬空镜像并把 buildkit 缓存压到 3GB 内（`BUILD_CACHE_KEEP`），收尾打印系统盘水位（超 `DISK_WARN_PCT` 默认 80% 告警） |
 | 冒烟验证失败（assets 为空）                  | wheel 未内嵌前端产物 —— 确认 release.yml 的前端构建成功后再重跑        |
 
 ### 版本回滚后仍异常
@@ -655,10 +655,14 @@ docker compose --env-file .env -f docker-compose.prod.yml up -d --force-recreate
 镜像和日志是主要占用：
 
 ```bash
-docker system df                                   # 查看占用分布
-docker image prune -a                              # 清理悬空镜像（deploy.sh 已自动保留最近 5 个应用镜像 / 3 个依赖基础镜像）
+docker system df                                   # 查看占用分布（镜像 / 容器 / 卷 / 构建缓存）
+docker image prune -f                              # 只删悬空镜像，安全
+docker builder prune -f --keep-storage 3GB         # 压构建缓存，保留 3GB
 docker volume ls                                   # 确认无误后再清理卷——卷里有你的数据
 ```
+
+⚠️ 不要用 `docker image prune -a`：它会删除**所有**未被容器引用的镜像（含带 tag 的历史版本），
+一回滚就找不到镜像了。deploy.sh 成功后已自动做上面三步的前两步，手动清理只在盘真的吃紧时补一刀。
 
 `docker-compose.prod.yml` 已配 `json-file` 日志轮转（20m × 5 = 100MB 上限），  
 不配的话日志会无限增长把盘写满。
