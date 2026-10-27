@@ -200,16 +200,16 @@ Related: `frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/c
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 解析与渲染 | 未开始 | — | — | — |
-| P1 编辑器与设计器 | 未开始 | — | — | — |
-| P2 导出与回归 | 未开始 | — | — | — |
+| P0 解析与渲染 | 已落地 | `frontend/src/components/Document/refWidth.ts`、`frontend/src/components/Document/chartRef.ts`、`frontend/src/components/Document/tableRef.ts`、`frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/components/Document/TableEmbed.tsx`、`src/cndb/plugins/documents/services/export/ref_width.py`、`src/cndb/plugins/documents/services/export/chart_refs.py`、`src/cndb/plugins/documents/services/export/table_refs.py` | `frontend/src/components/Document/refWidth.test.ts`、`frontend/src/components/Document/chartRef.test.ts`、`frontend/src/components/Document/tableRef.test.ts`、`frontend/src/components/Document/ChartEmbed.test.tsx`、`frontend/src/components/Document/TableEmbed.test.tsx`、`tests/test_document_export_chart_refs.py`、`tests/test_document_export_table_refs.py` | `11a9ddd5` |
+| P1 编辑器与设计器 | 已落地 | `frontend/src/components/Document/RefWidthControl.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertTableModal.tsx`、`frontend/src/pages/documents/ChartDesignerModal.tsx` | `frontend/src/components/Document/RefWidthControl.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx` | `11a9ddd5` |
+| P2 导出与回归 | 已落地 | `src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py` | `tests/test_cov_documents_extra.py`、`tests/test_document_export_chart_refs.py`、`tests/test_document_export_table_refs.py`、`frontend/tests/e2e/critical/document-chart-embed.spec.ts` | `11a9ddd5` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：Proposed（方案待人工评审，未开始实现）
-- 已完成：需求卡片 0051 经需求方确认（2026-10-27，五个未决问题均按建议）；ADR 初稿完成
-- 下一步：人工评审通过后把 `Status` 改 `Accepted`，由 implementer 按 P0 → P1 → P2 落地；每期回填落地状态表
-- 已知坑：带 `width` 的占位符必须前后端同版本上线，旧解析器会把它当普通文本；重复引用改宽依赖 occurrence，不能用 replace-all；PDF 表格宽度需用真实 `%PDF` 渲染结果断言，不能只断言解析值
-- 最近一次全绿：`make check-docs`（需求卡片落地时，2026-10-27）
+- 当前阶段：P0 / P1 / P2 已落地（Status 仍为 Accepted，待人工确认后改 Implemented）
+- 已完成：需求卡片 0051 经需求方确认（2026-10-27，五个未决问题均按建议）；ADR 评审通过；三期实现与单测 / 接口测试 / 导出测试完成，`make check-fast`、`make flow`、`make cov`、前端覆盖率门槛均通过
+- 下一步：人工确认实现后把 `Status` 改 `Implemented`；e2e 需在有浏览器依赖的机器 / CI 上跑通（本机缺 `libatk-1.0.so.0`，Playwright 无法启动 Chromium，属环境阻塞，非用例失败）
+- 已知坑：带 `width` 的占位符必须前后端同版本上线，旧解析器会把它当普通文本；重复引用改宽依赖 occurrence，不能用 replace-all；PDF 表格宽度需用真实 `%PDF` 渲染结果断言，不能只断言解析值；本机 8000 端口被其他服务占用时用 `E2E_PORT` 换端口跑 e2e
+- 最近一次全绿：`make check-fast` / `make flow` / `make cov` / `node scripts/check-coverage.mjs`（2026-10-27）；e2e 因本机缺少系统库未执行成功
