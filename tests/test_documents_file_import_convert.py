@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 import struct
+import xml.etree.ElementTree as ET
 import zlib
 
 import pytest
@@ -641,24 +642,64 @@ class TestHtmlConvertEdges:
         assert "](#doc-h-资料)" in body
         assert "](#top)" in body
 
-    def test_rendered_svg_in_pre_drops_style_and_warns(self):
+    def test_rendered_svg_in_pre_becomes_svg_image(self):
         html = (
-            "<body><pre class='mermaid'><svg><style>#mermaid-1{fill:#000}</style>"
+            "<body><pre class='mermaid'><svg viewBox='0 0 10 10'><style>#mermaid-1{fill:#000}</style>"
             "<text>步骤一</text></svg></pre><p>正文</p></body>"
         )
-        _, body, warnings = html_converter.convert_html(html.encode(), "x.html")
-        assert body == "正文"
-        assert "font-family" not in body
-        assert any("SVG" in warning for warning in warnings)
+        sunk: list[tuple[bytes, str]] = []
 
-    def test_chart_figure_svg_keeps_caption_and_warns(self):
+        def sink(data: bytes, name: str) -> str:
+            sunk.append((data, name))
+            return f"K{len(sunk)}"
+
+        _, body, warnings = html_converter.convert_html(html.encode(), "x.html", image_sink=sink)
+        # 渲染型图表落为 .svg 图片附件，不再把 SVG 内的 CSS 灌进正文
+        assert body == "![图表](file:K1)\n\n正文"
+        assert len(sunk) == 1
+        assert sunk[0][1] == "image1.svg"
+        assert b"<svg" in sunk[0][0]
+        assert b"mermaid-1{fill:#000}" in sunk[0][0]  # <style> 保留（配色靠它）
+        assert "font-family" not in body
+        assert not any("SVG" in warning for warning in warnings)
+
+    def test_rendered_svg_without_sink_is_placeholder(self):
+        html = "<body><pre class='mermaid'><svg viewBox='0 0 1 1'><text>步骤</text></svg></pre><p>正文</p></body>"
+        _, body, warnings = html_converter.convert_html(html.encode(), "x.html")
+        assert body == "_[图表未导入：image1.svg]_\n\n正文"
+        assert not any("SVG" in warning for warning in warnings)  # 与既有图片口径一致：无 sink 时占位不告警（D8）
+
+    def test_chart_figure_svg_becomes_image_and_keeps_caption(self):
         html = (
             "<body><figure><figcaption>图1-1 占比</figcaption>"
-            "<div><svg><style>.x{}</style><text>柱状</text></svg></div></figure></body>"
+            "<div><svg viewBox='0 0 1 1'><style>.x{}</style><text>柱状</text></svg></div></figure></body>"
         )
-        _, body, warnings = html_converter.convert_html(html.encode(), "x.html")
-        assert body == "图1-1 占比"
-        assert any("SVG" in warning for warning in warnings)
+        _, body, warnings = html_converter.convert_html(html.encode(), "x.html", image_sink=lambda data, name: "K")
+        assert body == "图1-1 占比\n\n![图表](file:K)"
+        assert not any("SVG" in warning for warning in warnings)
+
+    def test_inline_svg_foreign_object_void_tags_self_closed(self):
+        # <img> 引入 SVG 走 XML 解析：foreignObject 内的 <br> 必须自闭合，否则整图失败
+        html = "<body><svg viewBox='0 0 1 1'><foreignObject><div>上<br>下</div></foreignObject></svg></body>"
+        captured: list[bytes] = []
+        html_converter.convert_html(html.encode(), "x.html", image_sink=lambda data, name: captured.append(data) or "K")
+        svg = captured[0].decode("utf-8")
+        assert "<br/>" in svg
+        assert "</br>" not in svg
+        ET.fromstring(svg)  # 合法 XML：不抛异常
+
+    def test_inline_svg_scripts_and_event_handlers_stripped(self):
+        html = (
+            "<body><svg viewBox='0 0 1 1' onload='go()'><script>alert(1)</script>"
+            "<a xlink:href='javascript:alert(2)'><text>点</text></a></svg></body>"
+        )
+        captured: list[bytes] = []
+        html_converter.convert_html(html.encode(), "x.html", image_sink=lambda data, name: captured.append(data) or "K")
+        svg = captured[0].decode("utf-8")
+        assert "<script" not in svg
+        assert "onload" not in svg
+        assert "javascript:" not in svg
+        ET.fromstring(svg)
 
     def test_data_uri_invalid_base64(self):
         _, body, warnings = html_converter.convert_html(b"<p><img src='data:image/png;base64,A' alt='x'></p>", "x.html")
@@ -901,6 +942,26 @@ class TestMhtmlConvert:
         assert "图片未导入" not in body
         assert warnings == []
         assert dict(assets)["_assets/a.png"] == PNG_BYTES
+
+    def test_inline_svg_becomes_attachment(self):
+        html = (
+            "<html><head><title>图表页</title></head><body><p>前</p>"
+            "<svg viewBox='0 0 10 10'><style>.a{fill:red}</style><text>柱状</text></svg>"
+            "<p>后</p></body></html>"
+        )
+        sunk: list[tuple[bytes, str]] = []
+
+        def sink(payload: bytes, name: str) -> str:
+            sunk.append((payload, name))
+            return f"K{len(sunk)}"
+
+        _title, body, warnings, _assets = mhtml_converter.convert_mhtml(
+            _make_mhtml(html), "page.mhtml", image_sink=sink
+        )
+        assert "![图表](file:K1)" in body
+        assert sunk[0][1] == "image1.svg"
+        assert b"<svg" in sunk[0][0]
+        assert warnings == []
 
     def test_cid_reference_matches(self):
         html = (

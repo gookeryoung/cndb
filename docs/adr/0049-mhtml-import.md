@@ -38,14 +38,15 @@ Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/do
 
 ### 真实样例核对（2026-10-27，快照类 MHTML）
 
-以 Chrome「另存为 MHTML」的长文（含目录锚点、合并单元格表格、mermaid / ECharts 内联 SVG）实测，转换产物存在 4 类失真；均为 HTML 转换器共用缺陷，一并修复：
+以 Chrome「另存为 MHTML」的长文（含目录锚点、合并单元格表格、mermaid / ECharts 内联 SVG）实测，转换产物存在 5 类失真；均为 HTML 转换器共用缺陷，一并修复：
 
 | # | 症状（转换产物） | 根因 | 修复 |
 |---|---|---|---|
 | 9 | 目录与引注链接是 `file:///C:/.../page.html#s00`，入库后指向不存在的本地文件；目录 9 条链接挤在同一行 | 转换器对 `href` 原样输出，没有「文档自身」概念 | 指向根 HTML 自身的链接改写成文内标题锚点（D9） |
-| 10 | `<pre class="mermaid">` 内渲染后的 SVG 被当代码块输出：几 KB 的 CSS 加节点文字拼成一大段围栏；ECharts 图表被静默丢弃，只剩图题 | `_code_block` 取 `<pre>` 全量纯文本、未跳过 `<svg><style>`；`<svg>` 整体在 `_SKIP_TAGS` 被静默跳过 | 纯文本跳过非正文子树；无源码的图表块丢弃并告警（D10） |
+| 10 | `<pre class="mermaid">` 内渲染后的 SVG 被当代码块输出：几 KB 的 CSS 加节点文字拼成一大段围栏；ECharts 图表被静默丢弃，只剩图题 | `_code_block` 取 `<pre>` 全量纯文本、未跳过 `<svg><style>`；`<svg>` 整体在 `_SKIP_TAGS` 被静默跳过 | 纯文本跳过非正文子树（D10）；内联 SVG 落盘为 `.svg` 图片附件（D13） |
 | 11 | 指标表行 `| 产业营业收入 | 亿元 | ... |` 缺「类别」列导致整表错位 | 原实现丢弃 `rowspan` / `colspan`，后续行少一格 | 合并单元格展开为普通网格（D11） |
 | 12 | `1. **格局** ：用集中度…` 在标点前多出空格；列表项以空行分隔成「松散列表」 | 列表项各片段 `strip()` 后用空格拼接；每个列表行被当作独立块 | 片段按源码顺序拼接；同一列表输出为一个块（D12） |
+| 13 | 内联 SVG 图表告警「无法转换为文本，已跳过」，矢量图表整体丢失（3 张图仅剩图题） | 图片通道只接受位图字节，SVG 被当作「非正文子树」丢弃 | 保留 SVG 原始标记、清洗后落盘为 `.svg` 附件（D13） |
 
 设计目标（不变量）：
 
@@ -53,6 +54,7 @@ Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/do
 - **I2 逐条隔离**：单个 MHTML 损坏 / 超限只跳过该条，不中断整批（沿用 ADR 0010 C8）。
 - **I3 素材不丢**：匹配成功的图片要么落为站内附件（`file:` 引用），要么落为 `_assets` 图片文档（相对引用）；只有匹配不到的才占位 + 告警。
 - **I4 既有行为不变**：md / docx / html / 原件族的转换、上限、开关语义不受影响。
+- **I5 矢量图表不丢**：内联 ``<svg>``（mermaid / ECharts 渲染结果）落为 ``.svg`` 图片附件，与位图同走 ``file:`` 引用；不再是「丢弃 + 告警」。
 
 ## Decision
 
@@ -85,6 +87,7 @@ Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/do
 6. MHTML 文件名 / 素材名仅取 basename，目录层级不展开（素材一律平铺进 `_assets/`）。
 7. `MAX_FILES` / 批次总体积校验在展开前完成；`_assets` 素材不计入文件数上限（由 32MB 单文件上限兜底）。
 8. 二进制 part 的 quoted-printable 编码属非标准输入（RFC 2045 建议二进制走 base64，Chrome / Word 等现实生产者对图片一律 base64）：QP 解码仅承诺 HTML 文本 part 保真，二进制 QP 素材不承诺字节级还原。
+9. 内联 SVG：仅在 ``raw`` 完整（有 ``<svg`` 起、有 ``</svg>`` 止）时落盘，残缺标记告警「内联 SVG 图表无法解析，已跳过」；`alt` 统一为「图表」，`imageN.svg` 顺序命名；预览 / 关态（sink=None）回落 `_[图表未导入：imageN.svg]_` 占位、不告警（D8 同口径）；`.svg` 属站内可脚本化扩展名，下载端点强制 attachment + nosniff，前端经鉴权 blob（`useFileObjectUrl`）渲染，`<img>` 语义不执行脚本。
 
 ### 5. 迁移
 
@@ -105,7 +108,7 @@ Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/do
 - 相对引用保留（sink=None / OFF）：正文 `![alt](_assets/name)`，匹配成功不产生「图片未导入」告警；
 - 匹配：`cid:` 命中、basename 唯一兜底命中、basename 歧义未命中、未命中占位 + warning；
 - CSS 等 `text/css` part 丢弃；未被引用的图片素材仍落盘 / 展开；素材重名递增；
-- 保真修复（对应「真实样例核对」9-12）：自身绝对链接 → 标题锚点（无标题引注退化到最近标题、跨文档 / 外链保留）、`rowspan` / `colspan` 表格逐行对齐、`<pre>` 内渲染 SVG 不输出 CSS 且告警、图表 `<figure>` 保留图题并告警、列表标点前无多余空格且整表为一个块；
+- 保真修复（对应「真实样例核对」9-13）：自身绝对链接 → 标题锚点（无标题引注退化到最近标题、跨文档 / 外链保留）、`rowspan` / `colspan` 表格逐行对齐、内联 SVG 落为 `.svg` 附件（含无 sink 占位、`<pre>` / `<figure>` 两条路径、`foreignObject` 内 `<br>` 自闭合后为合法 XML、`<script>` / `on*` / 脚本 URL 被剥）、列表标点前无多余空格且整表为一个块；
 - 体积：8MB < MHTML ≤ 32MB 通过（reader 层），> 32MB 跳过；空文件 / 无 HTML part → `UnsupportedImport`；
 - 混合批次：mhtml + md + html 同批互不影响。
 
@@ -129,8 +132,8 @@ Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/do
 ### 9. 转换保真修复（真实样例核对后）
 
 - **自身链接**：`convert_html` 新增 `base_url`（MHTML 取根 part 的 `Content-Location`）；`href` 的 scheme / netloc / path 与 `base_url` 相同（或无 scheme 且 basename 与 `ctx.path` 相同）时视为文内链接 —— 该 id 在原文有对应标题则映射到 `#doc-h-<标题 slug>`（与前端 `outline.headingAnchor` 同算法，预览区标题 id 即由此生成，跳转才真正生效），无标题的引注 id 退化到最近标题，其余保留 `#fragment`；跨文档链接原样保留。
-- **非正文子树**：`_node_text` 跳过 `_SKIP_TAGS`（script / style / noscript / template / svg / canvas / iframe），围栏代码块不再吞 CSS；`<pre>` 去除非正文后为空且原含 `<svg>` 时整块丢弃并告警「内联 SVG 图表无法转换为文本」。
-- **图表**：`<figure>` 内含内联 SVG 且无 `<pre>` 时告警一次；图题（`figcaption`）保留。不把 SVG 转成图片（当前图片通道只接受位图字节，见「交接」已知坑）。
+- **非正文子树**：`_node_text` 跳过 `_SKIP_TAGS`（script / style / noscript / template / svg / canvas / iframe），围栏代码块不再吞 CSS。
+- **内联矢量图表**：`_Builder` 捕获 `<svg>` 子树**原始标记**（区分大小写：`viewBox` / `clipPath` / `foreignObject`，见 D13），`_svg_image_markdown` 清洗后经 `image_sink` 落为 `.svg` 附件 → `![图表](file:<key>)`；`<pre>` 内图表与 `<figure>` 内图表同一路径。清洗：剥 `<script>` / `on*` / 脚本 URL，`foreignObject` 内 HTML 空元素（`<br>` 等）自闭合、根元素补 `xmlns`（独立 SVG 走 XML 解析）。
 - **表格**：`rowspan` 覆盖的后续行重复单元格文本，`colspan` 多出的列留空，保证列数与表头一致；`rowspan` / `colspan` 非法按 1、上限 1000。
 - **列表**：列表项内片段按源码顺序直接拼接（不再逐片段 `strip()` 后插空格），整表列表输出为一个块，避免松散列表。
 
@@ -147,16 +150,17 @@ Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/do
 | D7 | 产物形态 | 只产出 Markdown 文档，不保留 MHTML 原件 | 与 docx / html 一致；避免双份存储（用户拍板） | 按 ADR 0025 原件族另存原件（双份存储，正文已是转换产物） | `reader.convert_file` |
 | D8 | analyze 预览口径 | 预览（sink=None）匹配成功的引用保留相对路径且不告警；预览不展开素材条目 | 预览不误导（不显示成片「未导入」）；落库差额在结果中体现 | 预览走占位 + 告警（每图一条告警，观感即「图片全丢」） | `importer.analyze_files` |
 | D9 | 文档自身链接 | `href` 指向根 HTML 自身（绝对地址与 `Content-Location` 相同，或无 scheme 且文件名相同）时改为文内标题锚点：原文 id 有对应标题 → `#doc-h-<标题 slug>`（与前端 `outline.headingAnchor` 同算法）；无标题 id → 最近标题；否则保留 `#fragment` | 快照 MHTML 的目录与引注全是 `file:///...#s01`，入库后该路径必然失效；Markdown 不保留元素 id，只有映射到标题锚点预览里才真能跳转 | 只保留 `#s01`（预览无此 id，点了不动）；全部 `file:` 链接一律剥成锚点（跨文件链接会错指）；保留原绝对地址（指向不存在的本地文件） | `html._anchor_index`、`html._same_document_fragment`、`mhtml.convert_mhtml` |
-| D10 | 渲染型图表 | 纯文本跳过 script / style / svg 等非正文子树；`<pre>` 去除非正文后为空则整块丢弃；图表 `<figure>` 与空 `<pre>` 各告警一次，图题保留 | CSS 不是正文，几 KB 样式灌进围栏代码块属明显失真；内联 SVG 无位图字节，当前图片通道无法落盘 | 把 SVG 内文字拼进代码块（无结构、含 CSS）；静默丢弃（用户不知图表缺失） | `html._node_text`、`html._code_block`、`html._blocks` |
+| D10 | 非正文子树 | 纯文本跳过 script / style / svg / canvas 等非正文子树，围栏代码块不再吞 CSS；内联 ``<svg>`` 由 D13 另行落为图片 | CSS 不是正文，几 KB 样式灌进围栏代码块属明显失真 | 把 SVG 内文字拼进代码块（无结构、含 CSS） | `html._node_text`、`html._code_block` |
 | D11 | 合并单元格表格 | `rowspan` 覆盖的后续行重复该单元格文本，`colspan` 多出的列留空；非法值按 1、上限 1000 | Markdown 无合并单元格；重复类别列保证逐列语义与表头对齐 | 丢弃 rowspan（列错位，误读指标）；横向铺开隐藏列（表格宽度不可控） | `html._table_markdown` |
 | D12 | 列表拼接 | 列表项片段按源码顺序直接拼接（不插空格）并折叠空白；同一列表输出为一个块 | 源码 `**格局**：` 无空格，人为插入会在中文标点前多出空格；逐行成块会让列表变松散 | 逐片段 `strip()` 后空格拼接（现状缺陷）；逐行成块（松散列表） | `html._render_list`、`html._blocks` |
+| D13 | 内联矢量图表 | `_Builder` 捕获 `<svg>` 子树**原始标记**（HTMLParser 会降大小写，重建破坏 `viewBox` / `clipPath` / `foreignObject`）；`_svg_image_markdown` 清洗（剥 script / `on*` / 脚本 URL、空元素自闭合、补 `xmlns`）后经 `image_sink` 落盘为 `.svg`，输出 `![图表](file:<key>)`；无 sink（预览 / 关态）回落 `_[图表未导入：imageN.svg]_` 占位、不告警（与 D8 同口径） | 内联 SVG 是渲染后的矢量图（mermaid / ECharts），无位图字节但本身即完整图像；浏览器 `<img>` 引入 SVG 走 XML 解析，故须保证良构；站点对 `.svg` 走鉴权 blob（`useFileObjectUrl`），`<img>` 语义不执行脚本 | 丢弃 + 告警（图表整体丢失，违背 I5）；把 SVG 内文字拼进正文（无结构）；转位图需引重依赖 / 外部二进制（无必要，`<img>` 直接支持 SVG）；内侧内联渲染（Markdown 无法承载） | `html._Builder`、`html._sanitize_svg`、`html._svg_image_markdown` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
 ## Consequences
 
-- **正向**：网页另存（MHTML）一键进库，图片不再丢失；`_assets` 目录化管理与 Obsidian 习惯一致；零新依赖、零迁移。真实快照样例（78KB → 30KB 正文）不再输出 CSS 块，目录 / 引注变为文内锚点，合并单元格表格列对齐。
-- **负向**：`html.py` 图片分派多一个分支；OFF 模式导入条目数与预览存在差额（D8）；渲染型 SVG 图表只保留图题 + 告警，图形本身不入库（D10）。
+- **正向**：网页另存（MHTML）一键进库，图片不再丢失；`_assets` 目录化管理与 Obsidian 习惯一致；零新依赖、零迁移。真实快照样例（78KB → 30KB 正文）不再输出 CSS 块，目录 / 引注变为文内锚点，合并单元格表格列对齐；3 张内联 SVG 图表（mermaid 流程 / 环形 / ECharts 柱状）落为 `.svg` 附件、正文以 `file:` 引用，均在预览中可见。
+- **负向**：`html.py` 图片分派多两个分支（位图 / SVG）；OFF 模式导入条目数与预览存在差额（D8）；内联 SVG 以 `imageN.svg` 顺序命名，不含图题/语义名（`alt` 固定为「图表」）。
 - **风险与缓解**：MHTML 变体（非标准 Content-Location）靠 basename 兜底 + 未命中告警兜住，坏例只丢单条（I2）。
 
 ## 与既有 ADR 的关系（可选）
@@ -174,11 +178,13 @@ Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/do
 | P0 | 已落地 | `src/cndb/plugins/documents/services/importers/mhtml.py`、`src/cndb/plugins/documents/services/importers/html.py`、`src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/formats.py` | `tests/test_documents_file_import_convert.py` | `5b563bea` |
 | P1 | 已落地 | `src/cndb/plugins/documents/services/importers/importer.py` | `tests/test_documents_file_import_api.py` | `4e9fed9f` |
 | P2 | 已落地 | `frontend/src/api/documents.ts`、`frontend/src/pages/documents/DocumentImportModal.tsx`、`src/cndb/plugins/documents/routers/file_import.py`、`CHANGELOG.md` | `frontend/src/pages/documents/DocumentImportModal.test.tsx` | `6878197e` |
+| 保真修复（D9-D12） | 已落地 | `src/cndb/plugins/documents/services/importers/html.py`、`src/cndb/plugins/documents/services/importers/mhtml.py`、`src/cndb/plugins/documents/services/importers/importer.py` | `tests/test_documents_file_import_convert.py` | `57547a08` |
+| 内联 SVG 落盘（D13） | 已落地 | `src/cndb/plugins/documents/services/importers/html.py` | `tests/test_documents_file_import_convert.py` | `26678596` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 全部落地（2026-10-27）；同日按真实快照 MHTML 完成转换保真修复（D9-D12，已提交）
-- 已完成：需求卡片与 ADR（用户确认全部未决问题）→ P0 解析器 + reader 分派（提交 `5b563bea`）→ P1 关态 `_assets` 展开 + 接口测试（`4e9fed9f`）→ P2 前端入口与 CHANGELOG（`6878197e`）→ 真实样例核对与 D9-D12 修复（本提交：`html.py` / `mhtml.py` / 判定层 7 例）
-- 下一步：如需保留渲染型图表，先扩展图片通道接受 SVG 字节（D10 当前只告警 + 留图题）
-- 已知坑：① 转换器对 QP 编码仅承诺 HTML 文本 part 保真，二进制 QP 素材不承诺字节级还原（边界 8，现实生产者对图片一律 base64）；② OFF 态 `conflict=skip` 时 MHTML 被跳过但其素材仍会落为图片文档（预扫描先于冲突判定，D4 口径，量级小可接受）；③ `docs/adr/0048` 存量 `adr-check` 报 Related 花括号路径错误，与本期无关；④ mermaid / ECharts 等内联 SVG 图表只保留图题 + 告警，图形不入库（D10）
-- 最近一次全绿：2026-10-27 真实样例修复后 `make check-fast` 全绿、`make test` 5773 passed / 3 skipped
+- 当前阶段：P0-P2 全部落地（2026-10-27）；同日按真实快照 MHTML 完成两轮转换保真修复（D9-D12 `57547a08`；D13 内联 SVG → `.svg` 附件 `26678596`）
+- 已完成：需求卡片与 ADR（用户确认全部未决问题）→ P0 解析器 + reader 分派（提交 `5b563bea`）→ P1 关态 `_assets` 展开 + 接口测试（`4e9fed9f`）→ P2 前端入口与 CHANGELOG（`6878197e`）→ 真实样例核对与 D9-D12 修复（`57547a08`）→ D13 内联 SVG 落盘（`26678596`，判定层 6 例：`<pre>` / `<figure>` / 无 sink 占位 / 空元素自闭合 / 脚本剥除 / MHTML 层 SVG）
+- 下一步：如需 SVG 语义命名或转位图，先改本 ADR 再动代码（当前 `.svg` 原样落盘最保真）
+- 已知坑：① 转换器对 QP 编码仅承诺 HTML 文本 part 保真，二进制 QP 素材不承诺字节级还原（边界 8，现实生产者对图片一律 base64）；② OFF 态 `conflict=skip` 时 MHTML 被跳过但其素材仍会落为图片文档（预扫描先于冲突判定，D4 口径，量级小可接受）；③ 内联 SVG 落盘依赖浏览器把渲染结果（含 `foreignObject` 内 HTML 空元素）写进 MHTML，若源 SVG 本身残缺则告警跳过（边界 9）
+- 最近一次全绿：2026-10-27 D13 修复后 `make check-fast` 全绿、`make test` 全绿（导入判定层 123 例 + 接口层 36 例）

@@ -4,6 +4,7 @@
 行内元素：a / strong / b / em / i / del / code / br / img。
 ``<script>`` / ``<style>`` 等非正文内容丢弃；``<title>`` 或首个 ``<h1>`` 作为标题并从正文剥离。
 图片：``data:`` URI 与批次内本地图片经 ``image_sink`` 落盘为站内附件，外链图片保留原 URL（决策 D2）。
+内联 ``<svg>``（mermaid / ECharts 渲染结果）按原始标记落盘为 ``.svg`` 图片附件（ADR 0049 D13）。
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ from __future__ import annotations
 import base64
 import binascii
 import posixpath
+import re
 from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
@@ -58,6 +60,20 @@ _BLOCK_CONTAINERS = frozenset(
     }
 )
 _CELL_TAGS = frozenset({"td", "th"})
+#: ``<svg>`` 原始标签名提取（``<svg`` / ``<foreignObject`` 等，保留大小写）
+_TAG_NAME_RE = re.compile(r"<\s*([^\s/>]+)")
+#: SVG 安全清洗（存入站内附件前剥离可执行内容；ADR 0049 D13）
+_SVG_SCRIPT_RE = re.compile(r"<script\b[^>]*>.*?</script\s*>", re.IGNORECASE | re.DOTALL)
+_SVG_SCRIPT_SELF_RE = re.compile(r"<script\b[^>]*/>", re.IGNORECASE)
+_SVG_EVENT_RE = re.compile(r"""\son[a-z]+\s*=\s*("[^"]*"|'[^']*')""", re.IGNORECASE)
+_SVG_HREF_RE = re.compile(r"""(\s(?:xlink:)?href\s*=\s*)("[^"]*"|'[^']*')""", re.IGNORECASE)
+_SVG_UNSAFE_URL_RE = re.compile(r"javascript:|data:text/html", re.IGNORECASE)
+#: ``foreignObject`` 内的 HTML 空元素：HTML 序列化写 ``<br>``，作为独立 SVG 按 XML 解析会报错
+_HTML_VOID_IN_SVG_RE = re.compile(
+    r"<(br|hr|img|input|col|meta|link|area|base|embed|source|track|wbr)((?:\s[^>]*?[^/>])?)\s*>",
+    re.IGNORECASE,
+)
+_XMLNS_ATTR = 'xmlns="http://www.w3.org/2000/svg"'
 _MIME_SUFFIX = {
     "image/png": ".png",
     "image/jpeg": ".jpg",
@@ -72,36 +88,77 @@ _MIME_SUFFIX = {
 
 @dataclass(eq=False)
 class _Node:
-    """轻量 DOM 节点（``eq=False`` 保证可用对象身份做集合成员判断）."""
+    """轻量 DOM 节点（``eq=False`` 保证可用对象身份做集合成员判断）.
+
+    ``raw``：仅 ``<svg>`` 子树使用 —— 原始标记文本（保留大小写与命名空间，ADR 0049 D13）。
+    """
 
     tag: str
     attrs: dict[str, str]
     children: list[_Node | str]
+    raw: str = ""
+
+
+def _xml_text(text: str) -> str:
+    """按 XML 转义文本节点（``<style>`` CSS 里的 ``&`` / ``<`` 不转义会让 SVG 解析失败）."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def _raw_tag_name(markup: str) -> str:
+    """从原始标签文本取标签名（保留大小写：``foreignObject`` / ``clipPath`` 不能降成小写）."""
+    matched = _TAG_NAME_RE.match(markup)
+    return matched.group(1) if matched else ""
 
 
 class _Builder(HTMLParser):
-    """把 HTML 文本解析为 ``_Node`` 树（容忍未闭合与错序标签）."""
+    """把 HTML 文本解析为 ``_Node`` 树（容忍未闭合与错序标签）.
+
+    同时按下标捕获 ``<svg>`` 子树的**原始标记**存入 ``_Node.raw``：SVG 解析区分大小写
+    （``viewBox`` / ``clipPath`` / ``foreignObject``），而 ``HTMLParser`` 会把标签名与属性
+    名降为小写，重建会破坏渲染，故直接留存原文（ADR 0049 D13）。
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.root = _Node("#root", {}, [])
         self._stack: list[_Node] = [self.root]
+        self._svg_root: _Node | None = None
+        self._svg_chunks: list[str] = []
+        self._svg_tags: list[str] = []
+        self._svg_depth = 0
 
     @override
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        node = _Node(tag.lower(), {key.lower(): (value or "") for key, value in attrs}, [])
+        tag = tag.lower()
+        raw = self.get_starttag_text() or ""
+        node = _Node(tag, {key.lower(): (value or "") for key, value in attrs}, [])
         self._stack[-1].children.append(node)
         if node.tag not in _VOID_TAGS:
             self._stack.append(node)
+        if tag == "svg" and self._svg_depth == 0:
+            self._svg_root = node
+        self._capture_open(tag, raw, self_closing=False)
 
     @override
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        node = _Node(tag.lower(), {key.lower(): (value or "") for key, value in attrs}, [])
+        tag = tag.lower()
+        raw = self.get_starttag_text() or ""
+        node = _Node(tag, {key.lower(): (value or "") for key, value in attrs}, [])
         self._stack[-1].children.append(node)
+        if tag == "svg" and self._svg_depth == 0:
+            # 自闭合的 ``<svg .../>``：无子树，捕获后立即收尾
+            self._svg_root = node
+            self._svg_chunks = [raw]
+            self._svg_tags = []
+            self._finish_svg()
+            return
+        self._capture_open(tag, raw, self_closing=True)
 
     @override
     def handle_endtag(self, tag: str) -> None:
         tag = tag.lower()
+        if self._svg_depth:
+            self._close_svg_tag(tag)
         if tag in _VOID_TAGS:
             return
         for index in range(len(self._stack) - 1, 0, -1):
@@ -112,6 +169,43 @@ class _Builder(HTMLParser):
     @override
     def handle_data(self, data: str) -> None:
         self._stack[-1].children.append(data)
+        if self._svg_depth:
+            self._svg_chunks.append(_xml_text(data))
+
+    @override
+    def handle_comment(self, data: str) -> None:
+        # 注释默认被丢弃；SVG 子树里保留（部分渲染器把样式写在注释包裹的 ``<style>`` 外）
+        if self._svg_depth:
+            self._svg_chunks.append(f"<!--{data}-->")
+
+    def _capture_open(self, tag: str, raw: str, *, self_closing: bool) -> None:
+        """``<svg>`` 子树内的开始标签按原文累积（含命名空间与大小写）."""
+        if self._svg_depth == 0 and tag != "svg":
+            return
+        if self._svg_depth == 0:
+            self._svg_chunks = []
+            self._svg_tags = []
+        if tag == "svg":
+            self._svg_depth += 1
+        self._svg_chunks.append(raw)
+        if not self_closing and tag not in _VOID_TAGS:
+            self._svg_tags.append(_raw_tag_name(raw) or tag)
+
+    def _close_svg_tag(self, tag: str) -> None:
+        """结束标签：用原文大小写回填（``</foreignObject>`` 写错会让整份 SVG 解析失败）."""
+        original = self._svg_tags.pop() if self._svg_tags else tag
+        self._svg_chunks.append(f"</{original}>")
+        if tag == "svg":
+            self._svg_depth -= 1
+            if self._svg_depth == 0:
+                self._finish_svg()
+
+    def _finish_svg(self) -> None:
+        if self._svg_root is not None and self._svg_chunks:
+            self._svg_root.raw = "".join(self._svg_chunks)
+        self._svg_root = None
+        self._svg_chunks = []
+        self._svg_tags = []
 
 
 @dataclass
@@ -337,6 +431,48 @@ def _image_markdown(node: _Node, ctx: _Ctx) -> str:
     return _local_image_markdown(ctx, src, alt)
 
 
+def _sanitize_svg(raw: str) -> str:
+    """落盘前的 SVG 规范化与安全清洗（ADR 0049 D13）.
+
+    规范化：``foreignObject`` 内的 HTML 空元素（``<br>`` 等）自闭合、根元素补齐 ``xmlns``，
+    保证存为独立 ``.svg`` 后能按 XML 解析（``<img>`` 引入 SVG 走 XML 解析，``<br>`` 未闭合即整图失败）。
+    清洗：剥 ``<script>`` / ``on*`` 事件 / 脚本 URL —— ``<img>`` 语义下本就不执行脚本，站内附件
+    可被单独打开，故按纵深防御处理；``<style>`` 保留（配色 / 尺寸全靠它）。
+    """
+    out = _SVG_SCRIPT_RE.sub("", raw)
+    out = _SVG_SCRIPT_SELF_RE.sub("", out)
+    out = _SVG_EVENT_RE.sub("", out)
+    out = _HTML_VOID_IN_SVG_RE.sub(lambda m: f"<{m.group(1)}{m.group(2)}/>", out)
+
+    def _drop_unsafe(matched: re.Match[str]) -> str:
+        # 脚本 URL 直接删掉整个属性，避免残留未声明的 ``xlink:`` 前缀（独立 SVG 按 XML 解析会报错）
+        return "" if _SVG_UNSAFE_URL_RE.search(matched.group(2)) else matched.group(0)
+
+    out = _SVG_HREF_RE.sub(_drop_unsafe, out)
+    head, _, tail = out.partition(">")
+    if "xmlns" not in head.lower():
+        out = f"{head} {_XMLNS_ATTR}>{tail}" if tail else f"{head} {_XMLNS_ATTR}>"
+    return out
+
+
+def _svg_image_markdown(node: _Node, ctx: _Ctx) -> str:
+    """内联 ``<svg>`` → ``.svg`` 图片附件（ADR 0049 D13）：矢量图表不再丢.
+
+    ``sink`` 可用 → 落盘为 ``file:`` 引用（预览 / ``import_attachments=false`` 时回落占位，
+    与 D8 同口径：不产生「图片未导入」告警）。原始标记损坏（未闭合等）时告警并跳过。
+    """
+    raw = (node.raw or "").strip()
+    if not raw.lower().startswith("<svg") or "</svg" not in raw.lower():
+        ctx.warnings.append("内联 SVG 图表无法解析，已跳过")
+        return ""
+    ctx.images += 1
+    name = f"image{ctx.images}.svg"
+    key = _sunk_image(ctx, _sanitize_svg(raw).encode("utf-8"), name)
+    if key:
+        return f"![图表](file:{key})"
+    return f"_[图表未导入：{name}]_"
+
+
 def _same_document_fragment(ctx: _Ctx, href: str) -> str | None:
     """指向「本文档自身」的链接 → 文内锚点；其余返回 None（ADR 0049 D9）.
 
@@ -426,18 +562,16 @@ def _render_list(node: _Node, ctx: _Ctx, *, ordered: bool, indent: int = 0) -> l
     return lines
 
 
-def _code_block(node: _Node, ctx: _Ctx) -> str:
+def _code_block(node: _Node) -> str:
     """``<pre>`` → 围栏代码块（语言取自 ``<code class="language-x">``）.
 
-    内联 SVG（mermaid / ECharts 等渲染后图表）在 ``_node_text`` 中被跳过；若 ``<pre>``
-    只剩图表而无源码，则整块丢弃并告警，避免把 SVG 内的 ``<style>`` 当代码输出（D10）。
+    内联 SVG（mermaid / ECharts 等渲染后图表）在 ``_node_text`` 中被跳过：``<pre>`` 只剩
+    图表而无源码时返回空串，由 ``_blocks`` 另行把图表落为 ``.svg`` 图片（D13）。
     """
     code = _find_first(node, "code")
     source = code if code is not None else node
     raw = _node_text(source).strip("\n")
     if not raw.strip():
-        if _find_first(node, "svg") is not None:
-            ctx.warnings.append("内联 SVG 图表无法转换为文本，已跳过")
         return ""
     language = ""
     if code is not None:
@@ -520,7 +654,16 @@ def _blocks(node: _Node, ctx: _Ctx, *, skip: set[_Node]) -> list[str]:
             if child.strip():
                 buffer.append(collapse_whitespace(child))
             continue
-        if child in skip or child.tag in _SKIP_TAGS:
+        if child in skip:
+            continue
+        if child.tag == "svg":
+            # 内联渲染的矢量图表（mermaid / ECharts）→ .svg 图片附件（D13）
+            flush()
+            image = _svg_image_markdown(child, ctx)
+            if image:
+                out.append(image)
+            continue
+        if child.tag in _SKIP_TAGS:
             continue
         tag = child.tag
         if tag in _HEADING_TAGS:
@@ -546,7 +689,13 @@ def _blocks(node: _Node, ctx: _Ctx, *, skip: set[_Node]) -> list[str]:
                 out.append("\n".join("> " + line if line else ">" for block in inner for line in block.split("\n")))
         elif tag == "pre":
             flush()
-            code = _code_block(child, ctx)
+            # mermaid 等把渲染结果（内联 SVG）写进 <pre>：图表落为图片，剩余源码仍作代码块
+            svg = _find_first(child, "svg")
+            if svg is not None:
+                image = _svg_image_markdown(svg, ctx)
+                if image:
+                    out.append(image)
+            code = _code_block(child)
             if code:
                 out.append(code)
         elif tag == "hr":
@@ -561,10 +710,7 @@ def _blocks(node: _Node, ctx: _Ctx, *, skip: set[_Node]) -> list[str]:
             buffer.append("\n")
         elif tag == "figure":
             flush()
-            # 图表（ECharts / mermaid）渲染为内联 SVG，当前无图像化能力：占位由 figcaption 承担，
-            # 这里只做一次告警提示内容缺失（D10）；<pre> 内的图表由 _code_block 自行告警。
-            if _find_first(child, "svg") is not None and _find_first(child, "pre") is None:
-                ctx.warnings.append("内联 SVG 图表无法转换为文本，已跳过")
+            # 图题（figcaption）与图表（内联 SVG → 图片）都由递归输出（D13）
             out.extend(_blocks(child, ctx, skip=skip))
         elif tag in _BLOCK_CONTAINERS or tag in ("li", "td", "th", "tr"):
             flush()
