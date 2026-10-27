@@ -1,5 +1,5 @@
 /**
- * 通用文件导入弹窗 —— 单文件 / 文件夹模式，支持 md、docx、html。
+ * 通用文件导入弹窗 —— 单文件 / 文件夹模式，支持 md、docx、html、mhtml。
  *
  * 两段式与数据表/Obsidian 导入一致：
  * 1. ``POST /import/files/analyze`` 只解析（本地读取 + 转换）不写库，展示篇数 / 文件夹 / 冲突 / 跳过；
@@ -59,6 +59,8 @@ const FORMAT_LABEL: Record<string, string> = {
   '.docx': 'Word',
   '.html': 'HTML',
   '.htm': 'HTML',
+  '.mhtml': 'MHTML',
+  '.mht': 'MHTML',
   '.pdf': 'PDF',
   '.xlsx': 'Excel',
   '.xls': 'Excel',
@@ -117,7 +119,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     onError: (err: unknown) => {
       reset()
       message.error(
-        err instanceof Error ? err.message : '解析失败，请确认文件格式在支持范围内（md / docx / html / pdf / Office / 图片）',
+        err instanceof Error ? err.message : '解析失败，请确认文件格式在支持范围内（md / docx / html / mhtml / pdf / Office / 图片）',
       )
     },
   })
@@ -323,7 +325,8 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               {mode === 'folder' ? '选择文件夹' : '选择文件'}
             </Button>
             <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--cn-text-muted)' }}>
-              支持 Markdown（.md）、Word（.docx）、HTML（.html）——导入时自动转换为 Markdown 并清理空白；
+              支持 Markdown（.md）、Word（.docx）、HTML（.html）、MHTML 网页存档（.mhtml/.mht，内嵌图片一并导入）——
+              导入时自动转换为 Markdown 并清理空白；
               PDF、Excel（.xlsx/.xls）、PowerPoint（.pptx/.ppt）与图片（png/jpg/gif/webp/svg/bmp）
               原样存档，导入后在阅读器里预览、可下载原件（不参与编辑）。导入到{targetText}。
             </p>

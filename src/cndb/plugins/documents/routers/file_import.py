@@ -87,7 +87,10 @@ async def import_document_files(
     parent_id: Annotated[int | None, Form(description="导入到哪个文件夹（空 = 根目录）")] = None,
     conflict: Annotated[str, Form(description="冲突策略：skip / rename / overwrite")] = CONFLICT_RENAME,
     status: Annotated[str, Form(description="新建文档的状态：draft / published / archived")] = "draft",
-    import_attachments: Annotated[bool, Form(description="是否导入 docx / html 内嵌图片")] = True,
+    import_attachments: Annotated[
+        bool,
+        Form(description="是否导入 docx / html / mhtml 内嵌图片；关闭时 MHTML 素材落为 _assets 素材文档"),
+    ] = True,
 ) -> dict[str, Any]:
     """把文件批次导入为文档树（文件夹 + 文档 + 附件）."""
     _require_member(db, workspace_id, current_user)

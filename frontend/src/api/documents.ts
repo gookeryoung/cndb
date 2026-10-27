@@ -323,11 +323,11 @@ export interface VaultImportOptions {
   status?: 'draft' | 'published' | 'archived'
 }
 
-// ── 通用文件导入（md / docx / html）──
+// ── 通用文件导入（md / docx / html / mhtml）──
 
 /** 支持导入的源文件后缀（与后端 SUPPORTED_SUFFIXES 对齐） */
 export const FILE_IMPORT_ACCEPT =
-  '.md,.markdown,.docx,.html,.htm,.pdf,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.gif,.webp,.svg,.bmp'
+  '.md,.markdown,.docx,.html,.htm,.mhtml,.mht,.pdf,.xlsx,.xls,.pptx,.ppt,.png,.jpg,.jpeg,.gif,.webp,.svg,.bmp'
 
 /** 一条待上传文件：浏览器 File + 批次内相对路径（文件夹模式取 webkitRelativePath） */
 export interface FileImportEntry {
