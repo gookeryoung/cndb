@@ -7,6 +7,12 @@ import logging
 import re
 from typing import Any, cast
 
+from cndb.plugins.documents.services.charts import to_png
+from cndb.plugins.documents.services.export.chart_refs import (
+    ChartResolver,
+    ResolvedChart,
+    parse_chart_ref_line,
+)
 from cndb.plugins.documents.services.export.images import IMAGE_LINE_RE, ImageResolver
 from cndb.plugins.documents.services.export.markdown_style import (
     _MD_BOLD_RE,
@@ -28,10 +34,12 @@ def _render_docx(
     title: str = "",
     images: ImageResolver | None = None,
     tables: TableResolver | None = None,
+    charts: ChartResolver | None = None,
 ) -> bytes:
     # images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片，
     # 解析失败写占位文字，避免导出物静默丢图
     # tables：数据表引用解析器；``{{table:…}}`` 独占一行时渲染为真实表格
+    # charts：图表引用解析器；``{{chart:…}}`` 独占一行时嵌入整幅图 PNG（2 倍分辨率）
     """把文档 Markdown 正文渲染为 .docx 字节流.
 
     支持标题 / 加粗 / 行内代码 / GFM 表格 / ``---PAGE---`` 换页，
@@ -130,6 +138,20 @@ def _render_docx(
         _apply_run_font(run, preset.body_font, caption_size)
         _write_table([resolved.header or [], *(resolved.rows or [])])
 
+    def _add_chart_ref(resolved: ResolvedChart, chart_id: int) -> None:
+        """渲染图表引用：坏引用降级为占位段落，正常引用嵌入整幅图 PNG（D6，2 倍分辨率）."""
+        if resolved.error:
+            doc.add_paragraph(resolved.error)
+            return
+        rendered = resolved.rendered
+        if rendered is None:  # pragma: no cover - 解析器契约保证二选一
+            doc.add_paragraph(f"[图表无法嵌入：{resolved.title or f'图表 #{chart_id}'}]")
+            return
+        try:
+            doc.add_picture(io.BytesIO(to_png(rendered, scale=2)), width=_docx_image_width(doc))
+        except Exception:  # pragma: no cover - Pillow 绘制失败兜底
+            doc.add_paragraph(f"[图表无法嵌入：{resolved.title or f'图表 #{chart_id}'}]")
+
     for raw_line in markdown_text.split("\n"):
         line = raw_line.rstrip()
 
@@ -147,6 +169,13 @@ def _render_docx(
             spec = parse_table_ref_line(line)
             if spec is not None:
                 _add_table_ref(tables(spec))
+                continue
+
+        # 图表引用：独占一行时渲染为整幅图（坏引用降级为占位文字）
+        if charts is not None:
+            chart_spec = parse_chart_ref_line(line)
+            if chart_spec is not None:
+                _add_chart_ref(charts(chart_spec), chart_spec.chart_id)
                 continue
 
         if not line.strip():

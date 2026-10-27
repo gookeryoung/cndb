@@ -87,4 +87,31 @@ describe('ChartEmbed', () => {
     fireEvent.click(screen.getByTestId('chart-embed-edit-300'))
     expect(onEditChart).toHaveBeenCalledWith(300)
   })
+
+  it('游客分享模式：走免登录匿名渲染端点（D9），失败同样降级', async () => {
+    const requests: string[] = []
+    server.use(
+      http.get('/api/v1/documents/share/:token/charts/:cid/render', ({ request }) => {
+        requests.push(new URL(request.url).pathname)
+        return new HttpResponse('<svg xmlns="http://www.w3.org/2000/svg"><text>游客图表</text></svg>', {
+          status: 200,
+          headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' },
+        })
+      }),
+    )
+
+    const first = renderProviders(<ChartEmbed shareToken="share-tok" chartId={303} />)
+    await screen.findByTestId('chart-embed-svg-303')
+    expect(screen.getByTestId('chart-embed-svg-303').innerHTML).toContain('游客图表')
+    expect(requests).toEqual(['/api/v1/documents/share/share-tok/charts/303/render'])
+    first.unmount()
+
+    server.use(
+      http.get('/api/v1/documents/share/:token/charts/:cid/render', () =>
+        HttpResponse.json({ detail: '分享链接不存在或已失效' }, { status: 404 })),
+    )
+    renderProviders(<ChartEmbed shareToken="share-tok" chartId={305} />)
+    const alert = await screen.findByTestId('chart-embed-305')
+    await waitFor(() => expect(alert.textContent).toContain('图表引用无效'))
+  })
 })

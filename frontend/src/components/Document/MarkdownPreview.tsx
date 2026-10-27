@@ -238,10 +238,12 @@ function Md({
   )
 }
 
-function MarkdownPreviewBase({ content, workspaceId, publicFileBase, onWikilink, onEditChart }: {
+function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase, onWikilink, onEditChart }: {
   content: string
   /** 工作区 ID：提供后启用 `{{table:…}}` / `{{chart:…}}` 动态引用渲染 */
   workspaceId?: number
+  /** 游客分享 token（ADR 0048 D9）：提供后启用 `{{chart:…}}` 免登录渲染；数据表引用维持不渲染 */
+  shareToken?: string
   /** 公开分享页的免登录图片基地址（ADR 0017） */
   publicFileBase?: string
   /** 双向链接点击回调：入参为 [[文档标题]] 中的标题 */
@@ -249,9 +251,14 @@ function MarkdownPreviewBase({ content, workspaceId, publicFileBase, onWikilink,
   /** 图表编辑入口（写权限由页面侧判断后传入）；不传时 ChartEmbed 无编辑按钮 */
   onEditChart?: (chartId: number) => void
 }) {
+  // 游客分享模式：无工作区上下文但带分享 token，只切 chart 片段（table 占位维持文本）
+  const publicMode = workspaceId === undefined && shareToken !== undefined
   const segments = useMemo(
-    () => (workspaceId !== undefined ? splitRefs(content) : null),
-    [content, workspaceId],
+    () =>
+      workspaceId !== undefined || publicMode
+        ? splitRefs(content, { chartsOnly: publicMode })
+        : null,
+    [content, workspaceId, publicMode],
   )
   const hasRef = segments?.some(s => s.type !== 'md') ?? false
 
@@ -272,7 +279,13 @@ function MarkdownPreviewBase({ content, workspaceId, publicFileBase, onWikilink,
         ) : seg.type === 'table' ? (
           <TableEmbed key={i} workspaceId={workspaceId!} tableRef={seg.ref} />
         ) : (
-          <ChartEmbed key={i} workspaceId={workspaceId!} chartId={seg.ref.chartId} onEditChart={onEditChart} />
+          <ChartEmbed
+            key={i}
+            workspaceId={workspaceId}
+            shareToken={shareToken}
+            chartId={seg.ref.chartId}
+            onEditChart={onEditChart}
+          />
         ),
       )}
     </div>

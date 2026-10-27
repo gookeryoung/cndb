@@ -78,11 +78,7 @@ def _chart_out(chart: DocumentChart) -> dict[str, Any]:
 
 def _render_svg_or_degraded(chart: DocumentChart) -> str:
     """实例渲染：模板下线降级为占位整幅图（边界 3，I5/I6）."""
-    try:
-        doc = charts.render_chart(chart.template_key, chart.config or {})
-    except charts.BadRequestTemplateError:
-        return charts.to_svg(charts.render_degraded(chart.id, "[图表引用无效：模板已下线]"))
-    return charts.to_svg(doc)
+    return charts.render_instance_svg(chart.template_key, chart.config, chart.id)
 
 
 def _etag_for(chart: DocumentChart) -> str:

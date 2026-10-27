@@ -5,6 +5,8 @@
 - POST /api/v1/documents/share/{token}                密码校验并读取
 - GET  /api/v1/documents/share/{token}/meta           分享元信息（标题 / 是否需要密码）
 - GET  /api/v1/documents/share/{token}/files/{key}    正文站内图片（免登录）
+- GET  /api/v1/documents/share/{token}/charts/{id}/render
+                                                      正文引用图表免登录渲染（D9 白名单）
 
 所有端点共用 ``resolve_public_share`` 作为唯一判定入口：未知 token、已撤销、
 已过期、文档已软删 / 未发布一律 404，且文案一致（不泄露链接是否存在）。
@@ -26,8 +28,10 @@ from sqlalchemy.orm import Session
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, NotFoundError, PermissionDeniedError
 from cndb.plugins.documents import services
-from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document, DocumentShare
+from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document, DocumentChart, DocumentShare
 from cndb.plugins.documents.schemas import ShareAccessRequest
+from cndb.plugins.documents.services import charts
+from cndb.plugins.documents.services.export import chart_refs
 from cndb.plugins.files import services as files_service
 
 public_router = APIRouter(prefix="/api/v1/documents/share", tags=["documents"])
@@ -174,6 +178,36 @@ def access_shared_file(
             "Cache-Control": "no-store",
             "X-Content-Type-Options": "nosniff",
         },
+    )
+
+
+@public_router.get("/{token}/charts/{chart_id}/render")
+def access_shared_chart_render(
+    token: str,
+    chart_id: int,
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """匿名渲染正文引用的图表（D9 免登录）.
+
+    白名单判定：token 有效且 ``chart_id`` 出现在该分享文档正文的 ``{{chart:…}}``
+    引用集合内才放行（防跨图表 ID 探测）；集合外 / 实例已删 / 跨工作区一律 404。
+    模板下线降级为占位整幅图（与成员 render 同口径，I5/I6）。
+    """
+    _, doc = resolve_public_share(db, token)
+    content = ""
+    if not doc.is_folder:
+        content = services.content.load_content(services.content.latest_version(db, doc.id), doc)
+    if chart_id not in chart_refs.referenced_chart_ids(content):
+        raise NotFoundError(_SHARE_GONE)
+    chart = db.get(DocumentChart, chart_id)
+    if chart is None or chart.workspace_id != doc.workspace_id:
+        raise NotFoundError(_SHARE_GONE)
+
+    svg = charts.render_instance_svg(chart.template_key, chart.config, chart.id)
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-store"},
     )
 
 

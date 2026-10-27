@@ -655,15 +655,22 @@ def export_document(
     # 解析器限定在该工作区上传目录内，非法 / 缺失的引用降级为占位文字
     images = services.export.make_image_resolver(settings.UPLOAD_DIR, workspace_id)
     # 数据表引用（``{{table:<id>|view=<vid>}}``）按当前导出用户权限解析为真实表格；
-    # Markdown 先改写成静态表格再落盘 / 打包，保证归档 zip 内也不含占位符
+    # 图表引用（``{{chart:<id>}}``）按 ADR 0048 解析为整幅图（md=SVG 资产 / docx·pdf=PNG）
     tables = services.export.make_table_resolver(db, workspace_id, current_user)
+    charts = services.export.make_chart_resolver(db, workspace_id, current_user)
+    chart_assets: dict[str, bytes] = {}
     if normalized == services.export.FORMAT_MARKDOWN:
+        # 归档改写顺序固定：图表改写 → 表格改写 → render_markdown_archive
+        # （与 ADR 0045 表格改写同一顺序约定，占位符无残留）
+        content, chart_assets = services.export.rewrite_markdown_chart_refs(content, charts)
         content = services.export.rewrite_markdown_table_refs(content, tables)
         file_bytes = services.export.render_export(content, normalized, doc.title, images=images)
     else:
-        file_bytes = services.export.render_export(content, normalized, doc.title, images=images, tables=tables)
+        file_bytes = services.export.render_export(
+            content, normalized, doc.title, images=images, tables=tables, charts=charts
+        )
 
-    # Markdown 带站内图片时打包为 zip（<标题>.md + assets/<file_key>），否则维持单文件 .md
+    # Markdown 带站内图片 / 图表资产时打包为 zip（<标题>.md + assets/*），否则维持单文件 .md
     media_type = services.export.FORMAT_CONTENT_TYPES[normalized]
     extension = services.export.FORMAT_EXTENSIONS[normalized]
     if normalized == services.export.FORMAT_MARKDOWN:
@@ -672,6 +679,7 @@ def export_document(
             doc.title,
             images,
             _export_filename(doc.title, "").rstrip("."),
+            extra_assets=chart_assets,
         )
         if archive is not None:
             file_bytes = archive

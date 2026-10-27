@@ -24,6 +24,14 @@ export const publicShareApi = {
     api.post<PublicShareDocument>(base(token), { password }).then(r => r.data),
   /** 正文站内图片地址（免登录）；拼接 file_key 后可直接用于 <img src> */
   fileUrl: (token: string) => `/api${base(token)}/files`,
+  /** 正文引用图表的免登录渲染（D9）：集合白名单由服务端判定，集合外 404 走降级 */
+  chartSvg: (token: string, chartId: number) =>
+    api
+      .get<string>(`${base(token)}/charts/${chartId}/render`, {
+        responseType: 'text',
+        transformResponse: [(data: string) => data],
+      })
+      .then(r => r.data),
 }
 
 export default publicShareApi

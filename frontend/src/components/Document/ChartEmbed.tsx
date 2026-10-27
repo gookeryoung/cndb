@@ -11,6 +11,7 @@ import { Alert, Button, Skeleton } from 'antd'
 import { EditOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { chartApi } from '@/api/charts'
+import publicShareApi from '@/api/publicShare'
 
 /** 防御性清洗：后端产出不含脚本，仍去掉 `<script>` 与行内事件属性 */
 export function sanitizeSvg(svg: string): string {
@@ -20,16 +21,25 @@ export function sanitizeSvg(svg: string): string {
     .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
 }
 
-export default function ChartEmbed({ workspaceId, chartId, onEditChart }: {
-  workspaceId: number
+export default function ChartEmbed({ workspaceId, chartId, shareToken, onEditChart }: {
+  /** 工作区 ID（成员模式）；游客分享模式（shareToken）下不传 */
+  workspaceId?: number
   chartId: number
+  /** 游客分享 token（ADR 0048 D9）：提供后走免登录匿名渲染端点 */
+  shareToken?: string
   /** 编辑入口（写权限由页面侧判断后传入）；不传不渲染（ADR 0042 模式） */
   onEditChart?: (chartId: number) => void
 }) {
+  const isPublic = Boolean(shareToken)
   const svgQuery = useQuery({
-    queryKey: ['chart-embed', workspaceId, chartId],
-    queryFn: () => chartApi.renderSvg(workspaceId, chartId),
-    enabled: Number.isFinite(workspaceId) && Number.isFinite(chartId),
+    queryKey: isPublic
+      ? ['chart-embed-public', shareToken, chartId]
+      : ['chart-embed', workspaceId, chartId],
+    queryFn: () =>
+      isPublic ? publicShareApi.chartSvg(shareToken!, chartId) : chartApi.renderSvg(workspaceId!, chartId),
+    enabled: isPublic
+      ? Boolean(shareToken) && Number.isFinite(chartId)
+      : Number.isFinite(workspaceId) && Number.isFinite(chartId),
     // 失效由 ETag / 实例编辑后手动失效处理；失败先降级提示，避免长时间骨架屏
     retry: false,
     staleTime: 60 * 1000,

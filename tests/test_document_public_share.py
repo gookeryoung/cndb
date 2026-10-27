@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from cndb.core.config import settings
 from cndb.core.errors import BadRequestError
 from cndb.plugins.accounts.models import User
-from cndb.plugins.documents.models import Document, DocumentShare
+from cndb.plugins.documents.models import Document, DocumentChart, DocumentShare
 from cndb.plugins.files import services as files_service
 from cndb.plugins.files.models import FileOwner
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
@@ -339,6 +339,79 @@ class TestPublicFile:
         key = _upload(client, ws, auth, document_id=doc["id"], name="pic.png")
         client.delete(f"{DOCS.format(ws=ws.id)}/{doc['id']}/share/{share['id']}", headers=auth)
         assert client.get(f"{SHARE_API}/{share['token']}/files/{key}").status_code == 404
+
+
+class TestPublicChartRender:
+    """D9：游客免登录图表渲染 —— token 有效 + 图表 ID 在正文引用集合内."""
+
+    @pytest.fixture
+    def chart(self, db, ws) -> DocumentChart:
+        c = DocumentChart(
+            workspace_id=ws.id,
+            title="市场规模",
+            template_key="stacked-bar-horizontal",
+            config={},
+        )
+        db.add(c)
+        db.commit()
+        db.refresh(c)
+        return c
+
+    def test_referenced_chart_renders_anonymously(self, client, ws, auth, chart):
+        doc = _create_doc(client, ws, auth, content=f"# 报表\n\n{{{{chart:{chart.id}}}}}\n\n正文\n")
+        token = _share_token(client, ws, auth, doc["id"])
+
+        r = client.get(f"{SHARE_API}/{token}/charts/{chart.id}/render")
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith("image/svg+xml")
+        assert r.headers["cache-control"] == "no-store"
+        assert "<svg" in r.text
+
+    def test_chart_outside_reference_set_404(self, client, ws, auth, chart):
+        doc = _create_doc(client, ws, auth)  # 正文无任何图表引用
+        token = _share_token(client, ws, auth, doc["id"])
+        assert client.get(f"{SHARE_API}/{token}/charts/{chart.id}/render").status_code == 404
+
+    def test_inline_reference_not_whitelisted_404(self, client, ws, auth, chart):
+        """行内混排（非独占段落）不进白名单，与前端渲染口径一致."""
+        doc = _create_doc(client, ws, auth, content=f"行内 {{{{chart:{chart.id}}}}} 不解析\n")
+        token = _share_token(client, ws, auth, doc["id"])
+        assert client.get(f"{SHARE_API}/{token}/charts/{chart.id}/render").status_code == 404
+
+    def test_deleted_chart_404(self, client, ws, auth, chart, db):
+        doc = _create_doc(client, ws, auth, content=f"{{{{chart:{chart.id}}}}}")
+        token = _share_token(client, ws, auth, doc["id"])
+        db.delete(chart)
+        db.commit()
+        assert client.get(f"{SHARE_API}/{token}/charts/{chart.id}/render").status_code == 404
+
+    def test_cross_workspace_chart_404(self, client, db, ws, auth, chart):
+        doc = _create_doc(client, ws, auth, content=f"{{{{chart:{chart.id}}}}}")
+        token = _share_token(client, ws, auth, doc["id"])
+        other = Workspace(name="ChartOtherWS", created_by_id=ws.created_by_id)
+        db.add(other)
+        db.commit()
+        chart.workspace_id = other.id
+        db.commit()
+        assert client.get(f"{SHARE_API}/{token}/charts/{chart.id}/render").status_code == 404
+
+    def test_revoked_share_blocks_chart(self, client, ws, auth, chart):
+        doc = _create_doc(client, ws, auth, content=f"{{{{chart:{chart.id}}}}}")
+        share = client.post(f"{DOCS.format(ws=ws.id)}/{doc['id']}/share", json={}, headers=auth).json()
+        client.delete(f"{DOCS.format(ws=ws.id)}/{doc['id']}/share/{share['id']}", headers=auth)
+        assert client.get(f"{SHARE_API}/{share['token']}/charts/{chart.id}/render").status_code == 404
+
+    def test_folder_share_404(self, client, ws, auth, chart, db):
+        folder = _create_doc(client, ws, auth, title="分享文件夹", content="", is_folder=True)
+        _add_share(db, folder["id"], "folder-chart-token")
+        assert client.get(f"{SHARE_API}/folder-chart-token/charts/{chart.id}/render").status_code == 404
+
+    def test_password_share_token_renders_without_password(self, client, ws, auth, chart):
+        """与 files 端点先例一致：token 即能力，图表渲染不再校验密码."""
+        doc = _create_doc(client, ws, auth, content=f"{{{{chart:{chart.id}}}}}")
+        r = client.post(f"{DOCS.format(ws=ws.id)}/{doc['id']}/share", json={"password": "abc123"}, headers=auth)
+        assert r.status_code == 201, r.text
+        assert client.get(f"{SHARE_API}/{r.json()['token']}/charts/{chart.id}/render").status_code == 200
 
 
 class TestResolveWorkspaceFile:

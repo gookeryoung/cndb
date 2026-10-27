@@ -133,7 +133,12 @@ export default function PublicSharePage() {
   } else {
     body = (
       <article data-testid="public-share-content">
-        <MarkdownPreview content={doc.content ?? ''} publicFileBase={publicShareApi.fileUrl(token)} />
+        {/* 游客分享页免登录渲染正文引用图表（ADR 0048 D9）；数据表占位维持文本 */}
+        <MarkdownPreview
+          content={doc.content ?? ''}
+          shareToken={token}
+          publicFileBase={publicShareApi.fileUrl(token)}
+        />
       </article>
     )
   }

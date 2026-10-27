@@ -5,6 +5,8 @@ from __future__ import annotations
 import io
 from typing import Any
 
+from cndb.plugins.documents.services.charts import to_png
+from cndb.plugins.documents.services.export.chart_refs import ChartResolver, parse_chart_ref_line
 from cndb.plugins.documents.services.export.images import IMAGE_LINE_RE, ImageResolver
 from cndb.plugins.documents.services.export.markdown_style import _MD_BOLD_RE, _MD_CODE_RE, _MD_HEADING_RE
 from cndb.plugins.documents.services.export.pdf_fonts import _ensure_pdf_font
@@ -42,9 +44,11 @@ def _render_pdf(
     title: str = "",
     images: ImageResolver | None = None,
     tables: TableResolver | None = None,
+    charts: ChartResolver | None = None,
 ) -> bytes:
     # images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片
     # tables：数据表引用解析器；``{{table:…}}`` 独占一行时渲染为真实表格
+    # charts：图表引用解析器；``{{chart:…}}`` 独占一行时嵌入整幅图 PNG（2 倍分辨率）
     """把文档 Markdown 正文渲染为 .pdf 字节流.
 
     Platypus 框架 + 自动分页 + 页眉页脚；中文字符依赖 ``_ensure_pdf_font``
@@ -121,6 +125,24 @@ def _render_pdf(
                 else:
                     story.append(Paragraph(f"<i>{_pdf_escape(resolved.caption)}</i>", body_style))
                     story.append(_make_pdf_table([resolved.header or [], *(resolved.rows or [])], preset, cjk_font))
+                    story.append(Spacer(1, 6))
+                continue
+
+        # 图表引用：独占一行时嵌入整幅图 PNG（坏引用降级为占位文字）
+        if charts is not None:
+            chart_spec = parse_chart_ref_line(line)
+            if chart_spec is not None:
+                chart_resolved = charts(chart_spec)
+                if chart_resolved.error:
+                    story.append(Paragraph(_pdf_escape(chart_resolved.error), body_style))
+                    continue
+                fallback = f"[图表无法嵌入：{chart_resolved.title or f'图表 #{chart_spec.chart_id}'}]"
+                rendered = chart_resolved.rendered
+                figure = _make_pdf_image((to_png(rendered, scale=2), "chart.png")) if rendered is not None else None
+                if figure is None:  # pragma: no cover - 渲染器契约保证 PNG 可解析
+                    story.append(Paragraph(_pdf_escape(fallback), body_style))
+                else:
+                    story.append(figure)
                     story.append(Spacer(1, 6))
                 continue
 
