@@ -1,6 +1,6 @@
 # ADR 0044: 文档列表页移动端顶部工具栏紧凑化
 
-Status: Proposed（待评审）
+Status: Implemented（2026-10-27 人工评审通过）
 Date: 2026-10-26
 Related: `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/documents/DocumentsPage.test.tsx`、`frontend/src/index.css`、`frontend/src/hooks/useResponsive.ts`
 需求卡片: `docs/requirements/0044-documents-mobile-toolbar-compact.md`（需求原文与约束编号的唯一副本）
@@ -149,15 +149,15 @@ Related: `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 工具栏重排 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | 待提交 |
-| P1 区段留白收窄 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | 待提交 |
+| P0 工具栏重排 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | e6cd68f2 |
+| P1 区段留白收窄 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | e6cd68f2 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 代码与测试已就绪，待需求方评审 ADR 后回填 `Status`
+- 当前阶段：P0 / P1 全部落地并提交（`e6cd68f2`），`Status` 已由人工评审确认改 `Implemented`
 - 已完成：移动端工具栏两行化、筛选收起 / 展开与计数徽标、返回图标化、系列详情卡与「最近打开」留白收窄
-- 下一步：人工评审 D1–D6，确认后将 `Status` 改为 `Accepted` / `Implemented`
+- 下一步：无（功能完结）
 - 已知坑：`Badge` 在 `count === 0` 时不渲染数字，断言徽标须用按钮 `aria-label` 而非 DOM 数字；桌面端用例依赖默认 `responsiveState = desktop`
-- 最近一次全绿：`make flow` @ 未提交（2026-10-26，5509 passed / 3 skipped）
+- 最近一次全绿：`make flow` @ 实现提交 `e6cd68f2`（2026-10-26，5509 passed / 3 skipped）

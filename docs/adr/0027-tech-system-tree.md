@@ -155,8 +155,8 @@ Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/s
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py` | — |
-| P1 | 已落地 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py`、`tests/test_backup_seed_roundtrip.py` | — |
+| P0 | 已落地 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py` | 0dc2e12f |
+| P1 | 已落地 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py`、`tests/test_backup_seed_roundtrip.py` | 0dc2e12f |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -164,6 +164,6 @@ Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/s
 
 - 当前阶段：P0-P1 已落地（Status 已定 Accepted）
 - 已完成：`技术体系.csv`（43 行 / 6 方向 / 4 层）、`fields.json` 设置、`views.json` 双视图、`tests/test_seed_tech_system.py` 9 例；真实数据集完整性回归随 `make flow` 全量通过
-- 下一步：提交后把落地表「提交」列回填 sha；如需 `Status=Implemented` 由人确认
+- 下一步：无（落地表「提交」列已回填 `0dc2e12f`）；如需 `Status=Implemented` 由人确认
 - 已知坑：视图种子对字段名逐字校验，CSV 表头与 `views.json` 必须完全一致；`ROOT` 不是合法技术编号，仅作为根标记；低基数 select 推断依赖行数与唯一值比例，新增行时勿让 `技术方向 / 技术层级 / 成熟度` 变成高基数列
 - 最近一次全绿：`make flow`（2026-10-24，5329 passed / 3 skipped）

@@ -209,14 +209,14 @@ fingerprint = sha1( inspect.getsource(build) , data_digest() )
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/help/services/figures/svg.py`、`src/cndb/plugins/help/services/figures/builders.py`、`src/cndb/plugins/help/services/figures/registry.py`、`src/cndb/plugins/help/services/figures/store.py`、`src/cndb/plugins/help/routers/figures.py`、`src/cndb/plugins/help/schemas.py`、`src/cndb/plugins/help/plugin.py`、`src/cndb/core/config.py`、`src/cndb/app.py`、`tests/conftest.py` | `tests/test_help_figures.py` | 本地 |
-| P1 | 已落地 | `frontend/src/pages/help/HelpFigure.tsx`、`frontend/src/api/help.ts`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`frontend/src/pages/help/content/configuration.tsx`、`frontend/src/pages/help/content/ExamplesSection.tsx`、`frontend/src/index.css` | `frontend/src/pages/help/HelpFigure.test.tsx`、`frontend/src/pages/help/content/ExamplesSection.test.tsx`、`frontend/src/test/msw.ts` | 本地 |
+| P0 | 已落地 | `src/cndb/plugins/help/services/figures/svg.py`、`src/cndb/plugins/help/services/figures/builders.py`、`src/cndb/plugins/help/services/figures/registry.py`、`src/cndb/plugins/help/services/figures/store.py`、`src/cndb/plugins/help/routers/figures.py`、`src/cndb/plugins/help/schemas.py`、`src/cndb/plugins/help/plugin.py`、`src/cndb/core/config.py`、`src/cndb/app.py`、`tests/conftest.py` | `tests/test_help_figures.py` | 9668a42f |
+| P1 | 已落地 | `frontend/src/pages/help/HelpFigure.tsx`、`frontend/src/api/help.ts`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`frontend/src/pages/help/content/configuration.tsx`、`frontend/src/pages/help/content/ExamplesSection.tsx`、`frontend/src/index.css` | `frontend/src/pages/help/HelpFigure.test.tsx`、`frontend/src/pages/help/content/ExamplesSection.test.tsx`、`frontend/src/test/msw.ts` | 9668a42f |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 已落地；待人工评审决定是否把 `Status` 改为 `Implemented`
+- 当前阶段：P0 / P1 已落地并提交（`9668a42f`），`Status` 为 `Accepted`；如需改 `Implemented` 由人确认
 - 已完成：后端图示引擎（`svg.py` 图元、`builders.py` 六类构建器 + 真实 CSV 预览、`registry.py` 17 条 `FIGURE_SPECS` + 指纹、`store.py` 快照与 `FigureRefresher` 线程、`routers/figures.py` 三端点含 ETag/304）；配置项 `HELP_FIGURES_*` 与 lifespan 启停；前端 `HelpFigure`（指纹缓存 + 清洗 + 三种降级）、`api/help.ts` 三方法、四部分正文插入图示例、示例区逐表数据预览、`.cn-help-figure*` 样式、msw 桩；字段类型主题删除「共 16 种」硬编码
 - 下一步：seed 内容移除另行立需求（与图示无关）；若后续要给图示加「导出 PNG」，需评估新增依赖（当前刻意只做 SVG）
 - 已知坑：图示快照在 `CACHE_DIR/help-figures`，**不要**把它当业务数据备份；新增图必须同时登记 `FIGURE_SPECS` 并在正文引用，否则前端显示「图示未登记」；预览图 key 由 `example-{scenario}-table-{n}` 序号生成，**调整清单里 tables 顺序会让图换名**（前端是按 index 引用的，顺序即契约）；`FigureStore` 的 `get` 会持锁重建，批量调用请走 `refresh()`；测试环境必须保持 `HELP_FIGURES_ENABLED=False`，否则线程会跨测试写同一缓存目录；SVG 内联渲染前必须保留 `sanitizeSvg`，不要为省一次正则直接塞 `dangerouslySetInnerHTML`
