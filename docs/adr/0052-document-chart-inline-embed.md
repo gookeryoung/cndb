@@ -1,8 +1,8 @@
 # ADR 0052: 文档图表由「外部实例引用」改为「正文内嵌 Markdown」
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-10-27
-Related: `frontend/src/components/Document/chartRef.ts`、`frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/refWidth.ts`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertChartModal.tsx`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/pages/public/PublicSharePage.tsx`、`frontend/src/api/charts.ts`、`frontend/src/api/publicShare.ts`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/charts.py`、`src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/charts/`、`src/cndb/plugins/documents/services/export/chart_refs.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/images.py`、`src/cndb/plugins/documents/services/importers/markdown.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/documents/services/search.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、ADR 0008（离线依赖）、ADR 0010（文档导入）、ADR 0017（游客分享）、ADR 0026（Chrome 81）、ADR 0042（插入入口）、ADR 0045（表引用导出）、ADR 0048（图表模板与实例）、ADR 0051（引用宽度）
+Related: `frontend/src/components/Document/chartBlock.ts`、`frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/refWidth.ts`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertChartModal.tsx`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/pages/public/PublicSharePage.tsx`、`frontend/src/api/charts.ts`、`frontend/src/api/publicShare.ts`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/charts.py`、`src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/charts/`、`src/cndb/plugins/documents/services/charts/inline.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/images.py`、`src/cndb/plugins/documents/services/importers/markdown.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/documents/services/search.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、ADR 0008（离线依赖）、ADR 0010（文档导入）、ADR 0017（游客分享）、ADR 0026（Chrome 81）、ADR 0042（插入入口）、ADR 0045（表引用导出）、ADR 0048（图表模板与实例）、ADR 0051（引用宽度）
 需求卡片: `docs/requirements/0052-document-chart-inline-embed.md`（需求原文与约束编号的唯一副本）
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」或「以后备用」段落；整节不适用写「无」。ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用（git 历史可追溯），不在仓库保留 `Superseded` / `Deprecated` 文档；编号不复用。
@@ -32,19 +32,19 @@ Related: `frontend/src/components/Document/chartRef.ts`、`frontend/src/componen
 
 | # | 现状 | 位置 | 影响 | 与卡片的关系 |
 |---|---|---|---|---|
-| 1 | 正文只有按 ID 引用：`{{chart:<id>\|width=N}}`，段落级独占 | `frontend/src/components/Document/chartRef.ts:28-48`、`src/cndb/plugins/documents/services/export/chart_refs.py:30-73` | 正文不含定义，离开数据库无法渲染 / 恢复 | 确认（C1 落点：换成围栏块） |
+| 1 | 正文以 ` ```chart ` 围栏块承载定义（独占段落），渲染只读块内配置 | `frontend/src/components/Document/chartBlock.ts`、`src/cndb/plugins/documents/services/charts/inline.py` | 正文自包含，离开数据库也能渲染 / 恢复 | 确认（C1 落点：围栏块） |
 | 2 | 图表实例存 `documents_chart`（`template_key + config`） | `src/cndb/plugins/documents/models.py:382-409`、迁移 `e0f1a2b3c4d5` | 定义与正文分离，是导出丢可编辑性、导入无法还原的根因 | 确认（D2 / D4） |
 | 3 | 预览按 ID 拉 `/charts/{id}/render`，客户端 ETag 缓存 | `frontend/src/components/Document/ChartEmbed.tsx:43-55`、`frontend/src/api/charts.ts:122-140` | 改为内嵌后渲染入参是定义，缓存键 / 端点形态需重定 | 确认（D3） |
 | 4 | 插入：设计器保存实例 → 页面插入 `{{chart:<id>}}` | `frontend/src/pages/documents/DocumentEditorPage.tsx:735-740`、`InsertChartModal.tsx:74`、`ChartDesignerModal.tsx:296-305` | 插入产物要从 ID 占位符改成定义块；保存语义改为「写正文」 | 确认（D4 / D9） |
 | 5 | 设计器实时预览走 `POST /charts/render-preview`（按 template + config，不落库） | `frontend/src/pages/documents/ChartDesignerModal.tsx:108-112`、`src/cndb/plugins/documents/routers/charts.py:107-121` | 该端点天然适配内嵌定义，可直接复用为正文渲染入口 | 确认（D3 依据） |
-| 6 | Markdown 导出把引用改写为 `![alt](assets/chart-<id>.svg)`，资产按 ID 命名 | `export/chart_refs.py:135-165`、`export/images.py:76-113`、`routers/documents.py:662-683` | 导出物只有静态图、没有定义；ID 命名在新模型中不存在 | 确认（D6） |
-| 7 | DOCX / PDF 按 ID 解析后 `to_png` 嵌入，逐行扫描 | `export/docx.py:146-158`、`:179-184`、`export/pdf.py:138-159`、`export/chart_refs.py:97-132` | 需改成「识别围栏 → 消费整块 → 渲染」；记忆化键从 id 改内容指纹 | 确认（D6） |
+| 6 | Markdown 导出保留定义块并追加 `![alt](assets/chart-<指纹>.svg)`，资产按内容指纹命名 | `services/charts/inline.py`、`export/images.py`、`routers/documents.py:662-690` | 导出物既可由第三方查看器看图，也可重导入还原定义 | 确认（D6） |
+| 7 | DOCX / PDF 按段落切分，图表块整体渲染 `to_png` 后嵌入 | `export/docx.py:146-190`、`export/pdf.py:120-160`、`services/charts/inline.py` | 围栏块被整块消费，不逐行误判；渲染按块定义进行 | 确认（D6） |
 | 8 | 游客分享匿名渲染端点用「正文引用 ID 集合」做白名单 | `src/cndb/plugins/documents/routers/public.py:184-206` | 内嵌后无 ID 可白名单，改按正文定义渲染 | 确认（D10） |
 | 9 | Markdown 导入只做标题提取 + 空白规整；围栏内容原样保留 | `importers/markdown.py:33-58`、`importers/normalize.py:107-150` | 内嵌块天然不丢；需补「配对静态图剥离 + 告警」 | 确认（D7） |
 | 10 | 备份把 `charts` 键纳入工作区备份，导入不改写正文引用 | `src/cndb/plugins/workspaces/services/backup_io.py:391-398`、`:594-640`、`routers/workspaces.py:574` | 内嵌后正文自包含，新备份天然往返；旧 v8 备份的旧引用无 id 映射 | 确认（D12：备份格式不变） |
 | 11 | 宽度写在占位符参数，按引用出现序号改写 | `frontend/src/components/Document/refWidth.ts:27-60`、`MarkdownPreview.tsx:282-330`、`DocumentEditorPage.tsx:747-750` | 图表宽度改由块字段承载；表引用宽度逻辑不动 | 确认（D8） |
 | 12 | 帮助与术语对外描述 `{{chart:编号}}` 与宽度写回 | `frontend/src/pages/help/content/tutorials.tsx:573-580`、`CONTEXT.md:66-68` | 语法、术语与帮助需同步；新术语写入 `CONTEXT.md` | 确认（文档收尾） |
-| 13 | 既有测试按 ID 占位符断言 | `tests/test_document_export_chart_refs.py`、`tests/test_documents_charts_{registry,render,api,migration,backup}.py`、`frontend/src/components/Document/{chartRef,ChartEmbed}.test.*`、`frontend/tests/e2e/critical/document-chart-embed.spec.ts` | 语法切换会命中大批样例，需同批迁移 | 确认（§7） |
+| 13 | 图表断言集中在块解析 / 导出 / 组件测试 | `tests/test_documents_charts_inline.py`、`tests/test_document_export_chart_inline.py`、`tests/test_documents_charts_{registry,render,api,migration,backup}.py`、`frontend/src/components/Document/{chartBlock,ChartEmbed}.test.*`、`frontend/tests/e2e/critical/document-chart-embed.spec.ts` | 语法切换后样例仍需前后端同批维护 | 确认（§7） |
 | 14 | 正文按大小分级存储（内联 / `gz:` base64 / 外存 `.md.gz`） | `src/cndb/plugins/documents/services/content.py:151-194`、`:213-241` | 数据迁移必须按同一策略解码 / 回写，外存文件需原地重写 | 新增（D5 约束） |
 | 15 | 历史版本 / 草稿 / 修改申请各自保存正文副本 | `models.py:131-150`、`:243-245`、`:284` | 旧引用若不迁移，历史版本与待审申请会显示裸占位符 | 新增（D5 范围） |
 | 16 | 全文检索 FTS 表保存正文快照 | `src/cndb/plugins/documents/services/content.py:993`、`search.py:443-480` | 迁移改写正文后 FTS 需同步，否则搜索片段残留旧占位符 | 新增（§5 迁移） |
@@ -111,7 +111,7 @@ Related: `frontend/src/components/Document/chartRef.ts`、`frontend/src/componen
 - **围栏识别**：起始行 `^ {0,3}`{3,}chart\s*$`，结束行同长度或更长的反引号；两者都必须落在段落边界（正文按 `\n\n+` 分段，段内只有围栏行）。行内混排（`前文 ```chart`）仍按普通 Markdown。
 - **判定顺序**：大小 → JSON 语法 → `version` → `template` 存在性 → `config` 宽松归一。失败产出稳定错误码（`json_invalid` / `version_unsupported` / `template_missing` / `too_large` / `config_invalid`），供前端 / 导出映射为占位文字。
 - **宽松渲染 / 严格保存**：渲染用 `normalize_config`（未知键忽略、缺键回退默认，I3 / ADR 0048 I6）；设计器保存前走 `require_valid_config`，非法不入正文。
-- **前端模块** `frontend/src/components/Document/chartBlock.ts`：与后端同构的 `parseChartBlock` / `splitContent` / `serializeChartBlock` / `rewriteChartBlock` / `parseBlockWidth`；`refs.ts` 合并 table / chart 两种切片（替代 `chartRef.ts` 的 `splitRefs`）。解析样例与后端同批维护。
+- **前端模块** `frontend/src/components/Document/chartBlock.ts`：与后端同构的 `parseChartBlock` / `serializeChartBlock` / `rewriteChartBlock` / `rewriteChartBlockWidth` / `iterChartBlocks`；`refs.ts` 合并 table / chart 两种切片。解析样例与后端同批维护。
 
 ### 3. API 变更清单
 
@@ -160,7 +160,7 @@ Related: `frontend/src/components/Document/chartRef.ts`、`frontend/src/componen
 | 层 | 文件 | 改动 |
 |---|---|---|
 | 解析 | `frontend/src/components/Document/chartBlock.ts`（新增） | `parseChartBlock` / `serializeChartBlock` / `iterChartBlocks` / `rewriteChartBlock`（按出现序号整块替换）/ `parseBlockWidth`；围栏与段落规则与后端同构 |
-| 切片 | `frontend/src/components/Document/refs.ts`（新增）、`chartRef.ts`（删除） | `splitRefs` 合并 `tableRef` + 图表块；保留 `chartsOnly` 供游客页只渲染图表 |
+| 切片 | `frontend/src/components/Document/refs.ts` | `splitRefs` 合并 `tableRef` + 图表块；保留 `chartsOnly` 供游客页只渲染图表 |
 | 嵌入 | `frontend/src/components/Document/ChartEmbed.tsx` | 入参由 `chartId` 改为 `spec`：成员 `POST render-preview`、游客 `POST share render-preview`；React Query 键含规范定义，编辑后自然刷新；失败 / 加载降级沿用；宽度取 `spec.width` |
 | 预览 | `frontend/src/components/Document/MarkdownPreview.tsx` | 图表片段透传 `spec` 与出现序号；坏块渲染 Alert；`onEditChart` / 宽度回调改为按块序号 |
 | 编辑器 | `frontend/src/pages/documents/DocumentEditorPage.tsx` | `insertChartBlock(spec)` 写入块（前后空行）；编辑回调按 occurrence 调 `rewriteChartBlock`；调宽调 `rewriteChartBlockWidth`；删除按 ID 取实例 / 失效渲染缓存的逻辑 |
@@ -180,7 +180,7 @@ Related: `frontend/src/components/Document/chartRef.ts`、`frontend/src/componen
 **接口层**：
 
 - `tests/test_documents_charts_api.py` 增补：`render-preview` 对成员可用、超 32KB 拒绝；坏模板 400。
-- `tests/test_document_export_chart_inline.py`（替代仍按旧语法断言的 `test_document_export_chart_refs.py`）：Markdown 导出保留块 + 生成 `assets/chart-<指纹>.svg`、相同定义复用一份资产；DOCX 含 image 部件、PDF `%PDF`；坏块降级且导出 200；无图表文档导出与现状逐字节一致（I8）。
+- `tests/test_document_export_chart_inline.py`：Markdown 导出保留块 + 生成 `assets/chart-<指纹>.svg`、相同定义复用一份资产；DOCX 含 image 部件、PDF `%PDF`；坏块降级且导出 200；无图表文档导出与现状逐字节一致（I8）。
 - `tests/test_documents_file_import_chart_blocks.py`：导出 `.md` → 再导入：块保留、配对静态图被剥离、指纹不匹配的图片保留；坏块 / 未知模板给告警且不阻断。
 - `tests/test_document_public_share.py` 增补：匿名 `POST .../charts/render-preview` token 有效 200、失效 token 404、超大配置 413/400；旧 `GET .../charts/{id}/render` 已移除（404）。
 - `tests/test_document_upload_*.py` 相关：`.md` 导入后正文块逐字保留（与 `normalize_markdown` 围栏规则一致）。
@@ -254,16 +254,17 @@ Related: `frontend/src/components/Document/chartRef.ts`、`frontend/src/componen
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 后端内嵌地基 | 未开始 | 待实现 | 待实现 | `<sha>` |
-| P1 前端引用改造 | 未开始 | 待实现 | 待实现 | `<sha>` |
-| P2 存量迁移与收口 | 未开始 | 待实现 | 待实现 | `<sha>` |
+| P0 后端内嵌地基 | 已落地 | `src/cndb/plugins/documents/services/charts/inline.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/importers/markdown.py`、`src/cndb/plugins/documents/routers/public.py` | `tests/test_documents_charts_inline.py`、`tests/test_document_export_chart_inline.py`、`tests/test_documents_file_import_chart_blocks.py`、`tests/test_document_public_share.py` | `ac0bf21f` |
+| P1 前端引用改造 | 已落地 | `frontend/src/components/Document/chartBlock.ts`、`frontend/src/components/Document/refs.ts`、`frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/pages/documents/InsertChartModal.tsx` | `frontend/src/components/Document/chartBlock.test.ts`、`frontend/src/components/Document/refs.test.ts`、`frontend/src/components/Document/ChartEmbed.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx`、`frontend/src/pages/documents/InsertChartModal.test.tsx` | `ac0bf21f` |
+| P2 存量迁移与收口 | 已落地 | `src/cndb/alembic/versions/x2y3z4a5b6c7_embed_document_charts.py`、`src/cndb/plugins/documents/services/export/__init__.py`、`src/cndb/plugins/documents/routers/documents.py`、`frontend/src/api/publicShare.ts` | `tests/test_documents_chart_inline_migration.py`、`tests/test_document_public_share.py`、`frontend/tests/e2e/critical/document-chart-embed.spec.ts` | `ac0bf21f` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：ADR Proposed，待人工评审（需求卡片 0052 已由需求方确认，Q1–Q8 全部按建议）
-- 已完成：需求卡片 `docs/requirements/0052-document-chart-inline-embed.md`；现状核对覆盖 16 条（含分级存储 / 历史版本 / 草稿 / 修改申请 / FTS）；决策 D1–D13 无待定
-- 下一步：评审通过后改 `Status: Accepted` 并登记索引；P0 先落 `charts/inline.py` + 迁移脚本 + 导出 / 导入改造；P2 收口时同步把 ADR 0048 的引用机制条目、ADR 0051 的图表宽度条目改写为本 ADR 口径
-- 已知坑：迁移与前端 / 导出必须同版本发布；围栏块必须段落独占，行内混排不解析；指纹不含 `legacy_id`；旧 v8 备份的 `{{chart:id}}` 无 id 映射；外存版本（>2MB）需要原地重写 `v{n}.md.gz`；FTS 是独立 content 表，需 `INSERT OR REPLACE` 同步
-- 最近一次全绿：`make check-docs`（ADR 新增前，46 个 ADR / 0 error）
+- 当前阶段：P0–P2 代码与测试已落地，Status 待人工确认后由 `Accepted` 转 `Implemented`
+- 已完成：`charts/inline.py` 判定 / 序列化 / 指纹 / 渲染 + 导出（md / docx / pdf）+ 导入配对图剥离与告警 + 游客 render-preview + alembic 数据迁移；前端 `chartBlock.ts` / `refs.ts` / `ChartEmbed` / 编辑器 / 设计器 editBlock / 插入弹窗；ADR 0048 / 0051 / CONTEXT / 帮助 / CHANGELOG 已同步为内嵌块口径
+- 下一步：人工确认后改 `Status: Implemented`；发布时确保后端迁移与前端同版本上线（正文已无旧语法）
+- 已知坑：围栏块必须段落独占，行内混排不解析；指纹不含 `legacy_id`；旧 v8 备份的 `{{chart:id}}` 无 id 映射，按原文保留；外存版本（>2MB）迁移需原地重写 `v{n}.md.gz`；FTS 是独立 content 表，需 `INSERT OR REPLACE` 同步；素材库删除不回写正文（定义已复制）
+- 最近一次全绿：`make check-fast`、`make test`（5789 passed / 3 skipped）、`make cov`（96.66%，门槛 95%）、`make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.89%）、`make check-docs`（47 个 ADR / 0 error / 0 warning）
+- e2e 未在本机跑通：Playwright chromium 缺系统库 `libatk-1.0.so.0`（`browserType.launch` 失败），需在有浏览器依赖的环境执行 `make e2e`；用例 `frontend/tests/e2e/critical/document-chart-embed.spec.ts` 已覆盖插入 / 调宽 / 编辑 / 导出 / 游客渲染 / 重导入去重
