@@ -14,7 +14,8 @@ import { FILE_REF_PREFIX } from './imageRef'
 import remarkGfm from 'remark-gfm'
 import TableEmbed from './TableEmbed'
 import ChartEmbed from './ChartEmbed'
-import { splitRefs } from './chartRef'
+import { splitRefs } from './refs'
+import type { ChartBlockSpec } from './chartBlock'
 import type { RefWidthChange } from './refWidth'
 import { headingAnchor } from './outline'
 import { scrollToHeading } from './docAnchor'
@@ -239,20 +240,22 @@ function Md({
   )
 }
 
-function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase, onWikilink, onEditChart, onRefWidthChange }: {
+function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase, onWikilink, onEditChart, onRefWidthChange, onChartWidthChange }: {
   content: string
-  /** 工作区 ID：提供后启用 `{{table:…}}` / `{{chart:…}}` 动态引用渲染 */
+  /** 工作区 ID：提供后启用 `{{table:…}}` 动态引用与图表块渲染 */
   workspaceId?: number
-  /** 游客分享 token（ADR 0048 D9）：提供后启用 `{{chart:…}}` 免登录渲染；数据表引用维持不渲染 */
+  /** 游客分享 token（ADR 0052 D10）：提供后启用图表块免登录渲染；数据表引用维持不渲染 */
   shareToken?: string
   /** 公开分享页的免登录图片基地址（ADR 0017） */
   publicFileBase?: string
   /** 双向链接点击回调：入参为 [[文档标题]] 中的标题 */
   onWikilink?: (title: string) => void
   /** 图表编辑入口（写权限由页面侧判断后传入）；不传时 ChartEmbed 无编辑按钮 */
-  onEditChart?: (chartId: number) => void
-  /** 引用宽度调整回调（ADR 0051；写权限由页面侧判断后传入）；不传时嵌入块无宽度控件 */
+  onEditChart?: (spec: ChartBlockSpec, occurrence: number) => void
+  /** 数据表引用宽度调整回调（ADR 0051；写权限由页面侧判断后传入） */
   onRefWidthChange?: (change: RefWidthChange) => void
+  /** 图表块宽度调整回调（ADR 0052 D8：宽度写入正文块） */
+  onChartWidthChange?: (occurrence: number, width: number) => void
 }) {
   // 游客分享模式：无工作区上下文但带分享 token，只切 chart 片段（table 占位维持文本）
   const publicMode = workspaceId === undefined && shareToken !== undefined
@@ -277,10 +280,9 @@ function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase,
   return (
     <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
       {(() => {
-        // 同一图表 / 表可被多次引用：按 ID 维护出现序号，宽度控件才能定位到目标段落
+        // 同一定义可被多次插入：图表按出现序号定位（宽度 / 编辑），数据表仍按 ID 计数
         const ordinals = new Map<string, number>()
-        const nextOrdinal = (kind: 'chart' | 'table', id: number) => {
-          const key = `${kind}:${id}`
+        const nextOrdinal = (key: string) => {
           const n = ordinals.get(key) ?? 0
           ordinals.set(key, n + 1)
           return n
@@ -292,7 +294,7 @@ function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase,
             )
           }
           if (seg.type === 'table') {
-            const occurrence = nextOrdinal('table', seg.ref.tableId)
+            const occurrence = nextOrdinal(`table:${seg.ref.tableId}`)
             return (
               <TableEmbed
                 key={i}
@@ -310,23 +312,18 @@ function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase,
               />
             )
           }
-          const occurrence = nextOrdinal('chart', seg.ref.chartId)
+          const occurrence = nextOrdinal('chart')
           return (
             <ChartEmbed
               key={i}
               workspaceId={workspaceId}
               shareToken={shareToken}
-              chartId={seg.ref.chartId}
-              width={seg.ref.width}
+              block={seg.block}
+              width={seg.block.spec?.width}
               refOrdinal={occurrence}
               onEditChart={onEditChart}
-              onWidthChange={onRefWidthChange
-                ? w => onRefWidthChange({
-                  kind: 'chart',
-                  id: seg.ref.chartId,
-                  occurrence,
-                  width: w,
-                })
+              onWidthChange={onChartWidthChange
+                ? w => onChartWidthChange(occurrence, w)
                 : undefined}
             />
           )

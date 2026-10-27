@@ -5,8 +5,8 @@
 - POST /api/v1/documents/share/{token}                密码校验并读取
 - GET  /api/v1/documents/share/{token}/meta           分享元信息（标题 / 是否需要密码）
 - GET  /api/v1/documents/share/{token}/files/{key}    正文站内图片（免登录）
-- GET  /api/v1/documents/share/{token}/charts/{id}/render
-                                                      正文引用图表免登录渲染（D9 白名单）
+- POST /api/v1/documents/share/{token}/charts/render-preview
+                                                      正文内嵌图表免登录渲染（ADR 0052 D10）
 
 所有端点共用 ``resolve_public_share`` 作为唯一判定入口：未知 token、已撤销、
 已过期、文档已软删 / 未发布一律 404，且文案一致（不泄露链接是否存在）。
@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import mimetypes
 from pathlib import Path as PathLib
 from typing import Annotated, Any
@@ -28,10 +29,10 @@ from sqlalchemy.orm import Session
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, NotFoundError, PermissionDeniedError
 from cndb.plugins.documents import services
-from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document, DocumentChart, DocumentShare
-from cndb.plugins.documents.schemas import ShareAccessRequest
+from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document, DocumentShare
+from cndb.plugins.documents.schemas import ChartRenderPreview, ShareAccessRequest
 from cndb.plugins.documents.services import charts
-from cndb.plugins.documents.services.export import chart_refs
+from cndb.plugins.documents.services.charts.inline import MAX_BLOCK_BYTES
 from cndb.plugins.files import services as files_service
 
 public_router = APIRouter(prefix="/api/v1/documents/share", tags=["documents"])
@@ -181,31 +182,27 @@ def access_shared_file(
     )
 
 
-@public_router.get("/{token}/charts/{chart_id}/render")
-def access_shared_chart_render(
+@public_router.post("/{token}/charts/render-preview")
+def access_shared_chart_preview(
     token: str,
-    chart_id: int,
+    payload: ChartRenderPreview,
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
-    """匿名渲染正文引用的图表（D9 免登录）.
+    """匿名渲染分享正文中的内嵌图表（ADR 0052 D10）.
 
-    白名单判定：token 有效且 ``chart_id`` 出现在该分享文档正文的 ``{{chart:…}}``
-    引用集合内才放行（防跨图表 ID 探测）；集合外 / 实例已删 / 跨工作区一律 404。
-    模板下线降级为占位整幅图（与成员 render 同口径，I5/I6）。
+    判定：token 有效（文档已发布）→ 模板存在 → 配置 ≤32KB；不提供按 ID 的图表
+    枚举面。模板下线 / 配置非法降级为占位整幅图（与成员 render 同口径，I5/I6）。
     """
-    _, doc = resolve_public_share(db, token)
-    content = ""
-    if not doc.is_folder:
-        content = services.content.load_content(services.content.latest_version(db, doc.id), doc)
-    if chart_id not in chart_refs.referenced_chart_ids(content):
+    _share, doc = resolve_public_share(db, token)
+    if doc.is_folder:
         raise NotFoundError(_SHARE_GONE)
-    chart = db.get(DocumentChart, chart_id)
-    if chart is None or chart.workspace_id != doc.workspace_id:
-        raise NotFoundError(_SHARE_GONE)
-
-    svg = charts.render_instance_svg(chart.template_key, chart.config, chart.id)
+    if len(json.dumps(payload.config, ensure_ascii=False).encode("utf-8")) > MAX_BLOCK_BYTES:
+        raise BadRequestError("图表配置过大")
+    if charts.get_template(payload.template_key) is None:
+        raise BadRequestError(f"模板 {payload.template_key} 不存在或已下线")
+    doc = charts.render_chart(payload.template_key, payload.config)
     return Response(
-        content=svg,
+        content=charts.to_svg(doc),
         media_type="image/svg+xml",
         headers={"Cache-Control": "no-store"},
     )

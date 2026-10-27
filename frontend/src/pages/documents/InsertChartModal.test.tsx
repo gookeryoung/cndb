@@ -1,7 +1,8 @@
-/** InsertChartModal 组件测试 — 模板两级浏览 / 已有实例列表 / 两个回调契约（ADR 0048 C4）. */
+/** InsertChartModal 组件测试 — 模板两级浏览 / 素材库复制插入 / 两个回调契约（ADR 0048 / 0052）. */
 
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { mockChartInstance } from '@/test/msw'
 import { renderProviders } from '@/test/render-providers'
 import InsertChartModal from './InsertChartModal'
 
@@ -46,15 +47,16 @@ describe('InsertChartModal', () => {
     expect(props.onPickExisting).not.toHaveBeenCalled()
   })
 
-  it('「已有图表」页签：列实例并可直接插入 {{chart:id}}', async () => {
+  it('「图表素材库」页签：列出素材并回传完整条目（页面复制定义插入）', async () => {
     const props = renderModal()
 
-    fireEvent.click(await screen.findByText(/已有图表/))
+    fireEvent.click(await screen.findByText(/图表素材库/))
     const item = await screen.findByTestId('chart-existing-item-300')
     expect(within(item).getByText('产业营业收入与增速')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('chart-existing-insert-300'))
-    expect(props.onPickExisting).toHaveBeenCalledWith(300)
+    expect(props.onPickExisting).toHaveBeenCalledWith(expect.objectContaining({ id: 300, template_key: 'bar-line-dual-axis' }))
+    expect(mockChartInstance.template_key).toBe('bar-line-dual-axis')
     expect(props.onPickTemplate).not.toHaveBeenCalled()
   })
 

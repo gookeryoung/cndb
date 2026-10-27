@@ -12,6 +12,7 @@ import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
 import { OUTLINE_PREFS_KEY } from './outlinePrefs'
 import { documentsApi } from '@/api/documents'
+import { serializeChartBlock } from '@/components/Document/chartBlock'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockTable, mockUser, mockWorkspace, server } from '@/test/msw'
 import type { ResponsiveState } from '@/hooks/useResponsive'
@@ -1597,12 +1598,15 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
     })
 })
 
-describe('DocumentEditorPage 图表引用（ADR 0048）', () => {
+describe('DocumentEditorPage 图表内嵌块（ADR 0052）', () => {
     beforeEach(() => {
         server.resetHandlers()
     })
 
-    it('编辑模式工具栏「插入图表」→ 选已有实例 → 正文插入 {{chart:300}}', async () => {
+    const blockOf = (title: string, width = 75) =>
+        serializeChartBlock({ version: 1, templateKey: 'bar-line-dual-axis', title, width, config: {} })
+
+    it('编辑模式工具栏「插入图表」→ 从素材库复制定义 → 正文写入图表块', async () => {
         renderEditor()
         const ta = await enterSourceMode()
         await waitFor(() => expect(ta.value).toContain('需求说明'))
@@ -1610,14 +1614,16 @@ describe('DocumentEditorPage 图表引用（ADR 0048）', () => {
         fireEvent.click(screen.getByTestId('md-toolbar-chart'))
         expect(await screen.findByText('插入图表')).toBeInTheDocument()
 
-        // 切到「已有图表」页签，直接插入实例 #300
-        fireEvent.click(await screen.findByText(/已有图表/))
+        fireEvent.click(await screen.findByText(/图表素材库/))
         fireEvent.click(await screen.findByTestId('chart-existing-insert-300'))
 
-        await waitFor(() => expect(ta.value).toContain('{{chart:300}}'))
+        await waitFor(() => expect(ta.value).toContain('```chart'))
+        expect(ta.value).toContain('"template": "bar-line-dual-axis"')
+        expect(ta.value).toContain('"title": "产业营业收入与增速"')
+        expect(ta.value).not.toContain('{{chart:300}}')
     }, 30_000)
 
-    it('从插入弹窗选模板 → 设计器保存 → 正文插入新实例引用', async () => {
+    it('从插入弹窗选模板 → 设计器保存 → 正文插入定义副本', async () => {
         renderEditor()
         const ta = await enterSourceMode()
         await waitFor(() => expect(ta.value).toContain('需求说明'))
@@ -1625,22 +1631,22 @@ describe('DocumentEditorPage 图表引用（ADR 0048）', () => {
         fireEvent.click(screen.getByTestId('md-toolbar-chart'))
         expect(await screen.findByText('插入图表')).toBeInTheDocument()
 
-        // 选「柱线组合图（双轴）」进设计器
         fireEvent.click(await screen.findByTestId('chart-template-pick-bar-line-dual-axis'))
         const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
         await waitFor(() => expect(title.value).toBe('柱线组合图（双轴）'))
 
-        // 保存（POST 建实例 #301）后页面回插引用
         fireEvent.click(screen.getByTestId('chart-designer-save'))
-        await waitFor(() => expect(ta.value).toContain('{{chart:301}}'))
+        await waitFor(() => expect(ta.value).toContain('```chart'))
+        expect(ta.value).toContain('"template": "bar-line-dual-axis"')
+        expect(ta.value).toContain('"width": 75')
     }, 30_000)
 
-    it('查看模式：按 width 渲染图表，owner 调整宽度后正文占位符被改写', async () => {
+    it('查看模式：按块宽度渲染，owner 调整宽度后写入块字段', async () => {
         server.use(
             http.get('/api/v1/workspaces/10/documents/2/content', () =>
                 HttpResponse.json({
                     ...mockDocuments[1],
-                    content: '# 需求说明\n\n{{chart:300|width=50}}\n\n正文。\n',
+                    content: `# 需求说明\n\n${blockOf('测试图', 50)}\n\n正文。\n`,
                     version_number: 1,
                     draft: null,
                     write_mode: 'direct',
@@ -1650,42 +1656,39 @@ describe('DocumentEditorPage 图表引用（ADR 0048）', () => {
         const modeSwitch = await screen.findByTestId('doc-mode-switch')
         fireEvent.click(within(modeSwitch).getByText('查看'))
 
-        const figure = await screen.findByTestId('chart-embed-300', {}, { timeout: 8000 })
+        const figure = await screen.findByTestId('chart-embed-bar-line-dual-axis', {}, { timeout: 8000 })
         expect(figure).toHaveAttribute('data-width', '50')
 
-        fireEvent.click(await screen.findByTestId('chart-embed-width-300-0'))
-        fireEvent.click(await screen.findByTestId('chart-embed-width-300-0-preset-25'))
-        await waitFor(() => expect(screen.getByTestId('chart-embed-300')).toHaveAttribute('data-width', '25'))
+        fireEvent.click(await screen.findByTestId('chart-embed-width-0'))
+        fireEvent.click(await screen.findByTestId('chart-embed-width-0-preset-25'))
+        await waitFor(() => expect(screen.getByTestId('chart-embed-bar-line-dual-axis')).toHaveAttribute('data-width', '25'))
 
-        // 切到编辑模式的源码视图核对正文改写结果（其他参数与段落保持原样）
         fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('编辑'))
         const ta = await enterSourceMode()
-        expect(ta.value).toContain('{{chart:300|width=25}}')
+        expect(ta.value).toContain('"width": 25')
+        expect(ta.value).toContain('```chart')
         expect(ta.value).toContain('# 需求说明')
     }, 30_000)
 
-    it('查看模式：预览内联渲染图表，owner 可从「编辑图表」进设计器', async () => {
+    it('查看模式：预览内联渲染图表，owner 可从「编辑图表」进设计器（不查实例）', async () => {
         server.use(
             http.get('/api/v1/workspaces/10/documents/2/content', () =>
                 HttpResponse.json({
                     ...mockDocuments[1],
-                    content: '# 需求说明\n\n{{chart:300}}\n\n正文。\n',
+                    content: `# 需求说明\n\n${blockOf('正文块图')}\n\n正文。\n`,
                     version_number: 1,
                     draft: null,
                     write_mode: 'direct',
                 })),
         )
         renderEditor()
-        // 等页面加载完成（「加载中…」阶段模式切换器尚未渲染）
         const modeSwitch = await screen.findByTestId('doc-mode-switch')
         fireEvent.click(within(modeSwitch).getByText('查看'))
 
-        // 图表段由 ChartEmbed 内联渲染
-        expect(await screen.findByTestId('chart-embed-svg-300', {}, { timeout: 8000 })).toBeInTheDocument()
+        expect(await screen.findByTestId('chart-embed-svg', {}, { timeout: 8000 })).toBeInTheDocument()
 
-        // owner（默认 workspace mock 角色为 owner）有编辑入口 → 打开设计器载入实例
-        fireEvent.click(screen.getByTestId('chart-embed-edit-300'))
+        fireEvent.click(screen.getByTestId('chart-embed-edit-0'))
         const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
-        await waitFor(() => expect(title.value).toBe('产业营业收入与增速'))
+        await waitFor(() => expect(title.value).toBe('正文块图'))
     }, 30_000)
 })

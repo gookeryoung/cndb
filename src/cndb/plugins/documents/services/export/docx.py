@@ -8,10 +8,11 @@ import re
 from typing import Any, cast
 
 from cndb.plugins.documents.services.charts import to_png
-from cndb.plugins.documents.services.export.chart_refs import (
-    ChartResolver,
-    ResolvedChart,
-    parse_chart_ref_line,
+from cndb.plugins.documents.services.charts.inline import (
+    InlineChartBlock,
+    block_error_message,
+    render_inline_chart,
+    split_inline_chart_segments,
 )
 from cndb.plugins.documents.services.export.images import IMAGE_LINE_RE, ImageResolver
 from cndb.plugins.documents.services.export.markdown_style import (
@@ -34,15 +35,14 @@ def _render_docx(
     title: str = "",
     images: ImageResolver | None = None,
     tables: TableResolver | None = None,
-    charts: ChartResolver | None = None,
 ) -> bytes:
     # images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片，
     # 解析失败写占位文字，避免导出物静默丢图
     # tables：数据表引用解析器；``{{table:…}}`` 独占一行时渲染为真实表格
-    # charts：图表引用解析器；``{{chart:…}}`` 独占一行时嵌入整幅图 PNG（2 倍分辨率）
+    # 图表：正文 `` ```chart `` 内嵌块渲染为整幅图 PNG（ADR 0052，2 倍分辨率）
     """把文档 Markdown 正文渲染为 .docx 字节流.
 
-    支持标题 / 加粗 / 行内代码 / GFM 表格 / ``---PAGE---`` 换页，
+    支持标题 / 加粗 / 行内代码 / GFM 表格 / 图表块 / ``---PAGE---`` 换页，
     并按默认导出预设应用字体、字号与表头配色。
     """
     from docx import Document
@@ -143,80 +143,81 @@ def _render_docx(
         _apply_run_font(run, preset.body_font, caption_size)
         _write_table([resolved.header or [], *(resolved.rows or [])], width_percent=width)
 
-    def _add_chart_ref(resolved: ResolvedChart, chart_id: int, width: int) -> None:
-        """渲染图表引用：坏引用降级为占位段落，正常引用嵌入整幅图 PNG（D6，2 倍分辨率）."""
-        if resolved.error:
-            doc.add_paragraph(resolved.error)
-            return
-        rendered = resolved.rendered
-        if rendered is None:  # pragma: no cover - 解析器契约保证二选一
-            doc.add_paragraph(f"[图表无法嵌入：{resolved.title or f'图表 #{chart_id}'}]")
+    def _add_chart_block(block: InlineChartBlock) -> None:
+        """渲染内嵌图表块：坏块降级为占位段落，正常块嵌入整幅图 PNG（D6，2 倍分辨率）."""
+        if block.error:
+            doc.add_paragraph(block_error_message(block.error))
             return
         try:
-            doc.add_picture(io.BytesIO(to_png(rendered, scale=2)), width=_docx_image_width(doc, width))
+            rendered = render_inline_chart(block)
+            doc.add_picture(io.BytesIO(to_png(rendered, scale=2)), width=_docx_image_width(doc, block.width))
         except Exception:  # pragma: no cover - Pillow 绘制失败兜底
-            doc.add_paragraph(f"[图表无法嵌入：{resolved.title or f'图表 #{chart_id}'}]")
+            doc.add_paragraph(f"[图表无法嵌入：{block.title or '图表'}]")
 
-    for raw_line in markdown_text.split("\n"):
-        line = raw_line.rstrip()
+    def _render_lines(markdown_body: str) -> None:
+        """逐行渲染普通 Markdown（表格缓冲跨行，调用方在图表块前先 flush）."""
+        nonlocal in_table, table_buffer
+        for raw_line in markdown_body.split("\n"):
+            line = raw_line.rstrip()
 
-        if _is_table_row(line):
-            if not in_table:
-                in_table = True
-                table_buffer = []
-            table_buffer.append(line)
+            if _is_table_row(line):
+                if not in_table:
+                    in_table = True
+                    table_buffer = []
+                table_buffer.append(line)
+                continue
+            if in_table:
+                _flush_table()
+
+            # 数据表引用：独占一行时渲染为真实表格
+            if tables is not None:
+                spec = parse_table_ref_line(line)
+                if spec is not None:
+                    _add_table_ref(tables(spec), spec.width)
+                    continue
+
+            if not line.strip():
+                doc.add_paragraph("")
+                continue
+
+            m = _MD_HEADING_RE.match(line)
+            if m:
+                level = min(len(m.group(1)), 9)
+                text = m.group(2).strip()
+                _add_themed_heading(text, level)
+                continue
+
+            # 换页标记
+            if line.strip() == "---PAGE---":
+                doc.add_page_break()
+                continue
+
+            # 站内图片：独占一行时嵌入真实图片
+            img_match = IMAGE_LINE_RE.match(line)
+            if img_match:
+                alt = img_match.group("alt") or "图片"
+                resolved = images(img_match.group("key")) if images is not None else None
+                if resolved is None:
+                    doc.add_paragraph(f"[图片缺失：{alt}]")
+                else:
+                    data, _name = resolved
+                    try:
+                        doc.add_picture(io.BytesIO(data), width=_docx_image_width(doc))
+                    except Exception:
+                        doc.add_paragraph(f"[图片无法嵌入：{alt}]")
+                continue
+
+            # 普通段落，处理粗体和代码
+            p = doc.add_paragraph()
+            _add_rich_runs(p, line, preset.body_font, preset.code_font)
+
+    for segment in split_inline_chart_segments(markdown_text):
+        if isinstance(segment, str):
+            _render_lines(segment)
             continue
         if in_table:
             _flush_table()
-
-        # 数据表引用：独占一行时渲染为真实表格
-        if tables is not None:
-            spec = parse_table_ref_line(line)
-            if spec is not None:
-                _add_table_ref(tables(spec), spec.width)
-                continue
-
-        # 图表引用：独占一行时渲染为整幅图（坏引用降级为占位文字）
-        if charts is not None:
-            chart_spec = parse_chart_ref_line(line)
-            if chart_spec is not None:
-                _add_chart_ref(charts(chart_spec), chart_spec.chart_id, chart_spec.width)
-                continue
-
-        if not line.strip():
-            doc.add_paragraph("")
-            continue
-
-        m = _MD_HEADING_RE.match(line)
-        if m:
-            level = min(len(m.group(1)), 9)
-            text = m.group(2).strip()
-            _add_themed_heading(text, level)
-            continue
-
-        # 换页标记
-        if line.strip() == "---PAGE---":
-            doc.add_page_break()
-            continue
-
-        # 站内图片：独占一行时嵌入真实图片
-        img_match = IMAGE_LINE_RE.match(line)
-        if img_match:
-            alt = img_match.group("alt") or "图片"
-            resolved = images(img_match.group("key")) if images is not None else None
-            if resolved is None:
-                doc.add_paragraph(f"[图片缺失：{alt}]")
-            else:
-                data, _name = resolved
-                try:
-                    doc.add_picture(io.BytesIO(data), width=_docx_image_width(doc))
-                except Exception:
-                    doc.add_paragraph(f"[图片无法嵌入：{alt}]")
-            continue
-
-        # 普通段落，处理粗体和代码
-        p = doc.add_paragraph()
-        _add_rich_runs(p, line, preset.body_font, preset.code_font)
+        _add_chart_block(segment)
 
     # 收尾：提交剩余表格
     if in_table:

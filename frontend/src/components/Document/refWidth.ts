@@ -1,16 +1,16 @@
 /**
- * 文档引用宽度（ADR 0051）：图表 / 数据表引用的显示宽度参数。
+ * 文档引用宽度（ADR 0051 / 0052）：数据表引用的显示宽度参数。
  *
- * 宽度只存在于正文占位符：`{{chart:<id>|width=N}}`、`{{table:<id>|…|width=N}}`，
- * 按引用出现位置独立。缺省、非整数、越界一律回退 {@link DEFAULT_REF_WIDTH}。
- * 本模块是宽度的唯一常量与改写入口（不依赖具体解析器，避免循环引用）。
+ * 数据表宽度在正文占位符 `{{table:<id>|…|width=N}}`；图表宽度已移入正文内嵌块
+ * （`chartBlock.ts` 的 `width` 字段）。缺省、非整数、越界一律回退
+ * {@link DEFAULT_REF_WIDTH}。本模块是宽度的唯一常量与归一入口。
  */
 
 export const DEFAULT_REF_WIDTH = 75
 export const MIN_REF_WIDTH = 25
 export const MAX_REF_WIDTH = 100
 
-export type RefKind = 'chart' | 'table'
+export type RefKind = 'table'
 
 /** 宽度调整事件：按 kind + 目标 ID + 出现序号（0 基）定位唯一引用 */
 export interface RefWidthChange {
@@ -28,8 +28,8 @@ export function parseRefWidth(value: string | number | null | undefined): number
   return n
 }
 
-/** 段落级占位符（含可选参数），与 chartRef.ts / tableRef.ts 语法一致 */
-const REF_RE = /^\{\{(chart|table):(\d+)((?:\|[a-zA-Z]+=[^|}]*)*)\}\}$/
+/** 段落级数据表占位符（含可选参数），与 tableRef.ts 语法一致 */
+const REF_RE = /^\{\{table:(\d+)((?:\|[a-zA-Z]+=[^|}]*)*)\}\}$/
 
 /**
  * 按出现序号改写一个引用的 `width` 参数；未命中原样返回。
@@ -47,13 +47,13 @@ export function rewriteRefWidth(content: string, change: RefWidthChange): string
     if (!part) continue
     const trimmed = part.trim()
     const m = REF_RE.exec(trimmed)
-    if (!m || m[1] !== change.kind || Number(m[2]) !== change.id) continue
+    if (!m || Number(m[1]) !== change.id) continue
     occurrence += 1
     if (occurrence !== change.occurrence) continue
 
-    const params = (m[3] ? m[3].slice(1).split('|') : []).filter(p => p && !/^width=/.test(p))
+    const params = (m[2] ? m[2].slice(1).split('|') : []).filter(p => p && !/^width=/.test(p))
     const width = parseRefWidth(change.width)
-    const rebuilt = `{{${change.kind}:${m[2]}${[...params, `width=${width}`].map(p => `|${p}`).join('')}}}`
+    const rebuilt = `{{table:${m[1]}${[...params, `width=${width}`].map(p => `|${p}`).join('')}}}`
     const start = part.indexOf(trimmed)
     parts[i] = part.slice(0, start) + rebuilt + part.slice(start + trimmed.length)
     break

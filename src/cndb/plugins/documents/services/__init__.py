@@ -5,6 +5,7 @@ from __future__ import annotations
 from . import (
     ai,
     change_requests,
+    charts,
     content,
     drafts,
     export,
@@ -20,6 +21,7 @@ from . import (
 __all__ = [
     "ai",
     "change_requests",
+    "charts",
     "content",
     "drafts",
     "export",

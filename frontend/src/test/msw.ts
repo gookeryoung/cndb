@@ -477,12 +477,14 @@ export const handlers = [
       headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', ETag: etag },
     })
   }),
-  // 游客分享免登录图表渲染（ADR 0048 D9）：白名单由服务端判定，这里只回样例 SVG
-  http.get('/api/v1/documents/share/:token/charts/:cid/render', ({ params }) =>
-    new HttpResponse(Number(params.cid) === 404 ? null : mockChartSvg, {
-      status: Number(params.cid) === 404 ? 404 : 200,
+  // 游客分享免登录图表渲染（ADR 0052 D10）：token 即能力，按正文定义渲染
+  http.post('/api/v1/documents/share/:token/charts/render-preview', async ({ request }) => {
+    const body = await request.json() as { template_key?: string }
+    return new HttpResponse(body.template_key === 'retired-template' ? null : mockChartSvg, {
+      status: body.template_key === 'retired-template' ? 400 : 200,
       headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', 'Cache-Control': 'no-store' },
-    })),
+    })
+  }),
 
   // 站内通知：默认无通知（铃铛在 MainLayout 中常驻，必须给默认处理）
   http.get('/api/v1/accounts/notifications', () =>

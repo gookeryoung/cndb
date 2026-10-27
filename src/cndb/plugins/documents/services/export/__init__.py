@@ -1,9 +1,9 @@
 """文档导出：Markdown / Word(.docx) / PDF 文件生成.
 
 文档正文即 Markdown；正文中独占段落的 ``{{table:…}}`` 数据表引用由
-:mod:`table_refs` 解析为真实表格（ADR 0045），``{{chart:…}}`` 图表引用由
-:mod:`chart_refs` 解析为真实图形（ADR 0048）。
-导出器签名统一为 ``exporter(markdown_text, title, images, tables, charts)``。
+:mod:`table_refs` 解析为真实表格（ADR 0045），`` ```chart `` 内嵌块由
+:mod:`charts.inline` 解析为真实图形（ADR 0052）。
+导出器签名统一为 ``exporter(markdown_text, title, images, tables)``。
 """
 
 from __future__ import annotations
@@ -11,14 +11,6 @@ from __future__ import annotations
 import io
 from typing import Any
 
-from cndb.plugins.documents.services.export import chart_refs
-from cndb.plugins.documents.services.export.chart_refs import (
-    ChartResolver,
-    make_chart_resolver,
-    parse_chart_ref_line,
-    referenced_chart_ids,
-    rewrite_markdown_chart_refs,
-)
 from cndb.plugins.documents.services.export.docx import _render_docx
 from cndb.plugins.documents.services.export.images import (
     ImageResolver,
@@ -51,15 +43,14 @@ def _render_markdown(
     title: str = "",
     images: ImageResolver | None = None,
     tables: TableResolver | None = None,
-    charts: ChartResolver | None = None,
 ) -> bytes:
     """Markdown 导出：正文落盘为 UTF-8 字节流.
 
     单文件 markdown 无法内嵌二进制：保留 ``file:<file_key>`` 应用内引用不改写；
-    数据表引用在落盘前改写为静态 GFM 表格快照（图表引用由端点侧先改写为
+    数据表引用在落盘前改写为静态 GFM 表格快照（图表块由端点侧先追加
     SVG 资产相对引用，这里幂等重跑为无操作）。
     """
-    _ = (title, images, charts)
+    _ = (title, images)
     if tables is not None:
         markdown_text = rewrite_markdown_table_refs(markdown_text, tables)
     return markdown_text.encode("utf-8")
@@ -101,8 +92,8 @@ def render_markdown_archive(
 ) -> bytes | None:
     """Markdown + 站内图片打包为 zip（``<archive_name>.md`` + ``assets/<file_key>``）.
 
-    ``extra_assets``：图表导出侧已改写收集的资产（``assets/chart-<id>.svg`` → 字节），
-    一并并入归档（ADR 0048 D6）。
+    ``extra_assets``：图表导出侧已改写收集的资产（``assets/chart-<指纹>.svg`` → 字节），
+    一并并入归档（ADR 0052 D6）。
 
     返回 None 表示正文里没有任何**可解析**的站内图片 / 图表资产，调用方应回退为
     普通 .md 响应（避免为不带图的文档凭空产生 zip，保持既有单文件行为）。
@@ -131,7 +122,6 @@ def render_export(
     title: str = "",
     images: ImageResolver | None = None,
     tables: TableResolver | None = None,
-    charts: ChartResolver | None = None,
 ) -> bytes:
     """按格式渲染文档正文.
 
@@ -141,12 +131,11 @@ def render_export(
         title: 文档标题，用于 DOCX 属性与 PDF 页眉。
         images: 站内图片解析器。
         tables: 数据表引用解析器；提供时 ``{{table:…}}`` 渲染为真实表格。
-        charts: 图表引用解析器；提供时 ``{{chart:…}}`` 渲染为整幅图。
 
     Raises:
         KeyError: 传入未注册的格式名。
     """
-    return _EXPORTERS[fmt](markdown_text, title, images, tables, charts)
+    return _EXPORTERS[fmt](markdown_text, title, images, tables)
 
 
 __all__ = [
@@ -156,18 +145,12 @@ __all__ = [
     "FORMAT_MARKDOWN",
     "FORMAT_PDF",
     "SUPPORTED_FORMATS",
-    "ChartResolver",
     "ImageResolver",
     "TableResolver",
-    "chart_refs",
-    "make_chart_resolver",
     "make_image_resolver",
     "make_table_resolver",
     "normalize_format",
-    "parse_chart_ref_line",
-    "referenced_chart_ids",
     "render_export",
     "render_markdown_archive",
-    "rewrite_markdown_chart_refs",
     "rewrite_markdown_table_refs",
 ]

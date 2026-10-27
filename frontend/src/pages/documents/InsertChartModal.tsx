@@ -1,9 +1,9 @@
-/** 插入图表弹窗（ADR 0048）：模板两级浏览 + 已有实例列表.
+/** 插入图表弹窗（ADR 0048 / 0052）：模板两级浏览 + 图表素材库复制插入.
  *
  * 页签一「新建图表」：左栏类别分组 → 右侧模板卡片（描述 + 模板默认配置的静态缩略图，
  * 缩略图走 render-preview 不落库）；「基于此模板新建」交给页面打开设计器。
- * 页签二「已有图表」：实例列表直接插入 `{{chart:<id>}}`。
- * 弹窗自身拉取模板与实例清单（React Query，open 时启用），页面只接回调。
+ * 页签二「已有图表」：素材库条目**复制定义**插入正文（不随素材库更新，D4）。
+ * 弹窗自身拉取模板与素材库清单（React Query，open 时启用），页面只接回调。
  */
 
 import { useMemo } from 'react'
@@ -11,7 +11,7 @@ import { Button, Empty, List, Modal, Skeleton, Tabs, Tag, Typography } from 'ant
 import { BarChartOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { chartApi } from '@/api/charts'
-import type { ChartTemplateInfo } from '@/api/charts'
+import type { ChartInstance, ChartTemplateInfo } from '@/api/charts'
 import { sanitizeSvg } from '@/components/Document/ChartEmbed'
 
 const { Text, Paragraph } = Typography
@@ -71,8 +71,8 @@ export default function InsertChartModal({
   open: boolean
   workspaceId: number
   onCancel: () => void
-  /** 页签二：选中已有实例，页面插入 `{{chart:<id>}}` */
-  onPickExisting: (chartId: number) => void
+  /** 页签二：选中素材库图表，页面复制其定义插入正文 */
+  onPickExisting: (chart: ChartInstance) => void
   /** 页签一：选中模板，页面关闭本弹窗并打开设计器 */
   onPickTemplate: (templateKey: string) => void
 }) {
@@ -171,7 +171,7 @@ export default function InsertChartModal({
           },
           {
             key: 'existing',
-            label: `已有图表${charts.length > 0 ? ` (${charts.length})` : ''}`,
+            label: `图表素材库${charts.length > 0 ? ` (${charts.length})` : ''}`,
             children: (
               <div style={{ maxHeight: 420, overflowY: 'auto' }}>
                 {chartsQuery.isLoading && <Skeleton active paragraph={{ rows: 4 }} />}
@@ -189,7 +189,7 @@ export default function InsertChartModal({
                           size="small"
                           type="primary"
                           data-testid={`chart-existing-insert-${item.id}`}
-                          onClick={() => onPickExisting(item.id)}
+                          onClick={() => onPickExisting(item)}
                         >
                           插入
                         </Button>,

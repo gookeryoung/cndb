@@ -24,13 +24,14 @@ export const publicShareApi = {
     api.post<PublicShareDocument>(base(token), { password }).then(r => r.data),
   /** 正文站内图片地址（免登录）；拼接 file_key 后可直接用于 <img src> */
   fileUrl: (token: string) => `/api${base(token)}/files`,
-  /** 正文引用图表的免登录渲染（D9）：集合白名单由服务端判定，集合外 404 走降级 */
-  chartSvg: (token: string, chartId: number) =>
+  /** 正文内嵌图表免登录渲染（ADR 0052 D10）：token 即能力，无图表 ID 白名单 */
+  chartPreview: (token: string, templateKey: string, config: Record<string, unknown>) =>
     api
-      .get<string>(`${base(token)}/charts/${chartId}/render`, {
-        responseType: 'text',
-        transformResponse: [(data: string) => data],
-      })
+      .post<string>(
+        `${base(token)}/charts/render-preview`,
+        { template_key: templateKey, config },
+        { responseType: 'text', transformResponse: [(data: string) => data] },
+      )
       .then(r => r.data),
 }
 

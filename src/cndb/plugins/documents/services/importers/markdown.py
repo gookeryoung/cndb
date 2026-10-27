@@ -9,12 +9,36 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from cndb.plugins.documents.services.charts.inline import (
+    iter_inline_chart_blocks,
+    validate_document_blocks,
+)
 from cndb.plugins.documents.services.obsidian import parse_vault_front_matter
 
 from .normalize import decode_text
 
 #: 一级标题行（``# 标题``，恰好一个 ``#``）
 _H1_LINE_RE = re.compile(r"#\s+(.*)$")
+
+
+def strip_paired_chart_images(body: str) -> str:
+    """移除导出时追加的配对静态图（``![…](assets/chart-<指纹>.svg)``）.
+
+    只剥离「紧随图表块之后且指纹完全匹配」的那一行，避免误删用户自己的图片；
+    未带定义的静态图（外部导入的 Markdown）原样保留。
+    """
+    for block in iter_inline_chart_blocks(body):
+        if not block.fingerprint:
+            continue
+        pattern = re.compile(
+            re.escape(block.source)
+            + r"\n\n!\[[^\]\n]*\]\((?:\./)?assets/chart-"
+            + re.escape(block.fingerprint)
+            + r"\.svg\)"
+        )
+        source = block.source
+        body = pattern.sub(lambda _m, source=source: source, body, count=1)
+    return body
 
 
 def _strip_first_h1(body: str) -> tuple[str, str]:
@@ -52,6 +76,8 @@ def convert_markdown(data: bytes, path: str) -> tuple[str, str, list[str]]:
     if not title:
         title = Path(path).stem
         warnings.append("标题取自文件名")
+    body = strip_paired_chart_images(body)
+    warnings.extend(validate_document_blocks(body))
     return title, body, warnings
 
 

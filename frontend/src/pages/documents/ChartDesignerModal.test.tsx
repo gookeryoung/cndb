@@ -1,10 +1,11 @@
-/** ChartDesignerModal 组件测试 — 新建 / 编辑 / 实时预览 / 保存回插 / 模板下线只读（ADR 0048 C4 / D5 / 边界 3）. */
+/** ChartDesignerModal 组件测试 — 新建 / 编辑正文块 / 实时预览 / 保存回传 / 模板下线只读（ADR 0048 C4 / D5，ADR 0052 D9）. */
 
 import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { renderProviders } from '@/test/render-providers'
 import { mockChartInstance, mockChartSvg, server } from '@/test/msw'
+import type { ChartBlockSpec } from '@/components/Document/chartBlock'
 import ChartDesignerModal, { type ChartDesignTarget } from './ChartDesignerModal'
 
 /** 捕获 render-preview / 保存请求体 */
@@ -91,7 +92,7 @@ describe('ChartDesignerModal', () => {
     expect(last.config?.caption?.title).toBe('全新图题')
   }, 15_000)
 
-  it('新建保存：POST 实例，onSaved 收到新实例（页面回插引用）', async () => {
+  it('新建保存：POST 素材库，onSaved 返回实例（页面插入定义副本）', async () => {
     const createBodies: unknown[] = []
     server.use(
       http.post('/api/v1/workspaces/10/charts', async ({ request }) => {
@@ -107,19 +108,32 @@ describe('ChartDesignerModal', () => {
     fireEvent.click(screen.getByTestId('chart-designer-save'))
 
     await waitFor(() => expect(props.onSaved).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(props.onSaved).mock.calls[0]![0].id).toBe(301)
+    const saved = vi.mocked(props.onSaved).mock.calls[0]![0]
+    expect(saved.kind).toBe('chart')
+    expect(saved.kind === 'chart' && saved.chart.id).toBe(301)
     expect(createBodies[0]).toMatchObject({ title: '柱线组合图（双轴）', template_key: 'bar-line-dual-axis' })
   })
 
-  it('编辑：载入实例 config，保存走 PUT 全量覆盖', async () => {
-    const putBodies: unknown[] = []
+  it('编辑正文块：载入块内定义，保存只回传新定义、不写素材库', async () => {
+    let writes = 0
     server.use(
-      http.put('/api/v1/workspaces/10/charts/300', async ({ request }) => {
-        putBodies.push(await request.json())
-        return HttpResponse.json({ ...mockChartInstance, title: '改名后' })
+      http.post('/api/v1/workspaces/10/charts', () => {
+        writes += 1
+        return HttpResponse.json(mockChartInstance, { status: 201 })
+      }),
+      http.put('/api/v1/workspaces/10/charts/:cid', () => {
+        writes += 1
+        return HttpResponse.json(mockChartInstance)
       }),
     )
-    const props = renderDesigner({ kind: 'edit', chart: mockChartInstance })
+    const spec: ChartBlockSpec = {
+      version: 1,
+      templateKey: mockChartInstance.template_key,
+      title: mockChartInstance.title,
+      width: 60,
+      config: mockChartInstance.config,
+    }
+    const props = renderDesigner({ kind: 'editBlock', spec, occurrence: 2 })
 
     const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
     await waitFor(() => expect(title.value).toBe('产业营业收入与增速'))
@@ -128,8 +142,11 @@ describe('ChartDesignerModal', () => {
     fireEvent.click(screen.getByTestId('chart-designer-save'))
 
     await waitFor(() => expect(props.onSaved).toHaveBeenCalledTimes(1))
-    expect(vi.mocked(props.onSaved).mock.calls[0]![0].id).toBe(300)
-    expect(putBodies[0]).toMatchObject({ title: '改名后', template_key: 'bar-line-dual-axis' })
+    const saved = vi.mocked(props.onSaved).mock.calls[0]![0]
+    expect(saved.kind).toBe('block')
+    expect(saved.kind === 'block' && saved.spec.title).toBe('改名后')
+    expect(saved.kind === 'block' && saved.spec.width).toBe(60)
+    expect(writes).toBe(0)
   }, 15_000)
 
   it('保存 400：后端校验错误逐条回显且不关闭弹窗', async () => {
@@ -153,10 +170,17 @@ describe('ChartDesignerModal', () => {
     expect(props.onCancel).not.toHaveBeenCalled()
   }, 15_000)
 
-  it('模板下线的实例：只读提示，无表单且不可保存（边界 3）', async () => {
+  it('模板下线的正文块：只读提示，无表单且不可保存（边界 3）', async () => {
     const props = renderDesigner({
-      kind: 'edit',
-      chart: { ...mockChartInstance, template_key: 'legacy-tpl' },
+      kind: 'editBlock',
+      spec: {
+        version: 1,
+        templateKey: 'legacy-tpl',
+        title: '旧图',
+        width: 75,
+        config: {},
+      },
+      occurrence: 0,
     })
 
     expect(await screen.findByTestId('chart-designer-template-missing')).toBeInTheDocument()

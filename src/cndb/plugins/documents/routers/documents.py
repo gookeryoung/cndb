@@ -655,20 +655,17 @@ def export_document(
     # 解析器限定在该工作区上传目录内，非法 / 缺失的引用降级为占位文字
     images = services.export.make_image_resolver(settings.UPLOAD_DIR, workspace_id)
     # 数据表引用（``{{table:<id>|view=<vid>}}``）按当前导出用户权限解析为真实表格；
-    # 图表引用（``{{chart:<id>}}``）按 ADR 0048 解析为整幅图（md=SVG 资产 / docx·pdf=PNG）
+    # 图表定义已在正文内嵌块中（ADR 0052），导出无需再按实例 ID 查库
     tables = services.export.make_table_resolver(db, workspace_id, current_user)
-    charts = services.export.make_chart_resolver(db, workspace_id, current_user)
     chart_assets: dict[str, bytes] = {}
     if normalized == services.export.FORMAT_MARKDOWN:
-        # 归档改写顺序固定：图表改写 → 表格改写 → render_markdown_archive
+        # 归档改写顺序固定：图表块追加静态 SVG → 表格改写 → render_markdown_archive
         # （与 ADR 0045 表格改写同一顺序约定，占位符无残留）
-        content, chart_assets = services.export.rewrite_markdown_chart_refs(content, charts)
+        content, chart_assets = services.charts.inline.rewrite_markdown_chart_blocks(content)
         content = services.export.rewrite_markdown_table_refs(content, tables)
         file_bytes = services.export.render_export(content, normalized, doc.title, images=images)
     else:
-        file_bytes = services.export.render_export(
-            content, normalized, doc.title, images=images, tables=tables, charts=charts
-        )
+        file_bytes = services.export.render_export(content, normalized, doc.title, images=images, tables=tables)
 
     # Markdown 带站内图片 / 图表资产时打包为 zip（<标题>.md + assets/*），否则维持单文件 .md
     media_type = services.export.FORMAT_CONTENT_TYPES[normalized]

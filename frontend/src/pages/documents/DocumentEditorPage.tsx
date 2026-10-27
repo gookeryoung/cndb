@@ -55,8 +55,17 @@ import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
 import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
 import { DEFAULT_REF_WIDTH, rewriteRefWidth, type RefWidthChange } from '@/components/Document/refWidth'
+import {
+  chartBlockBytes,
+  MAX_BLOCK_BYTES,
+  MAX_BLOCKS_PER_DOC,
+  rewriteChartBlock,
+  rewriteChartBlockWidth,
+  serializeChartBlock,
+  iterChartBlocks,
+  type ChartBlockSpec,
+} from '@/components/Document/chartBlock'
 import { documentsApi } from '@/api/documents'
-import { chartApi } from '@/api/charts'
 import { fileApi, tableApi, viewApi, workspaceApi } from '@/api'
 import { useLlmAction } from '@/hooks/useLlmAction'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -80,7 +89,7 @@ import BacklinksDrawer from './BacklinksDrawer'
 import DocumentAssetView from './DocumentAssetView'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
 import DocumentShareModal from './DocumentShareModal'
-import ChartDesignerModal, { type ChartDesignTarget } from './ChartDesignerModal'
+import ChartDesignerModal, { type ChartDesignResult, type ChartDesignTarget } from './ChartDesignerModal'
 import InsertChartModal from './InsertChartModal'
 import InsertTableModal from './InsertTableModal'
 import LinksDrawer from './LinksDrawer'
@@ -734,10 +743,18 @@ export default function DocumentEditorPage() {
     resetInsertState()
   }
 
-  // ── 图表（ADR 0048）：插入占位符 / 从预览进入设计器编辑 ──
-  const insertChartRef = useCallback((chartId: number) => {
-    insertSnippetAtCursor(`{{chart:${chartId}}}`)
-  }, [insertSnippetAtCursor])
+  // ── 图表（ADR 0052）：插入定义块 / 从预览按块序号进入设计器编辑 ──
+  const insertChartSpec = useCallback((spec: ChartBlockSpec) => {
+    if (chartBlockBytes(spec) > MAX_BLOCK_BYTES) {
+      message.error('图表定义超过 32KB，无法插入')
+      return
+    }
+    if (iterChartBlocks(content).length >= MAX_BLOCKS_PER_DOC) {
+      message.error(`单篇文档最多 ${MAX_BLOCKS_PER_DOC} 个图表，请先删除不再使用的图表`)
+      return
+    }
+    insertSnippetAtCursor(serializeChartBlock(spec))
+  }, [content, insertSnippetAtCursor])
 
   /** 图表编辑入口（ChartEmbed）：有写权限才传入预览，viewer 不出现按钮 */
   const canEditCharts = myRole === 'owner' || myRole === 'editor'
@@ -746,15 +763,14 @@ export default function DocumentEditorPage() {
   const changeRefWidth = useCallback((change: RefWidthChange) => {
     setContent(prev => rewriteRefWidth(prev, change))
   }, [])
-  const openChartDesignerForEdit = useCallback((chartId: number) => {
-    void qc
-      .fetchQuery({
-        queryKey: ['charts', workspaceId, 'detail', chartId],
-        queryFn: () => chartApi.get(workspaceId, chartId),
-      })
-      .then(chart => setChartDesign({ kind: 'edit', chart }))
-      .catch(() => message.error('图表加载失败'))
-  }, [qc, workspaceId])
+  /** 图表宽度随块写入正文（ADR 0052 D8）：按出现序号定位 */
+  const changeChartWidth = useCallback((occurrence: number, width: number) => {
+    setContent(prev => rewriteChartBlockWidth(prev, occurrence, width))
+  }, [])
+  /** 编辑正文块：直接带定义打开设计器，不再按实例 ID 拉取 */
+  const openChartDesignerForEdit = useCallback((spec: ChartBlockSpec, occurrence: number) => {
+    setChartDesign({ kind: 'editBlock', spec, occurrence })
+  }, [])
 
   // ── 插入图片：上传到工作区文件存储，正文写入站内引用 `![alt](file:<key>)` ──
   const imageInputRef = useRef<HTMLInputElement>(null)
@@ -1238,6 +1254,7 @@ export default function DocumentEditorPage() {
               onWikilink={handleWikilink}
               onEditChart={canEditCharts ? openChartDesignerForEdit : undefined}
               onRefWidthChange={canEditCharts ? changeRefWidth : undefined}
+              onChartWidthChange={canEditCharts ? changeChartWidth : undefined}
             />
           </div>
         ) : (
@@ -1454,14 +1471,14 @@ export default function DocumentEditorPage() {
         viewsLoading={viewsQuery.isLoading}
       />
 
-      {/* 插入图表弹窗（ADR 0048）：模板两级浏览 + 已有实例 */}
+      {/* 插入图表弹窗（ADR 0052）：模板两级浏览 + 素材库复制定义 */}
       <InsertChartModal
         open={chartInsertOpen}
         workspaceId={workspaceId}
         onCancel={() => setChartInsertOpen(false)}
-        onPickExisting={chartId => {
+        onPickExisting={chart => {
           setChartInsertOpen(false)
-          insertChartRef(chartId)
+          insertChartSpec({ version: 1, templateKey: chart.template_key, title: chart.title, width: DEFAULT_REF_WIDTH, config: chart.config })
         }}
         onPickTemplate={templateKey => {
           setChartInsertOpen(false)
@@ -1469,20 +1486,29 @@ export default function DocumentEditorPage() {
         }}
       />
 
-      {/* 图表设计器（ADR 0048）：新建保存后回插引用；编辑保存后刷新渲染缓存 */}
+      {/* 图表设计器（ADR 0052）：新建保存后插入定义副本；编辑按块序号替换 */}
       <ChartDesignerModal
         open={chartDesign !== null}
         workspaceId={workspaceId}
         target={chartDesign}
         onCancel={() => setChartDesign(null)}
-        onSaved={chart => {
+        onSaved={(result: ChartDesignResult) => {
+          const design = chartDesign
           setChartDesign(null)
-          void qc.invalidateQueries({ queryKey: ['chart-embed', workspaceId, chart.id] })
-          void qc.invalidateQueries({ queryKey: ['charts', workspaceId] })
-          if (chartDesign?.kind === 'create') {
-            insertChartRef(chart.id)
+          if (result.kind === 'chart') {
+            void qc.invalidateQueries({ queryKey: ['charts', workspaceId] })
+            insertChartSpec({
+              version: 1,
+              templateKey: result.chart.template_key,
+              title: result.chart.title,
+              width: DEFAULT_REF_WIDTH,
+              config: result.chart.config,
+            })
             message.success('图表已创建并插入（提交后生效）')
-          } else {
+            return
+          }
+          if (design?.kind === 'editBlock') {
+            setContent(prev => rewriteChartBlock(prev, design.occurrence, result.spec))
             message.success('图表已更新')
           }
         }}

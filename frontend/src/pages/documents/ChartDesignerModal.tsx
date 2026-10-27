@@ -1,9 +1,10 @@
-/** 图表设计器弹窗（ADR 0048 C4 / D5）：按模板 schema 编辑数据与文案，实时预览.
+/** 图表设计器弹窗（ADR 0048 C4 / D5，ADR 0052 D9）：按模板 schema 编辑数据与文案，实时预览.
  *
- * - 新建：从模板 default_config 起步；编辑：载入实例 config 全量覆盖保存（边界 8）；
+ * - 新建：从模板 default_config 起步，保存仍写图表素材库并回传实例（正文插入其定义副本）；
+ * - 编辑正文块（`editBlock`）：以块内定义起步，保存只回传新定义，不写素材库、不查实例；
  * - 数据表按模板 schema 生成（行增删受 row_min/row_max 钳制，系列数受 series_min/max 钳制）；
  * - 实时预览走 POST /charts/render-preview（不落库），输入防抖 300ms；
- * - 保存走 POST/PUT，后端严格校验 400 时逐条回显；模板下线的实例只读展示（边界 3）。
+ * - 保存走 POST，后端严格校验 400 时逐条回显；模板下线只读展示（边界 3）。
  */
 
 import { useEffect, useMemo, useState } from 'react'
@@ -24,13 +25,19 @@ import { useResponsive } from '@/hooks/useResponsive'
 import { chartApi } from '@/api/charts'
 import type { ChartInstance, ChartTemplateInfo } from '@/api/charts'
 import { sanitizeSvg } from '@/components/Document/ChartEmbed'
+import type { ChartBlockSpec } from '@/components/Document/chartBlock'
 
 const { Text, Paragraph } = Typography
 
-/** 设计目标：新建（模板 key）或编辑（已有实例） */
+/** 设计目标：新建（模板 key）或编辑正文内嵌块（定义 + 出现序号） */
 export type ChartDesignTarget =
   | { kind: 'create'; templateKey: string }
-  | { kind: 'edit'; chart: ChartInstance }
+  | { kind: 'editBlock'; spec: ChartBlockSpec; occurrence: number }
+
+/** 保存结果：新建返回素材库实例；编辑正文块返回替换用的定义 */
+export type ChartDesignResult =
+  | { kind: 'chart'; chart: ChartInstance }
+  | { kind: 'block'; spec: ChartBlockSpec }
 
 /** 行草稿：双轴模板（label/value/growth）或系列模板（label/values[]） */
 type ChartDataRowDraft =
@@ -153,8 +160,8 @@ export default function ChartDesignerModal({
   workspaceId: number
   target: ChartDesignTarget | null
   onCancel: () => void
-  /** 保存成功：页面关闭弹窗并插入 / 保持引用 */
-  onSaved: (chart: ChartInstance) => void
+  /** 保存成功：页面关闭弹窗，新建插入定义副本 / 编辑替换目标块 */
+  onSaved: (result: ChartDesignResult) => void
 }) {
   const templatesQuery = useQuery({
     queryKey: ['chart-templates', workspaceId],
@@ -164,7 +171,7 @@ export default function ChartDesignerModal({
   })
   const { isMobile } = useResponsive()
 
-  const templateKey = target?.kind === 'create' ? target.templateKey : target?.chart.template_key ?? null
+  const templateKey = target?.kind === 'create' ? target.templateKey : target?.spec.templateKey ?? null
   const template: ChartTemplateInfo | undefined = useMemo(
     () => templatesQuery.data?.templates.find(t => t.key === templateKey),
     [templatesQuery.data, templateKey],
@@ -179,8 +186,8 @@ export default function ChartDesignerModal({
   // 打开且模板就绪时初始化草稿：新建从 default_config 起步，编辑从实例 config 起步
   useEffect(() => {
     if (!open || !template || !templatesQuery.data) return
-    const base = target?.kind === 'edit' ? target.chart.config : template.default_config
-    setTitle(target?.kind === 'edit' ? target.chart.title : template.name)
+    const base = target?.kind === 'editBlock' ? target.spec.config : template.default_config
+    setTitle(target?.kind === 'editBlock' ? target.spec.title : template.name)
     setConfig(toDraftConfig(base))
     setSaveError(null)
     // 依赖收敛到 templateKey 与清单数据：模板对象引用变化（重取）不重置编辑中的草稿
@@ -289,20 +296,31 @@ export default function ChartDesignerModal({
     setConfig(prev => (prev ? { ...prev, theme: { ...prev.theme, paper: color } } : prev))
 
   const saveMut = useMutation({
-    mutationFn: () => {
+    mutationFn: async (): Promise<ChartDesignResult> => {
       if (!template || !config) throw new Error('设计器未就绪')
       const payload = {
         title: title.trim() || template.name,
         template_key: template.key,
         config: config as unknown as Record<string, unknown>,
       }
-      return target?.kind === 'edit'
-        ? chartApi.update(workspaceId, target.chart.id, payload)
-        : chartApi.create(workspaceId, payload)
+      if (target?.kind === 'editBlock') {
+        // 编辑正文块：只回传新定义，不写素材库（ADR 0052 D9）
+        return {
+          kind: 'block',
+          spec: {
+            ...target.spec,
+            title: payload.title,
+            templateKey: template.key,
+            config: payload.config,
+          },
+        }
+      }
+      const chart = await chartApi.create(workspaceId, payload)
+      return { kind: 'chart', chart }
     },
-    onSuccess: chart => {
+    onSuccess: result => {
       setSaveError(null)
-      onSaved(chart)
+      onSaved(result)
     },
     onError: (err: unknown) => {
       const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -321,7 +339,7 @@ export default function ChartDesignerModal({
 
   return (
     <Modal
-      title={target?.kind === 'edit' ? '编辑图表' : '设计图表'}
+      title={target?.kind === 'editBlock' ? '编辑图表' : '设计图表'}
       open={open}
       onCancel={onCancel}
       width={1200}
@@ -337,7 +355,7 @@ export default function ChartDesignerModal({
           data-testid="chart-designer-save"
           onClick={() => saveMut.mutate()}
         >
-          {target?.kind === 'edit' ? '保存修改' : '保存并插入'}
+          {target?.kind === 'editBlock' ? '保存修改' : '保存并插入'}
         </Button>,
       ]}
     >

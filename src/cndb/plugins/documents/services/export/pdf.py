@@ -6,7 +6,12 @@ import io
 from typing import Any
 
 from cndb.plugins.documents.services.charts import to_png
-from cndb.plugins.documents.services.export.chart_refs import ChartResolver, parse_chart_ref_line
+from cndb.plugins.documents.services.charts.inline import (
+    InlineChartBlock,
+    block_error_message,
+    render_inline_chart,
+    split_inline_chart_segments,
+)
 from cndb.plugins.documents.services.export.images import IMAGE_LINE_RE, ImageResolver
 from cndb.plugins.documents.services.export.markdown_style import _MD_BOLD_RE, _MD_CODE_RE, _MD_HEADING_RE
 from cndb.plugins.documents.services.export.pdf_fonts import _ensure_pdf_font
@@ -44,11 +49,10 @@ def _render_pdf(
     title: str = "",
     images: ImageResolver | None = None,
     tables: TableResolver | None = None,
-    charts: ChartResolver | None = None,
 ) -> bytes:
     # images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片
     # tables：数据表引用解析器；``{{table:…}}`` 独占一行时渲染为真实表格
-    # charts：图表引用解析器；``{{chart:…}}`` 独占一行时嵌入整幅图 PNG（2 倍分辨率）
+    # 图表：正文 `` ```chart `` 内嵌块渲染为整幅图 PNG（ADR 0052，2 倍分辨率）
     """把文档 Markdown 正文渲染为 .pdf 字节流.
 
     Platypus 框架 + 自动分页 + 页眉页脚；中文字符依赖 ``_ensure_pdf_font``
@@ -96,102 +100,110 @@ def _render_pdf(
     table_buffer: list[list[str]] = []
     in_table = False
 
-    for raw_line in markdown_text.split("\n"):
-        line = raw_line.rstrip()
+    def _flush_table() -> None:
+        nonlocal in_table, table_buffer
+        if table_buffer:
+            story.append(_make_pdf_table(table_buffer, preset, cjk_font))
+        in_table = False
+        table_buffer = []
 
-        # 表格行：以 | 分隔
-        if line.strip().startswith("|") and line.strip().endswith("|"):
-            if not in_table:
-                in_table = True
-                table_buffer = []
-            cells = [c.strip() for c in line.strip().strip("|").split("|")]
-            table_buffer.append(cells)
-            continue
-        elif in_table:
-            # 表格结束，提交表格
-            if table_buffer:
-                story.append(_make_pdf_table(table_buffer, preset, cjk_font))
-            in_table = False
-            table_buffer = []
-            # 继续处理当前这行
+    def _add_chart_block(block: InlineChartBlock) -> None:
+        """内嵌图表块 → 整幅图 PNG；坏块降级为占位段落（ADR 0052 D11）."""
+        if block.error:
+            story.append(Paragraph(_pdf_escape(block_error_message(block.error)), body_style))
+            return
+        fallback = f"[图表无法嵌入：{block.title or '图表'}]"
+        try:
+            rendered = render_inline_chart(block)
+            max_width = _PDF_MAX_IMAGE_WIDTH * block.width / 100
+            figure = _make_pdf_image((to_png(rendered, scale=2), "chart.png"), max_width=max_width)
+        except Exception:  # pragma: no cover - 渲染器契约保证 PNG 可解析
+            figure = None
+        if figure is None:
+            story.append(Paragraph(_pdf_escape(fallback), body_style))
+        else:
+            story.append(figure)
+            story.append(Spacer(1, 6))
 
-        # 数据表引用：独占一行时渲染为真实表格（坏引用降级为占位文字）
-        if tables is not None:
-            spec = parse_table_ref_line(line)
-            if spec is not None:
-                resolved = tables(spec)
-                if resolved.error:
-                    story.append(Paragraph(_pdf_escape(resolved.error), body_style))
-                else:
-                    story.append(Paragraph(f"<i>{_pdf_escape(resolved.caption)}</i>", body_style))
-                    story.append(
-                        _make_pdf_table(
-                            [resolved.header or [], *(resolved.rows or [])],
-                            preset,
-                            cjk_font,
-                            width_percent=spec.width,
+    def _render_lines(markdown_body: str) -> None:
+        """逐行渲染普通 Markdown；表格缓冲在图表块前由调用方 flush."""
+        nonlocal in_table, table_buffer
+        for raw_line in markdown_body.split("\n"):
+            line = raw_line.rstrip()
+
+            # 表格行：以 | 分隔
+            if line.strip().startswith("|") and line.strip().endswith("|"):
+                if not in_table:
+                    in_table = True
+                    table_buffer = []
+                cells = [c.strip() for c in line.strip().strip("|").split("|")]
+                table_buffer.append(cells)
+                continue
+            elif in_table:
+                _flush_table()
+
+            # 数据表引用：独占一行时渲染为真实表格（坏引用降级为占位文字）
+            if tables is not None:
+                spec = parse_table_ref_line(line)
+                if spec is not None:
+                    resolved = tables(spec)
+                    if resolved.error:
+                        story.append(Paragraph(_pdf_escape(resolved.error), body_style))
+                    else:
+                        story.append(Paragraph(f"<i>{_pdf_escape(resolved.caption)}</i>", body_style))
+                        story.append(
+                            _make_pdf_table(
+                                [resolved.header or [], *(resolved.rows or [])],
+                                preset,
+                                cjk_font,
+                                width_percent=spec.width,
+                            )
                         )
-                    )
-                    story.append(Spacer(1, 6))
+                        story.append(Spacer(1, 6))
+                    continue
+
+            # 空行
+            if not line.strip():
+                story.append(Spacer(1, 6))
                 continue
 
-        # 图表引用：独占一行时嵌入整幅图 PNG（坏引用降级为占位文字）
-        if charts is not None:
-            chart_spec = parse_chart_ref_line(line)
-            if chart_spec is not None:
-                chart_resolved = charts(chart_spec)
-                if chart_resolved.error:
-                    story.append(Paragraph(_pdf_escape(chart_resolved.error), body_style))
-                    continue
-                fallback = f"[图表无法嵌入：{chart_resolved.title or f'图表 #{chart_spec.chart_id}'}]"
-                rendered = chart_resolved.rendered
-                max_width = _PDF_MAX_IMAGE_WIDTH * chart_spec.width / 100
-                figure = (
-                    _make_pdf_image((to_png(rendered, scale=2), "chart.png"), max_width=max_width)
-                    if rendered is not None
-                    else None
-                )
-                if figure is None:  # pragma: no cover - 渲染器契约保证 PNG 可解析
-                    story.append(Paragraph(_pdf_escape(fallback), body_style))
+            # 标题行
+            m = _MD_HEADING_RE.match(line)
+            if m:
+                level = min(len(m.group(1)), 3)
+                text = m.group(2).strip()
+                style = heading_styles.get(level, heading_styles[3])
+                story.append(Paragraph(_pdf_escape(text), style))
+                continue
+
+            # 换页标记
+            if line.strip() == "---PAGE---":
+                story.append(PageBreak())
+                continue
+
+            # 站内图片：独占一行时嵌入真实图片（等比缩放到正文宽度内）
+            img_match = IMAGE_LINE_RE.match(line)
+            if img_match:
+                alt = img_match.group("alt") or "图片"
+                resolved = images(img_match.group("key")) if images is not None else None
+                figure = _make_pdf_image(resolved)
+                if figure is None:
+                    story.append(Paragraph(_pdf_escape(f"[图片缺失：{alt}]"), body_style))
                 else:
                     story.append(figure)
                     story.append(Spacer(1, 6))
                 continue
 
-        # 空行
-        if not line.strip():
-            story.append(Spacer(1, 6))
-            continue
+            # 普通段落（处理粗体）
+            story.append(Paragraph(_pdf_markdown_to_rml(line, cjk_font), body_style))
 
-        # 标题行
-        m = _MD_HEADING_RE.match(line)
-        if m:
-            level = min(len(m.group(1)), 3)
-            text = m.group(2).strip()
-            style = heading_styles.get(level, heading_styles[3])
-            story.append(Paragraph(_pdf_escape(text), style))
+    for segment in split_inline_chart_segments(markdown_text):
+        if isinstance(segment, str):
+            _render_lines(segment)
             continue
-
-        # 换页标记
-        if line.strip() == "---PAGE---":
-            story.append(PageBreak())
-            continue
-
-        # 站内图片：独占一行时嵌入真实图片（等比缩放到正文宽度内）
-        img_match = IMAGE_LINE_RE.match(line)
-        if img_match:
-            alt = img_match.group("alt") or "图片"
-            resolved = images(img_match.group("key")) if images is not None else None
-            figure = _make_pdf_image(resolved)
-            if figure is None:
-                story.append(Paragraph(_pdf_escape(f"[图片缺失：{alt}]"), body_style))
-            else:
-                story.append(figure)
-                story.append(Spacer(1, 6))
-            continue
-
-        # 普通段落（处理粗体）
-        story.append(Paragraph(_pdf_markdown_to_rml(line, cjk_font), body_style))
+        if in_table:
+            _flush_table()
+        _add_chart_block(segment)
 
     # 收尾：提交剩余表格
     if in_table and table_buffer:

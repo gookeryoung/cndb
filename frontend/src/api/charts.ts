@@ -1,7 +1,7 @@
-/** 文档图表 API — /api/v1/workspaces/{wid}/charts/*（ADR 0048）
+/** 文档图表 API — /api/v1/workspaces/{wid}/charts/*（ADR 0048 / 0052）
  *
- * 两级模板清单 / 实例 CRUD / render-preview（设计器实时预览，不落库）/
- * render（SVG + ETag 304）。渲染产物是 SVG 文本，由 ChartEmbed 内联展示。
+ * 两级模板清单 / 图表素材库 CRUD / render-preview（按 template + config 渲染，不落库；
+ * 设计器预览与正文内嵌块共用）。渲染产物是 SVG 文本，由 ChartEmbed 内联展示。
  */
 
 import api from './client'
@@ -70,15 +70,6 @@ export interface ChartCreatePayload {
   config: Record<string, unknown>
 }
 
-/** 实例渲染的 ETag 记忆：304 时复用上次 SVG 文本，避免重复内联 */
-const renderEtagCache = new Map<number, { etag: string; svg: string }>()
-
-/** 从 Cache-Control / ETag 响应头取 ETag（axios 头名小写） */
-function etagOf(headers: Record<string, unknown>): string | null {
-  const raw = headers.etag ?? headers.ETag
-  return typeof raw === 'string' ? raw : null
-}
-
 export const chartApi = {
   /** 两级清单：类别 → 模板（含 schema 与默认配置） */
   templates: (wid: number | string) =>
@@ -104,11 +95,11 @@ export const chartApi = {
   update: (wid: number | string, chartId: number, payload: ChartCreatePayload) =>
     api.put<ChartInstance>(`/v1/workspaces/${wid}/charts/${chartId}`, payload).then(r => r.data),
 
-  /** 物理删除（editor+）；正文引用处由预览 / 导出降级 */
+  /** 物理删除（editor+）；已插入正文的定义副本不受影响（ADR 0052 D4） */
   remove: (wid: number | string, chartId: number) =>
     api.delete(`/v1/workspaces/${wid}/charts/${chartId}`).then(r => r.data),
 
-  /** 不落库渲染（D5 设计器实时预览）：template_key + config → SVG 文本 */
+  /** 不落库渲染（D5 设计器实时预览 / ADR 0052 正文内嵌块）：template_key + config → SVG 文本 */
   renderPreview: (wid: number | string, templateKey: string, config: Record<string, unknown>) =>
     api
       .post<string>(
@@ -117,25 +108,4 @@ export const chartApi = {
         { responseType: 'text', transformResponse: [(data: string) => data] },
       )
       .then(r => r.data),
-
-  /** 实例渲染（成员）：SVG 文本；带 ETag 记忆，命中 304 复用上次产物 */
-  renderSvg: (wid: number | string, chartId: number) =>
-    api
-      .get<string>(`/v1/workspaces/${wid}/charts/${chartId}/render`, {
-        responseType: 'text',
-        transformResponse: [(data: string) => data],
-        validateStatus: s => (s >= 200 && s < 300) || s === 304,
-        headers: renderEtagCache.get(chartId)
-          ? { 'If-None-Match': renderEtagCache.get(chartId)!.etag }
-          : undefined,
-      })
-      .then(r => {
-        if (r.status === 304) {
-          const cached = renderEtagCache.get(chartId)
-          if (cached) return cached.svg
-        }
-        const etag = etagOf(r.headers as Record<string, unknown>)
-        if (etag) renderEtagCache.set(chartId, { etag, svg: r.data })
-        return r.data
-      }),
 }
