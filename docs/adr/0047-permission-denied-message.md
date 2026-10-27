@@ -168,15 +168,15 @@ def permission_denied_detail(
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/accounts/services/preferences.py`、`src/cndb/plugins/documents/services/export/table_refs.py` | `tests/test_permission_denied_message.py`、`tests/test_access_audit.py` | `68bc0031` |
-| P1 | 未开始 | Context #3-#6 各点位 | 同上 + 既有权限测试回填 | — |
+| P1 | 已落地 | Context #1-#6 全部点位：`src/cndb/plugins/tables/services/core/view_access.py`（视图级，旧 FORBIDDEN_DETAIL 文案常量删除）、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/routers/bulk_crud.py`（表级）、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/documents/services/change_requests.py`、`src/cndb/plugins/documents/services/issues.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/routers/vault.py`、`src/cndb/plugins/documents/routers/tags.py`、`src/cndb/plugins/documents/routers/issues.py`（文档侧）、`src/cndb/plugins/workspaces/routers/deps.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`（工作区管理）、`src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/change_requests/routers/change_requests.py`、`src/cndb/plugins/tables/routers/members.py`、`src/cndb/plugins/issues/routers/issues.py`（申请审核 / 表成员 / issues） | `tests/test_permission_denied_message.py`（P1 接口层抽查 3 例）+ 全量回归无旧文案残留断言 | 待提交 |
 | P2 | 未开始 | `frontend/src/pages/help/content/troubleshooting.tsx` | 既有 e2e 回归 | — |
 
 > P0 附注：`preferences.py` 与 `table_refs.py` 的降级捕获由 `except HTTPException` 放宽为 `except (HTTPException, CndbError)`，适配表级 403 改抛统一异常。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地，待提交；P1 未开始
-- 已完成：P0（标签单一来源 + 构造入口 + 工作区级/表级 403 接入 + 单测 + 两处降级捕获放宽）
-- 下一步：提交 P0（仅本 ADR 相关文件）；P1 按 Context #3-#6 点位逐个接入并回填旧文案断言
-- 已知坑：工作区另有未提交 WIP（`tables/services/core/records.py`、`workspaces/services/stats_cache.py`、`record_counts.py` 等）导致 `make check-fast` typecheck 报 3 个错误、全量测试 2 个失败（`test_filter_sort_api` / `test_cov_routers_edge`），均与本 ADR 无关；P1 时注意 `get_view_or_404` 仍抛 HTTPException
-- 最近一次全绿：P0 相关 95 用例通过；`make test` 全量 5541 通过 / 2 失败（均为上述无关 WIP）
+- 当前阶段：P1 已落地待提交；P2 未开始
+- 已完成：P0（入口 + 工作区级/表级接入）；P1（视图级、文档侧、工作区管理、申请审核/表成员/issues 全部点位收敛到唯一出口，含 P0 遗漏的 records/bulk_crud 表级点位；view_access 旧文案常量删除）
+- 下一步：提交 P1（待并行会话前端 WIP 收尾、`make check-fast` 全绿后）；P2 帮助文档 troubleshooting 补条目 + e2e 回归
+- 已知坑：`permission_denied_detail` 的 `workspace` 参数类型为 `Workspace`（非 Optional），`db.get(Workspace, id)` 结果须判空后再传；另有并行会话在同一工作区做 ADR 0046 前端 WIP（TreeView 批量渲染等），提交前需确认其收尾
+- 最近一次全绿：`make test` 5579 通过 / 3 跳过；`make check-fast` 后端全绿（tsc 被并行会话前端 WIP 短暂阻塞）

@@ -40,6 +40,7 @@ from cndb.plugins.tables.models import (
 )
 from cndb.plugins.tables.services.core.access import TableAccessPreload, TableAction, check_action
 from cndb.plugins.workspaces.models import WorkspaceRole
+from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 
 class ViewAction(StrEnum):
@@ -52,8 +53,6 @@ class ViewAction(StrEnum):
 
 #: 不可见视图的统一响应文案（404 同时用于"不存在"与"不可见"，避免泄露存在性）
 NOT_FOUND_DETAIL = "视图不存在"
-#: 可见但无权执行该动作的响应文案
-FORBIDDEN_DETAIL = "视图权限不足"
 #: 违反 D1 硬约束（每表至少一个 table 档视图）的响应文案
 LAST_TABLE_VIEW_DETAIL = "每张表需至少保留一个表内可见视图"
 
@@ -234,7 +233,8 @@ def get_view_or_404(
     if not resolve_view_action(db, table, view, user, ViewAction.VIEW_READ):
         raise HTTPException(status_code=404, detail=NOT_FOUND_DETAIL)
     if action != ViewAction.VIEW_READ and not resolve_view_action(db, table, view, user, action):
-        raise HTTPException(status_code=403, detail=FORBIDDEN_DETAIL)
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, table.workspace, user, scope="视图级")
     return view
 
 
@@ -251,7 +251,10 @@ def require_can_publish_to_table(db: Session, table: DataTable, user: User, visi
         return
     if check_action(db, table, user, TableAction.EDIT_VIEWS):
         return
-    raise HTTPException(status_code=403, detail="将视图开放给表内所有人需表视图编辑权限")
+    # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+    raise_permission_denied(
+        db, table.workspace, user, scope="表级", requirement="将视图开放给表内所有人需表视图编辑权限"
+    )
 
 
 def table_view_count(db: Session, table_id: int, exclude_view_id: int | None = None) -> int:
@@ -582,7 +585,6 @@ def shareable_members(
 
 
 __all__ = [
-    "FORBIDDEN_DETAIL",
     "LAST_TABLE_VIEW_DETAIL",
     "NOT_FOUND_DETAIL",
     "ViewAction",

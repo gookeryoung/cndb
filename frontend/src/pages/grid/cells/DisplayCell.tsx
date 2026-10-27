@@ -8,6 +8,15 @@ import dayjs from 'dayjs'
 
 // ─────────────── 展示态 ───────────────
 
+/** 字段 options 的截断信息（ADR 0046 D6：展示链路只带前 N 项，颜色 fallback 走值哈希） */
+function optionsLayout(field: Field): { truncated?: boolean; total?: number } {
+  const cfg = (field.config as Record<string, unknown> | undefined) || {}
+  return {
+    truncated: cfg.options_truncated === true,
+    total: typeof cfg.options_total === 'number' ? cfg.options_total : undefined,
+  }
+}
+
 /** 自动配色 Tag — 直接用 antd 预设色名 */
 function ColoredTag({ value }: { value: string }) {
   return <Tag color={getTagColorName(value)}>{value}</Tag>
@@ -58,16 +67,17 @@ export function DisplayCell({ value, field, rowId, wid }: { value: unknown; fiel
     case 'select': {
       const options = field.config?.options
       const v = String(value)
-      const color = resolveTagColor(v, options)
+      const color = resolveTagColor(v, options, 0, optionsLayout(field))
       return <Tag color={color}>{v}</Tag>
     }
     case 'multi_select':
     case 'multiselect': {
       const options = field.config?.options
+      const layout = optionsLayout(field)
       const arr = Array.isArray(value) ? value as unknown[] : String(value).split(',').map(s => s.trim()).filter(Boolean)
       return <>{arr.map((v, i) => {
         const sv = String(v)
-        return <Tag key={i} color={resolveTagColor(sv, options, i)}>{sv}</Tag>
+        return <Tag key={i} color={resolveTagColor(sv, options, i, layout)}>{sv}</Tag>
       })}</>
     }
     case 'email':

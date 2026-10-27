@@ -15,7 +15,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
 from cndb.plugins.workspaces.schemas import (
     MemberAddRequest,
@@ -26,7 +26,7 @@ from cndb.plugins.workspaces.schemas import (
 )
 
 
-def invalidate_workspace_list_cache() -> int:
+def invalidate_workspace_list_cache(workspace_id: int | None = None) -> int:
     """失效工作区列表缓存（成员变更后调用）.
 
     刻意在这里**直接**用缓存模块而不是从 routers/workspaces.py 导入：
@@ -35,7 +35,11 @@ def invalidate_workspace_list_cache() -> int:
     """
     from cndb.core.cache import cache_key, list_cache
 
-    return list_cache.clear(cache_key("ws-list"))
+    cleared = list_cache.clear(cache_key("ws-list"))
+    # 成员增删改变工作区详情统计（member_count，ADR 0046 D5）
+    if workspace_id is not None:
+        cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
+    return cleared
 
 
 router = APIRouter()
@@ -130,7 +134,8 @@ def update_member_role(
     ws = _get_workspace_or_404(workspace_id, db)
     requester_role = get_member_role(current_user, ws, db)
     if requester_role != WorkspaceRole.OWNER:
-        raise HTTPException(status_code=403, detail="需要所有者权限")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可执行此操作")
     member = (
         db.query(WorkspaceMember)
         .filter(
@@ -171,7 +176,8 @@ def remove_member(
     ws = _get_workspace_or_404(workspace_id, db)
     requester_role = get_member_role(current_user, ws, db)
     if requester_role != WorkspaceRole.OWNER:
-        raise HTTPException(status_code=403, detail="需要所有者权限")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可执行此操作")
     member = (
         db.query(WorkspaceMember)
         .filter(
@@ -195,7 +201,7 @@ def remove_member(
             raise HTTPException(status_code=400, detail="工作区至少保留一名所有者")
     db.delete(member)
     db.commit()
-    invalidate_workspace_list_cache()
+    invalidate_workspace_list_cache(workspace_id)
 
 
 # ── 转让所有权 ────────────────────────────────────────
@@ -212,7 +218,8 @@ def transfer_owner(
     ws = _get_workspace_or_404(workspace_id, db)
     requester_role = get_member_role(current_user, ws, db)
     if requester_role != WorkspaceRole.OWNER:
-        raise HTTPException(status_code=403, detail="仅所有者可转让所有权")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可转让所有权")
 
     # 目标必须是工作区成员
     target_member = (

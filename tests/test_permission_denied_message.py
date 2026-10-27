@@ -125,3 +125,75 @@ class TestRaisePermissionDenied:
         assert exc.value.code == "permission_denied"
         assert "角色为【查看者】" in exc.value.detail
         assert exc.value.to_payload()["code"] == "permission_denied"
+
+
+# ── P1：接口层抽查（视图级 / 工作区管理 / 文档非成员） ──
+
+
+def _login(client, username: str, password: str = "pass") -> dict[str, str]:
+    r = client.post("/api/v1/accounts/auth/login", json={"login": username, "password": password})
+    assert r.status_code == 200
+    return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+
+class TestP1Endpoints:
+    """P1 点位接入后的接口层抽查：403 detail 必含角色/层级/拥有者指引（ADR 0047 P1）."""
+
+    @pytest.fixture()
+    def _api_env(self, db, _user, _ws, _member):
+        owner = _user("pdm_api_o", nickname="API拥有者")
+        viewer = _user("pdm_api_v")
+        outsider = _user("pdm_api_x")
+        ws = _ws("PdmApiWS", owner=owner)
+        _member(ws, viewer, WorkspaceRole.VIEWER)
+        return owner, viewer, outsider, ws
+
+    def test_view_edit_denied_detail_has_role_and_scope(self, client, db, _api_env):
+        _owner, _viewer, _outsider, ws = _api_env
+        engine = db.get_bind()
+        from cndb.plugins.tables.models import DataField, DataTable
+        from cndb.plugins.tables.services.core import ddl
+
+        dt = DataTable(workspace_id=ws.id, name="PdmApiTable")
+        dt.ensure_db_name()
+        db.add(dt)
+        db.flush()
+        df = DataField(table_id=dt.id, name="姓名", field_type="text", order=0)
+        df.ensure_db_name()
+        db.add(df)
+        db.commit()
+        db.refresh(dt)
+        ddl.create_table(engine, dt)
+
+        o_h = _login(client, "pdm_api_o")
+        v_h = _login(client, "pdm_api_v")
+        views_url = f"/api/v1/workspaces/{ws.id}/tables/{dt.id}/views"
+        r = client.post(views_url, json={"name": "公共视图", "view_type": "grid", "visibility": "table"}, headers=o_h)
+        assert r.status_code == 201
+        vid = r.json()["id"]
+
+        r = client.patch(f"{views_url}/{vid}", json={"name": "改名"}, headers=v_h)
+        assert r.status_code == 403
+        detail = r.json()["detail"]
+        assert "角色为【查看者】" in detail
+        assert "视图级权限不足" in detail
+        assert "工作区拥有者【API拥有者】" in detail
+
+    def test_member_management_denied_detail_has_requirement(self, client, _api_env):
+        _owner, _viewer, _outsider, ws = _api_env
+        v_h = _login(client, "pdm_api_v")
+        r = client.patch(f"/api/v1/workspaces/{ws.id}/members/1", json={"role": "viewer"}, headers=v_h)
+        assert r.status_code == 403
+        detail = r.json()["detail"]
+        assert "角色为【查看者】" in detail
+        assert "（仅所有者可执行此操作）" in detail
+        assert "工作区拥有者【API拥有者】" in detail
+
+    def test_document_non_member_prompts_join(self, client, _api_env):
+        _owner, _viewer, _outsider, ws = _api_env
+        x_h = _login(client, "pdm_api_x")
+        r = client.get(f"/api/v1/workspaces/{ws.id}/documents", headers=x_h)
+        assert r.status_code == 403
+        detail = r.json()["detail"]
+        assert "你不是该工作区成员" in detail
+        assert "如需加入，请联系工作区拥有者【API拥有者】" in detail

@@ -22,6 +22,7 @@ import { resolveOpts, TREE_OPTIONS, resolveAutoField, findOptionSchema } from '.
 import { formatFieldDisplayValue, getSelectLabel } from '../cells/fieldValueFormat'
 import { pickPaletteColor } from '@/utils/paletteColor'
 import { WEIGHT } from '@/theme/tokens'
+import { useRowBatch, ViewBatchFooter } from './rowBatch'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -221,6 +222,9 @@ export default function TreeView({
   )
   const ds = densityStyle(density)
 
+  // 分批挂载（ADR 0046 D7）：2000 行 × 每行节点在树形结构里全量渲染会明显卡顿
+  const { visibleRows, remaining, total, loadMore } = useRowBatch(rows)
+
   // 从配置拿字段名；缺失则自动推断
   const parentField = opts.parent_field as string | undefined
   const titleField = useMemo(() => {
@@ -238,9 +242,9 @@ export default function TreeView({
   const { roots, totalNodeCount } = useMemo(
     () => {
       if (!parentField) return { roots: [] as TreeNode[], totalNodeCount: 0 }
-      return buildTree(rows, parentField)
+      return buildTree(visibleRows, parentField)
     },
-    [rows, parentField],
+    [visibleRows, parentField],
   )
 
   // 收集所有节点 ID（expandAll 用）
@@ -485,6 +489,7 @@ export default function TreeView({
         }}
       >
         {allRows}
+        <ViewBatchFooter remaining={remaining} total={total} onLoadMore={loadMore} fontSize={ds.metaFontSize} />
       </div>
     </div>
   )

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Button, Select, Input } from 'antd'
+import { useQuery } from '@tanstack/react-query'
 import {
   getOpsForField,
   effectiveFieldType,
@@ -10,10 +11,14 @@ import {
   type FieldOp,
 } from '../cells/fieldOps'
 import type { Field } from '@/api'
+import { fieldApi } from '@/api'
 import { WEIGHT } from '@/theme/tokens'
 
 interface ColumnFilterDropdownProps {
   field: Field
+  /** 当前工作区 / 表 id：字段 options 被截断时按需拉全量（ADR 0046 D6） */
+  wid?: number | string
+  tableId?: number | string
   currentFilter?: { op: string; value: unknown }
   onApply: (op: string, value: unknown) => void
   onReset: () => void
@@ -22,6 +27,8 @@ interface ColumnFilterDropdownProps {
 /** 列级筛选下拉面板 */
 export default function ColumnFilterDropdown({
   field,
+  wid,
+  tableId,
   currentFilter,
   onApply,
   onReset,
@@ -32,8 +39,20 @@ export default function ColumnFilterDropdown({
   const _resolveFt = (ft: string) => FIELD_TYPE_ALIASES[ft] ?? ft
   const resolvedType = _resolveFt(effectiveType)
   const isSelect = resolvedType === 'select' || resolvedType === 'multiselect'
+  // 展示链路默认只带前 500 项 options（ADR 0046 D6）；筛选需要全量供搜索
+  const truncated = Boolean((field.config as Record<string, unknown> | undefined)?.options_truncated)
+  const canFetchFull = truncated && wid != null && tableId != null
+  const { data: fullFields } = useQuery({
+    queryKey: ['fields-full', String(wid), String(tableId)],
+    queryFn: () => fieldApi.list(wid as number | string, tableId as number | string, false, true),
+    enabled: canFetchFull,
+    staleTime: 60_000,
+  })
+  const fullField = canFetchFull
+    ? fullFields?.find(f => String(f.id) === String(field.id)) ?? fullFields?.find(f => f.name === field.name)
+    : undefined
   const options = isSelect
-    ? extractSelectOptions(field.config).map(o => ({ value: o.value, label: o.label }))
+    ? extractSelectOptions(fullField?.config ?? field.config).map(o => ({ value: o.value, label: o.label }))
     : []
   // 引用字段只同步了源类型、拿不到源字段选项：去掉依赖选项集合的 in 操作符，
   // 值输入回退为文本，避免渲染一个没有选项的空下拉

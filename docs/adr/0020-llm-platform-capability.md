@@ -155,15 +155,16 @@ plugins/llm/
 # cndb/plugins/llm/services/gateway.py
 @dataclass(frozen=True, slots=True)
 class ActionSpec:
-    name: str                      # "document.polish"
-    label: str                     # 前端展示名
-    scope: str                     # "document" / "table" / "import" / "analytics" / "personal"
-    output_schema: type[BaseModel] | None   # 结构化动作必填；None 表示自由文本
-    system_prompt: str             # 动作级系统提示词（与用户个人 system 覆盖合并，见下）
+    name: str  # "document.polish"
+    label: str  # 前端展示名
+    scope: str  # "document" / "table" / "import" / "analytics" / "personal"
+    output_schema: type[BaseModel] | None  # 结构化动作必填；None 表示自由文本
+    system_prompt: str  # 动作级系统提示词（与用户个人 system 覆盖合并，见下）
     max_tokens: int = 4096
     temperature: float = 0.2
     json_mode: bool = False
     max_input_chars: int = 12000
+
 
 def invoke(
     db: Session,
@@ -171,7 +172,7 @@ def invoke(
     action: ActionSpec,
     variables: Mapping[str, Any],
     *,
-    context: LlmContext,           # workspace_id / target_type / target_id
+    context: LlmContext,  # workspace_id / target_type / target_id
     connection: LlmConnection | None = None,
 ) -> LlmResult:
     """校验连接 → 渲染提示词 → 调上游 → schema 校验 → 写 llm_run + core_event → 返回。"""
@@ -433,14 +434,19 @@ POST /api/v1/workspaces/12/documents/345/ai/actions/polish
 
 ```python
 POLISH = ActionSpec(
-    name="document.polish", label="AI 润色", scope="document",
-    output_schema=PolishOutput,             # {"text": str}
+    name="document.polish",
+    label="AI 润色",
+    scope="document",
+    output_schema=PolishOutput,  # {"text": str}
     system_prompt=(
         "你是中文文档编辑助手。只改写用户给出的片段，保持原意、术语与事实，"
         "不要添加原文没有的信息，不要输出解释、标题或 Markdown 代码围栏。"
-        "输出 JSON：{{\"text\": \"改写后的片段\"}}。"
+        '输出 JSON：{{"text": "改写后的片段"}}。'
     ),
-    temperature=0.3, max_tokens=1500, json_mode=True, max_input_chars=4000,
+    temperature=0.3,
+    max_tokens=1500,
+    json_mode=True,
+    max_input_chars=4000,
 )
 ```
 

@@ -223,6 +223,20 @@ def _create_view_obj(
     )
 
 
+def _ensure_view_sort_index(db: Session, dt: DataTable, view: DataView) -> None:
+    """视图保存排序后预建排序索引（ADR 0046 D4）：只加速读路径，失败不影响保存."""
+    import logging
+
+    from cndb.plugins.tables.services.core.ddl import ensure_sort_index
+
+    try:
+        ensure_sort_index(db, dt, view.sortings)
+    except Exception:  # pragma: no cover - 索引失败降级为无索引查询
+        logging.getLogger(__name__).warning(
+            "视图排序索引创建失败 view=%s table=%s", getattr(view, "id", None), dt.db_table_name, exc_info=True
+        )
+
+
 @router.post("", response_model=ViewResponse, status_code=status.HTTP_201_CREATED)
 def create_view(
     workspace_id: int,
@@ -255,6 +269,7 @@ def create_view(
     db.add(dv)
     db.commit()
     db.refresh(dv)
+    _ensure_view_sort_index(db, dt, dv)
     return _view_payloads(db, dt, current_user, [dv])[0]
 
 
@@ -421,6 +436,7 @@ def update_view(
         setattr(dv, key, value)
     db.commit()
     db.refresh(dv)
+    _ensure_view_sort_index(db, dt, dv)
     return _view_payloads(db, dt, current_user, [dv])[0]
 
 

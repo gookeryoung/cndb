@@ -81,8 +81,9 @@ export const tableApi = {
 }
 
 export const fieldApi = {
-    list: (wid: number | string, tid: number | string, includeTrashed = false) =>
-        api.get<Field[]>(`/v1/workspaces/${wid}/tables/${tid}/fields`, { params: { include_trashed: includeTrashed } }).then(r => r.data),
+    /** 字段列表；`full=true` 返回全量 options（表详情 / 字段列表默认截断，ADR 0046 D6） */
+    list: (wid: number | string, tid: number | string, includeTrashed = false, full = false) =>
+        api.get<Field[]>(`/v1/workspaces/${wid}/tables/${tid}/fields`, { params: { include_trashed: includeTrashed, full } }).then(r => r.data),
     create: (wid: number | string, tid: number | string, data: FieldCreate) =>
         api.post<Field>(`/v1/workspaces/${wid}/tables/${tid}/fields`, data).then(r => r.data),
     update: (wid: number | string, tid: number | string, fid: number | string, data: FieldUpdate) =>

@@ -292,6 +292,8 @@ def _invalidate_table_list_cache(workspace_id: int) -> None:
     from cndb.core.cache import cache_key, list_cache
 
     list_cache.clear(cache_key("tables", workspace_id))
+    # 新建表改变工作区统计（ADR 0046 D5）
+    list_cache.clear(cache_key("workspace-stats", workspace_id))
 
 
 __all__ = [

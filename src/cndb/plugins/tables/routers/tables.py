@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -31,6 +30,8 @@ from cndb.plugins.tables.services.core.access import (
     get_table_or_404,
 )
 from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
+from cndb.plugins.tables.services.core.field_serialization import field_response
+from cndb.plugins.tables.services.core.record_counts import batch_record_counts
 from cndb.plugins.tables.services.core.view_access import (
     grants_for_user,
     is_view_visible,
@@ -56,20 +57,8 @@ _ACTION_LABEL: dict[TableAction, str] = {
 
 
 def _batch_record_counts(db: Session, tables: list[DataTable]) -> dict[int, int | None]:
-    """一次 UNION ALL 取回多张动态表的行数（超过 100 张表则跳过，避免超长 SQL）."""
-    targets = [t for t in tables if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", t.db_table_name or "")]
-    if not targets or len(targets) > 100:  # pragma: no cover - 超大工作区退化到逐表
-        return {}
-    parts: list[str] = []
-    params: dict[str, int] = {}
-    for idx, tbl in enumerate(targets):
-        parts.append(f"SELECT :t{idx} AS tid, COUNT(*) AS cnt FROM {tbl.db_table_name}")  # nosec B608 - 表名白名单校验
-        params[f"t{idx}"] = tbl.id
-    try:
-        rows = db.execute(text(" UNION ALL ".join(parts)), params).all()
-    except Exception:
-        return {}
-    return {int(tid): int(cnt) for tid, cnt in rows}
+    """一次 UNION ALL 取回多张动态表的行数（实现见 record_counts.batch_record_counts）."""
+    return batch_record_counts(db, tables)
 
 
 def _fill_table_stats(
@@ -278,7 +267,10 @@ def _invalidate_table_list_cache(workspace_id: int) -> int:
     """失效某工作区的数据表列表缓存（建表/改名/删除/回收站变更后调用）."""
     from cndb.core.cache import cache_key, list_cache
 
-    return list_cache.clear(cache_key("tables", workspace_id))
+    cleared = list_cache.clear(cache_key("tables", workspace_id))
+    # 建表 / 删表改变工作区统计（ADR 0046 D5）
+    cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
+    return cleared
 
 
 @router.get("", response_model=list[TableResponse])
@@ -490,7 +482,8 @@ def get_table(
 
     return TableDetailResponse(
         **base.model_dump(),
-        fields=active_fields,
+        # options 截断：展示链路不传全量选项清单（ADR 0046 D6），编辑入口走 fields?full=1
+        fields=[field_response(f) for f in active_fields],
         views=view_briefs,
         current_user_actions=actions,
         workspace_owner=owner,

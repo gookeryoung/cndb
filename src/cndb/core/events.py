@@ -178,6 +178,8 @@ def invalidate_for_event(action: str, workspace_id: int | None) -> int:
             cleared += list_cache.clear(cache_key("records", workspace_id))
         if action.startswith(("table.", "record.", "row_rule.", "datasource.")):
             cleared += list_cache.clear(cache_key("tables", workspace_id))
+            # 工作区统计（行数 / 表数）随这些写路径变化（ADR 0046 D5）
+            cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
         if action.startswith("document."):
             cleared += list_cache.clear(cache_key("doc-tree", workspace_id))
         # 顶栏搜索会同时索引文档与数据表：任一侧变更都失效该工作区的搜索结果

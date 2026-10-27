@@ -85,7 +85,7 @@ figures/
 ### 2. 指纹与保鲜（I1/I2）
 
 ```python
-fingerprint = sha1( inspect.getsource(build) , data_digest() )
+fingerprint = sha1(inspect.getsource(build), data_digest())
 ```
 
 - `_code_digest(build)`：构建函数源码摘要（`lru_cache`），改配色 / 文案 / 节点即变；

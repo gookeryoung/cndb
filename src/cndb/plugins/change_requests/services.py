@@ -39,7 +39,7 @@ from cndb.plugins.change_requests.models import (
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
 
 # ── 双轨写入分派（records.py / bulk.py 调用） ──────────
 
@@ -367,7 +367,8 @@ def merge_request(
 def close_request(db: Session, cr: ChangeRequest, user: User, role: WorkspaceRole | None) -> ChangeRequest:
     """关闭申请：owner/editor，或提交人本人（已关闭 409）."""
     if not (role in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR) or cr.submitted_by_id == user.id):
-        raise HTTPException(status_code=403, detail="仅 owner/editor 或提交人可关闭")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, _cr_workspace(db, cr), user, requirement="仅 owner/editor 或提交人可关闭")
     if cr.status != CR_STATUS_OPEN:
         raise HTTPException(status_code=409, detail=f"当前状态 {cr.status} 不允许关闭")
     cr.status = CR_STATUS_CLOSED
@@ -393,7 +394,8 @@ def reopen_request(db: Session, cr: ChangeRequest, user: User) -> ChangeRequest:
 def update_base(db: Session, cr: ChangeRequest, table: DataTable, user: User) -> ChangeRequest:
     """刷新基准：仅提交人；stale 时重新快照 base_values（保留 values），复位 stale."""
     if cr.submitted_by_id != user.id:
-        raise HTTPException(status_code=403, detail="仅提交人可刷新基准")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, _cr_workspace(db, cr), user, requirement="仅提交人可刷新基准")
     if cr.status != CR_STATUS_OPEN:
         raise HTTPException(status_code=409, detail=f"当前状态 {cr.status} 不允许刷新基准")
     engine = db.get_bind()
@@ -427,10 +429,17 @@ def require_reviewer_role(db: Session, table: DataTable, user: User) -> Workspac
 
 def _require_reviewer(db: Session, cr: ChangeRequest, user: User) -> None:
     """merge 仅 owner/editor 可操作."""
-    ws = db.get(Workspace, cr.workspace_id)
-    role = get_member_role(user, ws, db) if ws else None
+    role = get_member_role(user, _cr_workspace(db, cr), db)
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise HTTPException(status_code=403, detail="仅 owner/editor 可合并修改申请")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, _cr_workspace(db, cr), user, requirement="仅 owner/editor 可合并修改申请")
+
+
+def _cr_workspace(db: Session, cr: ChangeRequest) -> Workspace:
+    ws = db.get(Workspace, cr.workspace_id)
+    if ws is None:  # pragma: no cover - 工作区删除级联清申请
+        raise HTTPException(status_code=404, detail="工作区不存在")
+    return ws
 
 
 # ── 内部工具 ──────────────────────────────────────────
@@ -711,7 +720,8 @@ def merge_row_requests(
     """
     role = require_reviewer_role(db, table, user)
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise HTTPException(status_code=403, detail="仅 owner/editor 可合并修改申请")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, table.workspace, user, requirement="仅 owner/editor 可合并修改申请")
 
     engine = db.get_bind()
     crs: list[ChangeRequest] = []

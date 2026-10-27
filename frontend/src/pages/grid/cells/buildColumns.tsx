@@ -258,6 +258,8 @@ export function buildColumns(
         filterDropdown: ({ confirm, clearFilters }) => (
           <ColumnFilterDropdown
             field={f}
+            wid={wid}
+            tableId={options?.tableId}
             currentFilter={currentFilter}
             onApply={(op, value) => { onFilterApply(f.name, op, value); confirm?.() }}
             onReset={() => { onFilterReset(f.name); clearFilters?.(); confirm?.() }}

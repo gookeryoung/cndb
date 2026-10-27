@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role, has_role
+from cndb.plugins.workspaces.permissions import get_member_role, has_role, raise_permission_denied
 
 
 def _get_workspace_or_404(workspace_id: int, db: Session) -> Workspace:
@@ -24,7 +24,8 @@ def _require_member(workspace: Workspace, user: User, db: Session) -> None:
 
 def _require_owner(workspace: Workspace, user: User, db: Session) -> None:
     if not has_role(user, workspace, WorkspaceRole.OWNER, db):
-        raise HTTPException(status_code=403, detail="需要所有者权限")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, workspace, user, requirement="仅所有者可执行此操作")
 
 
 __all__ = ["_get_workspace_or_404", "_require_member", "_require_owner"]

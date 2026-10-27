@@ -16,6 +16,7 @@ from cndb.plugins.change_requests import services as cr_services
 from cndb.plugins.tables.schemas import BulkDeleteRequest
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
+from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +95,7 @@ def bulk_delete_records(
         )
 
     if not check_action(db, dt, current_user, TableAction.EDIT_RECORDS):
-        raise HTTPException(status_code=403, detail="表级权限不足")
+        raise_permission_denied(db, dt.workspace, current_user, scope="表级")
 
     deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids, db=db, user=current_user)
     return {"deleted": deleted}

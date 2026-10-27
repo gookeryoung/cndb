@@ -12,7 +12,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from cndb.core.errors import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
+from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import (
     DI_ACTION_CLOSED,
@@ -26,7 +26,7 @@ from cndb.plugins.documents.models import (
 from cndb.plugins.documents.services import visibility
 from cndb.plugins.issues.models import ISSUE_CATEGORIES, ISSUE_STATUS_CLOSED, ISSUE_STATUS_OPEN
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
 
 STATUS_FILTERS = ("open", "closed", "all")
 
@@ -45,7 +45,8 @@ def require_member(db: Session, workspace_id: int, user: User) -> WorkspaceRole:
         raise NotFoundError("工作区不存在")
     role = get_member_role(user, ws, db)
     if role is None:
-        raise PermissionDeniedError("非工作区成员")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
+        raise_permission_denied(db, ws, user)
     return role
 
 

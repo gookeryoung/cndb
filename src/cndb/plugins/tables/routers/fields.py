@@ -248,12 +248,16 @@ def list_fields(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = False,
-) -> list[DataField]:
+    full: bool = False,
+):
+    """字段列表；``full=true`` 返回全量 options（字段编辑 / 筛选配置专用，ADR 0046 D6）."""
+    from cndb.plugins.tables.services.core.field_serialization import field_response
+
     get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     query = db.query(DataField).filter(DataField.table_id == table_id)
     if not include_trashed:
         query = query.filter(DataField.trashed == False)  # noqa: E712
-    return query.order_by(DataField.order, DataField.id).all()
+    return [field_response(f, full=full) for f in query.order_by(DataField.order, DataField.id).all()]
 
 
 @router.patch("/{field_id}", response_model=FieldResponse)

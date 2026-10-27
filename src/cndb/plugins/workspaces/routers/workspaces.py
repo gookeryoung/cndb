@@ -18,7 +18,7 @@ from cndb.plugins.workspaces.models import (
     WorkspaceType,
     WorkspaceVisibility,
 )
-from cndb.plugins.workspaces.permissions import get_member_role, has_role
+from cndb.plugins.workspaces.permissions import get_member_role, has_role, raise_permission_denied
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
 from cndb.plugins.workspaces.routers.member_routes import router as member_router
 from cndb.plugins.workspaces.schemas import (
@@ -49,11 +49,17 @@ def _list_cache() -> Any:
     return list_cache
 
 
-def invalidate_workspace_list_cache() -> int:
-    """失效所有用户的工作区列表缓存（成员/工作区变更后调用）."""
+def invalidate_workspace_list_cache(workspace_id: int | None = None) -> int:
+    """失效所有用户的工作区列表缓存（成员/工作区变更后调用）.
+
+    ``workspace_id`` 非空时同时失效该工作区的详情统计缓存（ADR 0046 D5）。
+    """
     from cndb.core.cache import cache_key, list_cache
 
-    return list_cache.clear(cache_key("ws-list"))
+    cleared = list_cache.clear(cache_key("ws-list"))
+    if workspace_id is not None:
+        cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
+    return cleared
 
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
@@ -160,7 +166,7 @@ def create_workspace(
     member = WorkspaceMember(workspace_id=ws.id, user_id=current_user.id, role=WorkspaceRole.OWNER)
     db.add(member)
     db.commit()
-    invalidate_workspace_list_cache()
+    invalidate_workspace_list_cache(ws.id)
     db.refresh(ws)
     return ws
 
@@ -172,58 +178,14 @@ def get_workspace(
     db: Annotated[Session, Depends(get_db)],
 ) -> WorkspaceDetailResponse:
     """获取工作区详情（需是成员），附带拥有者信息和统计."""
-    from contextlib import suppress
-
-    from sqlalchemy import MetaData, func, select
-
-    from cndb.plugins.tables.models import DataTable, DataView
+    from cndb.plugins.workspaces.services.stats_cache import get_workspace_stats
     from cndb.plugins.workspaces.services.storage_snapshot import snapshot_used_bytes
 
     ws = _get_workspace_or_404(workspace_id, db)
     _require_member(ws, current_user, db)
 
-    # 统计
-    table_count = (
-        db.query(DataTable)
-        .filter(
-            DataTable.workspace_id == workspace_id,
-            DataTable.trashed_at.is_(None),
-        )
-        .count()
-    )
-    member_count = (
-        db.query(WorkspaceMember)
-        .join(User, User.id == WorkspaceMember.user_id)
-        .filter(
-            WorkspaceMember.workspace_id == workspace_id,
-        )
-        .count()
-    )
-    view_count = (
-        db.query(DataView)
-        .join(DataTable)
-        .filter(
-            DataTable.workspace_id == workspace_id,
-            DataTable.trashed_at.is_(None),
-        )
-        .count()
-    )
-    # 总行数：遍历每个 DataTable 的物理表执行 COUNT
-    total_rows = 0
-    tables = (
-        db.query(DataTable)
-        .filter(
-            DataTable.workspace_id == workspace_id,
-            DataTable.trashed_at.is_(None),
-        )
-        .all()
-    )
-    metadata = MetaData()
-    for tbl in tables:
-        with suppress(Exception):
-            sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
-            cnt = db.execute(select(func.count(sa_table.c.id))).scalar() or 0
-            total_rows += int(cnt)
+    # 统计（table/member/view/total_rows）：UNION ALL + 30s 缓存，见 ADR 0046 D5
+    stats = get_workspace_stats(db, workspace_id)
 
     # 拥有者信息
     owner_member = (
@@ -247,10 +209,10 @@ def get_workspace(
     d.update(
         {
             "owner": owner_info,
-            "table_count": table_count,
-            "member_count": member_count,
-            "view_count": view_count,
-            "total_rows": total_rows,
+            "table_count": stats["table_count"],
+            "member_count": stats["member_count"],
+            "view_count": stats["view_count"],
+            "total_rows": stats["total_rows"],
             # 读用量快照（ADR 0024），缺失时懒计算一次并落库
             "storage_bytes": snapshot_used_bytes(db, workspace_id, lazy=True) or 0,
             "current_user_role": current_role.value if current_role else None,
@@ -273,7 +235,7 @@ def update_workspace(
     for key, value in update_data.items():
         setattr(ws, key, value)
     db.commit()
-    invalidate_workspace_list_cache()
+    invalidate_workspace_list_cache(workspace_id)
     db.refresh(ws)
     return ws
 
@@ -288,10 +250,11 @@ def delete_workspace(
     ws = _get_workspace_or_404(workspace_id, db)
     role = get_member_role(current_user, ws, db)
     if role != WorkspaceRole.OWNER:
-        raise HTTPException(status_code=403, detail="仅所有者可删除工作区")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, current_user, requirement="仅所有者可删除工作区")
     db.delete(ws)
     db.commit()
-    invalidate_workspace_list_cache()
+    invalidate_workspace_list_cache(workspace_id)
 
 
 # ── pin 切换 ──────────────────────────────────────────
@@ -349,7 +312,8 @@ def export_workspace(
     # 全量导出是备份/恢复的一侧，与 import_workspace 对称要求 EDITOR+：
     # 此前仅校验成员身份，任何 viewer 都能把所有表（含受限表）连数据行一起导出。
     if not has_role(current_user, ws, WorkspaceRole.EDITOR, db):
-        raise HTTPException(status_code=403, detail="需要编辑者及以上权限才能导出工作区")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, current_user, requirement="编辑者及以上权限才能导出工作区")
 
     # 工作区元信息
     workspace_meta = {
@@ -685,7 +649,8 @@ def import_workspace(
     """从 JSON 数据导入表结构、视图和数据行到指定工作区（EDITOR+）."""
     ws = _get_workspace_or_404(workspace_id, db)
     if not has_role(current_user, ws, WorkspaceRole.EDITOR, db):
-        raise HTTPException(status_code=403, detail="需要编辑者权限")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, current_user, requirement="编辑者及以上权限才能导入工作区")
     data = payload.json_data
     if not isinstance(data, dict) or "tables" not in data:
         raise HTTPException(status_code=400, detail="无效的导入数据格式")

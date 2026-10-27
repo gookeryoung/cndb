@@ -67,7 +67,12 @@ HELP_EXAMPLE_MANIFEST: list[dict] = [
         "name": "某企业销售管理",
         "summary": "从销售明细、客户流失到营销活动与日常待办的完整销售运营示例。",
         "tables": [
-            {"file": "电商销售.csv", "title": "电商销售", "description": "订单级销售明细，含渠道、产品、金额与日期。", "rows": 240},
+            {
+                "file": "电商销售.csv",
+                "title": "电商销售",
+                "description": "订单级销售明细，含渠道、产品、金额与日期。",
+                "rows": 240,
+            },
             {"file": "客户流失.csv", "title": "客户流失", "description": "客户维度的流失状态与回访记录。", "rows": 120},
         ],
         "highlights": ["图表视图看月度销售趋势", "看板视图跟踪客户流失回访", "数据分析模板：渠道占比"],

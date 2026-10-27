@@ -23,7 +23,7 @@ from cndb.plugins.documents.models import DocumentTag, Tag
 from cndb.plugins.documents.schemas import TagCreate, TagUpdate
 from cndb.plugins.documents.services.content import _refresh_tag_counts, require_editor
 from cndb.plugins.workspaces.models import Workspace
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
 
 router = APIRouter(prefix="/{workspace_id}/document-tags", tags=["documents"])
 
@@ -33,9 +33,8 @@ def _require_member(db: Session, workspace_id: int, user: User) -> None:
     if ws is None:
         raise NotFoundError("工作区不存在")
     if get_member_role(user, ws, db) is None:
-        from cndb.core.errors import PermissionDeniedError
-
-        raise PermissionDeniedError("非工作区成员")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
+        raise_permission_denied(db, ws, user)
 
 
 def _get_tag_or_404(db: Session, workspace_id: int, tag_id: int) -> Tag:

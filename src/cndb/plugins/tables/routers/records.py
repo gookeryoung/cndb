@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from typing import Annotated, Any
 
@@ -28,8 +29,10 @@ from cndb.plugins.tables.schemas import (
     RecordUpdate,
 )
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
+from cndb.plugins.tables.services.core.ddl import ensure_sort_index
 from cndb.plugins.tables.services.core.records import (
     _get_sa_table,
+    count_rows,
     create_row,
     delete_row,
     get_row,
@@ -40,10 +43,15 @@ from cndb.plugins.tables.services.core.records import (
     update_row,
 )
 from cndb.plugins.tables.services.core.row_access import can_edit_row, can_view_row
+from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 logger = logging.getLogger(__name__)
 # 记录列表缓存 TTL（秒）：短 TTL + 事件驱动失效（record.* 事件提交后清该工作区记录缓存）
 RECORD_LIST_TTL_SECONDS = 5.0
+
+# 深分页偏移上限（ADR 0046 D8）：OFFSET 线性扫描，超过该值改为提示用户收窄筛选。
+# 10 万偏移 = 每页 100 行时第 1000 页，覆盖正常浏览；更深的跳页在大表上必卡。
+MAX_RECORD_OFFSET = 100_000
 
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
@@ -62,7 +70,7 @@ def _dispatch_or_403(
     if not cr_services.can_write_directly(db, dt, user):
         return False
     if not check_action(db, dt, user, TableAction.EDIT_RECORDS):
-        raise HTTPException(status_code=403, detail="表级权限不足")
+        raise_permission_denied(db, dt.workspace, user, scope="表级")
     return True
 
 
@@ -118,8 +126,12 @@ def _list_response(
     limit: int,
     offset: int,
     include_trashed: bool,
+    total: int | None = None,
 ) -> RecordListResponse:
-    """调用 list_rows 并统一错误映射（ValueError→400，其余→500），GET/POST 列表端点共用."""
+    """调用 list_rows 并统一错误映射（ValueError→400，其余→500），GET/POST 列表端点共用.
+
+    ``total`` 非空时跳过内部 COUNT（ADR 0046 D3 计数缓存命中路径）.
+    """
     try:
         rows, total = list_rows(
             db.get_bind(),
@@ -132,6 +144,7 @@ def _list_response(
             include_trashed=include_trashed,
             db=db,
             user=user,
+            total=total,
         )
     except ValueError as exc:
         # 业务语义错误（未知操作符、非法字段等）— 客户端可修正
@@ -142,6 +155,110 @@ def _list_response(
         raise HTTPException(status_code=500, detail="服务内部错误") from exc
 
     return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
+
+
+def _query_sig(
+    *,
+    filters: list[dict[str, Any]] | None,
+    sorts: list[dict[str, Any]] | None,
+    filter_logic: str,
+    limit: int | None = None,
+    offset: int | None = None,
+) -> str:
+    """查询体签名（缓存键的一段）；不含 limit/offset 时用于计数缓存（翻页不重算）."""
+    body: dict[str, Any] = {"filters": filters or [], "sorts": sorts or [], "logic": filter_logic}
+    if limit is not None:
+        body["limit"] = limit
+        body["offset"] = offset
+    return hashlib.sha256(json.dumps(body, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:16]
+
+
+def _cached_list(
+    db: Session,
+    dt: DataTable,
+    user: User,
+    *,
+    filters: list[dict[str, Any]] | None,
+    sorts: list[dict[str, Any]] | None,
+    filter_logic: str,
+    limit: int,
+    offset: int,
+    include_trashed: bool,
+    cache_sig: str,
+) -> RecordListResponse:
+    """记录列表的统一读路径（GET/POST 共用）：排序索引 → 计数缓存 → 响应缓存（ADR 0046 D2/D3）."""
+    from cndb.core.cache import cache_key, list_cache
+    from cndb.plugins.tables.services.core.lookups import lookup_field_names
+
+    # 深分页保护（ADR 0046 D8）：SQLite 的 OFFSET 线性扫描，400 万偏移实测 ~3s。
+    # 超过上限直接给出可操作的提示，避免页面「假死」。
+    if offset > MAX_RECORD_OFFSET:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"分页偏移过大（最多支持 OFFSET={MAX_RECORD_OFFSET}），请用筛选条件或搜索缩小范围后再翻页"),
+        )
+
+    workspace_id = int(dt.workspace_id)
+    table_id = int(dt.id)
+    engine_id = id(db.bind)
+
+    ck = cache_key("records", workspace_id, table_id, user.id, include_trashed, cache_sig, engine_id)
+    cached = list_cache.get(ck)
+    if cached is not None:
+        return cached
+
+    # 视图排序索引：首个匹配查询一次性建（幂等），失败只降级为慢查询、不阻断读
+    if sorts:
+        try:
+            ensure_sort_index(db, dt, sorts)
+        except Exception:  # pragma: no cover - DDL 失败降级为无索引查询
+            logger.warning("视图排序索引创建失败，降级为无索引查询 table=%s", dt.db_table_name, exc_info=True)
+
+    total: int | None = None
+    # 含 lookup 字段的表 total 需 attach 后内存修正，不走计数缓存（保守跳过）
+    if db is not None and not lookup_field_names(dt):
+        count_ck = cache_key(
+            "records",
+            workspace_id,
+            table_id,
+            "count",
+            user.id,
+            include_trashed,
+            _query_sig(filters=filters, sorts=None, filter_logic=filter_logic),
+            engine_id,
+        )
+        total = list_cache.get(count_ck)
+        if total is None:
+            try:
+                total = count_rows(
+                    db.get_bind(),
+                    dt,
+                    filters=filters,
+                    filter_logic=filter_logic,
+                    include_trashed=include_trashed,
+                    db=db,
+                    user=user,
+                )
+            except ValueError as exc:
+                # 计数与行数据同一处 WHERE 构建：非法操作符等业务语义错误同样映射 400
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if total is not None:
+                list_cache.set(count_ck, total, RECORD_LIST_TTL_SECONDS)
+
+    result = _list_response(
+        db,
+        dt,
+        user,
+        filters=filters,
+        filter_logic=filter_logic,
+        sorts=sorts,
+        limit=limit,
+        offset=offset,
+        include_trashed=include_trashed,
+        total=total,
+    )
+    list_cache.set(ck, result, RECORD_LIST_TTL_SECONDS)
+    return result
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=None)
@@ -204,16 +321,26 @@ def list_records_get(
             return [x for x in v if isinstance(x, dict)]
         return None
 
-    return _list_response(
+    parsed_filters = _parse(filters, "filters")
+    parsed_sorts = _parse(sorts, "sorts")
+    # GET 与 POST /list 共用同一读路径（缓存 / 计数缓存 / 排序索引）—— 前端网格实际走 GET
+    return _cached_list(
         db,
         dt,
         current_user,
-        filters=_parse(filters, "filters"),
+        filters=parsed_filters,
+        sorts=parsed_sorts,
         filter_logic=filter_logic,
-        sorts=_parse(sorts, "sorts"),
         limit=limit,
         offset=offset,
         include_trashed=include_trashed,
+        cache_sig=_query_sig(
+            filters=parsed_filters,
+            sorts=parsed_sorts,
+            filter_logic=filter_logic,
+            limit=limit,
+            offset=offset,
+        ),
     )
 
 
@@ -231,26 +358,20 @@ def list_records(
     # 记录列表是表格页最热的读路径：按（工作区/表/用户/查询体）缓存 5s。
     # 必须带 user_id —— 行级权限（tables_tablepermission）是按人过滤的，不能跨用户复用。
     # 失效：记录写入会写入 record.* 统一事件，事件钩子统一清该工作区的记录缓存。
-    from cndb.core.cache import cache_key, list_cache
-
+    # 批量导入 / 数据源同步不写 audit，由 records._invalidate_search_cache 兜底清理。
     body_sig = hashlib.sha256(payload.model_dump_json().encode("utf-8")).hexdigest()[:16]
-    ck = cache_key("records", workspace_id, table_id, current_user.id, include_trashed, body_sig, id(db.bind))
-    cached = list_cache.get(ck)
-    if cached is not None:
-        return cached
-    result = _list_response(
+    return _cached_list(
         db,
         dt,
         current_user,
         filters=payload.filters if payload.filters else None,
-        filter_logic=payload.filter_logic,
         sorts=payload.sorts if payload.sorts else None,
+        filter_logic=payload.filter_logic,
         limit=payload.limit,
         offset=payload.offset,
         include_trashed=include_trashed,
+        cache_sig=body_sig,
     )
-    list_cache.set(ck, result, RECORD_LIST_TTL_SECONDS)
-    return result
 
 
 @router.get("/auto-increment-preview", response_model=AutoIncrementPreviewResponse)
@@ -300,7 +421,7 @@ def update_record(
     if decision == ROW_WRITE_NOT_FOUND:
         raise HTTPException(status_code=404, detail="行不存在")
     if decision == ROW_WRITE_DENIED:
-        raise HTTPException(status_code=403, detail="表级权限不足")
+        raise_permission_denied(db, dt.workspace, current_user, scope="表级")
     if decision == ROW_WRITE_CHANGE_REQUEST:
         return _cr_response(db, dt, current_user, op=CHANGE_OP_UPDATE, row_id=record_id, values=payload.values)
 
@@ -329,7 +450,7 @@ def delete_record(
     if decision == ROW_WRITE_NOT_FOUND:
         raise HTTPException(status_code=404, detail="行不存在")
     if decision == ROW_WRITE_DENIED:
-        raise HTTPException(status_code=403, detail="表级权限不足")
+        raise_permission_denied(db, dt.workspace, current_user, scope="表级")
     if decision == ROW_WRITE_CHANGE_REQUEST:
         return _cr_response(db, dt, current_user, op=CHANGE_OP_DELETE, row_id=record_id, values={})
 

@@ -36,6 +36,8 @@ def _invalidate_table_list_cache(workspace_id: int) -> None:
     from cndb.core.cache import cache_key, list_cache
 
     list_cache.clear(cache_key("tables", workspace_id))
+    # 成员数变化也影响工作区详情统计（ADR 0046 D5）
+    list_cache.clear(cache_key("workspace-stats", workspace_id))
 
 
 @router.get("", response_model=PermissionResponse)

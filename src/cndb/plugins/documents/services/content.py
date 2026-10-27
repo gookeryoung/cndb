@@ -24,7 +24,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 
 from cndb.core.config import settings
-from cndb.core.errors import ConflictError, NotFoundError, PermissionDeniedError
+from cndb.core.errors import ConflictError, NotFoundError
 from cndb.plugins.documents.models import (
     CHANGE_TYPE_MANUAL,
     CHANGE_TYPE_ROLLBACK,
@@ -46,7 +46,7 @@ from cndb.plugins.documents.models import (
 )
 from cndb.plugins.documents.services import parse
 from cndb.plugins.workspaces.models import WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
 
 if TYPE_CHECKING:
     from cndb.plugins.accounts.models import User
@@ -131,9 +131,11 @@ def get_document_any_state_or_404(db: Session, workspace_id: int, doc_id: int) -
 
 def require_editor(db: Session, workspace_id: int, user: User) -> WorkspaceRole:
     """校验用户是工作区 editor/owner（viewer 或非成员拒绝写操作）."""
-    role = get_member_role(user, _get_workspace(db, workspace_id), db)
+    ws = _get_workspace(db, workspace_id)
+    role = get_member_role(user, ws, db)
     if role is None or role == WorkspaceRole.VIEWER:
-        raise PermissionDeniedError("仅编辑者及以上角色可执行此操作")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, user, requirement="仅编辑者及以上角色可执行此操作")
     return role
 
 

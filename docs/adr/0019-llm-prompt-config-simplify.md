@@ -100,13 +100,15 @@ Related: `src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/plugin.py`、`
 DEFAULT_BASE_URL = "https://api.deepseek.com"
 DEFAULT_MODEL = "deepseek-chat"
 
+
 @dataclass(frozen=True, slots=True)
 class LlmConnection:
     base_url: str = DEFAULT_BASE_URL
     model: str = DEFAULT_MODEL
-    api_key: str = ""        # 解密后的明文，仅运行期使用
+    api_key: str = ""  # 解密后的明文，仅运行期使用
     system_prompt: str = ""
     has_api_key: bool = False
+
 
 def find_user_llm_config(db: Session, user_id: int) -> LlmUserConfig | None: ...
 def load_llm_connection(db: Session, user_id: int) -> LlmConnection: ...

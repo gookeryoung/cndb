@@ -54,13 +54,34 @@ interface Props {
   onCreated?: () => void
 }
 
-export default function RowDetailDrawer({ open, row, fields, wid, tid, onClose, initialValues, onCreated, readOnly }: Props) {
+export default function RowDetailDrawer({ open, row, fields: fieldsProp, wid, tid, onClose, initialValues, onCreated, readOnly }: Props) {
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [form] = Form.useForm()
   const autoFillLocked = useTableSettingsStore(s => s.autoFillLocked)
   // 新建模式下用户手动改过的自动编号：键存在即视为手动值（空串表示清空）
   const [autoIncrementEdits, setAutoIncrementEdits] = React.useState<Record<string, string>>({})
+
+  // 表详情默认只带前 500 项 options（ADR 0046 D6）。抽屉里要新建/编辑行、渲染 select 标签，
+  // 必须拿全量；只在有截断字段时才额外请求一次（react-query 缓存，抽屉关闭不拉取）。
+  const hasTruncatedOptions = React.useMemo(
+    () => fieldsProp.some(f => (f.config as Record<string, unknown> | undefined)?.options_truncated === true),
+    [fieldsProp],
+  )
+  const { data: fullFields } = useQuery({
+    queryKey: ['fields-full', String(wid), String(tid)],
+    queryFn: () => fieldApi.list(wid, tid, false, true),
+    enabled: open && hasTruncatedOptions,
+    staleTime: 60_000,
+  })
+  const fields = React.useMemo(() => {
+    if (!fullFields?.length) return fieldsProp
+    return fieldsProp.map(f => {
+      const truncated = (f.config as Record<string, unknown> | undefined)?.options_truncated === true
+      if (!truncated) return f
+      return fullFields.find(x => String(x.id) === String(f.id)) ?? f
+    })
+  }, [fieldsProp, fullFields])
 
   // 模式：row 存在 → 编辑；否则 → 新建
   const isCreate = !row

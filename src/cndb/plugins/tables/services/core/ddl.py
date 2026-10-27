@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from typing import TYPE_CHECKING, Any
 from weakref import WeakKeyDictionary
@@ -493,6 +494,108 @@ def rebuild_column(engine: Any, table: DataTable, old_field: DataField, new_fiel
     )
 
 
+# ── 视图排序索引（ADR 0046 D4） ──────────────────────
+
+#: 每张物理表最多保留的视图排序索引数量（超出按槽位 1→3 循环淘汰）
+SORT_INDEX_LIMIT = 3
+
+#: 进程内已建结果缓存：{(物理表名, ((列, 方向), ...))}
+_sort_indexed: set[tuple[str, tuple[tuple[str, str], ...]]] = set()
+
+_SORT_INDEX_PREFIX = "ix_{table}_sort_"
+
+
+def _sort_index_base(table_name: str) -> str:
+    return _SORT_INDEX_PREFIX.format(table=table_name)
+
+
+def _sort_signature(columns: list[tuple[str, str]]) -> str:
+    """列 + 方向签名（拼进索引名）：不同列 / 不同方向必须得到不同签名.
+
+    哈希而非明文，避免长列名把索引名撑爆；SQLite 索引元数据不保留方向，靠名字区分。
+    """
+    raw = "|".join(f"{col}:{direction}" for col, direction in columns)
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:8]
+
+
+def ensure_sort_index(
+    db: Any,
+    table: DataTable,
+    sorts: Iterable[Any] | None,
+) -> str | None:
+    """按视图 ``sortings`` 的「字段 + 方向」建复合索引（幂等，ADR 0046 D4）.
+
+    列序 = sortings 声明顺序，方向逐列声明 ASC / DESC，尾部补 ``id ASC`` 做分页 tie-break。
+    命名 ``ix_{物理表}_sort_{槽位}_{方向签名}``：方向签名让「同列不同方向」不会误复用；
+    槽位 1..3 循环复用，满 3 个后淘汰槽位 1 再建。
+
+    - lookup / 无物理列的排序项（URL 级联列等）无法建索引 → 直接跳过；
+    - 进程内按 ``(物理表名, ((列, 方向), ...))`` 缓存已建结果（同 ensure_match_keys_index），
+      重启后由 ``IF NOT EXISTS`` 保证幂等。
+
+    Returns:
+        新建或已存在的索引名；不适用时返回 ``None``。
+    """
+    items = [s for s in (sorts or []) if isinstance(s, dict)]
+    if not items:
+        return None
+
+    fields = {f.name: f for f in table.active_fields()}
+    columns: list[tuple[str, str]] = []
+    for item in items:
+        name = item.get("field_name") or item.get("field")
+        field = fields.get(str(name)) if name else None
+        if field is None:
+            return None
+        ft = default_registry.get(field.field_type)
+        if ft is None or not ft.has_physical_column:
+            return None
+        direction = "desc" if str(item.get("direction", "asc")).lower() == "desc" else "asc"
+        columns.append((str(field.db_column_name), direction))
+    if not columns:
+        return None
+
+    key = (str(table.db_table_name), tuple(columns))
+    if key in _sort_indexed:
+        return None
+
+    table_name = str(table.db_table_name)
+    base = _sort_index_base(table_name)
+    sig = _sort_signature(columns)
+    engine = db.get_bind()
+
+    insp = inspect(engine)
+    expected_cols = [col for col, _d in columns] + ["id"]
+    existing: dict[int, str] = {}
+    for idx in insp.get_indexes(table_name):
+        idx_name = str(idx.get("name") or "")
+        if not idx_name.startswith(base):
+            continue
+        # 列序列完全一致 → 该排序已有索引（方向不在元数据里，靠名字签名已区分）
+        if list(idx.get("column_names") or []) == expected_cols and idx_name.endswith(f"_{sig}"):
+            _sort_indexed.add(key)
+            return idx_name
+        slot = idx_name[len(base) :].split("_", 1)[0]
+        if slot.isdigit():
+            existing[int(slot)] = idx_name
+
+    slot = next((n for n in range(1, SORT_INDEX_LIMIT + 1) if n not in existing), None)
+    if slot is None:
+        # 槽位已满：淘汰槽位 1（建得最早），循环复用
+        slot = 1
+        with engine.begin() as conn:
+            conn.execute(text(f'DROP INDEX IF EXISTS "{existing[slot]}"'))
+
+    index_name = f"{base}{slot}_{sig}"
+    column_sql = ", ".join(f'"{col}" {"DESC" if d == "desc" else "ASC"}' for col, d in columns)
+    statement = text(f'CREATE INDEX IF NOT EXISTS "{index_name}" ON "{table_name}" ({column_sql}, "id" ASC)')
+    with engine.begin() as conn:
+        conn.execute(statement)
+    _sort_indexed.add(key)
+    logger.info("视图排序索引已创建: %s (%s)", index_name, column_sql)
+    return index_name
+
+
 # ── 快速入口（从 engine 字符串创建 engine） ────────────
 
 
@@ -515,6 +618,7 @@ __all__ = [
     "drop_link_table",
     "drop_table",
     "drop_unique_constraint",
+    "ensure_sort_index",
     "find_duplicate_values",
     "find_null_rows",
     "get_engine",

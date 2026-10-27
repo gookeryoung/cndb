@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from cndb.core.errors import BadRequestError, ConflictError, NotFoundError, PermissionDeniedError
+from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import (
     DCR_STATUS_CLOSED,
@@ -31,7 +31,7 @@ from cndb.plugins.documents.models import (
 from cndb.plugins.documents.services import content as content_service
 from cndb.plugins.documents.services import parse as parse_service
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
 
 # 写模式三态：与数据表双轨分派（change_requests.services.resolve_write_mode）语义一致
 WRITE_MODE_DIRECT = "direct"
@@ -54,9 +54,11 @@ def _get_workspace(db: Session, workspace_id: int) -> Workspace:
 
 def _require_member(db: Session, workspace_id: int, user: User) -> WorkspaceRole:
     """校验用户是工作区成员（任何成员都可提交/查看修改申请）."""
-    role = get_member_role(user, _get_workspace(db, workspace_id), db)
+    ws = _get_workspace(db, workspace_id)
+    role = get_member_role(user, ws, db)
     if role is None:
-        raise PermissionDeniedError("非工作区成员")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
+        raise_permission_denied(db, ws, user)
     return role
 
 
@@ -64,7 +66,10 @@ def _require_reviewer(db: Session, workspace_id: int, user: User) -> WorkspaceRo
     """校验用户可审核（owner/editor）."""
     role = _require_member(db, workspace_id, user)
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-        raise PermissionDeniedError("仅编辑者及以上角色可审核修改申请")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(
+            db, _get_workspace(db, workspace_id), user, requirement="仅编辑者及以上角色可审核修改申请"
+        )
     return role
 
 
@@ -359,7 +364,8 @@ def close_request(
         raise ConflictError("仅待审核的修改申请可关闭")
     is_submitter = cr.submitted_by_id is not None and cr.submitted_by_id == user.id
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR) and not is_submitter:
-        raise PermissionDeniedError("仅审核者或提交人可关闭该申请")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, _get_workspace(db, workspace_id), user, requirement="仅审核者或提交人可关闭该申请")
 
     cr.status = DCR_STATUS_CLOSED
     cr.reviewed_by_id = user.id
@@ -379,7 +385,10 @@ def delete_request(db: Session, workspace_id: int, request_id: int, user: User) 
     cr = get_request_or_404(db, workspace_id, request_id, user)
     is_submitter = cr.submitted_by_id is not None and cr.submitted_by_id == user.id
     if not is_submitter and role != WorkspaceRole.OWNER:
-        raise PermissionDeniedError("仅提交人本人或工作区所有者可删除该草稿")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(
+            db, _get_workspace(db, workspace_id), user, requirement="仅提交人本人或工作区所有者可删除该草稿"
+        )
     if cr.status != DCR_STATUS_OPEN:
         raise ConflictError("仅待审核的修改申请可作为草稿删除")
     db.delete(cr)
@@ -400,7 +409,8 @@ def update_base(
     if cr.status != DCR_STATUS_OPEN:
         raise ConflictError("仅待审核的修改申请可刷新基准")
     if cr.submitted_by_id is None or cr.submitted_by_id != user.id:
-        raise PermissionDeniedError("仅提交人本人可刷新基准")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, _get_workspace(db, workspace_id), user, requirement="仅提交人本人可刷新基准")
 
     current = _current_version_number(db, cr.document_id)
     target = current if base_version_number is None else base_version_number

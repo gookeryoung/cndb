@@ -21,6 +21,7 @@ import { formatFieldDisplayValue } from '../cells/fieldValueFormat'
 import { buildFlowGraph, FLOW_UNGROUPED_LABEL, type FlowNode } from './flowBoard'
 import { mixColor } from '@/theme/themeMix'
 import { WEIGHT } from '@/theme/tokens'
+import { useRowBatch, ViewBatchFooter } from './rowBatch'
 
 // ── 配色与密度 ────────────────────────────────────────
 
@@ -117,6 +118,8 @@ export default function FlowView({ rows, fields, view, density, onRowClick }: Fl
     [view?.view_options],
   )
   const ds = densityStyle(density)
+  // 分批挂载（ADR 0046 D7）：节点里逐行渲染卡片，2000 行全量挂载会明显卡顿
+  const { visibleRows, remaining, total, loadMore } = useRowBatch(rows)
   const nodeField = (opts.node_field as string) || ''
   const nodeOrder = useMemo(
     () => (Array.isArray(opts.node_order) ? (opts.node_order as unknown[]).map(String) : undefined),
@@ -129,8 +132,8 @@ export default function FlowView({ rows, fields, view, density, onRowClick }: Fl
   }, [opts.title_field, fields])
 
   const graph = useMemo(
-    () => (nodeField ? buildFlowGraph(rows, fields, nodeField, nodeOrder) : { nodes: [], edges: [] }),
-    [rows, fields, nodeField, nodeOrder],
+    () => (nodeField ? buildFlowGraph(visibleRows, fields, nodeField, nodeOrder) : { nodes: [], edges: [] }),
+    [visibleRows, fields, nodeField, nodeOrder],
   )
 
   // 边按「from→to」索引，供相邻节点间的连接线取流入量
@@ -243,6 +246,7 @@ export default function FlowView({ rows, fields, view, density, onRowClick }: Fl
       >
         {pipeline}
       </div>
+      <ViewBatchFooter remaining={remaining} total={total} onLoadMore={loadMore} fontSize={ds.metaFontSize} />
     </div>
   )
 }

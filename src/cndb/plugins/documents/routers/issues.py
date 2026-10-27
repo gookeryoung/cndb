@@ -21,10 +21,11 @@ from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
-from cndb.core.errors import PermissionDeniedError
+from cndb.core.errors import NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.schemas import DocumentIssueCommentCreate, DocumentIssueCreate
+from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 router = APIRouter(prefix="/{workspace_id}/document-issues", tags=["documents"])
 
@@ -94,7 +95,13 @@ def _transition(workspace_id: int, issue_id: int, current_user: User, db: Sessio
     role = services.issues.require_member(db, workspace_id, current_user)
     issue = services.issues.get_issue_or_404(db, workspace_id, issue_id, current_user)
     if not services.issues.can_manage_issue(issue, current_user, role):
-        raise PermissionDeniedError("仅 owner/editor 或创建者可操作")
+        from cndb.plugins.workspaces.models import Workspace
+
+        ws = db.get(Workspace, workspace_id)
+        if ws is None:
+            raise NotFoundError("工作区不存在")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, current_user, requirement="仅 owner/editor 或创建者可操作")
     if action == "close":
         return services.issues.get_issue_detail(db, services.issues.close_issue(db, issue, current_user))
     return services.issues.get_issue_detail(db, services.issues.reopen_issue(db, issue, current_user))

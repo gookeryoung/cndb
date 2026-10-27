@@ -63,6 +63,7 @@ def _invalidate_row_caches(workspace_id: int) -> None:
 
     list_cache.clear(cache_key("tables", workspace_id))
     list_cache.clear(cache_key("records", workspace_id))
+    list_cache.clear(cache_key("workspace-stats", workspace_id))
 
 
 def _after_rule_change(

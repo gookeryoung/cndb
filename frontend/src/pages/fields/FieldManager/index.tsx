@@ -40,6 +40,24 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   const [fieldType, setFieldType] = useState<FieldType | undefined>()
   const sorted = useMemo(() => [...fields].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)), [fields])
 
+  // 表详情默认只带前 500 项 options（ADR 0046 D6）。字段编辑必须基于全量配置，
+  // 否则保存时会把后段选项当作用户删除而丢掉 —— 打开面板时按需拉一次全量（缓存复用）。
+  // 只替换「被截断」的字段，其余字段仍以 props（父层最新回流）为准。
+  const { data: fullFields } = useQuery<Field[]>({
+    queryKey: ['fields-full', wid, tid],
+    queryFn: () => fieldApi.list(wid, tid, false, true),
+    enabled: open,
+    staleTime: 60_000,
+  })
+  const editFields = useMemo(() => {
+    if (!fullFields?.length) return fields
+    return fields.map(f => {
+      const truncated = (f.config as Record<string, unknown> | undefined)?.options_truncated === true
+      if (!truncated) return f
+      return fullFields.find(x => String(x.id) === String(f.id)) ?? f
+    })
+  }, [fields, fullFields])
+
   // ── 编辑对话框「最新数据」同步 ──
   // fields 常因保存后父层异步 refetch 才更新：若在该窗口内点开编辑，或对话框已打开时才回流，
   // 旧实现只在点击编辑那一刻回填一次（快照），会导致对话框停留在旧配置、需再点一次编辑才对。
@@ -50,8 +68,8 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
 
   /** 编辑目标始终以 fields 里的最新版本为准（找不到时回退到点击时的快照） */
   const liveEditTarget = useMemo(
-    () => (editTarget ? fields.find(f => String(f.id) === String(editTarget.id)) ?? editTarget : null),
-    [editTarget, fields],
+    () => (editTarget ? editFields.find(f => String(f.id) === String(editTarget.id)) ?? editTarget : null),
+    [editTarget, editFields],
   )
 
   /** 组装编辑用 config。关联字段的 reference_fields 为空（缺失或空数组，种子/历史数据
@@ -66,7 +84,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     const storedRefs = cfg.reference_fields
     const hasRefs = Array.isArray(storedRefs) && storedRefs.length > 0
     if (f.field_type === 'link' && !hasRefs) {
-      const derived = fields
+      const derived = editFields
         .filter(l => l.field_type === 'lookup' && String(l.config?.via_link_field_id) === String(f.id))
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
         .map(l => l.config?.source_field_id)
@@ -102,6 +120,10 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   // 而跳过回填，「引用字段」区就会停在打开时的空态，表现为「首次进入编辑页面无法同步」。
   useEffect(() => {
     if (!innerOpen || !liveEditTarget) return
+    // options 被截断且全量还没到：先不回填，等 fullFields 到达后由本 effect 重新触发，
+    // 避免用截断配置覆盖表单、保存时丢掉后段选项（ADR 0046 D6）
+    const truncated = (liveEditTarget.config as Record<string, unknown> | undefined)?.options_truncated === true
+    if (truncated && fullFields === undefined) return
     const config = buildEditConfig(liveEditTarget)
     const sig = JSON.stringify({
       n: liveEditTarget.name, t: liveEditTarget.field_type, r: liveEditTarget.required,
@@ -111,7 +133,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     if (sig === seededSigRef.current || dirtyRef.current) return
     seededSigRef.current = sig
     seedEditForm(liveEditTarget, config)
-  }, [innerOpen, liveEditTarget, fields]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [innerOpen, liveEditTarget, editFields, fullFields]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── 从其他表引入对话框状态 ──
   const [importOpen, setImportOpen] = useState(false)

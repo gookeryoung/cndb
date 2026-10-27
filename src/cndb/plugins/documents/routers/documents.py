@@ -43,7 +43,7 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
-from cndb.core.errors import BadRequestError, CndbError, ConflictError, NotFoundError, PermissionDeniedError
+from cndb.core.errors import BadRequestError, CndbError, ConflictError, NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
@@ -62,7 +62,7 @@ from cndb.plugins.documents.schemas import (
 from cndb.plugins.llm.services import gateway as llm_gateway
 from cndb.plugins.llm.services.errors import LlmError
 from cndb.plugins.llm.services.gateway import LlmContext
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
 
 # 文档树缓存 TTL（秒）
 DOC_TREE_TTL_SECONDS = 10.0
@@ -110,9 +110,8 @@ def _require_member(db: Session, workspace_id: int, user: User) -> None:
     if ws is None:
         raise NotFoundError("工作区不存在")
     if get_member_role(user, ws, db) is None:
-        from cndb.core.errors import PermissionDeniedError
-
-        raise PermissionDeniedError("非工作区成员")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
+        raise_permission_denied(db, ws, user)
 
 
 # ── 文档 CRUD ──
@@ -432,7 +431,13 @@ def update_document_content(
     """
     mode = services.change_requests.resolve_write_mode(db, workspace_id, current_user)
     if mode == services.change_requests.WRITE_MODE_DENIED:
-        raise PermissionDeniedError("非工作区成员")
+        from cndb.plugins.workspaces.models import Workspace
+
+        ws = db.get(Workspace, workspace_id)
+        if ws is None:
+            raise NotFoundError("工作区不存在")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, current_user)
 
     if mode == services.change_requests.WRITE_MODE_CHANGE_REQUEST:
         cr = services.change_requests.create_request(

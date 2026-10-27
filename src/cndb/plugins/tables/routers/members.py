@@ -14,6 +14,7 @@ from cndb.plugins.tables.models import AuditLog, DataTable, TableMember
 from cndb.plugins.tables.schemas import MemberCreate, MemberOut, MemberUpdate, OwnerTransfer
 from cndb.plugins.tables.services.core.access import check_workspace_permission, get_table_or_404
 from cndb.plugins.workspaces.models import Role, WorkspaceMember, WorkspaceRole
+from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["table-members"])
 
@@ -41,9 +42,11 @@ def _require_table_admin(
         .first()
     )
     if wm is None:
-        raise HTTPException(status_code=403, detail="非工作区成员，无法操作表成员")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
+        raise_permission_denied(db, table.workspace, current_user)
     if wm.role != WorkspaceRole.OWNER:
-        raise HTTPException(status_code=403, detail="仅表所有者或工作区所有者可执行此操作")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, table.workspace, current_user, requirement="仅表所有者或工作区所有者可执行此操作")
 
 
 def _assert_workspace_member(workspace_id: int, user_id: int, db: Session) -> None:
@@ -117,6 +120,8 @@ def _invalidate_table_list_cache(workspace_id: int) -> None:
     from cndb.core.cache import cache_key, list_cache
 
     list_cache.clear(cache_key("tables", workspace_id))
+    # 成员数变化也影响工作区详情统计（ADR 0046 D5）
+    list_cache.clear(cache_key("workspace-stats", workspace_id))
 
 
 @router.get("/members", response_model=list[MemberOut])
@@ -287,7 +292,8 @@ def transfer_owner(
     )
     ws_role = ws.role if ws else None
     if not is_owner and ws_role != WorkspaceRole.OWNER:
-        raise HTTPException(status_code=403, detail="仅表所有者或工作区所有者可转让所有权")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, table.workspace, current_user, requirement="仅表所有者或工作区所有者可转让所有权")
 
     # 目标必须是工作区成员
     _assert_workspace_member(workspace_id, payload.user_id, db)

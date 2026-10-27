@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -23,6 +23,7 @@ from cndb.plugins.issues import services
 from cndb.plugins.issues.schemas import IssueCommentCreate, IssueCreate
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/issues", tags=["issues"])
 
@@ -115,7 +116,8 @@ def _transition(
     issue = services.get_issue_or_404(db, table, issue_id)
     role = services.require_issue_actor_role(db, table, current_user)
     if not services.can_manage_issue(issue, current_user, role):
-        raise HTTPException(status_code=403, detail="仅 owner/editor 或创建者可操作")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, table.workspace, current_user, requirement="仅 owner/editor 或创建者可操作")
     if action == "close":
         return services.get_issue_detail(db, services.close_issue(db, issue, current_user))
     return services.get_issue_detail(db, services.reopen_issue(db, issue, current_user))

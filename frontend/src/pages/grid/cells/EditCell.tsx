@@ -72,6 +72,23 @@ export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, s
   })
   const labelField = isLink ? pickLinkLabelFieldName(targetFields ?? []) : null
 
+  // 单选/多选：表详情默认只带前 500 项 options（ADR 0046 D6），
+  // 编辑时必须拿全量，否则后段选项无法录入/无法保留原值标签
+  const optionsTruncated = Boolean((field.config as Record<string, unknown> | undefined)?.options_truncated)
+  const { data: fullFields } = useQuery({
+    queryKey: ['fields-full', String(wid), String(tableId)],
+    queryFn: () => fieldApi.list(wid!, tableId!, false, true),
+    enabled: optionsTruncated && !!wid && !!tableId,
+    staleTime: 60_000,
+  })
+  const fullFieldConfig = optionsTruncated
+    ? fullFields?.find(f => String(f.id) === String(field.id))?.config
+    : undefined
+  const effectiveOptions = (fullFieldConfig?.options ?? field.config?.options) as
+    | string[]
+    | Array<{ label: string; value: string }>
+    | undefined
+
   switch (ft) {
     case 'text':
     case 'email':
@@ -166,7 +183,7 @@ export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, s
       )
     }
     case 'select': {
-      const options = ((field.config?.options as string[] | Array<{ label: string; value: string }>) || []).map(o => {
+      const options = (effectiveOptions || []).map(o => {
         if (typeof o === 'string') return { value: o, label: o }
         return { value: String(o.value ?? o.label), label: String(o.label ?? o.value) }
       })
@@ -189,7 +206,7 @@ export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, s
     }
     case 'multi_select':
     case 'multiselect': {
-      const options = ((field.config?.options as string[] | Array<{ label: string; value: string }>) || []).map(o => {
+      const options = (effectiveOptions || []).map(o => {
         if (typeof o === 'string') return { value: o, label: o }
         return { value: String(o.value ?? o.label), label: String(o.label ?? o.value) }
       })

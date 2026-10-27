@@ -194,21 +194,28 @@ export function getTagColorName(value: string | number): string {
  *    （稳定可复现：同一选项在单选/多选/看板中颜色恒定，编辑字段对话框可复现同一色）；
  *    未命中任何选项时才回退调用方传入的 index（如多选单元格内的值序号）.
  *
+ * **options 被截断时**（字段配置带 `options_truncated`，见 ADR 0046 D6）：
+ * 位置已不可靠，路径 1 跳过、路径 3 改为「值稳定哈希」（同值同色、跨页面恒定），
+ * 调色板等级仍按 `options_total` 决定。
+ *
  * @param value 单元格显示值（label 文本）
  * @param options 字段配置中的选项列表（可以是 string[] 或 {label, value, color}[]）
  * @param index 未命中 options 时的 fallback 序号（fallback 调色板循环用）
+ * @param layout 截断信息（`truncated` / `total`），用于哈希 fallback
  */
 export function resolveTagColor(
   value: string | number,
   options?: unknown,
   index: number = 0,
+  layout?: { truncated?: boolean; total?: number },
 ): string {
   const key = String(value).trim()
   if (!key) return 'default'
+  const truncated = Boolean(layout?.truncated)
 
-  // 路径 1: 从 options 中查已存 color，同时记录命中位置
+  // 路径 1: 从 options 中查已存 color，同时记录命中位置（截断时位置不可靠，跳过）
   let matchedPos: number | null = null
-  if (Array.isArray(options)) {
+  if (!truncated && Array.isArray(options)) {
     for (let pos = 0; pos < options.length; pos++) {
       const opt = options[pos]
       if (typeof opt === 'string') {
@@ -232,10 +239,14 @@ export function resolveTagColor(
   const semantic = suggestColorForLabel(key)
   if (semantic) return semantic
 
-  // 路径 3: 按 options 总数挑选分级调色板做 fallback
-  const paletteSize = Array.isArray(options) ? options.length : 0
+  // 路径 3: 分级调色板 fallback
+  const paletteSize = truncated
+    ? (layout?.total ?? 0)
+    : (Array.isArray(options) ? options.length : 0)
   const palette = pickPalette(paletteSize)
-  return palette[(matchedPos ?? index) % palette.length]
+  // 截断字段：用值哈希取色（位置未知但同值同色）；否则沿用命中位置 / 调用方序号
+  const slot = truncated ? hashString(key) : (matchedPos ?? index)
+  return palette[slot % palette.length]
 }
 
 /** 为一组选项 label 批量生成推荐颜色（与后端 ``smart_color.suggest_colors`` 对齐）.

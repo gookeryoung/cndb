@@ -21,6 +21,7 @@ import { resolveOpts, WBS_OPTIONS, resolveAutoField, findOptionSchema } from '..
 import { formatFieldDisplayValue, getSelectLabel } from '../cells/fieldValueFormat'
 import { pickPaletteColor } from '@/utils/paletteColor'
 import { WEIGHT } from '@/theme/tokens'
+import { useRowBatch, ViewBatchFooter } from './rowBatch'
 
 // ── 类型定义 ──────────────────────────────────────────
 
@@ -258,6 +259,9 @@ export default function WbsView({
   )
   const ds = densityStyle(density)
 
+  // 分批挂载（ADR 0046 D7）：同树视图，全量挂载 2000 行节点会明显卡顿
+  const { visibleRows, remaining, total, loadMore } = useRowBatch(rows)
+
   // 从配置拿字段名；缺失则自动推断
   const parentField = opts.parent_field as string | undefined
   const titleField = useMemo(() => {
@@ -278,9 +282,9 @@ export default function WbsView({
   const { roots, totalNodeCount } = useMemo(
     () => {
       if (!parentField) return { roots: [] as WbsNode[], totalNodeCount: 0 }
-      return buildTree(rows, parentField, progressField)
+      return buildTree(visibleRows, parentField, progressField)
     },
-    [rows, parentField, progressField],
+    [visibleRows, parentField, progressField],
   )
 
   // 收集所有节点 ID（expandAll 用）
@@ -582,6 +586,7 @@ export default function WbsView({
         }}
       >
         {allRows}
+        <ViewBatchFooter remaining={remaining} total={total} onLoadMore={loadMore} fontSize={ds.metaFontSize} />
       </div>
     </div>
   )

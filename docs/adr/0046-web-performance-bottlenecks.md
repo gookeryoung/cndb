@@ -1,6 +1,6 @@
 # ADR 0046: 网页性能瓶颈识别与读路径优化（大表页面切换卡滞）
 
-Status: Proposed（待评审）
+Status: Accepted（需求方已确认卡片与方案，P0-P2 已落地）
 Date: 2026-10-27
 Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/datasource/services/write.py`、`frontend/src/api/records.ts`、`frontend/src/pages/grid/useGridData.ts`、`frontend/src/pages/workspace/TablesList.tsx`、`frontend/src/utils/tagColors.ts`
 需求卡片: `docs/requirements/0046-web-performance-bottlenecks.md`（需求原文与约束编号的唯一副本）
@@ -91,9 +91,9 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 | 层 | 文件 | 改动 |
 |---|---|---|
 | 字段编辑 / 视图筛选下拉 | `frontend/src/pages/fields/FieldManager.tsx`、`frontend/src/pages/grid/view-config/ViewConfigDialog.tsx`、`grid/cells/buildColumns.tsx`（ColumnFilterDropdown） | 需要 options 全量的入口改调 `fields?full=1` |
-| 单元格调色 | `frontend/src/utils/tagColors.ts`、`grid/cells/DisplayCell.tsx` | `options_truncated` 时 fallback 由「选项位置」改为「值稳定哈希」调色（新增 `hashTagColor`，仅截断字段使用） |
+| 单元格调色 | `frontend/src/utils/tagColors.ts`、`grid/cells/DisplayCell.tsx` | `options_truncated` 时 fallback 由「选项位置」改为「值稳定哈希」（`resolveTagColor` 的 `layout.truncated` 分支） |
 | 网格数据 | `frontend/src/api/records.ts`、`pages/grid/useGridData.ts` | 无改动（缓存为端点内行为；翻页计数已由后端分离缓存加速） |
-| 非 grid 视图 | `pages/grid/views/*` | P2 审计：未分批的视图（tree / gantt / matrix 等）按 gallery 模式（48/批 + 加载更多）补分批渲染 |
+| 非 grid 视图 | `pages/grid/views/*` | 树 / WBS / 流程按 200 行/批分批挂载 +「加载更多」（`rowBatch.tsx`）；甘特已有行虚拟化，无需改；矩阵 / 日历 / 图表为聚合视图（计数来自全量行），不分批 |
 
 ### 7. 测试清单
 
@@ -121,7 +121,7 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 |---|---|---|
 | **P0** | GET /records 读缓存 + 计数分离缓存 + `ensure_sort_index`（视图保存 / 首查两入口）+ 工作区统计 UNION ALL 化与缓存 | 低（缓存与索引均为只读加速，事件失效机制已有） |
 | **P1** | options 截断 + `fields?full=1` + 前端哈希调色与全量拉取改造 | 中（颜色口径变化 D6、下拉入口需逐一核对） |
-| **P2** | 非 grid 视图分批渲染审计补齐；深分页保护（offset 上限提示或 keyset 游标，按 P0 落地后实测决定是否需要） | 中 |
+| **P2** | 非 grid 视图分批渲染（树 / WBS / 流程）+ 深分页上限（`MAX_RECORD_OFFSET = 100_000`） | 低-中（分批不改变聚合口径，已在 D7 / D8 声明） |
 
 验收指标（本地 SQLite、4.29M 行股市日线表、dev 服务实测口径）：
 
@@ -143,8 +143,8 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 | D4 | 默认视图排序无法命中索引 | 新增 `ensure_sort_index`：按视图 sortings 的「字段+方向」建索引（尾补 id ASC），视图保存与列表首查两入口惰性建，每表上限 3 | 实测补方向匹配索引后排序 486ms → ~0ms；match 索引是同步幂等键专用（全 ASC），不应复用 | 修 `ensure_match_keys_index` 支持方向（幂等键语义与视图排序耦合，污染数据源链路）；每次请求 EXPLAIN 探测（请求路径做 DDL 探测过重） | `services/core/ddl.py`、`routers/views.py`、`routers/records.py` |
 | D5 | 工作区详情 240ms | total_rows 改 UNION ALL 单语句 + 统计块挂 30s `list_cache`（table./record./datasource. 事件失效） | `_batch_record_counts` 已验证 UNION ALL 可行（173ms → 4.5ms 缓存命中）；逐表 `Table(autoload_with=...)` 反射是纯浪费 | 读 `workspaces_storage_snapshot`（快照是字节数，无行数口径，ADR 0024 不覆盖） | `workspaces/routers/workspaces.py` |
 | D6 | 7,289 选项 ≈ 450KB 载荷 | 展示序列化 options > 500 截断 + `options_truncated/options_total` 标志；`fields?full=1` 供编辑 / 筛选用全量；截断字段 Tag 颜色 fallback 改「值稳定哈希」 | 414KB 表详情每次挂载传输 + 解析；选项全集 = 标的清单属目录数据，展示不需要 | 按值前缀分片加载（复杂度高收益有限）；options 全量保留仅压缩 gzip（414KB 压后仍 ~100KB 且解析成本不变） | `routers/tables.py`、`routers/fields.py`、`utils/tagColors.ts` |
-| D7 | 非 grid 视图 2000 行 | P2 审计分批渲染（gallery 已 48/批为范式），不在 P0 扩动 | 0.31s + 839KB 是次级瓶颈（非默认路径）；先治主路径再评估 | 立即下调 VIEW_FETCH_ALL_LIMIT（改变既有视图数据语义，需逐视图评估） | `pages/grid/views/*` |
-| D8 | 深分页 4.44s | P0 排序索引落地后实测残余耗时，再决定 keyset 游标或 offset 上限提示（P2） | 深分页是低频操作（跳到第 8 万页）；keyset 需改前端分页模型，代价大 | 直接 keyset（AntD 分页是 offset 模型，改造面大，先验证必要性） | 待 P2 |
+| D7 | 非 grid 视图 2000 行 | 逐个视图审计：树 / WBS / 流程改为 200 行/批 +「加载更多」；甘特已有行虚拟化；矩阵 / 日历 / 图表是**聚合**视图（卡片数 / 计数徽章来自全量行）不分批，否则计数失真 | 0.31s + 839KB 是次级瓶颈（非默认路径）；分批只应作用在「逐行挂载 DOM」的视图，聚合视图的分批会改变口径 | 立即下调 VIEW_FETCH_ALL_LIMIT（改变既有视图数据语义，需逐视图评估）；给聚合视图也加批次（计数徽章与列总计会随批次变化，违反 I2） | `pages/grid/views/rowBatch.tsx`、`TreeView.tsx`、`WbsView.tsx`、`FlowView.tsx` |
+| D8 | 深分页 4.44s | P0 排序索引落地后复测仍 2.9s（4M 偏移），采用 **OFFSET 上限 100,000 + 400 可操作提示**（`MAX_RECORD_OFFSET`）；不做 keyset | 复测：offset 5 万 0.45s、50 万 0.94s、400 万 2.9s，仍是线性扫描；10 万偏移 = 每页 100 行时第 1000 页，覆盖正常浏览 | 直接 keyset（AntD 分页是 offset 模型，改造面大且 deep link 不兼容）；纯前端限制（API 仍可被深翻页拖垮） | `routers/records.py`（`MAX_RECORD_OFFSET`） |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -173,16 +173,16 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
-| P1 | 未开始 | — | — | — |
-| P2 | 未开始 | — | — | — |
+| P0 | 已落地 | `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/services/core/record_counts.py`、`src/cndb/plugins/workspaces/services/stats_cache.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/core/events.py`（GET 读缓存 / 计数缓存 / 排序索引惰性建 / 统计 UNION ALL 与 30s 缓存 / 事件失效） | `tests/test_adr0046_read_path_perf.py` | 见本次提交 |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/field_serialization.py`、`src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py`、`frontend/src/utils/tagColors.ts`、`frontend/src/pages/grid/cells/DisplayCell.tsx`、`frontend/src/pages/grid/layout/ColumnFilterDropdown.tsx`、`frontend/src/pages/grid/cells/EditCell.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.tsx`、`frontend/src/pages/fields/FieldManager/index.tsx`（options 截断 + fields-full 全量通道 + 值哈希调色） | `tests/test_adr0046_options_truncation.py`、`frontend/src/utils/tagColors.test.ts` | 见本次提交 |
+| P2 | 已落地 | `frontend/src/pages/grid/views/rowBatch.tsx`、`frontend/src/pages/grid/views/TreeView.tsx`、`frontend/src/pages/grid/views/WbsView.tsx`、`frontend/src/pages/grid/views/FlowView.tsx`、`src/cndb/plugins/tables/routers/records.py`（200 行/批 + 深分页上限） | `frontend/src/pages/grid/views/rowBatch.test.tsx`、`tests/test_adr0046_read_path_perf.py` | 见本次提交 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案制定完成，等待人工评审（卡片确认 + ADR 评审两个卡点）
-- 已完成：瓶颈实测（见 Context 表，2026-10-27 本地 4.29M 行股市日线表）、需求卡片 `docs/requirements/0046-web-performance-bottlenecks.md`、本 ADR
-- 下一步：人工确认卡片「未决问题」3 项（验收阈值 / options 截断 / 排序索引写放大）→ 评审通过后 Status 改 `Accepted` → 交 `implementer` 按 P0 → P1 → P2 落地
-- 已知坑：dev 服务（Vite + uvicorn --reload）本身放大前端卡滞，复测指标须固定同一环境；惰性建索引首查有 ~2s 一次性阻塞，落地时在视图保存 / seed 预建；`GET /records` 缓存 key 须含 engine 身份与 user_id（沿用 POST 实现）
-- 最近一次全绿：`make check-docs` @ 本提交（2026-10-27）
+- 当前阶段：P0-P2 全部落地，等待人工终验（复测指标 + 是否改 `Implemented`）
+- 已完成：瓶颈实测（Context 表，2026-10-27 本地 4.29M 行股市日线表）、需求卡片、本 ADR、P0/P1/P2 代码与测试
+- 下一步：在真实大库复测「分期」表指标（网格冷请求 / 复访 / 翻页 / 目录页 / 表详情体积），确认后由人决定 Status → `Implemented`；如需更深的翻页体验再单独立项 keyset（本 ADR D8 已否决按现状）
+- 已知坑：dev 服务（Vite + uvicorn --reload）放大前端卡滞，复测须固定同一环境；排序索引首查有一次性建索引耗时（4.29M 行 ~2s），生产建议在视图保存 / seed 预建；`GET /records` 缓存 key 含 engine 身份与 user_id（行级权限按人隔离）；options 截断字段的 Tag 颜色改用值哈希，颜色与历史渲染不完全一致（D6 已声明）
+- 最近一次全绿：`make flow` + `make cov` + 前端覆盖率 + `make e2e` @ 2026-10-27（详见提交记录）

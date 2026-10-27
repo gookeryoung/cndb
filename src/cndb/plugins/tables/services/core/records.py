@@ -445,40 +445,32 @@ def _build_row_write_scope_where(
     return row_edit_scope_where(db, table, sa_table, user)
 
 
-def list_rows(
-    engine: Any,
+@dataclass(slots=True)
+class _QueryPlan:
+    """列表 / 计数共用的查询计划（ADR 0046 D3：计数与行数据走同一处 WHERE 构建）."""
+
+    sa_table: Any
+    final_where: list[Any]
+    #: 含 lookup 过滤或 lookup 排序时必须在 attach 之后内存求值
+    needs_post: bool
+    lk_filters: list[dict[str, Any]]
+    lk_sorts: list[dict[str, str]]
+
+
+def _build_query_plan(
     table: DataTable,
+    sa_table: Any,
     *,
-    filters: list[dict[str, Any]] | None = None,
-    filter_logic: str = "AND",
-    sorts: list[dict[str, str]] | None = None,
-    limit: int | None = 100,
-    offset: int = 0,
-    include_trashed: bool = False,
-    db: Any = None,
-    user: Any = None,
-) -> tuple[list[dict[str, Any]], int]:
-    """列表查询，返回 (rows, total_count).
-
-    Args:
-        filters: 过滤条件列表，每项 {field_name, op, value}. op 见 query.py，
-            关联字段支持 is_null/has_any/has_all.
-        filter_logic: "AND" 或 "OR"，多条件组合方式.
-        sorts: 排序列表，每项 {field_name, direction}，direction="asc"|"desc".
-        limit / offset: 分页. limit=None 或 limit=0 表示不限制数量（谨慎使用）.
-        include_trashed: 是否包含软删除行.
-        db: 元数据库会话（提供时 link 字段输出目标行摘要，否则回退 "#id"）.
-        user: 当前用户（提供时按 TablePermission.hidden_fields 做字段隐藏）.
-    """
-    from cndb.plugins.tables.services.core.lookups import (
-        lookup_field_names,
-        match_row_filters,
-        sort_rows_in_memory,
-        split_lookup_filters,
-    )
-    from cndb.plugins.tables.services.core.query import compile_filters, compile_sorts
-
-    sa_table = _get_sa_table(engine, table)
+    filters: list[dict[str, Any]] | None,
+    filter_logic: str,
+    sorts: list[dict[str, str]] | None,
+    include_trashed: bool,
+    db: Any,
+    user: Any,
+) -> _QueryPlan:
+    """构建 trashed + 行级权限 + 业务过滤的 WHERE（list_rows 与 count_rows 唯一来源）."""
+    from cndb.plugins.tables.services.core.lookups import lookup_field_names, split_lookup_filters
+    from cndb.plugins.tables.services.core.query import compile_filters
 
     # lookup 条件拆分：含 lookup 的顶层项/嵌套分组改在 attach 后内存求值（无物理列）
     lk_names = lookup_field_names(table) if db is not None else set()
@@ -496,7 +488,6 @@ def list_rows(
         if lk_names
         else []
     )
-    needs_post = bool(lk_filters) or bool(lk_sorts)
 
     # 基础 where（trashed 条件始终与业务过滤 AND 组合）
     base_where: list[Any] = []
@@ -513,23 +504,122 @@ def list_rows(
     if sql_filters:
         business_where = compile_filters(table, sa_table, sql_filters, filter_logic)
 
-    # 构建 base query —— trashed AND 权限 AND 业务过滤
-    query = sa_table.select()
     final_where: list[Any] = list(base_where)
     if business_where is not None:
         final_where.append(business_where)
-    if final_where:
-        if len(final_where) == 1:
-            query = query.where(final_where[0])
+
+    return _QueryPlan(
+        sa_table=sa_table,
+        final_where=final_where,
+        needs_post=bool(lk_filters) or bool(lk_sorts),
+        lk_filters=lk_filters,
+        lk_sorts=lk_sorts,
+    )
+
+
+def count_rows(
+    engine: Any,
+    table: DataTable,
+    *,
+    filters: list[dict[str, Any]] | None = None,
+    filter_logic: str = "AND",
+    sorts: list[dict[str, str]] | None = None,
+    include_trashed: bool = False,
+    db: Any = None,
+    user: Any = None,
+) -> int | None:
+    """仅返回行数（与 :func:`list_rows` 的 total 同口径）.
+
+    含 lookup 过滤 / 排序时 SQL 计数不等于最终 total（须 attach 后内存求值），
+    此时返回 ``None``，由调用方回退到 ``list_rows`` 内部计数（ADR 0046 D3）。
+
+    Args:
+        filters / filter_logic / sorts / include_trashed / db / user: 同 :func:`list_rows`.
+    """
+    sa_table = _get_sa_table(engine, table)
+    plan = _build_query_plan(
+        table,
+        sa_table,
+        filters=filters,
+        filter_logic=filter_logic,
+        sorts=sorts,
+        include_trashed=include_trashed,
+        db=db,
+        user=user,
+    )
+    if plan.needs_post:
+        return None
+    count_query = select(func.count(sa_table.c.id))
+    if plan.final_where:
+        count_query = count_query.where(*plan.final_where)
+    with engine.connect() as conn:
+        return int(conn.execute(count_query).scalar() or 0)
+
+
+def list_rows(
+    engine: Any,
+    table: DataTable,
+    *,
+    filters: list[dict[str, Any]] | None = None,
+    filter_logic: str = "AND",
+    sorts: list[dict[str, str]] | None = None,
+    limit: int | None = 100,
+    offset: int = 0,
+    include_trashed: bool = False,
+    db: Any = None,
+    user: Any = None,
+    total: int | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """列表查询，返回 (rows, total_count).
+
+    Args:
+        filters: 过滤条件列表，每项 {field_name, op, value}. op 见 query.py，
+            关联字段支持 is_null/has_any/has_all.
+        filter_logic: "AND" 或 "OR"，多条件组合方式.
+        sorts: 排序列表，每项 {field_name, direction}，direction="asc"|"desc".
+        limit / offset: 分页. limit=None 或 limit=0 表示不限制数量（谨慎使用）.
+        include_trashed: 是否包含软删除行.
+        db: 元数据库会话（提供时 link 字段输出目标行摘要，否则回退 "#id"）.
+        user: 当前用户（提供时按 TablePermission.hidden_fields 做字段隐藏）.
+        total: 已算好的行数（ADR 0046 D3 计数缓存）；传入即跳过内部 COUNT.
+            含 lookup 过滤 / 排序时忽略该值，改由内存过滤结果修正.
+    """
+    from cndb.plugins.tables.services.core.lookups import (
+        match_row_filters,
+        sort_rows_in_memory,
+    )
+    from cndb.plugins.tables.services.core.query import compile_sorts
+
+    sa_table = _get_sa_table(engine, table)
+    plan = _build_query_plan(
+        table,
+        sa_table,
+        filters=filters,
+        filter_logic=filter_logic,
+        sorts=sorts,
+        include_trashed=include_trashed,
+        db=db,
+        user=user,
+    )
+    needs_post = plan.needs_post
+    lk_filters = plan.lk_filters
+    lk_sorts = plan.lk_sorts
+
+    # 构建 base query —— trashed AND 权限 AND 业务过滤
+    query = sa_table.select()
+    if plan.final_where:
+        if len(plan.final_where) == 1:
+            query = query.where(plan.final_where[0])
         else:
-            query = query.where(and_(*final_where))
+            query = query.where(and_(*plan.final_where))
 
     # total count（含 lookup 条件时由内存过滤后修正）
     with engine.connect() as conn:
-        count_query = select(func.count(sa_table.c.id))
-        if final_where:
-            count_query = count_query.where(*final_where)
-        total = conn.execute(count_query).scalar()
+        if not needs_post and total is None:
+            count_query = select(func.count(sa_table.c.id))
+            if plan.final_where:
+                count_query = count_query.where(*plan.final_where)
+            total = conn.execute(count_query).scalar()
 
         # 排序（含 lookup 排序时改为全量查询后内存排序）
         if sorts and not lk_sorts:
@@ -1141,17 +1231,21 @@ def bulk_update_rows(
 
 
 def _invalidate_search_cache(table: Any) -> None:
-    """批量写不逐行记 audit，主动失效该工作区的搜索结果缓存（best-effort）.
+    """批量写不逐行记 audit，主动失效该工作区的读缓存（best-effort）.
 
     单行 CRUD 走 ``log_action → record_event`` 已自动失效；批量导入 / 数据源同步
-    不写 audit，需要在这里补一次，否则只能等 TTL 过期（ADR 0015）。
+    不写 audit，需要在这里补一次（ADR 0015）。ADR 0046 起记录列表 / 计数 /
+    工作区统计缓存也挂在同一前缀下，一并失效，避免翻页读到旧行数。
     """
     try:
-        from cndb.core.cache import cache_key, search_cache
+        from cndb.core.cache import cache_key, list_cache, search_cache
 
         workspace_id = getattr(table, "workspace_id", None)
         if workspace_id is not None:
             search_cache.clear(cache_key("search", workspace_id))
+            list_cache.clear(cache_key("records", workspace_id))
+            list_cache.clear(cache_key("tables", workspace_id))
+            list_cache.clear(cache_key("workspace-stats", workspace_id))
     except Exception:  # pragma: no cover - 缓存失效失败不影响写入
         pass
 
@@ -1161,6 +1255,7 @@ __all__ = [
     "bulk_delete",
     "bulk_update",
     "bulk_update_rows",
+    "count_rows",
     "create_row",
     "delete_row",
     "find_rows_by_key",

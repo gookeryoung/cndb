@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -32,6 +32,7 @@ from cndb.plugins.change_requests.schemas import (
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
 from cndb.plugins.workspaces.models import WorkspaceRole
+from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/change-requests", tags=["change_requests"])
 
@@ -162,7 +163,8 @@ def _transition(
     elif action == "reopen":
         role = services.require_reviewer_role(db, table, current_user)
         if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
-            raise HTTPException(status_code=403, detail="仅 owner/editor 可重开")
+            # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+            raise_permission_denied(db, table.workspace, current_user, requirement="仅 owner/editor 可重开")
         cr = services.reopen_request(db, cr, current_user)
     else:  # update-base
         cr = services.update_base(db, cr, table, current_user)

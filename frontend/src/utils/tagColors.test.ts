@@ -167,6 +167,50 @@ describe('resolveTagColor fallback 位置稳定化', () => {
   })
 })
 
+describe('resolveTagColor options 截断（ADR 0046 D6）', () => {
+  const truncatedOpts = ['玄学词A', '玄学词B']  // 截断后只保留前 500 项的一小片
+  const FULL = ['blue', 'green', 'orange', 'purple', 'red', 'cyan', 'gold', 'magenta', 'yellow', 'volcano', 'geekblue', 'lime', 'pink']
+  const CORE = ['blue', 'green', 'orange', 'purple', 'red']
+
+  it('截断时同值同色，且与调用方 index 无关', () => {
+    const layout = { truncated: true, total: 7289 }
+    expect(resolveTagColor('玄学词A', truncatedOpts, 0, layout))
+      .toBe(resolveTagColor('玄学词A', truncatedOpts, 7, layout))
+    expect(resolveTagColor('玄学词B', truncatedOpts, 0, layout))
+      .toBe(resolveTagColor('玄学词B', [], 3, layout))
+  })
+
+  it('截断时不再依赖选项在数组中的位置', () => {
+    const layout = { truncated: true, total: 7289 }
+    const reversed = [...truncatedOpts].reverse()
+    expect(resolveTagColor('玄学词A', truncatedOpts, 0, layout))
+      .toBe(resolveTagColor('玄学词A', reversed, 0, layout))
+  })
+
+  it('截断时调色板等级按 options_total 决定', () => {
+    // total 7289 > 13 → 完整 13 色板
+    expect(FULL).toContain(resolveTagColor('玄学词X', [], 0, { truncated: true, total: 7289 }))
+    // total 3 ≤ 5 → 核心 5 色板
+    expect(CORE).toContain(resolveTagColor('玄学词X', [], 0, { truncated: true, total: 3 }))
+  })
+
+  it('截断时已存 color 不再命中（路径 1 跳过）', () => {
+    const withColor = [{ label: '玄学词A', color: 'purple' }]
+    // 截断后本就不该依赖 options 里可能漏掉的项，只会走语义/哈希
+    expect(resolveTagColor('玄学词A', withColor, 0, { truncated: true, total: 600 })).not.toBe('purple')
+  })
+
+  it('语义命中的值截断与否同色（截断不改变语义路径）', () => {
+    expect(resolveTagColor('紧急', truncatedOpts, 0, { truncated: true, total: 600 })).toBe('red')
+  })
+
+  it('未截断字段的取色完全不变', () => {
+    const opts3 = ['玄学词A', '玄学词B', '玄学词C']
+    expect(resolveTagColor('玄学词B', opts3, 9)).toBe('green')
+    expect(resolveTagColor('玄学词A', opts3, 0, { truncated: false })).toBe('blue')
+  })
+})
+
 describe('suggestColorsForLabels 列表级批量推荐', () => {
   it('空列表返回空数组', () => {
     expect(suggestColorsForLabels([])).toEqual([])

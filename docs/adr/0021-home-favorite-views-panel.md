@@ -72,14 +72,18 @@ Related: `frontend/src/pages/workspace/WorkspaceList.tsx`, `frontend/src/pages/g
 ```python
 MAX_FAVORITE_VIEWS = 50
 
+
 def normalize_ids(raw: list[Any]) -> list[int]:
     """去重、保序、丢弃非正整数。"""
+
 
 def set_favorite_views(db, user, view_ids: list[Any]) -> list[int]:
     """全量替换收藏；校验可见 + 表可读 + 表未软删，静默丢弃无效 id；超上限 400。"""
 
+
 def load_favorite_view_summaries(db, user) -> list[dict]:
     """按收藏顺序返回摘要；读取时剪枝失效 id 并回写 preferences。"""
+
 
 def set_workspace_order(db, user, workspace_ids: list[Any]) -> list[int]:
     """全量替换；仅保留当前用户为成员的工作区 id。"""
