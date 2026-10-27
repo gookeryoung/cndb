@@ -147,14 +147,14 @@ Related: `src/cndb/plugins/documents/services/importers/`、`src/cndb/plugins/do
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `src/cndb/plugins/documents/services/importers/{mhtml,html,reader}.py` | `tests/test_documents_file_import_convert.py` | — |
-| P1 | 未开始 | `src/cndb/plugins/documents/services/importers/importer.py` | `tests/test_documents_file_import_api.py` | — |
-| P2 | 未开始 | `frontend/src/api/documents.ts`、`frontend/src/pages/documents/DocumentImportModal.tsx` | 前端既有导入弹窗单测 | — |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/importers/mhtml.py`、`src/cndb/plugins/documents/services/importers/html.py`、`src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/formats.py` | `tests/test_documents_file_import_convert.py` | `5b563bea` |
+| P1 | 已落地 | `src/cndb/plugins/documents/services/importers/importer.py` | `tests/test_documents_file_import_api.py` | `4e9fed9f` |
+| P2 | 已落地 | `frontend/src/api/documents.ts`、`frontend/src/pages/documents/DocumentImportModal.tsx`、`src/cndb/plugins/documents/routers/file_import.py`、`CHANGELOG.md` | `frontend/src/pages/documents/DocumentImportModal.test.tsx` | `6878197e` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0（解析器 + 分派实现中）
-- 已完成：需求卡片与 ADR（用户 2026-10-27 确认全部未决问题并授权实施）
-- 下一步：P0 → P1 → P2 逐期实现，每期 `make check-fast` → `make test`
-- 已知坑：`docs/adr/0048` 存量 `adr-check` 报 Related 花括号路径错误，与本期无关
-- 最近一次全绿：待本期实现后回填
+- 当前阶段：P0-P2 全部落地（2026-10-27）
+- 已完成：需求卡片与 ADR（用户确认全部未决问题）→ P0 解析器 + reader 分派（提交 `5b563bea`）→ P1 关态 `_assets` 展开 + 接口测试（`4e9fed9f`）→ P2 前端入口与 CHANGELOG（`6878197e`）
+- 下一步：无（后续如需扩展：MHTML 目录层级展开、非图片素材保留，先改本 ADR）
+- 已知坑：① 转换器对 QP 编码仅承诺 HTML 文本 part 保真，二进制 QP 素材不承诺字节级还原（边界 8，现实生产者对图片一律 base64）；② OFF 态 `conflict=skip` 时 MHTML 被跳过但其素材仍会落为图片文档（预扫描先于冲突判定，D4 口径，量级小可接受）；③ `docs/adr/0048` 存量 `adr-check` 报 Related 花括号路径错误，与本期无关
+- 最近一次全绿：2026-10-27 `make check-fast` 全绿、148 项导入测试（112 转换层 + 36 接口层）通过

@@ -50,6 +50,7 @@
 | [0046](0046-web-performance-bottlenecks.md) | 网页性能瓶颈识别与读路径优化（大表页面切换卡滞） | Accepted | P0-P2 已落地 | `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/workspaces/services/stats_cache.py`、`frontend/src/pages/grid/views/rowBatch.tsx` | `tests/test_adr0046_read_path_perf.py`、`tests/test_adr0046_options_truncation.py`、`frontend/src/pages/grid/views/rowBatch.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0047](0047-permission-denied-message.md) | 权限不足错误提示增强（角色 + 拥有者联系指引） | Accepted | P0-P1 已落地；P2 未开始 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/tables/services/core/view_access.py` | `tests/test_permission_denied_message.py` | [未发布](../../CHANGELOG.md) |
 | [0048](0048-document-chart-templates.md) | 文档可视化图形（类别 → 图形模板 → 用户图表实例） | Accepted | 进行中（P0 后端地基） | — | — | — |
+| [0049](0049-mhtml-import.md) | MHTML 导入（内嵌素材入库，图片不丢失） | Accepted | P0-P2 已落地 | `src/cndb/plugins/documents/services/importers/mhtml.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`frontend/src/api/documents.ts` | `tests/test_documents_file_import_convert.py`、`tests/test_documents_file_import_api.py` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 
