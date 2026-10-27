@@ -13,7 +13,7 @@ import {
   RobotOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { tableApi, workspaceApi } from '@/api'
+import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
 import GlobalSearch from '@/components/GlobalSearch'
 import { useAuthStore, useUiStore } from '@/store'
@@ -108,6 +108,14 @@ export default function MainLayout() {
   const { data: workspaces = [], isLoading: wsLoading } = useQuery({
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
+  })
+
+  // 顶栏版本小字 —— 与「关于系统」弹窗共用缓存；版本是非关键信息，失败静默不重试
+  const { data: systemAbout } = useQuery({
+    queryKey: ['system-about'],
+    queryFn: systemApi.about,
+    staleTime: 60_000,
+    retry: false,
   })
 
   const currentWs = workspaces.find(w => String(w.id) === wid)
@@ -416,7 +424,18 @@ export default function MainLayout() {
               c
             </span>
             {!isMobile && (
-              <span className="cn-brand-word">cndb</span>
+              <>
+                <span className="cn-brand-word">cndb</span>
+                {systemAbout?.app_version && (
+                  <span
+                    className="cn-brand-version"
+                    data-testid="app-version"
+                    title={`应用版本 v${systemAbout.app_version}`}
+                  >
+                    v{systemAbout.app_version}
+                  </span>
+                )}
+              </>
             )}
           </div>
         </Tooltip>

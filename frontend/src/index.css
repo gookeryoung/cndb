@@ -3435,6 +3435,16 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-primary);
 }
 
+/* 顶栏版本小字：跟随品牌字右侧，只做次要信息呈现，不继承品牌字字重 / 负字距 */
+.cn-brand-version {
+  font-size: var(--cn-text-xs);
+  font-weight: var(--cn-weight-regular);
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--cn-text-secondary);
+  white-space: nowrap;
+}
+
 @keyframes cn-rise-in {
   from {
     opacity: 0;

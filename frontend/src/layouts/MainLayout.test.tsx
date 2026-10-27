@@ -266,6 +266,39 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.getByText('服务器时间')).toBeInTheDocument()
         expect(screen.queryByText('database_url')).toBeNull()
     })
+
+    it('桌面端品牌字右侧显示应用版本小字', async () => {
+        renderLayout(mockUser)
+
+        // 版本与「关于系统」共用 msw 的 /system/about（app_version 0.3.0）
+        const version = await screen.findByTestId('app-version')
+        expect(version).toHaveTextContent('v0.3.0')
+        expect(version).toHaveAttribute('title', '应用版本 v0.3.0')
+        expect(version).toHaveClass('cn-brand-version')
+
+        // 位置约束：在 home-logo 内、品牌字 cndb 之后
+        const logo = screen.getByTestId('home-logo')
+        expect(logo).toContainElement(version)
+        const brandWord = logo.querySelector('.cn-brand-word')
+        expect(brandWord).not.toBeNull()
+        expect(brandWord!.compareDocumentPosition(version) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('版本接口失败时静默不渲染版本小字，顶栏其余功能不受影响', async () => {
+        server.use(
+            http.get('/api/v1/system/about', () => new HttpResponse(null, { status: 500 })),
+        )
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
+        })
+        // 非关键信息：不占位、不弹错，页面照常可用
+        await waitFor(() => {
+            expect(screen.queryByTestId('app-version')).toBeNull()
+        })
+        expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+    })
 })
 
 describe('MainLayout 大模型入口', () => {
@@ -562,8 +595,9 @@ describe('MainLayout 移动端适配', () => {
         await waitFor(() => {
             expect(screen.getByTestId('mobile-nav-btn')).toBeVisible()
         })
-        // 品牌文字隐藏（icon 仍渲染）
+        // 品牌文字隐藏（icon 仍渲染），版本小字随品牌字一起隐藏
         expect(screen.queryByText('cndb')).toBeNull()
+        expect(screen.queryByTestId('app-version')).toBeNull()
         // 工作区下拉仅图标：按钮内无「测试工作区」文字
         expect(screen.queryByRole('button', { name: /测试工作区/ })).toBeNull()
     })
