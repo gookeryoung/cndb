@@ -19,6 +19,8 @@ export default defineConfig({
   reporter: [
     ["list"],
     ["./tests/e2e/reporters/slow-test.ts"],
+    // CI 失败时上传的可读报告；outputFolder 与 workflow 的 artifact 路径保持一致
+    ["html", { outputFolder: "playwright-report", open: "never" }],
   ],
 
   // 一键起后端：.e2e-data 隔离 + seed + 起 :8000（E2E_PORT 可换端口）。reuseExistingServer

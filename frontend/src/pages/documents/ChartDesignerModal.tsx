@@ -354,6 +354,7 @@ export default function ChartDesignerModal({
 
       {template && config && (
         <div
+          data-testid="chart-designer-body"
           style={{
             display: 'flex',
             flexDirection: isMobile ? 'column' : 'row',

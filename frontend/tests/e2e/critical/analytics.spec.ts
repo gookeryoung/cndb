@@ -9,6 +9,7 @@
  */
 
 import { test, expect } from "../fixtures/auth"
+import fs from "node:fs"
 import type { APIRequestContext } from "@playwright/test"
 import { getAdminToken } from "../helpers/api"
 
@@ -129,7 +130,11 @@ test.describe("数据分析模块", () => {
       page.waitForEvent("download"),
       page.getByTestId("analytics-export-summary").click(),
     ])
-    expect(download.suggestedFilename()).toContain(".csv")
+    // 文件名由前端 anchor download 指定（含中文），Chromium 对非 ASCII blob 文件名
+    // 的 suggestedFilename 不稳定（可能回落为 "download"），以导出内容为准则。
+    const csv = fs.readFileSync(await download.path(), "utf-8")
+    expect(csv).toContain("产品类别")
+    expect(csv.split(/\r?\n/)[0]).toContain("平均合格率(%)")
   })
 
   test("图表聚合方式：切到柱状图后可选择「平均」并运行", async ({ page, request }) => {

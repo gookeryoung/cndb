@@ -4,6 +4,7 @@
  * → 典型示例清单渲染并下载 CSV → 窄屏目录抽屉可用。
  */
 import { test, expect } from "../fixtures/auth";
+import fs from "node:fs";
 
 const ANON = ["setup", "chromium-anon"];
 
@@ -66,7 +67,12 @@ test.describe("帮助文档整页", () => {
     const downloadPromise = page.waitForEvent("download");
     await page.getByTestId("help-example-download-电商销售.csv").click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe("电商销售.csv");
+    // Chromium 145 会把非 ASCII 的 download 文件名回落为 "download"，
+    // 文件名断言交给 ExamplesSection 单测，这里以导出内容为准。
+    const csv = fs.readFileSync(await download.path(), "utf-8");
+    expect(csv.replace(/^\uFEFF/, "").split("\n")[0]).toBe(
+      "订单号,用户ID,商品类别,单价,数量,支付方式,评分,销售额,日期",
+    );
 
     await page.getByRole("menuitem", { name: "视图类型", exact: true }).click();
     await expect(page).toHaveURL(/\/help\/tutorials\/view-types$/);

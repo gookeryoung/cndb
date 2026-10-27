@@ -114,10 +114,11 @@ test.describe("文档图表嵌入", () => {
       const preview = page.getByTestId("chart-designer-preview");
       await expect(preview).toBeVisible();
       const previewBox = await preview.boundingBox();
-      const modalBox = await page.locator(".ant-modal-content").boundingBox();
+      // 口径是「弹窗内容区」而非 .ant-modal-content 含 padding 的总宽（ADR 0051 D3）
+      const bodyBox = await page.getByTestId("chart-designer-body").boundingBox();
       expect(previewBox, "预览列应可见").toBeTruthy();
-      expect(modalBox, "设计器弹窗应可见").toBeTruthy();
-      expect(previewBox!.width / modalBox!.width).toBeGreaterThan(0.55);
+      expect(bodyBox, "设计器内容区应可见").toBeTruthy();
+      expect(previewBox!.width / bodyBox!.width).toBeGreaterThanOrEqual(0.55);
 
       await page.getByTestId("chart-designer-title").fill(chartTitle);
       await save.click();
@@ -132,14 +133,17 @@ test.describe("文档图表嵌入", () => {
       expect(chart, "新建图表未出现在实例列表").toBeTruthy();
       const chartId = chart!.id;
 
-      // 2.1) 编辑态预览默认 75%，用嵌入块宽度控件改成 50% 并写回正文（ADR 0051）
+      // 2.1) 查看态嵌入块默认 75%，用宽度控件改成 50%（ADR 0051）
+      // 实时预览（CodeMirror）不渲染嵌入块，宽度控件只在查看模式出现。
+      await page.getByTestId("doc-mode-switch").getByText("查看", { exact: true }).click();
       const editEmbed = page.getByTestId(`chart-embed-${chartId}`);
       await expect(editEmbed).toHaveAttribute("data-width", "75", { timeout: 20_000 });
       await page.getByTestId(`chart-embed-width-${chartId}-0`).click();
       await page.getByTestId(`chart-embed-width-${chartId}-0-preset-50`).click();
       await expect(editEmbed).toHaveAttribute("data-width", "50");
 
-      // 3) 提交修改：等弹窗关闭（成功/失败都会关）后，正文含 {{chart:id|width=50}} 落为新版本
+      // 3) 回编辑模式提交修改：等弹窗关闭（成功/失败都会关）后，正文含 {{chart:id|width=50}} 落为新版本
+      await page.getByTestId("doc-mode-switch").getByText("编辑", { exact: true }).click();
       await expect(page.getByTestId("doc-submit-btn")).toBeEnabled({ timeout: 20_000 });
       await page.getByTestId("doc-submit-btn").click();
       await page.getByRole("button", { name: "确认提交" }).click();
@@ -169,6 +173,12 @@ test.describe("文档图表嵌入", () => {
       const embed = page.getByTestId(`chart-embed-svg-${chartId}`);
       await expect(embed).toBeVisible({ timeout: 20_000 });
       await expect(embed.locator("svg")).toHaveCount(1);
+      await expect(page.getByTestId(`chart-embed-${chartId}`)).toHaveAttribute("data-width", "50");
+
+      // 4.1) 刷新后宽度仍生效（宽度已随正文落库，ADR 0051）
+      await page.reload();
+      await page.getByTestId("doc-mode-switch").getByText("查看", { exact: true }).click();
+      await expect(page.getByTestId(`chart-embed-svg-${chartId}`)).toBeVisible({ timeout: 20_000 });
       await expect(page.getByTestId(`chart-embed-${chartId}`)).toHaveAttribute("data-width", "50");
 
       // 5) 导出 Markdown（D6）：zip 归档，正文改写为 assets/ 引用且资产随包
