@@ -167,7 +167,7 @@ def permission_denied_detail(
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/accounts/services/preferences.py`、`src/cndb/plugins/documents/services/export/table_refs.py` | `tests/test_permission_denied_message.py`、`tests/test_access_audit.py` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/accounts/services/preferences.py`、`src/cndb/plugins/documents/services/export/table_refs.py` | `tests/test_permission_denied_message.py`、`tests/test_access_audit.py` | `68bc0031` |
 | P1 | 未开始 | Context #3-#6 各点位 | 同上 + 既有权限测试回填 | — |
 | P2 | 未开始 | `frontend/src/pages/help/content/troubleshooting.tsx` | 既有 e2e 回归 | — |
 
