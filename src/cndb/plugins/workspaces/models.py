@@ -103,6 +103,13 @@ ROLE_RANK: dict[WorkspaceRole, int] = {
     WorkspaceRole.VIEWER: 0,
 }
 
+# 工作区角色中文显示名（ADR 0047 单一来源：403 文案、帮助图示等均引用此处）
+WORKSPACE_ROLE_LABELS: dict[str, str] = {
+    WorkspaceRole.OWNER.value: "所有者",
+    WorkspaceRole.EDITOR.value: "编辑者",
+    WorkspaceRole.VIEWER.value: "查看者",
+}
+
 
 class Workspace(TimestampMixin, Base):
     """工作区：数据与权限的隔离边界."""
@@ -275,6 +282,7 @@ __all__ = [
     "BUILTIN_ROLE_CODES",
     "DEFAULT_STORAGE_QUOTA_BYTES",
     "ROLE_RANK",
+    "WORKSPACE_ROLE_LABELS",
     "WORKSPACE_TYPE_LABELS",
     "Role",
     "Workspace",

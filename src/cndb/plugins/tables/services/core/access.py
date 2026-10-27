@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable, TableMember, TablePermission
 from cndb.plugins.workspaces.models import ROLE_RANK, Role, Workspace, WorkspaceRole
+from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 logger = logging.getLogger(__name__)
 
@@ -229,7 +230,8 @@ def check_workspace_permission(
         raise HTTPException(status_code=404, detail="工作区不存在")
     role = get_member_role(user, ws, db)
     if role is None or ROLE_RANK[role] < ROLE_RANK[min_role]:
-        raise HTTPException(status_code=403, detail="权限不足")
+        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+        raise_permission_denied(db, ws, user)
     return ws
 
 
@@ -265,7 +267,8 @@ def get_table_or_404(
                 headers={"WWW-Authenticate": "Bearer"},
             )
         if not check_action(db, dt, user, action):
-            raise HTTPException(status_code=403, detail="表级权限不足")
+            # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
+            raise_permission_denied(db, dt.workspace, user, scope="表级")
     return dt
 
 

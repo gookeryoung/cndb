@@ -24,6 +24,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
+from cndb.core.errors import CndbError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import DataTable, DataView
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
@@ -117,7 +118,7 @@ def _readable_table_ids(db: Session, user: User, rows: list[tuple[DataView, Data
             try:
                 get_table_or_404(tid, int(table.workspace_id), db, user=user, action=TableAction.READ)
                 checked[tid] = True
-            except HTTPException:
+            except (HTTPException, CndbError):
                 checked[tid] = False
         if checked[tid]:
             readable.add(tid)

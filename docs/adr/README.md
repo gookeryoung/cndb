@@ -48,6 +48,7 @@
 | [0044](0044-documents-mobile-toolbar-compact.md) | 文档列表页移动端顶部工具栏紧凑化（两行常驻 + 筛选收起 + 返回图标化） | Implemented | P0-P1 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0045](0045-document-table-ref-view-and-export.md) | 文档数据表引用支持视图过滤与导出真实渲染 | Accepted | P0-P1 已落地 | `src/cndb/plugins/documents/services/export/table_refs.py`、`frontend/src/pages/documents/InsertTableModal.tsx` | `tests/test_document_export_table_refs.py`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0046](0046-web-performance-bottlenecks.md) | 网页性能瓶颈识别与读路径优化（大表页面切换卡滞） | Proposed | 未开始（方案已定，含实测瓶颈清单） | — | — | — |
+| [0047](0047-permission-denied-message.md) | 权限不足错误提示增强（角色 + 拥有者联系指引） | Accepted | P0 已落地；P1-P2 未开始 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/tables/services/core/access.py` | `tests/test_permission_denied_message.py` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

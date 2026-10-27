@@ -19,6 +19,7 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from cndb.core.errors import CndbError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.services.core.access import (
     TableAction,
@@ -134,7 +135,7 @@ def _resolve_one(db: Session, workspace_id: int, user: User, spec: TableRefSpec)
     """按权限取表 / 视图 / 行，归并为可渲染快照（失败降级）."""
     try:
         table = get_table_or_404(spec.table_id, workspace_id, db, user, TableAction.READ)
-    except HTTPException:
+    except (HTTPException, CndbError):
         return ResolvedTable(error=f"[数据表引用无效：表 #{spec.table_id} 不存在或无访问权限]")
 
     view = None

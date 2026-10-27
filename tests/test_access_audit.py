@@ -131,20 +131,21 @@ class TestCheckWorkspacePermission:
 
     def test_insufficient_role_raises_403(self, db):
         import pytest
-        from fastapi import HTTPException
 
+        from cndb.core.errors import PermissionDeniedError
         from cndb.plugins.tables.services.core.access import check_workspace_permission
 
         u, ws = self._make_user_ws(db, "cwp_viewer", role=WorkspaceRole.VIEWER)
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(PermissionDeniedError) as exc:
             check_workspace_permission(db, ws.id, u, WorkspaceRole.EDITOR)
         assert exc.value.status_code == 403
-        assert exc.value.detail == "权限不足"
+        # ADR 0047：文案带角色说明（该 fixture 无 owner 成员 → 无联系人片段）
+        assert exc.value.detail == "当前用户在此工作区的角色为【查看者】，权限不足"
 
     def test_non_member_raises_403(self, db):
         import pytest
-        from fastapi import HTTPException
 
+        from cndb.core.errors import PermissionDeniedError
         from cndb.plugins.accounts.models import User as _User
         from cndb.plugins.tables.services.core.access import check_workspace_permission
 
@@ -153,7 +154,7 @@ class TestCheckWorkspacePermission:
         outsider.set_password("pass")
         db.add(outsider)
         db.commit()
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(PermissionDeniedError) as exc:
             check_workspace_permission(db, ws.id, outsider, WorkspaceRole.VIEWER)
         assert exc.value.status_code == 403
 
