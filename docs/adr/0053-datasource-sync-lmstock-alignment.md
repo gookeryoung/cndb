@@ -202,9 +202,9 @@ Related: `src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/da
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_datasource_runner_pages.py` | `fdc08346` |
-| P1 | 已落地 | `src/cndb/core/http.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_datasource_host_fallback.py` | `fdc08346` |
-| P2 | 已落地 | `examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/股市日线.csv`、`examples/datasets/工作区-数据源示例/views.json`、`src/cndb/plugins/help/services/examples.py` | `tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | `9a9a6fdf` |
+| P0 | 已落地 | `src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_datasource_runner_pages.py` | `30dad426` |
+| P1 | 已落地 | `src/cndb/core/http.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_datasource_host_fallback.py` | `30dad426` |
+| P2 | 已落地 | `examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/股市日线.csv`、`examples/datasets/工作区-数据源示例/views.json`、`src/cndb/plugins/help/services/examples.py` | `tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | `8de997fe` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
