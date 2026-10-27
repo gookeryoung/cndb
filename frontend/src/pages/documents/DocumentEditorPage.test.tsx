@@ -1576,3 +1576,67 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
         expect(screen.getByRole('button', { name: /标签/ })).toBeInTheDocument()
     })
 })
+
+describe('DocumentEditorPage 图表引用（ADR 0048）', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+    })
+
+    it('编辑模式工具栏「插入图表」→ 选已有实例 → 正文插入 {{chart:300}}', async () => {
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
+
+        fireEvent.click(screen.getByTestId('md-toolbar-chart'))
+        expect(await screen.findByText('插入图表')).toBeInTheDocument()
+
+        // 切到「已有图表」页签，直接插入实例 #300
+        fireEvent.click(await screen.findByText(/已有图表/))
+        fireEvent.click(await screen.findByTestId('chart-existing-insert-300'))
+
+        await waitFor(() => expect(ta.value).toContain('{{chart:300}}'))
+    }, 30_000)
+
+    it('从插入弹窗选模板 → 设计器保存 → 正文插入新实例引用', async () => {
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
+
+        fireEvent.click(screen.getByTestId('md-toolbar-chart'))
+        expect(await screen.findByText('插入图表')).toBeInTheDocument()
+
+        // 选「柱线组合图（双轴）」进设计器
+        fireEvent.click(await screen.findByTestId('chart-template-pick-bar-line-dual-axis'))
+        const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
+        await waitFor(() => expect(title.value).toBe('柱线组合图（双轴）'))
+
+        // 保存（POST 建实例 #301）后页面回插引用
+        fireEvent.click(screen.getByTestId('chart-designer-save'))
+        await waitFor(() => expect(ta.value).toContain('{{chart:301}}'))
+    }, 30_000)
+
+    it('查看模式：预览内联渲染图表，owner 可从「编辑图表」进设计器', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/2/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    content: '# 需求说明\n\n{{chart:300}}\n\n正文。\n',
+                    version_number: 1,
+                    draft: null,
+                    write_mode: 'direct',
+                })),
+        )
+        renderEditor()
+        // 等页面加载完成（「加载中…」阶段模式切换器尚未渲染）
+        const modeSwitch = await screen.findByTestId('doc-mode-switch')
+        fireEvent.click(within(modeSwitch).getByText('查看'))
+
+        // 图表段由 ChartEmbed 内联渲染
+        expect(await screen.findByTestId('chart-embed-svg-300', {}, { timeout: 8000 })).toBeInTheDocument()
+
+        // owner（默认 workspace mock 角色为 owner）有编辑入口 → 打开设计器载入实例
+        fireEvent.click(screen.getByTestId('chart-embed-edit-300'))
+        const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
+        await waitFor(() => expect(title.value).toBe('产业营业收入与增速'))
+    }, 30_000)
+})

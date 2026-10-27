@@ -18,6 +18,7 @@ import {
   message,
 } from 'antd'
 import {
+  BarChartOutlined,
   BranchesOutlined,
   DownloadOutlined,
   FileMarkdownOutlined,
@@ -54,6 +55,7 @@ import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
 import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
 import { documentsApi } from '@/api/documents'
+import { chartApi } from '@/api/charts'
 import { fileApi, tableApi, viewApi, workspaceApi } from '@/api'
 import { useLlmAction } from '@/hooks/useLlmAction'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -77,6 +79,8 @@ import BacklinksDrawer from './BacklinksDrawer'
 import DocumentAssetView from './DocumentAssetView'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
 import DocumentShareModal from './DocumentShareModal'
+import ChartDesignerModal, { type ChartDesignTarget } from './ChartDesignerModal'
+import InsertChartModal from './InsertChartModal'
 import InsertTableModal from './InsertTableModal'
 import LinksDrawer from './LinksDrawer'
 import OutlineDrawer from './OutlineDrawer'
@@ -168,6 +172,10 @@ export default function DocumentEditorPage() {
   /** 按视图过滤 / 排序取数；null = 整表 */
   const [insertViewId, setInsertViewId] = useState<number | null>(null)
   const [insertLimit, setInsertLimit] = useState<number | null>(null)
+
+  // 插入 / 设计图表（ADR 0048）：弹窗选模板或已有实例，设计器保存后回插引用
+  const [chartInsertOpen, setChartInsertOpen] = useState(false)
+  const [chartDesign, setChartDesign] = useState<ChartDesignTarget | null>(null)
 
   // ── 文档 AI（ADR 0020 P1）：结果只做「建议 → 预览 → 确认」，不自动保存 ──
   const [aiOpen, setAiOpen] = useState(false)
@@ -721,6 +729,23 @@ export default function DocumentEditorPage() {
     resetInsertState()
   }
 
+  // ── 图表（ADR 0048）：插入占位符 / 从预览进入设计器编辑 ──
+  const insertChartRef = useCallback((chartId: number) => {
+    insertSnippetAtCursor(`{{chart:${chartId}}}`)
+  }, [insertSnippetAtCursor])
+
+  /** 图表编辑入口（ChartEmbed）：有写权限才传入预览，viewer 不出现按钮 */
+  const canEditCharts = myRole === 'owner' || myRole === 'editor'
+  const openChartDesignerForEdit = useCallback((chartId: number) => {
+    void qc
+      .fetchQuery({
+        queryKey: ['charts', workspaceId, 'detail', chartId],
+        queryFn: () => chartApi.get(workspaceId, chartId),
+      })
+      .then(chart => setChartDesign({ kind: 'edit', chart }))
+      .catch(() => message.error('图表加载失败'))
+  }, [qc, workspaceId])
+
   // ── 插入图片：上传到工作区文件存储，正文写入站内引用 `![alt](file:<key>)` ──
   const imageInputRef = useRef<HTMLInputElement>(null)
 
@@ -932,6 +957,7 @@ export default function DocumentEditorPage() {
             ? [
                 { key: 'insert-image', icon: <PictureOutlined />, label: '插入图片', onClick: () => imageInputRef.current?.click() },
                 { key: 'insert-table', icon: <TableOutlined />, label: '插入表格引用', onClick: () => setInsertOpen(true) },
+                { key: 'insert-chart', icon: <BarChartOutlined />, label: '插入图表', onClick: () => setChartInsertOpen(true) },
               ]
             : []),
         ]),
@@ -1196,7 +1222,12 @@ export default function DocumentEditorPage() {
             style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 16 : '20px 24px' }}
             data-testid="doc-view-mode"
           >
-            <MarkdownPreview content={content} workspaceId={workspaceId} onWikilink={handleWikilink} />
+            <MarkdownPreview
+              content={content}
+              workspaceId={workspaceId}
+              onWikilink={handleWikilink}
+              onEditChart={canEditCharts ? openChartDesignerForEdit : undefined}
+            />
           </div>
         ) : (
           <>
@@ -1233,10 +1264,11 @@ export default function DocumentEditorPage() {
                 onInsertTable={(cols, rows) => insertSnippetAtCursor(buildTableSkeleton(cols, rows))}
                 onAiAction={openAiRewrite}
                 aiDisabled={polishAi.loading}
-                // 插入图片 / 插入表格引用：桌面编辑模式走工具栏；窄屏收进「更多」菜单（ADR 0042 D4）
+                // 插入图片 / 插入表格引用 / 插入图表：桌面编辑模式走工具栏；窄屏收进「更多」菜单（ADR 0042 D4）
                 onInsertImage={isMobile ? undefined : () => imageInputRef.current?.click()}
                 imageInsertLoading={imageMut.isPending}
                 onInsertTableRef={isMobile ? undefined : () => setInsertOpen(true)}
+                onInsertChart={isMobile ? undefined : () => setChartInsertOpen(true)}
               />
               <Segmented
                 size="small"
@@ -1407,6 +1439,40 @@ export default function DocumentEditorPage() {
         tablesLoading={tablesQuery.isLoading}
         views={viewsQuery.data ?? []}
         viewsLoading={viewsQuery.isLoading}
+      />
+
+      {/* 插入图表弹窗（ADR 0048）：模板两级浏览 + 已有实例 */}
+      <InsertChartModal
+        open={chartInsertOpen}
+        workspaceId={workspaceId}
+        onCancel={() => setChartInsertOpen(false)}
+        onPickExisting={chartId => {
+          setChartInsertOpen(false)
+          insertChartRef(chartId)
+        }}
+        onPickTemplate={templateKey => {
+          setChartInsertOpen(false)
+          setChartDesign({ kind: 'create', templateKey })
+        }}
+      />
+
+      {/* 图表设计器（ADR 0048）：新建保存后回插引用；编辑保存后刷新渲染缓存 */}
+      <ChartDesignerModal
+        open={chartDesign !== null}
+        workspaceId={workspaceId}
+        target={chartDesign}
+        onCancel={() => setChartDesign(null)}
+        onSaved={chart => {
+          setChartDesign(null)
+          void qc.invalidateQueries({ queryKey: ['chart-embed', workspaceId, chart.id] })
+          void qc.invalidateQueries({ queryKey: ['charts', workspaceId] })
+          if (chartDesign?.kind === 'create') {
+            insertChartRef(chart.id)
+            message.success('图表已创建并插入（提交后生效）')
+          } else {
+            message.success('图表已更新')
+          }
+        }}
       />
 
       {/* 分享弹层：匿名只读链接的创建 / 复制 / 访问次数 / 撤销（ADR 0017） */}

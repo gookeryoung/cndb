@@ -16,6 +16,16 @@
 export { authApi } from './auth'
 export { workspaceApi } from './workspaces'
 export { preferencesApi } from './preferences'
+export { chartApi } from './charts'
+export type {
+  ChartCategoryInfo,
+  ChartCreatePayload,
+  ChartInstance,
+  ChartLabelField,
+  ChartRowColumn,
+  ChartTemplateInfo,
+  ChartTemplatesPayload,
+} from './charts'
 export { tableApi, fieldApi, auditApi, permissionApi, tableMembersApi, rowPermissionApi } from './tables'
 export { recordApi } from './records'
 export { viewApi } from './views'

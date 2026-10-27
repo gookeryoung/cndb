@@ -178,4 +178,24 @@ describe('MarkdownToolbar', () => {
     fireEvent.click(screen.getByTestId('md-toolbar-image'))
     expect(onInsertImage).not.toHaveBeenCalled()
   })
+
+  it('未传 onInsertChart 时不渲染插入图表按钮（ADR 0048）', () => {
+    renderProviders(<MarkdownToolbar onAction={() => { }} />)
+
+    expect(screen.queryByTestId('md-toolbar-chart')).toBeNull()
+    expect(screen.queryByLabelText('插入图表')).toBeNull()
+  })
+
+  it('传入 onInsertChart 时渲染按钮，点击透传回调且与表格引用并存（ADR 0048）', () => {
+    const onInsertChart = vi.fn()
+    renderProviders(
+      <MarkdownToolbar onAction={() => { }} onInsertTableRef={() => { }} onInsertChart={onInsertChart} />,
+    )
+
+    expect(screen.getByTestId('md-toolbar-chart')).toBeInTheDocument()
+    expect(screen.getByTestId('md-toolbar-table-ref')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('md-toolbar-chart'))
+    expect(onInsertChart).toHaveBeenCalledTimes(1)
+  })
 })

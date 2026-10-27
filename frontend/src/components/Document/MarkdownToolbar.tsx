@@ -7,6 +7,7 @@
 import type { ReactNode } from 'react'
 import { Button, Tooltip } from 'antd'
 import {
+  BarChartOutlined,
   BoldOutlined,
   BlockOutlined,
   CodeOutlined,
@@ -56,6 +57,8 @@ interface MarkdownToolbarProps {
   imageInsertLoading?: boolean
   /** 插入数据表引用（打开选表弹窗）；不传时不渲染该按钮（ADR 0042） */
   onInsertTableRef?: () => void
+  /** 插入图表（打开选模板 / 实例弹窗）；不传时不渲染该按钮（ADR 0042，ADR 0048） */
+  onInsertChart?: () => void
 }
 
 interface ToolbarItem {
@@ -117,6 +120,7 @@ export default function MarkdownToolbar({
   onInsertImage,
   imageInsertLoading,
   onInsertTableRef,
+  onInsertChart,
 }: MarkdownToolbarProps) {
   const triggerProps = {
     type: 'text' as const,
@@ -210,6 +214,18 @@ export default function MarkdownToolbar({
             aria-label="插入表格引用（数据表）"
             data-testid="md-toolbar-table-ref"
             onClick={onInsertTableRef}
+          />
+        </Tooltip>
+      )}
+      {/* 插入图表（ADR 0048）：与表格引用并列的可选入口 */}
+      {onInsertChart && (
+        <Tooltip title="插入图表">
+          <Button
+            {...triggerProps}
+            icon={<BarChartOutlined />}
+            aria-label="插入图表"
+            data-testid="md-toolbar-chart"
+            onClick={onInsertChart}
           />
         </Tooltip>
       )}

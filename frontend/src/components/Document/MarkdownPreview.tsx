@@ -1,4 +1,4 @@
-/** Markdown 预览组件 — react-markdown + GFM + 代码块样式 + 数据表动态引用渲染 +
+/** Markdown 预览组件 — react-markdown + GFM + 代码块样式 + 数据表 / 图表动态引用渲染 +
  * 双向链接（[[文档标题]]）渲染为可点击跳转.
  *
  * 标题元素渲染锚点 id（与大纲面板解析同算法），支持大纲点击定位。
@@ -13,7 +13,8 @@ import DocumentImage from './DocumentImage'
 import { FILE_REF_PREFIX } from './imageRef'
 import remarkGfm from 'remark-gfm'
 import TableEmbed from './TableEmbed'
-import { splitTableRefs } from './tableRef'
+import ChartEmbed from './ChartEmbed'
+import { splitRefs } from './chartRef'
 import { headingAnchor } from './outline'
 import { scrollToHeading } from './docAnchor'
 import { parseWikilinkHref, transformWikilinks } from './wikilink'
@@ -237,23 +238,25 @@ function Md({
   )
 }
 
-function MarkdownPreviewBase({ content, workspaceId, publicFileBase, onWikilink }: {
+function MarkdownPreviewBase({ content, workspaceId, publicFileBase, onWikilink, onEditChart }: {
   content: string
-  /** 工作区 ID：提供后启用 `{{table:…}}` 数据表动态引用渲染 */
+  /** 工作区 ID：提供后启用 `{{table:…}}` / `{{chart:…}}` 动态引用渲染 */
   workspaceId?: number
   /** 公开分享页的免登录图片基地址（ADR 0017） */
   publicFileBase?: string
   /** 双向链接点击回调：入参为 [[文档标题]] 中的标题 */
   onWikilink?: (title: string) => void
+  /** 图表编辑入口（写权限由页面侧判断后传入）；不传时 ChartEmbed 无编辑按钮 */
+  onEditChart?: (chartId: number) => void
 }) {
   const segments = useMemo(
-    () => (workspaceId !== undefined ? splitTableRefs(content) : null),
+    () => (workspaceId !== undefined ? splitRefs(content) : null),
     [content, workspaceId],
   )
-  const hasTableRef = segments?.some(s => s.type === 'table') ?? false
+  const hasRef = segments?.some(s => s.type !== 'md') ?? false
 
   // 无工作区上下文或无引用片段：整体按 Markdown 渲染
-  if (!hasTableRef) {
+  if (!hasRef) {
     return (
       <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
         <Md text={content} workspaceId={workspaceId} publicFileBase={publicFileBase} onWikilink={onWikilink} />
@@ -266,8 +269,10 @@ function MarkdownPreviewBase({ content, workspaceId, publicFileBase, onWikilink 
       {segments!.map((seg, i) =>
         seg.type === 'md' ? (
           <Md key={i} text={seg.text} workspaceId={workspaceId} publicFileBase={publicFileBase} onWikilink={onWikilink} />
-        ) : (
+        ) : seg.type === 'table' ? (
           <TableEmbed key={i} workspaceId={workspaceId!} tableRef={seg.ref} />
+        ) : (
+          <ChartEmbed key={i} workspaceId={workspaceId!} chartId={seg.ref.chartId} onEditChart={onEditChart} />
         ),
       )}
     </div>

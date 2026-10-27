@@ -11,6 +11,7 @@ import { setupServer } from 'msw/node'
 import type {
   Field, RowListResponse, TableSummary, UserResponse, View, Workspace,
 } from '@/api'
+import type { ChartInstance, ChartTemplatesPayload } from '@/api/charts'
 import type { DocumentItem } from '@/api/documents'
 import type { HelpExampleList, HelpFigureList } from '@/api/help'
 
@@ -206,6 +207,142 @@ export const mockHelpFigures: HelpFigureList = {
   generatedAt: 1761300000,
 }
 
+// ─────────────── 图表 fixtures（ADR 0048） ───────────────
+
+/** 图表渲染端点的样例 SVG（render / render-preview 共用，内容不断言具体图元） */
+export const mockChartSvg =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" data-chart-sample="1"><title>样例图表</title><rect width="720" height="480" fill="#FBFAF5"/></svg>'
+
+/** 两级模板清单：与后端 templates_payload() 同构（3 类别 × 3 模板，默认配置取精简样例） */
+export const mockChartTemplates: ChartTemplatesPayload = {
+  categories: [
+    { key: 'trend', name: '趋势分析', description: '时间序列的总量走势与增速' },
+    { key: 'composition', name: '结构构成', description: '整体中各部分的构成与变化' },
+    { key: 'comparison', name: '目标对比', description: '现状与规划目标的逐项对比' },
+  ],
+  templates: [
+    {
+      key: 'bar-line-dual-axis',
+      category: 'trend',
+      name: '柱线组合图（双轴）',
+      description: '柱（左轴主值，实际 / 测算两色）+ 折线（右轴次值），含规划期分界带与图注增速联动',
+      row_min: 2,
+      row_max: 24,
+      row_columns: [
+        { key: 'label', type: 'text', label: '年份' },
+        { key: 'value', type: 'number', label: '主值（左轴）', required: true },
+        { key: 'growth', type: 'number', label: '次值（右轴，留空按主值推算）' },
+      ],
+      series_min: 0,
+      series_max: 0,
+      label_fields: [
+        { key: 'legendActual', label: '图例 · 主值（实际）' },
+        { key: 'legendProjected', label: '图例 · 主值（测算）' },
+        { key: 'legendGrowth', label: '图例 · 次值' },
+        { key: 'bandLabel', label: '图内标注 · 规划期' },
+        { key: 'capActual', label: '轴下说明 · 实际区间' },
+        { key: 'capProjected', label: '轴下说明 · 测算区间' },
+        { key: 'unitLeft', label: '左轴单位' },
+        { key: 'unitRight', label: '右轴单位' },
+      ],
+      default_config: {
+        caption: {
+          no: '图 2-1',
+          context: '',
+          title: '产业营业收入与增速（2020—2030年）',
+          subtitle: '单位：亿元、%',
+          note: '注：2026—2030年年均增速{cagr}。\n数据来源：市统计局。',
+        },
+        labels: {
+          legendActual: '营业收入（实际值）',
+          legendProjected: '营业收入（测算值）',
+          legendGrowth: '同比增速',
+          bandLabel: '规划期（测算值）',
+          capActual: '实际值（统计口径）',
+          capProjected: '规划测算值',
+          unitLeft: '亿元',
+          unitRight: '%',
+        },
+        theme: { palette: ['#8E2318', '#5C7283', '#5F6B4E'], paper: '#FBFAF5' },
+        data: {
+          actualCount: 2,
+          rows: [
+            { label: '2020', value: 132, growth: null },
+            { label: '2021', value: 158, growth: 19.7 },
+            { label: '2022', value: 186, growth: null },
+          ],
+        },
+      },
+    },
+    {
+      key: 'stacked-bar-horizontal',
+      category: 'composition',
+      name: '水平堆叠条形图',
+      description: '行 × 系列堆叠的水平条形，宽段内置白字、窄段外置标签，行尾自动合计',
+      row_min: 1,
+      row_max: 12,
+      row_columns: [
+        { key: 'label', type: 'text', label: '行' },
+        { key: 'values', type: 'number[]', label: '系列值', required: true },
+      ],
+      series_min: 1,
+      series_max: 6,
+      label_fields: [],
+      default_config: {
+        caption: { no: '图 3-1', context: '', title: '产业结构变化', subtitle: '单位：亿元', note: '' },
+        labels: { series: ['整车', '零部件', '服务'], unitX: '亿元' },
+        theme: { palette: ['#8E2318', '#1E3D57', '#5F6B4E'], paper: '#FBFAF5' },
+        data: {
+          rows: [
+            { label: '2025年', values: [1250, 480, 120] },
+            { label: '2030年', values: [2040, 800, 360] },
+          ],
+        },
+      },
+    },
+    {
+      key: 'grouped-bar-horizontal',
+      category: 'comparison',
+      name: '水平分组条形图',
+      description: '类别 × 两系列（现状 / 目标）成组水平条，组内双条数值标签，横轴上限自动扩展',
+      row_min: 1,
+      row_max: 14,
+      row_columns: [
+        { key: 'label', type: 'text', label: '类别' },
+        { key: 'values', type: 'number[]', label: '系列值', required: true },
+      ],
+      series_min: 2,
+      series_max: 2,
+      label_fields: [],
+      default_config: {
+        caption: { no: '图 4-1', context: '', title: '本地配套率现状与目标', subtitle: '单位：%', note: '' },
+        labels: { series: ['2025年现状', '2030年目标'], unitX: '%' },
+        theme: { palette: ['#E9E4D6', '#8E2318'], paper: '#FBFAF5' },
+        data: {
+          rows: [
+            { label: '隔膜', values: [0, 35] },
+            { label: '车规芯片', values: [8, 25] },
+          ],
+        },
+      },
+    },
+  ],
+}
+
+/** 图表实例 fixture：ChartEmbed / 插入弹窗 / 设计器编辑模式使用 */
+export const mockChartInstance: ChartInstance = {
+  id: 300,
+  workspace_id: 10,
+  title: '产业营业收入与增速',
+  template_key: 'bar-line-dual-axis',
+  category: 'trend',
+  config: mockChartTemplates.templates[0].default_config,
+  created_by_id: 1,
+  updated_by_id: 1,
+  created_at: '2026-02-01T00:00:00Z',
+  updated_at: '2026-02-02T00:00:00Z',
+}
+
 // ─────────────── 默认 handlers ───────────────
 
 export const handlers = [
@@ -286,6 +423,60 @@ export const handlers = [
   // 视图
   http.get('/api/v1/workspaces/:wid/tables/:tid/views', () =>
     HttpResponse.json(mockViews)),
+
+  // 图表（ADR 0048）：字面段（templates / render-preview）先于 :id 段注册
+  http.get('/api/v1/workspaces/:wid/charts/templates', () =>
+    HttpResponse.json(mockChartTemplates)),
+  http.post('/api/v1/workspaces/:wid/charts/render-preview', () =>
+    new HttpResponse(mockChartSvg, {
+      status: 200,
+      headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' },
+    })),
+  http.get('/api/v1/workspaces/:wid/charts', () =>
+    HttpResponse.json({ items: [mockChartInstance] })),
+  http.post('/api/v1/workspaces/:wid/charts', async ({ request }) => {
+    const body = await request.json() as {
+      title?: string; template_key?: string; config?: Record<string, unknown>
+    }
+    return HttpResponse.json(
+      {
+        ...mockChartInstance,
+        id: mockChartInstance.id + 1,
+        title: body.title ?? '',
+        template_key: body.template_key ?? mockChartInstance.template_key,
+        config: body.config ?? mockChartInstance.config,
+        updated_at: '2026-02-03T00:00:00Z',
+      },
+      { status: 201 },
+    )
+  }),
+  http.get('/api/v1/workspaces/:wid/charts/:cid', ({ params }) =>
+    HttpResponse.json({ ...mockChartInstance, id: Number(params.cid) })),
+  http.put('/api/v1/workspaces/:wid/charts/:cid', async ({ request, params }) => {
+    const body = await request.json() as {
+      title?: string; template_key?: string; config?: Record<string, unknown>
+    }
+    return HttpResponse.json({
+      ...mockChartInstance,
+      id: Number(params.cid),
+      title: body.title ?? mockChartInstance.title,
+      template_key: body.template_key ?? mockChartInstance.template_key,
+      config: body.config ?? mockChartInstance.config,
+      updated_at: '2026-02-04T00:00:00Z',
+    })
+  }),
+  http.delete('/api/v1/workspaces/:wid/charts/:cid', ({ params }) =>
+    HttpResponse.json({ id: Number(params.cid), deleted: true })),
+  http.get('/api/v1/workspaces/:wid/charts/:cid/render', ({ request }) => {
+    const etag = '"mock-chart-etag-v1"'
+    if (request.headers.get('If-None-Match') === etag) {
+      return new HttpResponse(null, { status: 304, headers: { ETag: etag } })
+    }
+    return new HttpResponse(mockChartSvg, {
+      status: 200,
+      headers: { 'Content-Type': 'image/svg+xml; charset=utf-8', ETag: etag },
+    })
+  }),
 
   // 站内通知：默认无通知（铃铛在 MainLayout 中常驻，必须给默认处理）
   http.get('/api/v1/accounts/notifications', () =>
