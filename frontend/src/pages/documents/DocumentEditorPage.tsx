@@ -54,6 +54,7 @@ import { documentStats, formatStatsLabel } from '@/components/Document/documentS
 import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
 import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
+import { DEFAULT_REF_WIDTH, rewriteRefWidth, type RefWidthChange } from '@/components/Document/refWidth'
 import { documentsApi } from '@/api/documents'
 import { chartApi } from '@/api/charts'
 import { fileApi, tableApi, viewApi, workspaceApi } from '@/api'
@@ -172,6 +173,8 @@ export default function DocumentEditorPage() {
   /** 按视图过滤 / 排序取数；null = 整表 */
   const [insertViewId, setInsertViewId] = useState<number | null>(null)
   const [insertLimit, setInsertLimit] = useState<number | null>(null)
+  /** 插入时预设的显示宽度（ADR 0051；默认 75，只有非默认才写入占位符） */
+  const [insertWidth, setInsertWidth] = useState<number>(DEFAULT_REF_WIDTH)
 
   // 插入 / 设计图表（ADR 0048）：弹窗选模板或已有实例，设计器保存后回插引用
   const [chartInsertOpen, setChartInsertOpen] = useState(false)
@@ -718,13 +721,15 @@ export default function DocumentEditorPage() {
     setInsertTableId(null)
     setInsertViewId(null)
     setInsertLimit(null)
+    setInsertWidth(DEFAULT_REF_WIDTH)
   }
 
   const insertTableRef = () => {
     if (insertTableId === null) return
     const view = insertViewId ? `|view=${insertViewId}` : ''
     const limit = insertLimit ? `|limit=${insertLimit}` : ''
-    insertSnippetAtCursor(`{{table:${insertTableId}${view}${limit}}}`)
+    const width = insertWidth !== DEFAULT_REF_WIDTH ? `|width=${insertWidth}` : ''
+    insertSnippetAtCursor(`{{table:${insertTableId}${view}${limit}${width}}}`)
     setInsertOpen(false)
     resetInsertState()
   }
@@ -736,6 +741,11 @@ export default function DocumentEditorPage() {
 
   /** 图表编辑入口（ChartEmbed）：有写权限才传入预览，viewer 不出现按钮 */
   const canEditCharts = myRole === 'owner' || myRole === 'editor'
+
+  /** 引用宽度调整（ADR 0051）：按出现序号改写正文占位符，仅编辑者及以上可用 */
+  const changeRefWidth = useCallback((change: RefWidthChange) => {
+    setContent(prev => rewriteRefWidth(prev, change))
+  }, [])
   const openChartDesignerForEdit = useCallback((chartId: number) => {
     void qc
       .fetchQuery({
@@ -1227,6 +1237,7 @@ export default function DocumentEditorPage() {
               workspaceId={workspaceId}
               onWikilink={handleWikilink}
               onEditChart={canEditCharts ? openChartDesignerForEdit : undefined}
+              onRefWidthChange={canEditCharts ? changeRefWidth : undefined}
             />
           </div>
         ) : (
@@ -1435,6 +1446,8 @@ export default function DocumentEditorPage() {
         onViewIdChange={setInsertViewId}
         limit={insertLimit}
         onLimitChange={v => setInsertLimit(v)}
+        width={insertWidth}
+        onWidthChange={setInsertWidth}
         tables={tablesQuery.data ?? []}
         tablesLoading={tablesQuery.isLoading}
         views={viewsQuery.data ?? []}

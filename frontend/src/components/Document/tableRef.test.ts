@@ -7,21 +7,35 @@ import {
   parseTableRef,
   splitTableRefs,
 } from './tableRef'
+import { DEFAULT_REF_WIDTH } from './refWidth'
 
 describe('parseTableRef', () => {
-  it('解析基本形式 {{table:<id>}}，limit 取默认值', () => {
+  it('解析基本形式 {{table:<id>}}，limit / width 取默认值', () => {
     expect(parseTableRef('{{table:100}}')).toEqual({
       tableId: 100,
       limit: DEFAULT_TABLE_REF_LIMIT,
+      width: DEFAULT_REF_WIDTH,
     })
   })
 
-  it('解析 view 与 limit 参数', () => {
-    expect(parseTableRef('{{table:100|view=200|limit=5}}')).toEqual({
+  it('解析 view / limit / width 参数', () => {
+    expect(parseTableRef('{{table:100|view=200|limit=5|width=50}}')).toEqual({
       tableId: 100,
       view: 200,
       limit: 5,
+      width: 50,
     })
+  })
+
+  it('width 缺省 / 非整数 / 越界回退默认 75', () => {
+    expect(parseTableRef('{{table:100|width=}}')?.width).toBe(DEFAULT_REF_WIDTH)
+    expect(parseTableRef('{{table:100|width=abc}}')?.width).toBe(DEFAULT_REF_WIDTH)
+    expect(parseTableRef('{{table:100|width=50.5}}')?.width).toBe(DEFAULT_REF_WIDTH)
+    expect(parseTableRef('{{table:100|width=0}}')?.width).toBe(DEFAULT_REF_WIDTH)
+    expect(parseTableRef('{{table:100|width=101}}')?.width).toBe(DEFAULT_REF_WIDTH)
+    expect(parseTableRef('{{table:100|width=24}}')?.width).toBe(DEFAULT_REF_WIDTH)
+    expect(parseTableRef('{{table:100|width=25}}')?.width).toBe(25)
+    expect(parseTableRef('{{table:100|width=100}}')?.width).toBe(100)
   })
 
   it('limit 超上限钳制为 50', () => {
@@ -42,6 +56,7 @@ describe('parseTableRef', () => {
     expect(parseTableRef('{{table:100|view=abc|foo=bar}}')).toEqual({
       tableId: 100,
       limit: DEFAULT_TABLE_REF_LIMIT,
+      width: DEFAULT_REF_WIDTH,
     })
   })
 
@@ -49,6 +64,7 @@ describe('parseTableRef', () => {
     expect(parseTableRef('  {{table:7}}  ')).toEqual({
       tableId: 7,
       limit: DEFAULT_TABLE_REF_LIMIT,
+      width: DEFAULT_REF_WIDTH,
     })
   })
 
@@ -76,7 +92,7 @@ describe('splitTableRefs', () => {
     const segments = splitTableRefs('# 标题\n\n{{table:100}}\n\n正文。\n')
     expect(segments).toHaveLength(3)
     expect(segments[0]).toEqual({ type: 'md', text: '# 标题\n\n' })
-    expect(segments[1]).toEqual({ type: 'table', ref: { tableId: 100, limit: 20 } })
+    expect(segments[1]).toEqual({ type: 'table', ref: { tableId: 100, limit: 20, width: DEFAULT_REF_WIDTH } })
     expect(segments[2]).toEqual({ type: 'md', text: '正文。\n' })
   })
 
@@ -88,8 +104,11 @@ describe('splitTableRefs', () => {
   it('连续两个引用各自独立成片段', () => {
     const segments = splitTableRefs('{{table:100|limit=5}}\n\n{{table:101|view=9}}')
     expect(segments.map(s => s.type)).toEqual(['table', 'table'])
-    expect(segments[0]).toEqual({ type: 'table', ref: { tableId: 100, limit: 5 } })
-    expect(segments[1]).toEqual({ type: 'table', ref: { tableId: 101, view: 9, limit: 20 } })
+    expect(segments[0]).toEqual({ type: 'table', ref: { tableId: 100, limit: 5, width: DEFAULT_REF_WIDTH } })
+    expect(segments[1]).toEqual({
+      type: 'table',
+      ref: { tableId: 101, view: 9, limit: 20, width: DEFAULT_REF_WIDTH },
+    })
   })
 
   it('md 片段文本保留：前段含分隔符，后段不含被引用吞掉的空行', () => {

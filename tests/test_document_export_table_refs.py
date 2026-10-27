@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from typing import Any
 
@@ -137,6 +138,29 @@ class TestParse:
         assert parse_table_ref_line("前面 {{table:1}} 后面") is None
         assert parse_table_ref_line("{{table:x}}") is None
         assert parse_table_ref_line("") is None
+
+    def test_width_default_is_75(self):
+        assert parse_table_ref_line("{{table:1}}").width == 75  # type: ignore[union-attr]
+        assert parse_table_ref_line("{{table:1|view=2}}").width == 75  # type: ignore[union-attr]
+
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            ("25", 25),
+            ("50", 50),
+            ("100", 100),
+            ("", 75),
+            ("abc", 75),
+            ("50.5", 75),
+            ("24", 75),
+            ("101", 75),
+        ],
+    )
+    def test_width_range_and_fallback(self, raw: str, expected: int):
+        spec = parse_table_ref_line(f"{{{{table:1|view=2|width={raw}}}}}")
+        assert spec is not None
+        assert spec.width == expected
+        assert spec.view_id == 2
 
 
 class TestRewriteMarkdown:
@@ -282,6 +306,29 @@ class TestExportEndpoint:
         assert "<w:tbl>" in xml
         assert "王五" in xml
         assert "{{table:" not in xml
+
+    def test_docx_export_table_width_percent(self, client, ws, owner, table, db):
+        """DOCX 表宽按正文宽度百分比写入 ``w:tblW``（ADR 0051 D5）."""
+        auth = _login(client, owner.username)
+
+        def _tbl_width(percent: int) -> str:
+            doc = self._create_doc(
+                db,
+                ws,
+                owner,
+                f"{{{{table:{table.id}|width={percent}}}}}",
+                title=f"表宽{percent}",
+            )
+            r = client.get(f"{DOCS.format(ws=ws.id)}/{doc.id}/export", params={"format": "docx"}, headers=auth)
+            assert r.status_code == 200, r.text
+            with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+                xml = zf.read("word/document.xml").decode("utf-8")
+            m = re.search(r'<w:tblW w:type="pct" w:w="(\d+)"/>', xml)
+            assert m is not None
+            return m.group(1)
+
+        assert _tbl_width(75) == "3750"
+        assert _tbl_width(50) == "2500"
 
     def test_pdf_export_renders(self, client, ws, owner, table, db):
         auth = _login(client, owner.username)

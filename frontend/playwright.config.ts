@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 const _configDir = path.dirname(fileURLToPath(import.meta.url));
 const AUTH_STATE = path.resolve(_configDir, ".auth/state.json");
 
+// 本机 8000 被其他服务占用时可用 E2E_PORT 换端口；CI / 默认仍是 8000
+const E2E_PORT = process.env.E2E_PORT ?? "8000";
+const E2E_BASE_URL = `http://127.0.0.1:${E2E_PORT}`;
+
 export default defineConfig({
   testDir: "./tests/e2e",
   timeout: 30_000,
@@ -17,17 +21,17 @@ export default defineConfig({
     ["./tests/e2e/reporters/slow-test.ts"],
   ],
 
-  // 一键起后端：.e2e-data 隔离 + seed + 起 :8000。reuseExistingServer 关闭，绝不复用
-  // 来源不明的 8000 服务，保证每次在隔离数据上全量重建。跨平台 Python 脚本（避免 shell 差异）。
+  // 一键起后端：.e2e-data 隔离 + seed + 起 :8000（E2E_PORT 可换端口）。reuseExistingServer
+  // 关闭，绝不复用来源不明的 8000 服务，保证每次在隔离数据上全量重建。跨平台 Python 脚本（避免 shell 差异）。
   webServer: {
     command: "uv run python scripts/e2e-server.py",
-    url: "http://127.0.0.1:8000/",
+    url: `${E2E_BASE_URL}/`,
     reuseExistingServer: false,
     timeout: 120_000,
   },
 
   use: {
-    baseURL: "http://127.0.0.1:8000",
+    baseURL: E2E_BASE_URL,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     browserName: "chromium",

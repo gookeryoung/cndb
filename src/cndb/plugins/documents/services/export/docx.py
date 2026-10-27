@@ -92,14 +92,19 @@ def _render_docx(
         s = line.strip()
         return s.startswith("|") and s.endswith("|")
 
-    def _write_table(rows: list[list[str]]) -> None:
-        """把二维文本写入 docx 表格对象（首行加粗 + 主题底纹）."""
+    def _write_table(rows: list[list[str]], width_percent: int | None = None) -> None:
+        """把二维文本写入 docx 表格对象（首行加粗 + 主题底纹）.
+
+        ``width_percent`` 非空时按正文可用宽度的百分比设置表宽（数据表引用）。
+        """
         if not rows:
             return
         max_cols = max(len(r) for r in rows)
         norm_rows = [r + [""] * (max_cols - len(r)) for r in rows]
         t = doc.add_table(rows=len(norm_rows), cols=max_cols)
         t.style = "Table Grid"
+        if width_percent is not None:
+            _set_table_ref_width(t, width_percent)
         for i, row_cells in enumerate(norm_rows):
             for j, cell_text in enumerate(row_cells):
                 cell = t.cell(i, j)
@@ -126,7 +131,7 @@ def _render_docx(
         in_table = False
         table_buffer = []
 
-    def _add_table_ref(resolved: ResolvedTable) -> None:
+    def _add_table_ref(resolved: ResolvedTable, width: int) -> None:
         """渲染数据表引用：坏引用降级为占位段落，正常引用输出说明行 + 表格."""
         if resolved.error:
             doc.add_paragraph(resolved.error)
@@ -136,9 +141,9 @@ def _render_docx(
         run.italic = True
         caption_size = preset.body_size - 1
         _apply_run_font(run, preset.body_font, caption_size)
-        _write_table([resolved.header or [], *(resolved.rows or [])])
+        _write_table([resolved.header or [], *(resolved.rows or [])], width_percent=width)
 
-    def _add_chart_ref(resolved: ResolvedChart, chart_id: int) -> None:
+    def _add_chart_ref(resolved: ResolvedChart, chart_id: int, width: int) -> None:
         """渲染图表引用：坏引用降级为占位段落，正常引用嵌入整幅图 PNG（D6，2 倍分辨率）."""
         if resolved.error:
             doc.add_paragraph(resolved.error)
@@ -148,7 +153,7 @@ def _render_docx(
             doc.add_paragraph(f"[图表无法嵌入：{resolved.title or f'图表 #{chart_id}'}]")
             return
         try:
-            doc.add_picture(io.BytesIO(to_png(rendered, scale=2)), width=_docx_image_width(doc))
+            doc.add_picture(io.BytesIO(to_png(rendered, scale=2)), width=_docx_image_width(doc, width))
         except Exception:  # pragma: no cover - Pillow 绘制失败兜底
             doc.add_paragraph(f"[图表无法嵌入：{resolved.title or f'图表 #{chart_id}'}]")
 
@@ -168,14 +173,14 @@ def _render_docx(
         if tables is not None:
             spec = parse_table_ref_line(line)
             if spec is not None:
-                _add_table_ref(tables(spec))
+                _add_table_ref(tables(spec), spec.width)
                 continue
 
         # 图表引用：独占一行时渲染为整幅图（坏引用降级为占位文字）
         if charts is not None:
             chart_spec = parse_chart_ref_line(line)
             if chart_spec is not None:
-                _add_chart_ref(charts(chart_spec), chart_spec.chart_id)
+                _add_chart_ref(charts(chart_spec), chart_spec.chart_id, chart_spec.width)
                 continue
 
         if not line.strip():
@@ -223,18 +228,33 @@ def _render_docx(
     return buf.getvalue()
 
 
-def _docx_image_width(doc: Any) -> Any:
-    """图片最大宽度 = 正文可用宽度（页宽减左右页边距）；取不到时回退 14cm."""
+def _docx_image_width(doc: Any, percent: int = 100) -> Any:
+    """图片宽度 = 正文可用宽度 × 百分比（缺省 100）；取不到时回退 14cm 的对应比例."""
     from docx.shared import Cm
 
     try:
         section = doc.sections[0]
         usable = section.page_width - section.left_margin - section.right_margin
         if usable and usable > 0:
-            return usable
+            return int(usable * percent / 100)
     except (IndexError, AttributeError):  # pragma: no cover - 极端文档结构
         pass
-    return Cm(14)
+    return int(Cm(14) * percent / 100)
+
+
+def _set_table_ref_width(table: Any, percent: int) -> None:
+    """按正文宽度的百分比设置 DOCX 表宽（``w:tblW`` 用 1/50 百分比单位）."""
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    tbl_pr = table._tbl.tblPr
+    tbl_w = tbl_pr.find(qn("w:tblW"))
+    if tbl_w is None:
+        tbl_w = OxmlElement("w:tblW")
+        tbl_pr.append(tbl_w)
+    tbl_w.set(qn("w:type"), "pct")
+    # Word 的 pct 单位是 1/50 百分比：75% → 3750
+    tbl_w.set(qn("w:w"), str(int(percent * 50)))
 
 
 def _add_rich_runs(paragraph: Any, text: str, body_font: str = "Calibri", code_font: str = "Courier New") -> None:

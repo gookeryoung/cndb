@@ -6,11 +6,13 @@
  */
 
 import { useMemo, useState } from 'react'
-import { Alert, Skeleton, Table, Typography } from 'antd'
+import { Alert, Skeleton, Space, Table, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { recordApi, tableApi, viewApi } from '@/api'
 import type { Field, RowResponse } from '@/api'
 import type { TableRef } from './tableRef'
+import RefWidthControl from './RefWidthControl'
+import { parseRefWidth } from './refWidth'
 
 const { Text } = Typography
 
@@ -21,11 +23,16 @@ function cellText(value: unknown): string {
   return String(value)
 }
 
-export default function TableEmbed({ workspaceId, tableRef }: {
+export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthChange }: {
   workspaceId: number
   tableRef: TableRef
+  /** 同表在正文中的出现序号（0 基），用于宽度控件定位 */
+  refOrdinal?: number
+  /** 宽度调整回调；不传不渲染控件（查看 / 游客只读） */
+  onWidthChange?: (width: number) => void
 }) {
   const [page, setPage] = useState(1)
+  const pct = parseRefWidth(tableRef.width)
   const offset = (page - 1) * tableRef.limit
 
   const tableQuery = useQuery({
@@ -82,27 +89,43 @@ export default function TableEmbed({ workspaceId, tableRef }: {
   }
 
   return (
-    <div style={{ margin: '0.8em 0' }}>
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        {tableQuery.data.name}
-        {tableRef.view ? ` · 视图 #${tableRef.view}` : ''}
-        {` · 共 ${rowsQuery.data?.total ?? 0} 行`}
-      </Text>
-      <Table
-        size="small"
-        rowKey={(row: RowResponse) => String(row.id)}
-        columns={columns}
-        dataSource={rowsQuery.data?.items ?? []}
-        loading={rowsQuery.isLoading}
-        pagination={{
-          current: page,
-          pageSize: tableRef.limit,
-          total: rowsQuery.data?.total ?? 0,
-          showSizeChanger: false,
-          onChange: p => setPage(p),
-        }}
-        scroll={{ x: 'max-content' }}
-      />
+    <div
+      style={{ margin: '0.8em 0', width: `${pct}%`, maxWidth: '100%' }}
+      data-testid={`table-embed-${tableRef.tableId}`}
+      data-width={pct}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          {tableQuery.data.name}
+          {tableRef.view ? ` · 视图 #${tableRef.view}` : ''}
+          {` · 共 ${rowsQuery.data?.total ?? 0} 行`}
+        </Text>
+        {onWidthChange && (
+          <RefWidthControl
+            value={pct}
+            onChange={onWidthChange}
+            testId={`table-embed-width-${tableRef.tableId}-${refOrdinal ?? 0}`}
+          />
+        )}
+      </div>
+      <Space direction="vertical" size={0} style={{ width: '100%', overflowX: 'auto' }}>
+        <Table
+          size="small"
+          rowKey={(row: RowResponse) => String(row.id)}
+          columns={columns}
+          dataSource={rowsQuery.data?.items ?? []}
+          loading={rowsQuery.isLoading}
+          pagination={{
+            current: page,
+            pageSize: tableRef.limit,
+            total: rowsQuery.data?.total ?? 0,
+            showSizeChanger: false,
+            onChange: p => setPage(p),
+          }}
+          scroll={{ x: 'max-content' }}
+          style={{ minWidth: '100%' }}
+        />
+      </Space>
     </div>
   )
 }

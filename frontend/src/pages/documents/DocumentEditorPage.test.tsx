@@ -139,6 +139,26 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         })
     }, 30_000)
 
+    it('插入时可预设显示宽度：非 75 才写入 width 参数（ADR 0051）', async () => {
+        renderEditor()
+        const ta = await enterSourceMode()
+        await waitFor(() => expect(ta.value).toContain('需求说明'))
+
+        fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
+        const tableCombo = await screen.findByTestId('insert-table-select')
+        openSelect(tableCombo)
+        fireEvent.click(await screen.findByText('客户表'))
+
+        const widthInput = screen.getByTestId('insert-table-width') as HTMLInputElement
+        fireEvent.change(widthInput, { target: { value: '50' } })
+        fireEvent.blur(widthInput)
+        fireEvent.click(screen.getByRole('button', { name: /^插\s*入$/ }))
+
+        await waitFor(() => {
+            expect(ta.value.startsWith('{{table:100|width=50}}')).toBe(true)
+        })
+    }, 30_000)
+
     it('切换数据表后清空已选视图（ADR 0045）', async () => {
         server.use(
             http.get('/api/v1/workspaces/:wid/tables', () =>
@@ -1613,6 +1633,35 @@ describe('DocumentEditorPage 图表引用（ADR 0048）', () => {
         // 保存（POST 建实例 #301）后页面回插引用
         fireEvent.click(screen.getByTestId('chart-designer-save'))
         await waitFor(() => expect(ta.value).toContain('{{chart:301}}'))
+    }, 30_000)
+
+    it('查看模式：按 width 渲染图表，owner 调整宽度后正文占位符被改写', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/2/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    content: '# 需求说明\n\n{{chart:300|width=50}}\n\n正文。\n',
+                    version_number: 1,
+                    draft: null,
+                    write_mode: 'direct',
+                })),
+        )
+        renderEditor()
+        const modeSwitch = await screen.findByTestId('doc-mode-switch')
+        fireEvent.click(within(modeSwitch).getByText('查看'))
+
+        const figure = await screen.findByTestId('chart-embed-300', {}, { timeout: 8000 })
+        expect(figure).toHaveAttribute('data-width', '50')
+
+        fireEvent.click(await screen.findByTestId('chart-embed-width-300-0'))
+        fireEvent.click(await screen.findByTestId('chart-embed-width-300-0-preset-25'))
+        await waitFor(() => expect(screen.getByTestId('chart-embed-300')).toHaveAttribute('data-width', '25'))
+
+        // 切到编辑模式的源码视图核对正文改写结果（其他参数与段落保持原样）
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('编辑'))
+        const ta = await enterSourceMode()
+        expect(ta.value).toContain('{{chart:300|width=25}}')
+        expect(ta.value).toContain('# 需求说明')
     }, 30_000)
 
     it('查看模式：预览内联渲染图表，owner 可从「编辑图表」进设计器', async () => {

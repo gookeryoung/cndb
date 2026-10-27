@@ -4,10 +4,13 @@
  * 语法：`{{table:<表ID>}}`，可选参数以 `|` 分隔：
  * - `view=<视图ID>`：按视图的 filters/sortings 拉取行
  * - `limit=<每页行数>`：上限 {@link MAX_TABLE_REF_LIMIT}，非法回退默认值
+ * - `width=<显示宽度百分比>`：25–100，缺省 / 非法回退 75（ADR 0051）
  *
  * 占位符须独占一个段落（前后空行分隔，段内无其他文本）才被解析；
  * 行内混排视为普通 Markdown 文本。
  */
+
+import { DEFAULT_REF_WIDTH, parseRefWidth } from './refWidth'
 
 /** 每页行数上限（与设计约定一致，防止引用拖垮预览） */
 export const MAX_TABLE_REF_LIMIT = 50
@@ -23,6 +26,8 @@ export interface TableRef {
   view?: number
   /** 每页行数（已钳制到 [1, MAX_TABLE_REF_LIMIT]） */
   limit: number
+  /** 显示宽度百分比（25–100，缺省 / 非法回退 75） */
+  width: number
 }
 
 /** Markdown 内容切片：普通片段 / 数据表引用片段 */
@@ -49,6 +54,7 @@ export function parseTableRef(line: string): TableRef | null {
   const ref: TableRef = {
     tableId: Number(m[1]),
     limit: DEFAULT_TABLE_REF_LIMIT,
+    width: DEFAULT_REF_WIDTH,
   }
 
   const paramsRaw = m[2]
@@ -66,6 +72,8 @@ export function parseTableRef(line: string): TableRef | null {
       } else if (key === 'view') {
         const n = Number(value)
         if (Number.isFinite(n) && n >= 1) ref.view = Math.floor(n)
+      } else if (key === 'width') {
+        ref.width = parseRefWidth(value)
       }
     }
   }

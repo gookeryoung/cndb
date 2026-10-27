@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm'
 import TableEmbed from './TableEmbed'
 import ChartEmbed from './ChartEmbed'
 import { splitRefs } from './chartRef'
+import type { RefWidthChange } from './refWidth'
 import { headingAnchor } from './outline'
 import { scrollToHeading } from './docAnchor'
 import { parseWikilinkHref, transformWikilinks } from './wikilink'
@@ -238,7 +239,7 @@ function Md({
   )
 }
 
-function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase, onWikilink, onEditChart }: {
+function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase, onWikilink, onEditChart, onRefWidthChange }: {
   content: string
   /** 工作区 ID：提供后启用 `{{table:…}}` / `{{chart:…}}` 动态引用渲染 */
   workspaceId?: number
@@ -250,6 +251,8 @@ function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase,
   onWikilink?: (title: string) => void
   /** 图表编辑入口（写权限由页面侧判断后传入）；不传时 ChartEmbed 无编辑按钮 */
   onEditChart?: (chartId: number) => void
+  /** 引用宽度调整回调（ADR 0051；写权限由页面侧判断后传入）；不传时嵌入块无宽度控件 */
+  onRefWidthChange?: (change: RefWidthChange) => void
 }) {
   // 游客分享模式：无工作区上下文但带分享 token，只切 chart 片段（table 占位维持文本）
   const publicMode = workspaceId === undefined && shareToken !== undefined
@@ -273,21 +276,62 @@ function MarkdownPreviewBase({ content, workspaceId, shareToken, publicFileBase,
 
   return (
     <div className="doc-md-preview" style={{ lineHeight: 1.75, wordBreak: 'break-word' }}>
-      {segments!.map((seg, i) =>
-        seg.type === 'md' ? (
-          <Md key={i} text={seg.text} workspaceId={workspaceId} publicFileBase={publicFileBase} onWikilink={onWikilink} />
-        ) : seg.type === 'table' ? (
-          <TableEmbed key={i} workspaceId={workspaceId!} tableRef={seg.ref} />
-        ) : (
-          <ChartEmbed
-            key={i}
-            workspaceId={workspaceId}
-            shareToken={shareToken}
-            chartId={seg.ref.chartId}
-            onEditChart={onEditChart}
-          />
-        ),
-      )}
+      {(() => {
+        // 同一图表 / 表可被多次引用：按 ID 维护出现序号，宽度控件才能定位到目标段落
+        const ordinals = new Map<string, number>()
+        const nextOrdinal = (kind: 'chart' | 'table', id: number) => {
+          const key = `${kind}:${id}`
+          const n = ordinals.get(key) ?? 0
+          ordinals.set(key, n + 1)
+          return n
+        }
+        return segments!.map((seg, i) => {
+          if (seg.type === 'md') {
+            return (
+              <Md key={i} text={seg.text} workspaceId={workspaceId} publicFileBase={publicFileBase} onWikilink={onWikilink} />
+            )
+          }
+          if (seg.type === 'table') {
+            const occurrence = nextOrdinal('table', seg.ref.tableId)
+            return (
+              <TableEmbed
+                key={i}
+                workspaceId={workspaceId!}
+                tableRef={seg.ref}
+                refOrdinal={occurrence}
+                onWidthChange={onRefWidthChange
+                  ? w => onRefWidthChange({
+                    kind: 'table',
+                    id: seg.ref.tableId,
+                    occurrence,
+                    width: w,
+                  })
+                  : undefined}
+              />
+            )
+          }
+          const occurrence = nextOrdinal('chart', seg.ref.chartId)
+          return (
+            <ChartEmbed
+              key={i}
+              workspaceId={workspaceId}
+              shareToken={shareToken}
+              chartId={seg.ref.chartId}
+              width={seg.ref.width}
+              refOrdinal={occurrence}
+              onEditChart={onEditChart}
+              onWidthChange={onRefWidthChange
+                ? w => onRefWidthChange({
+                  kind: 'chart',
+                  id: seg.ref.chartId,
+                  occurrence,
+                  width: w,
+                })
+                : undefined}
+            />
+          )
+        })
+      })()}
     </div>
   )
 }

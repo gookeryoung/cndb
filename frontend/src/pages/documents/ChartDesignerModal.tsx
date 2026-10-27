@@ -20,6 +20,7 @@ import {
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
+import { useResponsive } from '@/hooks/useResponsive'
 import { chartApi } from '@/api/charts'
 import type { ChartInstance, ChartTemplateInfo } from '@/api/charts'
 import { sanitizeSvg } from '@/components/Document/ChartEmbed'
@@ -161,6 +162,7 @@ export default function ChartDesignerModal({
     enabled: open,
     staleTime: 5 * 60 * 1000,
   })
+  const { isMobile } = useResponsive()
 
   const templateKey = target?.kind === 'create' ? target.templateKey : target?.chart.template_key ?? null
   const template: ChartTemplateInfo | undefined = useMemo(
@@ -322,7 +324,8 @@ export default function ChartDesignerModal({
       title={target?.kind === 'edit' ? '编辑图表' : '设计图表'}
       open={open}
       onCancel={onCancel}
-      width={1080}
+      width={1200}
+      style={{ maxWidth: 'calc(100vw - 24px)' }}
       destroyOnHidden
       footer={[
         <Button key="cancel" onClick={onCancel}>取消</Button>,
@@ -350,9 +353,24 @@ export default function ChartDesignerModal({
       {open && !template && templatesQuery.isLoading && <Skeleton active paragraph={{ rows: 6 }} />}
 
       {template && config && (
-        <div style={{ display: 'flex', gap: 16 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: isMobile ? 'column' : 'row',
+            gap: 16,
+            alignItems: 'stretch',
+          }}
+        >
           {/* 左列：标题 + 数据 + 文案 + 配色 */}
-          <div style={{ flex: 1, minWidth: 0, maxHeight: '62vh', overflowY: 'auto', paddingRight: 4 }}>
+          <div
+            style={{
+              flex: isMobile ? 'none' : '1 1 44%',
+              minWidth: 0,
+              maxHeight: isMobile ? '40vh' : '62vh',
+              overflowY: 'auto',
+              paddingRight: 4,
+            }}
+          >
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
               <div>
                 <Text strong style={{ display: 'block', marginBottom: 4 }}>图表名称</Text>
@@ -577,8 +595,15 @@ export default function ChartDesignerModal({
             </Space>
           </div>
 
-          {/* 右列：实时预览（300ms 防抖，与正式渲染同源） */}
-          <div style={{ width: 400, flexShrink: 0 }}>
+          {/* 右列：实时预览（300ms 防抖，与正式渲染同源）；预览列占比 ≥ 55%（ADR 0051） */}
+          <div
+            data-testid="chart-designer-preview"
+            style={{
+              flex: isMobile ? 'none' : '1 1 56%',
+              minWidth: 0,
+              width: isMobile ? '100%' : undefined,
+            }}
+          >
             <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
               实时预览（输入停顿 0.3 秒后刷新）
             </Paragraph>

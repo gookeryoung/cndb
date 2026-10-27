@@ -17,8 +17,8 @@ from cndb.plugins.documents.services.export.theme import DEFAULT_THEME, ExportTh
 _PDF_MAX_IMAGE_WIDTH = 595.27 - 100
 
 
-def _make_pdf_image(resolved: tuple[bytes, str] | None) -> Any:
-    """把解析出的图片字节装成 Platypus Image，并等比缩放到正文宽度内.
+def _make_pdf_image(resolved: tuple[bytes, str] | None, max_width: float = _PDF_MAX_IMAGE_WIDTH) -> Any:
+    """把解析出的图片字节装成 Platypus Image，并等比缩放到给定宽度内（缺省正文宽度）.
 
     返回 None 表示无法嵌入（未解析到文件 / 格式不被 reportlab 支持）。
     """
@@ -33,7 +33,7 @@ def _make_pdf_image(resolved: tuple[bytes, str] | None) -> Any:
         width, height = reader.getSize()
         if not width or not height:  # pragma: no cover - 异常图片元数据
             return None
-        scale = min(1.0, _PDF_MAX_IMAGE_WIDTH / width)
+        scale = min(1.0, max_width / width)
         return PdfImage(io.BytesIO(data), width=width * scale, height=height * scale)
     except Exception:
         return None
@@ -124,7 +124,14 @@ def _render_pdf(
                     story.append(Paragraph(_pdf_escape(resolved.error), body_style))
                 else:
                     story.append(Paragraph(f"<i>{_pdf_escape(resolved.caption)}</i>", body_style))
-                    story.append(_make_pdf_table([resolved.header or [], *(resolved.rows or [])], preset, cjk_font))
+                    story.append(
+                        _make_pdf_table(
+                            [resolved.header or [], *(resolved.rows or [])],
+                            preset,
+                            cjk_font,
+                            width_percent=spec.width,
+                        )
+                    )
                     story.append(Spacer(1, 6))
                 continue
 
@@ -138,7 +145,12 @@ def _render_pdf(
                     continue
                 fallback = f"[图表无法嵌入：{chart_resolved.title or f'图表 #{chart_spec.chart_id}'}]"
                 rendered = chart_resolved.rendered
-                figure = _make_pdf_image((to_png(rendered, scale=2), "chart.png")) if rendered is not None else None
+                max_width = _PDF_MAX_IMAGE_WIDTH * chart_spec.width / 100
+                figure = (
+                    _make_pdf_image((to_png(rendered, scale=2), "chart.png"), max_width=max_width)
+                    if rendered is not None
+                    else None
+                )
                 if figure is None:  # pragma: no cover - 渲染器契约保证 PNG 可解析
                     story.append(Paragraph(_pdf_escape(fallback), body_style))
                 else:
@@ -247,8 +259,16 @@ def _pdf_table_style_cmds(preset: ExportTheme, cjk_font: str = "Helvetica") -> l
     ]
 
 
-def _make_pdf_table(rows: list[list[str]], preset: ExportTheme | None = None, cjk_font: str = "Helvetica") -> Any:
-    """构造 reportlab Table（带表头样式 + 中文字体 + 跨页重复）."""
+def _make_pdf_table(
+    rows: list[list[str]],
+    preset: ExportTheme | None = None,
+    cjk_font: str = "Helvetica",
+    width_percent: int = 100,
+) -> Any:
+    """构造 reportlab Table（带表头样式 + 中文字体 + 跨页重复）.
+
+    ``width_percent`` 按正文可用宽度的百分比设置总列宽（数据表引用，缺省 100）。
+    """
     from reportlab.platypus import Table, TableStyle
 
     if not rows:
@@ -256,7 +276,8 @@ def _make_pdf_table(rows: list[list[str]], preset: ExportTheme | None = None, cj
     # 确保每行等宽
     max_cols = max(len(r) for r in rows)
     norm_rows = [r + [""] * (max_cols - len(r)) for r in rows]
-    table = Table(norm_rows, repeatRows=1, hAlign="LEFT")
+    col_widths = [_PDF_MAX_IMAGE_WIDTH * width_percent / 100 / max_cols] * max_cols
+    table = Table(norm_rows, repeatRows=1, hAlign="LEFT", colWidths=col_widths)
     table.setStyle(TableStyle(_pdf_table_style_cmds(preset or DEFAULT_THEME, cjk_font)))
     return table
 

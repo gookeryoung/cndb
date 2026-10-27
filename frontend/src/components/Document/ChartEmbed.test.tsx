@@ -15,6 +15,29 @@ describe('ChartEmbed', () => {
     expect(canvas.querySelector('svg')).not.toBeNull()
   })
 
+  it('按 width 设置宿主宽度：缺省 75%，自定义 50%', async () => {
+    const first = renderProviders(<ChartEmbed workspaceId={10} chartId={300} />)
+    const figure = await screen.findByTestId('chart-embed-300')
+    expect(figure).toHaveAttribute('data-width', '75')
+    expect(figure.style.width).toBe('75%')
+    first.unmount()
+
+    renderProviders(<ChartEmbed workspaceId={10} chartId={300} width={50} />)
+    const narrow = await screen.findByTestId('chart-embed-300')
+    expect(narrow).toHaveAttribute('data-width', '50')
+    expect(narrow.style.width).toBe('50%')
+  })
+
+  it('传入 onWidthChange 时才渲染宽度控件，选择预设后透传百分比', async () => {
+    const onWidthChange = vi.fn()
+    renderProviders(<ChartEmbed workspaceId={10} chartId={300} onWidthChange={onWidthChange} />)
+    await screen.findByTestId('chart-embed-svg-300')
+
+    fireEvent.click(screen.getByTestId('chart-embed-width-300-0'))
+    fireEvent.click(await screen.findByTestId('chart-embed-width-300-0-preset-50'))
+    expect(onWidthChange).toHaveBeenCalledWith(50)
+  })
+
   it('实例不存在 / 无权限时降级为占位提示（D7：单段降级不阻断）', async () => {
     server.use(
       http.get('/api/v1/workspaces/10/charts/404', () =>
@@ -80,6 +103,7 @@ describe('ChartEmbed', () => {
     const first = renderProviders(<ChartEmbed workspaceId={10} chartId={300} />)
     await screen.findByTestId('chart-embed-svg-300')
     expect(screen.queryByTestId('chart-embed-edit-300')).toBeNull()
+    expect(screen.queryByTestId('chart-embed-width-300-0')).toBeNull()
     first.unmount()
 
     renderProviders(<ChartEmbed workspaceId={10} chartId={300} onEditChart={onEditChart} />)

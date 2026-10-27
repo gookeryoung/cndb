@@ -109,6 +109,16 @@ test.describe("文档图表嵌入", () => {
       const save = page.getByTestId("chart-designer-save");
       await expect(save).toBeVisible({ timeout: 20_000 });
       await expect(save).toBeEnabled();
+
+      // 设计器实时预览占内容区 ≥ 55%（ADR 0051 C1）
+      const preview = page.getByTestId("chart-designer-preview");
+      await expect(preview).toBeVisible();
+      const previewBox = await preview.boundingBox();
+      const modalBox = await page.locator(".ant-modal-content").boundingBox();
+      expect(previewBox, "预览列应可见").toBeTruthy();
+      expect(modalBox, "设计器弹窗应可见").toBeTruthy();
+      expect(previewBox!.width / modalBox!.width).toBeGreaterThan(0.55);
+
       await page.getByTestId("chart-designer-title").fill(chartTitle);
       await save.click();
       await expect(page.getByText("图表已创建并插入").first()).toBeVisible({ timeout: 20_000 });
@@ -122,7 +132,14 @@ test.describe("文档图表嵌入", () => {
       expect(chart, "新建图表未出现在实例列表").toBeTruthy();
       const chartId = chart!.id;
 
-      // 3) 提交修改：等弹窗关闭（成功/失败都会关）后，正文含 {{chart:id}} 落为新版本
+      // 2.1) 编辑态预览默认 75%，用嵌入块宽度控件改成 50% 并写回正文（ADR 0051）
+      const editEmbed = page.getByTestId(`chart-embed-${chartId}`);
+      await expect(editEmbed).toHaveAttribute("data-width", "75", { timeout: 20_000 });
+      await page.getByTestId(`chart-embed-width-${chartId}-0`).click();
+      await page.getByTestId(`chart-embed-width-${chartId}-0-preset-50`).click();
+      await expect(editEmbed).toHaveAttribute("data-width", "50");
+
+      // 3) 提交修改：等弹窗关闭（成功/失败都会关）后，正文含 {{chart:id|width=50}} 落为新版本
       await expect(page.getByTestId("doc-submit-btn")).toBeEnabled({ timeout: 20_000 });
       await page.getByTestId("doc-submit-btn").click();
       await page.getByRole("button", { name: "确认提交" }).click();
@@ -135,7 +152,9 @@ test.describe("文档图表嵌入", () => {
           "get",
           `/workspaces/${wid}/documents/${docId}/content`,
         );
-        expect((contentResp.body as { content: string }).content).toContain(`{{chart:${chartId}}}`);
+        expect((contentResp.body as { content: string }).content).toContain(
+          `{{chart:${chartId}|width=50}}`,
+        );
       }).toPass({ timeout: 15_000 });
       // 提交只生成新版本；草稿要显式发布（显式发布入口，见 publishMut）
       await page.getByTestId("doc-publish-toggle").click();
@@ -150,6 +169,7 @@ test.describe("文档图表嵌入", () => {
       const embed = page.getByTestId(`chart-embed-svg-${chartId}`);
       await expect(embed).toBeVisible({ timeout: 20_000 });
       await expect(embed.locator("svg")).toHaveCount(1);
+      await expect(page.getByTestId(`chart-embed-${chartId}`)).toHaveAttribute("data-width", "50");
 
       // 5) 导出 Markdown（D6）：zip 归档，正文改写为 assets/ 引用且资产随包
       const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });

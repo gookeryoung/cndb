@@ -55,6 +55,16 @@ describe('ChartDesignerModal', () => {
     expect(await screen.findByTestId('chart-designer-preview-svg')).toBeInTheDocument()
   }, 15_000)
 
+  it('预览列占比 ≥ 55%：弹窗加宽、预览列 56%，窄屏堆叠（ADR 0051 C1）', async () => {
+    renderDesigner({ kind: 'create', templateKey: 'bar-line-dual-axis' })
+
+    const preview = await screen.findByTestId('chart-designer-preview')
+    expect(preview.style.flex).toContain('56%')
+    const modal = document.querySelector('.ant-modal') as HTMLElement | null
+    expect(modal).not.toBeNull()
+    expect(parseFloat(modal!.style.width)).toBeGreaterThanOrEqual(1200)
+  })
+
   it('系列模板（堆叠）：渲染系列名称编辑与每行系列值输入', async () => {
     renderDesigner({ kind: 'create', templateKey: 'stacked-bar-horizontal' })
 

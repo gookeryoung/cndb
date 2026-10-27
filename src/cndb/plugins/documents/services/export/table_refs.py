@@ -1,9 +1,10 @@
-"""导出侧数据表引用解析（ADR 0045）.
+"""导出侧数据表引用解析（ADR 0045 / ADR 0051）.
 
-文档正文里的 ``{{table:<表ID>|view=<视图ID>|limit=<n>}}`` 独占段落，
+文档正文里的 ``{{table:<表ID>|view=<视图ID>|limit=<n>|width=<n>}}`` 独占段落，
 预览由前端 ``TableEmbed`` 渲染，导出则由本模块在服务端解析为真实表格：
 
 - 语法与 ``frontend/src/components/Document/tableRef.ts`` 同构（段落级、数字 ID、键值参数）；
+- ``width`` 只影响 DOCX / PDF 表格宽度（正文可用宽度 × n%），Markdown 不改写语法；
 - 取数复用表 / 视图权限判定与 ``list_rows``（行级权限 + 角色字段隐藏），按**导出发起人**收敛；
 - 单个坏引用降级为占位文字，不影响整篇导出。
 """
@@ -21,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import CndbError
 from cndb.plugins.accounts.models import User
+from cndb.plugins.documents.services.export.ref_width import DEFAULT_REF_WIDTH, parse_ref_width
 from cndb.plugins.tables.services.core.access import (
     TableAction,
     get_hidden_field_names,
@@ -45,6 +47,7 @@ class TableRefSpec:
 
     table_id: int
     view_id: int | None = None
+    width: int = DEFAULT_REF_WIDTH
 
 
 @dataclass
@@ -79,23 +82,26 @@ TableResolver = Callable[[TableRefSpec], ResolvedTable]
 def parse_table_ref_line(line: str) -> TableRefSpec | None:
     """解析独占一行的占位符；不合法返回 None.
 
-    未知参数忽略；``view`` 非数字 / 小于 1 时按整表处理（与前端一致）。
+    未知参数忽略；``view`` 非数字 / 小于 1 时按整表处理（与前端一致）；
+    ``width`` 缺省 / 非整数 / 越界回退 75。
     """
     m = TABLE_REF_RE.match(line.strip())
     if not m:
         return None
 
     view_id: int | None = None
+    width = DEFAULT_REF_WIDTH
     for key, value in _PARAM_RE.findall(m.group(2) or ""):
-        if key != "view":
-            continue
-        try:
-            parsed = int(value)
-        except ValueError:
-            continue
-        if parsed >= 1:
-            view_id = parsed
-    return TableRefSpec(table_id=int(m.group(1)), view_id=view_id)
+        if key == "view":
+            try:
+                parsed = int(value)
+            except ValueError:
+                continue
+            if parsed >= 1:
+                view_id = parsed
+        elif key == "width":
+            width = parse_ref_width(value)
+    return TableRefSpec(table_id=int(m.group(1)), view_id=view_id, width=width)
 
 
 def _cell_text(value: Any) -> str:

@@ -42,6 +42,12 @@ from cndb.plugins.documents.services.export import pdf as pdf_export
 from cndb.plugins.documents.services.export import pdf_fonts
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
 
+#: 1x1 PNG（合法图片字节，供 PDF 图片缩放用例使用）
+PNG_1PX = bytes.fromhex(
+    "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+    "0000000a49444154789c6300010000050001a5f645400000000049454e44ae426082"
+)
+
 DOCS = "/api/v1/workspaces/{ws}/documents"
 
 
@@ -669,6 +675,24 @@ class TestExportRenderers:
         assert table is not None
         empty_row = pdf_export._make_pdf_table([[], ["a"]])
         assert empty_row is not None
+
+    def test_make_pdf_table_width_percent(self):
+        """数据表引用宽度按正文宽度百分比收敛列宽（ADR 0051 D5）."""
+        wide = pdf_export._make_pdf_table([["a", "b"]], width_percent=100)
+        narrow = pdf_export._make_pdf_table([["a", "b"]], width_percent=50)
+        assert sum(wide._argW) == pytest.approx(pdf_export._PDF_MAX_IMAGE_WIDTH)
+        assert sum(narrow._argW) == pytest.approx(pdf_export._PDF_MAX_IMAGE_WIDTH * 0.5)
+
+    def test_make_pdf_image_scales_to_max_width(self):
+        """图表图片宽度按 max_width 等比缩放（ADR 0051 D5）."""
+        from reportlab.lib.utils import ImageReader
+
+        reader = ImageReader(io.BytesIO(PNG_1PX))
+        w, h = reader.getSize()
+        image = pdf_export._make_pdf_image((PNG_1PX, "chart.png"), max_width=w / 2)
+        assert image is not None
+        assert image.drawWidth == pytest.approx(w / 2)
+        assert image.drawHeight == pytest.approx(h / 2)
 
     def test_pdf_escape_and_rml(self):
         assert pdf_export._pdf_escape("a<b>&c") == "a&lt;b&gt;&amp;c"
