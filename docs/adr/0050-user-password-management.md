@@ -207,14 +207,14 @@ class UserPasswordResetResponse(BaseModel):
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 进行中 | `src/cndb/plugins/accounts/services/users.py`、`src/cndb/plugins/accounts/routers/users.py`、`src/cndb/plugins/accounts/schemas/users.py`、`src/cndb/core/events.py` | `tests/test_users_management.py` | — |
-| P1 | 进行中 | `frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/store/ui.ts`、`frontend/src/api/auth.ts`、`frontend/src/api/types/accounts.ts` | `frontend/src/pages/settings/SettingsModal.test.tsx` | — |
-| P2 | 进行中 | `frontend/src/pages/admin/UsersPage.tsx` | `frontend/src/pages/admin/UsersPage.test.tsx`、`frontend/tests/e2e/critical/user-password.spec.ts` | — |
+| P0 | 已落地 | `src/cndb/plugins/accounts/services/users.py`、`src/cndb/plugins/accounts/routers/users.py`、`src/cndb/plugins/accounts/schemas/users.py`、`src/cndb/core/events.py` | `tests/test_users_management.py` | `82d9a539` |
+| P1 | 已落地 | `frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/store/ui.ts`、`frontend/src/api/auth.ts`、`frontend/src/api/types/accounts.ts` | `frontend/src/pages/settings/SettingsModal.test.tsx` | `82d9a539` |
+| P2 | 已落地 | `frontend/src/pages/admin/UsersPage.tsx` | `frontend/src/pages/admin/UsersPage.test.tsx`、`frontend/tests/e2e/critical/user-password.spec.ts` | `82d9a539` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 实现完成（待回填提交 sha）
+- 当前阶段：P0-P2 全部落地（`Status` 保持 `Accepted`，实现已合入 `82d9a539`）
 - 已完成：管理重置端点 + 服务层 + schema + 审计 / 事件 + 接口测试；个人设置「安全」页签 + 强制重新登录；用户管理重置入口 / 一次性密码展示 / 日志标签；e2e 用例已编写
-- 下一步：`make check-fast` / `make test` / `make cov` / `make frontend-coverage` 全绿后回填提交 sha，`Status` 仍为 `Accepted`（评审已通过）
+- 下一步：无（本期范围已完成）；e2e 交由 CI 执行
 - 已知坑：自助改密端点已存在，勿重复新增；管理重置不得复用 `PATCH /users/{id}`；自动生成的密码只在本次响应中出现一次，审计 detail 不得落密码或哈希；e2e 需 Chromium 系统依赖（本机缺 `libatk-1.0.so.0`，未能在本机跑通，交给 CI）
 - 最近一次全绿：`make check-fast`、`make test`、`make cov`、`make frontend-coverage`（2026-10-27）
