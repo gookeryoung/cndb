@@ -18,11 +18,14 @@ services:
       context: .
       dockerfile: deploy/Dockerfile.dev
       args:
-        # 国内加速（默认值见 Dockerfile.dev）；需要官方源时置空/换成官方地址：
-        #   CNDB_PYTHON_IMAGE=python:3.12-slim CNDB_APT_MIRROR= CNDB_PIP_INDEX=https://pypi.org/simple
-        BASE_IMAGE: ${CNDB_PYTHON_IMAGE:-docker.m.daocloud.io/library/python:3.12-slim}
-        APT_MIRROR_HOST: ${CNDB_APT_MIRROR:-mirrors.cloud.tencent.com}
-        PIP_INDEX_URL: ${CNDB_PIP_INDEX:-https://mirrors.cloud.tencent.com/pypi/simple}
+        # 源由 deploy/docker-sources.sh 解析后注入（CNDB_SOURCES=auto|cn|global）：
+        #   make dd                    # 本地默认 cn，GitHub Actions 自动 global
+        #   CNDB_SOURCES=global make dd
+        # 也可继续用单项变量覆盖（默认官方源，国内 profile 会覆盖为镜像源）。
+        BASE_IMAGE: ${CNDB_PYTHON_IMAGE:-python:3.12-slim}
+        APT_MIRROR_HOST: ${CNDB_APT_MIRROR-}
+        PIP_INDEX_URL: ${CNDB_PIP_INDEX:-https://pypi.org/simple}
+        UV_DEFAULT_INDEX: ${CNDB_UV_INDEX:-https://pypi.org/simple}
     container_name: cndb-dev-backend
     working_dir: /app
     # 与宿主 `cndb dev` 同口径的端口（8772，Vite 代理默认目标）
@@ -46,8 +49,8 @@ services:
       start_period: 30s
 
   frontend:
-    # 国内加速：Node 镜像默认走国内代理；需要官方源时 `CNDB_NODE_IMAGE=node:22-alpine` 覆盖
-    image: ${CNDB_NODE_IMAGE:-docker.m.daocloud.io/library/node:22-alpine}
+    # 源由 deploy/docker-sources.sh 注入；默认官方镜像，国内 profile 自动换镜像代理
+    image: ${CNDB_NODE_IMAGE:-node:22-alpine}
     container_name: cndb-dev-frontend
     working_dir: /app/frontend
     # pnpm 由 corepack 按 package.json 的 packageManager 字段落地（12.4.2）
@@ -55,9 +58,9 @@ services:
     environment:
       # Vite 代理目标指向同编排内的后端服务（默认是 127.0.0.1:8772，容器内不通）
       - CNDB_API_TARGET=http://backend:8772
-      # 国内加速：corepack 拉取 pnpm 本体与 pnpm 下载依赖都走 npmmirror
-      - COREPACK_NPM_REGISTRY=https://registry.npmmirror.com
-      - npm_config_registry=https://registry.npmmirror.com
+      # corepack 拉取 pnpm 本体与 pnpm 下载依赖统一走 NPM registry（默认官方）
+      - COREPACK_NPM_REGISTRY=${CNDB_NPM_REGISTRY:-https://registry.npmjs.org/}
+      - npm_config_registry=${CNDB_NPM_REGISTRY:-https://registry.npmjs.org/}
     volumes:
       # 仓库根挂载：前端源码 HMR；node_modules 由下面的命名卷接管（见挂载说明）
       - .:/app

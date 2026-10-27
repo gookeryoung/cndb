@@ -18,6 +18,7 @@ TAT 的 Content 上限是 64 KiB（且 Content 本身还要对命令再做一次
 --------
 VERSION, IMAGE_REPO, WHEEL_URL, WHEEL_NAME, WHEEL_SHA256   必需
 WHEEL_MIRROR_URLS, BUILD_BASE_IMAGE, BUILD_PIP_INDEX_URL    可选
+CNDB_SOURCES    服务器侧构建源 profile（默认 cn；不继承 GitHub runner 的 global）
 PAYLOAD_PATH   默认 /tmp/cndb-deploy-config.tgz
 OUTPUT_PATH    默认 /tmp/cndb-deploy-cmd.sh
 
@@ -63,6 +64,10 @@ def build_command(payload_b64: str) -> str:
             raise SystemExit(f"[build] 非法的 PyPI 镜像地址：{url!r}")
     build_base_image = env("BUILD_BASE_IMAGE")
     build_pip_index_url = env("BUILD_PIP_INDEX_URL")
+    # 服务器在腾讯云内网，默认国内源；显式写入命令，绝不继承 GitHub runner 的 global。
+    server_sources = env("CNDB_SOURCES") or "cn"
+    if server_sources not in {"cn", "global", "auto"}:
+        raise SystemExit(f"[build] 非法的 CNDB_SOURCES：{server_sources!r}（允许 cn / global / auto）")
 
     lines: list[str] = [
         "set -Eeuo pipefail",
@@ -142,6 +147,7 @@ def build_command(payload_b64: str) -> str:
         "# ── 4. 服务器端构建并部署（内置备份/健康探测/失败回滚）────────",
         f"IMAGE_REPO_OVERRIDE='{image_repo}' \\",
         "SERVER_BUILD=1 \\",
+        f"CNDB_SOURCES='{server_sources}' \\",
         f"BUILD_BASE_IMAGE='{build_base_image}' \\",
         f"BUILD_PIP_INDEX_URL='{build_pip_index_url}' \\",
         f"./deploy/deploy.sh '{version}'",

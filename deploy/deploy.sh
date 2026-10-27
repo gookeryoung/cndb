@@ -17,8 +17,9 @@
 #      依赖未变时复用 cndb-base:deps-<hash>，只重建 20-40s 的 wheel 薄层；
 #      uv.lock 变化时才多花一次 1-3 分钟重建基础镜像。
 #      可选环境变量（国内服务器拉 Docker Hub 超时的换源逃生通道）：
-#        BUILD_BASE_IMAGE       覆盖基础镜像，如 docker.m.daocloud.io/library/python:3.12-slim
-#        BUILD_PIP_INDEX_URL    覆盖 pip 源，不设时基础镜像构建默认腾讯云 PyPI 内网镜像
+#        CNDB_SOURCES           构建源 profile（auto|cn|global）；auto 时服务器默认 cn
+#        BUILD_BASE_IMAGE       覆盖基础镜像（优先级高于 profile）
+#        BUILD_PIP_INDEX_URL    覆盖 pip 源（优先级高于 profile）
 #   2. OFFLINE=1（无外网隔离环境）：用离线交付包里的本地镜像，不 pull、不出网。
 #      前置：解包 cndb-<version>-offline-bundle.tar.gz（见 deploy/export-image.sh）；
 #      本脚本先 sha256sum -c 校验、docker load 镜像 tar，再照常重建容器/健康探测/回滚。
@@ -91,6 +92,21 @@ BIND_VALUE="$(grep -E '^CNDB_BIND=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= 
 # OFFLINE_DIR 默认指向包/仓库根：解包后镜像 tar 与 SHA256SUMS 与 deploy/ 同级。
 OFFLINE="${OFFLINE:-0}"
 OFFLINE_DIR="${OFFLINE_DIR:-$ROOT_DIR}"
+
+# ── 构建源（唯一解析入口；离线模式只 docker load，不解析/不联网）────────────────
+# 服务器 / CodeUp 默认 cn；GitHub Actions 自动 global；单项覆盖优先于 profile。
+# OFFLINE=1 不解析：nginx 镜像名必须沿用交付包里已 docker load 的名字（见 .env）。
+if [[ "$OFFLINE" != "1" ]]; then
+  EXPLICIT_BASE_IMAGE="${BUILD_BASE_IMAGE:-${CNDB_PYTHON_IMAGE:-}}"
+  [[ -f "${SCRIPT_DIR}/docker-sources.sh" ]] \
+    || die "缺少 deploy/docker-sources.sh（服务器上的 deploy/ 目录不完整）"
+  eval "$(bash "${SCRIPT_DIR}/docker-sources.sh" env)"
+  # .env 里的 CNDB_NGINX_IMAGE 视为用户显式覆盖（私有仓库 / 海外官方源），优先于 profile
+  env_nginx="$(grep -E '^CNDB_NGINX_IMAGE=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"' | xargs || true)"
+  if [[ -n "$env_nginx" ]]; then
+    export CNDB_NGINX_IMAGE="$env_nginx"
+  fi
+fi
 
 # compose 统一入口（启用代理时带上 profile，否则 nginx 容器不会被创建/启动）
 dc() {
@@ -306,7 +322,7 @@ deps_fingerprint() {
 }
 
 ensure_base_image() {
-  local fingerprint pip_index
+  local fingerprint
   fingerprint="$(deps_fingerprint)" \
     || die "无法计算依赖指纹：缺少 dist/requirements.lock.txt 或 deploy/Dockerfile.base"
   BASE_TAG="${BASE_IMAGE_REPO}:deps-${fingerprint}"
@@ -324,15 +340,16 @@ ensure_base_image() {
   fi
 
   log "构建依赖基础镜像（仅依赖变化时发生一次，约 1-3 分钟）..."
-  # 服务器在腾讯云内网，默认走腾讯云 PyPI 镜像；失败再用官方源兜底（可能较慢）
-  pip_index="${BUILD_PIP_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
+  log "构建源 profile=${CNDB_SOURCES_RESOLVED} | 基础镜像=${BASE_IMAGE} | pip=${PIP_INDEX_URL} | apt=${APT_MIRROR_HOST:-官方源}"
   if ! docker build -f deploy/Dockerfile.base \
-      ${BUILD_BASE_IMAGE:+--build-arg "BASE_IMAGE=${BUILD_BASE_IMAGE}"} \
-      --build-arg "PIP_INDEX_URL=${pip_index}" \
+      --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+      --build-arg "APT_MIRROR_HOST=${APT_MIRROR_HOST}" \
+      --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
       -t "$BASE_TAG" . ; then
-    warn "依赖基础镜像构建失败（pip 源: ${pip_index}），改用官方 PyPI 重试..."
+    warn "依赖基础镜像构建失败（profile=${CNDB_SOURCES_RESOLVED}），改用官方源整体重试..."
     docker build -f deploy/Dockerfile.base \
-      ${BUILD_BASE_IMAGE:+--build-arg "BASE_IMAGE=${BUILD_BASE_IMAGE}"} \
+      --build-arg "BASE_IMAGE=${EXPLICIT_BASE_IMAGE:-python:3.12-slim}" \
+      --build-arg "APT_MIRROR_HOST=" \
       --build-arg "PIP_INDEX_URL=https://pypi.org/simple" \
       -t "$BASE_TAG" . || die "依赖基础镜像构建失败"
   fi

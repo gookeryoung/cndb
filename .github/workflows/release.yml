@@ -25,6 +25,10 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# GitHub runner 在海外：Docker / apt / pip / uv / npm 一律用官方源。
+env:
+  CNDB_SOURCES: global
+
 jobs:
   # ===== PyPI 发布 =====
   pypi:

@@ -11,6 +11,7 @@
 #   ./deploy/export-image.sh 0.3.0
 #   IMAGE_REPO=ccr.ccs.tencentyun.com/pydev/cndb ./deploy/export-image.sh 0.3.0   # 与构建时保持一致
 #   WITH_NGINX=0 ./deploy/export-image.sh 0.3.0        # 不导出 nginx 反代镜像
+#   CNDB_SOURCES=global ./deploy/export-image.sh 0.3.0 # nginx 镜像走官方源
 #   OUTPUT_DIR=/tmp/pkg ./deploy/export-image.sh 0.3.0
 # ═══════════════════════════════════════════════════════════════════
 set -Eeuo pipefail
@@ -26,13 +27,18 @@ die()  { printf '\033[0;31m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*" >&2; exit 
 
 command -v docker >/dev/null 2>&1 || die "未找到 docker，请先安装 Docker"
 
+# ── 构建源（唯一解析入口）──────────────────────────────────────────
+# 只影响 nginx 镜像的拉取来源；应用镜像来自本地，不联网。
+EXPLICIT_NGINX_IMAGE="${CNDB_NGINX_IMAGE:-}"
+eval "$(bash "${SCRIPT_DIR}/docker-sources.sh" env)"
+
 VERSION="${1:-${VERSION:-}}"
 [[ -n "$VERSION" ]] || die "用法: $0 <version>   例: $0 0.3.0"
 VERSION="${VERSION#v}"
 
 IMAGE_REPO="${IMAGE_REPO:-}"
 APP_IMAGE="${IMAGE_REPO:-cndb}:${VERSION}"
-NGINX_IMAGE="${CNDB_NGINX_IMAGE:-nginx:1.27-alpine}"
+NGINX_IMAGE="${EXPLICIT_NGINX_IMAGE:-${NGINX_IMAGE}}"
 WITH_NGINX="${WITH_NGINX:-1}"
 OUTPUT_DIR="${OUTPUT_DIR:-dist/offline}"
 

@@ -27,8 +27,9 @@ name: Deploy to Tencent Cloud
 #   CNDB_REGION        实例地域，如 ap-shanghai
 #   TCR_REGISTRY / TCR_GROUP   （可选）TCR 域名与命名空间，仅作镜像命名/回滚识别，须成对提供
 #   TCR_USERNAME / TCR_PASSWORD （可选）仅手动回滚（docker pull）时使用
-#   BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL （可选）国内构建拉 Docker Hub/PyPI 超时的换源通道；
-#       BUILD_PIP_INDEX_URL 不配时，依赖基础镜像构建默认走腾讯云 PyPI 内网镜像
+#   CNDB_SOURCES （可选）服务器侧构建源 profile，默认 cn（国内镜像）；
+#       TAT 命令会显式写入该值，不会继承 GitHub runner 的 global
+#   BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL （可选）单项覆盖，优先级高于 profile
 #
 # 已废弃、可删除：SSH_HOST / SSH_PORT / SSH_USERNAME / SSH_PRIVATE_KEY（改 TAT 后不再有 SSH 登录）
 
@@ -180,6 +181,8 @@ jobs:
           WHEEL_SHA256: ${{ steps.wheel.outputs.sha256 }}
           BUILD_BASE_IMAGE: ${{ secrets.BUILD_BASE_IMAGE }}
           BUILD_PIP_INDEX_URL: ${{ secrets.BUILD_PIP_INDEX_URL }}
+          # 服务器在腾讯云内网：显式 cn，避免延续本 workflow 的 global profile
+          CNDB_SOURCES: cn
         run: |
           set -euo pipefail
           tar -czf /tmp/cndb-deploy-config.tgz \
@@ -207,6 +210,6 @@ jobs:
           echo "::error::部署失败。若 deploy.sh 已自动回滚，服务仍运行在上一版本。"
           echo "::error::TAT 回传的输出有长度上限，完整日志需上机查看："
           echo "::error::  docker logs --tail 100 cndb"
-          echo "::error::若卡在依赖基础镜像构建（首次或 uv.lock 变化后），多为拉基础镜像/pip 下载超时："
-          echo "::error::配置 Secret BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL 换源后重跑。"
+          echo "::error::若卡在依赖基础镜像构建（首次或 uv.lock 变化后），多为拉基础镜像/apt/pip 超时："
+          echo "::error::默认 CNDB_SOURCES=cn 已走国内镜像；仍失败可配置 BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL 单项覆盖后重跑。"
           echo "::error::若报『命令内容超过 64 KiB』，说明配置载荷过大，见 scripts/build_tat_command.py 的提示。"

@@ -119,13 +119,14 @@ docker --version && docker compose version
 curl -fsSL https://get.docker.com | sh
 systemctl enable --now docker
 
-# 国内服务器拉 Docker Hub 超时的解法（二选一，推荐 a）：
+# 国内服务器拉 Docker Hub 超时的解法（三选一，推荐 a）：
 # a) 配置 registry mirror（腾讯云 CVM 内网可用，对 docker pull/build 透明加速）
 sudo tee /etc/docker/daemon.json <<'EOF'
 { "registry-mirrors": ["https://mirror.ccs.tencentyun.com"] }
 EOF
 sudo systemctl restart docker
-# b) 不改 daemon，在 GitHub Secrets 配 BUILD_BASE_IMAGE 换基础镜像源（见下文）
+# b) 不改 daemon：服务器端构建默认 CNDB_SOURCES=cn（基础镜像走 docker.m.daocloud.io），无需配置
+# c) 仍要指定别的镜像：GitHub Secrets 配 BUILD_BASE_IMAGE 单项覆盖（见下文）
 
 # 建部署目录
 mkdir -p /opt/cndb/deploy /opt/cndb/backups
@@ -236,8 +237,11 @@ systemctl stop nginx && systemctl disable nginx
 > 应急回退：`systemctl start nginx` 即可恢复。应用此时绑在 `127.0.0.1:8000`，
 > 系统 nginx 原有的 `proxy_pass http://127.0.0.1:8000` 照样能通。
 
-**nginx 镜像换源**：默认 `nginx:1.27-alpine` 取自 Docker Hub，国内服务器常拉不动。
-用 `CNDB_NGINX_IMAGE` 换源，并**在切流前先单独拉一次**，免得切换窗口里才发现拉不下来：
+**nginx 镜像换源**：服务器端 `deploy.sh` 默认 `CNDB_SOURCES=cn`，会自动使用
+`docker.m.daocloud.io/library/nginx:1.27-alpine`。若服务器上旧的 `.env` 里还留着
+`CNDB_NGINX_IMAGE=nginx:1.27-alpine`，该行会被视为显式覆盖（继续用官方镜像），
+换成国内源请注释掉它。要指定别的源时用 `CNDB_NGINX_IMAGE` 覆盖，
+并**在切流前先单独拉一次**，免得切换窗口里才发现拉不下来：
 
 ```env
 CNDB_NGINX_IMAGE=mirror.ccs.tencentyun.com/library/nginx:1.27-alpine   # 腾讯云内网源，同地域最快
@@ -400,8 +404,9 @@ certbot renew --dry-run
 | `TCR_USERNAME`    | `tcr@deploy`（注意 `@`；仅手动回滚走 TCR pull 时需要） |
 | `TCR_PASSWORD`    | 服务账号密码                                  |
 | `SERVER_URL`      | 访问地址，用于部署后跳转                          |
-| `BUILD_BASE_IMAGE` | 可选。基础镜像换源，如 `docker.m.daocloud.io/library/python:3.12-slim`（服务器拉 Docker Hub 超时时配） |
-| `BUILD_PIP_INDEX_URL` | 可选。构建依赖基础镜像时的 pip 源。**不配默认走 `https://mirrors.cloud.tencent.com/pypi/simple`**（腾讯云内网源），失败会自动回退官方源 |
+| `BUILD_BASE_IMAGE` | 可选。单项覆盖基础镜像（优先级高于 `CNDB_SOURCES`），如 `docker.m.daocloud.io/library/python:3.12-slim` |
+| `BUILD_PIP_INDEX_URL` | 可选。单项覆盖构建依赖基础镜像时的 pip 源。默认由 `CNDB_SOURCES` 决定（服务器为 `cn`，走腾讯云内网源），失败会自动用官方源整体重试 |
+| `CNDB_SOURCES` | 可选。构建源 profile（`auto` / `cn` / `global`）；TAT 命令默认显式写 `cn`，不会继承 GitHub runner 的 `global` |
 
 > **`SSH_HOST` / `SSH_PORT` / `SSH_USERNAME` / `SSH_PRIVATE_KEY` 已不再使用**，可以删掉。
 > 改 TAT 下发后流水线没有任何 SSH 登录，服务器也不需要为部署保留公网 22 端口。
@@ -634,8 +639,8 @@ cd /opt/cndb && SERVER_BUILD=1 IMAGE_REPO_OVERRIDE=ccr.ccs.tencentyun.com/pydev/
 
 | 现象                                        | 原因与处理                                                     |
 | ----------------------------------------- | ----------------------------------------------------------- |
-| 构建卡在 `FROM python:3.12-slim` 拉取（依赖基础镜像构建阶段） | 服务器 Docker Hub 直连超时。配 registry-mirror（见「准备服务器」）或配 Secret `BUILD_BASE_IMAGE` 换源 |
-| 依赖基础镜像 pip 安装 404 / 超时              | 镜像源滞后或缺包。默认走腾讯云源，失败自动回退官方源；也可配 Secret `BUILD_PIP_INDEX_URL` 强制指定（避免阿里云等滞后源） |
+| 构建卡在 `FROM docker.m.daocloud.io/...` 拉取（依赖基础镜像构建阶段） | 国内镜像代理不可达/滞后。配 registry-mirror（见「准备服务器」），或配 Secret `BUILD_BASE_IMAGE` 换源；脚本会自动用官方源整体重试一次 |
+| 依赖基础镜像 pip / apt 安装 404 / 超时              | 镜像源滞后或缺包。默认 cn 走腾讯云源，失败自动用官方源整体重试；也可配 Secret `BUILD_PIP_INDEX_URL` 强制指定（避免阿里云等滞后源） |
 | 应用镜像构建报依赖缺失 / `--no-index` 失败     | 基础镜像与锁定清单不一致（极少见）。删掉对应 `cndb-base:deps-*` 镜像后重跑，会重新构建基础镜像 |
 | `缺少 dist/cndb-*.whl`                     | wheel 没下载下来。看 TAT 日志里「下载 wheel」那几行：国内镜像与官方源都失败通常是网络或版本未发布 |
 | 构建 OOM（进程被 kill 137）                 | 服务器内存 <2G。加 swap 或升配                                   |

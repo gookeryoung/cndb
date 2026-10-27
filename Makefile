@@ -104,16 +104,16 @@ build: frontend-build ## 构建分发包（前端 → wheel + sdist）
 # 版本号（默认取 pyproject.toml；可用 make docker-build VERSION=x.y.z 覆盖）
 VERSION ?= $(shell grep -m1 -E '^version' pyproject.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
 
-docker-dev dd: ## Docker 开发模式：容器内起前后端开发服务器（源码挂载 + 热重载，前端 5173 / 后端 8772）
-	docker compose -f docker-compose.dev.yml up --build
+docker-dev dd: ## Docker 开发模式：容器内起前后端（CNDB_SOURCES=auto 本地默认 cn；前端 5173 / 后端 8772）
+	bash deploy/docker-sources.sh exec docker compose -f docker-compose.dev.yml up --build
 
 docker-dev-down ddd: ## 停止 Docker 开发模式（移除容器与网络，保留数据卷）
 	docker compose -f docker-compose.dev.yml down
 
-docker-build db: build ## 本地构建镜像（联网机；VERSION=x.y.z 覆盖版本）
+docker-build db: build ## 本地构建镜像（CNDB_SOURCES=auto 本地默认 cn，GitHub 自动 global）
 	bash deploy/build-image.sh $(VERSION)
 
-docker-export de: ## 导出离线交付包（先 make docker-build；VERSION=x.y.z 覆盖版本）
+docker-export de: ## 导出离线交付包（先 make docker-build；CNDB_SOURCES 只影响 nginx 镜像来源）
 	bash deploy/export-image.sh $(VERSION)
 
 clean: ## 清理构建产物与缓存

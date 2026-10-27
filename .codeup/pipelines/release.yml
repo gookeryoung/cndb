@@ -23,7 +23,8 @@
 #   TENCENTCLOUD_SECRET_ID / TENCENTCLOUD_SECRET_KEY  子账号密钥（tat:RunCommand / tat:DescribeInvocationTasks）
 #   CNDB_REGION / CNDB_INSTANCE_ID                    Lighthouse 实例地域与实例 ID
 #   TCR_REGISTRY / TCR_GROUP                          （可选）镜像命名/回滚识别，须成对提供
-#   BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL            （可选）服务器端构建换源
+#   CNDB_SOURCES / BUILD_BASE_IMAGE / BUILD_PIP_INDEX_URL  （可选）服务器端构建源；
+#       CNDB_SOURCES 默认 cn（国内镜像），单项覆盖优先于 profile
 
 name: cndb-release
 
@@ -223,6 +224,9 @@ stages:
                 set -a
                 . /tmp/cndb-deploy.env
                 set +a
+
+                # CodeUp 在境内：服务器侧默认 cn（国内镜像）；不设置时会由脚本兜底为 cn
+                export CNDB_SOURCES="${CNDB_SOURCES:-cn}"
 
                 # 导出锁定依赖供服务器端 Dockerfile.base 构建缓存层复用（依赖未变时复用基础镜像）
                 mkdir -p dist

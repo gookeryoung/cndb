@@ -224,17 +224,31 @@ make push          # 推送全部 remote（含 tags）
 `cndb-dev-node-modules` 卷（容器重建不重复下载）。容器内需要演示数据时：
 `docker compose -f docker-compose.dev.yml exec backend cndb seed`。
 
-镜像构建默认走国内源（无需额外配置）：基础镜像经 `docker.m.daocloud.io` 镜像代理，
-apt 用腾讯云 Debian 源，pip / uv 依赖用腾讯云 PyPI，pnpm 与依赖用 npmmirror。
-需要官方源时逐项覆盖即可：
+镜像构建源由 `deploy/docker-sources.sh` 统一解析，`make docker-build` / `docker-dev` / `docker-export`
+共用同一 profile：
 
 ```bash
-CNDB_PYTHON_IMAGE=python:3.12-slim \
+# 本机 / CodeUp / 腾讯服务器：默认 cn（无需额外配置）
+#   ｜基础镜像 docker.m.daocloud.io ｜apt 腾讯云 ｜pip+uv 腾讯云 PyPI ｜pnpm npmmirror ｜
+make docker-dev
+
+# GitHub Actions / 海外机器：自动 global（GITHUB_ACTIONS=true），也可显式指定
+CNDB_SOURCES=global make docker-dev
+CNDB_SOURCES=cn make docker-build
+
+# 单项覆盖仍生效，优先级高于 profile（显式空串 = 用官方源）
 CNDB_APT_MIRROR= \
 CNDB_PIP_INDEX=https://pypi.org/simple \
+CNDB_UV_INDEX=https://pypi.org/simple \
+CNDB_PYTHON_IMAGE=python:3.12-slim \
 CNDB_NODE_IMAGE=node:22-alpine \
+CNDB_NPM_REGISTRY=https://registry.npmjs.org/ \
 make docker-dev
 ```
+
+GitHub workflow（CI / Release）已置 `CNDB_SOURCES=global`；腾讯部署 workflow 与 CodeUp
+流水线给 TAT 命令显式写 `CNDB_SOURCES=cn`，不会把 runner 的海外源带到服务器。
+基础镜像构建失败时会用官方源整体重试一次，日志会打印实际 profile。
 
 性能基准（10k 行导入 + 查询）：
 

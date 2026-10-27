@@ -9,8 +9,13 @@
 # 用法：
 #   ./deploy/build-image.sh 0.3.0
 #   IMAGE_REPO=ccr.ccs.tencentyun.com/pydev/cndb ./deploy/build-image.sh 0.3.0
-#   BUILD_BASE_IMAGE=docker.m.daocloud.io/library/python:3.12-slim ./deploy/build-image.sh 0.3.0
-#   BUILD_PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple ./deploy/build-image.sh 0.3.0
+#   CNDB_SOURCES=global ./deploy/build-image.sh 0.3.0   # GitHub / 海外：官方源
+#   CNDB_SOURCES=cn ./deploy/build-image.sh 0.3.0       # 国内：镜像源（默认）
+#   BUILD_BASE_IMAGE=... BUILD_PIP_INDEX_URL=... ./deploy/build-image.sh 0.3.0
+#       # 单项覆盖仍生效，优先级高于 profile
+#
+# 源 profile 由 deploy/docker-sources.sh 统一解析：本地默认 cn，
+# GITHUB_ACTIONS=true 时自动 global；失败后用官方源整体重试一次。
 #
 # 前置产物：dist/cndb-<version>-*.whl 与 dist/requirements.lock.txt
 #   （缺 wheel 时先执行 `make build`；缺锁定清单时脚本会尝试用 uv 生成）
@@ -27,6 +32,11 @@ warn() { printf '\033[0;33m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*"; }
 die()  { printf '\033[0;31m[%s]\033[0m %s\n' "$(date +%H:%M:%S)" "$*" >&2; exit 1; }
 
 command -v docker >/dev/null 2>&1 || die "未找到 docker，请先安装 Docker"
+
+# ── 构建源（唯一解析入口）──────────────────────────────────────────
+# 显式单项覆盖优先于 profile；记录显式基础镜像，供失败回退时保留。
+EXPLICIT_BASE_IMAGE="${BUILD_BASE_IMAGE:-${CNDB_PYTHON_IMAGE:-}}"
+eval "$(bash "${SCRIPT_DIR}/docker-sources.sh" env)"
 
 VERSION="${1:-${VERSION:-}}"
 [[ -n "$VERSION" ]] || die "用法: $0 <version>   例: $0 0.3.0"
@@ -65,16 +75,16 @@ if docker image inspect "$BASE_TAG" >/dev/null 2>&1; then
   ok "复用依赖基础镜像: ${BASE_TAG}"
 else
   log "构建依赖基础镜像（系统字体 + 锁定依赖，约 1-3 分钟）..."
-  # Dockerfile.base 的 BASE_IMAGE 默认 python:3.12-slim，这里显式传，便于换源
-  base_image="${BUILD_BASE_IMAGE:-python:3.12-slim}"
-  pip_index="${BUILD_PIP_INDEX_URL:-https://mirrors.cloud.tencent.com/pypi/simple}"
+  log "构建源 profile=${CNDB_SOURCES_RESOLVED} | 基础镜像=${BASE_IMAGE} | pip=${PIP_INDEX_URL} | apt=${APT_MIRROR_HOST:-官方源}"
   if ! docker build -f deploy/Dockerfile.base \
-      --build-arg "BASE_IMAGE=${base_image}" \
-      --build-arg "PIP_INDEX_URL=${pip_index}" \
+      --build-arg "BASE_IMAGE=${BASE_IMAGE}" \
+      --build-arg "APT_MIRROR_HOST=${APT_MIRROR_HOST}" \
+      --build-arg "PIP_INDEX_URL=${PIP_INDEX_URL}" \
       -t "$BASE_TAG" . ; then
-    warn "依赖基础镜像构建失败（pip 源: ${pip_index}），改用官方 PyPI 重试..."
+    warn "依赖基础镜像构建失败（profile=${CNDB_SOURCES_RESOLVED}），改用官方源整体重试..."
     docker build -f deploy/Dockerfile.base \
-      --build-arg "BASE_IMAGE=${base_image}" \
+      --build-arg "BASE_IMAGE=${EXPLICIT_BASE_IMAGE:-python:3.12-slim}" \
+      --build-arg "APT_MIRROR_HOST=" \
       --build-arg "PIP_INDEX_URL=https://pypi.org/simple" \
       -t "$BASE_TAG" . || die "依赖基础镜像构建失败"
   fi

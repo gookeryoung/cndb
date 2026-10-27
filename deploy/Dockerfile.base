@@ -25,15 +25,26 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# Debian 软件源镜像主机：空表示直连官方源（global），国内走 mirrors.cloud.tencent.com。
+# 由 deploy/docker-sources.sh 按 CNDB_SOURCES 注入，也可直接 --build-arg 覆盖。
+ARG APT_MIRROR_HOST=""
+
 # ── 系统依赖：仅中文字体 ──
 # 字体只装 fonts-wqy-microhei（约 5MB）：pdf_fonts.py 按 fc-match 候选列表
 # 动态注册，microhei 覆盖 GB2312/GBK 常用汉字，导出 Word/PDF 场景够用。
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
+RUN set -eux; \
+    if [ -n "${APT_MIRROR_HOST}" ]; then \
+      sed -i \
+        -e "s|deb.debian.org|${APT_MIRROR_HOST}|g" \
+        -e "s|security.debian.org|${APT_MIRROR_HOST}|g" \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
         fontconfig \
-        fonts-wqy-microhei \
-    && fc-cache -fv \
-    && rm -rf /var/lib/apt/lists/*
+        fonts-wqy-microhei; \
+    fc-cache -fv; \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

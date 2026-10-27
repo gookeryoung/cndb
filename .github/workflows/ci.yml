@@ -10,6 +10,8 @@ on:
       - 'src/**'
       - 'tests/**'
       - 'scripts/**'
+      - 'deploy/**'
+      - 'docker-compose*.yml'
       - 'frontend/src/**'
       - 'frontend/tests/**'
       - 'frontend/scripts/**'
@@ -36,6 +38,11 @@ on:
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+# GitHub runner 在海外：Docker / apt / pip / uv / npm 一律用官方源。
+# 本地与 CodeUp / 腾讯服务器不继承此值（deploy-tencent.yml / CodeUp 显式 cn）。
+env:
+  CNDB_SOURCES: global
 
 jobs:
   # 判定本次推送是否只有 ADR 文档 / ADR 校验脚本变化：
