@@ -284,6 +284,45 @@ class DocumentChangeRequestUpdateBase(BaseModel):
     base_version_number: int | None = Field(default=None, ge=0)
 
 
+# ── 图表实例（ADR 0048） ──
+
+
+class ChartCreate(BaseModel):
+    """创建图表实例：template_key 须在注册表内，config 结构由注册表校验."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    title: str = Field(min_length=1, max_length=255)
+    template_key: str = Field(min_length=1, max_length=64)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChartUpdate(ChartCreate):
+    """全量覆盖图表实例（边界 8：put 整体替换，乐观展示靠 updated_at）."""
+
+
+class ChartRenderPreview(BaseModel):
+    """设计器实时预览请求（不落库，D5）."""
+
+    template_key: str = Field(min_length=1, max_length=64)
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChartOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workspace_id: int
+    title: str
+    template_key: str
+    category: str | None = None
+    config: dict[str, Any]
+    created_by_id: int | None
+    updated_by_id: int | None
+    created_at: dt.datetime
+    updated_at: dt.datetime
+
+
 # ── 文档问题清单（文档级 Issue） ──
 
 
@@ -307,6 +346,10 @@ class DocumentIssueCommentCreate(BaseModel):
 
 
 __all__ = [
+    "ChartCreate",
+    "ChartOut",
+    "ChartRenderPreview",
+    "ChartUpdate",
     "ContentUpdate",
     "DiffResponse",
     "DocumentChangeRequestCreate",

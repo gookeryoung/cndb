@@ -64,7 +64,7 @@ class TestBackupV5:
     def test_export_carries_sync_jobs(self, client, owner_env):
         wid, _table_id, headers = owner_env
         backup = client.get(f"/api/v1/workspaces/{wid}/export", headers=headers).json()
-        assert backup["version"] == "7"
+        assert backup["version"] == "8"
         jobs = backup["sync_jobs"]
         assert len(jobs) == 1
         assert jobs[0]["name"] == "天气同步"
@@ -144,7 +144,7 @@ class TestBackupV7:
 
         backup = client.get(f"/api/v1/workspaces/{wid}/export", headers=headers).json()
 
-        assert backup["version"] == "7"
+        assert backup["version"] == "8"
         assert "llm_config" not in backup
         # 个人连接（含密文）绝不随工作区备份导出
         assert "llm.example.com/v1" not in json.dumps(backup)
@@ -167,6 +167,6 @@ class TestBackupV7:
     def test_export_carries_sync_jobs_without_llm_config(self, client, owner_env):
         wid, _table_id, headers = owner_env
         backup = client.get(f"/api/v1/workspaces/{wid}/export", headers=headers).json()
-        assert backup["version"] == "7"
+        assert backup["version"] == "8"
         assert len(backup["sync_jobs"]) == 1
         assert "llm_config" not in backup

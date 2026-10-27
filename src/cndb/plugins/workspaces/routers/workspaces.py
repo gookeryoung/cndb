@@ -304,7 +304,7 @@ def export_workspace(
 
     from sqlalchemy import MetaData, select
 
-    from cndb.plugins.documents.models import Document, DocumentTag, Tag
+    from cndb.plugins.documents.models import Document, DocumentChart, DocumentTag, Tag
     from cndb.plugins.documents.services.content import latest_version, load_content
     from cndb.plugins.tables.models import DataField, DataTable, DataView, RowPermission, TablePermission
 
@@ -565,14 +565,23 @@ def export_workspace(
         for job in sync_jobs
     ]
 
+    # v8（ADR 0048）：文档图表实例。config 原样导出（结构由 template_key 指向的
+    # 内置注册表解释）；正文 ``{{chart:id}}`` 引用不重写 id（与 ``{{table:id}}``
+    # 同口径 —— 正文是自由文本，备份往返语义是「实例存在且可渲染」）。
+    charts_rows = (
+        db.query(DocumentChart).filter(DocumentChart.workspace_id == workspace_id).order_by(DocumentChart.id).all()
+    )
+    charts_data = [{"title": c.title, "template_key": c.template_key, "config": c.config or {}} for c in charts_rows]
+
     return {
-        "version": "7",
+        "version": "8",
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
         "tables": tables_data,
         "document_tags": document_tags_data,
         "documents": documents_data,
         "sync_jobs": sync_jobs_data,
+        "charts": charts_data,
     }
 
 
@@ -635,6 +644,7 @@ def create_workspace_from_backup(
         imported_views=import_result.imported_views,
         imported_documents=import_result.imported_documents,
         imported_sync_jobs=import_result.imported_sync_jobs,
+        imported_charts=import_result.imported_charts,
         errors=import_result.errors,
     )
 

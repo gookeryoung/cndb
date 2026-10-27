@@ -379,6 +379,39 @@ class DocumentIssueComment(TimestampMixin, Base):
     issue: Mapped[DocumentIssue] = relationship(back_populates="comments")
 
 
+class DocumentChart(TimestampMixin, Base):
+    """图表实例（ADR 0048）：模板 key + 用户 config，渲染在请求期完成.
+
+    - 类别 / 模板是代码注册表（``services.charts.registry``），实例只存
+      ``template_key + config``，模板升级后旧实例自动获得修复（I6）；
+    - 无软删除：物理删除，正文引用处按 I5 降级为占位文字。
+    """
+
+    __tablename__ = "documents_chart"
+    __table_args__ = (
+        Index("ix_documents_chart_ws", "workspace_id"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    template_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 模板 schema 的完整配置：caption / labels / theme / data
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
+    updated_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DocumentChart(id={self.id}, template_key={self.template_key!r})"
+
+
 class DocumentIssueEvent(Base):
     """文档问题状态事件流水：记录谁在何时创建/关闭/重开问题."""
 
@@ -425,6 +458,7 @@ __all__ = [
     "SHARE_PERM_VIEWER",
     "Document",
     "DocumentChangeRequest",
+    "DocumentChart",
     "DocumentDraft",
     "DocumentIssue",
     "DocumentIssueComment",

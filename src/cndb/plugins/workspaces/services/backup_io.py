@@ -77,10 +77,10 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4", "5", "6", "7"):
+    if version not in ("1", "2", "3", "4", "5", "6", "7", "8"):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7）。请升级程序后再导入。",
+            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8）。请升级程序后再导入。",
         )
 
     imported_tables = 0
@@ -88,6 +88,7 @@ def _import_backup_into_workspace(
     imported_views = 0
     imported_documents = 0
     imported_sync_jobs = 0
+    imported_charts = 0
     errors: list[str] = []
 
     # v4 跨表引用重映射的收集器（v1-v3 备份无 id 信息，保持原样跳过重映射）：
@@ -392,6 +393,11 @@ def _import_backup_into_workspace(
         imported_sync_jobs += job_imported
         errors.extend(job_errors)
 
+        # ── v8（ADR 0048）：文档图表实例（旧备份无该键时按空处理） ──
+        chart_imported, chart_errors = _import_charts(workspace_id, json_data, current_user, db)
+        imported_charts += chart_imported
+        errors.extend(chart_errors)
+
         # v7（ADR 0019）：大模型连接是个人配置，不随工作区备份导出；
         # 旧 v6 备份里可能残留的 ``llm_config`` 键按未知键忽略。
     except HTTPException:
@@ -407,6 +413,7 @@ def _import_backup_into_workspace(
         imported_views=imported_views,
         imported_documents=imported_documents,
         imported_sync_jobs=imported_sync_jobs,
+        imported_charts=imported_charts,
         errors=errors,
     )
 
@@ -584,8 +591,57 @@ def _import_sync_jobs(
     return imported, errors
 
 
+def _import_charts(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+) -> tuple[int, list[str]]:
+    """还原文档图表实例（v8 起，ADR 0048），返回 (成功数, 错误明细).
+
+    - 模板已下线 / config 严格校验不过的实例跳过并记错误（不阻断整体导入）；
+    - 正文中 ``{{chart:旧id}}`` 引用不重写（与 ``{{table:id}}`` 同口径，
+      内容是自由文本；往返语义为「实例存在且可渲染」）。
+    """
+    from cndb.core.errors import BadRequestError
+    from cndb.plugins.documents.models import DocumentChart
+    from cndb.plugins.documents.services.charts import require_valid_config
+
+    items = json_data.get("charts") or []
+    if not items:
+        return 0, []
+
+    errors: list[str] = []
+    imported = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = (item.get("title") or "").strip()
+        template_key = (item.get("template_key") or "").strip()
+        try:
+            normalized = require_valid_config(template_key, item.get("config") or {})
+        except BadRequestError as exc:
+            errors.append(f"图表 {title or '(无标题)'} 跳过（模板下线或配置非法）: {exc}")
+            continue
+        db.add(
+            DocumentChart(
+                workspace_id=workspace_id,
+                title=title or "未命名图表",
+                template_key=template_key,
+                config=normalized,
+                created_by_id=current_user.id,
+                updated_by_id=current_user.id,
+            )
+        )
+        imported += 1
+    if imported:
+        db.commit()
+    return imported, errors
+
+
 __all__ = [
     "_coerce_row_value_types",
     "_import_backup_into_workspace",
+    "_import_charts",
     "_import_sync_jobs",
 ]

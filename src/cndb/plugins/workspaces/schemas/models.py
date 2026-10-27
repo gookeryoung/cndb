@@ -167,6 +167,8 @@ class WorkspaceImportResponse(BaseModel):
     """成功导入的文档数（仅最新正文；旧版备份无 documents 键时为 0）。"""
     imported_sync_jobs: int = 0
     """成功导入的外部数据同步任务数（v5 起；旧版备份无 sync_jobs 键时为 0）。"""
+    imported_charts: int = 0
+    """成功导入的文档图表实例数（v8 起；旧版备份无 charts 键时为 0）。"""
     errors: list[str] = []
     """部分内容导入失败/跳过的明细（空列表表示全部成功）。"""
 
@@ -192,6 +194,8 @@ class WorkspaceCreateFromBackupResponse(BaseModel):
     """成功导入的文档数（仅最新正文；旧版备份无 documents 键时为 0）。"""
     imported_sync_jobs: int = 0
     """成功导入的外部数据同步任务数（v5 起；旧版备份无 sync_jobs 键时为 0）。"""
+    imported_charts: int = 0
+    """成功导入的文档图表实例数（v8 起；旧版备份无 charts 键时为 0）。"""
     errors: list[str] = []
     """部分内容导入失败/跳过的明细（空列表表示全部成功）。"""
 
