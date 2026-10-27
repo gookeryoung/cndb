@@ -176,10 +176,12 @@ export default function HelpDocsPage() {
                 </div>
 
                 <div className="cn-help-docs-content">
-                    <article className="cn-help-docs-body">
-                        <h1 className="cn-help-docs-heading">{topic.label}</h1>
-                        <HelpDoc topic={topic} />
-                    </article>
+                    <div className="cn-help-docs-scroll">
+                        <article className="cn-help-docs-body">
+                            <h1 className="cn-help-docs-heading">{topic.label}</h1>
+                            <HelpDoc topic={topic} />
+                        </article>
+                    </div>
                     {!isMobile && toc}
                 </div>
             </main>
