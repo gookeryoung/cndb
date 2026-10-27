@@ -200,8 +200,8 @@ Related: `frontend/src/pages/documents/InsertTableModal.tsx`、`frontend/src/pag
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 后端导出渲染 | 已落地 | `src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/routers/documents.py` | `tests/test_document_export_table_refs.py` | — |
-| P1 前端插入视图 | 已落地 | `frontend/src/pages/documents/InsertTableModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentEditorPage.test.tsx` | — |
+| P0 后端导出渲染 | 已落地 | `src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/routers/documents.py` | `tests/test_document_export_table_refs.py` | `bde29f0` |
+| P1 前端插入视图 | 已落地 | `frontend/src/pages/documents/InsertTableModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/pages/documents/DocumentEditorPage.test.tsx` | `bde29f0` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
