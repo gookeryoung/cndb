@@ -241,13 +241,17 @@ test.describe("文档图表内嵌块", () => {
       }
 
       // 7) 重导入导出的 .md（D7）：块保留、配对静态图剥离，不出现双份
+      // 图表块按光标位置插入（用例未移动光标 → 落在正文最前），导出后首个非空行是块
+      // 而非 H1，故重导入标题取自**文件名**而非一级标题；这里按文件名定位新文档。
+      const importFileName = `重导入 ${stamp}.md`;
+      const importedTitle = importFileName.replace(/\.md$/, "");
       const importResp = await page.request.post(
         `/api/v1/workspaces/${wid}/documents/import/files`,
         {
           headers: { Authorization: `Bearer ${token}` },
           multipart: {
             files: {
-              name: `重导入 ${stamp}.md`,
+              name: importFileName,
               mimeType: "text/markdown",
               buffer: Buffer.from(mdText, "utf-8"),
             },
@@ -260,7 +264,7 @@ test.describe("文档图表内嵌块", () => {
       const tree = await apiCall(page.request, token, "get", `/workspaces/${wid}/documents/tree`);
       expect(tree.status).toBe(200);
       const importedDoc = flatten(tree.body as { items: TreeNode[] }).find(
-        (n) => !n.is_folder && n.id !== docId && n.title.startsWith(`图表嵌入 ${stamp}`),
+        (n) => !n.is_folder && n.id !== docId && n.title.startsWith(importedTitle),
       );
       expect(importedDoc, "重导入的文档未落库").toBeTruthy();
       importedDocId = importedDoc!.id;

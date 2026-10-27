@@ -265,6 +265,6 @@ Related: `frontend/src/components/Document/chartBlock.ts`、`frontend/src/compon
 - 当前阶段：P0–P2 代码与测试已落地，Status 待人工确认后由 `Accepted` 转 `Implemented`
 - 已完成：`charts/inline.py` 判定 / 序列化 / 指纹 / 渲染 + 导出（md / docx / pdf）+ 导入配对图剥离与告警 + 游客 render-preview + alembic 数据迁移；前端 `chartBlock.ts` / `refs.ts` / `ChartEmbed` / 编辑器 / 设计器 editBlock / 插入弹窗；ADR 0048 / 0051 / CONTEXT / 帮助 / CHANGELOG 已同步为内嵌块口径
 - 下一步：人工确认后改 `Status: Implemented`；发布时确保后端迁移与前端同版本上线（正文已无旧语法）
-- 已知坑：围栏块必须段落独占，行内混排不解析；指纹不含 `legacy_id`；旧 v8 备份的 `{{chart:id}}` 无 id 映射，按原文保留；外存版本（>2MB）迁移需原地重写 `v{n}.md.gz`；FTS 是独立 content 表，需 `INSERT OR REPLACE` 同步；素材库删除不回写正文（定义已复制）
-- 最近一次全绿：`make check-fast`、`make test`（5789 passed / 3 skipped）、`make cov`（96.66%，门槛 95%）、`make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.89%）、`make check-docs`（47 个 ADR / 0 error / 0 warning）
-- e2e 未在本机跑通：Playwright chromium 缺系统库 `libatk-1.0.so.0`（`browserType.launch` 失败），需在有浏览器依赖的环境执行 `make e2e`；用例 `frontend/tests/e2e/critical/document-chart-embed.spec.ts` 已覆盖插入 / 调宽 / 编辑 / 导出 / 游客渲染 / 重导入去重
+- 已知坑：围栏块必须段落独占，行内混排不解析；指纹不含 `legacy_id`；旧 v8 备份的 `{{chart:id}}` 无 id 映射，按原文保留；外存版本（>2MB）迁移需原地重写 `v{n}.md.gz`；FTS 是独立 content 表，需 `INSERT OR REPLACE` 同步；素材库删除不回写正文（定义已复制）；图表块按光标插入，未移动光标时落在正文最前，导出 `.md` 首个非空行是块而非 H1，重导入标题因此取自文件名（e2e 按文件名定位重导入文档）
+- 最近一次全绿：`make check-fast`、`make test`（5806 passed / 17 skipped）、`make check-docs`（48 个 ADR / 0 error / 4 warning）；P2 收尾时另跑过 `make cov`（96.66%，门槛 95%）、`make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.89%）
+- e2e：`frontend/tests/e2e/critical/document-chart-embed.spec.ts` 已在 Windows 本机跑通（Playwright chromium，2 passed），覆盖插入 / 调宽 / 编辑 / 导出 / 游客渲染 / 重导入去重
