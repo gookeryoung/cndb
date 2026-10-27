@@ -189,16 +189,14 @@ def test_validate_job_fields_accepts_drop_and_detects_missing():
 
 
 def test_real_datasource_json_is_valid():
-    """真实 examples 配置（ADR 0034 5 条 http_json + 2 条 llm_prompt），引用自洽."""
+    """真实 examples 配置（ADR 0053 3 条 http_json + 2 条 llm_prompt），引用自洽."""
     base = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例"
     cfg = json.loads((base / "datasource.json").read_text(encoding="utf-8-sig"))
     jobs = cfg["jobs"]
-    assert len(jobs) == 7
-    assert [job["provider"] for job in jobs] == ["http_json"] * 5 + ["llm_prompt"] * 2
+    assert len(jobs) == 5
+    assert [job["provider"] for job in jobs] == ["http_json"] * 3 + ["llm_prompt"] * 2
     assert [job["table"] for job in jobs] == [
         "股票清单",
-        "股市日线",
-        "股市日线",
         "股市日线",
         "股市日线",
         "行业政策与合规台账",
@@ -222,9 +220,10 @@ def test_real_datasource_json_is_valid():
     assert "{entrant}" in list_job["request_spec"]["url_template"]
     assert list_job["request_spec"]["paging"]["mode"] == "page"
 
-    # ② 当日快照：日期={today} 直写当日 bar，零值行剔除；新浪成交量原值即股（无 scale）
+    # ② 当日快照：日期={today} 直写当日 bar，零值行剔除；单序列幂等键 [股票代码, 日期]
     snapshot = jobs[1]
-    assert snapshot["request_spec"]["row_defaults"] == {"日期": "{today}", "来源": "新浪快照", "复权方式": "不复权"}
+    assert snapshot["match_keys"] == ["股票代码", "日期"]
+    assert snapshot["request_spec"]["row_defaults"] == {"日期": "{today}"}
     assert snapshot["request_spec"]["row_filter"] == {"field": "收盘", "op": ">", "value": 0}
     assert "trade" in snapshot["field_mapping"]
     assert all("scale" not in t for t in snapshot["field_mapping"].values())
@@ -235,55 +234,59 @@ def test_real_datasource_json_is_valid():
         assert job["request_spec"]["workers"] == 4
         assert job["rate_limit_ms"] == 50
 
-    # ③④⑤ 历史回补：backfill_date 水位 + 清单动态标的 + prefix 按板块互斥（ADR 0039 拆分基金/ETF）
-    backfills = jobs[2:5]
-    prefixes = [job["entrant_source"]["prefix_in"] for job in backfills]
-    assert prefixes[0] == ["sh60", "sz00", "sz30"]
-    assert prefixes[1] == ["sh68", "sh69"]
-    assert prefixes[2] == ["sh5", "sz1"]
-    all_prefixes = [prefix for job in backfills for prefix in job["entrant_source"]["prefix_in"]]
-    assert len(all_prefixes) == len(set(all_prefixes)) == 7, "回补任务前缀必须互斥"
-    for job in backfills:
-        assert job["entrant_source"]["table"] == "股票清单"
-        assert job["entrant_source"]["field"] == "代码"
-        assert job["cursor"] == {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"}
-        assert job["request_spec"]["record_mode"] == "rows_array"
-        assert job["request_spec"]["record_layout"] == {
-            "日期": 0,
-            "开盘": 1,
-            "收盘": 2,
-            "最高": 3,
-            "最低": 4,
-            "成交量": 5,
-        }
-        # 并发与限速取值（ADR 0035 D3 / ADR 0040 D4）：10 线程 + 10ms 全局间隔（100 req/s 天花板）
-        assert job["request_spec"]["workers"] == 10
-        assert job["rate_limit_ms"] == 10
-        assert "{end}" in job["request_spec"]["url_template"], "回补请求须带 end 锚点占位"
+    # ③ 历史回补（ADR 0053 D2/D5/D7/D11）：单条全市场任务、单轮翻页、不复权、直连优先
+    backfill = jobs[2]
+    assert backfill["name"] == "股市日线（腾讯回补 · 全市场）"
+    assert backfill["entrant_source"] == {"table": "股票清单", "field": "代码"}
+    assert "prefix_in" not in backfill["entrant_source"], "板块拆分已撤销"
+    assert backfill["match_keys"] == ["股票代码", "日期"]
+    assert backfill["cursor"] == {
+        "strategy": "backfill_date",
+        "field": "日期",
+        "backfill_start": "2016-01-01",
+        "page_to_start": True,
+        "page_size": 800,
+    }
+    spec = backfill["request_spec"]
+    assert spec["record_mode"] == "rows_array"
+    assert spec["record_layout"] == {
+        "日期": 0,
+        "开盘": 1,
+        "收盘": 2,
+        "最高": 3,
+        "最低": 4,
+        "成交量": 5,
+    }
+    # 并发与限速取值（ADR 0035 D3 / ADR 0040 D4）：10 线程 + 10ms 全局间隔（100 req/s 天花板）
+    assert spec["workers"] == 10
+    assert backfill["rate_limit_ms"] == 10
+    assert "{end}" in spec["url_template"], "回补请求须带 end 锚点占位"
+    assert spec["url_template"].startswith("{host}/ifzqgtimg/")
+    assert ",qfq" not in spec["url_template"], "回补改不复权（ADR 0053 D7）"
+    assert spec["data_path"] == "data.{entrant}.day"
+    assert "qfqday" not in spec["data_path"]
+    assert not spec.get("row_defaults"), "单序列后不再产出来源 / 复权方式常量列"
+    # 主机顺序：直连优先，proxy 作 failover；浏览器 UA / Referer 防 WAF 挑战（D11）
+    assert spec["url_hosts"] == ["https://web.ifzq.gtimg.cn", "https://proxy.finance.qq.com"]
+    assert spec["headers_template"]["Referer"] == "https://gu.qq.com/"
+    assert "Mozilla/5.0" in spec["headers_template"]["User-Agent"]
+    # 合并后不声明 scale：成交量取数据源原值（D8）
+    assert all("scale" not in t for t in backfill["field_mapping"].values())
 
-    # 股票任务前复权并允许回退 day（腾讯对无除权事件的品种只回 day）
-    for job in backfills[:2]:
-        assert job["request_spec"]["data_path"] == "data.{entrant}.qfqday|data.{entrant}.day"
-        assert job["request_spec"]["row_defaults"]["来源"] == "腾讯前复权"
-        assert job["request_spec"]["row_defaults"]["复权方式"] == "前复权"
-    # 基金/ETF 无前复权序列：只读 day，标注不复权（ADR 0039 D2）
-    fund_job = backfills[2]
-    assert fund_job["name"] == "股市日线（腾讯回补 · 基金ETF）"
-    assert fund_job["request_spec"]["data_path"] == "data.{entrant}.day"
-    assert "qfqday" not in fund_job["request_spec"]["data_path"]
-    assert fund_job["request_spec"]["row_defaults"] == {"来源": "腾讯不复权", "复权方式": "不复权"}
-    # 量纲拆分：主板/创业板/基金ETF 手→股 scale=100，科创板腾讯原值即股
-    assert backfills[0]["field_mapping"]["成交量"]["scale"] == 100
-    assert "scale" not in backfills[1]["field_mapping"]["成交量"]
-    assert backfills[2]["field_mapping"]["成交量"]["scale"] == 100
-
-    # 股市日线 / 股票清单 CSV 表头与新任务口径一致
-    day_header = (base / "股市日线.csv").read_text(encoding="utf-8-sig").splitlines()[0].split(",")
-    assert "成交额" in day_header
+    # 股市日线 / 股票清单 CSV 表头与新任务口径一致：单序列（无来源 / 复权方式列）
+    day_lines = (base / "股市日线.csv").read_text(encoding="utf-8-sig").splitlines()
+    day_header = day_lines[0].split(",")
+    assert day_header == ["股票代码", "日期", "开盘", "收盘", "最高", "最低", "成交量", "成交额"]
+    assert "来源" not in day_header and "复权方式" not in day_header
+    day_keys = [tuple(line.split(",")[:2]) for line in day_lines[1:] if line.strip()]
+    assert len(day_keys) == len(set(day_keys)), "股市日线示例必须 (股票代码, 日期) 唯一"
     list_header = (base / "股票清单.csv").read_text(encoding="utf-8-sig").splitlines()[0].split(",")
     assert list_header == ["代码", "名称", "类型", "最新价", "成交额", "市值", "换手率", "更新日期"]
     # 旧的「股市日线-新浪」按源分表结构不再回归
     assert not (base / "股市日线-新浪.csv").exists()
+    # 来源筛选视图不再保留（D6）
+    views = json.loads((base / "views.json").read_text(encoding="utf-8-sig"))
+    assert [view["name"] for view in views["股市日线"]] == ["全部日线"]
 
     # 大模型动态拉取：中文字段 + 中文幂等键，只配提示词与模型参数，手动触发
     llm_jobs = [job for job in jobs if job["provider"] == "llm_prompt"]

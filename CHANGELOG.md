@@ -5,6 +5,7 @@
 ## [未发布]
 
 ### 新增
+- **数据源同步对齐 lmstock：单轮翻页回补与主机回退**（ADR 0053 P0-P2）：`backfill_date` 游标新增 `page_to_start` / `page_size`，一轮内按标的水位反复翻页（空响应 / 短页 / 水位不前移 / 达 `backfill_start` 任一即停，200 pass 上限记 `partial`），历史回补从多轮 run 收敛为单轮；`request_spec` 新增 `url_hosts` + `{host}` 模板，抓取层 `FetchConfig.fallback_urls` 在网络错误 / 429·5xx 时逐个切换候选主机（逐候选过 SSRF），JSON 解析失败与 4xx 不切换。示例收敛为单序列三任务：三条板块回补合并为「腾讯回补 · 全市场」，回补改不复权（`data.{entrant}.day`），直连 `web.ifzq.gtimg.cn` 优先、proxy failover；「股市日线」删「来源 / 复权方式」两列与两条来源筛选视图，幂等键统一 `[股票代码, 日期]`。
 - **文档图表 / 数据表引用宽度与设计器预览占比**（ADR 0051 P0-P2）：数据表引用支持 `width` 参数（`{{table:<id>|view=…|limit=…|width=75}}`），图表宽度写入正文内嵌块 `width` 字段（ADR 0052），默认 75%、可调 25–100%，按引用独立、随正文分发；编辑模式嵌入块提供宽度控件，查看 / 游客只读不出现入口；DOCX / PDF 导出按正文可用宽度 × 百分比，Markdown 导出保留图表块宽度字段与表引用原语法；存量无 `width` 引用统一按 75% 呈现。图表设计器弹窗 1080→1200px，实时预览列由固定 400px（约 37%）提升到 ≥56%，窄屏上下堆叠。新增 `refWidth.ts` / `RefWidthControl.tsx` 与后端 `ref_width.py` 作为跨端唯一宽度口径。
 
 ### 变更
