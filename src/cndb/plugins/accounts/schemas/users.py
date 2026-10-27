@@ -45,6 +45,33 @@ class UserAdminUpdateRequest(BaseModel):
     is_active: bool | None = Field(default=None, description="启用（true）/ 禁用（false）")
 
 
+class UserPasswordResetRequest(BaseModel):
+    """管理员重置他人密码请求体.
+
+    留空 ``new_password`` 时由服务端生成 12 位随机密码，并仅在本次响应中返回一次。
+    """
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+
+    new_password: str | None = Field(
+        default=None,
+        min_length=6,
+        max_length=128,
+        description="新密码（6-128 位）；留空则自动生成 12 位随机密码",
+    )
+
+
+class UserPasswordResetResponse(BaseModel):
+    """管理员重置他人密码响应."""
+
+    ok: bool = Field(description="是否重置成功")
+    generated_password: str | None = Field(
+        default=None,
+        description="仅自动生成时返回一次；手工输入时恒为 null，不回显密码",
+    )
+    revoked_sessions: int = Field(description="被吊销的刷新令牌数量")
+
+
 class BatchUserActionRequest(BaseModel):
     """批量操作请求体：启用 / 禁用 / 设置角色."""
 
@@ -105,7 +132,9 @@ class UserAuditLogResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    action: str = Field(description="动作: update / role_change / activate / deactivate / batch / import / export")
+    action: str = Field(
+        description="动作: update / role_change / activate / deactivate / batch / import / export / password_reset"
+    )
     actor_id: int | None = Field(default=None, description="操作人 ID")
     target_user_id: int | None = Field(default=None, description="被操作用户 ID")
     detail: dict[str, Any] = Field(description="变更详情（before/after 快照、批量摘要）")

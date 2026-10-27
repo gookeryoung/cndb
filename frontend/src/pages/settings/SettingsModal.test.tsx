@@ -36,6 +36,8 @@ vi.mock('@/api', async (importOriginal) => {
       ...actual.authApi,
       updateProfile: vi.fn().mockResolvedValue({ id: 1, username: 'me', nickname: '新昵称', email: 'me@x.com' }),
       me: vi.fn().mockResolvedValue({ id: 1, username: 'me', nickname: '新昵称', email: 'me@x.com' }),
+      changePassword: vi.fn().mockResolvedValue({ ok: true, revoked_sessions: 1 }),
+      logout: vi.fn().mockResolvedValue({ revoked: 1 }),
     },
   }
 })
@@ -59,11 +61,13 @@ describe('SettingsModal 个人设置', () => {
     useTableSettingsStore.setState({ ...rest, ...DEFAULT_TABLE_SETTINGS })
   })
 
-  it('渲染四个 Tab 与全部主题卡片（10 张），主题页含配色与字体两节', () => {
+  it('渲染五个 Tab 与全部主题卡片（10 张），主题页含配色与字体两节', () => {
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
-    // 页签顺序：大模型排在「表格」右侧（顶栏已有直达入口，设置内靠后）
-    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual(['用户资料', '主题', '表格', '大模型'])
+    // 页签顺序：安全紧随用户资料，大模型排在「表格」右侧（顶栏已有直达入口，设置内靠后）
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
+      '用户资料', '安全', '主题', '表格', '大模型',
+    ])
     // 主题卡片惰性渲染，切到主题 Tab 后才能查到
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     const grid = document.querySelector('[data-testid="theme-grid"]')
@@ -223,6 +227,66 @@ describe('SettingsModal 个人设置', () => {
     expect(JSON.parse(localStorage.getItem('cndb_font') ?? '{}')).toEqual({ scale: 'standard', bold: false })
     expect(screen.getByText('标准')).toBeInTheDocument()
     expect(screen.queryByText('特大')).not.toBeInTheDocument()
+  })
+})
+
+describe('SettingsModal 安全页签（自助改密）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    useAuthStore.setState({ user: profileUser, token: 't', loading: false, expired: false })
+  })
+
+  it('两次新密码不一致时阻止提交并提示', async () => {
+    renderProviders(<SettingsModal open onClose={() => { }} initialTab="security" />, {
+      initialAuth: { user: profileUser, token: 't' },
+    })
+
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'oldpass1' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'newpass1' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'newpass2' } })
+    fireEvent.click(screen.getByRole('button', { name: /修改密码/ }))
+
+    expect(await screen.findByText('两次输入的新密码不一致')).toBeInTheDocument()
+    const { authApi } = await import('@/api')
+    expect(authApi.changePassword).not.toHaveBeenCalled()
+  })
+
+  it('新密码与当前密码相同时阻止提交', async () => {
+    renderProviders(<SettingsModal open onClose={() => { }} initialTab="security" />, {
+      initialAuth: { user: profileUser, token: 't' },
+    })
+
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'samepass' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'samepass' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'samepass' } })
+    fireEvent.click(screen.getByRole('button', { name: /修改密码/ }))
+
+    expect(await screen.findByText('新密码不能与当前密码相同')).toBeInTheDocument()
+    const { authApi } = await import('@/api')
+    expect(authApi.changePassword).not.toHaveBeenCalled()
+  })
+
+  it('提交成功后清空本地登录态（强制重新登录）', async () => {
+    renderProviders(<SettingsModal open onClose={() => { }} initialTab="security" />, {
+      initialAuth: { user: profileUser, token: 't' },
+    })
+
+    fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'oldpass1' } })
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'newpass1' } })
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'newpass1' } })
+    fireEvent.click(screen.getByRole('button', { name: /修改密码/ }))
+
+    const { authApi } = await import('@/api')
+    await waitFor(() =>
+      expect(authApi.changePassword).toHaveBeenCalledWith({
+        current_password: 'oldpass1',
+        new_password: 'newpass1',
+      }),
+    )
+    await waitFor(() => {
+      expect(useAuthStore.getState().token).toBeNull()
+      expect(useAuthStore.getState().user).toBeNull()
+    })
   })
 })
 

@@ -257,6 +257,70 @@ describe('UsersPage 用户管理', () => {
   })
 })
 
+describe('UsersPage 管理员重置密码', () => {
+  it('默认自动生成：二次确认后展示一次性密码', async () => {
+    const resetHandler = vi.fn(() =>
+      HttpResponse.json({ ok: true, generated_password: 'Ab3xY9pQ2mZk', revoked_sessions: 2 }),
+    )
+    server.use(
+      http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)),
+      http.post('/api/v1/accounts/users/2/password', resetHandler),
+    )
+    renderPage()
+
+    fireEvent.click((await screen.findAllByText('重置密码'))[1])
+    expect(await screen.findByText('重置用户密码', { selector: '.ant-modal-title' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '生成并重置' }))
+
+    expect(await screen.findByText(/确认重置用户「bob」的密码？/, { selector: '.ant-modal-confirm-title' })).toBeInTheDocument()
+    fireEvent.click(within(document.querySelector('.ant-modal-confirm') as HTMLElement).getByRole('button', { name: '确认重置' }))
+
+    await waitFor(() => expect(resetHandler).toHaveBeenCalledTimes(1))
+    expect(await screen.findByTestId('reset-password-result')).toHaveTextContent('Ab3xY9pQ2mZk')
+    expect(screen.getByText(/只展示这一次/)).toBeInTheDocument()
+  })
+
+  it('手工输入：提交自定义密码且不回显', async () => {
+    let body: unknown = null
+    server.use(
+      http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)),
+      http.post('/api/v1/accounts/users/2/password', async ({ request }) => {
+        body = await request.json()
+        return HttpResponse.json({ ok: true, generated_password: null, revoked_sessions: 1 })
+      }),
+    )
+    renderPage()
+
+    fireEvent.click((await screen.findAllByText('重置密码'))[1])
+    fireEvent.click(await screen.findByLabelText('手工输入'))
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'manual-pass-1' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认重置' }))
+    await screen.findByText(/确认重置用户「bob」的密码？/, { selector: '.ant-modal-confirm-title' })
+    fireEvent.click(within(document.querySelector('.ant-modal-confirm') as HTMLElement).getByRole('button', { name: '确认重置' }))
+
+    await waitFor(() => expect(body).toEqual({ new_password: 'manual-pass-1' }))
+    expect(await screen.findByText(/密码已重置，目标用户需用新密码重新登录/)).toBeInTheDocument()
+    expect(screen.queryByTestId('reset-password-result')).not.toBeInTheDocument()
+  })
+
+  it('手工输入过短时阻止提交', async () => {
+    const resetHandler = vi.fn(() => HttpResponse.json({ ok: true, generated_password: null, revoked_sessions: 0 }))
+    server.use(
+      http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)),
+      http.post('/api/v1/accounts/users/2/password', resetHandler),
+    )
+    renderPage()
+
+    fireEvent.click((await screen.findAllByText('重置密码'))[1])
+    fireEvent.click(await screen.findByLabelText('手工输入'))
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: '123' } })
+    fireEvent.click(screen.getByRole('button', { name: '确认重置' }))
+
+    expect(await screen.findByText('密码长度须为 6-128 位')).toBeInTheDocument()
+    expect(resetHandler).not.toHaveBeenCalled()
+  })
+})
+
 describe('UsersPage 移动端适配', () => {
   it('窄屏下筛选控件整行排布，表格保留列宽并横向滚动', async () => {
     responsiveState = {
@@ -346,6 +410,20 @@ describe('UsersPage 移动端适配', () => {
     fireEvent.click(within(await screen.findByTestId('user-card-1')).getByText('编辑'))
 
     expect(await screen.findByText('编辑用户：admin_su')).toBeInTheDocument()
+  })
+
+  it('窄屏卡片「重置密码」打开重置弹窗', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    server.use(http.get('/api/v1/accounts/users', () => HttpResponse.json(USERS)))
+    renderPage()
+
+    fireEvent.click(within(await screen.findByTestId('user-card-2')).getByText('重置密码'))
+
+    expect(await screen.findByText('重置用户密码', { selector: '.ant-modal-title' })).toBeInTheDocument()
+    expect(document.querySelector('.ant-modal-content')?.textContent).toContain('目标用户：bob')
   })
 
   it('桌面端仍为表格，不渲染卡片列表', async () => {

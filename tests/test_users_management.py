@@ -15,6 +15,7 @@ import pytest
 from cndb.plugins.accounts.models import User
 
 USERS_URL = "/api/v1/accounts/users"
+AUTH = "/api/v1/accounts/auth"
 REGISTER_URL = "/api/v1/accounts/auth/register"
 LOGIN_URL = "/api/v1/accounts/auth/login"
 ADMIN_REGISTER_URL = "/api/v1/accounts/auth/admin-register"
@@ -382,3 +383,96 @@ class TestUserListPage:
         assert item["phone"] == "13600000000"
         assert item["created_at"] is not None
         assert "hashed_password" not in item
+
+
+class TestUserPasswordReset:
+    """POST /users/{id}/password 管理员重置他人密码."""
+
+    def test_auto_generated_password_invalidates_sessions(self, client, admin_token):
+        target = _create_user_by_admin(client, admin_token, "reset_auto")
+        old = client.post(LOGIN_URL, json={"login": "reset_auto", "password": "pw1234"}).json()
+
+        r = client.post(f"{USERS_URL}/{target['id']}/password", json={}, headers=_auth(admin_token))
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert isinstance(body["generated_password"], str)
+        assert len(body["generated_password"]) == 12
+        assert body["revoked_sessions"] >= 1
+
+        # 旧 access token 立即失效，旧 refresh token 已吊销
+        assert client.get(f"{AUTH}/me", headers=_auth(old["access_token"])).status_code == 401
+        assert client.post(f"{AUTH}/refresh", json={"refresh_token": old["refresh_token"]}).status_code == 401
+        # 新密码可登录，旧密码不可
+        assert (
+            client.post(LOGIN_URL, json={"login": "reset_auto", "password": body["generated_password"]}).status_code
+            == 200
+        )
+        assert client.post(LOGIN_URL, json={"login": "reset_auto", "password": "pw1234"}).status_code == 401
+
+    def test_manual_password_not_echoed(self, client, admin_token):
+        target = _create_user_by_admin(client, admin_token, "reset_manual")
+        r = client.post(
+            f"{USERS_URL}/{target['id']}/password",
+            json={"new_password": "manual-pass-9"},
+            headers=_auth(admin_token),
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["generated_password"] is None
+        assert "manual-pass-9" not in r.text
+        assert client.post(LOGIN_URL, json={"login": "reset_manual", "password": "manual-pass-9"}).status_code == 200
+
+    def test_reset_self_rejected(self, client, admin_token):
+        me = client.get(f"{AUTH}/me", headers=_auth(admin_token)).json()
+        r = client.post(f"{USERS_URL}/{me['id']}/password", json={}, headers=_auth(admin_token))
+        assert r.status_code == 400
+        assert "个人设置" in r.json()["detail"]
+        # 密码未被改动
+        assert client.post(LOGIN_URL, json={"login": "um_admin", "password": "pw1234"}).status_code == 200
+
+    def test_non_superuser_forbidden(self, client, admin_token, audit_admin_token):
+        target = _create_user_by_admin(client, admin_token, "reset_perm")
+        assert (
+            client.post(f"{USERS_URL}/{target['id']}/password", json={}, headers=_auth(audit_admin_token)).status_code
+            == 403
+        )
+        plain = _register_and_login(client, "reset_plain")
+        assert client.post(f"{USERS_URL}/{target['id']}/password", json={}, headers=_auth(plain)).status_code == 403
+
+    def test_target_not_found_404(self, client, admin_token):
+        r = client.post(f"{USERS_URL}/999999/password", json={}, headers=_auth(admin_token))
+        assert r.status_code == 404
+
+    def test_too_short_password_422(self, client, admin_token):
+        target = _create_user_by_admin(client, admin_token, "reset_short")
+        r = client.post(
+            f"{USERS_URL}/{target['id']}/password",
+            json={"new_password": "12345"},
+            headers=_auth(admin_token),
+        )
+        assert r.status_code == 422
+
+    def test_audit_detail_has_no_secret(self, client, admin_token):
+        target = _create_user_by_admin(client, admin_token, "reset_audit")
+        client.post(
+            f"{USERS_URL}/{target['id']}/password",
+            json={"new_password": "audit-pass-9"},
+            headers=_auth(admin_token),
+        )
+        logs = client.get(f"{USERS_URL}/{target['id']}/audit-logs", headers=_auth(admin_token)).json()
+        entry = next(e for e in logs["items"] if e["action"] == "password_reset")
+        assert entry["detail"]["generated"] is False
+        assert entry["detail"]["revoked_sessions"] >= 0
+        assert "audit-pass-9" not in str(entry)
+
+
+class TestUserPasswordResetAutoAudit:
+    """自动生成密码场景的审计元信息."""
+
+    def test_auto_flag_recorded(self, client, admin_token):
+        target = _create_user_by_admin(client, admin_token, "reset_audit_auto")
+        body = client.post(f"{USERS_URL}/{target['id']}/password", json={}, headers=_auth(admin_token)).json()
+        logs = client.get(f"{USERS_URL}/{target['id']}/audit-logs", headers=_auth(admin_token)).json()
+        entry = next(e for e in logs["items"] if e["action"] == "password_reset")
+        assert entry["detail"]["generated"] is True
+        assert body["generated_password"] not in str(entry["detail"])

@@ -29,6 +29,8 @@ from cndb.plugins.accounts.schemas.users import (
     UserAuditLogResponse,
     UserImportResponse,
     UserListPage,
+    UserPasswordResetRequest,
+    UserPasswordResetResponse,
 )
 from cndb.plugins.accounts.services.user_bulk import (
     MAX_IMPORT_BYTES,
@@ -43,6 +45,7 @@ from cndb.plugins.accounts.services.users import (
     batch_user_action,
     get_user_or_none,
     query_audit_logs,
+    reset_user_password,
     update_user,
 )
 
@@ -232,6 +235,46 @@ def edit_user(
     except UserAdminError as exc:
         raise _map_user_admin_error(exc) from exc
     return UserAdminResponse.model_validate(user)
+
+
+@router.post(
+    "/{user_id}/password",
+    response_model=UserPasswordResetResponse,
+    summary="重置用户密码",
+)
+def reset_password(
+    user_id: int,
+    payload: UserPasswordResetRequest,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(_require_superuser)],
+) -> UserPasswordResetResponse:
+    """管理员重置他人密码（仅超级管理员）.
+
+    ``new_password`` 留空时生成 12 位随机密码并在本次响应返回一次；手工输入时不回显密码。
+    成功后目标用户全部会话失效；不能重置自己的密码（须走个人设置的自助改密）。
+
+    Args:
+        user_id: 目标用户 ID
+        payload: 重置请求体
+        db: 数据库会话
+        current_user: 超级管理员
+
+    Returns:
+        生成密码（仅自动生成时）与吊销会话数
+    """
+    target = get_user_or_none(db, user_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    try:
+        generated, revoked = reset_user_password(
+            db,
+            actor=current_user,
+            target=target,
+            new_password=payload.new_password,
+        )
+    except UserAdminError as exc:
+        raise _map_user_admin_error(exc) from exc
+    return UserPasswordResetResponse(ok=True, generated_password=generated, revoked_sessions=revoked)
 
 
 @router.post("/batch", response_model=BatchUserActionResponse, summary="批量操作")

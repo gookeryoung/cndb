@@ -24,6 +24,8 @@ from cndb.plugins.accounts.schemas.users import (
     BatchUserItemResult,
     UserAdminUpdateRequest,
 )
+from cndb.plugins.accounts.services import sessions as session_service
+from cndb.plugins.accounts.services.user_bulk import generate_password
 
 logger = logging.getLogger(__name__)
 
@@ -201,6 +203,55 @@ def update_user(db: Session, *, actor: User, target: User, data: UserAdminUpdate
     return target
 
 
+def reset_user_password(
+    db: Session,
+    *,
+    actor: User,
+    target: User,
+    new_password: str | None = None,
+) -> tuple[str | None, int]:
+    """管理员重置他人密码（不含自助改密路径）.
+
+    ``new_password`` 留空时生成 12 位随机密码；返回值仅在自动生成时携带明文，供本次响应一次性展示。
+    成功后目标用户 ``token_version`` +1（既有 access token 立即失效）并吊销全部刷新令牌。
+
+    Args:
+        db: 数据库会话
+        actor: 操作人（超级管理员）
+        target: 被重置用户
+        new_password: 手工指定密码；None 表示自动生成
+
+    Returns:
+        (generated_password | None, revoked_sessions)
+
+    Raises:
+        UserAdminError: 重置自己，或手工密码长度不在 6-128 位
+    """
+    if target.id == actor.id:
+        raise UserAdminError("不能重置自己的密码，请在个人设置中修改（需校验当前密码）")
+    if new_password is not None and not 6 <= len(new_password) <= 128:
+        raise UserAdminError("密码长度须为 6-128 位")
+
+    generated = new_password is None
+    plain = generate_password() if generated else new_password
+    assert plain is not None  # 仅在 generated 为 True 时可能为 None，此处已收窄
+
+    target.set_password(plain)
+    target.token_version = int(target.token_version or 0) + 1
+    db.commit()
+    db.refresh(target)
+
+    revoked = session_service.revoke_all(db, target.id, reason="password_reset_by_admin")
+    record_audit(
+        db,
+        action="password_reset",
+        actor_id=actor.id,
+        target_user_id=target.id,
+        detail={"generated": generated, "revoked_sessions": revoked},
+    )
+    return (plain if generated else None, revoked)
+
+
 def batch_user_action(db: Session, *, actor: User, payload: BatchUserActionRequest) -> BatchUserActionResponse:
     """批量启用/禁用/设置角色，逐项独立提交并返回逐项结果.
 
@@ -312,6 +363,7 @@ __all__ = [
     "get_user_or_none",
     "query_audit_logs",
     "record_audit",
+    "reset_user_password",
     "update_user",
     "validate_role",
 ]

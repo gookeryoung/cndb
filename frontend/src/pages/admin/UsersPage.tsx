@@ -6,7 +6,7 @@
 
 import { useMemo, useState, type Key } from 'react'
 import {
-  Table, Button, Input, Select, Space, Tag, Modal, Form, Switch,
+  Table, Button, Input, Select, Space, Tag, Modal, Form, Switch, Radio,
   App as AntApp, Typography, Drawer, Popconfirm, Checkbox, Empty, Pagination, Spin,
   Upload, Dropdown, Alert,
 } from 'antd'
@@ -37,6 +37,7 @@ const ACTION_LABELS: Record<string, string> = {
   batch: '批量操作',
   import: '批量导入',
   export: '导出',
+  password_reset: '重置密码',
 }
 
 /** 从 Content-Disposition 解析下载文件名（优先 RFC 5987 的 filename*，兼容中文） */
@@ -94,6 +95,16 @@ function DiffSummary({ log }: { log: UserAuditLogRecord }) {
     count?: number
     format?: string
     usernames?: string[]
+    generated?: boolean
+    revoked_sessions?: number
+  }
+  if (log.action === 'password_reset') {
+    return (
+      <div style={{ fontSize: 12 }}>
+        <div>{detail.generated ? '自动生成随机密码' : '管理员手工设定新密码'}</div>
+        <div>已吊销 {detail.revoked_sessions ?? 0} 个会话</div>
+      </div>
+    )
   }
   if (log.action === 'batch') {
     return (
@@ -175,6 +186,13 @@ export default function UsersPage() {
   // ── 编辑弹窗 ──
   const [editing, setEditing] = useState<UserAdminRecord | null>(null)
 
+  // ── 重置密码弹窗（默认自动生成，可切手工输入；生成结果仅展示一次） ──
+  const [resetTarget, setResetTarget] = useState<UserAdminRecord | null>(null)
+  const [resetOpen, setResetOpen] = useState(false)
+  const [resetMode, setResetMode] = useState<'auto' | 'manual'>('auto')
+  const [resetResult, setResetResult] = useState<{ password: string; revoked: number } | null>(null)
+  const [resetForm] = Form.useForm<{ new_password: string }>()
+
   // ── 日志抽屉（单用户） ──
   const [logTarget, setLogTarget] = useState<UserAdminRecord | null>(null)
 
@@ -209,6 +227,26 @@ export default function UsersPage() {
     },
     onError: (err) => {
       message.error(err instanceof Error ? err.message : '更新失败')
+    },
+  })
+
+  const resetMutation = useMutation({
+    mutationFn: ({ id, newPassword }: { id: number; newPassword?: string }) =>
+      authApi.resetUserPassword(id, newPassword ? { new_password: newPassword } : {}),
+    onSuccess: (res) => {
+      invalidate()
+      if (res.generated_password) {
+        // 自动生成的密码只在本次响应出现，留在弹窗内一次性展示
+        setResetResult({ password: res.generated_password, revoked: res.revoked_sessions })
+      } else {
+        setResetOpen(false)
+        message.success(
+          `密码已重置，目标用户需用新密码重新登录（已吊销 ${res.revoked_sessions} 个会话）`,
+        )
+      }
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '重置密码失败')
     },
   })
 
@@ -393,6 +431,53 @@ export default function UsersPage() {
     })
   }
 
+  const openReset = (record: UserAdminRecord) => {
+    setResetTarget(record)
+    setResetMode('auto')
+    setResetResult(null)
+    resetForm.resetFields()
+    setResetOpen(true)
+  }
+
+  /** 重置密码提交 —— 默认自动生成；手工输入需二次确认（含会话失效提示） */
+  const handleResetSubmit = () => {
+    if (!resetTarget) return
+    const run = (newPassword?: string) => {
+      modal.confirm({
+        title: `确认重置用户「${resetTarget.username}」的密码？`,
+        content: (
+          <div style={{ fontSize: 13 }}>
+            <div>
+              {newPassword
+                ? '将使用你手工设定的新密码。'
+                : '将由服务端生成 12 位随机密码，并仅在结果中展示一次。'}
+            </div>
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary">重置后该用户全部会话立即失效，需用新密码重新登录；操作会记录到操作日志。</Text>
+            </div>
+          </div>
+        ),
+        okText: '确认重置',
+        okType: 'danger',
+        cancelText: '取消',
+        onOk: () => resetMutation.mutateAsync({ id: resetTarget.id as number, newPassword }),
+      })
+    }
+    if (resetMode === 'auto') {
+      run()
+      return
+    }
+    resetForm.validateFields().then(values => run(values.new_password)).catch(() => {
+      // 校验失败时由 Form.Item 就地展示错误，无需额外提示
+    })
+  }
+
+  const closeReset = () => {
+    setResetOpen(false)
+    setResetTarget(null)
+    setResetResult(null)
+  }
+
   /** 编辑提交 —— 先做二次确认（展示变更摘要），确认后才调用后端 */
   const handleEditSubmit = () => {
     form.validateFields().then((values) => {
@@ -467,11 +552,14 @@ export default function UsersPage() {
         active ? <Tag color="green">启用</Tag> : <Tag color="default">禁用</Tag>,
     },
     {
-      title: '操作', key: 'actions', width: 160,
+      title: '操作', key: 'actions', width: 220,
       render: (_: unknown, record: UserAdminRecord) => (
         <Space size={4}>
           <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEdit(record)}>
             编辑
+          </Button>
+          <Button size="small" type="link" onClick={() => openReset(record)}>
+            重置密码
           </Button>
           <Button size="small" type="link" onClick={() => setLogTarget(record)}>
             日志
@@ -591,6 +679,7 @@ export default function UsersPage() {
                     </Space>
                     <span style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                       <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEdit(u)}>编辑</Button>
+                      <Button size="small" type="link" onClick={() => openReset(u)}>重置密码</Button>
                       <Button size="small" type="link" onClick={() => setLogTarget(u)}>日志</Button>
                     </span>
                   </div>
@@ -632,6 +721,80 @@ export default function UsersPage() {
           />
         </div>
       )}
+
+      {/* 重置密码弹窗：默认自动生成一次性密码，可切手工输入 */}
+      <Modal
+        title="重置用户密码"
+        open={resetOpen}
+        onCancel={closeReset}
+        width={520}
+        destroyOnHidden
+        footer={
+          resetResult
+            ? [<Button key="close" type="primary" onClick={closeReset}>我已保存，关闭</Button>]
+            : [
+              <Button key="cancel" onClick={closeReset}>取消</Button>,
+              <Button
+                key="submit"
+                type="primary"
+                danger
+                loading={resetMutation.isPending}
+                onClick={handleResetSubmit}
+              >
+                {resetMode === 'auto' ? '生成并重置' : '确认重置'}
+              </Button>,
+            ]
+        }
+      >
+        {resetTarget && (
+          <div style={{ marginBottom: 12, fontSize: 13 }}>
+            目标用户：<Text strong>{resetTarget.username}</Text>
+            {resetTarget.nickname ? `（${resetTarget.nickname}）` : ''}
+            <div>
+              <Text type="secondary">重置后该用户全部会话失效，需用新密码重新登录；不能重置自己的密码。</Text>
+            </div>
+          </div>
+        )}
+        {resetResult ? (
+          <div data-testid="reset-password-result">
+            <Alert
+              type="success"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="密码已重置"
+              description={`已吊销 ${resetResult.revoked} 个会话。以下密码只展示这一次，请立即转交用户。`}
+            />
+            <Typography.Paragraph copyable={{ text: resetResult.password }} style={{ marginBottom: 0 }}>
+              <Text code>{resetResult.password}</Text>
+            </Typography.Paragraph>
+          </div>
+        ) : (
+          <Form form={resetForm} layout="vertical">
+            <Form.Item label="新密码来源">
+              <Radio.Group
+                value={resetMode}
+                onChange={e => setResetMode(e.target.value as 'auto' | 'manual')}
+                options={[
+                  { value: 'auto', label: '自动生成（推荐）' },
+                  { value: 'manual', label: '手工输入' },
+                ]}
+              />
+            </Form.Item>
+            {resetMode === 'manual' && (
+              <Form.Item
+                name="new_password"
+                label="新密码"
+                rules={[
+                  { required: true, message: '请输入新密码' },
+                  { min: 6, max: 128, message: '密码长度须为 6-128 位' },
+                ]}
+              >
+                <Input.Password placeholder="6-128 位" autoComplete="new-password" />
+              </Form.Item>
+            )}
+          </Form>
+        )}
+      </Modal>
 
       {/* 批量导入弹窗：选文件 → 预演明细 → 确认导入 → 结果 + 初始密码下载 */}
       <Modal

@@ -4,6 +4,8 @@
 
 | Term | Meaning | Notes |
 |---|---|---|
+| 自助改密（Password Change） | 已登录用户在个人设置中凭「当前密码 + 新密码」修改自己的密码；成功后 `token_version` +1 且吊销全部刷新令牌，前端强制退出并重新登录 | 后端口径复用 `POST /api/v1/accounts/auth/password`；密码 6–128 位 |
+| 管理员重置密码（Password Reset） | 超级管理员在用户管理页为其他用户设定新密码：默认服务端生成 12 位随机密码并仅展示一次，也可手工输入；目标用户全部会话立即失效 | 不能重置自己（须走自助改密）；审计动作 `password_reset` 不记录密码与重置原因 |
 | 问题（Issue） | 数据表级反馈条目：任何工作区成员可提交（标题 + 描述 + 类别 data_error/suggestion/question/other），用于反馈数据错误、改进建议或提问；owner/editor（或创建者本人）可关闭/重开 | 评论与状态事件（created/closed/reopened）独立流水，详情页展示「谁在何时关闭/重开」 |
 | 修改申请（ChangeRequest） | 数据表级变更载体：所有成员可发起（查看者编辑自动生成，owner/editor 可手动创建），含 op（create/update/delete）+ 行增量 values + 提交时基准快照 base_values；仅 owner/editor 可 merge（落库）/close/reopen | 区别于旧「变更单」：同行允许多个 open 申请并存，冲突按字段级基准漂移检测标记，处理时逐项 apply/skip 决策；列表页提供「同行合并视图」（group_by=row 按行聚合、时间倒序）与行组批量审批，冲突字段须在冲突处理页逐字段裁决（无冲突自动合并，冲突不静默覆盖） |
 | 双轨制写入 | owner/editor（且工作区 allow_edit 开启）编辑直编直存；viewer 或 allow_edit 关闭时编辑自动生成修改申请（后端返回 202 + change_request 载荷） | 分派逻辑在 records 写路径 `dispatch_change_request`；批量删除生成含多个 delete item 的单条申请 |

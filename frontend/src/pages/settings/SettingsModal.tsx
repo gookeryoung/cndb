@@ -1,7 +1,8 @@
 /** 用户设置面板 — 用户资料 + 主题（配色/字体）+ 表格（显示/操作）+ 大模型（个人连接配置）. */
 
 import { useEffect } from 'react'
-import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
+import { useNavigate } from 'react-router-dom'
+import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App, Alert } from 'antd'
 import { useTheme } from '@/theme/ThemeProvider'
 import {
   THEME_META, THEME_MODES, FONT_SCALES, FONT_SCALE_META,
@@ -170,6 +171,91 @@ function ProfilePanel() {
           </Form.Item>
         </div>
         <Button type="primary" htmlType="submit">保存</Button>
+      </Form>
+    </div>
+  )
+}
+
+/** 安全分页内容 — 自助修改密码（成功后全部会话失效并强制重新登录） */
+function SecurityPanel({ onClose }: { onClose: () => void }) {
+  const { message } = App.useApp()
+  const navigate = useNavigate()
+  const logout = useAuthStore(s => s.logout)
+  const [form] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
+
+  const handleSubmit = async (values: { current_password: string; new_password: string }) => {
+    try {
+      await authApi.changePassword({
+        current_password: values.current_password,
+        new_password: values.new_password,
+      })
+      message.success('密码已修改，请用新密码重新登录')
+      onClose()
+      // 服务端已吊销全部会话，本地登出后回到登录页
+      logout()
+      navigate('/login', { replace: true })
+    } catch (err: unknown) {
+      const detail =
+        typeof err === 'object' && err !== null && 'response' in err
+          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+          : undefined
+      message.error(detail ?? '修改失败，请稍后重试')
+    }
+  }
+
+  return (
+    <div style={{ padding: '12px 0' }}>
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="修改成功后，包括当前设备在内的全部会话将失效，需要用新密码重新登录。"
+      />
+      <Form form={form} layout="vertical" onFinish={handleSubmit} style={{ maxWidth: 420 }}>
+        <Form.Item
+          name="current_password"
+          label="当前密码"
+          rules={[{ required: true, message: '请输入当前密码' }]}
+        >
+          <Input.Password placeholder="输入当前密码" autoComplete="current-password" />
+        </Form.Item>
+        <Form.Item
+          name="new_password"
+          label="新密码"
+          rules={[
+            { required: true, message: '请输入新密码' },
+            { min: 6, max: 128, message: '密码长度须为 6-128 位' },
+            ({ getFieldValue }) => ({
+              validator(_, value: string) {
+                if (value && value === getFieldValue('current_password')) {
+                  return Promise.reject(new Error('新密码不能与当前密码相同'))
+                }
+                return Promise.resolve()
+              },
+            }),
+          ]}
+        >
+          <Input.Password placeholder="6-128 位" autoComplete="new-password" />
+        </Form.Item>
+        <Form.Item
+          name="confirm_password"
+          label="确认新密码"
+          dependencies={['new_password']}
+          rules={[
+            { required: true, message: '请再次输入新密码' },
+            ({ getFieldValue }) => ({
+              validator(_, value: string) {
+                if (value && value !== getFieldValue('new_password')) {
+                  return Promise.reject(new Error('两次输入的新密码不一致'))
+                }
+                return Promise.resolve()
+              },
+            }),
+          ]}
+        >
+          <Input.Password placeholder="再次输入新密码" autoComplete="new-password" />
+        </Form.Item>
+        <Button type="primary" htmlType="submit">修改密码</Button>
       </Form>
     </div>
   )
@@ -376,6 +462,7 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
         defaultActiveKey={initialTab ?? 'profile'}
         items={[
           { key: 'profile', label: '用户资料', children: <ProfilePanel /> },
+          { key: 'security', label: '安全', children: <SecurityPanel onClose={onClose} /> },
           { key: 'theme', label: '主题', children: <ThemePanel /> },
           { key: 'table', label: '表格', children: <TablePanel /> },
           // 大模型入口已在顶栏常驻（桌面图标 / 移动端用户菜单），设置内排在「表格」右侧，避免与高频的资料 / 主题争前排

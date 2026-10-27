@@ -62,6 +62,7 @@ _USER_ACTION_SUMMARY = {
     "batch": "批量操作用户",
     "import": "批量导入用户",
     "export": "导出用户列表",
+    "password_reset": "重置用户密码",
 }
 
 

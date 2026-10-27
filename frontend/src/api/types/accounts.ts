@@ -39,6 +39,18 @@ export interface UserAdminUpdateRequest {
   is_active?: boolean
 }
 
+/** 管理员重置他人密码请求体 —— new_password 留空时由服务端生成 12 位随机密码 */
+export interface UserPasswordResetRequest {
+  new_password?: string | null
+}
+
+/** 管理员重置他人密码响应 —— generated_password 仅在自动生成时返回一次，手工输入恒为 null */
+export interface UserPasswordResetResponse {
+  ok: boolean
+  generated_password: string | null
+  revoked_sessions: number
+}
+
 /** 批量操作请求体（对齐后端 BatchUserActionRequest） */
 export interface BatchUserActionRequest {
   action: 'activate' | 'deactivate' | 'set_role'

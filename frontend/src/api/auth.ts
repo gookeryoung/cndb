@@ -7,6 +7,7 @@ import type {
     SessionInfo, TokenResponse,
     UserResponse,
     UserAdminRecord, UserAdminUpdateRequest, UserListPage, UserListQuery,
+    UserPasswordResetRequest, UserPasswordResetResponse,
     BatchUserActionRequest, BatchUserActionResponse,
     UserAuditLogPage, UserAuditLogQuery,
     UserImportResponse,
@@ -53,6 +54,9 @@ export const authApi = {
     /** 批量启用/禁用/设置角色，返回逐项结果 */
     batchUsers: (data: BatchUserActionRequest) =>
         api.post<BatchUserActionResponse>('/v1/accounts/users/batch', data).then(r => r.data),
+    /** 管理员重置他人密码（需超级管理员；留空 new_password 则生成 12 位随机密码并仅返回一次） */
+    resetUserPassword: (userId: number | string, data: UserPasswordResetRequest = {}) =>
+        api.post<UserPasswordResetResponse>(`/v1/accounts/users/${userId}/password`, data).then(r => r.data),
     /** 按当前筛选条件导出用户列表（CSV / XLSX，不含密码）；返回完整响应以便解析下载文件名 */
     exportUsers: (params: UserListQuery & { format: 'csv' | 'xlsx' }) =>
         api.get('/v1/accounts/users/export', { params, responseType: 'blob' }),

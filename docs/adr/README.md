@@ -51,6 +51,7 @@
 | [0047](0047-permission-denied-message.md) | 权限不足错误提示增强（角色 + 拥有者联系指引） | Accepted | P0-P1 已落地；P2 未开始 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/tables/services/core/view_access.py` | `tests/test_permission_denied_message.py` | [未发布](../../CHANGELOG.md) |
 | [0048](0048-document-chart-templates.md) | 文档可视化图形（类别 → 图形模板 → 用户图表实例） | Accepted | 进行中（P0 后端地基） | — | — | — |
 | [0049](0049-mhtml-import.md) | MHTML 导入（内嵌素材入库，图片不丢失） | Accepted | P0-P2 已落地 | `src/cndb/plugins/documents/services/importers/mhtml.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`frontend/src/api/documents.ts` | `tests/test_documents_file_import_convert.py`、`tests/test_documents_file_import_api.py` | [未发布](../../CHANGELOG.md) |
+| [0050](0050-user-password-management.md) | 用户自助修改密码与管理员重置他人密码 | Accepted | P0 进行中 | — | — | — |
 
 ## 说明
 
