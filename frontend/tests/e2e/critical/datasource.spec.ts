@@ -61,7 +61,8 @@ test.describe("数据源同步", () => {
     await drawer.getByTestId("datasource-url-template").fill("https://api.example.com/weather?city=北京")
     await drawer.getByTestId("datasource-save-btn").click()
 
-    await expect(page.getByText(name)).toBeVisible({ timeout: 15_000 })
+    // 保存成功提示里也会出现任务名，列表断言取首个可见匹配
+    await expect(page.getByText(name).first()).toBeVisible({ timeout: 15_000 })
 
     const listing = await listJobs(request)
     const created = listing.jobs.find(job => job.name === name)

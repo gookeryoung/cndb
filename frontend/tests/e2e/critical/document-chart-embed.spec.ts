@@ -113,12 +113,18 @@ test.describe("文档图表嵌入", () => {
       // 设计器实时预览占内容区 ≥ 55%（ADR 0051 C1）
       const preview = page.getByTestId("chart-designer-preview");
       await expect(preview).toBeVisible();
-      const previewBox = await preview.boundingBox();
-      // 口径是「弹窗内容区」而非 .ant-modal-content 含 padding 的总宽（ADR 0051 D3）
-      const bodyBox = await page.getByTestId("chart-designer-body").boundingBox();
-      expect(previewBox, "预览列应可见").toBeTruthy();
-      expect(bodyBox, "设计器内容区应可见").toBeTruthy();
-      expect(previewBox!.width / bodyBox!.width).toBeGreaterThanOrEqual(0.55);
+      // 口径是「弹窗内容区」而非 .ant-modal-content 含 padding 的总宽（ADR 0051 D3）。
+      // 弹窗有 zoom-in 动画，两次 boundingBox 会落在不同帧上导致比值抖动，
+      // 故在同一次 evaluate 里原子取两个矩形。
+      const previewRatio = () =>
+        page.evaluate(() => {
+          const previewEl = document.querySelector<HTMLElement>('[data-testid="chart-designer-preview"]');
+          const bodyEl = document.querySelector<HTMLElement>('[data-testid="chart-designer-body"]');
+          if (!previewEl || !bodyEl) return 0;
+          const bodyWidth = bodyEl.getBoundingClientRect().width;
+          return bodyWidth > 0 ? previewEl.getBoundingClientRect().width / bodyWidth : 0;
+        });
+      await expect.poll(previewRatio, { timeout: 10_000 }).toBeGreaterThanOrEqual(0.55);
 
       await page.getByTestId("chart-designer-title").fill(chartTitle);
       await save.click();

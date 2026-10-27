@@ -209,7 +209,7 @@ Related: `frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/c
 ## 交接（会话结束更新）
 
 - 当前阶段：P0 / P1 / P2 已落地（Status 仍为 Accepted，待人工确认后改 Implemented）
-- 已完成：需求卡片 0051 经需求方确认（2026-10-27，五个未决问题均按建议）；ADR 评审通过；三期实现与单测 / 接口测试 / 导出测试完成，`make check-fast`、`make flow`、`make cov`、前端覆盖率门槛均通过；e2e 已在本地补齐 Chromium 系统库并跑通 shard 1
+- 已完成：需求卡片 0051 经需求方确认（2026-10-27，五个未决问题均按建议）；ADR 评审通过；三期实现与单测 / 接口测试 / 导出测试完成，`make check-fast`、`make flow`、`make cov`、前端覆盖率门槛均通过；e2e 已在本地补齐 Chromium 系统库后跑通全部分片（shard 1 连跑 3 次）
 - 下一步：人工确认实现后把 `Status` 改 `Implemented`
-- 已知坑：带 `width` 的占位符必须前后端同版本上线，旧解析器会把它当普通文本；重复引用改宽依赖 occurrence，不能用 replace-all；PDF 表格宽度需用真实 `%PDF` 渲染结果断言，不能只断言解析值；本机 8000 端口被其他服务占用时用 `E2E_PORT` 换端口跑 e2e；e2e 服务的静态产物来自 `src/cndb/static`，改前端后需先 `make frontend-build` 再跑；嵌入块只在查看态渲染，调宽后需切回查看 / 刷新才能看到正文宽度，实时预览（CodeMirror）不渲染嵌入块
+- 已知坑：带 `width` 的占位符必须前后端同版本上线，旧解析器会把它当普通文本；重复引用改宽依赖 occurrence，不能用 replace-all；PDF 表格宽度需用真实 `%PDF` 渲染结果断言，不能只断言解析值；本机 8000 端口被其他服务占用时用 `E2E_PORT` 换端口跑 e2e；e2e 服务的静态产物来自 `src/cndb/static`，改前端后需先 `make frontend-build` 再跑；嵌入块只在查看态渲染，调宽后需切回查看 / 刷新才能看到正文宽度，实时预览（CodeMirror）不渲染嵌入块；量宽度占比要在一次 `evaluate` 内原子取两个矩形，分两次 `boundingBox` 会命中弹窗 zoom-in 动画的不同帧导致抖动
 - 最近一次全绿：`make check-fast` / `make flow` / `make cov` / `node scripts/check-coverage.mjs` / e2e shard 1（2026-10-27）
