@@ -255,34 +255,35 @@ def _rows_array_from_candidates(
     data_path: str | None,
     layout: Mapping[str, str | int] | None,
 ) -> list[dict[str, Any]]:
-    """按候选路径（``|`` 分隔）取第一个命中数组的响应节点，再拼成行（ADR 0039 D1/D3）.
+    """按候选路径（``|`` 分隔）取第一个命中数组的响应节点，再拼成行（ADR 0039 D1/D2）.
 
     同一接口对不同品种可能返回不同键（腾讯日线：有除权事件回 ``qfqday``、否则只回 ``day``），
     因此声明可写 ``data.{entrant}.qfqday|data.{entrant}.day``：
 
     - 依声明顺序取第一个**非空**数组；
     - 命中空数组记为「已命中但无数据」，继续尝试下一候选；
-    - 全部候选都未命中数组才报错（单候选保持原有错误文案）；
-    - 全部候选都为空数组时返回 ``[]``（合法无数据响应）。
-
-    单路径（无 ``|``）直接委托 :func:`rows_array_to_rows`，行为与扩展前完全一致。
+    - 路径缺失 / 值为 ``null``（如北交所品种回 ``data: {"bj920010": {}}``）记为「无数据」，
+      继续尝试下一候选，全部如此时返回 ``[]``（合法无数据响应，不是失败）；
+    - 命中存在但**不是数组**的节点（字典 / 标量）才是配置与接口形态不符，报错并列出候选；
+    - 单路径（无 ``|``）走同一实现。
     """
     candidates: list[str] = [part.strip() for part in data_path.split("|")] if data_path else []
     candidates = [candidate for candidate in candidates if candidate]
-    if len(candidates) <= 1:
-        return rows_array_to_rows(payload, candidates[0] if candidates else None, layout)
-    empty_hit = False
+    if not candidates:
+        return rows_array_to_rows(payload, None, layout)
+    invalid: list[str] = []
     for candidate in candidates:
         node = _resolve_path(payload, candidate)
-        if not isinstance(node, list):
+        if node is None:
             continue
-        if not node:
-            empty_hit = True
-            continue
-        return rows_array_to_rows(node, None, layout)
-    if empty_hit:
-        return []
-    raise ProviderError(f"行数组记录要求 data_path 指向一个数组（候选均未命中: {', '.join(candidates)}）")
+        if isinstance(node, list):
+            if not node:
+                continue
+            return rows_array_to_rows(node, None, layout)
+        invalid.append(candidate)
+    if invalid:
+        raise ProviderError(f"行数组记录要求 data_path 指向一个数组（命中非数组的候选: {', '.join(invalid)}）")
+    return []
 
 
 def _layout_positions(layout: Mapping[str, str | int] | None) -> dict[str, int]:

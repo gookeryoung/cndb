@@ -202,9 +202,9 @@ Related: `src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/da
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_datasource_runner_pages.py` | 未提交 |
-| P1 | 已落地 | `src/cndb/core/http.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_datasource_host_fallback.py` | 未提交 |
-| P2 | 已落地 | `examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/股市日线.csv`、`examples/datasets/工作区-数据源示例/views.json`、`src/cndb/plugins/help/services/examples.py` | `tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | 未提交 |
+| P0 | 已落地 | `src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_datasource_runner_pages.py` | `fdc08346` |
+| P1 | 已落地 | `src/cndb/core/http.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_datasource_host_fallback.py` | `fdc08346` |
+| P2 | 已落地 | `examples/datasets/工作区-数据源示例/datasource.json`、`examples/datasets/工作区-数据源示例/股市日线.csv`、`examples/datasets/工作区-数据源示例/views.json`、`src/cndb/plugins/help/services/examples.py` | `tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | `9a9a6fdf` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -213,5 +213,5 @@ Related: `src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/da
 - 当前阶段：P0-P2 已落地，等待全量门禁与人工评审（Status 仍 `Proposed`）
 - 已完成：需求卡片 0053（C1..C12，6 个未决问题已由需求方逐项拍板）；P0 单轮翻页（游标新键 + 多 pass 循环 + 进度累计 + 判定层测试）；P1 主机回退（`url_hosts` / `{host}` / `fallback_urls` + 24 例单测）；P2 示例收敛为单序列三任务（CSV / 视图 / help 示例 / CHANGELOG / seed 与 runner 集成测试）
 - 下一步：`make flow` → `make cov` → 前端 / e2e 门禁；P2 真源复验（联网：直连可用性、单轮翻页耗时）后回填本表；人工评审通过再把 Status 改 `Accepted`
-- 已知坑：① 示例合并后成交量单位混存（手 / 股），不要误加 `scale`；② 存量库 seed 不删旧任务与旧列，须手动清理后重跑；③ `page_to_start` 只在 `backfill_date` 且模板含 `{end}` 时合法，配置错会全市场空转；④ `core/http.py` 抓取主干重构须回归 SSRF / 重定向 / 重试用例；⑤ 预览只跑 1 个 pass，`passes/truncated` 明细只在执行记录里
+- 已知坑：① 示例合并后成交量单位混存（手 / 股），不要误加 `scale`；② 存量库 seed 不删旧任务与旧列，须手动清理后重跑；③ `page_to_start` 只在 `backfill_date` 且模板含 `{end}` 时合法，配置错会全市场空转；④ `core/http.py` 抓取主干重构须回归 SSRF / 重定向 / 重试用例；⑤ 预览只跑 1 个 pass，`passes/truncated` 明细只在执行记录里；⑥ 路径缺失（北交所 `bj92xxxx` 只回 `data: ""`）按「无数据」返回 `[]`（ADR 0039 D2 修订），该标的零入库但不失败，水位停在原处
 - 最近一次全绿：`make check-docs` @ 未提交（2026-10-27）；代码门禁待跑

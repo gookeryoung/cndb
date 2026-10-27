@@ -215,8 +215,18 @@ class TestDataPathCandidates:
         )
         assert rows == []
 
-    def test_all_candidates_missing_lists_candidates(self):
+    def test_all_candidates_missing_returns_empty(self):
+        """路径全部缺失 = 无数据（不是失败）：北交所等品种只回空对象."""
         payload = {"data": {"sh562550": {"qt": {}}}}
+        rows = PROVIDER.parse(
+            json.dumps(payload),
+            self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
+            data_path="data.sh562550.qfqday|data.sh562550.day",
+        )
+        assert rows == []
+
+    def test_candidate_hit_non_array_raises(self):
+        payload = {"data": {"sh562550": {"qfqday": {"收盘": "1.12"}, "day": []}}}
         with pytest.raises(ProviderError) as excinfo:
             PROVIDER.parse(
                 json.dumps(payload),
@@ -224,17 +234,18 @@ class TestDataPathCandidates:
                 data_path="data.sh562550.qfqday|data.sh562550.day",
             )
         message = str(excinfo.value)
-        assert "指向一个数组" in message
+        assert "命中非数组的候选" in message
         assert "data.sh562550.qfqday" in message
-        assert "data.sh562550.day" in message
 
-    def test_single_path_message_unchanged(self):
-        with pytest.raises(ProviderError, match=r"^行数组记录要求 data_path 指向一个数组$"):
-            PROVIDER.parse(
-                json.dumps(self.DAY_ONLY_PAYLOAD),
-                self._mk_job("data.sh562550.qfqday"),
-                data_path="data.sh562550.qfqday",
-            )
+    def test_single_path_missing_returns_empty(self):
+        """单路径缺失（如北交所品种的 data.{entrant}.day）不报错，按空批落地."""
+        payload = {"data": {"bj920010": {}}}
+        rows = PROVIDER.parse(
+            json.dumps(payload),
+            self._mk_job("data.bj920010.day"),
+            data_path="data.bj920010.day",
+        )
+        assert rows == []
 
 
 class TestRowDefaults:
