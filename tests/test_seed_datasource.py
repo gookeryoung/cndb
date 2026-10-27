@@ -284,9 +284,9 @@ def test_real_datasource_json_is_valid():
     assert list_header == ["代码", "名称", "类型", "最新价", "成交额", "市值", "换手率", "更新日期"]
     # 旧的「股市日线-新浪」按源分表结构不再回归
     assert not (base / "股市日线-新浪.csv").exists()
-    # 来源筛选视图不再保留（D6）
+    # 来源筛选视图不再保留（D6）；默认「全部」视图由系统内置，示例不重复定义
     views = json.loads((base / "views.json").read_text(encoding="utf-8-sig"))
-    assert [view["name"] for view in views["股市日线"]] == ["全部日线"]
+    assert "股市日线" not in views
 
     # 大模型动态拉取：中文字段 + 中文幂等键，只配提示词与模型参数，手动触发
     llm_jobs = [job for job in jobs if job["provider"] == "llm_prompt"]
