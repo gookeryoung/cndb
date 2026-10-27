@@ -1,8 +1,8 @@
 # ADR 0048: 文档可视化图形（类别 → 图形模板 → 用户图表实例）
 
-Status: Proposed（待评审）
+Status: Accepted（2026-10-27 人工评审通过：手工录入不联动 / 游客免登录可见 / 暂不扩模板）
 Date: 2026-10-27
-Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/components/Document/TableEmbed.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/MarkdownToolbar.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertTableModal.tsx`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/images.py`、`src/cndb/plugins/help/services/figures/registry.py`、ADR 0008（离线依赖约束）、ADR 0017（游客分享）、ADR 0026（Chrome 81 基线）、ADR 0042（插入入口）、ADR 0045（导出占位符解释范式）、ADR 0030（服务端 SVG 先例）
+Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/components/Document/TableEmbed.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/MarkdownToolbar.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertTableModal.tsx`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/images.py`、`src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/help/services/figures/registry.py`、ADR 0008（离线依赖约束）、ADR 0017（游客分享）、ADR 0026（Chrome 81 基线）、ADR 0042（插入入口）、ADR 0045（导出占位符解释范式）、ADR 0030（服务端 SVG 先例）
 需求卡片: `docs/requirements/0048-document-chart-templates.md`（需求原文与约束编号的唯一副本）
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」或「以后备用」段落；整节不适用写「无」。ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用（git 历史可追溯），不在仓库保留 `Superseded` / `Deprecated` 文档；编号不复用。
@@ -22,7 +22,7 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 | C5 | 「能够在文档中进行引用显示」 | 独占段落占位符 `{{chart:<id>}}`：前端 `chartRef.ts` / `ChartEmbed`（与 `tableRef.ts` / `TableEmbed` 同构）；导出侧 `export/chart_refs.py`（与 `table_refs.py` 同构）；失效统一降级占位文字（D4 / D7） |
 | C6 | 「请参考以上三个可编辑的HTML，设计首批模板」 | 首批 3 个模板（见 §Decision 2.首批模板）：`bar-line-dual-axis`（趋势）、`stacked-bar-horizontal`（构成）、`grouped-bar-horizontal`（对比）；图形形态与可编辑维度逐项对齐三份参考 HTML |
 | C7 | 隐含（数据口径与参考 HTML 一致） | 数据 / 文案 / 配色随实例持久化；派生值（测算期增速、合计）渲染期自动计算不落库；图注支持 `{cagr}` 等模板 token 由渲染器求值替换（D11）；不绑定数据表 |
-| C8 | 隐含（权限与既有文档能力一致） | 渲染 / 引用 = 工作区成员；实例 CRUD = owner / editor；导出按发起人权限；删除实例后引用降级（D8）；游客分享页本期不渲染图表（D9） |
+| C8 | 隐含（权限与既有文档能力一致） | 渲染 / 引用 = 工作区成员；实例 CRUD = owner / editor；导出按发起人权限；删除实例后引用降级（D8）；游客分享页**免登录渲染**——token 鉴权且仅限该分享文档正文引用的图表（D9） |
 | C9 | 隐含（既有功能零回归） | 占位符新增独立语法不影响 `{{table:…}}`；导出渲染器沿用 ADR 0045 的可选参数扩展方式；无图表引用的文档渲染结果逐字节不变；既有测试全绿 |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
@@ -119,6 +119,7 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 | `GET/PUT/DELETE /api/v1/workspaces/{wid}/charts/{id}` | 新增：实例读（成员）/ 改 / 删（owner / editor） |
 | `POST /api/v1/workspaces/{wid}/charts/render-preview` | 新增：不落库渲染（template_key + config → SVG），设计器实时预览专用 |
 | `GET /api/v1/workspaces/{wid}/charts/{id}/render` | 新增：实例渲染（SVG，`ETag` 取 `updated_at + template 指纹`，304 支持） |
+| `GET /api/v1/documents/share/{token}/charts/{chart_id}/render` | 新增：游客分享免登录渲染（D9）。token 有效（active / 未过期 / 文档已发布）且 `chart_id` 在该分享文档正文引用集合内才放行，否则 404 |
 | `GET /{wid}/documents/{doc_id}/export` | 行为变更（非契约变更）：`{{chart:<id>}}` 段落按 D6 渲染；路径 / 参数 / MIME / 文件名不变 |
 
 ### 4. 边界与例外
@@ -129,7 +130,7 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 4. **config 演进**：新增可编辑项旧实例自动回退默认值；删除项忽略未知键；渲染永不因缺键抛错（I6）。
 5. **数据规模**：单实例 data 行 / 系列数按模板 schema 限定（如 `bar-line-dual-axis` ≤ 24 行、堆叠系列 ≤ 6），超限 400；渲染产物 SVG 尺寸有上界，防滥用。
 6. **主题暗色**：SVG 用 `currentColor` / CSS 变量跟随前端明暗主题（对齐 HelpFigure 内联方案）；PNG 导出固定浅色纸底（打印口径）。
-7. **游客分享（ADR 0017）**：本期 `{{chart:…}}` 在游客页渲染为 `[图表需登录查看]` 占位行，不开放匿名 render 端点（D9）。
+7. **游客分享（ADR 0017）**：游客页 `{{chart:…}}` 免登录渲染（D9）：匿名 render 端点要求 token 有效，且 `chart_id` 必须出现在该分享文档正文的 `{{chart:…}}` 引用集合内（防跨图表 ID 探测）；任一不满足 404，前端降级占位文字。
 8. **并发编辑**：图表实例是独立实体（put 全量覆盖、`updated_at` 乐观展示），不进文档版本与修改申请链路；文档双轨写入不受影响（正文里占位符只是文本）。
 9. **图片归档顺序**：Markdown 导出先做图表改写再做 `render_markdown_archive`（与 ADR 0045 表格改写同一顺序约定）。
 10. **render-preview 不鉴权成员写身份**：成员即可用（只读渲染、无副作用）；防抖与频率由前端控制。
@@ -163,6 +164,7 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 
 - `tests/test_documents_charts_api.py`：模板清单两级结构；CRUD 权限（viewer 只读、跨工作区 404）；render ETag 304；render-preview 不落库；删除后引用降级。
 - `tests/test_document_export_chart_refs.py`：占位符解析同构样例（与前端 `chartRef.test.ts` 同一批）；三格式导出（md 归档含 SVG 资产、docx 含 image 部件、pdf `%PDF` 头）；坏引用降级且导出 200；重复引用记忆化；无图表文档导出与现状逐字节一致（I7）。
+- `tests/test_document_public_share.py` 增补（D9）：匿名 render——token 有效且 ID 在引用集合内 200；集合外 ID / 集合内已删 / 失效或撤销 token 404。
 
 **迁移 / 备份**：迁移幂等 + downgrade 往返；备份建 → 备 → 还 → 渲染可用。
 
@@ -176,7 +178,7 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 |---|---|---|
 | **P0 后端地基** | `documents_chart` 模型 + 迁移 + 注册表（3 模板 schema）+ 渲染管线（图元 / SVG / PNG 双写端）+ 模板 / CRUD / render / render-preview API + 判定层与接口层测试 + 迁移 / 备份往返 | 中（双写端一致性是核心风险，靠共享图元层 + 一致性测试兜住） |
 | **P1 前端引用与设计器** | `chartRef.ts` / `ChartEmbed` / MarkdownPreview 切片 / 工具栏入口 / `InsertChartModal`（两级选择 + 已有实例）/ `ChartDesignerModal`（实时预览）+ 前端单测 + msw fixtures | 中（设计器表单按 schema 生成，模板 schema 表达力决定上限） |
-| **P2 导出与收尾** | `export/chart_refs.py` + DOCX / PDF / Markdown 归档接线 + 导出测试 + e2e + 帮助文档（图表专题）+ CHANGELOG | 低（结构平移 ADR 0045，通道已验证） |
+| **P2 导出与游客分享** | `export/chart_refs.py` + DOCX / PDF / Markdown 归档接线 + 匿名 render 端点与 PublicSharePage 接线（D9）+ 导出测试 + e2e + 帮助文档（图表专题）+ CHANGELOG | 低-中（导出平移 ADR 0045；分享渲染复用 token 校验链路） |
 
 ## 决策记录（唯一决策台账）
 
@@ -190,7 +192,7 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 | D6 | 导出形态 | **md = SVG 资产归档**（zip `assets/chart-<id>.svg`）；**docx / pdf = PNG（2 倍分辨率）** 走既有图片通道 | #5 通道现成；SVG 保矢量可再编辑（对齐参考 HTML「导出 SVG 可在 Word / AI 继续编辑」）；Word / PDF 端 PNG 兼容性最稳 | 三格式全 SVG（python-docx 不支持 SVG 图片部件；reportlab 无 SVG 渲染）；全 PNG（md 失去矢量价值） | `export/chart_refs.py`、`export/images.py` |
 | D7 | 失效降级 | **`[图表引用无效：图表 #N 不存在或无访问权限]`**，单段降级、导出继续 200；不区分不存在 / 无权限 | I4 / I5；与 ADR 0045 D6 / ADR 0003 I6 口径一致 | 抛 4xx（一张图被删导不出整篇）；静默丢段（读者无从判断缺失） | `chart_refs.py`、`ChartEmbed.tsx` |
 | D8 | 权限 | 读（列表 / 渲染 / 引用）= 工作区成员；写（CRUD）= owner / editor；导出按发起人 | C8；图表是工作区资产，与数据表同档；不进文档修改申请链路（正文只是占位符文本，双轨写入天然覆盖） | 实例级细粒度权限（首期无诉求，表 / 视图先例也是工作区档） | `routers/charts.py` |
-| D9 | 游客分享 | **本期不渲染**：游客页 `{{chart:…}}` 显示 `[图表需登录查看]`；不开放匿名 render 端点 | ADR 0017 的只读边界已明确不扩数据能力；匿名渲染需 token 级鉴权与缓存设计，独立成卡 | 匿名 render 端点（扩大匿名面，超出本期范围） | `PublicSharePage.tsx`（降级文案） |
+| D9 | 游客分享 | **免登录渲染**：新增 `GET /documents/share/{token}/charts/{id}/render`，token 有效且图表 ID 在该分享文档正文引用集合内才放行；需求方 2026-10-27 确认「分享页允许免登录可见」 | 图表随分享文档分发；引用集合白名单不给 token 命名空间外的枚举能力 | 全工作区图表匿名可渲染（游客可探测任意图表 ID，越权面过大）；维持不渲染（与需求方结论相悖） | `routers/public.py`、`PublicSharePage.tsx`、`ChartEmbed.tsx`（public 变体） |
 | D10 | 渲染结果缓存 | **不落库缓存**：接口侧 ETag（`updated_at + 模板代码指纹`）304；导出即席渲染 | 实例规模小、渲染毫秒级；落缓存引入失效链（参考帮助图示的指纹重建是为「代码变更自动刷新」，ETag 已覆盖） | 存渲染快照列（失效链复杂，与 I6 演进语义冲突） | `routers/charts.py` |
 | D11 | 图注动态 token | **渲染期求值**：`{cagr}` 等有限 token 白名单，`layout` 计算后替换；未知 token 原样保留 | 对齐参考 HTML 的图注联动；白名单防模板注入 | 完整模板引擎（图注是短文案，收益不成比例） | `render.py` |
 | D12 | 实例删除语义 | **物理删除 + 引用降级**，无回收站 | 与表 / 视图删除先例一致；引用降级已有 I5 兜底 | 软删除（documents 文档树有回收站是因为树结构，实例是平铺资产，无此结构诉求） | `routers/charts.py` |
@@ -201,7 +203,7 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 
 - **正向**：文档获得「数据 + 模板 → 图形」的表达能力，参考 HTML 的规划类图表（趋势 / 构成 / 目标对比）可全流程在平台内制作、复用与分发；预览 / 导出同源，杜绝「网页好看、导出变形」；模板随代码演进，全部实例自动获得修复与增强（I6 + ETag）。
 - **负向**：渲染管线（图元层 + 双写端）是新的自研复杂度；新增一张表、一组 CRUD 端点与一个设计器弹窗，前端表单按 schema 生成的通用性有限（首批 3 模板 schema 人工对齐）；导出链路再增一段解释器。
-- **风险与缓解**：双写端视觉漂移 → 共享图元层 + 一致性测试（同批图元同文本集合）；模板 schema 表达力不足 → schema 版本化字段预留，首期锁定 3 模板；游客看到占位 → D9 明确边界，需求另立卡片；实例被删后文档信息缺失 → 降级占位文字显式可见，不静默。
+- **风险与缓解**：双写端视觉漂移 → 共享图元层 + 一致性测试（同批图元同文本集合）；模板 schema 表达力不足 → schema 版本化字段预留，首期锁定 3 模板；游客匿名面扩大 → D9 白名单（仅渲染该文档引用的图表）+ 复用 ADR 0017 token 校验链路；实例被删后文档信息缺失 → 降级占位文字显式可见，不静默。
 
 ## 行业对照（可选）
 
@@ -230,8 +232,8 @@ Related: `frontend/src/components/Document/tableRef.ts`、`frontend/src/componen
 
 ## 交接（会话结束更新）
 
-- 当前阶段：Proposed（方案已出，**未进入实现**，等待两处人工卡点）
-- 已完成：需求卡片 0048（C1–C9 + 现状影响面 10 条）；本 ADR（口径 / 现状核对 12 条 / 决策 D1–D12 / 三期分期）
-- 下一步：① 人工确认需求卡片（尤其三个未决问题：数据表联动、游客可见性、后续模板节奏）；② 人工评审 ADR（重点 D1 双写端、D6 导出形态、D9 游客边界）；Accepted 后按 P0 → P1 → P2 实现
+- 当前阶段：Accepted（2026-10-27 需求方确认三个未决问题：手工录入不联动 / 游客免登录可见 / 暂不扩模板），开始 P0
+- 已完成：需求卡片 0048（C1–C9，未决问题全部有结论）；本 ADR（口径 / 现状核对 12 条 / 决策 D1–D12 / 三期分期）
+- 下一步：P0 后端地基（模型 + 迁移 + 注册表 + 渲染管线 + API + 测试）→ P1 前端引用与设计器 → P2 导出与游客分享
 - 已知坑：实现时必须先跑 `make check-fast` 基线；`chartRef.ts` 与 `chart_refs.py` 的解析样例要同一批；Markdown 归档顺序须「图表改写 → 表格改写 → 归档」与 ADR 0045 叠加时保持无占位符残留；PNG 写端 CJK 字体复用 `export/pdf_fonts.py`，避免第三条字体链
 - 最近一次全绿：不适用（本轮仅文档，`make check-docs` 通过）
