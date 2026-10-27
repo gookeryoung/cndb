@@ -19,6 +19,7 @@ from . import html as html_converter
 from . import markdown as markdown_converter
 from .errors import UnsupportedImport
 from .formats import (
+    CONTENT_TYPE_IMAGE,
     MAX_ASSET_BYTES,
     SUPPORTED_SUFFIXES,
     asset_format,
@@ -28,6 +29,8 @@ from .normalize import clean_title, normalize_markdown
 
 #: 图片落盘回调：(字节, 建议文件名) → 站点文件 key；None 表示不落盘
 ImageSink = Callable[[bytes, str], str | None]
+#: 批次内本地图片：批次相对路径 → 原始字节（HTML 相对 ``<img src>`` 用）
+LocalImages = html_converter.LocalImages
 
 MARKDOWN_SUFFIXES = (".md", ".markdown")
 DOCX_SUFFIXES = (".docx",)
@@ -98,10 +101,26 @@ def validate_batch(items: Iterable[UploadedItem]) -> int:
     return total
 
 
-def convert_file(item: UploadedItem, *, image_sink: ImageSink | None = None) -> ImportedDoc:
+def build_local_image_index(items: Iterable[UploadedItem]) -> dict[str, bytes]:
+    """批次内图片文件按归一化路径索引（供 HTML 相对 ``<img src>`` 内联）."""
+    index: dict[str, bytes] = {}
+    for item in items:
+        fmt = asset_format(item.path)
+        if fmt is not None and fmt.content_type == CONTENT_TYPE_IMAGE and item.data:
+            index[item.path] = item.data
+    return index
+
+
+def convert_file(
+    item: UploadedItem,
+    *,
+    image_sink: ImageSink | None = None,
+    local_images: LocalImages | None = None,
+) -> ImportedDoc:
     """分派单个文件；不支持 / 损坏 / 超限时抛 ``UnsupportedImport``.
 
     原件族（PDF / Office / 图片）不转换，返回 ``asset=True`` 的结果，由 importer 落盘。
+    ``local_images`` 供 HTML 把同批上传的相对路径图片内联为站内附件。
     """
     suffix = normalize_suffix(item.path)
     if suffix not in SUPPORTED_SUFFIXES:
@@ -121,7 +140,9 @@ def convert_file(item: UploadedItem, *, image_sink: ImageSink | None = None) -> 
         elif suffix in DOCX_SUFFIXES:
             title, body, warnings = docx_converter.convert_docx(item.data, item.path, image_sink=image_sink)
         else:
-            title, body, warnings = html_converter.convert_html(item.data, item.path, image_sink=image_sink)
+            title, body, warnings = html_converter.convert_html(
+                item.data, item.path, image_sink=image_sink, local_images=local_images
+            )
     except UnsupportedImport:
         raise
     except Exception as exc:
@@ -153,12 +174,17 @@ def _convert_asset(item: UploadedItem, suffix: str, content_type: str, mime: str
 def convert_batch(
     items: Iterable[UploadedItem], *, image_sink: ImageSink | None = None
 ) -> tuple[list[ImportedDoc], list[dict[str, str]]]:
-    """逐条转换（单条失败只记 skip，不中断整批），返回 ``(成功项, 跳过明细)``."""
+    """逐条转换（单条失败只记 skip，不中断整批），返回 ``(成功项, 跳过明细)``.
+
+    批次内图片先建索引，HTML 相对 ``<img src>`` 才能内联为站内附件。
+    """
+    batch = list(items)
+    local_images = build_local_image_index(batch)
     docs: list[ImportedDoc] = []
     skipped: list[dict[str, str]] = []
-    for item in items:
+    for item in batch:
         try:
-            docs.append(convert_file(item, image_sink=image_sink))
+            docs.append(convert_file(item, image_sink=image_sink, local_images=local_images))
         except UnsupportedImport as exc:
             skipped.append({"path": item.path, "reason": str(exc)})
     return docs, skipped
@@ -173,8 +199,10 @@ __all__ = [
     "SUPPORTED_SUFFIXES",
     "ImageSink",
     "ImportedDoc",
+    "LocalImages",
     "UnsupportedImport",
     "UploadedItem",
+    "build_local_image_index",
     "convert_batch",
     "convert_file",
     "is_supported",

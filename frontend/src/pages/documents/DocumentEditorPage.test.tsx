@@ -10,6 +10,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import { http, HttpResponse } from 'msw'
 import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
+import { OUTLINE_PREFS_KEY } from './outlinePrefs'
 import { documentsApi } from '@/api/documents'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockTable, mockUser, mockWorkspace, server } from '@/test/msw'
@@ -106,7 +107,7 @@ describe('DocumentEditorPage 数据表动态引用', () => {
 
     it('未选择表时插入按钮禁用', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
         const okBtn = await screen.findByRole('button', { name: /^插\s*入$/ })
@@ -148,7 +149,7 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         )
         renderEditor()
         await enterSourceMode()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
         const tableCombo = await screen.findByTestId('insert-table-select')
@@ -169,7 +170,7 @@ describe('DocumentEditorPage 数据表动态引用', () => {
 
     it('关闭弹窗后重开不残留已选表（ADR 0045）', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(screen.getByRole('button', { name: /插入表格引用/ }))
         const tableCombo = await screen.findByTestId('insert-table-select')
@@ -189,7 +190,7 @@ describe('DocumentEditorPage 数据表动态引用', () => {
 
     it('查看模式不出现插入图片 / 插入表格引用入口（只读，ADR 0042）', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
         // 默认编辑模式（draft 文档）：两个插入入口在编辑工具栏
         expect(screen.getByTestId('md-toolbar-image')).toBeInTheDocument()
         expect(screen.getByTestId('md-toolbar-table-ref')).toBeInTheDocument()
@@ -219,7 +220,7 @@ describe('DocumentEditorPage 大纲面板', () => {
         )
     })
 
-    it('大纲抽屉：实时解析标题层级，点击定位预览锚点', async () => {
+    it('桌面端默认常驻大纲栏：实时解析标题层级，点击定位预览锚点', async () => {
         // jsdom 无 scrollIntoView，mock 捕获调用
         const scrollIntoView = vi.fn()
         Element.prototype.scrollIntoView = scrollIntoView as unknown as typeof Element.prototype.scrollIntoView
@@ -228,17 +229,18 @@ describe('DocumentEditorPage 大纲面板', () => {
         // 顶栏大纲按钮显示条目数（4 个标题）
         expect(await screen.findByRole('button', { name: /大纲\s*\(4\)/ })).toBeInTheDocument()
 
-        // 打开抽屉：层级条目齐备
-        fireEvent.click(screen.getByRole('button', { name: /大纲/ }))
-        expect(await screen.findByTestId('doc-outline-item-0')).toHaveTextContent('需求说明')
-        expect(screen.getByTestId('doc-outline-item-1')).toHaveTextContent('背景')
-        expect(screen.getByTestId('doc-outline-item-3')).toHaveTextContent('细分')
+        // 默认展开：不点按钮即可看到层级条目，且不渲染遮罩抽屉
+        const panel = await screen.findByTestId('doc-outline-panel')
+        expect(within(panel).getByTestId('doc-outline-item-0')).toHaveTextContent('需求说明')
+        expect(within(panel).getByTestId('doc-outline-item-1')).toHaveTextContent('背景')
+        expect(within(panel).getByTestId('doc-outline-item-3')).toHaveTextContent('细分')
+        expect(document.querySelector('.ant-drawer')).toBeNull()
 
         // 预览侧锚点在切到查看模式后才渲染（草稿文档默认编辑模式）
         expect(document.getElementById('doc-h-目标')).toBeNull()
 
         // 点击「目标」：切到查看模式并滚动定位到对应锚点
-        fireEvent.click(screen.getByTestId('doc-outline-item-2'))
+        fireEvent.click(within(panel).getByTestId('doc-outline-item-2'))
         await waitFor(() => {
             expect(document.getElementById('doc-h-目标')).toBeInTheDocument()
             expect(scrollIntoView).toHaveBeenCalled()
@@ -249,14 +251,65 @@ describe('DocumentEditorPage 大纲面板', () => {
         renderEditor()
         expect(await screen.findByRole('button', { name: /大纲\s*\(4\)/ })).toBeInTheDocument()
 
+        const panel = await screen.findByTestId('doc-outline-panel')
         const ta = await enterSourceMode()
         fireEvent.change(ta, { target: { value: '# 新标题\n\n正文' } })
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /大纲\s*\(1\)/ })).toBeInTheDocument()
+            expect(within(panel).getByTestId('doc-outline-item-0')).toHaveTextContent('新标题')
         })
+    })
 
-        fireEvent.click(screen.getByRole('button', { name: /大纲/ }))
-        expect(await screen.findByTestId('doc-outline-item-0')).toHaveTextContent('新标题')
+    it('顶栏按钮收起 / 展开右侧大纲栏，并记忆展开态', async () => {
+        renderEditor()
+        expect(await screen.findByTestId('doc-outline-panel')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-outline-toggle')).toHaveAttribute('aria-expanded', 'true')
+
+        fireEvent.click(screen.getByTestId('doc-outline-toggle'))
+        expect(screen.queryByTestId('doc-outline-panel')).toBeNull()
+        expect(screen.getByTestId('doc-outline-toggle')).toHaveAttribute('aria-expanded', 'false')
+        expect(JSON.parse(localStorage.getItem(OUTLINE_PREFS_KEY) ?? '{}')).toMatchObject({ open: false })
+
+        fireEvent.click(screen.getByTestId('doc-outline-toggle'))
+        expect(await screen.findByTestId('doc-outline-panel')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-outline-toggle')).toHaveAttribute('aria-expanded', 'true')
+    })
+
+    it('拖拽手柄缩窄大纲栏：实时预览、边界 clamp、松手落定并持久化', async () => {
+        renderEditor()
+        const panel = await screen.findByTestId('doc-outline-panel')
+        expect(panel.style.width).toBe('240px')
+
+        const handle = screen.getByTestId('doc-outline-resizer')
+        // 向右拖 60px → 240 - 60 = 180（最小宽度）
+        fireEvent.mouseDown(handle, { button: 0, clientX: 500 })
+        fireEvent.mouseMove(document, { clientX: 560 })
+        await waitFor(() => expect(screen.getByTestId('doc-outline-panel').style.width).toBe('180px'))
+        fireEvent.mouseUp(document)
+        expect(document.body.style.userSelect).toBe('')
+        expect(JSON.parse(localStorage.getItem(OUTLINE_PREFS_KEY) ?? '{}')).toMatchObject({ width: 180 })
+
+        // 向左拖 300px → 180 + 300 超出上限，clamp 到 400
+        fireEvent.mouseDown(screen.getByTestId('doc-outline-resizer'), { button: 0, clientX: 500 })
+        fireEvent.mouseMove(document, { clientX: 200 })
+        await waitFor(() => expect(screen.getByTestId('doc-outline-panel').style.width).toBe('400px'))
+        fireEvent.mouseUp(document)
+        expect(JSON.parse(localStorage.getItem(OUTLINE_PREFS_KEY) ?? '{}')).toMatchObject({ width: 400 })
+    })
+
+    it('拖拽手柄支持键盘调宽（方向键 / Home / End）', async () => {
+        renderEditor()
+        expect(await screen.findByTestId('doc-outline-panel')).toHaveStyle({ width: '240px' })
+
+        fireEvent.keyDown(screen.getByTestId('doc-outline-resizer'), { key: 'ArrowLeft' })
+        await waitFor(() => expect(screen.getByTestId('doc-outline-panel').style.width).toBe('256px'))
+        fireEvent.keyDown(screen.getByTestId('doc-outline-resizer'), { key: 'ArrowRight' })
+        await waitFor(() => expect(screen.getByTestId('doc-outline-panel').style.width).toBe('240px'))
+        fireEvent.keyDown(screen.getByTestId('doc-outline-resizer'), { key: 'Home' })
+        await waitFor(() => expect(screen.getByTestId('doc-outline-panel').style.width).toBe('180px'))
+        fireEvent.keyDown(screen.getByTestId('doc-outline-resizer'), { key: 'End' })
+        await waitFor(() => expect(screen.getByTestId('doc-outline-panel').style.width).toBe('400px'))
+        expect(JSON.parse(localStorage.getItem(OUTLINE_PREFS_KEY) ?? '{}')).toMatchObject({ width: 400 })
     })
 })
 
@@ -424,7 +477,7 @@ describe('DocumentEditorPage 文档导出', () => {
         )
 
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(screen.getByTestId('doc-export-btn'))
         fireEvent.click(await screen.findByText('导出 Word (.docx)'))
@@ -447,7 +500,7 @@ describe('DocumentEditorPage 文档导出', () => {
         )
 
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(screen.getByTestId('doc-export-btn'))
         fireEvent.click(await screen.findByText('导出 Markdown (.md)'))
@@ -508,7 +561,7 @@ describe('DocumentEditorPage 修改申请（双轨制保存）', () => {
 
     it('「修改申请」入口打开抽屉并展示空态', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(screen.getByTestId('doc-cr-open'))
 
@@ -532,9 +585,19 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
         }
     })
 
+    it('窄屏不渲染常驻大纲栏，点「大纲」打开抽屉', async () => {
+        renderEditor()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
+        expect(screen.queryByTestId('doc-outline-panel')).toBeNull()
+
+        fireEvent.click(screen.getByTestId('doc-outline-toggle'))
+        const drawer = await screen.findByRole('dialog')
+        expect(within(drawer).getByTestId('doc-outline-item-0')).toHaveTextContent('需求说明')
+    })
+
     it('只保留大纲 / 更多 / 保存，其余入口收进更多菜单并可触发', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         // 窄屏：桌面常显的次级入口不直接渲染
         expect(screen.queryByTestId('doc-cr-open')).toBeNull()
@@ -554,7 +617,7 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
 
     it('编辑模式「更多」菜单含插入入口，点「插入表格引用」打开选表弹窗（ADR 0042）', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
         // 默认编辑模式（draft 文档）：窄屏不渲染工具栏插入按钮，入口在菜单
         expect(screen.queryByTestId('md-toolbar-image')).toBeNull()
         expect(screen.queryByTestId('md-toolbar-table-ref')).toBeNull()
@@ -567,7 +630,7 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
 
     it('查看模式「更多」菜单不含插入入口（只读，ADR 0042）', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
         expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
@@ -589,7 +652,7 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
                 })),
         )
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(screen.getByTestId('doc-more-actions'))
         fireEvent.click(await screen.findByText('文档链接'))
@@ -630,14 +693,19 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
     })
 
     it('大纲点击锚点时先切到查看模式再定位', async () => {
+        // 本 describe 默认窄屏，锚点用例需要桌面常驻大纲栏
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
         const scrollIntoView = vi.fn()
         Element.prototype.scrollIntoView = scrollIntoView as unknown as typeof Element.prototype.scrollIntoView
         renderEditor()
         await enterSourceMode()
 
-        // 打开大纲抽屉并点击一个标题
-        fireEvent.click(screen.getByText(/大\s*纲/))
-        fireEvent.click(await screen.findByText('需求说明', { selector: '.ant-drawer *' }))
+        // 桌面端大纲常驻：直接点栏内标题
+        const panel = await screen.findByTestId('doc-outline-panel')
+        fireEvent.click(within(panel).getByTestId('doc-outline-item-0'))
 
         await waitFor(() => expect(document.querySelector('.doc-md-preview')).toBeInTheDocument())
         await waitFor(() => expect(scrollIntoView).toHaveBeenCalled())
@@ -649,7 +717,7 @@ describe('DocumentEditorPage 窄屏工具栏', () => {
             width: 1280, height: 800,
         }
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         expect(screen.getByTestId('doc-links-open')).toBeInTheDocument()
         expect(screen.getByTestId('doc-cr-open')).toBeInTheDocument()
@@ -1424,7 +1492,7 @@ describe('DocumentEditorPage AI 能力（ADR 0020 P1）', () => {
         )
 
         renderEditor()
-        await screen.findByText('需求说明')
+        await screen.findByRole('heading', { level: 4, name: '需求说明' })
         fireEvent.click(await screen.findByTestId('doc-ai-entry'))
         fireEvent.click(await screen.findByText('AI 标签建议'))
 
@@ -1447,7 +1515,7 @@ describe('DocumentEditorPage 分享入口（ADR 0017）', () => {
 
     it('owner 桌面端显示「分享」并打开分享弹层', async () => {
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         fireEvent.click(screen.getByTestId('doc-share-open'))
 
@@ -1461,7 +1529,7 @@ describe('DocumentEditorPage 分享入口（ADR 0017）', () => {
                 HttpResponse.json({ ...mockWorkspace, current_user_role: 'viewer' })),
         )
         renderEditor()
-        expect(await screen.findByText('需求说明')).toBeInTheDocument()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
 
         expect(screen.queryByTestId('doc-share-open')).toBeNull()
     })

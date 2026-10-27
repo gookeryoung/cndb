@@ -80,6 +80,13 @@ import DocumentShareModal from './DocumentShareModal'
 import InsertTableModal from './InsertTableModal'
 import LinksDrawer from './LinksDrawer'
 import OutlineDrawer from './OutlineDrawer'
+import OutlinePanel from './OutlinePanel'
+import {
+  clampOutlineWidth,
+  loadOutlinePrefs,
+  saveOutlinePrefs,
+  type OutlinePrefs,
+} from './outlinePrefs'
 import VersionsDrawer from './VersionsDrawer'
 import TagEditor from './TagEditor'
 
@@ -102,7 +109,7 @@ const MAX_AI_SELECTION_CHARS = 4000
 
 export default function DocumentEditorPage() {
   const { wid, docId } = useParams<{ wid: string; docId: string }>()
-  const { isMobile } = useResponsive()
+  const { isMobile, isDesktop } = useResponsive()
   const navigate = useNavigate()
   const qc = useQueryClient()
   const workspaceId = Number(wid)
@@ -112,7 +119,11 @@ export default function DocumentEditorPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
-  const [outlineOpen, setOutlineOpen] = useState(false)
+  const [outlineDrawerOpen, setOutlineDrawerOpen] = useState(false)
+  /** 桌面端右侧大纲栏偏好（展开态 + 宽度，存 localStorage） */
+  const [outlinePrefs, setOutlinePrefs] = useState<OutlinePrefs>(() => loadOutlinePrefs())
+  /** 拖动中的同步写入靠 ref 取最新值，避免闭包读到旧状态 */
+  const outlinePrefsRef = useRef(outlinePrefs)
   /** 顶层查看/编辑模式：已发布文档默认查看；有个人草稿或未发布文档默认编辑 */
   const [viewMode, setViewMode] = useState<'view' | 'edit'>('view')
   /** 编辑器的渲染模式：实时预览（Obsidian 风格）/ 源码 */
@@ -773,6 +784,23 @@ export default function DocumentEditorPage() {
     })
   }, [])
 
+  /** 大纲栏偏好唯一写入口：先同步 ref，再更新状态，按需落本地 */
+  const updateOutlinePrefs = useCallback((next: OutlinePrefs, persist = true) => {
+    outlinePrefsRef.current = next
+    setOutlinePrefs(next)
+    if (persist) saveOutlinePrefs(next)
+  }, [])
+
+  const toggleOutline = useCallback(() => {
+    const cur = outlinePrefsRef.current
+    updateOutlinePrefs({ ...cur, open: !cur.open })
+  }, [updateOutlinePrefs])
+
+  /** 拖动过程 commit=false（只预览宽度），松手 / 键盘操作 commit=true（写入偏好） */
+  const changeOutlineWidth = useCallback((width: number, commit = false) => {
+    updateOutlinePrefs({ ...outlinePrefsRef.current, width: clampOutlineWidth(width) }, commit)
+  }, [updateOutlinePrefs])
+
   // 双向链接跳转：按标题在工作区文档树中定位目标文档（无缓存时现场拉取树）
   const handleWikilink = useCallback(
     (title: string) => {
@@ -997,7 +1025,7 @@ export default function DocumentEditorPage() {
         {isMobile ? (
           <Space size={8}>
             {!isAssetDoc && (
-            <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
+            <Button icon={<MenuOutlined />} data-testid="doc-outline-toggle" onClick={() => setOutlineDrawerOpen(true)}>
               大纲{outline.length > 0 ? ` (${outline.length})` : ''}
             </Button>
             )}
@@ -1031,7 +1059,12 @@ export default function DocumentEditorPage() {
         ) : (
         <Space wrap>
           {!isAssetDoc && (
-          <Button icon={<MenuOutlined />} onClick={() => setOutlineOpen(true)}>
+          <Button
+            icon={<MenuOutlined />}
+            data-testid="doc-outline-toggle"
+            aria-expanded={isDesktop ? outlinePrefs.open : undefined}
+            onClick={() => (isDesktop ? toggleOutline() : setOutlineDrawerOpen(true))}
+          >
             大纲{outline.length > 0 ? ` (${outline.length})` : ''}
           </Button>
           )}
@@ -1153,7 +1186,9 @@ export default function DocumentEditorPage() {
       )}
 
       {/* 分屏编辑/预览 —— 窄屏改为「编辑 / 预览」页签切换，桌面保持左右分屏 */}
-      <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+        {/* 正文列：查看 / 编辑内容，桌面端右侧并排大纲栏 */}
+        <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {isAssetDoc ? (
           <DocumentAssetView workspaceId={workspaceId} doc={doc} />
         ) : viewMode === 'view' ? (
@@ -1227,6 +1262,15 @@ export default function DocumentEditorPage() {
             <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
           </>
         )}
+        </div>
+        {!isAssetDoc && isDesktop && outlinePrefs.open && (
+          <OutlinePanel
+            width={outlinePrefs.width}
+            outline={outline}
+            onWidthChange={changeOutlineWidth}
+            onAnchorClick={scrollToAnchor}
+          />
+        )}
       </div>
 
       {/* 插入图片用的隐藏文件选择器（工具栏按钮 / 窄屏更多菜单共用） */}
@@ -1239,10 +1283,10 @@ export default function DocumentEditorPage() {
         onChange={handleImagePick}
       />
 
-      {/* 大纲抽屉：实时标题层级，点击滚动定位预览区锚点 */}
+      {/* 大纲抽屉：窄屏（移动 / 平板）入口；桌面端走右侧常驻栏 */}
       <OutlineDrawer
-        open={outlineOpen}
-        onClose={() => setOutlineOpen(false)}
+        open={outlineDrawerOpen}
+        onClose={() => setOutlineDrawerOpen(false)}
         outline={outline}
         onAnchorClick={scrollToAnchor}
       />

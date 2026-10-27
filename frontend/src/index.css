@@ -4852,6 +4852,26 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   border-top: 1px solid var(--cn-border);
 }
 
+/* ─────────────── 文档大纲栏拖拽手柄 ─────────────── */
+.cn-doc-outline-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+  background: transparent;
+  border-radius: var(--cn-radius-xs);
+  outline: none;
+}
+
+.cn-doc-outline-resizer:hover,
+.cn-doc-outline-resizer:focus {
+  background: var(--cn-brand-color);
+  opacity: 0.45;
+}
+
 /* ─────────────── 文档列表批量操作栏 ─────────────── */
 .cn-doc-batch-bar {
   margin-bottom: var(--cn-space-lg);

@@ -253,9 +253,10 @@ def import_files(
         "warnings": [],
     }
 
+    local_images = reader.build_local_image_index(items)
     for item in sorted(items, key=lambda entry: entry.path):
         try:
-            doc = reader.convert_file(item, image_sink=store.store)
+            doc = reader.convert_file(item, image_sink=store.store, local_images=local_images)
         except UnsupportedImport as exc:
             stats["skipped"] += 1
             if len(stats["skipped_files"]) < DETAIL_LIMIT:

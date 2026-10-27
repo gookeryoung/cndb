@@ -252,6 +252,31 @@ class TestImportFiles:
         assert "# 一级" in content
         assert "段落 文本" in content
 
+    def test_html_local_image_inlined(self, client, db, ws, auth):
+        html = "<html><head><title>网页图片</title></head><body><p><img src='./图片/a.png' alt='图'></p></body></html>"
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(
+                ("站点/页面.html", html.encode(), "text/html"),
+                ("站点/图片/a.png", PNG_BYTES, "image/png"),
+            ),
+            data={"paths": ["站点/页面.html", "站点/图片/a.png"], "import_attachments": "true"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["attachments"] == 1
+        nodes = _flat(_tree(client, ws.id, auth))
+        page = next(node for node in nodes if node["title"] == "网页图片")
+        content = _content(client, ws.id, page["id"], auth)
+        assert "file:" in content
+        assert "./图片/a.png" not in content
+        owners = (
+            db.execute(select(FileOwner).where(FileOwner.workspace_id == ws.id, FileOwner.document_id == page["id"]))
+            .scalars()
+            .all()
+        )
+        assert len(owners) == 1
+
     def test_docx_file_with_attachment(self, client, db, ws, auth):
         def build(document):
             document.add_heading("Word 标题", level=1)

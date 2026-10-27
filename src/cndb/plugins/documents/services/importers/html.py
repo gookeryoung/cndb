@@ -3,24 +3,28 @@
 支持的块级元素：h1-h6 / p / ul / ol / li / blockquote / pre / table / hr / div 容器；
 行内元素：a / strong / b / em / i / del / code / br / img。
 ``<script>`` / ``<style>`` 等非正文内容丢弃；``<title>`` 或首个 ``<h1>`` 作为标题并从正文剥离。
-图片：``data:`` URI 经 ``image_sink`` 落盘为站内附件，外链图片保留原 URL（决策 D2）。
+图片：``data:`` URI 与批次内本地图片经 ``image_sink`` 落盘为站内附件，外链图片保留原 URL（决策 D2）。
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
-from collections.abc import Callable, Iterator
+import posixpath
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import override
+from urllib.parse import unquote, urlsplit
 
 from .errors import UnsupportedImport
 from .normalize import collapse_whitespace, decode_text
 
 #: 图片落盘回调：(字节, 建议文件名) → 站点文件 key；None 表示不落盘
 ImageSink = Callable[[bytes, str], str | None]
+#: 批次内本地图片：批次相对路径 → 原始字节
+LocalImages = Mapping[str, bytes]
 
 _VOID_TAGS = frozenset(
     {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
@@ -112,11 +116,14 @@ class _Builder(HTMLParser):
 
 @dataclass
 class _Ctx:
-    """渲染上下文：图片落盘回调 + 告警收集 + 图片计数."""
+    """渲染上下文：HTML 路径 + 本地图片索引 + 落盘回调 + 告警收集 + 图片计数."""
 
+    path: str = ""
+    local_images: LocalImages | None = None
     sink: ImageSink | None = None
     warnings: list[str] = field(default_factory=list)
     images: int = 0
+    _local_keys: dict[str, str] = field(default_factory=dict)
 
 
 def _walk(node: _Node) -> Iterator[_Node]:
@@ -156,26 +163,83 @@ def _decode_data_uri(uri: str) -> tuple[bytes, str] | None:
     return data, suffix
 
 
+def _is_external(src: str) -> bool:
+    """外链图片：``//`` 开头或带 scheme（``http`` / ``https`` 等）."""
+    if src.startswith("//"):
+        return True
+    try:
+        return bool(urlsplit(src).scheme)
+    except ValueError:  # pragma: no cover - 非法 URL（如坏 IPv6 字面量）
+        return False
+
+
+def _resolve_local_src(html_path: str, src: str) -> str | None:
+    """HTML 相对图片 ``src`` → 批次内相对路径；绝对路径 / 越界路径返回 None."""
+    try:
+        raw = unquote(urlsplit(src).path).replace("\\", "/").strip()
+    except ValueError:  # pragma: no cover - 与 _is_external 同一非法 URL 分支
+        return None
+    if not raw or raw.startswith("/"):
+        return None
+    joined = posixpath.normpath(posixpath.join(posixpath.dirname(html_path), raw))
+    if joined in {".", ".."} or joined.startswith("../"):
+        return None
+    return joined
+
+
+def _sunk_image(ctx: _Ctx, data: bytes, name: str) -> str | None:
+    """落盘一张图片并返回站内 key（``image_sink`` 缺失或拒绝时返回 None）."""
+    if ctx.sink is not None:
+        key = ctx.sink(data, name)
+        if key:
+            return key
+    return None
+
+
+def _local_image_markdown(ctx: _Ctx, src: str, alt: str) -> str:
+    """批次内本地图片 → ``file:`` 引用；未随附 / 路径越界时降级占位并告警."""
+    resolved = _resolve_local_src(ctx.path, src)
+    if resolved is None:
+        ctx.warnings.append(f"本地图片路径无效，已跳过：{src}")
+        return f"_[图片未导入：{alt or src}]_"
+    cached = ctx._local_keys.get(resolved)
+    if cached:
+        return f"![{alt or Path(resolved).name}](file:{cached})"
+    data = (ctx.local_images or {}).get(resolved)
+    if data is None:
+        ctx.warnings.append(f"本地图片未随附，已跳过：{resolved}")
+        return f"_[图片未导入：{alt or resolved}]_"
+    ctx.images += 1
+    name = Path(resolved).name or f"image{ctx.images}"
+    key = _sunk_image(ctx, data, name)
+    if key:
+        ctx._local_keys[resolved] = key
+        return f"![{alt or name}](file:{key})"
+    ctx.warnings.append(f"内嵌图片未导入：{name}")
+    return f"_[图片未导入：{name}]_"
+
+
 def _image_markdown(node: _Node, ctx: _Ctx) -> str:
-    """``<img>`` → Markdown：data URI 落盘引用，外链保留原 URL."""
+    """``<img>`` → Markdown：data URI / 批次内本地图片落盘，外链保留原 URL."""
     src = (node.attrs.get("src") or "").strip()
     alt = (node.attrs.get("alt") or "").strip()
     if not src:
         return ""
-    if not src.lower().startswith("data:"):
-        return f"![{alt}]({src})"
-    decoded = _decode_data_uri(src)
-    if decoded is None:
-        ctx.warnings.append("data URI 图片无法解析，已跳过")
-        return f"_[图片未导入：{alt or 'image'}]_"
-    ctx.images += 1
-    name = f"image{ctx.images}{decoded[1]}"
-    if ctx.sink is not None:
-        key = ctx.sink(decoded[0], name)
+    if src.lower().startswith("data:"):
+        decoded = _decode_data_uri(src)
+        if decoded is None:
+            ctx.warnings.append("data URI 图片无法解析，已跳过")
+            return f"_[图片未导入：{alt or 'image'}]_"
+        ctx.images += 1
+        name = f"image{ctx.images}{decoded[1]}"
+        key = _sunk_image(ctx, decoded[0], name)
         if key:
             return f"![{alt or name}](file:{key})"
-    ctx.warnings.append(f"内嵌图片未导入：{name}")
-    return f"_[图片未导入：{name}]_"
+        ctx.warnings.append(f"内嵌图片未导入：{name}")
+        return f"_[图片未导入：{name}]_"
+    if _is_external(src) or ctx.local_images is None:
+        return f"![{alt}]({src})"
+    return _local_image_markdown(ctx, src, alt)
 
 
 def _inline(node: _Node | str, ctx: _Ctx) -> str:
@@ -328,10 +392,18 @@ def _blocks(node: _Node, ctx: _Ctx, *, skip: set[_Node]) -> list[str]:
     return out
 
 
-def convert_html(data: bytes, path: str, *, image_sink: ImageSink | None = None) -> tuple[str, str, list[str]]:
+def convert_html(
+    data: bytes,
+    path: str,
+    *,
+    image_sink: ImageSink | None = None,
+    local_images: LocalImages | None = None,
+) -> tuple[str, str, list[str]]:
     """把 ``.html`` / ``.htm`` 字节流转换为 ``(标题, 正文 Markdown, 告警)``.
 
     标题优先级：``<title>`` → 首个 ``<h1>``（并从正文剥离）→ 文件名。
+    ``local_images`` 为同批上传图片（批次相对路径 → 字节），用于把 HTML 相对
+    ``<img src>`` 内联为站内附件；不传时保持原相对 URL。
     """
     text = decode_text(data)
     if not text.strip():
@@ -343,7 +415,7 @@ def convert_html(data: bytes, path: str, *, image_sink: ImageSink | None = None)
     except Exception as exc:  # 交由调用方按「单条跳过」处理
         raise UnsupportedImport("无法解析 HTML 文件") from exc
 
-    ctx = _Ctx(sink=image_sink)
+    ctx = _Ctx(path=path, local_images=local_images, sink=image_sink)
     skip: set[_Node] = set()
     title = ""
     title_node = _find_first(parser.root, "title")
@@ -368,4 +440,4 @@ def convert_html(data: bytes, path: str, *, image_sink: ImageSink | None = None)
     return title, body, ctx.warnings
 
 
-__all__ = ["ImageSink", "convert_html"]
+__all__ = ["ImageSink", "LocalImages", "convert_html"]

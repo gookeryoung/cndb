@@ -458,6 +458,88 @@ class TestHtmlConvert:
             html_converter.convert_html(b"   ", "x.html")
 
 
+class TestHtmlLocalImages:
+    """同批上传的本地图片：相对 src 解析 → 站内附件（无 ADR，修复导入丢图）."""
+
+    def test_relative_src_inlined(self):
+        html = "<body><p><img src='./图片/图%201.png?x=1#y' alt='图'></p></body>"
+        calls: list[tuple[bytes, str]] = []
+
+        def sink(data: bytes, name: str) -> str:
+            calls.append((data, name))
+            return "LOCAL1"
+
+        _, body, warnings = html_converter.convert_html(
+            html.encode(),
+            "报告/page.html",
+            image_sink=sink,
+            local_images={"报告/图片/图 1.png": PNG_BYTES},
+        )
+        assert "![图](file:LOCAL1)" in body
+        assert calls == [(PNG_BYTES, "图 1.png")]
+        assert [warning for warning in warnings if "图片" in warning] == []
+
+    def test_parent_relative_src_and_cache(self):
+        html = "<body><p><img src='../img/a.png'><img src='../img/a.png' alt='重复'></p></body>"
+        calls: list[tuple[bytes, str]] = []
+
+        def sink(data: bytes, name: str) -> str:
+            calls.append((data, name))
+            return "K"
+
+        _, body, _ = html_converter.convert_html(
+            html.encode(),
+            "docs/sub/page.html",
+            image_sink=sink,
+            local_images={"docs/img/a.png": PNG_BYTES},
+        )
+        assert body.count("file:K") == 2
+        assert len(calls) == 1
+
+    def test_missing_local_image_placeholder(self):
+        _, body, warnings = html_converter.convert_html(
+            b"<p><img src='img/a.png' alt='x'></p>",
+            "page.html",
+            image_sink=lambda d, n: "K",
+            local_images={},
+        )
+        assert "图片未导入" in body
+        assert any("未随附" in warning for warning in warnings)
+
+    def test_invalid_local_path_placeholder(self):
+        _, body, warnings = html_converter.convert_html(
+            b"<p><img src='/abs/a.png'><img src='../../outside.png'></p>",
+            "docs/page.html",
+            image_sink=lambda d, n: "K",
+            local_images={"a.png": PNG_BYTES},
+        )
+        assert body.count("图片未导入") == 2
+        assert len([warning for warning in warnings if "本地图片" in warning]) == 2
+
+    def test_local_sink_rejected_keeps_placeholder(self):
+        _, body, warnings = html_converter.convert_html(
+            b"<p><img src='a.png'></p>",
+            "page.html",
+            image_sink=lambda d, n: None,
+            local_images={"a.png": PNG_BYTES},
+        )
+        assert "图片未导入" in body
+        assert warnings
+
+    def test_without_batch_index_keeps_relative_url(self):
+        _, body, _ = html_converter.convert_html(b"<p><img src='img/a.png' alt='x'></p>", "page.html")
+        assert "![x](img/a.png)" in body
+
+    def test_external_image_not_looked_up(self):
+        _, body, _ = html_converter.convert_html(
+            b"<p><img src='https://e.x/a.png'><img src='//cdn.x/b.png'></p>",
+            "page.html",
+            local_images={"https://e.x/a.png": PNG_BYTES},
+        )
+        assert "![](https://e.x/a.png)" in body
+        assert "![](//cdn.x/b.png)" in body
+
+
 class TestHtmlConvertEdges:
     """html 渲染的边界与容错分支（标签未闭合 / 空洞容器 / 裸文本 / 异常 data URI）."""
 
@@ -613,6 +695,35 @@ class TestReader:
         monkeypatch.setattr(reader.html_converter, "convert_html", boom)
         with pytest.raises(UnsupportedImport):
             reader.convert_file(reader.UploadedItem("a.html", b"<p>x</p>"))
+
+    def test_build_local_image_index(self):
+        items = [
+            reader.UploadedItem("图片/a.png", PNG_BYTES),
+            reader.UploadedItem("图片/空.png", b""),
+            reader.UploadedItem("说明.md", b"x"),
+        ]
+        assert reader.build_local_image_index(items) == {"图片/a.png": PNG_BYTES}
+
+    def test_convert_batch_inlines_local_html_image(self):
+        items = [
+            reader.UploadedItem("站点/页面.html", "<body><p><img src='./图片/a.png' alt='a'></p></body>".encode()),
+            reader.UploadedItem("站点/图片/a.png", PNG_BYTES),
+        ]
+        keys: list[str] = []
+
+        def sink(data: bytes, name: str) -> str:
+            assert data == PNG_BYTES
+            assert name == "a.png"
+            keys.append(name)
+            return "BATCH1"
+
+        docs, skipped = reader.convert_batch(items, image_sink=sink)
+        assert skipped == []
+        page = next(doc for doc in docs if doc.suffix == ".html")
+        image = next(doc for doc in docs if doc.asset)
+        assert "![a](file:BATCH1)" in page.body
+        assert image.path == "站点/图片/a.png"
+        assert keys == ["a.png"]
 
     def test_convert_batch_isolates_failures(self):
         items = [
