@@ -336,7 +336,7 @@ def build_preview_html(data: bytes) -> str:
     for location, content_id, css_text in stylesheets:
         _register_keys(url_index, location, content_id, (css_text.encode("utf-8"), "text/css"), basename_count)
     for location, ctype, payload in aux:
-        _register_keys(url_index, location, content_id, (payload, ctype), basename_count)
+        _register_keys(url_index, location, "", (payload, ctype), basename_count)
 
     # 样式表索引：值统一为 (css 文本, 自身 Content-Location)——url() 需按其自身位置解析
     css_index: dict[str, _AssetEntry] = {}
