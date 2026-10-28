@@ -237,7 +237,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         </Button>,
       ]
 
-  /** 模式选择器：单个文件 / 文件夹 / Obsidian 库，库模式下也常驻以便随时切回 */
+  /** 模式选择器：单文件 / 文件夹 / Obsidian 库，库模式下也常驻以便随时切回 */
   const modeSelector = (
     <Space size={16} wrap>
       <Typography.Text type="secondary">导入模式</Typography.Text>
@@ -247,7 +247,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         optionType="button"
         data-testid="file-import-mode"
         options={[
-          { value: 'single', label: '单个文件' },
+          { value: 'single', label: '单文件' },
           { value: 'folder', label: '文件夹' },
           { value: 'vault', label: 'Obsidian 库' },
         ]}
