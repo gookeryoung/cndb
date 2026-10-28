@@ -6105,3 +6105,26 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     width: 100%;
   }
 }
+
+/* 文档大纲引线树（OutlineList）—— 参考 Obsidian 大纲风格：
+   悬停行浮现浅底、引线以品牌色高亮、折叠箭头仅悬停可见 */
+.cn-outline-row:hover {
+  background: color-mix(in srgb, var(--cn-brand-color, #3b82f6) 8%, transparent);
+}
+.cn-outline-row:hover .cn-outline-guide-line {
+  background: color-mix(in srgb, var(--cn-brand-color, #3b82f6) 45%, var(--cn-border, #d1d5db));
+}
+.cn-outline-caret {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.cn-outline-row:hover .cn-outline-caret,
+.cn-outline-caret:focus-visible {
+  opacity: 1;
+}
+.cn-outline-caret-icon {
+  transition: transform 0.15s;
+}
+.cn-outline-caret-expanded .cn-outline-caret-icon {
+  transform: rotate(90deg);
+}

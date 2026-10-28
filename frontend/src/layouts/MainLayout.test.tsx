@@ -3,13 +3,11 @@
  * 不得被无-wid 兜底重定向弹回第一个工作区（/admin 为无需 wid 的合法路径）。
  */
 
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
-import { useDocOutlineStore } from '@/store/docOutline'
-import type { OutlineItem } from '@/components/Document/outline'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, mockWorkspace, server } from '@/test/msw'
 import type { UserResponse, WorkspaceType } from '@/api'
@@ -660,68 +658,48 @@ describe('MainLayout 工作区类型门控', () => {
 // ─────────────── 侧边栏随功能段切换（需求 0065） ───────────────
 
 describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
-    afterEach(() => {
-        useDocOutlineStore.setState({ outline: [] })
-    })
-
-    it('文档列表页：侧栏显示文档列表（不含文件夹），不再渲染数据表列表', async () => {
+    it('文档列表页：侧栏显示文档/文件夹树（与文档管理页同源），不再渲染数据表列表', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
         // 数据表导航在文档段不渲染
         expect(screen.queryByTestId('sider-tables')).toBeNull()
-        // 列出非文件夹文档（msw：需求说明 1 篇 + 产品文档/会议纪要 2 个文件夹被过滤）
-        await waitFor(() => expect(screen.getByTestId('sider-documents-count')).toHaveTextContent('文档 (1)'))
-        expect(screen.getByText('需求说明')).toBeVisible()
-        // 文件夹不进入侧栏列表
-        expect(screen.queryByText('产品文档')).toBeNull()
+        // 树同时含文件夹与文档（msw：产品文档 > 需求说明 + 会议纪要）
+        await waitFor(() => expect(screen.getByTitle('产品文档')).toBeVisible())
+        await waitFor(() => expect(screen.getByTitle('需求说明')).toBeVisible())
+        await waitFor(() => expect(screen.getByTitle('会议纪要')).toBeVisible())
     })
 
     it('点击侧栏文档项导航到对应文档编辑器', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
-        await waitFor(() => expect(screen.getByText('需求说明')).toBeVisible())
-        fireEvent.click(screen.getByText('需求说明'))
+        await waitFor(() => expect(screen.getByTitle('需求说明')).toBeVisible())
+        fireEvent.click(screen.getByTitle('需求说明'))
         await waitFor(() => {
             expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents/2')
         })
     })
 
-    it('文档编辑器段：侧栏显示文档结构大纲（来自编辑器同步的 store），无表导航与文档列表', async () => {
-        const outline: OutlineItem[] = [
-            { level: 1, text: '概述', anchor: 'doc-h-概述', line: 0 },
-            { level: 2, text: '背景', anchor: 'doc-h-背景', line: 4 },
-        ]
-        useDocOutlineStore.setState({ outline })
+    it('点击侧栏文件夹项导航到对应层级管理页（?parent=）', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => expect(screen.getByTitle('会议纪要')).toBeVisible())
+        fireEvent.click(screen.getByTitle('会议纪要'))
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('parent=3')
+        })
+    })
+
+    it('文档编辑器段：侧栏仍是同一棵文档树并高亮当前文档，不再显示大纲', async () => {
         renderLayout(mockUser, '/w/10/documents/2')
 
-        await waitFor(() => expect(screen.getByTestId('sider-doc-outline')).toBeVisible())
-        expect(screen.getByText('文档结构')).toBeVisible()
-        expect(screen.getByText('概述')).toBeVisible()
-        expect(screen.getByText('背景')).toBeVisible()
+        await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
+        expect(screen.getByTitle('需求说明')).toBeVisible()
+        // 当前文档高亮
+        expect(screen.getByTitle('需求说明').closest('.ant-tree-treenode')).toHaveClass('ant-tree-treenode-selected')
+        // 侧栏不再有大纲形态
+        expect(screen.queryByTestId('sider-doc-outline')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
-        expect(screen.queryByTestId('sider-documents')).toBeNull()
-    })
-
-    it('大纲 store 为空（如刚进入编辑器未解析）时显示空态提示', async () => {
-        renderLayout(mockUser, '/w/10/documents/2')
-
-        await waitFor(() => expect(screen.getByTestId('sider-doc-outline')).toBeVisible())
-        expect(screen.getByText(/暂无标题/)).toBeVisible()
-    })
-
-    it('点击大纲条目派发锚点跳转事件，由编辑器消费定位', async () => {
-        const outline: OutlineItem[] = [{ level: 1, text: '概述', anchor: 'doc-h-概述', line: 0 }]
-        useDocOutlineStore.setState({ outline })
-        const dispatched: string[] = []
-        const handler = (e: Event) => dispatched.push((e as CustomEvent<string>).detail)
-        window.addEventListener('doc-outline-jump', handler)
-
-        renderLayout(mockUser, '/w/10/documents/2')
-        await waitFor(() => expect(screen.getByText('概述')).toBeVisible())
-        fireEvent.click(screen.getByText('概述'))
-        expect(dispatched).toEqual(['doc-h-概述'])
-        window.removeEventListener('doc-outline-jump', handler)
     })
 
     it('工作区设置段：不渲染任何侧栏，内容区占满宽度', async () => {
@@ -741,7 +719,7 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         expect(screen.queryByTestId('sider-doc-outline')).toBeNull()
     })
 
-    it('移动端文档段：抽屉导航显示文档列表而非表列表', async () => {
+    it('移动端文档段：抽屉导航显示文档树而非表列表', async () => {
         responsiveState = {
             deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
             width: 375, height: 667,
@@ -749,9 +727,7 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         renderLayout(mockUser, '/w/10/documents')
 
         fireEvent.click(screen.getByTestId('mobile-nav-btn'))
-        await waitFor(() => {
-            expect(screen.getByTestId('sider-documents-count')).toHaveTextContent('文档 (1)')
-        })
+        expect(await screen.findByTestId('sider-documents')).toBeVisible()
         expect(screen.queryByText('数据表 (')).toBeNull()
 
         responsiveState = {

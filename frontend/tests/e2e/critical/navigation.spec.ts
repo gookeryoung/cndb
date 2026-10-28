@@ -85,10 +85,10 @@ test.describe("MainLayout Header 导航按钮", () => {
 
   // ── 需求 0065：侧边栏随工作区功能段切换 ──
 
-  test("切到文档段：侧栏由数据表列表切换为文档列表，进入文档后显示文档结构", async ({ page }) => {
+  test("切到文档段：侧栏由数据表列表切换为文档树，进入文档后侧栏保持文档树并高亮当前文档", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
-    // API 建一篇带两级标题的文档，不依赖 seed 文档数据
+    // API 建一篇文档（根目录），不依赖 seed 文档数据
     const docTitle = `侧栏结构 ${Date.now()}`
     const created = await apiCall(page.request, adminToken, "post", `/workspaces/${WID}/documents`, {
       title: docTitle,
@@ -104,21 +104,20 @@ test.describe("MainLayout Header 导航按钮", () => {
       // 表段：数据表导航侧栏
       await expect(page.getByTestId("sider-tables")).toBeVisible({ timeout: 10_000 })
 
-      // 切到文档：表导航消失，文档列表侧栏出现
+      // 切到文档：表导航消失，文档树侧栏出现且包含新建文档
       await page.getByRole("tab", { name: /文档/ }).click()
       await page.waitForURL(/\/documents$/)
-      await expect(page.getByTestId("sider-documents")).toBeVisible()
+      const sider = page.getByTestId("sider-documents")
+      await expect(sider).toBeVisible()
       await expect(page.getByTestId("sider-tables")).toHaveCount(0)
+      await expect(sider.getByTitle(docTitle)).toBeVisible()
 
-      // 侧栏点文档 → 编辑器，侧栏切换为文档结构（含两级标题）
-      await page
-        .locator('[data-testid="sider-documents"] .ant-menu-item', { hasText: docTitle })
-        .click()
+      // 侧栏点文档 → 编辑器：侧栏仍是同一棵文档树，高亮当前文档；不再有大纲侧栏
+      await sider.getByTitle(docTitle).click()
       await page.waitForURL(new RegExp(`/documents/${docId}`))
-      const outline = page.getByTestId("sider-doc-outline")
-      await expect(outline).toBeVisible({ timeout: 10_000 })
-      await expect(outline).toContainText(docTitle)
-      await expect(outline).toContainText("背景")
+      await expect(page.getByTestId("sider-documents")).toBeVisible()
+      await expect(page.locator(".ant-tree-treenode-selected")).toContainText(docTitle)
+      await expect(page.getByTestId("sider-doc-outline")).toHaveCount(0)
     } finally {
       await apiCall(page.request, adminToken, "delete", `/workspaces/${WID}/documents/${docId}`).catch(() => {})
     }

@@ -60,7 +60,6 @@ import { documentStats, formatStatsLabel } from '@/components/Document/documentS
 import { buildImageSnippet, isImageFile } from '@/components/Document/imageRef'
 import { buildTableSkeleton, insertLink, wrapSelection } from '@/components/Document/markdownEdit'
 import { parseOutline } from '@/components/Document/outline'
-import { DOC_OUTLINE_JUMP_EVENT, useDocOutlineStore } from '@/store/docOutline'
 import { DEFAULT_REF_WIDTH, rewriteRefWidth, type RefWidthChange } from '@/components/Document/refWidth'
 import {
   chartBlockBytes,
@@ -890,15 +889,6 @@ export default function DocumentEditorPage() {
   // 大纲：从当前内容实时解析（不依赖保存后的 toc_json），点击定位预览区锚点
   const outline = useMemo(() => parseOutline(content), [content])
 
-  // 大纲同步到全局 store：MainLayout 的文档结构侧栏复用（含未保存的实时编辑内容），
-  // 离开编辑器时清空，侧栏回退为文档列表
-  const setGlobalOutline = useDocOutlineStore(s => s.setOutline)
-  const clearGlobalOutline = useDocOutlineStore(s => s.clearOutline)
-  useEffect(() => {
-    setGlobalOutline(outline)
-    return () => clearGlobalOutline()
-  }, [outline, setGlobalOutline, clearGlobalOutline])
-
   const scrollToAnchor = useCallback((anchor: string) => {
     // 锚点位于预览区：先切到查看模式，等渲染后再滚动定位
     setViewMode('view')
@@ -906,13 +896,6 @@ export default function DocumentEditorPage() {
       document.getElementById(anchor)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
   }, [])
-
-  // MainLayout 文档结构侧栏的锚点跳转：复用 scrollToAnchor（切查看模式后再滚动）
-  useEffect(() => {
-    const handler = (e: Event) => scrollToAnchor((e as CustomEvent<string>).detail)
-    window.addEventListener(DOC_OUTLINE_JUMP_EVENT, handler)
-    return () => window.removeEventListener(DOC_OUTLINE_JUMP_EVENT, handler)
-  }, [scrollToAnchor])
 
   /** 大纲栏偏好唯一写入口：先同步 ref，再更新状态，按需落本地 */
   const updateOutlinePrefs = useCallback((next: OutlinePrefs, persist = true) => {

@@ -1,7 +1,8 @@
-import React, { Suspense, lazy, useState, useCallback, useEffect, useRef } from 'react'
+import React, { Suspense, lazy, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer, Tree } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
+import type { DataNode } from 'antd/es/tree'
 import {
   LogoutOutlined, TableOutlined,
   UserOutlined, ExclamationCircleOutlined, SearchOutlined,
@@ -9,14 +10,13 @@ import {
   MenuOutlined, InfoCircleOutlined,
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
-  PullRequestOutlined, FileTextOutlined, BarChartOutlined, CloudDownloadOutlined,
-  RobotOutlined,
+  PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
+  RobotOutlined, FolderFilled, FileTextOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
-import { DOC_OUTLINE_JUMP_EVENT, useDocOutlineStore } from '@/store/docOutline'
-import OutlineList from '@/pages/documents/OutlineList'
+import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
 import GlobalSearch from '@/components/GlobalSearch'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
@@ -48,6 +48,19 @@ const DOCUMENT_SUBPAGES = [
   { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined /> },
   { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined /> },
 ] as const
+
+/** 文档树节点 → antd Tree 节点：文件夹/文档区分图标，原始节点挂在 docNode 供点击导航. */
+function toTreeNode(node: DocTreeNode): DataNode {
+  return {
+    key: String(node.id),
+    icon: node.is_folder
+      ? <FolderFilled style={{ color: 'var(--cn-primary, #1677ff)' }} />
+      : <FileTextOutlined />,
+    title: node.title,
+    docNode: node,
+    children: node.children.map(toTreeNode),
+  } as DataNode
+}
 
 /** 内容区骨架 —— 懒加载页面在 Content 内挂起时的占位，避免整页高度跳动 */
 function ContentFallback() {
@@ -139,14 +152,25 @@ export default function MainLayout() {
     staleTime: 60_000,
   })
 
-  // 文档侧栏的文档列表：仅文档段需要（未选中文档时展示），点击进入对应文档
-  // 注：inDocumentsContext 在下方「文档区二级页签」段定义，此查询在其后置使用
+  // 文档侧栏的文档树：与文档管理页同源 tree 端点（共享 react-query 缓存），全量文档+文件夹
   const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
-  const { data: docsData, isSuccess: docsListReady } = useQuery({
-    queryKey: ['workspaces', wid, 'documents', 'sider'],
-    queryFn: () => documentsApi.list(Number(wid)),
+  const { data: docsTreeData, isSuccess: docsTreeReady } = useQuery({
+    queryKey: ['documents', wid, 'tree'],
+    queryFn: () => documentsApi.tree(Number(wid)),
     enabled: !!wid && wsFeatures.documents && inDocumentsContext,
   })
+  const docTree = useMemo(() => buildDocTree(docsTreeData ?? []), [docsTreeData])
+  // 编辑器路由参数：仅纯数字为真实文档 id（静态子页段不会落入 docId，此处双保险）
+  const activeDocId = docId && /^\d+$/.test(docId) ? docId : undefined
+  // 树展开态：用户展开/收起前按「当前文档祖先链 + 一级文件夹」自动展开；交互后以手动状态为准
+  const [manualExpanded, setManualExpanded] = useState<string[] | null>(null)
+  const setDocTreeExpanded = (keys: string[]) => setManualExpanded(keys)
+  const autoExpanded = useMemo(() => {
+    const rootFolders = docTree.filter(n => n.is_folder).map(n => String(n.id))
+    if (!activeDocId) return rootFolders
+    return [...ancestorChain(docsTreeData ?? [], Number(activeDocId)).map(d => String(d.id)), ...rootFolders]
+  }, [docTree, docsTreeData, activeDocId])
+  const docTreeExpanded = manualExpanded ?? autoExpanded
 
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
   const orderedTables = tables
@@ -233,10 +257,6 @@ export default function MainLayout() {
       : (inAnalyticsContext || inDatasourceContext || inWsSettingsContext || !wsFeatures.tables)
         ? 'hidden'
         : 'tables'
-  // 文档编辑器路由参数：仅纯数字为真实文档 id（静态子页段不会落入 docId，此处双保险）
-  const activeDocId = docId && /^\d+$/.test(docId) ? docId : undefined
-  // 文档结构侧栏的大纲：由 DocumentEditorPage 实时同步（含未保存编辑），离开编辑器即清空
-  const docOutline = useDocOutlineStore(s => s.outline)
 
   // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
@@ -426,63 +446,41 @@ export default function MainLayout() {
   }
 
   /** 文档导航内容 —— 文档段下 Sider 与移动端抽屉共用（需求 0065）.
-   * 未选中文档：文档列表（点击进入）；已选中：当前文档标题大纲（锚点跳转，复用编辑器定位逻辑）。
-   * 大纲来自 useDocOutlineStore，离开编辑器后清空 → 回退空态提示。 */
+   * 文档/文件夹树（与文档管理页同源 tree 端点）：点文档进编辑器，点文件夹进对应层级管理页。
+   * 编辑器视图下同样显示该树并高亮当前文档（大纲仍由编辑器右侧大纲栏承担，侧栏不再显示大纲）。 */
   const renderDocumentNav = (mobile: boolean, collapsed = false) => {
     if (!wid) return null
-    if (activeDocId) {
-      return (
-        <div data-testid="sider-doc-outline" className="cn-table-nav">
-          <div style={{
-            padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold,
-            color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block',
-          }}>
-            文档结构
-          </div>
-          {collapsed ? null : docOutline.length === 0 ? (
-            <div className="cn-state">
-              <p>暂无标题（用 # 起首行添加，编辑时实时更新）</p>
-            </div>
-          ) : (
-            <div style={{ padding: '0 var(--cn-space-sm)' }}>
-              <OutlineList
-                outline={docOutline}
-                onAnchorClick={(anchor) => {
-                  window.dispatchEvent(new CustomEvent(DOC_OUTLINE_JUMP_EVENT, { detail: anchor }))
-                  if (mobile) setMobileNavOpen(false)
-                }}
-              />
-            </div>
-          )}
-        </div>
-      )
-    }
-    const docItems = (docsData?.items ?? []).filter(d => !d.is_folder)
+    const treeData: DataNode[] = docTree.map(toTreeNode)
     return (
       <div data-testid="sider-documents" className="cn-table-nav">
         <div style={{
           padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold,
           color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block',
         }}>
-          <span data-testid="sider-documents-count">文档 ({docsListReady ? docItems.length : '…'})</span>
+          文档
         </div>
-        {collapsed ? null : docsListReady && docItems.length === 0 ? (
+        {collapsed ? null : docsTreeReady && treeData.length === 0 ? (
           <div className="cn-state">
             <p>还没有文档，去文档页创建吧</p>
           </div>
         ) : (
-          <Menu
-            mode="inline"
+          <Tree
+            blockNode
+            showIcon
+            treeData={treeData}
             selectedKeys={activeDocId ? [activeDocId] : []}
-            items={docItems.map(d => ({
-              key: String(d.id),
-              icon: <FileTextOutlined />,
-              label: d.title,
-              onClick: () => {
-                navigate(`/w/${wid}/documents/${d.id}`)
-                if (mobile) setMobileNavOpen(false)
-              },
-            }))}
+            expandedKeys={docTreeExpanded}
+            onExpand={keys => setDocTreeExpanded(keys as string[])}
+            onClick={(_, node) => {
+              const raw = node as unknown as { docNode?: DocTreeNode }
+              if (!raw.docNode) return
+              if (raw.docNode.is_folder) {
+                navigate(`/w/${wid}/documents?parent=${raw.docNode.id}`)
+              } else {
+                navigate(`/w/${wid}/documents/${raw.docNode.id}`)
+              }
+              if (mobile) setMobileNavOpen(false)
+            }}
           />
         )}
       </div>

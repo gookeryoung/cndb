@@ -1,20 +1,23 @@
 /** 大纲条目列表：抽屉与右侧常驻栏共用，避免两套样式与 testid 漂移.
  *
- * 层级以引线树渲染：子级标题通过竖线 / 折线（├ └）与父级相连，直观展示层级；
- * 有子级标题的条目在引线末端显示圆形 +/− 折叠按钮（默认全展开），
- * 点按钮仅切换折叠态，点正文仍为锚点跳转。
+ * 层级以引线树渲染（参考 Obsidian 大纲风格）：
+ * - 每个层级一条细竖引线贯穿子级区域，无折线记号，直观呈现嵌套深度；
+ * - 悬停行时该行引线以品牌色高亮，行背景浮现浅色底；
+ * - 有子级标题的条目在引线末端悬停浮现折叠箭头（默认全展开），
+ *   点箭头仅切换折叠态，点正文仍为锚点跳转。
+ * 悬停高亮与箭头显隐样式见 index.css 的 `cn-outline-*` 段。
  */
 
 import { useMemo, useState } from 'react'
 
 import type { OutlineItem } from '@/components/Document/outline'
+import { RightOutlined } from '@ant-design/icons'
 import { Typography } from 'antd'
 import { WEIGHT } from '@/theme/tokens'
 
 const { Text } = Typography
 
 const CELL = 14
-const LINE_COLOR = 'var(--cn-border, #e8e8e8)'
 
 interface OutlineNode {
   item: OutlineItem
@@ -53,45 +56,20 @@ function collectVisible(nodes: OutlineNode[], collapsed: Set<string>, out: Outli
   }
 }
 
-/** 引线单元格：parent 指定后绘制竖线，elbow 为 true 时追加横向引线（├ └ 形） */
-function GuideCell({ parent, elbow }: { parent?: number; elbow?: boolean }) {
+/** 单元格：withLine 为 true 时绘制贯穿竖引线（Obsidian 缩进参考线风格） */
+function GuideCell({ withLine }: { withLine: boolean }) {
   return (
-    <span
-      style={{ position: 'relative', flexShrink: 0, width: CELL, height: 18, alignSelf: 'stretch' }}
-    >
-      {parent === 1 && (
+    <span style={{ position: 'relative', flexShrink: 0, width: CELL, alignSelf: 'stretch' }}>
+      {withLine && (
         <span
+          className="cn-outline-guide-line"
           style={{
             position: 'absolute',
-            left: 6,
-            top: 0,
-            height: elbow ? '50%' : '100%',
-            width: 1,
-            background: LINE_COLOR,
-          }}
-        />
-      )}
-      {parent === -1 && (
-        <span
-          style={{
-            position: 'absolute',
-            left: 6,
+            left: Math.floor(CELL / 2),
             top: 0,
             bottom: 0,
             width: 1,
-            background: LINE_COLOR,
-          }}
-        />
-      )}
-      {elbow && (
-        <span
-          style={{
-            position: 'absolute',
-            left: 6,
-            right: 0,
-            top: '50%',
-            height: 1,
-            background: LINE_COLOR,
+            background: 'var(--cn-border, #d1d5db)',
           }}
         />
       )}
@@ -136,20 +114,24 @@ export default function OutlineList({
         const hasChildren = node.children.length > 0
         const expanded = hasChildren && !collapsed.has(key)
 
-        // 父级所在引线列：向前找第一个 level 更小的可见标题
-        let parentCol = 0
-        for (let j = idx - 1; j >= 0; j--) {
-          if (visible[j].item.level < level) {
-            parentCol = visible[j].item.level
-            break
+        // 引线列 c 是否有祖先（level === c）存在：向前找第一个 level <= c 的可见标题
+        const lines: boolean[] = []
+        for (let c = 1; c < level; c++) {
+          let withLine = false
+          for (let j = idx - 1; j >= 0; j--) {
+            const lv = visible[j].item.level
+            if (lv <= c) {
+              withLine = lv === c
+              break
+            }
           }
+          lines.push(withLine)
         }
-        // 是否为父级最后一个子级（后面没有同级或更深标题）
-        const isLast = !visible.slice(idx + 1).some((n) => n.item.level >= level)
 
         return (
           <div
             key={key}
+            className="cn-outline-row"
             data-testid={`doc-outline-item-${i}`}
             style={{
               paddingRight: 8,
@@ -166,59 +148,37 @@ export default function OutlineList({
             onClick={() => onAnchorClick(o.anchor)}
           >
             {/* 祖先引线列：1..level-1 */}
-            {Array.from({ length: level - 1 }, (_, c) => c + 1).map((c) => {
-              if (c > parentCol) return <GuideCell key={c} />
-              if (c === parentCol) {
-                return (
-                  <GuideCell key={c} parent={isLast ? 1 : -1} elbow />
-                )
-              }
-              // c < parentCol：该祖先的子树在本行下方仍有更深层级则引线贯穿
-              const continues = visible
-                .slice(idx + 1)
-                .some((n) => n.item.level > c)
-              return <GuideCell key={c} parent={continues ? -1 : 0} />
-            })}
-            {/* 自身折叠按钮列：有子级时为圆形 +/− 按钮，叶子为空占位 */}
-            {hasChildren ? (
-              <span
-                data-testid={`doc-outline-toggle-${i}`}
-                aria-label={expanded ? '收起子标题' : '展开子标题'}
-                role="button"
-                tabIndex={0}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  toggle(key)
-                }}
-                style={{
-                  flexShrink: 0,
-                  width: CELL,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  alignSelf: 'stretch',
-                  userSelect: 'none',
-                }}
-              >
+            {lines.map((withLine, k) => (
+              <GuideCell key={k} withLine={withLine} />
+            ))}
+            {/* 折叠箭头列：有子级时悬停浮现，叶子为空占位 */}
+            <span
+              style={{ flexShrink: 0, width: CELL, display: 'flex', alignSelf: 'stretch' }}
+            >
+              {hasChildren && (
                 <span
+                  className={expanded ? 'cn-outline-caret cn-outline-caret-expanded' : 'cn-outline-caret'}
+                  data-testid={`doc-outline-toggle-${i}`}
+                  aria-label={expanded ? '收起子标题' : '展开子标题'}
+                  role="button"
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    toggle(key)
+                  }}
                   style={{
-                    width: 12,
-                    height: 12,
-                    lineHeight: '10px',
-                    textAlign: 'center',
-                    fontSize: 11,
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                     color: 'var(--cn-text-tertiary, #999)',
-                    border: '1px solid var(--cn-border-strong, #bbb)',
-                    borderRadius: '50%',
-                    boxSizing: 'border-box',
+                    userSelect: 'none',
                   }}
                 >
-                  {expanded ? '−' : '+'}
+                  <RightOutlined className="cn-outline-caret-icon" style={{ fontSize: 8 }} />
                 </span>
-              </span>
-            ) : (
-              <span style={{ flexShrink: 0, width: CELL }} />
-            )}
+              )}
+            </span>
             <span
               style={{
                 overflow: 'hidden',

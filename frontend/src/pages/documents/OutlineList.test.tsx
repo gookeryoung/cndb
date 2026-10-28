@@ -35,8 +35,10 @@ describe('OutlineList', () => {
     for (const i of [2, 3]) {
       expect(screen.queryByTestId(`doc-outline-toggle-${i}`)).not.toBeInTheDocument()
     }
-    // 默认展开态显示 − 号
-    expect(screen.getByTestId('doc-outline-toggle-0')).toHaveTextContent('−')
+    // 默认展开态箭头朝下（旋转 90°）
+    expect(screen.getByTestId('doc-outline-toggle-0').className).toContain(
+      'cn-outline-caret-expanded',
+    )
   })
 
   it('点击按钮折叠子级，再点展开；正文点击不受影响', () => {
@@ -48,8 +50,10 @@ describe('OutlineList', () => {
     expect(screen.queryByText('小节')).not.toBeInTheDocument()
     expect(screen.queryByText('第二节')).not.toBeInTheDocument()
     expect(screen.getByText('第二章')).toBeInTheDocument()
-    // 折叠后按钮变为 + 号
-    expect(screen.getByTestId('doc-outline-toggle-0')).toHaveTextContent('+')
+    // 折叠后箭头朝右（无旋转）
+    expect(screen.getByTestId('doc-outline-toggle-0').className).not.toContain(
+      'cn-outline-caret-expanded',
+    )
 
     fireEvent.click(screen.getByTestId('doc-outline-toggle-0'))
     expect(screen.getByText('第一节')).toBeInTheDocument()
