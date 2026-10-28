@@ -4851,7 +4851,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-size: var(--cn-text-xs);
 }
 
-/* 图表放大预览弹层（ADR 0060）：弹层 720px，SVG 按原比例自适应、居中，超高限 65vh */
+/* 图表放大预览弹层（ADR 0060）：弹层 75vw，SVG 按原比例自适应、居中，超高限 65vh */
 .cn-chart-preview svg {
   display: block;
   width: auto;

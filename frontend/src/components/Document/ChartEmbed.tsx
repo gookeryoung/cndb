@@ -177,7 +177,7 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
-        width={720}
+        width="75vw"
         title={spec?.title || spec?.templateKey}
         transitionName=""
         maskTransitionName=""
