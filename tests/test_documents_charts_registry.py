@@ -59,7 +59,7 @@ class TestRegistry:
 
     def test_fingerprint_contains_version_and_renderer(self):
         fp = template_fingerprint("bar-line-dual-axis")
-        assert fp == "bar-line-dual-axis@6+r1"
+        assert fp == "bar-line-dual-axis@7+r1"
         # 未知模板给占位指纹（实例仍可 ETag 缓存降级图）
         assert template_fingerprint("gone") == "gone@0+r1"
 
@@ -147,7 +147,7 @@ class TestValidateConfig:
         """ADR 0056 C1：双轴模板默认次值全部留空."""
         rows = CHART_TEMPLATES["bar-line-dual-axis"].default_config["data"]["rows"]
         assert all(row["growth"] is None for row in rows)
-        assert CHART_TEMPLATES["bar-line-dual-axis"].version == 6
+        assert CHART_TEMPLATES["bar-line-dual-axis"].version == 7
 
     def test_first_row_growth_rejected(self):
         """ADR 0056 C2：第 1 行次值禁填（无上年基数），第 2 行起仍允许."""

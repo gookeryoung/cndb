@@ -178,7 +178,10 @@ class TestSvgWriter:
         leaders = [
             p
             for p in doc.elements
-            if p.kind == "line" and p.stroke and p.stroke_width == 1 and any(abs(p.x1 - px) <= 1 and abs(p.y1 - py) <= 1 for px, py in points)
+            if p.kind == "line"
+            and p.stroke
+            and p.stroke_width == 1
+            and any(abs(p.x1 - px) <= 1 and abs(p.y1 - py) <= 1 for px, py in points)
         ]
         for gl in doc.elements:
             if not (gl.kind == "text" and gl.weight == 700 and gl.content.endswith("%")):
