@@ -160,8 +160,8 @@ body.theme-modern {
   --cn-bg-subtle: #fafafa;
   --cn-bg-canvas: #f5f7fa;
   --cn-bg-muted: #f9fafb;
-  --cn-border: #e5e7eb;
-  --cn-border-soft: #e5e7eb;
+  --cn-border: #d1d5db;
+  --cn-border-soft: #d1d5db;
   --cn-text-primary: #1f2937;
   --cn-text-secondary: #6b7280;
   --cn-text-muted: #9ca3af;
@@ -203,7 +203,7 @@ body.theme-dark {
   --cn-bg-canvas: #0d1117;
   --cn-bg-muted: #0a0f14;
   --cn-border: #30363d;
-  --cn-border-soft: #21262d;
+  --cn-border-soft: #30363d;
   --cn-text-primary: #e6edf3;
   --cn-text-secondary: #8b949e;
   --cn-text-muted: #6e7681;
@@ -260,8 +260,8 @@ body.theme-minimal {
   --cn-bg-subtle: #fafafa;
   --cn-bg-canvas: #fafafa;
   --cn-bg-muted: #f5f5f5;
-  --cn-border: #e5e5e5;
-  --cn-border-soft: #e5e5e5;
+  --cn-border: #d4d4d4;
+  --cn-border-soft: #d4d4d4;
   --cn-text-primary: #262626;
   --cn-text-secondary: #737373;
   --cn-text-muted: #a3a3a3;
@@ -281,7 +281,7 @@ body.theme-ocean {
   --cn-bg-canvas: #f0f8fa;
   --cn-bg-muted: #f4fafb;
   --cn-border: #cfe2e8;
-  --cn-border-soft: #e3eef2;
+  --cn-border-soft: #cfe2e8;
   --cn-text-primary: #0f3a45;
   --cn-text-secondary: #5b7c88;
   --cn-text-muted: #8aa7b0;
@@ -301,7 +301,7 @@ body.theme-forest {
   --cn-bg-canvas: #f2f7f3;
   --cn-bg-muted: #f6faf7;
   --cn-border: #d3e4d5;
-  --cn-border-soft: #e7f0e8;
+  --cn-border-soft: #d3e4d5;
   --cn-text-primary: #14301b;
   --cn-text-secondary: #5c7560;
   --cn-text-muted: #8fa894;
@@ -321,7 +321,7 @@ body.theme-sepia {
   --cn-bg-canvas: #efe7d2;
   --cn-bg-muted: #f7f1e1;
   --cn-border: #ddcfae;
-  --cn-border-soft: #e8dec6;
+  --cn-border-soft: #ddcfae;
   --cn-text-primary: #43341f;
   --cn-text-secondary: #7a6a4d;
   --cn-text-muted: #a89878;
@@ -341,7 +341,7 @@ body.theme-sakura {
   --cn-bg-canvas: #fdf5f9;
   --cn-bg-muted: #fef8fb;
   --cn-border: #f2d9e5;
-  --cn-border-soft: #f8e7ef;
+  --cn-border-soft: #f2d9e5;
   --cn-text-primary: #3d2230;
   --cn-text-secondary: #92708a;
   --cn-text-muted: #bfa3b2;
@@ -361,7 +361,7 @@ body.theme-midnight {
   --cn-bg-canvas: #100d1a;
   --cn-bg-muted: #0e0b16;
   --cn-border: #383150;
-  --cn-border-soft: #2a2440;
+  --cn-border-soft: #383150;
   --cn-text-primary: #e9e4f5;
   --cn-text-secondary: #a299c2;
   --cn-text-muted: #7d749c;
@@ -381,7 +381,7 @@ body.theme-oled {
   --cn-bg-canvas: #000000;
   --cn-bg-muted: #0f0f0f;
   --cn-border: #262626;
-  --cn-border-soft: #1a1a1a;
+  --cn-border-soft: #262626;
   --cn-text-primary: #f5f5f5;
   --cn-text-secondary: #a3a3a3;
   --cn-text-muted: #737373;
@@ -3405,11 +3405,9 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
-/* 晶格 LOGO：六边形晶格徽标 SVG（顶栏小号 / 认证页大号复用），带品牌色投影；圆角由 SVG 内部 shape 承担 */
+/* 晶格 LOGO：实心六边形晶格徽标 SVG（顶栏小号 / 认证页大号复用）；实心底融入背景，无投影贴片感 */
 .cn-brand-logo {
   flex-shrink: 0;
-  box-shadow: 0 4px 14px rgba(27, 154, 170, 0.32);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
   user-select: none;
 }
 
