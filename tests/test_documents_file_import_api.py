@@ -696,7 +696,7 @@ class TestMhtmlImport:
         r = client.post(
             IMPORT.format(ws=ws.id),
             files=_files(("页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
-            data={"paths": ["页面.mhtml"], "import_attachments": "true"},
+            data={"paths": ["页面.mhtml"], "import_attachments": "true", "mhtml_mode": "convert"},
             headers=auth,
         )
         assert r.status_code == 200, r.text
@@ -720,7 +720,7 @@ class TestMhtmlImport:
         r = client.post(
             IMPORT.format(ws=ws.id),
             files=_files(("笔记/页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
-            data={"paths": ["笔记/页面.mhtml"], "import_attachments": "false"},
+            data={"paths": ["笔记/页面.mhtml"], "import_attachments": "false", "mhtml_mode": "convert"},
             headers=auth,
         )
         assert r.status_code == 200, r.text
@@ -749,7 +749,23 @@ class TestMhtmlImport:
         image_owners = db.execute(select(FileOwner).where(FileOwner.document_id == image_doc.id)).scalars().all()
         assert len(image_owners) == 1
 
-    def test_analyze_preview_no_expansion_no_false_warnings(self, client, ws, auth):
+    def test_analyze_preview_convert_mode(self, client, ws, auth):
+        """convert 模式预览：MHTML 计为可导入文档（ADR 0049 边界 5）."""
+        r = client.post(
+            ANALYZE.format(ws=ws.id),
+            files=_files(("页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
+            data={"paths": ["页面.mhtml"], "mhtml_mode": "convert"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["total_documents"] == 1  # 预览不展开 _assets 条目（ADR 0049 边界 5）
+        assert data["items"][0]["suffix"] == ".mhtml"
+        assert data["items"][0]["is_asset"] is False
+        assert data["warnings"] == []
+
+    def test_analyze_preview_archive_default(self, client, ws, auth):
+        """0061 C5：默认 archive 预览把 MHTML 标为原样存档，不解析不告警."""
         r = client.post(
             ANALYZE.format(ws=ws.id),
             files=_files(("页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
@@ -758,15 +774,68 @@ class TestMhtmlImport:
         )
         assert r.status_code == 200, r.text
         data = r.json()
-        assert data["total_documents"] == 1  # 预览不展开 _assets 条目（ADR 0049 边界 5）
-        assert data["items"][0]["suffix"] == ".mhtml"
+        assert data["total_documents"] == 1
+        assert data["assets"] == 1
+        assert data["items"][0]["is_asset"] is True
+        assert data["items"][0]["format"] == "mhtml"
         assert data["warnings"] == []
+
+    def test_import_archive_default_stores_original(self, client, db, ws, auth):
+        """0061 C2：默认 archive 落为 MHTML 原件族文档，不转 Markdown、不展开素材.
+
+        原样存档不解析 HTML，标题取文件名（与 PDF 等原件族口径一致）。"""
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(("网页存档.mhtml", self._payload(self.LOCATION), "message/rfc822")),
+            data={"paths": ["网页存档.mhtml"], "import_attachments": "false"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["created"] == 1
+        assert stats["assets"] == 1
+        assert stats["attachments"] == 0
+        nodes = {node["title"]: node for node in _flat(_tree(client, ws.id, auth))}
+        assert set(nodes) == {"网页存档"}
+        doc = (
+            db.execute(select(Document).where(Document.workspace_id == ws.id, Document.title == "网页存档"))
+            .scalars()
+            .one()
+        )
+        assert doc.content_type == "mhtml"
+        assert doc.asset_file_key
+        version = doc.versions[0] if doc.versions else None
+        assert version is not None and version.content == ""
+        asset = client.get(f"{DOCS.format(ws=ws.id)}/{doc.id}/asset", headers=auth)
+        assert asset.status_code == 200, asset.text
+        assert asset.content == self._payload(self.LOCATION)
+
+    def test_import_invalid_mhtml_mode_rejected(self, client, ws, auth):
+        """0061 C1：非法 mhtml_mode 拒绝批次（400）."""
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(("页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
+            data={"paths": ["页面.mhtml"], "mhtml_mode": "bogus"},
+            headers=auth,
+        )
+        assert r.status_code == 400, r.text
+        assert "MHTML 处理模式" in r.json()["detail"]
+
+    def test_analyze_invalid_mhtml_mode_rejected(self, client, ws, auth):
+        r = client.post(
+            ANALYZE.format(ws=ws.id),
+            files=_files(("页面.mhtml", self._payload(self.LOCATION), "message/rfc822")),
+            data={"paths": ["页面.mhtml"], "mhtml_mode": "bogus"},
+            headers=auth,
+        )
+        assert r.status_code == 400, r.text
+        assert "MHTML 处理模式" in r.json()["detail"]
 
     def test_broken_mhtml_skipped(self, client, ws, auth):
         r = client.post(
             IMPORT.format(ws=ws.id),
             files=_files(("坏.mhtml", b"not a mime payload", "application/octet-stream")),
-            data={"paths": ["坏.mhtml"], "import_attachments": "true"},
+            data={"paths": ["坏.mhtml"], "import_attachments": "true", "mhtml_mode": "convert"},
             headers=auth,
         )
         assert r.status_code == 200, r.text

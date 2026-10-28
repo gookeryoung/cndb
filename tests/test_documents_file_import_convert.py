@@ -1105,22 +1105,44 @@ class TestMhtmlConvert:
 class TestReaderMhtml:
     def test_convert_file_mhtml(self):
         data = _make_mhtml("<html><head><title>T</title></head><body><p>正文</p></body></html>")
-        doc = reader.convert_file(reader.UploadedItem("page.mhtml", data))
+        doc = reader.convert_file(reader.UploadedItem("page.mhtml", data), mhtml_mode="convert")
         assert doc.title == "T"
         assert doc.suffix == ".mhtml"
         assert doc.body == "正文"
 
     def test_convert_file_mht_suffix(self):
         data = _make_mhtml("<html><body><p>存档</p></body></html>")
-        doc = reader.convert_file(reader.UploadedItem("page.mht", data))
+        doc = reader.convert_file(reader.UploadedItem("page.mht", data), mhtml_mode="convert")
         assert doc.title == "page"
         assert doc.suffix == ".mht"
+
+    def test_convert_file_mhtml_archive_default(self):
+        """0061 C2：默认 archive 原样存档，不转 Markdown."""
+        data = _make_mhtml("<html><head><title>T</title></head><body><p>正文</p></body></html>")
+        doc = reader.convert_file(reader.UploadedItem("page.mhtml", data))
+        assert doc.asset is True
+        assert doc.content_type == "mhtml"
+        assert doc.mime == "multipart/related"
+        assert doc.body == ""
+        assert doc.resources == []
+
+    def test_convert_file_mhtml_archive_over_32mb_skipped(self, monkeypatch):
+        """archive 模式同样受 32MB 上限约束（先于模式分流检查）。"""
+        data = _make_mhtml("<html><body><p>超大</p></body></html>")
+        monkeypatch.setattr(reader, "MHTML_MAX_FILE_BYTES", 4)
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("page.mhtml", data), mhtml_mode="archive")
+
+    def test_convert_file_mhtml_unknown_mode_rejected(self):
+        data = _make_mhtml("<html><body><p>正文</p></body></html>")
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("page.mhtml", data), mhtml_mode="bogus")
 
     def test_mhtml_over_8mb_but_under_32mb_accepted(self, monkeypatch):
         data = _make_mhtml("<html><body><p>大文件</p></body></html>")
         assert len(data) <= reader.MAX_FILE_BYTES  # 本例不必真造 8MB，用monkeypatch 缩阈值验证分派
         monkeypatch.setattr(reader, "MAX_FILE_BYTES", 4)
-        doc = reader.convert_file(reader.UploadedItem("page.mhtml", data))
+        doc = reader.convert_file(reader.UploadedItem("page.mhtml", data), mhtml_mode="convert")
         assert doc.body == "大文件"
 
     def test_mhtml_over_32mb_skipped(self, monkeypatch):
@@ -1134,6 +1156,6 @@ class TestReaderMhtml:
             reader.UploadedItem("ok.mhtml", _make_mhtml("<html><body><p>好</p></body></html>")),
             reader.UploadedItem("bad.mhtml", b"junk"),
         ]
-        docs, skipped = reader.convert_batch(items)
+        docs, skipped = reader.convert_batch(items, mhtml_mode="convert")
         assert [doc.path for doc in docs] == ["ok.mhtml"]
         assert {entry["path"] for entry in skipped} == {"bad.mhtml"}

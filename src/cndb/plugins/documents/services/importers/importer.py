@@ -36,7 +36,7 @@ from cndb.plugins.files.models import FileOwner
 from . import mhtml as mhtml_converter
 from . import reader
 from .errors import UnsupportedImport
-from .formats import ASSET_CONTENT_TYPES
+from .formats import ASSET_CONTENT_TYPES, MHTML_MODE_DEFAULT, MHTML_MODES
 from .reader import ImportedDoc, UploadedItem
 
 
@@ -147,6 +147,12 @@ def _expand_mhtml_resources(items: list[UploadedItem]) -> list[UploadedItem]:
     return expanded
 
 
+def _validate_mhtml_mode(mode: str) -> None:
+    """MHTML 处理模式校验（0061 C1）：非法取值直接拒绝批次."""
+    if mode not in MHTML_MODES:
+        raise BadRequestError(f"不支持的 MHTML 处理模式：{mode}，可选 {'/'.join(MHTML_MODES)}")
+
+
 def analyze_files(
     db: Session,
     workspace_id: int,
@@ -155,13 +161,15 @@ def analyze_files(
     *,
     parent_id: int | None = None,
     image_sink: reader.ImageSink | None = None,
+    mhtml_mode: str = MHTML_MODE_DEFAULT,
 ) -> dict[str, Any]:
     """解析批次并返回导入预览（不写任何数据）."""
     content_service.require_editor(db, workspace_id, user)
     _validate_parent(db, workspace_id, parent_id)
+    _validate_mhtml_mode(mhtml_mode)
     reader.validate_batch(items)
 
-    docs, skipped = reader.convert_batch(items, image_sink=image_sink)
+    docs, skipped = reader.convert_batch(items, image_sink=image_sink, mhtml_mode=mhtml_mode)
     siblings = _sibling_map(db, workspace_id)
     root_key = parent_id or 0
     folders, folder_ids = _preview_folders(siblings, root_key, _folder_groups(docs))
@@ -214,12 +222,14 @@ def import_files(
     conflict: str = CONFLICT_RENAME,
     status: str = "draft",
     import_attachments: bool = True,
+    mhtml_mode: str = MHTML_MODE_DEFAULT,
 ) -> dict[str, Any]:
     """把上传的文件批次导入为文档树（文件夹 + 文档 + 附件）."""
     if conflict not in CONFLICT_POLICIES:
         raise BadRequestError(f"不支持的冲突策略：{conflict}，可选 {'/'.join(CONFLICT_POLICIES)}")
     if status not in DOC_STATUSES:
         raise BadRequestError(f"不支持的文档状态：{status}")
+    _validate_mhtml_mode(mhtml_mode)
 
     content_service.require_editor(db, workspace_id, user)
     _validate_parent(db, workspace_id, parent_id)
@@ -275,14 +285,15 @@ def import_files(
         "warnings": [],
     }
 
-    if not import_attachments:
-        # 关态：素材展开为批次图片条目，落为 _assets 文件夹图片文档（ADR 0049 D4）
+    if not import_attachments and mhtml_mode == "convert":
+        # 关态 + 转换模式：素材展开为批次图片条目，落为 _assets 文件夹图片文档（ADR 0049 D4）；
+        # archive 模式下 MHTML 是原件本体，不做素材展开（0061 C4）
         items = _expand_mhtml_resources(items)
 
     local_images = reader.build_local_image_index(items)
     for item in sorted(items, key=lambda entry: entry.path):
         try:
-            doc = reader.convert_file(item, image_sink=store.store, local_images=local_images)
+            doc = reader.convert_file(item, image_sink=store.store, local_images=local_images, mhtml_mode=mhtml_mode)
         except UnsupportedImport as exc:
             stats["skipped"] += 1
             if len(stats["skipped_files"]) < DETAIL_LIMIT:

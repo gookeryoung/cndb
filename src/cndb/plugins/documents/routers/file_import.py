@@ -67,11 +67,14 @@ async def analyze_document_files(
     db: Annotated[Session, Depends(get_db)],
     paths: Annotated[list[str] | None, Form(description="与 files 一一对应的批次内相对路径")] = None,
     parent_id: Annotated[int | None, Form(description="导入到哪个文件夹（空 = 根目录）")] = None,
+    mhtml_mode: Annotated[
+        str, Form(description="MHTML 处理模式：archive=原样存档（默认）/ convert=转 Markdown")
+    ] = "archive",
 ) -> dict[str, Any]:
     """解析文件批次并返回导入预览（不写任何数据）."""
     _require_member(db, workspace_id, current_user)
     items, invalid = await _collect_items(files, paths)
-    result = importers.analyze_files(db, workspace_id, current_user, items, parent_id=parent_id)
+    result = importers.analyze_files(db, workspace_id, current_user, items, parent_id=parent_id, mhtml_mode=mhtml_mode)
     result["total_files"] = len(files)
     _merge_skipped(result, invalid, "skipped")
     return result
@@ -91,6 +94,9 @@ async def import_document_files(
         bool,
         Form(description="是否导入 docx / html / mhtml 内嵌图片；关闭时 MHTML 素材落为 _assets 素材文档"),
     ] = True,
+    mhtml_mode: Annotated[
+        str, Form(description="MHTML 处理模式：archive=原样存档（默认）/ convert=转 Markdown")
+    ] = "archive",
 ) -> dict[str, Any]:
     """把文件批次导入为文档树（文件夹 + 文档 + 附件）."""
     _require_member(db, workspace_id, current_user)
@@ -104,6 +110,7 @@ async def import_document_files(
         conflict=conflict,
         status=status,
         import_attachments=import_attachments,
+        mhtml_mode=mhtml_mode,
     )
     stats["skipped"] += len(invalid)
     stats["total"] += len(invalid)

@@ -162,6 +162,7 @@ describe('通用导入弹窗', () => {
     expect(documentsApi.fileImportAnalyze).toHaveBeenCalledWith(WID, {
       entries: [{ file: expect.any(File), path: '说明.md' }],
       parentId: null,
+      mhtmlMode: 'archive',
     })
   })
 
@@ -196,6 +197,7 @@ describe('通用导入弹窗', () => {
         { file: batch[1], path: '笔记/说明.md' },
       ],
       parentId: 3,
+      mhtmlMode: 'archive',
     })
     expect(await screen.findByTestId('file-import-picked')).toHaveTextContent('已选择 2 个文件')
   })
@@ -207,9 +209,13 @@ describe('通用导入弹窗', () => {
     pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
     await screen.findByTestId('file-import-summary')
 
+    // 先切到转换模式（重解析期间开关行卸载），稳定后再点选项与关闭内嵌图片开关
+    fireEvent.click(screen.getByTestId('file-import-mhtml-convert'))
+    const attachmentsSwitch = await screen.findByTestId('file-import-attachments')
+    expect(attachmentsSwitch).toBeEnabled()
     fireEvent.click(screen.getByLabelText(/跳过同名文档/))
     fireEvent.click(screen.getByLabelText('已发布'))
-    fireEvent.click(screen.getByTestId('file-import-attachments'))
+    fireEvent.click(attachmentsSwitch)
     fireEvent.click(screen.getByTestId('file-import-submit'))
 
     await waitFor(() => expect(documentsApi.fileImport).toHaveBeenCalledTimes(1))
@@ -220,8 +226,36 @@ describe('通用导入弹窗', () => {
         conflict: 'skip',
         status: 'published',
         importAttachments: false,
+        mhtmlMode: 'convert',
         entries: [expect.objectContaining({ path: '说明.md' })],
       }),
+    )
+  })
+
+  it('MHTML 模式开关：默认关、切换传 convert 并重解析、归档态禁用内嵌图片开关', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
+    await screen.findByTestId('file-import-summary')
+
+    // 开关行随预览出现：默认关，archive 态内嵌图片开关禁用（原样存档时不适用）
+    const convertSwitch = screen.getByTestId('file-import-mhtml-convert')
+    expect(convertSwitch).not.toBeChecked()
+    expect(screen.getByTestId('file-import-attachments')).toBeDisabled()
+
+    fireEvent.click(convertSwitch)
+    await waitFor(() => expect(documentsApi.fileImportAnalyze).toHaveBeenCalledTimes(2))
+    expect(documentsApi.fileImportAnalyze).toHaveBeenLastCalledWith(
+      WID,
+      expect.objectContaining({ mhtmlMode: 'convert' }),
+    )
+    // convert 态：内嵌图片开关恢复可用（默认开）
+    expect(screen.getByTestId('file-import-attachments')).toBeEnabled()
+
+    fireEvent.click(screen.getByTestId('file-import-submit'))
+    await waitFor(() => expect(documentsApi.fileImport).toHaveBeenCalledTimes(1))
+    expect(documentsApi.fileImport).toHaveBeenCalledWith(
+      WID,
+      expect.objectContaining({ importAttachments: true, mhtmlMode: 'convert' }),
     )
   })
 

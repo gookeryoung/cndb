@@ -33,6 +33,7 @@ import {
   type FileImportEntry,
   type FileImportPreviewItem,
   type FileImportResult,
+  type MhtmlImportMode,
   type VaultConflictPolicy,
 } from '@/api/documents'
 
@@ -96,6 +97,8 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const [result, setResult] = useState<FileImportResult | null>(null)
   const [conflict, setConflict] = useState<VaultConflictPolicy>('rename')
   const [importAttachments, setImportAttachments] = useState(true)
+  /** MHTML 处理模式：默认原样存档，打开后转 Markdown（0061 C6） */
+  const [mhtmlMode, setMhtmlMode] = useState<MhtmlImportMode>('archive')
   const [status, setStatus] = useState<'draft' | 'published'>('draft')
 
   const reset = () => {
@@ -111,8 +114,8 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   }
 
   const analyzeMut = useMutation({
-    mutationFn: (batch: FileImportEntry[]) =>
-      documentsApi.fileImportAnalyze(workspaceId, { entries: batch, parentId }),
+    mutationFn: (payload: { batch: FileImportEntry[]; mode: MhtmlImportMode }) =>
+      documentsApi.fileImportAnalyze(workspaceId, { entries: payload.batch, parentId, mhtmlMode: payload.mode }),
     onSuccess: data => {
       setAnalysis(data)
       setConflict('rename')
@@ -133,6 +136,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         conflict,
         status,
         importAttachments,
+        mhtmlMode,
       }),
     onSuccess: data => {
       setResult(data)
@@ -152,7 +156,16 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     setEntries(batch)
     setAnalysis(null)
     setResult(null)
-    analyzeMut.mutate(batch)
+    analyzeMut.mutate({ batch, mode: mhtmlMode })
+  }
+
+  /** 切换 MHTML 模式后预览口径随之变化（is_asset / format），已选批次需要重新解析 */
+  const changeMhtmlMode = (next: MhtmlImportMode) => {
+    setMhtmlMode(next)
+    if (entries.length > 0) {
+      setAnalysis(null)
+      analyzeMut.mutate({ batch: entries, mode: next })
+    }
   }
 
   const switchMode = (next: ImportMode) => {
@@ -345,10 +358,11 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               {mode === 'folder' ? '选择文件夹' : '选择文件'}
             </Button>
             <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--cn-text-muted)' }}>
-              支持 Markdown（.md）、Word（.docx）、HTML（.html）、MHTML 网页存档（.mhtml/.mht，内嵌图片一并导入）——
+              支持 Markdown（.md）、Word（.docx）、HTML（.html）、MHTML 网页存档（.mhtml/.mht）——
               导入时自动转换为 Markdown 并清理空白；
               PDF、Excel（.xlsx/.xls）、PowerPoint（.pptx/.ppt）与图片（png/jpg/gif/webp/svg/bmp）
-              原样存档，导入后在阅读器里预览、可下载原件（不参与编辑）。导入到{targetText}。
+              原样存档，导入后在阅读器里预览、可下载原件（不参与编辑）。MHTML 默认原样存档，
+              勾选「MHTML 转 Markdown」后才会转换。导入到{targetText}。
             </p>
             {entries.length > 0 && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
@@ -404,11 +418,22 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               <Space size={24} wrap>
                 <Space size={8}>
                   <Switch
+                    checked={mhtmlMode === 'convert'}
+                    onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
+                    data-testid="file-import-mhtml-convert"
+                  />
+                  <Typography.Text>MHTML 转 Markdown</Typography.Text>
+                </Space>
+                <Space size={8}>
+                  <Switch
                     checked={importAttachments}
                     onChange={setImportAttachments}
+                    disabled={mhtmlMode === 'archive'}
                     data-testid="file-import-attachments"
                   />
-                  <Typography.Text>导入内嵌图片</Typography.Text>
+                  <Typography.Text type={mhtmlMode === 'archive' ? 'secondary' : undefined}>
+                    导入内嵌图片{mhtmlMode === 'archive' ? '（MHTML 原样存档时不适用）' : ''}
+                  </Typography.Text>
                 </Space>
                 <Space size={8}>
                   <Typography.Text type="secondary">文档状态</Typography.Text>

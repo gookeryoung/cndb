@@ -335,6 +335,9 @@ export interface FileImportEntry {
   path: string
 }
 
+/** MHTML 处理模式（0061）：archive=原样存档（默认），convert=转 Markdown */
+export type MhtmlImportMode = 'convert' | 'archive'
+
 export interface FileImportPayload {
   entries: FileImportEntry[]
   /** 导入到哪个文件夹（空 = 根目录） */
@@ -342,6 +345,8 @@ export interface FileImportPayload {
   conflict?: VaultConflictPolicy
   status?: 'draft' | 'published' | 'archived'
   importAttachments?: boolean
+  /** MHTML 处理模式，缺省 archive（原样存档） */
+  mhtmlMode?: MhtmlImportMode
 }
 
 export interface FileImportPreviewItem {
@@ -417,6 +422,7 @@ function buildFileImportForm(payload: FileImportPayload): FormData {
     form.append('paths', entry.path)
   }
   if (payload.parentId != null) form.append('parent_id', String(payload.parentId))
+  form.append('mhtml_mode', payload.mhtmlMode ?? 'archive')
   return form
 }
 

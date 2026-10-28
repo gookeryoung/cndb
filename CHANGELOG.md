@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+### 变更
+- **MHTML 导入可选转换：默认原样存档，可选转 Markdown**（需求 0061）：通用文件导入的 MHTML（.mhtml/.mht）新增处理模式——`analyze` / `import` 接口新增表单参数 `mhtml_mode`（`archive`=原样存档 / `convert`=转 Markdown），**默认值由「转换」改为「原样存档」**：不解析不转换，与 PDF 等原件族同口径（`content_type=mhtml` 原件文档、阅读器 iframe 内嵌预览、可下载原件、不参与编辑、`import_attachments` 开关不适用且前端禁用）；勾选「MHTML 转 Markdown」沿用 ADR 0049 转换链路（行为不变），素材展开仅在该模式执行；预览随模式联动（archive 计入原样存档、convert 计入可导入文档），前端切换开关后自动重新解析批次；非法取值 400 拒绝批次，Obsidian 库导入不受影响。注意：调用方不传参时行为有变（原转 Markdown，现原样存档）。测试：`tests/test_documents_file_import_convert.py`、`tests/test_documents_file_import_api.py` 增 8 例；前端 `DocumentImportModal.test.tsx`；教程「MHTML 网页存档导入」条目新增。
+
 ### 新增
 - **文档图表块查看态点击放大预览**（ADR 0060）：查看模式（含游客分享页）下点击图表本体打开放大弹层，复用同一次 `render-preview` 已 sanitize 的 SVG（宽度撑满弹层、禁横向滚动，零额外请求），点关闭 / Esc / 遮罩返回正文；渲染失败 / 加载中 / 无效块无放大入口，编辑模式宽度 / 编辑 / 保存图片控件不受影响。实现：`frontend/src/components/Document/ChartEmbed.tsx`；测试：`ChartEmbed.test.tsx` 增 3 例、e2e `document-chart-embed.spec.ts`（成员 + 游客两段）。
 - **文档草稿支持「查看修改（diff）」「丢弃」入口，草稿三件套闭环**（ADR 0057 P0-P2）：新增只读端点 `GET /api/v1/workspaces/{wid}/documents/{doc_id}/draft/diff`（「编辑基准版本 → 草稿」unified diff，复用 `parse.unified_diff` 唯一入口；无草稿 404 `code=no_draft`；基准版本缺失回退最新版本；`stale` 标记文档已前进版本）；编辑页有草稿时出现「查看修改」（抽屉复用 DiffView，stale 显示提示不阻断）与「丢弃草稿」（Popconfirm 确认 → 既有 `DELETE /{doc_id}/draft` → 编辑态重置为最新版本并回到查看模式）；保存草稿语义不变，零迁移。测试：`tests/test_document_drafts.py` 增 6 例、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` 增 3 例、e2e `frontend/tests/e2e/critical/document-draft-diff-discard.spec.ts`。

@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from cndb.plugins.documents.models import (
     ASSET_CONTENT_TYPES,
     CONTENT_TYPE_IMAGE,
+    CONTENT_TYPE_MHTML,
     CONTENT_TYPE_PDF,
     CONTENT_TYPE_PPTX,
     CONTENT_TYPE_XLSX,
@@ -65,6 +66,12 @@ SUPPORTED_SUFFIXES: tuple[str, ...] = CONVERTIBLE_SUFFIXES + tuple(ASSET_FORMATS
 #: 原件单文件上限（图片 / PDF 普遍大于文本上限）
 MAX_ASSET_BYTES = 32 * 1024 * 1024
 
+#: MHTML 处理模式（0061）：archive=原样存档（默认），convert=转 Markdown（ADR 0049 链路）
+MHTML_MODES = ("convert", "archive")
+MHTML_MODE_DEFAULT = "archive"
+#: archive 模式的原件格式标记（MHTML 不进 ``ASSET_FORMATS``：convert 模式仍走转换管线）
+MHTML_ASSET_FORMAT = AssetFormat(CONTENT_TYPE_MHTML, "multipart/related", "MHTML")
+
 
 def normalize_suffix(path: str) -> str:
     """取小写扩展名（含点）；无扩展名返回空串。"""
@@ -93,11 +100,15 @@ __all__ = [
     "ASSET_CONTENT_TYPES",
     "ASSET_FORMATS",
     "CONTENT_TYPE_IMAGE",
+    "CONTENT_TYPE_MHTML",
     "CONTENT_TYPE_PDF",
     "CONTENT_TYPE_PPTX",
     "CONTENT_TYPE_XLSX",
     "CONVERTIBLE_SUFFIXES",
     "MAX_ASSET_BYTES",
+    "MHTML_ASSET_FORMAT",
+    "MHTML_MODES",
+    "MHTML_MODE_DEFAULT",
     "SUPPORTED_SUFFIXES",
     "AssetFormat",
     "asset_format",

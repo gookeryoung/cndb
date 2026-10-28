@@ -129,6 +129,17 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
         </div>
       )
     }
+    if (doc.content_type === 'mhtml') {
+      // MHTML 原件（0061 C7）：浏览器可直接渲染 multipart/related 存档；渲染失败时仍可下载
+      return (
+        <iframe
+          title={doc.title}
+          src={objectUrl}
+          data-testid="doc-asset-mhtml"
+          style={{ flex: 1, minHeight: 0, width: '100%', border: 'none' }}
+        />
+      )
+    }
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
