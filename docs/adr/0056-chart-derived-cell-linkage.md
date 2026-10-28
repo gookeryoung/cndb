@@ -152,12 +152,12 @@ linkGrowthFromValue(value: number, prevValue: number | null): number | null | 's
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/documents/services/charts/registry.py` | `tests/test_documents_charts_registry.py` | a3adaae9 |
 | P1 | 已落地 | `frontend/src/pages/documents/chartLinkage.ts`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/test/msw.ts` | `frontend/src/pages/documents/chartLinkage.test.ts`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx` | a3adaae9 |
-| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx`、`src/cndb/plugins/documents/services/charts/render.py` | `frontend/tests/e2e/critical/chart-designer-linkage.spec.ts`、`tests/test_documents_charts_render.py` | a3adaae9 + 修复提交 |
+| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx`、`src/cndb/plugins/documents/services/charts/render.py` | `frontend/tests/e2e/critical/chart-designer-linkage.spec.ts`、`tests/test_documents_charts_render.py` | 3c6bbb86 |
 
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P2 已落地（待人工评审回填 Implemented）
 - 已完成：P0（默认 growth 全空 + version 2 + 首行禁填校验）、P1（chartLinkage 联动 + 设计器禁填 / 联动 / 高亮标记）、P2（教程说明 + e2e spec + CHANGELOG）
 - 下一步：`make flow` 全绿后提交；e2e 按环境可用性跑 critical 分片；人工评审后 Status → Implemented
-- 已知坑：e2e 本地环境缺系统库（libatk-1.0.so.0）暂无法启动 chromium，spec 已就位待环境修复后执行；渲染端实际段次值留空不画点为既有行为；JS `Math.round` 与 Python `round` 半值边界舍入差异属可接受显示口径
-- 最近一次全绿：`make flow` @ a3adaae9（5847 passed）
+- 已知坑：e2e 本地环境缺系统库（libatk-1.0.so.0）暂无法启动 chromium，spec 已就位待环境修复后执行；JS `Math.round` 与 Python `round` 半值边界舍入差异属可接受显示口径
+- 最近一次全绿：`make flow` @ 3c6bbb86 前置基线（5847 passed）；渲染修复经 render/registry 单测（39 passed）+ 前端 documents 单测验证
