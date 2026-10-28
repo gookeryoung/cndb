@@ -189,7 +189,7 @@ describe('ChartEmbed', () => {
     await waitFor(() => expect(screen.getByTestId('chart-embed-preview-svg')).not.toBeVisible())
   })
 
-  it('预览层滚轮缩放：上滚放大、下滚缩小，边界 0.5x-3x，重开后复位 100%（ADR 0060）', async () => {
+  it('预览层标题栏 +- 按钮缩放：步进 10%，边界 0.5x-3x 时按钮禁用，重开后复位 100%（ADR 0060）', async () => {
     server.use(
       http.post('/api/v1/workspaces/10/charts/render-preview', () =>
         new HttpResponse('<svg xmlns="http://www.w3.org/2000/svg"><text>缩放</text></svg>', {
@@ -202,21 +202,26 @@ describe('ChartEmbed', () => {
     fireEvent.click(canvas)
     const preview = await screen.findByTestId('chart-embed-preview-svg')
     expect(preview).toHaveStyle({ width: '100%' })
+    expect(screen.getByTestId('chart-embed-zoom-level')).toHaveTextContent('100%')
 
-    const scroller = screen.getByTestId('chart-embed-preview-scroll')
-    fireEvent.wheel(scroller, { deltaY: -100 })
+    const zoomIn = screen.getByTestId('chart-embed-zoom-in')
+    fireEvent.click(zoomIn)
     expect(screen.getByTestId('chart-embed-preview-svg')).toHaveStyle({ width: '110%' })
-    // 连续上滚到上限 3x
-    for (let i = 0; i < 25; i += 1) fireEvent.wheel(scroller, { deltaY: -100 })
-    expect(screen.getByTestId('chart-embed-preview-svg')).toHaveStyle({ width: '300%' })
-    // 下滚到下限 0.5x
-    for (let i = 0; i < 40; i += 1) fireEvent.wheel(scroller, { deltaY: 100 })
-    expect(screen.getByTestId('chart-embed-preview-svg')).toHaveStyle({ width: '50%' })
+    expect(screen.getByTestId('chart-embed-zoom-level')).toHaveTextContent('110%')
+    // 连续放大到上限 3x，此时「放大」禁用
+    for (let i = 0; i < 25; i += 1) fireEvent.click(zoomIn)
+    expect(screen.getByTestId('chart-embed-zoom-level')).toHaveTextContent('300%')
+    expect(zoomIn).toBeDisabled()
+    // 缩回下限 50%，「缩小」禁用
+    const zoomOut = screen.getByTestId('chart-embed-zoom-out')
+    for (let i = 0; i < 30; i += 1) fireEvent.click(zoomOut)
+    expect(screen.getByTestId('chart-embed-zoom-level')).toHaveTextContent('50%')
+    expect(zoomOut).toBeDisabled()
 
     // 关闭重开后复位 100%
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
     fireEvent.click(canvas)
-    expect(await screen.findByTestId('chart-embed-preview-svg')).toHaveStyle({ width: '100%' })
+    expect(await screen.findByTestId('chart-embed-zoom-level')).toHaveTextContent('100%')
   })
 
   it('渲染失败 / 无效块无放大入口（I2 降级一致）', async () => {

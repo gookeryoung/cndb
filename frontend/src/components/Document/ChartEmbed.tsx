@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from 'react'
 import { Alert, App as AntApp, Button, Dropdown, Modal, Skeleton, Space } from 'antd'
-import { DownOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons'
+import { DownOutlined, DownloadOutlined, EditOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { chartApi } from '@/api/charts'
 import publicShareApi from '@/api/publicShare'
@@ -180,26 +180,45 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
         </Space>
       )}
       {/* 放大预览（ADR 0060 D1）：复用同一份已 sanitize 的 SVG，零额外请求；
-          弹层 75vw，滚轮缩放（0.5x-3x，以 100% 为基准），超高弹层内滚动；
+          弹层 75vw，标题栏 +- 按钮缩放（0.5x-3x，步进 10%），滚轮仅用于弹层内滚动；
           禁用过渡动画（jsdom 不跑离场动画，卸载语义保持一致） */}
       <Modal
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
         width="75vw"
-        title={spec?.title || spec?.templateKey}
+        title={
+          <Space size="small">
+            <span>{spec?.title || spec?.templateKey}</span>
+            <Button
+              size="small"
+              type="text"
+              icon={<ZoomOutOutlined />}
+              aria-label="缩小"
+              data-testid="chart-embed-zoom-out"
+              disabled={previewZoom <= 50}
+              onClick={() => setPreviewZoom(z => Math.max(50, z - 10))}
+            />
+            <span data-testid="chart-embed-zoom-level" style={{ fontSize: 12, minWidth: 40, textAlign: 'center' }}>
+              {previewZoom}%
+            </span>
+            <Button
+              size="small"
+              type="text"
+              icon={<ZoomInOutlined />}
+              aria-label="放大"
+              data-testid="chart-embed-zoom-in"
+              disabled={previewZoom >= 300}
+              onClick={() => setPreviewZoom(z => Math.min(300, z + 10))}
+            />
+          </Space>
+        }
         transitionName=""
         maskTransitionName=""
         data-testid="chart-embed-preview"
       >
         {previewOpen && svg && (
-          <div
-            data-testid="chart-embed-preview-scroll"
-            style={{ maxHeight: '70vh', overflow: 'auto' }}
-            onWheel={e => {
-              setPreviewZoom(z => Math.min(300, Math.max(50, z + (e.deltaY < 0 ? 10 : -10))))
-            }}
-          >
+          <div data-testid="chart-embed-preview-scroll" style={{ maxHeight: '70vh', overflow: 'auto' }}>
             <div
               data-testid="chart-embed-preview-svg"
               className="cn-chart-preview"
