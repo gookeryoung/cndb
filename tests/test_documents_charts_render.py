@@ -152,6 +152,15 @@ class TestSvgWriter:
                 assert not hits(bbox, other), gl.content
             placed.append(bbox)
 
+    def test_value_labels_above_growth_line(self):
+        """主值标签画在折线之后（折线穿过不遮挡数字）且带纸色 halo."""
+        doc = render_chart("bar-line-dual-axis", CHART_TEMPLATES["bar-line-dual-axis"].default_config)
+        kinds = [(idx, p) for idx, p in enumerate(doc.elements)]
+        line_idx = next(idx for idx, p in kinds if p.kind == "path" and p.stroke)
+        value_labels = [(idx, p) for idx, p in kinds if p.kind == "text" and p.weight == 600 and p.halo]
+        assert value_labels
+        assert all(idx > line_idx for idx, _ in value_labels)
+
     def test_growth_labels_dense_extreme_never_crash(self):
         """极端数据（柱满高 + 高增速）渲染不崩且标签仍有 halo."""
         cfg = {

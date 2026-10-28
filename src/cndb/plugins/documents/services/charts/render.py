@@ -251,7 +251,8 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
         Prim("text", tx=w - pad_r + 12, ty=pad_t - 18, content=str(labels.get("unitRight", "")), size=12.5, fill=MUTED)
     )
 
-    # 柱：主值
+    # 柱：主值（标签先缓存，折线之后再画，保证 z 序：柱 → 折线 → 主值标签）
+    value_label_prims: list[Prim] = []
     for i, row in enumerate(rows):
         val = float(row["value"] or 0.0)
         is_proj = i >= actual_count
@@ -275,7 +276,7 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
         else:
             prims.append(Prim("rect", x=cx - bar_w / 2, y=plot_bottom - 2, w=bar_w, h=2, fill=c_projected_edge, rx=0))
         if val > 0:
-            prims.append(
+            value_label_prims.append(
                 Prim(
                     "text",
                     tx=cx,
@@ -285,10 +286,12 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
                     weight=600,
                     fill=INK2,
                     anchor="middle",
+                    halo=True,
                 )
             )
 
-    # 折线：次值（实际段实线 + 测算段按主值推算）
+    # 折线：次值（实际段实线 + 测算段按主值推算）。画在柱上、标签下，
+    # 主值标签后画并带纸色 halo，折线穿过时不再遮挡数字（用户反馈）。
     pts: list[tuple[int, float, float, float, bool]] = []  # (i, v, x, y, proj)
     for i in range(1, n):
         g = growth_at(i)
@@ -309,6 +312,7 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
                     stroke_width=1.8,
                 )
             )
+    prims.extend(value_label_prims)
 
     def _rects_hit(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
         return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]

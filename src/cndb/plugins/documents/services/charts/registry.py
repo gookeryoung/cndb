@@ -145,7 +145,7 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
                     ],
                 },
             },
-            version=5,
+            version=6,
         ),
         ChartTemplate(
             key="stacked-bar-horizontal",
