@@ -48,11 +48,13 @@ _SERIES_COLUMNS_TPL = {"key": "values", "type": "number[]", "label": "系列值"
 
 @dataclass(frozen=True)
 class ChartCategory:
-    """图表类别（一级）：只读登记."""
+    """图表类别（一级；二级分类带 parent 指向一级）：只读登记."""
 
     key: str
     name: str
     description: str
+    #: 二级分类所属一级 key；None = 一级分类
+    parent: str | None = None
 
 
 @dataclass(frozen=True)
@@ -77,9 +79,10 @@ class ChartTemplate:
 
 
 CHART_CATEGORIES: tuple[ChartCategory, ...] = (
-    ChartCategory("trend", "趋势分析", "时间序列的总量走势与增速"),
     ChartCategory("composition", "结构构成", "整体中各部分的构成与变化"),
     ChartCategory("comparison", "目标对比", "现状与规划目标的逐项对比"),
+    ChartCategory("comparison-bar", "对比-柱形", "柱形类对比图", parent="comparison"),
+    ChartCategory("comparison-bar-h", "对比-条形", "条形类对比图", parent="comparison"),
 )
 
 CHART_TEMPLATES: dict[str, ChartTemplate] = {
@@ -87,8 +90,8 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
     for tpl in (
         ChartTemplate(
             key="bar-line-dual-axis",
-            category="trend",
-            name="柱线组合图（双轴）",
+            category="comparison-bar",
+            name="双轴柱线组合图",
             description="柱（左轴主值，实际 / 测算两色）+ 折线（右轴次值），含规划期分界带与图注增速联动",
             row_min=2,
             row_max=24,
@@ -142,11 +145,11 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
                     ],
                 },
             },
-            version=2,
+            version=3,
         ),
         ChartTemplate(
             key="stacked-bar-horizontal",
-            category="composition",
+            category="comparison-bar-h",
             name="水平堆叠条形图",
             description="行 × 系列堆叠的水平条形，宽段内置白字、窄段外置标签，行尾自动合计",
             row_min=1,
@@ -176,7 +179,7 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
         ),
         ChartTemplate(
             key="grouped-bar-horizontal",
-            category="comparison",
+            category="comparison-bar-h",
             name="水平分组条形图",
             description="类别 × 两系列（现状 / 目标）成组水平条，组内双条数值标签，横轴上限自动扩展",
             row_min=1,
@@ -472,9 +475,31 @@ def require_valid_config(template_key: str, config: Any) -> dict[str, Any]:
 
 
 def templates_payload() -> dict[str, Any]:
-    """`GET /charts/templates` 的两级清单载荷."""
+    """`GET /charts/templates` 的载荷：一级分类含 children 二级，模板扁平数组.
+
+    空分类不输出（一级下自身与二级均无模板、或二级无模板）。
+    """
+    top_level = [c for c in CHART_CATEGORIES if c.parent is None]
+    children = [c for c in CHART_CATEGORIES if c.parent is not None]
+
+    def child_entry(cat: ChartCategory) -> dict[str, Any] | None:
+        if not any(t.category == cat.key for t in CHART_TEMPLATES.values()):
+            return None
+        return {"key": cat.key, "name": cat.name, "description": cat.description, "parent": cat.parent}
+
+    category_entries: list[dict[str, Any]] = []
+    for cat in top_level:
+        children_entries = [e for e in (child_entry(c) for c in children if c.parent == cat.key) if e is not None]
+        has_direct = any(t.category == cat.key for t in CHART_TEMPLATES.values())
+        if not has_direct and not children_entries:
+            continue
+        entry: dict[str, Any] = {"key": cat.key, "name": cat.name, "description": cat.description}
+        if children_entries:
+            entry["children"] = children_entries
+        category_entries.append(entry)
+
     return {
-        "categories": [{"key": c.key, "name": c.name, "description": c.description} for c in CHART_CATEGORIES],
+        "categories": category_entries,
         "templates": [
             {
                 "key": t.key,

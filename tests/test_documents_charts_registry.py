@@ -29,14 +29,29 @@ TPL_KEYS = ("bar-line-dual-axis", "stacked-bar-horizontal", "grouped-bar-horizon
 
 class TestRegistry:
     def test_two_level_structure(self):
-        """三类 × 三模板，模板类别键都指向已登记类别."""
-        assert {c.key for c in CHART_CATEGORIES} == {"trend", "composition", "comparison"}
+        """一级 × 二级分类与模板：模板类别键都指向已登记的二级分类."""
+        assert {c.key for c in CHART_CATEGORIES} == {
+            "composition",
+            "comparison",
+            "comparison-bar",
+            "comparison-bar-h",
+        }
         assert set(CHART_TEMPLATES) == set(TPL_KEYS)
         for key in TPL_KEYS:
             tpl = CHART_TEMPLATES[key]
-            assert get_category(tpl.category) is not None
+            cat = get_category(tpl.category)
+            assert cat is not None and cat.parent is not None  # 模板必属二级
+            assert get_category(cat.parent) is not None  # 二级 parent 指向已登记一级
             assert tpl.row_min >= 1 and tpl.row_max >= tpl.row_min
             assert tpl.default_config  # 每个模板必须带默认配置
+
+    def test_category_assignment(self):
+        """ADR 0058 C1/C4：双轴更名并归对比-柱形，堆叠 / 分组归对比-条形."""
+        dual = CHART_TEMPLATES["bar-line-dual-axis"]
+        assert dual.name == "双轴柱线组合图"
+        assert dual.category == "comparison-bar"
+        assert CHART_TEMPLATES["stacked-bar-horizontal"].category == "comparison-bar-h"
+        assert CHART_TEMPLATES["grouped-bar-horizontal"].category == "comparison-bar-h"
 
     def test_get_template_unknown_is_none(self):
         assert get_template("no-such-template") is None
@@ -44,15 +59,24 @@ class TestRegistry:
 
     def test_fingerprint_contains_version_and_renderer(self):
         fp = template_fingerprint("bar-line-dual-axis")
-        assert fp == "bar-line-dual-axis@2+r1"
+        assert fp == "bar-line-dual-axis@3+r1"
         # 未知模板给占位指纹（实例仍可 ETag 缓存降级图）
         assert template_fingerprint("gone") == "gone@0+r1"
 
     def test_templates_payload_shape(self):
         payload = templates_payload()
-        assert [c["key"] for c in payload["categories"]] == ["trend", "composition", "comparison"]
+        # 一级分类层级化（ADR 0058）：composition 无模板不输出，comparison 含两个二级 children
+        cats = payload["categories"]
+        assert [c["key"] for c in cats] == ["comparison"]
+        children = cats[0]["children"]
+        assert [(c["key"], c["name"], c["parent"]) for c in children] == [
+            ("comparison-bar", "对比-柱形", "comparison"),
+            ("comparison-bar-h", "对比-条形", "comparison"),
+        ]
         assert {t["key"] for t in payload["templates"]} == set(TPL_KEYS)
         tpl = next(t for t in payload["templates"] if t["key"] == "bar-line-dual-axis")
+        assert tpl["name"] == "双轴柱线组合图"
+        assert tpl["category"] == "comparison-bar"
         assert tpl["row_min"] == 2 and tpl["row_max"] == 24
         assert tpl["default_config"]["data"]["rows"]  # 清单带默认配置供设计器起稿
 
@@ -123,7 +147,7 @@ class TestValidateConfig:
         """ADR 0056 C1：双轴模板默认次值全部留空."""
         rows = CHART_TEMPLATES["bar-line-dual-axis"].default_config["data"]["rows"]
         assert all(row["growth"] is None for row in rows)
-        assert CHART_TEMPLATES["bar-line-dual-axis"].version == 2
+        assert CHART_TEMPLATES["bar-line-dual-axis"].version == 3
 
     def test_first_row_growth_rejected(self):
         """ADR 0056 C2：第 1 行次值禁填（无上年基数），第 2 行起仍允许."""

@@ -44,6 +44,8 @@ test.describe("图表设计器次值联动", () => {
     await page.goto(`/w/${wid}/documents/${docId}`);
     await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("md-toolbar-chart").click();
+    // ADR 0058：多级列表 — 先选中模板项，右栏才出现「基于此模板新建」
+    await page.getByTestId(`chart-template-item-${TEMPLATE_KEY}`).click({ timeout: 20_000 });
     await page.getByTestId(`chart-template-pick-${TEMPLATE_KEY}`).click();
 
     // C1：默认次值全部留空；C2：第 1 行禁填、第 2 行可填

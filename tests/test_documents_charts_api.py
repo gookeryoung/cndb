@@ -86,7 +86,9 @@ class TestTemplates:
         r = client.get(CHARTS.format(ws=ws.id) + "/templates", headers=_login(client, viewer.username))
         assert r.status_code == 200, r.text
         body = r.json()
-        assert {c["key"] for c in body["categories"]} == {"trend", "composition", "comparison"}
+        cats = {c["key"]: c for c in body["categories"]}
+        assert set(cats) == {"comparison"}
+        assert {c["key"] for c in cats["comparison"]["children"]} == {"comparison-bar", "comparison-bar-h"}
         assert {t["key"] for t in body["templates"]} == set(CHART_TEMPLATES)
         assert all("default_config" in t for t in body["templates"])
 
@@ -144,7 +146,7 @@ class TestCrud:
         auth = _login(client, editor.username)
         chart = _create_chart(client, ws.id, auth)
         assert chart["template_key"] == "bar-line-dual-axis"
-        assert chart["category"] == "trend"
+        assert chart["category"] == "comparison-bar"
         assert chart["config"]["caption"]["title"] == DUAL["caption"]["title"]
 
         got = client.get(CHARTS.format(ws=ws.id) + f"/{chart['id']}", headers=auth)
@@ -196,7 +198,7 @@ class TestCrud:
         body = r.json()
         assert body["title"] == "结构变化图"  # str_strip_whitespace
         assert body["template_key"] == "stacked-bar-horizontal"
-        assert body["category"] == "composition"
+        assert body["category"] == "comparison-bar-h"
         assert body["config"] == _normalized(STACKED, "stacked-bar-horizontal")
 
     def test_list_and_category_filter(self, client, ws, editor):
@@ -208,8 +210,8 @@ class TestCrud:
         listing = client.get(CHARTS.format(ws=ws.id), headers=auth).json()
         assert len(listing["items"]) == 3
 
-        comp = client.get(CHARTS.format(ws=ws.id), params={"category": "composition"}, headers=auth).json()
-        assert [c["title"] for c in comp["items"]] == ["结构图"]
+        comp = client.get(CHARTS.format(ws=ws.id), params={"category": "comparison-bar-h"}, headers=auth).json()
+        assert [c["title"] for c in comp["items"]] == ["结构图", "对比图"]
 
     def test_delete_physical(self, client, ws, editor, db):
         from cndb.plugins.documents.models import DocumentChart

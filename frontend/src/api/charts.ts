@@ -6,11 +6,15 @@
 
 import api from './client'
 
-/** 图表类别（一级：趋势 / 构成 / 对比） */
+/** 图表类别（一级；二级分类带 parent 指向一级，ADR 0058） */
 export interface ChartCategoryInfo {
   key: string
   name: string
   description: string
+  /** 二级分类所属一级 key；一级分类无此字段 */
+  parent?: string
+  /** 一级分类下的二级分类（仅含非空二级，ADR 0058） */
+  children?: ChartCategoryInfo[]
 }
 
 /** 模板数据列声明（设计器按此生成数据表列） */

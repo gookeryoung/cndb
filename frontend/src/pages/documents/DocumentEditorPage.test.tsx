@@ -1631,9 +1631,10 @@ describe('DocumentEditorPage 图表内嵌块（ADR 0052）', () => {
         fireEvent.click(screen.getByTestId('md-toolbar-chart'))
         expect(await screen.findByText('插入图表')).toBeInTheDocument()
 
+        fireEvent.click(await screen.findByTestId('chart-template-item-bar-line-dual-axis'))
         fireEvent.click(await screen.findByTestId('chart-template-pick-bar-line-dual-axis'))
         const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
-        await waitFor(() => expect(title.value).toBe('柱线组合图（双轴）'))
+        await waitFor(() => expect(title.value).toBe('双轴柱线组合图'))
 
         fireEvent.click(screen.getByTestId('chart-designer-save'))
         await waitFor(() => expect(ta.value).toContain('```chart'))

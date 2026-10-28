@@ -104,6 +104,10 @@ test.describe("文档图表内嵌块", () => {
       await page.goto(`/w/${wid}/documents/${docId}`);
       await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
       await page.getByTestId("md-toolbar-chart").click();
+      // ADR 0058：多级列表 — 先选中模板项，右栏才出现「基于此模板新建」
+      await page
+        .getByTestId(`chart-template-item-${TEMPLATE_KEY}`)
+        .click({ timeout: 20_000 });
       const pick = page.getByTestId(`chart-template-pick-${TEMPLATE_KEY}`);
       await expect(pick).toBeVisible({ timeout: 20_000 });
       await pick.click();
@@ -136,10 +140,11 @@ test.describe("文档图表内嵌块", () => {
       // 实时预览（CodeMirror）不渲染嵌入块，宽度 / 编辑控件只在查看模式出现。
       await page.getByTestId("doc-mode-switch").getByText("查看", { exact: true }).click();
       const embed = page.getByTestId(`chart-embed-${TEMPLATE_KEY}`);
-      await expect(embed).toHaveAttribute("data-width", "75", { timeout: 20_000 });
+      await expect(embed).toHaveAttribute("data-width", "50", { timeout: 20_000 });
+      // 调宽到 25% 再验证写回（新插入默认即 50，见 chartBlock.ts DEFAULT_CHART_WIDTH）
       await page.getByTestId("chart-embed-width-0").click();
-      await page.getByTestId("chart-embed-width-0-preset-50").click();
-      await expect(embed).toHaveAttribute("data-width", "50");
+      await page.getByTestId("chart-embed-width-0-preset-25").click();
+      await expect(embed).toHaveAttribute("data-width", "25");
 
       // 2.1) 块内「编辑图表」：设计器 editBlock 只回传定义，不写素材库（D9）
       await page.getByTestId("chart-embed-edit-0").click();
@@ -167,7 +172,7 @@ test.describe("文档图表内嵌块", () => {
         expect(content).toContain("```chart");
         expect(content).toContain(`"template": "${TEMPLATE_KEY}"`);
         expect(content).toContain(`"title": "${editedTitle}"`);
-        expect(content).toContain('"width": 50');
+        expect(content).toContain('"width": 25');
         expect(content).not.toContain("{{chart:");
       }).toPass({ timeout: 15_000 });
 
@@ -184,13 +189,13 @@ test.describe("文档图表内嵌块", () => {
       const svg = page.getByTestId("chart-embed-svg");
       await expect(svg).toBeVisible({ timeout: 20_000 });
       await expect(svg.locator("svg")).toHaveCount(1);
-      await expect(embed).toHaveAttribute("data-width", "50");
+      await expect(embed).toHaveAttribute("data-width", "25");
 
       // 4.1) 刷新后宽度仍生效（宽度已随块落库）
       await page.reload();
       await page.getByTestId("doc-mode-switch").getByText("查看", { exact: true }).click();
       await expect(page.getByTestId("chart-embed-svg")).toBeVisible({ timeout: 20_000 });
-      await expect(embed).toHaveAttribute("data-width", "50");
+      await expect(embed).toHaveAttribute("data-width", "25");
 
       // 5) 导出 Markdown（D6）：zip 归档同时含定义块与指纹命名的静态资产
       const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });

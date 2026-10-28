@@ -43,7 +43,7 @@ describe('ChartDesignerModal', () => {
     renderDesigner({ kind: 'create', templateKey: 'bar-line-dual-axis' })
 
     const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
-    await waitFor(() => expect(title.value).toBe('柱线组合图（双轴）'))
+    await waitFor(() => expect(title.value).toBe('双轴柱线组合图'))
 
     // 双轴模板默认 3 行数据（fixture）
     expect(screen.getByTestId('chart-designer-row-label-0')).toHaveValue('2020')
@@ -146,14 +146,14 @@ describe('ChartDesignerModal', () => {
 
     // save 在草稿初始化完成前是禁用的（disabled={!template || !config}），须先等初始化
     const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
-    await waitFor(() => expect(title.value).toBe('柱线组合图（双轴）'))
+    await waitFor(() => expect(title.value).toBe('双轴柱线组合图'))
     fireEvent.click(screen.getByTestId('chart-designer-save'))
 
     await waitFor(() => expect(props.onSaved).toHaveBeenCalledTimes(1))
     const saved = vi.mocked(props.onSaved).mock.calls[0]![0]
     expect(saved.kind).toBe('chart')
     expect(saved.kind === 'chart' && saved.chart.id).toBe(301)
-    expect(createBodies[0]).toMatchObject({ title: '柱线组合图（双轴）', template_key: 'bar-line-dual-axis' })
+    expect(createBodies[0]).toMatchObject({ title: '双轴柱线组合图', template_key: 'bar-line-dual-axis' })
   })
 
   it('编辑正文块：载入块内定义，保存只回传新定义、不写素材库', async () => {
@@ -203,7 +203,7 @@ describe('ChartDesignerModal', () => {
 
     // 等草稿初始化（save 按钮解除禁用）后再点击
     const title = (await screen.findByTestId('chart-designer-title')) as HTMLInputElement
-    await waitFor(() => expect(title.value).toBe('柱线组合图（双轴）'))
+    await waitFor(() => expect(title.value).toBe('双轴柱线组合图'))
     fireEvent.click(screen.getByTestId('chart-designer-save'))
 
     expect(await screen.findByTestId('chart-designer-save-error')).toBeInTheDocument()

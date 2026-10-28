@@ -213,18 +213,24 @@ export const mockHelpFigures: HelpFigureList = {
 export const mockChartSvg =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" data-chart-sample="1"><title>样例图表</title><rect width="720" height="480" fill="#FBFAF5"/></svg>'
 
-/** 两级模板清单：与后端 templates_payload() 同构（3 类别 × 3 模板，默认配置取精简样例） */
+/** 两级模板清单：与后端 templates_payload() 同构（层级化类别 × 3 模板，默认配置取精简样例） */
 export const mockChartTemplates: ChartTemplatesPayload = {
   categories: [
-    { key: 'trend', name: '趋势分析', description: '时间序列的总量走势与增速' },
-    { key: 'composition', name: '结构构成', description: '整体中各部分的构成与变化' },
-    { key: 'comparison', name: '目标对比', description: '现状与规划目标的逐项对比' },
+    {
+      key: 'comparison',
+      name: '目标对比',
+      description: '现状与规划目标的逐项对比',
+      children: [
+        { key: 'comparison-bar', name: '对比-柱形', description: '柱形类对比图', parent: 'comparison' },
+        { key: 'comparison-bar-h', name: '对比-条形', description: '条形类对比图', parent: 'comparison' },
+      ],
+    },
   ],
   templates: [
     {
       key: 'bar-line-dual-axis',
-      category: 'trend',
-      name: '柱线组合图（双轴）',
+      category: 'comparison-bar',
+      name: '双轴柱线组合图',
       description: '柱（左轴主值，实际 / 测算两色）+ 折线（右轴次值），含规划期分界带与图注增速联动',
       row_min: 2,
       row_max: 24,
@@ -276,7 +282,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
     },
     {
       key: 'stacked-bar-horizontal',
-      category: 'composition',
+      category: 'comparison-bar-h',
       name: '水平堆叠条形图',
       description: '行 × 系列堆叠的水平条形，宽段内置白字、窄段外置标签，行尾自动合计',
       row_min: 1,
@@ -302,7 +308,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
     },
     {
       key: 'grouped-bar-horizontal',
-      category: 'comparison',
+      category: 'comparison-bar-h',
       name: '水平分组条形图',
       description: '类别 × 两系列（现状 / 目标）成组水平条，组内双条数值标签，横轴上限自动扩展',
       row_min: 1,
@@ -335,7 +341,7 @@ export const mockChartInstance: ChartInstance = {
   workspace_id: 10,
   title: '产业营业收入与增速',
   template_key: 'bar-line-dual-axis',
-  category: 'trend',
+  category: 'comparison-bar',
   config: mockChartTemplates.templates[0].default_config,
   created_by_id: 1,
   updated_by_id: 1,

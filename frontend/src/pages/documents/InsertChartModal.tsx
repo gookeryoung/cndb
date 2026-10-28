@@ -1,13 +1,14 @@
-/** 插入图表弹窗（ADR 0048 / 0052）：模板两级浏览 + 图表素材库复制插入.
+/** 插入图表弹窗（ADR 0048 / 0052 / 0058）：新建页签多级列表 + 图表素材库复制插入.
  *
- * 页签一「新建图表」：左栏类别分组 → 右侧模板卡片（描述 + 模板默认配置的静态缩略图，
- * 缩略图走 render-preview 不落库）；「基于此模板新建」交给页面打开设计器。
+ * 页签一「新建图表」（ADR 0058）：左栏 antd Collapse 手风琴（一级分类常显、点开展开
+ * 二级分类与模板项），右栏仅显示选中模板详情（大图预览走 render-preview 不落库，
+ * 未选中为空态不发请求）；「基于此模板新建」交给页面打开设计器。
  * 页签二「已有图表」：素材库条目**复制定义**插入正文（不随素材库更新，D4）。
  * 弹窗自身拉取模板与素材库清单（React Query，open 时启用），页面只接回调。
  */
 
-import { useMemo } from 'react'
-import { Button, Empty, List, Modal, Skeleton, Tabs, Tag, Typography } from 'antd'
+import { useMemo, useState } from 'react'
+import { Button, Collapse, Empty, List, Modal, Skeleton, Tabs, Tag, Typography } from 'antd'
 import { BarChartOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { chartApi } from '@/api/charts'
@@ -16,11 +17,12 @@ import { sanitizeSvg } from '@/components/Document/ChartEmbed'
 
 const { Text, Paragraph } = Typography
 
-/** 模板缩略图：用模板默认配置走 render-preview（不落库，D5 同源） */
-function TemplateThumb({ workspaceId, template, active }: {
+/** 模板缩略图：用模板默认配置走 render-preview（不落库，D5 同源；仅 active 时请求） */
+function TemplateThumb({ workspaceId, template, active, height = 110 }: {
   workspaceId: number
   template: ChartTemplateInfo
   active: boolean
+  height?: number
 }) {
   const thumbQuery = useQuery({
     queryKey: ['chart-template-thumb', workspaceId, template.key],
@@ -37,17 +39,17 @@ function TemplateThumb({ workspaceId, template, active }: {
     return (
       <div
         data-testid={`chart-template-thumb-${template.key}`}
-        style={{ height: 110, overflow: 'hidden', borderRadius: 4, border: '1px solid var(--cn-border, #eee)', lineHeight: 0 }}
+        style={{ height, overflow: 'hidden', borderRadius: 4, border: '1px solid var(--cn-border, #eee)', lineHeight: 0 }}
         // 后端唯一渲染器产出 + sanitizeSvg 清洗
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     )
   }
-  if (thumbQuery.isLoading) return <Skeleton.Image active style={{ width: '100%', height: 110 }} />
+  if (thumbQuery.isLoading) return <Skeleton.Image active style={{ width: '100%', height }} />
   return (
     <div
       style={{
-        height: 110,
+        height,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -58,6 +60,26 @@ function TemplateThumb({ workspaceId, template, active }: {
     >
       <BarChartOutlined style={{ fontSize: 28 }} />
     </div>
+  )
+}
+
+/** 左栏一个模板项（选中态高亮，选中后右栏出预览） */
+function TemplateItem({ template, selected, onSelect }: {
+  template: ChartTemplateInfo
+  selected: boolean
+  onSelect: (key: string) => void
+}) {
+  return (
+    <Button
+      block
+      type={selected ? 'primary' : 'text'}
+      ghost={selected}
+      style={{ justifyContent: 'flex-start', paddingLeft: 8, textAlign: 'left' }}
+      data-testid={`chart-template-item-${template.key}`}
+      onClick={() => onSelect(template.key)}
+    >
+      {template.name}
+    </Button>
   )
 }
 
@@ -94,14 +116,36 @@ export default function InsertChartModal({
   const templates = useMemo(() => templatesQuery.data?.templates ?? [], [templatesQuery.data])
   const charts = useMemo(() => chartsQuery.data?.items ?? [], [chartsQuery.data])
 
-  /** 类别 → 模板分组（保持注册表顺序） */
+  // 全部层级拍平（一级 + 二级），素材库 Tag 与模板归类查找用
+  const flatCategories = useMemo(
+    () => categories.flatMap(cat => (cat.children?.length ? [cat, ...cat.children] : [cat])),
+    [categories],
+  )
+
+  /** 一级分类 → 模板分组（含二级；保持注册表顺序，空分类不输出） */
   const grouped = useMemo(
-    () => categories.map(cat => ({
-      cat,
-      templates: templates.filter(t => t.category === cat.key),
-    })),
+    () =>
+      categories
+        .map(cat => {
+          const direct = templates.filter(t => t.category === cat.key)
+          const byChild = (cat.children ?? [])
+            .map(child => ({ child, templates: templates.filter(t => t.category === child.key) }))
+            .filter(g => g.templates.length > 0)
+          if (direct.length === 0 && byChild.length === 0) return null
+          return { cat, direct, byChild }
+        })
+        .filter((g): g is NonNullable<typeof g> => g !== null),
     [categories, templates],
   )
+
+  const [selectedTemplateKey, setSelectedTemplateKey] = useState<string | null>(null)
+  const selectedTemplate = useMemo(
+    () => templates.find(t => t.key === selectedTemplateKey) ?? null,
+    [templates, selectedTemplateKey],
+  )
+
+  /** 手风琴默认展开第一个含模板的一级分类，但不自动选中模板（ADR 0058 边界 1） */
+  const defaultExpandKey = grouped[0]?.cat.key
 
   return (
     <Modal
@@ -119,53 +163,87 @@ export default function InsertChartModal({
             key: 'new',
             label: '新建图表',
             children: (
-              <div style={{ maxHeight: 420, overflowY: 'auto' }}>
-                {templatesQuery.isLoading && <Skeleton active paragraph={{ rows: 4 }} />}
-                {templatesQuery.isError && (
-                  <Text type="danger">模板清单加载失败，请稍后重试。</Text>
-                )}
-                {grouped.map(({ cat, templates: tpls }) => (
-                  <div key={cat.key} style={{ marginBottom: 16 }}>
-                    <Text strong style={{ display: 'block', marginBottom: 8 }}>
-                      {cat.name}
-                      <Text type="secondary" style={{ fontWeight: 'normal', marginLeft: 8, fontSize: 12 }}>
-                        {cat.description}
-                      </Text>
-                    </Text>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12 }}>
-                      {tpls.map(tpl => (
-                        <div
-                          key={tpl.key}
-                          data-testid={`chart-template-card-${tpl.key}`}
-                          style={{
-                            border: '1px solid var(--cn-border, #e8e8e8)',
-                            borderRadius: 8,
-                            padding: 12,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: 8,
-                          }}
-                        >
-                          <TemplateThumb workspaceId={workspaceId} template={tpl} active={open} />
-                          <Text strong>{tpl.name}</Text>
-                          <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }} ellipsis={{ rows: 2 }}>
-                            {tpl.description}
-                          </Paragraph>
-                          <Button
-                            size="small"
-                            type="primary"
-                            ghost
-                            icon={<PlusOutlined />}
-                            data-testid={`chart-template-pick-${tpl.key}`}
-                            onClick={() => onPickTemplate(tpl.key)}
-                          >
-                            基于此模板新建
-                          </Button>
-                        </div>
-                      ))}
+              <div style={{ display: 'flex', gap: 12, height: 420 }}>
+                {/* 左栏：多级列表手风琴（一级常显、点开展开二级与模板项） */}
+                <div style={{ width: 240, flexShrink: 0, overflowY: 'auto', borderInlineEnd: '1px solid var(--cn-border, #eee)', paddingRight: 8 }} data-testid="chart-template-list">
+                  {templatesQuery.isLoading && <Skeleton active paragraph={{ rows: 4 }} />}
+                  {templatesQuery.isError && (
+                    <Text type="danger">模板清单加载失败，请稍后重试。</Text>
+                  )}
+                  {!templatesQuery.isLoading && grouped.length === 0 && !templatesQuery.isError && (
+                    <Empty description="暂无可用的图表模板" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  )}
+                  {grouped.length > 0 && (
+                    <Collapse
+                      accordion
+                      ghost
+                      size="small"
+                      defaultActiveKey={defaultExpandKey ? [defaultExpandKey] : []}
+                      items={grouped.map(({ cat, direct, byChild }) => ({
+                        key: cat.key,
+                        label: (
+                          <Text strong style={{ fontSize: 13 }}>
+                            {cat.name}
+                          </Text>
+                        ),
+                        children: (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {direct.map(tpl => (
+                              <TemplateItem
+                                key={tpl.key}
+                                template={tpl}
+                                selected={selectedTemplateKey === tpl.key}
+                                onSelect={setSelectedTemplateKey}
+                              />
+                            ))}
+                            {byChild.map(({ child, templates: tpls }) => (
+                              <div key={child.key}>
+                                <Text type="secondary" style={{ fontSize: 12, display: 'block', margin: '4px 0 2px' }}>
+                                  {child.name}
+                                </Text>
+                                {tpls.map(tpl => (
+                                  <TemplateItem
+                                    key={tpl.key}
+                                    template={tpl}
+                                    selected={selectedTemplateKey === tpl.key}
+                                    onSelect={setSelectedTemplateKey}
+                                  />
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        ),
+                      }))}
+                    />
+                  )}
+                </div>
+                {/* 右栏：仅选中模板后展示详情与预览（未选中空态，不发 render-preview） */}
+                <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }} data-testid="chart-template-detail">
+                  {!selectedTemplate && (
+                    <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <Empty description="在左侧选择一个模板查看预览" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                     </div>
-                  </div>
-                ))}
+                  )}
+                  {selectedTemplate && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <TemplateThumb workspaceId={workspaceId} template={selectedTemplate} active={open} height={220} />
+                      <Text strong>{selectedTemplate.name}</Text>
+                      <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+                        {selectedTemplate.description}
+                      </Paragraph>
+                      <div>
+                        <Button
+                          type="primary"
+                          icon={<PlusOutlined />}
+                          data-testid={`chart-template-pick-${selectedTemplate.key}`}
+                          onClick={() => onPickTemplate(selectedTemplate.key)}
+                        >
+                          基于此模板新建
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             ),
           },
@@ -201,7 +279,7 @@ export default function InsertChartModal({
                             {item.title}
                             {item.category && (
                               <Tag style={{ marginLeft: 8 }}>
-                                {categories.find(c => c.key === item.category)?.name ?? item.category}
+                                {flatCategories.find(c => c.key === item.category)?.name ?? item.category}
                               </Tag>
                             )}
                           </span>
