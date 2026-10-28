@@ -313,6 +313,8 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
                 )
             )
     prims.extend(value_label_prims)
+    # 引线插入点：主值标签之前（引线画在数字下层，halo 遮线，引线不遮挡数字）
+    leader_insert_at = len(prims) - len(value_label_prims)
 
     def _rects_hit(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
         return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
@@ -405,7 +407,7 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
         if dist > leader_threshold:
             qx = min(max(px, bbox[0] + 1), bbox[0] + bbox[2] - 1)
             qy = min(max(py, bbox[1] + 1), bbox[1] + bbox[3] - 1)
-            prims.append(Prim("line", x1=px, y1=py, x2=qx, y2=qy, stroke=c_line, stroke_width=1))
+            prims.insert(leader_insert_at, Prim("line", x1=px, y1=py, x2=qx, y2=qy, stroke=c_line, stroke_width=1))
         prims.append(
             Prim(
                 "text",

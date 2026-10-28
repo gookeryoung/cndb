@@ -161,6 +161,33 @@ class TestSvgWriter:
         assert value_labels
         assert all(idx > line_idx for idx, _ in value_labels)
 
+    def test_leaders_below_value_labels(self):
+        """引线画在主值标签下层（引线穿过数字时由 halo 遮线，不遮挡数字）."""
+        doc = render_chart("bar-line-dual-axis", CHART_TEMPLATES["bar-line-dual-axis"].default_config)
+
+        def width(text: str, size: float = 14.5) -> float:
+            from cndb.plugins.documents.services.charts.render import text_width
+
+            return text_width(text, size)
+
+        import re as _re
+
+        path = next(p for p in doc.elements if p.kind == "path" and p.d and p.stroke)
+        points = [(float(a), float(b)) for a, b in _re.findall(r"[ML] ?([\d.]+) ([\d.]+)", path.d)]
+        kinds = list(enumerate(doc.elements))
+        leaders = [
+            idx
+            for idx, p in kinds
+            if p.kind == "line"
+            and p.stroke
+            and p.stroke_width == 1
+            and any(abs(p.x1 - px) <= 1 and abs(p.y1 - py) <= 1 for px, py in points)
+        ]
+        assert leaders  # 默认数据存在引线
+        for idx, p in kinds:
+            if p.kind == "text" and p.weight == 600 and p.halo:
+                assert idx > max(leaders), p.content
+
     def test_displaced_growth_labels_get_leader_lines(self):
         """标签被挤离数据点超过 30px 时必须补引线（偏离不失联）."""
         doc = render_chart("bar-line-dual-axis", CHART_TEMPLATES["bar-line-dual-axis"].default_config)
