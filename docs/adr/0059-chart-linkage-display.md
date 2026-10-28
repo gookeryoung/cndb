@@ -147,9 +147,9 @@ growthLinkedDisplay(row: ChartDataRowDraft, prevRow: ChartDataRowDraft | undefin
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/documents/chartLinkage.ts` | `frontend/src/pages/documents/chartLinkage.test.ts` | 待提交 |
-| P1 | 已落地 | `frontend/src/pages/documents/ChartDesignerModal.tsx` | `frontend/src/pages/documents/ChartDesignerModal.test.tsx` | 待提交 |
-| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/chart-designer-linkage.spec.ts` | 待提交 |
+| P0 | 已落地 | `frontend/src/pages/documents/chartLinkage.ts` | `frontend/src/pages/documents/chartLinkage.test.ts` | c75dfadb |
+| P1 | 已落地 | `frontend/src/pages/documents/ChartDesignerModal.tsx` | `frontend/src/pages/documents/ChartDesignerModal.test.tsx` | c75dfadb |
+| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/chart-designer-linkage.spec.ts` | c75dfadb |
 
 ## 交接（会话结束更新）
 
@@ -157,4 +157,4 @@ growthLinkedDisplay(row: ChartDataRowDraft, prevRow: ChartDataRowDraft | undefin
 - 已完成：P0（growthLinkedDisplay 默认联动态判定）、P1（设计器联动态「(计算)」展示 / 点击进编辑 / Q1 未改动语义）、P2（教程文案 + e2e 扩展 + CHANGELOG）
 - 下一步：`make flow` 全绿后提交；e2e 本地环境就绪后跑 critical 分片；人工评审后 Status → Implemented
 - 已知坑：e2e 本地环境缺系统库（libatk-1.0.so.0）暂无法启动 chromium，spec 已就位待环境修复后执行；联动态展示用 readOnly Input 承载「数值(计算)」，点击切换 InputNumber 编辑态
-- 最近一次全绿：见本次 `make flow` 结果（落地后回填）
+- 最近一次全绿：`make flow` @ c75dfadb 前置工作区（5856 passed）
