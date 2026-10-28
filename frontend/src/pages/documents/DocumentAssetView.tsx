@@ -20,8 +20,8 @@ interface Props {
   doc: DocumentItem
 }
 
-/** 扩展名：优先用后端 MIME，缺失时退回 content_type */
-function suffixOf(doc: DocumentItem): string {
+/** 扩展名：优先用后端 MIME，缺失时退回 content_type（顶栏下载按钮与下载卡共用） */
+export function assetSuffix(doc: DocumentItem): string {
   const mime = doc.asset_mime ?? ''
   const byMime: Record<string, string> = {
     'application/pdf': 'pdf',
@@ -42,7 +42,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fmt = formatMeta(doc.content_type)
-  const suffix = suffixOf(doc)
+  const suffix = assetSuffix(doc)
   const isMhtml = doc.content_type === 'mhtml'
 
   const assetQuery = useQuery({
@@ -86,6 +86,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
 
   const downloadName = useMemo(() => `${doc.title || 'download'}${suffix ? `.${suffix}` : ''}`, [doc.title, suffix])
 
+  // 下载入口在编辑页顶栏（分享左侧的图标按钮），此处仅保留格式与大小信息
   const header = (
     <Space size={8} wrap style={{ marginBottom: 12 }}>
       <Tag color="default" data-testid="doc-asset-format">
@@ -94,16 +95,6 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
       <Text type="secondary" style={{ fontSize: 12 }}>
         {formatSize(doc.content_size)} · 原样存档（只读）
       </Text>
-      <Button
-        size="small"
-        icon={<DownloadOutlined />}
-        disabled={!objectUrl}
-        href={objectUrl ?? undefined}
-        download={downloadName}
-        data-testid="doc-asset-download"
-      >
-        下载原件
-      </Button>
     </Space>
   )
 

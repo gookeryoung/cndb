@@ -1196,3 +1196,64 @@ class TestMhtmlPreview:
     def test_unparsable_raises(self):
         with pytest.raises(UnsupportedImport):
             mhtml_converter.build_preview_html(b"junk")
+
+    def test_stylesheet_link_inlined_and_css_urls_rewritten(self):
+        """0064 C7/C8：外链样式表内联为 style，其中背景图 url() 改写 data URI."""
+        html = (
+            "<html><head><title>样式页</title>"
+            '<link rel="stylesheet" href="https://example.com/style.css"></head>'
+            "<body><p>正文</p></body></html>"
+        )
+        parts = [
+            {"location": "https://example.com/style.css", "mime": "text/css", "data": b"body{background:url(bg.png)}"},
+            {"location": "https://example.com/bg.png", "mime": "image/png", "data": PNG_BYTES},
+        ]
+        out = mhtml_converter.build_preview_html(_make_mhtml(html, parts))
+        assert "<style>body{background:url(data:image/png;base64," in out
+        assert "<link" not in out
+
+    def test_unmatched_stylesheet_link_preserved(self):
+        html = '<html><head><link rel="stylesheet" href="https://cdn.example.com/x.css"></head><body><p>页</p></body></html>'
+        out = mhtml_converter.build_preview_html(_make_mhtml(html))
+        assert '<link rel="stylesheet" href="https://cdn.example.com/x.css">' in out
+
+    def test_font_url_rewritten_with_part_mime(self):
+        """0064 C8：@font-face 字体按 part 自带 Content-Type 内联."""
+        html = '<html><head><title>字体页</title><link rel="stylesheet" href="https://example.com/s.css"></head><body><p>页</p></body></html>'
+        parts = [
+            {"location": "https://example.com/s.css", "mime": "text/css", "data": b"@font-face{src:url(f.woff)}"},
+            {"location": "https://example.com/f.woff", "mime": "font/woff", "data": b"WOFFDATA"},
+        ]
+        out = mhtml_converter.build_preview_html(_make_mhtml(html, parts))
+        assert "url(data:font/woff;base64," in out
+
+    def test_inline_style_block_urls_rewritten(self):
+        """0064 C8：根 HTML 既有 <style> 块中的 url() 同样内联."""
+        html = (
+            "<html><head><title>内联样式</title></head><body>"
+            '<style>div{background:url("https://example.com/a.png")}</style>'
+            "<p>正文</p></body></html>"
+        )
+        parts = [{"location": "https://example.com/a.png", "mime": "image/png", "data": PNG_BYTES}]
+        out = mhtml_converter.build_preview_html(_make_mhtml(html, parts))
+        assert "background:url(data:image/png;base64," in out
+
+    def test_srcset_candidates_inlined_with_descriptors(self):
+        """0064 C9：srcset 命中候选改写 data URI，描述符保留，未命中保留原样."""
+        html = (
+            "<html><head><title>响应式</title></head><body>"
+            '<img src="https://example.com/a.png" srcset="https://example.com/a.png 1x, https://cdn.example.com/x.png 2x" alt="图">'
+            "</body></html>"
+        )
+        parts = [{"location": "https://example.com/a.png", "mime": "image/png", "data": PNG_BYTES}]
+        out = mhtml_converter.build_preview_html(_make_mhtml(html, parts))
+        assert 'srcset="data:image/png;base64,' in out
+        assert " 1x, https://cdn.example.com/x.png 2x" in out
+
+    def test_convert_path_still_drops_css(self):
+        """0064 C10：深度内联仅预览链路，导入转换仍按 D6 丢弃 CSS."""
+        html = '<html><head><title>T</title><link rel="stylesheet" href="https://example.com/s.css"></head><body><p>正文</p></body></html>'
+        parts = [{"location": "https://example.com/s.css", "mime": "text/css", "data": b"body{}"}]
+        data = _make_mhtml(html, parts)
+        _title, body, _warnings, _assets = mhtml_converter.convert_mhtml(data, "page.mhtml")
+        assert "body{}" not in body

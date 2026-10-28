@@ -17,7 +17,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
-from typing import override
+from typing import Any, override
 from urllib.parse import unquote, urlsplit
 
 from .errors import UnsupportedImport
@@ -372,8 +372,13 @@ def _local_image_markdown(ctx: _Ctx, src: str, alt: str) -> str:
     return f"_[图片未导入：{name}]_"
 
 
-def _mhtml_entry(resources: Mapping[str, tuple[str, bytes]], src: str) -> tuple[str, bytes] | None:
-    """MHTML 素材查找唯一入口（ADR 0049 D3）：src 精确 → URL 解码 → 唯一 basename."""
+def _mhtml_entry(resources: Mapping[str, tuple[Any, Any]], src: str) -> tuple[Any, Any] | None:
+    """MHTML 素材查找唯一入口（ADR 0049 D3）：src 精确 → URL 解码 → 唯一 basename.
+
+    值类型放宽为 ``tuple[Any, Any]``：转换链路存 ``(相对引用, 字节)``，
+    预览链路（mhtml.py）存 ``(字节, MIME)`` / ``(CSS 文本, Content-Location)``，
+    本函数只做键查找，不解释值。
+    """
     entry = resources.get(src)
     if entry is None:
         entry = resources.get(unquote(src))

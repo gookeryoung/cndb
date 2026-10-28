@@ -1598,6 +1598,22 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
         // 标签与分享仍可用
         expect(screen.getByRole('button', { name: /标签/ })).toBeInTheDocument()
     })
+
+    it('原件族文档在分享左侧提供下载原件图标按钮，点击取回原件', async () => {
+        const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+        renderEditor()
+        expect(await screen.findByTestId('doc-asset-view')).toBeInTheDocument()
+
+        const downloadBtn = screen.getByTestId('doc-asset-download-btn')
+        // 分享按钮在其右侧（同一顶栏组内，下载在前）
+        const shareBtn = screen.getByTestId('doc-share-open')
+        expect(downloadBtn.compareDocumentPosition(shareBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+        fireEvent.click(downloadBtn)
+        await vi.waitFor(() => expect(documentsApi.assetBlob).toHaveBeenCalledWith(10, 2))
+        expect(clickSpy).toHaveBeenCalled()
+        clickSpy.mockRestore()
+    })
 })
 
 describe('DocumentEditorPage 图表内嵌块（ADR 0052）', () => {

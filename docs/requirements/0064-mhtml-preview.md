@@ -23,6 +23,10 @@
 | C4 | （安全口径） | 预览响应按 `Content-Disposition: inline` + `X-Content-Type-Options: nosniff` 返回；iframe 沙箱内脚本不执行（MHTML 来自外部网页存档，视为不可信内容） | documents plugin `routers/` | 后端单测断言响应头；前端单测断言 sandbox 属性 |
 | C5 | （兼容口径） | ADR 0049 `convert` 模式与 0061 `archive` 默认链路行为均不变，预览为只读附加能力，不改导入产物 | `services/importers/` 既有链路 | 既有 mhtml 导入单测回归通过 |
 | C6 | （文档口径） | 帮助教程「MHTML 导入」文案补充在线预览说明；CHANGELOG 记录新增能力 | `frontend/src/pages/help/content/tutorials.tsx`、`CHANGELOG` | `make check-docs` |
+| C7 | （保真度：CSS 内联） | 预览解析同时收集 `text/css` part（键：Content-Location 精确 / URL 解码 / 唯一 basename / cid），根 HTML 中命中索引的 `<link rel="stylesheet">` 原位替换为内联 `<style>`（按原文出现顺序）；未命中 link 保留原样 | `services/importers/mhtml.py` | 判定层单测：link 命中内联、未命中保留、多张样式表按序 |
+| C8 | （保真度：CSS 资源） | 内联 CSS 与根 HTML 既有内联 `<style>` 块中的 `url(...)` 引用按「相对 CSS part 自身 Content-Location 解析 → 三级匹配链」改写为 `data:` URI；图片按魔数嗅探 MIME，字体等非图片 part 使用 part 自带 Content-Type；未命中保留原样 | `services/importers/mhtml.py` | 判定层单测：背景图内联、@font-face 字体内联、未命中保留 |
+| C9 | （保真度：srcset） | `<img srcset>` 属性值中的候选 URL 命中素材索引时逐项内联为 `data:` URI，描述符保留 | `services/importers/mhtml.py` | 判定层单测：srcset 命中改写、描述符不变 |
+| C10 | （回归口径） | convert / archive 导入链路行为不变：CSS、字体 part 在导入转换中仍按 D6 丢弃，仅预览链路深度内联 | `services/importers/mhtml.py`、既有转换单测 | 既有 mhtml 转换单测回归通过 |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。
 

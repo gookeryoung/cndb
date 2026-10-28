@@ -93,7 +93,7 @@ const { Text, Title } = Typography
 
 import { isAssetContentType } from '@/components/Document/docFormat'
 import BacklinksDrawer from './BacklinksDrawer'
-import DocumentAssetView from './DocumentAssetView'
+import DocumentAssetView, { assetSuffix } from './DocumentAssetView'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
 import DocumentShareModal from './DocumentShareModal'
 import ChartDesignerModal, { type ChartDesignResult, type ChartDesignTarget } from './ChartDesignerModal'
@@ -173,6 +173,19 @@ export default function DocumentEditorPage() {
   const [crOpen, setCrOpen] = useState(false)
   /** 分享弹层（ADR 0017）：owner/editor 可创建匿名只读链接 */
   const [shareOpen, setShareOpen] = useState(false)
+
+  /** 原件族文档下载（顶栏分享左侧图标按钮 / 窄屏溢出菜单）：经鉴权接口取原件存为本地文件 */
+  const downloadAsset = async () => {
+    if (!doc) return
+    const blob = await documentsApi.assetBlob(workspaceId, doc.id)
+    const suffix = assetSuffix(doc)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${doc.title || 'download'}${suffix ? `.${suffix}` : ''}`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
   /** 提交修改弹窗与变更说明 */
   const [submitOpen, setSubmitOpen] = useState(false)
   const [changeSummary, setChangeSummary] = useState('')
@@ -1036,6 +1049,10 @@ export default function DocumentEditorPage() {
               ]
             : []),
         ]),
+    // 原件族文档：下载原件入口与分享并列（窄屏溢出菜单）
+    ...(isAssetDoc
+      ? [{ key: 'download-asset', icon: <DownloadOutlined />, label: '下载原件', onClick: () => void downloadAsset() }]
+      : []),
     // 仅 owner / editor 且非文件夹可分享（viewer 由后端 require_editor 拒绝）
     ...((myRole === 'owner' || myRole === 'editor') && !doc.is_folder
       ? [{ key: 'share', icon: <ShareAltOutlined />, label: '分享', onClick: () => setShareOpen(true) }]
@@ -1199,7 +1216,15 @@ export default function DocumentEditorPage() {
             onClick={() => setTagsOpen(true)}
           />
           <Divider type="vertical" style={{ margin: '0 2px' }} />
-          {/* 组 3：协作（修改申请 / 分享；分享仅 owner / editor 且非文件夹，viewer 由后端 require_editor 拒绝） */}
+          {/* 组 3：协作（下载 / 修改申请 / 分享）；原件族文档在分享左侧提供下载原件图标按钮 */}
+          {isAssetDoc && (
+            <IconBtn
+              icon={<DownloadOutlined />}
+              label="下载原件"
+              data-testid="doc-asset-download-btn"
+              onClick={() => void downloadAsset()}
+            />
+          )}
           {!isAssetDoc && (
             <IconBtn
               icon={<PullRequestOutlined />}

@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { screen } from '@testing-library/react'
-import DocumentAssetView from './DocumentAssetView'
+import DocumentAssetView, { assetSuffix } from './DocumentAssetView'
 import { renderProviders } from '@/test/render-providers'
 import { documentsApi, type DocumentItem } from '@/api/documents'
 
@@ -41,12 +41,12 @@ beforeEach(() => {
 })
 
 describe('DocumentAssetView 原件阅读器', () => {
-  it('PDF 走 iframe 内联渲染，并显示格式标签与下载按钮', async () => {
+  it('PDF 走 iframe 内联渲染，并显示格式标签（下载入口在顶栏，不再有内嵌下载按钮）', async () => {
     renderProviders(<DocumentAssetView workspaceId={7} doc={docOf({})} />)
 
     expect(await screen.findByTestId('doc-asset-pdf')).toBeInTheDocument()
     expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('PDF')
-    expect(screen.getByTestId('doc-asset-download')).toHaveTextContent('下载原件')
+    expect(screen.queryByTestId('doc-asset-download')).not.toBeInTheDocument()
     expect(documentsApi.assetBlob).toHaveBeenCalledWith(7, 31)
   })
 
@@ -76,17 +76,10 @@ describe('DocumentAssetView 原件阅读器', () => {
     expect(screen.queryByTestId('doc-asset-pdf')).not.toBeInTheDocument()
   })
 
-  it('MIME 缺失时按 content_type 兜底扩展名', async () => {
-    renderProviders(
-      <DocumentAssetView
-        workspaceId={7}
-        doc={docOf({ content_type: 'pptx', asset_mime: '', title: '胶片' })}
-      />,
-    )
-
-    const download = await screen.findByTestId('doc-asset-download')
-    expect(download).toHaveAttribute('download', '胶片.pptx')
-    expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('PowerPoint')
+  it('MIME 缺失时按 content_type 兜底扩展名（assetSuffix 共用于顶栏下载与下载卡）', () => {
+    expect(assetSuffix(docOf({ content_type: 'pptx', asset_mime: '', title: '胶片' }))).toBe('pptx')
+    expect(assetSuffix(docOf({}))).toBe('pdf')
+    expect(assetSuffix(docOf({ content_type: 'mhtml', asset_mime: 'multipart/related' }))).toBe('')
   })
 
   it('原件读取失败显示「原件缺失」而非空白', async () => {
@@ -98,7 +91,7 @@ describe('DocumentAssetView 原件阅读器', () => {
     expect(screen.queryByTestId('doc-asset-pdf')).not.toBeInTheDocument()
   })
 
-  it('MHTML 走预览端点 + 沙箱 iframe（0064 C3），下载按钮仍指向原件', async () => {
+  it('MHTML 走预览端点 + 沙箱 iframe（0064 C3）', async () => {
     renderProviders(
       <DocumentAssetView
         workspaceId={7}
@@ -109,12 +102,11 @@ describe('DocumentAssetView 原件阅读器', () => {
     const frame = await screen.findByTestId('doc-asset-mhtml')
     expect(frame.tagName).toBe('IFRAME')
     expect(frame).toHaveAttribute('sandbox', '')
-    // 预览与原件分开取：预览走 preview 端点，下载走原件端点
+    // 预览单独走 preview 端点（下载在顶栏走原件端点）
     expect(documentsApi.assetPreviewBlob).toHaveBeenCalledWith(7, 31)
-    expect(documentsApi.assetBlob).toHaveBeenCalledWith(7, 31)
   })
 
-  it('MHTML 预览失败退化为「原件缺失」下载卡', async () => {
+  it('MHTML 预览失败退化为「原件缺失」提示', async () => {
     vi.spyOn(documentsApi, 'assetPreviewBlob').mockRejectedValue(new Error('400'))
     renderProviders(
       <DocumentAssetView
@@ -125,6 +117,5 @@ describe('DocumentAssetView 原件阅读器', () => {
 
     expect(await screen.findByTestId('doc-asset-error')).toBeInTheDocument()
     expect(screen.queryByTestId('doc-asset-mhtml')).not.toBeInTheDocument()
-    expect(screen.getByTestId('doc-asset-download')).toBeInTheDocument()
   })
 })
