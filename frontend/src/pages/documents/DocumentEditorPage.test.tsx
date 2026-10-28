@@ -1692,3 +1692,90 @@ describe('DocumentEditorPage 图表内嵌块（ADR 0052）', () => {
         await waitFor(() => expect(title.value).toBe('正文块图'))
     }, 30_000)
 })
+
+describe('DocumentEditorPage 草稿 diff 与丢弃（ADR 0057）', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+    })
+
+    /** 渲染一个带个人草稿的文档（草稿基于 v1，最新版本 v2） */
+    async function renderWithDraft() {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    status: 'published',
+                    content: '# 标题\n\n第一段。\n',
+                    version_number: 2,
+                    write_mode: 'direct',
+                    draft: {
+                        content: '# 标题\n\n第一段改。\n',
+                        content_size: 20,
+                        base_version_number: 1,
+                        current_version_number: 2,
+                        stale: true,
+                        updated_at: '2026-02-01T00:00:00Z',
+                    },
+                })),
+        )
+        renderEditor()
+        expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿待提交')
+    }
+
+    it('「查看修改」打开抽屉并渲染草稿 diff；stale 时显示提示', async () => {
+        await renderWithDraft()
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/draft/diff', () =>
+                HttpResponse.json({
+                    base_version: 1,
+                    diff: '--- base\n+++ draft\n@@ -1,2 +1,2 @@\n-第一段。\n+第一段改。\n',
+                    added: 1,
+                    removed: 1,
+                    stale: true,
+                })),
+        )
+
+        fireEvent.click(await screen.findByTestId('doc-draft-diff-btn'))
+
+        // diff 抽屉内容与 stale 提示
+        expect(await screen.findByTestId('document-diff')).toBeInTheDocument()
+        expect(await screen.findByText('第一段改。')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-draft-diff-stale')).toBeInTheDocument()
+    })
+
+    it('丢弃草稿：确认后调用 DELETE，编辑态重置并回到查看模式', async () => {
+        let deleteCalls = 0
+        server.use(
+            http.delete('/api/v1/workspaces/:wid/documents/:docId/draft', () => {
+                deleteCalls += 1
+                return new HttpResponse(null, { status: 204 })
+            }),
+        )
+        await renderWithDraft()
+
+        fireEvent.click(await screen.findByTestId('doc-draft-discard-btn'))
+        // Popconfirm 确认
+        fireEvent.click(await screen.findByRole('button', { name: /^丢\s*弃$/ }))
+
+        await waitFor(() => expect(deleteCalls).toBe(1))
+        // 草稿标签消失，回到查看模式
+        await waitFor(() => expect(screen.queryByTestId('doc-draft-tag')).toBeNull())
+        expect(screen.getByTestId('doc-view-mode')).toBeInTheDocument()
+    })
+
+    it('丢弃草稿：取消确认不调用 DELETE', async () => {
+        let deleteCalls = 0
+        server.use(
+            http.delete('/api/v1/workspaces/:wid/documents/:docId/draft', () => {
+                deleteCalls += 1
+                return new HttpResponse(null, { status: 204 })
+            }),
+        )
+        await renderWithDraft()
+
+        fireEvent.click(await screen.findByTestId('doc-draft-discard-btn'))
+        fireEvent.click(await screen.findByRole('button', { name: /^取\s*消$/ }))
+        expect(deleteCalls).toBe(0)
+        expect(screen.getByTestId('doc-draft-tag')).toBeInTheDocument()
+    })
+})

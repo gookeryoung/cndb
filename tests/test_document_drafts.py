@@ -349,3 +349,72 @@ class TestLegacySaveClearsDraft:
 
         assert r.status_code == 200, r.text
         assert _get_content(client, ws.id, doc["id"], auth)["draft"] is None
+
+
+# ── 草稿 diff（ADR 0057）──────────────────────────────
+
+
+class TestDraftDiff:
+    def test_draft_diff_base_version_and_counts(self, client, ws, owner, db):
+        auth = _login(client, owner.username)
+        doc = _create_doc(client, ws.id, auth)
+        _save_draft(client, ws.id, doc["id"], auth, "标题\n\n第一段改\n\n第二段\n")
+
+        r = client.get(DOCS.format(ws=ws.id) + f"/{doc['id']}/draft/diff", headers=auth)
+
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["base_version"] == 1
+        assert body["stale"] is False
+        assert body["added"] >= 1 and body["removed"] >= 1
+        assert "第一段改" in body["diff"]
+        # 只读：草稿与版本不受影响
+        assert _versions_total(client, ws.id, doc["id"], auth) == 1
+        assert _get_content(client, ws.id, doc["id"], auth)["draft"] is not None
+
+    def test_draft_diff_no_draft_404(self, client, ws, owner, db):
+        auth = _login(client, owner.username)
+        doc = _create_doc(client, ws.id, auth)
+
+        r = client.get(DOCS.format(ws=ws.id) + f"/{doc['id']}/draft/diff", headers=auth)
+
+        assert r.status_code == 404, r.text
+        assert r.json()["code"] == "no_draft"
+
+    def test_draft_diff_stale_flag_when_doc_advanced(self, client, ws, owner, editor, db):
+        auth_owner = _login(client, owner.username)
+        auth_editor = _login(client, editor.username)
+        doc = _create_doc(client, ws.id, auth_owner)
+        # editor 基于 v1 保存草稿，owner 经旧路径推进到 v2（旧路径只消费 owner 自己的草稿）
+        _save_draft(client, ws.id, doc["id"], auth_editor, "标题\n\n第一段\n\n草稿改\n")
+        r = client.put(
+            DOCS.format(ws=ws.id) + f"/{doc['id']}/content",
+            json={"content": "标题\n\n第一段\n\n第二段已更新\n"},
+            headers=auth_owner,
+        )
+        assert r.status_code == 200, r.text
+
+        body = client.get(DOCS.format(ws=ws.id) + f"/{doc['id']}/draft/diff", headers=auth_editor).json()
+
+        # 基准仍是编辑基准 v1（Q1 决议），stale 提示文档已前进
+        assert body["base_version"] == 1
+        assert body["stale"] is True
+
+    def test_draft_diff_folder_rejected(self, client, ws, owner, db):
+        auth = _login(client, owner.username)
+        doc = _create_doc(client, ws.id, auth, is_folder=True)
+
+        r = client.get(DOCS.format(ws=ws.id) + f"/{doc['id']}/draft/diff", headers=auth)
+
+        assert r.status_code == 409, r.text
+
+    def test_draft_diff_private_to_owner(self, client, ws, owner, editor, db):
+        auth_owner = _login(client, owner.username)
+        auth_editor = _login(client, editor.username)
+        doc = _create_doc(client, ws.id, auth_owner)
+        _save_draft(client, ws.id, doc["id"], auth_owner, "标题\n\n第一段改\n")
+
+        # 他人（管理员/编辑）看不到别人草稿的 diff
+        r = client.get(DOCS.format(ws=ws.id) + f"/{doc['id']}/draft/diff", headers=auth_editor)
+        assert r.status_code == 404, r.text
+        assert r.json()["code"] == "no_draft"

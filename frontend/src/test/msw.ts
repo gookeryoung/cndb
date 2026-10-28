@@ -673,6 +673,9 @@ export const handlers = [
   }),
   http.delete('/api/v1/workspaces/:wid/documents/:docId/draft', () =>
     new HttpResponse(null, { status: 204 })),
+  // 草稿 diff（ADR 0057）：默认无差异，单用例覆盖
+  http.get('/api/v1/workspaces/:wid/documents/:docId/draft/diff', () =>
+    HttpResponse.json({ base_version: 1, diff: '', added: 0, removed: 0, stale: false })),
   // 显式提交：默认直编落库并生成新版本
   http.post('/api/v1/workspaces/:wid/documents/:docId/submit', async ({ request }) => {
     const body = await request.json() as { content?: string }

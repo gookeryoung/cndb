@@ -14,6 +14,7 @@
 - GET    /{doc_id}/export            导出 Markdown / Word / PDF 文件（成员）
 - PUT    /{doc_id}/content           保存内容（双轨制：直编落库 / 转修改申请 202，兼容旧行为）
 - GET    /{doc_id}/draft             读取个人工作草稿
+- GET    /{doc_id}/draft/diff        「基准版本 → 草稿」unified diff（ADR 0057）
 - PUT    /{doc_id}/draft             保存个人工作草稿（不生成版本）
 - DELETE /{doc_id}/draft             丢弃个人工作草稿
 - POST   /{doc_id}/submit            显式提交修改（直编 200 / 修改申请 202）
@@ -526,6 +527,21 @@ def discard_document_draft(
     """丢弃个人工作草稿（幂等）."""
     services.drafts.delete_draft(db, workspace_id, doc_id, current_user)
     return Response(status_code=204)
+
+
+@router.get("/{doc_id}/draft/diff")
+def draft_diff(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """「基准版本 → 草稿」unified diff（ADR 0057，只读）.
+
+    无草稿返回 404（code=no_draft）；基准为草稿的 base_version_number，
+    基准版本缺失时回退最新版本；stale=true 表示文档已前进版本。
+    """
+    return services.drafts.draft_diff(db, workspace_id, doc_id, current_user)
 
 
 @router.post("/{doc_id}/submit")

@@ -11,6 +11,7 @@ import {
   Dropdown,
   Input,
   Modal,
+  Popconfirm,
   Segmented,
   Space,
   Tag,
@@ -20,6 +21,7 @@ import {
 import {
   BarChartOutlined,
   BranchesOutlined,
+  DiffOutlined,
   DownloadOutlined,
   FileMarkdownOutlined,
   FilePdfOutlined,
@@ -103,6 +105,7 @@ import {
   type OutlinePrefs,
 } from './outlinePrefs'
 import VersionsDrawer from './VersionsDrawer'
+import { DocumentDiffView } from '@/components/DiffView'
 import TagEditor from './TagEditor'
 
 // 文档 AI 面全部懒加载：结果抽屉 / 顶栏入口只在点击后才进入加载队列（ADR 0020 C11）。
@@ -148,6 +151,8 @@ export default function DocumentEditorPage() {
   // 断链修复：旧标题 → 选中的目标文档 ID
   const [repairTargets, setRepairTargets] = useState<Record<string, number>>({})
   const [diffPair, setDiffPair] = useState<{ base: number; head: number } | null>(null)
+  /** 草稿 diff 抽屉（ADR 0057）：「查看修改」只看草稿与编辑基准版本的差异 */
+  const [draftDiffOpen, setDraftDiffOpen] = useState(false)
   const [crOpen, setCrOpen] = useState(false)
   /** 分享弹层（ADR 0017）：owner/editor 可创建匿名只读链接 */
   const [shareOpen, setShareOpen] = useState(false)
@@ -436,6 +441,33 @@ export default function DocumentEditorPage() {
     queryKey: ['documents', workspaceId, id, 'diff', diffPair?.base, diffPair?.head],
     queryFn: () => documentsApi.diff(workspaceId, id, diffPair!.base, diffPair!.head),
     enabled: diffPair !== null,
+  })
+
+  // 草稿 diff（ADR 0057）：「编辑基准版本 → 草稿」，只读
+  const draftDiffQuery = useQuery({
+    queryKey: ['documents', workspaceId, id, 'draft-diff'],
+    queryFn: () => documentsApi.getDraftDiff(workspaceId, id),
+    enabled: draftDiffOpen,
+  })
+
+  // 丢弃草稿（ADR 0057 D4）：确认后删除服务端草稿，编辑态重置为最新版本并回到查看模式
+  const discardMut = useMutation({
+    mutationFn: () => documentsApi.discardDraft(workspaceId, id),
+    onSuccess: () => {
+      setServerDraft(null)
+      setContent(latestContent)
+      setSavedContent(latestContent)
+      baseVersionRef.current = docQuery.data?.version_number ?? 0
+      setDraftDiffOpen(false)
+      setViewMode('view')
+      message.success('已丢弃草稿，回到最新版本')
+      void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'content'] })
+    },
+    onError: (err: unknown) => {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? '草稿丢弃失败'
+      message.error(detail)
+    },
   })
 
   const rollbackMut = useMutation({
@@ -1087,6 +1119,31 @@ export default function DocumentEditorPage() {
             </Dropdown>
             {!isAssetDoc && (
               <>
+            {/* 草稿三件套（ADR 0057，窄屏紧凑）：查看修改 / 丢弃 */}
+            {serverDraft && (
+              <>
+                <Button
+                  icon={<DiffOutlined />}
+                  size="small"
+                  data-testid="doc-draft-diff-btn"
+                  onClick={() => setDraftDiffOpen(true)}
+                >
+                  查看修改
+                </Button>
+                <Popconfirm
+                  title="丢弃草稿？"
+                  description="未提交的草稿修改将丢失，正文回到最新版本。"
+                  okText="丢弃"
+                  okButtonProps={{ danger: true }}
+                  cancelText="取消"
+                  onConfirm={() => discardMut.mutate()}
+                >
+                  <Button danger size="small" loading={discardMut.isPending} data-testid="doc-draft-discard-btn">
+                    丢弃
+                  </Button>
+                </Popconfirm>
+              </>
+            )}
             <Button
                 icon={<SaveOutlined />}
                 loading={draftMut.isPending}
@@ -1180,6 +1237,30 @@ export default function DocumentEditorPage() {
           )}
           {!isAssetDoc && (
             <>
+          {/* 草稿三件套（ADR 0057）：查看修改（diff）/ 保存草稿 / 丢弃草稿 */}
+          {serverDraft && (
+            <>
+              <Button
+                icon={<DiffOutlined />}
+                data-testid="doc-draft-diff-btn"
+                onClick={() => setDraftDiffOpen(true)}
+              >
+                查看修改
+              </Button>
+              <Popconfirm
+                title="丢弃草稿？"
+                description="未提交的草稿修改将丢失，正文回到最新版本。"
+                okText="丢弃"
+                okButtonProps={{ danger: true }}
+                cancelText="取消"
+                onConfirm={() => discardMut.mutate()}
+              >
+                <Button danger loading={discardMut.isPending} data-testid="doc-draft-discard-btn">
+                  丢弃草稿
+                </Button>
+              </Popconfirm>
+            </>
+          )}
           <Button
               icon={<SaveOutlined />}
               loading={draftMut.isPending}
@@ -1404,6 +1485,34 @@ export default function DocumentEditorPage() {
         onRollback={(target) => rollbackMut.mutate(target)}
         rollingBack={rollbackMut.isPending ? rollbackMut.variables ?? null : null}
       />
+
+      {/* 草稿 diff 抽屉（ADR 0057）：「编辑基准版本 → 草稿」只读差异 */}
+      <Drawer
+        title="草稿修改预览"
+        width={isMobile ? '100%' : 760}
+        open={draftDiffOpen}
+        onClose={() => setDraftDiffOpen(false)}
+        destroyOnClose
+      >
+        {draftDiffQuery.data?.stale && (
+          <Alert
+            type="warning"
+            showIcon
+            data-testid="doc-draft-diff-stale"
+            message={`文档已更新到 v${draftDiffQuery.data.base_version} 之后的版本，你的修改基于更早的基准，提交时可能被拒绝`}
+            style={{ marginBottom: 12 }}
+          />
+        )}
+        {draftDiffQuery.isLoading ? null : draftDiffQuery.data ? (
+          <DocumentDiffView
+            diff={draftDiffQuery.data.diff}
+            baseLabel={`v${draftDiffQuery.data.base_version}`}
+            headLabel="草稿"
+          />
+        ) : (
+          <Alert type="info" showIcon message="无法加载草稿差异" />
+        )}
+      </Drawer>
 
       {/* 标签抽屉 */}
       <Drawer title="文档标签" width={420} open={tagsOpen} onClose={() => setTagsOpen(false)}>

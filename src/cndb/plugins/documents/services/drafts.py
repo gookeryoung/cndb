@@ -20,9 +20,9 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from cndb.core.errors import BadRequestError, ConflictError
+from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
 from cndb.plugins.accounts.models import User
-from cndb.plugins.documents.models import Document, DocumentDraft
+from cndb.plugins.documents.models import Document, DocumentDraft, DocumentVersion
 from cndb.plugins.documents.services import change_requests as change_request_service
 from cndb.plugins.documents.services import content as content_service
 from cndb.plugins.documents.services import parse as parse_service
@@ -119,6 +119,46 @@ def save_draft(
     db.commit()
     db.refresh(draft)
     return draft
+
+
+def draft_diff(db: Session, workspace_id: int, doc_id: int, user: User) -> dict[str, Any]:
+    """「基准版本 → 草稿」的 unified diff（只读，不落任何写入）.
+
+    - 基准取草稿的 ``base_version_number``（编辑开始时的版本，与提交校验口径一致）；
+    - 基准版本已被清理 / 不存在时，回退以当前最新版本正文为基准（ADR 0057 D5）；
+    - 无草稿时 404（code=``no_draft``）；文件夹 / 非文本文档拒绝。
+    """
+    change_request_service.require_member(db, workspace_id, user)
+    doc = visibility_service.get_visible_document_or_404(db, workspace_id, doc_id, user)
+    if doc.is_folder:
+        raise ConflictError("文件夹没有内容")
+    content_service.ensure_text_document(doc)
+
+    draft = get_draft(db, doc.id, user.id)
+    if draft is None:
+        raise NotFoundError("没有可查看的草稿", code="no_draft")
+
+    latest_text, latest_num = _latest_content(db, doc)
+    version = db.execute(
+        select(DocumentVersion).where(
+            DocumentVersion.document_id == doc.id,
+            DocumentVersion.version_number == draft.base_version_number,
+        )
+    ).scalar_one_or_none()
+    if version is not None:
+        base_text = content_service.load_content(version, doc)
+        base_num = draft.base_version_number
+    else:
+        base_text, base_num = latest_text, latest_num
+
+    diff_text, added, removed = parse_service.unified_diff(base_text, draft.content)
+    return {
+        "base_version": base_num,
+        "diff": diff_text,
+        "added": added,
+        "removed": removed,
+        "stale": draft.base_version_number < latest_num,
+    }
 
 
 def delete_draft(db: Session, workspace_id: int, doc_id: int, user: User) -> None:
@@ -245,6 +285,7 @@ def submit_draft(
 
 __all__ = [
     "delete_draft",
+    "draft_diff",
     "draft_payload",
     "get_draft",
     "save_draft",

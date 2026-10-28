@@ -539,6 +539,18 @@ export const documentsApi = {
   discardDraft: (wid: number | string, docId: number | string) =>
     api.delete(`${base(wid)}/${docId}/draft`),
 
+  /** 草稿 diff（ADR 0057）：「编辑基准版本 → 草稿」unified diff，只读 */
+  getDraftDiff: (wid: number | string, docId: number | string) =>
+    api
+      .get<{
+        base_version: number
+        diff: string
+        added: number
+        removed: number
+        stale: boolean
+      }>(`${base(wid)}/${docId}/draft/diff`)
+      .then(r => r.data),
+
   /** 显式提交修改：直编 200 / 转修改申请 202；未修改时后端返回 409（code=no_changes） */
   submit: (
     wid: number | string,
