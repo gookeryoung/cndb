@@ -268,7 +268,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
           actualCount: 2,
           rows: [
             { label: '2020', value: 132, growth: null },
-            { label: '2021', value: 158, growth: 19.7 },
+            { label: '2021', value: 158, growth: null },
             { label: '2022', value: 186, growth: null },
           ],
         },

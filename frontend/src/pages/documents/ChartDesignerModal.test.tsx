@@ -49,11 +49,53 @@ describe('ChartDesignerModal', () => {
     expect(screen.getByTestId('chart-designer-row-label-0')).toHaveValue('2020')
     expect(screen.getByTestId('chart-designer-row-value-0')).toHaveValue('132')
     expect(screen.getByTestId('chart-designer-row-growth-0')).toHaveValue('')
+    // 默认次值全部留空（ADR 0056 C1）
+    expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveValue('')
+    expect(screen.getByTestId('chart-designer-row-growth-2')).toHaveValue('')
+    // 首行次值禁填（ADR 0056 C2）
+    expect(screen.getByTestId('chart-designer-row-growth-0')).toBeDisabled()
+    expect(screen.getByTestId('chart-designer-row-growth-1')).toBeEnabled()
     // actualCount 分界输入
     expect(screen.getByTestId('chart-designer-actual-count')).toBeInTheDocument()
 
     // 防抖后预览渲染（300ms + 请求，默认 1s 等待窗口足够）
     expect(await screen.findByTestId('chart-designer-preview-svg')).toBeInTheDocument()
+  }, 15_000)
+
+  it('次值联动（ADR 0056 C3/C4）：填第 2 行次值 → 主值联动并标记受影响；再改主值 → 次值反向重算', async () => {
+    renderDesigner({ kind: 'create', templateKey: 'bar-line-dual-axis' })
+
+    await screen.findByTestId('chart-designer-preview-svg')
+
+    // 填第 2 行次值 20% → 主值 = 132 × 1.2 = 158.4（基数为上一行主值），主值格标记受影响
+    fireEvent.change(screen.getByTestId('chart-designer-row-growth-1'), { target: { value: '20' } })
+    const value1 = screen.getByTestId('chart-designer-row-value-1') as HTMLInputElement
+    await waitFor(() => expect(value1).toHaveValue('158.4'))
+    expect(value1).toHaveAttribute('data-affected')
+
+    // 手动改主值 200 → 次值反向重算为 (200/132 − 1)×100 ≈ 51.5，次值格标记受影响
+    fireEvent.change(value1, { target: { value: '200' } })
+    const growth1 = screen.getByTestId('chart-designer-row-growth-1') as HTMLInputElement
+    await waitFor(() => expect(growth1).toHaveValue('51.5'))
+    expect(growth1).toHaveAttribute('data-affected')
+    expect(value1).not.toHaveAttribute('data-affected')
+
+    // 再手动编辑次值：标记清除
+    fireEvent.change(growth1, { target: { value: '25' } })
+    await waitFor(() => expect(growth1).not.toHaveAttribute('data-affected'))
+  }, 15_000)
+
+  it('次值联动不越界（ADR 0056 I1）：上年主值缺失时不联动', async () => {
+    renderDesigner({ kind: 'create', templateKey: 'bar-line-dual-axis' })
+
+    await screen.findByTestId('chart-designer-preview-svg')
+
+    // 清空第 1 行主值后，第 2 行填次值不联动主值（基数缺失）
+    fireEvent.change(screen.getByTestId('chart-designer-row-value-0'), { target: { value: '' } })
+    fireEvent.change(screen.getByTestId('chart-designer-row-growth-1'), { target: { value: '20' } })
+    const value1 = screen.getByTestId('chart-designer-row-value-1') as HTMLInputElement
+    expect(value1).toHaveValue('158')
+    expect(value1).not.toHaveAttribute('data-affected')
   }, 15_000)
 
   it('预览列占比 ≥ 55%：弹窗加宽、预览列 56%，窄屏堆叠（ADR 0051 C1）', async () => {

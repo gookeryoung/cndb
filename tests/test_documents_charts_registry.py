@@ -44,7 +44,7 @@ class TestRegistry:
 
     def test_fingerprint_contains_version_and_renderer(self):
         fp = template_fingerprint("bar-line-dual-axis")
-        assert fp == "bar-line-dual-axis@1+r1"
+        assert fp == "bar-line-dual-axis@2+r1"
         # 未知模板给占位指纹（实例仍可 ETag 缓存降级图）
         assert template_fingerprint("gone") == "gone@0+r1"
 
@@ -118,6 +118,24 @@ class TestValidateConfig:
     def test_default_configs_all_pass(self):
         for key in TPL_KEYS:
             assert validate_config(key, CHART_TEMPLATES[key].default_config) == []
+
+    def test_dual_axis_default_growth_all_empty(self):
+        """ADR 0056 C1：双轴模板默认次值全部留空."""
+        rows = CHART_TEMPLATES["bar-line-dual-axis"].default_config["data"]["rows"]
+        assert all(row["growth"] is None for row in rows)
+        assert CHART_TEMPLATES["bar-line-dual-axis"].version == 2
+
+    def test_first_row_growth_rejected(self):
+        """ADR 0056 C2：第 1 行次值禁填（无上年基数），第 2 行起仍允许."""
+        tpl = CHART_TEMPLATES["bar-line-dual-axis"]
+        rows = copy.deepcopy(tpl.default_config["data"]["rows"])
+        rows[0]["growth"] = 12.5
+        errors = validate_config("bar-line-dual-axis", {"data": {"rows": rows}})
+        assert any("第 1 行次值不能填写" in e for e in errors)
+        # 第 2 行起填写合法
+        ok = copy.deepcopy(tpl.default_config["data"]["rows"])
+        ok[1]["growth"] = 19.7
+        assert validate_config("bar-line-dual-axis", {"data": {"rows": ok}}) == []
 
     def test_unknown_template_and_non_dict(self):
         assert validate_config("gone", {}) == ["模板 gone 不存在或已下线"]

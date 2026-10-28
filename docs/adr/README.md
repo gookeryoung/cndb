@@ -57,6 +57,7 @@
 | [0053](0053-datasource-sync-lmstock-alignment.md) | 数据源同步对齐 lmstock 机制（单轮翻页回补 / 主机回退）与示例单序列收敛 | Proposed | P0-P2 已落地（待人工评审） | `src/cndb/plugins/datasource/services/{cursor,pipeline,runner}.py`、`src/cndb/core/http.py`、`src/cndb/plugins/datasource/providers/{base,http_json}.py`、`examples/datasets/工作区-数据源示例/` | `tests/test_datasource_runner_pages.py`、`tests/test_datasource_host_fallback.py`、`tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | [未发布](../../CHANGELOG.md) |
 | [0054](0054-dev-port-cleanup.md) | `make dev` 启动前检查并释放开发端口 | Proposed | P0 已落地（待人工评审） | `scripts/free_ports.py`、`Makefile` | `tests/test_free_ports.py` | [未发布](../../CHANGELOG.md) |
 | [0055](0055-header-brand-version.md) | 顶栏品牌字右侧显示应用版本小字 | Accepted | P0-P1 已落地（待人工确认转 Implemented） | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/layouts/MainLayout.test.tsx` | [未发布](../../CHANGELOG.md) |
+| [0056](0056-chart-derived-cell-linkage.md) | 图表设计器派生单元格联动（双轴次值默认留空） | Accepted | P0-P2 已落地（待人工评审） | `src/cndb/plugins/documents/services/charts/registry.py`、`frontend/src/pages/documents/chartLinkage.ts`、`frontend/src/pages/documents/ChartDesignerModal.tsx` | `tests/test_documents_charts_registry.py`、`frontend/src/pages/documents/chartLinkage.test.ts`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx`、`frontend/tests/e2e/critical/chart-designer-linkage.spec.ts` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

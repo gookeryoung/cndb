@@ -16,6 +16,7 @@ import {
   Modal,
   Skeleton,
   Space,
+  Tooltip,
   Typography,
 } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
@@ -26,6 +27,7 @@ import { chartApi } from '@/api/charts'
 import type { ChartInstance, ChartTemplateInfo } from '@/api/charts'
 import { sanitizeSvg } from '@/components/Document/ChartEmbed'
 import type { ChartBlockSpec } from '@/components/Document/chartBlock'
+import { linkGrowthFromValue, linkValueFromGrowth } from './chartLinkage'
 
 const { Text, Paragraph } = Typography
 
@@ -182,6 +184,8 @@ export default function ChartDesignerModal({
   const [title, setTitle] = useState('')
   const [config, setConfig] = useState<ChartConfigDraft | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  /** 受影响单元格（ADR 0056 C4）：联动重算产生的单元格键（`value:i` / `growth:i`），仅编辑期可见 */
+  const [affected, setAffected] = useState<ReadonlySet<string>>(new Set())
 
   // 打开且模板就绪时初始化草稿：新建从 default_config 起步，编辑从实例 config 起步
   useEffect(() => {
@@ -190,6 +194,7 @@ export default function ChartDesignerModal({
     setTitle(target?.kind === 'editBlock' ? target.spec.title : template.name)
     setConfig(toDraftConfig(base))
     setSaveError(null)
+    setAffected(new Set())
     // 依赖收敛到 templateKey 与清单数据：模板对象引用变化（重取）不重置编辑中的草稿
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, templateKey, templatesQuery.data, target])
@@ -197,16 +202,43 @@ export default function ChartDesignerModal({
   const updateRows = (rows: ChartDataRowDraft[]) =>
     setConfig(prev => (prev ? { ...prev, data: { ...prev.data, rows } } : prev))
 
-  const updateRowField = (index: number, field: 'label' | 'value' | 'growth', v: string | number | null) =>
-    setConfig(prev => {
-      if (!prev) return prev
-      const rows = prev.data.rows.map((row, i) => {
-        if (i !== index || isSeriesRow(row)) return row
-        if (field === 'label') return { ...row, label: String(v ?? '') }
-        return { ...row, [field]: typeof v === 'number' ? v : null }
-      })
-      return { ...prev, data: { ...prev.data, rows } }
+  /** 双轴联动编辑（ADR 0056 C3 / Q4）：填次值联动本行主值；改主值（i≥2）反向重算本行次值；
+   * 联动结果登记为受影响单元格，手动编辑的单元格清除其标记（D3：不跨行级联） */
+  const updateRowField = (index: number, field: 'label' | 'value' | 'growth', v: string | number | null) => {
+    if (!config) return
+    const rows: ChartDataRowDraft[] = config.data.rows.map((row, i) => {
+      if (i !== index || isSeriesRow(row)) return row
+      if (field === 'label') return { ...row, label: String(v ?? '') }
+      return { ...row, [field]: typeof v === 'number' ? v : null }
     })
+    const nextAffected = new Set(affected)
+    const row = config.data.rows[index]
+    if (row && !isSeriesRow(row) && typeof v === 'number' && index > 0) {
+      const prevRow = config.data.rows[index - 1]
+      const prevValue = prevRow && !isSeriesRow(prevRow) ? prevRow.value : null
+      if (field === 'growth') {
+        const linked = linkValueFromGrowth(prevValue, v)
+        if (linked !== null && !isSeriesRow(rows[index])) {
+          rows[index] = { ...rows[index], value: linked }
+          nextAffected.add(`value:${index}`)
+        }
+        nextAffected.delete(`growth:${index}`)
+      } else if (field === 'value') {
+        const linked = linkGrowthFromValue(v, prevValue)
+        if (linked !== null && !isSeriesRow(rows[index])) {
+          rows[index] = { ...rows[index], growth: linked }
+          nextAffected.add(`growth:${index}`)
+        }
+        nextAffected.delete(`value:${index}`)
+      } else {
+        nextAffected.delete(`${field}:${index}`)
+      }
+    } else {
+      nextAffected.delete(`${field}:${index}`)
+    }
+    setAffected(nextAffected)
+    setConfig({ ...config, data: { ...config.data, rows } })
+  }
 
   const updateSeriesRow = (index: number, field: 'label' | 'values', v: string | (number | null)[]) =>
     setConfig(prev => {
@@ -236,6 +268,8 @@ export default function ChartDesignerModal({
     if (!template || !config) return
     if (config.data.rows.length <= template.row_min) return
     updateRows(config.data.rows.filter((_, i) => i !== index))
+    // 行号整体位移，受影响标记失效即清空（ADR 0056 C4）
+    setAffected(new Set())
     // 双轴分界随之钳制到剩余行数内
     setConfig(prev => {
       if (!prev || prev.data.actualCount === undefined) return prev
@@ -508,7 +542,7 @@ export default function ChartDesignerModal({
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      列：标签 / 主值（左轴）/ 次值（右轴，留空按主值自动推算）
+                      列：标签 / 主值（左轴）/ 次值（右轴，填写后本行主值联动变动）
                     </Text>
                     {rows.map((row, i) =>
                       !isSeriesRow(row) ? (
@@ -520,20 +554,35 @@ export default function ChartDesignerModal({
                             style={{ width: 110 }}
                             data-testid={`chart-designer-row-label-${i}`}
                           />
-                          <InputNumber
-                            value={row.value}
-                            onChange={v => updateRowField(i, 'value', v)}
-                            placeholder="主值"
-                            style={{ width: 110 }}
-                            data-testid={`chart-designer-row-value-${i}`}
-                          />
-                          <InputNumber
-                            value={row.growth}
-                            onChange={v => updateRowField(i, 'growth', v)}
-                            placeholder="次值（可空）"
-                            style={{ width: 120 }}
-                            data-testid={`chart-designer-row-growth-${i}`}
-                          />
+                          <Tooltip title={affected.has(`value:${i}`) ? '由次值联动重算' : undefined}>
+                            <InputNumber
+                              value={row.value}
+                              onChange={v => updateRowField(i, 'value', v)}
+                              placeholder="主值"
+                              style={{ width: 110, ...(affected.has(`value:${i}`) ? { background: '#FDF2E4' } : {}) }}
+                              data-affected={affected.has(`value:${i}`) || undefined}
+                              data-testid={`chart-designer-row-value-${i}`}
+                            />
+                          </Tooltip>
+                          <Tooltip
+                            title={
+                              i === 0
+                                ? '第 1 行无上年基数，次值不可填写'
+                                : affected.has(`growth:${i}`)
+                                  ? '由主值联动重算'
+                                  : undefined
+                            }
+                          >
+                            <InputNumber
+                              value={row.growth}
+                              onChange={v => updateRowField(i, 'growth', v)}
+                              placeholder="次值（可空）"
+                              disabled={i === 0}
+                              style={{ width: 120, ...(affected.has(`growth:${i}`) ? { background: '#FDF2E4' } : {}) }}
+                              data-affected={affected.has(`growth:${i}`) || undefined}
+                              data-testid={`chart-designer-row-growth-${i}`}
+                            />
+                          </Tooltip>
                           <Button
                             type="text"
                             danger

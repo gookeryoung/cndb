@@ -129,11 +129,11 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
                     "actualCount": 6,
                     "rows": [
                         {"label": "2020", "value": 132, "growth": None},
-                        {"label": "2021", "value": 158, "growth": 19.7},
-                        {"label": "2022", "value": 186, "growth": 17.7},
-                        {"label": "2023", "value": 218, "growth": 17.2},
-                        {"label": "2024", "value": 250, "growth": 14.7},
-                        {"label": "2025", "value": 285, "growth": 14.0},
+                        {"label": "2021", "value": 158, "growth": None},
+                        {"label": "2022", "value": 186, "growth": None},
+                        {"label": "2023", "value": 218, "growth": None},
+                        {"label": "2024", "value": 250, "growth": None},
+                        {"label": "2025", "value": 285, "growth": None},
                         {"label": "2026", "value": 318, "growth": None},
                         {"label": "2027", "value": 358, "growth": None},
                         {"label": "2028", "value": 405, "growth": None},
@@ -142,7 +142,7 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
                     ],
                 },
             },
-            version=1,
+            version=2,
         ),
         ChartTemplate(
             key="stacked-bar-horizontal",
@@ -432,6 +432,8 @@ def validate_config(template_key: str, config: Any) -> list[str]:
             growth = row.get("growth")
             if growth is not None and _coerce_number(growth) is None:
                 errors.append(f"第 {i + 1} 行次值必须是数字或留空")
+            elif i == 0 and _coerce_number(growth) is not None:
+                errors.append("第 1 行次值不能填写（无上年基数）")
         raw_count = data.get("actualCount")
         count = template.default_config["data"]["actualCount"] if raw_count is None else _coerce_number(raw_count)
         if count is None or not (1 <= count <= len(rows)):
