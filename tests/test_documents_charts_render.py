@@ -95,6 +95,60 @@ class TestSvgWriter:
         # 全部次值点连续成线（10 个折线点：i=1..10）
         assert svg.count("<circle") >= 10
 
+    def test_growth_labels_avoid_bars_and_value_labels(self):
+        """次值标签避让：不与柱体填充区 / 柱顶主值标签相交，且全部带纸色 halo."""
+        doc = render_chart("bar-line-dual-axis", CHART_TEMPLATES["bar-line-dual-axis"].default_config)
+
+        def width(text: str, size: float = 14.5) -> float:
+            from cndb.plugins.documents.services.charts.render import text_width
+
+            return text_width(text, size)
+
+        def hits(a, b):
+            return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
+
+        # 只取柱体矩形：排除规划期底色带（整片浅色 rect）与纸底
+        bars = [
+            p
+            for p in doc.elements
+            if p.kind == "rect"
+            and p.h
+            and p.h > 5
+            and p.fill not in (None, "var(--cn-bg-container, #FBFAF5)", "rgba(30,61,87,.045)")
+        ]
+        value_labels = [p for p in doc.elements if p.kind == "text" and p.weight == 600]
+        growth_labels = [p for p in doc.elements if p.kind == "text" and p.weight == 700 and p.content.endswith("%")]
+        assert growth_labels
+        for gl in growth_labels:
+            lw = width(gl.content, gl.size)
+            bbox = (gl.tx - lw / 2, gl.ty - gl.size, lw, gl.size * 1.4)
+            assert gl.halo, gl.content
+            assert not gl.plate  # 底板压柱降级已废除
+            for bar in bars:
+                assert not hits(bbox, (bar.x, bar.y, bar.w, bar.h)), gl.content
+            for vl in value_labels:
+                vw = width(vl.content, vl.size)
+                assert not hits(bbox, (vl.tx - vw / 2, vl.ty - vl.size, vw, vl.size * 1.3)), gl.content
+        # 相邻增长率标签互不重叠
+        placed = []
+        for gl in growth_labels:
+            lw = width(gl.content, gl.size)
+            bbox = (gl.tx - lw / 2, gl.ty - gl.size, lw, gl.size * 1.4)
+            for other in placed:
+                assert not hits(bbox, other), gl.content
+            placed.append(bbox)
+
+    def test_growth_labels_dense_extreme_never_crash(self):
+        """极端数据（柱满高 + 高增速）渲染不崩且标签仍有 halo."""
+        cfg = {
+            "data": {
+                "actualCount": 3,
+                "rows": [{"label": str(2020 + i), "value": 100 + i * 50, "growth": 5.0 + i * 8} for i in range(11)],
+            }
+        }
+        svg = _render_svg("bar-line-dual-axis", cfg)
+        assert svg.count('paint-order="stroke"') >= 10
+
 
 class TestCagrToken:
     def test_cagr_evaluated_in_note(self):

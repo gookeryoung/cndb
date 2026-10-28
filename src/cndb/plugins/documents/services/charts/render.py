@@ -297,7 +297,7 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     if pts:
         d = " ".join(f"{'M' if idx == 0 else 'L'} {p[2]:.1f} {p[3]:.1f}" for idx, p in enumerate(pts))
         prims.append(Prim("path", d=d, stroke=c_line, stroke_width=2))
-        for i, g, px, py, proj in pts:
+        for _, _, px, py, proj in pts:
             prims.append(
                 Prim(
                     "circle",
@@ -309,31 +309,86 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
                     stroke_width=1.8,
                 )
             )
+
+    def _rects_hit(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
+        return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
+
+    # 增长率标签避让（用户反馈：标签压柱体 / 遮主值标签看不清）。
+    # 已占区域：柱体、柱顶主值标签、规划期标注；候选位按「点上方 → 更高 → 点下方」取第一个无碰撞位，
+    # 全部碰撞时退回点上方并靠纸色 halo 保证可读（标签永不加底板压进柱内）。
+    occupied: list[tuple[float, float, float, float]] = [
+        (
+            x_center(i) - bar_w / 2,
+            plot_bottom - (values[i] / y_max_rev) * plot_h,
+            bar_w,
+            (values[i] / y_max_rev) * plot_h,
+        )
+        for i in range(n)
+        if values[i] > 0
+    ]
+    for i in range(n):
+        if values[i] > 0:
+            tw = text_width(fmt_number(values[i]), 14.5)
             bar_top = plot_bottom - (values[i] / y_max_rev) * plot_h
-            inside_bar = py > bar_top + 10
-            above_y = py - 24
-            cy = min(py + 36, plot_bottom - 12) if (inside_bar or abs(above_y - (bar_top - 10)) < 45) else above_y
-            label = fmt_number(g) + "%"
-            in_bar = cy > bar_top + 4
-            color = c_line_derived if proj else c_line
-            plate = None
-            if in_bar:
-                lw = text_width(label, 14.5)
-                plate = (px - lw / 2 - 6, cy - 16, lw + 12, 21.5)
-            prims.append(
-                Prim(
-                    "text",
-                    tx=px,
-                    ty=cy + 5,
-                    content=label,
-                    size=14.5,
-                    weight=700,
-                    fill=color,
-                    anchor="middle",
-                    plate=plate,
-                    halo=not in_bar,
-                )
+            occupied.append((x_center(i) - tw / 2 - 4, bar_top - 28, tw + 8, 26))
+    band_lw = text_width(str(labels.get("bandLabel", "")), 12.5)
+    occupied.append((boundary + 6, pad_t + 2, band_lw + 8, 20))
+    # 左右轴刻度带整列占位（标签 x 平移避让时不得压进轴区）
+    occupied.append((pad_l - 70, pad_t - 30, 70, plot_h + 40))
+    occupied.append((w - pad_r, pad_t - 30, 80, plot_h + 40))
+
+    def _label_bbox(px: float, py: float, lw: float, dx: float, dy: float) -> tuple[float, float, float, float]:
+        cx = min(max(px + dx, pad_l + lw / 2 + 4), w - pad_r - lw / 2 - 4)
+        cy = min(max(py + dy, pad_t + 6), plot_bottom - 4)
+        return (cx - lw / 2 - 4, cy - 10, lw + 8, 22)
+
+    for _, g, px, py, proj in pts:
+        label = fmt_number(g) + "%"
+        lw = text_width(label, 14.5)
+        # 候选位：(dx, dy) 相对折线点。先近后远：点上下 → 柱侧平移 → 更高梯子。
+        dodge = bar_w / 2 + lw / 2 + 8
+        candidates = [
+            (0.0, -20.0),
+            (0.0, -34.0),
+            (0.0, 30.0),
+            (-dodge, 0.0),
+            (dodge, 0.0),
+            (-dodge, -14.0),
+            (dodge, -14.0),
+            (-dodge, 14.0),
+            (dodge, 14.0),
+            (0.0, -48.0),
+            (0.0, 44.0),
+            (0.0, -62.0),
+            (0.0, -76.0),
+            (0.0, -90.0),
+            (0.0, -104.0),
+            (0.0, -118.0),
+            (0.0, -132.0),
+        ]
+        scored = [
+            (
+                sum(1 for occ in occupied if _rects_hit(_label_bbox(px, py, lw, dx, dy), occ)),
+                idx,
+                _label_bbox(px, py, lw, dx, dy),
             )
+            for idx, (dx, dy) in enumerate(candidates)
+        ]
+        _, _, bbox = min(scored, key=lambda t: (t[0], t[1]))
+        occupied.append(bbox)
+        prims.append(
+            Prim(
+                "text",
+                tx=bbox[0] + lw / 2 + 4,
+                ty=bbox[1] + 15,
+                content=label,
+                size=14.5,
+                weight=700,
+                fill=c_line_derived if proj else c_line,
+                anchor="middle",
+                halo=True,
+            )
+        )
 
     # 横轴年份与区间说明
     for i, row in enumerate(rows):
