@@ -1,9 +1,9 @@
 /**
- * Critical — 文档草稿 diff 与丢弃（ADR 0057）.
+ * Critical — 文档草稿 diff 与丢弃（ADR 0057 + 需求 0062）.
  *
  * 覆盖关键链路（草稿经 API 预置，交互走真实浏览器）：
- * 1) 有草稿时编辑页出现「查看修改」，打开抽屉渲染「基准版本 → 草稿」unified diff；
- *    文档已前进版本时显示 stale 提示；
+ * 1) 有草稿时版本历史出现「当前草稿」条目，原最新版本标记「已发布」；
+ *    点草稿条目的「变更」原地渲染「基准版本 → 草稿」unified diff（含 stale 基准场景）；
  * 2) 「丢弃草稿」确认后调用 DELETE，草稿标签消失，编辑态重置并回到查看模式；
  * 3) 取消确认不调用 DELETE。
  *
@@ -22,8 +22,6 @@ const WORKSPACE_NAME = "科研项目管理";
 let wid: number;
 let token: string;
 const stamp = Date.now();
-
-test.describe.configure({ timeout: 120_000 });
 
 test.beforeAll(async ({ request }: { request: APIRequestContext }) => {
   token = await getAdminToken(request);
@@ -67,20 +65,24 @@ async function createDocWithDraft(
 }
 
 test.describe("文档草稿 diff 与丢弃", () => {
-  test("查看修改抽屉渲染 diff → 丢弃草稿回到查看模式", async ({ page }: { page: import("@playwright/test").Page }) => {
+  test("版本历史草稿条目渲染 diff → 丢弃草稿回到查看模式", async ({ page }: { page: import("@playwright/test").Page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目不跑 critical");
 
     const { docId } = await createDocWithDraft(page.request, { stale: false });
     await page.goto(`/w/${wid}/documents/${docId}`);
 
-    // 有草稿：标签与两个入口都出现
+    // 有草稿：打开版本历史，草稿条目在顶部，原最新版本标记「已发布」
     await expect(page.getByTestId("doc-draft-tag")).toBeVisible({ timeout: 20_000 });
-    await page.getByTestId("doc-draft-diff-btn").click();
+    await page.getByRole("button", { name: /版本/ }).click();
 
-    // 抽屉渲染草稿 diff：新增行来自草稿正文
     const drawer = page.getByRole("dialog");
     await expect(drawer).toBeVisible({ timeout: 20_000 });
-    await expect(drawer.getByTestId("document-diff")).toBeVisible();
+    await expect(drawer.getByTestId("version-item-draft")).toBeVisible();
+    await expect(drawer.getByText("已发布")).toBeVisible();
+
+    // 草稿条目的「变更」原地渲染草稿 diff：新增行来自草稿正文
+    await drawer.getByTestId("version-diff-toggle-draft").click();
+    await expect(drawer.getByTestId("document-diff")).toBeVisible({ timeout: 20_000 });
     await expect(drawer.getByText(/草稿修改后的正文/)).toBeVisible();
     await drawer.getByRole("button", { name: "Close" }).click();
 
@@ -95,15 +97,18 @@ test.describe("文档草稿 diff 与丢弃", () => {
     await expect(page.getByTestId("doc-view-mode")).not.toContainText("草稿修改后的正文");
   });
 
-  test("stale：文档已前进版本时 diff 抽屉显示提示", async ({ page }: { page: import("@playwright/test").Page }) => {
+  test("stale 基准：版本历史的草稿条目仍可渲染 diff", async ({ page }: { page: import("@playwright/test").Page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目不跑 critical");
 
     const { docId } = await createDocWithDraft(page.request, { stale: true });
     await page.goto(`/w/${wid}/documents/${docId}`);
 
     await expect(page.getByTestId("doc-draft-tag")).toBeVisible({ timeout: 20_000 });
-    await page.getByTestId("doc-draft-diff-btn").click();
+    await page.getByRole("button", { name: /版本/ }).click();
 
-    await expect(page.getByTestId("doc-draft-diff-stale")).toBeVisible({ timeout: 20_000 });
+    const drawer = page.getByRole("dialog");
+    await drawer.getByTestId("version-diff-toggle-draft").click();
+    await expect(drawer.getByTestId("document-diff")).toBeVisible({ timeout: 20_000 });
+    await expect(drawer.getByText(/草稿修改后的正文/)).toBeVisible();
   });
 });

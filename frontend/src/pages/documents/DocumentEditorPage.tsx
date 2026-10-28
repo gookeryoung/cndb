@@ -23,7 +23,6 @@ import {
 import {
   BarChartOutlined,
   BranchesOutlined,
-  DiffOutlined,
   DownloadOutlined,
   FileMarkdownOutlined,
   FilePdfOutlined,
@@ -110,7 +109,6 @@ import {
   type OutlinePrefs,
 } from './outlinePrefs'
 import VersionsDrawer from './VersionsDrawer'
-import { DocumentDiffView } from '@/components/DiffView'
 import TagEditor from './TagEditor'
 
 // 文档 AI 面全部懒加载：结果抽屉 / 顶栏入口只在点击后才进入加载队列（ADR 0020 C11）。
@@ -129,6 +127,9 @@ const AI_INSTRUCTION_LABELS: Record<DocumentAiInstruction, string> = {
 
 /** 单次选区改写上限（与后端 documents/services/ai.py 的 MAX_SELECTION_CHARS 对齐，超限先提示分段） */
 const MAX_AI_SELECTION_CHARS = 4000
+
+/** 提交弹窗的默认提交信息（需求 0063）：变更说明为空时预填，可自由修改 */
+const DEFAULT_CHANGE_SUMMARY = '更新文档'
 
 /** 顶栏图标按钮：仅图标 + Tooltip 提示；aria-label 承载含数量后缀的完整名称（测试与无障碍共用） */
 function IconBtn({
@@ -169,8 +170,6 @@ export default function DocumentEditorPage() {
   // 断链修复：旧标题 → 选中的目标文档 ID
   const [repairTargets, setRepairTargets] = useState<Record<string, number>>({})
   const [diffPair, setDiffPair] = useState<{ base: number; head: number } | null>(null)
-  /** 草稿 diff 抽屉（ADR 0057）：「查看修改」只看草稿与编辑基准版本的差异 */
-  const [draftDiffOpen, setDraftDiffOpen] = useState(false)
   const [crOpen, setCrOpen] = useState(false)
   /** 分享弹层（ADR 0017）：owner/editor 可创建匿名只读链接 */
   const [shareOpen, setShareOpen] = useState(false)
@@ -457,15 +456,12 @@ export default function DocumentEditorPage() {
 
   const diffQuery = useQuery({
     queryKey: ['documents', workspaceId, id, 'diff', diffPair?.base, diffPair?.head],
-    queryFn: () => documentsApi.diff(workspaceId, id, diffPair!.base, diffPair!.head),
+    // head=0 为草稿哨兵（需求 0062）：走「编辑基准版本 → 草稿」端点
+    queryFn: () =>
+      diffPair!.head === 0
+        ? documentsApi.getDraftDiff(workspaceId, id)
+        : documentsApi.diff(workspaceId, id, diffPair!.base, diffPair!.head),
     enabled: diffPair !== null,
-  })
-
-  // 草稿 diff（ADR 0057）：「编辑基准版本 → 草稿」，只读
-  const draftDiffQuery = useQuery({
-    queryKey: ['documents', workspaceId, id, 'draft-diff'],
-    queryFn: () => documentsApi.getDraftDiff(workspaceId, id),
-    enabled: draftDiffOpen,
   })
 
   // 丢弃草稿（ADR 0057 D4）：确认后删除服务端草稿，编辑态重置为最新版本并回到查看模式
@@ -476,7 +472,7 @@ export default function DocumentEditorPage() {
       setContent(latestContent)
       setSavedContent(latestContent)
       baseVersionRef.current = docQuery.data?.version_number ?? 0
-      setDraftDiffOpen(false)
+      setDiffPair(null)
       setViewMode('view')
       message.success('已丢弃草稿，回到最新版本')
       void qc.invalidateQueries({ queryKey: ['documents', workspaceId, id, 'content'] })
@@ -532,6 +528,8 @@ export default function DocumentEditorPage() {
       message.info('文档未发生修改，无需提交')
       return
     }
+    // 变更说明为空时预填默认提交信息（需求 0063）；取消后重开保留已输入文本
+    setChangeSummary(prev => (prev.trim() === '' ? DEFAULT_CHANGE_SUMMARY : prev))
     setSubmitOpen(true)
   }, [hasChanges])
 
@@ -1137,18 +1135,9 @@ export default function DocumentEditorPage() {
             </Dropdown>
             {!isAssetDoc && (
               <>
-            {/* 草稿三件套（ADR 0057，窄屏紧凑）：查看修改 / 丢弃 */}
+            {/* 草稿丢弃（ADR 0057，窄屏紧凑）；查看修改已并入版本历史（需求 0062） */}
             {serverDraft && (
-              <>
-                <Button
-                  icon={<DiffOutlined />}
-                  size="small"
-                  data-testid="doc-draft-diff-btn"
-                  onClick={() => setDraftDiffOpen(true)}
-                >
-                  查看修改
-                </Button>
-                <Popconfirm
+              <Popconfirm
                   title="丢弃草稿？"
                   description="未提交的草稿修改将丢失，正文回到最新版本。"
                   okText="丢弃"
@@ -1160,7 +1149,6 @@ export default function DocumentEditorPage() {
                     丢弃
                   </Button>
                 </Popconfirm>
-              </>
             )}
             <Button
                 icon={<SaveOutlined />}
@@ -1254,15 +1242,7 @@ export default function DocumentEditorPage() {
           )}
           {!isAssetDoc && (
             <>
-          {/* 组 5：提交动作（ADR 0057）：查看修改 / 保存草稿 / 提交修改；破坏性的丢弃草稿置组末并拉开间距 */}
-          {serverDraft && (
-            <IconBtn
-              icon={<DiffOutlined />}
-              label="查看修改"
-              data-testid="doc-draft-diff-btn"
-              onClick={() => setDraftDiffOpen(true)}
-            />
-          )}
+          {/* 组 5：提交动作（ADR 0057）：保存草稿 / 提交修改；破坏性的丢弃草稿置组末并拉开间距（查看修改已并入版本历史，需求 0062） */}
           <Button
               icon={<SaveOutlined />}
               loading={draftMut.isPending}
@@ -1510,40 +1490,13 @@ export default function DocumentEditorPage() {
         total={versionsQuery.data?.total}
         diffPair={diffPair}
         onToggleDiff={setDiffPair}
+        draft={serverDraft ? { baseVersion: serverDraft.base_version_number } : null}
         diffLoading={diffQuery.isLoading}
         diff={diffQuery.data}
         diffError={diffQuery.isError}
         onRollback={(target) => rollbackMut.mutate(target)}
         rollingBack={rollbackMut.isPending ? rollbackMut.variables ?? null : null}
       />
-
-      {/* 草稿 diff 抽屉（ADR 0057）：「编辑基准版本 → 草稿」只读差异 */}
-      <Drawer
-        title="草稿修改预览"
-        width={isMobile ? '100%' : 760}
-        open={draftDiffOpen}
-        onClose={() => setDraftDiffOpen(false)}
-        destroyOnClose
-      >
-        {draftDiffQuery.data?.stale && (
-          <Alert
-            type="warning"
-            showIcon
-            data-testid="doc-draft-diff-stale"
-            message={`文档已更新到 v${draftDiffQuery.data.base_version} 之后的版本，你的修改基于更早的基准，提交时可能被拒绝`}
-            style={{ marginBottom: 12 }}
-          />
-        )}
-        {draftDiffQuery.isLoading ? null : draftDiffQuery.data ? (
-          <DocumentDiffView
-            diff={draftDiffQuery.data.diff}
-            baseLabel={`v${draftDiffQuery.data.base_version}`}
-            headLabel="草稿"
-          />
-        ) : (
-          <Alert type="info" showIcon message="无法加载草稿差异" />
-        )}
-      </Drawer>
 
       {/* 标签抽屉 */}
       <Drawer title="文档标签" width={420} open={tagsOpen} onClose={() => setTagsOpen(false)}>

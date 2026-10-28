@@ -571,9 +571,10 @@ describe('DocumentEditorPage 修改申请（双轨制保存）', () => {
 
         expect(await screen.findByTestId('doc-cr-notice')).toHaveTextContent('已提交修改申请 #7')
         // 提交携带正文、变更说明与基准版本号，供后端做段落级合并 / 基准漂移判断
+        // （未改默认值 → 携带预填的默认提交信息，需求 0063）
         expect(submitBodies[0]).toMatchObject({
             content: '# 需求说明\n\n修改后的正文。\n',
-            change_summary: '',
+            change_summary: '更新文档',
             base_version_number: 1,
         })
         // 修改申请待审：回到查看模式展示当前发布版
@@ -1302,9 +1303,10 @@ describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
         fireEvent.change(ta, { target: { value: '# 需求说明\n\n提交后的正文。\n' } })
 
         fireEvent.click(screen.getByTestId('doc-submit-btn'))
-        // 弹窗出现：填写变更说明后确认提交
-        expect(await screen.findByTestId('doc-submit-summary')).toBeInTheDocument()
-        fireEvent.change(screen.getByTestId('doc-submit-summary'), { target: { value: '更新正文' } })
+        // 弹窗出现：默认预填「更新文档」（需求 0063），可修改后确认提交
+        const summaryInput = await screen.findByTestId('doc-submit-summary') as HTMLTextAreaElement
+        expect(summaryInput.value).toBe('更新文档')
+        fireEvent.change(summaryInput, { target: { value: '更新正文' } })
         fireEvent.click(screen.getByRole('button', { name: /确认提交/ }))
 
         await waitFor(() => expect(submitBodies).toHaveLength(1))
@@ -1723,7 +1725,7 @@ describe('DocumentEditorPage 草稿 diff 与丢弃（ADR 0057）', () => {
         expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿待提交')
     }
 
-    it('「查看修改」打开抽屉并渲染草稿 diff；stale 时显示提示', async () => {
+    it('版本历史出现当前草稿条目并可看草稿 diff，原最新版本标记已发布（需求 0062）', async () => {
         await renderWithDraft()
         server.use(
             http.get('/api/v1/workspaces/:wid/documents/:docId/draft/diff', () =>
@@ -1734,14 +1736,24 @@ describe('DocumentEditorPage 草稿 diff 与丢弃（ADR 0057）', () => {
                     removed: 1,
                     stale: true,
                 })),
+            http.get('/api/v1/workspaces/:wid/documents/:docId/versions', () =>
+                HttpResponse.json({
+                    total: 2,
+                    versions: [
+                        { id: 2, version_number: 2, content_size: 18, content_hash: null, change_summary: '', change_type: 'manual', created_at: '2026-02-01T00:00:00Z', created_by_id: 1 },
+                        { id: 1, version_number: 1, content_size: 16, content_hash: null, change_summary: '创建文档', change_type: 'manual', created_at: '2026-01-01T00:00:00Z', created_by_id: 1 },
+                    ],
+                })),
         )
 
-        fireEvent.click(await screen.findByTestId('doc-draft-diff-btn'))
+        // 打开版本历史抽屉（顶栏版本按钮），草稿条目在顶部、原最新版本标记「已发布」
+        fireEvent.click(screen.getByRole('button', { name: /版本/ }))
+        expect(await screen.findByTestId('version-item-draft')).toBeInTheDocument()
+        expect(screen.getByText('已发布')).toBeInTheDocument()
 
-        // diff 抽屉内容与 stale 提示
+        fireEvent.click(screen.getByTestId('version-diff-toggle-draft'))
         expect(await screen.findByTestId('document-diff')).toBeInTheDocument()
         expect(await screen.findByText('第一段改。')).toBeInTheDocument()
-        expect(screen.getByTestId('doc-draft-diff-stale')).toBeInTheDocument()
     })
 
     it('丢弃草稿：确认后调用 DELETE，编辑态重置并回到查看模式', async () => {

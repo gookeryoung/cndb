@@ -1,6 +1,7 @@
 /**
  * VersionsDrawer 测试 —— 版本时间线渲染 / 差异原地展开（不再切 Tab）/
- * 加载与错误态 / 回滚入口 / 折叠提示。
+ * 变更对比挂「产生变更的那一版」行 / 加载与错误态 / 回滚入口 /
+ * 折叠提示 / 当前草稿伪条目（需求 0062）。
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -62,37 +63,42 @@ describe('VersionsDrawer', () => {
       expect(screen.getByTestId(`version-item-${n}`)).toBeTruthy()
     }
     expect(screen.getByText('补充交付范围')).toBeTruthy()
+    // 非空提交信息前带「提交修改信息」标签（需求 0063）；空说明只有占位文字
+    expect(screen.getAllByText('提交修改信息').length).toBeGreaterThanOrEqual(2)
     expect(screen.getByText('未填写变更说明')).toBeTruthy()
     expect(screen.getByText('当前')).toBeTruthy()
-    expect(screen.getByText('回滚')).toBeTruthy()
+    // v3 的变更类型徽标与各版本的回滚按钮重名，用 getAllByText
+    expect(screen.getAllByText('回滚').length).toBeGreaterThanOrEqual(3)
     expect(screen.getByText('导入')).toBeTruthy()
   })
 
-  it('体积变化与相对上一版对比（最新版没有对比 / 回滚入口）', () => {
+  it('体积变化与变更入口挂在产生变更的那一版行（最早版没有变更 / 回滚入口）', () => {
     renderDrawer()
 
     // v4 相对 v3：+40 B；v2 相对 v1：+40 B；v3 与 v2 同体积
     expect(screen.getAllByText('+40 B').length).toBe(2)
     expect(screen.getByText('体积不变')).toBeTruthy()
 
-    expect(screen.queryByTestId('version-diff-toggle-4')).toBeNull()
+    expect(screen.queryByTestId('version-diff-toggle-1')).toBeNull()
+    // 最早版没有「变更」，但仍可回滚；只有最新版没有回滚入口
+    expect(screen.getByTestId('version-rollback-1')).toBeTruthy()
     expect(screen.queryByTestId('version-rollback-4')).toBeNull()
-    expect(screen.getByTestId('version-diff-toggle-1')).toBeTruthy()
+    expect(screen.getByTestId('version-diff-toggle-4')).toBeTruthy()
   })
 
-  it('点「与上一版对比」把对比对抛给页面（不切换页面）', () => {
+  it('点「变更」把本版相对上一版的对比对抛给页面（不切换页面）', () => {
     const onToggleDiff = vi.fn()
     renderDrawer({ onToggleDiff })
 
     fireEvent.click(screen.getByTestId('version-diff-toggle-2'))
-    expect(onToggleDiff).toHaveBeenCalledWith({ base: 2, head: 3 })
+    expect(onToggleDiff).toHaveBeenCalledWith({ base: 1, head: 2 })
     // 差异面板只在已展开时出现：本用例未传 diffPair，因此页面上没有 diff
     expect(screen.queryByTestId('version-diff-panel')).toBeNull()
   })
 
   it('展开态在卡片下方就地渲染差异，按钮变为收起', () => {
     const onToggleDiff = vi.fn()
-    renderDrawer({ onToggleDiff, diffPair: { base: 2, head: 3 }, diff: { added: 1, removed: 0, diff: DIFF } })
+    renderDrawer({ onToggleDiff, diffPair: { base: 1, head: 2 }, diff: { added: 1, removed: 0, diff: DIFF } })
 
     const panel = screen.getByTestId('version-diff-panel')
     expect(panel).toBeTruthy()
@@ -104,12 +110,12 @@ describe('VersionsDrawer', () => {
   })
 
   it('差异加载中与加载失败各自有独立占位', () => {
-    const { unmount } = renderDrawer({ diffPair: { base: 2, head: 3 }, diffLoading: true })
+    const { unmount } = renderDrawer({ diffPair: { base: 1, head: 2 }, diffLoading: true })
     expect(screen.getByTestId('version-diff-panel')).toBeTruthy()
     expect(screen.queryByTestId('document-diff')).toBeNull()
     unmount()
 
-    renderDrawer({ diffPair: { base: 2, head: 3 }, diffError: true })
+    renderDrawer({ diffPair: { base: 1, head: 2 }, diffError: true })
     expect(screen.getByText('差异计算失败，请重试')).toBeTruthy()
     expect(screen.queryByTestId('document-diff')).toBeNull()
   })
@@ -140,5 +146,41 @@ describe('VersionsDrawer', () => {
     renderDrawer({ loading: true })
     expect(screen.getByTestId('versions-loading')).toBeTruthy()
     expect(screen.queryByText('暂无历史版本（首次保存后自动创建）')).toBeNull()
+  })
+
+  it('有草稿时顶部插入当前草稿条目，原最新版本标记为已发布且无回滚', () => {
+    renderDrawer({ draft: { baseVersion: 3 } })
+
+    expect(screen.getByTestId('version-item-draft')).toBeTruthy()
+    expect(screen.getByText('草稿')).toBeTruthy()
+    expect(screen.getByText('基于 v3 的未提交修改（仅自己可见）')).toBeTruthy()
+    expect(screen.getByText('已发布')).toBeTruthy()
+    expect(screen.queryByText('当前 v4')).toBeNull()
+    // 草稿条目无回滚按钮，但其它版本回滚入口不受影响
+    expect(screen.queryByTestId('version-rollback-draft')).toBeNull()
+    expect(screen.queryByTestId('version-rollback-4')).toBeTruthy()
+  })
+
+  it('点草稿条目的「变更」抛 head=0 哨兵对比对', () => {
+    const onToggleDiff = vi.fn()
+    renderDrawer({ draft: { baseVersion: 3 }, onToggleDiff })
+
+    fireEvent.click(screen.getByTestId('version-diff-toggle-draft'))
+    expect(onToggleDiff).toHaveBeenCalledWith({ base: 3, head: 0 })
+  })
+
+  it('展开草稿 diff 时头标签显示「草稿」', () => {
+    renderDrawer({ draft: { baseVersion: 3 }, diffPair: { base: 3, head: 0 }, diff: { added: 1, removed: 0, diff: DIFF } })
+
+    expect(screen.getByTestId('version-diff-panel')).toBeTruthy()
+    // 「草稿」出现两次：条目名 + diff 头标签
+    expect(screen.getAllByText('草稿').length).toBe(2)
+  })
+
+  it('无草稿时（draft 为 null）不出现草稿条目，行为不变', () => {
+    renderDrawer({ draft: null })
+    expect(screen.queryByTestId('version-item-draft')).toBeNull()
+    expect(screen.getByText('当前')).toBeTruthy()
+    expect(screen.queryByText('已发布')).toBeNull()
   })
 })

@@ -5211,7 +5211,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
  * 颜色全部取 var(--cn-*)，浅色 / 深色 / github / mono 等主题自动适配。 */
 
 .cn-vh {
-  padding: var(--cn-space-3xl) var(--cn-space-3xl) var(--cn-space-4xl);
+  padding: var(--cn-space-xl) var(--cn-space-xl) var(--cn-space-3xl);
   background: var(--cn-bg-page);
   min-height: 100%;
 }
@@ -5263,14 +5263,14 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   position: relative;
   display: flex;
   justify-content: center;
-  padding-top: var(--cn-space-xl);
+  padding-top: var(--cn-space-lg);
 }
 
 .cn-vh-rail::after {
   content: '';
   position: absolute;
-  top: 25px;
-  bottom: -18px;
+  top: 22px;
+  bottom: -12px;
   left: 50%;
   width: 2px;
   transform: translateX(-50%);
@@ -5308,11 +5308,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 /* 卡片 */
 .cn-vh-body {
   min-width: 0;
-  padding-bottom: var(--cn-space-lg);
+  padding-bottom: var(--cn-space-md);
 }
 
 .cn-vh-card {
-  padding: var(--cn-space-lg) var(--cn-space-xl);
+  padding: var(--cn-space-sm) var(--cn-space-lg);
   border: 1px solid var(--cn-border);
   border-radius: var(--cn-radius-lg);
   background: var(--cn-bg-container);
@@ -5344,7 +5344,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: var(--cn-space-md);
+  gap: var(--cn-space-sm) var(--cn-space-md);
 }
 
 .cn-vh-ver {
@@ -5404,21 +5404,36 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-vh-summary {
-  margin-top: var(--cn-space-sm);
+  margin-top: var(--cn-space-xs);
   font-size: var(--cn-text-sm);
   color: var(--cn-text-primary);
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .cn-vh-summary.is-empty {
   color: var(--cn-text-muted);
 }
 
+/* 「提交修改信息」小标签：随非空变更说明展示（需求 0063） */
+.cn-vh-summary-label {
+  margin-right: var(--cn-space-sm);
+  padding: 0 var(--cn-space-sm);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-muted);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-2xs);
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* 操作按钮并入卡头右侧（text 小按钮，紧凑） */
 .cn-vh-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--cn-space-md);
-  margin-top: var(--cn-space-lg);
+  gap: var(--cn-space-xs) var(--cn-space-sm);
+  margin-left: var(--cn-space-md);
 }
 
 /* 原地展开的差异面板 */
@@ -5468,6 +5483,10 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
   .cn-vh-time {
     margin-left: 0;
+  }
+
+  .cn-vh-actions {
+    margin-left: auto;
   }
 }
 

@@ -1,9 +1,10 @@
 /** 版本抽屉：单栏时间线 + 差异原地展开（从 DocumentEditorPage 抽出）.
  *
- * 交互口径（2026-10-18 增强）：
- * - 取消「时间线 / 差异对比」两个 Tab —— 差异改为在**当前版本卡片下方原地展开**，
- *   不切页面、不跳 Tab；再点一次收起。
- * - 同一时刻只展开一处：一个 diff 动辄上千行，多开会让抽屉卡顿。
+ * 交互口径：
+ * - 取消「时间线 / 差异对比」两个 Tab —— 差异改为在卡片下方原地展开，
+ *   不切页面、不跳 Tab；再点一次收起。同一时刻只展开一处。
+ * - 对比对挂在「产生变更的那一版」行：V2 行的「变更」展示 V2 相对 V1 的差异。
+ * - 有草稿时顶部插入「当前草稿」伪条目（head=0 哨兵），原最新版本标记「已发布」。
  * - 抽屉不依赖 React Query：版本列表、diff 结果、loading 全部由页面解包后传入。
  *   差异渲染交给 DiffView（统一 / 并排 + 行内高亮）。
  */
@@ -17,7 +18,7 @@ import { useResponsive } from '@/hooks/useResponsive'
 import { formatDateTime, formatRelativeTime } from '@/utils/datetime'
 import { formatSize } from '@/utils/formatSize'
 
-/** 对比对：base 是旧版（本卡片），head 是新版（上一张卡片） */
+/** 对比对：base 是旧版（本卡片），head 是新版（上一张卡片）；head=0 表示当前草稿（哨兵） */
 export interface VersionDiffPair {
   base: number
   head: number
@@ -64,6 +65,7 @@ export default function VersionsDrawer({
   loading,
   versions,
   total,
+  draft,
   diffPair,
   onToggleDiff,
   diffLoading,
@@ -79,6 +81,8 @@ export default function VersionsDrawer({
   versions: VersionItem[]
   /** 版本总数（可能大于列表长度 —— 接口默认只给最近 50 个） */
   total?: number
+  /** 当前草稿（仅自己可见的未提交修改）；null 表示无草稿 */
+  draft?: { baseVersion: number } | null
   /** 当前展开的对比对；null 表示全部收起 */
   diffPair: VersionDiffPair | null
   /** 传 null 表示收起当前展开项 */
@@ -93,6 +97,44 @@ export default function VersionsDrawer({
   const latest = versions[0]
   const hidden = total !== undefined ? total - versions.length : 0
   const { isMobile } = useResponsive()
+  const hasDraft = draft != null
+  const draftPair: VersionDiffPair | null = hasDraft && draft.baseVersion > 0
+    ? { base: draft.baseVersion, head: 0 }
+    : null
+  const draftExpanded = draftPair !== null && diffPair?.head === 0
+
+  /** 卡头右侧的操作按钮（变更 / 回滚），text 小按钮保证紧凑 */
+  const actions = (pair: VersionDiffPair | null, expanded: boolean, testid: string) =>
+    pair ? (
+      <Button
+        size="small"
+        type="text"
+        icon={expanded ? <UpOutlined /> : <DownOutlined />}
+        aria-expanded={expanded}
+        data-testid={`version-diff-toggle-${testid}`}
+        onClick={() => onToggleDiff(expanded ? null : pair)}
+      >
+        {expanded ? '收起' : '变更'}
+      </Button>
+    ) : null
+
+  const diffPanel = (pair: VersionDiffPair) => (
+    <div className="cn-vh-diff" data-testid="version-diff-panel">
+      {diffLoading ? (
+        <div className="cn-vh-diff-loading">
+          <Skeleton active title={false} paragraph={{ rows: 5 }} />
+        </div>
+      ) : diffError ? (
+        <div className="cn-vh-diff-error">差异计算失败，请重试</div>
+      ) : (
+        <DocumentDiffView
+          diff={diff?.diff ?? ''}
+          baseLabel={`v${pair.base}`}
+          headLabel={pair.head === 0 ? '草稿' : `v${pair.head}`}
+        />
+      )}
+    </div>
+  )
 
   const body = () => {
     if (loading) {
@@ -102,7 +144,7 @@ export default function VersionsDrawer({
         </div>
       )
     }
-    if (versions.length <= 1) {
+    if (versions.length <= 1 && !hasDraft) {
       return (
         <div className="cn-vh-empty">
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无历史版本（首次保存后自动创建）" />
@@ -117,13 +159,42 @@ export default function VersionsDrawer({
           </div>
         )}
         <ol className="cn-vh-list">
+          {hasDraft && (
+            <li
+              className={`cn-vh-item is-current is-draft${draftExpanded ? ' is-expanded' : ''}`}
+              data-testid="version-item-draft"
+            >
+              <span className="cn-vh-rail" aria-hidden="true">
+                <span className="cn-vh-dot" />
+              </span>
+
+              <div className="cn-vh-body">
+                <div className="cn-vh-card">
+                  <div className="cn-vh-card-head">
+                    <span className="cn-vh-ver">草稿</span>
+                    <Tag color="green" className="cn-vh-tag">当前</Tag>
+                    <span className="cn-vh-actions">
+                      {actions(draftPair, draftExpanded, 'draft')}
+                    </span>
+                  </div>
+
+                  <div className="cn-vh-summary" title="基于编辑基准版本的未提交修改（仅自己可见）">
+                    基于 v{draft.baseVersion} 的未提交修改（仅自己可见）
+                  </div>
+                </div>
+
+                {draftExpanded && draftPair && diffPanel(draftPair)}
+              </div>
+            </li>
+          )}
           {versions.map((v, idx) => {
-            const isCurrent = idx === 0
+            const isCurrent = idx === 0 && !hasDraft
+            const isPublishedHead = idx === 0 && hasDraft
             // 时间线自上而下由新到旧：items[idx + 1] 才是更早的那一版
             const older = versions[idx + 1]
-            // 「与上一版对比」= 本版（旧）→ 上方那一版（新）
-            const pair: VersionDiffPair | null = idx > 0
-              ? { base: v.version_number, head: versions[idx - 1].version_number }
+            // 「变更」挂在本版（产生变更的新版）行：本版（新）→ 下一行（旧）
+            const pair: VersionDiffPair | null = idx < versions.length - 1
+              ? { base: versions[idx + 1].version_number, head: v.version_number }
               : null
             const expanded = pair !== null && diffPair?.base === pair.base && diffPair?.head === pair.head
             const meta = CHANGE_TYPE_META[v.change_type] ?? null
@@ -131,7 +202,7 @@ export default function VersionsDrawer({
             return (
               <li
                 key={v.id}
-                className={`cn-vh-item${isCurrent ? ' is-current' : ''}${expanded ? ' is-expanded' : ''}`}
+                className={`cn-vh-item${isCurrent ? ' is-current' : ''}${isPublishedHead ? ' is-published-head' : ''}${expanded ? ' is-expanded' : ''}`}
                 data-testid={`version-item-${v.version_number}`}
               >
                 <span className="cn-vh-rail" aria-hidden="true">
@@ -143,70 +214,47 @@ export default function VersionsDrawer({
                     <div className="cn-vh-card-head">
                       <span className="cn-vh-ver">v{v.version_number}</span>
                       {isCurrent && <Tag color="green" className="cn-vh-tag">当前</Tag>}
+                      {isPublishedHead && <Tag color="blue" className="cn-vh-tag">已发布</Tag>}
                       {meta && <Tag color={meta.color} className="cn-vh-tag">{meta.label}</Tag>}
                       <Tooltip title={formatDateTime(v.created_at)}>
                         <span className="cn-vh-time">{formatRelativeTime(v.created_at)}</span>
                       </Tooltip>
                       <VolumeDelta current={v.content_size} older={older?.content_size} />
                       <span className="cn-vh-size">{formatSize(v.content_size)}</span>
-                    </div>
-
-                    <div className={`cn-vh-summary${v.change_summary ? '' : ' is-empty'}`}>
-                      {v.change_summary || '未填写变更说明'}
-                    </div>
-
-                    <div className="cn-vh-actions">
-                      {pair && (
-                        <Button
-                          size="small"
-                          type={expanded ? 'primary' : 'default'}
-                          ghost={expanded}
-                          icon={expanded ? <UpOutlined /> : <DownOutlined />}
-                          aria-expanded={expanded}
-                          data-testid={`version-diff-toggle-${v.version_number}`}
-                          onClick={() => onToggleDiff(expanded ? null : pair)}
-                        >
-                          {expanded ? '收起对比' : '与上一版对比'}
-                        </Button>
-                      )}
-                      {!isCurrent && (
-                        <Popconfirm
-                          title={`回滚到 v${v.version_number}？`}
-                          description="将基于该版本内容创建一个新版本，当前内容不会被覆盖。"
-                          okText="确认回滚"
-                          cancelText="取消"
-                          onConfirm={() => onRollback(v.version_number)}
-                        >
-                          <Button
-                            size="small"
-                            icon={<RollbackOutlined />}
-                            loading={rollingBack === v.version_number}
-                            data-testid={`version-rollback-${v.version_number}`}
+                      <span className="cn-vh-actions">
+                        {actions(pair, expanded, String(v.version_number))}
+                        {!isCurrent && (
+                          <Popconfirm
+                            title={`回滚到 v${v.version_number}？`}
+                            description="将基于该版本内容创建一个新版本，当前内容不会被覆盖。"
+                            okText="确认回滚"
+                            cancelText="取消"
+                            onConfirm={() => onRollback(v.version_number)}
                           >
-                            回滚到此版
-                          </Button>
-                        </Popconfirm>
-                      )}
+                            <Button
+                              size="small"
+                              type="text"
+                              icon={<RollbackOutlined />}
+                              loading={rollingBack === v.version_number}
+                              data-testid={`version-rollback-${v.version_number}`}
+                            >
+                              回滚
+                            </Button>
+                          </Popconfirm>
+                        )}
+                      </span>
+                    </div>
+
+                    <div
+                      className={`cn-vh-summary${v.change_summary ? '' : ' is-empty'}`}
+                      title={v.change_summary || '未填写变更说明'}
+                    >
+                      {v.change_summary && <span className="cn-vh-summary-label">提交修改信息</span>}
+                      {v.change_summary || '未填写变更说明'}
                     </div>
                   </div>
 
-                  {expanded && pair && (
-                    <div className="cn-vh-diff" data-testid="version-diff-panel">
-                      {diffLoading ? (
-                        <div className="cn-vh-diff-loading">
-                          <Skeleton active title={false} paragraph={{ rows: 5 }} />
-                        </div>
-                      ) : diffError ? (
-                        <div className="cn-vh-diff-error">差异计算失败，请重试</div>
-                      ) : (
-                        <DocumentDiffView
-                          diff={diff?.diff ?? ''}
-                          baseLabel={`v${pair.base}`}
-                          headLabel={`v${pair.head}`}
-                        />
-                      )}
-                    </div>
-                  )}
+                  {expanded && pair && diffPanel(pair)}
                 </div>
               </li>
             )
