@@ -4921,9 +4921,18 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-doc-list.ant-list-split .ant-list-item {
   border-color: var(--cn-border);
   transition: background-color 0.15s ease;
-  /* antd 默认 12px 20px：左右收一档更紧凑，左 20px 保持一档避免勾选框贴边 */
-  padding: var(--cn-space-lg) var(--cn-space-xl);
+  /* 上下 8px（antd 默认 12px）：单文档项占两行文本，压缩纵向空间 */
+  padding: var(--cn-space-md) var(--cn-space-xl);
   padding-inline-start: var(--cn-space-2xl);
+}
+
+/* 标题与描述行间距收紧（antd 默认 marginXXS=4px，运行时注入需 !important 覆盖）；描述行高同步收紧 */
+.cn-doc-list .ant-list-item .ant-list-item-meta-title {
+  margin-bottom: var(--cn-space-hairline) !important;
+}
+
+.cn-doc-list .ant-list-item .ant-list-item-meta-description {
+  line-height: 1.4;
 }
 
 .cn-doc-list .ant-list-item:hover {
