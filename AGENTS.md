@@ -16,6 +16,15 @@
 - 禁止 `--no-verify`、禁止跳过 pre-commit（prek）；prek 对 L0 / L1 同样会触发，属预期。
 - commit message 用 conventional commits：L0 用 `docs:`，L1 用 `chore:` / `ci:` / `build:`，L2 按改动性质（`feat:` / `fix:` / `refactor:` / `test:`）。
 
+## 方案分级（先定性，再选方案载体）
+
+不是所有需求都写 ADR，按复杂度分三级（判定标准详见 [.trae/rules/design.md](.trae/rules/design.md) 的「方案分级」）：
+
+- **S0 小改**（bug 修复、微调、单点改动）：确认意图后直接实现，无需卡片与 ADR。
+- **S1 常规功能**（跨 2+ 模块、多约束但无架构分叉）：写需求卡片（可轻量），方案并入卡片，**不强制 ADR**。
+- **S2 重大项**（数据 / 迁移 / 权限口径、架构选型、对外契约、用户明确为重大项、方案有实质分叉）：需求卡片 + ADR，走完整流程。
+- 拿不准按上一级处理；实现中发现设计分叉，S1 升级为 S2 补 ADR。
+
 ## 代码改动（L2）执行链
 
 - 每次改完代码必须依次执行：`make check-fast` → `make test` → 项目文档更新 → `make push`
@@ -29,12 +38,12 @@
 
 ## 收工前
 
-1. 回填 ADR 的「落地状态」与「交接」（做到哪期 / 下一步 / 已知坑）。
-2. 更新 CHANGELOG（条目带 `(ADR NNNN Pn)`）与相关文档。
+1. 回填 ADR 的「落地状态」与「交接」（做到哪期 / 下一步 / 已知坑）——仅当该需求有 ADR（S2 项）。
+2. 更新 CHANGELOG（条目带 `(ADR NNNN Pn)`，S0 / S1 无 ADR 时正常写条目）与相关文档。
 3. 按「门禁分级」跑到对应级别全绿再提交（L0 / L1 不跑 `make flow`；L2 至少 `make flow`）；推送按 [.trae/rules/dev-workflow.md](.trae/rules/dev-workflow.md) 执行。
 
 ## 需求移除 / 变更
 
-1. 先清理 ADR，再改代码：删去失效的口径行 / 现状条目 / 决策行 / 测试与分期，不留「历史方案」段落，保持 ADR 与当前项目一致。
+1. 若该需求有 ADR（S2 项），先清理 ADR 再改代码：删去失效的口径行 / 现状条目 / 决策行 / 测试与分期，不留「历史方案」段落，保持 ADR 与当前项目一致；S0 / S1 需求直接改代码与文档。
 2. ADR 被新方案替代或需求作废：**直接删除**该 ADR 文件、README 索引行及代码 / 文档中的引用，不在仓库保留 `Superseded` / `Deprecated` 文档；编号不复用，追溯看 git 历史（`git log -- docs/adr/`）。
 3. 细则见 [.trae/rules/design.md](.trae/rules/design.md)；`make adr-check` 会拦截残留的失效状态文档，并校验索引 Status 一致。
