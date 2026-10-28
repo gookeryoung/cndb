@@ -27,7 +27,7 @@ import { chartApi } from '@/api/charts'
 import type { ChartInstance, ChartTemplateInfo } from '@/api/charts'
 import { sanitizeSvg } from '@/components/Document/ChartEmbed'
 import type { ChartBlockSpec } from '@/components/Document/chartBlock'
-import { linkGrowthFromValue, linkValueFromGrowth } from './chartLinkage'
+import { growthLinkedDisplay, linkGrowthFromValue, linkValueFromGrowth } from './chartLinkage'
 
 const { Text, Paragraph } = Typography
 
@@ -186,6 +186,9 @@ export default function ChartDesignerModal({
   const [saveError, setSaveError] = useState<string | null>(null)
   /** 受影响单元格（ADR 0056 C4）：联动重算产生的单元格键（`value:i` / `growth:i`），仅编辑期可见 */
   const [affected, setAffected] = useState<ReadonlySet<string>>(new Set())
+  /** 联动单元格编辑态（ADR 0059 C3）：正在编辑的单元格键与草稿值；联动态非编辑时显示「数值(计算)」，点击后仅显示纯数值 */
+  const [editingCell, setEditingCell] = useState<string | null>(null)
+  const [cellDraft, setCellDraft] = useState<number | null>(null)
 
   // 打开且模板就绪时初始化草稿：新建从 default_config 起步，编辑从实例 config 起步
   useEffect(() => {
@@ -195,6 +198,8 @@ export default function ChartDesignerModal({
     setConfig(toDraftConfig(base))
     setSaveError(null)
     setAffected(new Set())
+    setEditingCell(null)
+    setCellDraft(null)
     // 依赖收敛到 templateKey 与清单数据：模板对象引用变化（重取）不重置编辑中的草稿
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, templateKey, templatesQuery.data, target])
@@ -238,6 +243,13 @@ export default function ChartDesignerModal({
     }
     setAffected(nextAffected)
     setConfig({ ...config, data: { ...config.data, rows } })
+  }
+
+  /** 联动单元格编辑提交（ADR 0059 C4 / Q1）：数值有实际改动才走联动写入，未改动失焦保持联动态 */
+  const commitLinkedCell = (field: 'value' | 'growth', index: number, original: number | null) => {
+    if (cellDraft !== original) updateRowField(index, field, cellDraft)
+    setEditingCell(null)
+    setCellDraft(null)
   }
 
   const updateSeriesRow = (index: number, field: 'label' | 'values', v: string | (number | null)[]) =>
@@ -542,56 +554,109 @@ export default function ChartDesignerModal({
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
-                      列：标签 / 主值（左轴）/ 次值（右轴，填写后本行主值联动变动）
+                      列：标签 / 主值（左轴）/ 次值（右轴，留空按主值推算显示为「(计算)」，点击可编辑；填写后本行主值联动变动）
                     </Text>
                     {rows.map((row, i) =>
-                      !isSeriesRow(row) ? (
-                        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <Input
-                            value={row.label}
-                            onChange={e => updateRowField(i, 'label', e.target.value)}
-                            placeholder="年份"
-                            style={{ width: 110 }}
-                            data-testid={`chart-designer-row-label-${i}`}
-                          />
-                          <Tooltip title={affected.has(`value:${i}`) ? '由次值联动重算' : undefined}>
-                            <InputNumber
-                              value={row.value}
-                              onChange={v => updateRowField(i, 'value', v)}
-                              placeholder="主值"
-                              style={{ width: 110, ...(affected.has(`value:${i}`) ? { background: '#FDF2E4' } : {}) }}
-                              data-affected={affected.has(`value:${i}`) || undefined}
-                              data-testid={`chart-designer-row-value-${i}`}
+                      !isSeriesRow(row) ? (() => {
+                        // 联动态判定（ADR 0059 D5）：默认联动态（次值留空且可推算）+ 本轮联动重算（affected 集合）
+                        const prevRow = i > 0 && !isSeriesRow(rows[i - 1]) ? rows[i - 1] : undefined
+                        const prevValue = prevRow && !isSeriesRow(prevRow) ? (prevRow.value ?? null) : null
+                        const gDisp = growthLinkedDisplay(row.growth ?? null, row.value ?? null, prevValue)
+                        const growthLinked = i > 0 && (affected.has(`growth:${i}`) || gDisp.linked)
+                        const growthShow = (row.growth ?? gDisp.display) ?? null
+                        const valueLinked = affected.has(`value:${i}`)
+                        const growthEditing = editingCell === `growth:${i}`
+                        const valueEditing = editingCell === `value:${i}`
+                        return (
+                          <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <Input
+                              value={row.label}
+                              onChange={e => updateRowField(i, 'label', e.target.value)}
+                              placeholder="年份"
+                              style={{ width: 110 }}
+                              data-testid={`chart-designer-row-label-${i}`}
                             />
-                          </Tooltip>
-                          <Tooltip
-                            title={
-                              i === 0
-                                ? '第 1 行无上年基数，次值不可填写'
-                                : affected.has(`growth:${i}`)
-                                  ? '由主值联动重算'
-                                  : undefined
-                            }
-                          >
-                            <InputNumber
-                              value={row.growth}
-                              onChange={v => updateRowField(i, 'growth', v)}
-                              placeholder="次值（可空）"
-                              disabled={i === 0}
-                              style={{ width: 120, ...(affected.has(`growth:${i}`) ? { background: '#FDF2E4' } : {}) }}
-                              data-affected={affected.has(`growth:${i}`) || undefined}
-                              data-testid={`chart-designer-row-growth-${i}`}
+                            <Tooltip title={valueLinked && !valueEditing ? '由次值联动重算' : undefined}>
+                              {valueLinked && !valueEditing ? (
+                                <Input
+                                  readOnly
+                                  value={`${row.value ?? ''}(计算)`}
+                                  onClick={() => {
+                                    setCellDraft(row.value ?? null)
+                                    setEditingCell(`value:${i}`)
+                                  }}
+                                  style={{ width: 110, background: '#FDF2E4', cursor: 'text' }}
+                                  data-linked=""
+                                  data-testid={`chart-designer-row-value-${i}`}
+                                />
+                              ) : (
+                                <InputNumber
+                                  {...(valueEditing
+                                    ? {
+                                        autoFocus: true,
+                                        value: cellDraft,
+                                        onChange: v => setCellDraft(typeof v === 'number' ? v : null),
+                                        onBlur: () => commitLinkedCell('value', i, row.value ?? null),
+                                        onPressEnter: () => commitLinkedCell('value', i, row.value ?? null),
+                                      }
+                                    : { value: row.value, onChange: v => updateRowField(i, 'value', v) })}
+                                  placeholder="主值"
+                                  style={{ width: 110 }}
+                                  data-testid={`chart-designer-row-value-${i}`}
+                                />
+                              )}
+                            </Tooltip>
+                            <Tooltip
+                              title={
+                                i === 0
+                                  ? '第 1 行无上年基数，次值不可填写'
+                                  : growthLinked && !growthEditing
+                                    ? affected.has(`growth:${i}`)
+                                      ? '由主值联动重算'
+                                      : '留空按主值推算'
+                                    : undefined
+                              }
+                            >
+                              {growthLinked && !growthEditing ? (
+                                <Input
+                                  readOnly
+                                  value={`${growthShow ?? ''}(计算)`}
+                                  onClick={() => {
+                                    setCellDraft(growthShow)
+                                    setEditingCell(`growth:${i}`)
+                                  }}
+                                  style={{ width: 120, background: '#FDF2E4', cursor: 'text' }}
+                                  data-linked=""
+                                  data-testid={`chart-designer-row-growth-${i}`}
+                                />
+                              ) : (
+                                <InputNumber
+                                  {...(growthEditing
+                                    ? {
+                                        autoFocus: true,
+                                        value: cellDraft,
+                                        onChange: v => setCellDraft(typeof v === 'number' ? v : null),
+                                        onBlur: () => commitLinkedCell('growth', i, growthShow),
+                                        onPressEnter: () => commitLinkedCell('growth', i, growthShow),
+                                      }
+                                    : { value: row.growth, onChange: v => updateRowField(i, 'growth', v) })}
+                                  placeholder="次值（可空）"
+                                  disabled={i === 0}
+                                  style={{ width: 120 }}
+                                  data-testid={`chart-designer-row-growth-${i}`}
+                                />
+                              )}
+                            </Tooltip>
+                            <Button
+                              type="text"
+                              danger
+                              icon={<DeleteOutlined />}
+                              disabled={!canRemoveRow}
+                              onClick={() => removeRow(i)}
                             />
-                          </Tooltip>
-                          <Button
-                            type="text"
-                            danger
-                            icon={<DeleteOutlined />}
-                            disabled={!canRemoveRow}
-                            onClick={() => removeRow(i)}
-                          />
-                        </div>
-                      ) : null,
+                          </div>
+                        )
+                      })() : null,
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Text type="secondary" style={{ fontSize: 12 }}>实际值年份数（规划期分界）</Text>

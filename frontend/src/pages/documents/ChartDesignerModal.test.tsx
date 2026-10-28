@@ -49,9 +49,10 @@ describe('ChartDesignerModal', () => {
     expect(screen.getByTestId('chart-designer-row-label-0')).toHaveValue('2020')
     expect(screen.getByTestId('chart-designer-row-value-0')).toHaveValue('132')
     expect(screen.getByTestId('chart-designer-row-growth-0')).toHaveValue('')
-    // 默认次值全部留空（ADR 0056 C1）
-    expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveValue('')
-    expect(screen.getByTestId('chart-designer-row-growth-2')).toHaveValue('')
+    // 默认次值直接显示为联动状态：按主值推算 +「(计算)」（ADR 0059 C2）
+    expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveValue('19.7(计算)')
+    expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveAttribute('data-linked')
+    expect(screen.getByTestId('chart-designer-row-growth-2')).toHaveValue('17.7(计算)')
     // 首行次值禁填（ADR 0056 C2）
     expect(screen.getByTestId('chart-designer-row-growth-0')).toBeDisabled()
     expect(screen.getByTestId('chart-designer-row-growth-1')).toBeEnabled()
@@ -62,27 +63,68 @@ describe('ChartDesignerModal', () => {
     expect(await screen.findByTestId('chart-designer-preview-svg')).toBeInTheDocument()
   }, 15_000)
 
-  it('次值联动（ADR 0056 C3/C4）：填第 2 行次值 → 主值联动并标记受影响；再改主值 → 次值反向重算', async () => {
+  it('次值联动（ADR 0056 C3/C4 + 0059 C1/C3/C4）：点击联动态进编辑填次值 → 主值联动(计算)；改主值 → 次值反向重算(计算)', async () => {
     renderDesigner({ kind: 'create', templateKey: 'bar-line-dual-axis' })
 
     await screen.findByTestId('chart-designer-preview-svg')
 
-    // 填第 2 行次值 20% → 主值 = 132 × 1.2 = 158.4（基数为上一行主值），主值格标记受影响
-    fireEvent.change(screen.getByTestId('chart-designer-row-growth-1'), { target: { value: '20' } })
-    const value1 = screen.getByTestId('chart-designer-row-value-1') as HTMLInputElement
-    await waitFor(() => expect(value1).toHaveValue('158.4'))
-    expect(value1).toHaveAttribute('data-affected')
-
-    // 手动改主值 200 → 次值反向重算为 (200/132 − 1)×100 ≈ 51.5，次值格标记受影响
-    fireEvent.change(value1, { target: { value: '200' } })
+    // 点击联动态次值（19.7(计算)）进入编辑：仅显示纯数值 19.7（ADR 0059 C3）
+    fireEvent.click(screen.getByTestId('chart-designer-row-growth-1'))
     const growth1 = screen.getByTestId('chart-designer-row-growth-1') as HTMLInputElement
-    await waitFor(() => expect(growth1).toHaveValue('51.5'))
-    expect(growth1).toHaveAttribute('data-affected')
-    expect(value1).not.toHaveAttribute('data-affected')
+    expect(growth1).toHaveValue('19.7')
+    expect(growth1).not.toHaveAttribute('data-linked')
 
-    // 再手动编辑次值：标记清除
-    fireEvent.change(growth1, { target: { value: '25' } })
-    await waitFor(() => expect(growth1).not.toHaveAttribute('data-affected'))
+    // 改为 20 失焦提交 → 主值 = 132 × 1.2 = 158.4，进入联动态显示「158.4(计算)」
+    fireEvent.change(growth1, { target: { value: '20' } })
+    fireEvent.blur(growth1)
+    const value1 = screen.getByTestId('chart-designer-row-value-1') as HTMLInputElement
+    await waitFor(() => expect(value1).toHaveValue('158.4(计算)'))
+    expect(value1).toHaveAttribute('data-linked')
+
+    // 点击主值进入编辑显示纯数值 158.4，改 200 → 次值反向重算 51.5(计算)
+    fireEvent.click(value1)
+    const value1Edit = screen.getByTestId('chart-designer-row-value-1') as HTMLInputElement
+    expect(value1Edit).toHaveValue('158.4')
+    fireEvent.change(value1Edit, { target: { value: '200' } })
+    fireEvent.blur(value1Edit)
+    const growth1After = screen.getByTestId('chart-designer-row-growth-1') as HTMLInputElement
+    await waitFor(() => expect(growth1After).toHaveValue('51.5(计算)'))
+    expect(growth1After).toHaveAttribute('data-linked')
+
+    // 再手动编辑次值为 25：次值转显式值（无 data-linked），主值 = 132 × 1.25 = 165(计算)
+    fireEvent.click(growth1After)
+    const growth1Edit = screen.getByTestId('chart-designer-row-growth-1') as HTMLInputElement
+    expect(growth1Edit).toHaveValue('51.5')
+    fireEvent.change(growth1Edit, { target: { value: '25' } })
+    fireEvent.blur(growth1Edit)
+    await waitFor(() => {
+      const value1Final = screen.getByTestId('chart-designer-row-value-1') as HTMLInputElement
+      expect(value1Final).toHaveValue('165(计算)')
+    })
+    expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveValue('25')
+    expect(screen.getByTestId('chart-designer-row-growth-1')).not.toHaveAttribute('data-linked')
+  }, 15_000)
+
+  it('联动单元格未改动失焦保持联动态、清空次值恢复联动显示（ADR 0059 Q1 / C4）', async () => {
+    renderDesigner({ kind: 'create', templateKey: 'bar-line-dual-axis' })
+
+    await screen.findByTestId('chart-designer-preview-svg')
+
+    // 点击联动态次值进入编辑后未改动即失焦：保持联动态（仍显示 19.7(计算)）
+    fireEvent.click(screen.getByTestId('chart-designer-row-growth-1'))
+    const growth1 = screen.getByTestId('chart-designer-row-growth-1') as HTMLInputElement
+    fireEvent.blur(growth1)
+    expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveValue('19.7(计算)')
+    expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveAttribute('data-linked')
+
+    // 显式填 30 → 主值联动 171.6(计算)；再清空次值 → 恢复按主值推算的联动态 30(计算)
+    fireEvent.click(screen.getByTestId('chart-designer-row-growth-1'))
+    fireEvent.change(screen.getByTestId('chart-designer-row-growth-1'), { target: { value: '30' } })
+    fireEvent.blur(screen.getByTestId('chart-designer-row-growth-1'))
+    const value1 = screen.getByTestId('chart-designer-row-value-1') as HTMLInputElement
+    await waitFor(() => expect(value1).toHaveValue('171.6(计算)'))
+    fireEvent.change(screen.getByTestId('chart-designer-row-growth-1'), { target: { value: '' } })
+    await waitFor(() => expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveValue('30(计算)'))
   }, 15_000)
 
   it('次值联动不越界（ADR 0056 I1）：上年主值缺失时不联动', async () => {
@@ -154,6 +196,9 @@ describe('ChartDesignerModal', () => {
     expect(saved.kind).toBe('chart')
     expect(saved.kind === 'chart' && saved.chart.id).toBe(301)
     expect(createBodies[0]).toMatchObject({ title: '双轴柱线组合图', template_key: 'bar-line-dual-axis' })
+    // 提交 payload 无联动标记字段，留空次值仍存 null（ADR 0059 C5）
+    const savedConfig = (createBodies[0] as { config?: { data?: { rows?: { growth: number | null }[] } } }).config
+    expect(savedConfig?.data?.rows?.map(r => r.growth)).toEqual([null, null, null])
   })
 
   it('编辑正文块：载入块内定义，保存只回传新定义、不写素材库', async () => {

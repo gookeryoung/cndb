@@ -1,8 +1,8 @@
 /**
  * Critical — 图表设计器派生单元格联动（ADR 0056）.
  *
- * 覆盖：插入双轴图表（bar-line-dual-axis）→ 设计器默认次值全部留空（C1）→
- * 第 1 行次值禁填（C2）→ 填第 2 行次值后本行主值联动变动且标记受影响（C3 / C4）→
+ * 覆盖：插入双轴图表（bar-line-dual-axis）→ 默认次值显示为联动状态「(计算)」（0059 C2）→
+ * 第 1 行次值禁填（C2）→ 点击联动态进编辑填第 2 行次值后主值联动「(计算)」（0056 C3/C4 + 0059 C1/C3/C4）→
  * 保存建实例成功（后端校验放行第 2 行次值）。
  *
  * 为什么必须 E2E：联动与禁填是跨 antd 组件 / Tooltip 包裹层的真实 DOM 行为，
@@ -48,21 +48,24 @@ test.describe("图表设计器次值联动", () => {
     await page.getByTestId(`chart-template-item-${TEMPLATE_KEY}`).click({ timeout: 20_000 });
     await page.getByTestId(`chart-template-pick-${TEMPLATE_KEY}`).click();
 
-    // C1：默认次值全部留空；C2：第 1 行禁填、第 2 行可填
+    // C1 / C2（ADR 0056）：第 1 行禁填；C2（ADR 0059）：默认次值直接显示为联动状态「19.7(计算)」
     const growth0 = page.getByTestId("chart-designer-row-growth-0");
     const growth1 = page.getByTestId("chart-designer-row-growth-1");
     await expect(growth0).toBeVisible({ timeout: 20_000 });
     await expect(growth0).toBeDisabled();
     await expect(growth0).toHaveValue("");
     await expect(growth1).toBeEnabled();
-    await expect(growth1).toHaveValue("");
+    await expect(growth1).toHaveValue(/^[\d.]+\(计算\)$/);
+    await expect(growth1).toHaveAttribute("data-linked", "");
 
-    // C3 / C4：填第 2 行次值 20% → 本行主值联动 132 × 1.2 = 158.4 且带受影响标记
-    const value1 = page.getByTestId("chart-designer-row-value-1");
-    await expect(value1).toHaveValue("158");
+    // C3 / C4（ADR 0059）：点击联动态进入编辑（仅纯数值）→ 填 20 失焦 → 主值联动 132 × 1.2 = 158.4(计算)
+    await growth1.click();
+    await expect(growth1).toHaveValue(/^[\d.]+$/);
     await growth1.fill("20");
-    await expect(value1).toHaveValue("158.4");
-    await expect(value1).toHaveAttribute("data-affected");
+    await growth1.blur();
+    const value1 = page.getByTestId("chart-designer-row-value-1");
+    await expect(value1).toHaveValue("158.4(计算)");
+    await expect(value1).toHaveAttribute("data-linked", "");
 
     // 保存：后端校验放行（第 2 行次值合法），正文插入图表块
     await page.getByTestId("chart-designer-title").fill(`次值联动图 ${stamp}`);
