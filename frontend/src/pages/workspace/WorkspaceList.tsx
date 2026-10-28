@@ -209,54 +209,55 @@ export default function WorkspaceList() {
 
   return (
     <div style={{ padding: isMobile ? 12 : 16 }} data-testid="workspace-list">
-      {/* 工具栏 —— 移动端纵向堆叠：标题整行、搜索框占满、按钮均分，避免固定宽度导致横向溢出 */}
-      <div
-        data-testid="workspace-list-toolbar"
-        style={{
-          display: 'flex',
-          flexDirection: isMobile ? 'column' : 'row',
-          justifyContent: 'space-between',
-          alignItems: isMobile ? 'stretch' : 'center',
-          marginBottom: 16,
-          flexWrap: 'wrap',
-          gap: 12,
-        }}
-      >
-        <div>
-          <Title level={3} style={{ margin: 0 }}><FolderOpenOutlined style={{ marginRight: 8 }} />我的工作区</Title>
-          <Text type="secondary">选择或创建一个工作区开始协作</Text>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <Input.Search
-            placeholder="搜索工作区名称/标签..."
-            allowClear
-            prefix={<SearchOutlined />}
-            style={{ width: isMobile ? '100%' : 260 }}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setCreateOpen(true)}
-            style={isMobile ? { flex: 1 } : undefined}
-            data-testid="create-workspace-btn"
-          >
-            新建工作区
-          </Button>
-          <Button
-            icon={<UploadOutlined />}
-            onClick={() => { importForm.resetFields(); setImportOpen(true) }}
-            style={isMobile ? { flex: 1 } : undefined}
-            data-testid="import-workspace-btn"
-          >
-            导入工作区
-          </Button>
-        </div>
-      </div>
-
+      {/* 左右双板块：左侧「我的工作区」卡片（标题 + 搜索 + 新建/导入 + 列表）与右侧「我的视图」卡片同高 */}
       <div className="cn-home-split" data-testid="workspace-home-split">
         <div className="cn-home-main">
+          {/* 工具栏 —— 移动端纵向堆叠：标题整行、搜索框占满、按钮均分，避免固定宽度导致横向溢出 */}
+          <div
+            data-testid="workspace-list-toolbar"
+            style={{
+              display: 'flex',
+              flexDirection: isMobile ? 'column' : 'row',
+              justifyContent: 'space-between',
+              alignItems: isMobile ? 'stretch' : 'center',
+              marginBottom: 16,
+              flexWrap: 'wrap',
+              gap: 12,
+            }}
+          >
+            <div>
+              <Title level={3} style={{ margin: 0 }}><FolderOpenOutlined style={{ marginRight: 8 }} />我的工作区</Title>
+              <Text type="secondary">选择或创建一个工作区开始协作</Text>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Input.Search
+                placeholder="搜索工作区名称/标签..."
+                allowClear
+                prefix={<SearchOutlined />}
+                style={{ width: isMobile ? '100%' : 260 }}
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+              />
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => setCreateOpen(true)}
+                style={isMobile ? { flex: 1 } : undefined}
+                data-testid="create-workspace-btn"
+              >
+                新建工作区
+              </Button>
+              <Button
+                icon={<UploadOutlined />}
+                onClick={() => { importForm.resetFields(); setImportOpen(true) }}
+                style={isMobile ? { flex: 1 } : undefined}
+                data-testid="import-workspace-btn"
+              >
+                导入工作区
+              </Button>
+            </div>
+          </div>
+
           {isLoading ? (
             /* 骨架屏占位 —— 行式布局，sr-only 文本保留给屏幕阅读器与既有测试断言 */
             <div data-testid="workspace-list-skeleton" role="status">
