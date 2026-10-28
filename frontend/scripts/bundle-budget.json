@@ -11,46 +11,47 @@
     "2026-10-22 feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
     "2026-10-24 fix(ci): 移除 KlineView 后 echarts/simple-statistics 共享 chunk 合并进 ChartView（lazy chunk，首屏不变，总量未增），按实测收口基线",
     "2026-10-25 feat(help): 帮助文档整页为独立 lazy chunk（ADR 0029 P2），锁定体积防回归",
-    "2026-10-26 feat(help): 帮助文档四级层级（ADR 0036）把正文拆为 L3 小节 + L4 条目并新增 6 个主题，帮助正文体积由 10.06 涨到 25.60 KiB；该 chunk 已是 /help 单独 lazy chunk，不进首屏，正文为静态文案无可 lazy 化依赖"
+    "2026-10-26 feat(help): 帮助文档四级层级（ADR 0036）把正文拆为 L3 小节 + L4 条目并新增 6 个主题，帮助正文体积由 10.06 涨到 25.60 KiB；该 chunk 已是 /help 单独 lazy chunk，不进首屏，正文为静态文案无可 lazy 化依赖",
+    "2026-10-28 ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy"
   ],
   "chunks": [
     {
       "name": "主入口 index",
       "resolve": "entry",
-      "baseline": 179886,
-      "reason": "feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
-      "updatedAt": "2026-10-22",
-      "commit": "41fc045b"
+      "baseline": 185368,
+      "reason": "ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
+      "updatedAt": "2026-10-28",
+      "commit": "c8adba43"
     },
     {
       "name": "GridPage（表页闭包）",
       "resolve": {
         "assetPattern": "^GridPage-.*\\.js$"
       },
-      "baseline": 33806,
-      "reason": "feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
-      "updatedAt": "2026-10-22",
-      "commit": "41fc045b"
+      "baseline": 35480,
+      "reason": "ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
+      "updatedAt": "2026-10-28",
+      "commit": "c8adba43"
     },
     {
       "name": "ChartView（图表视图）",
       "resolve": {
         "assetPattern": "^ChartView-.*\\.js$"
       },
-      "baseline": 205127,
-      "reason": "fix(ci): 移除 KlineView 后 echarts/simple-statistics 共享 chunk 合并进 ChartView（lazy chunk，首屏不变，总量未增），按实测收口基线",
-      "updatedAt": "2026-10-24",
-      "commit": "ad6a2ff4"
+      "baseline": 205154,
+      "reason": "ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
+      "updatedAt": "2026-10-28",
+      "commit": "c8adba43"
     },
     {
       "name": "HelpDocsPage（帮助文档整页）",
       "resolve": {
         "assetPattern": "^HelpDocsPage-.*\\.js$"
       },
-      "baseline": 26219,
-      "reason": "feat(help): 帮助文档四级层级（ADR 0036）把正文拆为 L3 小节 + L4 条目并新增 6 个主题，帮助正文体积由 10.06 涨到 25.60 KiB；该 chunk 已是 /help 单独 lazy chunk，不进首屏，正文为静态文案无可 lazy 化依赖",
-      "updatedAt": "2026-10-26",
-      "commit": "851481d3"
+      "baseline": 27537,
+      "reason": "ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
+      "updatedAt": "2026-10-28",
+      "commit": "c8adba43"
     }
   ]
 }
