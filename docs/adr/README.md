@@ -61,7 +61,7 @@
 | [0058](0058-insert-chart-modal-cascade.md) | 插入图表对话框多级列表改造与双轴模板更名 | Accepted | P0-P2 已落地（待人工评审） | `src/cndb/plugins/documents/services/charts/registry.py`、`frontend/src/pages/documents/InsertChartModal.tsx` | `tests/test_documents_charts_registry.py`、`frontend/src/pages/documents/InsertChartModal.test.tsx` | [816d77aa](https://codeup.aliyun.com/cndev/python/cndb/commit/816d77aa) |
 | [0059](0059-chart-linkage-display.md) | 图表设计器联动单元格「(计算)」显示与默认联动态 | Accepted | P0-P2 已落地（待人工评审） | `frontend/src/pages/documents/chartLinkage.ts`、`frontend/src/pages/documents/ChartDesignerModal.tsx` | `frontend/src/pages/documents/chartLinkage.test.ts`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx`、`frontend/tests/e2e/critical/chart-designer-linkage.spec.ts` | [c75dfadb](https://codeup.aliyun.com/cndev/python/cndb/commit/c75dfadb) |
 | [0057](0057-document-draft-diff-view.md) | 文档草稿 — 修改内容查看（diff）、保存与丢弃 | Accepted | P0-P2 已落地（待人工评审） | `src/cndb/plugins/documents/services/drafts.py`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `tests/test_document_drafts.py`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`、`frontend/tests/e2e/critical/document-draft-diff-discard.spec.ts` | [未发布](../../CHANGELOG.md) |
-| [0060](0060-document-chart-click-zoom.md) | 文档图表点击放大查看（查看 / 游客模式对齐图片预览） | Accepted | 未开始 | `frontend/src/components/Document/ChartEmbed.tsx` | `frontend/src/components/Document/ChartEmbed.test.tsx` | — |
+| [0060](0060-document-chart-click-zoom.md) | 文档图表点击放大查看（查看 / 游客模式对齐图片预览） | Accepted | P0-P1 已落地（待人工评审） | `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/index.css` | `frontend/src/components/Document/ChartEmbed.test.tsx`、`frontend/tests/e2e/critical/document-chart-embed.spec.ts` | [未发布](../../CHANGELOG.md) |
 
 ## 说明
 

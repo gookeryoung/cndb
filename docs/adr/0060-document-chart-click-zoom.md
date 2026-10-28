@@ -118,13 +118,13 @@ Related: `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/compo
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
-| P1 | 未开始 | — | — | — |
+| P0 | 已落地 | `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/index.css` | `frontend/src/components/Document/ChartEmbed.test.tsx` | 待提交 |
+| P1 | 已落地 | `frontend/tests/e2e/critical/document-chart-embed.spec.ts`、`frontend/src/pages/help/content/tutorials.tsx` | 同左（e2e） | 待提交 |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：Proposed（待人工评审，通过后转 Accepted 交 implementer）
-- 已完成：需求卡片 0060、ADR 撰写
-- 下一步：评审 ADR → Accepted → 按 P0/P1 实现
-- 已知坑：无
-- 最近一次全绿：—
+- 当前阶段：P0-P1 已落地（待人工评审回填 Status）
+- 已完成：P0（放大交互 + 预览弹层 + 失败态无入口 + 单测 13/13）；P1（e2e 成员 4.2 段与游客段、教程文档提及）
+- 下一步：人工评审 → Status 改 Implemented；推送后由 CI 补跑 e2e（见已知坑）
+- 已知坑：本机缺 chromium 系统依赖（libatk-1.0.so.0），e2e 无法本地启动，由 CI 兜底；jsdom 不跑 Modal 离场动画，关闭断言用「不可见」而非「卸载」
+- 最近一次全绿：`make check-fast` + `make test`（后端 5856 passed）@ 3795aeed 之后的工作区（2026-10-28）

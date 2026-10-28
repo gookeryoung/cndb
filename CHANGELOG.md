@@ -5,6 +5,7 @@
 ## [未发布]
 
 ### 新增
+- **文档图表块查看态点击放大预览**（ADR 0060）：查看模式（含游客分享页）下点击图表本体打开放大弹层，复用同一次 `render-preview` 已 sanitize 的 SVG（宽度撑满弹层、禁横向滚动，零额外请求），点关闭 / Esc / 遮罩返回正文；渲染失败 / 加载中 / 无效块无放大入口，编辑模式宽度 / 编辑 / 保存图片控件不受影响。实现：`frontend/src/components/Document/ChartEmbed.tsx`；测试：`ChartEmbed.test.tsx` 增 3 例、e2e `document-chart-embed.spec.ts`（成员 + 游客两段）。
 - **文档草稿支持「查看修改（diff）」「丢弃」入口，草稿三件套闭环**（ADR 0057 P0-P2）：新增只读端点 `GET /api/v1/workspaces/{wid}/documents/{doc_id}/draft/diff`（「编辑基准版本 → 草稿」unified diff，复用 `parse.unified_diff` 唯一入口；无草稿 404 `code=no_draft`；基准版本缺失回退最新版本；`stale` 标记文档已前进版本）；编辑页有草稿时出现「查看修改」（抽屉复用 DiffView，stale 显示提示不阻断）与「丢弃草稿」（Popconfirm 确认 → 既有 `DELETE /{doc_id}/draft` → 编辑态重置为最新版本并回到查看模式）；保存草稿语义不变，零迁移。测试：`tests/test_document_drafts.py` 增 6 例、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` 增 3 例、e2e `frontend/tests/e2e/critical/document-draft-diff-discard.spec.ts`。
 - **文档图表块支持「保存图片」导出**：编辑模式下图表块「编辑图表」右侧新增「保存图片」下拉，可把当前后端渲染 SVG 存为 PNG / JPEG（2x 栅格化、JPEG 垫白底）或 SVG 矢量图，文件按图表标题命名（非法字符清洗）；纯浏览器本地完成（Blob + canvas），不新增端点、不上传。工具：`frontend/src/components/Document/chartImageSave.ts`；测试：`chartImageSave.test.ts`、`ChartEmbed.test.tsx`。
 

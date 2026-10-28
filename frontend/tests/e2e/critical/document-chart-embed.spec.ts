@@ -197,6 +197,15 @@ test.describe("文档图表内嵌块", () => {
       await expect(page.getByTestId("chart-embed-svg")).toBeVisible({ timeout: 20_000 });
       await expect(embed).toHaveAttribute("data-width", "25");
 
+      // 4.2) 查看态点击图表放大预览（ADR 0060）：弹层复用同一份 SVG，关闭后回到正文
+      await page.getByTestId("chart-embed-svg").click();
+      const zoomPreview = page.getByTestId("chart-embed-preview-svg");
+      await expect(zoomPreview).toBeVisible({ timeout: 20_000 });
+      await expect(zoomPreview.locator("svg")).toHaveCount(1);
+      await page.getByRole("button", { name: "Close" }).click();
+      await expect(zoomPreview).toBeHidden({ timeout: 20_000 });
+      await expect(page.getByTestId("chart-embed-svg")).toBeVisible();
+
       // 5) 导出 Markdown（D6）：zip 归档同时含定义块与指纹命名的静态资产
       const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });
       await page.getByTestId("doc-export-btn").click();
@@ -241,6 +250,12 @@ test.describe("文档图表内嵌块", () => {
           view.apiPaths.filter((p) => p.startsWith("/api/v1/workspaces/")),
           "游客页不得请求任何工作区鉴权接口",
         ).toEqual([]);
+
+        // 游客页同样支持点击放大（ADR 0060 I3 模式无关）
+        await guestEmbed.getByTestId("chart-embed-svg").click();
+        await expect(view.page.getByTestId("chart-embed-preview-svg").locator("svg")).toHaveCount(1);
+        await view.page.getByRole("button", { name: "Close" }).click();
+        await expect(view.page.getByTestId("chart-embed-preview-svg")).toBeHidden({ timeout: 20_000 });
       } finally {
         await view.context.close();
       }
