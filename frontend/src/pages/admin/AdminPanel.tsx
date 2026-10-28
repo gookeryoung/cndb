@@ -1,10 +1,12 @@
 /** 系统管理台 — 用户管理 / 事件流 / 系统信息 / 完整备份 / 完整恢复.
  *
  * 布局口径（与全站一致）：
- *   - 页面根 `·cn-admin`：16px 留白（窄屏 12px）+ 分区栏 与 内容列 之间 12px 间距；
- *   - 桌面端左侧是管理台自己的分区导航栏（200px，选中态沿用 `.cn-table-nav` 的
- *     品牌色指示条语言），窄屏折叠成可横滑的胶囊导航；
- *   - 内容列 = 页头（分区标题 + 说明 + 版本徽标）+ 分区内容，纵向 12px 节奏；
+ *   - 页面根 `·cn-admin`：撑满内容区高度的两栏布局；
+ *   - 桌面端左侧是管理台自己的 SIDEBAR（240px，贴边占满高度，风格与工作区
+ *     数据表 Sider 一致：bg-container 背景 + 右侧分隔线，选中态沿用
+ *     `.cn-table-nav` 的品牌色指示条语言），窄屏折叠成可横滑的胶囊导航；
+ *   - 内容列 = 页头（分区标题 + 说明 + 版本徽标）+ 分区内容，纵向 12px 节奏，
+ *     滚动只发生在内容列（16px 留白，窄屏 12px）；
  *   - 分区状态写入 `?section=`：可深链、刷新保持，且不影响「事件流」自身的
  *     `?action=` / `?keyword=` 筛选参数。
  */
@@ -463,7 +465,7 @@ export default function AdminPanel() {
 
   return (
     <div className="cn-admin" data-testid="admin-panel">
-      {/* 桌面端分区导航栏：窄屏由下方胶囊行替代（避免 200px 侧栏吃掉手机宽度） */}
+      {/* 桌面端分区导航 SIDEBAR：贴边占满高度，窄屏由下方胶囊行替代 */}
       {!isMobile && (
         <aside className="cn-admin-rail">
           <div className="cn-admin-rail-title">系统管理台</div>

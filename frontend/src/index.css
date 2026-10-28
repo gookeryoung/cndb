@@ -1329,11 +1329,26 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 340px;
   gap: var(--cn-space-xl);
-  align-items: start;
+  /* stretch：左右两板块（我的工作区 / 我的视图）高度一致，取二者较高者 */
+  align-items: stretch;
 }
 
+/* 左侧板块卡片：标题、搜索、新建/导入与工作区列表整合在同一卡片内（与右侧「我的视图」面板同款外观） */
 .cn-home-main {
   min-width: 0;
+  padding: var(--cn-space-lg);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container);
+}
+
+/* 右侧「我的视图」面板撑满栅格行高，与左侧卡片同高 */
+.cn-home-aside {
+  min-width: 0;
+}
+
+.cn-home-aside .cn-myviews-panel {
+  height: 100%;
 }
 
 /* 窄屏 / 平板：右侧面板堆叠到工作区下方，避免 340px 固定栏挤压行列表 */
@@ -4235,33 +4250,30 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 /* ─────────────── 系统管理台（AdminPanel）布局与视觉 ───────────────
- * 布局：桌面端「分区导航栏 + 内容列」两栏（200px + 自适应），窄屏折叠成横向胶囊行。
- * 口径：/admin 不渲染工作区 Sider（见 MainLayout），导航栏由管理台自带，
- * 选中态沿用 `.cn-table-nav` 的品牌色指示条语言，页头与内容列共用同一条左边界。
+ * 布局：桌面端「SIDEBAR + 内容列」两栏（240px + 自适应），侧栏贴边占满内容区
+ * 高度，风格与工作区数据表 Sider 一致（bg-container 背景 + 右侧分隔线，无卡片描边）；
+ * 窄屏折叠成横向胶囊行。
+ * 口径：/admin 不渲染工作区 Sider（见 MainLayout），侧栏由管理台自带，
+ * 选中态沿用 `.cn-table-nav` 的品牌色指示条语言；侧栏固定，滚动只发生在内容列。
  * 颜色 / 间距 / 字号 / 圆角全部取自 var(--cn-*) 标尺。 */
 
 .cn-admin {
   display: flex;
-  align-items: flex-start;
-  gap: var(--cn-space-lg);
-  padding: var(--cn-space-xl);
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
 }
 
-/* 分区导航栏：与数据表侧栏同宽，滚动内容区里吸顶 */
+/* 分区导航侧栏：与工作区数据表 Sider 同宽、贴边占满高度，滚动由内容列承担 */
 .cn-admin-rail {
-  position: sticky;
-  top: var(--cn-space-xl);
-  flex: 0 0 200px;
+  flex: 0 0 240px;
   display: flex;
   flex-direction: column;
   gap: var(--cn-space-md);
   padding: var(--cn-space-md);
-  border: 1px solid var(--cn-border);
-  border-radius: var(--cn-radius-lg);
+  border-right: 1px solid var(--cn-border);
   background: var(--cn-bg-container);
-  box-shadow:
-    0 1px 2px rgb(var(--cn-shadow-color) / 0.04),
-    0 4px 16px rgb(var(--cn-shadow-color) / 0.03);
+  overflow-y: auto;
 }
 
 .cn-admin-rail-title {
@@ -4337,10 +4349,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-muted);
 }
 
-/* 内容列：页头 → 分区内容，纵向 12px 节奏 */
+/* 内容列：页头 → 分区内容，纵向 12px 节奏；侧栏固定，滚动只发生在这里 */
 .cn-admin-main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--cn-space-xl);
   display: flex;
   flex-direction: column;
   gap: var(--cn-space-lg);
@@ -4662,6 +4677,10 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 @media (max-width: 767.98px) {
   .cn-admin {
     flex-direction: column;
+  }
+
+  /* 窄屏无侧栏，留白由内容列收紧 */
+  .cn-admin-main {
     padding: var(--cn-space-lg);
   }
 
