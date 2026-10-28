@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Badge,
   Checkbox,
   Alert,
   Breadcrumb,
@@ -17,7 +16,6 @@ import {
   Modal,
   Popconfirm,
   Row,
-  Select,
   Space,
   Tag,
   Tooltip,
@@ -36,7 +34,6 @@ import {
   EditOutlined,
   ExportOutlined,
   FileAddOutlined,
-  FilterOutlined,
   FolderAddOutlined,
   FolderOutlined,
   ImportOutlined,
@@ -83,11 +80,16 @@ export default function DocumentsPage() {
   const tagFilter = tagParam !== null && tagParam !== '' && !Number.isNaN(Number(tagParam))
     ? Number(tagParam)
     : undefined
+  // 状态筛选写入 URL（?status=），控件在侧栏（需求 0065），与 parent / order / tag 同机制
+  const statusParam = searchParams.get('status')
+  const statusFilter = ['draft', 'published', 'archived'].includes(statusParam ?? '')
+    ? (statusParam as string)
+    : undefined
   const orderBy: DocumentOrder = DOCUMENT_ORDER_OPTIONS.some(o => o.value === orderParam)
     ? (orderParam as DocumentOrder)
     : 'sort'
 
-  const updateParams = useCallback((patch: { parent?: number | null; order?: DocumentOrder; tag?: number | null }) => {
+  const updateParams = useCallback((patch: { parent?: number | null; order?: DocumentOrder; tag?: number | null; status?: string | null }) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
       if (patch.parent !== undefined) {
@@ -102,6 +104,10 @@ export default function DocumentsPage() {
         if (patch.tag === null) next.delete('tag')
         else next.set('tag', String(patch.tag))
       }
+      if (patch.status !== undefined) {
+        if (patch.status === null) next.delete('status')
+        else next.set('status', patch.status)
+      }
       return next
     }, { replace: true })
   }, [setSearchParams])
@@ -111,10 +117,7 @@ export default function DocumentsPage() {
     updateParams({ parent: id })
   }, [updateParams])
 
-  const [statusFilter, setStatusFilter] = useState<string | undefined>()
   const [titleKeyword, setTitleKeyword] = useState('')
-  // 移动端：排序 / 标签 / 状态低频筛选默认收起，避免顶部常驻三行
-  const [filterOpen, setFilterOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [createType, setCreateType] = useState<'doc' | 'folder'>('doc')
   const [newTitle, setNewTitle] = useState('')
@@ -167,12 +170,6 @@ export default function DocumentsPage() {
       }),
     // 子级列表走 list 端点；顶层散文档由全量树派生（list 不传 parent_id 会返回全部层级）
     enabled: Number.isFinite(workspaceId) && parentId !== null,
-  })
-
-  const tagsQuery = useQuery({
-    queryKey: ['documents', workspaceId, 'tags'],
-    queryFn: () => documentsApi.tags(workspaceId),
-    enabled: Number.isFinite(workspaceId),
   })
 
   const invalidate = useCallback(() => {
@@ -458,9 +455,6 @@ export default function DocumentsPage() {
   const mobileUpButton = parentId !== null && (
     <Button icon={<ArrowLeftOutlined />} aria-label="上一级" onClick={goUp} />
   )
-  /** 已应用筛选计数：排序非默认 / 标签 / 状态各计 1 项（收起态徽标与 aria-label 共用） */
-  const activeFilterCount =
-    (orderBy !== 'sort' ? 1 : 0) + (tagFilter !== undefined ? 1 : 0) + (statusFilter ? 1 : 0)
   const breadcrumbNode = (
     <Breadcrumb
       items={[
@@ -477,40 +471,6 @@ export default function DocumentsPage() {
       style={style}
       value={titleKeyword}
       onChange={e => setTitleKeyword(e.target.value)}
-    />
-  )
-  const renderOrderSelect = (style: CSSProperties) => (
-    <Select
-      style={style}
-      value={orderBy}
-      data-testid="doc-order-select"
-      onChange={(v: DocumentOrder) => updateParams({ order: v })}
-      options={DOCUMENT_ORDER_OPTIONS}
-    />
-  )
-  const renderTagSelect = (style: CSSProperties) => (
-    <Select
-      allowClear
-      placeholder="标签"
-      style={style}
-      value={tagFilter}
-      data-testid="doc-tag-filter"
-      onChange={(v?: number) => updateParams({ tag: v ?? null })}
-      options={(tagsQuery.data ?? []).map(tag => ({ value: tag.id, label: tag.name }))}
-    />
-  )
-  const renderStatusSelect = (style: CSSProperties) => (
-    <Select
-      allowClear
-      placeholder="状态"
-      style={style}
-      value={statusFilter}
-      onChange={setStatusFilter}
-      options={[
-        { value: 'draft', label: '草稿' },
-        { value: 'published', label: '已发布' },
-        { value: 'archived', label: '归档' },
-      ]}
     />
   )
   /** 窄屏次级操作：收录进「更多」菜单，避免顶栏折成三行 */
@@ -535,32 +495,11 @@ export default function DocumentsPage() {
               <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
             </Dropdown>
           </div>
-          {/* 第二行：搜索 + 筛选 + 新建（操作行常驻） */}
+          {/* 第二行：搜索 + 新建（筛选 / 排序已移入侧栏，需求 0065） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {renderSearchInput({ flex: 1, minWidth: 0 })}
-            <Badge count={activeFilterCount} size="small" offset={[-2, 2]}>
-              <Button
-                icon={<FilterOutlined />}
-                aria-label={activeFilterCount > 0 ? `筛选（已应用 ${activeFilterCount} 项）` : '筛选'}
-                aria-expanded={filterOpen}
-                data-testid="doc-toolbar-filter"
-                onClick={() => setFilterOpen(v => !v)}
-                type={filterOpen ? 'primary' : 'default'}
-              />
-            </Badge>
             <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建</Button>
           </div>
-          {/* 第三行：排序 / 标签 / 状态三等分 —— 仅在展开时渲染，收起后不占纵向空间 */}
-          {filterOpen && (
-            <div
-              data-testid="doc-toolbar-filters"
-              style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8 }}
-            >
-              {renderOrderSelect({ width: '100%' })}
-              {renderTagSelect({ width: '100%' })}
-              {renderStatusSelect({ width: '100%' })}
-            </div>
-          )}
         </div>
       ) : (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
@@ -573,9 +512,6 @@ export default function DocumentsPage() {
             <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
               回收站
             </Button>
-            {renderOrderSelect({ width: 120 })}
-            {renderTagSelect({ width: 140 })}
-            {renderStatusSelect({ width: 110 })}
             <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
             {/* 导入导出按钮组：紧凑并排，避免两个独立按钮占用过多横向空间 */}
             <Space.Compact>

@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer, Tree } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer, Tree, Select } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import {
@@ -11,12 +11,13 @@ import {
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
-  RobotOutlined, FolderFilled, FileTextOutlined,
+  RobotOutlined, FolderFilled, FileTextOutlined, ReloadOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
+import { DOCUMENT_ORDER_OPTIONS, type DocumentOrder } from '@/pages/documents/documentSort'
 import GlobalSearch from '@/components/GlobalSearch'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
@@ -96,7 +97,7 @@ export default function MainLayout() {
   const [aboutOpen, setAboutOpen] = useState(false)
   /** 顶部导航横滑容器（工作区页签 + 二级页签）—— 窄屏下把激活项滚入可视区 */
   const wsTabsRef = useRef<HTMLDivElement>(null)
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   // 移动端抽屉导航开关（仅 isMobile 时渲染汉堡入口）
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
@@ -160,6 +161,45 @@ export default function MainLayout() {
     enabled: !!wid && wsFeatures.documents && inDocumentsContext,
   })
   const docTree = useMemo(() => buildDocTree(docsTreeData ?? []), [docsTreeData])
+  // 侧栏筛选控件（需求 0065）：排序 / 标签 / 状态写 URL（?order=&tag=&status=），与文档列表页同源
+  const docOrderParam = searchParams.get('order') as DocumentOrder | null
+  const docOrderBy: DocumentOrder = DOCUMENT_ORDER_OPTIONS.some(o => o.value === docOrderParam)
+    ? (docOrderParam as DocumentOrder)
+    : 'sort'
+  const docTagParam = searchParams.get('tag')
+  const docTagFilter = docTagParam !== null && docTagParam !== '' && !Number.isNaN(Number(docTagParam))
+    ? Number(docTagParam)
+    : undefined
+  const docStatusParam = searchParams.get('status')
+  const docStatusFilter = ['draft', 'published', 'archived'].includes(docStatusParam ?? '')
+    ? (docStatusParam as string)
+    : undefined
+  const { data: docTags } = useQuery({
+    queryKey: ['documents', wid, 'tags'],
+    queryFn: () => documentsApi.tags(Number(wid)),
+    enabled: !!wid && wsFeatures.documents && inDocumentsContext,
+  })
+  const updateDocParams = useCallback((patch: { order?: DocumentOrder; tag?: number | null; status?: string | null }) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev)
+      if (patch.order !== undefined) {
+        if (patch.order === 'sort') next.delete('order')
+        else next.set('order', patch.order)
+      }
+      if (patch.tag !== undefined) {
+        if (patch.tag === null) next.delete('tag')
+        else next.set('tag', String(patch.tag))
+      }
+      if (patch.status !== undefined) {
+        if (patch.status === null) next.delete('status')
+        else next.set('status', patch.status)
+      }
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
+  const refreshDocs = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ['documents', wid] })
+  }, [queryClient, wid])
   // 编辑器路由参数：仅纯数字为真实文档 id（静态子页段不会落入 docId，此处双保险）
   const activeDocId = docId && /^\d+$/.test(docId) ? docId : undefined
   // 树展开态：用户展开/收起前按「当前文档祖先链 + 一级文件夹」自动展开；交互后以手动状态为准
@@ -455,33 +495,89 @@ export default function MainLayout() {
       <div data-testid="sider-documents" className="cn-table-nav">
         <div style={{
           padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold,
-          color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block',
+          color: 'var(--cn-text-secondary)', fontSize: 12, display: 'flex',
+          alignItems: 'center', justifyContent: 'space-between',
         }}>
-          文档
-        </div>
-        {collapsed ? null : docsTreeReady && treeData.length === 0 ? (
-          <div className="cn-state">
-            <p>还没有文档，去文档页创建吧</p>
-          </div>
-        ) : (
-          <Tree
-            blockNode
-            showIcon
-            treeData={treeData}
-            selectedKeys={activeDocId ? [activeDocId] : []}
-            expandedKeys={docTreeExpanded}
-            onExpand={keys => setDocTreeExpanded(keys as string[])}
-            onClick={(_, node) => {
-              const raw = node as unknown as { docNode?: DocTreeNode }
-              if (!raw.docNode) return
-              if (raw.docNode.is_folder) {
-                navigate(`/w/${wid}/documents?parent=${raw.docNode.id}`)
-              } else {
-                navigate(`/w/${wid}/documents/${raw.docNode.id}`)
-              }
-              if (mobile) setMobileNavOpen(false)
-            }}
+          <span>文档</span>
+          {/* 刷新：失效本工作区全部文档查询（树 / 列表 / 统计） */}
+          <Button
+            type="text" size="small" icon={<ReloadOutlined />}
+            aria-label="刷新文档"
+            data-testid="doc-sidebar-refresh"
+            onClick={refreshDocs}
           />
+        </div>
+        {collapsed ? null : (
+          <>
+            {/* 排序 / 标签 / 状态筛选（需求 0065）：写 URL 参数，文档列表页同源生效 */}
+            <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)', display: 'grid', gap: 6 }}>
+              <Select
+                size="small"
+                style={{ width: '100%' }}
+                value={docOrderBy}
+                data-testid="doc-order-select"
+                onChange={(v: DocumentOrder) => updateDocParams({ order: v })}
+                options={DOCUMENT_ORDER_OPTIONS}
+              />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Select
+                  size="small"
+                  allowClear
+                  placeholder="标签"
+                  style={{ flex: 1, minWidth: 0 }}
+                  value={docTagFilter}
+                  data-testid="doc-tag-filter"
+                  onChange={(v?: number) => updateDocParams({ tag: v ?? null })}
+                  options={(docTags ?? []).map(tag => ({ value: tag.id, label: tag.name }))}
+                />
+                <Select
+                  size="small"
+                  allowClear
+                  placeholder="状态"
+                  style={{ flex: 1, minWidth: 0 }}
+                  value={docStatusFilter}
+                  data-testid="doc-status-filter"
+                  onChange={(v?: string) => updateDocParams({ status: v ?? null })}
+                  options={[
+                    { value: 'draft', label: '草稿' },
+                    { value: 'published', label: '已发布' },
+                    { value: 'archived', label: '归档' },
+                  ]}
+                />
+              </div>
+            </div>
+            {docsTreeReady && treeData.length === 0 ? (
+              <div className="cn-state">
+                <p>还没有文档，去文档页创建吧</p>
+              </div>
+            ) : (
+              <Tree
+                blockNode
+                showIcon
+                treeData={treeData}
+                selectedKeys={activeDocId ? [activeDocId] : []}
+                expandedKeys={docTreeExpanded}
+                onExpand={keys => setDocTreeExpanded(keys as string[])}
+                onClick={(_, node) => {
+                  const raw = node as unknown as { docNode?: DocTreeNode }
+                  if (!raw.docNode) return
+                  if (raw.docNode.is_folder) {
+                    // 进入层级时保留已选排序 / 筛选（?order=&tag=&status=）
+                    const kept = new URLSearchParams()
+                    for (const k of ['order', 'tag', 'status']) {
+                      const v = searchParams.get(k)
+                      if (v) kept.set(k, v)
+                    }
+                    const qs = kept.toString()
+                    navigate(`/w/${wid}/documents?parent=${raw.docNode.id}${qs ? `&${qs}` : ''}`)
+                  } else {
+                    navigate(`/w/${wid}/documents/${raw.docNode.id}`)
+                  }
+                  if (mobile) setMobileNavOpen(false)
+                }}
+              />
+            )}
+          </>
         )}
       </div>
     )

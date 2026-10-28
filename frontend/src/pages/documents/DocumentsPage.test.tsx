@@ -1,6 +1,7 @@
 /**
  * 文档管理页测试 —— 顶层系列卡片总览 + 系列详情视图：
  * 纯函数聚合（buildSeriesStats）+ 顶层卡片网格渲染与导航 + 系列级操作（重命名/移动/删除）。
+ * （需求 0065：页面内左树已移除、排序/筛选控件移入侧栏，正文系列卡片与列表保留。）
  */
 
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
@@ -212,7 +213,7 @@ describe('DocumentsPage 回收站', () => {
       }),
     )
     renderPage()
-    await screen.findByTestId('doc-series-card-1')
+    await screen.findByTestId('doc-trash-open')
 
     fireEvent.click(screen.getByTestId('doc-trash-open'))
     const item = await screen.findByTestId('doc-trash-item-2')
@@ -234,7 +235,7 @@ describe('DocumentsPage 回收站', () => {
       }),
     )
     renderPage()
-    await screen.findByTestId('doc-series-card-1')
+    await screen.findByTestId('doc-trash-open')
 
     fireEvent.click(screen.getByTestId('doc-trash-open'))
     fireEvent.click(await screen.findByTestId('doc-trash-purge-2'))
@@ -252,7 +253,7 @@ describe('DocumentsPage 回收站', () => {
         HttpResponse.json({ items: [], total: 0 })),
     )
     renderPage()
-    await screen.findByTestId('doc-series-card-1')
+    await screen.findByTestId('doc-trash-open')
 
     fireEvent.click(screen.getByTestId('doc-trash-open'))
     expect(await screen.findByText('回收站为空')).toBeInTheDocument()
@@ -268,34 +269,17 @@ describe('DocumentsPage 排序与 URL 状态', () => {
         )
     }
 
-    it('排序切换写入 URL，并在文件夹列表请求中带上 order 参数', async () => {
+    it('?order= 深链：list 请求携带 order 参数（排序控件在侧栏，写 URL）', async () => {
         const orders: string[] = []
         server.use(
             http.get('/api/v1/workspaces/10/documents', ({ request }) => {
-                const url = new URL(request.url)
-                orders.push(url.searchParams.get('order') ?? 'sort')
+                orders.push(new URL(request.url).searchParams.get('order') ?? 'sort')
                 return HttpResponse.json({ items: [], total: 0 })
             }),
         )
-        // 根层不请求 list（由全量树派生），故进入文件夹后再验证
-        renderPage('/w/10/documents?parent=1')
-        await screen.findByTestId('doc-order-select')
-        await screen.findByRole('button', { name: /上一级/ })
-        await waitFor(() => expect(orders.length).toBeGreaterThan(0))
-        expect(orders[orders.length - 1]).toBe('sort')
-
-        const openSelect = () => {
-            const selector = screen.getByTestId('doc-order-select').querySelector('.ant-select-selector') as HTMLElement
-            fireEvent.mouseDown(selector)
-        }
-        openSelect()
-        fireEvent.click(await screen.findByText('最近更新'))
+        renderPage('/w/10/documents?parent=1&order=updated')
+        await screen.findByTestId('doc-series-detail')
         await waitFor(() => expect(orders[orders.length - 1]).toBe('updated'))
-
-        // 再切回「手动顺序」时 URL 不保留 order 参数（保持链接干净）
-        openSelect()
-        fireEvent.click(await screen.findByText('手动顺序'))
-        await waitFor(() => expect(orders[orders.length - 1]).toBe('sort'))
     })
 
     it('?parent= 深链：直接进入该文件夹（顶栏出现「上一级」）', async () => {
@@ -306,41 +290,6 @@ describe('DocumentsPage 排序与 URL 状态', () => {
         expect((await screen.findAllByText('产品文档')).length).toBeGreaterThan(0)
     })
 })
-
-describe('DocumentsPage 系列卡片排序', () => {
-    it('切到「最近更新」后，系列卡片按系列最新更新时间倒序排列', async () => {
-        // 两个根文件夹：A 更新较新、B 较旧；手动顺序相反（B 在前）
-        const tree = [
-            { ...mockDocuments[0], id: 1, title: '旧系列', sort_order: 0 },
-            { ...mockDocuments[2], id: 2, parent_id: 1, title: '旧系列的文档', updated_at: '2026-01-01T00:00:00Z' },
-            { ...mockDocuments[0], id: 3, title: '新系列', sort_order: 1 },
-            { ...mockDocuments[2], id: 4, parent_id: 3, title: '新系列的文档', updated_at: '2026-09-01T00:00:00Z' },
-        ]
-        server.use(http.get('/api/v1/workspaces/10/documents/tree', () => HttpResponse.json({ items: tree })))
-        renderProviders(
-            <Routes>
-                <Route path="/w/:wid/documents" element={<DocumentsPage />} />
-            </Routes>,
-            { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
-        )
-
-        const titles = () => Array.from(document.querySelectorAll('[data-testid^="doc-series-card-"]'))
-            .map(el => el.getAttribute('data-testid'))
-
-        // 默认手动顺序：旧系列(1) 在前
-        await screen.findByTestId('doc-series-card-1')
-        expect(titles()[0]).toBe('doc-series-card-1')
-
-        const selector = screen.getByTestId('doc-order-select').querySelector('.ant-select-selector') as HTMLElement
-        fireEvent.mouseDown(selector)
-        fireEvent.click(await screen.findByText('最近更新'))
-
-        await waitFor(() => expect(titles()[0]).toBe('doc-series-card-3'))
-    })
-})
-})
-
-
 
 describe('DocumentsPage 批量操作', () => {
     function renderPage(route = '/w/10/documents?parent=1') {
@@ -497,8 +446,6 @@ describe('DocumentsPage 标签筛选', () => {
         renderPage('/w/10/documents?parent=1&tag=7')
 
         await waitFor(() => expect(tagIds).toContain('7'))
-        // 下拉回显标签名（不等候 portal 展开，只断言选中值）
-        await waitFor(() => expect(screen.getByTestId('doc-tag-filter')).toHaveTextContent('季度'))
     })
 
     it('根层按 ?tag= 过滤派生的散文档列表', async () => {
@@ -515,17 +462,8 @@ describe('DocumentsPage 标签筛选', () => {
 
         expect(await screen.findByText('带标签文档')).toBeInTheDocument()
         await waitFor(() => expect(screen.queryByText('无标签文档')).toBeNull())
-        // 文件夹本身没有标签 → 按标签筛选时不展示系列卡片（与后端口径一致）
+        // 文件夹本身没有标签 → 按标签筛选时根层只展示命中的散文档（网格已移除，见 0065）
         expect(screen.queryByTestId('doc-series-grid')).toBeNull()
-    })
-
-    it('不带 tag 参数时展示全部（下拉仍渲染）', async () => {
-        server.use(
-            http.get('/api/v1/workspaces/10/documents/tags', () =>
-                HttpResponse.json({ items: [{ id: 7, name: '季度', doc_count: 0, color: null }] })),
-        )
-        renderPage()
-        expect(await screen.findByTestId('doc-tag-filter')).toBeInTheDocument()
     })
 })
 
@@ -549,11 +487,9 @@ describe('列表可见性提示', () => {
             <Routes>
                 <Route path="/w/:wid/documents" element={<DocumentsPage />} />
             </Routes>,
-            { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+            { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
         )
 
-        // 进入系列（文件夹）查看子文档列表
-        fireEvent.click(await screen.findByTestId('doc-series-card-1'))
         await screen.findByTestId('doc-series-detail')
 
         const privateTag = await screen.findByTestId('doc-list-visibility-2')
@@ -582,7 +518,7 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     }
   })
 
-  it('顶部收为两行：筛选默认收起，展开后可筛选，更多菜单承载次级操作', async () => {
+  it('顶部收为两行：搜索与新建常驻，排序 / 筛选已移入侧栏（需求 0065）', async () => {
     renderProviders(
       <Routes>
         <Route path="/w/:wid/documents" element={<DocumentsPage />} />
@@ -595,27 +531,15 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     // 桌面常显的次级按钮不再直接渲染
     expect(screen.queryByTestId('doc-trash-open')).toBeNull()
     expect(screen.queryByTestId('doc-file-import')).toBeNull()
-    // 默认只有导航行 + 操作行，排序 / 标签 / 状态不常驻
+    // 只剩导航行 + 搜索/新建行；筛选控件不在页面（由侧栏承担）
     expect(toolbar.children).toHaveLength(2)
-    expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
+    expect(screen.queryByTestId('doc-toolbar-filter')).toBeNull()
     expect(screen.queryByTestId('doc-order-select')).toBeNull()
     expect(screen.queryByTestId('doc-tag-filter')).toBeNull()
-    // 搜索、筛选、更多、新建仍可用
+    expect(screen.queryByTestId('doc-status-filter')).toBeNull()
+    // 搜索、新建仍可用
     expect(within(toolbar).getByPlaceholderText('本页标题过滤')).toBeVisible()
-    const filterBtn = within(toolbar).getByTestId('doc-toolbar-filter')
-    expect(filterBtn).toHaveAttribute('aria-expanded', 'false')
     expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
-
-    // 展开筛选行：三个控件恢复可见
-    fireEvent.click(filterBtn)
-    expect(await screen.findByTestId('doc-toolbar-filters')).toBeVisible()
-    expect(filterBtn).toHaveAttribute('aria-expanded', 'true')
-    expect(within(toolbar).getByTestId('doc-order-select')).toBeVisible()
-    expect(within(toolbar).getByTestId('doc-tag-filter')).toBeVisible()
-
-    // 再次点击收起，纵向空间收回
-    fireEvent.click(filterBtn)
-    await waitFor(() => expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull())
 
     // 「更多」菜单承载回收站与导入入口
     fireEvent.click(within(toolbar).getByTestId('doc-toolbar-more'))
@@ -624,22 +548,23 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     expect(screen.getByText('新建文件夹')).toBeInTheDocument()
   })
 
-  it('收起态仍能看出已应用筛选：计数徽标写入 aria-label', async () => {
+  it('?status= 深链：list 请求携带 status 参数（状态筛选写 URL，控件在侧栏）', async () => {
+    const statuses: (string | null)[] = []
     server.use(
-      http.get('/api/v1/workspaces/10/documents/tags', () =>
-        HttpResponse.json({ items: [{ id: 7, name: '季度', doc_count: 2, color: null }] })),
+      http.get('/api/v1/workspaces/10/documents', ({ request }) => {
+        statuses.push(new URL(request.url).searchParams.get('status'))
+        return HttpResponse.json({ items: [], total: 0 })
+      }),
     )
     renderProviders(
       <Routes>
         <Route path="/w/:wid/documents" element={<DocumentsPage />} />
       </Routes>,
-      { route: '/w/10/documents?parent=1&tag=7', initialAuth: { user: mockUser, token: 'fake-token' } },
+      { route: '/w/10/documents?parent=1&status=draft', initialAuth: { user: mockUser, token: 'fake-token' } },
     )
 
-    const filterBtn = await screen.findByTestId('doc-toolbar-filter')
-    expect(filterBtn).toHaveAttribute('aria-label', '筛选（已应用 1 项）')
-    // 深链筛选不自动展开（不重新占用第三行）
-    expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
+    await screen.findByTestId('doc-series-detail')
+    await waitFor(() => expect(statuses[statuses.length - 1]).toBe('draft'))
   })
 })
 
@@ -711,4 +636,5 @@ describe('文档列表边缘线与行操作', () => {
     fireEvent.click(await screen.findByTestId('doc-row-pin-2'))
     await waitFor(() => expect(pinned).toEqual(['2']))
   })
+})
 })

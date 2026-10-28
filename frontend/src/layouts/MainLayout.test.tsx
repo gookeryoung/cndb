@@ -65,10 +65,10 @@ function TableSettingsStub() {
     return <div data-testid="table-settings-stub">{loc.pathname}</div>
 }
 
-/** 文档路由桩 —— 展示当前 pathname 供断言 */
+/** 文档路由桩 —— 展示当前 pathname + query 供断言（?parent= 落在 search 上） */
 function DocumentsStub() {
     const loc = useLocation()
-    return <div data-testid="documents-page-stub">{loc.pathname}</div>
+    return <div data-testid="documents-page-stub">{loc.pathname}{loc.search}</div>
 }
 
 /** 工作区设置路由桩 —— 展示当前 pathname 供断言 */
@@ -690,11 +690,29 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         })
     })
 
+    it('侧栏承载排序 / 刷新 / 标签 / 状态控件：切排序写 URL（需求 0065 第二次修订）', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => expect(screen.getByTestId('doc-order-select')).toBeVisible())
+        expect(screen.getByTestId('doc-sidebar-refresh')).toBeVisible()
+        expect(screen.getByTestId('doc-tag-filter')).toBeVisible()
+        expect(screen.getByTestId('doc-status-filter')).toBeVisible()
+
+        // 切排序 → URL 写入 ?order=updated（文档列表页同源读取生效）
+        const selector = screen.getByTestId('doc-order-select').querySelector('.ant-select-selector') as HTMLElement
+        fireEvent.mouseDown(selector)
+        fireEvent.click(await screen.findByText('最近更新'))
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('order=updated')
+        })
+    })
+
     it('文档编辑器段：侧栏仍是同一棵文档树并高亮当前文档，不再显示大纲', async () => {
         renderLayout(mockUser, '/w/10/documents/2')
 
         await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
-        expect(screen.getByTitle('需求说明')).toBeVisible()
+        // 树数据异步返回，标题出现后再断言高亮
+        await waitFor(() => expect(screen.getByTitle('需求说明')).toBeVisible())
         // 当前文档高亮
         expect(screen.getByTitle('需求说明').closest('.ant-tree-treenode')).toHaveClass('ant-tree-treenode-selected')
         // 侧栏不再有大纲形态
