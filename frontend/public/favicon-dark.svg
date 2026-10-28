@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="晶格">
+<defs>
+<linearGradient id="gFrame" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#3CF4E6"/>
+<stop offset="0.45" stop-color="#2FD2FF"/>
+<stop offset="1" stop-color="#2A66FF"/>
+</linearGradient>
+<linearGradient id="gLine" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#3EF5EA"/>
+<stop offset="0.5" stop-color="#34D2FF"/>
+<stop offset="1" stop-color="#2F7CFF"/>
+</linearGradient>
+<linearGradient id="gNode" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#7DFEFF"/>
+<stop offset="0.5" stop-color="#4BE8FF"/>
+<stop offset="1" stop-color="#4A9DFF"/>
+</linearGradient>
+<radialGradient id="gCore" cx="0.5" cy="0.32" r="0.75">
+<stop offset="0" stop-color="#9BFFFF"/>
+<stop offset="0.5" stop-color="#4FF6FF"/>
+<stop offset="1" stop-color="#38C6FF"/>
+</radialGradient>
+<linearGradient id="plate" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#131F2C"/>
+<stop offset="0.55" stop-color="#0C141E"/>
+<stop offset="1" stop-color="#070C12"/>
+</linearGradient>
+</defs>
+<rect x="0" y="0" width="512" height="512" rx="114" fill="url(#plate)"/>
+<rect x="1" y="1" width="510" height="510" rx="113" fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="2"/>
+<g transform="translate(256 256) scale(0.76) translate(-256 -256)">
+<path d="M 240.41 47 Q 256 38 271.59 47 L 429.21 138 Q 444.79 147 444.79 165 L 444.79 347 Q 444.79 365 429.21 374 L 271.59 465 Q 256 474 240.41 465 L 82.79 374 Q 67.21 365 67.21 347 L 67.21 165 Q 67.21 147 82.79 138 Z" fill="none" stroke="url(#gFrame)" stroke-width="15" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 256 256 L 256 147 M 256 256 L 350.4 201.5 M 256 256 L 350.4 310.5 M 256 256 L 256 365 M 256 256 L 161.6 310.5 M 256 256 L 161.6 201.5 M 256 147 L 350.4 201.5 M 350.4 201.5 L 350.4 310.5 M 350.4 310.5 L 256 365 M 256 365 L 161.6 310.5 M 161.6 310.5 L 161.6 201.5 M 161.6 201.5 L 256 147 M 256 147 L 256 42.5 M 350.4 201.5 L 440.9 149.25 M 350.4 310.5 L 440.9 362.75 M 256 365 L 256 469.5 M 161.6 310.5 L 71.1 362.75 M 161.6 201.5 L 71.1 149.25 M 444.79 256 L 350.4 201.5 M 444.79 256 L 350.4 310.5 M 350.4 419.5 L 350.4 310.5 M 350.4 419.5 L 256 365 M 161.6 419.5 L 256 365 M 161.6 419.5 L 161.6 310.5 M 67.21 256 L 161.6 310.5 M 67.21 256 L 161.6 201.5 M 161.6 92.5 L 161.6 201.5 M 161.6 92.5 L 256 147 M 350.4 92.5 L 256 147 M 350.4 92.5 L 350.4 201.5" fill="none" stroke="url(#gLine)" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.95"/>
+<circle cx="256" cy="42.5" r="6.5" fill="url(#gNode)"/>
+<circle cx="440.9" cy="149.25" r="6.5" fill="url(#gNode)"/>
+<circle cx="440.9" cy="362.75" r="6.5" fill="url(#gNode)"/>
+<circle cx="256" cy="469.5" r="6.5" fill="url(#gNode)"/>
+<circle cx="71.1" cy="362.75" r="6.5" fill="url(#gNode)"/>
+<circle cx="71.1" cy="149.25" r="6.5" fill="url(#gNode)"/>
+<circle cx="444.79" cy="256" r="6.5" fill="url(#gNode)"/>
+<circle cx="350.4" cy="419.5" r="6.5" fill="url(#gNode)"/>
+<circle cx="161.6" cy="419.5" r="6.5" fill="url(#gNode)"/>
+<circle cx="67.21" cy="256" r="6.5" fill="url(#gNode)"/>
+<circle cx="161.6" cy="92.5" r="6.5" fill="url(#gNode)"/>
+<circle cx="350.4" cy="92.5" r="6.5" fill="url(#gNode)"/>
+<circle cx="256" cy="147" r="15.5" fill="url(#gNode)"/>
+<circle cx="350.4" cy="201.5" r="15.5" fill="url(#gNode)"/>
+<circle cx="350.4" cy="310.5" r="15.5" fill="url(#gNode)"/>
+<circle cx="256" cy="365" r="15.5" fill="url(#gNode)"/>
+<circle cx="161.6" cy="310.5" r="15.5" fill="url(#gNode)"/>
+<circle cx="161.6" cy="201.5" r="15.5" fill="url(#gNode)"/>
+<circle cx="256" cy="256" r="24" fill="url(#gCore)"/>
+</g>
+</svg>
