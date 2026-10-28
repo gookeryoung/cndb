@@ -178,8 +178,14 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     growth_vals = [growth_at(i) for i in range(1, n)]
     numeric_growth = [g for g in growth_vals if g is not None]
     max_g = max(numeric_growth) if numeric_growth else 0.0
-    step_g = _nice_step(max_g) if max_g > 0 else 5.0
-    y_max_g = max(step_g, math.ceil(max_g / step_g) * step_g) if max_g > 0 else step_g
+    min_g = min(numeric_growth) if numeric_growth else 0.0
+    # 次轴允许负值（用户反馈）：范围取 [floor(min), ceil(max)]，对称 nice 步长
+    span_src = max(max_g, -min_g, 1.0)
+    step_g = _nice_step(span_src)
+    y_max_g = math.ceil(max_g / step_g) * step_g if max_g > 0 else 0.0
+    y_min_g = math.floor(min_g / step_g) * step_g if min_g < 0 else 0.0
+    if y_max_g == y_min_g:
+        y_max_g = step_g
 
     def x_center(i: int) -> float:
         return pad_l + slot * (i + 0.5)
@@ -188,7 +194,8 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
         return plot_bottom - (v / y_max_rev) * plot_h
 
     def y_grow(v: float) -> float:
-        return plot_bottom - (v / y_max_g) * plot_h
+        span = y_max_g - y_min_g
+        return plot_bottom - ((v - y_min_g) / span) * plot_h if span > 0 else plot_bottom
 
     boundary = pad_l + slot * actual_count
     prims: list[Prim] = []
@@ -241,12 +248,15 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
         )
     )
 
-    # 右轴刻度
-    gv = 0.0
+    # 右轴刻度（含负值段，从 y_min_g 起步）
+    gv = y_min_g
     while gv <= y_max_g:
         prims.append(Prim("text", tx=w - pad_r + 12, ty=y_grow(gv) + 5, content=fmt_number(gv), size=14, fill=MUTED))
         gv += step_g
     prims.append(Prim("line", x1=w - pad_r, y1=pad_t - 6, x2=w - pad_r, y2=plot_bottom, stroke=RULE))
+    # 次轴零基准线（存在负增长时）
+    if y_min_g < 0:
+        prims.append(Prim("line", x1=pad_l, y1=y_grow(0), x2=w - pad_r, y2=y_grow(0), stroke=RULE))
     prims.append(
         Prim("text", tx=w - pad_r + 12, ty=pad_t - 18, content=str(labels.get("unitRight", "")), size=12.5, fill=MUTED)
     )
@@ -788,7 +798,7 @@ def _cagr_token(cfg: dict[str, Any]) -> str:
     base = rows[actual_count - 1].get("value")
     last = rows[-1].get("value")
     span = len(rows) - actual_count
-    if not base or not last or base <= 0 or span <= 0:
+    if not base or not last or base <= 0 or last <= 0 or span <= 0:
         return "—"
     return f"{(math.pow(last / base, 1 / span) - 1) * 100:.1f}%"
 

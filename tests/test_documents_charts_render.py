@@ -227,6 +227,40 @@ class TestSvgWriter:
             )
             assert connected, gl.content
 
+    def test_negative_growth_axis_range(self):
+        """次轴允许负值：负刻度出现、零基准线绘制、负值点在绘图区内（用户反馈）."""
+        cfg = {
+            "data": {
+                "actualCount": 5,
+                "rows": [
+                    {
+                        "label": str(2020 + i),
+                        "value": 200 - i * 30,
+                        "growth": [-8.5, -15.0, None, -12.5, 6.0, -20.0, 3.5, -5.0, 9.0, -18.0][i],
+                    }
+                    for i in range(10)
+                ],
+            }
+        }
+        doc = render_chart("bar-line-dual-axis", cfg)
+        import re as _re
+
+        path = next(p for p in doc.elements if p.kind == "path" and p.d and p.stroke)
+        points = [(float(a), float(b)) for a, b in _re.findall(r"[ML] ?([\d.]+) ([\d.]+)", path.d)]
+        assert points
+        # 水平线：底轴与零基准线（存在负增长时）
+        h_lines = [p for p in doc.elements if p.kind == "line" and p.y1 == p.y2 and p.stroke]
+        bottom_axis = max(p.y1 for p in h_lines)
+        zero_line = [p for p in h_lines if p.y1 < bottom_axis - 1]
+        assert zero_line  # 零基准线
+        # 全部折线点落在绘图区内（负值不再被 0 基线裁掉），且存在零线以下的点
+        for _x, y in points:
+            assert zero_line[0].y1 - 80 <= y <= bottom_axis + 1, y
+        assert any(y > zero_line[0].y1 for _x, y in points)
+        # 右轴出现负刻度文本
+        tick_texts = [p.content for p in doc.elements if p.kind == "text" and p.content.startswith("-")]
+        assert any(t in ("-8.5", "-15", "-20", "-12.5", "-5") for t in tick_texts)
+
     def test_growth_labels_dense_extreme_never_crash(self):
         """极端数据（柱满高 + 高增速）渲染不崩且标签仍有 halo."""
         cfg = {
