@@ -148,9 +148,9 @@ Related: `src/cndb/plugins/documents/services/drafts.py`、`src/cndb/plugins/doc
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/services/drafts.py`（`draft_diff`）、`src/cndb/plugins/documents/routers/documents.py`（`GET /draft/diff`） | `tests/test_document_drafts.py`（TestDraftDiff 6 例） | 待提交 |
-| P1 | 已落地 | `frontend/src/api/documents.ts`（`getDraftDiff`）、`frontend/src/pages/documents/DocumentEditorPage.tsx`（「查看修改」按钮 + diff 抽屉） | `frontend/src/pages/documents/DocumentEditorPage.test.tsx`（diff 抽屉 / stale 提示） | 待提交 |
-| P2 | 已落地 | `frontend/src/pages/documents/DocumentEditorPage.tsx`（「丢弃草稿」+ 编辑态重置） | `frontend/src/pages/documents/DocumentEditorPage.test.tsx`（确认 / 取消）、`frontend/tests/e2e/critical/document-draft-diff-discard.spec.ts` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/drafts.py`（`draft_diff`）、`src/cndb/plugins/documents/routers/documents.py`（`GET /draft/diff`） | `tests/test_document_drafts.py`（TestDraftDiff 6 例） | [41465823](https://codeup.aliyun.com/cndev/python/cndb/commit/41465823) |
+| P1 | 已落地 | `frontend/src/api/documents.ts`（`getDraftDiff`）、`frontend/src/pages/documents/DocumentEditorPage.tsx`（「查看修改」按钮 + diff 抽屉） | `frontend/src/pages/documents/DocumentEditorPage.test.tsx`（diff 抽屉 / stale 提示） | [41465823](https://codeup.aliyun.com/cndev/python/cndb/commit/41465823) |
+| P2 | 已落地 | `frontend/src/pages/documents/DocumentEditorPage.tsx`（「丢弃草稿」+ 编辑态重置） | `frontend/src/pages/documents/DocumentEditorPage.test.tsx`（确认 / 取消）、`frontend/tests/e2e/critical/document-draft-diff-discard.spec.ts` | [41465823](https://codeup.aliyun.com/cndev/python/cndb/commit/41465823) |
 
 ## 交接（会话结束更新）
 
@@ -158,4 +158,4 @@ Related: `src/cndb/plugins/documents/services/drafts.py`、`src/cndb/plugins/doc
 - 已完成：P0 后端 `draft_diff` + `GET /draft/diff`；P1 前端「查看修改」抽屉（复用 DiffView，stale 提示）；P2 「丢弃草稿」接线（Popconfirm → DELETE → 重置到最新版本并回查看模式）
 - 下一步：CI e2e 分片验证新 spec；人工评审后 Status 转 `Implemented`
 - 已知坑：本地 e2e 无法运行（Playwright chromium 缺系统库 libatk 且无 sudo 安装权限），新 e2e spec 未经本地浏览器执行，仅过 tsc / eslint / 单测等价验证（与 ADR 0053 会话同款环境限制）
-- 最近一次全绿：`make flow` + `make cov`（96.65%）+ `make frontend-coverage`（双门槛达标）@ 实现提交（2026-10-28）
+- 最近一次全绿：`make flow` + `make cov`（96.65%）+ `make frontend-coverage`（双门槛达标）@ [41465823](https://codeup.aliyun.com/cndev/python/cndb/commit/41465823)（2026-10-28）
