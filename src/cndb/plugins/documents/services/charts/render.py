@@ -313,9 +313,10 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     def _rects_hit(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
         return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
 
-    # 增长率标签避让（用户反馈：标签压柱体 / 遮主值标签看不清）。
-    # 已占区域：柱体、柱顶主值标签、规划期标注；候选位按「点上方 → 更高 → 点下方」取第一个无碰撞位，
-    # 全部碰撞时退回点上方并靠纸色 halo 保证可读（标签永不加底板压进柱内）。
+    # 增长率标签避让（用户反馈：标签压柱体 / 遮主值标签 / 压增长线看不清）。
+    # 已占区域：柱体、柱顶主值标签、规划期标注、增长折线段与数据点标记；
+    # 候选位按「点上方 → 更高 → 点下方」取第一个无碰撞位，
+    # 全部碰撞时取最小碰撞候选并靠纸色 halo 保证可读（标签永不加底板压进柱内）。
     occupied: list[tuple[float, float, float, float]] = [
         (
             x_center(i) - bar_w / 2,
@@ -333,6 +334,13 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
             occupied.append((x_center(i) - tw / 2 - 4, bar_top - 28, tw + 8, 26))
     band_lw = text_width(str(labels.get("bandLabel", "")), 12.5)
     occupied.append((boundary + 6, pad_t + 2, band_lw + 8, 20))
+    # 增长折线段（沿线近似加粗）与数据点标记也纳入占位，标签不得压线
+    for j in range(1, len(pts)):
+        x0, y0 = pts[j - 1][2], pts[j - 1][3]
+        x1, y1 = pts[j][2], pts[j][3]
+        occupied.append((min(x0, x1) - 5, min(y0, y1) - 5, abs(x1 - x0) + 10, abs(y1 - y0) + 10))
+    for _, _, px, py, _proj in pts:
+        occupied.append((px - 8, py - 8, 16, 16))
     # 左右轴刻度带整列占位（标签 x 平移避让时不得压进轴区）
     occupied.append((pad_l - 70, pad_t - 30, 70, plot_h + 40))
     occupied.append((w - pad_r, pad_t - 30, 80, plot_h + 40))

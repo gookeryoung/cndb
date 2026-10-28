@@ -119,6 +119,12 @@ class TestSvgWriter:
         value_labels = [p for p in doc.elements if p.kind == "text" and p.weight == 600]
         growth_labels = [p for p in doc.elements if p.kind == "text" and p.weight == 700 and p.content.endswith("%")]
         assert growth_labels
+        # 解析折线 path d，重建折线几何（数据点 + 段）
+        import re as _re
+
+        path = next(p for p in doc.elements if p.kind == "path" and p.d and p.stroke)
+        coords = [(float(a), float(b)) for a, b in _re.findall(r"[ML] ?([\d.]+) ([\d.]+)", path.d)]
+        assert len(coords) >= 10
         for gl in growth_labels:
             lw = width(gl.content, gl.size)
             bbox = (gl.tx - lw / 2, gl.ty - gl.size, lw, gl.size * 1.4)
@@ -129,6 +135,14 @@ class TestSvgWriter:
             for vl in value_labels:
                 vw = width(vl.content, vl.size)
                 assert not hits(bbox, (vl.tx - vw / 2, vl.ty - vl.size, vw, vl.size * 1.3)), gl.content
+            # 不得压增长折线段与数据点标记（解析 path d 重建折线几何）
+            for cx, cy in coords:
+                assert not hits(bbox, (cx - 8, cy - 8, 16, 16)), gl.content
+            for j in range(1, len(coords)):
+                sx0, sy0 = coords[j - 1]
+                sx1, sy1 = coords[j]
+                seg = (min(sx0, sx1) - 5, min(sy0, sy1) - 5, abs(sx1 - sx0) + 10, abs(sy1 - sy0) + 10)
+                assert not hits(bbox, seg), gl.content
         # 相邻增长率标签互不重叠
         placed = []
         for gl in growth_labels:
