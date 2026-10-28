@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from 'react'
-import { Alert, App as AntApp, Button, Dropdown, Skeleton, Space } from 'antd'
+import { Alert, App as AntApp, Button, Dropdown, Modal, Skeleton, Space } from 'antd'
 import { DownOutlined, DownloadOutlined, EditOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { chartApi } from '@/api/charts'
@@ -56,6 +56,7 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
   const cacheKey = specCacheKey(spec)
   const { message: toast } = AntApp.useApp()
   const [saving, setSaving] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   const handleSaveImage = async (format: ChartImageFormat) => {
     if (!svg || !spec || saving) return
@@ -95,7 +96,14 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
       {svg ? (
         <div
           data-testid="chart-embed-svg"
-          style={{ lineHeight: 0, maxWidth: '100%', overflowX: 'auto' }}
+          role="button"
+          tabIndex={0}
+          aria-label={`放大查看图表「${spec?.title || spec?.templateKey}」`}
+          onClick={() => setPreviewOpen(true)}
+          onKeyDown={e => {
+            if (e.key === 'Enter' || e.key === ' ') setPreviewOpen(true)
+          }}
+          style={{ lineHeight: 0, maxWidth: '100%', overflowX: 'auto', cursor: 'zoom-in' }}
           // 后端唯一渲染器产出 + sanitizeSvg 清洗，无脚本无外链
           dangerouslySetInnerHTML={{ __html: svg }}
         />
@@ -163,6 +171,27 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
           )}
         </Space>
       )}
+      {/* 放大预览（ADR 0060 D1）：复用同一份已 sanitize 的 SVG，零额外请求；
+          禁用过渡动画（jsdom 不跑离场动画，卸载语义保持一致） */}
+      <Modal
+        open={previewOpen}
+        onCancel={() => setPreviewOpen(false)}
+        footer={null}
+        width="90vw"
+        title={spec?.title || spec?.templateKey}
+        transitionName=""
+        maskTransitionName=""
+        data-testid="chart-embed-preview"
+      >
+        {previewOpen && svg && (
+          <div
+            data-testid="chart-embed-preview-svg"
+            className="cn-chart-preview"
+            style={{ lineHeight: 0, overflowX: 'hidden' }}
+            dangerouslySetInnerHTML={{ __html: svg }}
+          />
+        )}
+      </Modal>
     </figure>
   )
 }

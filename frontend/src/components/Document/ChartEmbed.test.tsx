@@ -160,4 +160,64 @@ describe('ChartEmbed', () => {
     renderProviders(<ChartEmbed shareToken="share-tok" block={block({ templateKey: 'retired-template' })} />)
     expect(await screen.findByTestId('chart-embed-error')).toBeInTheDocument()
   })
+
+  it('渲染成功后点击图表打开放大预览，复用同一份 SVG，关闭后弹层消失（ADR 0060）', async () => {
+    let renderCalls = 0
+    server.use(
+      http.post('/api/v1/workspaces/10/charts/render-preview', () => {
+        renderCalls += 1
+        return new HttpResponse('<svg xmlns="http://www.w3.org/2000/svg"><text>放大图表</text></svg>', {
+          status: 200,
+          headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' },
+        })
+      }),
+    )
+    renderProviders(<ChartEmbed workspaceId={10} block={block()} />)
+
+    const canvas = await screen.findByTestId('chart-embed-svg')
+    expect(canvas).toHaveAttribute('role', 'button')
+    expect(screen.queryByTestId('chart-embed-preview-svg')).toBeNull()
+
+    fireEvent.click(canvas)
+    const preview = await screen.findByTestId('chart-embed-preview-svg')
+    expect(preview.innerHTML).toContain('放大图表')
+    // 预览层复用同一份渲染结果，不发第二次渲染请求（I1）
+    expect(renderCalls).toBe(1)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    // Modal 关闭后隐藏（jsdom 中内容保持挂载，见 setup.ts 动画说明）
+    await waitFor(() => expect(screen.getByTestId('chart-embed-preview-svg')).not.toBeVisible())
+  })
+
+  it('渲染失败 / 无效块无放大入口（I2 降级一致）', async () => {
+    server.use(
+      http.post('/api/v1/workspaces/10/charts/render-preview', () =>
+        HttpResponse.json({ detail: '模板已下线' }, { status: 400 })),
+    )
+    const first = renderProviders(<ChartEmbed workspaceId={10} block={block({ templateKey: 'retired-template' })} />)
+    expect(await screen.findByTestId('chart-embed-error')).toBeInTheDocument()
+    expect(screen.queryByTestId('chart-embed-svg')).toBeNull()
+    expect(screen.queryByTestId('chart-embed-preview-svg')).toBeNull()
+    first.unmount()
+
+    renderProviders(
+      <ChartEmbed workspaceId={10} block={{ source: '```chart\n{bad}\n```', spec: null, error: 'json_invalid' }} />,
+    )
+    await screen.findByTestId('chart-embed-invalid-message')
+    expect(screen.queryByTestId('chart-embed-svg')).toBeNull()
+  })
+
+  it('游客分享模式同样支持点击放大（I3 模式无关）', async () => {
+    server.use(
+      http.post('/api/v1/documents/share/:token/charts/render-preview', () =>
+        new HttpResponse('<svg xmlns="http://www.w3.org/2000/svg"><text>游客放大</text></svg>', {
+          status: 200,
+          headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' },
+        })),
+    )
+    renderProviders(<ChartEmbed shareToken="share-tok" block={block()} />)
+
+    fireEvent.click(await screen.findByTestId('chart-embed-svg'))
+    expect((await screen.findByTestId('chart-embed-preview-svg')).innerHTML).toContain('游客放大')
+  })
 })

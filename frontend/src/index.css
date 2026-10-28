@@ -4851,6 +4851,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-size: var(--cn-text-xs);
 }
 
+/* 图表放大预览弹层（ADR 0060）：SVG 撑满弹层宽度，禁用横向滚动 */
+.cn-chart-preview svg {
+  width: 100%;
+  height: auto;
+}
+
 /* ─────────────── 编辑器状态栏（字数 / 行数 / 阅读时长） ─────────────── */
 .cn-doc-stats {
   flex-shrink: 0;
