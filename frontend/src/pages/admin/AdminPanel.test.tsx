@@ -197,6 +197,28 @@ describe('AdminPanel 系统管理台', () => {
       screen.getByText('跳过未知表 1 个: future_table', { selector: '.ant-modal-body div' }),
     ).toBeInTheDocument()
   })
+
+  it('侧栏不显示版本号说明文字，可折叠为图标栏再展开', async () => {
+    server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
+    renderPanel()
+    await screen.findByTestId('admin-nav-users')
+
+    // 页脚不再展示「仅系统管理员可见 · v版本」说明
+    expect(screen.queryByText(/仅系统管理员可见/)).not.toBeInTheDocument()
+
+    // 默认展开：导航项带文字标签；点击折叠后仅剩图标（title 提示 + 无标签）
+    expect(screen.getByTestId('admin-nav-users')).toHaveTextContent('用户管理')
+    fireEvent.click(screen.getByTestId('admin-rail-collapse'))
+    const collapsedItem = screen.getByTestId('admin-nav-users')
+    expect(collapsedItem).not.toHaveTextContent('用户管理')
+    expect(collapsedItem).toHaveAttribute('title', '用户管理')
+    expect(screen.getByTestId('admin-rail-collapse')).toHaveAttribute('aria-label', '展开侧栏')
+
+    // 再点一次恢复展开态
+    fireEvent.click(screen.getByTestId('admin-rail-collapse'))
+    expect(screen.getByTestId('admin-nav-users')).toHaveTextContent('用户管理')
+    expect(screen.getByTestId('admin-rail-collapse')).toHaveAttribute('aria-label', '收起侧栏')
+  })
 })
 
 describe('AdminPanel 系统信息窄屏布局', () => {

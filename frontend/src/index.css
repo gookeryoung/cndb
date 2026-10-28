@@ -4341,12 +4341,59 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-admin-rail-foot {
-  margin-top: var(--cn-space-xs);
-  padding: var(--cn-space-md) var(--cn-space-md) 0;
+  margin-top: auto;
+  padding-top: var(--cn-space-md);
   border-top: 1px solid var(--cn-border);
-  font-size: var(--cn-text-xs);
-  line-height: 1.6;
-  color: var(--cn-text-muted);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* 折叠开关 —— 与工作区 Sider 的 collapse trigger 同语义 */
+.cn-admin-rail-collapse {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--cn-radius-base);
+  background: transparent;
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-md);
+  cursor: pointer;
+  transition: background-color 0.18s ease, color 0.18s ease;
+}
+
+.cn-admin-rail-collapse:hover {
+  color: var(--cn-text-primary);
+  background: var(--cn-bg-subtle);
+}
+
+/* 折叠态：60px 图标栏，与工作区 Sider collapsedWidth 一致 */
+.cn-admin-rail-collapsed {
+  flex-basis: 60px;
+  padding: var(--cn-space-sm);
+  align-items: center;
+}
+
+.cn-admin-rail-collapsed .cn-admin-nav {
+  width: 100%;
+  align-items: stretch;
+}
+
+.cn-admin-rail-collapsed .cn-admin-nav-item {
+  justify-content: center;
+  padding: var(--cn-space-sm) 0;
+}
+
+.cn-admin-rail-collapsed .cn-admin-nav-item-active::before {
+  left: 0;
+  border-radius: 0 var(--cn-radius-sm) var(--cn-radius-sm) 0;
+}
+
+.cn-admin-rail-collapsed .cn-admin-rail-foot {
+  justify-content: center;
+  width: 100%;
 }
 
 /* 内容列：页头 → 分区内容，纵向 12px 节奏；侧栏固定，滚动只发生在这里 */

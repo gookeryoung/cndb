@@ -4,7 +4,8 @@
  *   - 页面根 `·cn-admin`：撑满内容区高度的两栏布局；
  *   - 桌面端左侧是管理台自己的 SIDEBAR（240px，贴边占满高度，风格与工作区
  *     数据表 Sider 一致：bg-container 背景 + 右侧分隔线，选中态沿用
- *     `.cn-table-nav` 的品牌色指示条语言），窄屏折叠成可横滑的胶囊导航；
+ *     `.cn-table-nav` 的品牌色指示条语言，可折叠为 60px 图标栏），窄屏折叠成
+ *     可横滑的胶囊导航；
  *   - 内容列 = 页头（分区标题 + 说明 + 版本徽标）+ 分区内容，纵向 12px 节奏，
  *     滚动只发生在内容列（16px 留白，窄屏 12px）；
  *   - 分区状态写入 `?section=`：可深链、刷新保持，且不影响「事件流」自身的
@@ -21,7 +22,7 @@ import {
   DatabaseOutlined, CloudUploadOutlined, CloudDownloadOutlined,
   InfoCircleOutlined, InboxOutlined, ExclamationCircleOutlined,
   ReloadOutlined, FileZipOutlined, WarningOutlined, SafetyOutlined,
-  TeamOutlined, HistoryOutlined, HddOutlined,
+  TeamOutlined, HistoryOutlined, HddOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api'
@@ -118,6 +119,9 @@ export default function AdminPanel() {
   const [restoring, setRestoring] = useState(false)
   // 恢复模式：auto 跟随备份标记；备份 schema 领先时校验通过自动切 sqlalchemy 降级
   const [restoreMode, setRestoreMode] = useState('auto')
+
+  // 侧栏折叠态 —— 与工作区数据表 Sider 的 collapsible 行为一致（60px 图标栏）
+  const [railCollapsed, setRailCollapsed] = useState(false)
 
   const inspectMutation = useMutation({
     mutationFn: (file: File) => adminApi.restoreInspect(file),
@@ -463,12 +467,14 @@ export default function AdminPanel() {
     return { ...s, active, onClick: () => goSection(s.key) }
   })
 
+  // 侧栏折叠态见上方 railCollapsed（Hook 须在条件 return 之前声明）
+
   return (
     <div className="cn-admin" data-testid="admin-panel">
-      {/* 桌面端分区导航 SIDEBAR：贴边占满高度，窄屏由下方胶囊行替代 */}
+      {/* 桌面端分区导航 SIDEBAR：贴边占满高度，可折叠（同工作区 Sider），窄屏由下方胶囊行替代 */}
       {!isMobile && (
-        <aside className="cn-admin-rail">
-          <div className="cn-admin-rail-title">系统管理台</div>
+        <aside className={railCollapsed ? 'cn-admin-rail cn-admin-rail-collapsed' : 'cn-admin-rail'}>
+          {!railCollapsed && <div className="cn-admin-rail-title">系统管理台</div>}
           <nav className="cn-admin-nav" role="tablist" aria-label="管理台分区" aria-orientation="vertical">
             {navItems.map(item => (
               <button
@@ -476,18 +482,27 @@ export default function AdminPanel() {
                 type="button"
                 role="tab"
                 aria-selected={item.active}
+                title={railCollapsed ? item.label : undefined}
                 data-testid={`admin-nav-${item.key}`}
                 className={item.active ? 'cn-admin-nav-item cn-admin-nav-item-active' : 'cn-admin-nav-item'}
                 onClick={item.onClick}
               >
                 <span className="cn-admin-nav-icon" aria-hidden>{item.icon}</span>
-                <span className="cn-admin-nav-label">{item.label}</span>
+                {!railCollapsed && <span className="cn-admin-nav-label">{item.label}</span>}
               </button>
             ))}
           </nav>
           <div className="cn-admin-rail-foot">
-            仅系统管理员可见
-            {info?.app_version ? ` · v${info.app_version}` : ''}
+            <button
+              type="button"
+              className="cn-admin-rail-collapse"
+              aria-label={railCollapsed ? '展开侧栏' : '收起侧栏'}
+              aria-expanded={!railCollapsed}
+              data-testid="admin-rail-collapse"
+              onClick={() => setRailCollapsed(c => !c)}
+            >
+              {railCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            </button>
           </div>
         </aside>
       )}
