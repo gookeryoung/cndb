@@ -531,25 +531,28 @@ export default function DocumentsPage() {
             {renderTagSelect({ width: 140 })}
             {renderStatusSelect({ width: 110 })}
             <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
-            <Tooltip title="导入：本地文件（Markdown / Word / HTML）单文件或整个文件夹，或整个 Obsidian 库（.zip），自动转 Markdown 并清理排版">
-              <Button
-                icon={<ImportOutlined />}
-                data-testid="doc-file-import"
-                onClick={() => setFileImportOpen(true)}
-              >
-                导入
-              </Button>
-            </Tooltip>
-            <Tooltip title="把当前工作区文档树导出为 Obsidian 库（.zip）">
-              <Button
-                icon={<ExportOutlined />}
-                data-testid="doc-vault-export"
-                loading={vaultExportMut.isPending}
-                onClick={() => vaultExportMut.mutate()}
-              >
-                导出
-              </Button>
-            </Tooltip>
+            {/* 导入导出按钮组：紧凑并排，避免两个独立按钮占用过多横向空间 */}
+            <Space.Compact>
+              <Tooltip title="导入：本地文件（Markdown / Word / HTML）单文件或整个文件夹，或整个 Obsidian 库（.zip），自动转 Markdown 并清理排版">
+                <Button
+                  icon={<ImportOutlined />}
+                  data-testid="doc-file-import"
+                  onClick={() => setFileImportOpen(true)}
+                >
+                  导入
+                </Button>
+              </Tooltip>
+              <Tooltip title="把当前工作区文档树导出为 Obsidian 库（.zip）">
+                <Button
+                  icon={<ExportOutlined />}
+                  data-testid="doc-vault-export"
+                  loading={vaultExportMut.isPending}
+                  onClick={() => vaultExportMut.mutate()}
+                >
+                  导出
+                </Button>
+              </Tooltip>
+            </Space.Compact>
             <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
           </Space>
         </div>
