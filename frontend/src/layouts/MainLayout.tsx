@@ -15,6 +15,8 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
+import { DOC_OUTLINE_JUMP_EVENT, useDocOutlineStore } from '@/store/docOutline'
+import OutlineList from '@/pages/documents/OutlineList'
 import GlobalSearch from '@/components/GlobalSearch'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
@@ -66,7 +68,7 @@ const { Header, Sider, Content } = Layout
 export default function MainLayout() {
   const navigate = useNavigate()
   const { modal } = AntApp.useApp()
-  const { wid, tid } = useParams<{ wid: string; tid?: string }>()
+  const { wid, tid, docId } = useParams<{ wid: string; tid?: string; docId?: string }>()
   const location = useLocation().pathname
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
@@ -137,6 +139,15 @@ export default function MainLayout() {
     staleTime: 60_000,
   })
 
+  // 文档侧栏的文档列表：仅文档段需要（未选中文档时展示），点击进入对应文档
+  // 注：inDocumentsContext 在下方「文档区二级页签」段定义，此查询在其后置使用
+  const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
+  const { data: docsData, isSuccess: docsListReady } = useQuery({
+    queryKey: ['workspaces', wid, 'documents', 'sider'],
+    queryFn: () => documentsApi.list(Number(wid)),
+    enabled: !!wid && wsFeatures.documents && inDocumentsContext,
+  })
+
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
   const orderedTables = tables
 
@@ -200,13 +211,32 @@ export default function MainLayout() {
   // ── 文档区二级页签（与表级同形：竖线分割 + 胶囊页签）──
   // 进入 /w/:wid/documents 及其子页时，在工作区 Tabs 右侧渲染「文档」根入口 + 子页页签。
   // 注意：/w/:wid/documents/:docId 也在该前缀下（编辑器页），此时无子页激活，仅展示根入口。
-  const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
+  // inDocumentsContext 已在上方文档侧栏查询处定义
   const activeDocumentTab = location.includes('/change-requests')
     ? 'change-requests'
     : location.includes('/issues')
       ? 'issues'
       : ''
   const activeDocumentSubpage = DOCUMENT_SUBPAGES.find(p => p.key === activeDocumentTab)
+
+  // ── 侧边栏形态：按当前功能段切换（需求 0065）──
+  // documents → 文档侧栏（未选文档=文档列表，已选中=标题大纲）；
+  // analytics / datasource / workspace settings → 无侧栏，内容区占满宽度；
+  // 其余（数据表段）→ 维持数据表导航。表级子页 /tables/:tid/settings 不含 /settings 段前缀，不受影响。
+  const inAnalyticsContext = !!wid && location.startsWith(`/w/${wid}/analytics`)
+  const inDatasourceContext = !!wid && location.startsWith(`/w/${wid}/datasource`)
+  const inWsSettingsContext = !!wid && location.startsWith(`/w/${wid}/settings`)
+  type SiderMode = 'documents' | 'tables' | 'hidden'
+  const siderMode: SiderMode =
+    inDocumentsContext && wsFeatures.documents
+      ? 'documents'
+      : (inAnalyticsContext || inDatasourceContext || inWsSettingsContext || !wsFeatures.tables)
+        ? 'hidden'
+        : 'tables'
+  // 文档编辑器路由参数：仅纯数字为真实文档 id（静态子页段不会落入 docId，此处双保险）
+  const activeDocId = docId && /^\d+$/.test(docId) ? docId : undefined
+  // 文档结构侧栏的大纲：由 DocumentEditorPage 实时同步（含未保存编辑），离开编辑器即清空
+  const docOutline = useDocOutlineStore(s => s.outline)
 
   // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
@@ -395,6 +425,70 @@ export default function MainLayout() {
     )
   }
 
+  /** 文档导航内容 —— 文档段下 Sider 与移动端抽屉共用（需求 0065）.
+   * 未选中文档：文档列表（点击进入）；已选中：当前文档标题大纲（锚点跳转，复用编辑器定位逻辑）。
+   * 大纲来自 useDocOutlineStore，离开编辑器后清空 → 回退空态提示。 */
+  const renderDocumentNav = (mobile: boolean, collapsed = false) => {
+    if (!wid) return null
+    if (activeDocId) {
+      return (
+        <div data-testid="sider-doc-outline" className="cn-table-nav">
+          <div style={{
+            padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold,
+            color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block',
+          }}>
+            文档结构
+          </div>
+          {collapsed ? null : docOutline.length === 0 ? (
+            <div className="cn-state">
+              <p>暂无标题（用 # 起首行添加，编辑时实时更新）</p>
+            </div>
+          ) : (
+            <div style={{ padding: '0 var(--cn-space-sm)' }}>
+              <OutlineList
+                outline={docOutline}
+                onAnchorClick={(anchor) => {
+                  window.dispatchEvent(new CustomEvent(DOC_OUTLINE_JUMP_EVENT, { detail: anchor }))
+                  if (mobile) setMobileNavOpen(false)
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )
+    }
+    const docItems = (docsData?.items ?? []).filter(d => !d.is_folder)
+    return (
+      <div data-testid="sider-documents" className="cn-table-nav">
+        <div style={{
+          padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold,
+          color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block',
+        }}>
+          <span data-testid="sider-documents-count">文档 ({docsListReady ? docItems.length : '…'})</span>
+        </div>
+        {collapsed ? null : docsListReady && docItems.length === 0 ? (
+          <div className="cn-state">
+            <p>还没有文档，去文档页创建吧</p>
+          </div>
+        ) : (
+          <Menu
+            mode="inline"
+            selectedKeys={activeDocId ? [activeDocId] : []}
+            items={docItems.map(d => ({
+              key: String(d.id),
+              icon: <FileTextOutlined />,
+              label: d.title,
+              onClick: () => {
+                navigate(`/w/${wid}/documents/${d.id}`)
+                if (mobile) setMobileNavOpen(false)
+              },
+            }))}
+          />
+        )}
+      </div>
+    )
+  }
+
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       <Header className="cn-app-header" style={{
@@ -498,14 +592,15 @@ export default function MainLayout() {
         {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
             管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
-            文档类工作区无数据表功能 → 不渲染表导航 Sider，内容区拿到整幅宽度 */}
-        {!isMobile && !inAdminConsole && !inHelpDocs && wsFeatures.tables && (
+            侧栏形态随功能段切换（需求 0065）：文档段=文档导航，数据表段=表导航，
+            analytics / datasource / 工作区设置段=无侧栏，内容区拿整幅宽度 */}
+        {!isMobile && !inAdminConsole && !inHelpDocs && siderMode !== 'hidden' && (
           <Sider
             collapsible collapsed={collapsed} onCollapse={setCollapsed}
             width={240} collapsedWidth={60}
             style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
           >
-            {renderTableNav(false, collapsed)}
+            {siderMode === 'documents' ? renderDocumentNav(false, collapsed) : renderTableNav(false, collapsed)}
           </Sider>
         )}
 
@@ -613,16 +708,16 @@ export default function MainLayout() {
         </Layout>
       </Layout>
 
-      {/* 移动端抽屉导航：替代常驻 Sider，点击表项后自动收起（文档类工作区无表导航） */}
+      {/* 移动端抽屉导航：替代常驻 Sider，点击条目后自动收起；内容随功能段切换（需求 0065） */}
       <Drawer
         title="导航"
         placement="left"
-        open={isMobile && mobileNavOpen && wsFeatures.tables}
+        open={isMobile && mobileNavOpen && siderMode !== 'hidden'}
         onClose={() => setMobileNavOpen(false)}
         width={280}
         styles={{ body: { padding: 0 } }}
       >
-        {wsFeatures.tables && renderTableNav(true)}
+        {siderMode === 'documents' ? renderDocumentNav(true) : siderMode === 'tables' && renderTableNav(true)}
       </Drawer>
 
       {/* 移动端工作区搜索：顶部抽屉承载与桌面同款搜索面板 */}

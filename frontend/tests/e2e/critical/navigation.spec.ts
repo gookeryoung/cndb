@@ -6,9 +6,16 @@
  */
 
 import { test, expect } from "../fixtures/auth"
+import { apiCall, getAdminToken } from "../helpers/api"
 
 const ANON = ["setup", "chromium-anon"]
 const WID = 1
+
+let adminToken = ""
+
+test.beforeAll(async ({ request }: { request: any }) => {
+  adminToken = await getAdminToken(request)
+})
 
 test.describe("MainLayout Header 导航按钮", () => {
   // 起点：工作区表列表页，保证所有 Header 按钮都能看到
@@ -74,6 +81,56 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(page.getByTestId("analytics-page")).toBeVisible({ timeout: 5000 })
     // 页签激活态落在「数据分析」，与文档模块互不影响
     await expect(page.getByRole("tab", { name: /数据分析/ })).toHaveAttribute("aria-selected", "true")
+  })
+
+  // ── 需求 0065：侧边栏随工作区功能段切换 ──
+
+  test("切到文档段：侧栏由数据表列表切换为文档列表，进入文档后显示文档结构", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+
+    // API 建一篇带两级标题的文档，不依赖 seed 文档数据
+    const docTitle = `侧栏结构 ${Date.now()}`
+    const created = await apiCall(page.request, adminToken, "post", `/workspaces/${WID}/documents`, {
+      title: docTitle,
+      content: `# ${docTitle}\n\n## 背景\n\n正文\n`,
+      status: "draft",
+    })
+    expect(created.status, JSON.stringify(created.body)).toBe(201)
+    const docId = (created.body as { id: number }).id
+
+    try {
+      await page.goto(`/w/${WID}/tables`)
+      await page.waitForURL(/\/tables$/)
+      // 表段：数据表导航侧栏
+      await expect(page.getByTestId("sider-tables")).toBeVisible({ timeout: 10_000 })
+
+      // 切到文档：表导航消失，文档列表侧栏出现
+      await page.getByRole("tab", { name: /文档/ }).click()
+      await page.waitForURL(/\/documents$/)
+      await expect(page.getByTestId("sider-documents")).toBeVisible()
+      await expect(page.getByTestId("sider-tables")).toHaveCount(0)
+
+      // 侧栏点文档 → 编辑器，侧栏切换为文档结构（含两级标题）
+      await page
+        .locator('[data-testid="sider-documents"] .ant-menu-item', { hasText: docTitle })
+        .click()
+      await page.waitForURL(new RegExp(`/documents/${docId}`))
+      const outline = page.getByTestId("sider-doc-outline")
+      await expect(outline).toBeVisible({ timeout: 10_000 })
+      await expect(outline).toContainText(docTitle)
+      await expect(outline).toContainText("背景")
+    } finally {
+      await apiCall(page.request, adminToken, "delete", `/workspaces/${WID}/documents/${docId}`).catch(() => {})
+    }
+  })
+
+  test("数据分析段不渲染侧栏，内容区占满宽度", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+
+    await page.goto(`/w/${WID}/analytics`)
+    await page.waitForURL(/\/analytics$/)
+    await expect(page.getByTestId("analytics-page")).toBeVisible({ timeout: 5000 })
+    await expect(page.locator(".ant-layout-sider")).toHaveCount(0)
   })
 })
 

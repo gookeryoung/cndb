@@ -3,11 +3,13 @@
  * 不得被无-wid 兜底重定向弹回第一个工作区（/admin 为无需 wid 的合法路径）。
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, fireEvent } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
+import { useDocOutlineStore } from '@/store/docOutline'
+import type { OutlineItem } from '@/components/Document/outline'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, mockWorkspace, server } from '@/test/msw'
 import type { UserResponse, WorkspaceType } from '@/api'
@@ -600,6 +602,12 @@ describe('MainLayout 移动端适配', () => {
         expect(screen.queryByTestId('app-version')).toBeNull()
         // 工作区下拉仅图标：按钮内无「测试工作区」文字
         expect(screen.queryByRole('button', { name: /测试工作区/ })).toBeNull()
+
+        // 复位为桌面端：responsiveState 是模块级变量，泄漏会让后续用例按移动端渲染
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
     })
 })
 
@@ -623,7 +631,7 @@ describe('MainLayout 工作区类型门控', () => {
         expect(screen.getByRole('tab', { name: /数据表/ })).toBeInTheDocument()
     })
 
-    it('文档类工作区（doc）仅显示「文档」与「工作区设置」，不渲染表导航侧栏', async () => {
+    it('文档类工作区（doc）仅显示「文档」与「工作区设置」，侧栏切换为文档导航', async () => {
         useWorkspaceType('doc')
         renderLayout(mockUser, '/w/10/documents')
 
@@ -633,8 +641,9 @@ describe('MainLayout 工作区类型门控', () => {
         expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
         expect(screen.getByRole('tab', { name: /文档/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /工作区设置/ })).toBeInTheDocument()
-        // 无数据表功能 → 不渲染常驻侧栏
-        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+        // 无数据表功能 → 文档段渲染文档导航侧栏（需求 0065），无表导航
+        await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
     it('文档类工作区访问数据表/数据分析路径自动重定向到文档页', async () => {
@@ -645,5 +654,109 @@ describe('MainLayout 工作区类型门控', () => {
             expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
         })
         expect(screen.queryByTestId('tables-page-stub')).toBeNull()
+    })
+})
+
+// ─────────────── 侧边栏随功能段切换（需求 0065） ───────────────
+
+describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
+    afterEach(() => {
+        useDocOutlineStore.setState({ outline: [] })
+    })
+
+    it('文档列表页：侧栏显示文档列表（不含文件夹），不再渲染数据表列表', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
+        // 数据表导航在文档段不渲染
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
+        // 列出非文件夹文档（msw：需求说明 1 篇 + 产品文档/会议纪要 2 个文件夹被过滤）
+        await waitFor(() => expect(screen.getByTestId('sider-documents-count')).toHaveTextContent('文档 (1)'))
+        expect(screen.getByText('需求说明')).toBeVisible()
+        // 文件夹不进入侧栏列表
+        expect(screen.queryByText('产品文档')).toBeNull()
+    })
+
+    it('点击侧栏文档项导航到对应文档编辑器', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => expect(screen.getByText('需求说明')).toBeVisible())
+        fireEvent.click(screen.getByText('需求说明'))
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents/2')
+        })
+    })
+
+    it('文档编辑器段：侧栏显示文档结构大纲（来自编辑器同步的 store），无表导航与文档列表', async () => {
+        const outline: OutlineItem[] = [
+            { level: 1, text: '概述', anchor: 'doc-h-概述', line: 0 },
+            { level: 2, text: '背景', anchor: 'doc-h-背景', line: 4 },
+        ]
+        useDocOutlineStore.setState({ outline })
+        renderLayout(mockUser, '/w/10/documents/2')
+
+        await waitFor(() => expect(screen.getByTestId('sider-doc-outline')).toBeVisible())
+        expect(screen.getByText('文档结构')).toBeVisible()
+        expect(screen.getByText('概述')).toBeVisible()
+        expect(screen.getByText('背景')).toBeVisible()
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
+        expect(screen.queryByTestId('sider-documents')).toBeNull()
+    })
+
+    it('大纲 store 为空（如刚进入编辑器未解析）时显示空态提示', async () => {
+        renderLayout(mockUser, '/w/10/documents/2')
+
+        await waitFor(() => expect(screen.getByTestId('sider-doc-outline')).toBeVisible())
+        expect(screen.getByText(/暂无标题/)).toBeVisible()
+    })
+
+    it('点击大纲条目派发锚点跳转事件，由编辑器消费定位', async () => {
+        const outline: OutlineItem[] = [{ level: 1, text: '概述', anchor: 'doc-h-概述', line: 0 }]
+        useDocOutlineStore.setState({ outline })
+        const dispatched: string[] = []
+        const handler = (e: Event) => dispatched.push((e as CustomEvent<string>).detail)
+        window.addEventListener('doc-outline-jump', handler)
+
+        renderLayout(mockUser, '/w/10/documents/2')
+        await waitFor(() => expect(screen.getByText('概述')).toBeVisible())
+        fireEvent.click(screen.getByText('概述'))
+        expect(dispatched).toEqual(['doc-h-概述'])
+        window.removeEventListener('doc-outline-jump', handler)
+    })
+
+    it('工作区设置段：不渲染任何侧栏，内容区占满宽度', async () => {
+        renderLayout(mockUser, '/w/10/settings')
+
+        await waitFor(() => expect(screen.getByTestId('settings-page-stub')).toBeVisible())
+        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
+        expect(screen.queryByTestId('sider-documents')).toBeNull()
+    })
+
+    it('数据表段维持表导航：数据表列表侧栏不受文档段切换影响', async () => {
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => expect(screen.getByTestId('sider-tables')).toBeVisible())
+        expect(screen.queryByTestId('sider-documents')).toBeNull()
+        expect(screen.queryByTestId('sider-doc-outline')).toBeNull()
+    })
+
+    it('移动端文档段：抽屉导航显示文档列表而非表列表', async () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 375, height: 667,
+        }
+        renderLayout(mockUser, '/w/10/documents')
+
+        fireEvent.click(screen.getByTestId('mobile-nav-btn'))
+        await waitFor(() => {
+            expect(screen.getByTestId('sider-documents-count')).toHaveTextContent('文档 (1)')
+        })
+        expect(screen.queryByText('数据表 (')).toBeNull()
+
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
     })
 })
