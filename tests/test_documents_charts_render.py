@@ -161,6 +161,42 @@ class TestSvgWriter:
         assert value_labels
         assert all(idx > line_idx for idx, _ in value_labels)
 
+    def test_displaced_growth_labels_get_leader_lines(self):
+        """标签被挤离数据点超过 30px 时必须补引线（偏离不失联）."""
+        doc = render_chart("bar-line-dual-axis", CHART_TEMPLATES["bar-line-dual-axis"].default_config)
+
+        def width(text: str, size: float = 14.5) -> float:
+            from cndb.plugins.documents.services.charts.render import text_width
+
+            return text_width(text, size)
+
+        import re as _re
+
+        path = next(p for p in doc.elements if p.kind == "path" and p.d and p.stroke)
+        points = [(float(a), float(b)) for a, b in _re.findall(r"[ML] ?([\d.]+) ([\d.]+)", path.d)]
+        # 只认起始于数据点的细线为引线（stroke_width==1 的还有网格线）
+        leaders = [
+            p
+            for p in doc.elements
+            if p.kind == "line" and p.stroke and p.stroke_width == 1 and any(abs(p.x1 - px) <= 1 and abs(p.y1 - py) <= 1 for px, py in points)
+        ]
+        for gl in doc.elements:
+            if not (gl.kind == "text" and gl.weight == 700 and gl.content.endswith("%")):
+                continue
+            lw = width(gl.content, gl.size)
+            bbox = (gl.tx - lw / 2, gl.ty - gl.size, lw, gl.size * 1.4)
+            cx, cy = bbox[0] + bbox[2] / 2, bbox[1] + bbox[3] / 2
+            nearest = min(points, key=lambda q: (q[0] - cx) ** 2 + (q[1] - cy) ** 2)
+            dist = ((cx - nearest[0]) ** 2 + (cy - nearest[1]) ** 2) ** 0.5
+            if dist <= 30:
+                continue
+            connected = any(
+                bbox[0] - 6 <= ex <= bbox[0] + bbox[2] + 6 and bbox[1] - 6 <= ey <= bbox[1] + bbox[3] + 6
+                for ld in leaders
+                for ex, ey in ((ld.x1, ld.y1), (ld.x2, ld.y2))
+            )
+            assert connected, gl.content
+
     def test_growth_labels_dense_extreme_never_crash(self):
         """极端数据（柱满高 + 高增速）渲染不崩且标签仍有 halo."""
         cfg = {

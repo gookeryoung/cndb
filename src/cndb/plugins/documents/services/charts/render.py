@@ -317,11 +317,11 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     def _rects_hit(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> bool:
         return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
 
-    # 增长率标签避让（用户反馈：标签压柱体 / 遮主值标签 / 压增长线看不清）。
-    # 已占区域：柱体、柱顶主值标签、规划期标注、增长折线段与数据点标记；
-    # 候选位按「点上方 → 更高 → 点下方」取第一个无碰撞位，
-    # 全部碰撞时取最小碰撞候选并靠纸色 halo 保证可读（标签永不加底板压进柱内）。
-    occupied: list[tuple[float, float, float, float]] = [
+    # 增长率标签避让（用户反馈：标签压柱体 / 遮主值标签 / 压增长线看不清 / 偏离太远）。
+    # 硬约束（绝不允许）：柱体、柱顶主值标签、规划期标注、轴刻度带、其他增长率标签；
+    # 软约束（ halo 可读时容忍）：增长折线段与数据点标记。
+    # 候选位评分取（硬命中, 软命中, 顺序）最小；引线兜底「偏离不失联」。
+    occupied_hard: list[tuple[float, float, float, float]] = [
         (
             x_center(i) - bar_w / 2,
             plot_bottom - (values[i] / y_max_rev) * plot_h,
@@ -335,63 +335,81 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
         if values[i] > 0:
             tw = text_width(fmt_number(values[i]), 14.5)
             bar_top = plot_bottom - (values[i] / y_max_rev) * plot_h
-            occupied.append((x_center(i) - tw / 2 - 4, bar_top - 28, tw + 8, 26))
+            occupied_hard.append((x_center(i) - tw / 2 - 4, bar_top - 28, tw + 8, 26))
     band_lw = text_width(str(labels.get("bandLabel", "")), 12.5)
-    occupied.append((boundary + 6, pad_t + 2, band_lw + 8, 20))
-    # 增长折线段（沿线近似加粗）与数据点标记也纳入占位，标签不得压线
+    occupied_hard.append((boundary + 6, pad_t + 2, band_lw + 8, 20))
+    occupied_soft: list[tuple[float, float, float, float]] = []
+    # 增长折线段（沿线近似加粗）与数据点标记
     for j in range(1, len(pts)):
         x0, y0 = pts[j - 1][2], pts[j - 1][3]
         x1, y1 = pts[j][2], pts[j][3]
-        occupied.append((min(x0, x1) - 5, min(y0, y1) - 5, abs(x1 - x0) + 10, abs(y1 - y0) + 10))
+        occupied_soft.append((min(x0, x1) - 5, min(y0, y1) - 5, abs(x1 - x0) + 10, abs(y1 - y0) + 10))
     for _, _, px, py, _proj in pts:
-        occupied.append((px - 8, py - 8, 16, 16))
+        occupied_soft.append((px - 8, py - 8, 16, 16))
     # 左右轴刻度带整列占位（标签 x 平移避让时不得压进轴区）
-    occupied.append((pad_l - 70, pad_t - 30, 70, plot_h + 40))
-    occupied.append((w - pad_r, pad_t - 30, 80, plot_h + 40))
+    occupied_hard.append((pad_l - 70, pad_t - 30, 70, plot_h + 40))
+    occupied_hard.append((w - pad_r, pad_t - 30, 80, plot_h + 40))
 
     def _label_bbox(px: float, py: float, lw: float, dx: float, dy: float) -> tuple[float, float, float, float]:
         cx = min(max(px + dx, pad_l + lw / 2 + 4), w - pad_r - lw / 2 - 4)
         cy = min(max(py + dy, pad_t + 6), plot_bottom - 4)
         return (cx - lw / 2 - 4, cy - 10, lw + 8, 22)
 
+    # 引线：标签被挤离数据点超过该阈值时补一条细引线，保证「偏离也不失联」
+    leader_threshold = 30.0
+
     for _, g, px, py, proj in pts:
         label = fmt_number(g) + "%"
         lw = text_width(label, 14.5)
-        # 候选位：(dx, dy) 相对折线点。先近后远：点上下 → 柱侧平移 → 更高梯子。
-        dodge = bar_w / 2 + lw / 2 + 8
+        # 候选位：(dx, dy) 相对折线点。先近后远：点上下近档 → 柱侧平移 → 点上下远档。
+        dodge = bar_w / 2 + lw / 2 + 6
         candidates = [
             (0.0, -20.0),
-            (0.0, -34.0),
-            (0.0, 30.0),
-            (-dodge, 0.0),
-            (dodge, 0.0),
-            (-dodge, -14.0),
-            (dodge, -14.0),
-            (-dodge, 14.0),
-            (dodge, 14.0),
-            (0.0, -48.0),
-            (0.0, 44.0),
-            (0.0, -62.0),
-            (0.0, -76.0),
-            (0.0, -90.0),
-            (0.0, -104.0),
-            (0.0, -118.0),
-            (0.0, -132.0),
+            (0.0, -30.0),
+            (0.0, 26.0),
+            (-dodge, -22.0),
+            (dodge, -22.0),
+            (-dodge, 22.0),
+            (dodge, 22.0),
+            (-dodge, -36.0),
+            (dodge, -36.0),
+            (0.0, -44.0),
+            (0.0, 42.0),
+            (0.0, -58.0),
+            (0.0, 56.0),
+            (0.0, -72.0),
+            (0.0, -86.0),
+            (0.0, -100.0),
+            (0.0, -114.0),
+            (0.0, -128.0),
+            (0.0, -142.0),
+            (-dodge, -100.0),
+            (dodge, -100.0),
+            (-dodge, -114.0),
+            (dodge, -114.0),
         ]
         scored = [
             (
-                sum(1 for occ in occupied if _rects_hit(_label_bbox(px, py, lw, dx, dy), occ)),
-                idx,
+                sum(1 for occ in occupied_hard if _rects_hit(_label_bbox(px, py, lw, dx, dy), occ)),
+                sum(1 for occ in occupied_soft if _rects_hit(_label_bbox(px, py, lw, dx, dy), occ)),
                 _label_bbox(px, py, lw, dx, dy),
             )
             for idx, (dx, dy) in enumerate(candidates)
         ]
+        # scored 按候选顺序生成，min 按 (硬命中, 软命中) 取首个最小（稳定序）
         _, _, bbox = min(scored, key=lambda t: (t[0], t[1]))
-        occupied.append(bbox)
+        occupied_hard.append(bbox)
+        lx, ly = bbox[0] + lw / 2 + 4, bbox[1] + 10
+        # 引线：标签中心离数据点超过阈值时，从点画细线连到标签框最近角
+        dist = ((lx - px) ** 2 + (ly - py) ** 2) ** 0.5
+        if dist > leader_threshold:
+            qx = min(max(px, bbox[0] + 1), bbox[0] + bbox[2] - 1)
+            qy = min(max(py, bbox[1] + 1), bbox[1] + bbox[3] - 1)
+            prims.append(Prim("line", x1=px, y1=py, x2=qx, y2=qy, stroke=c_line, stroke_width=1))
         prims.append(
             Prim(
                 "text",
-                tx=bbox[0] + lw / 2 + 4,
+                tx=lx,
                 ty=bbox[1] + 15,
                 content=label,
                 size=14.5,
