@@ -167,8 +167,9 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
         if i <= 0:
             return None
         provided = rows[i].get("growth")
-        if i < actual_count:
+        if provided is not None:
             return provided
+        # 次值留空按主值自动推算（ADR 0056：实际段与测算段口径一致，增长曲线不缺段）
         a, b = values[i - 1], values[i]
         if not a or a <= 0:
             return None

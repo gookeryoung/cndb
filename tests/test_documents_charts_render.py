@@ -87,6 +87,14 @@ class TestSvgWriter:
         assert "规划期（测算值）" in svg
         assert "12.8%" in svg  # 285 → 520 五年复合增速
 
+    def test_actual_segment_growth_derived_when_empty(self):
+        """ADR 0056：次值留空时实际段也按主值推算，增长曲线不缺段."""
+        svg = _render_svg("bar-line-dual-axis")  # 默认 11 行 growth 全空
+        assert "19.7%" in svg  # 实际段 132 → 158
+        assert "12.8%" in svg  # 测算段推算
+        # 全部次值点连续成线（10 个折线点：i=1..10）
+        assert svg.count("<circle") >= 10
+
 
 class TestCagrToken:
     def test_cagr_evaluated_in_note(self):

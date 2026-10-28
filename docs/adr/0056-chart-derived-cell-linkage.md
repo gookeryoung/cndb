@@ -30,7 +30,7 @@ Related: `src/cndb/plugins/documents/services/charts/registry.py`、`src/cndb/pl
 | 1 | 双轴模板默认数据 growth 带示例值（19.7 等），新建即非空 | `src/cndb/plugins/documents/services/charts/registry.py:130-142` | 新建实例次值全部预填，用户需逐行删除 | 确认（C1） |
 | 2 | 后端校验允许任意行次值非空 | `src/cndb/plugins/documents/services/charts/registry.py:423-438` | 首行次值可保存，但渲染不画（见 #4） | 确认（C2） |
 | 3 | 设计器次值列可自由编辑，主次值无联动 | `frontend/src/pages/documents/ChartDesignerModal.tsx:200-209`、`:530-536` | 填次值不改主值，两者可能矛盾 | 确认（C3/C4） |
-| 4 | 渲染时次值留空仅在测算段（i≥actualCount）按主值推算：`round((b/a−1)*1000)/10`；实际段留空不画点；首行恒不画 | `src/cndb/plugins/documents/services/charts/render.py:166-175` | 推算公式是联动的设计基准；实际段与测算段推算口径不同是既有渲染行为 | 确认（C3 公式互逆依据） |
+| 4 | 渲染时次值留空按主值推算：`round((b/a−1)*1000)/10`，实际段与测算段口径一致；首行恒不画 | `src/cndb/plugins/documents/services/charts/render.py:166-175` | 推算公式是联动的设计基准；渲染端任意段留空均自动推算，保证次值留空不导致增长曲线缺段 | 确认（C3 公式互逆依据；P2 后修正渲染口径） |
 | 5 | `{cagr}` 图注 token 只依赖主值复合增速 | `src/cndb/plugins/documents/services/charts/render.py:694-705` | 次值默认留空不影响 `{cagr}` | 确认（排除） |
 | 6 | 既有测试对默认 growth 值无硬编码断言 | `tests/test_documents_charts_registry.py:91-133`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx:51` | C1 改动波及面小 | 确认（排除波及） |
 | 7 | 模板 `version` 参与 ETag 指纹（D10） | `src/cndb/plugins/documents/services/charts/registry.py:75-76`、`:232-236` | 默认数据变更需递增 version | 新增 |
@@ -80,7 +80,7 @@ linkGrowthFromValue(value: number, prevValue: number | null): number | null | 's
 ### 4. 边界与例外
 
 1. 首行（i=1）次值输入框 `disabled` + Tooltip「第 1 行无上年基数，次值不可填写」；后端校验兜底 400（C2，前后端双防线）。
-2. `主值ᵢ₋₁` 为空、0 或负数时不联动，只写用户当前输入的单元格；次值留空的行渲染端行为维持现状（测算段自动推算、实际段不画点）。
+2. `主值ᵢ₋₁` 为空、0 或负数时不联动，只写用户当前输入的单元格；次值留空的行在渲染时按主值自动推算（实际段与测算段口径一致），增长曲线不因留空缺段。
 3. 联动重算按一位小数舍入（`round((x)×1000)/10`），保证设计器显示值与渲染端推算口径一致。
 4. 用户先填次值（主值被联动）再手动改主值 → 次值被反向重算并标记「受影响」；该单元格再次被手动编辑时清除标记。
 5. 编辑正文内嵌块（`editBlock`）与新建实例走同一联动逻辑；已存量实例打开设计器不强制重算、不改写已有值。
@@ -136,7 +136,7 @@ linkGrowthFromValue(value: number, prevValue: number | null): number | null | 's
 
 - **正向**：新建双轴图表开箱即见「主值驱动」模型，填增速即得主值，主次值永不矛盾；用户可分辨手动值与推算值；首行禁填杜绝无意义数据。
 - **负向**：设计器编辑逻辑复杂度上升（联动 + 标记 state）；存量实例中已填次值与主值矛盾的数据不会被动修正（用户自行编辑时才联动）。
-- **风险与缓解**：实际段次值留空渲染不画点（现状渲染行为），教程中说明口径避免误解。
+- **风险与缓解**：次值留空时渲染端按主值自动推算增长曲线（实际段与测算段口径一致），教程中说明口径避免误解。
 
 ## 与既有 ADR 的关系（可选）
 
@@ -152,7 +152,7 @@ linkGrowthFromValue(value: number, prevValue: number | null): number | null | 's
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/documents/services/charts/registry.py` | `tests/test_documents_charts_registry.py` | a3adaae9 |
 | P1 | 已落地 | `frontend/src/pages/documents/chartLinkage.ts`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/test/msw.ts` | `frontend/src/pages/documents/chartLinkage.test.ts`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx` | a3adaae9 |
-| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/chart-designer-linkage.spec.ts` | a3adaae9 |
+| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx`、`src/cndb/plugins/documents/services/charts/render.py` | `frontend/tests/e2e/critical/chart-designer-linkage.spec.ts`、`tests/test_documents_charts_render.py` | a3adaae9 + 修复提交 |
 
 ## 交接（会话结束更新）
 
