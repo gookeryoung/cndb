@@ -1172,6 +1172,7 @@ export default function DocumentEditorPage() {
           <Button
             icon={<MenuOutlined />}
             data-testid="doc-outline-toggle"
+            type={outlinePrefs.open ? 'primary' : 'default'}
             aria-expanded={isDesktop ? outlinePrefs.open : undefined}
             onClick={() => (isDesktop ? toggleOutline() : setOutlineDrawerOpen(true))}
           >
