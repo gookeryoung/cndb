@@ -642,3 +642,73 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
   })
 })
+
+describe('文档列表边缘线与行操作', () => {
+  function renderPage(route = '/w/10/documents?parent=1') {
+    return renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route, initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+  }
+
+  it('列表容器挂 GitHub 式边缘线样式类', async () => {
+    renderPage()
+    expect(await screen.findByTestId('doc-list')).toHaveClass('cn-doc-list')
+  })
+
+  it('行内重命名：回填原标题，提交 PATCH title', async () => {
+    const bodies: unknown[] = []
+    server.use(
+      http.patch('/api/v1/workspaces/:wid/documents/:docId', async ({ request }) => {
+        bodies.push(await request.json())
+        return HttpResponse.json(mockDocuments[1])
+      }),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('doc-row-rename-2'))
+    const input = await screen.findByTestId('doc-rename-input')
+    expect(input).toHaveValue('需求说明')
+    fireEvent.change(input, { target: { value: '需求说明书' } })
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+    await waitFor(() => expect(bodies).toEqual([{ title: '需求说明书' }]))
+  })
+
+  it('行内移动：改选根目录后提交 PATCH parent_id=0', async () => {
+    const patches: Array<{ id: string; body: unknown }> = []
+    server.use(
+      http.patch('/api/v1/workspaces/:wid/documents/:docId', async ({ params, request }) => {
+        patches.push({ id: String(params.docId), body: await request.json() })
+        return HttpResponse.json(mockDocuments[1])
+      }),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('doc-row-move-2'))
+    await screen.findByText('移动「需求说明」到…')
+    const selector = screen.getByTestId('doc-row-move-target').querySelector('.ant-select-selector')
+    expect(selector).not.toBeNull()
+    fireEvent.mouseDown(selector as Element)
+    fireEvent.click(await screen.findByText('（根目录）'))
+    fireEvent.click(screen.getByRole('button', { name: /^移\s*动$/ }))
+
+    await waitFor(() => expect(patches).toEqual([{ id: '2', body: { parent_id: 0 } }]))
+  })
+
+  it('行内置顶：调用 POST /{docId}/pin', async () => {
+    const pinned: string[] = []
+    server.use(
+      http.post('/api/v1/workspaces/:wid/documents/:docId/pin', ({ params }) => {
+        pinned.push(String(params.docId))
+        return HttpResponse.json({ document_id: 2, pinned: true })
+      }),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('doc-row-pin-2'))
+    await waitFor(() => expect(pinned).toEqual(['2']))
+  })
+})

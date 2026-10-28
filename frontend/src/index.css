@@ -3405,33 +3405,20 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
-/* 品牌标识座：品牌色渐变圆角方块（认证页大号 / 顶栏小号复用） */
-.cn-brand-mark {
-  font-family: var(--cn-font-display);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--cn-radius-xl);
-  background: linear-gradient(135deg,
-    var(--cn-mix-brand-color-88-white),
-    var(--cn-mix-brand-color-72-black));
-  background: linear-gradient(135deg,
-    color-mix(in srgb, var(--cn-brand-color) 88%, #ffffff),
-    color-mix(in srgb, var(--cn-brand-color) 72%, #000000));
-  color: #fff;
-  font-weight: var(--cn-weight-bold);
-  box-shadow: 0 4px 14px var(--cn-mix-brand-color-32-transparent);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
+/* 晶格 LOGO：六边形晶格徽标 SVG（顶栏小号 / 认证页大号复用），带品牌色投影；圆角由 SVG 内部 shape 承担 */
+.cn-brand-logo {
   flex-shrink: 0;
+  box-shadow: 0 4px 14px rgba(27, 154, 170, 0.32);
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
   user-select: none;
 }
 
-/* 顶栏品牌字：展示字体 + 拉丁负字距（内容固定为拉丁，不涉及中文） */
+/* 顶栏品牌字：展示字体；内容现为中文品牌名「晶格」，中文不适用拉丁负字距 */
 .cn-brand-word {
   font-family: var(--cn-font-display);
   font-size: var(--cn-text-lg);
   font-weight: var(--cn-weight-bold);
-  letter-spacing: var(--cn-tracking-display);
+  letter-spacing: 0;
   color: var(--cn-text-primary);
 }
 
@@ -4918,6 +4905,39 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     margin-bottom: var(--cn-space-md);
     padding: var(--cn-space-xs) var(--cn-space-sm);
   }
+}
+
+/* ─────────────── 文档列表（GitHub 式边缘线） ───────────────
+ * 外框 + 行间分隔线统一取 --cn-border（antd 默认 colorSplit 偏浅、深色模式下不易分辨），
+ * 行悬浮整行高亮；行尾操作按钮之间的竖分隔线关闭，靠图标与悬浮提示区分。
+ * 紧凑化：行内边距上下收紧；左内边距略大于右侧，给勾选框留呼吸空间不贴边。 */
+.cn-doc-list {
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container);
+  overflow: hidden;
+}
+
+.cn-doc-list.ant-list-split .ant-list-item {
+  border-color: var(--cn-border);
+  transition: background-color 0.15s ease;
+  /* antd 默认 12px 20px：左右收一档更紧凑，左 20px 保持一档避免勾选框贴边 */
+  padding: var(--cn-space-lg) var(--cn-space-xl);
+  padding-inline-start: var(--cn-space-2xl);
+}
+
+.cn-doc-list .ant-list-item:hover {
+  background: var(--cn-bg-subtle);
+}
+
+/* 头像区（勾选框 + 格式图标）与标题的间距收紧一档，整行更密
+   （antd 运行时按哈希类注入同字段规则且晚于本表，需 !important 单点覆盖） */
+.cn-doc-list .ant-list-item .ant-list-item-meta-avatar {
+  margin-inline-end: var(--cn-space-lg) !important;
+}
+
+.cn-doc-list .ant-list-item-action-split {
+  display: none;
 }
 
 /* ─────────────── 图片字段（展示 / 编辑） ───────────────

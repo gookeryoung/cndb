@@ -697,7 +697,7 @@ export const handlers = [
   // 系统基本信息（登录即可，普通用户可查看）
   http.get('/api/v1/system/about', () =>
     HttpResponse.json({
-      app_name: 'cndb',
+      app_name: '晶格',
       app_version: '0.3.0',
       auth_enabled: true,
       timezone: 'UTC',

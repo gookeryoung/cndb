@@ -16,6 +16,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
 import GlobalSearch from '@/components/GlobalSearch'
+import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import { workspaceLandingSegment, workspaceTypeFeatures } from '@/utils/workspaceType'
@@ -416,16 +417,10 @@ export default function MainLayout() {
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 4, cursor: 'pointer' }}
             data-testid="home-logo"
             onClick={() => navigate('/w')}>
-            <span
-              className="cn-brand-mark"
-              style={{ width: 24, height: 24, fontSize: 13, borderRadius: 6 }}
-              aria-hidden
-            >
-              c
-            </span>
+            <BrandMark size={24} />
             {!isMobile && (
               <>
-                <span className="cn-brand-word">cndb</span>
+                <span className="cn-brand-word">晶格</span>
                 {systemAbout?.app_version && (
                   <span
                     className="cn-brand-version"

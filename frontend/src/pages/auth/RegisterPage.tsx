@@ -3,6 +3,7 @@ import { UserOutlined, MailOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import { useAuthStore } from '@/store'
+import { BrandMark } from '@/components/BrandMark'
 
 const { Title, Text } = Typography
 
@@ -74,15 +75,11 @@ export default function RegisterPage() {
   return (
     <Card className="auth-card">
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <div
-          className="cn-brand-mark"
-          style={{ width: 44, height: 44, fontSize: 22, margin: '0 auto 12px' }}
-          aria-hidden
-        >
-          c
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+          <BrandMark size={44} />
         </div>
         <Title level={3} style={{ marginBottom: 4 }}>创建账号</Title>
-        <Text type="secondary">加入 cndb，开始构建你的数据工作区</Text>
+        <Text type="secondary">加入晶格，开始构建你的数据工作区</Text>
       </div>
       <Form<RegisterFormValues>
         form={form}

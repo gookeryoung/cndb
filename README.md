@@ -1,6 +1,6 @@
-# cndb
+# 晶格 CNDB（cndb）
 
-> 通用数据管理平台。
+> 晶格 —— 通用数据管理平台。数据如晶格般规整排列、彼此关联。
 
 [![Python](https://img.shields.io/badge/python-3.12%E2%80%933.14-blue.svg)](https://www.python.org)
 [![Coverage](https://img.shields.io/badge/coverage-%E2%89%A595%25-brightgreen.svg)](#开发)

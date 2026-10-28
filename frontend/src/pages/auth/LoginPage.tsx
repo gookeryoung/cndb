@@ -2,6 +2,7 @@ import { Card, Form, Input, Button, Typography, App as AntApp, Checkbox } from '
 import { UserOutlined, LockOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { useAuthStore } from '@/store'
+import { BrandMark } from '@/components/BrandMark'
 
 const { Title, Text } = Typography
 
@@ -25,14 +26,10 @@ export default function LoginPage() {
   return (
     <Card className="auth-card">
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <div
-          className="cn-brand-mark"
-          style={{ width: 44, height: 44, fontSize: 22, margin: '0 auto 12px' }}
-          aria-hidden
-        >
-          c
+        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
+          <BrandMark size={44} />
         </div>
-        <Title level={3} style={{ marginBottom: 4 }}>cndb</Title>
+        <Title level={3} style={{ marginBottom: 4 }}>晶格</Title>
         <Text type="secondary">登录以继续</Text>
       </div>
       <Form layout="vertical" onFinish={onFinish} initialValues={{ remember: true }}>

@@ -41,6 +41,7 @@ import {
   FolderOutlined,
   ImportOutlined,
   MoreOutlined,
+  PushpinOutlined,
   SearchOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -118,11 +119,13 @@ export default function DocumentsPage() {
   const [createType, setCreateType] = useState<'doc' | 'folder'>('doc')
   const [newTitle, setNewTitle] = useState('')
   const [newContent, setNewContent] = useState('')
-  // 系列详情：重命名 / 移动弹窗状态
-  const [renameOpen, setRenameOpen] = useState(false)
+  // 重命名弹窗（系列与列表行共用）：target 区分来源，决定标题文案与输入框 testid
+  const [renameTarget, setRenameTarget] = useState<{ id: number; title: string; isSeries: boolean } | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [moveOpen, setMoveOpen] = useState(false)
   const [moveTarget, setMoveTarget] = useState<number>(0)
+  // 列表行「移动」弹窗：目标 = { id, title, parent 初始值（0 = 根目录） }
+  const [rowMove, setRowMove] = useState<{ id: number; title: string; parent: number } | null>(null)
   // 回收站抽屉
   const [trashOpen, setTrashOpen] = useState(false)
   // 通用导入弹窗（单文件 / 文件夹 / Obsidian 库 zip）
@@ -227,18 +230,45 @@ export default function DocumentsPage() {
     onError: (err: unknown) => message.error(err instanceof Error ? err.message : '导出失败'),
   })
 
-  // 系列重命名（PATCH title）
+  // 重命名（PATCH title；系列与列表行共用）
   const renameMut = useMutation({
     mutationFn: () =>
-      documentsApi.updateMeta(workspaceId, currentSeries!.folder.id, {
+      documentsApi.updateMeta(workspaceId, renameTarget!.id, {
         title: renameValue.trim(),
       }),
     onSuccess: () => {
       message.success('已重命名')
-      setRenameOpen(false)
+      setRenameTarget(null)
       invalidate()
     },
     onError: () => message.error('重命名失败'),
+  })
+
+  // 列表行移动（PATCH parent_id；0 = 根目录约定）
+  const rowMoveMut = useMutation({
+    mutationFn: () =>
+      documentsApi.updateMeta(workspaceId, rowMove!.id, {
+        parent_id: rowMove!.parent,
+      }),
+    onSuccess: () => {
+      message.success('已移动')
+      setRowMove(null)
+      invalidate()
+    },
+    onError: () => message.error('移动失败'),
+  })
+
+  // 置顶 / 取消置顶（用户级标记：POST / DELETE /pin）
+  const pinMut = useMutation({
+    mutationFn: (doc: DocumentItem) =>
+      doc.pinned
+        ? documentsApi.unpinDocument(workspaceId, doc.id)
+        : documentsApi.pinDocument(workspaceId, doc.id),
+    onSuccess: (_res, doc) => {
+      message.success(doc.pinned ? '已取消置顶' : '已置顶')
+      invalidate()
+    },
+    onError: () => message.error('置顶操作失败'),
   })
 
   // 系列移动（PATCH parent_id；0 = 根目录约定）
@@ -394,6 +424,22 @@ export default function DocumentsPage() {
       { value: 0, title: '（根目录）', children: roots.filter(n => n.is_folder).map(toOption) },
     ]
   }, [moveOpen, currentFolderNode, treeQuery.data])
+
+  // 列表行移动目标下拉：根目录 + 全部文件夹（排除该节点自身及其子孙，防环）
+  const rowMoveTreeData = useMemo(() => {
+    if (!rowMove) return []
+    const roots = buildDocTree(treeQuery.data ?? [])
+    const node = findNodeById(roots, rowMove.id)
+    const excluded = new Set(node ? descendantIds(node) : [])
+    const toOption = (n: DocTreeNode): DataNode & { value: number } => ({
+      key: n.id,
+      value: n.id,
+      title: n.title,
+      disabled: excluded.has(n.id),
+      children: n.children.filter(c => c.is_folder).map(toOption),
+    })
+    return [{ value: 0, title: '（根目录）', children: roots.filter(n => n.is_folder).map(toOption) }]
+  }, [rowMove, treeQuery.data])
 
   if (!Number.isFinite(workspaceId)) {
     return <Alert type="error" message="无效的工作区" />
@@ -707,7 +753,7 @@ export default function DocumentsPage() {
                 data-testid="doc-series-rename"
                 onClick={() => {
                   setRenameValue(currentSeries.folder.title)
-                  setRenameOpen(true)
+                  setRenameTarget({ id: currentSeries.folder.id, title: currentSeries.folder.title, isSeries: true })
                 }}
               >
                 重命名
@@ -750,6 +796,8 @@ export default function DocumentsPage() {
         </Empty>
       ) : (
         <List
+          className="cn-doc-list"
+          data-testid="doc-list"
           dataSource={listItems}
           renderItem={doc => (
             <List.Item
@@ -760,6 +808,46 @@ export default function DocumentsPage() {
                   : navigate(`/w/${workspaceId}/documents/${doc.id}`)
               }
               actions={[
+                <Tooltip key="rename" title="重命名">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined />}
+                    aria-label={`重命名 ${doc.title}`}
+                    data-testid={`doc-row-rename-${doc.id}`}
+                    onClick={e => {
+                      e.stopPropagation()
+                      setRenameValue(doc.title)
+                      setRenameTarget({ id: doc.id, title: doc.title, isSeries: false })
+                    }}
+                  />
+                </Tooltip>,
+                <Tooltip key="move" title="移动">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<ApartmentOutlined />}
+                    aria-label={`移动 ${doc.title}`}
+                    data-testid={`doc-row-move-${doc.id}`}
+                    onClick={e => {
+                      e.stopPropagation()
+                      setRowMove({ id: doc.id, title: doc.title, parent: doc.parent_id ?? 0 })
+                    }}
+                  />
+                </Tooltip>,
+                <Tooltip key="pin" title={doc.pinned ? '取消置顶' : '置顶'}>
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<PushpinOutlined />}
+                    aria-label={doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`}
+                    data-testid={`doc-row-pin-${doc.id}`}
+                    onClick={e => {
+                      e.stopPropagation()
+                      pinMut.mutate(doc)
+                    }}
+                  />
+                </Tooltip>,
                 <Tooltip key="del" title="删除">
                   <Popconfirm
                     title={doc.is_folder ? '删除文件夹将同时删除其中所有文档，确认？' : '确认删除此文档？'}
@@ -773,11 +861,11 @@ export default function DocumentsPage() {
                       type="text"
                       danger
                       size="small"
+                      icon={<DeleteOutlined />}
                       onClick={e => e.stopPropagation()}
                       aria-label="删除文档"
-                    >
-                      删除
-                    </Button>
+                      data-testid={`doc-row-delete-${doc.id}`}
+                    />
                   </Popconfirm>
                 </Tooltip>,
               ]}
@@ -885,11 +973,11 @@ export default function DocumentsPage() {
         </Space>
       </Modal>
 
-      {/* 系列重命名弹窗 */}
+      {/* 重命名弹窗（系列 / 列表行共用：文案与 testid 按来源区分） */}
       <Modal
-        title={`重命名系列「${currentSeries?.folder.title ?? ''}」`}
-        open={renameOpen}
-        onCancel={() => setRenameOpen(false)}
+        title={renameTarget?.isSeries ? `重命名系列「${renameTarget.title}」` : `重命名「${renameTarget?.title ?? ''}」`}
+        open={renameTarget !== null}
+        onCancel={() => setRenameTarget(null)}
         onOk={() => renameMut.mutate()}
         okButtonProps={{ disabled: !renameValue.trim(), loading: renameMut.isPending }}
         okText="保存"
@@ -897,12 +985,33 @@ export default function DocumentsPage() {
         destroyOnHidden
       >
         <Input
-          placeholder="系列名称"
+          placeholder={renameTarget?.isSeries ? '系列名称' : '文档标题'}
           value={renameValue}
           onChange={e => setRenameValue(e.target.value)}
           onPressEnter={() => renameValue.trim() && renameMut.mutate()}
           autoFocus
-          data-testid="doc-series-rename-input"
+          data-testid={renameTarget?.isSeries ? 'doc-series-rename-input' : 'doc-rename-input'}
+        />
+      </Modal>
+
+      {/* 列表行移动弹窗：TreeSelect 选目标文件夹（排除自身及子孙，防环由后端二次校验） */}
+      <Modal
+        title={`移动「${rowMove?.title ?? ''}」到…`}
+        open={rowMove !== null}
+        onCancel={() => setRowMove(null)}
+        onOk={() => rowMoveMut.mutate()}
+        confirmLoading={rowMoveMut.isPending}
+        okText="移动"
+        cancelText="取消"
+        destroyOnHidden
+      >
+        <TreeSelect
+          style={{ width: '100%' }}
+          treeDefaultExpandAll
+          value={rowMove?.parent}
+          onChange={(v: number) => setRowMove(prev => (prev ? { ...prev, parent: v } : prev))}
+          treeData={rowMoveTreeData}
+          data-testid="doc-row-move-target"
         />
       </Modal>
 

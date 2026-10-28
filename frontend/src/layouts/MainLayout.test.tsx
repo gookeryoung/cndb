@@ -276,7 +276,7 @@ describe('MainLayout 顶部导航', () => {
         expect(version).toHaveAttribute('title', '应用版本 v0.3.0')
         expect(version).toHaveClass('cn-brand-version')
 
-        // 位置约束：在 home-logo 内、品牌字 cndb 之后
+        // 位置约束：在 home-logo 内、品牌字「晶格」之后
         const logo = screen.getByTestId('home-logo')
         expect(logo).toContainElement(version)
         const brandWord = logo.querySelector('.cn-brand-word')

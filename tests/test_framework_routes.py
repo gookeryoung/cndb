@@ -21,7 +21,7 @@ def test_health_endpoint(client: TestClient) -> None:
     assert r.status_code == 200
     d = r.json()
     assert d["status"] == "ok"
-    assert d["app"] == "cndb"
+    assert d["app"] == "晶格"
 
 
 def test_plugins_endpoint(client: TestClient) -> None:
