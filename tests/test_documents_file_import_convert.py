@@ -1257,3 +1257,14 @@ class TestMhtmlPreview:
         data = _make_mhtml(html, parts)
         _title, body, _warnings, _assets = mhtml_converter.convert_mhtml(data, "page.mhtml")
         assert "body{}" not in body
+
+    def test_aux_part_without_images_or_css_does_not_crash(self):
+        """回归：只有非图片 / 非 CSS 资源（如字体）时预览不得抛 UnboundLocalError.
+
+        ``aux`` 循环曾复用上两个循环的 ``content_id`` 变量；当资源与样式表均为空时
+        该变量未绑定，预览端点会 500。
+        """
+        html = "<html><head><title>纯字体页</title></head><body><p>正文</p></body></html>"
+        parts = [{"location": "https://example.com/f.woff", "mime": "font/woff", "data": b"WOFFDATA"}]
+        out = mhtml_converter.build_preview_html(_make_mhtml(html, parts))
+        assert "正文" in out
