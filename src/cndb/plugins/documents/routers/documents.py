@@ -757,6 +757,54 @@ def download_document_asset(
     return FileResponse(path, media_type=media_type, headers=headers)
 
 
+@router.get("/{doc_id}/asset/preview")
+def preview_document_asset(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """MHTML 原件在线预览（需求 0064）：返回自包含 HTML.
+
+    - 仅 ``content_type=mhtml`` 的原件族文档可用，其余 400；
+    - 权限与 ``/asset`` 同源：工作区成员 + 文档可见性；
+    - 复用 ADR 0049 解析链路：根 HTML 原样保留（内联样式保留），命中素材索引的
+      ``<img src>`` 内联为 ``data:`` URI，未命中引用保留原样；
+    - 浏览器不渲染 ``multipart/related`` 原件，预览必须转为自包含 HTML；
+    - 响应加 ``Content-Security-Policy: sandbox``：MHTML 来自外部网页存档，
+      视为不可信内容，即使直接打开该 URL 脚本也不执行。
+    """
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    if doc.content_type != "mhtml":
+        raise BadRequestError("该文档类型不支持在线预览")
+    if not doc.asset_file_key:
+        raise NotFoundError("该文档没有原件")
+
+    from cndb.plugins.files.services import resolve_workspace_file
+
+    path = resolve_workspace_file(workspace_id, doc.asset_file_key)
+    if not path.is_file():
+        raise NotFoundError("原件不存在或已被清理")
+
+    from cndb.plugins.documents.services.importers.errors import UnsupportedImport
+    from cndb.plugins.documents.services.importers.mhtml import build_preview_html
+
+    try:
+        html = build_preview_html(path.read_bytes())
+    except UnsupportedImport as exc:
+        raise BadRequestError(f"MHTML 原件无法解析：{exc}") from exc
+    return Response(
+        content=html,
+        media_type="text/html",
+        headers={
+            "Content-Disposition": 'inline; filename="preview.html"',
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "sandbox",
+        },
+    )
+
+
 @router.post("/batch")
 def batch_documents(
     workspace_id: int,

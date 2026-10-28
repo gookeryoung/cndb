@@ -818,4 +818,8 @@ export const documentsApi = {
   /** 取原件二进制（前端用 blob + objectURL 走阅读器，避免裸链接绕过鉴权） */
   assetBlob: (wid: number | string, docId: number) =>
     api.get<Blob>(`${base(wid)}/${docId}/asset`, { responseType: 'blob' }).then(r => r.data),
+
+  /** 取 MHTML 原件的自包含预览 HTML（0064：后端把图片内联为 data URI，前端沙箱 iframe 渲染） */
+  assetPreviewBlob: (wid: number | string, docId: number) =>
+    api.get<Blob>(`${base(wid)}/${docId}/asset/preview`, { responseType: 'blob' }).then(r => r.data),
 }

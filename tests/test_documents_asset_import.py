@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import base64
+import quopri
 import struct
 import zlib
 from pathlib import Path
@@ -364,6 +366,95 @@ class TestAssetEndpoint:
             path.unlink()
         r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset", headers=auth)
         assert r.status_code == 404
+
+
+MHTML_PREVIEW_BOUNDARY = "----MultipartBoundary--api62----"
+
+
+def _make_mhtml(html: str, image_location: str | None = None) -> bytes:
+    """构造最小 MHTML：根 HTML 走 QP，可选打包一张 PNG."""
+    lines = [
+        "From: <Saved by Blink>",
+        "MIME-Version: 1.0",
+        f'Content-Type: multipart/related; type="text/html"; boundary="{MHTML_PREVIEW_BOUNDARY}"',
+        "",
+        f"--{MHTML_PREVIEW_BOUNDARY}",
+        "Content-Type: text/html; charset=UTF-8",
+        "Content-Transfer-Encoding: quoted-printable",
+        "Content-Location: https://example.com/page",
+        "",
+        quopri.encodestring(html.encode("utf-8")).decode("ascii"),
+        "",
+    ]
+    if image_location:
+        lines += [
+            f"--{MHTML_PREVIEW_BOUNDARY}",
+            "Content-Type: image/png",
+            "Content-Transfer-Encoding: base64",
+            f"Content-Location: {image_location}",
+            "",
+            base64.encodebytes(PNG_BYTES).decode("ascii"),
+            "",
+        ]
+    lines.append(f"--{MHTML_PREVIEW_BOUNDARY}--")
+    return "\n".join(lines).encode("ascii")
+
+
+class TestMhtmlPreviewEndpoint:
+    """MHTML 在线预览端点（需求 0064 C1/C4）：自包含 HTML + 沙箱响应头."""
+
+    def _import_mhtml(self, client, ws_id: int, auth) -> dict:
+        html = (
+            "<html><head><title>网页存档</title><style>p{color:blue}</style></head>"
+            '<body><p>正文</p><img src="https://example.com/a.png" alt="图"></body></html>'
+        )
+        _import_one(
+            client,
+            ws_id,
+            auth,
+            "页面.mhtml",
+            _make_mhtml(html, "https://example.com/a.png"),
+            "message/rfc822",
+        )
+        return _doc(client, ws_id, auth)
+
+    def test_preview_returns_selfcontained_html(self, client, ws, auth):
+        doc = self._import_mhtml(client, ws.id, auth)
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=auth)
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith("text/html")
+        assert r.headers["content-security-policy"] == "sandbox"
+        assert r.headers["x-content-type-options"] == "nosniff"
+        assert r.headers["content-disposition"].startswith("inline")
+        body = r.text
+        assert "<style>p{color:blue}</style>" in body
+        assert "data:image/png;base64," in body
+        assert "https://example.com/a.png" not in body
+
+    def test_preview_rejects_non_mhtml(self, client, ws, auth):
+        _import_one(client, ws.id, auth, "报告.pdf", PDF_BYTES, "application/pdf")
+        doc = _doc(client, ws.id, auth)
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=auth)
+        assert r.status_code == 400
+
+    def test_preview_broken_file_returns_400(self, client, ws, auth):
+        doc = self._import_mhtml(client, ws.id, auth)
+        for path in (Path(settings.UPLOAD_DIR) / str(ws.id)).iterdir():
+            path.write_bytes(b"junk")
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=auth)
+        assert r.status_code == 400
+
+    def test_preview_respects_visibility(self, client, db, ws, auth):
+        doc = self._import_mhtml(client, ws.id, auth)
+        member = _make_user(db, "mhtml_member")
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=member.id, role=WorkspaceRole.EDITOR))
+        db.commit()
+        member_auth = _login(client, member.username)
+        # 草稿态对非创建者不可见 → 预览同样 404
+        assert client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=member_auth).status_code == 404
+        published = client.patch(DOCS.format(ws=ws.id) + f"/{doc['id']}", json={"status": "published"}, headers=auth)
+        assert published.status_code == 200, published.text
+        assert client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=member_auth).status_code == 200
 
 
 class TestAssetReadOnly:

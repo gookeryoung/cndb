@@ -1159,3 +1159,40 @@ class TestReaderMhtml:
         docs, skipped = reader.convert_batch(items, mhtml_mode="convert")
         assert [doc.path for doc in docs] == ["ok.mhtml"]
         assert {entry["path"] for entry in skipped} == {"bad.mhtml"}
+
+
+class TestMhtmlPreview:
+    """build_preview_html（需求 0064 C1/C2）：自包含 HTML，命中 img 内联 data URI，内联样式保留."""
+
+    def test_inlines_matched_images_and_keeps_style(self):
+        html = (
+            '<html><head><meta charset="utf-8"><title>预览页</title>'
+            "<style>body{color:red}</style></head><body>"
+            '<p><img src="https://example.com/img/a.png" alt="甲"></p></body></html>'
+        )
+        parts = [{"location": "https://example.com/img/a.png", "mime": "image/png", "data": PNG_BYTES}]
+        out = mhtml_converter.build_preview_html(_make_mhtml(html, parts))
+        assert "<style>body{color:red}</style>" in out
+        assert "data:image/png;base64," in out
+        assert "https://example.com/img/a.png" not in out
+
+    def test_cid_reference_inlined(self):
+        html = '<html><head><title>cid 页</title></head><body><img src="cid:logo" alt="标"></body></html>'
+        parts = [{"location": "", "content_id": "logo", "mime": "image/png", "data": PNG_BYTES}]
+        out = mhtml_converter.build_preview_html(_make_mhtml(html, parts))
+        assert "data:image/png;base64," in out
+
+    def test_unmatched_external_ref_preserved(self):
+        html = '<html><head><title>外链页</title></head><body><img src="https://cdn.example.com/x.png" alt="外"></body></html>'
+        out = mhtml_converter.build_preview_html(_make_mhtml(html))
+        assert 'src="https://cdn.example.com/x.png"' in out
+
+    def test_script_tag_preserved_but_never_executes_in_sandbox(self):
+        """预览不改写 HTML 结构；脚本隔离由端点 CSP sandbox + 前端 iframe sandbox 兜底."""
+        html = "<html><head><title>脚本页</title></head><body><script>alert(1)</script><p>正文</p></body></html>"
+        out = mhtml_converter.build_preview_html(_make_mhtml(html))
+        assert "<script>alert(1)</script>" in out
+
+    def test_unparsable_raises(self):
+        with pytest.raises(UnsupportedImport):
+            mhtml_converter.build_preview_html(b"junk")

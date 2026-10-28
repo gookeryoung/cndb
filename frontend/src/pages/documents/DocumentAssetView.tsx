@@ -1,7 +1,9 @@
-/** 原件族文档阅读器（ADR 0025）：PDF / 图片直接渲染，Office 给下载卡.
+/** 原件族文档阅读器（ADR 0025）：PDF / 图片 / MHTML 直接渲染，Office 给下载卡.
  *
  * 原件经带鉴权头的接口取回为 blob，再挂 objectURL —— 不用裸链接，
  * 否则未发布草稿的原件会绕过文档可见性。
+ * MHTML（0064）：浏览器不渲染 multipart/related 原件，改用后端生成的
+ * 自包含预览 HTML，在禁脚本的沙箱 iframe 里渲染；下载仍走原件接口。
  */
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Empty, Space, Spin, Tag, Typography } from 'antd'
@@ -38,13 +40,23 @@ function suffixOf(doc: DocumentItem): string {
 
 export default function DocumentAssetView({ workspaceId, doc }: Props) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const fmt = formatMeta(doc.content_type)
   const suffix = suffixOf(doc)
+  const isMhtml = doc.content_type === 'mhtml'
 
   const assetQuery = useQuery({
     queryKey: ['documents', workspaceId, doc.id, 'asset'],
     queryFn: () => documentsApi.assetBlob(workspaceId, doc.id),
     retry: false,
+  })
+
+  // MHTML 预览与原件下载分开取：预览是转换后的自包含 HTML，不能混用
+  const previewQuery = useQuery({
+    queryKey: ['documents', workspaceId, doc.id, 'asset-preview'],
+    queryFn: () => documentsApi.assetPreviewBlob(workspaceId, doc.id),
+    retry: false,
+    enabled: isMhtml,
   })
 
   const blob = assetQuery.data
@@ -57,6 +69,20 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
     setObjectUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [blob])
+
+  const previewBlob = previewQuery.data
+  useEffect(() => {
+    if (!previewBlob) {
+      setPreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(previewBlob)
+    setPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [previewBlob])
+
+  const loading = isMhtml ? previewQuery.isLoading : assetQuery.isLoading
+  const failed = isMhtml ? previewQuery.isError || !previewUrl : assetQuery.isError || !objectUrl
 
   const downloadName = useMemo(() => `${doc.title || 'download'}${suffix ? `.${suffix}` : ''}`, [doc.title, suffix])
 
@@ -81,7 +107,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
     </Space>
   )
 
-  if (assetQuery.isLoading) {
+  if (loading) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <Spin />
@@ -89,7 +115,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
     )
   }
 
-  if (assetQuery.isError || !objectUrl) {
+  if (failed) {
     return (
       <div style={{ padding: 24 }} data-testid="doc-asset-error">
         {header}
@@ -108,7 +134,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
       return (
         <iframe
           title={doc.title}
-          src={objectUrl}
+          src={objectUrl ?? undefined}
           data-testid="doc-asset-pdf"
           style={{ flex: 1, minHeight: 0, width: '100%', border: 'none' }}
         />
@@ -121,7 +147,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
         >
           {/* 用 <img> 而非 <object>：SVG 里的脚本不会执行 */}
           <img
-            src={objectUrl}
+            src={objectUrl ?? undefined}
             alt={doc.title}
             data-testid="doc-asset-image"
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
@@ -130,11 +156,13 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
       )
     }
     if (doc.content_type === 'mhtml') {
-      // MHTML 原件（0061 C7）：浏览器可直接渲染 multipart/related 存档；渲染失败时仍可下载
+      // MHTML 预览（0064 C3）：后端自包含 HTML，沙箱 iframe 渲染——
+      // sandbox 空值 = 禁脚本、禁同源、禁表单；网页存档视为不可信内容
       return (
         <iframe
           title={doc.title}
-          src={objectUrl}
+          src={previewUrl ?? undefined}
+          sandbox=""
           data-testid="doc-asset-mhtml"
           style={{ flex: 1, minHeight: 0, width: '100%', border: 'none' }}
         />
@@ -147,7 +175,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
         style={{ marginTop: 64 }}
         data-testid="doc-asset-download-card"
       >
-        <Button type="primary" icon={<DownloadOutlined />} href={objectUrl} download={downloadName}>
+        <Button type="primary" icon={<DownloadOutlined />} href={objectUrl ?? undefined} download={downloadName}>
           下载原件
         </Button>
       </Empty>

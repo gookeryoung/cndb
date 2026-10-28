@@ -37,6 +37,7 @@ function docOf(patch: Partial<DocumentItem>): DocumentItem {
 beforeEach(() => {
   vi.restoreAllMocks()
   vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))
+  vi.spyOn(documentsApi, 'assetPreviewBlob').mockResolvedValue(new Blob(['<html><body>预览</body></html>'], { type: 'text/html' }))
 })
 
 describe('DocumentAssetView 原件阅读器', () => {
@@ -95,5 +96,35 @@ describe('DocumentAssetView 原件阅读器', () => {
     expect(await screen.findByTestId('doc-asset-error')).toBeInTheDocument()
     expect(screen.getByText('原件缺失或无法读取')).toBeInTheDocument()
     expect(screen.queryByTestId('doc-asset-pdf')).not.toBeInTheDocument()
+  })
+
+  it('MHTML 走预览端点 + 沙箱 iframe（0064 C3），下载按钮仍指向原件', async () => {
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({ content_type: 'mhtml', asset_mime: 'multipart/related', title: '网页存档' })}
+      />,
+    )
+
+    const frame = await screen.findByTestId('doc-asset-mhtml')
+    expect(frame.tagName).toBe('IFRAME')
+    expect(frame).toHaveAttribute('sandbox', '')
+    // 预览与原件分开取：预览走 preview 端点，下载走原件端点
+    expect(documentsApi.assetPreviewBlob).toHaveBeenCalledWith(7, 31)
+    expect(documentsApi.assetBlob).toHaveBeenCalledWith(7, 31)
+  })
+
+  it('MHTML 预览失败退化为「原件缺失」下载卡', async () => {
+    vi.spyOn(documentsApi, 'assetPreviewBlob').mockRejectedValue(new Error('400'))
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({ content_type: 'mhtml', asset_mime: 'multipart/related', title: '网页存档' })}
+      />,
+    )
+
+    expect(await screen.findByTestId('doc-asset-error')).toBeInTheDocument()
+    expect(screen.queryByTestId('doc-asset-mhtml')).not.toBeInTheDocument()
+    expect(screen.getByTestId('doc-asset-download')).toBeInTheDocument()
   })
 })

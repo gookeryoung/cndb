@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import base64
 import posixpath
 import re
 from email.message import Message
@@ -176,4 +177,57 @@ def convert_mhtml(
     return title, body, warnings, assets
 
 
-__all__ = ["ASSET_DIR", "ImageSink", "convert_mhtml", "parse_mhtml"]
+__all__ = ["ASSET_DIR", "ImageSink", "build_preview_html", "convert_mhtml", "parse_mhtml"]
+
+
+#: 预览用图片 MIME 嗅探：魔数 → MIME（需求 0064 C1）
+_SNIFF_MIME: tuple[tuple[bytes, str], ...] = (
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"BM", "image/bmp"),
+    (b"\x00\x00\x01\x00", "image/x-icon"),
+)
+
+
+def _sniff_image_mime(payload: bytes) -> str:
+    """按魔数嗅探图片 MIME；未命中回退 ``application/octet-stream``."""
+    for magic, mime in _SNIFF_MIME:
+        if payload.startswith(magic):
+            return mime
+    if payload.startswith(b"\xff\xd8"):
+        return "image/jpeg"
+    if len(payload) >= 12 and payload[:4] == b"RIFF" and payload[8:12] == b"WEBP":
+        return "image/webp"
+    head = payload.lstrip()[:256].lower()
+    if head.startswith((b"<svg", b"<?xml")):
+        return "image/svg+xml"
+    return "application/octet-stream"
+
+
+def _data_uri(payload: bytes) -> str:
+    return f"data:{_sniff_image_mime(payload)};base64,{base64.b64encode(payload).decode('ascii')}"
+
+
+def build_preview_html(data: bytes) -> str:
+    """MHTML 字节流 → 自包含预览 HTML（需求 0064 C1/C2）.
+
+    根 HTML 原样保留（含内联 ``<style>``，D6 口径不变），仅把命中素材索引的
+    ``<img src>`` 内联为 ``data:`` URI；未命中引用保留原样。解析失败抛
+    ``UnsupportedImport``。产出的 HTML 仅在沙箱内渲染，脚本一律不执行。
+    """
+    html_text, _location, resources = parse_mhtml(data)
+    index = _build_index(resources)
+    out: list[str] = []
+    pos = 0
+    for match in _IMG_SRC_RE.finditer(html_text):
+        src = (match.group(1) or match.group(2) or "").strip()
+        entry = _mhtml_entry(index, src)
+        if entry is None:
+            continue
+        start, end = match.span(1) if match.group(1) is not None else match.span(2)
+        out.append(html_text[pos:start])
+        out.append(_data_uri(entry[1]))
+        pos = end
+    out.append(html_text[pos:])
+    return "".join(out)
