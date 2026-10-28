@@ -14,7 +14,7 @@ Related: `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/compo
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
 | C1 | 在查看模式下 | ChartEmbed 渲染成功（`chart-embed-svg` 存在）时，SVG 容器变为可点击：点击打开放大预览弹层；渲染失败 / 加载中 / 无效块无放大入口 |
-| C2 | 像图一样可以点击放大查看 | 预览层为 antd `Modal` 全屏遮罩，内容直接渲染同一份已 sanitize 的 SVG 字符串（宽度放大至视口，`dangerouslySetInnerHTML` 复用，零额外请求、矢量清晰） |
+| C2 | 像图一样可以点击放大查看 | 预览层为 antd `Modal` 遮罩弹层（宽 720px，SVG 按原比例自适应、居中，超高限 65vh），内容直接渲染同一份已 sanitize 的 SVG 字符串（`dangerouslySetInnerHTML` 复用，零额外请求、矢量清晰） |
 | C3 | 插入图表 | 编辑 / 宽度 / 保存图片控件仍在 `<figure>` 内的按钮区，放大点击只挂在 SVG 容器上，互不遮挡；编辑模式行为不变 |
 | C4 | （推论）游客分享页一致 | ChartEmbed 组件内实现，`shareToken` 模式自动获得同样放大能力，无单独改动 |
 
