@@ -620,7 +620,7 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     // 「更多」菜单承载回收站与导入入口
     fireEvent.click(within(toolbar).getByTestId('doc-toolbar-more'))
     expect(await screen.findByText('回收站')).toBeInTheDocument()
-    expect(screen.getByText('导入文件')).toBeInTheDocument()
+    expect(screen.getByText('导入')).toBeInTheDocument()
     expect(screen.getByText('新建文件夹')).toBeInTheDocument()
   })
 

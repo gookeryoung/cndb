@@ -54,7 +54,6 @@ import { buildSeriesStats, seriesStatsOf } from './seriesStats'
 import { formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
 import { formatMeta } from '@/components/Document/docFormat'
 import TrashDrawer from './TrashDrawer'
-import ObsidianImportModal from './ObsidianImportModal'
 import DocumentImportModal from './DocumentImportModal'
 import type { DocTreeNode } from './DocumentTree'
 import { formatSize } from '@/utils/formatSize'
@@ -126,9 +125,7 @@ export default function DocumentsPage() {
   const [moveTarget, setMoveTarget] = useState<number>(0)
   // 回收站抽屉
   const [trashOpen, setTrashOpen] = useState(false)
-  // Obsidian 文档库导入弹窗
-  const [vaultImportOpen, setVaultImportOpen] = useState(false)
-  // 通用文件导入弹窗（md / docx / html，单文件与文件夹）
+  // 通用导入弹窗（单文件 / 文件夹 / Obsidian 库 zip）
   const [fileImportOpen, setFileImportOpen] = useState(false)
   // 最近打开：读取本地历史（清空后用 version 触发重渲染）
   const [recentVersion, setRecentVersion] = useState(0)
@@ -473,8 +470,7 @@ export default function DocumentsPage() {
   /** 窄屏次级操作：收录进「更多」菜单，避免顶栏折成三行 */
   const mobileToolbarMenu: MenuProps['items'] = [
     { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
-    { key: 'import', icon: <ImportOutlined />, label: '导入文件', onClick: () => setFileImportOpen(true) },
-    { key: 'vault-import', icon: <ImportOutlined />, label: '导入 Obsidian 库', onClick: () => setVaultImportOpen(true) },
+    { key: 'import', icon: <ImportOutlined />, label: '导入', onClick: () => setFileImportOpen(true) },
     { key: 'export', icon: <ExportOutlined />, label: '导出 Obsidian 库', onClick: () => vaultExportMut.mutate() },
     { type: 'divider' },
     { key: 'trash', icon: <DeleteOutlined />, label: '回收站', onClick: () => setTrashOpen(true) },
@@ -535,22 +531,13 @@ export default function DocumentsPage() {
             {renderTagSelect({ width: 140 })}
             {renderStatusSelect({ width: 110 })}
             <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
-            <Tooltip title="导入本地文件（Markdown / Word / HTML）：单文件或整个文件夹，自动转 Markdown 并清理排版">
+            <Tooltip title="导入：本地文件（Markdown / Word / HTML）单文件或整个文件夹，或整个 Obsidian 库（.zip），自动转 Markdown 并清理排版">
               <Button
                 icon={<ImportOutlined />}
                 data-testid="doc-file-import"
                 onClick={() => setFileImportOpen(true)}
               >
                 导入
-              </Button>
-            </Tooltip>
-            <Tooltip title="导入 Obsidian 库（.zip）：保留目录结构、front-matter 标签与附件">
-              <Button
-                icon={<ImportOutlined />}
-                data-testid="doc-vault-import"
-                onClick={() => setVaultImportOpen(true)}
-              >
-                导入库
               </Button>
             </Tooltip>
             <Tooltip title="把当前工作区文档树导出为 Obsidian 库（.zip）">
@@ -960,19 +947,10 @@ export default function DocumentsPage() {
 
       <TrashDrawer open={trashOpen} onClose={() => setTrashOpen(false)} wid={workspaceId} />
 
-      {/* 通用文件导入：md / docx / html，单文件或文件夹，默认落在当前文件夹 */}
+      {/* 通用导入：单文件 / 文件夹 / Obsidian 库 zip，默认落在当前文件夹 */}
       <DocumentImportModal
         open={fileImportOpen}
         onClose={() => setFileImportOpen(false)}
-        workspaceId={workspaceId}
-        parentId={parentId}
-        parentLabel={currentFolderNode?.title}
-      />
-
-      {/* Obsidian 库导入：默认落在当前文件夹，导入完成后刷新树与列表 */}
-      <ObsidianImportModal
-        open={vaultImportOpen}
-        onClose={() => setVaultImportOpen(false)}
         workspaceId={workspaceId}
         parentId={parentId}
         parentLabel={currentFolderNode?.title}

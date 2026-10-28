@@ -99,7 +99,7 @@ beforeEach(() => {
 
 describe('Obsidian 库导入弹窗', () => {
   it('上传后展示解析预览与同名冲突提示', async () => {
-    renderProviders(<ObsidianImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
+    renderProviders(<ObsidianImportModal onClose={() => {}} workspaceId={WID} parentId={null} />)
     await upload()
 
     const summary = await screen.findByTestId('vault-import-summary')
@@ -114,7 +114,7 @@ describe('Obsidian 库导入弹窗', () => {
 
   it('按确认的策略与开关导入', async () => {
     renderProviders(
-      <ObsidianImportModal open onClose={() => {}} workspaceId={WID} parentId={3} parentLabel="收件箱" />,
+      <ObsidianImportModal onClose={() => {}} workspaceId={WID} parentId={3} parentLabel="收件箱" />,
     )
     await upload()
     await screen.findByTestId('vault-import-summary')
@@ -138,7 +138,7 @@ describe('Obsidian 库导入弹窗', () => {
   })
 
   it('导入完成后展示统计与告警', async () => {
-    renderProviders(<ObsidianImportModal open onClose={() => {}} workspaceId={WID} />)
+    renderProviders(<ObsidianImportModal onClose={() => {}} workspaceId={WID} />)
     await upload()
     await screen.findByTestId('vault-import-summary')
     fireEvent.click(screen.getByTestId('vault-import-submit'))
@@ -154,7 +154,7 @@ describe('Obsidian 库导入弹窗', () => {
 
   it('解析失败时清空已选文件', async () => {
     vi.spyOn(documentsApi, 'vaultAnalyze').mockRejectedValue(new Error('不是有效的 zip 压缩包'))
-    renderProviders(<ObsidianImportModal open onClose={() => {}} workspaceId={WID} />)
+    renderProviders(<ObsidianImportModal onClose={() => {}} workspaceId={WID} />)
     await upload()
     await waitFor(() => expect(documentsApi.vaultAnalyze).toHaveBeenCalled())
     await waitFor(() =>

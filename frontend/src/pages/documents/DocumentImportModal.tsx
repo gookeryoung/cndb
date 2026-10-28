@@ -25,6 +25,7 @@ import {
 } from 'antd'
 import { FileAddOutlined, FolderOpenOutlined, InboxOutlined } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { VaultImportForm } from './ObsidianImportModal'
 import {
   documentsApi,
   FILE_IMPORT_ACCEPT,
@@ -45,7 +46,7 @@ interface Props {
   parentLabel?: string
 }
 
-type ImportMode = 'single' | 'folder'
+type ImportMode = 'single' | 'folder' | 'vault'
 
 const CONFLICT_OPTIONS: { value: VaultConflictPolicy; label: string; hint: string }[] = [
   { value: 'rename', label: '保留两份（自动改名）', hint: '同名文档追加「 (2)」' },
@@ -236,18 +237,49 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         </Button>,
       ]
 
+  /** 模式选择器：单个文件 / 文件夹 / Obsidian 库，库模式下也常驻以便随时切回 */
+  const modeSelector = (
+    <Space size={16} wrap>
+      <Typography.Text type="secondary">导入模式</Typography.Text>
+      <Radio.Group
+        value={mode}
+        onChange={e => switchMode(e.target.value as ImportMode)}
+        optionType="button"
+        data-testid="file-import-mode"
+        options={[
+          { value: 'single', label: '单个文件' },
+          { value: 'folder', label: '文件夹' },
+          { value: 'vault', label: 'Obsidian 库' },
+        ]}
+      />
+    </Space>
+  )
+
   return (
     <Modal
-      title="导入文件"
+      title="导入"
       open={open}
       onCancel={close}
       width={760}
       destroyOnHidden
       maskClosable={!busy}
-      footer={footer}
+      footer={mode === 'vault' ? null : footer}
       data-testid="file-import-modal"
     >
-      {result ? (
+      {mode === 'vault' ? (
+        /* Obsidian 库导入：独立表单体，自带动作按钮与落库流程 */
+        <>
+          {modeSelector}
+          <div style={{ marginTop: 12 }}>
+            <VaultImportForm
+              workspaceId={workspaceId}
+              parentId={parentId}
+              parentLabel={parentLabel}
+              onClose={close}
+            />
+          </div>
+        </>
+      ) : result ? (
         <Space direction="vertical" size={12} style={{ width: '100%' }} data-testid="file-import-result">
           <Alert
             type="success"
@@ -276,19 +308,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         </Space>
       ) : (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
-          <Space size={16} wrap>
-            <Typography.Text type="secondary">导入模式</Typography.Text>
-            <Radio.Group
-              value={mode}
-              onChange={e => switchMode(e.target.value as ImportMode)}
-              optionType="button"
-              data-testid="file-import-mode"
-              options={[
-                { value: 'single', label: '单个文件' },
-                { value: 'folder', label: '文件夹' },
-              ]}
-            />
-          </Space>
+          {modeSelector}
 
           {/* 原生 file input：单文件模式选一个，文件夹模式带 webkitRelativePath */}
           <input

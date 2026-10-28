@@ -1,8 +1,8 @@
 /**
- * 通用文件导入弹窗测试 —— 单文件 / 文件夹模式，md / docx / html。
+ * 通用导入弹窗测试 —— 单文件 / 文件夹 / Obsidian 库三种模式。
  *
- * 覆盖：预览摘要与冲突提示 / 模式切换与相对路径 / 冲突策略与开关传递 /
- * 导入结果摘要与跳过明细 / 解析失败清空 / 未选文件时禁用提交。
+ * 覆盖：预览摘要与冲突提示 / 模式切换与相对路径 / 库模式切到 VaultImportForm /
+ * 冲突策略与开关传递 / 导入结果摘要与跳过明细 / 解析失败清空 / 未选文件时禁用提交。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,7 @@ import {
   documentsApi,
   type FileImportAnalyzeResult,
   type FileImportResult,
+  type VaultAnalyzeResult,
 } from '@/api/documents'
 
 const WID = 7
@@ -99,7 +100,52 @@ beforeEach(() => {
   vi.spyOn(documentsApi, 'fileImport').mockResolvedValue(RESULT)
 })
 
-describe('通用文件导入弹窗', () => {
+const VAULT_ANALYSIS: VaultAnalyzeResult = {
+  filename: 'vault.zip',
+  root_dir: 'MyVault',
+  total_notes: 1,
+  total_markdown: 1,
+  total_converted: 0,
+  total_folders: 0,
+  total_attachments: 0,
+  total_attachment_bytes: 0,
+  total_bytes: 512,
+  ignored_files: 0,
+  conflicts: 0,
+  tags: [],
+  warnings: [],
+  skipped: [],
+  preview_truncated: false,
+  folders: [],
+  items: [
+    {
+      path: '索引.md',
+      title: '索引',
+      folder: '',
+      size: 512,
+      tags: [],
+      status: 'new',
+      kind: 'markdown',
+      existing_document_id: null,
+    },
+  ],
+}
+
+describe('通用导入弹窗', () => {
+  it('库模式渲染 Obsidian 库上传表单，可切回文件模式', async () => {
+    vi.spyOn(documentsApi, 'vaultAnalyze').mockResolvedValue(VAULT_ANALYSIS)
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
+    expect(await screen.findByTestId('vault-import-upload')).toBeInTheDocument()
+
+    // 切回文件夹模式：库表单消失，文件上传区恢复
+    fireEvent.click(screen.getByRole('radio', { name: '文件夹' }))
+    await waitFor(() => expect(screen.queryByTestId('vault-import-upload')).not.toBeInTheDocument())
+    expect(screen.getByTestId('file-import-pick')).toBeInTheDocument()
+  })
+
+
   it('单文件上传后展示预览与同名冲突提示', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
     pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])

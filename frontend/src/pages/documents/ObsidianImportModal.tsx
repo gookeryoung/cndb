@@ -36,13 +36,13 @@ import {
 import { formatSize } from '@/utils/formatSize'
 
 interface Props {
-  open: boolean
-  onClose: () => void
   workspaceId: number
   /** 默认导入位置：当前浏览的文件夹（null = 根目录） */
   parentId?: number | null
   /** 当前文件夹标题，仅用于文案 */
   parentLabel?: string
+  /** 表单体关闭回调（取消 / 完成） */
+  onClose: () => void
 }
 
 const CONFLICT_OPTIONS: { value: VaultConflictPolicy; label: string; hint: string }[] = [
@@ -51,7 +51,8 @@ const CONFLICT_OPTIONS: { value: VaultConflictPolicy; label: string; hint: strin
   { value: 'skip', label: '跳过同名文档', hint: '只导入库里新增的笔记' },
 ]
 
-export default function ObsidianImportModal({ open, onClose, workspaceId, parentId, parentLabel }: Props) {
+/** 库导入表单体：上传 zip → 预览 → 确认策略 → 落库，动作按钮内置于表单底部（不依赖 Modal footer） */
+export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }: Props) {
   const { message } = AntApp.useApp()
   const qc = useQueryClient()
   const [file, setFile] = useState<File | null>(null)
@@ -192,16 +193,7 @@ export default function ObsidianImportModal({ open, onClose, workspaceId, parent
       ]
 
   return (
-    <Modal
-      title="导入 Obsidian 文档库"
-      open={open}
-      onCancel={close}
-      width={760}
-      destroyOnHidden
-      maskClosable={!busy}
-      footer={footer}
-      data-testid="vault-import-modal"
-    >
+    <>
       {result ? (
         <Space direction="vertical" size={12} style={{ width: '100%' }} data-testid="vault-import-result">
           <Alert
@@ -373,6 +365,24 @@ export default function ObsidianImportModal({ open, onClose, workspaceId, parent
           )}
         </Space>
       )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>{footer}</div>
+    </>
+  )
+}
+
+/** 独立弹窗包装：通用导入弹窗内的「库」模式直接复用 VaultImportForm，此包装保留单独打开的入口 */
+export default function ObsidianImportModal(props: Props) {
+  return (
+    <Modal
+      title="导入 Obsidian 文档库"
+      open
+      onCancel={props.onClose}
+      width={760}
+      destroyOnHidden
+      footer={null}
+      data-testid="vault-import-modal"
+    >
+      <VaultImportForm {...props} />
     </Modal>
   )
 }
