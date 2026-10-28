@@ -189,6 +189,36 @@ describe('ChartEmbed', () => {
     await waitFor(() => expect(screen.getByTestId('chart-embed-preview-svg')).not.toBeVisible())
   })
 
+  it('预览层滚轮缩放：上滚放大、下滚缩小，边界 0.5x-3x，重开后复位 100%（ADR 0060）', async () => {
+    server.use(
+      http.post('/api/v1/workspaces/10/charts/render-preview', () =>
+        new HttpResponse('<svg xmlns="http://www.w3.org/2000/svg"><text>缩放</text></svg>', {
+          status: 200,
+          headers: { 'Content-Type': 'image/svg+xml; charset=utf-8' },
+        })),
+    )
+    renderProviders(<ChartEmbed workspaceId={10} block={block()} />)
+    const canvas = await screen.findByTestId('chart-embed-svg')
+    fireEvent.click(canvas)
+    const preview = await screen.findByTestId('chart-embed-preview-svg')
+    expect(preview).toHaveStyle({ width: '100%' })
+
+    const scroller = screen.getByTestId('chart-embed-preview-scroll')
+    fireEvent.wheel(scroller, { deltaY: -100 })
+    expect(screen.getByTestId('chart-embed-preview-svg')).toHaveStyle({ width: '110%' })
+    // 连续上滚到上限 3x
+    for (let i = 0; i < 25; i += 1) fireEvent.wheel(scroller, { deltaY: -100 })
+    expect(screen.getByTestId('chart-embed-preview-svg')).toHaveStyle({ width: '300%' })
+    // 下滚到下限 0.5x
+    for (let i = 0; i < 40; i += 1) fireEvent.wheel(scroller, { deltaY: 100 })
+    expect(screen.getByTestId('chart-embed-preview-svg')).toHaveStyle({ width: '50%' })
+
+    // 关闭重开后复位 100%
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    fireEvent.click(canvas)
+    expect(await screen.findByTestId('chart-embed-preview-svg')).toHaveStyle({ width: '100%' })
+  })
+
   it('渲染失败 / 无效块无放大入口（I2 降级一致）', async () => {
     server.use(
       http.post('/api/v1/workspaces/10/charts/render-preview', () =>

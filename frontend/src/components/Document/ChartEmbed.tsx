@@ -57,6 +57,8 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
   const { message: toast } = AntApp.useApp()
   const [saving, setSaving] = useState(false)
   const [previewOpen, setPreviewOpen] = useState(false)
+  // 缩放用整数百分比（50-300，步进 10），避免 1.1*100 浮点误差
+  const [previewZoom, setPreviewZoom] = useState(100)
 
   const handleSaveImage = async (format: ChartImageFormat) => {
     if (!svg || !spec || saving) return
@@ -99,9 +101,15 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
           role="button"
           tabIndex={0}
           aria-label={`放大查看图表「${spec?.title || spec?.templateKey}」`}
-          onClick={() => setPreviewOpen(true)}
+          onClick={() => {
+            setPreviewZoom(100)
+            setPreviewOpen(true)
+          }}
           onKeyDown={e => {
-            if (e.key === 'Enter' || e.key === ' ') setPreviewOpen(true)
+            if (e.key === 'Enter' || e.key === ' ') {
+              setPreviewZoom(100)
+              setPreviewOpen(true)
+            }
           }}
           style={{ lineHeight: 0, maxWidth: '100%', overflowX: 'auto', cursor: 'zoom-in' }}
           // 后端唯一渲染器产出 + sanitizeSvg 清洗，无脚本无外链
@@ -172,6 +180,7 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
         </Space>
       )}
       {/* 放大预览（ADR 0060 D1）：复用同一份已 sanitize 的 SVG，零额外请求；
+          弹层 75vw，滚轮缩放（0.5x-3x，以 100% 为基准），超高弹层内滚动；
           禁用过渡动画（jsdom 不跑离场动画，卸载语义保持一致） */}
       <Modal
         open={previewOpen}
@@ -185,11 +194,19 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
       >
         {previewOpen && svg && (
           <div
-            data-testid="chart-embed-preview-svg"
-            className="cn-chart-preview"
-            style={{ lineHeight: 0, overflowX: 'hidden' }}
-            dangerouslySetInnerHTML={{ __html: svg }}
-          />
+            data-testid="chart-embed-preview-scroll"
+            style={{ maxHeight: '70vh', overflow: 'auto' }}
+            onWheel={e => {
+              setPreviewZoom(z => Math.min(300, Math.max(50, z + (e.deltaY < 0 ? 10 : -10))))
+            }}
+          >
+            <div
+              data-testid="chart-embed-preview-svg"
+              className="cn-chart-preview"
+              style={{ lineHeight: 0, width: `${previewZoom}%`, margin: '0 auto' }}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          </div>
         )}
       </Modal>
     </figure>
