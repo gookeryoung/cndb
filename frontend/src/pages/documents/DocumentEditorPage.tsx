@@ -1,12 +1,13 @@
 /** 文档页 — 查看/编辑双模式 + Obsidian 风格实时预览 + 个人草稿（保存与提交解耦） */
 
 import '@/compat/polyfills'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
   Breadcrumb,
   Button,
+  Divider,
   Drawer,
   Dropdown,
   Input,
@@ -15,6 +16,7 @@ import {
   Segmented,
   Space,
   Tag,
+  Tooltip,
   Typography,
   message,
 } from 'antd'
@@ -28,6 +30,9 @@ import {
   FileWordOutlined,
   HistoryOutlined,
   LinkOutlined,
+  DeleteOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
   MenuOutlined,
   MoreOutlined,
   PictureOutlined,
@@ -124,6 +129,19 @@ const AI_INSTRUCTION_LABELS: Record<DocumentAiInstruction, string> = {
 
 /** 单次选区改写上限（与后端 documents/services/ai.py 的 MAX_SELECTION_CHARS 对齐，超限先提示分段） */
 const MAX_AI_SELECTION_CHARS = 4000
+
+/** 顶栏图标按钮：仅图标 + Tooltip 提示；aria-label 承载含数量后缀的完整名称（测试与无障碍共用） */
+function IconBtn({
+  icon,
+  label,
+  ...rest
+}: ComponentProps<typeof Button> & { icon: ReactNode; label: string }) {
+  return (
+    <Tooltip title={label}>
+      <Button icon={icon} aria-label={label} {...rest} />
+    </Tooltip>
+  )
+}
 
 export default function DocumentEditorPage() {
   const { wid, docId } = useParams<{ wid: string; docId: string }>()
@@ -1167,57 +1185,57 @@ export default function DocumentEditorPage() {
             )}
           </Space>
         ) : (
-        <Space wrap>
+        // 桌面顶栏：按任务语义分组（导航关联 → 标注 → 协作 → 历史输出 → 提交动作），大纲为最右视图锚点
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+          {/* 组 1：导航与关联（反链 / 链接）；大纲开关固定最右端收尾 */}
           {!isAssetDoc && (
-          <Button
-            icon={<MenuOutlined />}
-            data-testid="doc-outline-toggle"
-            type={outlinePrefs.open ? 'primary' : 'default'}
-            aria-expanded={isDesktop ? outlinePrefs.open : undefined}
-            onClick={() => (isDesktop ? toggleOutline() : setOutlineDrawerOpen(true))}
-          >
-            大纲{outline.length > 0 ? ` (${outline.length})` : ''}
-          </Button>
+            <IconBtn icon={<LinkOutlined />} label="反链" onClick={() => setBacklinksOpen(true)} />
           )}
           {!isAssetDoc && (
-          <Button icon={<LinkOutlined />} onClick={() => setBacklinksOpen(true)}>
-            反链
-          </Button>
+            <IconBtn
+              icon={<BranchesOutlined />}
+              label="链接"
+              data-testid="doc-links-open"
+              onClick={() => setLinksOpen(true)}
+            />
           )}
-          {!isAssetDoc && (
-          <Button icon={<BranchesOutlined />} data-testid="doc-links-open" onClick={() => setLinksOpen(true)}>
-            链接
-          </Button>
-          )}
-          {/* 插入图片 / 插入表格引用已移入编辑模式 Markdown 工具栏（ADR 0042）：查看模式不出现写入口 */}
-          {/* AI 入口（懒加载）：整篇摘要 / 标签建议；选区改写入口在 MarkdownToolbar */}
+          {/* 组 2：内容标注（AI / 标签）；插入图片 / 表格引用已移入编辑模式 Markdown 工具栏（ADR 0042） */}
           {!isAssetDoc && (
             <Suspense fallback={null}>
               <AiDocEntry onSummarize={openAiSummary} onSuggestTags={openAiSuggestTags} />
             </Suspense>
           )}
-          <Button icon={<TagsOutlined />} onClick={() => setTagsOpen(true)}>
-            标签{doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}
-          </Button>
+          <IconBtn
+            icon={<TagsOutlined />}
+            label={`标签${doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}`}
+            onClick={() => setTagsOpen(true)}
+          />
+          <Divider type="vertical" style={{ margin: '0 2px' }} />
+          {/* 组 3：协作（修改申请 / 分享；分享仅 owner / editor 且非文件夹，viewer 由后端 require_editor 拒绝） */}
           {!isAssetDoc && (
-          <Button
-            icon={<PullRequestOutlined />}
-            data-testid="doc-cr-open"
-            onClick={() => setCrOpen(true)}
-          >
-            修改申请{pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}
-          </Button>
+            <IconBtn
+              icon={<PullRequestOutlined />}
+              label={`修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`}
+              data-testid="doc-cr-open"
+              onClick={() => setCrOpen(true)}
+            />
           )}
-          {/* 分享入口仅 owner / editor 且非文件夹（viewer 由后端 require_editor 拒绝） */}
           {(myRole === 'owner' || myRole === 'editor') && !doc.is_folder && (
-            <Button icon={<ShareAltOutlined />} data-testid="doc-share-open" onClick={() => setShareOpen(true)}>
-              分享
-            </Button>
+            <IconBtn
+              icon={<ShareAltOutlined />}
+              label="分享"
+              data-testid="doc-share-open"
+              onClick={() => setShareOpen(true)}
+            />
           )}
+          <Divider type="vertical" style={{ margin: '0 2px' }} />
+          {/* 组 4：版本与导出 */}
           {!isAssetDoc && (
-          <Button icon={<HistoryOutlined />} onClick={() => setVersionsOpen(true)}>
-            版本{doc.version_count > 0 ? ` (${doc.version_count})` : ''}
-          </Button>
+            <IconBtn
+              icon={<HistoryOutlined />}
+              label={`版本${doc.version_count > 0 ? ` (${doc.version_count})` : ''}`}
+              onClick={() => setVersionsOpen(true)}
+            />
           )}
           {!isAssetDoc && (
           <Dropdown
@@ -1231,36 +1249,19 @@ export default function DocumentEditorPage() {
               onClick: ({ key }) => exportMut.mutate(key as DocumentExportFormat),
             }}
           >
-            <Button icon={<DownloadOutlined />} loading={exportMut.isPending} data-testid="doc-export-btn">
-              导出
-            </Button>
+            <IconBtn icon={<DownloadOutlined />} label="导出" loading={exportMut.isPending} data-testid="doc-export-btn" />
           </Dropdown>
           )}
           {!isAssetDoc && (
             <>
-          {/* 草稿三件套（ADR 0057）：查看修改（diff）/ 保存草稿 / 丢弃草稿 */}
+          {/* 组 5：提交动作（ADR 0057）：查看修改 / 保存草稿 / 提交修改；破坏性的丢弃草稿置组末并拉开间距 */}
           {serverDraft && (
-            <>
-              <Button
-                icon={<DiffOutlined />}
-                data-testid="doc-draft-diff-btn"
-                onClick={() => setDraftDiffOpen(true)}
-              >
-                查看修改
-              </Button>
-              <Popconfirm
-                title="丢弃草稿？"
-                description="未提交的草稿修改将丢失，正文回到最新版本。"
-                okText="丢弃"
-                okButtonProps={{ danger: true }}
-                cancelText="取消"
-                onConfirm={() => discardMut.mutate()}
-              >
-                <Button danger loading={discardMut.isPending} data-testid="doc-draft-discard-btn">
-                  丢弃草稿
-                </Button>
-              </Popconfirm>
-            </>
+            <IconBtn
+              icon={<DiffOutlined />}
+              label="查看修改"
+              data-testid="doc-draft-diff-btn"
+              onClick={() => setDraftDiffOpen(true)}
+            />
           )}
           <Button
               icon={<SaveOutlined />}
@@ -1289,9 +1290,38 @@ export default function DocumentEditorPage() {
             >
               提交修改
             </Button>
+          {serverDraft && (
+            <Popconfirm
+              title="丢弃草稿？"
+              description="未提交的草稿修改将丢失，正文回到最新版本。"
+              okText="丢弃"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => discardMut.mutate()}
+            >
+              <IconBtn
+                danger
+                icon={<DeleteOutlined />}
+                label="丢弃草稿"
+                loading={discardMut.isPending}
+                data-testid="doc-draft-discard-btn"
+                style={{ marginLeft: 8 }}
+              />
+            </Popconfirm>
+          )}
             </>
           )}
-        </Space>
+          {/* 组 1 收尾：大纲视图开关，展开 / 收起用不同图标，不做高亮以与普通入口保持一致 */}
+          {!isAssetDoc && (
+            <IconBtn
+              icon={outlinePrefs.open ? <MenuFoldOutlined /> : <MenuUnfoldOutlined />}
+              label={`大纲${outline.length > 0 ? ` (${outline.length})` : ''}`}
+              data-testid="doc-outline-toggle"
+              aria-expanded={isDesktop ? outlinePrefs.open : undefined}
+              onClick={() => (isDesktop ? toggleOutline() : setOutlineDrawerOpen(true))}
+            />
+          )}
+        </div>
         )}
       </div>
 
