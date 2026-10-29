@@ -847,8 +847,8 @@ describe('DocumentEditorPage 查找与替换', () => {
         await waitFor(() => expect(ta.value).not.toBe(before))
         expect(ta.value).toContain('正文内容')
         expect(ta.value).not.toContain('段落')
-        // 正文被改动 → 出现未保存提示
-        expect(screen.getByText('未保存')).toBeInTheDocument()
+        // 正文被改动 → 出现「草稿未保存」标签
+        expect(screen.getByTestId('doc-draft-tag')).toHaveTextContent('草稿未保存')
 
         fireEvent.keyDown(ta, { key: 'Escape' })
         await waitFor(() => expect(screen.queryByTestId('doc-find-bar')).toBeNull())
@@ -937,7 +937,7 @@ describe('DocumentEditorPage 插入图片', () => {
         await waitFor(() => expect(hits).toHaveLength(1))
         await waitFor(() => expect(ta.value).toContain('![arch.png](file:abc123.png)'))
         // 插入后标记为未保存
-        expect(screen.getByText('未保存')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-draft-tag')).toHaveTextContent('草稿未保存')
     })
 
     it('上传失败时不改动正文（请求已发起但不插入引用）', async () => {
@@ -960,7 +960,7 @@ describe('DocumentEditorPage 插入图片', () => {
         await waitFor(() => expect(hits).toHaveLength(1))
         // 失败路径不得改动正文、不得出现未保存标记
         expect(ta.value).toBe(before)
-        expect(screen.queryByText('未保存')).toBeNull()
+        expect(screen.queryByText('草稿未保存')).toBeNull()
     })
 
 describe('DocumentEditorPage 粘贴图片与状态栏', () => {
@@ -1085,7 +1085,7 @@ describe('DocumentEditorPage 表格骨架与标题层级', () => {
         expect(ta.value).toContain('| --- | --- |')
         expect(ta.value.split('\n').filter(l => l.startsWith('| \u00a0')).length).toBe(2)
         // 插入后标记未保存
-        expect(screen.getByText('未保存')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-draft-tag')).toHaveTextContent('草稿未保存')
     })
 
     it('工具栏标题下拉：所选行变为三级标题', async () => {
@@ -1215,11 +1215,11 @@ describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
         )
         renderEditor()
 
-        expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿待提交')
+        expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿已保存')
         const ta = await enterSourceMode()
         await waitFor(() => expect(ta.value).toContain('草稿正文'))
-        // 草稿与最新版本不同 → 允许保存 / 提交
-        expect(screen.getByTestId('doc-save-btn')).toBeEnabled()
+        // 草稿载入后尚未再修改：保存禁用（无新改动可存），提交仍可用
+        expect(screen.getByTestId('doc-save-btn')).toBeDisabled()
         expect(screen.getByTestId('doc-submit-btn')).toBeEnabled()
     })
 
@@ -1260,9 +1260,9 @@ describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
             base_version_number: 1,
         })
         expect(submitCalls).toBe(0)
-        expect(await screen.findByTestId('doc-draft-tag')).toBeInTheDocument()
-        // 保存后无未保存提示（仍是待提交草稿）
-        expect(screen.queryByTestId('doc-unsaved-hint')).toBeNull()
+        expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿已保存')
+        // 保存后「保存草稿」禁用，再次修改前不可重复保存
+        expect(screen.getByTestId('doc-save-btn')).toBeDisabled()
     })
 
     it('切到查看模式：未保存改动自动落草稿', async () => {
@@ -1277,6 +1277,8 @@ describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
         const ta = await enterSourceMode()
         await waitFor(() => expect(ta.value).toContain('需求说明'))
         fireEvent.change(ta, { target: { value: '# 需求说明\n\n未提交改动。\n' } })
+        // 编写中：草稿状态标签显示「草稿未保存」
+        expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿未保存')
 
         fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
 
@@ -1738,7 +1740,7 @@ describe('DocumentEditorPage 草稿 diff 与丢弃（ADR 0057）', () => {
                 })),
         )
         renderEditor()
-        expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿待提交')
+        expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿已保存')
     }
 
     it('版本历史出现当前草稿条目并可看草稿 diff，原最新版本标记已发布（需求 0062）', async () => {

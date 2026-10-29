@@ -22,6 +22,7 @@ import {
 import {
   BarChartOutlined,
   BranchesOutlined,
+  CheckCircleOutlined,
   CodeOutlined,
   DownloadOutlined,
   EditOutlined,
@@ -45,6 +46,7 @@ import {
   ShareAltOutlined,
   TableOutlined,
   TagsOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import FindReplaceBar from '@/components/Document/FindReplaceBar'
@@ -525,7 +527,7 @@ export default function DocumentEditorPage() {
 
   /** 是否有未提交的修改：与最新版本正文一致时禁止保存草稿 / 提交 */
   const hasChanges = content !== latestContent
-  /** 是否有尚未保存到草稿的修改：仅用于顶部「未保存」提示 */
+  /** 是否有尚未保存到草稿的修改：驱动「草稿未保存 / 已保存」标签与保存按钮禁用 */
   const hasUnsaved = content !== savedContent
 
   /** 保存：只写个人草稿，不产生版本、不触发审核；提交由「提交修改」显式触发 */
@@ -534,8 +536,10 @@ export default function DocumentEditorPage() {
       message.info('内容与当前版本一致，无需保存')
       return
     }
+    // 草稿已保存且无新改动时不重复落库（Ctrl+S 与按钮共用此守卫）
+    if (!hasUnsaved) return
     draftMut.mutate(content)
-  }, [content, draftMut, hasChanges])
+  }, [content, draftMut, hasChanges, hasUnsaved])
 
   /** 打开提交确认弹窗：未修改时直接拦截，避免产生空版本 */
   const openSubmit = useCallback(() => {
@@ -1108,11 +1112,16 @@ export default function DocumentEditorPage() {
               {/* 窄屏：长文案占宽过多，草稿态收敛为「草稿」 */}
               {doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : (isMobile ? '草稿' : '草稿（仅自己可见）')}
             </Tag>
-            {serverDraft && (
-              <Tag color="orange" data-testid="doc-draft-tag">
-                草稿待提交
-              </Tag>
-            )}
+            {(hasUnsaved || serverDraft) &&
+              (hasUnsaved ? (
+                <Tag color="warning" icon={<WarningOutlined />} data-testid="doc-draft-tag">
+                  草稿未保存
+                </Tag>
+              ) : (
+                <Tag color="success" icon={<CheckCircleOutlined />} data-testid="doc-draft-tag">
+                  草稿已保存
+                </Tag>
+              ))}
             {/* 查看/编辑切换：按钮组连体样式，激活项高亮 */}
             {!doc.is_folder && !isAssetDoc && doc.status !== 'archived' && (
               <Space.Compact data-testid="doc-mode-switch">
@@ -1145,11 +1154,6 @@ export default function DocumentEditorPage() {
               >
                 发布
               </Button>
-            )}
-            {hasUnsaved && !isAssetDoc && (
-              <Text type="warning" style={{ fontSize: 12 }} data-testid="doc-unsaved-hint">
-                未保存
-              </Text>
             )}
           </Space>
         </div>
@@ -1184,7 +1188,7 @@ export default function DocumentEditorPage() {
               <Button
                 icon={<SaveOutlined />}
                 loading={draftMut.isPending}
-                disabled={!hasChanges}
+                disabled={!hasChanges || !hasUnsaved}
                 data-testid="doc-save-btn"
                 onClick={handleSave}
               >
@@ -1282,17 +1286,23 @@ export default function DocumentEditorPage() {
           )}
           {!isAssetDoc && (
             <>
-          {/* 组 5：提交动作（ADR 0057）：保存草稿 / 提交修改为按钮组连体；破坏性的丢弃草稿置组末并拉开间距（查看修改已并入版本历史，需求 0062） */}
+          {/* 组 5：提交动作：保存 / 提交 / 丢弃为同一按钮组连体（原 ADR 0057 的拉开间距口径已按用户要求调整为入组） */}
           <Space.Compact>
             <Button
               icon={<SaveOutlined />}
               loading={draftMut.isPending}
-              disabled={!hasChanges}
+              disabled={!hasChanges || !hasUnsaved}
               data-testid="doc-save-btn"
               onClick={handleSave}
-              title={hasChanges ? '保存为个人草稿，不生成版本' : '内容与当前版本一致，无需保存'}
+              title={
+                !hasChanges
+                  ? '内容与当前版本一致，无需保存'
+                  : !hasUnsaved
+                    ? '草稿已保存，再次修改后可继续保存'
+                    : '保存为个人草稿，不生成版本'
+              }
             >
-              保存草稿 (Ctrl+S)
+              保存
             </Button>
             <Button
               type="primary"
@@ -1309,28 +1319,28 @@ export default function DocumentEditorPage() {
                     : '提交后生成新版本'
               }
             >
-              提交修改
+              提交
             </Button>
+            {serverDraft && (
+              <Popconfirm
+                title="丢弃草稿？"
+                description="未提交的草稿修改将丢失，正文回到最新版本。"
+                okText="丢弃"
+                okButtonProps={{ danger: true }}
+                cancelText="取消"
+                onConfirm={() => discardMut.mutate()}
+              >
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  loading={discardMut.isPending}
+                  data-testid="doc-draft-discard-btn"
+                >
+                  丢弃
+                </Button>
+              </Popconfirm>
+            )}
           </Space.Compact>
-          {serverDraft && (
-            <Popconfirm
-              title="丢弃草稿？"
-              description="未提交的草稿修改将丢失，正文回到最新版本。"
-              okText="丢弃"
-              okButtonProps={{ danger: true }}
-              cancelText="取消"
-              onConfirm={() => discardMut.mutate()}
-            >
-              <IconBtn
-                danger
-                icon={<DeleteOutlined />}
-                label="丢弃草稿"
-                loading={discardMut.isPending}
-                data-testid="doc-draft-discard-btn"
-                style={{ marginLeft: 8 }}
-              />
-            </Popconfirm>
-          )}
             </>
           )}
           {/* 组 1 收尾：大纲视图开关，展开 / 收起用不同图标，不做高亮以与普通入口保持一致 */}
