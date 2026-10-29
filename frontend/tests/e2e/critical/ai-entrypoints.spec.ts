@@ -1,9 +1,12 @@
 /**
  * Critical — 大模型能力入口（ADR 0020）。
  *
- * 只验证「入口存在 + 交互接线」，不触发真实模型调用（e2e 不配置个人 Key）：
+ * 只验证「入口存在 + 交互接线」，不触发真实模型调用：
  * 1) 文档编辑器：草稿文档默认编辑态 → 工具栏出现 AI 润色 / 精简 / 扩写；未选中文本时点击给出中文提示；
  * 2) 个人设置 → 大模型：调用记录区可见（空态或列表），说明 P0 的 `GET /v1/llm/runs` 已接通。
+ *
+ * 需求 0069 起，未配置大模型时全局隐藏 AI 入口 —— beforeAll 里通过 API 给管理员
+ * 写入一份假的个人 LLM 配置（configured=true），afterAll 清除恢复，不影响其它用例。
  *
  * 为什么必须 E2E：工具栏只对编辑态渲染、设置抽屉要经顶栏用户菜单打开，jsdom 单测无法覆盖
  * 真实路由 / 懒加载 / 弹层交互。
@@ -24,6 +27,20 @@ const stamp = Date.now();
 test.beforeAll(async ({ request }: { request: APIRequestContext }) => {
   token = await getAdminToken(request);
   wid = await getWorkspaceId(request, WORKSPACE_NAME);
+  // 0069：未配置大模型时 AI 入口全局隐藏 —— 写入假配置使 configured=true（地址不连通也无妨，
+  // 本 spec 不发真实模型请求）
+  const saved = await apiCall(request, token, "put", "/llm/config", {
+    base_url: "http://127.0.0.1:9/v1",
+    model: "e2e-fake-model",
+    api_key: "e2e-fake-key",
+  });
+  expect(saved.status, JSON.stringify(saved.body)).toBe(200);
+  expect((saved.body as { configured: boolean }).configured).toBe(true);
+});
+
+test.afterAll(async ({ request }: { request: APIRequestContext }) => {
+  // 清除假 Key（e2e 数据库每次运行重新 seed，地址/模型残留无影响；此处仅为兜底）
+  await apiCall(request, token, "put", "/llm/config", { clear_api_key: true }).catch(() => undefined);
 });
 
 test.describe("文档 AI 入口", () => {
@@ -60,8 +77,8 @@ test.describe("个人设置 · 大模型", () => {
     await page.goto(`/w/${wid}/tables`);
     await expect(page.getByRole("heading", { level: 3 })).toBeVisible({ timeout: 20_000 });
 
-    // 顶栏用户菜单（seed 昵称：系统管理员）
-    await page.getByText("系统管理员", { exact: true }).click();
+    // 顶栏用户菜单（圆形头像按钮，testid 见 MainLayout；昵称已改为 Tooltip 不再直出文本）
+    await page.getByTestId("user-menu-trigger").click();
     await page.getByText("个人设置", { exact: true }).click();
 
     await expect(page.getByRole("tab", { name: "大模型" })).toBeVisible({ timeout: 10000 });
