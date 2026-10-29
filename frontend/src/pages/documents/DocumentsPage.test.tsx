@@ -538,7 +538,7 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     expect(within(toolbar).getByTestId('doc-tag-filter')).toBeVisible()
     expect(within(toolbar).getByTestId('doc-status-filter')).toBeVisible()
     // 搜索、新建仍可用
-    expect(within(toolbar).getByPlaceholderText('本页标题过滤')).toBeVisible()
+    expect(within(toolbar).getByPlaceholderText('过滤标题')).toBeVisible()
     expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
 
     // 「更多」菜单承载回收站与导入入口

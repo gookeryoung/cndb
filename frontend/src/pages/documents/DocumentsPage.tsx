@@ -45,7 +45,8 @@ import {
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  describeSort, DOC_SORT_OPTIONS, sortFlatByDocSort, sortToValue, valueToSort, useDocSortPref,
+  describeSort, DOC_SORT_OPTIONS, setDocTitleFilter, sortFlatByDocSort, sortToValue,
+  useDocSortPref, useDocTitleFilter, valueToSort,
 } from './docTreeSort'
 import { clearRecentDocs, loadRecentDocs } from './recentDocs'
 import { documentsApi } from '@/api/documents'
@@ -115,7 +116,8 @@ export default function DocumentsPage() {
     updateParams({ parent: id })
   }, [updateParams])
 
-  const [titleKeyword, setTitleKeyword] = useState('')
+  // 标题过滤关键词：与侧栏「过滤标题」联动（共享同一关键词，一套 UI 两处生效）
+  const [titleKeyword] = useDocTitleFilter()
   const [createOpen, setCreateOpen] = useState(false)
   const [createType, setCreateType] = useState<'doc' | 'folder'>('doc')
   const [newTitle, setNewTitle] = useState('')
@@ -473,10 +475,10 @@ export default function DocumentsPage() {
     <Input
       allowClear
       prefix={<SearchOutlined />}
-      placeholder="本页标题过滤"
+      placeholder="过滤标题"
       style={style}
       value={titleKeyword}
-      onChange={e => setTitleKeyword(e.target.value)}
+      onChange={e => setDocTitleFilter(e.target.value)}
     />
   )
   /** 标签 / 状态筛选（需求 0065 第二次修订）：写 URL（?tag=&status=），与 parent / order 同机制 */
@@ -571,6 +573,7 @@ export default function DocumentsPage() {
             <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
               回收站
             </Button>
+            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
             <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
             {/* 导入导出按钮组：紧凑并排，避免两个独立按钮占用过多横向空间 */}
             <Space.Compact>
@@ -594,7 +597,6 @@ export default function DocumentsPage() {
                 </Button>
               </Tooltip>
             </Space.Compact>
-            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
           </Space>
         </div>
       )}

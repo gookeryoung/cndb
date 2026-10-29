@@ -18,7 +18,8 @@ import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
 import {
-  describeSort, DOC_SORT_OPTIONS, sortDocTree, sortToValue, valueToSort, useDocSortPref,
+  describeSort, DOC_SORT_OPTIONS, setDocTitleFilter, sortDocTree, sortToValue, useDocSortPref,
+  useDocTitleFilter, valueToSort,
 } from '@/pages/documents/docTreeSort'
 import GlobalSearch from '@/components/GlobalSearch'
 import { BrandMark } from '@/components/BrandMark'
@@ -180,8 +181,8 @@ export default function MainLayout() {
   }, [queryClient, wid])
   // 树排序偏好（沿用原页面内左树的 docTreeSort 口径）：与文档内容区排序控件共享同一偏好，实时同步
   const [docSort, setDocSort] = useDocSortPref()
-  // 树标题过滤（原页面内左树能力）：命中节点及其祖先链保留
-  const [docTreeKeyword, setDocTreeKeyword] = useState('')
+  // 标题过滤（与文档内容区过滤框联动，共享同一关键词；命中节点及其祖先链保留）
+  const [docTreeKeyword] = useDocTitleFilter()
   // 编辑器路由参数：仅纯数字为真实文档 id（静态子页段不会落入 docId，此处双保险）
   const activeDocId = docId && /^\d+$/.test(docId) ? docId : undefined
   // 树展开态：用户展开/收起前按「当前文档祖先链 + 一级文件夹」自动展开；交互后以手动状态为准
@@ -520,7 +521,7 @@ export default function MainLayout() {
                 prefix={<SearchOutlined />}
                 placeholder="过滤标题"
                 value={docTreeKeyword}
-                onChange={e => setDocTreeKeyword(e.target.value)}
+                onChange={e => setDocTitleFilter(e.target.value)}
                 data-testid="doc-tree-filter"
                 style={{ flex: 1, minWidth: 0 }}
               />

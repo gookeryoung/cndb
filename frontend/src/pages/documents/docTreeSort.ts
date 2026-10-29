@@ -150,6 +150,31 @@ export function useDocSortPref(): [DocSort, (sort: DocSort) => void] {
   return [sort, setDocSortPref]
 }
 
+// ── 标题过滤关键词的跨组件共享（侧栏「过滤标题」与内容区过滤框联动，改一处两处同步）──
+
+let cachedTitleFilter = ''
+const titleFilterListeners = new Set<() => void>()
+
+function subscribeTitleFilter(cb: () => void): () => void {
+  titleFilterListeners.add(cb)
+  return () => {
+    titleFilterListeners.delete(cb)
+  }
+}
+
+/** 读取标题过滤关键词并订阅变化（会话内共享，不写 URL / localStorage） */
+export function useDocTitleFilter(): [string, (kw: string) => void] {
+  const kw = useSyncExternalStore(subscribeTitleFilter, () => cachedTitleFilter)
+  return [kw, setDocTitleFilter]
+}
+
+/** 更新标题过滤关键词（侧栏 / 内容区输入框共用） */
+export function setDocTitleFilter(kw: string): void {
+  if (kw === cachedTitleFilter) return
+  cachedTitleFilter = kw
+  for (const cb of titleFilterListeners) cb()
+}
+
 /** 读取本地排序偏好（非法/不可用时回落默认） */
 export function readDocSort(): DocSort {
   try {
