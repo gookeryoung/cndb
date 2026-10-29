@@ -269,6 +269,14 @@ describe('通用导入弹窗', () => {
     expect(screen.getByText('转Markdown（仅 MHTML 支持）')).toBeInTheDocument()
   })
 
+  it('批次仅含 .mht（MHTML 别名）时「转Markdown」开关可用', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    pick([new File(['x'], '网页存档.mht')])
+    await screen.findByTestId('file-import-summary')
+
+    expect(screen.getByTestId('file-import-mhtml-convert')).toBeEnabled()
+  })
+
   it('导入完成后展示统计、告警与跳过明细', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
     pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
