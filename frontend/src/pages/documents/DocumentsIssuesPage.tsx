@@ -73,8 +73,9 @@ export default function DocumentsIssuesPage() {
 
   // 新建问题时的文档候选（文件夹不参与：问题针对内容）
   const { data: tree = [] } = useQuery({
-    queryKey: ['documents', wid, 'tree'],
-    queryFn: () => documentsApi.tree(wid),
+    // key 用数字 wid，与文档页/侧栏共享同一缓存并在其变更时同步失效
+    queryKey: ['documents', Number(wid), 'tree'],
+    queryFn: () => documentsApi.tree(Number(wid)),
     enabled: !!wid && createOpen,
   })
   const documentOptions = useMemo(

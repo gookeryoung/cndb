@@ -180,7 +180,7 @@ export default function MainLayout() {
 
   // 文档数徽标：limit=1 仅取 total 计数，避免拉全量
   const { data: docCount, isSuccess: docsReady } = useQuery({
-    queryKey: ['documents', wid, 'count'],
+    queryKey: ['documents', Number(wid), 'count'],
     queryFn: () => documentsApi.list(Number(wid), { limit: 1 }),
     enabled: !!wid && wsFeatures.documents,
     staleTime: 60_000,
@@ -189,7 +189,9 @@ export default function MainLayout() {
   // 文档侧栏的文档树：与文档管理页同源 tree 端点（共享 react-query 缓存），全量文档+文件夹
   const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
   const { data: docsTreeData, isSuccess: docsTreeReady } = useQuery({
-    queryKey: ['documents', wid, 'tree'],
+    // 注意 key 用数字 wid：文档页 invalidateQueries 按 ['documents', <number>] 前缀失效，
+    // 字符串 wid 与数字 workspaceId 严格不等会导致前缀匹配不上、侧边栏不随页面变更刷新
+    queryKey: ['documents', Number(wid), 'tree'],
     queryFn: () => documentsApi.tree(Number(wid)),
     enabled: !!wid && wsFeatures.documents && inDocumentsContext,
   })
