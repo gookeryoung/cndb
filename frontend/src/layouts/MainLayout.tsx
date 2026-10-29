@@ -11,7 +11,8 @@ import {
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
-  RobotOutlined, FolderFilled, FileTextOutlined, ReloadOutlined, SortAscendingOutlined,
+  RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
+  MenuUnfoldOutlined, MenuFoldOutlined,
   LockOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -192,9 +193,6 @@ export default function MainLayout() {
     enabled: !!wid && wsFeatures.documents && inDocumentsContext,
   })
   const docTree = useMemo(() => buildDocTree(docsTreeData ?? []), [docsTreeData])
-  const refreshDocs = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey: ['documents', wid] })
-  }, [queryClient, wid])
   // 树排序偏好（沿用原页面内左树的 docTreeSort 口径）：与文档内容区排序控件共享同一偏好，实时同步
   const [docSort, setDocSort] = useDocSortPref()
   // 标题过滤（与文档内容区过滤框联动，共享同一关键词；命中节点及其祖先链保留）
@@ -210,6 +208,12 @@ export default function MainLayout() {
     return [...ancestorChain(docsTreeData ?? [], Number(activeDocId)).map(d => String(d.id)), ...rootFolders]
   }, [docTree, docsTreeData, activeDocId])
   const docTreeExpanded = manualExpanded ?? autoExpanded
+  // 展开全部 / 收起全部：图标随切换变化（收起态下一键展开全部节点，展开态下一键收起）
+  const [treeCollapsed, setTreeCollapsed] = useState(false)
+  const toggleTreeExpanded = () => {
+    setManualExpanded(treeCollapsed ? docTree.map(n => String(n.id)) : [])
+    setTreeCollapsed(!treeCollapsed)
+  }
 
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
   /** 侧栏表搜索关键词：按表名过滤（需求 0068，接入 SearchInput 统一组件） */
@@ -524,18 +528,22 @@ export default function MainLayout() {
           alignItems: 'center', justifyContent: 'space-between',
         }}>
           <span>文档</span>
-          {/* 刷新：失效本工作区全部文档查询（树 / 列表 / 统计） */}
-          <Button
-            type="text" size="small" icon={<ReloadOutlined />}
-            aria-label="刷新文档"
-            data-testid="doc-sidebar-refresh"
-            onClick={refreshDocs}
-          />
         </div>
         {collapsed ? null : (
           <>
-            {/* 树排序（与内容区排序按钮共享偏好）+ 标题过滤（原页面内左树能力，0065 移入侧栏） */}
+            {/* 第一行：展开/收起 + 排序 + 标题过滤 */}
             <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)', display: 'flex', gap: 6 }}>
+              {/* 展开/收起全部：图标随切换变化，置于排序按钮前面 */}
+              <Tooltip title={treeCollapsed ? '展开全部' : '收起全部'}>
+                <Button
+                  size="small"
+                  icon={treeCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                  aria-label={treeCollapsed ? '展开全部文档节点' : '收起全部文档节点'}
+                  data-testid="doc-tree-expand-toggle"
+                  onClick={toggleTreeExpanded}
+                  style={{ flexShrink: 0 }}
+                />
+              </Tooltip>
               <Dropdown
                 menu={{
                   items: DOC_SORT_OPTIONS.map(o => ({ key: o.value, label: o.label })),

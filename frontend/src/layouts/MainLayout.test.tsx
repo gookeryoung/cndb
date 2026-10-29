@@ -690,12 +690,14 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         })
     })
 
-    it('侧栏承载树排序 / 标题过滤 / 刷新控件（需求 0065 三次修订）', async () => {
+    it('侧栏承载展开/收起 / 树排序 / 标题过滤控件（需求 0065 三次修订）', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
-        await waitFor(() => expect(screen.getByTestId('doc-tree-sort')).toBeVisible())
+        await waitFor(() => expect(screen.getByTestId('doc-tree-expand-toggle')).toBeVisible())
+        expect(screen.getByTestId('doc-tree-sort')).toBeVisible()
         expect(screen.getByTestId('doc-tree-filter')).toBeVisible()
-        expect(screen.getByTestId('doc-sidebar-refresh')).toBeVisible()
+        // 刷新按钮已从侧栏移除（刷新走文档页工具栏）
+        expect(screen.queryByTestId('doc-sidebar-refresh')).toBeNull()
         // 「手动顺序」文字排序下拉已移除；标签 / 状态筛选在内容区顶部，侧栏不再渲染
         expect(screen.queryByTestId('doc-order-select')).toBeNull()
         expect(screen.queryByTestId('doc-tag-filter')).toBeNull()
@@ -704,6 +706,20 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         // 树排序下拉可选（与内容区共享偏好，不写 URL）
         fireEvent.click(screen.getByTestId('doc-tree-sort'))
         expect(await screen.findByText('名称 A → Z')).toBeInTheDocument()
+    })
+
+    it('展开/收起按钮置于排序之前，点击切换图标与展开态', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        const toggle = await screen.findByTestId('doc-tree-expand-toggle')
+        const sortBtn = screen.getByTestId('doc-tree-sort')
+        // DOM 顺序：展开/收起在排序之前
+        expect(sortBtn.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy()
+        // 默认展开态：显示收起图标
+        expect(toggle.querySelector('.anticon-menu-fold')).not.toBeNull()
+        fireEvent.click(toggle)
+        // 收起态：显示展开图标
+        await waitFor(() => expect(toggle.querySelector('.anticon-menu-unfold')).not.toBeNull())
     })
 
     it('文档编辑器段：侧栏仍是同一棵文档树并高亮当前文档，不再显示大纲', async () => {
