@@ -11,6 +11,7 @@ import { useQuery } from '@tanstack/react-query'
 import { recordApi, tableApi, viewApi } from '@/api'
 import type { Field, RowResponse } from '@/api'
 import { formatFieldDisplayValue } from '@/pages/grid/cells/fieldValueFormat'
+import { useDocSettingsStore } from '@/store'
 import type { TableRef } from './tableRef'
 import RefWidthControl from './RefWidthControl'
 import { parseRefWidth } from './refWidth'
@@ -33,7 +34,12 @@ export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthC
   onWidthChange?: (width: number) => void
 }) {
   const [page, setPage] = useState(1)
-  const pct = parseRefWidth(tableRef.width)
+  // 个人设置（文档页签）：未显式指定 width 的引用用默认宽度；对齐方式控制块级水平位置
+  const tableDefaultWidth = useDocSettingsStore(s => s.tableDefaultWidth)
+  const tableAlign = useDocSettingsStore(s => s.tableAlign)
+  const pct = tableRef.width != null
+    ? parseRefWidth(tableRef.width)
+    : tableDefaultWidth
   const offset = (page - 1) * tableRef.limit
 
   const tableQuery = useQuery({
@@ -96,9 +102,17 @@ export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthC
 
   return (
     <div
-      style={{ margin: '0.8em 0', width: `${pct}%`, maxWidth: '100%' }}
+      style={{
+        margin: '0.8em 0',
+        width: `${pct}%`,
+        maxWidth: '100%',
+        // 居中：宽度受限的块级元素用 auto 外边距水平居中
+        marginLeft: tableAlign === 'center' ? 'auto' : undefined,
+        marginRight: tableAlign === 'center' ? 'auto' : undefined,
+      }}
       data-testid={`table-embed-${tableRef.tableId}`}
       data-width={pct}
+      data-align={tableAlign}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Text type="secondary" style={{ fontSize: 12 }}>

@@ -6,6 +6,8 @@ import { http, HttpResponse } from 'msw'
 
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
+import { useDocSettingsStore } from '@/store'
+import { DEFAULT_DOC_SETTINGS } from '@/theme/docSettings'
 import DocumentImage from './DocumentImage'
 
 describe('DocumentImage', () => {
@@ -88,5 +90,33 @@ describe('DocumentImage', () => {
 
     const img = await screen.findByTestId('doc-image-external')
     expect(img).toHaveAttribute('referrerpolicy', 'no-referrer')
+  })
+
+  it('图片默认宽度取个人设置（文档页签）：默认 50%，改为 75% 后生效', async () => {
+    // 定位实际承载 width 样式的元素（antd 版本差异：容器或内部 img）
+    const widthEl = async (testId: string) => {
+      const root = await screen.findByTestId(testId)
+      if (root.style.width) return root
+      return (root.tagName === 'IMG' ? root : root.querySelector('img')) as HTMLElement
+    }
+
+    // 默认 50%
+    const first = renderProviders(
+      <DocumentImage publicFileBase="/api/v1/documents/share/tok/files" src="file:abc.png" alt="公开图" />,
+    )
+    expect((await widthEl('doc-image-public')).style.width).toBe('50%')
+    first.unmount()
+
+    // 个人设置改为 75%
+    const { updateSettings, resetSettings, ...rest } = useDocSettingsStore.getState()
+    void updateSettings
+    void resetSettings
+    useDocSettingsStore.setState({ ...rest, imageDefaultWidth: 75 })
+    renderProviders(
+      <DocumentImage publicFileBase="/api/v1/documents/share/tok/files" src="file:abc.png" alt="公开图" />,
+    )
+    expect((await widthEl('doc-image-public')).style.width).toBe('75%')
+    // 复位，避免污染其他用例
+    useDocSettingsStore.setState({ ...useDocSettingsStore.getState(), ...DEFAULT_DOC_SETTINGS })
   })
 })

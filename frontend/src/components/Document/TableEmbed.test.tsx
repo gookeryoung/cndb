@@ -5,6 +5,8 @@ import { http, HttpResponse } from 'msw'
 import { fireEvent, screen } from '@testing-library/react'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
+import { useDocSettingsStore } from '@/store'
+import { DEFAULT_DOC_SETTINGS } from '@/theme/docSettings'
 import TableEmbed from './TableEmbed'
 
 describe('TableEmbed', () => {
@@ -46,6 +48,33 @@ describe('TableEmbed', () => {
     fireEvent.click(screen.getByTestId('table-embed-width-100-1'))
     fireEvent.click(await screen.findByTestId('table-embed-width-100-1-preset-50'))
     expect(onWidthChange).toHaveBeenCalledWith(50)
+  })
+
+  it('未指定 width 参数时按个人设置的表格默认宽度与对齐渲染', async () => {
+    // 默认：75% 居中
+    const first = renderProviders(
+      <TableEmbed workspaceId={10} tableRef={{ tableId: 100, limit: 5 }} />,
+    )
+    const root = await screen.findByTestId('table-embed-100')
+    expect(root).toHaveAttribute('data-width', '75')
+    expect(root).toHaveAttribute('data-align', 'center')
+    expect(root.style.marginLeft).toBe('auto')
+    first.unmount()
+
+    // 个人设置：50% 靠左
+    const { updateSettings, resetSettings, ...rest } = useDocSettingsStore.getState()
+    void updateSettings
+    void resetSettings
+    useDocSettingsStore.setState({ ...rest, tableDefaultWidth: 50, tableAlign: 'left' })
+    renderProviders(
+      <TableEmbed workspaceId={10} tableRef={{ tableId: 100, limit: 5 }} />,
+    )
+    const left = await screen.findByTestId('table-embed-100')
+    expect(left).toHaveAttribute('data-width', '50')
+    expect(left).toHaveAttribute('data-align', 'left')
+    expect(left.style.marginLeft).toBe('')
+    // 复位，避免污染其他用例
+    useDocSettingsStore.setState({ ...useDocSettingsStore.getState(), ...DEFAULT_DOC_SETTINGS })
   })
 
   it('link 字段显示摘要值而非原始 JSON', async () => {

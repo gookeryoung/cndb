@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App, Alert } from 'antd'
+import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App, Divider } from 'antd'
 import { useTheme } from '@/theme/ThemeProvider'
 import {
   THEME_META, THEME_MODES, FONT_SCALES, FONT_SCALE_META,
@@ -10,7 +10,7 @@ import {
   DEFAULT_FONT_SETTINGS, DEFAULT_THEME_MODE,
   type ThemeMode,
 } from '@/theme/theme'
-import { useTableSettingsStore, useAuthStore, type SettingsTab } from '@/store'
+import { useTableSettingsStore, useDocSettingsStore, useAuthStore, type SettingsTab } from '@/store'
 import { authApi } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
 import type { Density, NewRowPosition } from '@/theme/tableSettings'
@@ -39,6 +39,16 @@ const themeSwatches: Record<ThemeMode, { primary: string; bg: string; text: stri
 }
 
 const { Text } = Typography
+
+/** 分区标题：节名 + 行内辅助说明（用户资料页签各节统一头部，替代大块 Alert / 分散提示） */
+function SectionHeader({ title, description }: { title: string; description: string }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <Text strong style={{ fontSize: 14 }}>{title}</Text>
+      <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>{description}</Text>
+    </div>
+  )
+}
 
 function ThemeCard({ mode, selected, onSelect }: {
   mode: ThemeMode
@@ -130,6 +140,7 @@ function ProfilePanel() {
 
   return (
     <div style={{ padding: '12px 0' }}>
+      <SectionHeader title="基本资料" description="昵称、邮箱自助更新，保存后即时生效" />
       <Form
         form={form}
         layout="vertical"
@@ -155,7 +166,7 @@ function ProfilePanel() {
             name="nickname"
             label="昵称"
             rules={[{ max: 150, message: '昵称不能超过 150 个字符' }]}
-            style={{ flex: 1, minWidth: 0, marginBottom: 12 }}
+            style={{ flex: 1, minWidth: 0, marginBottom: isMobile ? 12 : 0 }}
           >
             <Input placeholder="输入昵称" allowClear />
           </Form.Item>
@@ -166,12 +177,12 @@ function ProfilePanel() {
               { type: 'email', message: '邮箱格式不正确' },
               { max: 255, message: '邮箱不能超过 255 个字符' },
             ]}
-            style={{ flex: 1.3, minWidth: 0, marginBottom: 12 }}
+            style={{ flex: 1.3, minWidth: 0, marginBottom: isMobile ? 0 : undefined }}
           >
             <Input placeholder="输入邮箱" allowClear />
           </Form.Item>
         </div>
-        <Button type="primary" htmlType="submit">保存</Button>
+        <Button type="primary" htmlType="submit" style={{ marginTop: 16 }}>保存</Button>
       </Form>
     </div>
   )
@@ -179,6 +190,7 @@ function ProfilePanel() {
 
 /** 修改密码表单（并入「用户资料」页签下方）— 成功后全部会话失效并强制重新登录 */
 function SecurityPanel({ onClose }: { onClose: () => void }) {
+  const { isMobile } = useResponsive()
   const { message } = App.useApp()
   const navigate = useNavigate()
   const logout = useAuthStore(s => s.logout)
@@ -206,63 +218,62 @@ function SecurityPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div style={{ padding: '12px 0' }}>
-      <div style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>账号安全</Text>
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          自助修改登录密码
-        </Text>
-      </div>
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 16 }}
-        message="修改成功后，包括当前设备在内的全部会话将失效，需要用新密码重新登录。"
-      />
-      <Form form={form} layout="vertical" onFinish={handleSubmit} style={{ maxWidth: 420 }}>
-        <Form.Item
-          name="current_password"
-          label="当前密码"
-          rules={[{ required: true, message: '请输入当前密码' }]}
+      <SectionHeader title="账号安全" description="修改成功后全部会话失效，需用新密码重新登录" />
+      {/* 桌面端三个密码框并排一行（与上方基本资料单行结构呼应，降低纵向高度）；
+          移动端纵向堆叠，避免窄屏输入框被压缩 */}
+      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+        <div
+          data-testid="password-fields"
+          style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12 }}
         >
-          <Input.Password placeholder="输入当前密码" autoComplete="current-password" />
-        </Form.Item>
-        <Form.Item
-          name="new_password"
-          label="新密码"
-          rules={[
-            { required: true, message: '请输入新密码' },
-            { min: 6, max: 128, message: '密码长度须为 6-128 位' },
-            ({ getFieldValue }) => ({
-              validator(_, value: string) {
-                if (value && value === getFieldValue('current_password')) {
-                  return Promise.reject(new Error('新密码不能与当前密码相同'))
-                }
-                return Promise.resolve()
-              },
-            }),
-          ]}
-        >
-          <Input.Password placeholder="6-128 位" autoComplete="new-password" />
-        </Form.Item>
-        <Form.Item
-          name="confirm_password"
-          label="确认新密码"
-          dependencies={['new_password']}
-          rules={[
-            { required: true, message: '请再次输入新密码' },
-            ({ getFieldValue }) => ({
-              validator(_, value: string) {
-                if (value && value !== getFieldValue('new_password')) {
-                  return Promise.reject(new Error('两次输入的新密码不一致'))
-                }
-                return Promise.resolve()
-              },
-            }),
-          ]}
-        >
-          <Input.Password placeholder="再次输入新密码" autoComplete="new-password" />
-        </Form.Item>
-        <Button type="primary" htmlType="submit">修改密码</Button>
+          <Form.Item
+            name="current_password"
+            label="当前密码"
+            rules={[{ required: true, message: '请输入当前密码' }]}
+            style={{ flex: 1, minWidth: 0, marginBottom: isMobile ? 0 : undefined }}
+          >
+            <Input.Password placeholder="输入当前密码" autoComplete="current-password" />
+          </Form.Item>
+          <Form.Item
+            name="new_password"
+            label="新密码"
+            rules={[
+              { required: true, message: '请输入新密码' },
+              { min: 6, max: 128, message: '密码长度须为 6-128 位' },
+              ({ getFieldValue }) => ({
+                validator(_, value: string) {
+                  if (value && value === getFieldValue('current_password')) {
+                    return Promise.reject(new Error('新密码不能与当前密码相同'))
+                  }
+                  return Promise.resolve()
+                },
+              }),
+            ]}
+            style={{ flex: 1, minWidth: 0, marginBottom: isMobile ? 0 : undefined }}
+          >
+            <Input.Password placeholder="6-128 位" autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item
+            name="confirm_password"
+            label="确认新密码"
+            dependencies={['new_password']}
+            rules={[
+              { required: true, message: '请再次输入新密码' },
+              ({ getFieldValue }) => ({
+                validator(_, value: string) {
+                  if (value && value !== getFieldValue('new_password')) {
+                    return Promise.reject(new Error('两次输入的新密码不一致'))
+                  }
+                  return Promise.resolve()
+                },
+              }),
+            ]}
+            style={{ flex: 1, minWidth: 0, marginBottom: 0 }}
+          >
+            <Input.Password placeholder="再次输入新密码" autoComplete="new-password" />
+          </Form.Item>
+        </div>
+        <Button type="primary" htmlType="submit" style={{ marginTop: 16 }}>修改密码</Button>
       </Form>
     </div>
   )
@@ -463,6 +474,83 @@ function TablePanel() {
   )
 }
 
+/** 文档分页内容 — 文档内表格/图片的对齐与默认宽度，全部即时生效并持久化到浏览器 */
+function DocPanel() {
+  const { message } = App.useApp()
+  const tableAlign = useDocSettingsStore(s => s.tableAlign)
+  const imageAlign = useDocSettingsStore(s => s.imageAlign)
+  const tableDefaultWidth = useDocSettingsStore(s => s.tableDefaultWidth)
+  const imageDefaultWidth = useDocSettingsStore(s => s.imageDefaultWidth)
+  const updateSettings = useDocSettingsStore(s => s.updateSettings)
+  const resetSettings = useDocSettingsStore(s => s.resetSettings)
+
+  const alignOptions = [
+    { value: 'left' as const, label: '靠左' },
+    { value: 'center' as const, label: '居中' },
+  ]
+
+  return (
+    <div style={{ padding: '12px 0' }}>
+      <div style={{ marginBottom: 12 }}>
+        <Text strong style={{ fontSize: 14 }}>对齐方式</Text>
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          文档内表格与图片的水平对齐
+        </Text>
+      </div>
+      <div data-testid="doc-align-row" style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+        <Text style={{ fontSize: 13 }}>表格对齐</Text>
+        <Select
+          data-testid="doc-table-align-select"
+          value={tableAlign}
+          onChange={(v) => updateSettings({ tableAlign: v })}
+          style={{ width: 96 }}
+          options={alignOptions}
+        />
+        <Text style={{ fontSize: 13 }}>图片对齐</Text>
+        <Select
+          data-testid="doc-image-align-select"
+          value={imageAlign}
+          onChange={(v) => updateSettings({ imageAlign: v })}
+          style={{ width: 96 }}
+          options={alignOptions}
+        />
+      </div>
+
+      <div style={{ marginTop: 20, marginBottom: 12 }}>
+        <Text strong style={{ fontSize: 14 }}>默认宽度</Text>
+      </div>
+      <div data-testid="doc-width-row" style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
+        <Text style={{ fontSize: 13 }}>表格默认宽度</Text>
+        <Select
+          data-testid="doc-table-width-select"
+          value={tableDefaultWidth}
+          onChange={(v) => updateSettings({ tableDefaultWidth: v })}
+          style={{ width: 96 }}
+          options={[50, 75, 100].map(n => ({ value: n, label: `${n}%` }))}
+        />
+        <Text style={{ fontSize: 13 }}>图片默认宽度</Text>
+        <Select
+          data-testid="doc-image-width-select"
+          value={imageDefaultWidth}
+          onChange={(v) => updateSettings({ imageDefaultWidth: v })}
+          style={{ width: 96 }}
+          options={[50, 75].map(n => ({ value: n, label: `${n}%` }))}
+        />
+      </div>
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4, marginBottom: 16 }}>
+        仅影响缺省情况：正文中已显式指定宽度的表格引用不受影响
+      </Text>
+
+      <Button
+        size="small"
+        onClick={() => { resetSettings(); message.info('已恢复文档设置为默认值') }}
+      >
+        恢复默认
+      </Button>
+    </div>
+  )
+}
+
 export default function SettingsModal({ open, onClose, initialTab }: Props) {
   return (
     <Modal
@@ -477,10 +565,22 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
       <Tabs
         defaultActiveKey={initialTab ?? 'profile'}
         items={[
-          // 修改密码表单并入用户资料页签下方，不再单设「安全」页签
-          { key: 'profile', label: '用户资料', children: <><ProfilePanel /><SecurityPanel onClose={onClose} /></> },
+          // 修改密码表单并入用户资料页签下方，不再单设「安全」页签；两节用 Divider 分隔
+          {
+            key: 'profile',
+            label: '用户资料',
+            children: (
+              <>
+                <ProfilePanel />
+                <Divider style={{ margin: '4px 0' }} />
+                <SecurityPanel onClose={onClose} />
+              </>
+            ),
+          },
           { key: 'theme', label: '主题', children: <ThemePanel /> },
           { key: 'table', label: '表格', children: <TablePanel /> },
+          // 文档渲染配置：表格/图片对齐与默认宽度，排在「表格」之后
+          { key: 'doc', label: '文档', children: <DocPanel /> },
           // 大模型入口已在顶栏常驻（桌面图标 / 移动端用户菜单），设置内排在「表格」右侧，避免与高频的资料 / 主题争前排
           { key: 'llm', label: '大模型', children: <LlmConfigPanel /> },
         ]}

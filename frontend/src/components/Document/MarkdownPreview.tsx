@@ -15,6 +15,7 @@ import remarkGfm from 'remark-gfm'
 import TableEmbed from './TableEmbed'
 import ChartEmbed from './ChartEmbed'
 import { splitRefs } from './refs'
+import { useDocSettingsStore } from '@/store'
 import type { ChartBlockSpec } from './chartBlock'
 import type { RefWidthChange } from './refWidth'
 import { headingAnchor } from './outline'
@@ -169,6 +170,8 @@ function Md({
   publicFileBase?: string
   onWikilink?: (title: string) => void
 }) {
+  // 个人设置（文档页签）：图片对齐方式，作用于仅含图片的段落容器
+  const imageAlign = useDocSettingsStore(s => s.imageAlign)
   const components = useMemo(
     () => ({
       ...mdComponents,
@@ -183,7 +186,7 @@ function Md({
       p: ({ children, node }: React.ComponentProps<'p'> & { node?: MarkdownNode }) => {
         const onlyImage = isImageOnlyParagraph(node)
         return onlyImage
-          ? <div style={{ margin: '0.6em 0' }}>{children}</div>
+          ? <div style={{ margin: '0.6em 0', textAlign: imageAlign }}>{children}</div>
           : <p>{children}</p>
       },
       a: ({ href, children, ...rest }: React.ComponentProps<'a'>) => {
@@ -225,7 +228,7 @@ function Md({
         )
       },
     }),
-    [onWikilink, workspaceId, publicFileBase],
+    [onWikilink, workspaceId, publicFileBase, imageAlign],
   )
   return (
     <ReactMarkdown

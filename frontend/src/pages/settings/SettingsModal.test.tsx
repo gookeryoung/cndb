@@ -13,8 +13,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import SettingsModal from './SettingsModal'
 import { renderProviders } from '@/test/render-providers'
-import { useTableSettingsStore, useAuthStore } from '@/store'
+import { useTableSettingsStore, useDocSettingsStore, useAuthStore } from '@/store'
 import { DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
+import { DEFAULT_DOC_SETTINGS } from '@/theme/docSettings'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
 // 可控 useResponsive mock：默认桌面端，移动端用例在其内部切换
@@ -66,7 +67,7 @@ describe('SettingsModal 个人设置', () => {
 
     // 页签顺序：修改密码已并入用户资料页签，不再单设「安全」
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
-      '用户资料', '主题', '表格', '大模型',
+      '用户资料', '主题', '表格', '文档', '大模型',
     ])
     // 用户资料页签默认激活，修改密码表单（账号安全节）直接可见
     const activeTab = document.querySelector('.ant-tabs-tab.ant-tabs-tab-active')
@@ -233,6 +234,79 @@ describe('SettingsModal 个人设置', () => {
     expect(screen.queryByText('特大')).not.toBeInTheDocument()
     // auto 生效回显：jsdom polyfill 系统浅色 → 解析「浅色」（github-light）
     expect(screen.getByText(/跟随系统中/)).toBeInTheDocument()
+  })
+})
+
+describe('SettingsModal 文档页签（表格/图片对齐与默认宽度）', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    const { updateSettings, resetSettings, ...rest } = useDocSettingsStore.getState()
+    void updateSettings
+    void resetSettings
+    useDocSettingsStore.setState({ ...rest, ...DEFAULT_DOC_SETTINGS })
+  })
+
+  it('默认值：表格/图片居中，表格 75%、图片 50%', () => {
+    renderProviders(<SettingsModal open initialTab="doc" onClose={() => { }} />)
+
+    expect(screen.getByText('对齐方式')).toBeInTheDocument()
+    expect(screen.getByText('默认宽度')).toBeInTheDocument()
+    // 各下拉的选中值（AntD Select 选中值文本直接出现在选择框内）
+    expect(screen.getAllByText('居中')).toHaveLength(2)
+    expect(screen.getByText('75%')).toBeInTheDocument()
+    expect(screen.getByText('50%')).toBeInTheDocument()
+  })
+
+  it('表格对齐：居中 → 靠左，写入 store 与 localStorage', async () => {
+    renderProviders(<SettingsModal open initialTab="doc" onClose={() => { }} />)
+
+    fireEvent.mouseDown(screen.getAllByText('居中')[0])
+    fireEvent.click(await screen.findByText('靠左', { selector: '.ant-select-item-option-content' }))
+
+    await waitFor(() => expect(useDocSettingsStore.getState().tableAlign).toBe('left'))
+    const persisted = JSON.parse(localStorage.getItem('cndb_doc_settings') ?? '{}') as {
+      state?: { tableAlign?: string }
+    }
+    expect(persisted.state?.tableAlign).toBe('left')
+  })
+
+  it('表格默认宽度：75% → 100%，写入 store 与 localStorage', async () => {
+    renderProviders(<SettingsModal open initialTab="doc" onClose={() => { }} />)
+
+    fireEvent.mouseDown(screen.getByText('75%'))
+    fireEvent.click(await screen.findByText('100%', { selector: '.ant-select-item-option-content' }))
+
+    await waitFor(() => expect(useDocSettingsStore.getState().tableDefaultWidth).toBe(100))
+    const persisted = JSON.parse(localStorage.getItem('cndb_doc_settings') ?? '{}') as {
+      state?: { tableDefaultWidth?: number }
+    }
+    expect(persisted.state?.tableDefaultWidth).toBe(100)
+  })
+
+  it('图片默认宽度：50% → 75%，写入 store 与 localStorage', async () => {
+    renderProviders(<SettingsModal open initialTab="doc" onClose={() => { }} />)
+
+    // 图片宽度下拉通过 testid 定位，避免与表格宽度的「75%」文本混淆
+    fireEvent.mouseDown(screen.getByTestId('doc-image-width-select').querySelector('input')!)
+    fireEvent.click(await screen.findByText('75%', { selector: '.ant-select-item-option-content' }))
+
+    await waitFor(() => expect(useDocSettingsStore.getState().imageDefaultWidth).toBe(75))
+    const persisted = JSON.parse(localStorage.getItem('cndb_doc_settings') ?? '{}') as {
+      state?: { imageDefaultWidth?: number }
+    }
+    expect(persisted.state?.imageDefaultWidth).toBe(75)
+  })
+
+  it('恢复默认重置全部文档设置项', async () => {
+    useDocSettingsStore.getState().updateSettings({ tableAlign: 'left', imageAlign: 'left', tableDefaultWidth: 100, imageDefaultWidth: 75 })
+    renderProviders(<SettingsModal open initialTab="doc" onClose={() => { }} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '恢复默认' }))
+
+    await waitFor(() => {
+      expect(useDocSettingsStore.getState()).toMatchObject(DEFAULT_DOC_SETTINGS)
+    })
+    expect(screen.getAllByText('居中')).toHaveLength(2)
   })
 })
 
