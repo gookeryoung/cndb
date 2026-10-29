@@ -123,13 +123,15 @@ test.describe("MainLayout Header 导航按钮", () => {
     }
   })
 
-  test("数据分析段不渲染侧栏，内容区占满宽度", async ({ page }) => {
+  test("数据分析段侧栏折叠为图标条（需求 0065 C5：Sider 不卸载）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/analytics`)
     await page.waitForURL(/\/analytics$/)
     await expect(page.getByTestId("analytics-page")).toBeVisible({ timeout: 5000 })
-    await expect(page.locator(".ant-layout-sider")).toHaveCount(0)
+    const sider = page.locator(".ant-layout-sider")
+    await expect(sider).toHaveCount(1)
+    await expect(sider).toHaveClass(/ant-layout-sider-collapsed/)
   })
 })
 
