@@ -29,6 +29,7 @@ import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import { workspaceLandingSegment, workspaceTypeFeatures } from '@/utils/workspaceType'
+import { formatMeta } from '@/components/Document/docFormat'
 import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
 import { WEIGHT } from '@/theme/tokens'
 
@@ -58,11 +59,14 @@ const DOCUMENT_SUBPAGES = [
 
 /** 文档树节点 → antd Tree 节点：文件夹/文档区分图标，原始节点挂在 docNode 供点击导航. */
 function toTreeNode(node: DocTreeNode): DataNode {
+  // 格式图标与文档页树同口径（docFormat 单点维护）：PDF / 图片等按格式区分形状与配色
+  const fmt = formatMeta(node.content_type, node.is_folder)
+  const FormatIcon = fmt.Icon
   return {
     key: String(node.id),
     icon: node.is_folder
       ? <FolderFilled style={{ color: 'var(--cn-primary, #1677ff)' }} />
-      : <FileTextOutlined />,
+      : <FormatIcon style={{ color: fmt.color }} />,
     // 可见性提示：未发布的文档同事看不到，明确告知以免误以为"文档丢了"（与旧文档树口径一致）
     // 单行省略：文本占满剩余宽度截断（完整标题放 title 悬停提示），私有锁等尾缀图标不参与截断
     title: (
