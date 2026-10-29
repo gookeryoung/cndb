@@ -135,8 +135,6 @@ export default function OutlineList({
             data-testid={`doc-outline-item-${i}`}
             style={{
               paddingRight: 8,
-              paddingTop: 2,
-              paddingBottom: 2,
               fontSize: level <= 2 ? 13 : 12,
               fontWeight: level === 1 ? WEIGHT.semibold : WEIGHT.regular,
               color: level <= 2 ? 'var(--cn-text, inherit)' : 'var(--cn-text-secondary, #666)',
@@ -186,6 +184,9 @@ export default function OutlineList({
                 whiteSpace: 'nowrap',
                 display: 'flex',
                 alignItems: 'center',
+                /* 行距放正文内边距：引线格随 flex stretch 铺满整行高，保证跨行引线连续（Obsidian 风格） */
+                paddingTop: 2,
+                paddingBottom: 2,
               }}
             >
               {o.text}
