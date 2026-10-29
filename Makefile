@@ -23,7 +23,7 @@ FRONTEND_DEPS := frontend/node_modules/.make-sync
 .PHONY: help sync free-dev-ports dev seed frontend-sync frontend-static frontend-coverage frontend-build \
         build clean test cov lint typecheck e2e e2e-dev gitkeep-check adr-check \
         check-fast check-docs flow check bump pub push pack-doctor pack pack-cache-clean \
-        docker-dev docker-dev-down docker-build docker-export dd ddd db de \
+        docker-dev docker-dev-down docker-stop docker-build docker-export dd ds ddd db de \
         patch minor major
 
 # ── 开发 ──────────────────────────────────────────────────────────────
@@ -114,6 +114,9 @@ docker-dev dd: ## Docker 开发模式：容器内起前后端（CNDB_SOURCES=aut
 
 docker-dev-down ddd: ## 停止 Docker 开发模式（移除容器与网络，保留数据卷）
 	docker compose -f docker-compose.dev.yml down
+
+docker-stop ds: ## 快速停止 Docker 开发模式（仅停容器，不移除，保留数据卷）
+	docker compose -f docker-compose.dev.yml stop
 
 docker-build db: build ## 本地构建镜像（CNDB_SOURCES=auto 本地默认 cn，GitHub 自动 global）
 	bash deploy/build-image.sh $(VERSION)
