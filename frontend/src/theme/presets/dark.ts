@@ -13,7 +13,7 @@ export const githubDarkTheme: ThemeConfig = {
     colorTextBase: '#e6edf3',
     colorBgContainer: '#161b22',
     colorBgElevated: '#21262d',
-    colorBorder: '#30363d',
+    colorBorder: '#3d444d',
     colorBorderSecondary: '#21262d',
     colorSplit: '#21262d',
     colorTextSecondary: '#8b949e',
@@ -24,11 +24,11 @@ export const githubDarkTheme: ThemeConfig = {
     Button: {
       defaultBg: '#21262d',
       defaultColor: '#e6edf3',
-      defaultBorderColor: '#30363d',
-      defaultHoverBg: '#30363d',
+      defaultBorderColor: '#3d444d',
+      defaultHoverBg: '#3d444d',
     },
     Card: {
-      colorBorderSecondary: '#30363d',
+      colorBorderSecondary: '#3d444d',
     },
     Table: {
       headerBg: '#0d1117',
@@ -37,7 +37,7 @@ export const githubDarkTheme: ThemeConfig = {
       headerSortHoverBg: '#161b22',
       rowHoverBg: '#161b22',
       rowSelectedBg: '#1f2937',
-      borderColor: '#30363d',
+      borderColor: '#3d444d',
       headerBorderRadius: 0,
     },
     Modal: {
@@ -47,7 +47,7 @@ export const githubDarkTheme: ThemeConfig = {
     Input: {
       colorBgContainer: '#0d1117',
       activeBorderColor: '#58a6ff',
-      hoverBorderColor: '#30363d',
+      hoverBorderColor: '#3d444d',
     },
     Select: {
       colorBgContainer: '#0d1117',

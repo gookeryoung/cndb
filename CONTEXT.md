@@ -4,7 +4,7 @@
 
 | Term | Meaning | Notes |
 |---|---|---|
-| 晶格（品牌名） | 项目中文名「晶格」，英文标识沿用 CNDB（cndb）；LOGO 为六边形晶格徽标（蓝→青渐变六边形 + 三向晶格网格 + 发光中心节点） | 前端 `BrandMark` 组件与 `frontend/public/favicon.svg` 同源设计；展示于顶栏（`MainLayout`）、登录 / 注册页与「关于系统」（`APP_NAME`）；页面标题「晶格协同平台」 |
+| 晶格（品牌名） | 项目中文名「晶格」，英文标识沿用 CNDB（cndb）；LOGO 为六边形晶格徽标（蓝→青渐变六边形 + 三向晶格网格 + 发光中心节点） | 前端 `BrandMark` 组件与 `frontend/public/favicon.svg` 同源设计；展示于顶栏（`MainLayout`）、登录 / 注册页与「关于系统」（`APP_NAME`）；页面标题「晶格协同」 |
 | 自助改密（Password Change） | 已登录用户在个人设置中凭「当前密码 + 新密码」修改自己的密码；成功后 `token_version` +1 且吊销全部刷新令牌，前端强制退出并重新登录 | 后端口径复用 `POST /api/v1/accounts/auth/password`；密码 6–128 位 |
 | 管理员重置密码（Password Reset） | 超级管理员在用户管理页为其他用户设定新密码：默认服务端生成 12 位随机密码并仅展示一次，也可手工输入；目标用户全部会话立即失效 | 不能重置自己（须走自助改密）；审计动作 `password_reset` 不记录密码与重置原因 |
 | 问题（Issue） | 数据表级反馈条目：任何工作区成员可提交（标题 + 描述 + 类别 data_error/suggestion/question/other），用于反馈数据错误、改进建议或提问；owner/editor（或创建者本人）可关闭/重开 | 评论与状态事件（created/closed/reopened）独立流水，详情页展示「谁在何时关闭/重开」 |

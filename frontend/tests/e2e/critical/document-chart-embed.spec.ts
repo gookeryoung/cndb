@@ -152,7 +152,8 @@ test.describe("文档图表内嵌块", () => {
       await page.getByTestId("chart-designer-title").fill(editedTitle);
       await page.getByTestId("chart-designer-save").click();
       await expect(page.getByText("图表已更新").first()).toBeVisible({ timeout: 20_000 });
-      await expect(embed).toHaveAttribute("data-width", "50");
+      // editBlock 只回传定义（D9），宽度不在设计器内改动 —— 调宽后的 25 应保留
+      await expect(embed).toHaveAttribute("data-width", "25");
 
       // 3) 回编辑模式提交：正文落为自包含块（模板 + 标题 + 宽度都在块内），旧占位符不再出现
       await page.getByTestId("doc-mode-switch").getByText("编辑", { exact: true }).click();

@@ -10,7 +10,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from cndb.core.events import TARGET_RECORD, record_event
+from cndb.core.events import TARGET_RECORD, json_safe, record_event
 from cndb.plugins.tables.models import AuditLog, DataTable
 
 ACTION_CREATE = "create"
@@ -40,7 +40,9 @@ def log_action(
             action=action,
             actor_id=actor_id,
             target_id=target_id,
-            detail=detail or {},
+            # 行数据快照可能含 date/datetime/Decimal 等，直接 JSON 序列化会抛错
+            # 导致审计与事件双双写失败（缓存失效随之丢失），先拍平为可序列化结构
+            detail=json_safe(detail or {}),
         )
         db.add(entry)
         db.commit()

@@ -12,7 +12,6 @@ import {
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, ReloadOutlined, SortAscendingOutlined,
-  BulbOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
@@ -25,7 +24,6 @@ import {
 import GlobalSearch from '@/components/GlobalSearch'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
-import { useTheme } from '@/theme/ThemeProvider'
 import { useResponsive } from '@/hooks/useResponsive'
 import { workspaceLandingSegment, workspaceTypeFeatures } from '@/utils/workspaceType'
 import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
@@ -103,7 +101,6 @@ export default function MainLayout() {
   const location = useLocation().pathname
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
-  const { setMode } = useTheme()
   const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
   const [collapsed, setCollapsed] = useState(false)
@@ -381,18 +378,6 @@ export default function MainLayout() {
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
     { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => openSettings() },
-    // 主题快捷三档（GitHub Appearance 风格）：完整 10 套主题仍在个人设置弹窗内选择；
-    // 「跟随系统」持久化 auto 偏好，由 ThemeProvider 按系统明暗实时解析（需求 0066 C7）
-    {
-      key: 'theme',
-      icon: <BulbOutlined />,
-      label: '主题',
-      children: [
-        { key: 'theme-system', label: '跟随系统', onClick: () => setMode('auto') },
-        { key: 'theme-light', label: '浅色', onClick: () => setMode('github-light') },
-        { key: 'theme-dark', label: '深色', onClick: () => setMode('github-dark') },
-      ],
-    },
     // 大模型设置：桌面端顶栏有常驻图标入口，移动端顶栏放不下，收进用户菜单直达页签
     ...(isMobile
       ? [

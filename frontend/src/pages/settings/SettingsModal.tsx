@@ -26,9 +26,9 @@ interface Props {
 
 /** 每个主题对应的色板（展示用，不影响实际渲染） */
 const themeSwatches: Record<ThemeMode, { primary: string; bg: string; text: string; border: string }> = {
-  modern: { primary: '#3b82f6', bg: '#ffffff', text: '#1f2937', border: '#d1d5db' },
-  'github-dark': { primary: '#58a6ff', bg: '#0d1117', text: '#e6edf3', border: '#30363d' },
-  'github-light': { primary: '#0969da', bg: '#ffffff', text: '#1f2328', border: '#d0d7de' },
+  modern: { primary: '#3b82f6', bg: '#ffffff', text: '#1f2937', border: '#d1d9e0' },
+  'github-dark': { primary: '#58a6ff', bg: '#0d1117', text: '#e6edf3', border: '#3d444d' },
+  'github-light': { primary: '#0969da', bg: '#ffffff', text: '#1f2328', border: '#d1d9e0' },
   minimal: { primary: '#525252', bg: '#fafafa', text: '#262626', border: '#d4d4d4' },
   ocean: { primary: '#0891b2', bg: '#ffffff', text: '#0f3a45', border: '#cfe2e8' },
   forest: { primary: '#16a34a', bg: '#ffffff', text: '#14301b', border: '#d3e4d5' },

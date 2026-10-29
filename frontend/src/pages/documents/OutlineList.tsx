@@ -69,7 +69,7 @@ function GuideCell({ withLine }: { withLine: boolean }) {
             top: 0,
             bottom: 0,
             width: 1,
-            background: 'var(--cn-border, #d1d5db)',
+            background: 'var(--cn-border, #d1d9e0)',
           }}
         />
       )}

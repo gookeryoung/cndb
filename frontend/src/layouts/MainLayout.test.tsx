@@ -267,47 +267,6 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.queryByText('database_url')).toBeNull()
     })
 
-    it('用户菜单主题三档可切换 body 主题 class 并持久化', async () => {
-        localStorage.setItem('cndb_theme', 'github-light')
-        renderLayout(mockUser)
-
-        await waitFor(() => {
-            expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
-        })
-
-        // 悬停右上角用户区打开下拉菜单，悬停「主题」展开子菜单，点击「深色」
-        fireEvent.mouseEnter(screen.getByText('爱丽丝'))
-        fireEvent.mouseEnter(await screen.findByText('主题'))
-        fireEvent.click(await screen.findByText('深色'))
-
-        // ThemeProvider 的 layout effect 同步挂 body class + 写 localStorage
-        expect(document.body).toHaveClass('theme-github-dark')
-        expect(localStorage.getItem('cndb_theme')).toBe('github-dark')
-
-        // 还原默认主题，避免污染同文件后续用例
-        localStorage.removeItem('cndb_theme')
-    })
-
-    it('用户菜单「跟随系统」持久化 auto 偏好并按系统解析（0066 C7）', async () => {
-        localStorage.setItem('cndb_theme', 'github-dark')
-        renderLayout(mockUser)
-
-        await waitFor(() => {
-            expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
-        })
-
-        fireEvent.mouseEnter(screen.getByText('爱丽丝'))
-        fireEvent.mouseEnter(await screen.findByText('主题'))
-        fireEvent.click(await screen.findByText('跟随系统'))
-
-        // 持久化 auto 本身；jsdom polyfill matches=false → 解析浅色落点 github-light
-        expect(localStorage.getItem('cndb_theme')).toBe('auto')
-        expect(document.body).toHaveClass('theme-github-light')
-
-        // 还原默认主题，避免污染同文件后续用例
-        localStorage.removeItem('cndb_theme')
-    })
-
     it('桌面端品牌字右侧显示应用版本小字', async () => {
         renderLayout(mockUser)
 

@@ -20,9 +20,12 @@
 
 from __future__ import annotations
 
+import datetime
+import decimal
 import logging
+import uuid
 from contextlib import suppress
-from datetime import datetime
+from datetime import date as date_cls, datetime, time as time_cls
 from typing import Any
 
 from sqlalchemy import JSON, Index, Integer, String, func, select
@@ -107,6 +110,31 @@ def _current_request_id() -> str | None:
         return None
 
 
+def json_safe(value: Any) -> Any:
+    """递归把 detail 转成可 JSON 序列化的结构（date/datetime/UUID 等转字符串）.
+
+    ``record.*`` 事件的 detail 常带行数据快照（含 date/datetime/Decimal 字段值），
+    JSON 列默认序列化器遇到这些类型会抛 TypeError —— 事件/审计写不进去，
+    挂在事件上的缓存失效（``invalidate_for_event``）也随之被跳过，读路径就会
+    命中旧缓存（ADR 0046 读写一致性被打破）。这里在写入前统一拍平。
+    """
+    if isinstance(value, dict):
+        return {str(k): json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_safe(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, (date_cls, time_cls, datetime)):
+        return value.isoformat()
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, decimal.Decimal):
+        return float(value)
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return str(value)
+
+
 def record_event(
     db: Session,
     action: str,
@@ -147,7 +175,7 @@ def record_event(
             target_type=target_type,
             target_id=(str(target_id) if target_id is not None else None),
             summary=(summary or "")[:255],
-            detail=detail or {},
+            detail=json_safe(detail or {}),
             request_id=request_id or _current_request_id(),
         )
         db.add(event)

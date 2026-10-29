@@ -579,7 +579,7 @@ const editorTheme = EditorView.theme({
   '.cm-md-codeblock': {
     fontFamily: 'var(--cn-font-mono)',
     backgroundColor: 'var(--cn-code-block-bg, #f6f8fa)',
-    borderLeft: '3px solid var(--cn-code-block-border, #d0d7de)',
+    borderLeft: '3px solid var(--cn-code-block-border, #d1d9e0)',
     paddingLeft: 'var(--cn-space-lg, 12px)',
     fontSize: '0.92em',
   },
