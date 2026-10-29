@@ -269,17 +269,17 @@ describe('DocumentsPage 排序与 URL 状态', () => {
         )
     }
 
-    it('?order= 深链：list 请求携带 order 参数（排序控件在侧栏，写 URL）', async () => {
-        const orders: string[] = []
-        server.use(
-            http.get('/api/v1/workspaces/10/documents', ({ request }) => {
-                orders.push(new URL(request.url).searchParams.get('order') ?? 'sort')
-                return HttpResponse.json({ items: [], total: 0 })
-            }),
-        )
-        renderPage('/w/10/documents?parent=1&order=updated')
+    it('内容区顶部排序按钮与侧栏共享偏好：切「名称 A → Z」不写 URL（需求 0065 三次修订）', async () => {
+        renderPage('/w/10/documents?parent=1')
         await screen.findByTestId('doc-series-detail')
-        await waitFor(() => expect(orders[orders.length - 1]).toBe('updated'))
+
+        const sortBtn = screen.getByTestId('doc-content-sort')
+        expect(sortBtn).toBeVisible()
+        // 选中态来自共享偏好（docTreeSort 默认 manual）
+        fireEvent.click(sortBtn)
+        expect(await screen.findByText('名称 A → Z')).toBeInTheDocument()
+        // 排序是本地偏好，不改 URL
+        await waitFor(() => expect(window.location.search).not.toContain('order='))
     })
 
     it('?parent= 深链：直接进入该文件夹（顶栏出现「上一级」）', async () => {

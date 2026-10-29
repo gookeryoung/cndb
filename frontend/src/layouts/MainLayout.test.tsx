@@ -690,31 +690,20 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         })
     })
 
-    it('侧栏承载树排序 / 标题过滤 / 列表排序 / 刷新控件（需求 0065 第二次修订）', async () => {
+    it('侧栏承载树排序 / 标题过滤 / 刷新控件（需求 0065 三次修订）', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => expect(screen.getByTestId('doc-tree-sort')).toBeVisible())
         expect(screen.getByTestId('doc-tree-filter')).toBeVisible()
-        expect(screen.getByTestId('doc-order-select')).toBeVisible()
         expect(screen.getByTestId('doc-sidebar-refresh')).toBeVisible()
-        // 标签 / 状态筛选已移到文档内容区顶部，侧栏不再渲染
+        // 「手动顺序」文字排序下拉已移除；标签 / 状态筛选在内容区顶部，侧栏不再渲染
+        expect(screen.queryByTestId('doc-order-select')).toBeNull()
         expect(screen.queryByTestId('doc-tag-filter')).toBeNull()
         expect(screen.queryByTestId('doc-status-filter')).toBeNull()
 
-        // 树排序下拉可选（本地偏好，不写 URL）
+        // 树排序下拉可选（与内容区共享偏好，不写 URL）
         fireEvent.click(screen.getByTestId('doc-tree-sort'))
-        fireEvent.click(await screen.findByText('名称 A → Z'))
-        await waitFor(() => {
-            expect(screen.getByTestId('documents-page-stub')).not.toHaveTextContent('order=')
-        })
-
-        // 列表排序写 URL ?order=updated（文档列表页同源读取生效）
-        const selector = screen.getByTestId('doc-order-select').querySelector('.ant-select-selector') as HTMLElement
-        fireEvent.mouseDown(selector)
-        fireEvent.click(await screen.findByText('最近更新'))
-        await waitFor(() => {
-            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('order=updated')
-        })
+        expect(await screen.findByText('名称 A → Z')).toBeInTheDocument()
     })
 
     it('文档编辑器段：侧栏仍是同一棵文档树并高亮当前文档，不再显示大纲', async () => {

@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer, Tree, Select } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer, Tree } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import {
@@ -17,10 +17,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
-import { DOCUMENT_ORDER_OPTIONS, type DocumentOrder } from '@/pages/documents/documentSort'
 import {
-  describeSort, DOC_SORT_OPTIONS, readDocSort, sortDocTree, sortToValue, valueToSort, writeDocSort,
-  type DocSort,
+  describeSort, DOC_SORT_OPTIONS, sortDocTree, sortToValue, valueToSort, useDocSortPref,
 } from '@/pages/documents/docTreeSort'
 import GlobalSearch from '@/components/GlobalSearch'
 import { BrandMark } from '@/components/BrandMark'
@@ -113,7 +111,7 @@ export default function MainLayout() {
   const [aboutOpen, setAboutOpen] = useState(false)
   /** 顶部导航横滑容器（工作区页签 + 二级页签）—— 窄屏下把激活项滚入可视区 */
   const wsTabsRef = useRef<HTMLDivElement>(null)
-  const [searchParams, setSearchParams] = useSearchParams()
+  const [searchParams] = useSearchParams()
   // 移动端抽屉导航开关（仅 isMobile 时渲染汉堡入口）
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
@@ -177,25 +175,11 @@ export default function MainLayout() {
     enabled: !!wid && wsFeatures.documents && inDocumentsContext,
   })
   const docTree = useMemo(() => buildDocTree(docsTreeData ?? []), [docsTreeData])
-  // 侧栏列表排序（需求 0065）：写 URL ?order=，文档列表页同源生效
-  const docOrderParam = searchParams.get('order') as DocumentOrder | null
-  const docOrderBy: DocumentOrder = DOCUMENT_ORDER_OPTIONS.some(o => o.value === docOrderParam)
-    ? (docOrderParam as DocumentOrder)
-    : 'sort'
-  const updateDocOrder = useCallback((order: DocumentOrder) => {
-    setSearchParams(prev => {
-      const next = new URLSearchParams(prev)
-      if (order === 'sort') next.delete('order')
-      else next.set('order', order)
-      return next
-    }, { replace: true })
-  }, [setSearchParams])
   const refreshDocs = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['documents', wid] })
   }, [queryClient, wid])
-  // 树排序偏好（沿用原页面内左树的 docTreeSort 口径）：本地偏好 localStorage，不进 URL
-  const [docSort, setDocSort] = useState<DocSort>(() => readDocSort())
-  useEffect(() => { writeDocSort(docSort) }, [docSort])
+  // 树排序偏好（沿用原页面内左树的 docTreeSort 口径）：与文档内容区排序控件共享同一偏好，实时同步
+  const [docSort, setDocSort] = useDocSortPref()
   // 树标题过滤（原页面内左树能力）：命中节点及其祖先链保留
   const [docTreeKeyword, setDocTreeKeyword] = useState('')
   // 编辑器路由参数：仅纯数字为真实文档 id（静态子页段不会落入 docId，此处双保险）
@@ -509,46 +493,36 @@ export default function MainLayout() {
         </div>
         {collapsed ? null : (
           <>
-            {/* 树排序（本地偏好）+ 标题过滤（原页面内左树能力，0065 移入侧栏）+ 列表排序（URL） */}
-            <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)', display: 'grid', gap: 6 }}>
-              <div style={{ display: 'flex', gap: 6 }}>
-                <Dropdown
-                  menu={{
-                    items: DOC_SORT_OPTIONS.map(o => ({ key: o.value, label: o.label })),
-                    selectable: true,
-                    selectedKeys: [sortToValue(docSort)],
-                    onClick: ({ key }) => setDocSort(valueToSort(key)),
-                  }}
-                  trigger={['click']}
-                >
-                  <Tooltip title={`排序：${describeSort(docSort)}`}>
-                    <Button
-                      size="small"
-                      icon={<SortAscendingOutlined />}
-                      aria-label={`排序方式：${describeSort(docSort)}`}
-                      data-testid="doc-tree-sort"
-                      style={{ flexShrink: 0 }}
-                    />
-                  </Tooltip>
-                </Dropdown>
-                <Input
-                  size="small"
-                  allowClear
-                  prefix={<SearchOutlined />}
-                  placeholder="过滤标题"
-                  value={docTreeKeyword}
-                  onChange={e => setDocTreeKeyword(e.target.value)}
-                  data-testid="doc-tree-filter"
-                  style={{ flex: 1, minWidth: 0 }}
-                />
-              </div>
-              <Select
+            {/* 树排序（与内容区排序按钮共享偏好）+ 标题过滤（原页面内左树能力，0065 移入侧栏） */}
+            <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)', display: 'flex', gap: 6 }}>
+              <Dropdown
+                menu={{
+                  items: DOC_SORT_OPTIONS.map(o => ({ key: o.value, label: o.label })),
+                  selectable: true,
+                  selectedKeys: [sortToValue(docSort)],
+                  onClick: ({ key }) => setDocSort(valueToSort(key)),
+                }}
+                trigger={['click']}
+              >
+                <Tooltip title={`排序：${describeSort(docSort)}`}>
+                  <Button
+                    size="small"
+                    icon={<SortAscendingOutlined />}
+                    aria-label={`排序方式：${describeSort(docSort)}`}
+                    data-testid="doc-tree-sort"
+                    style={{ flexShrink: 0 }}
+                  />
+                </Tooltip>
+              </Dropdown>
+              <Input
                 size="small"
-                style={{ width: '100%' }}
-                value={docOrderBy}
-                data-testid="doc-order-select"
-                onChange={updateDocOrder}
-                options={DOCUMENT_ORDER_OPTIONS}
+                allowClear
+                prefix={<SearchOutlined />}
+                placeholder="过滤标题"
+                value={docTreeKeyword}
+                onChange={e => setDocTreeKeyword(e.target.value)}
+                data-testid="doc-tree-filter"
+                style={{ flex: 1, minWidth: 0 }}
               />
             </div>
             {docsTreeReady && treeData.length === 0 ? (
@@ -567,9 +541,9 @@ export default function MainLayout() {
                   const raw = node as unknown as { docNode?: DocTreeNode }
                   if (!raw.docNode) return
                   if (raw.docNode.is_folder) {
-                    // 进入层级时保留已选排序 / 筛选（?order=&tag=&status=）
+                    // 进入层级时保留已选筛选（?tag=&status=）
                     const kept = new URLSearchParams()
-                    for (const k of ['order', 'tag', 'status']) {
+                    for (const k of ['tag', 'status']) {
                       const v = searchParams.get(k)
                       if (v) kept.set(k, v)
                     }

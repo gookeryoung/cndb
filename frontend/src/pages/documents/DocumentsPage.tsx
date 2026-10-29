@@ -41,9 +41,12 @@ import {
   MoreOutlined,
   PushpinOutlined,
   SearchOutlined,
+  SortAscendingOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { DOCUMENT_ORDER_OPTIONS, sortDocuments, type DocumentOrder } from './documentSort'
+import {
+  describeSort, DOC_SORT_OPTIONS, sortFlatByDocSort, sortToValue, valueToSort, useDocSortPref,
+} from './docTreeSort'
 import { clearRecentDocs, loadRecentDocs } from './recentDocs'
 import { documentsApi } from '@/api/documents'
 import type { DocumentItem } from '@/api/documents'
@@ -72,34 +75,28 @@ export default function DocumentsPage() {
   const workspaceId = Number(wid)
   const { isMobile } = useResponsive()
 
-  // 当前文件夹与排序口径写入 URL（?parent=&order=）：支持从编辑器面包屑深链、刷新与分享
+  // 当前文件夹写入 URL（?parent=）：支持从编辑器面包屑深链、刷新与分享
   const parentParam = searchParams.get('parent')
   const parentId = parentParam !== null && parentParam !== '' ? Number(parentParam) : null
-  const orderParam = searchParams.get('order') as DocumentOrder | null
-  // 标签筛选同样写入 URL（?tag=），与 parent / order 一致：可分享、可刷新
+  // 标签筛选写入 URL（?tag=）：可分享、可刷新
   const tagParam = searchParams.get('tag')
   const tagFilter = tagParam !== null && tagParam !== '' && !Number.isNaN(Number(tagParam))
     ? Number(tagParam)
     : undefined
-  // 状态筛选写入 URL（?status=），控件在侧栏（需求 0065），与 parent / order / tag 同机制
+  // 状态筛选写入 URL（?status=），控件在内容区顶部（需求 0065），与 parent / tag 同机制
   const statusParam = searchParams.get('status')
   const statusFilter = ['draft', 'published', 'archived'].includes(statusParam ?? '')
     ? (statusParam as string)
     : undefined
-  const orderBy: DocumentOrder = DOCUMENT_ORDER_OPTIONS.some(o => o.value === orderParam)
-    ? (orderParam as DocumentOrder)
-    : 'sort'
+  // 排序口径：与侧栏树共享同一本地偏好（docTreeSort），两处 UI 实时同步（需求 0065 三次修订）
+  const [docSort, setDocSort] = useDocSortPref()
 
-  const updateParams = useCallback((patch: { parent?: number | null; order?: DocumentOrder; tag?: number | null; status?: string | null }) => {
+  const updateParams = useCallback((patch: { parent?: number | null; tag?: number | null; status?: string | null }) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
       if (patch.parent !== undefined) {
         if (patch.parent === null) next.delete('parent')
         else next.set('parent', String(patch.parent))
-      }
-      if (patch.order !== undefined) {
-        if (patch.order === 'sort') next.delete('order')
-        else next.set('order', patch.order)
       }
       if (patch.tag !== undefined) {
         if (patch.tag === null) next.delete('tag')
@@ -160,13 +157,12 @@ export default function DocumentsPage() {
   )
 
   const docsQuery = useQuery({
-    queryKey: ['documents', workspaceId, 'list', parentId, statusFilter, orderBy, tagFilter],
+    queryKey: ['documents', workspaceId, 'list', parentId, statusFilter, tagFilter],
     queryFn: () =>
       documentsApi.list(workspaceId, {
         parent_id: parentId ?? undefined,
         status: statusFilter,
         tag_id: tagFilter,
-        order: orderBy,
         limit: 200,
       }),
     // 子级列表走 list 端点；顶层散文档由全量树派生（list 不传 parent_id 会返回全部层级）
@@ -319,19 +315,21 @@ export default function DocumentsPage() {
     const all = buildSeriesStats(treeQuery.data ?? [])
     const kw = titleKeyword.trim().toLowerCase()
     const hit = kw ? all.filter(s => s.folder.title.toLowerCase().includes(kw)) : all
-    // 根层主体是系列卡片，同样按所选口径排序（最新更新时间取整个系列的聚合值）
-    return sortDocuments(
+    // 根层主体是系列卡片，与侧栏树共用同一排序偏好（最新更新时间取整个系列的聚合值）
+    return sortFlatByDocSort(
       hit.map(s => ({
         ...s,
+        id: s.folder.id,
         title: s.folder.title,
+        is_folder: true,
         sort_order: s.folder.sort_order,
         created_at: s.folder.created_at,
         updated_at: s.latestUpdate ?? s.folder.updated_at,
         pinned: s.folder.pinned,
       })),
-      orderBy,
+      docSort,
     )
-  }, [treeQuery.data, titleKeyword, orderBy])
+  }, [treeQuery.data, titleKeyword, docSort])
 
   const breadcrumbItems = useMemo(() => {
     const map = new Map<number, DocumentItem>()
@@ -367,9 +365,9 @@ export default function DocumentsPage() {
           (!statusFilter || d.status === statusFilter) &&
           (tagFilter === undefined || d.tag_ids.includes(tagFilter)),
       )
-    // 置顶优先 + 所选口径（与后端 order 参数同口径，保证顶层派生列表也一致）
-    return sortDocuments(raw, orderBy)
-  }, [filtered, parentId, treeQuery.data, titleKeyword, statusFilter, tagFilter, orderBy])
+    // 置顶优先 + 与侧栏树共用的排序偏好
+    return sortFlatByDocSort(raw, docSort)
+  }, [filtered, parentId, treeQuery.data, titleKeyword, statusFilter, tagFilter, docSort])
 
   /** 当前层级**可见**的可选项（根层为系列卡片 + 散文档，子层为列表项）：全选与已选统计只用它 */
   const selectableIds = useMemo(
@@ -508,6 +506,26 @@ export default function DocumentsPage() {
       ]}
     />
   )
+  /** 排序按钮（需求 0065 三次修订）：与侧栏树排序共享同一偏好，两处 UI 改一处即同步 */
+  const renderSortButton = (testid: string) => (
+    <Dropdown
+      menu={{
+        items: DOC_SORT_OPTIONS.map(o => ({ key: o.value, label: o.label })),
+        selectable: true,
+        selectedKeys: [sortToValue(docSort)],
+        onClick: ({ key }) => setDocSort(valueToSort(key)),
+      }}
+      trigger={['click']}
+    >
+      <Tooltip title={`排序：${describeSort(docSort)}`}>
+        <Button
+          icon={<SortAscendingOutlined />}
+          aria-label={`排序方式：${describeSort(docSort)}`}
+          data-testid={testid}
+        />
+      </Tooltip>
+    </Dropdown>
+  )
   /** 窄屏次级操作：收录进「更多」菜单，避免顶栏折成三行 */
   const mobileToolbarMenu: MenuProps['items'] = [
     { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
@@ -530,8 +548,9 @@ export default function DocumentsPage() {
               <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
             </Dropdown>
           </div>
-          {/* 第二行：搜索 + 标签/状态筛选 + 新建（需求 0065：筛选在内容区顶部，列表排序在侧栏） */}
+          {/* 第二行：排序 + 搜索 + 标签/状态筛选 + 新建（排序与侧栏共享偏好，需求 0065） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {renderSortButton('doc-content-sort')}
             {renderSearchInput({ flex: 1, minWidth: 120 })}
             {renderTagSelect({ width: 110 })}
             {renderStatusSelect({ width: 100 })}
@@ -545,6 +564,7 @@ export default function DocumentsPage() {
             {breadcrumbNode}
           </Space>
           <Space wrap>
+            {renderSortButton('doc-content-sort')}
             {renderSearchInput({ width: 180 })}
             {renderTagSelect({ width: 130 })}
             {renderStatusSelect({ width: 110 })}

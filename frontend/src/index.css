@@ -1327,7 +1327,7 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 
 .cn-home-split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) calc(340px + 5vw);
   gap: var(--cn-space-xl);
   /* stretch：左右两板块（我的工作区 / 我的视图）高度一致，取二者较高者 */
   align-items: stretch;
@@ -1503,8 +1503,8 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--cn-text-sm);
-  font-weight: var(--cn-weight-medium);
+  font-size: var(--cn-text-md);
+  font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
 }
 
@@ -1512,8 +1512,8 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--cn-text-2xs);
-  color: var(--cn-text-muted);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
 }
 
 .cn-myviews-row-tag.ant-tag {

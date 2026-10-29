@@ -9,6 +9,8 @@
  * 排序偏好是**本地偏好**（localStorage），不写服务端：与 Obsidian 的全局设置一致。
  */
 
+import { useSyncExternalStore } from 'react'
+
 export type DocSortKey = 'manual' | 'name' | 'created_at' | 'updated_at'
 export type DocSortOrder = 'asc' | 'desc'
 
@@ -18,13 +20,16 @@ export interface DocSort {
 }
 
 /** 参与排序的最小节点形状（避免与 DocumentTree 组件互相依赖） */
-export interface SortableDocNode {
+export interface SortableDocBase {
   id: number
   title: string
   is_folder: boolean
-  pinned: boolean
+  pinned?: boolean
   created_at: string
   updated_at: string
+}
+
+export interface SortableDocNode extends SortableDocBase {
   children: this[]
 }
 
@@ -82,7 +87,7 @@ function timeValue(raw: string): number {
 }
 
 /** 同级比较：置顶 → 文件夹优先 → 所选字段 → id（保证稳定） */
-function compareNodes(a: SortableDocNode, b: SortableDocNode, sort: DocSort): number {
+function compareNodes(a: SortableDocBase, b: SortableDocBase, sort: DocSort): number {
   if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
   if (a.is_folder !== b.is_folder) return a.is_folder ? -1 : 1
   const dir = sort.order === 'asc' ? 1 : -1
@@ -103,6 +108,46 @@ export function sortDocTree<T extends SortableDocNode>(nodes: T[], sort: DocSort
   return nodes
     .map(node => ({ ...node, children: sortDocTree(node.children, sort) }))
     .sort((a, b) => compareNodes(a, b, sort))
+}
+
+/**
+ * 按排序配置重排平铺列表（文档内容区的系列卡片 / 列表项，与侧栏树同口径）。
+ * 置顶优先在所有档位下成立；`manual` 档保持传入顺序（后端 sort_order）仅做置顶前置。
+ */
+export function sortFlatByDocSort<T extends SortableDocBase>(items: T[], sort: DocSort): T[] {
+  const pinnedFirst = (a: T, b: T) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned))
+  if (sort.key === 'manual') return [...items].sort(pinnedFirst)
+  return [...items].sort((a, b) => compareNodes(a, b, sort))
+}
+
+// ── 排序偏好的跨组件共享（侧栏与内容区两处 UI 写同一偏好，实时同步）──
+
+let cachedDocSort: DocSort | null = null
+const docSortListeners = new Set<() => void>()
+
+function getDocSortSnapshot(): DocSort {
+  if (cachedDocSort === null) cachedDocSort = readDocSort()
+  return cachedDocSort
+}
+
+function subscribeDocSort(cb: () => void): () => void {
+  docSortListeners.add(cb)
+  return () => {
+    docSortListeners.delete(cb)
+  }
+}
+
+/** 更新排序偏好：写 localStorage 并广播给所有 useDocSortPref 订阅者 */
+export function setDocSortPref(sort: DocSort): void {
+  cachedDocSort = sort
+  writeDocSort(sort)
+  for (const cb of docSortListeners) cb()
+}
+
+/** 读取排序偏好并订阅变化（侧栏 / 内容区排序控件共用，改一处两处同步） */
+export function useDocSortPref(): [DocSort, (sort: DocSort) => void] {
+  const sort = useSyncExternalStore(subscribeDocSort, getDocSortSnapshot)
+  return [sort, setDocSortPref]
 }
 
 /** 读取本地排序偏好（非法/不可用时回落默认） */
