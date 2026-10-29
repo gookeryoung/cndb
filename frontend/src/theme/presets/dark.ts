@@ -71,7 +71,7 @@ export const midnightTheme: ThemeConfig = {
     colorTextBase: '#e9e4f5',
     colorBgContainer: '#1d1830',
     colorBgElevated: '#26203a',
-    colorBorder: '#383150',
+    colorBorder: '#8b949e',
     colorBorderSecondary: '#383150',
     colorSplit: '#2a2440',
     colorTextSecondary: '#a299c2',
@@ -82,11 +82,11 @@ export const midnightTheme: ThemeConfig = {
     Button: {
       defaultBg: '#26203a',
       defaultColor: '#e9e4f5',
-      defaultBorderColor: '#383150',
+      defaultBorderColor: '#8b949e',
       defaultHoverBg: '#332b52',
     },
     Card: {
-      colorBorderSecondary: '#383150',
+      colorBorderSecondary: '#3d444d',
     },
     Table: {
       headerBg: '#15121f',
@@ -95,7 +95,7 @@ export const midnightTheme: ThemeConfig = {
       headerSortHoverBg: '#1d1830',
       rowHoverBg: '#1d1830',
       rowSelectedBg: '#332a55',
-      borderColor: '#383150',
+      borderColor: '#8b949e',
       headerBorderRadius: 0,
     },
     Modal: {
@@ -105,7 +105,7 @@ export const midnightTheme: ThemeConfig = {
     Input: {
       colorBgContainer: '#15121f',
       activeBorderColor: '#a78bfa',
-      hoverBorderColor: '#383150',
+      hoverBorderColor: '#8b949e',
     },
     Select: {
       colorBgContainer: '#15121f',
@@ -129,7 +129,7 @@ export const oledTheme: ThemeConfig = {
     colorTextBase: '#f5f5f5',
     colorBgContainer: '#0a0a0a',
     colorBgElevated: '#161616',
-    colorBorder: '#262626',
+    colorBorder: '#8b949e',
     colorBorderSecondary: '#262626',
     colorSplit: '#1a1a1a',
     colorTextSecondary: '#a3a3a3',
@@ -140,11 +140,11 @@ export const oledTheme: ThemeConfig = {
     Button: {
       defaultBg: '#161616',
       defaultColor: '#f5f5f5',
-      defaultBorderColor: '#2a2a2a',
+      defaultBorderColor: '#8b949e',
       defaultHoverBg: '#262626',
     },
     Card: {
-      colorBorderSecondary: '#262626',
+      colorBorderSecondary: '#3d444d',
     },
     Table: {
       headerBg: '#000000',
@@ -153,7 +153,7 @@ export const oledTheme: ThemeConfig = {
       headerSortHoverBg: '#0a0a0a',
       rowHoverBg: '#141414',
       rowSelectedBg: '#1f1f1f',
-      borderColor: '#262626',
+      borderColor: '#8b949e',
       headerBorderRadius: 0,
     },
     Modal: {
@@ -163,7 +163,7 @@ export const oledTheme: ThemeConfig = {
     Input: {
       colorBgContainer: '#000000',
       activeBorderColor: '#22d3ee',
-      hoverBorderColor: '#262626',
+      hoverBorderColor: '#8b949e',
     },
     Select: {
       colorBgContainer: '#000000',
