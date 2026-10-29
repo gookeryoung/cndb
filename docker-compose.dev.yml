@@ -29,7 +29,14 @@ services:
     container_name: cndb-dev-backend
     working_dir: /app
     # 与宿主 `cndb dev` 同口径的端口（8772，Vite 代理默认目标）
-    command: uvicorn cndb.app:app --host 0.0.0.0 --port 8772 --reload
+    # 首次启动（/data/data/cndb.db 不存在）先注入 seed 演示数据再起服务；
+    # 已有数据库则直接启动，避免每次重启清掉开发卷数据
+    command: >
+      sh -c "if [ ! -f /data/data/cndb.db ]; then
+               echo '[dd] 检测到空数据卷，注入 seed 演示数据...';
+               cndb seed;
+             fi;
+             uvicorn cndb.app:app --host 0.0.0.0 --port 8772 --reload"
     environment:
       # 数据根目录统一落 /data（命名卷）；不设则默认 ~/.cndb（容器内，重建即丢）
       - CNDB_DATA_DIR=/data

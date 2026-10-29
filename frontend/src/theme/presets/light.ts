@@ -36,7 +36,7 @@ export const githubLightTheme: ThemeConfig = {
     colorTextBase: '#1f2328',
     colorBgContainer: '#f6f8fa',
     colorBgElevated: '#ffffff',
-    colorBorder: '#d1d9e0',
+    colorBorder: '#6e7781',
     colorBorderSecondary: '#d1d9e0',
     colorSplit: '#d1d9e0',
     colorTextSecondary: '#59636e',
@@ -47,7 +47,7 @@ export const githubLightTheme: ThemeConfig = {
     Button: {
       defaultBg: '#f6f8fa',
       defaultColor: '#1f2328',
-      defaultBorderColor: '#d1d9e0',
+      defaultBorderColor: '#6e7781',
       defaultHoverBg: '#d1d9e0',
     },
     Table: {
@@ -55,7 +55,7 @@ export const githubLightTheme: ThemeConfig = {
       headerColor: '#59636e',
       rowHoverBg: '#f6f8fa',
       rowSelectedBg: '#ddf4ff',
-      borderColor: '#d1d9e0',
+      borderColor: '#6e7781',
       headerBorderRadius: 0,
     },
     Layout: {

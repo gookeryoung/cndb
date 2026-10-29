@@ -44,16 +44,17 @@ async function createDocWithDraft(
   const docId = (created.body as { id: number }).id;
 
   if (stale) {
-    // 先落草稿（基准 v1），再把文档推进到 v2，制造 stale
+    // 推进到 v2 后再落 base=1 的草稿制造 stale（直接模式的正文提交会清理同用户草稿，
+    // 因此不能先落草稿再推进 —— 顺序必须是先 v2 后草稿）
+    const advanced = await apiCall(request, token, "put", `/workspaces/${wid}/documents/${docId}/content`, {
+      content: latest,
+    });
+    expect(advanced.status, JSON.stringify(advanced.body)).toBe(200);
     const saved = await apiCall(request, token, "put", `/workspaces/${wid}/documents/${docId}/draft`, {
       content: draftText,
       base_version_number: 1,
     });
     expect(saved.status, JSON.stringify(saved.body)).toBe(200);
-    const advanced = await apiCall(request, token, "put", `/workspaces/${wid}/documents/${docId}/content`, {
-      content: latest,
-    });
-    expect(advanced.status, JSON.stringify(advanced.body)).toBe(200);
   } else {
     const saved = await apiCall(request, token, "put", `/workspaces/${wid}/documents/${docId}/draft`, {
       content: draftText,
@@ -84,7 +85,8 @@ test.describe("文档草稿 diff 与丢弃", () => {
     await drawer.getByTestId("version-diff-toggle-draft").click();
     await expect(drawer.getByTestId("document-diff")).toBeVisible({ timeout: 20_000 });
     await expect(drawer.getByText(/草稿修改后的正文/)).toBeVisible();
-    await drawer.getByRole("button", { name: "Close" }).click();
+    // antd Drawer 关闭按钮 aria-label 为「关闭」（zh_CN locale）
+    await drawer.getByRole("button", { name: "关闭" }).click();
 
     // 丢弃：确认后回到查看模式，草稿标签消失
     await page.getByTestId("doc-draft-discard-btn").click();

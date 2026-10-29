@@ -13,7 +13,7 @@ import {
 } from 'antd'
 import {
   PlusOutlined, StarOutlined, StarFilled, CaretRightOutlined, TeamOutlined, TableOutlined,
-  DownloadOutlined, SettingOutlined, SearchOutlined, GlobalOutlined, LockOutlined,
+  DownloadOutlined, SettingOutlined, GlobalOutlined, LockOutlined,
   SafetyCertificateOutlined, UploadOutlined, InboxOutlined, FileTextOutlined,
   FolderOpenOutlined, DatabaseOutlined, LoginOutlined, ArrowRightOutlined, HolderOutlined,
 } from '@ant-design/icons'
@@ -25,6 +25,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useResponsive } from '@/hooks/useResponsive'
+import SearchInput from '@/components/SearchInput'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { usePreferences, useSetWorkspaceOrder } from '@/hooks/useFavoriteViews'
 import { workspaceApi, tableApi } from '@/api'
@@ -233,13 +234,11 @@ export default function WorkspaceList() {
               <Text type="secondary">选择或创建一个工作区开始协作</Text>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              <Input.Search
-                placeholder="搜索工作区名称/标签..."
-                allowClear
-                prefix={<SearchOutlined />}
+              <SearchInput
+                placeholder="搜索工作区名称/标签…"
                 style={{ width: isMobile ? '100%' : 260 }}
                 value={search}
-                onChange={e => setSearch(e.target.value)}
+                onChange={e => setSearch((e.target as HTMLInputElement).value)}
               />
               <Button
                 type="primary"

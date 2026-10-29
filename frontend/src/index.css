@@ -160,8 +160,8 @@ body.theme-modern {
   --cn-bg-subtle: #fafafa;
   --cn-bg-canvas: #f5f7fa;
   --cn-bg-muted: #f9fafb;
-  --cn-border: #d1d9e0;
-  --cn-border-soft: #d1d9e0;
+  --cn-border: #d1d5db;
+  --cn-border-soft: #d1d5db;
   --cn-text-primary: #1f2937;
   --cn-text-secondary: #6b7280;
   --cn-text-muted: #9ca3af;
@@ -175,7 +175,7 @@ body.theme-modern {
 
   /* 代码高亮（文档代码块 / 实时编辑器共用，词法见 components/Document/codeHighlight.ts） */
   --cn-code-block-bg: #f6f8fa;
-  --cn-code-block-border: #d1d9e0;
+  --cn-code-block-border: #d0d7de;
   --cn-code-keyword: #cf222e;
   --cn-code-string: #0a3069;
   --cn-code-comment: #6e7781;
@@ -202,8 +202,8 @@ body.theme-dark {
   --cn-bg-subtle: #0d1117;
   --cn-bg-canvas: #0d1117;
   --cn-bg-muted: #0a0f14;
-  --cn-border: #3d444d;
-  --cn-border-soft: #3d444d;
+  --cn-border: #30363d;
+  --cn-border-soft: #30363d;
   --cn-text-primary: #e6edf3;
   --cn-text-secondary: #8b949e;
   --cn-text-muted: #6e7681;
@@ -217,7 +217,7 @@ body.theme-dark {
 
   /* 代码高亮：GitHub Dark 口径（浅色值在此处统一覆盖） */
   --cn-code-block-bg: #0d1117;
-  --cn-code-block-border: #3d444d;
+  --cn-code-block-border: #30363d;
   --cn-code-keyword: #ff7b72;
   --cn-code-string: #a5d6ff;
   --cn-code-comment: #8b949e;
@@ -241,8 +241,8 @@ body.theme-github-light {
   --cn-bg-subtle: #f6f8fa;
   --cn-bg-canvas: #f6f8fa;
   --cn-bg-muted: #f6f8fa;
-  --cn-border: #d1d9e0;
-  --cn-border-soft: #d1d9e0;
+  --cn-border: #d0d7de;
+  --cn-border-soft: #d0d7de;
   --cn-text-primary: #1f2328;
   --cn-text-secondary: #59636e;
   --cn-text-muted: #6e7781;
@@ -6114,7 +6114,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 .cn-outline-row:hover .cn-outline-guide-line {
   background: var(--cn-mix-brand-color-45-border);
-  background: color-mix(in srgb, var(--cn-brand-color, #3b82f6) 45%, var(--cn-border, #d1d9e0));
+  background: color-mix(in srgb, var(--cn-brand-color, #3b82f6) 45%, var(--cn-border, #d1d5db));
 }
 .cn-outline-caret {
   opacity: 0;

@@ -6,7 +6,8 @@
  *   typeConfigPanel.tsx — 类型专属 config 编辑区（数字/日期/选择/关联/附件）
  */
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Modal, Button, Tag, Input, Select, Checkbox, Tooltip, App as AntApp, Alert, Empty, Spin, Divider, Form, Radio } from 'antd'
+import { Modal, Button, Tag, Select, Checkbox, Tooltip, App as AntApp, Alert, Empty, Spin, Divider, Form, Radio } from 'antd'
+import SearchInput from '@/components/SearchInput'
 import { MinusOutlined, SwapOutlined, CloseCircleOutlined, CheckCircleOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { fieldApi, tableApi, workspaceApi } from '@/api'
@@ -478,8 +479,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             importMapping[s.source] !== s.source &&
             !fields.find(f => f.name === importMapping[s.source]) && (
               <Tooltip title="这是新输入的目标字段名">
-                <Input
-                  size="small"
+                <SearchInput
                   value={importMapping[s.source] ?? ''}
                   placeholder="输入新字段名"
                   onChange={(e) => {
@@ -589,10 +589,8 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
               </div>
               {/* 过滤 + 全选/反选（AC-4） */}
               <div style={{ marginBottom: 8, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <Input
-                  size="small"
-                  allowClear
-                  placeholder="按字段名过滤"
+                <SearchInput
+                  placeholder="过滤字段名…"
                   value={fieldFilter}
                   onChange={(e) => setFieldFilter(e.target.value)}
                   style={{ width: 200 }}

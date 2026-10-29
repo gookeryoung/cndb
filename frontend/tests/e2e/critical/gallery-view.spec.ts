@@ -75,9 +75,11 @@ test.describe("gallery 卡片画廊 — seed 注入视图渲染", () => {
     await openGalleryTable(page, request, "国际形势发展动态");
     await expect(page.getByTestId("gallery-card")).toHaveCount(12);
 
-    // 工作区页签「数据源同步」→ 左侧表列表点回本表（真实用户路径）
+    // 工作区页签「数据源同步」→ 切回「数据表」页签 → 侧栏点回本表（真实用户路径；
+    // 需求 0065 后数据源页无侧栏，表列表只在「数据表」段显示）
     await page.locator(".ant-tabs-tab", { hasText: "数据源同步" }).first().click();
     await expect(page).toHaveURL(/\/datasource/);
+    await page.locator(".ant-tabs-tab", { hasText: "数据表" }).first().click();
     await page.getByRole("menuitem", { name: /国际形势发展动态/ }).first().click();
 
     // 返回后必须仍是画廊，且卡片齐全（回归：视图状态被 reset 后未重新匹配，mode 回落 grid）

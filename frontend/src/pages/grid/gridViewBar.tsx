@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Button, Input, Segmented, Space, Tooltip } from 'antd'
+import { Button, Segmented, Space, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, FilterOutlined, MoreOutlined,
@@ -23,6 +23,7 @@ import { Tag, App as AntApp } from 'antd'
 import { useResponsive } from '@/hooks/useResponsive'
 import { MAX_FAVORITE_VIEWS, usePreferences, useToggleFavoriteView } from '@/hooks/useFavoriteViews'
 import TooltipDropdown from '@/components/TooltipDropdown'
+import SearchInput from '@/components/SearchInput'
 import type { ViewMode } from './views/viewModes'
 import ViewPermissionDrawer from './ViewPermissionDrawer'
 
@@ -356,11 +357,8 @@ export default function GridViewBar({
   )
 
   const searchInput = (
-    <Input.Search
-      size="small"
-      placeholder="搜索当前视图..."
-      allowClear
-      prefix={<SearchOutlined />}
+    <SearchInput
+      placeholder="搜索当前视图…"
       value={searchQuery}
       onChange={e => onSearchChange(e.target.value)}
       data-testid="view-search-input"

@@ -9,7 +9,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   Tooltip, App as AntApp, Button, Dropdown, Empty, Input, Modal, Tree, TreeSelect } from 'antd'
 import type { DataNode } from 'antd/es/tree'
-import type { ComponentType } from 'react'
+import type { ComponentType, ChangeEvent } from 'react'
 import {
   CheckCircleOutlined,
   EditOutlined,
@@ -31,6 +31,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { documentsApi } from '@/api/documents'
 import type { DocumentItem } from '@/api/documents'
 import TooltipDropdown from '@/components/TooltipDropdown'
+import SearchInput from '@/components/SearchInput'
 import { formatMeta } from '@/components/Document/docFormat'
 import {
   DOC_SORT_OPTIONS,
@@ -578,13 +579,12 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
         />
       </div>
       <div style={{ padding: '0 8px 6px' }}>
-        <Input.Search
-          size="small"
-          allowClear
+        <SearchInput
           placeholder="过滤文档树…"
           value={keyword}
-          onChange={e => setKeyword(e.target.value)}
+          onChange={(e: ChangeEvent<HTMLInputElement>) => setKeyword(e.target.value)}
           data-testid="doc-tree-filter"
+          style={{ width: '100%' }}
         />
       </div>
 

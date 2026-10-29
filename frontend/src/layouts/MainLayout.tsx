@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Input, Tooltip, Tabs, Drawer, Tree } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Tooltip, Tabs, Drawer, Tree } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import {
@@ -12,6 +12,7 @@ import {
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, ReloadOutlined, SortAscendingOutlined,
+  LockOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
@@ -22,6 +23,7 @@ import {
   useDocTitleFilter, valueToSort,
 } from '@/pages/documents/docTreeSort'
 import GlobalSearch from '@/components/GlobalSearch'
+import SearchInput from '@/components/SearchInput'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -60,7 +62,21 @@ function toTreeNode(node: DocTreeNode): DataNode {
     icon: node.is_folder
       ? <FolderFilled style={{ color: 'var(--cn-primary, #1677ff)' }} />
       : <FileTextOutlined />,
-    title: node.title,
+    // 可见性提示：未发布的文档同事看不到，明确告知以免误以为"文档丢了"（与旧文档树口径一致）
+    title: (
+      <span data-testid={`doc-tree-doc-${node.id}`}>
+        {node.title}
+        {node.visibility === 'private' && (
+          <Tooltip title="未发布：仅你与工作区所有者可见">
+            <LockOutlined
+              aria-label="仅自己可见"
+              data-testid={`doc-visibility-${node.id}`}
+              style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-text-secondary, #8c8c8c)' }}
+            />
+          </Tooltip>
+        )}
+      </span>
+    ),
     docNode: node,
     children: node.children.map(toTreeNode),
   } as DataNode
@@ -196,7 +212,12 @@ export default function MainLayout() {
   const docTreeExpanded = manualExpanded ?? autoExpanded
 
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
-  const orderedTables = tables
+  /** 侧栏表搜索关键词：按表名过滤（需求 0068，接入 SearchInput 统一组件） */
+  const [tableKeyword, setTableKeyword] = useState('')
+  const orderedTables = useMemo(
+    () => tables.filter(t => t.name.toLowerCase().includes(tableKeyword.trim().toLowerCase())),
+    [tables, tableKeyword],
+  )
 
   /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），按工作区类型过滤可见页签.
    *
@@ -289,9 +310,11 @@ export default function MainLayout() {
       ? 'documents'
       : location.includes('/analytics')
         ? 'analytics'
-        : location.includes('/settings')
-          ? 'settings'
-          : 'tables'
+        : location.includes('/datasource')
+          ? 'datasource'
+          : location.includes('/settings')
+            ? 'settings'
+            : 'tables'
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -436,7 +459,7 @@ export default function MainLayout() {
           padding: 'var(--cn-space-md) var(--cn-space-lg)', borderBottom: '1px solid var(--cn-border)',
           display: collapsed ? 'none' : 'flex', alignItems: 'center', gap: 8,
         }}>
-          <Input prefix={<SearchOutlined />} placeholder="搜索表..." allowClear />
+          <SearchInput placeholder="搜索表…" value={tableKeyword} onChange={e => setTableKeyword(e.target.value)} style={{ width: '100%' }} />
         </div>
         <div style={{ padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
           数据表 ({orderedTables.length})
@@ -515,11 +538,8 @@ export default function MainLayout() {
                   />
                 </Tooltip>
               </Dropdown>
-              <Input
-                size="small"
-                allowClear
-                prefix={<SearchOutlined />}
-                placeholder="过滤标题"
+              <SearchInput
+                placeholder="过滤标题…"
                 value={docTreeKeyword}
                 onChange={e => setDocTitleFilter(e.target.value)}
                 data-testid="doc-tree-filter"

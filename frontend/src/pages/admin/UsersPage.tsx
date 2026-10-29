@@ -14,6 +14,7 @@ import type { UploadProps, MenuProps } from 'antd'
 import { EditOutlined, PlusOutlined, ReloadOutlined, UploadOutlined, DownloadOutlined, InboxOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { authApi } from '@/api'
+import SearchInput from '@/components/SearchInput'
 import { useResponsive } from '@/hooks/useResponsive'
 import type {
   UserAdminRecord, UserRole, UserAuditLogRecord, BatchUserActionRequest, UserAdminUpdateRequest,
@@ -573,11 +574,12 @@ export default function UsersPage() {
     <div className="cn-admin-section" data-testid="users-page">
       {/* 工具栏：检索与筛选在左、结果计数与刷新在右；窄屏整行堆叠 */}
       <div className="cn-toolbar">
-        <Input.Search
-          placeholder="搜索用户名/邮箱/昵称"
-          allowClear
+        <SearchInput
+          size="middle"
+          placeholder="搜索用户名/邮箱/昵称…"
           style={{ width: isMobile ? '100%' : 220 }}
-          onSearch={(v) => { setKeyword(v); setPage(1) }}
+          onPressEnter={(e) => { setKeyword(e.currentTarget.value); setPage(1) }}
+          onChange={(e) => { if (!e.target.value) { setKeyword(''); setPage(1) } }}
         />
         <Select
           placeholder="角色筛选"
