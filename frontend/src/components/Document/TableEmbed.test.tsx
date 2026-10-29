@@ -1,8 +1,10 @@
 /** TableEmbed 组件测试：引用宽度宿主样式 / 宽度控件可选（ADR 0051）. */
 
 import { describe, expect, it, vi } from 'vitest'
+import { http, HttpResponse } from 'msw'
 import { fireEvent, screen } from '@testing-library/react'
 import { renderProviders } from '@/test/render-providers'
+import { server } from '@/test/msw'
 import TableEmbed from './TableEmbed'
 
 describe('TableEmbed', () => {
@@ -44,5 +46,42 @@ describe('TableEmbed', () => {
     fireEvent.click(screen.getByTestId('table-embed-width-100-1'))
     fireEvent.click(await screen.findByTestId('table-embed-width-100-1-preset-50'))
     expect(onWidthChange).toHaveBeenCalledWith(50)
+  })
+
+  it('link 字段显示摘要值而非原始 JSON', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/tables/100', () =>
+        HttpResponse.json({
+          id: 100,
+          workspace_id: 10,
+          name: '合同表',
+          fields: [
+            { id: 1000, name: '合同编号', field_type: 'text', order: 0 },
+            { id: 1001, name: '关联客户', field_type: 'link', order: 1 },
+          ],
+          views: [],
+        }),
+      ),
+      http.get('/api/v1/workspaces/10/tables/100/records', () =>
+        HttpResponse.json({
+          items: [
+            {
+              id: 1,
+              合同编号: 'KT2026002',
+              关联客户: [{ id: 36, value: 'KT2026002', match: 'KT2026002' }],
+            },
+          ],
+          total: 1,
+          offset: 0,
+          limit: 5,
+        }),
+      ),
+    )
+    renderProviders(<TableEmbed workspaceId={10} tableRef={{ tableId: 100, limit: 5, width: 75 }} />)
+    const cells = await screen.findAllByText(
+      (_content, el) => el?.tagName === 'TD' && el.textContent === 'KT2026002',
+    )
+    expect(cells.length).toBe(2)
+    expect(screen.queryByText(/\[\{/)).toBeNull()
   })
 })

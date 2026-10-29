@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import MetaData
+from sqlalchemy import MetaData, select
 from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
@@ -277,6 +277,54 @@ class TestExportResolver:
         resolver(spec)
         resolver(spec)
         assert len(calls) == 1
+
+
+class TestLinkFieldDisplay:
+    def test_link_field_shows_display_summary(self, db, db_engine, ws, owner, table):
+        """link 字段导出为显示值摘要（逗号连接），而非原始 JSON."""
+        from cndb.plugins.tables.services.core import links as links_service
+
+        # 目标表 + 两行
+        target = DataTable(workspace_id=ws.id, owner_id=owner.id, name="客户主表")
+        target.ensure_db_name()
+        db.add(target)
+        db.flush()
+        f_t = DataField(table_id=target.id, name="客户名", field_type="text", order=0)
+        f_t.ensure_db_name()
+        db.add(f_t)
+        db.commit()
+        db.refresh(target)
+        table_ddl.create_table(db_engine, target)
+        meta = MetaData()
+        meta.reflect(bind=db_engine, only=[target.db_table_name])
+        sa_target = meta.tables[target.db_table_name]
+        with db_engine.begin() as conn:
+            conn.execute(sa_target.insert(), [{f_t.db_column_name: "KT甲"}, {f_t.db_column_name: "KT乙"}])
+        target_ids = [r[0] for r in db_engine.connect().execute(select(sa_target.c.id))]
+
+        # 源表加 link 字段（含物理关联表）
+        f_link = DataField(
+            table_id=table.id,
+            name="关联客户",
+            field_type="link",
+            order=2,
+            config={"target_table_id": target.id, "multiple": True},
+        )
+        f_link.ensure_db_name()
+        db.add(f_link)
+        db.commit()
+        db.refresh(f_link)
+        table_ddl.add_column(db_engine, table, f_link)
+        table_ddl.create_link_table(db_engine, f_link)
+
+        # 已有首行（张三，id=1）挂两条 link
+        links_service.set_links(db_engine, f_link, row_id=1, target_ids=target_ids, db=db)
+
+        resolved = make_table_resolver(db, ws.id, owner)(TableRefSpec(table.id))
+        assert resolved.error is None
+        idx = resolved.header.index("关联客户")
+        assert any("KT甲, KT乙" in (row[idx] or "") for row in resolved.rows or [])
+        assert all("[{" not in cell for row in resolved.rows or [] for cell in row)
 
 
 class TestExportEndpoint:

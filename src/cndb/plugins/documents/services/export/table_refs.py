@@ -28,6 +28,7 @@ from cndb.plugins.tables.services.core.access import (
     get_hidden_field_names,
     get_table_or_404,
 )
+from cndb.plugins.tables.services.core.links import is_link_field
 from cndb.plugins.tables.services.core.records import list_rows
 from cndb.plugins.tables.services.core.view_access import ViewAction, get_view_or_404
 
@@ -115,6 +116,20 @@ def _cell_text(value: Any) -> str:
     return str(value)
 
 
+def _link_cell_text(value: Any) -> str | None:
+    """link 字段文本化：取摘要项显示值逗号连接；非列表结构返回 None 走通用口径."""
+    if not isinstance(value, list):
+        return None
+    parts: list[str] = []
+    for item in value:
+        if isinstance(item, dict):
+            raw = item.get("value") or item.get("match")
+            parts.append("" if raw is None else str(raw))
+        else:
+            parts.append(str(item))
+    return ", ".join(p for p in parts if p) or None
+
+
 def _markdown_cell(value: Any) -> str:
     """Markdown 单元格：转义 ``|``，换行转 ``<br>``（防止表格结构被破坏）."""
     return _cell_text(value).replace("|", "\\|").replace("\n", "<br>")
@@ -158,6 +173,16 @@ def _resolve_one(db: Session, workspace_id: int, user: User, spec: TableRefSpec)
         return ResolvedTable(error=f"[数据表引用无效：表 #{spec.table_id} 无可显示字段]")
 
     header = [f.name for f in fields]
+    link_names = {f.name for f in fields if is_link_field(f)}
+
+    def _cell(row: dict[str, Any], name: str) -> str:
+        value = row.get(name)
+        if name in link_names:
+            link_text = _link_cell_text(value)
+            if link_text is not None:
+                return link_text.replace("\n", " ")
+        return _plain_cell(value)
+
     filters = list(view.filters) if view is not None and view.filters else None
     sorts = list(view.sortings) if view is not None and view.sortings else None
     rows, total = list_rows(
@@ -179,7 +204,7 @@ def _resolve_one(db: Session, workspace_id: int, user: User, spec: TableRefSpec)
         table_name=table.name,
         view_name=view.name if view is not None else None,
         header=header,
-        rows=[[_plain_cell(row.get(name)) for name in header] for row in rows],
+        rows=[[_cell(row, name) for name in header] for row in rows],
         total=total,
         truncated=truncated,
     )

@@ -10,6 +10,7 @@ import { Alert, Skeleton, Space, Table, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { recordApi, tableApi, viewApi } from '@/api'
 import type { Field, RowResponse } from '@/api'
+import { formatFieldDisplayValue } from '@/pages/grid/cells/fieldValueFormat'
 import type { TableRef } from './tableRef'
 import RefWidthControl from './RefWidthControl'
 import { parseRefWidth } from './refWidth'
@@ -71,7 +72,12 @@ export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthC
       key: f.name,
       dataIndex: f.name,
       ellipsis: true,
-      render: (value: unknown) => cellText(value),
+      render: (value: unknown) => {
+        const text = formatFieldDisplayValue(f, value)
+        // 结构化值（如 attachment 对象数组）格式化后失真时回退 JSON 序列化
+        if (text === '[object Object]') return cellText(value)
+        return text === '' ? '-' : text
+      },
     }))
   }, [tableQuery.data])
 
