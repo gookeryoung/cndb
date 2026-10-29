@@ -13,7 +13,6 @@ import {
   Input,
   Modal,
   Popconfirm,
-  Segmented,
   Space,
   Tag,
   Tooltip,
@@ -23,7 +22,10 @@ import {
 import {
   BarChartOutlined,
   BranchesOutlined,
+  CodeOutlined,
   DownloadOutlined,
+  EditOutlined,
+  EyeOutlined,
   FileMarkdownOutlined,
   FilePdfOutlined,
   FileWordOutlined,
@@ -1111,17 +1113,28 @@ export default function DocumentEditorPage() {
                 草稿待提交
               </Tag>
             )}
+            {/* 查看/编辑切换：按钮组连体样式，激活项高亮 */}
             {!doc.is_folder && !isAssetDoc && doc.status !== 'archived' && (
-              <Segmented
-                size="small"
-                value={viewMode}
-                data-testid="doc-mode-switch"
-                onChange={v => handleModeChange(v as 'view' | 'edit')}
-                options={[
-                  { label: '查看', value: 'view' },
-                  { label: '编辑', value: 'edit' },
-                ]}
-              />
+              <Space.Compact data-testid="doc-mode-switch">
+                <Button
+                  size="small"
+                  type={viewMode === 'view' ? 'primary' : 'default'}
+                  icon={<ReadOutlined />}
+                  title="查看已发布的最新版本"
+                  onClick={() => handleModeChange('view')}
+                >
+                  查看
+                </Button>
+                <Button
+                  size="small"
+                  type={viewMode === 'edit' ? 'primary' : 'default'}
+                  icon={<EditOutlined />}
+                  title="进入编辑，修改先保存为个人草稿"
+                  onClick={() => handleModeChange('edit')}
+                >
+                  编辑
+                </Button>
+              </Space.Compact>
             )}
             {editable && doc.status === 'draft' && (
               <Button
@@ -1167,7 +1180,8 @@ export default function DocumentEditorPage() {
                   </Button>
                 </Popconfirm>
             )}
-            <Button
+            <Space.Compact>
+              <Button
                 icon={<SaveOutlined />}
                 loading={draftMut.isPending}
                 disabled={!hasChanges}
@@ -1186,23 +1200,24 @@ export default function DocumentEditorPage() {
               >
                 提交
               </Button>
+            </Space.Compact>
               </>
             )}
           </Space>
         ) : (
         // 桌面顶栏：按任务语义分组（导航关联 → 标注 → 协作 → 历史输出 → 提交动作），大纲为最右视图锚点
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
-          {/* 组 1：导航与关联（反链 / 链接）；大纲开关固定最右端收尾 */}
+          {/* 组 1：导航与关联（反链 / 链接，按钮组连体）；大纲开关固定最右端收尾 */}
           {!isAssetDoc && (
-            <IconBtn icon={<LinkOutlined />} label="反链" onClick={() => setBacklinksOpen(true)} />
-          )}
-          {!isAssetDoc && (
-            <IconBtn
-              icon={<BranchesOutlined />}
-              label="链接"
-              data-testid="doc-links-open"
-              onClick={() => setLinksOpen(true)}
-            />
+            <Space.Compact>
+              <IconBtn icon={<LinkOutlined />} label="反链" onClick={() => setBacklinksOpen(true)} />
+              <IconBtn
+                icon={<BranchesOutlined />}
+                label="链接"
+                data-testid="doc-links-open"
+                onClick={() => setLinksOpen(true)}
+              />
+            </Space.Compact>
           )}
           {/* 组 2：内容标注（AI / 标签）；插入图片 / 表格引用已移入编辑模式 Markdown 工具栏（ADR 0042） */}
           {!isAssetDoc && (
@@ -1267,8 +1282,9 @@ export default function DocumentEditorPage() {
           )}
           {!isAssetDoc && (
             <>
-          {/* 组 5：提交动作（ADR 0057）：保存草稿 / 提交修改；破坏性的丢弃草稿置组末并拉开间距（查看修改已并入版本历史，需求 0062） */}
-          <Button
+          {/* 组 5：提交动作（ADR 0057）：保存草稿 / 提交修改为按钮组连体；破坏性的丢弃草稿置组末并拉开间距（查看修改已并入版本历史，需求 0062） */}
+          <Space.Compact>
+            <Button
               icon={<SaveOutlined />}
               loading={draftMut.isPending}
               disabled={!hasChanges}
@@ -1295,6 +1311,7 @@ export default function DocumentEditorPage() {
             >
               提交修改
             </Button>
+          </Space.Compact>
           {serverDraft && (
             <Popconfirm
               title="丢弃草稿？"
@@ -1416,16 +1433,27 @@ export default function DocumentEditorPage() {
                 onInsertTableRef={isMobile ? undefined : () => setInsertOpen(true)}
                 onInsertChart={isMobile ? undefined : () => setChartInsertOpen(true)}
               />
-              <Segmented
-                size="small"
-                value={editorMode}
-                data-testid="doc-editor-mode-switch"
-                onChange={v => setEditorMode(v as MarkdownEditorMode)}
-                options={[
-                  { label: '实时预览', value: 'live' },
-                  { label: '源码', value: 'source' },
-                ]}
-              />
+              {/* 实时预览/源码切换：与顶栏「保存草稿/提交修改」同款图标+文字按钮风格，激活项高亮 */}
+              <Space size={4} data-testid="doc-editor-mode-switch">
+                <Button
+                  size="small"
+                  type={editorMode === 'live' ? 'primary' : 'default'}
+                  icon={<EyeOutlined />}
+                  title="Obsidian 风格实时预览，输入即渲染"
+                  onClick={() => setEditorMode('live')}
+                >
+                  实时预览
+                </Button>
+                <Button
+                  size="small"
+                  type={editorMode === 'source' ? 'primary' : 'default'}
+                  icon={<CodeOutlined />}
+                  title="纯 Markdown 源码编辑"
+                  onClick={() => setEditorMode('source')}
+                >
+                  源码
+                </Button>
+              </Space>
             </div>
             <MarkdownLiveEditor
               ref={editorRef}
