@@ -71,7 +71,7 @@ export const githubLightTheme: ThemeConfig = {
 export const minimalTheme: ThemeConfig = {
   token: {
     colorPrimary: '#525252',
-    borderRadius: 2,
+    borderRadius: 6,
     colorBgBase: '#fafafa',
     colorTextBase: '#262626',
     colorBgContainer: '#ffffff',
@@ -114,7 +114,7 @@ export const minimalTheme: ThemeConfig = {
 export const oceanTheme: ThemeConfig = {
   token: {
     colorPrimary: '#0891b2',
-    borderRadius: 8,
+    borderRadius: 6,
     colorBgBase: '#ffffff',
     colorTextBase: '#0f3a45',
     colorBgContainer: '#ffffff',
@@ -157,7 +157,7 @@ export const oceanTheme: ThemeConfig = {
 export const forestTheme: ThemeConfig = {
   token: {
     colorPrimary: '#16a34a',
-    borderRadius: 8,
+    borderRadius: 6,
     colorBgBase: '#ffffff',
     colorTextBase: '#14301b',
     colorBgContainer: '#ffffff',
@@ -200,7 +200,7 @@ export const forestTheme: ThemeConfig = {
 export const sepiaTheme: ThemeConfig = {
   token: {
     colorPrimary: '#a16207',
-    borderRadius: 4,
+    borderRadius: 6,
     colorBgBase: '#fbf6ea',
     colorTextBase: '#43341f',
     colorBgContainer: '#fbf6ea',
@@ -249,7 +249,7 @@ export const sepiaTheme: ThemeConfig = {
 export const sakuraTheme: ThemeConfig = {
   token: {
     colorPrimary: '#db2777',
-    borderRadius: 10,
+    borderRadius: 6,
     colorBgBase: '#ffffff',
     colorTextBase: '#3d2230',
     colorBgContainer: '#ffffff',

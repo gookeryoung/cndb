@@ -66,7 +66,7 @@ export const githubDarkTheme: ThemeConfig = {
 export const midnightTheme: ThemeConfig = {
   token: {
     colorPrimary: '#a78bfa',
-    borderRadius: 8,
+    borderRadius: 6,
     colorBgBase: '#15121f',
     colorTextBase: '#e9e4f5',
     colorBgContainer: '#1d1830',
@@ -124,7 +124,7 @@ export const midnightTheme: ThemeConfig = {
 export const oledTheme: ThemeConfig = {
   token: {
     colorPrimary: '#22d3ee',
-    borderRadius: 4,
+    borderRadius: 6,
     colorBgBase: '#000000',
     colorTextBase: '#f5f5f5',
     colorBgContainer: '#0a0a0a',
