@@ -38,7 +38,6 @@ import {
   ImportOutlined,
   MoreOutlined,
   PushpinOutlined,
-  ReloadOutlined,
   SearchOutlined,
   SortAscendingOutlined,
 } from '@ant-design/icons'
@@ -531,17 +530,6 @@ export default function DocumentsPage() {
       </Tooltip>
     </Dropdown>
   )
-  /** 刷新：失效当前工作区全部文档相关查询（树 / 列表 / 标签），与侧栏树刷新口径一致 */
-  const renderRefreshButton = (testid: string) => (
-    <Tooltip title="刷新文档列表">
-      <Button
-        icon={<ReloadOutlined />}
-        aria-label="刷新文档列表"
-        data-testid={testid}
-        onClick={invalidate}
-      />
-    </Tooltip>
-  )
   /** 窄屏次级操作：收录进「更多」菜单，避免顶栏折成三行 */
   const mobileToolbarMenu: MenuProps['items'] = [
     { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
@@ -567,7 +555,6 @@ export default function DocumentsPage() {
           {/* 第二行：排序 + 搜索 + 标签/状态筛选 + 新建（排序与侧栏共享偏好，需求 0065） */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             {renderSortButton('doc-content-sort')}
-            {renderRefreshButton('doc-content-refresh')}
             {renderSearchInput({ flex: 1, minWidth: 120 })}
             {renderTagSelect({ width: 110 })}
             {renderStatusSelect({ width: 100 })}
@@ -582,7 +569,6 @@ export default function DocumentsPage() {
           </Space>
           <Space wrap>
             {renderSortButton('doc-content-sort')}
-            {renderRefreshButton('doc-content-refresh')}
             {renderSearchInput({ width: 180 })}
             {renderTagSelect({ width: 130 })}
             {renderStatusSelect({ width: 110 })}
