@@ -68,7 +68,7 @@ function toTreeNode(node: DocTreeNode): DataNode {
     title: (
       <span className="cn-doc-sider-title" title={node.title} data-testid={`doc-tree-doc-${node.id}`}>
         <span className="cn-doc-sider-title-text">{node.title}</span>
-        {node.visibility === 'private' && (
+        {!node.is_folder && node.visibility === 'private' && (
           <Tooltip title="未发布：仅你与工作区所有者可见">
             <LockOutlined
               aria-label="仅自己可见"

@@ -47,6 +47,17 @@ describe('InsertChartModal', () => {
     })
     expect(screen.getByTestId('chart-template-pick-stacked-bar-horizontal')).toBeInTheDocument()
 
+    // 「基于此模板新建」固定在弹窗底部（footer），位于「取消」左侧
+    const footer = screen.getByTestId('chart-template-pick-stacked-bar-horizontal').closest('.ant-modal-footer')
+    expect(footer).not.toBeNull()
+    expect(within(footer as HTMLElement).getByRole('button', { name: /^取\s*消$/ })).toBeInTheDocument()
+    const pickBtn = screen.getByTestId('chart-template-pick-stacked-bar-horizontal')
+    const cancelBtn = within(footer as HTMLElement).getByRole('button', { name: /^取\s*消$/ })
+    expect(pickBtn.compareDocumentPosition(cancelBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // 弹窗文字允许选中复制（user-select 放开）
+    expect(document.querySelector('.cn-insert-chart-modal')).not.toBeNull()
+
     fireEvent.click(screen.getByTestId('chart-template-pick-stacked-bar-horizontal'))
     expect(props.onPickTemplate).toHaveBeenCalledTimes(1)
     expect(props.onPickTemplate).toHaveBeenCalledWith('stacked-bar-horizontal')

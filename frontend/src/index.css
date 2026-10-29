@@ -4984,6 +4984,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   margin: 0 auto;
 }
 
+/* 插入图表弹窗：正文文字允许选中复制（antd Button 默认 user-select:none，需显式放开） */
+.cn-insert-chart-modal,
+.cn-insert-chart-modal .ant-btn {
+  user-select: text;
+}
+
 /* ─────────────── 编辑器状态栏（字数 / 行数 / 阅读时长） ─────────────── */
 .cn-doc-stats {
   flex-shrink: 0;

@@ -1,8 +1,8 @@
 /** 插入图表弹窗（ADR 0048 / 0052 / 0058）：新建页签多级列表 + 图表素材库复制插入.
  *
  * 页签一「新建图表」（ADR 0058）：左栏 antd Collapse 手风琴（一级分类常显、点开展开
- * 二级分类与模板项），右栏仅显示选中模板详情（大图预览走 render-preview 不落库，
- * 未选中为空态不发请求）；「基于此模板新建」交给页面打开设计器。
+ * 二级分类与模板项），右栏仅显示选中模板详情（大图预览走 render-preview 不落库且完整
+ * 高度展示，未选中为空态不发请求）；「基于此模板新建」固定在弹窗底部「取消」左侧。
  * 页签二「已有图表」：素材库条目**复制定义**插入正文（不随素材库更新，D4）。
  * 弹窗自身拉取模板与素材库清单（React Query，open 时启用），页面只接回调。
  */
@@ -17,8 +17,11 @@ import { sanitizeSvg } from '@/components/Document/ChartEmbed'
 
 const { Text, Paragraph } = Typography
 
-/** 模板缩略图：用模板默认配置走 render-preview（不落库，D5 同源；仅 active 时请求） */
-function TemplateThumb({ workspaceId, template, active, height = 110 }: {
+/** 模板预览图：用模板默认配置走 render-preview（不落库，D5 同源；仅 active 时请求）.
+ *
+ * SVG 按原图比例完整展示（不裁剪高度）；height 仅约束加载骨架 / 失败占位。
+ */
+function TemplateThumb({ workspaceId, template, active, height = 220 }: {
   workspaceId: number
   template: ChartTemplateInfo
   active: boolean
@@ -39,8 +42,8 @@ function TemplateThumb({ workspaceId, template, active, height = 110 }: {
     return (
       <div
         data-testid={`chart-template-thumb-${template.key}`}
-        style={{ height, overflow: 'hidden', borderRadius: 4, border: '1px solid var(--cn-border, #eee)', lineHeight: 0 }}
-        // 后端唯一渲染器产出 + sanitizeSvg 清洗
+        style={{ borderRadius: 4, border: '1px solid var(--cn-border, #eee)', lineHeight: 0, overflow: 'hidden' }}
+        // 后端唯一渲染器产出 + sanitizeSvg 清洗；SVG 自带 viewBox + width=100%，按比例自动撑满高度
         dangerouslySetInnerHTML={{ __html: svg }}
       />
     )
@@ -147,12 +150,30 @@ export default function InsertChartModal({
   /** 手风琴默认展开第一个含模板的一级分类，但不自动选中模板（ADR 0058 边界 1） */
   const defaultExpandKey = grouped[0]?.cat.key
 
+  /** 底部操作区：「基于此模板新建」固定在「取消」左侧（未选中模板时仅取消） */
+  const footer = selectedTemplate ? (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+      <Button
+        type="primary"
+        icon={<PlusOutlined />}
+        data-testid={`chart-template-pick-${selectedTemplate.key}`}
+        onClick={() => onPickTemplate(selectedTemplate.key)}
+      >
+        基于此模板新建
+      </Button>
+      <Button onClick={onCancel}>取消</Button>
+    </div>
+  ) : (
+    <Button onClick={onCancel}>取消</Button>
+  )
+
   return (
     <Modal
       title="插入图表"
       open={open}
       onCancel={onCancel}
-      footer={<Button onClick={onCancel}>取消</Button>}
+      footer={footer}
+      className="cn-insert-chart-modal"
       width={720}
       destroyOnHidden
     >
@@ -226,21 +247,11 @@ export default function InsertChartModal({
                   )}
                   {selectedTemplate && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      <TemplateThumb workspaceId={workspaceId} template={selectedTemplate} active={open} height={220} />
+                      <TemplateThumb workspaceId={workspaceId} template={selectedTemplate} active={open} />
                       <Text strong>{selectedTemplate.name}</Text>
                       <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
                         {selectedTemplate.description}
                       </Paragraph>
-                      <div>
-                        <Button
-                          type="primary"
-                          icon={<PlusOutlined />}
-                          data-testid={`chart-template-pick-${selectedTemplate.key}`}
-                          onClick={() => onPickTemplate(selectedTemplate.key)}
-                        >
-                          基于此模板新建
-                        </Button>
-                      </div>
                     </div>
                   )}
                 </div>
