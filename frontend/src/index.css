@@ -4899,17 +4899,25 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   width: 12px;
 }
 
+/* 行内布局改为 flex：iconEle 在 antd 中渲染于 content-wrapper 内部，
+   若 title 用 display:block 会掉到图标行下方（26px 行高下正好被 overflow:hidden 裁掉，
+   表现为「只见图标不见名称」）；flex 让图标与标题同行排列。 */
 .cn-doc-sider-tree .ant-tree-node-content-wrapper {
+  display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
   height: 26px;
-  line-height: 26px;
   padding-inline: var(--cn-space-hairline);
   overflow: hidden;
 }
 
+.cn-doc-sider-tree .ant-tree-iconEle {
+  flex-shrink: 0;
+}
+
 .cn-doc-sider-tree .ant-tree-title {
-  display: block;
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
