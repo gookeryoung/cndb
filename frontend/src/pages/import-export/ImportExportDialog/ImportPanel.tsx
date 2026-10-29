@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Progress, App as AntApp, Space, Select, Alert, Empty, Upload, Table, Tabs, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'
 import { InboxOutlined, DownloadOutlined, FileTextOutlined, SettingOutlined, ReloadOutlined, SwapOutlined, RobotOutlined } from '@ant-design/icons'
-import { importApi } from '@/api'
+import { importApi, useLlmConfigured } from '@/api'
 import type { ImportTaskInfo, Field, ValidationReport } from '@/api'
 import type { ImportAiMappingItem } from '@/api/importExport'
 import { normalizeLlmError } from '@/hooks/useLlmAction'
@@ -88,6 +88,8 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
     // V3: 用户勾选丢弃的 planned_columns 字段名列表（默认全创建）
     const [droppedColumns, setDroppedColumns] = useState<string[]>([])
     const [diffing, setDiffing] = useState(false)  // 执行 DIFF 的 loading
+    // 未配置大模型时隐藏「AI 建议列映射」面板（需求 0069）
+    const llmConfigured = useLlmConfigured()
 
     // ── AI 列映射建议（ADR 0020 P2）：回填映射编辑态，确认导入时按映射写目标字段 ──
     const [aiMappings, setAiMappings] = useState<AiMappingDraft[]>([])
@@ -704,7 +706,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                 {renderDiffControls()}
 
                 {/* AI 列映射建议（只回填映射编辑态） */}
-                {renderAiMapping()}
+                {llmConfigured && renderAiMapping()}
 
                 {/* 未知列提示 / 规划 —— 可勾选逐个决定是否创建 */}
                 {(report.skipped_columns?.length > 0 || report.missing_required?.length > 0 || plannedColumns.length > 0) && (

@@ -28,7 +28,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
 import { arrayMove } from '@dnd-kit/sortable'
 import type { DragEndEvent } from '@dnd-kit/core'
-import { tableApi, recordApi, viewApi, auditApi, isChangeRequestResponse } from '@/api'
+import { tableApi, recordApi, viewApi, auditApi, isChangeRequestResponse, useLlmConfigured } from '@/api'
 import type { ID, RowValues, Field, RowResponse, View, ViewCreate } from '@/api'
 import type { FilterRule, SortRule } from './view-config/ViewConfigDialog'
 import MoveTableForm from './layout/MoveTableForm'
@@ -168,6 +168,8 @@ export default function GridPage() {
   const setMode = useGridViewStore(s => s.setMode)
   // 窄屏：网格需要横向滚动，固定首列（含选择列）才能在滚动中保持行标识
   const { isMobile } = useResponsive()
+  // 未配置大模型时不传回调：列头 AI 填充入口整体不渲染（需求 0069）
+  const llmConfigured = useLlmConfigured()
   const activeViewId = useGridViewStore(s => s.activeViewId)
   const setActiveViewId = useGridViewStore(s => s.setActiveViewId)
   const viewFilters = useGridViewStore(s => s.viewFilters)
@@ -1040,9 +1042,9 @@ export default function GridPage() {
       rowIndexTotal: rowList.total ?? 0,
       newRowKey: NEW_ROW_KEY,
       // 列头 AI 填充入口：只对当前可见字段（隐藏字段不参与 buildColumns）渲染
-      onAiFillField: setAiFillField,
+      onAiFillField: llmConfigured ? setAiFillField : undefined,
     },
-  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds, isMobile, offset, rowList.total, tid])
+  ), [table?.fields, wid, viewSortings, viewFilters, _onFilterApply, _onFilterReset, _onCellSave, inlineOps, columnWidths, fieldOrder, hiddenFieldIds, isMobile, offset, rowList.total, tid, llmConfigured])
 
   // 选中行聚合：过滤与计算收敛到同一个 useMemo。
   // 旧实现的 numericFields / selectedRows 每次渲染都是新数组，使本 memo 依赖恒变、缓存完全失效。

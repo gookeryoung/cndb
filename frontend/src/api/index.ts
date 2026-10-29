@@ -69,6 +69,7 @@ export type {
   SyncScheduleMode,
 } from './datasource'
 export { llmApi } from './llm'
+export { useLlmConfigured } from './useLlmConfigured'
 export type {
   LlmAction,
   LlmConfig,

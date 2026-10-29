@@ -63,6 +63,7 @@ vi.mock('@/api', () => ({
   },
   changeRequestsApi: { listGrouped: vi.fn().mockResolvedValue({ groups: [], ungrouped: [], total: 0 }) },
   isChangeRequestResponse: () => false,
+  useLlmConfigured: () => true,
 }))
 
 beforeEach(() => {

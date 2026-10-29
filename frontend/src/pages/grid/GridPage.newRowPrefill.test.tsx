@@ -64,6 +64,7 @@ vi.mock('@/api/hooks', async (importOriginal) => {
 })
 
 vi.mock('@/api', () => ({
+    useLlmConfigured: () => true,
     tableApi: { get: vi.fn(), references: vi.fn() },
     recordApi: {
         list: vi.fn(),

@@ -25,7 +25,7 @@ import {
   UnorderedListOutlined, DatabaseOutlined, TableOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { tableApi } from '@/api'
+import { tableApi, useLlmConfigured } from '@/api'
 import type { Field } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import type {
@@ -84,6 +84,8 @@ export default function AnalyticsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   /** 深链模板 id（URL ?template=<id>）：改写走 setSearchParams，读取提前到状态区供按钮禁用判定 */
   const templateParam = searchParams.get('template')
+  // 未配置大模型时隐藏 AI 生成分析面板与 AI 解读按钮（需求 0069）
+  const llmConfigured = useLlmConfigured()
 
   // ── 分析配置 ──
   const [tableId, setTableId] = useState<number | null>(null)
@@ -906,14 +908,16 @@ export default function AnalyticsPage() {
             groupOptions={groupOptions}
             metricOptions={chartOptions}
           />
-          <AnalyticsAiPanel
-            tableReady={tableId != null}
-            loading={suggestAi.loading}
-            error={suggestAi.error}
-            suggestion={suggestAi.data?.result ?? null}
-            appliedName={aiAppliedName}
-            onGenerate={question => { void generateAnalysis(question) }}
-          />
+          {llmConfigured && (
+            <AnalyticsAiPanel
+              tableReady={tableId != null}
+              loading={suggestAi.loading}
+              error={suggestAi.error}
+              suggestion={suggestAi.data?.result ?? null}
+              appliedName={aiAppliedName}
+              onGenerate={question => { void generateAnalysis(question) }}
+            />
+          )}
         </div>
 
         {/* 右栏：结果（图表 → 分组汇总 → 描述统计 → 派生数据） */}
@@ -928,7 +932,7 @@ export default function AnalyticsPage() {
               }))}
               fields={syntheticFields}
               title={templateName || chart.title || '分析结果'}
-              onAiExplain={requestExplain}
+              onAiExplain={llmConfigured ? requestExplain : undefined}
               aiExplainLoading={explainAi.loading}
             />
           ) : (

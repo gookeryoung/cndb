@@ -63,6 +63,7 @@ vi.mock('@/api/hooks', async (importOriginal) => {
 
 // mock recordApi / tableApi 等，避免点击保存时打到真实网络
 vi.mock('@/api', () => ({
+  useLlmConfigured: () => true,
   tableApi: { get: vi.fn(), references: vi.fn() },
   recordApi: {
     list: vi.fn(),

@@ -357,6 +357,17 @@ export const handlers = [
     HttpResponse.json({ access_token: 'fake-token', token_type: 'bearer' })),
   http.get('/api/v1/accounts/auth/me', () => HttpResponse.json(mockUser)),
 
+  // 大模型个人配置：默认已配置（需求 0069 —— AI 入口显隐以此为准；
+  // 未配置态用例通过 server.use 覆盖 configured=false）
+  http.get('/api/v1/llm/config', () => HttpResponse.json({
+    configured: true,
+    base_url: 'https://api.deepseek.com',
+    model: 'deepseek-chat',
+    has_api_key: true,
+    system_prompt: '',
+    default_system_prompt: '内置默认系统提示词',
+  })),
+
   // 帮助文档示例清单 / CSV 下载（ADR 0029 P1）
   http.get('/api/v1/help/examples', () => HttpResponse.json(mockHelpExamples)),
   http.get('/api/v1/help/examples/:scenario/files/:filename', () =>

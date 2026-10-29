@@ -1815,3 +1815,39 @@ describe('DocumentEditorPage 草稿 diff 与丢弃（ADR 0057）', () => {
         expect(screen.getByTestId('doc-draft-tag')).toBeInTheDocument()
     })
 })
+
+describe('DocumentEditorPage 未配置大模型时隐藏 AI 入口（需求 0069）', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+        server.use(
+            http.get('/api/v1/llm/config', () => HttpResponse.json({
+                configured: false,
+                base_url: '',
+                model: '',
+                has_api_key: false,
+                system_prompt: '',
+                default_system_prompt: '',
+            })),
+        )
+    })
+
+    it('桌面端：顶栏 AI 入口不渲染，编辑模式工具栏无 AI 改写入口', async () => {
+        renderEditor()
+        await screen.findByRole('heading', { level: 4, name: '需求说明' })
+        await enterSourceMode()
+        expect(screen.queryByTestId('doc-ai-entry')).toBeNull()
+        expect(screen.queryByTestId('md-toolbar-ai-polish')).toBeNull()
+    })
+
+    it('窄屏：更多菜单中无 AI 摘要 / AI 标签建议项', async () => {
+        responsiveState = { deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false, width: 390, height: 800 }
+        renderEditor()
+        await screen.findByRole('heading', { level: 4, name: '需求说明' })
+        fireEvent.click(screen.getByTestId('doc-more-actions'))
+        await waitFor(() => expect(screen.queryByText('AI 摘要')).toBeNull())
+        await waitFor(() => expect(screen.queryByText('AI 标签建议')).toBeNull())
+        // 菜单本身有内容（非整体未渲染的假通过）：查找替换项仍在
+        expect(await screen.findByText('查找替换')).toBeInTheDocument()
+        responsiveState = { deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true, width: 1280, height: 800 }
+    })
+})

@@ -18,7 +18,7 @@ import {
 } from '@ant-design/icons'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { datasourceApi, tableApi } from '@/api'
+import { datasourceApi, tableApi, useLlmConfigured } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import { materializeDomainTemplate } from './domainTemplate'
 import { LLM_PROMPT_PRESETS, type LlmPromptPreset } from './llmPromptPresets'
@@ -129,6 +129,15 @@ export default function DatasourcePage() {
   })
 
   const providers = useMemo(() => providersQuery.data ?? [], [providersQuery.data])
+  // 未配置大模型时，新建任务不提供 llm_prompt 提供方（选了也必然不可用）；
+  // 编辑存量 llm_prompt 任务时保留原选项，避免表单回填与保存口径被破坏（需求 0069 C5）
+  const llmConfigured = useLlmConfigured()
+  const drawerProviders = useMemo(
+    () => (llmConfigured || editing?.provider === 'llm_prompt'
+      ? providers
+      : providers.filter(p => p.name !== 'llm_prompt')),
+    [providers, llmConfigured, editing],
+  )
   const jobs = useMemo(() => jobsQuery.data?.jobs ?? [], [jobsQuery.data])
   const tables = useMemo(() => tablesQuery.data ?? [], [tablesQuery.data])
   const sessions = useMemo(() => sessionsQuery.data ?? [], [sessionsQuery.data])
@@ -508,7 +517,7 @@ export default function DatasourcePage() {
         wid={wid}
         open={drawerOpen}
         job={editing}
-        providers={providers}
+        providers={drawerProviders}
         tables={tables}
         sessions={sessions}
         onManageSessions={() => setSessionModalOpen(true)}

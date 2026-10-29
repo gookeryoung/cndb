@@ -622,7 +622,8 @@ describe('AnalyticsPage', () => {
 
   it('未选择分析表时 AI 生成入口禁用', async () => {
     renderPage('/w/1/analytics')
-    expect(screen.getByTestId('analytics-ai-question')).toBeDisabled()
+    // AI 面板随「大模型已配置」查询异步出现（需求 0069），须用 findBy 等待
+    expect(await screen.findByTestId('analytics-ai-question')).toBeDisabled()
     expect(screen.getByTestId('analytics-ai-generate')).toBeDisabled()
   })
 

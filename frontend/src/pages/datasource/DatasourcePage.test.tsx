@@ -737,3 +737,33 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(body.entrant_source).toEqual({ table: '股票清单', field: '代码', prefix_in: ['sh60'] })
   })
 })
+
+describe('DatasourcePage 未配置大模型时隐藏 llm_prompt 提供方（需求 0069）', () => {
+    /** 打开新建抽屉并展开提供方（适配器）下拉 */
+    async function openProviderDropdown() {
+        setupHandlers([])
+        renderPage()
+        fireEvent.click(await screen.findByRole('button', { name: /新建同步任务/ }))
+        await screen.findByText('新建同步任务', { selector: '.ant-drawer-title' })
+        const selects = screen.getAllByRole('combobox')
+        fireEvent.mouseDown(selects[0]!)
+    }
+
+    it('未配置大模型：提供方选项不含「大模型提示词」，其余选项保留', async () => {
+        server.use(
+            http.get('/api/v1/llm/config', () => HttpResponse.json({
+                configured: false, base_url: '', model: '', has_api_key: false,
+                system_prompt: '', default_system_prompt: '',
+            })),
+        )
+        await openProviderDropdown()
+        // 先等选项真实渲染（避免查询未返回时的假通过），再断言 llm_prompt 不在列
+        expect((await screen.findAllByText('通用 HTTP/JSON')).length).toBeGreaterThan(0)
+        await waitFor(() => expect(screen.queryByText('大模型提示词')).toBeNull())
+    })
+
+    it('已配置大模型：提供方选项包含「大模型提示词」', async () => {
+        await openProviderDropdown()
+        expect(await screen.findByText('大模型提示词')).toBeInTheDocument()
+    })
+})

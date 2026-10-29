@@ -80,6 +80,7 @@ import { documentsApi } from '@/api/documents'
 import { fileApi, tableApi, viewApi, workspaceApi } from '@/api'
 import { useLlmAction } from '@/hooks/useLlmAction'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useLlmConfigured } from '@/api'
 import type { WorkspaceRole } from '@/api'
 import type { AiResultSection } from '@/components/Ai/AiResultDrawer'
 import type {
@@ -153,6 +154,8 @@ export default function DocumentEditorPage() {
   const { isMobile, isDesktop } = useResponsive()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  // 未配置大模型时隐藏所有 AI 入口（需求 0069）：顶栏 AI、工具栏选区改写、更多菜单 AI 项
+  const llmConfigured = useLlmConfigured()
   const workspaceId = Number(wid)
   const id = Number(docId)
 
@@ -1043,8 +1046,12 @@ export default function DocumentEditorPage() {
       ? []
       : [
           { key: 'find', icon: <SearchOutlined />, label: '查找替换', onClick: openFind },
-          { key: 'ai-summarize', icon: <ReadOutlined />, label: 'AI 摘要', onClick: openAiSummary },
-          { key: 'ai-suggest-tags', icon: <TagsOutlined />, label: 'AI 标签建议', onClick: openAiSuggestTags },
+          ...(llmConfigured
+            ? [
+                { key: 'ai-summarize', icon: <ReadOutlined />, label: 'AI 摘要', onClick: openAiSummary },
+                { key: 'ai-suggest-tags', icon: <TagsOutlined />, label: 'AI 标签建议', onClick: openAiSuggestTags },
+              ]
+            : []),
           { key: 'backlinks', icon: <LinkOutlined />, label: '反向链接', onClick: () => setBacklinksOpen(true) },
           { key: 'links', icon: <BranchesOutlined />, label: '文档链接', onClick: () => setLinksOpen(true) },
           ...(viewMode === 'edit'
@@ -1229,8 +1236,9 @@ export default function DocumentEditorPage() {
               />
             </Space.Compact>
           )}
-          {/* 组 2：内容标注（AI / 标签）；插入图片 / 表格引用已移入编辑模式 Markdown 工具栏（ADR 0042） */}
-          {!isAssetDoc && (
+          {/* 组 2：内容标注（AI / 标签）；插入图片 / 表格引用已移入编辑模式 Markdown 工具栏（ADR 0042）；
+              未配置大模型时 AI 入口整体隐藏（需求 0069） */}
+          {!isAssetDoc && llmConfigured && (
             <Suspense fallback={null}>
               <AiDocEntry onSummarize={openAiSummary} onSuggestTags={openAiSuggestTags} />
             </Suspense>
@@ -1441,7 +1449,8 @@ export default function DocumentEditorPage() {
               <MarkdownToolbar
                 onAction={applyMarkdownAction}
                 onInsertTable={(cols, rows) => insertSnippetAtCursor(buildTableSkeleton(cols, rows))}
-                onAiAction={openAiRewrite}
+                // 未配置大模型时不传回调：工具栏 AI 选区改写入口整体不渲染（需求 0069）
+                onAiAction={llmConfigured ? openAiRewrite : undefined}
                 aiDisabled={polishAi.loading}
                 // 插入图片 / 插入表格引用 / 插入图表：桌面编辑模式走工具栏；窄屏收进「更多」菜单（ADR 0042 D4）
                 onInsertImage={isMobile ? undefined : () => imageInputRef.current?.click()}
