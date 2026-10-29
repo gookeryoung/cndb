@@ -1122,6 +1122,12 @@ export default function DocumentEditorPage() {
                   草稿已保存
                 </Tag>
               ))}
+            {/* 已有服务端草稿未提交：追加「待提交」提示（与保存状态标签并存） */}
+            {serverDraft && (
+              <Tag color="orange" data-testid="doc-pending-tag">
+                待提交
+              </Tag>
+            )}
             {/* 查看/编辑切换：按钮组连体样式，激活项高亮 */}
             {!doc.is_folder && !isAssetDoc && doc.status !== 'archived' && (
               <Space.Compact data-testid="doc-mode-switch">
@@ -1286,7 +1292,7 @@ export default function DocumentEditorPage() {
           )}
           {!isAssetDoc && (
             <>
-          {/* 组 5：提交动作：保存 / 提交 / 丢弃为同一按钮组连体（原 ADR 0057 的拉开间距口径已按用户要求调整为入组） */}
+          {/* 组 5：提交动作：保存 / 提交为按钮组连体；破坏性的丢弃草稿独立组外弱化为纯图标（ADR 0057 口径恢复） */}
           <Space.Compact>
             <Button
               icon={<SaveOutlined />}
@@ -1321,26 +1327,26 @@ export default function DocumentEditorPage() {
             >
               提交
             </Button>
-            {serverDraft && (
-              <Popconfirm
-                title="丢弃草稿？"
-                description="未提交的草稿修改将丢失，正文回到最新版本。"
-                okText="丢弃"
-                okButtonProps={{ danger: true }}
-                cancelText="取消"
-                onConfirm={() => discardMut.mutate()}
-              >
-                <Button
-                  danger
-                  icon={<DeleteOutlined />}
-                  loading={discardMut.isPending}
-                  data-testid="doc-draft-discard-btn"
-                >
-                  丢弃
-                </Button>
-              </Popconfirm>
-            )}
           </Space.Compact>
+          {serverDraft && (
+            <Popconfirm
+              title="丢弃草稿？"
+              description="未提交的草稿修改将丢失，正文回到最新版本。"
+              okText="丢弃"
+              okButtonProps={{ danger: true }}
+              cancelText="取消"
+              onConfirm={() => discardMut.mutate()}
+            >
+              <IconBtn
+                danger
+                icon={<DeleteOutlined />}
+                label="丢弃草稿"
+                loading={discardMut.isPending}
+                data-testid="doc-draft-discard-btn"
+                style={{ marginLeft: 8 }}
+              />
+            </Popconfirm>
+          )}
             </>
           )}
           {/* 组 1 收尾：大纲视图开关，展开 / 收起用不同图标，不做高亮以与普通入口保持一致 */}

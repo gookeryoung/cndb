@@ -1216,6 +1216,8 @@ describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
         renderEditor()
 
         expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿已保存')
+        // 已有服务端草稿 → 追加「待提交」标签
+        expect(screen.getByTestId('doc-pending-tag')).toHaveTextContent('待提交')
         const ta = await enterSourceMode()
         await waitFor(() => expect(ta.value).toContain('草稿正文'))
         // 草稿载入后尚未再修改：保存禁用（无新改动可存），提交仍可用
@@ -1261,6 +1263,8 @@ describe('DocumentEditorPage 查看 / 编辑模式与草稿提交', () => {
         })
         expect(submitCalls).toBe(0)
         expect(await screen.findByTestId('doc-draft-tag')).toHaveTextContent('草稿已保存')
+        // 保存后出现「待提交」标签
+        expect(screen.getByTestId('doc-pending-tag')).toHaveTextContent('待提交')
         // 保存后「保存草稿」禁用，再次修改前不可重复保存
         expect(screen.getByTestId('doc-save-btn')).toBeDisabled()
     })
@@ -1789,8 +1793,9 @@ describe('DocumentEditorPage 草稿 diff 与丢弃（ADR 0057）', () => {
         fireEvent.click(await screen.findByRole('button', { name: /^丢\s*弃$/ }))
 
         await waitFor(() => expect(deleteCalls).toBe(1))
-        // 草稿标签消失，回到查看模式
+        // 草稿标签与「待提交」标签均消失，回到查看模式
         await waitFor(() => expect(screen.queryByTestId('doc-draft-tag')).toBeNull())
+        expect(screen.queryByTestId('doc-pending-tag')).toBeNull()
         expect(screen.getByTestId('doc-view-mode')).toBeInTheDocument()
     })
 
