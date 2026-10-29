@@ -167,6 +167,46 @@ describe('ChartView 图表视图', () => {
     expect(option.series[0].data).toEqual([2, 3])
   })
 
+  it('非数值度量字段：统计面板回退计数统计（非空值个数）', () => {
+    // 度量=团队（select，非数值）：描述统计不可用，回退按个数统计；id=4 行团队非空计入
+    renderChart({
+      view: makeView({
+        chart_type: 'bar',
+        dimension_field: '月份',
+        measure_field: '团队',
+        date_granularity: 'month',
+      }),
+    })
+
+    const panel = screen.getByTestId('chart-stats-panel')
+    expect(panel).toBeInTheDocument()
+    expect(screen.getByText(/计数统计/)).toBeInTheDocument()
+    // ROWS 中团队字段 5 行全非空 → 计数 5
+    expect(screen.getByText('5')).toBeInTheDocument()
+    expect(screen.queryByText('求和')).not.toBeInTheDocument()
+    expect(screen.getByTestId('chart-stats-scope')).toHaveTextContent('样本量 5')
+  })
+
+  it('非数值度量字段含空值：计数剔除空值', () => {
+    // 复用「团队」字段，构造含 null/空串的行
+    const rows = [
+      { id: 1, 团队: '研发组' },
+      { id: 2, 团队: null },
+      { id: 3, 团队: '  ' },
+      { id: 4, 团队: '设计组' },
+    ] as unknown as RowResponse[]
+    renderChart({
+      rows,
+      view: makeView({
+        chart_type: 'bar',
+        dimension_field: '团队',
+        measure_field: '团队',
+      }),
+    })
+
+    expect(screen.getByTestId('chart-stats-scope')).toHaveTextContent('样本量 2')
+  })
+
   it('line 类型：series type 为 line', () => {
     renderChart({
       view: makeView({

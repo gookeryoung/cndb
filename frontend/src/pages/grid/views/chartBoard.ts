@@ -70,7 +70,7 @@ export const SINGLE_SERIES = '__single__'
 const NUMERIC_FIELD_TYPES = new Set(['number', 'float', 'percentage', 'timestamp'])
 
 /** 字段类型是否数值类（先解析历史别名，如 decimal→float） */
-function isNumericFieldType(fieldType: string | undefined): boolean {
+export function isNumericFieldType(fieldType: string | undefined): boolean {
   if (!fieldType) return false
   return NUMERIC_FIELD_TYPES.has(FIELD_TYPE_ALIASES[fieldType] ?? fieldType)
 }
@@ -472,6 +472,22 @@ export function computeStats(values: number[]): StatsResult | null {
     skewness: n >= 3 ? sampleSkewness(values) : null,
     outlierCount: values.reduce((acc, v) => acc + (v < lo || v > hi ? 1 : 0), 0),
   }
+}
+
+/** 计数统计结果（非数值度量字段的兜底口径，对齐 SQL COUNT(col)） */
+export interface CountStatsResult {
+  /** 非空值行数（null/undefined/空串不计） */
+  count: number
+}
+
+/** 非数值字段的计数统计：只按非空值个数统计（空值/空串剔除） */
+export function countStats(rows: RowResponse[], fieldName: string | undefined): CountStatsResult | null {
+  if (!fieldName) return null
+  let count = 0
+  for (const r of rows) {
+    if (!isEmptyValue(r[fieldName])) count++
+  }
+  return { count }
 }
 
 // ── 相关与回归 ────────────────────────────────────────

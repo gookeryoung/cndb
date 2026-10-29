@@ -26,7 +26,9 @@ import { resolveOpts, CHART_OPTIONS } from '../view-config/viewOptionSchema'
 import {
   buildChartData,
   computeStats,
+  countStats,
   extractNumbers,
+  isNumericFieldType,
   olsLine,
   type ChartConfig,
   type ChartData,
@@ -257,12 +259,17 @@ interface ScatterSummary {
   intercept: number | null
 }
 
-/** 描述统计面板（统计口径 tooltip + 样本量/总行数截断提示） */
+/** 描述统计面板（统计口径 tooltip + 样本量/总行数截断提示）.
+ *
+ * countOnly 模式：度量字段为非数值类型（文本/选择/日期等）时只展示基于个数的统计
+ * （对齐图表聚合的 count 回退与 SQL COUNT(col) 口径）。
+ */
 function StatsPanel({
   stats,
   total,
   fieldName,
   scatter,
+  countOnly = false,
 }: {
   stats: StatsResult
   /** 服务端总行数；undefined 时只显示样本量 */
@@ -271,23 +278,27 @@ function StatsPanel({
   fieldName: string
   /** 散点图附加的相关与回归摘要；非散点传 undefined */
   scatter?: ScatterSummary
+  /** 计数模式：只展示非空值计数 */
+  countOnly?: boolean
 }) {
-  const items: Array<[string, string]> = [
-    ['计数', fmtStat(stats.count)],
-    ['求和', fmtStat(stats.sum)],
-    ['均值', fmtStat(stats.mean)],
-    ['中位数', fmtStat(stats.median)],
-    ['众数', fmtStat(stats.mode)],
-    ['样本标准差', fmtStat(stats.std)],
-    ['最小值', fmtStat(stats.min)],
-    ['最大值', fmtStat(stats.max)],
-    ['极差', fmtStat(stats.range)],
-    ['P25', fmtStat(stats.p25)],
-    ['P75', fmtStat(stats.p75)],
-    ['IQR', fmtStat(stats.iqr)],
-    ['偏度', fmtStat(stats.skewness)],
-    ['离群值数', fmtStat(stats.outlierCount)],
-  ]
+  const items: Array<[string, string]> = countOnly
+    ? [['计数', fmtStat(stats.count)]]
+    : [
+        ['计数', fmtStat(stats.count)],
+        ['求和', fmtStat(stats.sum)],
+        ['均值', fmtStat(stats.mean)],
+        ['中位数', fmtStat(stats.median)],
+        ['众数', fmtStat(stats.mode)],
+        ['样本标准差', fmtStat(stats.std)],
+        ['最小值', fmtStat(stats.min)],
+        ['最大值', fmtStat(stats.max)],
+        ['极差', fmtStat(stats.range)],
+        ['P25', fmtStat(stats.p25)],
+        ['P75', fmtStat(stats.p75)],
+        ['IQR', fmtStat(stats.iqr)],
+        ['偏度', fmtStat(stats.skewness)],
+        ['离群值数', fmtStat(stats.outlierCount)],
+      ]
   return (
     <div
       data-testid="chart-stats-panel"
@@ -298,15 +309,21 @@ function StatsPanel({
     >
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
         <span style={{ fontWeight: WEIGHT.semibold, fontSize: 13, color: 'var(--cn-text-primary)' }}>
-          描述统计（{fieldName}）
+          {countOnly ? '计数统计' : '描述统计'}（{fieldName}）
         </span>
         <Tooltip
           title={
-            <div style={{ lineHeight: 1.8 }}>
-              样本标准差采用 n-1 口径；分位数采用线性插值（R-7）；
-              离群值为 IQR 法（Q1-1.5·IQR ~ Q3+1.5·IQR 之外）；
-              空值与非数值行已剔除
-            </div>
+            countOnly ? (
+              <div style={{ lineHeight: 1.8 }}>
+                计数为非空值个数（对齐 SQL COUNT(col) 口径），空值与空串已剔除
+              </div>
+            ) : (
+              <div style={{ lineHeight: 1.8 }}>
+                样本标准差采用 n-1 口径；分位数采用线性插值（R-7）；
+                离群值为 IQR 法（Q1-1.5·IQR ~ Q3+1.5·IQR 之外）；
+                空值与非数值行已剔除
+              </div>
+            )
           }
         >
           <span
@@ -329,7 +346,7 @@ function StatsPanel({
             <span style={{ color: 'var(--cn-text-primary)', fontVariantNumeric: 'tabular-nums' }}>{value}</span>
           </div>
         ))}
-        {scatter && (
+        {!countOnly && scatter && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
               <span style={{ color: 'var(--cn-text-secondary)' }}>Pearson r</span>
@@ -471,10 +488,26 @@ export function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTes
 
   // 统计面板数据：度量字段原始值（散点取 Y 字段）
   const statsField = cfg.chart_type === 'scatter' ? cfg.y_field : cfg.measure_field
+  const statsIsNumeric = useMemo(
+    () => isNumericFieldType(fields.find((f) => f.name === statsField)?.field_type),
+    [fields, statsField],
+  )
   const stats = useMemo(
     () => computeStats(extractNumbers(rows, statsField)),
     [rows, statsField],
   )
+  // 非数值度量字段（文本/选择/日期等）无法做描述统计，回退为基于非空值个数的计数统计
+  //（对齐 bucketByDimension 的 count 回退口径），不再整体隐藏面板
+  const panelStats = useMemo<StatsResult | null>(() => {
+    if (!statsField) return null
+    if (statsIsNumeric) return stats
+    const c = countStats(rows, statsField)
+    if (!c) return null
+    return {
+      count: c.count, sum: 0, mean: 0, median: 0, mode: null, std: null,
+      min: 0, max: 0, range: 0, p25: 0, p75: 0, iqr: 0, skewness: null, outlierCount: 0,
+    }
+  }, [rows, statsField, statsIsNumeric, stats])
   const scatterSummary = useMemo<ScatterSummary | undefined>(
     () => {
       if (cfg.chart_type !== 'scatter' || !data || data.kind !== 'scatter' || data.points.length < 2) return undefined
@@ -515,8 +548,11 @@ export function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTes
           </div>
         )}
       </div>
-      {hasChart && cfg.show_stats_panel !== false && stats && statsField && (
-        <StatsPanel stats={stats} total={total} fieldName={statsField} scatter={scatterSummary} />
+      {hasChart && cfg.show_stats_panel !== false && statsField && panelStats && (
+        <StatsPanel
+          stats={panelStats} total={total} fieldName={statsField}
+          scatter={scatterSummary} countOnly={!statsIsNumeric}
+        />
       )}
     </>
   )
