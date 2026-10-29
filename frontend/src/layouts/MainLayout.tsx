@@ -64,9 +64,10 @@ function toTreeNode(node: DocTreeNode): DataNode {
       ? <FolderFilled style={{ color: 'var(--cn-primary, #1677ff)' }} />
       : <FileTextOutlined />,
     // 可见性提示：未发布的文档同事看不到，明确告知以免误以为"文档丢了"（与旧文档树口径一致）
+    // 单行省略：文本占满剩余宽度截断（完整标题放 title 悬停提示），私有锁等尾缀图标不参与截断
     title: (
-      <span title={node.title} data-testid={`doc-tree-doc-${node.id}`}>
-        {node.title}
+      <span className="cn-doc-sider-title" title={node.title} data-testid={`doc-tree-doc-${node.id}`}>
+        <span className="cn-doc-sider-title-text">{node.title}</span>
         {node.visibility === 'private' && (
           <Tooltip title="未发布：仅你与工作区所有者可见">
             <LockOutlined
@@ -531,8 +532,8 @@ export default function MainLayout() {
         </div>
         {collapsed ? null : (
           <>
-            {/* 第一行：展开/收起 + 排序 + 标题过滤 */}
-            <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)', display: 'flex', gap: 6 }}>
+            {/* 第一行：展开/收起 + 排序 + 标题过滤（左内边距与上方「文档」标题、下方树行首同一基线） */}
+            <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)', display: 'flex', alignItems: 'center', gap: 6 }}>
               {/* 展开/收起全部：图标随切换变化，置于排序按钮前面 */}
               <Tooltip title={treeCollapsed ? '展开全部' : '收起全部'}>
                 <Button
@@ -576,31 +577,35 @@ export default function MainLayout() {
                 <p>还没有文档，去文档页创建吧</p>
               </div>
             ) : (
-              <Tree
-                blockNode
-                showIcon
-                treeData={treeData}
-                selectedKeys={activeDocId ? [activeDocId] : []}
-                expandedKeys={docTreeExpanded}
-                onExpand={keys => setDocTreeExpanded(keys as string[])}
-                onClick={(_, node) => {
-                  const raw = node as unknown as { docNode?: DocTreeNode }
-                  if (!raw.docNode) return
-                  if (raw.docNode.is_folder) {
-                    // 进入层级时保留已选筛选（?tag=&status=）
-                    const kept = new URLSearchParams()
-                    for (const k of ['tag', 'status']) {
-                      const v = searchParams.get(k)
-                      if (v) kept.set(k, v)
+              // 树容器左内边距 4px：行首箭头中心线落在 12px，与「文档」标题/工具栏按钮左基线对齐
+              <div style={{ padding: '0 var(--cn-space-sm) var(--cn-space-sm) var(--cn-space-xs)' }}>
+                <Tree
+                  blockNode
+                  showIcon
+                  className="cn-doc-sider-tree"
+                  treeData={treeData}
+                  selectedKeys={activeDocId ? [activeDocId] : []}
+                  expandedKeys={docTreeExpanded}
+                  onExpand={keys => setDocTreeExpanded(keys as string[])}
+                  onClick={(_, node) => {
+                    const raw = node as unknown as { docNode?: DocTreeNode }
+                    if (!raw.docNode) return
+                    if (raw.docNode.is_folder) {
+                      // 进入层级时保留已选筛选（?tag=&status=）
+                      const kept = new URLSearchParams()
+                      for (const k of ['tag', 'status']) {
+                        const v = searchParams.get(k)
+                        if (v) kept.set(k, v)
+                      }
+                      const qs = kept.toString()
+                      navigate(`/w/${wid}/documents?parent=${raw.docNode.id}${qs ? `&${qs}` : ''}`)
+                    } else {
+                      navigate(`/w/${wid}/documents/${raw.docNode.id}`)
                     }
-                    const qs = kept.toString()
-                    navigate(`/w/${wid}/documents?parent=${raw.docNode.id}${qs ? `&${qs}` : ''}`)
-                  } else {
-                    navigate(`/w/${wid}/documents/${raw.docNode.id}`)
-                  }
-                  if (mobile) setMobileNavOpen(false)
-                }}
-              />
+                    if (mobile) setMobileNavOpen(false)
+                  }}
+                />
+              </div>
             )}
           </>
         )}

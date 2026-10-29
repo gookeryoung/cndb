@@ -670,6 +670,16 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         await waitFor(() => expect(screen.getByTitle('会议纪要')).toBeVisible())
     })
 
+    it('长标题节点单行省略：文本截断、完整标题入 title 提示、尾缀图标不参与截断', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        // 结构锁定（样式见 index.css .cn-doc-sider-tree）：外层 flex 行 + 内层文本省略
+        const node = await screen.findByTitle('需求说明')
+        expect(node).toHaveClass('cn-doc-sider-title')
+        const text = node.querySelector('.cn-doc-sider-title-text')
+        expect(text).toHaveTextContent('需求说明')
+    })
+
     it('点击侧栏文档项导航到对应文档编辑器', async () => {
         renderLayout(mockUser, '/w/10/documents')
 

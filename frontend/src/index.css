@@ -4870,6 +4870,72 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
+/* ─────────────── 文档侧栏树（MainLayout Sider / 移动抽屉共用）───────────────
+ * 目标：① 长文件名不折行，单行省略号收尾（悬停看全名）；
+ * ② 行高压到 26px、缩进 12px/级、箭头 16px、图标列 18px，行内全部垂直居中，
+ *    行首与工具栏（展开/收起、排序按钮）保持同一左基线。 */
+.cn-doc-sider-tree .ant-tree-treenode {
+  padding: 0;
+  align-items: center;
+}
+
+.cn-doc-sider-tree .ant-tree-switcher {
+  width: 16px;
+  height: 26px;
+  line-height: 26px;
+}
+
+.cn-doc-sider-tree .ant-tree-switcher .ant-tree-switcher-icon {
+  font-size: var(--cn-text-3xs);
+}
+
+.cn-doc-sider-tree .ant-tree-iconEle {
+  width: 18px;
+  height: 26px;
+  line-height: 26px;
+}
+
+.cn-doc-sider-tree .ant-tree-indent-unit {
+  width: 12px;
+}
+
+.cn-doc-sider-tree .ant-tree-node-content-wrapper {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  line-height: 26px;
+  padding-inline: var(--cn-space-hairline);
+  overflow: hidden;
+}
+
+.cn-doc-sider-tree .ant-tree-title {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* 标题行：文本占满剩余宽度做省略，尾缀图标（私有锁）固定不缩不挤 */
+.cn-doc-sider-tree .cn-doc-sider-title {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.cn-doc-sider-tree .cn-doc-sider-title-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cn-doc-sider-tree .cn-doc-sider-title .anticon {
+  flex-shrink: 0;
+  margin-left: var(--cn-space-xs);
+}
+
 /* ─────────────── 文档查找 / 替换条 ───────────────
  * 与 Markdown 工具栏同层，窄屏可横滑；不挤压正文高度 */
 .cn-find-bar {
