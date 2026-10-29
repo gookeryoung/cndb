@@ -116,11 +116,10 @@ function MyViewRow({
         <span className="cn-myviews-type-icon" aria-hidden>{VIEW_TYPE_ICON[view.view_type] ?? <TableOutlined />}</span>
 
         <div className="cn-myviews-text">
-          {/* 先显示「工作区 › 数据表」位置，再显示视图名，便于直观定位来源 */}
+          <span className="cn-myviews-name" title={view.name}>{view.name}</span>
           <span className="cn-myviews-path" title={`${view.workspace_name} › ${view.table_name}`}>
             {view.workspace_name} › {view.table_name}
           </span>
-          <span className="cn-myviews-name" title={view.name}>{view.name}</span>
         </div>
 
         {view.is_default && <Tag color="blue" className="cn-myviews-row-tag">默认</Tag>}
