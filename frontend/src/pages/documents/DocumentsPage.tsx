@@ -738,10 +738,11 @@ export default function DocumentsPage() {
                     {STATUS_LABELS[st] ?? st} {n}
                   </Tag>
                 ))}
-                <Text type="secondary" style={{ fontSize: 12, marginLeft: 'auto' }}>
-                  更新 {formatTime(s.latestUpdate)}
-                </Text>
               </div>
+              {/* 更新时间独立成行左对齐：状态标签数量不定，放在同行右侧会导致位置参差 */}
+              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+                更新 {formatTime(s.latestUpdate)}
+              </Text>
             </Card>
           ))}
         </div>
