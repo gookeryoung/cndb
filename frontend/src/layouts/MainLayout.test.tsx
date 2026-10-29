@@ -138,12 +138,12 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.queryByTestId('workspace-settings-nav')).toBeNull()
 
         const adminBtn = screen.getByRole('button', { name: /管理台/ })
-        // 右上角用户区优先展示昵称
-        const userName = screen.getByText('爱丽丝')
+        // 右上角用户区仅保留头像（GitHub 风格），昵称收进 Tooltip
+        const userTrigger = screen.getByTestId('user-menu-trigger')
 
-        // DOM 顺序：管理台 → 昵称（头像区）
+        // DOM 顺序：管理台 → 用户头像区
         // FOLLOWING(4)：后者在前者之后
-        expect(adminBtn.compareDocumentPosition(userName) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(adminBtn.compareDocumentPosition(userTrigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
     it('Content 分页导航：默认激活「数据表」，点击 tab 正确导航且激活态随路由变化', async () => {
@@ -209,16 +209,18 @@ describe('MainLayout 顶部导航', () => {
         }
     })
 
-    it('右上角无昵称时回退显示账号名', async () => {
+    it('右上角仅保留头像图标：昵称/账号名不再展示在顶栏（仅存在于用户菜单）', async () => {
         renderLayout({ ...mockUser, nickname: undefined })
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
         })
 
-        // 昵称为空 → 头像区显示账号名（菜单项同时含账号名，故用 getAllByText）
-        expect(screen.getAllByText('alice').length).toBeGreaterThanOrEqual(1)
+        // GitHub 风格：顶栏用户区只渲染头像圆形按钮，昵称/账号名文字一律收进菜单与 Tooltip
         expect(screen.queryByText('爱丽丝')).toBeNull()
+        // 账号名仅出现在下拉菜单项中（先悬停头像打开菜单再断言）
+        fireEvent.mouseEnter(screen.getByTestId('user-menu-trigger'))
+        expect(await screen.findByText('alice')).toBeInTheDocument()
     })
 
     it('无工作区上下文（/admin）时不渲染工作区分页导航，避免隐式作用到未知工作区', async () => {
@@ -252,8 +254,8 @@ describe('MainLayout 顶部导航', () => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
         })
 
-        // 悬停右上角用户区打开下拉菜单，点击「关于系统」
-        fireEvent.mouseEnter(screen.getByText('爱丽丝'))
+        // 悬停右上角用户头像打开下拉菜单，点击「关于系统」
+        fireEvent.mouseEnter(screen.getByTestId('user-menu-trigger'))
         fireEvent.click(await screen.findByText('关于系统'))
 
         // 弹窗渲染基本信息（msw 返回 app_version 0.3.0）；普通用户可见即为本用例回归点
@@ -328,7 +330,8 @@ describe('MainLayout 大模型入口', () => {
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
         })
-        expect(screen.getByTestId('help-btn')).toHaveTextContent('帮助文档')
+        // GitHub 风格图标按钮：无文字，说明收进 aria-label / Tooltip
+        expect(screen.getByTestId('help-btn')).toHaveAttribute('aria-label', '帮助文档')
 
         fireEvent.click(screen.getByTestId('help-btn'))
         await waitFor(() => {

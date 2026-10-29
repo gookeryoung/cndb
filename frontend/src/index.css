@@ -553,6 +553,12 @@ body.theme-oled {
     0 2px 10px rgb(var(--cn-shadow-color) / 0.03);
 }
 
+/* 顶栏右侧 GitHub 风格图标按钮：管理台入口在 /admin 上下文时的激活态高亮 */
+.cn-header-icon-btn-active {
+  border-color: var(--cn-brand-color);
+  color: var(--cn-brand-color);
+}
+
 /* ── 顶栏工作区搜索（GitHub 风格）：范围选择器 + 分组结果面板 ──
  * 盒子外形对齐 GitHub 的 header 搜索框：低对比底色 + 细边框，聚焦时收白并染色边框；
  * 面板宽度跟随输入框，最小 320px 保证长标题可读。

@@ -1,6 +1,6 @@
 import React, { Suspense, lazy, useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import { Outlet, useNavigate, useParams, useSearchParams, useLocation, Navigate } from 'react-router-dom'
-import { Layout, Menu, Dropdown, Avatar, Button, Space, App as AntApp, Tooltip, Tabs, Drawer, Tree } from 'antd'
+import { Layout, Menu, Dropdown, Avatar, Button, App as AntApp, Tooltip, Tabs, Drawer, Tree } from 'antd'
 import type { MenuProps, TabsProps } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import {
@@ -668,15 +668,16 @@ export default function MainLayout() {
             移动端收为图标入口并展开抽屉，避免挤压顶栏横向空间。 */}
         {isMobile ? searchNode : <div className="cn-header-search">{searchNode}</div>}
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 4 }}>
+        {/* 顶栏右侧操作区 —— GitHub 风格：带边框图标按钮（antd 默认尺寸 32px），
+            文字说明收进 Tooltip，降低顶栏视觉密度 */}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
           {/* 大模型设置入口 —— 个人级连接与调用记录；桌面端常驻图标（帮助左侧），
               移动端顶栏空间紧张，入口收进用户菜单（见 userMenuItems） */}
           {!isMobile && (
             <Tooltip title="大模型设置：连接配置与调用记录">
               <Button
-                type="text"
-                size="small"
                 icon={<RobotOutlined />}
+                aria-label="大模型设置"
                 data-testid="llm-settings-btn"
                 onClick={() => openSettings('llm')}
               />
@@ -686,30 +687,36 @@ export default function MainLayout() {
           {!isMobile && (
             <Tooltip title="帮助文档与新手引导">
               <Button
-                type="text"
-                size="small"
                 icon={<QuestionCircleOutlined />}
+                aria-label="帮助文档"
                 data-testid="help-btn"
                 onClick={() => navigate('/help')}
-              >帮助文档</Button>
+              />
             </Tooltip>
           )}
-          {/* 系统管理台入口 —— 仅管理员可见，置于用户头像左侧以区别于常规导航 */}
+          {/* 系统管理台入口 —— 仅管理员可见，置于用户头像左侧以区别于常规导航；
+              /admin 上下文时以品牌色描边高亮（cn-header-icon-btn-active） */}
           {isAdmin && (
             <Tooltip title="系统管理台">
               <Button
-                type={location.includes('/admin') ? 'primary' : 'text'}
-                size="small" icon={<SafetyOutlined />}
+                icon={<SafetyOutlined />}
+                aria-label="管理台"
+                className={location.includes('/admin') ? 'cn-header-icon-btn-active' : undefined}
                 onClick={() => navigate('/admin')}
-              >{!isMobile && '管理台'}</Button>
+              />
             </Tooltip>
           )}
+          {/* 用户下拉 —— GitHub 风格：仅头像（带边框圆形按钮），昵称收进 Tooltip */}
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-            <Space style={{ cursor: 'pointer' }} data-testid="user-menu-trigger">
-              <Avatar size="small" icon={<UserOutlined />} />
-              {/* 右上角优先展示昵称，无昵称时回退账号名 */}
-              {!isMobile && <span>{user?.nickname || user?.username || ''}</span>}
-            </Space>
+            <Tooltip title={user?.nickname || user?.username || ''}>
+              <Button
+                shape="circle"
+                aria-label="用户菜单"
+                data-testid="user-menu-trigger"
+                style={{ padding: 0 }}
+                icon={<Avatar size={22} icon={<UserOutlined />} />}
+              />
+            </Tooltip>
           </Dropdown>
         </div>
       </Header>
