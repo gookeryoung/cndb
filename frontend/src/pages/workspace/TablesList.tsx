@@ -30,6 +30,7 @@ import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useCreateParam } from '@/hooks/useCreateParam'
 import { WEIGHT } from '@/theme/tokens'
 
 const ApiImportDialog = lazy(() => import('@/pages/import-export/ApiImportDialog'))
@@ -213,6 +214,8 @@ export default function TablesList() {
   const user = useAuthStore(s => s.user)
   const { isMobile } = useResponsive()
   const [createOpen, setCreateOpen] = useState(false)
+  // 命令面板「新建数据表」经 URL ?create=1 触发（0067 C3）
+  useCreateParam(() => setCreateOpen(true))
   const [editOpen, setEditOpen] = useState<TableSummary | null>(null)
   const [apiImportOpen, setApiImportOpen] = useState(false)
   const [filter, setFilter] = useState<AccessFilter>('all')

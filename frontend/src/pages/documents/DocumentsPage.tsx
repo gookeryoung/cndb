@@ -52,6 +52,7 @@ import { clearRecentDocs, loadRecentDocs } from './recentDocs'
 import { documentsApi } from '@/api/documents'
 import type { DocumentItem } from '@/api/documents'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useCreateParam } from '@/hooks/useCreateParam'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
 import { buildSeriesStats, seriesStatsOf } from './seriesStats'
 import { formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
@@ -385,6 +386,9 @@ export default function DocumentsPage() {
     setCreateType(type)
     setCreateOpen(true)
   }
+
+  // 命令面板「新建文档」经 URL ?create=1 触发（0067 C3）
+  useCreateParam(() => openCreate('doc'))
 
   /** 最近打开（过滤掉已删除/不可见的文档，避免死链） */
   const recentDocs = useMemo(() => {

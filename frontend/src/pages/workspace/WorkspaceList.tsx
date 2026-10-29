@@ -25,6 +25,7 @@ import {
 import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useCreateParam } from '@/hooks/useCreateParam'
 import { usePreferences, useSetWorkspaceOrder } from '@/hooks/useFavoriteViews'
 import { workspaceApi, tableApi } from '@/api'
 import type {
@@ -92,6 +93,8 @@ export default function WorkspaceList() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
+  // 命令面板「新建工作区」经 URL ?create=1 触发（0067 C3）
+  useCreateParam(() => setCreateOpen(true))
   const [settingsOpen, setSettingsOpen] = useState<Workspace | null>(null)
   const [backupOpen, setBackupOpen] = useState<Workspace | null>(null)
   const [importOpen, setImportOpen] = useState(false)
