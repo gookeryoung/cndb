@@ -206,7 +206,7 @@ describe('通用导入弹窗', () => {
     renderProviders(
       <DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={3} parentLabel="收件箱" />,
     )
-    pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
+    pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' }), new File(['x'], '网页.mhtml')])
     await screen.findByTestId('file-import-summary')
 
     // 先切到转换模式（重解析期间开关行卸载），稳定后再点选项与关闭内嵌图片开关
@@ -227,14 +227,14 @@ describe('通用导入弹窗', () => {
         status: 'published',
         importAttachments: false,
         mhtmlMode: 'convert',
-        entries: [expect.objectContaining({ path: '说明.md' })],
+        entries: [expect.objectContaining({ path: '说明.md' }), expect.objectContaining({ path: '网页.mhtml' })],
       }),
     )
   })
 
   it('MHTML 模式开关：默认关、切换传 convert 并重解析、归档态禁用内嵌图片开关', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
-    pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
+    pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' }), new File(['x'], '网页.mhtml')])
     await screen.findByTestId('file-import-summary')
 
     // 开关行随预览出现：默认关，archive 态内嵌图片开关禁用（原样存档时不适用）
@@ -257,6 +257,16 @@ describe('通用导入弹窗', () => {
       WID,
       expect.objectContaining({ importAttachments: true, mhtmlMode: 'convert' }),
     )
+  })
+
+  it('批次无 MHTML（如 PDF）时「转Markdown」开关禁用', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    pick([new File(['%PDF'], '报告.pdf', { type: 'application/pdf' })])
+    await screen.findByTestId('file-import-summary')
+
+    const convertSwitch = screen.getByTestId('file-import-mhtml-convert')
+    expect(convertSwitch).toBeDisabled()
+    expect(screen.getByText('转Markdown（仅 MHTML 支持）')).toBeInTheDocument()
   })
 
   it('导入完成后展示统计、告警与跳过明细', async () => {

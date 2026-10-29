@@ -793,16 +793,8 @@ export default function AnalyticsPage() {
       )}
 
       <div className="cn-an-workbench">
-        {/* 左栏：配置（AI 生成 → 数据源 → 智能推荐 → 公式 → 可视化 → 分组汇总） */}
+        {/* 左栏：配置（数据源 → 智能推荐 → 公式 → 可视化 → 分组汇总 → AI 生成） */}
         <div className="cn-an-col cn-an-col--config">
-          <AnalyticsAiPanel
-            tableReady={tableId != null}
-            loading={suggestAi.loading}
-            error={suggestAi.error}
-            suggestion={suggestAi.data?.result ?? null}
-            appliedName={aiAppliedName}
-            onGenerate={question => { void generateAnalysis(question) }}
-          />
           <AnalyticsBox
             title="数据源"
             icon={<DatabaseOutlined />}
@@ -913,6 +905,14 @@ export default function AnalyticsPage() {
             onChange={setSummary}
             groupOptions={groupOptions}
             metricOptions={chartOptions}
+          />
+          <AnalyticsAiPanel
+            tableReady={tableId != null}
+            loading={suggestAi.loading}
+            error={suggestAi.error}
+            suggestion={suggestAi.data?.result ?? null}
+            appliedName={aiAppliedName}
+            onGenerate={question => { void generateAnalysis(question) }}
           />
         </div>
 

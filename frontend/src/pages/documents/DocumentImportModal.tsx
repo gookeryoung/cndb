@@ -101,6 +101,9 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const [mhtmlMode, setMhtmlMode] = useState<MhtmlImportMode>('archive')
   const [status, setStatus] = useState<'draft' | 'published'>('draft')
 
+  /** 批次里是否含 MHTML：不含时「转Markdown」开关禁用（仅对 MHTML 生效） */
+  const hasMhtml = entries.some(entry => /\.mhtml?$/i.test(entry.path))
+
   const reset = () => {
     setEntries([])
     setAnalysis(null)
@@ -362,7 +365,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               导入时自动转换为 Markdown 并清理空白；
               PDF、Excel（.xlsx/.xls）、PowerPoint（.pptx/.ppt）与图片（png/jpg/gif/webp/svg/bmp）
               原样存档，导入后在阅读器里预览、可下载原件（不参与编辑）。MHTML 默认原样存档，
-              勾选「MHTML 转 Markdown」后才会转换。导入到{targetText}。
+              勾选「转Markdown」后才会转换（仅 MHTML 支持，PDF 等其他格式该选项禁用）。导入到{targetText}。
             </p>
             {entries.length > 0 && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
@@ -420,9 +423,12 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                   <Switch
                     checked={mhtmlMode === 'convert'}
                     onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
+                    disabled={!hasMhtml}
                     data-testid="file-import-mhtml-convert"
                   />
-                  <Typography.Text>MHTML 转 Markdown</Typography.Text>
+                  <Typography.Text type={hasMhtml ? undefined : 'secondary'}>
+                    转Markdown{!hasMhtml ? '（仅 MHTML 支持）' : ''}
+                  </Typography.Text>
                 </Space>
                 <Space size={8}>
                   <Switch
