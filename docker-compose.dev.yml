@@ -9,8 +9,18 @@
 #   · 数据落独立命名卷 cndb-dev-data（/data），不碰宿主 ~/.cndb
 #   · 前端 node_modules 用独立卷，容器重建不重复下载，也不与宿主平台产物互相污染
 #
-# 本文件不读取 .env、不依赖任何外部变量，`docker compose -f docker-compose.dev.yml up` 即可起。
+# 本文件不读取 .env、不依赖任何外部变量，`docker compose -f docker-compose.dev.yml up` 即可起；
+# 仅容器 DNS 兜底可按需用 CNDB_DNS_PRIMARY / CNDB_DNS_SECONDARY 覆盖（见下方 anchor）。
 # ═══════════════════════════════════════════════════════════════════
+
+# 容器 DNS：Docker 默认把宿主 /etc/resolv.conf 的 nameserver 原样拷进容器。
+# WSL2 NAT 模式下宿主解析器是 10.255.255.254（宿主虚拟交换机内部地址），容器
+# netns 里不可达，表现为 corepack / pnpm 拉包全部 "dns error: failed to lookup
+# address information"。这里显式给两个公共解析器兜底，可用环境变量覆盖：
+#   CNDB_DNS_PRIMARY=... CNDB_DNS_SECONDARY=... docker compose -f docker-compose.dev.yml up
+x-container-dns: &container-dns
+  - ${CNDB_DNS_PRIMARY:-223.5.5.5}
+  - ${CNDB_DNS_SECONDARY:-119.29.29.29}
 
 services:
   backend:
@@ -27,6 +37,7 @@ services:
         PIP_INDEX_URL: ${CNDB_PIP_INDEX:-https://pypi.org/simple}
         UV_DEFAULT_INDEX: ${CNDB_UV_INDEX:-https://pypi.org/simple}
     container_name: cndb-dev-backend
+    dns: *container-dns
     working_dir: /app
     # 与宿主 `cndb dev` 同口径的端口（8772，Vite 代理默认目标）
     # 首次启动（/data/data/cndb.db 不存在）先注入 seed 演示数据再起服务；
@@ -59,6 +70,7 @@ services:
     # 源由 deploy/docker-sources.sh 注入；默认官方镜像，国内 profile 自动换镜像代理
     image: ${CNDB_NODE_IMAGE:-node:22-alpine}
     container_name: cndb-dev-frontend
+    dns: *container-dns
     working_dir: /app/frontend
     # pnpm 由 corepack 按 package.json 的 packageManager 字段落地（12.4.2）
     command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0 --port 5173"

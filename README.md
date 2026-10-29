@@ -250,6 +250,14 @@ GitHub workflow（CI / Release）已置 `CNDB_SOURCES=global`；腾讯部署 wor
 流水线给 TAT 命令显式写 `CNDB_SOURCES=cn`，不会把 runner 的海外源带到服务器。
 基础镜像构建失败时会用官方源整体重试一次，日志会打印实际 profile。
 
+WSL2 等环境下 Docker 会把宿主解析器（如 `10.255.255.254`）拷进容器，该地址在容器网络内
+不可达，`pnpm` / corepack 拉包会报 `dns error`；`docker-compose.dev.yml` 默认给前后端容器
+注入公共解析器（`223.5.5.5` / `119.29.29.29`），可覆盖：
+
+```bash
+CNDB_DNS_PRIMARY=1.1.1.1 CNDB_DNS_SECONDARY=8.8.8.8 make docker-dev
+```
+
 性能基准（10k 行导入 + 查询）：
 
 ```bash

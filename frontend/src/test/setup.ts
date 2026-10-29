@@ -199,18 +199,28 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// ── 抑制 jsdom "navigation to another Document" 未实现警告 ─────────────
-// 测试中渲染下载 / 导出等逻辑会程序化 a.click() 触发跳转，jsdom 无法跨文档
-// 导航，会经 virtualConsole 发 jsdomError。vitest 把 virtualConsole 转发到
-// worker console 并直写 stderr（绕过 console.error patch），需在 emit 层拦截。
-// 仅过滤该类已知噪音，其他 jsdomError 照常抛出。
+// ── 抑制 jsdom 已知噪音（virtualConsole 层）────────────────────────────
+// 以下两类 jsdomError 经 virtualConsole 转发到 worker console 并直写 stderr
+// （绕过 console.error patch），需在 emit 层拦截：
+// 1) "navigation to another Document"：测试中渲染下载 / 导出等逻辑会程序化
+//    a.click() 触发跳转，jsdom 无法跨文档导航。
+// 2) "Could not parse CSS stylesheet"（type=css-parsing）：antd cssinjs 运行时
+//    注入的样式含 jsdom 内置 CSS 解析器不支持的现代语法，真实浏览器可正常解析，
+//    不影响任何断言；一次全量测试会刷出数百行。仅过滤该类，其他 jsdomError 照常抛出。
 if (typeof window !== 'undefined') {
-  const vc = (window as unknown as { _settings?: { virtualConsole?: { emit?: (evt: string, e: { message?: string }) => void } } })._settings?.virtualConsole
+  const vc = (window as unknown as {
+    _settings?: { virtualConsole?: { emit?: (evt: string, e: { message?: string; type?: string }) => void } }
+  })._settings?.virtualConsole
   if (vc && typeof vc.emit === 'function') {
     const origEmit = vc.emit.bind(vc)
-    vc.emit = (evt: string, e: { message?: string }) => {
-      if (evt === 'jsdomError' && typeof e?.message === 'string' && e.message.includes('navigation to another Document')) {
-        return
+    vc.emit = (evt: string, e: { message?: string; type?: string }) => {
+      if (evt === 'jsdomError') {
+        if (e?.type === 'css-parsing' || (typeof e?.message === 'string' && e.message.includes('Could not parse CSS stylesheet'))) {
+          return
+        }
+        if (typeof e?.message === 'string' && e.message.includes('navigation to another Document')) {
+          return
+        }
       }
       return origEmit(evt, e)
     }
