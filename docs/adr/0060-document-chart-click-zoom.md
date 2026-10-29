@@ -118,8 +118,8 @@ Related: `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/compo
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/index.css` | `frontend/src/components/Document/ChartEmbed.test.tsx` | 待提交 |
-| P1 | 已落地 | `frontend/tests/e2e/critical/document-chart-embed.spec.ts`、`frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/document-chart-embed.spec.ts` | 待提交 |
+| P0 | 已落地 | `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/index.css` | `frontend/src/components/Document/ChartEmbed.test.tsx` | 40b7233f |
+| P1 | 已落地 | `frontend/tests/e2e/critical/document-chart-embed.spec.ts`、`frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/document-chart-embed.spec.ts` | 40b7233f |
 
 ## 交接（会话结束更新）
 

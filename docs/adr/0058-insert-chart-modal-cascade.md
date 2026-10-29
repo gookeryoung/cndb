@@ -136,9 +136,9 @@ CHART_CATEGORIES = (
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/services/charts/registry.py`（parent 字段、二级分类、三模板迁类、更名 + version 3、载荷层级化） | `tests/test_documents_charts_registry.py`、`tests/test_documents_charts_api.py` | [816d77aa](https://codeup.aliyun.com/cndev/python/cndb/commit/816d77aa) |
-| P1 | 已落地 | `frontend/src/pages/documents/InsertChartModal.tsx`、`frontend/src/api/charts.ts`、`frontend/src/test/msw.ts` | `frontend/src/pages/documents/InsertChartModal.test.tsx` | [816d77aa](https://codeup.aliyun.com/cndev/python/cndb/commit/816d77aa) |
-| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx`、`frontend/tests/e2e/critical/document-chart-embed.spec.ts`、`frontend/tests/e2e/critical/chart-designer-linkage.spec.ts`（全仓旧名 grep 清零） | `frontend/src/pages/documents/ChartDesignerModal.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` | [816d77aa](https://codeup.aliyun.com/cndev/python/cndb/commit/816d77aa) |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/charts/registry.py`（parent 字段、二级分类、三模板迁类、更名 + version 3、载荷层级化） | `tests/test_documents_charts_registry.py`、`tests/test_documents_charts_api.py` | 816d77aa |
+| P1 | 已落地 | `frontend/src/pages/documents/InsertChartModal.tsx`、`frontend/src/api/charts.ts`、`frontend/src/test/msw.ts` | `frontend/src/pages/documents/InsertChartModal.test.tsx` | 816d77aa |
+| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx`、`frontend/tests/e2e/critical/document-chart-embed.spec.ts`、`frontend/tests/e2e/critical/chart-designer-linkage.spec.ts`（全仓旧名 grep 清零） | `frontend/src/pages/documents/ChartDesignerModal.test.tsx`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx` | 816d77aa |
 
 ## 交接（会话结束更新）
 

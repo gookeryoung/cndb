@@ -109,7 +109,7 @@ Related: `Makefile`、`scripts/free_ports.py`、`src/cndb/cli/main.py`
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `scripts/free_ports.py`、`Makefile` | `tests/test_free_ports.py` | 待提交 |
+| P0 | 已落地 | `scripts/free_ports.py`、`Makefile` | `tests/test_free_ports.py` | 4fa9c947 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
