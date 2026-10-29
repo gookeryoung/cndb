@@ -1,6 +1,6 @@
 # ADR 0053: 数据源同步对齐 lmstock 机制（单轮翻页回补 / 主机回退）与示例单序列收敛
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-10-27
 Related: `src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/core/http.py`、`examples/datasets/工作区-数据源示例/`、`src/cndb/cli/seed/datasource.py`、`tests/test_seed_datasource.py`、`docs/requirements/0053-datasource-sync-lmstock-alignment.md`、ADR 0033 / 0034 / 0039 / 0035
 需求卡片: `docs/requirements/0053-datasource-sync-lmstock-alignment.md`（需求原文与约束编号的唯一副本）

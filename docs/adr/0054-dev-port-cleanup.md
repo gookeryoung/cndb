@@ -1,6 +1,6 @@
 # ADR 0054: `make dev` 启动前检查并释放开发端口
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-10-28
 Related: `Makefile`、`scripts/free_ports.py`、`src/cndb/cli/main.py`
 需求卡片: `docs/requirements/0054-dev-port-cleanup.md`
@@ -115,8 +115,8 @@ Related: `Makefile`、`scripts/free_ports.py`、`src/cndb/cli/main.py`
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0（实现与单测完成，待评审回填 Status）
+- 当前阶段：P0（已落地，Status 已确认 Accepted）
 - 已完成：`scripts/free_ports.py`、Makefile `free-dev-ports` / `dev` 前置、`tests/test_free_ports.py`
-- 下一步：人工评审 ADR，确认后 `Status: Proposed` → `Accepted`
+- 下一步：无
 - 已知坑：释放端口不区分进程归属；前端端口在 CLI 中仍固定 5173，若未来支持覆盖需同步 `DEV_PORTS`
 - 最近一次全绿：`make flow` @ 待回填（2026-10-28）

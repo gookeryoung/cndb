@@ -307,7 +307,8 @@ export default function MainLayout() {
 
   // 进入分析/同步/设置段时自动折叠侧栏（记住进入前的折叠偏好，离开时恢复）
   const collapsedBeforeFocusRef = useRef(false)
-  const prevInFocusRef = useRef(inFocusContext)
+  // 初始化为 false：直接落在分析/同步/设置段的首屏也要走一次折叠（含首帧挂载）
+  const prevInFocusRef = useRef(false)
   useEffect(() => {
     if (inFocusContext && !prevInFocusRef.current) {
       collapsedBeforeFocusRef.current = collapsed

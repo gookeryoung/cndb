@@ -1,6 +1,6 @@
 # ADR 0023: 可配置复杂视图模板（dashboard 画布）
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-10-23
 Related: `frontend/src/pages/grid/views/ChartView.tsx`、`frontend/src/pages/grid/views/chartBoard.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/views/viewModes.ts`、`frontend/src/pages/grid/useGridData.ts`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/plugins/tables/models.py`、`src/cndb/plugins/analytics/services/compute.py`、`docs/adr/0022-gallery-view-content-tables.md`
 需求卡片: 无卡片（需求直接立项，原句逐字见 §口径）
