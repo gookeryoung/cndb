@@ -23,6 +23,7 @@ import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useDebouncedValue } from '@/hooks/useDebouncedValue'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useTheme } from '@/theme/ThemeProvider'
 import { chartApi } from '@/api/charts'
 import type { ChartInstance, ChartTemplateInfo } from '@/api/charts'
 import { sanitizeSvg } from '@/components/Document/ChartEmbed'
@@ -172,6 +173,9 @@ export default function ChartDesignerModal({
     staleTime: 5 * 60 * 1000,
   })
   const { isMobile } = useResponsive()
+  const { isDark } = useTheme()
+  /** 联动计算值单元格高亮底色：随主题取色，深色下浅橙底会与浅色文字同化不可读 */
+  const linkedCellBg = isDark ? 'rgba(250, 173, 20, 0.15)' : '#FDF2E4'
 
   const templateKey = target?.kind === 'create' ? target.templateKey : target?.spec.templateKey ?? null
   const template: ChartTemplateInfo | undefined = useMemo(
@@ -585,7 +589,7 @@ export default function ChartDesignerModal({
                                     setCellDraft(row.value ?? null)
                                     setEditingCell(`value:${i}`)
                                   }}
-                                  style={{ width: 110, background: '#FDF2E4', cursor: 'text' }}
+                                  style={{ width: 110, background: linkedCellBg, cursor: 'text' }}
                                   data-linked=""
                                   data-testid={`chart-designer-row-value-${i}`}
                                 />
@@ -625,7 +629,7 @@ export default function ChartDesignerModal({
                                     setCellDraft(growthShow)
                                     setEditingCell(`growth:${i}`)
                                   }}
-                                  style={{ width: 120, background: '#FDF2E4', cursor: 'text' }}
+                                  style={{ width: 120, background: linkedCellBg, cursor: 'text' }}
                                   data-linked=""
                                   data-testid={`chart-designer-row-growth-${i}`}
                                 />
