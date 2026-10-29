@@ -64,7 +64,7 @@ function toTreeNode(node: DocTreeNode): DataNode {
       : <FileTextOutlined />,
     // 可见性提示：未发布的文档同事看不到，明确告知以免误以为"文档丢了"（与旧文档树口径一致）
     title: (
-      <span data-testid={`doc-tree-doc-${node.id}`}>
+      <span title={node.title} data-testid={`doc-tree-doc-${node.id}`}>
         {node.title}
         {node.visibility === 'private' && (
           <Tooltip title="未发布：仅你与工作区所有者可见">

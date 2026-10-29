@@ -150,7 +150,7 @@ describe('WorkspaceList 列表渲染与交互', () => {
     renderWorkspaceList()
 
     expect(await screen.findByText('产品研发')).toBeInTheDocument()
-    const input = screen.getByPlaceholderText('搜索工作区名称/标签...')
+    const input = screen.getByPlaceholderText('搜索工作区名称/标签…')
 
     // 按名称过滤：市场运营卡片消失
     await userEvent.type(input, '产品')
@@ -358,10 +358,10 @@ function restoreViewport() {
   delete (window as unknown as { innerWidth?: number }).innerWidth
 }
 
-/** 获取搜索框外层容器（Input.Search 的 style 落在 group wrapper 上） */
+/** 获取搜索框外层容器（SearchInput 为带 prefix 的 Input，style 落在 affix wrapper 上） */
 function getSearchWrapper(): HTMLElement {
-  const input = screen.getByPlaceholderText('搜索工作区名称/标签...')
-  return input.closest('.ant-input-group-wrapper') as HTMLElement
+  const input = screen.getByPlaceholderText('搜索工作区名称/标签…')
+  return input.closest('.ant-input-affix-wrapper') as HTMLElement
 }
 
 describe('WorkspaceList 移动端适配', () => {
@@ -633,7 +633,7 @@ describe('WorkspaceList 自定义顺序', () => {
 
     expect(await screen.findByTestId('workspace-drag-10')).not.toBeDisabled()
 
-    await userEvent.type(screen.getByPlaceholderText('搜索工作区名称/标签...'), '产品')
+    await userEvent.type(screen.getByPlaceholderText('搜索工作区名称/标签…'), '产品')
     await waitFor(() => expect(screen.getByTestId('workspace-drag-10')).toBeDisabled())
   })
 })

@@ -235,6 +235,7 @@ export default function WorkspaceList() {
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <SearchInput
+                size="middle"
                 placeholder="搜索工作区名称/标签…"
                 style={{ width: isMobile ? '100%' : 260 }}
                 value={search}
