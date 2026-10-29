@@ -85,10 +85,13 @@ body {
   background: transparent;
 }
 
-/* 文本选区：品牌色柔和底，深浅主题自动适配 */
+/* 文本选区：品牌色柔和底，深浅主题自动适配。
+ * ::selection 只应用 background-color 长写属性，部分内核忽略简写，
+ * 故必须写 background-color；透明度低于 30% 在浅色 / 极简主题的白底上
+ * 近乎不可见，统一抬到 32%（与浏览器默认选区亮度对齐）。 */
 ::selection {
-  background: var(--cn-mix-brand-color-26-transparent);
-  background: color-mix(in srgb, var(--cn-brand-color) 26%, transparent);
+  background-color: var(--cn-mix-brand-color-32-transparent, rgba(59, 130, 246, 0.32));
+  background-color: color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
 }
 
 /* 确保 Ant Design Layout 没有默认边距 */
