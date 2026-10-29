@@ -494,6 +494,27 @@ export default function GridPage() {
   const canEditViews = hasAction('edit_views')
   const canManageData = hasAction('manage_data')
 
+  // ── 工作区搜索「表内数据」命中跳转：?row=<id> 定位到对应行 ──
+  // 数据拉取中先等待（避免把「还没到」误判为「不在当前页」）；当前页命中则滚动定位，
+  // 不在当前页（分页/视图过滤）则拉取单行打开详情抽屉；处理完清掉参数避免刷新重复触发
+  const targetRowParam = searchParams.get('row')
+  useEffect(() => {
+    if (!targetRowParam) return
+    if (rowsFetching) return
+    const settle = (r: RowResponse | undefined) => {
+      if (r && mode === 'grid') {
+        try { tableRef.current?.scrollTo({ key: r.id, align: 'top' }) } catch { /* 定位失败不阻断 */ }
+      }
+      if (r) openDetailWithPrefetch(r)
+      const params = new URLSearchParams(searchParams)
+      params.delete('row')
+      setSearchParams(params, { replace: true })
+    }
+    const local = rowList.items?.find(x => String(x.id) === targetRowParam)
+    if (local) { settle(local); return }
+    void recordApi.get(wid!, tid!, targetRowParam).then(settle).catch(() => settle(undefined))
+  }, [targetRowParam, rowsFetching, rowList.items, wid, tid]) // eslint-disable-line react-hooks/exhaustive-deps
+
   /** 新增行激活后自动滚动聚焦 —— tail 跳页时以行数变化为重同步信号，数据到达后二次校准. */
   useNewRowAutoScroll({
     active: newRowActive,

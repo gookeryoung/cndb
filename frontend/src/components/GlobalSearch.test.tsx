@@ -52,11 +52,11 @@ describe('GlobalSearch 顶栏工作区搜索', () => {
     await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/documents/2'))
   })
 
-  it('点击表内数据命中跳到该表', async () => {
+  it('点击表内数据命中跳到该表并携带 ?row 定位参数', async () => {
     renderSearch()
     await typeKeyword('张三')
     fireEvent.click(await screen.findByTestId('global-search-row-100-1'))
-    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/tables/100'))
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/tables/100?row=1'))
   })
 
   it('范围切到「数据表」后只剩数据表分组', async () => {

@@ -189,6 +189,7 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
     setKeyword('')
     if (item.kind === 'doc') navigate(`/w/${workspaceId}/documents/${item.id}`)
     else if (item.kind === 'table') navigate(`/w/${workspaceId}/tables/${item.id}`)
+    else if (item.rowId != null) navigate(`/w/${workspaceId}/tables/${item.tableId}?row=${item.rowId}`)
     else navigate(`/w/${workspaceId}/tables/${item.tableId}`)
     inputRef.current?.blur()
   }, [close, navigate, workspaceId])
