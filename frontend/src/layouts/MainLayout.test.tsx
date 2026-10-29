@@ -9,7 +9,7 @@ import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
 import { renderProviders } from '@/test/render-providers'
-import { mockUser, mockWorkspace, server } from '@/test/msw'
+import { mockDocuments, mockUser, mockWorkspace, server } from '@/test/msw'
 import type { UserResponse, WorkspaceType } from '@/api'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
@@ -668,6 +668,27 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         await waitFor(() => expect(screen.getByTitle('产品文档')).toBeVisible())
         await waitFor(() => expect(screen.getByTitle('需求说明')).toBeVisible())
         await waitFor(() => expect(screen.getByTitle('会议纪要')).toBeVisible())
+    })
+
+    it('未发布锁只标文档不标文件夹：文件夹自身状态恒为草稿，不渲染可见性锁', async () => {
+        // 回归：文件夹与文档共用 Document 模型，status 默认 draft → visibility=private；
+        // 发布子文档不会发布文件夹，锁若不排除文件夹会对已全发布的文件夹误报「未发布」
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/tree', () =>
+                HttpResponse.json({
+                    items: [
+                        { ...mockDocuments[0], visibility: 'private' }, // 文件夹（draft）
+                        { ...mockDocuments[1], visibility: 'private' }, // 文档（draft）
+                    ],
+                }),
+            ),
+        )
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
+        // 私有文档显示锁；文件夹不显示
+        await waitFor(() => expect(screen.getByTestId('doc-visibility-2')).toBeVisible())
+        expect(screen.queryByTestId('doc-visibility-1')).toBeNull()
     })
 
     it('长标题节点单行省略：文本截断、完整标题入 title 提示、尾缀图标不参与截断', async () => {
