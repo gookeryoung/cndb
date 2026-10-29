@@ -719,12 +719,16 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('工作区设置段：不渲染任何侧栏，内容区占满宽度', async () => {
+    it('工作区设置段：侧栏自动折叠为图标条，骨架不消失', async () => {
         renderLayout(mockUser, '/w/10/settings')
 
         await waitFor(() => expect(screen.getByTestId('settings-page-stub')).toBeVisible())
-        expect(document.querySelector('.ant-layout-sider')).toBeNull()
-        expect(screen.queryByTestId('sider-tables')).toBeNull()
+        // Sider 保持挂载并处于折叠态（切换时布局骨架不突然消失）
+        const sider = document.querySelector('.ant-layout-sider')
+        expect(sider).not.toBeNull()
+        expect(sider).toHaveClass('ant-layout-sider-collapsed')
+        // 折叠后仍是数据表导航内容
+        expect(screen.getByTestId('sider-tables')).toBeVisible()
         expect(screen.queryByTestId('sider-documents')).toBeNull()
     })
 

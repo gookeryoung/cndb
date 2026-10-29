@@ -90,10 +90,10 @@ describe('UsersPage 用户管理', () => {
     renderPage()
 
     await screen.findByText('admin_su')
-    const input = screen.getByPlaceholderText('搜索用户名/邮箱/昵称')
+    const input = screen.getByPlaceholderText('搜索用户名/邮箱/昵称…')
     fireEvent.change(input, { target: { value: 'bob' } })
-    // AntD Input.Search：点击搜索按钮触发 onSearch（比模拟回车键更可靠）
-    fireEvent.click(document.querySelector('.ant-input-search-button') as HTMLElement)
+    // SearchInput（0068）无搜索按钮：回车触发 onSearch 下发查询
+    fireEvent.keyDown(input, { key: 'Enter' })
 
     await waitFor(() => {
       const calls = spy.mock.calls.filter(([info]) => new URL(info.request.url).searchParams.get('keyword') === 'bob')
@@ -333,8 +333,8 @@ describe('UsersPage 移动端适配', () => {
     expect(await screen.findByText('admin_su')).toBeInTheDocument()
 
     // 筛选控件整行（避免固定宽度在手机上与相邻控件互相挤压）
-    const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称')
-    expect((searchInput.closest('.ant-input-group-wrapper') as HTMLElement).style.width).toBe('100%')
+    const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称…')
+    expect((searchInput.closest('.ant-input-affix-wrapper') as HTMLElement).style.width).toBe('100%')
 
     // 窄屏不再渲染宽表格：改为卡片列表（一屏一实体，无需左右滑动看角色/操作）
     expect(document.querySelector('.ant-table')).toBeNull()
@@ -347,8 +347,8 @@ describe('UsersPage 移动端适配', () => {
     renderPage()
 
     await screen.findByText('admin_su')
-    const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称')
-    expect((searchInput.closest('.ant-input-group-wrapper') as HTMLElement).style.width).toBe('220px')
+    const searchInput = screen.getByPlaceholderText('搜索用户名/邮箱/昵称…')
+    expect((searchInput.closest('.ant-input-affix-wrapper') as HTMLElement).style.width).toBe('220px')
 
     // 桌面端仍是表格：内容容器横向滚动 + 表格按内容宽度展开（列宽不被压成逐字换行，滚动兜底）
     const content = document.querySelector('.ant-table-content') as HTMLElement

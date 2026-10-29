@@ -287,20 +287,36 @@ export default function MainLayout() {
       : ''
   const activeDocumentSubpage = DOCUMENT_SUBPAGES.find(p => p.key === activeDocumentTab)
 
-  // ── 侧边栏形态：按当前功能段切换（需求 0065）──
+  // ── 侧边栏形态：按当前功能段切换（需求 0065；分析/同步/设置段改为折叠过渡）──
   // documents → 文档侧栏（未选文档=文档列表，已选中=标题大纲）；
-  // analytics / datasource / workspace settings → 无侧栏，内容区占满宽度；
-  // 其余（数据表段）→ 维持数据表导航。表级子页 /tables/:tid/settings 不含 /settings 段前缀，不受影响。
+  // analytics / datasource / workspace settings → Sider 不卸载，自动折叠为图标条，
+  //   减少切换时布局骨架消失的视觉冲击，返回数据表段时恢复用户原有折叠偏好；
+  // 其余（数据表段）→ 维持数据表导航。无 tables 能力的工作区类型仍隐藏侧栏。
+  // 表级子页 /tables/:tid/settings 不含 /settings 段前缀，不受影响。
   const inAnalyticsContext = !!wid && location.startsWith(`/w/${wid}/analytics`)
   const inDatasourceContext = !!wid && location.startsWith(`/w/${wid}/datasource`)
   const inWsSettingsContext = !!wid && location.startsWith(`/w/${wid}/settings`)
+  const inFocusContext = inAnalyticsContext || inDatasourceContext || inWsSettingsContext
   type SiderMode = 'documents' | 'tables' | 'hidden'
   const siderMode: SiderMode =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
-      : (inAnalyticsContext || inDatasourceContext || inWsSettingsContext || !wsFeatures.tables)
-        ? 'hidden'
-        : 'tables'
+      : wsFeatures.tables
+        ? 'tables'
+        : 'hidden'
+
+  // 进入分析/同步/设置段时自动折叠侧栏（记住进入前的折叠偏好，离开时恢复）
+  const collapsedBeforeFocusRef = useRef(false)
+  const prevInFocusRef = useRef(inFocusContext)
+  useEffect(() => {
+    if (inFocusContext && !prevInFocusRef.current) {
+      collapsedBeforeFocusRef.current = collapsed
+      setCollapsed(true)
+    } else if (!inFocusContext && prevInFocusRef.current) {
+      setCollapsed(collapsedBeforeFocusRef.current)
+    }
+    prevInFocusRef.current = inFocusContext
+  }, [inFocusContext, collapsed])
 
   // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
@@ -687,7 +703,8 @@ export default function MainLayout() {
             管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
             侧栏形态随功能段切换（需求 0065）：文档段=文档导航，数据表段=表导航，
-            analytics / datasource / 工作区设置段=无侧栏，内容区拿整幅宽度 */}
+            analytics / datasource / 工作区设置段=表导航自动折叠为图标条（骨架不消失），
+            无 tables 能力的类型不渲染侧栏 */}
         {!isMobile && !inAdminConsole && !inHelpDocs && siderMode !== 'hidden' && (
           <Sider
             collapsible collapsed={collapsed} onCollapse={setCollapsed}

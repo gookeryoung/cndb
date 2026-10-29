@@ -912,7 +912,7 @@ describe('FieldManager 从其他表引入字段', () => {
         await openImportDialogWithSource()
 
         // 过滤"名称" → 可见项只剩 名称
-        fireEvent.change(screen.getByPlaceholderText('按字段名过滤'), { target: { value: '名称' } })
+        fireEvent.change(screen.getByPlaceholderText('过滤字段名…'), { target: { value: '名称' } })
         await waitFor(() => {
             expect(screen.queryByText('金额')).not.toBeInTheDocument()
         })
@@ -925,7 +925,7 @@ describe('FieldManager 从其他表引入字段', () => {
         })
 
         // 清空过滤 → 全选补齐剩余字段（3 个源字段全部可选）
-        fireEvent.change(screen.getByPlaceholderText('按字段名过滤'), { target: { value: '' } })
+        fireEvent.change(screen.getByPlaceholderText('过滤字段名…'), { target: { value: '' } })
         fireEvent.click(screen.getByRole('button', { name: /全\s*选/ }))
         await waitFor(() => {
             expect(screen.getByText(/已选 3\/3/)).toBeInTheDocument()
