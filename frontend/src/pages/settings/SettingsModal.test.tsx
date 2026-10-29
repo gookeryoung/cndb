@@ -64,10 +64,14 @@ describe('SettingsModal 个人设置', () => {
   it('渲染五个 Tab 与全部主题卡片（10 张），主题页含配色与字体两节', () => {
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
-    // 页签顺序：安全紧随用户资料，大模型排在「表格」右侧（顶栏已有直达入口，设置内靠后）
+    // 页签顺序：修改密码已并入用户资料页签，不再单设「安全」
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
-      '用户资料', '安全', '主题', '表格', '大模型',
+      '用户资料', '主题', '表格', '大模型',
     ])
+    // 用户资料页签默认激活，修改密码表单（账号安全节）直接可见
+    const activeTab = document.querySelector('.ant-tabs-tab.ant-tabs-tab-active')
+    expect(activeTab?.textContent).toContain('用户资料')
+    expect(screen.getByText('账号安全')).toBeInTheDocument()
     // 主题卡片惰性渲染，切到主题 Tab 后才能查到
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     const grid = document.querySelector('[data-testid="theme-grid"]')
@@ -232,14 +236,14 @@ describe('SettingsModal 个人设置', () => {
   })
 })
 
-describe('SettingsModal 安全页签（自助改密）', () => {
+describe('SettingsModal 用户资料页签（自助改密）', () => {
   beforeEach(() => {
     localStorage.clear()
     useAuthStore.setState({ user: profileUser, token: 't', loading: false, expired: false })
   })
 
   it('两次新密码不一致时阻止提交并提示', async () => {
-    renderProviders(<SettingsModal open onClose={() => { }} initialTab="security" />, {
+    renderProviders(<SettingsModal open onClose={() => { }} />, {
       initialAuth: { user: profileUser, token: 't' },
     })
 
@@ -254,7 +258,7 @@ describe('SettingsModal 安全页签（自助改密）', () => {
   })
 
   it('新密码与当前密码相同时阻止提交', async () => {
-    renderProviders(<SettingsModal open onClose={() => { }} initialTab="security" />, {
+    renderProviders(<SettingsModal open onClose={() => { }} />, {
       initialAuth: { user: profileUser, token: 't' },
     })
 
@@ -269,7 +273,7 @@ describe('SettingsModal 安全页签（自助改密）', () => {
   })
 
   it('提交成功后清空本地登录态（强制重新登录）', async () => {
-    renderProviders(<SettingsModal open onClose={() => { }} initialTab="security" />, {
+    renderProviders(<SettingsModal open onClose={() => { }} />, {
       initialAuth: { user: profileUser, token: 't' },
     })
 

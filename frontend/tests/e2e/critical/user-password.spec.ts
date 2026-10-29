@@ -49,7 +49,7 @@ test.describe("密码管理", () => {
             await user.page.getByTestId("user-menu-trigger").click();
             await user.page.getByText("个人设置", { exact: true }).click();
 
-            await user.page.getByRole("tab", { name: "安全" }).click();
+            // 修改密码表单在「用户资料」页签内（默认页签），直接可见
             await user.page.getByLabel("当前密码").fill("pw1234");
             await user.page.getByLabel("新密码", { exact: true }).fill("newpass123");
             await user.page.getByLabel("确认新密码").fill("newpass123");

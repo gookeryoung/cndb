@@ -1,4 +1,4 @@
-/** 用户设置面板 — 用户资料 + 主题（配色/字体）+ 表格（显示/操作）+ 大模型（个人连接配置）. */
+/** 用户设置面板 — 用户资料（含修改密码）+ 主题（配色/字体）+ 表格（显示/操作）+ 大模型（个人连接配置）. */
 
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -177,7 +177,7 @@ function ProfilePanel() {
   )
 }
 
-/** 安全分页内容 — 自助修改密码（成功后全部会话失效并强制重新登录） */
+/** 修改密码表单（并入「用户资料」页签下方）— 成功后全部会话失效并强制重新登录 */
 function SecurityPanel({ onClose }: { onClose: () => void }) {
   const { message } = App.useApp()
   const navigate = useNavigate()
@@ -206,6 +206,12 @@ function SecurityPanel({ onClose }: { onClose: () => void }) {
 
   return (
     <div style={{ padding: '12px 0' }}>
+      <div style={{ marginBottom: 12 }}>
+        <Text strong style={{ fontSize: 14 }}>账号安全</Text>
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          自助修改登录密码
+        </Text>
+      </div>
       <Alert
         type="info"
         showIcon
@@ -471,8 +477,8 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
       <Tabs
         defaultActiveKey={initialTab ?? 'profile'}
         items={[
-          { key: 'profile', label: '用户资料', children: <ProfilePanel /> },
-          { key: 'security', label: '安全', children: <SecurityPanel onClose={onClose} /> },
+          // 修改密码表单并入用户资料页签下方，不再单设「安全」页签
+          { key: 'profile', label: '用户资料', children: <><ProfilePanel /><SecurityPanel onClose={onClose} /></> },
           { key: 'theme', label: '主题', children: <ThemePanel /> },
           { key: 'table', label: '表格', children: <TablePanel /> },
           // 大模型入口已在顶栏常驻（桌面图标 / 移动端用户菜单），设置内排在「表格」右侧，避免与高频的资料 / 主题争前排
