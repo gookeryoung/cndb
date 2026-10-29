@@ -8,14 +8,12 @@ import {
   Breadcrumb,
   Button,
   Card,
-  Col,
   Dropdown,
   Empty,
   Input,
   List,
   Modal,
   Popconfirm,
-  Row,
   Select,
   Space,
   Tag,
@@ -695,50 +693,58 @@ export default function DocumentsPage() {
 
       {/* 顶层：系列卡片网格（顶层文件夹即系列）；按标签筛选时隐藏——文件夹本身没有标签，
           与后端 list 端点按 tag_id 过滤后不含文件夹的口径保持一致 */}
+      {/* auto-fill 自适应列数：按容器宽度连续增减，不再固定 3 列 */}
       {parentId === null && tagFilter === undefined && seriesList.length > 0 && (
-        <Row gutter={isMobile ? [12, 12] : [16, 16]} data-testid="doc-series-grid" style={{ marginBottom: 8 }}>
+        <div
+          data-testid="doc-series-grid"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: isMobile ? 12 : 16,
+            marginBottom: 8,
+          }}
+        >
           {seriesList.map(s => (
-            <Col xs={24} sm={12} md={8} key={s.folder.id}>
-              <Card
-                hoverable
-                size="small"
-                data-testid={`doc-series-card-${s.folder.id}`}
-                styles={{ body: { padding: isMobile ? 12 : 16 } }}
-                onClick={() => setParentId(s.folder.id)}
-              >
-                <Space size={8} style={{ marginBottom: 8 }}>
-                  {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
-                  <span onClick={e => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.includes(s.folder.id)}
-                      data-testid={`doc-select-${s.folder.id}`}
-                      aria-label={`选择 ${s.folder.title}`}
-                      onChange={() => toggleSelected(s.folder.id)}
-                    />
-                  </span>
-                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
-                  <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
-                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
-                </Space>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--cn-text-secondary, #666)' }}>
-                  <span>{s.docCount} 篇文档</span>
-                  {s.subFolderCount > 0 && <span>{s.subFolderCount} 个子文件夹</span>}
-                  {s.tagCount > 0 && <span>{s.tagCount} 个标签</span>}
-                </div>
-                <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {Object.entries(s.statusCounts).map(([st, n]) => (
-                    <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} style={{ marginRight: 0 }}>
-                      {STATUS_LABELS[st] ?? st} {n}
-                    </Tag>
-                  ))}
-                  <Text type="secondary" style={{ fontSize: 12, marginLeft: 'auto' }}>
-                    更新 {formatTime(s.latestUpdate)}
-                  </Text>
-                </div>
-              </Card>
-            </Col>
+            <Card
+              key={s.folder.id}
+              hoverable
+              size="small"
+              data-testid={`doc-series-card-${s.folder.id}`}
+              styles={{ body: { padding: isMobile ? 12 : 16 } }}
+              onClick={() => setParentId(s.folder.id)}
+            >
+              <Space size={8} style={{ marginBottom: 8 }}>
+                {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
+                <span onClick={e => e.stopPropagation()}>
+                  <Checkbox
+                    checked={selectedIds.includes(s.folder.id)}
+                    data-testid={`doc-select-${s.folder.id}`}
+                    aria-label={`选择 ${s.folder.title}`}
+                    onChange={() => toggleSelected(s.folder.id)}
+                  />
+                </span>
+                <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
+                <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
+                {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
+              </Space>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--cn-text-secondary, #666)' }}>
+                <span>{s.docCount} 篇文档</span>
+                {s.subFolderCount > 0 && <span>{s.subFolderCount} 个子文件夹</span>}
+                {s.tagCount > 0 && <span>{s.tagCount} 个标签</span>}
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                {Object.entries(s.statusCounts).map(([st, n]) => (
+                  <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} style={{ marginRight: 0 }}>
+                    {STATUS_LABELS[st] ?? st} {n}
+                  </Tag>
+                ))}
+                <Text type="secondary" style={{ fontSize: 12, marginLeft: 'auto' }}>
+                  更新 {formatTime(s.latestUpdate)}
+                </Text>
+              </div>
+            </Card>
           ))}
-        </Row>
+        </div>
       )}
 
       {/* 系列详情头部：图标 + 名称 + 递归统计 + 系列级操作（重命名/移动/删除） */}
