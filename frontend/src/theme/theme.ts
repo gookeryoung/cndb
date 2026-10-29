@@ -8,8 +8,8 @@
 
 import type { ThemeConfig } from 'antd'
 
-import { THEME_MODES } from './meta'
-import type { ThemeMode } from './meta'
+import { THEME_PREFERENCES } from './meta'
+import type { ThemeMode, ThemePreference } from './meta'
 import { RADIUS, radiusFamily } from './tokens'
 import { baseTokens, compactComponents } from './presets/common'
 import {
@@ -27,8 +27,8 @@ import {
   oledTheme,
 } from './presets/dark'
 
-export { THEME_META, THEME_MODES } from './meta'
-export type { ThemeMeta, ThemeMode } from './meta'
+export { THEME_META, THEME_MODES, THEME_PREFERENCES, AUTO_LIGHT, AUTO_DARK } from './meta'
+export type { ThemeMeta, ThemeMode, ThemePreference } from './meta'
 export {
   DEFAULT_FONT_SETTINGS,
   FONT_SCALE_META,
@@ -55,8 +55,9 @@ export const THEMES: Record<ThemeMode, ThemeConfig> = {
 
 /* ─────────────── 持久化 helpers ─────────────── */
 
-/** 默认主题 — loadThemeMode 兜底与主题页「恢复默认」共用单一来源 */
-export const DEFAULT_THEME_MODE: ThemeMode = 'modern'
+/** 默认主题偏好 — loadThemeMode 兜底与主题页「恢复默认」共用单一来源.
+ * 0066 C5：默认「跟随系统」，首次访问按系统明暗解析；用户显式选择后覆盖。 */
+export const DEFAULT_THEME_MODE: ThemePreference = 'auto'
 
 const THEME_KEY = 'cndb_theme'
 
@@ -66,17 +67,17 @@ const LEGACY_MAP: Record<string, ThemeMode> = {
   dark: 'github-dark',
 }
 
-export function loadThemeMode(): ThemeMode {
+export function loadThemeMode(): ThemePreference {
   try {
     const raw = localStorage.getItem(THEME_KEY)
     if (!raw) return DEFAULT_THEME_MODE
     if (raw in LEGACY_MAP) return LEGACY_MAP[raw]
-    if ((THEME_MODES as readonly string[]).includes(raw)) return raw as ThemeMode
+    if ((THEME_PREFERENCES as readonly string[]).includes(raw)) return raw as ThemePreference
   } catch { /* noop */ }
   return DEFAULT_THEME_MODE
 }
 
-export function saveThemeMode(mode: ThemeMode) {
+export function saveThemeMode(mode: ThemePreference) {
   try { localStorage.setItem(THEME_KEY, mode) } catch { /* noop */ }
 }
 

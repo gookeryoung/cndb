@@ -12,12 +12,16 @@ import {
   THEMES,
   THEME_META,
   THEME_MODES,
+  THEME_PREFERENCES,
+  AUTO_LIGHT,
+  AUTO_DARK,
   getThemeConfig,
   loadThemeMode,
   saveThemeMode,
   FONT_SCALES,
   FONT_SCALE_META,
   DEFAULT_FONT_SETTINGS,
+  DEFAULT_THEME_MODE,
   loadFontSettings,
   saveFontSettings,
 } from './theme'
@@ -60,9 +64,34 @@ describe('THEME_MODES / THEME_META / THEMES 结构约束', () => {
   })
 })
 
+describe('THEME_PREFERENCES / auto 虚拟档（0066）', () => {
+  it('偏好集合 = auto + 全部实际主题，且不含重复', () => {
+    expect(THEME_PREFERENCES).toHaveLength(11)
+    expect(THEME_PREFERENCES[0]).toBe('auto')
+    expect(new Set(THEME_PREFERENCES).size).toBe(11)
+    for (const m of THEME_MODES) expect(THEME_PREFERENCES).toContain(m)
+  })
+
+  it('auto 不进 THEME_META / THEMES：虚拟档无 bodyClass 与 ThemeConfig（C2）', () => {
+    expect('auto' in THEME_META).toBe(false)
+    expect('auto' in THEMES).toBe(false)
+  })
+
+  it('auto 落点为 github 同族：浅色 github-light、深色 github-dark（C4）', () => {
+    expect(AUTO_LIGHT).toBe('github-light')
+    expect(AUTO_DARK).toBe('github-dark')
+    expect(THEME_META[AUTO_LIGHT].isDark).toBe(false)
+    expect(THEME_META[AUTO_DARK].isDark).toBe(true)
+  })
+
+  it('默认主题偏好为 auto（C5）', () => {
+    expect(DEFAULT_THEME_MODE).toBe('auto')
+  })
+})
+
 describe('loadThemeMode', () => {
-  it('无存储值时返回默认 modern', () => {
-    expect(loadThemeMode()).toBe('modern')
+  it('无存储值时返回默认 auto（C5）', () => {
+    expect(loadThemeMode()).toBe('auto')
   })
 
   it('兼容 legacy 值：light → modern，dark → github-dark', () => {
@@ -77,16 +106,21 @@ describe('loadThemeMode', () => {
     expect(loadThemeMode()).toBe('sakura')
   })
 
-  it('非法值回退 modern', () => {
-    localStorage.setItem('cndb_theme', 'not-a-theme')
-    expect(loadThemeMode()).toBe('modern')
+  it('auto 偏好值原样返回（C1：localStorage 存 auto 本身）', () => {
+    localStorage.setItem('cndb_theme', 'auto')
+    expect(loadThemeMode()).toBe('auto')
   })
 
-  it('localStorage 抛异常时回退 modern', () => {
+  it('非法值回退默认 auto', () => {
+    localStorage.setItem('cndb_theme', 'not-a-theme')
+    expect(loadThemeMode()).toBe('auto')
+  })
+
+  it('localStorage 抛异常时回退默认 auto', () => {
     vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('storage unavailable')
     })
-    expect(loadThemeMode()).toBe('modern')
+    expect(loadThemeMode()).toBe('auto')
   })
 })
 
@@ -94,6 +128,12 @@ describe('saveThemeMode / getThemeConfig', () => {
   it('saveThemeMode 写入 localStorage', () => {
     saveThemeMode('forest')
     expect(localStorage.getItem('cndb_theme')).toBe('forest')
+  })
+
+  it('saveThemeMode 可写入 auto 并往返一致（C1）', () => {
+    saveThemeMode('auto')
+    expect(localStorage.getItem('cndb_theme')).toBe('auto')
+    expect(loadThemeMode()).toBe('auto')
   })
 
   it('getThemeConfig 返回对应主题配置并注入 Segmented 强对比 token', () => {

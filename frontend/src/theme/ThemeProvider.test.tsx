@@ -6,7 +6,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { screen, render } from '@testing-library/react'
+import { screen, render, act } from '@testing-library/react'
 import { fireEvent } from '@testing-library/react'
 import { ThemeProvider, useTheme } from './ThemeProvider'
 
@@ -36,18 +36,99 @@ function FontProbe() {
   )
 }
 
+/** 可控 matchMedia 桩：返回值可变、change 监听可手动派发（0066 C3 用） */
+function stubMatchMedia(initialDark: boolean) {
+  const listeners = new Set<(e: { matches: boolean }) => void>()
+  let dark = initialDark
+  const mql = {
+    get matches() { return dark },
+    media: '(prefers-color-scheme: dark)',
+    onchange: null,
+    addEventListener: (_: string, cb: (e: { matches: boolean }) => void) => listeners.add(cb),
+    removeEventListener: (_: string, cb: (e: { matches: boolean }) => void) => listeners.delete(cb),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    configurable: true,
+    value: () => mql,
+  })
+  return {
+    setDark(next: boolean) {
+      dark = next
+      listeners.forEach(cb => cb({ matches: next }))
+    },
+  }
+}
+
 describe('ThemeProvider', () => {
-  it('默认渲染 modern 主题，body 挂 theme-modern class，localStorage 持久化默认值', () => {
+  it('默认偏好 auto：按系统浅色解析为 github-light，localStorage 持久化 auto（C1/C4/C5）', () => {
+    stubMatchMedia(false)
+    localStorage.clear()
     render(
       <ThemeProvider>
         <ThemeProbe />
       </ThemeProvider>,
     )
 
-    expect(screen.getByTestId('mode')).toHaveTextContent('modern')
+    expect(screen.getByTestId('mode')).toHaveTextContent('github-light')
     expect(screen.getByTestId('is-dark')).toHaveTextContent('false')
-    expect(document.body).toHaveClass('theme-modern')
-    expect(localStorage.getItem('cndb_theme')).toBe('modern')
+    expect(document.body).toHaveClass('theme-github-light')
+    expect(localStorage.getItem('cndb_theme')).toBe('auto')
+  })
+
+  it('auto + 系统深色：解析为 github-dark', () => {
+    stubMatchMedia(true)
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByTestId('mode')).toHaveTextContent('github-dark')
+    expect(screen.getByTestId('is-dark')).toHaveTextContent('true')
+    expect(document.body).toHaveClass('theme-github-dark')
+    expect(document.body).toHaveClass('theme-dark')
+  })
+
+  it('auto 下系统明暗实时切换：body class 跟随变化（C3）', () => {
+    const media = stubMatchMedia(false)
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    )
+
+    expect(document.body).toHaveClass('theme-github-light')
+    act(() => media.setDark(true))
+    expect(screen.getByTestId('mode')).toHaveTextContent('github-dark')
+    expect(document.body).toHaveClass('theme-github-dark')
+    expect(document.body).not.toHaveClass('theme-github-light')
+    act(() => media.setDark(false))
+    expect(document.body).toHaveClass('theme-github-light')
+  })
+
+  it('显式选择具体主题后系统切换不再影响生效主题（C6）', () => {
+    const media = stubMatchMedia(false)
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <ThemeProbe />
+      </ThemeProvider>,
+    )
+
+    fireEvent.click(screen.getByText('切到 sakura'))
+    expect(document.body).toHaveClass('theme-sakura')
+
+    // 系统切到深色：pref 为具体主题，不跟随
+    act(() => media.setDark(true))
+    expect(screen.getByTestId('mode')).toHaveTextContent('sakura')
+    expect(document.body).toHaveClass('theme-sakura')
+    expect(localStorage.getItem('cndb_theme')).toBe('sakura')
   })
 
   it('切换到深色主题：mode/isDark 更新，body class 切换并保留 theme-dark 兼容标记', () => {

@@ -6,6 +6,7 @@ import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, Ap
 import { useTheme } from '@/theme/ThemeProvider'
 import {
   THEME_META, THEME_MODES, FONT_SCALES, FONT_SCALE_META,
+  type ThemePreference,
   DEFAULT_FONT_SETTINGS, DEFAULT_THEME_MODE,
   type ThemeMode,
 } from '@/theme/theme'
@@ -264,9 +265,9 @@ function SecurityPanel({ onClose }: { onClose: () => void }) {
 /** 主题分页内容 — 配色 + 字体 */
 function ThemePanel() {
   const { message } = App.useApp()
-  const { mode, setMode, font, setFontScale, setFontBold } = useTheme()
+  const { mode, pref, setMode, font, setFontScale, setFontBold } = useTheme()
 
-  // 恢复默认：复用既有 setter 即时持久化（主题 modern / 字号标准 / 不加粗）
+  // 恢复默认：复用既有 setter 即时持久化（偏好跟随系统 auto / 字号标准 / 不加粗）
   const handleReset = () => {
     setMode(DEFAULT_THEME_MODE)
     setFontScale(DEFAULT_FONT_SETTINGS.scale)
@@ -283,12 +284,14 @@ function ThemePanel() {
         </Text>
       </div>
 
+      {/* 「跟随系统」虚拟档（0066 C7）：持久化 auto，生效主题按系统明暗实时解析 */}
       <Radio.Group
-        value={mode}
-        onChange={e => setMode(e.target.value)}
+        value={pref}
+        onChange={e => setMode(e.target.value as ThemePreference)}
         buttonStyle="solid"
         style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8 }}
       >
+        <Radio.Button value="auto">跟随系统</Radio.Button>
         {THEME_MODES.map(m => (
           <Radio.Button key={m} value={m}>
             {THEME_META[m].label}
@@ -296,7 +299,7 @@ function ThemePanel() {
         ))}
       </Radio.Group>
 
-      {/* 卡片式选择（视觉友好） */}
+      {/* 卡片式选择（视觉友好）；pref=auto 时无卡片选中，生效主题见上方回显 */}
       <div
         data-testid="theme-grid"
         style={{
@@ -309,11 +312,18 @@ function ThemePanel() {
           <ThemeCard
             key={m}
             mode={m}
-            selected={mode === m}
+            selected={mode === m && pref === m}
             onSelect={() => setMode(m)}
           />
         ))}
       </div>
+
+      {/* auto 生效回显：当前解析到的实际主题（0066 C7） */}
+      {pref === 'auto' && (
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          跟随系统中：当前按系统明暗使用「{THEME_META[mode].label}」
+        </Text>
+      )}
 
       <div style={{ marginTop: 20, marginBottom: 12 }}>
         <Text strong style={{ fontSize: 14 }}>字体</Text>

@@ -8,21 +8,31 @@ import zhCN from 'antd/locale/zh_CN'
 import {
   getThemeConfig, themeCssVars, loadThemeMode, saveThemeMode,
   loadFontSettings, saveFontSettings,
-  FONT_SCALE_META, THEME_META,
-  type ThemeMode, type FontScale, type FontSettings,
+  FONT_SCALE_META, THEME_META, AUTO_LIGHT, AUTO_DARK,
+  type ThemeMode, type ThemePreference, type FontScale, type FontSettings,
 } from '@/theme/theme'
 import { applyThemeMixVars } from '@/theme/themeMix'
 import { WEIGHT } from '@/theme/tokens'
 
 interface ThemeContextValue {
+  /** 当前生效的实际主题（pref=auto 时为系统解析结果） */
   mode: ThemeMode
-  setMode: (m: ThemeMode) => void
+  /** 持久化的主题偏好（auto / 具体主题）— 设置页与快捷菜单据此回显 */
+  pref: ThemePreference
+  setMode: (m: ThemePreference) => void
   /** 当前主题是否深色 — 方便组件内做针对性分支 */
   isDark: boolean
   /** 字体设置（字号档位 / 全局加粗） */
   font: FontSettings
   setFontScale: (s: FontScale) => void
   setFontBold: (b: boolean) => void
+}
+
+/** 系统当前是否偏好深色 — jsdom / 老内核无 matchMedia 时按浅色兜底. */
+function systemPrefersDark(): boolean {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-color-scheme: dark)').matches
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
@@ -47,7 +57,8 @@ function applyThemeVars(mode: ThemeMode) {
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [mode, setModeState] = useState<ThemeMode>(() => {
+  // 持久化层：用户偏好（auto / 具体主题），localStorage 只存这一层（0066 C1）
+  const [pref, setPrefState] = useState<ThemePreference>(() => {
     const m = loadThemeMode()
     // 首次进入时把默认值也持久化，保证 localStorage 始终有值
     try {
@@ -57,10 +68,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     return m
   })
 
-  const setMode = useCallback((m: ThemeMode) => {
-    setModeState(m)
+  // 系统层：pref=auto 时按系统明暗解析生效主题；change 事件实时跟随（0066 C3）
+  const [systemDark, setSystemDark] = useState<boolean>(systemPrefersDark)
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mql = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = (e: MediaQueryListEvent) => setSystemDark(e.matches)
+    mql.addEventListener('change', onChange)
+    return () => mql.removeEventListener('change', onChange)
+  }, [])
+
+  const setMode = useCallback((m: ThemePreference) => {
+    setPrefState(m)
     saveThemeMode(m)
   }, [])
+
+  // 生效主题：auto 按系统解析（C4），具体偏好原样生效（C6）
+  const mode: ThemeMode = pref === 'auto' ? (systemDark ? AUTO_DARK : AUTO_LIGHT) : pref
 
   const [font, setFontState] = useState<FontSettings>(loadFontSettings)
 
@@ -98,8 +123,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const isDark = THEME_META[mode].isDark
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ mode, setMode, isDark, font, setFontScale, setFontBold }),
-    [mode, setMode, isDark, font, setFontScale, setFontBold],
+    () => ({ mode, pref, setMode, isDark, font, setFontScale, setFontBold }),
+    [mode, pref, setMode, isDark, font, setFontScale, setFontBold],
   )
 
   const baseConfig = getThemeConfig(mode)

@@ -19,6 +19,21 @@ export const THEME_MODES = [
 ] as const
 export type ThemeMode = (typeof THEME_MODES)[number]
 
+/* ─────────────── 持久化偏好（需求 0066）：虚拟档 auto + 实际主题 ─────────────── */
+
+/** 可持久化的主题偏好 = 「跟随系统」虚拟档 + 10 套实际主题.
+ *
+ * auto 不是一套主题：不进 THEME_META（无 bodyClass）、无 ThemeConfig，
+ * 由 ThemeProvider 按 prefers-color-scheme 实时解析为 AUTO_LIGHT / AUTO_DARK。
+ */
+export const THEME_PREFERENCES = ['auto', ...THEME_MODES] as const
+export type ThemePreference = ThemeMode | 'auto'
+
+/** auto 的浅色落点 — 与深色落点同族（github-*），避免两态观感割裂（0066 C4） */
+export const AUTO_LIGHT: ThemeMode = 'github-light'
+/** auto 的深色落点（0066 C4） */
+export const AUTO_DARK: ThemeMode = 'github-dark'
+
 export interface ThemeMeta {
   id: ThemeMode
   label: string
