@@ -4795,13 +4795,17 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-doc-tree .ant-tree-switcher {
-  width: 16px;
+  width: 10px;
   height: 22px;
   line-height: 22px;
   /* 展开箭头：静态不占视觉，整行悬停或键盘聚焦时才显现（点击整行即可展开，见 expandAction="click"）。
      静态下每行只剩「图标 + 标题」，左侧不再有按钮感 */
   opacity: 0;
   transition: opacity 0.12s ease;
+}
+
+.cn-doc-tree .ant-tree-switcher .ant-tree-switcher-icon {
+  margin: 0;
 }
 
 .cn-doc-tree .ant-tree-treenode:hover .ant-tree-switcher,
@@ -4822,7 +4826,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-doc-tree .ant-tree-node-content-wrapper {
   height: 22px;
   line-height: 22px;
-  padding-inline: var(--cn-space-hairline);
+  padding-inline: 0;
   overflow: hidden;
 }
 
