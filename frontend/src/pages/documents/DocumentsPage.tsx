@@ -16,6 +16,7 @@ import {
   Modal,
   Popconfirm,
   Row,
+  Select,
   Space,
   Tag,
   Tooltip,
@@ -170,6 +171,13 @@ export default function DocumentsPage() {
       }),
     // 子级列表走 list 端点；顶层散文档由全量树派生（list 不传 parent_id 会返回全部层级）
     enabled: Number.isFinite(workspaceId) && parentId !== null,
+  })
+
+  // 标签筛选选项（需求 0065：筛选控件在内容区顶部）
+  const tagsQuery = useQuery({
+    queryKey: ['documents', workspaceId, 'tags'],
+    queryFn: () => documentsApi.tags(workspaceId),
+    enabled: Number.isFinite(workspaceId),
   })
 
   const invalidate = useCallback(() => {
@@ -473,6 +481,33 @@ export default function DocumentsPage() {
       onChange={e => setTitleKeyword(e.target.value)}
     />
   )
+  /** 标签 / 状态筛选（需求 0065 第二次修订）：写 URL（?tag=&status=），与 parent / order 同机制 */
+  const renderTagSelect = (style: CSSProperties) => (
+    <Select
+      allowClear
+      placeholder="标签"
+      style={style}
+      value={tagFilter}
+      data-testid="doc-tag-filter"
+      onChange={(v?: number) => updateParams({ tag: v ?? null })}
+      options={(tagsQuery.data ?? []).map(tag => ({ value: tag.id, label: tag.name }))}
+    />
+  )
+  const renderStatusSelect = (style: CSSProperties) => (
+    <Select
+      allowClear
+      placeholder="状态"
+      style={style}
+      value={statusFilter}
+      data-testid="doc-status-filter"
+      onChange={(v?: string) => updateParams({ status: v ?? null })}
+      options={[
+        { value: 'draft', label: '草稿' },
+        { value: 'published', label: '已发布' },
+        { value: 'archived', label: '归档' },
+      ]}
+    />
+  )
   /** 窄屏次级操作：收录进「更多」菜单，避免顶栏折成三行 */
   const mobileToolbarMenu: MenuProps['items'] = [
     { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
@@ -495,9 +530,11 @@ export default function DocumentsPage() {
               <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
             </Dropdown>
           </div>
-          {/* 第二行：搜索 + 新建（筛选 / 排序已移入侧栏，需求 0065） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {renderSearchInput({ flex: 1, minWidth: 0 })}
+          {/* 第二行：搜索 + 标签/状态筛选 + 新建（需求 0065：筛选在内容区顶部，列表排序在侧栏） */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {renderSearchInput({ flex: 1, minWidth: 120 })}
+            {renderTagSelect({ width: 110 })}
+            {renderStatusSelect({ width: 100 })}
             <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建</Button>
           </div>
         </div>
@@ -509,6 +546,8 @@ export default function DocumentsPage() {
           </Space>
           <Space wrap>
             {renderSearchInput({ width: 180 })}
+            {renderTagSelect({ width: 130 })}
+            {renderStatusSelect({ width: 110 })}
             <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
               回收站
             </Button>

@@ -11,13 +11,17 @@ import {
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
-  RobotOutlined, FolderFilled, FileTextOutlined, ReloadOutlined,
+  RobotOutlined, FolderFilled, FileTextOutlined, ReloadOutlined, SortAscendingOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
 import { DOCUMENT_ORDER_OPTIONS, type DocumentOrder } from '@/pages/documents/documentSort'
+import {
+  describeSort, DOC_SORT_OPTIONS, readDocSort, sortDocTree, sortToValue, valueToSort, writeDocSort,
+  type DocSort,
+} from '@/pages/documents/docTreeSort'
 import GlobalSearch from '@/components/GlobalSearch'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
@@ -61,6 +65,18 @@ function toTreeNode(node: DocTreeNode): DataNode {
     docNode: node,
     children: node.children.map(toTreeNode),
   } as DataNode
+}
+
+/** 树标题过滤：保留命中节点及其祖先链（空关键词返回原树） */
+function filterDocTree(nodes: DocTreeNode[], keyword: string): DocTreeNode[] {
+  const kw = keyword.trim().toLowerCase()
+  if (!kw) return nodes
+  const walk = (node: DocTreeNode): DocTreeNode | null => {
+    const children = node.children.map(walk).filter((c): c is DocTreeNode => c !== null)
+    if (node.title.toLowerCase().includes(kw) || children.length > 0) return { ...node, children }
+    return null
+  }
+  return nodes.map(walk).filter((n): n is DocTreeNode => n !== null)
 }
 
 /** 内容区骨架 —— 懒加载页面在 Content 内挂起时的占位，避免整页高度跳动 */
@@ -161,45 +177,27 @@ export default function MainLayout() {
     enabled: !!wid && wsFeatures.documents && inDocumentsContext,
   })
   const docTree = useMemo(() => buildDocTree(docsTreeData ?? []), [docsTreeData])
-  // 侧栏筛选控件（需求 0065）：排序 / 标签 / 状态写 URL（?order=&tag=&status=），与文档列表页同源
+  // 侧栏列表排序（需求 0065）：写 URL ?order=，文档列表页同源生效
   const docOrderParam = searchParams.get('order') as DocumentOrder | null
   const docOrderBy: DocumentOrder = DOCUMENT_ORDER_OPTIONS.some(o => o.value === docOrderParam)
     ? (docOrderParam as DocumentOrder)
     : 'sort'
-  const docTagParam = searchParams.get('tag')
-  const docTagFilter = docTagParam !== null && docTagParam !== '' && !Number.isNaN(Number(docTagParam))
-    ? Number(docTagParam)
-    : undefined
-  const docStatusParam = searchParams.get('status')
-  const docStatusFilter = ['draft', 'published', 'archived'].includes(docStatusParam ?? '')
-    ? (docStatusParam as string)
-    : undefined
-  const { data: docTags } = useQuery({
-    queryKey: ['documents', wid, 'tags'],
-    queryFn: () => documentsApi.tags(Number(wid)),
-    enabled: !!wid && wsFeatures.documents && inDocumentsContext,
-  })
-  const updateDocParams = useCallback((patch: { order?: DocumentOrder; tag?: number | null; status?: string | null }) => {
+  const updateDocOrder = useCallback((order: DocumentOrder) => {
     setSearchParams(prev => {
       const next = new URLSearchParams(prev)
-      if (patch.order !== undefined) {
-        if (patch.order === 'sort') next.delete('order')
-        else next.set('order', patch.order)
-      }
-      if (patch.tag !== undefined) {
-        if (patch.tag === null) next.delete('tag')
-        else next.set('tag', String(patch.tag))
-      }
-      if (patch.status !== undefined) {
-        if (patch.status === null) next.delete('status')
-        else next.set('status', patch.status)
-      }
+      if (order === 'sort') next.delete('order')
+      else next.set('order', order)
       return next
     }, { replace: true })
   }, [setSearchParams])
   const refreshDocs = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ['documents', wid] })
   }, [queryClient, wid])
+  // 树排序偏好（沿用原页面内左树的 docTreeSort 口径）：本地偏好 localStorage，不进 URL
+  const [docSort, setDocSort] = useState<DocSort>(() => readDocSort())
+  useEffect(() => { writeDocSort(docSort) }, [docSort])
+  // 树标题过滤（原页面内左树能力）：命中节点及其祖先链保留
+  const [docTreeKeyword, setDocTreeKeyword] = useState('')
   // 编辑器路由参数：仅纯数字为真实文档 id（静态子页段不会落入 docId，此处双保险）
   const activeDocId = docId && /^\d+$/.test(docId) ? docId : undefined
   // 树展开态：用户展开/收起前按「当前文档祖先链 + 一级文件夹」自动展开；交互后以手动状态为准
@@ -490,7 +488,9 @@ export default function MainLayout() {
    * 编辑器视图下同样显示该树并高亮当前文档（大纲仍由编辑器右侧大纲栏承担，侧栏不再显示大纲）。 */
   const renderDocumentNav = (mobile: boolean, collapsed = false) => {
     if (!wid) return null
-    const treeData: DataNode[] = docTree.map(toTreeNode)
+    // 树排序（文件夹恒在前，参考 Obsidian）+ 标题过滤后转 antd 节点
+    const sortedTree = sortDocTree(docTree, docSort)
+    const treeData: DataNode[] = filterDocTree(sortedTree, docTreeKeyword).map(toTreeNode)
     return (
       <div data-testid="sider-documents" className="cn-table-nav">
         <div style={{
@@ -509,42 +509,47 @@ export default function MainLayout() {
         </div>
         {collapsed ? null : (
           <>
-            {/* 排序 / 标签 / 状态筛选（需求 0065）：写 URL 参数，文档列表页同源生效 */}
+            {/* 树排序（本地偏好）+ 标题过滤（原页面内左树能力，0065 移入侧栏）+ 列表排序（URL） */}
             <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)', display: 'grid', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Dropdown
+                  menu={{
+                    items: DOC_SORT_OPTIONS.map(o => ({ key: o.value, label: o.label })),
+                    selectable: true,
+                    selectedKeys: [sortToValue(docSort)],
+                    onClick: ({ key }) => setDocSort(valueToSort(key)),
+                  }}
+                  trigger={['click']}
+                >
+                  <Tooltip title={`排序：${describeSort(docSort)}`}>
+                    <Button
+                      size="small"
+                      icon={<SortAscendingOutlined />}
+                      aria-label={`排序方式：${describeSort(docSort)}`}
+                      data-testid="doc-tree-sort"
+                      style={{ flexShrink: 0 }}
+                    />
+                  </Tooltip>
+                </Dropdown>
+                <Input
+                  size="small"
+                  allowClear
+                  prefix={<SearchOutlined />}
+                  placeholder="过滤标题"
+                  value={docTreeKeyword}
+                  onChange={e => setDocTreeKeyword(e.target.value)}
+                  data-testid="doc-tree-filter"
+                  style={{ flex: 1, minWidth: 0 }}
+                />
+              </div>
               <Select
                 size="small"
                 style={{ width: '100%' }}
                 value={docOrderBy}
                 data-testid="doc-order-select"
-                onChange={(v: DocumentOrder) => updateDocParams({ order: v })}
+                onChange={updateDocOrder}
                 options={DOCUMENT_ORDER_OPTIONS}
               />
-              <div style={{ display: 'flex', gap: 6 }}>
-                <Select
-                  size="small"
-                  allowClear
-                  placeholder="标签"
-                  style={{ flex: 1, minWidth: 0 }}
-                  value={docTagFilter}
-                  data-testid="doc-tag-filter"
-                  onChange={(v?: number) => updateDocParams({ tag: v ?? null })}
-                  options={(docTags ?? []).map(tag => ({ value: tag.id, label: tag.name }))}
-                />
-                <Select
-                  size="small"
-                  allowClear
-                  placeholder="状态"
-                  style={{ flex: 1, minWidth: 0 }}
-                  value={docStatusFilter}
-                  data-testid="doc-status-filter"
-                  onChange={(v?: string) => updateDocParams({ status: v ?? null })}
-                  options={[
-                    { value: 'draft', label: '草稿' },
-                    { value: 'published', label: '已发布' },
-                    { value: 'archived', label: '归档' },
-                  ]}
-                />
-              </div>
             </div>
             {docsTreeReady && treeData.length === 0 ? (
               <div className="cn-state">

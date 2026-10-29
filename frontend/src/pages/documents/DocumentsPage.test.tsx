@@ -531,12 +531,12 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     // 桌面常显的次级按钮不再直接渲染
     expect(screen.queryByTestId('doc-trash-open')).toBeNull()
     expect(screen.queryByTestId('doc-file-import')).toBeNull()
-    // 只剩导航行 + 搜索/新建行；筛选控件不在页面（由侧栏承担）
+    // 只剩导航行 + 搜索/筛选/新建行；列表排序控件在侧栏（?order=），不在页面
     expect(toolbar.children).toHaveLength(2)
-    expect(screen.queryByTestId('doc-toolbar-filter')).toBeNull()
     expect(screen.queryByTestId('doc-order-select')).toBeNull()
-    expect(screen.queryByTestId('doc-tag-filter')).toBeNull()
-    expect(screen.queryByTestId('doc-status-filter')).toBeNull()
+    // 标签 / 状态筛选在内容区顶部（需求 0065 第二次修订）
+    expect(within(toolbar).getByTestId('doc-tag-filter')).toBeVisible()
+    expect(within(toolbar).getByTestId('doc-status-filter')).toBeVisible()
     // 搜索、新建仍可用
     expect(within(toolbar).getByPlaceholderText('本页标题过滤')).toBeVisible()
     expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
