@@ -118,12 +118,14 @@ class TestTerminate:
     def test_posix_sends_term_then_kill(self, monkeypatch: pytest.MonkeyPatch) -> None:
         sent: list[tuple[int, int]] = []
         monkeypatch.setattr(free_ports.sys, "platform", "linux")
+        # Windows 的 signal 模块没有 SIGKILL，stub 一个等价值供 posix 分支引用
+        monkeypatch.setattr(free_ports.signal, "SIGKILL", 9, raising=False)
         monkeypatch.setattr(free_ports.os, "kill", lambda pid, sig: sent.append((pid, sig)))
 
         free_ports._terminate(111)
         free_ports._terminate(111, force=True)
 
-        assert sent == [(111, signal.SIGTERM), (111, signal.SIGKILL)]
+        assert sent == [(111, signal.SIGTERM), (111, 9)]
 
     def test_win32_uses_taskkill_tree(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[list[str]] = []
