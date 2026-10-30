@@ -12,9 +12,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
-def _run(tmp_path: Path, **extra: str) -> subprocess.CompletedProcess[str]:
+def _run(tmp_path: Path, *, payload_bytes: bytes = b"payload", **extra: str) -> subprocess.CompletedProcess[str]:
     payload = tmp_path / "payload.tgz"
-    payload.write_bytes(b"payload")
+    payload.write_bytes(payload_bytes)
     output = tmp_path / "cmd.sh"
     env = {
         "PATH": "/usr/bin:/bin",
@@ -76,7 +76,7 @@ class TestTatCommandSources:
         result = _run(tmp_path, CNDB_SOURCES=profile)
 
         assert result.returncode == 0, result.stderr
-        assert "1 条部署命令" in result.stdout
+        assert "1 条部署命令" in (result.stdout or "")
         # 每条命令（含最后一条）都必须在 TAT 的 64 KiB Content 上限内
         for f in _output_files(tmp_path):
             assert len(f.read_text(encoding="utf-8").encode("utf-8")) <= 48 * 1024
@@ -87,8 +87,7 @@ class TestTatPayloadChunking:
 
     def test_chunks_reassemble_to_payload_base64(self, tmp_path: Path) -> None:
         payload_bytes = bytes(range(256)) * 300  # 约 75 KB，超过单条上限，必然分片
-        (tmp_path / "payload.tgz").write_bytes(payload_bytes)
-        result = _run(tmp_path)
+        result = _run(tmp_path, payload_bytes=payload_bytes)
 
         assert result.returncode == 0, result.stderr
         files = _output_files(tmp_path)
