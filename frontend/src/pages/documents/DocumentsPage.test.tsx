@@ -566,6 +566,42 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     await screen.findByTestId('doc-series-detail')
     await waitFor(() => expect(statuses[statuses.length - 1]).toBe('draft'))
   })
+
+  it('移动端列表行：长文件名单行省略，状态/锁标签移入描述行', async () => {
+    const longTitle = '这是一个非常长的文档标题用于验证手机端列表单行省略显示不再折行错位'
+    server.use(
+      http.get('/api/v1/workspaces/10/documents', () =>
+        HttpResponse.json({
+          items: [{ ...mockDocuments[1], id: 2, title: longTitle, visibility: 'private' }],
+          total: 1,
+        }),
+      ),
+    )
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    await screen.findByTestId('doc-series-detail')
+    const list = screen.getByTestId('doc-list')
+    const strongNode = within(list).getByText(longTitle)
+    // Text strong 渲染为 <span class="cn-doc-title-ellipsis"><strong>文本</strong></span>，
+    // 文本节点命中内层 strong，断言挂到外层省略 span 上
+    const title = strongNode.closest('.cn-doc-title-ellipsis')
+    expect(title).not.toBeNull()
+    expect(title).toHaveAttribute('title', longTitle)
+    // 状态标签不消失，移到描述行；锁标签收敛为纯图标（语义保留在 aria-label）
+    // 注：Space 的 item 包装层与标签文本相同，用 getAllByText 断言存在即可
+    expect(within(list).getAllByText('草稿').length).toBeGreaterThan(0)
+    expect(within(list).getByTestId('doc-list-visibility-2')).toHaveAttribute('aria-label', '仅自己可见')
+    // 行内操作按钮全部保留（重命名/移动/置顶/删除）
+    expect(within(list).getByTestId('doc-row-rename-2')).toBeInTheDocument()
+    expect(within(list).getByTestId('doc-row-move-2')).toBeInTheDocument()
+    expect(within(list).getByTestId('doc-row-pin-2')).toBeInTheDocument()
+    expect(within(list).getByTestId('doc-row-delete-2')).toBeInTheDocument()
+  })
 })
 
 describe('文档列表边缘线与行操作', () => {
@@ -581,6 +617,17 @@ describe('文档列表边缘线与行操作', () => {
   it('列表容器挂 GitHub 式边缘线样式类', async () => {
     renderPage()
     expect(await screen.findByTestId('doc-list')).toHaveClass('cn-doc-list')
+  })
+
+  it('桌面端列表行保持换行布局：标题不走单行省略，状态标签留在标题行', async () => {
+    renderPage()
+    // 文本节点命中内层 strong，取外层 Typography span 断言桌面口径
+    const title = (await screen.findByText('需求说明')).closest('.ant-typography')
+    expect(title).not.toBeNull()
+    expect(title).not.toHaveClass('cn-doc-title-ellipsis')
+    expect(title).not.toHaveAttribute('title')
+    // 状态标签与标题同行（桌面口径不变；两行均为草稿态，取全部匹配）
+    expect(screen.getAllByText('草稿').length).toBeGreaterThan(0)
   })
 
   it('行内重命名：回填原标题，提交 PATCH title', async () => {

@@ -3512,6 +3512,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     max-width: 92vw !important;
   }
 
+  /* 列表行尾操作区（回收站抽屉等）：收窄与主内容的间距，避免长标题被挤溢出；
+     antd 运行时注入同字段规则且晚于本表，需 !important 覆盖 */
+  .ant-list .ant-list-item .ant-list-item-action {
+    margin-inline-start: var(--cn-space-sm) !important;
+  }
+
   /* 顶部 Header 两侧留白收窄，给内容让出横向空间 */
   .ant-layout-header {
     padding: 0 var(--cn-space-md) !important;
@@ -5129,6 +5135,65 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 .cn-doc-list .ant-list-item-action-split {
   display: none;
+}
+
+/* ─────────────── 文档标题单行省略（移动端长文件名适配） ───────────────
+ * 标题行用 flex 布局：标题占满剩余宽度截断（完整名在 title 悬停提示 / aria 可读），
+ * 置顶标签等尾缀不参与截断。与 antd Space 视觉等价（gap 对齐 Space size=8）。 */
+.cn-doc-row-title-line {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+.cn-doc-title-ellipsis {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── 窄屏（< 768px）：文档列表行紧凑化 ──
+ * 行内四枚操作图标与标题争宽是长文件名显示异常的根因之一：
+ * 这里同步收紧行内边距、头像间距与操作区间距，给单行省略标题让出空间。 */
+@media (max-width: 767.98px) {
+  .cn-doc-list.ant-list-split .ant-list-item {
+    padding: var(--cn-space-sm) var(--cn-space-md);
+    padding-inline-start: var(--cn-space-lg);
+  }
+
+  /* antd 运行时注入同字段规则且晚于本表，需 !important 单点覆盖（同上方桌面端口径） */
+  .cn-doc-list .ant-list-item .ant-list-item-meta-avatar {
+    margin-inline-end: var(--cn-space-sm) !important;
+  }
+
+  .cn-doc-list .ant-list-item .ant-list-item-action {
+    margin-inline-start: var(--cn-space-sm) !important;
+  }
+
+  .cn-doc-list .ant-list-item .ant-list-item-action > li {
+    padding-inline: var(--cn-space-hairline) !important;
+  }
+
+  /* 「最近打开」条：单行横滑（容器已 overflow-x:auto），单条超长标题省略 */
+  .cn-doc-recent .ant-space.ant-space-wrap {
+    flex-wrap: nowrap;
+  }
+
+  .cn-doc-recent .ant-btn {
+    max-width: 56vw;
+  }
+
+  .cn-doc-recent .ant-btn > span {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
 }
 
 /* ─────────────── 图片字段（展示 / 编辑） ───────────────

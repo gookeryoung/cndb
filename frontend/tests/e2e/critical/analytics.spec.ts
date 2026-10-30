@@ -22,6 +22,15 @@ async function gotoAnalytics(page: any, query = "") {
   await expect(page.getByTestId("analytics-page")).toBeVisible({ timeout: 10_000 })
 }
 
+/** 打开分析页区块开关：默认仅启用「可视化」，计算模板 / 分组汇总需手动开启（0e887219） */
+async function enableAnalyticsBlocks(page: any, keys: Array<"formula" | "summary">) {
+  for (const key of keys) {
+    const btn = page.getByTestId(`analytics-block-toggle-${key}`)
+    // aria-pressed 标识当前状态：已开启则不重复点击
+    if ((await btn.getAttribute("aria-pressed")) !== "true") await btn.click()
+  }
+}
+
 /** 选择 antd Select 的某个选项（下拉在 body 上渲染，需单独定位） */
 async function pickSelectOption(page: any, selectTestId: string, optionText: string) {
   await page.getByTestId(selectTestId).click()
@@ -48,6 +57,7 @@ test.describe("数据分析模块", () => {
 
   test("加载预置模板「批次合格率分布」→ 运行 → 图表与描述统计", async ({ page }) => {
     await gotoAnalytics(page)
+    await enableAnalyticsBlocks(page, ["formula", "summary"])
 
     // seed 已为该工作区预置 2 个分析模板
     await pickSelectOption(page, "analytics-template-select", "批次合格率分布")
@@ -76,6 +86,7 @@ test.describe("数据分析模块", () => {
 
   test("非法公式实时校验：拒绝非白名单表达式并禁用运行", async ({ page }) => {
     await gotoAnalytics(page)
+    await enableAnalyticsBlocks(page, ["formula"])
 
     await pickSelectOption(page, "analytics-table-select", "产品批次")
 
@@ -88,6 +99,7 @@ test.describe("数据分析模块", () => {
 
   test("合法公式可运行：按公式键生成派生列", async ({ page }) => {
     await gotoAnalytics(page)
+    await enableAnalyticsBlocks(page, ["formula"])
 
     await pickSelectOption(page, "analytics-table-select", "产品批次")
     await page.getByTestId("analytics-formula-expr-0").fill("round([合格数] / [实际产量] * 100, 1)")
@@ -103,6 +115,7 @@ test.describe("数据分析模块", () => {
   test("深链 ?template=<id>：刷新后自动回填公式与分组汇总配置", async ({ page, request }) => {
     const templateId = await getTemplateId(request, "批次合格率分布")
     await gotoAnalytics(page, `?template=${templateId}`)
+    await enableAnalyticsBlocks(page, ["formula", "summary"])
 
     await expect(page.getByTestId("analytics-formula-expr-0")).toHaveValue(
       "round([合格数] / [实际产量] * 100, 2)",
@@ -118,6 +131,7 @@ test.describe("数据分析模块", () => {
   test("分组汇总：运行后生成按产品类别分组的汇总表，可导出 CSV", async ({ page, request }) => {
     const templateId = await getTemplateId(request, "批次合格率分布")
     await gotoAnalytics(page, `?template=${templateId}`)
+    await enableAnalyticsBlocks(page, ["summary"])
 
     await page.getByTestId("analytics-run-btn").click()
     const summary = page.getByTestId("analytics-summary-table")
@@ -140,6 +154,7 @@ test.describe("数据分析模块", () => {
   test("图表聚合方式：切到柱状图后可选择「平均」并运行", async ({ page, request }) => {
     const templateId = await getTemplateId(request, "批次合格率分布")
     await gotoAnalytics(page, `?template=${templateId}`)
+    await enableAnalyticsBlocks(page, ["formula"])
 
     await pickSelectOption(page, "analytics-chart-type", "柱状图")
     const agg = page.getByTestId("analytics-chart-aggregation")
@@ -208,6 +223,7 @@ test.describe("分析通用化 · 窗口函数", () => {
 
   test("输入 ma() 后出现分区 / 排序选择器，运行后生成公式列", async ({ page }) => {
     await gotoAnalytics(page)
+    await enableAnalyticsBlocks(page, ["formula"])
     await pickSelectOption(page, "analytics-table-select", "产品批次")
 
     await page.getByTestId("analytics-formula-expr-0").fill("round(ma([实际产量], 2), 1)")

@@ -703,20 +703,39 @@ export default function DocumentsPage() {
               styles={{ body: { padding: isMobile ? 12 : 16 } }}
               onClick={() => setParentId(s.folder.id)}
             >
-              <Space size={8} style={{ marginBottom: 8 }}>
-                {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
-                <span onClick={e => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selectedIds.includes(s.folder.id)}
-                    data-testid={`doc-select-${s.folder.id}`}
-                    aria-label={`选择 ${s.folder.title}`}
-                    onChange={() => toggleSelected(s.folder.id)}
-                  />
-                </span>
-                <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
-                <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
-                {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
-              </Space>
+              {isMobile ? (
+                /* 移动端：标题单行省略（完整名在 title 悬停提示），避免长系列名把卡片撑高、标签折行错位 */
+                <div className="cn-doc-row-title-line" style={{ marginBottom: 8 }}>
+                  <span onClick={e => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.includes(s.folder.id)}
+                      data-testid={`doc-select-${s.folder.id}`}
+                      aria-label={`选择 ${s.folder.title}`}
+                      onChange={() => toggleSelected(s.folder.id)}
+                    />
+                  </span>
+                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
+                  <Text strong className="cn-doc-title-ellipsis" title={s.folder.title} style={{ fontSize: 15 }}>
+                    {s.folder.title}
+                  </Text>
+                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
+                </div>
+              ) : (
+                <Space size={8} style={{ marginBottom: 8 }}>
+                  {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
+                  <span onClick={e => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.includes(s.folder.id)}
+                      data-testid={`doc-select-${s.folder.id}`}
+                      aria-label={`选择 ${s.folder.title}`}
+                      onChange={() => toggleSelected(s.folder.id)}
+                    />
+                  </span>
+                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
+                  <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
+                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
+                </Space>
+              )}
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--cn-text-secondary, #666)' }}>
                 <span>{s.docCount} 篇文档</span>
                 {s.subFolderCount > 0 && <span>{s.subFolderCount} 个子文件夹</span>}
@@ -911,47 +930,85 @@ export default function DocumentsPage() {
                   </Space>
                 }
                 title={
-                  <Space size={8}>
-                    <Text strong>{doc.title}</Text>
-                    {doc.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${doc.id}`}>置顶</Tag>}
-                    <Tag color={STATUS_COLORS[doc.status]}>{STATUS_LABELS[doc.status]}</Tag>
-                    {/* 可见性提示：未发布的文档同事看不到，明确告知以免误以为文档丢失 */}
-                    {doc.visibility === 'private' && (
-                      <Tooltip title="未发布：仅你与工作区所有者可见">
-                        <Tag
-                          icon={<LockOutlined />}
-                          data-testid={`doc-list-visibility-${doc.id}`}
-                          aria-label="仅自己可见"
-                          style={{ fontSize: 11, lineHeight: '18px' }}
-                        >
-                          仅自己可见
-                        </Tag>
-                      </Tooltip>
-                    )}
-                    {doc.tag_ids.length > 0 && (
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {doc.tag_ids.length} 个标签
-                      </Text>
-                    )}
-                  </Space>
+                  isMobile ? (
+                    /* 移动端：长文件名单行省略（完整名在 title 悬停提示），状态/锁标签移入描述行，
+                       给标题让出横向空间（需求：手机端长文件名列表显示异常） */
+                    <div className="cn-doc-row-title-line">
+                      <Text strong className="cn-doc-title-ellipsis" title={doc.title}>{doc.title}</Text>
+                      {doc.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${doc.id}`}>置顶</Tag>}
+                    </div>
+                  ) : (
+                    <Space size={8}>
+                      <Text strong>{doc.title}</Text>
+                      {doc.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${doc.id}`}>置顶</Tag>}
+                      <Tag color={STATUS_COLORS[doc.status]}>{STATUS_LABELS[doc.status]}</Tag>
+                      {/* 可见性提示：未发布的文档同事看不到，明确告知以免误以为文档丢失 */}
+                      {doc.visibility === 'private' && (
+                        <Tooltip title="未发布：仅你与工作区所有者可见">
+                          <Tag
+                            icon={<LockOutlined />}
+                            data-testid={`doc-list-visibility-${doc.id}`}
+                            aria-label="仅自己可见"
+                            style={{ fontSize: 11, lineHeight: '18px' }}
+                          >
+                            仅自己可见
+                          </Tag>
+                        </Tooltip>
+                      )}
+                      {doc.tag_ids.length > 0 && (
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {doc.tag_ids.length} 个标签
+                        </Text>
+                      )}
+                    </Space>
+                  )
                 }
                 description={
-                  <Space size={16} wrap>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      更新于 {formatTime(doc.updated_at)}
-                    </Text>
-                    {!doc.is_folder && (
-                      <>
-                        <Text type="secondary" style={{ fontSize: 12 }}>{formatSize(doc.content_size)}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>v{doc.version_count}</Text>
-                      </>
-                    )}
-                    {doc.summary && (
-                      <Text type="secondary" style={{ fontSize: 12, maxWidth: 480 }} ellipsis>
-                        {doc.summary}
+                  isMobile ? (
+                    /* 移动端：状态与可见性标签收到描述行（锁标签收敛为纯图标，语义保留在 aria-label），
+                       摘要行省去，保持两行紧凑行高 */
+                    <Space size={8} wrap>
+                      <Tag color={STATUS_COLORS[doc.status]} style={{ marginInlineEnd: 0 }}>
+                        {STATUS_LABELS[doc.status]}
+                      </Tag>
+                      {doc.visibility === 'private' && (
+                        <Tooltip title="未发布：仅你与工作区所有者可见">
+                          <Tag
+                            icon={<LockOutlined />}
+                            data-testid={`doc-list-visibility-${doc.id}`}
+                            aria-label="仅自己可见"
+                            style={{ fontSize: 11, lineHeight: '18px', marginInlineEnd: 0 }}
+                          />
+                        </Tooltip>
+                      )}
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        更新于 {formatTime(doc.updated_at)}
                       </Text>
-                    )}
-                  </Space>
+                      {!doc.is_folder && (
+                        <>
+                          <Text type="secondary" style={{ fontSize: 12 }}>{formatSize(doc.content_size)}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>v{doc.version_count}</Text>
+                        </>
+                      )}
+                    </Space>
+                  ) : (
+                    <Space size={16} wrap>
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        更新于 {formatTime(doc.updated_at)}
+                      </Text>
+                      {!doc.is_folder && (
+                        <>
+                          <Text type="secondary" style={{ fontSize: 12 }}>{formatSize(doc.content_size)}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>v{doc.version_count}</Text>
+                        </>
+                      )}
+                      {doc.summary && (
+                        <Text type="secondary" style={{ fontSize: 12, maxWidth: 480 }} ellipsis>
+                          {doc.summary}
+                        </Text>
+                      )}
+                    </Space>
+                  )
                 }
               />
             </List.Item>

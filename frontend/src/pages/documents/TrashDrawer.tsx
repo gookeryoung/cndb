@@ -74,7 +74,16 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
           ) : (
             <List
               dataSource={trashQuery.data?.items ?? []}
-              renderItem={(item: TrashItem) => (
+              renderItem={(item: TrashItem) => {
+                /* 行首格式图标：文件夹固定文件夹图标，文档按格式取形（docFormat 单点维护） */
+                const headIcon = item.is_folder ? (
+                  <FolderOutlined style={{ flexShrink: 0 }} />
+                ) : (() => {
+                  const fmt = formatMeta(item.content_type)
+                  const FormatIcon = fmt.Icon
+                  return <FormatIcon aria-label={`格式：${fmt.label}`} style={{ color: fmt.color, flexShrink: 0 }} />
+                })()
+                return (
                 <List.Item
                   key={item.id}
                   data-testid={`doc-trash-item-${item.id}`}
@@ -108,18 +117,18 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
                 >
                   <List.Item.Meta
                     title={
-                      <Space size={6}>
-                        {item.is_folder ? (
-                          <FolderOutlined />
-                        ) : (
-                          (() => {
-                            const fmt = formatMeta(item.content_type)
-                            const FormatIcon = fmt.Icon
-                            return <FormatIcon aria-label={`格式：${fmt.label}`} style={{ color: fmt.color }} />
-                          })()
-                        )}
-                        <Text strong>{item.title}</Text>
-                      </Space>
+                      isMobile ? (
+                        /* 移动端：长文件名单行省略（完整名在 title 悬停提示），与文档列表行同口径 */
+                        <span className="cn-doc-row-title-line">
+                          {headIcon}
+                          <Text strong className="cn-doc-title-ellipsis" title={item.title}>{item.title}</Text>
+                        </span>
+                      ) : (
+                        <Space size={6}>
+                          {headIcon}
+                          <Text strong>{item.title}</Text>
+                        </Space>
+                      )
                     }
                     description={
                       <Text type="secondary" style={{ fontSize: 12 }}>
@@ -129,7 +138,8 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
                     }
                   />
                 </List.Item>
-              )}
+                )
+              }}
             />
           )}
     </Drawer>
