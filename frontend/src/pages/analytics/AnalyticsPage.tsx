@@ -20,12 +20,12 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import {
-  App as AntApp, Alert, Button, Empty, Input, Modal, Select,
-  Space, Tag, Tooltip, Typography,
+  App as AntApp, Alert, Button, Empty, Input, Modal, Select, Space,
+  Tag, Tooltip, Typography,
 } from 'antd'
 import {
   DeleteOutlined, SaveOutlined, BarChartOutlined, PlayCircleOutlined, CopyOutlined, EditOutlined,
-  UnorderedListOutlined, DatabaseOutlined,
+  UnorderedListOutlined, DatabaseOutlined, GroupOutlined, FunctionOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, useLlmConfigured } from '@/api'
