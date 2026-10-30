@@ -231,6 +231,8 @@ export function FormulaPanel({
               onKeyDown={e => {
                 if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                   e.preventDefault()
+                  // 阻断冒泡：页面级全局快捷键也监听同键位，避免触发两次
+                  e.stopPropagation()
                   if (canRun && !running) onRun()
                 }
               }}

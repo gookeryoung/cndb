@@ -616,6 +616,18 @@ export default function AnalyticsPage() {
     computeMutation.mutate()
   }, [canRun, computeMutation])
 
+  // ── 全局快捷键：Win/⌘/Ctrl + Enter 运行分析（公式输入框内的同键位已在 FormulaPanel 内处理并阻断冒泡）──
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        runAnalysis()
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [runAnalysis])
+
   // 有未保存修改时，关闭/刷新页面前给浏览器原生提示
   useEffect(() => {
     if (!dirty) return
@@ -779,16 +791,18 @@ export default function AnalyticsPage() {
               />
             </Tooltip>
           )}
-          <Button
-            type="primary"
-            data-testid="analytics-run-btn"
-            icon={<PlayCircleOutlined />}
-            loading={computeMutation.isPending}
-            disabled={!canRun}
-            onClick={runAnalysis}
-          >
-            运行分析
-          </Button>
+          <Tooltip title="Win / ⌘ / Ctrl + Enter">
+            <Button
+              type="primary"
+              data-testid="analytics-run-btn"
+              icon={<PlayCircleOutlined />}
+              loading={computeMutation.isPending}
+              disabled={!canRun}
+              onClick={runAnalysis}
+            >
+              运行分析
+            </Button>
+          </Tooltip>
           {!tableId && <Text type="secondary" className="cn-an-run-hint">请先选择分析表</Text>}
           {!!tableId && validFormulas.length === 0 && (
             <Text type="secondary" className="cn-an-run-hint">请至少填写一条公式</Text>

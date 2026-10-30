@@ -370,6 +370,32 @@ describe('AnalyticsPage', () => {
     await waitFor(() => expect(computeBodies).toHaveLength(1))
   })
 
+  it('全局 Win/⌘/Ctrl+Enter 触发运行分析（含公式输入外）', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
+
+    // Win 键在浏览器中上报为 metaKey：在非公式输入处按键也能运行
+    fireEvent.keyDown(window, { key: 'Enter', metaKey: true })
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+
+    // 不满足运行条件（无公式）时不触发：清空后按键不产生新请求
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+  })
+
+  it('公式输入内 Ctrl/Cmd+Enter 只触发一次（阻断冒泡，不叠加全局监听）', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
+
+    fireEvent.keyDown(screen.getByTestId('analytics-formula-expr-0'), { key: 'Enter', metaKey: true })
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+    // 无第二次请求（若未阻断冒泡会被全局监听再触发一次）
+    fireEvent.keyDown(screen.getByTestId('analytics-formula-expr-0'), { key: 'Enter', metaKey: true })
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+  })
+
   it('分析范围：设置起止值后请求体带扫描过滤', async () => {
     renderPage('/w/1/analytics?template=7')
     await waitTemplateLoaded()
