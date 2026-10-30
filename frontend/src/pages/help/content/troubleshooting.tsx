@@ -114,7 +114,7 @@ const faq: HelpTopic = {
                     label: '数据存在哪里？',
                     body: (
                         <P>
-                            cndb 是自托管应用，数据存储在服务器本地的 SQLite 数据库中；
+                            晶格协同是自托管应用，数据存储在服务器本地的 SQLite 数据库中；
                             打包安装版存放在系统用户数据目录（如 Windows 的 %APPDATA%\cndb）。
                         </P>
                     ),

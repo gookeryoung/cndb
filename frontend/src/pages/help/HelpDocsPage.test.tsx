@@ -41,7 +41,7 @@ describe('HelpDocsPage 桌面端', () => {
     it('/help 默认落到首个主题，并渲染两级导航', async () => {
         renderHelp('/help')
 
-        expect(await screen.findByRole('heading', { name: '认识 cndb' })).toBeVisible()
+        expect(await screen.findByRole('heading', { name: '认识晶格协同' })).toBeVisible()
         const aside = screen.getByTestId('help-docs-aside')
         expect(aside).toBeVisible()
         for (const section of HELP_SECTIONS) {
@@ -49,7 +49,7 @@ describe('HelpDocsPage 桌面端', () => {
             expect(within(aside).getByText(section.label)).toBeInTheDocument()
         }
         // 二级主题也能展开看到；当前主题选中
-        const current = screen.getByRole('menuitem', { name: '认识 cndb' })
+        const current = screen.getByRole('menuitem', { name: '认识晶格协同' })
         expect(current.className).toContain('ant-menu-item-selected')
     })
 
@@ -73,7 +73,7 @@ describe('HelpDocsPage 桌面端', () => {
     it('未知 section / topic 回落到首个主题', async () => {
         renderHelp('/help/nope/nope')
 
-        expect(await screen.findByRole('heading', { name: '认识 cndb' })).toBeVisible()
+        expect(await screen.findByRole('heading', { name: '认识晶格协同' })).toBeVisible()
     })
 
     it('「重新播放新手引导」发出 requestTour 信号', async () => {
@@ -144,7 +144,7 @@ describe('HelpDocsPage 窄屏', () => {
 
         expect(screen.queryByTestId('help-docs-aside')).toBeNull()
         expect(screen.queryByTestId('help-docs-toc')).toBeNull()
-        expect(await screen.findByRole('heading', { name: '认识 cndb' })).toBeVisible()
+        expect(await screen.findByRole('heading', { name: '认识晶格协同' })).toBeVisible()
 
         fireEvent.click(screen.getByTestId('help-docs-menu-btn'))
         expect(await screen.findByTestId('help-docs-nav-drawer')).toBeVisible()

@@ -1,6 +1,6 @@
 /** 帮助文档 · 快速入门（ADR 0036）.
  *
- * 三个主题：认识 cndb（概念）/ 十分钟上手（流程）/ 界面导航（入口速查）。
+ * 四个主题：认识晶格协同（概念）/ 设计理念（为什么这样做）/ 十分钟上手（流程）/ 界面导航（入口速查）。
  * 面向初次使用者：短句、动词开头，说清「做什么 + 得到什么」。
  */
 
@@ -10,8 +10,8 @@ import { Bullets, HelpLink, Note, P, Strong } from './primitives'
 
 const overview: HelpTopic = {
     key: 'overview',
-    label: '认识 cndb',
-    intro: <P>cndb 是自托管的数据与文档协作工具：把表格数据、文档和基于它们的视图放在同一个工作区里管理。</P>,
+    label: '认识晶格协同',
+    intro: <P>晶格协同（cndb）是自托管的数据与文档协作工具：把表格数据、文档和基于它们的视图放在同一个工作区里管理。</P>,
     subsections: [
         {
             key: 'concepts',
@@ -79,7 +79,7 @@ const overview: HelpTopic = {
                 <Bullets
                     items={[
                         <>
-                            <Strong>快速入门</Strong>：第一次使用，先看概念与五步流程。
+                            <Strong>快速入门</Strong>：第一次使用，先看概念与理念，再照五步流程走一遍。
                         </>,
                         <>
                             <Strong>教程&amp;最佳实践</Strong>：具体功能怎么配、怎么用才不出错。
@@ -95,6 +95,118 @@ const overview: HelpTopic = {
                         </>,
                     ]}
                 />
+            ),
+        },
+    ],
+}
+
+const philosophy: HelpTopic = {
+    key: 'philosophy',
+    label: '设计理念',
+    intro: (
+        <P>
+            cndb 的功能设计遵循几条一以贯之的原则。理解它们，就能解释你在产品里看到的大多数行为——为什么这样做、
+            以及换一种需求时该去哪里找。
+        </P>
+    ),
+    subsections: [
+        {
+            key: 'principles',
+            label: '五条原则',
+            summary: '每条原则对应一类你在产品里能直接感知的行为。',
+            items: [
+                {
+                    key: 'data-first',
+                    label: '数据为中心',
+                    body: (
+                        <P>
+                            数据表是整个系统的地基：字段有类型、行列有结构，文档、视图、图表都围绕表展开。
+                            数据如晶格般规整排列、彼此关联——link 字段建立表与表的引用，文档与图表再把这些数据讲成结论。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'views-not-data',
+                    label: '一份数据，多种呈现',
+                    body: (
+                        <P>
+                            筛选、排序、字段显隐与视图配置都保存在「视图」上，任何视图操作都不修改原始数据。
+                            同一张表可以有表格、看板、日历、甘特图、K 线、图表等多种读法，彼此互不影响；要改数据，回到单元格与行详情。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'doc-data-bridge',
+                    label: '数据与文档互通',
+                    body: (
+                        <P>
+                            文档不是孤立的文本：正文里可以用 <Strong>{'{{table:表名}}'}</Strong> 引用实时数据表、
+                            用 <Strong>{'{{chart:编号}}'}</Strong> 内嵌图表、用 <Strong>[[标题]]</Strong> 双向链接其他文档。
+                            数据更新后文档里的呈现随之更新，结论与数据始终同源。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'declarative',
+                    label: '声明式配置，不写代码',
+                    body: (
+                        <P>
+                            复杂能力以「填配置」的方式开放：字段类型决定录入与校验行为；数据源同步只需声明请求、解析、
+                            幂等键与调度四要素，即可把外部数据周期性接入同一张表；分析由公式、图表与分组汇总组合而成，无需开发。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'graduated-collaboration',
+                    label: '分级协作，写入有轨',
+                    body: (
+                        <P>
+                            成员分所有者 / 编辑者 / 查看者三级；写入遵循「双轨制」——有编辑权的人直编直存，
+                            查看者的修改自动转为修改申请，由所有者 / 编辑者审批后生效。问题清单则承接反馈与提问，
+                            让协作有迹可循。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'in-product',
+            label: '理念如何落到产品',
+            summary: '把原则对应到具体功能，遇到需求时按图索骥。',
+            body: (
+                <Bullets
+                    items={[
+                        <>
+                            想换一种看数据的方式 → 建视图，而不是改数据：
+                            <HelpLink section="tutorials" topic="view-types">视图类型</HelpLink>。
+                        </>,
+                        <>
+                            想把外部数据接进来 → 配置数据源同步任务，而不是手工搬运：
+                            <HelpLink section="configuration" topic="datasource">数据源同步</HelpLink>。
+                        </>,
+                        <>
+                            想沉淀分析结论 → 数据分析出图表，文档引用实时数据表：
+                            <HelpLink section="tutorials" topic="analytics" anchor="entry">数据分析与图表</HelpLink>、
+                            <HelpLink section="tutorials" topic="documents">文档</HelpLink>。
+                        </>,
+                        <>
+                            想控制谁能改什么 → 三级角色叠加表级授权，越权写入自动转修改申请：
+                            <HelpLink section="tutorials" topic="roles" anchor="model">权限与角色</HelpLink>。
+                        </>,
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'boundaries',
+            label: '边界与取舍',
+            summary: '理念也决定了产品「不做什么」，避免错误预期。',
+            body: (
+                <Note>
+                    cndb 是自托管系统：数据与部署都由你自己掌握，备份恢复、离线部署是一等公民；
+                    但也因此，浏览器基线只承诺 Chrome / Edge 81+，不承诺 Firefox / Safari。
+                    领域专属的数据接入不做进通用适配器，而是沉淀为领域模板与推荐提示词——通用框架稳定，领域能力外挂。
+                </Note>
             ),
         },
     ],
@@ -284,4 +396,4 @@ const uiTour: HelpTopic = {
     ],
 }
 
-export const quickStartTopics: HelpTopic[] = [overview, workflow, uiTour]
+export const quickStartTopics: HelpTopic[] = [overview, philosophy, workflow, uiTour]

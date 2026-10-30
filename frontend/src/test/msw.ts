@@ -213,7 +213,7 @@ export const mockHelpFigures: HelpFigureList = {
 export const mockChartSvg =
   '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" data-chart-sample="1"><title>样例图表</title><rect width="720" height="480" fill="#FBFAF5"/></svg>'
 
-/** 两级模板清单：与后端 templates_payload() 同构（层级化类别 × 3 模板，默认配置取精简样例） */
+/** 两级模板清单：与后端 templates_payload() 同构（层级化类别 × 既有 3 模板 + 新类型样例，默认配置取精简样例） */
 export const mockChartTemplates: ChartTemplatesPayload = {
   categories: [
     {
@@ -225,6 +225,22 @@ export const mockChartTemplates: ChartTemplatesPayload = {
         { key: 'comparison-bar-h', name: '对比-条形', description: '条形类对比图', parent: 'comparison' },
       ],
     },
+    {
+      key: 'trend',
+      name: '趋势分析',
+      description: '指标随时间或顺序的变化走势',
+      children: [
+        { key: 'trend-line', name: '趋势-折线', description: '多系列折线走势图', parent: 'trend' },
+      ],
+    },
+    {
+      key: 'composition',
+      name: '结构构成',
+      description: '整体中各部分的构成与变化',
+      children: [
+        { key: 'composition-pie', name: '构成-饼图', description: '饼图 / 环形占比图', parent: 'composition' },
+      ],
+    },
   ],
   templates: [
     {
@@ -234,6 +250,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
       description: '柱（左轴主值，实际 / 测算两色）+ 折线（右轴次值），含规划期分界带与图注增速联动',
       row_min: 2,
       row_max: 24,
+      row_kind: 'dual-axis',
       row_columns: [
         { key: 'label', type: 'text', label: '年份' },
         { key: 'value', type: 'number', label: '主值（左轴）', required: true },
@@ -251,6 +268,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
         { key: 'unitLeft', label: '左轴单位' },
         { key: 'unitRight', label: '右轴单位' },
       ],
+      style_fields: [],
       default_config: {
         caption: {
           no: '图 2-1',
@@ -287,6 +305,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
       description: '行 × 系列堆叠的水平条形，宽段内置白字、窄段外置标签，行尾自动合计',
       row_min: 1,
       row_max: 12,
+      row_kind: 'series',
       row_columns: [
         { key: 'label', type: 'text', label: '行' },
         { key: 'values', type: 'number[]', label: '系列值', required: true },
@@ -294,6 +313,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
       series_min: 1,
       series_max: 6,
       label_fields: [],
+      style_fields: [],
       default_config: {
         caption: { no: '图 3-1', context: '', title: '产业结构变化', subtitle: '单位：亿元', note: '' },
         labels: { series: ['整车', '零部件', '服务'], unitX: '亿元' },
@@ -313,6 +333,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
       description: '类别 × 两系列（现状 / 目标）成组水平条，组内双条数值标签，横轴上限自动扩展',
       row_min: 1,
       row_max: 14,
+      row_kind: 'series',
       row_columns: [
         { key: 'label', type: 'text', label: '类别' },
         { key: 'values', type: 'number[]', label: '系列值', required: true },
@@ -320,6 +341,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
       series_min: 2,
       series_max: 2,
       label_fields: [],
+      style_fields: [],
       default_config: {
         caption: { no: '图 4-1', context: '', title: '本地配套率现状与目标', subtitle: '单位：%', note: '' },
         labels: { series: ['2025年现状', '2030年目标'], unitX: '%' },
@@ -328,6 +350,138 @@ export const mockChartTemplates: ChartTemplatesPayload = {
           rows: [
             { label: '隔膜', values: [0, 35] },
             { label: '车规芯片', values: [8, 25] },
+          ],
+        },
+      },
+    },
+    {
+      key: 'line-vivid',
+      category: 'trend-line',
+      name: '折线图 · 明快数据',
+      description: '多系列折线走势并带数值标签，明快配色，适配数据分析与项目总结',
+      row_min: 2,
+      row_max: 24,
+      row_kind: 'series',
+      row_columns: [
+        { key: 'label', type: 'text', label: '横轴' },
+        { key: 'values', type: 'number[]', label: '系列值', required: true },
+      ],
+      series_min: 1,
+      series_max: 6,
+      label_fields: [{ key: 'unitY', label: '纵轴单位' }],
+      style_fields: [
+        { key: 'showMarkers', label: '显示数据点' },
+        { key: 'showValues', label: '显示数值标签' },
+      ],
+      default_config: {
+        caption: { no: '图 5-1', context: '', title: '新能源汽车产量走势', subtitle: '单位：万辆', note: '' },
+        labels: { series: ['纯电动', '插电混动'], unitY: '万辆' },
+        theme: { palette: ['#4E79A7', '#F28E2B', '#59A14F'], paper: '#FFFFFF' },
+        style: { showMarkers: true, showValues: true },
+        data: {
+          rows: [
+            { label: '2023', values: [568, 158] },
+            { label: '2024', values: [689, 228] },
+            { label: '2025', values: [762, 310] },
+          ],
+        },
+      },
+    },
+    {
+      key: 'pie-business',
+      category: 'composition-pie',
+      name: '饼图 · 商务蓝',
+      description: '扇形占比 + 右侧图例清单，藏蓝商务配色，适配汇报演示场景',
+      row_min: 2,
+      row_max: 12,
+      row_kind: 'value',
+      row_columns: [
+        { key: 'label', type: 'text', label: '名称' },
+        { key: 'value', type: 'number', label: '数值', required: true },
+      ],
+      series_min: 0,
+      series_max: 0,
+      label_fields: [],
+      style_fields: [
+        { key: 'donut', label: '环形样式' },
+        { key: 'showPercent', label: '显示百分比' },
+      ],
+      default_config: {
+        caption: { no: '图 5-4', context: '', title: '产业营业收入构成', subtitle: '单位：亿元', note: '' },
+        labels: {},
+        theme: { palette: ['#1E3D57', '#5C7283', '#8FA3B8', '#7C9A8C', '#B98A2F', '#6B4A7A'], paper: '#F6F8FA' },
+        style: { donut: false, showPercent: true },
+        data: {
+          rows: [
+            { label: '整车制造', value: 1250 },
+            { label: '零部件配套', value: 480 },
+            { label: '充换电服务', value: 210 },
+          ],
+        },
+      },
+    },
+    {
+      key: 'pie-donut',
+      category: 'composition-pie',
+      name: '环形图 · 明快数据',
+      description: '环形样式带中心合计读数，明快配色，适配数据分析与项目总结',
+      row_min: 2,
+      row_max: 12,
+      row_kind: 'value',
+      row_columns: [
+        { key: 'label', type: 'text', label: '名称' },
+        { key: 'value', type: 'number', label: '数值', required: true },
+      ],
+      series_min: 0,
+      series_max: 0,
+      label_fields: [],
+      style_fields: [
+        { key: 'donut', label: '环形样式' },
+        { key: 'showPercent', label: '显示百分比' },
+      ],
+      default_config: {
+        caption: { no: '图 5-4', context: '', title: '产业营业收入构成', subtitle: '单位：亿元', note: '' },
+        labels: {},
+        theme: { palette: ['#4E79A7', '#F28E2B', '#59A14F', '#E15759', '#76B7B2', '#EDC948'], paper: '#FFFFFF' },
+        style: { donut: true, showPercent: true },
+        data: {
+          rows: [
+            { label: '整车制造', value: 1250 },
+            { label: '零部件配套', value: 480 },
+            { label: '充换电服务', value: 210 },
+          ],
+        },
+      },
+    },
+    {
+      key: 'scatter-trend',
+      category: 'distribution-scatter',
+      name: '散点图 · 趋势关联',
+      description: '散点 + 最小二乘趋势参考线，明快配色，适配数据分析与项目总结',
+      row_min: 3,
+      row_max: 60,
+      row_kind: 'xy',
+      row_columns: [
+        { key: 'x', type: 'number', label: '横轴值', required: true },
+        { key: 'y', type: 'number', label: '纵轴值', required: true },
+      ],
+      series_min: 0,
+      series_max: 0,
+      label_fields: [
+        { key: 'unitX', label: '横轴单位' },
+        { key: 'unitY', label: '纵轴单位' },
+      ],
+      style_fields: [{ key: 'showTrend', label: '显示趋势参考线' }],
+      default_config: {
+        caption: { no: '图 5-5', context: '', title: '研发投入与新产品收入关联分析', subtitle: '', note: '' },
+        labels: { unitX: '研发投入（万元）', unitY: '新产品收入（万元）' },
+        theme: { palette: ['#4E79A7', '#F28E2B', '#59A14F'], paper: '#FFFFFF' },
+        style: { showTrend: true },
+        data: {
+          rows: [
+            { x: 120, y: 380 },
+            { x: 240, y: 700 },
+            { x: 480, y: 1320 },
           ],
         },
       },
@@ -708,7 +862,7 @@ export const handlers = [
   // 系统基本信息（登录即可，普通用户可查看）
   http.get('/api/v1/system/about', () =>
     HttpResponse.json({
-      app_name: '晶格',
+      app_name: '晶格协同',
       app_version: '0.3.0',
       auth_enabled: true,
       timezone: 'UTC',

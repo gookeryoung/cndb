@@ -14,7 +14,7 @@ from cndb.core.config import BASE_DIR, STATIC_DIR, Settings, _get_version
 def test_defaults() -> None:
     """默认值应符合预期."""
     s = Settings()
-    assert s.APP_NAME == "晶格"
+    assert s.APP_NAME == "晶格协同"
     assert s.DEBUG is True
     assert s.API_V1_PREFIX == "/api/v1"
     assert s.AUTH_ENABLED is True

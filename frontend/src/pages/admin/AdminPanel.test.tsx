@@ -29,7 +29,7 @@ afterEach(() => {
 })
 
 const INFO = {
-  app_name: '晶格',
+  app_name: '晶格协同',
   app_version: '1.2.3',
   database_url: 'sqlite:///data/cndb.db',
   upload_dir: '/data/uploads',
@@ -82,7 +82,7 @@ describe('AdminPanel 系统管理台', () => {
     // 用户管理为首个 Tab，系统信息需手动切换
     await activateTab(/系\s*统\s*信\s*息/)
     expect(await screen.findByText('应用名称')).toBeInTheDocument()
-    expect(screen.getByText('晶格')).toBeInTheDocument()
+    expect(screen.getByText('晶格协同')).toBeInTheDocument()
     expect(screen.getByText('sqlite:///data/cndb.db')).toBeInTheDocument()
   })
 

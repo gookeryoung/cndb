@@ -644,7 +644,7 @@ export default function MainLayout() {
             <BrandMark size={24} />
             {!isMobile && (
               <>
-                <span className="cn-brand-word">晶格</span>
+                <span className="cn-brand-word">晶格协同</span>
                 {systemAbout?.app_version && (
                   <span
                     className="cn-brand-version"

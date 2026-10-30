@@ -138,7 +138,7 @@ class Settings(BaseSettings):
     - STATIC_DIR（前端静态资源）→ 只读，指向包内 cndb/static（随包分发）
     """
 
-    APP_NAME: str = "晶格"
+    APP_NAME: str = "晶格协同"
     APP_VERSION: str = _get_version()
     DEBUG: bool = True
 

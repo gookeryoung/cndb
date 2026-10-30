@@ -29,7 +29,7 @@ export default function LoginPage() {
         <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 12 }}>
           <BrandMark size={44} />
         </div>
-        <Title level={3} style={{ marginBottom: 4 }}>晶格</Title>
+        <Title level={3} style={{ marginBottom: 4 }}>晶格协同</Title>
         <Text type="secondary">登录以继续</Text>
       </div>
       <Form layout="vertical" onFinish={onFinish} initialValues={{ remember: true }}>

@@ -79,7 +79,7 @@ export default function RegisterPage() {
           <BrandMark size={44} />
         </div>
         <Title level={3} style={{ marginBottom: 4 }}>创建账号</Title>
-        <Text type="secondary">加入晶格，开始构建你的数据工作区</Text>
+        <Text type="secondary">加入晶格协同，开始构建你的数据工作区</Text>
       </div>
       <Form<RegisterFormValues>
         form={form}
