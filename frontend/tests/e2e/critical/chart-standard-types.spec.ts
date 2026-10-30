@@ -35,11 +35,12 @@ async function expectEmbedded(page: Page) {
 
 /** 打开插入图表弹窗并基于模板新建（ADR 0058：多级列表 + 右栏新建）.
  *
- * 模板 → 一级分类映射（0070：手风琴默认只展开首个分类，其余需先点开） */
+ * 模板 → 一级分类映射（0070：手风琴默认只展开首个分类，其余需先点开）。
+ * 0073 起主题变体合并为规范模板，插入弹窗只展示规范 key（变体不再列出）。 */
 const TEMPLATE_CATEGORY: Record<string, string> = {
-  "line-vivid": "趋势分析",
-  "pie-donut": "结构构成",
-  "scatter-trend": "分布关联",
+  line: "趋势分析",
+  pie: "结构构成",
+  scatter: "分布关联",
 };
 
 async function openDesigner(page: Page, templateKey: string) {
@@ -67,7 +68,7 @@ test.describe("标准图表类型与预设模板库", () => {
 
     await page.goto(`/w/${wid}/documents/${docId}`);
     await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
-    await openDesigner(page, "line-vivid");
+    await openDesigner(page, "line");
 
     // C1/C3：设计器按系列模板初始化（系列名 / 纵轴单位 / 样式开关）
     await expect(page.getByTestId("chart-designer-series-name-0")).toHaveValue("纯电动", { timeout: 20_000 });
@@ -107,7 +108,7 @@ test.describe("标准图表类型与预设模板库", () => {
 
     await page.goto(`/w/${wid}/documents/${docId}`);
     await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
-    await openDesigner(page, "pie-donut");
+    await openDesigner(page, "pie");
 
     // value 行结构：名称 / 数值两列，无系列维度
     await expect(page.getByTestId("chart-designer-row-label-0")).toHaveValue("整车制造", { timeout: 20_000 });
@@ -140,7 +141,7 @@ test.describe("标准图表类型与预设模板库", () => {
 
     await page.goto(`/w/${wid}/documents/${docId}`);
     await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
-    await openDesigner(page, "scatter-trend");
+    await openDesigner(page, "scatter");
 
     // xy 行结构：横纵轴数值列
     await expect(page.getByTestId("chart-designer-row-x-0")).toHaveValue("120", { timeout: 20_000 });

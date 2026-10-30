@@ -474,7 +474,7 @@ export default function ChartDesignerModal({
     setConfig(prev => (prev ? { ...prev, theme: { ...prev.theme, paper: color } } : prev))
 
   /** 主题预设（需求卡片 0073）：仅规范模板携带；切换即整组替换 palette + paper */
-  const themePresets = template?.theme_presets ?? []
+  const themePresets = useMemo(() => template?.theme_presets ?? [], [template])
   /** 当前主题：palette + paper 与某预设完全一致视为已选中；逐色微调后回落「自定义」 */
   const activeThemeKey = useMemo(() => {
     if (!config) return undefined
@@ -654,7 +654,7 @@ export default function ChartDesignerModal({
                   {CAPTION_FIELDS.map(f => (
                     <Input
                       key={f.key}
-                      addonBefore={f.label}
+                      prefix={<Text type="secondary">{f.label}</Text>}
                       value={config.caption[f.key] ?? ''}
                       onChange={e => setCaption(f.key, e.target.value)}
                       placeholder={f.key === 'title' ? '（必填，渲染在图头）' : '可选'}
@@ -747,7 +747,7 @@ export default function ChartDesignerModal({
                     </div>
                     {showSeriesUnitX && (
                       <Input
-                        addonBefore="横轴单位"
+                        prefix={<Text type="secondary">横轴单位</Text>}
                         value={seriesUnit}
                         onChange={e => setLabel('unitX', e.target.value)}
                         style={{ marginTop: 8, maxWidth: 280 }}
@@ -995,7 +995,7 @@ export default function ChartDesignerModal({
                     {labelFields.map(f => (
                       <Input
                         key={f.key}
-                        addonBefore={f.label}
+                        prefix={<Text type="secondary">{f.label}</Text>}
                         value={String(config.labels[f.key] ?? '')}
                         onChange={e => setLabel(f.key, e.target.value)}
                         data-testid={`chart-designer-label-${f.key}`}

@@ -92,7 +92,7 @@ export default function InsertTableModal({
             style={{ width: '100%' }}
             min={MIN_REF_WIDTH}
             max={MAX_REF_WIDTH}
-            addonAfter="%"
+            suffix="%"
             value={width}
             onChange={v => {
               if (typeof v === 'number') onWidthChange(v)

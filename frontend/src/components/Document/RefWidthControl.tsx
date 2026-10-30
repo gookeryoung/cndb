@@ -60,7 +60,7 @@ export default function RefWidthControl({
               min={MIN_REF_WIDTH}
               max={MAX_REF_WIDTH}
               value={current}
-              addonAfter="%"
+              suffix="%"
               style={{ width: '100%' }}
               onChange={apply}
             />
