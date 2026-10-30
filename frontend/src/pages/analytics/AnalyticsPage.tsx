@@ -800,7 +800,7 @@ export default function AnalyticsPage() {
               disabled={!canRun}
               onClick={runAnalysis}
             >
-              运行分析
+              运行分析 (Ctrl+Enter)
             </Button>
           </Tooltip>
           {!tableId && <Text type="secondary" className="cn-an-run-hint">请先选择分析表</Text>}
