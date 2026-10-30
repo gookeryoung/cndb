@@ -1,7 +1,8 @@
 /** 插入图表弹窗（ADR 0048 / 0052 / 0058）：新建页签多级列表 + 图表素材库复制插入.
  *
- * 页签一「新建图表」（ADR 0058）：左栏 antd Collapse 手风琴（一级分类常显、点开展开
- * 二级分类与模板项），右栏仅显示选中模板详情（大图预览走 render-preview 不落库且完整
+ * 页签一「新建图表」（ADR 0058 / 需求卡片 0073）：左栏 antd Collapse 手风琴（一级分类常显、点开展开
+ * 二级分类与模板项；同结构的主题变体模板合并为一个规范条目，主题选择移入设计器），
+ * 右栏仅显示选中模板详情（大图预览走 render-preview 不落库且完整
  * 高度展示，未选中为空态不发请求）；「基于此模板新建」固定在弹窗底部「取消」左侧。
  * 页签二「已有图表」：素材库条目**复制定义**插入正文（不随素材库更新，D4）。
  * 弹窗自身拉取模板与素材库清单（React Query，open 时启用），页面只接回调。
@@ -125,20 +126,24 @@ export default function InsertChartModal({
     [categories],
   )
 
+  // 新建列表按结构合并主题变体（需求卡片 0073）：variant_of 指向所属类型的变体不展示；
+  // 变体仍留在 templates 里供设计器编辑存量实例
+  const visibleTemplates = useMemo(() => templates.filter(t => !t.variant_of), [templates])
+
   /** 一级分类 → 模板分组（含二级；保持注册表顺序，空分类不输出） */
   const grouped = useMemo(
     () =>
       categories
         .map(cat => {
-          const direct = templates.filter(t => t.category === cat.key)
+          const direct = visibleTemplates.filter(t => t.category === cat.key)
           const byChild = (cat.children ?? [])
-            .map(child => ({ child, templates: templates.filter(t => t.category === child.key) }))
+            .map(child => ({ child, templates: visibleTemplates.filter(t => t.category === child.key) }))
             .filter(g => g.templates.length > 0)
           if (direct.length === 0 && byChild.length === 0) return null
           return { cat, direct, byChild }
         })
         .filter((g): g is NonNullable<typeof g> => g !== null),
-    [categories, templates],
+    [categories, visibleTemplates],
   )
 
   const [selectedTemplateKey, setSelectedTemplateKey] = useState<string | null>(null)

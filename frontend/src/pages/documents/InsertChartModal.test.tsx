@@ -24,7 +24,7 @@ describe('InsertChartModal', () => {
     renderModal()
 
     // 一级分类常显（含小字描述）；第一个含模板的一级默认展开出二级与模板项
-    expect(await screen.findByText('对比')).toBeInTheDocument()
+    expect(await screen.findByText('横向对比')).toBeInTheDocument()
     expect(screen.getByText('现状与目标的逐项对比')).toBeInTheDocument()
     expect(screen.getByText('对比-柱形')).toBeInTheDocument()
     expect(screen.getByText('对比-条形')).toBeInTheDocument()
@@ -63,6 +63,18 @@ describe('InsertChartModal', () => {
     expect(props.onPickTemplate).toHaveBeenCalledTimes(1)
     expect(props.onPickTemplate).toHaveBeenCalledWith('stacked-bar-horizontal')
     expect(props.onPickExisting).not.toHaveBeenCalled()
+  })
+
+  it('新建列表按结构合并主题变体（0073）：变体不作为选项，规范模板展示', async () => {
+    renderModal()
+
+    // 手风琴默认展开第一个分类；展开「结构构成」后其中仅规范模板「饼图」可见
+    fireEvent.click(await screen.findByText('结构构成'))
+    expect(await screen.findByTestId('chart-template-item-pie')).toBeInTheDocument()
+    expect(screen.queryByTestId('chart-template-item-pie-business')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('chart-template-item-pie-donut')).not.toBeInTheDocument()
+    // 旧三模板（非主题变体）不受影响
+    expect(screen.getByTestId('chart-template-item-bar-line-dual-axis')).toBeInTheDocument()
   })
 
   it('「图表素材库」页签：列出素材并回传完整条目（页面复制定义插入）', async () => {

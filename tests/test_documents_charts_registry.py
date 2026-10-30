@@ -16,6 +16,8 @@ from cndb.core.errors import BadRequestError
 from cndb.plugins.documents.services.charts.registry import (
     CHART_CATEGORIES,
     CHART_TEMPLATES,
+    PALETTE_VIVID,
+    PAPER_VIVID,
     get_category,
     get_template,
     normalize_config,
@@ -54,6 +56,8 @@ STANDARD_SUFFIXES = {
     "heatmap": ("business", "classic", "vivid"),
 }
 STANDARD_KEYS = [f"{t}-{s}" for t, suffixes in STANDARD_SUFFIXES.items() for s in suffixes]
+#: 规范模板（需求卡片 0073）：key = 类型键，合并同结构主题变体
+CANONICAL_KEYS = list(STANDARD_TYPES)
 
 
 class TestRegistry:
@@ -116,6 +120,12 @@ class TestRegistry:
         line = next(t for t in payload["templates"] if t["key"] == "line-vivid")
         assert line["row_kind"] == "series"
         assert [f["key"] for f in line["style_fields"]] == ["showMarkers", "showValues"]
+        # 主题变体标记（0073）：变体带 variant_of，规范模板带 theme_presets
+        assert line["variant_of"] == "line"
+        canon = next(t for t in payload["templates"] if t["key"] == "line")
+        assert canon["variant_of"] is None
+        assert [p["key"] for p in canon["theme_presets"]] == ["vivid", "business", "classic"]
+        assert canon["theme_presets"][0]["name"] == "明快数据"
 
 
 class TestStandardTypePresets:
@@ -147,13 +157,13 @@ class TestStandardTypePresets:
             assert len({c["theme"]["paper"] for c in configs}) >= 2
 
     def test_default_configs_render_valid(self):
-        """C5 前置：全部预设默认配置通过严格校验."""
-        for key in STANDARD_KEYS:
+        """C5 前置：全部预设（含规范模板）默认配置通过严格校验."""
+        for key in STANDARD_KEYS + CANONICAL_KEYS:
             assert validate_config(key, CHART_TEMPLATES[key].default_config) == [], key
 
     def test_style_fields_match_default_style(self):
-        """C3：style_fields 声明与 default_config.style 键一致."""
-        for key in STANDARD_KEYS:
+        """C3：style_fields 声明与 default_config.style 键一致（含规范模板）."""
+        for key in STANDARD_KEYS + CANONICAL_KEYS:
             tpl = CHART_TEMPLATES[key]
             declared = {f["key"] for f in tpl.style_fields}
             style = tpl.default_config.get("style", {})
@@ -171,6 +181,44 @@ class TestStandardTypePresets:
         for key in TPL_KEYS:
             cfg = normalize_config(key, copy.deepcopy(CHART_TEMPLATES[key].default_config))
             assert "style" not in cfg, key
+
+
+class TestCanonicalThemeMerge:
+    """需求卡片 0073：同结构主题变体合并为规范模板，主题预设移入设计器."""
+
+    def test_canonical_templates_registered(self):
+        """C2：10 类规范模板（key = 类型键）注册，默认主题 = 明快数据."""
+        for type_key, (category, row_kind) in STANDARD_TYPES.items():
+            tpl = CHART_TEMPLATES[type_key]
+            assert tpl.category == category, type_key
+            assert tpl.row_kind == row_kind, type_key
+            assert tpl.variant_of is None, type_key
+            assert tpl.labels_from_default is True, type_key
+            assert tpl.default_config["theme"]["palette"] == PALETTE_VIVID, type_key
+            assert tpl.default_config["theme"]["paper"] == PAPER_VIVID, type_key
+
+    def test_variants_marked_and_kept(self):
+        """C2/C4：变体模板保留注册（存量实例可渲染 / 可编辑）并标记归属."""
+        for key in STANDARD_KEYS:
+            tpl = CHART_TEMPLATES[key]
+            assert tpl.variant_of == key.rsplit("-", 1)[0], key
+            assert tpl.theme_presets == (), key  # 变体不携带主题预设
+
+    def test_theme_presets_three_sets_vivid_first(self):
+        """C3：规范模板携带三套主题预设，明快在前."""
+        presets = CHART_TEMPLATES["line"].theme_presets
+        assert [p["key"] for p in presets] == ["vivid", "business", "classic"]
+        assert [p["name"] for p in presets] == ["明快数据", "商务蓝", "经典纸面"]
+        for p in presets:
+            assert p["paper"].startswith("#")
+            assert p["palette"] and all(c.startswith("#") for c in p["palette"])
+
+    def test_payload_keeps_variants_for_designer(self):
+        """C4：payload 保留变体模板（设计器编辑存量实例），弹窗过滤在前端."""
+        payload = templates_payload()
+        keys = {t["key"] for t in payload["templates"]}
+        assert keys == set(CHART_TEMPLATES)
+        assert "line-vivid" in keys and "line" in keys
 
 
 class TestNormalizeConfig:
@@ -230,8 +278,8 @@ class TestNormalizeConfig:
         assert len(seven["data"]["rows"][0]["values"]) == 6  # 超 series_max 截断
 
     def test_standard_default_roundtrip_stable(self):
-        """0070：标准类型默认配置归一幂等（含 style 节）."""
-        for key in STANDARD_KEYS:
+        """0070：标准类型默认配置归一幂等（含 style 节；含规范模板）."""
+        for key in STANDARD_KEYS + CANONICAL_KEYS:
             once = normalize_config(key, copy.deepcopy(CHART_TEMPLATES[key].default_config))
             twice = normalize_config(key, once)
             assert once == twice, key

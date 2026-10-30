@@ -83,13 +83,17 @@ class ChartTemplate:
     #: 样式开关声明（设计器按此生成样式表单，需求卡片 0070 C3）
     style_fields: tuple[dict[str, Any], ...] = field(default=())
     default_config: dict[str, Any] = field(default_factory=dict)
+    #: 主题变体归属（需求卡片 0073）：规范模板为 None；变体模板指向所属类型键
+    variant_of: str | None = None
+    #: 主题预设（需求卡片 0073）：仅规范模板携带，设计器「主题」选择数据源
+    theme_presets: tuple[dict[str, Any], ...] = field(default=())
     #: 模板代码指纹：布局 / schema 变更时递增，驱动 ETag 失效（D10）
     version: int = 1
 
 
 CHART_CATEGORIES: tuple[ChartCategory, ...] = (
     ChartCategory("composition", "结构构成", "整体中各部分的构成与变化"),
-    ChartCategory("comparison", "对比", "现状与目标的逐项对比"),
+    ChartCategory("comparison", "横向对比", "现状与目标的逐项对比"),
     ChartCategory("comparison-bar", "对比-柱形", "柱形类对比图", parent="comparison"),
     ChartCategory("comparison-bar-h", "对比-条形", "条形类对比图", parent="comparison"),
     # ── 标准类型分类（需求卡片 0070 C1/C2）──
@@ -248,6 +252,17 @@ PAPER_BUSINESS = "#F6F8FA"
 PAPER_CLASSIC = "#FBFAF5"
 PAPER_VIVID = "#FFFFFF"
 
+#: 主题预设（需求卡片 0073）：设计器「主题」选择的三套 palette + paper；
+#: 明快数据为合并后规范模板的默认主题（排第一）
+THEME_PRESETS: dict[str, dict[str, Any]] = {
+    "vivid": {"name": "明快数据", "palette": PALETTE_VIVID, "paper": PAPER_VIVID},
+    "business": {"name": "商务蓝", "palette": PALETTE_BUSINESS, "paper": PAPER_BUSINESS},
+    "classic": {"name": "经典纸面", "palette": PALETTE_CLASSIC, "paper": PAPER_CLASSIC},
+}
+
+#: 主题预设展示顺序（明快默认在前）
+_THEME_PRESET_ORDER = ("vivid", "business", "classic")
+
 #: value 行结构（label + value）：饼图 / 漏斗 / 仪表盘 / 树状图
 _VALUE_COLUMNS = (
     {"key": "label", "type": "text", "label": "名称"},
@@ -260,11 +275,35 @@ _XY_COLUMNS = (
 )
 
 
+def _theme_key(suffix: str) -> str:
+    """预设后缀 → 主题预设键（需求卡片 0073）：非 business / classic 的第三预设均为明快."""
+    if suffix == "business":
+        return "business"
+    if suffix == "classic":
+        return "classic"
+    return "vivid"
+
+
+def _theme_presets_payload() -> tuple[dict[str, Any], ...]:
+    """规范模板携带的主题预设（明快在前，供设计器「主题」选择）."""
+    return tuple(
+        {
+            "key": key,
+            "name": THEME_PRESETS[key]["name"],
+            "palette": list(THEME_PRESETS[key]["palette"]),
+            "paper": THEME_PRESETS[key]["paper"],
+        }
+        for key in _THEME_PRESET_ORDER
+    )
+
+
 def _add_type(
     out: dict[str, ChartTemplate],
     *,
     type_key: str,
     category: str,
+    name: str,
+    description: str,
     caption: dict[str, str],
     labels: dict[str, Any],
     rows: list[dict[str, Any]],
@@ -282,7 +321,12 @@ def _add_type(
 
     预设共享布局函数与示例数据（``layouts`` 按 key 分派），差异全部落在
     default_config（需求卡片 0070「口径」：预设 = 注册表条目，不引入嵌套概念）。
+
+    需求卡片 0073：另登记一个规范模板（key = ``type_key``，default_config 取明快
+    主题预设，携带 ``theme_presets``）；原主题变体（``{type}-{suffix}``）保留注册
+    （存量实例可渲染 / 可编辑）并以 ``variant_of`` 标记归属，插入弹窗列表不再展示。
     """
+    default_preset = next(p for p in presets if _theme_key(p["suffix"]) == "vivid")
     for preset in presets:
         key = f"{type_key}-{preset['suffix']}"
         default_config: dict[str, Any] = {
@@ -308,8 +352,36 @@ def _add_type(
             label_fields=label_fields,
             style_fields=style_fields,
             default_config=default_config,
+            variant_of=type_key,
             version=1,
         )
+    # 规范模板（合并同结构的主题变体；默认明快主题）
+    canonical_config: dict[str, Any] = {
+        "caption": dict(caption),
+        "labels": copy.deepcopy(labels),
+        "theme": {"palette": list(default_preset["palette"]), "paper": default_preset["paper"]},
+        "data": {"rows": copy.deepcopy(rows)},
+    }
+    if default_preset.get("style"):
+        canonical_config["style"] = dict(default_preset["style"])
+    out[type_key] = ChartTemplate(
+        key=type_key,
+        category=category,
+        name=name,
+        description=description,
+        row_min=row_min,
+        row_max=row_max,
+        row_columns=row_columns,
+        series_min=series_min,
+        series_max=series_max,
+        row_kind=row_kind,
+        labels_from_default=True,
+        label_fields=label_fields,
+        style_fields=style_fields,
+        default_config=canonical_config,
+        theme_presets=_theme_presets_payload(),
+        version=1,
+    )
 
 
 def _standard_type_templates() -> dict[str, ChartTemplate]:
@@ -319,6 +391,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="line",
         category="trend-line",
+        name="折线图",
+        description="多系列折线走势，支持多主题配色与数据点 / 数值标签开关",
         caption={
             "no": "图 5-1",
             "context": "",
@@ -377,6 +451,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="area",
         category="trend-area",
+        name="面积图",
+        description="面积 / 堆叠面积走势，支持多主题配色与数值标签开关",
         caption={
             "no": "图 5-2",
             "context": "",
@@ -435,6 +511,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="bar",
         category="comparison-bar",
+        name="柱状图",
+        description="纵向分组 / 堆叠柱形对比，支持多主题配色与数值标签开关",
         caption={
             "no": "图 5-3",
             "context": "",
@@ -493,6 +571,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="pie",
         category="composition-pie",
+        name="饼图",
+        description="扇形 / 环形占比，带右侧图例清单与中心合计读数，支持多主题配色",
         caption={
             "no": "图 5-4",
             "context": "",
@@ -548,6 +628,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="scatter",
         category="distribution-scatter",
+        name="散点图",
+        description="两变量散点关联，可选最小二乘趋势参考线，支持多主题配色",
         caption={
             "no": "图 5-5",
             "context": "",
@@ -610,6 +692,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="radar",
         category="evaluation-radar",
+        name="雷达图",
+        description="多维能力雷达，可选区域填充，支持多主题配色",
         caption={
             "no": "图 5-6",
             "context": "",
@@ -664,6 +748,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="funnel",
         category="composition-funnel",
+        name="漏斗图",
+        description="居中递缩漏斗，可显示阶段转化率，支持多主题配色",
         caption={
             "no": "图 5-7",
             "context": "",
@@ -715,6 +801,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="gauge",
         category="evaluation-gauge",
+        name="仪表盘",
+        description="单指标达成仪表盘（弧 + 指针 + 刻度），支持多主题配色",
         caption={
             "no": "图 5-8",
             "context": "",
@@ -760,6 +848,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="treemap",
         category="composition-treemap",
+        name="树状图",
+        description="squarified 矩形树图（面积占比），支持多主题配色",
         caption={
             "no": "图 5-9",
             "context": "",
@@ -814,6 +904,8 @@ def _standard_type_templates() -> dict[str, ChartTemplate]:
         out,
         type_key="heatmap",
         category="distribution-heatmap",
+        name="热力图",
+        description="行列矩阵热力（色阶 + 数值），支持多主题配色",
         caption={
             "no": "图 5-10",
             "context": "",
@@ -1272,6 +1364,8 @@ def templates_payload() -> dict[str, Any]:
                 "row_kind": t.row_kind,
                 "label_fields": [dict(f) for f in t.label_fields],
                 "style_fields": [dict(f) for f in t.style_fields],
+                "variant_of": t.variant_of,
+                "theme_presets": [dict(p) for p in t.theme_presets],
                 "default_config": t.default_config,
             }
             for t in CHART_TEMPLATES.values()

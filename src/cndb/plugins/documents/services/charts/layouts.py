@@ -986,19 +986,20 @@ def _heatmap_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     return h, prims
 
 
-#: 模板 key → 布局函数（标准类型；预设模板共享布局，差异在 default_config）
+#: 模板 key → 布局函数（标准类型；预设模板共享布局，差异在 default_config；
+#: 规范模板（需求卡片 0073，key = 类型键）与主题变体同布局）
 LAYOUTS: dict[str, Any] = {}
 for _keys, _fn in (
-    (("line-business", "line-classic", "line-vivid"), _line_prims),
-    (("area-business", "area-classic", "area-stacked"), _area_prims),
-    (("bar-business", "bar-classic", "bar-stacked"), _bar_v_prims),
-    (("pie-business", "pie-classic", "pie-donut"), _pie_prims),
-    (("scatter-business", "scatter-classic", "scatter-trend"), _scatter_prims),
-    (("radar-business", "radar-classic", "radar-fill"), _radar_prims),
-    (("funnel-business", "funnel-classic", "funnel-vivid"), _funnel_prims),
-    (("gauge-business", "gauge-classic", "gauge-vivid"), _gauge_prims),
-    (("treemap-business", "treemap-classic", "treemap-vivid"), _treemap_prims),
-    (("heatmap-business", "heatmap-classic", "heatmap-vivid"), _heatmap_prims),
+    (("line", "line-business", "line-classic", "line-vivid"), _line_prims),
+    (("area", "area-business", "area-classic", "area-stacked"), _area_prims),
+    (("bar", "bar-business", "bar-classic", "bar-stacked"), _bar_v_prims),
+    (("pie", "pie-business", "pie-classic", "pie-donut"), _pie_prims),
+    (("scatter", "scatter-business", "scatter-classic", "scatter-trend"), _scatter_prims),
+    (("radar", "radar-business", "radar-classic", "radar-fill"), _radar_prims),
+    (("funnel", "funnel-business", "funnel-classic", "funnel-vivid"), _funnel_prims),
+    (("gauge", "gauge-business", "gauge-classic", "gauge-vivid"), _gauge_prims),
+    (("treemap", "treemap-business", "treemap-classic", "treemap-vivid"), _treemap_prims),
+    (("heatmap", "heatmap-business", "heatmap-classic", "heatmap-vivid"), _heatmap_prims),
 ):
     for _key in _keys:
         LAYOUTS[_key] = _fn

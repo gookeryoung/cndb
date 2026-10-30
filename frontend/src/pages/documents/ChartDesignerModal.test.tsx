@@ -360,6 +360,34 @@ describe('ChartDesignerModal 标准类型（需求卡片 0070）', () => {
     expect(cfg?.data?.rows?.[0]).toEqual({ x: 130, y: 380 })
   }, 15_000)
 
+  it('主题选择（0073）：规范模板在配色上方提供主题选择，切换整组替换 palette + paper', async () => {
+    const bodies = useBodyCapture(/\/charts\/render-preview/)
+    renderDesigner({ kind: 'create', templateKey: 'pie' })
+
+    await screen.findByTestId('chart-designer-preview-svg')
+    // 主题选择位于配色区上方，默认明快数据（vivid）
+    const themeSelect = screen.getByTestId('chart-designer-theme')
+    expect(themeSelect.closest('div')).not.toBeNull()
+    const paletteSection = screen.getByTestId('chart-designer-palette-0')
+    expect(themeSelect.compareDocumentPosition(paletteSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // 切换商务蓝：预览请求 theme 变为商务蓝 palette + 纸底
+    fireEvent.mouseDown(themeSelect.querySelector('.ant-select-selector') as HTMLElement)
+    fireEvent.click(await screen.findByTitle('商务蓝'))
+    await waitFor(() => {
+      const last = bodies[bodies.length - 1] as { config?: { theme?: { palette?: string[]; paper?: string } } }
+      expect(last.config?.theme?.palette?.[0]).toBe('#1E3D57')
+      expect(last.config?.theme?.paper).toBe('#F6F8FA')
+    })
+  }, 15_000)
+
+  it('主题选择（0073）：变体模板（存量实例）无主题选择', async () => {
+    renderDesigner({ kind: 'create', templateKey: 'pie-business' })
+
+    expect(await screen.findByTestId('chart-designer-preview-svg')).toBeInTheDocument()
+    expect(screen.queryByTestId('chart-designer-theme')).toBeNull()
+  }, 15_000)
+
   it('保存 value 行结构：剔除 growth 字段（与模板 schema 同形）', async () => {
     const createBodies: unknown[] = []
     server.use(

@@ -6,6 +6,7 @@
  *   行结构按 row_kind 分派（需求卡片 0070）：dual-axis / series / value / xy；
  * - 数据一键导入（需求卡片 0070 C3）：粘贴 TSV / CSV（可含表头行）整表替换数据行；
  * - 样式实时编辑（需求卡片 0070 C3）：按模板 style_fields 生成开关表单，随预览防抖生效；
+ * - 主题选择（需求卡片 0073）：规范模板在配色上方提供主题预设（明快数据默认），切换整组替换 palette + paper；
  * - 实时预览走 POST /charts/render-preview（不落库），输入防抖 300ms；
  * - 保存走 POST，后端严格校验 400 时逐条回显；模板下线只读展示（边界 3）。
  */
@@ -18,6 +19,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Select,
   Skeleton,
   Space,
   Tooltip,
@@ -470,6 +472,22 @@ export default function ChartDesignerModal({
 
   const setPaper = (color: string) =>
     setConfig(prev => (prev ? { ...prev, theme: { ...prev.theme, paper: color } } : prev))
+
+  /** 主题预设（需求卡片 0073）：仅规范模板携带；切换即整组替换 palette + paper */
+  const themePresets = template?.theme_presets ?? []
+  /** 当前主题：palette + paper 与某预设完全一致视为已选中；逐色微调后回落「自定义」 */
+  const activeThemeKey = useMemo(() => {
+    if (!config) return undefined
+    return themePresets.find(p => p.paper === config.theme.paper && p.palette.join() === config.theme.palette.join())
+      ?.key
+  }, [themePresets, config])
+  const applyThemePreset = (key: string) => {
+    const preset = themePresets.find(p => p.key === key)
+    if (!preset) return
+    setConfig(prev =>
+      prev ? { ...prev, theme: { palette: [...preset.palette], paper: preset.paper } } : prev,
+    )
+  }
 
   /** 样式开关（需求卡片 0070 C3）：草稿无值时回退模板默认 */
   const defaultStyle = useMemo(() => {
@@ -1002,6 +1020,22 @@ export default function ChartDesignerModal({
                       </Checkbox>
                     ))}
                   </Space>
+                </div>
+              )}
+
+              {themePresets.length > 0 && (
+                <div>
+                  <Text strong style={{ display: 'block', marginBottom: 4 }}>主题</Text>
+                  <Select
+                    style={{ width: 200 }}
+                    value={activeThemeKey ?? 'custom'}
+                    onChange={applyThemePreset}
+                    options={[
+                      ...themePresets.map(p => ({ value: p.key, label: p.name })),
+                      { value: 'custom', label: '自定义' },
+                    ]}
+                    data-testid="chart-designer-theme"
+                  />
                 </div>
               )}
 

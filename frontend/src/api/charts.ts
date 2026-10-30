@@ -37,6 +37,14 @@ export interface ChartStyleField {
   label: string
 }
 
+/** 主题预设（需求卡片 0073）：设计器「主题」选择的一套 palette + paper */
+export interface ChartThemePreset {
+  key: string
+  name: string
+  palette: string[]
+  paper: string
+}
+
 /** 行结构类型：dual-axis（label+value+growth）| series（label+values[]）| value（label+value）| xy（x+y） */
 export type ChartRowKind = 'dual-axis' | 'series' | 'value' | 'xy'
 
@@ -54,6 +62,10 @@ export interface ChartTemplateInfo {
   row_kind: ChartRowKind
   label_fields: ChartLabelField[]
   style_fields: ChartStyleField[]
+  /** 主题变体归属（0073）：规范模板为 null；变体指向所属类型键（弹窗列表过滤用） */
+  variant_of?: string | null
+  /** 主题预设（0073）：仅规范模板携带，设计器「主题」选择数据源 */
+  theme_presets?: ChartThemePreset[]
   default_config: Record<string, unknown>
 }
 

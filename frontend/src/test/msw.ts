@@ -218,7 +218,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
   categories: [
     {
       key: 'comparison',
-      name: '对比',
+      name: '横向对比',
       description: '现状与目标的逐项对比',
       children: [
         { key: 'comparison-bar', name: '对比-柱形', description: '柱形类对比图', parent: 'comparison' },
@@ -357,6 +357,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
     {
       key: 'line-vivid',
       category: 'trend-line',
+      variant_of: 'line',
       name: '折线图 · 明快数据',
       description: '多系列折线走势并带数值标签，明快配色，适配数据分析与项目总结',
       row_min: 2,
@@ -390,6 +391,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
     {
       key: 'pie-business',
       category: 'composition-pie',
+      variant_of: 'pie',
       name: '饼图 · 商务蓝',
       description: '扇形占比 + 右侧图例清单，藏蓝商务配色，适配汇报演示场景',
       row_min: 2,
@@ -423,6 +425,7 @@ export const mockChartTemplates: ChartTemplatesPayload = {
     {
       key: 'pie-donut',
       category: 'composition-pie',
+      variant_of: 'pie',
       name: '环形图 · 明快数据',
       description: '环形样式带中心合计读数，明快配色，适配数据分析与项目总结',
       row_min: 2,
@@ -454,8 +457,48 @@ export const mockChartTemplates: ChartTemplatesPayload = {
       },
     },
     {
+      key: 'pie',
+      category: 'composition-pie',
+      variant_of: null,
+      name: '饼图',
+      description: '扇形 / 环形占比，带右侧图例清单与中心合计读数，支持多主题配色',
+      row_min: 2,
+      row_max: 12,
+      row_kind: 'value',
+      row_columns: [
+        { key: 'label', type: 'text', label: '名称' },
+        { key: 'value', type: 'number', label: '数值', required: true },
+      ],
+      series_min: 0,
+      series_max: 0,
+      label_fields: [],
+      style_fields: [
+        { key: 'donut', label: '环形样式' },
+        { key: 'showPercent', label: '显示百分比' },
+      ],
+      theme_presets: [
+        { key: 'vivid', name: '明快数据', palette: ['#4E79A7', '#F28E2B', '#59A14F'], paper: '#FFFFFF' },
+        { key: 'business', name: '商务蓝', palette: ['#1E3D57', '#5C7283', '#8FA3B8'], paper: '#F6F8FA' },
+        { key: 'classic', name: '经典纸面', palette: ['#8E2318', '#1E3D57', '#5F6B4E'], paper: '#FBFAF5' },
+      ],
+      default_config: {
+        caption: { no: '图 5-4', context: '', title: '产业营业收入构成', subtitle: '单位：亿元', note: '' },
+        labels: {},
+        theme: { palette: ['#4E79A7', '#F28E2B', '#59A14F'], paper: '#FFFFFF' },
+        style: { donut: false, showPercent: true },
+        data: {
+          rows: [
+            { label: '整车制造', value: 1250 },
+            { label: '零部件配套', value: 480 },
+            { label: '充换电服务', value: 210 },
+          ],
+        },
+      },
+    },
+    {
       key: 'scatter-trend',
       category: 'distribution-scatter',
+      variant_of: 'scatter',
       name: '散点图 · 趋势关联',
       description: '散点 + 最小二乘趋势参考线，明快配色，适配数据分析与项目总结',
       row_min: 3,
