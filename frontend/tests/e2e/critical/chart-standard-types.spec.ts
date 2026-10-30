@@ -47,7 +47,11 @@ async function openDesigner(page: Page, templateKey: string) {
   await page.getByTestId("md-toolbar-chart").click();
   const category = TEMPLATE_CATEGORY[templateKey];
   if (category) {
-    await page.locator(".cn-insert-chart-modal").getByText(category, { exact: true }).click({ timeout: 20_000 });
+    // 手风琴默认展开首个分类；若目标分类已展开则再点一次会收起（accordion），故仅在收起时点击
+    const header = page.locator(".cn-insert-chart-modal .ant-collapse-header", { hasText: category });
+    if ((await header.getAttribute("aria-expanded")) !== "true") {
+      await header.click({ timeout: 20_000 });
+    }
   }
   await page.getByTestId(`chart-template-item-${templateKey}`).click({ timeout: 20_000 });
   await page.getByTestId(`chart-template-pick-${templateKey}`).click();
