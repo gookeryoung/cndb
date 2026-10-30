@@ -6,9 +6,10 @@
 
 import { useState } from 'react'
 import {
-  App as AntApp, Button, Empty, Form, Input, List, Modal, Segmented, Select, Space, Spin, Tag, Typography,
+  App as AntApp, Button, Empty, Form, Input, Listy, Modal, Segmented, Select, Space, Spin, Tag, Typography,
 } from 'antd'
 import { MessageOutlined, PlusOutlined } from '@ant-design/icons'
+import CnListMeta from '@/components/CnListMeta'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
@@ -81,32 +82,38 @@ export default function IssuesPage() {
         {data && data.items.length === 0 ? (
           <Empty description="暂无问题" style={{ padding: 48 }} />
         ) : (
-          <List
-            dataSource={data?.items ?? []}
-            renderItem={(item: IssueListItem) => (
-              <List.Item
+          // antd List 弃用（ADR 0074）：Listy + 自绘 Meta / 操作区
+          <Listy
+            className="cn-listy-plain"
+            items={data?.items ?? []}
+            rowKey={item => item.id}
+            itemRender={(item: IssueListItem) => (
+              <div
+                className="cn-list-item"
                 style={{ cursor: 'pointer' }}
                 onClick={() => navigate(`/w/${wid}/tables/${tid}/issues/${item.id}`)}
-                actions={[
-                  <span key="comments" aria-label={`评论数 ${item.comment_count}`}>
+              >
+                <div className="cn-list-item-main">
+                  <CnListMeta
+                    title={
+                      <Space size={8} wrap>
+                        <Tag color={ISSUE_CATEGORY_META[item.category]?.color ?? 'default'} style={{ marginInlineEnd: 0 }}>
+                          {ISSUE_CATEGORY_META[item.category]?.label ?? item.category}
+                        </Tag>
+                        {status === 'all' && item.status === 'closed' && <Tag style={{ marginInlineEnd: 0 }}>已关闭</Tag>}
+                        <Text strong>{item.title}</Text>
+                      </Space>
+                    }
+                    description={<Text type="secondary">#{item.id} · 创建于 {formatDateTime(item.created_at)}</Text>}
+                  />
+                </div>
+                <div className="cn-list-item-actions">
+                  <span aria-label={`评论数 ${item.comment_count}`}>
                     <MessageOutlined style={{ marginRight: 4, color: 'var(--cn-text-secondary)' }} />
                     {item.comment_count}
-                  </span>,
-                ]}
-              >
-                <List.Item.Meta
-                  title={
-                    <Space size={8} wrap>
-                      <Tag color={ISSUE_CATEGORY_META[item.category]?.color ?? 'default'} style={{ marginInlineEnd: 0 }}>
-                        {ISSUE_CATEGORY_META[item.category]?.label ?? item.category}
-                      </Tag>
-                      {status === 'all' && item.status === 'closed' && <Tag style={{ marginInlineEnd: 0 }}>已关闭</Tag>}
-                      <Text strong>{item.title}</Text>
-                    </Space>
-                  }
-                  description={<Text type="secondary">#{item.id} · 创建于 {formatDateTime(item.created_at)}</Text>}
-                />
-              </List.Item>
+                  </span>
+                </div>
+              </div>
             )}
           />
         )}

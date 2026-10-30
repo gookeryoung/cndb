@@ -1265,7 +1265,7 @@ export default function DocumentEditorPage() {
             label={`标签${doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}`}
             onClick={() => setTagsOpen(true)}
           />
-          <Divider orientation="vertical" style={{ margin: '0 2px' }} />
+          <Divider vertical style={{ margin: '0 2px' }} />
           {/* 组 3：协作（下载 / 修改申请 / 分享）；原件族文档在分享左侧提供下载原件图标按钮 */}
           {isAssetDoc && (
             <IconBtn
@@ -1291,7 +1291,7 @@ export default function DocumentEditorPage() {
               onClick={() => setShareOpen(true)}
             />
           )}
-          <Divider orientation="vertical" style={{ margin: '0 2px' }} />
+          <Divider vertical style={{ margin: '0 2px' }} />
           {/* 组 4：版本与导出 */}
           {!isAssetDoc && (
             <IconBtn

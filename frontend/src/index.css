@@ -3513,10 +3513,9 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     max-width: 92vw !important;
   }
 
-  /* 列表行尾操作区（回收站抽屉等）：收窄与主内容的间距，避免长标题被挤溢出；
-     antd 运行时注入同字段规则且晚于本表，需 !important 覆盖 */
-  .ant-list .ant-list-item .ant-list-item-action {
-    margin-inline-start: var(--cn-space-sm) !important;
+  /* 列表行尾操作区（回收站抽屉等）：收窄与主内容的间距，避免长标题被挤溢出 */
+  .cn-list-item-actions {
+    margin-inline-start: var(--cn-space-sm);
   }
 
   /* 顶部 Header 两侧留白收窄，给内容让出横向空间 */
@@ -5096,6 +5095,62 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
+/* ─────────────── 自绘列表内容层（ADR 0074：antd List 弃用 → Listy + 自绘结构） ───────────────
+ * Listy 提供 .ant-listy-item 基底（内边距 / 分隔线 / hover 全走 token + cssinjs 兼容链）；
+ * 这里补 v5 List 的内容布局口径：Meta 层（头像 + 标题/描述）与行尾操作区。
+ * 各站点按 v5 size 档位选修饰类：cn-listy-plain（12px 0，默认）/ cn-listy-compact（8px 0，small）。 */
+.cn-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  min-width: 0;
+}
+
+.cn-list-item-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cn-list-meta {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cn-space-md);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cn-list-avatar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+}
+
+.cn-list-meta-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cn-list-meta-title {
+  margin-block-end: var(--cn-space-hairline);
+}
+
+.cn-list-item-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  flex: 0 0 auto;
+}
+
+.cn-listy-plain .ant-listy-item {
+  padding-block: var(--cn-space-md);
+  padding-inline: 0;
+}
+
+.cn-listy-compact .ant-listy-item {
+  padding-block: var(--cn-space-sm);
+  padding-inline: 0;
+}
+
 /* ─────────────── 文档列表（GitHub 式边缘线） ───────────────
  * 外框 + 行间分隔线统一取 --cn-border（antd 默认 colorSplit 偏浅、深色模式下不易分辨），
  * 行悬浮整行高亮；行尾操作按钮之间的竖分隔线关闭，靠图标与悬浮提示区分。
@@ -5107,35 +5162,31 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   overflow: hidden;
 }
 
-.cn-doc-list.ant-list-split .ant-list-item {
+.cn-doc-list .ant-listy-item {
   border-color: var(--cn-border);
   transition: background-color 0.15s ease;
   /* 上下 8px（antd 默认 12px）：单文档项占两行文本，压缩纵向空间 */
   padding: var(--cn-space-md) var(--cn-space-xl);
   padding-inline-start: var(--cn-space-2xl);
+  cursor: pointer;
 }
 
-/* 标题与描述行间距收紧（antd 默认 marginXXS=4px，运行时注入需 !important 覆盖）；描述行高同步收紧 */
-.cn-doc-list .ant-list-item .ant-list-item-meta-title {
-  margin-bottom: var(--cn-space-hairline) !important;
+/* 标题与描述行间距收紧；描述行高同步收紧 */
+.cn-doc-list .cn-list-meta-title {
+  margin-block-end: var(--cn-space-hairline);
 }
 
-.cn-doc-list .ant-list-item .ant-list-item-meta-description {
+.cn-doc-list .cn-list-meta-description {
   line-height: 1.4;
 }
 
-.cn-doc-list .ant-list-item:hover {
+.cn-doc-list .ant-listy-item:hover {
   background: var(--cn-bg-subtle);
 }
 
-/* 头像区（勾选框 + 格式图标）与标题的间距收紧一档，整行更密
-   （antd 运行时按哈希类注入同字段规则且晚于本表，需 !important 单点覆盖） */
-.cn-doc-list .ant-list-item .ant-list-item-meta-avatar {
-  margin-inline-end: var(--cn-space-lg) !important;
-}
-
-.cn-doc-list .ant-list-item-action-split {
-  display: none;
+/* 头像区（勾选框 + 格式图标）与标题的间距收紧一档，整行更密 */
+.cn-doc-list .cn-list-avatar {
+  margin-inline-end: var(--cn-space-lg);
 }
 
 /* ─────────────── 文档标题单行省略（移动端长文件名适配） ───────────────
@@ -5160,22 +5211,17 @@ body.theme-dark [style*="color:'#94a3b8'"] {
  * 行内四枚操作图标与标题争宽是长文件名显示异常的根因之一：
  * 这里同步收紧行内边距、头像间距与操作区间距，给单行省略标题让出空间。 */
 @media (max-width: 767.98px) {
-  .cn-doc-list.ant-list-split .ant-list-item {
+  .cn-doc-list .ant-listy-item {
     padding: var(--cn-space-sm) var(--cn-space-md);
     padding-inline-start: var(--cn-space-lg);
   }
 
-  /* antd 运行时注入同字段规则且晚于本表，需 !important 单点覆盖（同上方桌面端口径） */
-  .cn-doc-list .ant-list-item .ant-list-item-meta-avatar {
-    margin-inline-end: var(--cn-space-sm) !important;
+  .cn-doc-list .cn-list-avatar {
+    margin-inline-end: var(--cn-space-sm);
   }
 
-  .cn-doc-list .ant-list-item .ant-list-item-action {
-    margin-inline-start: var(--cn-space-sm) !important;
-  }
-
-  .cn-doc-list .ant-list-item .ant-list-item-action > li {
-    padding-inline: var(--cn-space-hairline) !important;
+  .cn-doc-list .cn-list-item-actions {
+    margin-inline-start: var(--cn-space-sm);
   }
 
   /* 「最近打开」条：单行横滑（容器已 overflow-x:auto），单条超长标题省略 */

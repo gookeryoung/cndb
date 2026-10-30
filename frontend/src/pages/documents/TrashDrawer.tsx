@@ -1,9 +1,10 @@
 /** 回收站抽屉 —— 自持软删列表查询、恢复与彻底删除. */
 
 import { useCallback } from 'react'
-import { App as AntApp, Button, Drawer, Empty, List, Popconfirm, Space, Typography } from 'antd'
+import { App as AntApp, Button, Drawer, Empty, Listy, Popconfirm, Space, Typography } from 'antd'
 import { FolderOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import CnListMeta from '@/components/CnListMeta'
 import { documentsApi } from '@/api/documents'
 import type { TrashItem } from '@/api/documents'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -72,9 +73,12 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
           ) : (trashQuery.data?.items ?? []).length === 0 ? (
             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="回收站为空" />
           ) : (
-            <List
-              dataSource={trashQuery.data?.items ?? []}
-              renderItem={(item: TrashItem) => {
+            // antd List 弃用（ADR 0074）：Listy + 自绘 Meta / 操作区
+            <Listy
+              className="cn-listy-compact"
+              items={trashQuery.data?.items ?? []}
+              rowKey={item => item.id}
+              itemRender={(item: TrashItem) => {
                 /* 行首格式图标：文件夹固定文件夹图标，文档按格式取形（docFormat 单点维护） */
                 const headIcon = item.is_folder ? (
                   <FolderOutlined style={{ flexShrink: 0 }} />
@@ -84,21 +88,41 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
                   return <FormatIcon aria-label={`格式：${fmt.label}`} style={{ color: fmt.color, flexShrink: 0 }} />
                 })()
                 return (
-                <List.Item
-                  key={item.id}
-                  data-testid={`doc-trash-item-${item.id}`}
-                  actions={[
+                <div className="cn-list-item" data-testid={`doc-trash-item-${item.id}`}>
+                  <div className="cn-list-item-main">
+                    <CnListMeta
+                      title={
+                        isMobile ? (
+                          /* 移动端：长文件名单行省略（完整名在 title 悬停提示），与文档列表行同口径 */
+                          <span className="cn-doc-row-title-line">
+                            {headIcon}
+                            <Text strong className="cn-doc-title-ellipsis" title={item.title}>{item.title}</Text>
+                          </span>
+                        ) : (
+                          <Space size={6}>
+                            {headIcon}
+                            <Text strong>{item.title}</Text>
+                          </Space>
+                        )
+                      }
+                      description={
+                        <Text type="secondary" style={{ fontSize: 12 }}>
+                          {item.is_folder ? '文件夹' : '文档'} · 删除于{' '}
+                          {item.deleted_at ? formatTime(item.deleted_at) : '未知时间'}
+                        </Text>
+                      }
+                    />
+                  </div>
+                  <div className="cn-list-item-actions">
                     <Button
-                      key="restore"
                       size="small"
                       data-testid={`doc-trash-restore-${item.id}`}
                       loading={restoreMut.isPending && restoreMut.variables === item.id}
                       onClick={() => restoreMut.mutate(item.id)}
                     >
                       恢复
-                    </Button>,
+                    </Button>
                     <Popconfirm
-                      key="purge"
                       title={
                         item.is_folder
                           ? '彻底删除将连同回收站中的子项与全部历史版本一并清除，且不可恢复，确认？'
@@ -112,32 +136,9 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
                       <Button size="small" danger data-testid={`doc-trash-purge-${item.id}`}>
                         彻底删除
                       </Button>
-                    </Popconfirm>,
-                  ]}
-                >
-                  <List.Item.Meta
-                    title={
-                      isMobile ? (
-                        /* 移动端：长文件名单行省略（完整名在 title 悬停提示），与文档列表行同口径 */
-                        <span className="cn-doc-row-title-line">
-                          {headIcon}
-                          <Text strong className="cn-doc-title-ellipsis" title={item.title}>{item.title}</Text>
-                        </span>
-                      ) : (
-                        <Space size={6}>
-                          {headIcon}
-                          <Text strong>{item.title}</Text>
-                        </Space>
-                      )
-                    }
-                    description={
-                      <Text type="secondary" style={{ fontSize: 12 }}>
-                        {item.is_folder ? '文件夹' : '文档'} · 删除于{' '}
-                        {item.deleted_at ? formatTime(item.deleted_at) : '未知时间'}
-                      </Text>
-                    }
-                  />
-                </List.Item>
+                    </Popconfirm>
+                  </div>
+                </div>
                 )
               }}
             />

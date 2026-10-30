@@ -11,8 +11,9 @@ import {
   Dropdown,
   Empty,
   Input,
-  List,
+  Listy,
   Modal,
+  Skeleton,
   Popconfirm,
   Radio,
   Select,
@@ -56,6 +57,7 @@ import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
 import { buildSeriesStats, seriesStatsOf } from './seriesStats'
 import { formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
 import { formatMeta } from '@/components/Document/docFormat'
+import CnListMeta from '@/components/CnListMeta'
 import TrashDrawer from './TrashDrawer'
 import DocumentImportModal from './DocumentImportModal'
 import type { DocTreeNode } from './DocumentTree'
@@ -818,7 +820,12 @@ export default function DocumentsPage() {
 
       {/* 列表：顶层散文档 / 子级全部子项 */}
       {docsQuery.isLoading ? (
-        <List loading />
+        // antd List 弃用（ADR 0074）：加载态用 Skeleton 占位（v5 List loading 同为骨架行）
+        <div className="cn-doc-list" aria-busy="true">
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
+        </div>
       ) : listItems.length === 0 && (parentId !== null || seriesList.length === 0) ? (
         <Empty description="暂无文档" style={{ marginTop: 80 }}>
           <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>
@@ -826,110 +833,51 @@ export default function DocumentsPage() {
           </Button>
         </Empty>
       ) : (
-        <List
-          className="cn-doc-list"
-          data-testid="doc-list"
-          dataSource={listItems}
-          renderItem={doc => (
-            <List.Item
-              style={{ cursor: 'pointer' }}
-              onClick={() =>
-                doc.is_folder
-                  ? setParentId(doc.id)
-                  : navigate(`/w/${workspaceId}/documents/${doc.id}`)
-              }
-              actions={[
-                <Tooltip key="rename" title="重命名">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<EditOutlined />}
-                    aria-label={`重命名 ${doc.title}`}
-                    data-testid={`doc-row-rename-${doc.id}`}
-                    onClick={e => {
-                      e.stopPropagation()
-                      setRenameValue(doc.title)
-                      setRenameTarget({ id: doc.id, title: doc.title, isSeries: false })
-                    }}
-                  />
-                </Tooltip>,
-                <Tooltip key="move" title="移动">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<ApartmentOutlined />}
-                    aria-label={`移动 ${doc.title}`}
-                    data-testid={`doc-row-move-${doc.id}`}
-                    onClick={e => {
-                      e.stopPropagation()
-                      setRowMove({ id: doc.id, title: doc.title, parent: doc.parent_id ?? 0 })
-                    }}
-                  />
-                </Tooltip>,
-                <Tooltip key="pin" title={doc.pinned ? '取消置顶' : '置顶'}>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<PushpinOutlined />}
-                    aria-label={doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`}
-                    data-testid={`doc-row-pin-${doc.id}`}
-                    onClick={e => {
-                      e.stopPropagation()
-                      pinMut.mutate(doc)
-                    }}
-                  />
-                </Tooltip>,
-                <Tooltip key="del" title="删除">
-                  <Popconfirm
-                    title={doc.is_folder ? '删除文件夹将同时删除其中所有文档，确认？' : '确认删除此文档？'}
-                    onConfirm={e => {
-                      e?.stopPropagation()
-                      deleteMut.mutate(doc.id)
-                    }}
-                    onCancel={e => e?.stopPropagation()}
-                  >
-                    <Button
-                      type="text"
-                      danger
-                      size="small"
-                      icon={<DeleteOutlined />}
-                      onClick={e => e.stopPropagation()}
-                      aria-label="删除文档"
-                      data-testid={`doc-row-delete-${doc.id}`}
-                    />
-                  </Popconfirm>
-                </Tooltip>,
-              ]}
-            >
-              <List.Item.Meta
-                avatar={
-                  <Space size={4}>
-                    <span onClick={e => e.stopPropagation()}>
-                      <Checkbox
-                        checked={selectedIds.includes(doc.id)}
-                        data-testid={`doc-select-${doc.id}`}
-                        aria-label={`选择 ${doc.title}`}
-                        onChange={() => toggleSelected(doc.id)}
-                      />
-                    </span>
-                    {doc.is_folder ? (
-                      <FolderOutlined style={{ fontSize: 22, color: '#faad14' }} />
-                    ) : (
-                      (() => {
-                        const fmt = formatMeta(doc.content_type)
-                        const FormatIcon = fmt.Icon
-                        return (
-                          <FormatIcon
-                            aria-label={`格式：${fmt.label}`}
-                            data-testid={`doc-list-format-${doc.id}`}
-                            style={{ fontSize: 22, color: fmt.color }}
-                          />
-                        )
-                      })()
-                    )}
-                  </Space>
+        <div data-testid="doc-list">
+          {/* antd List 弃用（ADR 0074）：Listy + 自绘 Meta / 操作区；Listy 根不透传 data-*，外层承载 testid */}
+          <Listy
+            className="cn-doc-list"
+            items={listItems}
+            rowKey={doc => doc.id}
+            itemRender={doc => (
+              <div
+                className="cn-list-item"
+                style={{ cursor: 'pointer' }}
+                onClick={() =>
+                  doc.is_folder
+                    ? setParentId(doc.id)
+                    : navigate(`/w/${workspaceId}/documents/${doc.id}`)
                 }
-                title={
+              >
+                <CnListMeta
+                  avatar={
+                    <Space size={4}>
+                      <span onClick={e => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.includes(doc.id)}
+                          data-testid={`doc-select-${doc.id}`}
+                          aria-label={`选择 ${doc.title}`}
+                          onChange={() => toggleSelected(doc.id)}
+                        />
+                      </span>
+                      {doc.is_folder ? (
+                        <FolderOutlined style={{ fontSize: 22, color: '#faad14' }} />
+                      ) : (
+                        (() => {
+                          const fmt = formatMeta(doc.content_type)
+                          const FormatIcon = fmt.Icon
+                          return (
+                            <FormatIcon
+                              aria-label={`格式：${fmt.label}`}
+                              data-testid={`doc-list-format-${doc.id}`}
+                              style={{ fontSize: 22, color: fmt.color }}
+                            />
+                          )
+                        })()
+                      )}
+                    </Space>
+                  }
+                  title={
                   isMobile ? (
                     /* 移动端：长文件名单行省略（完整名在 title 悬停提示），状态/锁标签移入描述行，
                        给标题让出横向空间（需求：手机端长文件名列表显示异常） */
@@ -1010,10 +958,73 @@ export default function DocumentsPage() {
                     </Space>
                   )
                 }
-              />
-            </List.Item>
-          )}
-        />
+                />
+                <div className="cn-list-item-actions">
+                  <Tooltip title="重命名">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<EditOutlined />}
+                      aria-label={`重命名 ${doc.title}`}
+                      data-testid={`doc-row-rename-${doc.id}`}
+                      onClick={e => {
+                        e.stopPropagation()
+                        setRenameValue(doc.title)
+                        setRenameTarget({ id: doc.id, title: doc.title, isSeries: false })
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title="移动">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<ApartmentOutlined />}
+                      aria-label={`移动 ${doc.title}`}
+                      data-testid={`doc-row-move-${doc.id}`}
+                      onClick={e => {
+                        e.stopPropagation()
+                        setRowMove({ id: doc.id, title: doc.title, parent: doc.parent_id ?? 0 })
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title={doc.pinned ? '取消置顶' : '置顶'}>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<PushpinOutlined />}
+                      aria-label={doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`}
+                      data-testid={`doc-row-pin-${doc.id}`}
+                      onClick={e => {
+                        e.stopPropagation()
+                        pinMut.mutate(doc)
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title="删除">
+                    <Popconfirm
+                      title={doc.is_folder ? '删除文件夹将同时删除其中所有文档，确认？' : '确认删除此文档？'}
+                      onConfirm={e => {
+                        e?.stopPropagation()
+                        deleteMut.mutate(doc.id)
+                      }}
+                      onCancel={e => e?.stopPropagation()}
+                    >
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        onClick={e => e.stopPropagation()}
+                        aria-label="删除文档"
+                        data-testid={`doc-row-delete-${doc.id}`}
+                      />
+                    </Popconfirm>
+                  </Tooltip>
+                </div>
+              </div>
+            )}
+          />
+        </div>
       )}
 
       {/* 新建弹窗 */}

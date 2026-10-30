@@ -4,11 +4,12 @@
  * 本轮不提供密码 / 有效期入口，但会如实展示历史分享的状态。
  */
 
-import { Alert, Button, Empty, List, Modal, Popconfirm, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Empty, Listy, Modal, Popconfirm, Space, Tag, Typography } from 'antd'
 import { CopyOutlined, DeleteOutlined, LinkOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { App } from 'antd'
 
+import CnListMeta from '@/components/CnListMeta'
 import { documentsApi, type ShareItem } from '@/api/documents'
 
 interface DocumentShareModalProps {
@@ -116,63 +117,64 @@ export default function DocumentShareModal({ open, onClose, workspaceId, docId, 
       ) : shares.length === 0 ? (
         <Empty description="还没有分享链接" image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
-        <List
-          data-testid="document-share-list"
-          size="small"
-          dataSource={shares}
-          renderItem={share => (
-            <List.Item
-              data-testid={`document-share-item-${share.id}`}
-              actions={[
-                <Button
-                  key="copy"
-                  type="link"
-                  size="small"
-                  icon={<CopyOutlined />}
-                  disabled={!share.is_active}
-                  onClick={() => void copy(share)}
-                >
-                  复制链接
-                </Button>,
-                <Popconfirm
-                  key="revoke"
-                  title="撤销后该链接立即失效，确定撤销？"
-                  okText="撤销"
-                  cancelText="取消"
-                  disabled={!share.is_active}
-                  onConfirm={() => revokeMut.mutate(share.id)}
-                >
+        <div data-testid="document-share-list">
+          {/* antd List 弃用（ADR 0074）：Listy + 自绘 Meta / 操作区 */}
+          <Listy
+            className="cn-listy-compact"
+            items={shares}
+            rowKey={share => share.id}
+            itemRender={share => (
+              <div className="cn-list-item" data-testid={`document-share-item-${share.id}`}>
+                <div className="cn-list-item-main">
+                  <CnListMeta
+                    title={
+                      <Space size={8}>
+                        <Tag color={share.is_active ? 'green' : 'default'}>{share.is_active ? '有效' : '已撤销'}</Tag>
+                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                          创建于 {formatTime(share.created_at)}
+                        </Typography.Text>
+                        {share.has_password && <Tag>需密码</Tag>}
+                      </Space>
+                    }
+                    description={
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        访问 {share.view_count} 次
+                      </Typography.Text>
+                    }
+                  />
+                </div>
+                <div className="cn-list-item-actions">
                   <Button
                     type="link"
                     size="small"
-                    danger
-                    icon={<DeleteOutlined />}
+                    icon={<CopyOutlined />}
                     disabled={!share.is_active}
+                    onClick={() => void copy(share)}
                   >
-                    撤销
+                    复制链接
                   </Button>
-                </Popconfirm>,
-              ]}
-            >
-              <List.Item.Meta
-                title={
-                  <Space size={8}>
-                    <Tag color={share.is_active ? 'green' : 'default'}>{share.is_active ? '有效' : '已撤销'}</Tag>
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      创建于 {formatTime(share.created_at)}
-                    </Typography.Text>
-                    {share.has_password && <Tag>需密码</Tag>}
-                  </Space>
-                }
-                description={
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    访问 {share.view_count} 次
-                  </Typography.Text>
-                }
-              />
-            </List.Item>
-          )}
-        />
+                  <Popconfirm
+                    title="撤销后该链接立即失效，确定撤销？"
+                    okText="撤销"
+                    cancelText="取消"
+                    disabled={!share.is_active}
+                    onConfirm={() => revokeMut.mutate(share.id)}
+                  >
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      icon={<DeleteOutlined />}
+                      disabled={!share.is_active}
+                    >
+                      撤销
+                    </Button>
+                  </Popconfirm>
+                </div>
+              </div>
+            )}
+          />
+        </div>
       )}
     </Modal>
   )

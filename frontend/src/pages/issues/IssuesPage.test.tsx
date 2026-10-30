@@ -87,7 +87,7 @@ describe('IssuesPage 问题清单列表', () => {
 
     await waitFor(() => expect(captured.status).toBe('all'))
     const closedRow = await screen.findByText('希望支持批量粘贴')
-    expect(closedRow.closest('li')?.textContent).toContain('已关闭')
+    expect(closedRow.closest('.ant-listy-item')?.textContent).toContain('已关闭')
   })
 
   it('点击列表项导航到详情页', async () => {

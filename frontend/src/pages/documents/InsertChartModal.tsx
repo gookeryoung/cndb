@@ -9,8 +9,9 @@
  */
 
 import { useMemo, useState } from 'react'
-import { Button, Collapse, Empty, List, Modal, Skeleton, Tabs, Tag, Typography } from 'antd'
+import { Button, Collapse, Empty, Listy, Modal, Skeleton, Tabs, Tag, Typography } from 'antd'
 import { BarChartOutlined, PlusOutlined } from '@ant-design/icons'
+import CnListMeta from '@/components/CnListMeta'
 import { useQuery } from '@tanstack/react-query'
 import { chartApi } from '@/api/charts'
 import type { ChartInstance, ChartTemplateInfo } from '@/api/charts'
@@ -277,41 +278,43 @@ export default function InsertChartModal({
                 {!chartsQuery.isLoading && charts.length === 0 && (
                   <Empty description="工作区还没有图表，先在「新建图表」里创建一个" />
                 )}
-                <List
-                  dataSource={charts}
-                  renderItem={item => (
-                    <List.Item
-                      data-testid={`chart-existing-item-${item.id}`}
-                      actions={[
+                {/* antd List 弃用（ADR 0074）：Listy + 自绘 Meta / 操作区 */}
+                <Listy
+                  className="cn-listy-plain"
+                  items={charts}
+                  rowKey={item => item.id}
+                  itemRender={item => (
+                    <div className="cn-list-item" data-testid={`chart-existing-item-${item.id}`}>
+                      <div className="cn-list-item-main">
+                        <CnListMeta
+                          title={
+                            <span>
+                              {item.title}
+                              {item.category && (
+                                <Tag style={{ marginLeft: 8 }}>
+                                  {flatCategories.find(c => c.key === item.category)?.name ?? item.category}
+                                </Tag>
+                              )}
+                            </span>
+                          }
+                          description={
+                            <Text type="secondary" style={{ fontSize: 12 }}>
+                              更新于 {item.updated_at.slice(0, 10)}
+                            </Text>
+                          }
+                        />
+                      </div>
+                      <div className="cn-list-item-actions">
                         <Button
-                          key="insert"
                           size="small"
                           type="primary"
                           data-testid={`chart-existing-insert-${item.id}`}
                           onClick={() => onPickExisting(item)}
                         >
                           插入
-                        </Button>,
-                      ]}
-                    >
-                      <List.Item.Meta
-                        title={
-                          <span>
-                            {item.title}
-                            {item.category && (
-                              <Tag style={{ marginLeft: 8 }}>
-                                {flatCategories.find(c => c.key === item.category)?.name ?? item.category}
-                              </Tag>
-                            )}
-                          </span>
-                        }
-                        description={
-                          <Text type="secondary" style={{ fontSize: 12 }}>
-                            更新于 {item.updated_at.slice(0, 10)}
-                          </Text>
-                        }
-                      />
-                    </List.Item>
+                        </Button>
+                      </div>
+                    </div>
                   )}
                 />
               </div>

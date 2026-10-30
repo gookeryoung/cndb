@@ -21,7 +21,7 @@
 | C4 | （隐含，与卡片 0026 的关系） | 浏览器基线口径必须明确：Chrome 81 基线保留或变更，由人拍板；`check-browser-compat.mjs`、`.browserslistrc`、`chrome81-smoke.mjs`、README 基线声明同步收口 | `frontend/scripts/`、`frontend/.browserslistrc`、`README.md` | 静态门禁退出码 + Chromium 81 冒烟 |
 | C5 | （隐含，不回归） | 现有功能与视觉不回归：前端单测、前端覆盖率双门槛、Playwright e2e 全绿；10 套主题视觉一致；关键 chunk 不超 bundle budget（超限走既有流程记录理由） | `frontend/src/**`、`frontend/tests/**` | `pnpm test:coverage`、`make e2e`、`pnpm bundle:budget` |
 | C6 | （隐含，存量资产处置） | 兼容层与补丁的去留有结论：`rc-field-form` / `rc-util` 两个 pnpm patch、`StyleProvider` 降级链、flex-gap shim、`themeMix` 兜底，逐项给出沿用 / 迁移 / 删除结论 | `frontend/patches/`、`frontend/src/compat/`、`frontend/src/theme/` | ADR 决策记录逐项落点 |
-| C7 | 「迁移到 ANTD6」 | antd v6 弃用 API（将在 v7 移除）在仓库内清零：升级后控制台无 legacy 弃用告警，存量命中点全部改用新 API | `frontend/src/**/*.tsx` | 控制台告警断言（e2e）+ 源码扫描 |
+| C7 | 「迁移到 ANTD6」 | antd v6 弃用 API（将在 v7 移除）在仓库内清零：升级后控制台无 legacy 弃用告警，存量命中点全部改用新 API；`List` 组件整体废弃一并迁 `Listy` + 自绘内容层（`CnListMeta`） | `frontend/src/**/*.tsx` | 控制台告警断言（e2e，无白名单）+ 源码扫描 |
 
 ## 现状影响面（候选，待 ADR 核实）
 

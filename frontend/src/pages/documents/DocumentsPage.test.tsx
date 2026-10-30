@@ -616,7 +616,9 @@ describe('文档列表边缘线与行操作', () => {
 
   it('列表容器挂 GitHub 式边缘线样式类', async () => {
     renderPage()
-    expect(await screen.findByTestId('doc-list')).toHaveClass('cn-doc-list')
+    // antd 0074 迁移后 testid 在外层 wrapper，cn-doc-list 挂在内层 Listy 根
+    const wrapper = await screen.findByTestId('doc-list')
+    expect(wrapper.querySelector('.cn-doc-list')).not.toBeNull()
   })
 
   it('桌面端列表行保持换行布局：标题不走单行省略，状态标签留在标题行', async () => {

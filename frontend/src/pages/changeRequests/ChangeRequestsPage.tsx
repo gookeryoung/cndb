@@ -10,9 +10,10 @@
 
 import { useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Badge, Button, Card, Checkbox, Empty, List, Segmented, Space, Spin, Tag, Typography,
+  Alert, App as AntApp, Badge, Button, Card, Checkbox, Empty, Listy, Segmented, Space, Spin, Tag, Typography,
 } from 'antd'
 import { CheckOutlined, PlusOutlined } from '@ant-design/icons'
+import CnListMeta from '@/components/CnListMeta'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
@@ -92,38 +93,42 @@ function RequestLine({
   onClick: () => void
 }) {
   return (
-    <List.Item
+    // antd List 弃用（ADR 0074）：Listy + 自绘 Meta / 操作区（List.Item.extra → 右侧操作区）
+    <div
+      className="cn-list-item"
       style={{ cursor: 'pointer', paddingInline: 8 }}
       onClick={onClick}
-      extra={onToggleSelect ? (
-        // 阻止勾选冒泡触发整行导航
-        <span onClick={(e) => e.stopPropagation()}>
-          <Checkbox checked={!!selected} onChange={(e) => onToggleSelect(e.target.checked)} />
-        </span>
-      ) : undefined}
     >
-      <List.Item.Meta
-        title={(
-          <Space size={8} wrap>
-            {showStatus && (
-              <Tag color={STATUS_META[item.status].color} style={{ marginInlineEnd: 0 }}>
-                {STATUS_META[item.status].label}
-              </Tag>
-            )}
-            <Text strong>{item.title}</Text>
-            {item.stale && <Tag color="warning" style={{ marginInlineEnd: 0 }}>基准已过期</Tag>}
-            {(item.conflicts_count ?? 0) > 0 && (
-              <Tag color="orange" style={{ marginInlineEnd: 0 }}>与 {item.conflicts_count} 行待审批申请冲突</Tag>
-            )}
-          </Space>
-        )}
-        description={(
-          <Text type="secondary">
-            #{item.id} · {memberDisplayName(nameById, item.submitted_by_id, '未知')} 提交于 {formatDateTime(item.created_at)}
-          </Text>
-        )}
-      />
-    </List.Item>
+      <div className="cn-list-item-main">
+        <CnListMeta
+          title={(
+            <Space size={8} wrap>
+              {showStatus && (
+                <Tag color={STATUS_META[item.status].color} style={{ marginInlineEnd: 0 }}>
+                  {STATUS_META[item.status].label}
+                </Tag>
+              )}
+              <Text strong>{item.title}</Text>
+              {item.stale && <Tag color="warning" style={{ marginInlineEnd: 0 }}>基准已过期</Tag>}
+              {(item.conflicts_count ?? 0) > 0 && (
+                <Tag color="orange" style={{ marginInlineEnd: 0 }}>与 {item.conflicts_count} 行待审批申请冲突</Tag>
+              )}
+            </Space>
+          )}
+          description={(
+            <Text type="secondary">
+              #{item.id} · {memberDisplayName(nameById, item.submitted_by_id, '未知')} 提交于 {formatDateTime(item.created_at)}
+            </Text>
+          )}
+        />
+      </div>
+      {onToggleSelect ? (
+        // 阻止勾选冒泡触发整行导航
+        <div className="cn-list-item-actions" onClick={(e) => e.stopPropagation()}>
+          <Checkbox checked={!!selected} onChange={(e) => onToggleSelect(e.target.checked)} />
+        </div>
+      ) : undefined}
+    </div>
   )
 }
 
@@ -311,10 +316,11 @@ export default function ChangeRequestsPage() {
                       )}
                     </div>
                   )}
-                  <List
-                    size="small"
-                    dataSource={group.requests}
-                    renderItem={(item: ChangeRequest) => (
+                  <Listy
+                    className="cn-listy-compact"
+                    items={group.requests}
+                    rowKey={item => item.id}
+                    itemRender={(item: ChangeRequest) => (
                       <RequestLine
                         item={item}
                         nameById={nameById}
@@ -330,10 +336,11 @@ export default function ChangeRequestsPage() {
             })}
             {ungrouped.length > 0 && (
               <Card size="small" title={<Text strong>新增行申请</Text>}>
-                <List
-                  size="small"
-                  dataSource={ungrouped}
-                  renderItem={(item: ChangeRequest) => (
+                <Listy
+                  className="cn-listy-compact"
+                  items={ungrouped}
+                  rowKey={item => item.id}
+                  itemRender={(item: ChangeRequest) => (
                     <RequestLine item={item} nameById={nameById} showStatus={false} onClick={() => goDetail(item.id)} />
                   )}
                 />
@@ -341,9 +348,11 @@ export default function ChangeRequestsPage() {
             )}
           </Space>
         ) : (
-          <List
-            dataSource={flatItems}
-            renderItem={(item: ChangeRequest) => (
+          <Listy
+            className="cn-listy-plain"
+            items={flatItems}
+            rowKey={item => item.id}
+            itemRender={(item: ChangeRequest) => (
               <RequestLine
                 item={item}
                 nameById={nameById}
