@@ -12,7 +12,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import type { CSSProperties } from 'react'
-import { EditorState, Facet, StateField, type Range } from '@codemirror/state'
+import { EditorState, Facet, StateEffect, StateField, type Range } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -32,6 +32,8 @@ import { loadFileObjectUrl } from '@/hooks/useFileObjectUrl'
 import { highlightCode } from './codeHighlight'
 import { parseImageRef } from './imageRef'
 import { parseMdTable, type MdTable, type MdTableAlign } from './mdTable'
+import { parseTableRef } from './tableRef'
+import { subscribeRefNames, tableRefBadge } from './tableRefNames'
 import { WEIGHT } from '@/theme/tokens'
 import { mixColor } from '@/theme/themeMix'
 
@@ -172,6 +174,31 @@ class MarkdownBulletWidget extends WidgetType {
   }
 }
 
+// ── 数据表引用占位符：`{{table:…}}` 独占行渲染成可读徽章（0071）─────────
+
+class MarkdownTableRefWidget extends WidgetType {
+  constructor(
+    private readonly label: string,
+    private readonly invalid: boolean,
+    /** 原始占位文本：光标进入还原源码前的提示与无障碍说明 */
+    private readonly raw: string,
+  ) {
+    super()
+  }
+
+  eq(other: MarkdownTableRefWidget): boolean {
+    return other.label === this.label && other.invalid === this.invalid && other.raw === this.raw
+  }
+
+  toDOM(): HTMLElement {
+    const chip = document.createElement('span')
+    chip.className = this.invalid ? 'cm-md-tableref cm-md-tableref-invalid' : 'cm-md-tableref'
+    chip.textContent = `▦ ${this.label}`
+    chip.title = `${this.raw}${this.invalid ? '（名称获取失败，引用可能已失效）' : ''}`
+    return chip
+  }
+}
+
 // ── 表格：光标不在表格内时整块渲染成 <table> ────────────────
 
 const INLINE_TOKEN_RE = /(\*\*|__)(.+?)\1|(\*|_)(.+?)\3|`([^`]+)`|~~(.+?)~~/g
@@ -300,6 +327,8 @@ function buildDecorations(state: EditorState, getView: () => EditorView | null):
   const push = (deco: Range<Decoration> | null) => {
     if (deco) ranges.push(deco)
   }
+  /** 代码块范围：占位符徽章不装饰代码块内的同形文本 */
+  const codeRanges: Array<[number, number]> = []
   /** 勾选待办：只改标记本身（`[ ]` ↔ `[x]`），其余字符不动 */
   const toggleTask = (from: number, to: number, checked: boolean) => {
     getView()?.dispatch({ changes: { from, to, insert: checked ? '[x]' : '[ ]' } })
@@ -392,6 +421,7 @@ function buildDecorations(state: EditorState, getView: () => EditorView | null):
         const fenced = name === 'FencedCode'
         const firstLine = doc.lineAt(node.from)
         const lastLine = doc.lineAt(node.to)
+        codeRanges.push([node.from, node.to])
         // 闭合围栏行：与首行同为 ``` / ~~~ 且不是同一行（空代码块）
         const closing =
           fenced && lastLine.number > firstLine.number && /^\s*(?:`{3,}|~{3,})\s*$/.test(lastLine.text)
@@ -480,20 +510,50 @@ function buildDecorations(state: EditorState, getView: () => EditorView | null):
     },
   })
 
+  // 数据表引用占位符（0071）：独占行 `{{table:…}}` 渲染成可读徽章，
+  // 光标进入还原源码；代码块内的同形文本不装饰；名称未加载完成时保持源码。
+  const wid = state.facet(tableRefContext)
+  if (wid !== undefined) {
+    for (let i = 1; i <= doc.lines; i++) {
+      const line = doc.line(i)
+      if (active(line.from, line.to)) continue
+      if (codeRanges.some(([from, to]) => line.from >= from && line.to <= to)) continue
+      const ref = parseTableRef(line.text)
+      if (!ref) continue
+      const { label, invalid } = tableRefBadge(ref, wid)
+      if (label === null) continue
+      ranges.push(
+        Decoration.replace({
+          widget: new MarkdownTableRefWidget(label, invalid, line.text.trim()),
+        }).range(line.from, line.to),
+      )
+    }
+  }
+
   return Decoration.set(ranges, true)
 }
 
-/** 图片组件需要工作区上下文：用 facet 传递给 widget（widget 无法使用 React hook） */
+/** 图片 / 表格引用组件需要工作区上下文：用 facet 传递给装饰构建（widget 无法使用 React hook） */
 const imageContext = Facet.define<number | string | undefined, number | string | undefined>({
   combine: values => values[values.length - 1],
 })
+
+/** 表格引用徽章的工作区上下文（与 imageContext 同构，独立 facet 便于单测） */
+const tableRefContext = Facet.define<number | string | undefined, number | string | undefined>({
+  combine: values => values[values.length - 1],
+})
+
+/** 名称异步解析完成后重建装饰的刷新信号（0071） */
+const refreshTableRefDecos = StateEffect.define<null>()
 
 /** 实时预览装饰的 StateField：块级装饰（表格）只能由 state 提供，插件不允许 */
 function livePreviewField(getView: () => EditorView | null) {
   return StateField.define<DecorationSet>({
     create: state => buildDecorations(state, getView),
     update: (decos, tr) =>
-      tr.docChanged || tr.selection ? buildDecorations(tr.state, getView) : decos,
+      tr.docChanged || tr.selection || tr.effects.some(e => e.is(refreshTableRefDecos))
+        ? buildDecorations(tr.state, getView)
+        : decos,
     provide: field => EditorView.decorations.from(field),
   })
 }
@@ -590,6 +650,24 @@ const editorTheme = EditorView.theme({
   },
   '.cm-md-image': { display: 'inline-flex', alignItems: 'center', maxWidth: '100%' },
   '.cm-md-image img': { maxWidth: '100%', maxHeight: '320px', borderRadius: '6px', verticalAlign: 'middle' },
+  '.cm-md-tableref': {
+    display: 'inline-block',
+    maxWidth: '100%',
+    padding: '2px 10px',
+    borderRadius: '6px',
+    border: '1px solid var(--cn-border, #e5e7eb)',
+    backgroundColor: 'var(--cn-bg-subtle, #fafafa)',
+    color: 'var(--cn-text-secondary, #6b7280)',
+    fontSize: '0.9em',
+    cursor: 'text',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  '.cm-md-tableref-invalid': {
+    borderColor: 'var(--cn-warning-color, #faad14)',
+    color: 'var(--cn-warning-color, #faad14)',
+  },
 })
 
 const EDITOR_STYLE: CSSProperties = { flex: 1, minHeight: 0, overflow: 'hidden' }
@@ -679,6 +757,7 @@ const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorPr
         markdown({ base: markdownLanguage }),
         livePreviewField(() => viewRef.current),
         imageContext.of(workspaceId),
+        tableRefContext.of(workspaceId),
         cmPlaceholder(placeholder ?? ''),
         EditorView.updateListener.of(update => {
           if (update.docChanged) onChangeRef.current(update.state.doc.toString())
@@ -723,6 +802,15 @@ const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorPr
     // value/placeholder 只在挂载时取初值；后续通过受控同步 effect 写入。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, workspaceId])
+
+  // 数据表引用名称异步解析完成后重建徽章装饰（0071）；
+  // 名称命中缓存时不会触发通知，刷新本身不再发起拉取，无死循环。
+  useEffect(() => {
+    if (mode !== 'live') return
+    return subscribeRefNames(() => {
+      viewRef.current?.dispatch({ effects: refreshTableRefDecos.of(null) })
+    })
+  }, [mode])
 
   if (mode === 'source') {
     return (

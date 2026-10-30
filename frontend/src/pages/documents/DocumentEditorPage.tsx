@@ -810,6 +810,12 @@ export default function DocumentEditorPage() {
     const limit = insertLimit ? `|limit=${insertLimit}` : ''
     const width = insertWidth !== DEFAULT_REF_WIDTH ? `|width=${insertWidth}` : ''
     insertSnippetAtCursor(`{{table:${insertTableId}${view}${limit}${width}}}`)
+    // 0071：插入成功提示带可读名，避免落笔后只剩 ID 无从对应
+    const tableName = tablesQuery.data?.find(t => t.id === insertTableId)?.name ?? `#${insertTableId}`
+    const viewName = insertViewId
+      ? viewsQuery.data?.find(v => v.id === insertViewId)?.name ?? `#${insertViewId}`
+      : null
+    message.success(`已插入数据表引用：${tableName}${viewName ? ` · ${viewName}` : ''}`)
     setInsertOpen(false)
     resetInsertState()
   }

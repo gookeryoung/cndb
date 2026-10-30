@@ -49,6 +49,14 @@ export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthC
     retry: false,
   })
 
+  // 视图名（0071）：带 view 时取名称展示，失败回退 `视图 #<ID>`
+  const viewQuery = useQuery({
+    queryKey: ['table-embed', workspaceId, tableRef.tableId, 'view-name', tableRef.view],
+    queryFn: () => viewApi.get(workspaceId, tableRef.tableId, tableRef.view!),
+    enabled: tableQuery.isSuccess && tableRef.view != null,
+    retry: false,
+  })
+
   // 行数据：带 view 走视图 rows（应用过滤/排序），否则直接分页拉 records
   const rowsQuery = useQuery({
     queryKey: [
@@ -117,7 +125,9 @@ export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthC
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
           {tableQuery.data.name}
-          {tableRef.view ? ` · 视图 #${tableRef.view}` : ''}
+          {tableRef.view
+            ? ` · ${viewQuery.data?.name ?? `视图 #${tableRef.view}`}`
+            : ''}
           {` · 共 ${rowsQuery.data?.total ?? 0} 行`}
         </Text>
         {onWidthChange && (

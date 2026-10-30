@@ -114,3 +114,44 @@ describe('TableEmbed', () => {
     expect(screen.queryByText(/\[\{/)).toBeNull()
   })
 })
+
+describe('TableEmbed 视图名展示（0071）', () => {
+  const rowsHandler = http.get('/api/v1/workspaces/10/tables/100/views/200/rows', () =>
+    HttpResponse.json({ rows: [], total: 0, view_id: 200 }))
+
+  it('带 view 时头部展示视图名而非 ID', async () => {
+    server.use(
+      rowsHandler,
+      http.get('/api/v1/workspaces/10/tables/100/views/200', () =>
+        HttpResponse.json({ id: 200, name: '重点客户', view_type: 'grid', is_default: false })),
+    )
+    renderProviders(<TableEmbed workspaceId={10} tableRef={{ tableId: 100, limit: 5, view: 200 }} />)
+    // 视图名接口是表详情之后的串行请求，等视图名出现再断言
+    const caption = await screen.findByText(/重点客户/)
+    expect(caption.textContent).toContain('客户表')
+    expect(caption.textContent).not.toContain('视图 #200')
+  })
+
+  it('视图名拉取失败回退「视图 #<ID>」', async () => {
+    server.use(
+      rowsHandler,
+      http.get('/api/v1/workspaces/10/tables/100/views/200', () => HttpResponse.json(null, { status: 404 })),
+    )
+    renderProviders(<TableEmbed workspaceId={10} tableRef={{ tableId: 100, limit: 5, view: 200 }} />)
+    const caption = await screen.findByText(/客户表/)
+    expect(caption.textContent).toContain('视图 #200')
+  })
+
+  it('无 view 参数时不请求视图名接口', async () => {
+    let viewDetailCalled = false
+    server.use(
+      http.get('/api/v1/workspaces/10/tables/100/views/200', () => {
+        viewDetailCalled = true
+        return HttpResponse.json({ id: 200, name: 'x', view_type: 'grid', is_default: false })
+      }),
+    )
+    renderProviders(<TableEmbed workspaceId={10} tableRef={{ tableId: 100, limit: 5 }} />)
+    await screen.findByTestId('table-embed-100')
+    expect(viewDetailCalled).toBe(false)
+  })
+})

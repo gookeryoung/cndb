@@ -1,9 +1,9 @@
 /** MarkdownLiveEditor 实时预览 — 代码块高亮 / 列表符号 / 待办复选框 / 表格渲染 */
 
 import { useState } from 'react'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render } from '@testing-library/react'
-import MarkdownLiveEditor from './MarkdownLiveEditor'
+import MarkdownLiveEditor, { type MarkdownEditorHandle } from './MarkdownLiveEditor'
 
 function renderEditor(value: string) {
   return render(
@@ -113,5 +113,84 @@ describe('MarkdownLiveEditor 表格', () => {
   it('分隔行不合法时不做表格渲染', () => {
     const { container } = renderEditor('说明\n\n| a | b |\n| x | y |')
     expect(container.querySelector('.cm-md-table')).toBeNull()
+  })
+})
+
+// ── 数据表引用占位符徽章（0071）────────────────────────
+
+const { badgeMock, subscribeMock } = vi.hoisted(() => ({
+  badgeMock: vi.fn(),
+  subscribeMock: vi.fn(),
+}))
+
+vi.mock('./tableRefNames', () => ({
+  tableRefBadge: badgeMock,
+  subscribeRefNames: subscribeMock,
+}))
+
+describe('MarkdownLiveEditor 数据表引用徽章', () => {
+  beforeEach(() => {
+    badgeMock.mockReset().mockReturnValue({ label: null, invalid: false })
+    subscribeMock.mockReset().mockReturnValue(() => {})
+  })
+
+  it('名称解析完成后独占行占位符渲染成可读徽章，源码不再直接显示', () => {
+    badgeMock.mockReturnValue({ label: '客户表 · 重点客户', invalid: false })
+    const { container } = renderEditor('正文\n\n{{table:7|view=200}}\n\n后文')
+    const chip = container.querySelector<HTMLElement>('.cm-md-tableref')
+    expect(chip?.textContent).toBe('▦ 客户表 · 重点客户')
+    expect(chip?.title).toContain('{{table:7|view=200}}')
+    expect(container.querySelector('.cm-content')?.textContent).not.toContain('{{table:7')
+  })
+
+  it('名称拉取失败时徽章带警示样式', () => {
+    badgeMock.mockReturnValue({ label: '#7', invalid: true })
+    // 占位行不能与光标同处首行，否则还原源码不渲染徽章
+    const { container } = renderEditor('前文\n\n{{table:7}}\n\n后文')
+    const chip = container.querySelector<HTMLElement>('.cm-md-tableref')
+    expect(chip).not.toBeNull()
+    expect(chip?.className).toContain('cm-md-tableref-invalid')
+    expect(chip?.title).toContain('引用可能已失效')
+  })
+
+  it('名称加载中（label=null）保持源码展示', () => {
+    const { container } = renderEditor('前文\n\n{{table:7}}\n\n后文')
+    expect(container.querySelector('.cm-md-tableref')).toBeNull()
+    expect(container.querySelector('.cm-content')?.textContent).toContain('{{table:7}}')
+  })
+
+  it('光标进入占位行还原为源码，便于编辑', () => {
+    badgeMock.mockReturnValue({ label: '客户表', invalid: false })
+    let handle: MarkdownEditorHandle | null = null
+    const { container } = render(
+      <MarkdownLiveEditor
+        ref={h => { handle = h }}
+        value={'前文\n\n{{table:7}}\n\n后文'}
+        mode="live"
+        workspaceId={1}
+        onChange={() => {}}
+      />,
+    )
+    expect(container.querySelector('.cm-md-tableref')).not.toBeNull()
+    // 光标定位到第 3 行行首（占位行）→ 还原源码
+    handle!.setSelection(4)
+    expect(container.querySelector('.cm-md-tableref')).toBeNull()
+    expect(container.querySelector('.cm-content')?.textContent).toContain('{{table:7}}')
+  })
+
+  it('代码块内的同形文本不渲染徽章', () => {
+    badgeMock.mockReturnValue({ label: '客户表', invalid: false })
+    const { container } = renderEditor('```\n{{table:7}}\n```')
+    expect(container.querySelector('.cm-md-tableref')).toBeNull()
+  })
+
+  it('live 模式订阅名称解析通知；源码模式不订阅', () => {
+    renderEditor('{{table:7}}')
+    expect(subscribeMock).toHaveBeenCalledTimes(1)
+    const { unmount } = render(
+      <MarkdownLiveEditor value="{{table:7}}" mode="source" workspaceId={1} onChange={() => {}} />,
+    )
+    expect(subscribeMock).toHaveBeenCalledTimes(1)
+    unmount()
   })
 })

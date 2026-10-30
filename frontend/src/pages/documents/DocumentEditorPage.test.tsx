@@ -90,8 +90,12 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         openSelect(combo)
         fireEvent.click(await screen.findByText('客户表'))
 
-        // 确认插入（「插入」按钮）
+        // 确认插入（「插入」按钮）；成功提示带可读名（0071）
+        const successSpy = vi.spyOn(message, 'success').mockImplementation(() => undefined as never)
         fireEvent.click(screen.getByRole('button', { name: /^插\s*入$/ }))
+        await waitFor(() => {
+            expect(successSpy).toHaveBeenCalledWith('已插入数据表引用：客户表')
+        })
 
         // 编辑区出现占位符且独占首段（光标在文首时插到最前，随后空行分隔正文）
         await waitFor(() => {
@@ -134,9 +138,14 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         openSelect(viewCombo)
         fireEvent.click(await screen.findByText('全部数据'))
 
+        // message 提示（0071）：用 spy 断言，规避 portal 渲染时序
+        const successSpy = vi.spyOn(message, 'success').mockImplementation(() => undefined as never)
         fireEvent.click(screen.getByRole('button', { name: /^插\s*入$/ }))
         await waitFor(() => {
             expect(ta.value.startsWith('{{table:100|view=200}}')).toBe(true)
+        })
+        await waitFor(() => {
+            expect(successSpy).toHaveBeenCalledWith('已插入数据表引用：客户表 · 全部数据')
         })
     }, 30_000)
 
