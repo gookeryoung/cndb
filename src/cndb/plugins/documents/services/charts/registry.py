@@ -80,7 +80,7 @@ class ChartTemplate:
 
 CHART_CATEGORIES: tuple[ChartCategory, ...] = (
     ChartCategory("composition", "结构构成", "整体中各部分的构成与变化"),
-    ChartCategory("comparison", "目标对比", "现状与规划目标的逐项对比"),
+    ChartCategory("comparison", "对比", "现状与目标的逐项对比"),
     ChartCategory("comparison-bar", "对比-柱形", "柱形类对比图", parent="comparison"),
     ChartCategory("comparison-bar-h", "对比-条形", "条形类对比图", parent="comparison"),
 )

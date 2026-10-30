@@ -5003,6 +5003,22 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   user-select: text;
 }
 
+/* 插入图表弹窗：模板分类卡片化（每个一级分类独立边框圆角，便于多类别纵向堆叠），
+   展开/收起动画由 antd Collapse 内置 motion 提供 */
+.cn-insert-chart-modal .chart-template-collapse {
+  background: transparent;
+}
+.cn-insert-chart-modal .chart-template-collapse > .ant-collapse-item {
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm, 6px);
+  margin-bottom: 8px;
+  overflow: hidden;
+  background: var(--cn-bg-container, #fff);
+}
+.cn-insert-chart-modal .chart-template-collapse > .ant-collapse-item:last-child {
+  margin-bottom: 0;
+}
+
 /* ─────────────── 编辑器状态栏（字数 / 行数 / 阅读时长） ─────────────── */
 .cn-doc-stats {
   flex-shrink: 0;

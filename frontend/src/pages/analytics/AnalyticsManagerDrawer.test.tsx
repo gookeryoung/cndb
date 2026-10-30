@@ -71,7 +71,7 @@ function renderDrawer(props: Partial<DrawerProps> = {}) {
 }
 
 describe('AnalyticsManagerDrawer', () => {
-  it('列出全部分析：名称 / 说明 / 数据源表名 / 公式数 / 更新时间 / 当前标记', () => {
+  it('列出全部分析：紧凑主行（名称 / 标记 / 数据源 / 公式数），描述与更新时间默认收起', () => {
     renderDrawer()
 
     expect(screen.getByTestId('analytics-manager')).toBeInTheDocument()
@@ -79,17 +79,34 @@ describe('AnalyticsManagerDrawer', () => {
 
     const main = screen.getByTestId('analytics-manager-item-7')
     expect(main).toHaveTextContent('批次合格率分布')
-    expect(main).toHaveTextContent('按产品看合格率')
-    expect(main).toHaveTextContent('数据源：产品批次')
-    expect(main).toHaveTextContent('1 个公式')
+    expect(main).toHaveTextContent('产品批次 · 1 个公式')
     expect(main).toHaveTextContent('当前')
     expect(main).toHaveTextContent('未保存')
+    // 描述与更新时间收在详情里，主行不展示
+    expect(main).not.toHaveTextContent('按产品看合格率')
+    expect(main).not.toHaveTextContent('更新于')
+    expect(screen.queryByTestId('analytics-manager-desc-7')).not.toBeInTheDocument()
 
     const other = screen.getByTestId('analytics-manager-item-8')
-    expect(other).toHaveTextContent('数据源：其他表')
+    expect(other).toHaveTextContent('其他表 · 1 个公式')
     // 空表达式公式不计入公式数
-    expect(other).toHaveTextContent('1 个公式')
+    expect(other).not.toHaveTextContent('2 个公式')
     expect(other).not.toHaveTextContent('当前')
+  })
+
+  it('点击展开箭头显示详情（描述 / 数据源 / 更新时间），再点收起', () => {
+    renderDrawer()
+
+    expect(screen.queryByTestId('analytics-manager-desc-7')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('analytics-manager-expand-7'))
+    const desc = screen.getByTestId('analytics-manager-desc-7')
+    expect(desc).toHaveTextContent('按产品看合格率')
+    expect(desc).toHaveTextContent('数据源：产品批次')
+    expect(desc).toHaveTextContent('更新于')
+
+    fireEvent.click(screen.getByTestId('analytics-manager-expand-7'))
+    expect(screen.queryByTestId('analytics-manager-desc-7')).not.toBeInTheDocument()
   })
 
   it('打开 / 复制按钮回调对应模板', () => {

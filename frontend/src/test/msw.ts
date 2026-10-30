@@ -218,8 +218,8 @@ export const mockChartTemplates: ChartTemplatesPayload = {
   categories: [
     {
       key: 'comparison',
-      name: '目标对比',
-      description: '现状与规划目标的逐项对比',
+      name: '对比',
+      description: '现状与目标的逐项对比',
       children: [
         { key: 'comparison-bar', name: '对比-柱形', description: '柱形类对比图', parent: 'comparison' },
         { key: 'comparison-bar-h', name: '对比-条形', description: '条形类对比图', parent: 'comparison' },

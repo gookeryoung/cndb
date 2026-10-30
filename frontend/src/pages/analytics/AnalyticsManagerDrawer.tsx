@@ -6,8 +6,15 @@
  * - 删除：组件内二次确认（与页面删除入口语义一致）后交给页面删除。
  */
 
+import { useState } from 'react'
 import { App as AntApp, Button, Drawer, Empty, List, Space, Tag, Tooltip, Typography } from 'antd'
-import { CopyOutlined, DeleteOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons'
+import {
+  CaretRightOutlined,
+  CopyOutlined,
+  DeleteOutlined,
+  FolderOpenOutlined,
+  PlusOutlined,
+} from '@ant-design/icons'
 import type { AnalyticsTemplate } from '@/api/analytics'
 import { templateTableName } from './analyticsModel'
 import { WEIGHT } from '@/theme/tokens'
@@ -60,6 +67,17 @@ export function AnalyticsManagerDrawer({
   onNew,
 }: Props) {
   const { modal } = AntApp.useApp()
+  /** 展开详情（描述 / 更新时间）的模板 id 集合 */
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set())
+
+  const toggleExpanded = (id: number) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
 
   const confirmDelete = (template: AnalyticsTemplate) => {
     modal.confirm({
@@ -108,70 +126,106 @@ export function AnalyticsManagerDrawer({
             renderItem={template => {
               const isActive = template.id === activeTemplateId
               const updatedAt = formatUpdatedAt(template.updated_at)
+              const expanded = expandedIds.has(template.id)
               return (
                 <List.Item
                   data-testid={`analytics-manager-item-${template.id}`}
-                  actions={[
-                    <Tooltip key="open" title="打开该分析">
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<FolderOpenOutlined />}
-                        data-testid={`analytics-manager-open-${template.id}`}
-                        onClick={() => onOpenTemplate(template)}
-                      >
-                        打开
-                      </Button>
-                    </Tooltip>,
-                    <Tooltip key="duplicate" title="复制为新分析（默认「原名 副本」）">
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<CopyOutlined />}
-                        loading={duplicating}
-                        data-testid={`analytics-manager-duplicate-${template.id}`}
-                        onClick={() => onDuplicate(template)}
-                      >
-                        复制
-                      </Button>
-                    </Tooltip>,
-                    <Tooltip key="delete" title="删除后不可恢复">
-                      <Button
-                        type="link"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        loading={deleting}
-                        data-testid={`analytics-manager-delete-${template.id}`}
-                        onClick={() => confirmDelete(template)}
-                      >
-                        删除
-                      </Button>
-                    </Tooltip>,
-                  ]}
+                  style={{
+                    display: 'block',
+                    marginBottom: 8,
+                    padding: '6px 12px',
+                    border: '1px solid var(--cn-border-soft, #d1d5db)',
+                    borderRadius: 8,
+                  }}
                 >
-                  <List.Item.Meta
-                    title={
-                      <Space wrap size={4}>
-                        <span>{template.name}</span>
-                        {isActive && <Tag color="blue">当前</Tag>}
-                        {isActive && dirty && <Tag color="orange">未保存</Tag>}
-                      </Space>
-                    }
-                    description={
-                      <div data-testid={`analytics-manager-desc-${template.id}`}>
-                        {template.description ? (
-                          <div style={{ marginBottom: 2 }}>{template.description}</div>
-                        ) : null}
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          数据源：{templateTableName(tables, template.table_id)}
-                          {' · '}
-                          {formulaCount(template)} 个公式
-                          {updatedAt ? ` · 更新于 ${updatedAt}` : ''}
-                        </Text>
-                      </div>
-                    }
-                  />
+                  {/* 紧凑主行：展开箭头 + 名称 / 标记 / 内联摘要 + 操作 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, minHeight: 28 }}>
+                    <Tooltip title={expanded ? '收起详情' : '展开详情（描述 / 更新时间）'}>
+                      <Button
+                        type="text"
+                        size="small"
+                        aria-label={expanded ? `收起详情 ${template.name}` : `展开详情 ${template.name}`}
+                        data-testid={`analytics-manager-expand-${template.id}`}
+                        icon={
+                          <CaretRightOutlined
+                            rotate={expanded ? 90 : 0}
+                            style={{ color: 'rgba(0,0,0,0.45)' }}
+                          />
+                        }
+                        onClick={() => toggleExpanded(template.id)}
+                      />
+                    </Tooltip>
+                    <Space size={4} style={{ flex: 1, minWidth: 0 }}>
+                      <span
+                        style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          fontWeight: isActive ? WEIGHT.medium : WEIGHT.regular,
+                        }}
+                      >
+                        {template.name}
+                      </span>
+                      {isActive && <Tag color="blue">当前</Tag>}
+                      {isActive && dirty && <Tag color="orange">未保存</Tag>}
+                      <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                        {templateTableName(tables, template.table_id)} · {formulaCount(template)} 个公式
+                      </Text>
+                    </Space>
+                    <Space size={0}>
+                      <Tooltip title="打开该分析">
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<FolderOpenOutlined />}
+                          data-testid={`analytics-manager-open-${template.id}`}
+                          onClick={() => onOpenTemplate(template)}
+                        >
+                          打开
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="复制为新分析（默认「原名 副本」）">
+                        <Button
+                          type="link"
+                          size="small"
+                          icon={<CopyOutlined />}
+                          loading={duplicating}
+                          data-testid={`analytics-manager-duplicate-${template.id}`}
+                          onClick={() => onDuplicate(template)}
+                        >
+                          复制
+                        </Button>
+                      </Tooltip>
+                      <Tooltip title="删除后不可恢复">
+                        <Button
+                          type="link"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          loading={deleting}
+                          data-testid={`analytics-manager-delete-${template.id}`}
+                          onClick={() => confirmDelete(template)}
+                        >
+                          删除
+                        </Button>
+                      </Tooltip>
+                    </Space>
+                  </div>
+                  {/* 展开详情：描述 + 更新时间 */}
+                  {expanded && (
+                    <div
+                      data-testid={`analytics-manager-desc-${template.id}`}
+                      style={{ padding: '2px 0 4px 32px' }}
+                    >
+                      {template.description ? (
+                        <div style={{ marginBottom: 2 }}>{template.description}</div>
+                      ) : null}
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        数据源：{templateTableName(tables, template.table_id)}
+                        {updatedAt ? ` · 更新于 ${updatedAt}` : ''}
+                      </Text>
+                    </div>
+                  )}
                 </List.Item>
               )
             }}

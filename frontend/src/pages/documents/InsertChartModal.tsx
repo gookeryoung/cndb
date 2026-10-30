@@ -197,15 +197,20 @@ export default function InsertChartModal({
                   {grouped.length > 0 && (
                     <Collapse
                       accordion
-                      ghost
                       size="small"
+                      className="chart-template-collapse"
                       defaultActiveKey={defaultExpandKey ? [defaultExpandKey] : []}
                       items={grouped.map(({ cat, direct, byChild }) => ({
                         key: cat.key,
                         label: (
-                          <Text strong style={{ fontSize: 13 }}>
-                            {cat.name}
-                          </Text>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <Text strong style={{ fontSize: 13 }}>
+                              {cat.name}
+                            </Text>
+                            <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
+                              {cat.description}
+                            </Text>
+                          </div>
                         ),
                         children: (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

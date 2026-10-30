@@ -23,8 +23,9 @@ describe('InsertChartModal', () => {
   it('「新建图表」页签：左栏多级列表（一级常显、二级展开），右栏未选中为空态且不发预览（C2/C3）', async () => {
     renderModal()
 
-    // 一级分类常显；第一个含模板的一级默认展开出二级与模板项
-    expect(await screen.findByText('目标对比')).toBeInTheDocument()
+    // 一级分类常显（含小字描述）；第一个含模板的一级默认展开出二级与模板项
+    expect(await screen.findByText('对比')).toBeInTheDocument()
+    expect(screen.getByText('现状与目标的逐项对比')).toBeInTheDocument()
     expect(screen.getByText('对比-柱形')).toBeInTheDocument()
     expect(screen.getByText('对比-条形')).toBeInTheDocument()
     expect(screen.getByTestId('chart-template-item-bar-line-dual-axis')).toBeInTheDocument()
