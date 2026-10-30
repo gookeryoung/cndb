@@ -31,6 +31,15 @@ export interface ChartLabelField {
   label: string
 }
 
+/** 模板样式开关声明（设计器按此生成样式表单，需求卡片 0070 C3） */
+export interface ChartStyleField {
+  key: string
+  label: string
+}
+
+/** 行结构类型：dual-axis（label+value+growth）| series（label+values[]）| value（label+value）| xy（x+y） */
+export type ChartRowKind = 'dual-axis' | 'series' | 'value' | 'xy'
+
 /** 图表模板（二级）：schema + 默认配置 */
 export interface ChartTemplateInfo {
   key: string
@@ -42,7 +51,9 @@ export interface ChartTemplateInfo {
   row_columns: ChartRowColumn[]
   series_min: number
   series_max: number
+  row_kind: ChartRowKind
   label_fields: ChartLabelField[]
+  style_fields: ChartStyleField[]
   default_config: Record<string, unknown>
 }
 
