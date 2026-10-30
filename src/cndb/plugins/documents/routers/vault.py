@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -112,10 +112,14 @@ def export_document_vault(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    style: Annotated[
+        str, Query(description="导出方式：obsidian（front-matter + .obsidian 配置）/ folder（纯 Markdown 文件夹树）")
+    ] = "obsidian",
 ) -> StreamingResponse:
-    """导出当前工作区文档树为 Obsidian 库（zip）.
+    """导出当前工作区文档树为 zip.
 
-    结构：``<库名>/<文件夹>/<标题>.md`` + ``attachments/`` + 最小 ``.obsidian/app.json``；
+    ``style=obsidian``（默认）：``<库名>/<文件夹>/<标题>.md`` + front-matter + ``attachments/``
+    + 最小 ``.obsidian/app.json``；``style=folder``：纯 Markdown 文件夹树。
     只导出当前用户可见的文档（未发布草稿仍按可见性规则裁剪）。
     """
     workspace = _require_member(db, workspace_id, current_user)
@@ -124,6 +128,7 @@ def export_document_vault(
         workspace_id,
         current_user,
         workspace_name=workspace.name or "",
+        style=style,
     )
     quoted = quote(filename)
     return StreamingResponse(

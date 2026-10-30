@@ -500,3 +500,30 @@ class TestExport:
     def test_export_empty_workspace(self, client, ws, auth):
         r = client.get(EXPORT.format(ws=ws.id), headers=auth)
         assert r.status_code == 400
+
+    def test_export_folder_style_is_plain_markdown_tree(self, client, ws, auth):
+        assert _post_zip(client, IMPORT.format(ws=ws.id), _vault_zip(), auth).status_code == 200
+
+        r = client.get(EXPORT.format(ws=ws.id), params={"style": "folder"}, headers=auth)
+        assert r.status_code == 200, r.text
+
+        # Content-Disposition 文件名：{工作区名}-folder-{时间戳}.zip
+        match = re.search(r"filename\*=UTF-8''(.+)", r.headers["content-disposition"])
+        assert match is not None
+        assert re.fullmatch(r"%E6%88%91%E7%9A%84%E7%9F%A5%E8%AF%86%E5%BA%93-folder-\d{8}-\d{4}\.zip", match.group(1))
+
+        with zipfile.ZipFile(io.BytesIO(r.content)) as archive:
+            names = set(archive.namelist())
+            assert "我的知识库/索引页.md" in names
+            assert "我的知识库/笔记/设计稿.md" in names
+            assert any(name.startswith("我的知识库/attachments/") for name in names)
+            # 纯文件夹导出：无 .obsidian 配置、无 front-matter
+            assert not any(name.startswith("我的知识库/.obsidian/") for name in names)
+            note = archive.read("我的知识库/索引页.md").decode("utf-8")
+            assert not note.startswith("---")
+            assert "![[attachments/" in note
+
+    def test_export_rejects_unknown_style(self, client, ws, auth):
+        assert _post_zip(client, IMPORT.format(ws=ws.id), _vault_zip(), auth).status_code == 200
+        r = client.get(EXPORT.format(ws=ws.id), params={"style": "word"}, headers=auth)
+        assert r.status_code == 400

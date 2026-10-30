@@ -1,6 +1,7 @@
 /** 文档管理 API — /api/v1/workspaces/{wid}/documents */
 
 import api from './client'
+import { parseContentDispositionFilename } from '@/utils/disposition'
 
 // ── 类型 ──
 
@@ -784,9 +785,11 @@ export const documentsApi = {
       .then(r => r.data)
   },
 
-  /** 导出当前工作区文档树为 Obsidian 库（zip blob） */
-  vaultExport: (wid: number | string) =>
-    api.get<Blob>(`${base(wid)}/export/vault`, { responseType: 'blob' }).then(r => r.data),
+  /** 导出当前工作区文档树为压缩包（zip blob + 后端 Content-Disposition 建议文件名） */
+  vaultExport: (wid: number | string, style: 'obsidian' | 'folder' = 'obsidian') =>
+    api
+      .get<Blob>(`${base(wid)}/export/vault`, { params: { style }, responseType: 'blob' })
+      .then(r => ({ blob: r.data, filename: parseContentDispositionFilename(r.headers?.['content-disposition']) })),
 
   // ── 通用文件导入（md / docx / html，单文件与文件夹模式）──
 

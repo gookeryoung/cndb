@@ -14,6 +14,7 @@ import {
   List,
   Modal,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Tag,
@@ -214,20 +215,24 @@ export default function DocumentsPage() {
     onError: () => message.error('删除失败'),
   })
 
-  // Obsidian 库导出（整库 zip：目录结构 + front-matter + 附件）
+  // 文档导出弹窗（需求 0072）：选「文件夹（Markdown）」或「Obsidian 库」，均为后端打包 zip
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportStyle, setExportStyle] = useState<'obsidian' | 'folder'>('obsidian')
   const vaultExportMut = useMutation({
-    mutationFn: () => documentsApi.vaultExport(workspaceId),
-    onSuccess: (blob: Blob) => {
+    mutationFn: (style: 'obsidian' | 'folder') => documentsApi.vaultExport(workspaceId, style),
+    onSuccess: ({ blob, filename }) => {
       const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
       const url = URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `obsidian-vault-${ts}.zip`
+      // 优先用后端 Content-Disposition 的统一命名（{工作区名}-{方式}-{时间戳}.zip）
+      link.download = filename ?? `documents-${ts}.zip`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
-      message.success('已导出 Obsidian 库')
+      message.success(exportStyle === 'folder' ? '已导出文件夹' : '已导出 Obsidian 库')
+      setExportOpen(false)
     },
     onError: (err: unknown) => message.error(err instanceof Error ? err.message : '导出失败'),
   })
@@ -534,7 +539,7 @@ export default function DocumentsPage() {
   const mobileToolbarMenu: MenuProps['items'] = [
     { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
     { key: 'import', icon: <ImportOutlined />, label: '导入', onClick: () => setFileImportOpen(true) },
-    { key: 'export', icon: <ExportOutlined />, label: '导出 Obsidian 库', onClick: () => vaultExportMut.mutate() },
+    { key: 'export', icon: <ExportOutlined />, label: '导出', onClick: () => setExportOpen(true) },
     { type: 'divider' },
     { key: 'trash', icon: <DeleteOutlined />, label: '回收站', onClick: () => setTrashOpen(true) },
   ]
@@ -588,12 +593,11 @@ export default function DocumentsPage() {
                   导入
                 </Button>
               </Tooltip>
-              <Tooltip title="把当前工作区文档树导出为 Obsidian 库（.zip）">
+              <Tooltip title="导出当前工作区文档树：文件夹（Markdown 压缩包）或 Obsidian 库（.zip）">
                 <Button
                   icon={<ExportOutlined />}
                   data-testid="doc-vault-export"
-                  loading={vaultExportMut.isPending}
-                  onClick={() => vaultExportMut.mutate()}
+                  onClick={() => setExportOpen(true)}
                 >
                   导出
                 </Button>
@@ -979,6 +983,40 @@ export default function DocumentsPage() {
             />
           )}
         </Space>
+      </Modal>
+
+      {/* 导出方式选择弹窗（需求 0072）：文件夹（Markdown）/ Obsidian 库，均为 zip 下载 */}
+      <Modal
+        title="导出文档"
+        open={exportOpen}
+        onCancel={() => setExportOpen(false)}
+        onOk={() => vaultExportMut.mutate(exportStyle)}
+        okText="导出"
+        cancelText="取消"
+        okButtonProps={{ loading: vaultExportMut.isPending, 'data-testid': 'doc-export-confirm' }}
+        destroyOnHidden
+      >
+        <Radio.Group
+          value={exportStyle}
+          onChange={e => setExportStyle(e.target.value as 'obsidian' | 'folder')}
+          data-testid="doc-export-style"
+          style={{ width: '100%' }}
+        >
+          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+            <Radio value="folder">
+              <Space direction="vertical" size={0}>
+                <Text>文件夹（Markdown）</Text>
+                <Text type="secondary">按文档树层级打包为 .md 文件夹压缩包，附件一并导出</Text>
+              </Space>
+            </Radio>
+            <Radio value="obsidian">
+              <Space direction="vertical" size={0}>
+                <Text>Obsidian 库</Text>
+                <Text type="secondary">含 front-matter 与最小 .obsidian 配置，解压后可直接作为库打开</Text>
+              </Space>
+            </Radio>
+          </Space>
+        </Radio.Group>
       </Modal>
 
       {/* 重命名弹窗（系列 / 列表行共用：文案与 testid 按来源区分） */}
