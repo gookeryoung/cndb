@@ -330,6 +330,37 @@ describe('AnalyticsPage', () => {
     expect(screen.getByTestId('analytics-export-summary')).toBeInTheDocument()
   })
 
+  it('三段带状布局：各结果盒落在对应配置的同一段内', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('analytics-run-btn'))
+    await screen.findByTestId('analytics-summary-table')
+
+    // 计算模板段 → 描述统计 + 派生数据；可视化段 → 图表；分组汇总段 → 汇总表
+    const formulaBand = screen.getByTestId('analytics-band-formula')
+    expect(within(formulaBand).getByTestId('analytics-stats-table')).toBeInTheDocument()
+    expect(within(formulaBand).getByTestId('analytics-rows-table')).toBeInTheDocument()
+
+    const chartBand = screen.getByTestId('analytics-band-chart')
+    expect(within(chartBand).getByTestId('analytics-export-chart')).toBeInTheDocument()
+    expect(within(chartBand).queryByTestId('analytics-summary-table')).not.toBeInTheDocument()
+
+    const summaryBand = screen.getByTestId('analytics-band-summary')
+    expect(within(summaryBand).getByTestId('analytics-summary-table')).toBeInTheDocument()
+    expect(within(summaryBand).queryByTestId('analytics-stats-table')).not.toBeInTheDocument()
+  })
+
+  it('未运行时：三段各显示结果占位提示', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+
+    expect(screen.getAllByTestId('analytics-result-placeholder')).toHaveLength(3)
+    expect(screen.getByTestId('analytics-band-formula')).toHaveTextContent('描述统计与派生数据')
+    expect(screen.getByTestId('analytics-band-chart')).toHaveTextContent('这里显示图表')
+    expect(screen.getByTestId('analytics-band-summary')).toHaveTextContent('分组汇总表')
+  })
+
   it('Ctrl/Cmd+Enter 在公式输入中直接运行分析', async () => {
     renderPage('/w/1/analytics?template=7')
     await waitTemplateLoaded()

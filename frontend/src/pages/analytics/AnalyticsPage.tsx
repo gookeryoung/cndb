@@ -5,10 +5,12 @@
  * 页面能力：
  * - 模板：加载 / 保存 / 另存为副本 / 重命名 / 删除；`?template=<id>` 深链刷新保持；
  *   有未保存修改时切换模板先确认
+ * - 布局：数据源与智能推荐全宽置顶；下方按分析环节分三段带状布局，左配置右对应结果——
+ *   计算模板 → 描述统计/派生数据、可视化 → 图表、分组汇总 → 分组汇总表
  * - 计算模板：多行公式编辑器（字段/函数快捷插入、示例片段、Ctrl/Cmd+Enter 运行、实时校验）
  * - 可视化：图表类型 + 维度聚合方式 + 维度/指标/系列
  * - 分组汇总：分组字段 + 指标（字段/公式 × 聚合）+ 排序 + Top N
- * - 结果：图表（可导出 PNG）+ 分组汇总表 + 描述统计（方差/极差/非空率）+ 派生数据（分页/排序/CSV）
+ * - AI：一句话生成分析模板（填编辑态不落库）+ 结果 AI 解读（只读抽屉）
  *
  * 公式语法（后端受限引擎，非 eval）：`[字段名]` 引用字段、`+ - * / ( )`、后缀 `%`、
  * round/abs/sqrt/pow/ceil/floor、整列聚合 sum/avg/count/min/max。
@@ -22,7 +24,7 @@ import {
 } from 'antd'
 import {
   DeleteOutlined, SaveOutlined, BarChartOutlined, PlayCircleOutlined, CopyOutlined, EditOutlined,
-  UnorderedListOutlined, DatabaseOutlined, TableOutlined,
+  UnorderedListOutlined, DatabaseOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { tableApi, useLlmConfigured } from '@/api'
@@ -42,7 +44,7 @@ import { AnalyticsBox } from './AnalyticsBox'
 import { FormulaPanel } from './FormulaPanel'
 import { ChartPanel } from './ChartPanel'
 import { SummaryPanel } from './SummaryPanel'
-import { AnalyticsResultView } from './AnalyticsResultView'
+import { ChartResultBox, RowsResultBox, StatsResultBox, SummaryResultBox } from './AnalyticsResultView'
 import { RecommendationPanel } from './RecommendationPanel'
 import { AnalyticsManagerDrawer } from './AnalyticsManagerDrawer'
 import { applySuggestionConfig, buildExplainPayload, suggestionName } from './analyticsAi'
@@ -66,6 +68,15 @@ const { Text } = Typography
 
 /** AI 解读抽屉只在点击「AI 解读」后才需要，lazy 挂载避免进入分析页首屏 chunk */
 const AnalyticsAiExplainDrawer = lazy(() => import('./AnalyticsAiExplainDrawer'))
+
+/** 未运行时的结果占位：与对应配置同排展示，提示运行后此处出现什么 */
+function ResultPlaceholder({ text }: { text: string }) {
+  return (
+    <div className="cn-an-band-empty" data-testid="analytics-result-placeholder">
+      <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={text} />
+    </div>
+  )
+}
 
 const DEFAULT_TEMPLATE_NAME = '未命名分析'
 /** 数值型字段：用于公式示例 / 分组汇总默认指标候选 */
@@ -668,6 +679,8 @@ export default function AnalyticsPage() {
     () => templates.find(t => t.id === activeTemplateId) ?? null,
     [templates, activeTemplateId],
   )
+  /** 结果盒共用的导出文件名主体：模板名优先，其次图表标题 */
+  const resultTitle = templateName || chart.title || '分析结果'
   const showTableMissing = (tableMissing || activeTemplate?.table_id == null) && tableId == null && activeTemplateId != null
 
   if (!wid) return null
@@ -795,169 +808,184 @@ export default function AnalyticsPage() {
       )}
 
       <div className="cn-an-workbench">
-        {/* 左栏：配置（数据源 → 智能推荐 → 公式 → 可视化 → 分组汇总 → AI 生成） */}
-        <div className="cn-an-col cn-an-col--config">
-          <AnalyticsBox
-            title="数据源"
-            icon={<DatabaseOutlined />}
-            extra={tableDetail
-              ? `${tableDetail.fields.length} 字段 · ${tableDetail.record_count ?? 0} 行`
-              : '未选择'}
-            footer={scopeField
-              ? <span className="cn-an-foot-hint">只统计区间内的行；全表扫描超上限时用它收窄</span>
-              : null}
-          >
-            <div className="cn-an-grid cn-an-grid--3">
-              <div className="cn-an-field cn-an-span3">
-                <span className="cn-an-label">分析表</span>
-                <Select
-                  data-testid="analytics-table-select"
-                  placeholder="选择工作区内的数据表"
-                  value={tableId ?? undefined}
-                  options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
-                  onChange={id => {
-                    setTableId(id ?? null)
-                    setTableMissing(false)
-                    setResult(null)
-                    setServerErrors({})
-                    // 换表后 AI 生成结果 / 解读都不再对应当前数据源，清空避免误用
-                    setAiAppliedName(null)
-                    suggestReset()
-                    explainReset()
-                    // 范围字段属于旧表，换表后必须清空，否则会带着不存在的字段去过滤
-                    setScopeField(null)
-                    setScopeFrom('')
-                    setScopeTo('')
-                  }}
-                />
-              </div>
-              {/* 分析范围：扫描前过滤（时序表用「时间 >= 起点」把扫描面压到区间内） */}
-              <div className="cn-an-field">
-                <span className="cn-an-label">范围字段</span>
-                <Select
-                  size="small"
-                  allowClear
-                  data-testid="analytics-scope-field"
-                  placeholder="不限（全表）"
-                  value={scopeField ?? undefined}
-                  options={tableFields.map(name => ({ value: name, label: name }))}
-                  onChange={value => setScopeField(value ?? null)}
-                />
-              </div>
-              <div className="cn-an-field">
-                <span className="cn-an-label">起始值（含）</span>
-                <Input
-                  size="small"
-                  data-testid="analytics-scope-from"
-                  placeholder="如 2025-01-01"
-                  disabled={!scopeField}
-                  value={scopeFrom}
-                  onChange={event => setScopeFrom(event.target.value)}
-                />
-              </div>
-              <div className="cn-an-field">
-                <span className="cn-an-label">结束值（含）</span>
-                <Input
-                  size="small"
-                  data-testid="analytics-scope-to"
-                  placeholder="可选"
-                  disabled={!scopeField}
-                  value={scopeTo}
-                  onChange={event => setScopeTo(event.target.value)}
-                />
-              </div>
+        {/* 数据源：全宽置顶 */}
+        <AnalyticsBox
+          title="数据源"
+          icon={<DatabaseOutlined />}
+          extra={tableDetail
+            ? `${tableDetail.fields.length} 字段 · ${tableDetail.record_count ?? 0} 行`
+            : '未选择'}
+          footer={scopeField
+            ? <span className="cn-an-foot-hint">只统计区间内的行；全表扫描超上限时用它收窄</span>
+            : null}
+        >
+          <div className="cn-an-grid cn-an-grid--3">
+            <div className="cn-an-field cn-an-span3">
+              <span className="cn-an-label">分析表</span>
+              <Select
+                data-testid="analytics-table-select"
+                placeholder="选择工作区内的数据表"
+                value={tableId ?? undefined}
+                options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
+                onChange={id => {
+                  setTableId(id ?? null)
+                  setTableMissing(false)
+                  setResult(null)
+                  setServerErrors({})
+                  // 换表后 AI 生成结果 / 解读都不再对应当前数据源，清空避免误用
+                  setAiAppliedName(null)
+                  suggestReset()
+                  explainReset()
+                  // 范围字段属于旧表，换表后必须清空，否则会带着不存在的字段去过滤
+                  setScopeField(null)
+                  setScopeFrom('')
+                  setScopeTo('')
+                }}
+              />
             </div>
-          </AnalyticsBox>
+            {/* 分析范围：扫描前过滤（时序表用「时间 >= 起点」把扫描面压到区间内） */}
+            <div className="cn-an-field">
+              <span className="cn-an-label">范围字段</span>
+              <Select
+                size="small"
+                allowClear
+                data-testid="analytics-scope-field"
+                placeholder="不限（全表）"
+                value={scopeField ?? undefined}
+                options={tableFields.map(name => ({ value: name, label: name }))}
+                onChange={value => setScopeField(value ?? null)}
+              />
+            </div>
+            <div className="cn-an-field">
+              <span className="cn-an-label">起始值（含）</span>
+              <Input
+                size="small"
+                data-testid="analytics-scope-from"
+                placeholder="如 2025-01-01"
+                disabled={!scopeField}
+                value={scopeFrom}
+                onChange={event => setScopeFrom(event.target.value)}
+              />
+            </div>
+            <div className="cn-an-field">
+              <span className="cn-an-label">结束值（含）</span>
+              <Input
+                size="small"
+                data-testid="analytics-scope-to"
+                placeholder="可选"
+                disabled={!scopeField}
+                value={scopeTo}
+                onChange={event => setScopeTo(event.target.value)}
+              />
+            </div>
+          </div>
+        </AnalyticsBox>
 
-          {/* ── 智能推荐：选表后按字段画像推荐图表 / 汇总 / 公式 / 典型示例 ── */}
-          {tableId != null && (
-            <RecommendationPanel
-              recommendations={recommendations}
-              loading={recommendLoading}
-              error={recommendError}
-              tableName={tableDetail?.name ?? templateTableName(tables, tableId)}
-              onSelectDimension={selectRecommendedDimension}
-              onSelectMetric={selectRecommendedMetric}
-              onSelectTime={selectRecommendedTime}
-              onApplyChart={applyRecommendedChart}
-              onApplySummary={applyRecommendedSummary}
-              onApplyFormulas={applyRecommendedFormulas}
-              onApplyExample={applyRecommendedExample}
-            />
-          )}
+        {/* ── 智能推荐：选表后按字段画像推荐图表 / 汇总 / 公式 / 典型示例 ── */}
+        {tableId != null && (
+          <RecommendationPanel
+            recommendations={recommendations}
+            loading={recommendLoading}
+            error={recommendError}
+            tableName={tableDetail?.name ?? templateTableName(tables, tableId)}
+            onSelectDimension={selectRecommendedDimension}
+            onSelectMetric={selectRecommendedMetric}
+            onSelectTime={selectRecommendedTime}
+            onApplyChart={applyRecommendedChart}
+            onApplySummary={applyRecommendedSummary}
+            onApplyFormulas={applyRecommendedFormulas}
+            onApplyExample={applyRecommendedExample}
+          />
+        )}
 
-          <FormulaPanel
-            tableFields={tableFields}
-            numericFields={numericFields}
-            formulas={formulas}
-            errors={errors}
-            onChange={setFormulas}
-            onRun={runAnalysis}
-            canRun={canRun}
-            running={computeMutation.isPending}
-          />
-          <ChartPanel
-            chart={chart}
-            onChange={setChart}
-            options={chartOptions}
-            tableFields={tableFields}
-          />
-          <SummaryPanel
-            summary={summary}
-            onChange={setSummary}
-            groupOptions={groupOptions}
-            metricOptions={chartOptions}
-          />
-          {llmConfigured && (
-            <AnalyticsAiPanel
-              tableReady={tableId != null}
-              loading={suggestAi.loading}
-              error={suggestAi.error}
-              suggestion={suggestAi.data?.result ?? null}
-              appliedName={aiAppliedName}
-              onGenerate={question => { void generateAnalysis(question) }}
+        {/* ── 第一段：计算模板 → 描述统计 + 派生数据 ── */}
+        <section className="cn-an-band" data-testid="analytics-band-formula">
+          <div className="cn-an-band-config">
+            <FormulaPanel
+              tableFields={tableFields}
+              numericFields={numericFields}
+              formulas={formulas}
+              errors={errors}
+              onChange={setFormulas}
+              onRun={runAnalysis}
+              canRun={canRun}
+              running={computeMutation.isPending}
             />
-          )}
-        </div>
-
-        {/* 右栏：结果（图表 → 分组汇总 → 描述统计 → 派生数据） */}
-        <div className="cn-an-col cn-an-col--result">
-          {result ? (
-            <AnalyticsResultView
-              result={result}
-              chart={chart}
-              formulas={validFormulas.map(f => ({
-                key: f.key.trim(),
-                label: (f.label ?? '').trim() || f.key.trim(),
-              }))}
-              fields={syntheticFields}
-              title={templateName || chart.title || '分析结果'}
-              onAiExplain={llmConfigured ? requestExplain : undefined}
-              aiExplainLoading={explainAi.loading}
-            />
-          ) : (
-            <AnalyticsBox title="分析结果" icon={<TableOutlined />} testId="analytics-result-empty">
-              <div className="cn-an-empty">
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description={
-                    <span>
-                      配置左侧公式与图表后，点右上角「运行分析」
-                      <br />
-                      图表、分组汇总、描述统计与派生数据会显示在这里
-                    </span>
-                  }
+          </div>
+          <div className="cn-an-band-result">
+            {result ? (
+              <>
+                <StatsResultBox result={result} title={resultTitle} />
+                <RowsResultBox
+                  result={result}
+                  fields={syntheticFields}
+                  formulas={validFormulas.map(f => ({
+                    key: f.key.trim(),
+                    label: (f.label ?? '').trim() || f.key.trim(),
+                  }))}
+                  title={resultTitle}
                 />
-                {templates.length > 0 && (
-                  <Button type="link" size="small" onClick={() => requestTemplateLoad(templates[0])}>
-                    载入示例模板「{templates[0]?.name}」
-                  </Button>
-                )}
-              </div>
-            </AnalyticsBox>
-          )}
-        </div>
+              </>
+            ) : (
+              <ResultPlaceholder text="运行分析后，这里显示描述统计与派生数据" />
+            )}
+          </div>
+        </section>
+
+        {/* ── 第二段：可视化 → 图表 ── */}
+        <section className="cn-an-band" data-testid="analytics-band-chart">
+          <div className="cn-an-band-config">
+            <ChartPanel
+              chart={chart}
+              onChange={setChart}
+              options={chartOptions}
+              tableFields={tableFields}
+            />
+          </div>
+          <div className="cn-an-band-result">
+            {result ? (
+              <ChartResultBox
+                result={result}
+                chart={chart}
+                fields={syntheticFields}
+                title={resultTitle}
+                onAiExplain={llmConfigured ? requestExplain : undefined}
+                aiExplainLoading={explainAi.loading}
+              />
+            ) : (
+              <ResultPlaceholder text="运行分析后，这里显示图表" />
+            )}
+          </div>
+        </section>
+
+        {/* ── 第三段：分组汇总 → 汇总表 ── */}
+        <section className="cn-an-band" data-testid="analytics-band-summary">
+          <div className="cn-an-band-config">
+            <SummaryPanel
+              summary={summary}
+              onChange={setSummary}
+              groupOptions={groupOptions}
+              metricOptions={chartOptions}
+            />
+          </div>
+          <div className="cn-an-band-result">
+            {result
+              ? <SummaryResultBox result={result} title={resultTitle} />
+              : <ResultPlaceholder text="运行分析后，这里显示分组汇总表" />}
+          </div>
+        </section>
       </div>
+
+      {llmConfigured && (
+        <AnalyticsAiPanel
+          tableReady={tableId != null}
+          loading={suggestAi.loading}
+          error={suggestAi.error}
+          suggestion={suggestAi.data?.result ?? null}
+          appliedName={aiAppliedName}
+          onGenerate={question => { void generateAnalysis(question) }}
+        />
+      )}
 
       {/* ── 另存为 / 重命名 ── */}
       <Modal

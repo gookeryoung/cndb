@@ -1,4 +1,11 @@
-/** 分析结果视图 —— 图表 + 分组汇总 + 描述统计 + 派生数据预览（含 CSV / PNG 导出）. */
+/** 分析结果视图 —— 按分析环节拆分的四个结果盒（图表 / 分组汇总 / 描述统计 / 派生数据）.
+ *
+ * 页面采用「配置 + 对应结果」的三段带状布局，本文件只提供各环节的结果盒：
+ * - ChartResultBox：可视化结果（图表，可导出 PNG、AI 解读）
+ * - SummaryResultBox：分组汇总表（可导出 CSV）
+ * - StatsResultBox：描述统计（可导出 CSV）
+ * - RowsResultBox：派生数据预览（分页 / 排序 / CSV）
+ */
 
 import { useEffect, useMemo, useState } from 'react'
 import { App as AntApp, Button, Empty, Space, Table, Tag, Tooltip } from 'antd'
@@ -28,21 +35,6 @@ interface FormulaLabel {
   label: string
 }
 
-interface Props {
-  result: AnalyticsComputeResponse
-  chart: AnalyticsChart
-  /** 当前公式（含展示名），用于派生列标题 */
-  formulas: FormulaLabel[]
-  /** 表字段元信息（决定预览列的数值格式化 / 排序方式） */
-  fields: Field[]
-  /** 模板名或图表标题，用于导出文件名 */
-  title: string
-  /** AI 结论解读入口：不传时不渲染按钮（解读只读，由页面用 useLlmAction 发起） */
-  onAiExplain?: () => void
-  /** AI 解读请求中（按钮 loading） */
-  aiExplainLoading?: boolean
-}
-
 /** 数值列排序器（空值排最后） */
 function numericSorter(key: string) {
   return (a: Record<string, unknown>, b: Record<string, unknown>) => {
@@ -61,16 +53,230 @@ function textSorter(key: string) {
     String(a[key] ?? '').localeCompare(String(b[key] ?? ''), 'zh-Hans-CN')
 }
 
-/** 分析结果：图表、汇总表、统计表、数据预览与导出 */
-export function AnalyticsResultView({
+/** 可视化结果盒：图表 + 导出 PNG + AI 解读入口 */
+export function ChartResultBox({
   result,
   chart,
-  formulas,
   fields,
   title,
   onAiExplain,
   aiExplainLoading = false,
-}: Props) {
+}: {
+  result: AnalyticsComputeResponse
+  chart: AnalyticsChart
+  fields: Field[]
+  /** 模板名或图表标题，用于导出文件名 */
+  title: string
+  /** AI 结论解读入口：不传时不渲染按钮（解读只读，由页面用 useLlmAction 发起） */
+  onAiExplain?: () => void
+  /** AI 解读请求中（按钮 loading） */
+  aiExplainLoading?: boolean
+}) {
+  const { message } = AntApp.useApp()
+
+  const exportChart = () => {
+    const container = document.querySelector('[data-testid="chart-container"]') as HTMLElement | null
+    const instance = container ? echarts.getInstanceByDom(container) : undefined
+    if (!instance) {
+      message.warning('图表尚未渲染完成，请稍后再试')
+      return
+    }
+    const dataUrl = instance.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' })
+    if (!dataUrl) {
+      message.warning('图表导出失败')
+      return
+    }
+    triggerDownload(`${safeFileName(title)}-图表.png`, dataUrl)
+    message.success('图表已导出 PNG')
+  }
+
+  return (
+    <AnalyticsBox
+      title={chart.title || '可视化结果'}
+      icon={<LineChartOutlined />}
+      extra={
+        <>
+          <span
+            className="cn-an-muted"
+            title={result.truncated ? '超出单次扫描上限，可在「分析范围」限定区间' : undefined}
+          >
+            共 {result.total} 行{result.truncated ? ' · 已截断' : ''}
+          </span>
+          <Tooltip title="把当前图表导出为 PNG（2x 清晰度）">
+            <Button size="small" icon={<PictureOutlined />} data-testid="analytics-export-chart" onClick={exportChart}>
+              导出图表
+            </Button>
+          </Tooltip>
+          {onAiExplain && (
+            <Tooltip title="根据当前汇总 / 统计结果生成文字解读（只读，不修改模板与数据）">
+              <Button
+                size="small"
+                icon={<RobotOutlined />}
+                loading={aiExplainLoading}
+                disabled={aiExplainLoading}
+                data-testid="analytics-ai-explain"
+                onClick={onAiExplain}
+              >
+                AI 解读
+              </Button>
+            </Tooltip>
+          )}
+        </>
+      }
+    >
+      {result.rows.length === 0 ? (
+        <Empty description="该表暂无数据" />
+      ) : (
+        <ChartCard cfg={toChartConfig(chart)} rows={result.rows} fields={fields} total={result.total} />
+      )}
+    </AnalyticsBox>
+  )
+}
+
+/** 分组汇总结果盒：无汇总配置时不渲染 */
+export function SummaryResultBox({ result, title }: { result: AnalyticsComputeResponse; title: string }) {
+  const { message } = AntApp.useApp()
+  const summary = result.summary
+
+  if (!summary) return null
+
+  const exportSummary = () => {
+    const headers = [summary.group_label, ...summary.columns.map(col => col.label)]
+    const rows = summary.rows.map(row => [
+      row.group,
+      ...summary.columns.map(col => row[col.key]),
+    ])
+    downloadTextFile(`${safeFileName(title)}-分组汇总.csv`, toCsv(headers, rows))
+    message.success('分组汇总已导出 CSV')
+  }
+
+  return (
+    <AnalyticsBox
+      title={`分组汇总（按 ${summary.group_label}）`}
+      icon={<TableOutlined />}
+      extra={
+        <>
+          <span className="cn-an-muted">
+            共 {summary.group_count} 组
+            {summary.truncated ? `，已按 Top ${summary.rows.length} 截断` : ''}
+          </span>
+          <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-summary" onClick={exportSummary}>
+            导出汇总
+          </Button>
+        </>
+      }
+    >
+      <Table
+        data-testid="analytics-summary-table"
+        size="small"
+        rowKey="group"
+        pagination={false}
+        scroll={{ x: 'max-content', y: 320 }}
+        dataSource={summary.rows}
+        columns={[
+          { title: summary.group_label, dataIndex: 'group', fixed: 'left' as const },
+          ...summary.columns.map(col => ({
+            title: col.label,
+            dataIndex: col.key,
+            render: (value: unknown) => formatNumber(value),
+            sorter: numericSorter(col.key),
+          })),
+        ]}
+      />
+    </AnalyticsBox>
+  )
+}
+
+/** 描述统计结果盒：含派生指标（公式列） */
+export function StatsResultBox({ result, title }: { result: AnalyticsComputeResponse; title: string }) {
+  const { message } = AntApp.useApp()
+
+  const exportStats = () => {
+    const headers = ['列', '类型', '计数', '缺失', '非空率', '均值', '标准差', '方差', '最小值', '极差', 'P25', '中位数', 'P75', '最大值', '求和']
+    const rows = result.columns.map(col => {
+      const ratio = nonNullRatio(col.count, col.missing)
+      return [
+        col.label || col.key,
+        col.kind === 'formula' ? '公式' : '字段',
+        col.count,
+        col.missing,
+        ratio === null ? '' : `${(ratio * 100).toFixed(1)}%`,
+        col.mean, col.stdev, col.variance, col.min, col.range,
+        col.q1, col.median, col.q3, col.max, col.sum,
+      ]
+    })
+    downloadTextFile(`${safeFileName(title)}-描述统计.csv`, toCsv(headers, rows))
+    message.success('描述统计已导出 CSV')
+  }
+
+  return (
+    <AnalyticsBox
+      title="描述统计（含派生指标）"
+      extra={
+        <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-stats" onClick={exportStats}>
+          导出 CSV
+        </Button>
+      }
+    >
+      <Table
+        data-testid="analytics-stats-table"
+        size="small"
+        rowKey="key"
+        pagination={false}
+        scroll={{ x: 'max-content' }}
+        dataSource={result.columns}
+        columns={[
+          {
+            title: '列',
+            dataIndex: 'key',
+            render: (_v, row) => (
+              <Space size={4}>
+                <span>{row.label || row.key}</span>
+                {row.kind === 'formula' && <Tag color="blue">公式</Tag>}
+              </Space>
+            ),
+          },
+          { title: '计数', dataIndex: 'count' },
+          { title: '缺失', dataIndex: 'missing' },
+          {
+            title: '非空率',
+            key: 'non_null_ratio',
+            render: (_v, row) => {
+              const ratio = nonNullRatio(row.count, row.missing)
+              return ratio === null ? '—' : `${(ratio * 100).toFixed(1)}%`
+            },
+          },
+          { title: '均值', dataIndex: 'mean', render: formatNumber },
+          { title: '标准差', dataIndex: 'stdev', render: formatNumber },
+          { title: '方差', dataIndex: 'variance', render: formatNumber },
+          { title: '最小值', dataIndex: 'min', render: formatNumber },
+          { title: '极差', dataIndex: 'range', render: formatNumber },
+          { title: 'P25', dataIndex: 'q1', render: formatNumber },
+          { title: '中位数', dataIndex: 'median', render: formatNumber },
+          { title: 'P75', dataIndex: 'q3', render: formatNumber },
+          { title: '最大值', dataIndex: 'max', render: formatNumber },
+          { title: '求和', dataIndex: 'sum', render: formatNumber },
+        ]}
+      />
+    </AnalyticsBox>
+  )
+}
+
+/** 派生数据预览盒：全字段 + 公式列，分页 / 排序 / CSV 导出 */
+export function RowsResultBox({
+  result,
+  fields,
+  formulas,
+  title,
+}: {
+  result: AnalyticsComputeResponse
+  /** 表字段元信息（决定预览列的数值格式化 / 排序方式） */
+  fields: Field[]
+  /** 当前公式（含展示名），用于派生列标题 */
+  formulas: FormulaLabel[]
+  /** 模板名或图表标题，用于导出文件名 */
+  title: string
+}) {
   const { message } = AntApp.useApp()
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0])
@@ -95,26 +301,6 @@ export function AnalyticsResultView({
     [formulas],
   )
 
-  const chartCfg = useMemo(() => toChartConfig(chart), [chart])
-
-  const exportStats = () => {
-    const headers = ['列', '类型', '计数', '缺失', '非空率', '均值', '标准差', '方差', '最小值', '极差', 'P25', '中位数', 'P75', '最大值', '求和']
-    const rows = result.columns.map(col => {
-      const ratio = nonNullRatio(col.count, col.missing)
-      return [
-        col.label || col.key,
-        col.kind === 'formula' ? '公式' : '字段',
-        col.count,
-        col.missing,
-        ratio === null ? '' : `${(ratio * 100).toFixed(1)}%`,
-        col.mean, col.stdev, col.variance, col.min, col.range,
-        col.q1, col.median, col.q3, col.max, col.sum,
-      ]
-    })
-    downloadTextFile(`${safeFileName(title)}-描述统计.csv`, toCsv(headers, rows))
-    message.success('描述统计已导出 CSV')
-  }
-
   const exportRows = () => {
     const headers = [...result.table_fields, ...formulas.map(f => f.label || f.key)]
     const rows = result.rows.map(row => [
@@ -123,34 +309,6 @@ export function AnalyticsResultView({
     ])
     downloadTextFile(`${safeFileName(title)}-派生数据.csv`, toCsv(headers, rows))
     message.success(`已导出 ${rows.length} 行派生数据`)
-  }
-
-  const exportSummary = () => {
-    const summary = result.summary
-    if (!summary) return
-    const headers = [summary.group_label, ...summary.columns.map(col => col.label)]
-    const rows = summary.rows.map(row => [
-      row.group,
-      ...summary.columns.map(col => row[col.key]),
-    ])
-    downloadTextFile(`${safeFileName(title)}-分组汇总.csv`, toCsv(headers, rows))
-    message.success('分组汇总已导出 CSV')
-  }
-
-  const exportChart = () => {
-    const container = document.querySelector('[data-testid="chart-container"]') as HTMLElement | null
-    const instance = container ? echarts.getInstanceByDom(container) : undefined
-    if (!instance) {
-      message.warning('图表尚未渲染完成，请稍后再试')
-      return
-    }
-    const dataUrl = instance.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' })
-    if (!dataUrl) {
-      message.warning('图表导出失败')
-      return
-    }
-    triggerDownload(`${safeFileName(title)}-图表.png`, dataUrl)
-    message.success('图表已导出 PNG')
   }
 
   const previewColumns = [
@@ -172,168 +330,40 @@ export function AnalyticsResultView({
   ]
 
   return (
-    <>
-      <AnalyticsBox
-        title={chart.title || '可视化结果'}
-        icon={<LineChartOutlined />}
-        extra={
-          <>
-            <span
-              className="cn-an-muted"
-              title={result.truncated ? '超出单次扫描上限，可在「分析范围」限定区间' : undefined}
-            >
-              共 {result.total} 行{result.truncated ? ' · 已截断' : ''}
-            </span>
-            <Tooltip title="把当前图表导出为 PNG（2x 清晰度）">
-              <Button size="small" icon={<PictureOutlined />} data-testid="analytics-export-chart" onClick={exportChart}>
-                导出图表
-              </Button>
-            </Tooltip>
-            {onAiExplain && (
-              <Tooltip title="根据当前汇总 / 统计结果生成文字解读（只读，不修改模板与数据）">
-                <Button
-                  size="small"
-                  icon={<RobotOutlined />}
-                  loading={aiExplainLoading}
-                  disabled={aiExplainLoading}
-                  data-testid="analytics-ai-explain"
-                  onClick={onAiExplain}
-                >
-                  AI 解读
-                </Button>
-              </Tooltip>
-            )}
-          </>
-        }
-      >
-        {result.rows.length === 0 ? (
-          <Empty description="该表暂无数据" />
-        ) : (
-          <ChartCard cfg={chartCfg} rows={result.rows} fields={fields} total={result.total} />
-        )}
-      </AnalyticsBox>
-
-      {result.summary && (
-        <AnalyticsBox
-          title={`分组汇总（按 ${result.summary.group_label}）`}
-          icon={<TableOutlined />}
-          extra={
-            <>
-              <span className="cn-an-muted">
-                共 {result.summary.group_count} 组
-                {result.summary.truncated ? `，已按 Top ${result.summary.rows.length} 截断` : ''}
-              </span>
-              <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-summary" onClick={exportSummary}>
-                导出汇总
-              </Button>
-            </>
-          }
-        >
-          <Table
-            data-testid="analytics-summary-table"
-            size="small"
-            rowKey="group"
-            pagination={false}
-            scroll={{ x: 'max-content', y: 320 }}
-            dataSource={result.summary.rows}
-            columns={[
-              { title: result.summary.group_label, dataIndex: 'group', fixed: 'left' as const },
-              ...result.summary.columns.map(col => ({
-                title: col.label,
-                dataIndex: col.key,
-                render: (value: unknown) => formatNumber(value),
-                sorter: numericSorter(col.key),
-              })),
-            ]}
-          />
-        </AnalyticsBox>
-      )}
-
-      <AnalyticsBox
-        title="描述统计（含派生指标）"
-        extra={
-          <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-stats" onClick={exportStats}>
-            导出 CSV
-          </Button>
-        }
-      >
-        <Table
-          data-testid="analytics-stats-table"
-          size="small"
-          rowKey="key"
-          pagination={false}
-          scroll={{ x: 'max-content' }}
-          dataSource={result.columns}
-          columns={[
-            {
-              title: '列',
-              dataIndex: 'key',
-              render: (_v, row) => (
-                <Space size={4}>
-                  <span>{row.label || row.key}</span>
-                  {row.kind === 'formula' && <Tag color="blue">公式</Tag>}
-                </Space>
-              ),
-            },
-            { title: '计数', dataIndex: 'count' },
-            { title: '缺失', dataIndex: 'missing' },
-            {
-              title: '非空率',
-              key: 'non_null_ratio',
-              render: (_v, row) => {
-                const ratio = nonNullRatio(row.count, row.missing)
-                return ratio === null ? '—' : `${(ratio * 100).toFixed(1)}%`
-              },
-            },
-            { title: '均值', dataIndex: 'mean', render: formatNumber },
-            { title: '标准差', dataIndex: 'stdev', render: formatNumber },
-            { title: '方差', dataIndex: 'variance', render: formatNumber },
-            { title: '最小值', dataIndex: 'min', render: formatNumber },
-            { title: '极差', dataIndex: 'range', render: formatNumber },
-            { title: 'P25', dataIndex: 'q1', render: formatNumber },
-            { title: '中位数', dataIndex: 'median', render: formatNumber },
-            { title: 'P75', dataIndex: 'q3', render: formatNumber },
-            { title: '最大值', dataIndex: 'max', render: formatNumber },
-            { title: '求和', dataIndex: 'sum', render: formatNumber },
-          ]}
-        />
-      </AnalyticsBox>
-
-      <AnalyticsBox
-        title="派生数据预览"
-        extra={
-          <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-rows" onClick={exportRows}>
-            导出 CSV
-          </Button>
-        }
-        footer={
-          <span className="cn-an-foot-hint">
-            派生列：{formulas.map(f => formulaLabelMap[f.key] ?? f.key).join('、') || '（无公式）'}
-            {result.rows.length < result.total ? `；返回前 ${result.rows.length} 行，统计基于全部 ${result.total} 行` : ''}
-          </span>
-        }
-      >
-        <Table
-          data-testid="analytics-rows-table"
-          size="small"
-          rowKey="id"
-          dataSource={result.rows}
-          columns={previewColumns}
-          pagination={{
-            current: page,
-            pageSize,
-            total: result.rows.length,
-            showSizeChanger: true,
-            pageSizeOptions: PAGE_SIZE_OPTIONS,
-            showTotal: total => `共 ${total} 行`,
-            onChange: (nextPage, nextSize) => {
-              setPage(nextSize !== pageSize ? 1 : nextPage)
-              setPageSize(nextSize)
-            },
-          }}
-          scroll={{ x: 'max-content' }}
-        />
-      </AnalyticsBox>
-    </>
+    <AnalyticsBox
+      title="派生数据预览"
+      extra={
+        <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-rows" onClick={exportRows}>
+          导出 CSV
+        </Button>
+      }
+      footer={
+        <span className="cn-an-foot-hint">
+          派生列：{formulas.map(f => formulaLabelMap[f.key] ?? f.key).join('、') || '（无公式）'}
+          {result.rows.length < result.total ? `；返回前 ${result.rows.length} 行，统计基于全部 ${result.total} 行` : ''}
+        </span>
+      }
+    >
+      <Table
+        data-testid="analytics-rows-table"
+        size="small"
+        rowKey="id"
+        dataSource={result.rows}
+        columns={previewColumns}
+        pagination={{
+          current: page,
+          pageSize,
+          total: result.rows.length,
+          showSizeChanger: true,
+          pageSizeOptions: PAGE_SIZE_OPTIONS,
+          showTotal: total => `共 ${total} 行`,
+          onChange: (nextPage, nextSize) => {
+            setPage(nextSize !== pageSize ? 1 : nextPage)
+            setPageSize(nextSize)
+          },
+        }}
+        scroll={{ x: 'max-content' }}
+      />
+    </AnalyticsBox>
   )
 }

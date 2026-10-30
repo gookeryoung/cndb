@@ -5794,28 +5794,44 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: nowrap;
 }
 
-/* ── 双栏工作台 ── */
+/* ── 三段带状工作台：数据源/推荐全宽置顶，每个分析环节一行「左配置 + 右对应结果」 ── */
 .cn-an-workbench {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
+  flex-direction: column;
   gap: var(--cn-space-md);
   min-height: 0;
 }
 
-.cn-an-col {
+.cn-an-band {
+  display: grid;
+  grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
+  gap: var(--cn-space-md);
+  align-items: start;
+}
+
+.cn-an-band-config,
+.cn-an-band-result {
   display: flex;
   flex-direction: column;
   gap: var(--cn-space-md);
   min-width: 0;
 }
 
-.cn-an-col--config {
-  flex: 0 1 420px;
+/* 未运行时的结果占位：与配置同排的虚线空态 */
+.cn-an-band-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  border: 1px dashed var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-subtle);
 }
 
-.cn-an-col--result {
-  flex: 1 1 560px;
+@media (max-width: 1023.98px) {
+  .cn-an-band {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ── 分区盒子（GitHub .Box 语言） ── */
@@ -6087,11 +6103,6 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   .cn-an-head-actions {
     width: 100%;
     margin-left: 0;
-  }
-
-  .cn-an-col--config,
-  .cn-an-col--result {
-    flex: 1 1 100%;
   }
 
   .cn-an-grid--3 {
