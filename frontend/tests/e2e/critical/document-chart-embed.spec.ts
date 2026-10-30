@@ -105,8 +105,8 @@ test.describe("文档图表内嵌块", () => {
       await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
       await page.getByTestId("md-toolbar-chart").click();
       // ADR 0058：多级列表 — 0070 新增「结构构成」模板后手风琴默认展开首个分类，
-      // 本用例模板在「对比」分类下，需先展开再选模板项
-      await page.locator(".cn-insert-chart-modal").getByText("对比", { exact: true }).click({ timeout: 20_000 });
+      // 本用例模板在「横向对比」分类下，需先展开再选模板项
+      await page.locator(".cn-insert-chart-modal").getByText("横向对比", { exact: true }).click({ timeout: 20_000 });
       await page
         .getByTestId(`chart-template-item-${TEMPLATE_KEY}`)
         .click({ timeout: 20_000 });

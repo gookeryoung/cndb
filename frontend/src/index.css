@@ -5795,11 +5795,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: nowrap;
 }
 
-/* 连体按钮组内相邻按钮共享边框，激活按钮的右边框会被右侧按钮盖住：
-   提升激活按钮层级，让完整边框（含右侧主色描边）绘制在相邻按钮之上 */
-.cn-an-block-toggle.ant-btn-primary {
+/* 连体按钮组内相邻按钮按 -1px 外边距重叠、统一 z-index:2（cssinjs 注入晚于本文件），
+   激活按钮的右边框会被右侧按钮盖住：以更高优先级提升到 3，让主色描边完整绘制 */
+.cn-an-head-actions .cn-an-block-toggle.ant-btn-primary {
   position: relative;
-  z-index: 1;
+  z-index: 3;
 }
 
 .cn-an-run-hint {

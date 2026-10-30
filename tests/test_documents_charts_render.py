@@ -250,8 +250,9 @@ class TestStandardTypeRender:
         cfg = normalize_config("bar-line-dual-axis", CHART_TEMPLATES["bar-line-dual-axis"].default_config)
         img = Image.open(io.BytesIO(to_png(render_chart("bar-line-dual-axis", cfg)))).convert("RGB")
         counts = {c: n for n, c in img.getcolors(3_000_000)}
-        # 次值折线 YEAR_PROJECTED #8C8578 / OLIVE #7A8570
-        assert counts.get((140, 133, 120), 0) + counts.get((122, 133, 112), 0) > 0
+        # 次值折线为矢量绘制 stroke=c_line #5F6B4E（95,107,78）；
+        # 不用 YEAR_PROJECTED/OLIVE 文字色断言——文字像素依赖字体渲染，CI 无 CJK 字体时会归零
+        assert counts.get((95, 107, 78), 0) > 0
 
 
 class TestSvgWriter:

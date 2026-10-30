@@ -106,7 +106,8 @@ function renderGridAt(route: string) {
 describe('GridPage 工作区搜索行定位（?row=<id> 深链接）', () => {
   it('行在当前页：打开行详情抽屉并清掉 ?row 参数', async () => {
     renderGridAt('/w/1/tables/1?row=2')
-    expect(await screen.findByText('行详情 #2')).toBeInTheDocument()
+    // CI 覆盖率插桩会拖慢 portal 挂载，默认 1s findBy 不够，放宽到 3s
+    expect(await screen.findByText('行详情 #2', undefined, { timeout: 3000 })).toBeInTheDocument()
     await waitFor(() => {
       expect(screen.getByTestId('loc').textContent).toBe('/w/1/tables/1')
     })
@@ -114,7 +115,7 @@ describe('GridPage 工作区搜索行定位（?row=<id> 深链接）', () => {
 
   it('行不在当前页（分页外）：拉取单行打开详情并清参', async () => {
     renderGridAt('/w/1/tables/1?row=999')
-    expect(await screen.findByText('行详情 #999')).toBeInTheDocument()
+    expect(await screen.findByText('行详情 #999', undefined, { timeout: 3000 })).toBeInTheDocument()
     expect(recordApi.get).toHaveBeenCalledWith('1', '1', '999')
     await waitFor(() => expect(screen.getByTestId('loc').textContent).toBe('/w/1/tables/1'))
   })
