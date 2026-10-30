@@ -43,8 +43,9 @@ describe('ThemeProvider 的 Chromium 81 样式降级', () => {
     renderAntdSample()
     const css = injectedCss()
     expect(css).toContain('padding-left')
-    expect(css).not.toMatch(/padding-inline/)
-    expect(css).not.toMatch(/margin-inline/)
+    // cssVar 模式下存在 --ant-*-padding-inline 等变量名，只断言「逻辑属性声明」而非子串
+    expect(css).not.toMatch(/(^|[^-\w])padding-inline\s*:/)
+    expect(css).not.toMatch(/(^|[^-\w])margin-inline\s*:/)
   })
 
   it('旧内核首帧前写入 --cn-mix-* 兜底变量', () => {

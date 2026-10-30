@@ -37,6 +37,9 @@ function systemPrefersDark(): boolean {
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
 
+/** Chrome 81 逻辑属性兼容转换器 — 固定引用，避免每次渲染新建数组导致 StyleProvider 重复处理样式 */
+const LEGACY_TRANSFORMERS = [legacyLogicalPropertiesTransformer]
+
 /** 清理所有可能的主题 class，只保留当前的 */
 function applyBodyClass(mode: ThemeMode) {
   const allClasses = Object.values(THEME_META).map(t => t.bodyClass)
@@ -120,6 +123,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     document.body.style.fontWeight = String(font.bold ? WEIGHT.semibold : WEIGHT.regular)
   }, [font])
 
+  // 主题配置按 mode 记忆：避免无关渲染重建对象，导致 cssinjs 误判主题变化而全量重算样式
+  const baseConfig = useMemo(() => getThemeConfig(mode), [mode])
   const isDark = THEME_META[mode].isDark
 
   const value = useMemo<ThemeContextValue>(
@@ -127,7 +132,24 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [mode, pref, setMode, isDark, font, setFontScale, setFontBold],
   )
 
-  const baseConfig = getThemeConfig(mode)
+  // cssVar 模式（antd 5.12+）：组件样式引用 --ant-* CSS 变量，切主题只更新变量值，
+  // 不再对全部挂载组件同步重建样式 —— 主题切换卡顿的主修复；hashed 关闭减少类名与样式冗余
+  const themeConfig = useMemo(
+    () => ({
+      ...baseConfig,
+      cssVar: true as const,
+      hashed: false as const,
+      algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+      // 字体设置覆盖主题 token 的字号/字重，其余 token（配色等）保持主题原值
+      token: {
+        ...baseConfig.token,
+        fontSize: FONT_SCALE_META[font.scale].px,
+        // 强调字重默认 600，开启全局加粗时抬升一档到 700
+        fontWeightStrong: font.bold ? WEIGHT.bold : WEIGHT.semibold,
+      },
+    }),
+    [baseConfig, isDark, font],
+  )
 
   return (
     <ThemeContext.Provider value={value}>
@@ -135,21 +157,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           hashPriority="high" 去掉 :where() 包裹，transformer 把逻辑属性转物理属性（ADR 0026 D2） */}
       <StyleProvider
         hashPriority="high"
-        transformers={[legacyLogicalPropertiesTransformer]}
+        transformers={LEGACY_TRANSFORMERS}
       >
         <ConfigProvider
           locale={zhCN}
-          theme={{
-            ...baseConfig,
-            algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
-            // 字体设置覆盖主题 token 的字号/字重，其余 token（配色等）保持主题原值
-            token: {
-              ...baseConfig.token,
-              fontSize: FONT_SCALE_META[font.scale].px,
-              // 强调字重默认 600，开启全局加粗时抬升一档到 700
-              fontWeightStrong: font.bold ? WEIGHT.bold : WEIGHT.semibold,
-            },
-          }}
+          theme={themeConfig}
         >
           <AntApp>{children}</AntApp>
         </ConfigProvider>
