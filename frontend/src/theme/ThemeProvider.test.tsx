@@ -196,6 +196,41 @@ describe('ThemeProvider', () => {
     expect(messages.some(m => m.includes('useTheme must be used inside <ThemeProvider>'))).toBe(true)
     spy.mockRestore()
   })
+
+  it('切换主题时 documentElement 短暂挂载 theme-switching 过渡类，首挂载不挂', () => {
+    // 覆盖本文件前序测试的 matchMedia 桩：reduce 查询必须返回 false，否则误判跳过过渡
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+      }),
+    })
+    vi.useFakeTimers()
+    try {
+      render(
+        <ThemeProvider>
+          <ThemeProbe />
+        </ThemeProvider>,
+      )
+      // 首次挂载直接落主题，不做过渡（避免首屏从默认色渐变）
+      expect(document.documentElement).not.toHaveClass('theme-switching')
+
+      fireEvent.click(screen.getByText('切到 oled'))
+      expect(document.documentElement).toHaveClass('theme-switching')
+
+      // 过渡窗口（200ms + 80ms 余量）结束后移除，不影响日常交互
+      act(() => { vi.advanceTimersByTime(300) })
+      expect(document.documentElement).not.toHaveClass('theme-switching')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('ThemeProvider 字体设置', () => {

@@ -1,6 +1,6 @@
 /** 主题切换 Provider — 维护多主题状态并注入 antd ConfigProvider. */
 
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { App as AntApp, ConfigProvider, theme as antdTheme } from 'antd'
 import { StyleProvider, legacyLogicalPropertiesTransformer } from '@ant-design/cssinjs'
@@ -36,6 +36,10 @@ function systemPrefersDark(): boolean {
 }
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
+
+/** 主题切换过渡：挂在 documentElement 上的临时类名与过渡时长（与 index.css .theme-switching 对应） */
+const THEME_SWITCHING_CLASS = 'theme-switching'
+const SWITCH_MS = 200
 
 /** Chrome 81 逻辑属性兼容转换器 — 固定引用，避免每次渲染新建数组导致 StyleProvider 重复处理样式 */
 const LEGACY_TRANSFORMERS = [legacyLogicalPropertiesTransformer]
@@ -109,11 +113,33 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [])
 
   // 用 layout effect：Chrome 81 的首帧必须已挂好主题 class 与变量，避免闪一下默认主题
+  const mountedRef = useRef(false)
   useLayoutEffect(() => {
+    const root = document.documentElement
+    // 切换瞬间挂载全局颜色过渡（index.css .theme-switching），让新旧主题平滑渐变；
+    // 先加类并强制回流，浏览器才能记录旧样式，变量变化才会走过渡而非瞬间跳变。
+    // 首次挂载不做过渡（避免首屏从默认色渐变）；prefers-reduced-motion 不做动画；
+    // 平时不挂载该类，避免拖慢日常交互。
+    const firstMount = !mountedRef.current
+    mountedRef.current = true
+    const reducedMotion = typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    let timer: number | undefined
+    if (!firstMount && !reducedMotion) {
+      root.classList.add(THEME_SWITCHING_CLASS)
+      void root.offsetHeight
+    }
     applyBodyClass(mode)
     applyThemeVars(mode)
     // Chrome 81 没有 color-mix()：按刚挂好的主题变量重算 --cn-mix-* 兜底（现代内核直接跳过）
     applyThemeMixVars()
+    if (!firstMount && !reducedMotion) {
+      timer = window.setTimeout(() => root.classList.remove(THEME_SWITCHING_CLASS), SWITCH_MS + 80)
+    }
+    return () => {
+      if (timer !== undefined) window.clearTimeout(timer)
+      root.classList.remove(THEME_SWITCHING_CLASS)
+    }
   }, [mode])
 
   // 字体设置：注入 body 基础字号与字重（antd 组件字号经 ConfigProvider token 下发）

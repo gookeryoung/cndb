@@ -34,6 +34,17 @@ body {
   transition: background-color 150ms ease, color 150ms ease;
 }
 
+/* 主题切换过渡：.theme-switching 仅在切换瞬间由 ThemeProvider 挂载（约 280ms 后移除），
+ * 让全页颜色随主题变量平滑渐变；平时不生效，避免拖慢日常交互与悬停反馈。
+ * 只过渡颜色类属性（背景/前景/边框/填充），不动 box-shadow / transform 等昂贵属性。 */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease,
+    fill 200ms ease, stroke 200ms ease, outline-color 200ms ease !important;
+}
+
 /* 等宽数字 token：表格数字列、金额等需要对齐时用，
    保持和正文同一套视觉体系（Inter 字形），只是数字 tabular-nums 对齐 */
 .font-num {
