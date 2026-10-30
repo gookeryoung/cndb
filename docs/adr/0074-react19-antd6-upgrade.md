@@ -160,9 +160,9 @@ Related: `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/package.json`、`frontend/pnpm-workspace.yaml`、`frontend/patches/@rc-component__util.patch`、`frontend/scripts/check-patches.mjs`、`frontend/src/hooks/useElementSize.ts`、`frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/theme/ThemeProvider.compat.test.tsx`、前端单测全量（2430 例） | 待回填 |
-| P1 | 已落地 | `frontend/src/theme/ThemeProvider.compat.test.tsx`（运行时样式审计 + D4 白名单） | `frontend/src/theme/ThemeProvider.compat.test.tsx`（无 :where 包裹 / 无逻辑属性声明 / 白名单外特性断言） | 待回填 |
-| P2 | 已落地 | `frontend/src/pages/**`（弃用 API 清零 + 测试选择器适配）、`frontend/src/index.css`（Modal 容器类）、`frontend/patches/react-dom@19.3.1.patch`（新增，jsdom 拆除竞态守卫）、`frontend/scripts/check-patches.mjs`、`frontend/tests/e2e/critical/*.spec.ts`、`frontend/tests/e2e/dev/*.spec.ts`（定位器）、`frontend/tests/e2e/critical/antd-deprecation.spec.ts`（新增）、`frontend/scripts/bundle-budget.json`（基线记录）、`README.md`、`CONTEXT.md`、`CHANGELOG.md` | `frontend/tests/e2e/critical/antd-deprecation.spec.ts` | 待回填 |
+| P0 | 已落地 | `frontend/package.json`、`frontend/pnpm-workspace.yaml`、`frontend/patches/@rc-component__util.patch`、`frontend/scripts/check-patches.mjs`、`frontend/src/hooks/useElementSize.ts`、`frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/theme/ThemeProvider.compat.test.tsx`、前端单测全量（2430 例） | fcc61ce9 |
+| P1 | 已落地 | `frontend/src/theme/ThemeProvider.compat.test.tsx`（运行时样式审计 + D4 白名单） | `frontend/src/theme/ThemeProvider.compat.test.tsx`（无 :where 包裹 / 无逻辑属性声明 / 白名单外特性断言） | fcc61ce9 |
+| P2 | 已落地 | `frontend/src/pages/**`（弃用 API 清零 + 测试选择器适配）、`frontend/src/index.css`（Modal 容器类）、`frontend/patches/react-dom@19.3.1.patch`（新增，jsdom 拆除竞态守卫）、`frontend/scripts/check-patches.mjs`、`frontend/tests/e2e/critical/*.spec.ts`、`frontend/tests/e2e/dev/*.spec.ts`（定位器）、`frontend/tests/e2e/critical/antd-deprecation.spec.ts`（新增）、`frontend/scripts/bundle-budget.json`（基线记录）、`README.md`、`CONTEXT.md`、`CHANGELOG.md` | `frontend/tests/e2e/critical/antd-deprecation.spec.ts` | fcc61ce9 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。
 
