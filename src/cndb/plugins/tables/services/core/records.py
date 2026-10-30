@@ -164,12 +164,14 @@ def _normalize_row_with_plan(
         except Exception as exc:
             raise ValueError(f"字段 {field_name}({spec.field.field_type}) 值校验失败: {exc}") from exc
 
-    # ── date/datetime auto_fill 自动填充（on_update 覆盖用户值；on_create 仅在未提供时补）──
+    # ── date/datetime auto_fill 自动填充 ──
+    # on_update：更新路径每次覆盖为当前时间；创建路径仅在未提供时补缺省
+    # （复制行等显式传原值的场景不得被覆盖）。on_create：仅未提供时补。
     for db_col, ft, config, mode in plan.auto_fill:
         auto_val = ft.default_value(config)
         if auto_val is None:
             continue
-        if mode == "on_update" or db_col not in result:
+        if (mode == "on_update" and for_update) or db_col not in result:
             result[db_col] = auto_val
 
     # ── DataField.default_value 默认值填充（仅创建、用户未传该字段时）──
