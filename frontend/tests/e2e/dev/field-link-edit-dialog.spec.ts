@@ -148,7 +148,8 @@ test.describe("字段编辑 · 关联字段配置回显", () => {
 
     // 2) 关联目标表：必须是目标表名，而不是「选择要关联的表」占位
     const targetItem = dialog.locator(".ant-form-item").filter({ hasText: "关联目标表" });
-    await expect(targetItem.locator(".ant-select-selection-item")).toHaveText(targetTableName, {
+    // antd 6：单选选中值是 .ant-select-content 内的裸文本节点（content-value div 仅 option 带样式时渲染）
+    await expect(targetItem.locator(".ant-select-content")).toHaveText(targetTableName, {
       timeout: 15_000,
     });
 
