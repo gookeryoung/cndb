@@ -19,6 +19,8 @@ def _run(tmp_path: Path, *, payload_bytes: bytes = b"payload", **extra: str) -> 
     env = {
         "PATH": "/usr/bin:/bin",
         "HOME": str(tmp_path),
+        # Windows 管道默认用 locale（GBK）编码输出，强制 UTF-8 保证两端一致
+        "PYTHONIOENCODING": "utf-8",
         "VERSION": "0.3.0",
         "IMAGE_REPO": "ccr.example/pydev/cndb",
         "WHEEL_URL": "https://pypi.org/packages/aa/cndb-0.3.0.whl",
@@ -34,6 +36,8 @@ def _run(tmp_path: Path, *, payload_bytes: bytes = b"payload", **extra: str) -> 
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         check=False,
     )
 
