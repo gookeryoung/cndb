@@ -101,8 +101,8 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const [mhtmlMode, setMhtmlMode] = useState<MhtmlImportMode>('archive')
   const [status, setStatus] = useState<'draft' | 'published'>('draft')
 
-  /** 批次里是否含 MHTML：不含时「转Markdown」开关禁用（仅对 MHTML 生效） */
-  const hasMhtml = entries.some(entry => /\.mhtml?$/i.test(entry.path))
+  /** 批次里是否含 MHTML（.mhtml / .mht）：不含时「转Markdown」开关禁用（仅对 MHTML 生效） */
+  const hasMhtml = entries.some(entry => /\.(mhtml|mht)$/i.test(entry.path))
 
   const reset = () => {
     setEntries([])
