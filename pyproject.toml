@@ -48,7 +48,7 @@ name            = "cndb"
 readme          = "README.md"
 # Windows 实为 3.12（钉版依赖仅在该版本验证）；平台差异由 __init__.py 运行时校验兜底。
 requires-python = ">=3.12,<3.15"
-version         = "0.4.21"
+version         = "0.4.22"
 
 [project.scripts]
 cndb  = "cndb.cli.main:main"
