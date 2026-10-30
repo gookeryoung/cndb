@@ -54,7 +54,7 @@ test.describe("数据源同步", () => {
     await gotoDatasource(page)
 
     await page.getByTestId("datasource-create-btn").click()
-    const drawer = page.locator(".ant-drawer-content")
+    const drawer = page.locator(".ant-drawer-section")
     await expect(drawer.getByTestId("datasource-name-input")).toBeVisible()
 
     await drawer.getByTestId("datasource-name-input").fill(name)
@@ -93,7 +93,7 @@ test.describe("数据源同步", () => {
     try {
       await gotoDatasource(page)
       await page.getByRole("button", { name: `编辑 ${name}` }).click()
-      const drawer = page.locator(".ant-drawer-content")
+      const drawer = page.locator(".ant-drawer-section")
       await expect(drawer.getByTestId("datasource-name-input")).toHaveValue(name)
       await expect(drawer.getByTestId("datasource-url-template")).toHaveValue(
         "https://api.example.com/news?page={page}",
@@ -106,7 +106,7 @@ test.describe("数据源同步", () => {
   test("空 URL 模板不可保存（前端校验拦截）", async ({ page }) => {
     await gotoDatasource(page)
     await page.getByTestId("datasource-create-btn").click()
-    const drawer = page.locator(".ant-drawer-content")
+    const drawer = page.locator(".ant-drawer-section")
 
     await drawer.getByTestId("datasource-name-input").fill("E2E 校验")
     await drawer.getByTestId("datasource-save-btn").click()

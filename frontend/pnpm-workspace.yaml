@@ -6,6 +6,8 @@ allowBuilds:
   msw: true
 
 # pnpm 10.13+/12 起配置统一迁至本文件，package.json 的 pnpm.patchedDependencies 已被忽略
+# 补丁清单见 scripts/check-patches.mjs（ADR 0074 D5：rc-field-form 摇树补丁随 antd 6 移除；
+# @rc-component/util 的 isEqual 补丁由 pnpm patch-commit 自动登记）
 patchedDependencies:
-  rc-field-form@2.7.1: patches/rc-field-form@2.7.1.patch
-  rc-util: patches/rc-util.patch
+  '@rc-component/util': patches/@rc-component__util.patch
+  react-dom@19.3.1: patches/react-dom@19.3.1.patch

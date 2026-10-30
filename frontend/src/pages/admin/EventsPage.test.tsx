@@ -85,7 +85,8 @@ describe('EventsPage', () => {
     renderProviders(<EventsPage />)
     await screen.findByText('登录成功：alice')
 
-    const input = screen.getByTestId('event-keyword')
+    // antd 6：Input.Search 的 data-testid 落在 group 包装层，实际 input 取其子节点
+    const input = screen.getByTestId('event-keyword').querySelector('input')!
     fireEvent.change(input, { target: { value: 'alice' } })
     fireEvent.keyDown(input, { key: 'Enter', code: 'Enter' })
 

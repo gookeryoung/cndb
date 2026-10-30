@@ -432,7 +432,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     )}
                 </div>
                 {task.error_message && (
-                    <Alert type="error" message={task.error_message} style={{ marginTop: 8, padding: '4px 10px' }} showIcon />
+                    <Alert type="error" title={task.error_message} style={{ marginTop: 8, padding: '4px 10px' }} showIcon />
                 )}
             </div>
         )
@@ -559,7 +559,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     )}
                 </div>
                 {aiMappingError && (
-                    <Alert data-testid="ai-mapping-error" type="error" showIcon style={{ marginTop: 8 }} message={aiMappingError} />
+                    <Alert data-testid="ai-mapping-error" type="error" showIcon style={{ marginTop: 8 }} title={aiMappingError} />
                 )}
                 {aiUnmapped.length > 0 && (
                     <Alert
@@ -567,7 +567,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         type="warning"
                         showIcon
                         style={{ marginTop: 8 }}
-                        message={`未映射的源列：${aiUnmapped.join('、')}（可手动调整目标字段；AI 不会自动导入）`}
+                        title={`未映射的源列：${aiUnmapped.join('、')}（可手动调整目标字段；AI 不会自动导入）`}
                     />
                 )}
                 {aiMappings.length > 0 && (
@@ -624,7 +624,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     type={hd.requires_review ? 'warning' : 'info'}
                     showIcon
                     style={{ flex: '1 1 480px', minWidth: 280, padding: '4px 10px' }}
-                    message={
+                    title={
                         <span>
                             {hd.message}
                             {hd.requires_review && (
@@ -680,7 +680,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         type="warning"
                         style={{ marginBottom: 12 }}
                         showIcon
-                        message={`参考列匹配到 ${multiConflict} 组多行冲突（同 key 对应多条已有数据），将取 ID 最小的一行更新`}
+                        title={`参考列匹配到 ${multiConflict} 组多行冲突（同 key 对应多条已有数据），将取 ID 最小的一行更新`}
                     />
                 )}
 
@@ -690,7 +690,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message={`按参考列 ${matchKeys.join('、')} 比对分析完成：没有匹配到已有数据，全部 ${newCount} 行将作为新增导入`}
+                        title={`按参考列 ${matchKeys.join('、')} 比对分析完成：没有匹配到已有数据，全部 ${newCount} 行将作为新增导入`}
                     />
                 )}
                 {hasUpsert && updateChangedCount === 0 && (
@@ -698,7 +698,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         type="info"
                         showIcon
                         style={{ marginBottom: 12 }}
-                        message={`命中 ${updateCount} 行已有数据，但字段值均与现有数据一致，本次不会产生实际更新`}
+                        title={`命中 ${updateCount} 行已有数据，但字段值均与现有数据一致，本次不会产生实际更新`}
                     />
                 )}
 
@@ -714,7 +714,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         type={plannedColumns.length > 0 ? 'info' : 'warning'}
                         style={{ marginBottom: 12 }}
                         showIcon
-                        message={
+                        title={
                             <div style={{ fontSize: 12 }}>
                                 {plannedColumns.length > 0 && (
                                     <div>
@@ -897,7 +897,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
             )}
 
             {(phase === 'analyzing' || phase === 'importing') && (
-                <Alert type="info" message="处理中..." style={{ marginTop: 12 }} showIcon />
+                <Alert type="info" title="处理中..." style={{ marginTop: 12 }} showIcon />
             )}
 
             {renderProgressSummary()}

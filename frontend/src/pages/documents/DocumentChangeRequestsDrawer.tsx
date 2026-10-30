@@ -45,7 +45,7 @@ export default function DocumentChangeRequestsDrawer({ open, onClose, workspaceI
   return (
     <Drawer
       title={`修改申请${openCount > 0 ? `（待审核 ${openCount}）` : ''}`}
-      width={860}
+      size={860}
       open={open}
       onClose={onClose}
       data-testid="dcr-drawer"

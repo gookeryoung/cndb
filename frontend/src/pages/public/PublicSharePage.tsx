@@ -93,7 +93,7 @@ export default function PublicSharePage() {
   let body: React.ReactNode
   if (passwordPanel) {
     body = (
-      <Space direction="vertical" size={12} style={{ maxWidth: 320 }}>
+      <Space orientation="vertical" size={12} style={{ maxWidth: 320 }}>
         <Typography.Text type="secondary">该分享需要密码访问</Typography.Text>
         <Input.Password
           value={password}
@@ -105,7 +105,7 @@ export default function PublicSharePage() {
           }}
           onPressEnter={() => password && unlockMutation.mutate(password)}
         />
-        {passwordError && <Alert type="error" showIcon message={passwordError} data-testid="public-share-password-error" />}
+        {passwordError && <Alert type="error" showIcon title={passwordError} data-testid="public-share-password-error" />}
         <Button
           type="primary"
           loading={unlockMutation.isPending}

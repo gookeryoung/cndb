@@ -7,7 +7,7 @@
  */
 
 import { useState } from 'react'
-import { App as AntApp, Button, Drawer, Empty, List, Space, Tag, Tooltip, Typography } from 'antd'
+import { App as AntApp, Button, Drawer, Empty, Space, Tag, Tooltip, Typography } from 'antd'
 import {
   CaretRightOutlined,
   CopyOutlined,
@@ -98,7 +98,7 @@ export function AnalyticsManagerDrawer({
           <Text type="secondary" style={{ fontSize: 12, fontWeight: WEIGHT.regular }}>共 {templates.length} 个</Text>
         </Space>
       }
-      width={560}
+      size={560}
       open={open}
       onClose={onClose}
       destroyOnHidden
@@ -120,15 +120,14 @@ export function AnalyticsManagerDrawer({
             description="暂无已保存的分析，点击右上角「新建分析」开始"
           />
         ) : (
-          <List
-            dataSource={templates}
-            rowKey={template => template.id}
-            renderItem={template => {
+          // antd 6 弃用 List 组件（v7 移除）：此处为纯自定义样式容器，直接用普通结构等价实现
+          templates.map(template => {
               const isActive = template.id === activeTemplateId
               const updatedAt = formatUpdatedAt(template.updated_at)
               const expanded = expandedIds.has(template.id)
               return (
-                <List.Item
+                <div
+                  key={template.id}
                   data-testid={`analytics-manager-item-${template.id}`}
                   style={{
                     display: 'block',
@@ -226,10 +225,9 @@ export function AnalyticsManagerDrawer({
                       </Text>
                     </div>
                   )}
-                </List.Item>
+                </div>
               )
-            }}
-          />
+          })
         )}
       </div>
     </Drawer>

@@ -661,7 +661,8 @@ describe('文档列表边缘线与行操作', () => {
 
     fireEvent.click(await screen.findByTestId('doc-row-move-2'))
     await screen.findByText('移动「需求说明」到…')
-    const selector = screen.getByTestId('doc-row-move-target').querySelector('.ant-select-selector')
+    // antd 6：Select 根节点即 data-testid 宿主（.ant-select-selector 已移除）
+    const selector = screen.getByTestId('doc-row-move-target')
     expect(selector).not.toBeNull()
     fireEvent.mouseDown(selector as Element)
     fireEvent.click(await screen.findByText('（根目录）'))

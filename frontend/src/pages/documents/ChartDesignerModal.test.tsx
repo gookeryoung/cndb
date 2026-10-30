@@ -372,7 +372,8 @@ describe('ChartDesignerModal 标准类型（需求卡片 0070）', () => {
     expect(themeSelect.compareDocumentPosition(paletteSection) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     // 切换商务蓝：预览请求 theme 变为商务蓝 palette + 纸底
-    fireEvent.mouseDown(themeSelect.querySelector('.ant-select-selector') as HTMLElement)
+    // antd 6：Select 根节点即 data-testid 宿主（.ant-select-selector 已移除），mousedown 根节点打开下拉
+    fireEvent.mouseDown(themeSelect)
     fireEvent.click(await screen.findByTitle('商务蓝'))
     await waitFor(() => {
       const last = bodies[bodies.length - 1] as { config?: { theme?: { palette?: string[]; paper?: string } } }

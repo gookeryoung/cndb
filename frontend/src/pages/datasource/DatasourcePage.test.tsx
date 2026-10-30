@@ -461,7 +461,8 @@ describe('DatasourcePage · 凭证会话与领域模板', () => {
     setupHandlers([makeJob()])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
-    const drawer = screen.getByText(/编辑同步任务 · 北京天气日报/).closest('.ant-drawer-content') as HTMLElement
+    // antd 6：Drawer 内容容器类由 .ant-drawer-content 改为 .ant-drawer-section
+    const drawer = screen.getByText(/编辑同步任务 · 北京天气日报/).closest('.ant-drawer-section') as HTMLElement
     expect(within(drawer).getByText('凭证会话')).toBeInTheDocument()
     expect(within(drawer).getByText('请求间隔（毫秒）')).toBeInTheDocument()
   })
@@ -600,7 +601,7 @@ describe('DatasourcePage · 大模型提示词', () => {
     fireEvent.click(await screen.findByRole('button', { name: '编辑 模型日报' }))
 
     const userInput = await screen.findByTestId('datasource-llm-user')
-    const drawer = userInput.closest('.ant-drawer-content') as HTMLElement
+    const drawer = userInput.closest('.ant-drawer-section') as HTMLElement
     expect(userInput).toHaveValue('请生成 {today} 的天气摘要，地区：{entrant}')
     expect(within(drawer).getByText('用户提示词')).toBeInTheDocument()
     expect(within(drawer).getByText('目标表（留空则按任务名自动建表）')).toBeInTheDocument()
@@ -631,7 +632,7 @@ describe('DatasourcePage · 大模型提示词', () => {
     fireEvent.click(await screen.findByTestId('datasource-llm-presets-btn'))
 
     const first = await screen.findByTestId('datasource-llm-preset-daily_news')
-    const modal = first.closest('.ant-modal-content') as HTMLElement
+    const modal = first.closest('.ant-modal-container') as HTMLElement
     expect(within(modal).getAllByTestId(/^datasource-llm-preset-/)).toHaveLength(LLM_PROMPT_PRESETS.length)
     for (const preset of LLM_PROMPT_PRESETS) {
       expect(within(modal).getByText(preset.name)).toBeInTheDocument()

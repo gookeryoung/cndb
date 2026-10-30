@@ -234,7 +234,7 @@ describe('ImportPanel 表头行自动识别与人工改选', () => {
     const { getTaskSpy } = await openHeaderPreview()
     const reanalyzeSpy = vi.spyOn(importApi, 'reanalyzeImport').mockResolvedValue(makeTask())
 
-    fireEvent.mouseDown(screen.getByTestId('header-row-select').querySelector('.ant-select-selector')!)
+    fireEvent.mouseDown(screen.getByTestId('header-row-select'))
     fireEvent.click(await screen.findByText(/^第 1 行 · 28%/, { selector: '.ant-select-item-option-content' }))
 
     expect(reanalyzeSpy).toHaveBeenCalledWith('10', '100', 77, [], 'add_text_field', 1)

@@ -239,7 +239,7 @@ export default function AiFillFieldDrawer({
   return (
     <Drawer
       open={open}
-      width={760}
+      size={760}
       onClose={close}
       destroyOnHidden
       title={<Space size={SPACE.sm}><RobotOutlined /><span>AI 填充本列：{field.name}</span></Space>}
@@ -287,7 +287,7 @@ export default function AiFillFieldDrawer({
             <Alert
               type="error"
               showIcon
-              message={fillAi.error}
+              title={fillAi.error}
               description="本次调用未改动任何行；可点击「重新生成」重试，或缩短输入行后重试。"
             />
           </div>
@@ -317,7 +317,7 @@ export default function AiFillFieldDrawer({
             data-testid="ai-fill-skipped"
             type="warning"
             showIcon
-            message={`有 ${skippedRowIds.length} 行不在你的可读范围或已被删除，已跳过：${skippedRowIds.join('、')}`}
+            title={`有 ${skippedRowIds.length} 行不在你的可读范围或已被删除，已跳过：${skippedRowIds.join('、')}`}
           />
         )}
 

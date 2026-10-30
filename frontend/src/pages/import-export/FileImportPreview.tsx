@@ -291,7 +291,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
             type={headerDetection.requires_review ? 'warning' : 'info'}
             showIcon
             style={{ flex: '1 1 480px', minWidth: 280, padding: '4px 10px' }}
-            message={
+            title={
               <span>
                 {headerDetection.message}
                 {headerDetection.requires_review && (

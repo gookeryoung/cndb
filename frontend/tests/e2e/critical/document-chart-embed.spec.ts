@@ -205,7 +205,7 @@ test.describe("文档图表内嵌块", () => {
       const zoomPreview = page.getByTestId("chart-embed-preview-svg");
       await expect(zoomPreview).toBeVisible({ timeout: 20_000 });
       await expect(zoomPreview.locator("svg")).toHaveCount(1);
-      await page.getByRole("button", { name: "Close" }).click();
+      await page.locator(".ant-modal-close").click(); // antd 6 + zhCN：关闭钮 aria-label 随本地化为「关闭」，按类名定位
       await expect(zoomPreview).toBeHidden({ timeout: 20_000 });
       await expect(page.getByTestId("chart-embed-svg")).toBeVisible();
 
@@ -257,7 +257,7 @@ test.describe("文档图表内嵌块", () => {
         // 游客页同样支持点击放大（ADR 0060 I3 模式无关）
         await guestEmbed.getByTestId("chart-embed-svg").click();
         await expect(view.page.getByTestId("chart-embed-preview-svg").locator("svg")).toHaveCount(1);
-        await view.page.getByRole("button", { name: "Close" }).click();
+        await view.page.locator(".ant-modal-close").click(); // antd 6 + zhCN：同上
         await expect(view.page.getByTestId("chart-embed-preview-svg")).toBeHidden({ timeout: 20_000 });
       } finally {
         await view.context.close();

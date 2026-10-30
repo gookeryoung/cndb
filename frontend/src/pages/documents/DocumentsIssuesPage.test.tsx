@@ -116,7 +116,7 @@ describe('DocumentsIssuesPage', () => {
 
     // 选择所属文档（MSW 默认文档树含「需求说明」）
     const combo = await screen.findByTestId('doc-issue-document')
-    fireEvent.mouseDown(combo.querySelector('.ant-select-selector') ?? combo)
+    fireEvent.mouseDown(combo)
     fireEvent.click(await screen.findByTitle('需求说明'))
 
     fireEvent.change(screen.getByPlaceholderText('一句话描述问题'), { target: { value: '标题与正文不符' } })

@@ -748,7 +748,7 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
       <Alert
         type="info"
         showIcon
-        message="从备份 JSON 创建一个全新的工作区"
+        title="从备份 JSON 创建一个全新的工作区"
         description="备份文件中的表结构、数据行和视图都会一并导入，当前用户自动成为该工作区所有者。"
         style={{ marginBottom: 16 }}
       />

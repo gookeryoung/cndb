@@ -454,7 +454,7 @@ export default function DocumentsPage() {
   }, [rowMove, treeQuery.data])
 
   if (!Number.isFinite(workspaceId)) {
-    return <Alert type="error" message="无效的工作区" />
+    return <Alert type="error" title="无效的工作区" />
   }
 
   /** 返回上级：以当前面包屑末项的 parent_id 为目标 */
@@ -1024,7 +1024,7 @@ export default function DocumentsPage() {
         onOk={() => createMut.mutate()}
         okButtonProps={{ disabled: !newTitle.trim(), loading: createMut.isPending }}
       >
-        <Space direction="vertical" style={{ width: '100%' }} size={12}>
+        <Space orientation="vertical" style={{ width: '100%' }} size={12}>
           <Input
             placeholder={createType === 'folder' ? '文件夹名称' : '文档标题'}
             value={newTitle}
@@ -1059,15 +1059,15 @@ export default function DocumentsPage() {
           data-testid="doc-export-style"
           style={{ width: '100%' }}
         >
-          <Space direction="vertical" style={{ width: '100%' }} size={12}>
+          <Space orientation="vertical" style={{ width: '100%' }} size={12}>
             <Radio value="folder">
-              <Space direction="vertical" size={0}>
+              <Space orientation="vertical" size={0}>
                 <Text>文件夹（Markdown）</Text>
                 <Text type="secondary">按文档树层级打包为 .md 文件夹压缩包，附件一并导出</Text>
               </Space>
             </Radio>
             <Radio value="obsidian">
-              <Space direction="vertical" size={0}>
+              <Space orientation="vertical" size={0}>
                 <Text>Obsidian 库</Text>
                 <Text type="secondary">含 front-matter 与最小 .obsidian 配置，解压后可直接作为库打开</Text>
               </Space>

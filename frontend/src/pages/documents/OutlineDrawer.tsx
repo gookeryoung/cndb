@@ -20,7 +20,7 @@ export default function OutlineDrawer({
   onAnchorClick: (anchor: string) => void
 }) {
   return (
-    <Drawer title="大纲" width={320} open={open} onClose={onClose}>
+    <Drawer title="大纲" size={320} open={open} onClose={onClose}>
       <OutlineList outline={outline} onAnchorClick={onAnchorClick} />
     </Drawer>
   )

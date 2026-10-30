@@ -309,7 +309,8 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
 
     // 添加成员弹窗打开（标题断言，避免与"添加成员"入口按钮重名）
     await waitFor(() => expect(document.querySelector('.ant-modal-title')).toHaveTextContent('添加成员'))
-    const modal = document.querySelector('.ant-modal-content') as HTMLElement
+    // antd 6：Modal 内容容器类由 .ant-modal-content 改为 .ant-modal-container
+    const modal = document.querySelector('.ant-modal-container') as HTMLElement
     const okBtn = within(modal).getByRole('button', { name: /^添\s*加$/ })
     expect(okBtn).toBeDisabled()
 

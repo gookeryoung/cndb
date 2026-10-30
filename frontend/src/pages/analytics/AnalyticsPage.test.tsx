@@ -436,7 +436,7 @@ describe('AnalyticsPage', () => {
     expect(computeBodies[0].filters).toEqual([])
 
     // 选范围字段 + 起止值 → 两个比较条件
-    fireEvent.mouseDown(screen.getByTestId('analytics-scope-field').querySelector('.ant-select-selector')!)
+    fireEvent.mouseDown(screen.getByTestId('analytics-scope-field'))
     fireEvent.click(await screen.findByText('产品', { selector: '.ant-select-item-option-content' }))
     fireEvent.change(screen.getByTestId('analytics-scope-from'), { target: { value: 'A' } })
     fireEvent.change(screen.getByTestId('analytics-scope-to'), { target: { value: 'C' } })
@@ -453,12 +453,12 @@ describe('AnalyticsPage', () => {
     renderPage('/w/1/analytics?template=7')
     await waitTemplateLoaded()
 
-    fireEvent.mouseDown(screen.getByTestId('analytics-scope-field').querySelector('.ant-select-selector')!)
+    fireEvent.mouseDown(screen.getByTestId('analytics-scope-field'))
     fireEvent.click(await screen.findByText('产品', { selector: '.ant-select-item-option-content' }))
     fireEvent.change(screen.getByTestId('analytics-scope-from'), { target: { value: 'A' } })
     expect(screen.getByTestId('analytics-scope-from')).toHaveValue('A')
 
-    fireEvent.mouseDown(screen.getByTestId('analytics-table-select').querySelector('.ant-select-selector')!)
+    fireEvent.mouseDown(screen.getByTestId('analytics-table-select'))
     fireEvent.click(await screen.findByText('其他表', { selector: '.ant-select-item-option-content' }))
 
     await waitFor(() => expect(screen.getByTestId('analytics-scope-from')).toHaveValue(''))
@@ -509,7 +509,7 @@ describe('AnalyticsPage', () => {
     fireEvent.change(screen.getByTestId('analytics-formula-expr-0'), { target: { value: '[产量] * 2' } })
     expect(await screen.findByTestId('analytics-dirty')).toBeInTheDocument()
 
-    fireEvent.mouseDown(screen.getByTestId('analytics-template-select').querySelector('.ant-select-selector')!)
+    fireEvent.mouseDown(screen.getByTestId('analytics-template-select'))
     fireEvent.click(await screen.findByText('其他模板', { selector: '.ant-select-item-option-content' }))
 
     const confirm = await screen.findByRole('dialog')

@@ -52,7 +52,7 @@ export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClos
         <Alert
           type="info"
           showIcon
-          message={`将备份整个工作区「${workspaceName || ''}」的完整数据`}
+          title={`将备份整个工作区「${workspaceName || ''}」的完整数据`}
           description="包含所有数据表结构、字段配置、数据行、视图配置、表权限配置，以及文档（含标签与最新正文）。导出为 JSON 文件，可在工作区列表页通过「导入工作区」恢复。"
           style={{ marginBottom: 16 }}
         />

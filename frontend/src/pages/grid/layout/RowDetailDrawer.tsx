@@ -187,7 +187,7 @@ export default function RowDetailDrawer({ open, row, fields: fieldsProp, wid, ti
   return (
     <Drawer
       title={isCreate ? '新建行' : `行详情 #${row!.id}`}
-      width={600}
+      size={600}
       open={open}
       onClose={onClose}
       extra={
@@ -287,7 +287,8 @@ export default function RowDetailDrawer({ open, row, fields: fieldsProp, wid, ti
             <Timeline
               items={audit.map(a => ({
                 color: a.action.includes('delete') ? 'red' : a.action.includes('create') ? 'green' : 'blue',
-                children: (
+                // antd 6：Timeline items.children 改为 items.content
+                content: (
                   <div>
                     <Tag>{a.action}</Tag>
                     <span style={{ color: '#94a3b8', fontSize: 12 }}>{a.actor_name || '系统'} · {a.created_at || ''}</span>

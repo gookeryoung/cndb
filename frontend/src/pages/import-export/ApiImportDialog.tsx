@@ -301,7 +301,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
         <Alert
           type="error"
           showIcon
-          message="请求失败"
+          title="请求失败"
           description={errorMsg}
           style={{ marginTop: 12 }}
           closable

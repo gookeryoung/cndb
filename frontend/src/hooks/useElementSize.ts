@@ -22,7 +22,7 @@ export interface ElementSize {
  */
 export function useElementSize<T extends HTMLElement>(
   initial: ElementSize = { width: 0, height: 0 },
-): [RefObject<T>, ElementSize] {
+): [RefObject<T | null>, ElementSize] {
   const ref = useRef<T>(null)
   const [size, setSize] = useState<ElementSize>(initial)
 

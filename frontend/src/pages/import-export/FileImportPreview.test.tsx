@@ -79,7 +79,7 @@ describe('FileImportPreview 文件导入预览', () => {
     setup()
 
     // 打开第一个字段（姓名）的类型下拉并选择「单选」
-    const selector = document.querySelectorAll('.ant-select-selector')[0]!
+    const selector = document.querySelectorAll('.ant-select')[0]!
     fireEvent.mouseDown(selector)
     fireEvent.click(await screen.findByText('单选'))
 
@@ -223,7 +223,7 @@ describe('FileImportPreview 表头行自动识别与人工改选', () => {
     setupTitleRow()
     const analyzeSpy = vi.spyOn(importApi, 'analyzeFile').mockResolvedValue(row1Result)
 
-    fireEvent.mouseDown(screen.getByTestId('header-row-select').querySelector('.ant-select-selector')!)
+    fireEvent.mouseDown(screen.getByTestId('header-row-select'))
     fireEvent.click(await screen.findByText(/^第 1 行 · 31%/, { selector: '.ant-select-item-option-content' }))
 
     expect(analyzeSpy).toHaveBeenCalledWith(10, file, 1)

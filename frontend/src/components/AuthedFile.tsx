@@ -46,8 +46,9 @@ export function AuthedImage({
       onMouseEnter={thumb ? () => setPreferFull(true) : undefined}
       preview={thumb ? {
         src: fullUrl,
-        visible: previewVisible,
-        onVisibleChange: visible => {
+        // antd 6：Image 预览 visible/onVisibleChange 改为 open/onOpenChange
+        open: previewVisible,
+        onOpenChange: visible => {
           setPreviewVisible(visible)
           if (visible) setPreferFull(true)
         },

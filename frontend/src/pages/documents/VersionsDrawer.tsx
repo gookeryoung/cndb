@@ -272,7 +272,7 @@ export default function VersionsDrawer({
           版本历史
         </span>
       }
-      width={isMobile ? '100%' : 960}
+      size={isMobile ? '100%' : 960}
       open={open}
       onClose={onClose}
       styles={{ body: { padding: 0 } }}

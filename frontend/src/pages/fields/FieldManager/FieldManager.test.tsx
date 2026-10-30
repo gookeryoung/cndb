@@ -15,7 +15,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { StrictMode } from 'react'
 import type { ReactNode } from 'react'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import FieldManager, { fieldNoteText, formatIncrementExample } from './index'
 import { renderProviders } from '@/test/render-providers'
 import { fieldApi, tableApi, workspaceApi } from '@/api'
@@ -116,15 +116,23 @@ async function openNewDialogAndSelectType(typeLabelZh: string) {
         expect(document.querySelector('.ant-modal-body')).not.toBeNull()
     })
 
-    // 打开类型下拉 → 搜索定位 → 点选
-    fireEvent.mouseDown(document.querySelector('.ant-select-selector')!)
+    // 打开类型下拉 → 搜索定位 → 点选（antd 6：mousedown 根节点 .ant-select）
+    // antd 6 弹层为异步两段挂载，且 openDialog(null) 的 setTimeout(0) resetFields 会重建表单
+    // 节点：必须等 Select 挂载并让该定时器跑完后交互，否则 mousedown 落在被重建前的节点上无效
+    await waitFor(() => {
+        expect(document.querySelector('.ant-select')).not.toBeNull()
+    })
+    await act(async () => {
+        await new Promise(r => setTimeout(r, 0))
+    })
+    fireEvent.mouseDown(document.querySelector('.ant-select')!)
     await waitFor(() => {
         expect(document.querySelector('.ant-select-dropdown')).not.toBeNull()
     })
 
-    // 搜索框在 Select 选择器内部（.ant-select-selection-search-input），不在 dropdown 里
+    // 搜索框在 Select 根节点内部（v6 为 input.ant-select-input），不在 dropdown 里
     const typeSelect = document.querySelector('.ant-select') as HTMLElement
-    const searchInput = typeSelect?.querySelector('.ant-select-selection-search-input') as HTMLInputElement
+    const searchInput = typeSelect?.querySelector('input.ant-select-input') as HTMLInputElement
     expect(searchInput).not.toBeNull()
     fireEvent.change(searchInput, { target: { value: typeLabelZh } })
 
@@ -279,7 +287,7 @@ describe('FieldManager 编辑对话框自动填充激活态', () => {
         // openDialog(null) 会安排 setTimeout(0) 的 form.resetFields()：若在 await 中
         // 让定时器先触发，Select 会因表单重置而关闭下拉。故下拉打开→选中须在同一个
         // 同步任务内完成（真实浏览器中用户交互远晚于该定时器，无此竞态）。
-        fireEvent.mouseDown(document.querySelector('.ant-select .ant-select-selector')!)
+        fireEvent.mouseDown(document.querySelector('.ant-select')!)
         // 同步遍历选项，按文案定位「日期」（optionRender 会在类型名下追加说明小字，故用前缀匹配）
         const target = Array.from(document.querySelectorAll('.ant-select-item-option-content'))
             .find(el => el.textContent?.startsWith('日期（日期）'))
@@ -458,8 +466,8 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
                 expect(sel).not.toHaveClass('ant-select-disabled')
             })
 
-            // 打开 Select 下拉 → 选一个选项
-            const selector = control.querySelector('.ant-select-selector')!
+            // 打开 Select 下拉 → 选一个选项（antd 6：mousedown 根节点）
+            const selector = control.querySelector('.ant-select')!
             fireEvent.mouseDown(selector)
             await clickSelectOption('待办')
 
@@ -525,7 +533,7 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
             })
 
             // 选中"待办"
-            fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
+            fireEvent.mouseDown(control.querySelector('.ant-select')!)
             await clickSelectOption('待办')
 
             // 删除 index=0（"待办"）选项
@@ -533,9 +541,8 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
 
             // 默认值 Select 的 value 应该被清空（显示 placeholder）
             await waitFor(() => {
-                // 有值时 antd Select 会有 .ant-select-selection-item；清空后没有
-                const selected = control.querySelectorAll('.ant-select-selection-item')
-                expect(selected).toHaveLength(0)
+                // antd 6 单选有值时 .ant-select-content 带 has-value 类；清空后消失
+                expect(control.querySelector('.ant-select-content')).not.toHaveClass('ant-select-content-has-value')
             })
         })
 
@@ -552,13 +559,13 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
             })
 
             // 打开多选 Select → 依次选"高优"和"低优"
-            fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
+            fireEvent.mouseDown(control.querySelector('.ant-select')!)
             // multiselect 打开后会关闭，需要每次重开
             await clickSelectOption('高优')
             await waitFor(() => {
                 expect(control.querySelectorAll('.ant-select-selection-item')).toHaveLength(1)
             })
-            fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
+            fireEvent.mouseDown(control.querySelector('.ant-select')!)
             await clickSelectOption('低优')
             await waitFor(() => {
                 expect(control.querySelectorAll('.ant-select-selection-item')).toHaveLength(2)
@@ -587,9 +594,9 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
             })
 
             // 全选
-            fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
+            fireEvent.mouseDown(control.querySelector('.ant-select')!)
             await clickSelectOption('A')
-            fireEvent.mouseDown(control.querySelector('.ant-select-selector')!)
+            fireEvent.mouseDown(control.querySelector('.ant-select')!)
             await clickSelectOption('B')
             await waitFor(() => {
                 expect(control.querySelectorAll('.ant-select-selection-item')).toHaveLength(2)
@@ -646,9 +653,11 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
 
             await waitFor(() => {
                 const control = defaultValueControl()
-                const items = control.querySelectorAll('.ant-select-selection-item')
-                expect(items).toHaveLength(1)
-                expect(items[0]!.textContent).toBe('进行中')
+                // antd 6 单选选中值直接渲染在 .ant-select-content（不再有 .ant-select-selection-item）
+                const content = control.querySelector('.ant-select-content')
+                expect(content).not.toBeNull()
+                expect(content).toHaveClass('ant-select-content-has-value')
+                expect(content!.textContent).toBe('进行中')
             })
         })
 
@@ -867,15 +876,15 @@ describe('FieldManager 从其他表引入字段', () => {
         })
 
         // 选工作区：打开第一个 Select 下拉 → 点"其他工作区"
-        const selectors = document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector')
+        const selectors = document.querySelectorAll('.ant-modal-body .ant-select')
         fireEvent.mouseDown(selectors[0]!)
         await clickSelectOption('其他工作区')
 
         // 选源表：先打开第二个 Select（源表）下拉，再点"外部表"
         await waitFor(() => {
-            expect(document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector').length).toBeGreaterThanOrEqual(2)
+            expect(document.querySelectorAll('.ant-modal-body .ant-select').length).toBeGreaterThanOrEqual(2)
         })
-        fireEvent.mouseDown(document.querySelectorAll('.ant-modal-body .ant-select .ant-select-selector')[1]!)
+        fireEvent.mouseDown(document.querySelectorAll('.ant-modal-body .ant-select')[1]!)
         await clickSelectOption('外部表')
 
         // 等源字段勾选区渲染
@@ -1035,7 +1044,8 @@ describe('FieldManager 关联字段对话框数据同步', () => {
         return item as HTMLElement
     }
     function targetTableText(): string | undefined {
-        return itemByLabel('关联目标表').querySelector('.ant-select-selection-item')?.textContent ?? undefined
+        // antd 6 单选选中值渲染在 .ant-select-content（无 selection-item 包装）
+        return itemByLabel('关联目标表').querySelector('.ant-select-content')?.textContent?.trim() ?? undefined
     }
     function renderFMWith(fields: any) {
         return renderProviders(
@@ -1207,11 +1217,11 @@ describe('FieldManager 切换字段类型时重置 config', () => {
             el.querySelector('.ant-form-item-label')?.textContent?.includes('类型'))
         expect(item).toBeDefined()
         const sel = item!.querySelector('.ant-select') as HTMLElement
-        fireEvent.mouseDown(sel.querySelector('.ant-select-selector')!)
+        fireEvent.mouseDown(sel)
         await waitFor(() => {
             expect(document.querySelector('.ant-select-dropdown')).not.toBeNull()
         })
-        const searchInput = sel.querySelector('.ant-select-selection-search-input') as HTMLInputElement
+        const searchInput = sel.querySelector('input.ant-select-input') as HTMLInputElement
         fireEvent.change(searchInput, { target: { value: typeLabelZh } })
         const opt = await waitFor(() => {
             const opts = Array.from(document.querySelectorAll('.ant-select-item-option-content'))

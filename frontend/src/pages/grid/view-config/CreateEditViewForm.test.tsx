@@ -20,7 +20,7 @@ const fields = [
 
 /** 打开第 idx 个 antd Select（0 = 视图类型选择器） */
 function openSelect(idx: number) {
-  const selector = document.querySelectorAll('.ant-select .ant-select-selector')[idx]
+  const selector = document.querySelectorAll('.ant-select')[idx]
   fireEvent.mouseDown(selector)
 }
 
@@ -40,7 +40,7 @@ describe('CreateEditViewForm 视图表单', () => {
     renderProviders(<CreateEditViewForm fields={fields} onSubmit={onSubmit} />)
 
     expect(screen.getByPlaceholderText('例如：只看进行中')).toBeInTheDocument()
-    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('表格 (Grid)')
+    expect(document.querySelector('.ant-select-content')?.textContent?.trim()).toBe('表格 (Grid)')
     expect(screen.getByRole('button', { name: /创\s*建/ })).toBeDisabled()
 
     fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))

@@ -61,7 +61,7 @@ export function AnalyticsAiPanel({
         icon={<RobotOutlined />}
         extra={<span className="cn-an-muted">AI 只生成建议，不自动保存</span>}
       >
-        <Space direction="vertical" size={SPACE.md} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={SPACE.md} style={{ width: '100%' }}>
           <Text type="secondary" style={{ fontSize: TEXT.xs }}>
             描述想看的分析，AI 会把公式 / 图表 / 分组汇总填进下方编辑区；
             例如「按月份看各城市的平均气温，并标出温差最大的三个城市」。
@@ -102,7 +102,7 @@ export function AnalyticsAiPanel({
               <Alert
                 type="error"
                 showIcon
-                message={error}
+                title={error}
                 description="生成结果未改动当前配置；可调整问题后重试，或继续手动配置。"
               />
             </div>
@@ -113,7 +113,7 @@ export function AnalyticsAiPanel({
               <Alert
                 type="success"
                 showIcon
-                message={`已填入编辑态：${appliedName}`}
+                title={`已填入编辑态：${appliedName}`}
                 description="尚未保存：确认公式 / 图表 / 汇总无误后，点右上角「保存 / 保存为模板」才会写入后端。"
               />
             </div>
@@ -124,7 +124,7 @@ export function AnalyticsAiPanel({
               <Alert
                 type="warning"
                 showIcon
-                message="生成结果含待确认的假设"
+                title="生成结果含待确认的假设"
                 description={
                   <ul style={{ margin: 0, paddingInlineStart: SPACE.xl }}>
                     {warnings.map(item => (

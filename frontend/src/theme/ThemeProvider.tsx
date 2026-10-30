@@ -158,12 +158,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     [mode, pref, setMode, isDark, font, setFontScale, setFontBold],
   )
 
-  // cssVar 模式（antd 5.12+）：组件样式引用 --ant-* CSS 变量，切主题只更新变量值，
-  // 不再对全部挂载组件同步重建样式 —— 主题切换卡顿的主修复；hashed 关闭减少类名与样式冗余
+  // cssVar 模式：antd 6 默认开启 CSS variables（组件样式引用 --ant-* 变量，切主题只更新
+  // 变量值，不再全量重建样式 —— 主题切换卡顿的主修复），无需显式声明；
+  // hashed 关闭减少类名与样式冗余
   const themeConfig = useMemo(
     () => ({
       ...baseConfig,
-      cssVar: true as const,
       hashed: false as const,
       algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
       // 字体设置覆盖主题 token 的字号/字重，其余 token（配色等）保持主题原值
@@ -188,6 +188,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
         <ConfigProvider
           locale={zhCN}
           theme={themeConfig}
+          // antd 6 移除了 Tag 末尾默认外边距；全站布局（工具栏 / 卡片头 / 表格内标签组）
+          // 依赖 v5 的 8px 间距口径，经 tag.styles 全局补回，避免逐处加 style（ADR 0074 P2）
+          tag={{ styles: { root: { marginInlineEnd: 8 } } }}
         >
           <AntApp>{children}</AntApp>
         </ConfigProvider>

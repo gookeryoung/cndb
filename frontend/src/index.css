@@ -3503,7 +3503,8 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     margin: var(--cn-space-md) auto;
   }
 
-  .ant-modal .ant-modal-content {
+  /* antd 6：Modal 内容容器类由 .ant-modal-content 改为 .ant-modal-container */
+  .ant-modal .ant-modal-container {
     padding: var(--cn-space-xl);
   }
 

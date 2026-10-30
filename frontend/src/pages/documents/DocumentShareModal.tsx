@@ -94,7 +94,7 @@ export default function DocumentShareModal({ open, onClose, workspaceId, docId, 
           type="warning"
           showIcon
           style={{ marginBottom: 12 }}
-          message="仅已发布文档可创建分享链接；请先发布该文档"
+          title="仅已发布文档可创建分享链接；请先发布该文档"
           data-testid="document-share-unpublished"
         />
       )}

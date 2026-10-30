@@ -15,7 +15,7 @@ import { makeField } from '@/test/fixtures'
 
 /** 打开第 idx 个 antd Select 下拉（0 = 操作符选择器） */
 function openSelect(idx: number) {
-  const selector = document.querySelectorAll('.ant-select .ant-select-selector')[idx]
+  const selector = document.querySelectorAll('.ant-select')[idx]
   fireEvent.mouseDown(selector)
 }
 
@@ -34,7 +34,8 @@ describe('ColumnFilterDropdown 列级筛选面板', () => {
 
     expect(screen.getByText('筛选「姓名」')).toBeInTheDocument()
     // 默认 op = getOpsForField('text')[0] = contains
-    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('包含')
+    // antd 6：单选选中值渲染在 .ant-select-content（无 selection-item 包装）
+    expect(document.querySelector('.ant-select-content')?.textContent?.trim()).toBe('包含')
     expect(screen.getByPlaceholderText('输入值')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /确\s*定/ })).toBeDisabled()
 
@@ -112,7 +113,8 @@ describe('ColumnFilterDropdown 列级筛选面板', () => {
       />,
     )
 
-    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('开头为')
+    // antd 6：单选选中值渲染在 .ant-select-content（无 selection-item 包装）
+    expect(document.querySelector('.ant-select-content')?.textContent?.trim()).toBe('开头为')
     expect(screen.getByPlaceholderText('输入值')).toHaveValue('张')
     expect(screen.getByRole('button', { name: /确\s*定/ })).toBeEnabled()
   })
@@ -178,7 +180,8 @@ describe('ColumnFilterDropdown 列级筛选面板', () => {
     )
 
     // select 默认操作符为 '='，不再是 text 的 '包含'
-    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('等于')
+    // antd 6：单选选中值渲染在 .ant-select-content（无 selection-item 包装）
+    expect(document.querySelector('.ant-select-content')?.textContent?.trim()).toBe('等于')
     fireEvent.change(screen.getByPlaceholderText('输入选项值'), { target: { value: '进行中' } })
     clickButton(/确\s*定/)
     expect(onApply).toHaveBeenCalledWith('=', '进行中')
@@ -205,7 +208,8 @@ describe('ColumnFilterDropdown 列级筛选面板', () => {
       <ColumnFilterDropdown field={field} onApply={vi.fn()} onReset={vi.fn()} />,
     )
 
-    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('包含')
+    // antd 6：单选选中值渲染在 .ant-select-content（无 selection-item 包装）
+    expect(document.querySelector('.ant-select-content')?.textContent?.trim()).toBe('包含')
     expect(screen.getByPlaceholderText('输入值')).toBeInTheDocument()
   })
 })

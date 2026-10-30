@@ -450,7 +450,7 @@ export default function DatasourcePage() {
                 showIcon
                 data-testid={`datasource-sync-progress-${job.id}`}
                 style={{ marginBottom: 8 }}
-                message={
+                title={
                   <Space size={8} wrap>
                     <Text strong>「{job.name}」运行中</Text>
                     {failed ? (
@@ -503,7 +503,7 @@ export default function DatasourcePage() {
           emptyText: (
             <Empty
               description={
-                <Space direction="vertical" size={2}>
+                <Space orientation="vertical" size={2}>
                   <Text>还没有同步任务</Text>
                   <Text type="secondary">新建后可按每天 / 间隔 / cron 自动抓取</Text>
                 </Space>
@@ -801,11 +801,11 @@ function JobDrawer({
     <>
       <Drawer
         title={activeJob ? `编辑同步任务 · ${watchedName?.trim() || activeJob.name}` : '新建同步任务'}
-        width={720}
+        size={720}
         open={open}
         onClose={onClose}
         forceRender
-        destroyOnClose
+        destroyOnHidden
         extra={
           <Space>
             <Button onClick={onClose}>取消</Button>
@@ -840,7 +840,7 @@ function JobDrawer({
                 type="info"
                 showIcon
                 style={{ marginBottom: 16 }}
-                message={LLM_PERSONAL_HINT}
+                title={LLM_PERSONAL_HINT}
                 description="API 地址 / 模型 / API Key 在个人设置里配置一次即可，所有提示词任务共用你的个人配置。"
               />
 
@@ -888,7 +888,7 @@ function JobDrawer({
                   closable
                   style={{ marginBottom: 16 }}
                   onClose={() => setAppliedPreset(null)}
-                  message={`已套用推荐场景：${appliedPreset.name}`}
+                  title={`已套用推荐场景：${appliedPreset.name}`}
                   description={`建议目标表字段：${appliedPreset.target_fields.join('、')}；建议幂等键：${appliedPreset.match_keys.join('、')}`}
                 />
               )}
@@ -1316,7 +1316,7 @@ function PreviewPanel({
           type="success"
           showIcon
           style={{ marginBottom: 8 }}
-          message={`自动识别幂等键：${preview.suggested_match_keys.join(', ')}`}
+          title={`自动识别幂等键：${preview.suggested_match_keys.join(', ')}`}
           description="可在「高级设置 → 幂等键」里采用，或直接保存由后端按此去重。"
         />
       )}
@@ -1325,7 +1325,7 @@ function PreviewPanel({
           type="warning"
           showIcon
           style={{ marginBottom: 8 }}
-          message={`${preview.failures.length} 个请求失败`}
+          title={`${preview.failures.length} 个请求失败`}
           description={preview.failures.map(f => `${f.label}: ${f.error}`).join('；')}
         />
       )}
@@ -1334,7 +1334,7 @@ function PreviewPanel({
           type="info"
           showIcon
           style={{ marginBottom: 8 }}
-          message={`${preview.normalize_failures.length} 个字段归一失败（已降级为空值）`}
+          title={`${preview.normalize_failures.length} 个字段归一失败（已降级为空值）`}
           description={preview.normalize_failures
             .slice(0, 5)
             .map(f => `第 ${f.row_index + 1} 行 ${f.field}: ${f.reason}`)
@@ -1402,10 +1402,10 @@ function HistoryDrawer({ wid, job, onClose }: { wid: string; job: SyncJob | null
   return (
     <Drawer
       title={job ? `运行历史 · ${job.name}` : '运行历史'}
-      width={880}
+      size={880}
       open={!!job}
       onClose={onClose}
-      destroyOnClose
+      destroyOnHidden
     >
       <Table<SyncRun>
         rowKey="id"
@@ -1484,7 +1484,7 @@ function SessionModal({
         destroyOnHidden
         footer={<Button onClick={onClose}>关闭</Button>}
       >
-        <Space direction="vertical" style={{ width: '100%' }} size={8}>
+        <Space orientation="vertical" style={{ width: '100%' }} size={8}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Button size="small" type="primary" icon={<PlusOutlined />} data-testid="datasource-session-new" onClick={openCreate}>
               新建会话
@@ -1697,7 +1697,7 @@ function LlmPresetModal({
       footer={<Button onClick={onClose}>关闭</Button>}
       styles={{ body: { maxHeight: 'min(60vh, 480px)', overflowY: 'auto' } }}
     >
-      <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Space orientation="vertical" size={12} style={{ width: '100%' }}>
         <Text type="secondary" style={{ fontSize: 12 }}>
           选一个典型场景一键填入用户提示词，再按需修改；点击场景名可展开适用场景与建议字段 / 幂等键。
           提示词里的 {'{{ }}'} 是 JSON 花括号的模板转义，运行时会还原为 {'{ }'}。
@@ -1728,7 +1728,7 @@ function LlmPresetModal({
               </Button>
             ),
             children: (
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              <Space orientation="vertical" size={4} style={{ width: '100%' }}>
                 <Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
                   {preset.description}
                 </Paragraph>

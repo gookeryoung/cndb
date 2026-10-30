@@ -423,7 +423,8 @@ describe('UsersPage 移动端适配', () => {
     fireEvent.click(within(await screen.findByTestId('user-card-2')).getByText('重置密码'))
 
     expect(await screen.findByText('重置用户密码', { selector: '.ant-modal-title' })).toBeInTheDocument()
-    expect(document.querySelector('.ant-modal-content')?.textContent).toContain('目标用户：bob')
+    // antd 6：Modal 内容容器类改为 .ant-modal-container
+    expect(document.querySelector('.ant-modal-container')?.textContent).toContain('目标用户：bob')
   })
 
   it('桌面端仍为表格，不渲染卡片列表', async () => {

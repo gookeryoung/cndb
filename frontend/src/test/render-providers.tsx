@@ -41,9 +41,13 @@ function buildWrapper(route: string, queryClient: QueryClient) {
     return (
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
-          {/* future flags 对齐 main.tsx 的 BrowserRouter，保证 v7 路由语义测试与生产一致 */}
+          {/* future flags 对齐 main.tsx 的 BrowserRouter（v7_startTransition 除外）：
+              React 19 下路由 transition 若在用例卸载时仍在进行，delayed-commit 回调
+              会在 vitest 拆除 jsdom 环境后读取 window.event 抛 ReferenceError
+              （覆盖率模式下必现）。测试断言的是业务语义而非并发时序，故仅测试环境
+              关闭 transition 包裹；生产 main.tsx 保持开启（ADR 0074 已知坑）。 */}
           <MemoryRouter
-            future={{ v7_relativeSplatPath: true, v7_startTransition: true }}
+            future={{ v7_relativeSplatPath: true, v7_startTransition: false }}
             initialEntries={[route]}
           >
             {children}

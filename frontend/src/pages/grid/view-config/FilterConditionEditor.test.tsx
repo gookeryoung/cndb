@@ -93,7 +93,7 @@ describe('FilterConditionEditor 共享筛选条件编辑器', () => {
   it('切换字段：重置为该字段类型的首个操作符并清空值', () => {
     const { onChange } = renderEditor({ rules: [{ field_name: '姓名', op: 'contains', value: '张' }] })
     // 打开字段下拉 → 选择「年龄」
-    fireEvent.mouseDown(document.querySelectorAll('.ant-select .ant-select-selector')[0]!)
+    fireEvent.mouseDown(document.querySelectorAll('.ant-select')[0]!)
     fireEvent.click(screen.getByText('年龄', { selector: '.ant-select-item-option-content' }))
     expect(onChange).toHaveBeenCalledWith([{ field_name: '年龄', op: '=', value: undefined }])
   })

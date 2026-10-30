@@ -62,7 +62,7 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
   return (
     <Drawer
       title="回收站"
-      width={isMobile ? '100%' : 520}
+      size={isMobile ? '100%' : 520}
       open={open}
       onClose={onClose}
       data-testid="doc-trash-drawer"

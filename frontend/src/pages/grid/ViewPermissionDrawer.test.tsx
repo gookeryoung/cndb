@@ -72,7 +72,7 @@ function renderDrawer(overrides: Partial<React.ComponentProps<typeof ViewPermiss
 
 /** 打开第 idx 个 antd Select（0 = 添加成员的多选） */
 function openSelect(idx: number) {
-  const selector = document.querySelectorAll('.ant-select .ant-select-selector')[idx]
+  const selector = document.querySelectorAll('.ant-select')[idx]
   fireEvent.mouseDown(selector)
 }
 

@@ -195,7 +195,7 @@ export default function ViewConfigDialog({
           type="error"
           showIcon
           style={{ marginBottom: 8 }}
-          message={`筛选/排序规则有误（共 ${filterErrors.length} 处），已阻止保存`}
+          title={`筛选/排序规则有误（共 ${filterErrors.length} 处），已阻止保存`}
           description={(
             <ul style={{ margin: 0, paddingLeft: 18 }}>
               {filterErrors.map((msg, i) => <li key={i}>{msg}</li>)}

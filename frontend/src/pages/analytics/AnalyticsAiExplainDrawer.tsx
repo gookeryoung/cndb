@@ -66,7 +66,7 @@ export default function AnalyticsAiExplainDrawer({
     <Drawer
       open={open}
       title="AI 结论解读"
-      width={640}
+      size={640}
       onClose={onClose}
       footer={footer}
       destroyOnHidden
@@ -99,7 +99,7 @@ export default function AnalyticsAiExplainDrawer({
             <Alert
               type="error"
               showIcon
-              message={error}
+              title={error}
               description="本次调用未改动任何模板或数据；可稍后点「重新解读」，或先运行分析刷新结果。"
             />
           </div>

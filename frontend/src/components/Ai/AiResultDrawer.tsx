@@ -149,7 +149,7 @@ export default function AiResultDrawer({
     <Drawer
       open={open}
       title={title}
-      width={width}
+      size={width}
       onClose={onClose}
       footer={footer}
       destroyOnHidden
@@ -166,7 +166,7 @@ export default function AiResultDrawer({
             <Alert
               type="error"
               showIcon
-              message={error}
+              title={error}
               description="本次调用未改动文档；可稍后重新生成，或缩短选区后重试。"
             />
           </div>

@@ -119,7 +119,7 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
         <Alert
           type="warning"
           showIcon
-          message="图表定义无效"
+          title="图表定义无效"
           description={message}
           style={{ margin: '0.8em 0' }}
           data-testid="chart-embed-invalid-message"
@@ -132,7 +132,7 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
         <Alert
           type="warning"
           showIcon
-          message="图表暂时无法渲染"
+          title="图表暂时无法渲染"
           description="模板可能已下线或配置不完整；可编辑图表检查数据后重试。"
           style={{ margin: '0.8em 0' }}
           data-testid="chart-embed-error"

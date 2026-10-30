@@ -1,0 +1,154 @@
+diff --git a/es/isEqual.js b/es/isEqual.js
+index b0696c3d5e84f1a17ec579247c01c5b356a28cb9..479da0d525dd6ad93d47fbf468f2439f39aedd2b 100644
+--- a/es/isEqual.js
++++ b/es/isEqual.js
+@@ -1,35 +1,44 @@
+-import warning from "./warning";
+-
+ /**
+  * Deeply compares two object literals.
++ *
++ * 修复说明（2026-10，ADR 0074 D5，迁移自 rc-util 补丁）：
++ * 原实现使用全局 refSet + warning 做循环引用检测，存在两个问题：
++ *   1. refSet 只 add 不 remove，DAG（同一子对象多条路径可达）被误报为循环
++ *   2. rc-table columns 结构合法包含 Function 自引用，真循环场景不应打 warning
++ *
++ * 修复方案：
++ *   - 改用「祖先链」追踪：只记录当前递归路径上的祖先，DAG 不误报
++ *   - 移除 warning 调用与导入：真循环静默返回 false（行为保持，不输出噪音）
++ *
+  * @param obj1 object 1
+  * @param obj2 object 2
+  * @param shallow shallow compare
+  * @returns
+  */
+ function isEqual(obj1, obj2, shallow = false) {
+-  // https://github.com/mapbox/mapbox-gl-js/pull/5979/files#diff-fde7145050c47cc3a306856efd5f9c3016e86e859de9afbd02c879be5067e58f
+-  const refSet = new Set();
+-  function deepEqual(a, b, level = 1) {
+-    const circular = refSet.has(a);
+-    warning(!circular, 'Warning: There may be circular references');
+-    if (circular) {
+-      return false;
+-    }
++  function deepEqual(a, b, ancestors = [], level = 1) {
++    // 身份完全相同：短路返回相等，不触碰祖先集合
+     if (a === b) {
+       return true;
+     }
++
++    // 祖先链上已出现过 a —— 真循环，静默返回 false
++    if (ancestors.includes(a)) {
++      return false;
++    }
++
+     if (shallow && level > 1) {
+       return false;
+     }
+-    refSet.add(a);
++
++    const nextAncestors = a && typeof a === 'object' ? ancestors.concat(a) : ancestors;
+     const newLevel = level + 1;
+     if (Array.isArray(a)) {
+       if (!Array.isArray(b) || a.length !== b.length) {
+         return false;
+       }
+       for (let i = 0; i < a.length; i++) {
+-        if (!deepEqual(a[i], b[i], newLevel)) {
++        if (!deepEqual(a[i], b[i], nextAncestors, newLevel)) {
+           return false;
+         }
+       }
+@@ -40,11 +49,11 @@ function isEqual(obj1, obj2, shallow = false) {
+       if (keys.length !== Object.keys(b).length) {
+         return false;
+       }
+-      return keys.every(key => deepEqual(a[key], b[key], newLevel));
++      return keys.every(key => deepEqual(a[key], b[key], nextAncestors, newLevel));
+     }
+     // other
+     return false;
+   }
+-  return deepEqual(obj1, obj2);
++  return deepEqual(obj1, obj2, [], 1);
+ }
+ export default isEqual;
+\ No newline at end of file
+diff --git a/lib/isEqual.js b/lib/isEqual.js
+index dc2af7ae70f5c1cd477153a205903b9317fa0206..6e8c8fcb2cc9ade3a097ddf583849b2644d11ec3 100644
+--- a/lib/isEqual.js
++++ b/lib/isEqual.js
+@@ -4,38 +4,47 @@ Object.defineProperty(exports, "__esModule", {
+   value: true
+ });
+ exports.default = void 0;
+-var _warning = _interopRequireDefault(require("./warning"));
+-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+ /**
+  * Deeply compares two object literals.
++ *
++ * 修复说明（2026-10，ADR 0074 D5，迁移自 rc-util 补丁）：
++ * 原实现使用全局 refSet + warning 做循环引用检测，存在两个问题：
++ *   1. refSet 只 add 不 remove，DAG（同一子对象多条路径可达）被误报为循环
++ *   2. rc-table columns 结构合法包含 Function 自引用，真循环场景不应打 warning
++ *
++ * 修复方案：
++ *   - 改用「祖先链」追踪：只记录当前递归路径上的祖先，DAG 不误报
++ *   - 移除 warning 调用：真循环静默返回 false（行为保持，不输出噪音）
++ *
+  * @param obj1 object 1
+  * @param obj2 object 2
+  * @param shallow shallow compare
+  * @returns
+  */
+ function isEqual(obj1, obj2, shallow = false) {
+-  // https://github.com/mapbox/mapbox-gl-js/pull/5979/files#diff-fde7145050c47cc3a306856efd5f9c3016e86e859de9afbd02c879be5067e58f
+-  const refSet = new Set();
+-  function deepEqual(a, b, level = 1) {
+-    const circular = refSet.has(a);
+-    (0, _warning.default)(!circular, 'Warning: There may be circular references');
+-    if (circular) {
+-      return false;
+-    }
++  function deepEqual(a, b, ancestors = [], level = 1) {
++    // 身份完全相同：短路返回相等，不触碰祖先集合
+     if (a === b) {
+       return true;
+     }
++
++    // 祖先链上已出现过 a —— 真循环，静默返回 false
++    if (ancestors.includes(a)) {
++      return false;
++    }
++
+     if (shallow && level > 1) {
+       return false;
+     }
+-    refSet.add(a);
++
++    const nextAncestors = a && typeof a === 'object' ? ancestors.concat(a) : ancestors;
+     const newLevel = level + 1;
+     if (Array.isArray(a)) {
+       if (!Array.isArray(b) || a.length !== b.length) {
+         return false;
+       }
+       for (let i = 0; i < a.length; i++) {
+-        if (!deepEqual(a[i], b[i], newLevel)) {
++        if (!deepEqual(a[i], b[i], nextAncestors, newLevel)) {
+           return false;
+         }
+       }
+@@ -46,11 +55,11 @@ function isEqual(obj1, obj2, shallow = false) {
+       if (keys.length !== Object.keys(b).length) {
+         return false;
+       }
+-      return keys.every(key => deepEqual(a[key], b[key], newLevel));
++      return keys.every(key => deepEqual(a[key], b[key], nextAncestors, newLevel));
+     }
+     // other
+     return false;
+   }
+-  return deepEqual(obj1, obj2);
++  return deepEqual(obj1, obj2, [], 1);
+ }
+ var _default = exports.default = isEqual;

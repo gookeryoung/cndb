@@ -195,11 +195,11 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
   return (
     <>
       {result ? (
-        <Space direction="vertical" size={12} style={{ width: '100%' }} data-testid="vault-import-result">
+        <Space orientation="vertical" size={12} style={{ width: '100%' }} data-testid="vault-import-result">
           <Alert
             type="success"
             showIcon
-            message={`已导入到${targetText}`}
+            title={`已导入到${targetText}`}
             description={`新增 ${result.created} 篇（其中转换文件 ${result.converted} 个）· 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 篇 · 新建文件夹 ${result.folders_created} 个 · 附件 ${result.attachments} 个`}
           />
           {result.tags_created.length > 0 && (
@@ -208,7 +208,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
             </Typography.Text>
           )}
           {result.warnings.map(warning => (
-            <Alert key={warning.code} type="warning" showIcon message={warning.message} />
+            <Alert key={warning.code} type="warning" showIcon title={warning.message} />
           ))}
           {result.skipped_notes.length > 0 && (
             <div>
@@ -224,7 +224,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
           )}
         </Space>
       ) : (
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Upload.Dragger
             accept=".zip"
             maxCount={1}
@@ -252,7 +252,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
             </p>
           </Upload.Dragger>
 
-          {analyzeMut.isPending && <Alert type="info" showIcon message="正在解析压缩包…" />}
+          {analyzeMut.isPending && <Alert type="info" showIcon title="正在解析压缩包…" />}
 
           {analysis && (
             <>
@@ -291,7 +291,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
               />
 
               {analysis.warnings.map(warning => (
-                <Alert key={warning.code} type="warning" showIcon message={warning.message} />
+                <Alert key={warning.code} type="warning" showIcon title={warning.message} />
               ))}
 
               {analysis.conflicts > 0 && (

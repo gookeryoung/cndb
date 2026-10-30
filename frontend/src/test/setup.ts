@@ -255,7 +255,16 @@ afterEach(async () => {
   server.resetHandlers()
 })
 
-afterAll(() => {
+afterAll(async () => {
   server.close()
   server.events.removeAllListeners()
+  // 文件收尾兜底：React 19 并发渲染可能自我连续调度 immediate（长链收尾），
+  // 固定波数排不干净——连续排空直到连续 3 波无新任务（近似判定），上限 30 波，
+  // 避免 jsdom 环境销毁后仍有回调访问 window / HTMLElement 抛
+  // ReferenceError / TypeError，被 vitest 计为 unhandled error（覆盖率模式必现）。
+  let idleWaves = 0
+  for (let i = 0; i < 30 && idleWaves < 3; i += 1) {
+    await new Promise<void>((resolve) => setImmediate(() => resolve()))
+    idleWaves += 1
+  }
 })

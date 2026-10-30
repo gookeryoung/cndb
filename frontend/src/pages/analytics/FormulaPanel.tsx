@@ -284,7 +284,7 @@ export function FormulaPanel({
           type="error"
           showIcon
           data-testid="analytics-formula-error"
-          message={errorTexts.map(([key, message]) => `${key || '未命名'}：${message}`).join('；')}
+          title={errorTexts.map(([key, message]) => `${key || '未命名'}：${message}`).join('；')}
         />
       )}
     </AnalyticsBox>

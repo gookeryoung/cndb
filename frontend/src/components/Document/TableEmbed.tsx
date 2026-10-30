@@ -101,7 +101,7 @@ export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthC
       <Alert
         type="warning"
         showIcon
-        message="数据表引用无效"
+        title="数据表引用无效"
         description={`表 #${tableRef.tableId} 不存在或无访问权限，请检查占位符 {{table:${tableRef.tableId}}} 中的表 ID。`}
         style={{ margin: '0.8em 0' }}
       />
@@ -138,7 +138,7 @@ export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthC
           />
         )}
       </div>
-      <Space direction="vertical" size={0} style={{ width: '100%', overflowX: 'auto' }}>
+      <Space orientation="vertical" size={0} style={{ width: '100%', overflowX: 'auto' }}>
         <Table
           size="small"
           rowKey={(row: RowResponse) => String(row.id)}

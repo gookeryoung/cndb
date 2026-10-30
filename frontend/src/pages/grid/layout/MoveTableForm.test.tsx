@@ -63,7 +63,8 @@ describe('MoveTableForm 目标工作区选择', () => {
 
     // 等待加载完成：受控值 20 应回显 label「目标工作区A」
     await screen.findByText('目标工作区A')
-    expect(document.querySelector('.ant-select-selection-item')?.textContent).toBe('目标工作区A')
+    // antd 6：单选选中值直接渲染在 .ant-select-content（无 selection-item 包装）
+    expect(document.querySelector('.ant-select-content')?.textContent?.trim()).toBe('目标工作区A')
   })
 
   it('选中目标工作区时回调 onChange 并回传其 id', async () => {

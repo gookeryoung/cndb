@@ -47,7 +47,7 @@ function ExampleError({ onRetry, message }: { onRetry: () => void; message: stri
         <Alert
             type="error"
             showIcon
-            message="示例清单加载失败"
+            title="示例清单加载失败"
             description={message}
             action={
                 <Button size="small" icon={<ReloadOutlined />} onClick={onRetry}>
@@ -70,7 +70,7 @@ export function ExampleSummary({ scenarioKey }: { scenarioKey: string }) {
         return <ExampleError message={query.error.message} onRetry={() => void query.refetch()} />
     }
     if (!example) {
-        return <Alert type="warning" showIcon message="示例清单中未找到该场景" data-testid="help-examples-missing" />
+        return <Alert type="warning" showIcon title="示例清单中未找到该场景" data-testid="help-examples-missing" />
     }
     return (
         <div data-testid="help-examples-section">

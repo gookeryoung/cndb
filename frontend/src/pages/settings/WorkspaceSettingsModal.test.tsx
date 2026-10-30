@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import WorkspaceSettingsModal from './WorkspaceSettingsModal'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
@@ -45,8 +45,12 @@ describe('WorkspaceSettingsModal', () => {
     )
 
     expect(screen.getByText('工作区设置')).toBeInTheDocument()
-    // antd 两字按钮自动插入空格（"关 闭"），用正则兼容
-    expect(screen.getByRole('button', { name: /^关\s*闭$/ })).toBeInTheDocument()
+    // antd 6：Modal 关闭 X 的 aria-label 随 zhCN 本地化为「关闭」，与页脚「关闭」按钮重名；
+    // 关闭 X 按类名断言，页脚按钮在 footer 内断言
+    expect(document.querySelector('.ant-modal-close')).not.toBeNull()
+    const footer = document.querySelector('.ant-modal-footer')
+    expect(footer).not.toBeNull()
+    expect(within(footer as HTMLElement).getByRole('button', { name: /^关\s*闭$/ })).toBeInTheDocument()
     // WorkspaceSettingsContent 基本设置 Tab 正常挂载
     // 注：rc-dialog 过渡期间 tab span 可能被判为不可见，这里断言存在性
     expect(await screen.findByText('基本设置')).toBeInTheDocument()
@@ -60,7 +64,8 @@ describe('WorkspaceSettingsModal', () => {
     )
 
     await screen.findByText('工作区设置')
-    fireEvent.click(screen.getByRole('button', { name: /^关\s*闭$/ }))
+    // antd 6：关闭 X 与页脚「关闭」重名，此处点右上角 X（同样触发 onClose）
+    fireEvent.click(document.querySelector('.ant-modal-close')!)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 

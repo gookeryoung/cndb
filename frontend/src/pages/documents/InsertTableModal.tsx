@@ -54,7 +54,7 @@ export default function InsertTableModal({
       onCancel={onCancel}
       destroyOnHidden
     >
-      <Space direction="vertical" style={{ width: '100%' }} size={12}>
+      <Space orientation="vertical" style={{ width: '100%' }} size={12}>
         <Select
           data-testid="insert-table-select"
           style={{ width: '100%' }}

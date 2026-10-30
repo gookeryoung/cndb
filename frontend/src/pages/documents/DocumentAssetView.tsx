@@ -113,7 +113,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
         <Alert
           type="warning"
           showIcon
-          message="原件缺失或无法读取"
+          title="原件缺失或无法读取"
           description="该文档的原件可能已被清理，请联系上传者重新导入。"
         />
       </div>

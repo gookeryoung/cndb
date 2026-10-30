@@ -152,7 +152,7 @@ export default function ImportDiffTable({ preview, mode, report, matchKeys }: Im
                     type="info"
                     showIcon
                     style={{ marginBottom: 8 }}
-                    message={`已匹配 ${report.update_count} 行已有数据，但字段值均与现有数据一致，无需更新`}
+                    title={`已匹配 ${report.update_count} 行已有数据，但字段值均与现有数据一致，无需更新`}
                 />
             )}
             <Table

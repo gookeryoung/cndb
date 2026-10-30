@@ -768,6 +768,7 @@ export default function DocumentEditorPage() {
     const selection = editorRef.current?.getSelection()
     const pos = selection?.start ?? null
     const end = selection?.end ?? pos
+    let inserted: { start: number; end: number } | null = null
     setContent(prev => {
       const start = pos ?? prev.length
       const stop = end ?? start
@@ -775,8 +776,18 @@ export default function DocumentEditorPage() {
       const after = prev.slice(stop)
       const prefix = before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : ''
       const suffix = after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : ''
+      const block = `${prefix}${snippet}${suffix}`
+      inserted = { start: before.length + prefix.length, end: before.length + block.length }
       return `${before}${prefix}${snippet}${suffix}${after}`
     })
+    // 光标随插入内容前移：一次粘贴多张图片走串行上传队列，逐条插入时读取的都是
+    // 同一光标位置；React 19 受控 textarea 会恢复插入前光标，若不显式前移，
+    // 第二条会插到第一条之前（顺序反转）。微任务时序在 React 提交后执行，
+    // 真实浏览器与测试环境一致。
+    if (inserted) {
+      const caret: { start: number; end: number } = inserted
+      queueMicrotask(() => editorRef.current?.setSelection(caret.start, caret.end))
+    }
   }, [])
 
   /** 编辑器快捷键：查找 / 加粗 / 斜体 / 链接 / Esc 关闭查找条（Ctrl+S 由全局处理） */
@@ -962,7 +973,7 @@ export default function DocumentEditorPage() {
 
   if (docQuery.isLoading) return <div style={{ padding: 24 }}>加载中…</div>
   if (docQuery.isError || !doc) {
-    return <Alert type="error" message="文档不存在或加载失败" style={{ margin: 24 }} showIcon />
+    return <Alert type="error" title="文档不存在或加载失败" style={{ margin: 24 }} showIcon />
   }
 
   const editable = true // viewer 保存转修改申请（202），无需在前端隐藏编辑入口
@@ -1254,7 +1265,7 @@ export default function DocumentEditorPage() {
             label={`标签${doc.tag_ids.length > 0 ? ` (${doc.tag_ids.length})` : ''}`}
             onClick={() => setTagsOpen(true)}
           />
-          <Divider type="vertical" style={{ margin: '0 2px' }} />
+          <Divider orientation="vertical" style={{ margin: '0 2px' }} />
           {/* 组 3：协作（下载 / 修改申请 / 分享）；原件族文档在分享左侧提供下载原件图标按钮 */}
           {isAssetDoc && (
             <IconBtn
@@ -1280,7 +1291,7 @@ export default function DocumentEditorPage() {
               onClick={() => setShareOpen(true)}
             />
           )}
-          <Divider type="vertical" style={{ margin: '0 2px' }} />
+          <Divider orientation="vertical" style={{ margin: '0 2px' }} />
           {/* 组 4：版本与导出 */}
           {!isAssetDoc && (
             <IconBtn
@@ -1381,7 +1392,7 @@ export default function DocumentEditorPage() {
         <Alert
           type="warning"
           showIcon
-          message={saveError}
+          title={saveError}
           description="你的编辑内容仍在页面上；个人草稿不会丢失，可重试或刷新后继续编辑。"
           closable
           onClose={() => setSaveError(null)}
@@ -1394,7 +1405,7 @@ export default function DocumentEditorPage() {
           type="info"
           showIcon
           data-testid="doc-cr-notice"
-          message={pendingNotice}
+          title={pendingNotice}
           description="正文尚未落库；可打开「修改申请」查看内容差异，由编辑者及以上角色通过后生效。"
           closable
           onClose={() => setPendingNotice(null)}
@@ -1583,7 +1594,7 @@ export default function DocumentEditorPage() {
       />
 
       {/* 标签抽屉 */}
-      <Drawer title="文档标签" width={420} open={tagsOpen} onClose={() => setTagsOpen(false)}>
+      <Drawer title="文档标签" size={420} open={tagsOpen} onClose={() => setTagsOpen(false)}>
         <TagEditor
           workspaceId={workspaceId}
           allTags={tagsQuery.data ?? []}
@@ -1711,7 +1722,7 @@ export default function DocumentEditorPage() {
         onOk={() => submitMut.mutate(changeSummary.trim())}
         onCancel={() => setSubmitOpen(false)}
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Text type="secondary">
             {writeMode === 'change_request'
               ? '你的角色没有直接编辑权限，提交后将生成修改申请，需编辑者及以上角色审核通过后才会更新正文。'

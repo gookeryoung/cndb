@@ -145,7 +145,7 @@ export default function HelpDocsPage() {
                     open={navOpen}
                     onClose={() => setNavOpen(false)}
                     placement="left"
-                    width={280}
+                    size={280}
                     title={HELP_DOCS_TITLE}
                     styles={{ body: { padding: 0 } }}
                     data-testid="help-docs-nav-drawer"

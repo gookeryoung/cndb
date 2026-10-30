@@ -124,7 +124,7 @@ export default function ChangeRequestCard({ cr, workspaceId, role, onChanged, sh
           <Alert
             type={cr.status === 'merged' ? 'success' : 'info'}
             showIcon
-            message={`审核意见：${cr.review_comment}`}
+            title={`审核意见：${cr.review_comment}`}
             style={{ marginTop: 6 }}
           />
         )}
@@ -200,7 +200,7 @@ export default function ChangeRequestCard({ cr, workspaceId, role, onChanged, sh
               <Spin size="small" />
             </div>
           ) : detail.isError || !detail.data ? (
-            <Alert type="error" showIcon message="差异加载失败" />
+            <Alert type="error" showIcon title="差异加载失败" />
           ) : (
             <DocumentDiffView
               diff={detail.data.diff?.diff ?? ''}

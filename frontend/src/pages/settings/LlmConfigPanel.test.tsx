@@ -173,12 +173,14 @@ describe('个人设置 · 大模型', () => {
     )
 
     expect(screen.getByTestId('llm-config-base-url')).toHaveValue('')
-    expect(screen.getByTestId('llm-config-provider')).toHaveTextContent('自定义')
+    // antd 6：服务商展示值经 Form.useWatch 异步回流（受控 Select 的 value 由 base_url 反查），
+    // 断言最终 UI 态；真实浏览器中微任务回流先于渲染，无感知差异
+    await waitFor(() => expect(screen.getByTestId('llm-config-provider')).toHaveTextContent('自定义'))
 
     fireEvent.change(screen.getByTestId('llm-config-base-url'), {
       target: { value: 'https://llm.internal.example.com/v1' },
     })
-    expect(screen.getByTestId('llm-config-provider')).toHaveTextContent('自定义')
+    await waitFor(() => expect(screen.getByTestId('llm-config-provider')).toHaveTextContent('自定义'))
   })
 
   it('模型可直接输入预设列表外的名称', async () => {

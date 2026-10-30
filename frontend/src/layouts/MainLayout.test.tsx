@@ -263,7 +263,8 @@ describe('MainLayout 顶部导航', () => {
         // 注：jsdom 不触发 transitionend，Modal 进场动画停在 opacity:0，
         // toBeVisible 会误报——沿用项目惯例断言内容存在于已打开的弹窗内
         const verEl = await screen.findByText('0.3.0', {}, { timeout: 5000 })
-        expect(verEl.closest('.ant-modal-content')).not.toBeNull()
+        // antd 6：Modal 内容容器类由 .ant-modal-content 改为 .ant-modal-container
+        expect(verEl.closest('.ant-modal-container')).not.toBeNull()
         expect(screen.getByText('应用名称')).toBeInTheDocument()
         expect(screen.getByText('服务器时间')).toBeInTheDocument()
         expect(screen.queryByText('database_url')).toBeNull()

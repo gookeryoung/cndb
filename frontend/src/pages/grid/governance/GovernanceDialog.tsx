@@ -288,10 +288,10 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
             <Alert
               type="success"
               showIcon
-              message={`合并完成：${mergeReport.data?.merged_count ?? 0} 组已合并，可前往「数据清洗」继续`}
+              title={`合并完成：${mergeReport.data?.merged_count ?? 0} 组已合并，可前往「数据清洗」继续`}
             />
           ) : mergeTask.data?.status === 'failed' ? (
-            <Alert type="error" showIcon message="合并失败" description={taskFailed(mergeTask.data)} />
+            <Alert type="error" showIcon title="合并失败" description={taskFailed(mergeTask.data)} />
           ) : (
             <Space><Spin size="small" /><Text type="secondary">正在合并...</Text></Space>
           )}
@@ -334,10 +334,10 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
           <Alert
             type="success"
             showIcon
-            message={`检测完成：共 ${detectReport.data?.group_count ?? 0} 组重复（${detectReport.data?.duplicate_row_count ?? 0} 行）`}
+            title={`检测完成：共 ${detectReport.data?.group_count ?? 0} 组重复（${detectReport.data?.duplicate_row_count ?? 0} 行）`}
           />
         ) : detectTask.data?.status === 'failed' ? (
-          <Alert type="error" showIcon message="检测失败" description={taskFailed(detectTask.data)} />
+          <Alert type="error" showIcon title="检测失败" description={taskFailed(detectTask.data)} />
         ) : (
           <Space><Spin size="small" /><Text type="secondary">正在检测...</Text></Space>
         )}
@@ -444,7 +444,7 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
       </div>
 
       {cleanTask.data?.status === 'failed' && (
-        <Alert style={{ marginTop: 12 }} type="error" showIcon message="清洗失败" description={taskFailed(cleanTask.data)} />
+        <Alert style={{ marginTop: 12 }} type="error" showIcon title="清洗失败" description={taskFailed(cleanTask.data)} />
       )}
 
       {cleanReport.data && (
@@ -463,7 +463,7 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
             locale={{ emptyText: '无受影响行' }}
           />
           {cleanReport.data.mode === 'preview' && (
-            <Alert style={{ marginTop: 8 }} type="info" showIcon message="预览模式：以上为将受影响的行数，未写入任何数据" />
+            <Alert style={{ marginTop: 8 }} type="info" showIcon title="预览模式：以上为将受影响的行数，未写入任何数据" />
           )}
         </div>
       )}

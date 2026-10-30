@@ -763,7 +763,7 @@ export default function UsersPage() {
               type="success"
               showIcon
               style={{ marginBottom: 12 }}
-              message="密码已重置"
+              title="密码已重置"
               description={`已吊销 ${resetResult.revoked} 个会话。以下密码只展示这一次，请立即转交用户。`}
             />
             <Typography.Paragraph copyable={{ text: resetResult.password }} style={{ marginBottom: 0 }}>
@@ -853,7 +853,7 @@ export default function UsersPage() {
             <Alert
               type={importResult && importResult.failed > 0 ? 'warning' : 'info'}
               showIcon
-              message={
+              title={
                 importResult
                   ? `共 ${importResult.total} 行：成功 ${importResult.created}，跳过 ${importResult.skipped}，失败 ${importResult.failed}`
                   : `预演结果：共 ${importPreview!.total} 行，可导入 ${importPreview!.created}，跳过 ${importPreview!.skipped}，失败 ${importPreview!.failed}`
@@ -975,7 +975,7 @@ export default function UsersPage() {
         title={logTarget ? `操作日志：${logTarget.username}` : ''}
         open={!!logTarget}
         onClose={() => setLogTarget(null)}
-        width={480}
+        size={480}
       >
         {logsQuery.isLoading && <Text type="secondary">加载中…</Text>}
         {logsQuery.data && logsQuery.data.total === 0 && <Text type="secondary">暂无操作记录</Text>}

@@ -490,7 +490,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
           <Alert
             type="info"
             showIcon
-            message="无行级权限配置权限"
+            title="无行级权限配置权限"
             description="行级权限规则属敏感配置，仅具备本表「编辑结构」权限者可查看与配置。"
           />
         ) : rulesLoading ? (

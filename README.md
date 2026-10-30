@@ -10,6 +10,7 @@
 
 > **浏览器基线**：Chrome / Edge **81+**（Chromium 81+ 内核；360、QQ 等按内核版本对齐）。不承诺 Firefox / Safari。
 > 构建目标、静态门禁与老内核冒烟共用同一常量（`frontend/scripts/browser-baseline.mjs`），口径见 [ADR 0026](docs/adr/0026-chrome81-compat.md)。
+> 注意：前端栈为 React 19 + antd 6（[ADR 0074](docs/adr/0074-react19-antd6-upgrade.md)），两者官方仅承诺现代浏览器；Chrome 81 兼容由本仓库自有兼容层（`StyleProvider` 降级 / polyfill / flex-gap shim）+ 定时真机冒烟保障，antd 6 小版本升级须重跑冒烟。
 
 ## 特性
 

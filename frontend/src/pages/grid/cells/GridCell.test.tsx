@@ -463,7 +463,7 @@ describe('GridCell link 字段编辑', () => {
     expect(await screen.findByText('张三')).toBeInTheDocument()
 
     // 打开下拉，第二个选项同样用主字段值"李四"
-    fireEvent.mouseDown(document.querySelector('.ant-select-selector')!)
+    fireEvent.mouseDown(document.querySelector('.ant-select')!)
     expect(await screen.findByText('李四')).toBeInTheDocument()
   })
 })

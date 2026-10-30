@@ -315,7 +315,8 @@ export default function TableSettingsPage() {
   const tabs = (
     <Tabs
       // 移动端竖排页签会挤占本就有限的内容宽度，改为顶部横排（可横向滚动）
-      tabPosition={isMobile ? 'top' : 'left'}
+      // antd 6：tabPlacement 采用逻辑方位值（left→start，right→end）
+      tabPlacement={isMobile ? 'top' : 'start'}
       className="table-settings-tabs"
       activeKey={activeTab}
       onChange={handleTabChange}

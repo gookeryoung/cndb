@@ -1,6 +1,6 @@
 # ADR 0074: 前端迁移 React 19 + antd 6
 
-Status: Proposed（待评审）
+Status: Accepted（2026-10-30 人工确认 D1：保留 Chrome 81 基线）
 Date: 2026-10-30
 Related: `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/index.css`、`frontend/src/compat/`、`frontend/scripts/check-browser-compat.mjs`、`frontend/patches/`、`docs/adr/0026-chrome81-compat.md`、`docs/adr/0031-font-and-css-typography.md`
 需求卡片: `docs/requirements/0074-react19-antd6-upgrade.md`（需求原文与约束编号的唯一副本）
@@ -16,10 +16,10 @@ Related: `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme
 | C1 | 迁移到 React 19 | `react` / `react-dom` / `@types/react` / `@types/react-dom` 升 19；React 19 类型收紧（`ReactNode` 含 Promise、`useRef` 必填初值等）逐点修复，不改业务语义；其余依赖经 peer 核实全部兼容（见现状 11） |
 | C2 | 迁移到 antd 6 | `antd@6` + `@ant-design/icons@6` + `@ant-design/cssinjs@2` 同批原子切换；不引入 `@ant-design/v5-patch-for-react-19`（antd 6 原生支持 React 19） |
 | C3 | 制定方案 | 本 ADR；分期 P0-P2，每期 `make flow` 全绿后落地回填，`make adr-check` 校验 |
-| C4 | 浏览器基线口径 | D1：保留 Chrome 81 基线（推荐，待人工拍板）；`check-browser-compat.mjs` 扩展「允许降级白名单」（`:has()` / `@container`），Chromium 81 冒烟继续作为权威验证 |
+| C4 | 浏览器基线口径 | D1：保留 Chrome 81 基线（2026-10-30 人工确认）；兼容层沿用，`:has()` / `@container` 按规则级降级白名单放行（运行时样式审计落在 `ThemeProvider.compat.test.tsx`，见 D4），Chromium 81 冒烟继续作为权威验证 |
 | C5 | 不回归 | 全量前端单测 + 覆盖率双门槛 + Playwright e2e + 10 套主题视觉核对 + bundle budget 既有流程不变 |
 | C6 | 存量资产处置 | D3-D5：`StyleProvider` 降级链沿用（cssinjs v2 仍提供 transformer）；flex-gap shim 与 `themeMix` 兜底原样沿用；`rc-util` 补丁迁移重打到 `@rc-component/util`，`rc-field-form` 摇树补丁删除（P0 实测发现同类问题再按流程重建） |
-| C7 | 弃用 API 清零 | 现存 16 处命中点（现状 4）一次性迁移到 v6 新 API，e2e 断言控制台无 antd 弃用告警 |
+| C7 | 弃用 API 清零 | 属性级弃用告警清零（存量命中点一次性迁移到 v6 新 API，e2e 断言控制台无弃用告警）；实施中发现 antd 6.6 将 `List` 组件整体废弃（推荐 Listy），7 处调用点与 `.cn-doc-list` CSS 耦合，组件级迁移登记为遗留项并在 e2e 告警断言中显式白名单（见 D6） |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
 
@@ -126,18 +126,18 @@ Related: `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme
 
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
 |---|---|---|---|---|---|
-| D1 | 浏览器基线（与 ADR 0026 的关系） | **保留 Chrome 81 基线**（推荐结论，须人工拍板后 ADR 转 Accepted）：兼容层沿用，`:has()` / `@container` 进降级白名单，真机冒烟为权威验证；antd 6 小版本升级须重跑冒烟 | 实测语法层可构建、React 19 运行时无硬缺口（现状 8-9）；兼容层资产已落地且与版本解耦；卡片 0026 是「重大需求」，废除需用户明示 | 提升基线到 Chrome 105+（可删 flex-gap shim / themeMix / transformer 等大幅简化，但直接违反卡片 0026 C1-C6，须需求方先废除该承诺）；双基线双构建（复杂度与包体不可接受） | `frontend/scripts/check-browser-compat.mjs`、`frontend/scripts/browser-baseline.mjs`、`README.md` |
+| D1 | 浏览器基线（与 ADR 0026 的关系） | **保留 Chrome 81 基线**（2026-10-30 人工确认）：兼容层沿用，`:has()` / `@container` 进降级白名单，真机冒烟为权威验证；antd 6 小版本升级须重跑冒烟 | 实测语法层可构建、React 19 运行时无硬缺口（现状 8-9）；兼容层资产已落地且与版本解耦；卡片 0026 是「重大需求」，废除需用户明示 | 提升基线到 Chrome 105+（可删 flex-gap shim / themeMix / transformer 等大幅简化，但直接违反卡片 0026 C1-C6，须需求方先废除该承诺）；双基线双构建（复杂度与包体不可接受） | `frontend/scripts/check-browser-compat.mjs`、`frontend/scripts/browser-baseline.mjs`、`README.md` |
 | D2 | 升级路径 | 一步到位：`react@19` + `antd@6` + `icons@6` + `cssinjs@2` 同批原子切换 | 分步任一组合都需要过渡补丁（antd 5 + React 19 需 `v5-patch-for-react-19`）或多一次全量回归；两个变更共享同一套回归门禁，合并验证成本更低 | 先 antd 6 后 React 19（多一次全量 e2e 回归）；先 React 19 后 antd 6（需临时引入 v5 补丁包，再删一次） | `frontend/package.json` |
-| D3 | CSS 策略 | 沿用 `StyleProvider hashPriority="high"` + `legacyLogicalPropertiesTransformer`；`cssVar: true` 维持 | 实测 antd 6 仍产逻辑属性 / `inset` / `:focus-visible`（现状 10），cssinjs v2 仍提供同名 transformer 且 `hashPriority` 默认仍 `low`；antd 6 默认 CSS variables 与现有配置同向 | 切到 antd 6 后拆除降级链（Chrome 81 上整条样式失效）；改用 `postcss-logical` 处理 antd 运行时样式（PostCSS 只处理源码 CSS，覆盖不了 CSS-in-JS） | `frontend/src/theme/ThemeProvider.tsx` |
-| D4 | `:has()` / `@container` 缺口 | 规则级降级白名单：`check-browser-compat.mjs` 登记后放行，Chromium 81 冒烟逐组件核对视觉影响并记录结论 | 无法 polyfill；14 个组件样式属渐进增强类（如校验态联动样式），单条丢弃不阻断功能；白名单让「接受哪些降级」显式可审计 | 引入 `css-has-polyfill`（体积大、 MutationObserver 性能差、与 CSS-in-JS 注入方式冲突）；整体放弃 Chrome 81（即否决 D1 结论） | `frontend/scripts/check-browser-compat.mjs` |
+| D3 | CSS 策略 | 沿用 `StyleProvider hashPriority="high"` + `legacyLogicalPropertiesTransformer`；显式 `cssVar: true` 声明移除（antd 6 默认开启 CSS variables，且 ThemeConfig 不再接受布尔 cssVar） | 实测 antd 6 仍产逻辑属性 / `inset` / `:focus-visible`（现状 10），cssinjs v2 仍提供同名 transformer 且 `hashPriority` 默认仍 `low`；antd 6 默认 CSS variables 与现有配置同向 | 切到 antd 6 后拆除降级链（Chrome 81 上整条样式失效）；改用 `postcss-logical` 处理 antd 运行时样式（PostCSS 只处理源码 CSS，覆盖不了 CSS-in-JS） | `frontend/src/theme/ThemeProvider.tsx` |
+| D4 | `:has()` / `@container` 缺口 | 规则级降级白名单：静态门禁扫描不到 CSS-in-JS 运行时产物，白名单审计落在 `ThemeProvider.compat.test.tsx`——渲染代表性组件样本、断言注入 CSS 中白名单外现代特性为零；Chromium 81 冒烟逐组件核对视觉影响并记录结论 | 无法 polyfill；antd 6 的 `:has()`（14 个组件）与 `@container`（steps）属渐进增强类，单条规则丢弃不阻断功能；白名单让「接受哪些降级」显式可审计 | 引入 `css-has-polyfill`（体积大、 MutationObserver 性能差、与 CSS-in-JS 注入方式冲突）；对构建 JS 做原始字符串扫描（噪声大：lib 源码里的字符串 ≠ 实际产出样式）；整体放弃 Chrome 81（即否决 D1 结论） | `frontend/src/theme/ThemeProvider.compat.test.tsx` |
 | D5 | pnpm patch 处置 | `rc-util` 的 `isEqual` DAG 修复迁移重打到 `@rc-component/util`；`rc-field-form` 摇树补丁删除（P0 实测发现同类问题再按流程重建） | antd 6 依赖改名后旧补丁目标消失；`isEqual` 修复语义与包名无关，必须保留（rc-table columns 自引用场景会误报）；摇树收益是否复现未知，预打无依据 | 两个补丁原样保留（目标包不存在，patch 直接失败）；全部删除（丢 `isEqual` 修复，回归 rc-table 误报） | `frontend/patches/`、`frontend/scripts/check-patches.mjs` |
-| D6 | 弃用 API | 16 处一次性迁移到 v6 新 API，e2e 断言控制台无弃用告警 | v7 将移除；存量小（16 处），趁升级窗口清零，避免长期欠账 | 保留旧 API 到 v7（升级窗口不清零，后续再付一次回归成本） | `frontend/src/pages/**` |
+| D6 | 弃用 API | 属性级弃用（Alert `message` 76 处、Drawer `width`/`height`、`destroyOnClose`、`maskClosable`、Space `direction`、Divider `type`、Tabs `tabPosition`、Tag `bordered`、Image 预览 `visible` 等）一次性迁移到 v6 新 API，e2e 断言控制台无弃用告警；**antd 6.6 将 `List` 组件整体废弃（推荐 Listy）**——7 处调用点（文档列表 / 回收站 / 问题列表等）与 `.cn-doc-list` 专用 CSS 耦合，且 Listy 为虚拟滚动范式（`items`/`rowKey`/`itemRender`），迁移属 UI 重构，登记为后续专项而非本次窗口强改；e2e 告警断言对 `[antd: List]` 显式白名单放行 | 属性级存量趁升级窗口清零，避免长期欠账；List 迁移涉及核心列表页视觉回归，强改风险大于收益，显式登记优于静默欠账 | 连带把 List 强行迁 Listy（扩大视觉回归面，属独立 UI 重构应单独立项）；保留 List 到 v7 静默欠账（无白名单登记，回归不可见） | `frontend/src/pages/**`、`frontend/tests/e2e/critical/antd-deprecation.spec.ts` |
 | D7 | 门禁与回归 | 既有门禁全量不放宽（单测 / 覆盖率双门槛 / e2e / bundle budget / chrome81 冒烟）；视觉回归用升级前基线截图对照 | C5；ADR 0026 的门禁资产直接复用，升级不构成放宽理由 | 为升级临时跳过 e2e 或降覆盖率（违反测试规范） | `Makefile`、`frontend/scripts/*.mjs` |
 | D8 | TypeScript / 类型 | 保持 TS 5.6，`@types/react` 升 19；类型收紧逐点修复、不改运行时行为 | React 19 类型要求 TS >= 5.0，5.6 兼容；类型修复混入行为变更会污染回归归因 | 同批升 TS 5.7+（与本次目标无关，扩大回归面） | `frontend/package.json`、`frontend/src/**` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
-> **评审提示**：D1 是唯一需要人拍板的分叉（保留 / 提升 Chrome 81 基线）。其余 D2-D8 依据现状证据已闭环，评审时如有异议一并提出。
+> **评审提示**：D1 已由人工确认（2026-10-30，保留 Chrome 81 基线）；其余 D2-D8 依据现状证据闭环，无待定项。
 
 ## Consequences
 
@@ -160,16 +160,29 @@ Related: `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
-| P1 | 未开始 | — | — | — |
-| P2 | 未开始 | — | — | — |
+| P0 | 已落地 | `frontend/package.json`、`frontend/pnpm-workspace.yaml`、`frontend/patches/@rc-component__util.patch`、`frontend/scripts/check-patches.mjs`、`frontend/src/hooks/useElementSize.ts`、`frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `frontend/src/theme/ThemeProvider.compat.test.tsx`、前端单测全量（2430 例） | 待回填 |
+| P1 | 已落地 | `frontend/src/theme/ThemeProvider.compat.test.tsx`（运行时样式审计 + D4 白名单） | `frontend/src/theme/ThemeProvider.compat.test.tsx`（无 :where 包裹 / 无逻辑属性声明 / 白名单外特性断言） | 待回填 |
+| P2 | 已落地 | `frontend/src/pages/**`（弃用 API 清零 + 测试选择器适配）、`frontend/src/index.css`（Modal 容器类）、`frontend/patches/react-dom@19.3.1.patch`（新增，jsdom 拆除竞态守卫）、`frontend/scripts/check-patches.mjs`、`frontend/tests/e2e/critical/*.spec.ts`、`frontend/tests/e2e/dev/*.spec.ts`（定位器）、`frontend/tests/e2e/critical/antd-deprecation.spec.ts`（新增）、`frontend/scripts/bundle-budget.json`（基线记录）、`README.md`、`CONTEXT.md`、`CHANGELOG.md` | `frontend/tests/e2e/critical/antd-deprecation.spec.ts` | 待回填 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案制定完成，ADR `Proposed` 待人工评审（D1 浏览器基线须拍板）
-- 已完成：现状影响面全量核实（含 React 19 + antd 6 + chrome81 target 临时目录实测）；需求卡片 0074 与本 ADR
-- 下一步：人工评审 D1（保留 / 提升 Chrome 81 基线）→ ADR 转 `Accepted` → 按 P0-P2 实施
-- 已知坑：antd 6 依赖已从 `rc-*` 改名 `@rc-component/*`，`check-patches.mjs` 的解析路径写死为 `antd → rc-field-form`，升级日必改；`:has()` 在 14 个组件样式中出现且无法 polyfill；antd 6 移除 Tag 末尾默认 margin、`Form onFinish` 不含 Form.List 未注册子项、v6.3.0 起弹层蒙层模糊默认关闭（三处专项核对见 Decision 6）
-- 最近一次全绿：方案属 L0 文档改动，`make check-docs` @ 本提交（2026-10-30）
+- 当前阶段：P0-P2 全部落地（代码待人工评审后回填 `Implemented`）
+- 已完成：
+  - P0：依赖同批升级（react 19.3.1 / antd 6.6.8 / icons 6.3.4 / cssinjs 2.1.2 / @types 19.3.0）；`rc-util` isEqual 补丁迁移重打为 `patches/@rc-component__util.patch`（es + lib 双份，祖先链追踪），`rc-field-form` 摇树补丁删除，`check-patches.mjs` 重定位到 `@rc-component/util` 且 es/lib 双检；React 19 类型收紧修复（`RefObject<T | null>` / `ReactElement` / `ThemeConfig` cssVar 声明移除——antd 6 默认开启）
+  - P1：兼容链复核通过（cssinjs v2 仍提供 transformer，`hashPriority` 默认仍 low）；`ThemeProvider.compat.test.tsx` 扩展为运行时样式审计——渲染 Form/Select/DatePicker/Tabs/Table/Modal 代表样本，断言注入 CSS 无 `:where(`、无逻辑属性声明、白名单外（oklch / @layer / light-dark / `:is(` 等）现代特性为零
+  - P2：属性级弃用清零（Alert `message`→`title` 76 处、Drawer `width`/`height`→`size`、`destroyOnClose`→`destroyOnHidden`、`maskClosable`→`mask.closable`、Space/Divider `orientation`、Tabs `tabPlacement`、Tag `variant`、Image 预览 `open`、Timeline `items.content`）；Tag 末尾 8px 外边距经 `tag.styles` 全局补回；List 组件（7 处）迁移登记为遗留项；e2e 定位器随 antd 6 DOM 调整更新（`.ant-modal-container` / `.ant-drawer-section`）；多图粘贴顺序修复（`insertSnippetAtCursor` 插入后光标随内容前移）；bundle-budget 主入口 181→226 KiB 已记录理由
+- 下一步：
+  1. **Chromium 81 真机冒烟首跑**（`pnpm e2e:chrome81`，定时 CI 每日 02:00 UTC 自动触发）：升级后首次真机验证，重点核对 `:has()` 受影响组件（form / tabs / input / select / card / pagination / date-picker / tooltip / tree / splitter）与 10 套主题截图
+  2. **List → Listy 迁移专项**（7 处调用点 + `.cn-doc-list` CSS 重做），完成后从 `antd-deprecation.spec.ts` 白名单移除 `[antd: List]`
+  3. 人工评审本 ADR，全绿后回填 `Implemented`
+- 已知坑：
+  - antd 6 DOM 结构变化集中在：Select（无 `.ant-select-selector`，交互打根节点；搜索框为 `input.ant-select-input`；单选选中值在 `.ant-select-content`）、Modal（`.ant-modal-content`→`.ant-modal-container`）、Drawer（`.ant-drawer-content`→`.ant-drawer-section`）、Image 预览关闭钮（无 aria-label，zhCN 下 Modal 关闭钮 aria-label 为「关闭」与页脚按钮重名）、Input.Search（data-testid 落在 group 包装层）
+  - **react-dom 19.3.1 补丁**：delayed-commit 的 `window.event` 读取无环境守卫，vitest 逐文件拆除 jsdom 环境后触发即抛 ReferenceError（覆盖率模式必现，计 unhandled error 使门禁失败）——补丁加 `typeof window` 守卫（`patches/react-dom@19.3.1.patch`，production 构建无该代码无需改），上游修复后可撤
+  - **测试环境关闭 router `v7_startTransition`**（`render-providers.tsx`，生产 main.tsx 保持开启）：路由 transition 在用例卸载时仍在进行同样触发上述竞态；测试断言业务语义而非并发时序
+  - `Form.useWatch` 在 antd 6 / React 19 下为异步微任务回流：受控组件断言必须用 `waitFor`（浏览器无感知差异）
+  - Tabs `tabPlacement` 用逻辑方位（`start`/`end`），`left`/`right` 类型不通过
+  - `Form.List` 全仓无命中，`onFinish` 取值口径专项核对为空操作
+  - 弹层蒙层模糊 v6.3.0 起默认关闭，与升级前视觉一致，未额外配置
+- 最近一次全绿：前端单测 2430 例全绿、typecheck / eslint 0 错误、`pnpm build`（含 chrome81 静态门禁 0 warning）、`pnpm bundle:budget` 达标 @ 工作区（2026-10-30）；后端 `make cov` 5943 例全绿（LD_LIBRARY_PATH 需为空，沙箱 NSS 目录污染见会话记录）

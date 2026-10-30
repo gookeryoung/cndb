@@ -525,7 +525,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message={importMode === 'link'
+        title={importMode === 'link'
           ? '将通过「关联引用」实时引用源表的数据：这里显示的值始终与源表保持一致，源表改动会自动同步（不复制数据）；若源表中的字段被删除或修改，引用会标记为已失效'
           : '字段会被复制成当前表的新字段，之后两边修改互不影响；若源字段是「关联」类型，复制后仍指向原来的目标表（支持跨工作区关联）'}
       />

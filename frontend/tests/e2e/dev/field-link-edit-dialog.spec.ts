@@ -126,7 +126,8 @@ async function openLinkEditDialog(page: Page) {
   });
   await expect(row).toHaveCount(1);
   await row.locator(".fm-row-actions button").first().click();
-  const dialog = page.locator(".ant-modal-content");
+  // antd 6：Modal 内容容器类改为 .ant-modal-container
+  const dialog = page.locator(".ant-modal-container");
   await expect(dialog).toBeVisible({ timeout: 15_000 });
   return dialog;
 }

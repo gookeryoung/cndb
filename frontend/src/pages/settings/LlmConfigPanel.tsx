@@ -247,7 +247,7 @@ export default function LlmConfigPanel() {
         const ok = status === 'success'
         const error = (run.error ?? '').trim()
         return (
-          <Space direction="vertical" size={0}>
+          <Space orientation="vertical" size={0}>
             <Tag
               color={ok ? 'green' : 'red'}
               data-testid={`llm-run-status-${run.id}`}
@@ -315,7 +315,7 @@ export default function LlmConfigPanel() {
         type="info"
         showIcon
         style={{ marginBottom: SPACE.lg }}
-        message={(
+        title={(
           <Space size={SPACE.md} wrap>
             <span>个人级配置，所有「大模型提示词」任务共用</span>
             {configuredTag}
@@ -465,7 +465,7 @@ export default function LlmConfigPanel() {
             type={testResult.ok ? 'success' : 'error'}
             showIcon
             style={{ marginTop: 12 }}
-            message={
+            title={
               testResult.ok
                 ? `连通成功 · ${testResult.model || '模型'} · ${testResult.latency_ms} ms`
                 : '连通失败'
@@ -511,7 +511,7 @@ export default function LlmConfigPanel() {
             <Alert
               type="error"
               showIcon
-              message="调用记录加载失败"
+              title="调用记录加载失败"
               description={runsError}
               action={(
                 <Button

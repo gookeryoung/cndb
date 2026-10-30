@@ -244,7 +244,7 @@ function DesignerPreview({ workspaceId, templateKey, config, open }: {
       <Alert
         type="warning"
         showIcon
-        message="预览暂时不可用"
+        title="预览暂时不可用"
         description="当前输入渲染失败（数据可能不完整），修正后自动重试；不影响保存。"
         data-testid="chart-designer-preview-error"
       />
@@ -609,7 +609,7 @@ export default function ChartDesignerModal({
         <Alert
           type="warning"
           showIcon
-          message="模板已下线"
+          title="模板已下线"
           description="该图表使用的模板已不存在，仅可查看；可在文档中删除引用。"
           data-testid="chart-designer-template-missing"
         />
@@ -636,7 +636,7 @@ export default function ChartDesignerModal({
               paddingRight: 4,
             }}
           >
-            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Space orientation="vertical" size={16} style={{ width: '100%' }}>
               <div>
                 <Text strong style={{ display: 'block', marginBottom: 4 }}>图表名称</Text>
                 <Input
@@ -650,7 +650,7 @@ export default function ChartDesignerModal({
 
               <div>
                 <Text strong style={{ display: 'block', marginBottom: 4 }}>图题信息</Text>
-                <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                <Space orientation="vertical" size={4} style={{ width: '100%' }}>
                   {CAPTION_FIELDS.map(f => (
                     <Input
                       key={f.key}
@@ -991,7 +991,7 @@ export default function ChartDesignerModal({
               {labelFields.length > 0 && (
                 <div>
                   <Text strong style={{ display: 'block', marginBottom: 4 }}>图例与文案</Text>
-                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                  <Space orientation="vertical" size={4} style={{ width: '100%' }}>
                     {labelFields.map(f => (
                       <Input
                         key={f.key}
@@ -1008,7 +1008,7 @@ export default function ChartDesignerModal({
               {(template.style_fields ?? []).length > 0 && (
                 <div>
                   <Text strong style={{ display: 'block', marginBottom: 4 }}>样式</Text>
-                  <Space direction="vertical" size={4}>
+                  <Space orientation="vertical" size={4}>
                     {(template.style_fields ?? []).map(f => (
                       <Checkbox
                         key={f.key}
@@ -1095,7 +1095,7 @@ export default function ChartDesignerModal({
           showIcon
           closable
           onClose={() => setSaveError(null)}
-          message="保存失败"
+          title="保存失败"
           description={<Paragraph style={{ whiteSpace: 'pre-wrap', marginBottom: 0 }}>{saveError}</Paragraph>}
           style={{ marginTop: 12 }}
           data-testid="chart-designer-save-error"

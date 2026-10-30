@@ -168,7 +168,7 @@ describe('PermissionEditor 表权限编辑器', () => {
     expect(await screen.findByText('bob')).toBeInTheDocument()
     await waitCanManage()
     // 分区渲染顺序：编辑者区（carol）在前、查看者区（bob）在后，第二个 Select 为 bob 行
-    openSelect(document.querySelectorAll('.ant-select .ant-select-selector')[1])
+    openSelect(document.querySelectorAll('.ant-select')[1])
     // 选项 label 是 Tag（文本隔一层，option-content 无直接文本节点），在下拉容器内点选
     const dropdown = await waitFor(() => {
       const el = document.querySelector('.ant-select-dropdown')
@@ -218,7 +218,7 @@ describe('PermissionEditor 表权限编辑器', () => {
     const modal = (await screen.findByText('添加表成员')).closest('.ant-modal') as HTMLElement
 
     // 模态框内第一个 Select 为用户选择器
-    openSelect(modal.querySelectorAll('.ant-select .ant-select-selector')[0])
+    openSelect(modal.querySelectorAll('.ant-select')[0])
     // 候选只剩 dave（bob/carol 已是表成员，alice 是 owner）
     fireEvent.click(await screen.findByText('dave (老D)', { selector: '.ant-select-item-option-content' }))
     fireEvent.click(within(modal).getByRole('button', { name: /添\s*加/ }))
@@ -235,7 +235,7 @@ describe('PermissionEditor 表权限编辑器', () => {
     const addBtns = await screen.findAllByRole('button', { name: /添加成员/ })
     fireEvent.click(addBtns[0]!)
     const modal = (await screen.findByText('添加表成员')).closest('.ant-modal') as HTMLElement
-    openSelect(modal.querySelectorAll('.ant-select .ant-select-selector')[0])
+    openSelect(modal.querySelectorAll('.ant-select')[0])
     fireEvent.click(await screen.findByText('dave (老D)', { selector: '.ant-select-item-option-content' }))
     fireEvent.click(within(modal).getByRole('button', { name: /添\s*加/ }))
 
@@ -352,7 +352,7 @@ describe('PermissionEditor 行级权限区', () => {
     const modal = (await screen.findByText('新建行级权限规则')).closest('.ant-modal') as HTMLElement
 
     // 选择主体「bob」
-    openSelect(modal.querySelectorAll('.ant-select .ant-select-selector')[0])
+    openSelect(modal.querySelectorAll('.ant-select')[0])
     fireEvent.click(await screen.findByText('bob（成员）', { selector: '.ant-select-item-option-content' }))
     // 选动作「可编辑」
     fireEvent.click(within(modal).getByText('可编辑（命中行可读且可直编）'))
@@ -428,7 +428,7 @@ describe('PermissionEditor 行级权限区', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: /添加规则/ }))
     const modal = (await screen.findByText('新建行级权限规则')).closest('.ant-modal') as HTMLElement
-    openSelect(modal.querySelectorAll('.ant-select .ant-select-selector')[0])
+    openSelect(modal.querySelectorAll('.ant-select')[0])
     fireEvent.click(await screen.findByText('bob（成员）', { selector: '.ant-select-item-option-content' }))
     fireEvent.click(within(modal).getByRole('button', { name: /^保\s*存$/ }))
 

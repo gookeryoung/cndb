@@ -180,7 +180,7 @@ export default function ViewPermissionDrawer({
   return (
     <Drawer
       title={view ? `视图权限 · ${view.name}` : '视图权限'}
-      width={480}
+      size={480}
       open={open}
       onClose={onClose}
       destroyOnHidden

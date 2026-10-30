@@ -162,10 +162,10 @@ export default function ChangeRequestRowMergePage() {
 
       <Title level={4} style={{ marginBottom: 8 }}>冲突处理 · 行 #{group.row_id}</Title>
       {group.row_missing && (
-        <Alert type="warning" showIcon style={{ marginBottom: 12 }} message="目标行已删除：本行变更可能无法落库，请确认后处理。" />
+        <Alert type="warning" showIcon style={{ marginBottom: 12 }} title="目标行已删除：本行变更可能无法落库，请确认后处理。" />
       )}
       {!canReview && (
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} message="仅 owner/editor 可处理并合并冲突，当前为只读预览。" />
+        <Alert type="info" showIcon style={{ marginBottom: 12 }} title="仅 owner/editor 可处理并合并冲突，当前为只读预览。" />
       )}
 
       {/* 1. 行摘要（ours：当前值） */}
@@ -226,7 +226,7 @@ export default function ChangeRequestRowMergePage() {
                 else setResolution(f, { strategy: 'item', item_id: Number(val.split(':')[1]) })
               }}
             >
-              <Space direction="vertical" size={4}>
+              <Space orientation="vertical" size={4}>
                 {(writersByField[f] ?? []).map(w => (
                   <Radio key={w.item_id} value={`item:${w.item_id}`}>
                     <Text>采用 #{w.request_id} 的值：</Text>
@@ -259,7 +259,7 @@ export default function ChangeRequestRowMergePage() {
           title={<Space size={8}>行级操作裁决 <Tag color="red">删除与修改互斥</Tag></Space>}
         >
           <Radio.Group value={rowAction} onChange={(e) => setRowAction(e.target.value as RowAction)}>
-            <Space direction="vertical">
+            <Space orientation="vertical">
               <Radio value="keep">保留行，应用修改（忽略删除）</Radio>
               <Radio value="delete">执行删除（忽略修改）</Radio>
             </Space>

@@ -852,7 +852,7 @@ export default function MainLayout() {
         placement="left"
         open={isMobile && mobileNavOpen && siderMode !== 'hidden'}
         onClose={() => setMobileNavOpen(false)}
-        width={280}
+        size={280}
         styles={{ body: { padding: 0 } }}
       >
         {siderMode === 'documents' ? renderDocumentNav(true) : siderMode === 'tables' && renderTableNav(true)}
@@ -864,7 +864,7 @@ export default function MainLayout() {
         placement="top"
         open={isMobile && searchMobileOpen}
         onClose={() => setSearchMobileOpen(false)}
-        height="auto"
+        size="auto"
         styles={{ body: { padding: 12 } }}
         data-testid="global-search-drawer"
       >

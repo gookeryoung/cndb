@@ -23,7 +23,7 @@ export default function BacklinksDrawer({
   onOpenDoc: (docId: number) => void
 }) {
   return (
-    <Drawer title="反向链接" width={420} open={open} onClose={onClose}>
+    <Drawer title="反向链接" size={420} open={open} onClose={onClose}>
       {loading ? (
         <Text type="secondary">加载中…</Text>
       ) : items.length === 0 ? (

@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { Form } from 'antd'
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, screen, waitFor } from '@testing-library/react'
 import type { FieldType } from '@/api'
 import { fieldApi } from '@/api/tables'
 import { renderProviders } from '@/test/render-providers'
@@ -109,13 +109,15 @@ describe('FieldConfigPanel 默认值分区', () => {
         expect(formValues().default_value).toBe('待办')
     })
 
-    it('boolean 类型：Switch 切换写回 true / false', () => {
+    it('boolean 类型：Switch 切换写回 true / false', async () => {
         renderProviders(<Host fieldType="boolean" />)
-        const sw = screen.getByRole('switch')
-        fireEvent.click(sw)
-        expect(formValues().default_value).toBe(true)
-        fireEvent.click(sw)
-        expect(formValues().default_value).toBe(false)
+        // antd 6：Switch 受控 checked 经 Form.useWatch 异步回流，
+        // 两次点击之间需等 watch 触发的重渲染落地，否则第二次 onChange 计算出旧值
+        fireEvent.click(screen.getByRole('switch'))
+        await waitFor(() => expect(formValues().default_value).toBe(true))
+        await act(async () => { await Promise.resolve() })
+        fireEvent.click(screen.getByRole('switch'))
+        await waitFor(() => expect(formValues().default_value).toBe(false))
     })
 
     it('link 类型：默认值控件禁用并提示「不支持」', () => {
@@ -179,7 +181,7 @@ describe('FieldConfigPanel 关联字段业务键', () => {
 
         await waitFor(() => expect(spy).toHaveBeenCalledWith('1', 30))
         // 候选里应过滤掉 link 字段，仅保留有物理列的字段
-        fireEvent.mouseDown(formItemByLabel('显示字段').querySelector('.ant-select-selector')!)
+        fireEvent.mouseDown(formItemByLabel('显示字段').querySelector('.ant-select')!)
         expect(await screen.findByText('编号')).toBeInTheDocument()
         expect(screen.getByText('名称')).toBeInTheDocument()
         expect(screen.queryByText('内联关联')).not.toBeInTheDocument()

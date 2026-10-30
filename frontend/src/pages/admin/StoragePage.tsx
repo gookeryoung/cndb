@@ -287,7 +287,7 @@ export default function StoragePage() {
       key: 'status',
       width: 90,
       render: (_, row) => {
-        if (row.used_bytes === null) return <Tag bordered={false}>统计中</Tag>
+        if (row.used_bytes === null) return <Tag variant="filled">统计中</Tag>
         const full = row.quota_bytes <= 0 || row.used_bytes >= row.quota_bytes
         return full
           ? <Tag color="red">已达上限</Tag>
@@ -347,7 +347,7 @@ export default function StoragePage() {
             {pendingCount > 0 && (
               <>
                 {' '}
-                <Tag bordered={false} color="gold">{pendingCount} 个统计中</Tag>
+                <Tag variant="filled" color="gold">{pendingCount} 个统计中</Tag>
               </>
             )}
           </div>

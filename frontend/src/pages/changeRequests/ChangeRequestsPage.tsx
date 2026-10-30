@@ -251,7 +251,7 @@ export default function ChangeRequestsPage() {
         type={banner.type}
         showIcon
         style={{ marginBottom: 16 }}
-        message={(
+        title={(
           <Space size={8} wrap>
             <Tag color={banner.type === 'success' ? 'green' : banner.type === 'warning' ? 'default' : 'blue'} style={{ marginInlineEnd: 0 }}>
               {banner.label}
@@ -265,7 +265,7 @@ export default function ChangeRequestsPage() {
         {isEmpty ? (
           <Empty description="暂无修改申请" style={{ padding: 48 }} />
         ) : groupedMode ? (
-          <Space direction="vertical" size={12} style={{ display: 'flex' }}>
+          <Space orientation="vertical" size={12} style={{ display: 'flex' }}>
             {groups.map((group: ChangeRowGroup) => {
               const rowId = String(group.row_id)
               const count = selectedCountByRow[rowId] ?? 0

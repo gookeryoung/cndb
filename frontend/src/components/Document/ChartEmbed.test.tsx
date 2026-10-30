@@ -184,7 +184,8 @@ describe('ChartEmbed', () => {
     // 预览层复用同一份渲染结果，不发第二次渲染请求（I1）
     expect(renderCalls).toBe(1)
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    // antd 6 + zhCN：预览 Modal 关闭钮 aria-label 随本地化为「关闭」，按类名点击更稳
+    fireEvent.click(document.querySelector('.ant-modal-close')!)
     // Modal 关闭后隐藏（jsdom 中内容保持挂载，见 setup.ts 动画说明）
     await waitFor(() => expect(screen.getByTestId('chart-embed-preview-svg')).not.toBeVisible())
   })
@@ -218,8 +219,8 @@ describe('ChartEmbed', () => {
     expect(screen.getByTestId('chart-embed-zoom-level')).toHaveTextContent('50%')
     expect(zoomOut).toBeDisabled()
 
-    // 关闭重开后复位 100%
-    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    // 关闭重开后复位 100%（antd 6 + zhCN：按类名定位预览 Modal 关闭钮）
+    fireEvent.click(document.querySelector('.ant-modal-close')!)
     fireEvent.click(canvas)
     expect(await screen.findByTestId('chart-embed-zoom-level')).toHaveTextContent('100%')
   })

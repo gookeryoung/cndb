@@ -278,7 +278,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
       onCancel={close}
       width={760}
       destroyOnHidden
-      maskClosable={!busy}
+      mask={{ closable: !busy }}
       footer={mode === 'vault' ? null : footer}
       data-testid="file-import-modal"
     >
@@ -296,18 +296,18 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
           </div>
         </>
       ) : result ? (
-        <Space direction="vertical" size={12} style={{ width: '100%' }} data-testid="file-import-result">
+        <Space orientation="vertical" size={12} style={{ width: '100%' }} data-testid="file-import-result">
           <Alert
             type="success"
             showIcon
-            message={`已导入到${targetText}`}
+            title={`已导入到${targetText}`}
             description={
               `新增 ${result.created} 篇 · 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 个 · ` +
               `新建文件夹 ${result.folders_created} 个 · 原样存档 ${result.assets ?? 0} 个 · 内嵌图片 ${result.attachments} 个`
             }
           />
           {result.warnings.map(item => (
-            <Alert key={`${item.path}:${item.message}`} type="warning" showIcon message={`${item.path}：${item.message}`} />
+            <Alert key={`${item.path}:${item.message}`} type="warning" showIcon title={`${item.path}：${item.message}`} />
           ))}
           {result.skipped_files.length > 0 && (
             <div>
@@ -323,7 +323,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
           )}
         </Space>
       ) : (
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           {modeSelector}
 
           {/* 原生 file input：单文件模式选一个，文件夹模式带 webkitRelativePath */}
@@ -374,7 +374,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
             )}
           </div>
 
-          {analyzeMut.isPending && <Alert type="info" showIcon message="正在解析文件…" />}
+          {analyzeMut.isPending && <Alert type="info" showIcon title="正在解析文件…" />}
 
           {analysis && (
             <>
@@ -395,7 +395,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               />
 
               {analysis.skipped.map(item => (
-                <Alert key={item.path} type="warning" showIcon message={`${item.path}：${item.reason}`} />
+                <Alert key={item.path} type="warning" showIcon title={`${item.path}：${item.reason}`} />
               ))}
 
               {analysis.conflicts > 0 && (

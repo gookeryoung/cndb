@@ -38,7 +38,7 @@ export default function LinksDrawer({
   onOpenDoc: (docId: number) => void
 }) {
   return (
-    <Drawer title="文档链接" width={460} open={open} onClose={onClose} data-testid="doc-links-drawer">
+    <Drawer title="文档链接" size={460} open={open} onClose={onClose} data-testid="doc-links-drawer">
       {loading ? (
         <Text type="secondary">加载中…</Text>
       ) : links.length === 0 ? (
@@ -50,7 +50,7 @@ export default function LinksDrawer({
               type="warning"
               showIcon
               style={{ marginBottom: 12 }}
-              message={`${brokenCount} 条断链`}
+              title={`${brokenCount} 条断链`}
               description="选择目标文档后点击「修复断链」，正文将改写为新标题并生成新版本。"
             />
           )}

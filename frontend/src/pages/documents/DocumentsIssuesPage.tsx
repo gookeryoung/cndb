@@ -246,7 +246,7 @@ export default function DocumentsIssuesPage() {
       {/* 问题详情 */}
       <Drawer
         title={current ? `问题 #${current.id}` : '问题详情'}
-        width={720}
+        size={720}
         open={detailId != null}
         onClose={() => setDetailId(null)}
       >

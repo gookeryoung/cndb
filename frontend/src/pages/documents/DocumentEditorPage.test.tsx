@@ -190,12 +190,14 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         openSelect(viewCombo)
         fireEvent.click(await screen.findByText('全部数据'))
         await waitFor(() =>
-            expect(viewCombo.querySelector('.ant-select-selection-item')?.textContent).toContain('全部数据'))
+            expect(viewCombo.querySelector('.ant-select-content')?.textContent).toContain('全部数据'))
 
         // 换表：已选视图应被清空
         openSelect(tableCombo)
         fireEvent.click(await screen.findByText('订单表'))
-        await waitFor(() => expect(viewCombo.querySelector('.ant-select-selection-item')).toBeNull())
+        // antd 6 单选清空后 .ant-select-content 失去 has-value 类（无 selection-item 包装）
+        await waitFor(() =>
+            expect(viewCombo.querySelector('.ant-select-content')).not.toHaveClass('ant-select-content-has-value'))
     }, 30_000)
 
     it('关闭弹窗后重开不残留已选表（ADR 0045）', async () => {
@@ -213,7 +215,8 @@ describe('DocumentEditorPage 数据表动态引用', () => {
         // 重开后不残留已选表 / 视图
         await waitFor(() =>
             expect(
-                screen.getAllByTestId('insert-table-select').filter(el => el.querySelector('.ant-select-selection-item')),
+                // antd 6：单选有值时 .ant-select-content 带 has-value 类
+                screen.getAllByTestId('insert-table-select').filter(el => el.querySelector('.ant-select-content-has-value')),
             ).toHaveLength(0))
         expect(screen.getByRole('button', { name: /^插\s*入$/ })).toBeDisabled()
     }, 30_000)

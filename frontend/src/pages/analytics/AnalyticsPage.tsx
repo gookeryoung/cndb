@@ -18,6 +18,7 @@
  */
 
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactElement } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom'
 import {
   App as AntApp, Alert, Button, Empty, Input, Modal, Select, Space,
@@ -754,7 +755,7 @@ export default function AnalyticsPage() {
               { key: 'chart', label: '可视化', icon: <BarChartOutlined /> },
               { key: 'summary', label: '分组汇总', icon: <GroupOutlined /> },
               { key: 'formula', label: '计算模板', icon: <FunctionOutlined /> },
-            ] as Array<{ key: AnalyticsBlockKey; label: string; icon: JSX.Element }>).map(item => (
+            ] as Array<{ key: AnalyticsBlockKey; label: string; icon: ReactElement }>).map(item => (
               <Button
                 key={item.key}
                 className="cn-an-block-toggle"
@@ -863,7 +864,7 @@ export default function AnalyticsPage() {
           type="warning"
           showIcon
           data-testid="analytics-table-missing"
-          message="该模板的数据源表已被删除，请重新选择分析表后再运行"
+          title="该模板的数据源表已被删除，请重新选择分析表后再运行"
         />
       )}
 
@@ -1071,7 +1072,7 @@ export default function AnalyticsPage() {
         confirmLoading={saveMutation.isPending}
         okText={saveMode === 'rename' ? '重命名' : '保存'}
       >
-        <Space direction="vertical" style={{ width: '100%' }}>
+        <Space orientation="vertical" style={{ width: '100%' }}>
           <Input
             data-testid="analytics-template-name"
             placeholder="模板名称"

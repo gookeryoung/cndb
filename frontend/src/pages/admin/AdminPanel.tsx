@@ -200,7 +200,7 @@ export default function AdminPanel() {
         type="info"
         showIcon
         icon={<InfoCircleOutlined />}
-        message="系统级完整备份"
+        title="系统级完整备份"
         description="将打包整个数据库（全部工作区、表、数据行、配置）以及附件目录 uploads/。导出为 .tar.gz 文件，包含 manifest.json 元信息。"
       />
 
@@ -264,7 +264,7 @@ export default function AdminPanel() {
         type="error"
         showIcon
         icon={<ExclamationCircleOutlined />}
-        message="破坏性操作 — 恢复将覆盖当前数据库"
+        title="破坏性操作 — 恢复将覆盖当前数据库"
         description="请确保已备份当前数据。恢复后原有工作区、表结构、数据行将全部被替换为备份中的内容。"
       />
 
@@ -299,7 +299,7 @@ export default function AdminPanel() {
                   type="warning"
                   showIcon
                   icon={<WarningOutlined />}
-                  message="备份由更新版本的程序生成"
+                  title="备份由更新版本的程序生成"
                   description="该备份由更高版本的程序生成，无法使用快速恢复。已自动选择「兼容恢复」：按当前程序支持的表结构逐表导入，备份中多出的表或字段的数据会被跳过。"
                   style={{ marginBottom: 'var(--cn-space-lg)' }}
                 />
@@ -409,7 +409,7 @@ export default function AdminPanel() {
       {inspectMutation.isPending && (
         <Progress percent={100} status="active" showInfo={false} />
       )}
-      {restoring && <Alert type="info" showIcon message="正在恢复系统数据，请勿关闭页面…" />}
+      {restoring && <Alert type="info" showIcon title="正在恢复系统数据，请勿关闭页面…" />}
 
       <div className="cn-hint">
         <InfoCircleOutlined />
@@ -516,7 +516,7 @@ export default function AdminPanel() {
             <p className="cn-admin-desc">{activeSection.desc}</p>
           </div>
           <div className="cn-admin-header-extra">
-            <Tag bordered={false} color="blue">系统管理员</Tag>
+            <Tag variant="filled" color="blue">系统管理员</Tag>
           </div>
         </header>
 

@@ -1,0 +1,31 @@
+diff --git a/cjs/react-dom-client.development.js b/cjs/react-dom-client.development.js
+index 90a9293eb9d445819cfd7cdecc909a68e68973d2..0f84f5b38cad2baccc07ad54764123f56a88c956 100644
+--- a/cjs/react-dom-client.development.js
++++ b/cjs/react-dom-client.development.js
+@@ -19552,7 +19552,7 @@
+         ? ((root.callbackNode = null),
+           (root.callbackPriority = 0),
+           scheduleCallback$1(NormalPriority$1, function () {
+-            schedulerEvent = window.event;
++            schedulerEvent = typeof window !== "undefined" ? window.event : void 0;
+             pendingDelayedCommitReason === IMMEDIATE_COMMIT &&
+               (pendingDelayedCommitReason = DELAYED_PASSIVE_COMMIT);
+             flushPassiveEffects();
+@@ -20527,7 +20527,7 @@
+       }
+     }
+     function processRootScheduleInImmediateTask() {
+-      schedulerEvent = window.event;
++      schedulerEvent = typeof window !== "undefined" ? window.event : void 0;
+       processRootScheduleInMicrotask();
+     }
+     function processRootScheduleInMicrotask() {
+@@ -20641,7 +20641,7 @@
+     }
+     function performWorkOnRootViaSchedulerTask(root, didTimeout) {
+       nestedUpdateScheduled = currentUpdateIsNested = !1;
+-      schedulerEvent = window.event;
++      schedulerEvent = typeof window !== "undefined" ? window.event : void 0;
+       if (
+         pendingEffectsStatus !== NO_PENDING_EFFECTS &&
+         pendingEffectsStatus !== PENDING_PASSIVE_PHASE
