@@ -686,6 +686,46 @@ class TestNormalizeValuesDateBranches:
         result, _ = records._normalize_values(tbl, {"d": "2024-01-15"})
         assert result["field_d"] == __import__("datetime").date(2024, 1, 15)
 
+    def test_on_update_create_respects_user_provided(self):
+        """on_update 创建路径且用户已传值 → 不覆盖（复制行复制原值的回归）."""
+        tbl = _mem_table(
+            [
+                DataField(
+                    name="d", field_type="date", order=0, db_column_name="field_d", config={"auto_fill": "on_update"}
+                )
+            ]
+        )
+        result, _ = records._normalize_values(tbl, {"d": "2024-01-15"})
+        assert result["field_d"] == __import__("datetime").date(2024, 1, 15)
+
+    def test_on_update_create_fills_when_missing(self):
+        """on_update 创建路径未传值 → 补当前日期."""
+        import datetime as _dt
+
+        tbl = _mem_table(
+            [
+                DataField(
+                    name="d", field_type="date", order=0, db_column_name="field_d", config={"auto_fill": "on_update"}
+                )
+            ]
+        )
+        result, _ = records._normalize_values(tbl, {})
+        assert result["field_d"] == _dt.date.today()
+
+    def test_on_update_overrides_on_update_path(self):
+        """on_update 更新路径 → 每次覆盖为当前时间（原有语义不变）."""
+        import datetime as _dt
+
+        tbl = _mem_table(
+            [
+                DataField(
+                    name="d", field_type="date", order=0, db_column_name="field_d", config={"auto_fill": "on_update"}
+                )
+            ]
+        )
+        result, _ = records._normalize_values(tbl, {"d": "2024-01-15"}, for_update=True)
+        assert result["field_d"] == _dt.date.today()
+
 
 class TestNormalizeValuesDefaultBranches:
     def test_default_value_no_physical_column_skipped(self):
