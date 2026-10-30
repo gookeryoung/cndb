@@ -74,6 +74,13 @@ const TPL_OTHER = makeTemplate({
   },
 })
 const TPL_BROKEN = makeTemplate({ id: 9, name: '已失效模板', table_id: null, config: { formulas: [MAIN_FORMULA], chart: null, summary: null, fields: [], limit: 1000 } })
+const TPL_CHART_ONLY = makeTemplate({
+  id: 10,
+  name: '仅可视化',
+  description: '',
+  config: { formulas: [], chart: { type: 'bar', x: '产品', y: '产量', aggregation: 'sum', title: '产量分布' }, summary: null, fields: [], limit: 1000 },
+})
+const TPL_EMPTY = makeTemplate({ id: 11, name: '空配置', description: '', config: { formulas: [], chart: null, summary: null, fields: [], limit: 1000 } })
 
 const COMPUTE_RESPONSE = {
   rows: [
@@ -203,7 +210,7 @@ function setupHandlers() {
   deleteIds = []
   aiSuggestBodies = []
   aiExplainBodies = []
-  templateList = [TPL_MAIN, TPL_OTHER, TPL_BROKEN]
+  templateList = [TPL_MAIN, TPL_OTHER, TPL_BROKEN, TPL_CHART_ONLY, TPL_EMPTY]
   server.use(
     http.get('/api/v1/workspaces/1/tables', () =>
       HttpResponse.json([{ id: TID, name: '产品批次' }, { id: 21, name: '其他表' }])),
@@ -371,6 +378,25 @@ describe('AnalyticsPage', () => {
 
     fireEvent.keyDown(screen.getByTestId('analytics-formula-expr-0'), { key: 'Enter', ctrlKey: true })
     await waitFor(() => expect(computeBodies).toHaveLength(1))
+  })
+
+  it('仅启用可视化：无公式但图表已配置 → 可运行', async () => {
+    renderPage('/w/1/analytics?template=10')
+    await waitTemplateLoaded(TPL_CHART_ONLY.name)
+    await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
+    expect(screen.queryByText('请填写公式，或配置图表 / 分组汇总后再运行')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('analytics-run-btn'))
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+    expect(computeBodies[0].formulas).toEqual([])
+  })
+
+  it('公式 / 图表 / 汇总三者皆空：运行禁用并提示', async () => {
+    renderPage('/w/1/analytics?template=11')
+    await waitTemplateLoaded(TPL_EMPTY.name)
+
+    expect(screen.getByTestId('analytics-run-btn')).toBeDisabled()
+    expect(screen.getByText('请填写公式，或配置图表 / 分组汇总后再运行')).toBeInTheDocument()
   })
 
   it('全局 Win/⌘/Ctrl+Enter 触发运行分析（含公式输入外）', async () => {

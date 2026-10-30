@@ -98,6 +98,29 @@ export const RECOMMENDATION_CHIP_ROLES: AnalyticsRecommendationRole[] = [
   'metric',
 ]
 
+/** 图表是否已配置（维度 / 指标任一非空即可运行，histogram 只用 x） */
+export function chartConfigured(chart: AnalyticsChart): boolean {
+  return !!(chart.x?.trim() || chart.y?.trim())
+}
+
+/** 分组汇总是否已配置（存在有效指标即算） */
+export function summaryConfigured(summary: AnalyticsSummary): boolean {
+  return summary.metrics.some(m => m.field.trim())
+}
+
+/** 是否满足运行条件：选了表 && 有公式 / 图表 / 汇总任一配置 && 公式无错误 */
+export function canRunAnalysis(input: {
+  tableId: number | null | undefined
+  validFormulaCount: number
+  chart: AnalyticsChart
+  summary: AnalyticsSummary
+  hasError: boolean
+}): boolean {
+  return !!input.tableId
+    && (input.validFormulaCount > 0 || chartConfigured(input.chart) || summaryConfigured(input.summary))
+    && !input.hasError
+}
+
 /** 公式键 → 汇总指标键（与后端 compute.metric_key 同一口径） */
 export function metricKey(agg: string, field: string): string {
   return `${agg}(${field})`

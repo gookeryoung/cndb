@@ -5,7 +5,10 @@ import {
   AGG_OPTIONS,
   AGG_VALUES,
   DEFAULT_CHART,
+  EMPTY_SUMMARY,
   applyExampleConfig,
+  canRunAnalysis,
+  chartConfigured,
   chartUsesAggregation,
   collectFormulaErrors,
   buildTemplateConfig,
@@ -24,6 +27,7 @@ import {
   normalizeSummary,
   recommendationRoleColor,
   safeFileName,
+  summaryConfigured,
   summarySortOptions,
   templateOptions,
   templateSnapshot,
@@ -325,5 +329,39 @@ describe('CSV 导出', () => {
     const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     triggerDownload('chart.png', 'data:image/png;base64,xxx')
     expect(clickSpy).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('运行门禁（canRunAnalysis）', () => {
+  const base = {
+    tableId: 7 as number | null,
+    validFormulaCount: 0,
+    chart: { ...DEFAULT_CHART },
+    summary: { ...EMPTY_SUMMARY, metrics: [] },
+    hasError: false,
+  }
+
+  it('chartConfigured：x / y 任一非空即算已配置，空白串不算', () => {
+    expect(chartConfigured({ ...DEFAULT_CHART, x: null, y: null })).toBe(false)
+    expect(chartConfigured({ ...DEFAULT_CHART, x: '  ' })).toBe(false)
+    expect(chartConfigured({ ...DEFAULT_CHART, x: '日期' })).toBe(true)
+    expect(chartConfigured({ ...DEFAULT_CHART, y: '产量' })).toBe(true)
+  })
+
+  it('summaryConfigured：存在有效指标才算已配置', () => {
+    expect(summaryConfigured({ ...EMPTY_SUMMARY, metrics: [] })).toBe(false)
+    expect(summaryConfigured({ ...EMPTY_SUMMARY, metrics: [{ agg: 'sum', field: '产量', label: '' }], group_by: '日期' })).toBe(true)
+  })
+
+  it('无公式但图表已配置 → 可运行；三者皆空 → 不可运行', () => {
+    expect(canRunAnalysis({ ...base, chart: { ...DEFAULT_CHART, x: '日期', y: '产量' } })).toBe(true)
+    expect(canRunAnalysis({ ...base, summary: { ...EMPTY_SUMMARY, metrics: [{ agg: 'avg', field: '产量', label: '' }] } })).toBe(true)
+    expect(canRunAnalysis(base)).toBe(false)
+  })
+
+  it('有公式可运行；未选表或公式有错误时不可运行', () => {
+    expect(canRunAnalysis({ ...base, validFormulaCount: 1 })).toBe(true)
+    expect(canRunAnalysis({ ...base, validFormulaCount: 1, tableId: null })).toBe(false)
+    expect(canRunAnalysis({ ...base, validFormulaCount: 1, hasError: true })).toBe(false)
   })
 })

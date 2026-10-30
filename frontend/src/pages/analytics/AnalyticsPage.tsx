@@ -67,6 +67,7 @@ import {
   normalizeChart,
   normalizeFormulas,
   normalizeSummary,
+  summaryConfigured,
   templateSnapshot,
   templateTableName,
 } from './analyticsModel'
