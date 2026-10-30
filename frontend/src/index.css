@@ -5022,7 +5022,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-insert-chart-modal .chart-template-collapse > .ant-collapse-item {
   border: 1px solid var(--cn-border);
   border-radius: var(--cn-radius-sm, 6px);
-  margin-bottom: 8px;
+  margin-bottom: var(--cn-space-md);
   overflow: hidden;
   background: var(--cn-bg-container, #fff);
 }

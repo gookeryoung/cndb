@@ -131,8 +131,9 @@ describe('断点口径', () => {
     expect(BREAKPOINT.tablet).toBe(992)
     const widths = [...css.matchAll(/@media[^{]*max-width:\s*([0-9.]+)px/g)].map(m => Number(m[1]))
     expect(widths.length).toBeGreaterThan(0)
-    // 991.98 = tablet(992) - 0.02，对应「窄屏单列堆叠」；575.98 为 antd xs 例外
-    const allowed = [BREAKPOINT.mobile - 0.02, BREAKPOINT.tablet - 0.02, 575.98]
+    // 991.98 = tablet(992) - 0.02，对应「窄屏单列堆叠」；575.98 为 antd xs 例外；
+    // 1023.98 = 数据分析带状工作台的双列下限（<1024 堆叠，与 useResponsive BREAKPOINTS.tablet 对齐）
+    const allowed = [BREAKPOINT.mobile - 0.02, BREAKPOINT.tablet - 0.02, 575.98, 1023.98]
     for (const w of widths) {
       expect(allowed, `出现未登记断点 ${w}px`).toContain(w)
     }

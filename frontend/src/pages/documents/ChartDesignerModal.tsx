@@ -2,7 +2,10 @@
  *
  * - 新建：从模板 default_config 起步，保存仍写图表素材库并回传实例（正文插入其定义副本）；
  * - 编辑正文块（`editBlock`）：以块内定义起步，保存只回传新定义，不写素材库、不查实例；
- * - 数据表按模板 schema 生成（行增删受 row_min/row_max 钳制，系列数受 series_min/max 钳制）；
+ * - 数据表按模板 schema 生成（行增删受 row_min/row_max 钳制，系列数受 series_min/max 钳制），
+ *   行结构按 row_kind 分派（需求卡片 0070）：dual-axis / series / value / xy；
+ * - 数据一键导入（需求卡片 0070 C3）：粘贴 TSV / CSV（可含表头行）整表替换数据行；
+ * - 样式实时编辑（需求卡片 0070 C3）：按模板 style_fields 生成开关表单，随预览防抖生效；
  * - 实时预览走 POST /charts/render-preview（不落库），输入防抖 300ms；
  * - 保存走 POST，后端严格校验 400 时逐条回显；模板下线只读展示（边界 3）。
  */
@@ -11,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
+  Checkbox,
   Input,
   InputNumber,
   Modal,
@@ -42,16 +46,19 @@ export type ChartDesignResult =
   | { kind: 'chart'; chart: ChartInstance }
   | { kind: 'block'; spec: ChartBlockSpec }
 
-/** 行草稿：双轴模板（label/value/growth）或系列模板（label/values[]） */
+/** 行草稿：双轴（label/value/growth）| 系列（label/values[]）| value（label/value）| xy（x/y） */
 type ChartDataRowDraft =
   | { label: string; value: number | null; growth: number | null }
   | { label: string; values: (number | null)[] }
+  | { x: number | null; y: number | null }
 
 /** config 草稿：与后端归一结构同形，前端全量编辑后整体提交 */
 interface ChartConfigDraft {
   caption: Record<string, string>
   labels: Record<string, unknown>
   theme: { palette: string[]; paper: string }
+  /** 样式开关（需求卡片 0070 C3）；无样式模板无此节 */
+  style?: Record<string, boolean>
   data: { actualCount?: number; rows: ChartDataRowDraft[] }
 }
 
@@ -72,6 +79,9 @@ function toDraftRow(raw: unknown): ChartDataRowDraft {
     }
   }
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
+  if ('x' in r || 'y' in r) {
+    return { x: num(r.x), y: num(r.y) }
+  }
   return {
     label: typeof r.label === 'string' ? r.label : '',
     value: num(r.value),
@@ -93,6 +103,11 @@ function toDraftConfig(raw: unknown): ChartConfigDraft {
   const dataRaw = (obj.data && typeof obj.data === 'object' ? obj.data : {}) as Record<string, unknown>
   const actualCount = typeof dataRaw.actualCount === 'number' ? dataRaw.actualCount : undefined
   const rows = Array.isArray(dataRaw.rows) ? dataRaw.rows.map(toDraftRow) : []
+  const styleRaw = (obj.style && typeof obj.style === 'object' ? obj.style : {}) as Record<string, unknown>
+  const style: Record<string, boolean> = {}
+  for (const [k, v] of Object.entries(styleRaw)) {
+    if (typeof v === 'boolean') style[k] = v
+  }
   return {
     caption,
     labels: (obj.labels && typeof obj.labels === 'object' ? obj.labels : {}) as Record<string, unknown>,
@@ -100,12 +115,96 @@ function toDraftConfig(raw: unknown): ChartConfigDraft {
       palette,
       paper: typeof themeRaw.paper === 'string' ? themeRaw.paper : '#FBFAF5',
     },
+    ...(Object.keys(style).length > 0 ? { style } : {}),
     data: actualCount !== undefined ? { actualCount, rows } : { rows },
   }
 }
 
 const isSeriesRow = (row: ChartDataRowDraft): row is { label: string; values: (number | null)[] } =>
   'values' in row
+
+const isXyRow = (row: ChartDataRowDraft): row is { x: number | null; y: number | null } => 'x' in row
+
+/** 标量行（dual-axis / value 共用形状）：label + value（+ growth，仅双轴展示） */
+const isScalarRow = (
+  row: ChartDataRowDraft,
+): row is { label: string; value: number | null; growth: number | null } =>
+  'label' in row && 'value' in row
+
+// ── 数据一键导入（需求卡片 0070 C3）：粘贴 TSV / CSV 整表替换 ──
+
+/** 数值单元格解析：容忍千分位 / 百分号 / 全角逗号 */
+function parseImportNumber(cell: string): number | null {
+  const cleaned = cell.replace(/[,，\s%]/g, '')
+  if (cleaned === '' || cleaned === '-') return null
+  const n = Number(cleaned)
+  return Number.isFinite(n) ? n : null
+}
+
+/** 分行分列：Tab 优先，其次逗号，否则按空白切 */
+function splitImportLines(text: string): string[][] {
+  return text
+    .split(/\r?\n/)
+    .map(line => line.trim())
+    .filter(Boolean)
+    .map(line => {
+      const cells = line.includes('\t')
+        ? line.split('\t')
+        : line.includes(',')
+          ? line.split(',')
+          : line.split(/\s+/)
+      return cells.map(c => c.trim())
+    })
+}
+
+/** 导入解析结果：rows 为替换用行草稿；seriesNames 为表头识别出的系列名（仅系列模板） */
+interface ImportedData {
+  rows: ChartDataRowDraft[]
+  seriesNames?: string[]
+}
+
+/** 按模板行结构解析粘贴数据；无有效数据行返回 null */
+function parseImportedRows(text: string, template: ChartTemplateInfo): ImportedData | null {
+  const lines = splitImportLines(text)
+  if (lines.length === 0) return null
+  const clampMax = (rows: ChartDataRowDraft[]) => rows.slice(0, template.row_max)
+
+  if (template.row_kind === 'series') {
+    // 表头行判定：首行第 2 列起存在非数值单元格
+    const first = lines[0]
+    const hasHeader = first.length > 1 && first.slice(1).some(c => parseImportNumber(c) === null)
+    const dataLines = hasHeader ? lines.slice(1) : lines
+    const seriesNames = hasHeader ? first.slice(1).map(c => c.replace(/^["']|["']$/g, '')) : undefined
+    const count = Math.max(
+      seriesNames?.length ?? 0,
+      ...dataLines.map(l => Math.max(l.length - 1, 0)),
+      template.series_min,
+    )
+    const rows = dataLines.map(l => ({
+      label: l[0] ?? '',
+      values: Array.from({ length: count }, (_, j) => parseImportNumber(l[j + 1] ?? '')),
+    }))
+    if (rows.length === 0) return null
+    return { rows: clampMax(rows), ...(seriesNames ? { seriesNames } : {}) }
+  }
+  if (template.row_kind === 'xy') {
+    const hasHeader = parseImportNumber(lines[0][0] ?? '') === null
+    const dataLines = (hasHeader ? lines.slice(1) : lines).filter(l => l.length >= 2)
+    const rows = dataLines.map(l => ({ x: parseImportNumber(l[0] ?? ''), y: parseImportNumber(l[1] ?? '') }))
+    if (rows.length === 0) return null
+    return { rows: clampMax(rows) }
+  }
+  // value（label + value）与 dual-axis（label + value + 可选 growth）
+  const hasHeader = lines[0].length > 1 && parseImportNumber(lines[0][1] ?? '') === null
+  const dataLines = hasHeader ? lines.slice(1) : lines
+  const rows = dataLines.map(l => ({
+    label: l[0] ?? '',
+    value: parseImportNumber(l[1] ?? ''),
+    growth: template.row_kind === 'dual-axis' && l.length > 2 ? parseImportNumber(l[2] ?? '') : null,
+  }))
+  if (rows.length === 0) return null
+  return { rows: clampMax(rows) }
+}
 
 /** 右侧实时预览：防抖后的 config 走 render-preview，SVG 内联（与正式渲染同源） */
 function DesignerPreview({ workspaceId, templateKey, config, open }: {
@@ -182,8 +281,14 @@ export default function ChartDesignerModal({
     () => templatesQuery.data?.templates.find(t => t.key === templateKey),
     [templatesQuery.data, templateKey],
   )
-  /** 系列模板（堆叠 / 分组）行结构是 label + values[]；双轴是 label + value/growth */
-  const isSeriesTemplate = (template?.series_max ?? 0) > 0
+  /** 行结构分派（需求卡片 0070）：双轴 / 系列 / value / xy */
+  const rowKind = template?.row_kind ?? 'series'
+  const isSeriesTemplate = rowKind === 'series'
+  const isDualAxisTemplate = rowKind === 'dual-axis'
+  /** 旧系列模板（堆叠 / 分组）的横轴单位在数据区固定展示；新类型走 label_fields 声明 */
+  const showSeriesUnitX =
+    isSeriesTemplate &&
+    typeof (template?.default_config.labels as Record<string, unknown> | undefined)?.unitX === 'string'
 
   const [title, setTitle] = useState('')
   const [config, setConfig] = useState<ChartConfigDraft | null>(null)
@@ -193,6 +298,9 @@ export default function ChartDesignerModal({
   /** 联动单元格编辑态（ADR 0059 C3）：正在编辑的单元格键与草稿值；联动态非编辑时显示「数值(计算)」，点击后仅显示纯数值 */
   const [editingCell, setEditingCell] = useState<string | null>(null)
   const [cellDraft, setCellDraft] = useState<number | null>(null)
+  /** 数据导入（需求卡片 0070 C3）：粘贴文本与解析错误 */
+  const [importText, setImportText] = useState('')
+  const [importError, setImportError] = useState<string | null>(null)
 
   // 打开且模板就绪时初始化草稿：新建从 default_config 起步，编辑从实例 config 起步
   useEffect(() => {
@@ -204,6 +312,8 @@ export default function ChartDesignerModal({
     setAffected(new Set())
     setEditingCell(null)
     setCellDraft(null)
+    setImportText('')
+    setImportError(null)
     // 依赖收敛到 templateKey 与清单数据：模板对象引用变化（重取）不重置编辑中的草稿
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, templateKey, templatesQuery.data, target])
@@ -212,29 +322,34 @@ export default function ChartDesignerModal({
     setConfig(prev => (prev ? { ...prev, data: { ...prev.data, rows } } : prev))
 
   /** 双轴联动编辑（ADR 0056 C3 / Q4）：填次值联动本行主值；改主值（i≥2）反向重算本行次值；
-   * 联动结果登记为受影响单元格，手动编辑的单元格清除其标记（D3：不跨行级联） */
+   * 联动结果登记为受影响单元格，手动编辑的单元格清除其标记（D3：不跨行级联）。
+   * 标量行编辑（value 行结构的 label / value）复用本函数，联动仅对双轴模板生效 */
   const updateRowField = (index: number, field: 'label' | 'value' | 'growth', v: string | number | null) => {
     if (!config) return
     const rows: ChartDataRowDraft[] = config.data.rows.map((row, i) => {
-      if (i !== index || isSeriesRow(row)) return row
+      if (i !== index || isSeriesRow(row) || isXyRow(row)) return row
       if (field === 'label') return { ...row, label: String(v ?? '') }
       return { ...row, [field]: typeof v === 'number' ? v : null }
     })
+    if (!isDualAxisTemplate) {
+      setConfig({ ...config, data: { ...config.data, rows } })
+      return
+    }
     const nextAffected = new Set(affected)
     const row = config.data.rows[index]
-    if (row && !isSeriesRow(row) && typeof v === 'number' && index > 0) {
+    if (row && isScalarRow(row) && typeof v === 'number' && index > 0) {
       const prevRow = config.data.rows[index - 1]
-      const prevValue = prevRow && !isSeriesRow(prevRow) ? prevRow.value : null
+      const prevValue = prevRow && isScalarRow(prevRow) ? prevRow.value : null
       if (field === 'growth') {
         const linked = linkValueFromGrowth(prevValue, v)
-        if (linked !== null && !isSeriesRow(rows[index])) {
+        if (linked !== null && isScalarRow(rows[index])) {
           rows[index] = { ...rows[index], value: linked }
           nextAffected.add(`value:${index}`)
         }
         nextAffected.delete(`growth:${index}`)
       } else if (field === 'value') {
         const linked = linkGrowthFromValue(v, prevValue)
-        if (linked !== null && !isSeriesRow(rows[index])) {
+        if (linked !== null && isScalarRow(rows[index])) {
           rows[index] = { ...rows[index], growth: linked }
           nextAffected.add(`growth:${index}`)
         }
@@ -267,16 +382,27 @@ export default function ChartDesignerModal({
       return { ...prev, data: { ...prev.data, rows } }
     })
 
+  /** xy 行编辑（散点图）：横 / 纵轴数值 */
+  const updateXyRow = (index: number, field: 'x' | 'y', v: number | null) =>
+    setConfig(prev => {
+      if (!prev) return prev
+      const rows = prev.data.rows.map((row, i) => (i === index && isXyRow(row) ? { ...row, [field]: v } : row))
+      return { ...prev, data: { ...prev.data, rows } }
+    })
+
   /** 添加一行：按模板行结构给空行（系列值补 0，避免保存校验失败） */
   const addRow = () => {
     if (!template || !config) return
     if (config.data.rows.length >= template.row_max) return
-    const emptyRow: ChartDataRowDraft = isSeriesTemplate
-      ? {
-        label: '',
-        values: new Array(Math.max(labelsSeries.length, template.series_min)).fill(0),
-      }
-      : { label: '', value: null, growth: null }
+    const emptyRow: ChartDataRowDraft =
+      rowKind === 'series'
+        ? {
+          label: '',
+          values: new Array(Math.max(labelsSeries.length, template.series_min)).fill(0),
+        }
+        : rowKind === 'xy'
+          ? { x: null, y: null }
+          : { label: '', value: null, growth: null }
     updateRows([...config.data.rows, emptyRow])
   }
 
@@ -345,13 +471,65 @@ export default function ChartDesignerModal({
   const setPaper = (color: string) =>
     setConfig(prev => (prev ? { ...prev, theme: { ...prev.theme, paper: color } } : prev))
 
+  /** 样式开关（需求卡片 0070 C3）：草稿无值时回退模板默认 */
+  const defaultStyle = useMemo(() => {
+    const raw = (template?.default_config.style ?? {}) as Record<string, unknown>
+    const out: Record<string, boolean> = {}
+    for (const [k, v] of Object.entries(raw)) {
+      if (typeof v === 'boolean') out[k] = v
+    }
+    return out
+  }, [template])
+  const styleFlag = (key: string): boolean => {
+    const draft = config?.style?.[key]
+    if (typeof draft === 'boolean') return draft
+    const fallback = defaultStyle[key]
+    return typeof fallback === 'boolean' ? fallback : false
+  }
+  const setStyleFlag = (key: string, value: boolean) =>
+    setConfig(prev => (prev ? { ...prev, style: { ...defaultStyle, ...(prev.style ?? {}), [key]: value } } : prev))
+
+  /** 数据一键导入（需求卡片 0070 C3）：按行结构解析粘贴数据，整表替换数据行 */
+  const applyImport = () => {
+    if (!template || !config) return
+    const parsed = parseImportedRows(importText, template)
+    if (!parsed) {
+      setImportError('未识别到有效数据行：请确认数值列为数字（可从 Excel / WPS 直接粘贴）')
+      return
+    }
+    setImportError(null)
+    setAffected(new Set())
+    setConfig(prev => {
+      if (!prev) return prev
+      const next: ChartConfigDraft = { ...prev, data: { ...prev.data, rows: parsed.rows } }
+      if (parsed.seriesNames && parsed.seriesNames.length > 0) {
+        next.labels = { ...prev.labels, series: parsed.seriesNames }
+      }
+      if (prev.data.actualCount !== undefined) {
+        next.data.actualCount = Math.max(1, Math.min(prev.data.actualCount, parsed.rows.length))
+      }
+      return next
+    })
+  }
+
   const saveMut = useMutation({
     mutationFn: async (): Promise<ChartDesignResult> => {
       if (!template || !config) throw new Error('设计器未就绪')
+      // 行草稿按行结构序列化：value 行剔除 growth、xy 行只留 x/y，保存的 config 与模板 schema 同形
+      const serializeRow = (row: ChartDataRowDraft): Record<string, unknown> => {
+        if (isSeriesRow(row)) return { label: row.label, values: row.values }
+        if (isXyRow(row)) return { x: row.x, y: row.y }
+        if (rowKind === 'value') return { label: row.label, value: row.value }
+        return { label: row.label, value: row.value, growth: row.growth }
+      }
+      const configPayload = {
+        ...config,
+        data: { ...config.data, rows: config.data.rows.map(serializeRow) },
+      } as unknown as Record<string, unknown>
       const payload = {
         title: title.trim() || template.name,
         template_key: template.key,
-        config: config as unknown as Record<string, unknown>,
+        config: configPayload,
       }
       if (target?.kind === 'editBlock') {
         // 编辑正文块：只回传新定义，不写素材库（ADR 0052 D9）
@@ -484,6 +662,42 @@ export default function ChartDesignerModal({
                   </Text>
                 </Text>
 
+                {/* 数据一键导入（需求卡片 0070 C3）：粘贴 TSV / CSV 整表替换 */}
+                <div style={{ marginBottom: 8 }}>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    导入数据（粘贴表格数据，可含表头行，一键替换下方数据行）
+                  </Text>
+                  <Input.TextArea
+                    value={importText}
+                    onChange={e => setImportText(e.target.value)}
+                    placeholder={
+                      rowKind === 'xy'
+                        ? '横轴值 纵轴值（每行一个点，Tab / 逗号 / 空格分隔）'
+                        : rowKind === 'series'
+                          ? '行标签 系列值…（每行一条数据，首行可为系列名表头）'
+                          : '名称 数值（每行一条数据）'
+                    }
+                    autoSize={{ minRows: 2, maxRows: 4 }}
+                    style={{ marginTop: 4 }}
+                    data-testid="chart-designer-import-text"
+                  />
+                  <Space style={{ marginTop: 4 }}>
+                    <Button
+                      size="small"
+                      disabled={!importText.trim()}
+                      onClick={applyImport}
+                      data-testid="chart-designer-import-apply"
+                    >
+                      导入数据
+                    </Button>
+                    {importError && (
+                      <Text type="danger" style={{ fontSize: 12 }} data-testid="chart-designer-import-error">
+                        {importError}
+                      </Text>
+                    )}
+                  </Space>
+                </div>
+
                 {isSeriesTemplate && (
                   <div style={{ marginBottom: 8 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
@@ -513,13 +727,15 @@ export default function ChartDesignerModal({
                         加系列
                       </Button>
                     </div>
-                    <Input
-                      addonBefore="横轴单位"
-                      value={seriesUnit}
-                      onChange={e => setLabel('unitX', e.target.value)}
-                      style={{ marginTop: 8, maxWidth: 280 }}
-                      data-testid="chart-designer-unit-x"
-                    />
+                    {showSeriesUnitX && (
+                      <Input
+                        addonBefore="横轴单位"
+                        value={seriesUnit}
+                        onChange={e => setLabel('unitX', e.target.value)}
+                        style={{ marginTop: 8, maxWidth: 280 }}
+                        data-testid="chart-designer-unit-x"
+                      />
+                    )}
                   </div>
                 )}
 
@@ -555,16 +771,17 @@ export default function ChartDesignerModal({
                       ) : null,
                     )}
                   </div>
-                ) : (
+                ) : isDualAxisTemplate ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                       列：标签 / 主值（左轴）/ 次值（右轴，留空按主值推算显示为「(计算)」，点击可编辑；填写后本行主值联动变动）
                     </Text>
                     {rows.map((row, i) =>
-                      !isSeriesRow(row) ? (() => {
+                      isScalarRow(row) ? (() => {
                         // 联动态判定（ADR 0059 D5）：默认联动态（次值留空且可推算）+ 本轮联动重算（affected 集合）
-                        const prevRow = i > 0 && !isSeriesRow(rows[i - 1]) ? rows[i - 1] : undefined
-                        const prevValue = prevRow && !isSeriesRow(prevRow) ? (prevRow.value ?? null) : null
+                        const prevCandidate = i > 0 ? rows[i - 1] : undefined
+                        const prevRow = prevCandidate && isScalarRow(prevCandidate) ? prevCandidate : undefined
+                        const prevValue = prevRow ? (prevRow.value ?? null) : null
                         const gDisp = growthLinkedDisplay(row.growth ?? null, row.value ?? null, prevValue)
                         const growthLinked = i > 0 && (affected.has(`growth:${i}`) || gDisp.linked)
                         const growthShow = (row.growth ?? gDisp.display) ?? null
@@ -674,6 +891,72 @@ export default function ChartDesignerModal({
                       />
                     </div>
                   </div>
+                ) : rowKind === 'xy' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      列：横轴值 / 纵轴值（散点，每行一个点）
+                    </Text>
+                    {rows.map((row, i) =>
+                      isXyRow(row) ? (
+                        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <InputNumber
+                            value={row.x}
+                            onChange={v => updateXyRow(i, 'x', typeof v === 'number' ? v : null)}
+                            placeholder="横轴值"
+                            style={{ width: 140 }}
+                            data-testid={`chart-designer-row-x-${i}`}
+                          />
+                          <InputNumber
+                            value={row.y}
+                            onChange={v => updateXyRow(i, 'y', typeof v === 'number' ? v : null)}
+                            placeholder="纵轴值"
+                            style={{ width: 140 }}
+                            data-testid={`chart-designer-row-y-${i}`}
+                          />
+                          <Button
+                            type="text"
+                            danger
+                            icon={<DeleteOutlined />}
+                            disabled={!canRemoveRow}
+                            onClick={() => removeRow(i)}
+                          />
+                        </div>
+                      ) : null,
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      列：名称 / 数值
+                    </Text>
+                    {rows.map((row, i) =>
+                      isScalarRow(row) ? (
+                        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <Input
+                            value={row.label}
+                            onChange={e => updateRowField(i, 'label', e.target.value)}
+                            placeholder="名称"
+                            style={{ width: 150 }}
+                            data-testid={`chart-designer-row-label-${i}`}
+                          />
+                          <InputNumber
+                            value={row.value}
+                            onChange={v => updateRowField(i, 'value', v)}
+                            placeholder="数值"
+                            style={{ width: 140 }}
+                            data-testid={`chart-designer-row-value-${i}`}
+                          />
+                          <Button
+                            type="text"
+                            danger
+                            icon={<DeleteOutlined />}
+                            disabled={!canRemoveRow}
+                            onClick={() => removeRow(i)}
+                          />
+                        </div>
+                      ) : null,
+                    )}
+                  </div>
                 )}
                 <Button
                   icon={<PlusOutlined />}
@@ -699,6 +982,24 @@ export default function ChartDesignerModal({
                         onChange={e => setLabel(f.key, e.target.value)}
                         data-testid={`chart-designer-label-${f.key}`}
                       />
+                    ))}
+                  </Space>
+                </div>
+              )}
+
+              {(template.style_fields ?? []).length > 0 && (
+                <div>
+                  <Text strong style={{ display: 'block', marginBottom: 4 }}>样式</Text>
+                  <Space direction="vertical" size={4}>
+                    {(template.style_fields ?? []).map(f => (
+                      <Checkbox
+                        key={f.key}
+                        checked={styleFlag(f.key)}
+                        onChange={e => setStyleFlag(f.key, e.target.checked)}
+                        data-testid={`chart-designer-style-${f.key}`}
+                      >
+                        {f.label}
+                      </Checkbox>
                     ))}
                   </Space>
                 </div>

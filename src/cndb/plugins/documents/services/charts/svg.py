@@ -63,9 +63,10 @@ def _prim_svg(p: Prim) -> str:
             f'fill="{p.fill}" stroke="{p.stroke}" stroke-width="{_num(p.stroke_width)}"/>'
         )
     if p.kind == "path":
+        # 填充路径（面积 / 雷达 / 饼图扇形，需求卡片 0070）：fill 为空保持描线语义
         return (
-            f'<path d="{p.d}" fill="none" stroke="{p.stroke}" stroke-width="{_num(p.stroke_width)}" '
-            'stroke-linejoin="round" stroke-linecap="round"/>'
+            f'<path d="{p.d}" fill="{p.fill or "none"}" stroke="{p.stroke or "none"}" '
+            f'stroke-width="{_num(p.stroke_width)}" stroke-linejoin="round" stroke-linecap="round"/>'
         )
     if p.kind == "text":
         parts: list[str] = []

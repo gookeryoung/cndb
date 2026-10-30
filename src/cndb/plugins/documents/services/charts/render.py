@@ -1,4 +1,4 @@
-"""图表唯一渲染入口（ADR 0048 I1）.
+"""图表唯一渲染入口（ADR 0048 I1；需求卡片 0070 扩展标准类型布局）.
 
 管线：``render_chart``（校验 / 归一 → 模板 layout 产出共享图元 → 整幅图组装）
 → ``to_svg``（Web / Markdown 导出资产）/ ``to_png``（DOCX / PDF 导出，见 raster.py）。
@@ -6,39 +6,46 @@
 - 图元层是两个写端的共享中间表示；写端只做序列化，不做几何计算；
 - 轴上限自动扩展、派生值（增速 / 合计 / ``{cagr}``）在 layout 内计算，不落库（C7）；
 - 中性色用 ``var(--cn-*, #hex)`` 令牌（SVG 跟随前端明暗主题），PNG 写端解析
-  回退十六进制（固定浅色纸底，边界 6）。
+  回退十六进制（固定浅色纸底，边界 6）；
+- 模块分层（需求卡片 0070）：``primitives`` 图元与几何工具，``layouts`` 标准
+  图表类型布局（折线 / 面积 / 柱状 / 饼图 / 散点 / 雷达 / 漏斗 / 仪表盘 /
+  树状图 / 热力图），本模块保留既有三模板布局与整幅图组装，并再导出图元。
 """
 
 from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any
 
+from cndb.plugins.documents.services.charts.layouts import LAYOUTS as _STANDARD_LAYOUTS
+from cndb.plugins.documents.services.charts.primitives import (
+    AXIS_LINE,
+    BRAND_RED,
+    FONT_FAMILY,
+    INK,
+    INK2,
+    MUTED,
+    PAPER,
+    RULE,
+    ChartDocument,
+    Prim,
+    fmt_number,
+    hex_or,
+    nice_step,
+    parse_path_points,
+    text_width,
+)
 from cndb.plugins.documents.services.charts.registry import (
     get_template,
     normalize_config,
 )
 
-# ── 语义色令牌（SVG 带 CSS 变量回退；PNG 解析回退值） ──
-
-PAPER = "var(--cn-bg-container, #FBFAF5)"
-INK = "var(--cn-text-primary, #17181A)"
-MUTED = "var(--cn-text-muted, #6E7276)"
-RULE = "var(--cn-border, #D8D2C1)"
-
-#: 品牌红（图号 / 图注边线，两主题一致）
-BRAND_RED = "#8E2318"
-INK2 = "var(--cn-text-primary, #33363B)"
-AXIS_LINE = "#B9B1A0"
 YEAR_PROJECTED = "#8C8578"
 BAND_DIVIDER = "#8FA0B0"
 BAND_FILL = "rgba(30,61,87,.045)"
 BAND_LABEL = "#41647C"
 OLIVE_DERIVED = "#7A8570"
-
-FONT_FAMILY = "'SimHei', '黑体', 'Noto Sans SC', 'Microsoft YaHei', sans-serif"
 
 #: 整幅图（fig-sheet）横向几何
 SHEET_PAD_X = 36.0
@@ -50,98 +57,15 @@ SUBTITLE_Y = 122.0
 PLOT_TOP = 142.0
 
 
-@dataclass
-class Prim:
-    """共享图元：两个写端（SVG / PNG）的唯一绘制指令."""
-
-    kind: str  # rect | line | circle | path | text
-    x: float = 0.0
-    y: float = 0.0
-    w: float = 0.0
-    h: float = 0.0
-    rx: float = 0.0
-    x1: float = 0.0
-    y1: float = 0.0
-    x2: float = 0.0
-    y2: float = 0.0
-    cx: float = 0.0
-    cy: float = 0.0
-    r: float = 0.0
-    d: str = ""
-    #: 文本基线锚点（text 图元专用）
-    tx: float = 0.0
-    ty: float = 0.0
-    content: str = ""
-    size: float = 13.0
-    fill: str = ""
-    stroke: str | None = None
-    stroke_width: float = 1.0
-    dash: str | None = None
-    opacity: float | None = None
-    weight: int = 400
-    anchor: str = "start"  # start | middle | end
-    #: 文本背景片 (x, y, w, h)，先于文本绘制（深柱内标签，对齐参考 HTML）
-    plate: tuple[float, float, float, float] | None = None
-    #: 文本描边留白（图面空白处的标签，对齐 paint-order: stroke）
-    halo: bool = False
-    #: 等宽字体（图号），其余用黑体族
-    mono: bool = False
-
-
-@dataclass
-class ChartDocument:
-    """整幅图：fig-sheet 形态（图头 meta / 标题 / 图区 / 图注）."""
-
-    width: float
-    height: float
-    label: str
-    elements: list[Prim] = field(default_factory=list)
-
-
-def text_width(content: str, size: float) -> float:
-    """估算文本渲染宽度（CJK 按一字宽、ASCII 按 0.55 字宽，对齐帮助图示口径）."""
-    total = 0.0
-    for ch in content:
-        total += size * (1.0 if ord(ch) > 0x2E7F else 0.55)
-    return total
-
-
-def fmt_number(value: float) -> str:
-    """数值文本化：一位小数内四舍五入，去掉多余的 .0（对齐参考 HTML fmt）."""
-    n = round(value * 10) / 10
-    if n == int(n):
-        return str(int(n))
-    return f"{n:g}"
-
-
-def _nice_step(max_value: float) -> float:
-    """取 1/2/5×10^k 的「好看」刻度步长，使轴上约 4–8 个刻度."""
-    if max_value <= 0:
-        return 1.0
-    raw = max_value / 5
-    mag = 10.0 ** math.floor(math.log10(raw))
-    for m in (1.0, 2.0, 5.0, 10.0):
-        if raw <= m * mag:
-            return m * mag
-    return 10.0 * mag
-
-
-def _hex_or(value: str, fallback: str) -> str:
-    """调色板取色：越界 / 非法回退."""
-    if isinstance(value, str) and value.startswith("#") and len(value) == 7:
-        return value
-    return fallback
-
-
 # ══ 模板 1：柱线组合图（双轴 · 含规划期） ══
 
 
 def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     """柱线双轴布局；返回 (画布高, 图元)."""
     palette = cfg["theme"]["palette"]
-    c_actual = _hex_or(palette[0] if palette else "", BRAND_RED)
-    c_projected = _hex_or(palette[1] if len(palette) > 1 else "", "#5C7283")
-    c_line = _hex_or(palette[2] if len(palette) > 2 else "", "#5F6B4E")
+    c_actual = hex_or(palette[0] if palette else "", BRAND_RED)
+    c_projected = hex_or(palette[1] if len(palette) > 1 else "", "#5C7283")
+    c_line = hex_or(palette[2] if len(palette) > 2 else "", "#5F6B4E")
     c_projected_edge = c_projected
     c_line_derived = OLIVE_DERIVED
     labels = cfg["labels"]
@@ -160,7 +84,7 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
 
     values = [float(row["value"] or 0.0) for row in rows]
     max_rev = max(values) if values else 0.0
-    step_rev = _nice_step(max_rev)
+    step_rev = nice_step(max_rev)
     y_max_rev = max(step_rev, math.ceil(max_rev / step_rev) * step_rev) if max_rev > 0 else step_rev
 
     def growth_at(i: int) -> float | None:
@@ -181,7 +105,7 @@ def _dual_axis_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     min_g = min(numeric_growth) if numeric_growth else 0.0
     # 次轴允许负值（用户反馈）：范围取 [floor(min), ceil(max)]，对称 nice 步长
     span_src = max(max_g, -min_g, 1.0)
-    step_g = _nice_step(span_src)
+    step_g = nice_step(span_src)
     y_max_g = math.ceil(max_g / step_g) * step_g if max_g > 0 else 0.0
     y_min_g = math.floor(min_g / step_g) * step_g if min_g < 0 else 0.0
     if y_max_g == y_min_g:
@@ -532,7 +456,7 @@ def _stacked_bar_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
 
     totals = [sum(float(v or 0.0) for v in row["values"]) for row in rows]
     max_total = max(totals) if totals else 0.0
-    step = _nice_step(max_total)
+    step = nice_step(max_total)
     x_max = max(step, math.ceil(max_total / step) * step) if max_total > 0 else step
 
     def x_scale(v: float) -> float:
@@ -579,7 +503,7 @@ def _stacked_bar_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
             val = float(row["values"][s] or 0.0) if s < len(row["values"]) else 0.0
             seg_w = max(0.0, val / x_max * plot_w)
             x = x_scale(acc)
-            color = _hex_or(palette[s] if s < len(palette) else "", default_palette[s % len(default_palette)])
+            color = hex_or(palette[s] if s < len(palette) else "", default_palette[s % len(default_palette)])
             if seg_w > 0:
                 prims.append(Prim("rect", x=x, y=y_top, w=seg_w, h=bar_h, rx=0, fill=color))
             if val > 0:
@@ -630,7 +554,7 @@ def _stacked_bar_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     cursor = (w - total_w) / 2
     ly = 32.0
     for idx, name in enumerate(series_names):
-        color = _hex_or(palette[idx] if idx < len(palette) else "", default_palette[idx % len(default_palette)])
+        color = hex_or(palette[idx] if idx < len(palette) else "", default_palette[idx % len(default_palette)])
         prims.append(Prim("rect", x=cursor, y=ly - 9, w=13, h=9, rx=1, fill=color))
         cursor += 20.0
         prims.append(Prim("text", tx=cursor, ty=ly, content=name, size=13.5, fill=MUTED))
@@ -644,8 +568,8 @@ def _stacked_bar_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
 
 def _grouped_bar_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     palette = cfg["theme"]["palette"]
-    c_now = _hex_or(palette[0] if palette else "", "#E9E4D6")
-    c_goal = _hex_or(palette[1] if len(palette) > 1 else "", "#8E2318")
+    c_now = hex_or(palette[0] if palette else "", "#E9E4D6")
+    c_goal = hex_or(palette[1] if len(palette) > 1 else "", "#8E2318")
     labels = cfg["labels"]
     series_names: list[str] = labels.get("series") or ["现状", "目标"]
     rows: list[dict[str, Any]] = cfg["data"]["rows"]
@@ -667,7 +591,7 @@ def _grouped_bar_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     for row in rows:
         for v in row["values"][:2]:
             max_val = max(max_val, float(v or 0.0))
-    step = _nice_step(max_val)
+    step = nice_step(max_val)
     x_max = max(step, math.ceil(max_val / step) * step) if max_val > 0 else step
 
     def x_scale(v: float) -> float:
@@ -779,7 +703,9 @@ def _grouped_bar_prims(cfg: dict[str, Any]) -> tuple[float, list[Prim]]:
     return h, prims
 
 
+#: 布局分派：标准类型（需求卡片 0070，layouts.py）+ 既有三模板（本模块）
 _LAYOUTS: dict[str, Callable[[dict[str, Any]], tuple[float, list[Prim]]]] = {
+    **_STANDARD_LAYOUTS,
     "bar-line-dual-axis": _dual_axis_prims,
     "stacked-bar-horizontal": _stacked_bar_prims,
     "grouped-bar-horizontal": _grouped_bar_prims,
@@ -837,23 +763,15 @@ def _offset(prims: list[Prim], dx: float, dy: float) -> list[Prim]:
 
 
 def _translate_path(d: str, dx: float, dy: float) -> str:
-    """平移 ``M x y L x y …`` 形式的折线路径."""
-    tokens = d.split(" ")
-    out: list[str] = []
-    i = 0
-    while i < len(tokens):
-        tok = tokens[i]
-        if tok in ("M", "L") and i + 2 < len(tokens) + 1:
-            try:
-                x, y = float(tokens[i + 1]), float(tokens[i + 2])
-                out.append(f"{tok}{x + dx:.1f} {y + dy:.1f}")
-                i += 3
-                continue
-            except ValueError:
-                pass
-        out.append(tok)
-        i += 1
-    return " ".join(out)
+    """平移 ``M x y L x y …`` 形式的折线路径.
+
+    统一经 ``parse_path_points`` 解析后重建（兼容粘连形态的存量输入），
+    输出固定为带空格的规范形态，供 SVG / PNG 两端一致解析。
+    """
+    pts = parse_path_points(d)
+    if not pts:
+        return d
+    return "M " + " L ".join(f"{x + dx:.1f} {y + dy:.1f}" for x, y in pts)
 
 
 def render_degraded(chart_id: int, reason: str) -> ChartDocument:
@@ -941,6 +859,14 @@ class BadRequestTemplateError(Exception):
 
 
 __all__ = [
+    "AXIS_LINE",
+    "BRAND_RED",
+    "FONT_FAMILY",
+    "INK",
+    "INK2",
+    "MUTED",
+    "PAPER",
+    "RULE",
     "ChartDocument",
     "Prim",
     "render_chart",

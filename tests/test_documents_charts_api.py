@@ -87,10 +87,19 @@ class TestTemplates:
         assert r.status_code == 200, r.text
         body = r.json()
         cats = {c["key"]: c for c in body["categories"]}
-        assert set(cats) == {"comparison"}
+        # 一级分类：既有对比 + 0070 新增（趋势 / 分布 / 评价 + 结构构成补齐）
+        assert set(cats) == {"composition", "comparison", "trend", "distribution", "evaluation"}
         assert {c["key"] for c in cats["comparison"]["children"]} == {"comparison-bar", "comparison-bar-h"}
+        assert {c["key"] for c in cats["composition"]["children"]} >= {
+            "composition-pie",
+            "composition-treemap",
+            "composition-funnel",
+        }
         assert {t["key"] for t in body["templates"]} == set(CHART_TEMPLATES)
         assert all("default_config" in t for t in body["templates"])
+        # 0070：新类型 schema 字段完整下发（row_kind / style_fields）
+        line = next(t for t in body["templates"] if t["key"] == "line-business")
+        assert line["row_kind"] == "series" and line["style_fields"]
 
     def test_outsider_and_anonymous_denied(self, client, ws, outsider):
         url = CHARTS.format(ws=ws.id) + "/templates"
@@ -140,6 +149,39 @@ class TestRenderPreview:
         )
         assert db.query(DocumentChart).count() == 0
 
+    def test_preview_standard_type_with_style(self, client, ws, owner):
+        """0070 C3：新类型带样式实时预览（默认配置 + 样式开关切换）."""
+        auth = _login(client, owner.username)
+        cfg = {"data": {"rows": [{"label": "A", "value": 3}, {"label": "B", "value": 7}]}}
+        r = client.post(
+            CHARTS.format(ws=ws.id) + "/render-preview",
+            json={"template_key": "pie-donut", "config": {**cfg, "style": {"donut": False}}},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        flat = r.text
+        r2 = client.post(
+            CHARTS.format(ws=ws.id) + "/render-preview",
+            json={"template_key": "pie-donut", "config": {**cfg, "style": {"donut": True}}},
+            headers=auth,
+        )
+        assert r2.status_code == 200
+        assert "合计" in r2.text and "合计" not in flat  # 环形样式生效
+
+    def test_preview_all_standard_presets(self, client, ws, owner):
+        """0070 C5：全部标准类型预设可预览（默认配置不 400）."""
+        auth = _login(client, owner.username)
+        for key, tpl in CHART_TEMPLATES.items():
+            if not tpl.labels_from_default:
+                continue
+            r = client.post(
+                CHARTS.format(ws=ws.id) + "/render-preview",
+                json={"template_key": key, "config": tpl.default_config},
+                headers=auth,
+            )
+            assert r.status_code == 200, (key, r.text)
+            assert "<svg" in r.text
+
 
 class TestCrud:
     def test_editor_creates_and_reads(self, client, ws, editor):
@@ -152,6 +194,74 @@ class TestCrud:
         got = client.get(CHARTS.format(ws=ws.id) + f"/{chart['id']}", headers=auth)
         assert got.status_code == 200
         assert got.json()["id"] == chart["id"]
+
+    def test_create_standard_type_chart(self, client, ws, editor):
+        """0070 C3：新类型直接建实例（严格校验通过、归一落库带 style 节）."""
+        auth = _login(client, editor.username)
+        cfg = {
+            "caption": {"no": "图 1", "context": "", "title": "营收构成", "subtitle": "", "note": ""},
+            "labels": {},
+            "theme": {"palette": ["#1E3D57", "#5C7283", "#8FA3B8"], "paper": "#F6F8FA"},
+            "style": {"donut": True, "showPercent": True},
+            "data": {"rows": [{"label": "A", "value": 60}, {"label": "B", "value": 40}]},
+        }
+        r = client.post(
+            CHARTS.format(ws=ws.id),
+            json={"title": "饼图", "template_key": "pie-donut", "config": cfg},
+            headers=auth,
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["template_key"] == "pie-donut"
+        assert body["category"] == "composition-pie"
+        assert body["config"]["style"] == {"donut": True, "showPercent": True}
+        # 散点（xy 行结构）与仪表盘（value 单行）也走同一链路
+        xy = client.post(
+            CHARTS.format(ws=ws.id),
+            json={
+                "title": "散点",
+                "template_key": "scatter-trend",
+                "config": {"data": {"rows": [{"x": 1, "y": 2}, {"x": 2, "y": 4}, {"x": 3, "y": 5}]}},
+            },
+            headers=auth,
+        )
+        assert xy.status_code == 201, xy.text
+        gauge = client.post(
+            CHARTS.format(ws=ws.id),
+            json={
+                "title": "仪表盘",
+                "template_key": "gauge-business",
+                "config": {"labels": {"max": 100, "unit": "%"}, "data": {"rows": [{"label": "完成率", "value": 80}]}},
+            },
+            headers=auth,
+        )
+        assert gauge.status_code == 201, gauge.text
+        assert gauge.json()["config"]["labels"]["max"] == "100"
+
+    def test_create_standard_type_validates_rows(self, client, ws, editor):
+        """0070：value / xy 行结构坏数据 400（严格校验覆盖新行结构）."""
+        auth = _login(client, editor.username)
+        bad = client.post(
+            CHARTS.format(ws=ws.id),
+            json={
+                "title": "x",
+                "template_key": "pie-business",
+                "config": {"data": {"rows": [{"label": "A", "value": "bad"}]}},
+            },
+            headers=auth,
+        )
+        assert bad.status_code == 400
+        assert bad.json()["code"] == "chart_config_invalid"
+        bad_xy = client.post(
+            CHARTS.format(ws=ws.id),
+            json={
+                "title": "x",
+                "template_key": "scatter-trend",
+                "config": {"data": {"rows": [{"x": 1, "y": "bad"}, {"x": 2, "y": 3}]}},
+            },
+            headers=auth,
+        )
+        assert bad_xy.status_code == 400
 
     def test_create_strips_title_and_validates(self, client, ws, editor):
         auth = _login(client, editor.username)

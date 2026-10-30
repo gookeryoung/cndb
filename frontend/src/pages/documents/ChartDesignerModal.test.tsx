@@ -276,3 +276,118 @@ describe('ChartDesignerModal', () => {
     expect(props.onSaved).not.toHaveBeenCalled()
   })
 })
+
+describe('ChartDesignerModal 标准类型（需求卡片 0070）', () => {
+  it('折线模板：系列名 / 样式开关 / 数值标签实时预览（C3）', async () => {
+    const bodies = useBodyCapture(/\/charts\/render-preview/)
+    renderDesigner({ kind: 'create', templateKey: 'line-vivid' })
+
+    // 系列名编辑 + 纵轴单位（label_fields 声明）
+    expect(await screen.findByTestId('chart-designer-series-name-0')).toHaveValue('纯电动')
+    expect(screen.getByTestId('chart-designer-label-unitY')).toBeInTheDocument()
+    // 旧系列的横轴单位输入不出现（新类型无 unitX 声明）
+    expect(screen.queryByTestId('chart-designer-unit-x')).toBeNull()
+
+    // 样式开关：默认开，关闭后预览 config.style 随之变化
+    const valuesToggle = screen.getByTestId('chart-designer-style-showValues')
+    expect(valuesToggle).toBeChecked()
+    await screen.findByTestId('chart-designer-preview-svg')
+    fireEvent.click(valuesToggle)
+    await waitFor(() => {
+      const last = bodies[bodies.length - 1] as { config?: { style?: Record<string, boolean> } }
+      expect(last.config?.style?.showValues).toBe(false)
+    })
+  }, 15_000)
+
+  it('数据一键导入（C3）：粘贴 TSV 含表头整表替换并识别系列名', async () => {
+    renderDesigner({ kind: 'create', templateKey: 'line-vivid' })
+    await screen.findByTestId('chart-designer-preview-svg')
+
+    fireEvent.change(screen.getByTestId('chart-designer-import-text'), {
+      target: { value: '季度\t线上\t线下\nQ1\t100\t200\nQ2\t120\t260\nQ3\t150\t300' },
+    })
+    fireEvent.click(screen.getByTestId('chart-designer-import-apply'))
+
+    // 表头识别为系列名，数据行整表替换
+    await waitFor(() => expect(screen.getByTestId('chart-designer-series-name-0')).toHaveValue('线上'))
+    expect(screen.getByTestId('chart-designer-series-name-1')).toHaveValue('线下')
+    expect(screen.getByTestId('chart-designer-row-label-0')).toHaveValue('Q1')
+    expect(screen.getByTestId('chart-designer-row-value-0-0')).toHaveValue('100')
+    expect(screen.getByTestId('chart-designer-row-value-2-1')).toHaveValue('300')
+    // 旧示例行被替换（2023 不再出现）
+    expect(screen.queryByTestId('chart-designer-row-label-3')).toBeNull()
+  }, 15_000)
+
+  it('数据一键导入（C3）：无可识别数据行时提示错误', async () => {
+    renderDesigner({ kind: 'create', templateKey: 'pie-business' })
+    await screen.findByTestId('chart-designer-preview-svg')
+
+    fireEvent.change(screen.getByTestId('chart-designer-import-text'), { target: { value: '' } })
+    expect(screen.getByTestId('chart-designer-import-apply')).toBeDisabled()
+    fireEvent.change(screen.getByTestId('chart-designer-import-text'), { target: { value: '名称 数值' } })
+    fireEvent.click(screen.getByTestId('chart-designer-import-apply'))
+    expect(await screen.findByTestId('chart-designer-import-error')).toBeInTheDocument()
+  }, 15_000)
+
+  it('饼图（value 行结构）：名称 / 数值编辑 + 环形样式开关', async () => {
+    renderDesigner({ kind: 'create', templateKey: 'pie-donut' })
+
+    expect(await screen.findByTestId('chart-designer-row-label-0')).toHaveValue('整车制造')
+    expect(screen.getByTestId('chart-designer-row-value-0')).toHaveValue('1250')
+    // 无系列维度：系列名编辑不出现
+    expect(screen.queryByTestId('chart-designer-series-name-0')).toBeNull()
+    // 环形样式默认开
+    expect(screen.getByTestId('chart-designer-style-donut')).toBeChecked()
+  }, 15_000)
+
+  it('散点图（xy 行结构）：横纵轴数值编辑 + 保存按 x/y 序列化', async () => {
+    const createBodies: unknown[] = []
+    server.use(
+      http.post('/api/v1/workspaces/10/charts', async ({ request }) => {
+        createBodies.push(await request.json())
+        return HttpResponse.json({ ...mockChartInstance, id: 302, template_key: 'scatter-trend' }, { status: 201 })
+      }),
+    )
+    const props = renderDesigner({ kind: 'create', templateKey: 'scatter-trend' })
+
+    expect(await screen.findByTestId('chart-designer-row-x-0')).toHaveValue('120')
+    expect(screen.getByTestId('chart-designer-row-y-0')).toHaveValue('380')
+    fireEvent.change(screen.getByTestId('chart-designer-row-x-0'), { target: { value: '130' } })
+
+    fireEvent.click(screen.getByTestId('chart-designer-save'))
+    await waitFor(() => expect(props.onSaved).toHaveBeenCalledTimes(1))
+    const cfg = (createBodies[0] as { config?: { data?: { rows?: Record<string, unknown>[] } } }).config
+    expect(cfg?.data?.rows?.[0]).toEqual({ x: 130, y: 380 })
+  }, 15_000)
+
+  it('保存 value 行结构：剔除 growth 字段（与模板 schema 同形）', async () => {
+    const createBodies: unknown[] = []
+    server.use(
+      http.post('/api/v1/workspaces/10/charts', async ({ request }) => {
+        createBodies.push(await request.json())
+        return HttpResponse.json({ ...mockChartInstance, id: 303, template_key: 'pie-business' }, { status: 201 })
+      }),
+    )
+    const props = renderDesigner({ kind: 'create', templateKey: 'pie-business' })
+
+    await screen.findByTestId('chart-designer-row-label-0')
+    fireEvent.click(screen.getByTestId('chart-designer-save'))
+    await waitFor(() => expect(props.onSaved).toHaveBeenCalledTimes(1))
+    const cfg = (createBodies[0] as { config?: { data?: { rows?: Record<string, unknown>[] } } }).config
+    expect(cfg?.data?.rows?.[0]).toEqual({ label: '整车制造', value: 1250 })
+  }, 15_000)
+
+  it('样式开关实时入预览：环形开关切换后 config.style.donut 变化（C3）', async () => {
+    const bodies = useBodyCapture(/\/charts\/render-preview/)
+    renderDesigner({ kind: 'create', templateKey: 'pie-business' })
+
+    await screen.findByTestId('chart-designer-preview-svg')
+    const donut = screen.getByTestId('chart-designer-style-donut')
+    expect(donut).not.toBeChecked() // 商务预设默认扇形
+    fireEvent.click(donut)
+    await waitFor(() => {
+      const last = bodies[bodies.length - 1] as { config?: { style?: Record<string, boolean> } }
+      expect(last.config?.style?.donut).toBe(true)
+    })
+  }, 15_000)
+})

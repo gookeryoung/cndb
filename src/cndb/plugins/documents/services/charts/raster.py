@@ -13,7 +13,7 @@ import math
 import re
 from typing import TYPE_CHECKING
 
-from cndb.plugins.documents.services.charts.render import ChartDocument
+from cndb.plugins.documents.services.charts.primitives import ChartDocument, parse_path_points
 
 if TYPE_CHECKING:
     from PIL.ImageDraw import ImageDraw
@@ -144,16 +144,13 @@ def to_png(doc: ChartDocument, scale: int = DEFAULT_SCALE) -> bytes:
             box = [p.cx * scale - r, p.cy * scale - r, p.cx * scale + r, p.cy * scale + r]
             draw.ellipse(box, fill=fill, outline=stroke, width=max(1, round(p.stroke_width * scale)) if stroke else 0)
         elif p.kind == "path" and p.d:
-            pts: list[tuple[float, float]] = []
-            tokens = p.d.split(" ")
-            for i, tok in enumerate(tokens):
-                if tok in ("M", "L") and i + 2 < len(tokens):
-                    try:
-                        pts.append((float(tokens[i + 1]) * scale, float(tokens[i + 2]) * scale))
-                    except ValueError:
-                        break
+            pts = [(x * scale, y * scale) for x, y in parse_path_points(p.d)]
             if len(pts) >= 2:
-                draw.line(pts, fill=stroke or "#000000", width=max(1, round(p.stroke_width * scale)), joint="curve")
+                # 填充路径（面积 / 雷达 / 饼图扇形，需求卡片 0070）；无填充保持折线
+                if fill is not None:
+                    draw.polygon(pts, fill=fill, outline=stroke)
+                else:
+                    draw.line(pts, fill=stroke or "#000000", width=max(1, round(p.stroke_width * scale)), joint="curve")
         elif p.kind == "text":
             size = round(p.size * scale)
             font = _load_font(size)

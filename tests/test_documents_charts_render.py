@@ -1,16 +1,20 @@
-"""图表渲染管线（ADR 0048）单测.
+"""图表渲染管线（ADR 0048 / 需求卡片 0070）单测.
 
-覆盖：唯一渲染入口 render_chart（三模板 + 垃圾 config 不崩）、SVG 写端
-（无脚本无外链、标题转义）、PNG 写端（PIL 光栅化 + 倍率）、降级整幅图、
-``{cagr}`` token 求值（D11）、resolve_color 的 var/rgba 解析（边界 6）。
+覆盖：唯一渲染入口 render_chart（三模板 + 标准类型 + 垃圾 config 不崩）、
+SVG 写端（无脚本无外链、标题转义、path 填充）、PNG 写端（PIL 光栅化 +
+倍率、折线 / 扇形光栅化不丢）、降级整幅图、``{cagr}`` token 求值（D11）、
+resolve_color 的 var/rgba 解析（边界 6）。
 """
 
 from __future__ import annotations
 
+import io
+
 import pytest
+from PIL import Image
 
 from cndb.plugins.documents.services.charts.raster import resolve_color, to_png
-from cndb.plugins.documents.services.charts.registry import CHART_TEMPLATES
+from cndb.plugins.documents.services.charts.registry import CHART_TEMPLATES, normalize_config
 from cndb.plugins.documents.services.charts.render import (
     SHEET_WIDTH,
     BadRequestTemplateError,
@@ -20,6 +24,20 @@ from cndb.plugins.documents.services.charts.render import (
 from cndb.plugins.documents.services.charts.svg import to_svg
 
 TPL_KEYS = ("bar-line-dual-axis", "stacked-bar-horizontal", "grouped-bar-horizontal")
+
+#: 标准类型样例 key（需求卡片 0070 C5：每类抽一套预设做渲染断言）
+STANDARD_SAMPLE_KEYS = (
+    "line-vivid",
+    "area-stacked",
+    "bar-stacked",
+    "pie-donut",
+    "scatter-trend",
+    "radar-business",
+    "funnel-classic",
+    "gauge-business",
+    "treemap-business",
+    "heatmap-vivid",
+)
 
 
 def _render_svg(key: str, config: dict | None = None) -> str:
@@ -59,6 +77,181 @@ class TestRenderChart:
         tall = render_chart("stacked-bar-horizontal", {"data": {"rows": rows}})
         base = render_chart("stacked-bar-horizontal", CHART_TEMPLATES["stacked-bar-horizontal"].default_config)
         assert tall.height > base.height
+
+
+class TestStandardTypeRender:
+    """需求卡片 0070 C5：标准类型预设渲染效果."""
+
+    @pytest.mark.parametrize("template_key", STANDARD_SAMPLE_KEYS)
+    def test_renders_sheet_with_expected_prims(self, template_key: str):
+        """每类图表整幅图成型：纸底铺满 + 关键图元出现."""
+        cfg = normalize_config(template_key, CHART_TEMPLATES[template_key].default_config)
+        doc = render_chart(template_key, cfg)
+        assert doc.width == SHEET_WIDTH
+        assert doc.height > 100
+        assert doc.elements[0].h == doc.height  # 纸底补齐
+        kinds = {p.kind for p in doc.elements}
+        assert "text" in kinds  # 图头 / 轴标 / 图例至少其一
+        if template_key in (
+            "bar-stacked",
+            "pie-donut",
+            "radar-business",
+            "funnel-classic",
+            "treemap-business",
+            "heatmap-vivid",
+        ):
+            assert "rect" in kinds
+        if template_key in ("line-vivid", "area-stacked", "scatter-trend", "radar-business", "gauge-business"):
+            assert "path" in kinds or "line" in kinds
+
+    @pytest.mark.parametrize("template_key", STANDARD_SAMPLE_KEYS)
+    def test_png_rasterizes_without_loss(self, template_key: str):
+        """PNG 光栅化成功且非空白（C5：写端一致性）."""
+        cfg = normalize_config(template_key, CHART_TEMPLATES[template_key].default_config)
+        png = to_png(render_chart(template_key, cfg))
+        assert png.startswith(b"\x89PNG\r\n\x1a\n")
+        img = Image.open(io.BytesIO(png)).convert("RGB")
+        colors = img.getcolors(2_000_000)
+        assert colors is not None and len(colors) > 8  # 非单色空白图
+
+    def test_line_series_paths_present(self):
+        """折线图：每系列一条描线 path + 数据点圆标."""
+        cfg = normalize_config("line-vivid", CHART_TEMPLATES["line-vivid"].default_config)
+        doc = render_chart("line-vivid", cfg)
+        strokes = [p for p in doc.elements if p.kind == "path" and p.stroke and not p.fill]
+        assert len(strokes) == 3  # 三系列
+        circles = [p for p in doc.elements if p.kind == "circle"]
+        assert len(circles) >= 3 * 6  # 6 行 × 3 系列数据点
+
+    def test_area_paths_filled(self):
+        """面积图：填充 path 带 rgba 填充与描线."""
+        cfg = normalize_config("area-stacked", CHART_TEMPLATES["area-stacked"].default_config)
+        doc = render_chart("area-stacked", cfg)
+        fills = [p for p in doc.elements if p.kind == "path" and p.fill and p.fill.startswith("rgba(")]
+        assert len(fills) >= 4  # 堆叠：四系列填充
+        svg = to_svg(doc)
+        assert 'fill="rgba(' in svg
+
+    def test_pie_sectors_closed_and_percent_labels(self):
+        """饼图：扇形 path 首尾闭合、含百分比标签与图例清单."""
+        cfg = normalize_config("pie-donut", CHART_TEMPLATES["pie-donut"].default_config)
+        doc = render_chart("pie-donut", cfg)
+        sectors = [p for p in doc.elements if p.kind == "path" and p.fill and p.fill.startswith("#")]
+        assert len(sectors) == 5  # 5 个正数值分块
+        for sector in sectors:
+            assert sector.d.startswith("M ") and " L " in sector.d
+        texts = " ".join(p.content for p in doc.elements if p.kind == "text")
+        assert "%" in texts and "合计" in texts
+
+    def test_gauge_reads_max_label(self):
+        """仪表盘：读数 / 指标名 / 量程文本存在，指针与轴心为线 + 圆."""
+        cfg = normalize_config("gauge-business", CHART_TEMPLATES["gauge-business"].default_config)
+        doc = render_chart("gauge-business", cfg)
+        texts = [p.content for p in doc.elements if p.kind == "text"]
+        assert "76.5%" in texts  # 中心读数
+        assert "年度营收目标完成率" in texts
+        assert any("量程 0–100%" in t for t in texts)
+        assert any(p.kind == "circle" and p.r == 7 for p in doc.elements)  # 轴心
+
+    def test_treemap_rects_fill_area(self):
+        """树状图：矩形总面积铺满绘图区、互不重叠且占比合计 100%."""
+        cfg = normalize_config("treemap-business", CHART_TEMPLATES["treemap-business"].default_config)
+        doc = render_chart("treemap-business", cfg)
+        rects = [p for p in doc.elements if p.kind == "rect" and p.fill and p.fill.startswith("#")]
+        assert len(rects) == 8
+        area = sum(p.w * p.h for p in rects)
+        x0 = min(p.x for p in rects)
+        x1 = max(p.x + p.w for p in rects)
+        y0 = min(p.y for p in rects)
+        y1 = max(p.y + p.h for p in rects)
+        assert area == pytest.approx((x1 - x0) * (y1 - y0), rel=0.01)  # 面积归一化铺满
+        for i, a in enumerate(rects):
+            for b in rects[i + 1 :]:
+                overlap = a.x < b.x + b.w and b.x < a.x + a.w and a.y < b.y + b.h and b.y < a.y + a.h
+                assert not overlap
+        # 占比文本与数据一致（小矩形仅显示占比，大矩形带数值）：逐个对回默认数据
+        import re
+
+        texts = "".join(p.content for p in doc.elements if p.kind == "text")
+        shown = {float(m) for m in re.findall(r"(\d+\.\d)%", texts)}
+        values = [r["value"] for r in CHART_TEMPLATES["treemap-business"].default_config["data"]["rows"]]
+        total = sum(values)
+        expected = {round(v / total * 100, 1) for v in values}
+        assert shown
+        assert shown <= expected
+
+    def test_funnel_rates_and_values(self):
+        """漏斗：阶段矩形递缩、数值白字、转化率标注."""
+        cfg = normalize_config("funnel-classic", CHART_TEMPLATES["funnel-classic"].default_config)
+        doc = render_chart("funnel-classic", cfg)
+        texts = [p.content for p in doc.elements if p.kind == "text"]
+        assert any("转化 53.3%" in t for t in texts)  # 640/1200
+        assert any(t == "1200" for t in texts)
+
+    def test_heatmap_grid_and_scale_bar(self):
+        """热力图：单元格数量 = 行 × 列，色阶条与行列标签存在."""
+        cfg = normalize_config("heatmap-vivid", CHART_TEMPLATES["heatmap-vivid"].default_config)
+        doc = render_chart("heatmap-vivid", cfg)
+        cells = [p for p in doc.elements if p.kind == "rect" and p.fill and p.fill.startswith("rgba(")]
+        assert len(cells) == 6 * 4 + 12  # 24 格 + 12 段色阶条
+        texts = [p.content for p in doc.elements if p.kind == "text"]
+        assert "研发部" in texts and "一季度" in texts
+
+    def test_style_toggles_change_output(self):
+        """C3：样式开关实时调整改变渲染输出（showValues / donut / showTrend）."""
+        base = normalize_config("line-vivid", CHART_TEMPLATES["line-vivid"].default_config)
+        off = normalize_config("line-vivid", {**base, "style": {"showValues": False, "showMarkers": True}})
+        texts_on = sum(1 for p in render_chart("line-vivid", base).elements if p.kind == "text" and p.halo)
+        texts_off = sum(1 for p in render_chart("line-vivid", off).elements if p.kind == "text" and p.halo)
+        assert texts_on > texts_off
+        # donut 开关：中心合计文本只在环形出现
+        pie = normalize_config("pie-classic", CHART_TEMPLATES["pie-classic"].default_config)
+        donut = normalize_config("pie-donut", CHART_TEMPLATES["pie-donut"].default_config)
+        flat_texts = [p.content for p in render_chart("pie-classic", pie).elements if p.kind == "text"]
+        donut_texts = [p.content for p in render_chart("pie-donut", donut).elements if p.kind == "text"]
+        assert "合计" in donut_texts and "合计" not in flat_texts
+        # showTrend 开关：趋势线只在 trend 预设出现
+        plain = render_chart(
+            "scatter-business", normalize_config("scatter-business", CHART_TEMPLATES["scatter-business"].default_config)
+        )
+        trend = render_chart(
+            "scatter-trend", normalize_config("scatter-trend", CHART_TEMPLATES["scatter-trend"].default_config)
+        )
+        plain_dashed = [p for p in plain.elements if p.kind == "line" and p.dash]
+        trend_dashed = [p for p in trend.elements if p.kind == "line" and p.dash]
+        assert len(trend_dashed) > len(plain_dashed)
+
+    def test_degenerate_data_never_crashes(self):
+        """C5：全零 / 单行 / 超量行等退化数据不崩."""
+        zero = render_chart("pie-donut", {"data": {"rows": [{"label": "A", "value": 0}, {"label": "B", "value": 0}]}})
+        assert zero.elements
+        single = render_chart("line-vivid", {"data": {"rows": [{"label": "only", "values": [1, 2]}]}})
+        assert single.elements
+        many = render_chart(
+            "scatter-trend",
+            {"data": {"rows": [{"x": i, "y": i * 2} for i in range(60)]}},
+        )
+        assert many.elements
+        flat = render_chart("radar-business", {"data": {"rows": [{"label": "A", "values": [0, 0, 0]}]}})
+        assert flat.elements
+
+    def test_path_translation_format_roundtrip(self):
+        """存量缺陷修复：整幅平移后的 path 为规范形态，PNG 写端可解析（不丢折线）."""
+        cfg = normalize_config("bar-line-dual-axis", CHART_TEMPLATES["bar-line-dual-axis"].default_config)
+        doc = render_chart("bar-line-dual-axis", cfg)
+        from cndb.plugins.documents.services.charts.primitives import parse_path_points
+
+        for p in doc.elements:
+            if p.kind == "path" and p.d:
+                assert parse_path_points(p.d), p.d  # 平移后仍可解析出坐标点
+
+    def test_png_contains_series_line_pixels(self):
+        """存量缺陷修复：双轴图 PNG 中次值折线颜色像素非零（折线不丢）."""
+        cfg = normalize_config("bar-line-dual-axis", CHART_TEMPLATES["bar-line-dual-axis"].default_config)
+        img = Image.open(io.BytesIO(to_png(render_chart("bar-line-dual-axis", cfg)))).convert("RGB")
+        counts = {c: n for n, c in img.getcolors(3_000_000)}
+        # 次值折线 YEAR_PROJECTED #8C8578 / OLIVE #7A8570
+        assert counts.get((140, 133, 120), 0) + counts.get((122, 133, 112), 0) > 0
 
 
 class TestSvgWriter:

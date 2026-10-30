@@ -44,7 +44,9 @@ test.describe("图表设计器次值联动", () => {
     await page.goto(`/w/${wid}/documents/${docId}`);
     await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("md-toolbar-chart").click();
-    // ADR 0058：多级列表 — 先选中模板项，右栏才出现「基于此模板新建」
+    // ADR 0058：多级列表 — 0070 新增「结构构成」模板后手风琴默认展开首个分类，
+    // 本用例模板在「对比」分类下，需先展开再选模板项
+    await page.locator(".cn-insert-chart-modal").getByText("对比", { exact: true }).click({ timeout: 20_000 });
     await page.getByTestId(`chart-template-item-${TEMPLATE_KEY}`).click({ timeout: 20_000 });
     await page.getByTestId(`chart-template-pick-${TEMPLATE_KEY}`).click();
 

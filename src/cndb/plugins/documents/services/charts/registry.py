@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -71,8 +72,16 @@ class ChartTemplate:
     row_columns: tuple[dict[str, Any], ...]
     series_min: int = 0  # 0 = 无系列维度（行内带固定列）
     series_max: int = 0
+    #: 行结构类型（归一 / 校验 / 设计器分派，需求卡片 0070）：
+    #: dual-axis（label+value+growth）| series（label+values[]）
+    #: | value（label+value）| xy（x+y）
+    row_kind: str = "series"
+    #: labels 归一按 default_config 声明回退（标准类型模板）；旧模板走兼容分支
+    labels_from_default: bool = False
     #: 保存前需要用户填写的文案键（labels）
     label_fields: tuple[dict[str, str], ...] = field(default=())
+    #: 样式开关声明（设计器按此生成样式表单，需求卡片 0070 C3）
+    style_fields: tuple[dict[str, Any], ...] = field(default=())
     default_config: dict[str, Any] = field(default_factory=dict)
     #: 模板代码指纹：布局 / schema 变更时递增，驱动 ETag 失效（D10）
     version: int = 1
@@ -83,6 +92,19 @@ CHART_CATEGORIES: tuple[ChartCategory, ...] = (
     ChartCategory("comparison", "对比", "现状与目标的逐项对比"),
     ChartCategory("comparison-bar", "对比-柱形", "柱形类对比图", parent="comparison"),
     ChartCategory("comparison-bar-h", "对比-条形", "条形类对比图", parent="comparison"),
+    # ── 标准类型分类（需求卡片 0070 C1/C2）──
+    ChartCategory("trend", "趋势分析", "指标随时间或顺序的变化走势"),
+    ChartCategory("trend-line", "趋势-折线", "多系列折线走势图", parent="trend"),
+    ChartCategory("trend-area", "趋势-面积", "面积 / 堆叠面积走势图", parent="trend"),
+    ChartCategory("composition-pie", "构成-饼图", "饼图 / 环形占比图", parent="composition"),
+    ChartCategory("composition-treemap", "构成-树状图", "矩形树图面积占比", parent="composition"),
+    ChartCategory("composition-funnel", "构成-漏斗", "阶段转化漏斗", parent="composition"),
+    ChartCategory("distribution", "分布关联", "数值分布与两变量关联"),
+    ChartCategory("distribution-scatter", "分布-散点", "两变量散点关联（可选趋势线）", parent="distribution"),
+    ChartCategory("distribution-heatmap", "分布-热力", "行列矩阵热力图", parent="distribution"),
+    ChartCategory("evaluation", "综合评价", "多维能力与目标达成评价"),
+    ChartCategory("evaluation-radar", "评价-雷达", "多维雷达能力图", parent="evaluation"),
+    ChartCategory("evaluation-gauge", "评价-仪表盘", "单指标达成仪表盘", parent="evaluation"),
 )
 
 CHART_TEMPLATES: dict[str, ChartTemplate] = {
@@ -95,6 +117,7 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
             description="柱（左轴主值，实际 / 测算两色）+ 折线（右轴次值），含规划期分界带与图注增速联动",
             row_min=2,
             row_max=24,
+            row_kind="dual-axis",
             row_columns=tuple(_DUAL_AXIS_COLUMNS),  # type: ignore[arg-type]
             label_fields=(
                 {"key": "legendActual", "label": "图例 · 主值（实际）"},
@@ -215,8 +238,637 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
     )
 }
 
+# ── 标准类型预设模板（需求卡片 0070 C1/C2）──
+
+#: 预设调色板：商务蓝（汇报演示）/ 经典纸面（正式报告）/ 明快数据（分析与总结）
+PALETTE_BUSINESS = ["#1E3D57", "#5C7283", "#8FA3B8", "#7C9A8C", "#B98A2F", "#6B4A7A"]
+PALETTE_CLASSIC = ["#8E2318", "#1E3D57", "#5F6B4E", "#B98A2F", "#6B4A7A", "#3F7E8C"]
+PALETTE_VIVID = ["#4E79A7", "#F28E2B", "#59A14F", "#E15759", "#76B7B2", "#EDC948"]
+PAPER_BUSINESS = "#F6F8FA"
+PAPER_CLASSIC = "#FBFAF5"
+PAPER_VIVID = "#FFFFFF"
+
+#: value 行结构（label + value）：饼图 / 漏斗 / 仪表盘 / 树状图
+_VALUE_COLUMNS = (
+    {"key": "label", "type": "text", "label": "名称"},
+    {"key": "value", "type": "number", "label": "数值", "required": True},
+)
+#: xy 行结构：散点图
+_XY_COLUMNS = (
+    {"key": "x", "type": "number", "label": "横轴值", "required": True},
+    {"key": "y", "type": "number", "label": "纵轴值", "required": True},
+)
+
+
+def _add_type(
+    out: dict[str, ChartTemplate],
+    *,
+    type_key: str,
+    category: str,
+    caption: dict[str, str],
+    labels: dict[str, Any],
+    rows: list[dict[str, Any]],
+    row_kind: str,
+    row_min: int,
+    row_max: int,
+    row_columns: tuple[dict[str, Any], ...],
+    series_min: int = 0,
+    series_max: int = 0,
+    label_fields: tuple[dict[str, str], ...] = (),
+    style_fields: tuple[dict[str, Any], ...] = (),
+    presets: tuple[dict[str, Any], ...],
+) -> None:
+    """按类型 schema × 预设（配色 / 纸底 / 样式）生成模板条目，登记进 ``out``.
+
+    预设共享布局函数与示例数据（``layouts`` 按 key 分派），差异全部落在
+    default_config（需求卡片 0070「口径」：预设 = 注册表条目，不引入嵌套概念）。
+    """
+    for preset in presets:
+        key = f"{type_key}-{preset['suffix']}"
+        default_config: dict[str, Any] = {
+            "caption": dict(caption),
+            "labels": copy.deepcopy(labels),
+            "theme": {"palette": list(preset["palette"]), "paper": preset["paper"]},
+            "data": {"rows": copy.deepcopy(rows)},
+        }
+        if preset.get("style"):
+            default_config["style"] = dict(preset["style"])
+        out[key] = ChartTemplate(
+            key=key,
+            category=category,
+            name=preset["name"],
+            description=preset["description"],
+            row_min=row_min,
+            row_max=row_max,
+            row_columns=row_columns,
+            series_min=series_min,
+            series_max=series_max,
+            row_kind=row_kind,
+            labels_from_default=True,
+            label_fields=label_fields,
+            style_fields=style_fields,
+            default_config=default_config,
+            version=1,
+        )
+
+
+def _standard_type_templates() -> dict[str, ChartTemplate]:
+    """10 类标准图表 × 3 套预设（需求卡片 0070 C1/C2）."""
+    out: dict[str, ChartTemplate] = {}
+    _add_type(
+        out,
+        type_key="line",
+        category="trend-line",
+        caption={
+            "no": "图 5-1",
+            "context": "",
+            "title": "新能源汽车产量走势（2021—2026年）",
+            "subtitle": "单位：万辆　｜　数据来源：示例数据",
+            "note": "注：2026年为行业预测值。\n数据来源：公开统计数据整理。",
+        },
+        labels={"series": ["纯电动", "插电混动", "燃料电池"], "unitY": "万辆"},
+        rows=[
+            {"label": "2021", "values": [279, 60, 0.2]},
+            {"label": "2022", "values": [411, 102, 0.3]},
+            {"label": "2023", "values": [568, 158, 0.6]},
+            {"label": "2024", "values": [689, 228, 1.0]},
+            {"label": "2025", "values": [762, 310, 1.6]},
+            {"label": "2026", "values": [820, 395, 2.4]},
+        ],
+        row_kind="series",
+        row_min=2,
+        row_max=24,
+        row_columns=({"key": "label", "type": "text", "label": "横轴"}, _SERIES_COLUMNS_TPL),
+        series_min=1,
+        series_max=6,
+        label_fields=({"key": "unitY", "label": "纵轴单位"},),
+        style_fields=(
+            {"key": "showMarkers", "label": "显示数据点"},
+            {"key": "showValues", "label": "显示数值标签"},
+        ),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "折线图 · 商务蓝",
+                "description": "多系列折线走势，藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+                "style": {"showMarkers": True, "showValues": False},
+            },
+            {
+                "suffix": "classic",
+                "name": "折线图 · 经典纸面",
+                "description": "多系列折线走势，经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+                "style": {"showMarkers": True, "showValues": False},
+            },
+            {
+                "suffix": "vivid",
+                "name": "折线图 · 明快数据",
+                "description": "多系列折线走势并带数值标签，明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+                "style": {"showMarkers": True, "showValues": True},
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="area",
+        category="trend-area",
+        caption={
+            "no": "图 5-2",
+            "context": "",
+            "title": "软件业务收入构成（2021—2026年）",
+            "subtitle": "单位：亿元　｜　信息技术服务占比持续提升",
+            "note": "注：收入构成按业务大类划分。\n数据来源：示例数据。",
+        },
+        labels={"series": ["软件产品", "信息技术服务", "信息安全", "嵌入式系统"], "unitY": "亿元"},
+        rows=[
+            {"label": "2021", "values": [2055, 5517, 310, 760]},
+            {"label": "2022", "values": [2402, 6335, 380, 820]},
+            {"label": "2023", "values": [2700, 7230, 450, 900]},
+            {"label": "2024", "values": [2950, 8200, 520, 980]},
+            {"label": "2025", "values": [3180, 9150, 600, 1060]},
+            {"label": "2026", "values": [3400, 10100, 680, 1150]},
+        ],
+        row_kind="series",
+        row_min=2,
+        row_max=24,
+        row_columns=({"key": "label", "type": "text", "label": "横轴"}, _SERIES_COLUMNS_TPL),
+        series_min=1,
+        series_max=6,
+        label_fields=({"key": "unitY", "label": "纵轴单位"},),
+        style_fields=(
+            {"key": "stacked", "label": "堆叠面积"},
+            {"key": "showValues", "label": "显示数值标签"},
+        ),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "面积图 · 商务蓝",
+                "description": "半透明填充面积走势，藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+                "style": {"stacked": False, "showValues": False},
+            },
+            {
+                "suffix": "classic",
+                "name": "面积图 · 经典纸面",
+                "description": "半透明填充面积走势，经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+                "style": {"stacked": False, "showValues": False},
+            },
+            {
+                "suffix": "stacked",
+                "name": "面积图 · 堆叠强调",
+                "description": "堆叠面积呈现构成变化，明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+                "style": {"stacked": True, "showValues": False},
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="bar",
+        category="comparison-bar",
+        caption={
+            "no": "图 5-3",
+            "context": "",
+            "title": "各区招商项目落地数（2024年与2025年）",
+            "subtitle": "单位：个　｜　2025年为全年快报数",
+            "note": "注：统计口径为当年新签约并落地项目。\n数据来源：区招商局。",
+        },
+        labels={"series": ["2024年", "2025年"], "unitY": "个"},
+        rows=[
+            {"label": "高新区", "values": [42, 56]},
+            {"label": "经开区", "values": [35, 48]},
+            {"label": "临港新城", "values": [28, 39]},
+            {"label": "科创走廊", "values": [22, 31]},
+            {"label": "老城片区", "values": [15, 20]},
+            {"label": "生态园区", "values": [10, 16]},
+        ],
+        row_kind="series",
+        row_min=2,
+        row_max=20,
+        row_columns=({"key": "label", "type": "text", "label": "类别"}, _SERIES_COLUMNS_TPL),
+        series_min=1,
+        series_max=6,
+        label_fields=({"key": "unitY", "label": "纵轴单位"},),
+        style_fields=(
+            {"key": "stacked", "label": "堆叠柱形"},
+            {"key": "showValues", "label": "显示数值标签"},
+        ),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "柱状图 · 商务蓝",
+                "description": "纵向分组柱形对比，藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+                "style": {"stacked": False, "showValues": False},
+            },
+            {
+                "suffix": "classic",
+                "name": "柱状图 · 经典纸面",
+                "description": "纵向分组柱形对比，经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+                "style": {"stacked": False, "showValues": False},
+            },
+            {
+                "suffix": "stacked",
+                "name": "柱状图 · 堆叠强调",
+                "description": "堆叠柱形并带合计标签，明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+                "style": {"stacked": True, "showValues": True},
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="pie",
+        category="composition-pie",
+        caption={
+            "no": "图 5-4",
+            "context": "",
+            "title": "产业营业收入构成（2025年）",
+            "subtitle": "单位：亿元　｜　占比按营收口径计算",
+            "note": "注：服务类业务包括充换电、电池租赁与检测、回收利用。\n数据来源：示例数据。",
+        },
+        labels={},
+        rows=[
+            {"label": "整车制造", "value": 1250},
+            {"label": "零部件配套", "value": 480},
+            {"label": "充换电服务", "value": 210},
+            {"label": "电池租赁与检测", "value": 120},
+            {"label": "回收利用", "value": 60},
+        ],
+        row_kind="value",
+        row_min=2,
+        row_max=12,
+        row_columns=_VALUE_COLUMNS,
+        label_fields=(),
+        style_fields=(
+            {"key": "donut", "label": "环形样式"},
+            {"key": "showPercent", "label": "显示百分比"},
+        ),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "饼图 · 商务蓝",
+                "description": "扇形占比 + 右侧图例清单，藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+                "style": {"donut": False, "showPercent": True},
+            },
+            {
+                "suffix": "classic",
+                "name": "饼图 · 经典纸面",
+                "description": "扇形占比 + 右侧图例清单，经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+                "style": {"donut": False, "showPercent": True},
+            },
+            {
+                "suffix": "donut",
+                "name": "环形图 · 明快数据",
+                "description": "环形样式带中心合计读数，明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+                "style": {"donut": True, "showPercent": True},
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="scatter",
+        category="distribution-scatter",
+        caption={
+            "no": "图 5-5",
+            "context": "",
+            "title": "研发投入与新产品收入关联分析",
+            "subtitle": "单位：万元　｜　样本为12家重点企业",
+            "note": "注：新产品收入为近三年立项产品累计收入。\n数据来源：企业调研。",
+        },
+        labels={"unitX": "研发投入（万元）", "unitY": "新产品收入（万元）"},
+        rows=[
+            {"x": 120, "y": 380},
+            {"x": 180, "y": 520},
+            {"x": 240, "y": 700},
+            {"x": 300, "y": 860},
+            {"x": 350, "y": 980},
+            {"x": 420, "y": 1150},
+            {"x": 480, "y": 1320},
+            {"x": 560, "y": 1480},
+            {"x": 640, "y": 1660},
+            {"x": 720, "y": 1850},
+            {"x": 800, "y": 2050},
+            {"x": 880, "y": 2260},
+        ],
+        row_kind="xy",
+        row_min=3,
+        row_max=60,
+        row_columns=_XY_COLUMNS,
+        label_fields=(
+            {"key": "unitX", "label": "横轴单位"},
+            {"key": "unitY", "label": "纵轴单位"},
+        ),
+        style_fields=({"key": "showTrend", "label": "显示趋势参考线"},),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "散点图 · 商务蓝",
+                "description": "两变量散点关联，藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+                "style": {"showTrend": False},
+            },
+            {
+                "suffix": "classic",
+                "name": "散点图 · 经典纸面",
+                "description": "两变量散点关联，经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+                "style": {"showTrend": False},
+            },
+            {
+                "suffix": "trend",
+                "name": "散点图 · 趋势关联",
+                "description": "散点 + 最小二乘趋势参考线，明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+                "style": {"showTrend": True},
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="radar",
+        category="evaluation-radar",
+        caption={
+            "no": "图 5-6",
+            "context": "",
+            "title": "企业综合能力对标（百分制）",
+            "subtitle": "对标行业标杆与行业均值",
+            "note": "注：各维度得分经专家评议折算为百分制。\n数据来源：示例数据。",
+        },
+        labels={"series": ["本企业", "行业标杆", "行业均值"]},
+        rows=[
+            {"label": "研发投入", "values": [72, 90, 60]},
+            {"label": "产能规模", "values": [85, 88, 70]},
+            {"label": "渠道覆盖", "values": [60, 92, 62]},
+            {"label": "服务能力", "values": [78, 90, 65]},
+            {"label": "人才密度", "values": [66, 85, 58]},
+            {"label": "数字化水平", "values": [80, 92, 63]},
+        ],
+        row_kind="series",
+        row_min=3,
+        row_max=10,
+        row_columns=({"key": "label", "type": "text", "label": "维度"}, _SERIES_COLUMNS_TPL),
+        series_min=1,
+        series_max=4,
+        style_fields=({"key": "fill", "label": "填充系列区域"},),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "雷达图 · 商务蓝",
+                "description": "多维能力雷达（区域填充），藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+                "style": {"fill": True},
+            },
+            {
+                "suffix": "classic",
+                "name": "雷达图 · 经典纸面",
+                "description": "多维能力雷达（仅描线），经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+                "style": {"fill": False},
+            },
+            {
+                "suffix": "fill",
+                "name": "雷达图 · 填充强调",
+                "description": "多维能力雷达（区域填充强调），明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+                "style": {"fill": True},
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="funnel",
+        category="composition-funnel",
+        caption={
+            "no": "图 5-7",
+            "context": "",
+            "title": "招商线索转化漏斗（2025年）",
+            "subtitle": "单位：家　｜　签约转化率 8.0%",
+            "note": "注：转化率 = 签约落地数 / 线索获取数。\n数据来源：招商系统。",
+        },
+        labels={},
+        rows=[
+            {"label": "线索获取", "value": 1200},
+            {"label": "意向洽谈", "value": 640},
+            {"label": "实地考察", "value": 320},
+            {"label": "合同谈判", "value": 180},
+            {"label": "签约落地", "value": 96},
+        ],
+        row_kind="value",
+        row_min=3,
+        row_max=8,
+        row_columns=_VALUE_COLUMNS,
+        style_fields=({"key": "showRates", "label": "显示阶段转化率"},),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "漏斗图 · 商务蓝",
+                "description": "居中递缩漏斗 + 阶段转化率，藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+                "style": {"showRates": True},
+            },
+            {
+                "suffix": "classic",
+                "name": "漏斗图 · 经典纸面",
+                "description": "居中递缩漏斗 + 阶段转化率，经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+                "style": {"showRates": True},
+            },
+            {
+                "suffix": "vivid",
+                "name": "漏斗图 · 明快数据",
+                "description": "居中递缩漏斗 + 阶段转化率，明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+                "style": {"showRates": True},
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="gauge",
+        category="evaluation-gauge",
+        caption={
+            "no": "图 5-8",
+            "context": "",
+            "title": "年度营收目标完成率",
+            "subtitle": "截至2025年三季度末",
+            "note": "注：完成率 = 累计营收 / 年度目标。\n数据来源：财务快报。",
+        },
+        labels={"max": "100", "unit": "%"},
+        rows=[{"label": "年度营收目标完成率", "value": 76.5}],
+        row_kind="value",
+        row_min=1,
+        row_max=1,
+        row_columns=_VALUE_COLUMNS,
+        label_fields=(
+            {"key": "max", "label": "量程上限"},
+            {"key": "unit", "label": "单位"},
+        ),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "仪表盘 · 商务蓝",
+                "description": "单指标达成仪表盘（弧 + 指针 + 刻度），藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+            },
+            {
+                "suffix": "classic",
+                "name": "仪表盘 · 经典纸面",
+                "description": "单指标达成仪表盘（弧 + 指针 + 刻度），经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+            },
+            {
+                "suffix": "vivid",
+                "name": "仪表盘 · 明快数据",
+                "description": "单指标达成仪表盘（弧 + 指针 + 刻度），明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="treemap",
+        category="composition-treemap",
+        caption={
+            "no": "图 5-9",
+            "context": "",
+            "title": "产业营收结构（2025年）",
+            "subtitle": "单位：亿元　｜　矩形面积按营收占比",
+            "note": "注：口径与饼图一致，面积表示占比大小。\n数据来源：示例数据。",
+        },
+        labels={},
+        rows=[
+            {"label": "整车制造", "value": 1250},
+            {"label": "零部件配套", "value": 480},
+            {"label": "充换电服务", "value": 210},
+            {"label": "汽车金融", "value": 150},
+            {"label": "电池租赁与检测", "value": 120},
+            {"label": "检测认证", "value": 85},
+            {"label": "后市场服务", "value": 95},
+            {"label": "回收利用", "value": 60},
+        ],
+        row_kind="value",
+        row_min=3,
+        row_max=24,
+        row_columns=_VALUE_COLUMNS,
+        style_fields=({"key": "showValues", "label": "显示数值与占比"},),
+        presets=(
+            {
+                "suffix": "business",
+                "name": "树状图 · 商务蓝",
+                "description": "squarified 矩形树图（数值 + 占比），藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+                "style": {"showValues": True},
+            },
+            {
+                "suffix": "classic",
+                "name": "树状图 · 经典纸面",
+                "description": "squarified 矩形树图（数值 + 占比），经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+                "style": {"showValues": True},
+            },
+            {
+                "suffix": "vivid",
+                "name": "树状图 · 明快数据",
+                "description": "squarified 矩形树图（仅占比），明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+                "style": {"showValues": False},
+            },
+        ),
+    )
+    _add_type(
+        out,
+        type_key="heatmap",
+        category="distribution-heatmap",
+        caption={
+            "no": "图 5-10",
+            "context": "",
+            "title": "各部门季度目标达成率（2025年）",
+            "subtitle": "单位：%　｜　颜色越深达成率越高",
+            "note": "注：达成率 = 实际完成 / 季度目标。\n数据来源：绩效系统。",
+        },
+        labels={"series": ["一季度", "二季度", "三季度", "四季度"]},
+        rows=[
+            {"label": "研发部", "values": [82, 88, 91, 95]},
+            {"label": "生产部", "values": [90, 86, 89, 93]},
+            {"label": "市场部", "values": [70, 78, 85, 90]},
+            {"label": "供应链", "values": [88, 92, 84, 89]},
+            {"label": "客服部", "values": [75, 80, 83, 88]},
+            {"label": "职能部门", "values": [85, 87, 90, 92]},
+        ],
+        row_kind="series",
+        row_min=3,
+        row_max=12,
+        row_columns=({"key": "label", "type": "text", "label": "行"}, _SERIES_COLUMNS_TPL),
+        series_min=3,
+        series_max=10,
+        presets=(
+            {
+                "suffix": "business",
+                "name": "热力图 · 商务蓝",
+                "description": "行列矩阵热力（色阶 + 数值），藏蓝商务配色，适配汇报演示场景",
+                "palette": PALETTE_BUSINESS,
+                "paper": PAPER_BUSINESS,
+            },
+            {
+                "suffix": "classic",
+                "name": "热力图 · 经典纸面",
+                "description": "行列矩阵热力（色阶 + 数值），经典红蓝纸面配色，适配正式报告文档",
+                "palette": PALETTE_CLASSIC,
+                "paper": PAPER_CLASSIC,
+            },
+            {
+                "suffix": "vivid",
+                "name": "热力图 · 明快数据",
+                "description": "行列矩阵热力（色阶 + 数值），明快配色，适配数据分析与项目总结",
+                "palette": PALETTE_VIVID,
+                "paper": PAPER_VIVID,
+            },
+        ),
+    )
+    return out
+
+
+CHART_TEMPLATES.update(_standard_type_templates())
+
 #: 渲染器全局指纹：管线代码变更时递增，参与 ETag（D10）
-RENDERER_VERSION = 1
+#: v2（需求卡片 0070）：标准类型布局 + path 填充写端 + 折线路径平移格式修复
+#: （历史粘连形态导致 PNG 导出丢折线 / 扇形）
+RENDERER_VERSION = 2
 
 
 def get_template(template_key: str) -> ChartTemplate | None:
@@ -316,7 +968,7 @@ def _normalize_rows_dual_axis(raw_rows: Any) -> list[dict[str, Any]]:
 
 
 def _normalize_rows_series(raw_rows: Any, series_count: int) -> list[dict[str, Any]]:
-    """堆叠 / 分组模板的行归一：values 截断 / 补零到系列数."""
+    """系列类模板的行归一：values 截断 / 补空到系列数."""
     rows: list[dict[str, Any]] = []
     if not isinstance(raw_rows, list):
         return rows
@@ -334,6 +986,55 @@ def _normalize_rows_series(raw_rows: Any, series_count: int) -> list[dict[str, A
     return rows
 
 
+def _normalize_rows_value(raw_rows: Any) -> list[dict[str, Any]]:
+    """value 行结构（label + value）归一：饼图 / 漏斗 / 仪表盘 / 树状图."""
+    rows: list[dict[str, Any]] = []
+    if not isinstance(raw_rows, list):
+        return rows
+    for row in raw_rows:
+        if not isinstance(row, dict):
+            continue
+        rows.append(
+            {
+                "label": _coerce_str(row.get("label"), ""),
+                "value": _coerce_number(row.get("value")),
+            }
+        )
+    return rows
+
+
+def _normalize_rows_xy(raw_rows: Any) -> list[dict[str, Any]]:
+    """xy 行结构（x + y）归一：散点图."""
+    rows: list[dict[str, Any]] = []
+    if not isinstance(raw_rows, list):
+        return rows
+    for row in raw_rows:
+        if not isinstance(row, dict):
+            continue
+        rows.append({"x": _coerce_number(row.get("x")), "y": _coerce_number(row.get("y"))})
+    return rows
+
+
+def _normalize_style(template: ChartTemplate, raw: Any) -> dict[str, Any] | None:
+    """样式开关归一（需求卡片 0070 C3）：按 default_config.style 声明回退.
+
+    无 style 节的模板（旧模板 / 无样式类型）返回 None，归一输出形状不变（C4）。
+    """
+    defaults = template.default_config.get("style")
+    if not isinstance(defaults, dict):
+        return None
+    out = dict(defaults)
+    if isinstance(raw, dict):
+        for key, default_value in defaults.items():
+            if key in raw:
+                if isinstance(default_value, bool):
+                    # 非布尔脏值回退默认（I6：坏值回退，不做 truthy 转换）
+                    out[key] = raw[key] if isinstance(raw[key], bool) else default_value
+                else:
+                    out[key] = _coerce_str(raw[key], str(default_value))
+    return out
+
+
 def _labels_for(template: ChartTemplate, raw: Any) -> dict[str, Any]:
     """labels 归一：按模板声明回退默认；未知键忽略."""
     defaults: dict[str, Any] = {}
@@ -349,6 +1050,27 @@ def _labels_for(template: ChartTemplate, raw: Any) -> dict[str, Any]:
             "unitRight": "",
         }
         out = _coerce_str_dict(raw, defaults)
+    elif template.labels_from_default:
+        # 标准类型（需求卡片 0070）：按 default_config.labels 声明逐键归一；
+        # series 为系列名数组，长度即系列数（布局 / 设计器均以此为准）
+        declared = template.default_config.get("labels") or {}
+        raw_dict: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        out: dict[str, Any] = {}
+        for key, default_value in declared.items():
+            if isinstance(default_value, list):
+                raw_list = raw_dict.get(key)
+                if isinstance(raw_list, list):
+                    names = [
+                        _coerce_str(item, f"系列{i + 1}")
+                        for i, item in enumerate(raw_list[: max(template.series_max, 1)])
+                    ]
+                else:
+                    names = [_coerce_str(item, "") for item in default_value]
+                while template.series_min and len(names) < template.series_min:
+                    names.append(f"系列{len(names) + 1}")
+                out[key] = names
+            else:
+                out[key] = _coerce_str(raw_dict.get(key), str(default_value))
     else:
         raw_dict = raw if isinstance(raw, dict) else {}
         series = raw_dict.get("series")
@@ -387,9 +1109,10 @@ def normalize_config(template_key: str, config: Any) -> dict[str, Any]:
     caption = _coerce_str_dict(raw.get("caption"), _DEFAULT_CAPTION)
     labels = _labels_for(template, raw.get("labels"))
     theme = _normalize_theme(template, raw.get("theme"))
+    style = _normalize_style(template, raw.get("style"))
     raw_data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
 
-    if template.key == "bar-line-dual-axis":
+    if template.row_kind == "dual-axis":
         data: dict[str, Any] = {
             "rows": _normalize_rows_dual_axis(raw_data.get("rows")),
             "actualCount": template.default_config["data"]["actualCount"],
@@ -397,11 +1120,28 @@ def normalize_config(template_key: str, config: Any) -> dict[str, Any]:
         actual_count = _coerce_number(raw_data.get("actualCount"))
         if actual_count is not None:
             data["actualCount"] = int(max(1, min(actual_count, max(len(data["rows"]), 1))))
+    elif template.row_kind == "value":
+        data = {"rows": _normalize_rows_value(raw_data.get("rows"))}
+    elif template.row_kind == "xy":
+        data = {"rows": _normalize_rows_xy(raw_data.get("rows"))}
+    elif template.labels_from_default:
+        # 标准类型系列模板：系列数以 labels.series 为准（缺省回退首行长度）
+        named_series = labels.get("series")
+        if isinstance(named_series, list) and named_series:
+            series_count = max(
+                template.series_min or 1, min(len(named_series), template.series_max or len(named_series))
+            )
+        else:
+            series_count = _effective_series_count(template, raw_data)
+        data = {"rows": _normalize_rows_series(raw_data.get("rows"), series_count)}
     else:
         series_count = _effective_series_count(template, raw_data)
         data = {"rows": _normalize_rows_series(raw_data.get("rows"), series_count)}
 
-    return {"caption": caption, "labels": labels, "theme": theme, "data": data}
+    out: dict[str, Any] = {"caption": caption, "labels": labels, "theme": theme, "data": data}
+    if style is not None:
+        out["style"] = style
+    return out
 
 
 def validate_config(template_key: str, config: Any) -> list[str]:
@@ -423,7 +1163,7 @@ def validate_config(template_key: str, config: Any) -> list[str]:
     if not (template.row_min <= len(rows) <= template.row_max):
         errors.append(f"行数须在 {template.row_min}–{template.row_max} 之间（当前 {len(rows)}）")
 
-    if template.key == "bar-line-dual-axis":
+    if template.row_kind == "dual-axis":
         for i, row in enumerate(rows):
             if not isinstance(row, dict):
                 errors.append(f"第 {i + 1} 行必须是对象")
@@ -441,6 +1181,24 @@ def validate_config(template_key: str, config: Any) -> list[str]:
         count = template.default_config["data"]["actualCount"] if raw_count is None else _coerce_number(raw_count)
         if count is None or not (1 <= count <= len(rows)):
             errors.append("actualCount（实际值年份数）须在 1 至行数之间")
+    elif template.row_kind == "value":
+        for i, row in enumerate(rows):
+            if not isinstance(row, dict):
+                errors.append(f"第 {i + 1} 行必须是对象")
+                continue
+            if not _coerce_str(row.get("label"), "").strip():
+                errors.append(f"第 {i + 1} 行缺少行标签")
+            if _coerce_number(row.get("value")) is None:
+                errors.append(f"第 {i + 1} 行数值必须是数字")
+    elif template.row_kind == "xy":
+        for i, row in enumerate(rows):
+            if not isinstance(row, dict):
+                errors.append(f"第 {i + 1} 行必须是对象")
+                continue
+            if _coerce_number(row.get("x")) is None:
+                errors.append(f"第 {i + 1} 行横轴值必须是数字")
+            if _coerce_number(row.get("y")) is None:
+                errors.append(f"第 {i + 1} 行纵轴值必须是数字")
     else:
         series_count: int | None = None
         for i, row in enumerate(rows):
@@ -511,7 +1269,9 @@ def templates_payload() -> dict[str, Any]:
                 "row_columns": list(t.row_columns),
                 "series_min": t.series_min,
                 "series_max": t.series_max,
+                "row_kind": t.row_kind,
                 "label_fields": [dict(f) for f in t.label_fields],
+                "style_fields": [dict(f) for f in t.style_fields],
                 "default_config": t.default_config,
             }
             for t in CHART_TEMPLATES.values()
