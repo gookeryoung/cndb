@@ -5789,6 +5789,19 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   margin-left: auto;
 }
 
+/* ── 区块启用按钮（可视化 / 分组汇总 / 计算模板，激活态主色高亮） ── */
+.cn-an-block-toggle {
+  font-size: var(--cn-text-2xs);
+  white-space: nowrap;
+}
+
+/* 连体按钮组内相邻按钮共享边框，激活按钮的右边框会被右侧按钮盖住：
+   提升激活按钮层级，让完整边框（含右侧主色描边）绘制在相邻按钮之上 */
+.cn-an-block-toggle.ant-btn-primary {
+  position: relative;
+  z-index: 1;
+}
+
 .cn-an-run-hint {
   font-size: var(--cn-text-2xs);
   white-space: nowrap;
@@ -5805,6 +5818,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-an-top-data {
   flex: 1 1 60%;
   min-width: 0;
+  /* 拉伸链路：让内层 AnalyticsBox 撑满行高，与右侧推荐盒底边对齐 */
+  display: flex;
+  flex-direction: column;
+}
+
+.cn-an-top-data > .cn-an-box {
+  flex: 1 1 auto;
 }
 
 .cn-an-top-recommend {
@@ -5812,6 +5832,19 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   min-width: 0;
   overflow: hidden;
   transition: flex-basis var(--cn-motion-base, 0.2s) ease;
+  display: flex;
+  flex-direction: column;
+}
+
+.cn-an-top-recommend > .cn-an-recommend-collapsed,
+.cn-an-top-recommend > div {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.cn-an-top-recommend > div > .cn-an-box {
+  flex: 1 1 auto;
 }
 
 /* 收起态窄条：内部空态文字压成单行竖排省空间 */

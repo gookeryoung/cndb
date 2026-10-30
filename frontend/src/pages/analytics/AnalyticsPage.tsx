@@ -40,6 +40,10 @@ import type {
   AnalyticsTemplateUpdate,
 } from '@/api/analytics'
 import { useLlmAction } from '@/hooks/useLlmAction'
+import { useAuthStore } from '@/store/auth'
+import {
+  DEFAULT_ANALYTICS_BLOCKS, useAnalyticsBlocksStore, type AnalyticsBlockKey,
+} from '@/store/analyticsBlocks'
 import { AnalyticsAiPanel } from './AnalyticsAiPanel'
 import { AnalyticsBox } from './AnalyticsBox'
 import { FormulaPanel } from './FormulaPanel'
@@ -54,6 +58,8 @@ import {
   EMPTY_SUMMARY,
   applyExampleConfig,
   buildTemplateConfig,
+  canRunAnalysis,
+  chartConfigured,
   collectFormulaErrors,
   isDirty,
   mergeFormulas,
@@ -98,6 +104,14 @@ export default function AnalyticsPage() {
   const templateParam = searchParams.get('template')
   // 未配置大模型时隐藏 AI 生成分析面板与 AI 解读按钮（需求 0069）
   const llmConfigured = useLlmConfigured()
+
+  // ── 区块启用开关（可视化 / 分组汇总 / 计算模板；按用户 + 本机记忆，默认仅启用可视化） ──
+  const authUserId = useAuthStore(s => s.user?.id)
+  const blockUserId = authUserId != null ? String(authUserId) : 'anon'
+  const blockByUser = useAnalyticsBlocksStore(s => s.byUser)
+  const setBlocks = useAnalyticsBlocksStore(s => s.setBlocks)
+  const blocks = blockByUser[blockUserId] ?? DEFAULT_ANALYTICS_BLOCKS
+  const toggleBlock = (key: AnalyticsBlockKey, enabled: boolean) => setBlocks(blockUserId, { [key]: enabled })
 
   // ── 分析配置 ──
   const [tableId, setTableId] = useState<number | null>(null)
@@ -173,7 +187,15 @@ export default function AnalyticsPage() {
   )
   const errors = useMemo(() => collectFormulaErrors(formulas, serverErrors), [formulas, serverErrors])
   const hasError = Object.keys(errors).length > 0
-  const canRun = !!tableId && validFormulas.length > 0 && !hasError
+  const canRun = canRunAnalysis({
+    tableId,
+    validFormulaCount: validFormulas.length,
+    chart,
+    summary,
+    hasError,
+  })
+  /** 无公式但图表 / 汇总可用时仍可运行；三者皆空才提示 */
+  const noRunnableConfig = validFormulas.length === 0 && !chartConfigured(chart) && !summaryConfigured(summary)
 
   const currentSnapshot = useMemo(
     () => templateSnapshot({ name: templateName, description: templateDesc, tableId, formulas, chart, summary }),
@@ -725,6 +747,28 @@ export default function AnalyticsPage() {
         </div>
 
         <div className="cn-an-head-actions">
+          {/* 连体按钮组：不设 size，与周围默认尺寸控件等高 */}
+          <Space.Compact className="cn-an-block-toggles" data-testid="analytics-block-toggles">
+            {([
+              { key: 'chart', label: '可视化', icon: <BarChartOutlined /> },
+              { key: 'summary', label: '分组汇总', icon: <GroupOutlined /> },
+              { key: 'formula', label: '计算模板', icon: <FunctionOutlined /> },
+            ] as Array<{ key: AnalyticsBlockKey; label: string; icon: JSX.Element }>).map(item => (
+              <Button
+                key={item.key}
+                className="cn-an-block-toggle"
+                data-testid={`analytics-block-toggle-${item.key}`}
+                aria-label={`启用${item.label}区块`}
+                aria-pressed={blocks[item.key]}
+                type={blocks[item.key] ? 'primary' : 'default'}
+                ghost={blocks[item.key]}
+                icon={item.icon}
+                onClick={() => toggleBlock(item.key, !blocks[item.key])}
+              >
+                {item.label}
+              </Button>
+            ))}
+          </Space.Compact>
           <Select
             data-testid="analytics-template-select"
             style={{ width: 200 }}
@@ -804,8 +848,8 @@ export default function AnalyticsPage() {
             </Button>
           </Tooltip>
           {!tableId && <Text type="secondary" className="cn-an-run-hint">请先选择分析表</Text>}
-          {!!tableId && validFormulas.length === 0 && (
-            <Text type="secondary" className="cn-an-run-hint">请至少填写一条公式</Text>
+          {!!tableId && noRunnableConfig && (
+            <Text type="secondary" className="cn-an-run-hint">请填写公式，或配置图表 / 分组汇总后再运行</Text>
           )}
           {!!tableId && hasError && (
             <Text type="danger" className="cn-an-run-hint">公式存在错误，修正后可运行</Text>
@@ -922,7 +966,55 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        {/* ── 第一段：计算模板 → 描述统计 + 派生数据 ── */}
+        {/* ── 第一段：可视化 → 图表 ── */}
+        {blocks.chart && (
+        <section className="cn-an-band" data-testid="analytics-band-chart">
+          <div className="cn-an-band-config">
+            <ChartPanel
+              chart={chart}
+              onChange={setChart}
+              options={chartOptions}
+              tableFields={tableFields}
+            />
+          </div>
+          <div className="cn-an-band-result">
+            {result ? (
+              <ChartResultBox
+                result={result}
+                chart={chart}
+                fields={syntheticFields}
+                title={resultTitle}
+                onAiExplain={llmConfigured ? requestExplain : undefined}
+                aiExplainLoading={explainAi.loading}
+              />
+            ) : (
+              <ResultPlaceholder text="运行分析后，这里显示图表" />
+            )}
+          </div>
+        </section>
+        )}
+
+        {/* ── 第二段：分组汇总 → 汇总表 ── */}
+        {blocks.summary && (
+        <section className="cn-an-band" data-testid="analytics-band-summary">
+          <div className="cn-an-band-config">
+            <SummaryPanel
+              summary={summary}
+              onChange={setSummary}
+              groupOptions={groupOptions}
+              metricOptions={chartOptions}
+            />
+          </div>
+          <div className="cn-an-band-result">
+            {result
+              ? <SummaryResultBox result={result} title={resultTitle} />
+              : <ResultPlaceholder text="运行分析后，这里显示分组汇总表" />}
+          </div>
+        </section>
+        )}
+
+        {/* ── 第三段：计算模板 → 描述统计 + 派生数据 ── */}
+        {blocks.formula && (
         <section className="cn-an-band" data-testid="analytics-band-formula">
           <div className="cn-an-band-config">
             <FormulaPanel
@@ -955,49 +1047,7 @@ export default function AnalyticsPage() {
             )}
           </div>
         </section>
-
-        {/* ── 第二段：可视化 → 图表 ── */}
-        <section className="cn-an-band" data-testid="analytics-band-chart">
-          <div className="cn-an-band-config">
-            <ChartPanel
-              chart={chart}
-              onChange={setChart}
-              options={chartOptions}
-              tableFields={tableFields}
-            />
-          </div>
-          <div className="cn-an-band-result">
-            {result ? (
-              <ChartResultBox
-                result={result}
-                chart={chart}
-                fields={syntheticFields}
-                title={resultTitle}
-                onAiExplain={llmConfigured ? requestExplain : undefined}
-                aiExplainLoading={explainAi.loading}
-              />
-            ) : (
-              <ResultPlaceholder text="运行分析后，这里显示图表" />
-            )}
-          </div>
-        </section>
-
-        {/* ── 第三段：分组汇总 → 汇总表 ── */}
-        <section className="cn-an-band" data-testid="analytics-band-summary">
-          <div className="cn-an-band-config">
-            <SummaryPanel
-              summary={summary}
-              onChange={setSummary}
-              groupOptions={groupOptions}
-              metricOptions={chartOptions}
-            />
-          </div>
-          <div className="cn-an-band-result">
-            {result
-              ? <SummaryResultBox result={result} title={resultTitle} />
-              : <ResultPlaceholder text="运行分析后，这里显示分组汇总表" />}
-          </div>
-        </section>
+        )}
       </div>
 
       {llmConfigured && (

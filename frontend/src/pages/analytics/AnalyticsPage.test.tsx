@@ -7,6 +7,7 @@ import { Route, Routes } from 'react-router-dom'
 import AnalyticsPage from './AnalyticsPage'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
+import { useAnalyticsBlocksStore } from '@/store/analyticsBlocks'
 import type { AnalyticsTemplate } from '@/api/analytics'
 
 const WID = 1
@@ -277,6 +278,8 @@ async function waitTemplateLoaded(name = TPL_MAIN.name) {
 
 beforeEach(() => {
   setupHandlers()
+  // 存量用例覆盖三段带状布局，全部启用区块（产品默认仅启用可视化，另见下方「区块启用开关」describe）
+  useAnalyticsBlocksStore.setState({ byUser: { anon: { chart: true, summary: true, formula: true } } })
   Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:mock'), writable: true, configurable: true })
   Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), writable: true, configurable: true })
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
@@ -747,5 +750,60 @@ describe('AnalyticsPage', () => {
     expect(await screen.findByTestId('analytics-ai-explain-error'))
       .toHaveTextContent('上游模型服务不可用（502）')
     expect(screen.getByTestId('analytics-ai-explain-regenerate')).toBeInTheDocument()
+  })
+})
+
+describe('AnalyticsPage 区块启用开关', () => {
+  beforeEach(() => {
+    setupHandlers()
+    // 回到产品默认：仅启用可视化；清掉 localStorage 残留，验证默认态与持久化
+    useAnalyticsBlocksStore.setState({ byUser: {} })
+    localStorage.removeItem('cndb_analytics_blocks')
+    Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:mock'), writable: true, configurable: true })
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), writable: true, configurable: true })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+  })
+
+  it('默认仅启用可视化：分组汇总与计算模板区块不渲染，开关态正确', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+
+    expect(screen.getByTestId('analytics-band-chart')).toBeInTheDocument()
+    expect(screen.queryByTestId('analytics-band-summary')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('analytics-band-formula')).not.toBeInTheDocument()
+
+    // 按钮化开关：aria-pressed 表达激活态
+    expect(screen.getByTestId('analytics-block-toggle-chart')).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByTestId('analytics-block-toggle-summary')).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByTestId('analytics-block-toggle-formula')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('打开分组汇总开关后区块出现，并持久化到 localStorage', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+
+    // 初始无汇总区块；打开开关后出现
+    expect(screen.queryByTestId('analytics-band-summary')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('analytics-block-toggle-summary'))
+    expect(screen.getByTestId('analytics-band-summary')).toBeInTheDocument()
+
+    // 持久化：按用户（未登录为 anon）写入 localStorage（persist 外层包 { state, version }）
+    await waitFor(() => {
+      const stored = JSON.parse(localStorage.getItem('cndb_analytics_blocks') ?? '{}')
+      expect(stored.state?.byUser?.anon?.summary).toBe(true)
+    })
+  })
+
+  it('开关状态按用户记忆：刷新（重新渲染）后保持', async () => {
+    const first = renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    fireEvent.click(screen.getByTestId('analytics-block-toggle-formula'))
+    expect(screen.getByTestId('analytics-band-formula')).toBeInTheDocument()
+    first.unmount()
+
+    // 重新渲染（模拟刷新）：计算模板区块仍启用
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    expect(screen.getByTestId('analytics-band-formula')).toBeInTheDocument()
   })
 })
