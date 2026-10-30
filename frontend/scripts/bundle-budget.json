@@ -12,7 +12,8 @@
     "2026-10-24 fix(ci): 移除 KlineView 后 echarts/simple-statistics 共享 chunk 合并进 ChartView（lazy chunk，首屏不变，总量未增），按实测收口基线",
     "2026-10-25 feat(help): 帮助文档整页为独立 lazy chunk（ADR 0029 P2），锁定体积防回归",
     "2026-10-26 feat(help): 帮助文档四级层级（ADR 0036）把正文拆为 L3 小节 + L4 条目并新增 6 个主题，帮助正文体积由 10.06 涨到 25.60 KiB；该 chunk 已是 /help 单独 lazy chunk，不进首屏，正文为静态文案无可 lazy 化依赖",
-    "2026-10-28 ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy"
+    "2026-10-28 ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
+    "2026-10-30 feat(documents): MHTML 预览/导入功能的帮助文档（quickStart 教程 + tutorials 章节），属帮助页静态文案，该 chunk 已是 /help 单独 lazy chunk，不进首屏，无 Dialog 可 lazy"
   ],
   "chunks": [
     {
@@ -48,10 +49,10 @@
       "resolve": {
         "assetPattern": "^HelpDocsPage-.*\\.js$"
       },
-      "baseline": 27537,
-      "reason": "ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
-      "updatedAt": "2026-10-28",
-      "commit": "c8adba43"
+      "baseline": 29418,
+      "reason": "feat(documents): MHTML 预览/导入功能的帮助文档（quickStart 教程 + tutorials 章节），属帮助页静态文案，该 chunk 已是 /help 单独 lazy chunk，不进首屏，无 Dialog 可 lazy",
+      "updatedAt": "2026-10-30",
+      "commit": "c8da6543"
     }
   ]
 }
