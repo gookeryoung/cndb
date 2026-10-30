@@ -3444,7 +3444,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   user-select: none;
 }
 
-/* 顶栏品牌字：展示字体；内容现为中文品牌名「晶格」，中文不适用拉丁负字距 */
+/* 顶栏品牌字：展示字体；内容现为中文品牌名「晶格协同」，中文不适用拉丁负字距 */
 .cn-brand-word {
   font-family: var(--cn-font-display);
   font-size: var(--cn-text-lg);
@@ -5794,6 +5794,39 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: nowrap;
 }
 
+/* ── 顶部并列：数据源 + 智能推荐（未选表时推荐收起为窄条，选表后向右展开） ── */
+.cn-an-top {
+  display: flex;
+  align-items: stretch;
+  gap: var(--cn-space-md);
+  min-width: 0;
+}
+
+.cn-an-top-data {
+  flex: 1 1 60%;
+  min-width: 0;
+}
+
+.cn-an-top-recommend {
+  flex: 0 0 220px;
+  min-width: 0;
+  overflow: hidden;
+  transition: flex-basis var(--cn-motion-base, 0.2s) ease;
+}
+
+/* 收起态窄条：内部空态文字压成单行竖排省空间 */
+.cn-an-top:not(.cn-an-top--expanded) .cn-an-recommend-collapsed .cn-an-box-body {
+  padding: var(--cn-space-md) var(--cn-space-sm);
+}
+
+.cn-an-top--expanded .cn-an-top-data {
+  flex: 1 1 45%;
+}
+
+.cn-an-top--expanded .cn-an-top-recommend {
+  flex: 1 1 55%;
+}
+
 /* ── 三段带状工作台：数据源/推荐全宽置顶，每个分析环节一行「左配置 + 右对应结果」 ── */
 .cn-an-workbench {
   display: flex;
@@ -5806,7 +5839,8 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   display: grid;
   grid-template-columns: minmax(0, 420px) minmax(0, 1fr);
   gap: var(--cn-space-md);
-  align-items: start;
+  /* 左右两列拉伸到本段较大者的高度，避免矮列下方留出大片空白 */
+  align-items: stretch;
 }
 
 .cn-an-band-config,
@@ -5815,6 +5849,17 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   flex-direction: column;
   gap: var(--cn-space-md);
   min-width: 0;
+}
+
+/* 列内最后一个盒子弹性填充剩余高度，使两列底边对齐 */
+.cn-an-band-config > :last-child,
+.cn-an-band-result > :last-child {
+  flex: 1 1 auto;
+}
+
+.cn-an-band .cn-an-box-body {
+  /* 盒子被拉高时内容区随之撑满，保持边框贴合不悬空 */
+  flex: 1 1 auto;
 }
 
 /* 未运行时的结果占位：与配置同排的虚线空态 */
@@ -5831,6 +5876,16 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 @media (max-width: 1023.98px) {
   .cn-an-band {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 窄屏：顶部并列退化为纵向堆叠，推荐面板不再收窄 */
+  .cn-an-top {
+    flex-direction: column;
+  }
+
+  .cn-an-top-recommend,
+  .cn-an-top--expanded .cn-an-top-recommend {
+    flex: 1 1 auto;
   }
 }
 

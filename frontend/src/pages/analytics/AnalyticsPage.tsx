@@ -5,7 +5,8 @@
  * 页面能力：
  * - 模板：加载 / 保存 / 另存为副本 / 重命名 / 删除；`?template=<id>` 深链刷新保持；
  *   有未保存修改时切换模板先确认
- * - 布局：数据源与智能推荐全宽置顶；下方按分析环节分三段带状布局，左配置右对应结果——
+ * - 布局：顶部「数据源 + 智能推荐」左右并列，未选表时推荐收起为窄条（表名称、维度为空），
+ *   选表后向右展开；下方按分析环节分三段带状布局，左配置右对应结果——
  *   计算模板 → 描述统计/派生数据、可视化 → 图表、分组汇总 → 分组汇总表
  * - 计算模板：多行公式编辑器（字段/函数快捷插入、示例片段、Ctrl/Cmd+Enter 运行、实时校验）
  * - 可视化：图表类型 + 维度聚合方式 + 维度/指标/系列
@@ -808,17 +809,22 @@ export default function AnalyticsPage() {
       )}
 
       <div className="cn-an-workbench">
-        {/* 数据源：全宽置顶 */}
-        <AnalyticsBox
-          title="数据源"
-          icon={<DatabaseOutlined />}
-          extra={tableDetail
-            ? `${tableDetail.fields.length} 字段 · ${tableDetail.record_count ?? 0} 行`
-            : '未选择'}
-          footer={scopeField
-            ? <span className="cn-an-foot-hint">只统计区间内的行；全表扫描超上限时用它收窄</span>
-            : null}
+        {/* 顶部并列：数据源 + 智能推荐（未选表时推荐收起为窄条，选表后向右展开） */}
+        <div
+          className={tableId != null ? 'cn-an-top cn-an-top--expanded' : 'cn-an-top'}
+          data-testid="analytics-top"
         >
+          <div className="cn-an-top-data">
+            <AnalyticsBox
+              title="数据源"
+              icon={<DatabaseOutlined />}
+              extra={tableDetail
+                ? `${tableDetail.fields.length} 字段 · ${tableDetail.record_count ?? 0} 行`
+                : '未选择'}
+              footer={scopeField
+                ? <span className="cn-an-foot-hint">只统计区间内的行；全表扫描超上限时用它收窄</span>
+                : null}
+            >
           <div className="cn-an-grid cn-an-grid--3">
             <div className="cn-an-field cn-an-span3">
               <span className="cn-an-label">分析表</span>
@@ -880,23 +886,27 @@ export default function AnalyticsPage() {
             </div>
           </div>
         </AnalyticsBox>
+          </div>
 
-        {/* ── 智能推荐：选表后按字段画像推荐图表 / 汇总 / 公式 / 典型示例 ── */}
-        {tableId != null && (
-          <RecommendationPanel
-            recommendations={recommendations}
-            loading={recommendLoading}
-            error={recommendError}
-            tableName={tableDetail?.name ?? templateTableName(tables, tableId)}
-            onSelectDimension={selectRecommendedDimension}
-            onSelectMetric={selectRecommendedMetric}
-            onSelectTime={selectRecommendedTime}
-            onApplyChart={applyRecommendedChart}
-            onApplySummary={applyRecommendedSummary}
-            onApplyFormulas={applyRecommendedFormulas}
-            onApplyExample={applyRecommendedExample}
-          />
-        )}
+          <div className="cn-an-top-recommend">
+            <RecommendationPanel
+              collapsed={tableId == null}
+              recommendations={recommendations}
+              loading={recommendLoading}
+              error={recommendError}
+              tableName={tableId != null
+                ? tableDetail?.name ?? templateTableName(tables, tableId)
+                : undefined}
+              onSelectDimension={selectRecommendedDimension}
+              onSelectMetric={selectRecommendedMetric}
+              onSelectTime={selectRecommendedTime}
+              onApplyChart={applyRecommendedChart}
+              onApplySummary={applyRecommendedSummary}
+              onApplyFormulas={applyRecommendedFormulas}
+              onApplyExample={applyRecommendedExample}
+            />
+          </div>
+        </div>
 
         {/* ── 第一段：计算模板 → 描述统计 + 派生数据 ── */}
         <section className="cn-an-band" data-testid="analytics-band-formula">

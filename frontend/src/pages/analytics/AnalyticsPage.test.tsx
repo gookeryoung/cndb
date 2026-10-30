@@ -545,9 +545,26 @@ describe('AnalyticsPage', () => {
     await waitFor(() => expect(screen.queryByTestId('analytics-template-meta')).not.toBeInTheDocument())
     expect(screen.getByTestId('analytics-formula-expr-0')).toHaveValue('')
     expect(screen.getByTestId('analytics-chart-title')).toHaveValue('')
-    // 数据源清空后推荐区块隐藏 / 未保存标记消失
-    expect(screen.queryByTestId('analytics-recommend')).not.toBeInTheDocument()
+    // 数据源清空后推荐区块收起（不再展示维度 chips）/ 未保存标记消失
+    expect(screen.getByTestId('analytics-recommend')).toHaveTextContent('选择数据表后展开')
+    expect(screen.queryByTestId('analytics-recommend-group-dimension')).not.toBeInTheDocument()
     expect(screen.queryByTestId('analytics-dirty')).not.toBeInTheDocument()
+  })
+
+  it('顶部并列：未选表时推荐收起为空态，载入模板后展开显示表名与维度', async () => {
+    // 未选表：推荐收起（表名称、维度为空）
+    const first = renderPage('/w/1/analytics')
+    const collapsed = await screen.findByTestId('analytics-recommend')
+    expect(collapsed).toHaveTextContent('选择数据表后展开')
+    expect(collapsed).not.toHaveTextContent('产品')
+    expect(screen.queryByTestId('analytics-recommend-group-dimension')).not.toBeInTheDocument()
+    first.unmount()
+
+    // 深链载入模板（配置数据源）后展开：显示表名与维度 chips
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await screen.findByTestId('analytics-recommend-group-dimension')
+    expect(screen.getByTestId('analytics-recommend')).toHaveTextContent('产品批次')
   })
 
   it('分析列表：复制模板后刷新列表并打开副本', async () => {

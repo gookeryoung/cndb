@@ -34,6 +34,8 @@ interface Props {
   loading?: boolean
   /** 请求失败：静默降级为「暂无推荐」，不阻塞页面 */
   error?: boolean
+  /** 未配置数据源：收起为窄条空态（表名称、维度为空），配置后展开 */
+  collapsed?: boolean
   /** 已选数据源表名（展示用） */
   tableName?: string
   /** 点击推荐维度 → 图表 X */
@@ -66,6 +68,7 @@ export function RecommendationPanel({
   recommendations,
   loading = false,
   error = false,
+  collapsed = false,
   tableName,
   onSelectDimension,
   onSelectMetric,
@@ -88,6 +91,22 @@ export function RecommendationPanel({
     if (role === 'metric') onSelectMetric(name)
     else if (role === 'time') onSelectTime(name)
     else onSelectDimension(name)
+  }
+
+  // 收起态：未配置数据源时只留标题与空提示（表名称、维度为空），配置后随容器展开
+  if (collapsed) {
+    return (
+      <div data-testid="analytics-recommend" className="cn-an-recommend-collapsed">
+        <AnalyticsBox
+          title={<span className="cn-an-rec-title"><ThunderboltOutlined /> 智能推荐</span>}
+        >
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description="选择数据表后展开：表名称、维度与推荐"
+          />
+        </AnalyticsBox>
+      </div>
+    )
   }
 
   return (
