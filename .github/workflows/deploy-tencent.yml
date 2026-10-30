@@ -10,7 +10,7 @@ name: Deploy to Tencent Cloud
 #
 # 链路：release.yml 的 pypi job 构建前端并发布 wheel → 本 workflow 解析 wheel 地址、
 # 国内镜像地址与 sha256（不下载）→ uv export 导出锁定依赖 → 把部署配置（compose +
-# deploy/ + 锁定清单）打成 tar.gz + base64 内联进 TAT 命令下发 → 服务器自行下载 wheel
+# deploy/ + 锁定清单）打成 tar.gz + base64，按分片拆成多条 TAT 命令逐条下发 → 服务器自行下载 wheel
 # → deploy.sh（复用/构建依赖基础镜像 → 只重建 wheel 薄层 → 冒烟 → 预备份 → 重建 →
 # 健康探测 → 失败自动回滚）→ 复查容器与健康端点。
 #
@@ -195,19 +195,23 @@ jobs:
           ls -la /tmp/cndb-deploy-config.tgz
           python3 scripts/build_tat_command.py
 
-      # 下发并等待；deploy.sh 日志随命令输出回传，失败时可直接看到卡在哪一步。
+      # 下发并等待；build 步骤按载荷分片生成多条命令（-01…为分片落地、-99 为部署命令），
+      # 必须按文件名顺序逐条下发。deploy.sh 日志随命令输出回传，失败时可直接看到卡在哪一步。
       - name: Deploy via TAT
         env:
           TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
           TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
         run: |
-          python3 scripts/deploy_via_tat.py \
-            --region "${{ secrets.CNDB_REGION }}" \
-            --instance-id "${{ secrets.CNDB_INSTANCE_ID }}" \
-            --command-file /tmp/cndb-deploy-cmd.sh \
-            --timeout 3600 \
-            --max-wait 3300 \
-            --poll-interval 5
+          for f in /tmp/cndb-deploy-cmd-*.sh; do
+            echo ">>> 下发 $f"
+            python3 scripts/deploy_via_tat.py \
+              --region "${{ secrets.CNDB_REGION }}" \
+              --instance-id "${{ secrets.CNDB_INSTANCE_ID }}" \
+              --command-file "$f" \
+              --timeout 3600 \
+              --max-wait 3300 \
+              --poll-interval 5
+          done
 
       - name: Notify failure
         if: failure()
