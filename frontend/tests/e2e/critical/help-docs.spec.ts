@@ -17,7 +17,7 @@ test.describe("帮助文档整页", () => {
 
     await expect(page).toHaveURL(/\/help\/quick-start\/overview$/);
     await expect(
-      page.getByRole("heading", { name: "认识 cndb", exact: true }),
+      page.getByRole("heading", { name: "认识晶格协同", exact: true }),
     ).toBeVisible({ timeout: 10000 });
     // 桌面：两级侧栏常驻，窄屏抽屉按钮不出现
     await expect(page.getByTestId("help-docs-aside")).toBeVisible();
@@ -46,7 +46,7 @@ test.describe("帮助文档整页", () => {
     await page.goBack();
     await expect(page).toHaveURL(/\/help\/quick-start\/overview$/);
     await expect(
-      page.getByRole("heading", { name: "认识 cndb", exact: true }),
+      page.getByRole("heading", { name: "认识晶格协同", exact: true }),
     ).toBeVisible();
   });
 
