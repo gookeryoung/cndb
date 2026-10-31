@@ -1267,6 +1267,13 @@ export default function GridPage() {
                 onRowClick={openDetailWithPrefetch}
                 loading={rowsFetching && !rowList.items?.length}
                 error={rowsError ? '数据加载失败，请稍后重试' : null}
+                canEdit={canEditViews}
+                onSave={(options) => {
+                  // 先写草稿再立即持久化：persistCurrentView 从 store 即时读取，
+                  // 避免 500ms 防抖窗口内旧配置被发到后端（ADR 0023 P1 显式保存）
+                  setViewOptionsDraft(options)
+                  saveViewNow()
+                }}
               />
             ) : (
               <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />

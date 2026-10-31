@@ -116,6 +116,14 @@ export type DashboardWidget =
   | DashboardTextWidget
   | DashboardTableWidget
 
+/** widget 未填标题时的默认展示名 */
+export const DASHBOARD_TYPE_LABELS: Record<DashboardWidgetType, string> = {
+  chart: '图表',
+  kpi: '指标',
+  text: '说明',
+  table: '明细',
+}
+
 export interface DashboardConfig {
   schema_version: 1
   canvas: DashboardCanvas

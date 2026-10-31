@@ -1,7 +1,7 @@
-/** dashboard 12 列栅格布局纯函数（ADR 0023 P0）.
+/** dashboard 12 列栅格布局纯函数（ADR 0023 P0/P1）.
  *
- * P0 只实现只读渲染需要的 clamp / compact / 窄屏塌陷与 grid 样式映射；
- * 拖拽、重叠下推、预设与撤销栈在 P1 补齐。
+ * P0：clamp / compact / 窄屏塌陷与 grid 样式映射；
+ * P1：重叠下推、空位查找、5 种版式预设与拖拽/缩放位移收敛。
  */
 
 import type { CSSProperties } from 'react'
@@ -57,9 +57,141 @@ export function compact(boxes: WidgetBox[]): WidgetBox[] {
   return placed
 }
 
-/** 保存前唯一出口：先收敛越界，再上浮消洞（P0 无拖拽，不处理重叠下推） */
-export function normalizeLayout(boxes: WidgetBox[], cols: number = DASHBOARD_COLS): WidgetBox[] {
-  return compact(boxes.map((box) => clampBox(box, cols)))
+/**
+ * 重叠下推：`movingId` 保持当前位置，其余块按 (y, x) 顺序被推到不重叠的最小 y.
+ *
+ * 拖动松手时使用；不做连锁动画，避免多块重排抖动（ADR 0023 §2）。
+ */
+export function resolveOverlap(
+  boxes: WidgetBox[],
+  movingId: string | null,
+  cols: number = DASHBOARD_COLS,
+): WidgetBox[] {
+  const moving = boxes.find((b) => b.id === movingId)
+  const rest = [...boxes]
+    .filter((b) => b.id !== movingId)
+    .sort((a, b) => a.y - b.y || a.x - b.x)
+  const ordered = moving ? [moving, ...rest] : rest
+  const placed: WidgetBox[] = []
+  for (const box of ordered) {
+    const candidate = clampBox(box, cols)
+    let y = candidate.y
+    let guard = 0
+    while (placed.some((p) => overlaps({ ...candidate, y }, p)) && guard < 1000) {
+      const blocking = placed.filter((p) => overlaps({ ...candidate, y }, p))
+      y = Math.max(...blocking.map((p) => p.y + p.h))
+      guard += 1
+    }
+    placed.push({ ...candidate, y })
+  }
+  const byId = new Map(placed.map((b) => [b.id, b]))
+  return boxes.map((b) => byId.get(b.id) ?? clampBox(b, cols))
+}
+
+/** 保存前唯一出口：先收敛越界，再解重叠，最后上浮消洞 */
+export function normalizeLayout(
+  boxes: WidgetBox[],
+  cols: number = DASHBOARD_COLS,
+  movingId: string | null = null,
+): WidgetBox[] {
+  return compact(resolveOverlap(boxes.map((box) => clampBox(box, cols)), movingId, cols))
+}
+
+/** 找到第一个可放下 `w × h` 的空位（按行优先扫描） */
+export function findFreeSlot(
+  boxes: WidgetBox[],
+  w: number,
+  h: number,
+  cols: number = DASHBOARD_COLS,
+): { x: number; y: number } {
+  const placed = boxes.map((b) => clampBox(b, cols))
+  const width = Math.min(Math.max(1, int(w)), cols)
+  const height = Math.min(Math.max(1, int(h)), DASHBOARD_MAX_H)
+  for (let y = 0; y <= DASHBOARD_MAX_Y; y += 1) {
+    for (let x = 0; x <= cols - width; x += 1) {
+      const candidate: WidgetBox = { id: '__slot__', x, y, w: width, h: height }
+      if (!placed.some((p) => overlaps(candidate, p))) return { x, y }
+    }
+  }
+  return { x: 0, y: DASHBOARD_MAX_Y }
+}
+
+/** 把 box 平移指定格数并收敛越界 */
+export function moveBoxBy(box: WidgetBox, dx: number, dy: number, cols: number = DASHBOARD_COLS): WidgetBox {
+  return clampBox({ ...box, x: box.x + int(dx), y: box.y + int(dy) }, cols)
+}
+
+/** 把 box 按格数缩放并收敛越界（右下角手柄） */
+export function resizeBoxBy(box: WidgetBox, dw: number, dh: number, cols: number = DASHBOARD_COLS): WidgetBox {
+  return clampBox({ ...box, w: box.w + int(dw), h: box.h + int(dh) }, cols)
+}
+
+/** 版式预设标识（ADR 0023 §2 三通道之一） */
+export type LayoutPresetKey = 'single' | 'two' | 'main-side' | 'grid-2x2' | 'kpi-charts'
+
+export interface LayoutPreset {
+  key: LayoutPresetKey
+  label: string
+}
+
+export const DASHBOARD_PRESETS: LayoutPreset[] = [
+  { key: 'single', label: '单栏' },
+  { key: 'two', label: '两栏等分' },
+  { key: 'main-side', label: '主次（8+4）' },
+  { key: 'grid-2x2', label: '2×2' },
+  { key: 'kpi-charts', label: 'KPI 条 + 图表' },
+]
+
+interface PresetSlot {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** 按预设给第 i 个块生成槽位；超出预设槽位时按同列流式续排 */
+function presetSlot(key: LayoutPresetKey, i: number, cols: number): PresetSlot {
+  switch (key) {
+    case 'single':
+      return { x: 0, y: i * 6, w: cols, h: 6 }
+    case 'two':
+      return { x: (i % 2) * Math.floor(cols / 2), y: Math.floor(i / 2) * 6, w: Math.floor(cols / 2), h: 6 }
+    case 'main-side': {
+      const wide = Math.ceil(cols / 3) * 2
+      const narrow = cols - wide
+      const pair = Math.floor(i / 2)
+      return i % 2 === 0
+        ? { x: 0, y: pair * 6, w: wide, h: 6 }
+        : { x: wide, y: pair * 6, w: narrow, h: 6 }
+    }
+    case 'grid-2x2':
+      return { x: (i % 2) * Math.floor(cols / 2), y: Math.floor(i / 2) * 6, w: Math.floor(cols / 2), h: 6 }
+    case 'kpi-charts': {
+      if (i < 4) return { x: i * 3, y: 0, w: 3, h: 4 }
+      const j = i - 4
+      return { x: (j % 2) * Math.floor(cols / 2), y: 4 + Math.floor(j / 2) * 8, w: Math.floor(cols / 2), h: 8 }
+    }
+    default:
+      return { x: 0, y: i * 6, w: cols, h: 6 }
+  }
+}
+
+/**
+ * 版式预设只重排现有块，不增删内容；数量不足留空位，多余按列流式续排.
+ *
+ * 输出经 `normalizeLayout` 收敛，便于直接写回 draft。
+ */
+export function applyPreset(
+  preset: LayoutPresetKey,
+  boxes: WidgetBox[],
+  cols: number = DASHBOARD_COLS,
+): WidgetBox[] {
+  const ordered = [...boxes].sort((a, b) => a.y - b.y || a.x - b.x)
+  const next = ordered.map((box, i) => {
+    const slot = presetSlot(preset, i, cols)
+    return clampBox({ ...box, ...slot }, cols)
+  })
+  return compact(next)
 }
 
 /** 窄屏塌陷：按 (y, x) 顺序排成单列（w=cols、x=0，h 保留） */

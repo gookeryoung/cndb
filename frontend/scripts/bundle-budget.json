@@ -15,7 +15,8 @@
     "2026-10-28 ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
     "2026-10-30 feat(documents): MHTML 预览/导入功能的帮助文档（quickStart 教程 + tutorials 章节），属帮助页静态文案，该 chunk 已是 /help 单独 lazy chunk，不进首屏，无 Dialog 可 lazy",
     "2026-10-30 chore: React 19 + antd 6 升级（ADR 0074 P0）—— react-dom 19 与 @rc-component/* 生态为运行时固有依赖，无法懒加载；主入口 +45 KiB 属依赖升级确定性增量",
-    "2026-10-31 feat(dashboard): ADR 0023 P0 只读画布新增 DashboardView lazy chunk（含契约归一/栅格/四类组件），按需打开不进首屏"
+    "2026-10-31 feat(dashboard): ADR 0023 P0 只读画布新增 DashboardView lazy chunk（含契约归一/栅格/四类组件），按需打开不进首屏",
+    "2026-10-31 feat: ADR 0023 P1 画布编辑器（拖拽/缩放/预设/草稿撤销栈）必须随画布视图加载；属性面板已改 lazy 从该 chunk 移出"
   ],
   "chunks": [
     {
@@ -51,10 +52,10 @@
       "resolve": {
         "assetPattern": "^DashboardView-.*\\.js$"
       },
-      "baseline": 6787,
-      "reason": "feat(dashboard): ADR 0023 P0 只读画布新增 DashboardView lazy chunk（含契约归一/栅格/四类组件），按需打开不进首屏",
+      "baseline": 12233,
+      "reason": "feat: ADR 0023 P1 画布编辑器（拖拽/缩放/预设/草稿撤销栈）必须随画布视图加载；属性面板已改 lazy 从该 chunk 移出",
       "updatedAt": "2026-10-31",
-      "commit": "e9540fb0"
+      "commit": "395a1a93"
     },
     {
       "name": "HelpDocsPage（帮助文档整页）",

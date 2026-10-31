@@ -2,10 +2,11 @@
  *
  * 覆盖：seed 同款一屏渲染（KPI/图表/文本/明细）/ 非法配置定位空态 / 空画布 / 加载与错误态 /
  * 窄屏单列塌陷。
+ * P1：编辑入口与权限、键盘微调、撤销/重做、属性面板新增、显式保存、Ctrl+S、Esc 回滚。
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import type { Field, RowResponse, View } from '@/api'
 import { renderProviders } from '@/test/render-providers'
 import { makeField } from '@/test/fixtures'
@@ -83,6 +84,8 @@ function renderDashboard(opts?: {
   rows?: RowResponse[]
   loading?: boolean
   error?: string | null
+  canEdit?: boolean
+  onSave?: (options: Record<string, unknown>) => void
 }) {
   return renderProviders(
     <DashboardView
@@ -91,6 +94,8 @@ function renderDashboard(opts?: {
       view={makeView(opts?.view_options ?? CONFIG)}
       loading={opts?.loading}
       error={opts?.error}
+      canEdit={opts?.canEdit}
+      onSave={opts?.onSave}
     />,
   )
 }
@@ -163,5 +168,134 @@ describe('DashboardView', () => {
     expect(screen.getByTestId('dashboard-widget-kpi-sales-empty')).toBeInTheDocument()
     // 文本组件不因无数据隐藏
     expect(screen.queryByTestId('dashboard-widget-note-empty')).not.toBeInTheDocument()
+  })
+})
+
+const EDIT_CONFIG = {
+  schema_version: 1,
+  canvas: { cols: 12, row_height: 40, gap: 12, padding: 16 },
+  widgets: [{
+    id: 'k1', type: 'kpi', title: '订单总数',
+    layout: { x: 0, y: 0, w: 3, h: 4 },
+    kpi: { value: { field: '订单号', agg: 'count' } },
+  }],
+  global_filters: [],
+  settings: { refresh_interval: 0, theme: 'inherit' },
+}
+
+/** 进入编辑态并等待工具栏切换 */
+async function enterEditing() {
+  fireEvent.click(screen.getByTestId('dashboard-edit'))
+  return screen.findByTestId('dashboard-save')
+}
+
+describe('DashboardView P1 编辑态', () => {
+  it('无编辑权限时不渲染工具栏', () => {
+    renderDashboard({ view_options: EDIT_CONFIG })
+    expect(screen.queryByTestId('dashboard-toolbar')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-edit')).not.toBeInTheDocument()
+  })
+
+  it('canEdit 显示编辑入口，进入后出现保存/退出与操作提示', async () => {
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true })
+    expect(screen.getByTestId('dashboard-edit')).toBeInTheDocument()
+    await enterEditing()
+    expect(screen.getByTestId('dashboard-edit-hint')).toHaveTextContent('方向键微调')
+    expect(screen.getByTestId('dashboard-widget-k1-drag-handle')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-resize-k1')).toBeInTheDocument()
+  })
+
+  it('方向键平移、Shift+方向键缩放', async () => {
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true })
+    await enterEditing()
+    const card = screen.getByTestId('dashboard-card-k1')
+    expect(card.style.gridColumn).toBe('1 / span 3')
+    fireEvent.keyDown(card, { key: 'ArrowRight' })
+    await waitFor(() => expect(card.style.gridColumn).toBe('2 / span 3'))
+    fireEvent.keyDown(card, { key: 'ArrowRight', shiftKey: true })
+    await waitFor(() => expect(card.style.gridColumn).toBe('2 / span 4'))
+  })
+
+  it('撤销 / 重做回退布局变更', async () => {
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true })
+    await enterEditing()
+    const card = screen.getByTestId('dashboard-card-k1')
+    fireEvent.keyDown(card, { key: 'ArrowRight' })
+    await waitFor(() => expect(card.style.gridColumn).toBe('2 / span 3'))
+    expect(screen.getByTestId('dashboard-undo')).toBeEnabled()
+
+    fireEvent.click(screen.getByTestId('dashboard-undo'))
+    await waitFor(() => expect(card.style.gridColumn).toBe('1 / span 3'))
+    expect(screen.getByTestId('dashboard-redo')).toBeEnabled()
+
+    fireEvent.click(screen.getByTestId('dashboard-redo'))
+    await waitFor(() => expect(card.style.gridColumn).toBe('2 / span 3'))
+  })
+
+  it('属性面板添加组件后新块出现在画布', async () => {
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true })
+    await enterEditing()
+    fireEvent.click(screen.getByTestId('dashboard-properties'))
+    fireEvent.click(await screen.findByTestId('dashboard-drawer-add'))
+    expect(await screen.findByTestId('dashboard-card-w_chart_1')).toBeInTheDocument()
+    expect(screen.getByText('有未保存修改')).toBeInTheDocument()
+  })
+
+  it('保存回调携带最新布局并退出编辑态', async () => {
+    const onSave = vi.fn()
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true, onSave })
+    await enterEditing()
+    fireEvent.keyDown(screen.getByTestId('dashboard-card-k1'), { key: 'ArrowRight' })
+    expect(await screen.findByText('有未保存修改')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('dashboard-save'))
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    const options = onSave.mock.calls[0][0] as Record<string, unknown>
+    const widgets = options.widgets as Array<{ id: string; layout: { x: number } }>
+    expect(widgets[0].layout.x).toBe(1)
+    // 退出编辑态
+    expect(screen.queryByTestId('dashboard-save')).not.toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-edit')).toBeInTheDocument()
+  })
+
+  it('Ctrl+S 触发保存', async () => {
+    const onSave = vi.fn()
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true, onSave })
+    await enterEditing()
+    fireEvent.keyDown(screen.getByTestId('dashboard-card-k1'), { key: 'ArrowDown' })
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+  })
+
+  it('Esc 无未保存变更时直接退出编辑', async () => {
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true })
+    await enterEditing()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByTestId('dashboard-save')).not.toBeInTheDocument())
+  })
+
+  it('Esc 有未保存变更时弹出放弃确认，确认后回滚', async () => {
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true })
+    await enterEditing()
+    fireEvent.keyDown(screen.getByTestId('dashboard-card-k1'), { key: 'ArrowRight' })
+    expect(await screen.findByText('有未保存修改')).toBeInTheDocument()
+    // 方向键微调会选中并打开属性面板（面板按需懒加载）；先关闭面板，Esc 才作用于退出编辑
+    await waitFor(() => expect(document.querySelector('.ant-drawer-close')).toBeInTheDocument())
+    fireEvent.click(document.querySelector('.ant-drawer-close') as HTMLElement)
+    await waitFor(() => expect(document.querySelector('.ant-drawer-close')).not.toBeInTheDocument())
+    fireEvent.keyDown(window, { key: 'Escape' })
+    // antd 6 的 Modal 会同时渲染可见标题与无障碍标题，故用 findAll
+    expect((await screen.findAllByText('放弃未保存的画布修改？')).length).toBeGreaterThan(0)
+    fireEvent.click(screen.getByRole('button', { name: '放弃修改' }))
+    await waitFor(() => expect(screen.queryByTestId('dashboard-save')).not.toBeInTheDocument())
+    // 回滚到基线布局
+    expect(screen.getByTestId('dashboard-card-k1').style.gridColumn).toBe('1 / span 3')
+  })
+
+  it('窄屏下禁用编辑入口', () => {
+    const original = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 500 })
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true })
+    expect(screen.getByTestId('dashboard-edit')).toBeDisabled()
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: original })
   })
 })
