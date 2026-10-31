@@ -200,9 +200,11 @@ jobs:
 
 **判定层（单测）**：DSL 解析合法 / 非法样例矩阵（未知键、环 `needs`、未知 `uses`、`with` schema 不符、表达式语法错）；表达式求值（运算符、函数白名单、注入样例仅按字面量处理）；DAG 结论推导（error / continue-on-error / skipped / partial 各路径）；注册表（注册 / 查找 / 目录序列化）；四类 table 检查（构造小表数据断言 finding）；三类 document 检查（坏引用 / 超限块 / 失效 wikilink）；finding 截断与扫描上限。
 
-**接口层**：CRUD + 校验 400 详情；手动运行 202 / 单飞 409；run 详情与 finding 过滤分页；权限（viewer 只读、非成员 403）；`enabled=false` 不响应事件触发（P1）。
+**接口层**：CRUD + 校验 400 详情；手动运行 202 / 单飞 409；run 详情与 finding 过滤分页；权限（viewer 只读、非成员 403）；`enabled=false` 不响应事件触发（P1）；finding 转 Issue（表目标 201 / 非表目标 400 / 跨工作区 404 / 非成员 403、viewer 可转）（P2）。
 
-**迁移 / 备份**：迁移幂等（重复执行）+ downgrade 还原；备份往返（P2：workflow 定义随工作区备份导出导入一致，run / finding 不进备份）。
+**调度层**：`is_due`（当前分钟槽命中 + 水位早于该槽）、`due_workflows`（启用 / schedule / 工作区 / 单定义 / limit 过滤、非法 cron 与坏编译容错）、`tick`（同步执行、同分钟不重复、下一分钟可再跑、冲突跳过、失败计数）、CLI 输出与失败退出码（P2）。
+
+**迁移 / 备份**：迁移幂等（重复执行）+ downgrade 还原；备份往返（P2：workflow 定义随工作区备份导出导入一致，run / finding 不进备份；坏 DSL 定义跳过、同名幂等；覆盖恢复先清空流水线三表）。
 
 **e2e（前端）**：新建流水线（YAML 校验错误可见）→ 修正保存 → 手动运行 → 详情页看到 finding 并可按严重度过滤。
 
@@ -231,6 +233,8 @@ jobs:
 | D11 | 前端入口 | 工作区页签「质量检查」，路由 `/w/:wid/pipelines` | 与数据源同步 / 数据分析同级的工作区级功能；工作区类型 `data_doc` / `data` 显示（`doc` 型无数据表检查目标） | 表级 / 文档级零散入口（检查天然跨域，应集中） | `frontend/src/pages/pipelines/` |
 | D12 | 备份口径 | workflow 随工作区备份导出（P2，backup v10）；run / finding 属流水不进 | 对齐 ADR 0075 排除清单（同步运行历史同类） | run 也进备份（体量随时间无界增长） | `plugins/workspaces/` 备份序列化、恢复路径 |
 | D13 | 检查的数据视角 | 工作区视角（owner 级读取，不套触发人个人行级权限） | 质量口径是表 / 文档级客观事实，随触发人漂移则结果不可比；配合 D7 的值级脱敏，侧信道风险受控 | 按触发人视角（同一 workflow 不同人跑出不同结论，违背"报告可复现"） | `pipeline/services/runner.py`、`pipeline/checks/base.py` |
+| D14 | 定时触发口径 | `cndb pipeline tick` 读取已启用且声明 `on.schedule` 的定义，cron 按 UTC+8 解释（与数据源调度同源），以当前分钟槽 + 最近一条 `trigger=schedule` 运行的 `created_at` 去重；tick 内同步执行，同一 workflow 仍走单飞 | cron 部署范式复用 `cndb sync tick` + `deploy/sync.sh`；同步执行避免 CLI 进程退出杀死后台线程导致 run 长期 pending；分钟槽水位保证同一分钟不重复触发 | tick 内起后台守护线程（进程生命周期不可控）；轮询 `core_event` 作触发源（延迟高、全表扫描）；秒级精度（cron 最小粒度为分钟） | `pipeline/services/scheduler.py`、`cli/pipeline.py`、`deploy/pipeline.sh` |
+| D15 | finding 转 Issue 映射 | 仅 `target_type == "table"` 的 finding 可转：在目标表创建 Issue，标题取 `[严重度] 消息`（截断 255），描述含检查动作 / 严重度 / `locator` 定位，类别固定 `data_error`；权限沿用 pipeline 可读 + 目标表读权限 | 复用 issues 插件既有创建入口与权限口径；`locator` 不含字段值，转换不突破 D7；文档目标暂无 Issue 载体，显式 400 而非静默忽略 | 任意目标类型均可转（文档 / 字段无对应 Issue 归属）；前端自行拼标题描述（口径分散难同步） | `pipeline/services/issue_bridge.py`、`pipeline/routers/workflows.py` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -269,14 +273,14 @@ jobs:
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/pipeline/`（模型 / DSL 编译 / 检查注册表 / table 与 document 检查 / 执行器 / 路由）、`src/cndb/alembic/versions/y3z4a5b6c7d8_add_pipeline_plugin.py` | `tests/test_pipeline_dsl.py`、`tests/test_pipeline_checks.py`、`tests/test_pipeline_runner.py`、`tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py` | ef8dff78 |
 | P1 | 已落地 | `frontend/src/pages/pipelines/`（列表 / YAML 编辑抽屉 / 运行详情 / 检查目录）、`frontend/src/api/pipelines.ts`、`frontend/src/layouts/MainLayout.tsx`、`src/cndb/plugins/pipeline/services/triggers.py`、`src/cndb/plugins/tables/routers/bulk_crud.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_pipeline_triggers.py`、`frontend/src/pages/pipelines/PipelinesPage.test.tsx`、`frontend/src/pages/pipelines/PipelineRunDetail.test.tsx`、`frontend/src/pages/pipelines/checkCatalog.test.ts`、`frontend/tests/e2e/critical/pipelines.spec.ts` | 25f08294 |
-| P2 | 未开始 | — | — | — |
+| P2 | 已落地 | `src/cndb/plugins/pipeline/services/scheduler.py`、`src/cndb/cli/pipeline.py`、`deploy/pipeline.sh`、`src/cndb/plugins/pipeline/services/issue_bridge.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/src/pages/pipelines/PipelineRunDetail.tsx`、`frontend/src/api/pipelines.ts` | `tests/test_pipeline_scheduler.py`、`tests/test_pipeline_issue_bridge.py`、`tests/test_pipeline_api.py`、`tests/test_workspace_backup_v9.py`、`frontend/src/pages/pipelines/PipelineRunDetail.test.tsx` | 9b836245 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P1 已落地（前端页面 + 三个事件分发点）；P2 未开始
-- 已完成：P0（插件骨架 + 三表迁移 + DSL 编译层 + 检查注册表 + `table/*` / `document/*` 检查 + 手动执行器 + 全部 API），alembic head `y3z4a5b6c7d8`；P1（质量检查列表 / YAML 编辑抽屉实时校验 / 运行详情与 finding 过滤、工作区页签 `quality` 开关、记录批量变更 / 文档保存 / 同步完成事件分发），分层测试后端 12 / 前端页面与目录 16 / e2e 2
-- 下一步：P2 定时触发（`cndb pipeline tick` + cron 部署脚本）+ 备份 v10（workflow 纳入、run / finding 排除）+ finding 一键转 Issue
-- 已知坑：YAML 1.1 把裸键 `on` 解析为布尔 `True`（编译层已归一回字符串键）；`with: null` 归一为空映射，`with: []` 明确报错；`doc` 型工作区不显示「质量检查」页签（无数据表目标）；检查执行走只读连接（SQLite 单写者场景避免与写路径抢锁）；事件分发为 best-effort（业务事务已提交后调用，异常仅记 warning 不打断写入）；antd 两字按钮可达名含空格（e2e 用 `/保\s*存/` 正则）；e2e 通过 API 建临时表后必须清理，避免污染共享工作区
-- 最近一次全绿：`make check` @ P1 落地（2026-10-31）
+- 当前阶段：P0 / P1 / P2 全部落地
+- 已完成：P0（插件骨架 + 三表迁移 + DSL 编译层 + 检查注册表 + `table/*` / `document/*` 检查 + 手动执行器 + 全部 API），alembic head `y3z4a5b6c7d8`；P1（质量检查列表 / YAML 编辑抽屉实时校验 / 运行详情与 finding 过滤、工作区页签 `quality` 开关、记录批量变更 / 文档保存 / 同步完成事件分发）；P2（`cndb pipeline tick` + `deploy/pipeline.sh` 定时触发（D14）、备份 v10（workflow 纳入 / run 与 finding 排除 / 恢复前清空三表）、finding 一键转 Issue（D15，后端接口 + 运行详情行内动作））
+- 下一步：无（ADR 0076 分期交付完毕）；后续如需扩展可新增检查动作或按需调整 tick 频率
+- 已知坑：YAML 1.1 把裸键 `on` 解析为布尔 `True`（编译层已归一回字符串键）；`with: null` 归一为空映射，`with: []` 明确报错；`doc` 型工作区不显示「质量检查」页签（无数据表目标）；检查执行走只读连接（SQLite 单写者场景避免与写路径抢锁）；事件分发为 best-effort（业务事务已提交后调用，异常仅记 warning 不打断写入）；antd 两字按钮可达名含空格（e2e 用 `/保\s*存/` 正则）；e2e 通过 API 建临时表后必须清理，避免污染共享工作区；tick 必须同步执行（后台线程随 CLI 退出被杀会让 run 卡 pending）；分钟槽水位依赖 `PipelineRun.created_at`，测试注入时间需显式回写；覆盖恢复前必须清空流水线三表，否则同名定义被导入幂等跳过
+- 最近一次全绿：`make check` @ P2 落地（2026-10-31）
