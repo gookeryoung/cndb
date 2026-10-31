@@ -163,9 +163,9 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`（v9 构建器 / v8 降采样 / 归档打包与解包）；`routers/workspaces.py` `GET /{wid}/export/archive` | `tests/test_workspace_backup_v9.py` TestArchiveStructure | 见 git log |
-| P1 | 已落地 | `services/backup_io.py`（版本白名单 1-9、v9 extras 落库、files_dir、旧行 id 映射）；`services/workspace_restore.py`（wait_sync_jobs_idle / clear_workspace_content / restore_workspace_from_backup）；`routers/workspaces.py` `POST /{wid}/restore`、`POST /workspaces/import/archive`（独立端点，偏离 D1「同端点分流」，multipart 与 JSON 载荷无法共端点） | `tests/test_workspace_backup_v9.py` TestRestoreRoundtrip；既有 v1-8 回归（version "9"→"99" 修正 2 处） | 见 git log |
-| P2 | 已落地 | `frontend/src/api/workspaces.ts`（exportWorkspaceArchive / restoreWorkspace / importWorkspaceArchive）；`pages/settings/WorkspaceBackupDialog.tsx`（全量归档导出 + 密钥开关 + 覆盖恢复双重确认，非 owner 隐藏）；`pages/workspace/WorkspaceList.tsx` 导入弹窗支持 .tar.gz | `WorkspaceBackupDialog.test.tsx` 9 例；e2e `frontend/tests/e2e/critical/workspace-backup.spec.ts` 3 例 | 见 git log |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`（v9 构建器 / v8 降采样 / 归档打包与解包）；`plugins/workspaces/routers/workspaces.py`（GET /{wid}/export/archive） | `tests/test_workspace_backup_v9.py` TestArchiveStructure | `d839ef16` |
+| P1 | 已落地 | `plugins/workspaces/services/backup_io.py`（版本白名单 1-9、v9 extras 落库、files_dir、旧行 id 映射）；`plugins/workspaces/services/workspace_restore.py`（wait_sync_jobs_idle / clear_workspace_content / restore_workspace_from_backup）；`plugins/workspaces/routers/workspaces.py`（POST /{wid}/restore、POST /workspaces/import/archive，独立端点，偏离 D1「同端点分流」，multipart 与 JSON 载荷无法共端点） | `tests/test_workspace_backup_v9.py` TestRestoreRoundtrip；既有 v1-8 回归（version "9"→"99" 修正 2 处） | `d839ef16` |
+| P2 | 已落地 | `frontend/src/api/workspaces.ts`（exportWorkspaceArchive / restoreWorkspace / importWorkspaceArchive）；`frontend/src/pages/settings/WorkspaceBackupDialog.tsx`（全量归档导出 + 密钥开关 + 覆盖恢复双重确认，非 owner 隐藏）；`frontend/src/pages/workspace/WorkspaceList.tsx` 导入弹窗支持 .tar.gz | `frontend/src/pages/settings/WorkspaceBackupDialog.test.tsx` 9 例；e2e `frontend/tests/e2e/critical/workspace-backup.spec.ts` 3 例 | `d839ef16` |
 
 ## 交接（会话结束更新）
 
