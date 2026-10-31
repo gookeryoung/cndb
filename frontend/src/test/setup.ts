@@ -1,7 +1,7 @@
 /**
  * Vitest 全局测试 setup：
  * - 注册 jest-dom 匹配器
- * - antd 5 在 jsdom 下的所需 polyfill（matchMedia / ResizeObserver / getBoundingClientRect / scrollTo）
+ * - antd 在 jsdom 下的所需 polyfill（matchMedia / ResizeObserver / getBoundingClientRect / scrollTo）
  * - RTL 自动 cleanup（globals 模式下 @testing-library/react 依赖 afterEach）
  * - 每个用例后清空 localStorage / sessionStorage，保证用例间隔离
  */

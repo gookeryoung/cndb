@@ -434,7 +434,7 @@ describe('FieldManager DefaultValueInput 类型感知控件', () => {
             // 初始文案
             expect(control.textContent).toContain('未设置（= false）')
 
-            // antd v5 Switch 根元素是 <button class="ant-switch">，直接 click 即可触发 onChange
+            // antd Switch 根元素是 <button class="ant-switch">，直接 click 即可触发 onChange
             const sw = control.querySelector('.ant-switch') as HTMLElement
             expect(sw).not.toBeNull()
             fireEvent.click(sw!)

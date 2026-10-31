@@ -10,7 +10,7 @@
  * - 两种模式共用一套命令式句柄（选区 / 定位 / 聚焦），上层无需感知实现差异。
  */
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
 import type { CSSProperties } from 'react'
 import { EditorState, Facet, StateEffect, StateField, type Range } from '@codemirror/state'
 import {
@@ -64,6 +64,8 @@ interface MarkdownLiveEditorProps {
   /** Ctrl/Cmd+F/H/B/I/K */
   onShortcut?: (action: MarkdownEditorShortcut) => void
   style?: CSSProperties
+  /** React 19 ref-as-prop：暴露 getSelection / setSelection / focus / revealOffset */
+  ref?: Ref<MarkdownEditorHandle>
 }
 
 // ── 图片组件：站内 file:<key> 走鉴权 blob，外部 URL 直出 ──
@@ -672,10 +674,7 @@ const editorTheme = EditorView.theme({
 
 const EDITOR_STYLE: CSSProperties = { flex: 1, minHeight: 0, overflow: 'hidden' }
 
-const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorProps>(function MarkdownLiveEditor(
-  { value, mode, workspaceId, placeholder, onChange, onPasteImages, onShortcut, style },
-  ref,
-) {
+function MarkdownLiveEditor({ value, mode, workspaceId, placeholder, onChange, onPasteImages, onShortcut, style, ref }: MarkdownLiveEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const taRef = useRef<TextAreaRef>(null)
@@ -872,6 +871,6 @@ const MarkdownLiveEditor = forwardRef<MarkdownEditorHandle, MarkdownLiveEditorPr
   }
 
   return <div ref={hostRef} data-testid="doc-live-editor" style={{ ...EDITOR_STYLE, ...style }} />
-})
+}
 
 export default MarkdownLiveEditor

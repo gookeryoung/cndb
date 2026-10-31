@@ -25,7 +25,7 @@ import { useRowBatch, ViewBatchFooter } from './rowBatch'
 
 // ── 配色与密度 ────────────────────────────────────────
 
-/** 节点色板 —— antd v5 官方预设主色（daybreak 系），按节点索引循环（语义为流程阶段着色，同 tagColors 策略） */
+/** 节点色板 —— antd 官方预设主色（daybreak 系），按节点索引循环（语义为流程阶段着色，同 tagColors 策略） */
 const NODE_COLORS: readonly string[] = [
   '#1677ff', '#52c41a', '#fa8c16', '#722ed1', '#13c2c2', '#eb2f96', '#faad14', '#2f54eb',
 ]

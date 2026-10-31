@@ -299,7 +299,7 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
                 value={incrementPrefix ?? ''}
                 onChange={(e) => setIncrementConfig({ increment_prefix: e.target.value })}
               />
-              {/* InputNumber 的 addonBefore 已被 antd v5 废弃（触发弃用警告），改用 span 标签 */}
+              {/* InputNumber 的 addonBefore 已废弃（触发弃用警告），改用 span 标签 */}
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
                 补零
                 <InputNumber

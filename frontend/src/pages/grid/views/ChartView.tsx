@@ -42,7 +42,7 @@ echarts.use([
   GridComponent, TooltipComponent, LegendComponent, SVGRenderer,
 ])
 
-/** 系列色板 —— antd v5 官方预设主色，按索引循环（同 MatrixView AXIS_COLORS / tagColors 策略） */
+/** 系列色板 —— antd 官方预设主色，按索引循环（同 MatrixView AXIS_COLORS / tagColors 策略） */
 const SERIES_COLORS: readonly string[] = [
   '#1677ff', // blue
   '#52c41a', // green
