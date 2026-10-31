@@ -268,15 +268,15 @@ jobs:
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/pipeline/`（模型 / DSL 编译 / 检查注册表 / table 与 document 检查 / 执行器 / 路由）、`src/cndb/alembic/versions/y3z4a5b6c7d8_add_pipeline_plugin.py` | `tests/test_pipeline_dsl.py`、`tests/test_pipeline_checks.py`、`tests/test_pipeline_runner.py`、`tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py` | ef8dff78 |
-| P1 | 未开始 | — | — | — |
+| P1 | 已落地 | `frontend/src/pages/pipelines/`（列表 / YAML 编辑抽屉 / 运行详情 / 检查目录）、`frontend/src/api/pipelines.ts`、`frontend/src/layouts/MainLayout.tsx`、`src/cndb/plugins/pipeline/services/triggers.py`、`src/cndb/plugins/tables/routers/bulk_crud.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_pipeline_triggers.py`、`frontend/src/pages/pipelines/PipelinesPage.test.tsx`、`frontend/src/pages/pipelines/PipelineRunDetail.test.tsx`、`frontend/src/pages/pipelines/checkCatalog.test.ts`、`frontend/tests/e2e/critical/pipelines.spec.ts` | 25f08294 |
 | P2 | 未开始 | — | — | — |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地（插件骨架 + 三表迁移 + DSL 编译层 + 检查注册表 + `table/*` / `document/*` 检查 + 手动执行器 + 全部 API）；P1 未开始
-- 已完成：P0 代码与分层测试（DSL 66 / 检查 37 / 执行器 19 / API 26 / 迁移 5）；alembic head 推进到 `y3z4a5b6c7d8`
-- 下一步：P1 前端页面（列表 / 编辑 / 运行详情）+ 三个事件分发点（记录批量变更 / 文档保存 / 同步完成）
-- 已知坑：YAML 1.1 把裸键 `on` 解析为布尔 `True`（编译层已归一回字符串键）；`with: null` 归一为空映射，`with: []` 明确报错；`doc` 型工作区不显示「质量检查」页签（无数据表目标）；检查执行走只读连接（SQLite 单写者场景避免与写路径抢锁）
-- 最近一次全绿：`make check` @ P0 落地（2026-10-31）
+- 当前阶段：P1 已落地（前端页面 + 三个事件分发点）；P2 未开始
+- 已完成：P0（插件骨架 + 三表迁移 + DSL 编译层 + 检查注册表 + `table/*` / `document/*` 检查 + 手动执行器 + 全部 API），alembic head `y3z4a5b6c7d8`；P1（质量检查列表 / YAML 编辑抽屉实时校验 / 运行详情与 finding 过滤、工作区页签 `quality` 开关、记录批量变更 / 文档保存 / 同步完成事件分发），分层测试后端 12 / 前端页面与目录 16 / e2e 2
+- 下一步：P2 定时触发（`cndb pipeline tick` + cron 部署脚本）+ 备份 v10（workflow 纳入、run / finding 排除）+ finding 一键转 Issue
+- 已知坑：YAML 1.1 把裸键 `on` 解析为布尔 `True`（编译层已归一回字符串键）；`with: null` 归一为空映射，`with: []` 明确报错；`doc` 型工作区不显示「质量检查」页签（无数据表目标）；检查执行走只读连接（SQLite 单写者场景避免与写路径抢锁）；事件分发为 best-effort（业务事务已提交后调用，异常仅记 warning 不打断写入）；antd 两字按钮可达名含空格（e2e 用 `/保\s*存/` 正则）；e2e 通过 API 建临时表后必须清理，避免污染共享工作区
+- 最近一次全绿：`make check` @ P1 落地（2026-10-31）
