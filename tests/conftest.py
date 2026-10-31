@@ -52,6 +52,7 @@ def db_engine():
     import cndb.plugins.documents.models
     import cndb.plugins.files.models
     import cndb.plugins.issues.models
+    import cndb.plugins.pipeline.models
     import cndb.plugins.tables.models
     import cndb.plugins.workspaces.models  # noqa: F401
 
@@ -172,6 +173,28 @@ def _sync_governance_tasks(monkeypatch_session: pytest.MonkeyPatch):
 
 
 @pytest.fixture(scope="session", autouse=True)
+def _sync_pipeline_tasks(monkeypatch_session: pytest.MonkeyPatch):
+    """流水线后台运行在测试中同步执行（原因同 _sync_import_tasks：StaticPool 单连接）."""
+    from contextlib import suppress
+
+    with suppress(ImportError):
+        import cndb.plugins.pipeline.routers.workflows as pipeline_router
+        from cndb.plugins.pipeline.services import runner
+
+        def _run_sync(
+            db_session_factory: Callable[[], Session],
+            run_id: int,
+        ) -> None:
+            session = db_session_factory()
+            try:
+                runner.execute_pipeline_run(session, run_id)
+            finally:
+                session.close()
+
+        monkeypatch_session.setattr(pipeline_router, "run_pipeline_in_background", _run_sync)
+
+
+@pytest.fixture(scope="session", autouse=True)
 def _isolate_upload_dir(tmp_path_factory, monkeypatch_session):
     """把 settings.UPLOAD_DIR 重定向到 session 级临时目录.
 
@@ -227,12 +250,14 @@ def _cleanup_tables(db_engine):
     按同名 id 统计进用量（曾导致「空工作区已用空间不为 0」）。
     """
     yield
-    # 等待 import/治理后台线程完成，避免残留线程与清表冲突
+    # 等待 import/治理/流水线后台线程完成，避免残留线程与清表冲突
+    from cndb.plugins.pipeline.services.runner import join_background_threads as join_pipeline
     from cndb.plugins.tables.services.governance.tasks import join_background_threads as join_gov
     from cndb.plugins.tables.services.importing.import_tasks import join_background_threads
 
     join_background_threads(timeout=10)
     join_gov(timeout=10)
+    join_pipeline(timeout=10)
     with db_engine.connect() as conn:
         # DELETE 比 DROP+CREATE 快一个量级；schema 在 session 级 engine 上只建一次
         for table in reversed(Base.metadata.sorted_tables):

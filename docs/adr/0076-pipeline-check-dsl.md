@@ -1,6 +1,6 @@
 # ADR 0076: 流水线检查系统与专用 DSL（数据表 / 文档质量检查 + 可扩展检查动作注册表）
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-10-31
 Related: `src/cndb/plugins/tables/services/governance/detect.py`、`src/cndb/plugins/documents/services/charts/inline.py`、`src/cndb/core/events.py`、`docs/adr/0004-row-level-permission-rules.md`、`docs/adr/0020-llm-platform-capability.md`、`docs/adr/0075-workspace-full-backup.md`
 需求卡片: `docs/requirements/0076-pipeline-check-dsl.md`（需求原文与约束编号的唯一副本）
@@ -267,7 +267,7 @@ jobs:
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
+| P0 | 已落地 | `src/cndb/plugins/pipeline/`（模型 / DSL 编译 / 检查注册表 / table 与 document 检查 / 执行器 / 路由）、`src/cndb/alembic/versions/y3z4a5b6c7d8_add_pipeline_plugin.py` | `tests/test_pipeline_dsl.py`、`tests/test_pipeline_checks.py`、`tests/test_pipeline_runner.py`、`tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py` | 待提交 |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 
@@ -275,8 +275,8 @@ jobs:
 
 ## 交接（会话结束更新）
 
-- 当前阶段：设计完成，等待人工评审（卡片未决问题复核 + ADR 评审，`Proposed` → `Accepted`）
-- 已完成：需求卡片 `docs/requirements/0076-pipeline-check-dsl.md`、本 ADR、索引与 CONTEXT 术语登记
-- 下一步：评审通过后按 P0（插件骨架 + DSL 编译层 + 注册表 + 检查族 + 执行器 + API）启动实现
-- 已知坑：alembic 当前 head 为 `x2y3z4a5b6c7`（P0 迁移 `down_revision` 锚点）；`doc` 型工作区不显示「质量检查」页签（无数据表目标）；检查执行须走只读 session（SQLite 单写者场景避免与写路径抢锁）
-- 最近一次全绿：`make check-docs` @ 设计提交（2026-10-31）
+- 当前阶段：P0 已落地（插件骨架 + 三表迁移 + DSL 编译层 + 检查注册表 + `table/*` / `document/*` 检查 + 手动执行器 + 全部 API）；P1 未开始
+- 已完成：P0 代码与分层测试（DSL 66 / 检查 37 / 执行器 19 / API 26 / 迁移 5）；alembic head 推进到 `y3z4a5b6c7d8`
+- 下一步：P1 前端页面（列表 / 编辑 / 运行详情）+ 三个事件分发点（记录批量变更 / 文档保存 / 同步完成）
+- 已知坑：YAML 1.1 把裸键 `on` 解析为布尔 `True`（编译层已归一回字符串键）；`with: null` 归一为空映射，`with: []` 明确报错；`doc` 型工作区不显示「质量检查」页签（无数据表目标）；检查执行走只读连接（SQLite 单写者场景避免与写路径抢锁）
+- 最近一次全绿：`make check` @ P0 落地（2026-10-31）
