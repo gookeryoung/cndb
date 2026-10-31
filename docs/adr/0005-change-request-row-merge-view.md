@@ -134,7 +134,7 @@ Related: `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/chan
 | M1 后端契约 + 分组 + 冲突检测 + 批量 merge | 已落地 | `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/change_requests/routers/change_requests.py`、`src/cndb/plugins/change_requests/schemas.py` | `tests/test_change_requests_merge_view.py`、`tests/test_change_requests_api.py` | `22d5ed58` |
 | M2 前端列表分组视图 + 批量审批 | 已落地 | `frontend/src/pages/changeRequests/ChangeRequestsPage.tsx`、`frontend/src/api/changeRequests.ts` | `frontend/src/pages/changeRequests/ChangeRequestsPage.test.tsx` | `22d5ed58` |
 | M3 冲突处理页 | 已落地 | `frontend/src/pages/changeRequests/ChangeRequestRowMergePage.tsx` | `frontend/src/pages/changeRequests/ChangeRequestRowMergePage.test.tsx` | `22d5ed58` |
-| M4 `usePendingChanges` 收敛 + 文档同步 | 已落地 | `frontend/src/pages/grid/useGridData.ts` | `frontend/src/pages/grid/useGridData.test.tsx`（聚合端点单次调用 / 详情端点零请求 / Map 取组内最新申请且 ungrouped 排除） | 见 git log |
+| M4 `usePendingChanges` 收敛 + 文档同步 | 已落地 | `frontend/src/pages/grid/useGridData.ts` | `frontend/src/pages/grid/useGridData.test.tsx`（聚合端点单次调用 / 详情端点零请求 / Map 取组内最新申请且 ungrouped 排除） | `b03ad090` |
 
 ## 交接（会话结束更新）
 
