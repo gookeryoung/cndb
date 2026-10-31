@@ -177,7 +177,7 @@ Related: `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme
   1. **Chromium 81 真机冒烟首跑**（`pnpm e2e:chrome81`，定时 CI 每日 02:00 UTC 自动触发）：升级后首次真机验证，重点核对 `:has()` 受影响组件（form / tabs / input / select / card / pagination / date-picker / tooltip / tree / splitter）与 10 套主题截图
   2. 人工评审本 ADR，全绿后回填 `Implemented`
 - 已知坑：
-  - antd 6 DOM 结构变化集中在：Select（无 `.ant-select-selector`，交互打根节点；搜索框为 `input.ant-select-input`；单选选中值在 `.ant-select-content`）、Modal（`.ant-modal-content`→`.ant-modal-container`）、Drawer（`.ant-drawer-content`→`.ant-drawer-section`）、Image 预览关闭钮（无 aria-label，zhCN 下 Modal 关闭钮 aria-label 为「关闭」与页脚按钮重名）、Input.Search（data-testid 落在 group 包装层）
+  - antd 6 DOM 结构变化集中在：Select（无 `.ant-select-selector`，交互打根节点；搜索框为 `input.ant-select-input`；单选选中值在 `.ant-select-content`）、Tabs（面板由 `.ant-tabs-tabpane` 改为 `.ant-tabs-content`，激活态 `.ant-tabs-content-active`，隐藏态 `.ant-tabs-content-hidden`；容器 `.ant-tabs-content-holder` 改为 `.ant-tabs-body-holder`）、Modal（`.ant-modal-content`→`.ant-modal-container`）、Drawer（`.ant-drawer-content`→`.ant-drawer-section`）、Image 预览关闭钮（无 aria-label，zhCN 下 Modal 关闭钮 aria-label 为「关闭」与页脚按钮重名）、Input.Search（data-testid 落在 group 包装层）
   - **react-dom 19.3.1 补丁**：delayed-commit 的 `window.event` 读取无环境守卫，vitest 逐文件拆除 jsdom 环境后触发即抛 ReferenceError（覆盖率模式必现，计 unhandled error 使门禁失败）——补丁加 `typeof window` 守卫（`patches/react-dom@19.3.1.patch`，production 构建无该代码无需改），上游修复后可撤
   - **测试环境关闭 router `v7_startTransition`**（`render-providers.tsx`，生产 main.tsx 保持开启）：路由 transition 在用例卸载时仍在进行同样触发上述竞态；测试断言业务语义而非并发时序
   - `Form.useWatch` 在 antd 6 / React 19 下为异步微任务回流：受控组件断言必须用 `waitFor`（浏览器无感知差异）

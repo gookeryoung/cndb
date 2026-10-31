@@ -289,10 +289,11 @@ async function main() {
       if (tabs.length < 2) throw new Error('未找到导出 Tab')
       tabs[1].click()
     })
-    // antd 6 移除了 .ant-select-selector，mousedown 事件需派发到 .ant-select 根节点
-    await page.waitForSelector('.ant-modal .ant-tabs-tabpane-active .ant-select', { timeout: 15_000 })
+    // antd 6：Tab 面板类名由 .ant-tabs-tabpane 改为 .ant-tabs-content（激活态 .ant-tabs-content-active）；
+    // 同时移除了 .ant-select-selector，mousedown 事件需派发到 .ant-select 根节点
+    await page.waitForSelector('.ant-modal .ant-tabs-content-active .ant-select', { timeout: 15_000 })
     await page.evaluate(() => {
-      const selector = document.querySelector('.ant-modal .ant-tabs-tabpane-active .ant-select')
+      const selector = document.querySelector('.ant-modal .ant-tabs-content-active .ant-select')
       selector.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
       selector.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
       selector.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -308,7 +309,7 @@ async function main() {
       option.click()
     })
     await page.waitForFunction(
-      () => (document.querySelector('.ant-modal .ant-tabs-tabpane-active .ant-select-content')?.textContent ?? '')
+      () => (document.querySelector('.ant-modal .ant-tabs-content-active .ant-select-content')?.textContent ?? '')
         .includes('PDF'),
       { timeout: 10_000 },
     )
@@ -333,7 +334,7 @@ async function main() {
       }
     })
     await page.evaluate(() => {
-      const active = document.querySelector('.ant-modal .ant-tabs-tabpane-active')
+      const active = document.querySelector('.ant-modal .ant-tabs-content-active')
       const button = Array.from(active?.querySelectorAll('button') ?? [])
         .find((el) => (el.textContent || '').trim() === '下载')
       if (!button) throw new Error('未找到下载按钮')
