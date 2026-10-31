@@ -343,7 +343,7 @@ export interface ChartTypeDef {
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/views/dashboard/WidgetShell.tsx`、`src/cndb/plugins/tables/services/core/dashboard_config.py`、`src/cndb/plugins/tables/routers/views.py`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx`、`src/cndb/cli/seed/views.py` | `tests/test_dashboard_config.py`、`tests/fixtures/dashboard/schema_cases.json`、`frontend/src/pages/grid/views/dashboard/*.test.ts`、`frontend/src/pages/grid/views/dashboard/*.test.tsx` | 随本次提交 |
+| P0 | 已落地 | `frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/views/dashboard/WidgetShell.tsx`、`src/cndb/plugins/tables/services/core/dashboard_config.py`、`src/cndb/plugins/tables/routers/views.py`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx`、`src/cndb/cli/seed/views.py` | `tests/test_dashboard_config.py`、`tests/fixtures/dashboard/schema_cases.json`、`frontend/src/pages/grid/views/dashboard/*.test.ts`、`frontend/src/pages/grid/views/dashboard/*.test.tsx` | fccfa05c |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 | P3 | 未开始 | — | — | — |
