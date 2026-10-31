@@ -117,7 +117,7 @@ Related: `frontend/src/pages/grid/views/ChartView.tsx`、`frontend/src/pages/gri
 **坐标模型**：12 列栅格，行高 40px，间距 12px。widget 存 `{x,y,w,h}` 整数格，渲染映射为 CSS Grid：
 
 ```ts
-// frontend/src/pages/grid/views/dashboard/layout/dashboardLayout.ts
+// frontend/src/pages/grid/views/dashboard/dashboardLayout.ts
 export interface WidgetBox { id: string; x: number; y: number; w: number; h: number }
 export function clampBox(box: WidgetBox, cols: number): WidgetBox        // 越界收敛（I2 第一道）
 export function resolveOverlap(boxes: WidgetBox[], movingId: string, cols: number): WidgetBox[]
@@ -148,7 +148,7 @@ export function collapseNarrow(boxes: WidgetBox[], cols: number): WidgetBox[]
 2. **数字输入**：属性面板的 `x / y / w / h` 四个 `InputNumber`；卡片聚焦后方向键移动 1 格、`Shift+方向键` 改尺寸；`aria-valuenow` 暴露当前格值（可访问性）。
 3. **版式预设**：`presets.ts` 提供 5 种 —— 单栏 / 两栏等分 / 主次（8+4）/ 2×2 / KPI 条 + 图表（4×3 顶条 + 下方两列）。预设只重排现有 widget 的 `layout`，不增删内容；数量不足时留空位，多余时继续按预设列流式排列。
 
-编辑态与预览态：`editing` 为本地布尔；编辑态显示栅格底纹、手柄、添加按钮、属性面板、撤销栈（快照式，上限 50 步）；`⌘/Ctrl+S` 保存，`Esc` 退出编辑并回滚未保存变更（有确认）。保存走既有 `PUT /views/{id}`（`view_options` 整体替换），并发冲突按 `updated_at` 比对提示「他人已修改，请刷新后重试」。
+编辑态与预览态：`editing` 为本地布尔；编辑态显示栅格底纹、手柄、添加按钮、属性面板、撤销栈（快照式，上限 50 步）；`⌘/Ctrl+S` 保存，`Esc` 退出编辑并回滚未保存变更（有确认）。保存走既有 `PATCH /views/{id}`（`view_options` 整体替换）；单用户编辑下采用后写覆盖，`updated_at` 乐观并发比对随 P2 批量取数一同接入（避免与取数缓存失效在同轮改两处契约）。
 
 ### 3. 图表展示方案
 
@@ -247,8 +247,8 @@ export interface ChartTypeDef {
 | 画布 | `DashboardGrid.tsx` | CSS Grid 渲染 + 拖拽/缩放/吸附（编辑态） |
 | 卡壳 | `WidgetShell.tsx` | 标题、工具条、四态、手柄、`role="group"` |
 | 内容 | `widgets/{Chart,Kpi,Table,Text}Widget.tsx` | 只消费 `Dataset` |
-| 布局 | `layout/dashboardLayout.ts`、`layout/presets.ts` | 纯函数（I2）+ 预设 |
-| 配置 | `config/DashboardConfigDrawer.tsx`、`config/widgetSchema.ts` | 属性面板 + widget 配置 schema（扩展 `ViewOptionSchema` 的 `kind`） |
+| 布局 | `dashboardLayout.ts`、`dashboardDraft.ts`、`useDashboardDraft.ts` | 纯函数（I2）+ 5 种预设 + 快照撤销栈与 draft 操作 |
+| 配置 | `DashboardConfigDrawer.tsx` | 属性面板（布局 / 数据 / 外观；懒加载） |
 | 图表 | `chart/chartRegistry.ts`、`chart/optionBuilders/*.ts` | 类型注册表与装配函数 |
 | 模型 | `dashboardModel.ts` | 解析 / 归一 / 序列化 / 版本迁移 |
 | 接线 | `views/viewModes.ts`、`GridPage.tsx`、`view-config/CreateEditViewForm.tsx` | 加 `dashboard` 模式按钮（lazy + hover 预取，同 `ChartView`）、类型下拉项 |
@@ -301,7 +301,7 @@ export interface ChartTypeDef {
 | 期 | 目标 | 交付物 | 关键实现要点 | 验收 | 风险 |
 |---|---|---|---|---|---|
 | **P0** | 契约先立住：配置能存、能校验、能只读渲染 | schema v1（TS + Python）+ `schema_cases.json`；`view_type=dashboard` 接线；`dashboardModel` / `dashboardLayout`（只含 `clamp/compact`）；`ChartWidget` / `KpiWidget` / `TextWidget`；固定栅格只读渲染；seed 示例一屏 | ① `ViewType` 加 `DASHBOARD` + `KNOWN_VIEW_TYPES` 白名单（历史 `form` 兼容）；② `ChartCard` 增加 `dataset` 直传入口，避免第二套图表实现；③ 批量取数先做**客户端版**（复用 `useGridData` 行集，>2000 行提示截断）；④ `DashboardView` lazy + hover 预取；⑤ 属性面板先只读展示（"配置项一览"），编辑留 P1 | `make flow` 全绿；刷新后配置与渲染一致；非法配置 400 且 `detail` 定位到 `widgets[i].xxx`；bundle 基线更新带 reason | 契约一次定不全 → 用 `schema_version` + 白名单裁剪兜底，不为将来预埋字段 |
-| **P1** | 可视化搭建：所见即所得的布局编辑器 | `DashboardGrid` 拖拽/缩放/吸附；数字输入 + 键盘微调；5 种预设；`DashboardConfigDrawer`（布局 / 数据 / 外观三段）；撤销栈与脏检查；窄屏塌陷 | ① 拖拽期只改 `transform` 预览，松手才写坐标（避免逐帧 reflow）；② `resolveOverlap` 下推 + `compact` 上浮是保存前唯一出口；③ 手柄只出现在编辑态与 hover 态，不用常驻控件占用卡面；④ 撤销存「widgets 快照」而非操作日志（≤32 块内存可控）；⑤ 保存用 `updated_at` 比对做乐观并发控制 | 拖拽 60fps（20 块以上不卡）；任意拖动后保存 → 重载无重叠无洞；撤销/重做与 `Esc` 行为有单测；e2e 拖拽用例通过 | 拖拽与滚动抢手势 → pointer sensor `distance:4`，容器滚动区不拦 `wheel` |
+| **P1** | 可视化搭建：所见即所得的布局编辑器 | `DashboardGrid` 拖拽/缩放/吸附；数字输入 + 键盘微调；5 种预设；`DashboardConfigDrawer`（布局 / 数据 / 外观三段）；撤销栈与脏检查；窄屏塌陷 | ① 拖拽期只改 `transform` 预览，松手才写坐标（避免逐帧 reflow）；② `resolveOverlap` 下推 + `compact` 上浮是保存前唯一出口；③ 手柄只出现在编辑态与 hover 态，不用常驻控件占用卡面；④ 撤销存「widgets 快照」而非操作日志（≤32 块内存可控）；⑤ 保存走既有 `PATCH /views/{id}` 后写覆盖，`updated_at` 乐观并发比对随 P2 批量取数接入 | 拖拽 60fps（20 块以上不卡）；任意拖动后保存 → 重载无重叠无洞；撤销/重做与 `Esc` 行为有单测；e2e 拖拽用例通过 | 拖拽与滚动抢手势 → pointer sensor `distance:4`，容器滚动区不拦 `wheel` |
 | **P2** | 图表够用：常见业务图表 + 大表口径 | `chartRegistry` + 8 类新图（area/stack/combo/radar/funnel/gauge/heatmap/treemap）；多度量与双轴；TopN / 排序 / 数值格式 / 阈值配色；`TableWidget`；服务端聚合端点 + 缓存；单卡 PNG 导出 | ① option 装配拆成 `axis/tooltip/legend/palette` 四个 helper，builder 只写差异；② 服务端 `Dataset` 与客户端同构（I3），`compute_summary` 输出直接映射；③ 同 `(table, filters)` 只扫一次，多 widget 共享行集；④ 新图表类型按需 `echarts.use`，不进主入口；⑤ 每类图一个 option 快照测试（`toMatchSnapshot`，锁配色与轴口径） | 大表（1.2 万行）首屏 ≤2s 且不拉全量行；每类图有快照；服务端/客户端同数据结果一致；`bundle-budget` 通过 | 新图类型膨胀体积 → 分 group 动态 `import()`，`gauge/treemap` 这类低频图后置 |
 | **P3** | 模板化：复用与联动 | 另存为模板 / 从模板创建（字段映射 + 缺字段标记）；跨表 widget（逐表 READ + 字段隐藏）；全局筛选联动（`{{global.x}}`）；定时刷新；整屏导出 / 只读分享（另议 ADR） | ① 模板 = 去掉 `query.table_id` 与字段名的「结构 + 角色意图」，落地时按目标表重新解析字段（同名优先，类型兜底）；② 跨表校验逐表 `get_table_or_404(READ)`，失败降级为无权限卡；③ 全局筛选注入在取数前统一改写 `filters`，不在渲染层拼条件；④ 刷新用 `refresh_interval` + 页面可见性暂停（后台标签不轮询） | 模板跨表落地后缺字段有明确提示且可一键改；跨表越权用例 403/无权限卡；全局筛选生效范围有单测 | 模板跨表映射歧义 → 只自动认领同名同类型字段，其余标「待配置」，不猜 |
 
@@ -344,14 +344,14 @@ export interface ChartTypeDef {
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/views/dashboard/WidgetShell.tsx`、`src/cndb/plugins/tables/services/core/dashboard_config.py`、`src/cndb/plugins/tables/routers/views.py`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx`、`src/cndb/cli/seed/views.py` | `tests/test_dashboard_config.py`、`tests/fixtures/dashboard/schema_cases.json`、`frontend/src/pages/grid/views/dashboard/*.test.ts`、`frontend/src/pages/grid/views/dashboard/*.test.tsx` | fccfa05c |
-| P1 | 未开始 | — | — | — |
+| P1 | 已落地 | `frontend/src/pages/grid/views/dashboard/DashboardGrid.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardConfigDrawer.tsx`、`frontend/src/pages/grid/views/dashboard/dashboardLayout.ts`、`frontend/src/pages/grid/views/dashboard/dashboardDraft.ts`、`frontend/src/pages/grid/views/dashboard/useDashboardDraft.ts`、`frontend/src/pages/grid/views/dashboard/WidgetShell.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/GridPage.tsx` | `frontend/src/pages/grid/views/dashboard/dashboardLayout.test.ts`、`frontend/src/pages/grid/views/dashboard/dashboardDraft.test.ts`、`frontend/src/pages/grid/views/dashboard/DashboardConfigDrawer.test.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.test.tsx`、`frontend/tests/e2e/critical/dashboard-edit.spec.ts` | 56292c12 |
 | P2 | 未开始 | — | — | — |
 | P3 | 未开始 | — | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地，下一步 P1（布局编辑器）
-- 已完成：schema v1（TS `dashboardModel.ts` + Python `dashboard_config.py`）与共享契约用例 `tests/fixtures/dashboard/schema_cases.json`；`view_type=dashboard` 白名单与 create/update/seed 接线；只读栅格渲染（`DashboardView` + Chart/KPI/Text/Table）；客户端组件级 query；非法配置 400 定位 `widgets[i].xxx`；seed「销售画布」示例；`DashboardView` lazy chunk 已入 bundle 基线
-- 下一步：P1 拖拽 / 缩放 / 吸附 + 数字输入 + 5 种预设 + `DashboardConfigDrawer` + 撤销栈与脏检查；先做 `DashboardGrid` 的纯函数 `resolveOverlap` 与测试
-- 已知坑：`ChartCard` 的 ECharts 实例必须常驻容器（dispose 会清空 DOM，React 再卸载子节点会抛 `removeChild`），画布卡片沿用「容器不承载 React 子节点、空态用兄弟覆盖层」的写法；P0 复用 `useGridData` 的 2000 行行集，大表截断提示与服务端聚合留 P2；`applyWidgetQuery` 的排序空值恒排后（对齐 SQL NULLS LAST）
-- 最近一次全绿：`make test` 6197 passed / 前端 2536 passed（一次并行抖动用例单跑通过）
+- 当前阶段：P1 已落地，下一步 P2（图表能力与聚合口径）
+- 已完成：P0 契约与只读画布；P1 布局编辑器——`DashboardGrid` 拖拽 / 缩放 / 方向键微调（拖拽期仅 `transform` 预览，松手提交一次），`DashboardConfigDrawer`（布局 / 数据 / 外观，lazy 加载）数字输入与组件增删，5 种版式预设，快照式撤销栈（≤50 步）+ 脏检查，显式保存 / `Ctrl+S` 与 `Esc` 确认回滚，窄屏塌陷 + 编辑入口禁用；`GridPage` 保存链路先写 draft 再立即持久化，避开 500ms 防抖窗口
+- 下一步：P2 `chartRegistry` + 8 类新图（area/stack/combo/radar/funnel/gauge/heatmap/treemap）、多度量与双轴、TopN / 数值格式 / 阈值配色、服务端聚合端点与缓存
+- 已知坑：① dnd-kit 的 `listeners` 是 `{ onPointerDown }` 映射，必须逐事件展开到 DOM，若整体作为 `listeners={...}` 透传则拖拽永不激活；② dnd-kit 在拖拽激活后于 document 捕获阶段拦截 click，松手 50ms 后才移除，e2e 拖拽后需等待再点工具栏；③ 图标类子元素会抢 pointer 事件，拖拽手柄内的 icon 需 `pointerEvents: none`；④ `ChartCard` 的 ECharts 实例必须常驻容器（dispose 会清空 DOM，React 再卸载子节点会抛 `removeChild`）；⑤ P1 保存尚未接 `updated_at` 乐观并发（ADR §2 约定留待 P2 与批量取数同批处理）
+- 最近一次全绿：`make check`（后端 6197 passed / 覆盖率 95.81%，前端 lint/typecheck/覆盖率全绿）、`make e2e`（93 passed / 21 skipped，含 `dashboard-edit.spec.ts` 拖拽保存用例）
