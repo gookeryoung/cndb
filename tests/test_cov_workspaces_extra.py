@@ -135,7 +135,7 @@ class TestWorkspacesImportRouter:
 
         before = db.query(Workspace).count()
         data = {
-            "version": "9",
+            "version": "99",
             "tables": [],
             "workspace": {"visibility": "bogus", "workspace_type": "bogus"},
         }

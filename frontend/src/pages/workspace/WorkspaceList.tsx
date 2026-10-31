@@ -406,6 +406,7 @@ export default function WorkspaceList() {
           open={!!backupOpen}
           wid={String(backupOpen.id)}
           workspaceName={backupOpen.name}
+          currentUserRole={backupOpen.current_user_role ?? null}
           onClose={() => setBackupOpen(null)}
         />
       )}
@@ -657,8 +658,8 @@ function WorkspaceRowDetail({
   )
 }
 
-/** 允许导入的文件扩展名 */
-const ACCEPTED_BACKUP_EXT = ['.json']
+/** 允许导入的文件扩展名（JSON 备份 / 全量归档） */
+const ACCEPTED_BACKUP_EXT = ['.json', '.tar.gz']
 
 interface ImportWorkspaceModalProps {
   open: boolean
@@ -673,23 +674,33 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
   const [importing, setImporting] = useState(false)
   const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number; documents: number } | null>(null)
   const [pendingJson, setPendingJson] = useState<Record<string, unknown> | null>(null)
+  const [pendingArchive, setPendingArchive] = useState<File | null>(null)
 
   const reset = () => {
     setImportResult(null)
     setPendingJson(null)
+    setPendingArchive(null)
     form.resetFields()
   }
 
   const beforeUpload = async (file: File) => {
     const name = file.name.toLowerCase()
     if (!ACCEPTED_BACKUP_EXT.some(ext => name.endsWith(ext))) {
-      onError(new Error('仅支持 JSON 备份文件'))
+      onError(new Error('仅支持 JSON 备份或 tar.gz 全量归档文件'))
+      return false
+    }
+    // 全量归档（.tar.gz）：不做本地解析，直接上传交给后端解包
+    if (name.endsWith('.tar.gz')) {
+      setPendingJson(null)
+      setPendingArchive(file)
+      setImportResult(null)
       return false
     }
     try {
       const text = await file.text()
       const json = JSON.parse(text)
       setPendingJson(json)
+      setPendingArchive(null)
       setImportResult(null)
       // 自动从备份文件里的 workspace.name 填充工作区名称
       const wsMeta = (json as Record<string, any>).workspace
@@ -704,7 +715,7 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
   }
 
   const handleSubmit = async () => {
-    if (!pendingJson) {
+    if (!pendingJson && !pendingArchive) {
       onError(new Error('请先选择备份文件'))
       return
     }
@@ -714,9 +725,21 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
 
     try {
       setImporting(true)
+      if (pendingArchive) {
+        // 全量归档导入（v9）：归档内自带工作区元信息，名称以归档为准
+        const result = await workspaceApi.importWorkspaceArchive(pendingArchive)
+        setImportResult({
+          tables: result.imported_tables,
+          rows: result.imported_rows,
+          views: result.imported_views,
+          documents: result.imported_documents ?? 0,
+        })
+        setTimeout(() => onSuccess(result.workspace), 800)
+        return
+      }
       const result = await workspaceApi.importFromBackup({
         name: values.name,
-        json_data: pendingJson,
+        json_data: pendingJson!,
       })
       setImportResult({
         tables: result.imported_tables,
@@ -768,8 +791,8 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
               showUploadList={false}
             >
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖拽 JSON 备份文件到此处</p>
-              <p className="ant-upload-hint">从其他工作区导出的 JSON 备份文件</p>
+              <p className="ant-upload-text">点击或拖拽备份文件到此处</p>
+              <p className="ant-upload-hint">JSON 备份或全量归档（.tar.gz）文件</p>
             </Upload.Dragger>
           </div>
         </Form>

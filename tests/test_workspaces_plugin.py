@@ -971,11 +971,11 @@ class TestWorkspaceExportImport:
         ws_id = self._create_ws(client, token)
         r = client.post(
             f"/api/v1/workspaces/{ws_id}/import",
-            json={"json_data": {"version": "9", "tables": []}},
+            json={"json_data": {"version": "99", "tables": []}},
             headers=_headers(token),
         )
         assert r.status_code == 400
-        assert "9" in r.json()["detail"]
+        assert "99" in r.json()["detail"]
         assert "1" in r.json()["detail"]
 
     def test_import_workspace_legacy_default_key(self, client, owner_user, db, monkeypatch):

@@ -63,6 +63,7 @@
 | [0057](0057-document-draft-diff-view.md) | 文档草稿 — 修改内容查看（diff）、保存与丢弃 | Accepted | P0-P2 已落地（待人工评审） | `src/cndb/plugins/documents/services/drafts.py`、`frontend/src/pages/documents/DocumentEditorPage.tsx` | `tests/test_document_drafts.py`、`frontend/src/pages/documents/DocumentEditorPage.test.tsx`、`frontend/tests/e2e/critical/document-draft-diff-discard.spec.ts` | [未发布](../../CHANGELOG.md) |
 | [0060](0060-document-chart-click-zoom.md) | 文档图表点击放大查看（查看 / 游客模式对齐图片预览） | Accepted | P0-P1 已落地（待人工评审） | `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/index.css` | `frontend/src/components/Document/ChartEmbed.test.tsx`、`frontend/tests/e2e/critical/document-chart-embed.spec.ts` | [未发布](../../CHANGELOG.md) |
 | [0074](0074-react19-antd6-upgrade.md) | 前端迁移 React 19 + antd 6 | Implemented | P0-P2 已落地（含 List→Listy 迁移专项，e14d48b0） | `frontend/package.json`、`frontend/patches/`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/pages/**` | `frontend/src/theme/ThemeProvider.compat.test.tsx`、`frontend/tests/e2e/critical/antd-deprecation.spec.ts` | [未发布](../../CHANGELOG.md) |
+| [0075](0075-workspace-full-backup.md) | 工作区全量备份与恢复（归档格式 + 覆盖恢复） | Accepted | 未开始 | — | — | — |
 
 ## 说明
 

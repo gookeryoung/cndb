@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 
 from fastapi import HTTPException
@@ -57,8 +58,12 @@ def _import_backup_into_workspace(
     json_data: dict[str, Any],
     current_user: User,
     db: Session,
+    files_dir: Path | None = None,
 ) -> WorkspaceImportResponse:
-    """把备份 JSON 中的表/行/视图导入到指定工作区（内部 helper，不做权限校验）."""
+    """把备份 JSON 中的表/行/视图导入到指定工作区（内部 helper，不做权限校验）.
+
+    ``files_dir``：v9 归档解出的 ``payload/`` 目录（含 ``files/``）；纯 JSON 导入传 None。
+    """
     import logging
 
     from cndb.plugins.tables.models import (
@@ -68,6 +73,7 @@ def _import_backup_into_workspace(
         RowAction,
         RowPermission,
         RowSubject,
+        TableMember,
         TablePermission,
         ViewVisibility,
         ensure_default_view,
@@ -77,10 +83,10 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4", "5", "6", "7", "8"):
+    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8）。请升级程序后再导入。",
+            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9）。请升级程序后再导入。",
         )
 
     imported_tables = 0
@@ -101,6 +107,8 @@ def _import_backup_into_workspace(
     pending_field_refs: list[tuple[DataField, dict[str, Any]]] = []
     row_id_maps: dict[int, dict[int, int]] = {}
     pending_link_rows: list[tuple[DataField, DataTable, list[list[int]]]] = []
+    # v9（ADR 0075）：旧行 id → 新行 id（按表），供附件归属（file_owners.row_id）回填
+    old_row_id_map: dict[tuple[int, int], int] = {}
 
     # 循环前先提交任何待处理事务，确保连接以干净状态进入逐表循环。
     # 原因：SQLite 的隐式事务（由 flush() 开启）会持有 RESERVED 锁，
@@ -205,6 +213,8 @@ def _import_backup_into_workspace(
                     sa_table = SATable(table.db_table_name, metadata, autoload_with=db.bind)
                     row_values = []
                     row_orig_idx: list[int] = []
+                    # v9：旧行 id（__row_id），与 row_values 顺序对齐，供附件归属回填
+                    old_row_ids: list[int | None] = []
                     for idx, raw in enumerate(rows_data):
                         values = {}
                         for f in fields_order:
@@ -216,9 +226,11 @@ def _import_backup_into_workspace(
                                 values[f.db_column_name] = raw[f.name]
                             elif f.db_column_name in raw:
                                 values[f.db_column_name] = raw[f.db_column_name]
+                        raw_rid = raw.get("__row_id")
                         if values:
                             row_values.append(values)
                             row_orig_idx.append(idx)
+                            old_row_ids.append(raw_rid if isinstance(raw_rid, int) else None)
                     if row_values:
                         _coerce_row_value_types(sa_table, row_values)
                         db.execute(insert(sa_table), row_values)
@@ -228,6 +240,10 @@ def _import_backup_into_workspace(
                         if isinstance(old_table_id, int):
                             new_ids = [r[0] for r in db.execute(select(sa_table.c.id).order_by(sa_table.c.id)).all()]
                             row_id_maps[table.id] = dict(zip(row_orig_idx, new_ids, strict=False))
+                            # v9：旧行 id → 新行 id（仅 __row_id 齐全时可用），供附件归属回填
+                            for old_rid, new_rid in zip(old_row_ids, new_ids, strict=False):
+                                if old_rid is not None:
+                                    old_row_id_map[(old_table_id, old_rid)] = new_rid
                     if len(row_values) < len(rows_data):
                         # 行键无法匹配（如旧版备份的随机物理列名）时不许静默丢数据
                         dropped = len(rows_data) - len(row_values)
@@ -324,6 +340,18 @@ def _import_backup_into_workspace(
                     )
                 )
 
+            # v9（ADR 0075）：表级成员授权还原（user_id 不随备份导出，统一归当前用户）
+            for md in tbl_data.get("members", []) or []:
+                if not isinstance(md, dict):
+                    continue
+                exists = (
+                    db.query(TableMember)
+                    .filter(TableMember.table_id == table.id, TableMember.user_id == current_user.id)
+                    .first()
+                )
+                if exists is None:
+                    db.add(TableMember(table_id=table.id, user_id=current_user.id, role=str(md.get("role") or "read")))
+
             # 每个表的视图/行数据独立提交，避免再次持锁影响后续 DDL
             db.commit()
             imported_tables += 1
@@ -384,7 +412,7 @@ def _import_backup_into_workspace(
                 logging.getLogger(__name__).warning("%s", msg)
 
         # ── 文档标签 + 文档树还原（仅最新正文，不含历史版本） ──
-        doc_imported, doc_errors = _import_documents(workspace_id, json_data, current_user, db)
+        doc_imported, doc_errors, doc_id_map = _import_documents(workspace_id, json_data, current_user, db)
         imported_documents += doc_imported
         errors.extend(doc_errors)
 
@@ -397,6 +425,19 @@ def _import_backup_into_workspace(
         chart_imported, chart_errors = _import_charts(workspace_id, json_data, current_user, db)
         imported_charts += chart_imported
         errors.extend(chart_errors)
+
+        # ── v9（ADR 0075）：版本历史/草稿/置顶/分享/议题/修改申请/会话密钥/游标/附件 ──
+        v9_errors = _import_v9_extras(
+            workspace_id,
+            json_data,
+            current_user,
+            db,
+            doc_id_map=doc_id_map,
+            table_id_map=table_id_map,
+            old_row_id_map=old_row_id_map,
+            files_dir=files_dir,
+        )
+        errors.extend(v9_errors)
 
         # v7（ADR 0019）：大模型连接是个人配置，不随工作区备份导出；
         # 旧 v6 备份里可能残留的 ``llm_config`` 键按未知键忽略。
@@ -423,8 +464,8 @@ def _import_documents(
     json_data: dict[str, Any],
     current_user: User,
     db: Session,
-) -> tuple[int, list[str]]:
-    """还原备份中的文档标签与文档树（仅最新正文），返回 (成功文档数, 错误明细).
+) -> tuple[int, list[str], dict[int, int]]:
+    """还原备份中的文档标签与文档树（仅最新正文），返回 (成功文档数, 错误明细, 旧文档 id → 新 id 映射).
 
     - 标签按 ``(workspace_id, name)`` 幂等创建，备份内旧标签 id 映射到新 id；
     - 文档经 ``create_document`` 落库：自动生成 slug、解析元数据、按分级存储策略
@@ -468,18 +509,38 @@ def _import_documents(
         title = (dd.get("title") or "").strip()
         try:
             mapped_tags = [tag_id_map[t] for t in (dd.get("tag_ids") or []) if t in tag_id_map]
+            asset_key = dd.get("asset_file_key")
             doc = create_document(
                 db,
                 workspace_id,
                 current_user,
                 title=title,
-                content="" if dd.get("is_folder") else (dd.get("content") or ""),
+                content="" if (dd.get("is_folder") or asset_key) else (dd.get("content") or ""),
                 is_folder=bool(dd.get("is_folder", False)),
                 parent_id=None,
                 status=dd.get("status") or "draft",
                 tag_ids=mapped_tags or None,
                 sort_order=int(dd.get("sort_order") or 0),
+                # v9（ADR 0075）：原件族文档随备份还原（file_key 指向归档内 uploads 条目）
+                content_type=dd.get("content_type") or "markdown",
+                asset_file_key=asset_key,
+                asset_mime=dd.get("asset_mime") or "",
+                content_size=int(dd.get("content_size") or 0) if asset_key else None,
             )
+            # v9：软删除元数据还原（回收站文档随备份携带）
+            if dd.get("is_deleted"):
+                import datetime as _dt
+
+                doc.is_deleted = True
+                raw_deleted_at = dd.get("deleted_at")
+                if raw_deleted_at:
+                    try:
+                        doc.deleted_at = _dt.datetime.fromisoformat(raw_deleted_at)
+                    except ValueError:
+                        doc.deleted_at = _dt.datetime.now(_dt.UTC)
+                doc.deleted_by_id = current_user.id
+                db.add(doc)
+                db.commit()
             old_doc_id = dd.get("id")
             if isinstance(old_doc_id, int):
                 doc_id_map[old_doc_id] = doc.id
@@ -509,7 +570,7 @@ def _import_documents(
     if changed:
         db.commit()
 
-    return imported, errors
+    return imported, errors, doc_id_map
 
 
 def _import_sync_jobs(
@@ -589,6 +650,358 @@ def _import_sync_jobs(
     if imported:
         db.commit()
     return imported, errors
+
+
+def _import_v9_extras(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+    *,
+    doc_id_map: dict[int, int],
+    table_id_map: dict[int, int],
+    old_row_id_map: dict[tuple[int, int], int],
+    files_dir: Path | None,
+) -> list[str]:
+    """还原 v9（ADR 0075）新增的备份数据，返回错误明细（不阻断整体导入）.
+
+    覆盖：文档版本历史、草稿、置顶、分享、议题+评论、修改申请、数据源会话
+    （含密钥）、entrant 游标、附件文件与归属记录。旧版备份无对应键时按空处理。
+    """
+    import datetime as _dt
+
+    from cndb.plugins.datasource.models import DatasourceEntrantCursor, DatasourceSession, DatasourceSyncJob
+    from cndb.plugins.documents.models import (
+        DocumentChangeRequest,
+        DocumentDraft,
+        DocumentIssue,
+        DocumentIssueComment,
+        DocumentPin,
+        DocumentShare,
+        DocumentVersion,
+    )
+    from cndb.plugins.documents.services.content import _external_version_path, _store_content_bytes, latest_version
+    from cndb.plugins.files.models import FileOwner
+    from cndb.plugins.files.services import resolve_workspace_file
+
+    errors: list[str] = []
+
+    def _new_doc_id(old: Any) -> int | None:
+        return doc_id_map.get(old) if isinstance(old, int) else None
+
+    def _restore_version_content(doc_id: int, vn: int, entry: dict[str, Any]) -> tuple[str, str]:
+        """按分级存储策略还原版本内容，返回 (DB content 字段值, 明文正文)."""
+        import gzip
+
+        content = entry.get("content") or ""
+        content_file = entry.get("content_file")
+        if content_file and files_dir is not None:
+            src = files_dir / content_file
+            if src.is_file():
+                raw = src.read_bytes()
+                dest = _external_version_path(doc_id, vn)
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(raw)
+                try:
+                    plain = gzip.decompress(raw).decode("utf-8")
+                except (OSError, EOFError, ValueError):
+                    plain = ""
+                return "", plain
+            errors.append(f"文档 {doc_id} v{vn} 外存内容文件缺失: {content_file}")
+        size = int(entry.get("content_size") or len(content.encode("utf-8")))
+        from cndb.plugins.documents.models import Document
+
+        doc = db.get(Document, doc_id)
+        if doc is None:
+            return content, content
+        stored_value = _store_content_bytes(doc, vn, content, size)  # type: ignore[arg-type]
+        return stored_value, content
+
+    # ── 1) 文档版本历史 ──
+    for entry in json_data.get("document_versions", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        doc_id = _new_doc_id(entry.get("document_id"))
+        if doc_id is None:
+            continue
+        vn = int(entry.get("version_number") or 1)
+        try:
+            existing = (
+                db.query(DocumentVersion)
+                .filter(DocumentVersion.document_id == doc_id, DocumentVersion.version_number == vn)
+                .first()
+            )
+            stored, plain = _restore_version_content(doc_id, vn, entry)
+            if existing is not None:
+                existing.content = stored
+                existing.content_size = int(entry.get("content_size") or 0)
+                existing.content_hash = entry.get("content_hash")
+                existing.change_summary = entry.get("change_summary") or ""
+                existing.change_type = entry.get("change_type") or "manual"
+                db.add(existing)
+            else:
+                db.add(
+                    DocumentVersion(
+                        document_id=doc_id,
+                        version_number=vn,
+                        content=stored,
+                        content_size=int(entry.get("content_size") or 0),
+                        content_hash=entry.get("content_hash"),
+                        change_summary=entry.get("change_summary") or "",
+                        change_type=entry.get("change_type") or "manual",
+                        created_by_id=current_user.id,
+                    )
+                )
+            # 最新版本刷新 FTS 与 doc.content_path（外存冗余标记）
+            latest = latest_version(db, doc_id)
+            if latest is not None and latest.version_number == vn:
+                from cndb.plugins.documents.models import Document
+
+                doc = db.get(Document, doc_id)
+                if doc is not None:
+                    from cndb.plugins.documents.services.content import _sync_fts
+
+                    _sync_fts(db, doc, plain)
+                    if stored == "" and int(entry.get("content_size") or 0) > 0:
+                        doc.content_path = str(_external_version_path(doc_id, vn))
+                        db.add(doc)
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            errors.append(f"文档 {doc_id} 版本 v{vn} 还原失败: {exc}")
+
+    # ── 2) 草稿（唯一约束 doc+user：与现有草稿冲突时跳过） ──
+    for entry in json_data.get("drafts", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        doc_id = _new_doc_id(entry.get("document_id"))
+        if doc_id is None:
+            continue
+        exists = (
+            db.query(DocumentDraft)
+            .filter(DocumentDraft.document_id == doc_id, DocumentDraft.user_id == current_user.id)
+            .first()
+        )
+        if exists is not None:
+            continue
+        db.add(
+            DocumentDraft(
+                document_id=doc_id,
+                user_id=current_user.id,
+                content=entry.get("content") or "",
+                content_size=int(entry.get("content_size") or 0),
+                content_hash=entry.get("content_hash") or "",
+                base_version_number=int(entry.get("base_version_number") or 0),
+            )
+        )
+    db.commit()
+
+    # ── 3) 置顶（个人语义：归当前用户） ──
+    for dd in json_data.get("documents", []) or []:
+        if not isinstance(dd, dict) or not dd.get("pinned"):
+            continue
+        doc_id = _new_doc_id(dd.get("id"))
+        if doc_id is None:
+            continue
+        exists = (
+            db.query(DocumentPin)
+            .filter(DocumentPin.document_id == doc_id, DocumentPin.user_id == current_user.id)
+            .first()
+        )
+        if exists is None:
+            db.add(DocumentPin(document_id=doc_id, user_id=current_user.id))
+    db.commit()
+
+    # ── 4) 分享链接（token 冲突时重新生成） ──
+    import secrets as _secrets
+
+    for dd in json_data.get("documents", []) or []:
+        if not isinstance(dd, dict):
+            continue
+        doc_id = _new_doc_id(dd.get("id"))
+        if doc_id is None:
+            continue
+        for sd in dd.get("shares", []) or []:
+            if not isinstance(sd, dict):
+                continue
+            token = str(sd.get("token") or "")
+            if db.query(DocumentShare).filter(DocumentShare.token == token).first() is not None:
+                token = _secrets.token_urlsafe(24)
+            try:
+                expires_raw = sd.get("expires_at")
+                db.add(
+                    DocumentShare(
+                        document_id=doc_id,
+                        token=token,
+                        permission=str(sd.get("permission") or "viewer"),
+                        password_hash=sd.get("password_hash"),
+                        expires_at=_dt.datetime.fromisoformat(expires_raw) if expires_raw else None,
+                        view_count=int(sd.get("view_count") or 0),
+                        is_active=bool(sd.get("is_active", True)),
+                        created_by_id=current_user.id,
+                    )
+                )
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                errors.append(f"文档 {doc_id} 分享链接还原失败: {exc}")
+
+    # ── 5) 议题 + 评论（事件流水按 D6 排除） ──
+    for dd in json_data.get("documents", []) or []:
+        if not isinstance(dd, dict):
+            continue
+        doc_id = _new_doc_id(dd.get("id"))
+        if doc_id is None:
+            continue
+        for issue_d in dd.get("issue", []) or []:
+            if not isinstance(issue_d, dict):
+                continue
+            try:
+                issue = DocumentIssue(
+                    workspace_id=workspace_id,
+                    document_id=doc_id,
+                    title=str(issue_d.get("title") or "未命名问题"),
+                    description=issue_d.get("description") or "",
+                    category=issue_d.get("category") or "other",
+                    status=issue_d.get("status") or "open",
+                    created_by_id=current_user.id,
+                )
+                db.add(issue)
+                db.flush()
+                for c in issue_d.get("comments", []) or []:
+                    db.add(
+                        DocumentIssueComment(
+                            issue_id=issue.id, content=str(c.get("content") or ""), created_by_id=current_user.id
+                        )
+                    )
+                db.commit()
+            except Exception as exc:
+                db.rollback()
+                errors.append(f"文档 {doc_id} 议题还原失败: {exc}")
+
+    # ── 6) 修改申请 ──
+    for entry in json_data.get("doc_change_requests", []) or []:
+        if not isinstance(entry, dict):
+            continue
+        doc_id = _new_doc_id(entry.get("document_id"))
+        if doc_id is None:
+            continue
+        try:
+            db.add(
+                DocumentChangeRequest(
+                    document_id=doc_id,
+                    workspace_id=workspace_id,
+                    title=entry.get("title") or "",
+                    description=entry.get("description") or "",
+                    proposed_content=entry.get("proposed_content") or "",
+                    proposed_size=int(entry.get("proposed_size") or 0),
+                    change_summary=entry.get("change_summary") or "",
+                    base_version_number=int(entry.get("base_version_number") or 0),
+                    status=entry.get("status") or "open",
+                    stale=bool(entry.get("stale", False)),
+                    review_comment=entry.get("review_comment") or "",
+                    submitted_by_id=current_user.id,
+                )
+            )
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            errors.append(f"文档 {doc_id} 修改申请还原失败: {exc}")
+
+    # ── 7) 数据源会话（按名称幂等 upsert；secrets=null 表示无密钥） ──
+    for sd in json_data.get("datasource_sessions", []) or []:
+        if not isinstance(sd, dict):
+            continue
+        name = (sd.get("name") or "").strip()
+        if not name:
+            continue
+        try:
+            session = (
+                db.query(DatasourceSession)
+                .filter(DatasourceSession.workspace_id == workspace_id, DatasourceSession.name == name)
+                .first()
+            )
+            if session is None:
+                session = DatasourceSession(workspace_id=workspace_id, created_by=current_user.id, name=name)
+                db.add(session)
+            session.headers = sd.get("headers") or {}
+            session.secrets = sd.get("secrets") or {}
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            errors.append(f"数据源会话 {name} 还原失败: {exc}")
+
+    # ── 8) entrant 游标（按 job 名关联；job 不存在时跳过） ──
+    job_ids = {
+        row[0]: row[1]
+        for row in db.query(DatasourceSyncJob.name, DatasourceSyncJob.id)
+        .filter(DatasourceSyncJob.workspace_id == workspace_id)
+        .all()
+    }
+    for cd in json_data.get("entrant_cursors", []) or []:
+        if not isinstance(cd, dict):
+            continue
+        job_id = job_ids.get(cd.get("job_name") or "")
+        if job_id is None:
+            continue
+        exists = (
+            db.query(DatasourceEntrantCursor)
+            .filter(
+                DatasourceEntrantCursor.job_id == job_id,
+                DatasourceEntrantCursor.entrant == str(cd.get("entrant") or ""),
+            )
+            .first()
+        )
+        if exists is None:
+            db.add(
+                DatasourceEntrantCursor(
+                    job_id=job_id,
+                    entrant=str(cd.get("entrant") or ""),
+                    cursor_value=str(cd.get("cursor_value") or ""),
+                )
+            )
+    db.commit()
+
+    # ── 9) 附件：文件落盘 + 归属记录（table/row id 重映射） ──
+    for fo in json_data.get("file_owners", []) or []:
+        if not isinstance(fo, dict):
+            continue
+        file_key = str(fo.get("file_key") or "")
+        if not file_key or "/" in file_key or ".." in file_key:
+            continue
+        try:
+            if files_dir is not None:
+                src = files_dir / "files" / "uploads" / file_key
+                if src.is_file():
+                    dest = resolve_workspace_file(workspace_id, file_key)
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_bytes(src.read_bytes())
+                else:
+                    errors.append(f"附件 {file_key} 在归档中缺失，已保留归属记录但文件不存在")
+            old_table_id = fo.get("table_id")
+            new_table_id = table_id_map.get(old_table_id) if isinstance(old_table_id, int) else None
+            old_row_id = fo.get("row_id")
+            new_row_id = (
+                old_row_id_map.get((int(old_table_id), old_row_id))
+                if isinstance(old_table_id, int) and isinstance(old_row_id, int)
+                else None
+            )
+            if new_table_id is None and new_row_id is not None:
+                new_row_id = None
+            owner = db.query(FileOwner).filter(FileOwner.file_key == file_key).first()
+            if owner is None:
+                owner = FileOwner(file_key=file_key, workspace_id=workspace_id)
+                db.add(owner)
+            owner.workspace_id = workspace_id
+            owner.table_id = new_table_id
+            owner.row_id = new_row_id
+            owner.uploaded_by_id = current_user.id
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            errors.append(f"附件 {file_key} 还原失败: {exc}")
+
+    return errors
 
 
 def _import_charts(

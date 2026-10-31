@@ -41,6 +41,30 @@ export const workspaceApi = {
   /** 导出整个工作区为 JSON（结构+数据+视图） */
   exportWorkspace: (wid: number | string) =>
     api.get<WorkspaceExportData>(`/v1/workspaces/${wid}/export`).then(r => r.data),
+  /** 导出工作区全量备份归档（tar.gz，含版本历史/草稿/议题/附件等，可含密钥） */
+  exportWorkspaceArchive: (wid: number | string, includeSecrets: boolean) =>
+    api.get(`/v1/workspaces/${wid}/export/archive`, {
+      params: { include_secrets: includeSecrets },
+      responseType: 'blob',
+    }).then(r => r.data as Blob),
+  /** 从 v9 归档覆盖恢复当前工作区（危险操作：清空现有业务数据后重建） */
+  restoreWorkspace: (wid: number | string, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{
+      imported_tables: number; imported_rows: number; imported_views: number
+      imported_documents?: number; errors?: string[]
+    }>(`/v1/workspaces/${wid}/restore`, form).then(r => r.data)
+  },
+  /** 从 v9 归档创建全新工作区（owner 为当前用户） */
+  importWorkspaceArchive: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{ workspace: Workspace } & {
+      imported_tables: number; imported_rows: number; imported_views: number
+      imported_documents?: number; errors?: string[]
+    }>('/v1/workspaces/import/archive', form).then(r => r.data)
+  },
   /** 从 JSON 数据导入工作区（创建新表、字段、数据、视图、文档） */
   importWorkspace: (wid: number | string, jsonData: Record<string, unknown>) =>
     api.post<{
