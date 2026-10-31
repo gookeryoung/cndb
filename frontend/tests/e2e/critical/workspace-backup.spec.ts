@@ -6,7 +6,7 @@
  */
 import { test, expect } from "../fixtures/auth";
 import { getAdminToken, apiCall } from "../helpers/api";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 
@@ -61,7 +61,11 @@ test.describe("工作区备份归档（v9）", () => {
     const downloadPromise = page.waitForEvent("download");
     await page.getByText("下载全量归档（.tar.gz）").click();
     const download = await downloadPromise;
-    expect(download.suggestedFilename()).toMatch(/\.tar\.gz$/);
+    // 文件名由前端 anchor download 指定（含中文工作区名），Chromium 对非 ASCII blob 文件名
+    // 的 suggestedFilename 不稳定（可能回落为 "download"，见 analytics.spec.ts 同因），以内容为准则：
+    // 校验落盘文件为 gzip 归档（tar.gz 魔数 1f 8b）。
+    const buf = readFileSync(await download.path());
+    expect(buf.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
   });
 
   test("归档导入：从全量归档创建新工作区", async ({ page, request }) => {

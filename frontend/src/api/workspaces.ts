@@ -51,19 +51,24 @@ export const workspaceApi = {
   restoreWorkspace: (wid: number | string, file: File) => {
     const form = new FormData()
     form.append('file', file)
+    // multipart 必须显式声明，拦截器会删掉让浏览器补 boundary；
+    // 实例默认头是 application/json，漏了它 axios 会把 FormData 序列化成 JSON → 后端 422
     return api.post<{
       imported_tables: number; imported_rows: number; imported_views: number
       imported_documents?: number; errors?: string[]
-    }>(`/v1/workspaces/${wid}/restore`, form).then(r => r.data)
+    }>(`/v1/workspaces/${wid}/restore`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .then(r => r.data)
   },
   /** 从 v9 归档创建全新工作区（owner 为当前用户） */
   importWorkspaceArchive: (file: File) => {
     const form = new FormData()
     form.append('file', file)
+    // 同上：multipart 必须显式声明，否则被 axios 按 JSON 序列化
     return api.post<{ workspace: Workspace } & {
       imported_tables: number; imported_rows: number; imported_views: number
       imported_documents?: number; errors?: string[]
-    }>('/v1/workspaces/import/archive', form).then(r => r.data)
+    }>('/v1/workspaces/import/archive', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+      .then(r => r.data)
   },
   /** 从 JSON 数据导入工作区（创建新表、字段、数据、视图、文档） */
   importWorkspace: (wid: number | string, jsonData: Record<string, unknown>) =>
