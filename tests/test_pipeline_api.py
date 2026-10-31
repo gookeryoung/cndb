@@ -319,6 +319,113 @@ class TestRuns:
         assert len(resp.json()["items"]) == 1
 
 
+class TestFindingToIssue:
+    """发现物一键转 Issue（ADR 0076 P2 / D15）."""
+
+    def _table_finding(self, client, ws, headers, people, db) -> tuple[int, int]:
+        add_rows(db, people, [{"姓名": None, "城市": None}])
+        workflow = _create(client, ws, headers, content=FINDING_CONTENT).json()
+        assert _trigger(client, ws, headers, workflow["id"]).status_code == 202
+        run_id = db.execute(select(PipelineRun.id)).scalars().first()
+        _expire(db)
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run_id}/findings"
+        finding_id = client.get(url, headers=headers).json()["items"][0]["id"]
+        return run_id, finding_id
+
+    def test_table_finding_converts_to_issue(self, client, ws, auth_owner, people, db):
+        run_id, finding_id = self._table_finding(client, ws, auth_owner, people, db)
+        resp = client.post(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run_id}/findings/{finding_id}/issue",
+            headers=auth_owner,
+        )
+        assert resp.status_code == 201, resp.text
+        body = resp.json()
+        assert body["table_id"] == people.id
+        assert body["title"].startswith("[warn]")
+        assert body["category"] == "data_error"
+        assert "流水线检查：table/null-rate" in body["description"]
+        assert "定位：" in body["description"]
+        assert body["status"] == "open"
+
+        from cndb.plugins.issues.models import Issue
+
+        issue = db.get(Issue, body["id"])
+        assert issue is not None and issue.table_id == people.id
+
+    def test_viewer_can_convert(self, client, ws, auth_owner, auth_viewer, people, db):
+        run_id, finding_id = self._table_finding(client, ws, auth_owner, people, db)
+        resp = client.post(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run_id}/findings/{finding_id}/issue",
+            headers=auth_viewer,
+        )
+        assert resp.status_code == 201, resp.text
+
+    def test_non_table_target_rejected(self, client, ws, auth_owner, db):
+        workflow = _create(client, ws, auth_owner).json()
+        run = PipelineRun(
+            workflow_id=workflow["id"],
+            workspace_id=ws.id,
+            trigger="manual",
+            trigger_payload={},
+            status="success",
+            stats={},
+            error_message="",
+        )
+        db.add(run)
+        db.flush()
+        finding = PipelineFinding(
+            run_id=run.id,
+            check="document/links",
+            severity="warn",
+            target_type="document",
+            target_id=1,
+            locator={},
+            message="链接失效",
+            detail={},
+        )
+        db.add(finding)
+        db.commit()
+        resp = client.post(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run.id}/findings/{finding.id}/issue",
+            headers=auth_owner,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "pipeline_finding_not_table"
+
+    def test_finding_or_run_not_found(self, client, ws, auth_owner, people, db):
+        run_id, _ = self._table_finding(client, ws, auth_owner, people, db)
+        resp = client.post(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run_id}/findings/999999/issue",
+            headers=auth_owner,
+        )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "pipeline_finding_not_found"
+
+        resp = client.post(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs/999999/findings/1/issue",
+            headers=auth_owner,
+        )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "pipeline_run_not_found"
+
+    def test_run_isolated_by_workspace(self, client, db, owner, ws, auth_owner, people):
+        run_id, finding_id = self._table_finding(client, ws, auth_owner, people, db)
+        other = make_workspace(db, owner, "IssueOtherWs")
+        resp = client.post(
+            f"/api/v1/workspaces/{other.id}/pipeline-runs/{run_id}/findings/{finding_id}/issue",
+            headers=auth_owner,
+        )
+        assert resp.status_code == 404
+
+    def test_outsider_denied(self, client, ws, auth_outsider, people, db, auth_owner):
+        run_id, finding_id = self._table_finding(client, ws, auth_owner, people, db)
+        resp = client.post(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run_id}/findings/{finding_id}/issue",
+            headers=auth_outsider,
+        )
+        assert resp.status_code == 403
+
+
 class TestPermissions:
     def test_viewer_can_read_only(self, client, ws, auth_owner, auth_viewer):
         workflow = _create(client, ws, auth_owner).json()

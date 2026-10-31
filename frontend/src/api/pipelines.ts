@@ -5,6 +5,7 @@
  */
 
 import api from './client'
+import type { Issue } from './types'
 
 /** 运行状态（与后端 RUN_STATUS_* 对齐） */
 export type PipelineRunStatus = 'pending' | 'running' | 'success' | 'partial' | 'failed' | 'canceled'
@@ -199,4 +200,7 @@ export const pipelinesApi = {
   /** 发现物分页（severity / target_type / check 过滤） */
   listFindings: (wid: number | string, runId: number | string, params?: PipelineFindingQuery) =>
     api.get<PipelineFindingPage>(`${runsBase(wid)}/${runId}/findings`, { params }).then(r => r.data),
+  /** 发现物一键转问题（仅表目标；非表目标后端 400） */
+  convertFindingToIssue: (wid: number | string, runId: number | string, findingId: number | string) =>
+    api.post<Issue>(`${runsBase(wid)}/${runId}/findings/${findingId}/issue`).then(r => r.data),
 }

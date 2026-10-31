@@ -83,10 +83,10 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9"):
+    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9）。请升级程序后再导入。",
+            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10）。请升级程序后再导入。",
         )
 
     imported_tables = 0
@@ -95,6 +95,7 @@ def _import_backup_into_workspace(
     imported_documents = 0
     imported_sync_jobs = 0
     imported_charts = 0
+    imported_pipelines = 0
     errors: list[str] = []
 
     # v4 跨表引用重映射的收集器（v1-v3 备份无 id 信息，保持原样跳过重映射）：
@@ -426,6 +427,11 @@ def _import_backup_into_workspace(
         imported_charts += chart_imported
         errors.extend(chart_errors)
 
+        # ── v10（ADR 0076）：流水线定义（运行 / 发现物属流水，不进备份） ──
+        pipeline_imported, pipeline_errors = _import_pipelines(workspace_id, json_data, current_user, db)
+        imported_pipelines += pipeline_imported
+        errors.extend(pipeline_errors)
+
         # ── v9（ADR 0075）：版本历史/草稿/置顶/分享/议题/修改申请/会话密钥/游标/附件 ──
         v9_errors = _import_v9_extras(
             workspace_id,
@@ -455,6 +461,7 @@ def _import_backup_into_workspace(
         imported_documents=imported_documents,
         imported_sync_jobs=imported_sync_jobs,
         imported_charts=imported_charts,
+        imported_pipelines=imported_pipelines,
         errors=errors,
     )
 
@@ -1052,9 +1059,66 @@ def _import_charts(
     return imported, errors
 
 
+def _import_pipelines(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+) -> tuple[int, list[str]]:
+    """还原流水线定义（v10 起，ADR 0076 D12），返回 (成功数, 错误明细).
+
+    - 同名定义已存在则跳过（与表 / 文档 / 同步任务的幂等口径一致）；
+    - 不导入 ``compiled`` 快照，按 ``content`` 重新编译：历史快照可能与当前
+      注册表版本不兼容，重编译能在导入期暴露 DSL 问题；
+    - 单条定义非法跳过并记错误，不阻断整体导入。
+    """
+    from cndb.plugins.pipeline.models import PipelineWorkflow
+    from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
+    from cndb.plugins.pipeline.services.errors import DslError
+
+    items = json_data.get("pipelines") or []
+    if not items:
+        return 0, []
+
+    errors: list[str] = []
+    imported = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get("name") or "").strip()
+        content = str(item.get("content") or "")
+        try:
+            ir = compile_workflow(content, fallback_name=name)
+        except DslError as exc:
+            errors.append(f"流水线 {name or '(未命名)'} 跳过（DSL 非法）: {exc.detail}")
+            continue
+        exists = (
+            db.query(PipelineWorkflow)
+            .filter(PipelineWorkflow.workspace_id == workspace_id, PipelineWorkflow.name == ir.name)
+            .first()
+        )
+        if exists is not None:
+            continue
+        db.add(
+            PipelineWorkflow(
+                workspace_id=workspace_id,
+                name=ir.name,
+                content=content,
+                compiled=ir.to_dict(),
+                enabled=bool(item.get("enabled", True)),
+                created_by_id=current_user.id,
+            )
+        )
+        imported += 1
+    if imported:
+        db.commit()
+    return imported, errors
+
+
 __all__ = [
     "_coerce_row_value_types",
     "_import_backup_into_workspace",
     "_import_charts",
+    "_import_pipelines",
     "_import_sync_jobs",
 ]

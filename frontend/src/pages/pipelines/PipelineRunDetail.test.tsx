@@ -124,6 +124,51 @@ describe('PipelineRunDetail 运行详情', () => {
     expect(screen.getByText('没有匹配的发现物')).toBeInTheDocument()
   })
 
+  it('表目标发现物可一键转问题', async () => {
+    let posted = false
+    server.use(
+      http.get('/api/v1/workspaces/10/pipeline-runs/71', () => HttpResponse.json(RUN)),
+      http.get('/api/v1/workspaces/10/pipeline-runs/71/findings', () =>
+        HttpResponse.json({ total: 1, items: [finding(1, 'warn')] })),
+      http.post('/api/v1/workspaces/10/pipeline-runs/71/findings/1/issue', () => {
+        posted = true
+        return HttpResponse.json({
+          id: 55,
+          workspace_id: 10,
+          table_id: 20,
+          title: '[warn] 城市存在空值',
+          description: '',
+          category: 'data_error',
+          status: 'open',
+          created_by_id: 1,
+          comments: [],
+          events: [],
+        })
+      }),
+    )
+    renderPage()
+
+    const button = await screen.findByRole('button', { name: /转问题/ })
+    fireEvent.click(button)
+    await waitFor(() => expect(posted).toBe(true))
+    expect(await screen.findByText('已创建问题 #55')).toBeInTheDocument()
+  })
+
+  it('非表目标发现物不展示转问题入口', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/pipeline-runs/71', () => HttpResponse.json(RUN)),
+      http.get('/api/v1/workspaces/10/pipeline-runs/71/findings', () =>
+        HttpResponse.json({
+          total: 1,
+          items: [{ ...finding(3, 'warn'), target_type: 'document', target_id: 9, check: 'document/links' }],
+        })),
+    )
+    renderPage()
+
+    expect(await screen.findByText('城市存在空值')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /转问题/ })).toBeNull()
+  })
+
   it('多页发现物翻页时请求新的 offset', async () => {
     let capturedOffset = ''
     server.use(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import delete, select
@@ -12,6 +12,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.core.errors import CndbError, NotFoundError
 from cndb.plugins.accounts.models import User
+from cndb.plugins.issues.services import get_issue_detail
 from cndb.plugins.pipeline.models import (
     PipelineFinding,
     PipelineRun,
@@ -34,6 +35,7 @@ from cndb.plugins.pipeline.schemas import (
 from cndb.plugins.pipeline.services.checks.registry import iter_check_specs
 from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
 from cndb.plugins.pipeline.services.errors import PipelineConflictError
+from cndb.plugins.pipeline.services.issue_bridge import convert_finding_to_issue
 from cndb.plugins.pipeline.services.runner import (
     create_run,
     run_pipeline_in_background,
@@ -331,6 +333,19 @@ def _build_run_router() -> APIRouter:
         total = query.count()
         rows = query.order_by(PipelineFinding.id).offset(offset).limit(limit).all()
         return FindingListResponse(total=total, items=[_finding_response(row) for row in rows])
+
+    @run_router.post("/{run_id}/findings/{finding_id}/issue", status_code=status.HTTP_201_CREATED)
+    def create_issue_from_finding(
+        workspace_id: int,
+        run_id: int,
+        finding_id: int,
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[Session, Depends(get_db)],
+    ) -> dict[str, Any]:
+        """把表目标发现物一键转成所属数据表的问题（非表目标 400）."""
+        _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+        issue = convert_finding_to_issue(db, workspace_id, run_id, finding_id, current_user)
+        return get_issue_detail(db, issue)
 
     return run_router
 

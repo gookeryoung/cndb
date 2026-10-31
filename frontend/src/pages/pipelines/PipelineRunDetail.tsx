@@ -2,16 +2,17 @@
  *
  * 数据源 `pipelinesApi.getRun` / `listFindings`（ADR 0076 P1）。
  * 运行处于 pending / running 时每 1.5 秒刷新一次，终态自动停止。
+ * 表目标的发现物可一键转成所属表的问题（P2 / D15）。
  * queryKey 约定：['pipeline-run', wid, rid] / ['pipeline-findings', wid, rid, severity, offset]。
  */
 
 import { useEffect, useState } from 'react'
 import {
-  Alert, Button, Collapse, Empty, Listy, Pagination, Segmented, Space, Spin, Tag, Typography,
+  Alert, App as AntApp, Button, Collapse, Empty, Listy, Pagination, Segmented, Space, Spin, Tag, Typography,
 } from 'antd'
-import { ArrowLeftOutlined } from '@ant-design/icons'
+import { ArrowLeftOutlined, FlagOutlined } from '@ant-design/icons'
 import CnListMeta from '@/components/CnListMeta'
-import { useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { pipelinesApi } from '@/api'
@@ -48,8 +49,15 @@ function ConclusionTag({ conclusion }: { conclusion: string }) {
 export default function PipelineRunDetail() {
   const { wid = '', rid = '' } = useParams<{ wid: string; rid: string }>()
   const navigate = useNavigate()
+  const { message } = AntApp.useApp()
   const [severity, setSeverity] = useState<SeverityFilter>('all')
   const [offset, setOffset] = useState(0)
+
+  const convertIssue = useMutation({
+    mutationFn: (finding: PipelineFinding) => pipelinesApi.convertFindingToIssue(wid, rid, finding.id),
+    onSuccess: (issue) => message.success(`已创建问题 #${issue.id}`),
+    onError: (err) => message.error(err instanceof Error ? err.message : '转问题失败'),
+  })
 
   // 切换过滤条件时回到第一页，避免越界空白页
   useEffect(() => { setOffset(0) }, [severity])
@@ -209,6 +217,19 @@ export default function PipelineRunDetail() {
                     )}
                   />
                 </div>
+                {finding.target_type === 'table' && (
+                  <div className="cn-list-item-actions">
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<FlagOutlined />}
+                      loading={convertIssue.isPending && convertIssue.variables?.id === finding.id}
+                      onClick={() => convertIssue.mutate(finding)}
+                    >
+                      转问题
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           />

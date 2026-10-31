@@ -1,4 +1,7 @@
-"""工作区全量备份（ADR 0075）：v9 备份构建器 + tar.gz 归档打包/解包.
+"""工作区全量备份（ADR 0075）：v10 备份构建器 + tar.gz 归档打包/解包.
+
+v10 在 v9 基础上新增顶层 ``pipelines[]``（流水线定义：name / content / enabled），
+运行与发现物属流水、不进备份（ADR 0076 D12）。
 
 v9 在 v8 顶层结构（workspace/tables/document_tags/documents/sync_jobs/charts）上扩展：
 - documents[] 增加 is_deleted / pinned / shares / issue（本体+评论）/ asset_file_key；
@@ -10,7 +13,8 @@ v9 在 v8 顶层结构（workspace/tables/document_tags/documents/sync_jobs/char
   随归档携带，backup.json 内以相对路径引用。
 
 明确排除（D6/D7）：tables_auditlog、tables_governancetask、datasource_sync_run、
-documents_issueevent、core_event、llm_user_config、llm_run。
+documents_issueevent、core_event、llm_user_config、llm_run、pipeline_run、
+pipeline_finding。
 
 用户 id 类字段（created_by/user_id 等）不导出：跨部署恢复时无法映射，
 导入端统一归当前操作用户（ADR 0075 边界口径）。
@@ -30,7 +34,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError
 
-BACKUP_VERSION = "9"
+BACKUP_VERSION = "10"
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
 ARCHIVE_KIND = "workspace_backup"
@@ -529,6 +533,19 @@ def build_workspace_backup_v9(
     )
     charts_data = [{"title": c.title, "template_key": c.template_key, "config": c.config or {}} for c in charts_rows]
 
+    # ── 流水线定义（v10，ADR 0076 D12）：只导出配置，运行 / 发现物属流水 ──
+    from cndb.plugins.pipeline.models import PipelineWorkflow
+
+    pipelines_data = [
+        {"name": wf.name, "content": wf.content, "enabled": wf.enabled}
+        for wf in (
+            db.query(PipelineWorkflow)
+            .filter(PipelineWorkflow.workspace_id == workspace_id)
+            .order_by(PipelineWorkflow.id)
+            .all()
+        )
+    ]
+
     backup = {
         "version": BACKUP_VERSION,
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
@@ -544,6 +561,7 @@ def build_workspace_backup_v9(
         "entrant_cursors": cursors_data,
         "file_owners": file_owners_data,
         "charts": charts_data,
+        "pipelines": pipelines_data,
         "include_secrets": include_secrets,
     }
     return backup, files
@@ -564,6 +582,7 @@ def downsample_v8(backup_v9: dict[str, Any]) -> dict[str, Any]:
         "datasource_sessions",
         "entrant_cursors",
         "file_owners",
+        "pipelines",
         "include_secrets",
     ):
         data.pop(key, None)
@@ -609,6 +628,7 @@ def build_manifest(backup: dict[str, Any], file_count: int) -> dict[str, Any]:
             "documents": len(backup.get("documents", [])),
             "document_versions": len(backup.get("document_versions", [])),
             "sync_jobs": len(backup.get("sync_jobs", [])),
+            "pipelines": len(backup.get("pipelines", [])),
             "files": file_count,
         },
     }

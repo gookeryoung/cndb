@@ -1,4 +1,4 @@
-"""工作区全量备份 v9（ADR 0075）：归档结构、往返一致与密钥口径校验."""
+"""工作区全量备份 v10（ADR 0075 / ADR 0076）：归档结构、往返一致与密钥口径校验."""
 
 from __future__ import annotations
 
@@ -45,6 +45,22 @@ def _seed_workspace(client: TestClient, headers: dict[str, str], db, wid: int) -
     assert r.status_code in (200, 201), r.text
     r = client.post(f"{TABLES.format(wid=wid)}/{tid}/records", json={"values": {"商品": "苹果"}}, headers=headers)
     assert r.status_code in (200, 201), r.text
+
+    # 流水线定义（v10：只导配置，运行 / 发现物不进备份）
+    pipeline_yaml = (
+        "name: 库存巡检\n"
+        "on:\n"
+        "  manual: true\n"
+        "jobs:\n"
+        "  表:\n"
+        "    steps:\n"
+        "      - uses: table/null-rate\n"
+        "        with:\n"
+        "          table: 库存表\n"
+        "          fields: [商品]\n"
+    )
+    r = client.post(f"{WS}/{wid}/pipelines", json={"content": pipeline_yaml}, headers=headers)
+    assert r.status_code == 201, r.text
 
     # 文档（两个版本：创建 + 直接插 v2）
     r = client.post(DOCS.format(wid=wid), json={"title": "笔记", "content": "第一版正文\n"}, headers=headers)
@@ -137,8 +153,11 @@ class TestArchiveStructure:
             assert m["version"] == "1"
             assert m["include_secrets"] is True
             backup = archive.backup
-            assert backup["version"] == "9"
+            assert backup["version"] == "10"
             assert backup["include_secrets"] is True
+            # v10：流水线定义随备份导出
+            assert backup["pipelines"][0]["name"] == "库存巡检"
+            assert "uses: table/null-rate" in backup["pipelines"][0]["content"]
             # v9 新增顶层键齐全
             for key in (
                 "document_versions",
@@ -184,6 +203,7 @@ class TestArchiveStructure:
             "datasource_sessions",
             "entrant_cursors",
             "file_owners",
+            "pipelines",
             "include_secrets",
         ):
             assert key not in backup, key
@@ -210,6 +230,7 @@ class TestRestoreRoundtrip:
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["imported_tables"] == 1
+        assert body["imported_pipelines"] == 1
         assert body["errors"] == [], body["errors"]
 
         from cndb.plugins.datasource.models import DatasourceSession
@@ -305,3 +326,87 @@ class TestRestoreRoundtrip:
             headers=auth_headers,
         )
         assert r.status_code == 400, r.text
+
+
+class TestPipelineImport:
+    """v10 流水线定义的导入细节：坏 DSL 跳过、同名幂等、非映射项忽略."""
+
+    _VALID = (
+        "name: 合规巡检\n"
+        "on:\n"
+        "  manual: true\n"
+        "jobs:\n"
+        "  表:\n"
+        "    steps:\n"
+        "      - uses: table/null-rate\n"
+        "        with:\n"
+        "          table: 任意表\n"
+        "          fields: [商品]\n"
+    )
+
+    def test_invalid_dsl_skipped_and_valid_imported(self, client, auth_headers, db):
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.pipeline.models import PipelineWorkflow
+        from cndb.plugins.workspaces.services.backup_io import _import_pipelines
+
+        wid = _new_workspace(client, auth_headers, "流水线导入")
+        user = db.query(User).filter(User.username == "admin").first() or db.query(User).first()
+        imported, errors = _import_pipelines(
+            wid,
+            {"pipelines": [{"name": "坏定义", "content": "jobs: {}"}, "not-a-dict", {"content": self._VALID}]},
+            user,
+            db,
+        )
+        assert imported == 1
+        assert len(errors) == 1 and "DSL 非法" in errors[0]
+        assert (
+            db.query(PipelineWorkflow)
+            .filter(PipelineWorkflow.workspace_id == wid, PipelineWorkflow.name == "合规巡检")
+            .count()
+            == 1
+        )
+
+        # 同名再导入：幂等跳过
+        again, _ = _import_pipelines(wid, {"pipelines": [{"content": self._VALID}]}, user, db)
+        assert again == 0
+
+    def test_empty_payload(self, client, auth_headers, db):
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.workspaces.services.backup_io import _import_pipelines
+
+        wid = _new_workspace(client, auth_headers, "空流水线")
+        user = db.query(User).first()
+        assert _import_pipelines(wid, {}, user, db) == (0, [])
+
+
+class TestPipelineBackupExclusions:
+    def test_runs_and_findings_not_exported(self, client, auth_headers, db):
+        from cndb.plugins.pipeline.models import PipelineFinding, PipelineRun, PipelineWorkflow
+
+        wid = _new_workspace(client, auth_headers, "流水排除")
+        workflow = PipelineWorkflow(
+            workspace_id=wid,
+            name="巡检",
+            content="name: 巡检\njobs: {}\n",
+            compiled={},
+            enabled=True,
+        )
+        db.add(workflow)
+        db.flush()
+        run = PipelineRun(workflow_id=workflow.id, workspace_id=wid, trigger="manual", status="success", stats={})
+        db.add(run)
+        db.flush()
+        db.add(
+            PipelineFinding(
+                run_id=run.id,
+                check="table/null-rate",
+                severity="warn",
+                target_type="table",
+                message="空值率偏高",
+            )
+        )
+        db.commit()
+
+        backup = client.get(f"{WS}/{wid}/export", headers=auth_headers).json()
+        assert backup["version"] == "8"
+        assert "pipeline_run" not in str(backup) and "pipeline_finding" not in str(backup)

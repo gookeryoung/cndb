@@ -1,7 +1,7 @@
 """工作区覆盖恢复（ADR 0075 D3/D4）：清空业务数据 + 按 v9 备份全量重建.
 
 - ``clear_workspace_content``：删除工作区全部业务数据（含动态表 DDL drop、
-  版本/草稿/回收站/议题/图表/同步任务/游标/会话/附件归属），**保留**
+  版本/草稿/回收站/议题/图表/同步任务/游标/会话/附件归属/流水线），**保留**
   ``workspaces_workspace`` 行与 ``workspaces_workspacemember``（成员是部署级资产）；
 - ``restore_workspace_from_backup``：clear + 复用 ``_import_backup_into_workspace``
   单一落库入口（I3），并把 workspace meta 按备份还原。
@@ -110,6 +110,15 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
         _delete_by_workspace_cascade(db, model, workspace_id)
 
     db.execute(delete(FileOwner).where(FileOwner.workspace_id == workspace_id))
+
+    # 流水线：发现物经 run 关联，先删 finding → run → workflow（v10 定义随备份重建）
+    from cndb.plugins.pipeline.models import PipelineFinding, PipelineRun, PipelineWorkflow
+
+    run_ids = [row[0] for row in db.query(PipelineRun.id).filter(PipelineRun.workspace_id == workspace_id).all()]
+    if run_ids:
+        db.execute(delete(PipelineFinding).where(PipelineFinding.run_id.in_(run_ids)))
+    db.execute(delete(PipelineRun).where(PipelineRun.workspace_id == workspace_id))
+    db.execute(delete(PipelineWorkflow).where(PipelineWorkflow.workspace_id == workspace_id))
 
     # 表相关：先删引用行，再 commit，最后 drop 动态物理表 + 删元数据行
     table_ids = [row[0] for row in db.query(DataTable.id).filter(DataTable.workspace_id == workspace_id).all()]
