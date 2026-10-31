@@ -1,6 +1,6 @@
 # ADR 0074: 前端迁移 React 19 + antd 6
 
-Status: Accepted（2026-10-30 人工确认 D1：保留 Chrome 81 基线）
+Status: Implemented（2026-10-31 人工确认 P0-P2 落地并评审通过；D1 于 2026-10-30 拍板保留 Chrome 81 基线）
 Date: 2026-10-30
 Related: `frontend/package.json`、`frontend/src/main.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/index.css`、`frontend/src/compat/`、`frontend/scripts/check-browser-compat.mjs`、`frontend/patches/`、`docs/adr/0026-chrome81-compat.md`、`docs/adr/0031-font-and-css-typography.md`
 需求卡片: `docs/requirements/0074-react19-antd6-upgrade.md`（需求原文与约束编号的唯一副本）
