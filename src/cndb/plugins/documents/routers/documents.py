@@ -31,6 +31,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import re
 from pathlib import Path
 from typing import Annotated, Any
@@ -64,6 +65,8 @@ from cndb.plugins.llm.services import gateway as llm_gateway
 from cndb.plugins.llm.services.errors import LlmError
 from cndb.plugins.llm.services.gateway import LlmContext
 from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+
+logger = logging.getLogger(__name__)
 
 # 文档树缓存 TTL（秒）
 DOC_TREE_TTL_SECONDS = 10.0
@@ -475,7 +478,26 @@ def update_document_content(
     v = services.content.latest_version(db, doc.id)
     data["content"] = payload.content
     data["version_number"] = v.version_number if v else 0
+    _dispatch_document_saved(db, doc)
     return data
+
+
+def _dispatch_document_saved(db: Session, doc: Any) -> None:
+    """正文直编落库后触发流水线（ADR 0076 P1；尽力而为，失败不影响保存）."""
+    try:
+        from cndb.plugins.pipeline.services.triggers import (
+            EVENT_DOCUMENT_SAVED,
+            dispatch_event,
+        )
+
+        dispatch_event(
+            db,
+            EVENT_DOCUMENT_SAVED,
+            workspace_id=doc.workspace_id,
+            payload={"document_id": doc.id, "title": doc.title},
+        )
+    except Exception:
+        logger.warning("文档保存事件分发失败，跳过", exc_info=True)
 
 
 @router.get("/{doc_id}/draft")

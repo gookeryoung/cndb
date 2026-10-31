@@ -20,20 +20,30 @@ describe('workspaceType 工作区类型元数据', () => {
   })
 
   it('data_doc 默认开放全部功能', () => {
-    expect(workspaceTypeFeatures('data_doc')).toEqual({ tables: true, documents: true, analytics: true, datasource: true })
+    expect(workspaceTypeFeatures('data_doc')).toEqual({
+      tables: true, documents: true, analytics: true, datasource: true, quality: true,
+    })
   })
 
   it('data 类仅开放数据表与数据分析，不含文档', () => {
-    expect(workspaceTypeFeatures('data')).toEqual({ tables: true, documents: false, analytics: true, datasource: true })
+    expect(workspaceTypeFeatures('data')).toEqual({
+      tables: true, documents: false, analytics: true, datasource: true, quality: true,
+    })
   })
 
   it('doc 类仅开放文档，不含数据表与数据分析', () => {
-    expect(workspaceTypeFeatures('doc')).toEqual({ tables: false, documents: true, analytics: false, datasource: false })
+    expect(workspaceTypeFeatures('doc')).toEqual({
+      tables: false, documents: true, analytics: false, datasource: false, quality: false,
+    })
   })
 
   it('类型缺失/为空时按默认 data_doc 全开', () => {
-    expect(workspaceTypeFeatures(undefined)).toEqual({ tables: true, documents: true, analytics: true, datasource: true })
-    expect(workspaceTypeFeatures(null)).toEqual({ tables: true, documents: true, analytics: true, datasource: true })
+    expect(workspaceTypeFeatures(undefined)).toEqual({
+      tables: true, documents: true, analytics: true, datasource: true, quality: true,
+    })
+    expect(workspaceTypeFeatures(null)).toEqual({
+      tables: true, documents: true, analytics: true, datasource: true, quality: true,
+    })
   })
 
   it('落地页路由段：有数据表功能 → tables，否则 → documents', () => {

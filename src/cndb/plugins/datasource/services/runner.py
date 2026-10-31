@@ -235,6 +235,7 @@ def execute_job(
         )
         _update_job_state(db, job, status=run.status, run_at=started, cursor=cursor_config, cursor_to=cursor_to)
         _record_event(db, job, run, user=user)
+        _dispatch_sync_finished(db, job, run)
         _record_llm_run(
             db,
             job,
@@ -258,6 +259,7 @@ def execute_job(
         db.add(run)
         _update_job_state(db, job, status=RunStatus.FAILED.value, run_at=started, cursor=cursor_config, cursor_to="")
         _record_event(db, job, run, user=user)
+        _dispatch_sync_finished(db, job, run)
         _record_llm_run(
             db,
             job,
@@ -1050,6 +1052,29 @@ def _record_event(db: Session, job: DatasourceSyncJob, run: DatasourceSyncRun, *
             "cursor_to": run.cursor_to,
         },
     )
+
+
+def _dispatch_sync_finished(db: Session, job: DatasourceSyncJob, run: DatasourceSyncRun) -> None:
+    """同步运行落库后触发流水线（ADR 0076 P1；尽力而为，失败不影响同步终态）."""
+    try:
+        from cndb.plugins.pipeline.services.triggers import (
+            EVENT_SYNC_FINISHED,
+            dispatch_event,
+        )
+
+        dispatch_event(
+            db,
+            EVENT_SYNC_FINISHED,
+            workspace_id=job.workspace_id,
+            payload={
+                "job_id": job.id,
+                "run_id": run.id,
+                "status": run.status,
+                "table_id": job.table_id,
+            },
+        )
+    except Exception:
+        logger.warning("同步完成事件分发失败，跳过", exc_info=True)
 
 
 def _record_llm_run(

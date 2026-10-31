@@ -11,6 +11,7 @@ import {
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
+  SafetyCertificateOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
   LockOutlined,
@@ -271,6 +272,14 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
+    ...(wsFeatures.quality ? [{
+      key: 'pipelines',
+      label: (
+        <span>
+          <SafetyCertificateOutlined /> 质量检查
+        </span>
+      ),
+    }] : []),
     { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
   // ── 表级页签（融合导航行，紧随工作区分页之后）──
@@ -300,14 +309,15 @@ export default function MainLayout() {
 
   // ── 侧边栏形态：按当前功能段切换（需求 0065；分析/同步/设置段改为折叠过渡）──
   // documents → 文档侧栏（未选文档=文档列表，已选中=标题大纲）；
-  // analytics / datasource / workspace settings → Sider 不卸载，自动折叠为图标条，
+  // analytics / datasource / pipelines / workspace settings → Sider 不卸载，自动折叠为图标条，
   //   减少切换时布局骨架消失的视觉冲击，返回数据表段时恢复用户原有折叠偏好；
   // 其余（数据表段）→ 维持数据表导航。无 tables 能力的工作区类型仍隐藏侧栏。
   // 表级子页 /tables/:tid/settings 不含 /settings 段前缀，不受影响。
   const inAnalyticsContext = !!wid && location.startsWith(`/w/${wid}/analytics`)
   const inDatasourceContext = !!wid && location.startsWith(`/w/${wid}/datasource`)
+  const inPipelinesContext = !!wid && location.startsWith(`/w/${wid}/pipelines`)
   const inWsSettingsContext = !!wid && location.startsWith(`/w/${wid}/settings`)
-  const inFocusContext = inAnalyticsContext || inDatasourceContext || inWsSettingsContext
+  const inFocusContext = inAnalyticsContext || inDatasourceContext || inPipelinesContext || inWsSettingsContext
   type SiderMode = 'documents' | 'tables' | 'hidden'
   const siderMode: SiderMode =
     inDocumentsContext && wsFeatures.documents
@@ -340,9 +350,11 @@ export default function MainLayout() {
         ? 'analytics'
         : location.includes('/datasource')
           ? 'datasource'
-          : location.includes('/settings')
-            ? 'settings'
-            : 'tables'
+          : location.includes('/pipelines')
+            ? 'pipelines'
+            : location.includes('/settings')
+              ? 'settings'
+              : 'tables'
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -361,11 +373,13 @@ export default function MainLayout() {
     const inDocuments = location.startsWith(`/w/${wid}/documents`)
     const inAnalytics = location.startsWith(`/w/${wid}/analytics`)
     const inDatasource = location.startsWith(`/w/${wid}/datasource`)
+    const inPipelines = location.startsWith(`/w/${wid}/pipelines`)
     if (
       (!feat.tables && inTables) ||
       (!feat.documents && inDocuments) ||
       (!feat.analytics && inAnalytics) ||
-      (!feat.datasource && inDatasource)
+      (!feat.datasource && inDatasource) ||
+      (!feat.quality && inPipelines)
     ) {
       navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.workspace_type)}`, { replace: true })
     }

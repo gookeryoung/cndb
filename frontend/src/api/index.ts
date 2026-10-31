@@ -82,6 +82,28 @@ export type {
 } from './llm'
 export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
+export { pipelinesApi } from './pipelines'
+export type {
+  PipelineCheckInput,
+  PipelineCheckSpec,
+  PipelineConclusion,
+  PipelineFinding,
+  PipelineFindingCounts,
+  PipelineFindingPage,
+  PipelineFindingQuery,
+  PipelineJobStat,
+  PipelineRun,
+  PipelineRunPage,
+  PipelineRunStats,
+  PipelineRunStatus,
+  PipelineRunSummary,
+  PipelineSeverity,
+  PipelineStepStat,
+  PipelineTrigger,
+  PipelineValidateResult,
+  PipelineWorkflow,
+  PipelineWorkflowPayload,
+} from './pipelines'
 export { searchApi } from './search'
 export type {
   WorkspaceSearchParams,

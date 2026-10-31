@@ -192,6 +192,10 @@ def _sync_pipeline_tasks(monkeypatch_session: pytest.MonkeyPatch):
                 session.close()
 
         monkeypatch_session.setattr(pipeline_router, "run_pipeline_in_background", _run_sync)
+        # 事件触发走 services.triggers 的模块级引用，同样换成同步桩
+        from cndb.plugins.pipeline.services import triggers as pipeline_triggers
+
+        monkeypatch_session.setattr(pipeline_triggers, "run_pipeline_in_background", _run_sync)
 
 
 @pytest.fixture(scope="session", autouse=True)

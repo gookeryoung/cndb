@@ -23,6 +23,37 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def _dispatch_record_updated(
+    db: Session,
+    table: Any,
+    *,
+    action: str,
+    row_ids: list[int],
+    count: int,
+) -> None:
+    """记录批量变更后触发流水线（ADR 0076 P1；尽力而为，失败不影响响应）."""
+    try:
+        from cndb.plugins.pipeline.services.triggers import (
+            EVENT_RECORD_UPDATED,
+            dispatch_event,
+        )
+
+        dispatch_event(
+            db,
+            EVENT_RECORD_UPDATED,
+            workspace_id=table.workspace_id,
+            payload={
+                "table_id": table.id,
+                "table_name": table.name,
+                "action": action,
+                "row_ids": row_ids,
+                "count": count,
+            },
+        )
+    except Exception:
+        logger.warning("记录变更事件分发失败，跳过", exc_info=True)
+
+
 # ── 批量建行 ───────────────────────────────────────────
 
 
@@ -67,6 +98,7 @@ def bulk_create_records(
     except Exception:
         logger.debug("导入后同步 select options 失败，跳过", exc_info=True)
 
+    _dispatch_record_updated(db, dt, action="created", row_ids=list(ids), count=len(ids))
     return {"created": len(ids), "ids": ids}
 
 
@@ -98,6 +130,14 @@ def bulk_delete_records(
         raise_permission_denied(db, dt.workspace, current_user, scope="表级")
 
     deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids, db=db, user=current_user)
+    if deleted:
+        _dispatch_record_updated(
+            db,
+            dt,
+            action="deleted",
+            row_ids=list(payload.row_ids),
+            count=deleted,
+        )
     return {"deleted": deleted}
 
 
@@ -144,6 +184,14 @@ def bulk_update_records(
     except Exception:
         logger.debug("更新后同步 select options 失败，跳过", exc_info=True)
 
+    if updated:
+        _dispatch_record_updated(
+            db,
+            dt,
+            action="updated",
+            row_ids=list(row_ids),
+            count=updated,
+        )
     return {"updated": updated}
 
 

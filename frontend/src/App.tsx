@@ -35,6 +35,8 @@ const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssues
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
 const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 const DatasourcePage = lazy(() => import('@/pages/datasource/DatasourcePage'))
+const PipelinesPage = lazy(() => import('@/pages/pipelines/PipelinesPage'))
+const PipelineRunDetail = lazy(() => import('@/pages/pipelines/PipelineRunDetail'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const HelpDocsPage = lazy(() => import('@/pages/help/HelpDocsPage'))
 
@@ -87,6 +89,12 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/datasource" element={
             <Suspense fallback={<PageFallback />}><DatasourcePage /></Suspense>
+          } />
+          <Route path="w/:wid/pipelines" element={
+            <Suspense fallback={<PageFallback />}><PipelinesPage /></Suspense>
+          } />
+          <Route path="w/:wid/pipelines/:rid" element={
+            <Suspense fallback={<PageFallback />}><PipelineRunDetail /></Suspense>
           } />
           <Route path="w/:wid/settings" element={
             <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>

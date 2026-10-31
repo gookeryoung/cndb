@@ -36,18 +36,20 @@ export interface WorkspaceFeatures {
   analytics: boolean
   /** 数据源同步功能（周期性外部数据接入） */
   datasource: boolean
+  /** 质量检查功能（流水线 DSL；依赖数据表或文档，纯文档类型关闭） */
+  quality: boolean
 }
 
 /** 按工作区类型解析开放的功能模块；类型缺失时按默认 data_doc 处理. */
 export function workspaceTypeFeatures(type?: WorkspaceType | null): WorkspaceFeatures {
   switch (type) {
     case 'data':
-      return { tables: true, documents: false, analytics: true, datasource: true }
+      return { tables: true, documents: false, analytics: true, datasource: true, quality: true }
     case 'doc':
-      return { tables: false, documents: true, analytics: false, datasource: false }
+      return { tables: false, documents: true, analytics: false, datasource: false, quality: false }
     case 'data_doc':
     default:
-      return { tables: true, documents: true, analytics: true, datasource: true }
+      return { tables: true, documents: true, analytics: true, datasource: true, quality: true }
   }
 }
 
