@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -21,6 +22,8 @@ from cndb.plugins.tables.models import (
     scope_key_for,
 )
 from cndb.plugins.tables.schemas import (
+    DashboardDataRequest,
+    DashboardDataResponse,
     ShareableMemberOut,
     ViewCreate,
     ViewMemberGrant,
@@ -31,6 +34,7 @@ from cndb.plugins.tables.schemas import (
 )
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.tables.services.core.dashboard_config import normalize_dashboard_config
+from cndb.plugins.tables.services.core.dashboard_data import build_dashboard_data
 from cndb.plugins.tables.services.core.view_access import (
     ViewAction,
     assert_can_change_visibility,
@@ -430,6 +434,17 @@ def get_view(
     return _view_payloads(db, dt, current_user, [dv])[0]
 
 
+def _same_moment(a: datetime, b: datetime) -> bool:
+    """比较两个时间点（容忍时区表示差异，精确到微秒）."""
+
+    def _naive(value: datetime) -> datetime:
+        if value.tzinfo is not None:
+            value = value.astimezone(UTC).replace(tzinfo=None)
+        return value.replace(microsecond=0) if value.microsecond == 0 else value
+
+    return _naive(a) == _naive(b)
+
+
 @router.patch("/{view_id}", response_model=ViewResponse)
 def update_view(
     workspace_id: int,
@@ -442,6 +457,18 @@ def update_view(
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     # 改配置需 VIEW_EDIT：本人视图放行；table 档需表 EDIT_VIEWS（I7）
     dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_EDIT)
+
+    # 乐观并发（ADR 0023 §2）：客户端携带读到的 updated_at，与库不一致即 409，
+    # 避免两人同时编辑画布时后写覆盖前写。
+    if (
+        payload.expected_updated_at is not None
+        and dv.updated_at is not None
+        and not _same_moment(payload.expected_updated_at, dv.updated_at)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="视图已被其他成员修改，请刷新后重试",
+        )
 
     # is_default 是**表级**标记（会清掉同表其它默认视图）：只有 table 档视图代表
     # "全表成员的落地页"，private/shared 档持有它会让其他成员进表看到空白（ADR 0003 §2）
@@ -467,12 +494,53 @@ def update_view(
         db.query(DataView).filter(DataView.table_id == table_id).update({"is_default": False})
 
     update_data = payload.model_dump(exclude_unset=True)
+    # expected_updated_at 只参与冲突判定，不是 DataView 列
+    update_data.pop("expected_updated_at", None)
     for key, value in update_data.items():
         setattr(dv, key, value)
+    # updated_at 是乐观并发令牌（ADR 0023 §2）：SQLite 的 func.now() 只有秒级精度，
+    # 同一秒内连续编辑会得到相同令牌而漏判冲突，这里显式写入微秒级 UTC 时间。
+    dv.updated_at = datetime.now(UTC)
     db.commit()
     db.refresh(dv)
     _ensure_view_sort_index(db, dt, dv)
     return _view_payloads(db, dt, current_user, [dv])[0]
+
+
+@router.post("/{view_id}/dashboard/data", response_model=DashboardDataResponse)
+def dashboard_data(
+    workspace_id: int,
+    table_id: int,
+    view_id: int,
+    payload: DashboardDataRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """批量取 widget 数据（ADR 0023 §4）.
+
+    同一 ``(table, view.filters + 全局筛选)`` 只扫描一次，多 widget 共享行集；
+    单 widget 失败只回填 ``errors``，不整页报错。权限：视图可读 + 表 READ，
+    逐 widget 复用 ``list_rows`` 的行级权限。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    dv = get_view_or_404(db, dt, current_user, view_id, ViewAction.VIEW_READ)
+    if dv.view_type != "dashboard":
+        raise HTTPException(status_code=400, detail="仅 dashboard 视图支持批量取数")
+    field_defs = {f.name: f.field_type for f in db.query(DataField).filter(DataField.table_id == table_id).all()}
+    config, err = normalize_dashboard_config(dv.view_options, field_defs)
+    if err or config is None:
+        raise HTTPException(status_code=400, detail=f"dashboard 配置校验失败: {err}")
+    return build_dashboard_data(
+        db,
+        dt,
+        dv,
+        current_user,
+        config,
+        workspace_id=workspace_id,
+        widget_ids=payload.widget_ids or None,
+        globals_values=payload.globals,
+        force=payload.force,
+    )
 
 
 @router.post("/{view_id}/visibility", response_model=ViewResponse)

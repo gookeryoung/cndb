@@ -293,6 +293,33 @@ class ViewUpdate(BaseModel):
     view_options: dict[str, Any] | None = None
     is_default: bool | None = None
     order: int | None = None
+    # 乐观并发（ADR 0023 §2）：客户端带上最近一次读到的 updated_at，
+    # 与库不一致时 409，避免两个编辑者互相覆盖画布配置。
+    expected_updated_at: datetime | None = None
+
+
+class DashboardDataRequest(BaseModel):
+    """dashboard 批量取数请求（ADR 0023 §4）."""
+
+    widget_ids: list[str] = Field(default_factory=list)
+    globals: dict[str, Any] = Field(default_factory=dict)
+    force: bool = False
+
+
+class DashboardDataItem(BaseModel):
+    widget_id: str
+    dataset: dict[str, Any]
+    meta: dict[str, Any]
+
+
+class DashboardDataErrorItem(BaseModel):
+    widget_id: str
+    detail: str
+
+
+class DashboardDataResponse(BaseModel):
+    items: list[DashboardDataItem] = Field(default_factory=list)
+    errors: list[DashboardDataErrorItem] = Field(default_factory=list)
 
 
 class ViewMemberInput(BaseModel):

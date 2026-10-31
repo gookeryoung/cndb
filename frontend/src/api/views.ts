@@ -4,6 +4,7 @@ import api from './client'
 import type {
     ViewCreate, View, ViewUpdate, RowResponse,
     ViewVisibilityUpdate, ViewMemberInput, ViewMember, ShareableMember, ViewMemberRole,
+    DashboardDataRequest, DashboardDataResponse,
 } from './types'
 
 export const viewApi = {
@@ -37,6 +38,9 @@ export const viewApi = {
     /** 日历视图 */
     calendar: (wid: number | string, tid: number | string, vid: number | string, start?: string, end?: string, limit = 500) =>
         api.get<{ rows: RowResponse[]; total: number; start_field: string }>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}/calendar`, { params: { start, end, limit } }).then(r => r.data),
+    /** dashboard 批量取数：一次请求多 widget，服务端同表只扫描一次（ADR 0023 §4） */
+    dashboardData: (wid: number | string, tid: number | string, vid: number | string, data: DashboardDataRequest = {}) =>
+        api.post<DashboardDataResponse>(`/v1/workspaces/${wid}/tables/${tid}/views/${vid}/dashboard/data`, data).then(r => r.data),
 
     // ── 可见性与共享名单（ADR 0003 P3）──────────────────
     /** 切换可见性档位；`members` 仅目标档位为 shared 时接受（全量替换名单，省略=不动名单） */

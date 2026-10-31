@@ -838,6 +838,8 @@ export default function GridPage() {
       filter_type?: 'AND' | 'OR'
       view_type?: string
       view_options?: Record<string, unknown> | null
+      /** 乐观并发令牌（ADR 0023 §2）：画布显式保存时传最近读到的 updated_at */
+      expected_updated_at?: string | null
       /** 静默保存：自动保存场景传 true，不弹成功提示 */
       silent?: boolean
     }) =>
@@ -848,13 +850,15 @@ export default function GridPage() {
         filter_type: args.filter_type ?? undefined,
         view_type: args.view_type,
         view_options: args.view_options ?? undefined,
+        expected_updated_at: args.expected_updated_at ?? undefined,
       }),
     onSuccess: (_data, vars) => {
       if (!vars.silent) message.success('视图已保存')
       queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })
     },
     onError: (err) => {
-      message.error(err instanceof Error ? err.message : '保存视图失败')
+      const status = (err as { response?: { status?: number } })?.response?.status
+      message.error(status === 409 ? '视图已被其他成员修改，请刷新后重试' : (err instanceof Error ? err.message : '保存视图失败'))
     },
   })
   const removeView = useMutation({
@@ -892,7 +896,7 @@ export default function GridPage() {
    *  状态一律从 store 即时读取（getState）而非闭包捕获：ViewConfigDialog 保存按钮在
    *  同一次点击内先 setViewOptionsDraft 再调 saveViewNow，闭包里的 draft 是上一轮渲染的
    *  旧值，会把旧配置发到后端（新值只能等 500ms 防抖，CI 下与后续操作产生竞态）. */
-  const persistCurrentView = useCallback((silent = true) => {
+  const persistCurrentView = useCallback((silent = true, expectedUpdatedAt?: string | null) => {
     const { activeViewId: vid, viewFilters: fs, viewSortings: ss, viewFilterLogic: logic, viewOptionsDraft: opts } = useGridViewStore.getState()
     if (!vid) return
     updateView.mutate({
@@ -901,6 +905,7 @@ export default function GridPage() {
       sortings: ss.length ? ss : null,
       filter_type: logic,
       view_options: opts,
+      expected_updated_at: expectedUpdatedAt,
       silent,
     })
   }, [updateView])
@@ -915,9 +920,9 @@ export default function GridPage() {
   }, [viewFilters, viewSortings, viewFilterLogic, viewOptionsDraft, activeViewId, debouncedPersist, cancelPersist])
 
   /** 立即保存视图（绕过 debounce）— 用于 ViewConfigDialog 保存按钮等显式保存场景，弹出成功提示 */
-  const saveViewNow = useCallback(() => {
+  const saveViewNow = useCallback((expectedUpdatedAt?: string | null) => {
     cancelPersist()
-    persistCurrentView(false)
+    persistCurrentView(false, expectedUpdatedAt)
   }, [cancelPersist, persistCurrentView])
 
   /** 右侧模式按钮组的统一处理：
@@ -1263,6 +1268,8 @@ export default function GridPage() {
                 rows={rowList.items || []}
                 fields={table?.fields || []}
                 view={activeView}
+                workspaceId={wid}
+                tableId={tid}
                 total={rowList.total}
                 onRowClick={openDetailWithPrefetch}
                 loading={rowsFetching && !rowList.items?.length}
@@ -1270,9 +1277,10 @@ export default function GridPage() {
                 canEdit={canEditViews}
                 onSave={(options) => {
                   // 先写草稿再立即持久化：persistCurrentView 从 store 即时读取，
-                  // 避免 500ms 防抖窗口内旧配置被发到后端（ADR 0023 P1 显式保存）
+                  // 避免 500ms 防抖窗口内旧配置被发到后端（ADR 0023 P1 显式保存）；
+                  // 带上读取时的 updated_at 做乐观并发比对（ADR 0023 §2）
                   setViewOptionsDraft(options)
-                  saveViewNow()
+                  saveViewNow(activeView?.updated_at)
                 }}
               />
             ) : (

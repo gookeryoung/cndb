@@ -24,9 +24,16 @@ const echartsMock = vi.hoisted(() => {
 vi.mock('echarts/core', () => ({ use: vi.fn(), init: echartsMock.init }))
 vi.mock('echarts/charts', () => ({
   BarChart: {}, LineChart: {}, PieChart: {}, ScatterChart: {}, BoxplotChart: {},
+  RadarChart: {}, FunnelChart: {}, GaugeChart: {}, HeatmapChart: {}, TreemapChart: {},
 }))
-vi.mock('echarts/components', () => ({ GridComponent: {}, TooltipComponent: {}, LegendComponent: {} }))
+vi.mock('echarts/components', () => ({
+  GridComponent: {}, TooltipComponent: {}, LegendComponent: {},
+  RadarComponent: {}, VisualMapComponent: {},
+}))
 vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
+
+const dashboardData = vi.hoisted(() => vi.fn())
+vi.mock('@/api/views', () => ({ viewApi: { dashboardData } }))
 
 const FIELDS: Field[] = [
   makeField({ id: 1, name: '订单号', field_type: 'text' }),
@@ -86,6 +93,9 @@ function renderDashboard(opts?: {
   error?: string | null
   canEdit?: boolean
   onSave?: (options: Record<string, unknown>) => void
+  total?: number
+  workspaceId?: string | number
+  tableId?: string | number
 }) {
   return renderProviders(
     <DashboardView
@@ -96,6 +106,9 @@ function renderDashboard(opts?: {
       error={opts?.error}
       canEdit={opts?.canEdit}
       onSave={opts?.onSave}
+      total={opts?.total}
+      workspaceId={opts?.workspaceId ?? 1}
+      tableId={opts?.tableId ?? 2}
     />,
   )
 }
@@ -110,7 +123,7 @@ describe('DashboardView', () => {
     expect(screen.getByTestId('dashboard-table-detail')).toBeInTheDocument()
     // row_limit=2 只渲染前两行
     expect(screen.getByTestId('dashboard-table-detail')).not.toHaveTextContent('A003')
-    expect(screen.getByTestId('chart-container')).toHaveAttribute('data-chart-ready', 'true')
+    expect(screen.getByTestId('dashboard-chart-container-sales-chart')).toHaveAttribute('data-chart-ready', 'true')
   })
 
   it('组件级 query 过滤在本地生效', () => {
@@ -168,6 +181,44 @@ describe('DashboardView', () => {
     expect(screen.getByTestId('dashboard-widget-kpi-sales-empty')).toBeInTheDocument()
     // 文本组件不因无数据隐藏
     expect(screen.queryByTestId('dashboard-widget-note-empty')).not.toBeInTheDocument()
+  })
+})
+
+describe('DashboardView 服务端取数路径（大表）', () => {
+  it('只提交数据 widget，渲染口径提示与单卡错误', async () => {
+    dashboardData.mockResolvedValue({
+      items: [
+        {
+          widget_id: 'kpi-count',
+          dataset: { kind: 'kpi', field: '订单号', agg: 'count', value: 12000 },
+          meta: { scanned: 20000, total: 12000, truncated: false, cached: false },
+        },
+        {
+          widget_id: 'kpi-sales',
+          dataset: { kind: 'kpi', field: '销售额', agg: 'sum', value: 9 },
+          meta: { scanned: 20000, total: 12000, truncated: false, cached: true },
+        },
+        {
+          widget_id: 'sales-chart',
+          dataset: { kind: 'category', categories: ['数码'], series: [{ name: '销售额', data: [180] }] },
+          meta: { scanned: 20000, total: 12000, truncated: false, cached: false },
+        },
+      ],
+      errors: [{ widget_id: 'detail', detail: '明细取数失败' }],
+    })
+    renderDashboard({ total: 12000 })
+
+    await waitFor(() => expect(dashboardData).toHaveBeenCalledTimes(1))
+    // 文本卡片不参与取数
+    expect(dashboardData.mock.calls[0][3]).toEqual({
+      widget_ids: ['kpi-count', 'kpi-sales', 'sales-chart', 'detail'],
+    })
+
+    await waitFor(() => expect(screen.getByTestId('dashboard-widget-kpi-sales-meta'))
+      .toHaveTextContent('样本 20000 / 总行数 12000 · 缓存'))
+    expect(screen.getByTestId('dashboard-kpi-value-kpi-sales')).toHaveTextContent('9')
+    expect(screen.getByTestId('dashboard-chart-container-sales-chart')).toHaveAttribute('data-chart-ready', 'true')
+    expect(screen.getByTestId('dashboard-widget-detail-error')).toHaveTextContent('明细取数失败')
   })
 })
 

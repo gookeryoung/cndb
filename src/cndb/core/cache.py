@@ -207,10 +207,15 @@ meta_cache = TTLCache(max_entries=256, name="meta")
 # 顶栏工作区搜索结果（短 TTL：单行写由事件即时失效，批量写显式失效，TTL 兜底）
 search_cache = TTLCache(max_entries=256, name="search")
 
+# dashboard 批量取数结果（ADR 0023 §4：TTL 60s / LRU 128；表写操作按 workspace 失效）
+dashboard_cache = TTLCache(max_entries=128, name="dashboard")
+
 
 def invalidate_all(prefix: str | None = None) -> int:
     """失效所有预置缓存（可按前缀），供写路径或管理接口调用."""
-    return list_cache.clear(prefix) + meta_cache.clear(prefix) + search_cache.clear(prefix)
+    return (
+        list_cache.clear(prefix) + meta_cache.clear(prefix) + search_cache.clear(prefix) + dashboard_cache.clear(prefix)
+    )
 
 
 __all__ = [
@@ -220,6 +225,7 @@ __all__ = [
     "RedisBackendPlaceholder",
     "TTLCache",
     "cache_key",
+    "dashboard_cache",
     "invalidate_all",
     "list_cache",
     "meta_cache",

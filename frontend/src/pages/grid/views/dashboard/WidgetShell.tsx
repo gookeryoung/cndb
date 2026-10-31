@@ -33,6 +33,8 @@ export interface WidgetShellProps {
   selected?: boolean
   dragHandleProps?: WidgetDragHandleProps
   onRemove?: () => void
+  /** 取数口径提示（如「样本 2000 / 总行数 12000」），显示在标题右侧 */
+  metaText?: string
 }
 
 export default function WidgetShell({
@@ -47,6 +49,7 @@ export default function WidgetShell({
   selected = false,
   dragHandleProps,
   onRemove,
+  metaText,
 }: WidgetShellProps) {
   // listeners 是 { onPointerDown: ... } 的映射对象，必须逐事件展开到 DOM；
   // 若整体作为 `listeners={...}` 透传，dnd-kit 收不到激活事件（拖拽永不启动）。
@@ -88,7 +91,7 @@ export default function WidgetShell({
         transition: 'border-color .15s, box-shadow .15s',
       }}
     >
-      {(title || editing) && (
+      {(title || editing || metaText) && (
         <div
           style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}
         >
@@ -113,6 +116,18 @@ export default function WidgetShell({
           >
             {title}
           </div>
+          {metaText && (
+            <span
+              data-testid={`${testId}-meta`}
+              title={metaText}
+              style={{
+                flexShrink: 0, fontSize: 11, color: 'var(--cn-text-muted)',
+                whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
+              }}
+            >
+              {metaText}
+            </span>
+          )}
           {editing && onRemove && (
             <Tooltip title="删除组件">
               <span

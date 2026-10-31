@@ -1,0 +1,1396 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`14 类图 option 快照 > area 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 32,
+    "left": 48,
+    "right": 24,
+    "top": 24,
+  },
+  "legend": undefined,
+  "series": [
+    {
+      "areaStyle": {},
+      "data": [
+        90,
+        120,
+        200,
+      ],
+      "emphasis": {
+        "focus": "series",
+      },
+      "itemStyle": {
+        "color": "#1677ff",
+      },
+      "lineStyle": {
+        "color": "#1677ff",
+        "width": 2,
+      },
+      "name": "销售额",
+      "smooth": true,
+      "stack": undefined,
+      "type": "line",
+      "yAxisIndex": undefined,
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "axis",
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": undefined,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "家电",
+      "食品",
+      "数码",
+    ],
+    "name": "类别",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+  "yAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "formatter": [Function],
+    },
+    "axisLine": {
+      "show": false,
+    },
+    "name": undefined,
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "position": undefined,
+    "scale": true,
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "type": "value",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > bar 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 32,
+    "left": 48,
+    "right": 24,
+    "top": 24,
+  },
+  "legend": undefined,
+  "series": [
+    {
+      "areaStyle": undefined,
+      "data": [
+        90,
+        120,
+        200,
+      ],
+      "emphasis": {
+        "focus": "series",
+      },
+      "itemStyle": {
+        "color": "#1677ff",
+      },
+      "lineStyle": undefined,
+      "name": "销售额",
+      "smooth": false,
+      "stack": undefined,
+      "type": "bar",
+      "yAxisIndex": undefined,
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "axis",
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": undefined,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "家电",
+      "食品",
+      "数码",
+    ],
+    "name": "类别",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+  "yAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "formatter": [Function],
+    },
+    "axisLine": {
+      "show": false,
+    },
+    "name": undefined,
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "position": undefined,
+    "scale": true,
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "type": "value",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > boxplot 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 32,
+    "left": 48,
+    "right": 24,
+    "top": 24,
+  },
+  "series": [
+    {
+      "data": [
+        [
+          40,
+          42.5,
+          45,
+          47.5,
+          50,
+        ],
+        [
+          120,
+          120,
+          120,
+          120,
+          120,
+        ],
+        [
+          30,
+          50,
+          70,
+          85,
+          100,
+        ],
+      ],
+      "itemStyle": {
+        "borderColor": "#1677ff",
+        "color": "#1677ff40",
+      },
+      "name": "销售额",
+      "type": "boxplot",
+    },
+    {
+      "data": [],
+      "itemStyle": {
+        "color": "#eb2f96",
+      },
+      "name": "离群值",
+      "symbolSize": 8,
+      "type": "scatter",
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "item",
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": undefined,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "家电",
+      "食品",
+      "数码",
+    ],
+    "name": "类别",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+  "yAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "formatter": undefined,
+    },
+    "axisLine": {
+      "show": false,
+    },
+    "name": undefined,
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "position": undefined,
+    "scale": true,
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "type": "value",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > combo 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 32,
+    "left": 48,
+    "right": 24,
+    "top": 40,
+  },
+  "legend": {
+    "data": [
+      "销售额",
+      "数量",
+    ],
+    "itemGap": 8,
+    "textStyle": {
+      "color": "#8c8c8c",
+    },
+    "top": 0,
+    "type": "scroll",
+  },
+  "series": [
+    {
+      "areaStyle": undefined,
+      "data": [
+        90,
+        120,
+        200,
+      ],
+      "emphasis": {
+        "focus": "series",
+      },
+      "itemStyle": {
+        "color": "#1677ff",
+      },
+      "lineStyle": undefined,
+      "name": "销售额",
+      "smooth": false,
+      "stack": undefined,
+      "type": "bar",
+      "yAxisIndex": 0,
+    },
+    {
+      "areaStyle": undefined,
+      "data": [
+        6,
+        4,
+        11,
+      ],
+      "emphasis": {
+        "focus": "series",
+      },
+      "itemStyle": {
+        "color": "#52c41a",
+      },
+      "lineStyle": undefined,
+      "name": "数量",
+      "smooth": false,
+      "stack": undefined,
+      "type": "bar",
+      "yAxisIndex": 1,
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "axis",
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": undefined,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "家电",
+      "食品",
+      "数码",
+    ],
+    "name": "类别",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+  "yAxis": [
+    {
+      "axisLabel": {
+        "color": "#8c8c8c",
+        "formatter": [Function],
+      },
+      "axisLine": {
+        "show": false,
+      },
+      "name": "销售额",
+      "nameTextStyle": {
+        "color": "#8c8c8c",
+      },
+      "position": undefined,
+      "scale": true,
+      "splitLine": {
+        "lineStyle": {
+          "color": "#f0f0f0",
+        },
+      },
+      "type": "value",
+    },
+    {
+      "axisLabel": {
+        "color": "#8c8c8c",
+        "formatter": [Function],
+      },
+      "axisLine": {
+        "show": false,
+      },
+      "name": "数量",
+      "nameTextStyle": {
+        "color": "#8c8c8c",
+      },
+      "position": "right",
+      "scale": true,
+      "splitLine": {
+        "lineStyle": {
+          "color": "#f0f0f0",
+        },
+      },
+      "type": "value",
+    },
+  ],
+}
+`;
+
+exports[`14 类图 option 快照 > funnel 生成 option 1`] = `
+{
+  "legend": {
+    "data": undefined,
+    "itemGap": 8,
+    "textStyle": {
+      "color": "#8c8c8c",
+    },
+    "top": 0,
+    "type": "scroll",
+  },
+  "series": [
+    {
+      "bottom": 24,
+      "data": [
+        {
+          "itemStyle": {
+            "color": "#1677ff",
+          },
+          "name": "数码",
+          "value": 200,
+        },
+        {
+          "itemStyle": {
+            "color": "#52c41a",
+          },
+          "name": "食品",
+          "value": 120,
+        },
+        {
+          "itemStyle": {
+            "color": "#fa8c16",
+          },
+          "name": "家电",
+          "value": 90,
+        },
+      ],
+      "gap": 2,
+      "label": {
+        "color": "#1f1f1f",
+      },
+      "left": "10%",
+      "right": "10%",
+      "sort": "none",
+      "top": 32,
+      "type": "funnel",
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "item",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > gauge 生成 option 1`] = `
+{
+  "series": [
+    {
+      "axisLabel": {
+        "color": "#8c8c8c",
+        "distance": 18,
+      },
+      "axisLine": {
+        "lineStyle": {
+          "color": [
+            [
+              1,
+              "#1677ff",
+            ],
+          ],
+          "width": 12,
+        },
+      },
+      "axisTick": {
+        "show": false,
+      },
+      "data": [
+        {
+          "itemStyle": {
+            "color": "#1677ff",
+          },
+          "name": "销售额",
+          "value": 410,
+        },
+      ],
+      "detail": {
+        "color": "#1f1f1f",
+        "formatter": [Function],
+      },
+      "max": 500,
+      "min": 0,
+      "pointer": {
+        "itemStyle": {
+          "color": "#1677ff",
+        },
+      },
+      "progress": {
+        "show": true,
+        "width": 12,
+      },
+      "splitLine": {
+        "length": 10,
+        "lineStyle": {
+          "color": "#f0f0f0",
+        },
+      },
+      "title": {
+        "color": "#8c8c8c",
+      },
+      "type": "gauge",
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "item",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > heatmap 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 56,
+    "left": 72,
+    "right": 72,
+    "top": 24,
+  },
+  "series": [
+    {
+      "data": [
+        [
+          0,
+          0,
+          0,
+        ],
+        [
+          0,
+          1,
+          50,
+        ],
+        [
+          0,
+          2,
+          40,
+        ],
+        [
+          1,
+          0,
+          0,
+        ],
+        [
+          1,
+          1,
+          0,
+        ],
+        [
+          1,
+          2,
+          120,
+        ],
+        [
+          2,
+          0,
+          130,
+        ],
+        [
+          2,
+          1,
+          70,
+        ],
+        [
+          2,
+          2,
+          0,
+        ],
+      ],
+      "emphasis": {
+        "itemStyle": {
+          "borderColor": "#1f1f1f",
+          "borderWidth": 1,
+        },
+      },
+      "label": {
+        "show": false,
+      },
+      "name": "销售额",
+      "type": "heatmap",
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "formatter": [Function],
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "item",
+  },
+  "visualMap": {
+    "bottom": 8,
+    "calculable": true,
+    "inRange": {
+      "color": [
+        "#1677ff",
+        "#fa8c16",
+        "#52c41a",
+      ],
+    },
+    "left": "center",
+    "max": 130,
+    "min": 0,
+    "orient": "horizontal",
+    "textStyle": {
+      "color": "#8c8c8c",
+    },
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": undefined,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "家电",
+      "食品",
+      "数码",
+    ],
+    "name": "类别",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+  "yAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": undefined,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "2026-01",
+      "2026-02",
+      "2026-03",
+    ],
+    "name": "日期",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > histogram 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 48,
+    "left": 48,
+    "right": 24,
+    "top": 24,
+  },
+  "series": [
+    {
+      "barCategoryGap": 0,
+      "barGap": 0,
+      "data": [
+        3,
+        1,
+        2,
+      ],
+      "itemStyle": {
+        "color": "#1677ff",
+      },
+      "name": "销售额",
+      "type": "bar",
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "axis",
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": 0,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "30~60",
+      "60~90",
+      "90~120",
+    ],
+    "name": undefined,
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+  "yAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "formatter": undefined,
+    },
+    "axisLine": {
+      "show": false,
+    },
+    "name": undefined,
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "position": undefined,
+    "scale": true,
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "type": "value",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > line 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 32,
+    "left": 48,
+    "right": 24,
+    "top": 24,
+  },
+  "legend": undefined,
+  "series": [
+    {
+      "areaStyle": undefined,
+      "data": [
+        90,
+        120,
+        200,
+      ],
+      "emphasis": {
+        "focus": "series",
+      },
+      "itemStyle": {
+        "color": "#1677ff",
+      },
+      "lineStyle": {
+        "color": "#1677ff",
+        "width": 2,
+      },
+      "name": "销售额",
+      "smooth": false,
+      "stack": undefined,
+      "type": "line",
+      "yAxisIndex": undefined,
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "axis",
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": undefined,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "家电",
+      "食品",
+      "数码",
+    ],
+    "name": "类别",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+  "yAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "formatter": [Function],
+    },
+    "axisLine": {
+      "show": false,
+    },
+    "name": undefined,
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "position": undefined,
+    "scale": true,
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "type": "value",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > pie 生成 option 1`] = `
+{
+  "legend": {
+    "data": undefined,
+    "itemGap": 8,
+    "textStyle": {
+      "color": "#8c8c8c",
+    },
+    "top": 0,
+    "type": "scroll",
+  },
+  "series": [
+    {
+      "center": [
+        "50%",
+        "55%",
+      ],
+      "data": [
+        {
+          "itemStyle": {
+            "color": "#1677ff",
+          },
+          "name": "家电",
+          "value": 90,
+        },
+        {
+          "itemStyle": {
+            "color": "#52c41a",
+          },
+          "name": "食品",
+          "value": 120,
+        },
+        {
+          "itemStyle": {
+            "color": "#fa8c16",
+          },
+          "name": "数码",
+          "value": 200,
+        },
+      ],
+      "label": {
+        "color": "#8c8c8c",
+      },
+      "radius": [
+        "32%",
+        "62%",
+      ],
+      "type": "pie",
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "item",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > radar 生成 option 1`] = `
+{
+  "legend": {
+    "data": [
+      "家电",
+      "食品",
+      "数码",
+    ],
+    "itemGap": 8,
+    "textStyle": {
+      "color": "#8c8c8c",
+    },
+    "top": 0,
+    "type": "scroll",
+  },
+  "radar": {
+    "axisName": {
+      "color": "#8c8c8c",
+    },
+    "indicator": [
+      {
+        "max": 221,
+        "name": "销售额",
+      },
+      {
+        "max": 13,
+        "name": "数量",
+      },
+    ],
+    "splitArea": {
+      "show": false,
+    },
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+  },
+  "series": [
+    {
+      "data": [
+        {
+          "itemStyle": {
+            "color": "#1677ff",
+          },
+          "name": "家电",
+          "value": [
+            90,
+            6,
+          ],
+        },
+        {
+          "itemStyle": {
+            "color": "#52c41a",
+          },
+          "name": "食品",
+          "value": [
+            120,
+            4,
+          ],
+        },
+        {
+          "itemStyle": {
+            "color": "#fa8c16",
+          },
+          "name": "数码",
+          "value": [
+            200,
+            11,
+          ],
+        },
+      ],
+      "type": "radar",
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "item",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > scatter 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 40,
+    "left": 48,
+    "right": 24,
+    "top": 24,
+  },
+  "series": [
+    {
+      "data": [
+        [
+          2,
+          100,
+        ],
+        [
+          1,
+          50,
+        ],
+        [
+          3,
+          70,
+        ],
+        [
+          4,
+          120,
+        ],
+        [
+          5,
+          40,
+        ],
+        [
+          6,
+          30,
+        ],
+      ],
+      "itemStyle": {
+        "color": "#1677ff",
+        "opacity": 0.75,
+      },
+      "name": "销售额",
+      "symbolSize": 9,
+      "type": "scatter",
+    },
+    {
+      "data": [
+        [
+          1,
+          84.76190476190476,
+        ],
+        [
+          6,
+          51.9047619047619,
+        ],
+      ],
+      "lineStyle": {
+        "color": "#52c41a",
+        "width": 2,
+      },
+      "name": "趋势线",
+      "showSymbol": false,
+      "silent": true,
+      "tooltip": {
+        "show": false,
+      },
+      "type": "line",
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "item",
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "formatter": [Function],
+    },
+    "axisLine": {
+      "show": false,
+    },
+    "name": "数量",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "position": undefined,
+    "scale": true,
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "type": "value",
+  },
+  "yAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "formatter": [Function],
+    },
+    "axisLine": {
+      "show": false,
+    },
+    "name": "销售额",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "position": undefined,
+    "scale": true,
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "type": "value",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > stack 生成 option 1`] = `
+{
+  "grid": {
+    "bottom": 32,
+    "left": 48,
+    "right": 24,
+    "top": 40,
+  },
+  "legend": {
+    "data": [
+      "2026-01",
+      "2026-02",
+      "2026-03",
+    ],
+    "itemGap": 8,
+    "textStyle": {
+      "color": "#8c8c8c",
+    },
+    "top": 0,
+    "type": "scroll",
+  },
+  "series": [
+    {
+      "areaStyle": undefined,
+      "data": [
+        null,
+        null,
+        130,
+      ],
+      "emphasis": {
+        "focus": "series",
+      },
+      "itemStyle": {
+        "color": "#1677ff",
+      },
+      "lineStyle": undefined,
+      "name": "2026-01",
+      "smooth": false,
+      "stack": "total",
+      "type": "bar",
+      "yAxisIndex": undefined,
+    },
+    {
+      "areaStyle": undefined,
+      "data": [
+        50,
+        null,
+        70,
+      ],
+      "emphasis": {
+        "focus": "series",
+      },
+      "itemStyle": {
+        "color": "#52c41a",
+      },
+      "lineStyle": undefined,
+      "name": "2026-02",
+      "smooth": false,
+      "stack": "total",
+      "type": "bar",
+      "yAxisIndex": undefined,
+    },
+    {
+      "areaStyle": undefined,
+      "data": [
+        40,
+        120,
+        null,
+      ],
+      "emphasis": {
+        "focus": "series",
+      },
+      "itemStyle": {
+        "color": "#fa8c16",
+      },
+      "lineStyle": undefined,
+      "name": "2026-03",
+      "smooth": false,
+      "stack": "total",
+      "type": "bar",
+      "yAxisIndex": undefined,
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "axis",
+  },
+  "xAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "interval": undefined,
+      "rotate": 0,
+    },
+    "axisLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "axisTick": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "data": [
+      "家电",
+      "食品",
+      "数码",
+    ],
+    "name": "类别",
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "type": "category",
+  },
+  "yAxis": {
+    "axisLabel": {
+      "color": "#8c8c8c",
+      "formatter": [Function],
+    },
+    "axisLine": {
+      "show": false,
+    },
+    "name": undefined,
+    "nameTextStyle": {
+      "color": "#8c8c8c",
+    },
+    "position": undefined,
+    "scale": true,
+    "splitLine": {
+      "lineStyle": {
+        "color": "#f0f0f0",
+      },
+    },
+    "type": "value",
+  },
+}
+`;
+
+exports[`14 类图 option 快照 > treemap 生成 option 1`] = `
+{
+  "series": [
+    {
+      "bottom": 8,
+      "breadcrumb": {
+        "show": false,
+      },
+      "data": [
+        {
+          "children": [
+            {
+              "name": "2026-01",
+              "value": 130,
+            },
+            {
+              "name": "2026-02",
+              "value": 70,
+            },
+          ],
+          "name": "数码",
+          "value": 200,
+        },
+        {
+          "children": [
+            {
+              "name": "2026-03",
+              "value": 120,
+            },
+          ],
+          "name": "食品",
+          "value": 120,
+        },
+        {
+          "children": [
+            {
+              "name": "2026-02",
+              "value": 50,
+            },
+            {
+              "name": "2026-03",
+              "value": 40,
+            },
+          ],
+          "name": "家电",
+          "value": 90,
+        },
+      ],
+      "itemStyle": {
+        "borderColor": "#ffffff",
+        "borderWidth": 1,
+      },
+      "label": {
+        "color": "#1f1f1f",
+      },
+      "leafDepth": 2,
+      "left": 8,
+      "levels": [
+        {
+          "itemStyle": {
+            "color": "#1677ff",
+          },
+        },
+        {
+          "itemStyle": {
+            "color": "#52c41a",
+          },
+        },
+      ],
+      "nodeClick": false,
+      "right": 8,
+      "roam": false,
+      "top": 8,
+      "type": "treemap",
+      "upperLabel": {
+        "color": "#8c8c8c",
+        "show": true,
+      },
+    },
+  ],
+  "tooltip": {
+    "backgroundColor": "#ffffff",
+    "borderColor": "#f0f0f0",
+    "textStyle": {
+      "color": "#1f1f1f",
+    },
+    "trigger": "item",
+  },
+}
+`;

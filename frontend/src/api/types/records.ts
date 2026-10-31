@@ -51,6 +51,8 @@ export interface View {
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
   /** 是否默认视图（对齐后端 ViewResponse.is_default）—— 仅 `table` 档视图可持有 */
   is_default: boolean; created_at?: string
+  /** 最后更新时间（UTC）：画布保存时作为乐观并发令牌（ADR 0023 §2） */
+  updated_at?: string
   /** 可见性档位（对齐后端 ViewResponse.visibility） */
   visibility?: ViewVisibility
   /** 视图创建者：null=创建者已注销的孤儿视图（对所有人不可见，ADR 0003 决策 D3） */
@@ -107,6 +109,39 @@ export interface ViewUpdate {
   field_order?: string[] | null; view_options?: Record<string, unknown> | null
   /** 是否设为默认视图（对齐后端 ViewUpdate.is_default） */
   is_default?: boolean
+  /** 乐观并发令牌（ADR 0023 §2）：与库内 updated_at 不一致时后端返回 409 */
+  expected_updated_at?: string | null
+}
+
+/** dashboard 批量取数（ADR 0023 §4） */
+export interface DashboardDataRequest {
+  widget_ids?: string[]
+  globals?: Record<string, unknown>
+  force?: boolean
+}
+
+export interface DashboardDataMeta {
+  scanned: number
+  total: number
+  truncated: boolean
+  cached: boolean
+}
+
+export interface DashboardDataItem {
+  widget_id: string
+  /** Dataset 结构由 dashboard/chart/types.ts 定义，API 层保持弱类型避免反向依赖 */
+  dataset: Record<string, unknown>
+  meta: DashboardDataMeta
+}
+
+export interface DashboardDataErrorItem {
+  widget_id: string
+  detail: string
+}
+
+export interface DashboardDataResponse {
+  items: DashboardDataItem[]
+  errors: DashboardDataErrorItem[]
 }
 
 export interface AuditLog {

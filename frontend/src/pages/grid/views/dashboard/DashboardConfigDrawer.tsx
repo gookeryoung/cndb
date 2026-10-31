@@ -9,11 +9,14 @@ import { Button, Divider, Drawer, Empty, Input, InputNumber, Select, Space, Swit
 import type { Field } from '@/api'
 import {
   DASHBOARD_TYPE_LABELS,
-  type DashboardChartType,
+  type DashboardChartSort,
   type DashboardConfig,
+  type DashboardThreshold,
   type DashboardWidget,
   type DashboardWidgetType,
 } from './dashboardModel'
+import { CHART_GROUP_LABELS, CHART_TYPE_DEFS, getChartTypeDef } from './chart/chartRegistry'
+import { PALETTES } from './chart/option'
 import {
   DASHBOARD_COLS,
   DASHBOARD_MAX_H,
@@ -25,14 +28,13 @@ import {
 const NUMERIC_TYPES = new Set(['number', 'float', 'percentage', 'timestamp'])
 const DATE_TYPES = new Set(['date', 'datetime'])
 
-const CHART_TYPE_OPTIONS: Array<{ value: DashboardChartType; label: string }> = [
-  { value: 'bar', label: '柱状图' },
-  { value: 'line', label: '折线图' },
-  { value: 'pie', label: '饼图' },
-  { value: 'scatter', label: '散点图' },
-  { value: 'histogram', label: '直方图' },
-  { value: 'boxplot', label: '箱线图' },
-]
+/** 图表类型按注册表分组（新增一类图自动出现在面板） */
+const CHART_TYPE_OPTIONS = Object.entries(CHART_GROUP_LABELS).map(([group, label]) => ({
+  label,
+  options: CHART_TYPE_DEFS
+    .filter((def) => def.group === group)
+    .map((def) => ({ value: def.type, label: def.label })),
+}))
 
 const AGG_OPTIONS = [
   { value: 'sum', label: '求和' },
@@ -40,7 +42,21 @@ const AGG_OPTIONS = [
   { value: 'count', label: '计数' },
   { value: 'min', label: '最小' },
   { value: 'max', label: '最大' },
+  { value: 'median', label: '中位数' },
 ]
+
+const SORT_OPTIONS: Array<{ value: DashboardChartSort; label: string }> = [
+  { value: 'none', label: '不排序' },
+  { value: 'x_asc', label: '维度升序' },
+  { value: 'x_desc', label: '维度降序' },
+  { value: 'y_asc', label: '数值升序' },
+  { value: 'y_desc', label: '数值降序' },
+]
+
+/** 支持排序 / TopN 的图表类型（类目轴类） */
+const SORTABLE_TYPES = new Set(['bar', 'line', 'area', 'stack', 'combo', 'pie', 'funnel', 'radar', 'heatmap', 'treemap'])
+
+const THRESHOLD_COLORS = ['#52c41a', '#faad14', '#fa541c', '#cf1322', '#1677ff']
 
 const GRANULARITY_OPTIONS = [
   { value: 'day', label: '按日' },
@@ -71,10 +87,22 @@ function ChartForm({ widget, fields, onChange }: {
   onChange: (next: DashboardWidget) => void
 }) {
   const chart = widget.chart
+  const def = getChartTypeDef(chart.type)
+  const supports = def.supports
   const numericOnly = chart.agg !== 'count' || chart.type === 'scatter' || chart.type === 'histogram'
   const xOptions = fieldOptions(fields, chart.type === 'scatter' ? isNumeric : undefined)
   const yOptions = fieldOptions(fields, numericOnly ? isNumeric : undefined)
   const setChart = (patch: Partial<typeof chart>) => onChange({ ...widget, chart: { ...chart, ...patch } })
+  const display = widget.display ?? {}
+  const setDisplay = (patch: Partial<typeof display>) =>
+    onChange({ ...widget, display: { ...display, ...patch } })
+  const thresholds = display.thresholds ?? []
+  const sortable = SORTABLE_TYPES.has(chart.type)
+
+  const setThreshold = (index: number, patch: Partial<DashboardThreshold>) => {
+    setDisplay({ thresholds: thresholds.map((item, i) => (i === index ? { ...item, ...patch } : item)) })
+  }
+
   return (
     <>
       <Row label="图表类型">
@@ -82,10 +110,18 @@ function ChartForm({ widget, fields, onChange }: {
           value={chart.type}
           options={CHART_TYPE_OPTIONS}
           style={{ width: '100%' }}
-          onChange={(type) => setChart({ type, x: type === 'histogram' ? undefined : chart.x })}
+          onChange={(type) => {
+            const next = getChartTypeDef(type)
+            setChart({
+              type,
+              x: type === 'histogram' || type === 'gauge' ? undefined : chart.x,
+              y: next.supports.multiY ? chart.y : chart.y.slice(0, 1),
+            })
+          }}
+          data-testid="dashboard-chart-type"
         />
       </Row>
-      {chart.type !== 'histogram' && (
+      {chart.type !== 'histogram' && chart.type !== 'gauge' && (
         <Row label="X 轴">
           <Select
             value={chart.x}
@@ -99,24 +135,26 @@ function ChartForm({ widget, fields, onChange }: {
       )}
       <Row label="度量">
         <Select
-          mode="multiple"
-          value={chart.y}
+          mode={supports.multiY ? 'multiple' : undefined}
+          value={supports.multiY ? chart.y : chart.y[0]}
           options={yOptions}
           style={{ width: '100%' }}
-          placeholder="选择一个或多个数值字段"
-          onChange={(y) => setChart({ y })}
+          placeholder={supports.multiY ? '选择一个或多个数值字段' : '选择数值字段'}
+          onChange={(value) => setChart({ y: Array.isArray(value) ? value : value ? [value] : [] })}
           data-testid="dashboard-chart-y"
         />
       </Row>
-      <Row label="聚合">
-        <Select
-          value={chart.agg}
-          options={AGG_OPTIONS}
-          style={{ width: '100%' }}
-          onChange={(agg) => setChart({ agg })}
-        />
-      </Row>
-      {(chart.type === 'bar' || chart.type === 'line') && (
+      {supports.agg && (
+        <Row label="聚合">
+          <Select
+            value={chart.agg}
+            options={AGG_OPTIONS}
+            style={{ width: '100%' }}
+            onChange={(agg) => setChart({ agg })}
+          />
+        </Row>
+      )}
+      {supports.series && (
         <Row label="分组字段">
           <Select
             allowClear
@@ -125,9 +163,142 @@ function ChartForm({ widget, fields, onChange }: {
             style={{ width: '100%' }}
             placeholder="不分组"
             onChange={(series) => setChart({ series })}
+            data-testid="dashboard-chart-series"
           />
         </Row>
       )}
+      {supports.stack && (
+        <Row label="堆叠">
+          <Select
+            value={chart.stack}
+            options={[
+              { value: 'none', label: '不堆叠' },
+              { value: 'stack', label: '堆叠' },
+              { value: 'percent', label: '百分比堆叠' },
+            ]}
+            style={{ width: '100%' }}
+            onChange={(stack) => setChart({ stack })}
+          />
+        </Row>
+      )}
+      {supports.dualAxis && (
+        <Row label="双轴">
+          <Switch checked={chart.dual_axis} onChange={(dual_axis) => setChart({ dual_axis })} />
+        </Row>
+      )}
+      {chart.type === 'gauge' && (
+        <Row label="目标值">
+          <InputNumber
+            value={chart.target}
+            style={{ width: '100%' }}
+            placeholder="留空自动取 1.2 倍"
+            onChange={(target) => setChart({ target: target ?? undefined })}
+            data-testid="dashboard-chart-target"
+          />
+        </Row>
+      )}
+      {sortable && (
+        <>
+          <Row label="排序">
+            <Select
+              value={chart.sort}
+              options={SORT_OPTIONS}
+              style={{ width: '100%' }}
+              onChange={(sort) => setChart({ sort })}
+              data-testid="dashboard-chart-sort"
+            />
+          </Row>
+          <Row label="Top N">
+            <InputNumber
+              min={1}
+              max={100}
+              value={chart.top_n}
+              style={{ width: '100%' }}
+              placeholder="不截断"
+              onChange={(top_n) => setChart({ top_n: top_n ?? undefined })}
+              data-testid="dashboard-chart-topn"
+            />
+          </Row>
+        </>
+      )}
+      <Divider style={{ margin: '10px 0' }}>数值格式</Divider>
+      <Row label="单位">
+        <Input
+          value={chart.format.unit ?? ''}
+          maxLength={8}
+          placeholder="如 元 / %"
+          onChange={(e) => setChart({ format: { ...chart.format, unit: e.target.value || undefined } })}
+        />
+      </Row>
+      <Row label="小数位">
+        <InputNumber
+          min={0}
+          max={6}
+          value={chart.format.decimals}
+          style={{ width: '100%' }}
+          onChange={(decimals) => setChart({ format: { ...chart.format, decimals: decimals ?? undefined } })}
+        />
+      </Row>
+      <Divider style={{ margin: '10px 0' }}>配色</Divider>
+      <Row label="色板">
+        <Select
+          value={display.palette ?? 'default'}
+          options={Object.keys(PALETTES).map((name) => ({ value: name, label: name }))}
+          style={{ width: '100%' }}
+          onChange={(palette) => setDisplay({ palette })}
+        />
+      </Row>
+      <Row label="图例">
+        <Switch
+          checked={display.show_legend !== false}
+          onChange={(show_legend) => setDisplay({ show_legend })}
+        />
+      </Row>
+      <Row label="阈值配色">
+        <Button
+          size="small"
+          disabled={thresholds.length >= 5}
+          onClick={() => setDisplay({
+            thresholds: [...thresholds, {
+              value: 0, color: THRESHOLD_COLORS[thresholds.length % THRESHOLD_COLORS.length],
+            }].sort((a, b) => a.value - b.value),
+          })}
+          data-testid="dashboard-chart-threshold-add"
+        >
+          添加阈值
+        </Button>
+      </Row>
+      {thresholds.map((item, i) => (
+        <Row key={`threshold-${i}`} label={`阈值 ${i + 1}`}>
+          <Space.Compact style={{ width: '100%' }}>
+            <InputNumber
+              value={item.value}
+              style={{ flex: 1 }}
+              onChange={(value) => {
+                setDisplay({
+                  thresholds: thresholds
+                    .map((t, idx) => (idx === i ? { ...t, value: value ?? 0 } : t))
+                    .sort((a, b) => a.value - b.value),
+                })
+              }}
+            />
+            <Select
+              value={item.color}
+              style={{ width: 88 }}
+              options={THRESHOLD_COLORS.map((color) => ({ value: color, label: color }))}
+              onChange={(color) => setThreshold(i, { color })}
+            />
+            <Button
+              danger
+              onClick={() => setDisplay({
+                thresholds: thresholds.filter((_, idx) => idx !== i),
+              })}
+            >
+              删除
+            </Button>
+          </Space.Compact>
+        </Row>
+      ))}
       <Row label="行数上限">
         <InputNumber
           min={1}

@@ -16,8 +16,12 @@ export const MAX_DASHBOARD_WIDGETS = 32
 export const DASHBOARD_SCHEMA_VERSION = 1
 
 export type DashboardWidgetType = 'chart' | 'kpi' | 'table' | 'text'
-export type DashboardChartType = 'bar' | 'line' | 'pie' | 'scatter' | 'histogram' | 'boxplot'
-export type DashboardAggregation = 'sum' | 'avg' | 'count' | 'min' | 'max'
+export type DashboardChartType =
+  | 'bar' | 'line' | 'pie' | 'scatter' | 'histogram' | 'boxplot'
+  | 'area' | 'stack' | 'combo' | 'radar' | 'funnel' | 'gauge' | 'heatmap' | 'treemap'
+export type DashboardAggregation = 'sum' | 'avg' | 'count' | 'min' | 'max' | 'median'
+/** 类目排序口径；asc/desc 为 P0 兼容值，语义等同 y_asc/y_desc */
+export type DashboardChartSort = 'none' | 'asc' | 'desc' | 'x_asc' | 'x_desc' | 'y_asc' | 'y_desc'
 export type DashboardFilterLogic = 'AND' | 'OR'
 export type DashboardGlobalFilterKind = 'date_range' | 'select' | 'search'
 
@@ -53,9 +57,11 @@ export interface DashboardChart {
   series?: string
   agg: DashboardAggregation
   stack: 'none' | 'stack' | 'percent'
-  sort: 'none' | 'asc' | 'desc'
+  sort: DashboardChartSort
   top_n?: number
   dual_axis: boolean
+  /** 仪表盘目标值（仅 gauge 使用） */
+  target?: number
   format: { unit?: string; decimals?: number }
 }
 
@@ -81,13 +87,25 @@ export interface DashboardGlobalFilter {
   label?: string
 }
 
+export interface DashboardThreshold {
+  value: number
+  color: string
+}
+
+export interface DashboardDisplay {
+  show_legend?: boolean
+  palette?: string
+  /** 阈值配色（≤5 项，按 value 升序后「达到阈值」取色） */
+  thresholds?: DashboardThreshold[]
+}
+
 export interface DashboardWidgetBase {
   id: string
   type: DashboardWidgetType
   title?: string
   layout: WidgetBox
   query: DashboardQuery
-  display?: { show_legend?: boolean; palette?: string }
+  display?: DashboardDisplay
 }
 
 export interface DashboardChartWidget extends DashboardWidgetBase {
@@ -151,8 +169,13 @@ const FILTER_OPS = new Set([
 ])
 const NUMERIC_TYPES = new Set(['number', 'float', 'percentage', 'timestamp'])
 const DATE_TYPES = new Set(['date', 'datetime'])
-const CHART_TYPES = new Set(['bar', 'line', 'pie', 'scatter', 'histogram', 'boxplot'])
-const AGGREGATIONS = new Set(['sum', 'avg', 'count', 'min', 'max'])
+const CHART_TYPES = new Set<string>([
+  'bar', 'line', 'pie', 'scatter', 'histogram', 'boxplot',
+  'area', 'stack', 'combo', 'radar', 'funnel', 'gauge', 'heatmap', 'treemap',
+])
+const AGGREGATIONS = new Set(['sum', 'avg', 'count', 'min', 'max', 'median'])
+const SORT_VALUES = new Set(['none', 'asc', 'desc', 'x_asc', 'x_desc', 'y_asc', 'y_desc'])
+const MAX_THRESHOLDS = 5
 
 type Raw = Record<string, unknown>
 type FieldTypes = Map<string, string>
@@ -246,7 +269,8 @@ function normalizeChart(raw: unknown, path: string, types: FieldTypes | null): D
     throw new DashboardConfigError(`${path}.agg`, `不支持的聚合方式 (${String(agg)})`)
   }
   let x: string | undefined
-  if (type !== 'histogram') x = requireField(raw.x, `${path}.x`, types)
+  // gauge 是单值卡：不需要类目轴（x 可省略）
+  if (type !== 'histogram' && type !== 'gauge') x = requireField(raw.x, `${path}.x`, types)
   const yRaw = raw.y
   if (!Array.isArray(yRaw) || yRaw.length === 0) throw new DashboardConfigError(`${path}.y`, '必须是非空数组')
   if (yRaw.length > 8) throw new DashboardConfigError(`${path}.y`, '度量最多 8 个')
@@ -267,17 +291,28 @@ function normalizeChart(raw: unknown, path: string, types: FieldTypes | null): D
   }
   let series: string | undefined
   if (raw.series != null) series = requireField(raw.series, `${path}.series`, types)
+  // 二维分布 / 层级占比必须给出第二维（series）
+  if ((type === 'heatmap' || type === 'treemap') && !series) {
+    throw new DashboardConfigError(`${path}.series`, `${type} 必须指定第二维字段`)
+  }
   const stack = raw.stack ?? 'none'
   if (stack !== 'none' && stack !== 'stack' && stack !== 'percent') {
     throw new DashboardConfigError(`${path}.stack`, '必须是 none/stack/percent')
   }
   const sort = raw.sort ?? 'none'
-  if (sort !== 'none' && sort !== 'asc' && sort !== 'desc') {
-    throw new DashboardConfigError(`${path}.sort`, '必须是 none/asc/desc')
+  if (typeof sort !== 'string' || !SORT_VALUES.has(sort)) {
+    throw new DashboardConfigError(`${path}.sort`, '必须是 none/asc/desc/x_asc/x_desc/y_asc/y_desc')
   }
   const top_n = raw.top_n == null ? undefined : asInt(raw.top_n, `${path}.top_n`, 1, 100)
   const dual_axis = raw.dual_axis ?? false
   if (typeof dual_axis !== 'boolean') throw new DashboardConfigError(`${path}.dual_axis`, '必须是布尔值')
+  let target: number | undefined
+  if (raw.target != null) {
+    if (typeof raw.target !== 'number' || !Number.isFinite(raw.target)) {
+      throw new DashboardConfigError(`${path}.target`, '必须是数值')
+    }
+    target = raw.target
+  }
   const fmtRaw = raw.format
   const format: { unit?: string; decimals?: number } = {}
   if (fmtRaw != null) {
@@ -297,9 +332,10 @@ function normalizeChart(raw: unknown, path: string, types: FieldTypes | null): D
     series,
     agg: agg as DashboardAggregation,
     stack,
-    sort,
+    sort: sort as DashboardChartSort,
     top_n,
     dual_axis,
+    target,
     format,
   }
 }
@@ -395,7 +431,7 @@ function normalizeWidget(raw: unknown, index: number, types: FieldTypes | null, 
   const base: DashboardWidgetBase = { id, type, title: title as string | undefined, layout, query }
   if (raw.display != null) {
     if (!isObj(raw.display)) throw new DashboardConfigError(`${path}.display`, '必须是对象')
-    const display: { show_legend?: boolean; palette?: string } = {}
+    const display: DashboardDisplay = {}
     if (raw.display.show_legend != null) {
       if (typeof raw.display.show_legend !== 'boolean') {
         throw new DashboardConfigError(`${path}.display.show_legend`, '必须是布尔值')
@@ -407,6 +443,25 @@ function normalizeWidget(raw: unknown, index: number, types: FieldTypes | null, 
         throw new DashboardConfigError(`${path}.display.palette`, '必须是长度 ≤32 的字符串')
       }
       display.palette = raw.display.palette
+    }
+    if (raw.display.thresholds != null) {
+      if (!Array.isArray(raw.display.thresholds)) {
+        throw new DashboardConfigError(`${path}.display.thresholds`, '必须是数组')
+      }
+      if (raw.display.thresholds.length > MAX_THRESHOLDS) {
+        throw new DashboardConfigError(`${path}.display.thresholds`, `最多 ${MAX_THRESHOLDS} 项`)
+      }
+      display.thresholds = raw.display.thresholds.map((item, i) => {
+        const p = `${path}.display.thresholds[${i}]`
+        if (!isObj(item)) throw new DashboardConfigError(p, '必须是对象')
+        if (typeof item.value !== 'number' || !Number.isFinite(item.value)) {
+          throw new DashboardConfigError(`${p}.value`, '必须是数值')
+        }
+        if (typeof item.color !== 'string' || !item.color || item.color.length > 32) {
+          throw new DashboardConfigError(`${p}.color`, '必须是长度 1..32 的字符串')
+        }
+        return { value: item.value, color: item.color }
+      })
     }
     base.display = display
   }

@@ -23,6 +23,12 @@ import {
 import { clampBox, collapseNarrow, normalizeLayout, type WidgetBox } from './dashboardLayout'
 import { applyWidgetQuery } from './dashboardQuery'
 import { useDashboardDraft } from './useDashboardDraft'
+import { useDashboardData } from './useDashboardData'
+import { buildDashboardDataset } from './chart/dataset'
+import { missingChartRoles } from './widgets/ChartWidget'
+import { aggregateKpi } from './widgets/KpiWidget'
+import type { Dataset, KpiDataset, TableDataset, DatasetMeta } from './chart/types'
+import { VIEW_FETCH_ALL_LIMIT } from '../../useGridData'
 import DashboardGrid from './DashboardGrid'
 import ChartWidget from './widgets/ChartWidget'
 import KpiWidget from './widgets/KpiWidget'
@@ -39,6 +45,9 @@ export interface DashboardViewProps {
   rows: RowResponse[]
   fields: Field[]
   view?: View | null
+  /** 工作区 / 数据表 id：大表走服务端批量取数时需要（ADR 0023 §4） */
+  workspaceId?: string | number
+  tableId?: string | number
   total?: number
   onRowClick?: (r: RowResponse) => void
   /** 行数据加载中 */
@@ -64,6 +73,25 @@ function useNarrow(): boolean {
   return narrow
 }
 
+/** Dataset 是否为空（决定卡片空态；与各 kind 的数据形状一一对应） */
+function datasetIsEmpty(dataset: Dataset): boolean {
+  switch (dataset.kind) {
+    case 'category': return dataset.categories.length === 0
+    case 'pie': return dataset.items.length === 0
+    case 'scatter': return dataset.points.length === 0
+    case 'histogram': return dataset.bins.length === 0
+    case 'boxplot': return dataset.categories.length === 0
+    case 'radar': return dataset.series.length === 0
+    case 'funnel': return dataset.items.length === 0
+    case 'gauge': return dataset.value === null
+    case 'heatmap': return dataset.values.length === 0
+    case 'treemap': return dataset.nodes.length === 0
+    case 'kpi': return dataset.value === null
+    case 'table': return dataset.rows.length === 0
+    default: return true
+  }
+}
+
 /** 解析配置；成功返回 config，失败返回可读路径 */
 export function parseDashboardConfig(
   raw: Record<string, unknown> | null | undefined,
@@ -81,6 +109,9 @@ export default function DashboardView({
   rows,
   fields,
   view,
+  workspaceId,
+  tableId,
+  total = 0,
   onRowClick,
   loading = false,
   error = null,
@@ -103,6 +134,12 @@ export default function DashboardView({
   const baselineRef = useRef(baseline)
   baselineRef.current = baseline
 
+  // 数据口径（I3）：总行数超过客户端上限时改走服务端批量取数，避免拉全量行
+  const useServer = total > VIEW_FETCH_ALL_LIMIT
+  const serverData = useDashboardData({
+    wid: workspaceId, tid: tableId, view, enabled: useServer,
+  })
+
   // 非编辑态跟随服务端配置；编辑态不覆盖本地草稿（I5）
   useEffect(() => {
     if (!editing) draft.reset(baseline)
@@ -124,6 +161,54 @@ export default function DashboardView({
     }
     return out
   }, [draft.config.widgets, rows])
+
+  /** 小表路径：客户端装配 Dataset（与 ChartWidget 内部回退同构，统一供口径提示） */
+  const clientDatasets = useMemo<Map<string, Dataset>>(() => {
+    const out = new Map<string, Dataset>()
+    if (useServer) return out
+    const overall = Math.max(total, rows.length)
+    for (const widget of draft.config.widgets) {
+      if (widget.type === 'text') continue
+      const rowsForWidget = rowsByWidget.get(widget.id) ?? []
+      const meta: DatasetMeta = {
+        scanned: rowsForWidget.length,
+        total: overall,
+        truncated: rowsForWidget.length < overall,
+        cached: false,
+      }
+      if (widget.type === 'chart') {
+        if (missingChartRoles(widget, fields).length) continue
+        out.set(widget.id, { ...buildDashboardDataset(rowsForWidget, fields, widget.chart), meta })
+      } else if (widget.type === 'kpi') {
+        const { field, agg } = widget.kpi.value
+        out.set(widget.id, {
+          kind: 'kpi', field, agg, value: aggregateKpi(rowsForWidget, field, agg), meta,
+        })
+      } else {
+        out.set(widget.id, {
+          kind: 'table',
+          columns: widget.table.columns,
+          rows: rowsForWidget.slice(0, widget.table.row_limit),
+          total: rowsForWidget.length,
+          meta,
+        })
+      }
+    }
+    return out
+  }, [useServer, draft.config.widgets, rowsByWidget, rows.length, fields, total])
+
+  const datasets = useServer ? serverData.datasets : clientDatasets
+  const widgetErrors = useServer ? serverData.errors : new Map<string, string>()
+
+  const metaById = useMemo(() => {
+    const out = new Map<string, string>()
+    for (const [id, dataset] of datasets) {
+      const meta = dataset.meta
+      if (!meta) continue
+      out.set(id, `样本 ${meta.scanned} / 总行数 ${meta.total}${meta.cached ? ' · 缓存' : ''}`)
+    }
+    return out
+  }, [datasets])
 
   const exitEditing = () => {
     setEditing(false)
@@ -202,16 +287,34 @@ export default function DashboardView({
 
   const renderBody = (widget: DashboardWidget) => {
     const rowsForWidget = rowsByWidget.get(widget.id) ?? []
+    const dataset = datasets.get(widget.id)
     if (widget.type === 'chart') {
-      return <ChartWidget widget={widget} rows={rowsForWidget} fields={fields} onRowClick={onRowClick} />
+      return (
+        <ChartWidget
+          widget={widget}
+          rows={rowsForWidget}
+          fields={fields}
+          dataset={dataset}
+          onRowClick={onRowClick}
+        />
+      )
     }
-    if (widget.type === 'kpi') return <KpiWidget widget={widget} rows={rowsForWidget} />
+    if (widget.type === 'kpi') {
+      const kpi = dataset?.kind === 'kpi' ? (dataset as KpiDataset) : undefined
+      return <KpiWidget widget={widget} rows={rowsForWidget} dataset={kpi} />
+    }
     if (widget.type === 'text') return <TextWidget widget={widget} />
-    return <TableWidget widget={widget} rows={rowsForWidget} />
+    const table = dataset?.kind === 'table' ? (dataset as TableDataset) : undefined
+    return <TableWidget widget={widget} rows={rowsForWidget} dataset={table} onRowClick={onRowClick} />
   }
 
-  const isWidgetEmpty = (widget: DashboardWidget) =>
-    widget.type !== 'text' && (rowsByWidget.get(widget.id) ?? []).length === 0
+  const isWidgetEmpty = (widget: DashboardWidget) => {
+    if (widget.type === 'text') return false
+    const rowsForWidget = rowsByWidget.get(widget.id) ?? []
+    if (!useServer && rowsForWidget.length === 0) return true
+    const dataset = datasets.get(widget.id)
+    return dataset ? datasetIsEmpty(dataset) : rowsForWidget.length === 0
+  }
 
   const toolbar = canEdit && (
     <div
@@ -303,8 +406,10 @@ export default function DashboardView({
         onRemove={draft.removeWidget}
         renderBody={renderBody}
         isWidgetEmpty={isWidgetEmpty}
-        loading={loading}
+        loading={loading || (useServer && serverData.loading)}
         error={error}
+        errorById={widgetErrors}
+        metaById={metaById}
       />
       {editing && drawerOpen && (
         <Suspense fallback={null}>

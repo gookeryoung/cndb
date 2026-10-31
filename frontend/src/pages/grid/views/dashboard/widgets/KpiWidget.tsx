@@ -7,6 +7,7 @@
 import type { RowResponse } from '@/api'
 import { extractNumbers } from '../../chartBoard'
 import type { DashboardAggregation, DashboardKpiWidget } from '../dashboardModel'
+import type { KpiDataset } from '../chart/types'
 
 /** 按聚合方式计算单指标值（无有效样本时返回 null） */
 export function aggregateKpi(rows: RowResponse[], field: string, agg: DashboardAggregation): number | null {
@@ -23,6 +24,12 @@ export function aggregateKpi(rows: RowResponse[], field: string, agg: DashboardA
       return nums.length ? Math.min(...nums) : null
     case 'max':
       return nums.length ? Math.max(...nums) : null
+    case 'median': {
+      if (!nums.length) return null
+      const sorted = [...nums].sort((a, b) => a - b)
+      const mid = Math.floor(sorted.length / 2)
+      return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+    }
     default:
       return null
   }
@@ -38,13 +45,15 @@ export function formatKpi(value: number | null): string {
 export interface KpiWidgetProps {
   widget: DashboardKpiWidget
   rows: RowResponse[]
+  /** 服务端聚合结果（大表路径）；客户端路径不传，按行集本地聚合 */
+  dataset?: KpiDataset
 }
 
-export default function KpiWidget({ widget, rows }: KpiWidgetProps) {
+export default function KpiWidget({ widget, rows, dataset }: KpiWidgetProps) {
   const { field, agg } = widget.kpi.value
-  const result = aggregateKpi(rows, field, agg)
+  const result = dataset ? dataset.value : aggregateKpi(rows, field, agg)
   const aggLabel: Record<DashboardAggregation, string> = {
-    sum: '合计', avg: '均值', count: '计数', min: '最小值', max: '最大值',
+    sum: '合计', avg: '均值', count: '计数', min: '最小值', max: '最大值', median: '中位数',
   }
   return (
     <div

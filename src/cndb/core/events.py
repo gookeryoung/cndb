@@ -201,15 +201,19 @@ def invalidate_for_event(action: str, workspace_id: int | None) -> int:
     if workspace_id is None or not action:
         return 0
     try:
-        from cndb.core.cache import cache_key, list_cache, search_cache
+        from cndb.core.cache import cache_key, dashboard_cache, list_cache, search_cache
 
         cleared = 0
         if action.startswith(("record.", "row_rule.", "datasource.")):
             cleared += list_cache.clear(cache_key("records", workspace_id))
+            # dashboard 批量取数结果随行/规则/数据源变更失效（ADR 0023 §4）
+            cleared += dashboard_cache.clear(cache_key("dashboard", workspace_id))
         if action.startswith(("table.", "record.", "row_rule.", "datasource.")):
             cleared += list_cache.clear(cache_key("tables", workspace_id))
             # 工作区统计（行数 / 表数）随这些写路径变化（ADR 0046 D5）
             cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
+        if action.startswith("table."):
+            cleared += dashboard_cache.clear(cache_key("dashboard", workspace_id))
         if action.startswith("document."):
             cleared += list_cache.clear(cache_key("doc-tree", workspace_id))
         # 顶栏搜索会同时索引文档与数据表：任一侧变更都失效该工作区的搜索结果

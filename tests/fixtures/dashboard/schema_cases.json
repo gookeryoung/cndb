@@ -219,6 +219,96 @@
           }
         ]
       }
+    },
+    {
+      "name": "P2 面积/堆叠与多度量",
+      "config": {
+        "widgets": [
+          {
+            "id": "area",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "area", "x": "日期", "y": ["销售额", "数量"], "series": "支付方式", "stack": "percent"}
+          },
+          {
+            "id": "stack",
+            "type": "chart",
+            "layout": {"x": 6, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "stack", "x": "商品类别", "y": ["销售额"], "series": "支付方式", "agg": "sum"}
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2 组合双轴 / 雷达",
+      "config": {
+        "widgets": [
+          {
+            "id": "combo",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "combo", "x": "日期", "y": ["销售额", "数量"], "dual_axis": true, "agg": "sum"}
+          },
+          {
+            "id": "radar",
+            "type": "chart",
+            "layout": {"x": 6, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "radar", "x": "商品类别", "y": ["销售额", "数量"], "series": "支付方式"}
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2 漏斗 / 仪表目标",
+      "config": {
+        "widgets": [
+          {
+            "id": "funnel",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "funnel", "x": "商品类别", "y": ["销售额"], "sort": "y_desc", "top_n": 5}
+          },
+          {
+            "id": "gauge",
+            "type": "chart",
+            "layout": {"x": 6, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "gauge", "y": ["销售额"], "agg": "sum", "target": 100000, "format": {"unit": "元"}}
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2 热力 / 矩形树（需第二维）",
+      "config": {
+        "widgets": [
+          {
+            "id": "heatmap",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "heatmap", "x": "商品类别", "series": "支付方式", "y": ["销售额"]}
+          },
+          {
+            "id": "treemap",
+            "type": "chart",
+            "layout": {"x": 6, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "treemap", "x": "商品类别", "series": "支付方式", "y": ["销售额"]}
+          }
+        ]
+      }
+    },
+    {
+      "name": "P2 中位数 / 类目排序 / 阈值配色",
+      "config": {
+        "widgets": [
+          {
+            "id": "median",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "display": {"thresholds": [{"value": 100, "color": "#52c41a"}, {"value": 500, "color": "#fa8c16"}]},
+            "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"], "agg": "median", "sort": "x_desc"}
+          }
+        ]
+      }
     }
   ],
   "invalid": [
@@ -334,9 +424,55 @@
       "name": "图表类型未知",
       "config": {"widgets": [
         {"id": "bad-chart", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "radar", "x": "商品类别", "y": ["销售额"]}}
+         "chart": {"type": "sankey", "x": "商品类别", "y": ["销售额"]}}
       ]},
       "path": "widgets[0].chart.type"
+    },
+    {
+      "name": "热力图必须指定第二维",
+      "config": {"widgets": [
+        {"id": "bad-heat", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "heatmap", "x": "商品类别", "y": ["销售额"]}}
+      ]},
+      "path": "widgets[0].chart.series"
+    },
+    {
+      "name": "仪表目标必须是数值",
+      "config": {"widgets": [
+        {"id": "bad-gauge", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "gauge", "y": ["销售额"], "target": "一百"}}
+      ]},
+      "path": "widgets[0].chart.target"
+    },
+    {
+      "name": "排序口径非法",
+      "config": {"widgets": [
+        {"id": "bad-order", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"], "sort": "top"}}
+      ]},
+      "path": "widgets[0].chart.sort"
+    },
+    {
+      "name": "阈值配色上限",
+      "config": {"widgets": [
+        {"id": "many-thresholds", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "display": {"thresholds": [
+           {"value": 1, "color": "#111"}, {"value": 2, "color": "#222"},
+           {"value": 3, "color": "#333"}, {"value": 4, "color": "#444"},
+           {"value": 5, "color": "#555"}, {"value": 6, "color": "#666"}
+         ]},
+         "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"]}}
+      ]},
+      "path": "widgets[0].display.thresholds"
+    },
+    {
+      "name": "阈值颜色不能为空",
+      "config": {"widgets": [
+        {"id": "bad-threshold", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "display": {"thresholds": [{"value": 100, "color": ""}]},
+         "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"]}}
+      ]},
+      "path": "widgets[0].display.thresholds[0].color"
     },
     {
       "name": "求和度量必须数值",

@@ -38,6 +38,10 @@ export interface DashboardGridProps {
   isWidgetEmpty: (widget: DashboardWidget) => boolean
   loading?: boolean
   error?: string | null
+  /** widget_id → 取数失败文案（单卡隔离，不影响其它卡片） */
+  errorById?: Map<string, string>
+  /** widget_id → 取数口径提示（样本 / 总行数） */
+  metaById?: Map<string, string>
 }
 
 interface DraggableCardProps {
@@ -48,6 +52,7 @@ interface DraggableCardProps {
   empty: boolean
   loading: boolean
   error?: string
+  metaText?: string
   onSelect: () => void
   onRemove: () => void
   onKeyNudge: (dx: number, dy: number, resize: boolean) => void
@@ -56,7 +61,7 @@ interface DraggableCardProps {
 }
 
 function DraggableCard({
-  box, editing, selected, title, empty, loading, error, onSelect, onRemove, onKeyNudge, onResizeStart, children,
+  box, editing, selected, title, empty, loading, error, metaText, onSelect, onRemove, onKeyNudge, onResizeStart, children,
 }: DraggableCardProps) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: box.id,
@@ -109,6 +114,7 @@ function DraggableCard({
         selected={selected}
         dragHandleProps={{ ...attributes, listeners }}
         onRemove={onRemove}
+        metaText={metaText}
         testId={`dashboard-widget-${box.id}`}
       >
         {children}
@@ -130,7 +136,8 @@ function DraggableCard({
 }
 
 export default function DashboardGrid({
-  config, editing, selectedId, onSelect, onLayout, onRemove, renderBody, isWidgetEmpty, loading = false, error = null,
+  config, editing, selectedId, onSelect, onLayout, onRemove, renderBody, isWidgetEmpty,
+  loading = false, error = null, errorById, metaById,
 }: DashboardGridProps) {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [preview, setPreview] = useState<WidgetBox[] | null>(null)
@@ -236,7 +243,8 @@ export default function DashboardGrid({
               title={titleByWidget.get(widget.id) ?? DASHBOARD_TYPE_LABELS[widget.type]}
               empty={isWidgetEmpty(widget)}
               loading={loading}
-              error={error ?? undefined}
+              error={errorById?.get(widget.id) ?? error ?? undefined}
+              metaText={metaById?.get(widget.id)}
               onSelect={() => onSelect(widget.id)}
               onRemove={() => onRemove(widget.id)}
               onKeyNudge={(dx, dy, resize) => handleKeyNudge(widget.id, dx, dy, resize)}

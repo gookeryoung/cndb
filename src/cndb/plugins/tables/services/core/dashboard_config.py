@@ -28,10 +28,31 @@ MAX_WIDGET_H = 20
 MAX_WIDGET_Y = 200
 #: P0 支持的 widget 类型
 WIDGET_TYPES = frozenset({"chart", "kpi", "table", "text"})
-#: P0 图表类型（与 chartBoard.ChartType 对齐）
-CHART_TYPES = frozenset({"bar", "line", "pie", "scatter", "histogram", "boxplot"})
-#: 聚合方式
-AGGREGATIONS = frozenset({"sum", "avg", "count", "min", "max"})
+#: P0-P2 支持的图表类型（与 dashboard/chart/chartRegistry.ts 对齐）
+CHART_TYPES = frozenset(
+    {
+        "bar",
+        "line",
+        "pie",
+        "scatter",
+        "histogram",
+        "boxplot",
+        "area",
+        "stack",
+        "combo",
+        "radar",
+        "funnel",
+        "gauge",
+        "heatmap",
+        "treemap",
+    }
+)
+#: 聚合方式（median 为 P2 新增）
+AGGREGATIONS = frozenset({"sum", "avg", "count", "min", "max", "median"})
+#: 类目排序口径（asc/desc 为 P0 兼容值，语义等同 y_asc/y_desc）
+SORT_VALUES = frozenset({"none", "asc", "desc", "x_asc", "x_desc", "y_asc", "y_desc"})
+#: 阈值配色条目上限
+MAX_THRESHOLDS = 5
 #: 全局筛选类型
 GLOBAL_FILTER_KINDS = frozenset({"date_range", "select", "search"})
 #: 过滤操作符（与 services/core/query.py 实际支持的正名对齐）
@@ -204,7 +225,8 @@ def _normalize_chart(
         return None, f"{path}.agg: 不支持的聚合方式 ({agg})"
 
     x_field: str | None = None
-    if chart_type != "histogram":
+    # gauge 是单值卡：不需要类目轴（x 可省略）
+    if chart_type not in ("histogram", "gauge"):
         x_field, err = _validate_field_ref(raw.get("x"), f"{path}.x", fields)
         if err:
             return None, err
@@ -236,19 +258,25 @@ def _normalize_chart(
         series, err = _validate_field_ref(series, f"{path}.series", fields)
         if err:
             return None, err
+    # 二维分布 / 层级占比必须给出第二维（series）
+    if chart_type in ("heatmap", "treemap") and series is None:
+        return None, f"{path}.series: {chart_type} 必须指定第二维字段"
 
     stack = raw.get("stack", "none")
     if stack not in ("none", "stack", "percent"):
         return None, f"{path}.stack: 必须是 none/stack/percent"
     sort = raw.get("sort", "none")
-    if sort not in ("none", "asc", "desc"):
-        return None, f"{path}.sort: 必须是 none/asc/desc"
+    if sort not in SORT_VALUES:
+        return None, f"{path}.sort: 必须是 none/asc/desc/x_asc/x_desc/y_asc/y_desc"
     top_n = raw.get("top_n")
     if top_n is not None and (not _is_int(top_n) or not (1 <= top_n <= 100)):
         return None, f"{path}.top_n: 必须是 1..100 的整数"
     dual_axis = raw.get("dual_axis", False)
     if not isinstance(dual_axis, bool):
         return None, f"{path}.dual_axis: 必须是布尔值"
+    target = raw.get("target")
+    if target is not None and (isinstance(target, bool) or not isinstance(target, (int, float))):
+        return None, f"{path}.target: 必须是数值"
 
     fmt_raw = raw.get("format")
     fmt: dict[str, Any] = {}
@@ -276,6 +304,7 @@ def _normalize_chart(
         "sort": sort,
         "top_n": top_n,
         "dual_axis": dual_axis,
+        "target": target,
         "format": fmt,
     }, None
 
@@ -530,6 +559,25 @@ def _normalize_widget(
             if not isinstance(palette, str) or len(palette) > 32:
                 return None, f"{path}.display.palette: 必须是长度 ≤32 的字符串"
             clean_display["palette"] = palette
+        thresholds = display.get("thresholds")
+        if thresholds is not None:
+            if not isinstance(thresholds, list):
+                return None, f"{path}.display.thresholds: 必须是数组"
+            if len(thresholds) > MAX_THRESHOLDS:
+                return None, f"{path}.display.thresholds: 最多 {MAX_THRESHOLDS} 项"
+            clean_thresholds: list[dict[str, Any]] = []
+            for i, item in enumerate(thresholds):
+                t_path = f"{path}.display.thresholds[{i}]"
+                if not isinstance(item, dict):
+                    return None, f"{t_path}: 必须是对象"
+                value = item.get("value")
+                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                    return None, f"{t_path}.value: 必须是数值"
+                color = item.get("color")
+                if not isinstance(color, str) or not color or len(color) > 32:
+                    return None, f"{t_path}.color: 必须是长度 1..32 的字符串"
+                clean_thresholds.append({"value": value, "color": color})
+            clean_display["thresholds"] = clean_thresholds
         widget["display"] = clean_display
     return widget, None
 
