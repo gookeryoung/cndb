@@ -267,7 +267,7 @@ jobs:
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/pipeline/`（模型 / DSL 编译 / 检查注册表 / table 与 document 检查 / 执行器 / 路由）、`src/cndb/alembic/versions/y3z4a5b6c7d8_add_pipeline_plugin.py` | `tests/test_pipeline_dsl.py`、`tests/test_pipeline_checks.py`、`tests/test_pipeline_runner.py`、`tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/pipeline/`（模型 / DSL 编译 / 检查注册表 / table 与 document 检查 / 执行器 / 路由）、`src/cndb/alembic/versions/y3z4a5b6c7d8_add_pipeline_plugin.py` | `tests/test_pipeline_dsl.py`、`tests/test_pipeline_checks.py`、`tests/test_pipeline_runner.py`、`tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py` | ef8dff78 |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 
