@@ -1,6 +1,6 @@
 # ADR 0005: 修改申请同行合并视图与冲突裁决
 
-Status: Accepted（M1-M3 已落地；M4 代码已交付，缺聚合端点的前端用例）
+Status: Accepted（M1-M4 已落地）
 Date: 2026-10-19
 Related: `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/change_requests/routers/change_requests.py`、`src/cndb/plugins/change_requests/schemas.py`、`frontend/src/pages/changeRequests/ChangeRequestsPage.tsx`、`frontend/src/pages/changeRequests/ChangeRequestRowMergePage.tsx`、`frontend/src/pages/grid/useGridData.ts`；术语见 `CONTEXT.md`「修改申请 / 双轨制写入 / 编辑中标识」
 需求卡片: 无卡片（需求直接立项，原文见「口径」）
@@ -134,14 +134,12 @@ Related: `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/chan
 | M1 后端契约 + 分组 + 冲突检测 + 批量 merge | 已落地 | `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/change_requests/routers/change_requests.py`、`src/cndb/plugins/change_requests/schemas.py` | `tests/test_change_requests_merge_view.py`、`tests/test_change_requests_api.py` | `22d5ed58` |
 | M2 前端列表分组视图 + 批量审批 | 已落地 | `frontend/src/pages/changeRequests/ChangeRequestsPage.tsx`、`frontend/src/api/changeRequests.ts` | `frontend/src/pages/changeRequests/ChangeRequestsPage.test.tsx` | `22d5ed58` |
 | M3 冲突处理页 | 已落地 | `frontend/src/pages/changeRequests/ChangeRequestRowMergePage.tsx` | `frontend/src/pages/changeRequests/ChangeRequestRowMergePage.test.tsx` | `22d5ed58` |
-| M4 `usePendingChanges` 收敛 + 文档同步 | 进行中 | `frontend/src/pages/grid/useGridData.ts` | `frontend/src/pages/changeRequests/ChangeRequestsPage.test.tsx`（聚合端点本身尚无独立用例） | `22d5ed58` |
-
-> M1-M3 有代码落点与专属测试文件；M4 的代码已上线（`usePendingChanges` 走 `listGrouped`），但缺一个直接断言「聚合端点替代 N+1」的前端用例，故标「进行中」，补测后转「已落地」。
+| M4 `usePendingChanges` 收敛 + 文档同步 | 已落地 | `frontend/src/pages/grid/useGridData.ts` | `frontend/src/pages/grid/useGridData.test.tsx`（聚合端点单次调用 / 详情端点零请求 / Map 取组内最新申请且 ungrouped 排除） | 见 git log |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：M1-M3 已落地；M4 代码已交付，待补聚合端点前端用例
-- 已完成：后端分组与冲突检测、行组批量 merge、前端分组视图、冲突裁决页、`usePendingChanges` 聚合收敛（代码）
-- 下一步：补 `usePendingChanges` 断言 `listGrouped` 被调用且不再逐条 `get` 的用例（`frontend/src/pages/grid/`），通过后把 M4 转「已落地」
+- 当前阶段：M1-M4 全部落地
+- 已完成：后端分组与冲突检测、行组批量 merge、前端分组视图、冲突裁决页、`usePendingChanges` 聚合收敛（含专属前端用例锁定「聚合端点单次调用、零逐条 get」）
+- 下一步：Status 转 Implemented 待人工确认
 - 已知坑：`create` 项不能进行组；冲突字段必须带 `resolutions`，否则 409；delete 互斥需 `row_action` 显式裁决；落库后同行其余 open 申请被置 `stale`，需 `update-base` 刷新
-- 最近一次全绿：`make flow` 通过（2026-10-20，本地工作区）
+- 最近一次全绿：`make flow` 通过（2026-10-31，M4 补测提交前）
