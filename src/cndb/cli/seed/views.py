@@ -10,13 +10,26 @@ from typing import Any
 from cndb.cli.seed import paths
 
 
-def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: str, table_name: str) -> bool:
+def _validate_view_fields(
+    vc: dict[str, Any],
+    valid_fields: set[str],
+    ws_name: str,
+    table_name: str,
+    field_types: dict[str, str] | None = None,
+) -> bool:
     """校验单个视图配置里引用的所有 field_name 是否在目标表存在.
 
-    Returns:
-        True 表示通过，False 表示校验失败并已打印错误信息.
+    ``field_types`` 为字段名 -> 字段类型；dashboard 配置需要用它做数值/日期角色校验.
+    返回 True 表示通过；False 表示校验失败并已打印错误信息.
     """
+    from cndb.plugins.tables.models import KNOWN_VIEW_TYPES
+    from cndb.plugins.tables.services.core.dashboard_config import normalize_dashboard_config
+
     view_name = vc.get("name", "")
+    view_type = vc.get("view_type", "grid")
+    if view_type not in KNOWN_VIEW_TYPES:
+        print(f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 view_type='{view_type}' 不支持")
+        return False
     for f in vc.get("filters", []):
         if f.get("field_name") not in valid_fields:
             print(
@@ -111,6 +124,13 @@ def _validate_view_fields(vc: dict[str, Any], valid_fields: set[str], ws_name: s
                         f"的 view_options.charts[{i}].{opt_key}='{opt_val}' 不存在"
                     )
                     return False
+    if view_type == "dashboard":
+        types = field_types or {}
+        config, err = normalize_dashboard_config(vo, types)
+        if err:
+            print(f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{view_name}' 的 dashboard 配置校验失败: {err}")
+            return False
+        vc["view_options"] = config
     return True
 
 
@@ -159,9 +179,10 @@ def _seed_views(
                 print(f"[seed-视图] 配置中的表 '{ws_name}/{table_name}' 不存在，跳过")
                 continue
             valid_fields = {f.name for f in dt.fields}
+            field_types = {f.name: f.field_type for f in dt.fields}
             for idx, vc in enumerate(view_list):
                 try:
-                    if not _validate_view_fields(vc, valid_fields, ws_name, table_name):
+                    if not _validate_view_fields(vc, valid_fields, ws_name, table_name, field_types):
                         continue
 
                     # scope 决定归属与可见性档位：

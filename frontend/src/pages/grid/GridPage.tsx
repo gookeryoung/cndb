@@ -23,6 +23,7 @@ import {
   ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
   TableOutlined, BarChartOutlined, NodeIndexOutlined, ApartmentOutlined, PictureOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useTable, useTableViews, useUpdateRowOptimistic, useDeleteRowsOptimistic } from '@/api/hooks'
@@ -69,6 +70,7 @@ const TreeView = lazy(() => import('./views/TreeView'))
 const MatrixView = lazy(() => import('./views/MatrixView'))
 const ChartView = lazy(() => import('./views/ChartView'))
 const FlowView = lazy(() => import('./views/FlowView'))
+const DashboardView = lazy(() => import('./views/dashboard/DashboardView'))
 
 function ModalFallback() {
   return null
@@ -137,6 +139,7 @@ const MODE_BUTTONS: readonly ModeBtn[] = [
   { mode: 'matrix', label: '矩阵', tooltip: '矩阵 (Matrix)：行列分类交叉，数据按类别填入单元格', icon: <TableOutlined /> },
   { mode: 'chart', label: '图表', tooltip: '图表 (Chart)：柱状/折线/饼图/散点/直方图/箱线图与统计分析', icon: <BarChartOutlined /> },
   { mode: 'flow', label: '流程', tooltip: '流程 (Flow)：按流程节点字段平铺为「从节点到节点」的流转管线', icon: <NodeIndexOutlined /> },
+  { mode: 'dashboard', label: '画布', tooltip: '仪表盘 (Dashboard)：12 列栅格自由排布图表 / 指标 / 说明 / 明细（ADR 0023）', icon: <DashboardOutlined /> },
 ]
 
 /** 安全读取 localStorage（SSR / 隐私模式下可能抛异常）. */
@@ -232,6 +235,7 @@ export default function GridPage() {
       void import('./views/MatrixView')
       void import('./views/ChartView')
       void import('./views/FlowView')
+      void import('./views/dashboard/DashboardView')
     }
     if (typeof requestIdleCallback === 'function') {
       const id = requestIdleCallback(preload)
@@ -356,7 +360,7 @@ export default function GridPage() {
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const MODE_VIEW_TYPES = new Set<string>(['tree', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'flow'])
+      const MODE_VIEW_TYPES = new Set<string>(['tree', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'flow', 'dashboard'])
       const vt = v.view_type ?? ''
       const newMode: ViewMode = MODE_VIEW_TYPES.has(vt) ? (vt as ViewMode) : 'grid'
 
@@ -1254,6 +1258,16 @@ export default function GridPage() {
               <ChartView rows={rowList.items || []} fields={table?.fields || []} view={activeView} total={rowList.total} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'flow' ? (
               <FlowView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+            ) : mode === 'dashboard' ? (
+              <DashboardView
+                rows={rowList.items || []}
+                fields={table?.fields || []}
+                view={activeView}
+                total={rowList.total}
+                onRowClick={openDetailWithPrefetch}
+                loading={rowsFetching && !rowList.items?.length}
+                error={rowsError ? '数据加载失败，请稍后重试' : null}
+              />
             ) : (
               <CalendarView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             )}

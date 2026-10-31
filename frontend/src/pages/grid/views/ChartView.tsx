@@ -416,6 +416,10 @@ export interface ChartCardProps {
   onRowClick?: (r: RowResponse) => void
   /** 必填缺失空态的 data-testid（多图模式加索引后缀便于定位，默认保持单图契约） */
   emptyConfigTestId?: string
+  /** 已聚合数据集直传入口（dashboard widget 复用本组件，避免第二套图表实现） */
+  dataset?: ChartData
+  /** 图表容器最小高度（默认 320；dashboard 小卡片传 0 避免撑破栅格单元） */
+  minHeight?: number
 }
 
 /** 单个图表卡片：ECharts 实例生命周期 + 描述统计面板 + 必填缺失空态.
@@ -424,16 +428,25 @@ export interface ChartCardProps {
  * 因此单图（扁平 view_options）与多图（charts[]）共用同一渲染逻辑；
  * 数据分析模块的图表预览亦直接复用本组件（注入合成 fields 即可）。
  */
-export function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTestId = 'chart-empty-config' }: ChartCardProps) {
+export function ChartCard({
+  cfg,
+  rows,
+  fields,
+  total,
+  onRowClick,
+  emptyConfigTestId = 'chart-empty-config',
+  dataset,
+  minHeight = 320,
+}: ChartCardProps) {
   // 订阅主题：主题切换触发重渲染 → 重新读 CSS 变量重建 option（ThemeProvider 主题 state 驱动联动）
   const { mode: themeMode } = useTheme()
 
   const missing = useMemo(() => missingFieldLabels(cfg, fields), [cfg, fields])
-  const hasChart = missing.length === 0
+  const hasChart = !!dataset || missing.length === 0
 
   const data = useMemo(
-    () => (hasChart ? buildChartData(rows, fields, cfg) : null),
-    [hasChart, rows, fields, cfg],
+    () => dataset ?? (missing.length === 0 ? buildChartData(rows, fields, cfg) : null),
+    [dataset, missing.length, rows, fields, cfg],
   )
 
   const option = useMemo(
@@ -525,7 +538,7 @@ export function ChartCard({ cfg, rows, fields, total, onRowClick, emptyConfigTes
   // 因此图表容器始终挂载、永不承载 React 子节点，空态以兄弟覆盖层呈现。
   return (
     <>
-      <div style={{ flex: 1, minHeight: 320, position: 'relative', display: 'flex' }}>
+      <div style={{ flex: 1, minHeight, position: 'relative', display: 'flex' }}>
         <div
           ref={containerRef}
           data-testid="chart-container"

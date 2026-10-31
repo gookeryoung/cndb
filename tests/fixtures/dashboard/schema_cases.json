@@ -1,0 +1,447 @@
+{
+  "_comment": "dashboard view_options 契约用例（ADR 0023 I1）：Python 与前端 TS 共用同一份，防止口径漂移。valid 断言解析成功且二次归一幂等；invalid 断言错误定位到 path。",
+  "fields": {
+    "订单号": "text",
+    "商品类别": "text",
+    "销售额": "number",
+    "数量": "number",
+    "日期": "date",
+    "评分": "float",
+    "支付方式": "select"
+  },
+  "valid": [
+    {
+      "name": "空配置补默认值",
+      "config": {}
+    },
+    {
+      "name": "柱状图基础",
+      "config": {
+        "schema_version": 1,
+        "widgets": [
+          {
+            "id": "sales-by-category",
+            "type": "chart",
+            "title": "各类目销售额",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 10},
+            "query": {"filters": [], "sortings": []},
+            "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"], "agg": "sum"}
+          }
+        ]
+      }
+    },
+    {
+      "name": "折线多系列与格式",
+      "config": {
+        "widgets": [
+          {
+            "id": "trend",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 12, "h": 10},
+            "chart": {
+              "type": "line",
+              "x": "日期",
+              "y": ["销售额", "数量"],
+              "series": "支付方式",
+              "agg": "sum",
+              "stack": "percent",
+              "sort": "desc",
+              "top_n": 10,
+              "dual_axis": true,
+              "format": {"unit": "元", "decimals": 2}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "饼图",
+      "config": {
+        "widgets": [
+          {
+            "id": "pie",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 4, "h": 8},
+            "chart": {"type": "pie", "x": "商品类别", "y": ["销售额"]}
+          }
+        ]
+      }
+    },
+    {
+      "name": "散点图双数值轴",
+      "config": {
+        "widgets": [
+          {
+            "id": "scatter",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "scatter", "x": "数量", "y": ["销售额"], "agg": "sum"}
+          }
+        ]
+      }
+    },
+    {
+      "name": "直方图无 X 轴",
+      "config": {
+        "widgets": [
+          {
+            "id": "hist",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "histogram", "y": ["销售额"]}
+          }
+        ]
+      }
+    },
+    {
+      "name": "箱线图",
+      "config": {
+        "widgets": [
+          {
+            "id": "box",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "chart": {"type": "boxplot", "x": "商品类别", "y": ["销售额"]}
+          }
+        ]
+      }
+    },
+    {
+      "name": "KPI 周期对比与迷你趋势",
+      "config": {
+        "widgets": [
+          {
+            "id": "kpi-sales",
+            "type": "kpi",
+            "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
+            "kpi": {
+              "value": {"field": "销售额", "agg": "sum"},
+              "compare": {"mode": "prev_period", "date_field": "日期", "granularity": "month"},
+              "sparkline": {"field": "销售额", "agg": "sum", "points": 12}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "KPI 文本字段计数",
+      "config": {
+        "widgets": [
+          {
+            "id": "kpi-count",
+            "type": "kpi",
+            "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
+            "kpi": {"value": {"field": "订单号", "agg": "count"}}
+          }
+        ]
+      }
+    },
+    {
+      "name": "文本组件",
+      "config": {
+        "widgets": [
+          {
+            "id": "note",
+            "type": "text",
+            "layout": {"x": 0, "y": 0, "w": 12, "h": 3},
+            "text": {"content": "口径说明：销售额按订单金额汇总，含退款。"}
+          }
+        ]
+      }
+    },
+    {
+      "name": "表格组件",
+      "config": {
+        "widgets": [
+          {
+            "id": "detail",
+            "type": "table",
+            "layout": {"x": 0, "y": 0, "w": 12, "h": 10},
+            "table": {"columns": ["订单号", "商品类别", "销售额"], "row_limit": 20}
+          }
+        ]
+      }
+    },
+    {
+      "name": "扁平画布键兼容",
+      "config": {
+        "row_height": 32,
+        "gap": 8,
+        "padding": 12,
+        "widgets": []
+      }
+    },
+    {
+      "name": "全局筛选与设置",
+      "config": {
+        "widgets": [],
+        "global_filters": [
+          {"id": "date", "kind": "date_range", "field": "日期", "label": "日期"},
+          {"id": "pay", "kind": "select", "field": "支付方式"},
+          {"id": "kw", "kind": "search", "field": "商品类别"}
+        ],
+        "settings": {"refresh_interval": 30, "theme": "light"}
+      }
+    },
+    {
+      "name": "未知键裁剪",
+      "config": {
+        "unknown_root": "x",
+        "widgets": [
+          {
+            "id": "trim",
+            "type": "text",
+            "unknown_widget": "x",
+            "layout": {"x": 0, "y": 0, "w": 12, "h": 3},
+            "text": {"content": "说明"}
+          }
+        ]
+      }
+    },
+    {
+      "name": "组件级过滤与排序",
+      "config": {
+        "widgets": [
+          {
+            "id": "filtered",
+            "type": "chart",
+            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "query": {
+              "filters": [
+                {"field_name": "销售额", "op": ">=", "value": 100},
+                {"field_name": "商品类别", "op": "in", "value": ["数码", "家电"]}
+              ],
+              "filter_logic": "OR",
+              "sortings": [{"field_name": "销售额", "direction": "desc"}],
+              "limit": 200
+            },
+            "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"]}
+          }
+        ]
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "schema_version 仅支持 1",
+      "config": {"schema_version": 2},
+      "path": "schema_version"
+    },
+    {
+      "name": "widgets 必须是数组",
+      "config": {"widgets": {}},
+      "path": "widgets"
+    },
+    {
+      "name": "widget 数量上限",
+      "config": {"widgets": [
+        {"id": "w0", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w1", "type": "text", "layout": {"x": 0, "y": 3, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w2", "type": "text", "layout": {"x": 0, "y": 6, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w3", "type": "text", "layout": {"x": 0, "y": 9, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w4", "type": "text", "layout": {"x": 0, "y": 12, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w5", "type": "text", "layout": {"x": 0, "y": 15, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w6", "type": "text", "layout": {"x": 0, "y": 18, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w7", "type": "text", "layout": {"x": 0, "y": 21, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w8", "type": "text", "layout": {"x": 0, "y": 24, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w9", "type": "text", "layout": {"x": 0, "y": 27, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w10", "type": "text", "layout": {"x": 0, "y": 30, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w11", "type": "text", "layout": {"x": 0, "y": 33, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w12", "type": "text", "layout": {"x": 0, "y": 36, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w13", "type": "text", "layout": {"x": 0, "y": 39, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w14", "type": "text", "layout": {"x": 0, "y": 42, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w15", "type": "text", "layout": {"x": 0, "y": 45, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w16", "type": "text", "layout": {"x": 0, "y": 48, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w17", "type": "text", "layout": {"x": 0, "y": 51, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w18", "type": "text", "layout": {"x": 0, "y": 54, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w19", "type": "text", "layout": {"x": 0, "y": 57, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w20", "type": "text", "layout": {"x": 0, "y": 60, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w21", "type": "text", "layout": {"x": 0, "y": 63, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w22", "type": "text", "layout": {"x": 0, "y": 66, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w23", "type": "text", "layout": {"x": 0, "y": 69, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w24", "type": "text", "layout": {"x": 0, "y": 72, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w25", "type": "text", "layout": {"x": 0, "y": 75, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w26", "type": "text", "layout": {"x": 0, "y": 78, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w27", "type": "text", "layout": {"x": 0, "y": 81, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w28", "type": "text", "layout": {"x": 0, "y": 84, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w29", "type": "text", "layout": {"x": 0, "y": 87, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w30", "type": "text", "layout": {"x": 0, "y": 90, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w31", "type": "text", "layout": {"x": 0, "y": 93, "w": 12, "h": 3}, "text": {"content": "x"}},
+        {"id": "w32", "type": "text", "layout": {"x": 0, "y": 96, "w": 12, "h": 3}, "text": {"content": "x"}}
+      ]},
+      "path": "widgets"
+    },
+    {
+      "name": "widget id 重复",
+      "config": {"widgets": [
+        {"id": "dup", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "text": {"content": "a"}},
+        {"id": "dup", "type": "text", "layout": {"x": 0, "y": 3, "w": 12, "h": 3}, "text": {"content": "b"}}
+      ]},
+      "path": "widgets[1].id"
+    },
+    {
+      "name": "widget id 非法字符",
+      "config": {"widgets": [
+        {"id": "有 中文", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "text": {"content": "a"}}
+      ]},
+      "path": "widgets[0].id"
+    },
+    {
+      "name": "widget 类型未知",
+      "config": {"widgets": [
+        {"id": "bad-type", "type": "map", "layout": {"x": 0, "y": 0, "w": 6, "h": 6}}
+      ]},
+      "path": "widgets[0].type"
+    },
+    {
+      "name": "layout 横向越界",
+      "config": {"widgets": [
+        {"id": "wide", "type": "text", "layout": {"x": 11, "y": 0, "w": 2, "h": 3}, "text": {"content": "a"}}
+      ]},
+      "path": "widgets[0].layout.x"
+    },
+    {
+      "name": "layout 高度为 0",
+      "config": {"widgets": [
+        {"id": "flat", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 0}, "text": {"content": "a"}}
+      ]},
+      "path": "widgets[0].layout.h"
+    },
+    {
+      "name": "禁止跨表 table_id",
+      "config": {"widgets": [
+        {"id": "cross", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "query": {"table_id": 2}, "text": {"content": "a"}}
+      ]},
+      "path": "widgets[0].query.table_id"
+    },
+    {
+      "name": "过滤操作符不支持",
+      "config": {"widgets": [
+        {"id": "bad-op", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3},
+         "query": {"filters": [{"field_name": "销售额", "op": "like", "value": 1}]}, "text": {"content": "a"}}
+      ]},
+      "path": "widgets[0].query.filters[0].op"
+    },
+    {
+      "name": "排序方向非法",
+      "config": {"widgets": [
+        {"id": "bad-sort", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3},
+         "query": {"sortings": [{"field_name": "销售额", "direction": "up"}]}, "text": {"content": "a"}}
+      ]},
+      "path": "widgets[0].query.sortings[0].direction"
+    },
+    {
+      "name": "图表类型未知",
+      "config": {"widgets": [
+        {"id": "bad-chart", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "radar", "x": "商品类别", "y": ["销售额"]}}
+      ]},
+      "path": "widgets[0].chart.type"
+    },
+    {
+      "name": "求和度量必须数值",
+      "config": {"widgets": [
+        {"id": "bad-measure", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "bar", "x": "商品类别", "y": ["订单号"], "agg": "sum"}}
+      ]},
+      "path": "widgets[0].chart.y[0]"
+    },
+    {
+      "name": "散点 X 必须数值",
+      "config": {"widgets": [
+        {"id": "bad-scatter", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "scatter", "x": "商品类别", "y": ["销售额"]}}
+      ]},
+      "path": "widgets[0].chart.x"
+    },
+    {
+      "name": "直方图度量必须数值",
+      "config": {"widgets": [
+        {"id": "bad-hist", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "histogram", "y": ["商品类别"]}}
+      ]},
+      "path": "widgets[0].chart.y[0]"
+    },
+    {
+      "name": "图表度量数组不能为空",
+      "config": {"widgets": [
+        {"id": "empty-y", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "bar", "x": "商品类别", "y": []}}
+      ]},
+      "path": "widgets[0].chart.y"
+    },
+    {
+      "name": "KPI 对比日期字段必须是日期",
+      "config": {"widgets": [
+        {"id": "bad-kpi-date", "type": "kpi", "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
+         "kpi": {"value": {"field": "销售额", "agg": "sum"},
+                 "compare": {"mode": "prev_period", "date_field": "商品类别"}}}
+      ]},
+      "path": "widgets[0].kpi.compare.date_field"
+    },
+    {
+      "name": "KPI 迷你趋势点数越界",
+      "config": {"widgets": [
+        {"id": "bad-spark", "type": "kpi", "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
+         "kpi": {"value": {"field": "销售额", "agg": "sum"},
+                 "sparkline": {"field": "销售额", "agg": "sum", "points": 0}}}
+      ]},
+      "path": "widgets[0].kpi.sparkline.points"
+    },
+    {
+      "name": "文本内容不能为空",
+      "config": {"widgets": [
+        {"id": "empty-text", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "text": {"content": "   "}}
+      ]},
+      "path": "widgets[0].text.content"
+    },
+    {
+      "name": "表格列数上限",
+      "config": {"widgets": [
+        {"id": "many-cols", "type": "table", "layout": {"x": 0, "y": 0, "w": 12, "h": 8},
+         "table": {"columns": ["订单号", "商品类别", "销售额", "数量", "日期", "评分", "支付方式", "订单号", "商品类别"]}}
+      ]},
+      "path": "widgets[0].table.columns"
+    },
+    {
+      "name": "全局筛选 id 重复",
+      "config": {"widgets": [], "global_filters": [
+        {"id": "dup", "kind": "search", "field": "商品类别"},
+        {"id": "dup", "kind": "select", "field": "支付方式"}
+      ]},
+      "path": "global_filters[1].id"
+    },
+    {
+      "name": "日期范围筛选必须引用日期字段",
+      "config": {"widgets": [], "global_filters": [
+        {"id": "range", "kind": "date_range", "field": "商品类别"}
+      ]},
+      "path": "global_filters[0].field"
+    },
+    {
+      "name": "全局筛选类型未知",
+      "config": {"widgets": [], "global_filters": [
+        {"id": "kind", "kind": "number", "field": "销售额"}
+      ]},
+      "path": "global_filters[0].kind"
+    },
+    {
+      "name": "设置主题非法",
+      "config": {"settings": {"theme": "auto"}},
+      "path": "settings.theme"
+    },
+    {
+      "name": "画布列数固定 12",
+      "config": {"canvas": {"cols": 10}},
+      "path": "canvas.cols"
+    },
+    {
+      "name": "字段不存在",
+      "config": {"widgets": [
+        {"id": "missing", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+         "chart": {"type": "bar", "x": "不存在", "y": ["销售额"]}}
+      ]},
+      "path": "widgets[0].chart.x"
+    }
+  ]
+}

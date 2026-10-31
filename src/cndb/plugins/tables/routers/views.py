@@ -11,7 +11,15 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.models import AuditLog, DataField, DataTable, DataView, ViewVisibility, scope_key_for
+from cndb.plugins.tables.models import (
+    KNOWN_VIEW_TYPES,
+    AuditLog,
+    DataField,
+    DataTable,
+    DataView,
+    ViewVisibility,
+    scope_key_for,
+)
 from cndb.plugins.tables.schemas import (
     ShareableMemberOut,
     ViewCreate,
@@ -22,6 +30,7 @@ from cndb.plugins.tables.schemas import (
     ViewVisibilityUpdate,
 )
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
+from cndb.plugins.tables.services.core.dashboard_config import normalize_dashboard_config
 from cndb.plugins.tables.services.core.view_access import (
     ViewAction,
     assert_can_change_visibility,
@@ -47,7 +56,10 @@ _SHARED_ONLY_DETAIL = "仅「指定成员」档视图可设置共享名单"
 
 def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[bool, str | None]:
     """校验视图配置里引用的所有 field_name 是否在目标表存在."""
-    valid_fields = {f.name for f in db.query(DataField).filter(DataField.table_id == table_id).all()}
+    if vc.view_type not in KNOWN_VIEW_TYPES:
+        return False, f"view_type='{vc.view_type}' 不在支持范围内"
+    field_defs = {f.name: f for f in db.query(DataField).filter(DataField.table_id == table_id).all()}
+    valid_fields = set(field_defs)
     for f in vc.filters or []:
         if f.get("field_name") not in valid_fields:
             return False, f"filter field_name='{f.get('field_name')}' 不存在"
@@ -113,6 +125,15 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
                 opt_val = entry.get(opt_key)
                 if opt_val and opt_val not in valid_fields:
                     return False, f"view_options.charts[{i}].{opt_key}='{opt_val}' 不存在"
+    if vc.view_type == "dashboard":
+        config, err = normalize_dashboard_config(
+            vc.view_options,
+            {name: field.field_type for name, field in field_defs.items()},
+        )
+        if err or config is None:
+            return False, f"dashboard 配置校验失败: {err or '未知错误'}"
+        # 白名单裁剪后的配置才是落库真相源（ADR 0023 §7.6）
+        vc.view_options = config
     return True, None
 
 
@@ -426,6 +447,20 @@ def update_view(
     # "全表成员的落地页"，private/shared 档持有它会让其他成员进表看到空白（ADR 0003 §2）
     if payload.is_default and dv.visibility != ViewVisibility.TABLE:
         raise HTTPException(status_code=400, detail="仅表内可见视图可设为默认视图")
+
+    if payload.view_type is not None and payload.view_type not in KNOWN_VIEW_TYPES:
+        raise HTTPException(status_code=400, detail=f"view_type='{payload.view_type}' 不在支持范围内")
+
+    # dashboard 配置走与创建相同的唯一校验入口（ADR 0023 §7）
+    effective_type = payload.view_type if payload.view_type is not None else dv.view_type
+    if effective_type == "dashboard":
+        effective_options = payload.view_options if payload.view_options is not None else dv.view_options
+        field_defs = {f.name: f.field_type for f in db.query(DataField).filter(DataField.table_id == table_id).all()}
+        config, err = normalize_dashboard_config(effective_options, field_defs)
+        if err:
+            raise HTTPException(status_code=400, detail=f"视图字段校验失败: dashboard 配置校验失败: {err}")
+        if payload.view_options is not None:
+            payload = payload.model_copy(update={"view_options": config})
 
     # 如果标记为 default，先把同表其他视图的 default 清掉
     if payload.is_default:

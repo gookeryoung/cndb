@@ -502,6 +502,127 @@
         "title_field": "订单号"
       },
       "order": 6
+    },
+    {
+      "name": "销售画布",
+      "view_type": "dashboard",
+      "view_options": {
+        "schema_version": 1,
+        "canvas": {
+          "cols": 12,
+          "row_height": 40,
+          "gap": 12,
+          "padding": 16
+        },
+        "widgets": [
+          {
+            "id": "w_orders",
+            "type": "kpi",
+            "title": "订单总数",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 3,
+              "h": 4
+            },
+            "query": {
+              "filters": [],
+              "filter_logic": "AND",
+              "sortings": []
+            },
+            "kpi": {
+              "value": {
+                "field": "订单号",
+                "agg": "count"
+              }
+            }
+          },
+          {
+            "id": "w_sales",
+            "type": "kpi",
+            "title": "销售额合计",
+            "layout": {
+              "x": 3,
+              "y": 0,
+              "w": 3,
+              "h": 4
+            },
+            "query": {
+              "filters": [],
+              "filter_logic": "AND",
+              "sortings": []
+            },
+            "kpi": {
+              "value": {
+                "field": "销售额",
+                "agg": "sum"
+              }
+            }
+          },
+          {
+            "id": "w_category",
+            "type": "chart",
+            "title": "各类别销售额",
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 10
+            },
+            "query": {
+              "filters": [],
+              "filter_logic": "AND",
+              "sortings": []
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ],
+              "series": null,
+              "agg": "sum",
+              "stack": "none",
+              "sort": "none",
+              "top_n": null,
+              "dual_axis": false,
+              "format": {
+                "unit": "元",
+                "decimals": 0
+              }
+            },
+            "display": {
+              "show_legend": true,
+              "palette": "default"
+            }
+          },
+          {
+            "id": "w_note",
+            "type": "text",
+            "title": "口径说明",
+            "layout": {
+              "x": 0,
+              "y": 10,
+              "w": 12,
+              "h": 3
+            },
+            "query": {
+              "filters": [],
+              "filter_logic": "AND",
+              "sortings": []
+            },
+            "text": {
+              "content": "本画布使用当前视图的行集在客户端聚合；超过 2000 行时仅展示样本，服务端全量聚合将在 P2 提供。"
+            }
+          }
+        ],
+        "global_filters": [],
+        "settings": {
+          "refresh_interval": 0,
+          "theme": "inherit"
+        }
+      },
+      "order": 7
     }
   ],
   "部门表": [

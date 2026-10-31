@@ -228,6 +228,7 @@ export default function CreateEditViewForm({
     { value: 'matrix', label: '矩阵 (Matrix)' },
     { value: 'chart', label: '图表 (Chart)' },
     { value: 'flow', label: '流程 (Flow)' },
+    { value: 'dashboard', label: '仪表盘 (Dashboard)' },
   ]
 
   return (

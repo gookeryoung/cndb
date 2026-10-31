@@ -6,7 +6,7 @@ import { VALID_MODES, collectAvailableViewTypes, deriveModeSwitch, type ViewMode
 const ALL_BUTTONS: Array<{ mode: ViewMode }> = [
   { mode: 'grid' }, { mode: 'tree' }, { mode: 'kanban' }, { mode: 'gallery' },
   { mode: 'calendar' }, { mode: 'gantt' }, { mode: 'wbs' }, { mode: 'matrix' }, { mode: 'chart' },
-  { mode: 'flow' },
+  { mode: 'flow' }, { mode: 'dashboard' },
 ]
 
 /** 快捷构造视图（view_type 合法值） */
@@ -94,9 +94,9 @@ describe('deriveModeSwitch — 模式按钮组矩阵（与 E2E seed 数据 1:1�
 })
 
 describe('VALID_MODES', () => {
-  it('与 10 种模式一一对应（URL/storage 校验共用）', () => {
+  it('与 11 种模式一一对应（URL/storage 校验共用）', () => {
     expect(VALID_MODES).toEqual([
-      'grid', 'tree', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'flow',
+      'grid', 'tree', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'flow', 'dashboard',
     ])
   })
 })

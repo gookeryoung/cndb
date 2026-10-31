@@ -14,7 +14,8 @@
     "2026-10-26 feat(help): 帮助文档四级层级（ADR 0036）把正文拆为 L3 小节 + L4 条目并新增 6 个主题，帮助正文体积由 10.06 涨到 25.60 KiB；该 chunk 已是 /help 单独 lazy chunk，不进首屏，正文为静态文案无可 lazy 化依赖",
     "2026-10-28 ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
     "2026-10-30 feat(documents): MHTML 预览/导入功能的帮助文档（quickStart 教程 + tutorials 章节），属帮助页静态文案，该 chunk 已是 /help 单独 lazy chunk，不进首屏，无 Dialog 可 lazy",
-    "2026-10-30 chore: React 19 + antd 6 升级（ADR 0074 P0）—— react-dom 19 与 @rc-component/* 生态为运行时固有依赖，无法懒加载；主入口 +45 KiB 属依赖升级确定性增量"
+    "2026-10-30 chore: React 19 + antd 6 升级（ADR 0074 P0）—— react-dom 19 与 @rc-component/* 生态为运行时固有依赖，无法懒加载；主入口 +45 KiB 属依赖升级确定性增量",
+    "2026-10-31 feat(dashboard): ADR 0023 P0 只读画布新增 DashboardView lazy chunk（含契约归一/栅格/四类组件），按需打开不进首屏"
   ],
   "chunks": [
     {
@@ -44,6 +45,16 @@
       "reason": "chore: React 19 + antd 6 升级（ADR 0074 P0）—— react-dom 19 与 @rc-component/* 生态为运行时固有依赖，无法懒加载；主入口 +45 KiB 属依赖升级确定性增量",
       "updatedAt": "2026-10-30",
       "commit": "500fbe6f"
+    },
+    {
+      "name": "DashboardView（画布视图）",
+      "resolve": {
+        "assetPattern": "^DashboardView-.*\\.js$"
+      },
+      "baseline": 6787,
+      "reason": "feat(dashboard): ADR 0023 P0 只读画布新增 DashboardView lazy chunk（含契约归一/栅格/四类组件），按需打开不进首屏",
+      "updatedAt": "2026-10-31",
+      "commit": "e9540fb0"
     },
     {
       "name": "HelpDocsPage（帮助文档整页）",

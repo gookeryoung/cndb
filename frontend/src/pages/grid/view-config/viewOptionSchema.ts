@@ -443,6 +443,37 @@ export const GALLERY_OPTIONS: ViewOptionSchema[] = [
   },
 ]
 
+/** Dashboard 画布的专属配置字段（P0 只暴露画布节奏，组件编辑在 P1） */
+export const DASHBOARD_OPTIONS: ViewOptionSchema[] = [
+  {
+    key: 'row_height', label: '行高（像素）', group: '画布',
+    tooltip: '每个栅格单元的高度；widget 高度按格数乘以行高',
+    kind: 'number_enum', defaultValue: 40,
+    enumOptions: [
+      { value: 32, label: '紧凑（32）' }, { value: 40, label: '标准（40）' },
+      { value: 48, label: '宽松（48）' }, { value: 56, label: '大（56）' },
+    ],
+  },
+  {
+    key: 'gap', label: '组件间距（像素）', group: '画布',
+    tooltip: '栅格单元之间的横向与纵向间距',
+    kind: 'number_enum', defaultValue: 12,
+    enumOptions: [
+      { value: 8, label: '8' }, { value: 12, label: '12' },
+      { value: 16, label: '16' }, { value: 20, label: '20' },
+    ],
+  },
+  {
+    key: 'padding', label: '画布内边距（像素）', group: '画布',
+    tooltip: '画布四周留白',
+    kind: 'number_enum', defaultValue: 16,
+    enumOptions: [
+      { value: 0, label: '0' }, { value: 8, label: '8' },
+      { value: 16, label: '16' }, { value: 24, label: '24' },
+    ],
+  },
+]
+
 /** 按 view_type 名返回 option schema 列表 */
 export function getOptionSchema(viewType: string): ViewOptionSchema[] {
   switch (viewType) {
@@ -455,6 +486,7 @@ export function getOptionSchema(viewType: string): ViewOptionSchema[] {
     case 'chart': return CHART_OPTIONS
     case 'flow': return FLOW_OPTIONS
     case 'gallery': return GALLERY_OPTIONS
+    case 'dashboard': return DASHBOARD_OPTIONS
     default: return []
   }
 }

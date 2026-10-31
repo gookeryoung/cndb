@@ -62,9 +62,29 @@ class ViewType(enum.StrEnum):
     GRID = "grid"
     KANBAN = "kanban"
     CALENDAR = "calendar"
+    DASHBOARD = "dashboard"
     # form 为历史存量类型（公开表单功能已移除），仅为兼容既有行保留；
     # 已无前端渲染入口，禁止新视图使用
     FORM = "form"
+
+
+#: 新建 / 导入视图允许的 ``view_type``（ADR 0023 D11）.
+#: 历史 ``form`` 行只读兼容：不在白名单内，但读取既有行不受影响。
+KNOWN_VIEW_TYPES: frozenset[str] = frozenset(
+    {
+        ViewType.GRID,
+        ViewType.KANBAN,
+        ViewType.CALENDAR,
+        ViewType.DASHBOARD,
+        "tree",
+        "gallery",
+        "gantt",
+        "wbs",
+        "matrix",
+        "chart",
+        "flow",
+    }
+)
 
 
 class FilterType(enum.StrEnum):
@@ -624,6 +644,7 @@ class GovernanceTask(TimestampMixin, Base):
 
 
 __all__ = [
+    "KNOWN_VIEW_TYPES",
     "AuditLog",
     "DataField",
     "DataTable",

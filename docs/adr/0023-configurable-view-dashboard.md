@@ -343,15 +343,15 @@ export interface ChartTypeDef {
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
+| P0 | 已落地 | `frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/views/dashboard/WidgetShell.tsx`、`src/cndb/plugins/tables/services/core/dashboard_config.py`、`src/cndb/plugins/tables/routers/views.py`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx`、`src/cndb/cli/seed/views.py` | `tests/test_dashboard_config.py`、`tests/fixtures/dashboard/schema_cases.json`、`frontend/src/pages/grid/views/dashboard/*.test.ts`、`frontend/src/pages/grid/views/dashboard/*.test.tsx` | 随本次提交 |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 | P3 | 未开始 | — | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 未开工（本 ADR 待评审；评审通过后先落 schema 与只读画布）
-- 已完成：设计（布局模型 / 图表注册表 / 取数口径 / 分期）
-- 下一步：评审 D1-D12；确认后先写 `dashboardModel.ts` 与 `schema_cases.json`，再接线 `view_type=dashboard`
-- 已知坑：`ChartView` 的 ECharts 实例必须常驻容器（dispose 会清空 DOM，React 再卸载子节点会抛 `removeChild`），画布卡片沿用「容器不承载 React 子节点、空态用兄弟覆盖层」的写法；非 grid 视图 2000 行上限在 P0 会直接暴露为截断提示
-- 最近一次全绿：`make flow` @ 本 ADR 提交前（纯文档改动，实际只跑 `make check-docs`）
+- 当前阶段：P0 已落地，下一步 P1（布局编辑器）
+- 已完成：schema v1（TS `dashboardModel.ts` + Python `dashboard_config.py`）与共享契约用例 `tests/fixtures/dashboard/schema_cases.json`；`view_type=dashboard` 白名单与 create/update/seed 接线；只读栅格渲染（`DashboardView` + Chart/KPI/Text/Table）；客户端组件级 query；非法配置 400 定位 `widgets[i].xxx`；seed「销售画布」示例；`DashboardView` lazy chunk 已入 bundle 基线
+- 下一步：P1 拖拽 / 缩放 / 吸附 + 数字输入 + 5 种预设 + `DashboardConfigDrawer` + 撤销栈与脏检查；先做 `DashboardGrid` 的纯函数 `resolveOverlap` 与测试
+- 已知坑：`ChartCard` 的 ECharts 实例必须常驻容器（dispose 会清空 DOM，React 再卸载子节点会抛 `removeChild`），画布卡片沿用「容器不承载 React 子节点、空态用兄弟覆盖层」的写法；P0 复用 `useGridData` 的 2000 行行集，大表截断提示与服务端聚合留 P2；`applyWidgetQuery` 的排序空值恒排后（对齐 SQL NULLS LAST）
+- 最近一次全绿：`make test` 6197 passed / 前端 2536 passed（一次并行抖动用例单跑通过）

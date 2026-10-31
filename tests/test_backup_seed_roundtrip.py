@@ -357,6 +357,7 @@ class TestSeedViewsIntegrity:
         "matrix",
         "chart",
         "flow",
+        "dashboard",
     }
 
     # 与 seed._seed_sales_tables 保持一致的硬编码业务表字段
@@ -437,6 +438,33 @@ class TestSeedViewsIntegrity:
                     for key in ("dimension_field", "measure_field", "x_field", "y_field", "group_field"):
                         if entry.get(key):
                             refs.add(entry[key])
+        # dashboard：query + chart 角色 + kpi + table + global_filters 的字段引用
+        for widget in vo.get("widgets", []) if isinstance(vo.get("widgets"), list) else []:
+            if not isinstance(widget, dict):
+                continue
+            query = widget.get("query") if isinstance(widget.get("query"), dict) else {}
+            refs |= {f.get("field_name") for f in query.get("filters", []) if isinstance(f, dict)}
+            refs |= {s.get("field_name") for s in query.get("sortings", []) if isinstance(s, dict)}
+            chart = widget.get("chart") if isinstance(widget.get("chart"), dict) else {}
+            for key in ("x", "series"):
+                if chart.get(key):
+                    refs.add(chart[key])
+            y = chart.get("y")
+            if isinstance(y, list):
+                refs.update(v for v in y if isinstance(v, str) and v)
+            kpi = widget.get("kpi") if isinstance(widget.get("kpi"), dict) else {}
+            for key in ("value", "sparkline"):
+                item = kpi.get(key) if isinstance(kpi.get(key), dict) else {}
+                if item.get("field"):
+                    refs.add(item["field"])
+            compare = kpi.get("compare") if isinstance(kpi.get("compare"), dict) else {}
+            if compare.get("date_field"):
+                refs.add(compare["date_field"])
+            table = widget.get("table") if isinstance(widget.get("table"), dict) else {}
+            refs.update(v for v in table.get("columns", []) if isinstance(v, str) and v)
+        for gf in vo.get("global_filters", []) if isinstance(vo.get("global_filters"), list) else []:
+            if isinstance(gf, dict) and gf.get("field"):
+                refs.add(gf["field"])
         refs.discard(None)
         return refs
 
@@ -525,7 +553,7 @@ class TestSeedViewsIntegrity:
             if isinstance(view_list, list)  # 跳过 _comment 等元数据字符串
             for vc in view_list
         }
-        assert types == self.VALID_VIEW_TYPES, f"10 种视图模式应全部覆盖，实际: {types}"
+        assert types == self.VALID_VIEW_TYPES, f"11 种视图模式应全部覆盖，实际: {types}"
 
 
 class TestCoerceRowValueTypes:
