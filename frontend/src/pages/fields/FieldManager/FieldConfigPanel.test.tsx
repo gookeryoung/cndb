@@ -182,7 +182,8 @@ describe('FieldConfigPanel 关联字段业务键', () => {
         await waitFor(() => expect(spy).toHaveBeenCalledWith('1', 30))
         // 候选里应过滤掉 link 字段，仅保留有物理列的字段
         fireEvent.mouseDown(formItemByLabel('显示字段').querySelector('.ant-select')!)
-        expect(await screen.findByText('编号')).toBeInTheDocument()
+        // antd 6 Select 下拉经 cssinjs 渲染链挂载，make check 并行高负载下可超默认 1s，放宽等待窗口（断言不变）
+        expect(await screen.findByText('编号', {}, { timeout: 3000 })).toBeInTheDocument()
         expect(screen.getByText('名称')).toBeInTheDocument()
         expect(screen.queryByText('内联关联')).not.toBeInTheDocument()
 
