@@ -14,7 +14,7 @@
 
 ## 特性
 
-- **插件化架构**：accounts / workspaces / tables / documents / issues / change_requests / analytics / files，可独立部署
+- **插件化架构**：accounts / workspaces / tables / documents / issues / change_requests / analytics / files / pipeline，可独立部署
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
 - **19 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ lookup（跨表引用）/ attachment / image
 - **9 种视图**：表格（Grid）/ 树形（Tree）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表 / 流程（Flow），视图级筛选、排序、字段显隐与配置持久化
@@ -25,7 +25,8 @@
 - **数据分析**：工作区级分析模板（公式引擎 + 图表 + 分组汇总/透视）与字段智能推荐，一键生成典型分析示例
 - **权限体系**：工作区三级角色 owner / editor / viewer，叠加全局角色（system_admin / security_admin / audit_admin / 超级管理员），表级 + 工作区级双重校验
 - **工作区类型**：新增与修改时可选 数据 + 文档（默认）/ 数据 / 文档 三类，按类型开放数据表、数据分析与文档功能（仅数据隐藏文档、仅文档隐藏数据表与数据分析）
-- **备份恢复**：`cndb backup` / `cndb restore` 全库归档（.tar.gz），跨机器迁移
+- **流水线质量检查**：工作区级声明式 YAML DSL（DAG jobs + 检查动作注册表 + `${{ }}` 白名单表达式），支持手动 / 事件（记录变更、文档保存、同步完成）/ 定时触发，发现物可一键转问题；用法见 [docs/PIPELINE_DSL.md](docs/PIPELINE_DSL.md)
+- **备份恢复**：`cndb backup` / `cndb restore` 全库归档（.tar.gz），跨机器迁移（工作区备份 v10 含流水线定义，运行与发现物不入备份）
 - **桌面 GUI**：`cndbw` 启动 Tkinter 管理面板（启动服务 / 备份恢复 / Windows 后台服务管理）
 
 ## 快速上手
@@ -174,6 +175,7 @@ src/cndb/
 | `cndb users` | 用户管理（create / delete / list / import） |
 | `cndb service` | Windows 开机自启后台服务（enable / disable / status / stop / run） |
 | `cndb docs` | 文档数据运维：`gc` 外存孤儿文件体检与回收（默认 dry-run，`--apply` 删除，`--json` 输出） |
+| `cndb pipeline` | 流水线定时扫描：`tick` 执行到期定义（`--workflow-id` / `--workspace-id` / `--limit` / `--json`，生产由 cron 每分钟调用） |
 | `cndb views` | 视图运维：`prune-orphans` 孤儿视图体检与回收（默认 dry-run，`--apply` 删除，`--workspace` 必填、`--table` 可选） |
 | `cndbw` | 启动 Tkinter 桌面管理面板 |
 
@@ -198,6 +200,7 @@ src/cndb/
 | 文档导出 | `/api/v1/workspaces/{wid}/documents/{doc_id}/export` | Markdown / Word / PDF 文件下载 |
 | Obsidian 库 | `/api/v1/workspaces/{wid}/documents/import[/analyze]`、`/documents/export/vault` | 库 zip 导入（预览 → 落库）/ 整库导出 |
 | 分析 | `/api/v1/workspaces/{wid}/analytics` | 分析模板 / 运行 / 字段智能推荐 |
+| 流水线 | `/api/v1/workspaces/{wid}/pipelines`、`/pipeline-runs` | 定义 CRUD / 校验 / 检查目录 / 手动运行 / 运行详情 / 发现物 / 转问题 |
 | 健康 | `/health` | 服务存活 |
 
 完整文档：启动后访问 `http://localhost:8000/docs`（FastAPI 自动生成）
