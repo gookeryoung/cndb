@@ -5,7 +5,7 @@
  */
 
 import type { HelpTopic } from '../helpNav'
-import { Bullets, HelpLink, Note, P, Steps } from './primitives'
+import { Bullets, HelpLink, Note, P, Steps, Strong } from './primitives'
 
 const faq: HelpTopic = {
     key: 'faq',
@@ -163,10 +163,20 @@ const guide: HelpTopic = {
                     key: 'missing-table',
                     label: '看不到某张表 / 按钮无权限',
                     body: (
-                        <P>
-                            确认当前工作区是否选对；查看自己在工作区的角色，以及该表「表设置 → 权限」是否做了显式限制。
-                            查看者编辑会转为修改申请，需要所有者 / 编辑者审批后生效。
-                        </P>
+                        <>
+                            <P>
+                                确认当前工作区是否选对，以及该表「表设置 → 权限」是否做了显式限制。操作被拒时提示会直接说明
+                                你的角色与被拒层级，例如<Strong>「当前用户在此工作区的角色为【查看者】，表级权限不足；如需提升权限，
+                                请联系工作区拥有者【张三】」</Strong>。
+                            </P>
+                            <Steps
+                                items={[
+                                    '按提示联系点名的拥有者（成员列表中角色为「所有者」的成员），申请提升角色或对该表授权。',
+                                    '查看者不提权也可走修改申请路径：编辑保存后转为修改申请，由所有者 / 编辑者审批后生效。',
+                                    '提示「你不是该工作区成员」时，先请拥有者把你加入工作区，再按角色范围操作。',
+                                ]}
+                            />
+                        </>
                     ),
                 },
                 {
