@@ -181,17 +181,26 @@ export function resolvePresentTarget(
 
 **低配模拟（人工实测，非门禁）**
 
-- 探针：`frontend/tests/perf/dashboard-export.spec.ts` + `frontend/playwright.perf.config.ts`，运行 `pnpm e2e:perf`（需先 `make frontend-build`；不在 `make e2e` / CI 分片内，单 worker 串行独占）。
-- 手段：CDP `Emulation.setCPUThrottlingRate` 6×（约等于一颗比宿主机单核慢 6 倍的 CPU，偏低端笔记本 / 政务终端档位）、视口 1366×768、`--enable-precise-memory-info`；同时采样 Chromium 进程组 RSS 与页面 JS 堆峰值。
+- 探针：`frontend/tests/perf/dashboard-export.spec.ts`（耗时）+ `frontend/tests/perf/dashboard-export-memory.spec.ts`（内存峰值），公共夹具 `frontend/tests/perf/fixtures.ts`，配置 `frontend/playwright.perf.config.ts`；运行 `pnpm e2e:perf`（需先 `make frontend-build`；不在 `make e2e` / CI 分片内，单 worker 串行独占）。
+- 手段：CDP `Emulation.setCPUThrottlingRate` 6×（约等于一颗比宿主机单核慢 6 倍的 CPU，偏低端笔记本 / 政务终端档位）、视口 1366×768、`--enable-precise-memory-info`；内存按 `--type=` 分类采样 Chromium 各进程 RSS（25ms），并在页面侧 hook `toDataURL` / `getContext` 记录编码阶段与画布尺寸。
 - 口径：点击 `导出 PNG / PDF` → 下载落盘的墙钟耗时，含导出库动态导入、html2canvas 捕获、编码与 jsPDF 组装。
 - 实测（2026-11-01，宿主机 24 核；**两次独立运行取区间**，非真机、无内存压力与 swap 干扰）：
 
-| 场景 | 捕获画布 | PNG 1× / 6× | PDF 1× / 6× | 进程组 RSS 增量峰值 |
+| 场景 | 捕获画布 | PNG 1× / 6× | PDF 1× / 6× | 进程组 RSS 增量峰值（粗采） |
 |---|---|---|---|---|
 | 典型（2 列 × 3 行，6 块） | 3443 × 3912（13.5 M px） | 310-320ms / 1.6-2.4s | 375-407ms / 2.1-3.1s | 28-139 MB |
-| 超大（20 块整行，200 行单元） | 1841 × 17381（32.0 M px，命中 `MAX_CANVAS_PIXELS` 预算） | 512-528ms / 2.85-3.15s | 669-689ms / 3.85-4.2s | 220-431 MB |
+| 超大（20 块整行，200 行单元） | 1841 × 17381（32.0 M px，命中 `MAX_CANVAS_PIXELS` 预算） | 512-528ms / 2.85-3.15s | 669-689ms / 3.85-4.2s | 220-431 MB（明细见下） |
 
-- 结论：整屏导出是**纯 CPU 型**耗时（6× 降速下近似 5-6× 墙钟），最坏档（超大画布 PDF @6×）约 4 秒量级，PNG 约 3 秒，未出现画面为空 / 失败；内存增量与画布像素规模（32 M px ≈ 128 MB 位图）同量级，超大画布 PDF 另有 JPEG dataURL 编码缓冲（RSS 增量峰值约 430 MB）。首次导出仅比热态多 50-70ms（动态导入成本可忽略）。
+- 耗时结论：整屏导出是**纯 CPU 型**耗时（6× 降速下近似 5-6× 墙钟），最坏档（超大画布 PDF @6×）约 4 秒量级，PNG 约 3 秒，未出现画面为空 / 失败；首次导出仅比热态多 50-70ms（动态导入成本可忽略）。
+
+**内存峰值（超大画布 1841 × 17381 = 32.0 M px，位图理论 122 MB；25ms 采样、3 次独立运行取区间）**
+
+- PNG：基线 735-739 MB → 峰值 897-903 MB（渲染进程 391 MB → 544-549 MB）；总增量 158-168 MB / 渲染进程增量 149-158 MB；峰值出现在点击后 +455~482 ms，落在 `toDataURL('image/png')` 编码窗口（387→509 ms）内，编码返回 1.4 MB base64。
+- PDF：基线 750-873 MB → 峰值 1112-1121 MB（渲染进程 398-522 MB → 753-762 MB）；总增量 239-371 MB / 渲染进程增量 231-364 MB；峰值出现在 +581~631 ms，落在逐页 `toDataURL('image/jpeg', 0.95)` 编码窗口（433→646 ms）内，编码返回 1.2 MB base64。
+- 归因：峰值增量约为位图理论值的 1.2-1.4×（PNG）与 2-3×（PDF）——PDF 捕获后仍按页新建 `pageCanvas` 再编码，超大画布单页时它与主画布同尺寸，等于同时存在两份 122 MB 位图；两者峰值都出现在编码阶段而非捕获阶段（捕获时位图是逐块绘制的）。
+- 回收：PNG 导出后 +10 s 回落到基线（+21~23 MB，属分配器碎片）；PDF +10 s 后残留 +13~140 MB（受基线抖动影响，属 GC 惰性），连续 5 次导出 RSS 由 570 MB 升到约 800 MB 后趋稳、第 5 次出现回落（672-686 MB），**无泄漏式单调累积**。
+- 低配判断：单次导出峰值增量 PNG ≤ ~170 MB、PDF ≤ ~370 MB；叠加浏览器常驻内存后，4 GB 档设备峰值占用约 0.8-1.2 GB，处于安全区；2 GB 档接近压力区。若后续放宽 `MAX_CANVAS_PIXELS` / `TARGET_RENDER_DPI`，需按「每多一份全尺寸画布 ≈ +122 MB」复核。
+- 待跟进（优化建议，未改实现）：PDF 单页场景（`cols=rows=1`）的切片画布与主画布尺寸相同，可直接复用主画布的 dataURL，省掉一份全尺寸位图（输出不变）。
 - 待跟进（未改动口径）：`computeRenderScale` 的 `sideCap` 只用内容宽度折算，实测超大画布高度 17381px 已超过 `MAX_CANVAS_SIDE`(16384) 的名义单边上限；Chromium 下仍成功，若后续要兜更严格的内核需改为按长边折算。
 
 ### 8. 分期
@@ -260,4 +269,4 @@ export function resolvePresentTarget(
 - 已完成：整屏导出（PNG / PDF 共用 `captureElement`、专用捕获容器、主题背景、数据就绪门控）、登录态只读深链（禁止回落、展示态隐藏页面 chrome 与行详情、退出展示）、视图栏复制链接、分享设置复用视图权限抽屉并补画布提示、e2e 两条（导出格式校验 / 只读分享与失效）
 - 下一步：低配设备表现已用 CDP CPU 降速做过可复现实测（`pnpm e2e:perf`，结论见「7. 测试清单 · 低配模拟」）；仅剩真机复核（真实内存压力 / 集成显卡 / 低内存 OOM 边界），如需扩展（例如整屏导出加图片格式选项）另开需求卡片，不改本 ADR 已收口的口径
 - 已知坑：① 既有 PDF 捕获目标是 `gridAreaRef`，dashboard 的导出必须换专用容器，否则工具栏会被截进文件；② `html2canvas-pro` 在 Chrome 81 需先加载 `Intl.Segmenter` 垫片（沿用 `exportPdf.ensureIntlSegmenter`）；③ `DashboardGrid` 自身滚动，捕获前必须展开滚动容器并按后代包围盒取尺寸；④ 深色主题导出需传主题背景，不能沿用写死的白色；⑤ 展示态 `?view` 未命中时**绝不能**走 `GridPage` 的默认视图回落；⑥ 大表 / 跨表走服务端取数，导出前要等 `useDashboardData.loading` 结束；⑦ 导出编排与分享辅助全部按需导入（`DashboardView` 内动态 `import('./dashboardExport')`），`DashboardView` 静态依赖只保留类型；⑧ 视图权限抽屉已改为 `lazy` 且仅在打开时挂载，避免回涨 `GridPage` chunk；⑨ Chromium 对含中文的 anchor download 文件名会回落为 `download`，e2e 用文件魔数而非文件名断言；⑩ `present=1` 时先等 `useTableViews` 结束再判失效，避免把「加载中」误判成「链接无效」
-- 最近一次全绿：`make check-fast`、`pnpm build` + `pnpm bundle:budget`、新增 e2e 4 例（2026-11-01）；低配模拟探针 `pnpm e2e:perf` 3 passed（2026-11-01）
+- 最近一次全绿：`make check-fast`、`pnpm build` + `pnpm bundle:budget`、新增 e2e 4 例（2026-11-01）；低配模拟探针 `pnpm e2e:perf` 全过（耗时 3 例 + 内存峰值 4 例，2026-11-01）

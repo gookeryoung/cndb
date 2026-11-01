@@ -3,9 +3,10 @@
  *
  * 容器内没有真机，这里用两条可复现的近似手段：
  * 1. **CPU 降速**：CDP `Emulation.setCPUThrottlingRate`（Chromium DevTools 同款），
- *    6×(下笔记本 / 低端政务终端的一档近似)，只降该页渲染 CPU，不影响自身计时；
- * 2. **内存**：Node 侧采样本机 Chromium 进程 RSS（Linux）+ 页面 `performance.memory`
- *    的 JS 堆峰值（已开 `--enable-precise-memory-info`）。
+ *    6×（低端笔记本 / 政务终端的一档近似），只降该页渲染 CPU，不影响自身计时；
+ * 2. **内存**：Node 侧采样 Chromium 进程组 RSS（Linux）+ 页面 `performance.memory`
+ *    的 JS 堆峰值（已开 `--enable-precise-memory-info`）；分阶段剖析见
+ *    `dashboard-export-memory.spec.ts`。
  *
  * 被测口径与用户点「导出 PNG / 导出 PDF」完全一致（`dashboard-export-png/pdf` 按钮
  * → 下载落盘），因此测到的是「点击 → 文件可就绪」的用户可感知耗时，包含导出库
@@ -14,7 +15,6 @@
  * 运行：`pnpm e2e:perf`（需先 `make frontend-build`；不进 `make e2e` 门禁）。
  * 结果同时打印到 stdout 并写入 `test-results/perf/dashboard-export.json`。
  */
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -26,9 +26,17 @@ import {
   DASHBOARD_WS_NAME,
   createDashboardView,
   deleteView,
-  emptyQuery,
   openDashboard,
 } from "../e2e/helpers/dashboard";
+import {
+  chromiumRssMb,
+  dashboardOptions,
+  hugeWidgets,
+  pngSize,
+  startHeapSampler,
+  stopHeapSampler,
+  typicalWidgets,
+} from "./fixtures";
 
 /** 单条测量记录 */
 interface ExportMetric {
@@ -42,7 +50,7 @@ interface ExportMetric {
   elapsedMs: number;
   /** 导出文件字节数 */
   fileBytes: number;
-  /** 捕获画布像素尺寸（PNG 为 IHDR，PDF 由文件内 JPEG 无法直读，故仅 PNG 给出） */
+  /** 捕获画布像素尺寸（PDF 由文件内 JPEG 无法直读，故仅 PNG 给出） */
   canvasPx?: { width: number; height: number };
   /** 导出期间 Chromium 进程组 RSS 峰值（MB，仅 Linux） */
   rssPeakMb?: number;
@@ -50,163 +58,6 @@ interface ExportMetric {
   rssDeltaMb?: number;
   /** 导出期间页面 JS 堆峰值（MB） */
   heapPeakMb?: number;
-}
-
-/** 典型画布：2 列 × 3 行（约 2 屏高，日常看板规模） */
-function typicalWidgets() {
-  const layouts = [
-    { x: 0, y: 0 },
-    { x: 6, y: 0 },
-    { x: 0, y: 8 },
-    { x: 6, y: 8 },
-    { x: 0, y: 16 },
-    { x: 6, y: 16 },
-  ];
-  return layouts.map((pos, i) => {
-    const layout = { ...pos, w: 6, h: 8 };
-    const kind = i % 3;
-    if (kind === 0) {
-      return {
-        id: `w_chart_${i}`,
-        type: "chart",
-        title: `类别 ${i}`,
-        layout,
-        query: emptyQuery(),
-        chart: {
-          type: "bar",
-          x: "商品类别",
-          y: ["销售额"],
-          agg: "sum",
-          stack: "none",
-          sort: "none",
-          dual_axis: false,
-          format: {},
-        },
-      };
-    }
-    if (kind === 1) {
-      return {
-        id: `w_kpi_${i}`,
-        type: "kpi",
-        title: `指标 ${i}`,
-        layout,
-        query: emptyQuery(),
-        kpi: { value: { field: "订单号", agg: "count" } },
-      };
-    }
-    return {
-      id: `w_text_${i}`,
-      type: "text",
-      title: `说明 ${i}`,
-      layout,
-      query: emptyQuery(),
-      text: { content: `第 ${i} 块说明文本，用于导出性能探测。` },
-    };
-  });
-}
-
-/** 超大画布：20 块整行组件、共 200 个行单元高（配置上限内，捕获画布约 1000×8000 CSS px） */
-function hugeWidgets() {
-  return Array.from({ length: 20 }, (_, i) => {
-    const layout = { x: 0, y: i * 10, w: 12, h: 10 };
-    const kind = i % 3;
-    if (kind === 0) {
-      return {
-        id: `w_huge_chart_${i}`,
-        type: "chart",
-        title: `类别 ${i}`,
-        layout,
-        query: emptyQuery(),
-        chart: {
-          type: "bar",
-          x: "商品类别",
-          y: ["销售额"],
-          agg: "sum",
-          stack: "none",
-          sort: "none",
-          dual_axis: false,
-          format: {},
-        },
-      };
-    }
-    if (kind === 1) {
-      return {
-        id: `w_huge_kpi_${i}`,
-        type: "kpi",
-        title: `指标 ${i}`,
-        layout,
-        query: emptyQuery(),
-        kpi: { value: { field: "订单号", agg: "count" } },
-      };
-    }
-    return {
-      id: `w_huge_text_${i}`,
-      type: "text",
-      title: `说明 ${i}`,
-      layout,
-      query: emptyQuery(),
-      text: { content: `第 ${i} 行说明文本，用于超大画布导出性能探测。` },
-    };
-  });
-}
-
-function dashboardOptions(widgets: unknown[]) {
-  return {
-    schema_version: 1,
-    widgets,
-    global_filters: [],
-    settings: { refresh_interval: 0, theme: "inherit" },
-  };
-}
-
-/** Linux 上采样 Chromium 进程组 RSS 总和（MB）；其他平台返回 undefined.
- *
- * Playwright 的 headless 浏览器进程名为 `chrome-headless`（comm 截断到 15 字符），
- * 完整版为 `chromium` / `chrome`，三类都要计入，否则采样恒为 0。
- */
-function chromiumRssMb(): number | undefined {
-  if (process.platform !== "linux") return undefined;
-  try {
-    const out = execFileSync("ps", ["-eo", "comm=,rss="], { encoding: "utf8" });
-    let totalKb = 0;
-    for (const line of out.split("\n")) {
-      const [comm, rss] = line.trim().split(/\s+/);
-      if (!comm || !rss) continue;
-      if (!/^(chrome|chromium|headless)/i.test(comm)) continue;
-      totalKb += Number(rss) || 0;
-    }
-    return totalKb / 1024;
-  } catch {
-    return undefined;
-  }
-}
-
-/** PNG IHDR 宽高（前 33 字节） */
-function pngSize(buf: Buffer): { width: number; height: number } {
-  expect(buf.subarray(0, 8).toString("hex"), "PNG 魔数").toBe("89504e470d0a1a0a");
-  expect(buf.subarray(12, 16).toString("latin1"), "PNG IHDR").toBe("IHDR");
-  return {
-    width: buf.readUInt32BE(16),
-    height: buf.readUInt32BE(20),
-  };
-}
-
-/** 打开/关闭页面 JS 堆采样（`performance.memory` 需 `--enable-precise-memory-info`） */
-async function heapPeak(page: Page, action: "start" | "stop"): Promise<number> {
-  return page.evaluate((mode) => {
-    const w = window as unknown as { __perfHeapPeak?: number; __perfHeapTimer?: number };
-    const memory = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory;
-    if (mode === "start") {
-      w.__perfHeapPeak = memory?.usedJSHeapSize ?? 0;
-      w.__perfHeapTimer = window.setInterval(() => {
-        const used = (performance as unknown as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize;
-        if (used !== undefined && used > (w.__perfHeapPeak ?? 0)) w.__perfHeapPeak = used;
-      }, 100);
-      return 0;
-    }
-    if (w.__perfHeapTimer !== undefined) window.clearInterval(w.__perfHeapTimer);
-    return w.__perfHeapPeak ?? 0;
-  }, action);
 }
 
 /** 单次导出测量：点击 → 下载落盘，中途采样 RSS / JS 堆.
@@ -223,7 +74,7 @@ async function measureExport(
   const cdp = await page.context().newCDPSession(page);
   await cdp.send("Emulation.setCPUThrottlingRate", { rate: cpuRate });
 
-  await heapPeak(page, "start");
+  await startHeapSampler(page, 100);
   const rssBaseMb = chromiumRssMb();
   let rssPeakMb = rssBaseMb;
   const rssTimer = setInterval(() => {
@@ -238,7 +89,7 @@ async function measureExport(
   const elapsedMs = Number(process.hrtime.bigint() - startedAt) / 1e6;
 
   clearInterval(rssTimer);
-  const heapBytes = await heapPeak(page, "stop");
+  const heapBytes = await stopHeapSampler(page);
   const filePath = await download.path();
   expect(filePath, "导出文件应落盘").toBeTruthy();
   const fileBytes = statSync(filePath!).size;
