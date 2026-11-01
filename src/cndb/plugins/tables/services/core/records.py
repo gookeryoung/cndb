@@ -1143,7 +1143,7 @@ def bulk_update_rows(
 
     ``reuse_normalized=True``（ADR 0040 D5）：``updates`` 条目可带 ``normalized``
     （校验阶段产出的 db_column → 已校验值），命中时跳过二次逐格校验；未命中的
-    字段仍按原语义校验。仅数据源同步等已校验链路打开，导入默认路径不变。
+    字段仍按原语义校验。仅数据同步等已校验链路打开，导入默认路径不变。
     """
     if not updates:
         return 0
@@ -1235,7 +1235,7 @@ def bulk_update_rows(
 def _invalidate_search_cache(table: Any) -> None:
     """批量写不逐行记 audit，主动失效该工作区的读缓存（best-effort）.
 
-    单行 CRUD 走 ``log_action → record_event`` 已自动失效；批量导入 / 数据源同步
+    单行 CRUD 走 ``log_action → record_event`` 已自动失效；批量导入 / 数据同步
     不写 audit，需要在这里补一次（ADR 0015）。ADR 0046 起记录列表 / 计数 /
     工作区统计缓存也挂在同一前缀下，一并失效，避免翻页读到旧行数。
     """

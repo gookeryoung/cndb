@@ -2,7 +2,7 @@
  *
  * 创建弹窗、工作区设置、顶部页签与侧栏门控共用，与后端
  * `workspaces/modules.py` 语义逐项一致（I2/I3）。
- * 三模块可任意勾选组合；数据分析 / 数据源同步强绑定数据表（派生功能，
+ * 三模块可任意勾选组合；数据分析 / 数据同步强绑定数据表（派生功能，
  * 不出现在勾选 UI 与 API 字段）；质量检查恒开放（D4）。
  */
 
@@ -23,7 +23,7 @@ export const WORKSPACE_MODULE_LABEL: Record<WorkspaceModule, string> = {
 
 /** 模块一句话说明（创建/设置卡片展示） */
 export const WORKSPACE_MODULE_HINT: Record<WorkspaceModule, string> = {
-  tables: '数据表、数据分析与数据源同步（三者强绑定）',
+  tables: '数据表、数据分析与数据同步（三者强绑定）',
   documents: '结构化文档协作与分享',
   design: '结构 DSL 建模与 3D 实时预览',
 }
@@ -58,7 +58,7 @@ export interface WorkspaceFeatures {
   design: boolean
   /** 数据分析功能（数据表派生，强绑定） */
   analytics: boolean
-  /** 数据源同步功能（数据表派生，强绑定） */
+  /** 数据同步功能（数据表派生，强绑定） */
   datasource: boolean
   /** 质量检查功能：所有工作区恒开放（ADR 0080 D4） */
   quality: boolean

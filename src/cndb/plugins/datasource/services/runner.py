@@ -1034,7 +1034,7 @@ def _record_event(db: Session, job: DatasourceSyncJob, run: DatasourceSyncRun, *
     record_event(
         db,
         ACTION_DATASOURCE_SYNC,
-        summary=f"数据源同步「{job.name}」{run.status}（新增 {run.inserted} / 更新 {run.updated}）",
+        summary=f"数据同步「{job.name}」{run.status}（新增 {run.inserted} / 更新 {run.updated}）",
         target_type=TARGET_DATASOURCE,
         target_id=job.id,
         workspace_id=job.workspace_id,

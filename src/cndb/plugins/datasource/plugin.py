@@ -29,7 +29,7 @@ router = datasource_router
 
 
 class DatasourcePlugin(PluginBase):
-    """数据源同步插件：Provider 适配器 + 归一 + 抓取管线 + 幂等落表."""
+    """数据同步插件：Provider 适配器 + 归一 + 抓取管线 + 幂等落表."""
 
     name = "datasource"
     version = "0.1.0"

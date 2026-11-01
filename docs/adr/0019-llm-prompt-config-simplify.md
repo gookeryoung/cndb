@@ -11,7 +11,7 @@ Related: `src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/plugin.py`、`
 >
 > 2026-10-23 用户追加需求：大模型设置要提供典型服务商及其模型对应列表，选后自动填好 API 地址与模型，同时保留自定义入口。本 ADR 追加 C10 口径（服务商预设），代码落点见 `frontend/src/pages/settings/llmProviders.ts`、`frontend/src/pages/settings/LlmConfigPanel.tsx`。
 
-> 2026-10-23 用户追加需求：典型示例数据要带「行业政策与合规台账 / 国际形势发展动态」的数据源同步配置，且大模型动态拉取的字段要支持中文。本 ADR 追加 C9 口径（字段命名中文化 + 示例同步任务），代码落点见 `llm/services/prompts.py`、`auto_table.py`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`examples/datasets/工作区-数据源示例/`。
+> 2026-10-23 用户追加需求：典型示例数据要带「行业政策与合规台账 / 国际形势发展动态」的数据同步配置，且大模型动态拉取的字段要支持中文。本 ADR 追加 C9 口径（字段命名中文化 + 示例同步任务），代码落点见 `llm/services/prompts.py`、`auto_table.py`、`frontend/src/pages/datasource/llmPromptPresets.ts`、`examples/datasets/工作区-数据源示例/`。
 
 ## 口径（需求 → 设计落点）
 

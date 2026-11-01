@@ -1,4 +1,4 @@
-/** 数据源同步页 — 工作区级任务列表 + Provider 驱动的任务编辑 / 抓取预览 / 运行历史.
+/** 数据同步页 — 工作区级任务列表 + Provider 驱动的任务编辑 / 抓取预览 / 运行历史.
  *
  * 后端：`/api/v1/workspaces/{wid}/datasource/*`（ADR 0006 M2/M3）
  * - 列表列：名称 / 适配器 / 目标表 / 调度 / 上次运行 / 操作
@@ -423,7 +423,7 @@ export default function DatasourcePage() {
         <Space size={8} className="cn-datasource-head-text">
           <CloudDownloadOutlined />
           <Title level={4} style={{ margin: 0 }}>
-            数据源同步
+            数据同步
           </Title>
           <Text type="secondary">定期抓取外部数据并按幂等键写入数据表</Text>
         </Space>

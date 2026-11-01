@@ -7,7 +7,7 @@
 import { Suspense, createContext, lazy, useCallback, useContext, useMemo, useState } from 'react'
 import {
   Button, Modal, Form, Input, Table, Typography, Empty, App as AntApp, Space, Tag, Upload, Dropdown,
-  Avatar, Segmented, Badge, Tooltip,
+  Avatar, Segmented, Badge, Tooltip, Pagination,
 } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -219,6 +219,10 @@ export default function TablesList() {
   const [editOpen, setEditOpen] = useState<TableSummary | null>(null)
   const [apiImportOpen, setApiImportOpen] = useState(false)
   const [filter, setFilter] = useState<AccessFilter>('all')
+  // 分页状态（需求 0082 C1/C2）：客户端分页，桌面表格与窄屏卡片共用同一页态；
+  // 切换筛选档位时回到第一页，避免停留在他页看到空列表
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(50)
   // 文件导入预览 Modal 状态
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewFile, setPreviewFile] = useState<File | null>(null)
@@ -268,6 +272,15 @@ export default function TablesList() {
       return true
     })
   }, [tables, filter, user])
+
+  // 页码防越界：筛选/删除导致页数收缩时收敛到最后一页
+  const maxPage = Math.max(1, Math.ceil(filteredTables.length / pageSize))
+  const safePage = Math.min(page, maxPage)
+  // 当前页数据（客户端切片）：筛选结果不足一页时只显示一页，分页器随之隐藏
+  const pagedTables = useMemo(() => {
+    const start = (safePage - 1) * pageSize
+    return filteredTables.slice(start, start + pageSize)
+  }, [filteredTables, safePage, pageSize])
 
   const create = useMutation({
     mutationFn: (v: { name: string; description?: string }) => tableApi.create(wid!, v),
@@ -662,7 +675,7 @@ export default function TablesList() {
         <Segmented<AccessFilter>
           block={isMobile}
           value={filter}
-          onChange={(v) => setFilter(v as AccessFilter)}
+          onChange={(v) => { setFilter(v as AccessFilter); setPage(1) }}
           options={[
             // 窄屏 block 分段控件每项只有约 90px，长文案会被截断成「我可编…」
             { label: '全部', value: 'all' },
@@ -694,7 +707,7 @@ export default function TablesList() {
                   description={filter !== 'all' ? '当前筛选条件下没有表' : '还没有表 —— 点击「新建表」或「导入数据表」开始'}
                   style={{ padding: 32 }}
                 />
-              ) : filteredTables.map(record => (
+              ) : filteredTables.slice((safePage - 1) * pageSize, safePage * pageSize).map(record => (
                 <SortableTableCard
                   key={record.id}
                   record={record}
@@ -713,7 +726,7 @@ export default function TablesList() {
               loading={isLoading}
               rowKey="id"
               columns={visibleColumns}
-              dataSource={filteredTables}
+              dataSource={pagedTables}
               pagination={false}
               scroll={{ x: 'max-content' }}
               components={{ body: { row: DraggableRow } }}
@@ -742,6 +755,21 @@ export default function TablesList() {
           )}
         </SortableContext>
       </DndContext>
+
+      {/* 分页器（需求 0082 C1/C2）：桌面表格与窄屏卡片共用；空列表或不足一页时不渲染 */}
+      {filteredTables.length > pageSize && (
+        <Pagination
+          style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}
+          current={safePage}
+          pageSize={pageSize}
+          total={filteredTables.length}
+          showSizeChanger
+          pageSizeOptions={[10, 20, 50, 100]}
+          showTotal={(t) => `共 ${t} 张表`}
+          data-testid="tables-list-pagination"
+          onChange={(p, l) => { setPage(p); setPageSize(l) }}
+        />
+      )}
 
       {/* 创建 Modal */}
       <Modal

@@ -1,4 +1,4 @@
-"""数据源同步插件 —— 周期性外部数据接入（Provider × SyncJob × Cursor × Normalizer）.
+"""数据同步插件 —— 周期性外部数据接入（Provider × SyncJob × Cursor × Normalizer）.
 
 M1（当前阶段）只落地领域无关的抓取管线：
 

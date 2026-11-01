@@ -9,7 +9,7 @@ Related: `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/plugins/wo
 | 需求片段 | 本设计的落地 |
 |---|---|
 | 未打开特定视图时，无法搜索到对应关键词内容 | 两个根因：① 不在表上下文（工作区页 / 文档页）时只扫**前 8 张表**，第 9 张及以后的数据表内容永远不进入结果；② 在表上下文但 URL 无 `?view=` 时，后端仍把数据表侧**收敛到当前表**，其他表内容搜不到。修复：工作区范围（`scope=all`）覆盖全部可读表且**不按视图收敛**；只有「数据表」范围（`scope=tables`）才收敛到当前表与激活视图（保留 ADR 0012 的视图口径） |
-| 构建缓存机制，便于实施快速搜索 | 新增进程内搜索结果缓存（TTL 15s + LRU 256），键含工作区 / 用户 / 范围 / 关键词 / 表 / 视图 / 上限；重复查询与范围切换直接命中，不再逐表 LIKE；写路径（单行 CRUD、批量导入、数据源同步）主动失效，批量写用短 TTL 兜底 |
+| 构建缓存机制，便于实施快速搜索 | 新增进程内搜索结果缓存（TTL 15s + LRU 256），键含工作区 / 用户 / 范围 / 关键词 / 表 / 视图 / 上限；重复查询与范围切换直接命中，不再逐表 LIKE；写路径（单行 CRUD、批量导入、数据同步）主动失效，批量写用短 TTL 兜底 |
 | 覆盖全部内容 | 删除 `MAX_TABLES_SCAN` 截断，工作区范围内逐表扫描全部可读表；保留「总行命中 20 条即停」的展示预算，避免把面板撑爆 |
 
 ## Context
@@ -23,7 +23,7 @@ Related: `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/plugins/wo
 | 3 | 每表 `ROWS_PER_TABLE=3`、总 `MAX_ROWS_TOTAL=20` | `services/search.py` | 命中密集时只展示前几条，特定行可能不在面板里（展示预算，非覆盖缺陷） |
 | 4 | 行检索逐表 `list_rows($query)`，无任何缓存 | `services/search.py`、`core/records.py` | 每次输入（250ms 去抖后）都重新扫表；关键词不存在时扫描成本最高，重复搜索没有任何收益 |
 | 5 | 单行 CRUD 通过 `log_action → record_event` 进入统一事件流；`invalidate_for_event` 已集中处理 `records` / `tables` 缓存失效 | `tables/services/core/audit.py`、`core/events.py` | 搜索结果缓存可以复用同一失效 choke point，不需要逐端点埋点 |
-| 6 | 批量写 `bulk_create` / `bulk_update` / `bulk_update_rows` **不写 audit** | `tables/services/core/records.py` | 批量导入 / 数据源同步后事件失效不会触发，需显式清搜索缓存（否则陈旧窗口只能靠 TTL） |
+| 6 | 批量写 `bulk_create` / `bulk_update` / `bulk_update_rows` **不写 audit** | `tables/services/core/records.py` | 批量导入 / 数据同步后事件失效不会触发，需显式清搜索缓存（否则陈旧窗口只能靠 TTL） |
 | 7 | `$query` 只匹配 String/Text 物理列 | `tables/services/core/query.py` | 数字 / 日期 / 选项字段的关键词搜不到（本次不改，列为 P2 边界） |
 
 设计不变量：
@@ -62,7 +62,7 @@ Related: `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/plugins/wo
 | 写入 | 失效方式 | 覆盖 |
 |---|---|---|
 | 单行 create / update / delete / trash / restore | `log_action → record_event → invalidate_for_event` 清 `search\|{wid}` | 即时 |
-| 批量导入 / 数据源同步（`bulk_create` / `bulk_update` / `bulk_update_rows`） | 写函数末尾显式清 `search\|{wid}`（best-effort） | 即时 |
+| 批量导入 / 数据同步（`bulk_create` / `bulk_update` / `bulk_update_rows`） | 写函数末尾显式清 `search\|{wid}`（best-effort） | 即时 |
 | 表 / 字段 / 视图 / 行级权限变更 | `table.*` / `row_rule.*` 事件清 `search\|{wid}`；无事件路径由 TTL 兜底 | ≤15s |
 | 文档创建 / 更新 / 删除 | `document.*` 事件清 `search\|{wid}`；文档写路径无事件时由 TTL 兜底 | ≤15s |
 | 备份恢复 / 成员角色变更 | `invalidate_all()` 或 TTL | ≤15s |

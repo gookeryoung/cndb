@@ -6413,7 +6413,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   gap: var(--cn-space-md);
 }
 
-/* ─────────────── 数据源同步页 ─────────────── */
+/* ─────────────── 数据同步页 ─────────────── */
 .cn-datasource-page {
   padding: var(--cn-space-xl);
 }

@@ -1,4 +1,4 @@
-# ADR 0014: 数据源同步接入大模型（llm_prompt Provider + 提示词 + cron + 连通测试）
+# ADR 0014: 数据同步接入大模型（llm_prompt Provider + 提示词 + cron + 连通测试）
 
 Status: Implemented（需求方 2026-10-21 确认提案并落地）
 Date: 2026-10-21
@@ -11,7 +11,7 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 
 | C # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 数据源同步功能增强 | 新增 `llm_prompt` provider 并登记进 `PROVIDERS`；既有 provider 与其配置结构不变 |
+| C1 | 数据同步功能增强 | 新增 `llm_prompt` provider 并登记进 `PROVIDERS`；既有 provider 与其配置结构不变 |
 | C2 | 需支持大模型 api 调用 | `LlmPromptProvider` 按 OpenAI 兼容协议请求 `{base_url}/chat/completions`；请求经 `RequestPlan.fetcher` 注入的 `llm/services/client.py`（重试 + SSRF 白名单），HTTP 传输复用 `core/http.py` 的超时 / 体积上限 / SSRF / 错误留痕（`api_fetch.py` 保留 re-export shim） |
 | C3 | 配置 api 和 key | `request_spec.url_template` 存 API 地址、`prompt` / `llm` 存提示词与模型参数；Key 优先取 `datasource_session.secrets.api_key`（Fernet 加密），缺省取个人大模型连接 `llm_user_config`（ADR 0019 / 0020），运行期渲染 `Authorization: Bearer {api_key}` |
 | C4 | 能够设置特定特示词（提示词） | `request_spec.prompt.system + user_template`，经 `render_text` 求值；内置变量 `entrant / start / end / today`，未知占位符保存即 400；`system` 可省略，未配置时使用内置默认系统提示词（定义在 `src/cndb/plugins/llm/services/prompts.py`，`llm_prompt` 复用；简化口径见 ADR 0019） |
@@ -171,7 +171,7 @@ class LlmPromptProvider:
 
 ## Consequences
 
-- **正向**：数据源同步从「抓 HTTP」扩展到「提示词生成」，复用调度、游标、幂等、落表、留痕与凭证加密；新增数据源只需一个 Provider。
+- **正向**：数据同步从「抓 HTTP」扩展到「提示词生成」，复用调度、游标、幂等、落表、留痕与凭证加密；新增数据源只需一个 Provider。
 - **负向**：模型输出质量不可控，提示词与结构化约束成为主要维护面；连通测试与预览会产生真实调用费用。
 - **风险与缓解**：模型返回非 JSON → 解析失败即 failed，不落脏数据；Key 泄露 → 只存密文、只回显键名、不随备份导出；cron 重复行 → 幂等键自动识别（ADR 0019）；上游不支持 `response_format` → 错误信息透传，必要时关闭 `json_mode`。
 

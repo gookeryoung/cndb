@@ -57,7 +57,7 @@ def _get_workspace_analytics_configs(datasets_dir: Path) -> dict[str, dict[str, 
 
 
 def _get_workspace_datasource_configs(datasets_dir: Path) -> dict[str, dict[str, Any]]:
-    """扫描每个工作区文件夹下的 datasource.json（数据源同步任务种子）.
+    """扫描每个工作区文件夹下的 datasource.json（数据同步任务种子）.
 
     Returns:
         工作区显示名 -> 同步任务配置（``{"jobs": [...]}``）的映射.

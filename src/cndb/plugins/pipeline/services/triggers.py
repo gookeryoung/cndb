@@ -4,7 +4,7 @@
 
 - 记录批量变更（批量建行 / 删行 / 改行）→ ``record.updated``
 - 文档正文保存（直编落库）→ ``document.saved``
-- 数据源同步完成（成功或失败）→ ``sync.finished``
+- 数据同步完成（成功或失败）→ ``sync.finished``
 
 分发是**尽力而为**：异常只记日志，绝不把调用方的业务事务带崩（与 ``record_event``
 同口径）。命中的定义按 ``compiled.on.events`` 判定，``enabled=false`` 不响应事件
@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 EVENT_RECORD_UPDATED = "record.updated"
 #: 文档正文保存事件（直编落库）
 EVENT_DOCUMENT_SAVED = "document.saved"
-#: 数据源同步完成事件（成功或失败）
+#: 数据同步完成事件（成功或失败）
 EVENT_SYNC_FINISHED = "sync.finished"
 
 #: 当前支持的事件集合（与前端检查目录 / DSL 文档同步）

@@ -1,4 +1,4 @@
-"""数据源同步任务种子：各工作区 `datasource.json`。
+"""数据同步任务种子：各工作区 `datasource.json`。
 
 把声明式同步任务（Provider 引用 + 标的集合 + 幂等键 + 字段映射 + 游标 / 调度）
 注入 ``datasource_sync_job``，让「多标的同源 → 同一张表」的典型链路随

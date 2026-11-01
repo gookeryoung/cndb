@@ -240,7 +240,7 @@ const guide: HelpTopic = {
         },
         {
             key: 'sync',
-            label: '数据源同步',
+            label: '数据同步',
             items: [
                 {
                     key: 'no-data',

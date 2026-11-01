@@ -369,7 +369,7 @@ def main() -> None:
 
     register_views_subparser(sub)
 
-    # sync 子命令组（数据源同步：list / run / tick / preview —— ADR 0006 M2）
+    # sync 子命令组（数据同步：list / run / tick / preview —— ADR 0006 M2）
     from cndb.cli.sync import register_sync_subparser
 
     register_sync_subparser(sub)

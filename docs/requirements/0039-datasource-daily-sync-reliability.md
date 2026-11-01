@@ -12,8 +12,8 @@
 
 ## 需求原句（逐字）
 
-> 数据源同步，股市日线，存在大量错误：ces.pipeline 数据源请求失败 \[symbol=sh562550]: 行数组记录要求 data\_path 指向一个数组
-> 2026-10-26 17:36:24,513 WARNING cndb.plugins.datasource.services.pipeline ，是否需针对性地优化。请分析数据源同步还有无提速的措施。
+> 数据同步，股市日线，存在大量错误：ces.pipeline 数据源请求失败 \[symbol=sh562550]: 行数组记录要求 data\_path 指向一个数组
+> 2026-10-26 17:36:24,513 WARNING cndb.plugins.datasource.services.pipeline ，是否需针对性地优化。请分析数据同步还有无提速的措施。
 
 ## 可实施约束（C1..Cn）
 
@@ -21,7 +21,7 @@
 | -- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
 | C1 | 大量错误：行数组记录要求 data\_path 指向一个数组 | `rows_array` 的 `data_path` 支持候选路径回退（`a.b\|a.c`）：按声明顺序取第一个命中数组的候选；全部候选都未命中数组才报错，错误信息列出全部候选；单路径配置行为与现状完全一致（向后兼容）                       | `src/cndb/plugins/datasource/providers/http_json.py`                                                                                                | 单测：缺 `qfqday` 回退 `day`、首候选空数组继续下一候选、全缺失报错、单路径不变                                        |
 | C2 | 股市日线，存在大量错误                    | 基金/ETF 与股票拆分任务：股票任务（`sh60`/`sz00`/`sz30`/`sh68`/`sh69`）走前复权并允许回退；基金/ETF 任务（`sh5`/`sz1`）只读 `day`，来源标「腾讯不复权」、复权方式标「不复权」；同一行标注必须与实际序列一致 | `examples/datasets/工作区-数据源示例/datasource.json`、`src/cndb/cli/seed/datasource.py`                                                                     | `tests/test_seed_datasource.py` 断言任务名 / 前缀 / `data_path` / `row_defaults`；真源抽样复验失败率为 0 |
-| C3 | 数据源同步还有无提速的措施                  | 落库写吞吐提升 ≥30%：流式批大小 5000 → 10000；`match_keys` 索引 DDL 每轮只执行一次；每批数据库提交次数不增加（进度 / 水位 / 续租合并为一次提交）                                        | `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py` | 落表基准（3.83M 行同口径）≥13k 行/s；单测断言提交次数与索引 DDL 次数                                            |
+| C3 | 数据同步还有无提速的措施                  | 落库写吞吐提升 ≥30%：流式批大小 5000 → 10000；`match_keys` 索引 DDL 每轮只执行一次；每批数据库提交次数不增加（进度 / 水位 / 续租合并为一次提交）                                        | `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py` | 落表基准（3.83M 行同口径）≥13k 行/s；单测断言提交次数与索引 DDL 次数                                            |
 | C4 | 提速措施                           | 同口径单轮（约 3.83M 行）落库耗时从实测 370s 降到 ≤270s；本次不改网络层（连接复用 / 页级并发 / DNS 缓存）                                                                  | `services/`、ADR 0039 Consequences                                                                                                                   | 基准脚本复测 + ADR「落地状态」回填实测                                                                 |
 | C5 | 针对性优化                          | 不变量不变：幂等键与「先查后写」口径、字段校验、`partial` 列语义、回补水位推进、`workers` / `rate_limit_ms` 语义、双源并存；零迁移、零新增依赖、零 API 契约与前端交互变更                           | `services/write.py`、`services/runner.py`、`services/pipeline.py`                                                                                     | 既有测试全绿 + 新增等价性用例                                                                       |
 | C6 | 大量错误 / 优化                      | 存量实例必须有生效路径（重跑 `cndb seed` 或前端编辑），旧 ETF 合并任务需人工清理；写入 ADR「交接」                                                                         | `src/cndb/cli/seed/datasource.py`、ADR 0039 交接                                                                                                       | 交接章节 + 人工复跑                                                                            |

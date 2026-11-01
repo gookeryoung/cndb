@@ -358,7 +358,7 @@ def list_records(
     # 记录列表是表格页最热的读路径：按（工作区/表/用户/查询体）缓存 5s。
     # 必须带 user_id —— 行级权限（tables_tablepermission）是按人过滤的，不能跨用户复用。
     # 失效：记录写入会写入 record.* 统一事件，事件钩子统一清该工作区的记录缓存。
-    # 批量导入 / 数据源同步不写 audit，由 records._invalidate_search_cache 兜底清理。
+    # 批量导入 / 数据同步不写 audit，由 records._invalidate_search_cache 兜底清理。
     body_sig = hashlib.sha256(payload.model_dump_json().encode("utf-8")).hexdigest()[:16]
     return _cached_list(
         db,

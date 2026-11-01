@@ -9,17 +9,17 @@
 
 ## 需求原句（逐字）
 
-> 请重构当前工作区类型设计和进入工作区后的顶部导航布局。工作区类型选择改为可勾选的模块，包括数据表、文档和设计三个功能模块，允许勾选其中任意项或多项。数据分析模块、数据源同步和数据表功能模块强绑定。文档和设计的功能模块暂未确定，后续开发。质量检查模块是否分散到数据表、文档和设计当中，进行适应性设计。请针对工作区的展示形式该如何调整制定可行方案。
+> 请重构当前工作区类型设计和进入工作区后的顶部导航布局。工作区类型选择改为可勾选的模块，包括数据表、文档和设计三个功能模块，允许勾选其中任意项或多项。数据分析模块、数据同步和数据表功能模块强绑定。文档和设计的功能模块暂未确定，后续开发。质量检查模块是否分散到数据表、文档和设计当中，进行适应性设计。请针对工作区的展示形式该如何调整制定可行方案。
 
 ## 可实施约束（C1..Cn）
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
 | C1 | 「工作区类型选择改为可勾选的模块，包括数据表、文档和设计三个功能模块，允许勾选其中任意项或多项」 | 工作区落库字段由单选枚举 `workspace_type`（data_doc/data/doc，共 7 种组合中仅 3 种可达）改为模块集合 `modules ⊆ {tables, documents, design}` 且非空；创建弹窗与工作区设置页改为卡片式模块勾选（图标 + 名称 + 说明，默认全选，至少勾选一项） | `workspaces` 插件（模型/迁移/schema/API）+ `frontend` 创建与设置页 | 后端：`tests/test_workspace_modules_*.py`（组合校验、空集 422）；前端：`WorkspaceList.test.tsx` / `WorkspaceSettingsContent.test.tsx` 勾选交互用例 |
-| C2 | 「数据分析模块、数据源同步和数据表功能模块强绑定」 | 勾选「数据表」即同时开放数据分析（`/analytics`）与数据源同步（`/datasource`）页签；二者不提供独立勾选项，取消「数据表」即一并关闭；绑定关系以声明式绑定表维护 | `frontend/src/utils/workspaceModules.ts`（新增，替代 `workspaceType.ts`） | `workspaceModules.test.ts`：tables→analytics+datasource 联动断言 |
+| C2 | 「数据分析模块、数据同步和数据表功能模块强绑定」 | 勾选「数据表」即同时开放数据分析（`/analytics`）与数据同步（`/datasource`）页签；二者不提供独立勾选项，取消「数据表」即一并关闭；绑定关系以声明式绑定表维护 | `frontend/src/utils/workspaceModules.ts`（新增，替代 `workspaceType.ts`） | `workspaceModules.test.ts`：tables→analytics+datasource 联动断言 |
 | C3 | 「文档和设计的功能模块暂未确定，后续开发」 | 本期文档/设计为独立单模块（无绑定子模块）；模块清单与绑定规则收敛为常量表（模块目录 + 模块→功能映射），后续为文档/设计新增子模块只改常量表，不改模型与迁移 | `workspaces` 插件 `modules.py`（后端唯一判定入口）+ `frontend/src/utils/workspaceModules.ts` | 判定层单测覆盖常量表全部分支 |
 | C4 | 「质量检查模块是否分散到数据表、文档和设计当中，进行适应性设计」 | 质量检查保留工作区级集中页签且所有工作区恒显（含仅设计，为后续 design 域检查动作预留入口）；页面改 GitHub 风格双栏：左侧流水线规则清单、右侧检查结果历史；检查动作目录按已启用模块过滤（动作名域前缀 `table/`、`document/` 对应模块），DSL 保存期拒绝已禁用域的动作 | `pipeline` 插件（目录端点过滤 + 保存校验）+ `MainLayout` 页签 + 质量检查页双栏重构 | 接口层：目录过滤与保存拒绝用例；前端：`PipelinesPage.test.tsx` 双栏用例 |
-| C5 | 「进入工作区后的顶部导航布局」调整 | 工作区页签按勾选模块渲染，顺序固定：数据表 → 文档 → 设计 → 数据分析 → 数据源同步 → 质量检查 → 工作区设置；URL 落在未开放功能段时重定向到落地页（落地段取第一个可用模块：tables → documents → design）；侧栏形态沿用现有切换逻辑 | `frontend/src/layouts/MainLayout.tsx` | `MainLayout.test.tsx`：各模块组合的页签集合与重定向断言 |
+| C5 | 「进入工作区后的顶部导航布局」调整 | 工作区页签按勾选模块渲染，顺序固定：数据表 → 文档 → 设计 → 数据分析 → 数据同步 → 质量检查 → 工作区设置；URL 落在未开放功能段时重定向到落地页（落地段取第一个可用模块：tables → documents → design）；侧栏形态沿用现有切换逻辑 | `frontend/src/layouts/MainLayout.tsx` | `MainLayout.test.tsx`：各模块组合的页签集合与重定向断言 |
 | C6 | 「重构当前工作区类型设计」（存量兼容） | 单条迁移将存量枚举映射为模块集合：`data_doc → [tables, documents, design]`、`data → [tables]`、`doc → [documents, design]`；备份协议升 v12（workspace 元数据写 `modules`，v11 及更早按同一映射读旧字段）；API 响应以 `modules` 替换 `workspace_type`，前后端同仓同步切换不留双字段 | `workspaces` 插件（迁移/备份/恢复）+ 前端 API 类型 | 迁移幂等 + downgrade 用例；备份 v12 往返 + v11 旧备份导入用例 |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。

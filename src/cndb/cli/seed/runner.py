@@ -142,7 +142,7 @@ def seed(_args: argparse.Namespace) -> None:
         #     analytics.json 见 examples/datasets/<工作区>/）
         analytics_count = analytics._seed_analytics(db, owner, ws_map, tables_map, datasets_dir)
 
-        # 3e) 数据源同步任务种子（依赖工作区 + 表已就绪：字段映射引用真实中文列名；
+        # 3e) 数据同步任务种子（依赖工作区 + 表已就绪：字段映射引用真实中文列名；
         #     datasource.json 见 examples/datasets/<工作区>/，只注入配置不触发抓取）
         datasource_count = datasource._seed_datasource(db, owner, ws_map, tables_map, datasets_dir)
 
@@ -173,7 +173,7 @@ def seed(_args: argparse.Namespace) -> None:
             f"[seed] 完成！共 {total} 张数据表、{view_count} 个视图、"
             f"{doc_count} 篇示例文档（{folder_count} 个文档文件夹）、"
             f"{analytics_count} 个分析模板、"
-            f"{datasource_count} 个数据源同步任务、"
+            f"{datasource_count} 个数据同步任务、"
             f"{pipeline_count} 条质量检查流水线、"
             f"{design_count} 份结构设计、"
             f"4 个演示账号（三员 + 普通用户）。"

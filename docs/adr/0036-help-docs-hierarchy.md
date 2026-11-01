@@ -64,7 +64,7 @@ Related: `frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/HelpDo
 | 全局搜索 / 收藏视图 / 排序 | `components/GlobalSearch.tsx`、`pages/workspace/MyViewsPanel.tsx` | 无 | **缺失** |
 | 修改申请与审批 | `pages/changeRequests`、`plugins/change_requests` | 一句「转修改申请」 | **不完整** |
 | 行级权限 / 表级授权 / 视图可见性 | `tables/services/core/{row_access,view_access}.py` | 仅三角色 | **不完整** |
-| 数据源同步（含大规模增量） | `pages/datasource` | 系统配置 1 主题 | 有，缺小节 |
+| 数据同步（含大规模增量） | `pages/datasource` | 系统配置 1 主题 | 有，缺小节 |
 | 管理台（用户 / 事件流 / 空间 / 备份恢复） | `pages/admin` | 只在存储主题里提一句 | **缺失** |
 | 界面导航（顶栏 / 页签 / 视图栏 / 入口） | `layouts/MainLayout.tsx` | 无 | **缺失** |
 | 诊断与反馈（收集信息 / 事件流 / 问题清单） | `pages/issues` | 排障末条一句话 | **缺失** |

@@ -400,7 +400,7 @@ def complete(connection: LlmConnection, *, messages, model, temperature,
 
 | 项 | 内容 |
 |---|---|
-| 触发入口 | 数据源同步 → 新建 / 编辑任务 → provider 选「大模型提示词」（既有页面） |
+| 触发入口 | 数据同步 → 新建 / 编辑任务 → provider 选「大模型提示词」（既有页面） |
 | 改动前 | `ds/providers/llm_prompt.py` 直接构造 `FetchConfig` 调 `fetch_json`；连接来自 `ds/services/connection.py`；配置路由在 `accounts` |
 | 改动后 | 消息构造仍在 provider；HTTP 调用走 `llm/services/client.py`；JSON 解析走 `llm/services/parsing.py`；连接来自 `llm/services/connection.py`；配置路由在 `llm/routers/config.py` |
 | 不改 | `request_spec.prompt.user_template` 极简表单、`DEFAULT_SYSTEM_PROMPT`、`render_text_lenient`、自动建表 / 补字段 / 自动幂等键、`max_tokens=4096`、截断提示、`datasource_session` Key 优先 |

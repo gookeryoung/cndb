@@ -33,9 +33,9 @@ Related: `src/cndb/plugins/tables/services/governance/detect.py`、`src/cndb/plu
 | 3 | 导入期校验报告只在导入时刻生成一次 | `src/cndb/plugins/tables/services/importing/importer.py:172` `analyze` | 无法回答"现在这张表合不合格" | 排除：时点不同，不作为运行期检查的执行载体，仅口径参考 |
 | 4 | 统一事件流 `core_event` 提供"域.动作"留痕与查询 | `src/cndb/core/events.py:139` `record_event` | 触发留痕有现成载体 | 新增：新增 `pipeline.run` 动作常量；每次运行留一条事件 |
 | 5 | 行级权限有唯一判定入口，规则引用隐藏字段会被静默剔除（侧信道保护） | `src/cndb/plugins/tables/services/core/row_access.py` | 检查若按个人视角运行，结果随触发人权限漂移，质量口径不稳定 | 新增：检查按工作区视角运行（D13），finding 不携带字段值 |
-| 6 | 数据源同步用 DB 租约保证同任务单飞（409） | `src/cndb/plugins/datasource/services/runner.py:125` | 并发单飞有范式可循 | 新增：workflow 级单飞沿用同一语义（P0 简化为状态检查 + 行锁，D8） |
+| 6 | 数据同步用 DB 租约保证同任务单飞（409） | `src/cndb/plugins/datasource/services/runner.py:125` | 并发单飞有范式可循 | 新增：workflow 级单飞沿用同一语义（P0 简化为状态检查 + 行锁，D8） |
 | 7 | 工作区全量备份明确排除流水类数据（审计 / 同步运行历史等） | `docs/adr/0075-workspace-full-backup.md` | workflow 属工作区配置还是流水需定口径 | 新增：workflow 进备份（P2，backup v10），run / finding 不进（D12） |
-| 8 | 工作区级功能页签（数据分析 / 数据源同步 / 文档等）由前端布局挂载 | `frontend/src/layouts/MainLayout.tsx` | 新页签有现成挂载点 | 新增：「质量检查」页签 |
+| 8 | 工作区级功能页签（数据分析 / 数据同步 / 文档等）由前端布局挂载 | `frontend/src/layouts/MainLayout.tsx` | 新页签有现成挂载点 | 新增：「质量检查」页签 |
 | 9 | 注册表 + 目录端点范式已有两处先例（图表模板、LLM 动作） | `src/cndb/plugins/documents/services/charts/registry.py`、`src/cndb/plugins/llm/`（`GET /api/v1/llm/actions`） | 检查动作注册表可直接对标 | 新增：DSL 的 `uses:` 与目录端点复用该范式 |
 
 **核心缺陷（需求要补的）**：现状没有任何机制能让用户**声明式地编排一套跨数据表与文档的质量检查规则并在任意时刻运行、留下结构化、可过滤的历史报告**——检查能力散落在导入 / 保存 / 渲染路径里，硬编码、不可配置、不可编排。
@@ -227,10 +227,10 @@ jobs:
 | D5 | 触发模型 | P0 手动；P1 事件分发点（三个既有写路径末尾）+ `core_event` 留痕；P2 cron tick | 手动先闭环价值，事件点改动可控；tick 复用 `cndb sync tick` + cron 部署范式 | 轮询 `core_event` 表作触发源（延迟高、全表扫描）；P0 直接做全量触发（写路径侵入面过大，先验证引擎） | `pipeline/services/runner.py`、`pipeline/services/triggers.py` |
 | D6 | 结果模型 | `pipeline_run` 快照 + `pipeline_finding` 结构化行 + `run.stats` 汇总 | finding 需按严重度 / 目标 / 动作过滤与分页，纯 JSON 报告做不到（治理任务 `report` 列的局限）；快照汇总让列表页免聚合查询 | 纯 JSON 报告（同 GovernanceTask，不可过滤）；全量 finding 进 `core_event`（事件表语义污染，粒度不匹配） | `pipeline/models.py` |
 | D7 | 只读保障与侧信道 | 检查上下文无写 API；finding 不携带字段值 / 单元格内容，仅字段名 / 行 ID / 计数 / 阈值 | I1；对齐 ADR 0004 行级权限的侧信道保护口径 | 检查携带样例值（对 viewer 泄露隐藏字段内容） | `pipeline/checks/base.py`（`CheckContext`） |
-| D8 | 并发口径 | workflow 级单飞：状态条件 UPDATE 抢占，冲突 409 | 对齐数据源同步单飞语义（`runner.py:125`）；P0 无租约（检查只读、可中断性弱，无需批间续期复杂度） | 立即引入 DB 租约（过度设计，检查任务粒度短）；允许并发 run（结果交叉，stats 无意义） | `pipeline/services/runner.py` |
+| D8 | 并发口径 | workflow 级单飞：状态条件 UPDATE 抢占，冲突 409 | 对齐数据同步单飞语义（`runner.py:125`）；P0 无租约（检查只读、可中断性弱，无需批间续期复杂度） | 立即引入 DB 租约（过度设计，检查任务粒度短）；允许并发 run（结果交叉，stats 无意义） | `pipeline/services/runner.py` |
 | D9 | 严重度与结论映射 | `error/warn/info` 三档；error 使 step 失败（`continue-on-error` 豁免）→ job 失败 → run `failed`；仅 warn/info → `partial`；全无 → `success` | GitHub Actions 的 conclusion 模型 + annotation severity 的合体；`partial` 区分"全绿"与"有告警" | 两档 error/warn（info 类截断提示无处安放）；warn 也判失败（巡检类告警不该红） | `pipeline/services/runner.py` |
 | D10 | 权限口径 | workflow CRUD 与触发 owner/editor；run / finding 查看为工作区成员 | 与数据源任务（创建编辑受限）+ 治理报告（成员可见）口径一致 | 仅 owner 可看结果（质量信息对团队有普适价值）；viewer 可运行（写入口子） | `pipeline/routers/` |
-| D11 | 前端入口 | 工作区页签「质量检查」，路由 `/w/:wid/pipelines` | 与数据源同步 / 数据分析同级的工作区级功能；工作区类型 `data_doc` / `data` 显示（`doc` 型无数据表检查目标） | 表级 / 文档级零散入口（检查天然跨域，应集中） | `frontend/src/pages/pipelines/` |
+| D11 | 前端入口 | 工作区页签「质量检查」，路由 `/w/:wid/pipelines` | 与数据同步 / 数据分析同级的工作区级功能；工作区类型 `data_doc` / `data` 显示（`doc` 型无数据表检查目标） | 表级 / 文档级零散入口（检查天然跨域，应集中） | `frontend/src/pages/pipelines/` |
 | D12 | 备份口径 | workflow 随工作区备份导出（P2，backup v10）；run / finding 属流水不进 | 对齐 ADR 0075 排除清单（同步运行历史同类） | run 也进备份（体量随时间无界增长） | `plugins/workspaces/` 备份序列化、恢复路径 |
 | D13 | 检查的数据视角 | 工作区视角（owner 级读取，不套触发人个人行级权限） | 质量口径是表 / 文档级客观事实，随触发人漂移则结果不可比；配合 D7 的值级脱敏，侧信道风险受控 | 按触发人视角（同一 workflow 不同人跑出不同结论，违背"报告可复现"） | `pipeline/services/runner.py`、`pipeline/checks/base.py` |
 | D14 | 定时触发口径 | `cndb pipeline tick` 读取已启用且声明 `on.schedule` 的定义，cron 按 UTC+8 解释（与数据源调度同源），以当前分钟槽 + 最近一条 `trigger=schedule` 运行的 `created_at` 去重；tick 内同步执行，同一 workflow 仍走单飞 | cron 部署范式复用 `cndb sync tick` + `deploy/sync.sh`；同步执行避免 CLI 进程退出杀死后台线程导致 run 长期 pending；分钟槽水位保证同一分钟不重复触发 | tick 内起后台守护线程（进程生命周期不可控）；轮询 `core_event` 作触发源（延迟高、全表扫描）；秒级精度（cron 最小粒度为分钟） | `pipeline/services/scheduler.py`、`cli/pipeline.py`、`deploy/pipeline.sh` |

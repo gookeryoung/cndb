@@ -1,4 +1,4 @@
-# 需求卡片：数据源同步实时写入速度与 stock-strategy 对标
+# 需求卡片：数据同步实时写入速度与 stock-strategy 对标
 
 - 编号：0040（与 ADR `docs/adr/0040-*.md` 同号，卡片存 `docs/requirements/0040-<topic>.md`）
 - 来源 / 提出人：用户

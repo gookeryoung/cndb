@@ -45,7 +45,7 @@ ACTION_AUTH_TOKEN_REUSE = "auth.token_reuse_detected"
 ACTION_AUTH_SESSION_REVOKED = "auth.session_revoked"
 ACTION_AUTH_REGISTER = "auth.register"
 
-# 数据源同步（datasource 插件）：每次同步运行留一条事件，便于跨插件事后追溯
+# 数据同步（datasource 插件）：每次同步运行留一条事件，便于跨插件事后追溯
 ACTION_DATASOURCE_SYNC = "datasource.sync"
 
 # 目标类型

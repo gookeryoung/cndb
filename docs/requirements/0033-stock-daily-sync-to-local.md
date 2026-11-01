@@ -16,7 +16,7 @@
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
 | C1 | "参照~/stock-strategy项目功能" | 参照 `/root/stockmaster`（`~/stock-strategy` 为空仓库，实际代码在 stockmaster）的日线同步链路：公开行情接口 → 增量拉取 → 本地表幂等 upsert（标的 + 日期去重，可重复运行不产生重复行） | datasource plugin | 同步运行测试（假源桩） |
-| C2 | "实现【数据校核】的数据同步到本地功能" | 在 cndb 数据源同步机制上落地股市日线「同步到本地」：拉取日线 OHLCV 写入本地数据表，支持增量（`cursor.strategy=date`）与手动/定时调度 | datasource plugin（http_json provider / pipeline / runner） | 后端单测 + 集成测试 |
+| C2 | "实现【数据校核】的数据同步到本地功能" | 在 cndb 数据同步机制上落地股市日线「同步到本地」：拉取日线 OHLCV 写入本地数据表，支持增量（`cursor.strategy=date`）与手动/定时调度 | datasource plugin（http_json provider / pipeline / runner） | 后端单测 + 集成测试 |
 | C3 | "把相关配置完善到【数据源示例】当中" | 同步任务配置进入 `examples/datasets/工作区-数据源示例/datasource.json`，配套示例表 / CSV / 视图；`cndb seed` 开箱注入（只注入配置不联网），演示时点「立即运行」即可拉取 | cli/seed + examples/datasets | `test_seed_datasource` 断言 |
 | C4 | "移除现有的【股市日线-新浪】等已有内容" | 新方案不保留旧的按源分表静态示例结构（「股市日线」「股市日线-新浪」「自选股」）；仓库侧该内容已随 `299f4e6a` 移除，本需求的「移除」落点见未决问题 3 | examples/datasets | seed 测试 + grep 复验 |
 

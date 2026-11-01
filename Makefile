@@ -3,6 +3,11 @@
 
 .DEFAULT_GOAL := help
 
+# 阻断 IDE（Trae）注入的 LD_LIBRARY_PATH：其自带的旧版 libsqlite3 缺少
+# sqlite3_deserialize 符号，会让 Python sqlite3 模块崩溃、后端测试长时间卡死。
+# GNU Make 默认把父环境变量透传给 recipe，unexport 后所有 uv run 子进程均不再继承。
+unexport LD_LIBRARY_PATH
+
 PACKAGE := cndb
 
 # pytest-xdist worker 数：实测 n8 后收益收敛（SQLite 单文件写锁），低配机器用 make test PYTEST_JOBS=4 覆盖

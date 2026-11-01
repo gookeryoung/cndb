@@ -1,4 +1,4 @@
-"""cndb sync 子命令 —— 数据源同步的运维入口（生产建议配系统 cron）。
+"""cndb sync 子命令 —— 数据同步的运维入口（生产建议配系统 cron）。
 
 子命令：
 - ``list``         列出同步任务（名称 / 来源 / 目标表 / 调度 / 上次状态）
@@ -292,7 +292,7 @@ def sync_command(args: argparse.Namespace) -> None:
 
 def register_sync_subparser(sub: Any) -> None:
     """向顶层 ArgumentParser 注册 `cndb sync` 子命令组."""
-    p_sync = sub.add_parser("sync", help="数据源同步（list / run / tick / preview）")
+    p_sync = sub.add_parser("sync", help="数据同步（list / run / tick / preview）")
     sync_sub = p_sync.add_subparsers(dest="sync_cmd")
 
     p_list = sync_sub.add_parser("list", help="列出同步任务")

@@ -2,7 +2,7 @@
  *
  * 覆盖（需求 0081 后的导航形态）：
  * 顶栏一级导航顺序（数据表 → 文档 → 设计 → 工作区设置）+ 三区划分、
- * 二级页签（数据分析 / 数据源同步 / 质量检查）维持在内容区上方、
+ * 二级页签（数据分析 / 数据同步 / 质量检查）维持在内容区上方、
  * Header 导航按钮可达性 — 文档、数据分析。
  * 以及表列表 owner 列展示 + 筛选器.
  */
@@ -47,7 +47,7 @@ test.describe("MainLayout Header 导航按钮", () => {
     expect(idx("设计")).toBe(2)
     expect(idx("工作区设置")).toBe(3)
 
-    // 二级页签：数据分析 / 数据源同步 / 质量检查；一级模块不在页签行
+    // 二级页签：数据分析 / 数据同步 / 质量检查；一级模块不在页签行
     const tabs = page.getByRole("tablist").first().getByRole("tab")
     await expect(tabs.filter({ hasText: "数据分析" })).toBeVisible()
     await expect(tabs.filter({ hasText: "质量检查" })).toBeVisible()
@@ -87,17 +87,19 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(page.getByTestId("documents-layout")).toBeVisible({ timeout: 5000 })
   })
 
-  test("切到文档模块：数据分析/数据源同步页签隐藏，质量检查恒显", async ({ page }) => {
+  test("切到文档模块：数据分析/数据同步页签隐藏，质量检查恒显", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/documents`)
     await page.waitForURL(/\/documents$/)
     await expect(page.getByTestId("documents-layout")).toBeVisible({ timeout: 5000 })
-    // 数据分析 / 数据源同步为数据表派生二级功能，仅数据表模块上下文显示
+    // 数据分析 / 数据同步为数据表派生二级功能，仅数据表模块上下文显示
     const tabs = page.getByRole("tablist").first().getByRole("tab")
     await expect(tabs.filter({ hasText: "数据分析" })).toHaveCount(0)
-    await expect(tabs.filter({ hasText: "数据源同步" })).toHaveCount(0)
-    await expect(tabs.filter({ hasText: "质量检查" })).toBeVisible()
+    await expect(tabs.filter({ hasText: "数据同步" })).toHaveCount(0)
+    // 质量检查恒显，但文档上下文由文档区胶囊页签承载（避免同名页签重复，页签行隐藏）
+    await expect(tabs.filter({ hasText: "质量检查" })).toHaveCount(0)
+    await expect(page.getByTestId("document-tab-pipelines")).toBeVisible()
   })
 
   // 需求 0082 C3：文档区二级页签新增「文档结构」，指向文档总览列表页本体

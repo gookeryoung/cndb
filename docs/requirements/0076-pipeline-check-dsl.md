@@ -33,7 +33,7 @@
 | 3 | 导入期校验报告 | `src/cndb/plugins/tables/services/importing/importer.py:172` | 仅导入时刻生效，口径可参考但不复用为运行期检查 |
 | 4 | 统一事件流 | `src/cndb/core/events.py:139` | 触发留痕载体（pipeline.run 事件） |
 | 5 | 行级权限判定 | `src/cndb/plugins/tables/services/core/row_access.py` | 检查执行的数据读取口径需明确（工作区视角 vs 个人视角） |
-| 6 | 数据源同步租约 / 单飞 | `src/cndb/plugins/datasource/services/runner.py:125` | 并发单飞范式参照 |
+| 6 | 数据同步租约 / 单飞 | `src/cndb/plugins/datasource/services/runner.py:125` | 并发单飞范式参照 |
 | 7 | 工作区全量备份 | `docs/adr/0075-workspace-full-backup.md` | workflow 是否随备份导出需定口径 |
 | 8 | 工作区级功能页签 | `frontend/src/layouts/MainLayout.tsx` | 新页签「质量检查」入口 |
 

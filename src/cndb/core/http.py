@@ -1,6 +1,6 @@
 """通用 HTTP 传输层（自 ``tables/services/importing/api_fetch.py`` 上移，ADR 0020 P0）.
 
-平台级调用（大模型 / 数据源同步 / 导入）共用同一份 SSRF 防护、超时、响应体上限与重试退避；
+平台级调用（大模型 / 数据同步 / 导入）共用同一份 SSRF 防护、超时、响应体上限与重试退避；
 ``api_fetch`` 保留 re-export shim，历史 import 不变。
 
 核心职责：

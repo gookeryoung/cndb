@@ -1,4 +1,4 @@
-# 需求卡片：数据源同步支持大模型 API（提示词 + cron + 结构化落表）
+# 需求卡片：数据同步支持大模型 API（提示词 + cron + 结构化落表）
 
 - 编号：0014（与 ADR `docs/adr/0014-*.md` 同号）
 - 来源 / 提出人：工作区需求（用户提出）
@@ -9,7 +9,7 @@
 
 ## 需求原句（逐字）
 
-> 数据源同步功能增强，需支持大模型 api 调用，配置 api 和 key，能够设置特定特示词和 cron 定时任务，将得到的结果更新到数据表当中。
+> 数据同步功能增强，需支持大模型 api 调用，配置 api 和 key，能够设置特定特示词和 cron 定时任务，将得到的结果更新到数据表当中。
 
 > api 增加连通测试。
 
@@ -17,7 +17,7 @@
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 数据源同步功能增强 | 增强限定在 `datasource` 插件内：新增 `llm_prompt` provider 并登记；既有 6 个 provider 的配置结构与运行行为不变 | `src/cndb/plugins/datasource/providers/registry.py`、`providers/llm_prompt.py` | 回归：现有 `tests/test_datasource_*` 全绿；单测：注册表同时包含新旧 provider，旧名称不变 |
+| C1 | 数据同步功能增强 | 增强限定在 `datasource` 插件内：新增 `llm_prompt` provider 并登记；既有 6 个 provider 的配置结构与运行行为不变 | `src/cndb/plugins/datasource/providers/registry.py`、`providers/llm_prompt.py` | 回归：现有 `tests/test_datasource_*` 全绿；单测：注册表同时包含新旧 provider，旧名称不变 |
 | C2 | 需支持大模型 api 调用 | 任务可选 `provider=llm_prompt`，按 OpenAI 兼容 `POST {base_url}/chat/completions` 调用；`base_url` / `model` / `timeout` 由 `request_spec` 配置；复用 `api_fetch` 的超时、重试、响应体积上限与失败留痕 | `providers/llm_prompt.py`、`services/pipeline.py` | 单测：假模型端点返回 `choices[0].message.content` → 解析成行；非 2xx / 超时记为 failure |
 | C3 | 配置 api 和 key | `base_url` / `model` 存 `request_spec`；API key **只存** `datasource_session.secrets`（Fernet 加密），运行时以 `{api_key}` 渲染进 `Authorization` 头；读接口只回显键名、不随工作区导出 | `services/runner.py`、`core/crypto.py`、`routers/sessions.py` | 单测：密文入库、接口无明文回显、备份不含密钥；接口测试：未绑定密钥时返回明确错误 |
 | C4 | 能够设置特定特示词（提示词） | `request_spec.prompt` 含 `system` + `user_template`；支持内置占位符 `{entrant}` / `{start}` / `{end}` / `{today}`，只做字面替换、不求值表达式；保存时校验提示词非空与占位符白名单 | `providers/llm_prompt.py`、`providers/template.py`、`routers/sync_jobs.py` | 单测：模板渲染（缺参 / 转义 / 未知占位符）；接口测试：空提示词 400 |

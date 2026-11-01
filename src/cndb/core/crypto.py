@@ -72,7 +72,7 @@ def decrypt_secret(value: str) -> str:
         return _current_fernet().decrypt(value[len(ENC_PREFIX) :].encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError) as exc:
         raise SecretDecryptError(
-            "密钥解密失败：DATASOURCE_SECRET_KEY / JWT_SECRET 是否变更？请到「数据源同步 → 凭证会话」重新保存密钥"
+            "密钥解密失败：DATASOURCE_SECRET_KEY / JWT_SECRET 是否变更？请到「数据同步 → 凭证会话」重新保存密钥"
         ) from exc
 
 

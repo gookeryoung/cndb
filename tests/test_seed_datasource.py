@@ -1,4 +1,4 @@
-"""数据源同步任务种子（datasource.json）测试.
+"""数据同步任务种子（datasource.json）测试.
 
 覆盖：
 - 单任务多标的（entrant_keys）注入，目标表名解析为 table_id

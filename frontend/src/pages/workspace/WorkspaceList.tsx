@@ -365,7 +365,7 @@ export default function WorkspaceList() {
             <Form.Item
               name="modules"
               label="功能模块"
-              extra="按需勾选工作区开放的功能；数据分析与数据源同步随数据表一并启用，质量检查恒可用。"
+              extra="按需勾选工作区开放的功能；数据分析与数据同步随数据表一并启用，质量检查恒可用。"
             >
               <ModuleCheckCards />
             </Form.Item>

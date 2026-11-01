@@ -38,7 +38,7 @@ const research = scenarioTopic(
 const datasource = scenarioTopic(
     'datasource',
     '数据源示例',
-    '一套数据接入场景：行情、政策台账、国际情报与天气观测，适合练数据源同步、去重键与画廊阅读。',
+    '一套数据接入场景：行情、政策台账、国际情报与天气观测，适合练数据同步、去重键与画廊阅读。',
 )
 
 export const exampleTopics: HelpTopic[] = [sales, research, datasource]

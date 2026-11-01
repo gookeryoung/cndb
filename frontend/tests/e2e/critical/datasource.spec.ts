@@ -1,4 +1,4 @@
-/** 数据源同步 E2E —— 工作区级「数据源同步」页签主链路.
+/** 数据同步 E2E —— 工作区级「数据同步」页签主链路.
  *
  * 覆盖：
  * - 页签进入 /w/:wid/datasource，任务列表渲染（可为空态）
@@ -37,15 +37,15 @@ async function gotoDatasource(page: any) {
   await expect(page.getByTestId("datasource-page")).toBeVisible({ timeout: 10_000 })
 }
 
-test.describe("数据源同步", () => {
+test.describe("数据同步", () => {
   test.beforeEach(async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     void page
   })
 
-  test("工作区页签可进入数据源同步页", async ({ page }) => {
+  test("工作区页签可进入数据同步页", async ({ page }) => {
     await gotoDatasource(page)
-    await expect(page.getByRole("heading", { name: "数据源同步" })).toBeVisible()
+    await expect(page.getByRole("heading", { name: "数据同步" })).toBeVisible()
     await expect(page.getByTestId("datasource-create-btn")).toBeVisible()
   })
 

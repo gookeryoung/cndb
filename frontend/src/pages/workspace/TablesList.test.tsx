@@ -659,3 +659,96 @@ describe('TablesList 表顺序拖拽', () => {
     expect(screen.getByTestId('table-drag-103')).toBeInTheDocument()
   })
 })
+
+/**
+ * 分页（需求 0082 C1/C2）：客户端分页，桌面表格与窄屏卡片共用同一页态；
+ * 空列表或不足一页时分页器不渲染。
+ */
+describe('TablesList 分页', () => {
+  beforeEach(() => {
+    // 前序用例可能把 responsiveState 留在移动端，本组默认桌面端
+    responsiveState = {
+      deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+      width: 1280, height: 800,
+    }
+  })
+
+  /** 生成 60 张表（默认每页 50，出两页） */
+  function manyTables(n: number): TableSummary[] {
+    return Array.from({ length: n }, (_, i) => ({
+      id: i + 1, name: `表${String(i + 1).padStart(3, '0')}`,
+      record_count: 0, field_count: 0, view_count: 0, my_access: 'read' as const,
+    }))
+  }
+
+  function setupMany(n = 60) {
+    setupWorkspace()
+    server.use(http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(manyTables(n))))
+  }
+
+  it('超过一页时渲染分页器：第一页仅 50 行，翻页后显示剩余 10 行', async () => {
+    setupMany()
+    renderPage()
+
+    await screen.findByText('表001')
+    const pager = screen.getByTestId('tables-list-pagination')
+    expect(pager).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-testid^="table-row-"]')).toHaveLength(50)
+    expect(screen.queryByText('表060')).toBeNull()
+
+    fireEvent.click(document.querySelector('.ant-pagination-item-2')!)
+    expect(await screen.findByText('表060')).toBeInTheDocument()
+    expect(document.querySelectorAll('[data-testid^="table-row-"]')).toHaveLength(10)
+  })
+
+  it('不足一页时不渲染分页器（0082 C1）', async () => {
+    setupMany(3)
+    renderPage()
+
+    await screen.findByText('表001')
+    expect(screen.queryByTestId('tables-list-pagination')).toBeNull()
+  })
+
+  it('修改每页条数后当前页行数随之变化（0082 C1）', async () => {
+    setupMany()
+    renderPage()
+
+    await screen.findByText('表001')
+    // 每页条数切到 10：antd 以「10 条/页」文本承载 Select
+    fireEvent.mouseDown(screen.getByText('50 条/页'))
+    const option = await screen.findByText('10 条/页')
+    fireEvent.click(option)
+    await waitFor(() => expect(document.querySelectorAll('[data-testid^="table-row-"]')).toHaveLength(10))
+    expect(screen.getByText('表010')).toBeInTheDocument()
+    expect(screen.queryByText('表011')).toBeNull()
+  })
+
+  it('切换筛选档位后回到第一页（0082 C1）', async () => {
+    setupMany()
+    renderPage()
+
+    await screen.findByText('表001')
+    fireEvent.click(document.querySelector('.ant-pagination-item-2')!)
+    expect(await screen.findByText('表060')).toBeInTheDocument()
+
+    // 切到「我拥有的」：60 张全是 read，筛选后为空，回到第一页并显示筛选空态
+    fireEvent.click(screen.getByRole('radio', { name: '我拥有的' }))
+    expect(await screen.findByText('当前筛选条件下没有表')).toBeInTheDocument()
+    expect(screen.queryByTestId('tables-list-pagination')).toBeNull()
+  })
+
+  it('窄屏卡片列表同样受分页控制（0082 C2）', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    setupMany()
+    renderPage()
+
+    await screen.findByTestId('tables-mobile-list')
+    // 等表数据返回后再断言分页与卡片数量
+    await screen.findByTestId('table-card-1')
+    expect(screen.getByTestId('tables-list-pagination')).toBeInTheDocument()
+    expect(screen.getAllByTestId(/^table-card-/)).toHaveLength(50)
+  })
+})

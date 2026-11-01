@@ -1,4 +1,4 @@
-# ADR 0035: 数据源同步吞吐优化（对标 stock-strategy 全市场日线同步）
+# ADR 0035: 数据同步吞吐优化（对标 stock-strategy 全市场日线同步）
 
 Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-25
@@ -59,7 +59,7 @@ Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/
 
 - `Importer.analyze(..., light=True)`：保留 `prefill_select_options_from_rows`、`RowValidator`、upsert 匹配、`_plan_unknown_columns` 与一次 `DiffReporter.build`（执行阶段要读 `skipped_columns`）；跳过 `profile_columns`、`recommend_match_keys`、`generate_cleaning_suggestions`、第二次报告组装。
 - `Importer.execute(..., sync_options=False)`：跳过末尾 `sync_select_options_from_table`（全表 distinct）。批内 prefill 已把本批新选项写入 config，覆盖「新标的代码入选」场景；存量行选项由人工导入链路的全表同步继续兜底。
-- `write.upsert_rows` 增加 `light: bool = False` 参数，数据源同步路径（`services/runner.py:_persist_rows`）传 `light=True`；导入 API / 前端导入保持默认 `False`（行为不变）。
+- `write.upsert_rows` 增加 `light: bool = False` 参数，数据同步路径（`services/runner.py:_persist_rows`）传 `light=True`；导入 API / 前端导入保持默认 `False`（行为不变）。
 - 保留 `partial=True`、`_drop_missing_required`、`bulk_create` / `bulk_update_rows` 调用顺序不变。
 
 **(c) 配置取值**（`examples/datasets/工作区-数据源示例/datasource.json`）
@@ -160,6 +160,6 @@ Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/
 - 当前阶段：P0-P2 已全部落地，门禁全绿（`make check`）
 - 已完成：选项值集合有界缓存；轻量落表模式（同步链路默认启用、人工导入不变）；示例任务并发/限速调整；基准复测（13.5 万行库、7,286 行单批：默认 1.33s 新增 / 2.26s 更新，同步链路 0.95s / 1.92s，基线 16.5s / 34.9s）
 - 下一步：真实回补任务计时复验（预期约 20 分钟量级）；存量实例按下方两条路径让配置生效
-- 存量实例生效路径：① 删除旧回补任务后重跑 `cndb seed`（种子按 `(工作区, 名称)` 幂等，同工作区同名任务会被覆盖）——注意 seed 不会删除旧表/旧任务，需人工清理；② 前端「数据源同步」编辑任务，把 `workers` 改为 10、限速改为 50 后保存
+- 存量实例生效路径：① 删除旧回补任务后重跑 `cndb seed`（种子按 `(工作区, 名称)` 幂等，同工作区同名任务会被覆盖）——注意 seed 不会删除旧表/旧任务，需人工清理；② 前端「数据同步」编辑任务，把 `workers` 改为 10、限速改为 50 后保存
 - 已知坑：① 选项缓存的键必须带 `len(options)`，否则 batch prefill 追加新标的代码后仍用旧集合；② `light` 模式仍要走 `_plan_unknown_columns`（执行阶段读 `skipped_columns`）；③ 单批基准须在与生产同规模的库上测，空库测不出选项校验成本；④ 回补任务 `running` 残留记录不要误判为死锁，先看进程是否被重启；⑤ 缓存是模块级全局的，同进程内导入与同步互相受益（基准须用独立进程分别测）
 - 最近一次全绿：`make check`（含 `make cov` 97.02%、前端 static）@ 待提交

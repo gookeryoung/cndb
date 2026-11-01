@@ -3,7 +3,7 @@
  *
  * 覆盖用户拍板的验收链路：
  * 1) 仅勾「文档 + 设计」的工作区：落地 /design，顶栏一级导航不含数据表，
- *    二级页签不含数据分析 / 数据源同步，质量检查页签恒显；
+ *    二级页签不含数据分析 / 数据同步，质量检查页签恒显；
  * 2) 质量检查页：仅勾「设计」的工作区检查动作目录为空时给出「暂无可用检查动作」提示
  *    （design 域动作后续提供；文档域已有检查动作，故需独立的设计域工作区）；
  * 3) 设置页取消「文档」仅留「设计」→ 保存后访问 /documents 自动重定向到 /design。
@@ -59,10 +59,10 @@ test.describe("工作区模块勾选与导航门控", () => {
     await expect(nav.getByTestId("ws-nav-design")).toBeVisible();
     await expect(nav.getByTestId("ws-nav-settings")).toBeVisible();
     await expect(nav.getByTestId("ws-nav-tables")).toHaveCount(0);
-    // 二级页签：质量检查恒显（ADR 0080 D4）；数据分析 / 数据源同步随表收敛不渲染
+    // 二级页签：质量检查恒显（ADR 0080 D4）；数据分析 / 数据同步随表收敛不渲染
     await expect(page.getByRole("tab", { name: /质量检查/ })).toBeVisible();
     await expect(page.getByRole("tab", { name: /数据分析/ })).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: /数据源同步/ })).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: /数据同步/ })).toHaveCount(0);
   });
 
   test("未开放段自动重定向到落地段", async ({ page }) => {

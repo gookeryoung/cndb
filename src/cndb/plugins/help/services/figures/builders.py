@@ -6,7 +6,7 @@
 |---|---|
 | 字段类型一览 | `tables.field_types.default_registry` |
 | 权限与角色 | `workspaces.models.WorkspaceRole` / `ViewVisibility` |
-| 数据源同步 | `datasource.models.ScheduleMode` / `RunStatus` |
+| 数据同步 | `datasource.models.ScheduleMode` / `RunStatus` |
 | 示例数据预览 | `examples/datasets` 下**真实 CSV** 的表头与前 4 行 |
 | 结构 / 流程类 | 本模块的编排代码（改了代码，指纹就变，图随之重建） |
 
@@ -222,7 +222,7 @@ def build_permission_model() -> str:
 
 
 def build_datasource_sync() -> str:
-    """数据源同步：四种调度模式 + 固定执行链路（读真实枚举）."""
+    """数据同步：四种调度模式 + 固定执行链路（读真实枚举）."""
     from cndb.plugins.datasource.models import ScheduleMode
 
     svg = Svg(168)
@@ -257,7 +257,7 @@ def build_datasource_sync() -> str:
         svg.text(left + node_w / 2, top + 46, note, size=10, fill=MUTED, anchor="middle")
         if index < len(nodes) - 1:
             svg.arrow(left + node_w + 1, top + 30, left + node_w + gap - 1, top + 30, color=BORDER)
-    return svg.render(title="数据源同步链路", desc="调度模式与从抓取到落表的执行链路")
+    return svg.render(title="数据同步链路", desc="调度模式与从抓取到落表的执行链路")
 
 
 # ── 示例数据预览（真实 CSV）────────────────────────────────

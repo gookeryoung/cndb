@@ -7,7 +7,7 @@
    关联（link）+ 引用（lookup）示例字段
 4. 硬编码业务表 — 部门表 + 员工表 + 报告模板，绑定到 datasets 创建的"某企业销售管理"工作区
 5. `examples/datasets/<工作区名>/documents/` — 典型文档种子目录树
-6. `examples/datasets/<工作区名>/datasource.json` — 数据源同步任务种子（Provider + 标的 + 幂等键 + 字段映射），只注入配置不触发抓取
+6. `examples/datasets/<工作区名>/datasource.json` — 数据同步任务种子（Provider + 标的 + 幂等键 + 字段映射），只注入配置不触发抓取
 7. `examples/datasets/<工作区名>/pipelines/*.yaml` — 质量检查流水线种子（ADR 0076），一份 YAML 一条定义，保存期全量编译校验
 8. `examples/datasets/<工作区名>/designs/*.cnmd` — 结构设计种子（ADR 0079），一份 .cnmd 一份设计（文件名即标题），保存期编译校验
 
@@ -21,7 +21,7 @@
 | `fields`   | 字段设置（fields.json）、字段引入规则与数据回填 |
 | `documents`| documents/ 目录树解析与入库 |
 | `views`    | views.json 视图种子 + demo 个人视图 |
-| `datasource` | datasource.json 数据源同步任务种子 |
+| `datasource` | datasource.json 数据同步任务种子 |
 | `pipelines` | pipelines/*.yaml 质量检查流水线种子（编译校验 + 表引用解析） |
 | `designs` | designs/*.cnmd 结构设计种子（编译校验，文件名即标题） |
 | `templates`| 部门/员工业务表与报告模板种子 |

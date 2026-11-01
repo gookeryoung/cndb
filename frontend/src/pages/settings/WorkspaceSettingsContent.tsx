@@ -402,7 +402,7 @@ export default function WorkspaceSettingsContent({
           </Form.Item>
           <Form.Item
             name="modules"
-            label={<>功能模块<HelpTip title="勾选工作区开放的功能：数据分析与数据源同步随数据表一并启用，质量检查恒可用。修改后顶部页签与导航随之调整" /></>}
+            label={<>功能模块<HelpTip title="勾选工作区开放的功能：数据分析与数据同步随数据表一并启用，质量检查恒可用。修改后顶部页签与导航随之调整" /></>}
           >
             <ModuleCheckCards disabled={!canEditBasic} />
           </Form.Item>

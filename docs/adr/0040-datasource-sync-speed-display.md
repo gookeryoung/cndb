@@ -1,4 +1,4 @@
-# ADR 0040: 数据源同步实时写入速度展示与端到端速度补齐
+# ADR 0040: 数据同步实时写入速度展示与端到端速度补齐
 
 Status: Implemented（2026-10-26 需求方评审通过，按「完全补齐差距」执行；2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-26
@@ -105,7 +105,7 @@ Related: `src/cndb/plugins/datasource/schemas.py`、`src/cndb/core/http.py`、`s
 - `Importer.analyze` 新增 `preview: bool = True`；为 `False` 时 `_build_upsert_result` 仍产出 `new_rows/update_rows/new_count/update_count/multi_key_conflicts`，跳过 `_fetch_old_rows_by_ids`、`_build_field_diffs` 与 `new_preview/update_preview`；
 - `preview=False` 时 `update_rows` 条目额外携带 `result.normalized`（db_column → 已校验值）；`records.bulk_update_rows` 新增 `reuse_normalized: bool = False`：启用时按「物理列 / link / auto_fill」预编译计划直接取用已校验值，只补 `on_update` 自动填充，不再调用 `validate_value` 二次逐格归一；缺省路径行为不变（I3/I4）；
 - `_normalize_values` 的逐行 `field_map` 构建与 auto_fill 配置解析改为批级预编译计划（同样只影响传入计划的调用方），降低创建路径与未复用路径的固定开销；
-- 仅 `services/write.py::upsert_rows` 在 `light=True`（数据源同步）时传 `preview=False` 与 `reuse_normalized=True`；导入接口 / 前端预览不传；
+- 仅 `services/write.py::upsert_rows` 在 `light=True`（数据同步）时传 `preview=False` 与 `reuse_normalized=True`；导入接口 / 前端预览不传；
 - 不引入唯一索引 / `ON CONFLICT`：SQL 层实测不是瓶颈（裸 `executemany` 50 万行/秒级），且会推翻 ADR 0006 的幂等口径。
 
 ### 9. 测试清单
@@ -151,7 +151,7 @@ Related: `src/cndb/plugins/datasource/schemas.py`、`src/cndb/core/http.py`、`s
 
 - **正向**：运行中可见写入速度与已用时；抓取约 2.4×（37 → 90 请求/秒）；落库预计 16.4-17.5k → 24-28k 行/秒；端到端从实测 370.4s 压到约 155-170s，补齐参考项目约 192s 的水平。
 - **负向**：共享 Client 把运行期连接集中在单点，需保证退出即关闭；归一复用要求「校验产出的 `normalized`」与写入语义严格对齐，等价性测试成本上升。
-- **风险与缓解**：限速降到 10ms 可能触发对端风控 —— 保留长退避与「疑似限流」提示，必要时任务限速调回；归一复用误伤导入预览 —— 只由数据源同步显式启用，默认路径不变并有用例锁定；基准受机器与网络波动影响 —— 只做同机前后对比，不作为 CI 门槛。
+- **风险与缓解**：限速降到 10ms 可能触发对端风控 —— 保留长退避与「疑似限流」提示，必要时任务限速调回；归一复用误伤导入预览 —— 只由数据同步显式启用，默认路径不变并有用例锁定；基准受机器与网络波动影响 —— 只做同机前后对比，不作为 CI 门槛。
 
 ## 行业对照
 
@@ -189,5 +189,5 @@ Related: `src/cndb/plugins/datasource/schemas.py`、`src/cndb/core/http.py`、`s
 - 当前阶段：P0-P2 已落地（2026-10-26），待人工做真源端到端复测
 - 已完成：P0 速度字段与前端展示、P1 共享客户端与示例任务限速 10ms、P2 预览关闭与归一复用；写路径实测 10,000 行更新批 16.4-17.5k → 24.8-26.8k 行/秒
 - 下一步（待人工）：① 在存量实例重跑腾讯日线回补，按 D8 口径记录端到端耗时并回填「行业对照」；② 观察限速 10ms 是否触发对端风控，必要时把任务 `rate_limit_ms` 调回
-- 已知坑：基准为同机单次测量，绝对吞吐受网络与机器负载影响，只做同机横向对比；`preview=False` / 归一复用只能由数据源同步链路传入，防止导入预览回归；共享 Client 必须在异常路径也关闭；`bulk_update_rows(reuse_normalized=True)` 对 `updates` 条目里没有 `normalized` 的字段仍走逐格校验，不改变数据质量
+- 已知坑：基准为同机单次测量，绝对吞吐受网络与机器负载影响，只做同机横向对比；`preview=False` / 归一复用只能由数据同步链路传入，防止导入预览回归；共享 Client 必须在异常路径也关闭；`bulk_update_rows(reuse_normalized=True)` 对 `updates` 条目里没有 `normalized` 的字段仍走逐格校验，不改变数据质量
 - 最近一次全绿：`make check` @ `5cc0a440`（2026-10-26，后端 5482 passed / 覆盖率 96.99%）

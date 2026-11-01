@@ -162,7 +162,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | D3 | 大数据量渲染 | 每批 48 张 +「加载更多」 | 非 grid 上限 2000，一并挂载会明显卡顿；分批实现简单、可测、无额外依赖 | 全量渲染（2000 卡片 DOM 过重）；行虚拟化（画廊为栅格，需自算列数，成本高于收益） | `views/GalleryView.tsx` |
 | D4 | 示例表默认视图 | 两表默认均为 gallery | 需求场景是「查看 / 分享资讯」；进入即阅读态，grid 一键可达 | 默认 grid（首屏仍是表格，新能力不可见） | `examples/datasets/工作区-数据源示例/views.json` |
 | D5 | 分享范围 | 工作区内共享：`ViewVisibility.TABLE` + 深链 + 收藏 | 复用 ADR 0003 三档可见性与 ADR 0021 收藏，零新增权限面 | 表 / 视图匿名公开链接（ADR 0003 D5 明确不复活，需新权限与脱敏设计） | `cli/seed/views.py`、`pages/workspace/MyViewsPanel.tsx` |
-| D6 | 示例数据来源 | 静态 CSV + 视图 + 两条 `llm_prompt` 同步任务（`schedule.mode=manual`，中文 `field_mapping` / `match_keys`） | 需求要求「典型示例数据带数据源同步配置」（ADR 0019 C9）；`manual` 不自动触发，种子仍不代持个人 Key 与地址（`request_spec` 只留提示词与模型参数） | 只种静态 CSV + 视图（同步配置缺失，用户无从参考）；种 `daily` / `cron` 任务（无 Key 时每天产生失败运行记录） | `examples/datasets/工作区-数据源示例/` |
+| D6 | 示例数据来源 | 静态 CSV + 视图 + 两条 `llm_prompt` 同步任务（`schedule.mode=manual`，中文 `field_mapping` / `match_keys`） | 需求要求「典型示例数据带数据同步配置」（ADR 0019 C9）；`manual` 不自动触发，种子仍不代持个人 Key 与地址（`request_spec` 只留提示词与模型参数） | 只种静态 CSV + 视图（同步配置缺失，用户无从参考）；种 `daily` / `cron` 任务（无 Key 时每天产生失败运行记录） | `examples/datasets/工作区-数据源示例/` |
 | D7 | CSV 首列 `id` | 种入前删除 | 会建出名为 `id` 的业务字段；`_row_to_dict` 用物理行 ID 覆盖同名字段，数据不可读 | 保留并改名 `source_id`（语义变成抓取侧 ID，与本需求无关） | `examples/datasets/工作区-数据源示例/*.csv` |
 | D8 | 列表型 option 校验 | `tag_fields` / `meta_fields` 逐项校验，非字符串 400 | 现有 `opt_val not in valid_fields` 对 list 抛 TypeError → 500；逐项校验报错可定位 | 不校验（脏引用到渲染期才静默丢字段）；只校验首项（漏检） | `routers/views.py`、`cli/seed/views.py` |
 

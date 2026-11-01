@@ -136,7 +136,7 @@ def _build_specs() -> list[FigureSpec]:
         ),
         FigureSpec(
             key="datasource-sync",
-            title="数据源同步链路",
+            title="数据同步链路",
             caption="四种调度模式与从抓取到落表的执行链路，取自数据源模块的实际枚举。",
             section="configuration",
             build=builders.build_datasource_sync,

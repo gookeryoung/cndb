@@ -75,9 +75,9 @@ test.describe("gallery 卡片画廊 — seed 注入视图渲染", () => {
     await openGalleryTable(page, request, "国际形势发展动态");
     await expect(page.getByTestId("gallery-card")).toHaveCount(12);
 
-    // 二级页签「数据源同步」→ 顶栏一级导航「数据表」→ 侧栏点回本表（真实用户路径；
+    // 二级页签「数据同步」→ 顶栏一级导航「数据表」→ 侧栏点回本表（真实用户路径；
     // 需求 0065 后数据源页无侧栏，表列表只在「数据表」段显示；0081 后数据表入口在顶栏）
-    await page.locator(".ant-tabs-tab", { hasText: "数据源同步" }).first().click();
+    await page.locator(".ant-tabs-tab", { hasText: "数据同步" }).first().click();
     await expect(page).toHaveURL(/\/datasource/);
     await page.getByTestId("ws-nav-tables").click();
     await page.getByRole("menuitem", { name: /国际形势发展动态/ }).first().click();

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════
-# cndb 数据源同步 —— 到期扫描（生产 cron 每分钟调用一次）
+# cndb 数据同步 —— 到期扫描（生产 cron 每分钟调用一次）
 #
 # 安装（宿主机 crontab -e）：
 #   * * * * * /opt/cndb/deploy/sync.sh >> /opt/cndb/data/sync.log 2>&1

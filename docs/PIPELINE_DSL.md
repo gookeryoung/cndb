@@ -89,7 +89,7 @@ jobs:                        # 非空映射；键为 job ID
 |---|---|---|
 | `record.updated` | 数据表记录批量建行 / 改行 / 删行提交后 | `on.table_id`、`on.table_name`、`on.action`、`on.row_ids`、`on.count` |
 | `document.saved` | 文档正文保存后 | `on.document_id`、`on.title` |
-| `sync.finished` | 数据源同步运行结束（成功或失败） | `on.job_id`、`on.run_id`、`on.status`、`on.table_id` |
+| `sync.finished` | 数据同步运行结束（成功或失败） | `on.job_id`、`on.run_id`、`on.status`、`on.table_id` |
 
 三种触发都会额外带上 `on.event`（`record.updated` / `document.saved` / `sync.finished`；定时为 `schedule`）。
 

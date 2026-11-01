@@ -28,7 +28,7 @@
 | 1 | 示例 CSV「美食推荐做法」 | `examples/datasets/工作区-数据源示例/美食推荐做法.csv` | 8 行菜谱数据，需整体替换 |
 | 2 | 示例字段必填设置 | `examples/datasets/工作区-数据源示例/fields.json:7-10` | 菜名 / 菜系必填 |
 | 3 | 示例视图配置 | `examples/datasets/工作区-数据源示例/views.json:133-204` | 5 个视图，字段全部为菜谱字段 |
-| 4 | 数据源同步种子 | `examples/datasets/工作区-数据源示例/datasource.json:5-60` | 美食 `llm_prompt` 任务与中文字段映射 |
+| 4 | 数据同步种子 | `examples/datasets/工作区-数据源示例/datasource.json:5-60` | 美食 `llm_prompt` 任务与中文字段映射 |
 | 5 | 帮助示例清单 | `src/cndb/plugins/help/services/examples.py:121-143` | 摘要 / 表条目 / 亮点含美食与菜谱 |
 | 6 | 帮助教程文案 | `frontend/src/pages/help/content/tutorials.tsx:32` | 需求原句出处 |
 | 7 | 画廊工具栏提示 | `frontend/src/pages/grid/GridPage.tsx:133` | 「适合资讯阅读与分享」 |

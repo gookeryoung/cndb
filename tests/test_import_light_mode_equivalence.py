@@ -1,4 +1,4 @@
-"""轻量落表模式等价性（ADR 0035 D2）：默认链路 vs 数据源同步链路.
+"""轻量落表模式等价性（ADR 0035 D2）：默认链路 vs 数据同步链路.
 
 核心不变量 I2：同一输入批次，``light=True`` 与默认模式的写入行集合、
 ``actually_created`` / ``actually_updated`` / ``error_count`` 完全一致；

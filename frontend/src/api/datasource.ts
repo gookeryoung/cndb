@@ -1,4 +1,4 @@
-/** 数据源同步 API — /api/v1/workspaces/{wid}/datasource/*
+/** 数据同步 API — /api/v1/workspaces/{wid}/datasource/*
  *
  * - providers：可用适配器 + 参数表单描述（Provider 驱动的新建向导）
  * - sync-jobs：任务 CRUD / 立即运行 / 抓取预览 / 运行历史

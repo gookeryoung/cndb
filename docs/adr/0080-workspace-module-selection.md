@@ -14,10 +14,10 @@ Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
 | C1 | 类型选择改为可勾选的模块（数据表/文档/设计，任意项或多项） | 落库字段由 `workspace_type` 枚举改为 `modules` JSON 集合（非空、白名单 {tables, documents, design}）；创建弹窗与工作区设置页改卡片式模块勾选（图标 + 名称 + 说明，默认全选）；API 以 `modules` 替换 `workspace_type`（D2/D8） |
-| C2 | 数据分析、数据源同步与数据表强绑定 | 二者为「数据表」的派生功能，不进勾选 UI 与 API 字段；由模块→功能绑定表唯一推导（D3） |
+| C2 | 数据分析、数据同步与数据表强绑定 | 二者为「数据表」的派生功能，不进勾选 UI 与 API 字段；由模块→功能绑定表唯一推导（D3） |
 | C3 | 文档和设计模块暂未确定，后续开发 | 本期二者为独立单模块；模块清单与绑定关系收敛为后端 `workspaces/modules.py` 与前端 `workspaceModules.ts` 两处常量表，后续扩展只改表不改模型（D1） |
 | C4 | 质量检查是否分散，适应性设计 | 质量检查保留工作区级集中页签且**所有工作区恒显**（含仅设计，为后续 design 域检查动作预留入口）；页面改 GitHub 风格双栏：左侧流水线规则清单、右侧检查结果历史（D4）；检查动作目录按已启用模块过滤，DSL 保存 / 校验期拒绝已禁用域动作 |
-| C5 | 顶部导航布局调整 | 页签按勾选模块渲染，顺序固定：数据表 → 文档 → 设计 → 数据分析 → 数据源同步 → 质量检查 → 工作区设置；落地段取第一个可用模块（tables → documents → design）；未开放段重定向（D9） |
+| C5 | 顶部导航布局调整 | 页签按勾选模块渲染，顺序固定：数据表 → 文档 → 设计 → 数据分析 → 数据同步 → 质量检查 → 工作区设置；落地段取第一个可用模块（tables → documents → design）；未开放段重定向（D9） |
 | C6 | 存量重构兼容 | 单条迁移映射旧枚举（D5）；备份协议 v11 → v12 写 `modules`、旧版按同一映射读（D7）；API 破坏性替换、前后端同仓同发（D2） |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
@@ -139,7 +139,7 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 
 **前端单测**：`workspaceModules.test.ts`（与后端矩阵逐项对齐，I3）、`WorkspaceList.test.tsx`（卡片式勾选交互、至少一项阻断、模块标签）、`WorkspaceSettingsContent.test.tsx`、`PipelinesPage.test.tsx`（双栏布局：左规则清单、右运行历史；目录为空提示）、`MainLayout.test.tsx`（各组合页签集合、未开放段重定向、仅设计工作区落地 `/design` 且质量页签仍在）。
 
-**e2e（前端）**：`frontend/tests/e2e/critical/workspace-modules.spec.ts` —— 新建工作区仅勾「文档 + 设计」→ 顶部页签断言（无数据表 / 数据分析 / 数据源同步）→ 质量检查页签仍显示且目录为空有提示 → 设置页取消「文档」→ 自动重定向到 `/design`。
+**e2e（前端）**：`frontend/tests/e2e/critical/workspace-modules.spec.ts` —— 新建工作区仅勾「文档 + 设计」→ 顶部页签断言（无数据表 / 数据分析 / 数据同步）→ 质量检查页签仍显示且目录为空有提示 → 设置页取消「文档」→ 自动重定向到 `/design`。
 
 ### 8. 分期
 
@@ -161,7 +161,7 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 | D6 | 迁移与 downgrade | 单条迁移：加列 → CASE 回填 → 置非空 → drop 旧列；downgrade 有损映射（tables+documents→DATA_DOC、tables→DATA、其余→DOC）仅在回滚路径接受（C6） | 纯列变更存量零丢失语义；有损 downgrade 换取模型单真相（D2） | 无损 downgrade（需长期保留旧列，与 D2 单真相源冲突） | `alembic/versions/b6c7d8e9f0a1_workspace_modules.py` |
 | D7 | 备份协议 | v12：workspace 元数据写 `modules`；≤v11 导入读旧 `workspace_type` 按 D5 映射；未知旧值回退全三并记 `errors`（C6/I4） | 协议逐版本演进有 v9→v10→v11 先例（ADR 0079 D9）；映射函数与迁移共用一份 | v11 内混装新字段（协议版本语义混乱）；备份不存 modules（跨环境导入丢模块口径，回退默认全开违背 I3） | `workspace_backup.py`、`workspace_restore.py`、`routers/workspaces.py` |
 | D8 | 默认值、空集与选型 UI | 新建默认三模块全选（等价旧默认 data_doc，评审拍板）；`modules` 至少一项，空集 422；选型 UI 采用卡片式勾选（模块图标 + 名称 + 一句话说明，点击整卡切换选中态），创建弹窗与工作区设置同款（C1） | 与现行默认行为对齐；卡片式比裸 Checkbox 传达「勾了会开放什么」，降低误配 | 允许空集（无落地页可去，重定向死循环）；默认仅数据表（与现默认 data_doc 不符，升级后新建行为突变）；裸 Checkbox.Group（无说明文字，强绑定的分析 / 同步不直观） | `schemas/models.py` 校验器、`WorkspaceList.tsx` 初始值、`WorkspaceSettingsContent.tsx` |
-| D9 | 前端门控入口与落地段 | `workspaceType.ts` 整体替换为 `workspaceModules.ts`；落地段顺序 tables → documents → design；页签顺序 数据表 → 文档 → 设计 → 数据分析 → 数据源同步 → 质量检查 → 工作区设置（C5） | 旧输入类型（WorkspaceType）已不存在，兼容层无消费方；设计页签排位沿用 ADR 0079 D8（文档之后） | 保留旧函数签名包一层（死代码）；落地段固定 tables（纯文档 / 纯设计工作区首屏必被重定向） | `frontend/src/utils/workspaceModules.ts`、`MainLayout.tsx` |
+| D9 | 前端门控入口与落地段 | `workspaceType.ts` 整体替换为 `workspaceModules.ts`；落地段顺序 tables → documents → design；页签顺序 数据表 → 文档 → 设计 → 数据分析 → 数据同步 → 质量检查 → 工作区设置（C5） | 旧输入类型（WorkspaceType）已不存在，兼容层无消费方；设计页签排位沿用 ADR 0079 D8（文档之后） | 保留旧函数签名包一层（死代码）；落地段固定 tables（纯文档 / 纯设计工作区首屏必被重定向） | `frontend/src/utils/workspaceModules.ts`、`MainLayout.tsx` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
