@@ -223,8 +223,9 @@ export interface ChartTypeDef {
 | 端点 | 变更 |
 |---|---|
 | `POST /api/v1/workspaces/{wid}/tables/{tid}/views`、`PUT .../views/{view_id}` | 修改：`view_type=dashboard` 时走 dashboard 校验（§7）；`view_type` 增加白名单（`KNOWN_VIEW_TYPES`），未知值 400（历史 `form` 行只读兼容，见 D1） |
-| `POST .../views/{view_id}/dashboard/data` | 新增：批量取 widget 数据。请求 `{ "widget_ids": ["w1"], "globals": {"date_from": "2026-01-01"}, "force": false }`；响应 `{ "items": [{ "widget_id", "dataset", "meta": { "scanned", "total", "truncated", "cached" } }], "errors": [{ "widget_id", "detail" }] }`；权限：视图可读 + 表 READ，逐 widget 复用 `list_rows` 的行级权限 |
+| `POST .../views/{view_id}/dashboard/data` | 新增：批量取 widget 数据。请求 `{ "widget_ids": ["w1"], "globals": {"date_from": "2026-01-01"}, "force": false }`；响应 `{ "items": [{ "widget_id", "dataset", "meta": { "scanned", "total", "truncated", "cached", "unapplied_globals" } }], "errors": [{ "widget_id", "detail" }] }`；权限：视图可读 + 每张参与表各自 READ（跨表目标表越权 / 软删整组降级为 `errors[]`） |
 | `GET .../views/{view_id}/dashboard/data` | 不提供：避免 URL 长度与缓存口径分裂（配置在 body 里更可控） |
+| `GET / POST / DELETE /api/v1/accounts/preferences/dashboard-templates[/{id}]` | 新增（P3 模板，账户偏好域）：列表 / 另存（同名覆盖，保留模板 id）/ 删除。模板只存「结构 + 字段名/类型快照」，后端统一剥离 `query.table_id`，落地时前端按目标表重新认领字段（D13） |
 | 备份 / seed / 视图导入导出 | 无结构变更：`view_options` 整体透传；seed 侧补 dashboard 的字段引用校验（`src/cndb/cli/seed/views.py:57` 同款逻辑） |
 
 缓存：键 = `hash(table_id + 归一后 filters/sortings + 字段集合 + limit + 行级权限摘要 + widget spec)`，TTL 60s，LRU 128；表写操作按 `table_id` 失效（复用 `cndb/core/cache.py` 的失效钩子）。
@@ -265,9 +266,12 @@ export interface ChartTypeDef {
 1. `schema_version == 1`（未来新版本按迁移函数升级后再校验）；`widgets` 为数组且 ≤32。
 2. `id` 合法且唯一；`type` 在白名单；`layout` 全整数且满足 §1 边界。
 3. `query.filters[].field_name` / `sortings[].field_name` 存在于表；`op` 在既有白名单内；`limit ≤ 5000`。
-4. `chart.type` 在注册表白名单；`roles` 必填项非空且字段类型匹配（数值角色不接受文本列）；`agg / sort / stack / dual_axis` 取值合法；`top_n ≤ 100`。
-5. `global_filters[].id` 唯一、`kind ∈ {date_range, select, search}`、`field` 存在且类型匹配。
-6. 序列化出口按白名单裁剪未知键（写入前裁剪，不报错 —— 保证跨版本配置可读）。
+4. `query.table_id`（P3）：正整数且逐表 `get_table_or_404(READ)`；**保存期严格**——目标表不存在 / 越权 / 软删即 400（`widgets[i].query.table_id`）；字段引用按**目标表** schema 校验，而不是视图所属基表。
+5. `chart.type` 在注册表白名单；`roles` 必填项非空且字段类型匹配（数值角色不接受文本列）；`agg / sort / stack / dual_axis` 取值合法；`top_n ≤ 100`。
+6. `global_filters[].id` 唯一、`kind ∈ {date_range, select, search}`、`field` 存在且类型匹配。
+7. 序列化出口按白名单裁剪未知键（写入前裁剪，不报错 —— 保证跨版本配置可读）。
+
+**读路径宽容（不变量补充 I4）**：取数时同一个归一函数带 `allow_unavailable_targets=True`，目标表不可用（越权 / 软删 / 删除）时跳过该 widget 的字段级校验、原样透传配置，由取数层把整组降级为「无权限访问目标表」错误卡，不整页 400；保存期保持严格，不放宽落库入口。
 
 前端同一套规则在 `dashboardModel.normalize` 里实现（读时补默认值、写时裁剪），两侧由 `tests/fixtures/dashboard/schema_cases.json` 的同一组用例驱动（合法 / 非法各 ≥10 例），防止 TS 与 Python 口径漂移（I1）。
 
@@ -287,6 +291,8 @@ export interface ChartTypeDef {
 **接口**
 - 校验分支：越界坐标 / 重复 id / 超 32 个 / 未知 `chart.type` / 字段不存在 / 非数值字段填进数值角色 / `top_n` 越界。
 - 取数：批量返回多 widget、单 widget 失败进 `errors[]` 不影响其它、行级权限与字段隐藏生效、缓存命中与写后失效、`truncated` 标记正确。
+- 跨表（P3）：保存期保留 `table_id`、目标表字段缺失 400（定位 `widgets[i].kpi`）、非正整数 / 不存在 / 跨工作区 / 软删目标表 400；取数期按表分组扫描（基表组套视图 filters + 全局筛选，跨表组不套）、目标表字段隐藏生效、目标表软删或 viewer 无 READ 降级为错误卡、`widget_ids` 子集只扫对应表。
+- 模板（P3）：另存剥离 `query.table_id`、同名覆盖保留 id、数量 / 体积上限 400、字段快照只留 `{name: type}`、删除未知 id 404、非法配置 400。
 - 视图白名单：未知 `view_type` 400；历史 `form` 行读取 200。
 
 **备份 / seed**
@@ -321,6 +327,8 @@ export interface ChartTypeDef {
 | D10 | 编辑交互 | 拖拽 + 数字输入 + 预设三通道 | 精确对齐与键盘用户不能只有拖拽；预设降低从零排版的成本 | 仅拖拽：像素级对齐不可达，表单用户无入口 | `DashboardGrid`、`DashboardConfigDrawer` |
 | D11 | 类型白名单 | `create/update` 校验 `KNOWN_VIEW_TYPES`，历史 `form` 只读兼容 | 消除「写错类型到渲染才报错」；存量行不受影响 | 继续放任自由字符串：前端新增模式与后端能力长期可能不一致 | `routers/views.py` |
 | D12 | 内容组件边界 | 卡壳管四态、内容只管 `Dataset → 图形` | 四态统一后不重复写骨架/重试；内容组件可被分析页复用 | 内容组件自管请求与状态：缓存与加载态无法跨卡片统一 | `WidgetShell.tsx` |
+| D13 | 模板存哪 | 存账户偏好（`user.preferences.dashboard_templates`），不做团队级模板表 | 模板是「个人复用习惯」，复用偏好域零迁移、零新权限；存量 preferences 读写链路现成 | 新建团队模板表：要补权限、备份、管理入口，而本期无共享模板诉求 | `plugins/accounts/services/preferences.py`、`routers/preferences.py` |
+| D14 | 跨表取数与降级 | 保存期逐表 READ 严格校验；取数期按 `(table_id)` 分组扫描，基表组套视图 filters + 全局筛选、跨表组不套；目标表不可用时整组降级为错误卡 | 跨表字段与基表 schema 无关，继承基表筛选会误伤；读路径宽容可避免一张表失效炸整页，且配置保存时已校验过 | 取数期也严格拒绝：目标表被删后整个画布 400；跨表组继承基表 filters：字段名不着边、筛选静默失效 | `dashboard_config.py`、`dashboard_data.py`、`routers/views.py` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」。
 
@@ -346,12 +354,12 @@ export interface ChartTypeDef {
 | P0 | 已落地 | `frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/views/dashboard/WidgetShell.tsx`、`src/cndb/plugins/tables/services/core/dashboard_config.py`、`src/cndb/plugins/tables/routers/views.py`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx`、`src/cndb/cli/seed/views.py` | `tests/test_dashboard_config.py`、`tests/fixtures/dashboard/schema_cases.json`、`frontend/src/pages/grid/views/dashboard/*.test.ts`、`frontend/src/pages/grid/views/dashboard/*.test.tsx` | fccfa05c |
 | P1 | 已落地 | `frontend/src/pages/grid/views/dashboard/DashboardGrid.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardConfigDrawer.tsx`、`frontend/src/pages/grid/views/dashboard/dashboardLayout.ts`、`frontend/src/pages/grid/views/dashboard/dashboardDraft.ts`、`frontend/src/pages/grid/views/dashboard/useDashboardDraft.ts`、`frontend/src/pages/grid/views/dashboard/WidgetShell.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/GridPage.tsx` | `frontend/src/pages/grid/views/dashboard/dashboardLayout.test.ts`、`frontend/src/pages/grid/views/dashboard/dashboardDraft.test.ts`、`frontend/src/pages/grid/views/dashboard/DashboardConfigDrawer.test.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.test.tsx`、`frontend/tests/e2e/critical/dashboard-edit.spec.ts` | 56292c12 |
 | P2 | 已落地 | `frontend/src/pages/grid/views/dashboard/chart/chartRegistry.ts`、`frontend/src/pages/grid/views/dashboard/chart/option.ts`、`frontend/src/pages/grid/views/dashboard/chart/dataset.ts`、`frontend/src/pages/grid/views/dashboard/chart/types.ts`、`frontend/src/pages/grid/views/dashboard/chart/register.ts`、`frontend/src/pages/grid/views/dashboard/chart/ChartCanvas.tsx`、`frontend/src/pages/grid/views/dashboard/useDashboardData.ts`、`frontend/src/pages/grid/views/dashboard/widgets/TableWidget.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`src/cndb/plugins/tables/services/core/dashboard_data.py`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/core/cache.py`、`src/cndb/core/events.py`、`frontend/scripts/bundle-budget.json` | `tests/test_dashboard_data.py`、`frontend/src/pages/grid/views/dashboard/chart/dataset.test.ts`、`frontend/src/pages/grid/views/dashboard/chart/option.test.ts`、`frontend/src/pages/grid/views/dashboard/chart/__snapshots__/option.test.ts.snap`、`frontend/src/pages/grid/views/dashboard/chart/register.test.ts`、`frontend/src/pages/grid/views/dashboard/chart/ChartCanvas.test.tsx`、`frontend/src/pages/grid/views/dashboard/useDashboardData.test.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.test.tsx` | 437480c6 |
-| P3 | 未开始 | — | — | — |
+| P3 | 已落地 | `frontend/src/pages/grid/views/dashboard/DashboardTemplateDialog.tsx`、`frontend/src/pages/grid/views/dashboard/dashboardTemplate.ts`、`frontend/src/pages/grid/views/dashboard/dashboardGlobals.ts`、`frontend/src/pages/grid/views/dashboard/GlobalFilterBar.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardConfigDrawer.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/views/dashboard/dashboardModel.ts`、`frontend/src/pages/grid/views/dashboard/useDashboardData.ts`、`frontend/src/api/preferences.ts`、`src/cndb/plugins/accounts/services/preferences.py`、`src/cndb/plugins/accounts/routers/preferences.py`、`src/cndb/plugins/tables/services/core/dashboard_config.py`、`src/cndb/plugins/tables/services/core/dashboard_data.py`、`src/cndb/plugins/tables/routers/views.py` | `tests/test_dashboard_templates.py`、`tests/test_dashboard_cross_table.py`、`tests/test_dashboard_config.py`、`tests/fixtures/dashboard/schema_cases.json`、`frontend/src/pages/grid/views/dashboard/dashboardTemplate.test.ts`、`frontend/src/pages/grid/views/dashboard/dashboardGlobals.test.ts`、`frontend/src/pages/grid/views/dashboard/GlobalFilterBar.test.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardTemplateDialog.test.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardConfigDrawer.test.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.test.tsx` | 8ae5c758 |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P2 已落地，下一步 P3（模板化、跨表与全局筛选联动）
-- 已完成：P0 契约与只读画布；P1 布局编辑器——`DashboardGrid` 拖拽 / 缩放 / 方向键微调（拖拽期仅 `transform` 预览，松手提交一次），`DashboardConfigDrawer`（布局 / 数据 / 外观，lazy 加载）数字输入与组件增删，5 种版式预设，快照式撤销栈（≤50 步）+ 脏检查，显式保存 / `Ctrl+S` 与 `Esc` 确认回滚，窄屏塌陷 + 编辑入口禁用；`GridPage` 保存链路先写 draft 再立即持久化，避开 500ms 防抖窗口；P2 图表注册表与 14 类图（新增 area/stack/combo/radar/funnel/gauge/heatmap/treemap），多度量 / 双轴 / TopN / 排序 / 数值格式 / 阈值配色 / 色板，`TableWidget` 列白名单 + 本地排序 + 点行开详情，大表（>2000 行）走 `POST .../views/{id}/dashboard/data` 服务端批量聚合（同表只扫一次、TTL 60s / LRU 128 缓存 + 事件失效），小表客户端同构 Dataset，PATCH 视图接入 `updated_at` 乐观并发（409）
-- 下一步：P3 模板另存与跨表落地、`{{global.x}}` 全局筛选联动、`refresh_interval` 定时刷新、整屏导出 / 只读分享
-- 已知坑：① dnd-kit 的 `listeners` 是 `{ onPointerDown }` 映射，必须逐事件展开到 DOM，若整体作为 `listeners={...}` 透传则拖拽永不激活；② dnd-kit 在拖拽激活后于 document 捕获阶段拦截 click，松手 50ms 后才移除，e2e 拖拽后需等待再点工具栏；③ 图标类子元素会抢 pointer 事件，拖拽手柄内的 icon 需 `pointerEvents: none`；④ `ChartCard` 的 ECharts 实例必须常驻容器（dispose 会清空 DOM，React 再卸载子节点会抛 `removeChild`）；⑤ 排序 / TopN 必须先保留原始 categories 索引再重排，若拿排序后索引去访问原始顺序的 `series.data` 会标签数值错位；⑥ SQLite `func.now()` 只有秒级精度，`update_view` 的乐观并发令牌需显式写微秒级 UTC；⑦ dashboard 14 类图使 `DashboardView` chunk 增长（echarts 模块按需注册但随 dashboard chunk 加载），`bundle-budget` 基线已带 reason 更新
-- 最近一次全绿：`make check`（后端 6222 passed / 覆盖率 95.41%，前端 2663 passed / 覆盖率双门槛达标）、`make e2e`（93 passed / 21 skipped）
+- 当前阶段：P3 已落地，P0-P3 全部交付（整屏导出 / 只读分享按 §9 P3 说明另立 ADR，不在本期）
+- 已完成：P0 契约与只读画布；P1 布局编辑器——`DashboardGrid` 拖拽 / 缩放 / 方向键微调（拖拽期仅 `transform` 预览，松手提交一次），`DashboardConfigDrawer`（布局 / 数据 / 外观，lazy 加载）数字输入与组件增删，5 种版式预设，快照式撤销栈（≤50 步）+ 脏检查，显式保存 / `Ctrl+S` 与 `Esc` 确认回滚，窄屏塌陷 + 编辑入口禁用；`GridPage` 保存链路先写 draft 再立即持久化，避开 500ms 防抖窗口；P2 图表注册表与 14 类图（新增 area/stack/combo/radar/funnel/gauge/heatmap/treemap），多度量 / 双轴 / TopN / 排序 / 数值格式 / 阈值配色 / 色板，`TableWidget` 列白名单 + 本地排序 + 点行开详情，大表（>2000 行）走 `POST .../views/{id}/dashboard/data` 服务端批量聚合（同表只扫一次、TTL 60s / LRU 128 缓存 + 事件失效），小表客户端同构 Dataset，PATCH 视图接入 `updated_at` 乐观并发（409）；P3 模板另存 / 从模板创建（模板存账户偏好、字段快照 + 同名 / 同类型自动认领 + 缺字段标「待配置」一键改）、跨表 widget（`query.table_id` 逐表 READ，字段按目标表 schema 校验，取数按表分组扫描，目标表越权 / 软删降级「无权限访问目标表」错误卡）、`{{global.x}}` 全局筛选联动（缺值条件忽略并标「未应用全局筛选」）、`refresh_interval` 定时刷新（后台标签页跳过）与手动刷新
+- 下一步：整屏导出 / 只读分享（ADR 0023 §9 P3 已注明「另议 ADR」）
+- 已知坑：① dnd-kit 的 `listeners` 是 `{ onPointerDown }` 映射，必须逐事件展开到 DOM，若整体作为 `listeners={...}` 透传则拖拽永不激活；② dnd-kit 在拖拽激活后于 document 捕获阶段拦截 click，松手 50ms 后才移除，e2e 拖拽后需等待再点工具栏；③ 图标类子元素会抢 pointer 事件，拖拽手柄内的 icon 需 `pointerEvents: none`；④ `ChartCard` 的 ECharts 实例必须常驻容器（dispose 会清空 DOM，React 再卸载子节点会抛 `removeChild`）；⑤ 排序 / TopN 必须先保留原始 categories 索引再重排，若拿排序后索引去访问原始顺序的 `series.data` 会标签数值错位；⑥ SQLite `func.now()` 只有秒级精度，`update_view` 的乐观并发令牌需显式写微秒级 UTC；⑦ dashboard 14 类图使 `DashboardView` chunk 增长（echarts 模块按需注册但随 dashboard chunk 加载），`bundle-budget` 基线已带 reason 更新；⑧ 跨表目标表可用性判定必须 catch `(HTTPException, CndbError)`——`get_table_or_404` 的越权拒绝抛 `PermissionDeniedError`（`CndbError` 子类，非 `HTTPException`），只 catch 后者会让降级错误卡变成整页 500/403；⑨ 读路径重归一化必须带 `allow_unavailable_targets=True`（哨兵 `UNAVAILABLE_TARGET` 原样透传 widget），否则目标表被软删后整页 400；保存路径保持严格；⑩ 跨表 widget 强制走服务端取数（客户端只预取基表行集），`hasCrossTable` 决定 `useServer`，否则跨表卡会静默拿到基表行；⑪ 模板对话框必须 lazy 且仅在打开时挂载（`templateMode !== null`），常挂载会把对话框源码拉进 `DashboardView` chunk 致 bundle 预算超限；antd 6 的 `Drawer` 宽度参数是 `size`（`width` 已弃用会告警）
+- 最近一次全绿：`make check`（后端 6256 passed / 覆盖率 95.50%，前端 222 文件 / 2709 passed / 覆盖率双门槛达标）、`make e2e`（93 passed / 21 skipped）、`pnpm build`（chrome81 静态门禁 0 warning）与 `pnpm bundle:budget`（DashboardView 57.00 KiB ≤ 57.76 KiB）
