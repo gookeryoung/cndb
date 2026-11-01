@@ -196,15 +196,15 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`（v12）、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/workspaces/services/backup_io.py`（版本白名单 +12）、`src/cndb/alembic/versions/b6c7d8e9f0a1_workspace_modules.py`、`src/cndb/plugins/pipeline/services/checks/registry.py`（domain_of 与保存期断言）、`src/cndb/plugins/pipeline/routers/workflows.py`（目录过滤 + 保存 / 校验 / 更新期拒绝） | `tests/test_workspace_modules.py`、`tests/test_workspace_modules_api.py`、`tests/test_workspace_modules_migration.py`、`tests/test_workspace_backup_v12.py` | ae5f70cf |
 | P1 | 已落地 | `frontend/src/utils/workspaceModules.ts`（新增，整体替换旧判定入口）、`frontend/src/api/types/common.ts`、`frontend/src/api/types/workspaces.ts`、`frontend/src/components/ModuleCheckCards.tsx`（新增，卡片式选型 D8）、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx`、`frontend/src/pages/pipelines/PipelinesPage.tsx`（双栏 D4） | `frontend/src/utils/workspaceModules.test.ts`、`frontend/src/layouts/MainLayout.test.tsx`、`frontend/src/pages/workspace/WorkspaceList.test.tsx`、`frontend/src/pages/pipelines/PipelinesPage.test.tsx` | af2b7941 |
-| P2 | 进行中 | `frontend/src/pages/help/content/configuration.tsx`、`frontend/src/pages/help/content/quickStart.tsx`（「三选一」文案改按需勾选模块）、`frontend/src/layouts/MainLayout.tsx`（注释口径）、`frontend/tests/e2e/critical/workspace-modules.spec.ts`（4 例：仅文档+设计页签集合 / 未开放段重定向 / 空目录提示 / 设置页收窄模块后重定向）；全仓 `workspace_type` 残留核查完成（余下引用均为迁移 / legacy 备份映射等预期语义） | `frontend/tests/e2e/critical/workspace-modules.spec.ts` | — |
+| P2 | 已落地 | `frontend/src/pages/help/content/configuration.tsx`、`frontend/src/pages/help/content/quickStart.tsx`（「三选一」文案改按需勾选模块）、`frontend/src/layouts/MainLayout.tsx`（注释口径）、`frontend/tests/e2e/critical/workspace-modules.spec.ts`（4 例：仅文档+设计页签集合 / 未开放段重定向 / 空目录提示 / 设置页收窄模块后重定向）；全仓旧类型字段残留核查完成（余下引用均为迁移 / legacy 备份映射等预期语义） | `frontend/tests/e2e/critical/workspace-modules.spec.ts` | ddbf235f |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 已落地，P2 进行中（帮助文案 + e2e 已完成，提交列待回填）
-- 已完成：需求卡片 `docs/requirements/0080-workspace-module-selection.md`（C1-C6，未决问题全部有结论）、本 ADR（D1-D9，无待定项）、`docs/adr/README.md` 索引、`CONTEXT.md` 术语「工作区模块」、P0 全部后端改动与测试、P1 全部前端改动与单测、P2 帮助文案与 e2e、CHANGELOG `[未发布]` 条目
+- 当前阶段：P0 / P1 / P2 全部落地（`Status: Accepted` 是否改 `Implemented` 待人工确认）
+- 已完成：需求卡片 `docs/requirements/0080-workspace-module-selection.md`（C1-C6，未决问题全部有结论）、本 ADR（D1-D9，无待定项）、`docs/adr/README.md` 索引、`CONTEXT.md` 术语「工作区模块」、P0 全部后端改动与测试、P1 全部前端改动与单测、P2 帮助文案 / e2e / 残留核查、CHANGELOG `[未发布]` 条目、落地表提交列回填（ae5f70cf / af2b7941 / ddbf235f）
 - 评审拍板结论：① 质量检查集中 + 页签恒显 + GitHub 风格双栏（左规则清单 / 右结果历史）；② 仅设计工作区也显示质量页签（后续加 design 域动作）；③ 存量映射认可（D5）；④ API 不保留 `workspace_type` 兼容字段（D2）；⑤ 新建默认三模块全选 + 卡片式选型 UI 优化（D8）
-- 下一步：P2 提交后回填落地表提交列；后续扩展 design 域检查动作只改检查注册表，不动门控
+- 下一步：无（全期落地）；后续扩展 design 域检查动作只改检查注册表，不动门控
 - 已知坑：SQLite 列变更须走 `batch_alter_table`；JSON 列 ORM 侧需 `server_default` 字面量（schema 自愈层无法调用工厂合成默认值）；`MainLayout` 重定向 effect 依赖 `currentWs`，设置页改勾选后自动触发重定向（测试须覆盖，e2e 中保存后需手动 goto 目标段验证重定向）；本机跑测试须先清空 `LD_LIBRARY_PATH`（trae 服务器旧 libsqlite3 遮蔽系统库）；备份导入版本白名单在 `backup_io.py`，升版本须同步加白名单；旧链头常量在 `tests/test_migration_missing_model_columns.py::HEAD_REVISION`；MainLayout / WorkspaceList 单测中 react-query 异步返回前按默认全模块渲染，同步断言会踩竞态，须 waitFor 收敛
 - 最近一次全绿：`make flow` @ P2 代码（2026-11-01）
