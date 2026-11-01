@@ -315,6 +315,24 @@ def _build_run_router() -> APIRouter:
     """运行详情 / 发现物路由（独立前缀 ``/{workspace_id}/pipeline-runs``）."""
     run_router = APIRouter(prefix="/{workspace_id}/pipeline-runs", tags=["pipeline"])
 
+    @run_router.get("", response_model=RunListResponse)
+    def list_workspace_runs(
+        workspace_id: int,
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[Session, Depends(get_db)],
+        workflow_id: Annotated[int | None, Query()] = None,
+        limit: Annotated[int, Query(ge=1, le=200)] = 20,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> RunListResponse:
+        """工作区运行历史（默认全部规则；``workflow_id`` 给定则只看该规则，按创建时间倒序分页）."""
+        _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+        query = db.query(PipelineRun).filter(PipelineRun.workspace_id == workspace_id)
+        if workflow_id is not None:
+            query = query.filter(PipelineRun.workflow_id == workflow_id)
+        total = query.count()
+        rows = query.order_by(PipelineRun.created_at.desc(), PipelineRun.id.desc()).offset(offset).limit(limit).all()
+        return RunListResponse(total=total, items=[_run_response(db, run) for run in rows])
+
     @run_router.get("/{run_id}", response_model=RunResponse)
     def get_run(
         workspace_id: int,

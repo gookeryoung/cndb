@@ -1,7 +1,8 @@
 /** 质量检查（流水线）页 —— GitHub 双栏（ADR 0080 D4），视觉口径对齐数据分析页.
  *
- * 左栏：流水线规则清单（启用开关 / 运行 / 编辑 / 删除，点击选中）；
- * 右栏：选中规则的运行结果历史（run 列表 → 点击进运行详情），未选中时给引导提示。
+ * 左栏：流水线规则清单（启用开关 / 运行 / 编辑 / 删除，点击选中 / 再点取消）；
+ * 右栏：运行历史——默认展示工作区全部规则的运行（行内带规则名），
+ * 选中某条规则后只展示其对应的运行，再点一次或点「查看全部」回到全部（run → 点击进运行详情）。
  * 两栏均为「带边框列表」：SectionBox 承担外框，flush 内容区里的行自带分隔线与
  * hover / 选中态，与数据分析页的分区方盒同一套语言。
  * 检查动作目录按已启用模块由后端过滤；目录为空（如仅勾「设计」）时页面给提示。
@@ -47,8 +48,12 @@ function runSummary(run: PipelineRun): string {
   ].filter(Boolean).join(' · ')
 }
 
-/** 运行行 —— 右栏单条历史记录（状态 / 触发来源 / 时间；活跃运行轮询提示交给详情页） */
-function RunItem({ run, onOpen }: { run: PipelineRun; onOpen: () => void }) {
+/** 运行行 —— 右栏单条历史记录（全部规则模式下带规则名；活跃运行轮询提示交给详情页） */
+function RunItem({ run, showWorkflow, onOpen }: {
+  run: PipelineRun
+  showWorkflow: boolean
+  onOpen: () => void
+}) {
   const meta = PIPELINE_STATUS_META[run.status] ?? { label: run.status, color: 'default' }
   const summary = runSummary(run)
   return (
@@ -63,6 +68,7 @@ function RunItem({ run, onOpen }: { run: PipelineRun; onOpen: () => void }) {
             <Space size={8} wrap>
               <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
               <Text strong>#{run.id}</Text>
+              {showWorkflow && <Text type="secondary">{run.workflow_name}</Text>}
               <Text type="secondary">{PIPELINE_TRIGGER_LABEL[run.trigger] ?? run.trigger}触发</Text>
             </Space>
           )}
@@ -91,7 +97,7 @@ export default function PipelinesPage() {
   const [content, setContent] = useState('')
   const [validation, setValidation] = useState<PipelineValidateResult | null>(null)
   const [validating, setValidating] = useState(false)
-  /** 左栏当前选中的流水线（决定右栏展示哪条规则的运行历史） */
+  /** 左栏当前选中的流水线（null = 全部规则，决定右栏展示哪些运行历史） */
   const [selectedId, setSelectedId] = useState<string | number | null>(null)
 
   const { data: workflows = [], isLoading } = useQuery({
@@ -108,11 +114,15 @@ export default function PipelinesPage() {
 
   const selected = workflows.find(w => w.id === selectedId) ?? null
 
-  // 右栏运行历史：仅选中规则后拉取；活跃运行（pending/running）10s 轮询推进状态
+  // 右栏运行历史：默认拉取工作区全部规则的运行，选中规则后按 workflow_id 过滤；
+  // 活跃运行（pending/running）10s 轮询推进状态
   const { data: runPage, isLoading: runsLoading } = useQuery({
-    queryKey: ['pipelines', wid, 'runs', selectedId],
-    queryFn: () => pipelinesApi.listRuns(wid, selectedId!, { limit: 20 }),
-    enabled: !!wid && selectedId != null,
+    queryKey: ['pipelines', wid, 'runs', selectedId ?? 'all'],
+    queryFn: () => pipelinesApi.listWorkspaceRuns(wid, {
+      limit: 20,
+      ...(selectedId != null ? { workflow_id: selectedId } : {}),
+    }),
+    enabled: !!wid,
     refetchInterval: (query) => {
       const runs = query.state.data?.items ?? []
       return runs.some(r => isActiveRun(r.status)) ? 10_000 : false
@@ -227,7 +237,7 @@ export default function PipelinesPage() {
             <h1 className="cn-page-head-title">质量检查</h1>
             <div className="cn-page-head-sub">
               <span className="cn-page-head-meta">
-                左侧检查规则、右侧运行历史；可手动运行，也可订阅记录变更、文档保存与同步完成事件
+                左侧检查规则、右侧运行历史（默认全部规则，选中后只看该规则）；可手动运行，也可订阅记录变更、文档保存与同步完成事件
               </span>
             </div>
           </div>
@@ -275,7 +285,7 @@ export default function PipelinesPage() {
                     workflow.id === selectedId ? 'cn-qc-row--active' : '',
                   ].filter(Boolean).join(' ')}
                   data-testid={`pipeline-item-${workflow.id}`}
-                  onClick={() => setSelectedId(workflow.id)}
+                  onClick={() => setSelectedId(prev => (prev === workflow.id ? null : workflow.id))}
                 >
                   <div className="cn-list-item-main">
                     <CnListMeta
@@ -354,39 +364,45 @@ export default function PipelinesPage() {
           </Spin>
         </SectionBox>
 
-        {/* 右栏：选中规则的运行结果历史 */}
+        {/* 右栏：运行历史（默认全部规则，选中规则后过滤） */}
         <SectionBox
           title={selected ? `运行历史：${selected.name}` : '运行历史'}
           icon={<HistoryOutlined />}
-          extra={selected && runPage ? <span>共 {runPage.total} 次</span> : undefined}
+          extra={runPage ? (
+            <Space size={4}>
+              <span>共 {runPage.total} 次</span>
+              {selected && (
+                <Button type="link" size="small" onClick={() => setSelectedId(null)}>
+                  查看全部
+                </Button>
+              )}
+            </Space>
+          ) : undefined}
           flush
           testId="qc-runs-box"
         >
-          {selectedId == null ? (
-            <div className="cn-qc-empty">
-              <Empty
-                description={workflows.length === 0
-                  ? '创建流水线后，这里会展示每次检查的结果'
-                  : '在左侧选择一条流水线，查看它的运行历史'}
-              />
-            </div>
-          ) : (
-            <Spin spinning={runsLoading}>
-              {(runPage?.items.length ?? 0) === 0 && !runsLoading ? (
-                <div className="cn-qc-empty">
-                  <Empty description="这条流水线还没有运行记录，点「运行」试试" />
-                </div>
-              ) : (
-                (runPage?.items ?? []).map(item => (
-                  <RunItem
-                    key={item.id}
-                    run={item}
-                    onOpen={() => navigate(`/w/${wid}/pipelines/${item.id}`)}
-                  />
-                ))
-              )}
-            </Spin>
-          )}
+          <Spin spinning={runsLoading}>
+            {(runPage?.items.length ?? 0) === 0 && !runsLoading ? (
+              <div className="cn-qc-empty">
+                <Empty
+                  description={selected
+                    ? '这条流水线还没有运行记录，点「运行」试试'
+                    : workflows.length === 0
+                      ? '创建流水线后，这里会展示每次检查的结果'
+                      : '还没有运行记录，运行任一流水线后这里会展示历史'}
+                />
+              </div>
+            ) : (
+              (runPage?.items ?? []).map(item => (
+                <RunItem
+                  key={item.id}
+                  run={item}
+                  showWorkflow={selectedId == null}
+                  onOpen={() => navigate(`/w/${wid}/pipelines/${item.id}`)}
+                />
+              ))
+            )}
+          </Spin>
         </SectionBox>
       </div>
 

@@ -166,6 +166,7 @@ jobs:
 | `GET /workspaces/{wid}/pipelines/checks` | 新增：只读检查动作目录（对标 `GET /api/v1/llm/actions`） |
 | `POST /workspaces/{wid}/pipelines/{pid}/run` | 新增：手动触发（202，单飞冲突 409，后台执行） |
 | `GET /workspaces/{wid}/pipelines/{pid}/runs` | 新增：运行历史（分页） |
+| `GET /workspaces/{wid}/pipeline-runs` | 新增：工作区运行历史（默认全部规则，可选 `workflow_id` 过滤，分页） |
 | `GET /workspaces/{wid}/pipeline-runs/{rid}` | 新增：运行详情（job / step 结论树 + finding 汇总） |
 | `GET /workspaces/{wid}/pipeline-runs/{rid}/findings` | 新增：发现物列表（`severity` / `target_type` / `check` 过滤，分页） |
 

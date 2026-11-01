@@ -134,6 +134,13 @@ export interface PipelineRunPage {
   items: PipelineRun[]
 }
 
+/** 运行历史查询参数（workflow_id 缺省 = 工作区全部规则） */
+export interface PipelineRunQuery {
+  workflow_id?: number | string
+  limit?: number
+  offset?: number
+}
+
 /** 检查发现物 */
 export interface PipelineFinding {
   id: number
@@ -194,6 +201,9 @@ export const pipelinesApi = {
   /** 运行历史 */
   listRuns: (wid: number | string, workflowId: number | string, params?: { limit?: number; offset?: number }) =>
     api.get<PipelineRunPage>(`${base(wid)}/${workflowId}/runs`, { params }).then(r => r.data),
+  /** 工作区运行历史（默认全部规则，可按 workflow_id 过滤） */
+  listWorkspaceRuns: (wid: number | string, params?: PipelineRunQuery) =>
+    api.get<PipelineRunPage>(runsBase(wid), { params }).then(r => r.data),
   /** 运行详情 */
   getRun: (wid: number | string, runId: number | string) =>
     api.get<PipelineRun>(`${runsBase(wid)}/${runId}`).then(r => r.data),

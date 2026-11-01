@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import PipelinesPage from './PipelinesPage'
 import { renderProviders } from '@/test/render-providers'
@@ -90,7 +90,7 @@ function defaultHandlers() {
   server.use(
     http.get('/api/v1/workspaces/10/pipelines', () => HttpResponse.json([WORKFLOW])),
     http.get('/api/v1/workspaces/10/pipelines/checks', () => HttpResponse.json(CHECKS)),
-    http.get('/api/v1/workspaces/10/pipelines/7/runs', () =>
+    http.get('/api/v1/workspaces/10/pipeline-runs', () =>
       HttpResponse.json({ total: 1, items: [RUN] })),
   )
 }
@@ -100,9 +100,12 @@ describe('PipelinesPage 列表与编辑', () => {
     defaultHandlers()
     renderPage()
 
-    expect(await screen.findByText('空值巡检')).toBeInTheDocument()
+    // 左栏规则清单与右栏运行行都有「空值巡检」与状态标签，限定在规则方盒内断言
+    await screen.findByTestId('pipeline-item-7')
+    const rulesBox = screen.getByTestId('qc-rules-box')
+    expect(within(rulesBox).getByText('空值巡检')).toBeInTheDocument()
     expect(screen.getByText(/事件 record.updated/)).toBeInTheDocument()
-    expect(screen.getByText('通过')).toBeInTheDocument()
+    expect(within(rulesBox).getByText('通过')).toBeInTheDocument()
     expect(screen.getByText(/最近运行 2026/)).toBeInTheDocument()
   })
 
@@ -177,43 +180,89 @@ describe('PipelinesPage 列表与编辑', () => {
 // ─────────────── GitHub 风格双栏（ADR 0080 D4）：左规则清单 / 右运行历史 ───────────────
 
 describe('PipelinesPage 双栏布局', () => {
-  it('未选中规则时右栏给引导提示，点击左栏规则后展示其运行历史', async () => {
-    let runsRequested = 0
+  /** 全部历史两条（空值巡检 / 文档巡检），按 workflow_id 过滤后只剩空值巡检 */
+  const OTHER_RUN: PipelineRun = { ...RUN, id: 72, status: 'success', workflow_name: '文档巡检' }
+
+  function historyHandlers() {
     defaultHandlers()
+    const requested: Array<string | null> = []
     server.use(
-      http.get('/api/v1/workspaces/10/pipelines/7/runs', () => {
-        runsRequested += 1
-        return HttpResponse.json({ total: 1, items: [RUN] })
+      http.get('/api/v1/workspaces/10/pipeline-runs', ({ request }) => {
+        const workflowId = new URL(request.url).searchParams.get('workflow_id')
+        requested.push(workflowId)
+        return workflowId
+          ? HttpResponse.json({ total: 1, items: [RUN] })
+          : HttpResponse.json({ total: 2, items: [RUN, OTHER_RUN] })
       }),
     )
+    return requested
+  }
+
+  it('默认展示全部规则的运行历史，选中规则后过滤，再点一次回到全部', async () => {
+    const requested = historyHandlers()
     renderPage()
 
-    // 左栏规则清单 + 右栏未选中引导
-    expect(await screen.findByTestId('pipeline-item-7')).toBeInTheDocument()
-    expect(screen.getByText(/在左侧选择一条流水线/)).toBeInTheDocument()
-    expect(runsRequested).toBe(0)
-
-    // 点击规则 → 右栏拉取并展示运行历史
-    fireEvent.click(screen.getByTestId('pipeline-item-7'))
+    // 默认未选中：右栏直接拉取全部历史，行内带规则名
     expect(await screen.findByTestId('run-item-71')).toBeInTheDocument()
+    expect(screen.getByTestId('run-item-72')).toBeInTheDocument()
+    expect(screen.getByText('文档巡检')).toBeInTheDocument()
     expect(screen.getByText('排队中')).toBeInTheDocument()
+    await waitFor(() => expect(requested[0]).toBeNull())
+
+    // 点击规则 → 只展示该规则的运行
+    fireEvent.click(screen.getByTestId('pipeline-item-7'))
+    await waitFor(() => expect(requested.at(-1)).toBe('7'))
     expect(screen.getByText(/运行历史：空值巡检/)).toBeInTheDocument()
+    expect(await screen.findByTestId('run-item-71')).toBeInTheDocument()
+    expect(screen.queryByTestId('run-item-72')).not.toBeInTheDocument()
+
+    // 再次点击同一规则 → 取消过滤回到全部
+    fireEvent.click(screen.getByTestId('pipeline-item-7'))
+    await waitFor(() => expect(requested.at(-1)).toBeNull())
+    expect(await screen.findByTestId('run-item-72')).toBeInTheDocument()
 
     // 点击运行记录跳转运行详情
     fireEvent.click(screen.getByTestId('run-item-71'))
     expect(await screen.findByTestId('run-detail-stub')).toBeInTheDocument()
   })
 
-  it('选中规则的运行历史为空时给空态提示', async () => {
-    defaultHandlers()
-    server.use(
-      http.get('/api/v1/workspaces/10/pipelines/7/runs', () =>
-        HttpResponse.json({ total: 0, items: [] })),
-    )
+  it('「查看全部」按钮清除规则过滤', async () => {
+    const requested = historyHandlers()
     renderPage()
 
     fireEvent.click(await screen.findByTestId('pipeline-item-7'))
+    await waitFor(() => expect(requested.at(-1)).toBe('7'))
+    fireEvent.click(await screen.findByRole('button', { name: /查看全部/ }))
+    await waitFor(() => expect(requested.at(-1)).toBeNull())
+  })
+
+  it('选中规则的运行历史为空时给空态提示', async () => {
+    defaultHandlers()
+    server.use(
+      http.get('/api/v1/workspaces/10/pipeline-runs', ({ request }) => {
+        const workflowId = new URL(request.url).searchParams.get('workflow_id')
+        return workflowId
+          ? HttpResponse.json({ total: 0, items: [] })
+          : HttpResponse.json({ total: 1, items: [RUN] })
+      }),
+    )
+    renderPage()
+
+    // 全部历史非空，选中后转空态
+    expect(await screen.findByTestId('run-item-71')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('pipeline-item-7'))
     expect(await screen.findByText(/还没有运行记录/)).toBeInTheDocument()
+  })
+
+  it('工作区没有任何运行记录时右栏给空态提示', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines', () => HttpResponse.json([WORKFLOW])),
+      http.get('/api/v1/workspaces/10/pipelines/checks', () => HttpResponse.json(CHECKS)),
+      http.get('/api/v1/workspaces/10/pipeline-runs', () => HttpResponse.json({ total: 0, items: [] })),
+    )
+    renderPage()
+
+    expect(await screen.findByText(/运行任一流水线后这里会展示历史/)).toBeInTheDocument()
   })
 
   it('检查动作目录为空（仅勾「设计」的工作区）时页面给出提示', async () => {

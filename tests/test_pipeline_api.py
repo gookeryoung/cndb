@@ -285,6 +285,56 @@ class TestRuns:
         assert resp.status_code == 404
         assert resp.json()["code"] == "pipeline_run_not_found"
 
+    def test_list_workspace_runs_defaults_to_all_workflows(self, client, ws, auth_owner, db):
+        """工作区历史默认覆盖全部规则（前端右栏未选中规则时的取数口径）."""
+        first = _create(client, ws, auth_owner).json()
+        second = _create(client, ws, auth_owner, content=CLEAN_CONTENT.replace("文档巡检", "文档巡检二")).json()
+        assert _trigger(client, ws, auth_owner, first["id"]).status_code == 202
+        assert _trigger(client, ws, auth_owner, second["id"]).status_code == 202
+        _expire(db)
+
+        resp = client.get(f"/api/v1/workspaces/{ws.id}/pipeline-runs", headers=auth_owner)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 2
+        assert {item["workflow_id"] for item in body["items"]} == {first["id"], second["id"]}
+        names = {item["workflow_id"]: item["workflow_name"] for item in body["items"]}
+        assert names == {first["id"]: first["name"], second["id"]: second["name"]}
+
+    def test_list_workspace_runs_filter_by_workflow(self, client, ws, auth_owner, db):
+        first = _create(client, ws, auth_owner).json()
+        second = _create(client, ws, auth_owner, content=CLEAN_CONTENT.replace("文档巡检", "文档巡检二")).json()
+        assert _trigger(client, ws, auth_owner, first["id"]).status_code == 202
+        assert _trigger(client, ws, auth_owner, second["id"]).status_code == 202
+        _expire(db)
+
+        resp = client.get(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs",
+            params={"workflow_id": first["id"]},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 1
+        assert [item["workflow_id"] for item in body["items"]] == [first["id"]]
+
+    def test_list_workspace_runs_isolated_by_workspace(self, client, db, owner, auth_owner, ws):
+        workflow = _create(client, ws, auth_owner).json()
+        assert _trigger(client, ws, auth_owner, workflow["id"]).status_code == 202
+        other = make_workspace(db, owner, "RunsListOtherWs")
+        assert client.get(f"/api/v1/workspaces/{other.id}/pipeline-runs", headers=auth_owner).json()["total"] == 0
+        _expire(db)
+        assert client.get(f"/api/v1/workspaces/{ws.id}/pipeline-runs", headers=auth_owner).json()["total"] == 1
+
+    def test_list_workspace_runs_permissions(self, client, ws, auth_owner, auth_viewer, auth_outsider, db):
+        workflow = _create(client, ws, auth_owner).json()
+        assert _trigger(client, ws, auth_owner, workflow["id"]).status_code == 202
+        _expire(db)
+
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs"
+        assert client.get(url, headers=auth_viewer).status_code == 200
+        assert client.get(url, headers=auth_outsider).status_code == 403
+
     def test_run_isolated_by_workspace(self, client, db, owner, auth_owner, ws):
         workflow = _create(client, ws, auth_owner).json()
         assert _trigger(client, ws, auth_owner, workflow["id"]).status_code == 202
