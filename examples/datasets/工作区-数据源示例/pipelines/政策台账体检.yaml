@@ -1,0 +1,24 @@
+# 政策台账体检（ADR 0076 示例）：定时触发 + 多键判重 + 台账口径校验。
+name: 政策台账体检
+on:
+  manual: true
+  schedule: "30 8 * * *"
+jobs:
+  台账完整性:
+    steps:
+      - uses: table/null-rate
+        with:
+          table: 行业政策与合规台账
+          fields: [日期, 发文机构, 标题, 风险等级]
+          max_rate: 0.05
+      - uses: table/duplicates
+        with:
+          table: 行业政策与合规台账
+          fields: [日期, 发文机构, 标题]
+          ignore_whitespace: true
+        severity: error
+      - uses: table/value-range
+        with:
+          table: 行业政策与合规台账
+          fields: [日期, 生效日期]
+          min: "2020-01-01"

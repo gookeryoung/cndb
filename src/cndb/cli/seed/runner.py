@@ -13,6 +13,7 @@ from cndb.cli.seed import (
     documents,
     fields,
     paths,
+    pipelines,
     sqlite,
     templates,
     views,
@@ -144,6 +145,10 @@ def seed(_args: argparse.Namespace) -> None:
         #     datasource.json 见 examples/datasets/<工作区>/，只注入配置不触发抓取）
         datasource_count = datasource._seed_datasource(db, owner, ws_map, tables_map, datasets_dir)
 
+        # 3f) 质量检查流水线种子（依赖工作区 + 表已就绪：pipelines/*.yaml，
+        #     保存期全量编译校验，表引用解析到当前工作区真实表）
+        pipeline_count = pipelines._seed_pipelines(db, owner, ws_map, tables_map, datasets_dir)
+
         # 5) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
         from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
 
@@ -165,6 +170,7 @@ def seed(_args: argparse.Namespace) -> None:
             f"{doc_count} 篇示例文档（{folder_count} 个文档文件夹）、"
             f"{analytics_count} 个分析模板、"
             f"{datasource_count} 个数据源同步任务、"
+            f"{pipeline_count} 条质量检查流水线、"
             f"4 个演示账号（三员 + 普通用户）。"
             "\n登录账号："
             "\n  系统管理员: admin / admin1234"

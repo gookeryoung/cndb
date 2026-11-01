@@ -1,0 +1,24 @@
+# 工作区内容物综合巡检（ADR 0076 示例）：数据表 + 文档混合检查。
+# document 检查族三类动作全覆盖，与数据表 job 并列执行互不阻断。
+name: 工作区综合巡检
+on:
+  manual: true
+  events: [document.saved]
+jobs:
+  文档体检:
+    steps:
+      - uses: document/links
+      - uses: document/broken-refs
+        with:
+          scopes: [table, chart, file]
+      - uses: document/chart-blocks
+        with:
+          max_blocks: 40
+  销售台账:
+    steps:
+      - uses: table/null-rate
+        with:
+          table: 电商销售
+          fields: [订单号]
+          max_rate: 0
+        severity: error

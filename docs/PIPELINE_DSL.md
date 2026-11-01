@@ -16,6 +16,7 @@
 | 纯校验 | `POST /api/v1/workspaces/{wid}/pipelines/validate`（不落库，返回 `ok/error/job_count/step_count`） |
 | 手动运行 | `POST /api/v1/workspaces/{wid}/pipelines/{id}/run`（202；活跃运行冲突 409） |
 | 定时运行 | `cndb pipeline tick`（生产由系统 cron 每分钟调用） |
+| 演示种子 | `cndb seed` 把 `examples/datasets/<工作区>/pipelines/*.yaml` 幂等注入为示例流水线（可复制改造） |
 
 最小可用示例：
 

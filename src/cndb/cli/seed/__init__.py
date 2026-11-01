@@ -8,6 +8,7 @@
 4. 硬编码业务表 — 部门表 + 员工表 + 报告模板，绑定到 datasets 创建的"某企业销售管理"工作区
 5. `examples/datasets/<工作区名>/documents/` — 典型文档种子目录树
 6. `examples/datasets/<工作区名>/datasource.json` — 数据源同步任务种子（Provider + 标的 + 幂等键 + 字段映射），只注入配置不触发抓取
+7. `examples/datasets/<工作区名>/pipelines/*.yaml` — 质量检查流水线种子（ADR 0076），一份 YAML 一条定义，保存期全量编译校验
 
 模块划分（原 `cli/seed.py` 单文件 2700 行，按职责拆分）：
 
@@ -20,6 +21,7 @@
 | `documents`| documents/ 目录树解析与入库 |
 | `views`    | views.json 视图种子 + demo 个人视图 |
 | `datasource` | datasource.json 数据源同步任务种子 |
+| `pipelines` | pipelines/*.yaml 质量检查流水线种子（编译校验 + 表引用解析） |
 | `templates`| 部门/员工业务表与报告模板种子 |
 | `samples`  | 示例报告模板定义与落盘生成 |
 | `runner`   | `seed()` 编排入口 |
@@ -61,9 +63,11 @@ from cndb.cli.seed.fields import (
 from cndb.cli.seed.paths import (
     _get_datasets_dir,
     _get_workspace_datasource_configs,
+    _get_workspace_pipeline_yamls,
     _get_workspace_view_configs,
     _workspace_display_name,
 )
+from cndb.cli.seed.pipelines import _seed_pipelines
 from cndb.cli.seed.runner import seed
 from cndb.cli.seed.sqlite import (
     _drop_all_tables_sqlite,
@@ -94,6 +98,7 @@ __all__ = [
     "_get_sa_table_by_name",
     "_get_workspace_datasource_configs",
     "_get_workspace_document_dirs",
+    "_get_workspace_pipeline_yamls",
     "_get_workspace_view_configs",
     "_iter_document_entries",
     "_load_field_settings",
@@ -104,6 +109,7 @@ __all__ = [
     "_seed_datasource",
     "_seed_demo_personal_views",
     "_seed_documents",
+    "_seed_pipelines",
     "_seed_sales_tables",
     "_seed_views",
     "_seed_xlsx_table",

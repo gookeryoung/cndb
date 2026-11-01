@@ -65,6 +65,26 @@ def _get_workspace_datasource_configs(datasets_dir: Path) -> dict[str, dict[str,
     return _scan_workspace_json(datasets_dir, "datasource.json", "seed-数据源")
 
 
+def _get_workspace_pipeline_yamls(datasets_dir: Path) -> dict[str, list[Path]]:
+    """扫描每个工作区文件夹下的 pipelines/*.yaml（质量检查流水线种子）.
+
+    Returns:
+        工作区显示名 -> 该工作区 pipelines/ 下全部 yaml 文件路径列表（按文件名排序；
+        无 pipelines/ 目录的工作区不出现在结果中）.
+    """
+    result: dict[str, list[Path]] = {}
+    for folder in sorted(datasets_dir.iterdir()):
+        if not folder.is_dir() or folder.name.startswith("."):
+            continue
+        pipe_dir = folder / "pipelines"
+        if not pipe_dir.is_dir():
+            continue
+        yamls = sorted(p for p in pipe_dir.iterdir() if p.suffix.lower() in {".yaml", ".yml"} and p.is_file())
+        if yamls:
+            result[_workspace_display_name(folder.name)] = yamls
+    return result
+
+
 def _scan_workspace_json(datasets_dir: Path, filename: str, log_tag: str) -> dict[str, dict[str, Any]]:
     """通用扫描：工作区文件夹下的 ``filename`` → 解析为 JSON.
 

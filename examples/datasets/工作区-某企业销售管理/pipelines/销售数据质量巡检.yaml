@@ -1,0 +1,47 @@
+# 销售域数据质量巡检（ADR 0076 示例）：手动 + 每周一早间定时。
+# 覆盖 table 检查族四类动作：空值率 / 判重 / 取值区间 / 新鲜度；
+# 阈值收口到 vars，门禁口径（error）与告警口径（warn）分离。
+name: 销售数据质量巡检
+on:
+  manual: true
+  schedule: "0 9 * * 1"
+vars:
+  null_limit: 0.02
+jobs:
+  订单口径:
+    steps:
+      - uses: table/null-rate
+        with:
+          table: 电商销售
+          fields: [订单号, 销售额, 日期]
+          max_rate: 0
+        severity: error
+      - uses: table/duplicates
+        with:
+          table: 电商销售
+          fields: [订单号]
+        severity: error
+      - uses: table/value-range
+        with:
+          table: 电商销售
+          fields: [单价, 销售额, 评分]
+          min: "0"
+  批次口径:
+    steps:
+      - uses: table/null-rate
+        with:
+          table: 产品批次
+          fields: [批次号, 生产日期, 合格数]
+          max_rate: ${{ vars.null_limit }}
+      - uses: table/value-range
+        with:
+          table: 产品批次
+          fields: [生产日期]
+          min: "2025-01-01"
+      - uses: table/stale
+        with:
+          table: 产品批次
+          field: 生产日期
+          max_age_days: 30
+        severity: info
+        continue-on-error: true

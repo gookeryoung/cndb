@@ -1,0 +1,20 @@
+# 同步完成后针对性校验（ADR 0076 示例）：仅事件触发，按 on.status 分流。
+# 同步失败时跳过数据校验，避免对半成品数据重复告警。
+name: 同步后行情校验
+on:
+  events: [sync.finished]
+jobs:
+  同步成功后校验:
+    if: ${{ on.status == 'success' }}
+    steps:
+      - uses: table/null-rate
+        with:
+          table: 股市日线
+          fields: [股票代码, 日期, 收盘]
+          max_rate: 0
+        severity: error
+      - uses: table/stale
+        with:
+          table: 股市日线
+          field: 日期
+          max_age_days: 3
