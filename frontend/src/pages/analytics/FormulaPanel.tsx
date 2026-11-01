@@ -10,7 +10,7 @@ import { Alert, Button, Dropdown, Input, Select, Tag, Tooltip } from 'antd'
 import type { InputRef } from 'antd'
 import { DeleteOutlined, FunctionOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import type { AnalyticsFormula } from '@/api/analytics'
-import { AnalyticsBox } from './AnalyticsBox'
+import SectionBox from '@/components/SectionBox'
 import { insertAtCursor, newFormula } from './analyticsModel'
 
 /** 单值函数快捷片段（插入末尾留光标在括号内） */
@@ -97,10 +97,10 @@ export function FormulaPanel({
   const errorTexts = Object.entries(errors)
 
   return (
-    <AnalyticsBox
+    <SectionBox
       title="计算模板"
       icon={<FunctionOutlined />}
-      className="cn-an-box--formula"
+      className="cn-box--formula"
       extra={
         <Tooltip
           title={
@@ -114,7 +114,7 @@ export function FormulaPanel({
             </div>
           }
         >
-          <QuestionCircleOutlined className="cn-an-box-hint" aria-label="公式语法" />
+          <QuestionCircleOutlined className="cn-box-hint" aria-label="公式语法" />
         </Tooltip>
       }
       footer={
@@ -287,6 +287,6 @@ export function FormulaPanel({
           title={errorTexts.map(([key, message]) => `${key || '未命名'}：${message}`).join('；')}
         />
       )}
-    </AnalyticsBox>
+    </SectionBox>
   )
 }

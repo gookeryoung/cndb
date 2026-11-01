@@ -103,7 +103,7 @@ describe('PipelinesPage 列表与编辑', () => {
     expect(await screen.findByText('空值巡检')).toBeInTheDocument()
     expect(screen.getByText(/事件 record.updated/)).toBeInTheDocument()
     expect(screen.getByText('通过')).toBeInTheDocument()
-    expect(screen.getByText('最近运行')).toBeInTheDocument()
+    expect(screen.getByText(/最近运行 2026/)).toBeInTheDocument()
   })
 
   it('编辑抽屉展示 YAML 并实时校验通过', async () => {
@@ -153,7 +153,7 @@ describe('PipelinesPage 列表与编辑', () => {
     server.use(http.post('/api/v1/workspaces/10/pipelines/7/run', () => HttpResponse.json(RUN, { status: 202 })))
     renderPage()
 
-    fireEvent.click((await screen.findAllByText('运行'))[0]!.closest('button')!)
+    fireEvent.click((await screen.findAllByRole('button', { name: /运行 空值巡检/ }))[0]!)
     expect(await screen.findByTestId('run-detail-stub')).toBeInTheDocument()
   })
 

@@ -5874,25 +5874,27 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
-/* ─────────────── 数据分析页（GitHub 方盒工作台） ───────────────
- * 结构：紧凑页头（标题 + 当前模板 + 操作） + 双栏工作台（左配置 / 右结果）。
- * 分区容器 .cn-an-box 对齐 GitHub 的 .Box 语言：1px 描边、6px 圆角、
- * 浅底标题条、无投影；颜色与尺寸全部走 --cn-* 变量，深浅主题自动适配。
- * 配置区收窄为固定列宽，结果区吃掉剩余宽度 —— 运行后无需在长表单里来回滚动。 */
+/* ─────────────── 工作台通用原语（页头 / 方盒） ───────────────
+ * 数据分析页与质量检查页共用这两套原语，改视觉口径只改这里：
+ * - .cn-page-head：紧凑页头（图标 + 标题 + 单行副标题 + 右侧主操作）；
+ * - .cn-box：分区方盒，对齐 GitHub 的 .Box 语言（1px 描边、主题圆角、浅底标题条、
+ *   无投影）；flush 变体去掉内容区内边距，专供「带边框列表」—— 外框由盒子承担，
+ *   行间分隔线满宽绘制，不出现双层描边。
+ * 颜色与尺寸全部走 --cn-* 变量，深浅主题自动适配。 */
 
 .cn-an-page {
   min-height: 0;
 }
 
 /* ── 页头 ── */
-.cn-an-head {
+.cn-page-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--cn-space-md) var(--cn-space-lg);
 }
 
-.cn-an-head-main {
+.cn-page-head-main {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
@@ -5900,7 +5902,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   min-width: 0;
 }
 
-.cn-an-head-icon {
+.cn-page-head-icon {
   flex: none;
   display: grid;
   place-items: center;
@@ -5913,7 +5915,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-size: var(--cn-text-lg);
 }
 
-.cn-an-head-text {
+.cn-page-head-text {
   display: flex;
   flex-direction: column;
   gap: var(--cn-space-hairline);
@@ -5921,7 +5923,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   overflow: hidden;
 }
 
-.cn-an-head-title {
+.cn-page-head-title {
   margin: 0;
   font-size: var(--cn-text-lg);
   font-weight: var(--cn-weight-semibold);
@@ -5929,7 +5931,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-primary);
 }
 
-.cn-an-head-sub {
+.cn-page-head-sub {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -5940,7 +5942,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 /* 模板元信息单行收敛：描述等长文本走 title 悬停，不撑高页头 */
-.cn-an-head-meta {
+.cn-page-head-meta {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -5948,7 +5950,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: nowrap;
 }
 
-.cn-an-head-actions {
+.cn-page-head-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -5964,7 +5966,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 /* 连体按钮组内相邻按钮按 -1px 外边距重叠、统一 z-index:2（cssinjs 注入晚于本文件），
    激活按钮的右边框会被右侧按钮盖住：以更高优先级提升到 3，让主色描边完整绘制 */
-.cn-an-head-actions .cn-an-block-toggle.ant-btn-primary {
+.cn-page-head-actions .cn-an-block-toggle.ant-btn-primary {
   position: relative;
   z-index: 3;
 }
@@ -5985,12 +5987,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-an-top-data {
   flex: 1 1 60%;
   min-width: 0;
-  /* 拉伸链路：让内层 AnalyticsBox 撑满行高，与右侧推荐盒底边对齐 */
+  /* 拉伸链路：让内层 SectionBox 撑满行高，与右侧推荐盒底边对齐 */
   display: flex;
   flex-direction: column;
 }
 
-.cn-an-top-data > .cn-an-box {
+.cn-an-top-data > .cn-box {
   flex: 1 1 auto;
 }
 
@@ -6010,12 +6012,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   flex-direction: column;
 }
 
-.cn-an-top-recommend > div > .cn-an-box {
+.cn-an-top-recommend > div > .cn-box {
   flex: 1 1 auto;
 }
 
 /* 收起态窄条：内部空态文字压成单行竖排省空间 */
-.cn-an-top:not(.cn-an-top--expanded) .cn-an-recommend-collapsed .cn-an-box-body {
+.cn-an-top:not(.cn-an-top--expanded) .cn-an-recommend-collapsed .cn-box-body {
   padding: var(--cn-space-md) var(--cn-space-sm);
 }
 
@@ -6057,7 +6059,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   flex: 1 1 auto;
 }
 
-.cn-an-band .cn-an-box-body {
+.cn-an-band .cn-box-body {
   /* 盒子被拉高时内容区随之撑满，保持边框贴合不悬空 */
   flex: 1 1 auto;
 }
@@ -6090,7 +6092,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 /* ── 分区盒子（GitHub .Box 语言） ── */
-.cn-an-box {
+.cn-box {
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -6100,7 +6102,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   overflow: hidden;
 }
 
-.cn-an-box-head {
+.cn-box-head {
   display: flex;
   align-items: center;
   gap: var(--cn-space-sm);
@@ -6110,21 +6112,24 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   border-bottom: 1px solid var(--cn-border);
 }
 
-.cn-an-box-icon {
+.cn-box-icon {
   display: inline-flex;
   color: var(--cn-text-muted);
   font-size: var(--cn-text-sm);
 }
 
-.cn-an-box-title {
+.cn-box-title {
   margin: 0;
+  min-width: 0;
+  overflow: hidden;
   font-size: var(--cn-text-sm);
   font-weight: var(--cn-weight-semibold);
   color: var(--cn-text-primary);
   white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.cn-an-box-extra {
+.cn-box-extra {
   display: flex;
   align-items: center;
   gap: var(--cn-space-sm);
@@ -6134,13 +6139,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-secondary);
 }
 
-.cn-an-box-hint {
+.cn-box-hint {
   color: var(--cn-text-muted);
   font-size: var(--cn-text-sm);
   cursor: help;
 }
 
-.cn-an-box-body {
+.cn-box-body {
   display: flex;
   flex-direction: column;
   gap: var(--cn-space-sm);
@@ -6148,7 +6153,13 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   min-width: 0;
 }
 
-.cn-an-box-foot {
+/* flush：内容区去内边距与行间距，列表行自行承担内边距 / 分隔线 / hover */
+.cn-box--flush > .cn-box-body {
+  gap: 0;
+  padding: 0;
+}
+
+.cn-box-foot {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -6355,7 +6366,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 @media (max-width: 767.98px) {
-  .cn-an-head-actions {
+  .cn-page-head-actions {
     width: 100%;
     margin-left: 0;
   }
@@ -6373,9 +6384,56 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 
   /* 数据分析页头：模板选择独占一行，操作按钮紧凑换行，避免 200px 下拉挤压图标组 */
-  .cn-an-head-actions .ant-select {
+  .cn-page-head-actions .ant-select {
     flex: 1 1 100%;
     width: 100% !important;
+  }
+}
+
+/* ─────────────── 质量检查页（GitHub 双栏：规则清单 + 运行历史） ───────────────
+ * 页头与方盒复用上方通用原语；两栏均为「带边框列表」：盒子承担外框，
+ * flush 盒体里的行自带分隔线 / hover / 选中态，与数据分析页同一套视觉口径。
+ * 左栏定宽收纳规则清单，右栏吃掉剩余宽度展示选中规则的运行历史。 */
+
+.cn-qc-split {
+  display: grid;
+  grid-template-columns: minmax(0, 400px) minmax(0, 1fr);
+  gap: var(--cn-space-md);
+  align-items: start;
+}
+
+/* 行：整行可点；选中项以品牌色左边线标识（非选中行留同宽透明边避免选中时跳动） */
+.cn-qc-row {
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border-inline-start: 1px solid transparent;
+  transition: background-color 0.15s ease;
+}
+
+.cn-qc-row + .cn-qc-row {
+  border-top: 1px solid var(--cn-border-soft);
+}
+
+.cn-qc-row--selectable {
+  cursor: pointer;
+}
+
+.cn-qc-row--selectable:hover {
+  background: var(--cn-bg-subtle);
+}
+
+.cn-qc-row--active {
+  background: var(--cn-bg-subtle);
+  border-inline-start-color: var(--cn-brand-color);
+}
+
+/* 空态：flush 盒体没有内边距，用自己的留白保持与其他盒子一致的视觉节奏 */
+.cn-qc-empty {
+  padding: var(--cn-space-3xl) var(--cn-space-lg);
+}
+
+@media (max-width: 1023.98px) {
+  .cn-qc-split {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

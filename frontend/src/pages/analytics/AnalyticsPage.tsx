@@ -42,11 +42,11 @@ import type {
 } from '@/api/analytics'
 import { useLlmAction } from '@/hooks/useLlmAction'
 import { useAuthStore } from '@/store/auth'
+import SectionBox from '@/components/SectionBox'
 import {
   DEFAULT_ANALYTICS_BLOCKS, useAnalyticsBlocksStore, type AnalyticsBlockKey,
 } from '@/store/analyticsBlocks'
 import { AnalyticsAiPanel } from './AnalyticsAiPanel'
-import { AnalyticsBox } from './AnalyticsBox'
 import { FormulaPanel } from './FormulaPanel'
 import { ChartPanel } from './ChartPanel'
 import { SummaryPanel } from './SummaryPanel'
@@ -725,16 +725,16 @@ export default function AnalyticsPage() {
   return (
     <div data-testid="analytics-page" className="cn-page cn-an-page">
       {/* ── 页头：标题 + 当前模板 + 模板操作／运行（主操作常驻右侧） ── */}
-      <header className="cn-an-head">
-        <div className="cn-an-head-main">
-          <span className="cn-an-head-icon" aria-hidden><BarChartOutlined /></span>
-          <div className="cn-an-head-text">
-            <h1 className="cn-an-head-title">数据分析</h1>
-            <div className="cn-an-head-sub">
+      <header className="cn-page-head">
+        <div className="cn-page-head-main">
+          <span className="cn-page-head-icon" aria-hidden><BarChartOutlined /></span>
+          <div className="cn-page-head-text">
+            <h1 className="cn-page-head-title">数据分析</h1>
+            <div className="cn-page-head-sub">
               {activeTemplateId != null ? (
                 <span
                   data-testid="analytics-template-meta"
-                  className="cn-an-head-meta"
+                  className="cn-page-head-meta"
                   title={templateDesc ? `模板描述：${templateDesc}` : undefined}
                 >
                   当前模板：{templateName}
@@ -748,7 +748,7 @@ export default function AnalyticsPage() {
           </div>
         </div>
 
-        <div className="cn-an-head-actions">
+        <div className="cn-page-head-actions">
           {/* 连体按钮组：不设 size，与周围默认尺寸控件等高 */}
           <Space.Compact className="cn-an-block-toggles" data-testid="analytics-block-toggles">
             {([
@@ -875,7 +875,7 @@ export default function AnalyticsPage() {
           data-testid="analytics-top"
         >
           <div className="cn-an-top-data">
-            <AnalyticsBox
+            <SectionBox
               title="数据源"
               icon={<DatabaseOutlined />}
               extra={tableDetail
@@ -945,7 +945,7 @@ export default function AnalyticsPage() {
               />
             </div>
           </div>
-        </AnalyticsBox>
+        </SectionBox>
           </div>
 
           <div className="cn-an-top-recommend">

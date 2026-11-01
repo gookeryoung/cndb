@@ -1,7 +1,9 @@
-/** 质量检查（流水线）页 —— GitHub 风格双栏（ADR 0080 D4）.
+/** 质量检查（流水线）页 —— GitHub 双栏（ADR 0080 D4），视觉口径对齐数据分析页.
  *
- * 左栏：流水线规则清单（启用开关 / 手动运行 / 编辑 / 删除，点击选中）；
+ * 左栏：流水线规则清单（启用开关 / 运行 / 编辑 / 删除，点击选中）；
  * 右栏：选中规则的运行结果历史（run 列表 → 点击进运行详情），未选中时给引导提示。
+ * 两栏均为「带边框列表」：SectionBox 承担外框，flush 内容区里的行自带分隔线与
+ * hover / 选中态，与数据分析页的分区方盒同一套语言。
  * 检查动作目录按已启用模块由后端过滤；目录为空（如仅勾「设计」）时页面给提示。
  * 编辑抽屉对 YAML 做防抖实时编译校验，保存前要求校验通过；插入片段由 `checkCatalog` 生成。
  * queryKey 约定：['pipelines', wid]。
@@ -9,13 +11,15 @@
 
 import { useEffect, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Collapse, Drawer, Empty, Input, Listy, Popconfirm, Space, Spin,
-  Switch, Tag, Typography,
+  Alert, App as AntApp, Button, Collapse, Drawer, Empty, Input, Popconfirm, Space, Spin,
+  Switch, Tag, Tooltip, Typography,
 } from 'antd'
 import {
-  DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined, RightOutlined,
+  DeleteOutlined, EditOutlined, HistoryOutlined, PlayCircleOutlined, PlusOutlined,
+  RightOutlined, SafetyCertificateOutlined, UnorderedListOutlined,
 } from '@ant-design/icons'
 import CnListMeta from '@/components/CnListMeta'
+import SectionBox from '@/components/SectionBox'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
@@ -33,13 +37,23 @@ function validateErrorText(err: unknown): string {
   return err instanceof Error ? err.message : '校验请求失败'
 }
 
+/** 运行摘要：发现物计数与耗时（均为可选，后端未产出时留空） */
+function runSummary(run: PipelineRun): string {
+  const findings = run.stats.findings ?? {}
+  return [
+    findings.error ? `错误 ${findings.error}` : '',
+    findings.warn ? `告警 ${findings.warn}` : '',
+    typeof run.stats.duration_ms === 'number' ? `耗时 ${run.stats.duration_ms} ms` : '',
+  ].filter(Boolean).join(' · ')
+}
+
 /** 运行行 —— 右栏单条历史记录（状态 / 触发来源 / 时间；活跃运行轮询提示交给详情页） */
 function RunItem({ run, onOpen }: { run: PipelineRun; onOpen: () => void }) {
   const meta = PIPELINE_STATUS_META[run.status] ?? { label: run.status, color: 'default' }
+  const summary = runSummary(run)
   return (
     <div
-      className="cn-list-item"
-      style={{ cursor: 'pointer' }}
+      className="cn-list-item cn-qc-row cn-qc-row--selectable"
       data-testid={`run-item-${run.id}`}
       onClick={onOpen}
     >
@@ -49,10 +63,14 @@ function RunItem({ run, onOpen }: { run: PipelineRun; onOpen: () => void }) {
             <Space size={8} wrap>
               <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
               <Text strong>#{run.id}</Text>
-              <Text type="secondary">{PIPELINE_TRIGGER_LABEL[run.trigger] ?? run.trigger}</Text>
+              <Text type="secondary">{PIPELINE_TRIGGER_LABEL[run.trigger] ?? run.trigger}触发</Text>
             </Space>
           )}
-          description={<Text type="secondary">{formatDateTime(run.created_at)}</Text>}
+          description={(
+            <Text type="secondary">
+              {formatDateTime(run.created_at)}{summary ? ` · ${summary}` : ''}
+            </Text>
+          )}
         />
       </div>
       <div className="cn-list-item-actions">
@@ -200,18 +218,24 @@ export default function PipelinesPage() {
   const saveDisabled = !validation?.ok || save.isPending
 
   return (
-    <div style={{ padding: '16px 24px', maxWidth: 1200, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div>
-          <Text strong style={{ fontSize: 18 }}>质量检查</Text>
-          <div>
-            <Text type="secondary">
-              左侧为检查规则清单，点击查看右侧的运行结果历史；可手动运行，也可订阅记录变更、文档保存与同步完成事件。
-            </Text>
+    <div className="cn-page cn-qc-page" data-testid="pipelines-page">
+      {/* ── 页头：标题 + 口径说明 + 新建入口（与数据分析页同款紧凑页头） ── */}
+      <header className="cn-page-head">
+        <div className="cn-page-head-main">
+          <span className="cn-page-head-icon" aria-hidden><SafetyCertificateOutlined /></span>
+          <div className="cn-page-head-text">
+            <h1 className="cn-page-head-title">质量检查</h1>
+            <div className="cn-page-head-sub">
+              <span className="cn-page-head-meta">
+                左侧检查规则、右侧运行历史；可手动运行，也可订阅记录变更、文档保存与同步完成事件
+              </span>
+            </div>
           </div>
         </div>
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建流水线</Button>
-      </div>
+        <div className="cn-page-head-actions">
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建流水线</Button>
+        </div>
+      </header>
 
       {/* 检查动作目录为空：当前工作区勾选的模块没有可用检查动作（如仅勾「设计」，
           design 域动作尚未提供），给出明确提示而非静默空态（ADR 0080 边界 #1） */}
@@ -220,133 +244,150 @@ export default function PipelinesPage() {
           type="info"
           showIcon
           data-testid="empty-checks-alert"
-          message="暂无可用检查动作"
+          title="暂无可用检查动作"
           description="当前工作区启用的功能模块下还没有检查动作；仍可创建流水线，待后续版本提供更多检查动作后即可运行。"
-          style={{ marginBottom: 12 }}
         />
       )}
 
-      {/* GitHub 风格双栏：左=规则清单，右=运行历史 */}
-      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }} data-testid="pipelines-split">
+      {/* GitHub 风格双栏：左=规则清单，右=运行历史；两栏都是带边框列表 */}
+      <div className="cn-qc-split" data-testid="pipelines-split">
         {/* 左栏：流水线规则清单 */}
-        <div style={{ flex: '0 0 42%', minWidth: 0 }}>
-          <Text strong style={{ display: 'block', marginBottom: 8 }}>检查规则</Text>
+        <SectionBox
+          title="检查规则"
+          icon={<UnorderedListOutlined />}
+          extra={<span>共 {workflows.length} 条</span>}
+          flush
+          testId="qc-rules-box"
+        >
           <Spin spinning={isLoading}>
             {workflows.length === 0 && !isLoading ? (
-              <Empty description="还没有流水线定义" style={{ padding: 48 }} />
+              <div className="cn-qc-empty">
+                <Empty description="还没有流水线定义，点右上角「新建流水线」开始" />
+              </div>
             ) : (
-              <Listy
-                className="cn-listy-plain"
-                items={workflows}
-                rowKey={item => item.id}
-                itemRender={(workflow: PipelineWorkflow) => (
-                  <div
-                    className="cn-list-item"
-                    data-testid={`pipeline-item-${workflow.id}`}
-                    style={{
-                      cursor: 'pointer',
-                      background: workflow.id === selectedId ? 'var(--cn-bg-subtle, #f5f5f5)' : undefined,
-                    }}
-                    onClick={() => setSelectedId(workflow.id)}
-                  >
-                    <div className="cn-list-item-main">
-                      <CnListMeta
-                        title={(
-                          <Space size={8} wrap>
-                            <Switch
-                              size="small"
-                              checked={workflow.enabled}
-                              loading={toggleEnabled.isPending}
-                              aria-label={`${workflow.name} 启用`}
-                              onClick={(_, e) => e.stopPropagation()}
-                              onChange={(enabled) => toggleEnabled.mutate({ workflow, enabled })}
-                            />
-                            <Text strong>{workflow.name}</Text>
-                            {workflow.last_run && (
-                              <Tag
-                                color={PIPELINE_STATUS_META[workflow.last_run.status]?.color ?? 'default'}
-                                style={{ marginInlineEnd: 0 }}
-                              >
-                                {PIPELINE_STATUS_META[workflow.last_run.status]?.label ?? workflow.last_run.status}
-                              </Tag>
-                            )}
-                            {!workflow.enabled && <Tag style={{ marginInlineEnd: 0 }}>已停用</Tag>}
-                          </Space>
-                        )}
-                        description={(
-                          <Text type="secondary">
-                            {describeTriggers(workflow.compiled?.on)}
-                            {workflow.last_run
-                              ? ` · 最近运行 ${formatDateTime(workflow.last_run.created_at)}`
-                              : ' · 尚未运行'}
-                          </Text>
-                        )}
-                      />
-                    </div>
-                    <div className="cn-list-item-actions" onClick={e => e.stopPropagation()}>
-                      <Space size={4}>
-                        {workflow.last_run && (
-                          <Button
-                            type="link"
-                            size="small"
-                            onClick={() => navigate(`/w/${wid}/pipelines/${workflow.last_run!.id}`)}
-                          >
-                            最近运行
-                          </Button>
-                        )}
-                        <Button type="link" size="small" icon={<PlayCircleOutlined />} onClick={() => run.mutate(workflow)}>
-                          运行
-                        </Button>
-                        <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(workflow)}>
-                          编辑
-                        </Button>
-                        <Popconfirm
-                          title={`删除流水线「${workflow.name}」？`}
-                          description="运行历史与检查发现物会一并删除。"
-                          okText="删除"
-                          okButtonProps={{ danger: true }}
-                          onConfirm={() => remove.mutate(workflow)}
-                        >
-                          <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
-                        </Popconfirm>
-                      </Space>
-                    </div>
+              workflows.map(workflow => (
+                <div
+                  key={workflow.id}
+                  className={[
+                    'cn-list-item',
+                    'cn-qc-row',
+                    'cn-qc-row--selectable',
+                    workflow.id === selectedId ? 'cn-qc-row--active' : '',
+                  ].filter(Boolean).join(' ')}
+                  data-testid={`pipeline-item-${workflow.id}`}
+                  onClick={() => setSelectedId(workflow.id)}
+                >
+                  <div className="cn-list-item-main">
+                    <CnListMeta
+                      avatar={(
+                        <Switch
+                          size="small"
+                          checked={workflow.enabled}
+                          loading={toggleEnabled.isPending}
+                          aria-label={`${workflow.name} 启用`}
+                          onClick={(_, event) => event.stopPropagation()}
+                          onChange={(enabled) => toggleEnabled.mutate({ workflow, enabled })}
+                        />
+                      )}
+                      title={(
+                        <Space size={8} wrap>
+                          <Text strong>{workflow.name}</Text>
+                          {workflow.last_run && (
+                            <Tag
+                              color={PIPELINE_STATUS_META[workflow.last_run.status]?.color ?? 'default'}
+                              style={{ marginInlineEnd: 0 }}
+                            >
+                              {PIPELINE_STATUS_META[workflow.last_run.status]?.label ?? workflow.last_run.status}
+                            </Tag>
+                          )}
+                          {!workflow.enabled && <Tag style={{ marginInlineEnd: 0 }}>已停用</Tag>}
+                        </Space>
+                      )}
+                      description={(
+                        <Text type="secondary">
+                          {describeTriggers(workflow.compiled?.on)}
+                          {workflow.last_run
+                            ? ` · 最近运行 ${formatDateTime(workflow.last_run.created_at)}`
+                            : ' · 尚未运行'}
+                        </Text>
+                      )}
+                    />
                   </div>
-                )}
-              />
+                  <div className="cn-list-item-actions" onClick={event => event.stopPropagation()}>
+                    <Tooltip title="运行">
+                      <Button
+                        type="text"
+                        size="small"
+                        aria-label={`运行 ${workflow.name}`}
+                        icon={<PlayCircleOutlined />}
+                        onClick={() => run.mutate(workflow)}
+                      />
+                    </Tooltip>
+                    <Tooltip title="编辑 DSL">
+                      <Button
+                        type="text"
+                        size="small"
+                        aria-label={`编辑 ${workflow.name}`}
+                        icon={<EditOutlined />}
+                        onClick={() => openEdit(workflow)}
+                      />
+                    </Tooltip>
+                    <Popconfirm
+                      title={`删除流水线「${workflow.name}」？`}
+                      description="运行历史与检查发现物会一并删除。"
+                      okText="删除"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() => remove.mutate(workflow)}
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        aria-label={`删除 ${workflow.name}`}
+                        icon={<DeleteOutlined />}
+                      />
+                    </Popconfirm>
+                  </div>
+                </div>
+              ))
             )}
           </Spin>
-        </div>
+        </SectionBox>
 
         {/* 右栏：选中规则的运行结果历史 */}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <Text strong style={{ display: 'block', marginBottom: 8 }}>
-            运行历史{selected ? `：${selected.name}` : ''}
-          </Text>
+        <SectionBox
+          title={selected ? `运行历史：${selected.name}` : '运行历史'}
+          icon={<HistoryOutlined />}
+          extra={selected && runPage ? <span>共 {runPage.total} 次</span> : undefined}
+          flush
+          testId="qc-runs-box"
+        >
           {selectedId == null ? (
-            <Empty
-              description={workflows.length === 0
-                ? '创建流水线后，这里会展示每次检查的结果'
-                : '在左侧选择一条流水线，查看它的运行历史'}
-              style={{ padding: 48 }}
-            />
+            <div className="cn-qc-empty">
+              <Empty
+                description={workflows.length === 0
+                  ? '创建流水线后，这里会展示每次检查的结果'
+                  : '在左侧选择一条流水线，查看它的运行历史'}
+              />
+            </div>
           ) : (
             <Spin spinning={runsLoading}>
               {(runPage?.items.length ?? 0) === 0 && !runsLoading ? (
-                <Empty description="这条流水线还没有运行记录，点「运行」试试" style={{ padding: 48 }} />
+                <div className="cn-qc-empty">
+                  <Empty description="这条流水线还没有运行记录，点「运行」试试" />
+                </div>
               ) : (
-                <Listy
-                  className="cn-listy-plain"
-                  items={runPage?.items ?? []}
-                  rowKey={(item: PipelineRun) => item.id}
-                  itemRender={(item: PipelineRun) => (
-                    <RunItem run={item} onOpen={() => navigate(`/w/${wid}/pipelines/${item.id}`)} />
-                  )}
-                />
+                (runPage?.items ?? []).map(item => (
+                  <RunItem
+                    key={item.id}
+                    run={item}
+                    onOpen={() => navigate(`/w/${wid}/pipelines/${item.id}`)}
+                  />
+                ))
               )}
             </Spin>
           )}
-        </div>
+        </SectionBox>
       </div>
 
       <Drawer
@@ -376,10 +417,10 @@ export default function PipelinesPage() {
               <Alert
                 type="success"
                 showIcon
-                message={`校验通过：${validation.name}（${validation.job_count} 个 job / ${validation.step_count} 个 step）`}
+                title={`校验通过：${validation.name}（${validation.job_count} 个 job / ${validation.step_count} 个 step）`}
               />
             ) : (
-              <Alert type="error" showIcon message="DSL 校验未通过" description={validation.error} />
+              <Alert type="error" showIcon title="DSL 校验未通过" description={validation.error} />
             )
           )}
         </div>

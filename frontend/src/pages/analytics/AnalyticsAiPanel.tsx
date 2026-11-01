@@ -16,7 +16,7 @@ import { RobotOutlined } from '@ant-design/icons'
 import type { AnalyticsAiTemplateSuggestion } from '@/api/analytics'
 import AiActionButton from '@/components/Ai/AiActionButton'
 import { SPACE, TEXT } from '@/theme/tokens'
-import { AnalyticsBox } from './AnalyticsBox'
+import SectionBox from '@/components/SectionBox'
 import { suggestionWarnings } from './analyticsAi'
 
 const { Text } = Typography
@@ -56,7 +56,7 @@ export function AnalyticsAiPanel({
 
   return (
     <div data-testid="analytics-ai-panel">
-      <AnalyticsBox
+      <SectionBox
         title="用一句话生成分析"
         icon={<RobotOutlined />}
         extra={<span className="cn-an-muted">AI 只生成建议，不自动保存</span>}
@@ -136,7 +136,7 @@ export function AnalyticsAiPanel({
             </div>
           )}
         </Space>
-      </AnalyticsBox>
+      </SectionBox>
     </div>
   )
 }

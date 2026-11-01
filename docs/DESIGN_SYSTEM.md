@@ -99,6 +99,19 @@
 
 合并顺序：`baseTokens → 主题 token → 组件 token`，主题显式声明的键优先（配色不会被标尺覆盖）。
 
+### 工作台原语：`.cn-page-head` / `.cn-box`
+
+数据分析与质量检查两页共用一套 GitHub 方盒语言，样式只在 `index.css` 定义一次，组件实现为 `components/SectionBox.tsx`（方盒）：
+
+| 类名 | 用途 |
+| --- | --- |
+| `.cn-page-head` / `-main` / `-icon` / `-text` / `-title` / `-sub` / `-meta` / `-actions` | 紧凑页头：图标 + 标题 + 单行副标题（长文案由 `-meta` 省略、悬停看全）+ 右侧主操作；窄屏操作区独占整行 |
+| `.cn-box` / `-head` / `-icon` / `-title` / `-extra` / `-body` / `-foot` / `-hint` | 分区方盒：1px 描边 + 主题圆角 + 浅底标题条，无投影；标题过长自动省略 |
+| `.cn-box--flush > .cn-box-body` | 内容区去内边距与间距，专供「带边框列表」—— 外框由盒子承担，行分隔线满宽，避免双层描边 |
+| `.cn-qc-split` / `.cn-qc-row` / `.cn-qc-row--selectable` / `.cn-qc-row--active` / `.cn-qc-empty` | 质量检查双栏与行态：选中行浅底 + 品牌色左边线；窄屏（≤1023.98px）单列堆叠 |
+
+新增带边框列表时优先复用 `.cn-box--flush` + 行类，不要另起「外层卡片 + 内层 List 边框」的双层描边。
+
 ### 代码高亮（`--cn-code-*`）
 
 文档里的围栏代码块与实时编辑器共用一套 token 类名（`.cn-tok-keyword` / `.cn-tok-string` / `.cn-tok-comment` …），

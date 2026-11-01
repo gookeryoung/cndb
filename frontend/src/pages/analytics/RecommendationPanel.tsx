@@ -20,7 +20,7 @@ import type {
   AnalyticsRecommendationRole,
   AnalyticsSummary,
 } from '@/api/analytics'
-import { AnalyticsBox } from './AnalyticsBox'
+import SectionBox from '@/components/SectionBox'
 import {
   RECOMMENDATION_CHIP_ROLES,
   formatRecommendationRole,
@@ -97,21 +97,21 @@ export function RecommendationPanel({
   if (collapsed) {
     return (
       <div data-testid="analytics-recommend" className="cn-an-recommend-collapsed">
-        <AnalyticsBox
+        <SectionBox
           title={<span className="cn-an-rec-title"><ThunderboltOutlined /> 智能推荐</span>}
         >
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description="选择数据表后展开：表名称、维度与推荐"
           />
-        </AnalyticsBox>
+        </SectionBox>
       </div>
     )
   }
 
   return (
     <div data-testid="analytics-recommend">
-      <AnalyticsBox
+      <SectionBox
         title={
           <span className="cn-an-rec-title">
             <ThunderboltOutlined /> 智能推荐
@@ -250,7 +250,7 @@ export function RecommendationPanel({
             </div>
           </>
         )}
-      </AnalyticsBox>
+      </SectionBox>
     </div>
   )
 }

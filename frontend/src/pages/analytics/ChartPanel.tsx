@@ -7,7 +7,7 @@
 import { Input, Select } from 'antd'
 import { LineChartOutlined } from '@ant-design/icons'
 import type { AnalyticsChart, AnalyticsAgg } from '@/api/analytics'
-import { AnalyticsBox } from './AnalyticsBox'
+import SectionBox from '@/components/SectionBox'
 import { AGG_OPTIONS, CHART_TYPES, chartUsesAggregation } from './analyticsModel'
 
 interface Props {
@@ -25,10 +25,10 @@ export function ChartPanel({ chart, onChange, options, tableFields }: Props) {
   const yLabel = chart.type === 'scatter' ? 'Y 数值列' : '指标 / Y 轴'
 
   return (
-    <AnalyticsBox
+    <SectionBox
       title="可视化"
       icon={<LineChartOutlined />}
-      className="cn-an-box--chart"
+      className="cn-box--chart"
       footer={<span className="cn-an-foot-hint">散点 / 直方图 / 箱线图不使用维度聚合</span>}
     >
       <div className="cn-an-grid cn-an-grid--2">
@@ -105,6 +105,6 @@ export function ChartPanel({ chart, onChange, options, tableFields }: Props) {
           />
         </div>
       </div>
-    </AnalyticsBox>
+    </SectionBox>
   )
 }

@@ -14,7 +14,7 @@ import * as echarts from 'echarts/core'
 import type { Field } from '@/api'
 import type { AnalyticsChart, AnalyticsComputeResponse } from '@/api/analytics'
 import { ChartCard } from '@/pages/grid/views/ChartView'
-import { AnalyticsBox } from './AnalyticsBox'
+import SectionBox from '@/components/SectionBox'
 import {
   downloadTextFile,
   formatNumber,
@@ -91,7 +91,7 @@ export function ChartResultBox({
   }
 
   return (
-    <AnalyticsBox
+    <SectionBox
       title={chart.title || '可视化结果'}
       icon={<LineChartOutlined />}
       extra={
@@ -129,7 +129,7 @@ export function ChartResultBox({
       ) : (
         <ChartCard cfg={toChartConfig(chart)} rows={result.rows} fields={fields} total={result.total} />
       )}
-    </AnalyticsBox>
+    </SectionBox>
   )
 }
 
@@ -151,7 +151,7 @@ export function SummaryResultBox({ result, title }: { result: AnalyticsComputeRe
   }
 
   return (
-    <AnalyticsBox
+    <SectionBox
       title={`分组汇总（按 ${summary.group_label}）`}
       icon={<TableOutlined />}
       extra={
@@ -183,7 +183,7 @@ export function SummaryResultBox({ result, title }: { result: AnalyticsComputeRe
           })),
         ]}
       />
-    </AnalyticsBox>
+    </SectionBox>
   )
 }
 
@@ -210,7 +210,7 @@ export function StatsResultBox({ result, title }: { result: AnalyticsComputeResp
   }
 
   return (
-    <AnalyticsBox
+    <SectionBox
       title="描述统计（含派生指标）"
       extra={
         <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-stats" onClick={exportStats}>
@@ -258,7 +258,7 @@ export function StatsResultBox({ result, title }: { result: AnalyticsComputeResp
           { title: '求和', dataIndex: 'sum', render: formatNumber },
         ]}
       />
-    </AnalyticsBox>
+    </SectionBox>
   )
 }
 
@@ -330,7 +330,7 @@ export function RowsResultBox({
   ]
 
   return (
-    <AnalyticsBox
+    <SectionBox
       title="派生数据预览"
       extra={
         <Button size="small" icon={<DownloadOutlined />} data-testid="analytics-export-rows" onClick={exportRows}>
@@ -364,6 +364,6 @@ export function RowsResultBox({
         }}
         scroll={{ x: 'max-content' }}
       />
-    </AnalyticsBox>
+    </SectionBox>
   )
 }

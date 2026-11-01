@@ -7,7 +7,7 @@
 import { Button, Input, InputNumber, Select, Tooltip } from 'antd'
 import { DeleteOutlined, GroupOutlined, PlusOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import type { AnalyticsAgg, AnalyticsSummary, AnalyticsSummaryMetric } from '@/api/analytics'
-import { AnalyticsBox } from './AnalyticsBox'
+import SectionBox from '@/components/SectionBox'
 import { AGG_OPTIONS, summarySortOptions } from './analyticsModel'
 
 interface Props {
@@ -43,13 +43,13 @@ export function SummaryPanel({ summary, onChange, groupOptions, metricOptions }:
   const sortOptions = summarySortOptions(summary)
 
   return (
-    <AnalyticsBox
+    <SectionBox
       title="分组汇总"
       icon={<GroupOutlined />}
-      className="cn-an-box--summary"
+      className="cn-box--summary"
       extra={
         <Tooltip title="按维度分组后计算指标（基于全量扫描行），可排序并只保留前 N 组；留空分组字段则输出全局合计">
-          <QuestionCircleOutlined className="cn-an-box-hint" aria-label="分组汇总说明" />
+          <QuestionCircleOutlined className="cn-box-hint" aria-label="分组汇总说明" />
         </Tooltip>
       }
       footer={
@@ -159,6 +159,6 @@ export function SummaryPanel({ summary, onChange, groupOptions, metricOptions }:
           />
         </div>
       ))}
-    </AnalyticsBox>
+    </SectionBox>
   )
 }
