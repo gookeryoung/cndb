@@ -54,9 +54,10 @@ const TABLE_SUBPAGES = [
 
 /** 文档区二级页定义 —— 与表级子页同形，但作用域是工作区下的全部文档（无「文档设置」）.
  * 「文档结构」在前（0082 C4）：指向既有文档总览列表页（/documents），作为文档模块的根级页签入口；
- * 其余子页页签导航到 /documents/<key>。 */
+ * 「质量检查」为工作区级页（/pipelines），不在文档前缀下，其余子页页签导航到 /documents/<key>。 */
 const DOCUMENT_SUBPAGES = [
   { key: 'structure', label: '文档结构', icon: <FolderOpenOutlined />, to: '' },
+  { key: 'pipelines', label: '质量检查', icon: <SafetyCertificateOutlined />, to: 'pipelines' },
   { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined />, to: 'change-requests' },
   { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined />, to: 'issues' },
 ] as const
@@ -352,11 +353,11 @@ export default function MainLayout() {
   const activeSubpage = TABLE_SUBPAGES.find(p => p.key === activeTableTab)
 
   // ── 文档区二级页签（与表级同形：竖线分割 + 胶囊页签）──
-  // 进入 /w/:wid/documents 及其子页时，在工作区 Tabs 右侧渲染「文档」根入口 + 子页页签。
-  // 注意：/w/:wid/documents/:docId 也在该前缀下（编辑器页），此时无子页激活，仅展示根入口。
+  // 进入 /w/:wid/documents 及其子页时，在工作区 Tabs 右侧渲染子页页签（无根入口，「文档结构」即根）。
+  // 注意：/w/:wid/documents/:docId 也在该前缀下（编辑器页），此时无子页激活。
   // inDocumentsContext 已在上方文档侧栏查询处定义
   // 「文档结构」页签即文档总览列表页本体（/documents 无子段时激活）；
-  // 其余子页由 pathname 中的静态段驱动。
+  // 其余子页由 pathname 中的静态段驱动；「质量检查」指向工作区级 /pipelines。
   const activeDocumentTab = location === `/w/${wid}/documents`
     ? 'structure'
     : location.includes('/change-requests')
@@ -885,17 +886,6 @@ export default function MainLayout() {
               )}
               {inDocumentsContext && (
                 <div className="cn-table-crumb" data-testid="documents-crumb">
-                  <span className="cn-table-crumb-divider" aria-hidden />
-                  <Button
-                    type="text"
-                    size="small"
-                    data-testid="documents-crumb-root"
-                    style={{ paddingInline: 8 }}
-                    onClick={() => navigate(`/w/${wid}/documents`)}
-                  >
-                    <FileTextOutlined />
-                    <span className="cn-table-crumb-name">文档</span>
-                  </Button>
                   {/* 文档区子页页签 —— 形式与表级页签一致，作用域为工作区下全部文档 */}
                   <nav className="cn-table-tabs" aria-label="文档页面切换">
                     {DOCUMENT_SUBPAGES.map(p => {
@@ -908,7 +898,11 @@ export default function MainLayout() {
                           aria-selected={active}
                           data-testid={`document-tab-${p.key}`}
                           className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
-                          onClick={() => navigate(`/w/${wid}/documents${p.to ? `/${p.to}` : ''}`)}
+                          onClick={() => navigate(
+                            p.key === 'pipelines'
+                              ? `/w/${wid}/pipelines`
+                              : `/w/${wid}/documents${p.to ? `/${p.to}` : ''}`,
+                          )}
                         >
                           {p.icon}
                           {p.label}

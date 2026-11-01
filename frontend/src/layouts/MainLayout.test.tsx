@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
@@ -365,7 +365,8 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         await waitFor(() => expect(screen.getByTestId('documents-page-stub')).toBeVisible())
         expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /数据源同步/ })).toBeNull()
-        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        // 工作区级页签行质量检查恒显（文档区胶囊页签另有同名入口，按 tablist 区分）
+        expect(within(screen.getByRole('tablist')).getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
         unmount()
 
         // 设计段同样收敛
@@ -557,14 +558,14 @@ describe('MainLayout 表级页签（融合导航行）', () => {
 })
 
 describe('MainLayout 文档区二级导航', () => {
-    it('进入文档页显示二级导航：文档根入口 + 文档结构 / 修改申请 / 问题清单页签', async () => {
+    it('进入文档页显示二级导航：文档结构 / 质量检查 / 修改申请 / 问题清单页签', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => {
             expect(screen.getByTestId('documents-crumb')).toBeVisible()
         })
-        expect(screen.getByTestId('documents-crumb-root')).toBeVisible()
         expect(screen.getByTestId('document-tab-structure')).toBeVisible()
+        expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
         expect(screen.getByTestId('document-tab-change-requests')).toBeVisible()
         expect(screen.getByTestId('document-tab-issues')).toBeVisible()
         // 未进入表上下文时表级页签不渲染
@@ -604,7 +605,7 @@ describe('MainLayout 文档区二级导航', () => {
         expect(screen.getByTestId('document-tab-issues')).toHaveAttribute('aria-selected', 'false')
     })
 
-    it('文档编辑器页仍显示二级导航（无子页激活），点击根入口返回文档总览', async () => {
+    it('文档编辑器页仍显示二级导航（无子页激活），点击「质量检查」导航到工作区级 pipelines 页', async () => {
         renderLayout(mockUser, '/w/10/documents/2')
 
         await waitFor(() => {
@@ -612,9 +613,11 @@ describe('MainLayout 文档区二级导航', () => {
         })
         expect(screen.getByTestId('document-tab-change-requests')).toHaveAttribute('aria-selected', 'false')
 
-        fireEvent.click(screen.getByTestId('documents-crumb-root'))
+        fireEvent.click(screen.getByTestId('document-tab-pipelines'))
         await waitFor(() => {
-            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
+            // /pipelines 无测试桩路由：离开文档上下文后文档页卸载、二级导航随之消失
+            expect(screen.queryByTestId('documents-page-stub')).toBeNull()
+            expect(screen.queryByTestId('documents-crumb')).toBeNull()
         })
     })
 
@@ -770,8 +773,8 @@ describe('MainLayout 工作区模块门控', () => {
 
         expect(screen.getByTestId('ws-nav-documents')).toBeInTheDocument()
         expect(screen.getByTestId('ws-nav-settings')).toBeInTheDocument()
-        // 质量检查页签恒显（ADR 0080 D4）
-        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        // 质量检查页签恒显（ADR 0080 D4；文档区胶囊页签另有同名入口，按 tablist 区分）
+        expect(within(screen.getByRole('tablist')).getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
         // 无数据表功能 → 文档段渲染文档导航侧栏（需求 0065），无表导航
         await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
         expect(screen.queryByTestId('sider-tables')).toBeNull()
