@@ -37,6 +37,8 @@ const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 const DatasourcePage = lazy(() => import('@/pages/datasource/DatasourcePage'))
 const PipelinesPage = lazy(() => import('@/pages/pipelines/PipelinesPage'))
 const PipelineRunDetail = lazy(() => import('@/pages/pipelines/PipelineRunDetail'))
+const DesignsPage = lazy(() => import('@/pages/design/DesignsPage'))
+const DesignEditorPage = lazy(() => import('@/pages/design/DesignEditorPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const HelpDocsPage = lazy(() => import('@/pages/help/HelpDocsPage'))
 
@@ -95,6 +97,13 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/pipelines/:rid" element={
             <Suspense fallback={<PageFallback />}><PipelineRunDetail /></Suspense>
+          } />
+          {/* 设计模块（ADR 0079）：列表 + DSL 编辑器（3D 实时预览） */}
+          <Route path="w/:wid/design" element={
+            <Suspense fallback={<PageFallback />}><DesignsPage /></Suspense>
+          } />
+          <Route path="w/:wid/design/:designId" element={
+            <Suspense fallback={<PageFallback />}><DesignEditorPage /></Suspense>
           } />
           <Route path="w/:wid/settings" element={
             <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>

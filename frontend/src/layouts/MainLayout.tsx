@@ -11,7 +11,7 @@ import {
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
-  SafetyCertificateOutlined,
+  SafetyCertificateOutlined, ToolOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
   LockOutlined,
@@ -256,6 +256,14 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
+    ...(wsFeatures.design ? [{
+      key: 'design',
+      label: (
+        <span>
+          <ToolOutlined /> 设计
+        </span>
+      ),
+    }] : []),
     ...(wsFeatures.analytics ? [{
       key: 'analytics',
       label: (
@@ -316,8 +324,10 @@ export default function MainLayout() {
   const inAnalyticsContext = !!wid && location.startsWith(`/w/${wid}/analytics`)
   const inDatasourceContext = !!wid && location.startsWith(`/w/${wid}/datasource`)
   const inPipelinesContext = !!wid && location.startsWith(`/w/${wid}/pipelines`)
+  const inDesignContext = !!wid && location.startsWith(`/w/${wid}/design`)
   const inWsSettingsContext = !!wid && location.startsWith(`/w/${wid}/settings`)
-  const inFocusContext = inAnalyticsContext || inDatasourceContext || inPipelinesContext || inWsSettingsContext
+  const inFocusContext =
+    inAnalyticsContext || inDatasourceContext || inPipelinesContext || inWsSettingsContext || inDesignContext
   type SiderMode = 'documents' | 'tables' | 'hidden'
   const siderMode: SiderMode =
     inDocumentsContext && wsFeatures.documents
@@ -346,14 +356,16 @@ export default function MainLayout() {
     ? 'tables'
     : location.includes('/documents')
       ? 'documents'
-      : location.includes('/analytics')
-        ? 'analytics'
-        : location.includes('/datasource')
-          ? 'datasource'
-          : location.includes('/pipelines')
-            ? 'pipelines'
-            : location.includes('/settings')
-              ? 'settings'
+      : location.includes('/design')
+        ? 'design'
+        : location.includes('/analytics')
+          ? 'analytics'
+          : location.includes('/datasource')
+            ? 'datasource'
+            : location.includes('/pipelines')
+              ? 'pipelines'
+              : location.includes('/settings')
+                ? 'settings'
               : 'tables'
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
@@ -374,12 +386,14 @@ export default function MainLayout() {
     const inAnalytics = location.startsWith(`/w/${wid}/analytics`)
     const inDatasource = location.startsWith(`/w/${wid}/datasource`)
     const inPipelines = location.startsWith(`/w/${wid}/pipelines`)
+    const inDesign = location.startsWith(`/w/${wid}/design`)
     if (
       (!feat.tables && inTables) ||
       (!feat.documents && inDocuments) ||
       (!feat.analytics && inAnalytics) ||
       (!feat.datasource && inDatasource) ||
-      (!feat.quality && inPipelines)
+      (!feat.quality && inPipelines) ||
+      (!feat.design && inDesign)
     ) {
       navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.workspace_type)}`, { replace: true })
     }

@@ -1,0 +1,119 @@
+/** 结构 DSL 编辑器 —— CodeMirror 6 封装（ADR 0079 D11）.
+ *
+ * StreamLanguage 高亮见 designLang；诊断回显：编译端点返回的结构化
+ * diagnostics（行 / 列）映射为错误行装饰（`cn-dsl-diag-error` 底色），
+ * doc 变更后旧装饰立即失效（等下一轮编译结果），避免错位。
+ */
+
+import { useEffect, useRef } from 'react'
+import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state'
+import {
+  Decoration,
+  EditorView,
+  keymap,
+  lineNumbers,
+  placeholder as cmPlaceholder,
+  type DecorationSet,
+} from '@codemirror/view'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
+import { oneDark } from '@codemirror/theme-one-dark'
+import type { DesignDiagnostic } from '@/api'
+import { cnDslLanguage } from './designLang'
+
+/** 诊断更新效果（编辑器外部把编译结果推进来） */
+export const setDiagnostics = StateEffect.define<DesignDiagnostic[]>()
+
+const diagnosticsField = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setDiagnostics)) {
+        const doc = tr.state.doc
+        const ranges = effect.value.map(item => {
+          const line = Math.min(Math.max(item.line, 1), doc.lines)
+          const pos = doc.line(line).from
+          return Decoration.line({ class: 'cn-dsl-diag-error' }).range(pos)
+        })
+        return Decoration.set(ranges)
+      }
+    }
+    // 文档变更后旧定位失效：清空装饰，等下一轮编译
+    return tr.docChanged ? Decoration.none : value
+  },
+  provide: field => EditorView.decorations.from(field),
+})
+
+/** 只读切换仓（viewer 只读看源码） */
+const editableCompartment = new Compartment()
+
+interface DslEditorProps {
+  value: string
+  onChange: (value: string) => void
+  diagnostics: DesignDiagnostic[]
+  placeholder?: string
+  /** 只读态（viewer）：内容可看不可改 */
+  readOnly?: boolean
+}
+
+export default function DslEditor({ value, onChange, diagnostics, placeholder, readOnly }: DslEditorProps) {
+  const hostRef = useRef<HTMLDivElement>(null)
+  const viewRef = useRef<EditorView | null>(null)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
+
+  // 视图只建一次；外部 value 变化（保存后回写等）以 transaction 同步
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host) return
+    const view = new EditorView({
+      parent: host,
+      state: EditorState.create({
+        doc: value,
+        extensions: [
+          lineNumbers(),
+          history(),
+          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          cnDslLanguage,
+          syntaxHighlighting(defaultHighlightStyle),
+          oneDark,
+          diagnosticsField,
+          EditorView.lineWrapping,
+          placeholder ? cmPlaceholder(placeholder) : [],
+          editableCompartment.of(EditorView.editable.of(!readOnly)),
+          EditorView.updateListener.of(update => {
+            if (update.docChanged) onChangeRef.current(update.state.doc.toString())
+          }),
+        ],
+      }),
+    })
+    viewRef.current = view
+    return () => {
+      view.destroy()
+      viewRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 视图仅按初始 value 建一次
+  }, [])
+
+  // 受控 value 同步（草稿恢复 / 保存失败回显不丢）
+  useEffect(() => {
+    const view = viewRef.current
+    if (view && view.state.doc.toString() !== value) {
+      view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
+    }
+  }, [value])
+
+  // 只读切换（viewer 也能看设计源）
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: editableCompartment.reconfigure(EditorView.editable.of(!readOnly)),
+    })
+  }, [readOnly])
+
+  // 诊断装饰同步（错误行底色）
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setDiagnostics.of(diagnostics) })
+  }, [diagnostics])
+
+  return <div ref={hostRef} className="cn-dsl-editor" />
+}

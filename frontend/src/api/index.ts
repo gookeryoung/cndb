@@ -104,6 +104,21 @@ export type {
   PipelineWorkflow,
   PipelineWorkflowPayload,
 } from './pipelines'
+export { designsApi } from './design'
+export type {
+  DesignBooleanNode,
+  DesignDetail,
+  DesignDiagnostic,
+  DesignIR,
+  DesignIRNode,
+  DesignIRParam,
+  DesignListItem,
+  DesignPreviewResult,
+  DesignPrimitiveNode,
+  DesignTransform,
+  DesignTransformKind,
+  DesignVersionItem,
+} from './design'
 export { searchApi } from './search'
 export type {
   WorkspaceSearchParams,

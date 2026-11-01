@@ -22,6 +22,8 @@ export default tseslint.config(
       'playwright-report',
       '.local-ms-playwright',
       '.playwright-browsers',
+      // Chromium 81 冒烟快照（chrome81-smoke.mjs 下载解压到 .cache/chrome81）
+      '.cache',
     ],
   },
 

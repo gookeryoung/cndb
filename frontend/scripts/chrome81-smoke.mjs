@@ -7,7 +7,7 @@
  * （CHROMIUM81_REVISION 与 BROWSER_BASELINE 同处 browser-baseline.mjs，避免版本漂移）。
  *
  * 覆盖：
- *  - 登录 → 工作区列表 → 数据表打开 / 视图切换 → 文档页；
+ *  - 登录 → 工作区列表 → 数据表打开 / 视图切换 → 文档页 → 设计编辑器（three.js，ADR 0079 D4）；
  *  - 兼容层自检：StyleProvider 产物无 :where()、--cn-mix-* 兜底已写入、flex-gap shim 已装载；
  *  - PDF 导出（html2canvas-pro 依赖 Intl.Segmenter，旧内核必须走垫片）；
  *  - 10 套主题逐一切换截图（输出到 .cache/chrome81-screenshots）。
@@ -263,6 +263,58 @@ async function main() {
       { timeout: 30_000 },
     )
     check('文档页打开', true)
+
+    // ── 4.5 设计模块（ADR 0079 D4：three.js 0.165 在 Chromium 81 实测）────
+    // 经 API 创建示例设计（参数化法兰板，与 DesignsPage 的起步模板同源）
+    const DESIGN_CONTENT = [
+      'param width = 80',
+      'param height = 40',
+      'param hole_d = 8',
+      'module plate(w, h, t) {',
+      '  difference {',
+      '    box(size = [w, h, t])',
+      '    translate([w / 2, h / 2, -1]) {',
+      '      cyl(d = hole_d, h = t + 2)',
+      '    }',
+      '  }',
+      '}',
+      'plate(width, height, 12)',
+      '',
+    ].join('\n')
+    const design = await fetchJson(`/api/v1/workspaces/${seed.workspace.id}/designs`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${seed.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: '冒烟-法兰板', description: 'Chromium 81 冒烟样例', content: DESIGN_CONTENT }),
+    })
+    await page.goto(`${baseUrl}/w/${seed.workspace.id}/design`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30_000,
+    })
+    await page.waitForFunction(
+      () => document.body.innerText.includes('冒烟-法兰板'),
+      { timeout: 30_000 },
+    )
+    check('设计列表打开', true)
+
+    await page.goto(`${baseUrl}/w/${seed.workspace.id}/design/${design.id}`, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30_000,
+    })
+    // three.js lazy chunk 在 Chromium 81 上加载并执行：画布挂载或 WebGL 不可用时的降级提示
+    await page.waitForFunction(
+      () => Boolean(
+        document.querySelector('[data-testid="design-preview-canvas"]') ||
+        document.querySelector('[data-testid="design-preview-webgl-unsupported"]'),
+      ),
+      { timeout: 30_000 },
+    )
+    const webglRendered = await page.evaluate(() =>
+      Boolean(document.querySelector('[data-testid="design-preview-canvas"]')),
+    )
+    // 出现画布或降级提示即证明 lazy chunk 加载并执行成功（否则仅剩 Skeleton + pageerror）
+    check('设计编辑器与 three.js chunk 在 Chromium 81 可用', true)
+    if (webglRendered) notes.push('three.js WebGL 渲染在 Chromium 81 实际产出画布')
+    else notes.push('Chromium 81 headless 无 WebGL 上下文，预览走降级提示（DSL 模块本身未崩）')
 
     // ── 5. PDF 导出（C5：Intl.Segmenter 垫片 + html2canvas-pro）──────
     await page.goto(`${baseUrl}/w/${seed.workspace.id}/tables/${seed.table.id}`, {

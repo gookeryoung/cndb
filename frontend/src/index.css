@@ -6459,3 +6459,43 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-outline-caret-expanded .cn-outline-caret-icon {
   transform: rotate(90deg);
 }
+
+/* ── 设计模块（ADR 0079）：DSL 编辑器与预览 ─────────────────── */
+
+/* CodeMirror 容器：编辑器撑满宿主高度 */
+.cn-dsl-editor-host .cn-dsl-editor {
+  height: 100%;
+}
+.cn-dsl-editor .cm-editor {
+  height: 100%;
+  border-radius: var(--cn-radius-lg);
+}
+.cn-dsl-editor .cm-scroller {
+  font-family: var(--cn-font-mono, monospace);
+  font-size: var(--cn-text-sm);
+}
+/* 编译诊断：错误行底色（诊断由 preview 端点按行 / 列回推） */
+.cn-dsl-editor .cm-line.cn-dsl-diag-error {
+  background: rgba(255, 99, 94, 0.18);
+}
+/* 诊断列表条目 */
+.cn-dsl-diag-item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cn-space-xs);
+  padding: var(--cn-space-hairline) 0;
+}
+/* 预览画布与参数面板 */
+.cn-dsl-preview-host {
+  border-radius: var(--cn-radius-lg);
+  overflow: hidden;
+}
+.cn-dsl-params {
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
+}
+.cn-dsl-version-item {
+  color: var(--cn-text-secondary, rgba(255, 255, 255, 0.45));
+  font-size: var(--cn-text-xs);
+}
