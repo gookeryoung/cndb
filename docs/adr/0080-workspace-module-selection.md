@@ -1,6 +1,6 @@
 # ADR 0080: 工作区类型改为可勾选功能模块与顶部导航适配
 
-Status: Proposed（待评审）
+Status: Accepted（2026-11-01 用户评审通过；评审修订：C4/D4 质量检查页签恒显 + GitHub 风格双栏、D8 默认全选 + 选型 UI 优化）
 Date: 2026-11-01
 Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/plugins/pipeline/services/checks/registry.py`、`frontend/src/utils/workspaceType.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx`、`docs/adr/0076-pipeline-check-dsl.md`、`docs/adr/0079-design-3d-dsl-module.md`
 需求卡片: `docs/requirements/0080-workspace-module-selection.md`（需求原文与约束编号的唯一副本）
@@ -13,10 +13,10 @@ Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 类型选择改为可勾选的模块（数据表/文档/设计，任意项或多项） | 落库字段由 `workspace_type` 枚举改为 `modules` JSON 集合（非空、白名单 {tables, documents, design}）；创建弹窗与工作区设置页改 Checkbox.Group；API 以 `modules` 替换 `workspace_type`（D2） |
+| C1 | 类型选择改为可勾选的模块（数据表/文档/设计，任意项或多项） | 落库字段由 `workspace_type` 枚举改为 `modules` JSON 集合（非空、白名单 {tables, documents, design}）；创建弹窗与工作区设置页改卡片式模块勾选（图标 + 名称 + 说明，默认全选）；API 以 `modules` 替换 `workspace_type`（D2/D8） |
 | C2 | 数据分析、数据源同步与数据表强绑定 | 二者为「数据表」的派生功能，不进勾选 UI 与 API 字段；由模块→功能绑定表唯一推导（D3） |
 | C3 | 文档和设计模块暂未确定，后续开发 | 本期二者为独立单模块；模块清单与绑定关系收敛为后端 `workspaces/modules.py` 与前端 `workspaceModules.ts` 两处常量表，后续扩展只改表不改模型（D1） |
-| C4 | 质量检查是否分散，适应性设计 | 保留工作区级集中页签（ADR 0076 D11），自适应门控：tables 或 documents 任一启用才显示；检查动作目录按模块过滤、DSL 保存/校验期拒绝已禁用域动作（D4） |
+| C4 | 质量检查是否分散，适应性设计 | 质量检查保留工作区级集中页签且**所有工作区恒显**（含仅设计，为后续 design 域检查动作预留入口）；页面改 GitHub 风格双栏：左侧流水线规则清单、右侧检查结果历史（D4）；检查动作目录按已启用模块过滤，DSL 保存 / 校验期拒绝已禁用域动作 |
 | C5 | 顶部导航布局调整 | 页签按勾选模块渲染，顺序固定：数据表 → 文档 → 设计 → 数据分析 → 数据源同步 → 质量检查 → 工作区设置；落地段取第一个可用模块（tables → documents → design）；未开放段重定向（D9） |
 | C6 | 存量重构兼容 | 单条迁移映射旧枚举（D5）；备份协议 v11 → v12 写 `modules`、旧版按同一映射读（D7）；API 破坏性替换、前后端同仓同发（D2） |
 
@@ -79,11 +79,10 @@ MODULE_FEATURES: dict[str, frozenset[str]] = {
 }
 
 def resolve_features(modules: list[str]) -> dict[str, bool]: ...
-def quality_available(modules: list[str]) -> bool: ...            # tables 或 documents 任一启用
 def legacy_type_to_modules(workspace_type: str) -> list[str]: ...  # data_doc/data/doc 映射（D5）
 ```
 
-**前端** `frontend/src/utils/workspaceModules.ts`（新增，替换 `workspaceType.ts`）：`WORKSPACE_MODULE_OPTIONS`（label / hint / icon）、`workspaceModulesFeatures(modules)`（键含 quality，取 `quality_available` 口径）、`workspaceLandingSegment(modules)`（tables → documents → design 第一个可用段）。语义与后端逐项一致（I2/I3）。
+**前端** `frontend/src/utils/workspaceModules.ts`（新增，替换 `workspaceType.ts`）：`WORKSPACE_MODULE_OPTIONS`（label / hint / icon）、`workspaceModulesFeatures(modules)`（quality 键恒为 true，D4）、`workspaceLandingSegment(modules)`（tables → documents → design 第一个可用段）。语义与后端逐项一致（I2/I3）。
 
 **质量检查域校验** `src/cndb/plugins/pipeline/services/checks/` 新增 `domain_of(uses) -> str`（`table/*` → tables、`document/*` → documents、`design/*` → design）与 `assert_steps_in_enabled_modules(ir, modules)`；create / update / validate 三个端点编译后统一调用（C4）。
 
@@ -99,7 +98,7 @@ def legacy_type_to_modules(workspace_type: str) -> list[str]: ...  # data_doc/da
 
 ### 4. 边界与例外
 
-1. 仅勾选「设计」的工作区：无任何检查目标，质量检查页签隐藏（卡片未决问题②）；落地页 `/w/:wid/design`。
+1. 仅勾选「设计」的工作区：质量检查页签照常显示（评审修订，为后续 design 域检查动作预留入口），目录为空时页面给「暂无可用检查动作」提示；落地页 `/w/:wid/design`。
 2. 后端不新增模块级路由拦截：与现状一致（Context #16），门控是前端导航层职责；`modules` 收窄只隐藏入口不删数据——取消勾选「文档」后文档实体保留，重新勾选即恢复可见（对齐现状「类型可改」行为）。
 3. 存量流水线不受目录过滤影响：已保存的工作流即使包含当前已禁用域的动作，仍可运行（目标数据还在，只是编辑器目录不再展示该动作；新建 / 保存路径才拦截）。
 4. `modules` 校验失败（空集 / 未知值）在创建与更新路径均返回 422；备份恢复导入路径同走校验器，映射失败（旧备份未知枚举值）回退全三模块并记入导入 `errors`。
@@ -123,30 +122,31 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 |---|---|---|
 | 判定入口 | `frontend/src/utils/workspaceModules.ts`（新增，删 `workspaceType.ts`） | 模块选项 / features / 落地段（D9） |
 | API 类型 | `frontend/src/api/types/common.ts`、`workspaces.ts` | `WorkspaceModule` 联合类型；接口字段 `modules`（Context #14） |
-| 创建弹窗 | `frontend/src/pages/workspace/WorkspaceList.tsx` | `Select` → `Checkbox.Group`（默认三模块全选，至少一项校验）；卡片类型标签 → 模块标签组；进入工作区按落地段导航 |
-| 工作区设置 | `frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | 同款勾选组 + 至少一项校验；展示模块标签组 |
-| 布局门控 | `frontend/src/layouts/MainLayout.tsx` | `wsFeatures` ← `workspaceModulesFeatures`；质量检查页签 ← `quality_available`；重定向 / 落地段扩 design；工作区菜单与兜底跳进去硬编码 `/tables`（边界 #6） |
+| 创建弹窗 | `frontend/src/pages/workspace/WorkspaceList.tsx` | `Select` → 卡片式模块勾选（D8，默认全选、至少一项校验）；卡片类型标签 → 模块标签组；进入工作区按落地段导航 |
+| 工作区设置 | `frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | 同款卡片式勾选组 + 至少一项校验；展示模块标签组 |
+| 布局门控 | `frontend/src/layouts/MainLayout.tsx` | `wsFeatures` ← `workspaceModulesFeatures`；质量检查页签恒显（D4）；重定向 / 落地段扩 design；工作区菜单与兜底跳转去掉硬编码 `/tables`（边界 #6） |
+| 质量检查页 | `frontend/src/pages/pipelines/` | GitHub 风格双栏（D4）：左栏流水线规则清单（列表 / 新建入口），右栏选中规则（或未选中时全部）的运行结果历史（run 列表 → finding 明细）；目录为空给「暂无可用检查动作」提示 |
 | 帮助文档 | `frontend/src/pages/help/content/configuration.tsx`、`quickStart.tsx` | 「三选一」文案改「按需勾选模块」 |
 | 测试迁移 | `frontend/src/utils/workspaceType.test.ts` 等 | 同步改为 `workspaceModules.test.ts`，断言不放宽 |
 
 ### 7. 测试清单
 
-**判定层（单测）**：`tests/test_workspace_modules.py` —— 绑定表全分支（7 种非空组合的 features 矩阵）、`quality_available` 边界（仅设计 → False）、`legacy_type_to_modules` 三值映射、空集 / 未知值 / 重复 / 乱序输入的校验器行为（I1）。
+**判定层（单测）**：`tests/test_workspace_modules.py` —— 绑定表全分支（7 种非空组合的 features 矩阵）、`legacy_type_to_modules` 三值映射、空集 / 未知值 / 重复 / 乱序输入的校验器行为（I1）。
 
 **接口层**：`tests/test_workspace_modules_api.py` —— 创建 / 更新各组合落库与响应字段、空集与非法值 422、`pipelines/checks` 目录按模块过滤、DSL 保存含禁用域动作 400、`validate` 同款、存量流水线仍可运行（边界 #3）。
 
 **迁移 / 备份**：`tests/test_workspace_modules_migration.py`（幂等 + downgrade 有损映射断言 + 回填映射逐值核对）、`tests/test_workspace_backup_v12.py`（v12 往返含 modules；v11 及更早旧备份导入按映射回填；未知旧枚举回退全三并记 errors）。
 
-**前端单测**：`workspaceModules.test.ts`（与后端矩阵逐项对齐，I3）、`WorkspaceList.test.tsx`（勾选交互、至少一项阻断、模块标签）、`WorkspaceSettingsContent.test.tsx`、`MainLayout.test.tsx`（各组合页签集合、未开放段重定向、仅设计工作区落地 `/design`）。
+**前端单测**：`workspaceModules.test.ts`（与后端矩阵逐项对齐，I3）、`WorkspaceList.test.tsx`（卡片式勾选交互、至少一项阻断、模块标签）、`WorkspaceSettingsContent.test.tsx`、`PipelinesPage.test.tsx`（双栏布局：左规则清单、右运行历史；目录为空提示）、`MainLayout.test.tsx`（各组合页签集合、未开放段重定向、仅设计工作区落地 `/design` 且质量页签仍在）。
 
-**e2e（前端）**：`frontend/tests/e2e/critical/workspace-modules.spec.ts` —— 新建工作区仅勾「文档 + 设计」→ 顶部页签断言（无数据表 / 数据分析 / 数据源同步 / 质量检查）→ 设置页取消「文档」→ 自动重定向到 `/design`。
+**e2e（前端）**：`frontend/tests/e2e/critical/workspace-modules.spec.ts` —— 新建工作区仅勾「文档 + 设计」→ 顶部页签断言（无数据表 / 数据分析 / 数据源同步）→ 质量检查页签仍显示且目录为空有提示 → 设置页取消「文档」→ 自动重定向到 `/design`。
 
 ### 8. 分期
 
 | 期 | 内容 | 风险 |
 |---|---|---|
 | **P0** | `WorkspaceModule` 常量与模型列 + `modules.py` 判定入口 + schema 校验器 + API 替换 + 迁移（幂等 / downgrade）+ pipeline 目录过滤与保存域校验 + 备份 v12 / 旧版映射 + 后端测试 | 低 |
-| **P1** | 前端 `workspaceModules.ts` + API 类型 + 创建 / 设置勾选组 + 列表卡片标签 + MainLayout 页签门控 / 落地 / 重定向 + 前端单测 | 中（MainLayout 门控分支多，组合用例须覆盖 7 种组合） |
+| **P1** | 前端 `workspaceModules.ts` + API 类型 + 创建 / 设置卡片式选型（D8）+ 列表卡片标签 + MainLayout 页签门控 / 落地 / 重定向 + 质量检查页 GitHub 风格双栏（D4）+ 前端单测 | 中（MainLayout 门控分支多，组合用例须覆盖 7 种组合；双栏页交互重构） |
 | **P2** | 帮助文案、CONTEXT.md 术语与 ADR 索引回填、e2e 收口、全仓 `workspace_type` 残留清理 | 低 |
 
 ## 决策记录（唯一决策台账）
@@ -156,11 +156,11 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 | D1 | 整体方案选型 | 单选枚举 → 模块集合 + 声明式绑定表：`modules` 白名单集合落库，模块→功能映射收敛为前后端各一处常量表（C1/C3） | 7 种非空组合全可达；C3 后续为文档 / 设计加子模块只改绑定表，零迁移（Context #1 核心缺陷） | 扩枚举组合值（组合数随模块数阶乘增长，不可扩展）；三个布尔列（绑定关系无法声明，校验逻辑散落查询两侧） | `workspaces/models.py`、`workspaces/modules.py`、`frontend/src/utils/workspaceModules.ts` |
 | D2 | 存储载体与 API 兼容 | `modules` JSON 列（对齐 `tags` 先例），drop 旧列；API 直接替换 `workspace_type` 不双写（C6） | 前后端同仓同发，无双端漂移；白名单由校验器保证（I1）；双字段会形成双真相源 | 保留枚举列兼容双写（双真相源必然漂移，违背 I2）；bitmask 整型（不可读、白名单与顺序校验弱） | `workspaces/models.py`、`schemas/models.py`、`routers/workspaces.py` |
 | D3 | 强绑定口径 | analytics / datasource 是 tables 的派生功能：不进勾选 UI、不进 API 字段，仅由绑定表推导（C2/I5） | 用户原文即强绑定；派生口径杜绝「有分析无数据表」的非法中间态 | 四项独立勾选（可造非法态，且与需求相悖）；分析 / 同步单独成模块（需求明确绑定） | `modules.py::MODULE_FEATURES` |
-| D4 | 质量检查归属 | 保留集中页签 + 自适应门控：tables 或 documents 任一启用才显示；目录按模块过滤，保存 / 校验期拒绝禁用域动作（C4） | ADR 0076 D11 已定「检查天然跨域，应集中」；自适应顺带修复 `doc` 型有文档检查却整页签关闭的不一致（Context #9）；域前缀现成可推导（Context #10/#11） | 分散为表级 / 文档级 / 设计级入口（丢跨域编排——流水线 DSL 的 `jobs` 可混合域动作，分散后无法建跨域流水线）；维持现状仅 tables 开（doc 型文档检查永不可达，不一致保留） | `pipeline/services/checks/`（`domain_of` + 断言）、`routers/workflows.py`、`MainLayout.tsx` |
+| D4 | 质量检查归属与页面形态 | 保留集中页签且**所有工作区恒显**（评审拍板：仅设计工作区也显示，为后续 design 域检查动作预留入口）；页面改 GitHub 风格双栏——左侧流水线规则清单、右侧检查结果历史；目录按模块过滤，保存 / 校验期拒绝禁用域动作（C4） | ADR 0076 D11 已定「检查天然跨域，应集中」；恒显消除「doc 型有文档检查却整页签关闭」的不一致（Context #9）且让空目录工作区有明确入口；域前缀现成可推导（Context #10/#11）；双栏参考 GitHub Actions 左 workflow 清单右运行历史的布局 | 分散为表级 / 文档级 / 设计级入口（丢跨域编排——流水线 DSL 的 `jobs` 可混合域动作，分散后无法建跨域流水线）；仅 tables/documents 开（仅设计工作区无入口，后续加 design 域动作时需再改门控）；维持现状仅 tables 开（doc 型文档检查永不可达） | `pipeline/services/checks/`（`domain_of` + 断言）、`routers/workflows.py`、`MainLayout.tsx`、`frontend/src/pages/pipelines/` |
 | D5 | 存量映射 | `data_doc → [tables, documents, design]`、`data → [tables]`、`doc → [documents, design]`（C6/I3） | 按现行 feature 矩阵逐项平移（`workspaceType.ts:49-54`），迁移前后行为零变化 | `doc → [documents]`（会移除现 doc 型已开放的设计页签，行为回退，违背 I3）；全部映射为全三模块（data 型凭空多出文档 / 设计入口） | 迁移 `b6c7d8e9f0a1`、`modules.py::legacy_type_to_modules` |
 | D6 | 迁移与 downgrade | 单条迁移：加列 → CASE 回填 → 置非空 → drop 旧列；downgrade 有损映射（tables+documents→DATA_DOC、tables→DATA、其余→DOC）仅在回滚路径接受（C6） | 纯列变更存量零丢失语义；有损 downgrade 换取模型单真相（D2） | 无损 downgrade（需长期保留旧列，与 D2 单真相源冲突） | `alembic/versions/b6c7d8e9f0a1_workspace_modules.py` |
 | D7 | 备份协议 | v12：workspace 元数据写 `modules`；≤v11 导入读旧 `workspace_type` 按 D5 映射；未知旧值回退全三并记 `errors`（C6/I4） | 协议逐版本演进有 v9→v10→v11 先例（ADR 0079 D9）；映射函数与迁移共用一份 | v11 内混装新字段（协议版本语义混乱）；备份不存 modules（跨环境导入丢模块口径，回退默认全开违背 I3） | `workspace_backup.py`、`workspace_restore.py`、`routers/workspaces.py` |
-| D8 | 默认值与空集 | 新建默认三模块全选（等价旧默认 data_doc）；`modules` 至少一项，空集 422（C1） | 与现行默认行为对齐；空集工作区无任何功能页，落地段无法推导 | 允许空集（无落地页可去，重定向死循环）；默认仅数据表（与现默认 data_doc 不符，升级后新建行为突变） | `schemas/models.py` 校验器、`WorkspaceList.tsx` 初始值 |
+| D8 | 默认值、空集与选型 UI | 新建默认三模块全选（等价旧默认 data_doc，评审拍板）；`modules` 至少一项，空集 422；选型 UI 采用卡片式勾选（模块图标 + 名称 + 一句话说明，点击整卡切换选中态），创建弹窗与工作区设置同款（C1） | 与现行默认行为对齐；卡片式比裸 Checkbox 传达「勾了会开放什么」，降低误配 | 允许空集（无落地页可去，重定向死循环）；默认仅数据表（与现默认 data_doc 不符，升级后新建行为突变）；裸 Checkbox.Group（无说明文字，强绑定的分析 / 同步不直观） | `schemas/models.py` 校验器、`WorkspaceList.tsx` 初始值、`WorkspaceSettingsContent.tsx` |
 | D9 | 前端门控入口与落地段 | `workspaceType.ts` 整体替换为 `workspaceModules.ts`；落地段顺序 tables → documents → design；页签顺序 数据表 → 文档 → 设计 → 数据分析 → 数据源同步 → 质量检查 → 工作区设置（C5） | 旧输入类型（WorkspaceType）已不存在，兼容层无消费方；设计页签排位沿用 ADR 0079 D8（文档之后） | 保留旧函数签名包一层（死代码）；落地段固定 tables（纯文档 / 纯设计工作区首屏必被重定向） | `frontend/src/utils/workspaceModules.ts`、`MainLayout.tsx` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
@@ -202,8 +202,9 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案制定完毕，`Proposed` 待人工评审（S2 卡点：卡片 + ADR 均需用户拍板后方可实现）
-- 已完成：需求卡片 `docs/requirements/0080-workspace-module-selection.md`（C1-C6 + 5 项未决问题提议结论）、本 ADR（D1-D9，无待定项）、`docs/adr/README.md` 索引登记、`CONTEXT.md` 术语改写
-- 下一步：用户评审确认——重点拍板：① 质量检查集中自适应方案（D4）；② 仅设计工作区隐藏质量页签；③ 存量映射 `doc → [documents, design]`（D5）；④ API 不保留 `workspace_type` 双字段（D2）；⑤ 新建默认全选（D8）。确认后 Status 改 `Accepted` 交 `implementer` 按 P0 → P1 → P2 推进
-- 已知坑：SQLite 列变更须走 `batch_alter_table`（工作区类型原始迁移 `e7f8a9b0c1d2` 同款约束）；JSON 列 server_default 不可移植，回填必须走迁移 UPDATE 而非列默认值；`MainLayout` 的重定向 effect 依赖 `currentWs`，模块集合变更（设置页改勾选）后会自动触发重定向，测试须覆盖该场景
-- 最近一次全绿：`make check-docs` @ 本次文档提交（2026-11-01，仅文档变更，L0 门禁）
+- 当前阶段：评审通过（2026-11-01，用户逐项拍板 5 项未决问题，C4/D4/D8 按拍板修订），`Accepted`——进入实现，按 P0 → P1 → P2 推进、每期一提交
+- 已完成：需求卡片 `docs/requirements/0080-workspace-module-selection.md`（C1-C6，未决问题全部有结论）、本 ADR（D1-D9，无待定项）、`docs/adr/README.md` 索引、`CONTEXT.md` 术语「工作区模块」
+- 评审拍板结论：① 质量检查集中 + 页签恒显 + GitHub 风格双栏（左规则清单 / 右结果历史）；② 仅设计工作区也显示质量页签（后续加 design 域动作）；③ 存量映射认可（D5）；④ API 不保留 `workspace_type` 兼容字段（D2）；⑤ 新建默认三模块全选 + 卡片式选型 UI 优化（D8）
+- 下一步：`implementer` 按 §8 分期实现，P0（后端模型 / 迁移 / API / 备份 v12 / pipeline 过滤与域校验）→ P1（前端全套）→ P2（帮助 / e2e / 残留清理 / 落地表回填）
+- 已知坑：SQLite 列变更须走 `batch_alter_table`；JSON 列 server_default 不可移植，回填必须走迁移 UPDATE；`MainLayout` 重定向 effect 依赖 `currentWs`，设置页改勾选后自动触发重定向（测试须覆盖）；本机跑测试须先清空 `LD_LIBRARY_PATH`（trae 服务器旧 libsqlite3 遮蔽系统库）
+- 最近一次全绿：`make check-docs` @ `95641259`（2026-11-01，仅文档变更，L0 门禁）
