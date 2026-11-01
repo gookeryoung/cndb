@@ -1,6 +1,6 @@
 # ADR 0079: 【设计】模块与结构 DSL（3D 机械制图实时预览与生成）
 
-Status: Accepted（2026-11-01 用户评审通过）
+Status: Implemented（2026-11-01 用户评审通过，同日确认 P0-P2 三期全部落地后实施）
 Date: 2026-11-01
 Related: `src/cndb/plugins/base.py`、`src/cndb/core/plugin_registry.py`、`src/cndb/plugins/pipeline/plugin.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/utils/workspaceType.ts`、`docs/adr/0026-chrome81-compat.md`、`docs/adr/0047-permission-denied-message.md`、`docs/adr/0075-workspace-full-backup.md`、`docs/adr/0076-pipeline-check-dsl.md`
 需求卡片: `docs/requirements/0079-design-3d-dsl-module.md`（需求原文与约束编号的唯一副本）
@@ -258,7 +258,7 @@ plate(width, height, 12)            // 顶层实例（产出几何）
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 三期全部落地（2026-11-01，实现提交 `881230cf` / `4e73eea9` / `19fea953`），本 ADR 交付完毕——**待人工确认 `Status` 是否改 `Implemented`**（落地表尾注口径）
+- 当前阶段：P0 / P1 / P2 三期全部落地（2026-11-01，实现提交 `881230cf` / `4e73eea9` / `19fea953`），本 ADR 交付完毕——`Status` 已经用户确认改为 `Implemented`（2026-11-01）
 - 已完成：需求卡片 0079、本 ADR（Accepted）；P0（插件骨架 + 两表 + 迁移 + DSL 编译引擎 + 判定层单测）；P1（designs API + three.js 实时预览前端，Chrome 81 实测）；P2 全量——版本回看 / 恢复端点（历史版原文重编译落新版本，D7）、前端导出（STL / OBJ / GLB + 正交三视图 PNG，与预览共用 `buildIRMeshes` 所见即所得，D5）、备份 v11（designs 导出 + 导入端逐版重编译，compiled 不导出，≤v10 兼容，D9）、种子 `designs/*.cnmd`（文件名即标题，seed 期编译校验）、帮助「结构设计（DSL）」主题、e2e `design-3d-preview.spec.ts`（画布渲染 + 诊断回显 + 导出 STL 二进制头校验）
 - 下一步：无（三期交付完毕；后续演进如新图元 / DSL 版本变更按「双端同步」口径另行走方案流程）
 - 已知坑：three.js 0.165 + three-mesh-bvh 0.7.8 + three-bvh-csg 0.0.17 配对锁定（Chrome 81 实测通过）；前端编辑器测试须 `vi.mock('./PreviewCanvas')`（jsdom 无 WebGL），且 `vi.mock` 工厂体不得引用顶层 import（hoisting 抢跑报 `__vi_import_N__`）；antd `Dropdown` 默认 hover 触发，点击式菜单须显式 `trigger={['click']}`（`fireEvent.click` 才能开）；DSL 标识符仅 ASCII 字母 / 数字 / 下划线（帮助主题文案须与编译器一致，勿用中文标识符示例）；e2e 服务的静态产物来自 `frontend/dist`，跑 e2e 前必须先 `pnpm build`（否则新 lazy chunk 缺失、组件静默不渲染）；编辑器就绪判定用 `.cm-placeholder` 消失而非文本匹配；Chromium 对非 ASCII 下载文件名的 `suggestedFilename` 不稳定（e2e 下载断言以内容为准则）；本机跑测试须先清空 `LD_LIBRARY_PATH`（trae 服务器自带旧 libsqlite3 会遮蔽系统库）
