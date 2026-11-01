@@ -21,6 +21,7 @@
     "e2e:smoke": "playwright test --project=chromium-authed tests/e2e/smoke",
     "e2e:critical": "playwright test --project=chromium-authed tests/e2e/critical",
     "e2e:dev": "playwright test --config playwright.dev.config.ts",
+    "e2e:perf": "playwright test --config playwright.perf.config.ts",
     "e2e:chrome81": "node scripts/chrome81-smoke.mjs",
     "e2e:headed": "playwright test --headed",
     "test": "vitest run",
