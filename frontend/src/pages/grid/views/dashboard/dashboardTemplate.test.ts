@@ -8,6 +8,7 @@ import {
   applyTemplateMapping,
   buildDashboardTemplate,
   collectTemplateRefs,
+  collectTemplateTableIds,
   matchingTargetFields,
   planTemplateFields,
 } from './dashboardTemplate'
@@ -91,6 +92,22 @@ describe('collectTemplateRefs', () => {
   })
 })
 
+describe('collectTemplateTableIds', () => {
+  it('去重收集跨表 widget 的目标表 id，忽略缺省与非法值', () => {
+    expect(collectTemplateTableIds(CONFIG_WITH_TABLE_ID as Record<string, unknown>)).toEqual(['2'])
+    expect(collectTemplateTableIds({
+      widgets: [
+        { query: { table_id: 3 } },
+        { query: { table_id: 3 } },
+        { query: { filters: [] } },
+        { query: { table_id: 0 } },
+        { query: 'bad' },
+        'garbage',
+      ],
+    })).toEqual(['3'])
+  })
+})
+
 describe('buildDashboardTemplate', () => {
   it('只快照被引用字段的类型，并剥离来源表', () => {
     const built = buildDashboardTemplate(
@@ -102,6 +119,49 @@ describe('buildDashboardTemplate', () => {
     expect((widgets[0].query as Record<string, unknown>).table_id).toBeUndefined()
     // 未引用的字段不进快照
     expect(built.fields).not.toHaveProperty('未使用')
+  })
+
+  it('跨表 widget 引用字段按目标表补录快照，同名冲突时基表优先', () => {
+    const crossConfig = {
+      widgets: [
+        {
+          id: 'w_kpi_cross',
+          type: 'kpi',
+          layout: { x: 0, y: 0, w: 3, h: 4 },
+          query: { table_id: 7, filters: [], filter_logic: 'AND', sortings: [] },
+          kpi: { value: { field: '薪资', agg: 'sum' } },
+        },
+        {
+          id: 'w_kpi_base',
+          type: 'kpi',
+          layout: { x: 3, y: 0, w: 3, h: 4 },
+          query: { filters: [], filter_logic: 'AND', sortings: [] },
+          kpi: { value: { field: '金额', agg: 'sum' } },
+        },
+      ],
+    }
+    const extraFields: Field[] = [
+      makeField({ id: 71, name: '薪资', field_type: 'number' }),
+      makeField({ id: 72, name: '金额', field_type: 'text' }),
+      makeField({ id: 73, name: '未引用', field_type: 'text' }),
+    ]
+    const built = buildDashboardTemplate(
+      crossConfig as unknown as Parameters<typeof buildDashboardTemplate>[0],
+      SOURCE_FIELDS,
+      { '7': extraFields },
+    )
+    expect(built.fields).toEqual({ 金额: 'number', 薪资: 'number' })
+    const widgets = built.config.widgets as Array<Record<string, unknown>>
+    expect((widgets[0].query as Record<string, unknown>).table_id).toBeUndefined()
+    expect(built.fields).not.toHaveProperty('未引用')
+  })
+
+  it('未提供目标表字段时只快照基表字段（跨表字段缺失由落地映射兜底）', () => {
+    const built = buildDashboardTemplate(
+      CONFIG_WITH_TABLE_ID as unknown as Parameters<typeof buildDashboardTemplate>[0],
+      SOURCE_FIELDS,
+    )
+    expect(built.fields).not.toHaveProperty('薪资')
   })
 
   it('输出可被模板落地重新归一（结构无损）', () => {

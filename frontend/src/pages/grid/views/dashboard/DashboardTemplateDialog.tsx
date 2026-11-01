@@ -10,11 +10,12 @@ import { App as AntApp, Button, Empty, Input, Modal, Select, Spin, Tooltip } fro
 import { DeleteOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { DashboardTemplate, Field } from '@/api'
-import { preferencesApi } from '@/api'
-import type { DashboardConfig } from './dashboardModel'
+import { fieldApi, preferencesApi } from '@/api'
+import { serializeDashboard, type DashboardConfig } from './dashboardModel'
 import {
   applyDashboardTemplate,
   buildDashboardTemplate,
+  collectTemplateTableIds,
   matchingTargetFields,
   planTemplateFields,
 } from './dashboardTemplate'
@@ -26,6 +27,8 @@ export interface DashboardTemplateDialogProps {
   mode: DashboardTemplateMode
   config: DashboardConfig
   fields: Field[]
+  /** 工作区 id：另存时按跨表 widget 的目标表拉字段类型快照（缺省时只快照基表字段） */
+  workspaceId?: string | number
   /** 另存时的默认名称（通常取视图名） */
   defaultName?: string
   onClose: () => void
@@ -45,6 +48,7 @@ export default function DashboardTemplateDialog({
   mode,
   config,
   fields,
+  workspaceId,
   defaultName,
   onClose,
   onSaved,
@@ -90,6 +94,24 @@ export default function DashboardTemplateDialog({
     setIssueMapping({})
   }
 
+  /** 拉取跨表 widget 目标表的字段（失败的表跳过，只影响类型快照的完整度） */
+  const fetchExtraFields = async (): Promise<Record<string, Field[]>> => {
+    if (workspaceId == null) return {}
+    const tableIds = collectTemplateTableIds(serializeDashboard(config))
+    if (!tableIds.length) return {}
+    const extra: Record<string, Field[]> = {}
+    let failed = 0
+    await Promise.all(tableIds.map(async (id) => {
+      try {
+        extra[id] = await fieldApi.list(workspaceId, id)
+      } catch {
+        failed += 1
+      }
+    }))
+    if (failed) message.warning('部分跨表字段类型读取失败，模板仅保留可读字段')
+    return extra
+  }
+
   const saveTemplate = async () => {
     const trimmed = name.trim()
     if (!trimmed) {
@@ -102,7 +124,8 @@ export default function DashboardTemplateDialog({
     }
     setBusy(true)
     try {
-      const built = buildDashboardTemplate(config, fields)
+      const extraFields = await fetchExtraFields()
+      const built = buildDashboardTemplate(config, fields, extraFields)
       const saved = await preferencesApi.saveDashboardTemplate({
         name: trimmed,
         config: built.config,

@@ -586,6 +586,7 @@ export default function DashboardView({
             mode={templateMode}
             config={config}
             fields={fields}
+            workspaceId={workspaceId}
             defaultName={view?.name ? `${view.name}模板` : '未命名模板'}
             onClose={() => setTemplateMode(null)}
             onApply={applyTemplateConfig}

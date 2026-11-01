@@ -18,9 +18,11 @@ const apiMock = vi.hoisted(() => ({
   deleteDashboardTemplate: vi.fn(),
 }))
 
+const fieldMock = vi.hoisted(() => ({ list: vi.fn() }))
+
 vi.mock('@/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/api')>()
-  return { ...actual, preferencesApi: apiMock }
+  return { ...actual, preferencesApi: apiMock, fieldApi: fieldMock }
 })
 
 const FIELDS: Field[] = [
@@ -74,6 +76,8 @@ function makeTemplate(overrides: Partial<DashboardTemplate> = {}): DashboardTemp
 
 function renderDialog(mode: 'save' | 'apply', options?: {
   fields?: Field[]
+  config?: typeof CONFIG
+  workspaceId?: string | number
   defaultName?: string
 }) {
   const handlers = { onClose: vi.fn(), onSaved: vi.fn(), onApply: vi.fn() }
@@ -81,8 +85,9 @@ function renderDialog(mode: 'save' | 'apply', options?: {
     <DashboardTemplateDialog
       open
       mode={mode}
-      config={CONFIG}
+      config={options?.config ?? CONFIG}
       fields={options?.fields ?? TARGET_FIELDS}
+      workspaceId={options?.workspaceId}
       defaultName={options?.defaultName}
       {...handlers}
     />,
@@ -105,8 +110,65 @@ describe('DashboardTemplateDialog — 另存', () => {
     expect(payload.name).toBe('自定义模板')
     expect(payload.fields).toEqual({ 商品类别: 'text', 销售额: 'number' })
     expect(payload.config.widgets[0].query.table_id).toBeUndefined()
+    // 无跨表 widget 时不为字段快照发额外请求
+    expect(fieldMock.list).not.toHaveBeenCalled()
     expect(handlers.onSaved).toHaveBeenCalledWith(expect.objectContaining({ name: '经营概览' }))
     expect(handlers.onClose).toHaveBeenCalled()
+  })
+
+  it('跨表 widget 另存时按目标表补录字段类型快照', async () => {
+    apiMock.saveDashboardTemplate.mockResolvedValue(makeTemplate())
+    const crossConfig = normalizeDashboard(
+      {
+        widgets: [
+          {
+            id: 'w_kpi_cross',
+            type: 'kpi',
+            layout: { x: 0, y: 0, w: 3, h: 4 },
+            query: { table_id: 5, filters: [], filter_logic: 'AND', sortings: [] },
+            kpi: { value: { field: '薪资', agg: 'sum' } },
+          },
+        ],
+      },
+      FIELDS,
+      { resolveTableFields: () => null, allowUnavailableTargets: true },
+    )
+    fieldMock.list.mockResolvedValue([makeField({ id: 21, name: '薪资', field_type: 'number' })])
+    renderDialog('save', { config: crossConfig, fields: FIELDS, workspaceId: 'ws1', defaultName: '跨表模板' })
+
+    fireEvent.click(screen.getByTestId('dashboard-template-save'))
+    await waitFor(() => expect(apiMock.saveDashboardTemplate).toHaveBeenCalledTimes(1))
+    expect(fieldMock.list).toHaveBeenCalledWith('ws1', '5')
+    const payload = apiMock.saveDashboardTemplate.mock.calls[0][0]
+    expect(payload.fields).toEqual({ 薪资: 'number' })
+    expect(payload.config.widgets[0].query.table_id).toBeUndefined()
+  })
+
+  it('目标表字段读取失败时降级为基表快照并提示', async () => {
+    apiMock.saveDashboardTemplate.mockResolvedValue(makeTemplate())
+    const crossConfig = normalizeDashboard(
+      {
+        widgets: [
+          {
+            id: 'w_kpi_cross',
+            type: 'kpi',
+            layout: { x: 0, y: 0, w: 3, h: 4 },
+            query: { table_id: 5, filters: [], filter_logic: 'AND', sortings: [] },
+            kpi: { value: { field: '销售额', agg: 'sum' } },
+          },
+        ],
+      },
+      FIELDS,
+      { resolveTableFields: () => null, allowUnavailableTargets: true },
+    )
+    fieldMock.list.mockRejectedValue(new Error('目标表不可用'))
+    renderDialog('save', { config: crossConfig, fields: FIELDS, workspaceId: 'ws1', defaultName: '跨表模板' })
+
+    fireEvent.click(screen.getByTestId('dashboard-template-save'))
+    expect(await screen.findByText('部分跨表字段类型读取失败，模板仅保留可读字段')).toBeInTheDocument()
+    await waitFor(() => expect(apiMock.saveDashboardTemplate).toHaveBeenCalledTimes(1))
+    const payload = apiMock.saveDashboardTemplate.mock.calls[0][0]
+    expect(payload.fields).toEqual({ 销售额: 'number' })
   })
 
   it('名称为空不提交', () => {

@@ -1,7 +1,8 @@
 /** dashboard 模板：提取 / 字段引用收集 / 落地映射（ADR 0023 P3）.
  *
  * 模板只保存「结构 + 字段名/类型快照」，**不保存来源表**：
- * - 另存时剥离 `query.table_id`，并为被引用的字段记录类型快照；
+ * - 另存时剥离 `query.table_id`，并为被引用的字段记录类型快照（含跨表 widget
+ *   引用字段 —— 按目标表 schema 补录，基表字段优先，同名冲突不覆盖）；
  * - 落地时按目标表「同名同类型」认领，认领不到的字段由 UI 提示用户一键改，
  *   其余不做猜测（避免把不兼容字段静默写进配置）；
  * - 最终仍走 `normalizeDashboard` 的唯一校验入口，模板不是后门。
@@ -95,9 +96,33 @@ export function collectTemplateRefs(config: Record<string, unknown>): TemplateFi
   return refs
 }
 
-/** 另存为模板：剥离来源表，并附上被引用字段的类型快照 */
-export function buildDashboardTemplate(config: DashboardConfig, fields: Field[]): BuiltDashboardTemplate {
+/** 收集配置中跨表 widget 引用的目标表 id（另存模板时据此补录字段类型快照） */
+export function collectTemplateTableIds(config: Record<string, unknown>): string[] {
+  const ids = new Set<string>()
+  const widgets = Array.isArray(config.widgets) ? config.widgets : []
+  for (const widget of widgets) {
+    if (!isObj(widget) || !isObj(widget.query)) continue
+    const tableId = widget.query.table_id
+    if ((typeof tableId === 'number' && tableId > 0) || (typeof tableId === 'string' && tableId)) {
+      ids.add(String(tableId))
+    }
+  }
+  return Array.from(ids)
+}
+
+/**
+ * 另存为模板：剥离来源表，并附上被引用字段的类型快照.
+ *
+ * `extraFields` 是跨表 widget 目标表的字段（按表 id 索引），由调用方在另存前拉取；
+ * 快照按「基表优先、同名字段不覆盖」合并，冲突时以基表类型为准（模板落地仍需人工映射兜底）。
+ */
+export function buildDashboardTemplate(
+  config: DashboardConfig,
+  fields: Field[],
+  extraFields: Record<string, Field[]> = {},
+): BuiltDashboardTemplate {
   const plain = JSON.parse(JSON.stringify(serializeDashboard(config))) as Raw
+  const tableIds = collectTemplateTableIds(plain)
   // 模板不硬编码来源表；跨表配置的 table_id 在另存时统一剥离
   if (Array.isArray(plain.widgets)) {
     for (const widget of plain.widgets) {
@@ -106,9 +131,14 @@ export function buildDashboardTemplate(config: DashboardConfig, fields: Field[])
   }
   const referenced = new Set(collectTemplateRefs(plain).map((ref) => ref.field))
   const snapshot: Record<string, string> = {}
-  for (const field of fields) {
-    if (referenced.has(field.name)) snapshot[field.name] = field.field_type
+  const merge = (list: Field[]) => {
+    for (const field of list) {
+      if (!referenced.has(field.name) || snapshot[field.name] !== undefined) continue
+      snapshot[field.name] = field.field_type
+    }
   }
+  merge(fields)
+  for (const id of tableIds) merge(extraFields[id] ?? [])
   return { config: plain, fields: snapshot }
 }
 

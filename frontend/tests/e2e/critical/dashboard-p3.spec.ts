@@ -337,6 +337,8 @@ test.describe("dashboard P3", () => {
       expect(templateWidgets).toHaveLength(1);
       // 模板只保存结构：跨表 widget 的来源表在落库前被剥离
       expect(templateWidgets[0]?.query?.table_id).toBeUndefined();
+      // 跨表 widget 的引用字段按目标表 schema 补录类型快照（基表无「薪资」）
+      expect(template?.fields["薪资"]).toBe("number");
     } finally {
       await deleteTemplatesByName(request, token, templateName);
       await deleteView(request, token, wid, tid, view.id);
