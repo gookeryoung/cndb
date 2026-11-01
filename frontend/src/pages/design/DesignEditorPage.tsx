@@ -17,7 +17,7 @@ import {
   ArrowLeftOutlined, ExperimentOutlined, HistoryOutlined, RollbackOutlined, SaveOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useParams, useSearchParams } from 'react-router-dom'
 import { designsApi, workspaceApi } from '@/api'
 import type { DesignDiagnostic, DesignVersionItem } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
@@ -35,6 +35,9 @@ export default function DesignEditorPage() {
   const { wid = '', designId = '' } = useParams<{ wid: string; designId: string }>()
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
+  // 结构树节点带 ?line= 打开编辑器并定位源行（ADR 0083 D7）
+  const [searchParams] = useSearchParams()
+  const revealLine = Number(searchParams.get('line')) || undefined
 
   const { data: detail, isLoading } = useQuery({
     queryKey: ['designs', wid, designId],
@@ -228,6 +231,8 @@ export default function DesignEditorPage() {
                 diagnostics={diagnostics}
                 placeholder="param width = 80&#10;box(size = [width, 40, 12])"
                 readOnly={isViewer}
+                // 原文回填完成后才定位，避免首帧空文档把行号钳到第 1 行
+                revealLine={contentReady ? revealLine : undefined}
               />
             )}
           </div>

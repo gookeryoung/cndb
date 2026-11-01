@@ -1,4 +1,4 @@
-"""design 插件路由：设计 CRUD / 即时编译 / 版本列表（ADR 0079 §3）.
+"""design 插件路由：设计 CRUD / 即时编译 / 版本列表 / 装配大纲（ADR 0079 §3、ADR 0083）.
 
 权限口径（D6）：全部端点要求工作区成员（读）；写端点（POST / PUT / DELETE）
 owner / editor，viewer 403（ADR 0047 统一文案）。preview 是**无写副作用的
@@ -10,7 +10,7 @@ owner / editor，viewer 403（ADR 0047 统一文案）。preview 是**无写副�
 from __future__ import annotations
 
 import dataclasses
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func
@@ -26,6 +26,7 @@ from cndb.plugins.design.schemas import (
     DesignCreate,
     DesignDetail,
     DesignListItem,
+    DesignOutlineResult,
     DesignUpdate,
     DesignVersionDetail,
     DesignVersionItem,
@@ -33,7 +34,7 @@ from cndb.plugins.design.schemas import (
     PreviewRequest,
     PreviewResponse,
 )
-from cndb.plugins.design.services.dsl.compile import CompileResult, compile_design
+from cndb.plugins.design.services.dsl.compile import IR_VERSION, CompileResult, compile_design
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
 
@@ -78,7 +79,23 @@ def _compile_or_400(content: str) -> dict[str, Any]:
             "；".join(f"第{d.line}行第{d.col}列：{d.message}" for d in result.diagnostics) or "编译失败",
             code="design_compile_failed",
         )
-    return result.ir or {"version": 1, "nodes": []}
+    return result.ir or {"version": IR_VERSION, "nodes": [], "outline": {"children": []}}
+
+
+def _design_outline(design: DesignDesign) -> tuple[dict[str, Any], Literal["compiled", "content"]]:
+    """取设计装配大纲：快照优先，历史快照（IR v1 无 outline）按原文即时编译派生.
+
+    只读口径（ADR 0083 D5）：content 派生不落库、不计数版本；content 派生失败
+    按保存端点同口径 400（原文落库时已编译通过，此处失败说明定义已不可编译）。
+    """
+    compiled = design.compiled or {}
+    outline = compiled.get("outline") if isinstance(compiled, dict) else None
+    if isinstance(outline, dict) and isinstance(outline.get("children"), list):
+        return {"children": outline["children"]}, "compiled"
+    ir = _compile_or_400(design.content)
+    derived = ir.get("outline") if isinstance(ir.get("outline"), dict) else None
+    children = derived.get("children") if isinstance(derived, dict) else None
+    return {"children": children if isinstance(children, list) else []}, "content"
 
 
 def _assert_title_available(db: Session, workspace_id: int, title: str, *, exclude_id: int | None = None) -> None:
@@ -286,6 +303,25 @@ def delete_design(
     design.is_deleted = True
     design.updated_by_id = current_user.id
     db.commit()
+
+
+@router.get("/{design_id}/outline", response_model=DesignOutlineResult)
+def get_design_outline(
+    workspace_id: int,
+    design_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DesignOutlineResult:
+    """装配大纲（ADR 0083 D4）：组件 / 分组 / 零件树 + 1 基源位置，成员可读."""
+    _require_member(db, workspace_id, current_user)
+    design = _design_or_404(db, workspace_id, design_id)
+    outline, source = _design_outline(design)
+    return DesignOutlineResult(
+        design_id=design.id,
+        version_number=_latest_version_number(db, design.id),
+        outline=outline,
+        source=source,
+    )
 
 
 @router.get("/{design_id}/versions", response_model=list[DesignVersionItem])

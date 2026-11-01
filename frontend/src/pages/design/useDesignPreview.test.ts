@@ -20,7 +20,7 @@ const previewBodies: Array<{ content: string; overrides?: Record<string, number>
 /** 单盒 IR：size[0] 作为标记位，竞态用例据此区分「谁胜出」 */
 function irOf(mark: number): DesignIR {
   return {
-    version: 1,
+    version: 2,
     units: { length: 'mm', angle: 'deg' },
     params: [],
     nodes: [{ op: 'box', size: [mark, 1, 1] }],

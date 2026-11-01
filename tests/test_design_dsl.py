@@ -213,7 +213,7 @@ class TestParser:
 class TestCompileBasics:
     def test_full_example_ir(self):
         ir = _ok(_EXAMPLE)
-        assert ir["version"] == 1
+        assert ir["version"] == 2
         assert ir["units"] == {"length": "mm", "angle": "deg"}
         assert ir["params"] == [
             {"name": "width", "value": 80},
@@ -623,3 +623,106 @@ class TestLimits:
         assert err_result.ok is False
         assert err_result.ir is None
         assert err_result.diagnostics[0].severity == "error"
+
+
+# ── 装配大纲（ADR 0083 D2 / D3） ─────────────────────────
+
+
+def _outline(ir: dict[str, Any]) -> list[dict[str, Any]]:
+    return ir["outline"]["children"]
+
+
+def _outline_parts(node: dict[str, Any]) -> int:
+    """大纲子树里的零件（图元）计数."""
+    if node["kind"] == "part":
+        return 1
+    return sum(_outline_parts(child) for child in node["children"])
+
+
+def _geom_primitives(node: dict[str, Any]) -> int:
+    """几何 IR 子树里的图元计数（布尔节点递归，图元为叶）."""
+    if "children" in node:
+        return sum(_geom_primitives(child) for child in node["children"])
+    return 1
+
+
+class TestOutline:
+    """大纲与 nodes 同源同次编译：组件 / 分组 / 零件三类节点 + 1 基源位置."""
+
+    def test_full_example_outline(self):
+        ir = _ok(_EXAMPLE)
+        (assembly,) = _outline(ir)
+        assert assembly["kind"] == "assembly"
+        assert assembly["name"] == "plate"
+        # 顶层实例调用语句（_EXAMPLE 第 16 行）
+        assert (assembly["line"], assembly["col"]) == (16, 1)
+        (group,) = assembly["children"]
+        assert group["kind"] == "group"
+        assert group["op"] == "difference"
+        assert (group["line"], group["col"]) == (8, 3)
+        part_box, part_cyl = group["children"]
+        assert part_box == {"kind": "part", "primitive": "box", "line": 9, "col": 5}
+        assert part_cyl == {"kind": "part", "primitive": "cyl", "line": 11, "col": 7}
+
+    def test_top_level_part(self):
+        ir = _ok("box(w=1,h=1,d=1)")
+        assert _outline(ir) == [{"kind": "part", "primitive": "box", "line": 1, "col": 1}]
+
+    def test_nested_modules_hierarchy(self):
+        content = "module inner() {\n  box(w=1,h=1,d=1)\n}\nmodule outer() {\n  inner()\n}\nouter()"
+        ir = _ok(content)
+        (outer,) = _outline(ir)
+        assert (outer["kind"], outer["name"], outer["line"], outer["col"]) == ("assembly", "outer", 7, 1)
+        (inner,) = outer["children"]
+        assert (inner["kind"], inner["name"], inner["line"], inner["col"]) == ("assembly", "inner", 5, 3)
+        assert inner["children"] == [{"kind": "part", "primitive": "box", "line": 2, "col": 3}]
+
+    def test_boolean_group_node(self):
+        content = "difference {\n  box(w=2,h=2,d=2)\n  cyl(d=1,h=4)\n}"
+        ir = _ok(content)
+        (group,) = _outline(ir)
+        assert group["kind"] == "group"
+        assert group["op"] == "difference"
+        assert (group["line"], group["col"]) == (1, 1)
+        assert [child["line"] for child in group["children"]] == [2, 3]
+        assert [child["primitive"] for child in group["children"]] == ["box", "cyl"]
+
+    def test_transform_is_transparent(self):
+        content = "translate([1,2,3]) {\n  box(w=1,h=1,d=1)\n}"
+        ir = _ok(content)
+        # 变换不建大纲节点，零件保持顶层层级；几何仍带 transform 栈
+        assert _outline(ir) == [{"kind": "part", "primitive": "box", "line": 2, "col": 3}]
+        assert ir["nodes"][0]["transform"] == {"ops": [["translate", [1.0, 2.0, 3.0]]]}
+
+    def test_empty_program_outline(self):
+        assert _ok("")["outline"] == {"children": []}
+        assert _ok("param a = 1")["outline"] == {"children": []}
+
+    def test_module_multi_instance_keeps_declaration_lines(self):
+        content = "module p() {\n  box(w=1,h=1,d=1)\n}\np()\np()"
+        ir = _ok(content)
+        assert len(_outline(ir)) == 2
+        assert [node["line"] for node in _outline(ir)] == [4, 5]
+        for node in _outline(ir):
+            assert node["children"] == [{"kind": "part", "primitive": "box", "line": 2, "col": 3}]
+
+    def test_outline_parts_match_geometry(self):
+        """I1：大纲零件数 = 几何图元数（同源同次编译）."""
+        for content in (
+            _EXAMPLE,
+            "union {\n  box(w=1,h=1,d=1)\n  sphere(r=1)\n}",
+            "translate([0,0,0]) box(w=1,h=1,d=1)",
+        ):
+            ir = _ok(content)
+            outline_total = sum(_outline_parts(node) for node in _outline(ir))
+            geometry_total = sum(_geom_primitives(node) for node in ir["nodes"])
+            assert outline_total == geometry_total
+
+    def test_outline_has_no_param_bindings(self):
+        """D3：大纲只带名称 / 类型 / 源位置，不写模块参数绑定值."""
+        ir = _ok("module m(a) {\n  box(w=a,h=1,d=1)\n}\nm(3)")
+        (assembly,) = _outline(ir)
+        assert set(assembly) == {"kind", "name", "line", "col", "children"}
+
+    def test_outline_absent_on_failure(self):
+        assert compile_design("box(").ir is None

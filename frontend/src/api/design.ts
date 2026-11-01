@@ -45,12 +45,52 @@ export interface DesignBooleanNode {
 
 export type DesignIRNode = DesignPrimitiveNode | DesignBooleanNode
 
-/** 设计 IR（v1，双端契约；单位固定 mm / deg，I5） */
+/** 设计 IR（v2 = v1 + 顶层装配大纲；单位固定 mm / deg，I5） */
 export interface DesignIR {
   version: number
   units: { length: string; angle: string }
   params: DesignIRParam[]
   nodes: DesignIRNode[]
+  /** 装配大纲（ADR 0083 D2）；历史 v1 快照可能缺失 */
+  outline?: DesignOutline
+}
+
+/** 装配大纲节点（ADR 0083 D3）：组件（module 实例，可嵌套）/ 布尔分组 / 零件（图元） */
+export interface DesignOutlineAssemblyNode {
+  kind: 'assembly'
+  name: string
+  line: number
+  col: number
+  children: DesignOutlineNode[]
+}
+
+export interface DesignOutlineGroupNode {
+  kind: 'group'
+  op: 'union' | 'difference' | 'intersection'
+  line: number
+  col: number
+  children: DesignOutlineNode[]
+}
+
+export interface DesignOutlinePartNode {
+  kind: 'part'
+  primitive: 'box' | 'cyl' | 'sphere' | 'cone' | 'torus' | 'tube'
+  line: number
+  col: number
+}
+
+export type DesignOutlineNode = DesignOutlineAssemblyNode | DesignOutlineGroupNode | DesignOutlinePartNode
+
+export interface DesignOutline {
+  children: DesignOutlineNode[]
+}
+
+/** 单设计装配大纲（outline 端点；source: compiled 快照 / content 历史快照派生，ADR 0083 D5） */
+export interface DesignOutlineResult {
+  design_id: number
+  version_number: number
+  outline: DesignOutline
+  source: 'compiled' | 'content'
 }
 
 /** 即时编译结果（preview 端点；无落库） */
@@ -127,4 +167,7 @@ export const designsApi = {
   /** 恢复历史版：以该版原文重编译保存为新版本（editor 权限） */
   restoreVersion: (wid: number | string, designId: number | string, versionNumber: number) =>
     api.post<DesignDetail>(`${base(wid)}/${designId}/versions/${versionNumber}/restore`).then(r => r.data),
+  /** 装配大纲（组件 / 分组 / 零件树 + 1 基源位置；成员可读，ADR 0083 D4） */
+  outline: (wid: number | string, designId: number | string) =>
+    api.get<DesignOutlineResult>(`${base(wid)}/${designId}/outline`).then(r => r.data),
 }

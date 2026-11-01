@@ -181,8 +181,12 @@ describe('FieldConfigPanel 关联字段业务键', () => {
 
         await waitFor(() => expect(spy).toHaveBeenCalledWith('1', 30))
         // 候选里应过滤掉 link 字段，仅保留有物理列的字段
-        fireEvent.mouseDown(formItemByLabel('显示字段').querySelector('.ant-select')!)
-        // antd 6 Select 下拉经 cssinjs 渲染链挂载，make check 并行高负载下可超默认 1s，放宽等待窗口（断言不变）
+        const displaySelect = formItemByLabel('显示字段').querySelector('.ant-select')!
+        // 字段列表 promise 落地前「显示字段」为 disabled（loading），此时 mouseDown 不会展开下拉，
+        // 之后选项永远不会出现；先等 enabled 再开（慢机上 spy 调用与 promise resolve 之间有间隙）
+        await waitFor(() => expect(displaySelect).not.toHaveClass('ant-select-disabled'))
+        fireEvent.mouseDown(displaySelect)
+        // antd 6 Select 下拉经 cssinjs 渲染链挂载，高负载下可超默认 1s，放宽等待窗口（断言不变）
         expect(await screen.findByText('编号', {}, { timeout: 3000 })).toBeInTheDocument()
         expect(screen.getByText('名称')).toBeInTheDocument()
         expect(screen.queryByText('内联关联')).not.toBeInTheDocument()

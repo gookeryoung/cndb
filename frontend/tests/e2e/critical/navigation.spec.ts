@@ -119,6 +119,17 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(page.getByTestId("document-tab-issues")).toBeVisible()
   })
 
+  test("设计区「设计结构」为默认页：页签可见且激活", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+
+    await page.goto(`/w/${WID}/design`)
+    await page.waitForURL(/\/design$/)
+    await expect(page.getByTestId("design-crumb")).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByTestId("design-tab-structure")).toBeVisible()
+    await expect(page.getByTestId("design-tab-structure")).toHaveAttribute("aria-selected", "true")
+    await expect(page.getByText("设计结构").first()).toBeVisible()
+  })
+
   test("文档区「质量检查」页签留在文档上下文（/documents/pipelines），不跳数据表段", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 

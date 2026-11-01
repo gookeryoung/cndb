@@ -6,6 +6,11 @@
 
 变换下推：变换是仿射映射，与布尔集合运算可交换，因此 IR 不保留变换包裹节点，
 而是把变换栈「先外后内」下推到每个图元的 ``transform.ops``（ADR 0079 §2）。
+
+装配大纲（ADR 0083 D2）：与 ``nodes`` 同一次编译产出顶层 ``outline`` ——
+``module`` 实例 = ``assembly``（可嵌套即装配层级）、布尔块 = ``group``、
+图元 = ``part``；每个节点带语句起始的 1 基行 / 列。变换不建大纲节点（透明穿透），
+大纲节点数沿用既有编译期限制，不新增限制项（ADR 0083 I3）。
 """
 
 from __future__ import annotations
@@ -39,8 +44,8 @@ from cndb.plugins.design.services.dsl.nodes import (
 )
 from cndb.plugins.design.services.dsl.parse import parse_program
 
-#: IR 协议版本（前后端契约，随语法演进递增）
-IR_VERSION = 1
+#: IR 协议版本（前后端契约，随语法演进递增；v2 = v1 + 顶层 outline，ADR 0083 D2）
+IR_VERSION = 2
 
 
 def compile_design(content: str, overrides: Mapping[str, float] | None = None) -> CompileResult:
@@ -79,13 +84,14 @@ def _compile(content: str, overrides: dict[str, float]) -> dict[str, Any]:
 
     env, params_out = _eval_params(program, overrides)
     modules = _collect_modules(program)
-    nodes = _Emitter(modules=modules, global_env=env).emit_top(program.instances)
+    nodes, outline = _Emitter(modules=modules, global_env=env).emit_top(program.instances)
 
     return {
         "version": IR_VERSION,
         "units": {"length": "mm", "angle": "deg"},
         "params": params_out,
         "nodes": nodes,
+        "outline": {"children": outline},
     }
 
 
@@ -265,6 +271,14 @@ _PRIMITIVE_EVALUATORS = {
 }
 
 
+# ── 装配大纲节点（ADR 0083 D3） ──────────────────────────
+
+
+def _part_outline(call: PrimitiveCall) -> dict[str, Any]:
+    """图元 → 零件大纲节点（叶）；行 / 列为调用语句起点（1 基，I4）."""
+    return {"kind": "part", "primitive": call.name, "line": call.line, "col": call.col}
+
+
 # ── 实例展开 ─────────────────────────────────────────────
 
 #: 变换栈元素：(kind, [x, y, z])；列表按「先外后内」排列
@@ -279,29 +293,51 @@ class _Emitter:
         self._global_env = global_env
         self._primitive_count = 0
 
-    def emit_top(self, instances: tuple[Instance, ...]) -> list[dict[str, Any]]:
-        """展开顶层实例；无实例时返回空列表（合法，预览显示空画布）."""
+    def emit_top(self, instances: tuple[Instance, ...]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """展开顶层实例，返回（几何 nodes, 装配大纲 children）；无实例时两者皆空（合法）."""
         return self._emit_instances(instances, env=self._global_env, xf=(), depth=0)
 
     def _emit_instances(
         self, instances: tuple[Instance, ...], env: dict[str, float], xf: _XfStack, depth: int
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         nodes: list[dict[str, Any]] = []
+        outline: list[dict[str, Any]] = []
         for inst in instances:
-            nodes.extend(self._emit_instance(inst, env, xf, depth))
-        return nodes
+            inst_nodes, inst_outline = self._emit_instance(inst, env, xf, depth)
+            nodes.extend(inst_nodes)
+            outline.extend(inst_outline)
+        return nodes, outline
 
-    def _emit_instance(self, inst: Instance, env: dict[str, float], xf: _XfStack, depth: int) -> list[dict[str, Any]]:
+    def _emit_instance(
+        self, inst: Instance, env: dict[str, float], xf: _XfStack, depth: int
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """展开单个实例：同时产出几何节点与大纲节点（ADR 0083 D3）."""
         if isinstance(inst, PrimitiveCall):
-            return [self._emit_primitive(inst, env, xf)]
+            return [self._emit_primitive(inst, env, xf)], [_part_outline(inst)]
         if isinstance(inst, ModuleCall):
-            return self._emit_module_call(inst, env, xf, depth)
+            nodes, children = self._emit_module_call(inst, env, xf, depth)
+            assembly = {
+                "kind": "assembly",
+                "name": inst.name,
+                "line": inst.line,
+                "col": inst.col,
+                "children": children,
+            }
+            return nodes, [assembly]
         if isinstance(inst, TransformCall):
+            # 变换透明穿透：不建大纲节点，其子实例保持在当前父节点层级
             vector = [eval_expr(item, env) for item in inst.vector]
             return self._emit_instances(inst.children, env, (*xf, (inst.kind, vector)), depth)
         # BooleanCall：children 一定非空（语法层已保证）
-        children = self._emit_instances(inst.children, env, xf, depth)
-        return [{"op": inst.kind, "children": children}]
+        nodes, children = self._emit_instances(inst.children, env, xf, depth)
+        group = {
+            "kind": "group",
+            "op": inst.kind,
+            "line": inst.line,
+            "col": inst.col,
+            "children": children,
+        }
+        return [{"op": inst.kind, "children": nodes}], [group]
 
     def _emit_primitive(self, call: PrimitiveCall, env: dict[str, float], xf: _XfStack) -> dict[str, Any]:
         """校验图元参数并构造 IR 节点（带变换栈下推）."""
@@ -318,7 +354,7 @@ class _Emitter:
 
     def _emit_module_call(
         self, call: ModuleCall, env: dict[str, float], xf: _XfStack, depth: int
-    ) -> list[dict[str, Any]]:
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """展开模块实例化：绑参（位置 + 命名 + 默认值）后以模块作用域求值体."""
         if depth + 1 > MAX_MODULE_RECURSION:
             raise DslEvalError(f"模块实例化递归深度超过上限 {MAX_MODULE_RECURSION}", call.line, call.col)

@@ -9,7 +9,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { EditorView } from '@codemirror/view'
 import { Routes, Route } from 'react-router-dom'
 import DesignEditorPage from './DesignEditorPage'
@@ -43,7 +43,7 @@ const CONTENT = [
 ].join('\n')
 
 const IR: DesignIR = {
-  version: 1,
+  version: 2,
   units: { length: 'mm', angle: 'deg' },
   params: [{ name: 'width', value: 80 }],
   nodes: [{ op: 'box', size: [80, 40, 12] }],
@@ -91,20 +91,27 @@ function useDefaultHandlers(preview: () => DesignPreviewResult = () => ({ ok: tr
   )
 }
 
-function renderPage() {
+function renderPage(route = '/w/10/design/20') {
   return renderProviders(
     <Routes>
       <Route path="/w/:wid/design/:designId" element={<DesignEditorPage />} />
     </Routes>,
-    { route: '/w/10/design/20', ...AUTH },
+    { route, ...AUTH },
   )
 }
 
-/** 经真实 CodeMirror transaction 修改编辑器内容（触发 onChange → dirty） */
+/** 经真实 CodeMirror transaction 修改编辑器内容（触发 onChange → dirty）
+ *
+ * dispatch 不走 RTL 的事件通道，必须包 act：否则 onChange 引发的状态更新与
+ * 「Ctrl+S 监听重绑」的 effect 可能在断言之后才落地，慢机（CI 4 vCPU 跑 3 分片）
+ * 上会退化成「按了 Ctrl+S 但没触发保存」的伪失败。
+ */
 function editViaCodeMirror(container: HTMLElement, insert: string) {
   const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)
   if (!view) throw new Error('编辑器视图未挂载')
-  view.dispatch({ changes: { from: view.state.doc.length, insert } })
+  act(() => {
+    view.dispatch({ changes: { from: view.state.doc.length, insert } })
+  })
 }
 
 /** 编辑器全文（CodeMirror 行内含多个高亮 span，须按整体 textContent 断言） */
@@ -137,6 +144,28 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(screen.getByText('调宽度')).toBeInTheDocument()
   })
 
+  it('?line= 定位源行并选中整行（0083 D7）', async () => {
+    useDefaultHandlers()
+    const { container } = renderPage('/w/10/design/20?line=2')
+
+    await waitForEditorReady(container)
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)
+    expect(view).not.toBeNull()
+    // 第 2 行 = "box(size = [width, 40, 12])"，起点为第 1 行长度 + 换行
+    await waitFor(() => expect(view!.state.selection.main.from).toBe(CONTENT.indexOf('\n') + 1))
+    expect(view!.state.sliceDoc(view!.state.selection.main.from, view!.state.selection.main.to))
+      .toBe('box(size = [width, 40, 12])')
+  })
+
+  it('?line= 越界时钳制到末行（0083 D7）', async () => {
+    useDefaultHandlers()
+    const { container } = renderPage('/w/10/design/20?line=99')
+
+    await waitForEditorReady(container)
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)
+    await waitFor(() => expect(view!.state.selection.main.from).toBe(CONTENT.indexOf('\n') + 1))
+  })
+
   it('preview 返回诊断时回显错误行与消息', async () => {
     useDefaultHandlers(() => ({
       ok: false,
@@ -166,7 +195,8 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(await screen.findByText('未保存')).toBeInTheDocument()
 
     fireEvent.keyDown(window, { key: 's', ctrlKey: true })
-    await waitFor(() => expect(saved).toBeDefined())
+    // 保存要等一次 msw 往返；CI 高负载下默认 1s 的 waitFor 窗口偏紧
+    await waitFor(() => expect(saved).toBeDefined(), { timeout: 3000 })
     expect(saved!.content).toBe(`${CONTENT}\n// 加工备注`)
     expect(await screen.findByText(/已保存为第 3 版/)).toBeInTheDocument()
   })

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -103,11 +103,25 @@ class DesignVersionDetail(DesignVersionItem):
     compiled: dict[str, Any]
 
 
+class DesignOutlineResult(BaseModel):
+    """单设计装配大纲（ADR 0083 D4）。
+
+    ``source`` 口径（D5）：``compiled`` = 快照已含 ``outline``（IR v2）；
+    ``content`` = 历史快照（IR v1）缺大纲，按原文即时编译派生（只读不落库）。
+    """
+
+    design_id: int
+    version_number: int
+    outline: dict[str, Any]
+    source: Literal["compiled", "content"]
+
+
 __all__ = [
     "DesignContentSave",
     "DesignCreate",
     "DesignDetail",
     "DesignListItem",
+    "DesignOutlineResult",
     "DesignUpdate",
     "DesignVersionDetail",
     "DesignVersionItem",

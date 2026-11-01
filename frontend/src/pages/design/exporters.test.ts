@@ -17,14 +17,14 @@ import type { DesignIR } from '@/api'
 import { buildIRMeshes } from './renderTree'
 
 const BOX_IR: DesignIR = {
-  version: 1,
+  version: 2,
   units: { length: 'mm', angle: 'deg' },
   params: [],
   nodes: [{ op: 'box', size: [10, 10, 10] }],
 }
 
 const PLATE_IR: DesignIR = {
-  version: 1,
+  version: 2,
   units: { length: 'mm', angle: 'deg' },
   params: [{ name: 'width', value: 80 }],
   nodes: [

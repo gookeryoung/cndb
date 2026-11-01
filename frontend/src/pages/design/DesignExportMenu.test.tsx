@@ -27,7 +27,7 @@ vi.mock('./exporters', async (importOriginal) => {
 })
 
 const IR: DesignIR = {
-  version: 1,
+  version: 2,
   units: { length: 'mm', angle: 'deg' },
   params: [],
   nodes: [{ op: 'box', size: [10, 10, 10] }],

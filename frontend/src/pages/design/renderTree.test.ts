@@ -184,7 +184,7 @@ describe('evalNode 布尔求值', () => {
 
 describe('irStats / buildIRMeshes', () => {
   const FLANGE: DesignIR = {
-    version: 1,
+    version: 2,
     units: { length: 'mm', angle: 'deg' },
     params: [{ name: 'width', value: 80 }],
     nodes: [{
@@ -212,7 +212,7 @@ describe('irStats / buildIRMeshes', () => {
   })
 
   it('空 IR（顶层无实例）产出零网格', () => {
-    const empty: DesignIR = { version: 1, units: { length: 'mm', angle: 'deg' }, params: [], nodes: [] }
+    const empty: DesignIR = { version: 2, units: { length: 'mm', angle: 'deg' }, params: [], nodes: [] }
     expect(buildIRMeshes(empty)).toHaveLength(0)
     expect(irStats(null).nodes).toBe(0)
   })

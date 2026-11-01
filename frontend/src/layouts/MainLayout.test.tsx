@@ -106,6 +106,7 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/tables/:tid/change-requests" element={<ChangeRequestsStub />} />
                 <Route path="w/:wid/tables/:tid/settings" element={<TableSettingsStub />} />
                 <Route path="w/:wid/design" element={<DesignsStub />} />
+                <Route path="w/:wid/design/:designId" element={<DesignsStub />} />
                 <Route path="w/:wid/documents" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/:docId" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/change-requests" element={<DocumentsStub />} />
@@ -386,6 +387,16 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /数据同步/ })).toBeNull()
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        // 设计区二级页签（0083 C1）：唯一入口「设计结构」，落在模块根页时激活
+        expect(screen.getByTestId('design-crumb')).toBeVisible()
+        expect(screen.getByTestId('design-tab-structure')).toHaveAttribute('aria-selected', 'true')
+    })
+
+    it('设计编辑器页显示设计区页签但无子页激活（0083 C1）', async () => {
+        renderLayout(mockUser, '/w/10/design/20')
+        await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toHaveTextContent('/w/10/design/20'))
+        expect(screen.getByTestId('design-crumb')).toBeVisible()
+        expect(screen.getByTestId('design-tab-structure')).toHaveAttribute('aria-selected', 'false')
     })
 
     it('主页（/w）顶栏渲染全局搜索：进入工作区前也可搜索（C3）', async () => {
@@ -817,6 +828,7 @@ describe('MainLayout 工作区模块门控', () => {
         await waitFor(() => expect(screen.queryByTestId('ws-nav-tables')).toBeNull())
         expect(screen.getByTestId('ws-nav-design')).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        expect(screen.getByTestId('design-tab-structure')).toHaveAttribute('aria-selected', 'true')
     })
 
     it('仅勾选文档的工作区访问数据表/数据分析路径自动重定向到文档页', async () => {

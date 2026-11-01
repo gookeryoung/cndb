@@ -14,7 +14,7 @@ import {
   SafetyCertificateOutlined, ToolOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
-  LockOutlined,
+  LockOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
@@ -61,6 +61,13 @@ const DOCUMENT_SUBPAGES = [
   { key: 'pipelines', label: '质量检查', icon: <SafetyCertificateOutlined />, to: 'pipelines' },
   { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined />, to: 'change-requests' },
   { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined />, to: 'issues' },
+] as const
+
+/** 设计区二级页定义 —— 与文档区同形（cn-table-crumb + cn-table-tab）。
+ * 0083：仅「设计结构」一项，`to: ''` 即模块根页（/w/:wid/design）作为默认页；
+ * 编辑器页（/w/:wid/design/:id）显示页签但无子页激活。设计区不引入双轨修改申请（ADR 0079 D6）。 */
+const DESIGN_SUBPAGES = [
+  { key: 'structure', label: '设计结构', icon: <ApartmentOutlined />, to: '' },
 ] as const
 
 /** 文档树节点 → antd Tree 节点：文件夹/文档区分图标，原始节点挂在 docNode 供点击导航. */
@@ -384,6 +391,12 @@ export default function MainLayout() {
           ? 'issues'
           : ''
   const activeDocumentSubpage = DOCUMENT_SUBPAGES.find(p => p.key === activeDocumentTab)
+
+  // 设计区二级页激活态（0083 C1）：仅模块根页 /w/:wid/design 激活「设计结构」，
+  // 编辑器 /w/:wid/design/:id 显示页签但无子页激活。
+  const activeDesignSubpage = location === `/w/${wid}/design`
+    ? DESIGN_SUBPAGES.find(p => p.key === 'structure')
+    : undefined
 
   // ── 侧边栏形态：按当前功能段切换（需求 0065；工作区设置/设计段折叠过渡）──
   // documents → 文档侧栏（未选文档=文档列表，已选中=标题大纲）；
@@ -921,6 +934,30 @@ export default function MainLayout() {
                           data-testid={`document-tab-${p.key}`}
                           className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
                           onClick={() => navigate(`/w/${wid}/documents${p.to ? `/${p.to}` : ''}`)}
+                        >
+                          {p.icon}
+                          {p.label}
+                        </button>
+                      )
+                    })}
+                  </nav>
+                </div>
+              )}
+              {inDesignContext && (
+                <div className="cn-table-crumb" data-testid="design-crumb">
+                  {/* 设计区子页页签 —— 形式与文档区一致，作用域为工作区下全部设计（0083 C1） */}
+                  <nav className="cn-table-tabs" aria-label="设计页面切换">
+                    {DESIGN_SUBPAGES.map(p => {
+                      const active = activeDesignSubpage?.key === p.key
+                      return (
+                        <button
+                          key={p.key}
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          data-testid={`design-tab-${p.key}`}
+                          className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
+                          onClick={() => navigate(`/w/${wid}/design${p.to ? `/${p.to}` : ''}`)}
                         >
                           {p.icon}
                           {p.label}

@@ -54,9 +54,11 @@ interface DslEditorProps {
   placeholder?: string
   /** 只读态（viewer）：内容可看不可改 */
   readOnly?: boolean
+  /** 定位到指定源行（1 基，来自设计结构树节点；越界钳制到末行，ADR 0083 D7） */
+  revealLine?: number
 }
 
-export default function DslEditor({ value, onChange, diagnostics, placeholder, readOnly }: DslEditorProps) {
+export default function DslEditor({ value, onChange, diagnostics, placeholder, readOnly, revealLine }: DslEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
@@ -114,6 +116,19 @@ export default function DslEditor({ value, onChange, diagnostics, placeholder, r
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setDiagnostics.of(diagnostics) })
   }, [diagnostics])
+
+  // 源行定位（结构树节点点击跳转，ADR 0083 D7）：选中该行并滚动到视口中部
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view || !revealLine || revealLine < 1) return
+    const line = Math.min(revealLine, view.state.doc.lines)
+    const range = view.state.doc.line(line)
+    view.dispatch({
+      selection: { anchor: range.from, head: range.to },
+      effects: EditorView.scrollIntoView(range.from, { y: 'center' }),
+    })
+    view.focus()
+  }, [revealLine])
 
   return <div ref={hostRef} className="cn-dsl-editor" />
 }

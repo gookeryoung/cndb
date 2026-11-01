@@ -78,7 +78,7 @@ class TestCreate:
         body = resp.json()
         assert body["title"] == "法兰板"
         assert body["version_number"] == 1
-        assert body["compiled"]["version"] == 1
+        assert body["compiled"]["version"] == 2
         assert body["compiled"]["units"] == {"length": "mm", "angle": "deg"}
         assert body["compiled"]["nodes"], "顶层实例应产出几何"
         # 创建即落 v1
@@ -405,3 +405,64 @@ class TestVersions:
         resp = client.post(_url(ws, f"/{created['id']}/versions/99/restore"), headers=auth_owner)
         assert resp.status_code == 404
         assert resp.json()["code"] == "design_version_not_found"
+
+
+class TestOutline:
+    """装配大纲端点（ADR 0083 D4 / D5）：快照优先 + 历史快照只读派生."""
+
+    @staticmethod
+    def _outline_url(ws, design_id: int) -> str:
+        return _url(ws, f"/{design_id}/outline")
+
+    def test_outline_from_compiled_snapshot(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.get(self._outline_url(ws, created["id"]), headers=auth_owner)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["design_id"] == created["id"]
+        assert body["version_number"] == 1
+        assert body["source"] == "compiled"
+        (assembly,) = body["outline"]["children"]
+        assert assembly["kind"] == "assembly"
+        assert assembly["name"] == "plate"
+        (group,) = assembly["children"]
+        assert group["kind"] == "group"
+        assert group["op"] == "difference"
+        assert [part["primitive"] for part in group["children"]] == ["box", "cyl"]
+        assert all(part["line"] >= 1 and part["col"] >= 1 for part in group["children"])
+
+    def test_outline_viewer_readable(self, client, ws, auth_owner, auth_viewer):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.get(self._outline_url(ws, created["id"]), headers=auth_viewer)
+        assert resp.status_code == 200
+
+    def test_outline_outsider_403(self, client, ws, auth_owner, auth_outsider):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.get(self._outline_url(ws, created["id"]), headers=auth_outsider)
+        assert resp.status_code == 403
+
+    def test_outline_missing_404(self, client, ws, auth_owner):
+        resp = client.get(self._outline_url(ws, 999), headers=auth_owner)
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "design_not_found"
+
+    def test_outline_legacy_snapshot_derived_without_writing(self, client, db, ws, auth_owner):
+        """IR v1 快照无 outline：按原文即时编译派生（source=content），库内快照不动（D5）."""
+        created = _create(client, ws, auth_owner).json()
+        design = db.scalar(select(DesignDesign).where(DesignDesign.id == created["id"]))
+        design.compiled = {"version": 1, "units": {"length": "mm", "angle": "deg"}, "params": [], "nodes": []}
+        db.commit()
+
+        resp = client.get(self._outline_url(ws, created["id"]), headers=auth_owner)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["source"] == "content"
+        assert body["outline"]["children"][0]["kind"] == "assembly"
+
+        db.refresh(design)
+        assert "outline" not in design.compiled, "只读派生不落库"
+
+    def test_outline_empty_design(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner, title="空白设计", content="").json()
+        body = client.get(self._outline_url(ws, created["id"]), headers=auth_owner).json()
+        assert body["outline"] == {"children": []}
