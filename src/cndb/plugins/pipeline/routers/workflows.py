@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
-from cndb.core.errors import CndbError, NotFoundError
+from cndb.core.errors import BadRequestError, CndbError, NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.issues.services import get_issue_detail
 from cndb.plugins.pipeline.models import (
@@ -33,9 +33,13 @@ from cndb.plugins.pipeline.schemas import (
     WorkflowUpdate,
 )
 from cndb.plugins.pipeline.services.checks.registry import (
+    CHECK_DOMAINS,
     assert_steps_in_enabled_modules,
     domain_of,
     iter_check_specs,
+    module_of_domain,
+    prefix_of,
+    workflow_domains,
 )
 from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
 from cndb.plugins.pipeline.services.errors import PipelineConflictError
@@ -59,6 +63,39 @@ def _enabled_modules(db: Session, workspace_id: int) -> list[str]:
     """工作区已启用模块集合（工作区不存在时回退全模块，权限层会先 404）."""
     ws = db.get(Workspace, workspace_id)
     return list(ws.modules) if ws is not None else ["tables", "documents", "design"]
+
+
+def _normalize_domain(domain: str | None) -> str | None:
+    """校验 ``domain`` 查询参数（None = 不过滤；未注册域 400）."""
+    if domain is None:
+        return None
+    if module_of_domain(domain) is None:
+        raise BadRequestError(f"未知检查域：{domain}（可用：{', '.join(CHECK_DOMAINS)}）")
+    return domain
+
+
+def _domain_enabled(db: Session, workspace_id: int, domain: str) -> bool:
+    """域对应的工作区模块是否已启用（未启用时本域无任何可见对象）."""
+    return module_of_domain(domain) in _enabled_modules(db, workspace_id)
+
+
+def _workflows_in_domain(db: Session, workspace_id: int, domain: str | None) -> list[PipelineWorkflow]:
+    """工作区内按动作域过滤的流水线（跨域编排同时属于多个域）.
+
+    ``domain`` 所属模块未启用时返回空（该模块的页面不可达，不给历史规则入口）；
+    ``domain=None`` 保持全量（集中管理 / 存量规则仍可运行，ADR 0080 边界 #3）。
+    """
+    if domain is not None and not _domain_enabled(db, workspace_id, domain):
+        return []
+    rows = (
+        db.query(PipelineWorkflow)
+        .filter(PipelineWorkflow.workspace_id == workspace_id)
+        .order_by(PipelineWorkflow.updated_at.desc(), PipelineWorkflow.id.desc())
+        .all()
+    )
+    if domain is None:
+        return rows
+    return [row for row in rows if domain in workflow_domains(row.compiled)]
 
 
 def _workflow_or_404(db: Session, workspace_id: int, workflow_id: int) -> PipelineWorkflow:
@@ -113,15 +150,11 @@ def list_workflows(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    domain: Annotated[str | None, Query()] = None,
 ) -> list[WorkflowResponse]:
-    """列出工作区内的流水线定义（按更新时间倒序）."""
+    """列出工作区内的流水线定义（按更新时间倒序；``domain`` 只返回含该域动作的规则）."""
     _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
-    rows = (
-        db.query(PipelineWorkflow)
-        .filter(PipelineWorkflow.workspace_id == workspace_id)
-        .order_by(PipelineWorkflow.updated_at.desc(), PipelineWorkflow.id.desc())
-        .all()
-    )
+    rows = _workflows_in_domain(db, workspace_id, _normalize_domain(domain))
     return [_workflow_response(db, row) for row in rows]
 
 
@@ -180,9 +213,15 @@ def list_checks(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    domain: Annotated[str | None, Query()] = None,
 ) -> list[CheckSpecResponse]:
-    """只读检查动作目录（``uses`` + 输入 schema，供 DSL 插入辅助；按工作区模块过滤）."""
+    """只读检查动作目录（``uses`` + 输入 schema，供 DSL 插入辅助）.
+
+    ``domain`` 给定时只返回该域动作（数据表检查 / 文档检查页各取所需）；
+    两类过滤叠加：域所属模块未启用的工作区目录始终为空。
+    """
     _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    target = _normalize_domain(domain)
     enabled = set(_enabled_modules(db, workspace_id))
     return [
         CheckSpecResponse(
@@ -203,7 +242,7 @@ def list_checks(
             ],
         )
         for spec in iter_check_specs()
-        if domain_of(spec.uses) in enabled
+        if domain_of(spec.uses) in enabled and (target is None or prefix_of(spec.uses) == target)
     ]
 
 
@@ -321,12 +360,17 @@ def _build_run_router() -> APIRouter:
         current_user: Annotated[User, Depends(get_current_user)],
         db: Annotated[Session, Depends(get_db)],
         workflow_id: Annotated[int | None, Query()] = None,
+        domain: Annotated[str | None, Query()] = None,
         limit: Annotated[int, Query(ge=1, le=200)] = 20,
         offset: Annotated[int, Query(ge=0)] = 0,
     ) -> RunListResponse:
-        """工作区运行历史（默认全部规则；``workflow_id`` 给定则只看该规则，按创建时间倒序分页）."""
+        """工作区运行历史（默认全部规则；``workflow_id`` / ``domain`` 可选过滤，按创建时间倒序分页）."""
         _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
         query = db.query(PipelineRun).filter(PipelineRun.workspace_id == workspace_id)
+        target = _normalize_domain(domain)
+        if target is not None:
+            workflow_ids = [row.id for row in _workflows_in_domain(db, workspace_id, target)]
+            query = query.filter(PipelineRun.workflow_id.in_(workflow_ids))
         if workflow_id is not None:
             query = query.filter(PipelineRun.workflow_id == workflow_id)
         total = query.count()

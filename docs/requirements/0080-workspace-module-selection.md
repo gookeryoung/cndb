@@ -18,7 +18,7 @@
 | C1 | 「工作区类型选择改为可勾选的模块，包括数据表、文档和设计三个功能模块，允许勾选其中任意项或多项」 | 工作区落库字段由单选枚举 `workspace_type`（data_doc/data/doc，共 7 种组合中仅 3 种可达）改为模块集合 `modules ⊆ {tables, documents, design}` 且非空；创建弹窗与工作区设置页改为卡片式模块勾选（图标 + 名称 + 说明，默认全选，至少勾选一项） | `workspaces` 插件（模型/迁移/schema/API）+ `frontend` 创建与设置页 | 后端：`tests/test_workspace_modules_*.py`（组合校验、空集 422）；前端：`WorkspaceList.test.tsx` / `WorkspaceSettingsContent.test.tsx` 勾选交互用例 |
 | C2 | 「数据分析模块、数据同步和数据表功能模块强绑定」 | 勾选「数据表」即同时开放数据分析（`/analytics`）与数据同步（`/datasource`）页签；二者不提供独立勾选项，取消「数据表」即一并关闭；绑定关系以声明式绑定表维护 | `frontend/src/utils/workspaceModules.ts`（新增，替代 `workspaceType.ts`） | `workspaceModules.test.ts`：tables→analytics+datasource 联动断言 |
 | C3 | 「文档和设计的功能模块暂未确定，后续开发」 | 本期文档/设计为独立单模块（无绑定子模块）；模块清单与绑定规则收敛为常量表（模块目录 + 模块→功能映射），后续为文档/设计新增子模块只改常量表，不改模型与迁移 | `workspaces` 插件 `modules.py`（后端唯一判定入口）+ `frontend/src/utils/workspaceModules.ts` | 判定层单测覆盖常量表全部分支 |
-| C4 | 「质量检查模块是否分散到数据表、文档和设计当中，进行适应性设计」 | 质量检查保留工作区级集中页签且所有工作区恒显（含仅设计，为后续 design 域检查动作预留入口）；页面改 GitHub 风格双栏：左侧流水线规则清单、右侧检查结果历史；检查动作目录按已启用模块过滤（动作名域前缀 `table/`、`document/` 对应模块），DSL 保存期拒绝已禁用域的动作 | `pipeline` 插件（目录端点过滤 + 保存校验）+ `MainLayout` 页签 + 质量检查页双栏重构 | 接口层：目录过滤与保存拒绝用例；前端：`PipelinesPage.test.tsx` 双栏用例 |
+| C4 | 「质量检查模块是否分散到数据表、文档和设计当中，进行适应性设计」 | 质量检查按域拆分入口：数据表域 `/w/:wid/pipelines`、文档域 `/w/:wid/documents/pipelines`（文档区胶囊页签，留在文档上下文）；两域共享 GitHub 风格双栏页面（左规则清单 / 右结果历史），规则、动作目录、运行历史均带 `domain` 过滤；工作区级质量检查页签在非文档上下文恒显（含仅设计工作区，为后续 design 域动作预留入口）；检查动作目录按已启用模块 + 域过滤（动作名域前缀 `table/`、`document/` 对应模块），DSL 保存期拒绝已禁用域的动作 | `pipeline` 插件（`domain` 过滤 + 保存校验）+ `App.tsx` 文档域路由 + `MainLayout` 文档区页签 + 质量检查页按域复用 | 接口层：域过滤 / 未知域 400 / 模块未启用为空用例；前端：`PipelinesPage.test.tsx` 文档域用例、`MainLayout.test.tsx` 文档区页签跳转 |
 | C5 | 「进入工作区后的顶部导航布局」调整 | 工作区页签按勾选模块渲染，顺序固定：数据表 → 文档 → 设计 → 数据分析 → 数据同步 → 质量检查 → 工作区设置；URL 落在未开放功能段时重定向到落地页（落地段取第一个可用模块：tables → documents → design）；侧栏形态沿用现有切换逻辑 | `frontend/src/layouts/MainLayout.tsx` | `MainLayout.test.tsx`：各模块组合的页签集合与重定向断言 |
 | C6 | 「重构当前工作区类型设计」（存量兼容） | 单条迁移将存量枚举映射为模块集合：`data_doc → [tables, documents, design]`、`data → [tables]`、`doc → [documents, design]`；备份协议升 v12（workspace 元数据写 `modules`，v11 及更早按同一映射读旧字段）；API 响应以 `modules` 替换 `workspace_type`，前后端同仓同步切换不留双字段 | `workspaces` 插件（迁移/备份/恢复）+ 前端 API 类型 | 迁移幂等 + downgrade 用例；备份 v12 往返 + v11 旧备份导入用例 |
 
@@ -46,8 +46,8 @@
 
 ## 未决问题（2026-11-01 用户拍板，全部有结论）
 
-- [x] 质量检查集中还是分散 → **集中页签 + GitHub 风格双栏**（左规则清单 / 右结果历史），页签所有工作区恒显
-- [x] 仅勾选「设计」的工作区质量检查页签 → **照常显示**（后续会增加 design 域检查规则，预留入口）
+- [x] 质量检查集中还是分散 → **按域拆分入口**：数据表域 `/pipelines`、文档域 `/documents/pipelines`，共用双栏页面并按 `domain` 过滤规则 / 动作 / 运行历史（2026-11-01 修订：文档模块的质量检查不跳数据表段，两模块可用规则不同）
+- [x] 仅勾选「设计」的工作区质量检查页签 → **照常显示**（非文档上下文；后续会增加 design 域检查规则，预留入口）；文档段的质量检查由文档区胶囊页签承载
 - [x] 存量映射 `doc → [documents, design]` → **认可**（按现行 feature 矩阵平移，行为零变化）
 - [x] API 是否保留 `workspace_type` 兼容字段 → **不保留**（前后端同仓同发；旧数据兼容由迁移与备份映射承担）
 - [x] 新建工作区默认勾选 → **三模块默认全选**，并优化工作区选型 UI 设计（卡片式勾选）

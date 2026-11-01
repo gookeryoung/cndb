@@ -3,6 +3,7 @@
  * 覆盖（需求 0081 后的导航形态）：
  * 顶栏一级导航顺序（数据表 → 文档 → 设计 → 工作区设置）+ 三区划分、
  * 二级页签（数据分析 / 数据同步 / 质量检查）维持在内容区上方、
+ * 文档模块的质量检查由文档区胶囊页签承载（/documents/pipelines，不跳数据表段）、
  * Header 导航按钮可达性 — 文档、数据分析。
  * 以及表列表 owner 列展示 + 筛选器.
  */
@@ -116,6 +117,21 @@ test.describe("MainLayout Header 导航按钮", () => {
     // 修改申请 / 问题清单两个子页签仍在同一行
     await expect(page.getByTestId("document-tab-change-requests")).toBeVisible()
     await expect(page.getByTestId("document-tab-issues")).toBeVisible()
+  })
+
+  test("文档区「质量检查」页签留在文档上下文（/documents/pipelines），不跳数据表段", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+
+    await page.goto(`/w/${WID}/documents`)
+    await page.waitForURL(/\/documents$/)
+    await expect(page.getByTestId("documents-crumb")).toBeVisible({ timeout: 5000 })
+
+    await page.getByTestId("document-tab-pipelines").click()
+    // 文档质量检查不跳到工作区级 /pipelines（数据表域）
+    await page.waitForURL(/\/documents\/pipelines$/)
+    await expect(page.getByTestId("document-tab-pipelines")).toHaveAttribute("aria-selected", "true")
+    await expect(page.getByTestId("pipelines-page")).toBeVisible({ timeout: 10_000 })
+    await expect(page.getByText(/仅文档检查动作与规则/)).toBeVisible()
   })
 
   test("数据分析 Tab → /w/:wid/analytics（独立于文档的模块）", async ({ page }) => {

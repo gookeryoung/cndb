@@ -1,13 +1,17 @@
 /** 质量检查（流水线）页 —— GitHub 双栏（ADR 0080 D4），视觉口径对齐数据分析页.
  *
+ * 同一页面按域复用：`/pipelines`（数据表检查）与 `/documents/pipelines`（文档检查）。
+ * 规则清单 / 检查动作目录 / 运行历史均带 `domain` 查询参数，两个模块各看各的；
+ * 跨域编排的流水线同时属于多个域，两边都可管理（不丢规则）。
+ *
  * 左栏：流水线规则清单（启用开关 / 运行 / 编辑 / 删除，点击选中 / 再点取消）；
- * 右栏：运行历史——默认展示工作区全部规则的运行（行内带规则名），
+ * 右栏：运行历史——默认展示当前域全部规则的运行（行内带规则名），
  * 选中某条规则后只展示其对应的运行，再点一次或点「查看全部」回到全部（run → 点击进运行详情）。
  * 两栏均为「带边框列表」：SectionBox 承担外框，flush 内容区里的行自带分隔线与
  * hover / 选中态，与数据分析页的分区方盒同一套语言。
- * 检查动作目录按已启用模块由后端过滤；目录为空（如仅勾「设计」）时页面给提示。
- * 编辑抽屉对 YAML 做防抖实时编译校验，保存前要求校验通过；插入片段由 `checkCatalog` 生成。
- * queryKey 约定：['pipelines', wid]。
+ * 检查动作目录按已启用模块 + 当前域过滤；目录为空时页面给提示。
+ * 编辑抽屉对 YAML 做防抖实时编译校验，保存前要求校验通过；新建模板按域给出本域动作。
+ * queryKey 约定：['pipelines', wid, domain]。
  */
 
 import { useEffect, useState } from 'react'
@@ -25,13 +29,31 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { pipelinesApi } from '@/api'
-import type { PipelineRun, PipelineValidateResult, PipelineWorkflow } from '@/api'
+import type { PipelineCheckDomain, PipelineRun, PipelineValidateResult, PipelineWorkflow } from '@/api'
 import {
   CHECK_CATEGORY_LABEL, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, buildStepSnippet,
   defaultWorkflowContent, describeTriggers, isActiveRun,
 } from './checkCatalog'
 
 const { Text } = Typography
+
+/** 检查域 → 页面文案（标题后缀 / 作用域说明 / 空目录提示） */
+const DOMAIN_META: Record<PipelineCheckDomain, {
+  scope: string
+  emptyRules: string
+  emptyChecks: string
+}> = {
+  table: {
+    scope: '仅数据表检查动作与规则；可手动运行，也可订阅记录变更与同步完成事件',
+    emptyRules: '还没有数据表检查规则，点右上角「新建流水线」开始',
+    emptyChecks: '当前工作区还没有数据表检查动作；仍可创建流水线，待后续版本提供更多检查动作后即可运行。',
+  },
+  document: {
+    scope: '仅文档检查动作与规则；可手动运行，也可订阅文档保存事件',
+    emptyRules: '还没有文档检查规则，点右上角「新建流水线」开始',
+    emptyChecks: '当前工作区还没有文档检查动作；仍可创建流水线，待后续版本提供更多检查动作后即可运行。',
+  },
+}
 
 /** 校验失败时统一兜底文案（网络错误等非 4xx 场景） */
 function validateErrorText(err: unknown): string {
@@ -86,11 +108,12 @@ function RunItem({ run, showWorkflow, onOpen }: {
   )
 }
 
-export default function PipelinesPage() {
+export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineCheckDomain }) {
   const { wid = '' } = useParams<{ wid: string }>()
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
+  const meta = DOMAIN_META[domain]
 
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<PipelineWorkflow | null>(null)
@@ -101,24 +124,25 @@ export default function PipelinesPage() {
   const [selectedId, setSelectedId] = useState<string | number | null>(null)
 
   const { data: workflows = [], isLoading } = useQuery({
-    queryKey: ['pipelines', wid],
-    queryFn: () => pipelinesApi.list(wid),
+    queryKey: ['pipelines', wid, domain],
+    queryFn: () => pipelinesApi.list(wid, domain),
     enabled: !!wid,
   })
 
   const { data: checks = [] } = useQuery({
-    queryKey: ['pipelines', wid, 'checks'],
-    queryFn: () => pipelinesApi.checks(wid),
+    queryKey: ['pipelines', wid, domain, 'checks'],
+    queryFn: () => pipelinesApi.checks(wid, domain),
     enabled: !!wid,
   })
 
   const selected = workflows.find(w => w.id === selectedId) ?? null
 
-  // 右栏运行历史：默认拉取工作区全部规则的运行，选中规则后按 workflow_id 过滤；
+  // 右栏运行历史：默认拉取当前域全部规则的运行，选中规则后按 workflow_id 过滤；
   // 活跃运行（pending/running）10s 轮询推进状态
   const { data: runPage, isLoading: runsLoading } = useQuery({
-    queryKey: ['pipelines', wid, 'runs', selectedId ?? 'all'],
+    queryKey: ['pipelines', wid, domain, 'runs', selectedId ?? 'all'],
     queryFn: () => pipelinesApi.listWorkspaceRuns(wid, {
+      domain,
       limit: 20,
       ...(selectedId != null ? { workflow_id: selectedId } : {}),
     }),
@@ -163,6 +187,13 @@ export default function PipelinesPage() {
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['pipelines', wid] })
 
+  /** 运行详情按当前域留在同一上下文：文档检查不跳回数据表质量检查页 */
+  const runDetailPath = (runId: number | string) => (
+    domain === 'document'
+      ? `/w/${wid}/documents/pipelines/${runId}`
+      : `/w/${wid}/pipelines/${runId}`
+  )
+
   const save = useMutation({
     mutationFn: () => editing
       ? pipelinesApi.update(wid, editing.id, { content })
@@ -173,7 +204,7 @@ export default function PipelinesPage() {
       setEditorOpen(false)
       setEditing(null)
       setValidation(null)
-      if (!editing) setContent(defaultWorkflowContent())
+      if (!editing) setContent(defaultWorkflowContent(domain))
       // 新建成功后选中新流水线，右栏直接展示其运行历史
       setSelectedId(workflow.id)
       return workflow
@@ -192,7 +223,7 @@ export default function PipelinesPage() {
     mutationFn: (workflow: PipelineWorkflow) => pipelinesApi.run(wid, workflow.id),
     onSuccess: (pipelineRun) => {
       message.success('已开始运行')
-      navigate(`/w/${wid}/pipelines/${pipelineRun.id}`)
+      navigate(runDetailPath(pipelineRun.id))
     },
     onError: (err) => message.warning(err instanceof Error ? err.message : '触发运行失败'),
   })
@@ -209,7 +240,7 @@ export default function PipelinesPage() {
 
   const openCreate = () => {
     setEditing(null)
-    setContent(defaultWorkflowContent())
+    setContent(defaultWorkflowContent(domain))
     setValidation(null)
     setEditorOpen(true)
   }
@@ -237,7 +268,7 @@ export default function PipelinesPage() {
             <h1 className="cn-page-head-title">质量检查</h1>
             <div className="cn-page-head-sub">
               <span className="cn-page-head-meta">
-                左侧检查规则、右侧运行历史（默认全部规则，选中后只看该规则）；可手动运行，也可订阅记录变更、文档保存与同步完成事件
+                左侧检查规则、右侧运行历史（默认全部规则，选中后只看该规则）；{meta.scope}
               </span>
             </div>
           </div>
@@ -247,7 +278,7 @@ export default function PipelinesPage() {
         </div>
       </header>
 
-      {/* 检查动作目录为空：当前工作区勾选的模块没有可用检查动作（如仅勾「设计」，
+      {/* 检查动作目录为空：当前域没有可用检查动作（如仅勾「设计」，
           design 域动作尚未提供），给出明确提示而非静默空态（ADR 0080 边界 #1） */}
       {!isLoading && checks.length === 0 && (
         <Alert
@@ -255,7 +286,7 @@ export default function PipelinesPage() {
           showIcon
           data-testid="empty-checks-alert"
           title="暂无可用检查动作"
-          description="当前工作区启用的功能模块下还没有检查动作；仍可创建流水线，待后续版本提供更多检查动作后即可运行。"
+          description={meta.emptyChecks}
         />
       )}
 
@@ -272,7 +303,7 @@ export default function PipelinesPage() {
           <Spin spinning={isLoading}>
             {workflows.length === 0 && !isLoading ? (
               <div className="cn-qc-empty">
-                <Empty description="还没有流水线定义，点右上角「新建流水线」开始" />
+                <Empty description={meta.emptyRules} />
               </div>
             ) : (
               workflows.map(workflow => (
@@ -398,7 +429,7 @@ export default function PipelinesPage() {
                   key={item.id}
                   run={item}
                   showWorkflow={selectedId == null}
-                  onOpen={() => navigate(`/w/${wid}/pipelines/${item.id}`)}
+                  onOpen={() => navigate(runDetailPath(item.id))}
                 />
               ))
             )}

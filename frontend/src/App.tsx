@@ -92,11 +92,12 @@ function AuthenticatedApp() {
           <Route path="w/:wid/datasource" element={
             <Suspense fallback={<PageFallback />}><DatasourcePage /></Suspense>
           } />
+          {/* 质量检查（ADR 0080 D4）：数据表域入口；文档域入口在文档布局内（/documents/pipelines） */}
           <Route path="w/:wid/pipelines" element={
-            <Suspense fallback={<PageFallback />}><PipelinesPage /></Suspense>
+            <Suspense fallback={<PageFallback />}><PipelinesPage domain="table" /></Suspense>
           } />
           <Route path="w/:wid/pipelines/:rid" element={
-            <Suspense fallback={<PageFallback />}><PipelineRunDetail /></Suspense>
+            <Suspense fallback={<PageFallback />}><PipelineRunDetail domain="table" /></Suspense>
           } />
           {/* 设计模块（ADR 0079）：列表 + DSL 编辑器（3D 实时预览） */}
           <Route path="w/:wid/design" element={
@@ -136,6 +137,13 @@ function AuthenticatedApp() {
               <Suspense fallback={<PageFallback />}><DocumentsPage /></Suspense>
             } />
             {/* 文档区二级页（静态段优先于 :docId，不会被编辑器路由吞掉） */}
+            {/* 文档质量检查：入口留在文档上下文，只呈现 document/* 动作与规则 */}
+            <Route path="pipelines" element={
+              <Suspense fallback={<PageFallback />}><PipelinesPage domain="document" /></Suspense>
+            } />
+            <Route path="pipelines/:rid" element={
+              <Suspense fallback={<PageFallback />}><PipelineRunDetail domain="document" /></Suspense>
+            } />
             <Route path="change-requests" element={
               <Suspense fallback={<PageFallback />}><DocumentsChangeRequestsPage /></Suspense>
             } />

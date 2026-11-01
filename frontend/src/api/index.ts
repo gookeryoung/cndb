@@ -84,6 +84,7 @@ export { governanceApi } from './governance'
 export type { DetectReport, MergeReport, CleanReport, GovernanceReport } from './governance'
 export { pipelinesApi } from './pipelines'
 export type {
+  PipelineCheckDomain,
   PipelineCheckInput,
   PipelineCheckSpec,
   PipelineConclusion,

@@ -110,6 +110,9 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/documents/:docId" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/change-requests" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/issues" element={<DocumentsStub />} />
+                {/* 文档质量检查：入口留在文档上下文（静态段优先于 :docId） */}
+                <Route path="w/:wid/documents/pipelines" element={<DocumentsStub />} />
+                <Route path="w/:wid/documents/pipelines/:rid" element={<DocumentsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="w/:wid/analytics" element={<WsSectionStub />} />
                 <Route path="w/:wid/datasource" element={<WsSectionStub />} />
@@ -617,7 +620,7 @@ describe('MainLayout 文档区二级导航', () => {
         expect(screen.getByTestId('document-tab-issues')).toHaveAttribute('aria-selected', 'false')
     })
 
-    it('文档编辑器页仍显示二级导航（无子页激活），点击「质量检查」导航到工作区级 pipelines 页', async () => {
+    it('文档编辑器页仍显示二级导航（无子页激活），点击「质量检查」留在文档上下文并激活', async () => {
         renderLayout(mockUser, '/w/10/documents/2')
 
         await waitFor(() => {
@@ -627,10 +630,23 @@ describe('MainLayout 文档区二级导航', () => {
 
         fireEvent.click(screen.getByTestId('document-tab-pipelines'))
         await waitFor(() => {
-            // /pipelines 无测试桩路由：离开文档上下文后文档页卸载、二级导航随之消失
-            expect(screen.queryByTestId('documents-page-stub')).toBeNull()
-            expect(screen.queryByTestId('documents-crumb')).toBeNull()
+            // 文档质量检查不跳到工作区级 /pipelines：仍留在文档区（/documents/pipelines）
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents/pipelines')
         })
+        expect(screen.queryByTestId('ws-section-stub')).toBeNull()
+        expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        expect(screen.getByTestId('document-tab-pipelines')).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'false')
+    })
+
+    it('直接落在文档质量检查页时「质量检查」页签激活', async () => {
+        renderLayout(mockUser, '/w/10/documents/pipelines')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        expect(screen.getByTestId('document-tab-pipelines')).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'false')
     })
 
     it('非文档上下文不渲染文档二级导航', async () => {

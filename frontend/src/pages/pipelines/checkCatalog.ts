@@ -5,7 +5,7 @@
  */
 
 import type {
-  PipelineCheckSpec, PipelineRunStatus, PipelineSeverity, PipelineTrigger, PipelineWorkflow,
+  PipelineCheckDomain, PipelineCheckSpec, PipelineRunStatus, PipelineSeverity, PipelineTrigger, PipelineWorkflow,
 } from '@/api'
 
 /** 运行状态 → 标签文案与颜色 */
@@ -78,8 +78,20 @@ export function buildStepSnippet(spec: PipelineCheckSpec): string {
   return lines.join('\n')
 }
 
-/** 最小可运行 DSL 模板（新建抽屉初始内容） */
-export function defaultWorkflowContent(): string {
+/** 最小可运行 DSL 模板（新建抽屉初始内容）：按当前质量检查域给出本域动作，
+ * 避免文档页新建时默认带数据表检查动作（ADR 0080 D4：两个域各自只呈现本域规则）。 */
+export function defaultWorkflowContent(domain: PipelineCheckDomain = 'table'): string {
+  if (domain === 'document') {
+    return [
+      'name: 文档质量检查',
+      'on:',
+      '  manual: true',
+      'jobs:',
+      '  文档体检:',
+      '    steps:',
+      '      - uses: document/broken-refs',
+    ].join('\n')
+  }
   return [
     'name: 数据质量巡检',
     'on:',

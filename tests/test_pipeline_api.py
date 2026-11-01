@@ -31,6 +31,20 @@ jobs:
           fields: [姓名, 城市]
 """
 
+MIXED_CONTENT = """
+name: 综合巡检
+jobs:
+  文档:
+    steps:
+      - uses: document/links
+  表:
+    steps:
+      - uses: table/null-rate
+        with:
+          table: 人员
+          fields: [姓名]
+"""
+
 
 @pytest.fixture
 def owner(db):
@@ -88,6 +102,19 @@ class TestCatalog:
         assert {"document/broken-refs", "document/chart-blocks", "document/links"} <= uses
         null_rate = next(item for item in resp.json() if item["uses"] == "table/null-rate")
         assert any(input_item["name"] == "max_rate" for input_item in null_rate["inputs"])
+
+    def test_checks_catalog_filters_by_domain(self, client, ws, auth_viewer):
+        """数据表 / 文档质量检查页各自只取本域动作（domain 查询参数）."""
+        for domain in ("table", "document"):
+            resp = client.get(f"{BASE.format(ws=ws.id)}/checks", params={"domain": domain}, headers=auth_viewer)
+            assert resp.status_code == 200
+            uses = [item["uses"] for item in resp.json()]
+            assert uses and all(u.startswith(f"{domain}/") for u in uses)
+
+    def test_checks_catalog_rejects_unknown_domain(self, client, ws, auth_viewer):
+        resp = client.get(f"{BASE.format(ws=ws.id)}/checks", params={"domain": "bogus"}, headers=auth_viewer)
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "bad_request"
 
     def test_checks_route_not_shadowed(self, client, ws, auth_owner):
         """``/checks`` 声明在动态 ``/{workflow_id}`` 之前."""
@@ -176,6 +203,49 @@ class TestCrud:
         _expire(db)
         detail = client.get(f"{BASE.format(ws=ws.id)}/{second['id']}", headers=auth_owner)
         assert detail.json()["last_run"]["id"] >= 1
+
+    def test_list_filters_by_domain(self, client, ws, auth_owner):
+        """规则清单按域过滤：数据表页不含文档规则，反之亦然."""
+        doc_flow = _create(client, ws, auth_owner).json()
+        table_flow = _create(client, ws, auth_owner, content=FINDING_CONTENT).json()
+
+        doc_ids = [
+            item["id"]
+            for item in client.get(BASE.format(ws=ws.id), params={"domain": "document"}, headers=auth_owner).json()
+        ]
+        table_ids = [
+            item["id"]
+            for item in client.get(BASE.format(ws=ws.id), params={"domain": "table"}, headers=auth_owner).json()
+        ]
+
+        assert doc_ids == [doc_flow["id"]]
+        assert table_ids == [table_flow["id"]]
+
+    def test_list_mixed_workflow_visible_in_both_domains(self, client, ws, auth_owner):
+        """跨域编排的流水线同时属于两个域（两边都可见，不丢规则）."""
+        mixed = _create(client, ws, auth_owner, content=MIXED_CONTENT).json()
+
+        for domain in ("table", "document"):
+            ids = [
+                item["id"]
+                for item in client.get(BASE.format(ws=ws.id), params={"domain": domain}, headers=auth_owner).json()
+            ]
+            assert ids == [mixed["id"]]
+
+    def test_list_rejects_unknown_domain(self, client, ws, auth_owner):
+        resp = client.get(BASE.format(ws=ws.id), params={"domain": "bogus"}, headers=auth_owner)
+        assert resp.status_code == 400
+
+    def test_list_domain_disabled_module_is_empty(self, client, ws, auth_owner):
+        """模块未启用时该域视图为空（历史规则仍可由无 domain 的集中列表管理）."""
+        _create(client, ws, auth_owner)  # 文档巡检
+        assert (
+            client.patch(f"/api/v1/workspaces/{ws.id}", json={"modules": ["tables"]}, headers=auth_owner).status_code
+            == 200
+        )
+
+        assert client.get(BASE.format(ws=ws.id), headers=auth_owner).json() != []
+        assert client.get(BASE.format(ws=ws.id), params={"domain": "document"}, headers=auth_owner).json() == []
 
     def test_update_content_and_enabled(self, client, ws, auth_owner):
         workflow = _create(client, ws, auth_owner).json()
@@ -317,6 +387,38 @@ class TestRuns:
         body = resp.json()
         assert body["total"] == 1
         assert [item["workflow_id"] for item in body["items"]] == [first["id"]]
+
+    def test_list_workspace_runs_filter_by_domain(self, client, ws, auth_owner, db):
+        """运行历史按域过滤：数据表页只看数据表规则的运行."""
+        doc_flow = _create(client, ws, auth_owner).json()
+        table_flow = _create(client, ws, auth_owner, content=FINDING_CONTENT).json()
+        assert _trigger(client, ws, auth_owner, doc_flow["id"]).status_code == 202
+        assert _trigger(client, ws, auth_owner, table_flow["id"]).status_code == 202
+        _expire(db)
+
+        doc_runs = client.get(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs",
+            params={"domain": "document"},
+            headers=auth_owner,
+        ).json()
+        table_runs = client.get(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs",
+            params={"domain": "table"},
+            headers=auth_owner,
+        ).json()
+
+        assert doc_runs["total"] == 1
+        assert [item["workflow_id"] for item in doc_runs["items"]] == [doc_flow["id"]]
+        assert table_runs["total"] == 1
+        assert [item["workflow_id"] for item in table_runs["items"]] == [table_flow["id"]]
+
+    def test_list_workspace_runs_rejects_unknown_domain(self, client, ws, auth_owner):
+        resp = client.get(
+            f"/api/v1/workspaces/{ws.id}/pipeline-runs",
+            params={"domain": "bogus"},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 400
 
     def test_list_workspace_runs_isolated_by_workspace(self, client, db, owner, auth_owner, ws):
         workflow = _create(client, ws, auth_owner).json()

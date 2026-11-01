@@ -35,6 +35,9 @@ _DOMAIN_BY_PREFIX: dict[str, str] = {
     "design": "design",
 }
 
+#: 合法检查域短名（与 ``uses:`` 前缀一致，供 ``domain`` 查询参数校验）
+CHECK_DOMAINS: tuple[str, ...] = tuple(_DOMAIN_BY_PREFIX)
+
 
 def domain_of(uses: str) -> str:
     """检查动作名 → 所属工作区模块（``table/null-rate`` → ``tables``）.
@@ -46,6 +49,36 @@ def domain_of(uses: str) -> str:
     if domain is None:
         raise CheckError(f"未知检查动作域：{uses}")
     return domain
+
+
+def prefix_of(uses: str) -> str:
+    """检查动作名 → 域短名（``table/null-rate`` → ``table``）."""
+    return uses.split("/", 1)[0]
+
+
+def module_of_domain(domain: str) -> str | None:
+    """域短名 → 所属工作区模块（未知域返回 None）."""
+    return _DOMAIN_BY_PREFIX.get(domain)
+
+
+def workflow_domains(compiled: dict[str, Any] | None) -> set[str]:
+    """从编译产物提取流水线涉及的动作域集合（跨域编排返回多个）.
+
+    ``compiled`` 来自 DSL 编译快照，结构异常（历史脏数据）时跳过该条目。
+    """
+    domains: set[str] = set()
+    if not compiled:
+        return domains
+    for job in compiled.get("jobs") or []:
+        if not isinstance(job, dict):
+            continue
+        for step in job.get("steps") or []:
+            if not isinstance(step, dict):
+                continue
+            uses = step.get("uses")
+            if isinstance(uses, str) and "/" in uses:
+                domains.add(prefix_of(uses))
+    return domains
 
 
 def assert_steps_in_enabled_modules(ir: Any, modules: list[str]) -> None:
@@ -199,6 +232,7 @@ def _coerce(input_type: str, value: Any, uses: str, name: str) -> Any:
 
 
 __all__ = [
+    "CHECK_DOMAINS",
     "CheckRunner",
     "assert_steps_in_enabled_modules",
     "coerce_params",
@@ -207,7 +241,10 @@ __all__ = [
     "iter_check_names",
     "iter_check_specs",
     "load_builtins",
+    "module_of_domain",
+    "prefix_of",
     "register_check",
     "require_check",
     "validate_static_params",
+    "workflow_domains",
 ]

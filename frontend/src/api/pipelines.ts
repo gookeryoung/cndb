@@ -16,6 +16,9 @@ export type PipelineSeverity = 'error' | 'warn' | 'info'
 /** job / step 结论 */
 export type PipelineConclusion = 'success' | 'failed' | 'skipped'
 
+/** 检查域（与 ``uses:`` 前缀一致）：数据表 / 文档质量检查各自只呈现本域动作与规则 */
+export type PipelineCheckDomain = 'table' | 'document'
+
 /** 发现物计数（stats.findings） */
 export interface PipelineFindingCounts {
   error: number
@@ -134,9 +137,10 @@ export interface PipelineRunPage {
   items: PipelineRun[]
 }
 
-/** 运行历史查询参数（workflow_id 缺省 = 工作区全部规则） */
+/** 运行历史查询参数（workflow_id 缺省 = 工作区全部规则；domain 缺省 = 全部域） */
 export interface PipelineRunQuery {
   workflow_id?: number | string
+  domain?: PipelineCheckDomain
   limit?: number
   offset?: number
 }
@@ -174,18 +178,19 @@ const base = (wid: number | string) => `/v1/workspaces/${wid}/pipelines`
 const runsBase = (wid: number | string) => `/v1/workspaces/${wid}/pipeline-runs`
 
 export const pipelinesApi = {
-  /** 列出工作区流水线（按更新时间倒序） */
-  list: (wid: number | string) =>
-    api.get<PipelineWorkflow[]>(base(wid)).then(r => r.data),
+  /** 列出工作区流水线（按更新时间倒序；domain 只返回含该域动作的规则） */
+  list: (wid: number | string, domain?: PipelineCheckDomain) =>
+    api.get<PipelineWorkflow[]>(base(wid), { params: domain ? { domain } : undefined }).then(r => r.data),
   /** 新建（保存期编译校验，DSL 非法返回 400） */
   create: (wid: number | string, data: PipelineWorkflowPayload) =>
     api.post<PipelineWorkflow>(base(wid), data).then(r => r.data),
   /** 纯编译校验（编辑器实时校验用） */
   validate: (wid: number | string, data: { content: string; name?: string | null }) =>
     api.post<PipelineValidateResult>(`${base(wid)}/validate`, data).then(r => r.data),
-  /** 检查动作目录 */
-  checks: (wid: number | string) =>
-    api.get<PipelineCheckSpec[]>(`${base(wid)}/checks`).then(r => r.data),
+  /** 检查动作目录（domain 只返回该域动作） */
+  checks: (wid: number | string, domain?: PipelineCheckDomain) =>
+    api.get<PipelineCheckSpec[]>(`${base(wid)}/checks`, { params: domain ? { domain } : undefined })
+      .then(r => r.data),
   /** 定义详情 */
   get: (wid: number | string, workflowId: number | string) =>
     api.get<PipelineWorkflow>(`${base(wid)}/${workflowId}`).then(r => r.data),
@@ -201,7 +206,7 @@ export const pipelinesApi = {
   /** 运行历史 */
   listRuns: (wid: number | string, workflowId: number | string, params?: { limit?: number; offset?: number }) =>
     api.get<PipelineRunPage>(`${base(wid)}/${workflowId}/runs`, { params }).then(r => r.data),
-  /** 工作区运行历史（默认全部规则，可按 workflow_id 过滤） */
+  /** 工作区运行历史（默认全部规则，可按 workflow_id / domain 过滤） */
   listWorkspaceRuns: (wid: number | string, params?: PipelineRunQuery) =>
     api.get<PipelineRunPage>(runsBase(wid), { params }).then(r => r.data),
   /** 运行详情 */

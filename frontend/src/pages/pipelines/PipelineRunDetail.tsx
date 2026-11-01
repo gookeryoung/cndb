@@ -3,6 +3,7 @@
  * 数据源 `pipelinesApi.getRun` / `listFindings`（ADR 0076 P1）。
  * 运行处于 pending / running 时每 1.5 秒刷新一次，终态自动停止。
  * 表目标的发现物可一键转成所属表的问题（P2 / D15）。
+ * `domain` 决定「返回」回到哪个质量检查页（数据表 / 文档各自留在本模块上下文）。
  * queryKey 约定：['pipeline-run', wid, rid] / ['pipeline-findings', wid, rid, severity, offset]。
  */
 
@@ -16,7 +17,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { pipelinesApi } from '@/api'
-import type { PipelineFinding, PipelineSeverity } from '@/api'
+import type { PipelineCheckDomain, PipelineFinding, PipelineSeverity } from '@/api'
 import {
   PIPELINE_SEVERITY_META, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, isActiveRun,
 } from './checkCatalog'
@@ -46,12 +47,15 @@ function ConclusionTag({ conclusion }: { conclusion: string }) {
   return <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
 }
 
-export default function PipelineRunDetail() {
+export default function PipelineRunDetail({ domain = 'table' }: { domain?: PipelineCheckDomain }) {
   const { wid = '', rid = '' } = useParams<{ wid: string; rid: string }>()
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const [severity, setSeverity] = useState<SeverityFilter>('all')
   const [offset, setOffset] = useState(0)
+
+  /** 返回按钮回到本域的质量检查页：文档运行详情不跳回数据表段 */
+  const listPath = domain === 'document' ? `/w/${wid}/documents/pipelines` : `/w/${wid}/pipelines`
 
   const convertIssue = useMutation({
     mutationFn: (finding: PipelineFinding) => pipelinesApi.convertFindingToIssue(wid, rid, finding.id),
@@ -93,7 +97,7 @@ export default function PipelineRunDetail() {
 
   return (
     <div style={{ padding: '16px 24px', maxWidth: 960, margin: '0 auto' }}>
-      <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate(`/w/${wid}/pipelines`)} style={{ paddingInline: 0 }}>
+      <Button type="link" icon={<ArrowLeftOutlined />} onClick={() => navigate(listPath)} style={{ paddingInline: 0 }}>
         返回质量检查
       </Button>
 

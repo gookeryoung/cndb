@@ -84,10 +84,12 @@ test.describe("质量检查", () => {
     void page
   })
 
-  test("工作区页签可进入质量检查页", async ({ page }) => {
+  test("数据表段质量检查页可直接进入，仅呈现数据表域规则", async ({ page }) => {
     await page.goto(`/w/${WID}/pipelines`)
     await expect(page.getByText("质量检查").first()).toBeVisible({ timeout: 10_000 })
     await expect(page.getByRole("button", { name: /新建流水线/ })).toBeVisible()
+    // 数据表域入口只呈现 table/* 动作与规则，不混入文档规则（ADR 0080 D4 修订）
+    await expect(page.getByText(/仅数据表检查动作与规则/)).toBeVisible()
   })
 
   test("新建（校验错误可见）→ 修正保存 → 运行 → finding 过滤", async ({ page, request }) => {

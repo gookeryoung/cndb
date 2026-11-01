@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { Route, Routes } from 'react-router-dom'
+import { Route, Routes, useLocation } from 'react-router-dom'
 import PipelineRunDetail from './PipelineRunDetail'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, server } from '@/test/msw'
@@ -59,12 +59,22 @@ function finding(id: number, severity: PipelineFinding['severity']): PipelineFin
 
 const FINDINGS: PipelineFinding[] = [finding(1, 'error'), finding(2, 'warn')]
 
-function renderPage() {
+/** 列表页路由档 —— 展示当前 pathname（验证返回路径留在本域） */
+function ListStub() {
+  const loc = useLocation()
+  return <div data-testid="list-stub">{loc.pathname}</div>
+}
+
+/** 按域渲染：数据表运行详情 /pipelines/:rid，文档运行详情 /documents/pipelines/:rid */
+function renderPage(domain: 'table' | 'document' = 'table') {
+  const base = domain === 'document' ? '/w/10/documents/pipelines' : '/w/10/pipelines'
+  const routePath = domain === 'document' ? '/w/:wid/documents/pipelines' : '/w/:wid/pipelines'
   return renderProviders(
     <Routes>
-      <Route path="/w/:wid/pipelines/:rid" element={<PipelineRunDetail />} />
+      <Route path={`${routePath}/:rid`} element={<PipelineRunDetail domain={domain} />} />
+      <Route path={routePath} element={<ListStub />} />
     </Routes>,
-    { route: '/w/10/pipelines/71', ...AUTH },
+    { route: `${base}/71`, ...AUTH },
   )
 }
 
@@ -182,5 +192,15 @@ describe('PipelineRunDetail 运行详情', () => {
 
     fireEvent.click(await screen.findByTitle('2'))
     await waitFor(() => expect(capturedOffset).toBe('50'))
+  })
+
+  it('文档域运行详情「返回质量检查」回到文档质量检查页', async () => {
+    defaultHandlers()
+    renderPage('document')
+
+    await screen.findByText('空值巡检')
+    fireEvent.click(screen.getByRole('button', { name: /返回质量检查/ }))
+    // 不跳回工作区级 /pipelines（数据表域）
+    expect(await screen.findByTestId('list-stub')).toHaveTextContent('/w/10/documents/pipelines')
   })
 })

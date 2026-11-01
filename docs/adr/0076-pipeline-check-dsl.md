@@ -14,7 +14,7 @@ Related: `src/cndb/plugins/tables/services/governance/detect.py`、`src/cndb/plu
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
 | C1 | 参照 GitHub Actions 工作流形态 | DSL 采用 YAML 子集：`name` / `on`（触发器）/ `jobs`（作业 DAG：`needs` / `if`）/ `steps`（`uses:` 动作 + `with:` 参数 + `severity` / `continue-on-error`）；表达式用 `${{ }}` 白名单子集（D3） |
-| C2 | 完整系统闭环 | 新插件 `src/cndb/plugins/pipeline/`：`pipeline_workflow` / `pipeline_run` / `pipeline_finding` 三表 + 后台执行器（单飞）+ REST API + 前端工作区页签「质量检查」（`/w/:wid/pipelines`） |
+| C2 | 完整系统闭环 | 新插件 `src/cndb/plugins/pipeline/`：`pipeline_workflow` / `pipeline_run` / `pipeline_finding` 三表 + 后台执行器（单飞）+ REST API + 前端质量检查页（数据表域 `/w/:wid/pipelines`、文档域 `/w/:wid/documents/pipelines`，见 D11） |
 | C3 | 专用声明式 DSL | `pipeline/services/dsl/`：YAML 文本入库，保存期编译为校验过的 IR（JSON）；表达式为递归下降求值的白名单子集，无 eval、无任意代码 |
 | C4 | 数据表检查族 | `pipeline/checks/table/`：`table/null-rate`、`table/duplicates`、`table/value-range`、`table/stale`；字段类型语义复用 `tables.field_types.default_registry`，判重归一化复用治理 `normalize_match_value` |
 | C5 | 文档检查族 | `pipeline/checks/document/`：`document/broken-refs`（图表 / 数据表 / 附件引用失效）、`document/chart-blocks`（复用 `validate_document_blocks` 口径）、`document/links`（站内 wikilink 与 `file:` 引用登记） |
@@ -159,14 +159,14 @@ jobs:
 
 | 端点 | 变更 |
 |---|---|
-| `GET /api/v1/workspaces/{wid}/pipelines` | 新增：列表（含最近一次 run 状态） |
+| `GET /api/v1/workspaces/{wid}/pipelines` | 新增：列表（含最近一次 run 状态）；`domain` 参数按动作域过滤（ADR 0080 D4） |
 | `POST /api/v1/workspaces/{wid}/pipelines` | 新增：创建（YAML 入参，保存期编译校验，失败 400 带行级错误信息） |
 | `GET / PUT / DELETE /workspaces/{wid}/pipelines/{pid}` | 新增：详情（含 IR）/ 更新（重编译）/ 删除（级联 run） |
 | `POST /workspaces/{wid}/pipelines/validate` | 新增：纯编译校验（不落库，编辑器实时校验用） |
-| `GET /workspaces/{wid}/pipelines/checks` | 新增：只读检查动作目录（对标 `GET /api/v1/llm/actions`） |
+| `GET /workspaces/{wid}/pipelines/checks` | 新增：只读检查动作目录（`domain` 参数按域过滤；对标 `GET /api/v1/llm/actions`） |
 | `POST /workspaces/{wid}/pipelines/{pid}/run` | 新增：手动触发（202，单飞冲突 409，后台执行） |
 | `GET /workspaces/{wid}/pipelines/{pid}/runs` | 新增：运行历史（分页） |
-| `GET /workspaces/{wid}/pipeline-runs` | 新增：工作区运行历史（默认全部规则，可选 `workflow_id` 过滤，分页） |
+| `GET /workspaces/{wid}/pipeline-runs` | 新增：工作区运行历史（默认全部规则，可选 `workflow_id` / `domain` 过滤，分页） |
 | `GET /workspaces/{wid}/pipeline-runs/{rid}` | 新增：运行详情（job / step 结论树 + finding 汇总） |
 | `GET /workspaces/{wid}/pipeline-runs/{rid}/findings` | 新增：发现物列表（`severity` / `target_type` / `check` 过滤，分页） |
 
@@ -191,7 +191,7 @@ jobs:
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| 页签挂载 | `frontend/src/layouts/MainLayout.tsx` | 工作区页签新增「质量检查」（工作区类型 `data_doc` / `data` 显示） |
+| 页签挂载 | `frontend/src/layouts/MainLayout.tsx` | 工作区页签「质量检查」（非文档上下文显示，文档段由文档区胶囊页签承载）；工作区级 `/pipelines` 为数据表域，`/documents/pipelines` 为文档域（ADR 0080 D4） |
 | 页面 | `frontend/src/pages/pipelines/PipelinesPage.tsx` | 流水线列表（名称 / 启用 / 最近运行状态）+ 新建 / 编辑抽屉（YAML 文本编辑 + `POST /pipelines/validate` 实时校验错误展示） |
 | 运行详情 | `frontend/src/pages/pipelines/PipelineRunDetail.tsx` | job / step 结论树（GitHub Actions 运行页形态）+ finding 表（severity 筛选）+ 触发按钮（409 提示） |
 | 检查目录 | `frontend/src/pages/pipelines/checkCatalog.ts` | 动作目录静态描述（`uses:` 插入辅助），数据以目录端点为准 |
@@ -231,7 +231,7 @@ jobs:
 | D8 | 并发口径 | workflow 级单飞：状态条件 UPDATE 抢占，冲突 409 | 对齐数据同步单飞语义（`runner.py:125`）；P0 无租约（检查只读、可中断性弱，无需批间续期复杂度） | 立即引入 DB 租约（过度设计，检查任务粒度短）；允许并发 run（结果交叉，stats 无意义） | `pipeline/services/runner.py` |
 | D9 | 严重度与结论映射 | `error/warn/info` 三档；error 使 step 失败（`continue-on-error` 豁免）→ job 失败 → run `failed`；仅 warn/info → `partial`；全无 → `success` | GitHub Actions 的 conclusion 模型 + annotation severity 的合体；`partial` 区分"全绿"与"有告警" | 两档 error/warn（info 类截断提示无处安放）；warn 也判失败（巡检类告警不该红） | `pipeline/services/runner.py` |
 | D10 | 权限口径 | workflow CRUD 与触发 owner/editor；run / finding 查看为工作区成员 | 与数据源任务（创建编辑受限）+ 治理报告（成员可见）口径一致 | 仅 owner 可看结果（质量信息对团队有普适价值）；viewer 可运行（写入口子） | `pipeline/routers/` |
-| D11 | 前端入口 | 工作区页签「质量检查」，路由 `/w/:wid/pipelines` | 与数据同步 / 数据分析同级的工作区级功能；工作区类型 `data_doc` / `data` 显示（`doc` 型无数据表检查目标） | 表级 / 文档级零散入口（检查天然跨域，应集中） | `frontend/src/pages/pipelines/` |
+| D11 | 前端入口 | 按域拆分双入口：数据表域 `/w/:wid/pipelines`、文档域 `/w/:wid/documents/pipelines`（文档区胶囊页签）；两域共享双栏页面，规则 / 动作目录 / 运行历史按 `domain` 过滤；工作区级页签在非文档上下文显示，文档段由文档区页签承载（ADR 0080 D4 修订） | 用户明确文档模块质量检查不应跳到数据表段、两模块可用规则应有差异；检查动作 `域/动作` 前缀可直接推导过滤维度，跨域编排双域可见防规则丢失 | 单一集中页签混域（文档入口被带去数据表段、规则混在一起）；表级 / 文档级各写一套独立页面（双栏与交互重复维护） | `frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/pipelines/` |
 | D12 | 备份口径 | workflow 随工作区备份导出（P2，backup v10）；run / finding 属流水不进 | 对齐 ADR 0075 排除清单（同步运行历史同类） | run 也进备份（体量随时间无界增长） | `plugins/workspaces/` 备份序列化、恢复路径 |
 | D13 | 检查的数据视角 | 工作区视角（owner 级读取，不套触发人个人行级权限） | 质量口径是表 / 文档级客观事实，随触发人漂移则结果不可比；配合 D7 的值级脱敏，侧信道风险受控 | 按触发人视角（同一 workflow 不同人跑出不同结论，违背"报告可复现"） | `pipeline/services/runner.py`、`pipeline/checks/base.py` |
 | D14 | 定时触发口径 | `cndb pipeline tick` 读取已启用且声明 `on.schedule` 的定义，cron 按 UTC+8 解释（与数据源调度同源），以当前分钟槽 + 最近一条 `trigger=schedule` 运行的 `created_at` 去重；tick 内同步执行，同一 workflow 仍走单飞 | cron 部署范式复用 `cndb sync tick` + `deploy/sync.sh`；同步执行避免 CLI 进程退出杀死后台线程导致 run 长期 pending；分钟槽水位保证同一分钟不重复触发 | tick 内起后台守护线程（进程生命周期不可控）；轮询 `core_event` 作触发源（延迟高、全表扫描）；秒级精度（cron 最小粒度为分钟） | `pipeline/services/scheduler.py`、`cli/pipeline.py`、`deploy/pipeline.sh` |

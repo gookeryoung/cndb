@@ -54,7 +54,8 @@ const TABLE_SUBPAGES = [
 
 /** 文档区二级页定义 —— 与表级子页同形，但作用域是工作区下的全部文档（无「文档设置」）.
  * 「文档结构」在前（0082 C4）：指向既有文档总览列表页（/documents），作为文档模块的根级页签入口；
- * 「质量检查」为工作区级页（/pipelines），不在文档前缀下，其余子页页签导航到 /documents/<key>。 */
+ * 「质量检查」（ADR 0080 D4）指向文档上下文的质量检查页（/documents/pipelines），
+ * 只呈现 document/* 检查动作与规则，不跳到数据表段；其余子页同样导航到 /documents/<key>。 */
 const DOCUMENT_SUBPAGES = [
   { key: 'structure', label: '文档结构', icon: <FolderOpenOutlined />, to: '' },
   { key: 'pipelines', label: '质量检查', icon: <SafetyCertificateOutlined />, to: 'pipelines' },
@@ -260,8 +261,8 @@ export default function MainLayout() {
 
   /** 数据表派生二级功能（数据分析 / 数据同步）的显示窗口：仅在数据表模块上下文
    * （表列表、表级页、分析段、同步段、质量检查段）显示；切到文档 / 设计 / 工作区设置一级模块时隐藏，
-   * 避免与当前模块无关的入口干扰导航。质量检查同为数据表段内的二级功能：
-   * 落在质量检查页时窗口保持开启（与数据分析行为一致），页签行不消失；质量检查页签本身恒显。 */
+   * 避免与当前模块无关的入口干扰导航。工作区级质量检查页（/pipelines）属数据表域：
+   * 落在该页时窗口保持开启（与数据分析行为一致），页签行不消失。 */
   const tablesDerivedActive =
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
     || activeWsTab === 'pipelines'
@@ -299,8 +300,9 @@ export default function MainLayout() {
    *
    * 数据分析 / 数据同步随数据表开放，且仅在数据表模块上下文显示
    * （切到文档 / 设计 / 工作区设置时隐藏，tablesDerivedActive 收敛）；
-   * 质量检查恒显（ADR 0080），但文档模块上下文除外：文档区胶囊页签已承载同名入口，
-   * 页签行再渲染一份属冗余，故文档上下文隐藏（设计 / 设置段仍显示）。
+   * 工作区级质量检查（/pipelines）为数据表域入口，恒显（ADR 0080），
+   * 但文档模块上下文除外：文档区胶囊页签已承载文档质量检查（/documents/pipelines），
+   * 页签行再渲染一份属冗余（设计 / 设置段仍显示）。
    * 一级模块已上移顶栏（C4），
    * 仅移动端仍在页签行全量渲染（顶栏空间不足，移动端形态维持现状）。
    */
@@ -332,7 +334,7 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
-    // 文档上下文不显示：文档区胶囊页签已有「质量检查」入口，避免同名页签重复
+    // 文档上下文不显示：文档区胶囊页签已有文档质量检查入口，避免同名页签混入数据表域
     ...(wsFeatures.quality && !inDocumentsContext ? [{
       key: 'pipelines',
       label: (
@@ -371,14 +373,16 @@ export default function MainLayout() {
   // 注意：/w/:wid/documents/:docId 也在该前缀下（编辑器页），此时无子页激活。
   // inDocumentsContext 已在上方文档侧栏查询处定义
   // 「文档结构」页签即文档总览列表页本体（/documents 无子段时激活）；
-  // 其余子页由 pathname 中的静态段驱动；「质量检查」指向工作区级 /pipelines。
+  // 其余子页由 pathname 中的静态段驱动；「质量检查」指向文档上下文页 /documents/pipelines。
   const activeDocumentTab = location === `/w/${wid}/documents`
     ? 'structure'
-    : location.includes('/change-requests')
-      ? 'change-requests'
-      : location.includes('/issues')
-        ? 'issues'
-        : ''
+    : location.startsWith(`/w/${wid}/documents/pipelines`)
+      ? 'pipelines'
+      : location.includes('/change-requests')
+        ? 'change-requests'
+        : location.includes('/issues')
+          ? 'issues'
+          : ''
   const activeDocumentSubpage = DOCUMENT_SUBPAGES.find(p => p.key === activeDocumentTab)
 
   // ── 侧边栏形态：按当前功能段切换（需求 0065；工作区设置/设计段折叠过渡）──
@@ -916,11 +920,7 @@ export default function MainLayout() {
                           aria-selected={active}
                           data-testid={`document-tab-${p.key}`}
                           className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
-                          onClick={() => navigate(
-                            p.key === 'pipelines'
-                              ? `/w/${wid}/pipelines`
-                              : `/w/${wid}/documents${p.to ? `/${p.to}` : ''}`,
-                          )}
+                          onClick={() => navigate(`/w/${wid}/documents${p.to ? `/${p.to}` : ''}`)}
                         >
                           {p.icon}
                           {p.label}

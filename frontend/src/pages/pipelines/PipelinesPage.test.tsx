@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import PipelinesPage from './PipelinesPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, server } from '@/test/msw'
@@ -76,13 +76,22 @@ const RUN: PipelineRun = {
   workflow_name: '空值巡检',
 }
 
-function renderPage() {
+/** 运行详情路由档 —— 展示当前 pathname（MemoryRouter 下不能读 window.location） */
+function RunDetailStub() {
+  const loc = useLocation()
+  return <div data-testid="run-detail-stub">{loc.pathname}</div>
+}
+
+/** 按域渲染：数据表域落在 /pipelines，文档域落在 /documents/pipelines（ADR 0080 D4 修订） */
+function renderPage(domain: 'table' | 'document' = 'table') {
+  const base = domain === 'document' ? '/w/10/documents/pipelines' : '/w/10/pipelines'
+  const routePath = domain === 'document' ? '/w/:wid/documents/pipelines' : '/w/:wid/pipelines'
   return renderProviders(
     <Routes>
-      <Route path="/w/:wid/pipelines" element={<PipelinesPage />} />
-      <Route path="/w/:wid/pipelines/:rid" element={<div data-testid="run-detail-stub">运行详情</div>} />
+      <Route path={routePath} element={<PipelinesPage domain={domain} />} />
+      <Route path={`${routePath}/:rid`} element={<RunDetailStub />} />
     </Routes>,
-    { route: '/w/10/pipelines', ...AUTH },
+    { route: base, ...AUTH },
   )
 }
 
@@ -274,5 +283,112 @@ describe('PipelinesPage 双栏布局', () => {
 
     expect(await screen.findByTestId('empty-checks-alert')).toBeInTheDocument()
     expect(screen.getByText('暂无可用检查动作')).toBeInTheDocument()
+  })
+})
+
+// ───────────── 按域复用（ADR 0080 D4 修订）：数据表 / 文档各看各的动作与规则 ─────────────
+
+describe('PipelinesPage 文档域', () => {
+  const DOC_WORKFLOW: PipelineWorkflow = {
+    id: 9,
+    workspace_id: 10,
+    name: '文档体检',
+    content: [
+      'name: 文档体检',
+      'on:',
+      '  manual: true',
+      'jobs:',
+      '  体检:',
+      '    steps:',
+      '      - uses: document/broken-refs',
+    ].join('\n'),
+    compiled: {
+      name: '文档体检',
+      on: { manual: true },
+      jobs: [{ steps: [{ uses: 'document/broken-refs' }] }],
+    },
+    enabled: true,
+    created_by_id: 1,
+    created_at: '2026-10-01T08:00:00Z',
+    updated_at: '2026-10-01T08:00:00Z',
+    last_run: null,
+  }
+
+  const DOC_CHECKS: PipelineCheckSpec[] = [{
+    uses: 'document/broken-refs',
+    title: '引用完整性',
+    category: 'document',
+    severity: 'warn',
+    target_types: ['document'],
+    inputs: [],
+  }]
+
+  /** 记录三个请求上的 domain 查询参数（undefined = 未带） */
+  function docHandlers(seen: Array<string | null> = []) {
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('domain'))
+        return HttpResponse.json([DOC_WORKFLOW])
+      }),
+      http.get('/api/v1/workspaces/10/pipelines/checks', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('domain'))
+        return HttpResponse.json(DOC_CHECKS)
+      }),
+      http.get('/api/v1/workspaces/10/pipeline-runs', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('domain'))
+        return HttpResponse.json({ total: 0, items: [] })
+      }),
+    )
+    return seen
+  }
+
+  it('请求三个接口都带 domain=document，页面只呈现文档规则与动作', async () => {
+    const seen = docHandlers()
+    renderPage('document')
+
+    await screen.findByTestId('pipeline-item-9')
+    expect(screen.getByText('文档体检')).toBeInTheDocument()
+    // 副标题按域说明作用域
+    expect(screen.getByText(/仅文档检查动作与规则/)).toBeInTheDocument()
+    // 三个接口均按文档域过滤（检查动作目录只给 document/*）
+    await waitFor(() => expect(seen.filter(v => v === 'document').length).toBe(3))
+
+    fireEvent.click(screen.getByRole('button', { name: /编\s*辑/ }))
+    expect(await screen.findByText('检查动作目录（1）')).toBeInTheDocument()
+    // Collapse 首次展开才挂载 children
+    fireEvent.click(screen.getByText('检查动作目录（1）'))
+    expect(await screen.findByText('document/broken-refs')).toBeInTheDocument()
+    expect(screen.queryByText('table/null-rate')).not.toBeInTheDocument()
+  })
+
+  it('文档域空态文案与新建模板按域给出', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines', () => HttpResponse.json([])),
+      http.get('/api/v1/workspaces/10/pipelines/checks', () => HttpResponse.json([])),
+      http.get('/api/v1/workspaces/10/pipeline-runs', () => HttpResponse.json({ total: 0, items: [] })),
+    )
+    renderPage('document')
+
+    expect(await screen.findByText(/还没有文档检查规则/)).toBeInTheDocument()
+    expect(screen.getByText(/还没有文档检查动作/)).toBeInTheDocument()
+    expect(screen.queryByText(/还没有数据表检查规则/)).not.toBeInTheDocument()
+
+    // 新建模板默认带文档动作（数据表模板不出现）
+    fireEvent.click(screen.getByRole('button', { name: /新建流水线/ }))
+    const editor = await screen.findByLabelText('流水线 YAML')
+    expect((editor as HTMLTextAreaElement).value).toContain('document/broken-refs')
+    expect((editor as HTMLTextAreaElement).value).not.toContain('table/null-rate')
+  })
+
+  it('运行与运行历史跳转留在文档域路由', async () => {
+    docHandlers()
+    server.use(
+      http.post('/api/v1/workspaces/10/pipelines/9/run', () => HttpResponse.json(RUN, { status: 202 })),
+    )
+    renderPage('document')
+
+    fireEvent.click(await screen.findByRole('button', { name: /运行 文档体检/ }))
+    // 运行详情留在文档上下文：不跳到工作区级 /pipelines/:rid
+    expect(await screen.findByTestId('run-detail-stub')).toHaveTextContent('/w/10/documents/pipelines/71')
   })
 })
