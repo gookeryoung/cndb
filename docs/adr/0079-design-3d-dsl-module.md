@@ -251,15 +251,15 @@ plate(width, height, 12)            // 顶层实例（产出几何）
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/design/plugin.py`、`src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/services/dsl/`（lexer / parse / expressions / compile / limits / nodes）、`src/cndb/alembic/versions/z4a5b6c7d8e9_add_design_plugin.py` | `tests/test_design_dsl.py`（126 例，design 包覆盖率 100%）、`tests/test_design_migration.py` | `881230cf` |
-| P1 | 未开始 | — | — | — |
+| P1 | 已落地 | `src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/schemas.py`、`frontend/src/api/design.ts`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/design/DslEditor.tsx`、`frontend/src/pages/design/PreviewCanvas.tsx`、`frontend/src/pages/design/useDesignPreview.ts`、`frontend/src/pages/design/designLang.ts`、`frontend/src/pages/design/renderTree.ts`、`frontend/scripts/chrome81-smoke.mjs`（设计编辑器冒烟步骤） | `tests/test_design_api.py`（28 例）、`frontend/src/pages/design/designLang.test.ts`（6 例）、`frontend/src/pages/design/renderTree.test.ts`（23 例）、`frontend/src/pages/design/useDesignPreview.test.ts`（5 例）、`frontend/src/pages/design/DesignsPage.test.tsx`（6 例）、`frontend/src/pages/design/DesignEditorPage.test.tsx`（6 例，共 46 例） | `4e73eea9` |
 | P2 | 未开始 | — | — | — |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地（2026-11-01），待进入 P1
-- 已完成：需求卡片 0079、本 ADR（Accepted）、P0 全量（插件骨架 + 两表 + 迁移 + DSL 编译引擎 + 判定层 / 迁移单测）
-- 下一步：P1 —— API（CRUD / preview / 版本）+ 前端设计页签与编辑器（CodeMirror 语言包 + three.js 实时预览 + 参数面板）+ 体积预算基线 + Chrome 81 冒烟
-- 已知坑：three.js 在 Chromium 81 内核的实际可用版本未实测（P1 首个动作是锁定版本 + 冒烟）；`three-bvh-csg` 与 three 主版本需配对锁定；本机跑测试须先清空 `LD_LIBRARY_PATH`（trae 服务器自带旧 libsqlite3 会遮蔽系统库）
-- 最近一次全绿：`make check` @ `881230cf`（6390 passed，覆盖率 95.60% ≥ 95%，2026-11-01）
+- 当前阶段：P1 已落地（2026-11-01，提交 `4e73eea9`），待进入 P2
+- 已完成：需求卡片 0079、本 ADR（Accepted）、P0 全量（插件骨架 + 两表 + 迁移 + DSL 编译引擎 + 判定层 / 迁移单测）、P1 全量（designs API：CRUD / preview（viewer 可用）/ 保存即落新版本 / 版本列表；前端设计页签 + 列表页 + CodeMirror 编辑器（诊断行装饰）+ 防抖预览（最后胜出竞态）+ three.js 0.165 Z-up 渲染（lazy 独立 chunk，主包零增长；WebGL 不可用降级提示）+ 参数面板 overrides 重编译；体积预算基线已更新；Chrome 81 冒烟已补设计编辑器步骤且实测通过——three.js WebGL 在 Chromium 81 实际产出画布，无 pageerror）
+- 下一步：P2 —— STL / OBJ / GLB 导出与三视图、版本回看 / 恢复端点、备份口径接入（含旧备份兼容往返测试）、帮助主题、`examples/datasets/<工作区>/designs/*.cnmd` 种子、e2e `design-3d-preview.spec.ts`
+- 已知坑：three.js 0.165 + three-mesh-bvh 0.7.8 + three-bvh-csg 0.0.17 配对锁定（Chrome 81 实测通过，D4 风险已消除）；前端编辑器测试须 `vi.mock('./PreviewCanvas')`（jsdom 无 WebGL）；编辑器就绪判定用 `.cm-placeholder` 消失而非文本匹配（placeholder 与初始内容同文案，且 CodeMirror 行内多 span 使 getByText 失效）；Chromium 81 快照解压在 `frontend/.cache/`，eslint ignores 已补 `.cache`；本机跑测试须先清空 `LD_LIBRARY_PATH`（trae 服务器自带旧 libsqlite3 会遮蔽系统库）
+- 最近一次全绿：`make check` @ `4e73eea9`（后端 6418 passed，覆盖率 95.61% ≥ 95%；前端 2808 passed，核心集合 lines 97.79% / branches 100%，2026-11-01）
