@@ -54,7 +54,7 @@ test.describe("设计模块（结构 DSL）", () => {
 
       // 2) 预览画布真实挂载（three WebGL2 + SwiftShader），模板编译通过
       await expect(page.getByTestId("design-preview-canvas")).toBeVisible({ timeout: 30_000 })
-      await expect(page.getByText("编译通过").first()).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByTestId("design-compile-ok")).toBeVisible({ timeout: 15_000 })
 
       // 3) 输入坏 DSL → 防抖重编译 → 诊断回显行号与消息
       const editor = page.locator(".cm-content")
@@ -68,7 +68,7 @@ test.describe("设计模块（结构 DSL）", () => {
       await page.keyboard.press("ControlOrMeta+a")
       await page.keyboard.type("param width = 80\nbox(size = [width, 40, 12])\n")
       await expect(page.getByText("第2行").first()).toBeHidden({ timeout: 15_000 })
-      await expect(page.getByText("编译通过").first()).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByTestId("design-compile-ok")).toBeVisible({ timeout: 15_000 })
 
       // 5) 导出 STL：点击导出菜单 → 二进制头为 'cndb design stl'
       // 文件名含中文设计名，Chromium suggestedFilename 不稳定（同 workspace-backup 用例），以内容为准则

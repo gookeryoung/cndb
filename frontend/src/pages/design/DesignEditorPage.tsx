@@ -183,7 +183,7 @@ export default function DesignEditorPage() {
           <Text type="secondary"><ExperimentOutlined /> 编译检查：</Text>
           {preview.compiling && <Spin size="small" />}
           {!preview.compiling && diagnostics.length === 0 && (
-            <Text type="secondary">
+            <Text type="secondary" data-testid="design-compile-ok">
               通过{preview.ir && preview.ir.nodes.length === 0 && '（顶层尚无实例）'}
             </Text>
           )}

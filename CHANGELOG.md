@@ -5,6 +5,7 @@
 ## [未发布]
 
 ### 修复
+- **修复 CI 红：设计编辑器编译状态改 testid 断言、设置页统计 Tab 测试限定查询范围**：① `design-3d-preview.spec.ts` 断言的「编译通过」文案在编辑器布局优化（编译检查上移顶部信息条）后已改为「编译检查：通过」，E2E 连续三次全红；改为在通过态挂 `data-testid="design-compile-ok"` 并以 testid 断言（文案可继续演进，不动断言）。② `WorkspaceSettingsContent.test.tsx` 统计 Tab 用 `getByText('数据表')` / `getByText('数据行')` 命中 3 个节点（统计卡片 + 功能模块勾选项 + 详情，ADR 0080 引入），改为 `within(getByTestId('ws-stats-grid'))` 限定统计网格内查询，断言不放宽。改动：`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/settings/WorkspaceSettingsContent.test.tsx`、`frontend/tests/e2e/critical/design-3d-preview.spec.ts`。
 - **Chromium 81 冒烟导出流程适配 antd 6 Tabs DOM**：Tab 面板类名由 `.ant-tabs-tabpane` 改为 `.ant-tabs-content`（激活态 `.ant-tabs-content-active`），修复 `pnpm e2e:chrome81` 在「导出」Tab 等待 `Select` 时 15s 超时；`.ant-select-content` 读取口径不变。改动：`frontend/scripts/chrome81-smoke.mjs`。
 
 ### 新增

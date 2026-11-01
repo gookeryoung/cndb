@@ -250,8 +250,10 @@ describe('WorkspaceSettingsContent 统计信息 Tab', () => {
 
     expect(await screen.findByText('危险操作')).toBeInTheDocument()
     expect(screen.getByText('角色信息')).toBeInTheDocument()
-    expect(screen.getByText('数据表')).toBeInTheDocument()
-    expect(screen.getByText('数据行')).toBeInTheDocument()
+    // 统计卡片里的「数据表」「数据行」与功能模块勾选项同名，须限定在统计网格内查询
+    const stats = within(screen.getByTestId('ws-stats-grid'))
+    expect(stats.getByText('数据表')).toBeInTheDocument()
+    expect(stats.getByText('数据行')).toBeInTheDocument()
   })
 })
 
