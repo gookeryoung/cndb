@@ -84,7 +84,7 @@ class DesignDetail(BaseModel):
 
 
 class DesignVersionItem(BaseModel):
-    """版本列表项（回看 / 恢复端点属 P2，本期只列表）."""
+    """版本列表项（不含原文，降低响应体量）."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -96,12 +96,20 @@ class DesignVersionItem(BaseModel):
     created_at: Any
 
 
+class DesignVersionDetail(DesignVersionItem):
+    """版本回看（P2，ADR 0079 §3）：该版原文与编译快照."""
+
+    content: str
+    compiled: dict[str, Any]
+
+
 __all__ = [
     "DesignContentSave",
     "DesignCreate",
     "DesignDetail",
     "DesignListItem",
     "DesignUpdate",
+    "DesignVersionDetail",
     "DesignVersionItem",
     "DiagnosticItem",
     "PreviewRequest",

@@ -83,10 +83,10 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"):
+    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"):
         raise HTTPException(
             status_code=400,
-            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10）。请升级程序后再导入。",
+            detail=f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11）。请升级程序后再导入。",
         )
 
     imported_tables = 0
@@ -96,6 +96,7 @@ def _import_backup_into_workspace(
     imported_sync_jobs = 0
     imported_charts = 0
     imported_pipelines = 0
+    imported_designs = 0
     errors: list[str] = []
 
     # v4 跨表引用重映射的收集器（v1-v3 备份无 id 信息，保持原样跳过重映射）：
@@ -432,6 +433,11 @@ def _import_backup_into_workspace(
         imported_pipelines += pipeline_imported
         errors.extend(pipeline_errors)
 
+        # ── v11（ADR 0079）：结构设计（原文 + 版本原文；旧备份无该键按空处理） ──
+        design_imported, design_errors = _import_designs(workspace_id, json_data, current_user, db)
+        imported_designs += design_imported
+        errors.extend(design_errors)
+
         # ── v9（ADR 0075）：版本历史/草稿/置顶/分享/议题/修改申请/会话密钥/游标/附件 ──
         v9_errors = _import_v9_extras(
             workspace_id,
@@ -462,6 +468,7 @@ def _import_backup_into_workspace(
         imported_sync_jobs=imported_sync_jobs,
         imported_charts=imported_charts,
         imported_pipelines=imported_pipelines,
+        imported_designs=imported_designs,
         errors=errors,
     )
 
@@ -1115,10 +1122,104 @@ def _import_pipelines(
     return imported, errors
 
 
+def _import_designs(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+) -> tuple[int, list[str]]:
+    """还原结构设计（v11 起，ADR 0079 D9），返回 (成功数, 错误明细).
+
+    - 同名设计已存在则跳过（与表 / 文档 / 流水线的幂等口径一致）；
+    - 不导入 ``compiled`` 快照，按 ``content`` 重新编译（与流水线同口径）：
+      历史快照可能与当前 IR 契约不兼容，重编译能在导入期暴露 DSL 问题；
+    - 版本行按备份携带的 ``version_number`` / ``content`` / ``comment`` 重建，
+      ``compiled`` 由该版原文重编译产出；单条非法跳过并记错误，不阻断整体导入。
+    """
+    from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
+    from cndb.plugins.design.services.dsl.compile import compile_design
+
+    items = json_data.get("designs") or []
+    if not items:
+        return 0, []
+
+    errors: list[str] = []
+    imported = 0
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        title = (item.get("title") or "").strip()
+        content = str(item.get("content") or "")
+        if not title:
+            continue
+        result = compile_design(content)
+        if not result.ok:
+            errors.append(f"设计 {title} 跳过（DSL 非法）: " + "；".join(d.message for d in result.diagnostics))
+            continue
+        exists = (
+            db.query(DesignDesign)
+            .filter(DesignDesign.workspace_id == workspace_id, DesignDesign.title == title)
+            .first()
+        )
+        if exists is not None:
+            continue
+        design = DesignDesign(
+            workspace_id=workspace_id,
+            title=title,
+            content=content,
+            compiled=result.ir or {"version": 1, "nodes": []},
+            description=str(item.get("description") or ""),
+            is_deleted=bool(item.get("is_deleted", False)),
+            created_by_id=current_user.id,
+            updated_by_id=current_user.id,
+        )
+        db.add(design)
+        db.flush()
+        # 版本行：逐版重编译（失败的版本跳过并记错误，不阻断该设计的其它版本）
+        restored_versions = 0
+        for entry in item.get("versions") or []:
+            if not isinstance(entry, dict):
+                continue
+            version_result = compile_design(str(entry.get("content") or ""))
+            if not version_result.ok:
+                errors.append(f"设计 {title} 的 v{entry.get('version_number')} 版本跳过（DSL 非法）")
+                continue
+            db.add(
+                DesignDesignVersion(
+                    design_id=design.id,
+                    workspace_id=workspace_id,
+                    version_number=int(entry.get("version_number") or 0),
+                    content=str(entry.get("content") or ""),
+                    compiled=version_result.ir or {"version": 1, "nodes": []},
+                    comment=str(entry.get("comment") or ""),
+                    created_by_id=current_user.id,
+                )
+            )
+            restored_versions += 1
+        if restored_versions == 0:
+            # 备份未携带版本（或全部非法）：按当前原文补 v1，保证「创建即 v1」口径
+            db.add(
+                DesignDesignVersion(
+                    design_id=design.id,
+                    workspace_id=workspace_id,
+                    version_number=1,
+                    content=content,
+                    compiled=result.ir or {"version": 1, "nodes": []},
+                    comment="",
+                    created_by_id=current_user.id,
+                )
+            )
+        imported += 1
+    if imported:
+        db.commit()
+    return imported, errors
+
+
 __all__ = [
     "_coerce_row_value_types",
     "_import_backup_into_workspace",
     "_import_charts",
+    "_import_designs",
     "_import_pipelines",
     "_import_sync_jobs",
 ]

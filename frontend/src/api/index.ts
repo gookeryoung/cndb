@@ -117,6 +117,7 @@ export type {
   DesignPrimitiveNode,
   DesignTransform,
   DesignTransformKind,
+  DesignVersionDetail,
   DesignVersionItem,
 } from './design'
 export { searchApi } from './search'

@@ -1,0 +1,16 @@
+// 参数化法兰板：同一份源码出多规格（编辑器参数面板改参即重编译预览）
+param width = 80
+param height = 40
+param hole_d = 8
+
+// 模块：带参数的结构复用（w/h 为板面尺寸，t 为板厚）
+module plate(w, h, t) {
+  difference {
+    box(size = [w, h, t])
+    translate([w / 2, h / 2, -1]) {
+      cyl(d = hole_d, h = t + 2)   // 减切通孔：两端各出 1mm 保证切透
+    }
+  }
+}
+
+plate(width, height, 12)

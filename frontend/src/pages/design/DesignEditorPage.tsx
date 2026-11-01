@@ -3,27 +3,31 @@
  * 数据流（ADR 0079 I1/D3/D4）：
  * - 编辑防抖 300ms → POST /designs/preview（无落库）→ 结构化诊断回显错误行；
  * - 渲染只消费后端编译的 IR（前端零解析零求值），three 相关全部在 lazy chunk；
- * - 保存：编译在后端通过才落库并落新版本，失败保留草稿（边界 #2）。
+ * - 保存：编译在后端通过才落库并落新版本，失败保留草稿（边界 #2）；
+ * - P2：版本历史支持回看（Drawer 看原文）与恢复（旧版重编译落新版本）；
+ *   导出（STL / OBJ / GLB / 三视图）与 PreviewCanvas 同属 lazy 边界（D4/D5）。
  */
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, InputNumber, Skeleton, Space, Spin, Tag, Typography,
+  Alert, App as AntApp, Button, Drawer, InputNumber, Popconfirm, Skeleton, Space, Spin, Tag, Typography,
 } from 'antd'
 import type { InputNumberProps } from 'antd'
 import {
-  ArrowLeftOutlined, ExperimentOutlined, RollbackOutlined, SaveOutlined,
+  ArrowLeftOutlined, ExperimentOutlined, HistoryOutlined, RollbackOutlined, SaveOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from 'react-router-dom'
 import { designsApi, workspaceApi } from '@/api'
-import type { DesignDiagnostic } from '@/api'
+import type { DesignDiagnostic, DesignVersionItem } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
 import DslEditor from './DslEditor'
 import { useDesignPreview } from './useDesignPreview'
 
 // three 渲染整块 lazy：three + three-bvh-csg 只进设计编辑器 chunk（D4 体积预算）
 const PreviewCanvas = lazy(() => import('./PreviewCanvas'))
+// 导出菜单同样落在 three lazy 边界（exporters 引 three，D5）
+const DesignExportMenu = lazy(() => import('./DesignExportMenu'))
 
 const { Text } = Typography
 
@@ -86,6 +90,30 @@ export default function DesignEditorPage() {
     enabled: !!wid && !!designId,
   })
 
+  // 版本回看（P2）：点击历史版本打开 Drawer 看该版原文
+  const [viewingVersion, setViewingVersion] = useState<DesignVersionItem | null>(null)
+  const { data: viewingDetail, isLoading: viewingLoading } = useQuery({
+    queryKey: ['designs', wid, designId, 'versions', viewingVersion?.version_number],
+    queryFn: () => designsApi.getVersion(wid, designId, viewingVersion!.version_number),
+    enabled: viewingVersion != null,
+  })
+
+  // 版本恢复（P2）：以历史版原文重编译保存为新版本（viewer 不可用）
+  const restore = useMutation({
+    mutationFn: () => designsApi.restoreVersion(wid, designId, viewingVersion!.version_number),
+    onSuccess: (restored) => {
+      message.success(`已恢复 v${viewingVersion?.version_number} 为第 ${restored.version_number} 版`)
+      setViewingVersion(null)
+      setContent(restored.content)
+      setOverrides({})
+      setSaveError('')
+      invalidate()
+    },
+    onError: (err) => {
+      message.error(err instanceof Error ? err.message : '恢复失败')
+    },
+  })
+
   // Ctrl+S 保存（编辑器与全局快捷键都走到这里）
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -123,6 +151,9 @@ export default function DesignEditorPage() {
           {isViewer && <Tag color="default" style={{ marginInlineEnd: 0 }}>只读</Tag>}
         </Space>
         <Space size={8}>
+          <Suspense fallback={null}>
+            <DesignExportMenu ir={preview.ir} title={detail?.title ?? '设计'} />
+          </Suspense>
           <Button
             icon={<SaveOutlined />}
             type="primary"
@@ -210,20 +241,72 @@ export default function DesignEditorPage() {
         </div>
       </div>
 
-      {/* 版本列表（回看 / 恢复端点属 P2，本期只读列表） */}
+      {/* 版本列表：点击回看该版原文（P2），非 viewer 可恢复 */}
       <div style={{ borderTop: '1px solid var(--cn-border, #eee)', paddingTop: 8 }}>
         <Space size={16} wrap>
-          <Text type="secondary">版本历史（{versions.length}）：</Text>
+          <Text type="secondary"><HistoryOutlined /> 版本历史（{versions.length}）：</Text>
           {versions.length === 0 ? (
             <Text type="secondary">暂无版本</Text>
           ) : versions.map(version => (
             <span key={version.id} className="cn-dsl-version-item">
-              <Tag style={{ marginInlineEnd: 4 }}>v{version.version_number}</Tag>
-              {version.comment ? version.comment : formatDateTime(version.created_at)}
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0 }}
+                aria-label={`回看版本 ${version.version_number}`}
+                onClick={() => setViewingVersion(version)}
+              >
+                <Tag style={{ marginInlineEnd: 4 }}>v{version.version_number}</Tag>
+                {version.comment ? version.comment : formatDateTime(version.created_at)}
+              </Button>
             </span>
           ))}
         </Space>
       </div>
+
+      {/* 版本回看抽屉：该版原文 + 恢复入口（viewer 只读） */}
+      <Drawer
+        title={`版本回看：v${viewingVersion?.version_number ?? ''}`}
+        open={viewingVersion != null}
+        size={520}
+        onClose={() => setViewingVersion(null)}
+        footer={
+          viewingVersion != null && !isViewer ? (
+            <Space>
+              <Popconfirm
+                title={`以 v${viewingVersion.version_number} 原文重新编译并保存为新版本？`}
+                onConfirm={() => restore.mutate()}
+              >
+                <Button type="primary" danger icon={<RollbackOutlined />} loading={restore.isPending}>
+                  恢复此版本
+                </Button>
+              </Popconfirm>
+              <Button onClick={() => setViewingVersion(null)}>关闭</Button>
+            </Space>
+          ) : null
+        }
+      >
+        {viewingVersion != null && (
+          <>
+            <Space size={8} wrap style={{ marginBottom: 8 }}>
+              <Tag>第 {viewingVersion.version_number} 版</Tag>
+              <Text type="secondary">{formatDateTime(viewingDetail?.created_at ?? viewingVersion.created_at)}</Text>
+            </Space>
+            {viewingDetail?.comment && <Text type="secondary">备注：{viewingDetail.comment}</Text>}
+            {viewingLoading ? (
+              <Skeleton active />
+            ) : (
+              <pre
+                data-testid="design-version-content"
+                className="cn-dsl-version-pre"
+                style={{ whiteSpace: 'pre-wrap', margin: 0 }}
+              >
+                {viewingDetail?.content ?? ''}
+              </pre>
+            )}
+          </>
+        )}
+      </Drawer>
     </div>
   )
 }

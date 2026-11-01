@@ -1,8 +1,10 @@
 /** DesignEditorPage 测试 —— 编辑器主流程（ADR 0079 §7）.
  *
- * jsdom 无 WebGL：PreviewCanvas 必须 mock（lazy chunk 的真实渲染由 e2e 覆盖）；
+ * jsdom 无 WebGL：PreviewCanvas 与 DesignExportMenu 必须 mock（lazy chunk 的
+ * 真实渲染与导出由 exporters 单测 + e2e 覆盖）；
  * 编辑器内容变更经 EditorView.findFromDOM 驱动真实 CodeMirror transaction，
- * 覆盖：源码展示 / 诊断回显 / 保存（Ctrl+S）/ 保存失败保留草稿 / 参数面板 overrides / viewer 只读.
+ * 覆盖：源码展示 / 诊断回显 / 保存（Ctrl+S）/ 保存失败保留草稿 / 参数面板 overrides /
+ * viewer 只读 / 版本回看（P2）/ 版本恢复（P2）.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -13,13 +15,23 @@ import { Routes, Route } from 'react-router-dom'
 import DesignEditorPage from './DesignEditorPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockWorkspace, server } from '@/test/msw'
-import type { DesignDetail, DesignIR, DesignPreviewResult, DesignVersionItem } from '@/api'
+import type {
+  DesignDetail, DesignIR, DesignPreviewResult, DesignVersionDetail, DesignVersionItem,
+} from '@/api'
 
 const previewCanvas = vi.hoisted(() => vi.fn())
 vi.mock('./PreviewCanvas', () => ({
   default: function PreviewCanvasStub({ ir }: { ir: DesignIR | null }) {
     previewCanvas(ir)
     return <div data-testid="preview-canvas-stub">{ir ? `节点数:${ir.nodes.length}` : '空'}</div>
+  },
+}))
+
+const exportMenu = vi.hoisted(() => vi.fn())
+vi.mock('./DesignExportMenu', () => ({
+  default: function DesignExportMenuStub({ ir, title }: { ir: DesignIR | null; title: string }) {
+    exportMenu({ ir, title })
+    return <div data-testid="export-menu-stub">导出:{title}</div>
   },
 }))
 
@@ -54,6 +66,14 @@ const VERSIONS: DesignVersionItem[] = [
   { id: 202, design_id: 20, version_number: 2, comment: '调宽度', created_by_id: 1, created_at: '2026-10-02T08:00:00Z' },
   { id: 201, design_id: 20, version_number: 1, comment: '', created_by_id: 1, created_at: '2026-10-01T08:00:00Z' },
 ]
+
+const V1_CONTENT = 'param width = 60\nbox(size = [width, 40, 12])'
+
+const V1_DETAIL: DesignVersionDetail = {
+  ...VERSIONS[1]!,
+  content: V1_CONTENT,
+  compiled: { ...IR, params: [{ name: 'width', value: 60 }], nodes: [{ op: 'box', size: [60, 40, 12] }] },
+}
 
 /** preview 请求体记录 */
 const previewBodies: Array<{ content: string; overrides?: Record<string, number> | null }> = []
@@ -192,5 +212,50 @@ describe('DesignEditorPage 编辑器主流程', () => {
 
     expect(await screen.findByText('只读')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /保\s*存/ })).toBeDisabled()
+  })
+
+  it('P2 版本回看：点击历史版本打开抽屉展示该版原文', async () => {
+    useDefaultHandlers()
+    server.use(http.get('/api/v1/workspaces/10/designs/20/versions/1', () => HttpResponse.json(V1_DETAIL)))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
+    expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
+    // detail 走 react-query 异步加载，Skeleton 先渲染，须等 pre 出现再断言
+    expect(await screen.findByTestId('design-version-content')).toHaveTextContent('param width = 60')
+  })
+
+  it('P2 版本恢复：确认后恢复旧版为新版本并刷新编辑器', async () => {
+    useDefaultHandlers()
+    server.use(http.get('/api/v1/workspaces/10/designs/20/versions/1', () => HttpResponse.json(V1_DETAIL)))
+    let restored = false
+    server.use(http.post('/api/v1/workspaces/10/designs/20/versions/1/restore', () => {
+      restored = true
+      return HttpResponse.json({ ...DETAIL, content: V1_CONTENT, version_number: 3, version_count: 3 })
+    }))
+    const { container } = renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
+    expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /恢复此版本/ }))
+    fireEvent.click(screen.getByRole('button', { name: /确\s*定|OK|是/ }))
+    await waitFor(() => expect(restored).toBe(true))
+    expect(await screen.findByText(/已恢复 v1 为第 3 版/)).toBeInTheDocument()
+    // 恢复后的原文同步进编辑器（草稿被替换为恢复内容）
+    await waitForEditorReady(container)
+    await waitFor(() => expect(cmText(container)).toContain('param width = 60'))
+  })
+
+  it('P2 viewer 回看无恢复入口', async () => {
+    useDefaultHandlers()
+    server.use(http.get('/api/v1/workspaces/10', () =>
+      HttpResponse.json({ ...mockWorkspace, id: 10, current_user_role: 'viewer' })))
+    server.use(http.get('/api/v1/workspaces/10/designs/20/versions/1', () => HttpResponse.json(V1_DETAIL)))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
+    expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /恢复此版本/ })).not.toBeInTheDocument()
   })
 })

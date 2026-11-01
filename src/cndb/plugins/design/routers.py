@@ -27,6 +27,7 @@ from cndb.plugins.design.schemas import (
     DesignDetail,
     DesignListItem,
     DesignUpdate,
+    DesignVersionDetail,
     DesignVersionItem,
     DiagnosticItem,
     PreviewRequest,
@@ -294,7 +295,7 @@ def list_design_versions(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[DesignVersionItem]:
-    """版本列表（按版本号倒序；回看 / 恢复端点属 P2）."""
+    """版本列表（按版本号倒序；不含原文，回看走单版本端点）."""
     _require_member(db, workspace_id, current_user)
     design = _design_or_404(db, workspace_id, design_id)
     rows = (
@@ -304,6 +305,69 @@ def list_design_versions(
         .all()
     )
     return [DesignVersionItem.model_validate(row) for row in rows]
+
+
+def _version_or_404(db: Session, design: DesignDesign, version_number: int) -> DesignDesignVersion:
+    """取指定版本（不存在 404；软删设计的版本随设计 404）."""
+    version = (
+        db.query(DesignDesignVersion)
+        .filter(
+            DesignDesignVersion.design_id == design.id,
+            DesignDesignVersion.version_number == version_number,
+        )
+        .first()
+    )
+    if version is None:
+        raise NotFoundError("设计版本不存在", code="design_version_not_found")
+    return version
+
+
+@router.get("/{design_id}/versions/{version_number}", response_model=DesignVersionDetail)
+def get_design_version(
+    workspace_id: int,
+    design_id: int,
+    version_number: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DesignVersionDetail:
+    """版本回看：该版原文与 IR 快照（成员可读，ADR 0079 D7）."""
+    _require_member(db, workspace_id, current_user)
+    design = _design_or_404(db, workspace_id, design_id)
+    return DesignVersionDetail.model_validate(_version_or_404(db, design, version_number))
+
+
+@router.post("/{design_id}/versions/{version_number}/restore", response_model=DesignDetail)
+def restore_design_version(
+    workspace_id: int,
+    design_id: int,
+    version_number: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DesignDetail:
+    """恢复历史版：以该版原文重新编译保存为新版本（editor 权限，D7）.
+
+    重编译而非直接搬 ``compiled`` 快照（与备份导入同口径）：历史快照可能与
+    当前 IR 契约不兼容，重编译在恢复期暴露问题；失败 400 且现状不动（边界 #2）。
+    恢复动作本身落新版本，历史版本不受影响。
+    """
+    _require_editor(db, workspace_id, current_user)
+    design = _design_or_404(db, workspace_id, design_id)
+    version = _version_or_404(db, design, version_number)
+    ir = _compile_or_400(version.content)
+    design.content = version.content
+    design.compiled = ir
+    design.updated_by_id = current_user.id
+    number = _add_version(
+        db,
+        design,
+        current_user,
+        content=version.content,
+        compiled=ir,
+        comment=f"恢复自 v{version_number}",
+    )
+    db.commit()
+    db.refresh(design)
+    return _detail(db, design, version_number=number)
 
 
 __all__ = ["router"]

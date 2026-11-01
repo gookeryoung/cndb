@@ -346,3 +346,62 @@ class TestVersions:
 
     def test_versions_of_missing_404(self, client, ws, auth_owner):
         assert client.get(_url(ws, "/9999/versions"), headers=auth_owner).status_code == 404
+
+    @staticmethod
+    def _make_two_versions(client, ws, headers) -> dict:
+        """建一个两版本的设计（v1 = GOOD_CONTENT，v2 = 简化单盒），返回 v1 详情."""
+        created = _create(client, ws, headers).json()
+        client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": "box(size = [1, 1, 1])", "comment": "简化"},
+            headers=headers,
+        )
+        return created
+
+    def test_get_version_detail(self, client, ws, auth_owner, auth_viewer):
+        """回看（P2）：单版本端点返回该版原文与 IR 快照，成员可读."""
+        created = self._make_two_versions(client, ws, auth_owner)
+        resp = client.get(_url(ws, f"/{created['id']}/versions/1"), headers=auth_viewer)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["version_number"] == 1
+        assert body["content"] == GOOD_CONTENT
+        assert body["compiled"]["nodes"], "v1 的 IR 快照随版本保留"
+
+    def test_get_version_missing_404(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.get(_url(ws, f"/{created['id']}/versions/99"), headers=auth_owner)
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "design_version_not_found"
+
+    def test_restore_version_recompiles_as_new(self, client, db, ws, auth_editor):
+        """恢复（P2）：以 v1 原文重编译落 v3，历史版本不受影响."""
+        created = self._make_two_versions(client, ws, auth_editor)
+        resp = client.post(_url(ws, f"/{created['id']}/versions/1/restore"), headers=auth_editor)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["version_number"] == 3
+        assert body["content"] == GOOD_CONTENT
+        assert body["compiled"] == created["compiled"], "同原文重编译应产出同 IR（I3）"
+        design = db.get(DesignDesign, created["id"])
+        assert design.content == GOOD_CONTENT
+        versions = db.scalars(
+            select(DesignDesignVersion)
+            .where(DesignDesignVersion.design_id == created["id"])
+            .order_by(DesignDesignVersion.version_number)
+        ).all()
+        assert [v.version_number for v in versions] == [1, 2, 3]
+        assert versions[2].comment == "恢复自 v1"
+        assert versions[1].content == "box(size = [1, 1, 1])", "历史 v2 不受恢复影响"
+
+    def test_restore_viewer_403(self, client, ws, auth_owner, auth_viewer):
+        created = self._make_two_versions(client, ws, auth_owner)
+        resp = client.post(_url(ws, f"/{created['id']}/versions/1/restore"), headers=auth_viewer)
+        assert resp.status_code == 403
+        assert "角色为【查看者】" in resp.json()["detail"]
+
+    def test_restore_missing_version_404(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.post(_url(ws, f"/{created['id']}/versions/99/restore"), headers=auth_owner)
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "design_version_not_found"

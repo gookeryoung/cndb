@@ -18,56 +18,57 @@
     "2026-10-31 feat(dashboard): ADR 0023 P0 只读画布新增 DashboardView lazy chunk（含契约归一/栅格/四类组件），按需打开不进首屏",
     "2026-10-31 feat: ADR 0023 P1 画布编辑器（拖拽/缩放/预设/草稿撤销栈）必须随画布视图加载；属性面板已改 lazy 从该 chunk 移出",
     "2026-10-31 feat: dashboard P2 注册 14 类图，echarts 图表/组件模块随 dashboard chunk 按需加载，属功能必需增长",
-    "2026-11-01 feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长"
+    "2026-11-01 feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长",
+    "2026-11-01 feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免"
   ],
   "chunks": [
     {
       "name": "主入口 index",
       "resolve": "entry",
-      "baseline": 232024,
-      "reason": "feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长",
+      "baseline": 232044,
+      "reason": "feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
       "updatedAt": "2026-11-01",
-      "commit": "df2e3781"
+      "commit": "2244e133"
     },
     {
       "name": "GridPage（表页闭包）",
       "resolve": {
         "assetPattern": "^GridPage-.*\\.js$"
       },
-      "baseline": 35855,
-      "reason": "feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长",
+      "baseline": 35868,
+      "reason": "feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
       "updatedAt": "2026-11-01",
-      "commit": "df2e3781"
+      "commit": "2244e133"
     },
     {
       "name": "ChartView（图表视图）",
       "resolve": {
         "assetPattern": "^ChartView-.*\\.js$"
       },
-      "baseline": 4245,
-      "reason": "feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长",
+      "baseline": 4247,
+      "reason": "feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
       "updatedAt": "2026-11-01",
-      "commit": "df2e3781"
+      "commit": "2244e133"
     },
     {
       "name": "DashboardView（画布视图）",
       "resolve": {
         "assetPattern": "^DashboardView-.*\\.js$"
       },
-      "baseline": 58934,
-      "reason": "feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长",
+      "baseline": 58939,
+      "reason": "feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
       "updatedAt": "2026-11-01",
-      "commit": "df2e3781"
+      "commit": "2244e133"
     },
     {
       "name": "HelpDocsPage（帮助文档整页）",
       "resolve": {
         "assetPattern": "^HelpDocsPage-.*\\.js$"
       },
-      "baseline": 29883,
-      "reason": "feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长",
+      "baseline": 31562,
+      "reason": "feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
       "updatedAt": "2026-11-01",
-      "commit": "df2e3781"
+      "commit": "2244e133"
     }
   ]
 }

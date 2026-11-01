@@ -10,6 +10,7 @@ from cndb.cli.seed import (
     analytics,
     datasets,
     datasource,
+    designs,
     documents,
     fields,
     paths,
@@ -149,6 +150,9 @@ def seed(_args: argparse.Namespace) -> None:
         #     保存期全量编译校验，表引用解析到当前工作区真实表）
         pipeline_count = pipelines._seed_pipelines(db, owner, ws_map, tables_map, datasets_dir)
 
+        # 3g) 结构设计种子（designs/*.cnmd，保存期编译校验；文件名即设计标题）
+        design_count = designs._seed_designs(db, owner, ws_map, datasets_dir)
+
         # 5) 为"某企业销售管理"工作区添加其他演示成员，使表权限设置能看到可添加的候选成员
         from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
 
@@ -171,6 +175,7 @@ def seed(_args: argparse.Namespace) -> None:
             f"{analytics_count} 个分析模板、"
             f"{datasource_count} 个数据源同步任务、"
             f"{pipeline_count} 条质量检查流水线、"
+            f"{design_count} 份结构设计、"
             f"4 个演示账号（三员 + 普通用户）。"
             "\n登录账号："
             "\n  系统管理员: admin / admin1234"

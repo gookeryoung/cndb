@@ -78,7 +78,7 @@ export interface DesignDetail extends DesignListItem {
   version_number: number
 }
 
-/** 版本列表项（回看 / 恢复属 P2，本期只列表） */
+/** 版本列表项（不含原文；回看走单版本端点） */
 export interface DesignVersionItem {
   id: number
   design_id: number
@@ -86,6 +86,12 @@ export interface DesignVersionItem {
   comment: string
   created_by_id: number | null
   created_at: string | null
+}
+
+/** 版本回看（P2）：该版原文与 IR 快照 */
+export interface DesignVersionDetail extends DesignVersionItem {
+  content: string
+  compiled: DesignIR | Record<string, never>
 }
 
 const base = (wid: number | string) => `/v1/workspaces/${wid}/designs`
@@ -115,4 +121,10 @@ export const designsApi = {
   /** 版本列表（按版本号倒序） */
   listVersions: (wid: number | string, designId: number | string) =>
     api.get<DesignVersionItem[]>(`${base(wid)}/${designId}/versions`).then(r => r.data),
+  /** 版本回看：该版原文与 IR 快照（成员可读） */
+  getVersion: (wid: number | string, designId: number | string, versionNumber: number) =>
+    api.get<DesignVersionDetail>(`${base(wid)}/${designId}/versions/${versionNumber}`).then(r => r.data),
+  /** 恢复历史版：以该版原文重编译保存为新版本（editor 权限） */
+  restoreVersion: (wid: number | string, designId: number | string, versionNumber: number) =>
+    api.post<DesignDetail>(`${base(wid)}/${designId}/versions/${versionNumber}/restore`).then(r => r.data),
 }

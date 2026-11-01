@@ -864,6 +864,96 @@ const viewConfig: HelpTopic = {
     ],
 }
 
+const designDsl: HelpTopic = {
+    key: 'design-dsl',
+    label: '结构设计（DSL）',
+    intro: (
+        <P>
+            设计模块用自研文本 DSL（文件约定 <code>.cnmd</code>）描述产品结构：参数化建模、六种图元、四种变换与三种布尔运算，
+            保存即编译为中间表示（IR），网页端实时预览 3D 模型并导出 STL / OBJ / GLB 与三视图 PNG。
+            语法与编译限制的事实以本页为准。
+        </P>
+    ),
+    subsections: [
+        {
+            key: 'syntax',
+            label: '语法总览',
+            summary: '类 OpenSCAD 的声明式子集：只做数据描述，不做程序逻辑。',
+            body: (
+                <Bullets
+                    items={[
+                        <>
+                            <strong>参数</strong>：<code>param width = 80</code>（顶层声明，标识符仅限字母 / 数字 / 下划线，长度单位 mm）；参数面板可临时覆盖参数值试算，不改原文。
+                        </>,
+                        <>
+                            <strong>模块</strong>：<code>module bracket(w, t = 4) {'{ … }'}</code> 支持默认值参数，实例化写
+                            <code> bracket(60) </code>即可复用，递归实例化最多 16 层。
+                        </>,
+                        <>
+                            <strong>图元（6 种）</strong>：<code>box(size=[x,y,z])</code>（也可 <code>w=,h=,d=</code>）、
+                            <code>cyl(d=,h=)</code>（沿 Z 轴）、<code>sphere(r=)</code>、<code>cone(d1=,d2=,h=)</code>、
+                            <code>torus(r=,tube=)</code>、<code>tube(od=,id=,h=)</code>；圆类图元可用
+                            <code>fn=</code> 指定分段数（默认 64，上限 256）。
+                        </>,
+                        <>
+                            <strong>变换（4 种）</strong>：<code>translate([x,y,z])</code>、<code>rotate([rx,ry,rz])</code>（角度制）、
+                            <code>scale([x,y,z])</code>、<code>mirror([x,y,z])</code>；变换可嵌套，矩阵按外→内复合。
+                        </>,
+                        <>
+                            <strong>布尔（3 种）</strong>：<code>union</code>（合并）、<code>difference</code>{' '}
+                            （首个为保留体，其余为切割体）、<code>intersection</code>（交集）；可任意嵌套。
+                        </>,
+                        '表达式支持四则运算与白名单三角函数（sin / cos / tan / asin / acos / atan2 / sqrt / abs / min / max / pow / ceil / floor / round / PI）；注释用 // 与 /* */。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'workflow',
+            label: '编辑与实时预览',
+            summary: '保存即编译：原文入库同时落 IR 快照，运行期零语法错误。',
+            body: (
+                <Bullets
+                    items={[
+                        '输入防抖后自动调预览接口：编译通过右侧画布实时渲染，可正交 / 透视切换、拖拽旋转查看。',
+                        '编译不通过时诊断列表给出行号与消息，编辑器对应行高亮，修正后自动恢复。',
+                        '保存（Ctrl+S）会把当前原文编译并落为新版本；版本历史记录每次保存，点历史版本可回看原文，确认后可以该版原文重新编译恢复为新版本。',
+                        '查看者角色只读：可看可回看，不能保存与恢复。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'export',
+            label: '导出与交付',
+            summary: '导出网格与预览共用同一条求值路径，所见即所得。',
+            body: (
+                <Bullets
+                    items={[
+                        '工具栏「导出」菜单提供四项：STL（二进制，3D 打印）、OBJ（网格交换）、GLB（glTF 2.0 预览交付）、三视图 PNG（前 / 上 / 右正交投影）。',
+                        '模型为空（顶层无实例）时导出按钮禁用；三视图依赖 WebGL，不支持时导出图片会提示，其余格式不受影响。',
+                        '导出文件名以设计标题命名；三视图按前 / 上 / 右各出一张 PNG，可直接贴入工艺文档。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'limits',
+            label: '编译期限制',
+            summary: '有界编译保证预览接口延迟可控，超限报诊断不出 IR。',
+            body: (
+                <Bullets
+                    items={[
+                        '原文不超过 256KB；嵌套深度不超过 32 层；图元实例总数不超过 2000。',
+                        'param 不超过 64 个；module 不超过 128 个；模块实例化递归不超过 16 层。',
+                        '超限时保存被拒绝（400 + 结构化诊断），草稿在编辑器中保留，不影响已有版本。',
+                    ]}
+                />
+            ),
+        },
+    ],
+}
+
 export const tutorialTopics: HelpTopic[] = [
     viewTypes,
     fieldTypes,
@@ -873,4 +963,5 @@ export const tutorialTopics: HelpTopic[] = [
     analytics,
     search,
     viewConfig,
+    designDsl,
 ]

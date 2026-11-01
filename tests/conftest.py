@@ -49,6 +49,7 @@ def db_engine():
     import cndb.plugins.analytics.models
     import cndb.plugins.change_requests.models
     import cndb.plugins.datasource.models
+    import cndb.plugins.design.models
     import cndb.plugins.documents.models
     import cndb.plugins.files.models
     import cndb.plugins.issues.models

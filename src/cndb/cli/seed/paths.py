@@ -72,16 +72,35 @@ def _get_workspace_pipeline_yamls(datasets_dir: Path) -> dict[str, list[Path]]:
         工作区显示名 -> 该工作区 pipelines/ 下全部 yaml 文件路径列表（按文件名排序；
         无 pipelines/ 目录的工作区不出现在结果中）.
     """
+    return _scan_workspace_glob(datasets_dir, "pipelines", {".yaml", ".yml"})
+
+
+def _get_workspace_design_cnmds(datasets_dir: Path) -> dict[str, list[Path]]:
+    """扫描每个工作区文件夹下的 designs/*.cnmd（结构设计种子，ADR 0079）.
+
+    Returns:
+        工作区显示名 -> 该工作区 designs/ 下全部 .cnmd 文件路径列表（按文件名排序；
+        无 designs/ 目录的工作区不出现在结果中）。文件名（去后缀）即设计标题。
+    """
+    return _scan_workspace_glob(datasets_dir, "designs", {".cnmd"})
+
+
+def _scan_workspace_glob(datasets_dir: Path, subdir: str, suffixes: set[str]) -> dict[str, list[Path]]:
+    """通用扫描：工作区文件夹下 ``<subdir>/`` 内匹配后缀的文件.
+
+    Returns:
+        工作区显示名 -> 文件路径列表（按文件名排序；无该子目录的工作区不出现在结果中）.
+    """
     result: dict[str, list[Path]] = {}
     for folder in sorted(datasets_dir.iterdir()):
         if not folder.is_dir() or folder.name.startswith("."):
             continue
-        pipe_dir = folder / "pipelines"
-        if not pipe_dir.is_dir():
+        target_dir = folder / subdir
+        if not target_dir.is_dir():
             continue
-        yamls = sorted(p for p in pipe_dir.iterdir() if p.suffix.lower() in {".yaml", ".yml"} and p.is_file())
-        if yamls:
-            result[_workspace_display_name(folder.name)] = yamls
+        files = sorted(p for p in target_dir.iterdir() if p.suffix.lower() in suffixes and p.is_file())
+        if files:
+            result[_workspace_display_name(folder.name)] = files
     return result
 
 

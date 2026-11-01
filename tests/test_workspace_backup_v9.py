@@ -153,7 +153,7 @@ class TestArchiveStructure:
             assert m["version"] == "1"
             assert m["include_secrets"] is True
             backup = archive.backup
-            assert backup["version"] == "10"
+            assert backup["version"] == "11"
             assert backup["include_secrets"] is True
             # v10：流水线定义随备份导出
             assert backup["pipelines"][0]["name"] == "库存巡检"
@@ -204,6 +204,7 @@ class TestArchiveStructure:
             "entrant_cursors",
             "file_owners",
             "pipelines",
+            "designs",
             "include_secrets",
         ):
             assert key not in backup, key

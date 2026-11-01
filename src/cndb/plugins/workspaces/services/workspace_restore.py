@@ -120,6 +120,12 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
     db.execute(delete(PipelineRun).where(PipelineRun.workspace_id == workspace_id))
     db.execute(delete(PipelineWorkflow).where(PipelineWorkflow.workspace_id == workspace_id))
 
+    # 结构设计：版本先删（design_id 关联），再删设计本体（v11 随备份重建）
+    from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
+
+    db.execute(delete(DesignDesignVersion).where(DesignDesignVersion.workspace_id == workspace_id))
+    db.execute(delete(DesignDesign).where(DesignDesign.workspace_id == workspace_id))
+
     # 表相关：先删引用行，再 commit，最后 drop 动态物理表 + 删元数据行
     table_ids = [row[0] for row in db.query(DataTable.id).filter(DataTable.workspace_id == workspace_id).all()]
     for model in (RowPermission, TablePermission, TableMember, DataView, DataField):

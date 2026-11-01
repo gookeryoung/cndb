@@ -1,0 +1,98 @@
+/** DesignExportMenu 测试（ADR 0079 D5）：菜单接线、空模型禁用、导出失败提示.
+ *
+ * exporters 本体由 exporters.test.ts 覆盖；此处 mock exporters 断言
+ * 菜单 → 导出函数 → 下载的接线与异常分支。
+ */
+
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import DesignExportMenu from './DesignExportMenu'
+import { renderProviders } from '@/test/render-providers'
+import type { DesignIR } from '@/api'
+import { DesignExportError } from './exporters'
+
+vi.mock('./exporters', async (importOriginal) => {
+  // 工厂体不得引用顶层 import（hoisting 抢跑）：DesignExportError 经 ...actual 原样保留
+  const actual = await importOriginal<typeof import('./exporters')>()
+  return {
+    ...actual,
+    buildSTL: vi.fn(() => new ArrayBuffer(10)),
+    buildOBJ: vi.fn(() => 'v 1 2 3'),
+    buildGLB: vi.fn(() => Promise.resolve(new Blob(['glb']))),
+    captureViews: vi.fn(() => ({ front: 'f', top: 't', right: 'r' })),
+    downloadBlob: vi.fn(),
+    downloadDataURL: vi.fn(),
+    exportMeshesOf: (ir: DesignIR | null) => (ir && ir.nodes.length > 0 ? ([{}] as never) : []),
+  }
+})
+
+const IR: DesignIR = {
+  version: 1,
+  units: { length: 'mm', angle: 'deg' },
+  params: [],
+  nodes: [{ op: 'box', size: [10, 10, 10] }],
+}
+
+const EMPTY_IR: DesignIR = { ...IR, nodes: [] }
+
+import { buildGLB, buildOBJ, buildSTL, captureViews, downloadBlob, downloadDataURL } from './exporters'
+
+function openMenu(ir: DesignIR | null) {
+  renderProviders(<DesignExportMenu ir={ir} title="法兰板" />)
+  return screen.getByRole('button', { name: '导出' })
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+describe('DesignExportMenu', () => {
+  it('空 IR（顶层无实例）导出按钮禁用（边界 #3）', () => {
+    const button = openMenu(EMPTY_IR)
+    expect(button).toBeDisabled()
+  })
+
+  it('点击菜单项分派到对应导出函数并下载', async () => {
+    fireEvent.click(openMenu(IR))
+    fireEvent.click(await screen.findByText('STL（二进制，3D 打印）'))
+    await waitFor(() => expect(buildSTL).toHaveBeenCalled())
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(ArrayBuffer), '法兰板.stl')
+
+    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    fireEvent.click(await screen.findByText('OBJ（网格交换）'))
+    await waitFor(() => expect(buildOBJ).toHaveBeenCalled())
+    expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), '法兰板.obj')
+
+    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    fireEvent.click(await screen.findByText('GLB（glTF 2.0 预览交付）'))
+    await waitFor(() => expect(buildGLB).toHaveBeenCalled())
+    await waitFor(() => expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), '法兰板.glb'))
+
+    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    fireEvent.click(await screen.findByText('三视图 PNG（前 / 上 / 右）'))
+    await waitFor(() => expect(captureViews).toHaveBeenCalled())
+    // 前上右三张各下载一次
+    await waitFor(() => expect(downloadDataURL).toHaveBeenCalledTimes(3))
+    expect(downloadDataURL).toHaveBeenCalledWith('f', '法兰板-三视图-前.png')
+    expect(downloadDataURL).toHaveBeenCalledWith('t', '法兰板-三视图-上.png')
+    expect(downloadDataURL).toHaveBeenCalledWith('r', '法兰板-三视图-右.png')
+  })
+
+  it('DesignExportError 显示为警告（如 WebGL 缺失），不视为失败', async () => {
+    vi.mocked(captureViews).mockImplementation(() => {
+      throw new DesignExportError('当前环境不支持 WebGL')
+    })
+    fireEvent.click(openMenu(IR))
+    fireEvent.click(await screen.findByText('三视图 PNG（前 / 上 / 右）'))
+    expect(await screen.findByText('当前环境不支持 WebGL')).toBeInTheDocument()
+  })
+
+  it('未知导出异常显示为错误提示', async () => {
+    vi.mocked(buildSTL).mockImplementation(() => {
+      throw new Error('序列化失败')
+    })
+    fireEvent.click(openMenu(IR))
+    fireEvent.click(await screen.findByText('STL（二进制，3D 打印）'))
+    expect(await screen.findByText('序列化失败')).toBeInTheDocument()
+  })
+})

@@ -1,0 +1,25 @@
+// L 型支座：布尔求并拼接底板 + 立板，角上打沉孔
+param base_w = 60
+param base_d = 40
+param thick = 6
+
+module corner_hole(x, y) {
+  translate([x, y, -1]) {
+    cyl(d = 5, h = thick + 2)
+  }
+}
+
+union {
+  // 底板：四角减切沉孔
+  difference {
+    box(size = [base_w, base_d, thick])
+    corner_hole(8, 8)
+    corner_hole(base_w - 8, 8)
+    corner_hole(8, base_d - 8)
+    corner_hole(base_w - 8, base_d - 8)
+  }
+  // 立板：贴底板后沿立起
+  translate([0, base_d / 2 - thick / 2, thick]) {
+    box(size = [base_w, thick, 30])
+  }
+}

@@ -1,4 +1,8 @@
-"""工作区全量备份（ADR 0075）：v10 备份构建器 + tar.gz 归档打包/解包.
+"""工作区全量备份（ADR 0075）：v11 备份构建器 + tar.gz 归档打包/解包.
+
+v11 在 v10 基础上新增顶层 ``designs[]``（结构设计：title / content /
+description / is_deleted + versions[] 版本原文），``compiled`` 快照不导出，
+导入端按 ``content`` 重编译（对齐 pipelines 口径，ADR 0079 D9）。
 
 v10 在 v9 基础上新增顶层 ``pipelines[]``（流水线定义：name / content / enabled），
 运行与发现物属流水、不进备份（ADR 0076 D12）。
@@ -34,7 +38,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError
 
-BACKUP_VERSION = "10"
+BACKUP_VERSION = "11"
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
 ARCHIVE_KIND = "workspace_backup"
@@ -546,6 +550,35 @@ def build_workspace_backup_v9(
         )
     ]
 
+    # ── 结构设计（v11，ADR 0079 D9）：DSL 原文 + 版本原文；compiled 不导出 ──
+    from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
+
+    designs_data: list[dict[str, Any]] = []
+    design_rows = (
+        db.query(DesignDesign).filter(DesignDesign.workspace_id == workspace_id).order_by(DesignDesign.id).all()
+    )
+    version_rows = (
+        db.query(DesignDesignVersion)
+        .filter(DesignDesignVersion.workspace_id == workspace_id)
+        .order_by(DesignDesignVersion.design_id, DesignDesignVersion.version_number)
+        .all()
+    )
+    versions_by_design: dict[int, list[dict[str, Any]]] = {}
+    for v in version_rows:
+        versions_by_design.setdefault(v.design_id, []).append(
+            {"version_number": v.version_number, "content": v.content, "comment": v.comment}
+        )
+    for d in design_rows:
+        designs_data.append(
+            {
+                "title": d.title,
+                "content": d.content,
+                "description": d.description,
+                "is_deleted": d.is_deleted,
+                "versions": versions_by_design.get(d.id, []),
+            }
+        )
+
     backup = {
         "version": BACKUP_VERSION,
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
@@ -562,6 +595,7 @@ def build_workspace_backup_v9(
         "file_owners": file_owners_data,
         "charts": charts_data,
         "pipelines": pipelines_data,
+        "designs": designs_data,
         "include_secrets": include_secrets,
     }
     return backup, files
@@ -583,6 +617,7 @@ def downsample_v8(backup_v9: dict[str, Any]) -> dict[str, Any]:
         "entrant_cursors",
         "file_owners",
         "pipelines",
+        "designs",
         "include_secrets",
     ):
         data.pop(key, None)
@@ -629,6 +664,7 @@ def build_manifest(backup: dict[str, Any], file_count: int) -> dict[str, Any]:
             "document_versions": len(backup.get("document_versions", [])),
             "sync_jobs": len(backup.get("sync_jobs", [])),
             "pipelines": len(backup.get("pipelines", [])),
+            "designs": len(backup.get("designs", [])),
             "files": file_count,
         },
     }
