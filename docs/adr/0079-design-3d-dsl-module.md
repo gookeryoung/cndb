@@ -1,6 +1,6 @@
 # ADR 0079: 【设计】模块与结构 DSL（3D 机械制图实时预览与生成）
 
-Status: Proposed（待评审）
+Status: Accepted（2026-11-01 用户评审通过）
 Date: 2026-11-01
 Related: `src/cndb/plugins/base.py`、`src/cndb/core/plugin_registry.py`、`src/cndb/plugins/pipeline/plugin.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/utils/workspaceType.ts`、`docs/adr/0026-chrome81-compat.md`、`docs/adr/0047-permission-denied-message.md`、`docs/adr/0075-workspace-full-backup.md`、`docs/adr/0076-pipeline-check-dsl.md`
 需求卡片: `docs/requirements/0079-design-3d-dsl-module.md`（需求原文与约束编号的唯一副本）
@@ -124,13 +124,15 @@ plate(width, height, 12)            // 顶层实例（产出几何）
     {"op": "difference", "children": [
       {"op": "box", "size": [80, 40, 12]},
       {"op": "cyl", "d": 8, "h": 14, "fn": 64,
-       "transform": {"translate": [40, 20, -1]}}
+       "transform": {"ops": [["translate", [40, 20, -1]]]}}
     ]}
   ]
 }
 ```
 
-表达式已在编译期求值为字面量；`nodes` 为布尔树，`transform` 修饰单个图元。
+表达式已在编译期求值为字面量；`nodes` 为布尔树。变换是仿射映射、与布尔集合
+运算可交换，因此 IR **不保留变换包裹节点**，而是把变换栈按「先外后内」顺序
+下推到每个图元的 `transform.ops`（`[["translate", …], ["rotate", …]]`）。
 
 ### 3. API 变更清单
 
@@ -248,7 +250,7 @@ plate(width, height, 12)            // 顶层实例（产出几何）
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
+| P0 | 已落地 | `src/cndb/plugins/design/plugin.py`、`src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/services/dsl/`（lexer / parse / expressions / compile / limits / nodes）、`src/cndb/alembic/versions/z4a5b6c7d8e9_add_design_plugin.py` | `tests/test_design_dsl.py`（126 例，design 包覆盖率 100%）、`tests/test_design_migration.py` | `881230cf` |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 
@@ -256,8 +258,8 @@ plate(width, height, 12)            // 顶层实例（产出几何）
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案评审（Proposed，未进入实现）
-- 已完成：需求卡片 0079、本 ADR、CONTEXT.md 术语、ADR 索引登记
-- 下一步：人工评审通过后 `Status` 改 `Accepted`，按 P0（DSL 引擎 + 两表 + 迁移）开工，交给 `implementer`
-- 已知坑：three.js 在 Chromium 81 内核的实际可用版本未实测（P1 首个动作是锁定版本 + 冒烟）；`three-bvh-csg` 与 three 主版本需配对锁定
-- 最近一次全绿：`make check-docs` @ 本次方案提交（2026-11-01）
+- 当前阶段：P0 已落地（2026-11-01），待进入 P1
+- 已完成：需求卡片 0079、本 ADR（Accepted）、P0 全量（插件骨架 + 两表 + 迁移 + DSL 编译引擎 + 判定层 / 迁移单测）
+- 下一步：P1 —— API（CRUD / preview / 版本）+ 前端设计页签与编辑器（CodeMirror 语言包 + three.js 实时预览 + 参数面板）+ 体积预算基线 + Chrome 81 冒烟
+- 已知坑：three.js 在 Chromium 81 内核的实际可用版本未实测（P1 首个动作是锁定版本 + 冒烟）；`three-bvh-csg` 与 three 主版本需配对锁定；本机跑测试须先清空 `LD_LIBRARY_PATH`（trae 服务器自带旧 libsqlite3 会遮蔽系统库）
+- 最近一次全绿：`make check` @ `881230cf`（6390 passed，覆盖率 95.60% ≥ 95%，2026-11-01）
