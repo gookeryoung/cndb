@@ -303,3 +303,60 @@ describe('GridViewBar 收藏入口', () => {
     expect(putCalls).toBe(0)
   })
 })
+
+// ─────────────── 复制只读链接（ADR 0077 P1） ───────────────
+
+describe('GridViewBar 复制只读链接', () => {
+  const DASHBOARD_VIEWS: View[] = [
+    { id: 1, name: '全部记录', view_type: 'grid', is_default: true, owner_id: null },
+    { id: 4, name: '销售画布', view_type: 'dashboard', is_default: false, owner_id: 9 },
+  ]
+
+  /** 记录写入剪贴板的 URL（jsdom 无 clipboard，需自行注入） */
+  function mockClipboard() {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+    return writeText
+  }
+
+  it('画布视图：菜单项可点并复制当前页面路径 + 视图 id', async () => {
+    const writeText = mockClipboard()
+    renderBar({ views: DASHBOARD_VIEWS, activeViewId: 4 })
+
+    fireEvent.click(screen.getByTestId('view-more-desktop'))
+    const item = (await screen.findByText('复制只读链接')).closest('li')
+    expect(item).not.toHaveClass('ant-dropdown-menu-item-disabled')
+    fireEvent.click(screen.getByText('复制只读链接'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const url = String(writeText.mock.calls[0][0])
+    // 路径来自 window.location（由 buildDashboardShareUrl 拼接，见 dashboardShare.test.ts）
+    expect(url).toContain('?view=4&mode=dashboard&present=1')
+  })
+
+  it('非画布视图：菜单项置灰且不写剪贴板', async () => {
+    const writeText = mockClipboard()
+    renderBar({ views: DASHBOARD_VIEWS, activeViewId: 1 })
+
+    fireEvent.click(screen.getByTestId('view-more-desktop'))
+    const item = (await screen.findByText('复制只读链接')).closest('li')
+    expect(item).toHaveClass('ant-dropdown-menu-item-disabled')
+    fireEvent.click(screen.getByText('复制只读链接'))
+
+    expect(writeText).not.toHaveBeenCalled()
+  })
+
+  it('移动端「更多」同样提供该入口', async () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    const writeText = mockClipboard()
+    renderBar({ views: DASHBOARD_VIEWS, activeViewId: 4 })
+
+    fireEvent.click(screen.getByTestId('view-more-btn'))
+    fireEvent.click(await screen.findByText('复制只读链接'))
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+  })
+})

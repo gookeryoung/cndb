@@ -196,6 +196,44 @@ export function measureContentBounds(target: HTMLElement): { width: number; heig
   }
 }
 
+/** 目标元素的视觉快照结果：画布 + 实际渲染缩放（PDF 的物理尺寸需要它） */
+export interface CapturedElement {
+  canvas: HTMLCanvasElement
+  renderScale: number
+}
+
+/** 将目标元素渲染为画布（PDF / PNG 共用的唯一捕获实现）.
+ *
+ * 展开滚动容器 → 按展开后的包围盒定画布尺寸 → 渲染完成后立即还原 DOM。
+ * 背景色由调用方传入：普通 PDF 导出沿用白色，dashboard 按当前主题取页面色。
+ */
+export async function captureElement(
+  target: HTMLElement,
+  backgroundColor: string = '#ffffff',
+): Promise<CapturedElement> {
+  // html2canvas-pro 内部无条件 new Intl.Segmenter：旧内核必须先补垫片再加载它
+  await ensureIntlSegmenter()
+  const { default: html2canvas } = await import('html2canvas-pro')
+
+  const restore = expandScrollContainers(target)
+  const bounds = measureContentBounds(target)
+  const renderScale = computeRenderScale(Math.ceil(bounds.width), Math.ceil(bounds.height))
+  try {
+    const canvas = await html2canvas(target, {
+      scale: renderScale,
+      backgroundColor,
+      useCORS: true,
+      // 背景图/图标/圆角在缩放时的插值质量（文本不受影响）
+      imageSmoothingQuality: 'high',
+      width: Math.ceil(bounds.width),
+      height: Math.ceil(bounds.height),
+    })
+    return { canvas, renderScale }
+  } finally {
+    restore()
+  }
+}
+
 /** 将目标元素渲染为 PDF 并触发下载.
  *
  * 排版口径为「屏幕实际大小」：1 CSS px → PX_TO_PT(0.75pt)，页面尺寸跟着内容长（不低于 A4），
@@ -204,34 +242,18 @@ export function measureContentBounds(target: HTMLElement): { width: number; heig
  * @param target 视图内容区根元素（GridPage 的 gridAreaRef 容器；调用方须已在导出模式下
  *   关闭虚拟滚动，使全部行进入 DOM）
  * @param filename 下载文件名（需以 .pdf 结尾）
+ * @param backgroundColor 捕获背景色；默认白色以保持既有「更新 / 导出」行为不变
  * @throws 渲染或 PDF 生成失败时向上抛出原始错误，由调用方提示
  */
-export async function exportViewToPdf(target: HTMLElement, filename: string): Promise<void> {
-  // html2canvas-pro 内部无条件 new Intl.Segmenter：旧内核必须先补垫片再加载它
-  await ensureIntlSegmenter()
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-    import('html2canvas-pro'),
+export async function exportViewToPdf(
+  target: HTMLElement,
+  filename: string,
+  backgroundColor: string = '#ffffff',
+): Promise<void> {
+  const [{ jsPDF }, { canvas, renderScale }] = await Promise.all([
     import('jspdf'),
+    captureElement(target, backgroundColor),
   ])
-
-  // 放开滚动容器 → 按展开后的包围盒定画布尺寸 → 渲染完成后立即还原 DOM
-  const restore = expandScrollContainers(target)
-  const bounds = measureContentBounds(target)
-  const renderScale = computeRenderScale(Math.ceil(bounds.width), Math.ceil(bounds.height))
-  let canvas: HTMLCanvasElement
-  try {
-    canvas = await html2canvas(target, {
-      scale: renderScale,
-      backgroundColor: '#ffffff',
-      useCORS: true,
-      // 背景图/图标/圆角在缩放时的插值质量（文本不受影响）
-      imageSmoothingQuality: 'high',
-      width: Math.ceil(bounds.width),
-      height: Math.ceil(bounds.height),
-    })
-  } finally {
-    restore()
-  }
 
   // 内容物理尺寸（pt）：1:1 排版，故直接由画布像素 / scale 换算，不依赖页面尺寸
   const contentWidthPt = (canvas.width / renderScale) * PX_TO_PT
@@ -279,7 +301,7 @@ export async function exportViewToPdf(target: HTMLElement, filename: string): Pr
       pageCanvas.height = sh
       const ctx = pageCanvas.getContext('2d')
       if (!ctx) throw new Error('PDF 导出失败：无法创建画布上下文')
-      ctx.fillStyle = '#ffffff'
+      ctx.fillStyle = backgroundColor
       ctx.fillRect(0, 0, sw, sh)
       ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
       pdf.addImage(

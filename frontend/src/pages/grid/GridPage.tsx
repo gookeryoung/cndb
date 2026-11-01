@@ -18,7 +18,7 @@
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Modal, Empty, App as AntApp, Skeleton } from 'antd'
+import { Button, Modal, Empty, App as AntApp, Skeleton } from 'antd'
 import {
   ColumnHeightOutlined, AppstoreOutlined,
   CalendarOutlined, LineChartOutlined, PartitionOutlined,
@@ -47,6 +47,7 @@ import GridViewBar from './gridViewBar'
 import GridTableSection, { NEW_ROW_KEY } from './gridTableSection'
 import GridAggregationBar from './gridAggregationBar'
 import GridViewModals from './gridViewModals'
+import { resolvePresentTarget, copyDashboardShareLink } from './views/dashboard/dashboardShare'
 import { useGridData, usePendingChanges } from './useGridData'
 
 // Modal 组件 lazy import：点击打开时才加载
@@ -327,7 +328,7 @@ export default function GridPage() {
     if (rowId == null) return false
     return pendingChanges?.has(String(rowId)) ?? false
   }, [pendingChanges])
-  const { data: views = [] } = useTableViews(wid!, tid!)
+  const { data: views = [], isLoading: viewsLoading } = useTableViews(wid!, tid!)
   /** 把后端存储的 filters（dict 或 list）归一化成 list 形式 */
   function normalizeFilters(raw: unknown): FilterRule[] {
     if (!raw) return []
@@ -413,6 +414,37 @@ export default function GridPage() {
   // 当前激活的视图对象（含 view_options）
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
 
+  // —— 登录态只读展示（`?view=<id>&mode=dashboard&present=1`，ADR 0077 P1） ——
+  // 链接只负责定位，权限仍由后端下发可见视图列表决定；展示态不回落默认视图（D9）。
+  const presentRequested = searchParams.get('present') === '1'
+  const presentTarget = resolvePresentTarget(views, searchParams.get('view'), presentRequested)
+  const presenting = presentTarget.kind === 'present'
+  /** 已确认失效（视图列表已加载）才显示空态，避免加载期闪现「链接无效」 */
+  const presentInvalid = presentTarget.kind === 'invalid' && !viewsLoading
+
+  // 展示态固定为画布模式（链接带 mode=dashboard，这里兜底被手工去掉参数的场景）
+  useEffect(() => {
+    if (presenting) setMode('dashboard')
+  }, [presenting, setMode])
+
+  /** 退出展示：只移除 `present` 参数，其余深链参数保留 */
+  const exitPresent = useCallback(() => {
+    const params = new URLSearchParams(searchParams)
+    params.delete('present')
+    setSearchParams(params, { replace: true })
+  }, [searchParams, setSearchParams])
+
+  /** 复制当前 dashboard 的登录态只读链接（ADR 0077 D6） */
+  const handleCopyShareLink = useCallback(async () => {
+    if (!activeView) return
+    try {
+      await copyDashboardShareLink(activeView.id)
+      message.success('只读链接已复制')
+    } catch {
+      message.error('复制失败，请检查浏览器剪贴板权限')
+    }
+  }, [activeView, message])
+
   // 视图初始化 / 重新匹配：URL ?view= 深链 > 默认视图(is_default) > mode 兜底 > 第一个
   // 默认视图是「进入数据表的落地视图」：只要表存在默认视图，除 ?view= 深链外任何因素都不得覆盖它。
   // ?mode= / localStorage 仅在表缺少默认视图时兜底（正常情况下每张表都有「全部」默认视图）。
@@ -425,26 +457,33 @@ export default function GridPage() {
 
     // 1. URL 深链优先（精确 view id，分享 / 刷新直达指定视图）
     const vidParam = searchParams.get('view')
-    if (vidParam) {
-      target = views.find(v => String(v.id) === vidParam) || null
-    }
-    // 2. 默认视图 —— 进入数据表的落地视图
-    if (!target) {
-      target = views.find(v => v.is_default) || null
-    }
-    // 3. 兜底：URL mode / localStorage mode（仅表无默认视图时才会走到）
-    if (!target) {
-      const spMode = searchParams.get('mode') as ViewMode | null
-      if (spMode && VALID_MODES.includes(spMode)) {
-        target = views.find(v => v.view_type === spMode) || null
+    const presentParam = searchParams.get('present') === '1'
+    if (presentParam) {
+      // 展示态（ADR 0077 D9）：只接受精确命中，**禁止回落到默认视图 / mode / 第一个视图**。
+      // 目标不可见或已删除时渲染「链接无效或无权访问」空态，不静默换成另一张视图。
+      target = vidParam ? (views.find(v => String(v.id) === vidParam) || null) : null
+    } else {
+      if (vidParam) {
+        target = views.find(v => String(v.id) === vidParam) || null
       }
+      // 2. 默认视图 —— 进入数据表的落地视图
       if (!target) {
-        const lsMode = _readModeFromStorage()
-        if (lsMode) target = views.find(v => v.view_type === lsMode) || null
+        target = views.find(v => v.is_default) || null
       }
+      // 3. 兜底：URL mode / localStorage mode（仅表无默认视图时才会走到）
+      if (!target) {
+        const spMode = searchParams.get('mode') as ViewMode | null
+        if (spMode && VALID_MODES.includes(spMode)) {
+          target = views.find(v => v.view_type === spMode) || null
+        }
+        if (!target) {
+          const lsMode = _readModeFromStorage()
+          if (lsMode) target = views.find(v => v.view_type === lsMode) || null
+        }
+      }
+      // 4. 最后退化为第一个视图
+      if (!target) target = views[0] || null
     }
-    // 4. 最后退化为第一个视图
-    if (!target) target = views[0] || null
 
     // ── 只在目标和当前不同时才切换（初始化不持久化 mode，避免污染 localStorage） ──
     // 两侧统一 String 化比较：activeViewId 由 loadView 存的是 number（v.id），
@@ -1108,62 +1147,91 @@ export default function GridPage() {
   // 早 return — 已确保所有 hooks 调用完成
   if (!wid || !tid) return <Empty description="无效的表 ID" style={{ padding: 48 }} />
 
+  // 展示态：视图列表未就绪时只显示骨架，避免把「还没加载到」误判为链接失效
+  if (presentRequested && viewsLoading) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 12 }}>
+        <TableSkeleton />
+      </div>
+    )
+  }
+
+  // 展示态链接失效（不可见 / 已删除 / 非画布视图）：不回落到默认视图（ADR 0077 D9）
+  if (presentInvalid) {
+    return (
+      <div
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          height: '100%', padding: 48, background: 'var(--cn-bg-page)',
+        }}
+      >
+        <Empty description="链接无效或无权访问" data-testid="dashboard-present-invalid">
+          <Button onClick={exitPresent} data-testid="dashboard-present-exit">退出展示</Button>
+        </Empty>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      {/* 顶部工具栏 */}
-      <GridToolbar
-        wid={wid!}
-        tid={tid!}
-        tableKey={tableKey}
-        tableName={table?.name}
-        recordCount={table?.record_count}
-        mode={mode}
-        addRowDisabled={!canEditRecords || newRowActive || editingRowId != null}
-        onAddRow={startNewRow}
-        permissionLabel={canEditRecords ? '可编辑' : '只读'}
-        onEditRow={() => {
-          if (selectedRowKeys.length !== 1) return
-          const row = (rowList.items || []).find(r => String(r.id) === String(selectedRowKeys[0]))
-          if (row) openDetailWithPrefetch(row)
-        }}
-        editRowDisabled={selectedRowKeys.length !== 1}
-        canEditSchema={canEditSchema}
-        canManageData={canManageData}
-        onOpenTableSettings={() => navigate(`/w/${wid}/tables/${tid}/settings`)}
-        onOpenImportExport={() => setImportExportOpen(true)}
-        onOpenGovernance={() => setGovernanceOpen(true)}
-        activeViewName={activeView?.name}
-        activeViewId={activeView?.id}
-        onCopyTable={(opts) => copyTable.mutate(opts)}
-        onMove={() => { setMoveTarget(null); setMoveOpen(true) }}
-        onResetColumnLayout={mode === 'grid' && hasColumnLayoutOverride ? handleResetColumnLayout : undefined}
-      />
+      {/* 顶部工具栏（只读展示态隐藏） */}
+      {!presenting && (
+        <GridToolbar
+          wid={wid!}
+          tid={tid!}
+          tableKey={tableKey}
+          tableName={table?.name}
+          recordCount={table?.record_count}
+          mode={mode}
+          addRowDisabled={!canEditRecords || newRowActive || editingRowId != null}
+          onAddRow={startNewRow}
+          permissionLabel={canEditRecords ? '可编辑' : '只读'}
+          onEditRow={() => {
+            if (selectedRowKeys.length !== 1) return
+            const row = (rowList.items || []).find(r => String(r.id) === String(selectedRowKeys[0]))
+            if (row) openDetailWithPrefetch(row)
+          }}
+          editRowDisabled={selectedRowKeys.length !== 1}
+          canEditSchema={canEditSchema}
+          canManageData={canManageData}
+          onOpenTableSettings={() => navigate(`/w/${wid}/tables/${tid}/settings`)}
+          onOpenImportExport={() => setImportExportOpen(true)}
+          onOpenGovernance={() => setGovernanceOpen(true)}
+          activeViewName={activeView?.name}
+          activeViewId={activeView?.id}
+          onCopyTable={(opts) => copyTable.mutate(opts)}
+          onMove={() => { setMoveTarget(null); setMoveOpen(true) }}
+          onResetColumnLayout={mode === 'grid' && hasColumnLayoutOverride ? handleResetColumnLayout : undefined}
+        />
+      )}
 
-      {/* 视图切换 + 操作栏（支持拖拽排序） */}
-      <GridViewBar
-        wid={wid!}
-        tid={tid!}
-        views={views}
-        activeViewId={activeViewId}
-        mode={mode}
-        modeButtons={modeButtons}
-        showModeSwitch={showModeSwitch}
-        hasFilters={viewFilters.length > 0}
-        hasSorts={viewSortings.length > 0}
-        searchQuery={searchQuery}
-        onSearchChange={(q) => { setSearchQuery(q); setOffset(0) }}
-        onSelectView={(v) => loadView(v)}
-        onModeChange={handleModeChange}
-        onDragEnd={handleViewDragEnd}
-        canManageViews={canEditViews}
-        onCreate={() => setCreateViewOpen(true)}
-        onEdit={() => setEditViewOpen(true)}
-        onDelete={() => activeViewId != null && removeView.mutate(String(activeViewId))}
-        onImport={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
-        onOpenViewConfig={() => setViewConfigOpen(true)}
-        onOpenTableSettings={() => openSettings('table')}
-        onViewsChanged={() => queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })}
-      />
+      {/* 视图切换 + 操作栏（支持拖拽排序；只读展示态隐藏） */}
+      {!presenting && (
+        <GridViewBar
+          wid={wid!}
+          tid={tid!}
+          views={views}
+          activeViewId={activeViewId}
+          mode={mode}
+          modeButtons={modeButtons}
+          showModeSwitch={showModeSwitch}
+          hasFilters={viewFilters.length > 0}
+          hasSorts={viewSortings.length > 0}
+          searchQuery={searchQuery}
+          onSearchChange={(q) => { setSearchQuery(q); setOffset(0) }}
+          onSelectView={(v) => loadView(v)}
+          onModeChange={handleModeChange}
+          onDragEnd={handleViewDragEnd}
+          canManageViews={canEditViews}
+          onCreate={() => setCreateViewOpen(true)}
+          onEdit={() => setEditViewOpen(true)}
+          onDelete={() => activeViewId != null && removeView.mutate(String(activeViewId))}
+          onImport={() => { setImportFile(null); setImportFileContent(''); setImportViewsOpen(true) }}
+          onOpenViewConfig={() => setViewConfigOpen(true)}
+          onOpenTableSettings={() => openSettings('table')}
+          onViewsChanged={() => queryClient.invalidateQueries({ queryKey: ['table-views', tableKey] })}
+        />
+      )}
 
       {/* 主内容 — flex:1 占满剩余空间，overflow:hidden 交给内部 Table 的虚拟滚动.
           key={tableKey}：切表整块重挂载，清空列宽预览等内部局部状态；cn-page-enter 提供切换淡入 */}
@@ -1271,11 +1339,14 @@ export default function GridPage() {
                 workspaceId={wid}
                 tableId={tid}
                 total={rowList.total}
-                onRowClick={openDetailWithPrefetch}
+                onRowClick={presenting ? undefined : openDetailWithPrefetch}
                 loading={rowsFetching && !rowList.items?.length}
                 error={rowsError ? '数据加载失败，请稍后重试' : null}
-                canEdit={canEditViews}
+                canEdit={canEditViews && !presenting}
                 onRefresh={() => { void refetchRows() }}
+                presenting={presenting}
+                onExitPresent={exitPresent}
+                onCopyShareLink={presenting ? undefined : () => { void handleCopyShareLink() }}
                 onSave={(options) => {
                   // 先写草稿再立即持久化：persistCurrentView 从 store 即时读取，
                   // 避免 500ms 防抖窗口内旧配置被发到后端（ADR 0023 P1 显式保存）；
@@ -1291,18 +1362,20 @@ export default function GridPage() {
         )}
       </div>
 
-      {/* 底部聚合条 */}
-      <GridAggregationBar
-        selectedCount={selectedRowKeys.length}
-        aggregates={aggregates}
-        copyLoading={copyRow.isPending}
-        deleteLoading={deleteRows.isPending}
-        onCopy={() => copyRow.mutate(selectedRowKeys as Array<number | string>)}
-        onDelete={() => deleteRows.mutate(selectedRowKeys as Array<number | string>, {
-          onSuccess: () => { message.success('已删除'); setSelectedRowKeys([]) },
-        })}
-        onClear={() => setSelectedRowKeys([])}
-      />
+      {/* 底部聚合条（只读展示态隐藏） */}
+      {!presenting && (
+        <GridAggregationBar
+          selectedCount={selectedRowKeys.length}
+          aggregates={aggregates}
+          copyLoading={copyRow.isPending}
+          deleteLoading={deleteRows.isPending}
+          onCopy={() => copyRow.mutate(selectedRowKeys as Array<number | string>)}
+          onDelete={() => deleteRows.mutate(selectedRowKeys as Array<number | string>, {
+            onSuccess: () => { message.success('已删除'); setSelectedRowKeys([]) },
+          })}
+          onClear={() => setSelectedRowKeys([])}
+        />
+      )}
 
       {/* 抽屉 & 对话框 */}
       {detailOpen && (

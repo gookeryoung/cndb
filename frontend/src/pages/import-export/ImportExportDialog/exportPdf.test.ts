@@ -20,6 +20,7 @@ import {
   PDF_IMAGE_QUALITY,
   PX_TO_PT,
   TARGET_RENDER_DPI,
+  captureElement,
   computePageSize,
   computeRenderScale,
   ensureIntlSegmenter,
@@ -192,6 +193,39 @@ describe('measureContentBounds 包围盒测量', () => {
   })
 })
 
+describe('captureElement 通用捕获（PNG / PDF 共用）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    html2canvasMock.mockResolvedValue({ width: 800, height: 600 })
+  })
+
+  it('默认白色背景，兼容既有 PDF 行为', async () => {
+    const target = document.createElement('div')
+    const captured = await captureElement(target)
+    expect(captured.renderScale).toBe(MIN_RENDER_SCALE)
+    expect(html2canvasMock).toHaveBeenCalledWith(
+      target,
+      expect.objectContaining({ backgroundColor: '#ffffff' }),
+    )
+  })
+
+  it('透传调用方指定的背景色（dashboard 按主题取色）', async () => {
+    const target = document.createElement('div')
+    await captureElement(target, '#141414')
+    expect(html2canvasMock).toHaveBeenCalledWith(
+      target,
+      expect.objectContaining({ backgroundColor: '#141414' }),
+    )
+  })
+
+  it('返回实际渲染缩放，供 PDF 换算物理尺寸', async () => {
+    const target = document.createElement('div')
+    const captured = await captureElement(target)
+    expect(captured.canvas).toEqual({ width: 800, height: 600 })
+    expect(captured.renderScale).toBe(MIN_RENDER_SCALE)
+  })
+})
+
 describe('exportViewToPdf 编排（库已 mock）', () => {
   /** 宽看板内容：2780x1800px @scale2 → 1042.5x675pt（正好 A4 装不下 → 扩页单页） */
   const boardCanvas = { width: 2780, height: 1800 }
@@ -214,9 +248,12 @@ describe('exportViewToPdf 编排（库已 mock）', () => {
   })
   let jsPDFOptions: { format: [number, number]; orientation: string; unit: string } | undefined
   let pdfInstance: ReturnType<typeof makePdfInstance>
+  /** 页切片画布上下文（断言背景填充色用） */
+  let sliceContexts: Array<{ fillStyle: string; fillRect: ReturnType<typeof vi.fn>; drawImage: ReturnType<typeof vi.fn> }>
 
   beforeEach(() => {
     vi.clearAllMocks()
+    sliceContexts = []
     pdfInstance = makePdfInstance([A4_PAGE_PT.width, A4_PAGE_PT.height])
     html2canvasMock.mockResolvedValue(boardCanvas)
     // 普通函数实现：需支持 new jsPDF(...) 调用（箭头函数不可构造）
@@ -229,10 +266,12 @@ describe('exportViewToPdf 编排（库已 mock）', () => {
     const realCreateElement = document.createElement.bind(document)
     vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
       if (tag === 'canvas') {
+        const ctx = { fillStyle: '', fillRect: vi.fn(), drawImage: vi.fn() }
+        sliceContexts.push(ctx)
         return {
           width: 0,
           height: 0,
-          getContext: () => ({ fillRect: vi.fn(), drawImage: vi.fn() }),
+          getContext: () => ctx,
           toDataURL: toDataURLMock,
         } as unknown as HTMLCanvasElement
       }
@@ -327,6 +366,29 @@ describe('exportViewToPdf 编排（库已 mock）', () => {
     expect(toDataURLMock).toHaveBeenCalledWith('image/jpeg', PDF_IMAGE_QUALITY)
     // 单页只编码一次
     expect(toDataURLMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('主题背景色透传到捕获与页切片填充（默认白色保持不变）', async () => {
+    const target = document.createElement('div')
+    await exportViewToPdf(target, 'a.pdf', '#141414')
+    // 捕获阶段（html2canvas 背景）
+    expect(html2canvasMock).toHaveBeenCalledWith(
+      target,
+      expect.objectContaining({ backgroundColor: '#141414' }),
+    )
+    // 分片画布填充阶段：避免切片时的透明区域把主题色漏回白底
+    expect(sliceContexts).toHaveLength(1)
+    expect(sliceContexts[0]?.fillStyle).toBe('#141414')
+  })
+
+  it('不传背景时沿用白色（既有「更新 / 导出」行为不变）', async () => {
+    const target = document.createElement('div')
+    await exportViewToPdf(target, 'a.pdf')
+    expect(html2canvasMock).toHaveBeenCalledWith(
+      target,
+      expect.objectContaining({ backgroundColor: '#ffffff' }),
+    )
+    expect(sliceContexts[0]?.fillStyle).toBe('#ffffff')
   })
 
   it('渲染失败时向上抛出原始错误且还原展开状态', async () => {

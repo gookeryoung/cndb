@@ -126,6 +126,17 @@ describe('ViewPermissionDrawer 档位', () => {
     expect(screen.queryByTestId('view-member-add')).toBeNull()
   })
 
+  it('画布视图给出只读链接提示，普通网格视图不显示（ADR 0077 C7）', async () => {
+    useBaseHandlers()
+    const { unmount } = renderDrawer({ view: { ...SHARED_VIEW, view_type: 'dashboard' } })
+
+    expect(await screen.findByTestId('view-permission-dashboard-hint')).toHaveTextContent('复制只读链接')
+    unmount()
+
+    renderDrawer()
+    expect(screen.queryByTestId('view-permission-dashboard-hint')).toBeNull()
+  })
+
   it('非 shared 档但名单有留存时提示「切回后自动恢复生效」', async () => {
     useBaseHandlers()
     renderDrawer({ view: { ...SHARED_VIEW, visibility: 'private' } })

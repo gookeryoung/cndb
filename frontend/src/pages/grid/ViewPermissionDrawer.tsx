@@ -194,6 +194,17 @@ export default function ViewPermissionDrawer({
             视图权限只在数据表权限范围内放宽，不会让看不到这张表的人看到视图。
           </Paragraph>
 
+          {/* 画布视图额外告知只读链接的可用档位（ADR 0077 C7 / D8）：分享设置与链接分发是同一套权限 */}
+          {view.view_type === 'dashboard' && (
+            <Paragraph
+              type="secondary"
+              style={{ fontSize: 12, marginBottom: 12 }}
+              data-testid="view-permission-dashboard-hint"
+            >
+              画布视图在「指定成员可见」或「表内所有人可见」档下，成员可通过视图栏「复制只读链接」打开只读展示（不含编辑与行详情）。
+            </Paragraph>
+          )}
+
           <Radio.Group
             value={visibility}
             onChange={e => void handleVisibility(e.target.value as ViewVisibility)}

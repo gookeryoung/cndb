@@ -10,7 +10,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { App as AntApp, Button, Empty, Modal, Tooltip } from 'antd'
 import {
-  CloseOutlined, CopyOutlined, EditOutlined, RedoOutlined, ReloadOutlined, SaveOutlined, SettingOutlined, UndoOutlined,
+  CloseOutlined, CopyOutlined, EditOutlined, FileImageOutlined, FilePdfOutlined, LinkOutlined,
+  LogoutOutlined, RedoOutlined, ReloadOutlined, SaveOutlined, SettingOutlined, UndoOutlined,
 } from '@ant-design/icons'
 import type { Field, RowResponse, View } from '@/api'
 import {
@@ -26,6 +27,7 @@ import { applyWidgetQuery } from './dashboardQuery'
 import { resolveQueryGlobals, type DashboardGlobals } from './dashboardGlobals'
 import { useDashboardDraft } from './useDashboardDraft'
 import { useDashboardData } from './useDashboardData'
+import type { DashboardExportFormat } from './dashboardExport'
 import GlobalFilterBar from './GlobalFilterBar'
 import type { DashboardTemplateMode } from './DashboardTemplateDialog'
 import { buildDashboardDataset } from './chart/dataset'
@@ -75,6 +77,12 @@ export interface DashboardViewProps {
   onSave?: (options: Record<string, unknown>) => void
   /** 小表路径的刷新回调（定时刷新 / 手动刷新；由页面层重新拉行集） */
   onRefresh?: () => void
+  /** 只读展示态（`present=1`）：隐藏编辑 / 模板入口、禁用行详情，保留刷新 / 导出 / 退出（ADR 0077 D7） */
+  presenting?: boolean
+  /** 退出只读展示（由页面层移除 `present` 参数） */
+  onExitPresent?: () => void
+  /** 复制当前 dashboard 的登录态只读链接；未提供时不渲染入口 */
+  onCopyShareLink?: () => void
 }
 
 function useNarrow(): boolean {
@@ -136,6 +144,9 @@ export default function DashboardView({
   canEdit = false,
   onSave,
   onRefresh,
+  presenting = false,
+  onExitPresent,
+  onCopyShareLink,
 }: DashboardViewProps) {
   const narrow = useNarrow()
   const { message } = AntApp.useApp()
@@ -151,6 +162,10 @@ export default function DashboardView({
   const [drawerOpen, setDrawerOpen] = useState(false)
   /** 模板对话框模式；null 表示关闭 */
   const [templateMode, setTemplateMode] = useState<DashboardTemplateMode | null>(null)
+  /** 整屏导出进行中的格式（null = 空闲）；同一时刻只允许一个导出任务 */
+  const [exporting, setExporting] = useState<DashboardExportFormat | null>(null)
+  /** 整屏导出捕获容器：全局筛选栏 + 画布主体，不含工具栏（ADR 0077 D4） */
+  const exportAreaRef = useRef<HTMLDivElement>(null)
   const draft = useDashboardDraft(baseline)
   const baselineRef = useRef(baseline)
   baselineRef.current = baseline
@@ -185,6 +200,16 @@ export default function DashboardView({
     if (!editing) draft.reset(baseline)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseline, editing])
+
+  // 展示态不允许停留在编辑态（入口已隐藏，防止带着编辑态进入展示链接）
+  useEffect(() => {
+    if (!presenting || !editing) return
+    setEditing(false)
+    setSelectedId(null)
+    setDrawerOpen(false)
+    draft.reset(baselineRef.current)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presenting, editing])
 
   // 选中项被撤销/删除后清理
   useEffect(() => {
@@ -354,6 +379,35 @@ export default function DashboardView({
   }
 
   const config = draft.config
+  /** 展示态禁止行详情：只展示聚合结果，不打开行抽屉（ADR 0077 D7 / I3） */
+  const effectiveRowClick = presenting ? undefined : onRowClick
+  /** 数据就绪判定：页面行集或服务端批量取数仍在加载时不导出，避免截到骨架屏 */
+  const dataLoading = loading || (useServer && serverData.loading)
+  const exportDisabled = dataLoading || exporting !== null || config.widgets.length === 0
+
+  /** 整屏导出：等待两帧让骨架屏退出 / 图表完成 setOption，再捕获专用容器 */
+  const handleExport = async (format: DashboardExportFormat) => {
+    const target = exportAreaRef.current
+    if (!target) {
+      message.error('未找到可导出的画布')
+      return
+    }
+    if (exportDisabled) return
+    setExporting(format)
+    try {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => { requestAnimationFrame(() => resolve()) })
+      })
+      // 编排模块按需加载：html2canvas / jsPDF 相关链路不得进入画布主 chunk（ADR 0077 D10）
+      const { exportDashboard } = await import('./dashboardExport')
+      await exportDashboard(target, view?.name, format)
+      message.success('导出完成')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '导出失败')
+    } finally {
+      setExporting(null)
+    }
+  }
 
   const globalBar = config.global_filters.length > 0 ? (
     <GlobalFilterBar
@@ -382,7 +436,7 @@ export default function DashboardView({
           rows={rowsForWidget}
           fields={fields}
           dataset={dataset}
-          onRowClick={onRowClick}
+          onRowClick={effectiveRowClick}
         />
       )
     }
@@ -392,7 +446,7 @@ export default function DashboardView({
     }
     if (widget.type === 'text') return <TextWidget widget={widget} />
     const table = dataset?.kind === 'table' ? (dataset as TableDataset) : undefined
-    return <TableWidget widget={widget} rows={rowsForWidget} dataset={table} onRowClick={onRowClick} />
+    return <TableWidget widget={widget} rows={rowsForWidget} dataset={table} onRowClick={effectiveRowClick} />
   }
 
   const isWidgetEmpty = (widget: DashboardWidget) => {
@@ -403,7 +457,7 @@ export default function DashboardView({
     return dataset ? datasetIsEmpty(dataset) : rowsForWidget.length === 0
   }
 
-  const toolbar = canEdit && (
+  const toolbar = (
     <div
       data-testid="dashboard-toolbar"
       style={{
@@ -440,20 +494,22 @@ export default function DashboardView({
         </>
       ) : (
         <>
-          <Tooltip title={narrow ? '窄屏下请使用桌面宽度编辑画布' : '拖拽 / 缩放 / 预设 / 属性面板'}>
-            <Button
-              size="small"
-              icon={<EditOutlined />}
-              disabled={narrow}
-              onClick={() => {
-                setEditing(true)
-                setSelectedId(config.widgets[0]?.id ?? null)
-              }}
-              data-testid="dashboard-edit"
-            >
-              编辑画布
-            </Button>
-          </Tooltip>
+          {!presenting && canEdit && (
+            <Tooltip title={narrow ? '窄屏下请使用桌面宽度编辑画布' : '拖拽 / 缩放 / 预设 / 属性面板'}>
+              <Button
+                size="small"
+                icon={<EditOutlined />}
+                disabled={narrow}
+                onClick={() => {
+                  setEditing(true)
+                  setSelectedId(config.widgets[0]?.id ?? null)
+                }}
+                data-testid="dashboard-edit"
+              >
+                编辑画布
+              </Button>
+            </Tooltip>
+          )}
           <Button
             size="small"
             icon={<ReloadOutlined />}
@@ -467,14 +523,56 @@ export default function DashboardView({
               每 {refreshInterval}s 自动刷新
             </span>
           )}
+          {!presenting && canEdit && (
+            <Button
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => setTemplateMode('apply')}
+              data-testid="dashboard-template-create"
+            >
+              从模板创建
+            </Button>
+          )}
+          {!presenting && onCopyShareLink && (
+            <Button
+              size="small"
+              icon={<LinkOutlined />}
+              onClick={onCopyShareLink}
+              data-testid="dashboard-copy-share"
+            >
+              复制只读链接
+            </Button>
+          )}
           <Button
             size="small"
-            icon={<CopyOutlined />}
-            onClick={() => setTemplateMode('apply')}
-            data-testid="dashboard-template-create"
+            icon={<FileImageOutlined />}
+            loading={exporting === 'png'}
+            disabled={exportDisabled}
+            onClick={() => { void handleExport('png') }}
+            data-testid="dashboard-export-png"
           >
-            从模板创建
+            导出 PNG
           </Button>
+          <Button
+            size="small"
+            icon={<FilePdfOutlined />}
+            loading={exporting === 'pdf'}
+            disabled={exportDisabled}
+            onClick={() => { void handleExport('pdf') }}
+            data-testid="dashboard-export-pdf"
+          >
+            导出 PDF
+          </Button>
+          {presenting && onExitPresent && (
+            <Button
+              size="small"
+              icon={<LogoutOutlined />}
+              onClick={onExitPresent}
+              data-testid="dashboard-exit-present"
+            >
+              退出展示
+            </Button>
+          )}
         </>
       )}
     </div>
@@ -501,10 +599,16 @@ export default function DashboardView({
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {toolbar}
-        {globalBar}
         {templateDialog}
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Empty description="画布还没有组件（视图设置中添加）" data-testid="dashboard-empty" />
+        <div
+          ref={exportAreaRef}
+          data-testid="dashboard-export-area"
+          style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+        >
+          {globalBar}
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Empty description="画布还没有组件（视图设置中添加）" data-testid="dashboard-empty" />
+          </div>
         </div>
       </div>
     )
@@ -520,7 +624,6 @@ export default function DashboardView({
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {toolbar}
-      {globalBar}
       {templateDialog}
       {editing && (
         <div
@@ -530,23 +633,31 @@ export default function DashboardView({
           拖拽标题栏移动 · 右下角缩放 · 选中后方向键微调（Shift+方向键改尺寸）· Ctrl/⌘+S 保存 · Esc 退出
         </div>
       )}
-      <DashboardGrid
-        config={gridConfig}
-        editing={editing}
-        selectedId={selectedId}
-        onSelect={(id) => {
-          setSelectedId(id)
-          if (id) setDrawerOpen(true)
-        }}
-        onLayout={draft.setLayouts}
-        onRemove={draft.removeWidget}
-        renderBody={renderBody}
-        isWidgetEmpty={isWidgetEmpty}
-        loading={loading || (useServer && serverData.loading)}
-        error={error}
-        errorById={widgetErrors}
-        metaById={metaById}
-      />
+      {/* 整屏导出捕获区：全局筛选栏 + 画布主体，不含工具栏与编辑提示（ADR 0077 D4） */}
+      <div
+        ref={exportAreaRef}
+        data-testid="dashboard-export-area"
+        style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+      >
+        {globalBar}
+        <DashboardGrid
+          config={gridConfig}
+          editing={editing}
+          selectedId={selectedId}
+          onSelect={(id) => {
+            setSelectedId(id)
+            if (id) setDrawerOpen(true)
+          }}
+          onLayout={draft.setLayouts}
+          onRemove={draft.removeWidget}
+          renderBody={renderBody}
+          isWidgetEmpty={isWidgetEmpty}
+          loading={dataLoading}
+          error={error}
+          errorById={widgetErrors}
+          metaById={metaById}
+        />
+      </div>
       {editing && drawerOpen && (
         <Suspense fallback={null}>
           <DashboardConfigDrawer

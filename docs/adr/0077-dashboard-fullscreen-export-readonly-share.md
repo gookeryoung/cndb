@@ -1,6 +1,6 @@
 # ADR 0077: dashboard 整屏导出与登录态只读分享
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-11-01
 Related: `frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardGrid.tsx`、`frontend/src/pages/grid/views/dashboard/widgets/ChartWidget.tsx`、`frontend/src/pages/grid/views/dashboard/useDashboardData.ts`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/gridViewBar.tsx`、`frontend/src/pages/grid/ViewPermissionDrawer.tsx`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts`、`frontend/src/pages/import-export/ImportExportDialog/ExportPanel.tsx`、`src/cndb/plugins/tables/services/core/view_access.py`、`docs/adr/0023-configurable-view-dashboard.md`、`docs/adr/0003-view-visibility-permission-model.md`、`docs/adr/0017-guest-document-share.md`
 需求卡片: `docs/requirements/0077-dashboard-fullscreen-export-readonly-share.md`（需求原文与约束编号的唯一副本）
@@ -233,16 +233,16 @@ export function resolvePresentTarget(
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `frontend/src/pages/grid/views/dashboard/dashboardExport.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx` | `frontend/src/pages/grid/views/dashboard/dashboardExport.test.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.test.ts`、`frontend/src/pages/grid/views/dashboard/DashboardView.test.tsx` | — |
-| P1 | 未开始 | `frontend/src/pages/grid/views/dashboard/dashboardShare.ts`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/gridViewBar.tsx` | `frontend/src/pages/grid/views/dashboard/dashboardShare.test.ts`、`frontend/tests/e2e/critical/dashboard-readonly-share.spec.ts` | — |
-| P2 | 未开始 | `frontend/src/pages/grid/gridViewBar.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx`、`frontend/scripts/bundle-budget.json` | `frontend/tests/e2e/critical/dashboard-readonly-share.spec.ts`、`frontend/tests/e2e/critical/dashboard-export.spec.ts` | — |
+| P0 | 已落地 | `frontend/src/pages/grid/views/dashboard/dashboardExport.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPng.ts`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx` | `frontend/src/pages/grid/views/dashboard/dashboardExport.test.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.test.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPng.test.ts`、`frontend/src/pages/grid/views/dashboard/DashboardView.test.tsx` | 待回填 |
+| P1 | 已落地 | `frontend/src/pages/grid/views/dashboard/dashboardShare.ts`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/gridViewBar.tsx` | `frontend/src/pages/grid/views/dashboard/dashboardShare.test.ts`、`frontend/src/pages/grid/GridPage.present.test.tsx`、`frontend/src/pages/grid/gridViewBar.test.tsx`、`frontend/tests/e2e/critical/dashboard-readonly-share.spec.ts` | 待回填 |
+| P2 | 已落地 | `frontend/src/pages/grid/ViewPermissionDrawer.tsx`、`frontend/src/pages/grid/gridViewBar.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx` | `frontend/src/pages/grid/ViewPermissionDrawer.test.tsx`、`frontend/tests/e2e/critical/dashboard-export.spec.ts`、`frontend/tests/e2e/critical/dashboard-readonly-share.spec.ts` | 待回填 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：Proposed（仅完成需求卡片与本 ADR，尚未实现）
-- 已完成：现状核对（画布工具栏、单卡 PNG、通用 PDF 导出、视图三档权限、深链回落、匿名分享移除）、方案与分期拆分
-- 下一步：人工评审本 ADR；通过后将 `Status` 改 `Accepted`，按 P0 → P1 → P2 实现，P0 先抽 `captureElement` 并保持既有 PDF 用例全绿
-- 已知坑：① 既有 PDF 捕获目标是 `gridAreaRef`，dashboard 的导出必须换专用容器，否则工具栏会被截进文件；② `html2canvas-pro` 在 Chrome 81 需先加载 `Intl.Segmenter` 垫片（沿用 `exportPdf.ensureIntlSegmenter`）；③ `DashboardGrid` 自身滚动，捕获前必须展开滚动容器并按后代包围盒取尺寸；④ 深色主题导出需传主题背景，不能沿用写死的白色；⑤ 展示态 `?view` 未命中时**绝不能**走 `GridPage` 的默认视图回落；⑥ 大表 / 跨表走服务端取数，导出前要等 `useDashboardData.loading` 结束；⑦ 新增导出代码不得静态进入 `DashboardView` chunk，落地后更新 `bundle-budget` 基线
-- 最近一次全绿：未实现，无代码门禁；文档门禁以 `make check-docs` 为准
+- 当前阶段：P0-P2 已全部落地，`Status` 保持 `Accepted`（待上线后按仓库口径确认是否改 `Implemented`）
+- 已完成：整屏导出（PNG / PDF 共用 `captureElement`、专用捕获容器、主题背景、数据就绪门控）、登录态只读深链（禁止回落、展示态隐藏页面 chrome 与行详情、退出展示）、视图栏复制链接、分享设置复用视图权限抽屉并补画布提示、e2e 两条（导出格式校验 / 只读分享与失效）
+- 下一步：上线后观察大画布导出在低配设备的表现；如需扩展（例如整屏导出加图片格式选项）另开需求卡片，不改本 ADR 已收口的口径
+- 已知坑：① 既有 PDF 捕获目标是 `gridAreaRef`，dashboard 的导出必须换专用容器，否则工具栏会被截进文件；② `html2canvas-pro` 在 Chrome 81 需先加载 `Intl.Segmenter` 垫片（沿用 `exportPdf.ensureIntlSegmenter`）；③ `DashboardGrid` 自身滚动，捕获前必须展开滚动容器并按后代包围盒取尺寸；④ 深色主题导出需传主题背景，不能沿用写死的白色；⑤ 展示态 `?view` 未命中时**绝不能**走 `GridPage` 的默认视图回落；⑥ 大表 / 跨表走服务端取数，导出前要等 `useDashboardData.loading` 结束；⑦ 导出编排与分享辅助全部按需导入（`DashboardView` 内动态 `import('./dashboardExport')`），`DashboardView` 静态依赖只保留类型；⑧ 视图权限抽屉已改为 `lazy` 且仅在打开时挂载，避免回涨 `GridPage` chunk；⑨ Chromium 对含中文的 anchor download 文件名会回落为 `download`，e2e 用文件魔数而非文件名断言；⑩ `present=1` 时先等 `useTableViews` 结束再判失效，避免把「加载中」误判成「链接无效」
+- 最近一次全绿：`make check-fast`、`pnpm build` + `pnpm bundle:budget`、新增 e2e 4 例（2026-11-01）

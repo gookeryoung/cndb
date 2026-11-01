@@ -5,14 +5,14 @@
  * 表格设置收进「更多」菜单，搜索折叠为可展开的第二行。桌面端布局保持不变。
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Segmented, Space, Tooltip } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, FilterOutlined, MoreOutlined,
   SearchOutlined, SettingOutlined, EditOutlined, ImportOutlined, ExportOutlined,
   HolderOutlined, LeftOutlined, RightOutlined, DownOutlined, SafetyOutlined,
-  StarOutlined, StarFilled,
+  StarOutlined, StarFilled, LinkOutlined,
 } from '@ant-design/icons'
 import { DndContext, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -25,7 +25,10 @@ import { MAX_FAVORITE_VIEWS, usePreferences, useToggleFavoriteView } from '@/hoo
 import TooltipDropdown from '@/components/TooltipDropdown'
 import SearchInput from '@/components/SearchInput'
 import type { ViewMode } from './views/viewModes'
-import ViewPermissionDrawer from './ViewPermissionDrawer'
+import { copyDashboardShareLink } from './views/dashboard/dashboardShare'
+
+/** 视图权限抽屉只在「更多 → 视图权限」打开时出现，按需加载（不进 GridPage chunk） */
+const ViewPermissionDrawer = lazy(() => import('./ViewPermissionDrawer'))
 
 /** 可拖拽视图 Tab 标签 —— 供 Segmented.options.label 使用，配合 DndContext + SortableContext. */
 function DndViewTab({ view, active, draggable, onClick }: { view: View; active: boolean; draggable: boolean; onClick: () => void }) {
@@ -287,6 +290,18 @@ export default function GridViewBar({
     )
   }, [activeView, isFavorite, favoriteLimitReached, toggleFavorite, message])
 
+  /** 复制只读链接仅对画布视图开放（ADR 0077 边界 7）；非画布视图菜单项置灰 */
+  const canCopyShareLink = activeView?.view_type === 'dashboard'
+  const handleCopyShareLink = useCallback(async () => {
+    if (!activeView || !canCopyShareLink) return
+    try {
+      await copyDashboardShareLink(activeView.id)
+      message.success('只读链接已复制')
+    } catch {
+      message.error('复制失败，请检查浏览器剪贴板权限')
+    }
+  }, [activeView, canCopyShareLink, message])
+
   const desktopMoreItems: MenuProps['items'] = [
     { key: 'permission', icon: <SafetyOutlined />, label: '视图权限', disabled: !canManageActive, onClick: () => setPermOpen(true) },
     { type: 'divider' },
@@ -294,6 +309,13 @@ export default function GridViewBar({
     { type: 'divider' },
     { key: 'import', icon: <ImportOutlined />, label: '导入视图', onClick: onImport },
     { key: 'export', icon: <ExportOutlined />, label: '导出视图', onClick: handleExportViews },
+    {
+      key: 'share',
+      icon: <LinkOutlined />,
+      label: '复制只读链接',
+      disabled: !canCopyShareLink,
+      onClick: () => { void handleCopyShareLink() },
+    },
   ]
 
   /** 移动端「更多」：桌面端的全部入口 + 搜索开关 + 表格设置（避免窄屏按钮挤压视图页签） */
@@ -316,6 +338,13 @@ export default function GridViewBar({
     { type: 'divider' },
     { key: 'import', icon: <ImportOutlined />, label: '导入视图', onClick: onImport },
     { key: 'export', icon: <ExportOutlined />, label: '导出视图', onClick: handleExportViews },
+    {
+      key: 'share',
+      icon: <LinkOutlined />,
+      label: '复制只读链接',
+      disabled: !canCopyShareLink,
+      onClick: () => { void handleCopyShareLink() },
+    },
     { type: 'divider' },
     { key: 'search', icon: <SearchOutlined />, label: '搜索当前视图', onClick: () => setMobileSearchOpen(v => !v) },
     { key: 'table-settings', icon: <SettingOutlined />, label: '表格设置', onClick: onOpenTableSettings },
@@ -465,7 +494,7 @@ export default function GridViewBar({
               />
             </Tooltip>
             <TooltipDropdown title="视图更多操作" menu={{ items: desktopMoreItems }}>
-              <Button size="small" type="text" icon={<MoreOutlined />} />
+              <Button size="small" type="text" icon={<MoreOutlined />} data-testid="view-more-desktop" aria-label="更多视图操作" />
             </TooltipDropdown>
 
             <div style={{ width: 1, height: 14, background: 'var(--cn-border)', margin: '0 3px' }} />
@@ -510,15 +539,19 @@ export default function GridViewBar({
 
       {/* 视图权限 Drawer —— 三档可见性 + 共享名单（ADR 0003 P3）。
           `canManageViews` 即表 EDIT_VIEWS，用于门控「表内所有人可见」档（D4）。 */}
-      <ViewPermissionDrawer
-        open={permOpen}
-        onClose={() => setPermOpen(false)}
-        wid={wid}
-        tid={tid}
-        view={activeView ?? null}
-        canPublishToTable={canManageViews}
-        onUpdated={() => onViewsChanged?.()}
-      />
+      {permOpen && (
+        <Suspense fallback={null}>
+          <ViewPermissionDrawer
+            open
+            onClose={() => setPermOpen(false)}
+            wid={wid}
+            tid={tid}
+            view={activeView ?? null}
+            canPublishToTable={canManageViews}
+            onUpdated={() => onViewsChanged?.()}
+          />
+        </Suspense>
+      )}
     </div>
   )
 }

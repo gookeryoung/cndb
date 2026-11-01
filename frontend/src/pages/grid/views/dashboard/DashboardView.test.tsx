@@ -35,6 +35,10 @@ vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
 const dashboardData = vi.hoisted(() => vi.fn())
 vi.mock('@/api/views', () => ({ viewApi: { dashboardData } }))
 
+/** 整屏导出编排：单测只验证调用参数，不真的跑 html2canvas / jsPDF */
+const dashboardExportMock = vi.hoisted(() => ({ exportDashboard: vi.fn() }))
+vi.mock('./dashboardExport', () => ({ exportDashboard: dashboardExportMock.exportDashboard }))
+
 const templateApiMock = vi.hoisted(() => ({
   listDashboardTemplates: vi.fn(),
   saveDashboardTemplate: vi.fn(),
@@ -117,6 +121,10 @@ function renderDashboard(opts?: {
   workspaceId?: string | number
   tableId?: string | number
   onRefresh?: () => void
+  onRowClick?: (row: RowResponse) => void
+  presenting?: boolean
+  onExitPresent?: () => void
+  onCopyShareLink?: () => void
 }) {
   return renderProviders(
     <DashboardView
@@ -128,9 +136,13 @@ function renderDashboard(opts?: {
       canEdit={opts?.canEdit}
       onSave={opts?.onSave}
       onRefresh={opts?.onRefresh}
+      onRowClick={opts?.onRowClick}
       total={opts?.total}
       workspaceId={opts?.workspaceId ?? 1}
       tableId={opts?.tableId ?? 2}
+      presenting={opts?.presenting}
+      onExitPresent={opts?.onExitPresent}
+      onCopyShareLink={opts?.onCopyShareLink}
     />,
   )
 }
@@ -264,10 +276,14 @@ async function enterEditing() {
 }
 
 describe('DashboardView P1 编辑态', () => {
-  it('无编辑权限时不渲染工具栏', () => {
+  it('无编辑权限的只读用户仍看到工具栏、刷新与导出，但没有编辑 / 模板入口', () => {
     renderDashboard({ view_options: EDIT_CONFIG })
-    expect(screen.queryByTestId('dashboard-toolbar')).not.toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-toolbar')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-refresh')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-export-png')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-export-pdf')).toBeInTheDocument()
     expect(screen.queryByTestId('dashboard-edit')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-template-create')).not.toBeInTheDocument()
   })
 
   it('canEdit 显示编辑入口，进入后出现保存/退出与操作提示', async () => {
@@ -568,5 +584,79 @@ describe('DashboardView P3 跨表 widget', () => {
     const options = onSave.mock.calls[0][0] as Record<string, unknown>
     const widgets = options.widgets as Array<{ id: string; query: { table_id?: number } }>
     expect(widgets[0].query.table_id).toBe(9)
+  })
+})
+
+describe('DashboardView P0 整屏导出（ADR 0077）', () => {
+  it('捕获容器只包住全局筛选栏与画布主体，不含工具栏', () => {
+    renderDashboard({ view_options: GLOBAL_CONFIG })
+    const area = screen.getByTestId('dashboard-export-area')
+    expect(area).toContainElement(screen.getByTestId('dashboard-globals'))
+    expect(area).toContainElement(screen.getByTestId('dashboard-canvas'))
+    expect(area).not.toContainElement(screen.getByTestId('dashboard-toolbar'))
+  })
+
+  it('点击导出按格式调用编排，文件名沿用视图名', async () => {
+    dashboardExportMock.exportDashboard.mockResolvedValue(undefined)
+    renderDashboard({ view_options: EDIT_CONFIG })
+    fireEvent.click(screen.getByTestId('dashboard-export-png'))
+    await waitFor(() => expect(dashboardExportMock.exportDashboard).toHaveBeenCalledTimes(1))
+    expect(dashboardExportMock.exportDashboard).toHaveBeenCalledWith(
+      screen.getByTestId('dashboard-export-area'),
+      '销售画布',
+      'png',
+    )
+  })
+
+  it('数据加载中与空画布禁用导出', () => {
+    renderDashboard({ view_options: EDIT_CONFIG, loading: true })
+    expect(screen.getByTestId('dashboard-export-png')).toBeDisabled()
+    expect(screen.getByTestId('dashboard-export-pdf')).toBeDisabled()
+  })
+
+  it('空画布禁用导出', () => {
+    renderDashboard({ view_options: { widgets: [] } })
+    expect(screen.getByTestId('dashboard-export-png')).toBeDisabled()
+  })
+
+  it('提供复制回调时才渲染只读链接入口', () => {
+    const onCopyShareLink = vi.fn()
+    renderDashboard({ view_options: EDIT_CONFIG, onCopyShareLink })
+    fireEvent.click(screen.getByTestId('dashboard-copy-share'))
+    expect(onCopyShareLink).toHaveBeenCalledTimes(1)
+  })
+
+  it('未提供复制回调时不渲染入口', () => {
+    renderDashboard({ view_options: EDIT_CONFIG })
+    expect(screen.queryByTestId('dashboard-copy-share')).not.toBeInTheDocument()
+  })
+})
+
+describe('DashboardView P1 只读展示态（ADR 0077）', () => {
+  it('展示态保留刷新 / 导出 / 退出，隐藏编辑、模板与复制链接', () => {
+    const onExitPresent = vi.fn()
+    const onCopyShareLink = vi.fn()
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true, presenting: true, onExitPresent, onCopyShareLink })
+    expect(screen.getByTestId('dashboard-refresh')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-export-png')).toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-edit')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-template-create')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('dashboard-copy-share')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('dashboard-exit-present'))
+    expect(onExitPresent).toHaveBeenCalledTimes(1)
+  })
+
+  it('展示态下明细表格点击行不触发回调', () => {
+    const onRowClick = vi.fn()
+    renderDashboard({ onRowClick, presenting: true })
+    fireEvent.click(screen.getByTestId('dashboard-table-row-detail-0'))
+    expect(onRowClick).not.toHaveBeenCalled()
+  })
+
+  it('对照：正常态明细行点击仍触发回调', () => {
+    const onRowClick = vi.fn()
+    renderDashboard({ onRowClick })
+    fireEvent.click(screen.getByTestId('dashboard-table-row-detail-0'))
+    expect(onRowClick).toHaveBeenCalledTimes(1)
   })
 })
