@@ -13,6 +13,7 @@ import { useQuery } from '@tanstack/react-query'
 import { viewApi } from '@/api/views'
 import type { View } from '@/api'
 import type { Dataset, DatasetMeta } from './chart/types'
+import type { DashboardGlobals } from './dashboardGlobals'
 
 /** 参与服务端取数的 widget 类型（文本卡片无需数据） */
 const DATA_WIDGET_TYPES = new Set(['chart', 'kpi', 'table'])
@@ -33,6 +34,8 @@ interface UseDashboardDataParams {
   view?: View | null
   /** 仅大表路径启用；小表走客户端聚合 */
   enabled: boolean
+  /** 全局筛选值（`{{global.x}}` 注入，ADR 0023 P3） */
+  globals?: DashboardGlobals
 }
 
 /** 从落库配置中读取参与取数的 widget id（编辑态新增但未保存的组件不在其列） */
@@ -50,12 +53,18 @@ function persistedWidgetIds(view: View | null | undefined): string[] {
   return out
 }
 
-export function useDashboardData({ wid, tid, view, enabled }: UseDashboardDataParams): DashboardDataState {
+export function useDashboardData({
+  wid, tid, view, enabled, globals,
+}: UseDashboardDataParams): DashboardDataState {
   const widgetIds = useMemo(() => persistedWidgetIds(view), [view])
   const idKey = widgetIds.join(',')
+  const globalsKey = useMemo(() => JSON.stringify(globals ?? {}), [globals])
   const query = useQuery({
-    queryKey: ['dashboard-data', String(wid ?? ''), String(tid ?? ''), view?.id ?? 0, view?.updated_at ?? '', idKey],
-    queryFn: () => viewApi.dashboardData(wid!, tid!, view!.id, { widget_ids: widgetIds }),
+    queryKey: [
+      'dashboard-data', String(wid ?? ''), String(tid ?? ''), view?.id ?? 0,
+      view?.updated_at ?? '', idKey, globalsKey,
+    ],
+    queryFn: () => viewApi.dashboardData(wid!, tid!, view!.id, { widget_ids: widgetIds, globals: globals ?? {} }),
     enabled: enabled && !!wid && !!tid && !!view && widgetIds.length > 0,
     staleTime: 60_000,
   })

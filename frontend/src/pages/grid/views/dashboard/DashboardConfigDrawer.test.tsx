@@ -5,12 +5,20 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import type { Field } from '@/api'
 import { renderProviders } from '@/test/render-providers'
 import { makeField } from '@/test/fixtures'
 import DashboardConfigDrawer from './DashboardConfigDrawer'
 import type { DashboardConfig, DashboardWidget } from './dashboardModel'
+
+/** 数据来源表候选 / 目标表字段（P3 跨表，ADR 0023 D8） */
+const tableListMock = vi.hoisted(() => vi.fn())
+const fieldListMock = vi.hoisted(() => vi.fn())
+vi.mock('@/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api')>()
+  return { ...actual, tableApi: { list: tableListMock }, fieldApi: { list: fieldListMock } }
+})
 
 const FIELDS: Field[] = [
   makeField({ id: 1, name: '商品类别', field_type: 'text' }),
@@ -52,6 +60,8 @@ function renderDrawer(overrides?: {
   selectedId?: string | null
   fields?: Field[]
   config?: DashboardConfig
+  workspaceId?: string | number
+  baseTableId?: string | number
 }) {
   const handlers = {
     onClose: vi.fn(),
@@ -69,6 +79,8 @@ function renderDrawer(overrides?: {
       open={overrides?.open ?? true}
       config={overrides?.config ?? CONFIG}
       fields={overrides?.fields ?? FIELDS}
+      workspaceId={overrides?.workspaceId}
+      baseTableId={overrides?.baseTableId}
       selectedId={overrides?.selectedId === undefined ? 'a' : overrides.selectedId}
       {...handlers}
     />,
@@ -177,5 +189,81 @@ describe('DashboardConfigDrawer', () => {
     fireEvent.mouseDown(selects[selects.length - 1])
     fireEvent.click(await screen.findByText('深色', { selector: '.ant-select-item-option-content' }))
     expect(onUpdateSettings).toHaveBeenCalledWith({ theme: 'dark' })
+  })
+})
+
+/** 跨表 chart widget（目标表 id=9） */
+function makeCrossConfig(): DashboardConfig {
+  const chart = makeWidget('c', 'chart', 0)
+  return {
+    ...CONFIG,
+    widgets: [
+      CONFIG.widgets[0],
+      { ...chart, title: '跨表图', query: { ...chart.query, table_id: 9 } } as DashboardWidget,
+    ],
+  }
+}
+
+const TABLES = [{ id: 2, name: '订单表' }, { id: 9, name: '客户表' }]
+
+describe('DashboardConfigDrawer P3 数据来源表', () => {
+  it('候选表排除基表并标记当前表', async () => {
+    tableListMock.mockResolvedValue(TABLES)
+    renderDrawer({ selectedId: 'b', workspaceId: 1, baseTableId: 2 })
+    fireEvent.click(screen.getByRole('tab', { name: '数据' }))
+    const select = await screen.findByTestId('dashboard-source-table')
+    await waitFor(() => expect(tableListMock).toHaveBeenCalledWith(1))
+    fireEvent.mouseDown(select)
+    expect(await screen.findByText('当前表订单表', { selector: '.ant-select-item-option-content' }))
+      .toBeInTheDocument()
+    expect(screen.getByText('客户表', { selector: '.ant-select-item-option-content' })).toBeInTheDocument()
+  })
+
+  it('切换到目标表按该表字段重建数据段并写回 table_id', async () => {
+    tableListMock.mockResolvedValue(TABLES)
+    fieldListMock.mockResolvedValue([
+      makeField({ id: 11, name: '客户', field_type: 'text' }),
+      makeField({ id: 12, name: '合同额', field_type: 'number' }),
+    ])
+    const { onPatchWidget } = renderDrawer({ selectedId: 'b', workspaceId: 1, baseTableId: 2 })
+    fireEvent.click(screen.getByRole('tab', { name: '数据' }))
+    const select = await screen.findByTestId('dashboard-source-table')
+    await waitFor(() => expect(tableListMock).toHaveBeenCalledWith(1))
+    fireEvent.mouseDown(select)
+    fireEvent.click(await screen.findByText('客户表', { selector: '.ant-select-item-option-content' }))
+
+    await waitFor(() => expect(fieldListMock).toHaveBeenCalledWith(1, 9))
+    await waitFor(() => expect(onPatchWidget).toHaveBeenCalled())
+    const updater = onPatchWidget.mock.calls[0][1] as (w: DashboardWidget) => DashboardWidget
+    const next = updater(CONFIG.widgets[1])
+    expect(next.type).toBe('chart')
+    if (next.type !== 'chart') throw new Error('期望 chart widget')
+    expect(next.query.table_id).toBe(9)
+    expect(next.title).toBe('标题-b')
+    expect(next.chart.x).toBe('客户')
+    expect(next.chart.y).toEqual(['合同额'])
+  })
+
+  it('切回基表删除 table_id 并复用基表字段', async () => {
+    tableListMock.mockResolvedValue(TABLES)
+    fieldListMock.mockResolvedValue([makeField({ id: 11, name: '合同额', field_type: 'number' })])
+    const { onPatchWidget } = renderDrawer({
+      config: makeCrossConfig(), selectedId: 'c', workspaceId: 1, baseTableId: 2,
+    })
+    fireEvent.click(screen.getByRole('tab', { name: '数据' }))
+    const select = await screen.findByTestId('dashboard-source-table')
+    await waitFor(() => expect(fieldListMock).toHaveBeenCalledWith(1, 9))
+    await waitFor(() => expect(select).not.toBeDisabled())
+    fireEvent.mouseDown(select)
+    fireEvent.click(await screen.findByText(/当前表/, { selector: '.ant-select-item-option-content' }))
+
+    await waitFor(() => expect(onPatchWidget).toHaveBeenCalled())
+    const updater = onPatchWidget.mock.calls[0][1] as (w: DashboardWidget) => DashboardWidget
+    const next = updater(makeCrossConfig().widgets[1])
+    expect(next.query.table_id).toBeUndefined()
+    expect(next.type).toBe('chart')
+    if (next.type !== 'chart') throw new Error('期望 chart widget')
+    expect(next.chart.x).toBe('商品类别')
+    expect(next.chart.y).toEqual(['销售额'])
   })
 })

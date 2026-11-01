@@ -44,6 +44,8 @@ export interface DashboardSorting {
 }
 
 export interface DashboardQuery {
+  /** 跨表 widget 的目标表 id；缺省表示落在视图所属基表（ADR 0023 P3） */
+  table_id?: number
   filters: DashboardFilter[]
   filter_logic: DashboardFilterLogic
   sortings: DashboardSorting[]
@@ -161,6 +163,31 @@ export class DashboardConfigError extends Error {
 }
 
 const ID_RE = /^[a-zA-Z0-9_-]{1,32}$/
+/** 全局筛选占位符（`{{global.x}}`，ADR 0023 §5-5） */
+export const GLOBAL_REF_RE = /^\{\{global\.([a-zA-Z0-9_-]{1,32})\}\}$/
+
+/** 跨表字段解析器：表 id → 该表字段类型；不可用（越权 / 软删 / 不存在）返回 null */
+export type DashboardTableFieldsResolver = (tableId: number) => FieldTypes | null
+
+export interface DashboardNormalizeOptions {
+  /** 注入后 `query.table_id` 才允许存在；未注入时仍按 P0-P2 口径拒绝 */
+  resolveTableFields?: DashboardTableFieldsResolver
+  /**
+   * 取数路径专用（与后端 `allow_unavailable_targets` 对齐）：目标表不可用时
+   * 跳过该 widget 的字段级校验，把已落库配置原样交给取数层降级为错误卡。
+   */
+  allowUnavailableTargets?: boolean
+}
+
+/** 收集过滤值中引用的全局筛选 id（整串占位符 / 数组元素） */
+export function collectGlobalRefs(value: unknown): string[] {
+  if (typeof value === 'string') {
+    const match = GLOBAL_REF_RE.exec(value)
+    return match ? [match[1]] : []
+  }
+  if (Array.isArray(value)) return value.flatMap(collectGlobalRefs)
+  return []
+}
 const FILTER_OPS = new Set([
   'eq', '=', 'neq', '!=', 'gt', '>', 'gte', '>=', 'lt', '<', 'lte', '<=',
   'in', 'not_in', 'contains', 'starts_with', 'ends_with',
@@ -241,10 +268,49 @@ function normalizeSortings(raw: unknown, path: string, types: FieldTypes | null)
   })
 }
 
-function normalizeQuery(raw: unknown, path: string, types: FieldTypes | null): DashboardQuery {
-  if (raw == null) return { filters: [], filter_logic: 'AND', sortings: [] }
+interface ResolvedQueryTable {
+  tableId?: number
+  /** 目标表字段类型；null 表示不可用（取数路径允许跳过字段校验） */
+  types: FieldTypes | null
+}
+
+/** 解析 `widget.query.table_id`：返回目标表 id 与该表字段类型（与后端同口径） */
+function resolveQueryTable(
+  rawQuery: unknown,
+  path: string,
+  baseTypes: FieldTypes | null,
+  options: DashboardNormalizeOptions | undefined,
+): ResolvedQueryTable {
+  if (!isObj(rawQuery) || !('table_id' in rawQuery)) {
+    return { types: baseTypes }
+  }
+  const id = rawQuery.table_id
+  if (!isInt(id) || id <= 0) throw new DashboardConfigError(`${path}.table_id`, '必须是正整数')
+  const resolver = options?.resolveTableFields
+  if (!resolver) throw new DashboardConfigError(`${path}.table_id`, 'P0-P2 禁止跨表')
+  const fields = resolver(id)
+  if (!fields) {
+    if (!options?.allowUnavailableTargets) {
+      throw new DashboardConfigError(`${path}.table_id`, '目标表不存在或无权限')
+    }
+    // 取数路径：目标表不可用时跳过字段级校验（落库配置已在保存期校验过）
+    return { tableId: id, types: null }
+  }
+  return { tableId: id, types: fields }
+}
+
+function normalizeQuery(
+  raw: unknown,
+  path: string,
+  types: FieldTypes | null,
+  tableId?: number,
+): DashboardQuery {
+  if (raw == null) {
+    const empty: DashboardQuery = { filters: [], filter_logic: 'AND', sortings: [] }
+    if (tableId !== undefined) empty.table_id = tableId
+    return empty
+  }
   if (!isObj(raw)) throw new DashboardConfigError(path, '必须是对象')
-  if ('table_id' in raw) throw new DashboardConfigError(`${path}.table_id`, 'P0-P2 禁止跨表')
   const logic = raw.filter_logic ?? 'AND'
   if (logic !== 'AND' && logic !== 'OR') {
     throw new DashboardConfigError(`${path}.filter_logic`, '必须是 AND/OR')
@@ -254,6 +320,7 @@ function normalizeQuery(raw: unknown, path: string, types: FieldTypes | null): D
     filter_logic: logic,
     sortings: normalizeSortings(raw.sortings, `${path}.sortings`, types),
   }
+  if (tableId !== undefined) query.table_id = tableId
   if (raw.limit != null) query.limit = asInt(raw.limit, `${path}.limit`, 1, 5000)
   return query
 }
@@ -399,7 +466,13 @@ function normalizeTable(raw: unknown, path: string, types: FieldTypes | null): {
   return { columns, row_limit }
 }
 
-function normalizeWidget(raw: unknown, index: number, types: FieldTypes | null, seen: Set<string>): DashboardWidget {
+function normalizeWidget(
+  raw: unknown,
+  index: number,
+  types: FieldTypes | null,
+  seen: Set<string>,
+  options?: DashboardNormalizeOptions,
+): DashboardWidget {
   const path = `widgets[${index}]`
   if (!isObj(raw)) throw new DashboardConfigError(path, '必须是对象')
   const id = raw.id
@@ -427,7 +500,10 @@ function normalizeWidget(raw: unknown, index: number, types: FieldTypes | null, 
   if (title != null && (typeof title !== 'string' || title.length > 200)) {
     throw new DashboardConfigError(`${path}.title`, '必须是长度 ≤200 的字符串')
   }
-  const query = normalizeQuery(raw.query, `${path}.query`, types)
+  // 跨表 widget：先解析目标表字段，再按目标表 schema 校验字段引用（ADR 0023 D8）
+  const resolved = resolveQueryTable(raw.query, `${path}.query`, types, options)
+  const effectiveTypes = resolved.types
+  const query = normalizeQuery(raw.query, `${path}.query`, effectiveTypes, resolved.tableId)
   const base: DashboardWidgetBase = { id, type, title: title as string | undefined, layout, query }
   if (raw.display != null) {
     if (!isObj(raw.display)) throw new DashboardConfigError(`${path}.display`, '必须是对象')
@@ -467,11 +543,11 @@ function normalizeWidget(raw: unknown, index: number, types: FieldTypes | null, 
   }
   switch (type) {
     case 'chart':
-      return { ...base, type, chart: normalizeChart(raw.chart, `${path}.chart`, types) }
+      return { ...base, type, chart: normalizeChart(raw.chart, `${path}.chart`, effectiveTypes) }
     case 'kpi':
-      return { ...base, type, kpi: normalizeKpi(raw.kpi, `${path}.kpi`, types) }
+      return { ...base, type, kpi: normalizeKpi(raw.kpi, `${path}.kpi`, effectiveTypes) }
     case 'table':
-      return { ...base, type, table: normalizeTable(raw.table, `${path}.table`, types) }
+      return { ...base, type, table: normalizeTable(raw.table, `${path}.table`, effectiveTypes) }
     default: {
       if (!isObj(raw.text) || typeof raw.text.content !== 'string'
         || !raw.text.content.trim() || raw.text.content.length > 20000) {
@@ -533,7 +609,11 @@ function normalizeCanvas(raw: Raw): DashboardCanvas {
 }
 
 /** 解析并归一 dashboard 配置；`fields` 传入时同时校验字段存在与角色类型 */
-export function normalizeDashboard(raw: unknown, fields?: Field[]): DashboardConfig {
+export function normalizeDashboard(
+  raw: unknown,
+  fields?: Field[],
+  options?: DashboardNormalizeOptions,
+): DashboardConfig {
   if (raw == null) raw = {}
   if (!isObj(raw)) throw new DashboardConfigError('root', 'dashboard 配置必须是对象')
   const types: FieldTypes | null = fields ? new Map(fields.map((f) => [f.name, f.field_type])) : null
@@ -546,8 +626,22 @@ export function normalizeDashboard(raw: unknown, fields?: Field[]): DashboardCon
     throw new DashboardConfigError('widgets', `最多 ${MAX_DASHBOARD_WIDGETS} 个`)
   }
   const seen = new Set<string>()
-  const widgets = rawWidgets.map((item, i) => normalizeWidget(item, i, types, seen))
+  const widgets = rawWidgets.map((item, i) => normalizeWidget(item, i, types, seen, options))
   const global_filters = normalizeGlobalFilters(raw.global_filters, types)
+  // 占位符必须指向已声明的全局筛选（ADR 0023 §5-5）
+  const knownGlobals = new Set(global_filters.map((f) => f.id))
+  widgets.forEach((widget, index) => {
+    widget.query.filters.forEach((rule, fIndex) => {
+      for (const ref of collectGlobalRefs(rule.value)) {
+        if (!knownGlobals.has(ref)) {
+          throw new DashboardConfigError(
+            `widgets[${index}].query.filters[${fIndex}].value`,
+            `引用了未声明的全局筛选 (${ref})`,
+          )
+        }
+      }
+    })
+  })
   const settingsRaw = raw.settings
   if (settingsRaw != null && !isObj(settingsRaw)) throw new DashboardConfigError('settings', '必须是对象')
   const settingsObj = (isObj(settingsRaw) ? settingsRaw : {}) as Raw

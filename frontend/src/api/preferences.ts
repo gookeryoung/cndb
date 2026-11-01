@@ -1,7 +1,12 @@
 /** 用户偏好 API — /api/v1/accounts/preferences/*（ADR 0021：主页收藏视图与自定义顺序） */
 
 import api from './client'
-import type { FavoriteViewSummary, UserPreferences } from './types'
+import type {
+  DashboardTemplate,
+  DashboardTemplateSavePayload,
+  FavoriteViewSummary,
+  UserPreferences,
+} from './types'
 
 export const preferencesApi = {
   /** 当前用户完整偏好（激活视图 + 工作区顺序 + 收藏视图 id） */
@@ -24,4 +29,15 @@ export const preferencesApi = {
         workspace_ids: workspaceIds.map(Number),
       })
       .then(r => r.data),
+  /** dashboard 模板列表（新保存的在前；ADR 0023 P3） */
+  listDashboardTemplates: () =>
+    api.get<DashboardTemplate[]>('/v1/accounts/preferences/dashboard-templates').then(r => r.data),
+  /** 另存为模板；同名模板原地覆盖（保留 id） */
+  saveDashboardTemplate: (payload: DashboardTemplateSavePayload) =>
+    api
+      .post<DashboardTemplate>('/v1/accounts/preferences/dashboard-templates', payload)
+      .then(r => r.data),
+  /** 删除模板；后端不存在返回 404 */
+  deleteDashboardTemplate: (templateId: string) =>
+    api.delete(`/v1/accounts/preferences/dashboard-templates/${encodeURIComponent(templateId)}`),
 }

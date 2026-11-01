@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
@@ -15,9 +15,12 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.accounts.services.preferences import (
+    delete_dashboard_template,
     ensure_preferences,
+    list_dashboard_templates,
     load_favorite_view_summaries,
     read_ordered_ids,
+    save_dashboard_template,
     set_favorite_views,
     set_workspace_order,
 )
@@ -104,6 +107,26 @@ class ActiveViewResponse(BaseModel):
     active_view_id: int | None
 
 
+class DashboardTemplateItem(BaseModel):
+    """dashboard 模板（结构 + 字段名/类型快照，不含来源表）."""
+
+    id: str
+    name: str
+    updated_at: str = ""
+    config: dict[str, Any]
+    fields: dict[str, str] = Field(default_factory=dict)
+
+
+class DashboardTemplateSave(BaseModel):
+    """另存 / 覆盖同名 dashboard 模板."""
+
+    model_config = ConfigDict(strict=True)
+
+    name: str = Field(description="模板名称，1..60 字符；同名覆盖")
+    config: dict[str, Any] = Field(description="dashboard 配置（后端统一剥离 query.table_id）")
+    fields: dict[str, str] | None = Field(default=None, description="字段名 -> 字段类型快照")
+
+
 # ── 辅助函数 ──
 
 
@@ -180,6 +203,39 @@ def replace_workspace_order(
     """全量替换主页工作区顺序；非成员工作区 id 静默丢弃."""
     user = _ensure_authenticated(current_user)
     return {"workspace_ids": set_workspace_order(db, user, payload.workspace_ids)}
+
+
+@router.get("/dashboard-templates", response_model=list[DashboardTemplateItem])
+def list_dashboard_template_endpoint(
+    current_user: Annotated[object | None, Depends(get_current_user)],
+) -> list[dict[str, Any]]:
+    """返回当前用户的 dashboard 模板（新保存的在前）."""
+    user = _ensure_authenticated(current_user)
+    return list_dashboard_templates(user)
+
+
+@router.post("/dashboard-templates", response_model=DashboardTemplateItem)
+def save_dashboard_template_endpoint(
+    payload: DashboardTemplateSave,
+    current_user: Annotated[object | None, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """另存为模板；同名模板原地覆盖（保留 id），超上限 / 超体积 400."""
+    user = _ensure_authenticated(current_user)
+    return save_dashboard_template(db, user, name=payload.name, config=payload.config, fields=payload.fields)
+
+
+@router.delete("/dashboard-templates/{template_id}", status_code=204, response_class=Response)
+def delete_dashboard_template_endpoint(
+    template_id: str,
+    current_user: Annotated[object | None, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """删除模板；不存在返回 404（不区分他人的模板 id）."""
+    user = _ensure_authenticated(current_user)
+    if not delete_dashboard_template(db, user, template_id):
+        raise HTTPException(status_code=404, detail="模板不存在")
+    return Response(status_code=204)
 
 
 @router.get("/tables/{table_id}/active-view", response_model=ActiveViewResponse)

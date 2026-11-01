@@ -26,6 +26,7 @@ from cndb.plugins.tables.services.core.dashboard_data import (
     build_radar_dataset,
     build_scatter_dataset,
     build_treemap_dataset,
+    resolve_query_globals,
 )
 from cndb.plugins.tables.services.core.records import create_row
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
@@ -279,6 +280,34 @@ def test_radar_funnel_gauge_treemap_heatmap_shapes() -> None:
     assert heatmap["max"] == 130
 
 
+def test_resolve_query_globals_replaces_and_drops() -> None:
+    """占位符解析：有值改写为日期区间，缺值丢弃并计数（ADR 0023 P3）."""
+    query = {
+        "filters": [
+            {"field_name": "日期", "op": "date_range", "value": "{{global.range}}"},
+            {"field_name": "商品类别", "op": "eq", "value": "数码"},
+        ],
+        "filter_logic": "AND",
+        "sortings": [],
+    }
+    resolved, unapplied = resolve_query_globals(query, {"range": {"from": "2026-01-01", "to": "2026-01-31"}})
+    assert unapplied == 0
+    assert resolved["filters"][0]["value"] == ["2026-01-01", "2026-01-31"]
+    assert resolved["filters"][1]["value"] == "数码"
+
+    resolved, unapplied = resolve_query_globals(query, {})
+    assert unapplied == 1
+    assert resolved["filters"] == [{"field_name": "商品类别", "op": "eq", "value": "数码"}]
+
+
+def test_resolve_query_globals_keeps_plain_values() -> None:
+    """无占位符的查询原样返回（避免无谓拷贝）."""
+    query = {"filters": [{"field_name": "销售额", "op": ">=", "value": 40}], "filter_logic": "AND", "sortings": []}
+    resolved, unapplied = resolve_query_globals(query, {"unused": "x"})
+    assert unapplied == 0
+    assert resolved == query
+
+
 # ── API 层 ─────────────────────────────────────────────
 
 
@@ -343,6 +372,44 @@ class TestDashboardDataAPI:
         assert r.status_code == 200
         assert r.json()["items"][0]["dataset"]["value"] == 130
         assert r.json()["items"][0]["meta"]["scanned"] == 2
+
+    def test_widget_global_placeholder_applied_and_flagged(self, client, ws, table, auth_owner):
+        """widget 级 `{{global.x}}`：有值时生效，缺值时丢弃并标记未应用."""
+        options = {
+            "widgets": [
+                {
+                    "id": "filtered",
+                    "type": "kpi",
+                    "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
+                    "kpi": {"value": {"field": "销售额", "agg": "sum"}},
+                    "query": {"filters": [{"field_name": "日期", "op": "date_range", "value": "{{global.range}}"}]},
+                }
+            ],
+            "global_filters": [{"id": "range", "kind": "date_range", "field": "日期"}],
+        }
+        created = client.post(
+            _url(ws, table),
+            json={"name": "全局占位符", "view_type": "dashboard", "view_options": options},
+            headers=auth_owner,
+        )
+        assert created.status_code == 201, created.text
+        view = created.json()
+        with_value = _data(
+            client,
+            ws,
+            table,
+            view,
+            auth_owner,
+            {"globals": {"range": ["2026-01-01", "2026-01-31"]}},
+        ).json()
+        item = with_value["items"][0]
+        assert item["dataset"]["value"] == 130
+        assert item["meta"]["unapplied_globals"] == 0
+
+        without_value = _data(client, ws, table, view, auth_owner, {}).json()
+        item = without_value["items"][0]
+        assert item["dataset"]["value"] == 410
+        assert item["meta"]["unapplied_globals"] == 1
 
     def test_widget_query_filter_and_top_n(self, client, ws, table, auth_owner, db):
         options = {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -11,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
+from cndb.core.errors import CndbError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.models import (
     KNOWN_VIEW_TYPES,
@@ -33,7 +35,10 @@ from cndb.plugins.tables.schemas import (
     ViewVisibilityUpdate,
 )
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
-from cndb.plugins.tables.services.core.dashboard_config import normalize_dashboard_config
+from cndb.plugins.tables.services.core.dashboard_config import (
+    TableFieldsResolver,
+    normalize_dashboard_config,
+)
 from cndb.plugins.tables.services.core.dashboard_data import build_dashboard_data
 from cndb.plugins.tables.services.core.view_access import (
     ViewAction,
@@ -58,7 +63,45 @@ router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/views", tags=["view
 _SHARED_ONLY_DETAIL = "仅「指定成员」档视图可设置共享名单"
 
 
-def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[bool, str | None]:
+def _dashboard_fields_resolver(
+    db: Session,
+    workspace_id: int,
+    user: User,
+) -> TableFieldsResolver:
+    """构造跨表 widget 的目标表字段解析器（ADR 0023 D8）.
+
+    按 ``widget.query.table_id`` 逐表做 ``READ`` 鉴权并读取字段定义；目标表
+    不存在 / 无权限 / 已软删统一返回 ``None``，由 ``normalize_dashboard_config``
+    转成 400。结果按 table_id 缓存，同一张表在一次请求内只查一遍。
+    """
+    cache: dict[int, dict[str, str] | None] = {}
+
+    def resolve(target_id: int) -> Mapping[str, str] | None:
+        if target_id not in cache:
+            try:
+                target = get_table_or_404(target_id, workspace_id, db, user=user, action=TableAction.READ)
+            except (HTTPException, CndbError):
+                # 404（不存在/跨工作区）与 403（业务异常 PermissionDeniedError）同口径
+                cache[target_id] = None
+            else:
+                cache[target_id] = (
+                    None
+                    if target.trashed_at is not None
+                    else {
+                        f.name: f.field_type for f in db.query(DataField).filter(DataField.table_id == target_id).all()
+                    }
+                )
+        return cache[target_id]
+
+    return resolve
+
+
+def _validate_view_fields(
+    vc: ViewCreate,
+    table_id: int,
+    db: Session,
+    table_fields_resolver: TableFieldsResolver | None = None,
+) -> tuple[bool, str | None]:
     """校验视图配置里引用的所有 field_name 是否在目标表存在."""
     if vc.view_type not in KNOWN_VIEW_TYPES:
         return False, f"view_type='{vc.view_type}' 不在支持范围内"
@@ -133,6 +176,7 @@ def _validate_view_fields(vc: ViewCreate, table_id: int, db: Session) -> tuple[b
         config, err = normalize_dashboard_config(
             vc.view_options,
             {name: field.field_type for name, field in field_defs.items()},
+            table_fields_resolver,
         )
         if err or config is None:
             return False, f"dashboard 配置校验失败: {err or '未知错误'}"
@@ -286,7 +330,7 @@ def create_view(
     if _scoped_name_conflict(db, table_id, scope_key, payload.name):
         raise HTTPException(status_code=400, detail="视图名已存在")
 
-    ok, err = _validate_view_fields(payload, table_id, db)
+    ok, err = _validate_view_fields(payload, table_id, db, _dashboard_fields_resolver(db, workspace_id, current_user))
     if not ok:
         raise HTTPException(status_code=400, detail=f"视图字段校验失败: {err}")
 
@@ -319,6 +363,8 @@ def import_views(
     }
     created: list[DataView] = []
     skipped: list[str] = []
+    # 跨表 widget 的目标表字段解析（一次导入内共享缓存，ADR 0023 D8）
+    dashboard_resolver = _dashboard_fields_resolver(db, workspace_id, current_user)
 
     # 导入者无 EDIT_VIEWS → 只能落 private 档（与 create_view 的 D4 门槛一致）
     can_edit_views = check_action(db, dt, current_user, TableAction.EDIT_VIEWS)
@@ -335,7 +381,7 @@ def import_views(
         if (scope_key, vc.name) in existing_keys:
             skipped.append(f"已存在: {vc.name}")
             continue
-        ok, err = _validate_view_fields(vc, table_id, db)
+        ok, err = _validate_view_fields(vc, table_id, db, dashboard_resolver)
         if not ok:
             skipped.append(f"跳过 {vc.name}: {err}")
             continue
@@ -483,7 +529,11 @@ def update_view(
     if effective_type == "dashboard":
         effective_options = payload.view_options if payload.view_options is not None else dv.view_options
         field_defs = {f.name: f.field_type for f in db.query(DataField).filter(DataField.table_id == table_id).all()}
-        config, err = normalize_dashboard_config(effective_options, field_defs)
+        config, err = normalize_dashboard_config(
+            effective_options,
+            field_defs,
+            _dashboard_fields_resolver(db, workspace_id, current_user),
+        )
         if err:
             raise HTTPException(status_code=400, detail=f"视图字段校验失败: dashboard 配置校验失败: {err}")
         if payload.view_options is not None:
@@ -527,7 +577,13 @@ def dashboard_data(
     if dv.view_type != "dashboard":
         raise HTTPException(status_code=400, detail="仅 dashboard 视图支持批量取数")
     field_defs = {f.name: f.field_type for f in db.query(DataField).filter(DataField.table_id == table_id).all()}
-    config, err = normalize_dashboard_config(dv.view_options, field_defs)
+    config, err = normalize_dashboard_config(
+        dv.view_options,
+        field_defs,
+        _dashboard_fields_resolver(db, workspace_id, current_user),
+        # 取数路径：目标表不可用（越权 / 软删 / 删除）降级为错误卡，不整页 400
+        allow_unavailable_targets=True,
+    )
     if err or config is None:
         raise HTTPException(status_code=400, detail=f"dashboard 配置校验失败: {err}")
     return build_dashboard_data(

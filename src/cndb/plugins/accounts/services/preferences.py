@@ -17,7 +17,10 @@
 
 from __future__ import annotations
 
+import json
+import uuid
 from collections.abc import Iterable
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -36,6 +39,15 @@ MAX_FAVORITE_VIEWS = 50
 
 #: 偏好中需要保持有序数组结构的键
 ORDER_KEYS = ("workspace_order", "favorite_views")
+
+#: dashboard 模板存储键（ADR 0023 P3：per-user，复用 preferences，零迁移）
+DASHBOARD_TEMPLATES_KEY = "dashboard_templates"
+#: 每用户模板数量上限
+MAX_DASHBOARD_TEMPLATES = 20
+#: 单个模板序列化后的体积上限（配置最多 32 个 widget，200KB 足够）
+MAX_DASHBOARD_TEMPLATE_BYTES = 200_000
+#: 模板名称长度上限
+MAX_DASHBOARD_TEMPLATE_NAME = 60
 
 
 def normalize_ids(raw: Iterable[Any] | None) -> list[int]:
@@ -67,6 +79,10 @@ def ensure_preferences(user: User) -> None:
         if not isinstance(prefs.get(key), list):
             prefs[key] = []
             changed = True
+    if not isinstance(prefs.get(DASHBOARD_TEMPLATES_KEY), list):
+        empty_templates: list[Any] = []
+        prefs[DASHBOARD_TEMPLATES_KEY] = empty_templates
+        changed = True
     if changed:
         flag_modified(user, "preferences")
 
@@ -221,14 +237,156 @@ def load_favorite_view_summaries(db: Session, user: User) -> list[dict[str, Any]
     return [by_id[item] for item in ids if item in by_id]
 
 
+# ── dashboard 模板（ADR 0023 P3） ─────────────────────
+
+
+def _clean_template_fields(raw: Any) -> dict[str, str]:
+    """模板字段快照：字段名 -> 字段类型（非法项丢弃，最多 200 项）."""
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not key or not isinstance(value, str):
+            continue
+        out[key] = value
+        if len(out) >= 200:
+            break
+    return out
+
+
+def _strip_template_table_ids(config: dict[str, Any]) -> dict[str, Any]:
+    """剥离模板中每个 widget 的 ``query.table_id``（模板是结构，不含来源表）."""
+    widgets = config.get("widgets")
+    if not isinstance(widgets, list):
+        return config
+    cleaned: list[Any] = []
+    for widget in widgets:
+        if isinstance(widget, dict) and isinstance(widget.get("query"), dict):
+            item = dict(widget)
+            item["query"] = {k: v for k, v in widget["query"].items() if k != "table_id"}
+            cleaned.append(item)
+        else:
+            cleaned.append(widget)
+    return {**config, "widgets": cleaned}
+
+
+def _read_templates(user: User) -> list[dict[str, Any]]:
+    """读取并规范化模板列表（丢弃结构损坏条目，不回写）."""
+    ensure_preferences(user)
+    raw = user.preferences.get(DASHBOARD_TEMPLATES_KEY) or []
+    out: list[dict[str, Any]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        template_id = item.get("id")
+        name = item.get("name")
+        config = item.get("config")
+        if not isinstance(template_id, str) or not template_id:
+            continue
+        if not isinstance(name, str) or not name:
+            continue
+        if not isinstance(config, dict):
+            continue
+        out.append(
+            {
+                "id": template_id,
+                "name": name[:MAX_DASHBOARD_TEMPLATE_NAME],
+                "updated_at": str(item.get("updated_at") or ""),
+                "config": config,
+                "fields": _clean_template_fields(item.get("fields")),
+            }
+        )
+    return out
+
+
+def list_dashboard_templates(user: User) -> list[dict[str, Any]]:
+    """当前用户的全部 dashboard 模板（新保存的排在前面）."""
+    return _read_templates(user)
+
+
+def save_dashboard_template(
+    db: Session,
+    user: User,
+    *,
+    name: str,
+    config: dict[str, Any],
+    fields: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """另存 / 覆盖同名模板，返回落库后的模板.
+
+    同名模板原地覆盖（保留 id，刷新 ``updated_at``），超出数量上限 400。
+    模板只存「结构 + 字段名/类型快照」，后端统一剥离 ``query.table_id``，
+    避免模板把来源表硬编码进去；落地时由前端按目标表重新认领字段。
+    """
+    clean_name = (name or "").strip()
+    if not clean_name or len(clean_name) > MAX_DASHBOARD_TEMPLATE_NAME:
+        raise HTTPException(
+            status_code=400,
+            detail=f"模板名称必须是 1..{MAX_DASHBOARD_TEMPLATE_NAME} 个字符",
+        )
+    if not isinstance(config, dict) or not isinstance(config.get("widgets"), list):
+        raise HTTPException(status_code=400, detail="模板配置必须是含 widgets 数组的对象")
+    if len(config["widgets"]) > 32:
+        raise HTTPException(status_code=400, detail="模板配置最多 32 个组件")
+    clean_fields = _clean_template_fields(fields)
+    payload = {
+        "name": clean_name,
+        "config": _strip_template_table_ids(config),
+        "fields": clean_fields,
+        "updated_at": datetime.now(UTC).isoformat(),
+    }
+    try:
+        encoded = json.dumps(payload, ensure_ascii=False).encode()
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="模板配置无法序列化为 JSON") from exc
+    if len(encoded) > MAX_DASHBOARD_TEMPLATE_BYTES:
+        raise HTTPException(status_code=400, detail="模板配置体积超出上限")
+
+    templates = _read_templates(user)
+    existing = next((item for item in templates if item["name"] == clean_name), None)
+    if existing is None and len(templates) >= MAX_DASHBOARD_TEMPLATES:
+        raise HTTPException(status_code=400, detail=f"最多保存 {MAX_DASHBOARD_TEMPLATES} 个模板")
+    template_id = existing["id"] if existing else uuid.uuid4().hex[:12]
+    stored = {"id": template_id, **payload}
+    if existing is not None:
+        templates = [stored if item["id"] == template_id else item for item in templates]
+    else:
+        templates = [stored, *templates]
+    ensure_preferences(user)
+    user.preferences[DASHBOARD_TEMPLATES_KEY] = templates
+    flag_modified(user, "preferences")
+    db.commit()
+    return stored
+
+
+def delete_dashboard_template(db: Session, user: User, template_id: str) -> bool:
+    """删除模板；不存在返回 False（由路由转 404）."""
+    templates = _read_templates(user)
+    remaining = [item for item in templates if item["id"] != template_id]
+    if len(remaining) == len(templates):
+        return False
+    ensure_preferences(user)
+    user.preferences[DASHBOARD_TEMPLATES_KEY] = remaining
+    flag_modified(user, "preferences")
+    db.commit()
+    return True
+
+
 __all__ = [
+    "DASHBOARD_TEMPLATES_KEY",
+    "MAX_DASHBOARD_TEMPLATES",
+    "MAX_DASHBOARD_TEMPLATE_BYTES",
+    "MAX_DASHBOARD_TEMPLATE_NAME",
     "MAX_FAVORITE_VIEWS",
+    "delete_dashboard_template",
     "ensure_preferences",
     "filter_favorite_view_ids",
+    "list_dashboard_templates",
     "load_favorite_view_summaries",
     "normalize_ids",
     "prune_favorite_views",
     "read_ordered_ids",
+    "save_dashboard_template",
     "set_favorite_views",
     "set_workspace_order",
 ]

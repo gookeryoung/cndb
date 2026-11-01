@@ -125,6 +125,8 @@ export interface DashboardDataMeta {
   total: number
   truncated: boolean
   cached: boolean
+  /** 因缺值被忽略的全局筛选条件数（ADR 0023 P3） */
+  unapplied_globals?: number
 }
 
 export interface DashboardDataItem {

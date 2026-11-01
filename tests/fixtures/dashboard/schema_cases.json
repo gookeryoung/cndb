@@ -23,9 +23,24 @@
             "id": "sales-by-category",
             "type": "chart",
             "title": "各类目销售额",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 10},
-            "query": {"filters": [], "sortings": []},
-            "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"], "agg": "sum"}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 10
+            },
+            "query": {
+              "filters": [],
+              "sortings": []
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ],
+              "agg": "sum"
+            }
           }
         ]
       }
@@ -37,18 +52,29 @@
           {
             "id": "trend",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 12, "h": 10},
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 10
+            },
             "chart": {
               "type": "line",
               "x": "日期",
-              "y": ["销售额", "数量"],
+              "y": [
+                "销售额",
+                "数量"
+              ],
               "series": "支付方式",
               "agg": "sum",
               "stack": "percent",
               "sort": "desc",
               "top_n": 10,
               "dual_axis": true,
-              "format": {"unit": "元", "decimals": 2}
+              "format": {
+                "unit": "元",
+                "decimals": 2
+              }
             }
           }
         ]
@@ -61,8 +87,19 @@
           {
             "id": "pie",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 4, "h": 8},
-            "chart": {"type": "pie", "x": "商品类别", "y": ["销售额"]}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 4,
+              "h": 8
+            },
+            "chart": {
+              "type": "pie",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ]
+            }
           }
         ]
       }
@@ -74,8 +111,20 @@
           {
             "id": "scatter",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "scatter", "x": "数量", "y": ["销售额"], "agg": "sum"}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "scatter",
+              "x": "数量",
+              "y": [
+                "销售额"
+              ],
+              "agg": "sum"
+            }
           }
         ]
       }
@@ -87,8 +136,18 @@
           {
             "id": "hist",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "histogram", "y": ["销售额"]}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "histogram",
+              "y": [
+                "销售额"
+              ]
+            }
           }
         ]
       }
@@ -100,8 +159,19 @@
           {
             "id": "box",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "boxplot", "x": "商品类别", "y": ["销售额"]}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "boxplot",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ]
+            }
           }
         ]
       }
@@ -113,11 +183,27 @@
           {
             "id": "kpi-sales",
             "type": "kpi",
-            "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 3,
+              "h": 4
+            },
             "kpi": {
-              "value": {"field": "销售额", "agg": "sum"},
-              "compare": {"mode": "prev_period", "date_field": "日期", "granularity": "month"},
-              "sparkline": {"field": "销售额", "agg": "sum", "points": 12}
+              "value": {
+                "field": "销售额",
+                "agg": "sum"
+              },
+              "compare": {
+                "mode": "prev_period",
+                "date_field": "日期",
+                "granularity": "month"
+              },
+              "sparkline": {
+                "field": "销售额",
+                "agg": "sum",
+                "points": 12
+              }
             }
           }
         ]
@@ -130,8 +216,18 @@
           {
             "id": "kpi-count",
             "type": "kpi",
-            "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
-            "kpi": {"value": {"field": "订单号", "agg": "count"}}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 3,
+              "h": 4
+            },
+            "kpi": {
+              "value": {
+                "field": "订单号",
+                "agg": "count"
+              }
+            }
           }
         ]
       }
@@ -143,8 +239,15 @@
           {
             "id": "note",
             "type": "text",
-            "layout": {"x": 0, "y": 0, "w": 12, "h": 3},
-            "text": {"content": "口径说明：销售额按订单金额汇总，含退款。"}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "口径说明：销售额按订单金额汇总，含退款。"
+            }
           }
         ]
       }
@@ -156,8 +259,20 @@
           {
             "id": "detail",
             "type": "table",
-            "layout": {"x": 0, "y": 0, "w": 12, "h": 10},
-            "table": {"columns": ["订单号", "商品类别", "销售额"], "row_limit": 20}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 10
+            },
+            "table": {
+              "columns": [
+                "订单号",
+                "商品类别",
+                "销售额"
+              ],
+              "row_limit": 20
+            }
           }
         ]
       }
@@ -176,11 +291,27 @@
       "config": {
         "widgets": [],
         "global_filters": [
-          {"id": "date", "kind": "date_range", "field": "日期", "label": "日期"},
-          {"id": "pay", "kind": "select", "field": "支付方式"},
-          {"id": "kw", "kind": "search", "field": "商品类别"}
+          {
+            "id": "date",
+            "kind": "date_range",
+            "field": "日期",
+            "label": "日期"
+          },
+          {
+            "id": "pay",
+            "kind": "select",
+            "field": "支付方式"
+          },
+          {
+            "id": "kw",
+            "kind": "search",
+            "field": "商品类别"
+          }
         ],
-        "settings": {"refresh_interval": 30, "theme": "light"}
+        "settings": {
+          "refresh_interval": 30,
+          "theme": "light"
+        }
       }
     },
     {
@@ -192,8 +323,15 @@
             "id": "trim",
             "type": "text",
             "unknown_widget": "x",
-            "layout": {"x": 0, "y": 0, "w": 12, "h": 3},
-            "text": {"content": "说明"}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "说明"
+            }
           }
         ]
       }
@@ -205,17 +343,44 @@
           {
             "id": "filtered",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
             "query": {
               "filters": [
-                {"field_name": "销售额", "op": ">=", "value": 100},
-                {"field_name": "商品类别", "op": "in", "value": ["数码", "家电"]}
+                {
+                  "field_name": "销售额",
+                  "op": ">=",
+                  "value": 100
+                },
+                {
+                  "field_name": "商品类别",
+                  "op": "in",
+                  "value": [
+                    "数码",
+                    "家电"
+                  ]
+                }
               ],
               "filter_logic": "OR",
-              "sortings": [{"field_name": "销售额", "direction": "desc"}],
+              "sortings": [
+                {
+                  "field_name": "销售额",
+                  "direction": "desc"
+                }
+              ],
               "limit": 200
             },
-            "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"]}
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ]
+            }
           }
         ]
       }
@@ -227,14 +392,41 @@
           {
             "id": "area",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "area", "x": "日期", "y": ["销售额", "数量"], "series": "支付方式", "stack": "percent"}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "area",
+              "x": "日期",
+              "y": [
+                "销售额",
+                "数量"
+              ],
+              "series": "支付方式",
+              "stack": "percent"
+            }
           },
           {
             "id": "stack",
             "type": "chart",
-            "layout": {"x": 6, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "stack", "x": "商品类别", "y": ["销售额"], "series": "支付方式", "agg": "sum"}
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "stack",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ],
+              "series": "支付方式",
+              "agg": "sum"
+            }
           }
         ]
       }
@@ -246,14 +438,41 @@
           {
             "id": "combo",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "combo", "x": "日期", "y": ["销售额", "数量"], "dual_axis": true, "agg": "sum"}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "combo",
+              "x": "日期",
+              "y": [
+                "销售额",
+                "数量"
+              ],
+              "dual_axis": true,
+              "agg": "sum"
+            }
           },
           {
             "id": "radar",
             "type": "chart",
-            "layout": {"x": 6, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "radar", "x": "商品类别", "y": ["销售额", "数量"], "series": "支付方式"}
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "radar",
+              "x": "商品类别",
+              "y": [
+                "销售额",
+                "数量"
+              ],
+              "series": "支付方式"
+            }
           }
         ]
       }
@@ -265,14 +484,42 @@
           {
             "id": "funnel",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "funnel", "x": "商品类别", "y": ["销售额"], "sort": "y_desc", "top_n": 5}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "funnel",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ],
+              "sort": "y_desc",
+              "top_n": 5
+            }
           },
           {
             "id": "gauge",
             "type": "chart",
-            "layout": {"x": 6, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "gauge", "y": ["销售额"], "agg": "sum", "target": 100000, "format": {"unit": "元"}}
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "gauge",
+              "y": [
+                "销售额"
+              ],
+              "agg": "sum",
+              "target": 100000,
+              "format": {
+                "unit": "元"
+              }
+            }
           }
         ]
       }
@@ -284,14 +531,38 @@
           {
             "id": "heatmap",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "heatmap", "x": "商品类别", "series": "支付方式", "y": ["销售额"]}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "heatmap",
+              "x": "商品类别",
+              "series": "支付方式",
+              "y": [
+                "销售额"
+              ]
+            }
           },
           {
             "id": "treemap",
             "type": "chart",
-            "layout": {"x": 6, "y": 0, "w": 6, "h": 8},
-            "chart": {"type": "treemap", "x": "商品类别", "series": "支付方式", "y": ["销售额"]}
+            "layout": {
+              "x": 6,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "treemap",
+              "x": "商品类别",
+              "series": "支付方式",
+              "y": [
+                "销售额"
+              ]
+            }
           }
         ]
       }
@@ -303,9 +574,76 @@
           {
             "id": "median",
             "type": "chart",
-            "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-            "display": {"thresholds": [{"value": 100, "color": "#52c41a"}, {"value": 500, "color": "#fa8c16"}]},
-            "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"], "agg": "median", "sort": "x_desc"}
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "display": {
+              "thresholds": [
+                {
+                  "value": 100,
+                  "color": "#52c41a"
+                },
+                {
+                  "value": 500,
+                  "color": "#fa8c16"
+                }
+              ]
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ],
+              "agg": "median",
+              "sort": "x_desc"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "全局筛选占位符",
+      "config": {
+        "schema_version": 1,
+        "widgets": [
+          {
+            "id": "filtered",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "query": {
+              "filters": [
+                {
+                  "field_name": "日期",
+                  "op": "date_range",
+                  "value": "{{global.range}}"
+                }
+              ]
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ],
+              "agg": "sum"
+            }
+          }
+        ],
+        "global_filters": [
+          {
+            "id": "range",
+            "kind": "date_range",
+            "field": "日期",
+            "label": "时间范围"
           }
         ]
       }
@@ -314,270 +652,1172 @@
   "invalid": [
     {
       "name": "schema_version 仅支持 1",
-      "config": {"schema_version": 2},
+      "config": {
+        "schema_version": 2
+      },
       "path": "schema_version"
     },
     {
       "name": "widgets 必须是数组",
-      "config": {"widgets": {}},
+      "config": {
+        "widgets": {}
+      },
       "path": "widgets"
     },
     {
       "name": "widget 数量上限",
-      "config": {"widgets": [
-        {"id": "w0", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w1", "type": "text", "layout": {"x": 0, "y": 3, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w2", "type": "text", "layout": {"x": 0, "y": 6, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w3", "type": "text", "layout": {"x": 0, "y": 9, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w4", "type": "text", "layout": {"x": 0, "y": 12, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w5", "type": "text", "layout": {"x": 0, "y": 15, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w6", "type": "text", "layout": {"x": 0, "y": 18, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w7", "type": "text", "layout": {"x": 0, "y": 21, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w8", "type": "text", "layout": {"x": 0, "y": 24, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w9", "type": "text", "layout": {"x": 0, "y": 27, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w10", "type": "text", "layout": {"x": 0, "y": 30, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w11", "type": "text", "layout": {"x": 0, "y": 33, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w12", "type": "text", "layout": {"x": 0, "y": 36, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w13", "type": "text", "layout": {"x": 0, "y": 39, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w14", "type": "text", "layout": {"x": 0, "y": 42, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w15", "type": "text", "layout": {"x": 0, "y": 45, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w16", "type": "text", "layout": {"x": 0, "y": 48, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w17", "type": "text", "layout": {"x": 0, "y": 51, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w18", "type": "text", "layout": {"x": 0, "y": 54, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w19", "type": "text", "layout": {"x": 0, "y": 57, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w20", "type": "text", "layout": {"x": 0, "y": 60, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w21", "type": "text", "layout": {"x": 0, "y": 63, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w22", "type": "text", "layout": {"x": 0, "y": 66, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w23", "type": "text", "layout": {"x": 0, "y": 69, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w24", "type": "text", "layout": {"x": 0, "y": 72, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w25", "type": "text", "layout": {"x": 0, "y": 75, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w26", "type": "text", "layout": {"x": 0, "y": 78, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w27", "type": "text", "layout": {"x": 0, "y": 81, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w28", "type": "text", "layout": {"x": 0, "y": 84, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w29", "type": "text", "layout": {"x": 0, "y": 87, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w30", "type": "text", "layout": {"x": 0, "y": 90, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w31", "type": "text", "layout": {"x": 0, "y": 93, "w": 12, "h": 3}, "text": {"content": "x"}},
-        {"id": "w32", "type": "text", "layout": {"x": 0, "y": 96, "w": 12, "h": 3}, "text": {"content": "x"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "w0",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w1",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 3,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w2",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 6,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w3",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 9,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w4",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 12,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w5",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 15,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w6",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 18,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w7",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 21,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w8",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 24,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w9",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 27,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w10",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 30,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w11",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 33,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w12",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 36,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w13",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 39,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w14",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 42,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w15",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 45,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w16",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 48,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w17",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 51,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w18",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 54,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w19",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 57,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w20",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 60,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w21",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 63,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w22",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 66,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w23",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 69,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w24",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 72,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w25",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 75,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w26",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 78,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w27",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 81,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w28",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 84,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w29",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 87,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w30",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 90,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w31",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 93,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          },
+          {
+            "id": "w32",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 96,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "x"
+            }
+          }
+        ]
+      },
       "path": "widgets"
     },
     {
       "name": "widget id 重复",
-      "config": {"widgets": [
-        {"id": "dup", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "text": {"content": "a"}},
-        {"id": "dup", "type": "text", "layout": {"x": 0, "y": 3, "w": 12, "h": 3}, "text": {"content": "b"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "dup",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "a"
+            }
+          },
+          {
+            "id": "dup",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 3,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "b"
+            }
+          }
+        ]
+      },
       "path": "widgets[1].id"
     },
     {
       "name": "widget id 非法字符",
-      "config": {"widgets": [
-        {"id": "有 中文", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "text": {"content": "a"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "有 中文",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "a"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].id"
     },
     {
       "name": "widget 类型未知",
-      "config": {"widgets": [
-        {"id": "bad-type", "type": "map", "layout": {"x": 0, "y": 0, "w": 6, "h": 6}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-type",
+            "type": "map",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 6
+            }
+          }
+        ]
+      },
       "path": "widgets[0].type"
     },
     {
       "name": "layout 横向越界",
-      "config": {"widgets": [
-        {"id": "wide", "type": "text", "layout": {"x": 11, "y": 0, "w": 2, "h": 3}, "text": {"content": "a"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "wide",
+            "type": "text",
+            "layout": {
+              "x": 11,
+              "y": 0,
+              "w": 2,
+              "h": 3
+            },
+            "text": {
+              "content": "a"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].layout.x"
     },
     {
       "name": "layout 高度为 0",
-      "config": {"widgets": [
-        {"id": "flat", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 0}, "text": {"content": "a"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "flat",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 0
+            },
+            "text": {
+              "content": "a"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].layout.h"
     },
     {
       "name": "禁止跨表 table_id",
-      "config": {"widgets": [
-        {"id": "cross", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "query": {"table_id": 2}, "text": {"content": "a"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "cross",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "query": {
+              "table_id": 2
+            },
+            "text": {
+              "content": "a"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].query.table_id"
     },
     {
       "name": "过滤操作符不支持",
-      "config": {"widgets": [
-        {"id": "bad-op", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3},
-         "query": {"filters": [{"field_name": "销售额", "op": "like", "value": 1}]}, "text": {"content": "a"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-op",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "query": {
+              "filters": [
+                {
+                  "field_name": "销售额",
+                  "op": "like",
+                  "value": 1
+                }
+              ]
+            },
+            "text": {
+              "content": "a"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].query.filters[0].op"
     },
     {
       "name": "排序方向非法",
-      "config": {"widgets": [
-        {"id": "bad-sort", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3},
-         "query": {"sortings": [{"field_name": "销售额", "direction": "up"}]}, "text": {"content": "a"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-sort",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "query": {
+              "sortings": [
+                {
+                  "field_name": "销售额",
+                  "direction": "up"
+                }
+              ]
+            },
+            "text": {
+              "content": "a"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].query.sortings[0].direction"
     },
     {
       "name": "图表类型未知",
-      "config": {"widgets": [
-        {"id": "bad-chart", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "sankey", "x": "商品类别", "y": ["销售额"]}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-chart",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "sankey",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ]
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.type"
     },
     {
       "name": "热力图必须指定第二维",
-      "config": {"widgets": [
-        {"id": "bad-heat", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "heatmap", "x": "商品类别", "y": ["销售额"]}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-heat",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "heatmap",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ]
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.series"
     },
     {
       "name": "仪表目标必须是数值",
-      "config": {"widgets": [
-        {"id": "bad-gauge", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "gauge", "y": ["销售额"], "target": "一百"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-gauge",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "gauge",
+              "y": [
+                "销售额"
+              ],
+              "target": "一百"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.target"
     },
     {
       "name": "排序口径非法",
-      "config": {"widgets": [
-        {"id": "bad-order", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"], "sort": "top"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-order",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ],
+              "sort": "top"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.sort"
     },
     {
       "name": "阈值配色上限",
-      "config": {"widgets": [
-        {"id": "many-thresholds", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "display": {"thresholds": [
-           {"value": 1, "color": "#111"}, {"value": 2, "color": "#222"},
-           {"value": 3, "color": "#333"}, {"value": 4, "color": "#444"},
-           {"value": 5, "color": "#555"}, {"value": 6, "color": "#666"}
-         ]},
-         "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"]}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "many-thresholds",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "display": {
+              "thresholds": [
+                {
+                  "value": 1,
+                  "color": "#111"
+                },
+                {
+                  "value": 2,
+                  "color": "#222"
+                },
+                {
+                  "value": 3,
+                  "color": "#333"
+                },
+                {
+                  "value": 4,
+                  "color": "#444"
+                },
+                {
+                  "value": 5,
+                  "color": "#555"
+                },
+                {
+                  "value": 6,
+                  "color": "#666"
+                }
+              ]
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ]
+            }
+          }
+        ]
+      },
       "path": "widgets[0].display.thresholds"
     },
     {
       "name": "阈值颜色不能为空",
-      "config": {"widgets": [
-        {"id": "bad-threshold", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "display": {"thresholds": [{"value": 100, "color": ""}]},
-         "chart": {"type": "bar", "x": "商品类别", "y": ["销售额"]}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-threshold",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "display": {
+              "thresholds": [
+                {
+                  "value": 100,
+                  "color": ""
+                }
+              ]
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ]
+            }
+          }
+        ]
+      },
       "path": "widgets[0].display.thresholds[0].color"
     },
     {
       "name": "求和度量必须数值",
-      "config": {"widgets": [
-        {"id": "bad-measure", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "bar", "x": "商品类别", "y": ["订单号"], "agg": "sum"}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-measure",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "订单号"
+              ],
+              "agg": "sum"
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.y[0]"
     },
     {
       "name": "散点 X 必须数值",
-      "config": {"widgets": [
-        {"id": "bad-scatter", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "scatter", "x": "商品类别", "y": ["销售额"]}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-scatter",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "scatter",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ]
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.x"
     },
     {
       "name": "直方图度量必须数值",
-      "config": {"widgets": [
-        {"id": "bad-hist", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "histogram", "y": ["商品类别"]}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-hist",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "histogram",
+              "y": [
+                "商品类别"
+              ]
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.y[0]"
     },
     {
       "name": "图表度量数组不能为空",
-      "config": {"widgets": [
-        {"id": "empty-y", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "bar", "x": "商品类别", "y": []}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "empty-y",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": []
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.y"
     },
     {
       "name": "KPI 对比日期字段必须是日期",
-      "config": {"widgets": [
-        {"id": "bad-kpi-date", "type": "kpi", "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
-         "kpi": {"value": {"field": "销售额", "agg": "sum"},
-                 "compare": {"mode": "prev_period", "date_field": "商品类别"}}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-kpi-date",
+            "type": "kpi",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 3,
+              "h": 4
+            },
+            "kpi": {
+              "value": {
+                "field": "销售额",
+                "agg": "sum"
+              },
+              "compare": {
+                "mode": "prev_period",
+                "date_field": "商品类别"
+              }
+            }
+          }
+        ]
+      },
       "path": "widgets[0].kpi.compare.date_field"
     },
     {
       "name": "KPI 迷你趋势点数越界",
-      "config": {"widgets": [
-        {"id": "bad-spark", "type": "kpi", "layout": {"x": 0, "y": 0, "w": 3, "h": 4},
-         "kpi": {"value": {"field": "销售额", "agg": "sum"},
-                 "sparkline": {"field": "销售额", "agg": "sum", "points": 0}}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "bad-spark",
+            "type": "kpi",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 3,
+              "h": 4
+            },
+            "kpi": {
+              "value": {
+                "field": "销售额",
+                "agg": "sum"
+              },
+              "sparkline": {
+                "field": "销售额",
+                "agg": "sum",
+                "points": 0
+              }
+            }
+          }
+        ]
+      },
       "path": "widgets[0].kpi.sparkline.points"
     },
     {
       "name": "文本内容不能为空",
-      "config": {"widgets": [
-        {"id": "empty-text", "type": "text", "layout": {"x": 0, "y": 0, "w": 12, "h": 3}, "text": {"content": "   "}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "empty-text",
+            "type": "text",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 3
+            },
+            "text": {
+              "content": "   "
+            }
+          }
+        ]
+      },
       "path": "widgets[0].text.content"
     },
     {
       "name": "表格列数上限",
-      "config": {"widgets": [
-        {"id": "many-cols", "type": "table", "layout": {"x": 0, "y": 0, "w": 12, "h": 8},
-         "table": {"columns": ["订单号", "商品类别", "销售额", "数量", "日期", "评分", "支付方式", "订单号", "商品类别"]}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "many-cols",
+            "type": "table",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 12,
+              "h": 8
+            },
+            "table": {
+              "columns": [
+                "订单号",
+                "商品类别",
+                "销售额",
+                "数量",
+                "日期",
+                "评分",
+                "支付方式",
+                "订单号",
+                "商品类别"
+              ]
+            }
+          }
+        ]
+      },
       "path": "widgets[0].table.columns"
     },
     {
       "name": "全局筛选 id 重复",
-      "config": {"widgets": [], "global_filters": [
-        {"id": "dup", "kind": "search", "field": "商品类别"},
-        {"id": "dup", "kind": "select", "field": "支付方式"}
-      ]},
+      "config": {
+        "widgets": [],
+        "global_filters": [
+          {
+            "id": "dup",
+            "kind": "search",
+            "field": "商品类别"
+          },
+          {
+            "id": "dup",
+            "kind": "select",
+            "field": "支付方式"
+          }
+        ]
+      },
       "path": "global_filters[1].id"
     },
     {
       "name": "日期范围筛选必须引用日期字段",
-      "config": {"widgets": [], "global_filters": [
-        {"id": "range", "kind": "date_range", "field": "商品类别"}
-      ]},
+      "config": {
+        "widgets": [],
+        "global_filters": [
+          {
+            "id": "range",
+            "kind": "date_range",
+            "field": "商品类别"
+          }
+        ]
+      },
       "path": "global_filters[0].field"
     },
     {
       "name": "全局筛选类型未知",
-      "config": {"widgets": [], "global_filters": [
-        {"id": "kind", "kind": "number", "field": "销售额"}
-      ]},
+      "config": {
+        "widgets": [],
+        "global_filters": [
+          {
+            "id": "kind",
+            "kind": "number",
+            "field": "销售额"
+          }
+        ]
+      },
       "path": "global_filters[0].kind"
     },
     {
       "name": "设置主题非法",
-      "config": {"settings": {"theme": "auto"}},
+      "config": {
+        "settings": {
+          "theme": "auto"
+        }
+      },
       "path": "settings.theme"
     },
     {
       "name": "画布列数固定 12",
-      "config": {"canvas": {"cols": 10}},
+      "config": {
+        "canvas": {
+          "cols": 10
+        }
+      },
       "path": "canvas.cols"
     },
     {
       "name": "字段不存在",
-      "config": {"widgets": [
-        {"id": "missing", "type": "chart", "layout": {"x": 0, "y": 0, "w": 6, "h": 8},
-         "chart": {"type": "bar", "x": "不存在", "y": ["销售额"]}}
-      ]},
+      "config": {
+        "widgets": [
+          {
+            "id": "missing",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "chart": {
+              "type": "bar",
+              "x": "不存在",
+              "y": [
+                "销售额"
+              ]
+            }
+          }
+        ]
+      },
       "path": "widgets[0].chart.x"
+    },
+    {
+      "name": "引用未声明的全局筛选",
+      "config": {
+        "widgets": [
+          {
+            "id": "filtered",
+            "type": "chart",
+            "layout": {
+              "x": 0,
+              "y": 0,
+              "w": 6,
+              "h": 8
+            },
+            "query": {
+              "filters": [
+                {
+                  "field_name": "日期",
+                  "op": "date_range",
+                  "value": "{{global.nope}}"
+                }
+              ]
+            },
+            "chart": {
+              "type": "bar",
+              "x": "商品类别",
+              "y": [
+                "销售额"
+              ],
+              "agg": "sum"
+            }
+          }
+        ],
+        "global_filters": []
+      },
+      "path": "widgets[0].query.filters[0].value"
     }
   ]
 }

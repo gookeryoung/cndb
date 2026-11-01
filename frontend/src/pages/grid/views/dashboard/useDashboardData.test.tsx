@@ -4,8 +4,9 @@
  * loading 与 refetch。
  */
 
+import { useState } from 'react'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { waitFor } from '@testing-library/react'
+import { act, waitFor } from '@testing-library/react'
 import { renderHookProviders } from '@/test/render-providers'
 import type { View } from '@/api'
 import { useDashboardData } from './useDashboardData'
@@ -73,7 +74,31 @@ describe('useDashboardData', () => {
     const view = makeView(WIDGETS)
     renderHookProviders(() => useDashboardData({ wid: 1, tid: 2, view, enabled: true }))
     await waitFor(() => expect(dashboardData).toHaveBeenCalled())
-    expect(dashboardData.mock.calls[0][3]).toEqual({ widget_ids: ['chart-1', 'kpi-1', 'table-1'] })
+    expect(dashboardData.mock.calls[0][3]).toEqual({ widget_ids: ['chart-1', 'kpi-1', 'table-1'], globals: {} })
+  })
+
+  it('全局筛选值进入请求体并作为缓存键的一部分', async () => {
+    const view = makeView(WIDGETS)
+    const { result } = renderHookProviders(() => {
+      const [globals, setGlobals] = useState<Record<string, unknown>>({ keyword: 'A001' })
+      const state = useDashboardData({ wid: 1, tid: 2, view, enabled: true, globals })
+      return { ...state, setGlobals }
+    })
+    await waitFor(() => expect(dashboardData).toHaveBeenCalledTimes(1))
+    expect(dashboardData.mock.calls[0][3]).toEqual({
+      widget_ids: ['chart-1', 'kpi-1', 'table-1'], globals: { keyword: 'A001' },
+    })
+    // 筛选值变化 → 缓存键变化 → 重新请求
+    act(() => result.current.setGlobals({ keyword: 'A002' }))
+    await waitFor(() => expect(dashboardData).toHaveBeenCalledTimes(2))
+    expect(dashboardData.mock.calls[1][3]).toEqual({
+      widget_ids: ['chart-1', 'kpi-1', 'table-1'], globals: { keyword: 'A002' },
+    })
+    // 内容不变但对象引用变化不重复请求（键由序列化值决定）
+    act(() => result.current.setGlobals({ keyword: 'A002' }))
+    await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(dashboardData).toHaveBeenCalledTimes(2)
+    expect(result.current.loading).toBe(false)
   })
 
   it('响应拆分为 datasets / errors / meta，非法 dataset 记错误', async () => {

@@ -91,6 +91,8 @@ export interface DatasetMeta {
   total: number
   truncated: boolean
   cached: boolean
+  /** 未应用全局筛选的条件数（占位符缺值，ADR 0023 §5-5） */
+  unapplied_globals?: number
 }
 
 type DatasetBase =

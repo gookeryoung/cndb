@@ -158,6 +158,25 @@ export interface UserPreferences {
   favorite_view_ids: number[]
 }
 
+/** dashboard 模板（对齐后端 DashboardTemplateItem，ADR 0023 P3）.
+ *
+ * 只存「结构 + 字段名/类型快照」，不含来源表；落地时按目标表同名同类型认领。
+ */
+export interface DashboardTemplate {
+  id: string
+  name: string
+  updated_at: string
+  config: Record<string, unknown>
+  fields: Record<string, string>
+}
+
+/** 另存 / 覆盖同名模板请求体 */
+export interface DashboardTemplateSavePayload {
+  name: string
+  config: Record<string, unknown>
+  fields?: Record<string, string>
+}
+
 /** 「我的视图」面板行摘要（对齐后端 FavoriteViewSummary） */
 export interface FavoriteViewSummary {
   view_id: number

@@ -10,7 +10,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { App as AntApp, Button, Empty, Modal, Tooltip } from 'antd'
 import {
-  CloseOutlined, EditOutlined, RedoOutlined, SaveOutlined, SettingOutlined, UndoOutlined,
+  CloseOutlined, CopyOutlined, EditOutlined, RedoOutlined, ReloadOutlined, SaveOutlined, SettingOutlined, UndoOutlined,
 } from '@ant-design/icons'
 import type { Field, RowResponse, View } from '@/api'
 import {
@@ -18,12 +18,16 @@ import {
   normalizeDashboard,
   serializeDashboard,
   type DashboardConfig,
+  type DashboardNormalizeOptions,
   type DashboardWidget,
 } from './dashboardModel'
 import { clampBox, collapseNarrow, normalizeLayout, type WidgetBox } from './dashboardLayout'
 import { applyWidgetQuery } from './dashboardQuery'
+import { resolveQueryGlobals, type DashboardGlobals } from './dashboardGlobals'
 import { useDashboardDraft } from './useDashboardDraft'
 import { useDashboardData } from './useDashboardData'
+import GlobalFilterBar from './GlobalFilterBar'
+import type { DashboardTemplateMode } from './DashboardTemplateDialog'
 import { buildDashboardDataset } from './chart/dataset'
 import { missingChartRoles } from './widgets/ChartWidget'
 import { aggregateKpi } from './widgets/KpiWidget'
@@ -37,9 +41,20 @@ import TextWidget from './widgets/TextWidget'
 
 /** 属性面板仅在点击「属性」/选中组件后出现，按需加载（不进 DashboardView chunk） */
 const DashboardConfigDrawer = lazy(() => import('./DashboardConfigDrawer'))
+/** 模板对话框仅在点击「另存 / 从模板创建」时出现，按需加载（不进 DashboardView chunk） */
+const DashboardTemplateDialog = lazy(() => import('./DashboardTemplateDialog'))
 
 /** 窄屏阈值（px）：低于该宽度按单列塌陷（ADR 0023 D4） */
 export const DASHBOARD_NARROW_WIDTH = 720
+
+/**
+ * 读/存路径的跨表解析选项：目标表字段不在前端预取，可用性由服务端保存校验与
+ * 取数层降级共同兜底（ADR 0023 D8）。
+ */
+const CROSS_TABLE_OPTIONS: DashboardNormalizeOptions = {
+  resolveTableFields: () => null,
+  allowUnavailableTargets: true,
+}
 
 export interface DashboardViewProps {
   rows: RowResponse[]
@@ -58,6 +73,8 @@ export interface DashboardViewProps {
   canEdit?: boolean
   /** 显式保存：由页面层写 view_options 并触发持久化 */
   onSave?: (options: Record<string, unknown>) => void
+  /** 小表路径的刷新回调（定时刷新 / 手动刷新；由页面层重新拉行集） */
+  onRefresh?: () => void
 }
 
 function useNarrow(): boolean {
@@ -96,9 +113,10 @@ function datasetIsEmpty(dataset: Dataset): boolean {
 export function parseDashboardConfig(
   raw: Record<string, unknown> | null | undefined,
   fields: Field[],
+  options?: DashboardNormalizeOptions,
 ): { config: DashboardConfig | null; error: string | null } {
   try {
-    return { config: normalizeDashboard(raw ?? {}, fields), error: null }
+    return { config: normalizeDashboard(raw ?? {}, fields, options ?? CROSS_TABLE_OPTIONS), error: null }
   } catch (e) {
     if (e instanceof DashboardConfigError) return { config: null, error: e.path }
     return { config: null, error: e instanceof Error ? e.message : String(e) }
@@ -117,6 +135,7 @@ export default function DashboardView({
   error = null,
   canEdit = false,
   onSave,
+  onRefresh,
 }: DashboardViewProps) {
   const narrow = useNarrow()
   const { message } = AntApp.useApp()
@@ -130,14 +149,35 @@ export default function DashboardView({
   const [editing, setEditing] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
+  /** 模板对话框模式；null 表示关闭 */
+  const [templateMode, setTemplateMode] = useState<DashboardTemplateMode | null>(null)
   const draft = useDashboardDraft(baseline)
   const baselineRef = useRef(baseline)
   baselineRef.current = baseline
 
-  // 数据口径（I3）：总行数超过客户端上限时改走服务端批量取数，避免拉全量行
-  const useServer = total > VIEW_FETCH_ALL_LIMIT
+  /** 全局筛选值（id → 值）；配置里删掉的筛选项自动剪枝 */
+  const [globals, setGlobals] = useState<DashboardGlobals>({})
+  const globalIds = useMemo(
+    () => baseline.global_filters.map((f) => f.id).join(','),
+    [baseline.global_filters],
+  )
+  useEffect(() => {
+    const known = new Set(globalIds.split(',').filter(Boolean))
+    setGlobals((current) => {
+      const kept = Object.entries(current).filter(([id]) => known.has(id))
+      return kept.length === Object.keys(current).length ? current : Object.fromEntries(kept)
+    })
+  }, [globalIds])
+
+  // 数据口径（I3）：总行数超过客户端上限、或画布内存在跨表 widget 时改走服务端
+  // 批量取数（客户端只有基表行集，跨表组必须由服务端按表扫描，ADR 0023 D8）
+  const hasCrossTable = useMemo(
+    () => draft.config.widgets.some((w) => w.query.table_id != null),
+    [draft.config.widgets],
+  )
+  const useServer = total > VIEW_FETCH_ALL_LIMIT || hasCrossTable
   const serverData = useDashboardData({
-    wid: workspaceId, tid: tableId, view, enabled: useServer,
+    wid: workspaceId, tid: tableId, view, enabled: useServer, globals,
   })
 
   // 非编辑态跟随服务端配置；编辑态不覆盖本地草稿（I5）
@@ -154,13 +194,23 @@ export default function DashboardView({
     }
   }, [draft.config.widgets, selectedId])
 
+  /** `{{global.x}}` 在取数前统一改写 filters（ADR 0023 P3），不在渲染层拼条件 */
+  const resolvedQueries = useMemo(() => {
+    const out = new Map<string, { query: DashboardWidget['query']; unapplied: number }>()
+    for (const widget of draft.config.widgets) {
+      out.set(widget.id, resolveQueryGlobals(widget.query, globals))
+    }
+    return out
+  }, [draft.config.widgets, globals])
+
   const rowsByWidget = useMemo(() => {
     const out = new Map<string, RowResponse[]>()
     for (const widget of draft.config.widgets) {
-      out.set(widget.id, applyWidgetQuery(rows, widget.query))
+      const resolved = resolvedQueries.get(widget.id)
+      out.set(widget.id, applyWidgetQuery(rows, resolved?.query ?? widget.query))
     }
     return out
-  }, [draft.config.widgets, rows])
+  }, [draft.config.widgets, resolvedQueries, rows])
 
   /** 小表路径：客户端装配 Dataset（与 ChartWidget 内部回退同构，统一供口径提示） */
   const clientDatasets = useMemo<Map<string, Dataset>>(() => {
@@ -175,6 +225,7 @@ export default function DashboardView({
         total: overall,
         truncated: rowsForWidget.length < overall,
         cached: false,
+        unapplied_globals: resolvedQueries.get(widget.id)?.unapplied ?? 0,
       }
       if (widget.type === 'chart') {
         if (missingChartRoles(widget, fields).length) continue
@@ -195,20 +246,40 @@ export default function DashboardView({
       }
     }
     return out
-  }, [useServer, draft.config.widgets, rowsByWidget, rows.length, fields, total])
+  }, [useServer, draft.config.widgets, rowsByWidget, resolvedQueries, rows.length, fields, total])
 
   const datasets = useServer ? serverData.datasets : clientDatasets
   const widgetErrors = useServer ? serverData.errors : new Map<string, string>()
+
+  /** 刷新入口：大表重取服务端聚合，小表由页面层重新拉行集 */
+  const refreshRef = useRef<() => void>(() => {})
+  refreshRef.current = () => {
+    if (useServer) serverData.refetch()
+    else onRefresh?.()
+  }
+
+  // 定时刷新（ADR 0023 P3）：后台标签页不轮询，回到前台后由下一次 tick 恢复
+  const refreshInterval = baseline.settings.refresh_interval
+  useEffect(() => {
+    if (!refreshInterval) return
+    const timer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      refreshRef.current()
+    }, refreshInterval * 1000)
+    return () => window.clearInterval(timer)
+  }, [refreshInterval])
 
   const metaById = useMemo(() => {
     const out = new Map<string, string>()
     for (const [id, dataset] of datasets) {
       const meta = dataset.meta
       if (!meta) continue
-      out.set(id, `样本 ${meta.scanned} / 总行数 ${meta.total}${meta.cached ? ' · 缓存' : ''}`)
+      const unapplied = meta.unapplied_globals ?? resolvedQueries.get(id)?.unapplied ?? 0
+      out.set(id, `样本 ${meta.scanned} / 总行数 ${meta.total}${meta.cached ? ' · 缓存' : ''}${
+        unapplied ? ' · 未应用全局筛选' : ''}`)
     }
     return out
-  }, [datasets])
+  }, [datasets, resolvedQueries])
 
   const exitEditing = () => {
     setEditing(false)
@@ -216,10 +287,17 @@ export default function DashboardView({
     setDrawerOpen(false)
   }
 
+  /** 应用模板：进入编辑态并整份替换草稿（基线不变 → dirty，需显式保存） */
+  const applyTemplateConfig = (next: DashboardConfig) => {
+    draft.replace(next)
+    setEditing(true)
+    setSelectedId(next.widgets[0]?.id ?? null)
+  }
+
   const save = () => {
     const options = serializeDashboard(draft.config)
     try {
-      normalizeDashboard(options, fields)
+      normalizeDashboard(options, fields, CROSS_TABLE_OPTIONS)
     } catch (e) {
       const path = e instanceof DashboardConfigError ? e.path : '配置'
       message.error(`画布配置无效：${path}`)
@@ -277,6 +355,14 @@ export default function DashboardView({
 
   const config = draft.config
 
+  const globalBar = config.global_filters.length > 0 ? (
+    <GlobalFilterBar
+      filters={config.global_filters}
+      values={globals}
+      onChange={setGlobals}
+    />
+  ) : null
+
   const patchLayout = (id: string, patch: Partial<WidgetBox>) => {
     const widget = config.widgets.find((w) => w.id === id)
     if (!widget) return
@@ -286,7 +372,8 @@ export default function DashboardView({
   }
 
   const renderBody = (widget: DashboardWidget) => {
-    const rowsForWidget = rowsByWidget.get(widget.id) ?? []
+    // 跨表 widget 的客户端行集不可用（只有基表 rows），未拿到服务端 Dataset 时按空集渲染
+    const rowsForWidget = widget.query.table_id != null ? [] : (rowsByWidget.get(widget.id) ?? [])
     const dataset = datasets.get(widget.id)
     if (widget.type === 'chart') {
       return (
@@ -310,7 +397,7 @@ export default function DashboardView({
 
   const isWidgetEmpty = (widget: DashboardWidget) => {
     if (widget.type === 'text') return false
-    const rowsForWidget = rowsByWidget.get(widget.id) ?? []
+    const rowsForWidget = widget.query.table_id != null ? [] : (rowsByWidget.get(widget.id) ?? [])
     if (!useServer && rowsForWidget.length === 0) return true
     const dataset = datasets.get(widget.id)
     return dataset ? datasetIsEmpty(dataset) : rowsForWidget.length === 0
@@ -341,34 +428,81 @@ export default function DashboardView({
           <Button size="small" icon={<SettingOutlined />} onClick={() => setDrawerOpen(true)} data-testid="dashboard-properties">
             属性
           </Button>
+          <Button size="small" icon={<CopyOutlined />} onClick={() => setTemplateMode('apply')} data-testid="dashboard-template-apply-open">
+            应用模板
+          </Button>
+          <Button size="small" icon={<CopyOutlined />} onClick={() => setTemplateMode('save')} data-testid="dashboard-template-save-open">
+            另存为模板
+          </Button>
           {draft.dirty && (
             <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--cn-text-secondary)' }}>有未保存修改</span>
           )}
         </>
       ) : (
-        <Tooltip title={narrow ? '窄屏下请使用桌面宽度编辑画布' : '拖拽 / 缩放 / 预设 / 属性面板'}>
+        <>
+          <Tooltip title={narrow ? '窄屏下请使用桌面宽度编辑画布' : '拖拽 / 缩放 / 预设 / 属性面板'}>
+            <Button
+              size="small"
+              icon={<EditOutlined />}
+              disabled={narrow}
+              onClick={() => {
+                setEditing(true)
+                setSelectedId(config.widgets[0]?.id ?? null)
+              }}
+              data-testid="dashboard-edit"
+            >
+              编辑画布
+            </Button>
+          </Tooltip>
           <Button
             size="small"
-            icon={<EditOutlined />}
-            disabled={narrow}
-            onClick={() => {
-              setEditing(true)
-              setSelectedId(config.widgets[0]?.id ?? null)
-            }}
-            data-testid="dashboard-edit"
+            icon={<ReloadOutlined />}
+            onClick={() => refreshRef.current()}
+            data-testid="dashboard-refresh"
           >
-            编辑画布
+            刷新
           </Button>
-        </Tooltip>
+          {refreshInterval > 0 && (
+            <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+              每 {refreshInterval}s 自动刷新
+            </span>
+          )}
+          <Button
+            size="small"
+            icon={<CopyOutlined />}
+            onClick={() => setTemplateMode('apply')}
+            data-testid="dashboard-template-create"
+          >
+            从模板创建
+          </Button>
+        </>
       )}
     </div>
   )
+
+  const templateDialog = templateMode !== null
+    ? (
+        <Suspense fallback={null}>
+          <DashboardTemplateDialog
+            open
+            mode={templateMode}
+            config={config}
+            fields={fields}
+            defaultName={view?.name ? `${view.name}模板` : '未命名模板'}
+            onClose={() => setTemplateMode(null)}
+            onApply={applyTemplateConfig}
+          />
+        </Suspense>
+      )
+    : null
 
   // 空画布：只读保持 P0 空态；编辑态给添加提示
   if (config.widgets.length === 0 && !editing) {
     return (
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
         {toolbar}
+        {globalBar}
+        {templateDialog}
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Empty description="画布还没有组件（视图设置中添加）" data-testid="dashboard-empty" />
         </div>
@@ -386,6 +520,8 @@ export default function DashboardView({
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
       {toolbar}
+      {globalBar}
+      {templateDialog}
       {editing && (
         <div
           data-testid="dashboard-edit-hint"
@@ -418,6 +554,8 @@ export default function DashboardView({
             onClose={() => setDrawerOpen(false)}
             config={config}
             fields={fields}
+            workspaceId={workspaceId}
+            baseTableId={tableId}
             selectedId={selectedId}
             onSelect={setSelectedId}
             onPatchWidget={draft.updateWidget}

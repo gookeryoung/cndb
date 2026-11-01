@@ -38,6 +38,8 @@ export interface DashboardDraftApi {
   applyPreset: (preset: LayoutPresetKey) => void
   updateCanvas: (patch: Partial<DashboardConfig['canvas']>) => void
   updateSettings: (patch: Partial<DashboardConfig['settings']>) => void
+  /** 用整份配置替换草稿（模板落地等一次性变更；记为一步可撤销） */
+  replace: (config: DashboardConfig) => void
   undo: () => void
   redo: () => void
   /** 保存成功后把当前草稿作为新基线 */
@@ -88,6 +90,10 @@ export function useDashboardDraft(baseline: DashboardConfig): DashboardDraftApi 
     setHistory((h) => commitHistory(h, patchSettings(h.present, patch)))
   }, [])
 
+  const replace = useCallback((next: DashboardConfig) => {
+    setHistory((h) => commitHistory(h, next))
+  }, [])
+
   const undo = useCallback(() => setHistory((h) => undoHistory(h)), [])
   const redo = useCallback(() => setHistory((h) => redoHistory(h)), [])
 
@@ -109,6 +115,7 @@ export function useDashboardDraft(baseline: DashboardConfig): DashboardDraftApi 
     applyPreset,
     updateCanvas,
     updateSettings,
+    replace,
     undo,
     redo,
     markSaved,

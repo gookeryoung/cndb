@@ -1,12 +1,16 @@
-/** dashboard 属性面板（ADR 0023 P1）.
+/** dashboard 属性面板（ADR 0023 P1 / P3）.
  *
  * 三段：布局（坐标 / 预设 / 增删）· 数据（按 widget 类型分派）· 外观（标题 / 画布参数）。
  * 面板只读 draft 并回调 updater，所有变更仍由 DashboardView 的草稿栈承接。
+ * P3 起「数据」段可切换数据来源表：跨表 widget 的字段按目标表 schema 重建（D8）。
  */
 
 import { useState } from 'react'
-import { Button, Divider, Drawer, Empty, Input, InputNumber, Select, Space, Switch, Tabs, Typography } from 'antd'
+import { useQuery } from '@tanstack/react-query'
+import { App as AntApp, Button, Divider, Drawer, Empty, Input, InputNumber, Select, Space, Switch, Tabs, Typography } from 'antd'
 import type { Field } from '@/api'
+import { fieldApi, tableApi } from '@/api'
+import { buildWidget } from './dashboardDraft'
 import {
   DASHBOARD_TYPE_LABELS,
   type DashboardChartSort,
@@ -467,24 +471,35 @@ function TableForm({ widget, fields, onChange }: {
   )
 }
 
-function DataTab({ widget, fields, onPatchWidget }: {
+function DataTab({ widget, fields, onPatchWidget, sourcePicker }: {
   widget: DashboardWidget | undefined
   fields: Field[]
   onPatchWidget: (id: string, updater: (w: DashboardWidget) => DashboardWidget) => void
+  /** 「数据来源表」选择器（仅数据类组件显示） */
+  sourcePicker?: React.ReactNode
 }) {
   if (!widget) return <Empty description="先在「布局」里选中一个组件" image={Empty.PRESENTED_IMAGE_SIMPLE} />
   const onChange = (next: DashboardWidget) => onPatchWidget(widget.id, () => next)
-  if (widget.type === 'chart') return <ChartForm widget={widget} fields={fields} onChange={onChange} />
-  if (widget.type === 'kpi') return <KpiForm widget={widget} fields={fields} onChange={onChange} />
-  if (widget.type === 'table') return <TableForm widget={widget} fields={fields} onChange={onChange} />
+  const form = widget.type === 'chart'
+    ? <ChartForm widget={widget} fields={fields} onChange={onChange} />
+    : widget.type === 'kpi'
+      ? <KpiForm widget={widget} fields={fields} onChange={onChange} />
+      : widget.type === 'table'
+        ? <TableForm widget={widget} fields={fields} onChange={onChange} />
+        : (
+          <Input.TextArea
+            value={widget.text.content}
+            autoSize={{ minRows: 8, maxRows: 20 }}
+            maxLength={20000}
+            onChange={(e) => onChange({ ...widget, text: { content: e.target.value } })}
+            data-testid="dashboard-text-content"
+          />
+        )
   return (
-    <Input.TextArea
-      value={widget.text.content}
-      autoSize={{ minRows: 8, maxRows: 20 }}
-      maxLength={20000}
-      onChange={(e) => onChange({ ...widget, text: { content: e.target.value } })}
-      data-testid="dashboard-text-content"
-    />
+    <>
+      {widget.type !== 'text' && sourcePicker}
+      {form}
+    </>
   )
 }
 
@@ -493,6 +508,10 @@ export interface DashboardConfigDrawerProps {
   onClose: () => void
   config: DashboardConfig
   fields: Field[]
+  /** 工作区 id：跨表切换需要拉候选表与目标表字段（缺省时只允许基表） */
+  workspaceId?: string | number
+  /** 基表 id：候选项中排除自身 */
+  baseTableId?: string | number
   selectedId: string | null
   onSelect: (id: string | null) => void
   onPatchWidget: (id: string, updater: (w: DashboardWidget) => DashboardWidget) => void
@@ -505,11 +524,78 @@ export interface DashboardConfigDrawerProps {
 }
 
 export default function DashboardConfigDrawer({
-  open, onClose, config, fields, selectedId, onSelect,
+  open, onClose, config, fields, workspaceId, baseTableId, selectedId, onSelect,
   onPatchWidget, onPatchLayout, onRemoveWidget, onAddWidget, onApplyPreset, onUpdateCanvas, onUpdateSettings,
 }: DashboardConfigDrawerProps) {
+  const { message } = AntApp.useApp()
   const [addType, setAddType] = useState<DashboardWidgetType>('chart')
+  const [switching, setSwitching] = useState(false)
   const widget = config.widgets.find((w) => w.id === selectedId)
+  const targetTableId = widget?.query.table_id
+
+  /** 工作区候选表（跨表切换来源；无 workspaceId 时禁用） */
+  const tablesQuery = useQuery({
+    queryKey: ['dashboard-source-tables', String(workspaceId ?? '')],
+    queryFn: () => tableApi.list(workspaceId!),
+    enabled: open && workspaceId != null,
+  })
+  /** 跨表 widget 的目标表字段（基表 widget 直接用页面预取的 `fields`） */
+  const targetFieldsQuery = useQuery({
+    queryKey: ['dashboard-target-fields', String(workspaceId ?? ''), String(targetTableId ?? '')],
+    queryFn: () => fieldApi.list(workspaceId!, targetTableId!),
+    enabled: open && workspaceId != null && targetTableId != null,
+  })
+  const sourceFields = targetTableId != null ? (targetFieldsQuery.data ?? []) : fields
+
+  /** 切换数据来源表：按目标表 schema 重建数据段，保留标题 / 展示设置与布局（D8） */
+  const handleSourceTableChange = async (nextId: number | undefined) => {
+    if (!widget || widget.type === 'text') return
+    if ((widget.query.table_id ?? 0) === (nextId ?? 0)) return
+    if (workspaceId == null && nextId != undefined) return
+    setSwitching(true)
+    try {
+      const nextFields = nextId != undefined ? await fieldApi.list(workspaceId!, nextId) : fields
+      const built = buildWidget(widget.type, nextFields, widget.layout)
+      if (!built) {
+        message.error('目标表没有可用字段，无法切换')
+        return
+      }
+      const nextWidget: DashboardWidget = {
+        ...built,
+        title: widget.title,
+        ...(widget.display ? { display: widget.display } : {}),
+      }
+      if (nextId != undefined) nextWidget.query = { ...nextWidget.query, table_id: nextId }
+      onPatchWidget(widget.id, () => nextWidget)
+    } catch {
+      message.error('目标表不可用（无权限或已删除）')
+    } finally {
+      setSwitching(false)
+    }
+  }
+
+  const sourceOptions = [
+    {
+      value: 0,
+      label: `当前表${(tablesQuery.data ?? []).find((t) => String(t.id) === String(baseTableId))?.name ?? ''}`,
+    },
+    ...(tablesQuery.data ?? [])
+      .filter((t) => String(t.id) !== String(baseTableId))
+      .map((t) => ({ value: Number(t.id), label: t.name })),
+  ]
+
+  const sourcePicker = (
+    <Row label="数据来源">
+      <Select
+        value={targetTableId ?? 0}
+        options={sourceOptions}
+        style={{ width: '100%' }}
+        disabled={switching || targetFieldsQuery.isFetching}
+        onChange={(value) => { void handleSourceTableChange(value === 0 ? undefined : value) }}
+        data-testid="dashboard-source-table"
+      />
+    </Row>
+  )
 
   const layoutTab = (
     <div data-testid="dashboard-drawer-layout">
@@ -643,14 +729,25 @@ export default function DashboardConfigDrawer({
       title="画布属性"
       open={open}
       onClose={onClose}
-      width={360}
+      size={360}
       destroyOnHidden
       data-testid="dashboard-config-drawer"
     >
       <Tabs
         items={[
           { key: 'layout', label: '布局', children: layoutTab },
-          { key: 'data', label: '数据', children: <DataTab widget={widget} fields={fields} onPatchWidget={onPatchWidget} /> },
+          {
+            key: 'data',
+            label: '数据',
+            children: (
+              <DataTab
+                widget={widget}
+                fields={sourceFields}
+                onPatchWidget={onPatchWidget}
+                sourcePicker={workspaceId != null ? sourcePicker : undefined}
+              />
+            ),
+          },
           { key: 'appearance', label: '外观', children: appearanceTab },
         ]}
       />

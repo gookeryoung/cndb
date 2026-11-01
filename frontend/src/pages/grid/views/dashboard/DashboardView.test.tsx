@@ -35,6 +35,23 @@ vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
 const dashboardData = vi.hoisted(() => vi.fn())
 vi.mock('@/api/views', () => ({ viewApi: { dashboardData } }))
 
+const templateApiMock = vi.hoisted(() => ({
+  listDashboardTemplates: vi.fn(),
+  saveDashboardTemplate: vi.fn(),
+  deleteDashboardTemplate: vi.fn(),
+}))
+/** 属性面板的数据来源表 / 目标表字段（P3 跨表） */
+const tableApiMock = vi.hoisted(() => ({ list: vi.fn() }))
+const fieldApiMock = vi.hoisted(() => ({ list: vi.fn() }))
+vi.mock('@/api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api')>()
+  return {
+    ...actual,
+    preferencesApi: templateApiMock,
+    tableApi: tableApiMock,
+    fieldApi: fieldApiMock,
+  }
+})
 const FIELDS: Field[] = [
   makeField({ id: 1, name: '订单号', field_type: 'text' }),
   makeField({ id: 2, name: '商品类别', field_type: 'text' }),
@@ -47,6 +64,9 @@ const ROWS: RowResponse[] = [
   { id: 2, 订单号: 'A002', 商品类别: '家电', 销售额: 50, 日期: '2026-02-11' },
   { id: 3, 订单号: 'A003', 商品类别: '数码', 销售额: 30, 日期: '2026-03-12' },
 ] as unknown as RowResponse[]
+
+tableApiMock.list.mockResolvedValue([{ id: 2, name: '订单表' }, { id: 9, name: '客户表' }])
+fieldApiMock.list.mockResolvedValue(FIELDS)
 
 const CONFIG = {
   schema_version: 1,
@@ -96,6 +116,7 @@ function renderDashboard(opts?: {
   total?: number
   workspaceId?: string | number
   tableId?: string | number
+  onRefresh?: () => void
 }) {
   return renderProviders(
     <DashboardView
@@ -106,6 +127,7 @@ function renderDashboard(opts?: {
       error={opts?.error}
       canEdit={opts?.canEdit}
       onSave={opts?.onSave}
+      onRefresh={opts?.onRefresh}
       total={opts?.total}
       workspaceId={opts?.workspaceId ?? 1}
       tableId={opts?.tableId ?? 2}
@@ -212,6 +234,7 @@ describe('DashboardView 服务端取数路径（大表）', () => {
     // 文本卡片不参与取数
     expect(dashboardData.mock.calls[0][3]).toEqual({
       widget_ids: ['kpi-count', 'kpi-sales', 'sales-chart', 'detail'],
+      globals: {},
     })
 
     await waitFor(() => expect(screen.getByTestId('dashboard-widget-kpi-sales-meta'))
@@ -348,5 +371,202 @@ describe('DashboardView P1 编辑态', () => {
     renderDashboard({ view_options: EDIT_CONFIG, canEdit: true })
     expect(screen.getByTestId('dashboard-edit')).toBeDisabled()
     Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: original })
+  })
+})
+
+const GLOBAL_CONFIG = {
+  ...EDIT_CONFIG,
+  widgets: [{
+    ...EDIT_CONFIG.widgets[0],
+    query: {
+      filters: [{ field_name: '订单号', op: 'contains', value: '{{global.kw}}' }],
+      filter_logic: 'AND',
+      sortings: [],
+    },
+    layout: { x: 0, y: 0, w: 3, h: 4 },
+    kpi: { value: { field: '销售额', agg: 'sum' } },
+  }],
+  global_filters: [{ id: 'kw', kind: 'search', field: '订单号', label: '单号搜索' }],
+}
+
+describe('DashboardView P3 全局筛选与刷新', () => {
+  it('全局筛选占位符缺值时提示未应用，输入后收窄数据并去掉提示', async () => {
+    renderDashboard({ view_options: GLOBAL_CONFIG })
+    expect(screen.getByTestId('dashboard-globals')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-widget-k1-meta')).toHaveTextContent('未应用全局筛选')
+    // 条件缺值被丢弃 → 全部行参与汇总
+    expect(screen.getByTestId('dashboard-kpi-value-k1')).toHaveTextContent('180')
+
+    const input = screen.getByTestId('dashboard-global-kw').querySelector('input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'A001' } })
+    await waitFor(() => expect(screen.getByTestId('dashboard-kpi-value-k1')).toHaveTextContent('100'))
+    expect(screen.getByTestId('dashboard-widget-k1-meta')).not.toHaveTextContent('未应用全局筛选')
+  })
+
+  it('清除筛选回退到未应用状态', async () => {
+    renderDashboard({ view_options: GLOBAL_CONFIG })
+    const input = screen.getByTestId('dashboard-global-kw').querySelector('input') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'A001' } })
+    await waitFor(() => expect(screen.getByTestId('dashboard-kpi-value-k1')).toHaveTextContent('100'))
+    fireEvent.click(screen.getByTestId('dashboard-globals-reset'))
+    await waitFor(() => expect(screen.getByTestId('dashboard-kpi-value-k1')).toHaveTextContent('180'))
+    expect(screen.getByTestId('dashboard-widget-k1-meta')).toHaveTextContent('未应用全局筛选')
+  })
+
+  it('手动刷新走页面层重新拉取行集', () => {
+    const onRefresh = vi.fn()
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true, onRefresh })
+    fireEvent.click(screen.getByTestId('dashboard-refresh'))
+    expect(onRefresh).toHaveBeenCalledTimes(1)
+  })
+
+  it('大表路径的刷新重取服务端聚合', async () => {
+    dashboardData.mockResolvedValue({ items: [], errors: [] })
+    renderDashboard({ total: 12000, canEdit: true })
+    await waitFor(() => expect(dashboardData).toHaveBeenCalledTimes(1))
+    fireEvent.click(screen.getByTestId('dashboard-refresh'))
+    await waitFor(() => expect(dashboardData).toHaveBeenCalledTimes(2))
+  })
+
+  it('refresh_interval 定时刷新，后台标签页跳过', () => {
+    vi.useFakeTimers()
+    const onRefresh = vi.fn()
+    try {
+      renderDashboard({
+        view_options: { ...EDIT_CONFIG, settings: { refresh_interval: 10, theme: 'inherit' } },
+        canEdit: true,
+        onRefresh,
+      })
+      expect(screen.getByText('每 10s 自动刷新')).toBeInTheDocument()
+      vi.advanceTimersByTime(10_000)
+      expect(onRefresh).toHaveBeenCalledTimes(1)
+
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+      vi.advanceTimersByTime(10_000)
+      expect(onRefresh).toHaveBeenCalledTimes(1)
+
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+      vi.advanceTimersByTime(10_000)
+      expect(onRefresh).toHaveBeenCalledTimes(2)
+    } finally {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'visible' })
+      vi.useRealTimers()
+    }
+  })
+})
+
+describe('DashboardView P3 模板', () => {
+  const TEMPLATE = {
+    id: 'tpl-1',
+    name: '单文本模板',
+    updated_at: '2026-01-01T00:00:00Z',
+    config: {
+      schema_version: 1,
+      widgets: [
+        {
+          id: 'w_text_1', type: 'text', layout: { x: 0, y: 0, w: 4, h: 4 },
+          text: { content: '模板说明' },
+        },
+      ],
+    },
+    fields: {},
+  }
+
+  it('从模板创建：应用后进入编辑态并替换画布', async () => {
+    templateApiMock.listDashboardTemplates.mockResolvedValue([TEMPLATE])
+    renderDashboard({ canEdit: true })
+
+    fireEvent.click(screen.getByTestId('dashboard-template-create'))
+    fireEvent.click(await screen.findByTestId('dashboard-template-item-tpl-1'))
+    await waitFor(() => expect(screen.getByTestId('dashboard-template-apply')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('dashboard-template-apply'))
+
+    expect(await screen.findByTestId('dashboard-edit-hint')).toBeInTheDocument()
+    expect(screen.getByTestId('dashboard-text-w_text_1')).toHaveTextContent('模板说明')
+  })
+
+  it('编辑态工具栏提供另存为模板入口', async () => {
+    renderDashboard({ canEdit: true })
+    fireEvent.click(screen.getByTestId('dashboard-edit'))
+    expect(screen.getByTestId('dashboard-template-save-open')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('dashboard-template-save-open'))
+    expect(await screen.findByTestId('dashboard-template-name')).toBeInTheDocument()
+  })
+})
+
+const CROSS_CONFIG = {
+  ...EDIT_CONFIG,
+  widgets: [
+    EDIT_CONFIG.widgets[0],
+    {
+      id: 'k2', type: 'kpi', title: '合同额合计',
+      layout: { x: 3, y: 0, w: 3, h: 4 },
+      // 目标表（客户表）不在基表行集里：必须走服务端逐表扫描（D8）
+      query: { table_id: 9, filters: [], filter_logic: 'AND', sortings: [] },
+      kpi: { value: { field: '合同额', agg: 'sum' } },
+    },
+  ],
+}
+
+describe('DashboardView P3 跨表 widget', () => {
+  it('存在跨表组件时小表也改走服务端取数', async () => {
+    dashboardData.mockResolvedValue({
+      items: [
+        {
+          widget_id: 'k1',
+          dataset: { kind: 'kpi', field: '订单号', agg: 'count', value: 3 },
+          meta: { scanned: 3, total: 3, truncated: false, cached: false },
+        },
+        {
+          widget_id: 'k2',
+          dataset: { kind: 'kpi', field: '合同额', agg: 'sum', value: 5000 },
+          meta: { scanned: 4, total: 4, truncated: false, cached: false },
+        },
+      ],
+      errors: [],
+    })
+    renderDashboard({ view_options: CROSS_CONFIG })
+
+    await waitFor(() => expect(dashboardData).toHaveBeenCalledTimes(1))
+    expect(dashboardData.mock.calls[0][3]).toMatchObject({ widget_ids: ['k1', 'k2'] })
+    expect(await screen.findByTestId('dashboard-kpi-value-k2')).toHaveTextContent('5,000')
+  })
+
+  it('目标表不可用时降级为错误卡且不影响其它组件', async () => {
+    dashboardData.mockResolvedValue({
+      items: [
+        {
+          widget_id: 'k1',
+          dataset: { kind: 'kpi', field: '订单号', agg: 'count', value: 3 },
+          meta: { scanned: 3, total: 3, truncated: false, cached: false },
+        },
+      ],
+      errors: [{ widget_id: 'k2', detail: '无权限访问目标表' }],
+    })
+    renderDashboard({ view_options: CROSS_CONFIG })
+
+    await waitFor(() => expect(screen.getByTestId('dashboard-widget-k2-error'))
+      .toHaveTextContent('无权限访问目标表'))
+    expect(screen.getByTestId('dashboard-kpi-value-k1')).toHaveTextContent('3')
+  })
+
+  it('属性面板可把组件切到工作区其它表', async () => {
+    const onSave = vi.fn()
+    renderDashboard({ view_options: EDIT_CONFIG, canEdit: true, onSave })
+    await enterEditing()
+    fireEvent.click(screen.getByTestId('dashboard-properties'))
+    fireEvent.mouseDown(await screen.findByTestId('dashboard-drawer-select'))
+    fireEvent.click(await screen.findByText('订单总数', { selector: '.ant-select-item-option-content' }))
+    fireEvent.click(screen.getByRole('tab', { name: '数据' }))
+    fireEvent.mouseDown(await screen.findByTestId('dashboard-source-table'))
+    fireEvent.click(await screen.findByText('客户表', { selector: '.ant-select-item-option-content' }))
+
+    await waitFor(() => expect(fieldApiMock.list).toHaveBeenCalledWith(1, 9))
+    expect(await screen.findByText('有未保存修改')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('dashboard-save'))
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1))
+    const options = onSave.mock.calls[0][0] as Record<string, unknown>
+    const widgets = options.widgets as Array<{ id: string; query: { table_id?: number } }>
+    expect(widgets[0].query.table_id).toBe(9)
   })
 })

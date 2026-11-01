@@ -6,14 +6,16 @@
 - 与前端 ``frontend/src/pages/grid/views/dashboard/dashboardModel.ts``
   由 ``tests/fixtures/dashboard/schema_cases.json`` 的同一组用例驱动，防止口径漂移。
 
-P0 只做单表（``query.table_id`` 禁止）、客户端聚合所需的结构校验；
-跨表 / 服务端聚合在 P2/P3 再扩展。
+P0-P2 只做单表（``query.table_id`` 禁止）、客户端聚合所需的结构校验；
+P3 起放开跨表：``query.table_id`` 指向同工作区另一张表时，由调用方注入
+``table_fields_resolver`` 逐表解析字段，本模块不做权限判定。
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from types import MappingProxyType
 from typing import Any, cast
 
 from cndb.plugins.tables.field_types.registry import normalize_field_type
@@ -97,6 +99,29 @@ COMPARE_MODES = frozenset({"prev_period", "prev_year"})
 GRANULARITIES = frozenset({"day", "week", "month", "quarter", "year"})
 #: id 规则（widget / 全局筛选）
 _ID_RE = re.compile(r"^[a-zA-Z0-9_-]{1,32}$")
+#: 全局筛选占位符（`{{global.x}}`，ADR 0023 §5-5）
+_GLOBAL_REF_RE = re.compile(r"^\{\{global\.([a-zA-Z0-9_-]{1,32})\}\}$")
+
+#: 跨表字段解析器：入参为 ``widget.query.table_id``，返回该表字段名 -> 类型；
+#: 目标表不存在 / 无权限 / 已软删时返回 ``None``（由调用方统一转 400）。
+TableFieldsResolver = Callable[[int], Mapping[str, str] | None]
+
+#: 读路径专用哨兵：目标表不可用（越权 / 软删 / 不存在）时跳过该 widget 的
+#: 字段级校验，把已落库的配置原样交给取数层降级为错误卡（保存期已校验过）
+UNAVAILABLE_TARGET: Mapping[str, str] = MappingProxyType({})
+
+
+def collect_global_refs(value: Any) -> list[str]:
+    """收集一个过滤值里引用的全局筛选 id（整串占位符 / 数组元素）."""
+    if isinstance(value, str):
+        match = _GLOBAL_REF_RE.fullmatch(value)
+        return [match.group(1)] if match else []
+    if isinstance(value, list):
+        refs: list[str] = []
+        for item in value:
+            refs.extend(collect_global_refs(item))
+        return refs
+    return []
 
 
 def _is_int(value: Any) -> bool:
@@ -166,18 +191,52 @@ def _normalize_sortings(
     return out, None
 
 
+def _resolve_query_table(
+    raw_query: Any,
+    path: str,
+    resolver: TableFieldsResolver | None,
+    *,
+    allow_unavailable: bool = False,
+) -> tuple[int | None, Mapping[str, str] | None, str | None]:
+    """解析 ``widget.query.table_id`` 指向的目标表字段.
+
+    未声明 ``table_id`` 时返回 ``(None, None, None)``，表示该 widget 落在
+    视图所属的基表上。声明了 ``table_id`` 但调用方未注入 resolver 时，仍按
+    P0-P2 口径拒绝（错误路径保持不变，供共享用例 ``schema_cases.json`` 校验）；
+    resolver 返回 ``None``（目标表不存在 / 无权限 / 已软删）时：
+
+    - ``allow_unavailable=False``（保存路径）→ 统一报错转 400；
+    - ``allow_unavailable=True``（取数路径）→ 返回 :data:`UNAVAILABLE_TARGET`，
+      该 widget 跳过字段级校验，由取数层降级为错误卡。
+    """
+    if not isinstance(raw_query, dict):
+        # 非对象形态交由 ``_normalize_query`` 报错
+        return None, None, None
+    if "table_id" not in raw_query:
+        return None, None, None
+    table_id = raw_query.get("table_id")
+    if not _is_int(table_id) or table_id <= 0:
+        return None, None, f"{path}.table_id: 必须是正整数"
+    if resolver is None:
+        return None, None, f"{path}.table_id: P0-P2 禁止跨表"
+    target_fields = resolver(cast(int, table_id))
+    if target_fields is None:
+        if allow_unavailable:
+            return cast(int, table_id), UNAVAILABLE_TARGET, None
+        return None, None, f"{path}.table_id: 目标表不存在或无权限"
+    return cast(int, table_id), target_fields, None
+
+
 def _normalize_query(
     raw: Any,
     path: str,
     fields: Mapping[str, str],
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """校验 widget.query."""
+    """校验 widget.query（``table_id`` 的归属由 :func:`_resolve_query_table` 处理）."""
     if raw is None:
         return {"filters": [], "filter_logic": "AND", "sortings": []}, None
     if not isinstance(raw, dict):
         return None, f"{path}: 必须是对象"
-    if "table_id" in raw:
-        return None, f"{path}.table_id: P0-P2 禁止跨表"
     filters, err = _normalize_filters(raw.get("filters"), f"{path}.filters", fields)
     if err:
         return None, err
@@ -468,11 +527,36 @@ def _normalize_canvas(raw: dict[str, Any]) -> tuple[dict[str, int], str | None]:
     return canvas, None
 
 
+def _passthrough_widget(
+    raw: Mapping[str, Any],
+    widget_id: str,
+    widget_type: str,
+    title: Any,
+    nums: dict[str, int],
+) -> dict[str, Any]:
+    """目标表不可用时原样透传已落库的 widget（跳过字段级校验，由取数层降级）."""
+    widget: dict[str, Any] = {
+        "id": widget_id,
+        "type": widget_type,
+        "title": title,
+        "layout": nums,
+        "query": dict(raw.get("query") or {}),
+    }
+    for key in ("chart", "kpi", "table", "text", "display"):
+        value = raw.get(key)
+        if value is not None:
+            widget[key] = value
+    return widget
+
+
 def _normalize_widget(
     raw: Any,
     index: int,
     fields: Mapping[str, str],
     seen_ids: set[str],
+    table_fields_resolver: TableFieldsResolver | None = None,
+    *,
+    allow_unavailable_targets: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """校验单个 widget 并裁剪未知键."""
     path = f"widgets[{index}]"
@@ -511,9 +595,24 @@ def _normalize_widget(
     if title is not None and (not isinstance(title, str) or len(title) > 200):
         return None, f"{path}.title: 必须是长度 ≤200 的字符串"
 
-    query, err = _normalize_query(raw.get("query"), f"{path}.query", fields)
+    query_path = f"{path}.query"
+    table_id, target_fields, err = _resolve_query_table(
+        raw.get("query"),
+        query_path,
+        table_fields_resolver,
+        allow_unavailable=allow_unavailable_targets,
+    )
     if err:
         return None, err
+    if target_fields is UNAVAILABLE_TARGET:
+        return _passthrough_widget(raw, widget_id, widget_type, title, nums), None
+    # 跨表 widget 的字段引用按目标表校验；未声明 table_id 时回落到基表
+    effective_fields = target_fields if target_fields is not None else fields
+    query, err = _normalize_query(raw.get("query"), query_path, effective_fields)
+    if err or query is None:
+        return None, err or f"{query_path}: 未知错误"
+    if table_id is not None:
+        query["table_id"] = table_id
 
     widget: dict[str, Any] = {
         "id": widget_id,
@@ -523,17 +622,17 @@ def _normalize_widget(
         "query": query,
     }
     if widget_type == "chart":
-        chart, err = _normalize_chart(raw.get("chart"), f"{path}.chart", fields)
+        chart, err = _normalize_chart(raw.get("chart"), f"{path}.chart", effective_fields)
         if err:
             return None, err
         widget["chart"] = chart
     elif widget_type == "kpi":
-        kpi, err = _normalize_kpi(raw.get("kpi"), f"{path}.kpi", fields)
+        kpi, err = _normalize_kpi(raw.get("kpi"), f"{path}.kpi", effective_fields)
         if err:
             return None, err
         widget["kpi"] = kpi
     elif widget_type == "table":
-        table, err = _normalize_table_widget(raw.get("table"), f"{path}.table", fields)
+        table, err = _normalize_table_widget(raw.get("table"), f"{path}.table", effective_fields)
         if err:
             return None, err
         widget["table"] = table
@@ -585,12 +684,19 @@ def _normalize_widget(
 def normalize_dashboard_config(
     raw: Any,
     fields: Mapping[str, str],
+    table_fields_resolver: TableFieldsResolver | None = None,
+    *,
+    allow_unavailable_targets: bool = False,
 ) -> tuple[dict[str, Any] | None, str | None]:
     """校验并归一 dashboard 配置.
 
     Args:
         raw: 视图 ``view_options`` 原始值（可能来自种子 / API / 旧配置）。
         fields: 表字段名 -> 字段类型（类型用 registry 原名或历史别名均可）。
+        table_fields_resolver: 跨表 widget 的目标表字段解析器；未注入时
+            ``query.table_id`` 仍按 P0-P2 口径拒绝。
+        allow_unavailable_targets: 取数路径专用；目标表不可用时跳过该 widget
+            的字段级校验（保存路径必须为 ``False``，否则越权会被静默放行）。
 
     Returns:
         ``(归一配置, None)`` 或 ``(None, 错误详情)``；错误详情以
@@ -617,7 +723,14 @@ def normalize_dashboard_config(
     widgets: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
     for index, item in enumerate(raw_widgets):
-        widget, err = _normalize_widget(item, index, fields, seen_ids)
+        widget, err = _normalize_widget(
+            item,
+            index,
+            fields,
+            seen_ids,
+            table_fields_resolver,
+            allow_unavailable_targets=allow_unavailable_targets,
+        )
         if err or widget is None:
             return None, err or f"widgets[{index}]: 未知错误"
         widgets.append(widget)
@@ -625,6 +738,14 @@ def normalize_dashboard_config(
     global_filters, err = _normalize_global_filters(raw.get("global_filters"), fields)
     if err:
         return None, err
+
+    # 全局筛选占位符必须指向已声明的 global_filters（ADR 0023 §5-5）
+    known_globals = {str(item["id"]) for item in (global_filters or [])}
+    for index, widget in enumerate(widgets):
+        for f_index, rule in enumerate(widget["query"]["filters"]):
+            for ref in collect_global_refs(rule.get("value")):
+                if ref not in known_globals:
+                    return None, (f"widgets[{index}].query.filters[{f_index}].value: 引用了未声明的全局筛选 ({ref})")
 
     settings_raw = raw.get("settings")
     settings: dict[str, Any] = {"refresh_interval": 0, "theme": "inherit"}

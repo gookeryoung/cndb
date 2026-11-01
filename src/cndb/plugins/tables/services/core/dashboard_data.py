@@ -15,14 +15,18 @@ import hashlib
 import json
 import logging
 import math
+import re
 from datetime import datetime
 from typing import Any
 
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from cndb.core.cache import cache_key, dashboard_cache
+from cndb.core.errors import CndbError
 from cndb.plugins.analytics.services.compute import scan_rows
 from cndb.plugins.tables.models import DataTable, DataView
+from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +46,9 @@ _AGGREGATIONS = frozenset({"sum", "avg", "count", "min", "max", "median"})
 
 #: 日期维度默认按月分桶（与客户端 dimKey 同口径）
 _DATE_PREFIX_LEN = 10
+
+#: 跨表 widget 目标表不可用时的降级文案（越权 / 不存在 / 已软删同口径）
+CROSS_TABLE_DENIED = "无权限访问目标表"
 
 
 class DashboardDataError(Exception):
@@ -657,6 +664,64 @@ def _chart_dataset(
 
 # ── 全局筛选 ──────────────────────────────────────────
 
+#: 过滤值中的全局筛选占位符（`{{global.x}}`）
+_GLOBAL_REF_RE = re.compile(r"^\{\{global\.([a-zA-Z0-9_-]{1,32})\}\}$")
+
+
+def _global_value(value: Any) -> Any:
+    """全局筛选值的请求形态 → 过滤值形态（date_range 的 ``{from,to}`` 转二元数组）."""
+    if isinstance(value, dict) and any(key in value for key in ("from", "to", "start", "end")):
+        start = value.get("from") if value.get("from") is not None else value.get("start")
+        end = value.get("to") if value.get("to") is not None else value.get("end")
+        return [start, end]
+    return value
+
+
+def _resolve_value(value: Any, values: dict[str, Any]) -> tuple[Any, bool]:
+    """替换单个过滤值中的占位符；返回 (新值, 是否全部解析成功)."""
+    if isinstance(value, str):
+        match = _GLOBAL_REF_RE.fullmatch(value)
+        if not match:
+            return value, True
+        global_id = match.group(1)
+        resolved = values.get(global_id)
+        if resolved is None or resolved in ("", []):
+            return None, False
+        return _global_value(resolved), True
+    if isinstance(value, list):
+        items: list[Any] = []
+        for item in value:
+            resolved, ok = _resolve_value(item, values)
+            if not ok:
+                return None, False
+            items.append(resolved)
+        return items, True
+    return value, True
+
+
+def resolve_query_globals(query: dict[str, Any], values: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    """在取数前统一改写 widget 查询里的 ``{{global.x}}``（ADR 0023 P3）.
+
+    Args:
+        query: 归一后的 widget.query。
+        values: 请求 ``globals``（全局筛选 id → 值）。
+
+    Returns:
+        ``(解析后的 query, 未解析条件数)``；未提供值的条件直接丢弃（§5-5）。
+    """
+    filters = query.get("filters") or []
+    resolved_filters: list[dict[str, Any]] = []
+    unapplied = 0
+    for rule in filters:
+        value, ok = _resolve_value(rule.get("value"), values)
+        if not ok:
+            unapplied += 1
+            continue
+        resolved_filters.append({**rule, "value": value})
+    if not filters:
+        return query, 0
+    return {**query, "filters": resolved_filters}, unapplied
+
 
 def _global_filters(
     config_filters: list[dict[str, Any]],
@@ -718,13 +783,14 @@ def _build_widget(
     widget: dict[str, Any],
     rows: list[dict[str, Any]],
     infos: dict[str, _FieldInfo],
-) -> dict[str, Any]:
-    """单 widget → Dataset；text 不取数（返回空 kind）."""
+    globals_values: dict[str, Any],
+) -> tuple[dict[str, Any], int]:
+    """单 widget → (Dataset, 未应用的全局筛条件数)；text 不取数（返回空 kind）."""
     widget_type = widget.get("type")
-    query = widget.get("query") or {}
+    query, unapplied = resolve_query_globals(widget.get("query") or {}, globals_values)
     widget_rows = apply_widget_query(rows, query)
     if widget_type == "chart":
-        return _chart_dataset(widget_rows, infos, widget["chart"])
+        return _chart_dataset(widget_rows, infos, widget["chart"]), unapplied
     if widget_type == "kpi":
         value = widget["kpi"]["value"]
         return {
@@ -732,7 +798,7 @@ def _build_widget(
             "field": value["field"],
             "agg": value["agg"],
             "value": _aggregate([row.get(value["field"]) for row in widget_rows], value["agg"]),
-        }
+        }, unapplied
     if widget_type == "table":
         table = widget["table"]
         columns = [name for name in table.get("columns") or [] if name in infos][:TABLE_MAX_COLUMNS]
@@ -744,8 +810,32 @@ def _build_widget(
                 {**{"id": row.get("id")}, **{name: row.get(name) for name in columns}} for row in widget_rows[:limit]
             ],
             "total": len(widget_rows),
-        }
-    return {"kind": "none"}
+        }, unapplied
+    return {"kind": "none"}, unapplied
+
+
+def _scan_table(
+    db: Session,
+    table: DataTable,
+    table_id: int | None,
+    workspace_id: int,
+    user: Any,
+) -> DataTable | None:
+    """把 ``widget.query.table_id`` 解析成可扫描的表（``None`` 表示不可用）.
+
+    跨表必须逐表再做一次 ``READ`` 鉴权（ADR 0023 D8）；越权 / 不存在 / 已软删
+    统一返回 ``None``，由调用方把该组 widget 降级为错误卡。
+    """
+    if table_id is None:
+        return table
+    try:
+        target = get_table_or_404(table_id, workspace_id, db, user=user, action=TableAction.READ)
+    except (HTTPException, CndbError):
+        # 404（不存在/跨工作区）与 403（PermissionDeniedError）同口径降级
+        return None
+    if target.trashed_at is not None:
+        return None
+    return target
 
 
 def build_dashboard_data(
@@ -760,7 +850,11 @@ def build_dashboard_data(
     globals_values: dict[str, Any] | None = None,
     force: bool = False,
 ) -> dict[str, Any]:
-    """批量取数：同一行集只扫描一次，逐 widget 聚合.
+    """批量取数：按 ``query.table_id`` 分组，每组同一行集只扫描一次，逐 widget 聚合.
+
+    未声明 ``table_id`` 的 widget 落在视图所属基表，共享
+    ``view.filters`` + 全局筛选 + ``view.filter_type``；跨表组各自独立扫描，
+    不套用基表视图的过滤条件（字段属于不同表 schema）。
 
     Returns:
         ``{"items": [{"widget_id", "dataset", "meta"}], "errors": [...]}``
@@ -786,46 +880,71 @@ def build_dashboard_data(
             "errors": list(cached_payload["errors"]),
         }
 
-    infos = _field_infos(table)
-    scan_filters = [*(view.filters or []), *_global_filters(config.get("global_filters") or [], values)]
-    rows, total, truncated = scan_rows(
-        db,
-        table,
-        user,
-        filters=scan_filters or None,
-        filter_logic=view.filter_type or "AND",
-    )
-
-    items: list[dict[str, Any]] = []
-    errors: list[dict[str, str]] = []
+    # 未知 widget 先记错误；其余按 ``query.table_id`` 分组（None = 基表）
+    errors_by_id: dict[str, dict[str, str]] = {}
+    groups: dict[int | None, list[str]] = {}
     for widget_id in wanted:
         widget = widgets.get(widget_id)
         if widget is None:
-            errors.append({"widget_id": widget_id, "detail": "widget 不存在"})
+            errors_by_id[widget_id] = {"widget_id": widget_id, "detail": "widget 不存在"}
             continue
-        try:
-            dataset = _build_widget(widget, rows, infos)
-        except DashboardDataError as exc:
-            errors.append({"widget_id": widget_id, "detail": str(exc)})
+        query_table_id = (widget.get("query") or {}).get("table_id")
+        groups.setdefault(query_table_id, []).append(widget_id)
+
+    items_by_id: dict[str, dict[str, Any]] = {}
+    for query_table_id, group_ids in groups.items():
+        target = _scan_table(db, table, query_table_id, workspace_id, user)
+        if target is None:
+            for widget_id in group_ids:
+                errors_by_id[widget_id] = {"widget_id": widget_id, "detail": CROSS_TABLE_DENIED}
             continue
-        except Exception:  # pragma: no cover - 兜底：单卡失败不拖垮整页
-            logger.warning("dashboard widget 取数失败 widget=%s", widget_id, exc_info=True)
-            errors.append({"widget_id": widget_id, "detail": "取数失败"})
-            continue
-        items.append(
-            {
+        infos = _field_infos(target)
+        if query_table_id is None:
+            scan_filters = [*(view.filters or []), *_global_filters(config.get("global_filters") or [], values)]
+            filter_logic = view.filter_type or "AND"
+        else:
+            scan_filters: list[dict[str, Any]] = []
+            filter_logic = "AND"
+        rows, total, truncated = scan_rows(
+            db,
+            target,
+            user,
+            filters=scan_filters or None,
+            filter_logic=filter_logic,
+        )
+        for widget_id in group_ids:
+            widget = widgets[widget_id]
+            try:
+                dataset, unapplied = _build_widget(widget, rows, infos, values)
+            except DashboardDataError as exc:
+                errors_by_id[widget_id] = {"widget_id": widget_id, "detail": str(exc)}
+                continue
+            except Exception:  # pragma: no cover - 兜底：单卡失败不拖垮整页
+                logger.warning("dashboard widget 取数失败 widget=%s", widget_id, exc_info=True)
+                errors_by_id[widget_id] = {"widget_id": widget_id, "detail": "取数失败"}
+                continue
+            items_by_id[widget_id] = {
                 "widget_id": widget_id,
                 "dataset": dataset,
-                "meta": {"scanned": len(rows), "total": total, "truncated": truncated, "cached": False},
+                "meta": {
+                    "scanned": len(rows),
+                    "total": total,
+                    "truncated": truncated,
+                    "cached": False,
+                    "unapplied_globals": unapplied,
+                },
             }
-        )
 
-    payload = {"items": items, "errors": errors}
+    payload = {
+        "items": [items_by_id[wid] for wid in wanted if wid in items_by_id],
+        "errors": [errors_by_id[wid] for wid in wanted if wid in errors_by_id],
+    }
     dashboard_cache.set(key, payload, DASHBOARD_CACHE_TTL)
     return payload
 
 
 __all__ = [
+    "CROSS_TABLE_DENIED",
     "DASHBOARD_CACHE_TTL",
     "DashboardDataError",
     "apply_widget_query",
@@ -840,4 +959,5 @@ __all__ = [
     "build_radar_dataset",
     "build_scatter_dataset",
     "build_treemap_dataset",
+    "resolve_query_globals",
 ]
