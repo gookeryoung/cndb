@@ -1,4 +1,7 @@
-"""工作区全量备份（ADR 0075）：v11 备份构建器 + tar.gz 归档打包/解包.
+"""工作区全量备份（ADR 0075）：v12 备份构建器 + tar.gz 归档打包/解包.
+
+v12 在 v11 基础上把 workspace 元数据的 ``workspace_type`` 替换为 ``modules``
+（功能模块集合，ADR 0080 D7）；导入端对 ≤v11 备份按旧枚举映射回填。
 
 v11 在 v10 基础上新增顶层 ``designs[]``（结构设计：title / content /
 description / is_deleted + versions[] 版本原文），``compiled`` 快照不导出，
@@ -38,7 +41,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError
 
-BACKUP_VERSION = "11"
+BACKUP_VERSION = "12"
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
 ARCHIVE_KIND = "workspace_backup"
@@ -150,7 +153,8 @@ def build_workspace_backup_v9(
         "visibility": workspace.visibility.value,
         "tags": workspace.tags,
         "allow_edit": workspace.allow_edit,
-        "workspace_type": workspace.workspace_type.value,
+        # v12：模块集合替代旧 workspace_type（ADR 0080 D7）
+        "modules": list(workspace.modules),
     }
 
     # ── 表（含字段/行/视图/权限/成员） ──

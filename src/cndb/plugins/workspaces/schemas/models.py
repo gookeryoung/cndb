@@ -9,10 +9,11 @@ from pydantic import BaseModel, ConfigDict, field_validator
 
 from cndb.plugins.workspaces.models import (
     DEFAULT_STORAGE_QUOTA_BYTES,
+    DEFAULT_WORKSPACE_MODULES,
     WorkspaceRole,
-    WorkspaceType,
     WorkspaceVisibility,
 )
+from cndb.plugins.workspaces.modules import normalize_modules
 
 
 class WorkspaceCreate(BaseModel):
@@ -23,7 +24,13 @@ class WorkspaceCreate(BaseModel):
     visibility: WorkspaceVisibility = WorkspaceVisibility.MEMBER
     tags: list[str] = []
     allow_edit: bool = True
-    workspace_type: WorkspaceType = WorkspaceType.DATA_DOC
+    modules: list[str] = DEFAULT_WORKSPACE_MODULES
+
+    @field_validator("modules", mode="before")
+    @classmethod
+    def _normalize_modules(cls, v: Any) -> list[str]:
+        """模块集合校验：非空、白名单、去重、固定顺序（ADR 0080 I1）."""
+        return normalize_modules(v)
 
 
 class WorkspaceUpdate(BaseModel):
@@ -35,7 +42,15 @@ class WorkspaceUpdate(BaseModel):
     visibility: WorkspaceVisibility | None = None
     tags: list[str] | None = None
     allow_edit: bool | None = None
-    workspace_type: WorkspaceType | None = None
+    modules: list[str] | None = None
+
+    @field_validator("modules", mode="before")
+    @classmethod
+    def _normalize_modules(cls, v: Any) -> list[str] | None:
+        """None 表示不改；否则非空、白名单、去重、固定顺序（空集 / 非法值 422）."""
+        if v is None:
+            return None
+        return normalize_modules(v)
 
 
 class WorkspaceResponse(BaseModel):
@@ -48,7 +63,7 @@ class WorkspaceResponse(BaseModel):
     visibility: WorkspaceVisibility
     tags: list[str]
     allow_edit: bool
-    workspace_type: WorkspaceType = WorkspaceType.DATA_DOC
+    modules: list[str] = DEFAULT_WORKSPACE_MODULES
     # 存储配额（字节），默认 100MB；由系统管理员在管理台「空间分配」调整
     storage_quota_bytes: int = DEFAULT_STORAGE_QUOTA_BYTES
     created_by_id: int | None

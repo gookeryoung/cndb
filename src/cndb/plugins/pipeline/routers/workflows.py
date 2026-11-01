@@ -32,7 +32,11 @@ from cndb.plugins.pipeline.schemas import (
     WorkflowResponse,
     WorkflowUpdate,
 )
-from cndb.plugins.pipeline.services.checks.registry import iter_check_specs
+from cndb.plugins.pipeline.services.checks.registry import (
+    assert_steps_in_enabled_modules,
+    domain_of,
+    iter_check_specs,
+)
 from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
 from cndb.plugins.pipeline.services.errors import PipelineConflictError
 from cndb.plugins.pipeline.services.issue_bridge import convert_finding_to_issue
@@ -41,7 +45,7 @@ from cndb.plugins.pipeline.services.runner import (
     run_pipeline_in_background,
 )
 from cndb.plugins.tables.services.core.access import check_workspace_permission
-from cndb.plugins.workspaces.models import WorkspaceRole
+from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/pipelines", tags=["pipeline"])
 
@@ -49,6 +53,12 @@ router = APIRouter(prefix="/{workspace_id}/pipelines", tags=["pipeline"])
 def _require(db: Session, workspace_id: int, user: User, role: WorkspaceRole) -> None:
     """工作区级角色门槛检查（D10）."""
     check_workspace_permission(db, workspace_id, user, role)
+
+
+def _enabled_modules(db: Session, workspace_id: int) -> list[str]:
+    """工作区已启用模块集合（工作区不存在时回退全模块，权限层会先 404）."""
+    ws = db.get(Workspace, workspace_id)
+    return list(ws.modules) if ws is not None else ["tables", "documents", "design"]
 
 
 def _workflow_or_404(db: Session, workspace_id: int, workflow_id: int) -> PipelineWorkflow:
@@ -125,6 +135,8 @@ def create_workflow(
     """新建流水线（保存期编译校验，DSL 非法返回 400）."""
     _require(db, workspace_id, current_user, WorkspaceRole.EDITOR)
     ir = compile_workflow(payload.content, fallback_name=payload.name or "")
+    # 保存期拒绝已禁用域的动作（ADR 0080 C4）
+    assert_steps_in_enabled_modules(ir, _enabled_modules(db, workspace_id))
     _assert_name_available(db, workspace_id, ir.name)
     workflow = PipelineWorkflow(
         workspace_id=workspace_id,
@@ -153,6 +165,8 @@ def validate_workflow(
         ir = compile_workflow(payload.content, fallback_name=payload.name or "")
     except CndbError as exc:
         return ValidateResponse(ok=False, error=exc.detail)
+    # 校验期同样拒绝已禁用域的动作（400，ADR 0080 C4）
+    assert_steps_in_enabled_modules(ir, _enabled_modules(db, workspace_id))
     return ValidateResponse(
         ok=True,
         name=ir.name,
@@ -167,8 +181,9 @@ def list_checks(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[CheckSpecResponse]:
-    """只读检查动作目录（``uses`` + 输入 schema，供 DSL 插入辅助）."""
+    """只读检查动作目录（``uses`` + 输入 schema，供 DSL 插入辅助；按工作区模块过滤）."""
     _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    enabled = set(_enabled_modules(db, workspace_id))
     return [
         CheckSpecResponse(
             uses=spec.uses,
@@ -188,6 +203,7 @@ def list_checks(
             ],
         )
         for spec in iter_check_specs()
+        if domain_of(spec.uses) in enabled
     ]
 
 
@@ -217,6 +233,8 @@ def update_workflow(
     target_name = payload.name if payload.name is not None else workflow.name
     if payload.content is not None:
         ir = compile_workflow(payload.content, fallback_name=target_name)
+        # 更新期拒绝已禁用域的动作（ADR 0080 C4）
+        assert_steps_in_enabled_modules(ir, _enabled_modules(db, workspace_id))
         target_name = ir.name
         workflow.content = payload.content
         workflow.compiled = ir.to_dict()

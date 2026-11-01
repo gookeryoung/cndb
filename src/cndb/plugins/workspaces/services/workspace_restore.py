@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import ConflictError
 from cndb.plugins.accounts.models import User
-from cndb.plugins.workspaces.models import WorkspaceType, WorkspaceVisibility
+from cndb.plugins.workspaces.models import WorkspaceVisibility
 from cndb.plugins.workspaces.schemas import WorkspaceImportResponse
 
 logger = logging.getLogger(__name__)
@@ -183,6 +183,7 @@ def restore_workspace_from_backup(
 
     # workspace meta 按备份还原（成员关系不动，D4）
     meta = backup.get("workspace") or {}
+    module_warning: str | None = None
     if isinstance(meta, dict) and meta:
         ws.name = meta.get("name") or ws.name
         ws.description = meta.get("description", "") or ""
@@ -190,10 +191,15 @@ def restore_workspace_from_backup(
         ws.allow_edit = bool(meta.get("allow_edit", True))
         with contextlib.suppress(ValueError, TypeError):
             ws.visibility = WorkspaceVisibility(meta.get("visibility", ws.visibility.value))
-        with contextlib.suppress(ValueError, TypeError):
-            ws.workspace_type = WorkspaceType(meta.get("workspace_type", ws.workspace_type.value))
+        # v12 写 modules；≤v11 备份按 workspace_type 映射，未知值回退全模块并记 errors（ADR 0080 D7）
+        from cndb.plugins.workspaces.modules import workspace_modules_from_meta
+
+        modules, module_warning = workspace_modules_from_meta(meta)
+        ws.modules = modules
         db.add(ws)
         db.commit()
 
     result = _import_backup_into_workspace(workspace_id, backup, current_user, db, files_dir=files_dir)
+    if module_warning:
+        result.errors.append(module_warning)
     return result

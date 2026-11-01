@@ -28,6 +28,39 @@ CheckRunner = Callable[[CheckContext, dict[str, Any]], Iterable[FindingDraft]]
 _REGISTRY: dict[str, tuple[CheckSpec, CheckRunner]] = {}
 _STATE = {"loaded": False}
 
+# 动作域前缀 → 工作区模块名（ADR 0080 D4：目录按模块过滤、保存期拒绝禁用域）
+_DOMAIN_BY_PREFIX: dict[str, str] = {
+    "table": "tables",
+    "document": "documents",
+    "design": "design",
+}
+
+
+def domain_of(uses: str) -> str:
+    """检查动作名 → 所属工作区模块（``table/null-rate`` → ``tables``）.
+
+    Raises:
+        CheckError: 域前缀不在映射表（未注册的动先经编译期报错）。
+    """
+    domain = _DOMAIN_BY_PREFIX.get(uses.split("/", 1)[0])
+    if domain is None:
+        raise CheckError(f"未知检查动作域：{uses}")
+    return domain
+
+
+def assert_steps_in_enabled_modules(ir: Any, modules: list[str]) -> None:
+    """保存 / 校验期断言：IR 中所有步骤的动作域均已启用（ADR 0080 C4）.
+
+    Raises:
+        CheckError: 存在属于未启用模块的动作。
+    """
+    enabled = set(modules)
+    for job in ir.jobs:
+        for step in job.steps:
+            domain = domain_of(step.uses)
+            if domain not in enabled:
+                raise CheckError(f"检查动作 {step.uses} 属于未启用的功能模块（{domain}），无法保存")
+
 
 def register_check(spec: CheckSpec, runner: CheckRunner) -> None:
     """登记一个检查动作（重复登记同名动作会被拒绝，便于插件化排障）."""
@@ -167,7 +200,9 @@ def _coerce(input_type: str, value: Any, uses: str, name: str) -> Any:
 
 __all__ = [
     "CheckRunner",
+    "assert_steps_in_enabled_modules",
     "coerce_params",
+    "domain_of",
     "get_check",
     "iter_check_names",
     "iter_check_specs",

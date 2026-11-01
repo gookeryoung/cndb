@@ -75,24 +75,32 @@ class WorkspaceVisibility(enum.StrEnum):
     PRIVATE = "private"
 
 
-class WorkspaceType(enum.StrEnum):
-    """工作区类型：决定工作区提供哪些功能模块.
+class WorkspaceModule(enum.StrEnum):
+    """工作区功能模块（ADR 0080）：可任意勾选组合，替代旧 workspace_type 枚举."""
 
-    - DATA_DOC：数据 + 文档（数据表 / 数据分析 / 文档），默认
-    - DATA：仅数据（数据表 / 数据分析，不提供文档）
-    - DOC：仅文档（不提供数据表与数据分析）
-    """
-
-    DATA_DOC = "data_doc"
-    DATA = "data"
-    DOC = "doc"
+    TABLES = "tables"
+    DOCUMENTS = "documents"
+    DESIGN = "design"
 
 
-# 工作区类型中文显示名
-WORKSPACE_TYPE_LABELS: dict[str, str] = {
-    WorkspaceType.DATA_DOC.value: "数据 + 文档",
-    WorkspaceType.DATA.value: "数据",
-    WorkspaceType.DOC.value: "文档",
+# 模块清单（有序，决定校验归一化顺序与前端页签顺序）
+WORKSPACE_MODULES: tuple[str, ...] = ("tables", "documents", "design")
+
+
+# 新建工作区默认模块：三模块全选（ADR 0080 D8，等价旧默认 data_doc）。
+# 字面量工厂（不走 list() 拷贝），schema 自愈层可据此合成 server_default 字面量。
+def default_workspace_modules() -> list[str]:
+    """Workspace.modules 列的 Python 端默认值（全三模块）."""
+    return ["tables", "documents", "design"]
+
+
+DEFAULT_WORKSPACE_MODULES: list[str] = list(WORKSPACE_MODULES)
+
+# 模块中文显示名
+MODULE_LABELS: dict[str, str] = {
+    WorkspaceModule.TABLES.value: "数据表",
+    WorkspaceModule.DOCUMENTS.value: "文档",
+    WorkspaceModule.DESIGN.value: "设计",
 }
 
 
@@ -144,13 +152,13 @@ class Workspace(TimestampMixin, Base):
         default=True,
         comment="是否允许成员（EDITOR 及以下）编辑数据",
     )
-    workspace_type: Mapped[WorkspaceType] = mapped_column(
-        Enum(WorkspaceType),
+    modules: Mapped[list[str]] = mapped_column(
+        JSON,
         nullable=False,
-        default=WorkspaceType.DATA_DOC,
-        # SQLAlchemy Enum 落库为枚举成员名（DATA_DOC），故 server_default 用 name
-        server_default=WorkspaceType.DATA_DOC.name,
-        comment="工作区类型：数据+文档 / 数据 / 文档",
+        default=default_workspace_modules,
+        # 自愈/兜底建表路径需要可编译的 DEFAULT（工厂调用不可依赖），与迁移回填口径一致
+        server_default='["tables", "documents", "design"]',
+        comment="启用的功能模块集合（tables/documents/design，ADR 0080）",
     )
     storage_quota_bytes: Mapped[int] = mapped_column(
         BigInteger,
@@ -281,14 +289,17 @@ __all__ = [
     "ACTION_LABELS",
     "BUILTIN_ROLE_CODES",
     "DEFAULT_STORAGE_QUOTA_BYTES",
+    "DEFAULT_WORKSPACE_MODULES",
+    "MODULE_LABELS",
     "ROLE_RANK",
+    "WORKSPACE_MODULES",
     "WORKSPACE_ROLE_LABELS",
-    "WORKSPACE_TYPE_LABELS",
     "Role",
     "Workspace",
     "WorkspaceMember",
+    "WorkspaceModule",
     "WorkspaceRole",
     "WorkspaceStorageSnapshot",
-    "WorkspaceType",
     "WorkspaceVisibility",
+    "default_workspace_modules",
 ]

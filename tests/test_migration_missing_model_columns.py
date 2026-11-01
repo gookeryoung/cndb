@@ -32,7 +32,7 @@ ADD_COLUMNS_REVISION = "f7a8b9c0d1e2"  # 历史加列迁移：补齐四列
 DROP_SHARE_REVISION = "a4b5c6d7e8f9"  # 删列迁移：移除视图匿名公开分享两列
 DROP_SHARE_DOWN = "e6a7b8c9d0e1"  # 删列迁移的 down_revision
 VISIBILITY_REVISION = "b5c6d7e8f9a0"  # 视图可见性三档迁移
-HEAD_REVISION = "z4a5b6c7d8e9"  # 设计模块两表（ADR 0079，当前 head）
+HEAD_REVISION = "b6c7d8e9f0a1"  # 工作区功能模块集合（ADR 0080，当前 head）
 
 
 def _upgrade_to(engine_target: str, revision: str) -> None:

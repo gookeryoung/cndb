@@ -194,7 +194,7 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`（v12）、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/workspaces/services/backup_io.py`（版本白名单 +12）、`src/cndb/alembic/versions/b6c7d8e9f0a1_workspace_modules.py`、`src/cndb/plugins/pipeline/services/checks/registry.py`（domain_of 与保存期断言）、`src/cndb/plugins/pipeline/routers/workflows.py`（目录过滤 + 保存 / 校验 / 更新期拒绝） | `tests/test_workspace_modules.py`、`tests/test_workspace_modules_api.py`、`tests/test_workspace_modules_migration.py`、`tests/test_workspace_backup_v12.py` | 本次 P0 提交 |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 
@@ -202,9 +202,9 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 
 ## 交接（会话结束更新）
 
-- 当前阶段：评审通过（2026-11-01，用户逐项拍板 5 项未决问题，C4/D4/D8 按拍板修订），`Accepted`——进入实现，按 P0 → P1 → P2 推进、每期一提交
-- 已完成：需求卡片 `docs/requirements/0080-workspace-module-selection.md`（C1-C6，未决问题全部有结论）、本 ADR（D1-D9，无待定项）、`docs/adr/README.md` 索引、`CONTEXT.md` 术语「工作区模块」
+- 当前阶段：P0 已落地（后端模型 / 迁移 / API / 备份 v12 / pipeline 过滤与域校验），进入 P1（前端全套）
+- 已完成：需求卡片 `docs/requirements/0080-workspace-module-selection.md`（C1-C6，未决问题全部有结论）、本 ADR（D1-D9，无待定项）、`docs/adr/README.md` 索引、`CONTEXT.md` 术语「工作区模块」、P0 全部后端改动与测试
 - 评审拍板结论：① 质量检查集中 + 页签恒显 + GitHub 风格双栏（左规则清单 / 右结果历史）；② 仅设计工作区也显示质量页签（后续加 design 域动作）；③ 存量映射认可（D5）；④ API 不保留 `workspace_type` 兼容字段（D2）；⑤ 新建默认三模块全选 + 卡片式选型 UI 优化（D8）
-- 下一步：`implementer` 按 §8 分期实现，P0（后端模型 / 迁移 / API / 备份 v12 / pipeline 过滤与域校验）→ P1（前端全套）→ P2（帮助 / e2e / 残留清理 / 落地表回填）
-- 已知坑：SQLite 列变更须走 `batch_alter_table`；JSON 列 server_default 不可移植，回填必须走迁移 UPDATE；`MainLayout` 重定向 effect 依赖 `currentWs`，设置页改勾选后自动触发重定向（测试须覆盖）；本机跑测试须先清空 `LD_LIBRARY_PATH`（trae 服务器旧 libsqlite3 遮蔽系统库）
-- 最近一次全绿：`make check-docs` @ `95641259`（2026-11-01，仅文档变更，L0 门禁）
+- 下一步：P1 前端（`workspaceModules.ts` + API 类型 + 创建 / 设置卡片式选型 + MainLayout 页签门控 / 落地 / 重定向 + 质量检查页双栏 + 单测）→ P2（帮助 / e2e / 残留清理 / 落地表回填）
+- 已知坑：SQLite 列变更须走 `batch_alter_table`；JSON 列 ORM 侧需 `server_default` 字面量（schema 自愈层无法调用工厂合成默认值）；`MainLayout` 重定向 effect 依赖 `currentWs`，设置页改勾选后自动触发重定向（测试须覆盖）；本机跑测试须先清空 `LD_LIBRARY_PATH`（trae 服务器旧 libsqlite3 遮蔽系统库）；备份导入版本白名单在 `backup_io.py`，升版本须同步加白名单；旧链头常量在 `tests/test_migration_missing_model_columns.py::HEAD_REVISION`
+- 最近一次全绿：`make flow` @ P0 代码（2026-11-01，6475 passed）

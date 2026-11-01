@@ -19,9 +19,9 @@ from cndb.plugins.workspaces.models import (
     Workspace,
     WorkspaceMember,
     WorkspaceRole,
-    WorkspaceType,
     WorkspaceVisibility,
 )
+from cndb.plugins.workspaces.modules import workspace_modules_from_meta
 from cndb.plugins.workspaces.permissions import get_member_role, has_role, raise_permission_denied
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
 from cndb.plugins.workspaces.routers.member_routes import router as member_router
@@ -162,7 +162,7 @@ def create_workspace(
         visibility=payload.visibility,
         tags=payload.tags,
         allow_edit=payload.allow_edit,
-        workspace_type=payload.workspace_type,
+        modules=payload.modules,
         created_by_id=current_user.id,
     )
     db.add(ws)
@@ -340,10 +340,8 @@ def create_workspace_from_backup(
     except (ValueError, TypeError):
         visibility = WorkspaceVisibility.MEMBER
 
-    try:
-        workspace_type = WorkspaceType(ws_meta.get("workspace_type", WorkspaceType.DATA_DOC.value))
-    except (ValueError, TypeError):
-        workspace_type = WorkspaceType.DATA_DOC
+    # v12 写 modules；≤v11 旧备份按 workspace_type 映射，未知值回退全模块并记 errors（ADR 0080 D7）
+    modules, module_warning = workspace_modules_from_meta(ws_meta)
 
     ws = Workspace(
         name=backup_name,
@@ -351,7 +349,7 @@ def create_workspace_from_backup(
         visibility=visibility,
         tags=ws_meta.get("tags", []) or [],
         allow_edit=bool(ws_meta.get("allow_edit", True)),
-        workspace_type=workspace_type,
+        modules=modules,
         created_by_id=current_user.id,
     )
     db.add(ws)
@@ -370,6 +368,9 @@ def create_workspace_from_backup(
         db.delete(ws)
         db.commit()
         raise
+
+    if module_warning:
+        import_result.errors.append(module_warning)
 
     return WorkspaceCreateFromBackupResponse(
         workspace=ws,
@@ -501,10 +502,8 @@ def create_workspace_from_archive(
             visibility = WorkspaceVisibility(ws_meta.get("visibility", "member"))
         except (ValueError, TypeError):
             visibility = WorkspaceVisibility.MEMBER
-        try:
-            workspace_type = WorkspaceType(ws_meta.get("workspace_type", WorkspaceType.DATA_DOC.value))
-        except (ValueError, TypeError):
-            workspace_type = WorkspaceType.DATA_DOC
+        # v12 写 modules；≤v11 旧备份按 workspace_type 映射，未知值回退全模块并记 errors（ADR 0080 D7）
+        modules, module_warning = workspace_modules_from_meta(ws_meta)
 
         ws = Workspace(
             name=backup_name,
@@ -512,7 +511,7 @@ def create_workspace_from_archive(
             visibility=visibility,
             tags=ws_meta.get("tags", []) or [],
             allow_edit=bool(ws_meta.get("allow_edit", True)),
-            workspace_type=workspace_type,
+            modules=modules,
             created_by_id=current_user.id,
         )
         db.add(ws)
@@ -533,6 +532,8 @@ def create_workspace_from_archive(
         tmp_path.unlink(missing_ok=True)
 
     invalidate_workspace_list_cache(ws.id)
+    if module_warning:
+        import_result.errors.append(module_warning)
     return WorkspaceCreateFromBackupResponse(
         workspace=ws,
         imported_tables=import_result.imported_tables,
