@@ -124,6 +124,12 @@ export { searchApi } from './search'
 export type {
   WorkspaceSearchParams,
   WorkspaceSearchResult,
+  GlobalSearchParams,
+  GlobalSearchResult,
+  GlobalDocumentHit,
+  GlobalTableHit,
+  GlobalRowHit,
+  WorkspaceRef,
   SearchScope,
   SearchDocumentHit,
   SearchTableHit,

@@ -1,7 +1,8 @@
 /** 顶栏工作区搜索（GlobalSearch）—— GitHub 风格范围切换 + 分组结果面板.
  *
  * 覆盖：默认范围=工作区（文档 + 数据表一次搜）、范围切换只保留对应分组、
- * 表上下文下的「当前激活视图」范围回显、键盘 Enter 打开首项、Esc 收起。
+ * 表上下文下的「当前激活视图」范围回显、键盘 Enter 打开首项、Esc 收起；
+ * 主页模式（0081 C3）：不传 workspaceId 时跨工作区检索（GET /api/v1/search）。
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -32,6 +33,17 @@ async function typeKeyword(text: string) {
   fireEvent.change(input, { target: { value: text } })
   // 250ms 去抖后才会发请求
   await screen.findByTestId('global-search-panel')
+}
+
+/** 主页模式渲染：不传 workspaceId（0081 C3），路由落在 /w 主页 */
+function renderGlobalSearch() {
+  return renderProviders(
+    <>
+      <GlobalSearch />
+      <LocationProbe />
+    </>,
+    { route: '/w' },
+  )
 }
 
 describe('GlobalSearch 顶栏工作区搜索', () => {
@@ -167,5 +179,48 @@ describe('GlobalSearch 命令模式（0067）', () => {
     await waitFor(() => {
       expect(document.querySelector('[data-testid="loc"]')).toBeInTheDocument()
     })
+  })
+})
+
+describe('GlobalSearch 主页模式（0081 C3）', () => {
+  it('无范围选择器：跨工作区检索恒为全部，占位与 footer 均为主页口径', async () => {
+    renderGlobalSearch()
+    const input = screen.getByTestId('global-search-input')
+    expect(input).toHaveAttribute('aria-label', '搜索全部工作区')
+    expect(input).toHaveAttribute('placeholder', '搜索全部工作区，或输入 > 执行命令…')
+    // 范围选择器只属于工作区模式（C3：主页不收敛范围）
+    expect(screen.queryByTestId('global-search-scope')).toBeNull()
+
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '需求' } })
+    expect(await screen.findByTestId('global-search-doc-2')).toBeInTheDocument()
+    expect(screen.getByTestId('global-search-panel')).toHaveTextContent('范围：全部工作区')
+  })
+
+  it('命中项带工作区名前缀，点击进入对应工作区（请求走全局端点）', async () => {
+    const spyGlobal = vi.spyOn(searchApi, 'global')
+    const spyWs = vi.spyOn(searchApi, 'workspace')
+    renderGlobalSearch()
+    await typeKeyword('需求')
+
+    // 副行带工作区名前缀：跨工作区命中可区分归属
+    expect(await screen.findByTestId('global-search-doc-2')).toHaveTextContent('测试工作区 ·')
+    expect(spyGlobal).toHaveBeenCalledWith({ q: '需求', limit: 10 })
+    expect(spyWs).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('global-search-doc-2'))
+    await waitFor(() => expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/documents/2'))
+    spyGlobal.mockRestore()
+    spyWs.mockRestore()
+  })
+
+  it('命令模式剔除需工作区上下文的命令（如新建数据表），全局命令仍可用', async () => {
+    renderGlobalSearch()
+    const input = screen.getByTestId('global-search-input')
+    fireEvent.focus(input)
+    fireEvent.change(input, { target: { value: '>' } })
+
+    expect(await screen.findByTestId('global-search-command-open-help')).toBeInTheDocument()
+    expect(screen.queryByTestId('global-search-command-new-table')).toBeNull()
   })
 })

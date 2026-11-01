@@ -231,39 +231,42 @@ export default function MainLayout() {
     [tables, tableKeyword],
   )
 
-  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），按勾选的功能模块过滤可见页签.
+  /** 顶栏一级模块导航（需求 0081 C4）：数据表 → 文档 → 设计 → 工作区设置.
    *
-   * 各项带数量徽标：仅数据就绪后渲染徽标（0 也显示），未就绪时不渲染占位，
-   * 避免加载瞬间误导（class cn-ws-tab-count，样式走 var(--cn-*) 主题变量）。
-   * 「工作区设置」无徽标。
+   * 前三项按勾选模块门控（ADR 0080 口径），「工作区设置」恒显；
+   * 数据表 / 文档带数量徽标（仅数据就绪后渲染，0 也显示）；
+   * key 即路由段（/w/:wid/{key}），激活态由 activeWsTab 驱动。
+   * 仅桌面端渲染：移动端顶栏放不下，一级模块维持页签行承载（C5）。
    */
-  const wsTabItems: TabsProps['items'] = [
+  const headerNavItems = [
     ...(wsFeatures.tables ? [{
       key: 'tables',
-      label: (
-        <span>
-          <DatabaseOutlined /> 数据表
-          {tablesReady && <span className="cn-ws-tab-count">{tables.length}</span>}
-        </span>
-      ),
+      icon: <DatabaseOutlined />,
+      label: '数据表',
+      count: tablesReady ? tables.length : undefined,
     }] : []),
     ...(wsFeatures.documents ? [{
       key: 'documents',
-      label: (
-        <span>
-          <FileTextOutlined /> 文档
-          {docsReady && docCount && <span className="cn-ws-tab-count">{docCount.total}</span>}
-        </span>
-      ),
+      icon: <FileTextOutlined />,
+      label: '文档',
+      count: docsReady && docCount ? docCount.total : undefined,
     }] : []),
     ...(wsFeatures.design ? [{
       key: 'design',
-      label: (
-        <span>
-          <ToolOutlined /> 设计
-        </span>
-      ),
+      icon: <ToolOutlined />,
+      label: '设计',
+      count: undefined,
     }] : []),
+    { key: 'settings', icon: <SettingOutlined />, label: '工作区设置', count: undefined },
+  ] as const
+
+  /** 工作区级分页导航（需求 0081 C5）：仅承载二级功能模块，维持原位置.
+   *
+   * 数据分析 / 数据源同步随数据表开放，质量检查恒显（ADR 0080）；
+   * 一级模块（数据表 / 文档 / 设计 / 工作区设置）已上移顶栏（C4），
+   * 仅移动端仍在页签行全量渲染（顶栏空间不足，移动端形态维持现状）。
+   */
+  const secondaryTabItems: TabsProps['items'] = [
     ...(wsFeatures.analytics ? [{
       key: 'analytics',
       label: (
@@ -288,8 +291,21 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
-    { key: 'settings', label: <span><SettingOutlined /> 工作区设置</span> },
   ]
+  const wsTabItems: TabsProps['items'] = isMobile
+    ? [
+      ...headerNavItems.map(item => ({
+        key: item.key,
+        label: (
+          <span>
+            {item.icon} {item.label}
+            {item.count !== undefined && <span className="cn-ws-tab-count">{item.count}</span>}
+          </span>
+        ),
+      })),
+      ...secondaryTabItems,
+    ]
+    : secondaryTabItems
   // ── 表级页签（融合导航行，紧随工作区分页之后）──
   // 当 URL 处于某张表的上下文（网格页 /w/:wid/tables/:tid 及其子页）时，
   // 在工作区 Tabs 右侧以竖线分割后渲染：表名（点击返回网格）+ 子页页签（GitHub 风格页签切换）。
@@ -410,24 +426,25 @@ export default function MainLayout() {
       viewId: Number.isFinite(viewParam) && viewParam > 0 ? viewParam : undefined,
     }
     : { tableId: undefined, viewId: undefined }
-  const searchNode = wid ? (
-    isMobile ? (
-      <Button
-        type="text"
-        icon={<SearchOutlined />}
-        aria-label="搜索工作区"
-        data-testid="global-search-mobile-open"
-        onClick={() => setSearchMobileOpen(true)}
-      />
-    ) : (
-      <GlobalSearch
-        workspaceId={Number(wid)}
-        workspaceName={currentWs?.name}
-        tableId={searchContext.tableId}
-        viewId={searchContext.viewId}
-      />
-    )
-  ) : null
+  // 顶栏搜索三态（需求 0081 C3）：工作区上下文 = 工作区范围；无工作区上下文
+  // （/w 主页、/admin、/help）= 主页模式，跨工作区检索（进入工作区前也可搜索）。
+  // 移动端一律收为图标入口 + 顶部抽屉，避免挤压顶栏横向空间。
+  const searchNode = isMobile ? (
+    <Button
+      type="text"
+      icon={<SearchOutlined />}
+      aria-label="搜索"
+      data-testid="global-search-mobile-open"
+      onClick={() => setSearchMobileOpen(true)}
+    />
+  ) : (
+    <GlobalSearch
+      workspaceId={wid ? Number(wid) : undefined}
+      workspaceName={currentWs?.name}
+      tableId={wid ? searchContext.tableId : undefined}
+      viewId={wid ? searchContext.viewId : undefined}
+    />
+  )
 
   const onLogout = useCallback(() => {
     modal.confirm({
@@ -653,54 +670,84 @@ export default function MainLayout() {
         height: 44, lineHeight: '44px', flexShrink: 0,
         display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
       }}>
-        {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航 */}
-        {isMobile && (
-          <Button
-            type="text"
-            icon={<MenuOutlined />}
-            aria-label="打开导航菜单"
-            data-testid="mobile-nav-btn"
-            onClick={() => setMobileNavOpen(true)}
-          />
-        )}
-        <Tooltip title="主页">
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 4, cursor: 'pointer' }}
-            data-testid="home-logo"
-            onClick={() => navigate('/w')}>
-            <BrandMark size={24} />
-            {!isMobile && (
-              <>
-                <span className="cn-brand-word">晶格协同</span>
-                {systemAbout?.app_version && (
-                  <span
-                    className="cn-brand-version"
-                    data-testid="app-version"
-                    title={`应用版本 v${systemAbout.app_version}`}
+        {/* ── 左区（需求 0081 C1）：品牌 + 工作区切换 + 一级模块导航 ── */}
+        <div className="cn-header-left">
+          {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航 */}
+          {isMobile && (
+            <Button
+              type="text"
+              icon={<MenuOutlined />}
+              aria-label="打开导航菜单"
+              data-testid="mobile-nav-btn"
+              onClick={() => setMobileNavOpen(true)}
+            />
+          )}
+          <Tooltip title="主页">
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginRight: 4, cursor: 'pointer' }}
+              data-testid="home-logo"
+              onClick={() => navigate('/w')}>
+              <BrandMark size={24} />
+              {!isMobile && (
+                <>
+                  <span className="cn-brand-word">晶格协同</span>
+                  {systemAbout?.app_version && (
+                    <span
+                      className="cn-brand-version"
+                      data-testid="app-version"
+                      title={`应用版本 v${systemAbout.app_version}`}
+                    >
+                      v{systemAbout.app_version}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          </Tooltip>
+
+          {/* 工作区下拉 —— 移动端仅显示图标，节省横向空间 */}
+          <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
+            <Button type="text" icon={<FolderOpenOutlined />} data-testid="ws-switch-btn">
+              {!isMobile && (currentWs?.name || '工作区')}
+            </Button>
+          </Dropdown>
+
+          {/* 一级模块导航（需求 0081 C4）—— 数据表 / 文档 / 设计 / 工作区设置上移顶栏；
+              仅桌面端渲染（移动端一级模块维持在下方页签行，C5）。
+              激活态由路由段驱动：表级子页（/tables/:tid/settings 等）一律落在「数据表」，
+              避免表设置页被误判为「工作区设置」；点击导航到对应段。 */}
+          {!isMobile && wid && (
+            <nav className="cn-header-nav" data-testid="ws-module-nav" aria-label="工作区一级功能导航">
+              {headerNavItems.map(item => {
+                const active = activeWsTab === item.key
+                return (
+                  <button
+                    key={item.key}
+                    type="button"
+                    aria-current={active ? 'page' : undefined}
+                    data-testid={`ws-nav-${item.key}`}
+                    className={active ? 'cn-header-nav-item cn-header-nav-item-active' : 'cn-header-nav-item'}
+                    onClick={() => navigate(`/w/${wid}/${item.key}`)}
                   >
-                    v{systemAbout.app_version}
-                  </span>
-                )}
-              </>
-            )}
-          </div>
-        </Tooltip>
+                    {item.icon}
+                    <span>{item.label}</span>
+                    {item.count !== undefined && <span className="cn-ws-tab-count">{item.count}</span>}
+                  </button>
+                )
+              })}
+            </nav>
+          )}
+        </div>
 
-        {/* 工作区下拉 —— 移动端仅显示图标，节省横向空间 */}
-        <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
-          <Button type="text" icon={<FolderOpenOutlined />} data-testid="ws-switch-btn">
-            {!isMobile && (currentWs?.name || '工作区')}
-          </Button>
-        </Dropdown>
-
-        {/* 工作区搜索 —— GitHub 风格顶栏搜索框：默认范围=整个工作区，
-            处于某张表时把数据表侧收敛到当前激活视图（table_id + view_id）。
-            桌面端由居中容器接管剩余横向空间，让搜索框相对居中、就近操作；
+        {/* ── 中区（需求 0081 C1/C3）：搜索框，接管剩余横向空间相对居中 ──
+            GitHub 风格顶栏搜索框：工作区上下文默认范围=整个工作区，处于某张表时把
+            数据表侧收敛到当前激活视图（table_id + view_id）；主页（/w）等无工作区
+            上下文 = 跨工作区检索，进入工作区前也可搜索（0081 C3）。
             移动端收为图标入口并展开抽屉，避免挤压顶栏横向空间。 */}
         {isMobile ? searchNode : <div className="cn-header-search">{searchNode}</div>}
 
-        {/* 顶栏右侧操作区 —— GitHub 风格：带边框图标按钮（antd 默认尺寸 32px），
-            文字说明收进 Tooltip，降低顶栏视觉密度 */}
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+        {/* ── 右区（需求 0081 C2）：操作区维持现状 —— GitHub 风格带边框图标按钮
+            （antd 默认尺寸 32px），文字说明收进 Tooltip，降低顶栏视觉密度 ── */}
+        <div className="cn-header-right">
           {/* 大模型设置入口 —— 个人级连接与调用记录；桌面端常驻图标（帮助左侧），
               移动端顶栏空间紧张，入口收进用户菜单（见 userMenuItems） */}
           {!isMobile && (
@@ -884,9 +931,9 @@ export default function MainLayout() {
         {siderMode === 'documents' ? renderDocumentNav(true) : siderMode === 'tables' && renderTableNav(true)}
       </Drawer>
 
-      {/* 移动端工作区搜索：顶部抽屉承载与桌面同款搜索面板 */}
+      {/* 移动端搜索：顶部抽屉承载与桌面同款搜索面板（主页模式 = 跨工作区，0081 C3） */}
       <Drawer
-        title="搜索工作区"
+        title={wid ? '搜索工作区' : '搜索全部工作区'}
         placement="top"
         open={isMobile && searchMobileOpen}
         onClose={() => setSearchMobileOpen(false)}
@@ -894,16 +941,14 @@ export default function MainLayout() {
         styles={{ body: { padding: 12 } }}
         data-testid="global-search-drawer"
       >
-        {wid && (
-          <div className="cn-search-in-drawer">
-            <GlobalSearch
-              workspaceId={Number(wid)}
-              workspaceName={currentWs?.name}
-              tableId={searchContext.tableId}
-              viewId={searchContext.viewId}
-            />
-          </div>
-        )}
+        <div className="cn-search-in-drawer">
+          <GlobalSearch
+            workspaceId={wid ? Number(wid) : undefined}
+            workspaceName={currentWs?.name}
+            tableId={wid ? searchContext.tableId : undefined}
+            viewId={wid ? searchContext.viewId : undefined}
+          />
+        </div>
       </Drawer>
 
       <Suspense fallback={<ModalFallback />}>

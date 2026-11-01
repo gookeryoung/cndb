@@ -25,6 +25,13 @@ ROWS_PER_TABLE = 3
 #: 一次检索最多返回的行命中（面板展示预算）
 MAX_ROWS_TOTAL = 20
 
+#: 跨工作区检索（主页 /api/v1/search）：单个工作区文档 / 表名各自的命中上限
+GLOBAL_PER_WS_LIMIT = 3
+
+#: 跨工作区检索：行命中按工作区截断的上限（search_workspace 内部按 MAX_ROWS_TOTAL 封顶，
+#: 主页场景只需要「找到在哪个工作区」，按工作区再收敛一层）
+GLOBAL_PER_WS_ROWS = 3
+
 
 def _readable_tables(db: Session, workspace_id: int, user: Any) -> list[Any]:
     """工作区内当前用户可读的表（与 /tables 列表同口径：批量预取后纯计算判定）."""
@@ -337,3 +344,78 @@ def _search_tables(
         "rows": row_hits[:MAX_ROWS_TOTAL],
         "view": view_scope,
     }
+
+
+def _member_workspaces(db: Session, user: Any) -> list[Any]:
+    """当前用户所属的工作区（pinned 优先 → id，与工作区列表口径一致）."""
+    from sqlalchemy import case
+
+    from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
+
+    rows = (
+        db.query(Workspace)
+        .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+        .filter(WorkspaceMember.user_id == user.id)
+        .order_by(
+            case((WorkspaceMember.pinned.is_(True), 0), else_=1),
+            Workspace.id,
+        )
+        .all()
+    )
+    return rows
+
+
+def search_all_workspaces(
+    db: Session,
+    user: Any,
+    keyword: str,
+    *,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """跨工作区统一检索（主页顶栏搜索框，需求 0081 C3）.
+
+    逐工作区复用 ``search_workspace(scope=all)``（各自带 15s 结果缓存），
+    每工作区按 GLOBAL_PER_WS_* 收敛配额后合并；命中项附带 workspace_id /
+    workspace_name 供前端跳转与分组展示。权限口径 = 工作区列表口径：
+    只扫当前用户所属的工作区，非成员工作区不参与。
+
+    Args:
+        keyword: 关键词（已去空白，非空）。
+        limit: 文档 / 表名 / 行三组各自的全局命中上限。
+    """
+    result: dict[str, Any] = {"query": keyword, "documents": [], "tables": [], "rows": []}
+    if not keyword:
+        return result
+
+    key = cache_key("global-search", getattr(user, "id", 0), limit, keyword)
+    cached = search_cache.get(key)
+    if cached is not None:
+        return cached
+
+    for ws in _member_workspaces(db, user):
+        if len(result["documents"]) >= limit and len(result["tables"]) >= limit and len(result["rows"]) >= limit:
+            break
+        per_ws = search_workspace(
+            db,
+            ws.id,
+            user,
+            keyword,
+            scope="all",
+            limit=GLOBAL_PER_WS_LIMIT,
+        )
+        for doc in per_ws["documents"][: max(0, limit - len(result["documents"]))]:
+            doc["workspace_id"] = ws.id
+            doc["workspace_name"] = ws.name
+            result["documents"].append(doc)
+        for table in per_ws["tables"][: max(0, limit - len(result["tables"]))]:
+            table["workspace_id"] = ws.id
+            table["workspace_name"] = ws.name
+            result["tables"].append(table)
+        for row in per_ws["rows"][:GLOBAL_PER_WS_ROWS][: max(0, limit - len(result["rows"]))]:
+            row["workspace_id"] = ws.id
+            row["workspace_name"] = ws.name
+            result["rows"].append(row)
+
+    # 空结果同样缓存：关键词无命中是全表扫描的最坏情况，最需要重用
+    search_cache.set(key, result, SEARCH_CACHE_TTL_SECONDS)
+    return result

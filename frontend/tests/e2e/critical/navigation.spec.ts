@@ -1,7 +1,9 @@
 /** MainLayout Header 导航 E2E.
  *
- * 覆盖：工作区级 Tab 顺序（数据表 → 文档 → 工作区设置）、
- * Header 导航按钮可达性 — 文档、工作区设置.
+ * 覆盖（需求 0081 后的导航形态）：
+ * 顶栏一级导航顺序（数据表 → 文档 → 设计 → 工作区设置）+ 三区划分、
+ * 二级页签（数据分析 / 数据源同步 / 质量检查）维持在内容区上方、
+ * Header 导航按钮可达性 — 文档、数据分析。
  * 以及表列表 owner 列展示 + 筛选器.
  */
 
@@ -24,50 +26,63 @@ test.describe("MainLayout Header 导航按钮", () => {
     await page.waitForURL(/\/tables$/)
   }
 
-  // 原 forms.spec.ts 的「导航 Tab 顺序」用例随表单功能移除而失效，此处按当前
-  // 工作区级 Tab 集重写：顺序即 wsTabItems 的声明顺序，回归导航被误调序的问题。
-  test("工作区 Tab 顺序为 数据表 → 文档 → 数据分析 → 工作区设置", async ({ page }) => {
+  // 需求 0081：四个一级模块上移顶栏（桌面端），回归导航被误调序的问题；
+  // 二级模块（数据分析等）维持在内容区上方页签行（C5）。
+  test("顶栏一级导航顺序为 数据表 → 文档 → 设计 → 工作区设置，二级页签仅承载二级模块", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
-    // 收敛到工作区级 Tabs 的 tablist：表级页签（role=tab）在表上下文下才会出现，
-    // 但 /w/:wid/tables（表列表）无 tid，故此处 first() 即工作区级 Tabs
+    // 一级导航落在顶栏左区（ws-module-nav），顺序即 headerNavItems 声明顺序；
+    // 布局挂载前页面处于「加载中」，须先等导航渲染完成再读 DOM
+    await expect(page.getByTestId("ws-nav-tables")).toBeVisible()
+    const navNames = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll('[data-testid="ws-module-nav"] button'),
+      ).map(b => (b.textContent ?? "").trim()),
+    )
+    // 导航标签内含数量徽标（如「数据表8」），故用子串匹配而非全等
+    const idx = (kw: string) => navNames.findIndex(n => n.includes(kw))
+    expect(idx("数据表")).toBe(0)
+    expect(idx("文档")).toBe(1)
+    expect(idx("设计")).toBe(2)
+    expect(idx("工作区设置")).toBe(3)
+
+    // 二级页签：数据分析 / 数据源同步 / 质量检查；一级模块不在页签行
     const tabs = page.getByRole("tablist").first().getByRole("tab")
-    // allTextContents() 不做自动等待，须先等 Tabs 挂载完成再读文本，否则会读到空标签集
-    await expect(tabs.filter({ hasText: "数据表" })).toBeVisible()
-    await expect(tabs.filter({ hasText: "工作区设置" })).toBeVisible()
-
-    const names = (await tabs.allTextContents()).map((t) => t.trim())
-    // Tab 标签内含数量徽标（如「数据表 8」），故用子串匹配而非全等
-    const idxAssets = names.findIndex((n) => n.includes("数据表"))
-    const idxDocs = names.findIndex((n) => n.includes("文档"))
-    const idxAnalytics = names.findIndex((n) => n.includes("数据分析"))
-    const idxSettings = names.findIndex((n) => n.includes("工作区设置"))
-
-    expect(idxAssets).toBeGreaterThanOrEqual(0)
-    expect(idxDocs).toBeGreaterThanOrEqual(0)
-    expect(idxAnalytics).toBeGreaterThanOrEqual(0)
-    expect(idxSettings).toBeGreaterThanOrEqual(0)
-    expect(idxAssets).toBeLessThan(idxDocs)
-    expect(idxDocs).toBeLessThan(idxAnalytics)
-    expect(idxAnalytics).toBeLessThan(idxSettings)
+    await expect(tabs.filter({ hasText: "数据分析" })).toBeVisible()
+    await expect(tabs.filter({ hasText: "质量检查" })).toBeVisible()
+    for (const primary of ["数据表", "文档", "设计", "工作区设置"]) {
+      await expect(tabs.filter({ hasText: primary })).toHaveCount(0)
+    }
   })
 
-  test("Content 分页导航可见 文档 / 数据分析 / 工作区设置 Tab", async ({ page }) => {
+  test("顶栏三区划分：左（品牌+工作区+一级导航）→ 中（搜索）→ 右（操作区）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
-    // MainLayout 重构后，文档 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs
-    await expect(page.getByRole("tab", { name: /文档/ })).toBeVisible()
-    await expect(page.getByRole("tab", { name: /数据分析/ })).toBeVisible()
-    await expect(page.getByRole("tab", { name: /工作区设置/ })).toBeVisible()
+    // 三区容器依序渲染（需求 0081 C1/C2）；先等布局挂载完成再读 DOM
+    await expect(page.getByTestId("ws-nav-tables")).toBeVisible()
+    const order = await page.evaluate(() => {
+      const left = document.querySelector(".cn-header-left")
+      const search = document.querySelector(".cn-header-search")
+      const right = document.querySelector(".cn-header-right")
+      if (!left || !search || !right) return null
+      const before = (a: Element, b: Element) =>
+        (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+      return { leftBeforeSearch: before(left, search), searchBeforeRight: before(search, right) }
+    })
+    expect(order).toEqual({ leftBeforeSearch: true, searchBeforeRight: true })
+    // 左区承载一级导航，中区承载搜索框
+    await expect(page.locator(".cn-header-left").locator('[data-testid="ws-module-nav"]')).toBeVisible()
+    await expect(page.locator(".cn-header-search").getByTestId("global-search-input")).toBeVisible()
   })
 
-  test("文档 Tab → /w/:wid/documents", async ({ page }) => {
+  test("文档导航 → /w/:wid/documents", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
-    await page.getByRole("tab", { name: /文档/ }).click()
+    // 需求 0081 C4：文档是一级模块，入口在顶栏导航
+    await page.getByTestId("ws-nav-documents").click()
     await page.waitForURL(/\/documents$/)
     await expect(page.getByTestId("documents-layout")).toBeVisible({ timeout: 5000 })
   })
@@ -104,8 +119,8 @@ test.describe("MainLayout Header 导航按钮", () => {
       // 表段：数据表导航侧栏
       await expect(page.getByTestId("sider-tables")).toBeVisible({ timeout: 10_000 })
 
-      // 切到文档：表导航消失，文档树侧栏出现且包含新建文档
-      await page.getByRole("tab", { name: /文档/ }).click()
+      // 切到文档（顶栏一级导航）：表导航消失，文档树侧栏出现且包含新建文档
+      await page.getByTestId("ws-nav-documents").click()
       await page.waitForURL(/\/documents$/)
       const sider = page.getByTestId("sider-documents")
       await expect(sider).toBeVisible()

@@ -58,9 +58,37 @@ export interface WorkspaceSearchParams {
   limit?: number
 }
 
+/** 跨工作区命中项：在工作区命中之上附带归属工作区（主页搜索点击跳转用，需求 0081） */
+export interface WorkspaceRef {
+  workspace_id: number
+  workspace_name: string
+}
+
+export type GlobalDocumentHit = SearchDocumentHit & WorkspaceRef
+export type GlobalTableHit = SearchTableHit & WorkspaceRef
+export type GlobalRowHit = SearchRowHit & WorkspaceRef
+
+/** 跨工作区统一检索结果（GET /api/v1/search）：无 view 收敛概念 */
+export interface GlobalSearchResult {
+  query: string
+  documents: GlobalDocumentHit[]
+  tables: GlobalTableHit[]
+  rows: GlobalRowHit[]
+}
+
+export interface GlobalSearchParams {
+  q: string
+  limit?: number
+}
+
 export const searchApi = {
   workspace: (wid: number | string, params: WorkspaceSearchParams) =>
     api
       .get<WorkspaceSearchResult>(`/v1/workspaces/${wid}/search`, { params })
+      .then(r => r.data),
+  /** 跨工作区检索（主页 / 无工作区上下文的顶栏搜索，需求 0081 C3） */
+  global: (params: GlobalSearchParams) =>
+    api
+      .get<GlobalSearchResult>('/v1/search', { params })
       .then(r => r.data),
 }

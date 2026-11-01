@@ -1,4 +1,4 @@
-/** 顶栏工作区搜索 —— GitHub 风格搜索框：范围切换 + 分组结果面板 + 命令模式.
+/** 顶栏统一搜索 —— GitHub 风格搜索框：范围切换 + 分组结果面板 + 命令模式.
  *
  * 口径：
  * - 默认范围是**整个工作区**（文档 FTS + 数据表行/表名），不再区分「文档页入口」；
@@ -6,7 +6,9 @@
  * - 工作区范围覆盖全部可读表且不按视图收敛；只有「数据表」范围才收敛到当前表
  *   与激活视图（此时才下发 view_id），面板底部明示当前范围，避免「搜不到」被误读成数据丢失；
  * - 命令模式（0067）：输入以 `>` 开头时面板切换为命令列表，不发搜索请求，
- *   命令定义集中在 components/commands.ts。
+ *   命令定义集中在 components/commands.ts；
+ * - 主页模式（0081 C3）：不传 workspaceId 时检索范围为当前用户可访问的**全部工作区**
+ *   （GET /api/v1/search），隐藏范围选择器，命中项带工作区名、点击进入对应工作区。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -24,7 +26,10 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { formatMeta } from '@/components/Document/docFormat'
 import { searchApi } from '@/api'
-import type { SearchScope, WorkspaceSearchResult } from '@/api'
+import type {
+  GlobalSearchResult, SearchDocumentHit, SearchRowHit, SearchScope, SearchTableHit,
+  WorkspaceRef, WorkspaceSearchResult,
+} from '@/api'
 import { parseHitHighlight } from '@/components/Document/outline'
 import { useTheme } from '@/theme/ThemeProvider'
 import { useUiStore } from '@/store'
@@ -33,6 +38,8 @@ import type { Command } from '@/components/commands'
 
 const SCOPE_STORAGE_KEY = 'cndb:search-scope'
 const MAX_ITEMS = 20
+/** 主页模式（跨工作区检索）单次请求的各组命中上限（与服务端口径一致） */
+const GLOBAL_LIMIT = 10
 
 const SCOPES: { key: SearchScope; label: string; icon: React.ReactNode; hint: string }[] = [
   { key: 'all', label: '工作区', icon: <SearchOutlined />, hint: '文档 + 数据表' },
@@ -60,20 +67,28 @@ function Highlight({ text }: { text: string }) {
 }
 
 interface GlobalSearchProps {
-  workspaceId: number
+  /** 工作区 id；不传 = 主页模式（跨工作区检索，需求 0081 C3） */
+  workspaceId?: number
   workspaceName?: string
-  /** 当前激活表 / 视图（不在表上下文中则不传） */
+  /** 当前激活表 / 视图（不在表上下文中则不传；主页模式无此概念） */
   tableId?: number
   viewId?: number
 }
 
+/** 两种模式的命中都带可选工作区归属：工作区模式下由 props 兜底填充 */
+type DocHit = import('@/api').SearchDocumentHit & Partial<WorkspaceRef>
+type TableHit = import('@/api').SearchTableHit & Partial<WorkspaceRef>
+type RowHit = import('@/api').SearchRowHit & Partial<WorkspaceRef>
+
 type PanelItem =
-  | { kind: 'doc'; key: string; id: number }
-  | { kind: 'table'; key: string; id: number }
-  | { kind: 'row'; key: string; tableId: number; rowId: number | null }
+  | { kind: 'doc'; key: string; id: number; wsId: number }
+  | { kind: 'table'; key: string; id: number; wsId: number }
+  | { kind: 'row'; key: string; tableId: number; rowId: number | null; wsId: number }
 
 export default function GlobalSearch({ workspaceId, workspaceName, tableId, viewId }: GlobalSearchProps) {
   const navigate = useNavigate()
+  // 主页模式：无工作区上下文（/w、/admin、/help 等），检索范围为全部可访问工作区
+  const isGlobal = workspaceId === undefined
   const [scope, setScope] = useState<SearchScope>(readScope)
   const [input, setInput] = useState('')
   const [keyword, setKeyword] = useState('')
@@ -113,29 +128,33 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
     try { localStorage.setItem(SCOPE_STORAGE_KEY, scope) } catch { /* ignore */ }
   }, [scope])
 
-  const query = useQuery({
-    // 视图收敛只属于「数据表」范围：工作区范围覆盖全部可读表，切换范围需重新请求
-    queryKey: [
-      'workspace-search',
-      workspaceId,
-      keyword,
-      scope,
-      tableId ?? null,
-      scope === 'tables' ? (viewId ?? null) : null,
-    ],
-    queryFn: () => searchApi.workspace(workspaceId, {
-      q: keyword,
-      scope,
-      table_id: tableId,
-      view_id: scope === 'tables' ? viewId : undefined,
-      limit: 10,
-    }),
-    enabled: Number.isFinite(workspaceId) && keyword.length > 0,
+  const query = useQuery<WorkspaceSearchResult | GlobalSearchResult>({
+    // 主页模式走跨工作区端点；工作区模式沿用既有键结构（视图收敛只属于「数据表」范围）
+    queryKey: isGlobal
+      ? ['global-search', keyword]
+      : [
+        'workspace-search',
+        workspaceId,
+        keyword,
+        scope,
+        tableId ?? null,
+        scope === 'tables' ? (viewId ?? null) : null,
+      ],
+    queryFn: (): Promise<WorkspaceSearchResult | GlobalSearchResult> => isGlobal
+      ? searchApi.global({ q: keyword, limit: GLOBAL_LIMIT })
+      : searchApi.workspace(workspaceId!, {
+        q: keyword,
+        scope,
+        table_id: tableId,
+        view_id: scope === 'tables' ? viewId : undefined,
+        limit: 10,
+      }),
+    enabled: keyword.length > 0 && (isGlobal || Number.isFinite(workspaceId!)),
     staleTime: 10_000,
-    placeholderData: prev => prev,
+    placeholderData: (prev: WorkspaceSearchResult | GlobalSearchResult | undefined) => prev,
   })
 
-  const data: WorkspaceSearchResult | undefined = keyword ? query.data : undefined
+  const data: WorkspaceSearchResult | GlobalSearchResult | undefined = keyword ? query.data : undefined
 
   // ── 键盘：Ctrl/⌘+K 聚焦，/ 聚焦，Esc 收起，↑↓ 选择，回车打开 ──
   useEffect(() => {
@@ -158,20 +177,43 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // 三个分组各自 memo：否则 ?? [] 每次渲染产生新数组，令下方 items 的 useMemo 失效
-  const docHits = useMemo(() => data?.documents ?? [], [data])
-  const tableHits = useMemo(() => data?.tables ?? [], [data])
-  const rowHits = useMemo(() => data?.rows ?? [], [data])
+  // 三个分组各自 memo：否则 ?? [] 每次渲染产生新数组，令下方 items 的 useMemo 失效。
+  // 工作区模式的命中不带工作区字段，用 props 兜底填充，两种模式共用同一渲染路径
+  const docHits = useMemo<DocHit[]>(
+    () => ((data?.documents ?? []) as Array<SearchDocumentHit & Partial<WorkspaceRef>>).map(d => ({
+      ...d,
+      workspace_id: d.workspace_id ?? workspaceId!,
+      workspace_name: d.workspace_name ?? workspaceName ?? '',
+    })),
+    [data, workspaceId, workspaceName],
+  )
+  const tableHits = useMemo<TableHit[]>(
+    () => ((data?.tables ?? []) as Array<SearchTableHit & Partial<WorkspaceRef>>).map(t => ({
+      ...t,
+      workspace_id: t.workspace_id ?? workspaceId!,
+      workspace_name: t.workspace_name ?? workspaceName ?? '',
+    })),
+    [data, workspaceId, workspaceName],
+  )
+  const rowHits = useMemo<RowHit[]>(
+    () => ((data?.rows ?? []) as Array<SearchRowHit & Partial<WorkspaceRef>>).map(r => ({
+      ...r,
+      workspace_id: r.workspace_id ?? workspaceId!,
+      workspace_name: r.workspace_name ?? workspaceName ?? '',
+    })),
+    [data, workspaceId, workspaceName],
+  )
 
   const items: PanelItem[] = useMemo(() => [
-    ...tableHits.map(t => ({ kind: 'table' as const, key: `table-${t.id}`, id: t.id })),
+    ...tableHits.map(t => ({ kind: 'table' as const, key: `table-${t.id}`, id: t.id, wsId: t.workspace_id! })),
     ...rowHits.map(r => ({
       kind: 'row' as const,
       key: `row-${r.table_id}-${r.row_id}`,
       tableId: r.table_id,
       rowId: r.row_id,
+      wsId: r.workspace_id!,
     })),
-    ...docHits.map(d => ({ kind: 'doc' as const, key: `doc-${d.id}`, id: d.id })),
+    ...docHits.map(d => ({ kind: 'doc' as const, key: `doc-${d.id}`, id: d.id, wsId: d.workspace_id! })),
   ].slice(0, MAX_ITEMS), [tableHits, rowHits, docHits])
 
   // 键盘导航统一行数：命令模式走 commands，搜索模式走 items（0067 C4）
@@ -187,12 +229,14 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
     close()
     setInput('')
     setKeyword('')
-    if (item.kind === 'doc') navigate(`/w/${workspaceId}/documents/${item.id}`)
-    else if (item.kind === 'table') navigate(`/w/${workspaceId}/tables/${item.id}`)
-    else if (item.rowId != null) navigate(`/w/${workspaceId}/tables/${item.tableId}?row=${item.rowId}`)
-    else navigate(`/w/${workspaceId}/tables/${item.tableId}`)
+    // 主页模式从命中项取归属工作区；工作区模式下即当前工作区
+    const wid = item.wsId
+    if (item.kind === 'doc') navigate(`/w/${wid}/documents/${item.id}`)
+    else if (item.kind === 'table') navigate(`/w/${wid}/tables/${item.id}`)
+    else if (item.rowId != null) navigate(`/w/${wid}/tables/${item.tableId}?row=${item.rowId}`)
+    else navigate(`/w/${wid}/tables/${item.tableId}`)
     inputRef.current?.blur()
-  }, [close, navigate, workspaceId])
+  }, [close, navigate])
 
   const runCommand = useCallback((cmd: Command) => {
     close()
@@ -235,11 +279,12 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
   }, [open, close])
 
   const scopeMeta = SCOPES.find(s => s.key === scope) ?? SCOPES[0]
-  // 数据表侧的实际检索范围：表上下文 + 激活视图时只搜该视图
-  const scopeNote = data?.view
-    ? data.view.name
-      ? `${data.view.table_name} · 视图「${data.view.name}」`
-      : `${data.view.table_name} · 整表`
+  // 数据表侧的实际检索范围：表上下文 + 激活视图时只搜该视图（主页模式无视图收敛）
+  const viewScope = !isGlobal && data && 'view' in data ? data.view : null
+  const scopeNote = viewScope
+    ? viewScope.name
+      ? `${viewScope.table_name} · 视图「${viewScope.name}」`
+      : `${viewScope.table_name} · 整表`
     : null
 
   const hasResult = items.length > 0
@@ -249,54 +294,63 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
   let idx = -1
   const nextIndex = () => { idx += 1; return idx }
   const isActive = (key: string) => !isCommandMode && items[activeIndex]?.key === key
+  // 主页模式命中项的副行带工作区名前缀（工作区模式下冗余，不显示）
+  const wsPrefix = (name?: string) => (isGlobal && name ? `${name} · ` : '')
 
   return (
     <div className="cn-global-search" ref={wrapRef} data-testid="global-search">
       <div className={showPanel ? 'cn-gs-box cn-gs-box-open' : 'cn-gs-box'}>
-        <Dropdown
-          trigger={['click']}
-          placement="bottomLeft"
-          menu={{
-            selectable: true,
-            selectedKeys: [scope],
-            items: SCOPES.map(s => ({
-              key: s.key,
-              icon: s.icon,
-              label: (
-                <span className="cn-gs-scope-item">
-                  <span>{s.label}</span>
-                  <span className="cn-gs-scope-hint">{s.hint}</span>
-                </span>
-              ),
-            })),
-            onClick: ({ key }) => setScope(key as SearchScope),
-          }}
-        >
-          <button
-            type="button"
-            className="cn-gs-scope"
-            data-testid="global-search-scope"
-            aria-label={`搜索范围：${scopeMeta.label}`}
+        {/* 范围选择器只属于工作区模式：主页跨工作区检索恒为「文档 + 数据表」全部（0081 C3） */}
+        {!isGlobal && (
+          <Dropdown
+            trigger={['click']}
+            placement="bottomLeft"
+            menu={{
+              selectable: true,
+              selectedKeys: [scope],
+              items: SCOPES.map(s => ({
+                key: s.key,
+                icon: s.icon,
+                label: (
+                  <span className="cn-gs-scope-item">
+                    <span>{s.label}</span>
+                    <span className="cn-gs-scope-hint">{s.hint}</span>
+                  </span>
+                ),
+              })),
+              onClick: ({ key }) => setScope(key as SearchScope),
+            }}
           >
-            {scopeMeta.icon}
-            <span className="cn-gs-scope-label">{scopeMeta.label}</span>
-            <DownOutlined className="cn-gs-scope-arrow" />
-          </button>
-        </Dropdown>
+            <button
+              type="button"
+              className="cn-gs-scope"
+              data-testid="global-search-scope"
+              aria-label={`搜索范围：${scopeMeta.label}`}
+            >
+              {scopeMeta.icon}
+              <span className="cn-gs-scope-label">{scopeMeta.label}</span>
+              <DownOutlined className="cn-gs-scope-arrow" />
+            </button>
+          </Dropdown>
+        )}
 
         <Input
           ref={inputRef}
           variant="borderless"
           className="cn-gs-input"
           data-testid="global-search-input"
-          placeholder={workspaceName ? `搜索「${workspaceName}」，或输入 > 执行命令…` : '搜索工作区，或输入 > 执行命令…'}
+          placeholder={isGlobal
+            ? '搜索全部工作区，或输入 > 执行命令…'
+            : workspaceName
+              ? `搜索「${workspaceName}」，或输入 > 执行命令…`
+              : '搜索工作区，或输入 > 执行命令…'}
           value={input}
           onChange={e => { setInput(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
           prefix={<SearchOutlined className="cn-gs-icon" />}
           suffix={input ? null : <kbd className="cn-gs-kbd">Ctrl K</kbd>}
-          aria-label="搜索工作区"
+          aria-label={isGlobal ? '搜索全部工作区' : '搜索工作区'}
         />
       </div>
 
@@ -367,12 +421,14 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
                     data-testid={`global-search-table-${t.id}`}
                     className={i === activeIndex ? 'cn-gs-item cn-gs-item-active' : 'cn-gs-item'}
                     onMouseEnter={() => setActiveIndex(i)}
-                    onClick={() => openItem({ kind: 'table', key: `table-${t.id}`, id: t.id })}
+                    onClick={() => openItem({ kind: 'table', key: `table-${t.id}`, id: t.id, wsId: t.workspace_id! })}
                   >
                     <TableOutlined className="cn-gs-item-icon" />
                     <span className="cn-gs-item-main">
                       <span className="cn-gs-item-title">{t.name}</span>
-                      {t.description && <span className="cn-gs-item-sub">{t.description}</span>}
+                      {(isGlobal || t.description) && (
+                        <span className="cn-gs-item-sub">{wsPrefix(t.workspace_name)}{t.description}</span>
+                      )}
                     </span>
                   </button>
                 )
@@ -398,12 +454,12 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
                     data-testid={`global-search-row-${r.table_id}-${r.row_id}`}
                     className={i === activeIndex ? 'cn-gs-item cn-gs-item-active' : 'cn-gs-item'}
                     onMouseEnter={() => setActiveIndex(i)}
-                    onClick={() => openItem({ kind: 'row', key, tableId: r.table_id, rowId: r.row_id })}
+                    onClick={() => openItem({ kind: 'row', key, tableId: r.table_id, rowId: r.row_id, wsId: r.workspace_id! })}
                   >
                     <DatabaseOutlined className="cn-gs-item-icon" />
                     <span className="cn-gs-item-main">
                       <span className="cn-gs-item-title"><Highlight text={r.title} /></span>
-                      <span className="cn-gs-item-sub">{r.table_name} · {r.snippet}</span>
+                      <span className="cn-gs-item-sub">{wsPrefix(r.workspace_name)}{r.table_name} · {r.snippet}</span>
                     </span>
                   </button>
                 )
@@ -428,7 +484,7 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
                     data-testid={`global-search-doc-${d.id}`}
                     className={i === activeIndex ? 'cn-gs-item cn-gs-item-active' : 'cn-gs-item'}
                     onMouseEnter={() => setActiveIndex(i)}
-                    onClick={() => openItem({ kind: 'doc', key: `doc-${d.id}`, id: d.id })}
+                    onClick={() => openItem({ kind: 'doc', key: `doc-${d.id}`, id: d.id, wsId: d.workspace_id! })}
                   >
                     {(() => {
                       const fmt = formatMeta(d.content_type)
@@ -443,7 +499,7 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
                     })()}
                     <span className="cn-gs-item-main">
                       <span className="cn-gs-item-title"><Highlight text={d.title_hit || d.title} /></span>
-                      <span className="cn-gs-item-sub"><Highlight text={d.summary_hit || ''} /></span>
+                      <span className="cn-gs-item-sub">{wsPrefix(d.workspace_name)}<Highlight text={d.summary_hit || ''} /></span>
                     </span>
                   </button>
                 )
@@ -453,7 +509,7 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
 
           {!isCommandMode && (
             <div className="cn-gs-footer">
-              <span>范围：{scopeMeta.label}{scopeNote ? ` · ${scopeNote}` : ''}</span>
+              <span>范围：{isGlobal ? '全部工作区' : `${scopeMeta.label}${scopeNote ? ` · ${scopeNote}` : ''}`}</span>
               <span className="cn-gs-footer-keys">↑↓ 选择 · Enter 打开 · Esc 关闭</span>
             </div>
           )}

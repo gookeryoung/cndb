@@ -36,6 +36,11 @@ function AdminStub() {
     return <div data-testid="admin-panel-stub">{loc.pathname}</div>
 }
 
+/** 主页路由桩（/w 工作区列表，需求 0081 C3 主页搜索） */
+function HomeStub() {
+    return <div data-testid="home-page-stub">主页</div>
+}
+
 /** 帮助文档路由桩 —— 展示当前 pathname 供断言（ADR 0029：整页路由，非抽屉） */
 function HelpStub() {
     const loc = useLocation()
@@ -100,6 +105,7 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/documents/change-requests" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/issues" element={<DocumentsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
+                <Route path="w" element={<HomeStub />} />
                 <Route path="admin" element={<AdminStub />} />
                 <Route path="help" element={<HelpStub />} />
                 <Route path="help/:sectionKey/:topicKey" element={<HelpStub />} />
@@ -134,85 +140,87 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.queryByTestId('tables-page-stub')).toBeNull()
     })
 
-    it('工作区级按钮已从顶部移除，管理台入口位于右上角用户区左侧', async () => {
+    it('顶栏三区布局：左（品牌+工作区+一级导航）→ 中（搜索）→ 右（操作区），右区维持现状', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
         })
 
-        // 「工作区设置」是工作区级功能，已移入 Content 分页导航，顶部不再保留
-        expect(screen.queryByTestId('workspace-settings-nav')).toBeNull()
+        // 三区容器依序渲染（需求 0081 C1/C2）
+        const left = document.querySelector('.cn-header-left')
+        const search = document.querySelector('.cn-header-search')
+        const right = document.querySelector('.cn-header-right')
+        expect(left).not.toBeNull()
+        expect(search).not.toBeNull()
+        expect(right).not.toBeNull()
+        expect(left!.compareDocumentPosition(search!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(search!.compareDocumentPosition(right!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        // 一级模块导航落在左区；右区仍是操作按钮（大模型/帮助/管理台/头像）
+        expect(left!.querySelector('[data-testid="ws-module-nav"]')).not.toBeNull()
+        expect(right!.querySelector('[data-testid="llm-settings-btn"]')).not.toBeNull()
 
+        // 右区 DOM 顺序：管理台 → 用户头像区（维持现状，C2）
         const adminBtn = screen.getByRole('button', { name: /管理台/ })
-        // 右上角用户区仅保留头像（GitHub 风格），昵称收进 Tooltip
         const userTrigger = screen.getByTestId('user-menu-trigger')
-
-        // DOM 顺序：管理台 → 用户头像区
-        // FOLLOWING(4)：后者在前者之后
         expect(adminBtn.compareDocumentPosition(userTrigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     })
 
-    it('Content 分页导航：默认激活「数据表」，点击 tab 正确导航且激活态随路由变化', async () => {
+    it('顶栏一级导航：默认激活「数据表」（带表数徽标），点击「工作区设置」导航且激活态随路由变化', async () => {
         renderLayout(mockUser)
 
-        // 初始在表列表页，「数据表」激活
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
-        // tab 数量徽标：数据表显示表数量（msw 返回 1 张表），文档显示文档数
+        // 徽标显示表数量（msw 返回 1 张表）
         await waitFor(() => {
-            expect(screen.getByRole('tab', { name: /数据表/ })).toHaveTextContent('1')
+            expect(screen.getByTestId('ws-nav-tables')).toHaveTextContent('1')
         })
-        expect(screen.getByRole('tab', { name: /数据表/ }).closest('.ant-tabs-tab'))
-            .toHaveClass('ant-tabs-tab-active')
+        expect(screen.getByTestId('ws-nav-tables')).toHaveAttribute('aria-current', 'page')
 
-        // 点击「工作区设置」tab → /w/10/settings
-        fireEvent.click(screen.getByRole('tab', { name: /工作区设置/ }))
+        // 点击「工作区设置」→ /w/10/settings（一级模块上移顶栏，需求 0081 C4）
+        fireEvent.click(screen.getByTestId('ws-nav-settings'))
         await waitFor(() => {
             expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
         })
-        expect(screen.getByRole('tab', { name: /工作区设置/ }).closest('.ant-tabs-tab'))
-            .toHaveClass('ant-tabs-tab-active')
+        expect(screen.getByTestId('ws-nav-settings')).toHaveAttribute('aria-current', 'page')
+        expect(screen.getByTestId('ws-nav-tables')).not.toHaveAttribute('aria-current')
     })
 
-    it('分页导航含「文档」页签：位于「工作区设置」之前、带文档数徽标，点击导航到文档模块', async () => {
+    it('顶栏一级导航含「文档」：位于「工作区设置」之前、带文档数徽标，点击导航到文档模块', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
 
-        const docsTab = screen.getByRole('tab', { name: /文档/ })
-        const settingsTab = screen.getByRole('tab', { name: /工作区设置/ })
-        // 文档页签位于工作区设置之前（DOM 顺序约束）
-        expect(docsTab.compareDocumentPosition(settingsTab) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        const docsNav = screen.getByTestId('ws-nav-documents')
+        const settingsNav = screen.getByTestId('ws-nav-settings')
+        // 文档导航位于工作区设置之前（DOM 顺序约束）
+        expect(docsNav.compareDocumentPosition(settingsNav) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
         // 徽标显示文档数（msw 返回 3 个文档）
         await waitFor(() => {
-            expect(docsTab).toHaveTextContent('3')
+            expect(docsNav).toHaveTextContent('3')
         })
 
         // 点击导航到 /w/10/documents 且激活态随路由切换
-        fireEvent.click(docsTab)
+        fireEvent.click(docsNav)
         await waitFor(() => {
             expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
         })
-        expect(screen.getByRole('tab', { name: /文档/ }).closest('.ant-tabs-tab'))
-            .toHaveClass('ant-tabs-tab-active')
+        expect(screen.getByTestId('ws-nav-documents')).toHaveAttribute('aria-current', 'page')
     })
 
-    it('分页导航各项均带图标，直观区分入口类型', async () => {
+    it('顶栏一级导航各项均带图标，直观区分入口类型', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
-        // antd 图标 aria-label 会拼进 accessible name（如 'database数据表'），故用子串正则匹配
-        const tabNames = ['数据表', '文档', '工作区设置']
-        for (const name of tabNames) {
-            const tab = screen.getByRole('tab', { name: new RegExp(name) })
-            expect(tab.querySelector('.anticon')).not.toBeNull()
+        const navIds = ['ws-nav-tables', 'ws-nav-documents', 'ws-nav-design', 'ws-nav-settings']
+        for (const id of navIds) {
+            expect(screen.getByTestId(id).querySelector('.anticon')).not.toBeNull()
         }
     })
 
@@ -230,7 +238,7 @@ describe('MainLayout 顶部导航', () => {
         expect(await screen.findByText('alice')).toBeInTheDocument()
     })
 
-    it('无工作区上下文（/admin）时不渲染工作区分页导航，避免隐式作用到未知工作区', async () => {
+    it('无工作区上下文（/admin）时不渲染一级导航与二级页签，顶栏搜索切换为主页模式', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
@@ -243,10 +251,14 @@ describe('MainLayout 顶部导航', () => {
             expect(screen.getByTestId('admin-panel-stub')).toHaveTextContent('/admin')
         })
 
-        // 分页导航依赖 wid 渲染；无工作区上下文时整体不渲染，侧边栏由「请先从顶部选择一个工作区」提示引导
-        expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull()
-        expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull()
-        expect(screen.queryByRole('tab', { name: /工作区设置/ })).toBeNull()
+        // 一级导航与二级页签均依赖 wid 渲染；无工作区上下文时整体不渲染，
+        // 侧边栏由「请先从顶部选择一个工作区」提示引导
+        expect(screen.queryByTestId('ws-module-nav')).toBeNull()
+        expect(screen.queryByTestId('ws-nav-tables')).toBeNull()
+        expect(screen.queryByTestId('ws-nav-settings')).toBeNull()
+        expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
+        // 主页模式搜索（0081 C3）：进入工作区前也可搜索，范围=全部工作区
+        expect(screen.getByTestId('global-search-input')).toHaveAttribute('aria-label', '搜索全部工作区')
     })
 
     it('非系统管理员不显示「管理台」入口', () => {
@@ -308,6 +320,58 @@ describe('MainLayout 顶部导航', () => {
             expect(screen.queryByTestId('app-version')).toBeNull()
         })
         expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+    })
+})
+
+// ─────────────── 顶栏一级导航 / 主页搜索 / 二级页签（需求 0081） ───────────────
+
+describe('MainLayout 顶栏导航重构（需求 0081）', () => {
+    it('桌面端内容区页签仅承载二级模块：一级模块不在页签行（C4/C5）', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => expect(screen.getByTestId('tables-page-stub')).toBeVisible())
+        // 二级模块维持在内容区上方页签行（原位置不动）
+        expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /数据源同步/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        // 一级模块已上移顶栏，不再出现在页签行
+        expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /设计/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /工作区设置/ })).toBeNull()
+    })
+
+    it('主页（/w）顶栏渲染全局搜索：进入工作区前也可搜索（C3）', async () => {
+        renderLayout(mockUser, '/w')
+
+        await waitFor(() => expect(screen.getByTestId('home-page-stub')).toBeVisible())
+        // 主页模式：无范围选择器、aria-label 口径为全部工作区
+        expect(screen.getByTestId('global-search-input')).toHaveAttribute('aria-label', '搜索全部工作区')
+        expect(screen.queryByTestId('global-search-scope')).toBeNull()
+        // 主页无工作区上下文：一级导航不渲染
+        expect(screen.queryByTestId('ws-module-nav')).toBeNull()
+    })
+
+    it('移动端一级模块维持在页签行全量渲染，顶栏不渲染一级导航（C5）', async () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 375, height: 667,
+        }
+        renderLayout(mockUser)
+
+        await waitFor(() => expect(screen.getByTestId('mobile-nav-btn')).toBeVisible())
+        // 顶栏放不下四个一级模块：维持页签行全量承载（移动端形态不变）
+        expect(screen.queryByTestId('ws-module-nav')).toBeNull()
+        expect(screen.getByRole('tab', { name: /数据表/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /文档/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /设计/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /工作区设置/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
+
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
     })
 })
 
@@ -631,28 +695,28 @@ function useWorkspaceModules(modules: WorkspaceModule[]) {
 }
 
 describe('MainLayout 工作区模块门控', () => {
-    it('仅勾选数据表的工作区不显示「文档/设计」页签，数据分析与数据源同步随表开放', async () => {
+    it('仅勾选数据表的工作区不显示「文档/设计」一级导航，数据分析与数据源同步随表开放', async () => {
         useWorkspaceModules(['tables'])
         renderLayout(mockUser)
 
         await waitFor(() => expect(screen.getByTestId('tables-page-stub')).toBeVisible())
-        await waitFor(() => expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull())
-        expect(screen.queryByRole('tab', { name: /设计/ })).toBeNull()
-        expect(screen.getByRole('tab', { name: /数据表/ })).toBeInTheDocument()
+        await waitFor(() => expect(screen.queryByTestId('ws-nav-documents')).toBeNull())
+        expect(screen.queryByTestId('ws-nav-design')).toBeNull()
+        expect(screen.getByTestId('ws-nav-tables')).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /数据源同步/ })).toBeInTheDocument()
     })
 
-    it('仅勾选文档的工作区仅显示「文档/质量检查/设置」页签，侧栏切换为文档导航', async () => {
+    it('仅勾选文档的工作区仅显示「文档/工作区设置」一级导航，侧栏切换为文档导航', async () => {
         useWorkspaceModules(['documents'])
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => expect(screen.getByTestId('documents-page-stub')).toBeVisible())
-        await waitFor(() => expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull())
+        await waitFor(() => expect(screen.queryByTestId('ws-nav-tables')).toBeNull())
         expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
 
-        expect(screen.getByRole('tab', { name: /文档/ })).toBeInTheDocument()
-        expect(screen.getByRole('tab', { name: /工作区设置/ })).toBeInTheDocument()
+        expect(screen.getByTestId('ws-nav-documents')).toBeInTheDocument()
+        expect(screen.getByTestId('ws-nav-settings')).toBeInTheDocument()
         // 质量检查页签恒显（ADR 0080 D4）
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
         // 无数据表功能 → 文档段渲染文档导航侧栏（需求 0065），无表导航
@@ -665,8 +729,8 @@ describe('MainLayout 工作区模块门控', () => {
         renderLayout(mockUser, '/w/10/design')
 
         await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toBeVisible())
-        await waitFor(() => expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull())
-        expect(screen.getByRole('tab', { name: /设计/ })).toBeInTheDocument()
+        await waitFor(() => expect(screen.queryByTestId('ws-nav-tables')).toBeNull())
+        expect(screen.getByTestId('ws-nav-design')).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
     })
 

@@ -24,6 +24,27 @@ from cndb.plugins.workspaces.services import ai as search_ai
 
 router = APIRouter(prefix="/workspaces/{workspace_id}/search", tags=["search"])
 
+# 跨工作区检索（需求 0081 C3）：主页顶栏搜索框的数据源，挂在 /api/v1/search。
+# 单独成 router 而不是并入 workspaces 路由：`/workspaces/{workspace_id}` 会吞掉
+# `/workspaces/search` 这类路径，全局端点必须在工作区前缀之外。
+global_router = APIRouter(prefix="/search", tags=["search"])
+
+
+@global_router.get("")
+def search_global(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    q: str = Query(min_length=1, max_length=200, description="关键词"),
+    limit: int = Query(default=10, ge=1, le=30, description="各组（文档 / 表名 / 行）的全局命中上限"),
+) -> dict[str, Any]:
+    """跨工作区统一检索（登录即可用，只扫当前用户所属的工作区，需求 0081 C3）."""
+    from cndb.plugins.workspaces.services.search import search_all_workspaces
+
+    keyword = q.strip()
+    if not keyword:
+        return {"query": "", "documents": [], "tables": [], "rows": []}
+    return search_all_workspaces(db, current_user, keyword, limit=limit)
+
 
 @router.get("")
 def search(

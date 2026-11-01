@@ -40,7 +40,7 @@ export function buildSteps(): TourStep[] {
       element: TOUR_SELECTORS.workspaceSwitch,
       popover: {
         title: '切换工作区',
-        description: '点击左上角的下拉框可以切换或进入工作区。内容区顶部的「数据表」「报表」「工作区设置」分页导航都作用于这里选中的工作区。',
+        description: '点击左上角的下拉框可以切换或进入工作区。顶栏的「数据表」「文档」「工作区设置」等一级导航与内容区的二级页签都作用于这里选中的工作区。',
       },
     },
     {

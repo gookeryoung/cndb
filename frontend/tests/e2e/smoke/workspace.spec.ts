@@ -12,16 +12,42 @@ async function gotoWorkspace(page: any) {
 }
 
 test.describe("工作区 + 表列表", () => {
-  test("主应用骨架：顶部导航 + Content Tabs + 表列表页", async ({ page }) => {
+  test("主应用骨架：顶栏导航 + 二级页签 + 表列表页", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     await gotoWorkspace(page);
 
-    // MainLayout 重构后：文档 / 工作区设置从 Header 按钮迁移为 Content 上方的 Tabs 导航
-    await expect(page.getByRole("tab", { name: /文档/ })).toBeVisible();
-    await expect(page.getByRole("tab", { name: /工作区设置/ })).toBeVisible();
+    // 需求 0081：数据表 / 文档 / 设计 / 工作区设置一级模块在顶栏导航（C4），
+    // 数据分析等二级模块维持在内容区上方页签行（C5）
+    await expect(page.getByTestId("ws-nav-tables")).toBeVisible();
+    await expect(page.getByTestId("ws-nav-documents")).toBeVisible();
+    await expect(page.getByTestId("ws-nav-settings")).toBeVisible();
+    await expect(page.getByRole("tab", { name: /数据分析/ })).toBeVisible();
 
     // 表列表页 — TablesList（用 :has-text 避免匹配到空状态 placeholder row）
     await expect(page.locator('button:has-text("新建表")').first()).toBeVisible();
+  });
+
+  test("主页顶栏搜索：进入工作区前可跨工作区搜索并跳转（需求 0081 C3）", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
+    await page.goto("/w");
+    await page.waitForURL(/\/w$/);
+
+    // 主页模式：无范围选择器，占位口径为全部工作区
+    const input = page.getByTestId("global-search-input");
+    await expect(input).toBeVisible();
+    await expect(page.getByTestId("global-search-scope")).toHaveCount(0);
+
+    // 搜索 seed 数据（某企业销售管理的「电商销售」表），面板出现跨工作区命中
+    await input.fill("电商销售");
+    const panel = page.getByTestId("global-search-panel");
+    await expect(panel).toBeVisible({ timeout: 10_000 });
+    await expect(panel).toContainText("范围：全部工作区");
+    const hit = panel.getByRole("option").filter({ hasText: "电商销售" }).first();
+    await expect(hit).toBeVisible({ timeout: 10_000 });
+
+    // 点击命中进入对应工作区的表
+    await hit.click();
+    await page.waitForURL(/\/w\/\d+\/tables\/\d+/);
   });
 
   test("seed 数据：至少有 9 张表（某企业销售管理）", async ({ page }) => {

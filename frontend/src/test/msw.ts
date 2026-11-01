@@ -824,6 +824,41 @@ export const handlers = [
       : null
     return HttpResponse.json({ query: q, documents, tables, rows, view })
   }),
+  // 跨工作区统一检索（主页顶栏搜索框，需求 0081 C3）：命中带 workspace_id / workspace_name。
+  // mock 口径：工作区 10 命中「需求 / 张三」关键词，归属「测试工作区」。
+  http.get('/api/v1/search', ({ request }) => {
+    const q = (new URL(request.url).searchParams.get('q') ?? '').trim()
+    if (!q) return HttpResponse.json({ query: '', documents: [], tables: [], rows: [] })
+    const kw = q.toLowerCase()
+    const hit = (text: string) => text.toLowerCase().includes(kw)
+    const documents = mockDocuments
+      .filter(d => !d.is_folder && (hit(d.title) || hit(d.summary)))
+      .map(d => ({
+        id: d.id,
+        title: d.title,
+        title_hit: hit(d.title) ? `<mark>${d.title}</mark>` : d.title,
+        summary_hit: hit(d.summary) ? `…<mark>${d.summary}</mark>…` : d.summary,
+        status: d.status,
+        updated_at: d.updated_at,
+        workspace_id: mockWorkspace.id,
+        workspace_name: mockWorkspace.name,
+      }))
+    const tables = hit(mockTable.name)
+      ? [{ id: mockTable.id, name: mockTable.name, description: '客户主数据', workspace_id: mockWorkspace.id, workspace_name: mockWorkspace.name }]
+      : []
+    const rows = mockRecords.items
+      .filter(r => Object.values(r).some(v => typeof v === 'string' && hit(v)))
+      .map(r => ({
+        table_id: mockTable.id,
+        table_name: mockTable.name,
+        row_id: r.id,
+        title: String(r.姓名 ?? ''),
+        snippet: String(r.姓名 ?? ''),
+        workspace_id: mockWorkspace.id,
+        workspace_name: mockWorkspace.name,
+      }))
+    return HttpResponse.json({ query: q, documents, tables, rows })
+  }),
   http.post('/api/v1/workspaces/:wid/documents', async ({ request }) => {
     const body = await request.json() as {
       title?: string
