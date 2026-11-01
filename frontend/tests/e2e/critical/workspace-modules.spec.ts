@@ -60,12 +60,21 @@ test.describe("工作区模块勾选与页签门控", () => {
     await expect(page).toHaveURL(new RegExp(`/w/${wid}/documents`));
   });
 
-  test("质量检查页签恒显：目录为空时给出提示", async ({ page }) => {
-    await page.goto(`/w/${wid}/pipelines`);
-    await expect(page.getByTestId("empty-checks-alert")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText("暂无可用检查动作")).toBeVisible();
-    // 页面仍可用：可新建流水线
-    await expect(page.getByRole("button", { name: /新建流水线/ })).toBeVisible();
+  test("质量检查页签恒显：目录为空时给出提示", async ({ page, request }) => {
+    // 检查动作目录按工作区已启用模块过滤：documents 模块自带文档检查族动作，目录非空。
+    // 「目录为空」只可能出现在仅勾「设计」时（design 域动作尚未提供），故先收窄模块。
+    const narrowed = await apiCall(request, token, "patch", `/workspaces/${wid}`, { modules: ["design"] });
+    expect(narrowed.status, JSON.stringify(narrowed.body)).toBe(200)
+    try {
+      await page.goto(`/w/${wid}/pipelines`);
+      await expect(page.getByTestId("empty-checks-alert")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText("暂无可用检查动作")).toBeVisible();
+      // 页面仍可用：可新建流水线
+      await expect(page.getByRole("button", { name: /新建流水线/ })).toBeVisible();
+    } finally {
+      // 还原给后续用例（设置页断言「文档」默认勾选）
+      await apiCall(request, token, "patch", `/workspaces/${wid}`, { modules: ["documents", "design"] })
+    }
   });
 
   test("设置页取消「文档」仅留设计后，未开放段重定向到 /design", async ({ page }) => {
