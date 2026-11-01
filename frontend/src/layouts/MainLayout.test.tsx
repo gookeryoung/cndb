@@ -341,6 +341,23 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.queryByRole('tab', { name: /工作区设置/ })).toBeNull()
     })
 
+    it('切到文档/设计模块时页签行隐藏数据分析与数据源同步，质量检查恒显', async () => {
+        // 数据分析 / 数据源同步为数据表派生二级功能，仅数据表上下文显示
+        const { unmount } = renderLayout(mockUser, '/w/10/documents')
+        await waitFor(() => expect(screen.getByTestId('documents-page-stub')).toBeVisible())
+        expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /数据源同步/ })).toBeNull()
+        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        unmount()
+
+        // 设计段同样收敛
+        renderLayout(mockUser, '/w/10/design')
+        await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toBeVisible())
+        expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /数据源同步/ })).toBeNull()
+        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+    })
+
     it('主页（/w）顶栏渲染全局搜索：进入工作区前也可搜索（C3）', async () => {
         renderLayout(mockUser, '/w')
 

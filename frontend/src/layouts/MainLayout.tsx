@@ -231,6 +231,35 @@ export default function MainLayout() {
     [tables, tableKeyword],
   )
 
+  // ── 表级页签（融合导航行，紧随工作区分页之后）──
+  // 当 URL 处于某张表的上下文（网格页 /w/:wid/tables/:tid 及其子页）时，
+  // 在工作区 Tabs 右侧以竖线分割后渲染：表名（点击返回网格）+ 子页页签（GitHub 风格页签切换）。
+  const inTableContext = !!wid && !!tid && location.startsWith(`/w/${wid}/tables/${tid}`)
+
+  // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
+  // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
+  const activeWsTab = inTableContext
+    ? 'tables'
+    : location.includes('/documents')
+      ? 'documents'
+      : location.includes('/design')
+        ? 'design'
+        : location.includes('/analytics')
+          ? 'analytics'
+          : location.includes('/datasource')
+            ? 'datasource'
+            : location.includes('/pipelines')
+              ? 'pipelines'
+              : location.includes('/settings')
+                ? 'settings'
+              : 'tables'
+
+  /** 数据表派生二级功能（数据分析 / 数据源同步）的显示窗口：仅在数据表模块上下文
+   * （表列表、表级页、分析段、同步段）显示；切到文档 / 设计 / 工作区设置一级模块时隐藏，
+   * 避免与当前模块无关的入口干扰导航；质量检查恒显不受影响。 */
+  const tablesDerivedActive =
+    activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
+
   /** 顶栏一级模块导航（需求 0081 C4）：数据表 → 文档 → 设计 → 工作区设置.
    *
    * 前三项按勾选模块门控（ADR 0080 口径），「工作区设置」恒显；
@@ -262,12 +291,13 @@ export default function MainLayout() {
 
   /** 工作区级分页导航（需求 0081 C5）：仅承载二级功能模块，维持原位置.
    *
-   * 数据分析 / 数据源同步随数据表开放，质量检查恒显（ADR 0080）；
-   * 一级模块（数据表 / 文档 / 设计 / 工作区设置）已上移顶栏（C4），
+   * 数据分析 / 数据源同步随数据表开放，且仅在数据表模块上下文显示
+   * （切到文档 / 设计 / 工作区设置时隐藏，tablesDerivedActive 收敛）；
+   * 质量检查恒显（ADR 0080）；一级模块已上移顶栏（C4），
    * 仅移动端仍在页签行全量渲染（顶栏空间不足，移动端形态维持现状）。
    */
   const secondaryTabItems: TabsProps['items'] = [
-    ...(wsFeatures.analytics ? [{
+    ...(wsFeatures.analytics && tablesDerivedActive ? [{
       key: 'analytics',
       label: (
         <span>
@@ -275,7 +305,7 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
-    ...(wsFeatures.datasource ? [{
+    ...(wsFeatures.datasource && tablesDerivedActive ? [{
       key: 'datasource',
       label: (
         <span>
@@ -306,10 +336,6 @@ export default function MainLayout() {
       ...secondaryTabItems,
     ]
     : secondaryTabItems
-  // ── 表级页签（融合导航行，紧随工作区分页之后）──
-  // 当 URL 处于某张表的上下文（网格页 /w/:wid/tables/:tid 及其子页）时，
-  // 在工作区 Tabs 右侧以竖线分割后渲染：表名（点击返回网格）+ 子页页签（GitHub 风格页签切换）。
-  const inTableContext = !!wid && !!tid && location.startsWith(`/w/${wid}/tables/${tid}`)
   const currentTable = orderedTables.find(t => String(t.id) === String(tid))
   const activeTableTab = location.includes('/change-requests')
     ? 'change-requests'
@@ -365,24 +391,6 @@ export default function MainLayout() {
     }
     prevInFocusRef.current = inFocusContext
   }, [inFocusContext, collapsed])
-
-  // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
-  // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
-  const activeWsTab = inTableContext
-    ? 'tables'
-    : location.includes('/documents')
-      ? 'documents'
-      : location.includes('/design')
-        ? 'design'
-        : location.includes('/analytics')
-          ? 'analytics'
-          : location.includes('/datasource')
-            ? 'datasource'
-            : location.includes('/pipelines')
-              ? 'pipelines'
-              : location.includes('/settings')
-                ? 'settings'
-              : 'tables'
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，

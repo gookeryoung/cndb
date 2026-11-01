@@ -87,6 +87,19 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(page.getByTestId("documents-layout")).toBeVisible({ timeout: 5000 })
   })
 
+  test("切到文档模块：数据分析/数据源同步页签隐藏，质量检查恒显", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+
+    await page.goto(`/w/${WID}/documents`)
+    await page.waitForURL(/\/documents$/)
+    await expect(page.getByTestId("documents-layout")).toBeVisible({ timeout: 5000 })
+    // 数据分析 / 数据源同步为数据表派生二级功能，仅数据表模块上下文显示
+    const tabs = page.getByRole("tablist").first().getByRole("tab")
+    await expect(tabs.filter({ hasText: "数据分析" })).toHaveCount(0)
+    await expect(tabs.filter({ hasText: "数据源同步" })).toHaveCount(0)
+    await expect(tabs.filter({ hasText: "质量检查" })).toBeVisible()
+  })
+
   test("数据分析 Tab → /w/:wid/analytics（独立于文档的模块）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
