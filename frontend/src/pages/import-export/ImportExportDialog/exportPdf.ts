@@ -94,7 +94,9 @@ export function computeRenderScale(contentWidth: number, contentHeight: number):
   if (contentWidth <= 0 || contentHeight <= 0) return MIN_RENDER_SCALE
   const desired = TARGET_RENDER_DPI / CSS_DPI
   const pixelCap = Math.sqrt(MAX_CANVAS_PIXELS / (contentWidth * contentHeight))
-  const sideCap = MAX_CANVAS_SIDE / contentWidth
+  // 单边上限按「长边」折算：超高（而非超宽）的画布同样可能撞浏览器画布单边限制，
+  // 只按宽度折算会让竖长内容在 scale≥1 时仍超 MAX_CANVAS_SIDE（实测 17381px > 16384）
+  const sideCap = MAX_CANVAS_SIDE / Math.max(contentWidth, contentHeight)
   const cap = Math.min(pixelCap, sideCap, MAX_RENDER_SCALE)
   const scale = Math.min(Math.max(MIN_RENDER_SCALE, desired), cap)
   // cap 可能低于 MIN（超大内容），但仍不放到 1 以下：位图至少要 1:1 覆盖 CSS 像素
@@ -282,6 +284,9 @@ export async function exportViewToPdf(
   const pxPerPt = canvas.width / contentWidthPt
 
   let pageIndex = 0
+  // 单页场景无需切片：主画布已由 html2canvas 填充背景色，直接编码复用，
+  // 省掉一份与主画布同尺寸的切片位图（超大画布下约省 120MB+ 的峰值内存）
+  const singlePage = cols === 1 && rows === 1
   for (let row = 0; row < rows; row++) {
     for (let col = 0; col < cols; col++) {
       const xPt = col * availWidthPt
@@ -291,21 +296,27 @@ export async function exportViewToPdf(
       if (!(sliceWidthPt > 0) || !(sliceHeightPt > 0)) continue
 
       if (pageIndex > 0) pdf.addPage()
-      const sx = Math.round(xPt * pxPerPt)
-      const sy = Math.round(yPt * pxPerPt)
-      const sw = Math.max(1, Math.round(sliceWidthPt * pxPerPt))
-      const sh = Math.max(1, Math.round(sliceHeightPt * pxPerPt))
-      // 源 canvas 按页切片，避免整图重复嵌入每页
-      const pageCanvas = document.createElement('canvas')
-      pageCanvas.width = sw
-      pageCanvas.height = sh
-      const ctx = pageCanvas.getContext('2d')
-      if (!ctx) throw new Error('PDF 导出失败：无法创建画布上下文')
-      ctx.fillStyle = backgroundColor
-      ctx.fillRect(0, 0, sw, sh)
-      ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
+      let bitmapDataUrl: string
+      if (singlePage) {
+        bitmapDataUrl = canvas.toDataURL('image/jpeg', PDF_IMAGE_QUALITY)
+      } else {
+        const sx = Math.round(xPt * pxPerPt)
+        const sy = Math.round(yPt * pxPerPt)
+        const sw = Math.max(1, Math.round(sliceWidthPt * pxPerPt))
+        const sh = Math.max(1, Math.round(sliceHeightPt * pxPerPt))
+        // 源 canvas 按页切片，避免整图重复嵌入每页
+        const pageCanvas = document.createElement('canvas')
+        pageCanvas.width = sw
+        pageCanvas.height = sh
+        const ctx = pageCanvas.getContext('2d')
+        if (!ctx) throw new Error('PDF 导出失败：无法创建画布上下文')
+        ctx.fillStyle = backgroundColor
+        ctx.fillRect(0, 0, sw, sh)
+        ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh)
+        bitmapDataUrl = pageCanvas.toDataURL('image/jpeg', PDF_IMAGE_QUALITY)
+      }
       pdf.addImage(
-        pageCanvas.toDataURL('image/jpeg', PDF_IMAGE_QUALITY),
+        bitmapDataUrl,
         'JPEG',
         margin + offsetXPt + xPt,
         margin + offsetYPt + yPt,

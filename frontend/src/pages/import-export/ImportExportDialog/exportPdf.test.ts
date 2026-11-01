@@ -124,6 +124,16 @@ describe('computeRenderScale 渲染分辨率反算', () => {
     expect(computeRenderScale(100, 100)).toBeLessThanOrEqual(MAX_RENDER_SCALE)
   })
 
+  it('超高内容按「长边」折算单边上限：画布高度不超 MAX_CANVAS_SIDE', () => {
+    // 1000x9000 的竖长内容：像素预算允许 1.886，但长边 9000 只允许 16384/9000 ≈ 1.820
+    const scale = computeRenderScale(1000, 9000)
+    expect(scale).toBeCloseTo(16_384 / 9000, 6)
+    // 旧实现只按宽度折算会得到 1.886，画布高度 16974px 超过 16384
+    expect(scale).toBeLessThan(Math.sqrt(32_000_000 / (1000 * 9000)))
+    // 渲染后长边不超上限
+    expect(scale * 9000).toBeLessThanOrEqual(16_384)
+  })
+
   it('非法尺寸回退到 MIN_RENDER_SCALE', () => {
     expect(computeRenderScale(0, 900)).toBe(MIN_RENDER_SCALE)
     expect(computeRenderScale(1390, 0)).toBe(MIN_RENDER_SCALE)
@@ -228,11 +238,11 @@ describe('captureElement 通用捕获（PNG / PDF 共用）', () => {
 
 describe('exportViewToPdf 编排（库已 mock）', () => {
   /** 宽看板内容：2780x1800px @scale2 → 1042.5x675pt（正好 A4 装不下 → 扩页单页） */
-  const boardCanvas = { width: 2780, height: 1800 }
+  const boardCanvas = { width: 2780, height: 1800, toDataURL: toDataURLMock }
   /** 窄内容：800x600px @scale2 → 300x225pt（A4 装得下 → 居中） */
-  const narrowCanvas = { width: 800, height: 600 }
+  const narrowCanvas = { width: 800, height: 600, toDataURL: toDataURLMock }
   /** 超高内容：height 使内容高达 15000pt > MAX_PAGE_PT → 被迫分页 */
-  const hugeCanvas = { width: 2780, height: 40_000 }
+  const hugeCanvas = { width: 2780, height: 40_000, toDataURL: toDataURLMock }
 
   /** 构造 jsPDF 实例桩：页尺寸取自构造参数 format（与真实 jsPDF 的自定义页面一致） */
   const makePdfInstance = (format: [number, number]) => ({
@@ -368,17 +378,43 @@ describe('exportViewToPdf 编排（库已 mock）', () => {
     expect(toDataURLMock).toHaveBeenCalledTimes(1)
   })
 
-  it('主题背景色透传到捕获与页切片填充（默认白色保持不变）', async () => {
+  it('主题背景色透传到捕获（默认白色保持不变）', async () => {
     const target = document.createElement('div')
     await exportViewToPdf(target, 'a.pdf', '#141414')
-    // 捕获阶段（html2canvas 背景）
+    // 捕获阶段（html2canvas 背景）；切片填充由多页用例覆盖
     expect(html2canvasMock).toHaveBeenCalledWith(
       target,
       expect.objectContaining({ backgroundColor: '#141414' }),
     )
-    // 分片画布填充阶段：避免切片时的透明区域把主题色漏回白底
-    expect(sliceContexts).toHaveLength(1)
+  })
+
+  it('单页导出复用主画布编码：不创建切片画布，省一份全尺寸位图', async () => {
+    const target = document.createElement('div')
+    await exportViewToPdf(target, 'a.pdf', '#141414')
+
+    // 单页（cols=rows=1）直接用主画布 toDataURL，不再创建同尺寸的切片画布
+    expect(sliceContexts).toHaveLength(0)
+    expect(toDataURLMock).toHaveBeenCalledTimes(1)
+    expect(toDataURLMock).toHaveBeenCalledWith('image/jpeg', PDF_IMAGE_QUALITY)
+    expect(pdfInstance.addImage).toHaveBeenCalledTimes(1)
+    // 图像尺寸仍等于内容物理尺寸（与切片路径一致）
+    const contentWidthPt = 2780 / MIN_RENDER_SCALE * PX_TO_PT
+    const contentHeightPt = 1800 / MIN_RENDER_SCALE * PX_TO_PT
+    const [, , , , w, h] = pdfInstance.addImage.mock.calls[0]
+    expect(w).toBeCloseTo(contentWidthPt, 6)
+    expect(h).toBeCloseTo(contentHeightPt, 6)
+  })
+
+  it('多页导出仍走切片路径：每页独立画布并填充背景色', async () => {
+    html2canvasMock.mockResolvedValue(hugeCanvas)
+    const target = document.createElement('div')
+    await exportViewToPdf(target, 'a.pdf', '#141414')
+
+    expect(pdfInstance.addImage).toHaveBeenCalledTimes(2)
+    expect(sliceContexts).toHaveLength(2)
     expect(sliceContexts[0]?.fillStyle).toBe('#141414')
+    expect(sliceContexts[1]?.fillStyle).toBe('#141414')
+    expect(toDataURLMock).toHaveBeenCalledTimes(2)
   })
 
   it('不传背景时沿用白色（既有「更新 / 导出」行为不变）', async () => {
@@ -388,7 +424,6 @@ describe('exportViewToPdf 编排（库已 mock）', () => {
       target,
       expect.objectContaining({ backgroundColor: '#ffffff' }),
     )
-    expect(sliceContexts[0]?.fillStyle).toBe('#ffffff')
   })
 
   it('渲染失败时向上抛出原始错误且还原展开状态', async () => {
