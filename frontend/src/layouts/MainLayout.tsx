@@ -305,6 +305,7 @@ export default function MainLayout() {
 
   /** 工作区级分页导航（需求 0081 C5）：仅承载二级功能模块，维持原位置.
    *
+   * 顺序：数据列表 → 质量检查 → 数据分析 → 数据同步（质量检查紧随数据列表，2026-11-02 用户口径）。
    * 数据分析 / 数据同步随数据表开放，且仅在数据表模块上下文显示
    * （切到文档 / 设计 / 工作区设置时隐藏，tablesDerivedActive 收敛）；
    * 工作区级质量检查（/pipelines）为数据表域入口，恒显（ADR 0080），
@@ -325,6 +326,16 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
+    // 质量检查紧随数据列表（第二项）：文档上下文不显示——文档区胶囊页签已有入口，
+    // 避免同名页签混入数据表域
+    ...(wsFeatures.quality && !inDocumentsContext ? [{
+      key: 'pipelines',
+      label: (
+        <span>
+          <SafetyCertificateOutlined /> 质量检查
+        </span>
+      ),
+    }] : []),
     ...(wsFeatures.analytics && tablesDerivedActive ? [{
       key: 'analytics',
       label: (
@@ -338,15 +349,6 @@ export default function MainLayout() {
       label: (
         <span>
           <CloudDownloadOutlined /> 数据同步
-        </span>
-      ),
-    }] : []),
-    // 文档上下文不显示：文档区胶囊页签已有文档质量检查入口，避免同名页签混入数据表域
-    ...(wsFeatures.quality && !inDocumentsContext ? [{
-      key: 'pipelines',
-      label: (
-        <span>
-          <SafetyCertificateOutlined /> 质量检查
         </span>
       ),
     }] : []),

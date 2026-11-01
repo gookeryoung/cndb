@@ -4,7 +4,7 @@
  */
 
 import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { screen, waitFor, fireEvent } from '@testing-library/react'
+import { screen, waitFor, fireEvent, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
@@ -351,6 +351,11 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /数据同步/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        // 页签顺序：数据列表 → 质量检查 → 数据分析 → 数据同步（质量检查紧随数据列表）
+        const tabLabels = within(document.querySelector('.cn-ws-tabs') as HTMLElement)
+            .getAllByRole('tab')
+            .map(tab => (tab.textContent ?? '').trim())
+        expect(tabLabels).toEqual(['数据列表', '质量检查', '数据分析', '数据同步'])
         // 一级模块已上移顶栏，不再出现在页签行
         expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull()

@@ -2,7 +2,7 @@
  *
  * 覆盖（需求 0081 后的导航形态）：
  * 顶栏一级导航顺序（数据表 → 文档 → 设计 → 工作区设置）+ 三区划分、
- * 二级页签（数据分析 / 数据同步 / 质量检查）维持在内容区上方、
+ * 二级页签（数据列表 / 质量检查 / 数据分析 / 数据同步）维持在内容区上方、
  * 文档模块的质量检查由文档区胶囊页签承载（/documents/pipelines，不跳数据表段）、
  * Header 导航按钮可达性 — 文档、数据分析。
  * 以及表列表 owner 列展示 + 筛选器.
@@ -48,10 +48,16 @@ test.describe("MainLayout Header 导航按钮", () => {
     expect(idx("设计")).toBe(2)
     expect(idx("工作区设置")).toBe(3)
 
-    // 二级页签：数据分析 / 数据同步 / 质量检查；一级模块不在页签行
+    // 二级页签：数据列表 → 质量检查 → 数据分析 → 数据同步；一级模块不在页签行
     const tabs = page.getByRole("tablist").first().getByRole("tab")
     await expect(tabs.filter({ hasText: "数据分析" })).toBeVisible()
     await expect(tabs.filter({ hasText: "质量检查" })).toBeVisible()
+    // 质量检查紧随数据列表（第二项），排在数据分析 / 数据同步之前
+    const labels = (await tabs.allTextContents()).map(t => t.trim())
+    const pos = (kw: string) => labels.findIndex(n => n.includes(kw))
+    expect(pos("质量检查")).toBeGreaterThan(pos("数据列表"))
+    expect(pos("质量检查")).toBeLessThan(pos("数据分析"))
+    expect(pos("数据分析")).toBeLessThan(pos("数据同步"))
     for (const primary of ["数据表", "文档", "设计", "工作区设置"]) {
       await expect(tabs.filter({ hasText: primary })).toHaveCount(0)
     }

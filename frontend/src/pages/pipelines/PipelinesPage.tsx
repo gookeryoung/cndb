@@ -4,9 +4,10 @@
  * 规则清单 / 检查动作目录 / 运行历史均带 `domain` 查询参数，两个模块各看各的；
  * 跨域编排的流水线同时属于多个域，两边都可管理（不丢规则）。
  *
- * 左栏：流水线规则清单（启用开关 / 运行 / 编辑 / 删除，点击选中 / 再点取消）；
+ * 左栏：流水线规则清单（「全部」置顶且默认激活，其下为启用开关 / 运行 / 编辑 / 删除，
+ * 点击规则选中 / 再点取消回「全部」）；
  * 右栏：运行历史——默认展示当前域全部规则的运行（行内带规则名），
- * 选中某条规则后只展示其对应的运行，再点一次或点「查看全部」回到全部（run → 点击进运行详情）。
+ * 选中某条规则后只展示其对应的运行，再点一次、点「全部」或点「查看全部」回到全部（run → 点击进运行详情）。
  * 两栏均为「带边框列表」：SectionBox 承担外框，flush 内容区里的行自带分隔线与
  * hover / 选中态，与数据分析页的分区方盒同一套语言。
  * 检查动作目录按已启用模块 + 当前域过滤；目录为空时页面给提示。
@@ -20,7 +21,7 @@ import {
   Switch, Tag, Tooltip, Typography,
 } from 'antd'
 import {
-  DeleteOutlined, EditOutlined, HistoryOutlined, PlayCircleOutlined, PlusOutlined,
+  AppstoreOutlined, DeleteOutlined, EditOutlined, HistoryOutlined, PlayCircleOutlined, PlusOutlined,
   RightOutlined, SafetyCertificateOutlined, UnorderedListOutlined,
 } from '@ant-design/icons'
 import CnListMeta from '@/components/CnListMeta'
@@ -301,6 +302,30 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
           testId="qc-rules-box"
         >
           <Spin spinning={isLoading}>
+            {/* 「全部」置顶并默认激活（selectedId == null）：右栏展示当前域全部规则的运行历史，
+                点击它清除规则过滤；列表为空时不渲染，避免与空态示例重复 */}
+            {workflows.length > 0 && (
+              <div
+                className={[
+                  'cn-list-item',
+                  'cn-qc-row',
+                  'cn-qc-row--selectable',
+                  selectedId == null ? 'cn-qc-row--active' : '',
+                ].filter(Boolean).join(' ')}
+                data-testid="pipeline-item-all"
+                onClick={() => setSelectedId(null)}
+              >
+                <div className="cn-list-item-main">
+                  <CnListMeta
+                    avatar={<AppstoreOutlined style={{ color: 'var(--cn-text-muted)' }} />}
+                    title={<Text strong>全部</Text>}
+                    description={(
+                      <Text type="secondary">{workflows.length} 条规则 · 展示全部运行历史</Text>
+                    )}
+                  />
+                </div>
+              </div>
+            )}
             {workflows.length === 0 && !isLoading ? (
               <div className="cn-qc-empty">
                 <Empty description={meta.emptyRules} />

@@ -207,9 +207,16 @@ describe('PipelinesPage 双栏布局', () => {
     return requested
   }
 
-  it('默认展示全部规则的运行历史，选中规则后过滤，再点一次回到全部', async () => {
+  it('默认展示全部规则的运行历史，「全部」置顶且激活；选中规则后过滤，再点一次回到全部', async () => {
     const requested = historyHandlers()
     renderPage()
+
+    // 「全部」置顶并默认激活，其下为规则清单
+    const allRow = await screen.findByTestId('pipeline-item-all')
+    expect(allRow).toHaveClass('cn-qc-row--active')
+    expect(within(allRow).getByText('全部')).toBeInTheDocument()
+    const ruleRow = screen.getByTestId('pipeline-item-7')
+    expect(ruleRow).not.toHaveClass('cn-qc-row--active')
 
     // 默认未选中：右栏直接拉取全部历史，行内带规则名
     expect(await screen.findByTestId('run-item-71')).toBeInTheDocument()
@@ -218,21 +225,40 @@ describe('PipelinesPage 双栏布局', () => {
     expect(screen.getByText('排队中')).toBeInTheDocument()
     await waitFor(() => expect(requested[0]).toBeNull())
 
-    // 点击规则 → 只展示该规则的运行
-    fireEvent.click(screen.getByTestId('pipeline-item-7'))
+    // 点击规则 → 只展示该规则的运行，激活态从「全部」转移到规则行
+    fireEvent.click(ruleRow)
     await waitFor(() => expect(requested.at(-1)).toBe('7'))
     expect(screen.getByText(/运行历史：空值巡检/)).toBeInTheDocument()
+    expect(allRow).not.toHaveClass('cn-qc-row--active')
+    expect(ruleRow).toHaveClass('cn-qc-row--active')
     expect(await screen.findByTestId('run-item-71')).toBeInTheDocument()
     expect(screen.queryByTestId('run-item-72')).not.toBeInTheDocument()
 
     // 再次点击同一规则 → 取消过滤回到全部
-    fireEvent.click(screen.getByTestId('pipeline-item-7'))
+    fireEvent.click(ruleRow)
     await waitFor(() => expect(requested.at(-1)).toBeNull())
     expect(await screen.findByTestId('run-item-72')).toBeInTheDocument()
+    expect(allRow).toHaveClass('cn-qc-row--active')
+    expect(ruleRow).not.toHaveClass('cn-qc-row--active')
 
     // 点击运行记录跳转运行详情
     fireEvent.click(screen.getByTestId('run-item-71'))
     expect(await screen.findByTestId('run-detail-stub')).toBeInTheDocument()
+  })
+
+  it('选中规则后点「全部」清除规则过滤', async () => {
+    const requested = historyHandlers()
+    renderPage()
+
+    const allRow = await screen.findByTestId('pipeline-item-all')
+    fireEvent.click(screen.getByTestId('pipeline-item-7'))
+    await waitFor(() => expect(requested.at(-1)).toBe('7'))
+    expect(allRow).not.toHaveClass('cn-qc-row--active')
+
+    fireEvent.click(allRow)
+    await waitFor(() => expect(requested.at(-1)).toBeNull())
+    expect(allRow).toHaveClass('cn-qc-row--active')
+    expect(screen.getByTestId('pipeline-item-7')).not.toHaveClass('cn-qc-row--active')
   })
 
   it('「查看全部」按钮清除规则过滤', async () => {
@@ -372,6 +398,8 @@ describe('PipelinesPage 文档域', () => {
     expect(await screen.findByText(/还没有文档检查规则/)).toBeInTheDocument()
     expect(screen.getByText(/还没有文档检查动作/)).toBeInTheDocument()
     expect(screen.queryByText(/还没有数据表检查规则/)).not.toBeInTheDocument()
+    // 规则清单为空时不渲染「全部」行，避免与空态示例重复
+    expect(screen.queryByTestId('pipeline-item-all')).toBeNull()
 
     // 新建模板默认带文档动作（数据表模板不出现）
     fireEvent.click(screen.getByRole('button', { name: /新建流水线/ }))
