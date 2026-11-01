@@ -853,15 +853,19 @@ export default function MainLayout() {
               background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', flexShrink: 0,
               display: 'flex', alignItems: 'stretch', overflowX: 'auto',
             }}>
-              <Tabs
-                activeKey={activeWsTab}
-                items={wsTabItems}
-                // 窄屏：工作区页签保持内容宽度，由整行横滑承载（否则二级页签 448px 会把
-                // 工作区页签挤成 0 宽而被裁掉，手机上看不到也切不了数据表/文档/设置）
-                style={{ flex: isMobile ? '0 0 auto' : '0 1 auto', minWidth: 0 }}
-                tabBarStyle={{ margin: 0, padding: '0 12px' }}
-                onChange={(key) => navigate(`/w/${wid}/${key}`)}
-              />
+              {/* 文档上下文（桌面端）二级页签为空：文档区胶囊页签已承载全部入口，
+                  空 Tabs 仍会渲染带内边距的空页签栏，在胶囊页签左侧留出空白，故不渲染 */}
+              {wsTabItems.length > 0 && (
+                <Tabs
+                  activeKey={activeWsTab}
+                  items={wsTabItems}
+                  // 窄屏：工作区页签保持内容宽度，由整行横滑承载（否则二级页签 448px 会把
+                  // 工作区页签挤成 0 宽而被裁掉，手机上看不到也切不了数据表/文档/设置）
+                  style={{ flex: isMobile ? '0 0 auto' : '0 1 auto', minWidth: 0 }}
+                  tabBarStyle={{ margin: 0, padding: '0 12px' }}
+                  onChange={(key) => navigate(`/w/${wid}/${key}`)}
+                />
+              )}
               {inTableContext && (
                 <div className="cn-table-crumb" data-testid="table-crumb">
                   <span className="cn-table-crumb-divider" aria-hidden />

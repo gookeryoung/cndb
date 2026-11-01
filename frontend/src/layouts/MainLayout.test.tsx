@@ -371,9 +371,9 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.queryByRole('tab', { name: /数据同步/ })).toBeNull()
         // 数据列表为数据表段专属二级页签，切到文档模块后隐藏
         expect(screen.queryByRole('tab', { name: /数据列表/ })).toBeNull()
-        // 文档上下文页签行不再渲染质量检查（与文档区胶囊页签同名重复）；
-        // 入口由文档区胶囊页签承载（胶囊页签 role=tab 但不在 tablist 内，按 tablist 区分）
-        expect(within(screen.getByRole('tablist')).queryByRole('tab', { name: /质量检查/ })).toBeNull()
+        // 文档上下文二级页签为空：整个空 Tabs（含 tablist）不渲染，避免空页签栏留白；
+        // 质量检查入口由文档区胶囊页签承载
+        expect(document.querySelector('.cn-ws-tabs .ant-tabs')).toBeNull()
         expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
         unmount()
 
@@ -583,6 +583,8 @@ describe('MainLayout 文档区二级导航', () => {
         // 「文档结构」即文档总览列表页本体：落在 /documents 时激活（0082 C4）
         expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'true')
         expect(screen.getByTestId('document-tab-change-requests')).toHaveAttribute('aria-selected', 'false')
+        // 二级页签为空时不渲染空 Tabs：避免空页签栏内边距在胶囊页签左侧留出空白
+        expect(document.querySelector('.cn-ws-tabs .ant-tabs')).toBeNull()
     })
 
     it('编辑器页「文档结构」未激活，点击后返回文档总览并激活（0082 C4）', async () => {
@@ -783,8 +785,8 @@ describe('MainLayout 工作区模块门控', () => {
 
         expect(screen.getByTestId('ws-nav-documents')).toBeInTheDocument()
         expect(screen.getByTestId('ws-nav-settings')).toBeInTheDocument()
-        // 文档上下文页签行不渲染质量检查（避免与胶囊页签同名重复）；入口由文档区胶囊页签承载
-        expect(within(screen.getByRole('tablist')).queryByRole('tab', { name: /质量检查/ })).toBeNull()
+        // 文档上下文二级页签为空：空 Tabs 不渲染（避免空页签栏留白），入口由文档区胶囊页签承载
+        expect(document.querySelector('.cn-ws-tabs .ant-tabs')).toBeNull()
         expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
         // 无数据表功能 → 文档段渲染文档导航侧栏（需求 0065），无表导航
         await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
