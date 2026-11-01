@@ -147,6 +147,60 @@ if (typeof Blob !== 'undefined' && !Blob.prototype.stream) {
   }
 }
 
+// ── 定时器 / 动画帧追踪（供文件收尾时排空）────────────────────────────
+// jsdom 环境下 vitest 会在文件结束时 close 窗口并删除全局（含 HTMLIFrameElement），
+// 而 antd / rc-motion 等组件遗留的定时器与 rAF 回调仍会触发，回调里的 React 状态
+// 更新会让并发渲染在环境销毁后才 commit，命中 react-dom 的
+// `element instanceof containerInfo.HTMLIFrameElement`（RHS 已被删除）而抛
+// "Right-hand side of 'instanceof' is not an object"，被 vitest 计为 unhandled error。
+// 这里记录本文件注册的全部延时任务，afterAll 里在环境销毁前统一撤销。
+const pendingTimeouts = new Set<number>()
+const pendingFrames = new Set<number>()
+if (typeof window !== 'undefined') {
+  const rawSetTimeout = window.setTimeout.bind(window)
+  const rawClearTimeout = window.clearTimeout.bind(window)
+  const rawRequestAnimationFrame = window.requestAnimationFrame?.bind(window)
+  const rawCancelAnimationFrame = window.cancelAnimationFrame?.bind(window)
+
+  window.setTimeout = function (
+    handler: TimerHandler,
+    timeout?: number,
+    ...args: unknown[]
+  ): number {
+    // 字符串形式的 handler 极少见，直接交回原生实现（不追踪）
+    if (typeof handler !== 'function') return rawSetTimeout(handler, timeout)
+    let id = 0
+    id = rawSetTimeout(() => {
+      pendingTimeouts.delete(id)
+      handler(...args)
+    }, timeout)
+    pendingTimeouts.add(id)
+    return id
+  } as typeof window.setTimeout
+
+  window.clearTimeout = function (id?: number): void {
+    if (id !== undefined) pendingTimeouts.delete(id)
+    rawClearTimeout(id)
+  } as typeof window.clearTimeout
+
+  if (rawRequestAnimationFrame && rawCancelAnimationFrame) {
+    window.requestAnimationFrame = function (callback: FrameRequestCallback): number {
+      let id = 0
+      id = rawRequestAnimationFrame((timestamp) => {
+        pendingFrames.delete(id)
+        callback(timestamp)
+      })
+      pendingFrames.add(id)
+      return id
+    } as typeof window.requestAnimationFrame
+
+    window.cancelAnimationFrame = function (id: number): void {
+      pendingFrames.delete(id)
+      rawCancelAnimationFrame(id)
+    } as typeof window.cancelAnimationFrame
+  }
+}
+
 // ── 抑制已知的无害 console.error 噪音（antd act 警告）──────────────────
 // antd ThemeProvider 渲染的 <AntApp> 挂载 rc-notification holder 及 rc-motion，
 // 会在 requestAnimationFrame 中更新状态，发生在 RTL act 作用域之外，产生
@@ -258,13 +312,15 @@ afterEach(async () => {
 afterAll(async () => {
   server.close()
   server.events.removeAllListeners()
-  // 文件收尾兜底：React 19 并发渲染可能自我连续调度 immediate（长链收尾），
-  // 固定波数排不干净——连续排空直到连续 3 波无新任务（近似判定），上限 30 波，
-  // 避免 jsdom 环境销毁后仍有回调访问 window / HTMLElement 抛
-  // ReferenceError / TypeError，被 vitest 计为 unhandled error（覆盖率模式必现）。
-  let idleWaves = 0
-  for (let i = 0; i < 30 && idleWaves < 3; i += 1) {
+  // 撤销本文件遗留的定时器与 rAF：jsdom 销毁后这些回调仍会触发，回调内的
+  // React 状态更新会在环境销毁之后 commit（见文件头「定时器 / 动画帧追踪」说明）。
+  for (const id of pendingTimeouts) window.clearTimeout(id)
+  pendingTimeouts.clear()
+  for (const id of pendingFrames) window.cancelAnimationFrame?.(id)
+  pendingFrames.clear()
+  // 文件收尾兜底：React 19 并发渲染会自我连续调度 immediate，一次性排空足够波数，
+  // 避免销毁后残留回调访问已删除的 window / HTMLElement 抛错被计为 unhandled error。
+  for (let i = 0; i < 30; i += 1) {
     await new Promise<void>((resolve) => setImmediate(() => resolve()))
-    idleWaves += 1
   }
 })
