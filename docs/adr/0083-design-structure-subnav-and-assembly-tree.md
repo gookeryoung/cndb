@@ -185,16 +185,16 @@ IR 形态 v2（`version: 2`，新增顶层 `outline`）：
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/schemas.py` | `tests/test_design_dsl.py` | 待提交 |
-| P1 | 已落地 | `src/cndb/plugins/design/routers.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/api/design.ts`、`frontend/src/index.css` | `tests/test_design_api.py`、`frontend/src/pages/design/designOutline.test.ts`、`frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | 待提交 |
-| P2 | 已落地 | `frontend/src/pages/design/DslEditor.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`CHANGELOG.md` | `frontend/src/pages/design/DesignEditorPage.test.tsx`、`frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`frontend/tests/e2e/critical/navigation.spec.ts` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/schemas.py` | `tests/test_design_dsl.py` | 458bfccd |
+| P1 | 已落地 | `src/cndb/plugins/design/routers.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/api/design.ts`、`frontend/src/index.css` | `tests/test_design_api.py`、`frontend/src/pages/design/designOutline.test.ts`、`frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | 458bfccd |
+| P2 | 已落地 | `frontend/src/pages/design/DslEditor.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`CHANGELOG.md` | `frontend/src/pages/design/DesignEditorPage.test.tsx`、`frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`frontend/tests/e2e/critical/navigation.spec.ts` | 458bfccd |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：Accepted；P0 / P1 / P2 已落地，等待提交与人工确认 `Implemented`
-- 已完成：IR v2 装配大纲（`outline`）+ 判定层单测；`GET /designs/{id}/outline`（快照优先 / v1 快照按原文派生 / 成员可读）；前端设计区二级页签、结构树默认页、`?line=` 编辑器定位、帮助文案、CHANGELOG、e2e（结构树 + 导航页签）
-- 下一步：提交 0083 变更（注意工作区里同时存在 ADR 0080 P3「质量检查按域拆分」的未提交改动，`MainLayout.tsx` / `App.tsx` / `api/index.ts` / 帮助文案等文件两者共用，需按 hunk 拆分或与用户确认后一并提交）；提交后回填本表「提交」列 sha，并由人确认 `Status`
+- 当前阶段：Accepted；P0 / P1 / P2 已落地并提交（458bfccd），等待人工确认 `Implemented`
+- 已完成：IR v2 装配大纲（`outline`）+ 判定层单测；`GET /designs/{id}/outline`（快照优先 / v1 快照按原文派生 / 成员可读）；前端设计区二级页签、结构树默认页、`?line=` 编辑器定位、帮助文案、CHANGELOG、e2e（结构树 + 导航页签）；与 ADR 0080 P3（0171b3be）按 hunk 拆分提交完成
+- 下一步：无（实现与提交已完成）；由人确认 `Status` 是否转 `Implemented`
 - 已知坑：antd Tree 展开带 collapse motion（`motionDeadline=500ms`），动画窗口内 rc-tree 的 `listChanging` 会吞掉后续展开点击——前端单测须在每次点展开箭头前等待约 600ms；IR 升 v2 后 `frontend/src/api/design.ts` 与既有 `version` 断言需同步；`compiled` 为 JSON 列无迁移，备份 v12 导入端重编译即可重建大纲；编辑器测试须 `vi.mock('./PreviewCanvas')`（jsdom 无 WebGL）
-- 最近一次全绿：`make check-fast`、`make test`（6495 passed）、`pnpm test`（2867 passed）、`make frontend-coverage`（双门槛达标）、目标 e2e `design-structure-tree.spec.ts` + `navigation.spec.ts` @ 2026-11-01（未提交，无 sha）
+- 最近一次全绿：`make check-fast`、`make test`（6495 passed）、`pnpm test`（2867 passed）、`make frontend-coverage`（双门槛达标）、目标 e2e `design-structure-tree.spec.ts` + `navigation.spec.ts` @ 2026-11-01（提交 458bfccd）
