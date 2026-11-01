@@ -1,6 +1,6 @@
 # ADR 0080: 工作区类型改为可勾选功能模块与顶部导航适配
 
-Status: Accepted（2026-11-01 用户评审通过；评审修订：C4/D4 质量检查页签恒显 + GitHub 风格双栏、D8 默认全选 + 选型 UI 优化）
+Status: Implemented（2026-11-01 用户评审通过；P0/P1/P2 全部落地后经用户确认收口）
 Date: 2026-11-01
 Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/plugins/pipeline/services/checks/registry.py`、`frontend/src/utils/workspaceModules.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx`、`docs/adr/0076-pipeline-check-dsl.md`、`docs/adr/0079-design-3d-dsl-module.md`
 需求卡片: `docs/requirements/0080-workspace-module-selection.md`（需求原文与约束编号的唯一副本）
@@ -202,7 +202,7 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 全部落地（`Status: Accepted` 是否改 `Implemented` 待人工确认）
+- 当前阶段：全期落地（P0 / P1 / P2，`Status: Implemented` 已确认）
 - 已完成：需求卡片 `docs/requirements/0080-workspace-module-selection.md`（C1-C6，未决问题全部有结论）、本 ADR（D1-D9，无待定项）、`docs/adr/README.md` 索引、`CONTEXT.md` 术语「工作区模块」、P0 全部后端改动与测试、P1 全部前端改动与单测、P2 帮助文案 / e2e / 残留核查、CHANGELOG `[未发布]` 条目、落地表提交列回填（ae5f70cf / af2b7941 / ddbf235f）
 - 评审拍板结论：① 质量检查集中 + 页签恒显 + GitHub 风格双栏（左规则清单 / 右结果历史）；② 仅设计工作区也显示质量页签（后续加 design 域动作）；③ 存量映射认可（D5）；④ API 不保留 `workspace_type` 兼容字段（D2）；⑤ 新建默认三模块全选 + 卡片式选型 UI 优化（D8）
 - 下一步：无（全期落地）；后续扩展 design 域检查动作只改检查注册表，不动门控
