@@ -258,7 +258,7 @@ export default function MainLayout() {
                 ? 'settings'
               : 'tables'
 
-  /** 数据表派生二级功能（数据分析 / 数据源同步）的显示窗口：仅在数据表模块上下文
+  /** 数据表派生二级功能（数据分析 / 数据同步）的显示窗口：仅在数据表模块上下文
    * （表列表、表级页、分析段、同步段、质量检查段）显示；切到文档 / 设计 / 工作区设置一级模块时隐藏，
    * 避免与当前模块无关的入口干扰导航。质量检查同为数据表段内的二级功能：
    * 落在质量检查页时窗口保持开启（与数据分析行为一致），页签行不消失；质量检查页签本身恒显。 */
@@ -297,12 +297,25 @@ export default function MainLayout() {
 
   /** 工作区级分页导航（需求 0081 C5）：仅承载二级功能模块，维持原位置.
    *
-   * 数据分析 / 数据源同步随数据表开放，且仅在数据表模块上下文显示
+   * 数据分析 / 数据同步随数据表开放，且仅在数据表模块上下文显示
    * （切到文档 / 设计 / 工作区设置时隐藏，tablesDerivedActive 收敛）；
-   * 质量检查恒显（ADR 0080）；一级模块已上移顶栏（C4），
+   * 质量检查恒显（ADR 0080），但文档模块上下文除外：文档区胶囊页签已承载同名入口，
+   * 页签行再渲染一份属冗余，故文档上下文隐藏（设计 / 设置段仍显示）。
+   * 一级模块已上移顶栏（C4），
    * 仅移动端仍在页签行全量渲染（顶栏空间不足，移动端形态维持现状）。
    */
   const secondaryTabItems: TabsProps['items'] = [
+    // 「数据列表」为数据表一级导航的第一个二级页签：进入数据表模块默认落在 /tables（数据列表视图），
+    // 从数据分析 / 质量检查等二级功能点击可回到列表。仅桌面端渲染：
+    // 移动端页签行一级模块已有「数据表」入口（key 同为 tables），避免重复。
+    ...(wsFeatures.tables && !isMobile && tablesDerivedActive ? [{
+      key: 'tables',
+      label: (
+        <span>
+          <TableOutlined /> 数据列表
+        </span>
+      ),
+    }] : []),
     ...(wsFeatures.analytics && tablesDerivedActive ? [{
       key: 'analytics',
       label: (
@@ -315,11 +328,12 @@ export default function MainLayout() {
       key: 'datasource',
       label: (
         <span>
-          <CloudDownloadOutlined /> 数据源同步
+          <CloudDownloadOutlined /> 数据同步
         </span>
       ),
     }] : []),
-    ...(wsFeatures.quality ? [{
+    // 文档上下文不显示：文档区胶囊页签已有「质量检查」入口，避免同名页签重复
+    ...(wsFeatures.quality && !inDocumentsContext ? [{
       key: 'pipelines',
       label: (
         <span>

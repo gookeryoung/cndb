@@ -151,7 +151,7 @@ const philosophy: HelpTopic = {
                     label: '声明式配置，不写代码',
                     body: (
                         <P>
-                            复杂能力以「填配置」的方式开放：字段类型决定录入与校验行为；数据源同步只需声明请求、解析、
+                            复杂能力以「填配置」的方式开放：字段类型决定录入与校验行为；数据同步只需声明请求、解析、
                             幂等键与调度四要素，即可把外部数据周期性接入同一张表；分析由公式、图表与分组汇总组合而成，无需开发。
                         </P>
                     ),
@@ -181,8 +181,8 @@ const philosophy: HelpTopic = {
                             <HelpLink section="tutorials" topic="view-types">视图类型</HelpLink>。
                         </>,
                         <>
-                            想把外部数据接进来 → 配置数据源同步任务，而不是手工搬运：
-                            <HelpLink section="configuration" topic="datasource">数据源同步</HelpLink>。
+                            想把外部数据接进来 → 配置数据同步任务，而不是手工搬运：
+                            <HelpLink section="configuration" topic="datasource">数据同步</HelpLink>。
                         </>,
                         <>
                             想沉淀分析结论 → 数据分析出图表，文档引用实时数据表：
@@ -279,7 +279,7 @@ const workflow: HelpTopic = {
                     items={[
                         <>
                             把重复性的数据接入交给周期任务：
-                            <HelpLink section="configuration" topic="datasource" anchor="schedule">数据源同步 · 调度与运行记录</HelpLink>。
+                            <HelpLink section="configuration" topic="datasource" anchor="schedule">数据同步 · 调度与运行记录</HelpLink>。
                         </>,
                         <>
                             用公式、分组汇总与图表做分析：
@@ -327,9 +327,12 @@ const uiTour: HelpTopic = {
                     label: '工作区二级页签',
                     body: (
                         <P>
-                            内容区上方只承载二级模块：数据分析 / 数据源同步 / 质量检查；一级模块（数据表 / 文档 / 设计 /
-                            工作区设置）位于顶栏导航。页签由工作区勾选的功能模块决定：数据分析与数据源同步随数据表一并开放，
-                            且仅在数据表模块下显示（切到文档 / 设计 / 工作区设置时隐藏），质量检查恒显示。
+                            内容区上方只承载二级模块：数据分析 / 数据同步 / 质量检查；一级模块（数据表 / 文档 / 设计 /
+                            工作区设置）位于顶栏导航。页签由工作区勾选的功能模块决定：数据分析与数据同步随数据表一并开放，
+                            且仅在数据表模块下显示（切到文档 / 设计 / 工作区设置时隐藏），质量检查恒显示，
+                            仅文档模块下例外——入口由文档区子页「质量检查」承载，页签行不再重复渲染。
+                            进入文档模块后，页签行右侧提供文档区子页：「文档结构」回到文档总览列表，
+                            「质量检查」进入工作区质量检查页，修改申请与问题清单作用于全部文档。
                         </P>
                     ),
                 },

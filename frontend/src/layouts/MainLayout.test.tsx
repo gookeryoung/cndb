@@ -339,9 +339,13 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         renderLayout(mockUser)
 
         await waitFor(() => expect(screen.getByTestId('tables-page-stub')).toBeVisible())
+        // 「数据列表」为数据表一级导航的第一个二级页签，进入数据表模块默认激活（数据列表视图即 /tables）
+        const listTab = screen.getByRole('tab', { name: /数据列表/ })
+        expect(listTab).toBeInTheDocument()
+        expect(listTab).toHaveAttribute('aria-selected', 'true')
         // 二级模块维持在内容区上方页签行（原位置不动）
         expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
-        expect(screen.getByRole('tab', { name: /数据源同步/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /数据同步/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
         // 一级模块已上移顶栏，不再出现在页签行
         expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull()
@@ -350,30 +354,34 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.queryByRole('tab', { name: /工作区设置/ })).toBeNull()
     })
 
-    it('落在质量检查段时页签行保持数据分析与数据源同步（与数据分析行为一致）', async () => {
+    it('落在质量检查段时页签行保持数据分析与数据同步（与数据分析行为一致）', async () => {
         // 质量检查同为数据表段内的二级功能：切到 /pipelines 不收敛页签行
         renderLayout(mockUser, '/w/10/pipelines')
         await waitFor(() => expect(screen.getByTestId('ws-section-stub')).toBeVisible())
         expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
-        expect(screen.getByRole('tab', { name: /数据源同步/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /数据同步/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
     })
 
-    it('切到文档/设计模块时页签行隐藏数据分析与数据源同步，质量检查恒显', async () => {
-        // 数据分析 / 数据源同步为数据表派生二级功能，仅数据表上下文显示
+    it('切到文档/设计模块时页签行隐藏数据分析与数据同步，文档段同时隐藏页签行质量检查', async () => {
+        // 数据分析 / 数据同步为数据表派生二级功能，仅数据表上下文显示
         const { unmount } = renderLayout(mockUser, '/w/10/documents')
         await waitFor(() => expect(screen.getByTestId('documents-page-stub')).toBeVisible())
         expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
-        expect(screen.queryByRole('tab', { name: /数据源同步/ })).toBeNull()
-        // 工作区级页签行质量检查恒显（文档区胶囊页签另有同名入口，按 tablist 区分）
-        expect(within(screen.getByRole('tablist')).getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        expect(screen.queryByRole('tab', { name: /数据同步/ })).toBeNull()
+        // 数据列表为数据表段专属二级页签，切到文档模块后隐藏
+        expect(screen.queryByRole('tab', { name: /数据列表/ })).toBeNull()
+        // 文档上下文页签行不再渲染质量检查（与文档区胶囊页签同名重复）；
+        // 入口由文档区胶囊页签承载（胶囊页签 role=tab 但不在 tablist 内，按 tablist 区分）
+        expect(within(screen.getByRole('tablist')).queryByRole('tab', { name: /质量检查/ })).toBeNull()
+        expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
         unmount()
 
-        // 设计段同样收敛
+        // 设计段同样收敛，但质量检查仍显示
         renderLayout(mockUser, '/w/10/design')
         await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toBeVisible())
         expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
-        expect(screen.queryByRole('tab', { name: /数据源同步/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /数据同步/ })).toBeNull()
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
     })
 
@@ -403,6 +411,8 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.getByRole('tab', { name: /设计/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /工作区设置/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
+        // 数据列表仅桌面端渲染：移动端页签行一级模块「数据表」已承载入口，不重复出现
+        expect(screen.queryByRole('tab', { name: /数据列表/ })).toBeNull()
 
         responsiveState = {
             deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
@@ -751,7 +761,7 @@ function useWorkspaceModules(modules: WorkspaceModule[]) {
 }
 
 describe('MainLayout 工作区模块门控', () => {
-    it('仅勾选数据表的工作区不显示「文档/设计」一级导航，数据分析与数据源同步随表开放', async () => {
+    it('仅勾选数据表的工作区不显示「文档/设计」一级导航，数据分析与数据同步随表开放', async () => {
         useWorkspaceModules(['tables'])
         renderLayout(mockUser)
 
@@ -760,7 +770,7 @@ describe('MainLayout 工作区模块门控', () => {
         expect(screen.queryByTestId('ws-nav-design')).toBeNull()
         expect(screen.getByTestId('ws-nav-tables')).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
-        expect(screen.getByRole('tab', { name: /数据源同步/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /数据同步/ })).toBeInTheDocument()
     })
 
     it('仅勾选文档的工作区仅显示「文档/工作区设置」一级导航，侧栏切换为文档导航', async () => {
@@ -773,8 +783,9 @@ describe('MainLayout 工作区模块门控', () => {
 
         expect(screen.getByTestId('ws-nav-documents')).toBeInTheDocument()
         expect(screen.getByTestId('ws-nav-settings')).toBeInTheDocument()
-        // 质量检查页签恒显（ADR 0080 D4；文档区胶囊页签另有同名入口，按 tablist 区分）
-        expect(within(screen.getByRole('tablist')).getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        // 文档上下文页签行不渲染质量检查（避免与胶囊页签同名重复）；入口由文档区胶囊页签承载
+        expect(within(screen.getByRole('tablist')).queryByRole('tab', { name: /质量检查/ })).toBeNull()
+        expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
         // 无数据表功能 → 文档段渲染文档导航侧栏（需求 0065），无表导航
         await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
         expect(screen.queryByTestId('sider-tables')).toBeNull()
