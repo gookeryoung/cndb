@@ -6,7 +6,7 @@ import { App as AntApp } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/store'
 import { workspaceApi } from '@/api'
-import { workspaceLandingSegment } from '@/utils/workspaceType'
+import { workspaceLandingSegment } from '@/utils/workspaceModules'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import AuthLayout from '@/layouts/AuthLayout'
@@ -56,10 +56,10 @@ function PageFallback() {
   )
 }
 
-/** 工作区根路由落地页 —— 按工作区类型决定进入「数据表」还是「文档」.
+/** 工作区根路由落地页 —— 按勾选模块决定落地段（tables → documents → design，ADR 0080）.
  *
  * 复用 MainLayout 已缓存的 workspaces 列表（同一 queryKey），不额外发请求；
- * 列表未就绪时先按默认（数据表）落地，类型到达后自动纠正。
+ * 列表未就绪时先按默认（数据表）落地，模块信息到达后自动纠正。
  */
 function WorkspaceLanding() {
   const { wid } = useParams<{ wid: string }>()
@@ -68,7 +68,7 @@ function WorkspaceLanding() {
     queryFn: () => workspaceApi.list(),
   })
   const ws = workspaces.find(w => String(w.id) === wid)
-  return <Navigate to={workspaceLandingSegment(ws?.workspace_type)} replace />
+  return <Navigate to={workspaceLandingSegment(ws?.modules)} replace />
 }
 
 function AuthenticatedApp() {

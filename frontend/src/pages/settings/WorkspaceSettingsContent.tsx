@@ -25,14 +25,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { workspaceApi } from '@/api'
 import type {
-  WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceType, WorkspaceVisibility,
+  WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility,
   MemberUserBrief,
 } from '@/api'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import HelpTip from '@/components/HelpTip'
+import ModuleCheckCards from '@/components/ModuleCheckCards'
 import { formatSize } from '@/utils/formatSize'
-import { WORKSPACE_TYPE_HINT, WORKSPACE_TYPE_LABEL, WORKSPACE_TYPE_OPTIONS } from '@/utils/workspaceType'
+import {
+  DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules,
+} from '@/utils/workspaceModules'
 import AddMemberModal from './AddMemberModal'
 import MemberZones from './MemberZones'
 import TransferOwnerModal from './TransferOwnerModal'
@@ -105,7 +108,7 @@ export default function WorkspaceSettingsContent({
         name: detail.name,
         description: detail.description,
         visibility: detail.visibility ?? 'member',
-        workspace_type: detail.workspace_type ?? 'data_doc',
+        modules: normalizeModules(detail.modules),
         tags: (detail.tags ?? []).join(', '),
       })
     }
@@ -132,7 +135,7 @@ export default function WorkspaceSettingsContent({
         name: v.name as string,
         description: v.description as string,
         visibility: v.visibility as WorkspaceVisibility,
-        workspace_type: v.workspace_type as WorkspaceType,
+        modules: normalizeModules(v.modules),
         tags: tagsStr.split(/[,，]/).map(s => s.trim()).filter(Boolean),
       })
     },
@@ -383,7 +386,7 @@ export default function WorkspaceSettingsContent({
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ visibility: 'member', tags: '', workspace_type: 'data_doc' }}
+          initialValues={{ visibility: 'member', tags: '', modules: [...DEFAULT_WORKSPACE_MODULES] }}
           onFinish={(v) => save.mutate(v)}
           disabled={!canEditBasic}
         >
@@ -398,13 +401,10 @@ export default function WorkspaceSettingsContent({
             <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
           </Form.Item>
           <Form.Item
-            name="workspace_type"
-            label={<>工作区类型<HelpTip title="决定工作区开放的功能：数据 + 文档=全部功能；数据=仅数据表与数据分析；文档=仅文档。修改后顶部页签与导航随之调整" /></>}
+            name="modules"
+            label={<>功能模块<HelpTip title="勾选工作区开放的功能：数据分析与数据源同步随数据表一并启用，质量检查恒可用。修改后顶部页签与导航随之调整" /></>}
           >
-            <Select
-              options={WORKSPACE_TYPE_OPTIONS.map(o => ({ ...o, label: `${o.label}（${WORKSPACE_TYPE_HINT[o.value]}）` }))}
-              disabled={!canEditBasic}
-            />
+            <ModuleCheckCards disabled={!canEditBasic} />
           </Form.Item>
           <Form.Item
             name="visibility"
@@ -517,8 +517,10 @@ export default function WorkspaceSettingsContent({
             <Descriptions.Item label="公开性">
               {VISIBILITY_LABEL[detail?.visibility ?? 'member']}
             </Descriptions.Item>
-            <Descriptions.Item label="工作区类型" span={2}>
-              {WORKSPACE_TYPE_LABEL[detail?.workspace_type ?? 'data_doc']}
+            <Descriptions.Item label="功能模块" span={2}>
+              {normalizeModules(detail?.modules).map(m => (
+                <Tag key={m} style={{ marginInlineEnd: 4 }}>{WORKSPACE_MODULE_LABEL[m]}</Tag>
+              ))}
             </Descriptions.Item>
             <Descriptions.Item label="标签" span={2}>
               {(detail?.tags ?? []).length > 0

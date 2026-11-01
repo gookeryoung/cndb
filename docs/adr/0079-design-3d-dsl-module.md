@@ -2,7 +2,7 @@
 
 Status: Implemented（2026-11-01 用户评审通过，同日确认 P0-P2 三期全部落地后实施）
 Date: 2026-11-01
-Related: `src/cndb/plugins/base.py`、`src/cndb/core/plugin_registry.py`、`src/cndb/plugins/pipeline/plugin.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/utils/workspaceType.ts`、`docs/adr/0026-chrome81-compat.md`、`docs/adr/0047-permission-denied-message.md`、`docs/adr/0075-workspace-full-backup.md`、`docs/adr/0076-pipeline-check-dsl.md`
+Related: `src/cndb/plugins/base.py`、`src/cndb/core/plugin_registry.py`、`src/cndb/plugins/pipeline/plugin.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/utils/workspaceModules.ts`、`docs/adr/0026-chrome81-compat.md`、`docs/adr/0047-permission-denied-message.md`、`docs/adr/0075-workspace-full-backup.md`、`docs/adr/0076-pipeline-check-dsl.md`
 需求卡片: `docs/requirements/0079-design-3d-dsl-module.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）

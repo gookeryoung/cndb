@@ -90,6 +90,8 @@ function defaultHandlers() {
   server.use(
     http.get('/api/v1/workspaces/10/pipelines', () => HttpResponse.json([WORKFLOW])),
     http.get('/api/v1/workspaces/10/pipelines/checks', () => HttpResponse.json(CHECKS)),
+    http.get('/api/v1/workspaces/10/pipelines/7/runs', () =>
+      HttpResponse.json({ total: 1, items: [RUN] })),
   )
 }
 
@@ -169,5 +171,59 @@ describe('PipelinesPage 列表与编辑', () => {
     const confirmButtons = await screen.findAllByRole('button', { name: /删\s*除/ })
     fireEvent.click(confirmButtons[confirmButtons.length - 1]!)
     await waitFor(() => expect(deleted).toBe(true))
+  })
+})
+
+// ─────────────── GitHub 风格双栏（ADR 0080 D4）：左规则清单 / 右运行历史 ───────────────
+
+describe('PipelinesPage 双栏布局', () => {
+  it('未选中规则时右栏给引导提示，点击左栏规则后展示其运行历史', async () => {
+    let runsRequested = 0
+    defaultHandlers()
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines/7/runs', () => {
+        runsRequested += 1
+        return HttpResponse.json({ total: 1, items: [RUN] })
+      }),
+    )
+    renderPage()
+
+    // 左栏规则清单 + 右栏未选中引导
+    expect(await screen.findByTestId('pipeline-item-7')).toBeInTheDocument()
+    expect(screen.getByText(/在左侧选择一条流水线/)).toBeInTheDocument()
+    expect(runsRequested).toBe(0)
+
+    // 点击规则 → 右栏拉取并展示运行历史
+    fireEvent.click(screen.getByTestId('pipeline-item-7'))
+    expect(await screen.findByTestId('run-item-71')).toBeInTheDocument()
+    expect(screen.getByText('排队中')).toBeInTheDocument()
+    expect(screen.getByText(/运行历史：空值巡检/)).toBeInTheDocument()
+
+    // 点击运行记录跳转运行详情
+    fireEvent.click(screen.getByTestId('run-item-71'))
+    expect(await screen.findByTestId('run-detail-stub')).toBeInTheDocument()
+  })
+
+  it('选中规则的运行历史为空时给空态提示', async () => {
+    defaultHandlers()
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines/7/runs', () =>
+        HttpResponse.json({ total: 0, items: [] })),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('pipeline-item-7'))
+    expect(await screen.findByText(/还没有运行记录/)).toBeInTheDocument()
+  })
+
+  it('检查动作目录为空（仅勾「设计」的工作区）时页面给出提示', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines', () => HttpResponse.json([])),
+      http.get('/api/v1/workspaces/10/pipelines/checks', () => HttpResponse.json([])),
+    )
+    renderPage()
+
+    expect(await screen.findByTestId('empty-checks-alert')).toBeInTheDocument()
+    expect(screen.getByText('暂无可用检查动作')).toBeInTheDocument()
   })
 })

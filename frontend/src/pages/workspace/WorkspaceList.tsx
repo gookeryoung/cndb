@@ -16,6 +16,7 @@ import {
   DownloadOutlined, SettingOutlined, GlobalOutlined, LockOutlined,
   SafetyCertificateOutlined, UploadOutlined, InboxOutlined, FileTextOutlined,
   FolderOpenOutlined, DatabaseOutlined, LoginOutlined, ArrowRightOutlined, HolderOutlined,
+  ToolOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -30,12 +31,14 @@ import { useCreateParam } from '@/hooks/useCreateParam'
 import { usePreferences, useSetWorkspaceOrder } from '@/hooks/useFavoriteViews'
 import { workspaceApi, tableApi } from '@/api'
 import type {
-  Workspace, WorkspaceRole, WorkspaceType, WorkspaceVisibility, TableSummary,
+  Workspace, WorkspaceRole, WorkspaceVisibility, TableSummary,
 } from '@/api'
 import {
-  WORKSPACE_TYPE_HINT, WORKSPACE_TYPE_LABEL, WORKSPACE_TYPE_OPTIONS,
-  workspaceLandingSegment, workspaceTypeFeatures,
-} from '@/utils/workspaceType'
+  DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules,
+  workspaceLandingSegment, workspaceModulesFeatures,
+} from '@/utils/workspaceModules'
+import type { WorkspaceModule } from '@/utils/workspaceModules'
+import ModuleCheckCards from '@/components/ModuleCheckCards'
 import { flattenWorkspaceOrder, sortWorkspaces } from '@/utils/homeOrder'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
 import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
@@ -64,16 +67,16 @@ const ROLE_BADGE_COLOR: Record<WorkspaceRole, string> = {
   owner: 'gold', editor: 'cyan', viewer: 'default',
 }
 
-/** 工作区类型徽标配色：标识功能范围（非权限），与公开性色系区分 */
-const TYPE_TAG_COLOR: Record<WorkspaceType, string> = {
-  data_doc: 'geekblue', data: 'purple', doc: 'orange',
+/** 功能模块徽标配色：标识勾选的功能范围（非权限），与公开性色系区分 */
+const MODULE_TAG_COLOR: Record<WorkspaceModule, string> = {
+  tables: 'geekblue', documents: 'orange', design: 'purple',
 }
 
-/** 行首图标：按工作区类型区分数据 / 文档语义 */
-const TYPE_ICON: Record<WorkspaceType, React.ReactNode> = {
-  data_doc: <DatabaseOutlined />,
-  data: <TableOutlined />,
-  doc: <FileTextOutlined />,
+/** 行首图标：按首个勾选模块区分数据 / 文档 / 设计语义 */
+const MODULE_ICON: Record<WorkspaceModule, React.ReactNode> = {
+  tables: <DatabaseOutlined />,
+  documents: <FileTextOutlined />,
+  design: <ToolOutlined />,
 }
 
 /** 展开后速览的数据表数量上限（超出走「查看全部」，避免展开区无限长） */
@@ -121,21 +124,21 @@ export default function WorkspaceList() {
     mutationFn: (v: {
       name: string; description?: string;
       visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean;
-      workspace_type?: WorkspaceType;
+      modules?: WorkspaceModule[];
     }) => workspaceApi.create({
       name: v.name,
       description: v.description ?? '',
       visibility: v.visibility ?? 'member',
       tags: v.tags ?? [],
       allow_edit: v.allow_edit ?? true,
-      workspace_type: v.workspace_type ?? 'data_doc',
+      modules: normalizeModules(v.modules),
     }),
     onSuccess: (w) => {
       message.success(`已创建 "${w.name}"`)
       setCreateOpen(false)
       form.resetFields()
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
-      navigate(`/w/${w.id}/${workspaceLandingSegment(w.workspace_type)}`)
+      navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules)}`)
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '创建工作区失败，请重试'),
   })
@@ -344,7 +347,7 @@ export default function WorkspaceList() {
           <Form
             form={form}
             layout="vertical"
-            initialValues={{ visibility: 'member', allow_edit: true, workspace_type: 'data_doc' }}
+            initialValues={{ visibility: 'member', allow_edit: true, modules: [...DEFAULT_WORKSPACE_MODULES] }}
             onFinish={(v) => {
               const tagsStr = (v.tags as string) || ''
               create.mutate({
@@ -360,11 +363,11 @@ export default function WorkspaceList() {
               <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
             </Form.Item>
             <Form.Item
-              name="workspace_type"
-              label="工作区类型"
-              extra={WORKSPACE_TYPE_HINT[(form.getFieldValue('workspace_type') as WorkspaceType) ?? 'data_doc']}
+              name="modules"
+              label="功能模块"
+              extra="按需勾选工作区开放的功能；数据分析与数据源同步随数据表一并启用，质量检查恒可用。"
             >
-              <Select options={WORKSPACE_TYPE_OPTIONS} />
+              <ModuleCheckCards />
             </Form.Item>
             <Form.Item name="visibility" label="公开性">
               <Select
@@ -420,7 +423,7 @@ export default function WorkspaceList() {
           setImportOpen(false)
           queryClient.invalidateQueries({ queryKey: ['workspaces'] })
           message.success(`已导入工作区「${w.name}」`)
-          navigate(`/w/${w.id}/${workspaceLandingSegment(w.workspace_type)}`)
+          navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules)}`)
         }}
         onError={(err) => message.error(err instanceof Error ? err.message : '导入失败')}
       />}
@@ -453,8 +456,8 @@ function WorkspaceRow({
   const vis = VISIBILITY_META[(ws.visibility ?? 'member') as WorkspaceVisibility]
     ?? VISIBILITY_META.member
   const role = ws.current_user_role ?? null
-  const type = (ws.workspace_type ?? 'data_doc') as WorkspaceType
-  const landing = `/w/${ws.id}/${workspaceLandingSegment(type)}`
+  const modules = normalizeModules(ws.modules)
+  const landing = `/w/${ws.id}/${workspaceLandingSegment(modules)}`
 
   return (
     <div
@@ -497,7 +500,7 @@ function WorkspaceRow({
           />
         </Tooltip>
 
-        <span className="cn-ws-row-icon" aria-hidden>{TYPE_ICON[type]}</span>
+        <span className="cn-ws-row-icon" aria-hidden>{MODULE_ICON[modules[0]]}</span>
 
         <div className="cn-ws-row-title">
           <span className="cn-ws-row-name" title={ws.name}>{ws.name}</span>
@@ -506,9 +509,11 @@ function WorkspaceRow({
               {vis.icon}
             </span>
           </Tooltip>
-          <Tag color={TYPE_TAG_COLOR[type]} className="cn-ws-row-tag">
-            {WORKSPACE_TYPE_LABEL[type]}
-          </Tag>
+          {modules.map(m => (
+            <Tag key={m} color={MODULE_TAG_COLOR[m]} className="cn-ws-row-tag">
+              {WORKSPACE_MODULE_LABEL[m]}
+            </Tag>
+          ))}
           {role && (
             <Tag color={ROLE_BADGE_COLOR[role]} className="cn-ws-row-tag">
               {ROLE_LABEL[role]}
@@ -571,7 +576,7 @@ function WorkspaceRowDetail({
   onBackup: () => void
 }) {
   const navigate = useNavigate()
-  const features = workspaceTypeFeatures(ws.workspace_type)
+  const features = workspaceModulesFeatures(ws.modules)
 
   const { data: tables = [], isLoading } = useQuery<TableSummary[]>({
     queryKey: ['workspaces', ws.id, 'tables'],

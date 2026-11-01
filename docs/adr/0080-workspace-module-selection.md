@@ -2,7 +2,7 @@
 
 Status: Accepted（2026-11-01 用户评审通过；评审修订：C4/D4 质量检查页签恒显 + GitHub 风格双栏、D8 默认全选 + 选型 UI 优化）
 Date: 2026-11-01
-Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/plugins/pipeline/services/checks/registry.py`、`frontend/src/utils/workspaceType.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx`、`docs/adr/0076-pipeline-check-dsl.md`、`docs/adr/0079-design-3d-dsl-module.md`
+Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/plugins/pipeline/services/checks/registry.py`、`frontend/src/utils/workspaceModules.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx`、`docs/adr/0076-pipeline-check-dsl.md`、`docs/adr/0079-design-3d-dsl-module.md`
 需求卡片: `docs/requirements/0080-workspace-module-selection.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -194,8 +194,8 @@ downgrade：重建 `workspace_type` 枚举列并按 modules 有损映射回填�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`（v12）、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/workspaces/services/backup_io.py`（版本白名单 +12）、`src/cndb/alembic/versions/b6c7d8e9f0a1_workspace_modules.py`、`src/cndb/plugins/pipeline/services/checks/registry.py`（domain_of 与保存期断言）、`src/cndb/plugins/pipeline/routers/workflows.py`（目录过滤 + 保存 / 校验 / 更新期拒绝） | `tests/test_workspace_modules.py`、`tests/test_workspace_modules_api.py`、`tests/test_workspace_modules_migration.py`、`tests/test_workspace_backup_v12.py` | 本次 P0 提交 |
-| P1 | 未开始 | — | — | — |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`（v12）、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/workspaces/services/backup_io.py`（版本白名单 +12）、`src/cndb/alembic/versions/b6c7d8e9f0a1_workspace_modules.py`、`src/cndb/plugins/pipeline/services/checks/registry.py`（domain_of 与保存期断言）、`src/cndb/plugins/pipeline/routers/workflows.py`（目录过滤 + 保存 / 校验 / 更新期拒绝） | `tests/test_workspace_modules.py`、`tests/test_workspace_modules_api.py`、`tests/test_workspace_modules_migration.py`、`tests/test_workspace_backup_v12.py` | ae5f70cf |
+| P1 | 进行中 | `frontend/src/utils/workspaceModules.ts`（新增，删 `workspaceType.ts`）、`frontend/src/api/types/common.ts`、`frontend/src/api/types/workspaces.ts`、`frontend/src/components/ModuleCheckCards.tsx`（新增，卡片式选型 D8）、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx`、`frontend/src/pages/pipelines/PipelinesPage.tsx`（双栏 D4） | `frontend/src/utils/workspaceModules.test.ts`、`frontend/src/layouts/MainLayout.test.tsx`、`frontend/src/pages/workspace/WorkspaceList.test.tsx`、`frontend/src/pages/pipelines/PipelinesPage.test.tsx` | — |
 | P2 | 未开始 | — | — | — |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。

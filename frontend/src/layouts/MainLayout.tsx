@@ -29,7 +29,7 @@ import SearchInput from '@/components/SearchInput'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
-import { workspaceLandingSegment, workspaceTypeFeatures } from '@/utils/workspaceType'
+import { workspaceLandingSegment, workspaceModulesFeatures } from '@/utils/workspaceModules'
 import { formatMeta } from '@/components/Document/docFormat'
 import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
 import { WEIGHT } from '@/theme/tokens'
@@ -174,8 +174,8 @@ export default function MainLayout() {
   })
 
   const currentWs = workspaces.find(w => String(w.id) === wid)
-  /** 当前工作区按类型开放的功能模块（类型缺失时按默认 data_doc 全开） */
-  const wsFeatures = workspaceTypeFeatures(currentWs?.workspace_type)
+  /** 当前工作区按勾选模块开放的功能（模块缺失/非法时按默认全三模块兜底） */
+  const wsFeatures = workspaceModulesFeatures(currentWs?.modules)
 
   const { data: tables = [], isSuccess: tablesReady } = useQuery({
     queryKey: ['workspaces', wid, 'tables'],
@@ -376,26 +376,24 @@ export default function MainLayout() {
     [location, wid, isMobile, tablesReady, tables.length, docsReady, docCount?.total],
   )
 
-  // 类型门控：当前 URL 落在该工作区未开放的功能区（如文档类访问 /tables）时，
-  // 重定向到该类型的落地页，避免出现空页签/空白内容。
+  // 模块门控：当前 URL 落在该工作区未开放的功能区（如仅勾「文档」访问 /tables）时，
+  // 重定向到该工作区的落地段，避免出现空页签/空白内容（ADR 0080；质量检查恒开放）。
   useEffect(() => {
     if (!wid || !currentWs) return
-    const feat = workspaceTypeFeatures(currentWs.workspace_type)
+    const feat = workspaceModulesFeatures(currentWs.modules)
     const inTables = location.startsWith(`/w/${wid}/tables`)
     const inDocuments = location.startsWith(`/w/${wid}/documents`)
     const inAnalytics = location.startsWith(`/w/${wid}/analytics`)
     const inDatasource = location.startsWith(`/w/${wid}/datasource`)
-    const inPipelines = location.startsWith(`/w/${wid}/pipelines`)
     const inDesign = location.startsWith(`/w/${wid}/design`)
     if (
       (!feat.tables && inTables) ||
       (!feat.documents && inDocuments) ||
       (!feat.analytics && inAnalytics) ||
       (!feat.datasource && inDatasource) ||
-      (!feat.quality && inPipelines) ||
       (!feat.design && inDesign)
     ) {
-      navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.workspace_type)}`, { replace: true })
+      navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.modules)}`, { replace: true })
     }
   }, [location, wid, currentWs, navigate])
 
@@ -449,7 +447,7 @@ export default function MainLayout() {
       key: `ws-${w.id}`,
       icon: <FolderOutlined />,
       label: (w.pinned ? '📌 ' : '') + w.name,
-      onClick: () => navigate(`/w/${w.id}/tables`),
+      onClick: () => navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules)}`),
     })),
   ]
 
@@ -491,7 +489,7 @@ export default function MainLayout() {
     } else if (workspaces.length > 0) {
       // 访问了需要 wid 的 URL 但没带 wid → 跳到第一个工作区
       const first = workspaces[0]
-      return <Navigate to={`/w/${first.id}/tables`} replace />
+      return <Navigate to={`/w/${first.id}/${workspaceLandingSegment(first.modules)}`} replace />
     } else {
       // 空工作区 + 需要 wid 的 URL（不是 / 也不是 /w）→ 跳到 /w 让用户创建
       return <Navigate to="/w" replace />

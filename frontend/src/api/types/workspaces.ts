@@ -1,13 +1,13 @@
 /** 工作区、成员与工作区导出载荷. */
 
-import type { ID, WorkspaceType, WorkspaceVisibility } from './common'
+import type { ID, WorkspaceModule, WorkspaceVisibility } from './common'
 
 export interface Workspace {
   id: ID; name: string; description?: string; default_role?: string
   pinned?: boolean; created_at?: string; updated_at?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
-  /** 工作区类型：data_doc（数据+文档，默认）/ data（仅数据）/ doc（仅文档） */
-  workspace_type?: WorkspaceType
+  /** 启用的功能模块集合（ADR 0080；缺失时前端按全三模块兜底） */
+  modules?: WorkspaceModule[]
   /** 存储配额（字节），默认 100MB；由系统管理员在管理台「空间分配」调整 */
   storage_quota_bytes?: number
   current_user_role?: WorkspaceRole | null
@@ -23,13 +23,13 @@ export interface WorkspaceDetail extends Workspace {
 export interface WorkspaceCreate {
   name: string; description?: string; default_role?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
-  /** 工作区类型，默认 data_doc（数据 + 文档） */
-  workspace_type?: WorkspaceType
+  /** 功能模块集合，默认全三模块（ADR 0080 D8） */
+  modules?: WorkspaceModule[]
 }
 export interface WorkspaceUpdate {
   name?: string; description?: string; default_role?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
-  workspace_type?: WorkspaceType
+  modules?: WorkspaceModule[]
 }
 /** 工作区角色 —— 三级（owner/editor/viewer），admin 已在 P1 迁移为 editor */
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
@@ -52,8 +52,8 @@ export interface WorkspaceExportData {
   exported_at: string
   workspace: {
     name: string; description: string; visibility: WorkspaceVisibility; tags: string[]; allow_edit: boolean
-    /** 工作区类型（旧备份可能缺失，导入时按 data_doc 兜底） */
-    workspace_type?: WorkspaceType
+    /** 功能模块集合（v12 起；旧备份缺省，导入时按后端映射兜底） */
+    modules?: WorkspaceModule[]
   }
   tables: Array<{
     name: string; description: string

@@ -10,7 +10,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, mockWorkspace, server } from '@/test/msw'
-import type { UserResponse, WorkspaceType } from '@/api'
+import type { UserResponse, WorkspaceModule } from '@/api'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
 // 可控 useResponsive mock：默认桌面端，移动端用例在 beforeEach 中切换
@@ -65,6 +65,12 @@ function TableSettingsStub() {
     return <div data-testid="table-settings-stub">{loc.pathname}</div>
 }
 
+/** 设计列表路由桩（ADR 0080：仅勾选设计的工作区落地段） */
+function DesignsStub() {
+    const loc = useLocation()
+    return <div data-testid="designs-page-stub">{loc.pathname}</div>
+}
+
 /** 文档路由桩 —— 展示当前 pathname + query 供断言（?parent= 落在 search 上） */
 function DocumentsStub() {
     const loc = useLocation()
@@ -88,6 +94,7 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/tables/:tid" element={<GridPageStub />} />
                 <Route path="w/:wid/tables/:tid/change-requests" element={<ChangeRequestsStub />} />
                 <Route path="w/:wid/tables/:tid/settings" element={<TableSettingsStub />} />
+                <Route path="w/:wid/design" element={<DesignsStub />} />
                 <Route path="w/:wid/documents" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/:docId" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/change-requests" element={<DocumentsStub />} />
@@ -613,43 +620,58 @@ describe('MainLayout 移动端适配', () => {
     })
 })
 
-// ─────────────── 工作区类型门控：页签 / 侧栏 / 落地页 ───────────────
+// ─────────────── 工作区模块门控：页签 / 侧栏 / 落地页（ADR 0080） ───────────────
 
-/** 覆盖工作区列表接口，返回指定类型的工作区 */
-function useWorkspaceType(type: WorkspaceType) {
+/** 覆盖工作区列表接口，返回指定勾选模块的工作区 */
+function useWorkspaceModules(modules: WorkspaceModule[]) {
     server.use(
         http.get('/api/v1/workspaces', () =>
-            HttpResponse.json([{ ...mockWorkspace, workspace_type: type }])),
+            HttpResponse.json([{ ...mockWorkspace, modules }])),
     )
 }
 
-describe('MainLayout 工作区类型门控', () => {
-    it('数据类工作区（data）不显示「文档」页签', async () => {
-        useWorkspaceType('data')
+describe('MainLayout 工作区模块门控', () => {
+    it('仅勾选数据表的工作区不显示「文档/设计」页签，数据分析与数据源同步随表开放', async () => {
+        useWorkspaceModules(['tables'])
         renderLayout(mockUser)
 
         await waitFor(() => expect(screen.getByTestId('tables-page-stub')).toBeVisible())
         await waitFor(() => expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull())
+        expect(screen.queryByRole('tab', { name: /设计/ })).toBeNull()
         expect(screen.getByRole('tab', { name: /数据表/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /数据源同步/ })).toBeInTheDocument()
     })
 
-    it('文档类工作区（doc）仅显示「文档」与「工作区设置」，侧栏切换为文档导航', async () => {
-        useWorkspaceType('doc')
+    it('仅勾选文档的工作区仅显示「文档/质量检查/设置」页签，侧栏切换为文档导航', async () => {
+        useWorkspaceModules(['documents'])
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => expect(screen.getByTestId('documents-page-stub')).toBeVisible())
         await waitFor(() => expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull())
-
         expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
+
         expect(screen.getByRole('tab', { name: /文档/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /工作区设置/ })).toBeInTheDocument()
+        // 质量检查页签恒显（ADR 0080 D4）
+        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
         // 无数据表功能 → 文档段渲染文档导航侧栏（需求 0065），无表导航
         await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('文档类工作区访问数据表/数据分析路径自动重定向到文档页', async () => {
-        useWorkspaceType('doc')
+    it('仅勾选设计的工作区落地 /design，质量检查页签仍在', async () => {
+        useWorkspaceModules(['design'])
+        renderLayout(mockUser, '/w/10/design')
+
+        await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toBeVisible())
+        await waitFor(() => expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull())
+        expect(screen.getByRole('tab', { name: /设计/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+    })
+
+    it('仅勾选文档的工作区访问数据表/数据分析路径自动重定向到文档页', async () => {
+        useWorkspaceModules(['documents'])
         renderLayout(mockUser, '/w/10/tables')
 
         await waitFor(() => {

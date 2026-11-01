@@ -47,6 +47,7 @@ function renderWorkspaceList(initialRoute = '/w') {
             <Route path="/w/:wid/tables" element={<LocationProbe />} />
             <Route path="/w/:wid/tables/:tid" element={<LocationProbe />} />
             <Route path="/w/:wid/documents" element={<LocationProbe />} />
+            <Route path="/w/:wid/design" element={<LocationProbe />} />
           </Routes>
         </MemoryRouter>
       </ThemeProvider>
@@ -275,7 +276,7 @@ describe('WorkspaceList 可折叠行列表', () => {
     let tableRequests = 0
     server.use(
       http.get('/api/v1/workspaces', () =>
-        HttpResponse.json([makeWs({ id: 10, name: '纯文档区', workspace_type: 'doc' })])),
+        HttpResponse.json([makeWs({ id: 10, name: '纯文档区', modules: ['documents'] })])),
       http.get('/api/v1/workspaces/10/tables', () => {
         tableRequests += 1
         return HttpResponse.json([])
@@ -422,11 +423,11 @@ describe('WorkspaceList 桌面端布局回归', () => {
   })
 })
 
-// ─────────────── 工作区类型：创建时可选用，并决定落地页 ───────────────
+// ─────────────── 功能模块：卡片式勾选（默认全选）并决定落地页（ADR 0080） ───────────────
 
-describe('WorkspaceList 工作区类型', () => {
+describe('WorkspaceList 功能模块选型', () => {
   beforeEach(() => {
-    // 创建接口回显请求体中的 workspace_type，模拟后端落库后的返回值
+    // 创建接口回显请求体中的 modules，模拟后端落库后的返回值
     server.use(
       http.post('/api/v1/workspaces', async ({ request }) => {
         const body = (await request.json()) as Partial<Workspace>
@@ -437,7 +438,7 @@ describe('WorkspaceList 工作区类型', () => {
           visibility: body.visibility ?? 'member',
           tags: body.tags ?? [],
           allow_edit: body.allow_edit ?? true,
-          workspace_type: body.workspace_type ?? 'data_doc',
+          modules: body.modules ?? ['tables', 'documents', 'design'],
           created_by_id: 1,
           created_at: '',
           updated_at: '',
@@ -446,38 +447,53 @@ describe('WorkspaceList 工作区类型', () => {
     )
   })
 
-  it('创建弹窗提供类型选择，默认「数据 + 文档」', async () => {
+  it('创建弹窗提供功能模块卡片勾选，默认三模块全选', async () => {
     renderWorkspaceList()
     fireEvent.click(await screen.findByTestId('create-workspace-btn'))
     const modal = await screen.findByTestId('create-workspace-modal')
 
-    expect(within(modal).getByText('工作区类型')).toBeInTheDocument()
-    // 默认选中项渲染为「数据 + 文档」
-    expect(within(modal).getByText('数据 + 文档')).toBeInTheDocument()
+    expect(within(modal).getByText('功能模块')).toBeInTheDocument()
+    for (const m of ['tables', 'documents', 'design']) {
+      expect(within(modal).getByTestId(`module-card-${m}`)).toHaveAttribute('data-checked', 'true')
+    }
   })
 
-  it('选择「文档」类型创建后落地到文档页 /w/42/documents', async () => {
+  it('取消勾选数据表与文档（仅留设计）后创建，落地到设计页 /w/42/design', async () => {
+    const user = userEvent.setup()
     renderWorkspaceList()
     fireEvent.click(await screen.findByTestId('create-workspace-btn'))
     const modal = await screen.findByTestId('create-workspace-modal')
 
-    fireEvent.change(screen.getByLabelText('工作区名称'), { target: { value: '文档区' } })
-    // 弹窗内第一个 combobox 为「工作区类型」（其后为公开性）
-    fireEvent.mouseDown(within(modal).getAllByRole('combobox')[0]!)
-    fireEvent.click(await screen.findByText('文档'))
+    fireEvent.change(screen.getByLabelText('工作区名称'), { target: { value: '设计区' } })
+    await user.click(within(modal).getByTestId('module-card-tables'))
+    await user.click(within(modal).getByTestId('module-card-documents'))
 
     const okBtn = document.querySelector('.ant-modal-footer .ant-btn-primary') as HTMLElement
     fireEvent.click(okBtn)
 
     await waitFor(() => {
-      expect(screen.getByTestId('location')).toHaveTextContent('/w/42/documents')
+      expect(screen.getByTestId('location')).toHaveTextContent('/w/42/design')
     }, { timeout: 3000 })
   })
 
-  it('文档类工作区卡片点击进入文档页而非数据表', async () => {
+  it('仅剩一个选中模块时不可取消（至少一项约束）', async () => {
+    const user = userEvent.setup()
+    renderWorkspaceList()
+    fireEvent.click(await screen.findByTestId('create-workspace-btn'))
+    const modal = await screen.findByTestId('create-workspace-modal')
+
+    // 依次取消两张卡后仅剩 design，再点 design 应无效果
+    await user.click(within(modal).getByTestId('module-card-tables'))
+    await user.click(within(modal).getByTestId('module-card-documents'))
+    await user.click(within(modal).getByTestId('module-card-design'))
+
+    expect(within(modal).getByTestId('module-card-design')).toHaveAttribute('data-checked', 'true')
+  })
+
+  it('仅勾选文档的工作区卡片点击进入文档页而非数据表', async () => {
     server.use(
       http.get('/api/v1/workspaces', () =>
-        HttpResponse.json([makeWs({ id: 10, name: '纯文档区', workspace_type: 'doc' })])),
+        HttpResponse.json([makeWs({ id: 10, name: '纯文档区', modules: ['documents'] })])),
     )
     renderWorkspaceList()
 
