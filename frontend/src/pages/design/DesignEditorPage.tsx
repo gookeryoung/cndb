@@ -177,9 +177,49 @@ export default function DesignEditorPage() {
         />
       )}
 
+      {/* 顶部信息条：编译检查 + 版本历史（上移收拢，编辑/预览区让出整列高度） */}
+      <div className="cn-dsl-topbar" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 24px' }}>
+        <Space size={12} wrap align="center">
+          <Text type="secondary"><ExperimentOutlined /> 编译检查：</Text>
+          {preview.compiling && <Spin size="small" />}
+          {!preview.compiling && diagnostics.length === 0 && (
+            <Text type="secondary">
+              通过{preview.ir && preview.ir.nodes.length === 0 && '（顶层尚无实例）'}
+            </Text>
+          )}
+          <Space size={8} wrap align="center">
+            {diagnostics.map((item, index) => (
+              <div key={`${item.line}-${item.col}-${index}`} className="cn-dsl-diag-item">
+                <Tag color="error" style={{ marginInlineEnd: 4 }}>第{item.line}行</Tag>
+                <Text type="danger">{item.message}</Text>
+              </div>
+            ))}
+          </Space>
+        </Space>
+        <Space size={8} wrap align="center">
+          <Text type="secondary"><HistoryOutlined /> 版本历史（{versions.length}）：</Text>
+          {versions.length === 0 ? (
+            <Text type="secondary">暂无版本</Text>
+          ) : versions.map(version => (
+            <span key={version.id} className="cn-dsl-version-item">
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0 }}
+                aria-label={`回看版本 ${version.version_number}`}
+                onClick={() => setViewingVersion(version)}
+              >
+                <Tag style={{ marginInlineEnd: 4 }}>v{version.version_number}</Tag>
+                {version.comment ? version.comment : formatDateTime(version.created_at)}
+              </Button>
+            </span>
+          ))}
+        </Space>
+      </div>
+
       <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0, flexWrap: 'wrap' }}>
-        {/* 左：源码 + 诊断 */}
-        <div style={{ flex: '1 1 380px', minWidth: 320, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
+        {/* 左：源码 */}
+        <div style={{ flex: '1 1 380px', minWidth: 320, display: 'flex', minHeight: 0 }}>
           <div className="cn-dsl-editor-host" style={{ flex: 1, minHeight: 260, overflow: 'hidden' }}>
             {isLoading ? <Skeleton active /> : (
               <DslEditor
@@ -190,20 +230,6 @@ export default function DesignEditorPage() {
                 readOnly={isViewer}
               />
             )}
-          </div>
-          <div style={{ maxHeight: 160, overflow: 'auto' }}>
-            {preview.compiling && <Spin size="small" />}
-            {!preview.compiling && diagnostics.length === 0 && (
-              <Text type="secondary">
-                <ExperimentOutlined /> 编译通过{preview.ir && preview.ir.nodes.length === 0 && '（顶层尚无实例）'}
-              </Text>
-            )}
-            {diagnostics.map((item, index) => (
-              <div key={`${item.line}-${item.col}-${index}`} className="cn-dsl-diag-item">
-                <Tag color="error" style={{ marginInlineEnd: 4 }}>第{item.line}行</Tag>
-                <Text type="danger">{item.message}</Text>
-              </div>
-            ))}
           </div>
         </div>
 
@@ -239,29 +265,6 @@ export default function DesignEditorPage() {
             </div>
           )}
         </div>
-      </div>
-
-      {/* 版本列表：点击回看该版原文（P2），非 viewer 可恢复 */}
-      <div style={{ borderTop: '1px solid var(--cn-border, #eee)', paddingTop: 8 }}>
-        <Space size={16} wrap>
-          <Text type="secondary"><HistoryOutlined /> 版本历史（{versions.length}）：</Text>
-          {versions.length === 0 ? (
-            <Text type="secondary">暂无版本</Text>
-          ) : versions.map(version => (
-            <span key={version.id} className="cn-dsl-version-item">
-              <Button
-                type="link"
-                size="small"
-                style={{ padding: 0 }}
-                aria-label={`回看版本 ${version.version_number}`}
-                onClick={() => setViewingVersion(version)}
-              >
-                <Tag style={{ marginInlineEnd: 4 }}>v{version.version_number}</Tag>
-                {version.comment ? version.comment : formatDateTime(version.created_at)}
-              </Button>
-            </span>
-          ))}
-        </Space>
       </div>
 
       {/* 版本回看抽屉：该版原文 + 恢复入口（viewer 只读） */}

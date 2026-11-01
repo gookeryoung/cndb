@@ -6499,3 +6499,10 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-secondary, rgba(255, 255, 255, 0.45));
   font-size: var(--cn-text-xs);
 }
+/* 顶部信息条：编译检查 + 版本历史收拢于页头下方 */
+.cn-dsl-topbar {
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
+}
