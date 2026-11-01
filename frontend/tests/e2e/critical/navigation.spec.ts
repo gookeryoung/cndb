@@ -100,6 +100,22 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(tabs.filter({ hasText: "质量检查" })).toBeVisible()
   })
 
+  // 需求 0082 C3：文档区二级页签新增「文档结构」，指向文档总览列表页本体
+  test("文档区二级页签含「文档结构」：落在文档总览时激活，点击回到总览", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+
+    await page.goto(`/w/${WID}/documents`)
+    await page.waitForURL(/\/documents$/)
+    await expect(page.getByTestId("documents-crumb")).toBeVisible({ timeout: 5000 })
+    const structureTab = page.getByTestId("document-tab-structure")
+    await expect(structureTab).toBeVisible()
+    await expect(structureTab).toHaveAttribute("aria-selected", "true")
+
+    // 修改申请 / 问题清单两个子页签仍在同一行
+    await expect(page.getByTestId("document-tab-change-requests")).toBeVisible()
+    await expect(page.getByTestId("document-tab-issues")).toBeVisible()
+  })
+
   test("数据分析 Tab → /w/:wid/analytics（独立于文档的模块）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
@@ -151,7 +167,7 @@ test.describe("MainLayout Header 导航按钮", () => {
     }
   })
 
-  test("数据分析段侧栏折叠为图标条（需求 0065 C5：Sider 不卸载）", async ({ page }) => {
+  test("数据分析段侧栏保持展开（Sider 不卸载且不折叠）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/analytics`)
@@ -159,7 +175,7 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(page.getByTestId("analytics-page")).toBeVisible({ timeout: 5000 })
     const sider = page.locator(".ant-layout-sider")
     await expect(sider).toHaveCount(1)
-    await expect(sider).toHaveClass(/ant-layout-sider-collapsed/)
+    await expect(sider).not.toHaveClass(/ant-layout-sider-collapsed/)
   })
 })
 

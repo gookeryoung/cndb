@@ -52,10 +52,13 @@ const TABLE_SUBPAGES = [
   { key: 'settings', label: '数据表设置', icon: <SettingOutlined /> },
 ] as const
 
-/** 文档区二级页定义 —— 与表级子页同形，但作用域是工作区下的全部文档（无「文档设置」）. */
+/** 文档区二级页定义 —— 与表级子页同形，但作用域是工作区下的全部文档（无「文档设置」）.
+ * 「文档结构」在前（0082 C4）：指向既有文档总览列表页（/documents），作为文档模块的根级页签入口；
+ * 其余子页页签导航到 /documents/<key>。 */
 const DOCUMENT_SUBPAGES = [
-  { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined /> },
-  { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined /> },
+  { key: 'structure', label: '文档结构', icon: <FolderOpenOutlined />, to: '' },
+  { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined />, to: 'change-requests' },
+  { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined />, to: 'issues' },
 ] as const
 
 /** 文档树节点 → antd Tree 节点：文件夹/文档区分图标，原始节点挂在 docNode 供点击导航. */
@@ -255,10 +258,12 @@ export default function MainLayout() {
               : 'tables'
 
   /** 数据表派生二级功能（数据分析 / 数据源同步）的显示窗口：仅在数据表模块上下文
-   * （表列表、表级页、分析段、同步段）显示；切到文档 / 设计 / 工作区设置一级模块时隐藏，
-   * 避免与当前模块无关的入口干扰导航；质量检查恒显不受影响。 */
+   * （表列表、表级页、分析段、同步段、质量检查段）显示；切到文档 / 设计 / 工作区设置一级模块时隐藏，
+   * 避免与当前模块无关的入口干扰导航。质量检查同为数据表段内的二级功能：
+   * 落在质量检查页时窗口保持开启（与数据分析行为一致），页签行不消失；质量检查页签本身恒显。 */
   const tablesDerivedActive =
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
+    || activeWsTab === 'pipelines'
 
   /** 顶栏一级模块导航（需求 0081 C4）：数据表 → 文档 → 设计 → 工作区设置.
    *
@@ -350,26 +355,27 @@ export default function MainLayout() {
   // 进入 /w/:wid/documents 及其子页时，在工作区 Tabs 右侧渲染「文档」根入口 + 子页页签。
   // 注意：/w/:wid/documents/:docId 也在该前缀下（编辑器页），此时无子页激活，仅展示根入口。
   // inDocumentsContext 已在上方文档侧栏查询处定义
-  const activeDocumentTab = location.includes('/change-requests')
-    ? 'change-requests'
-    : location.includes('/issues')
-      ? 'issues'
-      : ''
+  // 「文档结构」页签即文档总览列表页本体（/documents 无子段时激活）；
+  // 其余子页由 pathname 中的静态段驱动。
+  const activeDocumentTab = location === `/w/${wid}/documents`
+    ? 'structure'
+    : location.includes('/change-requests')
+      ? 'change-requests'
+      : location.includes('/issues')
+        ? 'issues'
+        : ''
   const activeDocumentSubpage = DOCUMENT_SUBPAGES.find(p => p.key === activeDocumentTab)
 
-  // ── 侧边栏形态：按当前功能段切换（需求 0065；分析/同步/设置段改为折叠过渡）──
+  // ── 侧边栏形态：按当前功能段切换（需求 0065；工作区设置/设计段折叠过渡）──
   // documents → 文档侧栏（未选文档=文档列表，已选中=标题大纲）；
-  // analytics / datasource / pipelines / workspace settings → Sider 不卸载，自动折叠为图标条，
+  // analytics / datasource / pipelines → 数据表侧栏始终展开（不再自动折叠）；
+  // workspace settings / design → Sider 不卸载，自动折叠为图标条，
   //   减少切换时布局骨架消失的视觉冲击，返回数据表段时恢复用户原有折叠偏好；
   // 其余（数据表段）→ 维持数据表导航。未勾选数据表模块的工作区仍隐藏侧栏。
   // 表级子页 /tables/:tid/settings 不含 /settings 段前缀，不受影响。
-  const inAnalyticsContext = !!wid && location.startsWith(`/w/${wid}/analytics`)
-  const inDatasourceContext = !!wid && location.startsWith(`/w/${wid}/datasource`)
-  const inPipelinesContext = !!wid && location.startsWith(`/w/${wid}/pipelines`)
   const inDesignContext = !!wid && location.startsWith(`/w/${wid}/design`)
   const inWsSettingsContext = !!wid && location.startsWith(`/w/${wid}/settings`)
-  const inFocusContext =
-    inAnalyticsContext || inDatasourceContext || inPipelinesContext || inWsSettingsContext || inDesignContext
+  const inFocusContext = inWsSettingsContext || inDesignContext
   type SiderMode = 'documents' | 'tables' | 'hidden'
   const siderMode: SiderMode =
     inDocumentsContext && wsFeatures.documents
@@ -902,7 +908,7 @@ export default function MainLayout() {
                           aria-selected={active}
                           data-testid={`document-tab-${p.key}`}
                           className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
-                          onClick={() => navigate(`/w/${wid}/documents/${p.key}`)}
+                          onClick={() => navigate(`/w/${wid}/documents${p.to ? `/${p.to}` : ''}`)}
                         >
                           {p.icon}
                           {p.label}

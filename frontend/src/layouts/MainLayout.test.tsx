@@ -88,6 +88,12 @@ function SettingsStub() {
     return <div data-testid="settings-page-stub">{loc.pathname}</div>
 }
 
+/** 分析 / 同步 / 质量检查路由桩 —— 展示当前 pathname 供断言 */
+function WsSectionStub() {
+    const loc = useLocation()
+    return <div data-testid="ws-section-stub">{loc.pathname}</div>
+}
+
 /** 按真实路由结构渲染 MainLayout，初始落在指定路径（默认第一个工作区的表列表页） */
 function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
     return renderProviders(
@@ -105,6 +111,9 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/documents/change-requests" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/issues" element={<DocumentsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
+                <Route path="w/:wid/analytics" element={<WsSectionStub />} />
+                <Route path="w/:wid/datasource" element={<WsSectionStub />} />
+                <Route path="w/:wid/pipelines" element={<WsSectionStub />} />
                 <Route path="w" element={<HomeStub />} />
                 <Route path="admin" element={<AdminStub />} />
                 <Route path="help" element={<HelpStub />} />
@@ -341,6 +350,15 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.queryByRole('tab', { name: /工作区设置/ })).toBeNull()
     })
 
+    it('落在质量检查段时页签行保持数据分析与数据源同步（与数据分析行为一致）', async () => {
+        // 质量检查同为数据表段内的二级功能：切到 /pipelines 不收敛页签行
+        renderLayout(mockUser, '/w/10/pipelines')
+        await waitFor(() => expect(screen.getByTestId('ws-section-stub')).toBeVisible())
+        expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /数据源同步/ })).toBeInTheDocument()
+        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+    })
+
     it('切到文档/设计模块时页签行隐藏数据分析与数据源同步，质量检查恒显', async () => {
         // 数据分析 / 数据源同步为数据表派生二级功能，仅数据表上下文显示
         const { unmount } = renderLayout(mockUser, '/w/10/documents')
@@ -539,18 +557,36 @@ describe('MainLayout 表级页签（融合导航行）', () => {
 })
 
 describe('MainLayout 文档区二级导航', () => {
-    it('进入文档页显示二级导航：文档根入口 + 修改申请 / 问题清单页签', async () => {
+    it('进入文档页显示二级导航：文档根入口 + 文档结构 / 修改申请 / 问题清单页签', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => {
             expect(screen.getByTestId('documents-crumb')).toBeVisible()
         })
         expect(screen.getByTestId('documents-crumb-root')).toBeVisible()
+        expect(screen.getByTestId('document-tab-structure')).toBeVisible()
         expect(screen.getByTestId('document-tab-change-requests')).toBeVisible()
         expect(screen.getByTestId('document-tab-issues')).toBeVisible()
-        // 未进入表上下文时表级页签不渲染，且文档二级页签默认均未激活
+        // 未进入表上下文时表级页签不渲染
         expect(screen.queryByTestId('table-crumb')).toBeNull()
+        // 「文档结构」即文档总览列表页本体：落在 /documents 时激活（0082 C4）
+        expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'true')
         expect(screen.getByTestId('document-tab-change-requests')).toHaveAttribute('aria-selected', 'false')
+    })
+
+    it('编辑器页「文档结构」未激活，点击后返回文档总览并激活（0082 C4）', async () => {
+        renderLayout(mockUser, '/w/10/documents/2')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'false')
+        fireEvent.click(screen.getByTestId('document-tab-structure'))
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
+        })
+        expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'true')
     })
 
     it('点击「修改申请」页签导航到子页并激活', async () => {
@@ -885,6 +921,17 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         expect(screen.getByTestId('sider-tables')).toBeVisible()
         expect(screen.queryByTestId('sider-documents')).toBeNull()
     })
+
+    it.each(['/w/10/analytics', '/w/10/datasource', '/w/10/pipelines'])(
+        '分析 / 同步 / 质量检查段：数据表侧栏始终展开不折叠（%s）', async (path) => {
+            renderLayout(mockUser, path)
+
+            await waitFor(() => expect(screen.getByTestId('ws-section-stub')).toBeVisible())
+            const sider = document.querySelector('.ant-layout-sider')
+            expect(sider).not.toBeNull()
+            expect(sider).not.toHaveClass('ant-layout-sider-collapsed')
+            expect(screen.getByTestId('sider-tables')).toBeVisible()
+        })
 
     it('数据表段维持表导航：数据表列表侧栏不受文档段切换影响', async () => {
         renderLayout(mockUser, '/w/10/tables')
