@@ -231,7 +231,7 @@ export default function MainLayout() {
     [tables, tableKeyword],
   )
 
-  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），按工作区类型过滤可见页签.
+  /** 工作区级分页导航：key 即路由段（/w/:wid/{key}），按勾选的功能模块过滤可见页签.
    *
    * 各项带数量徽标：仅数据就绪后渲染徽标（0 也显示），未就绪时不渲染占位，
    * 避免加载瞬间误导（class cn-ws-tab-count，样式走 var(--cn-*) 主题变量）。
@@ -319,7 +319,7 @@ export default function MainLayout() {
   // documents → 文档侧栏（未选文档=文档列表，已选中=标题大纲）；
   // analytics / datasource / pipelines / workspace settings → Sider 不卸载，自动折叠为图标条，
   //   减少切换时布局骨架消失的视觉冲击，返回数据表段时恢复用户原有折叠偏好；
-  // 其余（数据表段）→ 维持数据表导航。无 tables 能力的工作区类型仍隐藏侧栏。
+  // 其余（数据表段）→ 维持数据表导航。未勾选数据表模块的工作区仍隐藏侧栏。
   // 表级子页 /tables/:tid/settings 不含 /settings 段前缀，不受影响。
   const inAnalyticsContext = !!wid && location.startsWith(`/w/${wid}/analytics`)
   const inDatasourceContext = !!wid && location.startsWith(`/w/${wid}/datasource`)
