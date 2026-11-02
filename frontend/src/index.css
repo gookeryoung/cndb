@@ -552,23 +552,40 @@ body.theme-oled {
  * 顶栏 / 表导航 / 工作区 Tabs 的质感升级；
  * 全部颜色由 var(--cn-*) + color-mix 派生，10 套主题（含深色）自动适配。 */
 
-/* 顶栏：容器底色上叠品牌色微渐变 + 柔和投影，替代纯平面单边框。
+/* 顶栏：极简 / GitHub 式平面线条 —— 纯容器底色 + 1px 细边框，无渐变与投影，
+ * 顶栏与内容区以一条清晰的分界线隔开（线色随主题明暗取次级描边档位）。
  * 复合选择器抬升优先级，压过 antd Layout Header 运行时注入的单类规则。 */
 .ant-layout-header.cn-app-header {
-  background: linear-gradient(180deg,
-      var(--cn-mix-bg-container-97-brand-color-3),
-      var(--cn-bg-container));
-  background: linear-gradient(180deg,
-      color-mix(in srgb, var(--cn-bg-container) 97%, var(--cn-brand-color) 3%),
-      var(--cn-bg-container));
-  border-bottom: 1.5px solid var(--cn-border);
-  box-shadow:
-    0 1px 2px rgb(var(--cn-shadow-color) / 0.04),
-    0 2px 10px rgb(var(--cn-shadow-color) / 0.03);
+  background: var(--cn-bg-container);
+  border-bottom: 1px solid var(--cn-border-soft);
+  box-shadow: none;
+}
+
+/* 顶栏控件（搜索框 / 图标按钮）统一线条：1px + 小圆角 + 中性描边，
+ * 形状与线宽在所有主题一致，只有描边 / 文字颜色随明暗主题变化。
+ * 覆盖 antd Button 的默认边框与 text 型无边框形态，让可点区域边界清晰。 */
+.cn-app-header .ant-btn {
+  border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+  color: var(--cn-text-secondary);
+  box-shadow: none;
+}
+
+.cn-app-header .ant-btn:not(:disabled):hover {
+  border-color: var(--cn-border);
+  background: var(--cn-bg-subtle);
+  color: var(--cn-text-primary);
+}
+
+/* 圆形头像按钮保持正圆：线型统一不改变形状 */
+.cn-app-header .ant-btn-circle {
+  border-radius: var(--cn-radius-pill);
 }
 
 /* 顶栏右侧 GitHub 风格图标按钮：管理台入口在 /admin 上下文时的激活态高亮 */
-.cn-header-icon-btn-active {
+.cn-app-header .cn-header-icon-btn-active,
+.cn-app-header .cn-header-icon-btn-active:not(:disabled):hover {
   border-color: var(--cn-brand-color);
   color: var(--cn-brand-color);
 }
@@ -667,7 +684,7 @@ body.theme-oled {
   height: 28px;
   padding-inline: var(--cn-space-xs);
   background: var(--cn-bg-container);
-  border: 1.5px solid var(--cn-border);
+  border: 1px solid var(--cn-border-soft);
   border-radius: var(--cn-radius-base);
   transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
@@ -687,7 +704,7 @@ body.theme-oled {
   height: 22px;
   padding-inline: var(--cn-space-sm);
   border: 0;
-  border-right: 1.5px solid var(--cn-border);
+  border-right: 1px solid var(--cn-border-soft);
   border-radius: var(--cn-radius-sm);
   background: transparent;
   color: var(--cn-text-secondary);
@@ -717,7 +734,7 @@ body.theme-oled {
   font-family: inherit;
   font-size: var(--cn-text-2xs);
   color: var(--cn-text-muted);
-  border: 1.5px solid var(--cn-border);
+  border: 1px solid var(--cn-border-soft);
   border-radius: var(--cn-radius-sm);
   padding-inline: var(--cn-space-xs);
   line-height: 15px;
@@ -735,7 +752,7 @@ body.theme-oled {
   overflow-y: auto;
   padding: var(--cn-space-xs);
   background: var(--cn-bg-elevated);
-  border: 1.5px solid var(--cn-border);
+  border: 1px solid var(--cn-border-soft);
   border-radius: var(--cn-radius-lg);
   box-shadow: 0 12px 32px rgb(var(--cn-shadow-color) / 0.14);
 }

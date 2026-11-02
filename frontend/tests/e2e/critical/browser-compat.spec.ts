@@ -28,6 +28,7 @@ test("现代 Chromium 不启用旧内核兜底，且颜色 / 间距保持原生"
         .trim(),
       spaceGap: space ? getComputedStyle(space).columnGap : "",
       headerBackground: header ? getComputedStyle(header).backgroundImage : "",
+      headerBorderBottom: header ? getComputedStyle(header).borderBottomWidth : "",
     };
   });
 
@@ -35,8 +36,9 @@ test("现代 Chromium 不启用旧内核兜底，且颜色 / 间距保持原生"
   expect(info.noFlexGap).toBe(false);
   // --cn-mix-* 仅由旧内核兜底写入；现代浏览器应为空，继续走原生 color-mix
   expect(info.mixVar).toBe("");
-  // 顶栏的品牌色微渐变（原生 color-mix 派生）正常生效
-  expect(info.headerBackground).toContain("gradient");
+  // 顶栏为极简 / GitHub 式平面线条：无渐变填充，底边一条 1px 分界线
+  expect(info.headerBackground).toBe("none");
+  expect(info.headerBorderBottom).toBe("1px");
   // antd Space 的间距来自原生 gap，而非兜底补出的 margin
   if (info.spaceGap) expect(info.spaceGap).not.toBe("0px");
 });

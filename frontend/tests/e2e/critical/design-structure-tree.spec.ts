@@ -52,13 +52,16 @@ async function safeDeleteDesign(request: APIRequestContext, designId: number) {
     .catch(() => undefined)
 }
 
-/** 点击某个树节点所在行的展开箭头（testid 在标题内，需回溯到 treenode） */
+/** 点击某个树节点所在行的展开箭头（testid 在标题内，需回溯到 treenode）。
+ * 每次展开后等 650ms：antd 展开动画窗口内的下一次点击会被吞（同 DesignStructureNav
+ * 单测的 expandNode 等待口径）；列表页 idle 预取编辑器 chunk 的求值也会挤进该窗口。 */
 async function expandNode(page: import("@playwright/test").Page, testId: string) {
   await page
     .locator(".ant-tree-treenode")
     .filter({ has: page.getByTestId(testId) })
     .locator(".ant-tree-switcher")
     .click()
+  await page.waitForTimeout(650)
 }
 
 test.describe("设计结构（0083 / 0084）", () => {

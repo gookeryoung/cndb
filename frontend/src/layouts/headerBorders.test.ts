@@ -1,0 +1,50 @@
+/** 顶栏线条一致性（极简 / GitHub 式）—— 搜索框、图标按钮、分界线的边框契约.
+ *
+ * 顶栏控件与分界线统一走「1px + 次级描边（--cn-border-soft）」：线宽与形状在各主题
+ * 一致，只有颜色随明暗主题切换。这里直接读 index.css 文本，防止后续改样式时把
+ * 顶栏搜索框 / 图标按钮 / 底边线改回 1.5px 或强描边（--cn-border），导致分界风格漂移。
+ */
+
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
+
+import { describe, expect, it } from 'vitest'
+
+const INDEX_CSS = [
+  path.resolve(process.cwd(), 'src/index.css'),
+  path.resolve(process.cwd(), 'frontend/src/index.css'),
+].find(p => existsSync(p)) ?? ''
+
+/** 去掉注释，避免注释里的示例值被当成声明 */
+const css = readFileSync(INDEX_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
+
+/** 取某条简单选择器规则的声明块（选择器与花括号之间允许换行 / 空白） */
+function ruleBody(selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const match = css.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`))
+  if (!match) throw new Error(`index.css 未找到规则：${selector}`)
+  return match[1]!.replace(/\s+/g, ' ').trim()
+}
+
+describe('顶栏线条契约（搜索框 / 图标按钮 / 分界线）', () => {
+  it('顶栏底边为 1px 次级描边，平面底色、无渐变与投影', () => {
+    const body = ruleBody('.ant-layout-header.cn-app-header')
+    expect(body).toContain('border-bottom: 1px solid var(--cn-border-soft)')
+    expect(body).toContain('background: var(--cn-bg-container)')
+    expect(body).toContain('box-shadow: none')
+  })
+
+  it('顶栏图标按钮统一 1px 描边 + 基准圆角，圆形按钮保持正圆', () => {
+    const body = ruleBody('.cn-app-header .ant-btn')
+    expect(body).toContain('border: 1px solid var(--cn-border-soft)')
+    expect(body).toContain('border-radius: var(--cn-radius-base)')
+    expect(ruleBody('.cn-app-header .ant-btn-circle')).toContain('border-radius: var(--cn-radius-pill)')
+  })
+
+  it('顶栏搜索框及内部线条同为 1px 次级描边', () => {
+    expect(ruleBody('.cn-gs-box')).toContain('border: 1px solid var(--cn-border-soft)')
+    expect(ruleBody('.cn-gs-scope')).toContain('border-right: 1px solid var(--cn-border-soft)')
+    expect(ruleBody('.cn-gs-kbd')).toContain('border: 1px solid var(--cn-border-soft)')
+    expect(ruleBody('.cn-gs-panel')).toContain('border: 1px solid var(--cn-border-soft)')
+  })
+})
