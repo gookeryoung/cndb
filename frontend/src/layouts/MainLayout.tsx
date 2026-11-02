@@ -30,7 +30,10 @@ import SearchInput from '@/components/SearchInput'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
-import { workspaceLandingSegment, workspaceModulesFeatures } from '@/utils/workspaceModules'
+import {
+  workspaceLandingSegment, workspaceModulesFeatures, workspaceSwitchSegment,
+  type WorkspaceNavSegment,
+} from '@/utils/workspaceModules'
 import { formatMeta } from '@/components/Document/docFormat'
 import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
 import { WEIGHT } from '@/theme/tokens'
@@ -278,6 +281,15 @@ export default function MainLayout() {
   const tablesDerivedActive =
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
     || activeWsTab === 'acquisition' || activeWsTab === 'pipelines'
+
+  /** 当前所在的一级导航段 —— 切换工作区时保持（0081 C4）。
+   * 二级派生段（数据分析 / 数据同步 / 质量检查 / 智能采集）属数据表域，折算为 `tables`；
+   * 「工作区设置」恒显，保持不变。 */
+  const currentNavSegment: WorkspaceNavSegment =
+    activeWsTab === 'documents' ? 'documents'
+      : activeWsTab === 'design' ? 'design'
+        : activeWsTab === 'settings' ? 'settings'
+          : 'tables'
 
   /** 顶栏一级模块导航（需求 0081 C4）：数据表 → 文档 → 设计 → 工作区设置.
    *
@@ -529,7 +541,10 @@ export default function MainLayout() {
       key: `ws-${w.id}`,
       icon: <FolderOutlined />,
       label: (w.pinned ? '📌 ' : '') + w.name,
-      onClick: () => navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules)}`),
+      // 切到目标工作区的「同一一级模块」而不是一律回落地页：用户看到的是对应工作区的
+      // 对应内容；目标工作区没有该模块时，落到它有的第一个一级模块默认页
+      // （tables → documents → design，见 workspaceSwitchSegment）。
+      onClick: () => navigate(`/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules)}`),
     })),
   ]
 

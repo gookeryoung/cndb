@@ -90,3 +90,23 @@ export function workspaceLandingSegment(
   if (enabled.has('documents')) return 'documents'
   return 'design'
 }
+
+/** 切换工作区时保持的一级导航段（三模块 + 恒开放的工作区设置）. */
+export type WorkspaceNavSegment = WorkspaceModule | 'settings'
+
+/** 切换工作区时的目标路由段：保持当前一级模块（目标工作区已启用时）；
+ * 目标工作区不存在该模块时，落到它有的**第一个一级模块默认页**（数据表 → 文档 → 设计，
+ * 与顶部导航顺序一致，即 `workspaceLandingSegment`）；「工作区设置」恒显，保持不变。
+ *
+ * 口径（0081 C4 补充）：顶部一级导航是「当前工作区」的功能切面，切换工作区后仍停在同一
+ * 一级模块，用户看到的是目标工作区的对应内容；二级派生段（数据分析 / 数据同步 /
+ * 质量检查 / 智能采集）由调用方统一折算为 `tables` 再传入。
+ */
+export function workspaceSwitchSegment(
+  current: WorkspaceNavSegment | null | undefined,
+  modules?: WorkspaceModule[] | null,
+): string {
+  if (current === 'settings') return 'settings'
+  if (current && new Set(normalizeModules(modules)).has(current)) return current
+  return workspaceLandingSegment(modules)
+}

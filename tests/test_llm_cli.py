@@ -146,3 +146,148 @@ class TestDispatch:
     def test_json_dispatch(self, cli_db, capsys):
         payload = llm_cli.cmd_runs(_ns(user=None, action=None, status=None, limit=5))
         assert json.dumps(payload, ensure_ascii=False, default=str)
+
+
+class TestResolveUserBranches:
+    def test_no_users_stops(self, cli_db):
+        with pytest.raises(SystemExit):
+            llm_cli._resolve_user(cli_db, None)
+
+    def test_multiple_users_require_flag(self, cli_db):
+        _add_user(cli_db, "llm_cli_a")
+        _add_user(cli_db, "llm_cli_b")
+        with pytest.raises(SystemExit):
+            llm_cli._resolve_user(cli_db, None)
+        # 指定用户名时取该用户
+        user = llm_cli._resolve_user(cli_db, "llm_cli_b")
+        assert user.username == "llm_cli_b"
+
+    def test_unknown_username_stops(self, cli_db):
+        _add_user(cli_db)
+        with pytest.raises(SystemExit):
+            llm_cli._resolve_user(cli_db, "nobody")
+
+
+class TestRunsFiltersAndPrint:
+    def test_action_filter_and_user_scope(self, cli_db, capsys):
+        user = _add_user(cli_db)
+        cli_db.add_all(
+            [
+                LlmRun(user_id=user.id, action="document.polish", status="success", model="m", total_tokens=10),
+                LlmRun(user_id=user.id, action="table.fill_field", status="failed", model=None),
+            ]
+        )
+        cli_db.commit()
+
+        payload = llm_cli.cmd_runs(_ns(user="llm_cli_user", action="document.polish", status=None, limit=10))
+        assert [item["action"] for item in payload["items"]] == ["document.polish"]
+        assert payload["user"] == "llm_cli_user"
+
+        llm_cli._print_runs(payload)
+        out = capsys.readouterr().out
+        assert "用户 llm_cli_user" in out
+        assert "tokens=10" in out
+
+    def test_print_runs_all_users_and_error(self, capsys):
+        llm_cli._print_runs(
+            {
+                "user": None,
+                "total": 1,
+                "items": [
+                    {
+                        "id": 1,
+                        "action": "document.polish",
+                        "status": "failed",
+                        "model": None,
+                        "total_tokens": None,
+                        "latency_ms": 0,
+                        "created_at": "2026-11-02T09:00:00",
+                        "error": "鉴权失败",
+                    }
+                ],
+            }
+        )
+        out = capsys.readouterr().out
+        assert "全部用户" in out
+        assert "! 鉴权失败" in out
+
+
+class TestPruneGuards:
+    def test_days_must_be_positive(self, cli_db):
+        with pytest.raises(SystemExit):
+            llm_cli.cmd_prune(_ns(days=-1, dry_run=True))
+
+    def test_print_prune(self, capsys):
+        llm_cli._print_prune(
+            {
+                "days": 30,
+                "cutoff": "2026-10-03T00:00:00+00:00",
+                "matched": 2,
+                "deleted": 2,
+            }
+        )
+        assert "保留 30 天" in capsys.readouterr().out
+
+
+class TestDispatchVariants:
+    def test_test_command_failure_exits_1(self, cli_db, monkeypatch, capsys):
+        user = _add_user(cli_db)
+        cli_db.add(
+            LlmUserConfig(
+                user_id=user.id,
+                base_url="https://llm.example.com",
+                model="model-a",
+                api_key="enc:v1:fake",
+                system_prompt="",
+            )
+        )
+        cli_db.commit()
+
+        from cndb.plugins.llm.services import client as llm_client
+
+        monkeypatch.setattr(
+            llm_client,
+            "test_connection",
+            lambda _c: llm_client.LlmConnectionResult(
+                ok=False,
+                latency_ms=3,
+                model="model-a",
+                message="401 未授权",
+            ),
+        )
+        with pytest.raises(SystemExit) as exc:
+            llm_cli.llm_command(_ns(llm_cmd="test", user="llm_cli_user"))
+        assert exc.value.code == 1
+        assert "失败" in capsys.readouterr().out
+
+    def test_test_command_json_success(self, cli_db, monkeypatch, capsys):
+        user = _add_user(cli_db)
+        cli_db.add(
+            LlmUserConfig(
+                user_id=user.id,
+                base_url="https://llm.example.com",
+                model="model-a",
+                api_key="enc:v1:fake",
+                system_prompt="",
+            )
+        )
+        cli_db.commit()
+        from cndb.plugins.llm.services import client as llm_client
+
+        monkeypatch.setattr(
+            llm_client,
+            "test_connection",
+            lambda _c: llm_client.LlmConnectionResult(ok=True, latency_ms=1, model="m", message="ok"),
+        )
+        llm_cli.llm_command(_ns(llm_cmd="test", user="llm_cli_user", json=True))
+        assert json.loads(capsys.readouterr().out)["ok"] is True
+
+    def test_prune_human_output(self, cli_db, capsys):
+        llm_cli.llm_command(_ns(llm_cmd="prune", days=30, dry_run=True))
+        assert "[llm prune]" in capsys.readouterr().out
+
+    def test_register_subparser(self):
+        parser = argparse.ArgumentParser()
+        llm_cli.register_llm_subparser(parser.add_subparsers(dest="cmd"))
+        assert parser.parse_args(["llm", "runs", "--limit", "5"]).llm_cmd == "runs"
+        assert parser.parse_args(["llm", "prune", "--days", "7"]).days == 7

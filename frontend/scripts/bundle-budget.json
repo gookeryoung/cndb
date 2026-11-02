@@ -19,7 +19,8 @@
     "2026-10-31 feat: ADR 0023 P1 画布编辑器（拖拽/缩放/预设/草稿撤销栈）必须随画布视图加载；属性面板已改 lazy 从该 chunk 移出",
     "2026-10-31 feat: dashboard P2 注册 14 类图，echarts 图表/组件模块随 dashboard chunk 按需加载，属功能必需增长",
     "2026-11-01 feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长",
-    "2026-11-01 feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免"
+    "2026-11-01 feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
+    "2026-11-02 feat(help): 0080/0083/0085/0086 四轮功能帮助文档（功能模块门控、设计结构页签、采集策略、设计文件库与装配约束）累计正文增量；该 chunk 是 /help 独立 lazy chunk 不进首屏，正文为静态文案、无 Dialog/面板可再 lazy（2026-11-02 导航文案同步亦在此 chunk）"
   ],
   "chunks": [
     {
@@ -65,10 +66,10 @@
       "resolve": {
         "assetPattern": "^HelpDocsPage-.*\\.js$"
       },
-      "baseline": 31562,
-      "reason": "feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
-      "updatedAt": "2026-11-01",
-      "commit": "2244e133"
+      "baseline": 37293,
+      "reason": "feat(help): 0080/0083/0085/0086 四轮功能帮助文档（功能模块门控、设计结构页签、采集策略、设计文件库与装配约束）累计正文增量；该 chunk 是 /help 独立 lazy chunk 不进首屏，正文为静态文案、无 Dialog/面板可再 lazy（2026-11-02 导航文案同步亦在此 chunk）",
+      "updatedAt": "2026-11-02",
+      "commit": "08e9d1ea"
     }
   ]
 }

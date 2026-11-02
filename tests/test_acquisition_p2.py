@@ -417,3 +417,72 @@ class TestTick:
 
         assert report.examined == 0
         assert report.executed == 0
+
+
+# ── 渠道引用的容错分支（label / mapping / 错误声明） ──────────────
+
+
+class TestChannelRefEdges:
+    def test_channel_label_variants(self) -> None:
+        from cndb.plugins.acquisition.services.channels import channel_label
+
+        assert channel_label("job:12", 1) == "job:12"
+        assert channel_label({"job": 3}, 2) == "job:3"
+        assert channel_label({"provider": "http_json"}, 3) == "http_json"
+        assert channel_label({}, 4) == "channel-4"
+        assert channel_label(None, 5) == "channel-5"
+        assert channel_label("   ", 6) == "channel-6"
+
+    def test_mapping_refs(self) -> None:
+        assert parse_channel_ref({"job": "7"}) == ("job", 7)
+        assert parse_channel_ref({"provider": "http_json", "request_spec": {}}) == (
+            "inline",
+            {"provider": "http_json", "request_spec": {}},
+        )
+
+    def test_invalid_mapping_refs(self) -> None:
+        with pytest.raises(RuleError, match="job 编号非法"):
+            parse_channel_ref({"job": "abc"})
+        with pytest.raises(RuleError, match="缺少 job 或 provider"):
+            parse_channel_ref({"other": 1})
+        with pytest.raises(RuleError, match="类型非法"):
+            parse_channel_ref(42)
+        with pytest.raises(RuleError, match="job 编号必须是整数"):
+            parse_channel_ref("job:abc")
+
+    def test_unknown_preset_kind(self) -> None:
+        with pytest.raises(RuleError, match="未知渠道简写"):
+            preset_request("nope", "", "q")
+
+    def test_with_query_injects_variable_only_when_present(self) -> None:
+        from cndb.plugins.acquisition.services.channels import _with_query
+
+        spec = _job()
+        assert _with_query(spec, "") is spec
+        injected = _with_query(spec, "固态电池")
+        assert injected.extra_variables["query"] == "固态电池"
+
+    def test_build_specs_collects_per_channel_errors(self, db: Session) -> None:
+        specs, errors = build_channel_specs(
+            db,
+            workspace_id=999,
+            scope={"channels": ["job:424242", {"provider": "http_json"}]},
+            query="q",
+            today="2026-11-02",
+        )
+        assert specs == []
+        assert any("同步任务不存在" in item["error"] for item in errors)
+
+    def test_build_specs_rejects_foreign_job(self, db: Session, db_engine) -> None:
+        ws, _user = _make_workspace(db, "渠道归属")
+        table = _make_table(db, db_engine, ws.id)
+        job = _make_job(db, ws.id, table.id)
+        specs, errors = build_channel_specs(
+            db,
+            workspace_id=ws.id + 1000,
+            scope={"channels": [f"job:{job.id}"]},
+            query="q",
+            today="2026-11-02",
+        )
+        assert specs == []
+        assert "不属于当前工作区" in errors[0]["error"]

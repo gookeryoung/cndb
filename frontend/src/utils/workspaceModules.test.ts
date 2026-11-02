@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, WORKSPACE_MODULES,
-  normalizeModules, workspaceLandingSegment, workspaceModulesFeatures,
+  normalizeModules, workspaceLandingSegment, workspaceModulesFeatures, workspaceSwitchSegment,
 } from './workspaceModules'
 import type { WorkspaceModule } from './workspaceModules'
 
@@ -61,5 +61,22 @@ describe('workspaceModules 工作区功能模块元数据', () => {
     // 缺失/非法 → 默认全三 → 落地 tables
     expect(workspaceLandingSegment(undefined)).toBe('tables')
     expect(workspaceLandingSegment([])).toBe('tables')
+  })
+
+  it('切换工作区路由段：保持当前一级模块（目标工作区已启用时）', () => {
+    expect(workspaceSwitchSegment('documents', ['tables', 'documents'])).toBe('documents')
+    expect(workspaceSwitchSegment('design', ['design'])).toBe('design')
+    expect(workspaceSwitchSegment('tables', ['tables', 'design'])).toBe('tables')
+    // 工作区设置恒显，不随目标模块变化
+    expect(workspaceSwitchSegment('settings', ['design'])).toBe('settings')
+  })
+
+  it('切换工作区路由段：目标未开放当前模块 → 落到目标工作区有的第一个一级模块默认页', () => {
+    expect(workspaceSwitchSegment('documents', ['design'])).toBe('design')
+    expect(workspaceSwitchSegment('tables', ['documents', 'design'])).toBe('documents')
+    expect(workspaceSwitchSegment('design', ['tables', 'documents'])).toBe('tables')
+    // 无当前段（主页 / 管理台等无工作区上下文）→ 等同于落地段
+    expect(workspaceSwitchSegment(null, ['documents'])).toBe('documents')
+    expect(workspaceSwitchSegment(undefined, ['tables'])).toBe('tables')
   })
 })

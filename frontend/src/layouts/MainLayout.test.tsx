@@ -794,6 +794,22 @@ function useWorkspaceModules(modules: WorkspaceModule[]) {
     )
 }
 
+/** 覆盖工作区列表接口：返回当前工作区（全三模块）+ 目标工作区（指定模块），用于切换断言 */
+function useSwitchTarget(targetModules: WorkspaceModule[]) {
+    server.use(
+        http.get('/api/v1/workspaces', () => HttpResponse.json([
+            { ...mockWorkspace, id: 10, name: '测试工作区', modules: ['tables', 'documents', 'design'] },
+            { ...mockWorkspace, id: 20, name: '目标工作区', modules: targetModules },
+        ])),
+    )
+}
+
+/** 打开顶栏工作区下拉并选中「目标工作区」 */
+async function switchToTargetWorkspace() {
+    fireEvent.click(screen.getByTestId('ws-switch-btn'))
+    fireEvent.click(await screen.findByText('目标工作区'))
+}
+
 describe('MainLayout 工作区模块门控', () => {
     it('仅勾选数据表的工作区不显示「文档/设计」一级导航，数据分析与数据同步随表开放', async () => {
         useWorkspaceModules(['tables'])
@@ -845,6 +861,98 @@ describe('MainLayout 工作区模块门控', () => {
             expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
         })
         expect(screen.queryByTestId('tables-page-stub')).toBeNull()
+    })
+})
+
+// ─────────────── 工作区切换：顶部一级导航跳到对应工作区内容（需求 0081 C4） ───────────────
+
+describe('MainLayout 工作区切换', () => {
+    it('在文档模块切换工作区：落到目标工作区的文档内容（保持一级导航），而非其落地段', async () => {
+        useSwitchTarget(['tables', 'documents'])
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
+        })
+        await switchToTargetWorkspace()
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/20/documents')
+        })
+        expect(screen.getByTestId('ws-nav-documents')).toHaveAttribute('aria-current', 'page')
+    })
+
+    it('在表级子页切换工作区：收敛到目标工作区的数据表模块根，不带上旧表 id', async () => {
+        useSwitchTarget(['tables', 'documents'])
+        renderLayout(mockUser, '/w/10/tables/100/settings')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('table-settings-stub')).toHaveTextContent('/w/10/tables/100/settings')
+        })
+        await switchToTargetWorkspace()
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+        expect(screen.getByTestId('ws-nav-tables')).toHaveAttribute('aria-current', 'page')
+    })
+
+    it('二级派生段（数据分析）切换工作区：折算为数据表模块，落到 /tables', async () => {
+        useSwitchTarget(['tables'])
+        renderLayout(mockUser, '/w/10/analytics')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('ws-section-stub')).toHaveTextContent('/w/10/analytics')
+        })
+        await switchToTargetWorkspace()
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+    })
+
+    it('工作区设置段切换工作区：停留目标工作区的设置页', async () => {
+        useSwitchTarget(['design'])
+        renderLayout(mockUser, '/w/10/settings')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
+        })
+        await switchToTargetWorkspace()
+
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/20/settings')
+        })
+    })
+
+    it('目标工作区未开放当前模块时，落到它有的第一个一级模块默认页', async () => {
+        useSwitchTarget(['design'])
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
+        })
+        await switchToTargetWorkspace()
+
+        await waitFor(() => {
+            expect(screen.getByTestId('designs-page-stub')).toHaveTextContent('/w/20/design')
+        })
+        expect(screen.getByTestId('ws-nav-design')).toHaveAttribute('aria-current', 'page')
+    })
+
+    it('未开放当前模块且目标有多个模块时，按 数据表 → 文档 → 设计 取第一个可用模块', async () => {
+        useSwitchTarget(['tables', 'documents'])
+        renderLayout(mockUser, '/w/10/design')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('designs-page-stub')).toHaveTextContent('/w/10/design')
+        })
+        await switchToTargetWorkspace()
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+        expect(screen.getByTestId('ws-nav-tables')).toHaveAttribute('aria-current', 'page')
     })
 })
 
