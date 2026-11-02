@@ -278,9 +278,9 @@ system rover {
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/design/services/dsl/nodes.py`、`src/cndb/plugins/design/services/dsl/parse.py`、`src/cndb/plugins/design/services/dsl/compile.py`（SystemDecl / Program.items 保序、system 文法与重名 / 不可实例化诊断、IR_VERSION=3 与 system 大纲节点） | `tests/test_design_dsl.py`、`tests/test_design_api.py` | 待提交 |
-| P1 | 已落地 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/pages/design/designLang.ts`、`frontend/src/api/design.ts`（SiderMode='design' + renderDesignNav，设计段退出自动折叠；侧栏装配树；管理列表 + 四轮小车模板） | `frontend/src/pages/design/DesignStructureNav.test.tsx`、`frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/pages/design/designOutline.test.ts`、`frontend/src/pages/design/designLang.test.ts`、`frontend/src/layouts/MainLayout.test.tsx` | 待提交 |
-| P2 | 已落地 | `frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`CHANGELOG.md`、`frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`frontend/tests/e2e/critical/design-sidebar-assembly.spec.ts`（system 语法 + 侧栏三级装配；既有结构树 e2e 改侧栏断言） | `frontend/tests/e2e/critical/design-sidebar-assembly.spec.ts`、`frontend/tests/e2e/critical/design-structure-tree.spec.ts` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/design/services/dsl/nodes.py`、`src/cndb/plugins/design/services/dsl/parse.py`、`src/cndb/plugins/design/services/dsl/compile.py`（SystemDecl / Program.items 保序、system 文法与重名 / 不可实例化诊断、IR_VERSION=3 与 system 大纲节点） | `tests/test_design_dsl.py`、`tests/test_design_api.py` | f901c8e |
+| P1 | 已落地 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/pages/design/designLang.ts`、`frontend/src/api/design.ts`（SiderMode='design' + renderDesignNav，设计段退出自动折叠；侧栏装配树；管理列表 + 四轮小车模板） | `frontend/src/pages/design/DesignStructureNav.test.tsx`、`frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/pages/design/designOutline.test.ts`、`frontend/src/pages/design/designLang.test.ts`、`frontend/src/layouts/MainLayout.test.tsx` | f901c8e |
+| P2 | 已落地 | `frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`CHANGELOG.md`、`frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`frontend/tests/e2e/critical/design-sidebar-assembly.spec.ts`（system 语法 + 侧栏三级装配；既有结构树 e2e 改侧栏断言） | `frontend/tests/e2e/critical/design-sidebar-assembly.spec.ts`、`frontend/tests/e2e/critical/design-structure-tree.spec.ts` | f901c8e |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -288,6 +288,6 @@ system rover {
 
 - 当前阶段：Accepted（P0 / P1 / P2 全部落地；2026-11-02 用户拍板「对齐文档模块，允许，不做」）
 - 已完成：需求卡片 0084；`system` DSL 声明与 IR v3 大纲；侧栏 `DesignStructureNav`（桌面 Sider + 移动抽屉共用、编辑器自动展开高亮、点击定位）；`DesignsPage` 恢复管理页与四轮小车模板；帮助文档、CHANGELOG、e2e 同步
-- 下一步：`make e2e` 实跑 `design-sidebar-assembly.spec.ts` 与改版后的 `design-structure-tree.spec.ts`；按需补系统装配示例的种子数据集
+- 下一步：按需补系统装配示例的种子数据集；推送 / 发版需人工授权（提交在 main 本地，未推送）
 - 已知坑：antd Tree 展开动画窗口（约 600ms）会吞点击，单测 / e2e 展开前先等待；v2 快照派生只在读路径生效，保存一次后自然落 v3；侧栏大纲按设计懒加载，切换设计时缓存不失效，改名后树标题由列表查询刷新
-- 最近一次全绿：`make flow`（2026-11-02，`make check-fast` + 后端 6515 passed / 17 skipped）；前端全量 `pnpm vitest run` 全绿
+- 最近一次全绿：`make flow`（2026-11-02，`make check-fast` + 后端 6515 passed / 17 skipped）；前端全量 `pnpm vitest run` 全绿；`pnpm e2e` 113 passed / 22 skipped（含 `design-sidebar-assembly.spec.ts` 与改版 `design-structure-tree.spec.ts`）
