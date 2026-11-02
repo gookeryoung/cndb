@@ -10,8 +10,9 @@ unexport LD_LIBRARY_PATH
 
 PACKAGE := cndb
 
-# pytest-xdist worker 数：实测 n8 后收益收敛（SQLite 单文件写锁），低配机器用 make test PYTEST_JOBS=4 覆盖
-PYTEST_JOBS ?= 8
+# pytest-xdist worker 数：实测 24 核机器 n16 + worksteal 调度最优（~79s vs 旧 n8/loadfile ~120s）；
+# worksteal 动态窃取任务消除 loadfile 整文件分配的长尾；低配机器用 make test PYTEST_JOBS=8 覆盖
+PYTEST_JOBS ?= 16
 
 # dev 目标绑定地址/端口，可在命令行覆盖：make dev DEV_HOST=127.0.0.1 DEV_PORT=8000
 DEV_HOST ?= 0.0.0.0
