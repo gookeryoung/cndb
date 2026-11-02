@@ -10,6 +10,8 @@ import type {
 export interface DetectReport {
     total_rows: number
     duplicate_row_count: number
+    /** 合并后可减少的行数（每组只留 1 行；旧任务报告可能缺省） */
+    redundant_row_count?: number
     group_count: number
     groups: Array<{ member_row_ids: number[]; match_key_values: Record<string, unknown> }>
 }

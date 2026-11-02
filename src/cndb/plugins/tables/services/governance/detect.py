@@ -74,7 +74,7 @@ class ExactMatcher:
         """分页扫描全表，返回检测报告 dict.
 
         报告结构：
-            {"total_rows", "duplicate_row_count", "group_count",
+            {"total_rows", "duplicate_row_count", "redundant_row_count", "group_count",
              "groups": [{"member_row_ids": [...], "match_key_values": {...}}]}
 
         Raises:
@@ -121,9 +121,13 @@ class ExactMatcher:
             if len(row_ids) > 1
         ]
         dup_groups.sort(key=lambda g: g["member_row_ids"][0])
+        duplicate_row_count = sum(len(g["member_row_ids"]) for g in dup_groups)
         return {
             "total_rows": total_rows,
-            "duplicate_row_count": sum(len(g["member_row_ids"]) for g in dup_groups),
+            # 涉及重复的行数（每组含保留行）
+            "duplicate_row_count": duplicate_row_count,
+            # 合并后可减少的行数（每组只留 1 行）
+            "redundant_row_count": duplicate_row_count - len(dup_groups),
             "group_count": len(dup_groups),
             "groups": dup_groups,
         }

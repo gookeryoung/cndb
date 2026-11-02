@@ -86,6 +86,7 @@ class TestExactMatcher:
         assert sorted(group["member_row_ids"]) == [1, 3]
         assert group["match_key_values"] == {"姓名": "张三"}
         assert report["duplicate_row_count"] == 2
+        assert report["redundant_row_count"] == 1
 
     def test_multi_field_key(self, db, people_table) -> None:
         _add_rows(
@@ -123,7 +124,13 @@ class TestExactMatcher:
 
     def test_empty_table(self, db, people_table) -> None:
         report = gov_detect.ExactMatcher().detect(db.get_bind(), people_table, ["姓名"])
-        assert report == {"total_rows": 0, "duplicate_row_count": 0, "group_count": 0, "groups": []}
+        assert report == {
+            "total_rows": 0,
+            "duplicate_row_count": 0,
+            "redundant_row_count": 0,
+            "group_count": 0,
+            "groups": [],
+        }
 
     def test_trashed_rows_excluded(self, db, people_table) -> None:
         ids = _add_rows(db, people_table, [{"姓名": "张三"}, {"姓名": "张三"}, {"姓名": "张三"}])

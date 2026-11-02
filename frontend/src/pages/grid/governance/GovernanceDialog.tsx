@@ -254,8 +254,13 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
             {
               title: '成员行',
               dataIndex: 'member_row_ids',
-              width: 120,
-              render: (ids: number[]) => <Text code>{ids.join(', ')}</Text>,
+              width: 180,
+              render: (ids: number[]) => (
+                <Space orientation="vertical" size={0}>
+                  <Text type="secondary">共 {ids.length} 行</Text>
+                  <Text code>{ids.join(', ')}</Text>
+                </Space>
+              ),
             },
             {
               title: '保留行',
@@ -304,7 +309,10 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
   const dedupeTab = (
     <div>
       <div style={{ marginBottom: 8 }}>
-        <Text type="secondary">选择用于判重的字段（值完全相同的行归为一组）：</Text>
+        <Text type="secondary">
+          选择用于判重的字段（<Text strong>仅这些字段</Text>的值完全相同的行归为一组）；
+          检测范围为<Text strong>整张表</Text>，不受当前视图筛选影响。
+        </Text>
       </div>
       <Select
         mode="multiple"
@@ -334,7 +342,13 @@ export default function GovernanceDialog({ open, wid, tid, fields, onClose, onDa
           <Alert
             type="success"
             showIcon
-            title={`检测完成：共 ${detectReport.data?.group_count ?? 0} 组重复（${detectReport.data?.duplicate_row_count ?? 0} 行）`}
+            title={(() => {
+              const groupCount = detectReport.data?.group_count ?? 0
+              const involved = detectReport.data?.duplicate_row_count ?? 0
+              // 旧任务报告没有 redundant_row_count：按「每组只留 1 行」回算
+              const redundant = detectReport.data?.redundant_row_count ?? Math.max(0, involved - groupCount)
+              return `检测完成：共 ${groupCount} 组重复 —— 涉及 ${involved} 行，合并可减少 ${redundant} 行`
+            })()}
           />
         ) : detectTask.data?.status === 'failed' ? (
           <Alert type="error" showIcon title="检测失败" description={taskFailed(detectTask.data)} />
