@@ -823,19 +823,21 @@ def parse_workspace_archive(path: Path) -> BackupArchive:
                 raise BadRequestError("backup.json 格式非法")
 
             tmp = Path(tempfile.mkdtemp(prefix="cndb-ws-archive-"))
+            root = tmp.resolve()
             try:
-                extract_filter = "data" if hasattr(tarfile, "data_filter") else None
                 for member in tar.getmembers():
                     name = member.name
-                    if name.startswith("payload/files/") and member.isfile():
-                        # 只解出 files/ 条目，且过滤路径穿越（extract 过滤器双保险）
-                        member_path = tmp / name
-                        member_path.parent.mkdir(parents=True, exist_ok=True)
-                        src = tar.extractfile(member)
-                        if src is not None:
-                            member_path.write_bytes(src.read())
-                if extract_filter is not None:  # pragma: no cover - 3.12+ 分支
-                    pass
+                    if not (name.startswith("payload/files/") and member.isfile()):
+                        continue
+                    # 归档是外部输入：只解出 files/ 条目，且解析后必须落在解包目录内，
+                    # 否则 `..` / 绝对路径成员会把文件写到系统其它位置（路径穿越）
+                    member_path = (tmp / name).resolve()
+                    if not member_path.is_relative_to(root):
+                        raise BadRequestError("归档内含越界文件路径，已拒绝导入")
+                    member_path.parent.mkdir(parents=True, exist_ok=True)
+                    src = tar.extractfile(member)
+                    if src is not None:
+                        member_path.write_bytes(src.read())
             except Exception:
                 import shutil
 

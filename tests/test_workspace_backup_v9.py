@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import io
+import json
+import tarfile
+import tempfile
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from cndb.plugins.workspaces.services.workspace_backup import parse_workspace_archive
@@ -411,3 +415,28 @@ class TestPipelineBackupExclusions:
         backup = client.get(f"{WS}/{wid}/export", headers=auth_headers).json()
         assert backup["version"] == "8"
         assert "pipeline_run" not in str(backup) and "pipeline_finding" not in str(backup)
+
+
+class TestArchiveExtractionSafety:
+    """归档是外部输入：files/ 成员不得借 `..` 写出解包目录（路径穿越）."""
+
+    def test_traversal_member_rejected_and_not_written(self, tmp_path: Path, monkeypatch):
+        from cndb.core.errors import BadRequestError
+
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+        archive_file = tmp_path / "evil.tar.gz"
+        escape_name = "payload/files/../../../escape.txt"
+
+        def _add(tar: tarfile.TarFile, name: str, data: bytes) -> None:
+            info = tarfile.TarInfo(name=name)
+            info.size = len(data)
+            tar.addfile(info, io.BytesIO(data))
+
+        with tarfile.open(archive_file, "w:gz") as tar:
+            _add(tar, "payload/manifest.json", json.dumps({"kind": "workspace_backup", "version": "1"}).encode())
+            _add(tar, "payload/backup.json", json.dumps({"version": "13", "workspace": {"name": "x"}}).encode())
+            _add(tar, escape_name, b"pwned")
+
+        with pytest.raises(BadRequestError, match="越界文件路径"):
+            parse_workspace_archive(archive_file)
+        assert not (tmp_path / "escape.txt").exists()

@@ -167,6 +167,20 @@ class TestArchiveInspect:
         )
         assert r.status_code == 400, r.text
 
+    def test_inspect_invalid_archive_cleans_uploaded_temp(
+        self, client: TestClient, auth_headers: dict[str, str], tmp_path: Path, monkeypatch
+    ) -> None:
+        import tempfile
+
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+        r = client.post(
+            f"{WS}/import/archive/inspect",
+            files={"file": ("bad.tar.gz", b"not-a-tar", "application/gzip")},
+            headers=auth_headers,
+        )
+        assert r.status_code == 400, r.text
+        assert not list(tmp_path.glob("cndb-ws-*"))
+
 
 class TestArchiveDateValues:
     """回归：含日期列的工作区导出归档不得因 date 对象 500."""
