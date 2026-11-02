@@ -99,7 +99,7 @@ Related: `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/
 
 `strategy_id`、`run_id`、`round_no`、`channel`、`dedupe_key`（唯一索引 `(strategy_id, dedupe_key)`）、`title`、`source_url`、`published_at`、`match_score`、`target_kind`、`target_id`（表落点记 `table_id`；文档记 `document_id`）、`payload_digest`（内容指纹，判断是否需要新版本）、`created_at`。
 
-> **表落点的去重键是 ``row:<match_keys 指纹>``**（`rules.dedupe` 的 `identity` 参数）：业务身份由 `targets[].match_keys` 决定，不能退化成内容指纹——否则同一行换了数值就变成新条目，台账与"跨运行去重"都会失真。台账的**拦截**只对「只追加」落点（文档）生效，表落点重复由 `upsert_rows` 承担更新（D4）。
+> **表落点的去重键是 `row:<match_keys 指纹>`**（`rules.dedupe` 的 `identity` 参数）：业务身份由 `targets[].match_keys` 决定，不能退化成内容指纹——否则同一行换了数值就变成新条目，台账与「跨运行去重」都会失真。台账**不拦截**已采条目：表落点由 `upsert_rows` 更新，文档落点由 `payload_digest` 判定「内容未变则不产版本、变了则新版本、人工改过则转 issue」，拦截会把「应当更新」误判成「已采过」（D4 / D8）。
 
 规则 JSON 形态（前端表单与 API 同构，示例）：
 
@@ -428,7 +428,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/acquisition/models.py`、`src/cndb/plugins/acquisition/plugin.py`、`src/cndb/plugins/acquisition/schemas.py`、`src/cndb/plugins/acquisition/services/channels.py`、`src/cndb/plugins/acquisition/services/targets.py`、`src/cndb/plugins/acquisition/services/runner.py`、`src/cndb/plugins/acquisition/services/validation.py`、`src/cndb/plugins/acquisition/services/rules/expr.py`、`src/cndb/plugins/acquisition/services/rules/filter.py`、`src/cndb/plugins/acquisition/services/rules/dedupe.py`、`src/cndb/plugins/acquisition/routers/strategies.py`、`src/cndb/cli/acquisition.py`、`src/cndb/alembic/versions/a7c1d2e3f4b5_add_acquisition_plugin.py` | `tests/test_acquisition_rules.py`、`tests/test_acquisition_runner.py`、`tests/test_acquisition_api.py`、`tests/test_acquisition_migration.py` | `5eae7b60` |
-| P1 | 未开始 | — | — | — |
+| P1 | 已落地 | `src/cndb/plugins/acquisition/services/rules/keywords.py`、`src/cndb/plugins/acquisition/services/rules/expand.py`、`src/cndb/plugins/acquisition/services/rules/stop.py`、`src/cndb/plugins/acquisition/services/ai.py`、`src/cndb/plugins/acquisition/services/targets.py`、`src/cndb/plugins/acquisition/services/runner.py`、`src/cndb/plugins/acquisition/routers/strategies.py`、`src/cndb/cli/acquisition.py` | `tests/test_acquisition_iteration.py`、`tests/test_acquisition_api.py`、`tests/test_acquisition_runner.py` | `f2aa3977` |
 | P2 | 未开始 | — | — | — |
 | P3 | 未开始 | — | — | — |
 
@@ -436,8 +436,8 @@ next_query = expand.build(base, final_keywords, used, previous)
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P1（P0 已提交 [5eae7b60]；正在接入多轮迭代、复核闸口与文档落点）
-- 已完成：需求卡片 0085 + 本 ADR；P0 代码与测试（`tests/test_acquisition_*.py` 4 个文件，全量 `6557 passed / 17 skipped`）
-- 下一步：① 提交 P0（`feat: 采集策略基础框架（ADR 0085 P0）`）；② 落 P1：`rules/{keywords,expand,stop}.py` + 轮次循环（`max_rounds`）+ `review ∈ {auto,llm,manual}` 复核闸口 + `acquisition.awaiting_review` 状态与 `POST /runs/{rid}/resume` + 文档落点与人工保护
-- 已知坑：① `acquisition_item.target_id` 对表落点只记 `table_id`（不记行 id），避免行级外键随表重建失效；② 表落点去重键必须用 `match_keys` 身份（`row:` 前缀），用内容指纹会让「同一行换数值」变成新条目；③ 文档幂等依赖「最新版本 `change_type`」，与草稿（ADR 0057）并发时以「存在草稿即视为人工改动」优先；④ 备份 v13 必须与 `workspaces` 协议常量同轮改，否则 `make test` 会红在旧 v12 用例；⑤ 租约更新须 `synchronize_session=False`（SQLite 读出的 naive datetime 与 aware 参数比较会在 ORM 求值器里炸）
-- 最近一次全绿：`pytest -m "not slow" -n 4` @ 2026-11-02（6557 passed / 17 skipped）；`ruff check src tests`、`pyrefly check` 0 error
+- 当前阶段：P2（P0 `5eae7b60` / P1 `f2aa3977` 已落地；下一步接渠道扩展、调度接入、备份 v13 与模块位）
+- 已完成：需求卡片 0085 + 本 ADR；P0（四表 + 规则引擎 + 单轮编排 + API/CLI）、P1（多轮迭代 `keywords/expand/stop` + 复核闸口 `awaiting_review`/`resume` + 文档落点与人工保护 + `keyword_refine` 模型降级）
+- 下一步：P2 —— 渠道（`rss_atom` / 学术开放 API / `sitemap` 受限爬取）、既有 tick 调度接入（策略级到期扫描 + 租约）、备份协议 v13、工作区 `acquisition` 功能位；P3 —— `rule_draft` / `item_summary` / `run_report` / `failure_diagnose` 四个动作 + 前端页面与帮助文档
+- 已知坑：① `acquisition_item.target_id` 对表落点只记 `table_id`（不记行 id），避免行级外键随表重建失效；⑥ 迁移里父表不存在时须降级为普通列（`_fk()`），否则「最小 stub 库升到 head」的迁移测试会红；⑦ 文档落点不能按台账拦截，必须由 `payload_digest` 判定更新 / 跳过；⑧ 关键词抽取对表类候选要用「全部字符串列」兜底，否则表落点多轮没有扩展词；② 表落点去重键必须用 `match_keys` 身份（`row:` 前缀），用内容指纹会让「同一行换数值」变成新条目；③ 文档幂等依赖「最新版本 `change_type`」，与草稿（ADR 0057）并发时以「存在草稿即视为人工改动」优先；④ 备份 v13 必须与 `workspaces` 协议常量同轮改，否则 `make test` 会红在旧 v12 用例；⑤ 租约更新须 `synchronize_session=False`（SQLite 读出的 naive datetime 与 aware 参数比较会在 ORM 求值器里炸）
+- 最近一次全绿：本次改动相关 9 个测试文件 163 例全绿（`test_acquisition_*` 64 例 + datasource / backup v12 / llm 平台）；`ruff check` 本插件 0 error、`pyrefly check` 本插件 0 error。全量 `pytest -n 4` 目前被并行进行的 ADR 0086（`c8e2f4a6b8d0_design_file_library.py` 未完成）拉红，与本需求无关
