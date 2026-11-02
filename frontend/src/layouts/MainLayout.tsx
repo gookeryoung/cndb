@@ -437,38 +437,36 @@ export default function MainLayout() {
     ? DESIGN_SUBPAGES.find(p => p.key === 'structure')
     : undefined
 
-  // ── 侧边栏形态：按当前功能段切换（需求 0065；工作区设置段折叠过渡）──
+  // ── 侧边栏形态：按当前功能段切换（需求 0065）──
   // documents → 文档侧栏（文档树）；design → 设计侧栏（装配结构树，ADR 0084 D4）；
-  // analytics / datasource / pipelines → 数据表侧栏始终展开（不再自动折叠）；
-  // workspace settings → Sider 不卸载，自动折叠为图标条，
-  //   减少切换时布局骨架消失的视觉冲击，返回数据表段时恢复用户原有折叠偏好；
-  // 其余（数据表段）→ 维持数据表导航。未勾选数据表模块的工作区仍隐藏侧栏。
-  // 表级子页 /tables/:tid/settings 不含 /settings 段前缀，不受影响。
-  const inWsSettingsContext = !!wid && location.startsWith(`/w/${wid}/settings`)
-  const inFocusContext = inWsSettingsContext
+  // 其余（数据表 / 分析 / 同步）→ 数据表导航始终展开，不再自动折叠。
+  // 2026-11-02 用户口径：进入工作区设置也保持侧栏展开（含表级子页 /tables/:tid/settings，本就不受影响）。
+  // 2026-11-03 用户口径：进入「工作区设置」保持已进入模块的侧栏（从文档 / 设计进入就沿用文档树 /
+  // 装配结构树），不再切回数据表侧栏；仅当没有可沿用的模块（刷新 / 直接打开设置页、
+  // 目标工作区未启用该模块）时回落到数据表侧栏。
   type SiderMode = 'documents' | 'design' | 'tables' | 'hidden'
-  const siderMode: SiderMode =
+  const moduleSiderMode: 'documents' | 'design' | null =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
       : inDesignContext && wsFeatures.design
         ? 'design'
+        : null
+  // 记录最近一次非设置段所属模块（文档 / 设计）；工作区设置页据此沿用同一侧栏
+  const lastModuleSiderRef = useRef<'documents' | 'design' | null>(null)
+  if (moduleSiderMode) lastModuleSiderRef.current = moduleSiderMode
+
+  const previousModuleSider = lastModuleSiderRef.current
+  const siderMode: SiderMode =
+    moduleSiderMode
+    ?? (
+      activeWsTab === 'settings'
+      && previousModuleSider
+      && wsFeatures[previousModuleSider]
+        ? previousModuleSider
         : wsFeatures.tables
           ? 'tables'
           : 'hidden'
-
-  // 进入分析/同步/设置段时自动折叠侧栏（记住进入前的折叠偏好，离开时恢复）
-  const collapsedBeforeFocusRef = useRef(false)
-  // 初始化为 false：直接落在分析/同步/设置段的首屏也要走一次折叠（含首帧挂载）
-  const prevInFocusRef = useRef(false)
-  useEffect(() => {
-    if (inFocusContext && !prevInFocusRef.current) {
-      collapsedBeforeFocusRef.current = collapsed
-      setCollapsed(true)
-    } else if (!inFocusContext && prevInFocusRef.current) {
-      setCollapsed(collapsedBeforeFocusRef.current)
-    }
-    prevInFocusRef.current = inFocusContext
-  }, [inFocusContext, collapsed])
+    )
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -909,7 +907,7 @@ export default function MainLayout() {
             管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
             侧栏形态随功能段切换（需求 0065 / ADR 0084）：文档段=文档导航，设计段=装配结构树，
-            analytics / datasource / 工作区设置段=表导航自动折叠为图标条（骨架不消失），
+            数据表 / 分析 / 同步 / 工作区设置段=表导航保持展开，
             无 tables 能力的类型不渲染侧栏 */}
         {!isMobile && !inAdminConsole && !inHelpDocs && siderMode !== 'hidden' && (
           <Sider

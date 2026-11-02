@@ -19,7 +19,7 @@
 | C2 | 侧边栏不应还显示数据表列表 | 路由在文档功能段下，`sider-tables`（数据表列表及其操作菜单）不渲染；数据表能力入口仍由顶部「数据表」页签承担 | frontend/layouts/MainLayout | e2e 断言 testid 不存在 |
 | C3 | 而是文档结构 | Sider 中渲染文档大纲（标题层级树），复用 `OutlineList`（`frontend/src/pages/documents/OutlineList.tsx`）；点击条目锚点滚动到对应标题；未打开具体文档时显示文档列表或空态提示 | frontend/layouts、frontend/pages/documents | 前端单测 |
 | C4 | 优化导航布局和工作区功能切换设计 | 切换行为按当前路由段（tables / documents / 其他）判别，而非仅按 `workspaceTypeFeatures`；`data_doc` 工作区在两功能间切换时 Sider 内容跟随切换；纯 `data` 或 `doc` 类型工作区行为不变（doc 类型维持大纲侧栏，data 类型维持表列表） | frontend/layouts、frontend/utils/workspaceType.ts | 前端单测 |
-| C5 | （其他功能段） | 路由处于 `analytics` / `datasource` / `settings` 段时 Sider 不卸载，自动折叠为图标条（保留折叠前偏好，返回数据表段时恢复）；进入分析/同步/设置段的首屏同样执行折叠 | frontend/layouts | 前端单测 + e2e |
+| C5 | （其他功能段） | 路由处于 `analytics` / `datasource` / `settings` 段时 Sider 不卸载，自动折叠为图标条（保留折叠前偏好，返回数据表段时恢复）；进入分析/同步/设置段的首屏同样执行折叠。**2026-11-02 更新**：进入工作区设置不再自动折叠，侧栏保持展开。**2026-11-03 更新**：进入工作区设置沿用来源模块的侧栏（从文档 / 设计进入保持文档树 / 装配结构树），不再切回数据表侧栏；仅无来源模块（刷新 / 直接打开设置页）或目标工作区未启用该模块时回落数据表侧栏 | frontend/layouts | 前端单测 + e2e |
 | C6 | （可发现性） | Sider 顶部保留区域标题（如「文档结构」/「数据表」），移动端抽屉行为与现状一致不回退 | frontend/layouts | e2e |
 
 ## 现状影响面（候选，待精查）

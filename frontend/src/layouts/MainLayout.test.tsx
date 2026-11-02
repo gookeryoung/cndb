@@ -1067,15 +1067,15 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('工作区设置段：侧栏自动折叠为图标条，骨架不消失', async () => {
+    it('工作区设置段：侧栏保持展开不折叠', async () => {
         renderLayout(mockUser, '/w/10/settings')
 
         await waitFor(() => expect(screen.getByTestId('settings-page-stub')).toBeVisible())
-        // Sider 保持挂载并处于折叠态（切换时布局骨架不突然消失）
+        // 2026-11-02 用户口径：进入工作区设置不再自动折叠侧栏
         const sider = document.querySelector('.ant-layout-sider')
         expect(sider).not.toBeNull()
-        expect(sider).toHaveClass('ant-layout-sider-collapsed')
-        // 折叠后仍是数据表导航内容
+        expect(sider).not.toHaveClass('ant-layout-sider-collapsed')
+        // 仍是数据表导航内容
         expect(screen.getByTestId('sider-tables')).toBeVisible()
         expect(screen.queryByTestId('sider-documents')).toBeNull()
     })
@@ -1176,6 +1176,53 @@ async function expandDesignNode(testId: string) {
         expect(screen.getByTestId(testId).closest('.ant-tree-treenode')?.getAttribute('aria-expanded')).toBe('true')
     })
 }
+
+describe('MainLayout 工作区设置段侧栏沿用来源模块（2026-11-03 用户口径）', () => {
+    it('从文档模块进入工作区设置：侧栏保持文档树，不切回数据表', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
+        fireEvent.click(screen.getByTestId('ws-nav-settings'))
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
+        })
+        expect(screen.getByTestId('sider-documents')).toBeVisible()
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
+    })
+
+    it('从设计模块进入工作区设置：侧栏保持装配结构树，不切回数据表', async () => {
+        useDesignSidebar()
+        renderLayout(mockUser, '/w/10/design')
+
+        await waitFor(() => expect(screen.getByTestId('sider-designs')).toBeVisible())
+        fireEvent.click(screen.getByTestId('ws-nav-settings'))
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
+        })
+        expect(screen.getByTestId('sider-designs')).toBeVisible()
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
+    })
+
+    it('直接打开工作区设置（无来源模块）回落数据表侧栏', async () => {
+        renderLayout(mockUser, '/w/10/settings')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
+        })
+        expect(screen.getByTestId('sider-tables')).toBeVisible()
+    })
+
+    it('从数据表进入工作区设置：侧栏仍是数据表（来源即数据表）', async () => {
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => expect(screen.getByTestId('sider-tables')).toBeVisible())
+        fireEvent.click(screen.getByTestId('ws-nav-settings'))
+        await waitFor(() => {
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
+        })
+        expect(screen.getByTestId('sider-tables')).toBeVisible()
+    })
+})
 
 describe('MainLayout 设计段侧栏（ADR 0084）', () => {
     it('设计列表页：侧栏渲染装配结构导航，不再渲染数据表列表', async () => {
