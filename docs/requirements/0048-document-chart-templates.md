@@ -3,7 +3,7 @@
 - 编号：0048（与 ADR `docs/adr/0048-document-chart-templates.md` 同号）
 - 来源 / 提出人：用户（2026-10-27 会话），附三份可编辑 HTML 参考样例（见 §需求原句附注）
 - 日期：2026-10-27
-- 关联 ADR：`docs/adr/0048-document-chart-templates.md`（Proposed，待评审）
+- 关联 ADR：`docs/adr/0048-document-chart-templates.md`（Implemented（P0-P2 已落地））
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

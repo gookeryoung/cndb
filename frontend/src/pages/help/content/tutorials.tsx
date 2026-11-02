@@ -1,8 +1,9 @@
 /** 帮助文档 · 教程&最佳实践（ADR 0036）.
  *
- * 八个主题按「对象 / 任务族」切：视图类型、字段类型、导入导出、权限与角色、
- * 文档、数据分析、搜索与收藏、视图配置实践。事实与代码保持一致（视图 10 种模式、
- * 字段类型由注册表生成图示、workspace 三角色、视图可见性三档）。
+ * 主题按「对象 / 任务族」切：视图类型、字段类型、导入导出、权限与角色、文档、
+ * 数据分析、搜索与收藏、视图配置实践、质量检查与流水线、规则驱动的自动获取、
+ * 结构设计（DSL）。事实与代码保持一致（视图 10 种模式、字段类型由注册表生成图示、
+ * workspace 三角色、视图可见性三档、检查动作注册表、采集四段规则）。
  */
 
 import { Table } from 'antd'
@@ -870,8 +871,8 @@ const designDsl: HelpTopic = {
     intro: (
         <P>
             设计模块用自研文本 DSL（文件约定 <code>.cnmd</code>）描述产品结构：参数化建模、六种图元、四种变换与三种布尔运算，
-            保存即编译为中间表示（IR），网页端实时预览 3D 模型并导出 STL / OBJ / GLB 与三视图 PNG。
-            语法与编译限制的事实以本页为准。
+            设计文件之间用 <code>use</code> 复用零件、用 <code>constraint</code> 声明装配约束，保存即编译为中间表示（IR v4），
+            网页端实时预览 3D 模型并导出 STL / OBJ / GLB 与三视图 PNG。语法与编译限制的事实以本页为准。
         </P>
     ),
     subsections: [
@@ -893,6 +894,16 @@ const designDsl: HelpTopic = {
                             <strong>系统</strong>：<code>system rover {'{ chassis(width) sphere(r = 6) }'}</code>
                             是顶层单例根，把组件与零件组织成一个完整系统（不接受参数表、不可被实例化）；
                             只影响装配大纲层级，不改变几何结果。多个 system 按声明顺序并列。
+                        </>,
+                        <>
+                            <strong>分文件引用</strong>：<code>{`use "<file_key>"(参数…) as 标签`}</code> 把另一个零件文件装配进来，
+                            多实例可各自传参；只允许引用同工作区的 <code>part</code> 文件，禁止循环引用。
+                        </>,
+                        <>
+                            <strong>装配约束</strong>：<code>constraint 名称 类型(a=标签.基准, b=标签.基准, value=…)</code>，
+                            五类 <code>fixed</code> / <code>coincident</code> / <code>concentric</code> / <code>distance</code> / <code>angle</code>，
+                            基准可写 <code>origin</code> / <code>x</code> / <code>y</code> / <code>z</code>；未接地的首个实例按固定处理，
+                            冲突或过约束直接报错、不出 IR，欠约束只提示。
                         </>,
                         <>
                             <strong>图元（6 种）</strong>：<code>box(size=[x,y,z])</code>（也可 <code>w=,h=,d=</code>）、
@@ -945,6 +956,35 @@ const designDsl: HelpTopic = {
             ),
         },
         {
+            key: 'files',
+            label: '设计文件库',
+            summary: '设计模块里的「零件 / 装配」都是文件，跨文件引用按不可变的 file_key。',
+            body: (
+                <Bullets
+                    items={[
+                        <>文件分两类：<code>kind=part</code> 零件（只用图元与 <code>module</code>）与 <code>kind=assembly</code> 装配（可用 <code>use</code> 引用零件、可写 <code>system</code>）。</>,
+                        <>每个文件有稳定且不可变的 <code>file_key</code>（创建时按标题生成）,改名不改 key，所以引用不会因为改名失效；<code>folder</code> 只影响列表展示目录，可用「新建设计」时选择。</>,
+                        <>删除被其他文件引用的零件会被拒绝（返回引用方清单）；引用限同工作区、禁止循环，越界在编译期直接报诊断。</>,
+                        <>旧版单文件设计可用命令 <code>cndb design-refactor</code> 幂等迁移：把顶层 <code>module</code> 抽成零件文件、重写为 <code>use</code>，编译前后结构等价才落库，失败保留原文。</>,
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'deps',
+            label: '依赖刷新与打开性能',
+            summary: '打开优先读持久化 IR；被引用零件改过会标「依赖陈旧」，一键刷新即重编译落新版本。',
+            body: (
+                <Bullets
+                    items={[
+                        <>打开设计直接消费保存时落库的 IR 快照（内容与依赖都未变时不再请求编译），因此大装配也能秒开。</>,
+                        <>详情接口不再返回编译快照，改为单独的 <code>GET /designs/{'{id}'}/ir</code>（带 ETag，未变化返回 304）；编辑器顶部出现「依赖已更新」横幅时点刷新，会按最新依赖重编译并落一个新版本。</>,
+                        <>三维预览先出近似首帧再渐进替换为精确布尔结果，计算在渲染 Worker 中完成，编辑器与侧栏不卡顿；导出时才求值真正网格。</>,
+                    ]}
+                />
+            ),
+        },
+        {
             key: 'export',
             label: '导出与交付',
             summary: '导出网格与预览共用同一条求值路径，所见即所得。',
@@ -965,9 +1005,83 @@ const designDsl: HelpTopic = {
             body: (
                 <Bullets
                     items={[
-                        '原文不超过 256KB；嵌套深度不超过 32 层；图元实例总数不超过 2000。',
-                        'param 不超过 64 个；module 与 system 声明合计不超过 128 个；模块实例化递归不超过 16 层。',
+                        '单文件原文不超过 256KB；依赖闭包合计不超过 1MB / 64 个文件 / 深度 8 层；嵌套深度不超过 32 层，图元实例总数不超过 2000。',
+                        'param 不超过 64 个；module 与 system 声明合计不超过 256 个；模块实例化递归不超过 16 层。',
                         '超限时保存被拒绝（400 + 结构化诊断），草稿在编辑器中保留，不影响已有版本。',
+                    ]}
+                />
+            ),
+        },
+    ],
+}
+
+const qualityChecks: HelpTopic = {
+    key: 'quality-checks',
+    label: '质量检查与流水线',
+    intro: (
+        <P>
+            质量检查把「现在这张表 / 这篇文档合不合格」从导入期的临时报告，升级为可声明的规则：
+            一条流水线用 YAML 描述触发条件与检查步骤，保存即编译校验，运行时产出可过滤的结构化发现（finding）。
+            数据表域入口在 <code>/w/:wid/pipelines</code>，文档域在文档区的「质量检查」子页。
+        </P>
+    ),
+    subsections: [
+        {
+            key: 'concept',
+            label: '入口与三个对象',
+            summary: '左栏规则清单、右栏运行历史；规则 / 运行 / 发现三者一一可追溯。',
+            body: (
+                <Bullets
+                    items={[
+                        <><strong>流水线</strong>：一份 YAML 定义（存 <code>pipeline_workflow</code>），带触发方式与作业 DAG；同名可多域共存，定义随工作区备份导出。</>,
+                        <><strong>运行</strong>：一次执行记录（<code>pipeline_run</code>），状态由「发现的严重度 + 步骤结果」推导，同一流水线同时只允许一个运行中（重复触发 409）。</>,
+                        <><strong>发现</strong>：结构化结果行（<code>pipeline_finding</code>），带严重度、检查动作与定位信息，<strong>不含字段值</strong>；表目标可直接「转问题」。</>,
+                        '左栏按当前域过滤规则（数据表域只看 table/* 动作，文档域只看 document/*），顶部「全部」展示该域全部规则的运行历史；未选中规则时右栏默认就是全部历史。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'dsl',
+            label: '流水线怎么写',
+            summary: 'GitHub Actions 形态的 YAML 子集：触发、作业依赖、检查步骤三步走。',
+            body: (
+                <Bullets
+                    items={[
+                        <><strong>meta</strong>：<code>name</code> 必填；<code>on</code> 支持手动、事件（数据同步完成 / 文档保存 / 批量变更）与定时（cron 表达式按工作区时区解释）。</>,
+                        <><strong>jobs</strong>：<code>needs</code> 声明前置作业形成 DAG，<code>if</code> 用 <code>{'${{ }}'}</code> 白名单表达式（无 eval、无任意代码），<code>with.table</code> 引用工作区真实数据表。</>,
+                        <><strong>steps</strong>：<code>uses:</code> 引用检查动作（<code>域/动作</code>，如 <code>table/null-rate</code>），<code>with:</code> 传参数，<code>severity</code> 决定命中后的严重度，<code>continue-on-error</code> 让失败不中断后续步骤。</>,
+                        '保存 / 修改时整份 YAML 编译为 IR：未知动作、非法参数、非法表达式都当场 400 拒绝，运行期只会出现业务数据层面的问题，不会出现语法错误。',
+                        '列表页可直接打开 YAML 编辑抽屉；示例工作区带 4 条示例流水线（随 <code>cndb seed</code> 注入，只注入定义不触发运行）。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'checks',
+            label: '检查动作与发现处理',
+            summary: '检查只读：不修改业务数据，结论单一口径。',
+            body: (
+                <Bullets
+                    items={[
+                        <><strong>数据表族</strong>：<code>table/null-rate</code>（空值率）、<code>table/duplicates</code>（判重，复用治理的归一化口径）、<code>table/value-range</code>（区间）、<code>table/stale</code>（新鲜度）。</>,
+                        <><strong>文档族</strong>：<code>document/broken-refs</code>（图表 / 数据表 / 附件引用失效）、<code>document/chart-blocks</code>（图表块结构与上限）、<code>document/links</code>（站内 wikilink 与文件引用登记）。</>,
+                        '检查按工作区视角运行，不受触发人个人权限影响；隐藏字段不参与、发现里也不带字段值，避免变成侧信道。',
+                        '发现的严重度可筛，表目标发现的「转问题」会在目标表建一条问题（标题带严重度与消息，描述含检查动作与定位，类别 data_error）；非表目标不支持转换。',
+                    ]}
+                />
+            ),
+        },
+        {
+            key: 'schedule',
+            label: '定时运行与部署',
+            summary: '定时触发靠 CLI + cron，不引入常驻调度线程。',
+            body: (
+                <Bullets
+                    items={[
+                        '定时流水线由 cron 调 <code>cndb pipeline tick</code> 扫描到期定义并同步执行（<code>deploy/pipeline.sh</code> 为现成入口）；分钟槽水位去重保证同一分钟不重复触发。',
+                        '事件触发（同步完成 / 文档保存 / 批量变更）由业务路径自行投递，记录批量变更只记一次、不逐行触发。',
+                        '运行历史默认按当前域全部规则展示，运行中每 10s 轮询，结束即停。',
                     ]}
                 />
             ),
@@ -1063,6 +1177,7 @@ export const tutorialTopics: HelpTopic[] = [
     analytics,
     search,
     viewConfig,
+    qualityChecks,
     acquisition,
     designDsl,
 ]

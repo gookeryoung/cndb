@@ -3,7 +3,7 @@
 - 编号：0080（与 ADR `docs/adr/0080-workspace-module-selection.md` 同号）
 - 来源 / 提出人：用户（2026-11-01 会话）
 - 日期：2026-11-01
-- 关联 ADR：`docs/adr/0080-workspace-module-selection.md`（立项即建，Status: Proposed）
+- 关联 ADR：`docs/adr/0080-workspace-module-selection.md`（Implemented（P0-P3 已落地））
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

@@ -3,7 +3,7 @@
 - 编号：0077（与 ADR `docs/adr/0077-*.md` 同号，卡片存 `docs/requirements/0077-<topic>.md`）
 - 来源 / 提出人：ADR 0023 §9 P3 遗留项（用户口述「整屏导出 / 只读分享立 ADR」）
 - 日期：2026-11-01
-- 关联 ADR：`docs/adr/0077-dashboard-fullscreen-export-readonly-share.md`（Proposed）
+- 关联 ADR：`docs/adr/0077-dashboard-fullscreen-export-readonly-share.md`（Implemented（P0-P2 已落地））
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

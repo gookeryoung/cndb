@@ -20,7 +20,7 @@ description: Use when a requirement card or feature intent needs a design decisi
 4. 按模板写 Decision 各小节：数据模型、判定入口、API 变更清单、边界与例外、迁移（幂等 + downgrade + 存量零迁移）、前端、测试清单、分期（P0/P1/P2）。
 5. 收齐决策记录表 D1..Dn（议题 / 结论 / 依据 / 被否决项 / 代码落点），结论只写这一处；整体方案选型也占一行。
 6. 必要时补「行业对照」「与既有 ADR 的关系」两节。
-7. 写「落地状态」表（按分期列 P0/P1/P2，全部先填「未开始」）与「交接」节（当前阶段 / 已完成 / 下一步 / 已知坑），并把编号、标题、Status、落地阶段登记到 `docs/adr/README.md` 索引。
+7. 写「落地状态」表（按分期列 P0/P1/P2，全部先填「未开始」）与「交接」节（当前阶段 / 已完成 / 下一步 / 已知坑），并把编号、标题、Status、落地阶段登记到 `docs/adr/README.md` 索引里**所属功能域的分组表**（域内按编号升序；新域须同时补分组标题与该域「承接关系」一行）。
 
 ## 需求移除 / 变更（修订既有 ADR）
 
@@ -32,7 +32,7 @@ description: Use when a requirement card or feature intent needs a design decisi
 ## 产出
 
 - `docs/adr/NNNN-<topic>.md`（Status: Proposed，含「落地状态」与「交接」节）。
-- `docs/adr/README.md` 索引新增一行（编号 / 标题 / Status / 落地阶段 / 代码 / 测试 / CHANGELOG）。
+- `docs/adr/README.md` 索引在其功能域的表格里新增一行（编号 / 标题 / Status / 落地阶段 / 代码 / 测试 / CHANGELOG），并顺带校正该域「承接关系」一句。
 
 ## 门禁 / 卡点
 

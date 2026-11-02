@@ -3,7 +3,7 @@
 - 编号：0027（与 ADR `docs/adr/0027-*.md` 同号）
 - 来源 / 提出人：用户口述需求
 - 日期：2026-10-24
-- 关联 ADR：`docs/adr/0027-tech-system-tree.md`（Proposed，待评审）
+- 关联 ADR：`docs/adr/0027-tech-system-tree.md`（Implemented（P0-P1 已落地））
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

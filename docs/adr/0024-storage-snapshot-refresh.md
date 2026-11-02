@@ -178,7 +178,7 @@ def request_refresh(workspace_ids=None) -> list[int]                 # 接口层
 | 轴 | 载体 | 决定 | 由谁 |
 |---|---|---|---|
 | 配额口径（上限） | `workspaces_workspace.storage_quota_bytes` | 上限管理与「已用」统计分离，已用只做展示与预判 | 本 ADR |
-| 备份 / 恢复 | `admin/backup`、`admin/restore` | 快照表随库备份；恢复后允许缺快照，由刷新器补齐 | ADR 0007 |
+| 备份 / 恢复 | `admin/backup`、`admin/restore`（`cndb/backup.py`） | 快照表随系统级全库备份走；恢复后允许缺快照，由刷新器补齐 | 本 ADR（系统级全库备份无独立 ADR，口径见 `docs/AI_DRIVEN_DEV_FLOW.md` 与 `cndb/backup.py`） |
 
 ## 落地状态（随实现更新）
 
