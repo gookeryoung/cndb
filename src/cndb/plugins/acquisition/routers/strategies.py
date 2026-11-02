@@ -17,10 +17,16 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.acquisition.models import AcquisitionRound, AcquisitionRun, AcquisitionStrategy, RunTrigger
 from cndb.plugins.acquisition.schemas import (
+    ChannelCatalogResponse,
+    ChannelOption,
+    DiagnoseResponse,
     PreviewResponse,
     PreviewSample,
+    ProviderOption,
     ResumeRequest,
     RoundOut,
+    RuleDraftRequest,
+    RuleDraftResponse,
     RuleValidateRequest,
     RuleValidateResponse,
     RunDetailResponse,
@@ -31,6 +37,7 @@ from cndb.plugins.acquisition.schemas import (
     StrategyOut,
     StrategyUpdate,
 )
+from cndb.plugins.acquisition.services.channels import preset_catalog
 from cndb.plugins.acquisition.services.rules.expr import RuleError
 from cndb.plugins.acquisition.services.runner import (
     StrategyBusyError,
@@ -39,6 +46,8 @@ from cndb.plugins.acquisition.services.runner import (
     resume_run,
 )
 from cndb.plugins.acquisition.services.validation import validate_strategy_payload
+from cndb.plugins.datasource.models import DatasourceSyncJob
+from cndb.plugins.datasource.providers.registry import list_providers
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
@@ -415,6 +424,231 @@ def resume_run_route(
     if execution.run is None:
         raise HTTPException(status_code=500, detail="运行记录缺失")
     return _serialize_run(execution.run)
+
+
+@router.get("/channels", response_model=ChannelCatalogResponse)
+def list_channels(
+    workspace_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> ChannelCatalogResponse:
+    """渠道目录：可引用的既有同步任务 + 渠道简写 + 已注册 provider（P3）."""
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.VIEWER)
+    jobs = (
+        db.execute(
+            select(DatasourceSyncJob)
+            .where(DatasourceSyncJob.workspace_id == workspace_id)
+            .order_by(DatasourceSyncJob.id)
+        )
+        .scalars()
+        .all()
+    )
+    channels = [
+        ChannelOption(
+            value=f"job:{job.id}",
+            label=f"{job.name}（{job.provider}）",
+            kind="job",
+            provider=job.provider,
+            requires_key=bool(job.session_id),
+            hint="复用既有同步任务的请求模板与凭证",
+        )
+        for job in jobs
+    ]
+    channels.extend(ChannelOption(**item) for item in preset_catalog())
+    providers = [
+        ProviderOption(
+            name=str(item["name"]),
+            label=str(item["label"]),
+            params_schema=dict(item.get("params_schema") or {}),
+            supports_paging=bool(item.get("supports_paging")),
+        )
+        for item in list_providers()
+    ]
+    return ChannelCatalogResponse(
+        channels=channels,
+        providers=providers,
+        llm_actions=["keyword_refine", "rule_draft", "item_summary", "run_report", "failure_diagnose"],
+    )
+
+
+@router.post("/rule-drafts", response_model=RuleDraftResponse)
+def create_rule_draft(
+    workspace_id: int,
+    payload: RuleDraftRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> RuleDraftResponse:
+    """自然语言需求 → 规则草案（只回草案，**不落策略、不自动启用**，ADR 0085 §5 A）."""
+    from cndb.plugins.acquisition.services import ai as acquisition_ai
+    from cndb.plugins.documents.models import Document
+
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.EDITOR)
+    jobs = (
+        db.execute(
+            select(DatasourceSyncJob)
+            .where(DatasourceSyncJob.workspace_id == workspace_id)
+            .order_by(DatasourceSyncJob.id)
+        )
+        .scalars()
+        .all()
+    )
+    presets = preset_catalog()
+    allowed_channels = [f"job:{job.id}" for job in jobs] + [str(item["value"]) for item in presets]
+
+    tables = (
+        db.execute(
+            select(DataTable)
+            .where(DataTable.workspace_id == workspace_id, DataTable.trashed_at.is_(None))
+            .order_by(DataTable.id)
+        )
+        .scalars()
+        .all()
+    )
+    folders = (
+        db.execute(
+            select(Document)
+            .where(
+                Document.workspace_id == workspace_id,
+                Document.is_folder.is_(True),
+                Document.is_deleted.is_(False),
+            )
+            .order_by(Document.id)
+        )
+        .scalars()
+        .all()
+    )
+    context_lines = [
+        *(f"表 id={table.id} 名称={table.name} 字段={table.name}" for table in tables),
+        *(f"文件夹 id={folder.id} 名称={folder.title}" for folder in folders),
+    ]
+
+    draft, meta = acquisition_ai.draft_rules(
+        db,
+        user,
+        description=payload.description,
+        allowed_channels=allowed_channels,
+        allowed_table_ids=[int(table.id) for table in tables],
+        allowed_folder_ids=[int(folder.id) for folder in folders],
+        context_lines=context_lines,
+        workspace_id=workspace_id,
+    )
+    # 提示优先落点：模型没选时用请求里的 table_id / parent_id 兜底（仍是草案，由用户确认）
+    table_ids = {int(table.id) for table in tables}
+    folder_ids = {int(folder.id) for folder in folders}
+    if not draft["targets"] and payload.table_id in table_ids:
+        draft["targets"] = [{"kind": "table", "table_id": payload.table_id, "match_keys": list[str]()}]
+    elif not draft["targets"] and payload.parent_id in folder_ids:
+        draft["targets"] = [{"kind": "document", "parent_id": payload.parent_id}]
+
+    return RuleDraftResponse(
+        draft=draft,
+        model=str(meta.get("model") or ""),
+        run_id=meta.get("run_id"),
+        degraded=str(meta.get("degraded") or ""),
+        error=str(meta.get("error") or ""),
+    )
+
+
+@router.post("/runs/{run_id}/diagnose", response_model=DiagnoseResponse)
+def diagnose_run_route(
+    workspace_id: int,
+    run_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> DiagnoseResponse:
+    """失败诊断（只读）：模型不可用 → 规则化文案（ADR 0085 §5 E）."""
+    from cndb.plugins.acquisition.services import ai as acquisition_ai
+
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.VIEWER)
+    run = _get_run(db, workspace_id, run_id)
+    rounds = db.execute(
+        select(AcquisitionRound).where(AcquisitionRound.run_id == run.id).order_by(AcquisitionRound.round_no)
+    ).scalars()
+    payload = [
+        {
+            "round_no": row.round_no,
+            "query": row.query,
+            "stats": dict(row.stats or {}),
+            "stop_reason": row.stop_reason,
+        }
+        for row in rounds
+    ]
+    text, meta = acquisition_ai.diagnose_run(
+        db,
+        user,
+        run=run,
+        rounds=payload,
+        workspace_id=workspace_id,
+    )
+    return DiagnoseResponse(
+        text=text,
+        model=str(meta.get("model") or ""),
+        run_id=meta.get("run_id"),
+        degraded=str(meta.get("degraded") or ""),
+    )
+
+
+@router.post("/runs/{run_id}/cancel", response_model=RunOut)
+def cancel_run(
+    workspace_id: int,
+    run_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> RunOut:
+    """取消运行：只在**轮边界**生效（不中断在途 HTTP，避免半批数据）."""
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.EDITOR)
+    run = _get_run(db, workspace_id, run_id)
+    if run.status != "running":
+        raise HTTPException(status_code=400, detail=f"只有运行中的任务可取消（当前 {run.status}）")
+    run.detail = {**dict(run.detail or {}), "cancel_requested": True}
+    run.progress_message = "已请求取消：本轮结束后停止"
+    db.add(run)
+    db.commit()
+    db.refresh(run)
+    return _serialize_run(run)
+
+
+@router.post("/strategies/{strategy_id}/enable", response_model=StrategyOut)
+def enable_strategy(
+    workspace_id: int,
+    strategy_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> StrategyOut:
+    """启用策略：启用前跑一次规则校验（规则不合法直接 400）."""
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.EDITOR)
+    strategy = _get_strategy(db, workspace_id, strategy_id)
+    _validate(
+        db,
+        workspace_id,
+        scope=dict(strategy.scope or {}),
+        filter_rule=dict(strategy.filter_rule or {}),
+        targets=list(strategy.targets or []),
+        iteration=dict(strategy.iteration or {}),
+        schedule=dict(strategy.schedule or {}),
+    )
+    strategy.enabled = True
+    db.add(strategy)
+    db.commit()
+    db.refresh(strategy)
+    return _serialize_strategy(strategy)
+
+
+@router.post("/strategies/{strategy_id}/disable", response_model=StrategyOut)
+def disable_strategy(
+    workspace_id: int,
+    strategy_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> StrategyOut:
+    """停用策略（调度不再触发；在途运行不受影响）."""
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.EDITOR)
+    strategy = _get_strategy(db, workspace_id, strategy_id)
+    strategy.enabled = False
+    db.add(strategy)
+    db.commit()
+    db.refresh(strategy)
+    return _serialize_strategy(strategy)
 
 
 @router.post("/rules/validate", response_model=RuleValidateResponse)

@@ -355,7 +355,7 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         const tabLabels = within(document.querySelector('.cn-ws-tabs') as HTMLElement)
             .getAllByRole('tab')
             .map(tab => (tab.textContent ?? '').trim())
-        expect(tabLabels).toEqual(['数据列表', '质量检查', '数据分析', '数据同步'])
+        expect(tabLabels).toEqual(['数据列表', '质量检查', '数据分析', '数据同步', '智能采集'])
         // 一级模块已上移顶栏，不再出现在页签行
         expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull()

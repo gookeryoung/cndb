@@ -54,6 +54,8 @@ class TargetReport:
     docs_skipped: int = 0
     written: int = 0
     table_id: int | None = None
+    #: 语义辅助用量（``item_summary`` 的调用数 / 降级数 / token），并入 ``run.detail.llm``
+    llm: dict[str, Any] = field(default_factory=dict)
     errors: list[dict[str, str]] = field(default_factory=list)
 
     @property
@@ -314,7 +316,13 @@ def dispatch_document_target(
     round_no: int,
     user: Any = None,
 ) -> TargetReport:
-    """把通过筛选的候选写入文档落点：新建 / 新版本 / 人工保护转 issue."""
+    """把通过筛选的候选写入文档落点：新建 / 新版本 / 人工保护转 issue.
+
+    ``llm.actions`` 含 ``item_summary`` 时先用模型把单条候选压成摘要 / 标签 / 分类，
+    再作为 ``create_document`` / ``update_content`` 的入参 —— 模型输出**不直写业务表**（L8），
+    单次运行最多摘要 ``llm.max_item_summaries``（默认 20）条，超额度直接回落原文摘要。
+    """
+    from cndb.plugins.acquisition.services import ai as acquisition_ai
     from cndb.plugins.documents.models import CHANGE_TYPE_IMPORT
     from cndb.plugins.documents.services import issues as document_issues
     from cndb.plugins.documents.services.content import (
@@ -331,6 +339,14 @@ def dispatch_document_target(
         report.errors.append({"target": "document", "error": "文档落点需要有效用户上下文（策略创建人）"})
         return report
 
+    llm_conf = dict(strategy.llm or {})
+    summary_enabled = bool(llm_conf.get("enabled")) and (
+        not (isinstance(llm_conf.get("actions"), list) and llm_conf.get("actions"))
+        or "item_summary" in {str(item) for item in llm_conf.get("actions") or []}
+    )
+    summary_budget = int(llm_conf.get("max_item_summaries") or acquisition_ai.DEFAULT_MAX_SUMMARIES)
+    summary_meta: dict[str, Any] = {"calls": 0, "degraded": 0, "tokens": 0}
+
     for target in targets:
         parent_id = target.get("parent_id")
         title_template = str(target.get("title_template") or "{title}")
@@ -340,10 +356,33 @@ def dispatch_document_target(
 
         for item in items:
             key = dedupe_key(item, str(item.get("channel") or ""))
-            title = _render_template(title_template, item).strip()[:200] or "未命名采集条目"
-            body = _render_template(body_template, item).strip()
+            render_item: Mapping[str, Any] = item
+            extra_tag_names: list[str] = []
+            if summary_enabled and summary_meta["calls"] < summary_budget:
+                summary, meta = acquisition_ai.summarize_item(
+                    db,
+                    user,
+                    item=item,
+                    workspace_id=strategy.workspace_id,
+                    strategy_id=strategy.id,
+                )
+                summary_meta["calls"] += 1
+                summary_meta["tokens"] += int(meta.get("tokens") or 0)
+                if meta.get("degraded"):
+                    summary_meta["degraded"] += 1
+                render_item = {**dict(item), "summary": summary["summary"]}
+                if summary.get("category"):
+                    render_item = {**dict(render_item), "category": summary["category"]}
+                extra_tag_names = list(summary.get("tags") or [])
+            title = _render_template(title_template, render_item).strip()[:200] or "未命名采集条目"
+            body = _render_template(body_template, render_item).strip()
             digest = content_digest(title, body)
             row = ledger.get(key)
+
+            row_tag_ids = tag_ids
+            if extra_tag_names:
+                extra_ids = _resolve_tag_ids(db, strategy.workspace_id, extra_tag_names)
+                row_tag_ids = list(dict.fromkeys([*tag_ids, *extra_ids]))
 
             try:
                 if row is None or row.target_kind != "document" or row.target_id is None:
@@ -354,7 +393,7 @@ def dispatch_document_target(
                         title=title,
                         content=body,
                         parent_id=int(parent_id) if parent_id is not None else None,
-                        tag_ids=tag_ids,
+                        tag_ids=row_tag_ids,
                         change_type=CHANGE_TYPE_IMPORT,
                     )
                     report.docs_created += 1
@@ -412,6 +451,8 @@ def dispatch_document_target(
             except Exception as exc:  # 单条文档失败不拖垮整轮（I5）
                 db.rollback()
                 report.errors.append({"target": f"document:{key[:24]}", "error": str(exc)[:300]})
+    if summary_meta["calls"]:
+        report.llm = summary_meta
     db.commit()
     return report
 

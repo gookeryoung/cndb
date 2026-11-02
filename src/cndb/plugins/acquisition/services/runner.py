@@ -164,13 +164,14 @@ def _review_mode(iteration: Mapping[str, Any]) -> str:
     return ReviewState.AUTO.value
 
 
-def _llm_enabled(strategy: AcquisitionStrategy) -> bool:
+def _llm_enabled(strategy: AcquisitionStrategy, action: str = "keyword_refine") -> bool:
+    """语义辅助开关：``llm.enabled`` 为真，且动作在 ``llm.actions`` 白名单里（空 = 全部允许）."""
     config = dict(strategy.llm or {})
     if not config.get("enabled"):
         return False
     actions = config.get("actions")
     if isinstance(actions, list) and actions:
-        return "keyword_refine" in {str(item) for item in actions}
+        return action in {str(item) for item in actions}
     return True
 
 
@@ -233,7 +234,7 @@ def execute_strategy(
             start_round=1,
             current_query=_render_base(strategy, today),
         )
-        _finalize(db, strategy, execution, started=started, clock=clock)
+        _finalize(db, strategy, execution, started=started, clock=clock, user=_resolve_user(db, strategy, user))
         return execution
     except StrategyBusyError:
         raise
@@ -312,7 +313,7 @@ def resume_run(
             current_query=next_query,
             execution=_seed_execution(run),
         )
-        _finalize(db, strategy, execution, started=started, clock=clock)
+        _finalize(db, strategy, execution, started=started, clock=clock, user=_resolve_user(db, strategy, user))
         return execution
     finally:
         _release_lease(db, strategy)
@@ -356,6 +357,12 @@ def _run_loop(
     status: str | None = None
 
     for round_no in range(start_round, max_rounds + 1):
+        # 取消只在轮边界生效（不中断在途 HTTP）：刷新一次能看到其它进程写入的取消标记
+        db.refresh(run)
+        if (dict(run.detail or {})).get("cancel_requested"):
+            status = RunStatus.CANCELLED.value
+            run.detail = {**dict(run.detail or {}), "cancelled_at_round": round_no - 1}
+            break
         round_clock = time.perf_counter()
         run.progress = min(95, 5 + int((round_no - 1) * 80 / max_rounds))
         run.progress_message = f"第 {round_no}/{max_rounds} 轮：抓取中（检索式：{current_query[:80]}）"
@@ -798,8 +805,13 @@ def _finalize(
     *,
     started: dt.datetime,
     clock: float,
+    user: Any = None,
 ) -> None:
-    """写运行收尾状态与策略 last_status（租约在调用方释放）."""
+    """写运行收尾状态与策略 last_status（租约在调用方释放）.
+
+    ``llm.actions`` 含 ``run_report`` 时追加一段模型报告到 ``run.detail.report``：
+    只写 detail（不进业务表），失败降级为空串（L5 / L8）。
+    """
     run = execution.run
     if run is not None:
         run.status = execution.status
@@ -810,10 +822,44 @@ def _finalize(
             run.duration_ms = int((time.perf_counter() - clock) * 1000)
         if execution.status == RunStatus.FAILED.value and not run.error_message:
             run.error_message = "全部渠道均未返回数据或均失败"
+        if _llm_enabled(strategy, "run_report") and execution.status != RunStatus.AWAITING_REVIEW.value:
+            _attach_run_report(db, strategy, run, user=user)
         db.add(run)
     strategy.last_status = execution.status
     db.add(strategy)
     db.commit()
+
+
+def _attach_run_report(db: Session, strategy: AcquisitionStrategy, run: AcquisitionRun, *, user: Any) -> None:
+    """运行报告：模型可用则写自然语言摘要，不可用则不留键（结构化统计已在 run 上）."""
+    from cndb.plugins.acquisition.services import ai as acquisition_ai
+
+    rows = db.execute(
+        select(AcquisitionRound).where(AcquisitionRound.run_id == run.id).order_by(AcquisitionRound.round_no)
+    ).scalars()
+    rounds = [
+        {
+            "round_no": row.round_no,
+            "query": row.query,
+            "new_items": row.new_items,
+            "stop_reason": row.stop_reason,
+            "top_keywords": list(row.top_keywords or []),
+        }
+        for row in rows
+    ]
+    text, meta = acquisition_ai.write_run_report(
+        db,
+        user,
+        run=run,
+        rounds=rounds,
+        workspace_id=strategy.workspace_id,
+    )
+    detail = dict(run.detail or {})
+    if text:
+        detail["report"] = {"text": text, "model": meta.get("model", ""), "run_id": meta.get("run_id")}
+    if meta.get("degraded"):
+        detail["llm_report_degraded"] = meta["degraded"]
+    run.detail = detail
 
 
 def _progress_message(execution: StrategyExecution) -> str:

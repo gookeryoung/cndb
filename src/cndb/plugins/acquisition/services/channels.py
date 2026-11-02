@@ -27,11 +27,36 @@ from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
 from cndb.plugins.datasource.providers.base import SyncJobSpec
 from cndb.plugins.datasource.services.runner import build_job_spec, request_spec_from_payload
 
+_PRESET_HINTS: dict[str, str] = {
+    "rss": "任意 RSS / Atom 订阅地址，如 rss:https://example.com/feed.xml",
+    "sitemap": "站点 sitemap.xml（只做 URL 发现，指向 sitemap 索引会报错）",
+    "arxiv": "arXiv 全字段检索；冒号后留空用本轮迭代检索式",
+    "openalex": "OpenAlex 检索；冒号后留空用本轮迭代检索式",
+    "crossref": "Crossref 检索；冒号后留空用本轮迭代检索式",
+}
+
+
+def preset_catalog() -> list[dict[str, Any]]:
+    """渠道简写目录（前端渠道选择器 / 规则草案候选共用）."""
+    return [
+        {
+            "value": f"{kind}:",
+            "label": kind,
+            "kind": "preset",
+            "provider": str(_PRESETS[kind]["provider"]),
+            "requires_key": False,
+            "hint": _PRESET_HINTS.get(kind, ""),
+        }
+        for kind in _PRESETS
+    ]
+
+
 __all__ = [
     "ChannelSpec",
     "build_channel_specs",
     "channel_label",
     "parse_channel_ref",
+    "preset_catalog",
     "preset_request",
 ]
 

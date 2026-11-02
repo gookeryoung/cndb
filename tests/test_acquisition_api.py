@@ -218,3 +218,87 @@ def test_manual_review_pauses_and_resumes(client, db, table, sync_job, workspace
 
     again = client.post(f"{base}/runs/{run_id}/resume", json={}, headers=headers)
     assert again.status_code == 400
+
+
+# ── P3：渠道目录 / 规则草案 / 诊断 / 启停 ────────────────
+
+
+def test_channels_catalog(client, table, sync_job, workspace_with_auth):
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+
+    r = client.get(f"{base}/channels", headers=headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    values = [item["value"] for item in body["channels"]]
+    assert f"job:{sync_job.id}" in values
+    assert {"rss:", "sitemap:", "arxiv:", "openalex:", "crossref:"} <= set(values)
+    provider_names = [item["name"] for item in body["providers"]]
+    assert {"http_json", "rss_atom", "academic", "sitemap"} <= set(provider_names)
+    assert "rule_draft" in body["llm_actions"]
+
+
+def test_rule_draft_degrades_without_llm(client, table, sync_job, workspace_with_auth):
+    """未配置大模型：返回空骨架 + 提示，但仍用请求里的 table_id 兜底落点."""
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+
+    r = client.post(
+        f"{base}/rule-drafts",
+        json={"description": "每天抓固态电池政策", "table_id": table.id},
+        headers=headers,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["degraded"], body
+    assert body["draft"]["scope"]["channels"] == []
+    assert body["draft"]["targets"] == [{"kind": "table", "table_id": table.id, "match_keys": []}]
+
+
+def test_rule_draft_drops_foreign_target(client, table, sync_job, workspace_with_auth):
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+
+    r = client.post(f"{base}/rule-drafts", json={"description": "随便抓", "table_id": 999999}, headers=headers)
+    assert r.status_code == 200, r.text
+    assert r.json()["draft"]["targets"] == []
+
+
+def test_enable_disable_strategy(client, table, sync_job, workspace_with_auth):
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+    created = client.post(f"{base}/strategies", json=_payload(table, sync_job.id), headers=headers)
+    assert created.status_code == 201, created.text
+    strategy_id = created.json()["id"]
+
+    enabled = client.post(f"{base}/strategies/{strategy_id}/enable", headers=headers)
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json()["enabled"] is True
+
+    disabled = client.post(f"{base}/strategies/{strategy_id}/disable", headers=headers)
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json()["enabled"] is False
+
+
+def test_diagnose_run_returns_rule_based_text(client, table, sync_job, workspace_with_auth):
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+    strategy_id = client.post(f"{base}/strategies", json=_payload(table, sync_job.id), headers=headers).json()["id"]
+    run = client.post(f"{base}/strategies/{strategy_id}/run", headers=headers)
+    assert run.status_code == 200, run.text
+
+    diagnosed = client.post(f"{base}/runs/{run.json()['id']}/diagnose", headers=headers)
+    assert diagnosed.status_code == 200, diagnosed.text
+    assert diagnosed.json()["text"]
+    assert diagnosed.json()["degraded"]
+
+
+def test_cancel_rejects_finished_run(client, table, sync_job, workspace_with_auth):
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+    strategy_id = client.post(f"{base}/strategies", json=_payload(table, sync_job.id), headers=headers).json()["id"]
+    run_id = client.post(f"{base}/strategies/{strategy_id}/run", headers=headers).json()["id"]
+
+    cancelled = client.post(f"{base}/runs/{run_id}/cancel", headers=headers)
+    assert cancelled.status_code == 400
+    assert "运行中" in cancelled.json()["detail"]

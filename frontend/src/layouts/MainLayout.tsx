@@ -11,7 +11,7 @@ import {
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
-  SafetyCertificateOutlined, ToolOutlined,
+  SafetyCertificateOutlined, ToolOutlined, ExperimentOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
   LockOutlined, ApartmentOutlined,
@@ -263,6 +263,8 @@ export default function MainLayout() {
           ? 'analytics'
           : location.includes('/datasource')
             ? 'datasource'
+            : location.includes('/acquisition')
+              ? 'acquisition'
             : location.includes('/pipelines')
               ? 'pipelines'
               : location.includes('/settings')
@@ -275,7 +277,7 @@ export default function MainLayout() {
    * 落在该页时窗口保持开启（与数据分析行为一致），页签行不消失。 */
   const tablesDerivedActive =
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
-    || activeWsTab === 'pipelines'
+    || activeWsTab === 'acquisition' || activeWsTab === 'pipelines'
 
   /** 顶栏一级模块导航（需求 0081 C4）：数据表 → 文档 → 设计 → 工作区设置.
    *
@@ -352,6 +354,15 @@ export default function MainLayout() {
       label: (
         <span>
           <CloudDownloadOutlined /> 数据同步
+        </span>
+      ),
+    }] : []),
+    // 智能采集（ADR 0085）：数据表 / 文档派生功能，落在数据表派生窗口内显示
+    ...(wsFeatures.acquisition && tablesDerivedActive ? [{
+      key: 'acquisition',
+      label: (
+        <span>
+          <ExperimentOutlined /> 智能采集
         </span>
       ),
     }] : []),
@@ -453,12 +464,14 @@ export default function MainLayout() {
     const inDocuments = location.startsWith(`/w/${wid}/documents`)
     const inAnalytics = location.startsWith(`/w/${wid}/analytics`)
     const inDatasource = location.startsWith(`/w/${wid}/datasource`)
+    const inAcquisition = location.startsWith(`/w/${wid}/acquisition`)
     const inDesign = location.startsWith(`/w/${wid}/design`)
     if (
       (!feat.tables && inTables) ||
       (!feat.documents && inDocuments) ||
       (!feat.analytics && inAnalytics) ||
       (!feat.datasource && inDatasource) ||
+      (!feat.acquisition && inAcquisition) ||
       (!feat.design && inDesign)
     ) {
       navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.modules)}`, { replace: true })

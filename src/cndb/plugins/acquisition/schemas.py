@@ -151,3 +151,61 @@ class RuleValidateRequest(BaseModel):
 class RuleValidateResponse(BaseModel):
     ok: bool
     errors: list[str] = Field(default_factory=list)
+
+
+# ── P3：渠道目录 / 规则草案 / 失败诊断 ────────────────
+
+
+class ChannelOption(BaseModel):
+    """渠道目录里的一条可选渠道."""
+
+    value: str = Field(..., description="写进 scope.channels 的值（job:<id> 或 rss: / arxiv: 等简写）")
+    label: str
+    kind: str = Field(..., description="job / preset / provider")
+    provider: str = ""
+    requires_key: bool = False
+    hint: str = ""
+
+
+class ProviderOption(BaseModel):
+    """已注册 provider 的元信息（前端按 params_schema 渲染内联声明表单）."""
+
+    name: str
+    label: str
+    params_schema: dict[str, Any] = Field(default_factory=dict)
+    supports_paging: bool = False
+
+
+class ChannelCatalogResponse(BaseModel):
+    """渠道目录：jobs（可引用）+ 简写 + provider + 语义辅助开关说明."""
+
+    channels: list[ChannelOption] = Field(default_factory=list)
+    providers: list[ProviderOption] = Field(default_factory=list)
+    llm_actions: list[str] = Field(default_factory=list)
+
+
+class RuleDraftRequest(BaseModel):
+    """自然语言需求 → 规则草案（A 动作，只回草案不落策略）。"""
+
+    description: str = Field(..., min_length=2, max_length=4000)
+    table_id: int | None = Field(default=None, description="提示用：优先落这张表")
+    parent_id: int | None = Field(default=None, description="提示用：优先落这个文档文件夹")
+
+
+class RuleDraftResponse(BaseModel):
+    """草案 + 模型元信息；``degraded`` 非空表示模型未参与（前端提示手填）."""
+
+    draft: dict[str, Any]
+    model: str = ""
+    run_id: int | None = None
+    degraded: str = ""
+    error: str = ""
+
+
+class DiagnoseResponse(BaseModel):
+    """失败诊断（E 动作，只读）."""
+
+    text: str
+    model: str = ""
+    run_id: int | None = None
+    degraded: str = ""

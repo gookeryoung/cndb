@@ -35,6 +35,7 @@ const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssues
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
 const AnalyticsPage = lazy(() => import('@/pages/analytics/AnalyticsPage'))
 const DatasourcePage = lazy(() => import('@/pages/datasource/DatasourcePage'))
+const AcquisitionPage = lazy(() => import('@/pages/acquisition/StrategiesPage'))
 const PipelinesPage = lazy(() => import('@/pages/pipelines/PipelinesPage'))
 const PipelineRunDetail = lazy(() => import('@/pages/pipelines/PipelineRunDetail'))
 const DesignsPage = lazy(() => import('@/pages/design/DesignsPage'))
@@ -91,6 +92,10 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/datasource" element={
             <Suspense fallback={<PageFallback />}><DatasourcePage /></Suspense>
+          } />
+          {/* 智能采集（ADR 0085）：规则驱动的数据表 / 文档自动获取 */}
+          <Route path="w/:wid/acquisition" element={
+            <Suspense fallback={<PageFallback />}><AcquisitionPage /></Suspense>
           } />
           {/* 质量检查（ADR 0080 D4）：数据表域入口；文档域入口在文档布局内（/documents/pipelines） */}
           <Route path="w/:wid/pipelines" element={
