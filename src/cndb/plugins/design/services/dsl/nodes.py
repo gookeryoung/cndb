@@ -116,9 +116,23 @@ class ModuleCall:
     named: dict[str, Expr]
     line: int
     col: int
+    #: ``as`` 实例标签（ADR 0086 D4：约束引用端；同作用域唯一）
+    label: str | None = None
 
 
-Instance = PrimitiveCall | TransformCall | BooleanCall | ModuleCall
+@dataclass(frozen=True, slots=True)
+class UseCall:
+    """分文件零件引用：``use "file_key"(参数...) as 标签``（ADR 0086 D2）."""
+
+    file_key: str
+    positional: tuple[Expr, ...]
+    named: dict[str, Expr]
+    line: int
+    col: int
+    label: str | None = None
+
+
+Instance = PrimitiveCall | TransformCall | BooleanCall | ModuleCall | UseCall
 
 
 # ── 顶层声明 ─────────────────────────────────────────────
@@ -154,20 +168,47 @@ class ParamDecl:
 
 
 @dataclass(frozen=True, slots=True)
+class ConstraintRef:
+    """约束引用端：``实例标签.基准``（ADR 0086 D4；基准 origin / x / y / z）."""
+
+    label: str
+    anchor: str
+    line: int
+    col: int
+
+
+@dataclass(frozen=True, slots=True)
+class ConstraintDecl:
+    """装配约束声明：``constraint <id> <type>(a = …, b = …)``（ADR 0086 D4/D5）.
+
+    ``refs`` 承载实例引用（a / b），``values`` 承载数值参数（offset / value）；
+    MVP 类型 fixed / coincident / concentric / distance / angle。
+    """
+
+    id: str
+    kind: str
+    refs: dict[str, ConstraintRef]
+    values: dict[str, Expr]
+    line: int
+    col: int
+
+
+@dataclass(frozen=True, slots=True)
 class SystemDecl:
     """系统装配声明（ADR 0084 D1/D3）：顶层根、无参数表、不可实例化.
 
-    系统是纯组织层——把 ``body`` 平铺到顶层后几何与参数完全一致（I2）。
+    系统是纯组织层——把 ``body`` 平铺到顶层后几何与参数完全一致（I2）；
+    ADR 0086 起体内可声明装配约束（作用域 = 该系统）。
     """
 
     name: str
-    body: tuple[Instance, ...]
+    body: tuple[Instance | ConstraintDecl, ...]
     line: int
     col: int
 
 
 #: 顶层语句（保持原文出现顺序：几何按此顺序展开，ADR 0084 §2）
-ProgramItem = ParamDecl | ModuleDecl | SystemDecl | Instance
+ProgramItem = ParamDecl | ModuleDecl | SystemDecl | ConstraintDecl | Instance
 
 
 @dataclass(frozen=True, slots=True)
@@ -178,6 +219,8 @@ class Program:
     modules: tuple[ModuleDecl, ...]
     instances: tuple[Instance, ...]
     systems: tuple[SystemDecl, ...] = ()
+    #: 顶层约束声明（ADR 0086 D4，作用于顶层实例标签作用域）
+    constraints: tuple[ConstraintDecl, ...] = ()
     #: 顶层语句的原文顺序（编译按此交错展开，I2）；为空表示仅按分类元组展开
     items: tuple[ProgramItem, ...] = ()
 
@@ -196,20 +239,51 @@ class Diagnostic:
 
 
 @dataclass(frozen=True, slots=True)
+class FileSource:
+    """跨文件编译的输入快照（ADR 0086 §2）：一个设计文件的内容 + 身份."""
+
+    file_id: int
+    file_key: str
+    kind: str  # part / assembly
+    content: str
+    version_number: int
+    content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class DependencySnapshot:
+    """依赖闭包项：装配版本保存时用于可复现编译（ADR 0086 D6）."""
+
+    file_id: int
+    file_key: str
+    version_number: int
+    content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
 class CompileResult:
-    """编译结果：ok 时 ir 非空，失败时只有诊断（不产出半截 IR，I6）."""
+    """编译结果：ok 时 ir 非空，失败时只有诊断（不产出半截 IR，I6）.
+
+    ``diagnostics`` 既含 error 也含 warning（欠约束等）；只有 error 时 ``ok``
+    为 False。``dependencies`` 为本次编译实际用到的引用闭包（不含根文件）。
+    """
 
     ok: bool
     ir: dict[str, Any] | None
     diagnostics: tuple[Diagnostic, ...] = ()
+    dependencies: tuple[DependencySnapshot, ...] = ()
 
 
 __all__ = [
     "BinOp",
     "BooleanCall",
     "CompileResult",
+    "ConstraintDecl",
+    "ConstraintRef",
+    "DependencySnapshot",
     "Diagnostic",
     "Expr",
+    "FileSource",
     "FuncCall",
     "Instance",
     "ModuleCall",
@@ -224,5 +298,6 @@ __all__ = [
     "SystemDecl",
     "TransformCall",
     "UnaryOp",
+    "UseCall",
     "Vector",
 ]

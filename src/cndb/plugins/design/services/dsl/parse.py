@@ -1,4 +1,4 @@
-"""结构 DSL 语法（ADR 0079 D2）：param / module / 图元 / 变换 / 布尔.
+"""结构 DSL 语法（ADR 0079 D2 / ADR 0086 D2-D4）：param / module / use / constraint / 图元 / 变换 / 布尔.
 
 递归下降解析器：token 流 → AST（``nodes.Program``）；不做任何求值。
 嵌套深度在解析期判定（I6）；param / module 仅允许出现在顶层。
@@ -6,11 +6,21 @@
 
 from __future__ import annotations
 
-from cndb.plugins.design.services.dsl.lexer import EOF, IDENT, NUMBER, DslSyntaxError, Token, tokenize
+from cndb.plugins.design.services.dsl.lexer import (
+    EOF,
+    IDENT,
+    NUMBER,
+    STRING,
+    DslSyntaxError,
+    Token,
+    tokenize,
+)
 from cndb.plugins.design.services.dsl.limits import MAX_NESTING_DEPTH
 from cndb.plugins.design.services.dsl.nodes import (
     BinOp,
     BooleanCall,
+    ConstraintDecl,
+    ConstraintRef,
     Expr,
     FuncCall,
     Instance,
@@ -26,6 +36,7 @@ from cndb.plugins.design.services.dsl.nodes import (
     SystemDecl,
     TransformCall,
     UnaryOp,
+    UseCall,
     Vector,
 )
 
@@ -34,6 +45,16 @@ KEYWORD_PARAM = "param"
 KEYWORD_MODULE = "module"
 #: 系统装配声明关键字（ADR 0084 D1：顶层根、无参数表、不可实例化）
 KEYWORD_SYSTEM = "system"
+#: 分文件引用关键字（ADR 0086 D2）
+KEYWORD_USE = "use"
+#: 实例标签关键字（ADR 0086 D4）
+KEYWORD_AS = "as"
+#: 装配约束关键字（ADR 0086 D4）
+KEYWORD_CONSTRAINT = "constraint"
+#: 约束类型（MVP 五类，ADR 0086 D4）
+CONSTRAINT_TYPES = ("fixed", "coincident", "concentric", "distance", "angle")
+#: 约束引用端的默认命名基准（ADR 0086 D4）
+CONSTRAINT_ANCHORS = ("origin", "x", "y", "z")
 #: 布尔块关键字
 BOOLEANS = ("union", "difference", "intersection")
 #: 变换关键字
@@ -112,16 +133,29 @@ class Parser:
 
     @staticmethod
     def _is_keyword(value: str) -> bool:
-        return value in (KEYWORD_PARAM, KEYWORD_MODULE, KEYWORD_SYSTEM) or value in BOOLEANS or value in TRANSFORMS
+        return (
+            value
+            in (
+                KEYWORD_PARAM,
+                KEYWORD_MODULE,
+                KEYWORD_SYSTEM,
+                KEYWORD_USE,
+                KEYWORD_AS,
+                KEYWORD_CONSTRAINT,
+            )
+            or value in BOOLEANS
+            or value in TRANSFORMS
+        )
 
     # ── 顶层 ─────────────────────────────────────────────
 
     def parse_program(self) -> Program:
-        """解析整个编译单元：param / module / system 声明与顶层实例（任意顺序）."""
+        """解析整个编译单元：param / module / system / constraint 声明与顶层实例（任意顺序）."""
         params: list[ParamDecl] = []
         modules: list[ModuleDecl] = []
         systems: list[SystemDecl] = []
         instances: list[Instance] = []
+        constraints: list[ConstraintDecl] = []
         items: list[ProgramItem] = []
 
         while self._peek().kind != EOF:
@@ -138,6 +172,10 @@ class Parser:
                 system = self._parse_system_decl()
                 systems.append(system)
                 items.append(system)
+            elif token.kind == IDENT and token.value == KEYWORD_CONSTRAINT:
+                constraint = self._parse_constraint_decl()
+                constraints.append(constraint)
+                items.append(constraint)
             else:
                 instance = self._parse_instance(depth=1)
                 instances.append(instance)
@@ -147,6 +185,7 @@ class Parser:
             modules=tuple(modules),
             instances=tuple(instances),
             systems=tuple(systems),
+            constraints=tuple(constraints),
             items=tuple(items),
         )
 
@@ -180,7 +219,7 @@ class Parser:
         return ModuleDecl(name=name.value, params=tuple(params), body=body, line=start.line, col=start.col)
 
     def _parse_system_decl(self) -> SystemDecl:
-        """系统装配声明：``system 名 { instance* }``（顶层根、无参数表，ADR 0084 D3）."""
+        """系统装配声明：``system 名 { instance* constraint* }``（ADR 0084 D3 / ADR 0086 D4）."""
         start = self._expect_ident("system 关键字")
         name = self._expect_ident("系统名")
         if name.value in PRIMITIVES or self._is_keyword(name.value):
@@ -188,8 +227,75 @@ class Parser:
         if self._peek().kind == "(":
             token = self._peek()
             raise DslSyntaxError("system 不接受参数表（系统是单例根，可配置性请用顶层 param）", token.line, token.col)
-        body = self._parse_block_instances(depth=2, what="系统体")
-        return SystemDecl(name=name.value, body=body, line=start.line, col=start.col)
+        if MAX_NESTING_DEPTH < 2:
+            token = self._peek()
+            raise DslSyntaxError(f"嵌套深度超过上限 {MAX_NESTING_DEPTH}", token.line, token.col)
+        self._expect("{", "系统体开块 {")
+        body: list[Instance | ConstraintDecl] = []
+        while self._peek().kind != "}":
+            if self._peek().kind == EOF:
+                token = self._peek()
+                raise DslSyntaxError("系统体未闭合（缺少 }）", token.line, token.col)
+            token = self._peek()
+            if token.kind == IDENT and token.value == KEYWORD_CONSTRAINT:
+                body.append(self._parse_constraint_decl())
+                continue
+            body.append(self._parse_instance(depth=2))
+        self._expect("}", "}")
+        return SystemDecl(name=name.value, body=tuple(body), line=start.line, col=start.col)
+
+    def _parse_constraint_decl(self) -> ConstraintDecl:
+        """约束声明：``constraint <id> <type>(key = 值, …)``（ADR 0086 D4）.
+
+        ``a`` / ``b`` 必须为 ``标签.基准`` 引用；``offset`` / ``value`` 为表达式。
+        """
+        start = self._expect_ident("constraint 关键字")
+        id_token = self._expect_ident("约束 id")
+        kind_token = self._expect_ident("约束类型")
+        if kind_token.value not in CONSTRAINT_TYPES:
+            raise DslSyntaxError(
+                f"未知约束类型 '{kind_token.value}'（可用：{'/'.join(CONSTRAINT_TYPES)}）",
+                kind_token.line,
+                kind_token.col,
+            )
+        self._expect("(", "(")
+        refs: dict[str, ConstraintRef] = {}
+        values: dict[str, Expr] = {}
+        if self._peek().kind != ")":
+            while True:
+                arg_name = self._expect_ident("约束参数名")
+                self._expect("=", "=")
+                if arg_name.value in refs or arg_name.value in values:
+                    raise DslSyntaxError(f"约束参数 '{arg_name.value}' 重复", arg_name.line, arg_name.col)
+                if arg_name.value in ("a", "b"):
+                    refs[arg_name.value] = self._parse_constraint_ref()
+                else:
+                    values[arg_name.value] = self._parse_expr()
+                if self._peek().kind != ",":
+                    break
+                self._next()
+        self._expect(")", ")")
+        return ConstraintDecl(
+            id=id_token.value,
+            kind=kind_token.value,
+            refs=refs,
+            values=values,
+            line=start.line,
+            col=start.col,
+        )
+
+    def _parse_constraint_ref(self) -> ConstraintRef:
+        """解析 ``标签.基准``：基准取值 origin / x / y / z."""
+        label = self._expect_ident("实例标签")
+        self._expect(".", "约束引用中的 .")
+        anchor = self._expect_ident("命名基准（origin / x / y / z）")
+        if anchor.value not in CONSTRAINT_ANCHORS:
+            raise DslSyntaxError(
+                f"未知命名基准 '{anchor.value}'（可用：{'/'.join(CONSTRAINT_ANCHORS)}）",
+                anchor.line,
+                anchor.col,
+            )
+        return ConstraintRef(label=label.value, anchor=anchor.value, line=label.line, col=label.col)
 
     # ── 实例 ─────────────────────────────────────────────
 
@@ -220,6 +326,8 @@ class Parser:
             )
         if head.value in PRIMITIVES:
             return self._parse_primitive_call()
+        if head.value == KEYWORD_USE:
+            return self._parse_use_call()
         if head.value in TRANSFORMS:
             return self._parse_transform_call(depth)
         if head.value in BOOLEANS:
@@ -289,10 +397,61 @@ class Parser:
         self._expect("]", "向量闭括号 ]")
         return (x, y, z)
 
+    def _parse_use_call(self) -> UseCall:
+        """分文件引用：``use "file_key"(参数...) [as 标签]``（ADR 0086 D2）."""
+        head = self._next()
+        key = self._peek()
+        if key.kind != STRING:
+            raise DslSyntaxError(
+                f'use 后应为文件 key 字符串（如 "wheel"），实际是 {self._describe(key)}', key.line, key.col
+            )
+        self._next()
+        if not key.value:
+            raise DslSyntaxError("文件 key 不能为空", key.line, key.col)
+        # 参数表可选：``use "wheel"`` 与 ``use "wheel"(d = 30)`` 均合法
+        positional: list[Expr] = []
+        named: dict[str, Expr] = {}
+        if self._peek().kind == "(":
+            self._next()  # 消费开括号
+            positional, named = self._parse_call_args()
+        label = self._parse_optional_label()
+        return UseCall(
+            file_key=key.value,
+            positional=tuple(positional),
+            named=named,
+            line=head.line,
+            col=head.col,
+            label=label,
+        )
+
+    def _parse_optional_label(self) -> str | None:
+        """可选 ``as 标签``：仅模块 / use 实例可带（ADR 0086 D4）."""
+        token = self._peek()
+        if token.kind != IDENT or token.value != KEYWORD_AS:
+            return None
+        self._next()
+        label = self._expect_ident("实例标签")
+        if label.value in PRIMITIVES or self._is_keyword(label.value):
+            raise DslSyntaxError(f"实例标签 '{label.value}' 与关键字 / 图元重名", label.line, label.col)
+        return label.value
+
     def _parse_module_call(self) -> ModuleCall:
-        """模块实例化：``name(位置参数..., 命名参数...)``（命名须在位置之后）."""
+        """模块实例化：``name(位置参数..., 命名参数...) [as 标签]``（命名须在位置之后）."""
         head = self._next()
         self._expect("(", "(")
+        positional, named = self._parse_call_args()
+        label = self._parse_optional_label()
+        return ModuleCall(
+            name=head.value,
+            positional=tuple(positional),
+            named=named,
+            line=head.line,
+            col=head.col,
+            label=label,
+        )
+
+    def _parse_call_args(self) -> tuple[list[Expr], dict[str, Expr]]:
+        """解析 ``(位置参数..., 命名参数...)``（消费收尾 ``)``；命名须在位置之后）."""
         positional: list[Expr] = []
         named: dict[str, Expr] = {}
         if self._peek().kind != ")":
@@ -313,7 +472,7 @@ class Parser:
                     break
                 self._next()
         self._expect(")", ")")
-        return ModuleCall(name=head.value, positional=tuple(positional), named=named, line=head.line, col=head.col)
+        return positional, named
 
     # ── 表达式 ───────────────────────────────────────────
 
@@ -387,9 +546,14 @@ def parse_program(content: str) -> Program:
 
 __all__ = [
     "BOOLEANS",
+    "CONSTRAINT_ANCHORS",
+    "CONSTRAINT_TYPES",
+    "KEYWORD_AS",
+    "KEYWORD_CONSTRAINT",
     "KEYWORD_MODULE",
     "KEYWORD_PARAM",
     "KEYWORD_SYSTEM",
+    "KEYWORD_USE",
     "PRIMITIVES",
     "TRANSFORMS",
     "DslSyntaxError",

@@ -13,73 +13,137 @@
 起始的 1 基行 / 列。变换不建大纲节点（透明穿透），大纲节点数沿用既有编译期限制，
 不新增限制项（ADR 0083 I3 / ADR 0084 I3）。``system`` 是纯组织层：把系统体平铺到
 顶层后 ``nodes`` / ``params`` 完全一致（ADR 0084 I2）。
+
+分文件与装配约束（ADR 0086）：``use "file_key"(参数…) as 标签`` 经 ``resolver``
+回调拉取被引用 ``part`` 文件并递归编译（按 file_id + 版本 + 参数缓存，深拷贝注入）；
+依赖闭包按 I4 预算累计（文件数 / 原文字节 / 引用深度 / module 数），循环引用与
+缺失引用报带位置的诊断。``constraint`` 声明在同一作用域内经 ``constraints.py``
+做确定性位姿传播（fixed / 首件接地 → BFS），结果下推到组件图元节点并写入 IR
+``constraints``；欠约束为 warning 诊断，冲突抛错不产出 IR（I6）。
 """
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import math
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
+from cndb.plugins.design.services.dsl.constraints import ConstraintError, Pose, authored_pose, solve_constraints
 from cndb.plugins.design.services.dsl.expressions import DslEvalError, base_env, eval_expr, eval_vector
 from cndb.plugins.design.services.dsl.lexer import DslSyntaxError
 from cndb.plugins.design.services.dsl.limits import (
     DEFAULT_FN,
+    MAX_CLOSURE_BYTES,
+    MAX_CLOSURE_FILES,
+    MAX_CLOSURE_MODULES,
     MAX_CONTENT_BYTES,
     MAX_FN,
     MAX_MODULE_RECURSION,
     MAX_MODULES,
     MAX_PARAMS,
     MAX_PRIMITIVES,
+    MAX_REF_DEPTH,
     MIN_FN,
 )
 from cndb.plugins.design.services.dsl.nodes import (
     CompileResult,
+    ConstraintDecl,
+    DependencySnapshot,
     Diagnostic,
     Expr,
+    FileSource,
     Instance,
     ModuleCall,
     ModuleDecl,
-    ParamDecl,
     PrimitiveCall,
     Program,
-    ProgramItem,
     SystemDecl,
     TransformCall,
+    UseCall,
 )
 from cndb.plugins.design.services.dsl.parse import parse_program
 
-#: IR 协议版本（前后端契约，随语法演进递增；v2 = v1 + 顶层 outline，ADR 0083 D2；
-#: v3 = v2 + 大纲 system 节点，ADR 0084 D2）
-IR_VERSION = 3
+#: IR 协议版本（前后端契约，随语法演进递增；v3 = v2 + 大纲 system 节点，ADR 0084 D2；
+#: v4 = v3 + constraints[] + 大纲节点 file_id / use ref，ADR 0086 D2）
+IR_VERSION = 4
+
+#: 伪 file_id：独立编译（无文件身份）时的根文件占位
+_ROOT_FILE_ID = 0
 
 
-def compile_design(content: str, overrides: Mapping[str, float] | None = None) -> CompileResult:
+def compile_design(
+    content: str,
+    overrides: Mapping[str, float] | None = None,
+    *,
+    file_kind: str = "assembly",
+    file_id: int | None = None,
+    resolver: Callable[[str], FileSource | None] | None = None,
+) -> CompileResult:
     """编译结构 DSL：成功返回 IR，失败返回结构化诊断（不产出半截 IR，I6）.
 
-    ``overrides`` 为参数面板的实时覆盖（param 名 → 数值）；编译不通过时
-    ``ir`` 为 ``None``，调用方不得落库（I2）。
+    ``overrides`` 为参数面板的实时覆盖（param 名 → 数值）；``file_kind`` 为
+    根文件类型（part / assembly，part 禁止 system）；``resolver`` 按
+    ``file_key`` 返回被引用文件快照（ADR 0086 §2）。编译不通过时 ``ir`` 为
+    ``None``，调用方不得落库（I2）。
     """
+    closure = _Closure(resolver=resolver, root_id=file_id if file_id is not None else _ROOT_FILE_ID)
+    closure.files_seen.add(closure.root_id)
+    closure.stack.append(closure.root_id)
+    closure.total_bytes = len(content.encode("utf-8"))
+    if closure.total_bytes > MAX_CLOSURE_BYTES:
+        return _error_result(f"依赖闭包原文累计超过 {MAX_CLOSURE_BYTES // 1024}KB 上限", 1, 1)
     try:
-        ir = _compile(content, dict(overrides or {}))
-    except (DslSyntaxError, DslEvalError) as exc:
-        return CompileResult(
-            ok=False,
-            ir=None,
-            diagnostics=(Diagnostic(severity="error", line=exc.line, col=exc.col, message=exc.message),),
-        )
-    return CompileResult(ok=True, ir=ir, diagnostics=())
+        ir = _compile(content, dict(overrides or {}), file_kind=file_kind, closure=closure)
+    except (DslSyntaxError, DslEvalError, ConstraintError) as exc:
+        line = getattr(exc, "line", 1)
+        col = getattr(exc, "col", 1)
+        message = getattr(exc, "message", str(exc))
+        return _error_result(message, line, col)
+    warnings = ir.pop("_warnings", [])
+    diagnostics = tuple(Diagnostic(severity="warning", line=w[1], col=w[2], message=w[3]) for w in warnings)
+    dependencies = tuple(closure.deps[k] for k in sorted(closure.deps, key=lambda fid: closure.deps[fid].file_key))
+    return CompileResult(ok=True, ir=ir, diagnostics=diagnostics, dependencies=dependencies)
 
 
-# ── 语义编译 ─────────────────────────────────────────────
+def _error_result(message: str, line: int, col: int) -> CompileResult:
+    return CompileResult(
+        ok=False,
+        ir=None,
+        diagnostics=(Diagnostic(severity="error", line=line, col=col, message=message),),
+    )
 
 
-def _compile(content: str, overrides: dict[str, float]) -> dict[str, Any]:
+@dataclass
+class _Closure:
+    """依赖闭包的编译期共享状态：预算累计、依赖快照与跨文件编译缓存（I4）."""
+
+    resolver: Callable[[str], FileSource | None] | None
+    root_id: int
+    #: 已计入预算的文件（含根文件）
+    files_seen: set[int] = field(default_factory=set)
+    total_bytes: int = 0
+    module_count: int = 0
+    #: file_id → 依赖快照（不含根文件）
+    deps: dict[int, DependencySnapshot] = field(default_factory=dict)
+    #: (file_id, version, 参数覆盖) → (nodes, outline children) 模板（注入前深拷贝）
+    cache: dict[tuple[Any, ...], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = field(default_factory=dict)
+    #: 当前正在编译的文件链（循环引用检测；元素为 file_id）
+    stack: list[int] = field(default_factory=list)
+
+
+def _compile(content: str, overrides: dict[str, float], *, file_kind: str, closure: _Closure) -> dict[str, Any]:
     """词法 / 语法 / 语义三段编译；任何失败抛带位置的 DSL 异常."""
     if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
         raise DslEvalError(f"DSL 原文超过 {MAX_CONTENT_BYTES // 1024}KB 上限", 1, 1)
 
     program = parse_program(content)
+
+    if file_kind == "part" and program.systems:
+        bad = program.systems[0]
+        raise DslEvalError("part 文件不允许声明 system（系统请放装配文件）", bad.line, bad.col)
 
     if len(program.params) > MAX_PARAMS:
         bad = program.params[MAX_PARAMS]
@@ -91,7 +155,13 @@ def _compile(content: str, overrides: dict[str, float]) -> dict[str, Any]:
 
     env, params_out = _eval_params(program, overrides)
     modules, systems = _collect_decls(program)
-    nodes, outline = _Emitter(modules=modules, systems=systems, global_env=env).emit_top(program.items)
+    emitter = _Emitter(
+        modules=modules,
+        systems=systems,
+        global_env=env,
+        closure=closure,
+    )
+    nodes, outline, constraint_entries, warnings = emitter.emit_program(program, env)
 
     return {
         "version": IR_VERSION,
@@ -99,6 +169,8 @@ def _compile(content: str, overrides: dict[str, float]) -> dict[str, Any]:
         "params": params_out,
         "nodes": nodes,
         "outline": {"children": outline},
+        "constraints": constraint_entries,
+        "_warnings": warnings,
     }
 
 
@@ -299,32 +371,41 @@ _XfStack = tuple[tuple[str, list[float]], ...]
 
 
 class _Emitter:
-    """把 AST 实例展开为 IR 节点：模块递归、变换下推、图元上限计数."""
+    """把 AST 实例展开为 IR 节点：模块递归、变换下推、use 跨文件展开、图元上限计数."""
 
     def __init__(
         self,
         modules: dict[str, ModuleDecl],
         systems: dict[str, SystemDecl],
         global_env: dict[str, float],
+        closure: _Closure,
     ) -> None:
         self._modules = modules
         self._systems = systems
         self._global_env = global_env
+        self._closure = closure
         self._primitive_count = 0
 
-    def emit_top(self, items: tuple[ProgramItem, ...]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """按顶层语句顺序展开：声明跳过，实例与 ``system`` 体交错产出几何 / 大纲.
+    def emit_program(
+        self, program: Program, env: dict[str, float]
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[tuple[str, int, int, str]]]:
+        """按顶层语句顺序展开：实例进入顶层作用域，``system`` 体各自成约束作用域.
 
-        系统体经同一展开路径产出几何（``nodes`` 顺序 = 平铺顺序，ADR 0084 I2），
-        大纲侧包一层 ``system`` 节点（复杂系统级）。
+        返回 ``(nodes, outline, IR 约束记录, 警告)``；``system`` 是纯组织层——
+        几何平铺到顶层（ADR 0084 I2），大纲侧包一层 ``system`` 节点。
         """
         nodes: list[dict[str, Any]] = []
         outline: list[dict[str, Any]] = []
-        for item in items:
-            if isinstance(item, (ParamDecl, ModuleDecl)):
-                continue
+        entries: list[dict[str, Any]] = []
+        warnings: list[tuple[str, int, int, str]] = []
+        labels: dict[str, list[dict[str, Any]]] = {}
+        ordered: list[str] = []
+        poses: dict[str, Pose] = {}
+        for item in program.items:
             if isinstance(item, SystemDecl):
-                sys_nodes, sys_children = self._emit_instances(item.body, self._global_env, (), 0)
+                insts = tuple(i for i in item.body if isinstance(i, Instance))
+                cons = tuple(c for c in item.body if isinstance(c, ConstraintDecl))
+                sys_nodes, sys_children, sys_entries, sys_warnings = self.emit_scope(insts, cons, env, (), {}, [], {})
                 nodes.extend(sys_nodes)
                 outline.append(
                     {
@@ -335,25 +416,73 @@ class _Emitter:
                         "children": sys_children,
                     }
                 )
+                entries.extend(sys_entries)
+                warnings.extend(sys_warnings)
                 continue
-            inst_nodes, inst_outline = self._emit_instance(item, self._global_env, (), 0)
+            if isinstance(item, Instance):
+                inst_nodes, inst_outline = self._emit_instance(item, env, (), 0, labels, ordered, poses)
+                nodes.extend(inst_nodes)
+                outline.extend(inst_outline)
+        if program.constraints:
+            top_entries, top_warnings = solve_constraints(program.constraints, labels, ordered, poses, env)
+            entries.extend(top_entries)
+            warnings.extend(top_warnings)
+        return nodes, outline, entries, warnings
+
+    def emit_scope(
+        self,
+        instances: tuple[Instance, ...],
+        constraints: tuple[ConstraintDecl, ...],
+        env: dict[str, float],
+        xf: _XfStack,
+        labels: dict[str, list[dict[str, Any]]],
+        ordered: list[str],
+        poses: dict[str, Pose],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[tuple[str, int, int, str]]]:
+        """展开一个约束作用域（文件顶层或 system 体）并求解装配约束（ADR 0086 §3）.
+
+        返回 ``(nodes, outline 子节点, IR 约束记录, 警告)``；位姿下推在
+        ``solve_constraints`` 内原地完成。``labels`` / ``ordered`` / ``poses``
+        由调用方持有（顶层作用域跨语句累计）。
+        """
+        nodes: list[dict[str, Any]] = []
+        outline: list[dict[str, Any]] = []
+        for inst in instances:
+            inst_nodes, inst_outline = self._emit_instance(inst, env, xf, 0, labels, ordered, poses)
             nodes.extend(inst_nodes)
             outline.extend(inst_outline)
-        return nodes, outline
+        if not constraints:
+            return nodes, outline, [], []
+        entries, warnings = solve_constraints(constraints, labels, ordered, poses, env)
+        return nodes, outline, entries, warnings
 
     def _emit_instances(
-        self, instances: tuple[Instance, ...], env: dict[str, float], xf: _XfStack, depth: int
+        self,
+        instances: tuple[Instance, ...],
+        env: dict[str, float],
+        xf: _XfStack,
+        depth: int,
+        labels: dict[str, list[dict[str, Any]]],
+        ordered: list[str],
+        poses: dict[str, Pose],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         nodes: list[dict[str, Any]] = []
         outline: list[dict[str, Any]] = []
         for inst in instances:
-            inst_nodes, inst_outline = self._emit_instance(inst, env, xf, depth)
+            inst_nodes, inst_outline = self._emit_instance(inst, env, xf, depth, labels, ordered, poses)
             nodes.extend(inst_nodes)
             outline.extend(inst_outline)
         return nodes, outline
 
     def _emit_instance(
-        self, inst: Instance, env: dict[str, float], xf: _XfStack, depth: int
+        self,
+        inst: Instance,
+        env: dict[str, float],
+        xf: _XfStack,
+        depth: int,
+        labels: dict[str, list[dict[str, Any]]],
+        ordered: list[str],
+        poses: dict[str, Pose],
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """展开单个实例：同时产出几何节点与大纲节点（ADR 0083 D3）."""
         if isinstance(inst, PrimitiveCall):
@@ -367,13 +496,18 @@ class _Emitter:
                 "col": inst.col,
                 "children": children,
             }
+            self._register_label(inst.label, nodes, xf, labels, ordered, poses, inst.line, inst.col)
+            if inst.label:
+                assembly["label"] = inst.label
             return nodes, [assembly]
+        if isinstance(inst, UseCall):
+            return self._emit_use_call(inst, env, xf, labels, ordered, poses)
         if isinstance(inst, TransformCall):
             # 变换透明穿透：不建大纲节点，其子实例保持在当前父节点层级
             vector = [eval_expr(item, env) for item in inst.vector]
-            return self._emit_instances(inst.children, env, (*xf, (inst.kind, vector)), depth)
+            return self._emit_instances(inst.children, env, (*xf, (inst.kind, vector)), depth, labels, ordered, poses)
         # BooleanCall：children 一定非空（语法层已保证）
-        nodes, children = self._emit_instances(inst.children, env, xf, depth)
+        nodes, children = self._emit_instances(inst.children, env, xf, depth, labels, ordered, poses)
         group = {
             "kind": "group",
             "op": inst.kind,
@@ -382,6 +516,114 @@ class _Emitter:
             "children": children,
         }
         return [{"op": inst.kind, "children": nodes}], [group]
+
+    def _register_label(
+        self,
+        label: str | None,
+        nodes: list[dict[str, Any]],
+        xf: _XfStack,
+        labels: dict[str, list[dict[str, Any]]],
+        ordered: list[str],
+        poses: dict[str, Pose],
+        line: int,
+        col: int,
+    ) -> None:
+        """登记带标签组件：约束作用域内标签唯一（ADR 0086 D4）."""
+        if label is None:
+            return
+        if label in labels:
+            raise DslEvalError(f"重复的实例标签 '{label}'（同作用域内须唯一）", line, col)
+        labels[label] = nodes
+        ordered.append(label)
+        poses[label] = authored_pose(xf)
+
+    def _emit_use_call(
+        self,
+        call: UseCall,
+        env: dict[str, float],
+        xf: _XfStack,
+        labels: dict[str, list[dict[str, Any]]],
+        ordered: list[str],
+        poses: dict[str, Pose],
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """分文件零件引用：解析 → 预算 → 递归编译 → 深拷贝注入并标注来源（ADR 0086 §2）."""
+        source = self._resolve_source(call)
+        bindings = self._bind_use_args(source, call, env)
+        key = (source.file_id, source.version_number, tuple(sorted(bindings.items())))
+        cached = self._closure.cache.get(key)
+        if cached is None:
+            nodes, children = _compile_file_source(source, bindings, self._closure, call)
+            # 模板存深拷贝：原节点随后会被引用方变换 / 约束位姿原地修改
+            self._closure.cache[key] = (copy.deepcopy(nodes), copy.deepcopy(children))
+        else:
+            nodes, children = copy.deepcopy(cached[0]), copy.deepcopy(cached[1])
+        if xf:
+            _prepend_xf(nodes, xf)
+        name = call.label or source.file_key
+        assembly = {
+            "kind": "assembly",
+            "name": name,
+            "line": call.line,
+            "col": call.col,
+            "file_id": source.file_id,
+            "ref": {"file_id": source.file_id, "file_key": source.file_key, "kind": source.kind},
+            "children": _stamp_file_id(children, source.file_id),
+        }
+        self._register_label(call.label, nodes, xf, labels, ordered, poses, call.line, call.col)
+        if call.label:
+            assembly["label"] = call.label
+        return nodes, [assembly]
+
+    def _resolve_source(self, call: UseCall) -> FileSource:
+        """按 file_key 解析被引用文件：缺失 / 非 part / 循环 / 预算超限均报错（I2/I4）."""
+        if self._closure.resolver is None:
+            raise DslEvalError("当前编译未提供文件解析器，无法使用 use 引用", call.line, call.col)
+        if len(self._closure.stack) > MAX_REF_DEPTH:
+            raise DslEvalError(f"跨文件引用深度超过上限 {MAX_REF_DEPTH}", call.line, call.col)
+        source = self._closure.resolver(call.file_key)
+        if source is None:
+            raise DslEvalError(f"未找到引用的文件 '{call.file_key}'", call.line, call.col)
+        if source.kind != "part":
+            raise DslEvalError(f"use 目标必须是 part 文件（'{call.file_key}' 是 {source.kind}）", call.line, call.col)
+        if source.file_id in self._closure.stack:
+            chain = " → ".join([*map(str, self._closure.stack), str(source.file_id)])
+            raise DslEvalError(f"循环引用：{chain}", call.line, call.col)
+        if source.file_id not in self._closure.files_seen:
+            self._closure.files_seen.add(source.file_id)
+            if len(self._closure.files_seen) > MAX_CLOSURE_FILES:
+                raise DslEvalError(f"依赖闭包文件数超过上限 {MAX_CLOSURE_FILES}", call.line, call.col)
+            self._closure.total_bytes += len(source.content.encode("utf-8"))
+            if self._closure.total_bytes > MAX_CLOSURE_BYTES:
+                raise DslEvalError(f"依赖闭包原文累计超过 {MAX_CLOSURE_BYTES // 1024}KB 上限", call.line, call.col)
+            self._closure.deps[source.file_id] = DependencySnapshot(
+                file_id=source.file_id,
+                file_key=source.file_key,
+                version_number=source.version_number,
+                content_hash=hashlib.sha256(source.content.encode("utf-8")).hexdigest(),
+            )
+        return source
+
+    def _bind_use_args(self, source: FileSource, call: UseCall, env: dict[str, float]) -> dict[str, float]:
+        """把 use 实参绑定为被引用文件的 param 覆盖（位置按序 + 命名对名）."""
+        program = parse_program(source.content)
+        param_names = [p.name for p in program.params]
+        if len(call.positional) > len(param_names):
+            raise DslEvalError(
+                f"文件 '{source.file_key}' 最多接收 {len(param_names)} 个参数，实为 {len(call.positional)}",
+                call.line,
+                call.col,
+            )
+        bindings: dict[str, float] = {}
+        for i, expr in enumerate(call.positional):
+            bindings[param_names[i]] = eval_expr(expr, env)
+        declared = set(param_names)
+        for name, expr in call.named.items():
+            if name not in declared:
+                raise DslEvalError(f"文件 '{source.file_key}' 没有参数 '{name}'", call.line, call.col)
+            if name in bindings:
+                raise DslEvalError(f"文件 '{source.file_key}' 的参数 '{name}' 重复绑定", call.line, call.col)
+            bindings[name] = eval_expr(expr, env)
+        return bindings
 
     def _emit_primitive(self, call: PrimitiveCall, env: dict[str, float], xf: _XfStack) -> dict[str, Any]:
         """校验图元参数并构造 IR 节点（带变换栈下推）."""
@@ -410,7 +652,7 @@ class _Emitter:
         bindings = self._bind_module_args(decl, call, env)
         module_env = dict(self._global_env)
         module_env.update(bindings)
-        return self._emit_instances(decl.body, module_env, xf, depth + 1)
+        return self._emit_instances(decl.body, module_env, xf, depth + 1, {}, [], {})
 
     def _bind_module_args(self, decl: ModuleDecl, call: ModuleCall, env: dict[str, float]) -> dict[str, float]:
         """绑模块实参：位置按序、命名对名、缺省取默认值（重复绑定报错）.
@@ -448,6 +690,77 @@ class _Emitter:
             bindings[param.name] = value
             default_env[param.name] = value
         return bindings
+
+
+def _compile_file_source(
+    source: FileSource,
+    bindings: dict[str, float],
+    closure: _Closure,
+    call: UseCall,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """递归编译被引用 part 文件，返回 (nodes, outline 子节点) 模板（ADR 0086 §2）."""
+    closure.stack.append(source.file_id)
+    try:
+        if len(source.content.encode("utf-8")) > MAX_CONTENT_BYTES:
+            raise DslEvalError(f"DSL 原文超过 {MAX_CONTENT_BYTES // 1024}KB 上限", call.line, call.col)
+        program = parse_program(source.content)
+        if program.systems:
+            bad = program.systems[0]
+            raise DslEvalError(f"part 文件 '{source.file_key}' 不允许声明 system", bad.line, bad.col)
+        closure.module_count += len(program.modules) + len(program.systems)
+        if closure.module_count > MAX_CLOSURE_MODULES:
+            raise DslEvalError(f"依赖闭包 module / system 声明数超过上限 {MAX_CLOSURE_MODULES}", call.line, call.col)
+        if len(program.params) > MAX_PARAMS:
+            bad = program.params[MAX_PARAMS]
+            raise DslEvalError(f"param 数量超过上限 {MAX_PARAMS}", bad.line, bad.col)
+        decls = [item for item in program.items if isinstance(item, (ModuleDecl, SystemDecl))]
+        if len(decls) > MAX_MODULES:
+            bad = decls[MAX_MODULES]
+            raise DslEvalError(f"module / system 声明数量超过上限 {MAX_MODULES}", bad.line, bad.col)
+
+        env, _params_out = _eval_params(program, bindings)
+        modules, _systems = _collect_decls(program)
+        emitter = _Emitter(
+            modules=modules,
+            systems=_systems,
+            global_env=env,
+            closure=closure,
+        )
+        top_instances = [item for item in program.items if isinstance(item, Instance)]
+        nodes, outline, _entries, _warnings = emitter.emit_scope(
+            tuple(top_instances), program.constraints, env, (), {}, [], {}
+        )
+        return nodes, outline
+    finally:
+        closure.stack.pop()
+
+
+def _prepend_xf(nodes: list[dict[str, Any]], xf: _XfStack) -> None:
+    """把引用方的变换栈前插到被引用文件全部图元叶子（先外后内序保持）."""
+    ops = [[kind, list(vector)] for kind, vector in xf]
+    for node in nodes:
+        _prepend_xf_node(node, ops)
+
+
+def _prepend_xf_node(node: dict[str, Any], ops: list[list[Any]]) -> None:
+    if "children" in node:
+        for child in node["children"]:
+            _prepend_xf_node(child, ops)
+        return
+    existing = (node.get("transform") or {}).get("ops", [])
+    node["transform"] = {"ops": [*ops, *existing]}
+
+
+def _stamp_file_id(outline: list[dict[str, Any]], file_id: int) -> list[dict[str, Any]]:
+    """递归给大纲子树标注源文件 id（前端按 file_id 打开源文件，ADR 0086 C7）.
+
+    已带 ``file_id`` 的节点（嵌套 use 的更深层文件）保持原值不覆盖。
+    """
+    for node in outline:
+        node.setdefault("file_id", file_id)
+        if node.get("children"):
+            _stamp_file_id(node["children"], file_id)
+    return outline
 
 
 __all__ = [

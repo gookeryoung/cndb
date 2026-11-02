@@ -25,15 +25,25 @@ from cndb.plugins.design.services.dsl.nodes import SystemDecl
 from cndb.plugins.design.services.dsl.parse import parse_program
 
 
-def _ok(content: str, overrides: dict[str, float] | None = None) -> dict[str, Any]:
-    result = compile_design(content, overrides)
+def _ok(
+    content: str,
+    overrides: dict[str, float] | None = None,
+    *,
+    resolver=None,
+) -> dict[str, Any]:
+    result = compile_design(content, overrides, resolver=resolver)
     assert result.ok, [d.message for d in result.diagnostics]
     assert result.ir is not None
     return result.ir
 
 
-def _err(content: str, overrides: dict[str, float] | None = None) -> Diagnostic:
-    result = compile_design(content, overrides)
+def _err(
+    content: str,
+    overrides: dict[str, float] | None = None,
+    *,
+    resolver=None,
+) -> Diagnostic:
+    result = compile_design(content, overrides, resolver=resolver)
     assert not result.ok
     assert result.ir is None
     assert result.diagnostics
@@ -214,7 +224,8 @@ class TestParser:
 class TestCompileBasics:
     def test_full_example_ir(self):
         ir = _ok(_EXAMPLE)
-        assert ir["version"] == 3
+        assert ir["version"] == 4
+        assert ir["constraints"] == []
         assert ir["units"] == {"length": "mm", "angle": "deg"}
         assert ir["params"] == [
             {"name": "width", "value": 80},
@@ -873,3 +884,264 @@ class TestSystem:
         first = json.dumps(_ok(_SYSTEM_EXAMPLE), sort_keys=True)
         second = json.dumps(_ok(_SYSTEM_EXAMPLE), sort_keys=True)
         assert first == second
+
+
+# ── 分文件引用 use（ADR 0086 P0） ────────────────────────
+
+
+def _make_resolver(files: dict[str, tuple[int, str]]):
+    """构造 resolver：file_key → (file_id, content)；kind 固定 part."""
+    from cndb.plugins.design.services.dsl.nodes import FileSource
+
+    def resolve(key: str):
+        if key not in files:
+            return None
+        file_id, content = files[key]
+        return FileSource(
+            file_id=file_id,
+            file_key=key,
+            kind="part",
+            content=content,
+            version_number=1,
+            content_hash="",
+        )
+
+    return resolve
+
+
+def _outline_children(ir: dict[str, Any]) -> list[dict[str, Any]]:
+    return ir["outline"]["children"]
+
+
+class TestUseCall:
+    _WHEEL = "param d = 40\ncyl(d = d, h = 16)\n"
+
+    def test_use_expands_part_file(self):
+        resolver = _make_resolver({"wheel": (11, self._WHEEL)})
+        ir = _ok('use "wheel"(d = 30) as w1', resolver=resolver)
+        assert ir["nodes"] == [{"op": "cyl", "d": 30.0, "h": 16, "fn": 64}]
+        (outline,) = _outline_children(ir)
+        assert outline["kind"] == "assembly"
+        assert outline["name"] == "w1"
+        assert outline["ref"] == {"file_id": 11, "file_key": "wheel", "kind": "part"}
+        assert outline["file_id"] == 11
+
+    def test_use_without_label_keeps_author_pose(self):
+        resolver = _make_resolver({"wheel": (11, "cyl(d = 10, h = 5)\n")})
+        ir = _ok('use "wheel"', resolver=resolver)
+        assert ir["nodes"] == [{"op": "cyl", "d": 10, "h": 5, "fn": 64}]
+
+    def test_use_multiple_instances_independent(self):
+        resolver = _make_resolver({"wheel": (11, self._WHEEL)})
+        ir = _ok('use "wheel"(d = 30) as a\nuse "wheel"(d = 50) as b', resolver=resolver)
+        assert [n["d"] for n in ir["nodes"]] == [30.0, 50.0]
+
+    def test_use_missing_file_errors(self):
+        diag = _err('use "ghost"', resolver=_make_resolver({}))
+        assert "ghost" in diag.message
+
+    def test_use_unknown_param_errors(self):
+        resolver = _make_resolver({"wheel": (11, "cyl(d = 10, h = 5)\n")})
+        diag = _err('use "wheel"(x = 1)', resolver=resolver)
+        assert "x" in diag.message
+
+    def test_use_positional_and_named(self):
+        resolver = _make_resolver({"p": (11, "param a = 1\nparam b = 2\nbox(w = a, h = b, d = 3)\n")})
+        ir = _ok('use "p"(10, b = 20)', resolver=resolver)
+        assert ir["nodes"][0]["size"] == [10.0, 20.0, 3.0]
+
+    def test_use_without_resolver_errors(self):
+        diag = _err('use "wheel"')
+        assert "解析器" in diag.message
+
+    def test_use_transform_wraps_part(self):
+        resolver = _make_resolver({"wheel": (11, "cyl(d = 10, h = 5)\n")})
+        ir = _ok('translate([5, 0, 0]) use "wheel"', resolver=resolver)
+        assert ir["nodes"][0]["transform"]["ops"] == [["translate", [5, 0, 0]]]
+
+    def test_use_nested_part_reference(self):
+        resolver = _make_resolver(
+            {
+                "inner": (12, "box(w = 1, h = 1, d = 1)\n"),
+                "outer": (13, 'use "inner" as i\ncyl(d = 2, h = 2)\n'),
+            }
+        )
+        ir = _ok('use "outer" as o', resolver=resolver)
+        assert len(ir["nodes"]) == 2
+        (outline,) = _outline_children(ir)
+        assert outline["children"][0]["file_id"] == 12
+
+    def test_dependencies_snapshot_recorded(self):
+        resolver = _make_resolver({"wheel": (11, "cyl(d = 10, h = 5)\n"), "axle": (12, "box(w = 1, h = 1, d = 1)\n")})
+        result = compile_design('use "wheel" as a\nuse "axle" as b', resolver=resolver)
+        assert result.ok
+        keys = {d.file_key: d.file_id for d in result.dependencies}
+        assert keys == {"wheel": 11, "axle": 12}
+
+    def test_closure_budget_files(self):
+        from cndb.plugins.design.services.dsl import limits
+
+        count = limits.MAX_CLOSURE_FILES + 2
+        files = {f"p{i}": (1000 + i, "box(w = 1, h = 1, d = 1)\n") for i in range(count)}
+        content = "\n".join(f'use "p{i}" as c{i}' for i in range(count))
+        diag = _err(content, resolver=_make_resolver(files))
+        assert "上限" in diag.message
+
+    def test_closure_budget_bytes(self):
+        big = "box(w = 1, h = 1, d = 1)\n" * 40000  # 约 1MB
+        diag = _err('use "big"', resolver=_make_resolver({"big": (1, big)}))
+        assert "上限" in diag.message
+
+    def test_ref_depth_limit(self):
+        files: dict[str, tuple[int, str]] = {}
+        for i in range(12):
+            body = "box(w = 1, h = 1, d = 1)\n" if i == 0 else f'use "p{i - 1}" as c\nbox(w = 1, h = 1, d = 1)\n'
+            files[f"p{i}"] = (100 + i, body)
+        diag = _err('use "p11"', resolver=_make_resolver(files))
+        assert "深度" in diag.message
+
+    def test_circular_reference_detected(self):
+        files = {
+            "a": (1, 'use "b" as x\nbox(w = 1, h = 1, d = 1)\n'),
+            "b": (2, 'use "a" as y\nbox(w = 1, h = 1, d = 1)\n'),
+        }
+        diag = _err('use "a"', resolver=_make_resolver(files))
+        assert "循环引用" in diag.message
+
+    def test_part_file_cannot_declare_system(self):
+        diag = _err('use "p"', resolver=_make_resolver({"p": (1, "system s { box(w = 1, h = 1, d = 1) }\n")}))
+        assert "system" in diag.message
+
+    def test_use_compile_is_deterministic(self):
+        resolver = _make_resolver({"wheel": (11, self._WHEEL)})
+        content = 'use "wheel"(d = 30) as w1'
+        first = json.dumps(_ok(content, resolver=resolver), sort_keys=True)
+        second = json.dumps(_ok(content, resolver=resolver), sort_keys=True)
+        assert first == second
+
+
+# ── 装配约束（ADR 0086 P0） ──────────────────────────────
+
+_PART_WHEEL = "param d = 40\ncyl(d = d, h = 16)\n"
+_PART_AXLE = "cyl(d = 10, h = 80)\n"
+
+
+def _two_parts_resolver():
+    return _make_resolver({"wheel": (11, _PART_WHEEL), "axle": (12, _PART_AXLE)})
+
+
+class TestConstraints:
+    def test_fixed_keeps_author_pose(self):
+        ir = _ok(
+            'use "wheel"(d = 30) as w\nconstraint c1 fixed(a = w.origin)',
+            resolver=_two_parts_resolver(),
+        )
+        # wheel 的原点即图元原点：fixed 不加变换
+        assert ir["nodes"][0] == {"op": "cyl", "d": 30.0, "h": 16, "fn": 64}
+
+    def test_coincident_moves_second(self):
+        ir = _ok(
+            'use "wheel" as w\nuse "axle" as a\n'
+            "constraint c1 fixed(a = w.origin)\n"
+            "constraint c2 coincident(a = w.origin, b = a.origin, offset = [0, 0, 12])",
+            resolver=_two_parts_resolver(),
+        )
+        assert ir["nodes"][1]["transform"]["ops"] == [["translate", [0, 0, 12]]]
+        (entry,) = [c for c in ir["constraints"] if c["id"] == "c2"]
+        assert entry["status"] == "ok"
+
+    def test_distance_positions_by_value(self):
+        ir = _ok(
+            'use "wheel" as w\nuse "axle" as a\n'
+            "constraint c1 fixed(a = w.origin)\n"
+            "constraint c2 distance(a = w.origin, b = a.origin, value = 40)",
+            resolver=_two_parts_resolver(),
+        )
+        # 缺省方向 +Z：平移 40
+        assert ir["nodes"][1]["transform"]["ops"] == [["translate", [0.0, 0.0, 40.0]]]
+
+    def test_concentric_aligns_axes(self):
+        ir = _ok(
+            'use "wheel" as w\nrotate([90, 0, 0]) use "axle" as a\n'
+            "constraint c1 fixed(a = w.origin)\n"
+            "constraint c2 concentric(a = w.z, b = a.z)",
+            resolver=_two_parts_resolver(),
+        )
+        # a 的 z 轴被转到 X 向，concentric 需旋回与 w.z 平行
+        ops = ir["nodes"][1]["transform"]["ops"]
+        assert any(op[0] == "rotate" for op in ops)
+
+    def test_conflict_errors(self):
+        diag = _err(
+            'use "wheel" as w\nuse "axle" as a\n'
+            "constraint c1 fixed(a = w.origin)\n"
+            "constraint c2 coincident(a = w.origin, b = a.origin, offset = [0, 0, 12])\n"
+            "constraint c3 distance(a = w.origin, b = a.origin, value = 40)",
+            resolver=_two_parts_resolver(),
+        )
+        assert "冲突" in diag.message
+
+    def test_duplicate_label_errors(self):
+        diag = _err(
+            'use "wheel" as w\nuse "axle" as w',
+            resolver=_two_parts_resolver(),
+        )
+        assert "标签" in diag.message
+
+    def test_unknown_label_reference_errors(self):
+        diag = _err(
+            'use "wheel" as w\nconstraint c1 fixed(a = ghost.origin)',
+            resolver=_two_parts_resolver(),
+        )
+        assert "ghost" in diag.message
+
+    def test_angle_requires_axis_anchor(self):
+        diag = _err(
+            'use "wheel" as w\nuse "axle" as a\nconstraint c1 angle(a = w.origin, b = a.origin, value = 90)',
+            resolver=_two_parts_resolver(),
+        )
+        assert "轴向" in diag.message
+
+    def test_underconstrained_warning(self):
+        result = compile_design(
+            'use "wheel" as w\nuse "axle" as a\nconstraint c1 distance(a = w.origin, b = a.origin, value = 40)',
+            resolver=_two_parts_resolver(),
+        )
+        assert result.ok
+        assert any(d.severity == "warning" for d in result.diagnostics)
+        (entry,) = result.ir["constraints"]
+        assert entry["status"] == "warning"
+
+    def test_constraints_inside_system_scope(self):
+        ir = _ok(
+            'use "wheel" as w\nuse "axle" as a\n'
+            "system chassis {\n"
+            '  use "wheel" as w2\n'
+            '  use "axle" as a2\n'
+            "  constraint c1 fixed(a = w2.origin)\n"
+            "  constraint c2 coincident(a = w2.origin, b = a2.origin, offset = [0, 0, 5])\n"
+            "}\n",
+            resolver=_two_parts_resolver(),
+        )
+        # system 内约束只作用于该作用域；顶层实例保持作者位姿
+        assert ir["nodes"][0] == {"op": "cyl", "d": 40, "h": 16, "fn": 64}
+        assert ir["nodes"][1] == {"op": "cyl", "d": 10, "h": 80, "fn": 64}
+        assert len(ir["constraints"]) == 2
+
+    def test_constraint_compile_is_deterministic(self):
+        content = (
+            'use "wheel" as w\nuse "axle" as a\n'
+            "constraint c1 fixed(a = w.origin)\n"
+            "constraint c2 coincident(a = w.origin, b = a.origin, offset = [0, 0, 12])"
+        )
+        first = json.dumps(_ok(content, resolver=_two_parts_resolver()), sort_keys=True)
+        second = json.dumps(_ok(content, resolver=_two_parts_resolver()), sort_keys=True)
+        assert first == second
+
+    def test_unlabeled_instances_keep_author_pose(self):
+        ir = _ok(
+            'use "wheel"\nuse "axle"\nbox(w = 1, h = 1, d = 1)',
+            resolver=_two_parts_resolver(),
+        )
+        assert ir["constraints"] == []
+        assert ir["nodes"][0] == {"op": "cyl", "d": 40, "h": 16, "fn": 64}

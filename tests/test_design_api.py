@@ -78,7 +78,7 @@ class TestCreate:
         body = resp.json()
         assert body["title"] == "法兰板"
         assert body["version_number"] == 1
-        assert body["compiled"]["version"] == 3
+        assert body["compiled"]["version"] == 4
         assert body["compiled"]["units"] == {"length": "mm", "angle": "deg"}
         assert body["compiled"]["nodes"], "顶层实例应产出几何"
         # 创建即落 v1

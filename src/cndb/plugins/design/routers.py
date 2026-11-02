@@ -35,6 +35,7 @@ from cndb.plugins.design.schemas import (
     PreviewResponse,
 )
 from cndb.plugins.design.services.dsl.compile import IR_VERSION, CompileResult, compile_design
+from cndb.plugins.design.services.keys import generate_file_key
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
 
@@ -204,6 +205,7 @@ def create_design(
     design = DesignDesign(
         workspace_id=workspace_id,
         title=payload.title,
+        file_key=generate_file_key(db, workspace_id, payload.title),
         content=payload.content,
         compiled=ir,
         description=payload.description,

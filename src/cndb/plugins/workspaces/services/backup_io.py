@@ -1138,6 +1138,7 @@ def _import_designs(
     """
     from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
     from cndb.plugins.design.services.dsl.compile import compile_design
+    from cndb.plugins.design.services.keys import generate_file_key
 
     items = json_data.get("designs") or []
     if not items:
@@ -1166,6 +1167,7 @@ def _import_designs(
         design = DesignDesign(
             workspace_id=workspace_id,
             title=title,
+            file_key=generate_file_key(db, workspace_id, title, preferred=str(item.get("file_key") or "")),
             content=content,
             compiled=result.ir or {"version": 1, "nodes": []},
             description=str(item.get("description") or ""),

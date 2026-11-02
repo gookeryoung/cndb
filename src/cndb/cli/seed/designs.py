@@ -27,6 +27,7 @@ def _seed_designs(
     """
     from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
     from cndb.plugins.design.services.dsl.compile import compile_design
+    from cndb.plugins.design.services.keys import generate_file_key
 
     if datasets_dir is None:
         print("[seed-设计] examples/datasets 目录不存在，跳过设计注入")
@@ -66,6 +67,7 @@ def _seed_designs(
             design = DesignDesign(
                 workspace_id=ws.id,
                 title=title,
+                file_key=generate_file_key(db, ws.id, title),
                 content=content,
                 compiled=ir,
                 created_by_id=user.id if user is not None else None,
