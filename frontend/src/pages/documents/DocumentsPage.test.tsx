@@ -76,6 +76,9 @@ describe('DocumentsPage 顶层系列卡片总览', () => {
     expect(screen.getByText('草稿 1')).toBeInTheDocument()
     // 树中「需求说明」为子级文档，不进顶层列表（mock 无根级散文档）
     expect(screen.queryByText('需求说明')).toBeNull()
+    // 文件夹与文档分块：顶层只有文件夹块（无根级散文档）
+    expect(screen.getByTestId('doc-folder-block')).toBeInTheDocument()
+    expect(screen.queryByTestId('doc-file-block')).toBeNull()
   })
 
   it('点击系列卡片进入文件夹：列表展示子项', async () => {
@@ -88,9 +91,18 @@ describe('DocumentsPage 顶层系列卡片总览', () => {
 
     fireEvent.click(await screen.findByTestId('doc-series-card-1'))
 
-    // 子级列表渲染（list 端点按 parent_id=1 过滤）
+    // 子级列表渲染（list 端点按 parent_id=1 过滤），文件夹 / 文档分块展示
     expect(await screen.findByText('需求说明')).toBeInTheDocument()
     expect(screen.getByText('会议纪要')).toBeInTheDocument()
+    const folderBlock = screen.getByTestId('doc-subfolder-block')
+    const fileBlock = screen.getByTestId('doc-file-block')
+    expect(within(folderBlock).getByText('会议纪要')).toBeInTheDocument()
+    expect(within(folderBlock).queryByText('需求说明')).toBeNull()
+    expect(within(fileBlock).getByText('需求说明')).toBeInTheDocument()
+    expect(within(fileBlock).queryByText('会议纪要')).toBeNull()
+    expect(within(folderBlock).getByText('文件夹')).toBeInTheDocument()
+    expect(within(folderBlock).getByText('1 项')).toBeInTheDocument()
+    expect(within(fileBlock).getByText('文档')).toBeInTheDocument()
     // 系列卡片网格退场
     expect(screen.queryByTestId('doc-series-card-1')).toBeNull()
   })

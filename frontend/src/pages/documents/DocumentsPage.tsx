@@ -70,6 +70,16 @@ const { Text } = Typography
 export { buildSeriesStats, seriesStatsOf } from './seriesStats'
 export type { SeriesSummary } from './seriesStats'
 
+/** 内容区分块标题：文件夹 / 文档分块，附数量，便于一眼区分两类条目 */
+function SectionTitle({ label, count }: { label: string; count: number }) {
+  return (
+    <div data-testid="doc-section-title" style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+      <Text strong>{label}</Text>
+      <Text type="secondary" style={{ fontSize: 12 }}>{count} 项</Text>
+    </div>
+  )
+}
+
 export default function DocumentsPage() {
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
@@ -377,6 +387,16 @@ export default function DocumentsPage() {
     return sortFlatByDocSort(raw, docSort)
   }, [filtered, parentId, treeQuery.data, titleKeyword, statusFilter, tagFilter, docSort])
 
+  // 子级内容分块：文件夹与文档分开渲染，避免混排难区分（顶层文件夹由上方系列卡片承载）
+  const subFolders = useMemo(
+    () => (parentId !== null ? listItems.filter(d => d.is_folder) : []),
+    [parentId, listItems],
+  )
+  const fileItems = useMemo(
+    () => (parentId !== null ? listItems.filter(d => !d.is_folder) : listItems),
+    [parentId, listItems],
+  )
+
   /** 当前层级**可见**的可选项（根层为系列卡片 + 散文档，子层为列表项）：全选与已选统计只用它 */
   const selectableIds = useMemo(
     () =>
@@ -546,300 +566,8 @@ export default function DocumentsPage() {
     { key: 'trash', icon: <DeleteOutlined />, label: '回收站', onClick: () => setTrashOpen(true) },
   ]
 
-  return (
-    <div style={{ padding: isMobile ? 12 : 16 }}>
-      {/* 工具栏 */}
-      {isMobile ? (
-        <div data-testid="doc-toolbar-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-          {/* 第一行：返回 + 面包屑 + 更多（导航行常驻） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-            {mobileUpButton}
-            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>{breadcrumbNode}</div>
-            <Dropdown menu={{ items: mobileToolbarMenu }} trigger={['click']} placement="bottomRight">
-              <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
-            </Dropdown>
-          </div>
-          {/* 第二行：排序 + 搜索 + 标签/状态筛选 + 新建（排序与侧栏共享偏好，需求 0065） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            {renderSortButton('doc-content-sort')}
-            {renderSearchInput({ flex: 1, minWidth: 120 })}
-            {renderTagSelect({ width: 110 })}
-            {renderStatusSelect({ width: 100 })}
-            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建</Button>
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
-          <Space wrap>
-            {upButton}
-            {breadcrumbNode}
-          </Space>
-          <Space wrap>
-            {renderSortButton('doc-content-sort')}
-            {renderSearchInput({ width: 180 })}
-            {renderTagSelect({ width: 130 })}
-            {renderStatusSelect({ width: 110 })}
-            <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
-              回收站
-            </Button>
-            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
-            <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
-            {/* 导入导出按钮组：紧凑并排，避免两个独立按钮占用过多横向空间 */}
-            <Space.Compact>
-              <Tooltip title="导入：本地文件（Markdown / Word / HTML）单文件或整个文件夹，或整个 Obsidian 库（.zip），自动转 Markdown 并清理排版">
-                <Button
-                  icon={<ImportOutlined />}
-                  data-testid="doc-file-import"
-                  onClick={() => setFileImportOpen(true)}
-                >
-                  导入
-                </Button>
-              </Tooltip>
-              <Tooltip title="导出当前工作区文档树：文件夹（Markdown 压缩包）或 Obsidian 库（.zip）">
-                <Button
-                  icon={<ExportOutlined />}
-                  data-testid="doc-vault-export"
-                  onClick={() => setExportOpen(true)}
-                >
-                  导出
-                </Button>
-              </Tooltip>
-            </Space.Compact>
-          </Space>
-        </div>
-      )}
-
-      {/* 最近打开：本地历史，仅在根层展示；点标题直接进编辑器 */}
-      {parentId === null && recentDocs.length > 0 && (
-        <div className="cn-doc-recent" data-testid="doc-recent">
-          <Space size={4} wrap>
-            <ClockCircleOutlined style={{ color: 'var(--cn-text-muted)' }} />
-            <Text type="secondary" style={{ fontSize: 12 }}>最近打开</Text>
-            {recentDocs.map(it => (
-              <Button
-                key={it.id}
-                type="text"
-                size="small"
-                data-testid={`doc-recent-${it.id}`}
-                onClick={() => navigate(`/w/${workspaceId}/documents/${it.id}`)}
-              >
-                {it.title}
-              </Button>
-            ))}
-            <Button
-              type="text"
-              size="small"
-              data-testid="doc-recent-clear"
-              onClick={() => {
-                clearRecentDocs(workspaceId)
-                setRecentVersion(v => v + 1)
-              }}
-            >
-              清除
-            </Button>
-          </Space>
-        </div>
-      )}
-
-      {/* 批量操作栏：选中任意项后出现 */}
-      {selectedIds.length > 0 && (
-        <div className="cn-doc-batch-bar" data-testid="doc-batch-bar">
-          <Space size={12} wrap>
-            <Checkbox
-              checked={allSelected}
-              indeterminate={selectedIds.length > 0 && !allSelected}
-              data-testid="doc-batch-select-all"
-              onChange={e => setSelectedIds(e.target.checked ? selectableIds : [])}
-            >
-              全选
-            </Checkbox>
-            <Text type="secondary">已选 {selectedIds.length} 项</Text>
-            <Button
-              icon={<ApartmentOutlined />}
-              data-testid="doc-batch-move"
-              onClick={() => {
-                setBatchMoveTarget(parentId ?? 0)
-                setBatchMoveOpen(true)
-              }}
-            >
-              移动到…
-            </Button>
-            <Popconfirm
-              title={`删除选中的 ${selectedIds.length} 项？`}
-              description="文件夹将连同其中所有文档一起移入回收站。"
-              okText="删除"
-              okType="danger"
-              cancelText="取消"
-              onConfirm={() => batchMut.mutate({ action: 'delete', ids: selectedIds })}
-            >
-              <Button danger icon={<DeleteOutlined />} data-testid="doc-batch-delete" loading={batchMut.isPending}>
-                批量删除
-              </Button>
-            </Popconfirm>
-            <Button type="text" data-testid="doc-batch-clear" onClick={() => setSelectedIds([])}>
-              取消选择
-            </Button>
-          </Space>
-        </div>
-      )}
-
-      {/* 顶层：系列卡片网格（顶层文件夹即系列）；按标签筛选时隐藏——文件夹本身没有标签，
-          与后端 list 端点按 tag_id 过滤后不含文件夹的口径保持一致 */}
-      {/* auto-fill 自适应列数：按容器宽度连续增减，不再固定 3 列 */}
-      {parentId === null && tagFilter === undefined && seriesList.length > 0 && (
-        <div
-          data-testid="doc-series-grid"
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: isMobile ? 12 : 16,
-            marginBottom: 8,
-          }}
-        >
-          {seriesList.map(s => (
-            <Card
-              key={s.folder.id}
-              hoverable
-              size="small"
-              data-testid={`doc-series-card-${s.folder.id}`}
-              styles={{ body: { padding: isMobile ? 12 : 16 } }}
-              onClick={() => setParentId(s.folder.id)}
-            >
-              {isMobile ? (
-                /* 移动端：标题单行省略（完整名在 title 悬停提示），避免长系列名把卡片撑高、标签折行错位 */
-                <div className="cn-doc-row-title-line" style={{ marginBottom: 8 }}>
-                  <span onClick={e => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.includes(s.folder.id)}
-                      data-testid={`doc-select-${s.folder.id}`}
-                      aria-label={`选择 ${s.folder.title}`}
-                      onChange={() => toggleSelected(s.folder.id)}
-                    />
-                  </span>
-                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
-                  <Text strong className="cn-doc-title-ellipsis" title={s.folder.title} style={{ fontSize: 15 }}>
-                    {s.folder.title}
-                  </Text>
-                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
-                </div>
-              ) : (
-                <Space size={8} style={{ marginBottom: 8 }}>
-                  {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
-                  <span onClick={e => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.includes(s.folder.id)}
-                      data-testid={`doc-select-${s.folder.id}`}
-                      aria-label={`选择 ${s.folder.title}`}
-                      onChange={() => toggleSelected(s.folder.id)}
-                    />
-                  </span>
-                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
-                  <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
-                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
-                </Space>
-              )}
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--cn-text-secondary, #666)' }}>
-                <span>{s.docCount} 篇文档</span>
-                {s.subFolderCount > 0 && <span>{s.subFolderCount} 个子文件夹</span>}
-                {s.tagCount > 0 && <span>{s.tagCount} 个标签</span>}
-              </div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                {Object.entries(s.statusCounts).map(([st, n]) => (
-                  <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} style={{ marginRight: 0 }}>
-                    {STATUS_LABELS[st] ?? st} {n}
-                  </Tag>
-                ))}
-              </div>
-              {/* 更新时间独立成行左对齐：状态标签数量不定，放在同行右侧会导致位置参差 */}
-              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
-                更新 {formatTime(s.latestUpdate)}
-              </Text>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* 系列详情头部：图标 + 名称 + 递归统计 + 系列级操作（重命名/移动/删除） */}
-      {parentId !== null && currentSeries && (
-        <Card size="small" data-testid="doc-series-detail" styles={{ body: { padding: isMobile ? 12 : 16 } }} style={{ marginBottom: isMobile ? 12 : 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <FolderOutlined style={{ fontSize: 24, color: 'var(--cn-warning, #faad14)' }} />
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <Space size={8} wrap>
-                <Text strong style={{ fontSize: 16 }}>{currentSeries.folder.title}</Text>
-                {Object.entries(currentSeries.statusCounts).map(([st, n]) => (
-                  <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} style={{ marginRight: 0 }}>
-                    {STATUS_LABELS[st] ?? st} {n}
-                  </Tag>
-                ))}
-              </Space>
-              <div style={{ fontSize: 12, color: 'var(--cn-text-secondary, #666)', marginTop: 4 }}>
-                {currentSeries.docCount} 篇文档 · {currentSeries.subFolderCount} 个子文件夹
-                {currentSeries.tagCount > 0 && ` · ${currentSeries.tagCount} 个标签`}
-                {' · '}更新 {formatTime(currentSeries.latestUpdate)}
-              </div>
-            </div>
-            <Space wrap>
-              <Button
-                size="small"
-                icon={<EditOutlined />}
-                data-testid="doc-series-rename"
-                onClick={() => {
-                  setRenameValue(currentSeries.folder.title)
-                  setRenameTarget({ id: currentSeries.folder.id, title: currentSeries.folder.title, isSeries: true })
-                }}
-              >
-                重命名
-              </Button>
-              <Button
-                size="small"
-                icon={<ApartmentOutlined />}
-                data-testid="doc-series-move"
-                onClick={() => {
-                  setMoveTarget(currentSeries.folder.parent_id ?? 0)
-                  setMoveOpen(true)
-                }}
-              >
-                移动
-              </Button>
-              <Popconfirm
-                title="删除系列将同时删除其中全部文档与子文件夹，确认？"
-                okType="danger"
-                okText="删除"
-                cancelText="取消"
-                onConfirm={() => deleteMut.mutate(currentSeries.folder.id)}
-              >
-                <Button size="small" danger icon={<DeleteOutlined />} data-testid="doc-series-delete">
-                  删除
-                </Button>
-              </Popconfirm>
-            </Space>
-          </div>
-        </Card>
-      )}
-
-      {/* 列表：顶层散文档 / 子级全部子项 */}
-      {docsQuery.isLoading ? (
-        // antd List 弃用（ADR 0074）：加载态用 Skeleton 占位（v5 List loading 同为骨架行）
-        <div className="cn-doc-list" aria-busy="true">
-          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
-          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
-          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
-        </div>
-      ) : listItems.length === 0 && (parentId !== null || seriesList.length === 0) ? (
-        <Empty description="暂无文档" style={{ marginTop: 80 }}>
-          <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>
-            创建第一篇文档
-          </Button>
-        </Empty>
-      ) : (
-        <div data-testid="doc-list">
-          {/* antd List 弃用（ADR 0074）：Listy + 自绘 Meta / 操作区；Listy 根不透传 data-*，外层承载 testid */}
-          <Listy
-            className="cn-doc-list"
-            items={listItems}
-            rowKey={doc => doc.id}
-            itemRender={doc => (
+  /** 单个文档 / 文件夹行（文件夹块与文档块共用） */
+  const renderDocRow = (doc: DocumentItem) => (
               <div
                 className="cn-list-item"
                 style={{ cursor: 'pointer' }}
@@ -1022,8 +750,322 @@ export default function DocumentsPage() {
                   </Tooltip>
                 </div>
               </div>
-            )}
-          />
+            )
+
+  return (
+    <div style={{ padding: isMobile ? 12 : 16 }}>
+      {/* 工具栏 */}
+      {isMobile ? (
+        <div data-testid="doc-toolbar-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+          {/* 第一行：返回 + 面包屑 + 更多（导航行常驻） */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            {mobileUpButton}
+            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>{breadcrumbNode}</div>
+            <Dropdown menu={{ items: mobileToolbarMenu }} trigger={['click']} placement="bottomRight">
+              <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
+            </Dropdown>
+          </div>
+          {/* 第二行：排序 + 搜索 + 标签/状态筛选 + 新建（排序与侧栏共享偏好，需求 0065） */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {renderSortButton('doc-content-sort')}
+            {renderSearchInput({ flex: 1, minWidth: 120 })}
+            {renderTagSelect({ width: 110 })}
+            {renderStatusSelect({ width: 100 })}
+            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建</Button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+          <Space wrap>
+            {upButton}
+            {breadcrumbNode}
+          </Space>
+          <Space wrap>
+            {renderSortButton('doc-content-sort')}
+            {renderSearchInput({ width: 180 })}
+            {renderTagSelect({ width: 130 })}
+            {renderStatusSelect({ width: 110 })}
+            <Button icon={<DeleteOutlined />} data-testid="doc-trash-open" onClick={() => setTrashOpen(true)}>
+              回收站
+            </Button>
+            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建文档</Button>
+            <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
+            {/* 导入导出按钮组：紧凑并排，避免两个独立按钮占用过多横向空间 */}
+            <Space.Compact>
+              <Tooltip title="导入：本地文件（Markdown / Word / HTML）单文件或整个文件夹，或整个 Obsidian 库（.zip），自动转 Markdown 并清理排版">
+                <Button
+                  icon={<ImportOutlined />}
+                  data-testid="doc-file-import"
+                  onClick={() => setFileImportOpen(true)}
+                >
+                  导入
+                </Button>
+              </Tooltip>
+              <Tooltip title="导出当前工作区文档树：文件夹（Markdown 压缩包）或 Obsidian 库（.zip）">
+                <Button
+                  icon={<ExportOutlined />}
+                  data-testid="doc-vault-export"
+                  onClick={() => setExportOpen(true)}
+                >
+                  导出
+                </Button>
+              </Tooltip>
+            </Space.Compact>
+          </Space>
+        </div>
+      )}
+
+      {/* 最近打开：本地历史，仅在根层展示；点标题直接进编辑器 */}
+      {parentId === null && recentDocs.length > 0 && (
+        <div className="cn-doc-recent" data-testid="doc-recent">
+          <Space size={4} wrap>
+            <ClockCircleOutlined style={{ color: 'var(--cn-text-muted)' }} />
+            <Text type="secondary" style={{ fontSize: 12 }}>最近打开</Text>
+            {recentDocs.map(it => (
+              <Button
+                key={it.id}
+                type="text"
+                size="small"
+                data-testid={`doc-recent-${it.id}`}
+                onClick={() => navigate(`/w/${workspaceId}/documents/${it.id}`)}
+              >
+                {it.title}
+              </Button>
+            ))}
+            <Button
+              type="text"
+              size="small"
+              data-testid="doc-recent-clear"
+              onClick={() => {
+                clearRecentDocs(workspaceId)
+                setRecentVersion(v => v + 1)
+              }}
+            >
+              清除
+            </Button>
+          </Space>
+        </div>
+      )}
+
+      {/* 批量操作栏：选中任意项后出现 */}
+      {selectedIds.length > 0 && (
+        <div className="cn-doc-batch-bar" data-testid="doc-batch-bar">
+          <Space size={12} wrap>
+            <Checkbox
+              checked={allSelected}
+              indeterminate={selectedIds.length > 0 && !allSelected}
+              data-testid="doc-batch-select-all"
+              onChange={e => setSelectedIds(e.target.checked ? selectableIds : [])}
+            >
+              全选
+            </Checkbox>
+            <Text type="secondary">已选 {selectedIds.length} 项</Text>
+            <Button
+              icon={<ApartmentOutlined />}
+              data-testid="doc-batch-move"
+              onClick={() => {
+                setBatchMoveTarget(parentId ?? 0)
+                setBatchMoveOpen(true)
+              }}
+            >
+              移动到…
+            </Button>
+            <Popconfirm
+              title={`删除选中的 ${selectedIds.length} 项？`}
+              description="文件夹将连同其中所有文档一起移入回收站。"
+              okText="删除"
+              okType="danger"
+              cancelText="取消"
+              onConfirm={() => batchMut.mutate({ action: 'delete', ids: selectedIds })}
+            >
+              <Button danger icon={<DeleteOutlined />} data-testid="doc-batch-delete" loading={batchMut.isPending}>
+                批量删除
+              </Button>
+            </Popconfirm>
+            <Button type="text" data-testid="doc-batch-clear" onClick={() => setSelectedIds([])}>
+              取消选择
+            </Button>
+          </Space>
+        </div>
+      )}
+
+      {/* 顶层：系列卡片网格（顶层文件夹即系列）；按标签筛选时隐藏——文件夹本身没有标签，
+          与后端 list 端点按 tag_id 过滤后不含文件夹的口径保持一致 */}
+      {/* auto-fill 自适应列数：按容器宽度连续增减，不再固定 3 列 */}
+      {parentId === null && tagFilter === undefined && seriesList.length > 0 && (
+        <section data-testid="doc-folder-block" style={{ marginBottom: isMobile ? 12 : 16 }}>
+        <SectionTitle label="文件夹" count={seriesList.length} />
+        <div
+          data-testid="doc-series-grid"
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: isMobile ? 12 : 16,
+            marginBottom: 8,
+          }}
+        >
+          {seriesList.map(s => (
+            <Card
+              key={s.folder.id}
+              hoverable
+              size="small"
+              data-testid={`doc-series-card-${s.folder.id}`}
+              styles={{ body: { padding: isMobile ? 12 : 16 } }}
+              onClick={() => setParentId(s.folder.id)}
+            >
+              {isMobile ? (
+                /* 移动端：标题单行省略（完整名在 title 悬停提示），避免长系列名把卡片撑高、标签折行错位 */
+                <div className="cn-doc-row-title-line" style={{ marginBottom: 8 }}>
+                  <span onClick={e => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.includes(s.folder.id)}
+                      data-testid={`doc-select-${s.folder.id}`}
+                      aria-label={`选择 ${s.folder.title}`}
+                      onChange={() => toggleSelected(s.folder.id)}
+                    />
+                  </span>
+                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
+                  <Text strong className="cn-doc-title-ellipsis" title={s.folder.title} style={{ fontSize: 15 }}>
+                    {s.folder.title}
+                  </Text>
+                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
+                </div>
+              ) : (
+                <Space size={8} style={{ marginBottom: 8 }}>
+                  {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
+                  <span onClick={e => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.includes(s.folder.id)}
+                      data-testid={`doc-select-${s.folder.id}`}
+                      aria-label={`选择 ${s.folder.title}`}
+                      onChange={() => toggleSelected(s.folder.id)}
+                    />
+                  </span>
+                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
+                  <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
+                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
+                </Space>
+              )}
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--cn-text-secondary, #666)' }}>
+                <span>{s.docCount} 篇文档</span>
+                {s.subFolderCount > 0 && <span>{s.subFolderCount} 个子文件夹</span>}
+                {s.tagCount > 0 && <span>{s.tagCount} 个标签</span>}
+              </div>
+              <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                {Object.entries(s.statusCounts).map(([st, n]) => (
+                  <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} style={{ marginRight: 0 }}>
+                    {STATUS_LABELS[st] ?? st} {n}
+                  </Tag>
+                ))}
+              </div>
+              {/* 更新时间独立成行左对齐：状态标签数量不定，放在同行右侧会导致位置参差 */}
+              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+                更新 {formatTime(s.latestUpdate)}
+              </Text>
+            </Card>
+          ))}
+        </div>
+        </section>
+      )}
+
+      {/* 系列详情头部：图标 + 名称 + 递归统计 + 系列级操作（重命名/移动/删除） */}
+      {parentId !== null && currentSeries && (
+        <Card size="small" data-testid="doc-series-detail" styles={{ body: { padding: isMobile ? 12 : 16 } }} style={{ marginBottom: isMobile ? 12 : 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+            <FolderOutlined style={{ fontSize: 24, color: 'var(--cn-warning, #faad14)' }} />
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <Space size={8} wrap>
+                <Text strong style={{ fontSize: 16 }}>{currentSeries.folder.title}</Text>
+                {Object.entries(currentSeries.statusCounts).map(([st, n]) => (
+                  <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} style={{ marginRight: 0 }}>
+                    {STATUS_LABELS[st] ?? st} {n}
+                  </Tag>
+                ))}
+              </Space>
+              <div style={{ fontSize: 12, color: 'var(--cn-text-secondary, #666)', marginTop: 4 }}>
+                {currentSeries.docCount} 篇文档 · {currentSeries.subFolderCount} 个子文件夹
+                {currentSeries.tagCount > 0 && ` · ${currentSeries.tagCount} 个标签`}
+                {' · '}更新 {formatTime(currentSeries.latestUpdate)}
+              </div>
+            </div>
+            <Space wrap>
+              <Button
+                size="small"
+                icon={<EditOutlined />}
+                data-testid="doc-series-rename"
+                onClick={() => {
+                  setRenameValue(currentSeries.folder.title)
+                  setRenameTarget({ id: currentSeries.folder.id, title: currentSeries.folder.title, isSeries: true })
+                }}
+              >
+                重命名
+              </Button>
+              <Button
+                size="small"
+                icon={<ApartmentOutlined />}
+                data-testid="doc-series-move"
+                onClick={() => {
+                  setMoveTarget(currentSeries.folder.parent_id ?? 0)
+                  setMoveOpen(true)
+                }}
+              >
+                移动
+              </Button>
+              <Popconfirm
+                title="删除系列将同时删除其中全部文档与子文件夹，确认？"
+                okType="danger"
+                okText="删除"
+                cancelText="取消"
+                onConfirm={() => deleteMut.mutate(currentSeries.folder.id)}
+              >
+                <Button size="small" danger icon={<DeleteOutlined />} data-testid="doc-series-delete">
+                  删除
+                </Button>
+              </Popconfirm>
+            </Space>
+          </div>
+        </Card>
+      )}
+
+      {/* 列表：顶层散文档 / 子级文件夹与文档分块展示 */}
+      {docsQuery.isLoading ? (
+        // antd List 弃用（ADR 0074）：加载态用 Skeleton 占位（v5 List loading 同为骨架行）
+        <div className="cn-doc-list" aria-busy="true">
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
+        </div>
+      ) : listItems.length === 0 && (parentId !== null || seriesList.length === 0) ? (
+        <Empty description="暂无文档" style={{ marginTop: 80 }}>
+          <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>
+            创建第一篇文档
+          </Button>
+        </Empty>
+      ) : (
+        <div data-testid="doc-list">
+          {/* 子级：文件夹块在前、文档块在后；顶层文件夹已由上方系列卡片承载 */}
+          {parentId !== null && subFolders.length > 0 && (
+            <section data-testid="doc-subfolder-block" style={{ marginBottom: isMobile ? 12 : 16 }}>
+              <SectionTitle label="文件夹" count={subFolders.length} />
+              <Listy
+                className="cn-doc-list"
+                items={subFolders}
+                rowKey={doc => doc.id}
+                itemRender={renderDocRow}
+              />
+            </section>
+          )}
+          {fileItems.length > 0 && (
+            <section data-testid="doc-file-block">
+              <SectionTitle label="文档" count={fileItems.length} />
+              <Listy
+                className="cn-doc-list"
+                items={fileItems}
+                rowKey={doc => doc.id}
+                itemRender={renderDocRow}
+              />
+            </section>
+          )}
         </div>
       )}
 
