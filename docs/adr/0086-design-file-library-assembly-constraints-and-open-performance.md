@@ -1,6 +1,6 @@
 # ADR 0086: 设计文件库、组件级装配约束与系统级打开性能
 
-Status: Proposed（待评审）
+Status: Accepted（2026-11-02 需求方确认后按 P0→P1→P2 实施）
 Date: 2026-11-02
 Related: `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/services/dsl/lexer.py`、`src/cndb/plugins/design/services/dsl/parse.py`、`src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/services/dsl/limits.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/cli/seed/designs.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/src/api/design.ts`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/pages/design/PreviewCanvas.tsx`、`frontend/src/pages/design/renderTree.ts`；上游 ADR 0079 / 0083 / 0084 / 0075 / 0026
 需求卡片: `docs/requirements/0086-design-file-library-assembly-constraints-and-open-performance.md`
@@ -304,14 +304,14 @@ constraint c5 fixed(a = chassis.origin)
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | 待实现 | 待实现 | — |
+| P0 | 已落地 | `src/cndb/plugins/design/models.py`（文件库模型 + ref 表）；迁移 `src/cndb/alembic/versions/c8e2f4a6b8d0_design_file_library.py`；`src/cndb/plugins/design/services/keys.py`（file_key 生成）；`src/cndb/plugins/design/services/dsl/lexer.py`、`src/cndb/plugins/design/services/dsl/parse.py`、`src/cndb/plugins/design/services/dsl/constraints.py`、`src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/services/dsl/limits.py`（STRING / use / as / constraint / 文件感知编译 + 闭包预算 + 五类约束求解，IR v4）；`src/cndb/plugins/design/routers.py` 与 `src/cndb/cli/seed/designs.py`、`src/cndb/plugins/workspaces/services/backup_io.py`（创建 / 种子 / 导入生成 file_key） | `tests/test_design_dsl.py`（TestUseCall 17 例 + TestConstraints 14 例）、`tests/test_design_migration.py` 7 例、`tests/test_design_api.py` 与 `tests/test_migration_missing_model_columns.py` 常量同步 | 18c97405 |
 | P1 | 未开始 | 待实现 | 待实现 | — |
 | P2 | 未开始 | 待实现 | 待实现 | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案评审（ADR Proposed；需求卡片 0086 已由需求方确认）
-- 已完成：需求卡片 0086；ADR 0086（口径 / 现状核对 / 决策记录 / 测试 / 分期）
-- 下一步：人工评审 ADR 0086；评审通过后 Status 改 Accepted，再按 P0→P1→P2 实现
-- 已知坑：新格式独占数据无法完全 downgrade；旧设计重构需逐设计等价校验；P0 只支持 `use` 指向 `part`；性能阈值需在 Chrome 81 基线实测校准
-- 最近一次全绿：`make check-docs`（2026-11-02，文档门禁；本次仅方案文档）
+- 当前阶段：P0 已落地，下一步 P1（API / 备份 v13 / refactor CLI / 前端）
+- 已完成（P0，2026-11-02）：数据模型 + 迁移 `c8e2f4a6b8d0`；DSL `use "key"(args) as 标签` / `constraint <id> <type>(…)`（STRING token、`.` 标点、参数括号可选）；文件感知编译器（resolver 回调 + 闭包预算 I4 + 循环 / 缺失 / 深度诊断 + 深拷贝模板缓存）；五类约束确定性求解（fixed / 首件接地 BFS，容差 1e-6，欠约束 warning，冲突 ConstraintError）；IR v4（`constraints[]` + 大纲 `file_id` / `ref`）；`file_key` 由标题生成去重（`services/keys.py`，创建 / 种子 / 备份导入三处接入），保证新唯一键 `(workspace_id, file_key)` 在 P1 API 之前即可用
+- 下一步：P1 按计划实现（详情去 compiled、`GET /{id}/ir` ETag、refresh、dependencies、删除被引用 409、备份 v13、`cndb design-refactor`、前端）
+- 已知坑：legacy 最小库缺 `workspaces_workspace` 时 batch 反射 design FK 会失败 → 迁移对缺表场景整体跳过（create_all 兜底）；use 缓存模板必须深拷贝（否则被 xf 原地修改）；测试伪 file_id 不要与根文件 0 撞；PowerShell 无 heredoc；新格式独占数据（file_key / constraints）无法完全 downgrade（I9 已记录）；P0 只支持 `use` 指向 `part`
+- 最近一次全绿：`make flow`（2026-11-02，check-fast + test 6641 passed / 17 skipped）
