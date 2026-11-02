@@ -127,7 +127,7 @@ def test_create_rejects_document_target_and_bad_channel(client, table, sync_job,
         headers=headers,
     )
     assert doc.status_code == 400
-    assert "本期未启用" in doc.json()["detail"]
+    assert "目标文件夹不存在" in doc.json()["detail"]
 
     channel = client.post(
         f"{base}/strategies",
@@ -186,3 +186,35 @@ def test_unknown_strategy_returns_404(client, workspace_with_auth):
     base = f"/api/v1/workspaces/{workspace_id}/acquisition"
     assert client.get(f"{base}/strategies/999", headers=headers).status_code == 404
     assert client.get(f"{base}/runs/999", headers=headers).status_code == 404
+
+
+def test_manual_review_pauses_and_resumes(client, db, table, sync_job, workspace_with_auth):
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+    payload = _payload(
+        table,
+        sync_job.id,
+        iteration={
+            "max_rounds": 2,
+            "top_keywords_per_round": 3,
+            "expand": {"review": "manual"},
+            "budget": {"max_requests": 10},
+        },
+    )
+    strategy_id = client.post(f"{base}/strategies", json=payload, headers=headers).json()["id"]
+
+    paused = client.post(f"{base}/strategies/{strategy_id}/run", headers=headers)
+    assert paused.status_code == 200, paused.text
+    assert paused.json()["status"] == "awaiting_review"
+    run_id = paused.json()["id"]
+
+    detail = client.get(f"{base}/runs/{run_id}", headers=headers).json()
+    assert detail["rounds"][0]["review_state"] == "pending"
+
+    resumed = client.post(f"{base}/runs/{run_id}/resume", json={"keywords": ["自定义词"]}, headers=headers)
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["status"] == "success"
+    assert resumed.json()["round_count"] == 2
+
+    again = client.post(f"{base}/runs/{run_id}/resume", json={}, headers=headers)
+    assert again.status_code == 400

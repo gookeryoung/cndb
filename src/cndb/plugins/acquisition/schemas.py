@@ -132,6 +132,13 @@ class PreviewResponse(BaseModel):
     channel_errors: list[dict[str, str]] = Field(default_factory=list)
 
 
+class ResumeRequest(BaseModel):
+    """复核续跑：可带关键词 / 检索式（调整），也可全空（不调）。"""
+
+    keywords: list[str] | None = Field(default=None, max_length=20, description="调整后的扩展词；空表示不改")
+    query: str | None = Field(default=None, max_length=500, description="直接指定下一轮检索式；空表示用轮次记录")
+
+
 class RuleValidateRequest(BaseModel):
     """规则片段校验（前端表单实时校验复用）。"""
 

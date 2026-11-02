@@ -1,19 +1,20 @@
-"""策略执行编排：租约 → 轮次抓取 → 去重 → 筛选 → 落点 → 留痕（ADR 0085 §3）.
+"""策略执行编排：租约 → 轮次循环（抓取/去重/筛选/落点/扩展/复核）→ 留痕（ADR 0085 §3）.
 
-唯一执行入口 :func:`execute_strategy`（手动 / CLI / 调度 / 预览共用）。
-本期（P0）跑单轮：轮次循环结构已就位，扩展词与多轮在 P1 接入。
+唯一执行入口：
 
-失败口径（I5）：
+- :func:`execute_strategy`  正常执行（手动 / CLI / 调度共用；多轮迭代 + 复核闸口）
+- :func:`resume_run`        ``awaiting_review`` 的运行续跑（用户可调，也可不调）
+- :func:`preview_strategy`  只抓首轮、零写入（预览）
 
-- 单渠道失败只记 ``detail.channel_errors``，其它渠道继续；
-- 全部渠道失败 → ``failed``；部分失败 / 落点失败 / 预算触顶 → ``partial``；
-- 已落表数据不回滚（``upsert_rows`` 幂等，重跑安全）。
+失败口径（I5）：单渠道 / 单落点失败只降级该渠道 / 该条，已落数据不回滚；
+全渠道失败 → ``failed``；部分失败、预算触顶 → ``partial``；复核暂停 → ``awaiting_review``。
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import logging
+import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -32,12 +33,15 @@ from cndb.plugins.acquisition.models import (
 )
 from cndb.plugins.acquisition.services.channels import ChannelSpec, build_channel_specs
 from cndb.plugins.acquisition.services.rules.dedupe import dedupe_key
+from cndb.plugins.acquisition.services.rules.expand import apply_user_edit, build
 from cndb.plugins.acquisition.services.rules.expr import RuleError, render_query
 from cndb.plugins.acquisition.services.rules.filter import FilterRule, apply_filters
+from cndb.plugins.acquisition.services.rules.keywords import extract_keywords
+from cndb.plugins.acquisition.services.rules.stop import decide_stop
 from cndb.plugins.acquisition.services.targets import (
     TargetReport,
+    dispatch_document_target,
     dispatch_table_target,
-    existing_keys,
 )
 from cndb.plugins.datasource.providers.base import FetchFn
 from cndb.plugins.datasource.services.pipeline import run_pipeline
@@ -50,15 +54,24 @@ __all__ = [
     "StrategyBusyError",
     "StrategyExecution",
     "execute_strategy",
+    "identity_fields",
     "preview_strategy",
+    "resume_run",
+    "snapshot_rules",
 ]
 
 #: 预览返回的样例行数
 SAMPLE_SIZE = 5
-#: 单次运行默认请求预算（``iteration.budget.max_requests`` 缺省时）
+#: 单次运行默认请求预算
 DEFAULT_MAX_REQUESTS = 1000
-#: 累计条目上限（``iteration.stop.max_total_items`` 缺省时）
+#: 累计条目上限
 DEFAULT_MAX_TOTAL_ITEMS = 5000
+#: 关键词语料上限（条）：控制内存，够覆盖跨轮词频
+CORPUS_LIMIT = 2000
+#: 每轮默认扩展词数
+DEFAULT_TOP_KEYWORDS = 5
+#: 复核模式（manual 与 ReviewState 的字面量保持一致）
+REVIEW_MANUAL = "manual"
 
 
 class StrategyBusyError(RuntimeError):
@@ -67,7 +80,7 @@ class StrategyBusyError(RuntimeError):
 
 @dataclass(slots=True)
 class StrategyExecution:
-    """一次执行的产物（``run`` 在预览态为 ``None``）."""
+    """一次执行的产物（预览态 ``run`` 为 ``None``）."""
 
     run: AcquisitionRun | None = None
     round: AcquisitionRound | None = None
@@ -79,6 +92,8 @@ class StrategyExecution:
     by_channel: dict[str, int] = field(default_factory=dict)
     channel_errors: list[dict[str, str]] = field(default_factory=list)
     status: str = RunStatus.SUCCESS.value
+    rounds: int = 0
+    llm: dict[str, Any] = field(default_factory=dict)
 
 
 # ── 租约 ─────────────────────────────────────────
@@ -96,10 +111,7 @@ def _acquire_lease(db: Session, strategy: AcquisitionStrategy, now: dt.datetime)
                 AcquisitionStrategy.lease_until < now,
             ),
         )
-        .values(
-            lease_owner=default_owner(),
-            lease_until=now + dt.timedelta(seconds=LEASE_TTL_SECONDS),
-        )
+        .values(lease_owner=default_owner(), lease_until=now + dt.timedelta(seconds=LEASE_TTL_SECONDS))
         .execution_options(synchronize_session=False)
     )
     result = cast("CursorResult[Any]", db.execute(stmt))
@@ -115,7 +127,7 @@ def _release_lease(db: Session, strategy: AcquisitionStrategy) -> None:
     db.commit()
 
 
-# ── 快照 ─────────────────────────────────────────
+# ── 规则辅助 ─────────────────────────────────────
 
 
 def snapshot_rules(strategy: AcquisitionStrategy) -> dict[str, Any]:
@@ -138,13 +150,39 @@ def identity_fields(strategy: AcquisitionStrategy) -> tuple[str, ...]:
     return ()
 
 
-def _ledger_blocks(strategy: AcquisitionStrategy) -> bool:
-    """台账是否拦截已采条目：仅「只追加」落点（文档）需要，表落点靠 upsert 更新（D4）."""
-    kinds = {str(target.get("kind")) for target in list(strategy.targets or [])}
-    return "document" in kinds and "table" not in kinds
+def _base_terms(base_query: str) -> list[str]:
+    """基础检索式里已有的词（不重复用作扩展词）."""
+    return [word.lower() for word in re.findall(r"[\w\u4e00-\u9fff]{2,}", str(base_query or ""))]
 
 
-# ── 执行 ─────────────────────────────────────────
+def _review_mode(iteration: Mapping[str, Any]) -> str:
+    expand = iteration.get("expand")
+    if isinstance(expand, Mapping):
+        mode = str(expand.get("review") or ReviewState.AUTO.value)
+        if mode in (ReviewState.AUTO.value, ReviewState.LLM.value, REVIEW_MANUAL):
+            return mode
+    return ReviewState.AUTO.value
+
+
+def _llm_enabled(strategy: AcquisitionStrategy) -> bool:
+    config = dict(strategy.llm or {})
+    if not config.get("enabled"):
+        return False
+    actions = config.get("actions")
+    if isinstance(actions, list) and actions:
+        return "keyword_refine" in {str(item) for item in actions}
+    return True
+
+
+def table_targets_present(strategy: AcquisitionStrategy) -> bool:
+    return any(str(target.get("kind")) == "table" for target in list(strategy.targets or []))
+
+
+def document_targets_present(strategy: AcquisitionStrategy) -> bool:
+    return any(str(target.get("kind")) == "document" for target in list(strategy.targets or []))
+
+
+# ── 执行入口 ─────────────────────────────────────
 
 
 def execute_strategy(
@@ -157,21 +195,13 @@ def execute_strategy(
     now: dt.datetime | None = None,
     dry_run: bool = False,
 ) -> StrategyExecution:
-    """执行一次策略（``dry_run=True`` 时只抓取 + 筛选，不写表 / 不写台账 / 不落运行）."""
+    """执行一次策略（``dry_run=True`` 只抓首轮 + 筛选，零写入）."""
     started = _as_utc(now or dt.datetime.now(dt.UTC))
     today = started.date().isoformat()
     clock = time.perf_counter()
 
     if dry_run:
-        return _run_rounds(
-            db,
-            strategy,
-            user=user,
-            fetch=fetch,
-            today=today,
-            clock=clock,
-            dry_run=True,
-        )
+        return _preview_pass(db, strategy, user=user, fetch=fetch, today=today)
 
     if not _acquire_lease(db, strategy, started):
         raise StrategyBusyError("同一策略已有运行在进行中")
@@ -193,15 +223,15 @@ def execute_strategy(
         db.add(strategy)
         db.commit()
         db.refresh(run)
-        execution = _run_rounds(
+        execution = _run_loop(
             db,
             strategy,
-            user=user,
+            run,
+            user=_resolve_user(db, strategy, user),
             fetch=fetch,
             today=today,
-            clock=clock,
-            dry_run=False,
-            run=run,
+            start_round=1,
+            current_query=_render_base(strategy, today),
         )
         _finalize(db, strategy, execution, started=started, clock=clock)
         return execution
@@ -225,30 +255,343 @@ def execute_strategy(
         _release_lease(db, strategy)
 
 
-def _run_rounds(
+def resume_run(
+    db: Session,
+    run: AcquisitionRun,
+    *,
+    user: Any = None,
+    fetch: FetchFn | None = None,
+    now: dt.datetime | None = None,
+    keywords: Sequence[str] | None = None,
+    query: str | None = None,
+) -> StrategyExecution:
+    """续跑 ``awaiting_review`` 的运行：可带关键词 / 检索式（调整），也可不带（不调）."""
+    strategy = db.get(AcquisitionStrategy, run.strategy_id)
+    if strategy is None:
+        raise RuleError("采集策略不存在")
+    if run.status != RunStatus.AWAITING_REVIEW.value:
+        raise RuleError(f"运行不处于待复核状态（当前 {run.status}）")
+
+    started = _as_utc(now or dt.datetime.now(dt.UTC))
+    clock = time.perf_counter()
+    pending = _pending_round(db, run.id)
+    if pending is None:
+        raise RuleError("没有待复核的轮次")
+
+    if not _acquire_lease(db, strategy, started):
+        raise StrategyBusyError("同一策略已有运行在进行中")
+
+    try:
+        next_query = (query or "").strip() or pending.next_query
+        if not next_query:
+            next_query = _render_base(strategy, started.date().isoformat())
+        if keywords:
+            pending.top_keywords = apply_user_edit(_keywords_from_round(pending), list(keywords))
+            pending.next_query = next_query[:500]
+        pending.review_state = ReviewState.CONFIRMED.value
+        run.status = RunStatus.RUNNING.value
+        run.progress_message = f"第 {pending.round_no} 轮复核完成，继续第 {pending.round_no + 1} 轮"
+        db.add_all([pending, run])
+        db.commit()
+
+        execution = _run_loop(
+            db,
+            strategy,
+            run,
+            user=_resolve_user(db, strategy, user),
+            fetch=fetch,
+            today=started.date().isoformat(),
+            start_round=pending.round_no + 1,
+            current_query=next_query,
+            execution=_seed_execution(run),
+        )
+        _finalize(db, strategy, execution, started=started, clock=clock)
+        return execution
+    finally:
+        _release_lease(db, strategy)
+
+
+# ── 轮次循环 ─────────────────────────────────────
+
+
+def _run_loop(
+    db: Session,
+    strategy: AcquisitionStrategy,
+    run: AcquisitionRun,
+    *,
+    user: Any,
+    fetch: FetchFn | None,
+    today: str,
+    start_round: int,
+    current_query: str,
+    execution: StrategyExecution | None = None,
+) -> StrategyExecution:
+    """逐轮执行：抓取 → 去重 → 筛选 → 落点 → 扩展 → 复核闸口 → 停止判定."""
+    scope = dict(strategy.scope or {})
+    iteration = dict(strategy.iteration or {})
+    budget_cfg = dict(iteration.get("budget") or {})
+    stop_cfg = dict(iteration.get("stop") or {})
+    max_requests = int(budget_cfg.get("max_requests") or DEFAULT_MAX_REQUESTS)
+    max_total_items = int(stop_cfg.get("max_total_items") or DEFAULT_MAX_TOTAL_ITEMS)
+    max_rounds = max(1, min(int(iteration.get("max_rounds") or 1), 5))
+    top_keywords = int(iteration.get("top_keywords_per_round") or DEFAULT_TOP_KEYWORDS)
+    review_mode = _review_mode(iteration)
+    identity = identity_fields(strategy)
+    rule = FilterRule.from_dict(strategy.filter_rule)
+    base_terms = _base_terms(current_query)
+
+    state = execution or StrategyExecution()
+    state.run = run
+    counters = _counters_from_run(run)
+    corpus: list[dict[str, Any]] = []
+    used_keywords: set[str] = set()
+    consecutive_empty = 0
+    status: str | None = None
+
+    for round_no in range(start_round, max_rounds + 1):
+        round_clock = time.perf_counter()
+        run.progress = min(95, 5 + int((round_no - 1) * 80 / max_rounds))
+        run.progress_message = f"第 {round_no}/{max_rounds} 轮：抓取中（检索式：{current_query[:80]}）"
+        db.add(run)
+        db.commit()
+
+        specs, channel_errors = build_channel_specs(
+            db,
+            workspace_id=strategy.workspace_id,
+            scope=scope,
+            query=current_query,
+            today=today,
+            user_id=getattr(user, "id", None) or strategy.created_by_id,
+        )
+        total_channels = len(specs) + len(channel_errors)
+
+        collected: list[dict[str, Any]] = []
+        by_channel: dict[str, int] = {}
+        budget_exhausted = counters["requests"] >= max_requests
+
+        for spec in specs:
+            if budget_exhausted:
+                break
+            rows, used_requests, error = _fetch_channel(spec, fetch=fetch)
+            counters["requests"] += used_requests
+            if error is not None:
+                channel_errors.append({"channel": spec.channel, "error": error})
+                by_channel[spec.channel] = 0
+                continue
+            by_channel[spec.channel] = len(rows)
+            collected.extend(rows)
+            if counters["requests"] >= max_requests:
+                budget_exhausted = True
+
+        fresh, _keys = _dedupe_batch(collected)
+        filtered = apply_filters(fresh, rule)
+
+        remaining = max(0, max_total_items - counters["rows"])
+        items = filtered.items[:remaining]
+        report = TargetReport()
+        if items:
+            if table_targets_present(strategy):
+                _merge_report(
+                    report,
+                    dispatch_table_target(
+                        db,
+                        strategy=strategy,
+                        items=items,
+                        run_id=run.id,
+                        round_no=round_no,
+                        user=user,
+                        identity=identity,
+                    ),
+                )
+            if document_targets_present(strategy):
+                _merge_report(
+                    report,
+                    dispatch_document_target(
+                        db,
+                        strategy=strategy,
+                        items=items,
+                        run_id=run.id,
+                        round_no=round_no,
+                        user=user,
+                    ),
+                )
+
+        counters["fetched"] += len(collected)
+        counters["dedup"] += len(fresh)
+        counters["filtered"] += len(items)
+        counters["rows"] += report.written
+        counters["inserted"] += report.inserted
+        counters["updated"] += report.updated
+        counters["skipped"] += report.skipped
+        counters["docs_created"] += report.docs_created
+        counters["docs_updated"] += report.docs_updated
+        counters["docs_skipped"] += report.docs_skipped
+        corpus.extend(items)
+        if len(corpus) > CORPUS_LIMIT:
+            del corpus[: len(corpus) - CORPUS_LIMIT]
+
+        keywords, llm_meta = _keywords_for_next_round(
+            db,
+            strategy,
+            run,
+            user=user,
+            corpus=corpus,
+            base_query=current_query,
+            used=used_keywords | set(base_terms),
+            top_n=top_keywords,
+            mode=review_mode,
+            counters=counters,
+            budget_cfg=budget_cfg,
+        )
+        if llm_meta:
+            state.llm = llm_meta
+            run.detail = {**dict(run.detail or {}), "llm": _merge_llm_detail(run.detail, llm_meta)}
+        next_query = build(current_query, [item for item in keywords if not item.get("dropped")], ())
+        used_keywords.update(str(item.get("term") or "").lower() for item in keywords if item.get("term"))
+
+        consecutive_empty = consecutive_empty + 1 if report.changed == 0 else 0
+        stop_reason = decide_stop(
+            round_no=round_no,
+            max_rounds=max_rounds,
+            new_items=report.changed,
+            stop_config=stop_cfg,
+            consecutive_empty=consecutive_empty,
+            budget_exhausted=budget_exhausted,
+        )
+        pause = stop_reason is None and review_mode == REVIEW_MANUAL and next_query != current_query
+
+        round_status = _round_status(
+            channel_errors,
+            report.errors,
+            budget_exhausted,
+            total_channels=total_channels,
+        )
+        round_row = AcquisitionRound(
+            run_id=run.id,
+            round_no=round_no,
+            query=current_query[:500],
+            channels=[spec.channel for spec in specs],
+            stats={
+                "total_collected": len(collected),
+                "after_dedup": len(fresh),
+                "after_filter": len(items),
+                "by_channel": by_channel,
+                "channel_errors": channel_errors,
+                "target_errors": report.errors,
+            },
+            new_items=report.changed,
+            accumulated_items=counters["rows"],
+            top_keywords=keywords,
+            next_query=next_query[:500],
+            gap={"target": max_total_items, "covered": counters["rows"], "missing": remaining},
+            review_state=ReviewState.PENDING.value if pause else ReviewState.AUTO.value,
+            stop_reason=stop_reason or "",
+            status=round_status,
+            duration_ms=int((time.perf_counter() - round_clock) * 1000),
+        )
+        db.add(round_row)
+        run.round_count = round_no
+        run.fetched = counters["fetched"]
+        run.inserted = counters["inserted"]
+        run.updated = counters["updated"]
+        run.skipped = counters["skipped"]
+        run.docs_created = counters["docs_created"]
+        run.docs_updated = counters["docs_updated"]
+        run.docs_skipped = counters["docs_skipped"]
+        run.budget_used = {
+            "requests": counters["requests"],
+            "rows": counters["rows"],
+            "llm_calls": counters["llm_calls"],
+            "llm_tokens": counters["llm_tokens"],
+        }
+        run.detail = {
+            **dict(run.detail or {}),
+            "channels": by_channel,
+            "channel_errors": channel_errors,
+            "target_errors": report.errors,
+            "budget_exhausted": budget_exhausted,
+            "rounds": round_no,
+        }
+        db.add(run)
+        db.commit()
+        db.refresh(round_row)
+
+        state.round = round_row
+        state.collected = counters["fetched"]
+        state.after_dedup = counters["dedup"]
+        state.after_filter = counters["filtered"]
+        state.by_channel = by_channel
+        state.channel_errors = channel_errors
+        state.report = report
+        state.rounds = round_no
+
+        if pause:
+            state.status = RunStatus.AWAITING_REVIEW.value
+            return state
+        if stop_reason:
+            status = round_status
+            break
+        current_query = next_query
+
+    state.status = status or _aggregate_status(db, run.id)
+    return state
+
+
+def _keywords_for_next_round(
+    db: Session,
+    strategy: AcquisitionStrategy,
+    run: AcquisitionRun,
+    *,
+    user: Any,
+    corpus: Sequence[Mapping[str, Any]],
+    base_query: str,
+    used: set[str],
+    top_n: int,
+    mode: str,
+    counters: dict[str, int],
+    budget_cfg: Mapping[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """① 迭代产出候选 → ② 模型第二次判断（可跳过）."""
+    candidates = extract_keywords(corpus, top_n, exclude=sorted(used))
+    if not candidates:
+        return [], {}
+    deterministic = [
+        {"term": item["term"], "count": item["count"], "df": item["df"], "source": "tf", "dropped": False}
+        for item in candidates
+    ]
+    if mode not in (ReviewState.LLM.value, REVIEW_MANUAL) or not _llm_enabled(strategy):
+        return deterministic, {}
+    max_calls = int(budget_cfg.get("max_llm_calls") or 0)
+    if max_calls and counters["llm_calls"] >= max_calls:
+        return deterministic, {"degraded": "budget"}
+
+    from cndb.plugins.acquisition.services.ai import refine_keywords
+
+    final, rejected, meta = refine_keywords(
+        db,
+        user,
+        candidates=candidates,
+        base_query=base_query,
+        used=sorted(used),
+        workspace_id=strategy.workspace_id,
+        strategy_id=strategy.id,
+    )
+    counters["llm_calls"] += 0 if meta.get("degraded") else 1
+    counters["llm_tokens"] += int(meta.get("tokens") or 0)
+    return final, {**meta, "rejected": rejected, "strategy": strategy.id, "run": run.id}
+
+
+def _preview_pass(
     db: Session,
     strategy: AcquisitionStrategy,
     *,
     user: Any,
     fetch: FetchFn | None,
     today: str,
-    clock: float,
-    dry_run: bool,
-    run: AcquisitionRun | None = None,
 ) -> StrategyExecution:
-    """单轮执行（P0）：抓取 → 去重 → 筛选 → 落点 → 轮次留痕."""
+    """预览：真实抓取 + 筛选，**不写表 / 不写文档 / 不写台账 / 不落运行记录**（I6）."""
     scope = dict(strategy.scope or {})
-    iteration = dict(strategy.iteration or {})
-    budget_cfg = dict(iteration.get("budget") or {})
-    max_requests = int(budget_cfg.get("max_requests") or DEFAULT_MAX_REQUESTS)
-    stop_cfg = dict(iteration.get("stop") or {})
-    max_total_items = int(stop_cfg.get("max_total_items") or DEFAULT_MAX_TOTAL_ITEMS)
-
-    try:
-        query = render_query(str(scope.get("query") or ""), {"today": today})
-    except RuleError as exc:
-        raise RuleError(f"scope.query 渲染失败: {exc}") from exc
-
+    query = _render_base(strategy, today)
     specs, channel_errors = build_channel_specs(
         db,
         workspace_id=strategy.workspace_id,
@@ -257,25 +600,10 @@ def _run_rounds(
         today=today,
         user_id=getattr(user, "id", None) or strategy.created_by_id,
     )
-    expand_errors = len(channel_errors)
-
-    if run is not None:
-        run.progress = 8
-        run.progress_message = f"已展开 {len(specs)} 个渠道，开始抓取（检索式：{query[:80]}）"
-        db.add(run)
-        db.commit()
-
     collected: list[dict[str, Any]] = []
     by_channel: dict[str, int] = {}
-    requests = 0
-    budget_exhausted = False
-
     for spec in specs:
-        if requests >= max_requests:
-            budget_exhausted = True
-            break
-        rows, used, error = _fetch_channel(spec, fetch=fetch)
-        requests += used
+        rows, _used, error = _fetch_channel(spec, fetch=fetch)
         if error is not None:
             channel_errors.append({"channel": spec.channel, "error": error})
             by_channel[spec.channel] = 0
@@ -283,117 +611,66 @@ def _run_rounds(
         by_channel[spec.channel] = len(rows)
         collected.extend(rows)
 
-    if run is not None:
-        run.progress = 50
-        run.progress_message = f"抓取完成（{len(collected)} 条），正在跨来源去重..."
-        db.add(run)
-        db.commit()
-
-    # 跨轮 / 跨运行去重：运行内 seen 必去重；台账拦截只对「只追加」落点（文档）生效，
-    # 表落点的重复由 upsert（match_keys）承担 —— 拦截会变成「永不更新」（D4）
-    identity = identity_fields(strategy)
-    unique: list[dict[str, Any]] = []
-    keys: list[str] = []
-    seen: set[str] = set()
-    for item in collected:
-        key = dedupe_key(item, str(item.get("channel") or ""), identity)
-        if key in seen:
-            continue
-        seen.add(key)
-        keys.append(key)
-        unique.append(item)
-    known = existing_keys(db, strategy.id, keys) if keys and _ledger_blocks(strategy) else set()
-    fresh = [item for item, key in zip(unique, keys, strict=True) if key not in known]
-
-    if run is not None:
-        run.progress = 62
-        run.progress_message = f"去重后新增 {len(fresh)} 条，正在应用筛选规则..."
-        db.add(run)
-        db.commit()
-
-    rule = FilterRule.from_dict(strategy.filter_rule)
-    filtered = apply_filters(fresh, rule)
-    items = filtered.items[:max_total_items]
-
-    report = TargetReport()
-    if not dry_run:
-        report = dispatch_table_target(
-            db,
-            strategy=strategy,
-            items=items,
-            run_id=run.id if run is not None else None,
-            round_no=1,
-            user=user,
-            identity=identity,
-        )
-        if run is not None:
-            run.progress = 88
-            run.progress_message = "落点写入完成，正在记录轮次..."
-            db.add(run)
-            db.commit()
-
-    status = _decide_status(
-        total_channels=len(specs) + expand_errors,
-        failed_channels=len(channel_errors),
-        report_errors=report.errors,
-        budget_exhausted=budget_exhausted,
-    )
-
-    stats = {
-        "total_collected": len(collected),
-        "after_dedup": len(fresh),
-        "after_filter": len(items),
-        "by_channel": by_channel,
-        "channel_errors": channel_errors,
-    }
-
-    round_row: AcquisitionRound | None = None
-    if not dry_run and run is not None:
-        round_row = AcquisitionRound(
-            run_id=run.id,
-            round_no=1,
-            query=query[:500],
-            channels=[spec.channel for spec in specs],
-            stats=stats,
-            new_items=report.written,
-            accumulated_items=report.written,
-            top_keywords=[],
-            next_query="",
-            gap={"target": max_total_items, "covered": len(items), "missing": max(0, max_total_items - len(items))},
-            review_state=ReviewState.AUTO.value,
-            stop_reason="max_rounds" if items else "empty_round",
-            status=status,
-            duration_ms=int((time.perf_counter() - clock) * 1000),
-        )
-        db.add(round_row)
-        run.round_count = 1
-        run.fetched = len(collected)
-        run.inserted = report.inserted
-        run.updated = report.updated
-        run.skipped = report.skipped
-        run.budget_used = {"requests": requests, "rows": report.written, "llm_calls": 0, "llm_tokens": 0}
-        run.detail = {
-            "channels": by_channel,
-            "channel_errors": channel_errors,
-            "target_errors": report.errors,
-            "budget_exhausted": budget_exhausted,
-        }
-        db.add(run)
-        db.commit()
-        db.refresh(round_row)
-
+    fresh, _keys = _dedupe_batch(collected)
+    filtered = apply_filters(fresh, FilterRule.from_dict(strategy.filter_rule))
+    status = RunStatus.FAILED.value if (not specs and channel_errors) else RunStatus.SUCCESS.value
     return StrategyExecution(
-        run=run,
-        round=round_row,
-        report=report,
-        samples=items[:SAMPLE_SIZE],
+        samples=filtered.items[:SAMPLE_SIZE],
         collected=len(collected),
         after_dedup=len(fresh),
-        after_filter=len(items),
+        after_filter=filtered.passed,
         by_channel=by_channel,
         channel_errors=channel_errors,
         status=status,
     )
+
+
+def preview_strategy(
+    db: Session,
+    strategy: AcquisitionStrategy,
+    *,
+    fetch: FetchFn | None = None,
+    now: dt.datetime | None = None,
+    user: Any = None,
+) -> StrategyExecution:
+    """预览入口（供 API / CLI 复用）."""
+    return execute_strategy(db, strategy, user=user, fetch=fetch, now=now, dry_run=True)
+
+
+# ── 辅助 ─────────────────────────────────────────
+
+
+def _render_base(strategy: AcquisitionStrategy, today: str) -> str:
+    try:
+        return render_query(str((strategy.scope or {}).get("query") or ""), {"today": today})
+    except RuleError as exc:
+        raise RuleError(f"scope.query 渲染失败: {exc}") from exc
+
+
+def _resolve_user(db: Session, strategy: AcquisitionStrategy, user: Any) -> Any:
+    """文档落点 / 模型调用需要用户上下文：优先显式传入，其次策略创建人."""
+    if user is not None:
+        return user
+    if strategy.created_by_id is None:
+        return None
+    from cndb.plugins.accounts.models import User
+
+    return db.get(User, strategy.created_by_id)
+
+
+def _dedupe_batch(collected: Sequence[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+    """运行内去重，返回 ``(unique_items, keys)``（键序与 items 对齐）."""
+    unique: list[dict[str, Any]] = []
+    keys: list[str] = []
+    seen: set[str] = set()
+    for item in collected:
+        key = dedupe_key(item, str(item.get("channel") or ""))
+        if key in seen:
+            continue
+        seen.add(key)
+        keys.append(key)
+        unique.append(dict(item))
+    return unique, keys
 
 
 def _fetch_channel(
@@ -416,17 +693,93 @@ def _fetch_channel(
     return rows, outcome.plans, None
 
 
-def _decide_status(
-    *,
-    total_channels: int,
-    failed_channels: int,
+def _counters_from_run(run: AcquisitionRun) -> dict[str, int]:
+    budget = dict(run.budget_used or {})
+    return {
+        "fetched": int(run.fetched or 0),
+        "inserted": int(run.inserted or 0),
+        "updated": int(run.updated or 0),
+        "skipped": int(run.skipped or 0),
+        "rows": int(budget.get("rows") or ((run.inserted or 0) + (run.updated or 0))),
+        "requests": int(budget.get("requests") or 0),
+        "llm_calls": int(budget.get("llm_calls") or 0),
+        "llm_tokens": int(budget.get("llm_tokens") or 0),
+        "docs_created": int(run.docs_created or 0),
+        "docs_updated": int(run.docs_updated or 0),
+        "docs_skipped": int(run.docs_skipped or 0),
+        "dedup": 0,
+        "filtered": 0,
+    }
+
+
+def _seed_execution(run: AcquisitionRun) -> StrategyExecution:
+    rows = int((run.budget_used or {}).get("rows") or 0)
+    return StrategyExecution(
+        run=run,
+        collected=int(run.fetched or 0),
+        after_dedup=rows,
+        after_filter=rows,
+        rounds=int(run.round_count or 0),
+    )
+
+
+def _merge_report(target: TargetReport, source: TargetReport) -> None:
+    target.inserted += source.inserted
+    target.updated += source.updated
+    target.skipped += source.skipped
+    target.written += source.written
+    target.docs_created += source.docs_created
+    target.docs_updated += source.docs_updated
+    target.docs_skipped += source.docs_skipped
+    target.errors.extend(source.errors)
+
+
+def _pending_round(db: Session, run_id: int) -> AcquisitionRound | None:
+    stmt = (
+        select(AcquisitionRound)
+        .where(
+            AcquisitionRound.run_id == run_id,
+            AcquisitionRound.review_state == ReviewState.PENDING.value,
+        )
+        .order_by(AcquisitionRound.round_no.desc())
+        .limit(1)
+    )
+    return db.execute(stmt).scalar_one_or_none()
+
+
+def _keywords_from_round(round_row: AcquisitionRound) -> list[dict[str, Any]]:
+    return [dict(item) for item in list(round_row.top_keywords or []) if not item.get("dropped")]
+
+
+def _merge_llm_detail(detail: Mapping[str, Any] | None, meta: Mapping[str, Any]) -> dict[str, Any]:
+    current = dict((detail or {}).get("llm") or {})
+    merged = dict(current)
+    for key, value in meta.items():
+        if key in ("tokens", "llm_calls"):
+            merged[key] = int(merged.get(key) or 0) + int(value or 0)
+        else:
+            merged[key] = value
+    return merged
+
+
+def _round_status(
+    channel_errors: Sequence[Mapping[str, str]],
     report_errors: Sequence[Mapping[str, str]],
     budget_exhausted: bool,
+    *,
+    total_channels: int,
 ) -> str:
-    """运行状态判定（I5）：无渠道 / 全渠道失败 → failed；有任一部分失败或预算触顶 → partial."""
-    if total_channels == 0 or failed_channels >= total_channels:
+    if total_channels == 0 or len(channel_errors) >= total_channels:
         return RunStatus.FAILED.value
-    if failed_channels or report_errors or budget_exhausted:
+    if channel_errors or report_errors or budget_exhausted:
+        return RunStatus.PARTIAL.value
+    return RunStatus.SUCCESS.value
+
+
+def _aggregate_status(db: Session, run_id: int) -> str:
+    """多轮汇总：任一轮 failed / partial → partial；全部 success → success."""
+    rounds = list(db.execute(select(AcquisitionRound).where(AcquisitionRound.run_id == run_id)).scalars())
+    if any(row.status in (RunStatus.FAILED.value, RunStatus.PARTIAL.value) for row in rounds):
         return RunStatus.PARTIAL.value
     return RunStatus.SUCCESS.value
 
@@ -443,10 +796,11 @@ def _finalize(
     run = execution.run
     if run is not None:
         run.status = execution.status
-        run.progress = 100
+        run.progress = 100 if execution.status != RunStatus.AWAITING_REVIEW.value else run.progress
         run.progress_message = _progress_message(execution)
-        run.finished_at = _as_utc(started)
-        run.duration_ms = int((time.perf_counter() - clock) * 1000)
+        if execution.status != RunStatus.AWAITING_REVIEW.value:
+            run.finished_at = _as_utc(started)
+            run.duration_ms = int((time.perf_counter() - clock) * 1000)
         if execution.status == RunStatus.FAILED.value and not run.error_message:
             run.error_message = "全部渠道均未返回数据或均失败"
         db.add(run)
@@ -456,22 +810,13 @@ def _finalize(
 
 
 def _progress_message(execution: StrategyExecution) -> str:
+    if execution.status == RunStatus.AWAITING_REVIEW.value:
+        return f"第 {execution.rounds} 轮完成，等待复核扩展词（可直接继续或调整后再继续）"
     return (
-        f"采集完成：抓取 {execution.collected} 条 / 去重后新增 {execution.after_dedup} 条 / "
-        f"筛选后 {execution.after_filter} 条 / 写入 {execution.report.written} 行"
+        f"采集完成：{execution.rounds} 轮，抓取 {execution.collected} 条 / 去重后 {execution.after_dedup} 条 / "
+        f"筛选后 {execution.after_filter} 条 / 写入 {execution.report.written} 行 / "
+        f"文档新增 {execution.report.docs_created} 更新 {execution.report.docs_updated}"
     )
-
-
-def preview_strategy(
-    db: Session,
-    strategy: AcquisitionStrategy,
-    *,
-    fetch: FetchFn | None = None,
-    now: dt.datetime | None = None,
-    user: Any = None,
-) -> StrategyExecution:
-    """预览：真实抓取 + 真实筛选，**不写表 / 不写台账 / 不落运行记录**（I6）."""
-    return execute_strategy(db, strategy, user=user, fetch=fetch, now=now, dry_run=True)
 
 
 def list_runs(db: Session, strategy_id: int, *, limit: int = 20) -> list[AcquisitionRun]:

@@ -33,6 +33,17 @@ def _table_exists(table: str) -> bool:
     return table in sa.inspect(op.get_bind()).get_table_names()
 
 
+def _fk(target: str, ondelete: str) -> list[sa.ForeignKey]:
+    """父表存在时才声明外键.
+
+    历史遗留的「最小 stub 库」测试会只建少数表就 upgrade 到 head（见
+    ``tests/test_migration_missing_model_columns.py``）；此时声明指向不存在父表的
+    FK 会在 SQLite 上直接报 ``NoSuchTableError``，因此按存在性降级为普通列。
+    """
+    parent = target.split(".")[0]
+    return [sa.ForeignKey(target, ondelete=ondelete)] if _table_exists(parent) else []
+
+
 def _base_columns() -> list[sa.Column[Any]]:
     return [
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
@@ -49,18 +60,8 @@ def upgrade() -> None:
     op.create_table(
         _STRATEGY,
         *_base_columns(),
-        sa.Column(
-            "workspace_id",
-            sa.Integer(),
-            sa.ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "created_by_id",
-            sa.Integer(),
-            sa.ForeignKey("accounts_user.id", ondelete="SET NULL"),
-            nullable=True,
-        ),
+        sa.Column("workspace_id", sa.Integer(), *_fk("workspaces_workspace.id", "CASCADE"), nullable=False),
+        sa.Column("created_by_id", sa.Integer(), *_fk("accounts_user.id", "SET NULL"), nullable=True),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False, server_default=sa.text("0")),
         sa.Column("scope", sa.JSON(), nullable=False),
@@ -84,12 +85,7 @@ def upgrade() -> None:
     op.create_table(
         _RUN,
         *_base_columns(),
-        sa.Column(
-            "strategy_id",
-            sa.Integer(),
-            sa.ForeignKey(f"{_STRATEGY}.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
+        sa.Column("strategy_id", sa.Integer(), *_fk(f"{_STRATEGY}.id", "CASCADE"), nullable=False),
         sa.Column("trigger", sa.String(length=16), nullable=False, server_default="manual"),
         sa.Column("status", sa.String(length=16), nullable=False, server_default="running"),
         sa.Column("rule_snapshot", sa.JSON(), nullable=False),
@@ -117,7 +113,7 @@ def upgrade() -> None:
     op.create_table(
         _ROUND,
         *_base_columns(),
-        sa.Column("run_id", sa.Integer(), sa.ForeignKey(f"{_RUN}.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("run_id", sa.Integer(), *_fk(f"{_RUN}.id", "CASCADE"), nullable=False),
         sa.Column("round_no", sa.Integer(), nullable=False, server_default=sa.text("1")),
         sa.Column("query", sa.String(length=500), nullable=False, server_default=""),
         sa.Column("channels", sa.JSON(), nullable=False),
@@ -139,13 +135,8 @@ def upgrade() -> None:
     op.create_table(
         _ITEM,
         *_base_columns(),
-        sa.Column(
-            "strategy_id",
-            sa.Integer(),
-            sa.ForeignKey(f"{_STRATEGY}.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column("run_id", sa.Integer(), sa.ForeignKey(f"{_RUN}.id", ondelete="SET NULL"), nullable=True),
+        sa.Column("strategy_id", sa.Integer(), *_fk(f"{_STRATEGY}.id", "CASCADE"), nullable=False),
+        sa.Column("run_id", sa.Integer(), *_fk(f"{_RUN}.id", "SET NULL"), nullable=True),
         sa.Column("round_no", sa.Integer(), nullable=False, server_default=sa.text("1")),
         sa.Column("channel", sa.String(length=64), nullable=False, server_default=""),
         sa.Column("dedupe_key", sa.String(length=512), nullable=False),

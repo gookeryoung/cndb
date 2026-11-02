@@ -5,11 +5,13 @@
 - ``list``     列出采集策略（名称 / 渠道数 / 落点 / 最近状态）
 - ``run``      立即执行一条策略（同步执行，受预算上限约束）
 - ``preview``  只抓取 + 筛选，不落表 / 不写台账 / 不落运行记录
+- ``resume``   续跑 ``awaiting_review`` 的运行（可带关键词 / 检索式，也可不带）
 
 示例：
     cndb acquisition list --workspace-id 1
     cndb acquisition run --strategy-id 3 --json
     cndb acquisition preview --strategy-id 3
+    cndb acquisition resume --run-id 5 --keywords 固态 电解质
 """
 
 from __future__ import annotations
@@ -146,6 +148,44 @@ def cmd_preview(args: argparse.Namespace) -> dict[str, Any]:
         db.close()
 
 
+def cmd_resume(args: argparse.Namespace) -> dict[str, Any]:
+    from cndb.plugins.acquisition.models import AcquisitionRun
+    from cndb.plugins.acquisition.services.runner import StrategyBusyError, resume_run
+
+    db = _get_session()
+    try:
+        run = db.get(AcquisitionRun, int(args.run_id))
+        if run is None:
+            raise SystemExit(f"[error] 运行记录不存在: {args.run_id}")
+        keywords = list(getattr(args, "keywords", None) or [])
+        try:
+            execution = resume_run(
+                db,
+                run,
+                keywords=keywords or None,
+                query=getattr(args, "query", None),
+                now=_now(),
+            )
+        except StrategyBusyError as exc:
+            return {"run_id": run.id, "skipped": str(exc), "status": "skipped"}
+        except Exception as exc:  # 规则错误等按可读结果返回（CLI 不抛栈）
+            return {"run_id": run.id, "status": "failed", "error": str(exc)}
+        return {
+            "run_id": run.id,
+            "strategy_id": run.strategy_id,
+            "status": execution.status,
+            "rounds": execution.rounds,
+            "collected": execution.collected,
+            "after_filter": execution.after_filter,
+            "inserted": execution.report.inserted,
+            "updated": execution.report.updated,
+            "docs_created": execution.report.docs_created,
+            "docs_updated": execution.report.docs_updated,
+        }
+    finally:
+        db.close()
+
+
 def _print_list(payload: dict[str, Any]) -> None:
     print(f"[acquisition] 共 {payload['total']} 条策略")
     for item in payload["strategies"]:
@@ -176,6 +216,21 @@ def _print_run(payload: dict[str, Any]) -> None:
         print(f"    ! {payload['error']}")
 
 
+def _print_resume(payload: dict[str, Any]) -> None:
+    if payload.get("skipped"):
+        print(f"  run#{payload['run_id']} 跳过：{payload['skipped']}")
+        return
+    if payload.get("error"):
+        print(f"  run#{payload['run_id']} 失败：{payload['error']}")
+        return
+    print(
+        f"  run#{payload['run_id']} strategy#{payload['strategy_id']} status={payload['status']} "
+        f"rounds={payload['rounds']} collected={payload['collected']} filtered={payload['after_filter']} "
+        f"inserted={payload['inserted']} updated={payload['updated']} "
+        f"docs+{payload['docs_created']}/~{payload['docs_updated']}"
+    )
+
+
 def _print_preview(payload: dict[str, Any]) -> None:
     print(
         f"[acquisition preview] #{payload['strategy_id']} {payload['name']} "
@@ -194,10 +249,15 @@ def acquisition_command(args: argparse.Namespace) -> None:
     """分发 ``cndb acquisition <sub>``."""
     cmd = getattr(args, "acquisition_cmd", None)
     if cmd is None:
-        print("[error] 缺少 acquisition 子命令，可用: list / run / preview", file=sys.stderr)
+        print("[error] 缺少 acquisition 子命令，可用: list / run / preview / resume", file=sys.stderr)
         sys.exit(2)
-    handlers = {"list": cmd_list, "run": cmd_run, "preview": cmd_preview}
-    printers = {"list": _print_list, "run": _print_run, "preview": _print_preview}
+    handlers = {"list": cmd_list, "run": cmd_run, "preview": cmd_preview, "resume": cmd_resume}
+    printers = {
+        "list": _print_list,
+        "run": _print_run,
+        "preview": _print_preview,
+        "resume": _print_resume,
+    }
     handler = handlers.get(cmd)
     if handler is None:  # pragma: no cover - argparse 已收窄
         print(f"[error] 未知 acquisition 子命令: {cmd}", file=sys.stderr)
@@ -213,7 +273,7 @@ def acquisition_command(args: argparse.Namespace) -> None:
 
 def register_acquisition_subparser(sub: Any) -> None:
     """向顶层 ArgumentParser 注册 `cndb acquisition` 子命令组."""
-    p_acq = sub.add_parser("acquisition", help="采集策略（list / run / preview）")
+    p_acq = sub.add_parser("acquisition", help="采集策略（list / run / preview / resume）")
     acq_sub = p_acq.add_subparsers(dest="acquisition_cmd")
 
     p_list = acq_sub.add_parser("list", help="列出采集策略")
@@ -229,11 +289,18 @@ def register_acquisition_subparser(sub: Any) -> None:
     p_preview.add_argument("--limit", type=int, default=5, help="打印样例条数上限")
     p_preview.add_argument("--json", action="store_true", help="以 JSON 输出")
 
+    p_resume = acq_sub.add_parser("resume", help="续跑待复核的运行（可带关键词 / 检索式）")
+    p_resume.add_argument("--run-id", type=int, required=True, help="运行 id")
+    p_resume.add_argument("--keywords", nargs="*", help="调整后的扩展词（留空表示不调）")
+    p_resume.add_argument("--query", help="直接指定下一轮检索式")
+    p_resume.add_argument("--json", action="store_true", help="以 JSON 输出")
+
 
 __all__ = [
     "acquisition_command",
     "cmd_list",
     "cmd_preview",
+    "cmd_resume",
     "cmd_run",
     "register_acquisition_subparser",
 ]

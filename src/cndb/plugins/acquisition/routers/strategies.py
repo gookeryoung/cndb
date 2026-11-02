@@ -19,6 +19,7 @@ from cndb.plugins.acquisition.models import AcquisitionRound, AcquisitionRun, Ac
 from cndb.plugins.acquisition.schemas import (
     PreviewResponse,
     PreviewSample,
+    ResumeRequest,
     RoundOut,
     RuleValidateRequest,
     RuleValidateResponse,
@@ -35,6 +36,7 @@ from cndb.plugins.acquisition.services.runner import (
     StrategyBusyError,
     execute_strategy,
     preview_strategy,
+    resume_run,
 )
 from cndb.plugins.acquisition.services.validation import validate_strategy_payload
 from cndb.plugins.tables.models import DataTable
@@ -113,6 +115,17 @@ def _serialize_round(row: AcquisitionRound) -> RoundOut:
     )
 
 
+def _get_run(db: Session, workspace_id: int, run_id: int) -> AcquisitionRun:
+    """取运行记录并校验其策略归属当前工作区."""
+    run = db.get(AcquisitionRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="运行记录不存在")
+    strategy = db.get(AcquisitionStrategy, run.strategy_id)
+    if strategy is None or strategy.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="运行记录不存在")
+    return run
+
+
 def _get_strategy(db: Session, workspace_id: int, strategy_id: int) -> AcquisitionStrategy:
     strategy = db.get(AcquisitionStrategy, strategy_id)
     if strategy is None or strategy.workspace_id != workspace_id:
@@ -121,13 +134,27 @@ def _get_strategy(db: Session, workspace_id: int, strategy_id: int) -> Acquisiti
 
 
 def _assert_targets_in_workspace(db: Session, workspace_id: int, targets: list[dict[str, Any]]) -> None:
-    """表落点必须指向同工作区的表（越权 / 跨工作区直接 400）."""
+    """落点必须指向同工作区的表 / 文件夹（越权 / 跨工作区直接 400）."""
+    from cndb.plugins.documents.models import Document
+
     for target in targets:
-        if str(target.get("kind")) != "table":
+        kind = str(target.get("kind"))
+        if kind == "table":
+            table = db.get(DataTable, int(target["table_id"]))
+            if table is None or table.workspace_id != workspace_id or getattr(table, "is_deleted", False):
+                raise HTTPException(status_code=400, detail=f"目标表不存在或不属于当前工作区: {target['table_id']}")
             continue
-        table = db.get(DataTable, int(target["table_id"]))
-        if table is None or table.workspace_id != workspace_id or getattr(table, "is_deleted", False):
-            raise HTTPException(status_code=400, detail=f"目标表不存在或不属于当前工作区: {target['table_id']}")
+        if kind == "document" and target.get("parent_id") is not None:
+            parent = db.get(Document, int(target["parent_id"]))
+            if (
+                parent is None
+                or parent.workspace_id != workspace_id
+                or not parent.is_folder
+                or getattr(parent, "is_deleted", False)
+            ):
+                raise HTTPException(
+                    status_code=400, detail=f"目标文件夹不存在或不属于当前工作区: {target['parent_id']}"
+                )
 
 
 def _validate(
@@ -342,18 +369,35 @@ def get_run(
     user: Annotated[User, Depends(get_current_user)],
 ) -> RunDetailResponse:
     check_workspace_permission(db, workspace_id, user, WorkspaceRole.VIEWER)
-    run = db.get(AcquisitionRun, run_id)
-    if run is None:
-        raise HTTPException(status_code=404, detail="运行记录不存在")
-    strategy = db.get(AcquisitionStrategy, run.strategy_id)
-    if strategy is None or strategy.workspace_id != workspace_id:
-        raise HTTPException(status_code=404, detail="运行记录不存在")
+    run = _get_run(db, workspace_id, run_id)
     rounds = list(
         db.execute(
             select(AcquisitionRound).where(AcquisitionRound.run_id == run_id).order_by(AcquisitionRound.round_no)
         ).scalars()
     )
     return RunDetailResponse(run=_serialize_run(run), rounds=[_serialize_round(row) for row in rounds])
+
+
+@router.post("/runs/{run_id}/resume", response_model=RunOut)
+def resume_run_route(
+    workspace_id: int,
+    run_id: int,
+    payload: ResumeRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> RunOut:
+    """复核后续跑：带关键词 / 检索式即「调整」，全空即「不调」直接进下一轮."""
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.EDITOR)
+    run = _get_run(db, workspace_id, run_id)
+    try:
+        execution = resume_run(db, run, user=user, keywords=payload.keywords, query=payload.query)
+    except StrategyBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if execution.run is None:
+        raise HTTPException(status_code=500, detail="运行记录缺失")
+    return _serialize_run(execution.run)
 
 
 @router.post("/rules/validate", response_model=RuleValidateResponse)

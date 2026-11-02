@@ -5,7 +5,7 @@
 - ``scope.channels`` 非空且每条引用可解析（``job:<id>`` / 内联 provider 声明）；
 - ``scope.query`` 占位符可渲染（用样例上下文，未知占位符直接报错）；
 - ``filter_rule`` 布尔式可解析、日期可解析、数值项合法；
-- ``targets``：``kind`` 白名单 + 必填字段（本期仅 ``table``，文档落点在 P1）；
+- ``targets``：``kind`` 白名单 + 必填字段（``table`` 要 ``table_id``；``document`` 的 ``parent_id`` 可空）；
 - ``iteration``：``max_rounds`` / 预算数值范围（防跑飞，I8）。
 """
 
@@ -49,7 +49,10 @@ def _validate_targets(targets: Sequence[Any]) -> None:
                 raise RuleError("table 落点缺少合法的 table_id")
             continue
         if kind == "document":
-            raise RuleError("document 落点本期未启用（P1 接入）")
+            parent_id = target.get("parent_id")
+            if parent_id is not None and (not isinstance(parent_id, int) or parent_id <= 0):
+                raise RuleError("document 落点的 parent_id 必须是正整数或 null")
+            continue
         raise RuleError(f"未知落点类型: {kind!r}")
 
 

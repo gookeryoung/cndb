@@ -254,7 +254,7 @@ class TestValidation:
             ({"scope": {"channels": [], "query": "x"}}, "channels 不能为空"),
             ({"scope": {"channels": ["bad:1"], "query": "x"}}, "渠道引用非法"),
             ({"scope": {"channels": ["job:1"], "query": "{missing}"}}, "未知占位符"),
-            ({"targets": [{"kind": "document", "parent_id": 1}]}, "本期未启用"),
+            ({"targets": [{"kind": "document", "parent_id": -1}]}, "parent_id"),
             ({"iteration": {"max_rounds": 9}}, "上限"),
             ({"iteration": {"expand": {"review": "maybe"}}}, "review 非法"),
         ],
