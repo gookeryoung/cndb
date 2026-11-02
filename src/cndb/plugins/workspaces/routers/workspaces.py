@@ -463,10 +463,15 @@ def restore_workspace(
     tmp_path = Path(tmp_name)
     import os
 
-    with os.fdopen(fd, "wb") as out:
-        shutil.copyfileobj(file.file, out)
+    # 归档解析失败时上传副本必须清理，否则无效上传会在 /tmp 持续堆积（磁盘耗尽）
+    try:
+        with os.fdopen(fd, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+        archive = parse_workspace_archive(tmp_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
-    archive = parse_workspace_archive(tmp_path)
     try:
         result = restore_workspace_from_backup(workspace_id, archive.backup, archive.files_dir, current_user, db)
     finally:
@@ -495,10 +500,15 @@ def inspect_workspace_archive(
     tmp_path = Path(tmp_name)
     import os
 
-    with os.fdopen(fd, "wb") as out:
-        shutil.copyfileobj(file.file, out)
+    # 归档解析失败时上传副本必须清理，否则无效上传会在 /tmp 持续堆积（磁盘耗尽）
+    try:
+        with os.fdopen(fd, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+        archive = parse_workspace_archive(tmp_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
-    archive = parse_workspace_archive(tmp_path)
     try:
         data = archive.backup
         ws_meta = data.get("workspace") or {}
@@ -547,10 +557,15 @@ def create_workspace_from_archive(
     tmp_path = Path(tmp_name)
     import os
 
-    with os.fdopen(fd, "wb") as out:
-        shutil.copyfileobj(file.file, out)
+    # 归档解析失败时上传副本必须清理，否则无效上传会在 /tmp 持续堆积（磁盘耗尽）
+    try:
+        with os.fdopen(fd, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+        archive = parse_workspace_archive(tmp_path)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
 
-    archive = parse_workspace_archive(tmp_path)
     try:
         data = archive.backup
         if not isinstance(data, dict) or "tables" not in data:
