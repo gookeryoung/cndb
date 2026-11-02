@@ -1,11 +1,12 @@
-/** 原件族文档阅读器（ADR 0025）：PDF / 图片 / MHTML 直接渲染，Office 给下载卡.
+/** 原件族文档阅读器（ADR 0025）：PDF / 图片 / MHTML / PPTX 直接渲染，其余 Office 给下载卡.
  *
  * 原件经带鉴权头的接口取回为 blob，再挂 objectURL —— 不用裸链接，
  * 否则未发布草稿的原件会绕过文档可见性。
  * MHTML（0064）：浏览器不渲染 multipart/related 原件，改用后端生成的
  * 自包含预览 HTML，在禁脚本的沙箱 iframe 里渲染；下载仍走原件接口。
+ * PPTX：纯前端渲染（PptxPreview 懒加载），旧版 .ppt 仍回落下载卡。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Empty, Space, Spin, Tag, Typography } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
@@ -14,6 +15,9 @@ import { formatSize } from '@/utils/formatSize'
 import { formatMeta } from '@/components/Document/docFormat'
 
 const { Text } = Typography
+
+// PPTX 渲染库体积较大（jszip / echarts），只在打开 .pptx 时按需加载
+const PptxPreview = lazy(() => import('./PptxPreview'))
 
 interface Props {
   workspaceId: number
@@ -44,6 +48,8 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
   const fmt = formatMeta(doc.content_type)
   const suffix = assetSuffix(doc)
   const isMhtml = doc.content_type === 'mhtml'
+  // 仅标准 OOXML .pptx 可纯前端渲染；旧版二进制 .ppt 没有 zip 结构，仍下载查看
+  const isPptx = doc.content_type === 'pptx' && suffix === 'pptx'
 
   const assetQuery = useQuery({
     queryKey: ['documents', workspaceId, doc.id, 'asset'],
@@ -144,6 +150,18 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
           />
         </div>
+      )
+    }
+    if (isPptx && blob) {
+      return (
+        <Suspense fallback={(
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Spin />
+          </div>
+        )}
+        >
+          <PptxPreview blob={blob} title={doc.title} />
+        </Suspense>
       )
     }
     if (doc.content_type === 'mhtml') {

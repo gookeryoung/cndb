@@ -15,7 +15,7 @@
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 文档功能增强，需支持 PDF 等格式文件上传 | 明确要求 PDF 可上传；按需求方确认的范围，本次新增 **PDF / Office（xlsx、xls、pptx、ppt）/ 图片（png、jpg、jpeg、gif、webp、svg、bmp）**；md / docx / html 沿用 ADR 0010 的转换通道 | `plugins/documents/services/importers/`、`routers/file_import.py` | 接口测试：各格式各一例导入成功 |
+| C1 | 文档功能增强，需支持 PDF 等格式文件上传 | 明确要求 PDF 可上传；按需求方确认的范围，本次新增 **PDF / Office（xlsx、xls、pptx、ppt）/ 图片（png、jpg、jpeg、gif、webp、svg、bmp）**；md / docx / html 沿用 ADR 0010 的转换通道。**2026-11-03 增强**：`.pptx` 支持在线预览（纯前端渲染，懒加载独立 chunk），Excel / 旧版 .ppt 仍下载查看 | `plugins/documents/services/importers/`、`routers/file_import.py`、`frontend/src/pages/documents/{DocumentAssetView,PptxPreview}.tsx` | 接口测试：各格式各一例导入成功；前端单测：PPTX 走预览组件、旧版 PPT 回落下载卡 |
 | C2 | …等格式文件上传 | 无法可靠转成 Markdown 的格式**原样存档**：原件存工作区上传目录，文档节点记录格式与原件信息；正文区以阅读器方式呈现，不进入 Markdown 编辑器 | `plugins/documents/models.py`、`services/importers/importer.py`、`frontend/src/pages/documents/` | 测试：原件字节可原样取回（长度 + 前缀一致） |
 | C3 | 在文档树等地方… | 树上按格式渲染图标；同时覆盖文档列表、回收站、工作区搜索等出现文档条目的地方（同一份映射，不各写一套） | `frontend/src/pages/documents/docFormat.ts` 及各调用点 | 前端单测：同一 `content_type` 在各处取到同一图标与配色 |
 | C4 | 为不同格式配置不同的图标 | 图标**形状 + 配色**双区分（PDF 红、Word 蓝、Excel 绿、PPT 橙、图片紫、Markdown 蓝灰、未知灰），不只靠颜色区分（色弱可辨） | 同上 | 前端单测：格式 → (图标, 颜色) 映射唯一且非空 |

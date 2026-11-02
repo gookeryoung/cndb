@@ -71,6 +71,7 @@ test.describe("工作区备份归档（v9）", () => {
   test("归档导入：默认导入为新工作区（不覆盖同名既有工作区）", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     const name = `e2e归档导入源-${uniq}`;
+    const importedName = `${name}-改名导入`;
     const wid = await createWorkspace(request, name);
     const archivePath = await exportArchive(request, wid);
 
@@ -80,14 +81,17 @@ test.describe("工作区备份归档（v9）", () => {
     // 预检后默认选中「导入为新工作区」（推荐），覆盖恢复需显式切换
     await expect(page.getByTestId("import-archive-inspect")).toBeVisible({ timeout: 30000 });
     await expect(page.getByRole("radio", { name: /导入为新工作区/ })).toBeChecked();
+    // 新工作区名称默认带导入时间后缀，且允许修改
+    await expect(page.getByLabel("新工作区名称")).toHaveValue(new RegExp(`^${name}（导入 `));
+    await page.getByLabel("新工作区名称").fill(importedName);
     await page.getByRole("button", { name: "导入为新工作区" }).click();
 
-    await expect(page.getByText(`已导入工作区「${name}」`)).toBeVisible({ timeout: 30000 });
+    await expect(page.getByText(`已导入工作区「${importedName}」`)).toBeVisible({ timeout: 30000 });
     // 导入成功后新工作区应出现在列表（清理 by name 兜底，防 id 未收录）
     const token = await getAdminToken(request);
     const list = await apiCall(request, token, "get", "/workspaces");
     const imported = (list.body as Array<{ id: number; name: string }>).find(
-      (w) => w.name === name,
+      (w) => w.name === importedName,
     );
     if (imported && !createdWsIds.includes(imported.id)) createdWsIds.push(imported.id);
     expect(imported).toBeTruthy();

@@ -40,6 +40,7 @@ import {
 import type { WorkspaceModule } from '@/utils/workspaceModules'
 import ModuleCheckCards from '@/components/ModuleCheckCards'
 import { flattenWorkspaceOrder, sortWorkspaces } from '@/utils/homeOrder'
+import { formatDateTime } from '@/utils/datetime'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
 import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
 import MyViewsPanel from './MyViewsPanel'
@@ -668,6 +669,11 @@ function WorkspaceRowDetail({
 /** 允许导入的归档扩展名（仅全量归档，JSON 备份格式已下线） */
 const ACCEPTED_ARCHIVE_EXT = ['.tar.gz', '.tgz']
 
+/** 导入为新工作区的默认名称：归档内名称 + 导入时间后缀（用户可修改） */
+function defaultImportWorkspaceName(base: string): string {
+  return `${base}（导入 ${formatDateTime(new Date().toISOString())}）`
+}
+
 interface ImportWorkspaceModalProps {
   open: boolean
   onCancel: () => void
@@ -685,6 +691,8 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
   const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number; documents: number } | null>(null)
   const [pendingArchive, setPendingArchive] = useState<File | null>(null)
   const [inspect, setInspect] = useState<WorkspaceArchiveInspect | null>(null)
+  // 导入为新工作区时的名称：默认加导入时间后缀便于区分，允许用户修改
+  const [newName, setNewName] = useState('')
   // 默认导入为新工作区（推荐）；仅当归档目标同名工作区已存在且当前用户为 owner 才允许覆盖恢复
   const [mode, setMode] = useState<'new' | 'restore'>('new')
   const [confirmChecked, setConfirmChecked] = useState(false)
@@ -692,11 +700,13 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
 
   const existing = inspect?.existing_workspace ?? null
   const restoreReady = !!existing && confirmChecked && confirmName === inspect?.workspace_name
+  const newNameReady = mode === 'restore' || !!newName.trim()
 
   const reset = () => {
     setImportResult(null)
     setPendingArchive(null)
     setInspect(null)
+    setNewName('')
     setMode('new')
     setConfirmChecked(false)
     setConfirmName('')
@@ -712,12 +722,15 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
     setPendingArchive(file)
     setImportResult(null)
     setInspect(null)
+    setNewName('')
     setMode('new')
     setConfirmChecked(false)
     setConfirmName('')
     setInspecting(true)
     try {
-      setInspect(await workspaceApi.inspectWorkspaceArchive(file))
+      const info = await workspaceApi.inspectWorkspaceArchive(file)
+      setInspect(info)
+      setNewName(defaultImportWorkspaceName(info.workspace_name))
     } catch (err) {
       setPendingArchive(null)
       onError(err)
@@ -734,6 +747,10 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
       return
     }
     if (mode === 'restore' && (!existing || !restoreReady)) return
+    if (mode === 'new' && !newName.trim()) {
+      onError(new Error('请输入新工作区名称'))
+      return
+    }
 
     try {
       setImporting(true)
@@ -749,7 +766,7 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
         setTimeout(() => { reset(); onRestored(restoredId) }, 800)
         return
       }
-      const result = await workspaceApi.importWorkspaceArchive(pendingArchive)
+      const result = await workspaceApi.importWorkspaceArchive(pendingArchive, newName)
       setImportResult({
         tables: result.imported_tables,
         rows: result.imported_rows,
@@ -775,7 +792,8 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
       okText={mode === 'restore' ? '覆盖恢复' : '导入为新工作区'}
       okButtonProps={{
         danger: mode === 'restore',
-        disabled: !pendingArchive || inspecting || (mode === 'restore' && !restoreReady),
+        disabled: !pendingArchive || inspecting || !newNameReady
+          || (mode === 'restore' && !restoreReady),
       }}
       cancelText="取消"
       destroyOnHidden
@@ -840,6 +858,22 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
               </Radio>
             )}
           </Radio.Group>
+
+          {mode === 'new' && (
+            <div style={{ marginTop: 12 }}>
+              <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>新工作区名称</Text>
+              <Input
+                value={newName}
+                maxLength={255}
+                aria-label="新工作区名称"
+                placeholder="默认使用归档名称 + 导入时间，可修改"
+                onChange={e => setNewName(e.target.value)}
+              />
+              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+                默认带导入时间后缀，便于与已有同名工作区区分。
+              </Text>
+            </div>
+          )}
 
           {mode === 'restore' && existing && (
             <div style={{ marginTop: 12 }}>

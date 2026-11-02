@@ -65,10 +65,11 @@ export const workspaceApi = {
       { headers: { 'Content-Type': 'multipart/form-data' } },
     ).then(r => r.data)
   },
-  /** 从 v9 归档创建全新工作区（owner 为当前用户） */
-  importWorkspaceArchive: (file: File) => {
+  /** 从 v9 归档创建全新工作区（owner 为当前用户）；name 非空时覆盖归档内名称 */
+  importWorkspaceArchive: (file: File, name?: string) => {
     const form = new FormData()
     form.append('file', file)
+    if (name?.trim()) form.append('name', name.trim())
     // 同上：multipart 必须显式声明，否则被 axios 按 JSON 序列化
     return api.post<{ workspace: Workspace } & {
       imported_tables: number; imported_rows: number; imported_views: number

@@ -6,6 +6,11 @@ import DocumentAssetView, { assetSuffix } from './DocumentAssetView'
 import { renderProviders } from '@/test/render-providers'
 import { documentsApi, type DocumentItem } from '@/api/documents'
 
+// PPTX 渲染库体积大，单测只验证挂载分派；真实渲染由 PptxPreview.test.tsx 覆盖
+vi.mock('./PptxPreview', () => ({
+  default: ({ title }: { title: string }) => <div data-testid="pptx-preview-stub">{title}</div>,
+}))
+
 const PDF_DOC: DocumentItem = {
   id: 31,
   workspace_id: 7,
@@ -64,7 +69,7 @@ describe('DocumentAssetView 原件阅读器', () => {
     expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('图片')
   })
 
-  it('Excel / PPT 给下载卡而不是内联预览', async () => {
+  it('Excel / 旧版 PPT 给下载卡而不是内联预览', async () => {
     renderProviders(
       <DocumentAssetView
         workspaceId={7}
@@ -74,6 +79,40 @@ describe('DocumentAssetView 原件阅读器', () => {
 
     expect(await screen.findByTestId('doc-asset-download-card')).toHaveTextContent('不支持在线预览')
     expect(screen.queryByTestId('doc-asset-pdf')).not.toBeInTheDocument()
+  })
+
+  it('PPTX 走懒加载在线预览，不再给下载卡', async () => {
+    vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(
+      new Blob(['PK'], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
+    )
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({
+          content_type: 'pptx',
+          asset_mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          title: '胶片',
+        })}
+      />,
+    )
+
+    expect(await screen.findByTestId('pptx-preview-stub')).toHaveTextContent('胶片')
+    expect(screen.queryByTestId('doc-asset-download-card')).not.toBeInTheDocument()
+  })
+
+  it('旧版二进制 PPT 仍回落下载卡（纯前端渲染只支持 .pptx）', async () => {
+    vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(
+      new Blob(['\xd0\xcf'], { type: 'application/vnd.ms-powerpoint' }),
+    )
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({ content_type: 'pptx', asset_mime: 'application/vnd.ms-powerpoint', title: '旧版胶片' })}
+      />,
+    )
+
+    expect(await screen.findByTestId('doc-asset-download-card')).toHaveTextContent('不支持在线预览')
+    expect(screen.queryByTestId('pptx-preview-stub')).not.toBeInTheDocument()
   })
 
   it('MIME 缺失时按 content_type 兜底扩展名（assetSuffix 共用于顶栏下载与下载卡）', () => {

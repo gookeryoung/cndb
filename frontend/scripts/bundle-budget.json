@@ -2,7 +2,6 @@
   "_readme": "关键 chunk 体积基线（gzip 字节）。由 frontend/scripts/bundle-budget.mjs 读写，请勿手改 —— 统一用 `node scripts/bundle-budget.mjs --update --reason \"...\"`，理由会落盘到 reason/updatedAt/commit，让体积增长在 review 时可追溯。resolve: 'entry'=从 dist/index.html 取主入口 script；{assetPattern}=在 dist/assets 内按正则匹配 chunk 文件。tolerance=该项单独容差(%)，缺省用全局 tolerancePct。",
   "tolerancePct": 5,
   "history": [
-    "2025-07-01 分包瘦身确立主入口/GridPage 初始基线",
     "2026-09-26 排序三态、列宽估算/拖宽、列序 DnD 使 GridPage +2.5KB",
     "2026-10-07 图表视图接线使 GridPage +1.8KB；新增 ChartView chunk",
     "2026-10-08 数据治理向导使 GridPage +1.9KB",
@@ -20,7 +19,9 @@
     "2026-10-31 feat: dashboard P2 注册 14 类图，echarts 图表/组件模块随 dashboard chunk 按需加载，属功能必需增长",
     "2026-11-01 feat: 设计模块 P1（ADR 0079）新增 Design 列表/编辑器页与 CodeMirror 语言包；three.js 预览整块 lazy 化为独立 PreviewCanvas chunk，主包零增长",
     "2026-11-01 feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
-    "2026-11-02 feat(help): 0080/0083/0085/0086 四轮功能帮助文档（功能模块门控、设计结构页签、采集策略、设计文件库与装配约束）累计正文增量；该 chunk 是 /help 独立 lazy chunk 不进首屏，正文为静态文案、无 Dialog/面板可再 lazy（2026-11-02 导航文案同步亦在此 chunk）"
+    "2026-11-02 feat(help): 0080/0083/0085/0086 四轮功能帮助文档（功能模块门控、设计结构页签、采集策略、设计文件库与装配约束）累计正文增量；该 chunk 是 /help 独立 lazy chunk 不进首屏，正文为静态文案、无 Dialog/面板可再 lazy（2026-11-02 导航文案同步亦在此 chunk）",
+    "2026-11-02 feat(documents): 新增 PPTX 在线预览（pptx-preview 1.0.7 + jszip/echarts 闭包），整块 lazy 为独立 chunk（431 KiB gzip，仅打开 .pptx 时下载），纳入体积预算防慢涨",
+    "2026-11-02 feat(documents): DOCX/PPTX 原件族新增 PPTX 纯前端在线预览（pptx-preview + jszip + echarts 随库打包）；由 DocumentAssetView React.lazy 按需加载，仅打开 .pptx 时下载，不进文档页首屏"
   ],
   "chunks": [
     {
@@ -70,6 +71,16 @@
       "reason": "feat(help): 0080/0083/0085/0086 四轮功能帮助文档（功能模块门控、设计结构页签、采集策略、设计文件库与装配约束）累计正文增量；该 chunk 是 /help 独立 lazy chunk 不进首屏，正文为静态文案、无 Dialog/面板可再 lazy（2026-11-02 导航文案同步亦在此 chunk）",
       "updatedAt": "2026-11-02",
       "commit": "08e9d1ea"
+    },
+    {
+      "name": "PptxPreview（PPTX 在线预览）",
+      "resolve": {
+        "assetPattern": "^pptx-preview\\.es-.*\\.js$"
+      },
+      "baseline": 431053,
+      "reason": "feat(documents): DOCX/PPTX 原件族新增 PPTX 纯前端在线预览（pptx-preview + jszip + echarts 随库打包）；由 DocumentAssetView React.lazy 按需加载，仅打开 .pptx 时下载，不进文档页首屏",
+      "updatedAt": "2026-11-02",
+      "commit": "d4d5646f"
     }
   ]
 }

@@ -748,6 +748,19 @@ def workspace_backup_filename() -> str:
     return f"cndb-workspace-backup-{cndb.__version__}-{ts}.tar.gz"
 
 
+def _json_default(value: Any) -> Any:
+    """归档 JSON 序列化兜底：日期 / 时间字段按 ISO 字符串落盘.
+
+    表记录里的 date / datetime 值在 ``build_workspace_backup_v9`` 中保留为
+    Python 对象（与 v8 导出经 FastAPI jsonable_encoder 的口径一致），
+    ``json.dumps`` 默认不接受它们；此前含日期列的工作区导出归档会 500
+    （Object of type date is not JSON serializable）。
+    """
+    if isinstance(value, (dt.datetime, dt.date, dt.time)):
+        return value.isoformat()
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 def pack_workspace_archive(
     backup: dict[str, Any],
     files: list[BackupFileEntry],
@@ -766,8 +779,14 @@ def pack_workspace_archive(
             info.mtime = int(dt.datetime.now(dt.UTC).timestamp())
             tar.addfile(info, io.BytesIO(data))
 
-        _add_bytes("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2).encode("utf-8"))
-        _add_bytes("backup.json", json.dumps(backup, ensure_ascii=False).encode("utf-8"))
+        _add_bytes(
+            "manifest.json",
+            json.dumps(manifest, ensure_ascii=False, indent=2, default=_json_default).encode("utf-8"),
+        )
+        _add_bytes(
+            "backup.json",
+            json.dumps(backup, ensure_ascii=False, default=_json_default).encode("utf-8"),
+        )
         for entry in files:
             if entry.source.is_file():
                 tar.add(entry.source, arcname=f"payload/{entry.arcname}")

@@ -166,3 +166,80 @@ class TestArchiveInspect:
             headers=auth_headers,
         )
         assert r.status_code == 400, r.text
+
+
+class TestArchiveDateValues:
+    """回归：含日期列的工作区导出归档不得因 date 对象 500."""
+
+    def test_archive_serializes_date_values(
+        self, client: TestClient, auth_headers: dict[str, str], tmp_path: Path
+    ) -> None:
+        ws = _new_workspace(client, auth_headers, "日期归档", ["tables"])
+        wid = ws["id"]
+        r = client.post(f"{WS}/{wid}/tables", json={"name": "排期表"}, headers=auth_headers)
+        assert r.status_code == 201, r.text
+        tid = r.json()["id"]
+        r = client.post(
+            f"{WS}/{wid}/tables/{tid}/fields",
+            json={"name": "启动日期", "field_type": "date", "order": 0},
+            headers=auth_headers,
+        )
+        assert r.status_code in (200, 201), r.text
+        r = client.post(
+            f"{WS}/{wid}/tables/{tid}/records",
+            json={"values": {"启动日期": "2026-08-30"}},
+            headers=auth_headers,
+        )
+        assert r.status_code in (200, 201), r.text
+
+        raw = _export_archive(client, auth_headers, wid)
+        archive_file = tmp_path / "dated.tar.gz"
+        archive_file.write_bytes(raw)
+
+        from cndb.plugins.workspaces.services.workspace_backup import parse_workspace_archive
+
+        archive = parse_workspace_archive(archive_file)
+        try:
+            row = archive.backup["tables"][0]["rows"][0]
+            assert row["启动日期"] == "2026-08-30"
+        finally:
+            archive.cleanup()
+
+
+class TestArchiveImportName:
+    """导入为新工作区时允许覆盖名称（默认由前端加导入时间后缀）."""
+
+    def test_import_archive_with_custom_name(
+        self, client: TestClient, auth_headers: dict[str, str], tmp_path: Path
+    ) -> None:
+        ws = _new_workspace(client, auth_headers, "原始名称", ["tables"])
+        raw = _export_archive(client, auth_headers, ws["id"])
+        archive_file = tmp_path / "rename.tar.gz"
+        archive_file.write_bytes(raw)
+
+        with archive_file.open("rb") as fh:
+            r = client.post(
+                f"{WS}/import/archive",
+                files={"file": ("rename.tar.gz", fh, "application/gzip")},
+                data={"name": "原始名称（导入 2026-11-02 23:00）"},
+                headers=auth_headers,
+            )
+        assert r.status_code == 201, r.text
+        assert r.json()["workspace"]["name"] == "原始名称（导入 2026-11-02 23:00）"
+
+    def test_import_archive_without_name_keeps_archive_name(
+        self, client: TestClient, auth_headers: dict[str, str], tmp_path: Path
+    ) -> None:
+        ws = _new_workspace(client, auth_headers, "保持原名", ["tables"])
+        raw = _export_archive(client, auth_headers, ws["id"])
+        archive_file = tmp_path / "keep.tar.gz"
+        archive_file.write_bytes(raw)
+
+        with archive_file.open("rb") as fh:
+            r = client.post(
+                f"{WS}/import/archive",
+                files={"file": ("keep.tar.gz", fh, "application/gzip")},
+                headers=auth_headers,
+            )
+        assert r.status_code == 201, r.text
+        assert r.json()["workspace"]["name"] == "保持原名"

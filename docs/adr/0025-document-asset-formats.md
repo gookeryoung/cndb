@@ -14,7 +14,7 @@ Related: `plugins/documents/models.py`、`plugins/documents/services/importers/`
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
 | C1 | 需支持 PDF 等格式文件上传 | 导入白名单新增 `.pdf`、`.xlsx/.xls`、`.pptx/.ppt`、`.png/.jpg/.jpeg/.gif/.webp/.svg/.bmp`（用户确认的格式范围）；md / docx / html 沿用 ADR 0010 的转换通道。 |
-| C2 | …上传 | 新格式**原样存档**：原件写入工作区上传目录，`Document` 记录 `asset_file_key` / `asset_mime` / `content_type`；正文区以阅读器呈现（PDF 浏览器原生渲染、图片直出、Office 给下载卡），不进入 Markdown 编辑器。 |
+| C2 | …上传 | 新格式**原样存档**：原件写入工作区上传目录，`Document` 记录 `asset_file_key` / `asset_mime` / `content_type`；正文区以阅读器呈现（PDF 浏览器原生渲染、图片直出、PPTX 纯前端在线预览，Excel / 旧版 .ppt 给下载卡），不进入 Markdown 编辑器。 |
 | C3 | 在文档树等地方 | 新增 `frontend/src/pages/documents/docFormat.ts` 作为唯一映射；文档树、文档列表、回收站、工作区搜索统一取用。 |
 | C4 | 为不同格式配置不同的图标 | 映射同时给「图标形状 + 配色」（PDF 红 / Word 蓝 / Excel 绿 / PPT 橙 / 图片紫 / Markdown 蓝灰 / 未知灰），不只靠颜色区分。 |
 | C5 | 功能增强…（健壮性） | 沿用 ADR 0010 的批次上限、逐条隔离、冲突三策略、`require_editor`；新增原件读取端点走文档可见性校验（不做「持 key 即可读」的裸链接）；原件文档禁写正文。 |
@@ -118,10 +118,14 @@ SUPPORTED_SUFFIXES = CONVERTIBLE_SUFFIXES + tuple(ASSET_FORMATS)
 | 格式映射 | `components/Document/docFormat.ts`（新增，跨页共享：树 / 列表 / 回收站 / 搜索都取自这里） | `DOC_FORMAT_META`：`content_type → {label, Icon, color}`；`isAssetDoc()`、`formatMeta()`；图标用 antd `FilePdfOutlined` / `FileWordOutlined` / `FileExcelOutlined` / `FilePptOutlined` / `FileImageOutlined` / `FileMarkdownOutlined` / `FileTextOutlined` |
 | 文档树 | `DocumentTree.tsx` | 文档节点图标改由 `formatMeta()` 提供（文件夹逻辑不变） |
 | 列表 / 回收站 / 搜索 | `DocumentsPage.tsx`、`TrashDrawer.tsx`、`GlobalSearch.tsx` | 同上，统一取映射（搜索结果由后端补 `content_type`） |
-| 原件阅读器 | `pages/documents/DocumentAssetView.tsx`（新增） | 拉取 blob → PDF `<iframe>`（objectURL）/ 图片 `<img>` / 其它下载卡；顶部格式标签、大小、下载按钮；失败态「原件缺失，请重新上传」 |
+| 原件阅读器 | `pages/documents/DocumentAssetView.tsx`（新增） | 拉取 blob → PDF `<iframe>`（objectURL）/ 图片 `<img>` / MHTML 沙箱 iframe / PPTX 懒加载预览（`PptxPreview.tsx`，2026-11-03 新增）/ Excel 与旧版 .ppt 下载卡；顶部格式标签、大小、下载按钮；失败态「原件缺失，请重新上传」 |
 | 编辑器页 | `DocumentEditorPage.tsx` | `isAssetDoc(doc.content_type)` 时：隐藏查看/编辑切换、保存/提交、图片/插入表格/AI 等编辑入口，正文区替换为阅读器；保留标签、分享、删除 |
 | 导入弹窗 | `DocumentImportModal.tsx` | `accept` 扩展；预览表增「格式」列并标注「原样存档」；文案说明新的可导入范围 |
 | API | `api/documents.ts` | `FILE_IMPORT_ACCEPT` 扩展；新增 `assetBlob()`（`responseType: 'blob'`） |
+
+**PPTX 在线预览（2026-11-03 增强）**：`.pptx` 原件在浏览器内用 `pptx-preview` 解析 zip 并渲染幻灯片（list 模式，宽度跟随内容区），
+支持文本 / 形状 / 图片等常见版式；旧版二进制 `.ppt` 与 Excel 仍回落下载卡。渲染库（含 jszip / echarts 依赖）整块
+`React.lazy` 为独立 chunk，只在打开 .pptx 时下载，不进文档页首屏；解析失败（损坏 / 加密 / 非标准 zip）显示下载提示。
 
 ### 6. 边界与例外
 

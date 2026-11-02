@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
@@ -534,8 +534,13 @@ def create_workspace_from_archive(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     file: Annotated[UploadFile, File()],
+    name: Annotated[str | None, Form()] = None,
 ) -> WorkspaceCreateFromBackupResponse:
-    """从 v9 归档创建全新工作区（owner 为当前用户），与 JSON 导入互不干扰."""
+    """从 v9 归档创建全新工作区（owner 为当前用户），与 JSON 导入互不干扰.
+
+    ``name`` 非空时用作新工作区名称（前端默认填「归档名 + 导入时间后缀」便于区分，
+    并允许用户修改）；为空时回落到归档内的 workspace.name。
+    """
     from cndb.plugins.workspaces.services.workspace_backup import parse_workspace_archive
 
     fd, tmp_name = tempfile.mkstemp(prefix="cndb-ws-import-", suffix=".tar.gz")
@@ -552,7 +557,7 @@ def create_workspace_from_archive(
             raise HTTPException(status_code=400, detail="无效的备份归档格式")
 
         ws_meta = data.get("workspace") or {}
-        backup_name = (ws_meta.get("name") or "").strip() or "未命名工作区"
+        backup_name = (name or "").strip()[:255] or (ws_meta.get("name") or "").strip() or "未命名工作区"
         try:
             visibility = WorkspaceVisibility(ws_meta.get("visibility", "member"))
         except (ValueError, TypeError):

@@ -675,14 +675,18 @@ describe('WorkspaceList 导入工作区（全量归档）', () => {
     }
   }
 
-  it('选择归档后默认「导入为新工作区」并在成功后跳转（不覆盖已有工作区）', async () => {
+  it('选择归档后默认「导入为新工作区」，名称带导入时间后缀且可修改', async () => {
     let importCalls = 0
+    let nameSent = false
     server.use(
       http.post('/api/v1/workspaces/import/archive/inspect', () => HttpResponse.json(inspectPayload(true))),
-      http.post('/api/v1/workspaces/import/archive', () => {
+      http.post('/api/v1/workspaces/import/archive', async ({ request }) => {
         importCalls += 1
+        // jsdom 的 File 不是 undici 的 File，request.formData() 会解析失败；
+        // multipart 正文里直接断言提交的名称字段（ASCII 便于读取）
+        nameSent = (await request.text()).includes('custom-import-name')
         return HttpResponse.json({
-          workspace: { id: 42, name: '测试工作区', modules: ['tables'] },
+          workspace: { id: 42, name: 'custom-import-name', modules: ['tables'] },
           imported_tables: 2, imported_rows: 3, imported_views: 1, imported_documents: 1, errors: [],
         })
       }),
@@ -699,9 +703,16 @@ describe('WorkspaceList 导入工作区（全量归档）', () => {
     expect(screen.queryByText('危险操作：覆盖恢复')).not.toBeInTheDocument()
     expect(screen.queryByText(/我已知晓/)).not.toBeInTheDocument()
 
+    // 默认名称 = 归档名 + 导入时间后缀，可在提交前修改
+    const nameInput = screen.getByLabelText('新工作区名称') as HTMLInputElement
+    expect(nameInput.value).toMatch(/^测试工作区（导入 \d{4}-\d{2}-\d{2} \d{2}:\d{2}）$/)
+    fireEvent.change(nameInput, { target: { value: 'custom-import-name' } })
+    expect((screen.getByLabelText('新工作区名称') as HTMLInputElement).value).toBe('custom-import-name')
+
     fireEvent.click(screen.getByRole('button', { name: '导入为新工作区' }))
 
     await waitFor(() => expect(importCalls).toBe(1), { timeout: 3000 })
+    expect(nameSent).toBe(true)
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/42/tables'), { timeout: 3000 })
   })
 

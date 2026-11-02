@@ -89,6 +89,7 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 | `POST /v1/workspaces/import` | 兼容扩展：请求体支持归档文件（v9）与旧 JSON（v1-8），按 manifest/`version` 字段分流到解包层或旧路径 |
 | `GET /v1/workspaces/{wid}/export` | 保留（后端兼容 / CLI 与旧数据）：v8 JSON 口径，由 v9 构建器降采样输出；2026-11-03 起前端「备份工作区」只提供全量归档 |
 | `POST /v1/workspaces/import/archive/inspect` | 新增（2026-11-03）：multipart 预检归档，返回归档内工作区名 / 版本 / 统计与「同名且当前用户为 owner」的既有工作区（不落库），供导入对话框决定是否提供覆盖恢复 |
+| `POST /v1/workspaces/import/archive` | 2026-11-03 扩展：multipart 增加可选 `name` 表单字段，覆盖新工作区名称；缺省仍用归档内名称（前端默认填「归档名 + 导入时间后缀」，用户可改） |
 
 ### 4. 边界与例外
 
@@ -112,7 +113,7 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 |---|---|---|
 | API 封装 | `frontend/src/api/workspaces.ts` | `exportWorkspaceArchive`（blob）、`restoreWorkspace`、`inspectWorkspaceArchive`（预检）；2026-11-03 起移除前端 JSON 备份 / 导入方法 |
 | 备份对话框 | `frontend/src/pages/settings/WorkspaceBackupDialog.tsx` | **只保留全量归档备份**：归档导出 + 密钥开关；恢复入口整体移出（2026-11-03 用户口径） |
-| 导入工作区 | `frontend/src/pages/workspace/WorkspaceList.tsx` | 仅接受 .tar.gz；选文件后调预检，默认「导入为新工作区」（推荐，避免覆盖）；仅当归档目标同名工作区已存在且当前用户为 owner 时展示「覆盖恢复到已有工作区」危险选项（勾选 + 输入工作区名双重确认） |
+| 导入工作区 | `frontend/src/pages/workspace/WorkspaceList.tsx` | 仅接受 .tar.gz；选文件后调预检，默认「导入为新工作区」（推荐，避免覆盖），新工作区名称预填「归档名 + 导入时间后缀」并允许修改；仅当归档目标同名工作区已存在且当前用户为 owner 时展示「覆盖恢复到已有工作区」危险选项（勾选 + 输入工作区名双重确认） |
 
 ### 7. 测试清单
 
@@ -166,7 +167,7 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`（v9 构建器 / v8 降采样 / 归档打包与解包）；`plugins/workspaces/routers/workspaces.py`（GET /{wid}/export/archive） | `tests/test_workspace_backup_v9.py` TestArchiveStructure | `d839ef16` |
 | P1 | 已落地 | `plugins/workspaces/services/backup_io.py`（版本白名单 1-9、v9 extras 落库、files_dir、旧行 id 映射）；`plugins/workspaces/services/workspace_restore.py`（wait_sync_jobs_idle / clear_workspace_content / restore_workspace_from_backup）；`plugins/workspaces/routers/workspaces.py`（POST /{wid}/restore、POST /workspaces/import/archive，独立端点，偏离 D1「同端点分流」，multipart 与 JSON 载荷无法共端点） | `tests/test_workspace_backup_v9.py` TestRestoreRoundtrip；既有 v1-8 回归（version "9"→"99" 修正 2 处） | `d839ef16` |
-| P2 | 已落地 | `frontend/src/api/workspaces.ts`（exportWorkspaceArchive / restoreWorkspace / importWorkspaceArchive / inspectWorkspaceArchive）；`frontend/src/pages/settings/WorkspaceBackupDialog.tsx`（仅全量归档导出 + 密钥开关）；`frontend/src/pages/workspace/WorkspaceList.tsx` 导入弹窗（.tar.gz 预检 → 默认新建 / 同名 owner 可覆盖恢复）（2026-11-03 调整） | `frontend/src/pages/settings/WorkspaceBackupDialog.test.tsx` 5 例；`frontend/src/pages/workspace/WorkspaceList.test.tsx` 导入 3 例；后端 `tests/test_workspace_backup_v12.py` TestArchiveInspect 3 例；e2e `frontend/tests/e2e/critical/workspace-backup.spec.ts` 3 例 | `d839ef16` |
+| P2 | 已落地 | `frontend/src/api/workspaces.ts`（exportWorkspaceArchive / restoreWorkspace / importWorkspaceArchive / inspectWorkspaceArchive）；`frontend/src/pages/settings/WorkspaceBackupDialog.tsx`（仅全量归档导出 + 密钥开关）；`frontend/src/pages/workspace/WorkspaceList.tsx` 导入弹窗（.tar.gz 预检 → 默认新建并可在「归档名 + 导入时间后缀」基础上改名 / 同名 owner 可覆盖恢复）（2026-11-03 调整） | `frontend/src/pages/settings/WorkspaceBackupDialog.test.tsx` 5 例；`frontend/src/pages/workspace/WorkspaceList.test.tsx` 导入 3 例；后端 `tests/test_workspace_backup_v12.py` TestArchiveInspect 3 例 + TestArchiveDateValues 1 例 + TestArchiveImportName 2 例；e2e `frontend/tests/e2e/critical/workspace-backup.spec.ts` 3 例 | `d839ef16` |
 
 ## 交接（会话结束更新）
 

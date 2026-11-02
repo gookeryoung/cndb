@@ -57,6 +57,7 @@
     "html2canvas-pro": "^2.5.2",
     "jspdf": "^4.2.1",
     "nunjucks": "^3.2.4",
+    "pptx-preview": "1.0.7",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "react-error-boundary": "^6.1.6",
