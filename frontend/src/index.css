@@ -696,12 +696,12 @@ body.theme-oled {
   border-color: var(--cn-brand-color);
 }
 
-/* 内层 Input 声明为 borderless，但 antd 仍会在 focus-visible 时画 outline；
- * 与外层 .cn-gs-box 的聚焦边框叠成双线，这里统一收掉，聚焦提示只保留外框一条线。 */
+/* 内层 Input 声明为 borderless，但 antd 仍会在键盘聚焦时画 outline，
+ * 与外层 .cn-gs-box 的聚焦边框叠成双线，这里统一收掉，聚焦提示只保留外框一条线。
+ * 只用 :focus / :focus-within（兼容 Chrome 81，见 ADR 0026 D6）。 */
 .cn-gs-box .cn-gs-input,
 .cn-gs-box .cn-gs-input:focus,
-.cn-gs-box .cn-gs-input:focus-within,
-.cn-gs-box .cn-gs-input:has(input:focus-visible) {
+.cn-gs-box .cn-gs-input:focus-within {
   outline: none;
   box-shadow: none;
 }

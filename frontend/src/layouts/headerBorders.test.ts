@@ -57,8 +57,7 @@ describe('顶栏线条契约（搜索框 / 图标按钮 / 分界线）', () => {
     expect(focused).not.toContain('box-shadow')
 
     const inner = ruleBody(
-      '.cn-gs-box .cn-gs-input, .cn-gs-box .cn-gs-input:focus, '
-      + '.cn-gs-box .cn-gs-input:focus-within, .cn-gs-box .cn-gs-input:has(input:focus-visible)',
+      '.cn-gs-box .cn-gs-input, .cn-gs-box .cn-gs-input:focus, .cn-gs-box .cn-gs-input:focus-within',
     )
     expect(inner).toContain('outline: none')
     expect(inner).toContain('box-shadow: none')
