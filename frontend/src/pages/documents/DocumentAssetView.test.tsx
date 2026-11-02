@@ -1,7 +1,7 @@
 /** 原件族阅读器测试（ADR 0025）：PDF / 图片 / Office 三种形态 + 失败态. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import DocumentAssetView, { assetSuffix } from './DocumentAssetView'
 import { renderProviders } from '@/test/render-providers'
 import { documentsApi, type DocumentItem } from '@/api/documents'
@@ -9,6 +9,14 @@ import { documentsApi, type DocumentItem } from '@/api/documents'
 // PPTX 渲染库体积大，单测只验证挂载分派；真实渲染由 PptxPreview.test.tsx 覆盖
 vi.mock('./PptxPreview', () => ({
   default: ({ title }: { title: string }) => <div data-testid="pptx-preview-stub">{title}</div>,
+}))
+vi.mock('./PptxSlideshow', () => ({
+  default: ({ title, onClose }: { title: string; onClose: () => void }) => (
+    <div data-testid="pptx-slideshow-stub">
+      {title}
+      <button type="button" onClick={onClose}>退出放映</button>
+    </div>
+  ),
 }))
 
 const PDF_DOC: DocumentItem = {
@@ -79,6 +87,7 @@ describe('DocumentAssetView 原件阅读器', () => {
 
     expect(await screen.findByTestId('doc-asset-download-card')).toHaveTextContent('不支持在线预览')
     expect(screen.queryByTestId('doc-asset-pdf')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('doc-pptx-present')).not.toBeInTheDocument()
   })
 
   it('PPTX 走懒加载在线预览，不再给下载卡', async () => {
@@ -98,6 +107,12 @@ describe('DocumentAssetView 原件阅读器', () => {
 
     expect(await screen.findByTestId('pptx-preview-stub')).toHaveTextContent('胶片')
     expect(screen.queryByTestId('doc-asset-download-card')).not.toBeInTheDocument()
+
+    // 顶部提供放映入口：点击进入全屏放映覆盖层，退出后回到阅读器
+    fireEvent.click(screen.getByTestId('doc-pptx-present'))
+    expect(await screen.findByTestId('pptx-slideshow-stub')).toHaveTextContent('胶片')
+    fireEvent.click(screen.getByRole('button', { name: '退出放映' }))
+    await waitFor(() => expect(screen.queryByTestId('pptx-slideshow-stub')).not.toBeInTheDocument())
   })
 
   it('旧版二进制 PPT 仍回落下载卡（纯前端渲染只支持 .pptx）', async () => {

@@ -8,7 +8,7 @@
  */
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Empty, Space, Spin, Tag, Typography } from 'antd'
-import { DownloadOutlined } from '@ant-design/icons'
+import { DownloadOutlined, PlayCircleOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { documentsApi, type DocumentItem } from '@/api/documents'
 import { formatSize } from '@/utils/formatSize'
@@ -18,6 +18,7 @@ const { Text } = Typography
 
 // PPTX 渲染库体积较大（jszip / echarts），只在打开 .pptx 时按需加载
 const PptxPreview = lazy(() => import('./PptxPreview'))
+const PptxSlideshow = lazy(() => import('./PptxSlideshow'))
 
 interface Props {
   workspaceId: number
@@ -45,6 +46,7 @@ export function assetSuffix(doc: DocumentItem): string {
 export default function DocumentAssetView({ workspaceId, doc }: Props) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [presenting, setPresenting] = useState(false)
   const fmt = formatMeta(doc.content_type)
   const suffix = assetSuffix(doc)
   const isMhtml = doc.content_type === 'mhtml'
@@ -101,6 +103,17 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
       <Text type="secondary" style={{ fontSize: 12 }}>
         {formatSize(doc.content_size)} · 原样存档（只读）
       </Text>
+      {isPptx && blob && (
+        <Button
+          size="small"
+          type="primary"
+          icon={<PlayCircleOutlined />}
+          data-testid="doc-pptx-present"
+          onClick={() => setPresenting(true)}
+        >
+          放映
+        </Button>
+      )}
     </Space>
   )
 
@@ -198,6 +211,11 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
     >
       {header}
       {viewer}
+      {presenting && blob && (
+        <Suspense fallback={null}>
+          <PptxSlideshow blob={blob} title={doc.title} onClose={() => setPresenting(false)} />
+        </Suspense>
+      )}
     </div>
   )
 }
