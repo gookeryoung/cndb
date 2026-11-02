@@ -1,9 +1,10 @@
-# 工作区内容物综合巡检（ADR 0076 示例）：数据表 + 文档混合检查。
-# document 检查族三类动作全覆盖，与数据表 job 并列执行互不阻断。
+# 工作区内容物综合巡检（ADR 0076 示例）：数据表变更触发，数据表 + 文档混合检查。
+# 该规则在数据表域的质量检查页出现，触发事件用 record.updated（记录批量变更）而不是
+# 文档保存；document 检查族三类动作全覆盖，与数据表 job 并列执行互不阻断。
 name: 工作区综合巡检
 on:
   manual: true
-  events: [document.saved]
+  events: [record.updated]
 jobs:
   文档体检:
     steps:

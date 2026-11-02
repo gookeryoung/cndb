@@ -211,6 +211,9 @@ def test_real_pipeline_examples_are_valid(db, db_engine, tmp_path):
             names.add(ir.name)
             triggers = ir.triggers
             assert triggers.get("manual") is True or triggers.get("events") or triggers.get("schedule")
+            if ir.name == "工作区综合巡检":
+                # 该示例会出现在数据表域质量检查页：触发事件必须是表变更而不是文档保存
+                assert triggers.get("events") == ["record.updated"]
             for job in ir.jobs:
                 for step in job.steps:
                     table_name = step.params.get("table")
