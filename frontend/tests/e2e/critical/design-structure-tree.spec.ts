@@ -1,8 +1,9 @@
-/** 设计结构默认页 E2E（需求 0083 C1–C4）—— 装配树展示层级 + 节点定位源行.
+/** 设计结构 E2E（需求 0083 C1–C4 / ADR 0084 C1）—— 侧栏装配树展示层级 + 节点定位源行.
  *
  * 走完整 UI 链路：经 API 建一份带模块 / 布尔分组 / 图元的设计，进入设计模块默认页
- * （/w/:wid/design）展开装配树，断言 组件 → 结构分组 → 零件 三层与源行元信息；
+ * （/w/:wid/design），在侧栏展开装配树，断言 组件 → 结构分组 → 零件 三层与源行元信息；
  * 再点击零件节点，校验跳转到编辑器并带 `?line=` 源行参数。
+ * 主区已恢复设计管理页（ADR 0084 C5），装配树迁到侧栏。
  * 清理统一走 API，避免失败用例残留设计。
  */
 
@@ -60,13 +61,13 @@ async function expandNode(page: import("@playwright/test").Page, testId: string)
     .click()
 }
 
-test.describe("设计结构默认页（0083）", () => {
+test.describe("设计结构（0083 / 0084）", () => {
   test.beforeEach(async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     void page
   })
 
-  test("默认页展开装配树 → 组件 / 分组 / 零件带源行 → 点击零件定位编辑器", async ({ page, request }) => {
+  test("侧栏展开装配树 → 组件 / 分组 / 零件带源行 → 点击零件定位编辑器", async ({ page, request }) => {
     test.setTimeout(90_000)
     const stamp = Date.now()
     const title = `E2E 装配树 ${stamp}`
@@ -75,13 +76,13 @@ test.describe("设计结构默认页（0083）", () => {
     try {
       designId = await createDesign(request, title)
 
-      // 1) 设计模块默认页即「设计结构」：页签激活并展示装配树
+      // 1) 设计模块默认页为设计管理页，页签激活；装配树落在侧栏（ADR 0084 D4 / C5）
       await page.goto(`/w/${WID}/design`)
       await page.waitForURL(/\/w\/1\/design$/)
       await expect(page.getByTestId("design-crumb")).toBeVisible({ timeout: 10_000 })
       await expect(page.getByTestId("design-tab-structure")).toHaveAttribute("aria-selected", "true")
-      await expect(page.getByTestId("design-structure-tree")).toBeVisible({ timeout: 10_000 })
-      await expect(page.getByText(title).first()).toBeVisible()
+      await expect(page.getByTestId("sider-designs")).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByTestId(`design-node-${designId}`)).toBeVisible({ timeout: 10_000 })
 
       // 2) 展开设计 → 懒加载大纲，出现组件（module 实例）
       await expandNode(page, `design-node-${designId}`)

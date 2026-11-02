@@ -7,10 +7,12 @@
 变换下推：变换是仿射映射，与布尔集合运算可交换，因此 IR 不保留变换包裹节点，
 而是把变换栈「先外后内」下推到每个图元的 ``transform.ops``（ADR 0079 §2）。
 
-装配大纲（ADR 0083 D2）：与 ``nodes`` 同一次编译产出顶层 ``outline`` ——
-``module`` 实例 = ``assembly``（可嵌套即装配层级）、布尔块 = ``group``、
-图元 = ``part``；每个节点带语句起始的 1 基行 / 列。变换不建大纲节点（透明穿透），
-大纲节点数沿用既有编译期限制，不新增限制项（ADR 0083 I3）。
+装配大纲（ADR 0083 D2 / ADR 0084 D2）：与 ``nodes`` 同一次编译产出顶层 ``outline`` ——
+``system`` 声明 = ``system``（复杂系统级，ADR 0084）、``module`` 实例 = ``assembly``
+（组件级，可嵌套）、布尔块 = ``group``、图元 = ``part``（零件级）；每个节点带语句
+起始的 1 基行 / 列。变换不建大纲节点（透明穿透），大纲节点数沿用既有编译期限制，
+不新增限制项（ADR 0083 I3 / ADR 0084 I3）。``system`` 是纯组织层：把系统体平铺到
+顶层后 ``nodes`` / ``params`` 完全一致（ADR 0084 I2）。
 """
 
 from __future__ import annotations
@@ -38,14 +40,18 @@ from cndb.plugins.design.services.dsl.nodes import (
     Instance,
     ModuleCall,
     ModuleDecl,
+    ParamDecl,
     PrimitiveCall,
     Program,
+    ProgramItem,
+    SystemDecl,
     TransformCall,
 )
 from cndb.plugins.design.services.dsl.parse import parse_program
 
-#: IR 协议版本（前后端契约，随语法演进递增；v2 = v1 + 顶层 outline，ADR 0083 D2）
-IR_VERSION = 2
+#: IR 协议版本（前后端契约，随语法演进递增；v2 = v1 + 顶层 outline，ADR 0083 D2；
+#: v3 = v2 + 大纲 system 节点，ADR 0084 D2）
+IR_VERSION = 3
 
 
 def compile_design(content: str, overrides: Mapping[str, float] | None = None) -> CompileResult:
@@ -78,13 +84,14 @@ def _compile(content: str, overrides: dict[str, float]) -> dict[str, Any]:
     if len(program.params) > MAX_PARAMS:
         bad = program.params[MAX_PARAMS]
         raise DslEvalError(f"param 数量超过上限 {MAX_PARAMS}", bad.line, bad.col)
-    if len(program.modules) > MAX_MODULES:
-        bad = program.modules[MAX_MODULES]
-        raise DslEvalError(f"module 数量超过上限 {MAX_MODULES}", bad.line, bad.col)
+    decls = [item for item in program.items if isinstance(item, (ModuleDecl, SystemDecl))]
+    if len(decls) > MAX_MODULES:
+        bad = decls[MAX_MODULES]
+        raise DslEvalError(f"module / system 声明数量超过上限 {MAX_MODULES}", bad.line, bad.col)
 
     env, params_out = _eval_params(program, overrides)
-    modules = _collect_modules(program)
-    nodes, outline = _Emitter(modules=modules, global_env=env).emit_top(program.instances)
+    modules, systems = _collect_decls(program)
+    nodes, outline = _Emitter(modules=modules, systems=systems, global_env=env).emit_top(program.items)
 
     return {
         "version": IR_VERSION,
@@ -128,14 +135,20 @@ def _override_number(name: str, value: object, line: int, col: int) -> float:
     return float(value)
 
 
-def _collect_modules(program: Program) -> dict[str, ModuleDecl]:
-    """建模块注册表；重名报错（param 名与模块名空间独立）."""
+def _collect_decls(program: Program) -> tuple[dict[str, ModuleDecl], dict[str, SystemDecl]]:
+    """建 module / system 注册表；两名空间共享，重名报错（ADR 0084 D3）."""
     modules: dict[str, ModuleDecl] = {}
-    for decl in program.modules:
-        if decl.name in modules:
-            raise DslEvalError(f"重复的 module 声明 '{decl.name}'", decl.line, decl.col)
-        modules[decl.name] = decl
-    return modules
+    systems: dict[str, SystemDecl] = {}
+    for decl in (*program.modules, *program.systems):
+        if isinstance(decl, ModuleDecl):
+            if decl.name in modules or decl.name in systems:
+                raise DslEvalError(f"重复的 module 声明 '{decl.name}'", decl.line, decl.col)
+            modules[decl.name] = decl
+            continue
+        if decl.name in systems or decl.name in modules:
+            raise DslEvalError(f"重复的 system 声明 '{decl.name}'", decl.line, decl.col)
+        systems[decl.name] = decl
+    return modules, systems
 
 
 # ── 图元校验（IR 节点构造） ────────────────────────────────
@@ -288,14 +301,45 @@ _XfStack = tuple[tuple[str, list[float]], ...]
 class _Emitter:
     """把 AST 实例展开为 IR 节点：模块递归、变换下推、图元上限计数."""
 
-    def __init__(self, modules: dict[str, ModuleDecl], global_env: dict[str, float]) -> None:
+    def __init__(
+        self,
+        modules: dict[str, ModuleDecl],
+        systems: dict[str, SystemDecl],
+        global_env: dict[str, float],
+    ) -> None:
         self._modules = modules
+        self._systems = systems
         self._global_env = global_env
         self._primitive_count = 0
 
-    def emit_top(self, instances: tuple[Instance, ...]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """展开顶层实例，返回（几何 nodes, 装配大纲 children）；无实例时两者皆空（合法）."""
-        return self._emit_instances(instances, env=self._global_env, xf=(), depth=0)
+    def emit_top(self, items: tuple[ProgramItem, ...]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """按顶层语句顺序展开：声明跳过，实例与 ``system`` 体交错产出几何 / 大纲.
+
+        系统体经同一展开路径产出几何（``nodes`` 顺序 = 平铺顺序，ADR 0084 I2），
+        大纲侧包一层 ``system`` 节点（复杂系统级）。
+        """
+        nodes: list[dict[str, Any]] = []
+        outline: list[dict[str, Any]] = []
+        for item in items:
+            if isinstance(item, (ParamDecl, ModuleDecl)):
+                continue
+            if isinstance(item, SystemDecl):
+                sys_nodes, sys_children = self._emit_instances(item.body, self._global_env, (), 0)
+                nodes.extend(sys_nodes)
+                outline.append(
+                    {
+                        "kind": "system",
+                        "name": item.name,
+                        "line": item.line,
+                        "col": item.col,
+                        "children": sys_children,
+                    }
+                )
+                continue
+            inst_nodes, inst_outline = self._emit_instance(item, self._global_env, (), 0)
+            nodes.extend(inst_nodes)
+            outline.extend(inst_outline)
+        return nodes, outline
 
     def _emit_instances(
         self, instances: tuple[Instance, ...], env: dict[str, float], xf: _XfStack, depth: int
@@ -360,6 +404,8 @@ class _Emitter:
             raise DslEvalError(f"模块实例化递归深度超过上限 {MAX_MODULE_RECURSION}", call.line, call.col)
         decl = self._modules.get(call.name)
         if decl is None:
+            if call.name in self._systems:
+                raise DslEvalError(f"'{call.name}' 是 system 声明，不可实例化（请改用 module）", call.line, call.col)
             raise DslEvalError(f"未知模块 '{call.name}'", call.line, call.col)
         bindings = self._bind_module_args(decl, call, env)
         module_env = dict(self._global_env)

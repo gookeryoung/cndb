@@ -70,10 +70,10 @@ function TableSettingsStub() {
     return <div data-testid="table-settings-stub">{loc.pathname}</div>
 }
 
-/** 设计列表路由桩（ADR 0080：仅勾选设计的工作区落地段） */
+/** 设计列表路由桩（ADR 0080：仅勾选设计的工作区落地段）；展示 search 供大纲定位断言 */
 function DesignsStub() {
     const loc = useLocation()
-    return <div data-testid="designs-page-stub">{loc.pathname}</div>
+    return <div data-testid="designs-page-stub">{loc.pathname}{loc.search}</div>
 }
 
 /** 文档路由桩 —— 展示当前 pathname + query 供断言（?parent= 落在 search 上） */
@@ -372,7 +372,7 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
     })
 
-    it('切到文档/设计模块时页签行隐藏数据分析与数据同步，文档段同时隐藏页签行质量检查', async () => {
+    it('切到文档/设计模块时页签行隐藏数据分析、数据同步与质量检查', async () => {
         // 数据分析 / 数据同步为数据表派生二级功能，仅数据表上下文显示
         const { unmount } = renderLayout(mockUser, '/w/10/documents')
         await waitFor(() => expect(screen.getByTestId('documents-page-stub')).toBeVisible())
@@ -386,12 +386,12 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
         unmount()
 
-        // 设计段同样收敛，但质量检查仍显示
+        // 设计段同样收敛：质量检查为数据表域入口，设计模块不再渲染（2026-11-02 用户口径）
         renderLayout(mockUser, '/w/10/design')
         await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toBeVisible())
         expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /数据同步/ })).toBeNull()
-        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        expect(screen.queryByRole('tab', { name: /质量检查/ })).toBeNull()
         // 设计区二级页签（0083 C1）：唯一入口「设计结构」，落在模块根页时激活
         expect(screen.getByTestId('design-crumb')).toBeVisible()
         expect(screen.getByTestId('design-tab-structure')).toHaveAttribute('aria-selected', 'true')
@@ -825,14 +825,15 @@ describe('MainLayout 工作区模块门控', () => {
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('仅勾选设计的工作区落地 /design，质量检查页签仍在', async () => {
+    it('仅勾选设计的工作区落地 /design，页签行不渲染质量检查', async () => {
         useWorkspaceModules(['design'])
         renderLayout(mockUser, '/w/10/design')
 
         await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toBeVisible())
         await waitFor(() => expect(screen.queryByTestId('ws-nav-tables')).toBeNull())
         expect(screen.getByTestId('ws-nav-design')).toBeInTheDocument()
-        expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
+        // 设计模块不承载质量检查入口（2026-11-02 用户口径）
+        expect(screen.queryByRole('tab', { name: /质量检查/ })).toBeNull()
         expect(screen.getByTestId('design-tab-structure')).toHaveAttribute('aria-selected', 'true')
     })
 
@@ -1000,6 +1001,130 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         fireEvent.click(screen.getByTestId('mobile-nav-btn'))
         expect(await screen.findByTestId('sider-documents')).toBeVisible()
         expect(screen.queryByText('数据表 (')).toBeNull()
+
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1280, height: 800,
+        }
+    })
+})
+
+// ─────────────── 设计段侧栏（ADR 0084 D4 / D5） ───────────────
+
+/** 设计列表 fixture：侧栏装配树的根节点（大纲按设计懒加载） */
+const mockDesignList = [
+    {
+        id: 20,
+        workspace_id: 10,
+        title: '四轮小车',
+        description: '三级装配示例',
+        version_count: 2,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-02T00:00:00Z',
+    },
+]
+
+/** 装配大纲 fixture：系统 → 组件 → 零件 + 系统直属零件（ADR 0084 §9） */
+const mockDesignOutline = {
+    design_id: 20,
+    version_number: 2,
+    source: 'compiled' as const,
+    outline: {
+        children: [{
+            kind: 'system',
+            name: 'rover',
+            line: 27,
+            col: 1,
+            children: [
+                {
+                    kind: 'assembly',
+                    name: 'chassis',
+                    line: 28,
+                    col: 3,
+                    children: [{ kind: 'part', primitive: 'box', line: 22, col: 5 }],
+                },
+                { kind: 'part', primitive: 'sphere', line: 34, col: 3 },
+            ],
+        }],
+    },
+}
+
+function useDesignSidebar() {
+    server.use(
+        http.get('/api/v1/workspaces/:wid/designs', () => HttpResponse.json(mockDesignList)),
+        http.get('/api/v1/workspaces/:wid/designs/:designId/outline', () => HttpResponse.json(mockDesignOutline)),
+    )
+}
+
+/** 点击树节点展开箭头（antd 展开动画窗口约 600ms 会吞下一次点击，先等待） */
+async function expandDesignNode(testId: string) {
+    await new Promise(resolve => setTimeout(resolve, 600))
+    const switcher = screen.getByTestId(testId)
+        .closest('.ant-tree-treenode')
+        ?.querySelector('.ant-tree-switcher')
+    expect(switcher).toBeTruthy()
+    fireEvent.click(switcher as Element)
+    await waitFor(() => {
+        expect(screen.getByTestId(testId).closest('.ant-tree-treenode')?.getAttribute('aria-expanded')).toBe('true')
+    })
+}
+
+describe('MainLayout 设计段侧栏（ADR 0084）', () => {
+    it('设计列表页：侧栏渲染装配结构导航，不再渲染数据表列表', async () => {
+        useDesignSidebar()
+        renderLayout(mockUser, '/w/10/design')
+
+        await waitFor(() => expect(screen.getByTestId('sider-designs')).toBeVisible())
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
+        expect(screen.queryByTestId('sider-documents')).toBeNull()
+        // 大纲按设计懒加载：未展开时仍渲染设计根节点与版本号
+        await waitFor(() => expect(screen.getByTestId('design-node-20')).toBeVisible())
+        expect(screen.getByTestId('design-node-20')).toHaveTextContent('v2')
+    })
+
+    it('设计编辑器页：自动展开当前设计并加载大纲，选中态高亮', async () => {
+        useDesignSidebar()
+        renderLayout(mockUser, '/w/10/design/20')
+
+        // 进入编辑器即见装配结构（C1）：设计根自动展开并加载系统级节点
+        await waitFor(() => expect(screen.getByTestId('design-outline-node-design-20-0')).toBeVisible())
+        expect(screen.getByTestId('design-outline-node-design-20-0')).toHaveTextContent('rover')
+        expect(screen.getByTestId('design-outline-node-design-20-0')).toHaveTextContent('系统 · 第 27 行 · 2 个零件')
+        // 当前设计高亮（侧栏树 selectedKeys 由编辑器路由驱动）
+        expect(screen.getByTestId('design-node-20').closest('.ant-tree-treenode'))
+            .toHaveClass('ant-tree-treenode-selected')
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
+    })
+
+    it('展开系统后点击零件节点定位编辑器源行（?line=）', async () => {
+        useDesignSidebar()
+        renderLayout(mockUser, '/w/10/design/20')
+
+        await waitFor(() => expect(screen.getByTestId('design-outline-node-design-20-0')).toBeVisible())
+        await expandDesignNode('design-outline-node-design-20-0')
+        fireEvent.click(await screen.findByText('球体'))
+        await waitFor(() => {
+            expect(screen.getByTestId('designs-page-stub')).toHaveTextContent('/w/10/design/20?line=34')
+        })
+    })
+
+    it('移动端设计段：抽屉导航显示装配结构而非表列表，点击节点后收起', async () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 375, height: 667,
+        }
+        useDesignSidebar()
+        renderLayout(mockUser, '/w/10/design/20')
+
+        fireEvent.click(screen.getByTestId('mobile-nav-btn'))
+        await waitFor(() => expect(screen.getByTestId('sider-designs')).toBeVisible())
+        expect(screen.queryByText('数据表 (')).toBeNull()
+
+        // 展开系统 → 点击零件 → 导航并自动收起抽屉
+        await waitFor(() => expect(screen.getByTestId('design-outline-node-design-20-0')).toBeVisible())
+        await expandDesignNode('design-outline-node-design-20-0')
+        fireEvent.click(await screen.findByText('球体'))
+        await waitFor(() => expect(document.querySelector('.ant-drawer-open')).toBeNull())
 
         responsiveState = {
             deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,

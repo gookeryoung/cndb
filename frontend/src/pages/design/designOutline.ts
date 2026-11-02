@@ -9,8 +9,8 @@ import type { DesignOutlineNode } from '../../api/design'
 
 /** 树节点负载：供点击跳转 / 图标 / 文案渲染使用 */
 export interface DesignTreeMeta {
-  /** 节点类别：设计根 / 组件 / 分组 / 零件 */
-  type: 'design' | 'assembly' | 'group' | 'part'
+  /** 节点类别：设计根 / 系统（复杂系统级，ADR 0084）/ 组件 / 分组 / 零件 */
+  type: 'design' | 'system' | 'assembly' | 'group' | 'part'
   /** 设计节点：设计 id（用于打开编辑器） */
   designId?: number
   /** 大纲节点：1 基源行（用于编辑器定位） */
@@ -58,7 +58,7 @@ export function primitiveLabel(primitive: string): string {
   return PRIMITIVE_LABELS[primitive] ?? primitive
 }
 
-/** 子树零件计数（part 记 1，assembly / group 递归求和） */
+/** 子树零件计数（part 记 1，system / assembly / group 递归求和） */
 export function countParts(node: DesignOutlineNode): number {
   if (node.kind === 'part') return 1
   return node.children.reduce((total, child) => total + countParts(child), 0)
@@ -83,6 +83,16 @@ export function outlineToTree(
     }
     const children = outlineToTree(node.children, designId, key)
     const partCount = node.children.reduce((total, child) => total + countParts(child), 0)
+    if (node.kind === 'system') {
+      return {
+        key,
+        title: node.name,
+        detail: `系统 · 第 ${node.line} 行 · ${partCount} 个零件`,
+        isLeaf: children.length === 0,
+        meta: { type: 'system', designId, line: node.line, col: node.col, partCount },
+        children,
+      }
+    }
     if (node.kind === 'assembly') {
       return {
         key,

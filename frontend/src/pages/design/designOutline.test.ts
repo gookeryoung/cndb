@@ -73,6 +73,31 @@ describe('outlineToTree', () => {
     expect(assembly!.isLeaf).toBe(true)
     expect(assembly!.meta.partCount).toBe(0)
   })
+
+  it('系统级节点（ADR 0084）：标签「系统」+ 声明行 + 递归零件计数', () => {
+    const nodes: DesignOutlineNode[] = [{
+      kind: 'system',
+      name: 'rover',
+      line: 27,
+      col: 1,
+      children: [
+        { kind: 'assembly', name: 'chassis', line: 28, col: 3, children: [
+          { kind: 'part', primitive: 'box', line: 22, col: 5 },
+        ] },
+        { kind: 'part', primitive: 'sphere', line: 34, col: 3 },
+      ],
+    }]
+    const [system] = outlineToTree(nodes, 20)
+    expect(system).toMatchObject({
+      key: 'design-20-0',
+      title: 'rover',
+      detail: '系统 · 第 27 行 · 2 个零件',
+      isLeaf: false,
+      meta: { type: 'system', designId: 20, line: 27, col: 1, partCount: 2 },
+    })
+    expect(system!.children!.map(entry => entry.meta.type)).toEqual(['assembly', 'part'])
+    expect(countParts(nodes[0]!)).toBe(2)
+  })
 })
 
 describe('辅助映射', () => {

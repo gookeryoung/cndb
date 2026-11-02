@@ -22,6 +22,8 @@ from cndb.plugins.design.services.dsl.nodes import (
     ParamDecl,
     PrimitiveCall,
     Program,
+    ProgramItem,
+    SystemDecl,
     TransformCall,
     UnaryOp,
     Vector,
@@ -30,6 +32,8 @@ from cndb.plugins.design.services.dsl.nodes import (
 #: 语句关键字（不能作图元 / 模块名）
 KEYWORD_PARAM = "param"
 KEYWORD_MODULE = "module"
+#: 系统装配声明关键字（ADR 0084 D1：顶层根、无参数表、不可实例化）
+KEYWORD_SYSTEM = "system"
 #: 布尔块关键字
 BOOLEANS = ("union", "difference", "intersection")
 #: 变换关键字
@@ -108,25 +112,43 @@ class Parser:
 
     @staticmethod
     def _is_keyword(value: str) -> bool:
-        return value in (KEYWORD_PARAM, KEYWORD_MODULE) or value in BOOLEANS or value in TRANSFORMS
+        return value in (KEYWORD_PARAM, KEYWORD_MODULE, KEYWORD_SYSTEM) or value in BOOLEANS or value in TRANSFORMS
 
     # ── 顶层 ─────────────────────────────────────────────
 
     def parse_program(self) -> Program:
-        """解析整个编译单元：param / module 声明与顶层实例（任意顺序）."""
+        """解析整个编译单元：param / module / system 声明与顶层实例（任意顺序）."""
         params: list[ParamDecl] = []
         modules: list[ModuleDecl] = []
+        systems: list[SystemDecl] = []
         instances: list[Instance] = []
+        items: list[ProgramItem] = []
 
         while self._peek().kind != EOF:
             token = self._peek()
             if token.kind == IDENT and token.value == KEYWORD_PARAM:
-                params.append(self._parse_param_decl())
+                decl = self._parse_param_decl()
+                params.append(decl)
+                items.append(decl)
             elif token.kind == IDENT and token.value == KEYWORD_MODULE:
-                modules.append(self._parse_module_decl())
+                module = self._parse_module_decl()
+                modules.append(module)
+                items.append(module)
+            elif token.kind == IDENT and token.value == KEYWORD_SYSTEM:
+                system = self._parse_system_decl()
+                systems.append(system)
+                items.append(system)
             else:
-                instances.append(self._parse_instance(depth=1))
-        return Program(params=tuple(params), modules=tuple(modules), instances=tuple(instances))
+                instance = self._parse_instance(depth=1)
+                instances.append(instance)
+                items.append(instance)
+        return Program(
+            params=tuple(params),
+            modules=tuple(modules),
+            instances=tuple(instances),
+            systems=tuple(systems),
+            items=tuple(items),
+        )
 
     def _parse_param_decl(self) -> ParamDecl:
         start = self._expect_ident("param 关键字")
@@ -156,6 +178,18 @@ class Parser:
         self._expect(")", ")")
         body = self._parse_block_instances(depth=2, what="模块体")
         return ModuleDecl(name=name.value, params=tuple(params), body=body, line=start.line, col=start.col)
+
+    def _parse_system_decl(self) -> SystemDecl:
+        """系统装配声明：``system 名 { instance* }``（顶层根、无参数表，ADR 0084 D3）."""
+        start = self._expect_ident("system 关键字")
+        name = self._expect_ident("系统名")
+        if name.value in PRIMITIVES or self._is_keyword(name.value):
+            raise DslSyntaxError(f"系统名 '{name.value}' 与关键字 / 图元重名", name.line, name.col)
+        if self._peek().kind == "(":
+            token = self._peek()
+            raise DslSyntaxError("system 不接受参数表（系统是单例根，可配置性请用顶层 param）", token.line, token.col)
+        body = self._parse_block_instances(depth=2, what="系统体")
+        return SystemDecl(name=name.value, body=body, line=start.line, col=start.col)
 
     # ── 实例 ─────────────────────────────────────────────
 
@@ -355,6 +389,7 @@ __all__ = [
     "BOOLEANS",
     "KEYWORD_MODULE",
     "KEYWORD_PARAM",
+    "KEYWORD_SYSTEM",
     "PRIMITIVES",
     "TRANSFORMS",
     "DslSyntaxError",

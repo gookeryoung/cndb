@@ -1,89 +1,73 @@
-/** 设计结构页（设计模块默认页，ADR 0083 D6）.
+/** 设计管理页（设计模块默认页，ADR 0084 D5）
  *
- * 主体为装配大纲树：设计（根）→ 组件（module 实例，可嵌套）→ 结构分组 →
- * 零件（图元）。大纲由后端编译链路与 IR 同源产出（D2），前端零解析（ADR 0079 I1）；
- * 按设计展开懒加载单设计大纲端点（D4），节点带 1 基源行并可点击定位编辑器（D7）。
- * 既有能力（新建 / 打开 / 改名 / 描述 / 删除）全部保留在树节点与工具栏上。
+ * 形态对齐文档模块分工：侧栏 = 装配结构树（导航），主区 = 设计管理列表
+ * （新建 / 打开 / 改名 / 描述 / 删除 + 版本与更新时间摘要）。
+ * 装配结构树已迁至侧栏（`DesignStructureNav`），本页不再渲染大纲树。
  */
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import {
-  App as AntApp, Button, Empty, Form, Input, Modal, Popconfirm, Skeleton, Space, Tag, Tree, Typography,
+  App as AntApp, Button, Empty, Form, Input, List, Modal, Popconfirm, Skeleton, Space, Tag, Typography,
 } from 'antd'
-import type { DataNode, TreeProps } from 'antd/es/tree'
-import {
-  ApartmentOutlined, AppstoreOutlined, ClusterOutlined, DeleteOutlined, EditOutlined,
-  NodeIndexOutlined, PlusOutlined, ToolOutlined,
-} from '@ant-design/icons'
+import { ApartmentOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { designsApi, workspaceApi } from '@/api'
-import type { DesignListItem, DesignOutlineNode } from '@/api'
+import type { DesignListItem } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
-import {
-  countParts, designEditorPath, type DesignTreeEntry, type DesignTreeMeta, outlineToTree,
-} from './designOutline'
+import { designEditorPath } from './designOutline'
 
 const { Text } = Typography
 
-/** 新建设计的起步模板（ADR 0079 §2 法兰板示例） */
-export const DEFAULT_DESIGN_CONTENT = `// 参数：驱动参数面板，可被预览覆盖重编译
-param width = 80          // 长度单位 mm
-param height = 40
-param hole_d = 8
+/** 新建设计的起步模板：复杂系统（system）→ 组件（module）→ 零件（图元）三级装配示例
+ *  （ADR 0084 §9；后端编译通过才落 v1 版本） */
+export const DEFAULT_DESIGN_CONTENT = `// 四轮小车（rover）：复杂系统 → 组件 → 零件三级装配示例
+param body_len = 120
+param body_w = 60
+param body_t = 8
+param wheel_d = 40
+param wheel_w = 16
+param axle_d = 10
 
-// 模块：带默认值的可复用结构
-module plate(w, h, t) {
-  difference {
-    box(size = [w, h, t])
-    translate([w / 2, h / 2, -1]) {
-      cyl(d = hole_d, h = t + 2)   // 减切通孔：两端各出 1mm
+// 组件级：module 可复用 / 可实例化 / 可嵌套（子装配）
+module wheel(d, w) {
+  rotate([90, 0, 0])
+    difference {
+      cyl(d = d, h = w)
+      translate([0, 0, -1]) cyl(d = d * 0.35, h = w + 2)
     }
+}
+
+module axle(d, len) {
+  rotate([90, 0, 0]) tube(od = d, id = d * 0.6, h = len)
+}
+
+module chassis(len, w, t) {
+  difference {
+    box(size = [len, w, t])
+    translate([0, 0, -1]) cyl(d = 14, h = t + 2)
   }
 }
 
-plate(width, height, 12)            // 顶层实例（产出几何）
+// 系统级：复杂系统装配声明（顶层根，不可实例化）
+system rover {
+  chassis(body_len, body_w, body_t)
+
+  translate([body_len / 2 - 18, 0, 0]) axle(axle_d, body_w + 2 * wheel_w)
+  translate([body_len / 2 - 18, body_w / 2 + wheel_w / 2, 0]) wheel(wheel_d, wheel_w)
+  translate([body_len / 2 - 18, -body_w / 2 - wheel_w / 2, 0]) wheel(wheel_d, wheel_w)
+
+  translate([-body_len / 2 + 18, 0, 0]) axle(axle_d, body_w + 2 * wheel_w)
+  translate([-body_len / 2 + 18, body_w / 2 + wheel_w / 2, 0]) wheel(wheel_d, wheel_w)
+  translate([-body_len / 2 + 18, -body_w / 2 - wheel_w / 2, 0]) wheel(wheel_d, wheel_w)
+
+  translate([0, 0, body_t + 42]) sphere(r = 14)   // 零件级细节：传感器球头
+}
 `
 
-interface CreateFormValues {
+interface DesignFormValues {
   title: string
   description?: string
-}
-
-interface RenameFormValues {
-  title: string
-  description?: string
-}
-
-/** 大纲节点图标：组件 / 分组 / 零件各一类（设计根用工具图标） */
-const ENTRY_ICONS = {
-  assembly: ClusterOutlined,
-  group: NodeIndexOutlined,
-  part: AppstoreOutlined,
-} as const
-
-/** Tree 节点（额外携带 meta，供点击跳转定位） */
-interface DesignTreeDataNode extends DataNode {
-  meta?: DesignTreeMeta
-  children?: DesignTreeDataNode[]
-}
-
-/** 大纲条 → antd Tree 节点（标题 + 类型 / 行号 / 零件数描述） */
-function entryToTreeNode(entry: DesignTreeEntry): DesignTreeDataNode {
-  const Icon = ENTRY_ICONS[entry.meta.type as keyof typeof ENTRY_ICONS]
-  return {
-    key: entry.key,
-    meta: entry.meta,
-    isLeaf: entry.isLeaf,
-    icon: <Icon />,
-    title: (
-      <span className="cn-design-outline-title" data-testid={`design-outline-node-${entry.key}`}>
-        <span>{entry.title}</span>
-        <Text type="secondary" className="cn-design-outline-detail">{entry.detail}</Text>
-      </span>
-    ),
-    children: entry.children?.map(entryToTreeNode),
-  }
 }
 
 export default function DesignsPage() {
@@ -105,18 +89,15 @@ export default function DesignsPage() {
   })
   const isViewer = wsDetail?.current_user_role === 'viewer'
 
-  // 已加载大纲（按设计 id）：展开设计时懒加载（D4）；source=content 表示历史快照派生（D5）
-  const [outlines, setOutlines] = useState<Record<number, { nodes: DesignOutlineNode[]; source: 'compiled' | 'content' }>>({})
-
   const [createOpen, setCreateOpen] = useState(false)
-  const [createForm] = Form.useForm<CreateFormValues>()
+  const [createForm] = Form.useForm<DesignFormValues>()
   const [renaming, setRenaming] = useState<DesignListItem | null>(null)
-  const [renameForm] = Form.useForm<RenameFormValues>()
+  const [renameForm] = Form.useForm<DesignFormValues>()
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['designs', wid] })
 
   const create = useMutation({
-    mutationFn: (values: CreateFormValues) =>
+    mutationFn: (values: DesignFormValues) =>
       designsApi.create(wid, {
         title: values.title,
         description: values.description ?? '',
@@ -133,7 +114,7 @@ export default function DesignsPage() {
   })
 
   const rename = useMutation({
-    mutationFn: (payload: { item: DesignListItem; values: RenameFormValues }) =>
+    mutationFn: (payload: { item: DesignListItem; values: DesignFormValues }) =>
       designsApi.update(wid, payload.item.id, {
         title: payload.values.title,
         description: payload.values.description ?? payload.item.description,
@@ -160,86 +141,6 @@ export default function DesignsPage() {
     setRenaming(item)
   }
 
-  /** 设计节点标题：名称 + 版本 / 更新时间 + 历史快照标记 + 打开 / 编辑 / 删除入口 */
-  const renderDesignTitle = (item: DesignListItem) => {
-    const outline = outlines[item.id]
-    return (
-      <span className="cn-design-tree-title" data-testid={`design-node-${item.id}`}>
-        <Text strong>{item.title}</Text>
-        <Text type="secondary" className="cn-design-tree-meta">
-          {item.description || '（无描述）'}
-          {' · '}v{item.version_count}
-          {' · '}更新于 {formatDateTime(item.updated_at)}
-        </Text>
-        {outline?.source === 'content' && (
-          <Tag color="orange" bordered={false} className="cn-design-tree-tag">历史快照派生</Tag>
-        )}
-        {/* 树节点内联操作：阻止冒泡，避免同时触发行定位跳转 */}
-        <span className="cn-design-tree-actions" onClick={(event) => event.stopPropagation()}>
-          <Button size="small" type="link" onClick={() => navigate(designEditorPath(wid, item.id))}>
-            打开
-          </Button>
-          {!isViewer && (
-            <>
-              <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openRename(item)}>
-                编辑
-              </Button>
-              <Popconfirm
-                title={`删除设计「${item.title}」？`}
-                description="版本历史会一并隐藏，操作不可撤销。"
-                okText="删除"
-                okButtonProps={{ danger: true }}
-                onConfirm={() => remove.mutate(item)}
-              >
-                <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
-              </Popconfirm>
-            </>
-          )}
-        </span>
-      </span>
-    )
-  }
-
-  const treeData = useMemo<DesignTreeDataNode[]>(
-    () => designs.map((item) => {
-      const outline = outlines[item.id]
-      return {
-        key: `design-${item.id}`,
-        meta: { type: 'design', designId: item.id, partCount: outline ? outline.nodes.reduce((total, node) => total + countParts(node), 0) : 0 },
-        isLeaf: outline ? outline.nodes.length === 0 : false,
-        icon: <ToolOutlined />,
-        title: renderDesignTitle(item),
-        children: outline ? outlineToTree(outline.nodes, item.id).map(entryToTreeNode) : undefined,
-      }
-    }),
-    // renderDesignTitle 依赖 isViewer / outlines / designs，均在本依赖内
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [designs, outlines, isViewer, wid],
-  )
-
-  /** 展开设计时懒加载该设计大纲（D4）；历史快照派生只读，保存一次后自然落库（D5） */
-  const loadOutline = (node: DesignTreeDataNode): Promise<void> => {
-    const designId = node.meta?.designId
-    if (!designId || node.meta?.type !== 'design' || outlines[designId]) return Promise.resolve()
-    return designsApi.outline(wid, designId)
-      .then((result) => {
-        setOutlines((prev) => ({ ...prev, [designId]: { nodes: result.outline.children, source: result.source } }))
-      })
-      .catch((err) => {
-        message.error(err instanceof Error ? err.message : '装配大纲加载失败')
-      })
-  }
-
-  /** 点击节点：设计 → 编辑器；组件 / 分组 / 零件 → 编辑器并定位源行（D7） */
-  const onSelectNode: TreeProps['onSelect'] = (_keys, info) => {
-    const meta = (info.node as DesignTreeDataNode).meta
-    if (!meta || meta.type === 'design') {
-      if (meta?.designId) navigate(designEditorPath(wid, meta.designId))
-      return
-    }
-    navigate(designEditorPath(wid, meta.designId ?? 0, meta.line))
-  }
-
   return (
     <div style={{ padding: '16px 24px', maxWidth: 960, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -250,7 +151,7 @@ export default function DesignsPage() {
           </Space>
           <div>
             <Text type="secondary">
-              按装配层级查看设计的组件与零件；展开设计加载大纲，点击节点定位到结构 DSL 源行。
+              侧栏按装配层级（系统 → 组件 → 零件）浏览设计；本页管理设计，点击进入结构 DSL 编辑器。
             </Text>
           </div>
         </div>
@@ -264,15 +165,60 @@ export default function DesignsPage() {
       ) : designs.length === 0 ? (
         <Empty description="还没有结构设计" style={{ padding: 48 }} />
       ) : (
-        <div className="cn-design-structure" data-testid="design-structure-tree">
-          <Tree
-            blockNode
-            showIcon
-            treeData={treeData}
-            // antd 懒加载契约：展开无 children 的节点时调用，子节点由 treeData 状态回填
-            loadData={(node) => loadOutline(node as DesignTreeDataNode)}
-            onSelect={onSelectNode}
+        <div className="cn-design-structure" data-testid="design-list">
+          <List
+            dataSource={designs}
+            renderItem={(item) => (
+              <List.Item
+                data-testid={`design-row-${item.id}`}
+                actions={[
+                  <Button key="open" size="small" type="link" onClick={() => navigate(designEditorPath(wid, item.id))}>
+                    打开
+                  </Button>,
+                  ...(isViewer
+                    ? []
+                    : [
+                        <Button
+                          key="edit"
+                          size="small"
+                          type="link"
+                          icon={<EditOutlined />}
+                          onClick={() => openRename(item)}
+                        >
+                          编辑
+                        </Button>,
+                        <Popconfirm
+                          key="delete"
+                          title={`删除设计「${item.title}」？`}
+                          description="版本历史会一并隐藏，操作不可撤销。"
+                          okText="删除"
+                          okButtonProps={{ danger: true }}
+                          onConfirm={() => remove.mutate(item)}
+                        >
+                          <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
+                        </Popconfirm>,
+                      ]),
+                ]}
+              >
+                <List.Item.Meta
+                  title={<Text strong>{item.title}</Text>}
+                  description={(
+                    <span className="cn-design-tree-meta">
+                      {item.description || '（无描述）'}
+                      {' · '}v{item.version_count}
+                      {' · '}更新于 {formatDateTime(item.updated_at)}
+                    </span>
+                  )}
+                />
+              </List.Item>
+            )}
           />
+          <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)' }}>
+            <Text type="secondary">
+              <Tag bordered={false}>提示</Tag>
+              展开侧栏中的设计可查看系统 / 组件 / 零件层级，点击节点定位到源行。
+            </Text>
+          </div>
         </div>
       )}
 
@@ -299,7 +245,7 @@ export default function DesignsPage() {
           <Form.Item name="description" label="描述（可选）">
             <Input.TextArea rows={2} maxLength={500} placeholder="用途说明" />
           </Form.Item>
-          <Text type="secondary">将以示例模板（参数化法兰板）创建，创建后可自由编辑。</Text>
+          <Text type="secondary">将以示例模板（四轮小车：系统 / 组件 / 零件三级装配）创建，创建后可自由编辑。</Text>
         </Form>
       </Modal>
 
@@ -331,4 +277,3 @@ export default function DesignsPage() {
     </div>
   )
 }
-

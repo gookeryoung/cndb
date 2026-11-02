@@ -154,12 +154,32 @@ class ParamDecl:
 
 
 @dataclass(frozen=True, slots=True)
+class SystemDecl:
+    """系统装配声明（ADR 0084 D1/D3）：顶层根、无参数表、不可实例化.
+
+    系统是纯组织层——把 ``body`` 平铺到顶层后几何与参数完全一致（I2）。
+    """
+
+    name: str
+    body: tuple[Instance, ...]
+    line: int
+    col: int
+
+
+#: 顶层语句（保持原文出现顺序：几何按此顺序展开，ADR 0084 §2）
+ProgramItem = ParamDecl | ModuleDecl | SystemDecl | Instance
+
+
+@dataclass(frozen=True, slots=True)
 class Program:
-    """编译单元：顶层 param / module 声明与顶层实例."""
+    """编译单元：顶层 param / module / system 声明与顶层实例."""
 
     params: tuple[ParamDecl, ...]
     modules: tuple[ModuleDecl, ...]
     instances: tuple[Instance, ...]
+    systems: tuple[SystemDecl, ...] = ()
+    #: 顶层语句的原文顺序（编译按此交错展开，I2）；为空表示仅按分类元组展开
+    items: tuple[ProgramItem, ...] = ()
 
 
 # ── 诊断与编译结果 ────────────────────────────────────────
@@ -200,6 +220,8 @@ __all__ = [
     "ParamDecl",
     "PrimitiveCall",
     "Program",
+    "ProgramItem",
+    "SystemDecl",
     "TransformCall",
     "UnaryOp",
     "Vector",

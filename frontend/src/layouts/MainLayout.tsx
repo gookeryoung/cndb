@@ -20,6 +20,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
+import DesignStructureNav from '@/pages/design/DesignStructureNav'
 import {
   describeSort, DOC_SORT_OPTIONS, setDocTitleFilter, sortDocTree, sortToValue, useDocSortPref,
   useDocTitleFilter, valueToSort,
@@ -205,6 +206,8 @@ export default function MainLayout() {
 
   // 文档侧栏的文档树：与文档管理页同源 tree 端点（共享 react-query 缓存），全量文档+文件夹
   const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
+  // 设计模块上下文：页签行不再渲染工作区级质量检查（2026-11-02 用户口径）
+  const inDesignContext = !!wid && location.startsWith(`/w/${wid}/design`)
   const { data: docsTreeData, isSuccess: docsTreeReady } = useQuery({
     // 注意 key 用数字 wid：文档页 invalidateQueries 按 ['documents', <number>] 前缀失效，
     // 字符串 wid 与数字 workspaceId 严格不等会导致前缀匹配不上、侧边栏不随页面变更刷新
@@ -309,8 +312,8 @@ export default function MainLayout() {
    * 数据分析 / 数据同步随数据表开放，且仅在数据表模块上下文显示
    * （切到文档 / 设计 / 工作区设置时隐藏，tablesDerivedActive 收敛）；
    * 工作区级质量检查（/pipelines）为数据表域入口，恒显（ADR 0080），
-   * 但文档模块上下文除外：文档区胶囊页签已承载文档质量检查（/documents/pipelines），
-   * 页签行再渲染一份属冗余（设计 / 设置段仍显示）。
+   * 但文档 / 设计模块上下文除外：文档区胶囊页签已承载文档质量检查（/documents/pipelines），
+   * 页签行再渲染一份属冗余；设计模块按 2026-11-02 用户口径不承载质量检查入口（设置段仍显示）。
    * 一级模块已上移顶栏（C4），
    * 仅移动端仍在页签行全量渲染（顶栏空间不足，移动端形态维持现状）。
    */
@@ -326,9 +329,9 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
-    // 质量检查紧随数据列表（第二项）：文档上下文不显示——文档区胶囊页签已有入口，
-    // 避免同名页签混入数据表域
-    ...(wsFeatures.quality && !inDocumentsContext ? [{
+    // 质量检查紧随数据列表（第二项）：文档 / 设计上下文不显示——文档区胶囊页签已有入口，
+    // 设计模块不承载质量检查入口，避免同名页签混入其他模块
+    ...(wsFeatures.quality && !inDocumentsContext && !inDesignContext ? [{
       key: 'pipelines',
       label: (
         <span>
@@ -400,23 +403,24 @@ export default function MainLayout() {
     ? DESIGN_SUBPAGES.find(p => p.key === 'structure')
     : undefined
 
-  // ── 侧边栏形态：按当前功能段切换（需求 0065；工作区设置/设计段折叠过渡）──
-  // documents → 文档侧栏（未选文档=文档列表，已选中=标题大纲）；
+  // ── 侧边栏形态：按当前功能段切换（需求 0065；工作区设置段折叠过渡）──
+  // documents → 文档侧栏（文档树）；design → 设计侧栏（装配结构树，ADR 0084 D4）；
   // analytics / datasource / pipelines → 数据表侧栏始终展开（不再自动折叠）；
-  // workspace settings / design → Sider 不卸载，自动折叠为图标条，
+  // workspace settings → Sider 不卸载，自动折叠为图标条，
   //   减少切换时布局骨架消失的视觉冲击，返回数据表段时恢复用户原有折叠偏好；
   // 其余（数据表段）→ 维持数据表导航。未勾选数据表模块的工作区仍隐藏侧栏。
   // 表级子页 /tables/:tid/settings 不含 /settings 段前缀，不受影响。
-  const inDesignContext = !!wid && location.startsWith(`/w/${wid}/design`)
   const inWsSettingsContext = !!wid && location.startsWith(`/w/${wid}/settings`)
-  const inFocusContext = inWsSettingsContext || inDesignContext
-  type SiderMode = 'documents' | 'tables' | 'hidden'
+  const inFocusContext = inWsSettingsContext
+  type SiderMode = 'documents' | 'design' | 'tables' | 'hidden'
   const siderMode: SiderMode =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
-      : wsFeatures.tables
-        ? 'tables'
-        : 'hidden'
+      : inDesignContext && wsFeatures.design
+        ? 'design'
+        : wsFeatures.tables
+          ? 'tables'
+          : 'hidden'
 
   // 进入分析/同步/设置段时自动折叠侧栏（记住进入前的折叠偏好，离开时恢复）
   const collapsedBeforeFocusRef = useRef(false)
@@ -710,6 +714,21 @@ export default function MainLayout() {
     )
   }
 
+  /** 设计导航内容 —— 设计段下 Sider 与移动端抽屉共用（ADR 0084 D4）.
+   * 装配树（设计 → 系统 → 组件 → 分组 → 零件），按设计懒加载 outline 端点；
+   * 点设计进编辑器、点大纲节点带 ?line= 定位（ADR 0083 D7）；侧栏只读（0084 D6）。 */
+  const renderDesignNav = (mobile: boolean, collapsed = false) => {
+    if (!wid) return null
+    return (
+      <DesignStructureNav
+        workspaceId={wid}
+        mobile={mobile}
+        collapsed={collapsed}
+        onNavigate={() => setMobileNavOpen(false)}
+      />
+    )
+  }
+
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       <Header className="cn-app-header" style={{
@@ -850,7 +869,7 @@ export default function MainLayout() {
         {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
             管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
-            侧栏形态随功能段切换（需求 0065）：文档段=文档导航，数据表段=表导航，
+            侧栏形态随功能段切换（需求 0065 / ADR 0084）：文档段=文档导航，设计段=装配结构树，
             analytics / datasource / 工作区设置段=表导航自动折叠为图标条（骨架不消失），
             无 tables 能力的类型不渲染侧栏 */}
         {!isMobile && !inAdminConsole && !inHelpDocs && siderMode !== 'hidden' && (
@@ -859,7 +878,11 @@ export default function MainLayout() {
             width={240} collapsedWidth={60}
             style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
           >
-            {siderMode === 'documents' ? renderDocumentNav(false, collapsed) : renderTableNav(false, collapsed)}
+            {siderMode === 'documents'
+              ? renderDocumentNav(false, collapsed)
+              : siderMode === 'design'
+                ? renderDesignNav(false, collapsed)
+                : renderTableNav(false, collapsed)}
           </Sider>
         )}
 
@@ -993,7 +1016,11 @@ export default function MainLayout() {
         size={280}
         styles={{ body: { padding: 0 } }}
       >
-        {siderMode === 'documents' ? renderDocumentNav(true) : siderMode === 'tables' && renderTableNav(true)}
+        {siderMode === 'documents'
+          ? renderDocumentNav(true)
+          : siderMode === 'design'
+            ? renderDesignNav(true)
+            : siderMode === 'tables' && renderTableNav(true)}
       </Drawer>
 
       {/* 移动端搜索：顶部抽屉承载与桌面同款搜索面板（主页模式 = 跨工作区，0081 C3） */}

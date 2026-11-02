@@ -1,7 +1,7 @@
 /** 结构 DSL（.cnmd）语言支持 —— CodeMirror StreamLanguage 高亮（ADR 0079 D11）.
  *
  * DSL v1 语法面（与后端 lexer 同口径，仅为高亮不做判定）：
- * - 语句关键字：param / module
+ * - 语句关键字：param / module / system（系统装配声明，ADR 0084）
  * - 布尔块：union / difference / intersection
  * - 变换：translate / rotate / scale / mirror
  * - 图元：box / cyl / sphere / cone / torus / tube
@@ -12,7 +12,7 @@ import { StreamLanguage, type StreamParser } from '@codemirror/language'
 
 /** 语句与结构关键字（高亮为 keyword） */
 const KEYWORDS = new Set([
-  'param', 'module',
+  'param', 'module', 'system',
   'union', 'difference', 'intersection',
   'translate', 'rotate', 'scale', 'mirror',
 ])

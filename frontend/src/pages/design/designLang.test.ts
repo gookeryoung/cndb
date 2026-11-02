@@ -6,7 +6,7 @@ import { cnDslLanguage, identStyle, isIdentChar, isIdentStart } from './designLa
 describe('designLang 分词口径', () => {
   it('语句与结构关键字高亮为 keyword', () => {
     for (const keyword of [
-      'param', 'module',
+      'param', 'module', 'system',
       'union', 'difference', 'intersection',
       'translate', 'rotate', 'scale', 'mirror',
     ]) {

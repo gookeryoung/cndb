@@ -45,17 +45,26 @@ export interface DesignBooleanNode {
 
 export type DesignIRNode = DesignPrimitiveNode | DesignBooleanNode
 
-/** 设计 IR（v2 = v1 + 顶层装配大纲；单位固定 mm / deg，I5） */
+/** 设计 IR（v3 = v2 + 大纲 system 节点（ADR 0084 D2）；单位固定 mm / deg，I5） */
 export interface DesignIR {
   version: number
   units: { length: string; angle: string }
   params: DesignIRParam[]
   nodes: DesignIRNode[]
-  /** 装配大纲（ADR 0083 D2）；历史 v1 快照可能缺失 */
+  /** 装配大纲（ADR 0083 D2 / ADR 0084 D2）；历史 v1 快照可能缺失 */
   outline?: DesignOutline
 }
 
-/** 装配大纲节点（ADR 0083 D3）：组件（module 实例，可嵌套）/ 布尔分组 / 零件（图元） */
+/** 装配大纲节点（ADR 0083 D3 / ADR 0084 D2）：
+ * 系统（system 声明，复杂系统级）/ 组件（module 实例，可嵌套）/ 布尔分组 / 零件（图元） */
+export interface DesignOutlineSystemNode {
+  kind: 'system'
+  name: string
+  line: number
+  col: number
+  children: DesignOutlineNode[]
+}
+
 export interface DesignOutlineAssemblyNode {
   kind: 'assembly'
   name: string
@@ -79,7 +88,11 @@ export interface DesignOutlinePartNode {
   col: number
 }
 
-export type DesignOutlineNode = DesignOutlineAssemblyNode | DesignOutlineGroupNode | DesignOutlinePartNode
+export type DesignOutlineNode =
+  | DesignOutlineSystemNode
+  | DesignOutlineAssemblyNode
+  | DesignOutlineGroupNode
+  | DesignOutlinePartNode
 
 export interface DesignOutline {
   children: DesignOutlineNode[]

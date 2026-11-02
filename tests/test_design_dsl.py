@@ -21,6 +21,7 @@ from cndb.plugins.design.services.dsl.limits import (
     MAX_PARAMS,
     MAX_PRIMITIVES,
 )
+from cndb.plugins.design.services.dsl.nodes import SystemDecl
 from cndb.plugins.design.services.dsl.parse import parse_program
 
 
@@ -213,7 +214,7 @@ class TestParser:
 class TestCompileBasics:
     def test_full_example_ir(self):
         ir = _ok(_EXAMPLE)
-        assert ir["version"] == 2
+        assert ir["version"] == 3
         assert ir["units"] == {"length": "mm", "angle": "deg"}
         assert ir["params"] == [
             {"name": "width", "value": 80},
@@ -612,7 +613,13 @@ class TestLimits:
     def test_modules_exceeded(self):
         content = "\n".join(f"module m{i}() {{ box(w=1,h=1,d=1) }}" for i in range(MAX_MODULES + 1))
         diagnostic = _err(content)
-        assert f"module 数量超过上限 {MAX_MODULES}" in diagnostic.message
+        assert f"module / system 声明数量超过上限 {MAX_MODULES}" in diagnostic.message
+
+    def test_system_counts_toward_module_limit(self):
+        modules = "\n".join(f"module m{i}() {{ box(w=1,h=1,d=1) }}" for i in range(MAX_MODULES - 1))
+        content = modules + "\nsystem s { box(w=1,h=1,d=1) }\nsystem s2 { box(w=1,h=1,d=1) }"
+        diagnostic = _err(content)
+        assert f"module / system 声明数量超过上限 {MAX_MODULES}" in diagnostic.message
 
     def test_result_contract(self):
         """失败结果只有诊断、无半截 IR；成功结果无诊断."""
@@ -726,3 +733,143 @@ class TestOutline:
 
     def test_outline_absent_on_failure(self):
         assert compile_design("box(").ir is None
+
+
+# ── 系统装配声明（ADR 0084 D1 / D3） ─────────────────────
+
+
+_SYSTEM_EXAMPLE = """param wheel_d = 40
+module wheel(d) {
+  difference {
+    cyl(d = d, h = 16)
+    cyl(d = d * 0.35, h = 18)
+  }
+}
+module chassis() {
+  box(size = [120, 60, 8])
+}
+system rover {
+  chassis()
+  translate([40, 0, 0]) wheel(wheel_d)
+  translate([-40, 0, 0]) wheel(wheel_d)
+}
+"""
+
+
+class TestSystem:
+    """system 是顶层单例根：系统级大纲节点 + 纯组织层（几何等价）+ 不可实例化."""
+
+    def test_parse_system_decl(self):
+        program = parse_program("system s { box(w=1,h=1,d=1) }")
+        (system,) = program.systems
+        assert (system.name, system.line, system.col) == ("s", 1, 1)
+        assert len(system.body) == 1
+        assert [item for item in program.items if isinstance(item, SystemDecl)] == [system]
+
+    def test_system_outline_node(self):
+        ir = _ok(_SYSTEM_EXAMPLE)
+        (system,) = _outline(ir)
+        assert system["kind"] == "system"
+        assert system["name"] == "rover"
+        assert (system["line"], system["col"]) == (11, 1)
+        chassis, wheel_a, wheel_b = system["children"]
+        assert chassis["kind"] == "assembly" and chassis["name"] == "chassis"
+        assert wheel_a["kind"] == "assembly" and wheel_a["name"] == "wheel"
+        assert wheel_b["kind"] == "assembly" and wheel_b["name"] == "wheel"
+        # 变换透明穿透：平移不占层级，组件直接挂在 system 下
+        assert wheel_a["children"][0]["kind"] == "group"
+        assert [part["primitive"] for part in wheel_a["children"][0]["children"]] == ["cyl", "cyl"]
+
+    def test_system_is_pure_organization_layer(self):
+        """I2：把系统体平铺到顶层，nodes / params 完全一致（几何链路零感知）."""
+        system_ir = _ok(_SYSTEM_EXAMPLE)
+        flat = (
+            "param wheel_d = 40\n"
+            "module wheel(d) {\n"
+            "  difference {\n"
+            "    cyl(d = d, h = 16)\n"
+            "    cyl(d = d * 0.35, h = 18)\n"
+            "  }\n"
+            "}\n"
+            "module chassis() {\n"
+            "  box(size = [120, 60, 8])\n"
+            "}\n"
+            "chassis()\n"
+            "translate([40, 0, 0]) wheel(wheel_d)\n"
+            "translate([-40, 0, 0]) wheel(wheel_d)\n"
+        )
+        flat_ir = _ok(flat)
+        assert system_ir["nodes"] == flat_ir["nodes"]
+        assert system_ir["params"] == flat_ir["params"]
+
+    def test_multiple_systems_in_declaration_order(self):
+        content = "system a { box(w=1,h=1,d=1) }\nsystem b { sphere(r=1) }"
+        ir = _ok(content)
+        assert [node["name"] for node in _outline(ir)] == ["a", "b"]
+        assert [node["children"][0]["primitive"] for node in _outline(ir)] == ["box", "sphere"]
+
+    def test_system_interleaved_with_top_level_instances(self):
+        """nodes 顺序 = 顶层语句顺序（系统体就地展开，I2）."""
+        content = "box(w=1,h=1,d=1)\nsystem s { cyl(d=1,h=1) }\nsphere(r=1)"
+        ir = _ok(content)
+        assert [node["op"] for node in ir["nodes"]] == ["box", "cyl", "sphere"]
+        kinds = [node["kind"] for node in _outline(ir)]
+        assert kinds == ["part", "system", "part"]
+
+    def test_empty_system_body(self):
+        ir = _ok("system s { }")
+        (system,) = _outline(ir)
+        assert system["children"] == []
+        assert ir["nodes"] == []
+
+    def test_no_system_outline_matches_v2_shape(self):
+        """I5：无 system 的原文大纲仍只有 assembly / group / part."""
+        ir = _ok("module m() { box(w=1,h=1,d=1) } m()")
+        (node,) = _outline(ir)
+        assert node["kind"] == "assembly"
+        assert set(node) == {"kind", "name", "line", "col", "children"}
+
+    def test_system_cannot_be_instantiated(self):
+        diagnostic = _err("system s { box(w=1,h=1,d=1) }\ns()")
+        assert "是 system 声明，不可实例化" in diagnostic.message
+
+    def test_system_duplicate_decl(self):
+        diagnostic = _err("system s { box(w=1,h=1,d=1) }\nsystem s { sphere(r=1) }")
+        assert "重复的 system 声明 's'" in diagnostic.message
+
+    def test_system_name_conflicts_with_module(self):
+        diagnostic = _err("module n() { box(w=1,h=1,d=1) }\nsystem n { sphere(r=1) }")
+        assert "重复的 system 声明 'n'" in diagnostic.message
+
+    def test_system_name_conflicts_with_primitive(self):
+        diagnostic = _err("system box { sphere(r=1) }")
+        assert "与关键字 / 图元重名" in diagnostic.message
+
+    def test_system_rejects_param_list(self):
+        diagnostic = _err("system s(a) { box(w=1,h=1,d=1) }")
+        assert "system 不接受参数表" in diagnostic.message
+
+    def test_system_nested_declaration_rejected(self):
+        diagnostic = _err("module m() { system s { box(w=1,h=1,d=1) } }")
+        assert "关键字 'system' 不能作为实例" in diagnostic.message
+
+    def test_system_keyword_not_usable_as_identifier(self):
+        diagnostic = _err("box(d = system)")
+        assert "关键字 'system' 不能作为标识符引用" in diagnostic.message
+
+    def test_system_body_uses_global_params(self):
+        ir = _ok("param g = 3\nsystem s { box(w=g, h=g, d=g) }")
+        (system,) = _outline(ir)
+        assert system["children"] == [{"kind": "part", "primitive": "box", "line": 2, "col": 12}]
+        assert ir["nodes"] == [{"op": "box", "size": [3.0, 3.0, 3.0]}]
+
+    def test_system_outline_parts_match_geometry(self):
+        ir = _ok(_SYSTEM_EXAMPLE)
+        outline_total = sum(_outline_parts(node) for node in _outline(ir))
+        geometry_total = sum(_geom_primitives(node) for node in ir["nodes"])
+        assert outline_total == geometry_total
+
+    def test_system_compile_is_deterministic(self):
+        first = json.dumps(_ok(_SYSTEM_EXAMPLE), sort_keys=True)
+        second = json.dumps(_ok(_SYSTEM_EXAMPLE), sort_keys=True)
+        assert first == second

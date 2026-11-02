@@ -78,7 +78,7 @@ class TestCreate:
         body = resp.json()
         assert body["title"] == "法兰板"
         assert body["version_number"] == 1
-        assert body["compiled"]["version"] == 2
+        assert body["compiled"]["version"] == 3
         assert body["compiled"]["units"] == {"length": "mm", "angle": "deg"}
         assert body["compiled"]["nodes"], "顶层实例应产出几何"
         # 创建即落 v1
@@ -466,3 +466,40 @@ class TestOutline:
         created = _create(client, ws, auth_owner, title="空白设计", content="").json()
         body = client.get(self._outline_url(ws, created["id"]), headers=auth_owner).json()
         assert body["outline"] == {"children": []}
+
+    def test_outline_system_level_from_snapshot(self, client, ws, auth_owner):
+        """ADR 0084：system 声明产出系统级大纲节点（source=compiled 快照）."""
+        content = "module wheel() {\n  cyl(d=10, h=4)\n}\nsystem rover {\n  wheel()\n  box(w=1, h=1, d=1)\n}\n"
+        created = _create(client, ws, auth_owner, title="小车", content=content).json()
+        body = client.get(self._outline_url(ws, created["id"]), headers=auth_owner).json()
+        assert body["source"] == "compiled"
+        (system,) = body["outline"]["children"]
+        assert system["kind"] == "system"
+        assert system["name"] == "rover"
+        assert [child["kind"] for child in system["children"]] == ["assembly", "part"]
+
+    def test_outline_v2_snapshot_derives_system_from_content(self, client, db, ws, auth_owner):
+        """IR v2 快照（无 system 语义）可按原文派生系统级大纲，且不落库（I5 / D7）."""
+        content = "system s {\n  box(w=1, h=1, d=1)\n}\n"
+        created = _create(client, ws, auth_owner, title="系统快照", content=content).json()
+        design = db.scalar(select(DesignDesign).where(DesignDesign.id == created["id"]))
+        design.compiled = {
+            "version": 2,
+            "units": {"length": "mm", "angle": "deg"},
+            "params": [],
+            "nodes": [],
+            "outline": {"children": []},
+        }
+        db.commit()
+
+        body = client.get(self._outline_url(ws, created["id"]), headers=auth_owner).json()
+        assert body["source"] == "compiled", "v2 快照自带 outline，端点仍按快照返回"
+        assert body["outline"]["children"] == []
+
+        design.compiled = {"version": 2, "units": {"length": "mm", "angle": "deg"}, "params": [], "nodes": []}
+        db.commit()
+        derived = client.get(self._outline_url(ws, created["id"]), headers=auth_owner).json()
+        assert derived["source"] == "content"
+        assert derived["outline"]["children"][0]["kind"] == "system"
+        db.refresh(design)
+        assert "outline" not in design.compiled, "只读派生不落库"

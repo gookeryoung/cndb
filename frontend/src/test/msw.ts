@@ -605,6 +605,8 @@ export const handlers = [
   // 文档问题清单列表（默认空；单用例 server.use 覆盖）
   http.get('/api/v1/workspaces/:wid/document-issues', () =>
     HttpResponse.json({ items: [], total: 0 })),
+  // 设计列表（默认空；设计侧栏与设计管理页共用同一端点，单用例 server.use 覆盖）
+  http.get('/api/v1/workspaces/:wid/designs', () => HttpResponse.json([])),
 
   // 附件（useFileObjectUrl 经 axios 取 blob；1x1 PNG 字节即可）
   http.post('/api/v1/workspaces/:wid/files', () =>
