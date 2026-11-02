@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
-from cndb.plugins.acquisition.models import AcquisitionStrategy
+from cndb.plugins.acquisition.models import AcquisitionItem, AcquisitionRun, AcquisitionStrategy
 from cndb.plugins.acquisition.services import runner as acquisition_runner
 from cndb.plugins.datasource.models import DatasourceSyncJob
 from cndb.plugins.datasource.services.pipeline import PipelineOutcome
@@ -191,6 +191,34 @@ def test_preview_uses_form_overrides(client, db, table, sync_job, workspace_with
     strategy = db.query(AcquisitionStrategy).filter_by(id=strategy_id).one()
     db.refresh(strategy)
     assert strategy.filter_rule == {"must_have_keywords": ["不存在的词"]}
+
+
+def test_preview_draft_without_saving(client, db, table, sync_job, workspace_with_auth):
+    """未保存草稿也能预览：只按请求体规则抓取，不落策略 / 运行 / 台账."""
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+
+    resp = client.post(
+        f"{base}/preview",
+        json={
+            "scope": {"channels": [f"job:{sync_job.id}"], "query": "{today} 北京", "max_results_per_channel": 20},
+            "filter_rule": {"must_have_keywords": ["北京"]},
+            "iteration": {"max_rounds": 1},
+        },
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["collected"] == 1 and body["after_filter"] == 1
+    assert body["rejected_by"] == {}
+    # 未选落点也可预览；零写入
+    assert db.query(AcquisitionStrategy).count() == 0
+    assert db.query(AcquisitionRun).count() == 0
+    assert db.query(AcquisitionItem).count() == 0
+
+    bad = client.post(f"{base}/preview", json={"scope": {"channels": [], "query": "x"}}, headers=headers)
+    assert bad.status_code == 400
+    assert "channels" in bad.json()["detail"]
 
 
 def test_validate_rules_endpoint(client, table, sync_job, workspace_with_auth):

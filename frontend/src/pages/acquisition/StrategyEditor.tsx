@@ -2,7 +2,8 @@
  *
  * - 草案只回表单，**不自动保存 / 不自动启用**（模型是规则翻译器，不是决策者）
  * - 保存前先跑 `rules/validate`；实质变更由后端 `rule_version +1` 并回 draft
- * - 预览只对已保存策略开放（预览走指定策略的抓取声明，草稿没有 id）
+ * - 预览对未保存草稿同样开放：按表单当前四段规则走 `/acquisition/preview`，零写入
+ * - 保存后不关闭抽屉（新建保存后转为更新态），可立刻预览 / 继续调整
  * - 落点支持就地新建数据表 / 文档文件夹，避免为建落点退出抽屉、丢掉已填内容
  */
 
@@ -157,6 +158,8 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
   const [description, setDescription] = useState('')
   const [draftNote, setDraftNote] = useState<{ text: string; tone: 'info' | 'warning' } | null>(null)
   const [preview, setPreview] = useState<AcquisitionPreview | null>(null)
+  // 新建保存后继续停留在抽屉里（便于立刻预览 / 调整），再次保存走更新
+  const [savedStrategy, setSavedStrategy] = useState<AcquisitionStrategy | null>(null)
   const [createKind, setCreateKind] = useState<'table' | 'folder' | null>(null)
   const [createName, setCreateName] = useState('')
   // 就地新建的落点：先本地合并进选项，保证 Select 立刻显示名称，再等列表查询回填
@@ -171,10 +174,13 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
       setPreview(null)
       setCreatedTables([])
       setCreatedFolders([])
+      setSavedStrategy(null)
       setCreateKind(null)
       setCreateName('')
     }
   }, [open, strategy, form])
+
+  const current = savedStrategy ?? strategy
 
   const tableOptions = useMemo(() => {
     const merged = [...tables]
@@ -272,12 +278,15 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
 
   const previewMutation = useMutation({
     mutationFn: async () => {
-      if (!strategy) throw new Error('请先保存策略再预览')
-      // 用表单当前筛选 / 检索式试算：改完规则不必先保存就能验证命中
+      // 未保存草稿也能试抓：直接提交表单当前四段规则，不落策略 / 不留运行记录
       const payload = toPayload(form.getFieldsValue(true))
-      return acquisitionApi.preview(wid, strategy.id, {
+      return acquisitionApi.previewDraft(wid, {
+        scope: payload.scope,
+        filter_rule: payload.filter_rule,
+        targets: payload.targets,
+        iteration: payload.iteration,
+        schedule: payload.schedule,
         query: payload.scope.query,
-        filterRule: payload.filter_rule,
       })
     },
     onSuccess: setPreview,
@@ -293,12 +302,15 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
         targets: payload.targets,
         iteration: payload.iteration,
       })
-      return strategy
-        ? acquisitionApi.updateStrategy(wid, strategy.id, payload)
+      return current
+        ? acquisitionApi.updateStrategy(wid, current.id, payload)
         : acquisitionApi.createStrategy(wid, payload)
     },
-    onSuccess: () => {
-      message.success(strategy ? '已保存（实质变更会重置为未启用）' : '已创建，可先预览再启用')
+    onSuccess: (saved) => {
+      message.success(
+        current ? '已保存（实质变更会重置为未启用），可直接预览' : '已创建，可直接预览或继续调整',
+      )
+      setSavedStrategy(saved)
       queryClient.invalidateQueries({ queryKey: ['acquisition', wid] })
       onSaved()
     },
@@ -309,7 +321,7 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
     <Drawer
       open={open}
       size={720}
-      title={strategy ? `编辑策略 · ${strategy.name}` : '新建采集策略'}
+      title={current ? `编辑策略 · ${current.name}` : '新建采集策略'}
       onClose={onClose}
       destroyOnHidden
       extra={(
@@ -494,12 +506,11 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
           <Button
             icon={<ThunderboltOutlined />}
             loading={previewMutation.isPending}
-            disabled={!strategy}
             onClick={() => previewMutation.mutate()}
           >
             抓一次看看（不写入）
           </Button>
-          {!strategy && <Text type="secondary">保存后可用预览</Text>}
+          <Text type="secondary">按表单当前规则试抓，未保存也可用</Text>
         </Space>
         {preview && (
           <Alert
@@ -552,10 +563,10 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
       </Modal>
 
       <div style={{ marginTop: 12 }}>
-        {strategy && (
+        {current && (
           <Space wrap>
-            <Tag>规则版本 v{strategy.rule_version}</Tag>
-            <Tag color={strategy.enabled ? 'green' : 'default'}>{strategy.enabled ? '已启用' : '未启用'}</Tag>
+            <Tag>规则版本 v{current.rule_version}</Tag>
+            <Tag color={current.enabled ? 'green' : 'default'}>{current.enabled ? '已启用' : '未启用'}</Tag>
           </Space>
         )}
       </div>

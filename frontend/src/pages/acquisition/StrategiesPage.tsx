@@ -285,7 +285,7 @@ export default function StrategiesPage() {
         tables={tables}
         folders={folders}
         onClose={() => setEditorOpen(false)}
-        onSaved={() => { setEditorOpen(false); refresh() }}
+        onSaved={() => { refresh() }}
       />
       <RunDetail open={runId !== null} wid={wid} runId={runId} onClose={() => setRunId(null)} />
     </div>

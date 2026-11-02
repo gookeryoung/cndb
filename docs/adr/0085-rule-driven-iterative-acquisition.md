@@ -302,6 +302,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 | `GET /strategies`、`POST /strategies` | 新增：列表 / 创建；创建校验占位符、布尔式、`targets` 归属、模块开关、预算上下限 |
 | `GET /strategies/{id}`、`PUT /strategies/{id}`、`DELETE /strategies/{id}` | 新增：读写删（软删）；实质变更 → `rule_version+1` 且回 `draft` |
 | `POST /strategies/{id}/enable`、`POST /strategies/{id}/disable` | 新增：启停（启用前跑一次规则校验；**不强制先预览**——预览不落库，无法作为持久前置条件，改为前端引导 + 启用后首次运行即可验证） |
+| `POST /preview` | 新增：**未保存草稿**预览（`VIEWER`）——按请求体里的 `scope` / `filter_rule` / `iteration` 真实抓取与筛选，不落策略、不留运行记录；落点可空（`require_targets=False`），编辑器新建阶段即可试抓 |
 | `POST /strategies/{id}/preview` | 新增：`dry_run` 首轮——真实抓取、真实筛选，**不写表 / 不写文档 / 不写 item**；请求体可带 `query` / `filter_rule` 覆盖已保存值（编辑器未保存表单试算），返回 `{collected, after_dedup, after_filter, rejected_by, samples[], channel_errors[]}`（`rejected_by` 按 must_have / exclude / optional / date 等原因聚合，供前端解释「命中 0」） |
 | `POST /strategies/{id}/run` | 新增：手动触发（`EDITOR`），**同步执行**并返回终态运行记录；租约被占用 409。P2 接入调度后仍是同步执行（定时入口为 `cndb acquisition tick`），**不引入后台线程 / 任务队列**：单次运行受 `iteration.budget.max_requests` 封顶，cron 周期内可完成 |
 | `POST /runs/{rid}/cancel` | 新增：轮边界取消（写 `detail.cancel_requested`，`runner` 在每轮开头刷新并停；已结束的运行 400） |
@@ -335,7 +336,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 | 层 | 文件 | 改动 | 状态 |
 |---|---|---|---|
 | 页面 | `frontend/src/pages/acquisition/StrategiesPage.tsx` | 策略列表（名称 / 渠道 / 落点 / 调度与复核口径 / 最近状态）+ 启停 + 运行 + 历史 + 删除 | 已落地 |
-| 页面 | `frontend/src/pages/acquisition/StrategyEditor.tsx` | 四段式表单（范围 / 筛选 / 落点 / 迭代与预算）+ 调度 + 自然语言「生成草案」（只填表单，需确认才保存）+ 内联预览面板（抓取前后计数 / 样例 / 渠道错误） | 已落地（预览并入编辑器，未单拆 `RulePreviewPanel`） |
+| 页面 | `frontend/src/pages/acquisition/StrategyEditor.tsx` | 四段式表单（范围 / 筛选 / 落点 / 迭代与预算）+ 调度 + 自然语言「生成草案」（只填表单，需确认才保存）+ 内联预览面板（抓取前后计数 / 样例 / 渠道错误 / 拦截原因）；预览对未保存草稿开放，保存后不关闭抽屉（新建保存后转更新态） | 已落地（预览并入编辑器，未单拆 `RulePreviewPanel`） |
 | 页面 | `frontend/src/pages/acquisition/RunDetail.tsx` | 运行摘要 + 轮次时间线（检索式、新增、扩展词来源、停止原因）+ 诊断 / 复核续跑 / 取消 | 已落地（以抽屉形态挂在策略页，未单开路由） |
 | API | `frontend/src/api/acquisition.ts` | 类型与封装（Strategy / Run / Round / Channel / RuleDraft） | 已落地（页面直接 import 该模块，未改 `api/index.ts` 聚合出口） |
 | 导航 | `frontend/src/layouts/MainLayout.tsx` | 数据表段新增二级页签「智能采集」（`acquisition` 功能位开启时渲染，并入数据表派生窗口） | 已落地 |

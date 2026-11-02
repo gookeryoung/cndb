@@ -116,6 +116,17 @@ class PreviewRequest(BaseModel):
     filter_rule: dict[str, Any] | None = Field(default=None, description="表单当前的筛选规则（覆盖已保存值）")
 
 
+class DraftPreviewRequest(BaseModel):
+    """未保存草稿的预览：只带抓取 / 筛选需要的规则，零写入."""
+
+    scope: dict[str, Any] = Field(..., description="渠道 / 检索式 / 每渠道上限")
+    filter_rule: dict[str, Any] = Field(default_factory=dict, description="三段式筛选 + 布尔式")
+    targets: list[dict[str, Any]] = Field(default_factory=list, description="落点（预览不写入，可空）")
+    iteration: dict[str, Any] = Field(default_factory=dict)
+    schedule: dict[str, Any] = Field(default_factory=dict)
+    query: str | None = Field(default=None, max_length=500, description="覆盖 scope.query（表单当前值）")
+
+
 class PreviewSample(BaseModel):
     title: str = ""
     url: str = ""

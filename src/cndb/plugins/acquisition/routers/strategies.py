@@ -20,6 +20,7 @@ from cndb.plugins.acquisition.schemas import (
     ChannelCatalogResponse,
     ChannelOption,
     DiagnoseResponse,
+    DraftPreviewRequest,
     PreviewRequest,
     PreviewResponse,
     PreviewSample,
@@ -338,6 +339,75 @@ def run_strategy(
     return _serialize_run(execution.run)
 
 
+def _preview_response(execution: Any) -> PreviewResponse:
+    """PreviewResponse 单点构造（已保存策略 / 未保存草稿共用）."""
+    return PreviewResponse(
+        status=execution.status,
+        collected=execution.collected,
+        after_dedup=execution.after_dedup,
+        after_filter=execution.after_filter,
+        rejected_by=dict(execution.rejected_by),
+        by_channel=dict(execution.by_channel),
+        samples=[
+            PreviewSample(
+                title=str(item.get("title") or ""),
+                url=str(item.get("url") or item.get("source_url") or ""),
+                published_at=str(item.get("published_at") or ""),
+                match_score=int(item.get("match_score") or 0),
+            )
+            for item in execution.samples
+        ],
+        channel_errors=execution.channel_errors,
+    )
+
+
+@router.post("/preview", response_model=PreviewResponse)
+def preview_draft_route(
+    workspace_id: int,
+    payload: DraftPreviewRequest,
+    db: Annotated[Session, Depends(get_db)],
+    user: Annotated[User, Depends(get_current_user)],
+) -> PreviewResponse:
+    """未保存草稿的预览：按表单当前规则真实抓取 / 筛选，不落策略也不留运行记录.
+
+    编辑器在「新建策略」阶段即可用：填好渠道与检索式就能试抓，不必先保存。
+    """
+    check_workspace_permission(db, workspace_id, user, WorkspaceRole.VIEWER)
+    try:
+        validate_strategy_payload(
+            scope=payload.scope,
+            filter_rule=payload.filter_rule,
+            targets=payload.targets,
+            iteration=payload.iteration,
+            schedule=payload.schedule,
+            require_targets=False,
+        )
+    except RuleError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # 仅内存对象：不 add 到 session，预览链路本身零写入
+    draft = AcquisitionStrategy(
+        workspace_id=workspace_id,
+        created_by_id=user.id,
+        name="",
+        enabled=False,
+        scope=dict(payload.scope),
+        filter_rule=dict(payload.filter_rule),
+        targets=list(payload.targets),
+        iteration=dict(payload.iteration),
+        llm={},
+        schedule=dict(payload.schedule),
+    )
+    execution = preview_strategy(
+        db,
+        draft,
+        user=user,
+        query=payload.query,
+        filter_rule=payload.filter_rule,
+    )
+    return _preview_response(execution)
+
+
 @router.post("/strategies/{strategy_id}/preview", response_model=PreviewResponse)
 def preview_strategy_route(
     workspace_id: int,
@@ -359,24 +429,7 @@ def preview_strategy_route(
         query=payload.query if payload else None,
         filter_rule=payload.filter_rule if payload else None,
     )
-    return PreviewResponse(
-        status=execution.status,
-        collected=execution.collected,
-        after_dedup=execution.after_dedup,
-        after_filter=execution.after_filter,
-        rejected_by=dict(execution.rejected_by),
-        by_channel=dict(execution.by_channel),
-        samples=[
-            PreviewSample(
-                title=str(item.get("title") or ""),
-                url=str(item.get("url") or item.get("source_url") or ""),
-                published_at=str(item.get("published_at") or ""),
-                match_score=int(item.get("match_score") or 0),
-            )
-            for item in execution.samples
-        ],
-        channel_errors=execution.channel_errors,
-    )
+    return _preview_response(execution)
 
 
 @router.get("/strategies/{strategy_id}/runs", response_model=RunListResponse)

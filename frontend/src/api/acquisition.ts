@@ -146,6 +146,17 @@ export interface AcquisitionRun {
   duration_ms: number
 }
 
+/** 未保存草稿预览载荷（编辑器「新建策略」阶段即可试抓） */
+export interface AcquisitionDraftPreviewPayload {
+  scope: AcquisitionScope
+  filter_rule?: AcquisitionFilterRule
+  targets?: AcquisitionTarget[]
+  iteration?: AcquisitionIteration
+  schedule?: Record<string, unknown>
+  /** 覆盖 scope.query（表单当前检索式） */
+  query?: string
+}
+
 export interface AcquisitionPreview {
   status: string
   collected: number
@@ -198,6 +209,10 @@ export const acquisitionApi = {
 
   disableStrategy: (wid: number | string, id: number) =>
     api.post<AcquisitionStrategy>(`${base(wid)}/strategies/${id}/disable`).then(r => r.data),
+
+  /** 未保存草稿预览：按表单当前四段规则真实抓取 / 筛选，不落策略、不留运行记录 */
+  previewDraft: (wid: number | string, data: AcquisitionDraftPreviewPayload) =>
+    api.post<AcquisitionPreview>(`${base(wid)}/preview`, data).then(r => r.data),
 
   /** 预览：query / filterRule 传表单当前值（可能未保存），不传则用已保存规则 */
   preview: (wid: number | string, id: number, opts?: { query?: string; filterRule?: AcquisitionFilterRule }) =>

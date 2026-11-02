@@ -112,8 +112,13 @@ def validate_strategy_payload(
     targets: Sequence[Any] | None,
     iteration: Mapping[str, Any] | None,
     schedule: Mapping[str, Any] | None = None,
+    require_targets: bool = True,
 ) -> None:
-    """逐段校验策略声明；不合法抛 :class:`RuleError`."""
+    """逐段校验策略声明；不合法抛 :class:`RuleError`.
+
+    ``require_targets=False`` 供「未保存草稿的预览」使用：还没选落点时也应能试抓，
+    预览本身零写入，不依赖落点是否合法。
+    """
     payload = dict(scope or {})
     _validate_channels(list(payload.get("channels") or []))
     render_query(str(payload.get("query") or ""), dict(_SAMPLE_CONTEXT))
@@ -121,7 +126,8 @@ def validate_strategy_payload(
     rule = FilterRule.from_dict(filter_rule)
     rule.validate()
 
-    _validate_targets(list(targets or []))
+    if require_targets:
+        _validate_targets(list(targets or []))
 
     _validate_iteration(dict(iteration or {}))
     _validate_schedule(schedule)

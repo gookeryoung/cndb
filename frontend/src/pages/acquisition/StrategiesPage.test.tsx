@@ -125,10 +125,61 @@ describe('StrategiesPage 智能采集', () => {
     expect(screen.getByText(/抓取 4/)).toBeInTheDocument()
   })
 
+  it('新建策略未保存也能「抓一次看看」', async () => {
+    server.use(...handlers([]))
+    let body: Record<string, unknown> | null = null
+    server.use(http.post(`${BASE}/acquisition/preview`, async ({ request }) => {
+      body = await request.json() as Record<string, unknown>
+      return HttpResponse.json({
+        status: 'success',
+        collected: 50,
+        after_dedup: 50,
+        after_filter: 50,
+        rejected_by: {},
+        by_channel: { 'job:2': 50 },
+        samples: [],
+        channel_errors: [],
+      })
+    }))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /新建策略/ }))
+    expect(await screen.findByText('新建采集策略')).toBeInTheDocument()
+
+    fireEvent.mouseDown(screen.getByText('选择同步任务 / RSS / 学术接口'))
+    fireEvent.click(await screen.findByText(/政策源（http_json）/))
+    fireEvent.change(screen.getByPlaceholderText('如：固态电池 电解质'), { target: { value: '固态电池' } })
+
+    const button = screen.getByRole('button', { name: /抓一次看看/ })
+    expect(button).not.toBeDisabled()
+    fireEvent.click(button)
+
+    await waitFor(() => expect(body).not.toBeNull())
+    expect(body!.scope).toMatchObject({ channels: ['job:2'], query: '固态电池' })
+    expect(await screen.findByText(/抓取 50 条 → 去重 50 → 命中 50/)).toBeInTheDocument()
+  })
+
+  it('保存后保持抽屉打开，可继续预览或调整', async () => {
+    server.use(...handlers([makeStrategy()]))
+    server.use(
+      http.post(`${BASE}/acquisition/rules/validate`, () => HttpResponse.json({ ok: true, errors: [] })),
+      http.put(`${BASE}/acquisition/strategies/5`, () => HttpResponse.json(makeStrategy())),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /编辑/ }))
+    expect(await screen.findByText('编辑策略 · 固态电池政策日报')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument()
+    expect(screen.getByText('编辑策略 · 固态电池政策日报')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /抓一次看看/ })).not.toBeDisabled()
+  })
+
   it('预览命中 0 时说明被哪条筛选拦下', async () => {
     server.use(...handlers([makeStrategy()]))
     let sentFilter: unknown = null
-    server.use(http.post(`${BASE}/acquisition/strategies/5/preview`, async ({ request }) => {
+    server.use(http.post(`${BASE}/acquisition/preview`, async ({ request }) => {
       sentFilter = ((await request.json()) as { filter_rule?: unknown }).filter_rule
       return HttpResponse.json({
         status: 'success',
