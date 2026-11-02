@@ -26,7 +26,7 @@ UVX_INDEX := --default-index https://mirrors.cloud.tencent.com/pypi/simple
 # 前端依赖 stamp：pnpm install 成功后由 make 刷新，lock / package.json 未变时零开销跳过
 FRONTEND_DEPS := frontend/node_modules/.make-sync
 
-.PHONY: help sync free-dev-ports dev seed frontend-sync frontend-static frontend-coverage frontend-build \
+.PHONY: help env-guard sync free-dev-ports dev seed frontend-sync frontend-static frontend-coverage frontend-build \
         build clean test cov lint typecheck e2e e2e-dev gitkeep-check adr-check \
         check-fast check-docs flow check bump pub push pack-doctor pack pack-cache-clean \
         docker-dev docker-dev-down docker-stop docker-build docker-export dd ds ddd db de \
@@ -37,6 +37,9 @@ FRONTEND_DEPS := frontend/node_modules/.make-sync
 help: ## 显示帮助信息
 	@uv run python scripts/help.py $(MAKEFILE_LIST)
 
+env-guard: ## 环境体检（拦截 LD_LIBRARY_PATH 污染：旧版 libsqlite3 缺 sqlite3_deserialize 会让测试卡死）
+	@uv run python scripts/check_env.py
+
 sync: ## 安装后端开发依赖 + git pre-commit 钩子 (prek)
 	uv sync --extra dev
 	uv run prek install --force
@@ -44,7 +47,7 @@ sync: ## 安装后端开发依赖 + git pre-commit 钩子 (prek)
 free-dev-ports: ## 结束占用开发端口的旧进程（后端 DEV_PORT=8772、前端 5173；可用 DEV_PORTS 覆盖）
 	@uv run python scripts/free_ports.py $(DEV_PORTS)
 
-dev: free-dev-ports $(FRONTEND_DEPS) ## 开发模式：先释放旧端口，再启动前后端（uvicorn + Vite，Ctrl+C 一起停）
+dev: env-guard free-dev-ports $(FRONTEND_DEPS) ## 开发模式：先释放旧端口，再启动前后端（uvicorn + Vite，Ctrl+C 一起停）
 	uv run cndb dev --host $(DEV_HOST) --port $(DEV_PORT)
 
 seed: ## 注入演示数据（幂等：重建工作区/表/视图/文档并创建演示账号）
@@ -76,10 +79,10 @@ lint: ## 后端风格检查（ruff check + format，与 CI 同口径扫 src + te
 typecheck: ## 后端类型检查（pyrefly）
 	uv run pyrefly check -j 0
 
-test: ## 后端测试（不含覆盖率）
+test: env-guard ## 后端测试（不含覆盖率）
 	uv run pytest -m "not slow" -n $(PYTEST_JOBS)
 
-cov: ## 后端测试 + 覆盖率门禁（与 CI 同口径，只统计 cndb 包；阈值见 pyproject [tool.coverage.report]）
+cov: env-guard ## 后端测试 + 覆盖率门禁（与 CI 同口径，只统计 cndb 包；阈值见 pyproject [tool.coverage.report]）
 	uv run pytest -m "not slow" --cov=$(PACKAGE) --cov-report=term --cov-report=html -n $(PYTEST_JOBS)
 	@echo 'Coverage report: htmlcov/index.html'
 
@@ -96,13 +99,13 @@ e2e-dev: $(FRONTEND_DEPS) ## dev 模式 E2E（vite dev 源码直出，兜住只�
 	cd frontend && pnpm e2e:dev
 
 # L1 配置改动：轻量静态门禁（无测试）
-check-fast: gitkeep-check adr-check lint typecheck frontend-static ## 轻量静态门禁（无测试，实现期快速反馈）
+check-fast: env-guard gitkeep-check adr-check lint typecheck frontend-static ## 轻量静态门禁（无测试，实现期快速反馈）
 # L0 文档改动：只跑文档级校验
 check-docs: gitkeep-check adr-check ## 文档级门禁（只改 *.md 时用）
 # L2 代码改动：轻量静态门禁 + 全量后端测试
 flow: check-fast test ## AI 开发流：轻量静态门禁 + 全量后端测试
 
-check: $(FRONTEND_DEPS) ## 全套门禁（并行 7 项：gitkeep / adr / lint / 类型 / 前端静态 + 覆盖率 / cov）
+check: env-guard $(FRONTEND_DEPS) ## 全套门禁（并行 7 项：gitkeep / adr / lint / 类型 / 前端静态 + 覆盖率 / cov）
 	@$(MAKE) -j4 cov frontend-coverage gitkeep-check adr-check lint typecheck frontend-static
 
 # ── 构建 / 打包 / 发布 ────────────────────────────────────────────────

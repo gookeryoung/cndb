@@ -35,6 +35,7 @@
 1. 先读 [docs/AI_DRIVEN_DEV_FLOW.md](docs/AI_DRIVEN_DEV_FLOW.md) 与 [.trae/rules/](.trae/rules/) 下的规则；工具不自动加载时也必须手动读。
 2. 找当前任务的 ADR：看 [docs/adr/README.md](docs/adr/README.md) 的「落地阶段」，再读 ADR 的「落地状态」与「交接」。
 3. 跑一次基线：代码任务 `make check-fast`，纯文档 / 配置任务 `make check-docs`；不要假设上一轮全绿。
+4. 跑门禁前先确认环境健康：`make env-guard`（已内置为 `check-fast` / `test` / `cov` / `check` / `dev` 的前置）。若报 sqlite3 缺 `deserialize`，是 shell 被注入了 `LD_LIBRARY_PATH`——Trae 自带的旧版 libsqlite3 缺 `sqlite3_deserialize`，后端测试会**卡死在 import 阶段**而不是失败；`unset LD_LIBRARY_PATH`（PowerShell：`Remove-Item Env:LD_LIBRARY_PATH`）后重跑，不要拿 pytest 参数或超时当解法。
 
 ## 收工前
 

@@ -210,6 +210,15 @@ class TestMain:
 class TestMakefileWiring:
     def test_dev_depends_on_free_dev_ports(self) -> None:
         makefile = _MAKEFILE.read_text(encoding="utf-8")
-        assert "dev: free-dev-ports" in makefile
+        assert "dev: env-guard free-dev-ports" in makefile
         assert "DEV_PORTS ?= $(DEV_PORT) 5173" in makefile
         assert "scripts/free_ports.py $(DEV_PORTS)" in makefile
+
+    def test_gate_targets_depend_on_env_guard(self) -> None:
+        """环境体检必须前置到所有会加载 sqlite3 的门禁（否则 LD_LIBRARY_PATH 污染会卡死而非失败）."""
+        makefile = _MAKEFILE.read_text(encoding="utf-8")
+        lines = makefile.splitlines()
+        for target in ("check-fast:", "test:", "cov:", "check:", "dev:"):
+            matched = next(line for line in lines if line.startswith(target))
+            assert "env-guard" in matched, f"{target} 缺少 env-guard 前置"
+        assert "uv run python scripts/check_env.py" in makefile

@@ -113,6 +113,7 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 
 - 禁 `--no-verify`、禁跳过 prek；conventional commits。
 - 门禁按改动类型分级（L0 文档 → `make check-docs`；L1 配置 → `make check-fast`；L2 代码 → `make flow`），只改文档 / 配置不跑全量 `make flow`；混合改动与拿不准的情况按 L2 全链执行。
+- 环境体检前置：`make env-guard` 是 `check-fast` / `test` / `cov` / `check` / `dev` 的前置（[check_env.py](../scripts/check_env.py)）。门禁卡住超过 1 分钟先看体检结论——`LD_LIBRARY_PATH` 注入的旧版 libsqlite3 缺 `sqlite3_deserialize` 会让后端测试卡死在 import 阶段而非失败，清变量后重跑即可，不要用 pytest 参数或加超时绕过。
 - ADR 标「已落地」的期必须有代码落点与测试文件；落地状态与交接每期回填（`make adr-check` 校验）。
 - 需求移除 / 变更先清理 ADR（删失效段落与决策行），不保留历史方案段；ADR 被替代或需求作废则**直接删除**该文件、`docs/adr/README.md` 索引行与全仓引用（git 历史可追溯），不保留 `Superseded` / `Deprecated` 文档，编号不复用。
 - 覆盖率不得注水（阈值 95%，omit 白名单固定）。
