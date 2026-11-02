@@ -18,10 +18,13 @@ const INDEX_CSS = [
 /** 去掉注释，避免注释里的示例值被当成声明 */
 const css = readFileSync(INDEX_CSS, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '')
 
-/** 取某条简单选择器规则的声明块（选择器与花括号之间允许换行 / 空白） */
+/** 取某条选择器规则的声明块（支持逗号分组跨行、选择器与花括号之间换行 / 空白） */
 function ruleBody(selector: string): string {
-  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const match = css.match(new RegExp(`(?:^|\\n)\\s*${escaped}\\s*\\{([^}]*)\\}`))
+  const pattern = selector
+    .split(',')
+    .map(part => part.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+    .join('\\s*,\\s*')
+  const match = css.match(new RegExp(`(?:^|\\n)\\s*${pattern}\\s*\\{([^}]*)\\}`))
   if (!match) throw new Error(`index.css 未找到规则：${selector}`)
   return match[1]!.replace(/\s+/g, ' ').trim()
 }
@@ -46,5 +49,18 @@ describe('顶栏线条契约（搜索框 / 图标按钮 / 分界线）', () => {
     expect(ruleBody('.cn-gs-scope')).toContain('border-right: 1px solid var(--cn-border-soft)')
     expect(ruleBody('.cn-gs-kbd')).toContain('border: 1px solid var(--cn-border-soft)')
     expect(ruleBody('.cn-gs-panel')).toContain('border: 1px solid var(--cn-border-soft)')
+  })
+
+  it('聚焦态只保留一条品牌色边框，不叠加光晕与内层 outline', () => {
+    const focused = ruleBody('.cn-gs-box-open, .cn-gs-box:focus-within')
+    expect(focused).toContain('border-color: var(--cn-brand-color)')
+    expect(focused).not.toContain('box-shadow')
+
+    const inner = ruleBody(
+      '.cn-gs-box .cn-gs-input, .cn-gs-box .cn-gs-input:focus, '
+      + '.cn-gs-box .cn-gs-input:focus-within, .cn-gs-box .cn-gs-input:has(input:focus-visible)',
+    )
+    expect(inner).toContain('outline: none')
+    expect(inner).toContain('box-shadow: none')
   })
 })

@@ -689,12 +689,21 @@ body.theme-oled {
   transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-/* 与全站 SearchInput 观感统一：白底常规边框，聚焦态描品牌色（需求 0068） */
+/* 聚焦态只描一条品牌色 1px 线（极简 / GitHub 线条口径）：不再叠加 3px 光晕，
+ * 避免「外层边框 + 聚焦光环」看起来像两层边框。 */
 .cn-gs-box-open,
 .cn-gs-box:focus-within {
   border-color: var(--cn-brand-color);
-  box-shadow: 0 0 0 3px var(--cn-mix-brand-color-14-transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cn-brand-color) 14%, transparent);
+}
+
+/* 内层 Input 声明为 borderless，但 antd 仍会在 focus-visible 时画 outline；
+ * 与外层 .cn-gs-box 的聚焦边框叠成双线，这里统一收掉，聚焦提示只保留外框一条线。 */
+.cn-gs-box .cn-gs-input,
+.cn-gs-box .cn-gs-input:focus,
+.cn-gs-box .cn-gs-input:focus-within,
+.cn-gs-box .cn-gs-input:has(input:focus-visible) {
+  outline: none;
+  box-shadow: none;
 }
 
 .cn-gs-scope {
