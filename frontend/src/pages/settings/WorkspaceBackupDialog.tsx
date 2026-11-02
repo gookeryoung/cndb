@@ -70,14 +70,6 @@ export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClos
           description="备份格式为全量归档（.tar.gz），包含：数据表结构与数据、字段 / 视图 / 表权限配置，文档（含标签、版本历史、草稿、回收站）、置顶 / 分享 / 议题、数据源会话与同步游标、设计文件与采集策略、附件与外存正文。"
           style={{ marginBottom: 12 }}
         />
-        <Alert
-          type="success"
-          showIcon
-          title="恢复到工作区请走「导入工作区」"
-          description="归档文件在工作区列表页「导入工作区」中导入：默认创建新工作区（不覆盖任何数据）；当同名工作区已存在且你是其 owner 时，可选择覆盖恢复到该工作区。"
-          style={{ marginBottom: 16 }}
-        />
-
         <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }}>
           <Space>
             <Switch checked={includeSecrets} onChange={setIncludeSecrets} />

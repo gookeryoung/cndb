@@ -40,8 +40,8 @@ describe('WorkspaceBackupDialog 工作区备份', () => {
     expect(screen.queryByText('下载 JSON 备份')).not.toBeInTheDocument()
     expect(screen.queryByText('恢复到本工作区')).not.toBeInTheDocument()
     expect(screen.queryByText('危险操作：覆盖恢复')).not.toBeInTheDocument()
-    // 恢复入口指引到「导入工作区」
-    expect(screen.getByText('恢复到工作区请走「导入工作区」')).toBeInTheDocument()
+    // 备份对话框只讲备份，不再出现恢复相关提示
+    expect(screen.queryByText(/恢复到工作区请走/)).not.toBeInTheDocument()
   })
 
   it('归档导出成功：提示密钥已包含', async () => {
