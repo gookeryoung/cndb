@@ -6774,6 +6774,41 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   transform: rotate(90deg);
 }
 
+/* PPTX 全屏放映：左右透明点击区（点击左侧上一页 / 右侧下一页），
+ * 位于幻灯片之上、底部控制条之下；默认低可见度，悬停提亮。 */
+.cn-pptx-nav-zone {
+  position: absolute;
+  top: 0;
+  bottom: 72px;
+  width: 18%;
+  max-width: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font-size: var(--cn-text-xl);
+  opacity: 0.32;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+.cn-pptx-nav-zone:hover:not(:disabled) {
+  opacity: 0.9;
+  background: rgba(255, 255, 255, 0.06);
+}
+.cn-pptx-nav-zone:disabled {
+  opacity: 0.08;
+  cursor: default;
+}
+.cn-pptx-nav-zone-prev {
+  left: 0;
+}
+.cn-pptx-nav-zone-next {
+  right: 0;
+}
+
 /* ── 设计模块（ADR 0079）：DSL 编辑器与预览 ─────────────────── */
 
 /* 页面骨架：工具栏 + 左右两栏，页面自身不纵向滚动（滚动在各栏内部） */

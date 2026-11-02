@@ -33,28 +33,50 @@ export default function PptxSlideshow({ blob, title, onClose }: Props) {
   const statusRef = useRef<'loading' | 'ready' | 'error'>('loading')
   const onCloseRef = useRef(onClose)
   onCloseRef.current = onClose
+  // 已经真正进入全屏 / 正在退出：用于区分「浏览器 Esc 退出」与清理或重复事件
+  const enteredFullscreenRef = useRef(false)
+  const closingRef = useRef(false)
 
   // 全屏覆盖层 + 退出全屏时自动关闭（用户按浏览器 Esc 也走这里）
   useEffect(() => {
     const el = overlayRef.current
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+
+    const onFullscreenChange = () => {
+      if (document.fullscreenElement === el) {
+        enteredFullscreenRef.current = true
+        return
+      }
+      // 只有「确实进入过全屏」后的退出才算用户主动退出；
+      // React StrictMode 的 effect 清理 / 首次请求竞态不会触发 onClose
+      if (enteredFullscreenRef.current && !closingRef.current) {
+        closingRef.current = true
+        onCloseRef.current()
+      }
+    }
+    document.addEventListener('fullscreenchange', onFullscreenChange)
+
     const request = el?.requestFullscreen?.()
     if (request) void request.catch(() => undefined)
 
-    const onFullscreenChange = () => {
-      if (!document.fullscreenElement) onClose()
-    }
-    document.addEventListener('fullscreenchange', onFullscreenChange)
     return () => {
       document.removeEventListener('fullscreenchange', onFullscreenChange)
       document.body.style.overflow = previousOverflow
-      if (document.fullscreenElement === el) {
-        const exit = document.exitFullscreen?.()
-        if (exit) void exit.catch(() => undefined)
-      }
+      // 不在清理里主动 exitFullscreen：退出统一走 close 回调，
+      // 否则 StrictMode 的二次执行会「刚进全屏就被退出」
     }
-  }, [onClose])
+  }, [])
+
+  /** 退出放映：先退出全屏再通知父组件卸载，退出事件由 closingRef 吞掉 */
+  const close = useCallback(() => {
+    closingRef.current = true
+    if (document.fullscreenElement) {
+      const exit = document.exitFullscreen?.()
+      if (exit) void exit.catch(() => undefined)
+    }
+    onCloseRef.current()
+  }, [])
 
   // 解析并渲染第一页
   useEffect(() => {
@@ -131,7 +153,7 @@ export default function PptxSlideshow({ blob, title, onClose }: Props) {
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         event.preventDefault()
-        onCloseRef.current()
+        close()
         return
       }
       if (['ArrowRight', 'ArrowDown', ' ', 'PageDown'].includes(event.key)) {
@@ -144,7 +166,7 @@ export default function PptxSlideshow({ blob, title, onClose }: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [go])
+  }, [close, go])
 
   return (
     <div
@@ -166,6 +188,26 @@ export default function PptxSlideshow({ blob, title, onClose }: Props) {
       )}
 
       {status === 'loading' && <Spin style={{ position: 'absolute' }} />}
+
+      {/* 左右点击区：点击左侧上一页、点击右侧下一页（底部控制条区域留空避免遮挡） */}
+      <button
+        type="button"
+        className="cn-pptx-nav-zone cn-pptx-nav-zone-prev"
+        aria-label="点击左侧上一页"
+        disabled={status !== 'ready' || index <= 0}
+        onClick={() => go(index - 1)}
+      >
+        <LeftOutlined />
+      </button>
+      <button
+        type="button"
+        className="cn-pptx-nav-zone cn-pptx-nav-zone-next"
+        aria-label="点击右侧下一页"
+        disabled={status !== 'ready' || count === 0 || index >= count - 1}
+        onClick={() => go(index + 1)}
+      >
+        <RightOutlined />
+      </button>
 
       {/* 底部控制条：上一页 / 页码 / 下一页 / 退出放映 */}
       <div
@@ -195,7 +237,7 @@ export default function PptxSlideshow({ blob, title, onClose }: Props) {
           ghost
           icon={<CloseOutlined />}
           aria-label="退出放映"
-          onClick={onClose}
+          onClick={close}
           style={{ marginLeft: 16 }}
         >
           退出放映
