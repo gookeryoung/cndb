@@ -1,9 +1,10 @@
 # ADR 0052: 文档图表由「外部实例引用」改为「正文内嵌 Markdown」
 
-Status: Accepted
+Status: Implemented（2026-11-02 人工确认）
 Date: 2026-10-27
 Related: `frontend/src/components/Document/chartBlock.ts`、`frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/components/Document/refWidth.ts`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertChartModal.tsx`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/pages/public/PublicSharePage.tsx`、`frontend/src/api/charts.ts`、`frontend/src/api/publicShare.ts`、`src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/routers/charts.py`、`src/cndb/plugins/documents/routers/public.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/charts/`、`src/cndb/plugins/documents/services/charts/inline.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/images.py`、`src/cndb/plugins/documents/services/importers/markdown.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/documents/services/search.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、ADR 0008（离线依赖）、ADR 0010（文档导入）、ADR 0017（游客分享）、ADR 0026（Chrome 81）、ADR 0042（插入入口）、ADR 0045（表引用导出）、ADR 0048（图表模板与实例）、ADR 0051（引用宽度）
 需求卡片: `docs/requirements/0052-document-chart-inline-embed.md`（需求原文与约束编号的唯一副本）
+> 本 ADR 已合并原 ADR 0060（文档图表点击放大查看），口径 / 决策 / 落地状态见文末「续作」小节（编号 0060 不复用）。
 
 > 需求变更时**先改本 ADR 再改代码**：删去失效的口径行 / 现状条目 / 决策 D 行 / 测试与分期，不留「历史方案」或「以后备用」段落；整节不适用写「无」。ADR 被新方案替代或需求作废时**直接删除本文件**，同步删除 `docs/adr/README.md` 索引行与代码 / 文档中的引用（git 历史可追溯），不在仓库保留 `Superseded` / `Deprecated` 文档；编号不复用。
 
@@ -268,3 +269,108 @@ Related: `frontend/src/components/Document/chartBlock.ts`、`frontend/src/compon
 - 已知坑：围栏块必须段落独占，行内混排不解析；指纹不含 `legacy_id`；旧 v8 备份的 `{{chart:id}}` 无 id 映射，按原文保留；外存版本（>2MB）迁移需原地重写 `v{n}.md.gz`；FTS 是独立 content 表，需 `INSERT OR REPLACE` 同步；素材库删除不回写正文（定义已复制）；图表块按光标插入，未移动光标时落在正文最前，导出 `.md` 首个非空行是块而非 H1，重导入标题因此取自文件名（e2e 按文件名定位重导入文档）
 - 最近一次全绿：`make check-fast`、`make test`（5806 passed / 17 skipped）、`make check-docs`（48 个 ADR / 0 error / 4 warning）；P2 收尾时另跑过 `make cov`（96.66%，门槛 95%）、`make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.89%）
 - e2e：`frontend/tests/e2e/critical/document-chart-embed.spec.ts` 已在 Windows 本机跑通（Playwright chromium，2 passed），覆盖插入 / 调宽 / 编辑 / 导出 / 游客渲染 / 重导入去重
+
+## 续作：文档图表点击放大查看（原 ADR 0060，已并入本 ADR）
+
+> 原独立文件已删除，编号 0060 不复用（追溯：`git log -- docs/adr/0060-document-chart-click-zoom.md`）。下列各节保留原 ADR 的约束 / 决策编号，代码与提交里的 `ADR 0060 Cx / Dx` 指的就是本节。
+> 需求卡片：`docs/requirements/0060-chart-click-zoom.md`（需求原文与约束编号的唯一副本）
+
+### 口径（原 ADR 0060）
+
+需求原文：见需求卡片 §需求原句（逐字，ADR 不复制第二份）。
+
+卡片约束沿用各自编号（C1..Cn），本表只补「设计怎么落地」，不重新拆句：
+
+| 卡片约束 # | 需求片段（引用） | 本设计的落地 |
+|---|---|---|
+| C1 | 在查看模式下 | ChartEmbed 渲染成功（`chart-embed-svg` 存在）时，SVG 容器变为可点击：点击打开放大预览弹层；渲染失败 / 加载中 / 无效块无放大入口 |
+| C2 | 像图一样可以点击放大查看 | 预览层为 antd `Modal` 遮罩弹层（默认宽 75vw，SVG 按原比例自适应、居中），内容直接渲染同一份已 sanitize 的 SVG 字符串（`dangerouslySetInnerHTML` 复用，零额外请求、矢量清晰）；标题栏提供 −/＋ 缩放按钮与当前百分比（0.5x-3x，步进 10%，到边界按钮禁用，打开时复位 100%）；滚轮仅用于弹层内上下滚动，不缩放 |
+| C3 | 插入图表 | 编辑 / 宽度 / 保存图片控件仍在 `<figure>` 内的按钮区，放大点击只挂在 SVG 容器上，互不遮挡；编辑模式行为不变 |
+| C4 | （推论）游客分享页一致 | ChartEmbed 组件内实现，`shareToken` 模式自动获得同样放大能力，无单独改动 |
+
+### Decision（原 ADR 0060）
+
+### 1. 数据模型
+
+无（纯前端交互改动）。
+
+### 2. 判定算法（唯一入口）
+
+无（无判定逻辑变更）。
+
+### 3. API 变更清单
+
+无。
+
+### 4. 边界与例外
+
+1. 渲染失败 / 无效块 / 加载中：无放大入口（I2）。
+2. SVG 本身带 `overflowX: auto` 横向滚动（`ChartEmbed.tsx:98`）：放大层内禁用横向滚动、按视口宽度整体展示（预览语义是「看全貌」，与内联的「可平移」区分）。
+3. 点击目标：仅 SVG 容器；按钮区（编辑 / 宽度 / 保存图片）不触发预览。
+4. 预览层内点击遮罩或关闭按钮即关闭；Esc 关闭由 Modal 默认行为提供。
+
+### 5. 迁移
+
+无。
+
+### 6. 前端
+
+| 层 | 文件 | 改动 |
+|---|---|---|
+| 图表内嵌块 | `frontend/src/components/Document/ChartEmbed.tsx` | 新增 `previewOpen` state；SVG 容器加 `role="button"`、`cursor: zoom-in` 与点击回调；新增 antd `Modal`（footer=null，标题为图表名）渲染同一 SVG；`data-testid="chart-embed-zoom"` / `chart-embed-preview` |
+| 样式 | `frontend/src/index.css`（如需） | 预览层 SVG 宽度 / 背景样式 |
+| 测试 | `frontend/src/components/Document/ChartEmbed.test.tsx` | 新增放大交互用例 |
+
+### 7. 测试清单
+
+**判定层（单测）**：无（无判定逻辑）。
+
+**接口层**：无（无 API 变更）。
+
+**迁移 / 备份**：无。
+
+**e2e（前端 / 单测）**：
+
+- 渲染成功：点击 `chart-embed-svg` 出现预览弹层（`chart-embed-preview`），内容含同一 SVG。
+- 渲染失败 / 无效块：无放大入口，点击无响应。
+- 编辑模式下宽度 / 编辑 / 保存图片控件不受影响（C3 回归）。
+- 关闭预览后回到原视图（Modal onClose）。
+
+### 8. 分期
+
+| 期 | 内容 | 风险 |
+|---|---|---|
+| **P0** | ChartEmbed 放大预览（交互 + 弹层 + 失败态无入口），单测 | 低 |
+| **P1** | e2e 用例 + 教程 / 帮助文档提及（如有图表章节） | 低 |
+
+### 决策记录（原 ADR 0060）
+
+| # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
+|---|---|---|---|---|---|
+| D1 | 放大实现方式 | antd `Modal` + 复用 sanitize 后的 SVG 字符串（`dangerouslySetInnerHTML`） | I1 零额外请求、矢量清晰、两模式共用 | antd `Image` preview（需 img src，要走 data URL 转换且语义错位）；echarts/位图转换（引入导出复杂度） | `frontend/src/components/Document/ChartEmbed.tsx` |
+| D2 | 放大入口范围 | 仅 `chart-embed-svg` 渲染成功态可点，失败 / 加载 / 无效块无入口 | I2 降级一致 | 全 figure 可点（会与按钮区冲突） | 同上 |
+| D3 | 游客分享页覆盖 | 组件内实现自动覆盖 `shareToken` 模式，无单独代码 | I3、卡片 C4 | 分享页单独实现（重复代码） | 同上 |
+
+门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
+
+### 与既有 ADR 的关系（原 ADR 0060）
+
+| 轴 | 载体 | 决定 | 由谁 |
+|---|---|---|---|
+| 图表内嵌块渲染 | ChartEmbed 组件 | 后端唯一渲染器 SVG + 单块降级 | ADR 0052 |
+| 块宽度 | refWidth 字段 | 内联宽度 25-100%，放大层不受其约束 | ADR 0051 / 本 ADR D1 |
+
+### 落地状态（原 ADR 0060）
+
+| 期 | 状态 | 代码落点 | 测试 | 提交 |
+|---|---|---|---|---|
+| P0 | 已落地 | `frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/index.css` | `frontend/src/components/Document/ChartEmbed.test.tsx` | 40b7233f |
+| P1 | 已落地 | `frontend/tests/e2e/critical/document-chart-embed.spec.ts`、`frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/document-chart-embed.spec.ts` | 40b7233f |
+
+### 交接（原 ADR 0060）
+
+- 当前阶段：P0-P1 已落地（待人工评审回填 Status）
+- 已完成：P0（放大交互 + 预览弹层 + 失败态无入口 + 单测 13/13）；P1（e2e 成员 4.2 段与游客段、教程文档提及）
+- 下一步：人工评审 → Status 改 Implemented；推送后由 CI 补跑 e2e（见已知坑）
+- 已知坑：本机缺 chromium 系统依赖（libatk-1.0.so.0），e2e 无法本地启动，由 CI 兜底；jsdom 不跑 Modal 离场动画，关闭断言用「不可见」而非「卸载」
+- 最近一次全绿：`make check-fast` + `make test`（后端 5856 passed）@ 3795aeed 之后的工作区（2026-10-28）

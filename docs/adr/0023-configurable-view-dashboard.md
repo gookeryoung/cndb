@@ -1,9 +1,10 @@
 # ADR 0023: 可配置复杂视图模板（dashboard 画布）
 
-Status: Accepted
+Status: Implemented（2026-11-02 人工确认）
 Date: 2026-10-23
 Related: `frontend/src/pages/grid/views/ChartView.tsx`、`frontend/src/pages/grid/views/chartBoard.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`frontend/src/pages/grid/view-config/CreateEditViewForm.tsx`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/views/viewModes.ts`、`frontend/src/pages/grid/useGridData.ts`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/plugins/tables/models.py`、`src/cndb/plugins/analytics/services/compute.py`、`docs/adr/0022-gallery-view-content-tables.md`
 需求卡片: 无卡片（需求直接立项，原句逐字见 §口径）
+> 本 ADR 已合并原 ADR 0077（dashboard 整屏导出与登录态只读分享），口径 / 决策 / 落地状态见文末「续作」小节（编号 0077 不复用）。
 
 ## 口径（需求 → 设计落点）
 
@@ -363,3 +364,228 @@ export interface ChartTypeDef {
 - 下一步：无（本 ADR 已全部交付）；整屏导出 / 只读分享见 ADR 0077
 - 已知坑：① dnd-kit 的 `listeners` 是 `{ onPointerDown }` 映射，必须逐事件展开到 DOM，若整体作为 `listeners={...}` 透传则拖拽永不激活；② dnd-kit 在拖拽激活后于 document 捕获阶段拦截 click，松手 50ms 后才移除，e2e 拖拽后需等待再点工具栏；③ 图标类子元素会抢 pointer 事件，拖拽手柄内的 icon 需 `pointerEvents: none`；④ `ChartCard` 的 ECharts 实例必须常驻容器（dispose 会清空 DOM，React 再卸载子节点会抛 `removeChild`）；⑤ 排序 / TopN 必须先保留原始 categories 索引再重排，若拿排序后索引去访问原始顺序的 `series.data` 会标签数值错位；⑥ SQLite `func.now()` 只有秒级精度，`update_view` 的乐观并发令牌需显式写微秒级 UTC；⑦ dashboard 14 类图使 `DashboardView` chunk 增长（echarts 模块按需注册但随 dashboard chunk 加载），`bundle-budget` 基线已带 reason 更新；⑧ 跨表目标表可用性判定必须 catch `(HTTPException, CndbError)`——`get_table_or_404` 的越权拒绝抛 `PermissionDeniedError`（`CndbError` 子类，非 `HTTPException`），只 catch 后者会让降级错误卡变成整页 500/403；⑨ 读路径重归一化必须带 `allow_unavailable_targets=True`（哨兵 `UNAVAILABLE_TARGET` 原样透传 widget），否则目标表被软删后整页 400；保存路径保持严格；⑩ 跨表 widget 强制走服务端取数（客户端只预取基表行集），`hasCrossTable` 决定 `useServer`，否则跨表卡会静默拿到基表行；⑪ 模板对话框必须 lazy 且仅在打开时挂载（`templateMode !== null`），常挂载会把对话框源码拉进 `DashboardView` chunk 致 bundle 预算超限；antd 6 的 `Drawer` 宽度参数是 `size`（`width` 已弃用会告警）；⑫ dashboard P3 e2e 必须用 API 自建唯一命名视图并在 `finally` 删除（连同同名模板），不可改写 seed「销售画布」——该视图被 `dashboard-edit.spec.ts` 并行持有；属性面板「数据」页签需限定 `.ant-drawer` 内定位，页面导航存在同名 `数据表 / 数据分析` Tab，`getByRole("tab", { name: "数据" })` 会触发 strict violation；⑬ 模板另存的字段类型快照必须按 `query.table_id` 逐表补录（`collectTemplateTableIds` + `fieldApi.list`），只传基表字段会让跨表 widget 的引用字段不在快照里，落地时静默漏掉缺字段映射（`buildDashboardTemplate` 的 `extraFields` 按表 id 合并，基表同名优先）
 - 最近一次全绿：`make check`（后端 6256 passed / 覆盖率 95.50%，前端 226 文件 / 2759 passed / 覆盖率双门槛达标）、`make e2e`（101 passed / 21 skipped）、`pnpm build`（chrome81 静态门禁 0 warning）与 `pnpm bundle:budget`（DashboardView 57.51 KiB ≤ 57.76 KiB）
+
+## 续作：dashboard 整屏导出与登录态只读分享（原 ADR 0077，已并入本 ADR）
+
+> 原独立文件已删除，编号 0077 不复用（追溯：`git log -- docs/adr/0077-dashboard-fullscreen-export-readonly-share.md`）。下列各节保留原 ADR 的约束 / 决策编号，代码与提交里的 `ADR 0077 Cx / Dx` 指的就是本节。
+> 需求卡片：`docs/requirements/0077-dashboard-fullscreen-export-readonly-share.md`（需求原文与约束编号的唯一副本）
+
+### 口径（原 ADR 0077）
+
+需求原文：见需求卡片 §需求原句（逐字，ADR 不复制第二份）。
+
+| 卡片约束 # | 需求片段（引用） | 本设计的落地 |
+|---|---|---|
+| C1 | 整屏导出 | 新增画布级捕获目标：按 `normalizeLayout` 当前布局一次性把全部 widget 渲染进同一张 PNG / PDF；单卡 PNG 保留为快捷入口，不替代整屏 |
+| C2 | 整屏导出 | `DashboardView` 工具栏从「仅 `canEdit`」改为「所有可见者」；导出 / 刷新 / 复制链接不要求 `EDIT_VIEWS`（D5） |
+| C3 | 整屏导出 | PNG（默认）与 PDF（可选）；复用 `html2canvas-pro` + `jsPDF`，两者继续在导出点击时动态导入（D3） |
+| C4 | 整屏导出 | 捕获区 = 全局筛选栏 + 画布主体；排除画布工具栏与应用导航；背景取当前主题页面色，空 / 错状态照实输出（D4） |
+| C5 | 只读分享 | 「复制只读链接」生成带 `view` / `mode=dashboard` / `present=1` 的深链；打开即进入只读展示（D6 / D7） |
+| C6 | 只读分享 | 不新增匿名入口，不新增 share token；接收者走既有登录态 + 表 `READ` + 视图可见性判定（D2 / D8） |
+| C7 | 只读分享 | 可见范围沿用视图三档（`private` / `shared` / `table`）与既有授权名单；分享设置直接复用「视图权限」抽屉（D8） |
+| C8 | 只读分享 | 展示态要求 `view` 必须解析成功，**不回落到默认视图**；不可见 / 已删 / 非 dashboard 视图按「链接无效」处理（D9） |
+| C9 | 只读分享 | 展示态隐藏 `GridToolbar` / `GridViewBar` / 聚合条与行详情入口，保留刷新、导出、退出展示；窄屏沿用单列塌陷（D7） |
+| C10 | 整屏导出 | 既有 `ExportPanel` 的 PDF 默认行为不变；新增导出辅助函数按需导入，不进入 `GridPage` / `DashboardView` 主 chunk（D10） |
+| C11 | 整屏导出 / 只读分享 | 零后端端点、零表结构、零迁移；权限判定复用 `get_table_or_404` + `get_view_or_404`（D1 / D8） |
+
+决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
+
+### Decision（原 ADR 0077）
+
+### 1. 数据模型
+
+**无新增表、无新增列、无新增迁移**：
+
+- 画布配置继续存 `tables_dataview.view_options`（ADR 0023 D2）。
+- 分享范围继续由 `tables_dataview.visibility` + `tables_dataviewpermission` 授权名单表达（ADR 0003）。
+- 只读链接是**无状态深链**：`?view=<id>&mode=dashboard&present=1`，不落库、不生成 token、不存快照。链接本身不携带任何权限或数据。
+
+### 2. 判定算法（唯一入口）
+
+**后端权限判定不变**：分享链接打开后仍由 `GridPage` 走既有链路——`useTable` / `useTableViews` 取当前用户可见视图，`get_table_or_404(READ)` + `get_view_or_404(VIEW_READ)` 决定 404/403；`records` / `dashboard/data` 继续叠加行级权限与字段隐藏。本 ADR **不新增任何判定入口**。
+
+前端新增两个纯函数（`dashboardShare.ts`），只负责链接与展示态解析，不做权限判定：
+
+```ts
+export interface DashboardShareInput {
+  origin: string
+  pathname: string      // /w/{wid}/tables/{tid}
+  viewId: number | string
+}
+export function buildDashboardShareUrl(input: DashboardShareInput): string
+// `${origin}${pathname}?view=${viewId}&mode=dashboard&present=1`
+
+export type PresentTarget =
+  | { kind: 'normal' }
+  | { kind: 'present'; view: View }
+  | { kind: 'invalid'; reason: 'missing_view' | 'not_visible' | 'not_dashboard' }
+
+export function resolvePresentTarget(
+  views: View[],
+  requestedViewId: string | null,
+  present: boolean,
+): PresentTarget
+```
+
+判定顺序固定：
+
+1. `present !== true` → `normal`（既有回落逻辑不变）。
+2. `requestedViewId` 缺失 → `invalid/missing_view`。
+3. `views` 中不存在该 id → `invalid/not_visible`（**禁止回落到默认视图**，I2 / C8）。
+4. 目标视图 `view_type !== 'dashboard'` → `invalid/not_dashboard`。
+5. 命中 → `present`。
+
+`GridPage` 在 `present` 模式下以该结果驱动渲染：`invalid` 显示「链接无效或无权访问」空态；`present` 隐藏工具栏并渲染只读画布。
+
+### 3. API 变更清单
+
+| 端点 | 变更 |
+|---|---|
+| `GET /api/v1/workspaces/{wid}/tables/{tid}/views` | 不变：只返回当前用户可见视图，作为 `resolvePresentTarget` 的输入 |
+| `GET .../views/{view_id}` / `POST .../views/{view_id}/dashboard/data` / 行记录读取 | 不变：权限、行级权限、字段隐藏与缓存口径全部沿用 |
+| `PATCH .../views/{view_id}` / 可见性与授权端点 | 不变：分享设置复用「视图权限」抽屉 |
+| 新增导出 / 分享端点 | **无**：整屏导出为前端视觉快照；只读分享为无状态深链 |
+
+### 4. 边界与例外
+
+1. **导出目标**：`DashboardView` 内新增专用捕获容器，包住 `GlobalFilterBar` + `DashboardGrid`，不含画布工具栏、应用侧栏 / 顶栏、弹窗与行详情抽屉（C4）。
+2. **数据就绪**：页面行集加载中、或服务端批量取数 `loading` 时导出按钮禁用；捕获前连续等待两帧，确保 `Skeleton` 已退出、图表已 `setOption`（C4 / I1）。
+3. **空 / 错状态**：单卡取数失败或空数据照实导出，不中断整屏；整张画布无 widget 时禁用导出并提示。
+4. **主题与背景**：捕获背景取当前 `--cn-bg-page`（读取失败回退 `#ffffff`）；PDF 背景通过新增可选参数传入，既有 `ExportPanel` 默认仍为白色（C10 / 16）。
+5. **尺寸与清晰度**：沿用 `computeRenderScale` 的画布像素预算与单边上限；超大画布宁可降低 scale 也不分配失败；PDF 继续走 `computePageSize` + `MAX_PAGE_PT` 分页。
+6. **文件名**：`<视图名>-<YYYYMMDD_HHMMSS>.<png|pdf>`，视图名按 Windows 非法字符清洗，空名回退「画布」。
+7. **只读链接**：链接只在 dashboard 视图生成；非 dashboard 视图不展示「复制只读链接」入口。链接不含 `q` / 其他视图参数，保证转发结果稳定。
+8. **权限变化**：视图删除、转 `private`、从 `shared` 名单移除、表 / 工作区删除后，接收者打开链接得到「链接无效或无权访问」，不回落到默认视图（C8）。
+9. **展示态交互**：隐藏 `GridToolbar`、`GridViewBar`、底部聚合条、行详情与导入 / 导出入口；保留刷新、导出、退出展示；表格 widget 点击行不打开详情（C9 / I3）。
+10. **窄屏**：沿用 ADR 0023 D4 的单列塌陷；展示态与正常态一致，不额外存储移动端布局。
+11. **自动刷新**：展示态沿用画布 `settings.refresh_interval`，后台标签页不轮询（ADR 0023 P3）；不新增推送。
+12. **导出与权限**：导出结果只反映当前用户可见字段与行；不生成可被他人越权读取的服务器快照（I2）。
+
+### 5. 迁移
+
+无迁移。分享为无状态深链，导出为客户端行为；`tables_dataview` / 授权表 / 备份格式均不变，存量零迁移、无 downgrade。
+
+### 6. 前端
+
+| 层 | 文件 | 改动 |
+|---|---|---|
+| 导出编排 | `frontend/src/pages/grid/views/dashboard/dashboardExport.ts`（新增） | `exportDashboardToPng` / `exportDashboardToPdf`：等待就绪 → 捕获专用容器 → 下载；文件名与主题背景 |
+| 捕获复用 | `frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts` | 抽出 `captureElement(target, backgroundColor)`（展开滚动 / 测量 / 渲染 / 恢复）；新增可选背景参数；保持既有 `exportViewToPdf` 默认行为 |
+| 图片导出 | `frontend/src/pages/import-export/ImportExportDialog/exportPng.ts`（新增或并入 `exportPdf.ts`） | 用同一 `captureElement` 产出 PNG Blob 并触发下载 |
+| 链接与展示解析 | `frontend/src/pages/grid/views/dashboard/dashboardShare.ts`（新增） | `buildDashboardShareUrl`、`resolvePresentTarget` 纯函数 |
+| 画布页 | `frontend/src/pages/grid/views/dashboard/DashboardView.tsx` | 工具栏对所有可见者渲染；新增导出（PNG / PDF）、复制链接、退出展示；新增捕获容器 ref；展示态隐藏编辑并禁用行点击 |
+| 页面接线 | `frontend/src/pages/grid/GridPage.tsx` | 解析 `present=1`；展示态隐藏 `GridToolbar` / `GridViewBar` / 聚合条；向 `DashboardView` 传 `presenting` / `onExitPresent` / 分享回调；`invalid` 显示空态 |
+| 视图栏 | `frontend/src/pages/grid/gridViewBar.tsx` | 桌面 / 移动「更多」菜单新增「复制只读链接」，仅当前视图为 dashboard 时可用 |
+| 体积预算 | `frontend/scripts/bundle-budget.json` | 若新增独立导出 chunk，按实测补条目与 `reason`；`DashboardView` 基线不得因静态引入上涨 |
+
+### 7. 测试清单
+
+**判定层（单测）**
+
+- `buildDashboardShareUrl`：origin / pathname 组合正确；仅保留 `view` / `mode=dashboard` / `present=1`；数字 / 字符串 id 一致；不丢路径前缀。
+- `resolvePresentTarget`：非展示态返回 `normal`；缺 `view` / 视图不在可见列表 / 非 dashboard → 对应 `invalid`；命中返回 `present`；**显式断言不回落到默认视图**。
+- 文件名构造：非法字符清洗、空视图名回退、时间戳格式。
+- `captureElement` / `exportViewToPng`（html2canvas mock）：背景色传入、包围盒尺寸、scale 上限、滚动容器恢复（成功与抛错两条路径）。
+
+**组件（vitest）**
+
+- `DashboardView`：只读身份仍渲染导出 / 刷新 / 复制链接；编辑身份保留原工具栏；加载中禁用导出；展示态无编辑 / 模板 / 删除入口，且行点击不触发回调。
+- `GridPage`：`present=1` 时隐藏页面工具栏与聚合条；目标视图不可见或非 dashboard 显示「链接无效或无权访问」；正常模式渲染不变。
+- `GridViewBar`：dashboard 视图出现「复制只读链接」并复制正确 URL；非 dashboard 不出现 / 禁用。
+- `ViewPermissionDrawer`：既有三档与名单用例回归，分享设置未引入新写口径。
+
+**接口层**
+
+- 无新增端点。回归：不可见视图 `GET` → 404；可见只读视图可读、写 → 403；行级权限 / 字段隐藏在 `records` 与 `dashboard/data` 两种取数路径均生效。
+- 匿名访问只读链接仍被 `ProtectedRoute` 挡到登录页；不存在绕过登录的 dashboard 公开端点。
+
+**迁移 / 备份**
+
+- 无迁移；工作区备份 / 恢复、视图导入导出不新增字段，往返用例不改。
+
+**e2e（前端）**
+
+- owner 建 dashboard → 视图权限设为 `shared` 并授权 viewer → 复制只读链接 → viewer 在第二个登录态直达链接：画布可见、无编辑 / 删除 / 行详情入口。
+- 只读链接触发 PNG / PDF 下载（Playwright `download` 事件，文件名与后缀正确、文件非空）。
+- 收回报权 / 视图转 `private` / 删除视图后，同一链接显示「链接无效或无权访问」，不展示默认视图。
+- 只读用户（无 `EDIT_VIEWS`）仍可使用整屏导出。
+
+**低配模拟（人工实测，非门禁）**
+
+- 探针：`frontend/tests/perf/dashboard-export.spec.ts`（耗时）+ `frontend/tests/perf/dashboard-export-memory.spec.ts`（内存峰值），公共夹具 `frontend/tests/perf/fixtures.ts`，配置 `frontend/playwright.perf.config.ts`；运行 `pnpm e2e:perf`（需先 `make frontend-build`；不在 `make e2e` / CI 分片内，单 worker 串行独占）。
+- 手段：CDP `Emulation.setCPUThrottlingRate` 6×（约等于一颗比宿主机单核慢 6 倍的 CPU，偏低端笔记本 / 政务终端档位）、视口 1366×768、`--enable-precise-memory-info`；内存按 `--type=` 分类采样 Chromium 各进程 RSS（25ms），并在页面侧 hook `toDataURL` / `getContext` 记录编码阶段与画布尺寸。
+- 口径：点击 `导出 PNG / PDF` → 下载落盘的墙钟耗时，含导出库动态导入、html2canvas 捕获、编码与 jsPDF 组装。
+- 实测（2026-11-01，宿主机 24 核；**两次独立运行取区间**，非真机、无内存压力与 swap 干扰）：
+
+| 场景 | 捕获画布 | PNG 1× / 6× | PDF 1× / 6× | 进程组 RSS 增量峰值（粗采） |
+|---|---|---|---|---|
+| 典型（2 列 × 3 行，6 块） | 3443 × 3912（13.5 M px） | 310-320ms / 1.6-2.4s | 375-407ms / 2.1-3.1s | 28-139 MB |
+| 超大（20 块整行，200 行单元） | 1841 × 17381（32.0 M px，命中 `MAX_CANVAS_PIXELS` 预算） | 512-528ms / 2.85-3.15s | 669-689ms / 3.85-4.2s | 220-431 MB（明细见下） |
+
+- 耗时结论：整屏导出是**纯 CPU 型**耗时（6× 降速下近似 5-6× 墙钟），最坏档（超大画布 PDF @6×）约 4 秒量级，PNG 约 3 秒，未出现画面为空 / 失败；首次导出仅比热态多 50-70ms（动态导入成本可忽略）。
+
+**内存峰值（超大画布 1841 × 17381 = 32.0 M px，位图理论 122 MB；25ms 采样、3 次独立运行取区间）**
+
+- PNG：基线 735-739 MB → 峰值 897-903 MB（渲染进程 391 MB → 544-549 MB）；总增量 158-168 MB / 渲染进程增量 149-158 MB；峰值出现在点击后 +455~482 ms，落在 `toDataURL('image/png')` 编码窗口（387→509 ms）内，编码返回 1.4 MB base64。
+- PDF：基线 750-873 MB → 峰值 1112-1121 MB（渲染进程 398-522 MB → 753-762 MB）；总增量 239-371 MB / 渲染进程增量 231-364 MB；峰值出现在 +581~631 ms，落在逐页 `toDataURL('image/jpeg', 0.95)` 编码窗口（433→646 ms）内，编码返回 1.2 MB base64。
+- 归因：峰值增量约为位图理论值的 1.2-1.4×（PNG）与 2-3×（PDF）——PDF 捕获后仍按页新建 `pageCanvas` 再编码，超大画布单页时它与主画布同尺寸，等于同时存在两份 122 MB 位图；两者峰值都出现在编码阶段而非捕获阶段（捕获时位图是逐块绘制的）。
+- 回收：PNG 导出后 +10 s 回落到基线（+21~23 MB，属分配器碎片）；PDF +10 s 后残留 +13~140 MB（受基线抖动影响，属 GC 惰性），连续 5 次导出 RSS 由 570 MB 升到约 800 MB 后趋稳、第 5 次出现回落（672-686 MB），**无泄漏式单调累积**。
+- 低配判断：单次导出峰值增量 PNG ≤ ~170 MB、PDF ≤ ~370 MB；叠加浏览器常驻内存后，4 GB 档设备峰值占用约 0.8-1.2 GB，处于安全区；2 GB 档接近压力区。若后续放宽 `MAX_CANVAS_PIXELS` / `TARGET_RENDER_DPI`，需按「每多一份全尺寸画布 ≈ +122 MB」复核。
+
+**遗留项修复后复测（2026-11-01，同口径超大画布）**
+
+- `computeRenderScale` 改按长边折算单边上限（`sideCap = MAX_CANVAS_SIDE / max(w, h)`）：捕获画布 1841×17381 → **1735×16384**，不再超浏览器单边名义上限；超高内容分辨率略降（位图 122 → 108 MB），宽内容与既有尺寸不受影响（单测锁定 `computeRenderScale(1000, 9000) = 16384/9000`）。
+- `exportViewToPdf` 单页场景（`cols=rows=1`）复用主画布 `toDataURL`，不再创建同尺寸切片画布：绝对峰值 RSS PNG 856 MB / PDF 948 MB（修复前 903 / 1112-1121 MB），PDF 与 PNG 峰值差由 ~220 MB 收窄到 ~92 MB（剩余为 JPEG 编码缓冲）；多页仍走切片路径（单测锁定两条路径）。
+- 结论：两项遗留优化均已落地并经探针复测验证，无新增待跟进。
+
+### 8. 分期
+
+| 期 | 内容 | 风险 |
+|---|---|---|
+| **P0** | 抽取 `captureElement`；新增整屏 PNG / PDF 编排；`DashboardView` 工具栏对所有可见者开放并加导出入口；主题背景参数 | 中（捕获尺寸与旧内核兼容需实测；既有 PDF 行为须保持不变） |
+| **P1** | `dashboardShare` 纯函数；`GridPage` 展示态与禁止回落；画布展示态工具栏；视图栏复制链接 | 中（展示态权限语义与既有深链回落逻辑交叉，需单测锁定） |
+| **P2** | 分享设置入口联动（复用视图权限抽屉）、只读 / 失效 e2e、体积预算与文档回填 | 低 |
+
+### 决策记录（原 ADR 0077）
+
+| # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
+|---|---|---|---|---|---|
+| D1 | 整体方案选型 | **前端视觉快照导出 + 登录态只读深链**，零后端模型 / 端点 / 迁移 | 导出与分享都建立在「当前用户已可见的渲染结果」上；现有 `html2canvas-pro`、`jsPDF` 与视图权限链路可直接复用 | ① 服务端渲染 PDF / PNG：需新增图像渲染与中文字体链路，且要与前端图表口径保持同构；② 新建 dashboard 分享表与 token：需复制文档分享的撤销 / 计数 / 归属校验，本需求无匿名诉求 | `dashboardExport.ts`、`dashboardShare.ts`、`GridPage.tsx` |
+| D2 | 是否支持匿名只读分享 | **不支持**；只读链接必须登录，匿名能力仍只属于文档分享（ADR 0017） | ADR 0003 D5 已彻底移除表 / 视图匿名分享，理由是匿名面会绕过表权限、行级权限与字段隐藏；dashboard 数据聚合面更大，不能例外 | ① 新增 dashboard 匿名 token（等于复活 D5 已删除的公开读取面）；② 导出静态快照托管为公开链接（需新增对象存储、清理与访问控制） | `view_access.py`、`GridPage.tsx` |
+| D3 | 导出格式 | **PNG（默认）+ PDF（可选）** | PNG 适合聊天 / 文档直接粘贴；PDF 适合打印与归档；两者都已有成熟前端实现 | ① 仅 PDF：聊天场景不便；② 仅 PNG：长画布打印不友好；③ 后端导出新格式：重复实现 | `dashboardExport.ts`、`exportPng.ts` |
+| D4 | 导出捕获范围与背景 | 捕获 **全局筛选栏 + 画布主体**；排除画布工具栏 / 应用导航；背景取当前主题色 | 筛选值决定数据口径，必须与画面一起出现；工具栏属于操作面，不属于展示内容；白底 + 深色图表不可读 | ① 只截画布主体：导出图缺少筛选口径；② 截整个 `gridAreaRef`：会把编辑按钮带进文件；③ 固定白底：深色主题不可读 | `DashboardView.tsx`、`exportPdf.ts` |
+| D5 | 导出入口与权限 | `DashboardView` 工具栏对所有可见者渲染，导出 / 刷新 / 复制链接不需要 `EDIT_VIEWS` | 用户能看见数据就应能带走自己的视图；导出不放大权限；只读用户目前完全没有画布操作入口 | ① 仅编辑者导出：只读协作者只能截图；② 只放在数据导入 / 导出弹窗：入口与画布语境割裂 | `DashboardView.tsx`、`GridPage.tsx` |
+| D6 | 只读链接形态 | `?view=<id>&mode=dashboard&present=1` 的现有路由深链，不新增路由 / 端点 | 复用 `GridPage` 的取数与权限链路，链接稳定、可刷新、可转发；无状态最容易撤销（权限一变即失效） | ① 新增 `/present/...` 路由：要复制 table / views / rows 取数逻辑；② 短链 / token：需落库与撤销面 | `dashboardShare.ts`、`GridPage.tsx` |
+| D7 | 展示态边界 | 只读展示：隐藏页面工具栏、聚合条、行详情与导入导出；保留刷新 / 导出 / 退出；禁用行点击 | 只读分享用于「看板展示」，不应出现任何写入口；刷新与导出是只读诉求 | ① 复用普通 GridPage：写入口与行详情仍在；② 全屏浏览器 API 自动进入：非用户手势无法可靠全屏 | `DashboardView.tsx`、`GridPage.tsx` |
+| D8 | 分享范围与设置 | 沿用视图三档可见性 + 既有授权名单；分享设置复用「视图权限」抽屉 | 已有唯一权限模型与产品入口；不引入第二套 grant 口径 | ① dashboard 独立分享名单：与视图权限双写，易漂移；② 链接自带角色：URL 不可信 | `ViewPermissionDrawer.tsx`、`gridViewBar.tsx` |
+| D9 | 目标视图失效 | 展示态 **不回落到默认视图**，直接「链接无效或无权访问」 | 回落会把「无权看 A」静默变成「看到了 B」，与 ADR 0003 I6 的不泄露存在性口径冲突 | ① 继续回落默认视图：语义错误且可能展示未分享内容；② 单独返回 403 文案：泄露视图曾存在 | `resolvePresentTarget`、`GridPage.tsx` |
+| D10 | 复用与体积 | 抽出 `captureElement` 供 PDF / PNG 共用；导出与分享辅助模块按需导入，`DashboardView` 不静态膨胀 | 避免两套捕获逻辑漂移；现有体积预算对 dashboard 有独立基线 | ① 复制 PDF 捕获实现到 dashboard：两处维护；② 导出库静态挂主入口：首屏与主 chunk 膨胀 | `exportPdf.ts`、`dashboardExport.ts`、`bundle-budget.json` |
+
+门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
+
+### 与既有 ADR 的关系（原 ADR 0077）
+
+| 轴 | 载体 | 决定 | 由谁 |
+|---|---|---|---|
+| dashboard 配置与取数 | `view_options`、`dashboard/data` | 整屏导出消费现有 `Dataset`，分享沿用视图配置 | ADR 0023 |
+| 视图可见性与匿名分享 | `visibility` + 授权名单 | 分享只读沿用三档可见性；**不恢复匿名分享** | ADR 0003 D5 |
+| 匿名分享能力范围 | `/public/share/:token` | 匿名能力仍只覆盖文档，不扩展到表 / 视图 / dashboard | ADR 0017 C10 |
+| 旧内核导出兼容 | `exportPdf.ts` 垫片与动态导入 | 整屏导出沿用同一路径 | ADR 0026 |
+
+### 落地状态（原 ADR 0077）
+
+| 期 | 状态 | 代码落点 | 测试 | 提交 |
+|---|---|---|---|---|
+| P0 | 已落地 | `frontend/src/pages/grid/views/dashboard/dashboardExport.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPng.ts`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx` | `frontend/src/pages/grid/views/dashboard/dashboardExport.test.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.test.ts`、`frontend/src/pages/import-export/ImportExportDialog/exportPng.test.ts`、`frontend/src/pages/grid/views/dashboard/DashboardView.test.tsx` | `b9ccd0b8` |
+| P1 | 已落地 | `frontend/src/pages/grid/views/dashboard/dashboardShare.ts`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/gridViewBar.tsx` | `frontend/src/pages/grid/views/dashboard/dashboardShare.test.ts`、`frontend/src/pages/grid/GridPage.present.test.tsx`、`frontend/src/pages/grid/gridViewBar.test.tsx`、`frontend/tests/e2e/critical/dashboard-readonly-share.spec.ts` | `b9ccd0b8` |
+| P2 | 已落地 | `frontend/src/pages/grid/ViewPermissionDrawer.tsx`、`frontend/src/pages/grid/gridViewBar.tsx`、`frontend/src/pages/grid/views/dashboard/DashboardView.tsx` | `frontend/src/pages/grid/ViewPermissionDrawer.test.tsx`、`frontend/tests/e2e/critical/dashboard-export.spec.ts`、`frontend/tests/e2e/critical/dashboard-readonly-share.spec.ts` | `b9ccd0b8` |
+
+> 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；P0-P2 全期落地并经人工确认（2026-11-01），`Status` 由 `Accepted` 转 `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
+
+### 交接（原 ADR 0077）
+
+- 当前阶段：P0-P2 已全部落地并经人工确认，`Status` 定为 `Implemented`（2026-11-01）
+- 已完成：整屏导出（PNG / PDF 共用 `captureElement`、专用捕获容器、主题背景、数据就绪门控）、登录态只读深链（禁止回落、展示态隐藏页面 chrome 与行详情、退出展示）、视图栏复制链接、分享设置复用视图权限抽屉并补画布提示、e2e 两条（导出格式校验 / 只读分享与失效）
+- 下一步：低配设备表现已用 CDP CPU 降速做过可复现实测（`pnpm e2e:perf`，结论见「7. 测试清单 · 低配模拟」）；仅剩真机复核（真实内存压力 / 集成显卡 / 低内存 OOM 边界），如需扩展（例如整屏导出加图片格式选项）另开需求卡片，不改本 ADR 已收口的口径
+- 已知坑：① 既有 PDF 捕获目标是 `gridAreaRef`，dashboard 的导出必须换专用容器，否则工具栏会被截进文件；② `html2canvas-pro` 在 Chrome 81 需先加载 `Intl.Segmenter` 垫片（沿用 `exportPdf.ensureIntlSegmenter`）；③ `DashboardGrid` 自身滚动，捕获前必须展开滚动容器并按后代包围盒取尺寸；④ 深色主题导出需传主题背景，不能沿用写死的白色；⑤ 展示态 `?view` 未命中时**绝不能**走 `GridPage` 的默认视图回落；⑥ 大表 / 跨表走服务端取数，导出前要等 `useDashboardData.loading` 结束；⑦ 导出编排与分享辅助全部按需导入（`DashboardView` 内动态 `import('./dashboardExport')`），`DashboardView` 静态依赖只保留类型；⑧ 视图权限抽屉已改为 `lazy` 且仅在打开时挂载，避免回涨 `GridPage` chunk；⑨ Chromium 对含中文的 anchor download 文件名会回落为 `download`，e2e 用文件魔数而非文件名断言；⑩ `present=1` 时先等 `useTableViews` 结束再判失效，避免把「加载中」误判成「链接无效」
+- 最近一次全绿：`make check-fast`、`pnpm build` + `pnpm bundle:budget`、新增 e2e 4 例（2026-11-01）；低配模拟探针 `pnpm e2e:perf` 全过（耗时 3 例 + 内存峰值 4 例，2026-11-01）

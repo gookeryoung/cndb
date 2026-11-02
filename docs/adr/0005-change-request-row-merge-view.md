@@ -1,6 +1,6 @@
 # ADR 0005: 修改申请同行合并视图与冲突裁决
 
-Status: Accepted（M1-M4 已落地）
+Status: Implemented（M1-M4 已落地；2026-11-02 人工确认）
 Date: 2026-10-19
 Related: `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/change_requests/routers/change_requests.py`、`src/cndb/plugins/change_requests/schemas.py`、`frontend/src/pages/changeRequests/ChangeRequestsPage.tsx`、`frontend/src/pages/changeRequests/ChangeRequestRowMergePage.tsx`、`frontend/src/pages/grid/useGridData.ts`；术语见 `CONTEXT.md`「修改申请 / 双轨制写入 / 编辑中标识」
 需求卡片: 无卡片（需求直接立项，原文见「口径」）

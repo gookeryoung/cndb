@@ -587,7 +587,7 @@ describe('DashboardView P3 跨表 widget', () => {
   })
 })
 
-describe('DashboardView P0 整屏导出（ADR 0077）', () => {
+describe('DashboardView P0 整屏导出（ADR 0023 / 原 0077）', () => {
   it('捕获容器只包住全局筛选栏与画布主体，不含工具栏', () => {
     renderDashboard({ view_options: GLOBAL_CONFIG })
     const area = screen.getByTestId('dashboard-export-area')
@@ -632,7 +632,7 @@ describe('DashboardView P0 整屏导出（ADR 0077）', () => {
   })
 })
 
-describe('DashboardView P1 只读展示态（ADR 0077）', () => {
+describe('DashboardView P1 只读展示态（ADR 0023 / 原 0077）', () => {
   it('展示态保留刷新 / 导出 / 退出，隐藏编辑、模板与复制链接', () => {
     const onExitPresent = vi.fn()
     const onCopyShareLink = vi.fn()

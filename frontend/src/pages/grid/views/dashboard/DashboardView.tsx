@@ -77,7 +77,7 @@ export interface DashboardViewProps {
   onSave?: (options: Record<string, unknown>) => void
   /** 小表路径的刷新回调（定时刷新 / 手动刷新；由页面层重新拉行集） */
   onRefresh?: () => void
-  /** 只读展示态（`present=1`）：隐藏编辑 / 模板入口、禁用行详情，保留刷新 / 导出 / 退出（ADR 0077 D7） */
+  /** 只读展示态（`present=1`）：隐藏编辑 / 模板入口、禁用行详情，保留刷新 / 导出 / 退出（ADR 0023 / 原 0077 D7） */
   presenting?: boolean
   /** 退出只读展示（由页面层移除 `present` 参数） */
   onExitPresent?: () => void
@@ -164,7 +164,7 @@ export default function DashboardView({
   const [templateMode, setTemplateMode] = useState<DashboardTemplateMode | null>(null)
   /** 整屏导出进行中的格式（null = 空闲）；同一时刻只允许一个导出任务 */
   const [exporting, setExporting] = useState<DashboardExportFormat | null>(null)
-  /** 整屏导出捕获容器：全局筛选栏 + 画布主体，不含工具栏（ADR 0077 D4） */
+  /** 整屏导出捕获容器：全局筛选栏 + 画布主体，不含工具栏（ADR 0023 / 原 0077 D4） */
   const exportAreaRef = useRef<HTMLDivElement>(null)
   const draft = useDashboardDraft(baseline)
   const baselineRef = useRef(baseline)
@@ -379,7 +379,7 @@ export default function DashboardView({
   }
 
   const config = draft.config
-  /** 展示态禁止行详情：只展示聚合结果，不打开行抽屉（ADR 0077 D7 / I3） */
+  /** 展示态禁止行详情：只展示聚合结果，不打开行抽屉（ADR 0023 / 原 0077 D7 / I3） */
   const effectiveRowClick = presenting ? undefined : onRowClick
   /** 数据就绪判定：页面行集或服务端批量取数仍在加载时不导出，避免截到骨架屏 */
   const dataLoading = loading || (useServer && serverData.loading)
@@ -398,7 +398,7 @@ export default function DashboardView({
       await new Promise<void>((resolve) => {
         requestAnimationFrame(() => { requestAnimationFrame(() => resolve()) })
       })
-      // 编排模块按需加载：html2canvas / jsPDF 相关链路不得进入画布主 chunk（ADR 0077 D10）
+      // 编排模块按需加载：html2canvas / jsPDF 相关链路不得进入画布主 chunk（ADR 0023 / 原 0077 D10）
       const { exportDashboard } = await import('./dashboardExport')
       await exportDashboard(target, view?.name, format)
       message.success('导出完成')
@@ -634,7 +634,7 @@ export default function DashboardView({
           拖拽标题栏移动 · 右下角缩放 · 选中后方向键微调（Shift+方向键改尺寸）· Ctrl/⌘+S 保存 · Esc 退出
         </div>
       )}
-      {/* 整屏导出捕获区：全局筛选栏 + 画布主体，不含工具栏与编辑提示（ADR 0077 D4） */}
+      {/* 整屏导出捕获区：全局筛选栏 + 画布主体，不含工具栏与编辑提示（ADR 0023 / 原 0077 D4） */}
       <div
         ref={exportAreaRef}
         data-testid="dashboard-export-area"

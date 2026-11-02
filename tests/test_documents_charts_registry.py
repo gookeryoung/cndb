@@ -82,7 +82,7 @@ class TestRegistry:
             assert tpl.default_config  # 每个模板必须带默认配置
 
     def test_category_assignment(self):
-        """ADR 0058 C1/C4：双轴更名并归对比-柱形，堆叠 / 分组归对比-条形."""
+        """ADR 0048 / 原 0058 C1/C4：双轴更名并归对比-柱形，堆叠 / 分组归对比-条形."""
         dual = CHART_TEMPLATES["bar-line-dual-axis"]
         assert dual.name == "双轴柱线组合图"
         assert dual.category == "comparison-bar"
@@ -101,7 +101,7 @@ class TestRegistry:
 
     def test_templates_payload_shape(self):
         payload = templates_payload()
-        # 一级分类层级化（ADR 0058 + 0070）：空分类不输出，五个一级均含二级 children
+        # 一级分类层级化（ADR 0048 / 原 0058 + 0070）：空分类不输出，五个一级均含二级 children
         cats = payload["categories"]
         assert [c["key"] for c in cats] == ["composition", "comparison", "trend", "distribution", "evaluation"]
         comparison_children = next(c for c in cats if c["key"] == "comparison")["children"]

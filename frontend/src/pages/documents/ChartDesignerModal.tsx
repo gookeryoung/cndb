@@ -297,7 +297,7 @@ export default function ChartDesignerModal({
   const [saveError, setSaveError] = useState<string | null>(null)
   /** 受影响单元格（ADR 0056 C4）：联动重算产生的单元格键（`value:i` / `growth:i`），仅编辑期可见 */
   const [affected, setAffected] = useState<ReadonlySet<string>>(new Set())
-  /** 联动单元格编辑态（ADR 0059 C3）：正在编辑的单元格键与草稿值；联动态非编辑时显示「数值(计算)」，点击后仅显示纯数值 */
+  /** 联动单元格编辑态（ADR 0056 / 原 0059 C3）：正在编辑的单元格键与草稿值；联动态非编辑时显示「数值(计算)」，点击后仅显示纯数值 */
   const [editingCell, setEditingCell] = useState<string | null>(null)
   const [cellDraft, setCellDraft] = useState<number | null>(null)
   /** 数据导入（需求卡片 0070 C3）：粘贴文本与解析错误 */
@@ -366,7 +366,7 @@ export default function ChartDesignerModal({
     setConfig({ ...config, data: { ...config.data, rows } })
   }
 
-  /** 联动单元格编辑提交（ADR 0059 C4 / Q1）：数值有实际改动才走联动写入，未改动失焦保持联动态 */
+  /** 联动单元格编辑提交（ADR 0056 / 原 0059 C4 / Q1）：数值有实际改动才走联动写入，未改动失焦保持联动态 */
   const commitLinkedCell = (field: 'value' | 'growth', index: number, original: number | null) => {
     if (cellDraft !== original) updateRowField(index, field, cellDraft)
     setEditingCell(null)
@@ -796,7 +796,7 @@ export default function ChartDesignerModal({
                     </Text>
                     {rows.map((row, i) =>
                       isScalarRow(row) ? (() => {
-                        // 联动态判定（ADR 0059 D5）：默认联动态（次值留空且可推算）+ 本轮联动重算（affected 集合）
+                        // 联动态判定（ADR 0056 / 原 0059 D5）：默认联动态（次值留空且可推算）+ 本轮联动重算（affected 集合）
                         const prevCandidate = i > 0 ? rows[i - 1] : undefined
                         const prevRow = prevCandidate && isScalarRow(prevCandidate) ? prevCandidate : undefined
                         const prevValue = prevRow ? (prevRow.value ?? null) : null

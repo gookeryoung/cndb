@@ -194,7 +194,7 @@ export default function ViewPermissionDrawer({
             视图权限只在数据表权限范围内放宽，不会让看不到这张表的人看到视图。
           </Paragraph>
 
-          {/* 画布视图额外告知只读链接的可用档位（ADR 0077 C7 / D8）：分享设置与链接分发是同一套权限 */}
+          {/* 画布视图额外告知只读链接的可用档位（ADR 0023 / 原 0077 C7 / D8）：分享设置与链接分发是同一套权限 */}
           {view.view_type === 'dashboard' && (
             <Paragraph
               type="secondary"

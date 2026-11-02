@@ -1,6 +1,6 @@
 # ADR 0076: 流水线检查系统与专用 DSL（数据表 / 文档质量检查 + 可扩展检查动作注册表）
 
-Status: Accepted
+Status: Implemented（2026-11-02 人工确认）
 Date: 2026-10-31
 Related: `src/cndb/plugins/tables/services/governance/detect.py`、`src/cndb/plugins/documents/services/charts/inline.py`、`src/cndb/core/events.py`、`docs/adr/0004-row-level-permission-rules.md`、`docs/adr/0020-llm-platform-capability.md`、`docs/adr/0075-workspace-full-backup.md`
 需求卡片: `docs/requirements/0076-pipeline-check-dsl.md`（需求原文与约束编号的唯一副本）

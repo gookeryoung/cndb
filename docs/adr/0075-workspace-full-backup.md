@@ -1,6 +1,6 @@
 # ADR 0075: 工作区全量备份与恢复（归档格式 + 覆盖恢复）
 
-Status: Accepted（已评审，2026-10-31 需求方确认）
+Status: Implemented（P0-P2 已落地，2026-11-02 人工确认）
 Date: 2026-10-31
 Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/cli/backup.py`、`src/cndb/cli/restore/`、`frontend/src/pages/settings/WorkspaceBackupDialog.tsx`、ADR 0004 / 0006 / 0019 / 0048
 需求卡片: `docs/requirements/0075-workspace-full-backup.md`（需求原文与约束编号的唯一副本）

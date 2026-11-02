@@ -1,6 +1,6 @@
 # ADR 0083: 【设计】模块二级导航「设计结构」与装配大纲树
 
-Status: Accepted（2026-11-01 评审通过，进入实现）
+Status: Implemented（P0-P2 已落地，2026-11-02 人工确认）
 Date: 2026-11-01
 Related: `src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/services/dsl/nodes.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/schemas.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/DslEditor.tsx`、`frontend/src/api/design.ts`、`docs/adr/0079-design-3d-dsl-module.md`
 需求卡片: `docs/requirements/0083-design-structure-subnav-and-assembly-tree.md`（需求原文与约束编号的唯一副本）

@@ -61,7 +61,7 @@ class _FieldSpec:
 
 @dataclass(slots=True)
 class _NormalizePlan:
-    """一次批量写入的归一化计划：字段表 + 自动填充 / 默认值规格（ADR 0040 D5）.
+    """一次批量写入的归一化计划：字段表 + 自动填充 / 默认值规格（ADR 0037 / 原 0040 D5）.
 
     同一批内所有行共用，逐行只做取值与 ``validate_value``，不再重建字段 map、
     逐行解析 ``DateFieldConfig``；语义与旧的逐行实现保持一致。
@@ -156,7 +156,7 @@ def _normalize_row_with_plan(
             result[spec.db_column] = None
             continue
         if validated is not None and spec.db_column in validated:
-            # 校验阶段已归一过同一份原始值，直接复用（ADR 0040 D5）
+            # 校验阶段已归一过同一份原始值，直接复用（ADR 0037 / 原 0040 D5）
             result[spec.db_column] = validated[spec.db_column]
             continue
         try:
@@ -206,7 +206,7 @@ def _normalize_values(
     - DataField.default_value 默认值填充（仅创建路径、用户未传该字段时；校验失败跳过）
 
     返回 (物理列值, 关联值列表)。批量场景请复用 :func:`_build_normalize_plan`，
-    避免逐行重建字段表与日期配置（ADR 0040 D5）。
+    避免逐行重建字段表与日期配置（ADR 0037 / 原 0040 D5）。
     """
     plan = _build_normalize_plan(table, for_update=for_update)
     return _normalize_row_with_plan(plan, values, for_update=for_update)
@@ -1141,7 +1141,7 @@ def bulk_update_rows(
     与 bulk_update 不同：bulk_update 是 "N 行共用一组 values"，这里是 "N 行各有自己的 values"。
     批量导入场景不逐条记 audit log（避免海量 audit 行）。返回成功更新的行数。
 
-    ``reuse_normalized=True``（ADR 0040 D5）：``updates`` 条目可带 ``normalized``
+    ``reuse_normalized=True``（ADR 0037 / 原 0040 D5）：``updates`` 条目可带 ``normalized``
     （校验阶段产出的 db_column → 已校验值），命中时跳过二次逐格校验；未命中的
     字段仍按原语义校验。仅数据同步等已校验链路打开，导入默认路径不变。
     """
@@ -1152,7 +1152,7 @@ def bulk_update_rows(
     row_scope = _build_row_scope_where(table, sa_table, db, user)
     total = 0
 
-    # 批级预编译归一化计划（ADR 0040 D5）：字段表 / 自动填充规格只解析一次
+    # 批级预编译归一化计划（ADR 0037 / 原 0040 D5）：字段表 / 自动填充规格只解析一次
     plan = _build_normalize_plan(table, for_update=True)
     prepared: list[tuple[int, dict[str, Any], list[tuple[Any, list[int]]]]] = []
     for item in updates:
@@ -1236,7 +1236,7 @@ def _invalidate_search_cache(table: Any) -> None:
     """批量写不逐行记 audit，主动失效该工作区的读缓存（best-effort）.
 
     单行 CRUD 走 ``log_action → record_event`` 已自动失效；批量导入 / 数据同步
-    不写 audit，需要在这里补一次（ADR 0015）。ADR 0046 起记录列表 / 计数 /
+    不写 audit，需要在这里补一次（ADR 0012 / 原 0015）。ADR 0046 起记录列表 / 计数 /
     工作区统计缓存也挂在同一前缀下，一并失效，避免翻页读到旧行数。
     """
     try:

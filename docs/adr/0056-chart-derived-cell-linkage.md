@@ -1,9 +1,10 @@
 # ADR 0056: 图表设计器派生单元格联动（双轴次值默认留空）
 
-Status: Accepted
+Status: Implemented（2026-11-02 人工确认）
 Date: 2026-10-28
 Related: `src/cndb/plugins/documents/services/charts/registry.py`、`src/cndb/plugins/documents/services/charts/render.py`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、ADR 0048（图表模板）、ADR 0051（预览与显示比例）
 需求卡片: `docs/requirements/0056-chart-derived-cell-linkage.md`（需求原文与约束编号的唯一副本）
+> 本 ADR 已合并原 ADR 0059（图表设计器联动单元格「(计算)」显示与默认联动态），口径 / 决策 / 落地状态见文末「续作」小节（编号 0059 不复用）。
 
 ## 口径（需求 → 设计落点）
 
@@ -161,3 +162,132 @@ linkGrowthFromValue(value: number, prevValue: number | null): number | null | 's
 - 下一步：`make flow` 全绿后提交；e2e 按环境可用性跑 critical 分片；人工评审后 Status → Implemented
 - 已知坑：e2e 本地环境缺系统库（libatk-1.0.so.0）暂无法启动 chromium，spec 已就位待环境修复后执行；JS `Math.round` 与 Python `round` 半值边界舍入差异属可接受显示口径
 - 最近一次全绿：`make flow` @ 3c6bbb86 前置基线（5847 passed）；渲染修复经 render/registry 单测（39 passed）+ 前端 documents 单测验证
+
+## 续作：图表设计器联动单元格「(计算)」显示与默认联动态（原 ADR 0059，已并入本 ADR）
+
+> 原独立文件已删除，编号 0059 不复用（追溯：`git log -- docs/adr/0059-chart-linkage-display.md`）。下列各节保留原 ADR 的约束 / 决策编号，代码与提交里的 `ADR 0059 Cx / Dx` 指的就是本节。
+> 需求卡片：`docs/requirements/0059-chart-linkage-display.md`（需求原文与约束编号的唯一副本）
+
+### 口径（原 ADR 0059）
+
+需求原文：见需求卡片 §需求原句（逐字，ADR 不复制第二份）。
+
+卡片约束沿用各自编号（C1..Cn），本表只补「设计怎么落地」：
+
+| 卡片约束 # | 需求片段（引用） | 本设计的落地 |
+|---|---|---|
+| C1 | 「联动项风格按当前形式，数值后增加(计算)表示联动值」 | 设计器联动态单元格非编辑态渲染为可点击的展示态：沿用底色高亮（`#FDF2E4`），数值后追加「(计算)」后缀（如 `12.3(计算)`），并带 `data-linked` 标记 |
+| C2 | 「默认次值直接显示为联动状态」 | 双轴设计器打开时，次值列（i≥1）凡 `growth === null` 且按主值可推算（基数存在且 >0）即处于联动态，显示推算增速值 +「(计算)」；推算复用 `chartLinkage.linkGrowthFromValue`（与渲染端同口径，一位小数）；存储仍为 `null` |
+| C3 | 「点击联动项单元格后，进入编辑状态，仅显示数值不显示(计算)」 | 点击联动态单元格切换为真实 `InputNumber` 编辑态，初始值为推算数值（纯数字，无后缀），可直接修改 |
+| C4 | 「对应主/次值单元格变为联动状态」 | 失焦 / 回车提交：数值有改动 → 走既有 `updateRowField` 联动（公式与舍入口径沿用 ADR 0056 D2/D3：互逆、不跨行级联、基数缺失不联动），配对单元格被重算进入联动态；清空次值 → 删除显式值，恢复按主值推算的联动态显示；数值未改动 → 保持联动态（Q1，存储不变） |
+| C5 | 「完善该设计」 | 提交的 config 结构不变（`label`/`value`/`growth`），无任何联动标记字段；次值未被显式编辑仍存 `null`，渲染端留空推算行为不变 |
+| C6 | 「一并完善其他类图表」 | 联动态显示机制实现为双轴数据表分支内的通用渲染模式（展示态 / 编辑态切换不绑定具体字段）；堆叠 / 分组模板无数值派生关系，行为不变（Q2，沿用 ADR 0056 D5 否决结论） |
+
+决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
+
+### Decision（原 ADR 0059）
+
+### 1. 数据模型
+
+无表变更、无迁移、无 config 结构变更。全部改动在前端设计器显示层与交互层。
+
+### 2. 判定算法（唯一入口）
+
+联动态判定与显示值计算仍以 `chartLinkage.ts` 为唯一入口，新增一个纯展示判定 helper（不改既有两函数）：
+
+```ts
+// 默认联动态显示值：次值留空时按主值推算（C2），与 linkGrowthFromValue 同口径
+growthLinkedDisplay(row: ChartDataRowDraft, prevRow: ChartDataRowDraft | undefined):
+  { linked: boolean; display: number | null }   // linked=false 时 display 为 row.growth
+```
+
+设计器内单元格最终显示态 = 三步收敛（`ChartDesignerModal.tsx` 内纯函数 `cellDisplayState`）：
+
+1. 编辑态（该单元格正被点击编辑）→ 显示纯数值（联动态取推算值，非联动态取原值）；
+2. 联动态（`affected` 含该键，或 C2 的默认联动态判定成立）→ 非编辑态显示 `数值(计算)` + 高亮；
+3. 其余 → 普通 `InputNumber` 原样显示。
+
+### 3. API 变更清单
+
+| 端点 | 变更 |
+|---|---|
+| 无 | 全部接口不变；提交 payload 结构与校验规则均不变（C5） |
+
+### 4. 边界与例外
+
+1. 第 1 行（i=0）次值：无上年基数，不进入默认联动态，保持禁填（C2 与 0056 I3 一致）。
+2. 基数缺失 / ≤0、推算结果非有限数：该单元格不进入联动态，按普通空白处理，可正常填写。
+3. 点击联动态单元格进入编辑后未改动即失焦：保持联动态（Q1），`growth` 仍为 `null`、主值不被改写。
+4. 编辑联动态次值并改动数值：走 `updateRowField` 既有联动，主值被重算进入联动态（C4）；再次手动编辑被联动单元格即清除其 `affected` 标记（0056 D4 行为不变）。
+5. 清空已填次值：`growth` 置 `null` 后，默认联动态判定自动接管，恢复「推算值(计算)」显示（C4）。
+6. 联动态主值（被次值联动重算）：其数值已写入草稿（0056 既有行为），显示 `数值(计算)`；点击编辑显示该数值，改动后按反向公式重算次值。
+7. 增删行导致行号位移：`affected` 集合整体清空（既有行为），默认联动态按新行序即时重算，不受影响。
+8. 堆叠 / 分组系列模板：不进入联动态渲染分支，行为不变（C6）。
+
+### 5. 迁移
+
+无。零迁移、存量零改写（I4）。
+
+### 6. 前端
+
+| 层 | 文件 | 改动 |
+|---|---|---|
+| 联动纯函数 | `frontend/src/pages/documents/chartLinkage.ts` | 新增 `growthLinkedDisplay`（C2 默认联动态判定与显示值），复用 `linkGrowthFromValue` |
+| 设计器 | `frontend/src/pages/documents/ChartDesignerModal.tsx` | 双轴数据表单元格改为「展示态 / 编辑态」双态渲染：联动态非编辑时渲染可点击的 `数值(计算)` 文本（沿用高亮），点击切换为 `InputNumber`（C1/C2/C3）；失焦提交接入 Q1 未改动保持联动态语义（C4） |
+| 教程文档 | `frontend/src/pages/help/content/tutorials.tsx` | 图表教程补「次值留空显示为推算值(计算)、点击可编辑、编辑后对应主/次值联动」说明（C6 文档面） |
+
+### 7. 测试清单
+
+**判定层（单测）**：`frontend/src/pages/documents/chartLinkage.test.ts` — `growthLinkedDisplay`：基数存在 → linked + 一位小数推算值；基数缺失 / ≤0 / 首行 → linked=false；growth 非空 → linked=false。
+
+**前端单测**：`ChartDesignerModal.test.tsx` — 默认打开双轴设计器，次值列（i≥1 且可推算）显示 `x.x(计算)` 且带高亮（C2）；第 1 行次值禁填不变；点击联动态次值 → 编辑框为纯数值（C3）；未改动失焦 → 恢复 `(计算)` 显示、payload growth 仍 null（Q1/C5）；改动次值失焦 → 主值显示 `x.x(计算)`（C4）；清空次值 → 恢复联动态显示（C4）；提交 payload 无标记字段（C5）；堆叠 / 分组模板行为回归不变（C6）。
+
+**接口层 / 迁移 / 备份**：无（零接口、零迁移，不适用）。
+
+**e2e（前端）**：`frontend/tests/e2e/critical/chart-designer-linkage.spec.ts` 扩展 — 新建双轴图默认次值列显示 `(计算)`；点击进入编辑显示纯数值；填次值后主值带 `(计算)`、预览曲线不变。
+
+### 8. 分期
+
+| 期 | 内容 | 风险 |
+|---|---|---|
+| **P0** | `chartLinkage.growthLinkedDisplay` + 单测（纯函数，无 UI） | 低 |
+| **P1** | 设计器双态渲染（联动态 `(计算)` 展示 + 点击进编辑 + Q1 未改动语义）+ 前端单测 | 中 |
+| **P2** | 教程文案 + e2e 扩展 + `make flow` 全绿 | 低 |
+
+### 决策记录（原 ADR 0059）
+
+| # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
+|---|---|---|---|---|---|
+| D1 | 整体方案选型：联动态展示放显示层还是改数据模型（如落库推算值） | 纯前端显示层双态渲染，数据模型不动 | 需求只要求「知晓」；落库推算值违反 0056 I2 且破坏留空推算渲染语义 | 推算值落库（污染 config、渲染端双口径） | `ChartDesignerModal.tsx` |
+| D2 | 默认联动态显示值口径 | 复用 `linkGrowthFromValue`（与 `render.py` `growth_at` 同公式同舍入，一位小数） | I1 单一口径；需求方确认 Q3 | 新增第二套推算函数（双口径漂移） | `chartLinkage.ts` |
+| D3 | 「(计算)」呈现方式 | 非编辑态渲染为可点击文本 `数值(计算)`（沿用高亮），点击切换真实 `InputNumber` | 需求原文「点击后进入编辑状态，仅显示数值」；InputNumber 无法内嵌后缀文本 | InputNumber 内拼后缀（编辑态会带出 `(计算)` 字样）；仅加前缀 / 后缀 addon（占宽且编辑态同样带出） | `ChartDesignerModal.tsx` |
+| D4 | 联动单元格未改动即失焦的语义 | 保持联动态（growth 仍 null、主值不改写） | 需求方确认 Q1；避免「点一下就固化推算值」的隐式写入 | 失焦即固化显式值（隐式改数据，违背显式值优先） | `ChartDesignerModal.tsx` |
+| D5 | 联动态的来源建模 | 两种来源统一为「联动态」：默认推算（growth 为 null 且可算）+ 本轮联动重算（`affected` 集合，保留） | 显示行为一致（`(计算)` + 高亮），来源只影响数值是否已写入草稿 | 废弃 `affected` 改为全量即时推导（主值联动态无法从数据推导，会丢标记） | `ChartDesignerModal.tsx` |
+| D6 | 其他图表范围 | 联动态渲染实现为通用模式，堆叠 / 分组行为不变，不新增派生能力 | 需求方确认 Q2；沿用 ADR 0056 D5 | 为堆叠 / 分组新增占比派生列（超出需求） | `ChartDesignerModal.tsx` |
+
+门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
+
+### 与既有 ADR 的关系（原 ADR 0059）
+
+| 轴 | 载体 | 决定 | 由谁 |
+|---|---|---|---|
+| 联动公式 / 舍入口径 | `chartLinkage.ts` | 不变，仍是唯一入口 | ADR 0056 D2 |
+| 首行禁填 / 后端 400 | `registry.py` | 不变 | ADR 0056 D6 |
+| 设计器显示层（联动态 / `(计算)` / 双态渲染） | `ChartDesignerModal.tsx` | 本 ADR 新增 | ADR 0059 |
+| 渲染端留空推算 | `render.py` | 不变 | ADR 0048 |
+
+### 落地状态（原 ADR 0059）
+
+| 期 | 状态 | 代码落点 | 测试 | 提交 |
+|---|---|---|---|---|
+| P0 | 已落地 | `frontend/src/pages/documents/chartLinkage.ts` | `frontend/src/pages/documents/chartLinkage.test.ts` | c75dfadb |
+| P1 | 已落地 | `frontend/src/pages/documents/ChartDesignerModal.tsx` | `frontend/src/pages/documents/ChartDesignerModal.test.tsx` | c75dfadb |
+| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx` | `frontend/tests/e2e/critical/chart-designer-linkage.spec.ts` | c75dfadb |
+
+### 交接（原 ADR 0059）
+
+- 当前阶段：P0-P2 已落地（待人工评审回填 Implemented）
+- 已完成：P0（growthLinkedDisplay 默认联动态判定）、P1（设计器联动态「(计算)」展示 / 点击进编辑 / Q1 未改动语义）、P2（教程文案 + e2e 扩展 + CHANGELOG）
+- 下一步：`make flow` 全绿后提交；e2e 本地环境就绪后跑 critical 分片；人工评审后 Status → Implemented
+- 已知坑：e2e 本地环境缺系统库（libatk-1.0.so.0）暂无法启动 chromium，spec 已就位待环境修复后执行；联动态展示用 readOnly Input 承载「数值(计算)」，点击切换 InputNumber 编辑态
+- 最近一次全绿：`make flow` @ c75dfadb 前置工作区（5856 passed）

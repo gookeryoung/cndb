@@ -1,9 +1,9 @@
 # 需求卡片：数据同步实时写入速度与 stock-strategy 对标
 
-- 编号：0040（与 ADR `docs/adr/0040-*.md` 同号，卡片存 `docs/requirements/0040-<topic>.md`）
+- 编号：0040（原与 ADR `docs/adr/0040-datasource-sync-speed-display.md` 同号，该 ADR 已并入 `docs/adr/0037-datasource-sync-progress-speed.md` 的「续作」小节）
 - 来源 / 提出人：用户
 - 日期：2026-10-26
-- 关联 ADR：`docs/adr/0040-datasource-sync-speed-display.md`
+- 关联 ADR：`docs/adr/0037-datasource-sync-progress-speed.md`（原独立 ADR 0040 已并入其「续作」小节，见 `git log -- docs/adr/0040-datasource-sync-speed-display.md`；Status: Implemented）
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 
@@ -36,7 +36,7 @@
 
 ## 未决问题
 
-- 已确认：需求方要求「完全补齐差距」，允许按需增加库依赖；C2 的对比结论与 C3 的补齐口径见 ADR 0040「行业对照」。
+- 已确认：需求方要求「完全补齐差距」，允许按需增加库依赖；C2 的对比结论与 C3 的补齐口径见 ADR 0037 / 原 0040「行业对照」。
 
 ## 卡点
 

@@ -315,7 +315,7 @@ class TestRunPreview:
         assert body["run"]["progress_total"] == 1
         assert body["run"]["progress_done"] == 1
         assert body["run"]["progress_entrant"] == "beijing"
-        # ADR 0040 C1：终态耗时取 duration_ms，速度与已写入行数自洽
+        # ADR 0037 / 原 0040 C1：终态耗时取 duration_ms，速度与已写入行数自洽
         assert body["run"]["elapsed_ms"] == body["run"]["duration_ms"]
         assert body["run"]["rows_per_second"] >= 0
 

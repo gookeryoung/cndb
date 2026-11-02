@@ -1,6 +1,6 @@
 # ADR 0057: 文档草稿 — 修改内容查看（diff）、保存与丢弃
 
-Status: Accepted
+Status: Implemented（2026-11-02 人工确认）
 Date: 2026-10-28
 Related: `src/cndb/plugins/documents/services/drafts.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/parse.py`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/api/documents.ts`、ADR 0051
 需求卡片: `docs/requirements/0057-document-draft-diff-view.md`（需求原文与约束编号的唯一副本）

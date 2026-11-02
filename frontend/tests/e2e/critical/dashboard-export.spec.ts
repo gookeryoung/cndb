@@ -1,4 +1,4 @@
-/** Critical — dashboard 整屏导出（ADR 0077 P0 / P2，仅 chromium-authed）.
+/** Critical — dashboard 整屏导出（ADR 0023 / 原 0077 P0 / P2，仅 chromium-authed）.
  *
  * 覆盖：工具栏「导出 PNG / 导出 PDF」产出真实下载且格式正确（PNG / PDF 魔数）；
  * 只读成员（demo，工作区 VIEWER）在展示态仍可导出整屏。

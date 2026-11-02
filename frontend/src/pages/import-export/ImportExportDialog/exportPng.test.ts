@@ -1,4 +1,4 @@
-/** exportPng 模块测试 —— 与 PDF 共用的视觉快照链路只负责 PNG 编码与下载（ADR 0077 P0）.
+/** exportPng 模块测试 —— 与 PDF 共用的视觉快照链路只负责 PNG 编码与下载（ADR 0023 / 原 0077 P0）.
  *
  * 捕获本身由 `exportPdf.captureElement` 覆盖，这里只验证：背景色透传、下载链接生命周期、
  * 空画面报错、捕获异常透传。

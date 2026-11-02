@@ -1,4 +1,4 @@
-"""SyncRunOut 速度字段判定单测（ADR 0040 D1）."""
+"""SyncRunOut 速度字段判定单测（ADR 0037 / 原 0040 D1）."""
 
 from __future__ import annotations
 

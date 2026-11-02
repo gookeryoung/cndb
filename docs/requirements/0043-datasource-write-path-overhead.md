@@ -25,7 +25,7 @@
 | C2 | 可以（W3 chunk 调大） | 幂等匹配查询的默认分片从 500 提到 **2000**（或经量测后取不触发绑定变量上限的值，见未决问题 Q3）；查询语义（含空键退回 `OR + IS NULL` 分支、冲突取 `min(id)`）不变，单批查询次数随之下降 | `src/cndb/plugins/tables/services/core/records.py:940-1035`（`find_rows_by_key`）、调用方 `services/importing/importer.py` | 既有 `tests/test_import_pipeline.py` 全绿；新增「同批数据在不同 chunk_size 下 `exact_map` / `conflict_map` 完全一致」用例 |
 | C3 | 可以（O1 checkpoint 收尾） | 数据同步每轮结束（成功 / 部分失败 / failed 三态）后，若方言为 SQLite 则在独立连接上执行 `PRAGMA wal_checkpoint(TRUNCATE)`；非 SQLite 方言与 `journal_mode != wal` 时跳过；checkpoint 失败或忙超时**只记日志，不得改写运行记录状态、不得使已落库批次回滚** | `src/cndb/plugins/datasource/services/runner.py:828`（`_finalize` 之后）、`src/cndb/core/database.py` | 新增用例：SQLite 下 checkpoint 执行且 WAL 回落、非 SQLite / 非 WAL 被跳过、checkpoint 抛错时 `run.status` 与 `write` 计数不变 |
 | C4 | 可以（失败明细有界） | 归一失败明细的跨批聚合有界：保留失败**总计数**（供 `detail` 统计口径使用），明细只保留前 N 条（N 由 ADR 定，建议 100，与 `_finalize` 落库截断对齐）；超出部分丢弃不报错，`detail.normalize_failures` 的内容与条数口径不变（仍为前 100 条） | `src/cndb/plugins/datasource/services/pipeline.py:107-114`、`runner.py:856-874` | 新增用例：构造 >N 条失败，断言内存中明细长度为 N、计数为全量、`detail` 只含前 100 条 |
-| C5 | 可以（边界） | 本卡**不放宽**任何既有口径：逐格校验与字段类型转换（ADR 0040 D5/D8）、先查后写与非唯一索引的幂等口径（ADR 0006、ADR 0034 D6）、全局请求限速（ADR 0034 D5）、批大小 10,000（ADR 0039 D4）、人工导入默认路径行为（ADR 0035 D2）全部不变；不引入多进程并行、不换存储引擎、不新增运行期依赖、不改 API / 前端 | 全仓 | `make flow` 全绿；ADR「口径」表逐条给出落点 |
+| C5 | 可以（边界） | 本卡**不放宽**任何既有口径：逐格校验与字段类型转换（ADR 0037 / 原 0040 D5/D8）、先查后写与非唯一索引的幂等口径（ADR 0006、ADR 0034 D6）、全局请求限速（ADR 0034 D5）、批大小 10,000（ADR 0039 D4）、人工导入默认路径行为（ADR 0035 D2）全部不变；不引入多进程并行、不换存储引擎、不新增运行期依赖、不改 API / 前端 | 全仓 | `make flow` 全绿；ADR「口径」表逐条给出落点 |
 | C6 | 可以（可验收） | 每条优化必须给出**同机前后对比**的性能口径（落库行/秒或单批耗时），绝对吞吐不作为 CI 门槛；若某项实测收益不显著（<3%），ADR 需记录「实测后不做」而不是默默保留 | ADR「Consequences」 | 基准脚本输出 + ADR 回填 |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。
@@ -43,7 +43,7 @@
 
 ## 未决问题
 
-- [x] **Q1（前置）**：ADR 0040 的端到端 155~170s 估算尚未经真源复测、10ms 限速是否触发对端风控也未观察。是否必须先完成该人工验收，再决定本卡是否执行？结论：**先验收**；本卡只做「语义不变」项，不因 0040 未达标而扩大范围。
+- [x] **Q1（前置）**：ADR 0037 / 原 0040 的端到端 155~170s 估算尚未经真源复测、10ms 限速是否触发对端风控也未观察。是否必须先完成该人工验收，再决定本卡是否执行？结论：**先验收**；本卡只做「语义不变」项，不因 0040 未达标而扩大范围。
 - [x] **Q2（W2 排除）**：分析中的 W2（校验 / 归一搬进 `ProcessPoolExecutor`）是否确认排除在本卡之外？结论：**排除**（跨进程序列化可能吃掉一半收益，且批内 select 选项 prefill 的反馈语义要重设计）。
 - [x] **Q3（绑定变量上限）**：`IN` 分片调大受 SQLite `SQLITE_MAX_VARIABLE_NUMBER` 约束（旧构建默认 999，3.32+ 为 32766）。结论：**按 `max_vars // 键列数` 动态封顶**，默认目标 2000，运行时探测上限后取 `min(2000, 上限 // 键列数)`，不足则回落现状 500。
 - [x] **Q4（checkpoint 时机）**：`wal_checkpoint(TRUNCATE)` 需要独占写锁，可能与前台写请求或另一并行同步任务争用（`busy_timeout=5000`）。结论：**每轮都尝试（成功 / 部分失败 / failed 三态）+ 失败只记日志**，接受偶发忙超时跳过。

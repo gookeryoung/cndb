@@ -1,4 +1,4 @@
-/** syncProgress 格式化工具单测（ADR 0040 判定层边界）.*/
+/** syncProgress 格式化工具单测（ADR 0037 / 原 0040 判定层边界）.*/
 
 import { describe, expect, it } from 'vitest'
 import {

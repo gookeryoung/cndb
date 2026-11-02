@@ -1,9 +1,9 @@
 # 需求卡片：插入图表对话框多级列表改造与双轴模板更名
 
-- 编号：0058（与 ADR `docs/adr/0058-insert-chart-modal-cascade.md` 同号）
+- 编号：0058（原与 ADR `docs/adr/0058-insert-chart-modal-cascade.md` 同号，该 ADR 已并入 `docs/adr/0048-document-chart-templates.md` 的「续作」小节）
 - 来源 / 提出人：用户
 - 日期：2026-10-28
-- 关联 ADR：立项后回填
+- 关联 ADR：`docs/adr/0048-document-chart-templates.md`（原独立 ADR 0058 已并入其「续作」小节，见 `git log -- docs/adr/0058-insert-chart-modal-cascade.md`；Status: Implemented）
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

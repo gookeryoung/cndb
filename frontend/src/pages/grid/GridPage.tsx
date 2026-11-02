@@ -414,7 +414,7 @@ export default function GridPage() {
   // 当前激活的视图对象（含 view_options）
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
 
-  // —— 登录态只读展示（`?view=<id>&mode=dashboard&present=1`，ADR 0077 P1） ——
+  // —— 登录态只读展示（`?view=<id>&mode=dashboard&present=1`，ADR 0023 / 原 0077 P1） ——
   // 链接只负责定位，权限仍由后端下发可见视图列表决定；展示态不回落默认视图（D9）。
   const presentRequested = searchParams.get('present') === '1'
   const presentTarget = resolvePresentTarget(views, searchParams.get('view'), presentRequested)
@@ -434,7 +434,7 @@ export default function GridPage() {
     setSearchParams(params, { replace: true })
   }, [searchParams, setSearchParams])
 
-  /** 复制当前 dashboard 的登录态只读链接（ADR 0077 D6） */
+  /** 复制当前 dashboard 的登录态只读链接（ADR 0023 / 原 0077 D6） */
   const handleCopyShareLink = useCallback(async () => {
     if (!activeView) return
     try {
@@ -459,7 +459,7 @@ export default function GridPage() {
     const vidParam = searchParams.get('view')
     const presentParam = searchParams.get('present') === '1'
     if (presentParam) {
-      // 展示态（ADR 0077 D9）：只接受精确命中，**禁止回落到默认视图 / mode / 第一个视图**。
+      // 展示态（ADR 0023 / 原 0077 D9）：只接受精确命中，**禁止回落到默认视图 / mode / 第一个视图**。
       // 目标不可见或已删除时渲染「链接无效或无权访问」空态，不静默换成另一张视图。
       target = vidParam ? (views.find(v => String(v.id) === vidParam) || null) : null
     } else {
@@ -1156,7 +1156,7 @@ export default function GridPage() {
     )
   }
 
-  // 展示态链接失效（不可见 / 已删除 / 非画布视图）：不回落到默认视图（ADR 0077 D9）
+  // 展示态链接失效（不可见 / 已删除 / 非画布视图）：不回落到默认视图（ADR 0023 / 原 0077 D9）
   if (presentInvalid) {
     return (
       <div

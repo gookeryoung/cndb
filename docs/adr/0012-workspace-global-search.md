@@ -3,6 +3,7 @@
 Status: Implemented（2026-10-21）
 Date: 2026-10-21
 Related: `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/workspaces/services/search.py`、`frontend/src/components/GlobalSearch.tsx`、`frontend/src/api/search.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx`
+> 本 ADR 已合并原 ADR 0015（工作区搜索缓存与全表覆盖增强），口径 / 决策 / 落地状态见文末「续作」小节（编号 0015 不复用）。
 
 ## 口径（需求 → 设计落点）
 
@@ -88,3 +89,71 @@ Related: `src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/plugins/wor
   - 行命中只跳到表网格页，**不定位到具体行**（网格暂无 `?row=` 深链参数）
   - `documentsApi.search` 仍保留（后端端点未删除），当前无前端调用方
 - 最近一次全绿：`make check-fast` + 定向测试（后端 `tests/test_workspace_search.py` 17 例、前端 GlobalSearch 7 例与文档页 201 例）2026-10-21
+
+## 续作：工作区搜索缓存与全表覆盖增强（原 ADR 0015，已并入本 ADR）
+
+> 原独立文件已删除，编号 0015 不复用（追溯：`git log -- docs/adr/0015-search-cache-and-full-coverage.md`）。下列各节保留原 ADR 的约束 / 决策编号，代码与提交里的 `ADR 0015 Cx / Dx` 指的就是本节。
+
+### 口径（原 ADR 0015）
+
+| 需求片段 | 本设计的落地 |
+|---|---|
+| 未打开特定视图时，无法搜索到对应关键词内容 | 两个根因：① 不在表上下文（工作区页 / 文档页）时只扫**前 8 张表**，第 9 张及以后的数据表内容永远不进入结果；② 在表上下文但 URL 无 `?view=` 时，后端仍把数据表侧**收敛到当前表**，其他表内容搜不到。修复：工作区范围（`scope=all`）覆盖全部可读表且**不按视图收敛**；只有「数据表」范围（`scope=tables`）才收敛到当前表与激活视图（保留 ADR 0012 的视图口径） |
+| 构建缓存机制，便于实施快速搜索 | 新增进程内搜索结果缓存（TTL 15s + LRU 256），键含工作区 / 用户 / 范围 / 关键词 / 表 / 视图 / 上限；重复查询与范围切换直接命中，不再逐表 LIKE；写路径（单行 CRUD、批量导入、数据同步）主动失效，批量写用短 TTL 兜底 |
+| 覆盖全部内容 | 删除 `MAX_TABLES_SCAN` 截断，工作区范围内逐表扫描全部可读表；保留「总行命中 20 条即停」的展示预算，避免把面板撑爆 |
+
+### Decision（原 ADR 0015）
+
+### 1. 范围语义（修复「未打开视图搜不到」）
+
+| 范围 | 数据表侧行为 | 视图收敛 | 当前表 |
+|---|---|---|---|
+| `all`（工作区） | 扫描全部可读表；当前表排在最前（仅排序） | **不收敛** | 仅排序优先 |
+| `tables`（数据表） | 有表上下文 → 只扫当前表；无表上下文 → 全部可读表 | URL 带 `?view=` 时按该视图 filters 收敛；否则整表 | 收敛目标 |
+| `documents`（文档） | 不跑数据表侧 | — | — |
+
+前端 `GlobalSearch` 只在 `scope === 'tables'` 时下发 `view_id`；`table_id` 始终下发，但在工作区范围只用于排序。后端在 `scope=all` 时忽略 `view_id`，即使旧客户端传了也不会收窄。
+
+### 2. 全表覆盖
+
+`_search_tables` 删除 `tables[:MAX_TABLES_SCAN]`，`targets` 为全部可读表（当前表前置）。保留 `MAX_ROWS_TOTAL=20` 短路：行命中达到 20 条即停止扫描，面板展示上限不变。
+
+### 3. 搜索结果缓存
+
+- **实例**：`core/cache.py` 新增 `search_cache = TTLCache(max_entries=256, name="search")`，并接入 `invalidate_all`。
+- **键**：`search | workspace_id | user_id | scope | table_id | view_id | limit | keyword`；`scope=all` 时 `view_id` 归一为 0，避免无意义的缓存分片。
+- **TTL**：15s。交互搜索的重复率远高于 15s，命中后零 SQL；权限变化（如工作区角色调整）最迟 15s 生效。
+- **入口**：`search_workspace` 包一层 `get → 计算 → set`，空结果同样缓存（关键词不存在是全扫的最坏情况，最需要缓存）。
+
+### 4. 失效矩阵
+
+| 写入 | 失效方式 | 覆盖 |
+|---|---|---|
+| 单行 create / update / delete / trash / restore | `log_action → record_event → invalidate_for_event` 清 `search\|{wid}` | 即时 |
+| 批量导入 / 数据同步（`bulk_create` / `bulk_update` / `bulk_update_rows`） | 写函数末尾显式清 `search\|{wid}`（best-effort） | 即时 |
+| 表 / 字段 / 视图 / 行级权限变更 | `table.*` / `row_rule.*` 事件清 `search\|{wid}`；无事件路径由 TTL 兜底 | ≤15s |
+| 文档创建 / 更新 / 删除 | `document.*` 事件清 `search\|{wid}`；文档写路径无事件时由 TTL 兜底 | ≤15s |
+| 备份恢复 / 成员角色变更 | `invalidate_all()` 或 TTL | ≤15s |
+
+### 边界与例外（原 ADR 0015）
+
+1. **展示预算仍在**：总行命中 20 条即停，命中极多时后面的表可能只剩表名结果；需要「看全部命中」应另立 ADR 做独立结果页 / 分页。
+2. **`$query` 仅文本列**：数字、日期、选项字段的关键词不命中（当前边界）。
+3. **缓存不跨进程**：与项目单进程部署一致；多实例部署前必须换成共享后端（`CacheBackend` 协议已预留）。
+4. **权限变更延迟**：成员角色 / 表权限调整没有统一事件时，最迟 15s 后生效。
+
+### 落地状态（原 ADR 0015）
+
+| 期 | 状态 | 代码落点 | 测试 | 提交 |
+|---|---|---|---|---|
+| P0 | 已落地 | `src/cndb/plugins/workspaces/services/search.py`、`src/cndb/plugins/workspaces/routers/search.py`、`src/cndb/core/cache.py`、`src/cndb/core/events.py`、`src/cndb/plugins/tables/services/core/records.py`、`frontend/src/components/GlobalSearch.tsx`、`frontend/src/api/search.ts` | `tests/test_workspace_search.py`、`frontend/src/components/GlobalSearch.test.tsx` | 8d0df1f2 |
+
+> 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件。
+
+### 交接（原 ADR 0015）
+
+- 当前阶段：P0 已落地（功能完成，无后续分期）
+- 已完成：`scope=all` 改为全工作区覆盖且不按视图收敛；删除 8 张表截断；`search_cache`（15s / 256 条）与事件 / 批量写失效；前端只在数据表范围下发 `view_id`
+- 下一步：无
+- 已知坑：`$query` 只搜文本列（数字 / 日期 / 选项不命中）；总行命中 20 条为面板展示预算；缓存失效 best-effort，权限变化最迟 15s 生效
+- 最近一次全绿：`make check-fast` + `make test`（5136 passed / 8 skipped）+ 前端定向单测 34 例（`GlobalSearch` / `MainLayout`）2026-10-21 @ `8d0df1f2`

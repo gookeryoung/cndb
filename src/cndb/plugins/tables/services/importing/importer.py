@@ -191,7 +191,7 @@ class Importer:
         列画像、参考列推荐、清洗建议，以及第二次报告组装；校验、upsert 匹配、
         未知列规划与一次报告构建保持不变（报告键集合与默认模式一致，值为空）。
 
-        ``preview=False``（ADR 0040 D5）跳过同步链路从不消费的预览构建：旧行回查、
+        ``preview=False``（ADR 0037 / 原 0040 D5）跳过同步链路从不消费的预览构建：旧行回查、
         字段级 diff、new/update 预览条目；upsert 分类、计数与写入行不变，且 update
         行会附带校验产出的 ``normalized`` 供落库复用。人工导入保持默认 True。
         """
@@ -333,7 +333,7 @@ class Importer:
         大吞吐链路用）：批内 prefill 已把本批新选项写回 config，全表 distinct
         对逐批落表是重复计算；人工导入保持默认 True。
 
-        ``preview=False``（ADR 0040 D5）透传给 ``analyze``：跳过同步链路不消费的
+        ``preview=False``（ADR 0037 / 原 0040 D5）透传给 ``analyze``：跳过同步链路不消费的
         预览构建，人工导入保持默认 True。
         """
 

@@ -1,6 +1,6 @@
 # ADR 0084: 【设计】侧栏装配结构树与系统级装配声明
 
-Status: Accepted
+Status: Implemented（2026-11-02 人工确认）
 Date: 2026-11-02
 Related: `src/cndb/plugins/design/services/dsl/parse.py`、`src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/services/dsl/nodes.py`、`src/cndb/plugins/design/services/dsl/limits.py`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/pages/design/designLang.ts`、`frontend/src/api/design.ts`、`docs/adr/0079-design-3d-dsl-module.md`、`docs/adr/0083-design-structure-subnav-and-assembly-tree.md`
 需求卡片: `docs/requirements/0084-design-sidebar-assembly-and-system-level.md`（需求原文与约束编号的唯一副本）

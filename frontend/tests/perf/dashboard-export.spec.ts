@@ -1,5 +1,5 @@
 /**
- * 低配设备整屏导出性能探针（ADR 0077 P0 的遗留问题验证）。
+ * 低配设备整屏导出性能探针（ADR 0023 / 原 0077 P0 的遗留问题验证）。
  *
  * 容器内没有真机，这里用两条可复现的近似手段：
  * 1. **CPU 降速**：CDP `Emulation.setCPUThrottlingRate`（Chromium DevTools 同款），

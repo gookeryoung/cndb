@@ -44,13 +44,13 @@ test.describe("图表设计器次值联动", () => {
     await page.goto(`/w/${wid}/documents/${docId}`);
     await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("md-toolbar-chart").click();
-    // ADR 0058：多级列表 — 0070 新增「结构构成」模板后手风琴默认展开首个分类，
+    // ADR 0048 / 原 0058：多级列表 — 0070 新增「结构构成」模板后手风琴默认展开首个分类，
     // 本用例模板在「横向对比」分类下，需先展开再选模板项
     await page.locator(".cn-insert-chart-modal").getByText("横向对比", { exact: true }).click({ timeout: 20_000 });
     await page.getByTestId(`chart-template-item-${TEMPLATE_KEY}`).click({ timeout: 20_000 });
     await page.getByTestId(`chart-template-pick-${TEMPLATE_KEY}`).click();
 
-    // C1 / C2（ADR 0056）：第 1 行禁填；C2（ADR 0059）：默认次值直接显示为联动状态「19.7(计算)」
+    // C1 / C2（ADR 0056）：第 1 行禁填；C2（ADR 0056 / 原 0059）：默认次值直接显示为联动状态「19.7(计算)」
     const growth0 = page.getByTestId("chart-designer-row-growth-0");
     const growth1 = page.getByTestId("chart-designer-row-growth-1");
     await expect(growth0).toBeVisible({ timeout: 20_000 });
@@ -60,7 +60,7 @@ test.describe("图表设计器次值联动", () => {
     await expect(growth1).toHaveValue(/^[\d.]+\(计算\)$/);
     await expect(growth1).toHaveAttribute("data-linked", "");
 
-    // C3 / C4（ADR 0059）：点击联动态进入编辑（仅纯数值）→ 填 20 失焦 → 主值联动 132 × 1.2 = 158.4(计算)
+    // C3 / C4（ADR 0056 / 原 0059）：点击联动态进入编辑（仅纯数值）→ 填 20 失焦 → 主值联动 132 × 1.2 = 158.4(计算)
     await growth1.click();
     await expect(growth1).toHaveValue(/^[\d.]+$/);
     await growth1.fill("20");

@@ -50,7 +50,7 @@ describe('hasBase', () => {
   })
 })
 
-describe('growthLinkedDisplay（默认联动态显示值，ADR 0059 C2）', () => {
+describe('growthLinkedDisplay（默认联动态显示值，ADR 0056 / 原 0059 C2）', () => {
   it('次值留空且基数可推算 → 联动态，显示推算值（一位小数）', () => {
     expect(growthLinkedDisplay(null, 324.9, 285)).toEqual({ linked: true, display: 14 })
     expect(growthLinkedDisplay(null, 158, 132)).toEqual({ linked: true, display: 19.7 })

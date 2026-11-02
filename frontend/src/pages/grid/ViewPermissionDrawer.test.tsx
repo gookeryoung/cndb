@@ -126,7 +126,7 @@ describe('ViewPermissionDrawer 档位', () => {
     expect(screen.queryByTestId('view-member-add')).toBeNull()
   })
 
-  it('画布视图给出只读链接提示，普通网格视图不显示（ADR 0077 C7）', async () => {
+  it('画布视图给出只读链接提示，普通网格视图不显示（ADR 0023 / 原 0077 C7）', async () => {
     useBaseHandlers()
     const { unmount } = renderDrawer({ view: { ...SHARED_VIEW, view_type: 'dashboard' } })
 

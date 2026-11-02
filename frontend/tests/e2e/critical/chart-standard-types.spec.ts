@@ -33,7 +33,7 @@ async function expectEmbedded(page: Page) {
   await expect(page.getByTestId("chart-embed-svg").locator("svg")).toHaveCount(1, { timeout: 20_000 });
 }
 
-/** 打开插入图表弹窗并基于模板新建（ADR 0058：多级列表 + 右栏新建）.
+/** 打开插入图表弹窗并基于模板新建（ADR 0048 / 原 0058：多级列表 + 右栏新建）.
  *
  * 模板 → 一级分类映射（0070：手风琴默认只展开首个分类，其余需先点开）。
  * 0073 起主题变体合并为规范模板，插入弹窗只展示规范 key（变体不再列出）。 */

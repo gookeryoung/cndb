@@ -290,7 +290,7 @@ export default function GridViewBar({
     )
   }, [activeView, isFavorite, favoriteLimitReached, toggleFavorite, message])
 
-  /** 复制只读链接仅对画布视图开放（ADR 0077 边界 7）；非画布视图菜单项置灰 */
+  /** 复制只读链接仅对画布视图开放（ADR 0023 / 原 0077 边界 7）；非画布视图菜单项置灰 */
   const canCopyShareLink = activeView?.view_type === 'dashboard'
   const handleCopyShareLink = useCallback(async () => {
     if (!activeView || !canCopyShareLink) return

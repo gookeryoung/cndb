@@ -7,7 +7,7 @@
 - ``scope=all``（工作区）：扫描**全部可读表**，不按当前视图收敛（当前表只做排序优先）；
 - ``scope=tables``（数据表）：有表上下文时收敛到该表，并按激活视图收敛；
   无表上下文时扫描全部可读表；
-- 结果走进程内短 TTL 缓存（见 ADR 0015），写路径通过统一事件 / 批量写入口失效。
+- 结果走进程内短 TTL 缓存（见 ADR 0012 / 原 0015），写路径通过统一事件 / 批量写入口失效。
 """
 
 from __future__ import annotations
@@ -303,7 +303,7 @@ def _search_tables(
         scoped_view_id = view_id
     else:
         # 工作区范围（或无表上下文）：覆盖全部可读表；当前表只排在最前，不做视图收敛，
-        # 否则「没打开某个视图」时视图外的内容会整体搜不到（ADR 0015）
+        # 否则「没打开某个视图」时视图外的内容会整体搜不到（ADR 0012 / 原 0015）
         targets = ([active] + [t for t in tables if t is not active]) if active is not None else tables
         scoped_view_id = None
 

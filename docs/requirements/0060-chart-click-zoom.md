@@ -1,9 +1,9 @@
 # 需求卡片：文档图表点击放大查看
 
-- 编号：0060（与 ADR `docs/adr/0060-*.md` 同号，卡片存 `docs/requirements/0060-chart-click-zoom.md`）
+- 编号：0060（原与 ADR `docs/adr/0060-document-chart-click-zoom.md` 同号，该 ADR 已并入 `docs/adr/0052-document-chart-inline-embed.md` 的「续作」小节）
 - 来源 / 提出人：用户
 - 日期：2026-10-28
-- 关联 ADR：<立项后回填>
+- 关联 ADR：`docs/adr/0052-document-chart-inline-embed.md`（原独立 ADR 0060 已并入其「续作」小节，见 `git log -- docs/adr/0060-document-chart-click-zoom.md`；Status: Implemented）
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

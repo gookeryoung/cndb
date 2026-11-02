@@ -1,6 +1,6 @@
 # ADR 0086: 设计文件库、组件级装配约束与系统级打开性能
 
-Status: Accepted（2026-11-02 需求方确认后按 P0→P1→P2 实施）
+Status: Implemented（P0-P2 全部落地，2026-11-02 人工确认）
 Date: 2026-11-02
 Related: `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/services/dsl/lexer.py`、`src/cndb/plugins/design/services/dsl/parse.py`、`src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/services/dsl/limits.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/cli/seed/designs.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/src/api/design.ts`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/pages/design/PreviewCanvas.tsx`、`frontend/src/pages/design/renderTree.ts`；上游 ADR 0079 / 0083 / 0084 / 0075 / 0026
 需求卡片: `docs/requirements/0086-design-file-library-assembly-constraints-and-open-performance.md`

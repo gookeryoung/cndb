@@ -1,9 +1,9 @@
 # 需求卡片：dashboard 整屏导出与登录态只读分享
 
-- 编号：0077（与 ADR `docs/adr/0077-*.md` 同号，卡片存 `docs/requirements/0077-<topic>.md`）
+- 编号：0077（原与 ADR `docs/adr/0077-dashboard-fullscreen-export-readonly-share.md` 同号，该 ADR 已并入 `docs/adr/0023-configurable-view-dashboard.md` 的「续作」小节）
 - 来源 / 提出人：ADR 0023 §9 P3 遗留项（用户口述「整屏导出 / 只读分享立 ADR」）
 - 日期：2026-11-01
-- 关联 ADR：`docs/adr/0077-dashboard-fullscreen-export-readonly-share.md`（Implemented（P0-P2 已落地））
+- 关联 ADR：`docs/adr/0023-configurable-view-dashboard.md`（原独立 ADR 0077 已并入其「续作」小节，见 `git log -- docs/adr/0077-dashboard-fullscreen-export-readonly-share.md`；Status: Implemented）
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 
@@ -55,9 +55,9 @@
 - [x] 导出范围 → 全局筛选栏 + 画布主体，排除应用导航与画布工具栏。
 - [x] 导出格式 → PNG（默认）+ PDF（可选），复用现有前端库。
 - [x] 分享设置落点 → 复用既有「视图权限」抽屉；只读链接复制入口置于视图栏与画布工具栏。
-- [x] 需求方 / 评审确认：以上口径按仓库既有约束收敛；ADR 0077 已评审通过（Status: Accepted），P0-P2 已落地（实现提交 `b9ccd0b8`）。
+- [x] 需求方 / 评审确认：以上口径按仓库既有约束收敛；ADR 0023 / 原 0077 已评审通过（Status: Accepted），P0-P2 已落地（实现提交 `b9ccd0b8`）。
 
 ## 卡点
 
 - [x] 每条需求句都有 C 编号约束（无遗漏、无「待定」）
-- [x] 未决问题全部有结论；最后一条人工评审确认项已随 ADR 0077 评审关闭
+- [x] 未决问题全部有结论；最后一条人工评审确认项已随 ADR 0023 / 原 0077 评审关闭

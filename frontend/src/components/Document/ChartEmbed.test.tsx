@@ -161,7 +161,7 @@ describe('ChartEmbed', () => {
     expect(await screen.findByTestId('chart-embed-error')).toBeInTheDocument()
   })
 
-  it('渲染成功后点击图表打开放大预览，复用同一份 SVG，关闭后弹层消失（ADR 0060）', async () => {
+  it('渲染成功后点击图表打开放大预览，复用同一份 SVG，关闭后弹层消失（ADR 0052 / 原 0060）', async () => {
     let renderCalls = 0
     server.use(
       http.post('/api/v1/workspaces/10/charts/render-preview', () => {
@@ -190,7 +190,7 @@ describe('ChartEmbed', () => {
     await waitFor(() => expect(screen.getByTestId('chart-embed-preview-svg')).not.toBeVisible())
   })
 
-  it('预览层标题栏 +- 按钮缩放：步进 10%，边界 0.5x-3x 时按钮禁用，重开后复位 100%（ADR 0060）', async () => {
+  it('预览层标题栏 +- 按钮缩放：步进 10%，边界 0.5x-3x 时按钮禁用，重开后复位 100%（ADR 0052 / 原 0060）', async () => {
     server.use(
       http.post('/api/v1/workspaces/10/charts/render-preview', () =>
         new HttpResponse('<svg xmlns="http://www.w3.org/2000/svg"><text>缩放</text></svg>', {

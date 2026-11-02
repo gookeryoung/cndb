@@ -3,7 +3,7 @@
 - 编号：0054（与 ADR `docs/adr/0054-dev-port-cleanup.md` 同号）
 - 来源 / 提出人：用户（2026-10-28 会话，附 `make dev` 启动失败输出）
 - 日期：2026-10-28
-- 关联 ADR：`docs/adr/0054-dev-port-cleanup.md`（Accepted（P0 已落地，Status 待人工确认））
+- 关联 ADR：`docs/adr/0054-dev-port-cleanup.md`（Implemented（P0 已落地））
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

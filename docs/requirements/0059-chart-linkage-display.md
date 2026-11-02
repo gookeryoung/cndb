@@ -1,9 +1,9 @@
 # 需求卡片：图表设计器联动单元格「(计算)」显示与默认联动态
 
-- 编号：0059（与 ADR `docs/adr/0059-chart-linkage-display.md` 同号）
+- 编号：0059（原与 ADR `docs/adr/0059-chart-linkage-display.md` 同号，该 ADR 已并入 `docs/adr/0056-chart-derived-cell-linkage.md` 的「续作」小节）
 - 来源 / 提出人：用户
 - 日期：2026-10-28
-- 关联 ADR：`docs/adr/0059-chart-linkage-display.md`
+- 关联 ADR：`docs/adr/0056-chart-derived-cell-linkage.md`（原独立 ADR 0059 已并入其「续作」小节，见 `git log -- docs/adr/0059-chart-linkage-display.md`；Status: Implemented）
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

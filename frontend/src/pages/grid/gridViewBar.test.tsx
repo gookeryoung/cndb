@@ -304,7 +304,7 @@ describe('GridViewBar 收藏入口', () => {
   })
 })
 
-// ─────────────── 复制只读链接（ADR 0077 P1） ───────────────
+// ─────────────── 复制只读链接（ADR 0023 / 原 0077 P1） ───────────────
 
 describe('GridViewBar 复制只读链接', () => {
   const DASHBOARD_VIEWS: View[] = [

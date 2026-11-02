@@ -1,5 +1,5 @@
 /**
- * 超大画布导出的内存峰值剖析（ADR 0077 P0 遗留问题的深挖，opt-in、非门禁）。
+ * 超大画布导出的内存峰值剖析（ADR 0023 / 原 0077 P0 遗留问题的深挖，opt-in、非门禁）。
  *
  * 与 `dashboard-export.spec.ts`（耗时）互补，这里只关心内存：
  * - **分类采样**：Linux 上按 `--type=` 把 Chromium 进程分成 browser / renderer / gpu，

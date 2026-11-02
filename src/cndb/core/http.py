@@ -545,7 +545,7 @@ def _get_response_handler(name_or_callable: str | ResponseHandler) -> ResponseHa
 
 
 def open_http_client(*, timeout: float | httpx2.Timeout | None = None) -> httpx2.Client:
-    """创建可复用的 HTTP 客户端（单次同步运行内共享连接，ADR 0040 D3）.
+    """创建可复用的 HTTP 客户端（单次同步运行内共享连接，ADR 0037 / 原 0040 D3）.
 
     调用方负责用 ``with`` 关闭；重定向仍由 ``fetch_json`` 手动跟随并逐跳校验。
     """

@@ -3,7 +3,7 @@
 - 编号：0056（与 ADR `docs/adr/0056-chart-derived-cell-linkage.md` 同号）
 - 来源 / 提出人：用户
 - 日期：2026-10-28
-- 关联 ADR：立项后回填
+- 关联 ADR：`docs/adr/0056-chart-derived-cell-linkage.md`（Implemented（原 ADR 0056 / 原 0059 联动显示已并入其「续作」小节））
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

@@ -1,6 +1,6 @@
 # ADR 0054: `make dev` 启动前检查并释放开发端口
 
-Status: Accepted
+Status: Implemented（2026-11-02 人工确认）
 Date: 2026-10-28
 Related: `Makefile`、`scripts/free_ports.py`、`src/cndb/cli/main.py`
 需求卡片: `docs/requirements/0054-dev-port-cleanup.md`

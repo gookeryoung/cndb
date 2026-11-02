@@ -3,7 +3,7 @@
 - 编号：0047（与 ADR `docs/adr/0047-permission-denied-message.md` 同号，卡片存 `docs/requirements/0047-permission-denied-message.md`）
 - 来源 / 提出人：用户（口语需求，2026-10-27）
 - 日期：2026-10-27
-- 关联 ADR：待立项后回填（建议 `docs/adr/0047-permission-denied-message.md`）
+- 关联 ADR：`docs/adr/0047-permission-denied-message.md`（Implemented（P0-P2 已落地））
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

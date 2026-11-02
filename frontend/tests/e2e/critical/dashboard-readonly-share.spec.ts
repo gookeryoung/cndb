@@ -1,4 +1,4 @@
-/** Critical — dashboard 登录态只读分享（ADR 0077 P1 / P2，仅 chromium-authed）.
+/** Critical — dashboard 登录态只读分享（ADR 0023 / 原 0077 P1 / P2，仅 chromium-authed）.
  *
  * 覆盖：视图栏「复制只读链接」生成的深链 → demo（工作区 VIEWER，被授权 viewer）打开后
  * 进入只读展示（无页面工具栏 / 视图栏 / 编辑入口 / 行详情）；撤权与删除视图后同一链接

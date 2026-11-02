@@ -1,6 +1,6 @@
 # ADR 0051: 文档图表实时预览占比与图表 / 表格引用宽度
 
-Status: Accepted（2026-10-27 人工评审通过：预览占比、引用宽度参数与导出口径按建议方案）
+Status: Implemented（2026-10-27 人工评审通过；P0-P2 已落地，2026-11-02 人工确认）
 Date: 2026-10-27
 Related: `frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/components/Document/chartBlock.ts`、`frontend/src/components/Document/tableRef.ts`、`frontend/src/components/Document/ChartEmbed.tsx`、`frontend/src/components/Document/TableEmbed.tsx`、`frontend/src/components/Document/MarkdownPreview.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/InsertTableModal.tsx`、`src/cndb/plugins/documents/services/charts/inline.py`、`src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、ADR 0017（游客分享）、ADR 0026（Chrome 81）、ADR 0042（工具栏插入入口）、ADR 0045（数据表引用导出）、ADR 0048（图表模板与素材库）、ADR 0052（正文内嵌图表宽度由块字段承载）
 需求卡片: `docs/requirements/0051-document-chart-preview-and-width.md`（需求原文与约束编号的唯一副本）

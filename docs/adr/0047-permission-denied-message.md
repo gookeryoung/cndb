@@ -1,6 +1,6 @@
 # ADR 0047: 权限不足错误提示增强（角色 + 拥有者联系指引）
 
-Status: Accepted（已评审，2026-10-27）
+Status: Implemented（已评审 2026-10-27；P0-P2 已落地，2026-11-02 人工确认）
 Date: 2026-10-27
 Related: `src/cndb/core/errors.py`、`src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/tables/services/core/view_access.py`、`src/cndb/plugins/workspaces/permissions.py`、`docs/adr/0003-view-visibility-permission-model.md`
 需求卡片: `docs/requirements/0047-permission-denied-message.md`（需求原文与约束编号的唯一副本）

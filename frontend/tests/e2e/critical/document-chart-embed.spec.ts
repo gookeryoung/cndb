@@ -104,7 +104,7 @@ test.describe("文档图表内嵌块", () => {
       await page.goto(`/w/${wid}/documents/${docId}`);
       await expect(page.getByTestId("md-toolbar")).toBeVisible({ timeout: 20_000 });
       await page.getByTestId("md-toolbar-chart").click();
-      // ADR 0058：多级列表 — 0070 新增「结构构成」模板后手风琴默认展开首个分类，
+      // ADR 0048 / 原 0058：多级列表 — 0070 新增「结构构成」模板后手风琴默认展开首个分类，
       // 本用例模板在「横向对比」分类下，需先展开再选模板项
       await page.locator(".cn-insert-chart-modal").getByText("横向对比", { exact: true }).click({ timeout: 20_000 });
       await page
@@ -200,7 +200,7 @@ test.describe("文档图表内嵌块", () => {
       await expect(page.getByTestId("chart-embed-svg")).toBeVisible({ timeout: 20_000 });
       await expect(embed).toHaveAttribute("data-width", "25");
 
-      // 4.2) 查看态点击图表放大预览（ADR 0060）：弹层复用同一份 SVG，关闭后回到正文
+      // 4.2) 查看态点击图表放大预览（ADR 0052 / 原 0060）：弹层复用同一份 SVG，关闭后回到正文
       await page.getByTestId("chart-embed-svg").click();
       const zoomPreview = page.getByTestId("chart-embed-preview-svg");
       await expect(zoomPreview).toBeVisible({ timeout: 20_000 });
@@ -254,7 +254,7 @@ test.describe("文档图表内嵌块", () => {
           "游客页不得请求任何工作区鉴权接口",
         ).toEqual([]);
 
-        // 游客页同样支持点击放大（ADR 0060 I3 模式无关）
+        // 游客页同样支持点击放大（ADR 0052 / 原 0060 I3 模式无关）
         await guestEmbed.getByTestId("chart-embed-svg").click();
         await expect(view.page.getByTestId("chart-embed-preview-svg").locator("svg")).toHaveCount(1);
         await view.page.locator(".ant-modal-close").click(); // antd 6 + zhCN：同上

@@ -86,7 +86,7 @@ describe('GlobalSearch 顶栏工作区搜索', () => {
     await typeKeyword('张三')
 
     expect(await screen.findByTestId('global-search-row-100-1')).toBeInTheDocument()
-    // 工作区范围覆盖全部可读表，view_id 不下发、也不出现视图范围回显（ADR 0015）
+    // 工作区范围覆盖全部可读表，view_id 不下发、也不出现视图范围回显（ADR 0012 / 原 0015）
     expect(screen.getByTestId('global-search-panel')).not.toHaveTextContent('视图「全部数据」')
   })
 

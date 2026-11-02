@@ -1,4 +1,4 @@
-/** dashboard 整屏导出编排（ADR 0077 P0）.
+/** dashboard 整屏导出编排（ADR 0023 / 原 0077 P0）.
  *
  * 与「更新 / 导出」弹窗里的通用 PDF 不同，这里面向画布语境：
  * - 捕获目标由 `DashboardView` 提供的专用容器（全局筛选栏 + 画布主体），不含工具栏；
@@ -37,7 +37,7 @@ export function resolveExportBackground(root: HTMLElement | null): string {
 /** 导出当前画布（PNG / PDF），失败时向上抛出由调用方提示.
  *
  * 导出实现按格式动态导入：既有 PDF 模块顶部含兼容垫片与导出库引用，
- * 静态引入会把它们拉进 `DashboardView` chunk（ADR 0077 D10）。
+ * 静态引入会把它们拉进 `DashboardView` chunk（ADR 0023 / 原 0077 D10）。
  */
 export async function exportDashboard(
   target: HTMLElement,

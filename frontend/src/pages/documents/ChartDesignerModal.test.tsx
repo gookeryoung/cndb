@@ -49,7 +49,7 @@ describe('ChartDesignerModal', () => {
     expect(screen.getByTestId('chart-designer-row-label-0')).toHaveValue('2020')
     expect(screen.getByTestId('chart-designer-row-value-0')).toHaveValue('132')
     expect(screen.getByTestId('chart-designer-row-growth-0')).toHaveValue('')
-    // 默认次值直接显示为联动状态：按主值推算 +「(计算)」（ADR 0059 C2）
+    // 默认次值直接显示为联动状态：按主值推算 +「(计算)」（ADR 0056 / 原 0059 C2）
     expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveValue('19.7(计算)')
     expect(screen.getByTestId('chart-designer-row-growth-1')).toHaveAttribute('data-linked')
     expect(screen.getByTestId('chart-designer-row-growth-2')).toHaveValue('17.7(计算)')
@@ -68,7 +68,7 @@ describe('ChartDesignerModal', () => {
 
     await screen.findByTestId('chart-designer-preview-svg')
 
-    // 点击联动态次值（19.7(计算)）进入编辑：仅显示纯数值 19.7（ADR 0059 C3）
+    // 点击联动态次值（19.7(计算)）进入编辑：仅显示纯数值 19.7（ADR 0056 / 原 0059 C3）
     fireEvent.click(screen.getByTestId('chart-designer-row-growth-1'))
     const growth1 = screen.getByTestId('chart-designer-row-growth-1') as HTMLInputElement
     expect(growth1).toHaveValue('19.7')
@@ -105,7 +105,7 @@ describe('ChartDesignerModal', () => {
     expect(screen.getByTestId('chart-designer-row-growth-1')).not.toHaveAttribute('data-linked')
   }, 15_000)
 
-  it('联动单元格未改动失焦保持联动态、清空次值恢复联动显示（ADR 0059 Q1 / C4）', async () => {
+  it('联动单元格未改动失焦保持联动态、清空次值恢复联动显示（ADR 0056 / 原 0059 Q1 / C4）', async () => {
     renderDesigner({ kind: 'create', templateKey: 'bar-line-dual-axis' })
 
     await screen.findByTestId('chart-designer-preview-svg')
@@ -196,7 +196,7 @@ describe('ChartDesignerModal', () => {
     expect(saved.kind).toBe('chart')
     expect(saved.kind === 'chart' && saved.chart.id).toBe(301)
     expect(createBodies[0]).toMatchObject({ title: '双轴柱线组合图', template_key: 'bar-line-dual-axis' })
-    // 提交 payload 无联动标记字段，留空次值仍存 null（ADR 0059 C5）
+    // 提交 payload 无联动标记字段，留空次值仍存 null（ADR 0056 / 原 0059 C5）
     const savedConfig = (createBodies[0] as { config?: { data?: { rows?: { growth: number | null }[] } } }).config
     expect(savedConfig?.data?.rows?.map(r => r.growth)).toEqual([null, null, null])
   })

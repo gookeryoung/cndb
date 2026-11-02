@@ -1,4 +1,4 @@
-"""preview=False 与归一值复用的等价性（ADR 0040 D5）."""
+"""preview=False 与归一值复用的等价性（ADR 0037 / 原 0040 D5）."""
 
 from __future__ import annotations
 

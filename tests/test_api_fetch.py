@@ -531,7 +531,7 @@ class TestFetchConfig:
 __all__ = []
 
 
-# ── fetch_json 连接复用（ADR 0040 D3） ─────────────────
+# ── fetch_json 连接复用（ADR 0037 / 原 0040 D3） ─────────────────
 
 
 class TestFetchJsonClientReuse:

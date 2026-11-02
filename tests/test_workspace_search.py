@@ -242,7 +242,7 @@ def _make_table(db, ws: Workspace, owner: User, name: str) -> DataTable:
 
 
 class TestCoverageAndCache:
-    """工作区范围的全表覆盖与结果缓存（ADR 0015）."""
+    """工作区范围的全表覆盖与结果缓存（ADR 0012 / 原 0015）."""
 
     def test_workspace_scope_scans_beyond_first_eight_tables(self, client, ws, table, auth, db):
         """第 9 张及以后的数据表也要被扫描（旧实现只扫前 8 张，永远搜不到）."""

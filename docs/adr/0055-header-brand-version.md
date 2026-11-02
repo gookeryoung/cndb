@@ -1,6 +1,6 @@
 # ADR 0055: 顶栏品牌字右侧显示应用版本小字
 
-Status: Accepted（2026-10-28 人工评审通过）
+Status: Implemented（P0-P1 已落地，2026-11-02 人工确认）
 Date: 2026-10-28
 Related: `frontend/src/layouts/MainLayout.tsx`、`frontend/src/layouts/MainLayout.test.tsx`、`frontend/src/index.css`、`frontend/src/api/system.ts`、`frontend/src/components/AboutModal.tsx`、`src/cndb/core/system_api.py`、`frontend/src/test/msw.ts`、`frontend/tests/e2e/critical/typography.spec.ts`
 需求卡片: `docs/requirements/0055-header-brand-version.md`（需求原文与约束编号的唯一副本）

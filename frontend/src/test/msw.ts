@@ -780,7 +780,7 @@ export const handlers = [
     return HttpResponse.json({ items, total: items.length, query: q })
   }),
   // 工作区统一检索（顶栏搜索框）：文档按标题/摘要命中；数据表按表名 + 表内行值命中。
-  // scope 只影响对应分组；仅「数据表」范围带 view_id 时回显 view 说明（ADR 0015）。
+  // scope 只影响对应分组；仅「数据表」范围带 view_id 时回显 view 说明（ADR 0012 / 原 0015）。
   http.get('/api/v1/workspaces/:wid/search', ({ request }) => {
     const url = new URL(request.url)
     const q = (url.searchParams.get('q') ?? '').trim()

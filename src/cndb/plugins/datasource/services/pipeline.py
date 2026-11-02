@@ -223,7 +223,7 @@ def run_pipeline(
         job: 同步任务声明。
         provider: 显式指定适配器；缺省按 ``job.provider`` 从注册表取。
         fetch: 注入的抓取函数（测试用假源）；缺省走 ``api_fetch.fetch_json``。
-            缺省抓取器在单次运行内共享一个 HTTP 客户端（连接复用，ADR 0040 D3）。
+            缺省抓取器在单次运行内共享一个 HTTP 客户端（连接复用，ADR 0037 / 原 0040 D3）。
         rate_limit_ms: 全局相邻请求的最小出发间隔（毫秒，0 = 不限速）。
         sleep: 注入的等待函数（测试用，缺省 ``time.sleep``）。
         on_batch: 流式回调：归一 + 过滤后的行攒满 ``batch_size`` 即调用（内存不攒全量）；

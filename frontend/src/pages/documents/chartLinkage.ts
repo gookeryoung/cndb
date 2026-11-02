@@ -29,7 +29,7 @@ export function linkGrowthFromValue(value: number, prevValue: number | null): nu
   return Math.round((value / prevValue - 1) * 1000) / 10
 }
 
-/** 默认联动态显示值（ADR 0059 C2）：次值留空且按主值可推算 → 联动态，显示推算增速值；
+/** 默认联动态显示值（ADR 0056 / 原 0059 C2）：次值留空且按主值可推算 → 联动态，显示推算增速值；
  * 推算复用 `linkGrowthFromValue`（与渲染端 `growth_at` 同公式同舍入，I1 单一口径）；
  * 次值已有显式值或推算不可行 → 非联动态，显示原值 */
 export function growthLinkedDisplay(

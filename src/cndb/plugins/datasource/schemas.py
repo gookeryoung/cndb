@@ -124,7 +124,7 @@ def _as_utc(value: dt.datetime) -> dt.datetime:
 
 
 def _elapsed_ms(run: Any, now: dt.datetime | None) -> int:
-    """运行已用毫秒：运行中按当前时间推算，终态取落库的 duration_ms（ADR 0040 D1）."""
+    """运行已用毫秒：运行中按当前时间推算，终态取落库的 duration_ms（ADR 0037 / 原 0040 D1）."""
     if run.status != "running":
         return max(0, int(run.duration_ms or 0))
     current = _as_utc(now) if now is not None else dt.datetime.now(dt.UTC)
@@ -133,7 +133,7 @@ def _elapsed_ms(run: Any, now: dt.datetime | None) -> int:
 
 
 def _rows_per_second(fetched: int, elapsed_ms: int) -> float:
-    """累计平均写入速度（行/秒）：不足 1 秒不输出失真瞬时值（ADR 0040 D1）."""
+    """累计平均写入速度（行/秒）：不足 1 秒不输出失真瞬时值（ADR 0037 / 原 0040 D1）."""
     if fetched <= 0 or elapsed_ms < 1000:
         return 0.0
     rate = round(fetched * 1000 / elapsed_ms, 1)
@@ -159,7 +159,7 @@ class SyncRunOut(BaseModel):
     progress_total: int = 0
     progress_done: int = 0
     progress_entrant: str = ""
-    # 实时速度（ADR 0040 C1/D1）：已用毫秒与累计平均写入速度，服务端计算不入库
+    # 实时速度（ADR 0037 / 原 0040 C1/D1）：已用毫秒与累计平均写入速度，服务端计算不入库
     elapsed_ms: int = 0
     rows_per_second: float = 0.0
     error_message: str

@@ -359,7 +359,7 @@ class TestRowFilterValidation:
 
 
 class TestSharedHttpClient:
-    """ADR 0040 D3：缺省抓取器整轮运行共用一个客户端，显式注入时不新建."""
+    """ADR 0037 / 原 0040 D3：缺省抓取器整轮运行共用一个客户端，显式注入时不新建."""
 
     def test_one_client_shared_by_all_requests(self, monkeypatch):
         opened: list[object] = []
