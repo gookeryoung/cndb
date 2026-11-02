@@ -427,7 +427,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 进行中 | `src/cndb/plugins/acquisition/{models,plugin,schemas}.py`、`services/{channels,targets,runner,validation}.py`、`services/rules/{expr,filter,dedupe}.py`、`routers/strategies.py`、`src/cndb/cli/acquisition.py`、`src/cndb/alembic/versions/a7c1d2e3f4b5_add_acquisition_plugin.py` | `tests/test_acquisition_rules.py`、`tests/test_acquisition_runner.py`、`tests/test_acquisition_api.py`、`tests/test_acquisition_migration.py` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/acquisition/models.py`、`src/cndb/plugins/acquisition/plugin.py`、`src/cndb/plugins/acquisition/schemas.py`、`src/cndb/plugins/acquisition/services/channels.py`、`src/cndb/plugins/acquisition/services/targets.py`、`src/cndb/plugins/acquisition/services/runner.py`、`src/cndb/plugins/acquisition/services/validation.py`、`src/cndb/plugins/acquisition/services/rules/expr.py`、`src/cndb/plugins/acquisition/services/rules/filter.py`、`src/cndb/plugins/acquisition/services/rules/dedupe.py`、`src/cndb/plugins/acquisition/routers/strategies.py`、`src/cndb/cli/acquisition.py`、`src/cndb/alembic/versions/a7c1d2e3f4b5_add_acquisition_plugin.py` | `tests/test_acquisition_rules.py`、`tests/test_acquisition_runner.py`、`tests/test_acquisition_api.py`、`tests/test_acquisition_migration.py` | `5eae7b60` |
 | P1 | 未开始 | — | — | — |
 | P2 | 未开始 | — | — | — |
 | P3 | 未开始 | — | — | — |
@@ -436,7 +436,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0（四表 + 规则引擎 + 单轮 runner + API/CLI 已落地并通过全量测试，等待提交）
+- 当前阶段：P1（P0 已提交 [5eae7b60]；正在接入多轮迭代、复核闸口与文档落点）
 - 已完成：需求卡片 0085 + 本 ADR；P0 代码与测试（`tests/test_acquisition_*.py` 4 个文件，全量 `6557 passed / 17 skipped`）
 - 下一步：① 提交 P0（`feat: 采集策略基础框架（ADR 0085 P0）`）；② 落 P1：`rules/{keywords,expand,stop}.py` + 轮次循环（`max_rounds`）+ `review ∈ {auto,llm,manual}` 复核闸口 + `acquisition.awaiting_review` 状态与 `POST /runs/{rid}/resume` + 文档落点与人工保护
 - 已知坑：① `acquisition_item.target_id` 对表落点只记 `table_id`（不记行 id），避免行级外键随表重建失效；② 表落点去重键必须用 `match_keys` 身份（`row:` 前缀），用内容指纹会让「同一行换数值」变成新条目；③ 文档幂等依赖「最新版本 `change_type`」，与草稿（ADR 0057）并发时以「存在草稿即视为人工改动」优先；④ 备份 v13 必须与 `workspaces` 协议常量同轮改，否则 `make test` 会红在旧 v12 用例；⑤ 租约更新须 `synchronize_session=False`（SQLite 读出的 naive datetime 与 aware 参数比较会在 ORM 求值器里炸）
