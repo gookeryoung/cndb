@@ -31,7 +31,8 @@ export interface PipelineStepStat {
   uses: string
   severity: string
   conclusion: string
-  findings: number
+  /** 本 step 落库的发现物按严重度计数（后端 runner 产出的对象，不是总数） */
+  findings: Partial<PipelineFindingCounts>
   error?: string
 }
 

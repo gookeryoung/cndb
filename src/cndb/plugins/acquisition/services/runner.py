@@ -264,8 +264,13 @@ def resume_run(
     now: dt.datetime | None = None,
     keywords: Sequence[str] | None = None,
     query: str | None = None,
+    timeout: bool = False,
 ) -> StrategyExecution:
-    """续跑 ``awaiting_review`` 的运行：可带关键词 / 检索式（调整），也可不带（不调）."""
+    """续跑 ``awaiting_review`` 的运行：可带关键词 / 检索式（调整），也可不带（不调）.
+
+    ``timeout=True`` 表示由调度超时兜底发起（D14：72h 未确认按「不调」续跑），
+    在 ``run.detail.review_timeout`` 留痕，便于区分「用户没调」与「没人管」。
+    """
     strategy = db.get(AcquisitionStrategy, run.strategy_id)
     if strategy is None:
         raise RuleError("采集策略不存在")
@@ -289,6 +294,8 @@ def resume_run(
             pending.top_keywords = apply_user_edit(_keywords_from_round(pending), list(keywords))
             pending.next_query = next_query[:500]
         pending.review_state = ReviewState.CONFIRMED.value
+        if timeout:
+            run.detail = {**dict(run.detail or {}), "review_timeout": True}
         run.status = RunStatus.RUNNING.value
         run.progress_message = f"第 {pending.round_no} 轮复核完成，继续第 {pending.round_no + 1} 轮"
         db.add_all([pending, run])

@@ -4,7 +4,12 @@
 
 - ``"job:12"`` / ``{"job": 12}``：引用同工作区的既有同步任务，复用其请求模板 / 凭证会话 / 分页；
   运行期读一次构造内存声明，**不复制、不回写** job 行，存量任务零迁移；
-- ``{"provider": "http_json", "request_spec": {...}, "parser": "json"}``：内联声明（不落 job 表）。
+- ``"rss:https://example.com/feed.xml"``：订阅渠道（``rss_atom`` provider）；
+- ``"sitemap:https://example.com/sitemap.xml"``：站点 URL 发现（只解析 ``<urlset>``）；
+- ``"arxiv:"`` / ``"openalex:固态电池"`` / ``"crossref:"``：学术开放 API；冒号后留空表示用本轮
+  迭代检索式 ``{query}``，填了则固定该检索词（P2）；
+- ``{"provider": "http_json", "request_spec": {...}, "parser": "json"}``：内联声明（不落 job 表、
+  可用任意已注册 provider）。
 
 策略层只做「取声明 + 注入本轮检索式变量 ``{query}``」，抓取仍由 datasource 管线执行。
 """
@@ -22,9 +27,43 @@ from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
 from cndb.plugins.datasource.providers.base import SyncJobSpec
 from cndb.plugins.datasource.services.runner import build_job_spec, request_spec_from_payload
 
-__all__ = ["ChannelSpec", "build_channel_specs", "channel_label", "parse_channel_ref"]
+__all__ = [
+    "ChannelSpec",
+    "build_channel_specs",
+    "channel_label",
+    "parse_channel_ref",
+    "preset_request",
+]
 
 _DEFAULT_MAX_ITEMS = 200
+#: 学术接口单次返回上限（各家都接受 50，过大容易触发限流）
+_ACADEMIC_PAGE_SIZE = 50
+
+#: 渠道简写 → 内联声明模板；``{q}`` 在运行期替换成本轮检索式
+_PRESETS: dict[str, dict[str, Any]] = {
+    "rss": {"provider": "rss_atom", "parser": "rss"},
+    "sitemap": {"provider": "sitemap", "parser": "sitemap"},
+    "arxiv": {
+        "provider": "academic",
+        "parser": "academic",
+        "url_template": "https://export.arxiv.org/api/query",
+        "params_template": {"search_query": "all:{q}", "max_results": _ACADEMIC_PAGE_SIZE},
+    },
+    "openalex": {
+        "provider": "academic",
+        "parser": "academic",
+        "url_template": "https://api.openalex.org/works",
+        "params_template": {"search": "{q}", "per-page": _ACADEMIC_PAGE_SIZE},
+        "data_path": "results",
+    },
+    "crossref": {
+        "provider": "academic",
+        "parser": "academic",
+        "url_template": "https://api.crossref.org/works",
+        "params_template": {"query": "{q}", "rows": _ACADEMIC_PAGE_SIZE},
+        "data_path": "message.items",
+    },
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,7 +99,12 @@ def parse_channel_ref(ref: Any) -> tuple[str, Any]:
             if not job_id.isdigit():
                 raise RuleError(f"渠道引用非法（job 编号必须是整数）: {ref!r}")
             return "job", int(job_id)
-        raise RuleError(f"渠道引用非法（仅支持 job:<id> 或内联 provider 声明）: {ref!r}")
+        prefix, _, rest = text.partition(":")
+        if prefix in _PRESETS:
+            return "preset", (prefix, rest.strip())
+        raise RuleError(
+            f"渠道引用非法（支持 job:<id> / rss:<url> / sitemap:<url> / arxiv: / openalex: / crossref: / 内联 provider 声明）: {ref!r}"
+        )
     if isinstance(ref, Mapping):
         if ref.get("job") is not None:
             try:
@@ -71,6 +115,34 @@ def parse_channel_ref(ref: Any) -> tuple[str, Any]:
             return "inline", dict(ref)
         raise RuleError(f"渠道声明缺少 job 或 provider: {ref!r}")
     raise RuleError(f"渠道声明类型非法: {ref!r}")
+
+
+def preset_request(kind: str, rest: str, query: str) -> dict[str, Any]:
+    """渠道简写 → 内联声明；``rss`` / ``sitemap`` 必须给 http(s) 地址（P2）."""
+    preset = _PRESETS.get(kind)
+    if preset is None:
+        raise RuleError(f"未知渠道简写: {kind!r}")
+    term = rest or query
+    request_spec: dict[str, Any] = {}
+    if kind in ("rss", "sitemap"):
+        if not rest.startswith(("http://", "https://")):
+            raise RuleError(f"{kind}: 后必须是一个 http/https 地址: {rest!r}")
+        request_spec = {"url_template": rest}
+    else:
+        request_spec = {
+            "url_template": preset["url_template"],
+            "params_template": {
+                key: str(value).replace("{q}", term) for key, value in dict(preset["params_template"]).items()
+            },
+        }
+        if preset.get("data_path"):
+            request_spec["data_path"] = preset["data_path"]
+    payload: dict[str, Any] = {
+        "provider": preset["provider"],
+        "parser": preset["parser"],
+        "request_spec": request_spec,
+    }
+    return payload
 
 
 def _with_query(spec: SyncJobSpec, query: str) -> SyncJobSpec:
@@ -104,6 +176,9 @@ def build_channel_specs(
         label = channel_label(ref, index)
         try:
             kind, payload = parse_channel_ref(ref)
+            if kind == "preset":
+                payload = preset_request(str(payload[0]), str(payload[1]), query)
+                kind = "inline"
             if kind == "job":
                 job = db.get(DatasourceSyncJob, int(payload))
                 if job is None:

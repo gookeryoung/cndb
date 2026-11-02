@@ -6,12 +6,14 @@
 - ``run``      立即执行一条策略（同步执行，受预算上限约束）
 - ``preview``  只抓取 + 筛选，不落表 / 不写台账 / 不落运行记录
 - ``resume``   续跑 ``awaiting_review`` 的运行（可带关键词 / 检索式，也可不带）
+- ``tick``     扫描到期策略并执行（配合系统 cron，ADR 0085 P2）
 
 示例：
     cndb acquisition list --workspace-id 1
     cndb acquisition run --strategy-id 3 --json
     cndb acquisition preview --strategy-id 3
     cndb acquisition resume --run-id 5 --keywords 固态 电解质
+    cndb acquisition tick --limit 10
 """
 
 from __future__ import annotations
@@ -148,6 +150,23 @@ def cmd_preview(args: argparse.Namespace) -> dict[str, Any]:
         db.close()
 
 
+def cmd_tick(args: argparse.Namespace) -> dict[str, Any]:
+    from cndb.plugins.acquisition.services.scheduler import DEFAULT_TICK_LIMIT, tick
+
+    db = _get_session()
+    try:
+        report = tick(
+            db,
+            now=_now(),
+            limit=int(getattr(args, "limit", DEFAULT_TICK_LIMIT) or DEFAULT_TICK_LIMIT),
+            workspace_id=getattr(args, "workspace_id", None),
+            strategy_id=getattr(args, "strategy_id", None),
+        )
+        return report.to_dict()
+    finally:
+        db.close()
+
+
 def cmd_resume(args: argparse.Namespace) -> dict[str, Any]:
     from cndb.plugins.acquisition.models import AcquisitionRun
     from cndb.plugins.acquisition.services.runner import StrategyBusyError, resume_run
@@ -216,6 +235,17 @@ def _print_run(payload: dict[str, Any]) -> None:
         print(f"    ! {payload['error']}")
 
 
+def _print_tick(payload: dict[str, Any]) -> None:
+    print(
+        f"[acquisition tick] 扫描 {payload['examined']} 条，执行 {payload['executed']} 条 "
+        f"(success={payload['succeeded']} partial={payload['partial']} failed={payload['failed']} "
+        f"review={payload['awaiting_review']}) 超时续跑 {payload['resumed_timeout']} "
+        f"跳过：租约 {payload['skipped_leased']} / 待复核 {payload['skipped_pending']}"
+    )
+    for strategy_id in payload["strategy_ids"]:
+        print(f"  - strategy#{strategy_id}")
+
+
 def _print_resume(payload: dict[str, Any]) -> None:
     if payload.get("skipped"):
         print(f"  run#{payload['run_id']} 跳过：{payload['skipped']}")
@@ -249,14 +279,21 @@ def acquisition_command(args: argparse.Namespace) -> None:
     """分发 ``cndb acquisition <sub>``."""
     cmd = getattr(args, "acquisition_cmd", None)
     if cmd is None:
-        print("[error] 缺少 acquisition 子命令，可用: list / run / preview / resume", file=sys.stderr)
+        print("[error] 缺少 acquisition 子命令，可用: list / run / preview / resume / tick", file=sys.stderr)
         sys.exit(2)
-    handlers = {"list": cmd_list, "run": cmd_run, "preview": cmd_preview, "resume": cmd_resume}
+    handlers = {
+        "list": cmd_list,
+        "run": cmd_run,
+        "preview": cmd_preview,
+        "resume": cmd_resume,
+        "tick": cmd_tick,
+    }
     printers = {
         "list": _print_list,
         "run": _print_run,
         "preview": _print_preview,
         "resume": _print_resume,
+        "tick": _print_tick,
     }
     handler = handlers.get(cmd)
     if handler is None:  # pragma: no cover - argparse 已收窄
@@ -269,11 +306,13 @@ def acquisition_command(args: argparse.Namespace) -> None:
         printers[cmd](payload)
     if cmd == "run" and payload.get("status") == "failed":
         sys.exit(1)
+    if cmd == "tick" and payload.get("failed"):
+        sys.exit(1)
 
 
 def register_acquisition_subparser(sub: Any) -> None:
     """向顶层 ArgumentParser 注册 `cndb acquisition` 子命令组."""
-    p_acq = sub.add_parser("acquisition", help="采集策略（list / run / preview / resume）")
+    p_acq = sub.add_parser("acquisition", help="采集策略（list / run / preview / resume / tick）")
     acq_sub = p_acq.add_subparsers(dest="acquisition_cmd")
 
     p_list = acq_sub.add_parser("list", help="列出采集策略")
@@ -295,6 +334,12 @@ def register_acquisition_subparser(sub: Any) -> None:
     p_resume.add_argument("--query", help="直接指定下一轮检索式")
     p_resume.add_argument("--json", action="store_true", help="以 JSON 输出")
 
+    p_tick = acq_sub.add_parser("tick", help="扫描到期策略并执行（cron 调用）")
+    p_tick.add_argument("--workspace-id", type=int, help="只处理某个工作区")
+    p_tick.add_argument("--strategy-id", type=int, help="只跑指定策略（忽略调度到期判定）")
+    p_tick.add_argument("--limit", type=int, default=20, help="单次最多执行的策略数")
+    p_tick.add_argument("--json", action="store_true", help="以 JSON 输出")
+
 
 __all__ = [
     "acquisition_command",
@@ -302,5 +347,6 @@ __all__ = [
     "cmd_preview",
     "cmd_resume",
     "cmd_run",
+    "cmd_tick",
     "register_acquisition_subparser",
 ]

@@ -25,7 +25,7 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { pipelinesApi } from '@/api'
-import type { PipelineCheckDomain, PipelineFinding, PipelineSeverity } from '@/api'
+import type { PipelineCheckDomain, PipelineFinding, PipelineSeverity, PipelineStepStat } from '@/api'
 import {
   PIPELINE_SEVERITY_META, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, isActiveRun,
 } from './checkCatalog'
@@ -53,6 +53,12 @@ const SEVERITY_OPTIONS: Array<{ label: string; value: SeverityFilter }> = [
 function ConclusionTag({ conclusion }: { conclusion: string }) {
   const meta = CONCLUSION_META[conclusion] ?? { label: conclusion, color: 'default' }
   return <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
+}
+
+/** step.findings 是 { error, warn, info } 计数对象，展示时汇总成条数 */
+function stepFindingTotal(step: PipelineStepStat): number {
+  return Object.values(step.findings ?? {})
+    .reduce((sum, count) => sum + (typeof count === 'number' ? count : 0), 0)
 }
 
 /** 概要条单元格：标签在上、数值在下（错误 / 告警命中有色，0 保持弱化） */
@@ -221,7 +227,7 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
                             )}
                             description={(
                               <Text type={step.error ? 'danger' : 'secondary'}>
-                                {step.error ? step.error : `发现 ${step.findings} 项`}
+                                {step.error ? step.error : `发现 ${stepFindingTotal(step)} 项`}
                               </Text>
                             )}
                           />

@@ -3,7 +3,8 @@
  * 创建弹窗、工作区设置、顶部页签与侧栏门控共用，与后端
  * `workspaces/modules.py` 语义逐项一致（I2/I3）。
  * 三模块可任意勾选组合；数据分析 / 数据同步强绑定数据表（派生功能，
- * 不出现在勾选 UI 与 API 字段）；质量检查恒开放（D4）。
+ * 不出现在勾选 UI 与 API 字段）；采集策略要求「有表或文档」二者其一；
+ * 质量检查恒开放（D4）。
  */
 
 export type WorkspaceModule = 'tables' | 'documents' | 'design'
@@ -60,6 +61,8 @@ export interface WorkspaceFeatures {
   analytics: boolean
   /** 数据同步功能（数据表派生，强绑定） */
   datasource: boolean
+  /** 采集策略功能（数据表或文档派生：两者至少其一，ADR 0085 P2） */
+  acquisition: boolean
   /** 质量检查功能：所有工作区恒开放（ADR 0080 D4） */
   quality: boolean
 }
@@ -73,6 +76,7 @@ export function workspaceModulesFeatures(modules?: WorkspaceModule[] | null): Wo
     design: enabled.has('design'),
     analytics: enabled.has('tables'),
     datasource: enabled.has('tables'),
+    acquisition: enabled.has('tables') || enabled.has('documents'),
     quality: true,
   }
 }

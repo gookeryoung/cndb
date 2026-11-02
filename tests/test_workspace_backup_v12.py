@@ -43,7 +43,7 @@ class TestBackupV12Modules:
 
         archive = parse_workspace_archive(archive_file)
         try:
-            assert archive.backup["version"] == "12"
+            assert archive.backup["version"] == "13"
             assert archive.backup["workspace"]["modules"] == ["tables", "design"]
             assert "workspace_type" not in archive.backup["workspace"]
         finally:

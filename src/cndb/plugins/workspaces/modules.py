@@ -1,7 +1,7 @@
 """工作区模块口径（ADR 0080）：模块集合 → 开放功能的唯一判定入口.
 
 - ``MODULE_FEATURES``：模块 → 派生功能绑定表（数据分析 / 数据同步强绑定数据表，
-  不进勾选 UI 与 API 字段，仅由此推导）；
+  采集策略要求「有表或文档」二者其一，均不进勾选 UI 与 API 字段，仅由此推导）；
 - ``resolve_features``：模块集合 → 功能开关矩阵（后端唯一入口，与前端
   ``workspaceModules.ts`` 语义逐项一致）;
 - ``legacy_type_to_modules``：旧 ``workspace_type`` 枚举 → 模块集合（迁移与
@@ -20,13 +20,21 @@ from cndb.plugins.workspaces.models import WORKSPACE_MODULES, WorkspaceModule
 
 # 模块 → 派生功能绑定表（唯一真相源；quality 不在此表，恒开放，见 resolve_features）
 MODULE_FEATURES: dict[str, frozenset[str]] = {
-    WorkspaceModule.TABLES.value: frozenset({"tables", "analytics", "datasource"}),
-    WorkspaceModule.DOCUMENTS.value: frozenset({"documents"}),
+    WorkspaceModule.TABLES.value: frozenset({"tables", "analytics", "datasource", "acquisition"}),
+    WorkspaceModule.DOCUMENTS.value: frozenset({"documents", "acquisition"}),
     WorkspaceModule.DESIGN.value: frozenset({"design"}),
 }
 
 # 功能开关矩阵的稳定输出顺序
-_FEATURE_KEYS: tuple[str, ...] = ("tables", "documents", "design", "analytics", "datasource", "quality")
+_FEATURE_KEYS: tuple[str, ...] = (
+    "tables",
+    "documents",
+    "design",
+    "analytics",
+    "datasource",
+    "acquisition",
+    "quality",
+)
 
 # 旧 workspace_type 枚举 → 模块集合（ADR 0080 D5：按现行 feature 矩阵逐项平移）
 _LEGACY_TYPE_TO_MODULES: dict[str, list[str]] = {

@@ -188,6 +188,8 @@ class WorkspaceImportResponse(BaseModel):
     """成功导入的流水线定义数（v10 起；旧版备份无 pipelines 键时为 0）。"""
     imported_designs: int = 0
     """成功导入的结构设计数（v11 起；旧版备份无 designs 键时为 0）。"""
+    imported_acquisitions: int = 0
+    """成功导入的采集策略数（v13 起；旧版备份无 acquisitions 键时为 0）。"""
     errors: list[str] = []
     """部分内容导入失败/跳过的明细（空列表表示全部成功）。"""
 

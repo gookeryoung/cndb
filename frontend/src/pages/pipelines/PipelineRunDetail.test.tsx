@@ -29,8 +29,8 @@ const RUN: PipelineRun = {
         id: '体检',
         conclusion: 'success',
         steps: [
-          { uses: 'table/null-rate', severity: 'warn', conclusion: 'success', findings: 1 },
-          { uses: 'document/links', severity: 'info', conclusion: 'skipped', findings: 0 },
+          { uses: 'table/null-rate', severity: 'warn', conclusion: 'success', findings: { error: 0, warn: 1, info: 0 } },
+          { uses: 'document/links', severity: 'info', conclusion: 'skipped', findings: { error: 0, warn: 0, info: 0 } },
         ],
       },
     ],
@@ -102,6 +102,9 @@ describe('PipelineRunDetail 运行详情', () => {
     fireEvent.click(await screen.findByText('体检'))
     expect(await screen.findByText('table/null-rate')).toBeInTheDocument()
     expect(screen.getByText('严重度 告警')).toBeInTheDocument()
+    // step.findings 是按严重度计数的对象，展示时汇总为条数而非 [object Object]
+    expect(screen.getByText('发现 1 项')).toBeInTheDocument()
+    expect(screen.getByText('发现 0 项')).toBeInTheDocument()
     expect(await screen.findByText('城市存在空值')).toBeInTheDocument()
   })
 

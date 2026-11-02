@@ -165,9 +165,16 @@ def _validate(
     filter_rule: dict[str, Any],
     targets: list[dict[str, Any]],
     iteration: dict[str, Any],
+    schedule: dict[str, Any] | None = None,
 ) -> None:
     try:
-        validate_strategy_payload(scope=scope, filter_rule=filter_rule, targets=targets, iteration=iteration)
+        validate_strategy_payload(
+            scope=scope,
+            filter_rule=filter_rule,
+            targets=targets,
+            iteration=iteration,
+            schedule=schedule,
+        )
     except RuleError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     _assert_targets_in_workspace(db, workspace_id, targets)
@@ -206,6 +213,7 @@ def create_strategy(
         filter_rule=payload.filter_rule,
         targets=payload.targets,
         iteration=payload.iteration,
+        schedule=payload.schedule,
     )
     strategy = AcquisitionStrategy(
         workspace_id=workspace_id,
@@ -253,7 +261,16 @@ def update_strategy(
     filter_rule = data.get("filter_rule", dict(strategy.filter_rule or {}))
     targets = data.get("targets", list(strategy.targets or []))
     iteration = data.get("iteration", dict(strategy.iteration or {}))
-    _validate(db, workspace_id, scope=scope, filter_rule=filter_rule, targets=targets, iteration=iteration)
+    schedule = data.get("schedule", dict(strategy.schedule or {}))
+    _validate(
+        db,
+        workspace_id,
+        scope=scope,
+        filter_rule=filter_rule,
+        targets=targets,
+        iteration=iteration,
+        schedule=schedule,
+    )
 
     changed_rules = any(field in data for field in _RULE_FIELDS)
     if "name" in data:

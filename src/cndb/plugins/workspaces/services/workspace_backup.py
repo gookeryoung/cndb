@@ -1,4 +1,7 @@
-"""工作区全量备份（ADR 0075）：v12 备份构建器 + tar.gz 归档打包/解包.
+"""工作区全量备份（ADR 0075）：v13 备份构建器 + tar.gz 归档打包/解包.
+
+v13 在 v12 基础上新增顶层 ``acquisitions[]``（采集策略：四段规则 + 调度 + 启用态），
+运行记录 / 轮次 / 条目台账不进备份（与同步任务「运行记录不导出」同口径，ADR 0085 P2）。
 
 v12 在 v11 基础上把 workspace 元数据的 ``workspace_type`` 替换为 ``modules``
 （功能模块集合，ADR 0080 D7）；导入端对 ≤v11 备份按旧枚举映射回填。
@@ -41,7 +44,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError
 
-BACKUP_VERSION = "12"
+BACKUP_VERSION = "13"
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
 ARCHIVE_KIND = "workspace_backup"
@@ -583,6 +586,56 @@ def build_workspace_backup_v9(
             }
         )
 
+    # ── v13（ADR 0085 P2）：采集策略（运行记录 / 轮次 / 条目台账不导出） ──
+    from cndb.plugins.acquisition.models import AcquisitionStrategy
+
+    doc_meta = {d.id: (d.title, d.parent_id) for d in docs}
+
+    def _folder_path(folder_id: Any) -> list[str]:
+        """文档落点 → 从根到父的文件夹标题路径（导入端按路径重建 id）."""
+        path: list[str] = []
+        seen: set[int] = set()
+        current = int(folder_id) if folder_id is not None else None
+        while current is not None and current in doc_meta and current not in seen:
+            seen.add(current)
+            title, parent = doc_meta[current]
+            path.append(str(title))
+            current = parent
+        return list(reversed(path))
+
+    def _export_target(target: Any) -> dict[str, Any]:
+        """落点：id 换成可搬迁的名字 / 路径，其余键原样保留（向前兼容新键）."""
+        raw: dict[str, Any] = dict(target) if isinstance(target, dict) else {}
+        kind = str(raw.get("kind") or "")
+        exported = {key: value for key, value in raw.items() if key not in ("table_id", "parent_id")}
+        if kind == "table":
+            table_id = raw.get("table_id")
+            exported["table_name"] = table_name_by_id.get(int(table_id)) if table_id else None
+        elif kind == "document":
+            exported["parent_path"] = _folder_path(raw.get("parent_id"))
+        return exported
+
+    acquisitions = (
+        db.query(AcquisitionStrategy)
+        .filter(AcquisitionStrategy.workspace_id == workspace_id)
+        .order_by(AcquisitionStrategy.id)
+        .all()
+    )
+    acquisitions_data: list[dict[str, Any]] = [
+        {
+            "name": s.name,
+            "enabled": s.enabled,
+            "rule_version": s.rule_version,
+            "scope": s.scope,
+            "filter_rule": s.filter_rule,
+            "targets": [_export_target(target) for target in list(s.targets or [])],
+            "iteration": s.iteration,
+            "llm": s.llm,
+            "schedule": s.schedule,
+        }
+        for s in acquisitions
+    ]
+
     backup = {
         "version": BACKUP_VERSION,
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
@@ -600,6 +653,7 @@ def build_workspace_backup_v9(
         "charts": charts_data,
         "pipelines": pipelines_data,
         "designs": designs_data,
+        "acquisitions": acquisitions_data,
         "include_secrets": include_secrets,
     }
     return backup, files
@@ -622,6 +676,7 @@ def downsample_v8(backup_v9: dict[str, Any]) -> dict[str, Any]:
         "file_owners",
         "pipelines",
         "designs",
+        "acquisitions",
         "include_secrets",
     ):
         data.pop(key, None)
@@ -669,6 +724,7 @@ def build_manifest(backup: dict[str, Any], file_count: int) -> dict[str, Any]:
             "sync_jobs": len(backup.get("sync_jobs", [])),
             "pipelines": len(backup.get("pipelines", [])),
             "designs": len(backup.get("designs", [])),
+            "acquisitions": len(backup.get("acquisitions", [])),
             "files": file_count,
         },
     }

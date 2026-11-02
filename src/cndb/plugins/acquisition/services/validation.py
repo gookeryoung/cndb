@@ -6,7 +6,9 @@
 - ``scope.query`` 占位符可渲染（用样例上下文，未知占位符直接报错）；
 - ``filter_rule`` 布尔式可解析、日期可解析、数值项合法；
 - ``targets``：``kind`` 白名单 + 必填字段（``table`` 要 ``table_id``；``document`` 的 ``parent_id`` 可空）；
-- ``iteration``：``max_rounds`` / 预算数值范围（防跑飞，I8）。
+- ``iteration``：``max_rounds`` / 预算数值范围（防跑飞，I8）；
+- ``schedule``：与数据同步同语义（``manual`` / ``daily`` / ``interval`` / ``cron``），
+  非法表达式在保存期就报错（P2 接入调度后必须前置校验）。
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from typing import Any
 from cndb.plugins.acquisition.services.channels import parse_channel_ref
 from cndb.plugins.acquisition.services.rules.expr import RuleError, render_query
 from cndb.plugins.acquisition.services.rules.filter import FilterRule
+from cndb.plugins.datasource.services.schedule import ScheduleConfig
 
 __all__ = ["MAX_CHANNELS", "MAX_REQUESTS_LIMIT", "MAX_ROUNDS_LIMIT", "validate_strategy_payload"]
 
@@ -92,12 +95,23 @@ def _validate_iteration(iteration: Mapping[str, Any]) -> None:
             raise RuleError(f"iteration.expand.review 非法: {review!r}")
 
 
+def _validate_schedule(schedule: Mapping[str, Any] | None) -> None:
+    """调度声明：复用数据同步的 ``ScheduleConfig``（含 cron 表达式与时区）."""
+    if not schedule:
+        return
+    try:
+        ScheduleConfig.from_dict(dict(schedule))
+    except Exception as exc:  # ProviderError / ValueError / TypeError 统一转规则错误
+        raise RuleError(f"schedule 非法: {exc}") from exc
+
+
 def validate_strategy_payload(
     *,
     scope: Mapping[str, Any] | None,
     filter_rule: Mapping[str, Any] | None,
     targets: Sequence[Any] | None,
     iteration: Mapping[str, Any] | None,
+    schedule: Mapping[str, Any] | None = None,
 ) -> None:
     """逐段校验策略声明；不合法抛 :class:`RuleError`."""
     payload = dict(scope or {})
@@ -110,6 +124,7 @@ def validate_strategy_payload(
     _validate_targets(list(targets or []))
 
     _validate_iteration(dict(iteration or {}))
+    _validate_schedule(schedule)
     max_items = payload.get("max_results_per_channel")
     if max_items not in (None, ""):
         _positive_int(max_items, field="scope.max_results_per_channel", default=200, ceiling=200)
