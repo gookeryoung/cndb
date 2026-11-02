@@ -1,6 +1,6 @@
 # ADR 0085: 规则驱动的数据表 / 文档迭代获取（采集策略 + 规则引擎 + 大模型参与边界）
 
-Status: Proposed（待评审）
+Status: Implemented（P0-P3 全部落地，2026-11-02 人工确认）
 Date: 2026-11-02
 Related: `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/scheduler.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/auto_table.py`、`src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/datasource/providers/llm_prompt.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/llm/services/gateway.py`、`src/cndb/plugins/llm/services/actions.py`、`src/cndb/plugins/llm/services/connection.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/services/backup_io.py`；上游 ADR 0006 / 0014 / 0019 / 0020 / 0034 / 0080
 需求卡片: `docs/requirements/0085-rule-driven-iterative-acquisition.md`（需求原文与约束编号的唯一副本）
@@ -437,7 +437,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P3 全部落地（`Status` 仍为 Proposed，等待人工确认是否改 Accepted / Implemented）
+- 当前阶段：P0-P3 全部落地，`Status` 已由 Proposed 改为 Implemented（2026-11-02 人工确认），本 ADR 不再有待办期
 - 已完成：需求卡片 0085 + 本 ADR；P0（四表 + 规则引擎 + 单轮编排 + API/CLI）、P1（多轮迭代 `keywords/expand/stop` + 复核闸口 `awaiting_review`/`resume` + 文档落点与人工保护 + `keyword_refine` 模型降级）、P2（`rss_atom`/`academic`/`sitemap` provider + 渠道简写 + 策略级 tick 调度与超时复核兜底 + 备份 v13 + `acquisition` 功能位前后端同步）、P3（`rule_draft`/`item_summary`/`run_report`/`failure_diagnose` 四个模型动作 + 渠道目录/草案/诊断/取消/启停端点 + 前端策略页与运行抽屉 + 帮助主题）
 - 下一步（未排期）：① 规则草案 → 表单的字段级 diff 提示；② `GET /channels` 之外的渠道连通性自检（避免保存后首次运行才发现鉴权失败）；③ 采集完成后可接 `pipeline` 质量检查（ADR 0076，本期明确不接）；④ 前端 e2e（Playwright）覆盖「建策略 → 预览 → 启用 → 运行 → 轮次时间线」
 - 已知坑：① `acquisition_item.target_id` 对表落点只记 `table_id`（不记行 id），避免行级外键随表重建失效；⑥ 迁移里父表不存在时须降级为普通列（`_fk()`），否则「最小 stub 库升到 head」的迁移测试会红；⑦ 文档落点不能按台账拦截，必须由 `payload_digest` 判定更新 / 跳过；⑨ 备份 v13 只导出策略的「规则 + 调度 + 启用态」，落点 id 必须换成 `table_name` / `parent_path`，否则跨工作区导入后落点全指向源工作区的 id；⑩ `resume_run` 的 `timeout=True` 只在调度兜底里用，用户主动续跑不写 `detail.review_timeout`；⑧ 关键词抽取对表类候选要用「全部字符串列」兜底，否则表落点多轮没有扩展词；② 表落点去重键必须用 `match_keys` 身份（`row:` 前缀），用内容指纹会让「同一行换数值」变成新条目；③ 文档幂等依赖「最新版本 `change_type`」，与草稿（ADR 0057）并发时以「存在草稿即视为人工改动」优先；④ 备份 v13 必须与 `workspaces` 协议常量同轮改，否则 `make test` 会红在旧 v12 用例；⑤ 租约更新须 `synchronize_session=False`（SQLite 读出的 naive datetime 与 aware 参数比较会在 ORM 求值器里炸）
