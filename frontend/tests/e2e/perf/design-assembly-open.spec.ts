@@ -107,6 +107,9 @@ test.describe("性能基准：装配设计打开（ADR 0086 C9）", () => {
       // 预热（不计入指标）：SPA 落地到列表页，CodeMirror / three / 编辑器 chunk 全部拉取解析
       await page.goto(`/w/${WID}/design`);
       await expect(page.getByTestId(`design-row-${asm.id}`)).toBeVisible({ timeout: 30_000 });
+      // 列表页空闲预取窗口（DesignsPage requestIdleCallback timeout=2s）：真实用户在列表
+      // 页有停留，编辑器 chunk 已预取；这里等待窗口结束再开始计时
+      await page.waitForTimeout(2200);
 
       const runs: OpenMetrics[] = [];
       for (let i = 0; i < RUNS; i += 1) {

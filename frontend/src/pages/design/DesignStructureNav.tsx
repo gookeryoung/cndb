@@ -12,10 +12,10 @@ import type { DataNode, TreeProps } from 'antd/es/tree'
 import {
   ApartmentOutlined, AppstoreOutlined, ClusterOutlined, NodeIndexOutlined, ToolOutlined,
 } from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { designsApi } from '@/api'
-import type { DesignListItem, DesignOutlineNode } from '@/api'
+import type { DesignIRResponse, DesignListItem, DesignOutlineNode } from '@/api'
 import SearchInput from '@/components/SearchInput'
 import {
   designEditorPath, type DesignTreeEntry, type DesignTreeMeta, outlineToTree,
@@ -79,6 +79,7 @@ export default function DesignStructureNav({
 }: DesignStructureNavProps) {
   const navigate = useNavigate()
   const pathname = useLocation().pathname
+  const queryClient = useQueryClient()
   const [keyword, setKeyword] = useState('')
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
   // 已加载大纲（按设计 id）：展开设计时懒加载（ADR 0083 D4）；source=content = 历史快照派生
@@ -99,9 +100,19 @@ export default function DesignStructureNav({
     return designs.filter(item => item.title.toLowerCase().includes(q))
   }, [designs, keyword])
 
-  /** 展开设计时懒加载该设计大纲（ADR 0083 D4）；历史快照派生只读，保存一次后自然落库（D5） */
+  /** 展开设计时懒加载该设计大纲（ADR 0083 D4）；历史快照派生只读，保存一次后自然落库（D5）。
+   * 打开性能（ADR 0086 D10）：编辑器已拉取 /ir 时直接复用其大纲建树，不重复请求 /outline */
   const loadOutline = (designId: number): Promise<void> => {
     if (outlines[designId] || loadingIds[designId]) return Promise.resolve()
+    // IR 快照缓存优先（键与编辑器 useQuery 一致，designId 为字符串）
+    const irResp = queryClient.getQueryData<DesignIRResponse>([
+      'designs', workspaceId, String(designId), 'ir',
+    ])
+    const cachedChildren = irResp?.ir?.outline?.children
+    if (cachedChildren) {
+      setOutlines(prev => ({ ...prev, [designId]: { nodes: cachedChildren, source: 'compiled' } }))
+      return Promise.resolve()
+    }
     setLoadingIds(prev => ({ ...prev, [designId]: true }))
     return designsApi
       .outline(workspaceId, designId)

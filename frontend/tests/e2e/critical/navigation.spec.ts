@@ -66,25 +66,32 @@ test.describe("MainLayout Header 导航按钮", () => {
     }
   })
 
-  test("顶栏三区划分：左（品牌+工作区+一级导航）→ 中（搜索）→ 右（操作区）", async ({ page }) => {
+  test("顶栏布局：搜索框位于右侧操作按钮左侧（主页 / 工作区位置一致）", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
-    // 三区容器依序渲染（需求 0081 C1/C2）；先等布局挂载完成再读 DOM
+    // 需求 0081 C1（2026-11-03 调整）：左区（品牌 + 工作区 + 一级导航）在前，
+    // 搜索框收进右区首位、位于操作按钮左侧；先等布局挂载完成再读 DOM
     await expect(page.getByTestId("ws-nav-tables")).toBeVisible()
     const order = await page.evaluate(() => {
       const left = document.querySelector(".cn-header-left")
-      const search = document.querySelector(".cn-header-search")
       const right = document.querySelector(".cn-header-right")
-      if (!left || !search || !right) return null
+      const search = right?.querySelector(".cn-header-search")
+      const llm = right?.querySelector('[data-testid="llm-settings-btn"]')
+      if (!left || !right || !search || !llm) return null
       const before = (a: Element, b: Element) =>
         (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
-      return { leftBeforeSearch: before(left, search), searchBeforeRight: before(search, right) }
+      return {
+        leftBeforeRight: before(left, right),
+        searchInRight: !left.querySelector(".cn-header-search"),
+        searchBeforeActions: before(search, llm),
+      }
     })
-    expect(order).toEqual({ leftBeforeSearch: true, searchBeforeRight: true })
-    // 左区承载一级导航，中区承载搜索框
+    expect(order).toEqual({ leftBeforeRight: true, searchInRight: true, searchBeforeActions: true })
+    // 左区承载一级导航，右区承载搜索框
     await expect(page.locator(".cn-header-left").locator('[data-testid="ws-module-nav"]')).toBeVisible()
-    await expect(page.locator(".cn-header-search").getByTestId("global-search-input")).toBeVisible()
+    await expect(page.locator(".cn-header-right").locator(".cn-header-search").getByTestId("global-search-input"))
+      .toBeVisible()
   })
 
   test("文档导航 → /w/:wid/documents", async ({ page }) => {

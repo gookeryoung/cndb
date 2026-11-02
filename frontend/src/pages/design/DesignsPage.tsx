@@ -5,7 +5,7 @@
  * 装配结构树已迁至侧栏（`DesignStructureNav`），本页不再渲染大纲树。
  */
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   App as AntApp, Button, Empty, Form, Input, List, Modal, Popconfirm, Select, Skeleton, Space, Tag, Typography,
 } from 'antd'
@@ -16,6 +16,7 @@ import { designsApi, workspaceApi } from '@/api'
 import type { DesignListItem } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
 import { designEditorPath } from './designOutline'
+import { prefetchDesignEditorChunks } from './prefetchEditor'
 
 const { Text } = Typography
 
@@ -113,6 +114,17 @@ export default function DesignsPage() {
   const [createForm] = Form.useForm<DesignFormValues>()
   const [renaming, setRenaming] = useState<DesignListItem | null>(null)
   const [renameForm] = Form.useForm<DesignFormValues>()
+
+  // 打开性能（ADR 0086 C9）：列表页空闲时预取编辑器 route chunk 与 3D 预览 chunk，
+  // 首次点击「打开」不再为下载解析付费（requestIdleCallback Chrome 47+，兜底 setTimeout）
+  useEffect(() => {
+    if (typeof window.requestIdleCallback === 'function') {
+      const id = window.requestIdleCallback(() => prefetchDesignEditorChunks(), { timeout: 2000 })
+      return () => window.cancelIdleCallback(id)
+    }
+    const timer = window.setTimeout(() => prefetchDesignEditorChunks(), 300)
+    return () => window.clearTimeout(timer)
+  }, [])
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['designs', wid] })
 

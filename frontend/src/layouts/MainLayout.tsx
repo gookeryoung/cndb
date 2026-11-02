@@ -844,16 +844,16 @@ export default function MainLayout() {
           )}
         </div>
 
-        {/* ── 中区（需求 0081 C1/C3）：搜索框，接管剩余横向空间相对居中 ──
-            GitHub 风格顶栏搜索框：工作区上下文默认范围=整个工作区，处于某张表时把
-            数据表侧收敛到当前激活视图（table_id + view_id）；主页（/w）等无工作区
-            上下文 = 跨工作区检索，进入工作区前也可搜索（0081 C3）。
-            移动端收为图标入口并展开抽屉，避免挤压顶栏横向空间。 */}
-        {isMobile ? searchNode : <div className="cn-header-search">{searchNode}</div>}
-
-        {/* ── 右区（需求 0081 C2）：操作区维持现状 —— GitHub 风格带边框图标按钮
-            （antd 默认尺寸 32px），文字说明收进 Tooltip，降低顶栏视觉密度 ── */}
+        {/* ── 右区（需求 0081 C1/C2/C3）：搜索框 + 操作按钮组 ──
+            搜索框固定在操作按钮左侧（顶栏最右一组的首位），主页与工作区两种视图
+            位置一致，不再随左区宽度 / 一级导航有无而浮动；GitHub 风格顶栏搜索框：
+            工作区上下文默认范围=整个工作区，处于某张表时把数据表侧收敛到当前激活
+            视图（table_id + view_id）；主页（/w）等无工作区上下文 = 跨工作区检索，
+            进入工作区前也可搜索（0081 C3）。移动端收为图标入口并展开抽屉，避免挤压
+            顶栏横向空间。操作区维持 GitHub 风格带边框图标按钮（antd 默认尺寸 32px），
+            文字说明收进 Tooltip，降低顶栏视觉密度。 */}
         <div className="cn-header-right">
+          {isMobile ? searchNode : <div className="cn-header-search">{searchNode}</div>}
           {/* 大模型设置入口 —— 个人级连接与调用记录；桌面端常驻图标（帮助左侧），
               移动端顶栏空间紧张，入口收进用户菜单（见 userMenuItems） */}
           {!isMobile && (

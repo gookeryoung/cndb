@@ -573,10 +573,10 @@ body.theme-oled {
   color: var(--cn-brand-color);
 }
 
-/* ── 顶栏三区布局（需求 0081 C1）──
- * 左区 = 品牌 + 工作区切换 + 一级模块导航；中区 = 搜索框（cn-header-search 接管
- * 剩余横向空间）；右区 = 操作按钮组（内容维持重构前现状，marginLeft:auto 兜底
- * 中区缺失时的右贴边）。 */
+/* ── 顶栏三区布局（需求 0081 C1，2026-11-03 搜索位置调整）──
+ * 左区 = 品牌 + 工作区切换 + 一级模块导航；右区 = 搜索框 + 操作按钮组（搜索框
+ * 固定为右组首位，主页与工作区两种视图位置一致，不再随左区宽度浮动；
+ * marginLeft:auto 把整组贴到顶栏右侧）。 */
 .cn-header-left {
   display: flex;
   align-items: center;
@@ -590,6 +590,8 @@ body.theme-oled {
   display: flex;
   align-items: center;
   gap: var(--cn-space-sm);
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 /* ── 顶栏一级模块导航（需求 0081 C4）──
@@ -640,19 +642,21 @@ body.theme-oled {
   margin-left: var(--cn-space-md);
 }
 
-/* 顶栏搜索居中容器：接管导航组与右侧操作组之间的剩余横向空间，
- * 搜索框落在这段空间的中间（而非整栏绝对居中），窄屏下也不会与两侧重叠。 */
+/* 顶栏搜索容器：位于右区操作按钮左侧，固定弹性宽度（主页 / 工作区同位置），
+ * 窄屏按 flex-shrink 收缩到最小可读宽度，不与右侧图标按钮重叠。 */
 .cn-header-search {
-  flex: 1 1 auto;
+  flex: 0 1 360px;
   min-width: 0;
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
 }
 
-/* 居中容器内由容器负责伸缩：取消搜索框自身的左外边距，宽度回到上限内自适应 */
+/* 容器内由搜索框自身伸缩：取消左外边距与最小宽度，窄屏顶栏可继续收缩不换行 */
 .cn-header-search .cn-global-search {
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   width: 100%;
+  max-width: 420px;
+  min-width: 0;
   margin-left: 0;
 }
 
@@ -6746,7 +6750,97 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 /* ── 设计模块（ADR 0079）：DSL 编辑器与预览 ─────────────────── */
 
-/* CodeMirror 容器：编辑器撑满宿主高度 */
+/* 页面骨架：工具栏 + 左右两栏，页面自身不纵向滚动（滚动在各栏内部） */
+.cn-dsl-page {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-lg) var(--cn-space-xl);
+  overflow: hidden;
+}
+
+/* 顶部工具栏：左身份 / 状态标签，右动作按钮；窄屏换行 */
+.cn-dsl-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm) var(--cn-space-md);
+  padding: var(--cn-space-xs) var(--cn-space-md);
+  border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
+  flex: 0 0 auto;
+}
+.cn-dsl-toolbar-main,
+.cn-dsl-toolbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+.cn-dsl-title {
+  font-size: var(--cn-text-lg);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cn-dsl-status-tag {
+  margin-inline-end: 0;
+}
+.cn-dsl-btn-tag {
+  margin-inline-start: var(--cn-space-xs);
+  margin-inline-end: 0;
+}
+
+/* 诊断条：编译失败时标签下方单行横向滚动展示行号与消息 */
+.cn-dsl-diag-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-lg);
+  padding: var(--cn-space-hairline) var(--cn-space-md);
+  border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 0 0 auto;
+  line-height: 22px;
+}
+.cn-dsl-diag-bar .cn-dsl-diag-item {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* 左右两栏：min-height 0 保证子项内部滚动而不是撑破页面 */
+.cn-dsl-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--cn-space-lg);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cn-dsl-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.cn-dsl-pane--preview {
+  gap: var(--cn-space-sm);
+}
+
+/* CodeMirror 容器：编辑器撑满宿主高度（滚动交给 .cm-scroller 内置） */
+.cn-dsl-editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
 .cn-dsl-editor-host .cn-dsl-editor {
   height: 100%;
 }
@@ -6769,26 +6863,102 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   gap: var(--cn-space-xs);
   padding: var(--cn-space-hairline) 0;
 }
-/* 预览画布与参数面板 */
+/* 预览画布：占满右栏剩余高度；约束面板固定在底、横向滚动 */
 .cn-dsl-preview-host {
+  flex: 1 1 auto;
+  min-height: 0;
   border-radius: var(--cn-radius-lg);
   overflow: hidden;
 }
-.cn-dsl-params {
-  padding: var(--cn-space-md) var(--cn-space-lg);
-  border-radius: var(--cn-radius-lg);
-  background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
-}
-.cn-dsl-version-item {
-  color: var(--cn-text-secondary, rgba(255, 255, 255, 0.45));
-  font-size: var(--cn-text-xs);
-}
-/* 顶部信息条：编译检查 + 版本历史收拢于页头下方 */
-.cn-dsl-topbar {
-  padding: var(--cn-space-sm) var(--cn-space-lg);
+.cn-dsl-pane--preview .cn-dsl-constraints {
+  flex: 0 0 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--cn-space-xs) var(--cn-space-md);
   border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
   border-radius: var(--cn-radius-lg);
   background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
+}
+.cn-dsl-pane--preview .cn-dsl-constraints .ant-space {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* 参数抽屉：名称 / 默认值 / 已覆盖 + 输入 */
+.cn-dsl-param-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+}
+.cn-dsl-param-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-xs) var(--cn-space-sm);
+  border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--cn-radius-base);
+}
+.cn-dsl-param-name {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  min-width: 0;
+}
+.cn-dsl-param-default {
+  font-size: var(--cn-text-xs);
+}
+
+/* 版本历史侧栏：竖向列表，每行版本标签 + 说明 + 时间 */
+.cn-dsl-version-list {
+  display: flex;
+  flex-direction: column;
+}
+.cn-dsl-version-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: auto;
+  padding: var(--cn-space-sm) var(--cn-space-xs);
+  text-align: start;
+  white-space: normal;
+}
+.cn-dsl-version-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cn-dsl-version-time {
+  flex: 0 0 auto;
+  margin-inline-start: var(--cn-space-md);
+  font-size: var(--cn-text-xs);
+}
+.cn-dsl-version-pre {
+  margin: 0;
+  padding: var(--cn-space-md);
+  border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
+  font-family: var(--cn-font-mono, monospace);
+  font-size: var(--cn-text-xs);
+  white-space: pre-wrap;
+  overflow: auto;
+}
+
+/* 窄屏：两栏堆叠，各自仍可内部滚动 */
+@media (max-width: 1023.98px) {
+  .cn-dsl-page {
+    padding: var(--cn-space-md);
+  }
+  .cn-dsl-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(240px, 1fr) minmax(240px, 1fr);
+  }
+  .cn-dsl-title {
+    max-width: 180px;
+  }
 }
 
 /* ─────────────── 设计结构树（ADR 0083：设计模块默认页） ───────────────

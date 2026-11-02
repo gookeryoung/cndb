@@ -217,4 +217,36 @@ describe('DesignStructureNav 侧栏装配结构（0084）', () => {
     fireEvent.click(screen.getByText('组件（rover__chassis） · 1 个零件'))
     expect(await screen.findByTestId('editor-stub')).toHaveTextContent('/w/10/design/30')
   })
+
+  it('IR 快照缓存命中时不重复请求 /outline（ADR 0086 D10 首屏不双请求）', async () => {
+    useListHandler()
+    let outlineCalls = 0
+    server.use(http.get('/api/v1/workspaces/10/designs/:designId/outline', () => {
+      outlineCalls += 1
+      return HttpResponse.json({ detail: 'should not be called' }, { status: 500 })
+    }))
+    const { queryClient } = renderNav('/w/10/design')
+
+    expect(await screen.findByTestId('design-node-20')).toBeInTheDocument()
+    // 模拟编辑器已拉取 /ir：大纲复用快照，不再打 outline 端点
+    //（测试 QueryClient gcTime=0，播种与展开须同步完成，避免缓存被 gc）
+    queryClient.setQueryData(['designs', '10', '20', 'ir'], {
+      design_id: 20,
+      version_number: 2,
+      content_hash: 'h',
+      ir: { version: 4, units: { length: 'mm', angle: 'deg' }, params: [], nodes: [], outline: { children: OUTLINE } },
+    })
+    const switcher = screen.getByTestId('design-node-20')
+      .closest('.ant-tree-treenode')
+      ?.querySelector('.ant-tree-switcher')
+    expect(switcher).toBeTruthy()
+    fireEvent.click(switcher as Element)
+    await waitFor(() => {
+      expect(screen.getByTestId('design-node-20').closest('.ant-tree-treenode')?.getAttribute('aria-expanded')).toBe('true')
+    })
+
+    expect(await screen.findByText('rover')).toBeInTheDocument()
+    expect(screen.getByText('系统 · 第 27 行 · 3 个零件')).toBeInTheDocument()
+    expect(outlineCalls).toBe(0)
+  })
 })

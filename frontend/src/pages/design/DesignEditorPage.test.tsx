@@ -146,9 +146,10 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(cmText(container)).toContain('box(size = [width, 40, 12])')
     // 预览走防抖 → 编译通过 → stub 收到 IR（节点数 1）
     expect(await screen.findByText('节点数:1')).toBeInTheDocument()
-    // 版本历史
-    expect(screen.getByText(/版本历史（2）/)).toBeInTheDocument()
-    expect(screen.getByText('调宽度')).toBeInTheDocument()
+    // 版本历史：顶部按钮打开侧栏，列表在抽屉内
+    expect(screen.getByText('版本历史（2）')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
+    expect(await screen.findByText('调宽度')).toBeInTheDocument()
   })
 
   it('?line= 定位源行并选中整行（0083 D7）', async () => {
@@ -246,6 +247,7 @@ describe('DesignEditorPage 编辑器主流程', () => {
     useDefaultHandlers()
     renderPage()
 
+    fireEvent.click(await screen.findByRole('button', { name: '参数' }))
     const input = await screen.findByLabelText('参数 width')
     expect((input as HTMLInputElement).value).toBe('80')
 
@@ -288,6 +290,7 @@ describe('DesignEditorPage 编辑器主流程', () => {
     server.use(http.get('/api/v1/workspaces/10/designs/20/versions/1', () => HttpResponse.json(V1_DETAIL)))
     renderPage()
 
+    fireEvent.click(await screen.findByRole('button', { name: '版本历史' }))
     fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
     expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
     // detail 走 react-query 异步加载，Skeleton 先渲染，须等 pre 出现再断言
@@ -304,6 +307,7 @@ describe('DesignEditorPage 编辑器主流程', () => {
     }))
     const { container } = renderPage()
 
+    fireEvent.click(await screen.findByRole('button', { name: '版本历史' }))
     fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
     expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
 
@@ -323,6 +327,7 @@ describe('DesignEditorPage 编辑器主流程', () => {
     server.use(http.get('/api/v1/workspaces/10/designs/20/versions/1', () => HttpResponse.json(V1_DETAIL)))
     renderPage()
 
+    fireEvent.click(await screen.findByRole('button', { name: '版本历史' }))
     fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
     expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /恢复此版本/ })).not.toBeInTheDocument()

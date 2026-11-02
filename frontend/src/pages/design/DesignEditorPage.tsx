@@ -4,17 +4,22 @@
  * - 编辑防抖 300ms → POST /designs/preview（无落库）→ 结构化诊断回显错误行；
  * - 渲染只消费后端编译的 IR（前端零解析零求值），three 相关全部在 lazy chunk；
  * - 保存：编译在后端通过才落库并落新版本，失败保留草稿（边界 #2）；
- * - P2：版本历史支持回看（Drawer 看原文）与恢复（旧版重编译落新版本）；
+ * - P2：版本历史支持回看（侧栏抽屉看原文）与恢复（旧版重编译落新版本）；
  *   导出（STL / OBJ / GLB / 三视图）与 PreviewCanvas 同属 lazy 边界（D4/D5）。
+ *
+ * 编辑区布局（UI 优化）：顶部一条工具栏收拢全部动作 —— 标题 / 版本标签 / 编译状态标签
+ * （错误时下方展开诊断条）/ 参数按钮（抽屉）/ 版本历史按钮（侧栏抽屉）/ 导出 / 保存；
+ * 左右两栏各自内置滚动，页面本身不产生纵向滚动条。
  */
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Drawer, InputNumber, Popconfirm, Skeleton, Space, Spin, Tag, Typography,
+  Alert, App as AntApp, Button, Drawer, Empty, InputNumber, Popconfirm, Skeleton, Space, Tag, Typography,
 } from 'antd'
 import type { InputNumberProps } from 'antd'
 import {
-  ArrowLeftOutlined, ExperimentOutlined, HistoryOutlined, RollbackOutlined, SaveOutlined,
+  ArrowLeftOutlined, CheckCircleFilled, CloseCircleFilled, ExperimentOutlined, HistoryOutlined,
+  LoadingOutlined, RollbackOutlined, SaveOutlined, SlidersOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
@@ -64,6 +69,9 @@ export default function DesignEditorPage() {
   const [contentReady, setContentReady] = useState(false)
   const [overrides, setOverrides] = useState<Record<string, number>>({})
   const [saveError, setSaveError] = useState('')
+  // 顶部工具栏抽屉：参数面板 / 版本历史（点击按钮从右侧展开）
+  const [paramsOpen, setParamsOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   // 详情到达只回填一次（此后编辑权归用户；保存成功后 dirty 归零再回填最新态）
   const [loadedId, setLoadedId] = useState('')
   useEffect(() => {
@@ -119,7 +127,7 @@ export default function DesignEditorPage() {
     enabled: !!wid && !!designId,
   })
 
-  // 版本回看（P2）：点击历史版本打开 Drawer 看该版原文
+  // 版本回看（P2）：历史侧栏内点选版本，看该版原文
   const [viewingVersion, setViewingVersion] = useState<DesignVersionItem | null>(null)
   const { data: viewingDetail, isLoading: viewingLoading } = useQuery({
     queryKey: ['designs', wid, designId, 'versions', viewingVersion?.version_number],
@@ -133,6 +141,7 @@ export default function DesignEditorPage() {
     onSuccess: (restored) => {
       message.success(`已恢复 v${viewingVersion?.version_number} 为第 ${restored.version_number} 版`)
       setViewingVersion(null)
+      setHistoryOpen(false)
       setContent(restored.content)
       setOverrides({})
       setSaveError('')
@@ -165,21 +174,66 @@ export default function DesignEditorPage() {
       return next
     })
   }
+  const overrideCount = Object.keys(overrides).length
 
   const diagnostics: DesignDiagnostic[] = useMemo(() => preview.diagnostics, [preview.diagnostics])
+  const errorCount = diagnostics.length
   const canSave = dirty && !isViewer && !preview.compiling
 
+  const closeHistory = () => {
+    setHistoryOpen(false)
+    setViewingVersion(null)
+  }
+
   return (
-    <div style={{ padding: '12px 16px', height: '100%', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-        <Space size={8} wrap>
-          <Link to={`/w/${wid}/design`}><Button icon={<ArrowLeftOutlined />} type="text" /></Link>
-          <Text strong style={{ fontSize: 17 }}>{detail?.title ?? '设计'}</Text>
-          {detail && <Tag style={{ marginInlineEnd: 0 }}>v{detail.version_number}</Tag>}
-          {dirty && <Tag color="warning" style={{ marginInlineEnd: 0 }}>未保存</Tag>}
-          {isViewer && <Tag color="default" style={{ marginInlineEnd: 0 }}>只读</Tag>}
-        </Space>
-        <Space size={8}>
+    <div className="cn-dsl-page">
+      {/* 顶部工具栏：身份 / 状态标签在左，动作按钮在右 */}
+      <div className="cn-dsl-toolbar">
+        <div className="cn-dsl-toolbar-main">
+          <Link to={`/w/${wid}/design`} aria-label="返回设计列表">
+            <Button icon={<ArrowLeftOutlined />} type="text" />
+          </Link>
+          <Text strong className="cn-dsl-title">{detail?.title ?? '设计'}</Text>
+          <Space size={4} wrap>
+            {detail && (
+              <Tag className="cn-dsl-status-tag" data-testid="design-version-tag">
+                v{detail.version_number}
+              </Tag>
+            )}
+            {preview.compiling ? (
+              <Tag color="processing" className="cn-dsl-status-tag" data-testid="design-compile-status">
+                <LoadingOutlined /> 编译中
+              </Tag>
+            ) : errorCount > 0 ? (
+              <Tag color="error" className="cn-dsl-status-tag" data-testid="design-compile-status">
+                <CloseCircleFilled /> {errorCount} 处错误
+              </Tag>
+            ) : (
+              <Tag color="success" className="cn-dsl-status-tag" data-testid="design-compile-ok">
+                <CheckCircleFilled /> 编译通过
+                {preview.ir && preview.ir.nodes.length === 0 && '（顶层尚无实例）'}
+              </Tag>
+            )}
+            {dirty && <Tag color="warning" className="cn-dsl-status-tag">未保存</Tag>}
+            {isViewer && <Tag className="cn-dsl-status-tag">只读</Tag>}
+          </Space>
+        </div>
+        <Space size={8} wrap className="cn-dsl-toolbar-actions">
+          <Button
+            icon={<SlidersOutlined />}
+            aria-label="参数"
+            onClick={() => setParamsOpen(true)}
+          >
+            参数{params.length > 0 ? `（${params.length}）` : ''}
+            {overrideCount > 0 && <Tag color="processing" className="cn-dsl-btn-tag">{overrideCount} 覆盖</Tag>}
+          </Button>
+          <Button
+            icon={<HistoryOutlined />}
+            aria-label="版本历史"
+            onClick={() => setHistoryOpen(true)}
+          >
+            版本历史（{versions.length}）
+          </Button>
           <Suspense fallback={null}>
             <DesignExportMenu ir={preview.ir} title={detail?.title ?? '设计'} />
           </Suspense>
@@ -227,50 +281,23 @@ export default function DesignEditorPage() {
         />
       )}
 
-      {/* 顶部信息条：编译检查 + 版本历史（上移收拢，编辑/预览区让出整列高度） */}
-      <div className="cn-dsl-topbar" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 24px' }}>
-        <Space size={12} wrap align="center">
-          <Text type="secondary"><ExperimentOutlined /> 编译检查：</Text>
-          {preview.compiling && <Spin size="small" />}
-          {!preview.compiling && diagnostics.length === 0 && (
-            <Text type="secondary" data-testid="design-compile-ok">
-              通过{preview.ir && preview.ir.nodes.length === 0 && '（顶层尚无实例）'}
-            </Text>
-          )}
-          <Space size={8} wrap align="center">
-            {diagnostics.map((item, index) => (
-              <div key={`${item.line}-${item.col}-${index}`} className="cn-dsl-diag-item">
-                <Tag color="error" style={{ marginInlineEnd: 4 }}>第{item.line}行</Tag>
-                <Text type="danger">{item.message}</Text>
-              </div>
-            ))}
-          </Space>
-        </Space>
-        <Space size={8} wrap align="center">
-          <Text type="secondary"><HistoryOutlined /> 版本历史（{versions.length}）：</Text>
-          {versions.length === 0 ? (
-            <Text type="secondary">暂无版本</Text>
-          ) : versions.map(version => (
-            <span key={version.id} className="cn-dsl-version-item">
-              <Button
-                type="link"
-                size="small"
-                style={{ padding: 0 }}
-                aria-label={`回看版本 ${version.version_number}`}
-                onClick={() => setViewingVersion(version)}
-              >
-                <Tag style={{ marginInlineEnd: 4 }}>v{version.version_number}</Tag>
-                {version.comment ? version.comment : formatDateTime(version.created_at)}
-              </Button>
-            </span>
+      {/* 诊断条：编译状态用标签表达，具体错误在标签下方单行横向滚动展开 */}
+      {errorCount > 0 && (
+        <div className="cn-dsl-diag-bar" role="status">
+          <ExperimentOutlined />
+          {diagnostics.map((item, index) => (
+            <div key={`${item.line}-${item.col}-${index}`} className="cn-dsl-diag-item">
+              <Tag color="error" style={{ marginInlineEnd: 4 }}>第{item.line}行</Tag>
+              <Text type="danger">{item.message}</Text>
+            </div>
           ))}
-        </Space>
-      </div>
+        </div>
+      )}
 
-      <div style={{ display: 'flex', gap: 12, flex: 1, minHeight: 0, flexWrap: 'wrap' }}>
-        {/* 左：源码 */}
-        <div style={{ flex: '1 1 380px', minWidth: 320, display: 'flex', minHeight: 0 }}>
-          <div className="cn-dsl-editor-host" style={{ flex: 1, minHeight: 260, overflow: 'hidden' }}>
+      {/* 左右两栏：编辑器 / 预览各自内置滚动，页面不整体滚动 */}
+      <div className="cn-dsl-workbench">
+        <div className="cn-dsl-pane cn-dsl-pane--editor">
+          <div className="cn-dsl-editor-host">
             {isLoading ? <Skeleton active /> : (
               <DslEditor
                 value={content}
@@ -285,37 +312,12 @@ export default function DesignEditorPage() {
           </div>
         </div>
 
-        {/* 右：预览 + 参数面板 */}
-        <div style={{ flex: '1 1 420px', minWidth: 320, display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
-          <div className="cn-dsl-preview-host" style={{ flex: 1, minHeight: 300, position: 'relative' }}>
+        <div className="cn-dsl-pane cn-dsl-pane--preview">
+          <div className="cn-dsl-preview-host">
             <Suspense fallback={<Skeleton active style={{ height: '100%' }} />}>
               <PreviewCanvas ir={preview.ir} />
             </Suspense>
           </div>
-          {params.length > 0 && (
-            <div className="cn-dsl-params">
-              <Space size={12} wrap align="center">
-                <Text type="secondary">参数：</Text>
-                {params.map(param => (
-                  <Space key={param.name} size={4}>
-                    <Text code>{param.name}</Text>
-                    <InputNumber
-                      size="small"
-                      value={overrides[param.name] ?? param.value}
-                      step={1}
-                      aria-label={`参数 ${param.name}`}
-                      onChange={value => onParamChange(param.name, value)}
-                    />
-                  </Space>
-                ))}
-                {Object.keys(overrides).length > 0 && (
-                  <Button size="small" icon={<RollbackOutlined />} onClick={() => setOverrides({})}>
-                    重置
-                  </Button>
-                )}
-              </Space>
-            </div>
-          )}
           <DesignConstraintsPanel
             constraints={preview.ir?.constraints ?? []}
             onReveal={(line) => setSearchParams(
@@ -330,33 +332,101 @@ export default function DesignEditorPage() {
         </div>
       </div>
 
-      {/* 版本回看抽屉：该版原文 + 恢复入口（viewer 只读） */}
+      {/* 参数抽屉：顶部「参数」按钮打开，改参即重编译 */}
       <Drawer
-        title={`版本回看：v${viewingVersion?.version_number ?? ''}`}
-        open={viewingVersion != null}
-        size={520}
-        onClose={() => setViewingVersion(null)}
-        footer={
-          viewingVersion != null && !isViewer ? (
-            <Space>
-              <Popconfirm
-                title={`以 v${viewingVersion.version_number} 原文重新编译并保存为新版本？`}
-                onConfirm={() => restore.mutate()}
-              >
-                <Button type="primary" danger icon={<RollbackOutlined />} loading={restore.isPending}>
-                  恢复此版本
-                </Button>
-              </Popconfirm>
-              <Button onClick={() => setViewingVersion(null)}>关闭</Button>
-            </Space>
-          ) : null
-        }
+        title="参数"
+        open={paramsOpen}
+        size={380}
+        onClose={() => setParamsOpen(false)}
+        extra={overrideCount > 0 ? (
+          <Button size="small" icon={<RollbackOutlined />} onClick={() => setOverrides({})}>
+            重置
+          </Button>
+        ) : null}
       >
-        {viewingVersion != null && (
+        {params.length === 0 ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前设计没有参数" />
+        ) : (
+          <div className="cn-dsl-param-list">
+            {params.map(param => {
+              const overridden = overrides[param.name] != null
+              return (
+                <div key={param.name} className="cn-dsl-param-row">
+                  <div className="cn-dsl-param-name">
+                    <Text code>{param.name}</Text>
+                    <Text type="secondary" className="cn-dsl-param-default">
+                      默认 {param.value}
+                    </Text>
+                    {overridden && <Tag color="processing" className="cn-dsl-status-tag">已覆盖</Tag>}
+                  </div>
+                  <InputNumber
+                    size="small"
+                    value={overrides[param.name] ?? param.value}
+                    step={1}
+                    aria-label={`参数 ${param.name}`}
+                    onChange={value => onParamChange(param.name, value)}
+                  />
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Drawer>
+
+      {/* 版本历史侧栏：列表 → 选中版本回看原文 + 恢复入口（viewer 只读） */}
+      <Drawer
+        title={viewingVersion
+          ? `版本回看：v${viewingVersion.version_number}`
+          : `版本历史（${versions.length}）`}
+        open={historyOpen}
+        size={460}
+        onClose={closeHistory}
+        footer={viewingVersion != null && !isViewer ? (
+          <Space>
+            <Popconfirm
+              title={`以 v${viewingVersion.version_number} 原文重新编译并保存为新版本？`}
+              onConfirm={() => restore.mutate()}
+            >
+              <Button type="primary" danger icon={<RollbackOutlined />} loading={restore.isPending}>
+                恢复此版本
+              </Button>
+            </Popconfirm>
+            <Button onClick={() => setViewingVersion(null)}>返回列表</Button>
+          </Space>
+        ) : null}
+      >
+        {viewingVersion == null ? (
+          versions.length === 0 ? (
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无版本" />
+          ) : (
+            <div className="cn-dsl-version-list">
+              {versions.map(version => (
+                <Button
+                  key={version.id}
+                  type="text"
+                  block
+                  className="cn-dsl-version-row"
+                  aria-label={`回看版本 ${version.version_number}`}
+                  onClick={() => setViewingVersion(version)}
+                >
+                  <Tag style={{ marginInlineEnd: 8 }}>v{version.version_number}</Tag>
+                  <span className="cn-dsl-version-text">
+                    {version.comment ? version.comment : '未填写变更说明'}
+                  </span>
+                  <Text type="secondary" className="cn-dsl-version-time">
+                    {formatDateTime(version.created_at)}
+                  </Text>
+                </Button>
+              ))}
+            </div>
+          )
+        ) : (
           <>
             <Space size={8} wrap style={{ marginBottom: 8 }}>
               <Tag>第 {viewingVersion.version_number} 版</Tag>
-              <Text type="secondary">{formatDateTime(viewingDetail?.created_at ?? viewingVersion.created_at)}</Text>
+              <Text type="secondary">
+                {formatDateTime(viewingDetail?.created_at ?? viewingVersion.created_at)}
+              </Text>
             </Space>
             {viewingDetail?.comment && <Text type="secondary">备注：{viewingDetail.comment}</Text>}
             {viewingDetail && viewingDetail.dependencies.length > 0 && (
@@ -372,11 +442,7 @@ export default function DesignEditorPage() {
             {viewingLoading ? (
               <Skeleton active />
             ) : (
-              <pre
-                data-testid="design-version-content"
-                className="cn-dsl-version-pre"
-                style={{ whiteSpace: 'pre-wrap', margin: 0 }}
-              >
+              <pre data-testid="design-version-content" className="cn-dsl-version-pre">
                 {viewingDetail?.content ?? ''}
               </pre>
             )}

@@ -161,27 +161,29 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.queryByTestId('tables-page-stub')).toBeNull()
     })
 
-    it('顶栏三区布局：左（品牌+工作区+一级导航）→ 中（搜索）→ 右（操作区），右区维持现状', async () => {
+    it('顶栏布局：搜索框位于右侧操作按钮左侧，主页 / 工作区位置一致（0081 C1 调整）', async () => {
         renderLayout(mockUser)
 
         await waitFor(() => {
             expect(screen.getByRole('button', { name: /测试工作区/ })).toBeVisible()
         })
 
-        // 三区容器依序渲染（需求 0081 C1/C2）
+        // 左区（品牌 + 工作区 + 一级导航）先于右区（需求 0081 C1）
         const left = document.querySelector('.cn-header-left')
-        const search = document.querySelector('.cn-header-search')
         const right = document.querySelector('.cn-header-right')
         expect(left).not.toBeNull()
-        expect(search).not.toBeNull()
         expect(right).not.toBeNull()
-        expect(left!.compareDocumentPosition(search!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        expect(search!.compareDocumentPosition(right!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-        // 一级模块导航落在左区；右区仍是操作按钮（大模型/帮助/管理台/头像）
+        expect(left!.compareDocumentPosition(right!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         expect(left!.querySelector('[data-testid="ws-module-nav"]')).not.toBeNull()
-        expect(right!.querySelector('[data-testid="llm-settings-btn"]')).not.toBeNull()
 
-        // 右区 DOM 顺序：管理台 → 用户头像区（维持现状，C2）
+        // 搜索框收进右区首位（不再占中区剩余空间，避免主页 / 工作区两视图位置漂移）
+        const search = right!.querySelector('.cn-header-search')
+        expect(search).not.toBeNull()
+        expect(left!.querySelector('.cn-header-search')).toBeNull()
+        expect(search!.compareDocumentPosition(screen.getByTestId('llm-settings-btn'))
+            & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+        // 右区操作按钮 DOM 顺序不变：大模型 → 帮助 → 管理台 → 用户头像（C2）
         const adminBtn = screen.getByRole('button', { name: /管理台/ })
         const userTrigger = screen.getByTestId('user-menu-trigger')
         expect(adminBtn.compareDocumentPosition(userTrigger) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
