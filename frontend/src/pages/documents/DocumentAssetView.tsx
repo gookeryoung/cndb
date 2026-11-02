@@ -213,7 +213,12 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
       {viewer}
       {presenting && blob && (
         <Suspense fallback={null}>
-          <PptxSlideshow blob={blob} title={doc.title} onClose={() => setPresenting(false)} />
+          <PptxSlideshow
+            blob={blob}
+            title={doc.title}
+            storageKey={`pptx-present-page:${workspaceId}:${doc.id}`}
+            onClose={() => setPresenting(false)}
+          />
         </Suspense>
       )}
     </div>

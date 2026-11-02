@@ -126,7 +126,9 @@ SUPPORTED_SUFFIXES = CONVERTIBLE_SUFFIXES + tuple(ASSET_FORMATS)
 **PPTX 在线预览与全屏放映（2026-11-03 增强）**：`.pptx` 原件在浏览器内用 `pptx-preview` 解析 zip 并渲染幻灯片
 （阅读器 list 模式，宽度跟随内容区；放映 slide 模式，按幻灯片实际比例缩放并适配视口），支持文本 / 形状 / 图片等常见版式；
 阅读器顶部「放映」进入全屏（Fullscreen API 不可用时退化为固定覆盖层），← / ↑ / PageUp 上一页、→ / ↓ / 空格 / PageDown
-下一页、Esc / 退出按钮关闭；幻灯片左右两侧为透明点击区（左侧上一页 / 右侧下一页，边界禁用）。旧版二进制 `.ppt` 与 Excel 仍回落下载卡。渲染库（含 jszip / echarts 依赖）整块
+下一页、Esc / 退出按钮关闭；幻灯片左右两侧为透明点击区（左侧上一页 / 右侧下一页，边界禁用）。底部控制条提供
+临时标记笔（canvas 自由绘制，换页 / 退出即清空，不写回原件）与 0.5x–2.5x 缩放（整个舞台缩放，标记随缩放对齐）；
+放映页码按文档写入 localStorage，退出后再次进入从上次放映页继续。旧版二进制 `.ppt` 与 Excel 仍回落下载卡。渲染库（含 jszip / echarts 依赖）整块
 `React.lazy` 为独立 chunk，只在打开 .pptx 时下载，不进文档页首屏；解析失败（损坏 / 加密 / 非标准 zip）显示下载提示。
 
 ### 6. 边界与例外
