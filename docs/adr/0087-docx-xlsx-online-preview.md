@@ -141,9 +141,9 @@ def build_office_preview(content_type: str, mime: str, data: bytes) -> str: ... 
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/services/importers/formats.py`、`src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/routers/file_import.py`、`frontend/src/components/Document/docFormat.ts`、`frontend/src/pages/documents/DocumentImportModal.tsx`、`frontend/src/api/documents.ts` | `tests/test_documents_asset_import.py`、`frontend/src/pages/documents/DocumentImportModal.test.tsx`、`frontend/src/components/Document/docFormat.test.ts` | `63cad891` |
-| P1 | 已落地 | `src/cndb/plugins/documents/services/preview/office.py`、`src/cndb/plugins/documents/routers/documents.py`、`frontend/src/pages/documents/DocumentAssetView.tsx` | `tests/test_documents_asset_import.py`、`frontend/src/pages/documents/DocumentAssetView.test.tsx` | `63cad891` |
-| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx`、`CONTEXT.md`、`CHANGELOG.md` | `CONTEXT.md`、`CHANGELOG.md` | `63cad891` |
+| P0 | 已落地 | `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/services/importers/formats.py`、`src/cndb/plugins/documents/services/importers/reader.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/routers/file_import.py`、`frontend/src/components/Document/docFormat.ts`、`frontend/src/pages/documents/DocumentImportModal.tsx`、`frontend/src/api/documents.ts` | `tests/test_documents_asset_import.py`、`frontend/src/pages/documents/DocumentImportModal.test.tsx`、`frontend/src/components/Document/docFormat.test.ts` | `c92cb4f2` |
+| P1 | 已落地 | `src/cndb/plugins/documents/services/preview/office.py`、`src/cndb/plugins/documents/routers/documents.py`、`frontend/src/pages/documents/DocumentAssetView.tsx` | `tests/test_documents_asset_import.py`、`frontend/src/pages/documents/DocumentAssetView.test.tsx` | `c92cb4f2` |
+| P2 | 已落地 | `frontend/src/pages/help/content/tutorials.tsx`、`CONTEXT.md`、`CHANGELOG.md` | `CONTEXT.md`、`CHANGELOG.md` | `c92cb4f2` |
 
 ## 交接
 
