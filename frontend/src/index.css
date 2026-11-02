@@ -6402,11 +6402,40 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   align-items: start;
 }
 
-/* 行：整行可点；选中项以品牌色左边线标识（非选中行留同宽透明边避免选中时跳动） */
+/* 行：整行可点；选中项以品牌色左边线标识（非选中行留同宽透明边避免选中时跳动）。
+ * 紧凑口径对齐文档列表：上下内边距 6px、标题行高 1.4、描述行降一档字号 + 行高 1.4；
+ * Meta 的 avatar（启用开关 / 图标）由通用 flex-start 改为中心对齐，
+ * 避免两行文案把行撑高后开关 / 图标贴顶。 */
 .cn-qc-row {
-  padding: var(--cn-space-md) var(--cn-space-lg);
+  padding: var(--cn-space-sm) var(--cn-space-lg);
   border-inline-start: 1px solid transparent;
   transition: background-color 0.15s ease;
+}
+
+.cn-qc-row .cn-list-meta {
+  align-items: center;
+}
+
+.cn-qc-row .cn-list-meta-title {
+  line-height: 1.4;
+}
+
+.cn-qc-row .cn-list-meta-description {
+  font-size: var(--cn-text-xs);
+  line-height: 1.4;
+}
+
+/* antd Typography 自带 14px / 22px 行高，会覆盖上方容器口径把行重新撑高，
+ * 这里让它继承：标题 14px 行高 1.4、描述降为 12px */
+.cn-qc-row .ant-typography {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* 行内状态标签同步收一档，避免 22px 的 Tag 反过来撑高标题行 */
+.cn-qc-row .ant-tag {
+  padding-inline: var(--cn-space-sm);
+  line-height: 18px;
 }
 
 .cn-qc-row + .cn-qc-row {
@@ -6431,9 +6460,151 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: var(--cn-space-3xl) var(--cn-space-lg);
 }
 
+/* ─────────────── 质量检查运行详情（概要条 + 左执行结果 / 右发现物） ───────────────
+ * 与规则页同一套页头 / 方盒语言：概要条用等宽单元格 + 1px 描边与内部分隔线；
+ * 双栏两侧都是 flush SectionBox，外框由盒子承担，行间分隔线满宽绘制。 */
+
+.cn-qc-run-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container);
+  overflow: hidden;
+}
+
+.cn-qc-run-stat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+  min-width: 0;
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border-inline-start: 1px solid var(--cn-border-soft);
+}
+
+.cn-qc-run-stat:first-child {
+  border-inline-start: none;
+}
+
+.cn-qc-run-stat-label {
+  font-size: var(--cn-text-2xs);
+  line-height: 1.2;
+  color: var(--cn-text-secondary);
+  white-space: nowrap;
+}
+
+.cn-qc-run-stat-value.ant-typography {
+  font-size: var(--cn-text-md);
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 左栏定宽收纳 job / step 结论树，右栏吃掉剩余宽度展示发现物（与规则页同一分割口径） */
+.cn-qc-run-split {
+  display: grid;
+  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+  gap: var(--cn-space-md);
+  align-items: start;
+}
+
+/* job 折叠头：ghost Collapse 去外框，行分隔线由本类补；上下内边距与规则行一致（6px） */
+.cn-qc-run-jobs .ant-collapse-item {
+  border-bottom: 1px solid var(--cn-border-soft);
+}
+
+.cn-qc-run-jobs .ant-collapse-item:last-child {
+  border-bottom: none;
+}
+
+.cn-qc-run-jobs .ant-collapse-header {
+  align-items: center !important;
+  padding: var(--cn-space-sm) var(--cn-space-lg) !important;
+}
+
+.cn-qc-run-jobs .ant-collapse-header-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.cn-qc-run-jobs .ant-collapse-content-box {
+  padding: 0 !important;
+}
+
+.cn-qc-run-job-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-md);
+  width: 100%;
+  min-width: 0;
+}
+
+.cn-qc-run-job-meta.ant-typography {
+  flex: none;
+  font-size: var(--cn-text-2xs);
+}
+
+/* step 行：缩进一格表达层级，行间用满宽细线分隔；描述压到与规则行一致的 12px */
+.cn-qc-run-step {
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  padding-inline-start: var(--cn-space-2xl);
+  border-top: 1px solid var(--cn-border-soft);
+}
+
+.cn-qc-run-step .cn-list-meta-title {
+  margin-block-end: var(--cn-space-hairline);
+}
+
+/* 让 Typography 继承行内字号：描述 12px、标题保持 14px，不被 antd 默认 14px 反向覆盖 */
+.cn-qc-run-step .ant-typography {
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.cn-qc-run-step .cn-list-meta-description {
+  font-size: var(--cn-text-xs);
+  line-height: 1.4;
+}
+
+.cn-qc-run-step-empty.ant-typography {
+  display: block;
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  padding-inline-start: var(--cn-space-2xl);
+  font-size: var(--cn-text-xs);
+}
+
+/* 发现物描述含 check / target / locator，长 JSON 允许断行不撑破盒子 */
+.cn-qc-run-finding .cn-list-meta-description {
+  word-break: break-word;
+}
+
+/* 分页贴盒子底边：flush 盒体无内边距，footer 自行补横向留白并与末行用分隔线隔开 */
+.cn-qc-run-findings .cn-box-foot {
+  margin-top: 0;
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  justify-content: flex-end;
+  border-top: 1px solid var(--cn-border-soft);
+}
+
 @media (max-width: 1023.98px) {
-  .cn-qc-split {
+  .cn-qc-split,
+  .cn-qc-run-split {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 窄屏概要继续紧凑：6 格折成 3 + 3 两行，行首去左分隔线、第二行补上分隔线 */
+@media (max-width: 767.98px) {
+  .cn-qc-run-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cn-qc-run-stat:nth-child(3n + 1) {
+    border-inline-start: none;
+  }
+
+  .cn-qc-run-stat:nth-child(n + 4) {
+    border-top: 1px solid var(--cn-border-soft);
   }
 }
 

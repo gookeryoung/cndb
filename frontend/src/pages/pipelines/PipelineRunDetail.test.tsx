@@ -203,4 +203,34 @@ describe('PipelineRunDetail 运行详情', () => {
     // 不跳回工作区级 /pipelines（数据表域）
     expect(await screen.findByTestId('list-stub')).toHaveTextContent('/w/10/documents/pipelines')
   })
+
+  it('采用规则页同款页头与「概要条 + 双栏方盒」布局', async () => {
+    defaultHandlers()
+    const { container } = renderPage()
+
+    await screen.findByText('空值巡检')
+    expect(screen.getByTestId('pipeline-run-detail')).toBeInTheDocument()
+    expect(container.querySelector('.cn-page-head')).not.toBeNull()
+    expect(screen.getByTestId('qc-jobs-box')).toBeInTheDocument()
+    expect(screen.getByTestId('qc-findings-box')).toBeInTheDocument()
+    // 概要条：Job / Step / 严重度 / 耗时单元格
+    expect(container.querySelector('.cn-qc-run-summary')).not.toBeNull()
+    expect(screen.getByText('Job')).toBeInTheDocument()
+    expect(screen.getByText('1/1')).toBeInTheDocument()
+    expect(screen.getByText('120 ms')).toBeInTheDocument()
+  })
+
+  it('没有 job 记录时展示执行结果空态', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/pipeline-runs/71', () => HttpResponse.json({
+        ...RUN,
+        stats: { ...RUN.stats, jobs: [], jobs_total: 0, jobs_done: 0, steps_total: 0 },
+      })),
+      http.get('/api/v1/workspaces/10/pipeline-runs/71/findings', () =>
+        HttpResponse.json({ total: 0, items: [] })),
+    )
+    renderPage()
+
+    expect(await screen.findByText('暂无 job 执行记录')).toBeInTheDocument()
+  })
 })

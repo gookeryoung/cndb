@@ -3,7 +3,7 @@
  *
  * 覆盖用户拍板的验收链路：
  * 1) 仅勾「文档 + 设计」的工作区：落地 /design，顶栏一级导航不含数据表，
- *    二级页签不含数据分析 / 数据同步，文档质量检查在文档区胶囊页签；
+ *    二级页签不含数据分析 / 数据同步，文档质量检查在文档区胶囊页签，设计模块页签行无质量检查；
  * 2) 质量检查页：仅勾「设计」的工作区检查动作目录为空时给出「暂无可用检查动作」提示
  *    （design 域动作后续提供；文档域已有检查动作，故需独立的设计域工作区）；
  *    文档模块的质量检查入口在文档区胶囊页签（/documents/pipelines），只呈现 document/* 规则，
@@ -50,7 +50,7 @@ test.afterAll(async ({ request }: { request: APIRequestContext }) => {
 });
 
 test.describe("工作区模块勾选与导航门控", () => {
-  test("仅勾文档+设计：落地 /design，导航按模块收敛且质量检查恒显", async ({ page }) => {
+  test("仅勾文档+设计：落地 /documents，导航按模块收敛且设计段无质量检查", async ({ page }) => {
     await page.goto(`/w/${wid}`);
     // 落地段 = 第一个可用模块：无 tables → documents
     await expect(page).toHaveURL(new RegExp(`/w/${wid}/documents`));
@@ -65,6 +65,12 @@ test.describe("工作区模块勾选与导航门控", () => {
     await expect(page.getByTestId("document-tab-pipelines")).toBeVisible();
     await expect(page.getByRole("tab", { name: /数据分析/ })).toHaveCount(0);
     await expect(page.getByRole("tab", { name: /数据同步/ })).toHaveCount(0);
+
+    // 切到设计模块：页签行不再渲染质量检查（2026-11-02 用户口径），设计区胶囊页签承接
+    await nav.getByTestId("ws-nav-design").click();
+    await expect(page).toHaveURL(new RegExp(`/w/${wid}/design`));
+    await expect(page.getByRole("tab", { name: /质量检查/ })).toHaveCount(0);
+    await expect(page.getByTestId("design-tab-structure")).toHaveAttribute("aria-selected", "true");
   });
 
   test("未开放段自动重定向到落地段", async ({ page }) => {

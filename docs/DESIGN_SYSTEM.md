@@ -108,7 +108,7 @@
 | `.cn-page-head` / `-main` / `-icon` / `-text` / `-title` / `-sub` / `-meta` / `-actions` | 紧凑页头：图标 + 标题 + 单行副标题（长文案由 `-meta` 省略、悬停看全）+ 右侧主操作；窄屏操作区独占整行 |
 | `.cn-box` / `-head` / `-icon` / `-title` / `-extra` / `-body` / `-foot` / `-hint` | 分区方盒：1px 描边 + 主题圆角 + 浅底标题条，无投影；标题过长自动省略 |
 | `.cn-box--flush > .cn-box-body` | 内容区去内边距与间距，专供「带边框列表」—— 外框由盒子承担，行分隔线满宽，避免双层描边 |
-| `.cn-qc-split` / `.cn-qc-row` / `.cn-qc-row--selectable` / `.cn-qc-row--active` / `.cn-qc-empty` | 质量检查双栏与行态：选中行浅底 + 品牌色左边线；窄屏（≤1023.98px）单列堆叠 |
+| `.cn-qc-split` / `.cn-qc-row` / `.cn-qc-row--selectable` / `.cn-qc-row--active` / `.cn-qc-empty` | 质量检查双栏与行态：选中行浅底 + 品牌色左边线；行上下内边距 6px、行内 Meta 垂直居中（开关 / 图标与标题 + 描述中线对齐）、标题行高 1.4、描述 12px、状态标签行高 18px；窄屏（≤1023.98px）单列堆叠 |
 
 新增带边框列表时优先复用 `.cn-box--flush` + 行类，不要另起「外层卡片 + 内层 List 边框」的双层描边。
 
