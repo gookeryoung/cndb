@@ -15,7 +15,7 @@ classifiers = [
 dependencies = [
     # 0.126+ 的 fastapi.types 从 pydantic.main 导入 IncEx（pydantic>=2.7 才运行时可用），
     # 与 Windows 上 pydantic<2.7 冲突，钉 0.125.x
-    "fastapi>=0.115.0,<0.126.0; sys_platform == 'win32'",
+    "fastapi>=0.115.0,<0.163.0; sys_platform == 'win32'",
     "fastapi>=0.115.0; sys_platform != 'win32'",
     "fastapi-offline>=1.7.0",
     # 与 pydantic <2.7 对齐（Win7 兼容）
