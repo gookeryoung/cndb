@@ -786,19 +786,20 @@ def preview_document_asset(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Response:
-    """MHTML 原件在线预览（需求 0064）：返回自包含 HTML.
+    """原件在线预览：MHTML（需求 0064）/ Excel / Word（ADR 0087）返回自包含 HTML.
 
-    - 仅 ``content_type=mhtml`` 的原件族文档可用，其余 400；
+    - 仅 ``content_type ∈ {mhtml, xlsx, word}`` 的原件族文档可用，其余 400；
     - 权限与 ``/asset`` 同源：工作区成员 + 文档可见性；
-    - 复用 ADR 0049 解析链路：根 HTML 原样保留（内联样式保留），命中素材索引的
+    - MHTML 复用 ADR 0049 解析链路：根 HTML 原样保留（内联样式保留），命中素材索引的
       ``<img src>`` 内联为 ``data:`` URI，未命中引用保留原样；
-    - 浏览器不渲染 ``multipart/related`` 原件，预览必须转为自包含 HTML；
-    - 响应加 ``Content-Security-Policy: sandbox``：MHTML 来自外部网页存档，
-      视为不可信内容，即使直接打开该 URL 脚本也不执行。
+    - Excel / Word 复用 ``services/preview/office``（openpyxl / python-docx）渲染为自包含 HTML，
+      旧版二进制 ``.xls`` / ``.doc`` 一律 400（保持下载查看）；
+    - 响应加 ``Content-Security-Policy: sandbox``：原件来自外部，视为不可信内容，
+      即使直接打开该 URL 脚本也不执行。
     """
     _require_member(db, workspace_id, current_user)
     doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
-    if doc.content_type != "mhtml":
+    if doc.content_type not in ("mhtml", "xlsx", "word"):
         raise BadRequestError("该文档类型不支持在线预览")
     if not doc.asset_file_key:
         raise NotFoundError("该文档没有原件")
@@ -809,13 +810,21 @@ def preview_document_asset(
     if not path.is_file():
         raise NotFoundError("原件不存在或已被清理")
 
-    from cndb.plugins.documents.services.importers.errors import UnsupportedImport
-    from cndb.plugins.documents.services.importers.mhtml import build_preview_html
+    if doc.content_type == "mhtml":
+        from cndb.plugins.documents.services.importers.errors import UnsupportedImport
+        from cndb.plugins.documents.services.importers.mhtml import build_preview_html
 
-    try:
-        html = build_preview_html(path.read_bytes())
-    except UnsupportedImport as exc:
-        raise BadRequestError(f"MHTML 原件无法解析：{exc}") from exc
+        try:
+            html = build_preview_html(path.read_bytes())
+        except UnsupportedImport as exc:
+            raise BadRequestError(f"MHTML 原件无法解析：{exc}") from exc
+    else:
+        from cndb.plugins.documents.services.preview import UnsupportedPreview, build_office_preview
+
+        try:
+            html = build_office_preview(doc.content_type, doc.asset_mime, path.read_bytes())
+        except UnsupportedPreview as exc:
+            raise BadRequestError(f"原件无法在线预览：{exc}") from exc
     return Response(
         content=html,
         media_type="text/html",

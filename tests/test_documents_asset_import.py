@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import base64
+import datetime as dt
+import io
 import quopri
 import struct
 import zlib
@@ -20,6 +22,7 @@ from cndb.core.config import settings
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.services.importers import formats, reader
 from cndb.plugins.documents.services.importers.errors import UnsupportedImport
+from cndb.plugins.documents.services.preview import office as office_preview
 from cndb.plugins.files.models import FileOwner
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
 
@@ -47,6 +50,48 @@ def _png_bytes() -> bytes:
 
 
 PNG_BYTES = _png_bytes()
+
+
+def _xlsx_bytes() -> bytes:
+    """构造真实 xlsx：两个工作表（含日期 / 数值 / 空表）+ 一个会转义的单元格."""
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "销售明细"
+    sheet.append(["月份", "金额", "日期", "备注"])
+    sheet.append(["一月", 1200.5, dt.date(2026, 1, 31), "<script>alert(1)</script>"])
+    sheet.append([])
+    sheet.append(["二月", 99, None, None])
+    workbook.create_sheet("备注空表")
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _docx_bytes(*, with_image: bool = True) -> bytes:
+    """构造真实 docx：标题 / 段落 / 列表 / 表格 / 可选内嵌图片."""
+    from docx import Document as DocxDocument
+
+    document = DocxDocument()
+    document.add_heading("项目说明", level=1)
+    document.add_paragraph("正文段落")
+    document.add_paragraph("第一条", style="List Bullet")
+    document.add_paragraph("第二条", style="List Bullet")
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "字段"
+    table.cell(0, 1).text = "取值"
+    table.cell(1, 0).text = "版本"
+    table.cell(1, 1).text = "v1"
+    if with_image:
+        document.add_picture(io.BytesIO(PNG_BYTES))
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
+
+
+XLSX_REAL_BYTES = _xlsx_bytes()
+DOCX_REAL_BYTES = _docx_bytes()
 
 
 def _login(client, username: str, password: str = "passw0rd") -> dict[str, str]:
@@ -164,6 +209,93 @@ class TestFormats:
             reader.convert_file(reader.UploadedItem("a.png", b""))
 
 
+class TestDocxMode:
+    """Word 处理模式（ADR 0087）：默认转换，archive 原样存档."""
+
+    def test_convert_is_default(self):
+        doc = reader.convert_file(reader.UploadedItem("a.docx", DOCX_REAL_BYTES))
+        assert doc.asset is False
+        assert doc.content_type == "markdown"
+        assert doc.title == "项目说明"
+        assert "正文段落" in doc.body
+
+    def test_archive_stores_original(self):
+        doc = reader.convert_file(reader.UploadedItem("a.docx", DOCX_REAL_BYTES), docx_mode="archive")
+        assert doc.asset is True
+        assert doc.body == ""
+        assert doc.content_type == "word"
+        assert doc.mime.endswith("wordprocessingml.document")
+        assert doc.title == "a"
+
+    def test_unknown_mode_rejected(self):
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("a.docx", DOCX_REAL_BYTES), docx_mode="explode")
+
+
+class TestOfficePreviewRender:
+    """原件预览渲染（ADR 0087 C1/C2/C3/C4）."""
+
+    def test_spreadsheet_html_has_sheets_rows_and_escaped_text(self):
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        assert '<table class="sheet">' in html
+        assert "销售明细" in html
+        assert "备注空表" in html
+        assert "<th>月份</th>" in html
+        assert "1200.5" in html
+        assert "2026-01-31" in html
+        # 来源文本一律转义：单元格里的脚本不能出现在标签里
+        assert "<script>alert(1)</script>" not in html
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+    def test_spreadsheet_empty_sheet(self):
+        # 全空工作表给空态提示，不产出空 <table>
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        assert "（空白工作表）" in html
+        assert '<table class="sheet"></table>' not in html
+
+    def test_spreadsheet_truncated_note(self, monkeypatch):
+        monkeypatch.setattr(office_preview, "MAX_TOTAL_CELLS", 2)
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        assert "已截断" in html
+
+    def test_spreadsheet_broken_bytes(self):
+        with pytest.raises(office_preview.UnsupportedPreview):
+            office_preview.build_spreadsheet_html(b"not-a-zip")
+
+    def test_document_html_structure(self):
+        html = office_preview.build_document_html(DOCX_REAL_BYTES)
+        assert "<h1>项目说明</h1>" in html
+        assert "<p>正文段落</p>" in html
+        assert "<ul><li>第一条</li><li>第二条</li></ul>" in html
+        assert '<table class="docx">' in html and "<th>字段</th>" in html
+        assert "data:image/png;base64," in html
+
+    def test_document_without_image_has_no_data_uri(self):
+        html = office_preview.build_document_html(_docx_bytes(with_image=False))
+        assert "data:image/png;base64," not in html
+
+    def test_document_empty(self):
+        from docx import Document as DocxDocument
+
+        buffer = io.BytesIO()
+        DocxDocument().save(buffer)
+        html = office_preview.build_document_html(buffer.getvalue())
+        assert "没有可见正文" in html
+
+    def test_document_broken_bytes(self):
+        with pytest.raises(office_preview.UnsupportedPreview):
+            office_preview.build_document_html(b"not-a-zip")
+
+    def test_legacy_binary_formats_rejected(self):
+        for mime in ("application/vnd.ms-excel", "application/msword"):
+            with pytest.raises(office_preview.UnsupportedPreview):
+                office_preview.build_office_preview("xlsx", mime, XLSX_REAL_BYTES)
+
+    def test_unknown_content_type_rejected(self):
+        with pytest.raises(office_preview.UnsupportedPreview):
+            office_preview.build_office_preview("pdf", "application/pdf", PDF_BYTES)
+
+
 # ── 接口层 ──
 
 
@@ -190,6 +322,52 @@ class TestAnalyzeAssets:
 
 
 class TestImportAssets:
+    def test_import_docx_archive_and_read_back(self, client, ws, auth):
+        stats = _import_one(
+            client,
+            ws.id,
+            auth,
+            "说明书.docx",
+            DOCX_REAL_BYTES,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            docx_mode="archive",
+        )
+        assert stats["assets"] == 1
+        doc = _doc(client, ws.id, auth)
+        assert doc["content_type"] == "word"
+        assert doc["asset_mime"].endswith("wordprocessingml.document")
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset", headers=auth)
+        assert r.status_code == 200
+        assert r.content == DOCX_REAL_BYTES
+
+    def test_import_docx_convert_keeps_markdown(self, client, ws, auth):
+        _import_one(
+            client,
+            ws.id,
+            auth,
+            "说明书.docx",
+            DOCX_REAL_BYTES,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        doc = _doc(client, ws.id, auth)
+        assert doc["content_type"] == "markdown"
+
+    def test_invalid_docx_mode_rejected(self, client, ws, auth):
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(("说明书.docx", DOCX_REAL_BYTES, "application/octet-stream")),
+            data={"paths": "说明书.docx", "docx_mode": "explode"},
+            headers=auth,
+        )
+        assert r.status_code == 400
+        r = client.post(
+            ANALYZE.format(ws=ws.id),
+            files=_files(("说明书.docx", DOCX_REAL_BYTES, "application/octet-stream")),
+            data={"paths": "说明书.docx", "docx_mode": "explode"},
+            headers=auth,
+        )
+        assert r.status_code == 400
+
     def test_import_pdf_and_read_back(self, client, ws, auth):
         stats = _import_one(client, ws.id, auth, "报告.pdf", PDF_BYTES, "application/pdf")
         assert stats["created"] == 1
@@ -451,6 +629,98 @@ class TestMhtmlPreviewEndpoint:
         db.commit()
         member_auth = _login(client, member.username)
         # 草稿态对非创建者不可见 → 预览同样 404
+        assert client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=member_auth).status_code == 404
+        published = client.patch(DOCS.format(ws=ws.id) + f"/{doc['id']}", json={"status": "published"}, headers=auth)
+        assert published.status_code == 200, published.text
+        assert client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=member_auth).status_code == 200
+
+
+class TestOfficePreviewEndpoint:
+    """Excel / Word 预览端点（ADR 0087）：自包含 HTML + 沙箱响应头."""
+
+    def _import(self, client, ws_id: int, auth, name: str, data: bytes, mime: str, **form) -> dict:
+        _import_one(client, ws_id, auth, name, data, mime, **form)
+        return _doc(client, ws_id, auth)
+
+    def test_xlsx_preview_renders_table(self, client, ws, auth):
+        doc = self._import(
+            client,
+            ws.id,
+            auth,
+            "明细.xlsx",
+            XLSX_REAL_BYTES,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=auth)
+        assert r.status_code == 200, r.text
+        assert r.headers["content-type"].startswith("text/html")
+        assert r.headers["content-security-policy"] == "sandbox"
+        assert r.headers["x-content-type-options"] == "nosniff"
+        assert r.headers["content-disposition"].startswith("inline")
+        assert '<table class="sheet">' in r.text
+        assert "销售明细" in r.text
+
+    def test_docx_preview_renders_document(self, client, ws, auth):
+        doc = self._import(
+            client,
+            ws.id,
+            auth,
+            "说明书.docx",
+            DOCX_REAL_BYTES,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            docx_mode="archive",
+        )
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=auth)
+        assert r.status_code == 200, r.text
+        assert "<h1>项目说明</h1>" in r.text
+        assert "data:image/png;base64," in r.text
+
+    def test_legacy_xls_preview_rejected(self, client, ws, auth):
+        # 旧版 .xls 属 xlsx 渲染族但 MIME 为二进制 Excel：保持下载卡（400）
+        doc = self._import(client, ws.id, auth, "老表.xls", XLSX_BYTES, "application/vnd.ms-excel")
+        assert doc["content_type"] == "xlsx"
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=auth)
+        assert r.status_code == 400
+
+    def test_broken_xlsx_preview_returns_400(self, client, ws, auth):
+        doc = self._import(
+            client,
+            ws.id,
+            auth,
+            "坏表.xlsx",
+            XLSX_BYTES,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=auth)
+        assert r.status_code == 400
+
+    def test_preview_missing_original_returns_404(self, client, ws, auth):
+        doc = self._import(
+            client,
+            ws.id,
+            auth,
+            "明细.xlsx",
+            XLSX_REAL_BYTES,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        for path in (Path(settings.UPLOAD_DIR) / str(ws.id)).iterdir():
+            path.unlink()
+        r = client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=auth)
+        assert r.status_code == 404
+
+    def test_preview_respects_visibility(self, client, db, ws, auth):
+        doc = self._import(
+            client,
+            ws.id,
+            auth,
+            "明细.xlsx",
+            XLSX_REAL_BYTES,
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        member = _make_user(db, "office_preview_member")
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=member.id, role=WorkspaceRole.EDITOR))
+        db.commit()
+        member_auth = _login(client, member.username)
         assert client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=member_auth).status_code == 404
         published = client.patch(DOCS.format(ws=ws.id) + f"/{doc['id']}", json={"status": "published"}, headers=auth)
         assert published.status_code == 200, published.text

@@ -163,6 +163,7 @@ describe('通用导入弹窗', () => {
       entries: [{ file: expect.any(File), path: '说明.md' }],
       parentId: null,
       mhtmlMode: 'archive',
+      docxMode: 'convert',
     })
   })
 
@@ -198,6 +199,7 @@ describe('通用导入弹窗', () => {
       ],
       parentId: 3,
       mhtmlMode: 'archive',
+      docxMode: 'convert',
     })
     expect(await screen.findByTestId('file-import-picked')).toHaveTextContent('已选择 2 个文件')
   })
@@ -257,6 +259,38 @@ describe('通用导入弹窗', () => {
       WID,
       expect.objectContaining({ importAttachments: true, mhtmlMode: 'convert' }),
     )
+  })
+
+  it('Word 原样存档开关：默认关、切换传 archive 并重解析、导入带 docxMode', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    pick([new File(['PK'], '说明书.docx', { type: 'application/octet-stream' })])
+    await screen.findByTestId('file-import-summary')
+
+    const archiveSwitch = screen.getByTestId('file-import-docx-archive')
+    expect(archiveSwitch).not.toBeChecked()
+
+    fireEvent.click(archiveSwitch)
+    await waitFor(() => expect(documentsApi.fileImportAnalyze).toHaveBeenCalledTimes(2))
+    expect(documentsApi.fileImportAnalyze).toHaveBeenLastCalledWith(
+      WID,
+      expect.objectContaining({ docxMode: 'archive' }),
+    )
+
+    fireEvent.click(screen.getByTestId('file-import-submit'))
+    await waitFor(() => expect(documentsApi.fileImport).toHaveBeenCalledTimes(1))
+    expect(documentsApi.fileImport).toHaveBeenCalledWith(
+      WID,
+      expect.objectContaining({ docxMode: 'archive' }),
+    )
+  })
+
+  it('批次无 Word（如 PDF）时「Word 原样存档」开关禁用', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    pick([new File(['%PDF'], '报告.pdf', { type: 'application/pdf' })])
+    await screen.findByTestId('file-import-summary')
+
+    expect(screen.getByTestId('file-import-docx-archive')).toBeDisabled()
+    expect(screen.getByText('Word 原样存档（仅 docx 支持）')).toBeInTheDocument()
   })
 
   it('批次无 MHTML（如 PDF）时「转Markdown」开关禁用', async () => {

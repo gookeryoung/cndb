@@ -21,6 +21,10 @@ from . import mhtml as mhtml_converter
 from .errors import UnsupportedImport
 from .formats import (
     CONTENT_TYPE_IMAGE,
+    CONTENT_TYPE_WORD,
+    DOCX_ASSET_FORMAT,
+    DOCX_MODE_DEFAULT,
+    DOCX_MODES,
     MAX_ASSET_BYTES,
     MHTML_MODE_DEFAULT,
     MHTML_MODES,
@@ -125,11 +129,13 @@ def convert_file(
     image_sink: ImageSink | None = None,
     local_images: LocalImages | None = None,
     mhtml_mode: str = MHTML_MODE_DEFAULT,
+    docx_mode: str = DOCX_MODE_DEFAULT,
 ) -> ImportedDoc:
     """分派单个文件；不支持 / 损坏 / 超限时抛 ``UnsupportedImport``.
 
     原件族（PDF / Office / 图片）不转换，返回 ``asset=True`` 的结果，由 importer 落盘。
     MHTML 按 ``mhtml_mode`` 分流（0061）：archive 走原件族原样存档，convert 走 ADR 0049 转换。
+    ``.docx`` 按 ``docx_mode`` 分流（0087）：archive 原样存档，convert 走 ADR 0010 转换。
     ``local_images`` 供 HTML 把同批上传的相对路径图片内联为站内附件。
     """
     suffix = normalize_suffix(item.path)
@@ -141,6 +147,13 @@ def convert_file(
     fmt = asset_format(item.path)
     if fmt is not None:
         return _convert_asset(item, suffix, fmt.content_type, fmt.mime)
+
+    if suffix in DOCX_SUFFIXES:
+        if docx_mode not in DOCX_MODES:
+            raise UnsupportedImport(f"不支持的 Word 处理模式：{docx_mode}")
+        if docx_mode == "archive":
+            # 原样存档：不解析、不转换，标记为 Word 原件（0087 C2）
+            return _convert_asset(item, suffix, CONTENT_TYPE_WORD, DOCX_ASSET_FORMAT.mime)
 
     if suffix in MHTML_SUFFIXES:
         # MHTML 单独放宽到 32MB（图片打包进单文件，ADR 0049 D5），先于通用 8MB 检查
@@ -212,6 +225,7 @@ def convert_batch(
     *,
     image_sink: ImageSink | None = None,
     mhtml_mode: str = MHTML_MODE_DEFAULT,
+    docx_mode: str = DOCX_MODE_DEFAULT,
 ) -> tuple[list[ImportedDoc], list[dict[str, str]]]:
     """逐条转换（单条失败只记 skip，不中断整批），返回 ``(成功项, 跳过明细)``.
 
@@ -223,7 +237,15 @@ def convert_batch(
     skipped: list[dict[str, str]] = []
     for item in batch:
         try:
-            docs.append(convert_file(item, image_sink=image_sink, local_images=local_images, mhtml_mode=mhtml_mode))
+            docs.append(
+                convert_file(
+                    item,
+                    image_sink=image_sink,
+                    local_images=local_images,
+                    mhtml_mode=mhtml_mode,
+                    docx_mode=docx_mode,
+                )
+            )
         except UnsupportedImport as exc:
             skipped.append({"path": item.path, "reason": str(exc)})
     return docs, skipped

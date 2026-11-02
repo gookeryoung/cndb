@@ -70,11 +70,22 @@ async def analyze_document_files(
     mhtml_mode: Annotated[
         str, Form(description="MHTML 处理模式：archive=原样存档（默认）/ convert=转 Markdown")
     ] = "archive",
+    docx_mode: Annotated[
+        str, Form(description="Word 处理模式：convert=转 Markdown（默认）/ archive=原样存档")
+    ] = "convert",
 ) -> dict[str, Any]:
     """解析文件批次并返回导入预览（不写任何数据）."""
     _require_member(db, workspace_id, current_user)
     items, invalid = await _collect_items(files, paths)
-    result = importers.analyze_files(db, workspace_id, current_user, items, parent_id=parent_id, mhtml_mode=mhtml_mode)
+    result = importers.analyze_files(
+        db,
+        workspace_id,
+        current_user,
+        items,
+        parent_id=parent_id,
+        mhtml_mode=mhtml_mode,
+        docx_mode=docx_mode,
+    )
     result["total_files"] = len(files)
     _merge_skipped(result, invalid, "skipped")
     return result
@@ -97,6 +108,9 @@ async def import_document_files(
     mhtml_mode: Annotated[
         str, Form(description="MHTML 处理模式：archive=原样存档（默认）/ convert=转 Markdown")
     ] = "archive",
+    docx_mode: Annotated[
+        str, Form(description="Word 处理模式：convert=转 Markdown（默认）/ archive=原样存档")
+    ] = "convert",
 ) -> dict[str, Any]:
     """把文件批次导入为文档树（文件夹 + 文档 + 附件）."""
     _require_member(db, workspace_id, current_user)
@@ -111,6 +125,7 @@ async def import_document_files(
         status=status,
         import_attachments=import_attachments,
         mhtml_mode=mhtml_mode,
+        docx_mode=docx_mode,
     )
     stats["skipped"] += len(invalid)
     stats["total"] += len(invalid)

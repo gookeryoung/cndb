@@ -339,6 +339,9 @@ export interface FileImportEntry {
 /** MHTML 处理模式（0061）：archive=原样存档（默认），convert=转 Markdown */
 export type MhtmlImportMode = 'convert' | 'archive'
 
+/** Word 处理模式（0087）：convert=转 Markdown（默认），archive=原样存档 */
+export type DocxImportMode = 'convert' | 'archive'
+
 export interface FileImportPayload {
   entries: FileImportEntry[]
   /** 导入到哪个文件夹（空 = 根目录） */
@@ -348,6 +351,8 @@ export interface FileImportPayload {
   importAttachments?: boolean
   /** MHTML 处理模式，缺省 archive（原样存档） */
   mhtmlMode?: MhtmlImportMode
+  /** Word 处理模式，缺省 convert（转 Markdown）；archive = 原件存档 + 在线预览 */
+  docxMode?: DocxImportMode
 }
 
 export interface FileImportPreviewItem {
@@ -356,7 +361,7 @@ export interface FileImportPreviewItem {
   folder: string
   /** 源格式后缀，如 .md / .docx / .html */
   suffix: string
-  /** 落库后的渲染族：markdown / pdf / image / xlsx / pptx */
+  /** 落库后的渲染族：markdown / pdf / image / xlsx / pptx / word */
   format: string
   /** true = 原样存档（只读，可预览 / 下载） */
   is_asset: boolean
@@ -424,6 +429,7 @@ function buildFileImportForm(payload: FileImportPayload): FormData {
   }
   if (payload.parentId != null) form.append('parent_id', String(payload.parentId))
   form.append('mhtml_mode', payload.mhtmlMode ?? 'archive')
+  form.append('docx_mode', payload.docxMode ?? 'convert')
   return form
 }
 

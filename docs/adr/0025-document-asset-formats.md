@@ -14,7 +14,7 @@ Related: `plugins/documents/models.py`、`plugins/documents/services/importers/`
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
 | C1 | 需支持 PDF 等格式文件上传 | 导入白名单新增 `.pdf`、`.xlsx/.xls`、`.pptx/.ppt`、`.png/.jpg/.jpeg/.gif/.webp/.svg/.bmp`（用户确认的格式范围）；md / docx / html 沿用 ADR 0010 的转换通道。 |
-| C2 | …上传 | 新格式**原样存档**：原件写入工作区上传目录，`Document` 记录 `asset_file_key` / `asset_mime` / `content_type`；正文区以阅读器呈现（PDF 浏览器原生渲染、图片直出、PPTX 纯前端在线预览，Excel / 旧版 .ppt 给下载卡），不进入 Markdown 编辑器。 |
+| C2 | …上传 | 新格式**原样存档**：原件写入工作区上传目录，`Document` 记录 `asset_file_key` / `asset_mime` / `content_type`；正文区以阅读器呈现（PDF 浏览器原生渲染、图片直出、PPTX 纯前端在线预览；Excel / Word 原件的在线预览见 ADR 0087；旧版 .ppt 给下载卡），不进入 Markdown 编辑器。 |
 | C3 | 在文档树等地方 | 新增 `frontend/src/pages/documents/docFormat.ts` 作为唯一映射；文档树、文档列表、回收站、工作区搜索统一取用。 |
 | C4 | 为不同格式配置不同的图标 | 映射同时给「图标形状 + 配色」（PDF 红 / Word 蓝 / Excel 绿 / PPT 橙 / 图片紫 / Markdown 蓝灰 / 未知灰），不只靠颜色区分。 |
 | C5 | 功能增强…（健壮性） | 沿用 ADR 0010 的批次上限、逐条隔离、冲突三策略、`require_editor`；新增原件读取端点走文档可见性校验（不做「持 key 即可读」的裸链接）；原件文档禁写正文。 |

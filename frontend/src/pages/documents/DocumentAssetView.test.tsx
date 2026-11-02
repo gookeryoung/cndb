@@ -1,4 +1,4 @@
-/** 原件族阅读器测试（ADR 0025）：PDF / 图片 / Office 三种形态 + 失败态. */
+/** 原件族阅读器测试（ADR 0025 / 0087）：PDF / 图片 / Office / 预览失败态. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
@@ -77,7 +77,63 @@ describe('DocumentAssetView 原件阅读器', () => {
     expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('图片')
   })
 
-  it('Excel / 旧版 PPT 给下载卡而不是内联预览', async () => {
+  it('xlsx 走后端 HTML 预览（沙箱 iframe），不再给下载卡', async () => {
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({
+          content_type: 'xlsx',
+          asset_mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          title: '明细',
+        })}
+      />,
+    )
+
+    const frame = await screen.findByTestId('doc-asset-office')
+    expect(frame.tagName).toBe('IFRAME')
+    expect(frame).toHaveAttribute('sandbox', '')
+    expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('Excel')
+    expect(screen.queryByTestId('doc-asset-download-card')).not.toBeInTheDocument()
+    expect(documentsApi.assetPreviewBlob).toHaveBeenCalledWith(7, 31)
+  })
+
+  it('archive 存档的 Word 文档同样走预览 iframe', async () => {
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({
+          content_type: 'word',
+          asset_mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          title: '说明书',
+        })}
+      />,
+    )
+
+    expect((await screen.findByTestId('doc-asset-office')).tagName).toBe('IFRAME')
+    expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('Word')
+    expect(assetSuffix(docOf({ content_type: 'word', asset_mime: '' }))).toBe('docx')
+  })
+
+  it('Office 预览失败退化下载卡（原件仍可下载）', async () => {
+    vi.spyOn(documentsApi, 'assetPreviewBlob').mockRejectedValue(new Error('400'))
+    renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({
+          content_type: 'xlsx',
+          asset_mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          title: '坏表',
+        })}
+      />,
+    )
+
+    const card = await screen.findByTestId('doc-asset-download-card')
+    expect(card).toHaveTextContent('原件无法在线预览')
+    expect(screen.queryByTestId('doc-asset-office')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('doc-asset-error')).not.toBeInTheDocument()
+  })
+
+  it('旧版 .xls / .ppt 给下载卡而不是内联预览', async () => {
     renderProviders(
       <DocumentAssetView
         workspaceId={7}
@@ -86,7 +142,7 @@ describe('DocumentAssetView 原件阅读器', () => {
     )
 
     expect(await screen.findByTestId('doc-asset-download-card')).toHaveTextContent('不支持在线预览')
-    expect(screen.queryByTestId('doc-asset-pdf')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('doc-asset-office')).not.toBeInTheDocument()
     expect(screen.queryByTestId('doc-pptx-present')).not.toBeInTheDocument()
   })
 
@@ -132,6 +188,15 @@ describe('DocumentAssetView 原件阅读器', () => {
 
   it('MIME 缺失时按 content_type 兜底扩展名（assetSuffix 共用于顶栏下载与下载卡）', () => {
     expect(assetSuffix(docOf({ content_type: 'pptx', asset_mime: '', title: '胶片' }))).toBe('pptx')
+    expect(
+      assetSuffix(
+        docOf({
+          content_type: 'xlsx',
+          asset_mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          title: '明细',
+        }),
+      ),
+    ).toBe('xlsx')
     expect(assetSuffix(docOf({}))).toBe('pdf')
     expect(assetSuffix(docOf({ content_type: 'mhtml', asset_mime: 'multipart/related' }))).toBe('')
   })

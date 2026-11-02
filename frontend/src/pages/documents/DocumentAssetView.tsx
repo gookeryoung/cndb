@@ -2,8 +2,8 @@
  *
  * 原件经带鉴权头的接口取回为 blob，再挂 objectURL —— 不用裸链接，
  * 否则未发布草稿的原件会绕过文档可见性。
- * MHTML（0064）：浏览器不渲染 multipart/related 原件，改用后端生成的
- * 自包含预览 HTML，在禁脚本的沙箱 iframe 里渲染；下载仍走原件接口。
+ * MHTML（0064）/ Excel（0087）/ Word archive（0087）：浏览器不渲染这些原件，
+ * 改用后端生成的自包含预览 HTML，在禁脚本的沙箱 iframe 里渲染；下载仍走原件接口。
  * PPTX：纯前端渲染（PptxPreview 懒加载），旧版 .ppt 仍回落下载卡。
  */
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
@@ -38,9 +38,14 @@ export function assetSuffix(doc: DocumentItem): string {
     'image/bmp': 'bmp',
     'application/vnd.ms-excel': 'xls',
     'application/vnd.ms-powerpoint': 'ppt',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
   }
   if (byMime[mime]) return byMime[mime]
-  return doc.content_type === 'xlsx' ? 'xlsx' : doc.content_type === 'pptx' ? 'pptx' : ''
+  if (doc.content_type === 'xlsx') return 'xlsx'
+  if (doc.content_type === 'pptx') return 'pptx'
+  if (doc.content_type === 'word') return 'docx'
+  return ''
 }
 
 export default function DocumentAssetView({ workspaceId, doc }: Props) {
@@ -52,6 +57,10 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
   const isMhtml = doc.content_type === 'mhtml'
   // 仅标准 OOXML .pptx 可纯前端渲染；旧版二进制 .ppt 没有 zip 结构，仍下载查看
   const isPptx = doc.content_type === 'pptx' && suffix === 'pptx'
+  // Excel / Word 预览走后端 HTML：仅标准 .xlsx 与 archive 存档的 .docx；
+  // 旧版二进制 .xls / .doc 保持下载卡（后端也会 400）
+  const isOfficePreview = (doc.content_type === 'xlsx' && suffix === 'xlsx') || doc.content_type === 'word'
+  const needsPreview = isMhtml || isOfficePreview
 
   const assetQuery = useQuery({
     queryKey: ['documents', workspaceId, doc.id, 'asset'],
@@ -59,12 +68,12 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
     retry: false,
   })
 
-  // MHTML 预览与原件下载分开取：预览是转换后的自包含 HTML，不能混用
+  // 预览与原件下载分开取：预览是转换后的自包含 HTML，不能混用
   const previewQuery = useQuery({
     queryKey: ['documents', workspaceId, doc.id, 'asset-preview'],
     queryFn: () => documentsApi.assetPreviewBlob(workspaceId, doc.id),
     retry: false,
-    enabled: isMhtml,
+    enabled: needsPreview,
   })
 
   const blob = assetQuery.data
@@ -89,8 +98,14 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
     return () => URL.revokeObjectURL(url)
   }, [previewBlob])
 
-  const loading = isMhtml ? previewQuery.isLoading : assetQuery.isLoading
-  const failed = isMhtml ? previewQuery.isError || !previewUrl : assetQuery.isError || !objectUrl
+  const loading = needsPreview ? previewQuery.isLoading : assetQuery.isLoading
+  // Office 预览失败（损坏 / 加密）不吞成「原件缺失」：退化为下载卡，原件仍可取
+  const officePreviewFailed = isOfficePreview && (previewQuery.isError || !previewUrl)
+  const failed = isMhtml
+    ? previewQuery.isError || !previewUrl
+    : officePreviewFailed
+      ? false
+      : assetQuery.isError || !objectUrl
 
   const downloadName = useMemo(() => `${doc.title || 'download'}${suffix ? `.${suffix}` : ''}`, [doc.title, suffix])
 
@@ -177,7 +192,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
         </Suspense>
       )
     }
-    if (doc.content_type === 'mhtml') {
+    if (isMhtml) {
       // MHTML 预览（0064 C3）：后端自包含 HTML，沙箱 iframe 渲染——
       // sandbox 空值 = 禁脚本、禁同源、禁表单；网页存档视为不可信内容
       return (
@@ -190,10 +205,27 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
         />
       )
     }
+    if (isOfficePreview && !officePreviewFailed) {
+      // Excel / Word 预览（0087 C1/C3）：后端 openpyxl / python-docx 生成自包含 HTML，
+      // 同样在 sandbox 禁脚本 iframe 内渲染；失败时落到下面的下载卡
+      return (
+        <iframe
+          title={doc.title}
+          src={previewUrl ?? undefined}
+          sandbox=""
+          data-testid="doc-asset-office"
+          style={{ flex: 1, minHeight: 0, width: '100%', border: 'none' }}
+        />
+      )
+    }
     return (
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
-        description={`${fmt.label} 文件不支持在线预览，请下载后查看`}
+        description={
+          isOfficePreview
+            ? `${fmt.label} 原件无法在线预览，请下载后查看`
+            : `${fmt.label} 文件不支持在线预览，请下载后查看`
+        }
         style={{ marginTop: 64 }}
         data-testid="doc-asset-download-card"
       >

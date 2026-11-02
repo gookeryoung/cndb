@@ -5,7 +5,7 @@
  * 1. ``POST /import/files/analyze`` 只解析（本地读取 + 转换）不写库，展示篇数 / 文件夹 / 冲突 / 跳过；
  * 2. ``POST /import/files`` 按确认的冲突策略 / 状态 / 附件开关真正导入。
  *
- * 格式化口径由后端决定（docx / html → Markdown、标题识别、清理多余空白），前端只把「会发生什么」
+ * 格式化口径由后端决定（docx / html → Markdown、标题识别、清理多余空白；docx 可选原件存档），前端只把「会发生什么」
  * 讲清楚：可导入篇数、待建文件夹、同名冲突、被跳过的文件与告警。
  */
 import { useMemo, useRef, useState } from 'react'
@@ -32,6 +32,7 @@ import {
   type FileImportAnalyzeResult,
   type FileImportEntry,
   type FileImportPreviewItem,
+  type DocxImportMode,
   type FileImportResult,
   type MhtmlImportMode,
   type VaultConflictPolicy,
@@ -99,10 +100,14 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const [importAttachments, setImportAttachments] = useState(true)
   /** MHTML 处理模式：默认原样存档，打开后转 Markdown（0061 C6） */
   const [mhtmlMode, setMhtmlMode] = useState<MhtmlImportMode>('archive')
+  /** Word 处理模式：默认转 Markdown（兼容 0010），打开后原件存档 + 在线预览（0087 C2） */
+  const [docxMode, setDocxMode] = useState<DocxImportMode>('convert')
   const [status, setStatus] = useState<'draft' | 'published'>('draft')
 
   /** 批次里是否含 MHTML（.mhtml / .mht）：不含时「转Markdown」开关禁用（仅对 MHTML 生效） */
   const hasMhtml = entries.some(entry => /\.(mhtml|mht)$/i.test(entry.path))
+  /** 批次里是否含 Word（.docx）：不含时「Word 原样存档」开关禁用（仅对 docx 生效） */
+  const hasDocx = entries.some(entry => /\.docx$/i.test(entry.path))
 
   const reset = () => {
     setEntries([])
@@ -117,8 +122,13 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   }
 
   const analyzeMut = useMutation({
-    mutationFn: (payload: { batch: FileImportEntry[]; mode: MhtmlImportMode }) =>
-      documentsApi.fileImportAnalyze(workspaceId, { entries: payload.batch, parentId, mhtmlMode: payload.mode }),
+    mutationFn: (payload: { batch: FileImportEntry[]; mhtmlMode: MhtmlImportMode; docxMode: DocxImportMode }) =>
+      documentsApi.fileImportAnalyze(workspaceId, {
+        entries: payload.batch,
+        parentId,
+        mhtmlMode: payload.mhtmlMode,
+        docxMode: payload.docxMode,
+      }),
     onSuccess: data => {
       setAnalysis(data)
       setConflict('rename')
@@ -140,6 +150,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         status,
         importAttachments,
         mhtmlMode,
+        docxMode,
       }),
     onSuccess: data => {
       setResult(data)
@@ -159,7 +170,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     setEntries(batch)
     setAnalysis(null)
     setResult(null)
-    analyzeMut.mutate({ batch, mode: mhtmlMode })
+    analyzeMut.mutate({ batch, mhtmlMode, docxMode })
   }
 
   /** 切换 MHTML 模式后预览口径随之变化（is_asset / format），已选批次需要重新解析 */
@@ -167,7 +178,16 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     setMhtmlMode(next)
     if (entries.length > 0) {
       setAnalysis(null)
-      analyzeMut.mutate({ batch: entries, mode: next })
+      analyzeMut.mutate({ batch: entries, mhtmlMode: next, docxMode })
+    }
+  }
+
+  /** 切换 Word 模式同样会改变落库渲染族（markdown ↔ word），已选批次需要重新解析 */
+  const changeDocxMode = (next: DocxImportMode) => {
+    setDocxMode(next)
+    if (entries.length > 0) {
+      setAnalysis(null)
+      analyzeMut.mutate({ batch: entries, mhtmlMode, docxMode: next })
     }
   }
 
@@ -365,7 +385,8 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               导入时自动转换为 Markdown 并清理空白；
               PDF、Excel（.xlsx/.xls）、PowerPoint（.pptx/.ppt）与图片（png/jpg/gif/webp/svg/bmp）
               原样存档，导入后在阅读器里预览、可下载原件（不参与编辑）。MHTML 默认原样存档，
-              勾选「转Markdown」后才会转换（仅 MHTML 支持，PDF 等其他格式该选项禁用）。导入到{targetText}。
+              勾选「转Markdown」后才会转换（仅 MHTML 支持，PDF 等其他格式该选项禁用）；
+              Word 默认转 Markdown，勾选「Word 原样存档」后保留原件并在阅读器内预览（仅 .docx 支持）。导入到{targetText}。
             </p>
             {entries.length > 0 && (
               <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
@@ -428,6 +449,17 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                   />
                   <Typography.Text type={hasMhtml ? undefined : 'secondary'}>
                     转Markdown{!hasMhtml ? '（仅 MHTML 支持）' : ''}
+                  </Typography.Text>
+                </Space>
+                <Space size={8}>
+                  <Switch
+                    checked={docxMode === 'archive'}
+                    onChange={checked => changeDocxMode(checked ? 'archive' : 'convert')}
+                    disabled={!hasDocx}
+                    data-testid="file-import-docx-archive"
+                  />
+                  <Typography.Text type={hasDocx ? undefined : 'secondary'}>
+                    Word 原样存档{!hasDocx ? '（仅 docx 支持）' : ''}
                   </Typography.Text>
                 </Space>
                 <Space size={8}>

@@ -8,6 +8,8 @@
   **原样存档**（原件进上传目录，文档节点记录格式与 MIME），正文走阅读器。
 
 新增格式只改本文件：``reader`` 的扩展名白名单与 ``importer`` 的落库分派都读这张表。
+
+``.docx`` 默认走转换管线，可选 ``docx_mode=archive`` 原样存档（ADR 0087）。
 """
 
 from __future__ import annotations
@@ -20,6 +22,7 @@ from cndb.plugins.documents.models import (
     CONTENT_TYPE_MHTML,
     CONTENT_TYPE_PDF,
     CONTENT_TYPE_PPTX,
+    CONTENT_TYPE_WORD,
     CONTENT_TYPE_XLSX,
 )
 
@@ -72,6 +75,16 @@ MHTML_MODE_DEFAULT = "archive"
 #: archive 模式的原件格式标记（MHTML 不进 ``ASSET_FORMATS``：convert 模式仍走转换管线）
 MHTML_ASSET_FORMAT = AssetFormat(CONTENT_TYPE_MHTML, "multipart/related", "MHTML")
 
+#: Word 处理模式（ADR 0087）：convert=转 Markdown（默认，ADR 0010 链路），archive=原件存档
+DOCX_MODES = ("convert", "archive")
+DOCX_MODE_DEFAULT = "convert"
+#: archive 模式的原件格式标记（`.docx` 不进 ``ASSET_FORMATS``：convert 模式仍走转换管线）
+DOCX_ASSET_FORMAT = AssetFormat(
+    CONTENT_TYPE_WORD,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "Word",
+)
+
 
 def normalize_suffix(path: str) -> str:
     """取小写扩展名（含点）；无扩展名返回空串。"""
@@ -103,8 +116,12 @@ __all__ = [
     "CONTENT_TYPE_MHTML",
     "CONTENT_TYPE_PDF",
     "CONTENT_TYPE_PPTX",
+    "CONTENT_TYPE_WORD",
     "CONTENT_TYPE_XLSX",
     "CONVERTIBLE_SUFFIXES",
+    "DOCX_ASSET_FORMAT",
+    "DOCX_MODES",
+    "DOCX_MODE_DEFAULT",
     "MAX_ASSET_BYTES",
     "MHTML_ASSET_FORMAT",
     "MHTML_MODES",

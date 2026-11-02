@@ -36,7 +36,7 @@ export interface DocFormatMeta {
 }
 
 /** 原件族 content_type：后端 models.ASSET_CONTENT_TYPES 的同口径副本 */
-export const DOC_ASSET_CONTENT_TYPES = ['pdf', 'image', 'xlsx', 'pptx', 'mhtml'] as const
+export const DOC_ASSET_CONTENT_TYPES = ['pdf', 'image', 'xlsx', 'pptx', 'mhtml', 'word'] as const
 
 export const DOC_FORMAT_META: Record<string, DocFormatMeta> = {
   markdown: { label: 'Markdown', Icon: FileMarkdownOutlined, color: '#56728f', asset: false },
@@ -47,8 +47,8 @@ export const DOC_FORMAT_META: Record<string, DocFormatMeta> = {
   pptx: { label: 'PowerPoint', Icon: FilePptOutlined, color: '#d46b08', asset: true },
   // MHTML 网页存档（0061）：原样存档时是原件族，阅读器 iframe 预览 / 下载
   mhtml: { label: 'MHTML', Icon: GlobalOutlined, color: '#08979c', asset: true },
-  // word 仅为「导出 / 未来保留」的映射：docx 导入仍转 Markdown，节点态是 markdown
-  word: { label: 'Word', Icon: FileWordOutlined, color: '#2f54eb', asset: false },
+  // word：archive 模式导入的 .docx 原件（ADR 0087）；默认 convert 导入仍是 markdown
+  word: { label: 'Word', Icon: FileWordOutlined, color: '#2f54eb', asset: true },
 }
 
 const FALLBACK: DocFormatMeta = {
