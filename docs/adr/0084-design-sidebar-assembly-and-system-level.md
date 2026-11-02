@@ -160,6 +160,8 @@ system_decl  := "system" IDENT "{" instance* "}"
 
 **e2e（前端）**：`frontend/tests/e2e/critical/design-sidebar-assembly.spec.ts`——进入设计模块 → 侧栏出现设计清单 → 展开出现「系统 / 组件 / 零件」三级与行号 → 点击零件节点进入编辑器并定位；`design-structure-tree.spec.ts` 与 `navigation.spec.ts` 按主区改版回归调整。
 
+**种子层（`tests/test_seed_designs.py` 扩展）**：真实示例清单含四份且全部可编译；`六轴机械臂.cnmd` 大纲顶层为两个 `system` 根（`robot_cell` / `fixture`），递归覆盖 `system / assembly / group / part` 四级，`forearm` 下嵌套 `link` / `joint` 子装配。
+
 ### 8. 分期
 
 | 期 | 内容 | 风险 |
@@ -239,6 +241,13 @@ system rover {
     · 球体      零件 · 第 41 行
 ```
 
+**种子示例（`cndb seed` 注入）**：`examples/datasets/工作区-某企业销售管理/designs/` 在既有法兰板 / L 型支座两个组件级用例之外，补充两份系统级典型示例：
+
+- `四轮小车.cnmd`：与默认模板同构（`system rover` → `chassis` / `axle` / `wheel` → 布尔分组 → 图元），新建与种子数据看到同一份三级装配。
+- `六轴机械臂.cnmd`：一份设计含两个并列系统根（`robot_cell` + `fixture`），覆盖 系统 → 组件 → 子装配组件（`forearm` 下嵌套 `link` / `joint`）→ 结构分组 → 零件 四级；同时示范「连杆 + 关节」可复用组件与多系统声明。
+
+两份文件均经 `compile_design` 编译通过，seed 期与其他示例同一路径落库（文件名即标题，创建即 v1）。
+
 ## 决策记录（唯一决策台账）
 
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
@@ -287,7 +296,7 @@ system rover {
 ## 交接（会话结束更新）
 
 - 当前阶段：Accepted（P0 / P1 / P2 全部落地；2026-11-02 用户拍板「对齐文档模块，允许，不做」）
-- 已完成：需求卡片 0084；`system` DSL 声明与 IR v3 大纲；侧栏 `DesignStructureNav`（桌面 Sider + 移动抽屉共用、编辑器自动展开高亮、点击定位）；`DesignsPage` 恢复管理页与四轮小车模板；帮助文档、CHANGELOG、e2e 同步
-- 下一步：按需补系统装配示例的种子数据集；推送 / 发版需人工授权（提交在 main 本地，未推送）
+- 已完成：需求卡片 0084；`system` DSL 声明与 IR v3 大纲；侧栏 `DesignStructureNav`（桌面 Sider + 移动抽屉共用、编辑器自动展开高亮、点击定位）；`DesignsPage` 恢复管理页与四轮小车模板；帮助文档、CHANGELOG、e2e 同步；示例种子补充 `四轮小车.cnmd` 与 `六轴机械臂.cnmd`（复杂系统级 / 多系统 / 子装配嵌套，经 `cndb seed` 注入）
+- 下一步：按需扩展更多行业装配示例；推送 / 发版需人工授权（提交在 main 本地，未推送）
 - 已知坑：antd Tree 展开动画窗口（约 600ms）会吞点击，单测 / e2e 展开前先等待；v2 快照派生只在读路径生效，保存一次后自然落 v3；侧栏大纲按设计懒加载，切换设计时缓存不失效，改名后树标题由列表查询刷新
-- 最近一次全绿：`make flow`（2026-11-02，`make check-fast` + 后端 6515 passed / 17 skipped）；前端全量 `pnpm vitest run` 全绿；`pnpm e2e` 113 passed / 22 skipped（含 `design-sidebar-assembly.spec.ts` 与改版 `design-structure-tree.spec.ts`）
+- 最近一次全绿：`make flow`（2026-11-02，`make check-fast` + 后端 6516 passed / 17 skipped，含补充的示例种子用例）；前端 / e2e 本轮未改动，沿用上一轮 `pnpm vitest run` 全绿与 `pnpm e2e` 113 passed / 22 skipped

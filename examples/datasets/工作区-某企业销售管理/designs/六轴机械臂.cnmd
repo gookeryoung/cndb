@@ -1,0 +1,85 @@
+// 六轴机械臂工作单元：复杂系统级装配典型示例
+// 层级：系统（system）→ 组件（module 实例，可嵌套 = 子装配）→ 结构分组（布尔块）→ 零件（图元）
+// 一份设计含两个系统根：robot_cell（机械臂）与 fixture（工件夹具）
+param base_d = 90
+param base_h = 28
+param shoulder_l = 150
+param elbow_l = 120
+param link_w = 26
+param joint_d = 38
+param wrist_d = 26
+param tool_span = 56
+param tool_h = 22
+
+// ── 组件级：关节壳体（圆管减内孔）──
+module joint(d, w) {
+  rotate([90, 0, 0])
+    difference {
+      tube(od = d, id = d * 0.45, h = w)
+      translate([0, 0, -1]) cyl(d = d * 0.45, h = w + 2)
+    }
+}
+
+// ── 组件级：连杆（本体开孔 + 两端关节 → 子装配嵌套）──
+module link(len, w, d) {
+  difference {
+    box(size = [len, w, w])
+    translate([len / 2, w / 2, -1]) cyl(d = d * 0.4, h = w + 2)
+  }
+  translate([len / 2 - 8, 0, 0]) joint(d, w + 2)
+  translate([-len / 2 + 8, 0, 0]) joint(d, w + 2)
+}
+
+// ── 组件级：小臂（连杆 + 腕部关节 → 二级子装配）──
+module forearm(len, w, d) {
+  link(len, w, d)
+  translate([len / 2 - 8, 0, 0]) rotate([0, 90, 0]) joint(d * 0.75, w)
+}
+
+// ── 组件级：回转底座（法兰盘减中心孔）──
+module base(d, h) {
+  difference {
+    cyl(d = d, h = h)
+    translate([0, 0, -1]) cyl(d = d * 0.55, h = h + 2)
+  }
+}
+
+// ── 组件级：末端夹爪（两指 + 腕球）──
+module gripper(span, h) {
+  translate([0, span / 2, 0]) box(size = [18, 8, h])
+  translate([0, -span / 2, 0]) box(size = [18, 8, h])
+  sphere(r = h * 0.6)
+}
+
+// ── 组件级：定位夹钳（两侧夹板 + 中心销）──
+module clamp(span, t) {
+  translate([0, span / 2, 0]) box(size = [46, t, 16])
+  translate([0, -span / 2, 0]) box(size = [46, t, 16])
+  cyl(d = 14, h = 20)
+}
+
+// ── 系统级：机械臂工作单元（顶层根，不可实例化）──
+system robot_cell {
+  base(base_d, base_h)
+
+  // 大臂：竖直连杆（组件内嵌关节子装配）
+  translate([0, 0, base_h + shoulder_l / 2]) rotate([0, 90, 0]) link(shoulder_l, link_w, joint_d)
+
+  // 小臂：水平连杆 + 腕部关节（子装配嵌套子装配）
+  translate([0, 0, base_h + shoulder_l]) rotate([0, 0, 90]) forearm(elbow_l, link_w, wrist_d)
+
+  // 末端夹爪：腕部前伸
+  translate([0, 0, base_h + shoulder_l]) rotate([0, 0, 90]) translate([elbow_l + 8, 0, 0]) gripper(tool_span, tool_h)
+}
+
+// ── 系统级：工件夹具（一设计多系统的并列系统根）──
+system fixture {
+  difference {
+    box(size = [130, 96, 14])
+    translate([-52, 40, -1]) cyl(d = 9, h = 16)
+    translate([52, 40, -1]) cyl(d = 9, h = 16)
+    translate([-52, -40, -1]) cyl(d = 9, h = 16)
+    translate([52, -40, -1]) cyl(d = 9, h = 16)
+  }
+  translate([0, 0, 14]) clamp(70, 12)
+}

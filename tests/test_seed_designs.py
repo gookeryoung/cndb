@@ -167,9 +167,50 @@ def test_real_design_examples_are_valid():
 
     ws_cnmds = seed_paths._get_workspace_design_cnmds(base)
     assert set(ws_cnmds) == {"某企业销售管理"}
-    assert [p.name for p in ws_cnmds["某企业销售管理"]] == ["L型支座.cnmd", "法兰板.cnmd"]
+    assert [p.name for p in ws_cnmds["某企业销售管理"]] == [
+        "L型支座.cnmd",
+        "六轴机械臂.cnmd",
+        "四轮小车.cnmd",
+        "法兰板.cnmd",
+    ]
 
     for path in ws_cnmds["某企业销售管理"]:
         result = compile_design(path.read_text(encoding="utf-8-sig"))
         assert result.ok, f"{path.name} 应可编译：{[d.message for d in result.diagnostics]}"
         assert result.ir and result.ir["nodes"], f"{path.name} 应有顶层实例"
+
+
+def _outline_kinds(nodes: list[dict]) -> set[str]:
+    """递归收集大纲节点 kind（组件可嵌套，系统 / 分组 / 零件均覆盖）."""
+    kinds: set[str] = set()
+    for node in nodes:
+        kinds.add(node["kind"])
+        kinds |= _outline_kinds(node.get("children", []))
+    return kinds
+
+
+def test_real_complex_system_example_outline():
+    """复杂系统级装配示例：两个系统根 + 系统 / 组件 / 分组 / 零件四级层级."""
+    from cndb.plugins.design.services.dsl.compile import compile_design
+
+    path = (
+        Path(__file__).resolve().parents[1]
+        / "examples"
+        / "datasets"
+        / "工作区-某企业销售管理"
+        / "designs"
+        / "六轴机械臂.cnmd"
+    )
+    result = compile_design(path.read_text(encoding="utf-8-sig"))
+    assert result.ok
+    assert result.ir
+    roots = result.ir["outline"]["children"]
+    assert [root["kind"] for root in roots] == ["system", "system"]
+    assert {root["name"] for root in roots} == {"robot_cell", "fixture"}
+    assert _outline_kinds(roots) == {"system", "assembly", "group", "part"}
+
+    # 子装配嵌套：forearm 为组件，其下再挂 link / joint 组件
+    robot = next(root for root in roots if root["name"] == "robot_cell")
+    forearm = next(child for child in robot["children"] if child["kind"] == "assembly" and child["name"] == "forearm")
+    nested = {child["name"] for child in forearm["children"] if child["kind"] == "assembly"}
+    assert {"link", "joint"} <= nested
