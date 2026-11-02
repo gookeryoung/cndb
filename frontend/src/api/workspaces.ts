@@ -3,7 +3,7 @@
 import api from './client'
 import type {
   WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
-  WorkspaceExportData,
+  WorkspaceArchiveInspect,
 } from './types'
 
 export const workspaceApi = {
@@ -38,9 +38,6 @@ export const workspaceApi = {
   /** 转让工作区所有权（仅 owner 可执行） */
   transferOwner: (wid: number | string, userId: number) =>
     api.post<WorkspaceMember>(`/v1/workspaces/${wid}/owner`, { user_id: userId }).then(r => r.data),
-  /** 导出整个工作区为 JSON（结构+数据+视图） */
-  exportWorkspace: (wid: number | string) =>
-    api.get<WorkspaceExportData>(`/v1/workspaces/${wid}/export`).then(r => r.data),
   /** 导出工作区全量备份归档（tar.gz，含版本历史/草稿/议题/附件等，可含密钥） */
   exportWorkspaceArchive: (wid: number | string, includeSecrets: boolean) =>
     api.get(`/v1/workspaces/${wid}/export/archive`, {
@@ -59,6 +56,15 @@ export const workspaceApi = {
     }>(`/v1/workspaces/${wid}/restore`, form, { headers: { 'Content-Type': 'multipart/form-data' } })
       .then(r => r.data)
   },
+  /** 归档导入预检：读取归档内工作区名 / 版本 / 统计，并判断同名 owner 工作区是否存在 */
+  inspectWorkspaceArchive: (file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<WorkspaceArchiveInspect>(
+      '/v1/workspaces/import/archive/inspect', form,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    ).then(r => r.data)
+  },
   /** 从 v9 归档创建全新工作区（owner 为当前用户） */
   importWorkspaceArchive: (file: File) => {
     const form = new FormData()
@@ -70,23 +76,4 @@ export const workspaceApi = {
     }>('/v1/workspaces/import/archive', form, { headers: { 'Content-Type': 'multipart/form-data' } })
       .then(r => r.data)
   },
-  /** 从 JSON 数据导入工作区（创建新表、字段、数据、视图、文档） */
-  importWorkspace: (wid: number | string, jsonData: Record<string, unknown>) =>
-    api.post<{
-      imported_tables: number; imported_rows: number; imported_views: number
-      imported_documents?: number; errors?: string[]
-    }>(
-      `/v1/workspaces/${wid}/import`,
-      { json_data: jsonData },
-    ).then(r => r.data),
-  /** 从备份 JSON 创建全新工作区（同时导入表结构、数据、视图与文档） */
-  importFromBackup: (payload: { name?: string; json_data: Record<string, unknown> }) =>
-    api.post<{
-      workspace: Workspace
-      imported_tables: number
-      imported_rows: number
-      imported_views: number
-      imported_documents?: number
-      errors?: string[]
-    }>('/v1/workspaces/import', payload).then(r => r.data),
 }

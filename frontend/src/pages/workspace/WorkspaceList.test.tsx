@@ -653,3 +653,113 @@ describe('WorkspaceList 自定义顺序', () => {
     await waitFor(() => expect(screen.getByTestId('workspace-drag-10')).toBeDisabled())
   })
 })
+
+// ─────────────── 导入工作区：全量归档 / 新建 vs 覆盖恢复 ───────────────
+
+describe('WorkspaceList 导入工作区（全量归档）', () => {
+  const ARCHIVE = new File([new Uint8Array([0x1f, 0x8b])], 'ws.tar.gz', { type: 'application/gzip' })
+
+  function selectArchive() {
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(input).not.toBeNull()
+    fireEvent.change(input!, { target: { files: [ARCHIVE] } })
+  }
+
+  function inspectPayload(existing: boolean) {
+    return {
+      workspace_name: '测试工作区',
+      backup_version: '13',
+      include_secrets: true,
+      stats: { tables: 2, documents: 1, files: 0 },
+      existing_workspace: existing ? { id: 10, name: '测试工作区', role: 'owner' } : null,
+    }
+  }
+
+  it('选择归档后默认「导入为新工作区」并在成功后跳转（不覆盖已有工作区）', async () => {
+    let importCalls = 0
+    server.use(
+      http.post('/api/v1/workspaces/import/archive/inspect', () => HttpResponse.json(inspectPayload(true))),
+      http.post('/api/v1/workspaces/import/archive', () => {
+        importCalls += 1
+        return HttpResponse.json({
+          workspace: { id: 42, name: '测试工作区', modules: ['tables'] },
+          imported_tables: 2, imported_rows: 3, imported_views: 1, imported_documents: 1, errors: [],
+        })
+      }),
+    )
+    renderWorkspaceList()
+
+    fireEvent.click(await screen.findByTestId('import-workspace-btn'))
+    selectArchive()
+
+    expect(await screen.findByTestId('import-archive-inspect')).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: /导入为新工作区/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: /覆盖恢复到已有工作区/ })).not.toBeChecked()
+    // 未选择覆盖恢复时不出现危险提示与确认项
+    expect(screen.queryByText('危险操作：覆盖恢复')).not.toBeInTheDocument()
+    expect(screen.queryByText(/我已知晓/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '导入为新工作区' }))
+
+    await waitFor(() => expect(importCalls).toBe(1), { timeout: 3000 })
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/42/tables'), { timeout: 3000 })
+  })
+
+  it('归档目标已存在时出现覆盖恢复选项，双重确认后调用覆盖恢复', async () => {
+    let restored = false
+    server.use(
+      http.post('/api/v1/workspaces/import/archive/inspect', () => HttpResponse.json(inspectPayload(true))),
+      http.post('/api/v1/workspaces/10/restore', () => {
+        restored = true
+        return HttpResponse.json({
+          imported_tables: 2, imported_rows: 3, imported_views: 1, imported_documents: 1, errors: [],
+        })
+      }),
+    )
+    renderWorkspaceList()
+
+    fireEvent.click(await screen.findByTestId('import-workspace-btn'))
+    selectArchive()
+    await screen.findByTestId('import-archive-inspect')
+
+    fireEvent.click(screen.getByRole('radio', { name: /覆盖恢复到已有工作区/ }))
+    expect(screen.getByText('危险操作：覆盖恢复')).toBeInTheDocument()
+
+    const ok = screen.getByRole('button', { name: '覆盖恢复' })
+    expect(ok).toBeDisabled()
+
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.change(screen.getByPlaceholderText(/输入工作区名称/), { target: { value: '测试工作区' } })
+    expect(ok).toBeEnabled()
+
+    fireEvent.click(ok)
+    await waitFor(() => expect(restored).toBe(true), { timeout: 3000 })
+    expect(await screen.findByText(/恢复完成：2 表/)).toBeInTheDocument()
+  })
+
+  it('归档目标不存在时只提供「导入为新工作区」，不出现恢复选项', async () => {
+    let importCalls = 0
+    server.use(
+      http.post('/api/v1/workspaces/import/archive/inspect', () => HttpResponse.json(inspectPayload(false))),
+      http.post('/api/v1/workspaces/import/archive', () => {
+        importCalls += 1
+        return HttpResponse.json({
+          workspace: { id: 43, name: '测试工作区', modules: ['tables'] },
+          imported_tables: 2, imported_rows: 3, imported_views: 1, errors: [],
+        })
+      }),
+    )
+    renderWorkspaceList()
+
+    fireEvent.click(await screen.findByTestId('import-workspace-btn'))
+    selectArchive()
+    await screen.findByTestId('import-archive-inspect')
+
+    expect(screen.getByRole('radio', { name: /导入为新工作区/ })).toBeChecked()
+    expect(screen.queryByRole('radio', { name: /覆盖恢复到已有工作区/ })).not.toBeInTheDocument()
+    expect(screen.queryByText(/危险操作/)).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '导入为新工作区' }))
+    await waitFor(() => expect(importCalls).toBe(1), { timeout: 3000 })
+  })
+})

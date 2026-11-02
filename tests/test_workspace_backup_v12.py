@@ -112,3 +112,57 @@ class TestLegacyBackupImport:
         r = client.post(f"{WS}/import", json={"json_data": data}, headers=auth_headers)
         assert r.status_code == 201, r.text
         assert r.json()["workspace"]["modules"] == ALL
+
+
+class TestArchiveInspect:
+    """导入前预检：归档元信息 + 同名 owner 工作区（决定是否提供覆盖恢复）."""
+
+    def test_inspect_returns_meta_and_existing_target(
+        self, client: TestClient, auth_headers: dict[str, str], tmp_path: Path
+    ) -> None:
+        ws = _new_workspace(client, auth_headers, "预检归档", ["tables", "documents"])
+        raw = _export_archive(client, auth_headers, ws["id"])
+        archive_file = tmp_path / "inspect.tar.gz"
+        archive_file.write_bytes(raw)
+
+        with archive_file.open("rb") as fh:
+            r = client.post(
+                f"{WS}/import/archive/inspect",
+                files={"file": ("inspect.tar.gz", fh, "application/gzip")},
+                headers=auth_headers,
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["workspace_name"] == "预检归档"
+        assert body["backup_version"] == "13"
+        assert body["include_secrets"] is True
+        assert body["stats"]["tables"] == 0
+        assert body["existing_workspace"] == {"id": ws["id"], "name": "预检归档", "role": "owner"}
+
+    def test_inspect_without_existing_target(
+        self, client: TestClient, auth_headers: dict[str, str], tmp_path: Path
+    ) -> None:
+        ws = _new_workspace(client, auth_headers, "已删除来源", ["tables"])
+        raw = _export_archive(client, auth_headers, ws["id"])
+        assert client.delete(f"{WS}/{ws['id']}", headers=auth_headers).status_code in (200, 204)
+
+        archive_file = tmp_path / "gone.tar.gz"
+        archive_file.write_bytes(raw)
+        with archive_file.open("rb") as fh:
+            r = client.post(
+                f"{WS}/import/archive/inspect",
+                files={"file": ("gone.tar.gz", fh, "application/gzip")},
+                headers=auth_headers,
+            )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["workspace_name"] == "已删除来源"
+        assert body["existing_workspace"] is None
+
+    def test_inspect_rejects_invalid_archive(self, client: TestClient, auth_headers: dict[str, str]) -> None:
+        r = client.post(
+            f"{WS}/import/archive/inspect",
+            files={"file": ("bad.tar.gz", b"not-a-tar", "application/gzip")},
+            headers=auth_headers,
+        )
+        assert r.status_code == 400, r.text

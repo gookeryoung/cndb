@@ -28,6 +28,8 @@ from cndb.plugins.workspaces.routers.member_routes import router as member_route
 from cndb.plugins.workspaces.schemas import (
     PinRequest,
     PinToggleResponse,
+    WorkspaceArchiveInspectResponse,
+    WorkspaceArchiveTarget,
     WorkspaceCreate,
     WorkspaceCreateFromBackup,
     WorkspaceCreateFromBackupResponse,
@@ -472,6 +474,59 @@ def restore_workspace(
         tmp_path.unlink(missing_ok=True)
     invalidate_workspace_list_cache(workspace_id)
     return result
+
+
+@router.post("/import/archive/inspect", response_model=WorkspaceArchiveInspectResponse)
+def inspect_workspace_archive(
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    file: Annotated[UploadFile, File()],
+) -> WorkspaceArchiveInspectResponse:
+    """预检归档：返回归档内工作区名 / 版本 / 统计，以及同名且当前用户为 owner 的既有工作区.
+
+    供导入对话框选择「导入为新工作区（推荐）」或「覆盖恢复到已有工作区」；
+    不写库，解析失败按无效归档返回 400。
+    """
+    from sqlalchemy import select
+
+    from cndb.plugins.workspaces.services.workspace_backup import parse_workspace_archive
+
+    fd, tmp_name = tempfile.mkstemp(prefix="cndb-ws-inspect-", suffix=".tar.gz")
+    tmp_path = Path(tmp_name)
+    import os
+
+    with os.fdopen(fd, "wb") as out:
+        shutil.copyfileobj(file.file, out)
+
+    archive = parse_workspace_archive(tmp_path)
+    try:
+        data = archive.backup
+        ws_meta = data.get("workspace") or {}
+        backup_name = (ws_meta.get("name") or "").strip() or "未命名工作区"
+        existing = db.execute(
+            select(Workspace)
+            .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
+            .where(
+                WorkspaceMember.user_id == current_user.id,
+                WorkspaceMember.role == WorkspaceRole.OWNER,
+                Workspace.name == (ws_meta.get("name") or "").strip(),
+            )
+            .order_by(Workspace.id)
+            .limit(1)
+        ).scalar_one_or_none()
+        manifest = archive.manifest
+        created_at = manifest.get("created_at")
+        return WorkspaceArchiveInspectResponse(
+            workspace_name=backup_name,
+            backup_version=str(data.get("version", "")),
+            created_at=created_at,
+            include_secrets=bool(manifest.get("include_secrets", True)),
+            stats=manifest.get("stats") or {},
+            existing_workspace=(WorkspaceArchiveTarget(id=existing.id, name=existing.name) if existing else None),
+        )
+    finally:
+        archive.cleanup()
+        tmp_path.unlink(missing_ok=True)
 
 
 @router.post("/import/archive", response_model=WorkspaceCreateFromBackupResponse, status_code=status.HTTP_201_CREATED)

@@ -9,14 +9,14 @@
 import { useMemo, useState } from 'react'
 import {
   Typography, Tag, Button, Modal, Form, Input, Select, Switch, Empty, App as AntApp,
-  Upload, Alert, Progress, Skeleton, Tooltip,
+  Upload, Alert, Progress, Skeleton, Tooltip, Radio, Space, Checkbox,
 } from 'antd'
 import {
   PlusOutlined, StarOutlined, StarFilled, CaretRightOutlined, TeamOutlined, TableOutlined,
   DownloadOutlined, SettingOutlined, GlobalOutlined, LockOutlined,
   SafetyCertificateOutlined, UploadOutlined, InboxOutlined, FileTextOutlined,
   FolderOpenOutlined, DatabaseOutlined, LoginOutlined, ArrowRightOutlined, HolderOutlined,
-  ToolOutlined,
+  ToolOutlined, WarningOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -31,7 +31,7 @@ import { useCreateParam } from '@/hooks/useCreateParam'
 import { usePreferences, useSetWorkspaceOrder } from '@/hooks/useFavoriteViews'
 import { workspaceApi, tableApi } from '@/api'
 import type {
-  Workspace, WorkspaceRole, WorkspaceVisibility, TableSummary,
+  Workspace, WorkspaceRole, WorkspaceVisibility, TableSummary, WorkspaceArchiveInspect,
 } from '@/api'
 import {
   DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules,
@@ -106,7 +106,6 @@ export default function WorkspaceList() {
   /** 已展开的工作区 id 集合（允许多行同时展开，与 GitHub 文件树一致） */
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [form] = Form.useForm()
-  const [importForm] = Form.useForm()
 
   const { data: workspaces = [], isLoading } = useQuery<WSWithStats[]>({
     queryKey: ['workspaces'],
@@ -255,7 +254,7 @@ export default function WorkspaceList() {
               </Button>
               <Button
                 icon={<UploadOutlined />}
-                onClick={() => { importForm.resetFields(); setImportOpen(true) }}
+                onClick={() => setImportOpen(true)}
                 style={isMobile ? { flex: 1 } : undefined}
                 data-testid="import-workspace-btn"
               >
@@ -409,21 +408,24 @@ export default function WorkspaceList() {
           open={!!backupOpen}
           wid={String(backupOpen.id)}
           workspaceName={backupOpen.name}
-          currentUserRole={backupOpen.current_user_role ?? null}
           onClose={() => setBackupOpen(null)}
         />
       )}
 
-      {/* 导入工作区 Modal — 从备份 JSON 创建全新工作区 */}
+      {/* 导入工作区 Modal — 全量归档导入：默认新建工作区；同名 owner 工作区可覆盖恢复 */}
       {importOpen && <ImportWorkspaceModal
         open={importOpen}
-        form={importForm}
         onCancel={() => setImportOpen(false)}
-        onSuccess={(w) => {
+        onImported={(w) => {
           setImportOpen(false)
           queryClient.invalidateQueries({ queryKey: ['workspaces'] })
           message.success(`已导入工作区「${w.name}」`)
           navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules)}`)
+        }}
+        onRestored={() => {
+          setImportOpen(false)
+          queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+          message.success('已覆盖恢复到所选工作区')
         }}
         onError={(err) => message.error(err instanceof Error ? err.message : '导入失败')}
       />}
@@ -663,97 +665,99 @@ function WorkspaceRowDetail({
   )
 }
 
-/** 允许导入的文件扩展名（JSON 备份 / 全量归档） */
-const ACCEPTED_BACKUP_EXT = ['.json', '.tar.gz']
+/** 允许导入的归档扩展名（仅全量归档，JSON 备份格式已下线） */
+const ACCEPTED_ARCHIVE_EXT = ['.tar.gz', '.tgz']
 
 interface ImportWorkspaceModalProps {
   open: boolean
-  form: ReturnType<typeof Form.useForm>[0]
   onCancel: () => void
-  onSuccess: (w: Workspace) => void
+  /** 导入为新工作区成功（避免覆盖任何现有数据，默认选项） */
+  onImported: (w: Workspace) => void
+  /** 覆盖恢复到同名既有工作区成功（仅 owner 可见该选项） */
+  onRestored: (wid: number | string) => void
   onError: (err: unknown) => void
 }
 
-function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: ImportWorkspaceModalProps) {
+function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError }: ImportWorkspaceModalProps) {
   const { isMobile } = useResponsive()
   const [importing, setImporting] = useState(false)
+  const [inspecting, setInspecting] = useState(false)
   const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number; documents: number } | null>(null)
-  const [pendingJson, setPendingJson] = useState<Record<string, unknown> | null>(null)
   const [pendingArchive, setPendingArchive] = useState<File | null>(null)
+  const [inspect, setInspect] = useState<WorkspaceArchiveInspect | null>(null)
+  // 默认导入为新工作区（推荐）；仅当归档目标同名工作区已存在且当前用户为 owner 才允许覆盖恢复
+  const [mode, setMode] = useState<'new' | 'restore'>('new')
+  const [confirmChecked, setConfirmChecked] = useState(false)
+  const [confirmName, setConfirmName] = useState('')
+
+  const existing = inspect?.existing_workspace ?? null
+  const restoreReady = !!existing && confirmChecked && confirmName === inspect?.workspace_name
 
   const reset = () => {
     setImportResult(null)
-    setPendingJson(null)
     setPendingArchive(null)
-    form.resetFields()
+    setInspect(null)
+    setMode('new')
+    setConfirmChecked(false)
+    setConfirmName('')
+    setInspecting(false)
   }
 
   const beforeUpload = async (file: File) => {
     const name = file.name.toLowerCase()
-    if (!ACCEPTED_BACKUP_EXT.some(ext => name.endsWith(ext))) {
-      onError(new Error('仅支持 JSON 备份或 tar.gz 全量归档文件'))
+    if (!ACCEPTED_ARCHIVE_EXT.some(ext => name.endsWith(ext))) {
+      onError(new Error('仅支持全量归档文件（.tar.gz）'))
       return false
     }
-    // 全量归档（.tar.gz）：不做本地解析，直接上传交给后端解包
-    if (name.endsWith('.tar.gz')) {
-      setPendingJson(null)
-      setPendingArchive(file)
-      setImportResult(null)
-      return false
-    }
+    setPendingArchive(file)
+    setImportResult(null)
+    setInspect(null)
+    setMode('new')
+    setConfirmChecked(false)
+    setConfirmName('')
+    setInspecting(true)
     try {
-      const text = await file.text()
-      const json = JSON.parse(text)
-      setPendingJson(json)
+      setInspect(await workspaceApi.inspectWorkspaceArchive(file))
+    } catch (err) {
       setPendingArchive(null)
-      setImportResult(null)
-      // 自动从备份文件里的 workspace.name 填充工作区名称
-      const wsMeta = (json as Record<string, any>).workspace
-      if (wsMeta?.name) {
-        form.setFieldsValue({ name: wsMeta.name })
-      }
-    } catch {
-      onError(new Error('文件内容不是有效的 JSON'))
+      onError(err)
+    } finally {
+      setInspecting(false)
     }
     // 返回 false 阻止 Upload 组件自动上传，手动在 onOk 里提交
     return false
   }
 
   const handleSubmit = async () => {
-    if (!pendingJson && !pendingArchive) {
-      onError(new Error('请先选择备份文件'))
+    if (!pendingArchive) {
+      onError(new Error('请先选择全量归档文件'))
       return
     }
-    const raw: unknown = await form.validateFields().catch(() => null)
-    if (!raw) return
-    const values = raw as { name?: string }
+    if (mode === 'restore' && (!existing || !restoreReady)) return
 
     try {
       setImporting(true)
-      if (pendingArchive) {
-        // 全量归档导入（v9）：归档内自带工作区元信息，名称以归档为准
-        const result = await workspaceApi.importWorkspaceArchive(pendingArchive)
+      if (mode === 'restore' && existing) {
+        const result = await workspaceApi.restoreWorkspace(existing.id, pendingArchive)
         setImportResult({
           tables: result.imported_tables,
           rows: result.imported_rows,
           views: result.imported_views,
           documents: result.imported_documents ?? 0,
         })
-        setTimeout(() => onSuccess(result.workspace), 800)
+        const restoredId = existing.id
+        setTimeout(() => { reset(); onRestored(restoredId) }, 800)
         return
       }
-      const result = await workspaceApi.importFromBackup({
-        name: values.name,
-        json_data: pendingJson!,
-      })
+      const result = await workspaceApi.importWorkspaceArchive(pendingArchive)
       setImportResult({
         tables: result.imported_tables,
         rows: result.imported_rows,
         views: result.imported_views,
         documents: result.imported_documents ?? 0,
       })
-      // 延迟一下让用户看到成功信息，然后跳转
-      setTimeout(() => onSuccess(result.workspace), 800)
+      const imported = result.workspace
+      setTimeout(() => { reset(); onImported(imported) }, 800)
     } catch (err) {
       onError(err)
     } finally {
@@ -768,45 +772,107 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
       onCancel={() => { reset(); onCancel() }}
       onOk={handleSubmit}
       confirmLoading={importing}
-      okText="开始导入"
+      okText={mode === 'restore' ? '覆盖恢复' : '导入为新工作区'}
+      okButtonProps={{
+        danger: mode === 'restore',
+        disabled: !pendingArchive || inspecting || (mode === 'restore' && !restoreReady),
+      }}
       cancelText="取消"
       destroyOnHidden
-      width={isMobile ? 'calc(100vw - 32px)' : 560}
+      width={isMobile ? 'calc(100vw - 32px)' : 600}
     >
       <Alert
         type="info"
         showIcon
-        title="从备份 JSON 创建一个全新的工作区"
-        description="备份文件中的表结构、数据行和视图都会一并导入，当前用户自动成为该工作区所有者。"
+        title="从全量归档（.tar.gz）导入"
+        description="默认创建新工作区，不覆盖任何现有数据；仅当归档目标工作区已存在且你是其 owner 时，才会出现「覆盖恢复到已有工作区」的危险选项。"
         style={{ marginBottom: 16 }}
       />
 
       {!importResult && (
-        <Form form={form} layout="vertical">
-          <Form.Item name="name" label="工作区名称（可修改）">
-            <Input placeholder="默认使用备份文件中的工作区名称" />
-          </Form.Item>
+        <div style={{ marginBottom: 16 }}>
+          <Upload.Dragger
+            multiple={false}
+            accept={ACCEPTED_ARCHIVE_EXT.join(',')}
+            beforeUpload={beforeUpload}
+            disabled={importing || inspecting}
+            showUploadList={false}
+          >
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">点击或拖拽归档文件到此处</p>
+            <p className="ant-upload-hint">全量归档（.tar.gz）文件</p>
+          </Upload.Dragger>
+        </div>
+      )}
 
-          <div style={{ marginBottom: 16 }}>
-            <Upload.Dragger
-              multiple={false}
-              accept={ACCEPTED_BACKUP_EXT.join(',')}
-              beforeUpload={beforeUpload}
-              disabled={importing}
-              showUploadList={false}
-            >
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">点击或拖拽备份文件到此处</p>
-              <p className="ant-upload-hint">JSON 备份或全量归档（.tar.gz）文件</p>
-            </Upload.Dragger>
-          </div>
-        </Form>
+      {inspecting && (
+        <div style={{ textAlign: 'center', padding: '12px 0', color: 'var(--cn-text-secondary)' }}>
+          正在读取归档信息…
+        </div>
+      )}
+
+      {inspect && !importResult && (
+        <div data-testid="import-archive-inspect" style={{ marginBottom: 16 }}>
+          <Space size={8} wrap>
+            <Text strong>{inspect.workspace_name}</Text>
+            <Tag>v{inspect.backup_version}</Tag>
+            {inspect.stats?.tables !== undefined && <Tag>{inspect.stats.tables} 张表</Tag>}
+            {inspect.stats?.documents !== undefined && <Tag>{inspect.stats.documents} 篇文档</Tag>}
+            <Tag color={inspect.include_secrets ? 'warning' : 'default'}>
+              {inspect.include_secrets ? '含数据源密钥' : '不含密钥'}
+            </Tag>
+          </Space>
+
+          <Radio.Group
+            value={mode}
+            onChange={e => setMode(e.target.value as 'new' | 'restore')}
+            style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}
+          >
+            <Radio value="new">
+              导入为新工作区
+              <Tag color="success" style={{ marginInlineStart: 8 }}>推荐</Tag>
+              <Text type="secondary" style={{ marginInlineStart: 8 }}>不覆盖任何现有数据</Text>
+            </Radio>
+            {existing && (
+              <Radio value="restore">
+                覆盖恢复到已有工作区「{existing.name}」
+                <Tag color="error" style={{ marginInlineStart: 8 }}>危险</Tag>
+              </Radio>
+            )}
+          </Radio.Group>
+
+          {mode === 'restore' && existing && (
+            <div style={{ marginTop: 12 }}>
+              <Alert
+                type="error"
+                showIcon
+                icon={<WarningOutlined />}
+                title="危险操作：覆盖恢复"
+                description={`将清空「${existing.name}」现有全部业务数据，用归档内容全量重建；工作区名称与成员保持不变，且不可撤销。仅工作区 owner 可执行。`}
+                style={{ marginBottom: 12 }}
+              />
+              <Space direction="vertical" style={{ width: '100%' }} size={8}>
+                <Checkbox
+                  checked={confirmChecked}
+                  onChange={e => setConfirmChecked(e.target.checked)}
+                >我已知晓：恢复将清空该工作区现有全部业务数据，且不可撤销</Checkbox>
+                <Input
+                  placeholder={`输入工作区名称「${inspect.workspace_name}」以确认`}
+                  value={confirmName}
+                  onChange={e => setConfirmName(e.target.value)}
+                />
+              </Space>
+            </div>
+          )}
+        </div>
       )}
 
       {importing && (
         <div style={{ textAlign: 'center', padding: '24px 0' }}>
           <Progress percent={100} status="active" showInfo={false} />
-          <div style={{ marginTop: 8, color: '#64748b' }}>正在导入，请稍候...</div>
+          <div style={{ marginTop: 8, color: 'var(--cn-text-secondary)' }}>
+            {mode === 'restore' ? '正在覆盖恢复，请稍候...' : '正在导入新工作区，请稍候...'}
+          </div>
         </div>
       )}
 
@@ -819,7 +885,8 @@ function ImportWorkspaceModal({ open, form, onCancel, onSuccess, onError }: Impo
         }}>
           <FileTextOutlined style={{ color: '#22c55e', fontSize: 20 }} />
           <span style={{ marginLeft: 8, color: '#15803d' }}>
-            导入完成：{importResult.tables} 表 / {importResult.rows} 行 / {importResult.views} 视图{importResult.documents ? ` / ${importResult.documents} 文档` : ''}
+            {mode === 'restore' ? '恢复完成' : '导入完成'}：{importResult.tables} 表 / {importResult.rows} 行
+            / {importResult.views} 视图{importResult.documents ? ` / ${importResult.documents} 文档` : ''}
           </span>
         </div>
       )}

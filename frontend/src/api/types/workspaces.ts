@@ -46,6 +46,22 @@ export interface WorkspaceMember {
   user: MemberUserBrief
 }
 
+/** 归档导入预检：可覆盖恢复的既有工作区（当前用户为 owner） */
+export interface WorkspaceArchiveTarget {
+  id: ID; name: string; role: WorkspaceRole
+}
+
+/** 归档导入预检结果（不落库） */
+export interface WorkspaceArchiveInspect {
+  workspace_name: string
+  backup_version: string
+  created_at?: string | null
+  include_secrets: boolean
+  stats: Record<string, number>
+  /** 同名且当前用户为 owner 的既有工作区；为空表示只能导入为新工作区 */
+  existing_workspace?: WorkspaceArchiveTarget | null
+}
+
 /** 工作区级整体导出数据结构 */
 export interface WorkspaceExportData {
   version: string

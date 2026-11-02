@@ -194,6 +194,29 @@ class WorkspaceImportResponse(BaseModel):
     """部分内容导入失败/跳过的明细（空列表表示全部成功）。"""
 
 
+class WorkspaceArchiveTarget(BaseModel):
+    """归档导入时可覆盖恢复的已有工作区（当前用户为 owner）."""
+
+    id: int
+    name: str
+    role: WorkspaceRole = WorkspaceRole.OWNER
+
+
+class WorkspaceArchiveInspectResponse(BaseModel):
+    """归档导入前的预检信息（不落库）.
+
+    前端据 ``existing_workspace`` 决定是否展示「覆盖恢复到已有工作区」入口：
+    只有归档内工作区名与当前用户为 owner 的既有工作区同名时才返回该字段。
+    """
+
+    workspace_name: str
+    backup_version: str
+    created_at: datetime | None = None
+    include_secrets: bool = True
+    stats: dict[str, Any] = {}
+    existing_workspace: WorkspaceArchiveTarget | None = None
+
+
 class WorkspaceCreateFromBackup(BaseModel):
     """从备份 JSON 创建工作区请求."""
 

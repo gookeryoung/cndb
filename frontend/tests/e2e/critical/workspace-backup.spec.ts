@@ -68,7 +68,7 @@ test.describe("工作区备份归档（v9）", () => {
     expect(buf.subarray(0, 2)).toEqual(Buffer.from([0x1f, 0x8b]));
   });
 
-  test("归档导入：从全量归档创建新工作区", async ({ page, request }) => {
+  test("归档导入：默认导入为新工作区（不覆盖同名既有工作区）", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     const name = `e2e归档导入源-${uniq}`;
     const wid = await createWorkspace(request, name);
@@ -77,7 +77,10 @@ test.describe("工作区备份归档（v9）", () => {
     await page.goto("/w");
     await page.getByRole("button", { name: "导入工作区" }).click();
     await page.setInputFiles('input[type="file"]', archivePath);
-    await page.getByRole("button", { name: "开始导入" }).click();
+    // 预检后默认选中「导入为新工作区」（推荐），覆盖恢复需显式切换
+    await expect(page.getByTestId("import-archive-inspect")).toBeVisible({ timeout: 30000 });
+    await expect(page.getByRole("radio", { name: /导入为新工作区/ })).toBeChecked();
+    await page.getByRole("button", { name: "导入为新工作区" }).click();
 
     await expect(page.getByText(`已导入工作区「${name}」`)).toBeVisible({ timeout: 30000 });
     // 导入成功后新工作区应出现在列表（清理 by name 兜底，防 id 未收录）
@@ -91,23 +94,25 @@ test.describe("工作区备份归档（v9）", () => {
     void wid;
   });
 
-  test("覆盖恢复：危险确认流（勾选 + 输入工作区名）", async ({ page, request }) => {
+  test("覆盖恢复：入口在导入工作区，危险确认流（勾选 + 输入工作区名）", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过");
     const name = `e2e覆盖恢复-${uniq}`;
     const wid = await createWorkspace(request, name);
     const archivePath = await exportArchive(request, wid);
 
     await page.goto("/w");
-    await page.getByLabel(`展开「${name}」`).click();
-    await page.getByTestId(`backup-btn-${wid}`).click();
+    await page.getByRole("button", { name: "导入工作区" }).click();
+    await page.setInputFiles('input[type="file"]', archivePath);
+    // 同名来源工作区仍存在 → 预检返回既有 owner 目标，出现覆盖恢复选项
+    await expect(page.getByTestId("import-archive-inspect")).toBeVisible({ timeout: 30000 });
+    await page.getByRole("radio", { name: /覆盖恢复到已有工作区/ }).check();
     await expect(page.getByText("危险操作：覆盖恢复")).toBeVisible();
 
     // 未完成双重确认时按钮禁用
-    const restoreBtn = page.getByRole("button", { name: "覆盖恢复本工作区" });
+    const restoreBtn = page.getByRole("button", { name: "覆盖恢复" });
     await expect(restoreBtn).toBeDisabled();
 
-    // 选择归档 + 勾选 + 输入工作区名 → 按钮解禁
-    await page.locator(".ant-modal input[type='file']").setInputFiles(archivePath);
+    // 勾选 + 输入工作区名 → 按钮解禁
     await page.getByRole("checkbox").check();
     await page.getByPlaceholder(/输入工作区名称/).fill(name);
     await expect(restoreBtn).toBeEnabled();

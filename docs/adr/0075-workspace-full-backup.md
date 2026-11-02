@@ -87,7 +87,8 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 | `GET /v1/workspaces/{wid}/export/archive` | 新增：StreamingResponse 返回 tar.gz，query 参数 `include_secrets`（默认 true） |
 | `POST /v1/workspaces/{wid}/restore` | 新增：multipart 上传归档，覆盖恢复到当前工作区；仅 owner 可调用 |
 | `POST /v1/workspaces/import` | 兼容扩展：请求体支持归档文件（v9）与旧 JSON（v1-8），按 manifest/`version` 字段分流到解包层或旧路径 |
-| `GET /v1/workspaces/{wid}/export` | 保留：v8 JSON 口径，由 v9 构建器降采样输出（废弃预告，不在本期删除） |
+| `GET /v1/workspaces/{wid}/export` | 保留（后端兼容 / CLI 与旧数据）：v8 JSON 口径，由 v9 构建器降采样输出；2026-11-03 起前端「备份工作区」只提供全量归档 |
+| `POST /v1/workspaces/import/archive/inspect` | 新增（2026-11-03）：multipart 预检归档，返回归档内工作区名 / 版本 / 统计与「同名且当前用户为 owner」的既有工作区（不落库），供导入对话框决定是否提供覆盖恢复 |
 
 ### 4. 边界与例外
 
@@ -109,9 +110,9 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| API 封装 | `frontend/src/api/workspaces.ts` | 新增 `exportWorkspaceArchive`（blob）、`restoreWorkspace` |
-| 备份对话框 | `frontend/src/pages/settings/WorkspaceBackupDialog.tsx` | 新增「归档备份（全量）」导出入口 + 密钥开关；新增「恢复到本工作区」入口（危险操作二次确认，输入工作区名确认） |
-| 工作区设置 | `frontend/src/pages/settings/`（工作区设置页） | 恢复入口挂在工作区设置，非 owner 隐藏 |
+| API 封装 | `frontend/src/api/workspaces.ts` | `exportWorkspaceArchive`（blob）、`restoreWorkspace`、`inspectWorkspaceArchive`（预检）；2026-11-03 起移除前端 JSON 备份 / 导入方法 |
+| 备份对话框 | `frontend/src/pages/settings/WorkspaceBackupDialog.tsx` | **只保留全量归档备份**：归档导出 + 密钥开关；恢复入口整体移出（2026-11-03 用户口径） |
+| 导入工作区 | `frontend/src/pages/workspace/WorkspaceList.tsx` | 仅接受 .tar.gz；选文件后调预检，默认「导入为新工作区」（推荐，避免覆盖）；仅当归档目标同名工作区已存在且当前用户为 owner 时展示「覆盖恢复到已有工作区」危险选项（勾选 + 输入工作区名双重确认） |
 
 ### 7. 测试清单
 
@@ -165,12 +166,12 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`（v9 构建器 / v8 降采样 / 归档打包与解包）；`plugins/workspaces/routers/workspaces.py`（GET /{wid}/export/archive） | `tests/test_workspace_backup_v9.py` TestArchiveStructure | `d839ef16` |
 | P1 | 已落地 | `plugins/workspaces/services/backup_io.py`（版本白名单 1-9、v9 extras 落库、files_dir、旧行 id 映射）；`plugins/workspaces/services/workspace_restore.py`（wait_sync_jobs_idle / clear_workspace_content / restore_workspace_from_backup）；`plugins/workspaces/routers/workspaces.py`（POST /{wid}/restore、POST /workspaces/import/archive，独立端点，偏离 D1「同端点分流」，multipart 与 JSON 载荷无法共端点） | `tests/test_workspace_backup_v9.py` TestRestoreRoundtrip；既有 v1-8 回归（version "9"→"99" 修正 2 处） | `d839ef16` |
-| P2 | 已落地 | `frontend/src/api/workspaces.ts`（exportWorkspaceArchive / restoreWorkspace / importWorkspaceArchive）；`frontend/src/pages/settings/WorkspaceBackupDialog.tsx`（全量归档导出 + 密钥开关 + 覆盖恢复双重确认，非 owner 隐藏）；`frontend/src/pages/workspace/WorkspaceList.tsx` 导入弹窗支持 .tar.gz | `frontend/src/pages/settings/WorkspaceBackupDialog.test.tsx` 9 例；e2e `frontend/tests/e2e/critical/workspace-backup.spec.ts` 3 例 | `d839ef16` |
+| P2 | 已落地 | `frontend/src/api/workspaces.ts`（exportWorkspaceArchive / restoreWorkspace / importWorkspaceArchive / inspectWorkspaceArchive）；`frontend/src/pages/settings/WorkspaceBackupDialog.tsx`（仅全量归档导出 + 密钥开关）；`frontend/src/pages/workspace/WorkspaceList.tsx` 导入弹窗（.tar.gz 预检 → 默认新建 / 同名 owner 可覆盖恢复）（2026-11-03 调整） | `frontend/src/pages/settings/WorkspaceBackupDialog.test.tsx` 5 例；`frontend/src/pages/workspace/WorkspaceList.test.tsx` 导入 3 例；后端 `tests/test_workspace_backup_v12.py` TestArchiveInspect 3 例；e2e `frontend/tests/e2e/critical/workspace-backup.spec.ts` 3 例 | `d839ef16` |
 
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P2 全部落地，门禁全绿
 - 已完成：v9 归档构建/解包、v8 降采样出口、导入端 v9 extras、覆盖恢复（clear + import + meta 还原）、前端备份对话框与导入入口、单测 + e2e
-- 下一步：`make check` 全绿后提交推送（`feat: 工作区全量备份与恢复（ADR 0075）`）
+- 下一步：`make check` 全绿后提交推送（`feat: 工作区全量备份与恢复（ADR 0075）`）；2026-11-03 已调整前端备份 / 导入形态（仅归档 + 导入时选择新建或覆盖恢复）
 - 已知坑：测试环境 `LD_LIBRARY_PATH` 含旧 libsqlite3 导致 `_sqlite3` ImportError，须 `LD_LIBRARY_PATH= make test`；clear 的 DDL drop 前必须 commit 释放 RESERVED 锁；导出 `_store_content_bytes` 内联 50KB / 外存 2MB 阈值沿用 documents/services/content.py 口径
 - 最近一次全绿：make check（本次提交前）
