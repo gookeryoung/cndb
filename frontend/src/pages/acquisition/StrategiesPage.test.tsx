@@ -125,6 +125,33 @@ describe('StrategiesPage 智能采集', () => {
     expect(screen.getByText(/抓取 4/)).toBeInTheDocument()
   })
 
+  it('预览命中 0 时说明被哪条筛选拦下', async () => {
+    server.use(...handlers([makeStrategy()]))
+    let sentFilter: unknown = null
+    server.use(http.post(`${BASE}/acquisition/strategies/5/preview`, async ({ request }) => {
+      sentFilter = ((await request.json()) as { filter_rule?: unknown }).filter_rule
+      return HttpResponse.json({
+        status: 'success',
+        collected: 50,
+        after_dedup: 50,
+        after_filter: 0,
+        rejected_by: { must_have: 50 },
+        by_channel: { 'job:2': 50 },
+        samples: [],
+        channel_errors: [],
+      })
+    }))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /编辑/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /抓一次看看/ }))
+
+    expect(await screen.findByText(/抓取 50 条 → 去重 50 → 命中 0/)).toBeInTheDocument()
+    expect(screen.getByText(/未全部命中「必须包含」 50 条/)).toBeInTheDocument()
+    // 预览带表单当前筛选（而不是只发检索式）
+    expect(sentFilter).toMatchObject({ must_have_keywords: ['电解质'] })
+  })
+
   it('落点可就地新建数据表并自动选中，无需退出抽屉', async () => {
     server.use(...handlers([makeStrategy()]))
     let createdName = ''

@@ -69,23 +69,53 @@ def _as_date(value: Any) -> dt.date | None:
 def candidate_text(item: Mapping[str, Any]) -> str:
     """用于关键词 / 布尔式匹配的文本.
 
-    文档类候选取「标题 + 摘要 + 正文」；表类候选（归一后的行，没有 title）取全部字符串列，
-    保证同一套筛选规则对两种落点都可用。
+    优先「标题 + 摘要 + 正文」，**并追加其余字段的文本内容**：不同数据源把正文放在
+    ``description`` / ``desc`` / ``text`` / ``body`` / ``abstract`` 等名字下，只认三个键
+    会让关键词明明存在却全部判成未命中（预览「命中 0」的常见原因），因此这里做浅层
+    展开（嵌套对象 / 数组最多下钻两层），保证同一套筛选规则对不同源的字段命名都能用。
     """
-    parts = [
-        str(item.get("title") or ""),
-        str(item.get("summary") or ""),
-        str(item.get("content") or ""),
-    ]
-    text = " ".join(part for part in parts if part)
-    if text.strip():
-        return text
-    columns = [
-        str(int(value) if isinstance(value, bool) else value)
-        for key, value in item.items()
-        if isinstance(value, str) and not str(key).startswith("_")
-    ]
-    return " ".join(columns)
+    parts: list[str] = []
+    seen: set[str] = set()
+
+    def add(text: str) -> None:
+        cleaned = text.strip()
+        if cleaned and cleaned not in seen:
+            seen.add(cleaned)
+            parts.append(cleaned)
+
+    for key in ("title", "summary", "content"):
+        add(str(item.get(key) or ""))
+    for key, value in item.items():
+        if key in ("title", "summary", "content") or str(key).startswith("_"):
+            continue
+        for text in _iter_text(value):
+            add(text)
+    return " ".join(parts)
+
+
+def _iter_text(value: Any, depth: int = 0) -> list[str]:
+    """抽取任意 JSON 值中的文本（最多下钻两层，避免大对象无限展开）."""
+    if depth > 2 or value is None:
+        return []
+    if isinstance(value, bool):
+        return [str(int(value))]
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (int, float)):
+        return [str(value)]
+    if isinstance(value, Mapping):
+        texts: list[str] = []
+        for key, entry in value.items():
+            if str(key).startswith("_"):
+                continue
+            texts.extend(_iter_text(entry, depth + 1))
+        return texts
+    if isinstance(value, (list, tuple)):
+        texts = []
+        for entry in value:
+            texts.extend(_iter_text(entry, depth + 1))
+        return texts
+    return []
 
 
 def _join_values(value: Any) -> str:
@@ -168,10 +198,17 @@ class FilterOutcome:
 
     items: list[dict[str, Any]] = field(default_factory=list)
     rejected: int = 0
+    #: 按拦下原因聚合的计数（must_have / exclude / optional / date / …），供预览解释「命中 0」
+    rejected_by: dict[str, int] = field(default_factory=dict)
 
     @property
     def passed(self) -> int:
         return len(self.items)
+
+
+def _reject(outcome: FilterOutcome, reason: str) -> None:
+    outcome.rejected += 1
+    outcome.rejected_by[reason] = outcome.rejected_by.get(reason, 0) + 1
 
 
 def _score(
@@ -216,31 +253,31 @@ def apply_filters(
         # 1. 布尔式优先；无布尔式时 must_have 为硬条件，有布尔式时降为加分项
         if bool_ast is not None:
             if not evaluate_boolean(bool_ast, text):
-                outcome.rejected += 1
+                _reject(outcome, "boolean")
                 continue
         elif any(keyword.lower() not in lowered for keyword in rule.must_have_keywords):
-            outcome.rejected += 1
+            _reject(outcome, "must_have")
             continue
 
         # 2. 排除词
         if any(keyword.lower() in lowered for keyword in rule.exclude_keywords):
-            outcome.rejected += 1
+            _reject(outcome, "exclude")
             continue
 
         # 3. 可选词（为空则忽略）
         optional_hits = sum(1 for keyword in rule.optional_keywords if keyword.lower() in lowered)
         if rule.optional_keywords and optional_hits == 0 and bool_ast is None:
-            outcome.rejected += 1
+            _reject(outcome, "optional")
             continue
 
         # 4. 作者 / 机构
         if rule.authors and not any(author.lower() in _join_values(item.get("authors")) for author in rule.authors):
-            outcome.rejected += 1
+            _reject(outcome, "authors")
             continue
         if rule.institutions and not any(
             inst.lower() in _join_values(item.get("affiliations")) for inst in rule.institutions
         ):
-            outcome.rejected += 1
+            _reject(outcome, "institutions")
             continue
 
         # 5. 日期范围（解析不出来的日期不拦，避免因源站格式差异整批丢弃）
@@ -249,28 +286,28 @@ def apply_filters(
             lower = _as_date(rule.date_from)
             upper = _as_date(rule.date_to)
             if lower is not None and published < lower:
-                outcome.rejected += 1
+                _reject(outcome, "date")
                 continue
             if upper is not None and published > upper:
-                outcome.rejected += 1
+                _reject(outcome, "date")
                 continue
 
         # 6. 分类 / 类型
         if rule.categories and not any(cat.lower() in _join_values(item.get("categories")) for cat in rule.categories):
-            outcome.rejected += 1
+            _reject(outcome, "categories")
             continue
         if rule.document_types:
             doc_type = str(item.get("document_type") or "").lower()
             if not any(candidate.lower() in doc_type for candidate in rule.document_types):
-                outcome.rejected += 1
+                _reject(outcome, "document_type")
                 continue
 
         # 7. 引用数 / 全文
         if rule.min_citations > 0 and _as_int(item.get("citation_count"), 0) < rule.min_citations:
-            outcome.rejected += 1
+            _reject(outcome, "citations")
             continue
         if rule.require_fulltext and not item.get("fulltext_url"):
-            outcome.rejected += 1
+            _reject(outcome, "fulltext")
             continue
 
         scored = dict(item)

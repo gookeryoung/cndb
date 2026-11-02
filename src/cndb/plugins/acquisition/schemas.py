@@ -110,9 +110,10 @@ class RunDetailResponse(BaseModel):
 
 
 class PreviewRequest(BaseModel):
-    """预览：可覆盖检索式（保存前试算），不落库。"""
+    """预览：可覆盖检索式 / 筛选（保存前试算），不落库."""
 
     query: str | None = Field(default=None, max_length=500)
+    filter_rule: dict[str, Any] | None = Field(default=None, description="表单当前的筛选规则（覆盖已保存值）")
 
 
 class PreviewSample(BaseModel):
@@ -127,6 +128,8 @@ class PreviewResponse(BaseModel):
     collected: int
     after_dedup: int
     after_filter: int
+    #: 按原因聚合的拦截计数（must_have / exclude / optional / date / …），命中 0 时用于提示
+    rejected_by: dict[str, int] = Field(default_factory=dict)
     by_channel: dict[str, int] = Field(default_factory=dict)
     samples: list[PreviewSample] = Field(default_factory=list)
     channel_errors: list[dict[str, str]] = Field(default_factory=list)

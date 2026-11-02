@@ -302,7 +302,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 | `GET /strategies`、`POST /strategies` | 新增：列表 / 创建；创建校验占位符、布尔式、`targets` 归属、模块开关、预算上下限 |
 | `GET /strategies/{id}`、`PUT /strategies/{id}`、`DELETE /strategies/{id}` | 新增：读写删（软删）；实质变更 → `rule_version+1` 且回 `draft` |
 | `POST /strategies/{id}/enable`、`POST /strategies/{id}/disable` | 新增：启停（启用前跑一次规则校验；**不强制先预览**——预览不落库，无法作为持久前置条件，改为前端引导 + 启用后首次运行即可验证） |
-| `POST /strategies/{id}/preview` | 新增：`dry_run` 首轮——真实抓取、真实筛选，**不写表 / 不写文档 / 不写 item**，返回 `{collected, after_dedup, after_filter, samples[], channel_errors[]}` |
+| `POST /strategies/{id}/preview` | 新增：`dry_run` 首轮——真实抓取、真实筛选，**不写表 / 不写文档 / 不写 item**；请求体可带 `query` / `filter_rule` 覆盖已保存值（编辑器未保存表单试算），返回 `{collected, after_dedup, after_filter, rejected_by, samples[], channel_errors[]}`（`rejected_by` 按 must_have / exclude / optional / date 等原因聚合，供前端解释「命中 0」） |
 | `POST /strategies/{id}/run` | 新增：手动触发（`EDITOR`），**同步执行**并返回终态运行记录；租约被占用 409。P2 接入调度后仍是同步执行（定时入口为 `cndb acquisition tick`），**不引入后台线程 / 任务队列**：单次运行受 `iteration.budget.max_requests` 封顶，cron 周期内可完成 |
 | `POST /runs/{rid}/cancel` | 新增：轮边界取消（写 `detail.cancel_requested`，`runner` 在每轮开头刷新并停；已结束的运行 400） |
 | `POST /runs/{rid}/resume` | 新增：`awaiting_review` 续跑；可选 `{keywords?: [term], query?}`，不带参数 = 「不调」，直接进下一轮；`EDITOR` 权限。调度超时兜底走同一入口（`timeout=True`，写 `detail.review_timeout`） |

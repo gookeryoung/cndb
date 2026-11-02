@@ -89,6 +89,8 @@ class StrategyExecution:
     collected: int = 0
     after_dedup: int = 0
     after_filter: int = 0
+    #: 预览时按原因聚合的拦截计数（must_have / date / …），供前端解释「命中 0」
+    rejected_by: dict[str, int] = field(default_factory=dict)
     by_channel: dict[str, int] = field(default_factory=dict)
     channel_errors: list[dict[str, str]] = field(default_factory=list)
     status: str = RunStatus.SUCCESS.value
@@ -602,10 +604,22 @@ def _preview_pass(
     user: Any,
     fetch: FetchFn | None,
     today: str,
+    query_override: str | None = None,
+    filter_override: Mapping[str, Any] | None = None,
 ) -> StrategyExecution:
-    """预览：真实抓取 + 筛选，**不写表 / 不写文档 / 不写台账 / 不落运行记录**（I6）."""
+    """预览：真实抓取 + 筛选，**不写表 / 不写文档 / 不写台账 / 不落运行记录**（I6）.
+
+    ``query_override`` / ``filter_override`` 用编辑器里尚未保存的表单值试算——否则用户
+    改完筛选再点预览，看到的仍是旧规则的结果，容易被误判成「采集不到」。
+    """
     scope = dict(strategy.scope or {})
-    query = _render_base(strategy, today)
+    if query_override is not None and str(query_override).strip():
+        try:
+            query = render_query(str(query_override), {"today": today})
+        except RuleError as exc:
+            raise RuleError(f"scope.query 渲染失败: {exc}") from exc
+    else:
+        query = _render_base(strategy, today)
     specs, channel_errors = build_channel_specs(
         db,
         workspace_id=strategy.workspace_id,
@@ -626,13 +640,15 @@ def _preview_pass(
         collected.extend(rows)
 
     fresh, _keys = _dedupe_batch(collected)
-    filtered = apply_filters(fresh, FilterRule.from_dict(strategy.filter_rule))
+    rule_payload = strategy.filter_rule if filter_override is None else filter_override
+    filtered = apply_filters(fresh, FilterRule.from_dict(rule_payload))
     status = RunStatus.FAILED.value if (not specs and channel_errors) else RunStatus.SUCCESS.value
     return StrategyExecution(
         samples=filtered.items[:SAMPLE_SIZE],
         collected=len(collected),
         after_dedup=len(fresh),
         after_filter=filtered.passed,
+        rejected_by=dict(filtered.rejected_by),
         by_channel=by_channel,
         channel_errors=channel_errors,
         status=status,
@@ -646,9 +662,23 @@ def preview_strategy(
     fetch: FetchFn | None = None,
     now: dt.datetime | None = None,
     user: Any = None,
+    query: str | None = None,
+    filter_rule: Mapping[str, Any] | None = None,
 ) -> StrategyExecution:
-    """预览入口（供 API / CLI 复用）."""
-    return execute_strategy(db, strategy, user=user, fetch=fetch, now=now, dry_run=True)
+    """预览入口（供 API / CLI 复用）.
+
+    ``query`` / ``filter_rule`` 为可选的表单覆盖值（保存前试算），不落库。
+    """
+    started = _as_utc(now or dt.datetime.now(dt.UTC))
+    return _preview_pass(
+        db,
+        strategy,
+        user=user,
+        fetch=fetch,
+        today=started.date().isoformat(),
+        query_override=query,
+        filter_override=filter_rule,
+    )
 
 
 # ── 辅助 ─────────────────────────────────────────

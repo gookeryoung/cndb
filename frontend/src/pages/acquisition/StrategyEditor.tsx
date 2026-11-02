@@ -63,6 +63,27 @@ interface FormValues {
   scheduleSeconds?: number
 }
 
+const REJECT_LABELS: Record<string, string> = {
+  must_have: '未全部命中「必须包含」',
+  boolean: '布尔式未命中',
+  exclude: '命中「必须排除」',
+  optional: '未命中任一「可选包含」',
+  authors: '作者不匹配',
+  institutions: '机构不匹配',
+  categories: '分类不匹配',
+  document_type: '文档类型不匹配',
+  date: '发布日期不在范围内',
+  citations: '引用数不足',
+  fulltext: '缺少全文链接',
+}
+
+function rejectSummary(rejectedBy: Record<string, number>): string {
+  const entries = Object.entries(rejectedBy).filter(([, count]) => count > 0)
+  if (!entries.length) return '没有通过筛选的条目'
+  entries.sort((a, b) => b[1] - a[1])
+  return entries.map(([reason, count]) => `${REJECT_LABELS[reason] ?? reason} ${count} 条`).join('；')
+}
+
 const REVIEW_OPTIONS = [
   { value: 'llm', label: '大模型判断后自动继续（默认）' },
   { value: 'auto', label: '纯确定性，不走模型' },
@@ -252,7 +273,12 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
   const previewMutation = useMutation({
     mutationFn: async () => {
       if (!strategy) throw new Error('请先保存策略再预览')
-      return acquisitionApi.preview(wid, strategy.id, form.getFieldValue('query'))
+      // 用表单当前筛选 / 检索式试算：改完规则不必先保存就能验证命中
+      const payload = toPayload(form.getFieldsValue(true))
+      return acquisitionApi.preview(wid, strategy.id, {
+        query: payload.scope.query,
+        filterRule: payload.filter_rule,
+      })
     },
     onSuccess: setPreview,
     onError: (error: Error) => message.error(error.message),
@@ -482,6 +508,12 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
             message={`抓取 ${preview.collected} 条 → 去重 ${preview.after_dedup} → 命中 ${preview.after_filter}`}
             description={(
               <Space orientation="vertical" size={4} style={{ width: '100%' }}>
+                {preview.after_filter === 0 && preview.after_dedup > 0 && (
+                  <Text type="warning">
+                    全部被筛选拦下：{rejectSummary(preview.rejected_by ?? {})}
+                    。「必须包含」要求全部命中，可先清空筛选预览一次确认源数据字段，或把关键词放到「可选包含」。
+                  </Text>
+                )}
                 {Object.entries(preview.by_channel).map(([channel, count]) => (
                   <Text key={channel} type="secondary">{channel}：{count} 条</Text>
                 ))}

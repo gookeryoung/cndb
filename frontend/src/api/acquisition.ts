@@ -151,6 +151,8 @@ export interface AcquisitionPreview {
   collected: number
   after_dedup: number
   after_filter: number
+  /** 按原因聚合的拦截计数（must_have / exclude / optional / date / …） */
+  rejected_by?: Record<string, number>
   by_channel: Record<string, number>
   samples: Array<{ title: string; url: string; published_at: string; match_score: number }>
   channel_errors: Array<{ channel: string; error: string }>
@@ -197,9 +199,13 @@ export const acquisitionApi = {
   disableStrategy: (wid: number | string, id: number) =>
     api.post<AcquisitionStrategy>(`${base(wid)}/strategies/${id}/disable`).then(r => r.data),
 
-  preview: (wid: number | string, id: number, query?: string) =>
+  /** 预览：query / filterRule 传表单当前值（可能未保存），不传则用已保存规则 */
+  preview: (wid: number | string, id: number, opts?: { query?: string; filterRule?: AcquisitionFilterRule }) =>
     api
-      .post<AcquisitionPreview>(`${base(wid)}/strategies/${id}/preview`, query ? { query } : {})
+      .post<AcquisitionPreview>(`${base(wid)}/strategies/${id}/preview`, {
+        ...(opts?.query ? { query: opts.query } : {}),
+        ...(opts?.filterRule ? { filter_rule: opts.filterRule } : {}),
+      })
       .then(r => r.data),
 
   run: (wid: number | string, id: number) =>

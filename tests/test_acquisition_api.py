@@ -165,6 +165,34 @@ def test_preview_and_run_and_history(client, db, table, sync_job, workspace_with
     assert detail.json()["rounds"][0]["stop_reason"] == "max_rounds"
 
 
+def test_preview_uses_form_overrides(client, db, table, sync_job, workspace_with_auth):
+    """预览可带当前（未保存）的检索式 / 筛选试算，并回报拦截原因."""
+    workspace_id, headers = workspace_with_auth
+    base = f"/api/v1/workspaces/{workspace_id}/acquisition"
+    payload = _payload(table, sync_job.id)
+    payload["filter_rule"] = {"must_have_keywords": ["不存在的词"]}
+    strategy_id = client.post(f"{base}/strategies", json=payload, headers=headers).json()["id"]
+
+    saved = client.post(f"{base}/strategies/{strategy_id}/preview", headers=headers)
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["after_filter"] == 0
+    assert saved.json()["rejected_by"] == {"must_have": 1}
+
+    # 表单里把筛选清空后预览：走覆盖值而不是已保存规则
+    override = client.post(
+        f"{base}/strategies/{strategy_id}/preview",
+        json={"query": "北京", "filter_rule": {}},
+        headers=headers,
+    )
+    assert override.status_code == 200, override.text
+    assert override.json()["after_filter"] == 1
+    assert override.json()["rejected_by"] == {}
+    # 覆盖值不落库
+    strategy = db.query(AcquisitionStrategy).filter_by(id=strategy_id).one()
+    db.refresh(strategy)
+    assert strategy.filter_rule == {"must_have_keywords": ["不存在的词"]}
+
+
 def test_validate_rules_endpoint(client, table, sync_job, workspace_with_auth):
     workspace_id, headers = workspace_with_auth
     base = f"/api/v1/workspaces/{workspace_id}/acquisition"

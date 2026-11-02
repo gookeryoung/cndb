@@ -103,6 +103,19 @@ class TestFilterRule:
         assert outcome.items[0]["title"] == strong["title"]
         assert 0 <= int(outcome.items[0]["match_score"]) <= 100
 
+    def test_candidate_text_includes_other_text_fields(self) -> None:
+        """正文放在 description / 嵌套字段里也要参与匹配（不同源字段名不一致）."""
+        rule = FilterRule(must_have_keywords=("固态电解质",))
+        flat = {"title": "Weekly digest", "description": "固态电解质界面研究"}
+        nested = {"title": "Weekly digest", "payload": {"body": "固态电解质界面研究"}}
+        assert apply_filters([flat], rule).passed == 1
+        assert apply_filters([nested], rule).passed == 1
+
+    def test_rejected_by_reason(self) -> None:
+        outcome = apply_filters([self._item(title="其它")], FilterRule(must_have_keywords=("固态电解质",)))
+        assert outcome.rejected == 1
+        assert outcome.rejected_by == {"must_have": 1}
+
     def test_table_row_candidate_uses_string_columns(self) -> None:
         """表类候选没有 title：用全部字符串列做匹配文本（P0 表落点必需）."""
         rule = FilterRule(must_have_keywords=("北京",))

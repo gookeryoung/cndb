@@ -20,6 +20,7 @@ from cndb.plugins.acquisition.schemas import (
     ChannelCatalogResponse,
     ChannelOption,
     DiagnoseResponse,
+    PreviewRequest,
     PreviewResponse,
     PreviewSample,
     ProviderOption,
@@ -343,16 +344,27 @@ def preview_strategy_route(
     strategy_id: int,
     db: Annotated[Session, Depends(get_db)],
     user: Annotated[User, Depends(get_current_user)],
+    payload: PreviewRequest | None = None,
 ) -> PreviewResponse:
-    """抓一次并筛选，不写表 / 不写台账 / 不落运行记录。"""
+    """抓一次并筛选，不写表 / 不写台账 / 不落运行记录.
+
+    请求体可带 ``query`` / ``filter_rule``：用编辑器当前（可能未保存）的检索式与筛选试算。
+    """
     check_workspace_permission(db, workspace_id, user, WorkspaceRole.VIEWER)
     strategy = _get_strategy(db, workspace_id, strategy_id)
-    execution = preview_strategy(db, strategy, user=user)
+    execution = preview_strategy(
+        db,
+        strategy,
+        user=user,
+        query=payload.query if payload else None,
+        filter_rule=payload.filter_rule if payload else None,
+    )
     return PreviewResponse(
         status=execution.status,
         collected=execution.collected,
         after_dedup=execution.after_dedup,
         after_filter=execution.after_filter,
+        rejected_by=dict(execution.rejected_by),
         by_channel=dict(execution.by_channel),
         samples=[
             PreviewSample(
