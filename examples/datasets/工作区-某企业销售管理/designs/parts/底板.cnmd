@@ -1,0 +1,9 @@
+// 零件文件：底板（带中心过孔的安装板，ADR 0086 C1）
+param len = 120
+param wid = 60
+param t = 8
+
+difference {
+  box(size = [len, wid, t])
+  translate([0, 0, -1]) cyl(d = 14, h = t + 2)
+}

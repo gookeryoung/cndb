@@ -67,8 +67,15 @@ def _url(ws, suffix: str = "") -> str:
     return f"{BASE.format(ws=ws.id)}{suffix}"
 
 
-def _create(client, ws, headers, title: str = "法兰板", content: str = GOOD_CONTENT):
-    return client.post(_url(ws), json={"title": title, "content": content}, headers=headers)
+def _create(client, ws, headers, title: str = "法兰板", content: str = GOOD_CONTENT, **extra):
+    return client.post(_url(ws), json={"title": title, "content": content, **extra}, headers=headers)
+
+
+def _ir(client, ws, design_id: int, headers) -> dict:
+    """取 ``GET /{id}/ir`` 快照（详情不再携带 compiled，ADR 0086 D10）."""
+    resp = client.get(_url(ws, f"/{design_id}/ir"), headers=headers)
+    assert resp.status_code == 200
+    return resp.json()
 
 
 class TestCreate:
@@ -78,21 +85,61 @@ class TestCreate:
         body = resp.json()
         assert body["title"] == "法兰板"
         assert body["version_number"] == 1
-        assert body["compiled"]["version"] == 4
-        assert body["compiled"]["units"] == {"length": "mm", "angle": "deg"}
-        assert body["compiled"]["nodes"], "顶层实例应产出几何"
+        assert body["kind"] == "assembly"
+        assert body["file_key"] == "法兰板"
+        assert "compiled" not in body, "详情移除 compiled（ADR 0086 D10）"
+        ir = _ir(client, ws, body["id"], auth_owner)
+        assert ir["ir"]["version"] == 4
+        assert ir["ir"]["units"] == {"length": "mm", "angle": "deg"}
+        assert ir["ir"]["nodes"], "顶层实例应产出几何"
+        assert ir["content_hash"], "详情带 content_hash（与 /ir ETag 同源）"
         # 创建即落 v1
         design_id = body["id"]
         versions = db.scalars(select(DesignDesignVersion).where(DesignDesignVersion.design_id == design_id)).all()
         assert [v.version_number for v in versions] == [1]
         assert versions[0].content == GOOD_CONTENT
-        assert versions[0].compiled == body["compiled"]
+        assert versions[0].compiled == ir["ir"]
 
     def test_create_empty_content_ok(self, client, ws, auth_owner):
         """空程序合法（边界 #3：顶层无实例编译通过、nodes 为空）."""
         resp = _create(client, ws, auth_owner, title="空白设计", content="")
         assert resp.status_code == 201
-        assert resp.json()["compiled"]["nodes"] == []
+        assert _ir(client, ws, resp.json()["id"], auth_owner)["ir"]["nodes"] == []
+
+    def test_create_part_kind(self, client, ws, auth_owner):
+        """part 文件：kind 落库、file_key 可指定；part 允许无 system 的普通几何."""
+        resp = _create(
+            client, ws, auth_owner, title="垫圈", content="cyl(d = 10, h = 2)", kind="part", file_key="washer"
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["kind"] == "part"
+        assert body["file_key"] == "washer"
+        assert body["folder"] == ""
+
+    def test_create_part_system_rejected(self, client, ws, auth_owner):
+        """part 文件禁止 system（D3）：400 编译失败."""
+        resp = _create(client, ws, auth_owner, title="零件", content="system s {\n  box(w=1,h=1,d=1)\n}\n", kind="part")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "design_compile_failed"
+
+    def test_create_folder(self, client, ws, auth_owner):
+        resp = _create(client, ws, auth_owner, title="垫圈", content="cyl(d=10, h=2)", folder="parts/底盘")
+        assert resp.status_code == 201
+        assert resp.json()["folder"] == "parts/底盘"
+
+    @pytest.mark.parametrize("bad", ["/abs", "a/../b", "a\\b", "a//b"])
+    def test_create_folder_invalid_400(self, client, ws, auth_owner, bad):
+        resp = _create(client, ws, auth_owner, title="目录", content="", folder=bad)
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "design_folder_invalid"
+
+    def test_create_file_key_conflict_deduped(self, client, ws, auth_owner):
+        """file_key 工作区唯一：指定冲突 key 时自动加后缀."""
+        first = _create(client, ws, auth_owner, title="垫圈", content="cyl(d=10,h=2)", file_key="washer").json()
+        second = _create(client, ws, auth_owner, title="垫圈2", content="cyl(d=12,h=2)", file_key="washer").json()
+        assert first["file_key"] == "washer"
+        assert second["file_key"] == "washer-2"
 
     def test_create_compile_fail_400(self, client, db, ws, auth_owner):
         resp = _create(client, ws, auth_owner, content=BAD_CONTENT)
@@ -139,7 +186,9 @@ class TestListAndGet:
 
         detail = client.get(_url(ws, f"/{created['id']}"), headers=auth_viewer).json()
         assert detail["content"] == GOOD_CONTENT
-        assert detail["compiled"] == created["compiled"]
+        assert "compiled" not in detail
+        assert detail["file_key"] == created["file_key"]
+        assert detail["content_hash"]
 
     def test_list_filters_deleted_and_title(self, client, ws, auth_owner):
         a = _create(client, ws, auth_owner, title="支座").json()
@@ -206,7 +255,7 @@ class TestSaveContent:
         body = resp.json()
         assert body["version_number"] == 2
         assert body["content"] == new_content
-        assert body["compiled"]["nodes"] == [{"op": "box", "size": [10, 10, 10]}]
+        assert _ir(client, ws, created["id"], auth_owner)["ir"]["nodes"] == [{"op": "box", "size": [10, 10, 10]}]
         versions = db.scalars(
             select(DesignDesignVersion)
             .where(DesignDesignVersion.design_id == created["id"])
@@ -219,7 +268,7 @@ class TestSaveContent:
     def test_save_compile_fail_keeps_old_ir(self, client, db, ws, auth_owner):
         """边界 #2：保存被拒时库内旧 compiled 不动、内容不丢."""
         created = _create(client, ws, auth_owner).json()
-        old_compiled = created["compiled"]
+        old_compiled = _ir(client, ws, created["id"], auth_owner)["ir"]
         resp = client.put(
             _url(ws, f"/{created['id']}/content"),
             json={"content": BAD_CONTENT},
@@ -377,12 +426,13 @@ class TestVersions:
     def test_restore_version_recompiles_as_new(self, client, db, ws, auth_editor):
         """恢复（P2）：以 v1 原文重编译落 v3，历史版本不受影响."""
         created = self._make_two_versions(client, ws, auth_editor)
+        v1_ir = client.get(_url(ws, f"/{created['id']}/versions/1"), headers=auth_editor).json()["compiled"]
         resp = client.post(_url(ws, f"/{created['id']}/versions/1/restore"), headers=auth_editor)
         assert resp.status_code == 200
         body = resp.json()
         assert body["version_number"] == 3
         assert body["content"] == GOOD_CONTENT
-        assert body["compiled"] == created["compiled"], "同原文重编译应产出同 IR（I3）"
+        assert _ir(client, ws, created["id"], auth_editor)["ir"] == v1_ir, "同原文重编译应产出同 IR（I3）"
         design = db.get(DesignDesign, created["id"])
         assert design.content == GOOD_CONTENT
         versions = db.scalars(
@@ -503,3 +553,176 @@ class TestOutline:
         assert derived["outline"]["children"][0]["kind"] == "system"
         db.refresh(design)
         assert "outline" not in design.compiled, "只读派生不落库"
+
+
+PART_CONTENT = "param dw = 10\nparam wh = 2\ncyl(d = dw, h = wh)"
+
+ASSEMBLY_CONTENT = 'use "washer"(dw = 12, wh = 3) as w1\ntranslate([50, 0, 0]) use "washer"() as w2\n'
+
+
+class TestFileLibrary:
+    """设计文件库 P1（ADR 0086 §4）：/ir ETag / 引用 / stale / 删除阻断 / refresh / 快照恢复."""
+
+    def _part(self, client, ws, headers, key: str = "washer") -> dict:
+        return _create(client, ws, headers, title="垫圈", content=PART_CONTENT, kind="part", file_key=key).json()
+
+    def _assembly(self, client, ws, headers) -> dict:
+        return _create(client, ws, headers, title="底盘", content=ASSEMBLY_CONTENT).json()
+
+    def test_ir_etag_and_304(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        first = client.get(_url(ws, f"/{created['id']}/ir"), headers=auth_owner)
+        etag = first.headers["ETag"]
+        assert etag.strip('"')
+        body = first.json()
+        assert body["design_id"] == created["id"]
+        assert body["version_number"] == 1
+        assert body["ir"]["version"] == 4
+        again = client.get(_url(ws, f"/{created['id']}/ir"), headers={**auth_owner, "If-None-Match": etag})
+        assert again.status_code == 304
+        # 保存后 ETag 变化
+        client.put(_url(ws, f"/{created['id']}/content"), json={"content": "box(size = [1, 1, 1])"}, headers=auth_owner)
+        fresh = client.get(_url(ws, f"/{created['id']}/ir"), headers={**auth_owner, "If-None-Match": etag})
+        assert fresh.status_code == 200
+        assert fresh.headers["ETag"] != etag
+
+    def test_preview_with_design_id_resolves_use(self, client, ws, auth_owner):
+        """preview 带 design_id：use 引用按工作区 resolver 解析（ADR 0086 §4）."""
+        self._part(client, ws, auth_owner)
+        assembly = self._assembly(client, ws, auth_owner)
+        resp = client.post(
+            _url(ws, "/preview"),
+            json={"content": ASSEMBLY_CONTENT, "design_id": assembly["id"]},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["ok"] is True
+        assert len(body["ir"]["nodes"]) == 2, "两个 washer 实例独立展开"
+
+    def test_preview_without_design_id_rejects_use(self, client, ws, auth_owner):
+        resp = client.post(_url(ws, "/preview"), json={"content": ASSEMBLY_CONTENT}, headers=auth_owner)
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is False
+
+    def test_save_content_syncs_refs_and_marks_referrers_stale(self, client, db, ws, auth_owner):
+        part = self._part(client, ws, auth_owner)
+        assembly = self._assembly(client, ws, auth_owner)
+        from cndb.plugins.design.models import DesignDesignref
+
+        refs = db.scalars(select(DesignDesignref).where(DesignDesignref.design_id == assembly["id"])).all()
+        assert [r.target_design_id for r in refs] == [part["id"]]
+
+        detail = client.get(_url(ws, f"/{assembly['id']}"), headers=auth_owner).json()
+        assert detail["dependencies_stale"] is False
+        # 零件保存 → 引用方置 stale（D6）
+        client.put(
+            _url(ws, f"/{part['id']}/content"),
+            json={"content": PART_CONTENT.replace("dw = 10", "dw = 14")},
+            headers=auth_owner,
+        )
+        detail = client.get(_url(ws, f"/{assembly['id']}"), headers=auth_owner).json()
+        assert detail["dependencies_stale"] is True
+        # 装配 refresh：以最新依赖重编译落新版本并清 stale
+        resp = client.post(_url(ws, f"/{assembly['id']}/refresh"), json={}, headers=auth_owner)
+        assert resp.status_code == 200
+        assert resp.json()["version_number"] == 2
+        detail = client.get(_url(ws, f"/{assembly['id']}"), headers=auth_owner).json()
+        assert detail["dependencies_stale"] is False
+        version = db.scalars(
+            select(DesignDesignVersion)
+            .where(DesignDesignVersion.design_id == assembly["id"])
+            .order_by(DesignDesignVersion.version_number.desc())
+        ).first()
+        assert version is not None and version.comment == "依赖更新"
+        assert version.dependencies and version.dependencies[0]["file_key"] == "washer"
+
+    def test_dependencies_endpoint(self, client, ws, auth_owner):
+        part = self._part(client, ws, auth_owner)
+        assembly = self._assembly(client, ws, auth_owner)
+        body = client.get(_url(ws, f"/{assembly['id']}/dependencies"), headers=auth_owner).json()
+        assert [item["file_key"] for item in body["items"]] == ["washer"]
+        assert body["items"][0]["title"] == "垫圈"
+        assert body["referrers"] == []
+        reverse = client.get(_url(ws, f"/{part['id']}/dependencies"), headers=auth_owner).json()
+        assert [item["file_key"] for item in reverse["referrers"]] == [assembly["file_key"]]
+
+    def test_delete_referenced_409_then_allowed(self, client, ws, auth_owner):
+        part = self._part(client, ws, auth_owner)
+        assembly = self._assembly(client, ws, auth_owner)
+        resp = client.delete(_url(ws, f"/{part['id']}"), headers=auth_owner)
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "design_file_referenced"
+        assert "底盘" in resp.json()["detail"]
+        # 引用方软删后可删目标（D3 §5）
+        client.delete(_url(ws, f"/{assembly['id']}"), headers=auth_owner)
+        assert client.delete(_url(ws, f"/{part['id']}"), headers=auth_owner).status_code == 204
+
+    def test_rename_and_move_do_not_break_refs(self, client, ws, auth_owner):
+        """file_key 不可变：改名 / 移动目录后引用不断链（D2）."""
+        part = self._part(client, ws, auth_owner)
+        assembly = self._assembly(client, ws, auth_owner)
+        resp = client.put(
+            _url(ws, f"/{part['id']}"),
+            json={"title": "新垫圈", "folder": "parts/标准件"},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["file_key"] == "washer"
+        detail = client.get(_url(ws, f"/{assembly['id']}"), headers=auth_owner).json()
+        assert detail["dependencies_stale"] is False
+        body = client.get(_url(ws, f"/{assembly['id']}/dependencies"), headers=auth_owner).json()
+        assert body["items"][0]["design_id"] == part["id"]
+
+    def test_list_kind_folder_filters(self, client, ws, auth_owner):
+        self._part(client, ws, auth_owner)
+        _create(client, ws, auth_owner, title="支架", content="box(size=[1,1,1])", folder="parts")
+        parts = client.get(_url(ws), params={"kind": "part"}, headers=auth_owner).json()
+        assert [item["title"] for item in parts] == ["垫圈"]
+        foldered = client.get(_url(ws), params={"folder": "parts"}, headers=auth_owner).json()
+        assert [item["title"] for item in foldered] == ["支架"]
+        items = client.get(_url(ws), headers=auth_owner).json()
+        kinds = {item["title"]: item["kind"] for item in items}
+        assert kinds == {"垫圈": "part", "支架": "assembly"}
+
+    def test_version_detail_includes_dependencies(self, client, ws, auth_owner):
+        self._part(client, ws, auth_owner)
+        assembly = self._assembly(client, ws, auth_owner)
+        body = client.get(_url(ws, f"/{assembly['id']}/versions/1"), headers=auth_owner).json()
+        assert body["dependencies"] and body["dependencies"][0]["file_key"] == "washer"
+        assert body["dependencies"][0]["version_number"] == 1
+
+    def test_restore_recompiles_by_dependency_snapshot(self, client, db, ws, auth_owner):
+        """恢复按快照闭包编译（I5）：零件已更新时恢复仍按旧零件版本复现."""
+        part = self._part(client, ws, auth_owner)
+        assembly = self._assembly(client, ws, auth_owner)
+        client.put(
+            _url(ws, f"/{part['id']}/content"),
+            json={"content": PART_CONTENT.replace("dw = 10", "dw = 20")},
+            headers=auth_owner,
+        )
+        resp = client.post(_url(ws, f"/{assembly['id']}/versions/1/restore"), headers=auth_owner)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["version_number"] == 2
+        version = db.scalars(
+            select(DesignDesignVersion).where(
+                DesignDesignVersion.design_id == assembly["id"],
+                DesignDesignVersion.version_number == 2,
+            )
+        ).one()
+        assert version.dependencies[0]["version_number"] == 1, "恢复按 v1 快照闭包落库"
+        # nodes 数与 v1 相同（两个实例），几何未随零件最新版漂移
+        assert len(version.compiled["nodes"]) == 2
+
+    def test_restore_missing_dependency_400(self, client, db, ws, auth_owner):
+        """快照闭包中的依赖缺失 → 400 design_dependency_missing（I5 不取最新）."""
+        part = self._part(client, ws, auth_owner)
+        assembly = self._assembly(client, ws, auth_owner)
+        version = db.get(DesignDesignVersion, assembly["id"])
+        # 造一个带未知依赖的快照版本（绕过编译写入，仅针对恢复端点的缺失分支）
+        version.dependencies = [{"file_id": part["id"], "file_key": "gone", "version_number": 1, "content_hash": "x"}]
+        db.commit()
+        resp = client.post(_url(ws, f"/{assembly['id']}/versions/1/restore"), headers=auth_owner)
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "design_dependency_missing"

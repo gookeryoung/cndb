@@ -140,6 +140,21 @@ def downgrade() -> None:
 
     if not _table_exists(_DESIGN) or not _table_exists("workspaces_workspace"):
         return
+    # D12：重构过的设计从 refactored_from_version 版本行还原原文（旧代码读到 use 原文会编译失败）
+    cols = _columns(_DESIGN)
+    if "refactored_from_version" in cols and _table_exists(_VERSION):
+        op.get_bind().execute(
+            sa.text(
+                f"UPDATE {_DESIGN} SET"  # nosec B608 - 常量表名
+                f" content = (SELECT v.content FROM {_VERSION} v"
+                " WHERE v.design_id = design_design.id AND v.version_number = design_design.refactored_from_version),"
+                f" compiled = (SELECT v.compiled FROM {_VERSION} v"
+                " WHERE v.design_id = design_design.id AND v.version_number = design_design.refactored_from_version)"
+                " WHERE refactored_from_version IS NOT NULL"
+                " AND (SELECT v.content FROM design_designversion v"
+                " WHERE v.design_id = design_design.id AND v.version_number = design_design.refactored_from_version) IS NOT NULL"
+            )
+        )
     # folder 清空后再恢复 (workspace_id, title) 唯一，避免目录分组造成的重名冲突
     op.get_bind().execute(sa.text(f"UPDATE {_DESIGN} SET folder = ''"))  # nosec B608 - 常量表名
     uniqs = _unique_names(_DESIGN)

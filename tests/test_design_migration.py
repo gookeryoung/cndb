@@ -109,6 +109,29 @@ class TestDesignMigration:
         assert "dependencies" not in _columns(db_path, VERSION)
         assert _unique_index_count(db_path, DESIGN) == 1
 
+    def test_downgrade_restores_refactored_content(self, tmp_path: Path):
+        """D12：refactored_from_version 非空的设计 downgrade 时从该版本行还原 content/compiled."""
+        db_path = tmp_path / "design_refactor_down.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url)
+        with _conn(db_path) as conn:
+            conn.execute(
+                f"INSERT INTO {DESIGN} (workspace_id, title, kind, file_key, folder, content, compiled, description, refactored_from_version, is_deleted, created_at, updated_at)"  # nosec B608 - 测试常量
+                " VALUES (1, '支架', 'assembly', 'design-1', '', 'use \"x\"()', '{}', '', 1, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            conn.execute(
+                f"INSERT INTO {VERSION} (design_id, workspace_id, version_number, content, compiled, comment, created_at)"  # nosec B608 - 测试常量
+                " VALUES (1, 1, 1, 'module m() {\n  box(size=[1,1,1])\n}\nm()', '{\"legacy\": true}', '', CURRENT_TIMESTAMP)"
+            )
+            conn.commit()
+        _downgrade(url, PREVIOUS)
+        with _conn(db_path) as conn:
+            content, compiled = conn.execute(
+                f"SELECT content, compiled FROM {DESIGN} WHERE title = '支架'"  # nosec B608 - 测试常量
+            ).fetchone()
+        assert content == "module m() {\n  box(size=[1,1,1])\n}\nm()"
+        assert compiled == '{"legacy": true}'
+
     def test_reupgrade_after_downgrade(self, tmp_path: Path):
         db_path = tmp_path / "design_round.db"
         url = f"sqlite:///{db_path}"

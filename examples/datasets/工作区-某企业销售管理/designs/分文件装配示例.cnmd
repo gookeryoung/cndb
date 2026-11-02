@@ -1,0 +1,7 @@
+// 装配文件：分文件装配示例（use 引用 parts/ 零件，ADR 0086 C2/C5）
+// 同一零件多实例互不影响；fixed 接地后其余组件保持作者位姿（欠约束给警告）
+use "底板" as base
+translate([-40, 0, 4]) use "轮毂" as wheel_l
+translate([40, 0, 4]) use "轮毂" as wheel_r
+
+constraint c1 fixed(a = base.origin)

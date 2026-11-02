@@ -8,7 +8,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -1269,34 +1271,34 @@ def _import_designs(
     current_user: User,
     db: Session,
 ) -> tuple[int, list[str]]:
-    """还原结构设计（v11 起，ADR 0079 D9），返回 (成功数, 错误明细).
+    """还原设计文件库（v13，ADR 0079 D9 / 0086 D11），返回 (成功数, 错误明细).
 
+    - 两阶段注入（与种子同口径）：先建全部文件行（kind / file_key / folder），
+      再按工作区身份编译 ``use`` 引用——装配依赖的零件行先于编译存在；
     - 同名设计已存在则跳过（与表 / 文档 / 流水线的幂等口径一致）；
-    - 不导入 ``compiled`` 快照，按 ``content`` 重新编译（与流水线同口径）：
-      历史快照可能与当前 IR 契约不兼容，重编译能在导入期暴露 DSL 问题；
-    - 版本行按备份携带的 ``version_number`` / ``content`` / ``comment`` 重建，
-      ``compiled`` 由该版原文重编译产出；单条非法跳过并记错误，不阻断整体导入。
+    - 不导入 ``compiled`` 快照，按 ``content`` + resolver 重新编译（唯一入口）；
+    - 版本行按备份携带的 ``version_number`` / ``content`` / ``comment`` /
+      ``dependencies`` 重建，逐版按快照闭包编译；单条非法跳过并记错误，
+      不阻断整体导入。
     """
     from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
     from cndb.plugins.design.services.dsl.compile import compile_design
+    from cndb.plugins.design.services.dsl.nodes import FileSource
     from cndb.plugins.design.services.keys import generate_file_key
 
-    items = json_data.get("designs") or []
+    items = [item for item in (json_data.get("designs") or []) if isinstance(item, dict)]
     if not items:
         return 0, []
 
     errors: list[str] = []
     imported = 0
+
+    # ── 阶段一：建文件行（拿 id 与 file_key），暂不编译 ──
+    created: dict[str, dict[str, Any]] = {}  # file_key → {design, content, versions}
     for item in items:
-        if not isinstance(item, dict):
-            continue
         title = (item.get("title") or "").strip()
         content = str(item.get("content") or "")
         if not title:
-            continue
-        result = compile_design(content)
-        if not result.ok:
-            errors.append(f"设计 {title} 跳过（DSL 非法）: " + "；".join(d.message for d in result.diagnostics))
             continue
         exists = (
             db.query(DesignDesign)
@@ -1308,9 +1310,10 @@ def _import_designs(
         design = DesignDesign(
             workspace_id=workspace_id,
             title=title,
+            kind=str(item.get("kind") or "assembly"),
+            folder=str(item.get("folder") or ""),
             file_key=generate_file_key(db, workspace_id, title, preferred=str(item.get("file_key") or "")),
             content=content,
-            compiled=result.ir or {"version": 1, "nodes": []},
             description=str(item.get("description") or ""),
             is_deleted=bool(item.get("is_deleted", False)),
             created_by_id=current_user.id,
@@ -1318,23 +1321,108 @@ def _import_designs(
         )
         db.add(design)
         db.flush()
-        # 版本行：逐版重编译（失败的版本跳过并记错误，不阻断该设计的其它版本）
+        created[design.file_key] = {"design": design, "content": content, "versions": item.get("versions") or []}
+        imported += 1
+
+    def _resolve(key: str) -> FileSource | None:
+        entry = created.get(key)
+        if entry is None:
+            return None
+        design = entry["design"]
+        numbers = [int(v.get("version_number") or 0) for v in entry["versions"] if isinstance(v, dict)]
+        return FileSource(
+            file_id=design.id,
+            file_key=design.file_key,
+            kind=design.kind,
+            content=entry["content"],
+            version_number=max(numbers) if numbers else 1,
+            content_hash=hashlib.sha256(entry["content"].encode("utf-8")).hexdigest(),
+        )
+
+    def _resolve_pinned(pinned: dict[str, int]) -> Callable[[str], FileSource | None]:
+        def resolve(key: str) -> FileSource | None:
+            entry = created.get(key)
+            if entry is None:
+                return None
+            want = pinned.get(key)
+            match = next(
+                (v for v in entry["versions"] if isinstance(v, dict) and int(v.get("version_number") or 0) == want),
+                None,
+            )
+            content = str(match.get("content") or "") if match is not None else entry["content"]
+            design = entry["design"]
+            return FileSource(
+                file_id=design.id,
+                file_key=design.file_key,
+                kind=design.kind,
+                content=content,
+                version_number=want or 1,
+                content_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            )
+
+        return resolve
+
+    # ── 阶段二：按文件身份编译落 compiled / 依赖闭包 / 版本行 ──
+    for entry in list(created.values()):
+        design: DesignDesign = entry["design"]
+        versions = entry["versions"]
+        result = compile_design(design.content, file_kind=design.kind, file_id=design.id, resolver=_resolve)
+        if not result.ok:
+            # 阶段一为解析引用预建的行回滚删除（旧口径：非法 DSL 零残留、计失败）
+            db.delete(design)
+            created_key = next((k for k, v in created.items() if v["design"] is design), None)
+            if created_key is not None:
+                del created[created_key]
+            imported -= 1
+            errors.append(f"设计 {design.title} 跳过（DSL 非法）: " + "；".join(d.message for d in result.diagnostics))
+            continue
+        deps = [
+            {
+                "file_id": d.file_id,
+                "file_key": d.file_key,
+                "version_number": d.version_number,
+                "content_hash": d.content_hash,
+            }
+            for d in result.dependencies
+        ]
+        design.compiled = result.ir or {}
+        design.dependencies = deps
         restored_versions = 0
-        for entry in item.get("versions") or []:
-            if not isinstance(entry, dict):
+        for v in versions:
+            if not isinstance(v, dict):
                 continue
-            version_result = compile_design(str(entry.get("content") or ""))
-            if not version_result.ok:
-                errors.append(f"设计 {title} 的 v{entry.get('version_number')} 版本跳过（DSL 非法）")
+            snapshot = {
+                str(dep["file_key"]): int(dep["version_number"])
+                for dep in (v.get("dependencies") or [])
+                if isinstance(dep, dict) and dep.get("file_key")
+            }
+            version_result = compile_design(
+                str(v.get("content") or ""),
+                file_kind=design.kind,
+                file_id=design.id,
+                resolver=_resolve_pinned(snapshot) if snapshot else _resolve,
+            )
+            if not version_result.ok or version_result.ir is None:
+                errors.append(f"设计 {design.title} 的 v{v.get('version_number')} 版本跳过（DSL 非法）")
                 continue
+            version_deps = [
+                {
+                    "file_id": d.file_id,
+                    "file_key": d.file_key,
+                    "version_number": d.version_number,
+                    "content_hash": d.content_hash,
+                }
+                for d in version_result.dependencies
+            ]
             db.add(
                 DesignDesignVersion(
                     design_id=design.id,
                     workspace_id=workspace_id,
-                    version_number=int(entry.get("version_number") or 0),
-                    content=str(entry.get("content") or ""),
-                    compiled=version_result.ir or {"version": 1, "nodes": []},
-                    comment=str(entry.get("comment") or ""),
+                    version_number=int(v.get("version_number") or 0),
+                    content=str(v.get("content") or ""),
+                    compiled=version_result.ir,
+                    dependencies=version_deps,
+                    comment=str(v.get("comment") or ""),
                     created_by_id=current_user.id,
                 )
             )
@@ -1346,13 +1434,17 @@ def _import_designs(
                     design_id=design.id,
                     workspace_id=workspace_id,
                     version_number=1,
-                    content=content,
-                    compiled=result.ir or {"version": 1, "nodes": []},
+                    content=design.content,
+                    compiled=result.ir,
+                    dependencies=deps,
                     comment="",
                     created_by_id=current_user.id,
                 )
             )
-        imported += 1
+        # 直接引用索引（导入后删除阻断立即可用）
+        from cndb.plugins.design.services.files import direct_use_keys, sync_refs
+
+        sync_refs(db, design, direct_use_keys(design.content))
     if imported:
         db.commit()
     return imported, errors

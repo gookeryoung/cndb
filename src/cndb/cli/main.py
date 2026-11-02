@@ -390,6 +390,11 @@ def main() -> None:
 
     register_acquisition_subparser(sub)
 
+    # design-refactor 子命令（旧设计拆分重构：ADR 0086 P1）
+    from cndb.cli.design import register_design_subparser
+
+    register_design_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -447,6 +452,10 @@ def main() -> None:
         from cndb.cli.acquisition import acquisition_command
 
         acquisition_command(args)
+    elif args.command == "design-refactor":
+        from cndb.cli.design import design_command
+
+        design_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)

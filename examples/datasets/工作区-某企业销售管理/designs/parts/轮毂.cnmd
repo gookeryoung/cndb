@@ -1,0 +1,10 @@
+// 零件文件：轮毂（顶层 param 即公开参数，顶层实例即零件几何，ADR 0086 C1）
+// 目录 designs/parts/ 下 → kind=part；装配用 use "轮毂"(...) 引用
+param d = 40
+param w = 16
+
+rotate([90, 0, 0])
+  difference {
+    cyl(d = d, h = w)
+    translate([0, 0, -1]) cyl(d = d * 0.35, h = w + 2)
+  }

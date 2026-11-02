@@ -75,14 +75,29 @@ def _get_workspace_pipeline_yamls(datasets_dir: Path) -> dict[str, list[Path]]:
     return _scan_workspace_glob(datasets_dir, "pipelines", {".yaml", ".yml"})
 
 
-def _get_workspace_design_cnmds(datasets_dir: Path) -> dict[str, list[Path]]:
-    """扫描每个工作区文件夹下的 designs/*.cnmd（结构设计种子，ADR 0079）.
+def _get_workspace_design_cnmds(datasets_dir: Path) -> dict[str, list[tuple[str, Path]]]:
+    """扫描每个工作区文件夹下 ``designs/**/*.cnmd``（递归，ADR 0086 §6 种子分文件）.
 
     Returns:
-        工作区显示名 -> 该工作区 designs/ 下全部 .cnmd 文件路径列表（按文件名排序；
-        无 designs/ 目录的工作区不出现在结果中）。文件名（去后缀）即设计标题。
+        工作区显示名 -> [(folder, path)]：folder 为 .cnmd 相对 ``designs/`` 的父目录
+        posix 路径（顶层文件为 ``""``；``designs/parts/x.cnmd`` → ``"parts"``），
+        按 (folder, 文件名) 排序；无 designs/ 目录的工作区不出现在结果中。
+        父目录首段为 ``parts`` 的文件是零件文件，顶层为装配文件。
     """
-    return _scan_workspace_glob(datasets_dir, "designs", {".cnmd"})
+    result: dict[str, list[tuple[str, Path]]] = {}
+    for folder in sorted(datasets_dir.iterdir()):
+        if not folder.is_dir() or folder.name.startswith("."):
+            continue
+        target_dir = folder / "designs"
+        if not target_dir.is_dir():
+            continue
+        files = sorted(p for p in target_dir.rglob("*.cnmd") if p.is_file())
+        entries = [(p.parent.relative_to(target_dir).as_posix(), p) for p in files]
+        entries = [("" if folder == "." else folder, p) for folder, p in entries]
+        entries.sort(key=lambda item: (item[0], item[1].name))
+        if entries:
+            result[_workspace_display_name(folder.name)] = entries
+    return result
 
 
 def _scan_workspace_glob(datasets_dir: Path, subdir: str, suffixes: set[str]) -> dict[str, list[Path]]:

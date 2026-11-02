@@ -573,7 +573,12 @@ def build_workspace_backup_v9(
     versions_by_design: dict[int, list[dict[str, Any]]] = {}
     for v in version_rows:
         versions_by_design.setdefault(v.design_id, []).append(
-            {"version_number": v.version_number, "content": v.content, "comment": v.comment}
+            {
+                "version_number": v.version_number,
+                "content": v.content,
+                "comment": v.comment,
+                "dependencies": list(v.dependencies or []),
+            }
         )
     for d in design_rows:
         designs_data.append(
@@ -582,6 +587,11 @@ def build_workspace_backup_v9(
                 "content": d.content,
                 "description": d.description,
                 "is_deleted": d.is_deleted,
+                # v13（ADR 0086 D11）：文件身份与依赖闭包；compiled 仍不导出
+                "kind": d.kind,
+                "file_key": d.file_key,
+                "folder": d.folder,
+                "dependencies": list(d.dependencies or []),
                 "versions": versions_by_design.get(d.id, []),
             }
         )
