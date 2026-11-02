@@ -50,6 +50,8 @@ test.describe("MainLayout Header 导航按钮", () => {
 
     // 二级页签：数据列表 → 质量检查 → 数据分析 → 数据同步；一级模块不在页签行
     const tabs = page.getByRole("tablist").first().getByRole("tab")
+    // 数据列表为数据表段首个二级页签，先显式确认存在，避免后续相对位置断言在缺项时误判
+    await expect(tabs.filter({ hasText: "数据列表" })).toBeVisible()
     await expect(tabs.filter({ hasText: "数据分析" })).toBeVisible()
     await expect(tabs.filter({ hasText: "质量检查" })).toBeVisible()
     // 质量检查紧随数据列表（第二项），排在数据分析 / 数据同步之前
@@ -94,7 +96,7 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(page.getByTestId("documents-layout")).toBeVisible({ timeout: 5000 })
   })
 
-  test("切到文档模块：数据分析/数据同步页签隐藏，质量检查恒显", async ({ page }) => {
+  test("切到文档模块：数据分析/数据同步/质量检查页签隐藏", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
     await page.goto(`/w/${WID}/documents`)
@@ -104,7 +106,7 @@ test.describe("MainLayout Header 导航按钮", () => {
     const tabs = page.getByRole("tablist").first().getByRole("tab")
     await expect(tabs.filter({ hasText: "数据分析" })).toHaveCount(0)
     await expect(tabs.filter({ hasText: "数据同步" })).toHaveCount(0)
-    // 质量检查恒显，但文档上下文由文档区胶囊页签承载（避免同名页签重复，页签行隐藏）
+    // 文档上下文由文档区胶囊页签承载质量检查（避免同名页签重复，页签行隐藏）
     await expect(tabs.filter({ hasText: "质量检查" })).toHaveCount(0)
     await expect(page.getByTestId("document-tab-pipelines")).toBeVisible()
   })
