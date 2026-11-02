@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, override
+from urllib.parse import urlsplit
 
 from pydantic import Field
 from sqlalchemy import String, Text, text
@@ -119,7 +120,11 @@ class EmailFieldType(FieldType):
 
 # ── url ────────────────────────────────────────────
 
-_URL_RE = re.compile(r"^https?://[\w.-]+(?::\d+)?(?:/[\w./?#=&%+-]*)?$", re.IGNORECASE)
+# URL 只校验「协议 + 主机」这两件真正决定可点开的事，路径 / 查询允许 RFC 3986 的任意
+# 合法字符（`;` / `:` / `~` / `@` / 逗号 / 括号 / 百分号 / unicode 等）。此前用
+# `[\w./?#=&%+-]` 白名单，`...?a=1&amp;b=2` 这类带分号的真实链接会被判非法，进而让
+# 整批采集（数据源 / 智能采集）校验失败、一行都写不进去。
+_URL_CTRL_RE = re.compile(r"[\x00-\x20\x7f]")
 
 
 class UrlFieldType(FieldType):
@@ -136,7 +141,10 @@ class UrlFieldType(FieldType):
         text = str(value).strip()
         if not text:
             return None
-        if not _URL_RE.match(text):
+        if _URL_CTRL_RE.search(text):
+            raise ValueError(f"URL 格式无效（不能包含空白 / 控制字符）: {text!r}")
+        parts = urlsplit(text)
+        if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
             raise ValueError(f"URL 格式无效（需以 http:// 或 https:// 开头）: {text!r}")
         return text
 

@@ -835,17 +835,30 @@ def bulk_create(
     table: DataTable,
     rows: list[dict[str, Any]],
     db: Any = None,
+    *,
+    skip_invalid: bool = False,
 ) -> list[int]:
-    """批量创建，返回新行 id 列表；行内 link 字段同步写关联表."""
+    """批量创建，返回新行 id 列表；行内 link 字段同步写关联表.
+
+    ``skip_invalid=True``（数据同步 / 智能采集等「一批里个别源数据不合法」的场景）：
+    逐行校验失败只丢弃该行并记日志，不中断整批；默认 ``False`` 保持人工导入的
+    「有一行不合法就整体报错」语义。
+    """
     sa_table = _get_sa_table(engine, table)
     # 逐行生成自动编号（顺序递增），再统一写入；assigned 记录本批次已分配编号，
     # 否则后续行扫描不到前面尚未落库的编号会重复分配
     assigned: dict[int, list[str]] = {}
     split_rows: list[tuple[dict[str, Any], list[tuple[DataField, list[int]]]]] = []
     for r in rows:
-        normalized, link_values = _normalize_values(table, r)
-        _apply_auto_increment_defaults(engine, table, r, normalized, assigned)
-        _ensure_required_fields_provided(table, normalized)
+        try:
+            normalized, link_values = _normalize_values(table, r)
+            _apply_auto_increment_defaults(engine, table, r, normalized, assigned)
+            _ensure_required_fields_provided(table, normalized)
+        except ValueError:
+            if not skip_invalid:
+                raise
+            logger.warning("批量创建跳过校验失败的行: table=%s row=%r", table.name, r, exc_info=True)
+            continue
         split_rows.append((normalized, link_values))
 
     # 所有主行提交前预校验全部 link 目标存在，避免部分主行已入库但后续 link 写入失败
@@ -1135,6 +1148,7 @@ def bulk_update_rows(
     *,
     user: Any = None,
     reuse_normalized: bool = False,
+    skip_invalid: bool = False,
 ) -> int:
     """批量单行更新 — 每条 row_id 对应独立 values（upsert 分流时用）.
 
@@ -1161,9 +1175,15 @@ def bulk_update_rows(
         if row_id is None or not values:
             continue
         validated = item.get("normalized") if reuse_normalized else None
-        normalized, link_values = _normalize_row_with_plan(
-            plan, values, validated if isinstance(validated, dict) else None, for_update=True
-        )
+        try:
+            normalized, link_values = _normalize_row_with_plan(
+                plan, values, validated if isinstance(validated, dict) else None, for_update=True
+            )
+        except ValueError:
+            if not skip_invalid:
+                raise
+            logger.warning("批量更新跳过校验失败的行: table=%s row_id=%s", table.name, row_id, exc_info=True)
+            continue
         prepared.append((int(row_id), normalized, link_values))
 
     # 总事务前预校验所有待更新行的 link 目标存在 + 必填/唯一约束，避免部分行已提交但 link 失败

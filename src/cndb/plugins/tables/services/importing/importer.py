@@ -434,6 +434,8 @@ class Importer:
         _report(60, "写入数据")
         new_ids: list[int] = []
         updated_count = 0
+        # 逐行校验失败被跳过的行数（partial 链路：单行源数据不合法不应让整批落空）
+        invalid_skipped = 0
 
         if upsert_result is not None and (
             upsert_result.get("update_rows") or upsert_result.get("multi_key_conflicts", 0) > 0
@@ -455,7 +457,9 @@ class Importer:
                     db=self.db,
                     user=self.user,
                     reuse_normalized=not preview,
+                    skip_invalid=self.partial,
                 )
+                # 更新路径的「跳过」可能还包含行级权限过滤，无法与校验失败区分，只留日志不计入报告
             if new_list:
                 valid_new_vals = [v for v in new_list if id(v) in to_import_ids]
             # skip_errors=False 场景下，error 行也进 to_import 但 upsert 里没匹配到 → 一并创建
@@ -464,18 +468,25 @@ class Importer:
             all_new = valid_new_vals + unmatched_vals
             all_new = self._drop_missing_required(all_new, failed)
             if all_new:
-                new_ids = rec.bulk_create(self.engine, self.table, all_new, db=self.db)
+                new_ids = rec.bulk_create(self.engine, self.table, all_new, db=self.db, skip_invalid=self.partial)
+                invalid_skipped += max(0, len(all_new) - len(new_ids))
         else:
             # 纯追加路径（兼容旧流程）
             all_new = self._drop_missing_required(to_import, failed)
             if all_new:
-                new_ids = rec.bulk_create(self.engine, self.table, all_new, db=self.db)
+                new_ids = rec.bulk_create(self.engine, self.table, all_new, db=self.db, skip_invalid=self.partial)
+                invalid_skipped += max(0, len(all_new) - len(new_ids))
 
         # 更新 report：补充实际行数
         report = dict(report)
         report["actually_created"] = len(new_ids)
         report["actually_updated"] = updated_count
         report["actually_imported"] = len(new_ids) + updated_count
+        if invalid_skipped:
+            # 计入 error_count：WriteOutcome.skipped / 任务报告据此展示「跳过多少行」
+            report["error_count"] = int(report.get("error_count", 0) or 0) + invalid_skipped
+            report["invalid_skipped"] = invalid_skipped
+            logger.warning("批量落表跳过 %d 行校验失败数据: table=%s", invalid_skipped, self.table.name)
 
         # 导入完成后自动补全 select/multiselect options（覆盖新旧字段 + 存量数据）
         if sync_options:

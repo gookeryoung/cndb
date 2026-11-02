@@ -40,6 +40,30 @@ class TestUrlEmptyString:
         assert ft.validate_value("  ", {}) is None
 
 
+class TestUrlValidation:
+    """URL 校验只卡协议 / 主机，路径与查询按 RFC 3986 放行（采集落表回归）."""
+
+    def test_accepts_real_world_paths_and_queries(self):
+        ft = UrlFieldType()
+        for text in (
+            "http://thesis.lib.nccu.edu.tw/cgi-bin/cdrfb3/gsweb.cgi?o=dstdcdr&amp;i=sid=%22B2002001367%22.",
+            "https://example.com/a;b:c~d@e,f(g)/h?x=1&y=%20z",
+            "https://例子.测试/路径/文件?q=中文",
+        ):
+            assert ft.validate_value(text, {}) == text
+
+    def test_rejects_non_http_and_missing_host(self):
+        ft = UrlFieldType()
+        for text in ("ftp://example.com/x", "javascript:alert(1)", "http://", "//example.com/x"):
+            with pytest.raises(ValueError, match="URL 格式无效"):
+                ft.validate_value(text, {})
+
+    def test_rejects_whitespace_and_control_chars(self):
+        ft = UrlFieldType()
+        with pytest.raises(ValueError, match="URL 格式无效"):
+            ft.validate_value("https://example.com/a b", {})
+
+
 class TestPhoneEmptyString:
     def test_phone_empty_string_returns_none(self):
         ft = PhoneFieldType()

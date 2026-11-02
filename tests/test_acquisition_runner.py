@@ -116,6 +116,42 @@ ROWS = [{"city": "北京", "day": "2026-11-01", "temp": "12.5"}]
 
 
 class TestExecuteStrategy:
+    def test_invalid_row_is_skipped_instead_of_failing_whole_batch(self, db_engine, db):
+        """空表首轮自动建字段后逐行校验：单行 URL 非法只跳过该行，其余照常落表."""
+        table = DataTable(workspace_id=1, name="空表")
+        table.ensure_db_name()
+        db.add(table)
+        db.commit()
+        db.refresh(table)
+        ddl.create_table(db_engine, table)
+        job = _make_job(db, table)
+        strategy = AcquisitionStrategy(
+            workspace_id=1,
+            name="空表首轮",
+            enabled=True,
+            scope={"channels": [f"job:{job.id}"], "query": "北京", "max_results_per_channel": 50},
+            filter_rule={},
+            targets=[{"kind": "table", "table_id": table.id, "match_keys": []}],
+            iteration={"max_rounds": 1, "budget": {"max_requests": 10}},
+            llm={},
+            schedule={"mode": "manual"},
+        )
+        db.add(strategy)
+        db.commit()
+        db.refresh(strategy)
+        rows = [{"title": f"t{i}", "url": f"https://e/{i}"} for i in range(10)]
+        rows.append({"title": "bad", "url": "ftp://e/bad"})
+
+        execution = execute_strategy(db, strategy, fetch=_fetch(rows), now=NOW)
+
+        assert execution.status == "success"
+        assert execution.report.errors == []
+        assert execution.report.inserted == 10
+        assert execution.report.skipped == 1
+        # 渠道 entrant 参数（city）与行字段一起自动建列；url 推断为链接类型
+        assert {field.name for field in table.active_fields()} == {"city", "title", "url"}
+        assert _row_count(db_engine, table) == 10
+
     def test_success_writes_rows_ledger_and_run(self, db_engine, db):
         table = _make_table(db, db_engine)
         job = _make_job(db, table)
