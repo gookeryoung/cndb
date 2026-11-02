@@ -20,8 +20,12 @@ export interface DesignPreviewState {
 export interface UseDesignPreviewOptions {
   /** 防抖毫秒（默认 300） */
   delay?: number
-  /** 关闭时跳过请求（如详情未加载完成） */
-  enabled?: boolean
+  /** 关闭时跳过请求（如详情未加载完成 / 内容干净未改，ADR 0086 I6） */
+  enabled?: number | boolean
+  /** 编辑中的设计文件 id：preview 带 design_id 让后端解析 use 引用（ADR 0086 §4） */
+  designId?: number | null
+  /** 打开时的 IR 快照（GET /{id}/ir）：干净状态下直接消费，不发 preview */
+  initialIr?: DesignIR | null
 }
 
 const EMPTY_STATE: DesignPreviewState = { compiling: false, ok: true, ir: null, diagnostics: [] }
@@ -33,24 +37,31 @@ export function useDesignPreview(
   overrides: Record<string, number>,
   options?: UseDesignPreviewOptions,
 ): DesignPreviewState {
-  const { delay = 300, enabled = true } = options ?? {}
+  const { delay = 300, enabled = true, designId = null, initialIr = null } = options ?? {}
   const [state, setState] = useState<DesignPreviewState>(EMPTY_STATE)
   const seqRef = useRef(0)
   // overrides 是每次渲染新建的对象（受控面板），序列化为 key 参与依赖比较
   const overridesKey = JSON.stringify(overrides)
 
+  // 干净打开：直接消费后端持久化 IR 快照，不重复编译（ADR 0086 D7 / I6）
   useEffect(() => {
-    if (!wid || !enabled) {
-      setState(EMPTY_STATE)
-      return
-    }
+    if (!enabled && initialIr) setState({ compiling: false, ok: true, ir: initialIr, diagnostics: [] })
+    if (!enabled && !initialIr) setState(EMPTY_STATE)
+  }, [enabled, initialIr])
+
+  useEffect(() => {
+    if (!wid || !enabled) return
     seqRef.current += 1
     const seq = seqRef.current
     const ov = JSON.parse(overridesKey || '{}') as Record<string, number>
     setState(prev => ({ ...prev, compiling: true }))
     const timer = setTimeout(() => {
       designsApi
-        .preview(wid, { content, overrides: Object.keys(ov).length > 0 ? ov : null })
+        .preview(wid, {
+          content,
+          overrides: Object.keys(ov).length > 0 ? ov : null,
+          design_id: designId,
+        })
         .then(result => {
           if (seq !== seqRef.current) return
           setState({ compiling: false, ok: result.ok, ir: result.ir, diagnostics: result.diagnostics })
@@ -62,7 +73,7 @@ export function useDesignPreview(
         })
     }, delay)
     return () => clearTimeout(timer)
-  }, [wid, content, overridesKey, delay, enabled])
+  }, [wid, content, overridesKey, delay, enabled, designId])
 
   return state
 }

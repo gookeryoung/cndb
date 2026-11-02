@@ -141,6 +141,51 @@ export function evalNode(node: DesignIRNode): THREE.BufferGeometry | null {
   return acc
 }
 
+/** 非布尔近似（ADR 0086 C8 首帧）：布尔树只展开图元、跳过 CSG 求值.
+ *
+ * 每个图元独立套用自己的 transform；布尔节点无 transform（编译期已下推），
+ * 递归拼接即可。首帧同步渲染该结果作为骨架，CSG 精确结果由 Worker 渐进替换。
+ */
+export function approximatePrimitives(node: DesignIRNode): THREE.BufferGeometry[] {
+  if (!('children' in node)) {
+    const geometry = primitiveGeometry(node)
+    return geometry ? [geometry] : []
+  }
+  const out: THREE.BufferGeometry[] = []
+  for (const child of node.children) out.push(...approximatePrimitives(child))
+  return out
+}
+
+/** 序列化几何（Worker → 主线程传输；transferable 数组） */
+export interface SerializedGeometry {
+  position: Float32Array
+  normal: Float32Array
+  index: Uint32Array
+}
+
+/** three BufferGeometry → 可传输结构（拷贝，源几何可继续持有缓存） */
+export function serializeGeometry(geometry: THREE.BufferGeometry): SerializedGeometry {
+  const position = geometry.getAttribute('position')
+  const normal = geometry.getAttribute('normal')
+  const index = geometry.getIndex()
+  return {
+    position: position.array.slice() as Float32Array,
+    normal: normal ? (normal.array.slice() as Float32Array) : new Float32Array(0),
+    index: index ? (index.array.slice() as Uint32Array) : new Uint32Array(0),
+  }
+}
+
+/** 序列化几何 → three BufferGeometry（主线程重建） */
+export function deserializeGeometry(data: SerializedGeometry): THREE.BufferGeometry {
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(data.position, 3))
+  if (data.normal.length === data.position.length) {
+    geometry.setAttribute('normal', new THREE.BufferAttribute(data.normal, 3))
+  }
+  if (data.index.length > 0) geometry.setIndex(new THREE.BufferAttribute(data.index, 1))
+  return geometry
+}
+
 /** IR 统计（预览信息条 / 测试断言用） */
 export function irStats(ir: DesignIR | null | undefined): { nodes: number; triangles: number } {
   let triangles = 0

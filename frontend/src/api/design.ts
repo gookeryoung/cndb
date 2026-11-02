@@ -45,7 +45,25 @@ export interface DesignBooleanNode {
 
 export type DesignIRNode = DesignPrimitiveNode | DesignBooleanNode
 
-/** 设计 IR（v3 = v2 + 大纲 system 节点（ADR 0084 D2）；单位固定 mm / deg，I5） */
+/** 约束条目（IR v4，ADR 0086 D5/D6）：求解状态进 IR，错误走诊断 */
+export interface DesignIRConstraint {
+  id: string
+  type: 'fixed' | 'coincident' | 'concentric' | 'distance' | 'angle'
+  a: string
+  b?: string
+  status: 'ok' | 'warning'
+  line: number
+  col: number
+}
+
+/** 装配大纲 use 实例的引用来源（IR v4） */
+export interface DesignOutlineRef {
+  file_id: number
+  file_key: string
+  kind: 'part' | 'assembly' | string
+}
+
+/** 设计 IR（v4 = v3 + constraints + 大纲 file_id/ref（ADR 0086）；单位固定 mm / deg，I5） */
 export interface DesignIR {
   version: number
   units: { length: string; angle: string }
@@ -53,6 +71,8 @@ export interface DesignIR {
   nodes: DesignIRNode[]
   /** 装配大纲（ADR 0083 D2 / ADR 0084 D2）；历史 v1 快照可能缺失 */
   outline?: DesignOutline
+  /** 组件级装配约束求解结果（v4）；旧 v1-v3 快照缺失 */
+  constraints?: DesignIRConstraint[]
 }
 
 /** 装配大纲节点（ADR 0083 D3 / ADR 0084 D2）：
@@ -71,6 +91,8 @@ export interface DesignOutlineAssemblyNode {
   line: number
   col: number
   children: DesignOutlineNode[]
+  /** use 实例的源文件（IR v4）；当前设计内联组件缺省 */
+  ref?: DesignOutlineRef
 }
 
 export interface DesignOutlineGroupNode {
@@ -113,22 +135,52 @@ export interface DesignPreviewResult {
   diagnostics: DesignDiagnostic[]
 }
 
-/** 设计列表项（不含原文与 IR） */
+/** 设计文件列表项（不含原文与 IR） */
 export interface DesignListItem {
   id: number
   workspace_id: number
   title: string
   description: string
+  kind: 'part' | 'assembly' | string
+  file_key: string
+  folder: string
+  dependencies_stale: boolean
   version_count: number
   created_at: string | null
   updated_at: string | null
 }
 
-/** 设计详情（原文唯一真相源 + IR 快照 + 当前版本号） */
+/** 设计文件详情（原文唯一真相源；**不含 compiled**，IR 走 getIR，ADR 0086 D10） */
 export interface DesignDetail extends DesignListItem {
   content: string
-  compiled: DesignIR | Record<string, never>
+  content_hash: string
   version_number: number
+}
+
+/** GET /{id}/ir 响应：IR 快照直用（首屏不重复编译，I6）；ETag = content_hash-version */
+export interface DesignIRResponse {
+  design_id: number
+  version_number: number
+  content_hash: string
+  ir: DesignIR
+}
+
+/** 依赖 / 引用方条目（GET /{id}/dependencies） */
+export interface DesignDependencyItem {
+  design_id: number
+  file_key: string
+  title: string
+  folder: string
+  kind: string
+  version_number: number
+  dependencies_stale: boolean
+}
+
+/** 当前直接引用（items）与引用方清单（referrers） */
+export interface DesignDependenciesResponse {
+  design_id: number
+  items: DesignDependencyItem[]
+  referrers: DesignDependencyItem[]
 }
 
 /** 版本列表项（不含原文；回看走单版本端点） */
@@ -141,26 +193,34 @@ export interface DesignVersionItem {
   created_at: string | null
 }
 
-/** 版本回看（P2）：该版原文与 IR 快照 */
+/** 版本回看（P2）：该版原文、编译快照与依赖闭包快照 */
 export interface DesignVersionDetail extends DesignVersionItem {
   content: string
   compiled: DesignIR | Record<string, never>
+  dependencies: Array<{ file_id: number; file_key: string; version_number: number; content_hash: string }>
 }
 
 const base = (wid: number | string) => `/v1/workspaces/${wid}/designs`
 
 export const designsApi = {
-  /** 设计列表（过滤软删，按更新时间倒序） */
-  list: (wid: number | string, params?: { q_title?: string }) =>
+  /** 设计文件列表（过滤软删，按更新时间倒序；kind / folder / q_title 过滤） */
+  list: (wid: number | string, params?: { q_title?: string; kind?: string; folder?: string }) =>
     api.get<DesignListItem[]>(base(wid), { params }).then(r => r.data),
-  /** 新建（原文必经编译，失败 400 + 诊断） */
-  create: (wid: number | string, data: { title: string; content?: string; description?: string }) =>
+  /** 新建设计文件（原文必经编译，失败 400 + 诊断；kind/file_key/folder 可选） */
+  create: (wid: number | string, data: {
+    title: string
+    content?: string
+    description?: string
+    kind?: 'part' | 'assembly'
+    file_key?: string
+    folder?: string
+  }) =>
     api.post<DesignDetail>(base(wid), data).then(r => r.data),
-  /** 详情（含原文与 IR） */
+  /** 详情（原文 + 文件身份；不含 compiled，ADR 0086 D10） */
   get: (wid: number | string, designId: number | string) =>
     api.get<DesignDetail>(`${base(wid)}/${designId}`).then(r => r.data),
-  /** 改名 / 描述（不触发重编译） */
-  update: (wid: number | string, designId: number | string, data: { title?: string; description?: string }) =>
+  /** 改名 / 描述 / 目录（不触发重编译；file_key 不可改） */
+  update: (wid: number | string, designId: number | string, data: { title?: string; description?: string; folder?: string }) =>
     api.put<DesignDetail>(`${base(wid)}/${designId}`, data).then(r => r.data),
   /** 保存原文（编译通过才落库并生成新版本；失败旧 IR 不动） */
   saveContent: (wid: number | string, designId: number | string, data: { content: string; comment?: string }) =>
@@ -168,9 +228,18 @@ export const designsApi = {
   /** 软删 */
   remove: (wid: number | string, designId: number | string) =>
     api.delete<void>(`${base(wid)}/${designId}`).then(r => r.data),
-  /** 即时编译（编辑器防抖 / 参数面板共用；无落库） */
-  preview: (wid: number | string, data: { content: string; overrides?: Record<string, number> | null }) =>
+  /** 即时编译（编辑器防抖 / 参数面板共用；带 design_id 解析 use 引用；无落库） */
+  preview: (wid: number | string, data: { content: string; overrides?: Record<string, number> | null; design_id?: number | null }) =>
     api.post<DesignPreviewResult>(`${base(wid)}/preview`, data).then(r => r.data),
+  /** IR 快照（首屏直用不重复编译，I6；带 ETag 支持条件请求） */
+  getIR: (wid: number | string, designId: number | string) =>
+    api.get<DesignIRResponse>(`${base(wid)}/${designId}/ir`).then(r => r.data),
+  /** 依赖刷新：以最新依赖重编译落新版本并清 stale（editor 权限） */
+  refresh: (wid: number | string, designId: number | string, comment?: string) =>
+    api.post<DesignDetail>(`${base(wid)}/${designId}/refresh`, { comment: comment ?? '依赖更新' }).then(r => r.data),
+  /** 当前直接依赖与引用方清单 */
+  dependencies: (wid: number | string, designId: number | string) =>
+    api.get<DesignDependenciesResponse>(`${base(wid)}/${designId}/dependencies`).then(r => r.data),
   /** 版本列表（按版本号倒序） */
   listVersions: (wid: number | string, designId: number | string) =>
     api.get<DesignVersionItem[]>(`${base(wid)}/${designId}/versions`).then(r => r.data),

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import DesignsPage, { DEFAULT_DESIGN_CONTENT } from './DesignsPage'
+import DesignsPage, { DEFAULT_DESIGN_CONTENT, DEFAULT_PART_CONTENT } from './DesignsPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockWorkspace, server } from '@/test/msw'
 import type { DesignDetail, DesignListItem } from '@/api'
@@ -17,6 +17,10 @@ const DESIGN: DesignListItem = {
   workspace_id: 10,
   title: '法兰板',
   description: '示例结构',
+  kind: 'assembly',
+  file_key: 'flange-plate',
+  folder: '',
+  dependencies_stale: false,
   version_count: 3,
   created_at: '2026-10-01T08:00:00Z',
   updated_at: '2026-10-02T08:00:00Z',
@@ -45,15 +49,12 @@ function useListHandler(items: DesignListItem[] = [DESIGN]) {
 
 function makeDetail(id: number, title: string, content: string): DesignDetail {
   return {
+    ...DESIGN,
     id,
-    workspace_id: 10,
     title,
-    description: '',
     version_count: 1,
-    created_at: '2026-10-01T08:00:00Z',
-    updated_at: '2026-10-01T08:00:00Z',
     content,
-    compiled: {},
+    content_hash: 'hash',
     version_number: 1,
   }
 }
@@ -108,6 +109,40 @@ describe('设计管理页（0084 D5）', () => {
     expect(DEFAULT_DESIGN_CONTENT).toContain('module chassis(')
     expect(DEFAULT_DESIGN_CONTENT).toContain('module wheel(')
     expect(DEFAULT_DESIGN_CONTENT).toContain('sphere(r = 14)')
+  })
+
+  it('新建零件：kind/folder/file_key 进入请求并使用零件模板（ADR 0086 C1）', async () => {
+    useListHandler()
+    let created: Record<string, unknown> | undefined
+    server.use(http.post('/api/v1/workspaces/10/designs', async ({ request }) => {
+      created = await request.json() as Record<string, unknown>
+      return HttpResponse.json(makeDetail(78, '垫块', created?.content as string ?? ''), { status: 201 })
+    }))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /新建设计/ }))
+    fireEvent.change(await screen.findByPlaceholderText('如：法兰板'), { target: { value: '垫块' } })
+    fireEvent.mouseDown(screen.getAllByText('装配（系统 / 组件装配声明）')[0]!)
+    fireEvent.click(await screen.findByText('零件（顶层参数 + 零件几何）'))
+    fireEvent.change(screen.getByPlaceholderText('如：parts/rover'), { target: { value: 'parts/demo' } })
+    fireEvent.change(screen.getByPlaceholderText('缺省由名称生成'), { target: { value: 'demo_block' } })
+    fireEvent.click(screen.getByRole('button', { name: /创\s*建/ }))
+    expect(await screen.findByTestId('editor-stub')).toBeInTheDocument()
+    await waitFor(() => expect(created).toBeDefined())
+    expect(created!.kind).toBe('part')
+    expect(created!.folder).toBe('parts/demo')
+    expect(created!.file_key).toBe('demo_block')
+    expect(created!.content).toBe(DEFAULT_PART_CONTENT)
+  })
+
+  it('列表展示类型 / 目录 / 依赖陈旧标记（ADR 0086 C4）', async () => {
+    useListHandler([{ ...DESIGN, kind: 'part', folder: 'parts/demo', dependencies_stale: true }])
+    renderPage()
+
+    expect(await screen.findByText('零件')).toBeInTheDocument()
+    expect(screen.getByText('parts/demo')).toBeInTheDocument()
+    expect(screen.getByTestId('design-list-stale-20')).toBeInTheDocument()
+    expect(screen.getByText('flange-plate')).toBeInTheDocument()
   })
 
   it('viewer 只读：隐藏新建与删除，保留打开', async () => {

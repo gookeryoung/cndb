@@ -8,7 +8,8 @@ import { describe, expect, it } from 'vitest'
 import * as THREE from 'three'
 import type { DesignIR, DesignPrimitiveNode } from '@/api'
 import {
-  buildIRMeshes, composeTransform, evalNode, irStats, opMatrix, primitiveGeometry,
+  approximatePrimitives, buildIRMeshes, composeTransform, deserializeGeometry, evalNode,
+  irStats, opMatrix, primitiveGeometry, serializeGeometry,
 } from './renderTree'
 
 /** 变换矩阵应用到点，断言近似相等 */
@@ -215,5 +216,54 @@ describe('irStats / buildIRMeshes', () => {
     const empty: DesignIR = { version: 2, units: { length: 'mm', angle: 'deg' }, params: [], nodes: [] }
     expect(buildIRMeshes(empty)).toHaveLength(0)
     expect(irStats(null).nodes).toBe(0)
+  })
+})
+
+describe('approximatePrimitives 非布尔近似（ADR 0086 C8）', () => {
+  it('布尔树展开为图元集合（不做 CSG，差集孔不挖除）', () => {
+    const geometries = approximatePrimitives({
+      op: 'difference',
+      children: [
+        { op: 'box', size: [80, 40, 12] },
+        { op: 'cyl', d: 8, h: 14, fn: 24, transform: { ops: [['translate', [40, 20, -1]]] } },
+      ],
+    })
+    expect(geometries).toHaveLength(2)
+  })
+
+  it('嵌套布尔节点递归展开', () => {
+    const geometries = approximatePrimitives({
+      op: 'union',
+      children: [
+        { op: 'difference', children: [{ op: 'box', size: [10, 10, 10] }, { op: 'box', size: [1, 1, 1] }] },
+        { op: 'sphere', r: 3, fn: 16 },
+      ],
+    })
+    expect(geometries).toHaveLength(3)
+  })
+
+  it('图元独立套用 transform：平移后的 box 落在目标位置', () => {
+    const geometries = approximatePrimitives({
+      op: 'difference',
+      children: [
+        { op: 'box', size: [10, 10, 10] },
+        { op: 'box', size: [2, 2, 2], transform: { ops: [['translate', [100, 0, 0]]] } },
+      ],
+    })
+    const boxes = geometries.map(g => new THREE.Box3().setFromBufferAttribute(g.getAttribute('position') as THREE.BufferAttribute))
+    expect(boxes[0]!.min.x).toBeCloseTo(-5, 6)
+    expect(boxes[1]!.min.x).toBeCloseTo(99, 6)
+  })
+})
+
+describe('serializeGeometry / deserializeGeometry 往返', () => {
+  it('序列化往返后几何顶点与索引一致', () => {
+    const geometry = primitiveGeometry({ op: 'cyl', d: 8, h: 14, fn: 16 })!
+    const restored = deserializeGeometry(serializeGeometry(geometry))
+    const a = geometry.getAttribute('position') as THREE.BufferAttribute
+    const b = restored.getAttribute('position') as THREE.BufferAttribute
+    expect(b.count).toBe(a.count)
+    expect(Array.from(b.array)).toEqual(Array.from(a.array))
+    expect(restored.getIndex()!.count).toBe(geometry.getIndex()!.count)
   })
 })

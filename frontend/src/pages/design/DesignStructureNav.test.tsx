@@ -19,6 +19,10 @@ const DESIGN: DesignListItem = {
   workspace_id: 10,
   title: '小车',
   description: '',
+  kind: 'assembly',
+  file_key: 'rover',
+  folder: '',
+  dependencies_stale: false,
   version_count: 2,
   created_at: '2026-10-01T08:00:00Z',
   updated_at: '2026-10-02T08:00:00Z',
@@ -174,5 +178,43 @@ describe('DesignStructureNav 侧栏装配结构（0084）', () => {
     expect(await screen.findByTestId('design-node-20')).toBeInTheDocument()
     await expandNode('design-node-20')
     expect(await screen.findByText('历史快照派生')).toBeInTheDocument()
+  })
+
+  it('零件文件显示「零件」标签，依赖陈旧显示标记（ADR 0086 C4）', async () => {
+    useListHandler([{ ...DESIGN, kind: 'part', dependencies_stale: true }])
+    renderNav('/w/10/design')
+
+    expect(await screen.findByText('零件')).toBeInTheDocument()
+    expect(screen.getByTestId('design-stale-20')).toBeInTheDocument()
+  })
+
+  it('use 实例带源文件时点击打开源文件（ADR 0086 C7）', async () => {
+    useListHandler()
+    // 组件 chassis 来自外部零件文件 file_id=30（IR v4 ref）
+    server.use(http.get('/api/v1/workspaces/10/designs/:designId/outline', ({ params }) => {
+      const designId = Number(params.designId)
+      return HttpResponse.json({
+        design_id: designId,
+        version_number: 2,
+        outline: {
+          children: designId === 20
+            ? [{
+                kind: 'assembly',
+                name: 'chassis',
+                line: 28,
+                col: 3,
+                ref: { file_id: 30, file_key: 'rover__chassis', kind: 'part' },
+                children: [{ kind: 'part', primitive: 'box', line: 5, col: 3 }],
+              }]
+            : [],
+        },
+        source: 'compiled',
+      })
+    }))
+    renderNav('/w/10/design/20')
+
+    expect(await screen.findByText('组件（rover__chassis） · 1 个零件')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('组件（rover__chassis） · 1 个零件'))
+    expect(await screen.findByTestId('editor-stub')).toHaveTextContent('/w/10/design/30')
   })
 })

@@ -8,11 +8,28 @@
 import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import type { DesignIR } from '@/api'
-import { buildIRMeshes } from './renderTree'
+import {
+  approximatePrimitives,
+  buildIRMeshes,
+  deserializeGeometry,
+  type SerializedGeometry,
+} from './renderTree'
 
 // 机械制图 Z 轴向上：模块加载时置一次（本 chunk 才会 import three）
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
+
+/** 合并前的属性归一：mergeGeometries 要求所有几何 indexed/非 indexed 一致且属性集相同
+ *（CSG 结果非 indexed、图元 indexed，混合必失败），统一转非 indexed 并裁剪到 position/normal。 */
+function toMergable(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  const normalized = geometry.index ? geometry.toNonIndexed() : geometry
+  for (const key of Object.keys(normalized.attributes)) {
+    if (key !== 'position' && key !== 'normal') normalized.deleteAttribute(key)
+  }
+  if (!normalized.getAttribute('normal')) normalized.computeVertexNormals()
+  return normalized
+}
 
 export interface PreviewStats {
   nodes: number
@@ -23,6 +40,30 @@ interface PreviewCanvasProps {
   ir: DesignIR | null
   /** 渲染完成 / IR 清空时回传统计（信息条展示） */
   onStats?: (stats: PreviewStats) => void
+}
+
+/** Worker 节点结果消息 */
+interface WorkerNodeMessage {
+  type: 'node'
+  gen: number
+  index: number
+  geometry: SerializedGeometry | null
+}
+
+/** 创建渲染 Worker（失败返回 null：jsdom / 环境不支持时回退主线程同步求值） */
+function createDesignWorker(): Worker | null {
+  try {
+    return new Worker(new URL('./designWorker.ts', import.meta.url), { type: 'module' })
+  } catch {
+    return null
+  }
+}
+
+/** 共享材质（进程级单例；仅挂材质、不随几何销毁） */
+let sharedMaterial: THREE.MeshStandardMaterial | null = null
+function getMaterial(): THREE.MeshStandardMaterial {
+  sharedMaterial ??= new THREE.MeshStandardMaterial({ color: 0x9fb4cc, metalness: 0.15, roughness: 0.55 })
+  return sharedMaterial
 }
 
 /** 计算把相机放到能框住包围盒的距离（对角视角） */
@@ -50,6 +91,22 @@ export default function PreviewCanvas({ ir, onStats }: PreviewCanvasProps) {
   const statsRef = useRef(onStats)
   statsRef.current = onStats
   const [unsupported, setUnsupported] = useState(false)
+  // Worker（C8）：惰性创建一次；消息处理经 handlerRef 转发到最新 IR effect
+  const workerRef = useRef<Worker | null>(null)
+  const handlerRef = useRef<((event: MessageEvent) => void) | null>(null)
+  const genRef = useRef(0)
+  const nodeGroupsRef = useRef<Map<number, THREE.Group>>(new Map())
+  const trianglesRef = useRef(0)
+  const lastStatsAtRef = useRef(0)
+
+  // 统一统计上报：nodes 固定为顶层节点数，triangles 取当前已挂载几何合计。
+  // 节流：渐进替换期间每个节点都会变化，限频 200ms 防止整页 React 重渲染风暴
+  const reportStats = (ir: DesignIR | null, force = false) => {
+    const now = performance.now()
+    if (!force && now - lastStatsAtRef.current < 200) return
+    lastStatsAtRef.current = now
+    statsRef.current?.({ nodes: ir?.nodes.length ?? 0, triangles: trianglesRef.current })
+  }
 
   // ── WebGL 场景：仅挂载一次（上下文创建失败降级为提示块，不抛错） ──
   useEffect(() => {
@@ -61,9 +118,11 @@ export default function PreviewCanvas({ ir, onStats }: PreviewCanvasProps) {
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 5000)
     cameraRef.current = camera
 
+    // 预览性能优先（C8）：不开 MSAA（SwiftShader / 低端 GPU 上初始化与渲染代价高），
+    // 以高 pixelRatio + 材质 roughness 弥补观感
     let renderer: THREE.WebGLRenderer
     try {
-      renderer = new THREE.WebGLRenderer({ antialias: true })
+      renderer = new THREE.WebGLRenderer({ antialias: false })
     } catch {
       // WebGL 不可用（无 GPU / 远程会话 / 旧内核 headless）：显示提示而非白屏
       setUnsupported(true)
@@ -131,29 +190,161 @@ export default function PreviewCanvas({ ir, onStats }: PreviewCanvasProps) {
     }
   }, [])
 
-  // ── IR 变更：重建网格组并重新取景 ──
+  // ── Worker 生命周期：挂载创建、卸载终止 ──
+  useEffect(() => {
+    const worker = createDesignWorker()
+    if (!worker) {
+      console.warn('[design-worker] 创建失败，回退主线程同步求值')
+    } else {
+      worker.onerror = (event) => console.error('[design-worker] 错误', event.message ?? event)
+      worker.onmessage = (event: MessageEvent) => handlerRef.current?.(event)
+      workerRef.current = worker
+    }
+    return () => {
+      if (workerRef.current) {
+        workerRef.current.onmessage = null
+        workerRef.current.terminate()
+        workerRef.current = null
+      }
+    }
+  }, [])
+
+  // ── IR 变更：首帧同步近似骨架，CSG 精确几何由 Worker 渐进替换（ADR 0086 C8） ──
   useEffect(() => {
     const group = groupRef.current
     const camera = cameraRef.current
     const controls = controlsRef.current
     if (!group || !camera) return
-    group.traverse(obj => {
-      if (obj instanceof THREE.Mesh) obj.geometry.dispose()
-    })
+    // 清理旧几何（Worker 结果替换在 gen 校验后操作 nodeGroups，不会跨 IR 串扰）
+    for (const nodeGroup of nodeGroupsRef.current.values()) {
+      nodeGroup.traverse(obj => {
+        if (obj instanceof THREE.Mesh) obj.geometry.dispose()
+      })
+    }
+    nodeGroupsRef.current.clear()
     group.clear()
-    const meshes = buildIRMeshes(ir)
-    let triangles = 0
-    for (const mesh of meshes) {
-      group.add(mesh)
-      const position = mesh.geometry.getAttribute('position')
-      triangles += Math.floor(position.count / 3)
+    trianglesRef.current = 0
+    if (!ir || ir.nodes.length === 0) {
+      reportStats(ir)
+      return
     }
-    statsRef.current?.({ nodes: meshes.length, triangles })
-    const box = new THREE.Box3().setFromObject(group)
-    if (frameCamera(camera, box) && controls) {
-      controls.target.copy(box.getCenter(new THREE.Vector3()))
-      controls.update()
+
+    const worker = workerRef.current
+    if (!worker) {
+      // 回退路径（无 Worker 环境）：主线程同步全量求值（原行为）
+      const meshes = buildIRMeshes(ir)
+      for (const mesh of meshes) {
+        group.add(mesh)
+        const position = mesh.geometry.getAttribute('position')
+        trianglesRef.current += Math.floor(position.count / 3)
+      }
+      const box = new THREE.Box3().setFromObject(group)
+      if (frameCamera(camera, box) && controls) {
+        controls.target.copy(box.getCenter(new THREE.Vector3()))
+        controls.update()
+      }
+      statsRef.current?.({ nodes: meshes.length, triangles: trianglesRef.current })
+      return
     }
+
+    // 首帧骨架：图元展开按 rAF 分批构建（每批一小片，避免单次长任务，C9）；
+    // Worker 的 CSG 精确求值与骨架并行推进
+    const gen = genRef.current + 1
+    genRef.current = gen
+    let batchIndex = 0
+    const BATCH = 25
+    const buildBatch = () => {
+      if (gen !== genRef.current) return // IR 已变：骨架构建作废
+      const end = Math.min(batchIndex + BATCH, ir.nodes.length)
+      for (; batchIndex < end; batchIndex += 1) {
+        const index = batchIndex
+        const nodeGroup = new THREE.Group()
+        const geometries = approximatePrimitives(ir.nodes[index])
+        // 按节点合并为单个网格：draw call 从图元数降到节点数（软渲染首帧代价线性相关）
+        let merged: THREE.BufferGeometry | null = null
+        if (geometries.length > 1) {
+          try {
+            merged = mergeGeometries(geometries.map(toMergable), false)
+          } catch {
+            merged = null
+          }
+        }
+        if (merged) {
+          for (const geometry of geometries) geometry.dispose()
+          merged.computeVertexNormals()
+          nodeGroup.add(new THREE.Mesh(merged, getMaterial()))
+          trianglesRef.current += Math.floor(merged.getAttribute('position').count / 3)
+        } else {
+          for (const geometry of geometries) {
+            nodeGroup.add(new THREE.Mesh(geometry, getMaterial()))
+            trianglesRef.current += Math.floor(geometry.getAttribute('position').count / 3)
+          }
+        }
+        nodeGroupsRef.current.set(index, nodeGroup)
+        group.add(nodeGroup)
+      }
+      const box = new THREE.Box3().setFromObject(group)
+      if (frameCamera(camera, box) && controls) {
+        controls.target.copy(box.getCenter(new THREE.Vector3()))
+        controls.update()
+      }
+      reportStats(ir)
+      if (batchIndex < ir.nodes.length) {
+        window.requestAnimationFrame(buildBatch)
+      } else {
+        reportStats(ir, true) // 骨架构建完成：强制上报一次最终统计
+      }
+    }
+    buildBatch()
+
+    // Worker 渐进替换：gen 不匹配（新 IR 已到）的消息一律丢弃
+    handlerRef.current = (event: MessageEvent) => {
+      const message = event.data as WorkerNodeMessage & { type: string }
+      if (message.type === 'node') {
+        if (message.gen !== gen) return
+        const nodeGroup = nodeGroupsRef.current.get(message.index)
+        if (!nodeGroup) return
+        nodeGroup.traverse(obj => {
+          if (obj instanceof THREE.Mesh) obj.geometry.dispose()
+        })
+        nodeGroup.clear()
+        if (message.geometry) {
+          const geometry = deserializeGeometry(message.geometry)
+          nodeGroup.add(new THREE.Mesh(geometry, getMaterial()))
+          trianglesRef.current += Math.floor(geometry.getAttribute('position').count / 3)
+        }
+        reportStats(ir)
+      } else if (message.type === 'done' && message.gen === gen) {
+        // 全部节点替换完成：合并为单一静态网格（draw call 200 → 1，
+        // 软渲染 / 低端 GPU 上每帧代价与 draw call 线性相关，C9）
+        const geometries: THREE.BufferGeometry[] = []
+        for (const nodeGroup of nodeGroupsRef.current.values()) {
+          nodeGroup.traverse(obj => {
+            if (obj instanceof THREE.Mesh) geometries.push(obj.geometry)
+          })
+        }
+        let staticMesh: THREE.Mesh | null = null
+        if (geometries.length > 1) {
+          try {
+            const merged = mergeGeometries(geometries.map(toMergable), false)
+            if (merged) {
+              for (const geometry of geometries) geometry.dispose()
+              staticMesh = new THREE.Mesh(merged, getMaterial())
+            }
+          } catch {
+            staticMesh = null
+          }
+        }
+        if (staticMesh) {
+          group.clear()
+          nodeGroupsRef.current.clear()
+          group.add(staticMesh)
+        }
+        reportStats(ir, true) // CSG 替换完成：强制上报最终统计
+        handlerRef.current = null
+      }
+    }
+    worker.postMessage({ type: 'eval', gen, nodes: ir.nodes })
   }, [ir])
 
   if (unsupported) {

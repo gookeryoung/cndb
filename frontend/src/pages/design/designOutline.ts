@@ -17,7 +17,9 @@ export interface DesignTreeMeta {
   line?: number
   /** 大纲节点：1 基源列 */
   col?: number
-  /** 子树内的零件计数（前端按 children 派生，D3） */
+  /** use 实例的源文件 id（IR v4，ADR 0086 §7）：点击打开源文件而非当前设计 */
+  fileId?: number
+  /** 子树内的零件计数（一次后序遍历派生，ADR 0086 C7） */
   partCount: number
 }
 
@@ -81,15 +83,19 @@ export function outlineToTree(
         meta: { type: 'part', designId, line: node.line, col: node.col, partCount: 1 },
       }
     }
+    // use 实例（IR v4）：带 ref 时点击打开源文件（fileId），否则定位当前设计源行
+    const ref = node.kind === 'assembly' ? node.ref : undefined
     const children = outlineToTree(node.children, designId, key)
-    const partCount = node.children.reduce((total, child) => total + countParts(child), 0)
+    // 一次后序计数：父节点计数 = 子节点计数求和，每条边只遍历一次（ADR 0086 C7）
+    const partCount = children.reduce((total, child) => total + child.meta.partCount, 0)
+    const base = { designId, line: node.line, col: node.col, partCount, ...(ref ? { fileId: ref.file_id } : {}) }
     if (node.kind === 'system') {
       return {
         key,
         title: node.name,
         detail: `系统 · 第 ${node.line} 行 · ${partCount} 个零件`,
         isLeaf: children.length === 0,
-        meta: { type: 'system', designId, line: node.line, col: node.col, partCount },
+        meta: { type: 'system', ...base },
         children,
       }
     }
@@ -97,9 +103,9 @@ export function outlineToTree(
       return {
         key,
         title: node.name,
-        detail: `组件 · 第 ${node.line} 行 · ${partCount} 个零件`,
+        detail: ref ? `组件（${ref.file_key}） · ${partCount} 个零件` : `组件 · 第 ${node.line} 行 · ${partCount} 个零件`,
         isLeaf: children.length === 0,
-        meta: { type: 'assembly', designId, line: node.line, col: node.col, partCount },
+        meta: { type: 'assembly', ...base },
         children,
       }
     }
@@ -108,7 +114,7 @@ export function outlineToTree(
       title: groupLabel(node.op),
       detail: `结构分组 · 第 ${node.line} 行 · ${partCount} 个零件`,
       isLeaf: children.length === 0,
-      meta: { type: 'group', designId, line: node.line, col: node.col, partCount },
+      meta: { type: 'group', ...base },
       children,
     }
   })

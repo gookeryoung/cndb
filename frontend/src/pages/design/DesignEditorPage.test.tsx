@@ -54,11 +54,15 @@ const DETAIL: DesignDetail = {
   workspace_id: 10,
   title: '法兰板',
   description: '示例结构',
+  kind: 'assembly',
+  file_key: 'flange-plate',
+  folder: '',
+  dependencies_stale: false,
   version_count: 2,
   created_at: '2026-10-01T08:00:00Z',
   updated_at: '2026-10-02T08:00:00Z',
   content: CONTENT,
-  compiled: IR,
+  content_hash: 'abc123',
   version_number: 2,
 }
 
@@ -73,15 +77,18 @@ const V1_DETAIL: DesignVersionDetail = {
   ...VERSIONS[1]!,
   content: V1_CONTENT,
   compiled: { ...IR, params: [{ name: 'width', value: 60 }], nodes: [{ op: 'box', size: [60, 40, 12] }] },
+  dependencies: [],
 }
 
 /** preview 请求体记录 */
-const previewBodies: Array<{ content: string; overrides?: Record<string, number> | null }> = []
+const previewBodies: Array<{ content: string; overrides?: Record<string, number> | null; design_id?: number | null }> = []
 
 function useDefaultHandlers(preview: () => DesignPreviewResult = () => ({ ok: true, ir: IR, diagnostics: [] })) {
   previewBodies.length = 0
   server.use(
     http.get('/api/v1/workspaces/10/designs/20', () => HttpResponse.json(DETAIL)),
+    http.get('/api/v1/workspaces/10/designs/20/ir', () =>
+      HttpResponse.json({ design_id: 20, version_number: 2, content_hash: 'abc123', ir: IR })),
     http.get('/api/v1/workspaces/10/designs/20/versions', () => HttpResponse.json(VERSIONS)),
     http.post('/api/v1/workspaces/10/designs/preview', async ({ request }) => {
       const body = await request.json() as { content: string; overrides?: Record<string, number> | null }
@@ -174,6 +181,9 @@ describe('DesignEditorPage 编辑器主流程', () => {
     }))
     const { container } = renderPage()
 
+    // 干净打开不发 preview（I6）：先编辑触发防抖 preview，再等诊断回显
+    await waitForEditorReady(container)
+    editViaCodeMirror(container, '\nfoo()')
     expect(await screen.findByText('第2行')).toBeInTheDocument()
     expect(screen.getByText('未知图元 foo')).toBeInTheDocument()
     // 错误行底色装饰
@@ -221,6 +231,17 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(screen.getByText('未保存')).toBeInTheDocument()
   })
 
+  it('干净打开直接消费 IR 快照，不发 preview（ADR 0086 I6）', async () => {
+    useDefaultHandlers()
+    renderPage()
+
+    // 详情与 IR 到达后即渲染（stub 收到快照 IR），且 preview 零请求
+    expect(await screen.findByText('节点数:1')).toBeInTheDocument()
+    await new Promise(resolve => setTimeout(resolve, 450))
+    expect(previewBodies.length).toBe(0)
+    expect(screen.getByTestId('design-compile-ok')).toBeInTheDocument()
+  })
+
   it('参数面板从 IR 渲染，改参后 overrides 进入 preview 请求', async () => {
     useDefaultHandlers()
     renderPage()
@@ -229,9 +250,27 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect((input as HTMLInputElement).value).toBe('80')
 
     fireEvent.change(input, { target: { value: '100' } })
-    await waitFor(() => expect(previewBodies.length).toBeGreaterThan(1))
+    await waitFor(() => expect(previewBodies.length).toBeGreaterThan(0))
     expect(previewBodies[previewBodies.length - 1]!.overrides).toEqual({ width: 100 })
+    expect(previewBodies[previewBodies.length - 1]!.design_id).toBe(20)
     expect(await screen.findByRole('button', { name: /重置/ })).toBeInTheDocument()
+  })
+
+  it('依赖陈旧显示横幅，刷新落新版本（ADR 0086 D6）', async () => {
+    useDefaultHandlers()
+    server.use(http.get('/api/v1/workspaces/10/designs/20', () =>
+      HttpResponse.json({ ...DETAIL, dependencies_stale: true })))
+    let refreshed = false
+    server.use(http.post('/api/v1/workspaces/10/designs/20/refresh', () => {
+      refreshed = true
+      return HttpResponse.json({ ...DETAIL, dependencies_stale: false, version_number: 3 })
+    }))
+    renderPage()
+
+    expect(await screen.findByTestId('design-stale-banner')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '刷新依赖' }))
+    await waitFor(() => expect(refreshed).toBe(true))
+    expect(await screen.findByText(/依赖已刷新，保存为第 3 版/)).toBeInTheDocument()
   })
 
   it('viewer 只读态：标记只读且保存禁用', async () => {

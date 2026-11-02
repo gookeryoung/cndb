@@ -22,6 +22,7 @@ import { designsApi, workspaceApi } from '@/api'
 import type { DesignDiagnostic, DesignVersionItem } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
 import DslEditor from './DslEditor'
+import DesignConstraintsPanel from './DesignConstraintsPanel'
 import { useDesignPreview } from './useDesignPreview'
 
 // three 渲染整块 lazy：three + three-bvh-csg 只进设计编辑器 chunk（D4 体积预算）
@@ -36,12 +37,19 @@ export default function DesignEditorPage() {
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   // 结构树节点带 ?line= 打开编辑器并定位源行（ADR 0083 D7）
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const revealLine = Number(searchParams.get('line')) || undefined
 
   const { data: detail, isLoading } = useQuery({
     queryKey: ['designs', wid, designId],
     queryFn: () => designsApi.get(wid, designId),
+    enabled: !!wid && !!designId,
+  })
+
+  // IR 快照（ADR 0086 D7 / I6）：首屏直用持久化 IR，干净状态不发 preview
+  const { data: irResp } = useQuery({
+    queryKey: ['designs', wid, designId, 'ir'],
+    queryFn: () => designsApi.getIR(wid, designId),
     enabled: !!wid && !!designId,
   })
 
@@ -67,7 +75,25 @@ export default function DesignEditorPage() {
   }, [detail, loadedId])
 
   const dirty = contentReady && detail != null && content !== detail.content
-  const preview = useDesignPreview(wid, content, overrides, { enabled: contentReady })
+  // 干净打开（内容未改且无参数覆盖）：直接消费 IR 快照，不发 preview（I6）
+  const clean = !dirty && Object.keys(overrides).length === 0
+  const preview = useDesignPreview(wid, content, overrides, {
+    enabled: contentReady && !clean,
+    designId: detail ? detail.id : null,
+    initialIr: irResp?.ir ?? null,
+  })
+
+  // 依赖陈旧（ADR 0086 D6）：被引用零件更新后提示刷新，refresh 落新版本并清 stale
+  const refresh = useMutation({
+    mutationFn: () => designsApi.refresh(wid, designId),
+    onSuccess: (updated) => {
+      message.success(`依赖已刷新，保存为第 ${updated.version_number} 版`)
+      setContent(updated.content)
+      setOverrides({})
+      invalidate()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '依赖刷新失败'),
+  })
 
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['designs', wid] })
@@ -180,6 +206,27 @@ export default function DesignEditorPage() {
         />
       )}
 
+      {detail?.dependencies_stale && (
+        <Alert
+          type="warning"
+          showIcon
+          data-testid="design-stale-banner"
+          message="依赖的零件文件已更新，当前打开的是旧快照"
+          description="历史版本按依赖快照复现（不取最新）；点击刷新将以最新依赖重新编译并保存新版本。"
+          action={(
+            <Button
+              size="small"
+              type="primary"
+              loading={refresh.isPending}
+              disabled={isViewer || dirty}
+              onClick={() => refresh.mutate()}
+            >
+              刷新依赖
+            </Button>
+          )}
+        />
+      )}
+
       {/* 顶部信息条：编译检查 + 版本历史（上移收拢，编辑/预览区让出整列高度） */}
       <div className="cn-dsl-topbar" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 24px' }}>
         <Space size={12} wrap align="center">
@@ -269,6 +316,17 @@ export default function DesignEditorPage() {
               </Space>
             </div>
           )}
+          <DesignConstraintsPanel
+            constraints={preview.ir?.constraints ?? []}
+            onReveal={(line) => setSearchParams(
+              prev => {
+                const next = new URLSearchParams(prev)
+                next.set('line', String(line))
+                return next
+              },
+              { replace: true },
+            )}
+          />
         </div>
       </div>
 
@@ -301,6 +359,16 @@ export default function DesignEditorPage() {
               <Text type="secondary">{formatDateTime(viewingDetail?.created_at ?? viewingVersion.created_at)}</Text>
             </Space>
             {viewingDetail?.comment && <Text type="secondary">备注：{viewingDetail.comment}</Text>}
+            {viewingDetail && viewingDetail.dependencies.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary">依赖快照：</Text>
+                <Space size={4} wrap>
+                  {viewingDetail.dependencies.map(dep => (
+                    <Tag key={dep.file_key}>{dep.file_key}@v{dep.version_number}</Tag>
+                  ))}
+                </Space>
+              </div>
+            )}
             {viewingLoading ? (
               <Skeleton active />
             ) : (

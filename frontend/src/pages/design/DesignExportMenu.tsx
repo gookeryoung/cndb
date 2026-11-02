@@ -5,7 +5,7 @@
  * 网格与预览共用同一 IR 求值路径（renderTree.buildIRMeshes），所见即所得。
  */
 
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import { App as AntApp, Button, Dropdown } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
@@ -25,13 +25,14 @@ export default function DesignExportMenu({ ir, title }: { ir: DesignIR | null; t
   const { message } = AntApp.useApp()
   const [busy, setBusy] = useState(false)
 
-  // 导出与预览同一条求值路径；nodes 为空（边界 #3）时菜单整体禁用
-  const meshes = useMemo(() => exportMeshesOf(ir), [ir])
-  const empty = !ir || ir.nodes.length === 0 || meshes.length === 0
+  // 可用性只看 IR 节点（边界 #3）；网格求值（buildIRMeshes 含 CSG，大装配可达数百 ms）
+  // 延迟到真正导出时才做（ADR 0086 C9：打开编辑器不允许主线程长任务）
+  const empty = !ir || ir.nodes.length === 0
 
   const onExport = async (kind: 'stl' | 'obj' | 'glb' | 'views') => {
     setBusy(true)
     try {
+      const meshes = exportMeshesOf(ir)
       if (kind === 'stl') downloadBlob(buildSTL(meshes), `${title}.stl`)
       else if (kind === 'obj') downloadBlob(new Blob([buildOBJ(meshes)], { type: 'text/plain' }), `${title}.obj`)
       else if (kind === 'glb') downloadBlob(await buildGLB(meshes), `${title}.glb`)

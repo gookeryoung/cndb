@@ -109,11 +109,15 @@ export type {
 export { designsApi } from './design'
 export type {
   DesignBooleanNode,
+  DesignDependencyItem,
+  DesignDependenciesResponse,
   DesignDetail,
   DesignDiagnostic,
   DesignIR,
+  DesignIRConstraint,
   DesignIRNode,
   DesignIRParam,
+  DesignIRResponse,
   DesignListItem,
   DesignOutline,
   DesignOutlineNode,

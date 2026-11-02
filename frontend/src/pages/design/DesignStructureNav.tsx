@@ -18,7 +18,7 @@ import { designsApi } from '@/api'
 import type { DesignListItem, DesignOutlineNode } from '@/api'
 import SearchInput from '@/components/SearchInput'
 import {
-  countParts, designEditorPath, type DesignTreeEntry, type DesignTreeMeta, outlineToTree,
+  designEditorPath, type DesignTreeEntry, type DesignTreeMeta, outlineToTree,
 } from './designOutline'
 
 const { Text } = Typography
@@ -134,14 +134,16 @@ export default function DesignStructureNav({
   const treeData = useMemo<DesignTreeDataNode[]>(
     () => filteredDesigns.map(item => {
       const outline = outlines[item.id]
-      const partCount = outline ? outline.nodes.reduce((total, node) => total + countParts(node), 0) : 0
+      const entries = outline ? outlineToTree(outline.nodes, item.id) : []
+      // 一次后序计数在 outlineToTree 内完成（ADR 0086 C7），这里只求根层和
+      const partCount = entries.reduce((total, entry) => total + entry.meta.partCount, 0)
       return {
         key: `design-${item.id}`,
         meta: { type: 'design' as const, designId: item.id, partCount },
         isLeaf: outline ? outline.nodes.length === 0 : false,
         icon: <ToolOutlined />,
         title: renderDesignTitle(item, outline),
-        children: outline ? outlineToTree(outline.nodes, item.id).map(entryToTreeNode) : undefined,
+        children: entries.map(entryToTreeNode),
       }
     }),
     // renderDesignTitle 依赖 outlines / designs，均在本依赖内
@@ -152,7 +154,13 @@ export default function DesignStructureNav({
     return (
       <span className="cn-design-tree-title" data-testid={`design-node-${item.id}`}>
         <Text strong>{item.title}</Text>
+        {item.kind === 'part' && <Tag bordered={false} className="cn-design-tree-tag">零件</Tag>}
         <Text type="secondary" className="cn-design-tree-meta">v{item.version_count}</Text>
+        {item.dependencies_stale && (
+          <Tag color="gold" bordered={false} className="cn-design-tree-tag" data-testid={`design-stale-${item.id}`}>
+            依赖陈旧
+          </Tag>
+        )}
         {outline?.source === 'content' && (
           <Tag color="orange" bordered={false} className="cn-design-tree-tag">历史快照派生</Tag>
         )}
@@ -160,12 +168,15 @@ export default function DesignStructureNav({
     )
   }
 
-  /** 点击节点：设计 → 编辑器；系统 / 组件 / 分组 / 零件 → 编辑器并定位源行（ADR 0083 D7） */
+  /** 点击节点：设计 → 编辑器；系统 / 组件 / 分组 / 零件 → 编辑器并定位源行（ADR 0083 D7）；
+   * use 实例带源文件（IR v4）时打开该源文件（ADR 0086 C7） */
   const onSelectNode: TreeProps['onSelect'] = (_keys, info) => {
     const meta = (info.node as DesignTreeDataNode).meta
     if (!meta) return
     if (meta.type === 'design') {
       if (meta.designId) navigate(designEditorPath(workspaceId, meta.designId))
+    } else if (meta.fileId) {
+      navigate(designEditorPath(workspaceId, meta.fileId))
     } else {
       navigate(designEditorPath(workspaceId, meta.designId ?? 0, meta.line))
     }
@@ -215,6 +226,9 @@ export default function DesignStructureNav({
             showIcon
             className="cn-doc-sider-tree"
             treeData={treeData}
+            // 虚拟滚动：大装配只渲染可见节点（ADR 0086 C7）
+            virtual
+            height={640}
             expandedKeys={expandedKeys}
             selectedKeys={activeDesignId === undefined ? [] : [`design-${activeDesignId}`]}
             onExpand={keys => setExpandedKeys(keys as string[])}

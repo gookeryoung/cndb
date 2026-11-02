@@ -7,7 +7,7 @@
 
 import { useState } from 'react'
 import {
-  App as AntApp, Button, Empty, Form, Input, List, Modal, Popconfirm, Skeleton, Space, Tag, Typography,
+  App as AntApp, Button, Empty, Form, Input, List, Modal, Popconfirm, Select, Skeleton, Space, Tag, Typography,
 } from 'antd'
 import { ApartmentOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -65,9 +65,29 @@ system rover {
 }
 `
 
+/** 新建零件文件的起步模板：顶层 param 即公开参数，顶层实例即零件几何（ADR 0086 C1） */
+export const DEFAULT_PART_CONTENT = `// 零件文件：顶层 param = 公开参数，顶层实例 = 零件几何
+param width = 80
+param depth = 40
+param height = 12
+
+// 顶层实例：零件几何（禁止 system 声明）
+difference {
+  box(size = [width, depth, height])
+  translate([0, 0, -1]) cyl(d = 8, h = height + 2)
+}
+`
+
+/** 新建装配文件的起步模板：use 引用 part 文件 + 组件级约束（ADR 0086 C5）
+ *  注意：模板中的 "plate" 需替换为实际零件 file_key 才能编译通过 */
+export const DEFAULT_ASSEMBLY_CONTENT = DEFAULT_DESIGN_CONTENT
+
 interface DesignFormValues {
   title: string
   description?: string
+  kind: 'part' | 'assembly'
+  folder?: string
+  file_key?: string
 }
 
 export default function DesignsPage() {
@@ -101,7 +121,10 @@ export default function DesignsPage() {
       designsApi.create(wid, {
         title: values.title,
         description: values.description ?? '',
-        content: DEFAULT_DESIGN_CONTENT,
+        content: values.kind === 'part' ? DEFAULT_PART_CONTENT : DEFAULT_ASSEMBLY_CONTENT,
+        kind: values.kind,
+        folder: values.folder ?? '',
+        file_key: values.file_key || undefined,
       }),
     onSuccess: (created) => {
       message.success('设计已创建')
@@ -201,9 +224,22 @@ export default function DesignsPage() {
                 ]}
               >
                 <List.Item.Meta
-                  title={<Text strong>{item.title}</Text>}
+                  title={(
+                    <Space size={6} wrap>
+                      <Text strong>{item.title}</Text>
+                      <Tag bordered={false} color={item.kind === 'part' ? 'blue' : 'geekblue'}>
+                        {item.kind === 'part' ? '零件' : '装配'}
+                      </Tag>
+                      {item.folder && <Tag bordered={false}>{item.folder}</Tag>}
+                      {item.dependencies_stale && (
+                        <Tag color="gold" bordered={false} data-testid={`design-list-stale-${item.id}`}>依赖陈旧</Tag>
+                      )}
+                    </Space>
+                  )}
                   description={(
                     <span className="cn-design-tree-meta">
+                      {item.file_key && <Text code style={{ fontSize: 12 }}>{item.file_key}</Text>}
+                      {' '}
                       {item.description || '（无描述）'}
                       {' · '}v{item.version_count}
                       {' · '}更新于 {formatDateTime(item.updated_at)}
@@ -231,7 +267,12 @@ export default function DesignsPage() {
         confirmLoading={create.isPending}
         destroyOnHidden
       >
-        <Form form={createForm} layout="vertical" onFinish={values => create.mutate(values)}>
+        <Form
+          form={createForm}
+          layout="vertical"
+          initialValues={{ kind: 'assembly' }}
+          onFinish={values => create.mutate(values)}
+        >
           <Form.Item
             name="title"
             label="名称"
@@ -242,10 +283,40 @@ export default function DesignsPage() {
           >
             <Input placeholder="如：法兰板" autoFocus />
           </Form.Item>
+          <Form.Item name="kind" label="文件类型" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: 'assembly', label: '装配（系统 / 组件装配声明）' },
+                { value: 'part', label: '零件（顶层参数 + 零件几何）' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            name="folder"
+            label="目录（可选）"
+            rules={[{ pattern: /^(?!\/)[^\\]*$/, message: '目录为相对路径（a/b），不允许反斜杠' }]}
+          >
+            <Input placeholder="如：parts/rover" />
+          </Form.Item>
+          <Form.Item
+            name="file_key"
+            label="文件标识（可选，创建后不可改）"
+            rules={[{ pattern: /^[A-Za-z0-9_\-\u4e00-\u9fff]{1,64}$/, message: '1-64 位字母 / 数字 / 下划线 / 连字符 / 中文' }]}
+          >
+            <Input placeholder="缺省由名称生成" />
+          </Form.Item>
           <Form.Item name="description" label="描述（可选）">
             <Input.TextArea rows={2} maxLength={500} placeholder="用途说明" />
           </Form.Item>
-          <Text type="secondary">将以示例模板（四轮小车：系统 / 组件 / 零件三级装配）创建，创建后可自由编辑。</Text>
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.kind !== next.kind}>
+            {({ getFieldValue }) => (
+              <Text type="secondary">
+                {getFieldValue('kind') === 'part'
+                  ? '将以零件模板（顶层参数 + 零件几何）创建，创建后可自由编辑。'
+                  : '将以示例模板（四轮小车：系统 / 组件 / 零件三级装配）创建，创建后可自由编辑。'}
+              </Text>
+            )}
+          </Form.Item>
         </Form>
       </Modal>
 
