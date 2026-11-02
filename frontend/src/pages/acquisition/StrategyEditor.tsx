@@ -3,15 +3,18 @@
  * - 草案只回表单，**不自动保存 / 不自动启用**（模型是规则翻译器，不是决策者）
  * - 保存前先跑 `rules/validate`；实质变更由后端 `rule_version +1` 并回 draft
  * - 预览只对已保存策略开放（预览走指定策略的抓取声明，草稿没有 id）
+ * - 落点支持就地新建数据表 / 文档文件夹，避免为建落点退出抽屉、丢掉已填内容
  */
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Divider, Drawer, Form, Input, InputNumber, Radio, Select, Space, Tag, Typography,
+  Alert, App as AntApp, Button, Divider, Drawer, Form, Input, InputNumber, Modal, Radio, Select, Space, Tag, Typography,
 } from 'antd'
-import { ExperimentOutlined, ThunderboltOutlined } from '@ant-design/icons'
+import { ExperimentOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 
+import { tableApi } from '@/api'
+import { documentsApi } from '@/api/documents'
 import { acquisitionApi } from '@/api/acquisition'
 import type {
   AcquisitionChannelOption, AcquisitionPreview, AcquisitionStrategy, AcquisitionStrategyPayload,
@@ -133,6 +136,11 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
   const [description, setDescription] = useState('')
   const [draftNote, setDraftNote] = useState<{ text: string; tone: 'info' | 'warning' } | null>(null)
   const [preview, setPreview] = useState<AcquisitionPreview | null>(null)
+  const [createKind, setCreateKind] = useState<'table' | 'folder' | null>(null)
+  const [createName, setCreateName] = useState('')
+  // 就地新建的落点：先本地合并进选项，保证 Select 立刻显示名称，再等列表查询回填
+  const [createdTables, setCreatedTables] = useState<EditorTableOption[]>([])
+  const [createdFolders, setCreatedFolders] = useState<EditorFolderOption[]>([])
 
   useEffect(() => {
     if (open) {
@@ -140,8 +148,57 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
       setDescription('')
       setDraftNote(null)
       setPreview(null)
+      setCreatedTables([])
+      setCreatedFolders([])
+      setCreateKind(null)
+      setCreateName('')
     }
   }, [open, strategy, form])
+
+  const tableOptions = useMemo(() => {
+    const merged = [...tables]
+    for (const item of createdTables) {
+      if (!merged.some(exist => exist.id === item.id)) merged.push(item)
+    }
+    return merged.map(item => ({ value: item.id, label: item.name }))
+  }, [tables, createdTables])
+
+  const folderOptions = useMemo(() => {
+    const merged = [...folders]
+    for (const item of createdFolders) {
+      if (!merged.some(exist => exist.id === item.id)) merged.push(item)
+    }
+    return merged.map(item => ({ value: item.id, label: item.title }))
+  }, [folders, createdFolders])
+
+  const createTargetMutation = useMutation({
+    mutationFn: async () => {
+      const name = createName.trim()
+      if (!name) throw new Error('请填写名称')
+      if (createKind === 'table') {
+        const created = await tableApi.create(wid, { name })
+        return { kind: 'table' as const, id: Number(created.id), name: created.name }
+      }
+      const created = await documentsApi.create(wid, { title: name, content: '', is_folder: true, parent_id: null })
+      return { kind: 'folder' as const, id: Number(created.id), name: created.title }
+    },
+    onSuccess: (created) => {
+      if (created.kind === 'table') {
+        setCreatedTables(prev => [...prev, { id: created.id, name: created.name }])
+        form.setFieldValue('tableId', created.id)
+        queryClient.invalidateQueries({ queryKey: ['tables', wid] })
+        message.success(`已新建数据表「${created.name}」并选中`)
+      } else {
+        setCreatedFolders(prev => [...prev, { id: created.id, title: created.name }])
+        form.setFieldValue('folderId', created.id)
+        queryClient.invalidateQueries({ queryKey: ['documents', wid] })
+        message.success(`已新建文件夹「${created.name}」并选中`)
+      }
+      setCreateKind(null)
+      setCreateName('')
+    },
+    onError: (error: Error) => message.error(error.message || '新建失败'),
+  })
 
   const channelOptions = useMemo(
     () => channels.map(item => ({ value: item.value, label: `${item.label}${item.hint ? ` · ${item.hint}` : ''}` })),
@@ -324,22 +381,37 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
         <Form.Item noStyle shouldUpdate={(prev, next) => prev.targetKind !== next.targetKind}>
           {({ getFieldValue }) => (getFieldValue('targetKind') === 'table' ? (
             <>
-              <Form.Item name="tableId" label="目标表" rules={[{ required: true, message: '请选择目标表' }]}>
-                <Select options={tables.map(t => ({ value: t.id, label: t.name }))} showSearch optionFilterProp="label" />
+              <Form.Item label="目标表" required extra="没有合适的表？就地新建后自动选中，无需退出">
+                <Space.Compact style={{ width: '100%' }}>
+                  <Form.Item name="tableId" noStyle rules={[{ required: true, message: '请选择目标表' }]}>
+                    <Select options={tableOptions} showSearch optionFilterProp="label" style={{ width: '100%' }} />
+                  </Form.Item>
+                  <Button icon={<PlusOutlined />} onClick={() => { setCreateKind('table'); setCreateName('') }}>
+                    新建表
+                  </Button>
+                </Space.Compact>
               </Form.Item>
               <Form.Item name="matchKeys" label="去重键（同键视为同一行）">
                 <Select mode="tags" open={false} placeholder="如：city、day" />
               </Form.Item>
             </>
           ) : (
-            <Form.Item name="folderId" label="文档文件夹" extra="留空即写入文档根目录">
-              <Select
-                allowClear
-                options={folders.map(f => ({ value: f.id, label: f.title }))}
-                showSearch
-                optionFilterProp="label"
-                placeholder="选择文件夹"
-              />
+            <Form.Item label="文档文件夹" extra="留空即写入文档根目录；可直接新建文件夹">
+              <Space.Compact style={{ width: '100%' }}>
+                <Form.Item name="folderId" noStyle>
+                  <Select
+                    allowClear
+                    options={folderOptions}
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="选择文件夹"
+                    style={{ width: '100%' }}
+                  />
+                </Form.Item>
+                <Button icon={<PlusOutlined />} onClick={() => { setCreateKind('folder'); setCreateName('') }}>
+                  新建文件夹
+                </Button>
+              </Space.Compact>
             </Form.Item>
           ))}
         </Form.Item>
@@ -426,6 +498,26 @@ export default function StrategyEditor({ open, wid, strategy, channels, tables, 
           />
         )}
       </Space>
+
+      <Modal
+        open={createKind !== null}
+        title={createKind === 'folder' ? '新建文档文件夹' : '新建数据表'}
+        okText="创建并选中"
+        cancelText="取消"
+        onCancel={() => { setCreateKind(null); setCreateName('') }}
+        onOk={() => createTargetMutation.mutate()}
+        okButtonProps={{ loading: createTargetMutation.isPending, disabled: !createName.trim() }}
+        destroyOnHidden
+      >
+        <Input
+          autoFocus
+          maxLength={128}
+          placeholder={createKind === 'folder' ? '文件夹名称' : '数据表名称'}
+          value={createName}
+          onChange={event => setCreateName(event.target.value)}
+          onPressEnter={() => { if (createName.trim() && !createTargetMutation.isPending) createTargetMutation.mutate() }}
+        />
+      </Modal>
 
       <div style={{ marginTop: 12 }}>
         {strategy && (

@@ -1,7 +1,7 @@
 /** StrategiesPage 集成测试 —— 列表渲染 / 空态 / 启停 / 运行后打开运行详情. */
 
 import { describe, expect, it } from 'vitest'
-import { fireEvent, screen } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Route, Routes } from 'react-router-dom'
 import StrategiesPage from './StrategiesPage'
@@ -123,5 +123,27 @@ describe('StrategiesPage 智能采集', () => {
     fireEvent.click(await screen.findByRole('button', { name: /运行/ }))
     expect(await screen.findByText('运行 #11')).toBeInTheDocument()
     expect(screen.getByText(/抓取 4/)).toBeInTheDocument()
+  })
+
+  it('落点可就地新建数据表并自动选中，无需退出抽屉', async () => {
+    server.use(...handlers([makeStrategy()]))
+    let createdName = ''
+    server.use(http.post(`${BASE}/tables`, async ({ request }) => {
+      const body = await request.json() as { name: string }
+      createdName = body.name
+      return HttpResponse.json({ id: 42, name: body.name, workspace_id: WID })
+    }))
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /编辑/ }))
+    expect(await screen.findByText('编辑策略 · 固态电池政策日报')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: /新建表/ }))
+    fireEvent.change(await screen.findByPlaceholderText('数据表名称'), { target: { value: '新采集表' } })
+    fireEvent.click(screen.getByRole('button', { name: /创建并选中/ }))
+
+    await waitFor(() => expect(createdName).toBe('新采集表'))
+    expect(await screen.findByText(/已新建数据表「新采集表」并选中/)).toBeInTheDocument()
+    expect(screen.getByText('新采集表')).toBeInTheDocument()
   })
 })

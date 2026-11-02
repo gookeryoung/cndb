@@ -168,9 +168,7 @@ export default function StrategiesPage() {
       )}
 
       {loading ? <Spin /> : strategies.length === 0 ? (
-        <Empty description="还没有采集策略：先新建一条，用「预览」确认能抓到想要的内容再启用">
-          <Button type="primary" onClick={() => { setEditing(null); setEditorOpen(true) }}>新建策略</Button>
-        </Empty>
+        <Empty description="还没有采集策略：点右上角「新建策略」开始，用「预览」确认能抓到想要的内容再启用" />
       ) : (
         <Table<AcquisitionStrategy>
           rowKey="id"
