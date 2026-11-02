@@ -22,10 +22,17 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.issues import services
 from cndb.plugins.issues.schemas import IssueCommentCreate, IssueCreate
 from cndb.plugins.tables.models import DataTable
-from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.tables.services.core.access import (
+    TableAction,
+    check_workspace_permission,
+    get_table_or_404,
+    readable_tables,
+)
+from cndb.plugins.workspaces.models import WorkspaceRole
 from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/issues", tags=["issues"])
+workspace_router = APIRouter(prefix="/{workspace_id}/issues", tags=["issues"])
 
 
 def _table_for_read(
@@ -70,6 +77,20 @@ def list_issues(
     """问题列表，默认展示 open（GitHub 式两栏过滤）."""
     table = _table_for_read(workspace_id, table_id, current_user, db)
     items = services.list_issues(db, table.id, status=status)
+    return {"items": items, "total": len(items)}
+
+
+@workspace_router.get("")
+def list_workspace_issues(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    status: str = Query(default="open", pattern="^(open|closed|all)$"),
+) -> dict[str, Any]:
+    """工作区级问题清单（数据表模块）：跨当前用户可读的表聚合，附 table_name."""
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    table_ids = [table.id for table in readable_tables(db, workspace_id, current_user)]
+    items = services.list_workspace_issues(db, workspace_id, table_ids, status=status)
     return {"items": items, "total": len(items)}
 
 

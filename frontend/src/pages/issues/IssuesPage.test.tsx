@@ -42,6 +42,7 @@ function listHandler(captured: { status?: string } = {}) {
 function renderPage(route = '/w/10/tables/20/issues') {
   return renderProviders(
     <Routes>
+      <Route path="/w/:wid/tables/issues" element={<IssuesPage />} />
       <Route path="/w/:wid/tables/:tid/issues" element={<IssuesPage />} />
       <Route path="/w/:wid/tables/:tid/issues/:issueId" element={<div data-testid="issue-detail-stub">详情</div>} />
     </Routes>,
@@ -133,5 +134,39 @@ describe('IssuesPage 新建问题', () => {
 
     expect(await screen.findByText('请输入标题')).toBeInTheDocument()
     expect(createSpy).not.toHaveBeenCalled()
+  })
+})
+
+describe('IssuesPage 工作区级列表', () => {
+  it('跨表展示表名，新建问题时先选目标表再提交到该表', async () => {
+    let createdPath = ''
+    server.use(
+      http.get('/api/v1/workspaces/10/issues', () => HttpResponse.json({
+        items: ISSUES.map(item => ({ ...item, table_name: '客户表' })),
+        total: ISSUES.length,
+      })),
+      http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json([
+        { id: 20, name: '客户表', workspace_id: 10 },
+        { id: 21, name: '订单表', workspace_id: 10 },
+      ])),
+      http.post('/api/v1/workspaces/10/tables/:tid/issues', ({ params }) => {
+        createdPath = String(params.tid)
+        return HttpResponse.json({
+          ...ISSUES[0], id: 99, table_id: Number(params.tid), title: '新问题',
+        }, { status: 201 })
+      }),
+    )
+    renderPage('/w/10/tables/issues')
+
+    expect(await screen.findByText('日期列出现 1970 值')).toBeInTheDocument()
+    expect(screen.getAllByText('表：客户表').length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByRole('button', { name: /新建问题/ }))
+    fireEvent.change(await screen.findByPlaceholderText('一句话描述问题'), { target: { value: '新问题' } })
+    fireEvent.mouseDown(await screen.findByText('问题提交到哪张表'))
+    fireEvent.click(await screen.findByText('订单表'))
+    fireEvent.click(screen.getByRole('button', { name: /提\s*交/ }))
+
+    await waitFor(() => expect(createdPath).toBe('21'))
   })
 })

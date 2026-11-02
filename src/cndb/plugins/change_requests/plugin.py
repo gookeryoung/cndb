@@ -27,8 +27,10 @@ class ChangeRequestsPlugin(PluginBase):
     def register_routes(self, router: APIRouter) -> None:
         """挂载 change-requests 路由."""
         from cndb.plugins.change_requests.routers import router as cr_router
+        from cndb.plugins.change_requests.routers import workspace_router as cr_workspace_router
 
         router.include_router(cr_router)
+        router.include_router(cr_workspace_router)
 
 
 plugin = ChangeRequestsPlugin()

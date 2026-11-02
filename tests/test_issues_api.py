@@ -232,3 +232,26 @@ class TestIssueIsolation:
         auth = _login(client, outsider.username)
         r = client.get(ISSUES.format(ws=ws.id, tb=table.id), headers=auth)
         assert r.status_code == 403
+
+
+class TestWorkspaceIssueList:
+    def test_list_across_tables_with_table_name(self, client, db, ws, table, auth_owner, auth_viewer) -> None:
+        other = make_table(db, ws, name="IssueTable2")
+        client.post(ISSUES.format(ws=ws.id, tb=table.id), json={"title": "表一问题"}, headers=auth_viewer)
+        client.post(ISSUES.format(ws=ws.id, tb=other.id), json={"title": "表二问题"}, headers=auth_viewer)
+
+        r = client.get(f"/api/v1/workspaces/{ws.id}/issues", params={"status": "all"}, headers=auth_owner)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["total"] == 2
+        assert {item["table_name"] for item in body["items"]} == {"IssueTable", "IssueTable2"}
+        assert {item["table_id"] for item in body["items"]} == {table.id, other.id}
+
+    def test_non_member_403(self, client, db, ws, table) -> None:
+        outsider = User(username="issue_outsider", nickname="Outsider")
+        outsider.set_password("passw0rd")
+        db.add(outsider)
+        db.commit()
+        headers = _login(client, outsider.username)
+        r = client.get(f"/api/v1/workspaces/{ws.id}/issues", headers=headers)
+        assert r.status_code == 403

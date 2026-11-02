@@ -588,3 +588,41 @@ class TestDualTrackDispatch:
         )
         assert r.status_code == 200
         assert r.json() == {"deleted": 1}
+
+
+class TestWorkspaceChangeRequestList:
+    def test_list_across_tables_with_table_name(self, client, db, ws, table, auth_owner, auth_viewer) -> None:
+        dt, ids = table
+        other = make_table(db, ws, name="CRTable2")
+        other_ids = rec.bulk_create(db.get_bind(), other, [{"名称": "丙", "数量": 3}], db=db)[0]
+        client.post(
+            CR.format(ws=ws.id, tb=dt.id),
+            json={"items": [{"op": "update", "row_id": ids[0], "values": {"数量": 9}}]},
+            headers=auth_viewer,
+        )
+        client.post(
+            CR.format(ws=ws.id, tb=other.id),
+            json={"items": [{"op": "update", "row_id": other_ids, "values": {"数量": 8}}]},
+            headers=auth_viewer,
+        )
+
+        r = client.get(f"/api/v1/workspaces/{ws.id}/change-requests", params={"scope": "open"}, headers=auth_owner)
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["total"] == 2
+        assert {item["table_name"] for item in body["items"]} == {"CRTable", "CRTable2"}
+        assert all("table_id" in item for item in body["items"])
+
+        mine = client.get(
+            f"/api/v1/workspaces/{ws.id}/change-requests", params={"scope": "mine"}, headers=auth_viewer
+        ).json()
+        assert mine["total"] == 2
+
+    def test_non_member_403(self, client, db, ws, table, auth_owner) -> None:
+        outsider = User(username="cr_outsider", nickname="Outsider")
+        outsider.set_password("passw0rd")
+        db.add(outsider)
+        db.commit()
+        headers = _login(client, outsider.username)
+        r = client.get(f"/api/v1/workspaces/{ws.id}/change-requests", headers=headers)
+        assert r.status_code == 403

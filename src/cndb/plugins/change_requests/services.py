@@ -12,7 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from fastapi import HTTPException
@@ -207,6 +207,49 @@ def list_requests(
         serialize_request(r, conflicts_count=conflicts.get(r.id, 0), **(meta.get(r.id) or _EMPTY_ITEM_META))
         for r in requests
     ]
+
+
+def list_workspace_requests(
+    db: Session,
+    workspace_id: int,
+    table_ids: Sequence[int],
+    *,
+    scope: str,
+    user: User,
+) -> list[dict[str, Any]]:
+    """工作区级修改申请列表（跨表，扁平）：附 ``table_name`` 供列表跳转详情."""
+    if not table_ids:
+        return []
+    q = db.query(ChangeRequest).filter(
+        ChangeRequest.workspace_id == workspace_id,
+        ChangeRequest.table_id.in_(list(table_ids)),
+    )
+    if scope == "open":
+        q = q.filter(ChangeRequest.status == CR_STATUS_OPEN)
+    elif scope == "merged":
+        q = q.filter(ChangeRequest.status == CR_STATUS_MERGED)
+    elif scope == "mine":
+        q = q.filter(ChangeRequest.submitted_by_id == user.id)
+    requests = q.order_by(ChangeRequest.created_at.desc(), ChangeRequest.id.desc()).all()
+    if not requests:
+        return []
+
+    involved = {r.table_id for r in requests}
+    conflicts = {table_id: _conflict_row_counts(db, table_id) for table_id in involved}
+    meta = {table_id: _request_item_meta(db, table_id) for table_id in involved}
+    table_names = {
+        row[0]: row[1] for row in db.query(DataTable.id, DataTable.name).filter(DataTable.id.in_(list(involved))).all()
+    }
+    out: list[dict[str, Any]] = []
+    for request in requests:
+        data = serialize_request(
+            request,
+            conflicts_count=conflicts[request.table_id].get(request.id, 0),
+            **(meta[request.table_id].get(request.id) or _EMPTY_ITEM_META),
+        )
+        data["table_name"] = table_names.get(request.table_id, "")
+        out.append(data)
+    return out
 
 
 def get_request_or_404(db: Session, table: DataTable, request_id: int) -> ChangeRequest:

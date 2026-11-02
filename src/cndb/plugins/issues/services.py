@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Sequence
 from typing import Any
 
 from fastapi import HTTPException
@@ -96,6 +97,49 @@ def list_issues(
         )
         counts = {int(issue_id): int(n) for issue_id, n in rows}
     return [_serialize_issue(i, comment_count=counts.get(i.id, 0)) for i in issues]
+
+
+def list_workspace_issues(
+    db: Session,
+    workspace_id: int,
+    table_ids: Sequence[int],
+    *,
+    status: str = "open",
+) -> list[dict[str, Any]]:
+    """工作区级问题列表：跨表聚合，附 ``table_name`` 供列表跳转详情."""
+    if not table_ids:
+        return []
+    q = db.query(Issue).filter(Issue.workspace_id == workspace_id, Issue.table_id.in_(list(table_ids)))
+    if status == ISSUE_STATUS_OPEN:
+        q = q.filter(Issue.status == ISSUE_STATUS_OPEN)
+    elif status == ISSUE_STATUS_CLOSED:
+        q = q.filter(Issue.status == ISSUE_STATUS_CLOSED)
+    issues = q.order_by(Issue.id.desc()).all()
+    if not issues:
+        return []
+
+    from sqlalchemy import func
+
+    counts = {
+        int(issue_id): int(n)
+        for issue_id, n in (
+            db.query(IssueComment.issue_id, func.count(IssueComment.id))
+            .filter(IssueComment.issue_id.in_([i.id for i in issues]))
+            .group_by(IssueComment.issue_id)
+            .all()
+        )
+    }
+    table_names = {
+        row[0]: row[1]
+        for row in db.query(DataTable.id, DataTable.name).filter(DataTable.id.in_([i.table_id for i in issues])).all()
+    }
+    return [
+        {
+            **_serialize_issue(issue, comment_count=counts.get(issue.id, 0)),
+            "table_name": table_names.get(issue.table_id, ""),
+        }
+        for issue in issues
+    ]
 
 
 def get_issue_or_404(db: Session, table: DataTable, issue_id: int) -> Issue:

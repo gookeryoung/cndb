@@ -23,6 +23,8 @@ export interface Issue {
 /** 问题列表项（附评论数） */
 export interface IssueListItem extends Issue {
   comment_count: number
+  /** 工作区级列表附带的数据表名（表级列表不返回） */
+  table_name?: string
 }
 
 export interface IssuePage { items: IssueListItem[]; total: number }

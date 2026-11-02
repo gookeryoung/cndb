@@ -13,7 +13,7 @@ import CnListMeta from '@/components/CnListMeta'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
-import { issuesApi } from '@/api'
+import { issuesApi, tableApi } from '@/api'
 import type { IssueCategory, IssueListItem } from '@/api'
 
 const { Text } = Typography
@@ -35,29 +35,41 @@ const STATUS_FILTER_OPTIONS: Array<{ label: string; value: StatusFilter }> = [
 ]
 
 export default function IssuesPage() {
-  const { wid = '', tid = '' } = useParams<{ wid: string; tid: string }>()
+  const { wid = '', tid = '' } = useParams<{ wid: string; tid?: string }>()
+  // 无 :tid = 工作区级（数据表模块「问题清单」页签）；有 :tid = 单表视图
+  const workspaceMode = !tid
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const [status, setStatus] = useState<StatusFilter>('open')
   const [createOpen, setCreateOpen] = useState(false)
-  const [form] = Form.useForm<{ title: string; description?: string; category?: IssueCategory }>()
+  const [form] = Form.useForm<{ table_id?: number; title: string; description?: string; category?: IssueCategory }>()
 
   const { data, isLoading } = useQuery({
-    queryKey: ['issues', wid, tid, status],
-    queryFn: () => issuesApi.list(wid, tid, status),
-    enabled: !!wid && !!tid,
+    queryKey: workspaceMode ? ['issues', wid, 'workspace', status] : ['issues', wid, tid, status],
+    queryFn: () => (workspaceMode ? issuesApi.listWorkspace(wid, status) : issuesApi.list(wid, tid, status)),
+    enabled: !!wid && (workspaceMode || !!tid),
   })
 
+  // 工作区级新建问题需要先选目标表
+  const { data: tableList = [] } = useQuery({
+    queryKey: ['tables', wid],
+    queryFn: () => tableApi.list(wid),
+    enabled: !!wid && workspaceMode && createOpen,
+  })
+  const tableOptions = tableList.map(table => ({ value: Number(table.id), label: table.name }))
+
   const create = useMutation({
-    mutationFn: (v: { title: string; description?: string; category?: IssueCategory }) =>
-      issuesApi.create(wid, tid, v),
+    mutationFn: (v: { table_id?: number; title: string; description?: string; category?: IssueCategory }) => {
+      const targetTid = workspaceMode ? Number(v.table_id) : Number(tid)
+      return issuesApi.create(wid, targetTid, { title: v.title, description: v.description, category: v.category })
+    },
     onSuccess: (detail) => {
       message.success('问题已提交')
-      queryClient.invalidateQueries({ queryKey: ['issues', wid, tid] })
+      queryClient.invalidateQueries({ queryKey: ['issues', wid] })
       setCreateOpen(false)
       form.resetFields()
-      navigate(`/w/${wid}/tables/${tid}/issues/${detail.id}`)
+      navigate(`/w/${wid}/tables/${detail.table_id}/issues/${detail.id}`)
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '提交问题失败'),
   })
@@ -91,7 +103,7 @@ export default function IssuesPage() {
               <div
                 className="cn-list-item"
                 style={{ cursor: 'pointer' }}
-                onClick={() => navigate(`/w/${wid}/tables/${tid}/issues/${item.id}`)}
+                onClick={() => navigate(`/w/${wid}/tables/${item.table_id}/issues/${item.id}`)}
               >
                 <div className="cn-list-item-main">
                   <CnListMeta
@@ -100,6 +112,9 @@ export default function IssuesPage() {
                         <Tag color={ISSUE_CATEGORY_META[item.category]?.color ?? 'default'} style={{ marginInlineEnd: 0 }}>
                           {ISSUE_CATEGORY_META[item.category]?.label ?? item.category}
                         </Tag>
+                        {workspaceMode && item.table_name && (
+                          <Tag color="blue" style={{ marginInlineEnd: 0 }}>表：{item.table_name}</Tag>
+                        )}
                         {status === 'all' && item.status === 'closed' && <Tag style={{ marginInlineEnd: 0 }}>已关闭</Tag>}
                         <Text strong>{item.title}</Text>
                       </Space>
@@ -129,6 +144,20 @@ export default function IssuesPage() {
         destroyOnHidden
       >
         <Form form={form} layout="vertical" initialValues={{ category: 'other' }}>
+          {workspaceMode && (
+            <Form.Item
+              name="table_id"
+              label="目标数据表"
+              rules={[{ required: true, message: '请选择目标数据表' }]}
+            >
+              <Select
+                options={tableOptions}
+                showSearch
+                optionFilterProp="label"
+                placeholder="问题提交到哪张表"
+              />
+            </Form.Item>
+          )}
           <Form.Item
             name="title"
             label="标题"

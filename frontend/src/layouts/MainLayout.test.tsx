@@ -64,6 +64,12 @@ function ChangeRequestsStub() {
     return <div data-testid="cr-page-stub">{loc.pathname}</div>
 }
 
+/** 工作区级问题清单路由桩 —— 展示 pathname 供断言 */
+function IssuesPageStub() {
+    const loc = useLocation()
+    return <div data-testid="issues-page-stub">{loc.pathname}</div>
+}
+
 /** 表级子页路由桩 —— 数据表设置页，展示 pathname 供断言 */
 function TableSettingsStub() {
     const loc = useLocation()
@@ -103,6 +109,8 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 {/* 表详情路由桩：点击侧边栏表项会导航到 /w/:wid/tables/:tid，
                     缺少该路由时 react-router 会报 "No routes matched location" */}
                 <Route path="w/:wid/tables/:tid" element={<GridPageStub />} />
+                <Route path="w/:wid/tables/change-requests" element={<ChangeRequestsStub />} />
+                <Route path="w/:wid/tables/issues" element={<IssuesPageStub />} />
                 <Route path="w/:wid/tables/:tid/change-requests" element={<ChangeRequestsStub />} />
                 <Route path="w/:wid/tables/:tid/settings" element={<TableSettingsStub />} />
                 <Route path="w/:wid/design" element={<DesignsStub />} />
@@ -351,11 +359,11 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.getByRole('tab', { name: /数据分析/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /数据同步/ })).toBeInTheDocument()
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
-        // 页签顺序：数据列表 → 质量检查 → 数据分析 → 数据同步（质量检查紧随数据列表）
+        // 页签顺序：数据列表 → 数据分析 → 数据同步 → 智能采集 → 质量检查 → 修改申请 → 问题清单
         const tabLabels = within(document.querySelector('.cn-ws-tabs') as HTMLElement)
             .getAllByRole('tab')
             .map(tab => (tab.textContent ?? '').trim())
-        expect(tabLabels).toEqual(['数据列表', '质量检查', '数据分析', '数据同步', '智能采集'])
+        expect(tabLabels).toEqual(['数据列表', '数据分析', '数据同步', '智能采集', '质量检查', '修改申请', '问题清单'])
         // 一级模块已上移顶栏，不再出现在页签行
         expect(screen.queryByRole('tab', { name: /数据表/ })).toBeNull()
         expect(screen.queryByRole('tab', { name: /文档/ })).toBeNull()
@@ -525,58 +533,48 @@ describe('MainLayout 大模型入口', () => {
     })
 })
 
-describe('MainLayout 表级页签（融合导航行）', () => {
-    it('表上下文渲染页签区：表名 + 子页页签，替代旧下拉框', async () => {
+describe('MainLayout 表级导航（2026-11-03 取消）', () => {
+    it('选中单个数据表时不再渲染表名 / 数据表设置入口 / 分隔符', async () => {
         renderLayout(mockUser, '/w/10/tables/100')
 
-        await waitFor(() => {
-            expect(screen.getByTestId('table-crumb')).toBeVisible()
-        })
-        // 表名来自 msw 的 mockTable（id=100 客户表）；表列表异步加载，等待其渲染完成
-        await waitFor(() => {
-            expect(screen.getByTestId('table-crumb-table')).toHaveTextContent('客户表')
-        })
-        // 三个子页页签已渲染（GitHub 风格页签切换）
-        expect(screen.getByTestId('table-tab-change-requests')).toBeVisible()
-        expect(screen.getByTestId('table-tab-issues')).toBeVisible()
-        expect(screen.getByTestId('table-tab-settings')).toBeVisible()
-        // 旧下拉入口与「› 当前位置」文本已移除
-        expect(screen.queryByTestId('table-crumb-menu')).toBeNull()
-        expect(screen.queryByTestId('table-crumb-current')).toBeNull()
-        // 旧表级二级导航行已移除
-        expect(screen.queryByTestId('table-subnav-back')).toBeNull()
-    })
-
-    it('点击子页页签切换页面：点击「数据表设置」导航到 /w/10/tables/100/settings', async () => {
-        renderLayout(mockUser, '/w/10/tables/100')
-
-        await waitFor(() => {
-            expect(screen.getByTestId('table-crumb')).toBeVisible()
-        })
-        fireEvent.click(screen.getByTestId('table-tab-settings'))
-        await waitFor(() => {
-            expect(screen.getByTestId('table-settings-stub')).toHaveTextContent('/w/10/tables/100/settings')
-        })
-    })
-
-    it('子页上下文对应页签带选中态，点击表名返回网格', async () => {
-        renderLayout(mockUser, '/w/10/tables/100/change-requests')
-
-        // 当前子页页签选中，其余未选中（选中态由 pathname 驱动）
-        await waitFor(() => {
-            expect(screen.getByTestId('table-tab-change-requests')).toBeVisible()
-        })
-        expect(screen.getByTestId('table-tab-change-requests')).toHaveAttribute('aria-selected', 'true')
-        expect(screen.getByTestId('table-tab-settings')).toHaveAttribute('aria-selected', 'false')
-
-        // 点击表名返回网格
-        fireEvent.click(screen.getByTestId('table-crumb-table'))
         await waitFor(() => {
             expect(screen.getByTestId('grid-page-stub')).toHaveTextContent('/w/10/tables/100')
         })
+        expect(screen.queryByTestId('table-crumb')).toBeNull()
+        expect(screen.queryByTestId('table-tab-settings')).toBeNull()
+        expect(document.querySelector('.cn-table-crumb-divider')).toBeNull()
+        // 表列表 / 工作区级页签仍正常
+        expect(screen.getByRole('tab', { name: /数据列表/ })).toBeInTheDocument()
     })
 
-    it('非表上下文（表列表页）不渲染页签区', async () => {
+    it('数据表设置路由仍可直接访问（只是入口从导航移除）', async () => {
+        renderLayout(mockUser, '/w/10/tables/100/settings')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('table-settings-stub')).toHaveTextContent('/w/10/tables/100/settings')
+        })
+        expect(screen.queryByTestId('table-crumb')).toBeNull()
+    })
+
+    it('数据表模块工作区级渲染「修改申请 / 问题清单」页签并可切换', async () => {
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => {
+            expect(screen.getByText('修改申请')).toBeVisible()
+            expect(screen.getByText('问题清单')).toBeVisible()
+        })
+        fireEvent.click(screen.getByText('修改申请'))
+        await waitFor(() => {
+            expect(screen.getByTestId('cr-page-stub')).toHaveTextContent('/w/10/tables/change-requests')
+        })
+        expect(screen.queryByTestId('table-crumb')).toBeNull()
+        fireEvent.click(screen.getByText('问题清单'))
+        await waitFor(() => {
+            expect(screen.getByTestId('issues-page-stub')).toHaveTextContent('/w/10/tables/issues')
+        })
+    })
+
+    it('非表上下文（表列表页）不渲染表级导航', async () => {
         renderLayout(mockUser, '/w/10/tables')
 
         await waitFor(() => {
@@ -684,7 +682,7 @@ describe('MainLayout 顶部页签行布局', () => {
         renderLayout(mockUser, '/w/10/tables/100/settings')
 
         await waitFor(() => {
-            expect(screen.getByTestId('table-crumb')).toBeVisible()
+            expect(screen.getByTestId('table-settings-stub')).toHaveTextContent('/w/10/tables/100/settings')
         })
         const tabs = document.querySelector('.cn-ws-tabs .ant-tabs') as HTMLElement
         expect(tabs.style.flex).toBe('0 0 auto')
@@ -699,7 +697,7 @@ describe('MainLayout 顶部页签行布局', () => {
         renderLayout(mockUser, '/w/10/tables/100/settings')
 
         await waitFor(() => {
-            expect(screen.getByTestId('table-crumb')).toBeVisible()
+            expect(screen.getByTestId('table-settings-stub')).toHaveTextContent('/w/10/tables/100/settings')
         })
         const tabs = document.querySelector('.cn-ws-tabs .ant-tabs') as HTMLElement
         expect(tabs.style.flex).toBe('0 1 auto')

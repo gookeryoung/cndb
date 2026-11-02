@@ -83,7 +83,7 @@ function rowPreview(values: Record<string, unknown>, max = 3): string {
 
 /** 单条申请行（组内/平铺共用渲染） */
 function RequestLine({
-  item, nameById, showStatus, selected, onToggleSelect, onClick,
+  item, nameById, showStatus, selected, onToggleSelect, onClick, tableName,
 }: {
   item: ChangeRequest
   nameById: Map<string, string>
@@ -91,6 +91,8 @@ function RequestLine({
   selected?: boolean
   onToggleSelect?: (checked: boolean) => void
   onClick: () => void
+  /** 工作区级列表：标明申请所属数据表 */
+  tableName?: string
 }) {
   return (
     // antd List 弃用（ADR 0074）：Listy + 自绘 Meta / 操作区（List.Item.extra → 右侧操作区）
@@ -108,6 +110,7 @@ function RequestLine({
                   {STATUS_META[item.status].label}
                 </Tag>
               )}
+              {tableName && <Tag color="blue" style={{ marginInlineEnd: 0 }}>表：{tableName}</Tag>}
               <Text strong>{item.title}</Text>
               {item.stale && <Tag color="warning" style={{ marginInlineEnd: 0 }}>基准已过期</Tag>}
               {(item.conflicts_count ?? 0) > 0 && (
@@ -133,7 +136,9 @@ function RequestLine({
 }
 
 export default function ChangeRequestsPage() {
-  const { wid = '', tid = '' } = useParams<{ wid: string; tid: string }>()
+  const { wid = '', tid = '' } = useParams<{ wid: string; tid?: string }>()
+  // 无 :tid = 工作区级（数据表模块「修改申请」页签）；有 :tid = 单表视图
+  const workspaceMode = !tid
   const navigate = useNavigate()
   const { message, modal } = AntApp.useApp()
   const queryClient = useQueryClient()
@@ -142,12 +147,16 @@ export default function ChangeRequestsPage() {
   const nameById = useMemberNameMap(wid)
 
   // 分组视图仅在「待审核」且选择同行合并时启用（历史/我的/全部维持平铺）
-  const groupedMode = scope === 'open' && view === 'grouped'
+  const groupedMode = !workspaceMode && scope === 'open' && view === 'grouped'
 
   const flatQuery = useQuery({
-    queryKey: ['change-requests', wid, tid, scope],
-    queryFn: () => changeRequestsApi.list(wid, tid, scope),
-    enabled: !!wid && !!tid && !groupedMode,
+    queryKey: workspaceMode
+      ? ['change-requests', wid, 'workspace', scope]
+      : ['change-requests', wid, tid, scope],
+    queryFn: () => (
+      workspaceMode ? changeRequestsApi.listWorkspace(wid, scope) : changeRequestsApi.list(wid, tid, scope)
+    ),
+    enabled: !!wid && (workspaceMode || !!tid) && !groupedMode,
   })
 
   const groupedQuery = useQuery({
@@ -180,7 +189,7 @@ export default function ChangeRequestsPage() {
   }
 
   const invalidate = () => {
-    queryClient.invalidateQueries({ queryKey: ['change-requests', wid, tid] })
+    queryClient.invalidateQueries({ queryKey: ['change-requests', wid] })
     queryClient.invalidateQueries({ queryKey: ['pending-changes', `${wid}/${tid}`] })
     queryClient.invalidateQueries({ queryKey: ['table-records', `${wid}/${tid}`] })
   }
@@ -216,13 +225,17 @@ export default function ChangeRequestsPage() {
   const openNewDialog = () => {
     // 新建修改申请入口：写路径（单元格/行详情/批量删除）已按双轨自动分派，
     // 提示按当前写模式适配 —— 直编用户明确告知"编辑直接生效、不会生成申请"
+    if (workspaceMode) {
+      message.info('修改申请由具体数据表中的编辑自动生成：打开目标表编辑数据后即可在此审批')
+      return
+    }
     message.info(newRequestHint(writeMode))
   }
 
-  // 旧响应无 write_mode 时按申请模式兜底（与 viewer 工况一致）
+  // 旧响应无 write_mode 时按申请模式兜底（与 viewer 工况一致）；工作区级跨表无法用单一写模式
   const writeMode: TableWriteMode =
     (groupedMode ? groupedQuery.data?.write_mode : flatQuery.data?.write_mode) ?? 'change_request'
-  const banner = WRITE_MODE_BANNER[writeMode]
+  const banner = workspaceMode ? null : WRITE_MODE_BANNER[writeMode]
 
   const isLoading = groupedMode ? groupedQuery.isLoading : flatQuery.isLoading
 
@@ -231,8 +244,8 @@ export default function ChangeRequestsPage() {
   const flatItems = flatQuery.data?.items ?? []
   const isEmpty = groupedMode ? groups.length === 0 && ungrouped.length === 0 : flatItems.length === 0
 
-  const goDetail = (reqId: ChangeRequest['id']) =>
-    navigate(`/w/${wid}/tables/${tid}/change-requests/${reqId}`)
+  const goDetail = (item: ChangeRequest) =>
+    navigate(`/w/${wid}/tables/${item.table_id}/change-requests/${item.id}`)
 
   const selectedCountByRow = useMemo(() => {
     const m: Record<string, number> = {}
@@ -245,26 +258,28 @@ export default function ChangeRequestsPage() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
         <Space size={12} wrap>
           <Segmented options={SCOPE_OPTIONS} value={scope} onChange={(v) => { setScope(v as Scope); setSelected({}) }} />
-          {scope === 'open' && (
+          {!workspaceMode && scope === 'open' && (
             <Segmented options={VIEW_OPTIONS} value={view} onChange={(v) => { setView(v as View); setSelected({}) }} />
           )}
         </Space>
         <Button type="primary" icon={<PlusOutlined />} onClick={openNewDialog}>新建修改申请</Button>
       </div>
 
-      <Alert
-        type={banner.type}
-        showIcon
-        style={{ marginBottom: 16 }}
-        title={(
-          <Space size={8} wrap>
-            <Tag color={banner.type === 'success' ? 'green' : banner.type === 'warning' ? 'default' : 'blue'} style={{ marginInlineEnd: 0 }}>
-              {banner.label}
-            </Tag>
-            <Text type="secondary">{banner.message}</Text>
-          </Space>
-        )}
-      />
+      {banner && (
+        <Alert
+          type={banner.type}
+          showIcon
+          style={{ marginBottom: 16 }}
+          title={(
+            <Space size={8} wrap>
+              <Tag color={banner.type === 'success' ? 'green' : banner.type === 'warning' ? 'default' : 'blue'} style={{ marginInlineEnd: 0 }}>
+                {banner.label}
+              </Tag>
+              <Text type="secondary">{banner.message}</Text>
+            </Space>
+          )}
+        />
+      )}
 
       <Spin spinning={isLoading}>
         {isEmpty ? (
@@ -327,7 +342,8 @@ export default function ChangeRequestsPage() {
                         showStatus={false}
                         selected={selected[rowId]?.has(String(item.id))}
                         onToggleSelect={canReview ? (checked) => toggleSelect(rowId, String(item.id), checked) : undefined}
-                        onClick={() => goDetail(item.id)}
+                        onClick={() => goDetail(item)}
+                        tableName={item.table_name}
                       />
                     )}
                   />
@@ -341,7 +357,7 @@ export default function ChangeRequestsPage() {
                   items={ungrouped}
                   rowKey={item => item.id}
                   itemRender={(item: ChangeRequest) => (
-                    <RequestLine item={item} nameById={nameById} showStatus={false} onClick={() => goDetail(item.id)} />
+                    <RequestLine item={item} nameById={nameById} showStatus={false} tableName={item.table_name} onClick={() => goDetail(item)} />
                   )}
                 />
               </Card>
@@ -357,7 +373,8 @@ export default function ChangeRequestsPage() {
                 item={item}
                 nameById={nameById}
                 showStatus={scope !== 'open'}
-                onClick={() => goDetail(item.id)}
+                tableName={item.table_name}
+                onClick={() => goDetail(item)}
               />
             )}
           />

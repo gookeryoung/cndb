@@ -20,6 +20,9 @@ export const changeRequestsApi = {
     api.post<CRRowMergeResponse>(
       `/v1/workspaces/${wid}/tables/${tid}/change-requests/rows/${rowId}/merge`, data,
     ).then(r => r.data),
+  /** 工作区级列表（数据表模块）：跨当前用户可读的表聚合，附 table_name */
+  listWorkspace: (wid: number | string, scope: 'open' | 'all' | 'mine' | 'merged' = 'open') =>
+    api.get<ChangeRequestPage>(`/v1/workspaces/${wid}/change-requests`, { params: { scope } }).then(r => r.data),
   /** 详情 = 本体 + items（字段级 diff）+ actions 流水 */
   get: (wid: number | string, tid: number | string, requestId: number | string) =>
     api.get<ChangeRequestDetail>(`/v1/workspaces/${wid}/tables/${tid}/change-requests/${requestId}`).then(r => r.data),

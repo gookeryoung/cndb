@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-from .change_requests import router
+from .change_requests import router, workspace_router
 
-__all__ = ["router"]
+__all__ = ["router", "workspace_router"]

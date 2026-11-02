@@ -30,11 +30,17 @@ from cndb.plugins.change_requests.schemas import (
     RowMergePayload,
 )
 from cndb.plugins.tables.models import DataTable
-from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.tables.services.core.access import (
+    TableAction,
+    check_workspace_permission,
+    get_table_or_404,
+    readable_tables,
+)
 from cndb.plugins.workspaces.models import WorkspaceRole
 from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/change-requests", tags=["change_requests"])
+workspace_router = APIRouter(prefix="/{workspace_id}/change-requests", tags=["change_requests"])
 
 
 def _table_for_read(
@@ -89,6 +95,20 @@ def list_requests(
         return {**grouped, "write_mode": write_mode}  # type: ignore[dict-item]
     items = services.list_requests(db, table.id, scope=scope, user=current_user)
     return {"items": items, "total": len(items), "write_mode": write_mode}
+
+
+@workspace_router.get("")
+def list_workspace_requests(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    scope: str = Query(default="open", pattern="^(open|all|mine|merged)$"),
+) -> dict[str, Any]:
+    """工作区级修改申请清单（数据表模块）：跨当前用户可读的表聚合，附 table_name."""
+    check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    table_ids = [table.id for table in readable_tables(db, workspace_id, current_user)]
+    items = services.list_workspace_requests(db, workspace_id, table_ids, scope=scope, user=current_user)
+    return {"items": items, "total": len(items)}
 
 
 @router.get("/{request_id}")

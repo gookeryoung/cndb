@@ -74,6 +74,7 @@ function listHandler(
 function renderPage(route = '/w/10/tables/20/change-requests') {
   return renderProviders(
     <Routes>
+      <Route path="/w/:wid/tables/change-requests" element={<ChangeRequestsPage />} />
       <Route path="/w/:wid/tables/:tid/change-requests" element={<ChangeRequestsPage />} />
       <Route path="/w/:wid/tables/:tid/change-requests/rows/:rowId/merge" element={<div data-testid="cr-row-merge-stub">冲突处理</div>} />
       <Route path="/w/:wid/tables/:tid/change-requests/:requestId" element={<div data-testid="cr-detail-stub">详情</div>} />
@@ -279,5 +280,31 @@ describe('ChangeRequestsPage 同行合并视图', () => {
     expect(captured.groupBy).toBe('row')
     fireEvent.click(screen.getByText('平铺'))
     await waitFor(() => expect(captured.groupBy).toBeUndefined())
+  })
+})
+
+describe('ChangeRequestsPage 工作区级列表', () => {
+  it('跨表聚合展示数据表名，并跳转到对应表的详情', async () => {
+    let scope = ''
+    server.use(http.get('/api/v1/workspaces/10/change-requests', ({ request }) => {
+      scope = new URL(request.url).searchParams.get('scope') ?? ''
+      return HttpResponse.json({
+        items: CRS.map(item => ({ ...item, table_name: item.table_id === 20 ? '客户表' : '订单表' })),
+        total: CRS.length,
+      })
+    }))
+    renderPage('/w/10/tables/change-requests')
+
+    expect(await screen.findByText('调整客户分级')).toBeInTheDocument()
+    expect(scope).toBe('open')
+    expect(screen.getAllByText('表：客户表').length).toBeGreaterThan(0)
+    // 跨表列表没有同行合并视图与单一写模式标注
+    expect(screen.queryByText('同行合并')).toBeNull()
+    expect(screen.queryByText('申请模式')).toBeNull()
+
+    fireEvent.click(screen.getByText('调整客户分级'))
+    await waitFor(() => {
+      expect(screen.getByTestId('cr-detail-stub')).toBeInTheDocument()
+    })
   })
 })

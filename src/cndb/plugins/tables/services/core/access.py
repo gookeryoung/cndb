@@ -142,6 +142,25 @@ def preload_table_access(db: Session, tables: Sequence[DataTable], user: User) -
     return TableAccessPreload(member_role=member_role, members=members, perms=perms)
 
 
+def readable_tables(db: Session, workspace_id: int, user: User) -> list[DataTable]:
+    """工作区下当前用户可读的数据表（不含回收站；工作区级列表页过滤用）."""
+    workspace = db.get(Workspace, workspace_id)
+    member_role = _get_member_role_by_workspace(db, workspace, user) if workspace is not None else None
+    tables = (
+        db.query(DataTable)
+        .filter(DataTable.workspace_id == workspace_id, DataTable.trashed.is_(False))
+        .order_by(DataTable.order.asc(), DataTable.id.asc())
+        .all()
+    )
+    return [t for t in tables if check_action(db, t, user, TableAction.READ, member_role=member_role)]
+
+
+def _get_member_role_by_workspace(db: Session, workspace: Workspace, user: User) -> WorkspaceRole | None:
+    from cndb.plugins.workspaces.permissions import get_member_role
+
+    return get_member_role(user, workspace, db)
+
+
 def check_action(
     db: Session,
     table: DataTable,
@@ -377,6 +396,7 @@ __all__ = [
     "get_row_scope",
     "get_table_or_404",
     "preload_table_access",
+    "readable_tables",
     "row_filter_conjunction",
     "row_filters_bypass",
 ]

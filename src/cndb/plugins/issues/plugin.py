@@ -27,8 +27,10 @@ class IssuesPlugin(PluginBase):
     def register_routes(self, router: APIRouter) -> None:
         """挂载 issues 路由."""
         from cndb.plugins.issues.routers import router as issues_router
+        from cndb.plugins.issues.routers import workspace_router as issues_workspace_router
 
         router.include_router(issues_router)
+        router.include_router(issues_workspace_router)
 
 
 plugin = IssuesPlugin()

@@ -49,12 +49,11 @@ function ModalFallback() {
   return null
 }
 
-/** 表级子页定义 —— 融合导航行面包屑的下拉菜单与当前位置展示共用；顺序即菜单顺序. */
-const TABLE_SUBPAGES = [
-  { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined /> },
-  { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined /> },
-  { key: 'settings', label: '数据表设置', icon: <SettingOutlined /> },
-] as const
+/** 数据表模块工作区级页签 → 路由段（其余页签 key 即路由段） */
+const TABLE_LEVEL_TAB_PATHS: Record<string, string> = {
+  'change-requests': 'tables/change-requests',
+  issues: 'tables/issues',
+}
 
 /** 文档区二级页定义 —— 与表级子页同形，但作用域是工作区下的全部文档（无「文档设置」）.
  * 「文档结构」在前（0082 C4）：指向既有文档总览列表页（/documents），作为文档模块的根级页签入口；
@@ -249,12 +248,12 @@ export default function MainLayout() {
     [tables, tableKeyword],
   )
 
-  // ── 表级页签（融合导航行，紧随工作区分页之后）──
-  // 当 URL 处于某张表的上下文（网格页 /w/:wid/tables/:tid 及其子页）时，
-  // 在工作区 Tabs 右侧以竖线分割后渲染：表名（点击返回网格）+ 子页页签（GitHub 风格页签切换）。
+  // ── 表上下文 ──
+  // 2026-11-03 用户口径：取消表级导航（表名 / 数据表设置入口 / 分隔符），
+  // 选中单表时只保留工作区级页签；表设置路由仍可直接访问。
   const inTableContext = !!wid && !!tid && location.startsWith(`/w/${wid}/tables/${tid}`)
 
-  // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」（子页高亮由表级导航负责），
+  // 激活态由 pathname 驱动：表详情页及表级子页一律落在「数据表」，
   // 避免表设置页（/tables/:tid/settings）被误判为「工作区设置」
   const activeWsTab = inTableContext
     ? 'tables'
@@ -262,6 +261,10 @@ export default function MainLayout() {
       ? 'documents'
       : location.includes('/design')
         ? 'design'
+        : location.startsWith(`/w/${wid}/tables/change-requests`)
+          ? 'change-requests'
+          : location.startsWith(`/w/${wid}/tables/issues`)
+            ? 'issues'
         : location.includes('/analytics')
           ? 'analytics'
           : location.includes('/datasource')
@@ -281,6 +284,7 @@ export default function MainLayout() {
   const tablesDerivedActive =
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
     || activeWsTab === 'acquisition' || activeWsTab === 'pipelines'
+    || activeWsTab === 'change-requests' || activeWsTab === 'issues'
 
   /** 当前所在的一级导航段 —— 切换工作区时保持（0081 C4）。
    * 二级派生段（数据分析 / 数据同步 / 质量检查 / 智能采集）属数据表域，折算为 `tables`；
@@ -322,7 +326,7 @@ export default function MainLayout() {
 
   /** 工作区级分页导航（需求 0081 C5）：仅承载二级功能模块，维持原位置.
    *
-   * 顺序：数据列表 → 质量检查 → 数据分析 → 数据同步（质量检查紧随数据列表，2026-11-02 用户口径）。
+   * 顺序：数据列表 → 数据分析 → 数据同步 → 智能采集 → 质量检查 → 修改申请 → 问题清单（2026-11-03 用户口径）。
    * 数据分析 / 数据同步随数据表开放，且仅在数据表模块上下文显示
    * （切到文档 / 设计 / 工作区设置时隐藏，tablesDerivedActive 收敛）；
    * 工作区级质量检查（/pipelines）为数据表域入口，恒显（ADR 0080），
@@ -343,16 +347,6 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
-    // 质量检查紧随数据列表（第二项）：文档 / 设计上下文不显示——文档区胶囊页签已有入口，
-    // 设计模块不承载质量检查入口，避免同名页签混入其他模块
-    ...(wsFeatures.quality && !inDocumentsContext && !inDesignContext ? [{
-      key: 'pipelines',
-      label: (
-        <span>
-          <SafetyCertificateOutlined /> 质量检查
-        </span>
-      ),
-    }] : []),
     ...(wsFeatures.analytics && tablesDerivedActive ? [{
       key: 'analytics',
       label: (
@@ -369,12 +363,38 @@ export default function MainLayout() {
         </span>
       ),
     }] : []),
-    // 智能采集（ADR 0085）：数据表 / 文档派生功能，落在数据表派生窗口内显示
+    // 智能采集（ADR 0085）：数据表 / 文档派生功能，紧随数据同步（2026-11-03 用户口径）
     ...(wsFeatures.acquisition && tablesDerivedActive ? [{
       key: 'acquisition',
       label: (
         <span>
           <ExperimentOutlined /> 智能采集
+        </span>
+      ),
+    }] : []),
+    // 质量检查 / 修改申请 / 问题清单（2026-11-03 用户口径）：排在数据分析、数据同步之后。
+    // 质量检查在文档 / 设计上下文不显示——文档区胶囊页签已有入口，设计模块不承载该入口；
+    // 修改申请 / 问题清单参考文档模块上移到数据表一级模块层级，跨可读表聚合，表级子页只保留「数据表设置」。
+    ...(wsFeatures.quality && !inDocumentsContext && !inDesignContext ? [{
+      key: 'pipelines',
+      label: (
+        <span>
+          <SafetyCertificateOutlined /> 质量检查
+        </span>
+      ),
+    }] : []),
+    ...(wsFeatures.tables && tablesDerivedActive ? [{
+      key: 'change-requests',
+      label: (
+        <span>
+          <PullRequestOutlined /> 修改申请
+        </span>
+      ),
+    }, {
+      key: 'issues',
+      label: (
+        <span>
+          <ExclamationCircleOutlined /> 问题清单
         </span>
       ),
     }] : []),
@@ -393,15 +413,6 @@ export default function MainLayout() {
       ...secondaryTabItems,
     ]
     : secondaryTabItems
-  const currentTable = orderedTables.find(t => String(t.id) === String(tid))
-  const activeTableTab = location.includes('/change-requests')
-    ? 'change-requests'
-    : location.includes('/issues')
-      ? 'issues'
-      : location.includes('/settings')
-        ? 'settings'
-        : ''
-  const activeSubpage = TABLE_SUBPAGES.find(p => p.key === activeTableTab)
 
   // ── 文档区二级页签（与表级同形：竖线分割 + 胶囊页签）──
   // 进入 /w/:wid/documents 及其子页时，在工作区 Tabs 右侧渲染子页页签（无根入口，「文档结构」即根）。
@@ -916,8 +927,7 @@ export default function MainLayout() {
 
         <Layout style={{ flex: 1, minHeight: 0 }}>
           {/* 工作区级分页导航 —— 位于 Content 之外，跨页切换不重挂载；无工作区上下文时不渲染。
-              表上下文时紧随其后以竖线分割出表级页签段：表名（品牌色表图标标识）回网格 +
-              子页胶囊页签切换；激活形状分层（工作区=墨条 / 表级=胶囊）以区分导航层级 */}
+              表上下文不再追加表级页签段（2026-11-03 取消表名 / 数据表设置入口 / 分隔符） */}
           {wid && (
             <div className="cn-ws-tabs" ref={wsTabsRef} style={{
               background: 'var(--cn-bg-container)', borderBottom: '1px solid var(--cn-border)', flexShrink: 0,
@@ -933,44 +943,8 @@ export default function MainLayout() {
                   // 工作区页签挤成 0 宽而被裁掉，手机上看不到也切不了数据表/文档/设置）
                   style={{ flex: isMobile ? '0 0 auto' : '0 1 auto', minWidth: 0 }}
                   tabBarStyle={{ margin: 0, padding: '0 12px' }}
-                  onChange={(key) => navigate(`/w/${wid}/${key}`)}
+                  onChange={(key) => navigate(`/w/${wid}/${TABLE_LEVEL_TAB_PATHS[key] ?? key}`)}
                 />
-              )}
-              {inTableContext && (
-                <div className="cn-table-crumb" data-testid="table-crumb">
-                  <span className="cn-table-crumb-divider" aria-hidden />
-                  <Button
-                    type="text"
-                    size="small"
-                    data-testid="table-crumb-table"
-                    style={{ paddingInline: 8 }}
-                    onClick={() => navigate(`/w/${wid}/tables/${tid}`)}
-                  >
-                    {/* 品牌色表图标：与工作区段区分的「数据表级」视觉标识（样式见 cn-table-crumb-table） */}
-                    <TableOutlined />
-                    <span className="cn-table-crumb-name">{currentTable?.name || '数据表'}</span>
-                  </Button>
-                  {/* 表级子页页签 —— 激活态与选中项由 pathname 驱动，替代旧的 ▾ 下拉切换 */}
-                  <nav className="cn-table-tabs" aria-label="表级页面切换">
-                    {TABLE_SUBPAGES.map(p => {
-                      const active = activeSubpage?.key === p.key
-                      return (
-                        <button
-                          key={p.key}
-                          type="button"
-                          role="tab"
-                          aria-selected={active}
-                          data-testid={`table-tab-${p.key}`}
-                          className={active ? 'cn-table-tab cn-table-tab-active' : 'cn-table-tab'}
-                          onClick={() => navigate(`/w/${wid}/tables/${tid}/${p.key}`)}
-                        >
-                          {p.icon}
-                          {p.label}
-                        </button>
-                      )
-                    })}
-                  </nav>
-                </div>
               )}
               {inDocumentsContext && (
                 <div className="cn-table-crumb" data-testid="documents-crumb">

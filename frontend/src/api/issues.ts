@@ -7,6 +7,9 @@ export const issuesApi = {
   /** 问题列表，默认 open（GitHub 式两栏过滤） */
   list: (wid: number | string, tid: number | string, status: 'open' | 'closed' | 'all' = 'open') =>
     api.get<IssuePage>(`/v1/workspaces/${wid}/tables/${tid}/issues`, { params: { status } }).then(r => r.data),
+  /** 工作区级列表（数据表模块）：跨当前用户可读的表聚合，附 table_name */
+  listWorkspace: (wid: number | string, status: 'open' | 'closed' | 'all' = 'open') =>
+    api.get<IssuePage>(`/v1/workspaces/${wid}/issues`, { params: { status } }).then(r => r.data),
   /** 详情 = 本体 + comments + events */
   get: (wid: number | string, tid: number | string, issueId: number | string) =>
     api.get<IssueDetail>(`/v1/workspaces/${wid}/tables/${tid}/issues/${issueId}`).then(r => r.data),

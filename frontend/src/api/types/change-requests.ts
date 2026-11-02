@@ -31,6 +31,8 @@ export interface ChangeRequest {
   fields?: string[]
   /** 申请内的变更项数量 */
   item_count?: number
+  /** 工作区级列表附带的数据表名（表级列表不返回） */
+  table_name?: string
 }
 
 /** 申请内单条变更项（详情响应含字段级 diff 与冲突标记） */

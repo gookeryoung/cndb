@@ -114,6 +114,13 @@ function AuthenticatedApp() {
           <Route path="w/:wid/settings" element={
             <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>
           } />
+          {/* 工作区级数据表页签：修改申请 / 问题清单（参考文档模块，页面在模块层级） */}
+          <Route path="w/:wid/tables/change-requests" element={
+            <Suspense fallback={<PageFallback />}><ChangeRequestsPage /></Suspense>
+          } />
+          <Route path="w/:wid/tables/issues" element={
+            <Suspense fallback={<PageFallback />}><IssuesPage /></Suspense>
+          } />
           <Route path="w/:wid/tables/:tid" element={
             <Suspense fallback={<PageFallback />}><GridPage /></Suspense>
           } />
