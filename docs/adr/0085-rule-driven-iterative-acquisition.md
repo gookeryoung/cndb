@@ -242,10 +242,10 @@ else:
 | 运行 API | `plugins/acquisition/routers/runs.py` | 手动运行 / 取消 / 预览 / 运行与轮次查询 | 不改规则 |
 | 编排 | `plugins/acquisition/services/runner.py` | 租约、轮次循环、预算、状态机、留痕 | 不发 HTTP、不写表、不写文档 |
 | 规则引擎 | `plugins/acquisition/services/rules/` | 表达式 / 筛选 / 打分 / 去重 / 关键词 / 扩展 / 停止判定（纯函数） | 不碰 DB、不碰网络 |
-| 渠道适配 | `plugins/acquisition/services/channels.py` | `rss_atom` / `sitemap`（受限）/ `arxiv` / `openalex` / `crossref` / `job:<id>` / `llm_prompt` → `SyncJobSpec` | 不实现 HTTP 细节（复用 `core/http.py`） |
+| 渠道适配 | `plugins/acquisition/services/channels.py` + `plugins/datasource/providers/feeds.py` | `job:<id>` / 内联 provider 声明 / 渠道简写（`rss:` `sitemap:` `arxiv:` `openalex:` `crossref:`）→ `SyncJobSpec`；三个新 provider（`rss_atom` / `academic` / `sitemap`）只做「响应文本 → 统一字段」，请求构造仍继承 `http_json` | 不实现 HTTP 细节（复用 `core/http.py`）；provider 不碰 DB |
 | 落点分发 | `plugins/acquisition/services/targets.py` | 表 `upsert_rows` + `auto_table`；文档 `create_document` / `update_content`；写 `acquisition_item` | 不新增写路径、不做 DDL 之外的 schema 变更 |
 | 语义辅助 | `plugins/acquisition/services/ai.py` | 5 个 `ActionSpec` 的输入构造、裁剪、调用、输出校验与降级 | 不自建 HTTP、不直连模型、不写业务表 |
-| 调度接入 | `plugins/acquisition/services/scheduler_hook.py` | 向既有 tick 注册策略到期扫描（复用 `is_due` + 租约列） | 不新建调度线程 |
+| 调度接入 | `plugins/acquisition/services/scheduler.py` + `cndb acquisition tick` | 策略到期扫描（复用 `is_due` + 策略租约列）、待复核不抢跑、复核超时兜底续跑 | 不新建调度线程、不引入任务队列 |
 | 文档侧 | `plugins/documents/services/content.py`（复用） | 建文档 / 新版本 / 版本类型标记 | 不感知「采集」概念 |
 | 模型侧 | `plugins/llm/`（复用 + 注册动作） | 连接解析、调用、留痕、错误分类 | 不 import 领域插件 |
 | 工作区 | `plugins/workspaces/modules.py` | 新增功能位 `acquisition`（依赖 tables / documents 至少其一） | 不改既有绑定语义 |
@@ -303,7 +303,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 | `GET /strategies/{id}`、`PUT /strategies/{id}`、`DELETE /strategies/{id}` | 新增：读写删（软删）；实质变更 → `rule_version+1` 且回 `draft` |
 | `POST /strategies/{id}/enable`、`POST /strategies/{id}/disable` | 新增：启停（启用前跑一次规则校验 + `preview` 必须存在） |
 | `POST /strategies/{id}/preview` | 新增：`dry_run` 首轮——真实抓取、真实筛选，**不写表 / 不写文档 / 不写 item**，返回 `{collected, after_dedup, after_filter, samples[], channel_errors[]}` |
-| `POST /strategies/{id}/run` | 新增：手动触发（`EDITOR`），**同步执行**并返回终态运行记录；租约被占用 409。P0 之所以同步：单轮受 `iteration.budget.max_requests` 封顶（默认 1000），耗时可控；P2 接入调度后改后台线程 + `run_id` 轮询 |
+| `POST /strategies/{id}/run` | 新增：手动触发（`EDITOR`），**同步执行**并返回终态运行记录；租约被占用 409。P2 接入调度后仍是同步执行（定时入口为 `cndb acquisition tick`），**不引入后台线程 / 任务队列**：单次运行受 `iteration.budget.max_requests` 封顶，cron 周期内可完成 |
 | `POST /runs/{rid}/cancel` | 新增：轮边界取消 |
 | `POST /runs/{rid}/resume` | 新增：`awaiting_review` 续跑；可选 `{keywords?: [{term,action}], query?}`，不带参数 = 「不调」，直接进下一轮；`EDITOR` 权限 |
 | `GET /strategies/{id}/runs`、`GET /runs/{rid}`、`GET /runs/{rid}/rounds` | 新增：运行历史与轮次时间线 |
@@ -312,7 +312,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 
 ### 8. 边界与例外
 
-1. **不做通用爬虫**：`sitemap` 渠道仅允许声明域名白名单、`max_pages`、深度 1、遵守 `robots.txt`；不抓登录态页面、不解析 JS 渲染内容；内网 / 本机地址仍被 `core/http.py` 的 SSRF 白名单拒绝。
+1. **不做通用爬虫**：`sitemap` 渠道只解析 `<urlset>` 做 **URL 发现**（不递归 `sitemapindex`、不抓正文、不解析 JS），正文抓取仍走文档导入链；内网 / 本机地址由 `core/http.py` 的 SSRF 白名单拒绝。原方案的「域名白名单 + max_pages + robots.txt + 深度 1」随正文抓取一并留到需要时再开（本期口径更保守）。
 2. **单策略上限**：渠道 ≤8、`max_rounds` ≤5、每渠道每轮 ≤200 条、单次运行请求 ≤1000；超限创建期 400。
 3. **零新增不算失败**：「抓到了但全部被筛掉 / 全部去重」属正常收敛，`status=success` 且 `stop_reason=empty_round`。
 4. **失败分级**：全渠道失败 → `failed`；部分渠道 / 部分落点失败 → `partial`；预算触顶 → `partial` 且 `detail.budget_exhausted=true`。
@@ -320,14 +320,14 @@ next_query = expand.build(base, final_keywords, used, previous)
 6. **文档落点前置**：`targets` 含 `document` 时要求工作区开启 `documents` 模块，否则创建期 400；含 `table` 时要求 `tables` 模块。
 7. **学术渠道合规**：仅用公开开放 API（arXiv / OpenAlex / Crossref / Unpaywall），带 `mailto`（polite pool），单轮条数受 API 自身 limit 约束。
 8. **时区**：时间窗与 `{today}` 一律按工作区时区（复用 `schedule.timezone`），跨时区不额外转换。
-9. **复核不阻塞调度**：`awaiting_review` 的运行不占租约、不计入「运行中」，同一策略的下一次定时到点仍会正常新建运行；超时按「不调」续跑并记 `detail.review_timeout=true`。
+9. **复核与调度的关系**：`awaiting_review` 不占租约、不计入「运行中」，但**调度会跳过仍有待确认轮次的策略**（`skipped_pending`）——否则用户尚未确认的扩展词会被定时任务直接覆盖。超时（72h，`REVIEW_TIMEOUT_SECONDS`）由 `tick` 兜底按「不调」续跑并记 `detail.review_timeout=true`，随后该策略恢复可调度。
 
 ### 9. 迁移
 
 - 单条 alembic 迁移 `a7c1d2e3f4b5_add_acquisition_plugin.py`：四张表 + 索引（`(strategy_id, dedupe_key)` 唯一、`(run_id, round_no)` 唯一、`strategy(workspace_id, enabled)`、`run(strategy_id, started_at)`）；`downgrade` 逆序 drop（数据不恢复，与既有迁移一致）。
 - 存量零迁移：既有 `datasource_sync_job` / 游标 / 运行记录不动，策略以 `job:<id>` 引用。
-- 工作区模块：`WORKSPACE_MODULES` 增 `acquisition`，`MODULE_FEATURES` 增绑定 `acquisition → {acquisition}`；`normalize_modules` 校验「acquisition 至少依赖 tables 或 documents 之一」，旧备份模块集合按原样导入（不自动加 acquisition）。
-- 备份：协议 `v12 → v13`，新增顶层 `acquisition: {strategies[], runs[], rounds[], items[]}`（`rule_snapshot` 随 run 导出，**不含任何 Key / 个人地址**）；导入按 `(workspace, name)` 幂等跳过；≤v12 旧备份无该键正常导入；清空恢复包含四表。
+- 工作区功能位：`WORKSPACE_MODULES` **不变**（仍是 tables / documents / design，勾选 UI 不增项）；`MODULE_FEATURES` 在 `tables` 与 `documents` 两个模块上都绑定派生功能 `acquisition`，即「有表或文档即开放采集」，`resolve_features` 输出新增 `acquisition` 键（`quality` 仍恒开）。旧备份模块集合原样导入，功能位按模块推导，无需迁移。
+- 备份：协议 `v12 → v13`，新增顶层 `acquisitions[]`（**只导策略**：四段规则 + 调度 + 启用态 + `rule_version`，**不含任何 Key / 个人地址**；运行 / 轮次 / 条目台账属运行数据，与同步任务「运行记录不导出」同口径）。落点 id 换成 `table_name` / `parent_path`，导入端按名字与「根 → 父」标题链重建；同名策略幂等跳过；表找不到丢弃该落点、文件夹找不到落根目录并记 `errors`；≤v12 旧备份无该键正常导入；清空恢复时四表一并删除，再按策略重建。
 
 ### 10. 前端
 
@@ -401,7 +401,7 @@ next_query = expand.build(base, final_keywords, used, previous)
 | D9 | 模型角色 | 「规则翻译器 + 语义辅助」，非执行者 | 采集正确性不应依赖模型可用性；成本与漂移可控 | 让模型规划每轮检索并决定落点：不可复现、失败即停摆 | `services/ai.py`、`plugins/llm/services/actions.py` |
 | D10 | 预算机制 | 策略级 `budget` JSON + 运行期记账 | 首期不需要全局配额中心；预算随策略导出 / 迁移 | 全局配额表 / 计费中心：超需求，且引入跨工作区耦合 | `services/runner.py`、`models.py` |
 | D11 | 工作区模块 | 新增功能位 `acquisition`，依赖 tables / documents 至少其一 | 与 ADR 0080 模块口径一致；文档落点必须开 documents | 不登记功能位（恒显）：仅设计工作区会看到不可用入口 | `plugins/workspaces/modules.py` |
-| D12 | 备份协议 | v12 → v13，四表入归档，规则快照随 run 导出 | 与既有「按表清单 + 版本号」口径一致 | 不进备份：恢复后策略全丢；或因含 Key 被排除（Key 本就不在规则里） | `plugins/workspaces/services/backup_io.py` |
+| D12 | 备份协议 | v12 → v13，**只导策略**（规则 + 调度 + 启用态），运行 / 轮次 / 台账不导；落点按名字 / 路径重建 | 与既有「按表清单 + 版本号」「运行数据不导出」口径一致（对齐 `datasource_sync_run`、`pipeline_run`） | 四表全导：归档体积随运行历史膨胀，且恢复后会带着旧的去重台账 / 轮次，反而让新工作区「什么都采不到」 | `plugins/workspaces/services/backup_io.py` |
 | D13 | 落点写文档是否新增写路径 | 否，复用 `create_document` / `update_content`（`change_type=auto_import`） | ADR 0020 I3「AI 与自动写不新增写路径」的延伸 | 新写路径：版本 / 权限 / 草稿语义会分叉 | `plugins/documents/services/content.py` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
@@ -429,15 +429,15 @@ next_query = expand.build(base, final_keywords, used, previous)
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/acquisition/models.py`、`src/cndb/plugins/acquisition/plugin.py`、`src/cndb/plugins/acquisition/schemas.py`、`src/cndb/plugins/acquisition/services/channels.py`、`src/cndb/plugins/acquisition/services/targets.py`、`src/cndb/plugins/acquisition/services/runner.py`、`src/cndb/plugins/acquisition/services/validation.py`、`src/cndb/plugins/acquisition/services/rules/expr.py`、`src/cndb/plugins/acquisition/services/rules/filter.py`、`src/cndb/plugins/acquisition/services/rules/dedupe.py`、`src/cndb/plugins/acquisition/routers/strategies.py`、`src/cndb/cli/acquisition.py`、`src/cndb/alembic/versions/a7c1d2e3f4b5_add_acquisition_plugin.py` | `tests/test_acquisition_rules.py`、`tests/test_acquisition_runner.py`、`tests/test_acquisition_api.py`、`tests/test_acquisition_migration.py` | `5eae7b60` |
 | P1 | 已落地 | `src/cndb/plugins/acquisition/services/rules/keywords.py`、`src/cndb/plugins/acquisition/services/rules/expand.py`、`src/cndb/plugins/acquisition/services/rules/stop.py`、`src/cndb/plugins/acquisition/services/ai.py`、`src/cndb/plugins/acquisition/services/targets.py`、`src/cndb/plugins/acquisition/services/runner.py`、`src/cndb/plugins/acquisition/routers/strategies.py`、`src/cndb/cli/acquisition.py` | `tests/test_acquisition_iteration.py`、`tests/test_acquisition_api.py`、`tests/test_acquisition_runner.py` | `f2aa3977` |
-| P2 | 未开始 | — | — | — |
+| P2 | 已落地 | `src/cndb/plugins/datasource/providers/feeds.py`、`src/cndb/plugins/datasource/providers/registry.py`、`src/cndb/plugins/acquisition/services/channels.py`、`src/cndb/plugins/acquisition/services/scheduler.py`、`src/cndb/plugins/acquisition/services/runner.py`、`src/cndb/plugins/acquisition/services/validation.py`、`src/cndb/cli/acquisition.py`、`src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/utils/workspaceModules.ts` | `tests/test_acquisition_p2.py`、`tests/test_workspace_backup_v13.py`、`tests/test_workspace_modules.py`、`frontend/src/utils/workspaceModules.test.ts` | `a559adcb` |
 | P3 | 未开始 | — | — | — |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P2（P0 `5eae7b60` / P1 `f2aa3977` 已落地；下一步接渠道扩展、调度接入、备份 v13 与模块位）
-- 已完成：需求卡片 0085 + 本 ADR；P0（四表 + 规则引擎 + 单轮编排 + API/CLI）、P1（多轮迭代 `keywords/expand/stop` + 复核闸口 `awaiting_review`/`resume` + 文档落点与人工保护 + `keyword_refine` 模型降级）
-- 下一步：P2 —— 渠道（`rss_atom` / 学术开放 API / `sitemap` 受限爬取）、既有 tick 调度接入（策略级到期扫描 + 租约）、备份协议 v13、工作区 `acquisition` 功能位；P3 —— `rule_draft` / `item_summary` / `run_report` / `failure_diagnose` 四个动作 + 前端页面与帮助文档
-- 已知坑：① `acquisition_item.target_id` 对表落点只记 `table_id`（不记行 id），避免行级外键随表重建失效；⑥ 迁移里父表不存在时须降级为普通列（`_fk()`），否则「最小 stub 库升到 head」的迁移测试会红；⑦ 文档落点不能按台账拦截，必须由 `payload_digest` 判定更新 / 跳过；⑧ 关键词抽取对表类候选要用「全部字符串列」兜底，否则表落点多轮没有扩展词；② 表落点去重键必须用 `match_keys` 身份（`row:` 前缀），用内容指纹会让「同一行换数值」变成新条目；③ 文档幂等依赖「最新版本 `change_type`」，与草稿（ADR 0057）并发时以「存在草稿即视为人工改动」优先；④ 备份 v13 必须与 `workspaces` 协议常量同轮改，否则 `make test` 会红在旧 v12 用例；⑤ 租约更新须 `synchronize_session=False`（SQLite 读出的 naive datetime 与 aware 参数比较会在 ORM 求值器里炸）
-- 最近一次全绿：本次改动相关 9 个测试文件 163 例全绿（`test_acquisition_*` 64 例 + datasource / backup v12 / llm 平台）；`ruff check` 本插件 0 error、`pyrefly check` 本插件 0 error。全量 `pytest -n 4` 目前被并行进行的 ADR 0086（`c8e2f4a6b8d0_design_file_library.py` 未完成）拉红，与本需求无关
+- 当前阶段：P3（P0 `5eae7b60` / P1 `f2aa3977` / P2 已落地；下一步接 `rule_draft` / `item_summary` / `run_report` / `failure_diagnose` 四个模型动作与前端页面）
+- 已完成：需求卡片 0085 + 本 ADR；P0（四表 + 规则引擎 + 单轮编排 + API/CLI）、P1（多轮迭代 `keywords/expand/stop` + 复核闸口 `awaiting_review`/`resume` + 文档落点与人工保护 + `keyword_refine` 模型降级）、P2（`rss_atom`/`academic`/`sitemap` provider + 渠道简写 + 策略级 tick 调度与超时复核兜底 + 备份 v13 + `acquisition` 功能位前后端同步）
+- 下一步：P3 —— `rule_draft` / `item_summary` / `run_report` / `failure_diagnose` 四个动作、前端页面（策略列表 / 编辑器 / 轮次时间线）与帮助文档；另需补 `GET /channels` 目录接口（P0-P2 只做了前缀简写，未提供目录发现）
+- 已知坑：① `acquisition_item.target_id` 对表落点只记 `table_id`（不记行 id），避免行级外键随表重建失效；⑥ 迁移里父表不存在时须降级为普通列（`_fk()`），否则「最小 stub 库升到 head」的迁移测试会红；⑦ 文档落点不能按台账拦截，必须由 `payload_digest` 判定更新 / 跳过；⑨ 备份 v13 只导出策略的「规则 + 调度 + 启用态」，落点 id 必须换成 `table_name` / `parent_path`，否则跨工作区导入后落点全指向源工作区的 id；⑩ `resume_run` 的 `timeout=True` 只在调度兜底里用，用户主动续跑不写 `detail.review_timeout`；⑧ 关键词抽取对表类候选要用「全部字符串列」兜底，否则表落点多轮没有扩展词；② 表落点去重键必须用 `match_keys` 身份（`row:` 前缀），用内容指纹会让「同一行换数值」变成新条目；③ 文档幂等依赖「最新版本 `change_type`」，与草稿（ADR 0057）并发时以「存在草稿即视为人工改动」优先；④ 备份 v13 必须与 `workspaces` 协议常量同轮改，否则 `make test` 会红在旧 v12 用例；⑤ 租约更新须 `synchronize_session=False`（SQLite 读出的 naive datetime 与 aware 参数比较会在 ORM 求值器里炸）
+- 最近一次全绿：全量 `pytest -m "not slow" -n 4` = **6641 passed / 17 skipped**（P2 收口后复跑）；`ruff check src tests` 与 `pyrefly check` 0 error；`make adr-check` / `gitkeep-check` 0 error 0 warning
