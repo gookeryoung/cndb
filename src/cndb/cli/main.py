@@ -10,6 +10,7 @@
 - views              视图运维（prune-orphans：孤儿视图体检与回收）
 - llm                大模型能力运维（test / runs / prune）
 - pipeline           流水线定时触发运维（tick）
+- acquisition        采集策略运维（list / run / preview）
 
 实现策略：argparse 标准库（避免引入 typer/click），子命令通过函数分发。
 """
@@ -384,6 +385,11 @@ def main() -> None:
 
     register_pipeline_subparser(sub)
 
+    # acquisition 子命令组（采集策略：list / run / preview —— ADR 0085 P0）
+    from cndb.cli.acquisition import register_acquisition_subparser
+
+    register_acquisition_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -437,6 +443,10 @@ def main() -> None:
         from cndb.cli.pipeline import pipeline_command
 
         pipeline_command(args)
+    elif args.command == "acquisition":
+        from cndb.cli.acquisition import acquisition_command
+
+        acquisition_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)
