@@ -250,10 +250,11 @@ class TestOfficePreviewRender:
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
 
     def test_spreadsheet_empty_sheet(self):
-        # 全空工作表给空态提示，不产出空 <table>
+        # 全空工作表在分页面板内给空态提示，不产出空 <table>
         html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
         assert "（空白工作表）" in html
         assert '<table class="sheet"></table>' not in html
+        assert 'cn-sheet-panel-1" data-sheet="1"><p class="cn-preview-empty">（空白工作表）</p>' in html
 
     def test_spreadsheet_truncated_note(self, monkeypatch):
         monkeypatch.setattr(office_preview, "MAX_TOTAL_CELLS", 2)

@@ -17,7 +17,7 @@
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 「xlsx 文件在线预览」 | `content_type=xlsx` 的原件在阅读器内直接渲染为表格（多工作表分区、首行作表头、数值 / 日期格式化为文本），不再给「不支持在线预览」下载卡 | `documents/services/preview/`、`documents/routers/documents.py`、`frontend/src/pages/documents/DocumentAssetView.tsx` | 判定层单测（渲染 / 多表 / 截断）+ 接口层预览端点 + 前端单测分派 |
+| C1 | 「xlsx 文件在线预览」 | `content_type=xlsx` 的原件在阅读器内直接渲染为表格（**多工作表按标签页分页切换**、首行作表头、数值 / 日期格式化为文本），不再给「不支持在线预览」下载卡 | `documents/services/preview/`、`documents/routers/documents.py`、`frontend/src/pages/documents/DocumentAssetView.tsx` | 判定层单测（渲染 / 多表 / 截断）+ 接口层预览端点 + 前端单测分派 |
 | C2 | 「docx 文件在线预览」 | 导入链路新增 `docx_mode`：`convert`（默认，沿用 ADR 0010 转 Markdown）/ `archive`（原件存档，`content_type=word`）；archive 存档的原件在阅读器内渲染为 HTML（标题 / 段落 / 加粗斜体 / 列表 / 表格 / 内嵌图片） | `documents/services/importers/`、`documents/routers/file_import.py`、`frontend/src/pages/documents/DocumentImportModal.tsx` | 判定层单测（模式分派 / 渲染）+ 接口层导入 + 前端单测（开关切换重解析） |
 | C3 | （安全口径） | 预览 HTML 一律在 `sandbox` 禁脚本 iframe 渲染；后端输出全部文本转义、加 `Content-Security-Policy: sandbox` + `X-Content-Type-Options: nosniff`；预览读权限与 `/asset` 同源（工作区成员 + 文档可见性） | `documents/services/preview/`、`documents/routers/documents.py`、`frontend/src/pages/documents/DocumentAssetView.tsx` | 接口层断言响应头与 404；前端单测断言 sandbox 属性 |
 | C4 | （有界口径） | 解析与渲染有硬上限：工作表数 / 单表行列 / 总单元格 / 单元格文本长度 / 内嵌图片数量与总字节 / 输出 HTML 体积；超限截断并在页面提示，不随原件体积线性膨胀内存 | `documents/services/preview/office.py` | 判定层单测：超限截断标记、空文档、损坏原件报错 |

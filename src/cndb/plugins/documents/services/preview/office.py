@@ -65,24 +65,38 @@ th, td { border: 1px solid #d7dee8; padding: 4px 8px; text-align: left; vertical
 th { background: #f1f5f9; font-weight: 600; position: sticky; top: 0; }
 img { max-width: 100%; height: auto; }
 .cn-preview-title { font-size: 12px; color: #64748b; margin: 0 0 12px; }
+/* 工作表分页：radio + label 实现无脚本标签页（沙箱内禁用 JS） */
+.cn-sheet-tabs { position: relative; }
+.cn-sheet-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.cn-sheet-tabbar { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px;
+  border-bottom: 1px solid #d7dee8; position: sticky; top: 0; background: #fff; z-index: 2; }
+.cn-sheet-tab { flex: 0 0 auto; padding: 3px 12px; border: 1px solid transparent; border-radius: 6px;
+  font-size: 13px; color: #64748b; cursor: pointer; white-space: nowrap; user-select: none; }
+.cn-sheet-tab:hover { background: #f1f5f9; }
+.cn-sheet-tab-count { color: #94a3b8; font-size: 11px; margin-left: 4px; }
+.cn-sheet-panel { display: none; }
+.cn-sheet-panel.is-active { display: block; }
 .cn-preview-empty, .cn-preview-note { color: #64748b; font-size: 12px; }
 @media (prefers-color-scheme: dark) {
   body { background: #0f172a; color: #e2e8f0; }
   th { background: #1e293b; }
   th, td { border-color: #334155; }
   .cn-preview-title, .cn-preview-empty, .cn-preview-note { color: #94a3b8; }
+  .cn-sheet-tabbar { background: #0f172a; border-color: #334155; }
+  .cn-sheet-tab { color: #94a3b8; }
+  .cn-sheet-tab:hover { background: #1e293b; }
 }
 """
 
 _HEADING_RE = re.compile(r"^(?:Heading|标题)\s*(\d)$", re.IGNORECASE)
 
 
-def _page(body: str, *, kind: str) -> str:
+def _page(body: str, *, kind: str, extra_css: str = "") -> str:
     """套上自包含页面骨架（标题仅为格式提示，不含原件正文）."""
     return (
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        f"<title>{html.escape(kind)}预览</title><style>{_PAGE_STYLE}</style></head>"
+        f"<title>{html.escape(kind)}预览</title><style>{_PAGE_STYLE}{extra_css}</style></head>"
         f'<body><p class="cn-preview-title">{html.escape(kind)}原件预览（只读）</p>{body}</body></html>'
     )
 
@@ -119,7 +133,7 @@ def _cell_text(value: Any) -> str:
 
 
 def _sheet_html(ws: Any, budget: list[int], state: list[bool]) -> str:
-    """渲染一个工作表为 ``<section>``；``budget`` 为跨表单元格余量，``state`` 为截断标记."""
+    """渲染一个工作表为表格 HTML；``budget`` 为跨表单元格余量，``state`` 为截断标记."""
     rows: list[list[str]] = []
     columns = 0
     for row in ws.iter_rows(max_row=MAX_SHEET_ROWS, max_col=MAX_SHEET_COLS, values_only=True):
@@ -135,9 +149,8 @@ def _sheet_html(ws: Any, budget: list[int], state: list[bool]) -> str:
         columns = max(columns, len(cells))
         rows.append(cells)
 
-    title = f"<h2>{html.escape(str(ws.title or '工作表'))}</h2>"
     if not rows:
-        return f'<section>{title}<p class="cn-preview-empty">（空白工作表）</p></section>'
+        return '<p class="cn-preview-empty">（空白工作表）</p>'
 
     header, *body = rows
 
@@ -147,11 +160,71 @@ def _sheet_html(ws: Any, budget: list[int], state: list[bool]) -> str:
 
     head = f"<thead><tr>{cells_html(header, 'th')}</tr></thead>"
     body_rows = "".join(f"<tr>{cells_html(cells, 'td')}</tr>" for cells in body)
-    return f'<section>{title}<table class="sheet">{head}<tbody>{body_rows}</tbody></table></section>'
+    return f'<table class="sheet">{head}<tbody>{body_rows}</tbody></table>'
+
+
+class _SheetTab:
+    """一个工作表的标签页数据：名称 + 面板 HTML."""
+
+    __slots__ = ("markup", "name")
+
+    def __init__(self, name: str, markup: str) -> None:
+        self.name = name
+        self.markup = markup
+
+
+def _spreadsheet_body(tabs: list[_SheetTab]) -> tuple[str, str]:
+    """多工作表 → (标签页 HTML, 动态 CSS)；单表不渲染标签条，只出表格。
+
+    分页用 ``radio + label`` 实现：预览在 ``sandbox``（禁脚本）中渲染，不能依赖 JS；
+    每个工作表只在对应 radio 选中时显示（``:checked ~`` 兄弟选择器，Chrome 81 可用）。
+    """
+    if len(tabs) == 1:
+        return tabs[0].markup, ""
+
+    radios: list[str] = []
+    labels: list[str] = []
+    panels: list[str] = []
+    rules: list[str] = []
+    dark_rules: list[str] = []
+    for index, tab in enumerate(tabs):
+        tab_id = f"cn-sheet-{index}"
+        checked = " checked" if index == 0 else ""
+        radios.append(f'<input class="cn-sheet-radio" type="radio" name="cn-sheet" id="{tab_id}"{checked}>')
+        labels.append(
+            f'<label class="cn-sheet-tab cn-sheet-tab-{index}" for="{tab_id}">{html.escape(tab.name)}</label>'
+        )
+        active = " is-active" if index == 0 else ""
+        panels.append(
+            f'<section class="cn-sheet-panel cn-sheet-panel-{index}{active}" data-sheet="{index}">'
+            f"{tab.markup}</section>"
+        )
+        # 选中态：标签高亮 + 对应面板显示（无 JS 的纯 CSS 分页）
+        selector = f"#{tab_id}:checked ~ .cn-sheet-tabbar .cn-sheet-tab-{index}"
+        rules.append(f"{selector} {{ color: #1f2937; border-color: #d7dee8; background: #f1f5f9; font-weight: 600; }}")
+        rules.append(f"#{tab_id}:checked ~ .cn-sheet-panels .cn-sheet-panel-{index} {{ display: block; }}")
+        dark_rules.append(f"{selector} {{ color: #e2e8f0; border-color: #334155; background: #1e293b; }}")
+    body = (
+        '<div class="cn-sheet-tabs">'
+        + "".join(radios)
+        + '<div class="cn-sheet-tabbar" role="tablist">'
+        + "".join(labels)
+        + '</div><div class="cn-sheet-panels">'
+        + "".join(panels)
+        + "</div></div>"
+    )
+    extra_css = "".join(rules)
+    if dark_rules:
+        extra_css += "@media (prefers-color-scheme: dark) {" + "".join(dark_rules) + "}"
+    return body, extra_css
 
 
 def build_spreadsheet_html(data: bytes) -> str:
-    """xlsx 原件 → 多工作表表格 HTML（ADR 0087 C1）."""
+    """xlsx 原件 → 多工作表表格 HTML（ADR 0087 C1）.
+
+    多工作表按**标签页分页**展示（一次只看一个表），标签条可横向滚动、吸附在顶部；
+    单表不渲染标签条。分页用 CSS 实现，不依赖脚本（预览运行在 sandbox 中）。
+    """
     from openpyxl import load_workbook
 
     try:
@@ -159,7 +232,7 @@ def build_spreadsheet_html(data: bytes) -> str:
     except Exception as exc:
         raise UnsupportedPreview(f"Excel 原件无法解析：{exc}") from exc
 
-    parts: list[str] = []
+    tabs: list[_SheetTab] = []
     budget = [MAX_TOTAL_CELLS]
     state = [False]
     size = 0
@@ -167,7 +240,7 @@ def build_spreadsheet_html(data: bytes) -> str:
         sheets = list(workbook.worksheets)
         for ws in sheets[:MAX_SHEETS]:
             markup = _sheet_html(ws, budget, state)
-            parts.append(markup)
+            tabs.append(_SheetTab(str(ws.title or "工作表"), markup))
             size += len(markup)
             if state[0] or size > MAX_HTML_CHARS:
                 state[0] = True
@@ -181,10 +254,12 @@ def build_spreadsheet_html(data: bytes) -> str:
     finally:
         workbook.close()
 
-    body = "".join(parts) or '<p class="cn-preview-empty">（工作簿没有可预览的内容）</p>'
+    if not tabs:
+        return _page('<p class="cn-preview-empty">（工作簿没有可预览的内容）</p>', kind="Excel")
+    body, extra_css = _spreadsheet_body(tabs)
     if state[0]:
         body += _truncated_note()
-    return _page(body, kind="Excel")
+    return _page(body, kind="Excel", extra_css=extra_css)
 
 
 # ── 文档（docx）──
