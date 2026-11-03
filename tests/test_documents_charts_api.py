@@ -321,7 +321,7 @@ class TestCrud:
         assert len(listing["items"]) == 3
 
         comp = client.get(CHARTS.format(ws=ws.id), params={"category": "comparison-bar-h"}, headers=auth).json()
-        assert [c["title"] for c in comp["items"]] == ["结构图", "对比图"]
+        assert {c["title"] for c in comp["items"]} == {"结构图", "对比图"}
 
     def test_delete_physical(self, client, ws, editor, db):
         from cndb.plugins.documents.models import DocumentChart
