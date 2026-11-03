@@ -274,6 +274,19 @@ class TestOfficePreviewRender:
             "BA",
         ]
 
+    def test_spreadsheet_page_fills_iframe_height(self):
+        """布局（需求 0091）：整页铺满 iframe 高度，滚动只发生在面板内，底部不留大空白."""
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        assert '<body class="cn-preview-sheet-page">' in html
+        assert "html, body { height: 100%; }" in html
+        assert "body.cn-preview-sheet-page { display: flex; flex-direction: column;" in html
+        # 标签条固定、面板撑满剩余高度并各自滚动
+        assert ".cn-sheet-tabs { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }" in html
+        assert ".cn-sheet-panels { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }" in html
+        assert ".cn-sheet-panel { flex: 1 1 auto; min-height: 0; overflow: auto; }" in html
+        # 旧的 70vh 高度上限会留下底部空白，已移除
+        assert "max-height: 70vh" not in html
+
     def test_spreadsheet_sheets_are_paginated(self):
         """多工作表按标签页分页（需求 0089）：一次只显示一个表，纯 CSS 切换."""
         html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
@@ -296,10 +309,12 @@ class TestOfficePreviewRender:
         html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
         assert "is-active" not in html
         assert ".cn-sheet-panel.is-active" not in html
-        # 除表格自身的 display:block 外，只有 :checked 规则允许面板显示
+        # 允许面板显示的三条规则：两条 :checked（多表切换）+ 一条 is-single（单表铺满高度）
         panel_rules = [rule for rule in html.split("}") if "cn-sheet-panel" in rule and "display: block" in rule]
-        assert len(panel_rules) == 2
-        assert all(":checked" in rule for rule in panel_rules)
+        assert len(panel_rules) == 3
+        assert all(":checked" in rule or "is-single" in rule for rule in panel_rules)
+        # 多表结构里绝不能出现 is-single 容器（否则面板会常驻显示）
+        assert 'class="cn-sheet-panels is-single"' not in html
 
     def test_spreadsheet_single_sheet_has_no_tabbar(self):
         """单工作表不渲染标签条（避免无意义的分页 chrome）."""
@@ -315,10 +330,11 @@ class TestOfficePreviewRender:
 
         html = office_preview.build_spreadsheet_html(buffer.getvalue())
         assert '<table class="sheet">' in html
-        # 样式表里始终有分页类定义，这里断言的是「不渲染分页结构」
+        # 样式表里始终有分页类定义，这里断言的是「不渲染分页结构」，但仍有铺满高度的面板
         assert '<div class="cn-sheet-tabs">' not in html
         assert 'class="cn-sheet-radio"' not in html
         assert 'role="tablist"' not in html
+        assert '<div class="cn-sheet-panels is-single">' in html
 
     def test_spreadsheet_empty_sheet(self):
         # 全空工作表在分页面板内给空态提示，不产出空 <table>

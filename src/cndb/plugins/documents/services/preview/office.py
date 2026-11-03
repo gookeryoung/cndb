@@ -60,7 +60,7 @@ h3 { font-size: 16px; margin: 20px 0 8px; }
 p { margin: 0 0 10px; }
 ul, ol { margin: 0 0 10px; padding-left: 24px; }
 table { border-collapse: collapse; margin: 0 0 16px; font-size: 13px; max-width: 100%; }
-table.sheet { display: block; overflow: auto; max-height: 70vh; }
+table.sheet { display: block; }
 th, td { border: 1px solid #d7dee8; padding: 4px 8px; text-align: left; vertical-align: top; white-space: pre-wrap; }
 th { background: #f1f5f9; font-weight: 600; }
 /* 列号行吸附在顶部；行号列吸附在左侧（横向滚动时也可见） */
@@ -95,16 +95,30 @@ img { max-width: 100%; height: auto; }
 }
 """
 
+#: 工作表页专用：整页铺满 iframe 高度，只有面板内部滚动（不留底部大空白）
+_SHEET_PAGE_STYLE = """
+html, body { height: 100%; }
+body.cn-preview-sheet-page { display: flex; flex-direction: column; padding: 12px 20px 12px; }
+body.cn-preview-sheet-page .cn-preview-title { flex: 0 0 auto; margin-bottom: 8px; }
+.cn-sheet-tabs { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.cn-sheet-tabbar { flex: 0 0 auto; }
+.cn-sheet-panels { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.cn-sheet-panel { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.cn-sheet-panels.is-single .cn-sheet-panel { display: block; }
+body.cn-preview-sheet-page .cn-preview-note { flex: 0 0 auto; margin-top: 8px; }
+"""
+
 _HEADING_RE = re.compile(r"^(?:Heading|标题)\s*(\d)$", re.IGNORECASE)
 
 
-def _page(body: str, *, kind: str, extra_css: str = "") -> str:
+def _page(body: str, *, kind: str, extra_css: str = "", body_class: str = "") -> str:
     """套上自包含页面骨架（标题仅为格式提示，不含原件正文）."""
+    class_attr = f' class="{body_class}"' if body_class else ""
     return (
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{html.escape(kind)}预览</title><style>{_PAGE_STYLE}{extra_css}</style></head>"
-        f'<body><p class="cn-preview-title">{html.escape(kind)}原件预览（只读）</p>{body}</body></html>'
+        f'<body{class_attr}><p class="cn-preview-title">{html.escape(kind)}原件预览（只读）</p>{body}</body></html>'
     )
 
 
@@ -208,7 +222,12 @@ def _spreadsheet_body(tabs: list[_SheetTab]) -> tuple[str, str]:
     每个工作表只在对应 radio 选中时显示（``:checked ~`` 兄弟选择器，Chrome 81 可用）。
     """
     if len(tabs) == 1:
-        return tabs[0].markup, ""
+        body = (
+            '<div class="cn-sheet-panels is-single">'
+            f'<section class="cn-sheet-panel" data-sheet="0">{tabs[0].markup}</section>'
+            "</div>"
+        )
+        return body, ""
 
     radios: list[str] = []
     labels: list[str] = []
@@ -285,7 +304,12 @@ def build_spreadsheet_html(data: bytes) -> str:
     body, extra_css = _spreadsheet_body(tabs)
     if state[0]:
         body += _truncated_note()
-    return _page(body, kind="Excel", extra_css=extra_css)
+    return _page(
+        body,
+        kind="Excel",
+        extra_css=_SHEET_PAGE_STYLE + extra_css,
+        body_class="cn-preview-sheet-page",
+    )
 
 
 # ── 文档（docx）──

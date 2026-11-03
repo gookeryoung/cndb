@@ -17,7 +17,7 @@ Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/se
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 「xlsx 文件在线预览」 | `GET /{wid}/documents/{doc_id}/asset/preview` 对 `content_type=xlsx`（且 MIME 非旧版 `.xls`）返回 `openpyxl` 渲染的自包含 HTML：**多工作表按标签页分页**（`radio + label` 纯 CSS 切换，一次只显示一个表；标签条横向滚动 + 顶部吸附；单表不渲染标签条），每个面板内是 `<table>`，**带 Excel 行列号**：列号 A/B/C…（表头行，`thead th` 顶部吸附）、行号取原件真实行号（首列 `th`，左侧吸附；整行为空的行跳过，因此行号可能不连续），数据单元格为 `<td>`，数值 / 日期 / 布尔转文本 |
+| C1 | 「xlsx 文件在线预览」 | `GET /{wid}/documents/{doc_id}/asset/preview` 对 `content_type=xlsx`（且 MIME 非旧版 `.xls`）返回 `openpyxl` 渲染的自包含 HTML：**多工作表按标签页分页**（`radio + label` 纯 CSS 切换，一次只显示一个表；标签条横向滚动 + 顶部吸附；单表不渲染标签条），每个面板内是 `<table>`，**带 Excel 行列号**：列号 A/B/C…（表头行，`thead th` 顶部吸附）、行号取原件真实行号（首列 `th`，左侧吸附；整行为空的行跳过，因此行号可能不连续），数据单元格为 `<td>`，数值 / 日期 / 布尔转文本；预览页铺满 iframe 高度（标签条固定、面板内滚动，不再用 `70vh` 高度上限留出底部空白） |
 | C2 | 「docx 文件在线预览」 | 导入新增 `docx_mode ∈ {convert, archive}`（默认 `convert`）：`archive` 时 `.docx` 走原件族落盘，`content_type=word`、`asset_mime=…wordprocessingml.document`；预览端点对 `content_type=word` 用 `python-docx` 渲染标题 / 段落 / 加粗斜体 / 列表 / 表格 / 内嵌图片（`data:` URI） |
 | C3 | （安全口径） | 预览 HTML 只由后端模板拼接且所有来源文本 `html.escape`；响应带 `Content-Security-Policy: sandbox` / `X-Content-Type-Options: nosniff` / `Content-Disposition: inline`；前端 `<iframe sandbox="">`（禁脚本、禁同源、禁表单）；权限走 `visibility.get_visible_document_or_404` 与 `/asset` 同源 |
 | C4 | （有界口径） | `preview/office.py` 固定上限：工作表 20 / 单表 2000 行 × 100 列 / 全局 50000 单元格 / 单元格文本 2000 字符 / 图片 200 张且合计 16MB / 输出 HTML 4MB；触顶即截断并在页面尾部提示「已截断」 |
