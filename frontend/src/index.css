@@ -5303,20 +5303,21 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 /* ── 窄屏（< 768px）：文档列表行紧凑化 ──
- * 行内四枚操作图标与标题争宽是长文件名显示异常的根因之一：
- * 这里同步收紧行内边距、头像间距与操作区间距，给单行省略标题让出空间。 */
+ * 操作图标收进单枚「更多」后，行内留白再收紧一档，把宽度让给单行省略标题，
+ * 同时保持 24px 的图标点击区。 */
 @media (max-width: 767.98px) {
   .cn-doc-list .ant-listy-item {
     padding: var(--cn-space-sm) var(--cn-space-md);
-    padding-inline-start: var(--cn-space-lg);
+    padding-inline-start: var(--cn-space-md);
   }
 
+  /* 图标与「更多」操作都缩到 18px / 24px 后，行内留白同步收紧一档 */
   .cn-doc-list .cn-list-avatar {
-    margin-inline-end: var(--cn-space-sm);
+    margin-inline-end: var(--cn-space-xs);
   }
 
   .cn-doc-list .cn-list-item-actions {
-    margin-inline-start: var(--cn-space-sm);
+    margin-inline-start: var(--cn-space-xs);
   }
 
   /* 「最近打开」条：单行横滑（容器已 overflow-x:auto），单条超长标题省略 */

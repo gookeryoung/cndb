@@ -3,20 +3,21 @@
 import { useCallback, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Checkbox,
   Alert,
+  Badge,
   Breadcrumb,
   Button,
   Card,
+  Checkbox,
   Dropdown,
   Empty,
   Input,
   Listy,
   Modal,
-  Skeleton,
   Popconfirm,
   Radio,
   Select,
+  Skeleton,
   Space,
   Tag,
   Tooltip,
@@ -27,17 +28,18 @@ import {
 import type { DataNode } from 'antd/es/tree'
 import type { MenuProps } from 'antd'
 import {
-  LockOutlined,
-  ClockCircleOutlined,
   ApartmentOutlined,
   ArrowLeftOutlined,
+  ClockCircleOutlined,
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
   FileAddOutlined,
+  FilterOutlined,
   FolderAddOutlined,
   FolderOutlined,
   ImportOutlined,
+  LockOutlined,
   MoreOutlined,
   PushpinOutlined,
   SearchOutlined,
@@ -71,9 +73,12 @@ export { buildSeriesStats, seriesStatsOf } from './seriesStats'
 export type { SeriesSummary } from './seriesStats'
 
 /** 内容区分块标题：文件夹 / 文档分块，附数量，便于一眼区分两类条目 */
-function SectionTitle({ label, count }: { label: string; count: number }) {
+function SectionTitle({ label, count, compact = false }: { label: string; count: number; compact?: boolean }) {
   return (
-    <div data-testid="doc-section-title" style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: 8 }}>
+    <div
+      data-testid="doc-section-title"
+      style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: compact ? 4 : 8 }}
+    >
       <Text strong>{label}</Text>
       <Text type="secondary" style={{ fontSize: 12 }}>{count} 项</Text>
     </div>
@@ -151,6 +156,10 @@ export default function DocumentsPage() {
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [batchMoveOpen, setBatchMoveOpen] = useState(false)
   const [batchMoveTarget, setBatchMoveTarget] = useState<number>(0)
+  // 移动端筛选抽屉（第三行，默认收起）：标签 / 状态是低频筛选，收起后顶栏只留一行操作
+  const [filterOpen, setFilterOpen] = useState(false)
+  // hook 版 Modal：确认框走当前 ConfigProvider 主题（静态 Modal.confirm 读不到动态主题）
+  const [modal, modalContextHolder] = Modal.useModal()
 
   // 全量树：顶层系列统计 + 面包屑祖先链 + 系列详情共用（React Query 按 key 共享缓存）
   const treeQuery = useQuery({
@@ -567,6 +576,143 @@ export default function DocumentsPage() {
     { key: 'trash', icon: <DeleteOutlined />, label: '回收站', onClick: () => setTrashOpen(true) },
   ]
 
+  /** 移动端筛选按钮：标签 / 状态是低频筛选，收起后用计数徽标 + aria-label 保留「已应用」感知 */
+  const activeFilterCount = (tagFilter !== undefined ? 1 : 0) + (statusFilter ? 1 : 0)
+  const mobileFilterLabel = activeFilterCount > 0 ? `筛选（已应用 ${activeFilterCount} 项）` : '筛选'
+
+  /** 行尾操作：移动端收进单枚「更多」下拉，给标题让出横向空间；桌面保持四个常驻图标 */
+  const renderRowActions = (doc: DocumentItem) => {
+    if (!isMobile) {
+      return (
+        <div className="cn-list-item-actions">
+          <Tooltip title="重命名">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              aria-label={`重命名 ${doc.title}`}
+              data-testid={`doc-row-rename-${doc.id}`}
+              onClick={e => {
+                e.stopPropagation()
+                setRenameValue(doc.title)
+                setRenameTarget({ id: doc.id, title: doc.title, isSeries: false })
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="移动">
+            <Button
+              type="text"
+              size="small"
+              icon={<ApartmentOutlined />}
+              aria-label={`移动 ${doc.title}`}
+              data-testid={`doc-row-move-${doc.id}`}
+              onClick={e => {
+                e.stopPropagation()
+                setRowMove({ id: doc.id, title: doc.title, parent: doc.parent_id ?? 0 })
+              }}
+            />
+          </Tooltip>
+          <Tooltip title={doc.pinned ? '取消置顶' : '置顶'}>
+            <Button
+              type="text"
+              size="small"
+              icon={<PushpinOutlined />}
+              aria-label={doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`}
+              data-testid={`doc-row-pin-${doc.id}`}
+              onClick={e => {
+                e.stopPropagation()
+                pinMut.mutate(doc)
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="删除">
+            <Popconfirm
+              title={doc.is_folder ? '删除文件夹将同时删除其中所有文档，确认？' : '确认删除此文档？'}
+              onConfirm={e => {
+                e?.stopPropagation()
+                deleteMut.mutate(doc.id)
+              }}
+              onCancel={e => e?.stopPropagation()}
+            >
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+                onClick={e => e.stopPropagation()}
+                aria-label="删除文档"
+                data-testid={`doc-row-delete-${doc.id}`}
+              />
+            </Popconfirm>
+          </Tooltip>
+        </div>
+      )
+    }
+
+    const items: MenuProps['items'] = [
+      {
+        key: 'rename',
+        icon: <EditOutlined />,
+        label: <span data-testid={`doc-row-rename-${doc.id}`}>重命名</span>,
+        onClick: ({ domEvent }) => {
+          // 菜单是 Portal：React 事件仍沿组件树冒泡到整行，不拦截会触发行跳转
+          domEvent.stopPropagation()
+          setRenameValue(doc.title)
+          setRenameTarget({ id: doc.id, title: doc.title, isSeries: false })
+        },
+      },
+      {
+        key: 'move',
+        icon: <ApartmentOutlined />,
+        label: <span data-testid={`doc-row-move-${doc.id}`}>移动</span>,
+        onClick: ({ domEvent }) => {
+          domEvent.stopPropagation()
+          setRowMove({ id: doc.id, title: doc.title, parent: doc.parent_id ?? 0 })
+        },
+      },
+      {
+        key: 'pin',
+        icon: <PushpinOutlined />,
+        label: <span data-testid={`doc-row-pin-${doc.id}`}>{doc.pinned ? '取消置顶' : '置顶'}</span>,
+        onClick: ({ domEvent }) => {
+          domEvent.stopPropagation()
+          pinMut.mutate(doc)
+        },
+      },
+      { type: 'divider' },
+      {
+        key: 'delete',
+        danger: true,
+        icon: <DeleteOutlined />,
+        label: <span data-testid={`doc-row-delete-${doc.id}`}>删除</span>,
+        onClick: ({ domEvent }) => {
+          domEvent.stopPropagation()
+          modal.confirm({
+            title: doc.is_folder ? '删除文件夹将同时删除其中所有文档，确认？' : '确认删除此文档？',
+            okText: '删除',
+            okType: 'danger',
+            cancelText: '取消',
+            onOk: () => deleteMut.mutate(doc.id),
+          })
+        },
+      },
+    ]
+    return (
+      <div className="cn-list-item-actions">
+        <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
+          <Button
+            type="text"
+            size="small"
+            icon={<MoreOutlined />}
+            aria-label={`更多操作 ${doc.title}`}
+            data-testid={`doc-row-more-${doc.id}`}
+            onClick={e => e.stopPropagation()}
+          />
+        </Dropdown>
+      </div>
+    )
+  }
+
   /** 单个文档 / 文件夹行（文件夹块与文档块共用） */
   const renderDocRow = (doc: DocumentItem) => (
               <div
@@ -590,7 +736,7 @@ export default function DocumentsPage() {
                         />
                       </span>
                       {doc.is_folder ? (
-                        <FolderOutlined style={{ fontSize: 22, color: '#faad14' }} />
+                        <FolderOutlined style={{ fontSize: isMobile ? 18 : 22, color: '#faad14' }} />
                       ) : (
                         (() => {
                           const fmt = formatMeta(doc.content_type)
@@ -599,7 +745,7 @@ export default function DocumentsPage() {
                             <FormatIcon
                               aria-label={`格式：${fmt.label}`}
                               data-testid={`doc-list-format-${doc.id}`}
-                              style={{ fontSize: 22, color: fmt.color }}
+                              style={{ fontSize: isMobile ? 18 : 22, color: fmt.color }}
                             />
                           )
                         })()
@@ -612,7 +758,15 @@ export default function DocumentsPage() {
                        给标题让出横向空间（需求：手机端长文件名列表显示异常） */
                     <div className="cn-doc-row-title-line">
                       <Text strong className="cn-doc-title-ellipsis" title={doc.title}>{doc.title}</Text>
-                      {doc.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${doc.id}`}>置顶</Tag>}
+                      {doc.pinned && (
+                        <Tag
+                          color="blue"
+                          data-testid={`doc-pinned-tag-${doc.id}`}
+                          style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '16px', paddingInline: 4 }}
+                        >
+                          置顶
+                        </Tag>
+                      )}
                     </div>
                   ) : (
                     <Space size={8}>
@@ -644,8 +798,11 @@ export default function DocumentsPage() {
                   isMobile ? (
                     /* 移动端：状态与可见性标签收到描述行（锁标签收敛为纯图标，语义保留在 aria-label），
                        摘要行省去，保持两行紧凑行高 */
-                    <Space size={8} wrap>
-                      <Tag color={STATUS_COLORS[doc.status]} style={{ marginInlineEnd: 0 }}>
+                    <Space size={6} wrap>
+                      <Tag
+                        color={STATUS_COLORS[doc.status]}
+                        style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '16px', paddingInline: 4 }}
+                      >
                         {STATUS_LABELS[doc.status]}
                       </Tag>
                       {doc.visibility === 'private' && (
@@ -654,18 +811,17 @@ export default function DocumentsPage() {
                             icon={<LockOutlined />}
                             data-testid={`doc-list-visibility-${doc.id}`}
                             aria-label="仅自己可见"
-                            style={{ fontSize: 11, lineHeight: '18px', marginInlineEnd: 0 }}
+                            style={{ fontSize: 11, lineHeight: '16px', paddingInline: 4, marginInlineEnd: 0 }}
                           />
                         </Tooltip>
                       )}
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
                         更新于 {formatTime(doc.updated_at)}
                       </Text>
                       {!doc.is_folder && (
-                        <>
-                          <Text type="secondary" style={{ fontSize: 12 }}>{formatSize(doc.content_size)}</Text>
-                          <Text type="secondary" style={{ fontSize: 12 }}>v{doc.version_count}</Text>
-                        </>
+                        <Text type="secondary" style={{ fontSize: 11 }}>
+                          {formatSize(doc.content_size)} · v{doc.version_count}
+                        </Text>
                       )}
                     </Space>
                   ) : (
@@ -688,92 +844,45 @@ export default function DocumentsPage() {
                   )
                 }
                 />
-                <div className="cn-list-item-actions">
-                  <Tooltip title="重命名">
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<EditOutlined />}
-                      aria-label={`重命名 ${doc.title}`}
-                      data-testid={`doc-row-rename-${doc.id}`}
-                      onClick={e => {
-                        e.stopPropagation()
-                        setRenameValue(doc.title)
-                        setRenameTarget({ id: doc.id, title: doc.title, isSeries: false })
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title="移动">
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<ApartmentOutlined />}
-                      aria-label={`移动 ${doc.title}`}
-                      data-testid={`doc-row-move-${doc.id}`}
-                      onClick={e => {
-                        e.stopPropagation()
-                        setRowMove({ id: doc.id, title: doc.title, parent: doc.parent_id ?? 0 })
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title={doc.pinned ? '取消置顶' : '置顶'}>
-                    <Button
-                      type="text"
-                      size="small"
-                      icon={<PushpinOutlined />}
-                      aria-label={doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`}
-                      data-testid={`doc-row-pin-${doc.id}`}
-                      onClick={e => {
-                        e.stopPropagation()
-                        pinMut.mutate(doc)
-                      }}
-                    />
-                  </Tooltip>
-                  <Tooltip title="删除">
-                    <Popconfirm
-                      title={doc.is_folder ? '删除文件夹将同时删除其中所有文档，确认？' : '确认删除此文档？'}
-                      onConfirm={e => {
-                        e?.stopPropagation()
-                        deleteMut.mutate(doc.id)
-                      }}
-                      onCancel={e => e?.stopPropagation()}
-                    >
-                      <Button
-                        type="text"
-                        danger
-                        size="small"
-                        icon={<DeleteOutlined />}
-                        onClick={e => e.stopPropagation()}
-                        aria-label="删除文档"
-                        data-testid={`doc-row-delete-${doc.id}`}
-                      />
-                    </Popconfirm>
-                  </Tooltip>
-                </div>
+                {renderRowActions(doc)}
               </div>
             )
 
   return (
-    <div style={{ padding: isMobile ? 12 : 16 }}>
+    <div style={{ padding: isMobile ? 10 : 16 }}>
       {/* 工具栏 */}
       {isMobile ? (
-        <div data-testid="doc-toolbar-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+        <div data-testid="doc-toolbar-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
           {/* 第一行：返回 + 面包屑 + 更多（导航行常驻） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             {mobileUpButton}
             <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>{breadcrumbNode}</div>
             <Dropdown menu={{ items: mobileToolbarMenu }} trigger={['click']} placement="bottomRight">
               <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
             </Dropdown>
           </div>
-          {/* 第二行：排序 + 搜索 + 标签/状态筛选 + 新建（排序与侧栏共享偏好，需求 0065） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {/* 第二行：排序 + 搜索 + 筛选 + 新建 —— 单行不折行；标签 / 状态收进筛选行（默认收起） */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
             {renderSortButton('doc-content-sort')}
-            {renderSearchInput({ flex: 1, minWidth: 120 })}
-            {renderTagSelect({ width: 110 })}
-            {renderStatusSelect({ width: 100 })}
+            {renderSearchInput({ flex: 1, minWidth: 0 })}
+            <Badge count={activeFilterCount} size="small">
+              <Button
+                icon={<FilterOutlined />}
+                aria-label={mobileFilterLabel}
+                aria-expanded={filterOpen}
+                data-testid="doc-toolbar-filter"
+                onClick={() => setFilterOpen(v => !v)}
+              />
+            </Badge>
             <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建</Button>
           </div>
+          {/* 第三行：仅在展开筛选时出现，防止低频筛选常驻占高 */}
+          {filterOpen && (
+            <div data-testid="doc-toolbar-filters" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {renderTagSelect({ flex: 1, minWidth: 0 })}
+              {renderStatusSelect({ flex: 1, minWidth: 0 })}
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
@@ -851,7 +960,7 @@ export default function DocumentsPage() {
       {/* 批量操作栏：选中任意项后出现 */}
       {selectedIds.length > 0 && (
         <div className="cn-doc-batch-bar" data-testid="doc-batch-bar">
-          <Space size={12} wrap>
+          <Space size={isMobile ? 6 : 12} wrap>
             <Checkbox
               checked={allSelected}
               indeterminate={selectedIds.length > 0 && !allSelected}
@@ -861,16 +970,20 @@ export default function DocumentsPage() {
               全选
             </Checkbox>
             <Text type="secondary">已选 {selectedIds.length} 项</Text>
-            <Button
-              icon={<ApartmentOutlined />}
-              data-testid="doc-batch-move"
-              onClick={() => {
-                setBatchMoveTarget(parentId ?? 0)
-                setBatchMoveOpen(true)
-              }}
-            >
-              移动到…
-            </Button>
+            {/* 窄屏只留图标：批量栏是一行，文字按钮会把操作挤到第二行 */}
+            <Tooltip title="移动到…">
+              <Button
+                icon={<ApartmentOutlined />}
+                aria-label="移动到…"
+                data-testid="doc-batch-move"
+                onClick={() => {
+                  setBatchMoveTarget(parentId ?? 0)
+                  setBatchMoveOpen(true)
+                }}
+              >
+                {!isMobile && '移动到…'}
+              </Button>
+            </Tooltip>
             <Popconfirm
               title={`删除选中的 ${selectedIds.length} 项？`}
               description="文件夹将连同其中所有文档一起移入回收站。"
@@ -879,8 +992,14 @@ export default function DocumentsPage() {
               cancelText="取消"
               onConfirm={() => batchMut.mutate({ action: 'delete', ids: selectedIds })}
             >
-              <Button danger icon={<DeleteOutlined />} data-testid="doc-batch-delete" loading={batchMut.isPending}>
-                批量删除
+              <Button
+                danger
+                icon={<DeleteOutlined />}
+                aria-label="批量删除"
+                data-testid="doc-batch-delete"
+                loading={batchMut.isPending}
+              >
+                {!isMobile && '批量删除'}
               </Button>
             </Popconfirm>
             <Button type="text" data-testid="doc-batch-clear" onClick={() => setSelectedIds([])}>
@@ -894,14 +1013,15 @@ export default function DocumentsPage() {
           与后端 list 端点按 tag_id 过滤后不含文件夹的口径保持一致 */}
       {/* auto-fill 自适应列数：按容器宽度连续增减，不再固定 3 列 */}
       {parentId === null && tagFilter === undefined && seriesList.length > 0 && (
-        <section data-testid="doc-folder-block" style={{ marginBottom: isMobile ? 12 : 16 }}>
-        <SectionTitle label="文件夹" count={seriesList.length} />
+        <section data-testid="doc-folder-block" style={{ marginBottom: isMobile ? 10 : 16 }}>
+        <SectionTitle label="文件夹" count={seriesList.length} compact={isMobile} />
         <div
           data-testid="doc-series-grid"
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: isMobile ? 12 : 16,
+            // 手机端收窄卡片最小宽度：390px 宽屏可排两列，平板自动增列；桌面维持 240px 大卡
+            gridTemplateColumns: isMobile ? 'repeat(auto-fill, minmax(150px, 1fr))' : 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: isMobile ? 8 : 16,
             marginBottom: 8,
           }}
         >
@@ -911,12 +1031,12 @@ export default function DocumentsPage() {
               hoverable
               size="small"
               data-testid={`doc-series-card-${s.folder.id}`}
-              styles={{ body: { padding: isMobile ? 12 : 16 } }}
+              styles={{ body: { padding: isMobile ? 10 : 16 } }}
               onClick={() => setParentId(s.folder.id)}
             >
               {isMobile ? (
                 /* 移动端：标题单行省略（完整名在 title 悬停提示），避免长系列名把卡片撑高、标签折行错位 */
-                <div className="cn-doc-row-title-line" style={{ marginBottom: 8 }}>
+                <div className="cn-doc-row-title-line" style={{ marginBottom: 6 }}>
                   <span onClick={e => e.stopPropagation()}>
                     <Checkbox
                       checked={selectedIds.includes(s.folder.id)}
@@ -925,11 +1045,19 @@ export default function DocumentsPage() {
                       onChange={() => toggleSelected(s.folder.id)}
                     />
                   </span>
-                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
-                  <Text strong className="cn-doc-title-ellipsis" title={s.folder.title} style={{ fontSize: 15 }}>
+                  <FolderOutlined style={{ fontSize: 18, color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
+                  <Text strong className="cn-doc-title-ellipsis" title={s.folder.title} style={{ fontSize: 14 }}>
                     {s.folder.title}
                   </Text>
-                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
+                  {s.folder.pinned && (
+                    <Tag
+                      color="blue"
+                      data-testid={`doc-pinned-tag-${s.folder.id}`}
+                      style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '16px', paddingInline: 4 }}
+                    >
+                      置顶
+                    </Tag>
+                  )}
                 </div>
               ) : (
                 <Space size={8} style={{ marginBottom: 8 }}>
@@ -947,20 +1075,32 @@ export default function DocumentsPage() {
                   {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
                 </Space>
               )}
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', fontSize: 12, color: 'var(--cn-text-secondary, #666)' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  gap: isMobile ? 8 : 12,
+                  flexWrap: 'wrap',
+                  fontSize: isMobile ? 11 : 12,
+                  color: 'var(--cn-text-secondary, #666)',
+                }}
+              >
                 <span>{s.docCount} 篇文档</span>
                 {s.subFolderCount > 0 && <span>{s.subFolderCount} 个子文件夹</span>}
                 {s.tagCount > 0 && <span>{s.tagCount} 个标签</span>}
               </div>
-              <div style={{ marginTop: 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+              <div style={{ marginTop: isMobile ? 4 : 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                 {Object.entries(s.statusCounts).map(([st, n]) => (
-                  <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} style={{ marginRight: 0 }}>
+                  <Tag
+                    key={st}
+                    color={STATUS_COLORS[st] ?? 'default'}
+                    style={{ marginRight: 0, fontSize: 10, lineHeight: '16px', paddingInline: 4 }}
+                  >
                     {STATUS_LABELS[st] ?? st} {n}
                   </Tag>
                 ))}
               </div>
               {/* 更新时间独立成行左对齐：状态标签数量不定，放在同行右侧会导致位置参差 */}
-              <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+              <Text type="secondary" style={{ fontSize: isMobile ? 11 : 12, display: 'block', marginTop: 4 }}>
                 更新 {formatTime(s.latestUpdate)}
               </Text>
             </Card>
@@ -971,47 +1111,58 @@ export default function DocumentsPage() {
 
       {/* 系列详情头部：图标 + 名称 + 递归统计 + 系列级操作（重命名/移动/删除） */}
       {parentId !== null && currentSeries && (
-        <Card size="small" data-testid="doc-series-detail" styles={{ body: { padding: isMobile ? 12 : 16 } }} style={{ marginBottom: isMobile ? 12 : 16 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-            <FolderOutlined style={{ fontSize: 24, color: 'var(--cn-warning, #faad14)' }} />
-            <div style={{ flex: 1, minWidth: 180 }}>
-              <Space size={8} wrap>
-                <Text strong style={{ fontSize: 16 }}>{currentSeries.folder.title}</Text>
+        <Card size="small" data-testid="doc-series-detail" styles={{ body: { padding: isMobile ? 10 : 16 } }} style={{ marginBottom: isMobile ? 10 : 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 8 : 12, flexWrap: 'wrap' }}>
+            <FolderOutlined style={{ fontSize: isMobile ? 20 : 24, color: 'var(--cn-warning, #faad14)' }} />
+            <div style={{ flex: 1, minWidth: isMobile ? 140 : 180 }}>
+              <Space size={isMobile ? 4 : 8} wrap>
+                <Text strong style={{ fontSize: isMobile ? 15 : 16 }}>{currentSeries.folder.title}</Text>
                 {Object.entries(currentSeries.statusCounts).map(([st, n]) => (
-                  <Tag key={st} color={STATUS_COLORS[st] ?? 'default'} style={{ marginRight: 0 }}>
+                  <Tag
+                    key={st}
+                    color={STATUS_COLORS[st] ?? 'default'}
+                    style={{ marginRight: 0, fontSize: isMobile ? 10 : 12, lineHeight: isMobile ? '16px' : undefined }}
+                  >
                     {STATUS_LABELS[st] ?? st} {n}
                   </Tag>
                 ))}
               </Space>
-              <div style={{ fontSize: 12, color: 'var(--cn-text-secondary, #666)', marginTop: 4 }}>
+              <div style={{ fontSize: isMobile ? 11 : 12, color: 'var(--cn-text-secondary, #666)', marginTop: 4 }}>
                 {currentSeries.docCount} 篇文档 · {currentSeries.subFolderCount} 个子文件夹
                 {currentSeries.tagCount > 0 && ` · ${currentSeries.tagCount} 个标签`}
                 {' · '}更新 {formatTime(currentSeries.latestUpdate)}
               </div>
             </div>
-            <Space wrap>
-              <Button
-                size="small"
-                icon={<EditOutlined />}
-                data-testid="doc-series-rename"
-                onClick={() => {
-                  setRenameValue(currentSeries.folder.title)
-                  setRenameTarget({ id: currentSeries.folder.id, title: currentSeries.folder.title, isSeries: true })
-                }}
-              >
-                重命名
-              </Button>
-              <Button
-                size="small"
-                icon={<ApartmentOutlined />}
-                data-testid="doc-series-move"
-                onClick={() => {
-                  setMoveTarget(currentSeries.folder.parent_id ?? 0)
-                  setMoveOpen(true)
-                }}
-              >
-                移动
-              </Button>
+            {/* 窄屏图标化：系列级操作只占一行，不再把标题区挤成两行 */}
+            <Space size={isMobile ? 4 : 8} wrap>
+              <Tooltip title="重命名系列">
+                <Button
+                  size="small"
+                  icon={<EditOutlined />}
+                  aria-label="重命名系列"
+                  data-testid="doc-series-rename"
+                  onClick={() => {
+                    setRenameValue(currentSeries.folder.title)
+                    setRenameTarget({ id: currentSeries.folder.id, title: currentSeries.folder.title, isSeries: true })
+                  }}
+                >
+                  {!isMobile && '重命名'}
+                </Button>
+              </Tooltip>
+              <Tooltip title="移动系列">
+                <Button
+                  size="small"
+                  icon={<ApartmentOutlined />}
+                  aria-label="移动系列"
+                  data-testid="doc-series-move"
+                  onClick={() => {
+                    setMoveTarget(currentSeries.folder.parent_id ?? 0)
+                    setMoveOpen(true)
+                  }}
+                >
+                  {!isMobile && '移动'}
+                </Button>
+              </Tooltip>
               <Popconfirm
                 title="删除系列将同时删除其中全部文档与子文件夹，确认？"
                 okType="danger"
@@ -1019,8 +1170,14 @@ export default function DocumentsPage() {
                 cancelText="取消"
                 onConfirm={() => deleteMut.mutate(currentSeries.folder.id)}
               >
-                <Button size="small" danger icon={<DeleteOutlined />} data-testid="doc-series-delete">
-                  删除
+                <Button
+                  size="small"
+                  danger
+                  icon={<DeleteOutlined />}
+                  aria-label="删除系列"
+                  data-testid="doc-series-delete"
+                >
+                  {!isMobile && '删除'}
                 </Button>
               </Popconfirm>
             </Space>
@@ -1032,12 +1189,12 @@ export default function DocumentsPage() {
       {docsQuery.isLoading ? (
         // antd List 弃用（ADR 0074）：加载态用 Skeleton 占位（v5 List loading 同为骨架行）
         <div className="cn-doc-list" aria-busy="true">
-          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
-          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
-          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: '16px 24px' }} />
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: isMobile ? '10px 12px' : '16px 24px' }} />
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: isMobile ? '10px 12px' : '16px 24px' }} />
+          <Skeleton active title={false} paragraph={{ rows: 1 }} style={{ padding: isMobile ? '10px 12px' : '16px 24px' }} />
         </div>
       ) : listItems.length === 0 && (parentId !== null || seriesList.length === 0) ? (
-        <Empty description="暂无文档" style={{ marginTop: 80 }}>
+        <Empty description="暂无文档" style={{ marginTop: isMobile ? 32 : 80 }}>
           <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>
             创建第一篇文档
           </Button>
@@ -1046,8 +1203,8 @@ export default function DocumentsPage() {
         <div data-testid="doc-list">
           {/* 子级：文件夹块在前、文档块在后；顶层文件夹已由上方系列卡片承载 */}
           {parentId !== null && subFolders.length > 0 && (
-            <section data-testid="doc-subfolder-block" style={{ marginBottom: isMobile ? 12 : 16 }}>
-              <SectionTitle label="文件夹" count={subFolders.length} />
+            <section data-testid="doc-subfolder-block" style={{ marginBottom: isMobile ? 8 : 16 }}>
+              <SectionTitle label="文件夹" count={subFolders.length} compact={isMobile} />
               <Listy
                 className="cn-doc-list"
                 items={subFolders}
@@ -1058,7 +1215,7 @@ export default function DocumentsPage() {
           )}
           {fileItems.length > 0 && (
             <section data-testid="doc-file-block">
-              <SectionTitle label="文档" count={fileItems.length} />
+              <SectionTitle label="文档" count={fileItems.length} compact={isMobile} />
               <Listy
                 className="cn-doc-list"
                 items={fileItems}
@@ -1228,6 +1385,9 @@ export default function DocumentsPage() {
         parentId={parentId}
         parentLabel={currentFolderNode?.title}
       />
+
+      {/* hook 版 Modal 的上下文占位（移动端「更多 → 删除」确认框） */}
+      {modalContextHolder}
     </div>
   )
 }

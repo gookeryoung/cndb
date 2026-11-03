@@ -530,7 +530,7 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     }
   })
 
-  it('顶部收为两行：搜索与新建常驻，排序 / 筛选已移入侧栏（需求 0065）', async () => {
+  it('默认两行：排序 / 搜索 / 筛选 / 新建单行，标签与状态按需展开', async () => {
     renderProviders(
       <Routes>
         <Route path="/w/:wid/documents" element={<DocumentsPage />} />
@@ -543,21 +543,52 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     // 桌面常显的次级按钮不再直接渲染
     expect(screen.queryByTestId('doc-trash-open')).toBeNull()
     expect(screen.queryByTestId('doc-file-import')).toBeNull()
-    // 只剩导航行 + 搜索/筛选/新建行；列表排序控件在侧栏（?order=），不在页面
+    // 默认只有导航行 + 操作行；标签 / 状态筛选行收起，避免顶栏折成三行
     expect(toolbar.children).toHaveLength(2)
     expect(screen.queryByTestId('doc-order-select')).toBeNull()
-    // 标签 / 状态筛选在内容区顶部（需求 0065 第二次修订）
+    expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
+    // 排序、搜索、筛选入口、新建都在同一行常驻
+    expect(within(toolbar).getByTestId('doc-content-sort')).toBeVisible()
+    expect(within(toolbar).getByPlaceholderText('过滤标题')).toBeVisible()
+    const filterButton = within(toolbar).getByTestId('doc-toolbar-filter')
+    expect(filterButton).toHaveAttribute('aria-expanded', 'false')
+    expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
+
+    // 展开筛选行后，标签 / 状态控件原位可见；再次点击收起
+    fireEvent.click(filterButton)
+    expect(await screen.findByTestId('doc-toolbar-filters')).toBeVisible()
     expect(within(toolbar).getByTestId('doc-tag-filter')).toBeVisible()
     expect(within(toolbar).getByTestId('doc-status-filter')).toBeVisible()
-    // 搜索、新建仍可用
-    expect(within(toolbar).getByPlaceholderText('过滤标题')).toBeVisible()
-    expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
+    expect(filterButton).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(filterButton)
+    expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
 
     // 「更多」菜单承载回收站与导入入口
     fireEvent.click(within(toolbar).getByTestId('doc-toolbar-more'))
     expect(await screen.findByText('回收站')).toBeInTheDocument()
     expect(screen.getByText('导入')).toBeInTheDocument()
     expect(screen.getByText('新建文件夹')).toBeInTheDocument()
+  })
+
+  it('?tag= 深链：筛选入口显示已应用数量，展开后回显标签', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/documents/tags', () =>
+        HttpResponse.json({ items: [{ id: 7, name: '需求', doc_count: 1, color: null }] })),
+    )
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1&tag=7', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    const toolbar = await screen.findByTestId('doc-toolbar-mobile')
+    const filterButton = within(toolbar).getByTestId('doc-toolbar-filter')
+    expect(filterButton).toHaveAttribute('aria-label', '筛选（已应用 1 项）')
+    fireEvent.click(filterButton)
+    expect(await screen.findByTestId('doc-toolbar-filters')).toBeVisible()
+    // 标签下拉回显 URL 里的标签名
+    expect(within(toolbar).getByTestId('doc-tag-filter').textContent).toContain('需求')
   })
 
   it('?status= 深链：list 请求携带 status 参数（状态筛选写 URL，控件在侧栏）', async () => {
@@ -608,11 +639,61 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     // 注：Space 的 item 包装层与标签文本相同，用 getAllByText 断言存在即可
     expect(within(list).getAllByText('草稿').length).toBeGreaterThan(0)
     expect(within(list).getByTestId('doc-list-visibility-2')).toHaveAttribute('aria-label', '仅自己可见')
-    // 行内操作按钮全部保留（重命名/移动/置顶/删除）
-    expect(within(list).getByTestId('doc-row-rename-2')).toBeInTheDocument()
-    expect(within(list).getByTestId('doc-row-move-2')).toBeInTheDocument()
-    expect(within(list).getByTestId('doc-row-pin-2')).toBeInTheDocument()
-    expect(within(list).getByTestId('doc-row-delete-2')).toBeInTheDocument()
+    // 行尾四枚操作收进单枚「更多」，展开后四项能力全部保留
+    fireEvent.click(within(list).getByTestId('doc-row-more-2'))
+    expect(await screen.findByTestId('doc-row-rename-2')).toBeInTheDocument()
+    expect(screen.getByTestId('doc-row-move-2')).toBeInTheDocument()
+    expect(screen.getByTestId('doc-row-pin-2')).toBeInTheDocument()
+    expect(screen.getByTestId('doc-row-delete-2')).toBeInTheDocument()
+  })
+
+  it('移动端行尾「更多」：删除走二次确认后调用 DELETE', async () => {
+    const deleted: string[] = []
+    server.use(
+      http.delete('/api/v1/workspaces/:wid/documents/:docId', ({ params }) => {
+        deleted.push(String(params.docId))
+        return HttpResponse.json({ id: 2, deleted: true })
+      }),
+    )
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    await screen.findByTestId('doc-series-detail')
+    fireEvent.click(await screen.findByTestId('doc-row-more-2'))
+    fireEvent.click(await screen.findByTestId('doc-row-delete-2'))
+    // Modal.confirm 的确认按钮文案与菜单项不同：这里是按钮角色
+    fireEvent.click(await screen.findByRole('button', { name: /^删\s*除$/ }))
+    await waitFor(() => expect(deleted).toEqual(['2']))
+  })
+
+  it('移动端文件夹卡片：最小宽度收窄到 150px（390px 屏两列）', async () => {
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    const grid = await screen.findByTestId('doc-series-grid')
+    expect(grid.getAttribute('style')).toContain('minmax(150px, 1fr)')
+  })
+
+  it('移动端系列详情：操作按钮图标化并保留无障碍名称', async () => {
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    await screen.findByTestId('doc-series-detail')
+    expect(screen.getByTestId('doc-series-rename')).toHaveAttribute('aria-label', '重命名系列')
+    expect(screen.getByTestId('doc-series-move')).toHaveAttribute('aria-label', '移动系列')
+    expect(screen.getByTestId('doc-series-delete')).toHaveAttribute('aria-label', '删除系列')
   })
 })
 
