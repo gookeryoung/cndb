@@ -7,14 +7,11 @@
  * PPTX：纯前端渲染（PptxPreview 懒加载），旧版 .ppt 仍回落下载卡。
  */
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Empty, Space, Spin, Tag, Typography } from 'antd'
-import { DownloadOutlined, PlayCircleOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Spin } from 'antd'
+import { DownloadOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { documentsApi, type DocumentItem } from '@/api/documents'
-import { formatSize } from '@/utils/formatSize'
 import { formatMeta } from '@/components/Document/docFormat'
-
-const { Text } = Typography
 
 // PPTX 渲染库体积较大（jszip / echarts），只在打开 .pptx 时按需加载
 const PptxPreview = lazy(() => import('./PptxPreview'))
@@ -23,6 +20,9 @@ const PptxSlideshow = lazy(() => import('./PptxSlideshow'))
 interface Props {
   workspaceId: number
   doc: DocumentItem
+  /** PPTX 放映覆盖层是否打开（按钮在文档页顶栏，状态由页面持有） */
+  presenting?: boolean
+  onPresentingChange?: (presenting: boolean) => void
 }
 
 /** 扩展名：优先用后端 MIME，缺失时退回 content_type（顶栏下载按钮与下载卡共用） */
@@ -48,10 +48,14 @@ export function assetSuffix(doc: DocumentItem): string {
   return ''
 }
 
-export default function DocumentAssetView({ workspaceId, doc }: Props) {
+export default function DocumentAssetView({
+  workspaceId,
+  doc,
+  presenting = false,
+  onPresentingChange,
+}: Props) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
-  const [presenting, setPresenting] = useState(false)
   const fmt = formatMeta(doc.content_type)
   const suffix = assetSuffix(doc)
   const isMhtml = doc.content_type === 'mhtml'
@@ -109,29 +113,6 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
 
   const downloadName = useMemo(() => `${doc.title || 'download'}${suffix ? `.${suffix}` : ''}`, [doc.title, suffix])
 
-  // 下载入口在编辑页顶栏（分享左侧的图标按钮），此处仅保留格式与大小信息
-  const header = (
-    <Space size={8} wrap style={{ marginBottom: 12 }}>
-      <Tag color="default" data-testid="doc-asset-format">
-        {fmt.label}
-      </Tag>
-      <Text type="secondary" style={{ fontSize: 12 }}>
-        {formatSize(doc.content_size)} · 原样存档（只读）
-      </Text>
-      {isPptx && blob && (
-        <Button
-          size="small"
-          type="primary"
-          icon={<PlayCircleOutlined />}
-          data-testid="doc-pptx-present"
-          onClick={() => setPresenting(true)}
-        >
-          放映
-        </Button>
-      )}
-    </Space>
-  )
-
   if (loading) {
     return (
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -143,7 +124,6 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
   if (failed) {
     return (
       <div style={{ padding: 24 }} data-testid="doc-asset-error">
-        {header}
         <Alert
           type="warning"
           showIcon
@@ -241,7 +221,6 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
       style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '12px 24px' }}
       data-testid="doc-asset-view"
     >
-      {header}
       {viewer}
       {presenting && blob && (
         <Suspense fallback={null}>
@@ -249,7 +228,7 @@ export default function DocumentAssetView({ workspaceId, doc }: Props) {
             blob={blob}
             title={doc.title}
             storageKey={`pptx-present-page:${workspaceId}:${doc.id}`}
-            onClose={() => setPresenting(false)}
+            onClose={() => onPresentingChange?.(false)}
           />
         </Suspense>
       )}

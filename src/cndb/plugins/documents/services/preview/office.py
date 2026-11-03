@@ -69,7 +69,6 @@ thead th.cn-sheet-corner { left: 0; z-index: 2; }
 tbody th.cn-sheet-rownum { position: sticky; left: 0; z-index: 1; min-width: 40px;
   text-align: right; font-weight: 400; color: #64748b; background: #fafafa; }
 img { max-width: 100%; height: auto; }
-.cn-preview-title { font-size: 12px; color: #64748b; margin: 0 0 12px; }
 /* 工作表分页：radio + label 实现无脚本标签页（沙箱内禁用 JS） */
 .cn-sheet-tabs { position: relative; }
 .cn-sheet-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
@@ -86,7 +85,7 @@ img { max-width: 100%; height: auto; }
   body { background: #0f172a; color: #e2e8f0; }
   th { background: #1e293b; }
   th, td { border-color: #334155; }
-  .cn-preview-title, .cn-preview-empty, .cn-preview-note { color: #94a3b8; }
+  .cn-preview-empty, .cn-preview-note { color: #94a3b8; }
   .cn-sheet-tabbar { background: #0f172a; border-color: #334155; }
   thead th { background: #1e293b; }
   tbody th.cn-sheet-rownum { background: #111827; color: #94a3b8; }
@@ -99,7 +98,6 @@ img { max-width: 100%; height: auto; }
 _SHEET_PAGE_STYLE = """
 html, body { height: 100%; }
 body.cn-preview-sheet-page { display: flex; flex-direction: column; padding: 12px 20px 12px; }
-body.cn-preview-sheet-page .cn-preview-title { flex: 0 0 auto; margin-bottom: 8px; }
 .cn-sheet-tabs { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .cn-sheet-tabbar { flex: 0 0 auto; }
 .cn-sheet-panels { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
@@ -118,7 +116,7 @@ def _page(body: str, *, kind: str, extra_css: str = "", body_class: str = "") ->
         '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>{html.escape(kind)}预览</title><style>{_PAGE_STYLE}{extra_css}</style></head>"
-        f'<body{class_attr}><p class="cn-preview-title">{html.escape(kind)}原件预览（只读）</p>{body}</body></html>'
+        f"<body{class_attr}>{body}</body></html>"
     )
 
 

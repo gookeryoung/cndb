@@ -58,7 +58,8 @@ describe('DocumentAssetView 原件阅读器', () => {
     renderProviders(<DocumentAssetView workspaceId={7} doc={docOf({})} />)
 
     expect(await screen.findByTestId('doc-asset-pdf')).toBeInTheDocument()
-    expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('PDF')
+    // 格式 / 只读标识统一在文档页顶栏，阅读器内部不再重复一行
+    expect(screen.queryByTestId('doc-asset-format')).not.toBeInTheDocument()
     expect(screen.queryByTestId('doc-asset-download')).not.toBeInTheDocument()
     expect(documentsApi.assetBlob).toHaveBeenCalledWith(7, 31)
   })
@@ -74,7 +75,7 @@ describe('DocumentAssetView 原件阅读器', () => {
     const image = await screen.findByTestId('doc-asset-image')
     expect(image.tagName).toBe('IMG')
     expect(image).toHaveAttribute('alt', '图标')
-    expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('图片')
+    expect(screen.queryByTestId('doc-asset-format')).not.toBeInTheDocument()
   })
 
   it('xlsx 走后端 HTML 预览（沙箱 iframe），不再给下载卡', async () => {
@@ -92,7 +93,7 @@ describe('DocumentAssetView 原件阅读器', () => {
     const frame = await screen.findByTestId('doc-asset-office')
     expect(frame.tagName).toBe('IFRAME')
     expect(frame).toHaveAttribute('sandbox', '')
-    expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('Excel')
+    expect(screen.queryByTestId('doc-asset-format')).not.toBeInTheDocument()
     expect(screen.queryByTestId('doc-asset-download-card')).not.toBeInTheDocument()
     expect(documentsApi.assetPreviewBlob).toHaveBeenCalledWith(7, 31)
   })
@@ -110,7 +111,7 @@ describe('DocumentAssetView 原件阅读器', () => {
     )
 
     expect((await screen.findByTestId('doc-asset-office')).tagName).toBe('IFRAME')
-    expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('Word')
+    expect(screen.queryByTestId('doc-asset-format')).not.toBeInTheDocument()
     expect(assetSuffix(docOf({ content_type: 'word', asset_mime: '' }))).toBe('docx')
   })
 
@@ -163,12 +164,45 @@ describe('DocumentAssetView 原件阅读器', () => {
 
     expect(await screen.findByTestId('pptx-preview-stub')).toHaveTextContent('胶片')
     expect(screen.queryByTestId('doc-asset-download-card')).not.toBeInTheDocument()
+    // 放映入口已上移到文档页顶栏，阅读器内部不再重复按钮
+    expect(screen.queryByTestId('doc-pptx-present')).not.toBeInTheDocument()
+  })
 
-    // 顶部提供放映入口：点击进入全屏放映覆盖层，退出后回到阅读器
-    fireEvent.click(screen.getByTestId('doc-pptx-present'))
+  it('PPTX 放映覆盖层由页面状态驱动（presenting / onPresentingChange）', async () => {
+    vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(
+      new Blob(['PK'], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
+    )
+    const onPresentingChange = vi.fn()
+    const { rerender, ...utils } = renderProviders(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({
+          content_type: 'pptx',
+          asset_mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          title: '胶片',
+        })}
+        presenting
+        onPresentingChange={onPresentingChange}
+      />,
+    )
+
     expect(await screen.findByTestId('pptx-slideshow-stub')).toHaveTextContent('胶片')
     fireEvent.click(screen.getByRole('button', { name: '退出放映' }))
+    expect(onPresentingChange).toHaveBeenCalledWith(false)
+
+    // 关闭后（presenting=false）不再渲染覆盖层
+    rerender(
+      <DocumentAssetView
+        workspaceId={7}
+        doc={docOf({
+          content_type: 'pptx',
+          asset_mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+          title: '胶片',
+        })}
+      />,
+    )
     await waitFor(() => expect(screen.queryByTestId('pptx-slideshow-stub')).not.toBeInTheDocument())
+    void utils
   })
 
   it('旧版二进制 PPT 仍回落下载卡（纯前端渲染只支持 .pptx）', async () => {

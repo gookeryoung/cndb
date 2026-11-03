@@ -49,6 +49,7 @@ import {
   MenuOutlined,
   MoreOutlined,
   PictureOutlined,
+  PlayCircleOutlined,
   PullRequestOutlined,
   ReadOutlined,
   SaveOutlined,
@@ -109,7 +110,8 @@ import type {
 const { Text, Title } = Typography
 
 
-import { isAssetContentType } from '@/components/Document/docFormat'
+import { formatMeta, isAssetContentType } from '@/components/Document/docFormat'
+import { formatSize } from '@/utils/formatSize'
 import BacklinksDrawer from './BacklinksDrawer'
 import DocumentAssetView, { assetSuffix } from './DocumentAssetView'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
@@ -187,6 +189,8 @@ export default function DocumentEditorPage() {
   const [editorMode, setEditorMode] = useState<MarkdownEditorMode>('live')
   /** 并排查看：编辑区与渲染预览左右并排（桌面端；偏好在 localStorage） */
   const [splitOpen, setSplitOpen] = useState<boolean>(() => loadSplitOpen())
+  /** PPTX 放映覆盖层（原件族）：按钮在顶栏，状态由页面持有 */
+  const [assetPresenting, setAssetPresenting] = useState(false)
   const [backlinksOpen, setBacklinksOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   // 断链修复：旧标题 → 选中的目标文档 ID
@@ -612,6 +616,11 @@ export default function DocumentEditorPage() {
     ]
   }, [treeQuery.data, id, navigate, wid])
 
+  // 切换文档时关闭 PPTX 放映覆盖层（避免跨文档残留）
+  useEffect(() => {
+    setAssetPresenting(false)
+  }, [docQuery.data?.id])
+
   // 记录「最近打开」：文档加载完成后写入本地历史（个人浏览偏好，按工作区分键）
   useEffect(() => {
     if (!doc || doc.is_folder) return
@@ -1008,6 +1017,9 @@ export default function DocumentEditorPage() {
   const editable = true // viewer 保存转修改申请（202），无需在前端隐藏编辑入口
   // 原件族（PDF / Office / 图片，ADR 0025）：只读，正文区换成阅读器，编辑类入口全部隐藏
   const isAssetDoc = !doc.is_folder && isAssetContentType(doc.content_type)
+  // 原件族的格式 / 只读标识只在顶栏出现一次（预览区不再重复渲染「XX 原件预览（只读）」）
+  const assetFmt = isAssetDoc ? formatMeta(doc.content_type) : null
+  const isPptxAsset = isAssetDoc && doc.content_type === 'pptx' && assetSuffix(doc) === 'pptx'
   // 并排查看只在桌面编辑态生效：窄屏沿用「编辑 / 预览」页签，查看态仍是纯预览
   const splitActive = splitOpen && viewMode === 'edit' && !isAssetDoc && isDesktop
 
@@ -1167,6 +1179,15 @@ export default function DocumentEditorPage() {
               {/* 窄屏：长文案占宽过多，草稿态收敛为「草稿」 */}
               {doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : (isMobile ? '草稿' : '草稿（仅自己可见）')}
             </Tag>
+            {assetFmt && (
+              <Tag
+                data-testid="doc-asset-format"
+                title={`${formatSize(doc.content_size)} · 原样存档`}
+                style={{ marginInlineEnd: 0 }}
+              >
+                {assetFmt.label} · 只读
+              </Tag>
+            )}
             {(hasUnsaved || serverDraft) &&
               (hasUnsaved ? (
                 <Tag color="warning" icon={<WarningOutlined />} data-testid="doc-draft-tag">
@@ -1224,6 +1245,11 @@ export default function DocumentEditorPage() {
             <Button icon={<MenuOutlined />} data-testid="doc-outline-toggle" onClick={() => setOutlineDrawerOpen(true)}>
               大纲{outline.length > 0 ? ` (${outline.length})` : ''}
             </Button>
+            )}
+            {isPptxAsset && (
+              <Button icon={<PlayCircleOutlined />} data-testid="doc-pptx-present" onClick={() => setAssetPresenting(true)}>
+                放映
+              </Button>
             )}
             <Dropdown trigger={['click']} menu={{ items: docMoreItems }}>
               <Button icon={<MoreOutlined />} data-testid="doc-more-actions">更多</Button>
@@ -1308,7 +1334,15 @@ export default function DocumentEditorPage() {
             onClick={() => setTagsOpen(true)}
           />
           <Divider vertical style={{ margin: '0 2px' }} />
-          {/* 组 3：协作（下载 / 修改申请 / 分享）；原件族文档在分享左侧提供下载原件图标按钮 */}
+          {/* 组 3：协作（放映 / 下载 / 修改申请 / 分享）；原件族文档在分享左侧提供下载原件图标按钮 */}
+          {isPptxAsset && (
+            <IconBtn
+              icon={<PlayCircleOutlined />}
+              label="放映"
+              data-testid="doc-pptx-present"
+              onClick={() => setAssetPresenting(true)}
+            />
+          )}
           {isAssetDoc && (
             <IconBtn
               icon={<DownloadOutlined />}
@@ -1460,7 +1494,12 @@ export default function DocumentEditorPage() {
         {/* 正文列：查看 / 编辑内容，桌面端右侧并排大纲栏 */}
         <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
         {isAssetDoc ? (
-          <DocumentAssetView workspaceId={workspaceId} doc={doc} />
+          <DocumentAssetView
+            workspaceId={workspaceId}
+            doc={doc}
+            presenting={assetPresenting}
+            onPresentingChange={setAssetPresenting}
+          />
         ) : viewMode === 'view' ? (
           <div
             style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 16 : '20px 24px' }}

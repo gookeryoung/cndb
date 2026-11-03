@@ -286,6 +286,10 @@ class TestOfficePreviewRender:
         assert ".cn-sheet-panel { flex: 1 1 auto; min-height: 0; overflow: auto; }" in html
         # 旧的 70vh 高度上限会留下底部空白，已移除
         assert "max-height: 70vh" not in html
+        # 格式 / 只读标识只在文档页顶栏出现一次，预览 HTML 不再重复一行
+        assert "cn-preview-title" not in html
+        assert "原件预览" not in html
+        assert html.split('<body class="cn-preview-sheet-page">', 1)[1].startswith('<div class="cn-sheet-tabs">')
 
     def test_spreadsheet_sheets_are_paginated(self):
         """多工作表按标签页分页（需求 0089）：一次只显示一个表，纯 CSS 切换."""

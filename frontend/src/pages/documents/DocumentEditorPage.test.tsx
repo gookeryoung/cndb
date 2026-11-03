@@ -23,6 +23,18 @@ let responsiveState: ResponsiveState = {
     deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
     width: 1280, height: 800,
 }
+// PPTX 渲染库体积大：单测只验证挂载分派与放映状态
+vi.mock('./PptxPreview', () => ({
+    default: ({ title }: { title: string }) => <div data-testid="pptx-preview-stub">{title}</div>,
+}))
+vi.mock('./PptxSlideshow', () => ({
+    default: ({ onClose }: { onClose: () => void }) => (
+        <div data-testid="pptx-slideshow-stub">
+            <button type="button" onClick={onClose}>退出放映</button>
+        </div>
+    ),
+}))
+
 vi.mock('@/hooks/useResponsive', async () => {
     const actual = await vi.importActual<typeof import('@/hooks/useResponsive')>('@/hooks/useResponsive')
     return { ...actual, useResponsive: () => responsiveState }
@@ -1733,6 +1745,8 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
 
         expect(await screen.findByTestId('doc-asset-view')).toBeInTheDocument()
         expect(screen.getByTestId('doc-asset-pdf')).toBeInTheDocument()
+        // 格式 / 只读标识统一在顶栏标题行（正文区不再重复一行）
+        expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('PDF · 只读')
         // 原件只读：没有查看/编辑切换、保存/提交、导出与版本入口
         expect(screen.queryByTestId('doc-mode-switch')).toBeNull()
         expect(screen.queryByTestId('doc-save-btn')).toBeNull()
@@ -1740,6 +1754,39 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
         expect(screen.queryByTestId('doc-export-btn')).toBeNull()
         // 标签与分享仍可用
         expect(screen.getByRole('button', { name: /标签/ })).toBeInTheDocument()
+    })
+
+    it('PPTX 原件：顶栏提供放映入口，覆盖层由页面状态控制', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/2/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    id: 2,
+                    title: '胶片',
+                    content_type: 'pptx',
+                    asset_mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    content: '',
+                    version_number: 1,
+                    version_count: 1,
+                    draft: null,
+                    write_mode: 'direct',
+                })),
+        )
+        vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(
+            new Blob(['PK'], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
+        )
+        renderEditor()
+
+        expect(await screen.findByTestId('doc-asset-format')).toHaveTextContent('PowerPoint · 只读')
+        expect(await screen.findByTestId('pptx-preview-stub')).toHaveTextContent('胶片')
+        // 放映按钮在顶栏（不再压在预览内容里）
+        const present = screen.getByTestId('doc-pptx-present')
+        expect(document.querySelector('[data-testid="doc-asset-view"]')?.contains(present)).toBe(false)
+
+        fireEvent.click(present)
+        expect(await screen.findByTestId('pptx-slideshow-stub')).toBeInTheDocument()
+        fireEvent.click(screen.getByRole('button', { name: '退出放映' }))
+        await waitFor(() => expect(screen.queryByTestId('pptx-slideshow-stub')).not.toBeInTheDocument())
     })
 
     it('原件族文档在分享左侧提供下载原件图标按钮，点击取回原件', async () => {
