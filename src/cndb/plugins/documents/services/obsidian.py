@@ -45,6 +45,8 @@ from cndb.core.config import settings
 from cndb.core.errors import BadRequestError, ConflictError
 from cndb.plugins.documents.models import (
     CHANGE_TYPE_IMPORT,
+    CONTENT_TYPE_MHTML,
+    CONTENT_TYPE_WORD,
     DOC_STATUS_DRAFT,
     DOC_STATUSES,
     Document,
@@ -54,6 +56,7 @@ from cndb.plugins.documents.models import (
 from cndb.plugins.documents.services import content as content_service
 from cndb.plugins.documents.services import parse, visibility
 from cndb.plugins.documents.services.export.images import INLINE_IMAGE_RE, resolve_upload_path
+from cndb.plugins.documents.services.importers.formats import ASSET_FORMATS, DOCX_ASSET_FORMAT
 from cndb.plugins.files.models import FileOwner
 
 # ── 限制与常量 ──
@@ -364,6 +367,68 @@ def _safe_filename(raw: str, *, fallback: str = "未命名") -> str:
 
 
 # ── 库索引与笔记解析 ──
+
+
+@dataclass
+class VaultAssetDoc:
+    """压缩文档里的一份原件（PDF / Office / 图片 / MHTML），按原件落为只读文档."""
+
+    path: str
+    folder: tuple[str, ...]
+    title: str
+    content_type: str
+    mime: str
+    size: int
+
+
+#: 压缩文档导入时按原件落库的额外后缀（.docx 存为 word 原件、MHTML 原样存档）
+_ARCHIVE_ASSET_EXTRAS: dict[str, tuple[str, str]] = {
+    ".docx": (CONTENT_TYPE_WORD, DOCX_ASSET_FORMAT.mime),
+    ".mhtml": (CONTENT_TYPE_MHTML, "multipart/related"),
+    ".mht": (CONTENT_TYPE_MHTML, "multipart/related"),
+}
+
+#: 导入方式（需求 0088）：archive=压缩文档（纯文档树，原件按文档导入）/ obsidian=Obsidian 库
+VAULT_IMPORT_STYLES = ("archive", "obsidian")
+
+
+def _archive_asset_format(path: str) -> tuple[str, str] | None:
+    """压缩文档条目 → (content_type, mime)；不是可导入的原件返回 None."""
+    suffix = Path(path).suffix.lower()
+    fmt = ASSET_FORMATS.get(suffix)
+    if fmt is not None:
+        return fmt.content_type, fmt.mime
+    return _ARCHIVE_ASSET_EXTRAS.get(suffix)
+
+
+def _archive_assets(archive: VaultArchive, notes: list[VaultNote], index: _VaultIndex) -> list[VaultAssetDoc]:
+    """压缩文档里的原件文档（排除 Markdown / 结构文件 / 已被笔记引用的附件）."""
+    referenced = {target for note in notes for target in _referenced_attachments(note, index)}
+    assets: list[VaultAssetDoc] = []
+    for path in archive.paths:
+        suffix = Path(path).suffix.lower()
+        if suffix in MARKDOWN_SUFFIXES or suffix in CONVERTIBLE_EXTENSIONS or path in referenced:
+            continue
+        # attachments/ 下的文件是笔记附件（随引用落盘），不作为独立文档
+        lowered = path.lower()
+        if lowered.startswith("attachments/") or "/attachments/" in lowered:
+            continue
+        resolved = _archive_asset_format(path)
+        if resolved is None:
+            continue
+        content_type, mime = resolved
+        parts = path.split("/")
+        assets.append(
+            VaultAssetDoc(
+                path=path,
+                folder=tuple(parts[:-1]),
+                title=_clean_title(Path(path).stem),
+                content_type=content_type,
+                mime=mime,
+                size=archive.size_of(path),
+            )
+        )
+    return assets
 
 
 @dataclass
@@ -752,6 +817,12 @@ def _validate_parent(db: Session, workspace_id: int, parent_id: int | None) -> D
     return parent
 
 
+def _validate_import_style(style: str) -> None:
+    """导入方式校验（需求 0088）：非法取值直接拒绝批次."""
+    if style not in VAULT_IMPORT_STYLES:
+        raise BadRequestError(f"不支持的导入方式：{style}，可选 {'/'.join(VAULT_IMPORT_STYLES)}")
+
+
 def analyze_vault(
     db: Session,
     workspace_id: int,
@@ -759,21 +830,31 @@ def analyze_vault(
     archive: VaultArchive,
     *,
     parent_id: int | None = None,
+    style: str = "obsidian",
 ) -> dict[str, Any]:
-    """解析库并给出导入预览（不写任何数据）."""
+    """解析压缩包并给出导入预览（不写任何数据）.
+
+    ``style=archive``（压缩文档）时，PDF / Office / 图片 / MHTML 等原件按文档计入预览；
+    ``style=obsidian``（默认）只统计 Markdown 笔记与 .canvas / .base 转换文档。
+    """
+    _validate_import_style(style)
     content_service.require_editor(db, workspace_id, user)
     _validate_parent(db, workspace_id, parent_id)
 
     notes = _parse_notes(archive)
     attachment_paths = archive.attachment_paths()
     index = _build_index(notes, attachment_paths)
+    # 两种方式都把「未被笔记引用、又不在 attachments/ 下」的原件导入为只读文档，
+    # 这样导出的 PDF / Office / 图片在回环导入时不会丢失（需求 0088）
+    assets = _archive_assets(archive, notes, index)
     siblings = _sibling_map(db, workspace_id)
 
     root_key = parent_id or 0
     folders: list[dict[str, Any]] = []
     folder_ids: dict[tuple[str, ...], int] = {}
     folder_status: dict[tuple[str, ...], str] = {}
-    for folder in sorted({note.folder for note in notes}, key=lambda f: (len(f), f)):
+    all_folders = {note.folder for note in notes} | {asset.folder for asset in assets}
+    for folder in sorted(all_folders, key=lambda f: (len(f), f)):
         parent = root_key
         for chain in _folder_chain(folder):
             if chain in folder_ids:
@@ -810,6 +891,27 @@ def analyze_vault(
                     "tags": note.tags[:20],
                     "status": status,
                     "kind": note.kind,
+                    "is_asset": False,
+                    "existing_document_id": existing.id if existing else None,
+                }
+            )
+    for asset in sorted(assets, key=lambda a: a.path):
+        parent = folder_ids.get(asset.folder, root_key)
+        existing = None if parent < 0 else _existing_child(siblings, parent, asset.title)
+        status = "conflict" if existing is not None else "new"
+        if existing is not None:
+            conflicts += 1
+        if len(items) < PREVIEW_LIMIT:
+            items.append(
+                {
+                    "path": asset.path,
+                    "title": asset.title,
+                    "folder": "/".join(asset.folder),
+                    "size": asset.size,
+                    "tags": [],
+                    "status": status,
+                    "kind": asset.content_type,
+                    "is_asset": True,
                     "existing_document_id": existing.id if existing else None,
                 }
             )
@@ -819,17 +921,21 @@ def analyze_vault(
     warnings = _analyze_warnings(notes, archive)
     converted = [note for note in notes if note.kind != "markdown"]
 
+    imported_paths = {note.path for note in notes} | {asset.path for asset in assets} | set(referenced)
+    ignored = len(archive.skipped) + sum(1 for path in archive.paths if path not in imported_paths)
     return {
         "filename": archive.filename,
         "root_dir": archive.root_dir,
+        "style": style,
         "total_notes": len(notes),
         "total_markdown": len(notes) - len(converted),
         "total_converted": len(converted),
+        "assets": len(assets),
         "total_folders": len(folders),
         "total_attachments": len(referenced),
         "total_attachment_bytes": sum(archive.size_of(path) for path in referenced),
-        "total_bytes": sum(note.size for note in notes),
-        "ignored_files": len(archive.skipped),
+        "total_bytes": sum(note.size for note in notes) + sum(asset.size for asset in assets),
+        "ignored_files": ignored,
         "conflicts": conflicts,
         "tags": tag_names[:DETAIL_LIMIT],
         "warnings": warnings,
@@ -978,6 +1084,9 @@ class _AttachmentStore:
         self.enabled = enabled
         self.written = 0
         self.bytes_written = 0
+        # 原件（压缩文档导入）单独计数，界面上与「附件」区分
+        self.assets_written = 0
+        self.assets_bytes = 0
         self._cache: dict[tuple[int, str], str] = {}
         self._pending: list[str] = []
 
@@ -992,6 +1101,18 @@ class _AttachmentStore:
         (directory / key).write_bytes(data)
         self.written += 1
         self.bytes_written += len(data)
+        return key
+
+    def store_asset(self, archive: VaultArchive, vault_path: str) -> str:
+        """原件落盘：与附件同目录，但计入 assets 统计（压缩文档导入用）."""
+        data = archive.read(vault_path)
+        suffix = Path(vault_path).suffix.lower()
+        key = f"{uuid.uuid4().hex}{suffix}"
+        directory = Path(settings.UPLOAD_DIR) / str(self.workspace_id)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / key).write_bytes(data)
+        self.assets_written += 1
+        self.assets_bytes += len(data)
         return key
 
     def bind_owner(self, document_id: int, file_key: str) -> None:
@@ -1024,22 +1145,30 @@ def import_vault(
     create_tags: bool = True,
     import_attachments: bool = True,
     status: str = DOC_STATUS_DRAFT,
+    style: str = "obsidian",
 ) -> dict[str, Any]:
-    """把库导入为文档树（文件夹 + 文档 + 标签 + 附件）."""
+    """把压缩包导入为文档树（文件夹 + 文档 + 标签 + 附件 + 原件）.
+
+    ``style=archive``（压缩文档）时，未被告警的 PDF / Office / 图片 / MHTML 按原件落为
+    只读文档；``style=obsidian``（默认）只导入 Markdown 笔记与 .canvas / .base 转换文档。
+    """
     if conflict not in CONFLICT_POLICIES:
         raise BadRequestError(f"不支持的冲突策略：{conflict}，可选 {'/'.join(CONFLICT_POLICIES)}")
     if status not in DOC_STATUSES:
         raise BadRequestError(f"不支持的文档状态：{status}")
+    _validate_import_style(style)
 
     content_service.require_editor(db, workspace_id, user)
     _validate_parent(db, workspace_id, parent_id)
 
     notes = _parse_notes(archive)
-    if not notes:
-        raise BadRequestError("压缩包里没有找到 markdown 文档（.md / .markdown）")
-
     attachment_paths = archive.attachment_paths()
     index = _build_index(notes, attachment_paths)
+    # 两种方式都把「未被笔记引用、又不在 attachments/ 下」的原件导入为只读文档，
+    # 这样导出的 PDF / Office / 图片在回环导入时不会丢失（需求 0088）
+    assets = _archive_assets(archive, notes, index)
+    if not notes and not assets:
+        raise BadRequestError("压缩包里没有找到可导入的文档（.md 或 PDF / Office / 图片等原件）")
     siblings = _sibling_map(db, workspace_id)
     store = _AttachmentStore(db, workspace_id, user, enabled=import_attachments)
 
@@ -1087,6 +1216,7 @@ def import_vault(
         "attachment_bytes": 0,
         "tags_created": [],
         "documents": [],
+        "assets": 0,
         "converted": 0,
         "skipped_notes": [],
         "warnings": [],
@@ -1183,10 +1313,74 @@ def import_vault(
                 }
             )
 
+    # 压缩文档：原件族按原样落为只读文档（需求 0088，与导出对齐）
+    for asset in sorted(assets, key=lambda a: a.path):
+        parent = ensure_folder(asset.folder)
+        title = _clean_title(asset.title)
+        existing = _existing_child(siblings, parent, title)
+        if existing is not None and existing.is_folder:
+            title = _next_title(siblings, parent, title)
+            existing = None
+        elif existing is not None and conflict == CONFLICT_SKIP:
+            stats["skipped"] += 1
+            if len(stats["skipped_notes"]) < DETAIL_LIMIT:
+                stats["skipped_notes"].append({"path": asset.path, "title": title, "reason": "同名文档已存在"})
+            continue
+        elif existing is not None and (conflict == CONFLICT_RENAME or not existing.asset_file_key):
+            # 可编辑的 Markdown 不被只读原件覆盖：按改名处理（与通用导入一致）
+            title = _next_title(siblings, parent, title)
+            existing = None
+
+        key = store.store_asset(archive, asset.path)
+        if existing is not None:
+            previous = existing.asset_file_key
+            doc = content_service.replace_document_asset(
+                db,
+                workspace_id,
+                existing.id,
+                user,
+                asset_file_key=key,
+                asset_mime=asset.mime,
+                content_size=asset.size,
+            )
+            if previous and previous != key:
+                from cndb.plugins.files.services import forget_owner, remove_workspace_file
+
+                forget_owner(db, previous)
+                remove_workspace_file(workspace_id, previous)
+            stats["updated"] += 1
+        else:
+            order = len(siblings.get(parent, {}))
+            doc = content_service.create_document(
+                db,
+                workspace_id,
+                user,
+                title=title,
+                content="",
+                parent_id=(parent or None),
+                status=status,
+                sort_order=order,
+                change_type=CHANGE_TYPE_IMPORT,
+                content_type=asset.content_type,
+                asset_file_key=key,
+                asset_mime=asset.mime,
+                content_size=asset.size,
+            )
+            siblings.setdefault(parent, {})[title.strip().lower()] = doc
+            stats["created"] += 1
+        store.bind_owner(doc.id, key)
+        store.flush()
+        stats["assets"] += 1
+        if len(stats["documents"]) < RESULT_DOCS_LIMIT:
+            stats["documents"].append(
+                {"id": doc.id, "title": doc.title, "path": asset.path, "kind": asset.content_type}
+            )
+
     stats["converted"] = converted_created
     stats["folders_created"] = created_folders
     stats["attachments"] = store.written
     stats["attachment_bytes"] = store.bytes_written
+    stats["asset_bytes"] = store.assets_bytes
     stats["tags_created"] = list(dict.fromkeys(tags.created))
     stats["total"] = stats["created"] + stats["updated"] + stats["skipped"]
     if total_normalized:

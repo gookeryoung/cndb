@@ -21,7 +21,7 @@ import {
   Tag as AntTag,
   Typography,
 } from 'antd'
-import { FileTextOutlined, FileZipOutlined, FolderOpenOutlined } from '@ant-design/icons'
+import { AppstoreOutlined, FileTextOutlined, FileZipOutlined } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { VaultImportForm } from './ObsidianImportModal'
 import {
@@ -56,7 +56,7 @@ interface Props {
   parentLabel?: string
 }
 
-type ImportMode = 'single' | 'folder' | 'vault'
+type ImportMode = 'single' | 'archive' | 'vault'
 
 const FORMAT_LABEL: Record<string, string> = {
   '.md': 'Markdown',
@@ -80,14 +80,10 @@ const FORMAT_LABEL: Record<string, string> = {
   '.bmp': '图片',
 }
 
-/** 把浏览器选中的文件整理为批次条目：文件夹模式取相对路径，单文件模式取文件名 */
-function toEntries(files: FileList | null, mode: ImportMode): FileImportEntry[] {
+/** 把浏览器选中的文件整理为批次条目（单文件模式取文件名） */
+function toEntries(files: FileList | null): FileImportEntry[] {
   if (!files) return []
-  return Array.from(files).map(file => {
-    const relative = (file as File & { webkitRelativePath?: string }).webkitRelativePath
-    const path = mode === 'folder' ? relative || file.name : file.name
-    return { file, path }
-  })
+  return Array.from(files).map(file => ({ file, path: file.name }))
 }
 
 export default function DocumentImportModal({ open, onClose, workspaceId, parentId, parentLabel }: Props) {
@@ -169,7 +165,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   })
 
   const pick = (files: FileList | null) => {
-    const batch = toEntries(files, mode)
+    const batch = toEntries(files)
     if (batch.length === 0) return
     setEntries(batch)
     setAnalysis(null)
@@ -290,7 +286,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         </Button>,
       ]
 
-  /** 模式选择器：单文件 / 文件夹 / Obsidian 库，库模式下也常驻以便随时切回 */
+  /** 模式选择器：单文件 / 压缩包 / Obsidian 库（压缩包与 Obsidian 库均上传 .zip，与导出对齐） */
   const modeSelector = (
     <Space size={16} wrap>
       <Typography.Text type="secondary">导入模式</Typography.Text>
@@ -312,13 +308,13 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
             ),
           },
           {
-            value: 'folder',
+            value: 'archive',
             label: (
               <Space size={6}>
                 <span aria-hidden>
-                  <FolderOpenOutlined />
+                  <FileZipOutlined />
                 </span>
-                文件夹
+                压缩包
               </Space>
             ),
           },
@@ -327,7 +323,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
             label: (
               <Space size={6}>
                 <span aria-hidden>
-                  <FileZipOutlined />
+                  <AppstoreOutlined />
                 </span>
                 Obsidian 库
               </Space>
@@ -351,18 +347,19 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     >
       {/* 统一纵向节奏：三种模式同一容器 + 12px 间距，首个元素贴齐弹窗内容顶部 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-        {mode === 'vault' ? (
-          /* Obsidian 库导入：独立表单体，自带动作按钮与落库流程 */
+        {mode === 'archive' || mode === 'vault' ? (
+          /* 压缩包 / Obsidian 库导入：独立表单体，自带动作按钮与落库流程 */
           <>
             {modeSelector}
             <VaultImportForm
               workspaceId={workspaceId}
               parentId={parentId}
               parentLabel={parentLabel}
+              style={mode === 'vault' ? 'obsidian' : 'archive'}
               onClose={close}
             />
           </>
-        ) : result ? (
+        ) : mode === 'single' && result ? (
           <div
             data-testid="file-import-result"
             style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
@@ -397,14 +394,11 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
           <>
             {modeSelector}
 
-            {/* 原生 file input：单文件模式选一个，文件夹模式带 webkitRelativePath */}
+            {/* 原生 file input：单文件模式选一个；压缩包 / 库模式走 VaultImportForm 的 zip 输入 */}
             <input
               ref={inputRef}
               type="file"
               accept={FILE_IMPORT_ACCEPT}
-              multiple={mode === 'folder'}
-              // webkitdirectory 非标准属性，React 需按字符串挂载
-              {...(mode === 'folder' ? { webkitdirectory: '' } : {})}
               style={{ display: 'none' }}
               data-testid="file-import-input"
               onChange={event => {
@@ -418,10 +412,10 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               testId="file-import-dropzone"
               pickTestId="file-import-pick"
               helpTestId="file-import-help"
-              icon={mode === 'folder' ? <FolderOpenOutlined /> : <FileTextOutlined />}
-              title={mode === 'folder' ? '选择文件夹导入' : '选择文件导入'}
+              icon={<FileTextOutlined />}
+              title="选择文件导入"
               subtitle={`导入到${targetText} · 支持 Markdown / Word / HTML / MHTML / PDF / Excel / PPT / 图片`}
-              actionLabel={mode === 'folder' ? '选择文件夹' : '选择文件'}
+              actionLabel="选择文件"
               disabled={busy}
               onPick={() => inputRef.current?.click()}
               helpTitle="格式与处理方式"

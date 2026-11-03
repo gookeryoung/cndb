@@ -259,8 +259,10 @@ export interface VaultPreviewItem {
   size: number
   tags: string[]
   status: 'new' | 'conflict'
-  /** 来源类型：markdown / canvas / base（后两者由 .canvas / .base 转换） */
-  kind: 'markdown' | 'canvas' | 'base'
+  /** 来源类型：markdown / canvas / base（后两者由 .canvas / .base 转换）/ 原件渲染族（pdf / xlsx / word …） */
+  kind: string
+  /** true = 压缩文档里的原件（按原文件导入，只读） */
+  is_asset?: boolean
   existing_document_id: number | null
 }
 
@@ -287,6 +289,10 @@ export interface VaultAnalyzeResult {
   total_markdown: number
   /** 其中由 .canvas / .base 转换的文档数 */
   total_converted: number
+  /** 压缩文档里的原件（PDF / Office / 图片 / MHTML）数 */
+  assets?: number
+  /** 导入方式：archive=压缩文档 / obsidian=Obsidian 库 */
+  style?: VaultExportStyle
   total_folders: number
   total_attachments: number
   total_attachment_bytes: number
@@ -310,6 +316,8 @@ export interface VaultImportResult {
   folders_created: number
   /** 由 .canvas / .base 转换导入的文档数 */
   converted: number
+  /** 按原件导入的只读文档数 */
+  assets?: number
   attachments: number
   attachment_bytes: number
   tags_created: string[]
@@ -321,6 +329,8 @@ export interface VaultImportResult {
 export interface VaultImportOptions {
   /** 导入到哪个文件夹（空 = 根目录） */
   parentId?: number | null
+  /** 导入方式（需求 0088）：archive=压缩文档（默认）/ obsidian=Obsidian 库 */
+  style?: VaultExportStyle
   conflict?: VaultConflictPolicy
   importAttachments?: boolean
   importTags?: boolean
@@ -767,10 +777,16 @@ export const documentsApi = {
   // 请求拦截器会删掉它再由浏览器补 boundary（否则后端解析不了表单 → 422）。
 
   /** 上传 zip 解析预览（只读，不落库）：条目数 / 冲突 / 标签 / 告警 */
-  vaultAnalyze: (wid: number | string, file: File, parentId?: number | null) => {
+  vaultAnalyze: (
+    wid: number | string,
+    file: File,
+    parentId?: number | null,
+    style: VaultExportStyle = 'obsidian',
+  ) => {
     const form = new FormData()
     form.append('file', file)
     if (parentId != null) form.append('parent_id', String(parentId))
+    form.append('style', style)
     return api
       .post<VaultAnalyzeResult>(`${base(wid)}/import/analyze`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -787,6 +803,7 @@ export const documentsApi = {
     form.append('import_attachments', String(options.importAttachments ?? true))
     form.append('import_tags', String(options.importTags ?? true))
     form.append('status', options.status ?? 'draft')
+    form.append('style', options.style ?? 'obsidian')
     return api
       .post<VaultImportResult>(`${base(wid)}/import`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },

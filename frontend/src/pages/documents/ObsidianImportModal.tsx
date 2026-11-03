@@ -26,6 +26,7 @@ import {
   documentsApi,
   type VaultAnalyzeResult,
   type VaultConflictPolicy,
+  type VaultExportStyle,
   type VaultImportResult,
   type VaultPreviewItem,
 } from '@/api/documents'
@@ -41,18 +42,32 @@ import {
   ImportTruncatedHint,
 } from './importUi'
 
+/** 预览表里的类型标签：结构文件 / 原件渲染族 */
+const KIND_LABEL: Record<string, string> = {
+  canvas: 'Canvas',
+  base: 'Base',
+  pdf: 'PDF',
+  xlsx: 'Excel',
+  pptx: 'PPT',
+  word: 'Word',
+  image: '图片',
+  mhtml: 'MHTML',
+}
+
 interface Props {
   workspaceId: number
   /** 默认导入位置：当前浏览的文件夹（null = 根目录） */
   parentId?: number | null
   /** 当前文件夹标题，仅用于文案 */
   parentLabel?: string
+  /** 压缩包导入方式（需求 0088）：archive=压缩文档（默认）/ obsidian=Obsidian 库 */
+  style?: VaultExportStyle
   /** 表单体关闭回调（取消 / 完成） */
   onClose: () => void
 }
 
 /** 库导入表单体：上传 zip → 预览 → 确认策略 → 落库，动作按钮内置于表单底部（不依赖 Modal footer） */
-export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }: Props) {
+export function VaultImportForm({ workspaceId, parentId, parentLabel, style = 'obsidian', onClose }: Props) {
   const { message } = AntApp.useApp()
   const qc = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -76,7 +91,8 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
   }
 
   const analyzeMut = useMutation({
-    mutationFn: (payload: { file: File }) => documentsApi.vaultAnalyze(workspaceId, payload.file, parentId),
+    mutationFn: (payload: { file: File }) =>
+      documentsApi.vaultAnalyze(workspaceId, payload.file, parentId, style),
     onSuccess: data => {
       setAnalysis(data)
       // 有冲突时默认「自动改名」；无冲突时策略无实际影响
@@ -92,6 +108,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
     mutationFn: (payload: { file: File }) =>
       documentsApi.vaultImport(workspaceId, payload.file, {
         parentId,
+        style,
         conflict,
         importAttachments,
         importTags,
@@ -127,7 +144,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
         render: (value: string, item: VaultPreviewItem) =>
           item.kind && item.kind !== 'markdown' ? (
             <Space size={4}>
-              <AntTag color="blue">{item.kind === 'canvas' ? 'Canvas' : 'Base'}</AntTag>
+              <AntTag color={item.is_asset ? 'default' : 'blue'}>{KIND_LABEL[item.kind] ?? item.kind}</AntTag>
               <span>{value}</span>
             </Space>
           ) : (
@@ -177,6 +194,12 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
           zero: analysis.total_converted === 0,
         },
         { key: 'folders', label: '新建文件夹', value: `${analysis.total_folders} 个`, zero: analysis.total_folders === 0 },
+        {
+          key: 'assets',
+          label: '原件',
+          value: `${analysis.assets ?? 0} 个`,
+          zero: (analysis.assets ?? 0) === 0,
+        },
         { key: 'conflicts', label: '同名冲突', value: `${analysis.conflicts} 篇`, zero: analysis.conflicts === 0 },
         {
           key: 'attachments',
@@ -236,7 +259,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
             type="success"
             showIcon
             title={`已导入到${targetText}`}
-            description={`新增 ${result.created} 篇（其中转换文件 ${result.converted} 个）· 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 篇 · 新建文件夹 ${result.folders_created} 个 · 附件 ${result.attachments} 个`}
+            description={`新增 ${result.created} 篇 · 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 篇 · 新建文件夹 ${result.folders_created} 个 · 原件 ${result.assets ?? 0} 个 · 附件 ${result.attachments} 个${result.converted ? ` · 其中转换文件 ${result.converted} 个` : ''}`}
           />
           {result.tags_created.length > 0 && (
             <Typography.Text type="secondary">
@@ -282,17 +305,31 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
             pickTestId="vault-import-pick"
             helpTestId="vault-import-help"
             icon={<FileZipOutlined />}
-            title="上传 Obsidian 库压缩包"
-            subtitle={`导入到${targetText} · 先把库文件夹压缩为 .zip，解析后先预览再写入`}
+            title={style === 'archive' ? '上传压缩文档' : '上传 Obsidian 库压缩包'}
+            subtitle={
+              style === 'archive'
+                ? `导入到${targetText} · 由导出生成的 .zip，按原结构还原 Markdown 与原件`
+                : `导入到${targetText} · 先把库文件夹压缩为 .zip，解析后先预览再写入`
+            }
             actionLabel="选择 .zip 文件"
             disabled={busy}
             onPick={() => inputRef.current?.click()}
-            helpTitle="库导入说明"
+            helpTitle={style === 'archive' ? '压缩包导入说明' : '库导入说明'}
             help={
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
-                <li>目录结构还原为文件夹，front-matter 的 title / tags 生效</li>
-                <li>附件按引用改写为站内文件，双链转为站内链接</li>
-                <li>.canvas / .base 转为文档，无法识别的条目计入「忽略条目」</li>
+                {style === 'archive' ? (
+                  <>
+                    <li>文件夹层级按包内路径还原；Markdown 按正文导入（无 front-matter 也适用）</li>
+                    <li>PDF / Word / Excel / PPT / 图片 / MHTML 按原件导入为只读文档</li>
+                    <li>站内图片随包还原为附件，正文引用保持可用</li>
+                  </>
+                ) : (
+                  <>
+                    <li>目录结构还原为文件夹，front-matter 的 title / tags 生效</li>
+                    <li>附件按引用改写为站内文件，双链转为站内链接</li>
+                    <li>.canvas / .base 转为文档，无法识别的条目计入「忽略条目」</li>
+                  </>
+                )}
               </ul>
             }
             selected={

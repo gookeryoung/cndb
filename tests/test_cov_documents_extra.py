@@ -411,9 +411,14 @@ class TestObsidianImportHttp:
         r = _post_zip(client, DOCS.format(ws=ws.id) + "/import", _build_zip({"a.md": "# a\n"}), auth, status="weird")
         assert r.status_code == 400
 
-    def test_import_rejects_empty_vault(self, client, ws, auth):
-        r = _post_zip(client, DOCS.format(ws=ws.id) + "/import", _build_zip({"图片.png": b"PNG"}), auth)
+    def test_import_rejects_vault_without_importable_files(self, client, ws, auth):
+        # 只含无法导入的杂项（.txt）→ 400；纯图片 zip 会作为原件文档导入（需求 0088）
+        r = _post_zip(client, DOCS.format(ws=ws.id) + "/import", _build_zip({"readme.txt": b"hi"}), auth)
         assert r.status_code == 400
+
+        r = _post_zip(client, DOCS.format(ws=ws.id) + "/import", _build_zip({"图片.png": b"PNG"}), auth)
+        assert r.status_code == 200, r.text
+        assert r.json()["assets"] == 1
 
     def test_import_nested_folders_and_duplicate_attachment(self, client, ws, auth):
         data = _build_zip(

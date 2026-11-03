@@ -30,6 +30,8 @@ describe('documentsApi.vaultAnalyze', () => {
     expect(body).toBeInstanceOf(FormData)
     expect((body as FormData).get('file')).toBe(FILE)
     expect((body as FormData).get('parent_id')).toBe('9')
+    // 缺省导入方式为 Obsidian 库；压缩文档显式传 archive
+    expect((body as FormData).get('style')).toBe('obsidian')
     expect(multipartHeader(post.mock.calls[0])).toBe('multipart/form-data')
     expect(config).toBeTruthy()
   })
@@ -40,6 +42,9 @@ describe('documentsApi.vaultAnalyze', () => {
     await documentsApi.vaultAnalyze(WID, FILE, null)
 
     expect((post.mock.calls[0][1] as FormData).get('parent_id')).toBeNull()
+
+    await documentsApi.vaultAnalyze(WID, FILE, null, 'archive')
+    expect((post.mock.calls[1][1] as FormData).get('style')).toBe('archive')
   })
 })
 
@@ -63,6 +68,7 @@ describe('documentsApi.vaultImport', () => {
     expect(form.get('import_attachments')).toBe('false')
     expect(form.get('import_tags')).toBe('true')
     expect(form.get('status')).toBe('published')
+    expect(form.get('style')).toBe('obsidian')
     expect(multipartHeader(post.mock.calls[0])).toBe('multipart/form-data')
   })
 
@@ -77,6 +83,11 @@ describe('documentsApi.vaultImport', () => {
     expect(form.get('import_attachments')).toBe('true')
     expect(form.get('import_tags')).toBe('true')
     expect(form.get('status')).toBe('draft')
+    expect(form.get('style')).toBe('obsidian')
+
+    // 压缩文档导入：显式携带 style=archive
+    await documentsApi.vaultImport(WID, FILE, { style: 'archive' })
+    expect((post.mock.calls[1][1] as FormData).get('style')).toBe('archive')
   })
 })
 

@@ -109,7 +109,28 @@ describe('Obsidian 库导入弹窗', () => {
     expect(screen.getByTestId('vault-import-conflict')).toBeInTheDocument()
     expect(screen.getByTestId('vault-import-preview')).toHaveTextContent('笔记/设计稿.md')
     expect(screen.getByText('2 处双链统一为 [[标题]]')).toBeInTheDocument()
-    expect(documentsApi.vaultAnalyze).toHaveBeenCalledWith(WID, expect.any(File), null)
+    expect(documentsApi.vaultAnalyze).toHaveBeenCalledWith(WID, expect.any(File), null, 'obsidian')
+  })
+
+  it('压缩文档方式：卡片文案与解析 / 导入都带 style=archive', async () => {
+    renderProviders(
+      <ObsidianImportModal style="archive" onClose={() => {}} workspaceId={WID} parentId={null} />,
+    )
+    const zone = await screen.findByTestId('vault-import-upload')
+    expect(zone).toHaveTextContent('上传压缩文档')
+    expect(zone).toHaveTextContent('按原结构还原 Markdown 与原件')
+
+    await upload()
+    await screen.findByTestId('vault-import-summary')
+    expect(documentsApi.vaultAnalyze).toHaveBeenCalledWith(WID, expect.any(File), null, 'archive')
+
+    fireEvent.click(screen.getByTestId('vault-import-submit'))
+    await waitFor(() => expect(documentsApi.vaultImport).toHaveBeenCalledTimes(1))
+    expect(documentsApi.vaultImport).toHaveBeenCalledWith(
+      WID,
+      expect.any(File),
+      expect.objectContaining({ style: 'archive' }),
+    )
   })
 
   it('按确认的策略与开关导入', async () => {
@@ -129,6 +150,7 @@ describe('Obsidian 库导入弹窗', () => {
       expect.any(File),
       expect.objectContaining({
         parentId: 3,
+        style: 'obsidian',
         conflict: 'skip',
         importAttachments: true,
         importTags: true,

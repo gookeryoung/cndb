@@ -1,4 +1,4 @@
-# ADR 0010: 文档通用文件导入（md / docx / html，单文件与文件夹模式）
+# ADR 0010: 文档通用文件导入（md / docx / html，单文件与压缩包模式）
 
 Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-20
@@ -142,7 +142,7 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| 导入弹窗 | `frontend/src/pages/documents/DocumentImportModal.tsx`（新增，或扩展 `ObsidianImportModal.tsx`，见 D5） | 单文件 / 文件夹模式切换；`accept=".md,.markdown,.docx,.html,.htm"`；文件夹模式用目录选择（`webkitdirectory`，取 `file.webkitRelativePath` 作为 `paths`）；两段式 analyze→import；预览表 + 冲突策略 + 状态选择 |
+| 导入弹窗 | `frontend/src/pages/documents/DocumentImportModal.tsx`（新增，或扩展 `ObsidianImportModal.tsx`，见 D5） | 单文件 / 压缩包 / Obsidian 库三种模式（需求 0088 起文件树导入改为 `.zip` 压缩包，与导出对齐）；单文件 `accept=".md,.markdown,.docx,.html,.htm"`；压缩包 / 库走 zip 通道（`style=archive|obsidian`）；两段式 analyze→import；预览表 + 冲突策略 + 状态选择 |
 | 入口 | `frontend/src/pages/documents/DocumentsPage.tsx`（`~:884` 附近） | 工具栏新增「导入文件」入口按钮 |
 | API | `frontend/src/api/documents.ts` | 新增 `filesAnalyze` / `filesImport`（multipart：`files` + `paths` + 选项） |
 | 类型 | `frontend/src/api/documents.ts` | `FileImportAnalyzeResult` / `FileImportResult` / `FileImportOptions` |
@@ -162,7 +162,7 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 
 - `analyze`：预览篇数 / 文件夹 / 冲突 / 跳过 / 告警，**不落库**（复查库内无新增）；
 - `import`：三种格式各一例落库，正文 == 规整后 Markdown，标题 == 识别结果；
-- 文件夹模式：两层相对路径 → 两级文件夹节点 + 文档；隐藏目录 / 非法路径跳过；
+- 压缩包模式：两层相对路径 → 两级文件夹节点 + 文档；隐藏目录 / 非法路径 / 路径穿越跳过；原件族按原文件导入（需求 0088）；
 - 冲突策略：`skip`/`rename`/`overwrite` 三态；`overwrite` 走 `update_content` 生成新版本且 `change_type=auto_import`；
 - 权限：非 editor → 403；非成员 → 403；`parent_id` 非文件夹 → 409；
 - 超限：单文件超限只跳过该条；总条目/总量超限 → 400；
@@ -184,7 +184,7 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 |---|---|---|
 | **P0 转换管线 + 判定单测** | `services/importers/`（reader / normalize / markdown / docx / html）+ 标题识别 + 规整器 + 全量单测。不开放端点 | 低 |
 | **P1 端点接入 + 落库** | `import/files/analyze` + `import/files` 两个端点；文件夹层级 / 冲突策略 / 权限 / 边界（I5）；接口层测试 | 中 |
-| **P2 前端入口** | 导入弹窗（单文件 / 文件夹模式）+ Page 入口按钮 + api 封装 + 前端单测 + e2e | 中 |
+| **P2 前端入口** | 导入弹窗（单文件 / 压缩包模式）+ Page 入口按钮 + api 封装 + 前端单测 + e2e | 中 |
 
 ## 决策记录（唯一决策台账）
 
@@ -195,7 +195,7 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 | D3 | 标题识别优先级 | **内嵌标题 > 首个显式标题行 > 文件名**；命中标题行从正文剥离 | 用户确认；C6 要求「自动识别标题和正文内容」，需固定优先级并防标题重复 | 仅用文件名（丢失文档内标题）/ 保留标题行在正文（重复） | `importers/*.py` 标题提取 |
 | D4 | 空白规整边界 | **保守清理**：只清行尾空白、折叠连续空行、折叠行内连续空格、清无效行首缩进；**不删中英文间空格**，不改围栏/front-matter/表格 | 用户确认；「中英文间空格」误伤风险高（I3 保语义） | 激进删除所有空格（破坏可读性/语义） | `importers/normalize.py` |
 | D5 | 与既有 Obsidian 导入的关系 | **新建独立入口「导入文件」**，保留 Obsidian 通道不动 | 用户确认；载体不同（文件批次 vs zip）、格式集合不同（三类源 vs 库语法），独立更清晰 | 合并为一个入口（模式分支增多，zip 与目录上传 UI 语义不同） | `DocumentImportModal.tsx` / `DocumentsPage.tsx` |
-| D6 | 文件夹模式上传载体 | **浏览器目录选择**（`webkitdirectory`，多文件 + `paths`）；zip 由 Obsidian 通道承担 | 用户确认；浏览器无原生目录树上传，zip 已在既有通道 | 仅支持 zip（不够直观）/ 仅支持多选文件（丢失目录结构） | `importers/reader.py` + 前端 |
+| D6 | 文件树导入载体 | **压缩包（`.zip`）**：需求 0088 起「文件夹模式」由「压缩包」取代，与导出对齐；后端复用 vault zip 通道（`style=archive`，原件族按原文件导入），前端不再使用 `webkitdirectory` | 用户确认（2026-11-03）；导出已是 zip，导入用同一载体可回环 | 浏览器目录选择（两端口径不一致，无法回环）/ 仅支持多选文件（丢失目录结构） | `routers/vault.py`、`services/obsidian.py` + 前端 |
 | D7 | 导入文档默认状态 | **草稿**（`draft`），与既有导入默认一致 | I4 一致 + 降低误发风险 | 已发布（导入即对全工作区可见） | 端点 Form 默认值 |
 | D8 | 冲突默认策略 | **`rename`**（保留两份） | 与既有导入默认一致（无损、可回溯） | `skip` / `overwrite` 作默认（有丢失或覆盖风险） | 端点 Form 默认值 |
 | D9 | 转换失败的粒度 | **逐条隔离**（I5）：单条失败只记 `skipped`，整批继续 | C8「足够健壮」；批量导入不应因单文件中断 | 整批失败（一个坏文件毁掉整批） | `importers/reader.convert_batch` |
@@ -217,7 +217,7 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 | 维度 | 飞书云文档「导入」 | Notion Import | 本设计 |
 |---|---|---|---|
 | 支持格式 | doc/docx/pdf/md/txt 等 | md/html/docx/txt/zip | md/docx/html（C4 限定三类） |
-| 目录结构 | 单文件为主 | zip 保留目录树 | 单文件 / 文件夹（多文件 + 相对路径，D6） |
+| 目录结构 | 单文件为主 | zip 保留目录树 | 单文件 / 压缩包（zip，D6） |
 | 转换目标 | 自有块结构 | 自有块结构 | Markdown（项目正文唯一格式，I1） |
 
 来源：飞书云文档帮助中心《导入文件》；Notion Help《Import your content》。
@@ -233,8 +233,8 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 ## 交接（会话结束更新）
 
 - 当前阶段：P0/P1/P2 均已落地并提交（`a322f993`），功能完结
-- 已完成：转换管线（md/docx/html → Markdown，标题三级识别 + 剥离，保守空白规整）；两段式端点（analyze/import）+ 落库编排（文件夹层级 / 冲突三策略 / 附件登记）；前端弹窗（单文件 / 文件夹模式）+ Page 入口
+- 已完成：转换管线（md/docx/html → Markdown，标题三级识别 + 剥离，保守空白规整）；两段式端点（analyze/import）+ 落库编排（文件夹层级 / 冲突三策略 / 附件登记）；前端弹窗（单文件 / 压缩包模式）+ Page 入口
 - 测试：后端新模块覆盖率 99%（整体 98.12% ≥ 95%）；前端单测 6 例；e2e 单文件 / 文件夹 2 例通过
-- 已知坑：模块名为 `importers`（`import` 是 Python 保留字，无法作为包名）；antd `Radio.Group optionType="button"` 的可点击目标是 label，`getByRole("radio")` 命中的是隐藏 input；本环境浏览器不支持给 webkitdirectory input 注入目录，e2e 文件夹模式在页面内合成含 `webkitRelativePath` 的 FileList 后走真实 UI/后端
+- 已知坑：模块名为 `importers`（`import` 是 Python 保留字，无法作为包名）；antd `Radio.Group optionType="button"` 的可点击目标是 label，`getByRole("radio")` 命中的是隐藏 input；文件树导入走 `.zip`（需求 0088），e2e 需在页面内合成 zip 后走真实 UI/后端
 - 下一步：无（功能已完结）
 - 最近一次全绿：见本次收尾 `make check` 结果

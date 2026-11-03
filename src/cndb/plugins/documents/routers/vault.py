@@ -65,15 +65,18 @@ async def analyze_document_vault(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     parent_id: Annotated[int | None, Form(description="导入到哪个文件夹（空 = 根目录）")] = None,
+    style: Annotated[
+        str, Form(description="导入方式：archive=压缩文档（原件按文档导入）/ obsidian=Obsidian 库")
+    ] = "obsidian",
 ) -> dict[str, Any]:
-    """解析库并返回导入预览（不写任何数据）.
+    """解析压缩包并返回导入预览（不写任何数据）.
 
-    返回笔记/文件夹/附件数量、冲突清单（同名文档）、标签、告警与被忽略条目，
+    返回笔记 / 原件 / 文件夹 / 附件数量、冲突清单（同名文档）、标签、告警与被忽略条目，
     前端据此让用户确认冲突策略后再调用 ``POST /import``。
     """
     _require_member(db, workspace_id, current_user)
     archive = await _read_archive(file)
-    return obsidian.analyze_vault(db, workspace_id, current_user, archive, parent_id=parent_id)
+    return obsidian.analyze_vault(db, workspace_id, current_user, archive, parent_id=parent_id, style=style)
 
 
 @router.post("/import")
@@ -87,8 +90,11 @@ async def import_document_vault(
     import_attachments: Annotated[bool, Form(description="是否导入图片等附件")] = True,
     import_tags: Annotated[bool, Form(description="是否按 front-matter 建标签")] = True,
     status: Annotated[str, Form(description="新建文档的状态：draft / published / archived")] = "draft",
+    style: Annotated[
+        str, Form(description="导入方式：archive=压缩文档（原件按文档导入）/ obsidian=Obsidian 库")
+    ] = "obsidian",
 ) -> dict[str, Any]:
-    """把 Obsidian 库导入为文档树（文件夹 + 文档 + 标签 + 附件）."""
+    """把压缩包导入为文档树（文件夹 + 文档 + 标签 + 附件 + 原件）."""
     _require_member(db, workspace_id, current_user)
     archive = await _read_archive(file)
     stats = obsidian.import_vault(
@@ -101,6 +107,7 @@ async def import_document_vault(
         create_tags=import_tags,
         import_attachments=import_attachments,
         status=status,
+        style=style,
     )
     # 文档树缓存按用户隔离，写后立即失效由路由依赖负责；这里补一次防并发读回填
     invalidate_document_tree_cache(workspace_id)

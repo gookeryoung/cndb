@@ -79,13 +79,6 @@ const RESULT: FileImportResult = {
   warnings: [{ path: '设计.docx', message: '内嵌图片未导入：image1.png' }],
 }
 
-/** 造一个带 webkitRelativePath 的 File（浏览器只读属性，测试里补上） */
-function folderFile(name: string, relativePath: string, content = 'x') {
-  const file = new File([content], name, { type: 'text/markdown' })
-  Object.defineProperty(file, 'webkitRelativePath', { value: relativePath })
-  return file
-}
-
 function fileInput(): HTMLInputElement {
   return document.querySelector('input[type="file"]') as HTMLInputElement
 }
@@ -132,7 +125,7 @@ const VAULT_ANALYSIS: VaultAnalyzeResult = {
 }
 
 describe('通用导入弹窗', () => {
-  it('模式选择器与拖放区共用一套图标（单文件 / 文件夹 / zip 库）', async () => {
+  it('模式选择器与拖放区共用一套图标（单文件 / 压缩包 / Obsidian 库）', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
     const modeIcons = () =>
       Array.from(
@@ -140,23 +133,22 @@ describe('通用导入弹窗', () => {
       ).map(node => node.getAttribute('class'))
     expect(modeIcons()).toEqual([
       expect.stringContaining('anticon-file-text'),
-      expect.stringContaining('anticon-folder-open'),
       expect.stringContaining('anticon-file-zip'),
+      expect.stringContaining('anticon-appstore'),
     ])
 
-    // 单文件 → 文件夹：拖放区图标随模式切换，且与选择器同源（Modal 渲染在 portal 里）
-    const zoneIcon = (name: string) =>
-      document.querySelector(`[data-testid="file-import-dropzone"] .anticon-${name}`)
-    expect(zoneIcon('file-text')).toBeTruthy()
-    fireEvent.click(screen.getByRole('radio', { name: '文件夹' }))
-    expect(zoneIcon('folder-open')).toBeTruthy()
+    // 单文件：拖放区用文档图标
+    expect(document.querySelector('[data-testid="file-import-dropzone"] .anticon-file-text')).toBeTruthy()
 
-    // 库模式：拖放区同样是压缩包图标，不再是独立的 Dragger 样式
-    fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
-    const vaultZone = await screen.findByTestId('vault-import-upload')
-    expect(vaultZone.querySelector('.anticon-file-zip')).toBeTruthy()
-    expect(vaultZone).toHaveTextContent('上传 Obsidian 库压缩包')
+    // 压缩包：与「Obsidian 库」共用 zip 卡片，只是文案不同
+    fireEvent.click(screen.getByRole('radio', { name: '压缩包' }))
+    const archiveZone = await screen.findByTestId('vault-import-upload')
+    expect(archiveZone.querySelector('.anticon-file-zip')).toBeTruthy()
+    expect(archiveZone).toHaveTextContent('上传压缩文档')
     expect(screen.getByTestId('vault-import-pick')).toHaveTextContent('选择 .zip 文件')
+
+    fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
+    expect(await screen.findByTestId('vault-import-upload')).toHaveTextContent('上传 Obsidian 库压缩包')
   })
 
   it('三种模式的底部动作条与文字块结构一致（切模式不跳动）', async () => {
@@ -168,12 +160,8 @@ describe('通用导入弹窗', () => {
     expect(footers()).toHaveLength(1)
     expect(subtitle()).toHaveStyle({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' })
 
-    fireEvent.click(screen.getByRole('radio', { name: '文件夹' }))
-    expect(footers()).toHaveLength(1)
-    expect(subtitle()).toHaveStyle({ whiteSpace: 'nowrap' })
-
-    // 库模式复用同一动作条与同一文字块，不额外套一层弹窗 footer
-    fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
+    // 压缩包与 Obsidian 库复用同一动作条与同一文字块，不额外套一层弹窗 footer
+    fireEvent.click(screen.getByRole('radio', { name: '压缩包' }))
     const vaultZone = await screen.findByTestId('vault-import-upload')
     expect(footers()).toHaveLength(1)
     expect(within(vaultZone).getByTitle(/导入到/)).toHaveStyle({ whiteSpace: 'nowrap' })
@@ -181,17 +169,17 @@ describe('通用导入弹窗', () => {
     expect(vaultZone.querySelector('[data-testid="vault-import-picked"]')).toBeNull()
   })
 
-  it('库模式纵向节奏与文件 / 文件夹一致（同一 flex 容器 + 12px 间距）', async () => {
+  it('压缩包模式的纵向节奏与单文件一致（同一 flex 容器 + 12px 间距）', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
     const bodyRoot = () =>
       document.querySelector('[data-testid="file-import-modal"] .ant-modal-body > div') as HTMLElement
 
-    // 文件 / 文件夹：选择器与上传卡同属一个 flex column，底部动作条收尾
+    // 单文件：选择器与上传卡同属一个 flex column，底部动作条收尾
     expect(bodyRoot()).toHaveStyle({ display: 'flex', flexDirection: 'column', gap: '12px' })
     expect(bodyRoot().lastElementChild).toBe(screen.getByTestId('import-footer'))
 
-    // Obsidian 库：外层容器不变，库表单根节点用同一套 flex column（不再套 marginTop / 行内 Space）
-    fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
+    // 压缩包：外层容器不变，压缩包表单根节点用同一套 flex column（不再套 marginTop / 行内 Space）
+    fireEvent.click(screen.getByRole('radio', { name: '压缩包' }))
     const zone = await screen.findByTestId('vault-import-upload')
     expect(bodyRoot().style.gap).toBe('12px')
     const vaultRoot = zone.parentElement as HTMLElement
@@ -203,15 +191,15 @@ describe('通用导入弹窗', () => {
     expect(vaultRoot.lastElementChild).toBe(screen.getByTestId('import-footer'))
   })
 
-  it('库模式渲染 Obsidian 库上传表单，可切回文件模式', async () => {
+  it('压缩包 / 库模式共用 zip 卡片，可切回单文件模式', async () => {
     vi.spyOn(documentsApi, 'vaultAnalyze').mockResolvedValue(VAULT_ANALYSIS)
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
 
     fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
     expect(await screen.findByTestId('vault-import-upload')).toBeInTheDocument()
 
-    // 切回文件夹模式：库表单消失，文件上传区恢复
-    fireEvent.click(screen.getByRole('radio', { name: '文件夹' }))
+    // 切回单文件模式：zip 卡片消失，文件上传区恢复
+    fireEvent.click(screen.getByRole('radio', { name: '单文件' }))
     await waitFor(() => expect(screen.queryByTestId('vault-import-upload')).not.toBeInTheDocument())
     expect(screen.getByTestId('file-import-pick')).toBeInTheDocument()
   })
@@ -265,29 +253,19 @@ describe('通用导入弹窗', () => {
     expect(screen.getAllByTestId('file-import-asset-tag')[0]).toHaveTextContent('原样存档')
   })
 
-  it('文件夹模式按相对路径提交批次', async () => {
+  it('压缩包模式以 style=archive 解析并提交，不再走本地文件夹批次', async () => {
+    vi.spyOn(documentsApi, 'vaultAnalyze').mockResolvedValue(VAULT_ANALYSIS)
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={3} />)
-    fireEvent.click(screen.getByRole('radio', { name: '文件夹' }))
-    // 切换模式后 input 带 webkitdirectory
-    await waitFor(() => expect(fileInput()).toHaveAttribute('webkitdirectory'))
 
-    const batch = [
-      folderFile('设计.docx', '笔记/设计.docx'),
-      folderFile('说明.md', '笔记/说明.md'),
-    ]
-    pick(batch)
+    fireEvent.click(screen.getByRole('radio', { name: '压缩包' }))
+    await screen.findByTestId('vault-import-upload')
+    const zipInput = document.querySelector('[data-testid="vault-import-input"]') as HTMLInputElement
+    expect(zipInput).toHaveAttribute('accept', '.zip')
 
-    await waitFor(() => expect(documentsApi.fileImportAnalyze).toHaveBeenCalledTimes(1))
-    expect(documentsApi.fileImportAnalyze).toHaveBeenCalledWith(WID, {
-      entries: [
-        { file: batch[0], path: '笔记/设计.docx' },
-        { file: batch[1], path: '笔记/说明.md' },
-      ],
-      parentId: 3,
-      mhtmlMode: 'archive',
-      docxMode: 'convert',
-    })
-    expect(await screen.findByTestId('file-import-picked')).toHaveTextContent('已选 2 个文件')
+    fireEvent.change(zipInput, { target: { files: [new File(['zip'], 'docs.zip', { type: 'application/zip' })] } })
+    await waitFor(() => expect(documentsApi.vaultAnalyze).toHaveBeenCalledTimes(1))
+    expect(documentsApi.vaultAnalyze).toHaveBeenCalledWith(WID, expect.any(File), 3, 'archive')
+    expect(await screen.findByTestId('vault-import-summary')).toBeInTheDocument()
   })
 
   it('按确认的策略与开关导入', async () => {
