@@ -75,7 +75,7 @@ img { max-width: 100%; height: auto; }
 .cn-sheet-tab:hover { background: #f1f5f9; }
 .cn-sheet-tab-count { color: #94a3b8; font-size: 11px; margin-left: 4px; }
 .cn-sheet-panel { display: none; }
-.cn-sheet-panel.is-active { display: block; }
+/* 可见性只由 :checked 决定（首屏也不需要常驻规则，否则切页时第一页不会隐藏） */
 .cn-preview-empty, .cn-preview-note { color: #64748b; font-size: 12px; }
 @media (prefers-color-scheme: dark) {
   body { background: #0f172a; color: #e2e8f0; }
@@ -194,10 +194,8 @@ def _spreadsheet_body(tabs: list[_SheetTab]) -> tuple[str, str]:
         labels.append(
             f'<label class="cn-sheet-tab cn-sheet-tab-{index}" for="{tab_id}">{html.escape(tab.name)}</label>'
         )
-        active = " is-active" if index == 0 else ""
         panels.append(
-            f'<section class="cn-sheet-panel cn-sheet-panel-{index}{active}" data-sheet="{index}">'
-            f"{tab.markup}</section>"
+            f'<section class="cn-sheet-panel cn-sheet-panel-{index}" data-sheet="{index}">{tab.markup}</section>'
         )
         # 选中态：标签高亮 + 对应面板显示（无 JS 的纯 CSS 分页）
         selector = f"#{tab_id}:checked ~ .cn-sheet-tabbar .cn-sheet-tab-{index}"

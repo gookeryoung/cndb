@@ -249,6 +249,52 @@ class TestOfficePreviewRender:
         assert "<script>alert(1)</script>" not in html
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
 
+    def test_spreadsheet_sheets_are_paginated(self):
+        """多工作表按标签页分页（需求 0089）：一次只显示一个表，纯 CSS 切换."""
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        # 每个工作表一枚 radio + 一个面板；只有第一个默认选中
+        assert html.count('class="cn-sheet-radio"') == 2
+        assert 'id="cn-sheet-0" checked' in html
+        assert 'id="cn-sheet-1" checked' not in html
+        assert 'role="tablist"' in html
+        assert html.count(":checked ~ .cn-sheet-panels .cn-sheet-panel-") == 2
+        assert "#cn-sheet-1:checked ~ .cn-sheet-panels .cn-sheet-panel-1 { display: block; }" in html
+        assert ".cn-sheet-panel { display: none; }" in html
+        assert "#cn-sheet-1:checked ~ .cn-sheet-tabbar .cn-sheet-tab-1" in html
+
+    def test_spreadsheet_panel_visibility_only_by_checked(self):
+        """回归（Excel 切页后前一页仍显示）：面板可见性只能由 :checked 决定.
+
+        曾用 `.cn-sheet-panel.is-active { display: block }` 给首屏兜底，导致切到第二页时
+        第一个面板仍然常驻显示（两页叠在一起）。这里锁死：不存在任何常驻显示规则。
+        """
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        assert "is-active" not in html
+        assert ".cn-sheet-panel.is-active" not in html
+        # 除表格自身的 display:block 外，只有 :checked 规则允许面板显示
+        panel_rules = [rule for rule in html.split("}") if "cn-sheet-panel" in rule and "display: block" in rule]
+        assert len(panel_rules) == 2
+        assert all(":checked" in rule for rule in panel_rules)
+
+    def test_spreadsheet_single_sheet_has_no_tabbar(self):
+        """单工作表不渲染标签条（避免无意义的分页 chrome）."""
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "唯一"
+        sheet.append(["列", "值"])
+        sheet.append(["a", 1])
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+
+        html = office_preview.build_spreadsheet_html(buffer.getvalue())
+        assert '<table class="sheet">' in html
+        # 样式表里始终有分页类定义，这里断言的是「不渲染分页结构」
+        assert '<div class="cn-sheet-tabs">' not in html
+        assert 'class="cn-sheet-radio"' not in html
+        assert 'role="tablist"' not in html
+
     def test_spreadsheet_empty_sheet(self):
         # 全空工作表在分页面板内给空态提示，不产出空 <table>
         html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
