@@ -262,6 +262,12 @@ class BulkDeleteRequest(BaseModel):
     row_ids: list[int]
 
 
+class RecordCopyRequest(BaseModel):
+    """复制行（需求 0092）：按源行原值批量复制，不触发字段自动填充 / 默认值."""
+
+    row_ids: list[int] = Field(min_length=1, max_length=200)
+
+
 # ── DataView schemas ──────────────────────────────────
 
 

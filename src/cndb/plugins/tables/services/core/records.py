@@ -37,6 +37,7 @@ from cndb.plugins.tables.services.core.links import (
     clear_row_links,
     ensure_link_targets_exist,
     is_link_field,
+    load_links,
     set_links,
     validate_link_write,
 )
@@ -122,6 +123,7 @@ def _normalize_row_with_plan(
     validated: dict[str, Any] | None = None,
     *,
     for_update: bool = False,
+    exact: bool = False,
 ) -> tuple[dict[str, Any], list[tuple[DataField, list[int]]]]:
     """按预编译计划归一一行（``validated`` 为已校验的 db_column → 值，可选复用）."""
     result: dict[str, Any] = {}
@@ -146,6 +148,11 @@ def _normalize_row_with_plan(
             logger.debug("只读虚拟字段 %s（%s）无物理列，忽略写入值", field_name, spec.field.field_type)
             continue
         if raw is None:
+            if exact:
+                # 复制行（exact）：源行的空值就是空值，显式写 NULL，
+                # 不能走「未提供 → 默认值 / 自动填充」的分支
+                result[spec.db_column] = None
+                continue
             if not for_update:
                 # 创建路径：None 表示未提供该字段值，依赖 default_value 填充；
                 # 必填字段在此 raise，交由上层报错
@@ -163,6 +170,10 @@ def _normalize_row_with_plan(
             result[spec.db_column] = ft.validate_value(raw, spec.field.config)
         except Exception as exc:
             raise ValueError(f"字段 {field_name}({spec.field.field_type}) 值校验失败: {exc}") from exc
+
+    if exact:
+        # 复制行：整行按源值写入，跳过 date auto_fill 与字段默认值
+        return result, link_values
 
     # ── date/datetime auto_fill 自动填充 ──
     # on_update：更新路径每次覆盖为当前时间；创建路径仅在未提供时补缺省
@@ -194,6 +205,7 @@ def _normalize_values(
     values: dict[str, Any],
     *,
     for_update: bool = False,
+    exact: bool = False,
 ) -> tuple[dict[str, Any], list[tuple[DataField, list[int]]]]:
     """把前端传入的 {field_name: raw_value} 转为 {db_column_name: normalized_value}.
 
@@ -209,7 +221,7 @@ def _normalize_values(
     避免逐行重建字段表与日期配置（ADR 0037 / 原 0040 D5）。
     """
     plan = _build_normalize_plan(table, for_update=for_update)
-    return _normalize_row_with_plan(plan, values, for_update=for_update)
+    return _normalize_row_with_plan(plan, values, for_update=for_update, exact=exact)
 
 
 def _ensure_required_fields_provided(table: DataTable, normalized: dict[str, Any]) -> None:
@@ -307,6 +319,54 @@ def _get_sa_table(engine: Any, table: DataTable) -> Table:
         table.db_table_name,
         missing_message=f"物理表 {table.db_table_name} 不存在，请先调用 create_table()",
     )
+
+
+#: 复制行时跳过的系统列（自增主键 / 时间戳 / 审计人 / 软删标记）
+_COPY_SYSTEM_COLUMNS = frozenset({"id", "created_at", "updated_at", "created_by", "updated_by", "_trashed"})
+
+
+def copy_row_values(
+    engine: Any,
+    table: DataTable,
+    row_id: int,
+    db: Any = None,
+    *,
+    user: Any = None,
+) -> dict[str, Any] | None:
+    """读取一行用于「复制行」的字段值（含关联 id），返回 {字段名: 源值} 或 None.
+
+    - 读范围与 ``get_row`` 同源（行级权限 / 软删过滤），范围外返回 None（上层 404）；
+    - 复制所有物理列原值（含字段隐藏的列，但响应不回显，不会借此泄露）；
+    - 关联字段折算为目标行 id 列表；
+    - 系统列（id / 时间戳 / 审计人 / 软删标记）不参与复制。
+    """
+    sa_table = _get_sa_table(engine, table)
+    scope = _build_row_read_scope_where(table, sa_table, db, user)
+    where = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
+    if scope is not None:
+        where.append(scope)
+    with engine.connect() as conn:
+        raw = conn.execute(sa_table.select().where(and_(*where))).first()
+    if raw is None:
+        return None
+
+    mapping = raw._mapping
+    values: dict[str, Any] = {}
+    for field in table.fields:
+        if field.trashed:
+            continue
+        if is_link_field(field):
+            links = load_links(engine, field, [row_id]).get(int(row_id), [])
+            values[field.name] = links
+            continue
+        ft = default_registry.get(field.field_type)
+        if ft is None or not ft.has_physical_column:
+            continue
+        if field.db_column_name in _COPY_SYSTEM_COLUMNS:
+            continue
+        if field.db_column_name in mapping:
+            values[field.name] = mapping[field.db_column_name]
+    return values
 
 
 # ── CREATE ───────────────────────────────────────────
@@ -837,6 +897,7 @@ def bulk_create(
     db: Any = None,
     *,
     skip_invalid: bool = False,
+    exact_copy: bool = False,
 ) -> list[int]:
     """批量创建，返回新行 id 列表；行内 link 字段同步写关联表.
 
@@ -851,8 +912,9 @@ def bulk_create(
     split_rows: list[tuple[dict[str, Any], list[tuple[DataField, list[int]]]]] = []
     for r in rows:
         try:
-            normalized, link_values = _normalize_values(table, r)
-            _apply_auto_increment_defaults(engine, table, r, normalized, assigned)
+            normalized, link_values = _normalize_values(table, r, exact=exact_copy)
+            if not exact_copy:
+                _apply_auto_increment_defaults(engine, table, r, normalized, assigned)
             _ensure_required_fields_provided(table, normalized)
         except ValueError:
             if not skip_invalid:

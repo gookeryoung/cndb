@@ -15,6 +15,11 @@ export const recordApi = {
   /** 新建行：直编直存（201 RowResponse）；查看者/关闭直编时提交 create 修改申请（202 ChangeRequestDispatchResponse） */
   create: (wid: number | string, tid: number | string, data: RowCreate): Promise<RowResponse | ChangeRequestBatchResponse> =>
     api.post<RowResponse | ChangeRequestBatchResponse>(`/v1/workspaces/${wid}/tables/${tid}/records`, data).then(r => r.data),
+  /** 复制行：按源行原值批量创建（后端不套用自动填充 / 默认值 / 自动编号） */
+  copyRows: (wid: number | string, tid: number | string, rowIds: Array<number | string>) =>
+    api
+      .post<{ created: number; ids: number[] }>(`/v1/workspaces/${wid}/tables/${tid}/records/copy`, { row_ids: rowIds })
+      .then(r => r.data),
   get: (wid: number | string, tid: number | string, rid: number | string) =>
     api.get<RowResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}`).then(r => r.data),
   /** 自动编号预览：新增行只读展示「即将生成的编号」，按库内已有数据 max+1 推算 */

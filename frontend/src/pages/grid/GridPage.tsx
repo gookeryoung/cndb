@@ -595,17 +595,11 @@ export default function GridPage() {
     })
   }, [mutateUpdateRow, isPendingRowId, message])
   const copyRow = useMutation({
+    // 复制行走服务端按源行原值复制（需求 0092）：不套用自动编号 / 默认值 / 日期自动填充，
+    // 也不受当前视图缺列影响（前端批量建行会丢掉未加载 / 隐藏字段）
     mutationFn: async (ids: Array<number | string>) => {
-      const copies: Array<Record<string, unknown>> = []
-      for (const id of ids) {
-        const r = rowList.items.find(x => x.id === id)
-        if (r) {
-          const { id: _skip, created_at: _c, updated_at: _u, created_by: _cb, updated_by: _ub, ...rest } = r
-          copies.push(rest as Record<string, unknown>)
-        }
-      }
-      if (copies.length === 0) return []
-      const res = await recordApi.bulkCreate(wid!, tid!, copies)
+      if (ids.length === 0) return []
+      const res = await recordApi.copyRows(wid!, tid!, ids)
       return res.ids
     },
     onSuccess: (ids) => {

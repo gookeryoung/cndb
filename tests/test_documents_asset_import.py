@@ -250,7 +250,7 @@ class TestOfficePreviewRender:
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
 
     def test_spreadsheet_shows_row_and_column_numbers(self):
-        """行列号（需求 0090）：列 A/B/C…，行号取原件真实行号（空行跳过导致不连续）."""
+        """行列号：列 A/B/C…，行号取原件真实行号（空行跳过导致不连续）."""
         html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
         # 列号：首个工作表 4 列 → A..D，且含左上角占位单元格
         for letter in ("A", "B", "C", "D"):
@@ -285,7 +285,7 @@ class TestOfficePreviewRender:
         assert "background: var(--cn-bg-subtle" in html
 
     def test_spreadsheet_page_fills_iframe_height(self):
-        """布局（需求 0091）：整页铺满 iframe 高度，滚动只发生在面板内，底部不留大空白."""
+        """布局：整页铺满 iframe 高度，滚动只发生在面板内，底部不留大空白."""
         html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
         assert '<body class="cn-preview-sheet-page">' in html
         assert "html, body { height: 100%; }" in html

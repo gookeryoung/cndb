@@ -23,6 +23,7 @@ from cndb.plugins.change_requests.models import (
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.schemas import (
     AutoIncrementPreviewResponse,
+    RecordCopyRequest,
     RecordCreate,
     RecordListRequest,
     RecordListResponse,
@@ -32,6 +33,8 @@ from cndb.plugins.tables.services.core.access import TableAction, check_action, 
 from cndb.plugins.tables.services.core.ddl import ensure_sort_index
 from cndb.plugins.tables.services.core.records import (
     _get_sa_table,
+    bulk_create,
+    copy_row_values,
     count_rows,
     create_row,
     delete_row,
@@ -389,6 +392,34 @@ def auto_increment_preview(
     """
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     return AutoIncrementPreviewResponse(values=preview_auto_increment_values(db.get_bind(), dt))
+
+
+@router.post("/copy", status_code=status.HTTP_201_CREATED, response_model=None)
+def copy_records(
+    workspace_id: int,
+    table_id: int,
+    payload: RecordCopyRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object]:
+    """复制行（需求 0092）：按源行原值批量创建，不触发自动填充 / 默认值 / 自动编号.
+
+    - 行读范围与 ``GET /{record_id}`` 同源：范围外 / 已删除的行 404；
+    - 复制全部物理列原值（含被隐藏的字段，但响应不回显），关联字段按目标 id 复制；
+    - 复制属于「新增行」：需要表级 EDIT_RECORDS 权限（与批量建行一致）。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    rows: list[dict[str, Any]] = []
+    for row_id in payload.row_ids:
+        values = copy_row_values(db.get_bind(), dt, row_id, db=db, user=current_user)
+        if values is None:
+            raise HTTPException(status_code=404, detail=f"行 {row_id} 不存在或不可见")
+        rows.append(values)
+    try:
+        ids = bulk_create(db.get_bind(), dt, rows, db=db, exact_copy=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"created": len(ids), "ids": ids}
 
 
 @router.get("/{record_id}")
