@@ -242,12 +242,37 @@ class TestOfficePreviewRender:
         assert '<table class="sheet">' in html
         assert "销售明细" in html
         assert "备注空表" in html
-        assert "<th>月份</th>" in html
+        assert "<td>月份</td>" in html
         assert "1200.5" in html
         assert "2026-01-31" in html
         # 来源文本一律转义：单元格里的脚本不能出现在标签里
         assert "<script>alert(1)</script>" not in html
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in html
+
+    def test_spreadsheet_shows_row_and_column_numbers(self):
+        """行列号（需求 0090）：列 A/B/C…，行号取原件真实行号（空行跳过导致不连续）."""
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        # 列号：首个工作表 4 列 → A..D，且含左上角占位单元格
+        for letter in ("A", "B", "C", "D"):
+            assert f'<th scope="col">{letter}</th>' in html
+        assert 'class="cn-sheet-corner"' in html
+        # 行号：第 1 行表头、第 2 行数据、第 3 行为空被跳过、第 4 行数据
+        assert 'class="cn-sheet-rownum" scope="row">1</th>' in html
+        assert 'class="cn-sheet-rownum" scope="row">2</th>' in html
+        assert 'class="cn-sheet-rownum" scope="row">3</th>' not in html
+        assert 'class="cn-sheet-rownum" scope="row">4</th>' in html
+        # 表头吸附在顶部、行号列吸附在左侧（横向滚动也不丢行号）
+        assert "thead th { position: sticky; top: 0;" in html
+        assert "tbody th.cn-sheet-rownum { position: sticky; left: 0;" in html
+
+    def test_column_letters(self):
+        assert [office_preview._column_letters(i) for i in (1, 26, 27, 52, 53)] == [
+            "A",
+            "Z",
+            "AA",
+            "AZ",
+            "BA",
+        ]
 
     def test_spreadsheet_sheets_are_paginated(self):
         """多工作表按标签页分页（需求 0089）：一次只显示一个表，纯 CSS 切换."""

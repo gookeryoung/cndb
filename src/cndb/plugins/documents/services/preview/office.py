@@ -62,7 +62,12 @@ ul, ol { margin: 0 0 10px; padding-left: 24px; }
 table { border-collapse: collapse; margin: 0 0 16px; font-size: 13px; max-width: 100%; }
 table.sheet { display: block; overflow: auto; max-height: 70vh; }
 th, td { border: 1px solid #d7dee8; padding: 4px 8px; text-align: left; vertical-align: top; white-space: pre-wrap; }
-th { background: #f1f5f9; font-weight: 600; position: sticky; top: 0; }
+th { background: #f1f5f9; font-weight: 600; }
+/* 列号行吸附在顶部；行号列吸附在左侧（横向滚动时也可见） */
+thead th { position: sticky; top: 0; z-index: 1; }
+thead th.cn-sheet-corner { left: 0; z-index: 2; }
+tbody th.cn-sheet-rownum { position: sticky; left: 0; z-index: 1; min-width: 40px;
+  text-align: right; font-weight: 400; color: #64748b; background: #fafafa; }
 img { max-width: 100%; height: auto; }
 .cn-preview-title { font-size: 12px; color: #64748b; margin: 0 0 12px; }
 /* 工作表分页：radio + label 实现无脚本标签页（沙箱内禁用 JS） */
@@ -83,6 +88,8 @@ img { max-width: 100%; height: auto; }
   th, td { border-color: #334155; }
   .cn-preview-title, .cn-preview-empty, .cn-preview-note { color: #94a3b8; }
   .cn-sheet-tabbar { background: #0f172a; border-color: #334155; }
+  thead th { background: #1e293b; }
+  tbody th.cn-sheet-rownum { background: #111827; color: #94a3b8; }
   .cn-sheet-tab { color: #94a3b8; }
   .cn-sheet-tab:hover { background: #1e293b; }
 }
@@ -112,6 +119,15 @@ def _truncated_note() -> str:
 # ── 表格（xlsx）──
 
 
+def _column_letters(index: int) -> str:
+    """1 基列序号 → Excel 列名（1→A，26→Z，27→AA）."""
+    letters = ""
+    while index > 0:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
 def _cell_text(value: Any) -> str:
     """单元格值 → 展示文本：日期 / 数值 / 布尔按可读形式，文本原样."""
     if value is None:
@@ -133,10 +149,16 @@ def _cell_text(value: Any) -> str:
 
 
 def _sheet_html(ws: Any, budget: list[int], state: list[bool]) -> str:
-    """渲染一个工作表为表格 HTML；``budget`` 为跨表单元格余量，``state`` 为截断标记."""
-    rows: list[list[str]] = []
+    """渲染一个工作表为表格 HTML（带 Excel 行列号）.
+
+    ``budget`` 为跨表单元格余量，``state`` 为截断标记。行号取**原件真实行号**
+    （整行为空的 Excel 行跳过，因此行号可能不连续），列号按 A/B/C… 生成。
+    """
+    rows: list[tuple[int, list[str]]] = []
     columns = 0
-    for row in ws.iter_rows(max_row=MAX_SHEET_ROWS, max_col=MAX_SHEET_COLS, values_only=True):
+    for row_index, row in enumerate(
+        ws.iter_rows(max_row=MAX_SHEET_ROWS, max_col=MAX_SHEET_COLS, values_only=True), start=1
+    ):
         if budget[0] <= 0 or len(rows) >= MAX_SHEET_ROWS:
             state[0] = True
             break
@@ -147,20 +169,26 @@ def _sheet_html(ws: Any, budget: list[int], state: list[bool]) -> str:
             continue
         budget[0] -= len(cells)
         columns = max(columns, len(cells))
-        rows.append(cells)
+        rows.append((row_index, cells))
 
     if not rows:
         return '<p class="cn-preview-empty">（空白工作表）</p>'
 
-    header, *body = rows
-
-    def cells_html(cells: list[str], tag: str) -> str:
+    letters = [_column_letters(index) for index in range(1, columns + 1)]
+    head = (
+        '<thead><tr><th class="cn-sheet-corner" scope="col"></th>'
+        + "".join(f'<th scope="col">{letter}</th>' for letter in letters)
+        + "</tr></thead>"
+    )
+    body_rows: list[str] = []
+    for row_index, cells in rows:
         padded = cells + [""] * (columns - len(cells))
-        return "".join(f"<{tag}>{html.escape(cell)}</{tag}>" for cell in padded)
-
-    head = f"<thead><tr>{cells_html(header, 'th')}</tr></thead>"
-    body_rows = "".join(f"<tr>{cells_html(cells, 'td')}</tr>" for cells in body)
-    return f'<table class="sheet">{head}<tbody>{body_rows}</tbody></table>'
+        body_rows.append(
+            f'<tr><th class="cn-sheet-rownum" scope="row">{row_index}</th>'
+            + "".join(f"<td>{html.escape(cell)}</td>" for cell in padded)
+            + "</tr>"
+        )
+    return f'<table class="sheet">{head}<tbody>{"".join(body_rows)}</tbody></table>'
 
 
 class _SheetTab:
