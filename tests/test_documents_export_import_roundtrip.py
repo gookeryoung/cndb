@@ -221,6 +221,24 @@ class TestArchiveRoundtrip:
             assert not any(name.startswith("回环源/.obsidian/") for name in names)
             assert not archive.read("回环源/说明.md").decode("utf-8").startswith("---")
 
+    def test_export_keeps_nested_tree_when_first_root_doc_deleted(self, client, db, ws, owner, auth):
+        """删除根目录首项后，扁平排序会让子项排在父文件夹之前，导出仍须保留嵌套路径."""
+        _seed(client, db, ws, owner, auth)
+        note = next(node for node in _tree(client, ws.id, auth) if node["title"] == "说明")
+        r = client.delete(f"{DOCS.format(ws=ws.id)}/{note['id']}", headers=auth)
+        assert r.status_code == 200, r.text
+
+        exported = _export(client, ws.id, auth, "archive")
+        with zipfile.ZipFile(io.BytesIO(exported)) as archive:
+            names = set(archive.namelist())
+        assert "回环源/笔记/索引.md" in names
+        assert "回环源/索引.md" not in names
+
+        target = _workspace(db, owner, "删除首项回环")
+        _import_zip(client, target.id, auth, exported, "archive")
+        imported = next(node for node in _tree(client, target.id, auth) if node["title"] == "索引")
+        assert imported["parent_id"] is not None
+
     def test_archive_roundtrip_is_stable_across_generations(self, client, db, ws, owner, auth):
         """第二代回环：导入后的工作区再导出 → 再导入，结构与原件仍然一致."""
         _seed(client, db, ws, owner, auth)

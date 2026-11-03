@@ -1581,7 +1581,28 @@ def export_vault(
                 candidate = f"{stem} ({index}){suffix}"
             taken.add(candidate.lower())
             names[doc.id] = candidate
-            dirs[doc.id] = f"{dirs.get(parent, '')}/{candidate}" if doc.is_folder else dirs.get(parent, "")
+
+    # 目录必须按父子链解析：文档按全局 sort_order 扁平排序，子项可能先于父文件夹出现，
+    # 沿 children 迭代会让子项拿不到父目录而被导出到根目录（zip 结构错乱）。
+    folders = {doc.id: doc for doc in docs if doc.is_folder}
+
+    def _folder_dir(folder_id: int, trail: set[int]) -> str:
+        folder = folders.get(folder_id)
+        if folder is None:
+            return ""
+        if folder_id in dirs:
+            return dirs[folder_id]
+        if folder_id in trail:  # 防御脏数据成环，回退到根目录
+            return ""
+        parent_dir = _folder_dir(folder.parent_id or 0, trail | {folder_id})
+        dirs[folder_id] = f"{parent_dir}/{names[folder_id]}"
+        return dirs[folder_id]
+
+    for folder_id in folders:
+        _folder_dir(folder_id, set())
+    for doc in docs:
+        if not doc.is_folder:
+            dirs[doc.id] = dirs.get(doc.parent_id or 0, "")
 
     attachments: dict[str, bytes] = {}
     root_dir = Path(settings.UPLOAD_DIR)
