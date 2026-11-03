@@ -1205,6 +1205,17 @@ describe('DocumentEditorPage 粘贴图片与状态栏', () => {
         fireEvent.change(ta, { target: { value: '第一行\n第二行' } })
         await waitFor(() => expect(screen.getByTestId('doc-stats')).toHaveTextContent('7 字 · 2 行'))
     })
+
+    it('查看态展示总字数与预计阅读时长', async () => {
+        renderEditor()
+        // 草稿默认进编辑态，先切到查看再断言阅读态状态栏
+        fireEvent.click(within(await screen.findByTestId('doc-mode-switch')).getByText('查看'))
+        expect(await screen.findByTestId('doc-view-mode')).toBeInTheDocument()
+
+        const stats = await screen.findByTestId('doc-stats')
+        // 与编辑态同口径：字数 · 行数 · 预计阅读时长
+        expect(stats.textContent).toMatch(/\d+ 字 · \d+ 行 · 约 \d+ 分钟/)
+    })
 })
 
 describe('DocumentEditorPage 最近打开记录', () => {

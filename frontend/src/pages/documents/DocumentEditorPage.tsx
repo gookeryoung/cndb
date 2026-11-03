@@ -1541,19 +1541,23 @@ export default function DocumentEditorPage() {
             onPresentingChange={setAssetPresenting}
           />
         ) : viewMode === 'view' ? (
-          <div
-            style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 16 : '20px 24px' }}
-            data-testid="doc-view-mode"
-          >
-            <MarkdownPreview
-              content={content}
-              workspaceId={workspaceId}
-              onWikilink={handleWikilink}
-              onEditChart={canEditCharts ? openChartDesignerForEdit : undefined}
-              onRefWidthChange={canEditCharts ? changeRefWidth : undefined}
-              onChartWidthChange={canEditCharts ? changeChartWidth : undefined}
-            />
-          </div>
+          <>
+            <div
+              style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 16 : '20px 24px' }}
+              data-testid="doc-view-mode"
+            >
+              <MarkdownPreview
+                content={content}
+                workspaceId={workspaceId}
+                onWikilink={handleWikilink}
+                onEditChart={canEditCharts ? openChartDesignerForEdit : undefined}
+                onRefWidthChange={canEditCharts ? changeRefWidth : undefined}
+                onChartWidthChange={canEditCharts ? changeChartWidth : undefined}
+              />
+            </div>
+            {/* 查看态同样展示正文体量：与编辑态状态栏同口径（字数 / 行数 / 预计阅读时长） */}
+            <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
+          </>
         ) : (
           <>
             {findOpen && (
