@@ -5269,6 +5269,16 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   background: var(--cn-bg-subtle);
 }
 
+/* 末行不画分隔线：Listy 每项都带 1px 下边框，容器本身也有 1.5px 外框，
+ * 不覆盖时最后一行底边会与外框叠成「两条线」。行间线仍由 :not(:last-child) 保证。 */
+.cn-doc-list .ant-listy-item {
+  border-block-end: none;
+}
+
+.cn-doc-list .ant-listy-item:not(:last-child) {
+  border-block-end: 1px solid var(--cn-border);
+}
+
 /* 头像区（勾选框 + 格式图标）与标题的间距收紧一档，整行更密 */
 .cn-doc-list .cn-list-avatar {
   margin-inline-end: var(--cn-space-lg);
