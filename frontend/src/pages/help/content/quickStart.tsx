@@ -411,3 +411,6 @@ const uiTour: HelpTopic = {
 }
 
 export const quickStartTopics: HelpTopic[] = [overview, philosophy, workflow, uiTour]
+
+/** 供 helpNav 的 HELP_SECTION_LOADERS 按部分懒加载（0090 C1）。 */
+export default quickStartTopics

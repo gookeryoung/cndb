@@ -1,10 +1,16 @@
-/** 帮助文档导航（ADR 0029 / ADR 0036）单测 —— 四层层级、归属唯一性、锚点与 URL 解析。 */
+/** 帮助文档导航（ADR 0029 / ADR 0036 / 0090）单测 —— 四层层级、归属唯一性、锚点与 URL 解析。 */
 
 import { describe, expect, it } from 'vitest'
+import configurationTopics from './content/configuration'
+import exampleTopics from './content/examples'
+import quickStartTopics from './content/quickStart'
+import troubleshootingTopics from './content/troubleshooting'
+import tutorialTopics from './content/tutorials'
 import {
     HELP_DOCS_TITLE,
+    HELP_SECTION_LOADERS,
     HELP_SECTIONS,
-    findTopic,
+    findTopicMeta,
     helpLink,
     itemAnchor,
     subsectionAnchor,
@@ -12,8 +18,19 @@ import {
     topicPath,
 } from './helpNav'
 
+/** 各部分正文：单测静态引入 content 模块做层级完整性检查（测试不进构建产物，不影响 chunk 体积）。 */
+const SECTION_CONTENT = {
+    'quick-start': quickStartTopics,
+    tutorials: tutorialTopics,
+    examples: exampleTopics,
+    configuration: configurationTopics,
+    troubleshooting: troubleshootingTopics,
+} as const
+
 /** 全站所有主题：层级检查逐个跑一遍，新增主题无需改测试。 */
-const ALL_TOPICS = HELP_SECTIONS.flatMap((section) => section.topics.map((topic) => ({ section, topic })))
+const ALL_TOPICS = HELP_SECTIONS.flatMap((section) =>
+    SECTION_CONTENT[section.key].map((topic) => ({ section, topic })),
+)
 
 describe('helpNav 一级 / 二级结构', () => {
     it('一级固定 5 个部分且顺序符合需求', () => {
@@ -37,10 +54,13 @@ describe('helpNav 一级 / 二级结构', () => {
             const topicKeys = new Set<string>()
             for (const topic of section.topics) {
                 expect(topic.label.length).toBeGreaterThan(0)
-                expect(topic.intro).toBeTruthy()
                 expect(topicKeys.has(topic.key)).toBe(false)
                 topicKeys.add(topic.key)
             }
+        }
+        // 正文侧：每个主题必须有导语（元数据不含 intro，由 content 模块提供）
+        for (const { topic } of ALL_TOPICS) {
+            expect(topic.intro).toBeTruthy()
         }
     })
 })
@@ -113,16 +133,33 @@ describe('topicPath / helpLink 生成地址', () => {
     })
 })
 
-describe('findTopic 解析与回落', () => {
+describe('findTopicMeta 解析与回落', () => {
     it('命中已知 section / topic', () => {
-        const { section, topic } = findTopic('tutorials', 'roles')
+        const { section, topic } = findTopicMeta('tutorials', 'roles')
         expect(section.key).toBe('tutorials')
         expect(topic.key).toBe('roles')
     })
 
     it('缺失或未知参数回落到首个部分的首个主题', () => {
-        expect(findTopic().topic.key).toBe(HELP_SECTIONS[0]!.topics[0]!.key)
-        expect(findTopic('nope', 'nope').section.key).toBe(HELP_SECTIONS[0]!.key)
-        expect(findTopic('tutorials', 'nope').topic.key).toBe(HELP_SECTIONS[1]!.topics[0]!.key)
+        expect(findTopicMeta().topic.key).toBe(HELP_SECTIONS[0]!.topics[0]!.key)
+        expect(findTopicMeta('nope', 'nope').section.key).toBe(HELP_SECTIONS[0]!.key)
+        expect(findTopicMeta('tutorials', 'nope').topic.key).toBe(HELP_SECTIONS[1]!.topics[0]!.key)
+    })
+})
+
+describe('0090 元数据与正文懒加载口径', () => {
+    it('每个部分的元数据 topic 列表与 content 模块 default export 完全一致（防双份漂移）', () => {
+        for (const section of HELP_SECTIONS) {
+            const topics = SECTION_CONTENT[section.key]
+            expect(topics.map((t) => ({ key: t.key, label: t.label })), section.key).toEqual(section.topics)
+        }
+    })
+
+    it('HELP_SECTION_LOADERS 覆盖全部 5 个部分且可动态加载正文', async () => {
+        expect(Object.keys(HELP_SECTION_LOADERS).sort()).toEqual([...HELP_SECTIONS.map((s) => s.key)].sort())
+        for (const section of HELP_SECTIONS) {
+            const mod = await HELP_SECTION_LOADERS[section.key]()
+            expect(mod.default.map((t) => t.key), section.key).toEqual(section.topics.map((t) => t.key))
+        }
     })
 })

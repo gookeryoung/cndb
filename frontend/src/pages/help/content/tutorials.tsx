@@ -1208,3 +1208,6 @@ export const tutorialTopics: HelpTopic[] = [
     acquisition,
     designDsl,
 ]
+
+/** 供 helpNav 的 HELP_SECTION_LOADERS 按部分懒加载（0090 C1）。 */
+export default tutorialTopics

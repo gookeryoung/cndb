@@ -14,6 +14,9 @@
  *  1. 基线外置在 scripts/bundle-budget.json，**只能**通过 --update 修改，
  *     且必须带 --reason（理由落盘：reason/updatedAt/commit），
  *     避免「体积涨了就随手改个数字」把门禁变成橡皮图章。
+ *  1b. FAIL 判据是 chunk 的显式 `budget`（gzip 字节硬上限）——基线只是 warn 参照，
+ *     --update 不会重置上限；上调上限必须走 `--set-budget --only <名> --reason`。
+ *     小步增量只 warn 不 FAIL，「一劳永逸」与防膨胀并存（需求卡片 0090）。
  *  2. 超限时不只报数字：附带该 chunk 内 Top-N 源文件归属（读构建期产出的
  *     dist/.vite/chunk-modules.json），并给出处置顺序（先 lazy，再谈加基线）。
  *  3. 介于基线与上限之间（已涨但未超）标记 warn 并在输出末尾汇总，
@@ -50,14 +53,25 @@ if (explicitBytes != null && (!/^\d+$/.test(explicitBytes) || Number(explicitByt
   console.error(`[bundle-budget] --bytes 必须是正整数（收到 ${explicitBytes}）`)
   process.exit(1)
 }
+/** 显式设置 chunk 的 budget（gzip 字节硬上限）。0090 起基线与上限分离：
+ *  baseline 只是 warn 参照，FAIL 判据是 actual > budget；调整上限必须显式走这里。 */
+const setBudget = argValue('--set-budget')
+if (setBudget != null && (!/^\d+$/.test(setBudget) || Number(setBudget) <= 0)) {
+  console.error(`[bundle-budget] --set-budget 必须是正整数（收到 ${setBudget}）`)
+  process.exit(1)
+}
 
 const fail = (msg) => {
   console.error(`[bundle-budget] ${msg}`)
   process.exit(1)
 }
 
-if (doUpdate && !reason) {
-  fail('调整基线必须说明原因：--reason "feat/fix 描述 + 为什么必须增长"。这是留给 review 的证据。')
+if (setBudget != null && !only) {
+  fail('--set-budget 必须配合 --only <chunk 名> 使用，防止误改多个 chunk 的上限')
+}
+
+if ((doUpdate || setBudget != null) && !reason) {
+  fail('调整基线 / 上限必须说明原因：--reason "feat/fix 描述 + 为什么必须增长"。这是留给 review 的证据。')
 }
 
 // ── 环境自检：build 产物缺失要给「怎么修」而不是堆栈 ──────────────────
@@ -132,13 +146,32 @@ for (const item of config.chunks) {
   const file = resolveFile(item.resolve, item.name)
   const actual = gzipSize(file)
   const tolerance = item.tolerance != null ? item.tolerance / 100 : globalTolerance
-  const limit = Math.ceil(item.baseline * (1 + tolerance))
+  // 0090 C3：上限优先取显式 budget；未声明时回退旧的「基线 + 容差」口径
+  const limit = item.budget ?? Math.ceil(item.baseline * (1 + tolerance))
   const delta = actual - item.baseline
   results.push({ item, file, actual, limit, delta })
 }
 
 const overs = results.filter((r) => r.actual > r.limit)
 const warns = results.filter((r) => r.actual <= r.limit && r.delta > 0)
+
+if (setBudget != null) {
+  const head = shortHead()
+  const stamp = today()
+  const target = Number(setBudget)
+  for (const r of results) {
+    const before = r.item.budget ?? Math.ceil(r.item.baseline * (1 + (r.item.tolerance ?? config.tolerancePct ?? 5) / 100))
+    r.item.budget = target
+    r.item.reason = reason.trim()
+    r.item.updatedAt = stamp
+    r.item.commit = head
+    console.log(`[bundle-budget] 设置上限 ${r.item.name}: ${before} → ${target}（${target >= before ? '+' : ''}${(((target - before) / before) * 100).toFixed(1)}%）`)
+  }
+  config.history = [...(config.history || []), `${stamp} [set-budget] ${reason.trim()}`].slice(-20)
+  writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`)
+  console.log(`[bundle-budget] 已写入 ${path.relative(root, configPath)}（reason: ${reason.trim()}）`)
+  process.exit(0)
+}
 
 if (doUpdate) {
   const head = shortHead()
@@ -148,15 +181,23 @@ if (doUpdate) {
     const before = r.item.baseline
     r.item.baseline = target ?? r.actual
     r.item.reason = reason.trim()
-    r.item.updatedAt = today()
+    r.item.updatedAt = stamp
     r.item.commit = head
     const pct = before ? ((r.actual - before) / before) * 100 : 0
     const tag = Math.abs(pct) < 0.05 ? '持平' : `${pct > 0 ? '+' : ''}${pct.toFixed(1)}%`
-    console.log(`[bundle-budget] 更新基线 ${r.item.name}: ${before} → ${r.item.baseline}（${tag}）`)
+    // 0090 C4：--update 只动基线，budget 上限保持不变（上限调整走 --set-budget）
+    const budgetNote = r.item.budget != null ? `，budget 上限 ${r.item.budget} 不变` : ''
+    console.log(`[bundle-budget] 更新基线 ${r.item.name}: ${before} → ${r.item.baseline}（${tag}）${budgetNote}`)
     if (pct > 10) {
       console.warn(
         `[bundle-budget] ⚠ ${r.item.name} 单次上调 ${pct.toFixed(1)}%（>10%）：请先确认没有可用 React.lazy 拆出的按需代码，` +
         ' 并在 PR 说明中解释该增量的必要性。',
+      )
+    }
+    if (r.item.budget != null && r.item.baseline > r.item.budget) {
+      console.warn(
+        `[bundle-budget] ⚠ ${r.item.name} 实测已超过 budget 上限 ${r.item.budget}：本次 --update 只更新了基线，` +
+        '校验仍会 FAIL。确属合理增长请用 --set-budget 显式调整上限并说明理由。',
       )
     }
   }
@@ -172,15 +213,16 @@ for (const r of results) {
   const status = actual > limit ? 'FAIL' : delta > 0 ? 'warn' : 'ok'
   const deltaPct = ((delta / item.baseline) * 100).toFixed(1)
   const deltaTxt = `${delta >= 0 ? '+' : '-'}${formatKB(Math.abs(delta))} / ${deltaPct >= 0 ? '+' : '-'}${Math.abs(Number(deltaPct)).toFixed(1)}%`
+  const limitSrc = item.budget != null ? 'budget' : '基线+容差'
   console.log(
     `[bundle-budget] ${status.padEnd(4)} ${item.name}: ${formatKB(actual)}` +
-    `（基线 ${formatKB(item.baseline)}，上限 ${formatKB(limit)}，偏差 ${deltaTxt}）  ${file}`,
+    `（基线 ${formatKB(item.baseline)}，上限 ${formatKB(limit)}〔${limitSrc}〕，偏差 ${deltaTxt}）  ${file}`,
   )
 }
 
 if (warns.length) {
   console.log(
-    `\n[bundle-budget] 注意：${warns.map((w) => w.item.name).join('、')} 已超过基线但在容差内。` +
+    `\n[bundle-budget] 注意：${warns.map((w) => w.item.name).join('、')} 已超过基线但在上限内。` +
     ' 这是「慢涨」信号，别等到超限才处理。',
   )
 }

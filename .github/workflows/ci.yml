@@ -231,10 +231,10 @@ jobs:
       - name: Build frontend
         run: cd frontend && pnpm build
 
-      # 关键 chunk（主入口 / GridPage / ChartView）gzip 体积门禁：基线 +5% 容差，超限失败。
-      # 基线在 frontend/scripts/bundle-budget.json（勿手改），超限输出会带 Top-N 源文件归因；
-      # 确属合理增长走 scripts/bundle-budget.mjs --update --reason "…"，理由随 JSON 提交。
-      # 详见 docs/BUNDLE_BUDGET.md
+      # 关键 chunk（主入口 / GridPage / 帮助各部分等）gzip 体积门禁：actual > budget 才 FAIL，
+      # 超 baseline 未超 budget 只 warn（慢涨信号）。基线在 frontend/scripts/bundle-budget.json（勿手改），
+      # 超限输出会带 Top-N 源文件归因；确属合理增长走 --update（基线）/ --set-budget（上限）+ --reason，
+      # 理由随 JSON 提交。详见 docs/BUNDLE_BUDGET.md
       - name: Bundle size budget
         run: cd frontend && pnpm bundle:budget
 

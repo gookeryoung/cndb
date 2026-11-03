@@ -14,7 +14,16 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useResponsive } from '@/hooks/useResponsive'
 import { useOnboardingStore } from '@/store/onboarding'
 import HelpDoc from './content/HelpDoc'
-import { HELP_DOCS_TITLE, HELP_SECTIONS, findTopic, itemAnchor, subsectionAnchor, topicPath } from './helpNav'
+import {
+    HELP_DOCS_TITLE,
+    HELP_SECTION_LOADERS,
+    HELP_SECTIONS,
+    findTopicMeta,
+    itemAnchor,
+    subsectionAnchor,
+    topicPath,
+    type HelpTopic,
+} from './helpNav'
 
 const { Text } = Typography
 
@@ -36,9 +45,30 @@ export default function HelpDocsPage() {
     const [navOpen, setNavOpen] = useState(false)
     const [openKeys, setOpenKeys] = useState<string[]>(() => HELP_SECTIONS.map((item) => item.key))
     const [activeAnchor, setActiveAnchor] = useState<string>('')
+    // 正文按 L1 部分懒加载（0090 C1）：元数据驱动导航与 URL 纠正，正文异步到达后再渲染。
+    const [topics, setTopics] = useState<HelpTopic[] | null>(null)
 
-    const { section, topic } = findTopic(sectionKey, topicKey)
-    const canonical = topicPath(section.key, topic.key)
+    const { section, topic: topicMeta } = findTopicMeta(sectionKey, topicKey)
+    const canonical = topicPath(section.key, topicMeta.key)
+
+    // 当前部分的正文：切部分即重新加载；卸载后丢弃结果防 setState 泄漏。
+    useEffect(() => {
+        let alive = true
+        setTopics(null)
+        HELP_SECTION_LOADERS[section.key]()
+            .then((mod) => {
+                if (alive) setTopics(mod.default)
+            })
+            .catch(() => {
+                if (alive) setTopics([])
+            })
+        return () => {
+            alive = false
+        }
+    }, [section.key])
+
+    // 正文就绪后按 key 命中；未知 key 回落到首个主题（与元数据回落口径一致）。
+    const topic = topics?.find((item) => item.key === topicKey) ?? topics?.[0]
 
     // URL 与导航不一致（缺参数 / 未知 key / 多余段）时纠正到规范地址。
     useEffect(() => {
@@ -90,7 +120,7 @@ export default function HelpDocsPage() {
         />
     )
 
-    const toc = (
+    const toc = topic && (
         <nav className="cn-help-docs-toc" aria-label="本页目录" data-testid="help-docs-toc">
             <div className="cn-help-docs-toc-title">本页目录</div>
             <ol className="cn-help-docs-toc-list">
@@ -177,10 +207,15 @@ export default function HelpDocsPage() {
 
                 <div className="cn-help-docs-content">
                     <div className="cn-help-docs-scroll">
-                        <article className="cn-help-docs-body">
-                            <h1 className="cn-help-docs-heading">{topic.label}</h1>
-                            <HelpDoc topic={topic} />
-                        </article>
+                        {topic ? (
+                            <article className="cn-help-docs-body">
+                                <h1 className="cn-help-docs-heading">{topic.label}</h1>
+                                <HelpDoc topic={topic} />
+                            </article>
+                        ) : (
+                            // 正文 chunk 下载中的占位（正常瞬时；失败时 topics=[] 恒为占位）
+                            <div className="cn-help-docs-body" data-testid="help-docs-loading" aria-busy="true" />
+                        )}
                     </div>
                     {!isMobile && toc}
                 </div>

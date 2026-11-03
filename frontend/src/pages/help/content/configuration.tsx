@@ -375,3 +375,6 @@ const storage: HelpTopic = {
 }
 
 export const configurationTopics: HelpTopic[] = [workspace, personal, datasource, admin, storage]
+
+/** 供 helpNav 的 HELP_SECTION_LOADERS 按部分懒加载（0090 C1）。 */
+export default configurationTopics

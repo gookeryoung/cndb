@@ -61,6 +61,24 @@
 > 顺带一提：介于基线与上限之间时脚本标记为 `warn` 并在末尾汇总。
 > 「慢涨」要在这一步就看见，别等它攒到 FAIL。
 
+## 基线（baseline）与上限（budget）是两回事（2026-11-03 起）
+
+历史上 `baseline` 同时承担「上次实测值」和「上限基数」两个职责：每次 `--update`
+都会把基线压回实测值、连同 5% 容差一起消耗掉，于是**每次新增一点内容都必然
+触发一次加基线**（2026-11 的帮助文档 chunk 连续多轮如此）。0090 起语义分离：
+
+| 字段 | 含义 | 谁来改 |
+|---|---|---|
+| `baseline` | 上次实测值，**只作 warn 参照**（超基线未超上限 = 慢涨警告） | `--update`（只刷新基线，不碰上限） |
+| `budget` | gzip 字节硬上限，`actual > budget` 才 FAIL | `--set-budget --only <chunk> --reason` |
+
+余量约定：主入口（常驻首屏）留约 3%；按需 chunk（GridPage / DashboardView /
+Help 各部分等）留 15–25%。效果：日常小步增量只产生 warn、不再打红 CI，
+**误把重型依赖静态链入受控 chunk 之类的大增量依然会被 budget 硬拦**。
+帮助文档正文自 0090 起按 L1 部分拆为独立 chunk（`quickStart-*` / `tutorials-*`
+等，各有预算条目），新增帮助文案不再推动 `HelpDocsPage` 壳 chunk 膨胀；
+某 section 触达 budget 时应升级为按 topic 细拆，而不是抬上限。
+
 ## 第三方依赖的隐性膨胀（2026-10-20 案例）
 
 归因表里如果 Top-10 全是 `node_modules/*` 而业务代码只有几 KB，说明问题不在本仓库代码，
@@ -101,26 +119,33 @@
 **判据**：首屏 chunk 里出现「只有点了才出现的东西」= 代码问题；出现「整块库的边角
 模块」= 依赖声明问题。前者拆 lazy，后者补 sideEffects 或 patch，都不该直接抬基线。
 
-## 怎样调整基线
+## 怎样调整基线与上限
 
 **不要手改 JSON。** 统一走脚本，理由会落盘到 `reason` / `updatedAt` / `commit`：
 
 ```bash
 cd frontend && pnpm build
 
-# 全部条目更新到实测值
+# 全部条目基线更新到实测值（不动 budget 上限）
 pnpm bundle:budget:update --reason "feat: xxx，为何这部分代码必须随该 chunk 加载"
 
-# 只更新某一项，并显式指定基线（留合理余量时用）
+# 只更新某一项基线，并显式指定（留合理余量时用）
 node scripts/bundle-budget.mjs --update --only GridPage --bytes 32768 --reason "…"
+
+# 调整某一项的 budget 硬上限（必须 --only 定位到单一 chunk）
+node scripts/bundle-budget.mjs --set-budget 43000 --only GridPage --reason "…"
 ```
 
 规则：
 
 - 没有 `--reason` 直接拒绝执行 —— 这是留给 review 的证据，
   也是本门禁不当橡皮图章的关键；
-- 单次上调超过 10% 会额外告警，请在 PR 说明里解释必要性；
-- `bundle-budget.json` 的 `history` 字段自动追加每次调整的日期与理由（保留最近 20 条）。
+- `--update` 只动 `baseline`，`budget` 原样保留（输出会提示上限不变）；
+  若实测已超 budget，校验仍会 FAIL，须走 `--set-budget` 显式决策；
+- `--set-budget` 必须配合 `--only`，防止一把改掉多个 chunk 的上限；
+- 单次基线上调超过 10% 会额外告警，请在 PR 说明里解释必要性；
+- `bundle-budget.json` 的 `history` 字段自动追加每次调整的日期与理由（保留最近 20 条，
+  `--set-budget` 的条目带 `[set-budget]` 前缀）。
 
 ## 第一道防线：ESLint 规则
 
