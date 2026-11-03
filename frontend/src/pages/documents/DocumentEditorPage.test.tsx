@@ -11,6 +11,7 @@ import { http, HttpResponse } from 'msw'
 import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
 import { OUTLINE_PREFS_KEY } from './outlinePrefs'
+import { SPLIT_PREF_KEY } from './splitPrefs'
 import { documentsApi } from '@/api/documents'
 import { serializeChartBlock } from '@/components/Document/chartBlock'
 import { renderProviders } from '@/test/render-providers'
@@ -343,6 +344,130 @@ describe('DocumentEditorPage 大纲面板', () => {
         fireEvent.keyDown(screen.getByTestId('doc-outline-resizer'), { key: 'End' })
         await waitFor(() => expect(screen.getByTestId('doc-outline-panel').style.width).toBe('400px'))
         expect(JSON.parse(localStorage.getItem(OUTLINE_PREFS_KEY) ?? '{}')).toMatchObject({ width: 400 })
+    })
+})
+
+describe('DocumentEditorPage 并排查看', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+        localStorage.removeItem(SPLIT_PREF_KEY)
+    })
+
+    afterEach(() => {
+        localStorage.removeItem(SPLIT_PREF_KEY)
+    })
+
+    it('默认关闭；顶栏按钮位于「反链」左侧，点击后左编辑右预览并持久化', async () => {
+        renderEditor()
+
+        const toggle = await screen.findByTestId('doc-split-toggle')
+        const backlinks = screen.getByRole('button', { name: '反链' })
+        // 需求 0089：入口固定在反链左侧（DOM 顺序确定，不靠视觉猜测）
+        expect(toggle.compareDocumentPosition(backlinks) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(toggle).toHaveAttribute('aria-pressed', 'false')
+        expect(screen.queryByTestId('doc-split-view')).not.toBeInTheDocument()
+
+        fireEvent.click(toggle)
+
+        const split = await screen.findByTestId('doc-split-view')
+        expect(split).toBeInTheDocument()
+        expect(toggle).toHaveAttribute('aria-pressed', 'true')
+        // 左侧编辑区（实时预览 / 源码开关仍在），右侧渲染预览
+        expect(screen.getByTestId('doc-editor-mode-switch')).toBeInTheDocument()
+        const preview = screen.getByTestId('doc-split-preview')
+        expect(within(preview).getByRole('heading', { name: '需求说明' })).toBeInTheDocument()
+        expect(localStorage.getItem(SPLIT_PREF_KEY)).toBe('1')
+
+        // 再点一次关闭：回到单栏编辑
+        fireEvent.click(toggle)
+        await waitFor(() => expect(screen.queryByTestId('doc-split-view')).not.toBeInTheDocument())
+        expect(localStorage.getItem(SPLIT_PREF_KEY)).toBe('0')
+    })
+
+    it('记忆偏好：下次打开自动并排；编辑内容实时反映到右侧预览', async () => {
+        localStorage.setItem(SPLIT_PREF_KEY, '1')
+        renderEditor()
+
+        const preview = await screen.findByTestId('doc-split-preview')
+        // 并排预览走 useDeferredValue（长文档不阻塞输入），首帧可能晚一拍
+        expect(await within(preview).findByRole('heading', { name: '需求说明' })).toBeInTheDocument()
+
+        // 源码模式下改正文：右侧预览同步（并排的意义所在）
+        fireEvent.click(within(screen.getByTestId('doc-editor-mode-switch')).getByText('源码'))
+        const textarea = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        fireEvent.change(textarea, { target: { value: '# 并排新标题\n\n正文' } })
+        await waitFor(() =>
+            expect(within(screen.getByTestId('doc-split-preview')).getByRole('heading', { name: '并排新标题' })).toBeInTheDocument(),
+        )
+    })
+
+    it('查看模式下点并排：自动进入编辑并渲染双栏', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    status: 'published',
+                    content: '# 已发布文档\n\n正文段落。\n',
+                    version_number: 1,
+                    draft: null,
+                    write_mode: 'direct',
+                })),
+        )
+        renderEditor()
+
+        // 已发布文档默认查看模式：只有预览，没有编辑工具栏
+        await screen.findByTestId('doc-view-mode')
+        fireEvent.click(await screen.findByTestId('doc-split-toggle'))
+
+        const split = await screen.findByTestId('doc-split-view')
+        expect(split).toBeInTheDocument()
+        expect(screen.getByTestId('doc-editor-mode-switch')).toBeInTheDocument()
+        expect(within(screen.getByTestId('doc-split-preview')).getByRole('heading', { name: '已发布文档' })).toBeInTheDocument()
+    })
+
+    it('归档文档不提供并排入口（只读）', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+                HttpResponse.json({
+                    ...mockDocuments[1],
+                    status: 'archived',
+                    content: '# 归档文档\n\n正文段落。\n',
+                    version_number: 1,
+                    draft: null,
+                    write_mode: 'direct',
+                })),
+        )
+        renderEditor()
+        // 归档文档只读：默认查看模式，且不出现「查看 / 编辑」与「并排查看」入口
+        await screen.findByTestId('doc-view-mode')
+        expect(screen.queryByTestId('doc-mode-switch')).not.toBeInTheDocument()
+        expect(screen.queryByTestId('doc-split-toggle')).not.toBeInTheDocument()
+    })
+
+    it('窄屏不提供并排入口（沿用编辑 / 预览页签）', async () => {
+        responsiveState = {
+            deviceType: 'mobile',
+            isMobile: true,
+            isTablet: false,
+            isDesktop: false,
+            width: 390,
+            height: 780,
+        }
+        try {
+            renderEditor()
+            await screen.findByTestId('doc-mode-switch')
+            expect(screen.queryByTestId('doc-split-toggle')).not.toBeInTheDocument()
+            expect(screen.queryByTestId('doc-split-view')).not.toBeInTheDocument()
+        } finally {
+            responsiveState = {
+                deviceType: 'desktop',
+                isMobile: false,
+                isTablet: false,
+                isDesktop: true,
+                width: 1280,
+                height: 800,
+            }
+        }
     })
 })
 

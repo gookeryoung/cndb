@@ -1,7 +1,18 @@
 /** 文档页 — 查看/编辑双模式 + Obsidian 风格实时预览 + 个人草稿（保存与提交解耦） */
 
 import '@/compat/polyfills'
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
@@ -44,6 +55,7 @@ import {
   SearchOutlined,
   SendOutlined,
   ShareAltOutlined,
+  SplitCellsOutlined,
   TableOutlined,
   TagsOutlined,
   WarningOutlined,
@@ -52,6 +64,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import FindReplaceBar from '@/components/Document/FindReplaceBar'
 import { ancestorChain } from './DocumentTree'
 import { pushRecentDoc } from './recentDocs'
+import { loadSplitOpen, saveSplitOpen } from './splitPrefs'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import MarkdownLiveEditor, {
   type MarkdownEditorHandle,
@@ -172,6 +185,8 @@ export default function DocumentEditorPage() {
   const [viewMode, setViewMode] = useState<'view' | 'edit'>('view')
   /** 编辑器的渲染模式：实时预览（Obsidian 风格）/ 源码 */
   const [editorMode, setEditorMode] = useState<MarkdownEditorMode>('live')
+  /** 并排查看：编辑区与渲染预览左右并排（桌面端；偏好在 localStorage） */
+  const [splitOpen, setSplitOpen] = useState<boolean>(() => loadSplitOpen())
   const [backlinksOpen, setBacklinksOpen] = useState(false)
   const [linksOpen, setLinksOpen] = useState(false)
   // 断链修复：旧标题 → 选中的目标文档 ID
@@ -567,6 +582,17 @@ export default function DocumentEditorPage() {
     [viewMode, hasChanges, hasUnsaved, draftMut, content],
   )
 
+  useEffect(() => {
+    saveSplitOpen(splitOpen)
+  }, [splitOpen])
+
+  /** 并排查看开关：开启时若处于查看模式，自动进入编辑（并排 = 编辑 + 预览） */
+  const toggleSplit = useCallback(() => {
+    const next = !splitOpen
+    setSplitOpen(next)
+    if (next && viewMode !== 'edit') handleModeChange('edit')
+  }, [splitOpen, viewMode, handleModeChange])
+
   /** 当前文档所在路径（祖先链，去掉自身）：复用与文档树相同的 React Query 缓存 key */
   const treeQuery = useQuery({
     queryKey: ['documents', workspaceId, 'tree'],
@@ -594,6 +620,9 @@ export default function DocumentEditorPage() {
 
   /** 正文统计（字数 / 行数 / 预计阅读时长） */
   const stats = useMemo(() => documentStats(content), [content])
+
+  /** 并排预览用延迟值：长文档逐键渲染不阻塞编辑输入（React 会在空闲时追平） */
+  const splitPreviewContent = useDeferredValue(content)
 
   /** 全部匹配（随正文 / 查询 / 大小写开关实时重算） */
   const findMatchesList = useMemo(
@@ -979,6 +1008,8 @@ export default function DocumentEditorPage() {
   const editable = true // viewer 保存转修改申请（202），无需在前端隐藏编辑入口
   // 原件族（PDF / Office / 图片，ADR 0025）：只读，正文区换成阅读器，编辑类入口全部隐藏
   const isAssetDoc = !doc.is_folder && isAssetContentType(doc.content_type)
+  // 并排查看只在桌面编辑态生效：窄屏沿用「编辑 / 预览」页签，查看态仍是纯预览
+  const splitActive = splitOpen && viewMode === 'edit' && !isAssetDoc && isDesktop
 
   // ── AI 抽屉展示数据：按当前动作从对应 hook 取 loading / error / 结果 ──
   const aiLoading =
@@ -1244,6 +1275,17 @@ export default function DocumentEditorPage() {
           {/* 组 1：导航与关联（反链 / 链接，按钮组连体）；大纲开关固定最右端收尾 */}
           {!isAssetDoc && (
             <Space.Compact>
+              {/* 并排查看（需求 0089）：固定在反链左侧；归档文档只读，不提供 */}
+              {doc.status !== 'archived' && (
+                <IconBtn
+                  icon={<SplitCellsOutlined />}
+                  label={splitActive ? '退出并排查看' : '并排查看（编辑 + 预览）'}
+                  data-testid="doc-split-toggle"
+                  type={splitActive ? 'primary' : 'default'}
+                  aria-pressed={splitActive}
+                  onClick={toggleSplit}
+                />
+              )}
               <IconBtn icon={<LinkOutlined />} label="反链" onClick={() => setBacklinksOpen(true)} />
               <IconBtn
                 icon={<BranchesOutlined />}
@@ -1497,17 +1539,59 @@ export default function DocumentEditorPage() {
                 </Button>
               </Space>
             </div>
-            <MarkdownLiveEditor
-              ref={editorRef}
-              value={content}
-              mode={editorMode}
-              workspaceId={workspaceId}
-              placeholder="输入 Markdown 内容…"
-              onChange={setContent}
-              onPasteImages={handlePasteImages}
-              onShortcut={applyEditorShortcut}
-            />
-            <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
+            {splitActive ? (
+              <div data-testid="doc-split-view" style={{ flex: 1, minHeight: 0, display: 'flex' }}>
+                {/* 左：编辑（沿用实时预览 / 源码开关） */}
+                <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                  <MarkdownLiveEditor
+                    ref={editorRef}
+                    value={content}
+                    mode={editorMode}
+                    workspaceId={workspaceId}
+                    placeholder="输入 Markdown 内容…"
+                    onChange={setContent}
+                    onPasteImages={handlePasteImages}
+                    onShortcut={applyEditorShortcut}
+                  />
+                  <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
+                </div>
+                {/* 右：渲染预览（与查看模式同一渲染器，随正文实时更新） */}
+                <div
+                  data-testid="doc-split-preview"
+                  style={{
+                    flex: 1,
+                    minWidth: 0,
+                    minHeight: 0,
+                    overflow: 'auto',
+                    padding: '12px 20px',
+                    borderLeft: '1px solid var(--cn-border)',
+                  }}
+                >
+                  <MarkdownPreview
+                    content={splitPreviewContent}
+                    workspaceId={workspaceId}
+                    onWikilink={handleWikilink}
+                    onEditChart={canEditCharts ? openChartDesignerForEdit : undefined}
+                    onRefWidthChange={canEditCharts ? changeRefWidth : undefined}
+                    onChartWidthChange={canEditCharts ? changeChartWidth : undefined}
+                  />
+                </div>
+              </div>
+            ) : (
+              <>
+                <MarkdownLiveEditor
+                  ref={editorRef}
+                  value={content}
+                  mode={editorMode}
+                  workspaceId={workspaceId}
+                  placeholder="输入 Markdown 内容…"
+                  onChange={setContent}
+                  onPasteImages={handlePasteImages}
+                  onShortcut={applyEditorShortcut}
+                />
+                <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
+              </>
+            )}
           </>
         )}
         </div>
