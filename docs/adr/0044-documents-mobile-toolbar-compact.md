@@ -165,14 +165,14 @@ Related: `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/
 |---|---|---|---|---|
 | P0 工具栏重排 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | e6cd68f2 |
 | P1 区段留白收窄 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | e6cd68f2 |
-| P2 整页紧凑化 | 进行中 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | 待回填 |
+| P2 整页紧凑化 | 已落地 | `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/documents/DocumentsPage.test.tsx` | 4b68fe1 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P2 整页紧凑化已实现，前端单测通过，待 `make flow` 全绿与提交
+- 当前阶段：P2 整页紧凑化已落地（`4b68fe1`），全期完成
 - 已完成：P0 / P1（`e6cd68f2`）；P2 工具栏操作行收敛、文件夹两列卡、行尾「更多」下拉、系列 / 批量图标化、列表元信息收紧
-- 下一步：跑 `make flow` → 提交 P2 → 回填本表提交 sha
-- 已知坑：菜单是 Portal，React 事件仍沿组件树冒泡到整行，菜单项必须 `domEvent.stopPropagation()`；移动端确认框用 `Modal.useModal()` 而非静态 `Modal.confirm`；`Badge` 在 `count === 0` 时不渲染数字，断言用按钮 `aria-label`
-- 最近一次全绿：`make flow` @ P0/P1 实现提交 `e6cd68f2`（2026-10-26）
+- 下一步：按需发版；发版前重跑 `make frontend-coverage` / `make e2e`
+- 已知坑：菜单是 Portal，React 事件仍沿组件树冒泡到整行，菜单项必须 `domEvent.stopPropagation()`；移动端确认框用 `Modal.useModal()` 而非静态 `Modal.confirm`；`Badge` 在 `count === 0` 时不渲染数字，断言用按钮 `aria-label`；本机 `make frontend-coverage` 在默认 16 workers 下 9 个 `GridPage.*.test.tsx` 的 `preloadGridViews` 钩子 10s 超时（单套用 coverage 跑通过，与本 ADR 无关），必要时用 `VITEST_MAX_WORKERS=8` 重跑
+- 最近一次全绿：`make flow` + 前端全量 `pnpm test` @ `4b68fe1`（2026-11-03）；`make frontend-coverage` 受上述 GridPage 钩子超时阻塞
