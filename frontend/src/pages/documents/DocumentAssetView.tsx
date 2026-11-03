@@ -2,8 +2,9 @@
  *
  * 原件经带鉴权头的接口取回为 blob，再挂 objectURL —— 不用裸链接，
  * 否则未发布草稿的原件会绕过文档可见性。
- * MHTML（0064）/ Excel（0087）/ Word archive（0087）：浏览器不渲染这些原件，
- * 改用后端生成的自包含预览 HTML，在禁脚本的沙箱 iframe 里渲染；下载仍走原件接口。
+ * MHTML（0064）：浏览器不渲染 multipart/related，改用后端自包含 HTML + 沙箱 iframe；
+ * Excel（0087）/ Word archive（0087）：后端自包含 HTML 走 ``OfficeHtmlPreview``（Shadow DOM 内联），
+ * 与 PPTX 一样只保留正文区一条滚动条，不再多一层 iframe 视口；下载仍走原件接口。
  * PPTX：纯前端渲染（PptxPreview 懒加载），旧版 .ppt 仍回落下载卡。
  */
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
@@ -12,6 +13,7 @@ import { DownloadOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { documentsApi, type DocumentItem } from '@/api/documents'
 import { formatMeta } from '@/components/Document/docFormat'
+import OfficeHtmlPreview from './OfficeHtmlPreview'
 
 // PPTX 渲染库体积较大（jszip / echarts），只在打开 .pptx 时按需加载
 const PptxPreview = lazy(() => import('./PptxPreview'))
@@ -64,7 +66,6 @@ export default function DocumentAssetView({
   // Excel / Word 预览走后端 HTML：仅标准 .xlsx 与 archive 存档的 .docx；
   // 旧版二进制 .xls / .doc 保持下载卡（后端也会 400）
   const isOfficePreview = (doc.content_type === 'xlsx' && suffix === 'xlsx') || doc.content_type === 'word'
-  const needsPreview = isMhtml || isOfficePreview
 
   const assetQuery = useQuery({
     queryKey: ['documents', workspaceId, doc.id, 'asset'],
@@ -72,12 +73,18 @@ export default function DocumentAssetView({
     retry: false,
   })
 
-  // 预览与原件下载分开取：预览是转换后的自包含 HTML，不能混用
+  // MHTML 预览取 blob（沙箱 iframe）；Office 预览取文本（Shadow DOM 内联）
   const previewQuery = useQuery({
     queryKey: ['documents', workspaceId, doc.id, 'asset-preview'],
     queryFn: () => documentsApi.assetPreviewBlob(workspaceId, doc.id),
     retry: false,
-    enabled: needsPreview,
+    enabled: isMhtml,
+  })
+  const officePreviewQuery = useQuery({
+    queryKey: ['documents', workspaceId, doc.id, 'asset-preview-text'],
+    queryFn: () => documentsApi.assetPreviewText(workspaceId, doc.id),
+    retry: false,
+    enabled: isOfficePreview,
   })
 
   const blob = assetQuery.data
@@ -102,9 +109,14 @@ export default function DocumentAssetView({
     return () => URL.revokeObjectURL(url)
   }, [previewBlob])
 
-  const loading = needsPreview ? previewQuery.isLoading : assetQuery.isLoading
+  const officeHtml = officePreviewQuery.data
+  const loading = isMhtml
+    ? previewQuery.isLoading
+    : isOfficePreview
+      ? officePreviewQuery.isLoading
+      : assetQuery.isLoading
   // Office 预览失败（损坏 / 加密）不吞成「原件缺失」：退化为下载卡，原件仍可取
-  const officePreviewFailed = isOfficePreview && (previewQuery.isError || !previewUrl)
+  const officePreviewFailed = isOfficePreview && (officePreviewQuery.isError || !officeHtml)
   const failed = isMhtml
     ? previewQuery.isError || !previewUrl
     : officePreviewFailed
@@ -185,18 +197,10 @@ export default function DocumentAssetView({
         />
       )
     }
-    if (isOfficePreview && !officePreviewFailed) {
-      // Excel / Word 预览（0087 C1/C3）：后端 openpyxl / python-docx 生成自包含 HTML，
-      // 同样在 sandbox 禁脚本 iframe 内渲染；失败时落到下面的下载卡
-      return (
-        <iframe
-          title={doc.title}
-          src={previewUrl ?? undefined}
-          sandbox=""
-          data-testid="doc-asset-office"
-          style={{ flex: 1, minHeight: 0, width: '100%', border: 'none' }}
-        />
-      )
+    if (isOfficePreview && !officePreviewFailed && officeHtml) {
+      // Excel / Word 预览（0087 C1/C3）：后端自包含 HTML 内联到 Shadow DOM，
+      // 正文区只保留一条滚动条（与 PPTX 一致）；失败时落到下面的下载卡
+      return <OfficeHtmlPreview html={officeHtml} />
     }
     return (
       <Empty

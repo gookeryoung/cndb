@@ -776,6 +776,15 @@ export const documentsApi = {
   // 注意：实例默认头是 application/json，multipart 必须显式声明 multipart/form-data，
   // 请求拦截器会删掉它再由浏览器补 boundary（否则后端解析不了表单 → 422）。
 
+  /** 原件预览 HTML（文本）：Office（xlsx / word）内联渲染用，不经过 blob / iframe */
+  assetPreviewText: (wid: number | string, docId: number | string) =>
+    api
+      .get<string>(`${base(wid)}/${docId}/asset/preview`, {
+        responseType: 'text',
+        transformResponse: [(data: string) => data],
+      })
+      .then(r => r.data),
+
   /** 上传 zip 解析预览（只读，不落库）：条目数 / 冲突 / 标签 / 告警 */
   vaultAnalyze: (
     wid: number | string,

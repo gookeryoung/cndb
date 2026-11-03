@@ -52,8 +52,8 @@ LEGACY_MIMES: frozenset[str] = frozenset({"application/vnd.ms-excel", "applicati
 
 _PAGE_STYLE = """
 :root { color-scheme: light dark; }
-body { margin: 0; padding: 20px 24px 40px; font: 14px/1.7 -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
-  color: #1f2937; background: #fff; }
+body { margin: 0; padding: 16px 20px 24px; font: 14px/1.7 -apple-system, "Segoe UI", "Noto Sans SC", sans-serif;
+  color: var(--cn-text-primary, #1f2937); background: var(--cn-bg-container, #fff); }
 h1 { font-size: 22px; margin: 0 0 16px; }
 h2 { font-size: 18px; margin: 24px 0 10px; }
 h3 { font-size: 16px; margin: 20px 0 8px; }
@@ -61,36 +61,31 @@ p { margin: 0 0 10px; }
 ul, ol { margin: 0 0 10px; padding-left: 24px; }
 table { border-collapse: collapse; margin: 0 0 16px; font-size: 13px; max-width: 100%; }
 table.sheet { display: block; }
-th, td { border: 1px solid #d7dee8; padding: 4px 8px; text-align: left; vertical-align: top; white-space: pre-wrap; }
-th { background: #f1f5f9; font-weight: 600; }
+th, td { border: 1px solid var(--cn-border-soft, #d7dee8); padding: 4px 8px; text-align: left; vertical-align: top; white-space: pre-wrap; }
+th { background: var(--cn-bg-muted, #f1f5f9); font-weight: 600; }
 /* 列号行吸附在顶部；行号列吸附在左侧（横向滚动时也可见） */
-thead th { position: sticky; top: 0; z-index: 1; }
+thead th { position: sticky; top: 0; z-index: 1; background: var(--cn-bg-muted, #f1f5f9); }
 thead th.cn-sheet-corner { left: 0; z-index: 2; }
 tbody th.cn-sheet-rownum { position: sticky; left: 0; z-index: 1; min-width: 40px;
-  text-align: right; font-weight: 400; color: #64748b; background: #fafafa; }
+  text-align: right; font-weight: 400; color: var(--cn-text-secondary, #64748b);
+  background: var(--cn-bg-subtle, #fafafa); }
 img { max-width: 100%; height: auto; }
 /* 工作表分页：radio + label 实现无脚本标签页（沙箱内禁用 JS） */
 .cn-sheet-tabs { position: relative; }
 .cn-sheet-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .cn-sheet-tabbar { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px;
-  border-bottom: 1px solid #d7dee8; position: sticky; top: 0; background: #fff; z-index: 2; }
+  border-bottom: 1px solid var(--cn-border-soft, #d7dee8); position: sticky; top: 0;
+  background: var(--cn-bg-container, #fff); z-index: 2; }
 .cn-sheet-tab { flex: 0 0 auto; padding: 3px 12px; border: 1px solid transparent; border-radius: 6px;
-  font-size: 13px; color: #64748b; cursor: pointer; white-space: nowrap; user-select: none; }
-.cn-sheet-tab:hover { background: #f1f5f9; }
-.cn-sheet-tab-count { color: #94a3b8; font-size: 11px; margin-left: 4px; }
+  font-size: 13px; color: var(--cn-text-secondary, #64748b); cursor: pointer; white-space: nowrap; user-select: none; }
+.cn-sheet-tab:hover { background: var(--cn-bg-subtle, #f1f5f9); }
+.cn-sheet-tab-count { color: var(--cn-text-muted, #94a3b8); font-size: 11px; margin-left: 4px; }
 .cn-sheet-panel { display: none; }
 /* 可见性只由 :checked 决定（首屏也不需要常驻规则，否则切页时第一页不会隐藏） */
-.cn-preview-empty, .cn-preview-note { color: #64748b; font-size: 12px; }
+.cn-preview-empty, .cn-preview-note { color: var(--cn-text-muted, #64748b); font-size: 12px; }
+/* 直接打开预览 URL 时无应用主题变量：按系统偏好兜底（应用内由 --cn-* 接管） */
 @media (prefers-color-scheme: dark) {
-  body { background: #0f172a; color: #e2e8f0; }
-  th { background: #1e293b; }
-  th, td { border-color: #334155; }
-  .cn-preview-empty, .cn-preview-note { color: #94a3b8; }
-  .cn-sheet-tabbar { background: #0f172a; border-color: #334155; }
-  thead th { background: #1e293b; }
-  tbody th.cn-sheet-rownum { background: #111827; color: #94a3b8; }
-  .cn-sheet-tab { color: #94a3b8; }
-  .cn-sheet-tab:hover { background: #1e293b; }
+  :root { color-scheme: dark; }
 }
 """
 
@@ -244,9 +239,17 @@ def _spreadsheet_body(tabs: list[_SheetTab]) -> tuple[str, str]:
         )
         # 选中态：标签高亮 + 对应面板显示（无 JS 的纯 CSS 分页）
         selector = f"#{tab_id}:checked ~ .cn-sheet-tabbar .cn-sheet-tab-{index}"
-        rules.append(f"{selector} {{ color: #1f2937; border-color: #d7dee8; background: #f1f5f9; font-weight: 600; }}")
+        rules.append(
+            f"{selector} {{ color: var(--cn-text-primary, #1f2937);"
+            " border-color: var(--cn-border-soft, #d7dee8);"
+            " background: var(--cn-bg-subtle, #f1f5f9); font-weight: 600; }"
+        )
         rules.append(f"#{tab_id}:checked ~ .cn-sheet-panels .cn-sheet-panel-{index} {{ display: block; }}")
-        dark_rules.append(f"{selector} {{ color: #e2e8f0; border-color: #334155; background: #1e293b; }}")
+        dark_rules.append(
+            f"{selector} {{ color: var(--cn-text-primary, #e2e8f0);"
+            " border-color: var(--cn-border-soft, #334155);"
+            " background: var(--cn-bg-subtle, #1e293b); }"
+        )
     body = (
         '<div class="cn-sheet-tabs">'
         + "".join(radios)

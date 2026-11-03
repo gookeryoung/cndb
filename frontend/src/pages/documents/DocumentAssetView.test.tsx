@@ -51,6 +51,9 @@ beforeEach(() => {
   vi.restoreAllMocks()
   vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))
   vi.spyOn(documentsApi, 'assetPreviewBlob').mockResolvedValue(new Blob(['<html><body>预览</body></html>'], { type: 'text/html' }))
+  vi.spyOn(documentsApi, 'assetPreviewText').mockResolvedValue(
+    '<html><head><style>.cn-sheet-panel{display:none}</style></head><body><table class="sheet"><tbody><tr><td>预览</td></tr></tbody></table></body></html>',
+  )
 })
 
 describe('DocumentAssetView 原件阅读器', () => {
@@ -78,7 +81,7 @@ describe('DocumentAssetView 原件阅读器', () => {
     expect(screen.queryByTestId('doc-asset-format')).not.toBeInTheDocument()
   })
 
-  it('xlsx 走后端 HTML 预览（沙箱 iframe），不再给下载卡', async () => {
+  it('xlsx 走后端 HTML 内联预览（Shadow DOM），不再给下载卡也不再套 iframe', async () => {
     renderProviders(
       <DocumentAssetView
         workspaceId={7}
@@ -90,12 +93,15 @@ describe('DocumentAssetView 原件阅读器', () => {
       />,
     )
 
-    const frame = await screen.findByTestId('doc-asset-office')
-    expect(frame.tagName).toBe('IFRAME')
-    expect(frame).toHaveAttribute('sandbox', '')
+    const host = await screen.findByTestId('doc-asset-office')
+    expect(host.tagName).toBe('DIV')
+    // 内容进影子根：样式隔离、正文区只有一条滚动条（与 PPTX 同模型）
+    expect(host.shadowRoot?.innerHTML).toContain('<table class="sheet">')
+    expect(host.shadowRoot?.innerHTML).toContain('.cn-sheet-panel{display:none}')
+    expect(document.querySelector('iframe[data-testid="doc-asset-office"]')).toBeNull()
     expect(screen.queryByTestId('doc-asset-format')).not.toBeInTheDocument()
     expect(screen.queryByTestId('doc-asset-download-card')).not.toBeInTheDocument()
-    expect(documentsApi.assetPreviewBlob).toHaveBeenCalledWith(7, 31)
+    expect(documentsApi.assetPreviewText).toHaveBeenCalledWith(7, 31)
   })
 
   it('archive 存档的 Word 文档同样走预览 iframe', async () => {
@@ -110,13 +116,13 @@ describe('DocumentAssetView 原件阅读器', () => {
       />,
     )
 
-    expect((await screen.findByTestId('doc-asset-office')).tagName).toBe('IFRAME')
+    expect((await screen.findByTestId('doc-asset-office')).tagName).toBe('DIV')
     expect(screen.queryByTestId('doc-asset-format')).not.toBeInTheDocument()
     expect(assetSuffix(docOf({ content_type: 'word', asset_mime: '' }))).toBe('docx')
   })
 
   it('Office 预览失败退化下载卡（原件仍可下载）', async () => {
-    vi.spyOn(documentsApi, 'assetPreviewBlob').mockRejectedValue(new Error('400'))
+    vi.spyOn(documentsApi, 'assetPreviewText').mockRejectedValue(new Error('400'))
     renderProviders(
       <DocumentAssetView
         workspaceId={7}

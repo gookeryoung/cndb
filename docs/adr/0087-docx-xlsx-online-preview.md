@@ -103,7 +103,8 @@ def build_office_preview(content_type: str, mime: str, data: bytes) -> str: ... 
 
 - **格式 / 只读标识单点**：原件族的格式与只读属性统一显示在文档页顶栏**右侧动作区**（紧邻图标按钮组之前的一枚 `{格式} · 只读` 徽标），其后紧跟信息图标按钮，点击弹出「原件信息」气泡（格式 / 大小 / MIME / 原样存档 · 只读口径）；预览区与阅读器内部不再重复任何标识；PPTX 的「放映」入口同样收进右侧动作组（窄屏也在顶栏），预览内容区只放内容本身；
 - `docFormat.ts`：`word` → `{ label: 'Word', Icon: FileWordOutlined, color: '#2f54eb', asset: true }`，加入 `DOC_ASSET_CONTENT_TYPES`；
-- `DocumentAssetView`：预览分支由「仅 MHTML」抽象为「MHTML / Office」——`previewQuery` 对 `mhtml`、`xlsx`（`.xlsx` 后缀）与 `word` 开启；Office 预览在 `sandbox=""` iframe 中渲染（`data-testid=doc-asset-office`），失败时为下载卡 + 提示；`assetSuffix` 补 docx / xlsx 的 MIME 映射；
+- `DocumentAssetView`：预览分支由「仅 MHTML」抽象为「MHTML / Office」——MHTML 取 blob 走 `sandbox=""` iframe；Office（`xlsx` / `word`）取文本交给 `OfficeHtmlPreview`：把后端 HTML 拆成「样式 + body 片段」注入 **Shadow DOM**（样式隔离、不污染页面、剔除 `<script>`），正文区只保留一条滚动条（与 PPTX 预览同模型），不再套 iframe 视口；预览失败时为下载卡 + 提示；`assetSuffix` 补 docx / xlsx 的 MIME 映射；后端预览 CSS 颜色改用 `var(--cn-*)` 主题变量（自定义属性继承进影子根），避免系统深色偏好导致「黑底预览块」；
+- `OfficeHtmlPreview.tsx`：Shadow DOM 渲染器 + `splitPreviewHtml`（拆 style / body、兜底剔脚本），宿主补 `:host` 基础字体与前景色；
 - `DocumentImportModal`：新增「Word 原样存档」开关（默认关），切换后重新 `analyze`；导入请求带 `docxMode`；
 - `api/documents.ts`：`DocxImportMode` 类型 + `FileImportPayload.docxMode` + 表单字段 `docx_mode`。
 
@@ -111,7 +112,7 @@ def build_office_preview(content_type: str, mime: str, data: bytes) -> str: ... 
 
 - 判定层（`tests/test_documents_asset_import.py`）：`docx_mode` 分派（convert 仍 markdown / archive 落 word）、非法模式 400、xlsx 预览 HTML（多表 / 表头 / 数值 / 日期）、docx 预览 HTML（标题 / 列表 / 表格 / 图片 `data:`）、截断标记、损坏原件报错、旧版 `.xls` 拒绝；
 - 接口层：`archive` 导入后 `content_type=word` 且 `asset` 端点可下载；预览端点响应头（CSP / nosniff / inline）、非预览类型 400、权限与可见性 404、缺失原件 404；
-- 前端（`DocumentAssetView.test.tsx`、`DocumentImportModal.test.tsx`、`docFormat.test.ts`）：xlsx / word 走沙箱 iframe、旧版 xls 回落下载卡、Word 开关默认关 / 切换重解析 / 导入带 `docxMode`、`word` 属原件族。
+- 前端（`DocumentAssetView.test.tsx`、`OfficeHtmlPreview.test.tsx`、`DocumentImportModal.test.tsx`、`docFormat.test.ts`）：xlsx / word 走 `DIV + shadowRoot`（无 iframe）、Shadow DOM 拆分 / 剔除脚本 / 更新不叠加、旧版 xls 回落下载卡、Word 开关默认关 / 切换重解析 / 导入带 `docxMode`、`word` 属原件族。
 
 ### 8. 分期
 

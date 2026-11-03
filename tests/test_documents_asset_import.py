@@ -274,6 +274,16 @@ class TestOfficePreviewRender:
             "BA",
         ]
 
+    def test_spreadsheet_preview_follows_app_theme(self):
+        """内联渲染（Shadow DOM）时颜色取页面主题变量，避免「深色预览块」与主题不一致."""
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        assert "var(--cn-text-primary" in html
+        assert "var(--cn-bg-muted" in html
+        assert "var(--cn-border-soft" in html
+        # 选中态是 ID 选择器，必须直接用变量（否则深色主题下仍是浅底）
+        assert "color: var(--cn-text-primary, #1f2937)" in html
+        assert "background: var(--cn-bg-subtle" in html
+
     def test_spreadsheet_page_fills_iframe_height(self):
         """布局（需求 0091）：整页铺满 iframe 高度，滚动只发生在面板内，底部不留大空白."""
         html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
