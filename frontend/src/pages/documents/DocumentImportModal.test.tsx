@@ -151,20 +151,35 @@ describe('通用导入弹窗', () => {
     pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
 
     const summary = await screen.findByTestId('file-import-summary')
-    expect(summary).toHaveTextContent('4 个') // 文件数
-    expect(summary).toHaveTextContent('3 篇') // 可导入文档
-    expect(summary).toHaveTextContent('原样存档1 个')
-    expect(summary).toHaveTextContent('1 篇') // 同名冲突
+    expect(summary).toHaveTextContent('文件 4 个')
+    expect(summary).toHaveTextContent('可导入 3 篇')
+    expect(summary).toHaveTextContent('原样存档 1 个')
+    expect(summary).toHaveTextContent('同名冲突 1 篇')
     expect(screen.getByTestId('file-import-conflict')).toBeInTheDocument()
     expect(screen.getByTestId('file-import-preview')).toHaveTextContent('笔记/设计.docx')
     expect(screen.getByText(/bad.txt：不支持的格式/)).toBeInTheDocument()
-    expect(screen.getByTestId('file-import-picked')).toHaveTextContent('已选择 1 个文件')
+    expect(screen.getByTestId('file-import-picked')).toHaveTextContent('已选 1 个文件')
     expect(documentsApi.fileImportAnalyze).toHaveBeenCalledWith(WID, {
       entries: [{ file: expect.any(File), path: '说明.md' }],
       parentId: null,
       mhtmlMode: 'archive',
       docxMode: 'convert',
     })
+  })
+
+  it('整个上传区可点击，格式说明与选择互不干扰', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    const inputClick = vi.spyOn(HTMLInputElement.prototype, 'click')
+    const zone = screen.getByTestId('file-import-dropzone')
+
+    fireEvent.click(zone)
+    expect(inputClick).toHaveBeenCalledTimes(1)
+
+    // 点「格式说明」只开说明气泡，不触发文件选择
+    fireEvent.click(screen.getByTestId('file-import-help'))
+    expect(inputClick).toHaveBeenCalledTimes(1)
+    expect(await screen.findByText('格式与处理方式')).toBeInTheDocument()
+    expect(screen.getByText(/原样存档：PDF \/ Excel \/ PPT \/ 图片/)).toBeInTheDocument()
   })
 
   it('预览把 PDF / Office / 图片标为原样存档，accept 覆盖新格式', async () => {
@@ -201,7 +216,7 @@ describe('通用导入弹窗', () => {
       mhtmlMode: 'archive',
       docxMode: 'convert',
     })
-    expect(await screen.findByTestId('file-import-picked')).toHaveTextContent('已选择 2 个文件')
+    expect(await screen.findByTestId('file-import-picked')).toHaveTextContent('已选 2 个文件')
   })
 
   it('按确认的策略与开关导入', async () => {
@@ -290,20 +305,22 @@ describe('通用导入弹窗', () => {
     await screen.findByTestId('file-import-summary')
 
     expect(screen.getByTestId('file-import-docx-archive')).toBeDisabled()
-    expect(screen.getByText('Word 原样存档（仅 docx 支持）')).toBeInTheDocument()
+    expect(screen.getByText('Word 原样存档')).toBeInTheDocument()
   })
 
-  it('批次无 MHTML（如 PDF）时「转Markdown」开关禁用', async () => {
+  it('批次无 MHTML（如 PDF）时「MHTML 转 Markdown」开关禁用', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
     pick([new File(['%PDF'], '报告.pdf', { type: 'application/pdf' })])
     await screen.findByTestId('file-import-summary')
 
     const convertSwitch = screen.getByTestId('file-import-mhtml-convert')
     expect(convertSwitch).toBeDisabled()
-    expect(screen.getByText('转Markdown（仅 MHTML 支持）')).toBeInTheDocument()
+    expect(screen.getByText('MHTML 转 Markdown')).toBeInTheDocument()
+    // 内嵌图片开关与 MHTML 无关的批次保持可用（原样存档不适用只针对批次含 MHTML 时）
+    expect(screen.getByTestId('file-import-attachments')).toBeEnabled()
   })
 
-  it('批次仅含 .mht（MHTML 别名）时「转Markdown」开关可用', async () => {
+  it('批次仅含 .mht（MHTML 别名）时「MHTML 转 Markdown」开关可用', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
     pick([new File(['x'], '网页存档.mht')])
     await screen.findByTestId('file-import-summary')

@@ -13,17 +13,18 @@ import {
   Alert,
   App as AntApp,
   Button,
-  Descriptions,
   Empty,
   Modal,
+  Popover,
   Radio,
   Space,
   Switch,
   Table,
   Tag as AntTag,
+  Tooltip,
   Typography,
 } from 'antd'
-import { FileAddOutlined, FolderOpenOutlined, InboxOutlined } from '@ant-design/icons'
+import { FileAddOutlined, FolderOpenOutlined, InboxOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { VaultImportForm } from './ObsidianImportModal'
 import {
@@ -104,10 +105,12 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const [docxMode, setDocxMode] = useState<DocxImportMode>('convert')
   const [status, setStatus] = useState<'draft' | 'published'>('draft')
 
-  /** 批次里是否含 MHTML（.mhtml / .mht）：不含时「转Markdown」开关禁用（仅对 MHTML 生效） */
+  /** 批次里是否含 MHTML（.mhtml / .mht）：不含时「MHTML 转 Markdown」开关禁用（仅对 MHTML 生效） */
   const hasMhtml = entries.some(entry => /\.(mhtml|mht)$/i.test(entry.path))
   /** 批次里是否含 Word（.docx）：不含时「Word 原样存档」开关禁用（仅对 docx 生效） */
   const hasDocx = entries.some(entry => /\.docx$/i.test(entry.path))
+  /** 内嵌图片开关只在「MHTML 原样存档」时无意义（素材已随原件保留），其余批次均可用 */
+  const attachmentsDisabled = hasMhtml && mhtmlMode === 'archive'
 
   const reset = () => {
     setEntries([])
@@ -246,6 +249,19 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const busy = analyzeMut.isPending || importMut.isPending
   const targetText = parentLabel ? `「${parentLabel}」文件夹` : '根目录'
 
+  /** 解析结果的紧凑统计：零值走次要色，避免一行里全是 0 抢注意力 */
+  const summaryItems = analysis
+    ? [
+        { key: 'files', label: '文件', value: `${analysis.total_files} 个`, zero: analysis.total_files === 0 },
+        { key: 'docs', label: '可导入', value: `${analysis.total_documents} 篇`, zero: analysis.total_documents === 0 },
+        { key: 'assets', label: '原样存档', value: `${analysis.assets ?? 0} 个`, zero: (analysis.assets ?? 0) === 0 },
+        { key: 'folders', label: '新建文件夹', value: `${analysis.total_folders} 个`, zero: analysis.total_folders === 0 },
+        { key: 'conflicts', label: '同名冲突', value: `${analysis.conflicts} 篇`, zero: analysis.conflicts === 0 },
+        { key: 'skipped', label: '跳过', value: `${analysis.skipped.length} 个`, zero: analysis.skipped.length === 0 },
+        { key: 'warnings', label: '告警', value: `${analysis.warnings.length} 条`, zero: analysis.warnings.length === 0 },
+      ]
+    : []
+
   const footer = result
     ? [
         <Button key="close" type="primary" onClick={close}>
@@ -358,40 +374,67 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
             data-testid="file-import-input"
             onChange={e => pick(e.target.files)}
           />
+          {/* 整块可点：鼠标直接落点；键盘 / 读屏走里面的真实按钮，不重复挂 role=button */}
           <div
+            data-testid="file-import-dropzone"
+            onClick={() => {
+              if (!busy) inputRef.current?.click()
+            }}
             style={{
               border: '1px dashed var(--cn-border)',
               borderRadius: 8,
-              padding: '24px 16px',
+              padding: '18px 16px 14px',
               textAlign: 'center',
+              cursor: busy ? 'default' : 'pointer',
             }}
           >
-            <p style={{ fontSize: 32, margin: 0, color: 'var(--cn-text-muted)' }}>
-              {mode === 'folder' ? <FolderOpenOutlined /> : <InboxOutlined />}
-            </p>
-            <p style={{ margin: '8px 0' }}>
-              {mode === 'folder' ? '选择一个文件夹' : '选择一个文件'}
-            </p>
-            <Button
-              icon={mode === 'folder' ? <FolderOpenOutlined /> : <FileAddOutlined />}
-              disabled={busy}
-              data-testid="file-import-pick"
-              onClick={() => inputRef.current?.click()}
-            >
-              {mode === 'folder' ? '选择文件夹' : '选择文件'}
-            </Button>
-            <p style={{ margin: '8px 0 0', fontSize: 12, color: 'var(--cn-text-muted)' }}>
-              支持 Markdown（.md）、Word（.docx）、HTML（.html）、MHTML 网页存档（.mhtml/.mht）——
-              导入时自动转换为 Markdown 并清理空白；
-              PDF、Excel（.xlsx/.xls）、PowerPoint（.pptx/.ppt）与图片（png/jpg/gif/webp/svg/bmp）
-              原样存档，导入后在阅读器里预览、可下载原件（不参与编辑）。MHTML 默认原样存档，
-              勾选「转Markdown」后才会转换（仅 MHTML 支持，PDF 等其他格式该选项禁用）；
-              Word 默认转 Markdown，勾选「Word 原样存档」后保留原件并在阅读器内预览（仅 .docx 支持）。导入到{targetText}。
-            </p>
+            <Space size={10} align="center" style={{ justifyContent: 'center', width: '100%' }}>
+              <span style={{ fontSize: 26, color: 'var(--cn-text-muted)', lineHeight: 1 }}>
+                {mode === 'folder' ? <FolderOpenOutlined /> : <InboxOutlined />}
+              </span>
+              <span style={{ textAlign: 'left' }}>
+                <Typography.Text strong>
+                  {mode === 'folder' ? '选择文件夹导入' : '选择文件导入'}
+                </Typography.Text>
+                <br />
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  导入到{targetText} · 支持 Markdown / Word / HTML / MHTML / PDF / Excel / PPT / 图片
+                </Typography.Text>
+              </span>
+            </Space>
+            <Space size={8} align="center" style={{ marginTop: 12 }} onClick={event => event.stopPropagation()}>
+              <Button
+                type="primary"
+                icon={mode === 'folder' ? <FolderOpenOutlined /> : <FileAddOutlined />}
+                disabled={busy}
+                data-testid="file-import-pick"
+                onClick={() => inputRef.current?.click()}
+              >
+                {mode === 'folder' ? '选择文件夹' : '选择文件'}
+              </Button>
+              <Popover
+                trigger="click"
+                placement="bottom"
+                title="格式与处理方式"
+                content={
+                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
+                    <li>转换：Markdown / HTML 直接转换；Word、MHTML 可勾选转换后编辑</li>
+                    <li>原样存档：PDF / Excel / PPT / 图片，以及勾选存档的 Word、MHTML；可预览、可下载，不可编辑</li>
+                    <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>
+                  </ul>
+                }
+              >
+                <Button type="link" size="small" icon={<QuestionCircleOutlined />} data-testid="file-import-help">
+                  格式说明
+                </Button>
+              </Popover>
+            </Space>
             {entries.length > 0 && (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
-                已选择 {entries.length} 个文件
-              </Typography.Text>
+              <div data-testid="file-import-picked">
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  已选 {entries.length} 个文件
+                </Typography.Text>
+              </div>
             )}
           </div>
 
@@ -399,21 +442,19 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
 
           {analysis && (
             <>
-              <Descriptions
-                size="small"
-                column={3}
-                bordered
+              <div
                 data-testid="file-import-summary"
-                items={[
-                  { key: 'files', label: '文件', children: `${analysis.total_files} 个` },
-                  { key: 'docs', label: '可导入文档', children: `${analysis.total_documents} 篇` },
-                  { key: 'folders', label: '新建文件夹', children: `${analysis.total_folders} 个` },
-                  { key: 'assets', label: '原样存档', children: `${analysis.assets ?? 0} 个` },
-                  { key: 'conflicts', label: '同名冲突', children: `${analysis.conflicts} 篇` },
-                  { key: 'skipped', label: '跳过', children: `${analysis.skipped.length} 个` },
-                  { key: 'warnings', label: '告警', children: `${analysis.warnings.length} 条` },
-                ]}
-              />
+                style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 12 }}
+              >
+                {summaryItems.map(item => (
+                  <span key={item.key} style={{ whiteSpace: 'nowrap' }}>
+                    <Typography.Text type={item.zero ? 'secondary' : undefined} style={{ fontSize: 12 }}>
+                      {item.label}
+                    </Typography.Text>{' '}
+                    <span style={{ fontWeight: 600 }}>{item.value}</span>
+                  </span>
+                ))}
+              </div>
 
               {analysis.skipped.map(item => (
                 <Alert key={item.path} type="warning" showIcon title={`${item.path}：${item.reason}`} />
@@ -421,11 +462,13 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
 
               {analysis.conflicts > 0 && (
                 <div data-testid="file-import-conflict">
-                  <Typography.Text strong>同名文档处理方式</Typography.Text>
+                  <Typography.Text strong style={{ fontSize: 12 }}>
+                    同名文档处理方式
+                  </Typography.Text>
                   <Radio.Group
                     value={conflict}
                     onChange={e => setConflict(e.target.value as VaultConflictPolicy)}
-                    style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}
+                    style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}
                   >
                     {CONFLICT_OPTIONS.map(option => (
                       <Radio key={option.value} value={option.value}>
@@ -439,42 +482,65 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                 </div>
               )}
 
-              <Space size={24} wrap>
-                <Space size={8}>
-                  <Switch
-                    checked={mhtmlMode === 'convert'}
-                    onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
-                    disabled={!hasMhtml}
-                    data-testid="file-import-mhtml-convert"
-                  />
-                  <Typography.Text type={hasMhtml ? undefined : 'secondary'}>
-                    转Markdown{!hasMhtml ? '（仅 MHTML 支持）' : ''}
+              <div
+                data-testid="file-import-options"
+                style={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  alignItems: 'center',
+                  gap: '10px 24px',
+                  padding: '10px 12px',
+                  border: '1px solid var(--cn-border)',
+                  borderRadius: 8,
+                  background: 'var(--cn-bg-subtle, transparent)',
+                }}
+              >
+                <Tooltip title="MHTML 默认原样存档；开启后按网页转换链路转成可编辑文档">
+                  <Space size={6}>
+                    <Switch
+                      size="small"
+                      checked={mhtmlMode === 'convert'}
+                      onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
+                      disabled={!hasMhtml}
+                      data-testid="file-import-mhtml-convert"
+                    />
+                    <Typography.Text type={hasMhtml ? undefined : 'secondary'} style={{ fontSize: 12 }}>
+                      MHTML 转 Markdown
+                    </Typography.Text>
+                  </Space>
+                </Tooltip>
+                <Tooltip title="Word 默认转 Markdown；开启后保留原件，阅读器内预览、不可编辑">
+                  <Space size={6}>
+                    <Switch
+                      size="small"
+                      checked={docxMode === 'archive'}
+                      onChange={checked => changeDocxMode(checked ? 'archive' : 'convert')}
+                      disabled={!hasDocx}
+                      data-testid="file-import-docx-archive"
+                    />
+                    <Typography.Text type={hasDocx ? undefined : 'secondary'} style={{ fontSize: 12 }}>
+                      Word 原样存档
+                    </Typography.Text>
+                  </Space>
+                </Tooltip>
+                <Tooltip title="转换 Word / HTML / MHTML 时一并导入内嵌图片；MHTML 原样存档时素材已随原件保留">
+                  <Space size={6}>
+                    <Switch
+                      size="small"
+                      checked={importAttachments}
+                      onChange={setImportAttachments}
+                      disabled={attachmentsDisabled}
+                      data-testid="file-import-attachments"
+                    />
+                    <Typography.Text type={attachmentsDisabled ? 'secondary' : undefined} style={{ fontSize: 12 }}>
+                      导入内嵌图片
+                    </Typography.Text>
+                  </Space>
+                </Tooltip>
+                <Space size={6} style={{ marginLeft: 'auto' }}>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    状态
                   </Typography.Text>
-                </Space>
-                <Space size={8}>
-                  <Switch
-                    checked={docxMode === 'archive'}
-                    onChange={checked => changeDocxMode(checked ? 'archive' : 'convert')}
-                    disabled={!hasDocx}
-                    data-testid="file-import-docx-archive"
-                  />
-                  <Typography.Text type={hasDocx ? undefined : 'secondary'}>
-                    Word 原样存档{!hasDocx ? '（仅 docx 支持）' : ''}
-                  </Typography.Text>
-                </Space>
-                <Space size={8}>
-                  <Switch
-                    checked={importAttachments}
-                    onChange={setImportAttachments}
-                    disabled={mhtmlMode === 'archive'}
-                    data-testid="file-import-attachments"
-                  />
-                  <Typography.Text type={mhtmlMode === 'archive' ? 'secondary' : undefined}>
-                    导入内嵌图片{mhtmlMode === 'archive' ? '（MHTML 原样存档时不适用）' : ''}
-                  </Typography.Text>
-                </Space>
-                <Space size={8}>
-                  <Typography.Text type="secondary">文档状态</Typography.Text>
                   <Radio.Group
                     value={status}
                     onChange={e => setStatus(e.target.value as 'draft' | 'published')}
@@ -486,7 +552,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                     ]}
                   />
                 </Space>
-              </Space>
+              </div>
 
               {analysis.items.length === 0 ? (
                 <Empty description="没有可导入的文件" />

@@ -22,7 +22,7 @@
 | C3 | 选择转MD | `mhtml_mode='convert'` 时沿用 ADR 0049 转换链路（`convert_mhtml` → Markdown + 素材展开），行为与现状一致 | `services/importers/mhtml.py` | 后端单测：convert 模式产物与现状快照一致 |
 | C4 | （性能口径） | `_expand_mhtml_resources` 仅在 convert 模式执行，archive 模式不解包素材索引 | `services/importers/importer.py:130` | 后端单测：archive 模式不触发素材展开 |
 | C5 | （预览一致性） | analyze 预览随 `mhtml_mode` 联动：archive 时 mhtml 项标记原样存档（`is_asset` / format 正确），convert 时为可导入文档；预览计数与落库结果一致 | `services/importers/reader.py`、`importer.py` | 后端单测：同一批次两种模式的 analyze 断言 |
-| C6 | （前端开关） | 通用导入弹窗确认区新增「MHTML 转 Markdown」开关，默认关；开关状态随 analyze / import 提交传递；archive（开关关）时「导入内嵌图片」开关禁用并提示不适用 | frontend `DocumentImportModal.tsx`、`api/documents.ts` | 前端单测：默认值、开关切换后提交参数、禁用态 |
+| C6 | （前端开关） | 通用导入弹窗确认区新增「MHTML 转 Markdown」开关，默认关；开关状态随 analyze / import 提交传递；archive（开关关）且批次含 MHTML 时「导入内嵌图片」开关禁用并提示不适用（批次不含 MHTML 时保持可用） | frontend `DocumentImportModal.tsx`、`api/documents.ts` | 前端单测：默认值、开关切换后提交参数、禁用态 |
 | C7 | （阅读体验，best effort） | DocumentAssetView 对 `content_type=mhtml` 尝试 `<iframe>` 内嵌预览；若现有白名单机制不支持则退化为仅下载（不阻塞验收） | frontend `DocumentAssetView.tsx` | 前端单测或人工验证 |
 | C8 | （行为变更说明） | 默认值从「转换」变为「不转换」属行为变更：CHANGELOG 记录，帮助教程文案同步（含两种模式差异） | `CHANGELOG`、`frontend/src/pages/help/content/tutorials.tsx` | `make check-docs` |
 | C9 | （回归口径） | Obsidian 库导入（vault）不受影响：vault 链路不新增 `mhtml_mode`，行为不变 | `services/importers/` vault 相关 | 后端 vault 导入单测回归通过 |
