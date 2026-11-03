@@ -1320,21 +1320,42 @@ def _tags_by_document(db: Session, doc_ids: list[int]) -> dict[int, list[str]]:
     return out
 
 
+def _export_suffix(doc: Document) -> str:
+    """导出文件名扩展名：文件夹空串、原件族取原件扩展名、Markdown 用 ``.md``."""
+    if doc.is_folder:
+        return ""
+    if doc.asset_file_key:
+        return Path(doc.asset_file_key).suffix.lower()
+    return ".md"
+
+
+#: 导出方式（需求 0088）：archive=压缩文档（纯文档树），obsidian=Obsidian 库（front-matter + 配置）
+EXPORT_STYLES = ("archive", "obsidian")
+#: 导出方式 → 文件名中的方式段
+_EXPORT_KINDS = {"archive": "documents", "obsidian": "obsidian"}
+
+
 def export_vault(
     db: Session,
     workspace_id: int,
     user: Any,
     *,
     workspace_name: str = "",
+    style: str = "archive",
 ) -> tuple[bytes, str]:
-    """把工作区文档树导出为 zip 压缩包（Obsidian 库格式）.
+    """把工作区文档树导出为 zip 压缩包（需求 0088）.
 
-    产物为 ``<库名>/<文件夹>/<标题>.md`` + front-matter + ``attachments/`` + 最小
-    ``.obsidian/`` 配置，解压后可直接作为 Obsidian 库打开（需求 0088：只保留压缩包导出）。
+    两种方式：``archive``（默认，压缩文档：纯文档树）与 ``obsidian``（front-matter +
+    ``.obsidian/`` 配置，解压即可作为库打开）。
+
+    产物结构为 ``<库名>/<文件夹>/<标题>.md`` + ``attachments/``；**原件族文档（PDF / Office /
+    图片 / MHTML 等）按原件字节与原始扩展名原样导出**，不转成空 Markdown。
 
     Returns:
         (zip 字节, 建议文件名)
     """
+    if style not in EXPORT_STYLES:
+        raise BadRequestError(f"不支持的导出方式: {style}，可选 {'/'.join(EXPORT_STYLES)}")
     docs = _visible_documents(db, workspace_id, user)
     if not any(not doc.is_folder for doc in docs):
         raise BadRequestError("当前工作区没有可导出的文档")
@@ -1356,12 +1377,14 @@ def export_vault(
     for parent, bucket in children.items():
         for doc in bucket:
             stem = _safe_filename(doc.title, fallback="未命名")
+            # 扩展名一起参与去重：原件族按原始扩展名导出，避免与同名 Markdown 撞名
+            suffix = _export_suffix(doc)
             taken = used.setdefault(parent, set())
-            candidate = stem
+            candidate = f"{stem}{suffix}"
             for index in range(2, 1000):
                 if candidate.lower() not in taken:
                     break
-                candidate = f"{stem} ({index})"
+                candidate = f"{stem} ({index}){suffix}"
             taken.add(candidate.lower())
             names[doc.id] = candidate
             dirs[doc.id] = f"{dirs.get(parent, '')}/{candidate}" if doc.is_folder else dirs.get(parent, "")
@@ -1370,6 +1393,7 @@ def export_vault(
     root_dir = Path(settings.UPLOAD_DIR)
     buffer = io.BytesIO()
     total_notes = 0
+    total_assets = 0
 
     def _rewrite_images(text: str) -> str:
         def _replace(match: re.Match[str]) -> str:
@@ -1392,31 +1416,47 @@ def export_vault(
             if doc.is_folder:
                 archive.writestr(f"{root_name}/{dirs[doc.id].strip('/')}/", "")
                 continue
+            directory = dirs.get(doc.id, "").strip("/")
+            rel = f"{root_name}/{directory + '/' if directory else ''}{names[doc.id]}"
+            if doc.asset_file_key:
+                # 原件族：按原始字节与扩展名导出（需求 0088），不转空 Markdown
+                source = resolve_upload_path(root_dir, workspace_id, doc.asset_file_key)
+                if source is None:
+                    continue
+                try:
+                    archive.writestr(rel, source.read_bytes())
+                except OSError:  # pragma: no cover - 读失败跳过该条
+                    continue
+                total_assets += 1
+                continue
             body = contents.get(doc.id, "")
             body = _rewrite_images(body)
-            note_tags = tags_map.get(doc.id, [])
-            front = _render_front_matter(doc.title, note_tags, doc)
-            text = f"{front}\n\n{body.lstrip()}" if body else f"{front}\n"
-            directory = dirs.get(doc.id, "").strip("/")
-            rel = f"{root_name}/{directory + '/' if directory else ''}{names[doc.id]}.md"
+            if style == "obsidian":
+                note_tags = tags_map.get(doc.id, [])
+                front = _render_front_matter(doc.title, note_tags, doc)
+                text = f"{front}\n\n{body.lstrip()}" if body else f"{front}\n"
+            else:
+                text = body.lstrip() or "\n"
             archive.writestr(rel, text)
             total_notes += 1
 
         for rel, data in sorted(attachments.items()):
             archive.writestr(f"{root_name}/{rel}", data)
 
-        # 最小 Obsidian 配置：解包即可作为库打开，附件进 attachments/
-        archive.writestr(
-            f"{root_name}/.obsidian/app.json",
-            '{\n  "attachmentFolderPath": "attachments",\n  "newLinkFormat": "shortest",\n  "useMarkdownLinks": false\n}\n',
-        )
-        archive.writestr(f"{root_name}/.obsidian/appearance.json", "{}\n")
+        # 最小 Obsidian 配置：仅库导出携带，解包即可作为库打开
+        if style == "obsidian":
+            archive.writestr(
+                f"{root_name}/.obsidian/app.json",
+                '{\n  "attachmentFolderPath": "attachments",\n  "newLinkFormat": "shortest",\n  "useMarkdownLinks": false\n}\n',
+            )
+            archive.writestr(f"{root_name}/.obsidian/appearance.json", "{}\n")
 
-    if total_notes == 0:  # pragma: no cover - 上面已守卫
+    if total_notes == 0 and total_assets == 0:  # pragma: no cover - 上面已守卫
         raise BadRequestError("当前工作区没有可导出的文档")
 
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
-    return buffer.getvalue(), f"{root_name}-obsidian-{stamp}.zip"
+    kind = _EXPORT_KINDS[style]
+    return buffer.getvalue(), f"{root_name}-{kind}-{stamp}.zip"
 
 
 __all__ = [

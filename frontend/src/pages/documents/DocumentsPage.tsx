@@ -15,6 +15,7 @@ import {
   Modal,
   Skeleton,
   Popconfirm,
+  Radio,
   Select,
   Space,
   Tag,
@@ -49,7 +50,7 @@ import {
 } from './docTreeSort'
 import { clearRecentDocs, loadRecentDocs } from './recentDocs'
 import { documentsApi } from '@/api/documents'
-import type { DocumentItem } from '@/api/documents'
+import type { DocumentItem, VaultExportStyle } from '@/api/documents'
 import { useResponsive } from '@/hooks/useResponsive'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
@@ -226,9 +227,12 @@ export default function DocumentsPage() {
     onError: () => message.error('删除失败'),
   })
 
-  // 文档导出（需求 0088）：直接下载 zip 压缩包，不再弹窗选方式（文件夹导出已移除）
+  // 文档导出（需求 0088）：两种方式均为 .zip —— 压缩文档（默认）/ Obsidian 库；
+  // 原件族（PDF / Office / 图片等）按原件导出，Markdown 导出正文
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportStyle, setExportStyle] = useState<VaultExportStyle>('archive')
   const vaultExportMut = useMutation({
-    mutationFn: () => documentsApi.vaultExport(workspaceId),
+    mutationFn: (style: VaultExportStyle) => documentsApi.vaultExport(workspaceId, style),
     onSuccess: ({ blob, filename }) => {
       const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
       const url = URL.createObjectURL(blob)
@@ -240,7 +244,8 @@ export default function DocumentsPage() {
       link.click()
       document.body.removeChild(link)
       URL.revokeObjectURL(url)
-      message.success('已导出压缩包')
+      message.success(exportStyle === 'archive' ? '已导出压缩文档' : '已导出 Obsidian 库')
+      setExportOpen(false)
     },
     onError: (err: unknown) => message.error(err instanceof Error ? err.message : '导出失败'),
   })
@@ -557,7 +562,7 @@ export default function DocumentsPage() {
   const mobileToolbarMenu: MenuProps['items'] = [
     { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
     { key: 'import', icon: <ImportOutlined />, label: '导入', onClick: () => setFileImportOpen(true) },
-    { key: 'export', icon: <ExportOutlined />, label: '导出', onClick: () => vaultExportMut.mutate() },
+    { key: 'export', icon: <ExportOutlined />, label: '导出', onClick: () => setExportOpen(true) },
     { type: 'divider' },
     { key: 'trash', icon: <DeleteOutlined />, label: '回收站', onClick: () => setTrashOpen(true) },
   ]
@@ -797,12 +802,11 @@ export default function DocumentsPage() {
                   导入
                 </Button>
               </Tooltip>
-              <Tooltip title="导出当前工作区文档树为 .zip 压缩包（含 front-matter 与最小 .obsidian 配置，解压即可作为库打开）">
+              <Tooltip title="导出当前工作区文档树为 .zip 压缩包：压缩文档（默认）或 Obsidian 库，原件按原文件导出">
                 <Button
                   icon={<ExportOutlined />}
                   data-testid="doc-vault-export"
-                  loading={vaultExportMut.isPending}
-                  onClick={() => vaultExportMut.mutate()}
+                  onClick={() => setExportOpen(true)}
                 >
                   导出
                 </Button>
@@ -1090,6 +1094,44 @@ export default function DocumentsPage() {
             />
           )}
         </Space>
+      </Modal>
+
+      {/* 导出方式选择弹窗（需求 0088）：两种方式均为 .zip，原件族按原文件导出 */}
+      <Modal
+        title="导出文档"
+        open={exportOpen}
+        onCancel={() => setExportOpen(false)}
+        onOk={() => vaultExportMut.mutate(exportStyle)}
+        okText="导出"
+        cancelText="取消"
+        okButtonProps={{ loading: vaultExportMut.isPending, 'data-testid': 'doc-export-confirm' }}
+        destroyOnHidden
+      >
+        <Radio.Group
+          value={exportStyle}
+          onChange={e => setExportStyle(e.target.value as VaultExportStyle)}
+          data-testid="doc-export-style"
+          style={{ width: '100%' }}
+        >
+          <Space orientation="vertical" style={{ width: '100%' }} size={12}>
+            <Radio value="archive">
+              <Space orientation="vertical" size={0}>
+                <Text>压缩文档（.zip）</Text>
+                <Text type="secondary">
+                  按文档树打包：Markdown 导出正文，PDF / Word / Excel / PPT / 图片等按原件导出
+                </Text>
+              </Space>
+            </Radio>
+            <Radio value="obsidian">
+              <Space orientation="vertical" size={0}>
+                <Text>Obsidian 库（.zip）</Text>
+                <Text type="secondary">
+                  在压缩文档基础上追加 front-matter 与最小 .obsidian 配置，解压后可直接作为库打开
+                </Text>
+              </Space>
+            </Radio>
+          </Space>
+        </Radio.Group>
       </Modal>
 
       {/* 重命名弹窗（系列 / 列表行共用：文案与 testid 按来源区分） */}

@@ -727,15 +727,15 @@ describe('DocumentsPage 文档导出（需求 0088：只用压缩包）', () => 
     return clicked
   }
 
-  /** mock 导出端点：记录请求 URL（含查询串），回带 Content-Disposition 统一命名 */
+  /** mock 导出端点：记录 style 参数，回带 Content-Disposition 统一命名 */
   function mockExportEndpoint(requests: string[]) {
     server.use(
       http.get('/api/v1/workspaces/:wid/documents/export/vault', ({ request }) => {
-        requests.push(new URL(request.url).search)
+        requests.push(new URL(request.url).searchParams.get('style') ?? '')
         return new HttpResponse(new Blob(['zip']), {
           headers: {
             'Content-Disposition':
-              "attachment; filename=\"vault.zip\"; filename*=UTF-8''%E4%BA%A7%E5%93%81%E6%96%87%E6%A1%A3-obsidian-20261030-1200.zip",
+              "attachment; filename=\"vault.zip\"; filename*=UTF-8''%E4%BA%A7%E5%93%81%E6%96%87%E6%A1%A3-documents-20261030-1200.zip",
           },
         })
       }),
@@ -744,7 +744,7 @@ describe('DocumentsPage 文档导出（需求 0088：只用压缩包）', () => 
 
   afterEach(() => vi.restoreAllMocks())
 
-  it('点导出直接下载 zip 压缩包，用后端统一命名（不再弹窗选方式）', async () => {
+  it('点导出弹窗默认「压缩文档」，确认后下载后端统一命名的 zip', async () => {
     const requests: string[] = []
     mockExportEndpoint(requests)
     const clicked = spyDownload()
@@ -752,13 +752,29 @@ describe('DocumentsPage 文档导出（需求 0088：只用压缩包）', () => 
     await enterSeries()
 
     fireEvent.click(await screen.findByTestId('doc-vault-export'))
+    await screen.findByTestId('doc-export-style')
+    // 需求 0088：默认选中「压缩文档」；两种方式都是 .zip
+    const checked = screen.getByTestId('doc-export-style').querySelector('.ant-radio-wrapper-checked')
+    expect(checked).toHaveTextContent('压缩文档（.zip）')
+    expect(screen.getByText('Obsidian 库（.zip）')).toBeInTheDocument()
 
-    await waitFor(() => expect(requests).toHaveLength(1))
-    // 需求 0088：导出只有压缩包一种格式，不再携带 style 参数
-    expect(requests[0]).toBe('')
-    expect(clicked).toEqual(['产品文档-obsidian-20261030-1200.zip'])
-    // 不再出现导出方式选择弹窗
-    expect(screen.queryByTestId('doc-export-style')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('doc-export-confirm'))
+    await waitFor(() => expect(requests).toEqual(['archive']))
+    expect(clicked).toEqual(['产品文档-documents-20261030-1200.zip'])
+  })
+
+  it('改选 Obsidian 库后导出携带 style=obsidian', async () => {
+    const requests: string[] = []
+    mockExportEndpoint(requests)
+    spyDownload()
+    renderPage()
+    await enterSeries()
+
+    fireEvent.click(await screen.findByTestId('doc-vault-export'))
+    fireEvent.click(await screen.findByText('Obsidian 库（.zip）'))
+    fireEvent.click(screen.getByTestId('doc-export-confirm'))
+
+    await waitFor(() => expect(requests).toEqual(['obsidian']))
   })
 })
 })

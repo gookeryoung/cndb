@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Annotated, Any
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -112,11 +112,16 @@ def export_document_vault(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    style: Annotated[
+        str,
+        Query(description="导出方式：archive=压缩文档（默认，纯文档树）/ obsidian=Obsidian 库（front-matter + 配置）"),
+    ] = "archive",
 ) -> StreamingResponse:
-    """导出当前工作区文档树为 zip 压缩包（需求 0088：只保留压缩包导出）.
+    """导出当前工作区文档树为 zip 压缩包（需求 0088）.
 
-    ``<库名>/<文件夹>/<标题>.md`` + front-matter + ``attachments/`` + 最小 ``.obsidian/app.json``，
-    解压后可直接作为 Obsidian 库打开。只导出当前用户可见的文档（未发布草稿仍按可见性规则裁剪）。
+    两种方式：``archive``（默认，压缩文档）与 ``obsidian``（front-matter + 最小 ``.obsidian/``
+    配置）。Markdown 按正文导出；PDF / Office / 图片 / MHTML 等原件族按**原件字节与原始扩展名**
+    导出，不再转成空 Markdown。只导出当前用户可见的文档（未发布草稿仍按可见性规则裁剪）。
     """
     workspace = _require_member(db, workspace_id, current_user)
     data, filename = obsidian.export_vault(
@@ -124,6 +129,7 @@ def export_document_vault(
         workspace_id,
         current_user,
         workspace_name=workspace.name or "",
+        style=style,
     )
     quoted = quote(filename)
     return StreamingResponse(

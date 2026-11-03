@@ -10,7 +10,9 @@ import base64
 import datetime as dt
 import io
 import quopri
+import re
 import struct
+import zipfile
 import zlib
 from pathlib import Path
 
@@ -725,6 +727,73 @@ class TestOfficePreviewEndpoint:
         published = client.patch(DOCS.format(ws=ws.id) + f"/{doc['id']}", json={"status": "published"}, headers=auth)
         assert published.status_code == 200, published.text
         assert client.get(f"{DOCS.format(ws=ws.id)}/{doc['id']}/asset/preview", headers=member_auth).status_code == 200
+
+
+class TestExportAssets:
+    """文档树导出（需求 0088）：原件族按原件字节与扩展名导出，不转空 Markdown."""
+
+    DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    def _seed(self, client, ws, auth) -> None:
+        _import_one(client, ws.id, auth, "报告.pdf", PDF_BYTES, "application/pdf")
+        _import_one(client, ws.id, auth, "明细.xlsx", XLSX_REAL_BYTES, self.XLSX_MIME)
+        _import_one(client, ws.id, auth, "说明书.docx", DOCX_REAL_BYTES, self.DOCX_MIME, docx_mode="archive")
+        assert client.post(
+            DOCS.format(ws=ws.id),
+            json={"title": "正文", "content": "# 标题\n\n正文", "status": "published"},
+            headers=auth,
+        ).status_code in (200, 201)
+
+    def _export(self, client, ws, auth, **params) -> tuple[bytes, str]:
+        r = client.get(DOCS.format(ws=ws.id) + "/export/vault", params=params, headers=auth)
+        assert r.status_code == 200, r.text
+        return r.content, r.headers["content-disposition"]
+
+    def test_archive_style_exports_originals(self, client, ws, auth):
+        self._seed(client, ws, auth)
+        content, disposition = self._export(client, ws, auth)
+        assert re.search(r"documents-\d{8}-\d{4}\.zip", disposition)
+
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = set(archive.namelist())
+            # 原件族：原扩展名 + 原始字节
+            assert "原件库/报告.pdf" in names
+            assert archive.read("原件库/报告.pdf") == PDF_BYTES
+            assert archive.read("原件库/明细.xlsx") == XLSX_REAL_BYTES
+            assert archive.read("原件库/说明书.docx") == DOCX_REAL_BYTES
+            # 不再出现空 Markdown 占位
+            assert not {"原件库/报告.md", "原件库/明细.md", "原件库/说明书.md"} & names
+            # Markdown 正文按正文导出，压缩文档不带 front-matter / .obsidian
+            assert not archive.read("原件库/正文.md").decode("utf-8").startswith("---")
+            assert not any(name.startswith("原件库/.obsidian/") for name in names)
+
+    def test_obsidian_style_keeps_originals(self, client, ws, auth):
+        self._seed(client, ws, auth)
+        content, disposition = self._export(client, ws, auth, style="obsidian")
+        assert re.search(r"obsidian-\d{8}-\d{4}\.zip", disposition)
+
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = set(archive.namelist())
+            assert archive.read("原件库/报告.pdf") == PDF_BYTES
+            assert "原件库/说明书.docx" in names
+            assert "原件库/.obsidian/app.json" in names
+            assert archive.read("原件库/正文.md").decode("utf-8").startswith("---")
+
+    def test_asset_title_collides_with_markdown(self, client, ws, auth):
+        """同名原件与 Markdown 并存：扩展名参与去重，两者都保留."""
+        _import_one(client, ws.id, auth, "报告.pdf", PDF_BYTES, "application/pdf")
+        assert client.post(
+            DOCS.format(ws=ws.id),
+            json={"title": "报告", "content": "正文", "status": "published"},
+            headers=auth,
+        ).status_code in (200, 201)
+
+        content, _ = self._export(client, ws, auth)
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = set(archive.namelist())
+        assert "原件库/报告.pdf" in names
+        assert "原件库/报告.md" in names
 
 
 class TestAssetReadOnly:

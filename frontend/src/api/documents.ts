@@ -248,6 +248,9 @@ export interface DocumentAiPayloads {
 /** 导入冲突策略：跳过同名 / 自动改名（追加「 (2)」）/ 覆盖生成新版本 */
 export type VaultConflictPolicy = 'skip' | 'rename' | 'overwrite'
 
+/** 文档树导出方式（需求 0088）：archive=压缩文档（默认），obsidian=Obsidian 库 */
+export type VaultExportStyle = 'archive' | 'obsidian'
+
 export interface VaultPreviewItem {
   /** 库内相对路径，如「笔记/设计稿.md」 */
   path: string
@@ -791,10 +794,10 @@ export const documentsApi = {
       .then(r => r.data)
   },
 
-  /** 导出当前工作区文档树为 zip 压缩包（默认且唯一格式；后端 Content-Disposition 给建议文件名） */
-  vaultExport: (wid: number | string) =>
+  /** 导出当前工作区文档树为 zip 压缩包（archive=压缩文档，默认；obsidian=Obsidian 库） */
+  vaultExport: (wid: number | string, style: VaultExportStyle = 'archive') =>
     api
-      .get<Blob>(`${base(wid)}/export/vault`, { responseType: 'blob' })
+      .get<Blob>(`${base(wid)}/export/vault`, { params: { style }, responseType: 'blob' })
       .then(r => ({ blob: r.data, filename: parseContentDispositionFilename(r.headers?.['content-disposition']) })),
 
   // ── 通用文件导入（md / docx / html，单文件与文件夹模式）──

@@ -470,7 +470,7 @@ class TestExport:
     def test_export_structure(self, client, ws, auth):
         assert _post_zip(client, IMPORT.format(ws=ws.id), _vault_zip(), auth).status_code == 200
 
-        r = client.get(EXPORT.format(ws=ws.id), headers=auth)
+        r = client.get(EXPORT.format(ws=ws.id), params={"style": "obsidian"}, headers=auth)
         assert r.status_code == 200, r.text
         assert r.headers["content-type"] == "application/zip"
 
@@ -501,14 +501,29 @@ class TestExport:
         r = client.get(EXPORT.format(ws=ws.id), headers=auth)
         assert r.status_code == 400
 
-    def test_export_ignores_removed_style_param(self, client, ws, auth):
-        """需求 0088：文件夹导出已移除，多余的 style 参数不再改变产物."""
+    def test_export_archive_style_is_plain_document_tree(self, client, ws, auth):
+        """需求 0088：默认「压缩文档」——纯文档树，无 front-matter 与 .obsidian 配置."""
         assert _post_zip(client, IMPORT.format(ws=ws.id), _vault_zip(), auth).status_code == 200
 
-        r = client.get(EXPORT.format(ws=ws.id), params={"style": "folder"}, headers=auth)
+        r = client.get(EXPORT.format(ws=ws.id), headers=auth)
         assert r.status_code == 200, r.text
+
+        # Content-Disposition 文件名：{工作区名}-documents-{时间戳}.zip
+        match = re.search(r"filename\*=UTF-8''(.+)", r.headers["content-disposition"])
+        assert match is not None
+        assert re.fullmatch(r"%E6%88%91%E7%9A%84%E7%9F%A5%E8%AF%86%E5%BA%93-documents-\d{8}-\d{4}\.zip", match.group(1))
+
         with zipfile.ZipFile(io.BytesIO(r.content)) as archive:
             names = set(archive.namelist())
-            # 仍为 Obsidian 库格式（front-matter + .obsidian 配置）
-            assert "我的知识库/.obsidian/app.json" in names
-            assert archive.read("我的知识库/索引页.md").decode("utf-8").startswith("---")
+            assert "我的知识库/索引页.md" in names
+            assert "我的知识库/笔记/设计稿.md" in names
+            assert any(name.startswith("我的知识库/attachments/") for name in names)
+            assert not any(name.startswith("我的知识库/.obsidian/") for name in names)
+            note = archive.read("我的知识库/索引页.md").decode("utf-8")
+            assert not note.startswith("---")
+            assert "![[attachments/" in note
+
+    def test_export_rejects_unknown_style(self, client, ws, auth):
+        assert _post_zip(client, IMPORT.format(ws=ws.id), _vault_zip(), auth).status_code == 200
+        r = client.get(EXPORT.format(ws=ws.id), params={"style": "word"}, headers=auth)
+        assert r.status_code == 400

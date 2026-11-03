@@ -81,28 +81,28 @@ describe('documentsApi.vaultImport', () => {
 })
 
 describe('documentsApi.vaultExport', () => {
-  it('以 blob 方式下载 zip 并解析 Content-Disposition 文件名（唯一格式 .zip）', async () => {
+  it('默认导出方式为压缩文档（archive），并解析 Content-Disposition 文件名', async () => {
     const get = vi
       .spyOn(api, 'get')
       .mockResolvedValue({
         data: new Blob(['zip']),
-        headers: { 'content-disposition': "attachment; filename=\"vault.zip\"; filename*=UTF-8''%E5%BA%93-obsidian-20261030-1200.zip" },
+        headers: { 'content-disposition': "attachment; filename=\"vault.zip\"; filename*=UTF-8''%E5%BA%93-documents-20261030-1200.zip" },
       } as never)
 
     const { blob, filename } = await documentsApi.vaultExport(WID)
 
     expect(get.mock.calls[0][0]).toBe(`/v1/workspaces/${WID}/documents/export/vault`)
-    expect(get.mock.calls[0][1]).toMatchObject({ responseType: 'blob' })
-    expect(get.mock.calls[0][1]).not.toHaveProperty('params')
+    expect(get.mock.calls[0][1]).toMatchObject({ responseType: 'blob', params: { style: 'archive' } })
     expect(blob).toBeInstanceOf(Blob)
-    expect(filename).toBe('库-obsidian-20261030-1200.zip')
+    expect(filename).toBe('库-documents-20261030-1200.zip')
   })
 
-  it('后端没给文件名时 filename 为 null（调用方兜底）', async () => {
-    vi.spyOn(api, 'get').mockResolvedValue({ data: new Blob(['zip']) } as never)
+  it('Obsidian 库方式传 style=obsidian；后端没给文件名时 filename 为 null', async () => {
+    const get = vi.spyOn(api, 'get').mockResolvedValue({ data: new Blob(['zip']) } as never)
 
-    const { blob, filename } = await documentsApi.vaultExport(WID)
+    const { blob, filename } = await documentsApi.vaultExport(WID, 'obsidian')
 
+    expect(get.mock.calls[0][1]).toMatchObject({ params: { style: 'obsidian' } })
     expect(blob).toBeInstanceOf(Blob)
     expect(filename).toBeNull()
   })

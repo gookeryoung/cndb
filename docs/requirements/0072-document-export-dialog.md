@@ -11,20 +11,21 @@
 
 > 文档导出，弹出对话框选择导出方式，包括文件夹和Obsidian库（实际为对应压缩包）。导出压缩文件的命名请参考其他导入导出的统一风格。
 
-**2026-11-03 需求变更（需求 0088）**：移除「文件夹（纯 Markdown）」方式与导出弹窗，只保留 `.zip` 压缩包导出（Obsidian 库格式），点击导出直接下载；原 C2 与 C4 的 folder 命名作废。
+**2026-11-03 需求变更（需求 0088）**：导出方式改为「压缩文档（默认，纯文档树）」与「Obsidian 库（front-matter + `.obsidian/`）」两种，均为 `.zip`；原「文件夹（纯 Markdown）」方式作废。同时修正原件族被导出为空 Markdown 的缺陷——PDF / Office / 图片 / MHTML 等按原件字节与原始扩展名导出。
 
 ## 可实施约束（C1..Cn）
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 导出为压缩包 | 文档页「导出」按钮点击即下载 `.zip`（需求 0088 起不再弹窗；原弹窗已删除） | frontend `DocumentsPage.tsx` | 前端单测（点击直下 + 下载命名） |
-| C3 | Obsidian 库（实际为压缩包） | 唯一导出格式：`<工作区名>/<文件夹>/<标题>.md` + front-matter + `attachments/` + 最小 `.obsidian/` 配置；可见性裁剪与正文一致 | backend `services/obsidian.py`、`routers/vault.py` | 后端单测（zip 结构 / 回环导入 / 空文档报错） |
-| C4 | 命名参考其他导入导出的统一风格 | zip 文件名由后端生成：`{工作区名}-obsidian-{YYYYMMDD-HHMM}.zip`；前端从 `Content-Disposition` 的 `filename*=UTF-8''` 解析文件名，失败回退 `documents-{ts}.zip` | backend 命名 + frontend 下载命名 | 前端单测（解析 Content-Disposition）+ 后端单测（文件名格式） |
+| C1 | 导出压缩包（两种方式） | 文档页「导出」弹窗提供「压缩文档（默认，纯文档树）」与「Obsidian 库（front-matter + 最小 `.obsidian/`）」两种，均为 `.zip`；确认后下载 | frontend `DocumentsPage.tsx`、`api/documents.ts` | 前端单测（默认压缩文档 / 切换 obsidian / 下载命名） |
+| C2 | 原件族原样导出 | PDF / Excel / Word 存档 / PPT / 图片 / MHTML 按原件字节与原始扩展名写入压缩包，不转空 Markdown；缺失原件跳过 | backend `services/obsidian.py` | 后端单测（原字节回读 / 无空 md / 同名共存） |
+| C3 | 文档树结构 | `<工作区名>/<文件夹>/<标题>.md` + `attachments/`；压缩文档无 front-matter / 无 `.obsidian/`，Obsidian 库带；可见性裁剪与正文一致 | backend `services/obsidian.py`、`routers/vault.py` | 后端单测（两种方式结构 / 回环导入 / 空文档报错） |
+| C4 | 命名参考其他导入导出的统一风格 | zip 文件名由后端生成：`{工作区名}-documents-{YYYYMMDD-HHMM}.zip`（压缩文档）/ `{工作区名}-obsidian-{YYYYMMDD-HHMM}.zip`（库）；前端从 `Content-Disposition` 的 `filename*=UTF-8''` 解析文件名，失败回退 `documents-{ts}.zip` | backend 命名 + frontend 下载命名 | 前端单测（解析 Content-Disposition）+ 后端单测（文件名格式） |
 
-## 口径（S1 方案，2026-11-03 收窄）
+## 口径（S1 方案，2026-11-03 修订）
 
-- 后端：`GET /{wid}/documents/export/vault` 只产出 Obsidian 库格式 zip（`export_vault` 无 `style` 参数，需求 0088 删除 folder 分支）。
-- 前端：导出按钮直接触发 `vaultExport`，下载文件名统一走 Content-Disposition 解析（`parseContentDispositionFilename`）。
+- 后端：`GET /{wid}/documents/export/vault?style=archive|obsidian`（默认 archive）；`export_vault(style)` 只区分 front-matter 与 `.obsidian/`，原件族一律按原件导出。
+- 前端：导出弹窗两项，默认「压缩文档」；下载文件名统一走 Content-Disposition 解析（`parseContentDispositionFilename`）。
 
 ## 现状影响面（候选，待实现时核实）
 
@@ -36,7 +37,7 @@
 
 ## 未决问题
 
-- [x] ~~文件夹导出是否含 front-matter / `.obsidian/`~~：该方式已按需求 0088 移除，不再适用
+- [x] 压缩文档是否含 front-matter / `.obsidian/`：不含（纯文档树）；Obsidian 库带（需求 0088）
 - [x] 空文档树报错行为沿用现有「当前工作区没有可导出的文档」
 
 ## 卡点
