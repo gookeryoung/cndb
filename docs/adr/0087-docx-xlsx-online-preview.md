@@ -101,7 +101,7 @@ def build_office_preview(content_type: str, mime: str, data: bytes) -> str: ... 
 
 ### 6. 前端
 
-- **格式 / 只读标识单点**：原件族的格式与大小、只读属性统一显示在文档页顶栏标题行（一枚 `{格式} · 只读` 标签，悬停显示大小），预览区与阅读器内部不再重复；PPTX 的「放映」入口也收进顶栏动作组（窄屏同样在顶栏），预览内容区只放内容本身；
+- **格式 / 只读标识单点**：原件族的格式与只读属性统一显示在文档页顶栏**右侧动作区**（紧邻图标按钮组之前的一枚 `{格式} · 只读` 徽标），其后紧跟信息图标按钮，点击弹出「原件信息」气泡（格式 / 大小 / MIME / 原样存档 · 只读口径）；预览区与阅读器内部不再重复任何标识；PPTX 的「放映」入口同样收进右侧动作组（窄屏也在顶栏），预览内容区只放内容本身；
 - `docFormat.ts`：`word` → `{ label: 'Word', Icon: FileWordOutlined, color: '#2f54eb', asset: true }`，加入 `DOC_ASSET_CONTENT_TYPES`；
 - `DocumentAssetView`：预览分支由「仅 MHTML」抽象为「MHTML / Office」——`previewQuery` 对 `mhtml`、`xlsx`（`.xlsx` 后缀）与 `word` 开启；Office 预览在 `sandbox=""` iframe 中渲染（`data-testid=doc-asset-office`），失败时为下载卡 + 提示；`assetSuffix` 补 docx / xlsx 的 MIME 映射；
 - `DocumentImportModal`：新增「Word 原样存档」开关（默认关），切换后重新 `analyze`；导入请求带 `docxMode`；

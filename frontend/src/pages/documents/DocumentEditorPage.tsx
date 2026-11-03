@@ -24,6 +24,7 @@ import {
   Input,
   Modal,
   Popconfirm,
+  Popover,
   Space,
   Tag,
   Tooltip,
@@ -42,6 +43,7 @@ import {
   FilePdfOutlined,
   FileWordOutlined,
   HistoryOutlined,
+  InfoCircleOutlined,
   LinkOutlined,
   DeleteOutlined,
   MenuFoldOutlined,
@@ -1020,6 +1022,45 @@ export default function DocumentEditorPage() {
   // 原件族的格式 / 只读标识只在顶栏出现一次（预览区不再重复渲染「XX 原件预览（只读）」）
   const assetFmt = isAssetDoc ? formatMeta(doc.content_type) : null
   const isPptxAsset = isAssetDoc && doc.content_type === 'pptx' && assetSuffix(doc) === 'pptx'
+
+  /** 原件族：格式 / 只读徽标 + 信息气泡（大小 / MIME / 只读口径） */
+  const assetFmtTag = assetFmt ? (
+    <>
+      <Tag data-testid="doc-asset-format" style={{ marginInlineEnd: 0 }}>
+        {assetFmt.label} · 只读
+      </Tag>
+      <Popover
+        trigger="click"
+        placement="bottomRight"
+        title="原件信息"
+        content={
+          <div style={{ minWidth: 180, fontSize: 12, lineHeight: 1.9 }} data-testid="doc-asset-info-panel">
+            <div>
+              <Typography.Text type="secondary">格式</Typography.Text> {assetFmt.label}
+            </div>
+            <div>
+              <Typography.Text type="secondary">大小</Typography.Text> {formatSize(doc.content_size)}
+            </div>
+            <div>
+              <Typography.Text type="secondary">MIME</Typography.Text> {doc.asset_mime || '未知'}
+            </div>
+            <div>
+              <Typography.Text type="secondary">属性</Typography.Text> 原样存档 · 只读（不可编辑正文）
+            </div>
+          </div>
+        }
+      >
+        <Button
+          type="text"
+          size="small"
+          icon={<InfoCircleOutlined />}
+          aria-label="原件信息"
+          data-testid="doc-asset-info"
+        />
+      </Popover>
+    </>
+  ) : null
+
   // 并排查看只在桌面编辑态生效：窄屏沿用「编辑 / 预览」页签，查看态仍是纯预览
   const splitActive = splitOpen && viewMode === 'edit' && !isAssetDoc && isDesktop
 
@@ -1179,15 +1220,6 @@ export default function DocumentEditorPage() {
               {/* 窄屏：长文案占宽过多，草稿态收敛为「草稿」 */}
               {doc.status === 'published' ? '已发布' : doc.status === 'archived' ? '归档' : (isMobile ? '草稿' : '草稿（仅自己可见）')}
             </Tag>
-            {assetFmt && (
-              <Tag
-                data-testid="doc-asset-format"
-                title={`${formatSize(doc.content_size)} · 原样存档`}
-                style={{ marginInlineEnd: 0 }}
-              >
-                {assetFmt.label} · 只读
-              </Tag>
-            )}
             {(hasUnsaved || serverDraft) &&
               (hasUnsaved ? (
                 <Tag color="warning" icon={<WarningOutlined />} data-testid="doc-draft-tag">
@@ -1241,6 +1273,7 @@ export default function DocumentEditorPage() {
         </div>
         {isMobile ? (
           <Space size={8}>
+            {assetFmtTag}
             {!isAssetDoc && (
             <Button icon={<MenuOutlined />} data-testid="doc-outline-toggle" onClick={() => setOutlineDrawerOpen(true)}>
               大纲{outline.length > 0 ? ` (${outline.length})` : ''}
@@ -1298,6 +1331,13 @@ export default function DocumentEditorPage() {
         ) : (
         // 桌面顶栏：按任务语义分组（导航关联 → 标注 → 协作 → 历史输出 → 提交动作），大纲为最右视图锚点
         <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 2 }}>
+          {/* 原件族：格式 / 只读徽标 + 信息气泡，紧邻右侧图标按钮组之前 */}
+          {assetFmtTag && (
+            <>
+              {assetFmtTag}
+              <Divider vertical style={{ margin: '0 2px' }} />
+            </>
+          )}
           {/* 组 1：导航与关联（反链 / 链接，按钮组连体）；大纲开关固定最右端收尾 */}
           {!isAssetDoc && (
             <Space.Compact>

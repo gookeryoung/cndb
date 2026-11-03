@@ -1724,6 +1724,7 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
                     title: '季度报告',
                     content_type: 'pdf',
                     asset_mime: 'application/pdf',
+                    content_size: 2048,
                     content: '',
                     version_number: 1,
                     version_count: 1,
@@ -1746,7 +1747,13 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
         expect(await screen.findByTestId('doc-asset-view')).toBeInTheDocument()
         expect(screen.getByTestId('doc-asset-pdf')).toBeInTheDocument()
         // 格式 / 只读标识统一在顶栏标题行（正文区不再重复一行）
-        expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('PDF · 只读')
+        const formatTag = screen.getByTestId('doc-asset-format')
+        expect(formatTag).toHaveTextContent('PDF · 只读')
+        // 格式 / 只读徽标在右侧动作区：其后紧跟信息图标，再往后才是原有图标按钮
+        const info = screen.getByTestId('doc-asset-info')
+        expect(formatTag.compareDocumentPosition(info) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        const tagsBtn = screen.getByRole('button', { name: /标签/ })
+        expect(info.compareDocumentPosition(tagsBtn) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         // 原件只读：没有查看/编辑切换、保存/提交、导出与版本入口
         expect(screen.queryByTestId('doc-mode-switch')).toBeNull()
         expect(screen.queryByTestId('doc-save-btn')).toBeNull()
@@ -1754,6 +1761,20 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
         expect(screen.queryByTestId('doc-export-btn')).toBeNull()
         // 标签与分享仍可用
         expect(screen.getByRole('button', { name: /标签/ })).toBeInTheDocument()
+    })
+
+    it('点击信息图标显示原件详情（大小 / 格式 / MIME / 只读口径）', async () => {
+        renderEditor()
+        await screen.findByTestId('doc-asset-view')
+
+        fireEvent.click(screen.getByTestId('doc-asset-info'))
+        const panel = await screen.findByTestId('doc-asset-info-panel')
+        expect(panel).toHaveTextContent('格式 PDF')
+        expect(panel).toHaveTextContent('大小 2.0 KB')
+        expect(panel).toHaveTextContent('MIME application/pdf')
+        expect(panel).toHaveTextContent('原样存档 · 只读')
+        // 徽标本身不再承担详情展示，信息只在气泡里
+        expect(screen.getByTestId('doc-asset-format')).toHaveTextContent('PDF · 只读')
     })
 
     it('PPTX 原件：顶栏提供放映入口，覆盖层由页面状态控制', async () => {
