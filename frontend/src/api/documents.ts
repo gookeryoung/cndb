@@ -791,10 +791,10 @@ export const documentsApi = {
       .then(r => r.data)
   },
 
-  /** 导出当前工作区文档树为压缩包（zip blob + 后端 Content-Disposition 建议文件名） */
-  vaultExport: (wid: number | string, style: 'obsidian' | 'folder' = 'obsidian') =>
+  /** 导出当前工作区文档树为 zip 压缩包（默认且唯一格式；后端 Content-Disposition 给建议文件名） */
+  vaultExport: (wid: number | string) =>
     api
-      .get<Blob>(`${base(wid)}/export/vault`, { params: { style }, responseType: 'blob' })
+      .get<Blob>(`${base(wid)}/export/vault`, { responseType: 'blob' })
       .then(r => ({ blob: r.data, filename: parseContentDispositionFilename(r.headers?.['content-disposition']) })),
 
   // ── 通用文件导入（md / docx / html，单文件与文件夹模式）──

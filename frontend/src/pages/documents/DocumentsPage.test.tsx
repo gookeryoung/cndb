@@ -700,7 +700,7 @@ describe('文档列表边缘线与行操作', () => {
   })
 })
 
-describe('DocumentsPage 导出方式弹窗（需求 0072）', () => {
+describe('DocumentsPage 文档导出（需求 0088：只用压缩包）', () => {
   function renderPage() {
     return renderProviders(
       <Routes>
@@ -727,11 +727,11 @@ describe('DocumentsPage 导出方式弹窗（需求 0072）', () => {
     return clicked
   }
 
-  /** mock 导出端点：记录 style 参数，回带 Content-Disposition 统一命名 */
+  /** mock 导出端点：记录请求 URL（含查询串），回带 Content-Disposition 统一命名 */
   function mockExportEndpoint(requests: string[]) {
     server.use(
       http.get('/api/v1/workspaces/:wid/documents/export/vault', ({ request }) => {
-        requests.push(new URL(request.url).searchParams.get('style') ?? '')
+        requests.push(new URL(request.url).search)
         return new HttpResponse(new Blob(['zip']), {
           headers: {
             'Content-Disposition':
@@ -744,7 +744,7 @@ describe('DocumentsPage 导出方式弹窗（需求 0072）', () => {
 
   afterEach(() => vi.restoreAllMocks())
 
-  it('点导出弹窗选方式，默认 Obsidian 库，下载用后端统一命名', async () => {
+  it('点导出直接下载 zip 压缩包，用后端统一命名（不再弹窗选方式）', async () => {
     const requests: string[] = []
     mockExportEndpoint(requests)
     const clicked = spyDownload()
@@ -752,28 +752,13 @@ describe('DocumentsPage 导出方式弹窗（需求 0072）', () => {
     await enterSeries()
 
     fireEvent.click(await screen.findByTestId('doc-vault-export'))
-    await screen.findByTestId('doc-export-style')
-    // 默认选中「Obsidian 库」
-    const checked = screen.getByTestId('doc-export-style').querySelector('.ant-radio-wrapper-checked')
-    expect(checked).toHaveTextContent('Obsidian 库')
 
-    fireEvent.click(screen.getByTestId('doc-export-confirm'))
-    await waitFor(() => expect(requests).toEqual(['obsidian']))
+    await waitFor(() => expect(requests).toHaveLength(1))
+    // 需求 0088：导出只有压缩包一种格式，不再携带 style 参数
+    expect(requests[0]).toBe('')
     expect(clicked).toEqual(['产品文档-obsidian-20261030-1200.zip'])
-  })
-
-  it('改选「文件夹」方式后导出携带 style=folder', async () => {
-    const requests: string[] = []
-    mockExportEndpoint(requests)
-    spyDownload()
-    renderPage()
-    await enterSeries()
-
-    fireEvent.click(await screen.findByTestId('doc-vault-export'))
-    fireEvent.click(await screen.findByText('文件夹（Markdown）'))
-    fireEvent.click(screen.getByTestId('doc-export-confirm'))
-
-    await waitFor(() => expect(requests).toEqual(['folder']))
+    // 不再出现导出方式选择弹窗
+    expect(screen.queryByTestId('doc-export-style')).not.toBeInTheDocument()
   })
 })
 })

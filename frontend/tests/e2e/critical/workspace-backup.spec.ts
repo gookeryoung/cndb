@@ -112,8 +112,8 @@ test.describe("工作区备份归档（v9）", () => {
     await page.getByRole("radio", { name: /覆盖恢复到已有工作区/ }).check();
     await expect(page.getByText("危险操作：覆盖恢复")).toBeVisible();
 
-    // 未完成双重确认时按钮禁用
-    const restoreBtn = page.getByRole("button", { name: "覆盖恢复" });
+    // 未完成双重确认时按钮禁用（exact：列表行按钮 aria-label 含工作区名「e2e覆盖恢复-…」会子串命中）
+    const restoreBtn = page.getByRole("button", { name: "覆盖恢复", exact: true });
     await expect(restoreBtn).toBeDisabled();
 
     // 勾选 + 输入工作区名 → 按钮解禁

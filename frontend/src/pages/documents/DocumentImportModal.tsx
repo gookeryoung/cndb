@@ -27,6 +27,7 @@ import { VaultImportForm } from './ObsidianImportModal'
 import {
   ImportConflictOptions,
   ImportDropzone,
+  ImportFooter,
   ImportOptionsPanel,
   ImportStatusRadio,
   ImportSummary,
@@ -345,162 +346,168 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
       width={760}
       destroyOnHidden
       mask={{ closable: !busy }}
-      footer={mode === 'vault' ? null : footer}
+      footer={null}
       data-testid="file-import-modal"
     >
-      {mode === 'vault' ? (
-        /* Obsidian 库导入：独立表单体，自带动作按钮与落库流程 */
-        <>
-          {modeSelector}
-          <div style={{ marginTop: 12 }}>
+      {/* 统一纵向节奏：三种模式同一容器 + 12px 间距，首个元素贴齐弹窗内容顶部 */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
+        {mode === 'vault' ? (
+          /* Obsidian 库导入：独立表单体，自带动作按钮与落库流程 */
+          <>
+            {modeSelector}
             <VaultImportForm
               workspaceId={workspaceId}
               parentId={parentId}
               parentLabel={parentLabel}
               onClose={close}
             />
+          </>
+        ) : result ? (
+          <div
+            data-testid="file-import-result"
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+          >
+            <Alert
+              type="success"
+              showIcon
+              title={`已导入到${targetText}`}
+              description={
+                `新增 ${result.created} 篇 · 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 个 · ` +
+                `新建文件夹 ${result.folders_created} 个 · 原样存档 ${result.assets ?? 0} 个 · 内嵌图片 ${result.attachments} 个`
+              }
+            />
+            {result.warnings.map(item => (
+              <Alert key={`${item.path}:${item.message}`} type="warning" showIcon title={`${item.path}：${item.message}`} />
+            ))}
+            {result.skipped_files.length > 0 && (
+              <div>
+                <Typography.Text strong>跳过明细</Typography.Text>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                  {result.skipped_files.slice(0, 10).map(item => (
+                    <li key={item.path}>
+                      {item.path}（{item.reason}）
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            <ImportFooter>{footer}</ImportFooter>
           </div>
-        </>
-      ) : result ? (
-        <Space orientation="vertical" size={12} style={{ width: '100%' }} data-testid="file-import-result">
-          <Alert
-            type="success"
-            showIcon
-            title={`已导入到${targetText}`}
-            description={
-              `新增 ${result.created} 篇 · 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 个 · ` +
-              `新建文件夹 ${result.folders_created} 个 · 原样存档 ${result.assets ?? 0} 个 · 内嵌图片 ${result.attachments} 个`
-            }
-          />
-          {result.warnings.map(item => (
-            <Alert key={`${item.path}:${item.message}`} type="warning" showIcon title={`${item.path}：${item.message}`} />
-          ))}
-          {result.skipped_files.length > 0 && (
-            <div>
-              <Typography.Text strong>跳过明细</Typography.Text>
-              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12 }}>
-                {result.skipped_files.slice(0, 10).map(item => (
-                  <li key={item.path}>
-                    {item.path}（{item.reason}）
-                  </li>
+        ) : (
+          <>
+            {modeSelector}
+
+            {/* 原生 file input：单文件模式选一个，文件夹模式带 webkitRelativePath */}
+            <input
+              ref={inputRef}
+              type="file"
+              accept={FILE_IMPORT_ACCEPT}
+              multiple={mode === 'folder'}
+              // webkitdirectory 非标准属性，React 需按字符串挂载
+              {...(mode === 'folder' ? { webkitdirectory: '' } : {})}
+              style={{ display: 'none' }}
+              data-testid="file-import-input"
+              onChange={event => {
+                const files = event.target.files
+                pick(files)
+                // 清空 value：重选同一批文件也能触发 change
+                event.target.value = ''
+              }}
+            />
+            <ImportDropzone
+              testId="file-import-dropzone"
+              pickTestId="file-import-pick"
+              helpTestId="file-import-help"
+              icon={mode === 'folder' ? <FolderOpenOutlined /> : <FileTextOutlined />}
+              title={mode === 'folder' ? '选择文件夹导入' : '选择文件导入'}
+              subtitle={`导入到${targetText} · 支持 Markdown / Word / HTML / MHTML / PDF / Excel / PPT / 图片`}
+              actionLabel={mode === 'folder' ? '选择文件夹' : '选择文件'}
+              disabled={busy}
+              onPick={() => inputRef.current?.click()}
+              helpTitle="格式与处理方式"
+              help={
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
+                  <li>转换：Markdown / HTML 直接转换；Word、MHTML 可勾选转换后编辑</li>
+                  <li>原样存档：PDF / Excel / PPT / 图片，以及勾选存档的 Word、MHTML；可预览、可下载，不可编辑</li>
+                  <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>
+                </ul>
+              }
+              selected={
+                entries.length > 0 ? (
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
+                    已选 {entries.length} 个文件
+                  </Typography.Text>
+                ) : null
+              }
+            />
+
+            {analyzeMut.isPending && <Alert type="info" showIcon title="正在解析文件…" />}
+
+            {analysis && (
+              <>
+                <ImportSummary items={summaryItems} testId="file-import-summary" />
+
+                {analysis.skipped.map(item => (
+                  <Alert key={item.path} type="warning" showIcon title={`${item.path}：${item.reason}`} />
                 ))}
-              </ul>
-            </div>
-          )}
-        </Space>
-      ) : (
-        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          {modeSelector}
 
-          {/* 原生 file input：单文件模式选一个，文件夹模式带 webkitRelativePath */}
-          <input
-            ref={inputRef}
-            type="file"
-            accept={FILE_IMPORT_ACCEPT}
-            multiple={mode === 'folder'}
-            // webkitdirectory 非标准属性，React 需按字符串挂载
-            {...(mode === 'folder' ? { webkitdirectory: '' } : {})}
-            style={{ display: 'none' }}
-            data-testid="file-import-input"
-            onChange={event => {
-              const files = event.target.files
-              pick(files)
-              // 清空 value：重选同一批文件也能触发 change
-              event.target.value = ''
-            }}
-          />
-          <ImportDropzone
-            testId="file-import-dropzone"
-            pickTestId="file-import-pick"
-            helpTestId="file-import-help"
-            icon={mode === 'folder' ? <FolderOpenOutlined /> : <FileTextOutlined />}
-            title={mode === 'folder' ? '选择文件夹导入' : '选择文件导入'}
-            subtitle={`导入到${targetText} · 支持 Markdown / Word / HTML / MHTML / PDF / Excel / PPT / 图片`}
-            actionLabel={mode === 'folder' ? '选择文件夹' : '选择文件'}
-            disabled={busy}
-            onPick={() => inputRef.current?.click()}
-            helpTitle="格式与处理方式"
-            help={
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
-                <li>转换：Markdown / HTML 直接转换；Word、MHTML 可勾选转换后编辑</li>
-                <li>原样存档：PDF / Excel / PPT / 图片，以及勾选存档的 Word、MHTML；可预览、可下载，不可编辑</li>
-                <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>
-              </ul>
-            }
-            selected={
-              entries.length > 0 ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
-                  已选 {entries.length} 个文件
-                </Typography.Text>
-              ) : null
-            }
-          />
-
-          {analyzeMut.isPending && <Alert type="info" showIcon title="正在解析文件…" />}
-
-          {analysis && (
-            <>
-              <ImportSummary items={summaryItems} testId="file-import-summary" />
-
-              {analysis.skipped.map(item => (
-                <Alert key={item.path} type="warning" showIcon title={`${item.path}：${item.reason}`} />
-              ))}
-
-              {analysis.conflicts > 0 && (
-                <ImportConflictOptions
-                  testId="file-import-conflict"
-                  value={conflict}
-                  onChange={setConflict}
-                />
-              )}
-
-              <ImportOptionsPanel testId="file-import-options">
-                <ImportSwitch
-                  testId="file-import-mhtml-convert"
-                  label="MHTML 转 Markdown"
-                  checked={mhtmlMode === 'convert'}
-                  onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
-                  disabled={!hasMhtml}
-                  tooltip="MHTML 默认原样存档；开启后按网页转换链路转成可编辑文档"
-                />
-                <ImportSwitch
-                  testId="file-import-docx-archive"
-                  label="Word 原样存档"
-                  checked={docxMode === 'archive'}
-                  onChange={checked => changeDocxMode(checked ? 'archive' : 'convert')}
-                  disabled={!hasDocx}
-                  tooltip="Word 默认转 Markdown；开启后保留原件，阅读器内预览、不可编辑"
-                />
-                <ImportSwitch
-                  testId="file-import-attachments"
-                  label="导入内嵌图片"
-                  checked={importAttachments}
-                  onChange={setImportAttachments}
-                  disabled={attachmentsDisabled}
-                  tooltip="转换 Word / HTML / MHTML 时一并导入内嵌图片；MHTML 原样存档时素材已随原件保留"
-                />
-                <ImportStatusRadio value={status} onChange={setStatus} />
-              </ImportOptionsPanel>
-
-              {analysis.items.length === 0 ? (
-                <Empty description="没有可导入的文件" />
-              ) : (
-                <div data-testid="file-import-preview">
-                  <Table<FileImportPreviewItem>
-                    size="small"
-                    rowKey="path"
-                    columns={columns}
-                    dataSource={analysis.items}
-                    pagination={{ pageSize: 8, size: 'small', hideOnSinglePage: true }}
-                    scroll={{ y: 220 }}
+                {analysis.conflicts > 0 && (
+                  <ImportConflictOptions
+                    testId="file-import-conflict"
+                    value={conflict}
+                    onChange={setConflict}
                   />
-                  {analysis.preview_truncated && <ImportTruncatedHint count={analysis.items.length} />}
-                </div>
-              )}
-            </>
-          )}
-        </Space>
-      )}
+                )}
+
+                <ImportOptionsPanel testId="file-import-options">
+                  <ImportSwitch
+                    testId="file-import-mhtml-convert"
+                    label="MHTML 转 Markdown"
+                    checked={mhtmlMode === 'convert'}
+                    onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
+                    disabled={!hasMhtml}
+                    tooltip="MHTML 默认原样存档；开启后按网页转换链路转成可编辑文档"
+                  />
+                  <ImportSwitch
+                    testId="file-import-docx-archive"
+                    label="Word 原样存档"
+                    checked={docxMode === 'archive'}
+                    onChange={checked => changeDocxMode(checked ? 'archive' : 'convert')}
+                    disabled={!hasDocx}
+                    tooltip="Word 默认转 Markdown；开启后保留原件，阅读器内预览、不可编辑"
+                  />
+                  <ImportSwitch
+                    testId="file-import-attachments"
+                    label="导入内嵌图片"
+                    checked={importAttachments}
+                    onChange={setImportAttachments}
+                    disabled={attachmentsDisabled}
+                    tooltip="转换 Word / HTML / MHTML 时一并导入内嵌图片；MHTML 原样存档时素材已随原件保留"
+                  />
+                  <ImportStatusRadio value={status} onChange={setStatus} />
+                </ImportOptionsPanel>
+
+                {analysis.items.length === 0 ? (
+                  <Empty description="没有可导入的文件" />
+                ) : (
+                  <div data-testid="file-import-preview">
+                    <Table<FileImportPreviewItem>
+                      size="small"
+                      rowKey="path"
+                      columns={columns}
+                      dataSource={analysis.items}
+                      pagination={{ pageSize: 8, size: 'small', hideOnSinglePage: true }}
+                      scroll={{ y: 220 }}
+                    />
+                    {analysis.preview_truncated && <ImportTruncatedHint count={analysis.items.length} />}
+                  </div>
+                )}
+              </>
+            )}
+            <ImportFooter>{footer}</ImportFooter>
+          </>
+        )}
+      </div>
     </Modal>
   )
 }

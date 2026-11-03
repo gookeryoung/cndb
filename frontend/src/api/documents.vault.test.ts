@@ -81,7 +81,7 @@ describe('documentsApi.vaultImport', () => {
 })
 
 describe('documentsApi.vaultExport', () => {
-  it('以 blob 方式下载 zip 并解析 Content-Disposition 文件名（默认 obsidian）', async () => {
+  it('以 blob 方式下载 zip 并解析 Content-Disposition 文件名（唯一格式 .zip）', async () => {
     const get = vi
       .spyOn(api, 'get')
       .mockResolvedValue({
@@ -92,17 +92,17 @@ describe('documentsApi.vaultExport', () => {
     const { blob, filename } = await documentsApi.vaultExport(WID)
 
     expect(get.mock.calls[0][0]).toBe(`/v1/workspaces/${WID}/documents/export/vault`)
-    expect(get.mock.calls[0][1]).toMatchObject({ responseType: 'blob', params: { style: 'obsidian' } })
+    expect(get.mock.calls[0][1]).toMatchObject({ responseType: 'blob' })
+    expect(get.mock.calls[0][1]).not.toHaveProperty('params')
     expect(blob).toBeInstanceOf(Blob)
     expect(filename).toBe('库-obsidian-20261030-1200.zip')
   })
 
-  it('folder 方式传 style 参数并返回 null 文件名兜底', async () => {
-    const get = vi.spyOn(api, 'get').mockResolvedValue({ data: new Blob(['zip']) } as never)
+  it('后端没给文件名时 filename 为 null（调用方兜底）', async () => {
+    vi.spyOn(api, 'get').mockResolvedValue({ data: new Blob(['zip']) } as never)
 
-    const { blob, filename } = await documentsApi.vaultExport(WID, 'folder')
+    const { blob, filename } = await documentsApi.vaultExport(WID)
 
-    expect(get.mock.calls[0][1]).toMatchObject({ params: { style: 'folder' } })
     expect(blob).toBeInstanceOf(Blob)
     expect(filename).toBeNull()
   })

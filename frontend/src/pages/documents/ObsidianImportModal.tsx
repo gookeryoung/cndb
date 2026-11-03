@@ -33,6 +33,7 @@ import { formatSize } from '@/utils/formatSize'
 import {
   ImportConflictOptions,
   ImportDropzone,
+  ImportFooter,
   ImportOptionsPanel,
   ImportStatusRadio,
   ImportSummary,
@@ -225,9 +226,12 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
       ]
 
   return (
-    <>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
       {result ? (
-        <Space orientation="vertical" size={12} style={{ width: '100%' }} data-testid="vault-import-result">
+        <div
+          data-testid="vault-import-result"
+          style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+        >
           <Alert
             type="success"
             showIcon
@@ -254,9 +258,9 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
               </ul>
             </div>
           )}
-        </Space>
+        </div>
       ) : (
-        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+        <>
           {/* 原生 zip input：与单文件 / 文件夹模式共用同一套拖放区样式 */}
           <input
             ref={inputRef}
@@ -353,10 +357,10 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
               )}
             </>
           )}
-        </Space>
+        </>
       )}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>{footer}</div>
-    </>
+      <ImportFooter>{footer}</ImportFooter>
+    </div>
   )
 }
 

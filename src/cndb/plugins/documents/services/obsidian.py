@@ -1320,27 +1320,21 @@ def _tags_by_document(db: Session, doc_ids: list[int]) -> dict[int, list[str]]:
     return out
 
 
-EXPORT_STYLES = ("obsidian", "folder")
-
-
 def export_vault(
     db: Session,
     workspace_id: int,
     user: Any,
     *,
     workspace_name: str = "",
-    style: str = "obsidian",
 ) -> tuple[bytes, str]:
-    """把工作区文档树导出为 zip.
+    """把工作区文档树导出为 zip 压缩包（Obsidian 库格式）.
 
-    ``style`` 取 ``obsidian``（front-matter + ``.obsidian/`` 配置，可直接作库打开）
-    或 ``folder``（纯 Markdown 文件夹树，无 front-matter 与 ``.obsidian/``）。
+    产物为 ``<库名>/<文件夹>/<标题>.md`` + front-matter + ``attachments/`` + 最小
+    ``.obsidian/`` 配置，解压后可直接作为 Obsidian 库打开（需求 0088：只保留压缩包导出）。
 
     Returns:
         (zip 字节, 建议文件名)
     """
-    if style not in EXPORT_STYLES:
-        raise BadRequestError(f"不支持的导出方式: {style}，可选 {'/'.join(EXPORT_STYLES)}")
     docs = _visible_documents(db, workspace_id, user)
     if not any(not doc.is_folder for doc in docs):
         raise BadRequestError("当前工作区没有可导出的文档")
@@ -1400,12 +1394,9 @@ def export_vault(
                 continue
             body = contents.get(doc.id, "")
             body = _rewrite_images(body)
-            if style == "folder":
-                text = body.lstrip() or "\n"
-            else:
-                note_tags = tags_map.get(doc.id, [])
-                front = _render_front_matter(doc.title, note_tags, doc)
-                text = f"{front}\n\n{body.lstrip()}" if body else f"{front}\n"
+            note_tags = tags_map.get(doc.id, [])
+            front = _render_front_matter(doc.title, note_tags, doc)
+            text = f"{front}\n\n{body.lstrip()}" if body else f"{front}\n"
             directory = dirs.get(doc.id, "").strip("/")
             rel = f"{root_name}/{directory + '/' if directory else ''}{names[doc.id]}.md"
             archive.writestr(rel, text)
@@ -1414,20 +1405,18 @@ def export_vault(
         for rel, data in sorted(attachments.items()):
             archive.writestr(f"{root_name}/{rel}", data)
 
-        # 最小 Obsidian 配置：解包即可作为库打开，附件进 attachments/（folder 导出不带）
-        if style != "folder":
-            archive.writestr(
-                f"{root_name}/.obsidian/app.json",
-                '{\n  "attachmentFolderPath": "attachments",\n  "newLinkFormat": "shortest",\n  "useMarkdownLinks": false\n}\n',
-            )
-            archive.writestr(f"{root_name}/.obsidian/appearance.json", "{}\n")
+        # 最小 Obsidian 配置：解包即可作为库打开，附件进 attachments/
+        archive.writestr(
+            f"{root_name}/.obsidian/app.json",
+            '{\n  "attachmentFolderPath": "attachments",\n  "newLinkFormat": "shortest",\n  "useMarkdownLinks": false\n}\n',
+        )
+        archive.writestr(f"{root_name}/.obsidian/appearance.json", "{}\n")
 
     if total_notes == 0:  # pragma: no cover - 上面已守卫
         raise BadRequestError("当前工作区没有可导出的文档")
 
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
-    kind = "folder" if style == "folder" else "obsidian"
-    return buffer.getvalue(), f"{root_name}-{kind}-{stamp}.zip"
+    return buffer.getvalue(), f"{root_name}-obsidian-{stamp}.zip"
 
 
 __all__ = [

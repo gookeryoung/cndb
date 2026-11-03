@@ -6,7 +6,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import DocumentImportModal from './DocumentImportModal'
 import { renderProviders } from '@/test/render-providers'
 import {
@@ -157,6 +157,50 @@ describe('通用导入弹窗', () => {
     expect(vaultZone.querySelector('.anticon-file-zip')).toBeTruthy()
     expect(vaultZone).toHaveTextContent('上传 Obsidian 库压缩包')
     expect(screen.getByTestId('vault-import-pick')).toHaveTextContent('选择 .zip 文件')
+  })
+
+  it('三种模式的底部动作条与文字块结构一致（切模式不跳动）', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
+    const footers = () => document.querySelectorAll('[data-testid="import-footer"]')
+    const subtitle = () =>
+      within(screen.getByTestId('file-import-dropzone')).getByTitle(/导入到/)
+
+    expect(footers()).toHaveLength(1)
+    expect(subtitle()).toHaveStyle({ whiteSpace: 'nowrap', textOverflow: 'ellipsis' })
+
+    fireEvent.click(screen.getByRole('radio', { name: '文件夹' }))
+    expect(footers()).toHaveLength(1)
+    expect(subtitle()).toHaveStyle({ whiteSpace: 'nowrap' })
+
+    // 库模式复用同一动作条与同一文字块，不额外套一层弹窗 footer
+    fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
+    const vaultZone = await screen.findByTestId('vault-import-upload')
+    expect(footers()).toHaveLength(1)
+    expect(within(vaultZone).getByTitle(/导入到/)).toHaveStyle({ whiteSpace: 'nowrap' })
+    // 已选行常驻占位（未选时也保留高度）
+    expect(vaultZone.querySelector('[data-testid="vault-import-picked"]')).toBeNull()
+  })
+
+  it('库模式纵向节奏与文件 / 文件夹一致（同一 flex 容器 + 12px 间距）', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
+    const bodyRoot = () =>
+      document.querySelector('[data-testid="file-import-modal"] .ant-modal-body > div') as HTMLElement
+
+    // 文件 / 文件夹：选择器与上传卡同属一个 flex column，底部动作条收尾
+    expect(bodyRoot()).toHaveStyle({ display: 'flex', flexDirection: 'column', gap: '12px' })
+    expect(bodyRoot().lastElementChild).toBe(screen.getByTestId('import-footer'))
+
+    // Obsidian 库：外层容器不变，库表单根节点用同一套 flex column（不再套 marginTop / 行内 Space）
+    fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
+    const zone = await screen.findByTestId('vault-import-upload')
+    expect(bodyRoot().style.gap).toBe('12px')
+    const vaultRoot = zone.parentElement as HTMLElement
+    expect(vaultRoot).toHaveStyle({ display: 'flex', flexDirection: 'column', gap: '12px' })
+    const visibleChildren = Array.from(vaultRoot.children).filter(
+      node => (node as HTMLElement).style.display !== 'none',
+    )
+    expect(visibleChildren[0]).toBe(zone)
+    expect(vaultRoot.lastElementChild).toBe(screen.getByTestId('import-footer'))
   })
 
   it('库模式渲染 Obsidian 库上传表单，可切回文件模式', async () => {

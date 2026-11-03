@@ -89,10 +89,15 @@ export function ImportDropzone({
         >
           {icon}
         </span>
-        <span style={{ textAlign: 'left' }}>
+        <span style={{ textAlign: 'left', maxWidth: 520 }}>
           <Typography.Text strong>{title}</Typography.Text>
           <br />
-          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          {/* 单行省略：不同模式的副标题长短不一，这里保持同样的文字块高度 */}
+          <Typography.Text
+            type="secondary"
+            style={{ fontSize: 12, display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            title={subtitle}
+          >
             {subtitle}
           </Typography.Text>
         </span>
@@ -114,7 +119,8 @@ export function ImportDropzone({
           </Popover>
         ) : null}
       </Space>
-      {selected ? <div style={{ marginTop: 8 }}>{selected}</div> : null}
+      {/* 已选行常驻占位：选中前后卡片高度与按钮位置不跳动 */}
+      <div style={{ marginTop: 8, minHeight: 20 }}>{selected}</div>
     </div>
   )
 }
@@ -125,6 +131,24 @@ export interface ImportSummaryItem {
   value: ReactNode
   /** 值为零：走次要色，避免一排 0 抢注意力 */
   zero?: boolean
+}
+
+/** 底部动作条：三入口统一（右对齐 + 分隔线 + 12px 间距），与弹窗内容同一节奏 */
+export function ImportFooter({ children }: { children: ReactNode }) {
+  return (
+    <div
+      data-testid="import-footer"
+      style={{
+        display: 'flex',
+        justifyContent: 'flex-end',
+        gap: 8,
+        paddingTop: 12,
+        borderTop: '1px solid var(--cn-border-soft)',
+      }}
+    >
+      {children}
+    </div>
+  )
 }
 
 /** 解析结果的单行紧凑统计（不占一整块表格） */
