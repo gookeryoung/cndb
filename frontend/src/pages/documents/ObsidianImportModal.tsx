@@ -8,23 +8,19 @@
  * 落库口径由后端决定（目录 → 文件夹、front-matter title/tags、附件改写为 ``file:`` 引用），
  * 前端只负责把「会发生什么」讲清楚：冲突数、被忽略条目、不能表达的双链锚点/别名。
  */
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   Alert,
   App as AntApp,
   Button,
-  Descriptions,
   Empty,
   Modal,
-  Radio,
   Space,
-  Switch,
   Table,
   Tag as AntTag,
   Typography,
-  Upload,
 } from 'antd'
-import { InboxOutlined } from '@ant-design/icons'
+import { FileZipOutlined } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   documentsApi,
@@ -34,6 +30,15 @@ import {
   type VaultPreviewItem,
 } from '@/api/documents'
 import { formatSize } from '@/utils/formatSize'
+import {
+  ImportConflictOptions,
+  ImportDropzone,
+  ImportOptionsPanel,
+  ImportStatusRadio,
+  ImportSummary,
+  ImportSwitch,
+  ImportTruncatedHint,
+} from './importUi'
 
 interface Props {
   workspaceId: number
@@ -45,16 +50,11 @@ interface Props {
   onClose: () => void
 }
 
-const CONFLICT_OPTIONS: { value: VaultConflictPolicy; label: string; hint: string }[] = [
-  { value: 'rename', label: '保留两份（自动改名）', hint: '同名文档追加「 (2)」' },
-  { value: 'overwrite', label: '覆盖已有文档', hint: '生成新版本，历史可回溯' },
-  { value: 'skip', label: '跳过同名文档', hint: '只导入库里新增的笔记' },
-]
-
 /** 库导入表单体：上传 zip → 预览 → 确认策略 → 落库，动作按钮内置于表单底部（不依赖 Modal footer） */
 export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }: Props) {
   const { message } = AntApp.useApp()
   const qc = useQueryClient()
+  const inputRef = useRef<HTMLInputElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [analysis, setAnalysis] = useState<VaultAnalyzeResult | null>(null)
   const [result, setResult] = useState<VaultImportResult | null>(null)
@@ -165,6 +165,38 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
   const busy = analyzeMut.isPending || importMut.isPending
   const targetText = parentLabel ? `「${parentLabel}」文件夹` : '根目录'
 
+  /** 库解析结果的紧凑统计（口径与合并成一行展示，零值走次要色） */
+  const summaryItems = analysis
+    ? [
+        { key: 'notes', label: '笔记', value: `${analysis.total_markdown} 篇`, zero: analysis.total_markdown === 0 },
+        {
+          key: 'converted',
+          label: '转换文件',
+          value: `${analysis.total_converted} 个`,
+          zero: analysis.total_converted === 0,
+        },
+        { key: 'folders', label: '新建文件夹', value: `${analysis.total_folders} 个`, zero: analysis.total_folders === 0 },
+        { key: 'conflicts', label: '同名冲突', value: `${analysis.conflicts} 篇`, zero: analysis.conflicts === 0 },
+        {
+          key: 'attachments',
+          label: '附件',
+          value: analysis.total_attachments
+            ? `${analysis.total_attachments} 个 · ${formatSize(analysis.total_attachment_bytes)}`
+            : '0 个',
+          zero: analysis.total_attachments === 0,
+        },
+        {
+          key: 'tags',
+          label: '标签',
+          value: analysis.tags.length
+            ? analysis.tags.slice(0, 5).join('、') + (analysis.tags.length > 5 ? '…' : '')
+            : '—',
+          zero: analysis.tags.length === 0,
+        },
+        { key: 'ignored', label: '忽略条目', value: `${analysis.ignored_files} 个`, zero: analysis.ignored_files === 0 },
+      ]
+    : []
+
   const footer = result
     ? [
         <Button key="close" type="primary" onClick={close}>
@@ -225,122 +257,84 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
         </Space>
       ) : (
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          <Upload.Dragger
+          {/* 原生 zip input：与单文件 / 文件夹模式共用同一套拖放区样式 */}
+          <input
+            ref={inputRef}
+            type="file"
             accept=".zip"
-            maxCount={1}
-            fileList={file ? [{ uid: 'vault', name: file.name, status: 'done' }] : []}
-            beforeUpload={next => {
+            style={{ display: 'none' }}
+            data-testid="vault-import-input"
+            onChange={event => {
+              const next = event.target.files?.[0]
+              event.target.value = ''
+              if (!next) return
               setAnalysis(null)
               setFile(next)
               analyzeMut.mutate({ file: next })
-              return false
             }}
-            onRemove={() => {
-              reset()
-              return true
-            }}
+          />
+          <ImportDropzone
+            testId="vault-import-upload"
+            pickTestId="vault-import-pick"
+            helpTestId="vault-import-help"
+            icon={<FileZipOutlined />}
+            title="上传 Obsidian 库压缩包"
+            subtitle={`导入到${targetText} · 先把库文件夹压缩为 .zip，解析后先预览再写入`}
+            actionLabel="选择 .zip 文件"
             disabled={busy}
-            data-testid="vault-import-upload"
-          >
-            <p className="ant-upload-drag-icon">
-              <InboxOutlined />
-            </p>
-            <p className="ant-upload-text">把 Obsidian 库文件夹压缩为 .zip 后拖到这里</p>
-            <p className="ant-upload-hint">
-              解析后会先展示预览（篇数 / 文件夹 / 附件 / 同名冲突），确认后才写入文档库；
-              导入到{targetText}。
-            </p>
-          </Upload.Dragger>
+            onPick={() => inputRef.current?.click()}
+            helpTitle="库导入说明"
+            help={
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
+                <li>目录结构还原为文件夹，front-matter 的 title / tags 生效</li>
+                <li>附件按引用改写为站内文件，双链转为站内链接</li>
+                <li>.canvas / .base 转为文档，无法识别的条目计入「忽略条目」</li>
+              </ul>
+            }
+            selected={
+              file ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="vault-import-picked">
+                  已选 {file.name}
+                </Typography.Text>
+              ) : null
+            }
+          />
 
           {analyzeMut.isPending && <Alert type="info" showIcon title="正在解析压缩包…" />}
 
           {analysis && (
             <>
-              <Descriptions
-                size="small"
-                column={3}
-                bordered
-                data-testid="vault-import-summary"
-                items={[
-                  { key: 'notes', label: '笔记', children: `${analysis.total_markdown} 篇` },
-                  {
-                    key: 'converted',
-                    label: '转换文件',
-                    children: `${analysis.total_converted} 个`,
-                  },
-                  { key: 'folders', label: '新建文件夹', children: `${analysis.total_folders} 个` },
-                  { key: 'conflicts', label: '同名冲突', children: `${analysis.conflicts} 篇` },
-                  {
-                    key: 'attachments',
-                    label: '附件',
-                    children: `${analysis.total_attachments} 个（${formatSize(analysis.total_attachment_bytes)}）`,
-                  },
-                  {
-                    key: 'tags',
-                    label: '标签',
-                    children: analysis.tags.length
-                      ? analysis.tags.slice(0, 5).join('、') + (analysis.tags.length > 5 ? '…' : '')
-                      : '—',
-                  },
-                  {
-                    key: 'ignored',
-                    label: '忽略条目',
-                    children: `${analysis.ignored_files} 个`,
-                  },
-                ]}
-              />
+              <ImportSummary items={summaryItems} testId="vault-import-summary" />
 
               {analysis.warnings.map(warning => (
                 <Alert key={warning.code} type="warning" showIcon title={warning.message} />
               ))}
 
               {analysis.conflicts > 0 && (
-                <div data-testid="vault-import-conflict">
-                  <Typography.Text strong>同名文档处理方式</Typography.Text>
-                  <Radio.Group
-                    value={conflict}
-                    onChange={e => setConflict(e.target.value as VaultConflictPolicy)}
-                    style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 }}
-                  >
-                    {CONFLICT_OPTIONS.map(option => (
-                      <Radio key={option.value} value={option.value}>
-                        {option.label}
-                        <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-                          {option.hint}
-                        </Typography.Text>
-                      </Radio>
-                    ))}
-                  </Radio.Group>
-                </div>
+                <ImportConflictOptions
+                  testId="vault-import-conflict"
+                  value={conflict}
+                  onChange={setConflict}
+                />
               )}
 
-              <Space size={24} wrap>
-                <Space size={8}>
-                  <Switch
-                    checked={importAttachments}
-                    onChange={setImportAttachments}
-                    data-testid="vault-import-attachments"
-                  />
-                  <Typography.Text>导入图片等附件</Typography.Text>
-                </Space>
-                <Space size={8}>
-                  <Switch checked={importTags} onChange={setImportTags} data-testid="vault-import-tags" />
-                  <Typography.Text>按 front-matter 建标签</Typography.Text>
-                </Space>
-                <Space size={8}>
-                  <Typography.Text type="secondary">文档状态</Typography.Text>
-                  <Radio.Group
-                    value={status}
-                    onChange={e => setStatus(e.target.value as 'draft' | 'published')}
-                    optionType="button"
-                    size="small"
-                    options={[
-                      { value: 'draft', label: '草稿' },
-                      { value: 'published', label: '已发布' },
-                    ]}
-                  />
-                </Space>
-              </Space>
+              <ImportOptionsPanel testId="vault-import-options">
+                <ImportSwitch
+                  testId="vault-import-attachments"
+                  label="导入图片等附件"
+                  checked={importAttachments}
+                  onChange={setImportAttachments}
+                  tooltip="按库内引用把图片等附件导入为站内文件"
+                />
+                <ImportSwitch
+                  testId="vault-import-tags"
+                  label="按 front-matter 建标签"
+                  checked={importTags}
+                  onChange={setImportTags}
+                  tooltip="读取笔记 front-matter 的 tags 并自动创建标签"
+                />
+                <ImportStatusRadio value={status} onChange={setStatus} />
+              </ImportOptionsPanel>
 
               {analysis.items.length === 0 ? (
                 <Empty description="压缩包里没有 markdown 文档" />
@@ -354,11 +348,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, onClose }:
                     pagination={{ pageSize: 8, size: 'small', hideOnSinglePage: true }}
                     scroll={{ y: 220 }}
                   />
-                  {analysis.preview_truncated && (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      预览仅展示前 {analysis.items.length} 篇，其余同样会被导入。
-                    </Typography.Text>
-                  )}
+                  {analysis.preview_truncated && <ImportTruncatedHint count={analysis.items.length} />}
                 </div>
               )}
             </>

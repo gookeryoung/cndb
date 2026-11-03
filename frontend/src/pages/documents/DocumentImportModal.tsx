@@ -15,18 +15,24 @@ import {
   Button,
   Empty,
   Modal,
-  Popover,
   Radio,
   Space,
-  Switch,
   Table,
   Tag as AntTag,
-  Tooltip,
   Typography,
 } from 'antd'
-import { FileAddOutlined, FolderOpenOutlined, InboxOutlined, QuestionCircleOutlined } from '@ant-design/icons'
+import { FileTextOutlined, FileZipOutlined, FolderOpenOutlined } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { VaultImportForm } from './ObsidianImportModal'
+import {
+  ImportConflictOptions,
+  ImportDropzone,
+  ImportOptionsPanel,
+  ImportStatusRadio,
+  ImportSummary,
+  ImportSwitch,
+  ImportTruncatedHint,
+} from './importUi'
 import {
   documentsApi,
   FILE_IMPORT_ACCEPT,
@@ -50,12 +56,6 @@ interface Props {
 }
 
 type ImportMode = 'single' | 'folder' | 'vault'
-
-const CONFLICT_OPTIONS: { value: VaultConflictPolicy; label: string; hint: string }[] = [
-  { value: 'rename', label: '保留两份（自动改名）', hint: '同名文档追加「 (2)」' },
-  { value: 'overwrite', label: '覆盖已有文档', hint: '生成新版本，历史可回溯' },
-  { value: 'skip', label: '跳过同名文档', hint: '只导入新增的文件' },
-]
 
 const FORMAT_LABEL: Record<string, string> = {
   '.md': 'Markdown',
@@ -299,9 +299,39 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         optionType="button"
         data-testid="file-import-mode"
         options={[
-          { value: 'single', label: '单文件' },
-          { value: 'folder', label: '文件夹' },
-          { value: 'vault', label: 'Obsidian 库' },
+          {
+            value: 'single',
+            label: (
+              <Space size={6}>
+                <span aria-hidden>
+                  <FileTextOutlined />
+                </span>
+                单文件
+              </Space>
+            ),
+          },
+          {
+            value: 'folder',
+            label: (
+              <Space size={6}>
+                <span aria-hidden>
+                  <FolderOpenOutlined />
+                </span>
+                文件夹
+              </Space>
+            ),
+          },
+          {
+            value: 'vault',
+            label: (
+              <Space size={6}>
+                <span aria-hidden>
+                  <FileZipOutlined />
+                </span>
+                Obsidian 库
+              </Space>
+            ),
+          },
         ]}
       />
     </Space>
@@ -372,187 +402,85 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
             {...(mode === 'folder' ? { webkitdirectory: '' } : {})}
             style={{ display: 'none' }}
             data-testid="file-import-input"
-            onChange={e => pick(e.target.files)}
+            onChange={event => {
+              const files = event.target.files
+              pick(files)
+              // 清空 value：重选同一批文件也能触发 change
+              event.target.value = ''
+            }}
           />
-          {/* 整块可点：鼠标直接落点；键盘 / 读屏走里面的真实按钮，不重复挂 role=button */}
-          <div
-            data-testid="file-import-dropzone"
-            onClick={() => {
-              if (!busy) inputRef.current?.click()
-            }}
-            style={{
-              border: '1px dashed var(--cn-border)',
-              borderRadius: 8,
-              padding: '18px 16px 14px',
-              textAlign: 'center',
-              cursor: busy ? 'default' : 'pointer',
-            }}
-          >
-            <Space size={10} align="center" style={{ justifyContent: 'center', width: '100%' }}>
-              <span style={{ fontSize: 26, color: 'var(--cn-text-muted)', lineHeight: 1 }}>
-                {mode === 'folder' ? <FolderOpenOutlined /> : <InboxOutlined />}
-              </span>
-              <span style={{ textAlign: 'left' }}>
-                <Typography.Text strong>
-                  {mode === 'folder' ? '选择文件夹导入' : '选择文件导入'}
-                </Typography.Text>
-                <br />
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  导入到{targetText} · 支持 Markdown / Word / HTML / MHTML / PDF / Excel / PPT / 图片
-                </Typography.Text>
-              </span>
-            </Space>
-            <Space size={8} align="center" style={{ marginTop: 12 }} onClick={event => event.stopPropagation()}>
-              <Button
-                type="primary"
-                icon={mode === 'folder' ? <FolderOpenOutlined /> : <FileAddOutlined />}
-                disabled={busy}
-                data-testid="file-import-pick"
-                onClick={() => inputRef.current?.click()}
-              >
-                {mode === 'folder' ? '选择文件夹' : '选择文件'}
-              </Button>
-              <Popover
-                trigger="click"
-                placement="bottom"
-                title="格式与处理方式"
-                content={
-                  <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
-                    <li>转换：Markdown / HTML 直接转换；Word、MHTML 可勾选转换后编辑</li>
-                    <li>原样存档：PDF / Excel / PPT / 图片，以及勾选存档的 Word、MHTML；可预览、可下载，不可编辑</li>
-                    <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>
-                  </ul>
-                }
-              >
-                <Button type="link" size="small" icon={<QuestionCircleOutlined />} data-testid="file-import-help">
-                  格式说明
-                </Button>
-              </Popover>
-            </Space>
-            {entries.length > 0 && (
-              <div data-testid="file-import-picked">
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          <ImportDropzone
+            testId="file-import-dropzone"
+            pickTestId="file-import-pick"
+            helpTestId="file-import-help"
+            icon={mode === 'folder' ? <FolderOpenOutlined /> : <FileTextOutlined />}
+            title={mode === 'folder' ? '选择文件夹导入' : '选择文件导入'}
+            subtitle={`导入到${targetText} · 支持 Markdown / Word / HTML / MHTML / PDF / Excel / PPT / 图片`}
+            actionLabel={mode === 'folder' ? '选择文件夹' : '选择文件'}
+            disabled={busy}
+            onPick={() => inputRef.current?.click()}
+            helpTitle="格式与处理方式"
+            help={
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
+                <li>转换：Markdown / HTML 直接转换；Word、MHTML 可勾选转换后编辑</li>
+                <li>原样存档：PDF / Excel / PPT / 图片，以及勾选存档的 Word、MHTML；可预览、可下载，不可编辑</li>
+                <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>
+              </ul>
+            }
+            selected={
+              entries.length > 0 ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
                   已选 {entries.length} 个文件
                 </Typography.Text>
-              </div>
-            )}
-          </div>
+              ) : null
+            }
+          />
 
           {analyzeMut.isPending && <Alert type="info" showIcon title="正在解析文件…" />}
 
           {analysis && (
             <>
-              <div
-                data-testid="file-import-summary"
-                style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 12 }}
-              >
-                {summaryItems.map(item => (
-                  <span key={item.key} style={{ whiteSpace: 'nowrap' }}>
-                    <Typography.Text type={item.zero ? 'secondary' : undefined} style={{ fontSize: 12 }}>
-                      {item.label}
-                    </Typography.Text>{' '}
-                    <span style={{ fontWeight: 600 }}>{item.value}</span>
-                  </span>
-                ))}
-              </div>
+              <ImportSummary items={summaryItems} testId="file-import-summary" />
 
               {analysis.skipped.map(item => (
                 <Alert key={item.path} type="warning" showIcon title={`${item.path}：${item.reason}`} />
               ))}
 
               {analysis.conflicts > 0 && (
-                <div data-testid="file-import-conflict">
-                  <Typography.Text strong style={{ fontSize: 12 }}>
-                    同名文档处理方式
-                  </Typography.Text>
-                  <Radio.Group
-                    value={conflict}
-                    onChange={e => setConflict(e.target.value as VaultConflictPolicy)}
-                    style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 4 }}
-                  >
-                    {CONFLICT_OPTIONS.map(option => (
-                      <Radio key={option.value} value={option.value}>
-                        {option.label}
-                        <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-                          {option.hint}
-                        </Typography.Text>
-                      </Radio>
-                    ))}
-                  </Radio.Group>
-                </div>
+                <ImportConflictOptions
+                  testId="file-import-conflict"
+                  value={conflict}
+                  onChange={setConflict}
+                />
               )}
 
-              <div
-                data-testid="file-import-options"
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  alignItems: 'center',
-                  gap: '10px 24px',
-                  padding: '10px 12px',
-                  border: '1px solid var(--cn-border)',
-                  borderRadius: 8,
-                  background: 'var(--cn-bg-subtle, transparent)',
-                }}
-              >
-                <Tooltip title="MHTML 默认原样存档；开启后按网页转换链路转成可编辑文档">
-                  <Space size={6}>
-                    <Switch
-                      size="small"
-                      checked={mhtmlMode === 'convert'}
-                      onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
-                      disabled={!hasMhtml}
-                      data-testid="file-import-mhtml-convert"
-                    />
-                    <Typography.Text type={hasMhtml ? undefined : 'secondary'} style={{ fontSize: 12 }}>
-                      MHTML 转 Markdown
-                    </Typography.Text>
-                  </Space>
-                </Tooltip>
-                <Tooltip title="Word 默认转 Markdown；开启后保留原件，阅读器内预览、不可编辑">
-                  <Space size={6}>
-                    <Switch
-                      size="small"
-                      checked={docxMode === 'archive'}
-                      onChange={checked => changeDocxMode(checked ? 'archive' : 'convert')}
-                      disabled={!hasDocx}
-                      data-testid="file-import-docx-archive"
-                    />
-                    <Typography.Text type={hasDocx ? undefined : 'secondary'} style={{ fontSize: 12 }}>
-                      Word 原样存档
-                    </Typography.Text>
-                  </Space>
-                </Tooltip>
-                <Tooltip title="转换 Word / HTML / MHTML 时一并导入内嵌图片；MHTML 原样存档时素材已随原件保留">
-                  <Space size={6}>
-                    <Switch
-                      size="small"
-                      checked={importAttachments}
-                      onChange={setImportAttachments}
-                      disabled={attachmentsDisabled}
-                      data-testid="file-import-attachments"
-                    />
-                    <Typography.Text type={attachmentsDisabled ? 'secondary' : undefined} style={{ fontSize: 12 }}>
-                      导入内嵌图片
-                    </Typography.Text>
-                  </Space>
-                </Tooltip>
-                <Space size={6} style={{ marginLeft: 'auto' }}>
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    状态
-                  </Typography.Text>
-                  <Radio.Group
-                    value={status}
-                    onChange={e => setStatus(e.target.value as 'draft' | 'published')}
-                    optionType="button"
-                    size="small"
-                    options={[
-                      { value: 'draft', label: '草稿' },
-                      { value: 'published', label: '已发布' },
-                    ]}
-                  />
-                </Space>
-              </div>
+              <ImportOptionsPanel testId="file-import-options">
+                <ImportSwitch
+                  testId="file-import-mhtml-convert"
+                  label="MHTML 转 Markdown"
+                  checked={mhtmlMode === 'convert'}
+                  onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
+                  disabled={!hasMhtml}
+                  tooltip="MHTML 默认原样存档；开启后按网页转换链路转成可编辑文档"
+                />
+                <ImportSwitch
+                  testId="file-import-docx-archive"
+                  label="Word 原样存档"
+                  checked={docxMode === 'archive'}
+                  onChange={checked => changeDocxMode(checked ? 'archive' : 'convert')}
+                  disabled={!hasDocx}
+                  tooltip="Word 默认转 Markdown；开启后保留原件，阅读器内预览、不可编辑"
+                />
+                <ImportSwitch
+                  testId="file-import-attachments"
+                  label="导入内嵌图片"
+                  checked={importAttachments}
+                  onChange={setImportAttachments}
+                  disabled={attachmentsDisabled}
+                  tooltip="转换 Word / HTML / MHTML 时一并导入内嵌图片；MHTML 原样存档时素材已随原件保留"
+                />
+                <ImportStatusRadio value={status} onChange={setStatus} />
+              </ImportOptionsPanel>
 
               {analysis.items.length === 0 ? (
                 <Empty description="没有可导入的文件" />
@@ -566,11 +494,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                     pagination={{ pageSize: 8, size: 'small', hideOnSinglePage: true }}
                     scroll={{ y: 220 }}
                   />
-                  {analysis.preview_truncated && (
-                    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                      预览仅展示前 {analysis.items.length} 篇，其余同样会被导入。
-                    </Typography.Text>
-                  )}
+                  {analysis.preview_truncated && <ImportTruncatedHint count={analysis.items.length} />}
                 </div>
               )}
             </>

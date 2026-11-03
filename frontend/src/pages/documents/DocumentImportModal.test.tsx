@@ -132,6 +132,33 @@ const VAULT_ANALYSIS: VaultAnalyzeResult = {
 }
 
 describe('通用导入弹窗', () => {
+  it('模式选择器与拖放区共用一套图标（单文件 / 文件夹 / zip 库）', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
+    const modeIcons = () =>
+      Array.from(
+        screen.getByTestId('file-import-mode').querySelectorAll('.ant-radio-button-wrapper .anticon'),
+      ).map(node => node.getAttribute('class'))
+    expect(modeIcons()).toEqual([
+      expect.stringContaining('anticon-file-text'),
+      expect.stringContaining('anticon-folder-open'),
+      expect.stringContaining('anticon-file-zip'),
+    ])
+
+    // 单文件 → 文件夹：拖放区图标随模式切换，且与选择器同源（Modal 渲染在 portal 里）
+    const zoneIcon = (name: string) =>
+      document.querySelector(`[data-testid="file-import-dropzone"] .anticon-${name}`)
+    expect(zoneIcon('file-text')).toBeTruthy()
+    fireEvent.click(screen.getByRole('radio', { name: '文件夹' }))
+    expect(zoneIcon('folder-open')).toBeTruthy()
+
+    // 库模式：拖放区同样是压缩包图标，不再是独立的 Dragger 样式
+    fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
+    const vaultZone = await screen.findByTestId('vault-import-upload')
+    expect(vaultZone.querySelector('.anticon-file-zip')).toBeTruthy()
+    expect(vaultZone).toHaveTextContent('上传 Obsidian 库压缩包')
+    expect(screen.getByTestId('vault-import-pick')).toHaveTextContent('选择 .zip 文件')
+  })
+
   it('库模式渲染 Obsidian 库上传表单，可切回文件模式', async () => {
     vi.spyOn(documentsApi, 'vaultAnalyze').mockResolvedValue(VAULT_ANALYSIS)
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
