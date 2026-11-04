@@ -281,8 +281,25 @@ class TestOfficePreviewRender:
         assert "var(--cn-bg-muted" in html
         assert "var(--cn-border-soft" in html
         # 选中态是 ID 选择器，必须直接用变量（否则深色主题下仍是浅底）
-        assert "color: var(--cn-text-primary, #1f2937)" in html
-        assert "background: var(--cn-bg-subtle" in html
+        assert "var(--cn-mix-brand-color-78-text-primary" in html
+        assert "var(--cn-mix-brand-color-12-bg-container" in html
+
+    def test_sheet_tabs_use_pill_design(self):
+        """工作表标签 UI：二级页签同款胶囊（无边框 / 页面底 / 品牌色浅底选中态）."""
+        html = office_preview.build_spreadsheet_html(XLSX_REAL_BYTES)
+        # 标签条跟随页面底色（不再是白底横带），并保留滚动时的模糊遮罩
+        assert "background: var(--cn-bg-page, #f5f7fa);" in html
+        assert "backdrop-filter: blur(6px);" in html
+        # 标签本体：无边框胶囊 + 悬停品牌色浅底
+        tab_rule = html.split(".cn-sheet-tab {", 1)[1].split("}", 1)[0]
+        assert "border: none;" in tab_rule
+        assert "border-radius: var(--cn-radius-base, 6px);" in tab_rule
+        assert "var(--cn-mix-brand-color-6-bg-container" in html
+        # 选中态：品牌混色底 + 品牌混色文字 + medium 字重（不再用灰底 + 加粗）
+        selected = html.split("#cn-sheet-0:checked ~ .cn-sheet-tabbar .cn-sheet-tab-0 {", 1)[1].split("}", 1)[0]
+        assert "var(--cn-mix-brand-color-12-bg-container" in selected
+        assert "var(--cn-mix-brand-color-78-text-primary" in selected
+        assert "font-weight: var(--cn-weight-medium, 500);" in selected
 
     def test_spreadsheet_page_fills_iframe_height(self):
         """布局：整页铺满 iframe 高度，滚动只发生在面板内，底部不留大空白."""

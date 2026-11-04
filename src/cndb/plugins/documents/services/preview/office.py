@@ -73,12 +73,21 @@ img { max-width: 100%; height: auto; }
 /* 工作表分页：radio + label 实现无脚本标签页（沙箱内禁用 JS） */
 .cn-sheet-tabs { position: relative; }
 .cn-sheet-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.cn-sheet-tabbar { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; margin-bottom: 12px;
-  border-bottom: 1px solid var(--cn-border-soft, #d7dee8); position: sticky; top: 0;
-  background: var(--cn-bg-container, #fff); z-index: 2; }
-.cn-sheet-tab { flex: 0 0 auto; padding: 3px 12px; border: 1px solid transparent; border-radius: 6px;
-  font-size: 13px; color: var(--cn-text-secondary, #64748b); cursor: pointer; white-space: nowrap; user-select: none; }
-.cn-sheet-tab:hover { background: var(--cn-bg-subtle, #f1f5f9); }
+/* 工作表标签：与页面二级页签（.cn-table-tab）同款胶囊语言——
+ * 无边框、页面底色上悬浮，选中态用品牌色浅底 + 品牌混色文字，不再是一条白底横带。 */
+.cn-sheet-tabbar { display: flex; gap: 2px; overflow-x: auto; padding: 2px 0 10px; margin-bottom: 12px;
+  border-bottom: 1px solid var(--cn-border-soft, #d7dee8);
+  position: sticky; top: 0; z-index: 2;
+  background: var(--cn-bg-page, #f5f7fa);
+  background: color-mix(in srgb, var(--cn-bg-page, #f5f7fa) 92%, transparent);
+  backdrop-filter: blur(6px); }
+.cn-sheet-tab { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 12px; border: none; border-radius: var(--cn-radius-base, 6px);
+  font-size: 13px; line-height: 1.5; color: var(--cn-text-secondary, #64748b);
+  cursor: pointer; white-space: nowrap; user-select: none;
+  transition: color 0.18s ease, background-color 0.18s ease; }
+.cn-sheet-tab:hover { color: var(--cn-brand-color, #3b82f6);
+  background: var(--cn-mix-brand-color-6-bg-container, #f1f5f9); }
 .cn-sheet-tab-count { color: var(--cn-text-muted, #94a3b8); font-size: 11px; margin-left: 4px; }
 .cn-sheet-panel { display: none; }
 /* 可见性只由 :checked 决定（首屏也不需要常驻规则，否则切页时第一页不会隐藏） */
@@ -86,6 +95,7 @@ img { max-width: 100%; height: auto; }
 /* 直接打开预览 URL 时无应用主题变量：按系统偏好兜底（应用内由 --cn-* 接管） */
 @media (prefers-color-scheme: dark) {
   :root { color-scheme: dark; }
+  .cn-sheet-tabbar { background: var(--cn-bg-page, #0f172a); }
 }
 """
 
@@ -240,15 +250,16 @@ def _spreadsheet_body(tabs: list[_SheetTab]) -> tuple[str, str]:
         # 选中态：标签高亮 + 对应面板显示（无 JS 的纯 CSS 分页）
         selector = f"#{tab_id}:checked ~ .cn-sheet-tabbar .cn-sheet-tab-{index}"
         rules.append(
-            f"{selector} {{ color: var(--cn-text-primary, #1f2937);"
-            " border-color: var(--cn-border-soft, #d7dee8);"
-            " background: var(--cn-bg-subtle, #f1f5f9); font-weight: 600; }"
+            f"{selector} {{"
+            " color: var(--cn-mix-brand-color-78-text-primary, var(--cn-text-primary, #1f2937));"
+            " background: var(--cn-mix-brand-color-12-bg-container, #e8eef7);"
+            " font-weight: var(--cn-weight-medium, 500); }"
         )
         rules.append(f"#{tab_id}:checked ~ .cn-sheet-panels .cn-sheet-panel-{index} {{ display: block; }}")
         dark_rules.append(
-            f"{selector} {{ color: var(--cn-text-primary, #e2e8f0);"
-            " border-color: var(--cn-border-soft, #334155);"
-            " background: var(--cn-bg-subtle, #1e293b); }"
+            f"{selector} {{"
+            " color: var(--cn-mix-brand-color-78-text-primary, #dbeafe);"
+            " background: var(--cn-mix-brand-color-12-bg-container, #1e293b); }"
         )
     body = (
         '<div class="cn-sheet-tabs">'
