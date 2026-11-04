@@ -1,7 +1,7 @@
 """design_file_library —— 设计文件库与装配约束（ADR 0086 P0）.
 
 Revision ID: c8e2f4a6b8d0
-Revises: a7c1d2e3f4b5
+Revises: b6c7d8e9f0a1
 Create Date: 2026-11-02 14:00:00.000000
 
 - ``design_design``：升级为「设计文件」——新增 ``kind`` / ``file_key`` / ``folder`` /
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c8e2f4a6b8d0"
-down_revision: str | Sequence[str] | None = "a7c1d2e3f4b5"
+down_revision: str | Sequence[str] | None = "b6c7d8e9f0a1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

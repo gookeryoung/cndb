@@ -1116,85 +1116,6 @@ const qualityChecks: HelpTopic = {
     ],
 }
 
-const acquisition: HelpTopic = {
-    key: 'acquisition',
-    label: '规则驱动的自动获取',
-    intro: (
-        <P>
-            智能采集把「一次抓取」变成「一条规则长期迭代」：渠道 + 检索式 + 筛选 + 落点 + 迭代四段写进策略，
-            定时跑、按轮扩展、表与文档双落点，运行与轮次全部留痕（ADR 0085）。大模型只做规则翻译与语义辅助，
-            采集能否跑通不依赖模型可用性。
-        </P>
-    ),
-    subsections: [
-        {
-            key: 'concept',
-            label: '入口与四个概念',
-            summary: '数据表段「智能采集」：策略列表 → 编辑器 → 运行详情。',
-            body: (
-                <Bullets
-                    items={[
-                        <><strong>策略</strong>：一条规则本体，含四段 JSON 与调度；实质修改会让 <code>rule_version</code> 加一并退回未启用。</>,
-                        <><strong>运行</strong>：一次执行（手动 / 定时 / CLI），状态为运行中、待复核、成功、部分成功、失败、已取消。</>,
-                        <><strong>轮次</strong>：运行内的每一轮抓取，记录检索式、新增数、扩展词与停止原因。</>,
-                        <><strong>落点</strong>：写入目标，只能二选一或多选——数据表（按去重键 upsert）或文档（同一条目恒定指向同一篇文档）。</>,
-                    ]}
-                />
-            ),
-        },
-        {
-            key: 'rules',
-            label: '规则怎么写',
-            summary: '先想清楚「哪些算命中」，再想「怎么写进去」。',
-            body: (
-                <>
-                    <Bullets
-                        items={[
-                            <><strong>渠道</strong>：可引用已有数据同步任务（<code>job:12</code>，复用其请求模板与凭证），也可用简写 <code>rss:&lt;地址&gt;</code>、<code>sitemap:&lt;地址&gt;</code>、<code>arxiv:</code>、<code>openalex:</code>、<code>crossref:</code>；简写冒号后留空表示用本轮检索式。</>,
-                            <><strong>检索式</strong>：支持 <code>{'{today}'}</code> 占位符；迭代扩展时会被包成 <code>(原式) AND (词1 OR 词2)</code>。</>,
-                            <><strong>三段式筛选</strong>：「必须包含」全命中、「可选包含」命中任一、「必须排除」命中即弃；也可直接写布尔式（AND / OR / NOT / 括号 / 引号短语）。</>,
-                            <><strong>落点</strong>：表落点要指定去重键（同一业务身份视为同一行，换数值不会新增行）；文档落点可选文件夹，人工改过的文档不会被覆盖，而是转成问题清单里的更新建议。目标表或文件夹还没建？落点旁的「新建表 / 新建文件夹」可就地创建并自动选中，不必退出正在填写的策略。</>,
-                            <><strong>自然语言草案</strong>：编辑器顶部输入一句需求点「生成草案」，模型只填表单、不保存不启用；渠道 / 表 / 文件夹越界一律丢弃。</>,
-                        ]}
-                    />
-                    <P>写不准就先点「抓一次看看」：预览真实抓取、真实筛选，用的是编辑器里<strong>当前</strong>的检索式与筛选——<strong>新建时不用先保存</strong>也能试抓，保存后抽屉也不会关闭，可以接着调整再预览；预览不写表、不写文档、不留运行记录。命中 0 时预览会说明被哪条筛选拦下——「必须包含」要求全部命中，多个关键词都出现才通过；只想命中其一请用「可选包含」。</P>
-                </>
-            ),
-        },
-        {
-            key: 'iteration',
-            label: '迭代、预算与复核',
-            summary: '四重停止：空轮、最小新增、预算、轮数，取最先触发者。',
-            body: (
-                <Bullets
-                    items={[
-                        <><strong>扩展词</strong>：确定性词频 + 文档频次产出候选，模型只能在候选内 keep / drop / rename / weight，候选外的新词直接丢弃并留痕。</>,
-                        <><strong>复核三档</strong>：「纯确定性」不走模型；「模型判断」自动继续（默认）；「每轮确认」在第 N 轮结束停下等你确认，可以改扩展词、也可以直接继续。</>,
-                        <><strong>预算</strong>：单次运行请求上限（默认 100）/ 轮数上限 5 / 每渠道每轮上限 200；触顶记为「部分成功」而不是失败。</>,
-                        <><strong>取消</strong>：只在轮边界生效，不打断在途请求，因此不会留下半批数据。</>,
-                        <><strong>超时兜底</strong>：待复核超过 72 小时，定时任务会按「不调」自动续跑，并记录 review_timeout。</>,
-                    ]}
-                />
-            ),
-        },
-        {
-            key: 'model',
-            label: '模型参与边界',
-            summary: '模型是「规则翻译器 + 语义辅助」，不是采集执行者。',
-            body: (
-                <Bullets
-                    items={[
-                        '五个固定动作：规则草案（rule_draft）、扩展词复核（keyword_refine）、条目摘要（item_summary）、运行报告（run_report）、失败诊断（failure_diagnose）。',
-                        '模型不发起抓取、不决定落点、不编造 URL / DOI / 统计；所有模型输出要么经你确认成为规则，要么受候选集与白名单约束成为排序或文案。',
-                        '未配置大模型、超额、上游 4xx/5xx、输出不合规——一律降级为确定性结果，采集照常完成，只多一条降级记录。',
-                        '个人设置里的连接与 Key 只存在个人配置，规则、运行快照与备份里都不会出现。',
-                    ]}
-                />
-            ),
-        },
-    ],
-}
-
 export const tutorialTopics: HelpTopic[] = [
     viewTypes,
     fieldTypes,
@@ -1205,7 +1126,6 @@ export const tutorialTopics: HelpTopic[] = [
     search,
     viewConfig,
     qualityChecks,
-    acquisition,
     designDsl,
 ]
 

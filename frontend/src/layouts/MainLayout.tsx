@@ -11,7 +11,7 @@ import {
   DatabaseOutlined,
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
-  SafetyCertificateOutlined, ToolOutlined, ExperimentOutlined,
+  SafetyCertificateOutlined, ToolOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
   LockOutlined, ApartmentOutlined, AppstoreOutlined,
@@ -271,8 +271,6 @@ export default function MainLayout() {
           ? 'analytics'
           : location.includes('/datasource')
             ? 'datasource'
-            : location.includes('/acquisition')
-              ? 'acquisition'
             : location.includes('/pipelines')
               ? 'pipelines'
               : location.includes('/settings')
@@ -285,12 +283,12 @@ export default function MainLayout() {
    * 落在该页时窗口保持开启（与数据分析行为一致），页签行不消失。 */
   const tablesDerivedActive =
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
-    || activeWsTab === 'acquisition' || activeWsTab === 'pipelines'
+    || activeWsTab === 'pipelines'
     || activeWsTab === 'change-requests' || activeWsTab === 'issues'
     || activeWsTab === 'data-flow'
 
   /** 当前所在的一级导航段 —— 切换工作区时保持（0081 C4）。
-   * 二级派生段（数据分析 / 数据同步 / 质量检查 / 智能采集）属数据表域，折算为 `tables`；
+   * 二级派生段（数据分析 / 数据同步 / 质量检查）属数据表域，折算为 `tables`；
    * 「工作区设置」恒显，保持不变。 */
   const currentNavSegment: WorkspaceNavSegment =
     activeWsTab === 'documents' ? 'documents'
@@ -329,7 +327,7 @@ export default function MainLayout() {
 
   /** 工作区级分页导航（需求 0081 C5）：仅承载二级功能模块，维持原位置.
    *
-   * 顺序：数据列表 → 数据分析 → 数据同步 → 智能采集 → 质量检查 → 修改申请 → 问题清单（2026-11-03 用户口径）。
+   * 顺序：数据列表 → 数据分析 → 数据同步 → 质量检查 → 修改申请 → 问题清单（2026-11-03 用户口径）。
    * 数据分析 / 数据同步随数据表开放，且仅在数据表模块上下文显示
    * （切到文档 / 设计 / 工作区设置时隐藏，tablesDerivedActive 收敛）；
    * 工作区级质量检查（/pipelines）为数据表域入口，恒显（ADR 0080），
@@ -372,15 +370,6 @@ export default function MainLayout() {
       label: (
         <span>
           <CloudDownloadOutlined /> 数据同步
-        </span>
-      ),
-    }] : []),
-    // 智能采集（ADR 0085）：数据表 / 文档派生功能，紧随数据同步（2026-11-03 用户口径）
-    ...(wsFeatures.acquisition && tablesDerivedActive ? [{
-      key: 'acquisition',
-      label: (
-        <span>
-          <ExperimentOutlined /> 智能采集
         </span>
       ),
     }] : []),
@@ -497,14 +486,12 @@ export default function MainLayout() {
     const inDocuments = location.startsWith(`/w/${wid}/documents`)
     const inAnalytics = location.startsWith(`/w/${wid}/analytics`)
     const inDatasource = location.startsWith(`/w/${wid}/datasource`)
-    const inAcquisition = location.startsWith(`/w/${wid}/acquisition`)
     const inDesign = location.startsWith(`/w/${wid}/design`)
     if (
       (!feat.tables && inTables) ||
       (!feat.documents && inDocuments) ||
       (!feat.analytics && inAnalytics) ||
       (!feat.datasource && inDatasource) ||
-      (!feat.acquisition && inAcquisition) ||
       (!feat.design && inDesign)
     ) {
       navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.modules)}`, { replace: true })

@@ -47,7 +47,6 @@ class TestResolveFeatures:
                 "design": True,
                 "analytics": True,
                 "datasource": True,
-                "acquisition": True,
                 "quality": True,
             },
             ("tables", "documents"): {
@@ -56,7 +55,6 @@ class TestResolveFeatures:
                 "design": False,
                 "analytics": True,
                 "datasource": True,
-                "acquisition": True,
                 "quality": True,
             },
             ("tables", "design"): {
@@ -65,7 +63,6 @@ class TestResolveFeatures:
                 "design": True,
                 "analytics": True,
                 "datasource": True,
-                "acquisition": True,
                 "quality": True,
             },
             ("documents", "design"): {
@@ -74,7 +71,6 @@ class TestResolveFeatures:
                 "design": True,
                 "analytics": False,
                 "datasource": False,
-                "acquisition": True,
                 "quality": True,
             },
             ("tables",): {
@@ -83,7 +79,6 @@ class TestResolveFeatures:
                 "design": False,
                 "analytics": True,
                 "datasource": True,
-                "acquisition": True,
                 "quality": True,
             },
             ("documents",): {
@@ -92,7 +87,6 @@ class TestResolveFeatures:
                 "design": False,
                 "analytics": False,
                 "datasource": False,
-                "acquisition": True,
                 "quality": True,
             },
             ("design",): {
@@ -101,7 +95,6 @@ class TestResolveFeatures:
                 "design": True,
                 "analytics": False,
                 "datasource": False,
-                "acquisition": False,
                 "quality": True,
             },
         }

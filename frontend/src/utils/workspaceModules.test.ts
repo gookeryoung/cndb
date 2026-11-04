@@ -20,13 +20,13 @@ describe('workspaceModules 工作区功能模块元数据', () => {
   // 7 种非空组合矩阵 —— 与后端 tests/test_workspace_modules.py 逐项对齐（I3）
   it('7 种非空组合的功能开放矩阵与后端一致', () => {
     const cases: Array<[WorkspaceModule[], Record<string, boolean>]> = [
-      [['tables'], { tables: true, documents: false, design: false, analytics: true, datasource: true, acquisition: true }],
-      [['documents'], { tables: false, documents: true, design: false, analytics: false, datasource: false, acquisition: true }],
-      [['design'], { tables: false, documents: false, design: true, analytics: false, datasource: false, acquisition: false }],
-      [['tables', 'documents'], { tables: true, documents: true, design: false, analytics: true, datasource: true, acquisition: true }],
-      [['tables', 'design'], { tables: true, documents: false, design: true, analytics: true, datasource: true, acquisition: true }],
-      [['documents', 'design'], { tables: false, documents: true, design: true, analytics: false, datasource: false, acquisition: true }],
-      [['tables', 'documents', 'design'], { tables: true, documents: true, design: true, analytics: true, datasource: true, acquisition: true }],
+      [['tables'], { tables: true, documents: false, design: false, analytics: true, datasource: true }],
+      [['documents'], { tables: false, documents: true, design: false, analytics: false, datasource: false }],
+      [['design'], { tables: false, documents: false, design: true, analytics: false, datasource: false }],
+      [['tables', 'documents'], { tables: true, documents: true, design: false, analytics: true, datasource: true }],
+      [['tables', 'design'], { tables: true, documents: false, design: true, analytics: true, datasource: true }],
+      [['documents', 'design'], { tables: false, documents: true, design: true, analytics: false, datasource: false }],
+      [['tables', 'documents', 'design'], { tables: true, documents: true, design: true, analytics: true, datasource: true }],
     ]
     for (const [modules, expectPartial] of cases) {
       const feat = workspaceModulesFeatures(modules)
@@ -35,7 +35,6 @@ describe('workspaceModules 工作区功能模块元数据', () => {
       expect(feat.design).toBe(expectPartial.design)
       expect(feat.analytics).toBe(expectPartial.analytics)
       expect(feat.datasource).toBe(expectPartial.datasource)
-      expect(feat.acquisition).toBe(expectPartial.acquisition)
       // 质量检查恒开放（D4）
       expect(feat.quality).toBe(true)
     }

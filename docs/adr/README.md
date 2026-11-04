@@ -136,16 +136,14 @@ DSL 内核 / 结构导航 / 系统级装配 / 分文件与约束。
 
 承接关系：原 0015（搜索缓存与 `scope=all` 全表覆盖）已并入 0012 的「续作」小节；0036 在 0029 的路由与内容底座上加四级层级规则，0030 的图示引擎由 0036 的层级承载。
 
-## 质量检查与采集
+## 质量检查
 
-流水线检查 DSL / 规则驱动的迭代获取。
+流水线检查 DSL。
 
 | 编号 | 标题 | Status | 落地阶段 | 代码 | 测试 | CHANGELOG |
 |---|---|---|---|---|---|---|
 | [0076](0076-pipeline-check-dsl.md) | 流水线检查系统与专用 DSL（数据表 / 文档质量检查 + 检查动作注册表） | Implemented | P0-P2 已落地（2026-11-02 人工确认）；D11 入口口径已由 ADR 0080 P3 修订为按域双入口 | `src/cndb/plugins/pipeline/`、`src/cndb/cli/pipeline.py`、`deploy/pipeline.sh`、`src/cndb/alembic/versions/y3z4a5b6c7d8_add_pipeline_plugin.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/src/pages/pipelines/`、`frontend/src/api/pipelines.ts` | `tests/test_pipeline_dsl.py`、`tests/test_pipeline_checks.py`、`tests/test_pipeline_runner.py`、`tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py`、`tests/test_pipeline_triggers.py`、`tests/test_pipeline_scheduler.py`、`tests/test_pipeline_issue_bridge.py`、`tests/test_workspace_backup_v9.py`、`frontend/src/pages/pipelines/*.test.*`、`frontend/tests/e2e/critical/pipelines.spec.ts` | [未发布](../../CHANGELOG.md) |
-| [0085](0085-rule-driven-iterative-acquisition.md) | 规则驱动的数据表 / 文档迭代获取（采集策略 + 规则引擎 + 大模型参与边界） | Implemented | P0-P3 全部落地（2026-11-02 人工确认） | `src/cndb/plugins/acquisition/`、`src/cndb/cli/acquisition.py`、`src/cndb/alembic/versions/a7c1d2e3f4b5_add_acquisition_plugin.py` | `tests/test_acquisition_{rules,runner,iteration,api,migration,p2,ai}.py`、`tests/test_workspace_backup_v13.py`、`frontend/src/pages/acquisition/StrategiesPage.test.tsx` | [未发布](../../CHANGELOG.md) |
 
-承接关系：0076 提供 `sync.finished` / `document.saved` 等事件，0085 的采集完成可接其检查（本期未接）。
 
 ## 示例数据与内容口径
 

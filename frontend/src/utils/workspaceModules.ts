@@ -61,8 +61,6 @@ export interface WorkspaceFeatures {
   analytics: boolean
   /** 数据同步功能（数据表派生，强绑定） */
   datasource: boolean
-  /** 采集策略功能（数据表或文档派生：两者至少其一，ADR 0085 P2） */
-  acquisition: boolean
   /** 质量检查功能：所有工作区恒开放（ADR 0080 D4） */
   quality: boolean
 }
@@ -76,7 +74,6 @@ export function workspaceModulesFeatures(modules?: WorkspaceModule[] | null): Wo
     design: enabled.has('design'),
     analytics: enabled.has('tables'),
     datasource: enabled.has('tables'),
-    acquisition: enabled.has('tables') || enabled.has('documents'),
     quality: true,
   }
 }
@@ -100,7 +97,7 @@ export type WorkspaceNavSegment = WorkspaceModule | 'settings'
  *
  * 口径（0081 C4 补充）：顶部一级导航是「当前工作区」的功能切面，切换工作区后仍停在同一
  * 一级模块，用户看到的是目标工作区的对应内容；二级派生段（数据分析 / 数据同步 /
- * 质量检查 / 智能采集）由调用方统一折算为 `tables` 再传入。
+ * 质量检查）由调用方统一折算为 `tables` 再传入。
  */
 export function workspaceSwitchSegment(
   current: WorkspaceNavSegment | null | undefined,

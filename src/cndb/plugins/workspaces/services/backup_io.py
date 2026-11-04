@@ -102,7 +102,6 @@ def _import_backup_into_workspace(
     imported_charts = 0
     imported_pipelines = 0
     imported_designs = 0
-    imported_acquisitions = 0
     errors: list[str] = []
 
     # v4 跨表引用重映射的收集器（v1-v3 备份无 id 信息，保持原样跳过重映射）：
@@ -444,11 +443,6 @@ def _import_backup_into_workspace(
         imported_designs += design_imported
         errors.extend(design_errors)
 
-        # ── v13（ADR 0085 P2）：采集策略（运行记录不进备份） ──
-        acq_imported, acq_errors = _import_acquisitions(workspace_id, json_data, current_user, db)
-        imported_acquisitions += acq_imported
-        errors.extend(acq_errors)
-
         # ── v9（ADR 0075）：版本历史/草稿/置顶/分享/议题/修改申请/会话密钥/游标/附件 ──
         v9_errors = _import_v9_extras(
             workspace_id,
@@ -480,7 +474,6 @@ def _import_backup_into_workspace(
         imported_charts=imported_charts,
         imported_pipelines=imported_pipelines,
         imported_designs=imported_designs,
-        imported_acquisitions=imported_acquisitions,
         errors=errors,
     )
 
@@ -1078,137 +1071,6 @@ def _import_charts(
     return imported, errors
 
 
-def _import_acquisitions(
-    workspace_id: int,
-    json_data: dict[str, Any],
-    current_user: User,
-    db: Session,
-) -> tuple[int, list[str]]:
-    """还原采集策略（v13 起，ADR 0085 P2），返回 (成功数, 错误明细).
-
-    - 同名策略已存在则跳过（与表 / 文档 / 同步任务 / 流水线一致的幂等口径）；
-    - 落点按**名字 / 文件夹路径**重建 id：表按同名表、文档按「根 → 父」标题链匹配；
-      表找不到则丢弃该落点，文件夹找不到则落根目录（都记 errors，不静默）；
-    - 规则段按保存期同一套 :func:`validate_strategy_payload` 校验，非法策略跳过。
-    """
-    from cndb.plugins.acquisition.models import AcquisitionStrategy
-    from cndb.plugins.acquisition.services.rules.expr import RuleError
-    from cndb.plugins.acquisition.services.validation import validate_strategy_payload
-    from cndb.plugins.documents.models import Document
-    from cndb.plugins.tables.models import DataTable
-
-    items = json_data.get("acquisitions") or []
-    if not items:
-        return 0, []
-
-    errors: list[str] = []
-    imported = 0
-    table_ids = {
-        row[0]: row[1]
-        for row in db.query(DataTable.name, DataTable.id)
-        .filter(DataTable.workspace_id == workspace_id, DataTable.trashed_at.is_(None))
-        .all()
-    }
-    folders = [
-        (doc.id, doc.title, doc.parent_id)
-        for doc in db.query(Document)
-        .filter(
-            Document.workspace_id == workspace_id,
-            Document.is_folder.is_(True),
-            Document.is_deleted.is_(False),
-        )
-        .order_by(Document.id)
-        .all()
-    ]
-
-    def _resolve_folder(path: list[str]) -> tuple[int | None, bool]:
-        """按「根 → 父」标题链找文件夹，返回 ``(folder_id, 是否全部命中)``."""
-        parent: int | None = None
-        for title in path:
-            match = next(
-                (fid for fid, ftitle, fparent in folders if ftitle == title and fparent == parent),
-                None,
-            )
-            if match is None:
-                return None, False
-            parent = match
-        return parent, True
-
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        name = str(item.get("name") or "").strip()
-        if not name:
-            continue
-        exists = (
-            db.query(AcquisitionStrategy)
-            .filter(AcquisitionStrategy.workspace_id == workspace_id, AcquisitionStrategy.name == name)
-            .first()
-        )
-        if exists is not None:
-            continue
-
-        targets: list[dict[str, Any]] = []
-        for raw in list(item.get("targets") or []):
-            if not isinstance(raw, dict):
-                continue
-            target = {key: value for key, value in raw.items() if key not in ("table_name", "parent_path")}
-            kind = str(target.get("kind") or "")
-            if kind == "table":
-                table_id = table_ids.get(str(raw.get("table_name") or ""))
-                if table_id is None:
-                    errors.append(f"采集策略 {name} 的表落点 {raw.get('table_name')!r} 未找到同名表，已丢弃该落点")
-                    continue
-                target["table_id"] = int(table_id)
-            elif kind == "document":
-                folder_id, matched = _resolve_folder([str(part) for part in list(raw.get("parent_path") or [])])
-                if not matched:
-                    errors.append(f"采集策略 {name} 的文件夹路径未找到，落入文档根目录")
-                target["parent_id"] = folder_id
-            targets.append(target)
-
-        if not targets:
-            errors.append(f"采集策略 {name} 跳过（没有可用落点）")
-            continue
-
-        scope = dict(item.get("scope") or {})
-        filter_rule = dict(item.get("filter_rule") or {})
-        iteration = dict(item.get("iteration") or {})
-        schedule = dict(item.get("schedule") or {})
-        try:
-            validate_strategy_payload(
-                scope=scope,
-                filter_rule=filter_rule,
-                targets=targets,
-                iteration=iteration,
-                schedule=schedule,
-            )
-        except RuleError as exc:
-            errors.append(f"采集策略 {name} 跳过（规则非法）: {exc}")
-            continue
-
-        db.add(
-            AcquisitionStrategy(
-                workspace_id=workspace_id,
-                created_by_id=current_user.id,
-                name=name,
-                # 与同步任务同口径：启用态按备份还原（调度为 manual 时不会被 tick 触发）
-                enabled=bool(item.get("enabled", False)),
-                scope=scope,
-                filter_rule=filter_rule,
-                targets=targets,
-                iteration=iteration,
-                llm=dict(item.get("llm") or {}),
-                schedule=schedule,
-                rule_version=int(item.get("rule_version") or 1),
-            )
-        )
-        imported += 1
-    if imported:
-        db.commit()
-    return imported, errors
-
-
 def _import_pipelines(
     workspace_id: int,
     json_data: dict[str, Any],
@@ -1452,7 +1314,6 @@ def _import_designs(
 
 __all__ = [
     "_coerce_row_value_types",
-    "_import_acquisitions",
     "_import_backup_into_workspace",
     "_import_charts",
     "_import_designs",
