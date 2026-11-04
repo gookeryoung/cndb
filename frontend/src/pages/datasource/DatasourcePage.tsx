@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, App as AntApp, Button, Collapse, Drawer, Dropdown, Empty, Form, Input, InputNumber, Modal,
-  Progress, Select, Space, Switch, Table, Tag, Tooltip, Typography,
+  Progress, Radio, Select, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import {
   CloudDownloadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined, EyeOutlined,
@@ -308,6 +308,7 @@ export default function DatasourcePage() {
         render: (name: string, job: SyncJob) => (
           <Space size={6}>
             <Text strong>{name}</Text>
+            {job.direction === 'push' && <Tag color="purple">推送</Tag>}
             {!job.enabled && <Tag>已停用</Tag>}
           </Space>
         ),
@@ -597,7 +598,18 @@ function JobDrawer({
     if (job) {
       form.setFieldsValue({
         name: job.name,
+        direction: job.direction ?? 'pull',
         provider: job.provider,
+        push_url_template: job.push_spec?.url_template ?? undefined,
+        push_method: job.push_spec?.method ?? 'POST',
+        push_headers_json: JSON.stringify(job.push_spec?.headers_template ?? {}, null, 2),
+        push_body_json: job.push_spec?.body_template
+          ? JSON.stringify(job.push_spec.body_template, null, 2)
+          : '',
+        push_batch_size: job.push_spec?.batch_size ?? 100,
+        push_max_rows: job.push_spec?.max_rows ?? 5000,
+        push_fields: job.push_spec?.fields ?? [],
+        push_watermark_field: job.push_spec?.watermark_field ?? undefined,
         table_id: job.table_id ?? undefined,
         url_template: job.request_spec?.url_template,
         data_path: job.request_spec?.data_path ?? undefined,
@@ -630,7 +642,15 @@ function JobDrawer({
       const defaultProvider = providers[0]
       form.setFieldsValue({
         name: defaultJobName(),
+        direction: 'pull',
         provider: defaultProvider?.name,
+        push_method: 'POST',
+        push_headers_json: '{}',
+        push_body_json: '',
+        push_batch_size: 100,
+        push_max_rows: 5000,
+        push_fields: [],
+        push_watermark_field: undefined,
         cursor_strategy: defaultProvider?.default_cursor ?? 'date',
         schedule_mode: 'manual',
         paging_mode: 'none',
@@ -690,6 +710,47 @@ function JobDrawer({
 
   const buildPayload = useCallback(async (): Promise<SyncJobPayload> => {
     const validated = await form.validateFields()
+    const direction = String(validated.direction ?? form.getFieldValue('direction') ?? 'pull')
+    if (direction === 'push') {
+      const parseJson = (raw: unknown, label: string) => {
+        const text = String(raw ?? '').trim()
+        if (!text) return undefined
+        try {
+          return JSON.parse(text) as unknown
+        } catch {
+          throw new Error(`${label}不是合法 JSON`)
+        }
+      }
+      const headers = parseJson(validated.push_headers_json, '请求头') as Record<string, string> | undefined
+      const body = parseJson(validated.push_body_json, '请求体模板')
+      return {
+        name: String(validated.name).trim(),
+        direction: 'push',
+        provider: 'http_json',
+        table_id: validated.table_id == null ? null : Number(validated.table_id),
+        request_spec: {},
+        push_spec: {
+          url_template: String(validated.push_url_template ?? '').trim(),
+          method: (validated.push_method ?? 'POST') as 'POST' | 'PUT' | 'PATCH',
+          headers_template: headers ?? {},
+          ...(body !== undefined ? { body_template: body } : {}),
+          batch_size: Number(validated.push_batch_size) || 100,
+          max_rows: Number(validated.push_max_rows) || 5000,
+          fields: (validated.push_fields ?? []).map(String),
+          watermark_field: String(validated.push_watermark_field ?? '').trim(),
+        },
+        cursor: job?.cursor ?? { strategy: 'none' },
+        schedule: {
+          mode: validated.schedule_mode,
+          at: validated.schedule_mode === 'daily' ? validated.schedule_at : '',
+          seconds: validated.schedule_mode === 'interval' ? Number(validated.schedule_seconds) || 0 : 0,
+          expr: validated.schedule_mode === 'cron' ? validated.schedule_expr : '',
+        },
+        enabled: Boolean(validated.enabled),
+        session_id: validated.session_id == null ? null : Number(validated.session_id),
+        rate_limit_ms: 0,
+      }
+    }
     // LLM 的主表单极简，调度 / 幂等键 / 模型参数都在收起的「高级设置」里，
     // 未挂载字段不会出现在 validateFields 结果里，需要用 store 值兜底；
     // 非 LLM 任务保持原有口径（只用已挂载字段），避免默认 provider 行为变化。
@@ -705,6 +766,7 @@ function JobDrawer({
     const requestSpec = mergeBase ? { ...mergeBase, ...builtSpec } : builtSpec
     return {
       name: String(values.name).trim(),
+      direction: 'pull',
       provider: String(values.provider),
       table_id: values.table_id == null ? null : Number(values.table_id),
       request_spec: requestSpec,
@@ -768,6 +830,7 @@ function JobDrawer({
   const activeProvider = Form.useWatch('provider', form) as string | undefined
   const providerInfo = providers.find(p => p.name === activeProvider)
   const isLlm = activeProvider === 'llm_prompt'
+  const isPush = (Form.useWatch('direction', form) as string | undefined) === 'push'
   // 折叠面板未展开时对应 Form.Item 尚未挂载，watch 拿不到值，回退到任务本身
   const scheduleMode = (Form.useWatch('schedule_mode', form) as string | undefined) ?? activeJob?.schedule?.mode
   const cursorStrategy = Form.useWatch('cursor_strategy', form) as string | undefined
@@ -812,28 +875,144 @@ function JobDrawer({
             <Button data-testid="datasource-save-btn" loading={saving} onClick={() => void handleSave(false)}>
               保存
             </Button>
-            <Button
-              type="primary"
-              data-testid="datasource-save-preview-btn"
-              loading={saving || previewing}
-              onClick={() => void handleSave(true)}
-            >
-              保存并预览
-            </Button>
+            {!isPush && (
+              <Button
+                type="primary"
+                data-testid="datasource-save-preview-btn"
+                loading={saving || previewing}
+                onClick={() => void handleSave(true)}
+              >
+                保存并预览
+              </Button>
+            )}
           </Space>
         }
       >
         <Form form={form} layout="vertical" size="small">
-          <Space size={12} style={{ display: 'flex' }}>
-            <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]} style={{ flex: 1 }}>
+          <Space size={12} style={{ display: 'flex', flexWrap: 'wrap' }}>
+            <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]} style={{ flex: 1, minWidth: 220 }}>
               <Input data-testid="datasource-name-input" placeholder="例如：北京天气日报" />
             </Form.Item>
-            <Form.Item name="provider" label="适配器" rules={[{ required: true }]} style={{ width: 220 }}>
-              <Select options={providerOptions} onChange={onProviderChange} />
+            <Form.Item name="direction" label="方向" style={{ width: 180 }}>
+              <Radio.Group
+                optionType="button"
+                buttonStyle="solid"
+                options={[
+                  { value: 'pull', label: '抓取（外部→表）' },
+                  { value: 'push', label: '推送（表→外部）' },
+                ]}
+              />
             </Form.Item>
+            {!isPush && (
+              <Form.Item name="provider" label="适配器" rules={[{ required: true }]} style={{ width: 220 }}>
+                <Select options={providerOptions} onChange={onProviderChange} />
+              </Form.Item>
+            )}
           </Space>
 
-          {isLlm ? (
+          {isPush ? (
+            <>
+              <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                title="对外推送：按批把源数据表的行发送到外部接口"
+                description="读取源表 → 按字段白名单组装 JSON → POST/PUT/PATCH；可用增量字段只推送游标之后的新行。失败批次会记入运行历史。"
+              />
+              <Space size={12} style={{ display: 'flex' }}>
+                <Form.Item name="table_id" label="源数据表" rules={[{ required: true, message: '请选择源数据表' }]} style={{ flex: 1 }}>
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    placeholder="选择要推送的数据表"
+                    options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
+                  />
+                </Form.Item>
+                <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
+                  <Switch />
+                </Form.Item>
+              </Space>
+              <Form.Item
+                name="push_url_template"
+                label="目标 URL"
+                rules={[
+                  { required: true, message: '请输入推送地址' },
+                  { pattern: /^https?:\/\//, message: '必须是 http/https 地址' },
+                ]}
+                extra="支持 {api_key} 等会话密钥占位符；SSRF 校验与抓取一致"
+              >
+                <Input placeholder="https://example.com/api/ingest" />
+              </Form.Item>
+              <Space size={12} style={{ display: 'flex', flexWrap: 'wrap' }}>
+                <Form.Item name="push_method" label="方法" style={{ width: 120 }}>
+                  <Select options={[{ value: 'POST' }, { value: 'PUT' }, { value: 'PATCH' }].map(o => ({ ...o, label: o.value }))} />
+                </Form.Item>
+                <Form.Item name="push_batch_size" label="每批行数" style={{ width: 130 }}>
+                  <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item name="push_max_rows" label="单次最多行数" style={{ width: 150 }}>
+                  <InputNumber min={1} max={100000} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item name="push_watermark_field" label="增量字段（可选）" style={{ flex: 1, minWidth: 180 }}>
+                  <Input placeholder="updated_at / day；留空每次全量" />
+                </Form.Item>
+              </Space>
+              <Form.Item name="push_fields" label="推送字段（留空=全部未隐藏字段）" extra="按源表字段名选择；未知字段保存时会被拒绝">
+                <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 项目名称, 负责人" />
+              </Form.Item>
+              <Form.Item
+                name="push_headers_json"
+                label="请求头（JSON）"
+                extra='如 {"Authorization": "Bearer {api_key}"}；键值必须是字符串'
+              >
+                <Input.TextArea rows={3} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 12 }} />
+              </Form.Item>
+              <Form.Item
+                name="push_body_json"
+                label="请求体模板（JSON，可选）"
+                extra='留空发送 {"rows":[...]}；可用 {"data":"{rows}","count":"{count}","source":"{table}"}'
+              >
+                <Input.TextArea rows={4} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 12 }} />
+              </Form.Item>
+              <Space size={12} style={{ display: 'flex', flexWrap: 'wrap' }}>
+                <Form.Item name="session_id" label="凭证会话（可选）" style={{ flex: 1, minWidth: 220 }}>
+                  <Select
+                    allowClear
+                    placeholder="不使用会话"
+                    options={sessions.map(item => ({
+                      value: item.id,
+                      label: item.secret_keys.length ? `${item.name}（密钥: ${item.secret_keys.join(', ')}）` : item.name,
+                    }))}
+                  />
+                </Form.Item>
+                <Form.Item name="schedule_mode" label="调度" style={{ width: 150 }}>
+                  <Select
+                    options={[
+                      { value: 'manual', label: '手动' },
+                      { value: 'daily', label: '每天定时' },
+                      { value: 'interval', label: '固定间隔' },
+                      { value: 'cron', label: 'cron' },
+                    ]}
+                  />
+                </Form.Item>
+                {scheduleMode === 'daily' && (
+                  <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 150 }}>
+                    <Input placeholder="17:10" />
+                  </Form.Item>
+                )}
+                {scheduleMode === 'interval' && (
+                  <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 150 }}>
+                    <InputNumber min={1} style={{ width: '100%' }} />
+                  </Form.Item>
+                )}
+                {scheduleMode === 'cron' && (
+                  <Form.Item name="schedule_expr" label="cron 表达式" style={{ flex: 1, minWidth: 180 }}>
+                    <Input placeholder="0 7 * * *" />
+                  </Form.Item>
+                )}
+              </Space>
+            </>
+          ) : isLlm ? (
             <>
               <Alert
                 data-testid="datasource-llm-personal-hint"
@@ -1244,7 +1423,7 @@ function JobDrawer({
           )}
         </Form>
 
-        {preview && (
+        {!isPush && preview && (
           <PreviewPanel
             preview={preview}
             onRefresh={
@@ -1264,7 +1443,7 @@ function JobDrawer({
             refreshing={previewing}
           />
         )}
-        {!preview && activeJob && (
+        {!isPush && !preview && activeJob && (
           <Button icon={<EyeOutlined />} loading={previewing} onClick={() => void handleSave(true)}>
             抓取预览（不落库）
           </Button>

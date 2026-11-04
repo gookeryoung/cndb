@@ -484,9 +484,11 @@ def build_workspace_backup_v9(
     sync_jobs_data: list[dict[str, Any]] = [
         {
             "name": job.name,
+            "direction": getattr(job, "direction", "pull") or "pull",
             "provider": job.provider,
             "table_name": table_name_by_id.get(job.table_id) if job.table_id else None,
             "request_spec": job.request_spec,
+            "push_spec": getattr(job, "push_spec", None) or {},
             "parser": job.parser,
             "entrant_param": job.entrant_param,
             "entrant_keys": job.entrant_keys,

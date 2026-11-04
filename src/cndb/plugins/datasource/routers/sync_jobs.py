@@ -40,6 +40,7 @@ from cndb.plugins.datasource.services.connection import (
     resolve_request_spec_defaults,
 )
 from cndb.plugins.datasource.services.cursor import CursorConfig, validate_page_to_start
+from cndb.plugins.datasource.services.push import validate_push_spec
 from cndb.plugins.datasource.services.runner import (
     execute_job,
     preview_job,
@@ -97,6 +98,8 @@ def _validate_job_config(
     match_keys: list[str],
     entrant_param: str | None = None,
     session_id: int | None = None,
+    direction: str = "pull",
+    push_spec: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """创建 / 更新时逐项校验，返回补齐连接默认值后的 ``request_spec``.
 
@@ -108,6 +111,14 @@ def _validate_job_config(
         session = db.get(DatasourceSession, session_id)
         if session is None or session.workspace_id != workspace_id:
             raise HTTPException(status_code=400, detail=f"凭证会话不存在: {session_id}")
+
+    if direction == "push":
+        try:
+            validate_push_spec(push_spec, table_id=table_id, db=db, workspace_id=workspace_id)
+            ScheduleConfig.from_dict(schedule)
+        except (ProviderError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return dict(request_spec or {})
 
     filled = dict(request_spec or {})
     connection = None
@@ -192,15 +203,19 @@ def create_sync_job(
         match_keys=payload.match_keys,
         entrant_param=payload.entrant_param,
         session_id=payload.session_id,
+        direction=payload.direction,
+        push_spec=payload.push_spec,
     )
     job = DatasourceSyncJob(
         workspace_id=workspace_id,
         created_by=current_user.id,
         name=payload.name,
+        direction=payload.direction,
         provider=payload.provider,
         table_id=payload.table_id,
         # ADR 0020 P0：只持久化任务自身配置，不写连接默认值
         request_spec=dict(payload.request_spec or {}),
+        push_spec=dict(payload.push_spec or {}),
         parser=payload.parser,
         entrant_param=payload.entrant_param,
         entrant_keys=payload.entrant_keys,
@@ -246,7 +261,9 @@ def update_sync_job(
     job = _job_or_404(db, workspace_id, job_id)
 
     provider = payload.provider if payload.provider is not None else job.provider
+    direction = payload.direction if payload.direction is not None else job.direction
     request_spec = payload.request_spec if payload.request_spec is not None else (job.request_spec or {})
+    push_spec = payload.push_spec if payload.push_spec is not None else (job.push_spec or {})
     cursor = payload.cursor if payload.cursor is not None else (job.cursor or {})
     schedule = payload.schedule if payload.schedule is not None else (job.schedule or {})
     match_keys = payload.match_keys if payload.match_keys is not None else (job.match_keys or [])
@@ -265,10 +282,13 @@ def update_sync_job(
         match_keys=match_keys,
         entrant_param=entrant_param,
         session_id=session_id,
+        direction=direction,
+        push_spec=push_spec,
     )
 
     for field_name in (
         "name",
+        "direction",
         "provider",
         "table_id",
         "parser",
@@ -288,6 +308,8 @@ def update_sync_job(
     # ADR 0020 P0：只持久化任务自身配置；连接默认值运行期解析，不随备份导出
     if payload.request_spec is not None:
         job.request_spec = dict(payload.request_spec or {})
+    if payload.push_spec is not None:
+        job.push_spec = dict(payload.push_spec or {})
     db.add(job)
     db.commit()
     db.refresh(job)

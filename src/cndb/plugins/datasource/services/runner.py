@@ -65,10 +65,12 @@ from cndb.plugins.datasource.services.entrant_state import (
 )
 from cndb.plugins.datasource.services.pipeline import (
     DEFAULT_BATCH_SIZE,
+    FetchFailure,
     PipelineOutcome,
     RequestProgress,
     run_pipeline,
 )
+from cndb.plugins.datasource.services.push import execute_push
 from cndb.plugins.datasource.services.write import WriteOutcome, upsert_rows
 
 if TYPE_CHECKING:
@@ -170,6 +172,59 @@ def execute_job(
         cursor_config = CursorConfig.from_dict(job.cursor)
         cursor_from = window_start(cursor_config, today=today) or ""
         session = db.get(DatasourceSession, job.session_id) if job.session_id else None
+
+        if getattr(job, "direction", "pull") == "push":
+            push = execute_push(db, job, run, session=session)
+            if push.failed_batches:
+                # 有失败批次时不推进游标，下次重试覆盖失败行（成功行需由接收方幂等处理）
+                push.cursor_to = push.cursor_from
+            outcome = PipelineOutcome(
+                plans=push.batches,
+                succeeded=max(0, push.batches - push.failed_batches),
+                failures=[
+                    FetchFailure(label=f"batch {item.get('batch')}", error=str(item.get("error") or ""))
+                    for item in push.failures
+                ],
+            )
+            write = WriteOutcome(
+                fetched=push.rows_read,
+                inserted=push.pushed,
+                skipped=push.failed_batches,
+            )
+            _finalize(
+                run,
+                outcome=outcome,
+                write=write,
+                cursor_from=push.cursor_from,
+                cursor_to=push.cursor_to,
+                started_clock=started_clock,
+                now=started,
+                progress=progress,
+            )
+            # _finalize 的口径是「抓取」；推送补充自己的统计块
+            run.detail["push"] = {
+                "rows_read": push.rows_read,
+                "pushed": push.pushed,
+                "batches": push.batches,
+                "failed_batches": push.failed_batches,
+                "responses": push.responses,
+            }
+            _update_job_state(db, job, status=run.status, run_at=started, cursor=cursor_config, cursor_to="")
+            if push.cursor_to:
+                job.cursor = {**(job.cursor or {}), "value": push.cursor_to}
+                db.add(job)
+                db.commit()
+            _record_event(db, job, run, user=user)
+            _dispatch_sync_finished(db, job, run)
+            _checkpoint_wal(db)
+            return JobExecution(
+                run=run,
+                outcome=outcome,
+                write=write,
+                cursor_from=push.cursor_from,
+                cursor_to=push.cursor_to,
+            )
+
         spec = build_job_spec(
             job,
             cursor_from=cursor_from,

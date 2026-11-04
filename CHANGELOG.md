@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+### 新增
+- **【数据同步】支持对外推送：把工作区数据表按批发送到外部接口（需求 0099 / ADR 0099）**：此前数据同步只有「外部 → 表」抓取，业务数据无法回传 ERP / 业务中台等外部系统。现：① **任务方向**：`datasource_sync_job` 新增 `direction`（pull 默认 / push）与 `push_spec`，迁移 `19d835337b45` 存量回填 pull；② **推送配置**：URL / method（POST·PUT·PATCH）/ 请求头模板 / 请求体模板 / batch_size / max_rows / 字段白名单 / 增量水位字段 / timeout，创建与更新统一校验 URL、字段、批次与超时；③ **执行**：`execute_job` 按方向分流，推送读取源表物理列 → 按批渲染 JSON（`{rows}` / `{count}` / `{table}` / `{job}` / `{batch}` 保留 JSON 类型）→ 复用 `open_http_client` 发送并过 SSRF 校验；运行记录沿用 `datasource_sync_run`，有失败批次不推进游标，全部失败 failed / 部分失败 partial；④ **前端**：任务抽屉新增方向切换与推送表单，列表显示「推送」标签，推送模式隐藏抓取预览；⑤ **备份**：同步任务导出 / 导入带 direction / push_spec，旧备份默认 pull。测试：`tests/test_datasource_push.py` 4 例（校验 / 分批发送与增量 / HTTP 500 失败 / API 创建与非法字段 400）、`DatasourcePage.test.tsx` 新增推送表单提交用例。改动：`src/cndb/plugins/datasource/{models.py,schemas.py,services/push.py,services/runner.py,routers/sync_jobs.py}`、`src/cndb/alembic/versions/19d835337b45_datasource_push_direction.py`、`src/cndb/plugins/workspaces/services/{workspace_backup,backup_io}.py`、`frontend/src/{api/datasource.ts,pages/datasource/DatasourcePage.tsx,pages/datasource/DatasourcePage.test.tsx}`、`docs/requirements/0099-*.md`、`docs/adr/0099-*.md`。
+
 ### 移除
 - **【智能采集】移除智能采集功能、文档与测试**：删除 `plugins/acquisition` 插件、CLI `cndb acquisition`、前端 `/w/:wid/acquisition` 页面与 API、工作区功能位 `acquisition`、帮助文档主题、备份 v13 的 `acquisitions[]` 导出 / 导入、ADR 0085 与需求卡片 0085，以及全部采集相关测试；迁移 `a7c1d2e3f4b5` 一并删除并把 `c8e2f4a6b8d0` 的 `down_revision` 接到 `b6c7d8e9f0a1`。旧 v13 备份若含 `acquisitions` 键按未知键忽略。
 

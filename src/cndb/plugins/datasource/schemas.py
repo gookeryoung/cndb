@@ -30,9 +30,11 @@ class SyncJobCreate(BaseModel):
     """
 
     name: str = Field(..., min_length=1, max_length=128)
+    direction: str = Field(default="pull", pattern="^(pull|push)$", description="同步方向：拉取 / 对外推送")
     provider: str = Field(default="http_json")
     table_id: int | None = Field(default=None, description="目标表；留空表示暂不落表")
-    request_spec: dict[str, Any] = Field(..., description="请求模板与分页 / 时间窗口声明")
+    request_spec: dict[str, Any] = Field(default_factory=dict, description="请求模板与分页 / 时间窗口声明")
+    push_spec: dict[str, Any] = Field(default_factory=dict, description="推送目标 / 批次 / 字段 / 游标声明")
     parser: str = Field(default="json")
     entrant_param: str | None = Field(default=None, description="标的占位符名，如 city / symbol")
     entrant_keys: list[str] = Field(default_factory=list)
@@ -50,9 +52,11 @@ class SyncJobUpdate(BaseModel):
     """局部更新：未提供的字段保持不变."""
 
     name: str | None = Field(default=None, min_length=1, max_length=128)
+    direction: str | None = Field(default=None, pattern="^(pull|push)$")
     provider: str | None = None
     table_id: int | None = None
     request_spec: dict[str, Any] | None = None
+    push_spec: dict[str, Any] | None = None
     parser: str | None = None
     entrant_param: str | None = None
     entrant_keys: list[str] | None = None
@@ -69,9 +73,11 @@ class SyncJobOut(BaseModel):
     id: int
     workspace_id: int
     name: str
+    direction: str = "pull"
     provider: str
     table_id: int | None
     request_spec: dict[str, Any]
+    push_spec: dict[str, Any] = Field(default_factory=dict)
     parser: str
     entrant_param: str | None
     entrant_keys: list[str]
@@ -93,9 +99,11 @@ class SyncJobOut(BaseModel):
             id=job.id,
             workspace_id=job.workspace_id,
             name=job.name,
+            direction=getattr(job, "direction", "pull") or "pull",
             provider=job.provider,
             table_id=job.table_id,
             request_spec=job.request_spec or {},
+            push_spec=job.push_spec or {},
             parser=job.parser,
             entrant_param=job.entrant_param,
             entrant_keys=job.entrant_keys or [],

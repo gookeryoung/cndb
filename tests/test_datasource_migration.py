@@ -9,7 +9,7 @@ from alembic import command
 
 from cndb.core.migrations import _build_config
 
-REVISION = "c4d5e6f7a8b9"  # 当前 head（ADR 0037：运行记录进度列）
+REVISION = "19d835337b45"  # 当前 head（需求 0099：同步任务方向 / 推送配置）
 PREVIOUS = "e7f8a9b0c1d2"
 SYNC_REVISION = "0a1b2c3d4e5f"
 JOB_TABLE = "datasource_sync_job"

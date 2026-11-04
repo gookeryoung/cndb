@@ -88,6 +88,8 @@ class DatasourceSyncJob(TimestampMixin, Base):
         ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
+    # 同步方向：pull = 外部 → 工作区表（默认，旧任务）；push = 工作区表 → 外部接口
+    direction: Mapped[str] = mapped_column(String(16), nullable=False, default="pull", server_default="pull")
     provider: Mapped[str] = mapped_column(String(32), nullable=False, default="http_json")
     # 目标动态表；为空表示"尚未绑定"（M3 向导里可自动建表后回填）
     table_id: Mapped[int | None] = mapped_column(
@@ -99,6 +101,8 @@ class DatasourceSyncJob(TimestampMixin, Base):
     #  "data_path","encoding","paging":{...},"time_window":{...}}
     request_spec: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     parser: Mapped[str] = mapped_column(String(32), nullable=False, default="json")
+    # 推送声明（direction=push）：url / method / headers / body / batch_size / fields / watermark_field
+    push_spec: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict, server_default="{}")
     # 标的占位符名与取值集合，如 entrant_param="city" + entrant_keys=["北京","上海"]
     entrant_param: Mapped[str | None] = mapped_column(String(64), nullable=True)
     entrant_keys: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)

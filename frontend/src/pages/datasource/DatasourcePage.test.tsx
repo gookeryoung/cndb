@@ -309,6 +309,28 @@ describe('DatasourcePage', () => {
     expect(calls.filter(call => call === 'create-job')).toHaveLength(1)
   })
 
+  it('编辑任务切换为对外推送后提交 push_spec', async () => {
+    const calls = setupHandlers([makeJob()])
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    await screen.findByText(/编辑同步任务 · 北京天气日报/)
+
+    fireEvent.click(screen.getByText('推送（表→外部）'))
+    expect(await screen.findByText(/对外推送：按批把源数据表的行发送到外部接口/)).toBeInTheDocument()
+
+    fireEvent.change(screen.getByPlaceholderText('https://example.com/api/ingest'), {
+      target: { value: 'https://example.com/ingest' },
+    })
+    fireEvent.click(screen.getByTestId('datasource-save-btn'))
+    await waitFor(() => expect(calls).toContain('update-job'))
+    const body = jobBodies[jobBodies.length - 1]!
+    expect(body.direction).toBe('push')
+    expect(body.table_id).toBe(20)
+    expect((body.push_spec as Record<string, unknown>).url_template).toBe('https://example.com/ingest')
+    expect((body.push_spec as Record<string, unknown>).batch_size).toBe(100)
+    expect(body.request_spec).toEqual({})
+  })
+
   it('点击「编辑」打开抽屉并回填名称', async () => {
     setupHandlers([makeJob()])
     renderPage()

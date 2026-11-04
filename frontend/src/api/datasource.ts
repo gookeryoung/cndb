@@ -121,13 +121,27 @@ export interface SyncScheduleConfig {
 /** 字段映射项：null 表示丢弃该字段 */
 export type SyncFieldMapping = Record<string, { name?: string; field_type?: string } | string | null>
 
+export interface PushSpec {
+  url_template: string
+  method?: 'POST' | 'PUT' | 'PATCH'
+  headers_template?: Record<string, string>
+  body_template?: unknown
+  batch_size?: number
+  max_rows?: number
+  fields?: string[]
+  watermark_field?: string
+  timeout?: number
+}
+
 export interface SyncJob {
   id: number
   workspace_id: number
   name: string
+  direction?: 'pull' | 'push'
   provider: string
   table_id: number | null
   request_spec: SyncRequestSpec
+  push_spec?: PushSpec
   parser: string
   entrant_param: string | null
   entrant_keys: string[]
@@ -154,9 +168,11 @@ export interface SyncJob {
 
 export interface SyncJobPayload {
   name: string
+  direction?: 'pull' | 'push'
   provider: string
   table_id?: number | null
   request_spec: SyncRequestSpec
+  push_spec?: PushSpec
   parser?: string
   entrant_param?: string | null
   entrant_keys?: string[]

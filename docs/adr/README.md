@@ -86,8 +86,9 @@
 | [0041](0041-datasource-running-tasks-list.md) | 数据同步顶部运行中任务多行列表 | Implemented | P0-P1 已落地 | `frontend/src/pages/datasource/syncProgress.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `frontend/src/pages/datasource/syncProgress.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0043](0043-datasource-write-path-overhead.md) | 数据同步落库剩余开销削减（行拷贝收敛 / 幂等匹配分片 / WAL 收尾 / 失败明细有界） | Implemented | P0/P2 已落地（P1 实测后不做） | `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/core/database.py` | `tests/test_datasource_row_ownership.py`、`tests/test_core_database_wal_checkpoint.py`、`tests/test_datasource_normalize_failures_bound.py`、`tests/test_datasource_runner.py` | [未发布](../../CHANGELOG.md) |
 | [0053](0053-datasource-sync-lmstock-alignment.md) | 数据同步对齐 lmstock 机制（单轮翻页回补 / 主机回退）与示例单序列收敛 | Implemented | P0-P2 已落地 | `src/cndb/plugins/datasource/services/{cursor,pipeline,runner}.py`、`src/cndb/core/http.py`、`src/cndb/plugins/datasource/providers/{base,http_json}.py`、`examples/datasets/工作区-数据源示例/` | `tests/test_datasource_runner_pages.py`、`tests/test_datasource_host_fallback.py`、`tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | [未发布](../../CHANGELOG.md) |
+| [0099](0099-datasource-push.md) | 数据同步支持对外推送（表 → 外部接口） | Implemented | P0-P2 已落地 | `src/cndb/plugins/datasource/services/push.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/alembic/versions/19d835337b45_datasource_push_direction.py`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_push.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | [未发布](../../CHANGELOG.md) |
 
-承接关系：0035 → 0037（原 0040 同步速度展示已并入 0037「续作」）→ 0039 / 0043 → 0041 依次提速与补齐观测；0053 承接 0033 / 0034 的双源与回补口径；0019 / 0020 把 0014 的连接配置收敛到平台 `llm`。
+承接关系：0035 → 0037（原 0040 同步速度展示已并入 0037「续作」）→ 0039 / 0043 → 0041 依次提速与补齐观测；0053 承接 0033 / 0034 的双源与回补口径；0019 / 0020 把 0014 的连接配置收敛到平台 `llm`；0099 在 0006 的任务 / 调度 / 运行记录上增加 direction=push，抓取路径不变。
 
 ## 文档与图表
 
