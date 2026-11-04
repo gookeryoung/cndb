@@ -7148,3 +7148,258 @@ body.cn-doc-focus-view .doc-md-preview {
 body.cn-doc-focus-view .cn-doc-stats {
   display: none;
 }
+
+/* ─────────────── 数据流程：横向大过程 + 纵向子过程（需求 0098） ───────────────
+ * 横向节点流展示端到端流程（大过程），纵向节点流展示当前流程的子过程；
+ * 节点统一走主题 token，选中态用品牌色描边 + 内阴影，避免依赖 color-mix（Chrome 81 兼容）。 */
+.cn-flow-rail {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow-x: auto;
+  padding: var(--cn-space-xs) 0 var(--cn-space-md);
+  margin-bottom: var(--cn-space-sm);
+}
+
+.cn-flow-rail-item {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.cn-flow-node {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cn-space-md);
+  min-width: 232px;
+  max-width: 280px;
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-container);
+  color: var(--cn-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.cn-flow-node:hover {
+  border-color: var(--cn-brand-color);
+}
+
+.cn-flow-node.is-active {
+  border-color: var(--cn-brand-color);
+  box-shadow: inset 0 0 0 1px var(--cn-brand-color);
+  background: var(--cn-bg-page);
+}
+
+.cn-flow-node-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--cn-bg-page);
+  border: 1px solid var(--cn-border);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-flow-node.is-active .cn-flow-node-index {
+  background: var(--cn-brand-color);
+  border-color: var(--cn-brand-color);
+  color: #fff;
+}
+
+.cn-flow-node-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+  min-width: 0;
+}
+
+.cn-flow-node-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  flex-wrap: wrap;
+  font-weight: var(--cn-weight-semibold);
+  font-size: var(--cn-text-md);
+}
+
+.cn-flow-node-desc {
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+  line-height: 1.45;
+}
+
+.cn-flow-node-meta {
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-flow-connector {
+  position: relative;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 2px;
+  background: var(--cn-border);
+  margin: 0 var(--cn-space-xs);
+}
+
+.cn-flow-connector::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -4px;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid var(--cn-border);
+}
+
+.cn-flow-workbench {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cn-space-xl);
+}
+
+.cn-flow-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 0 0 260px;
+  min-width: 0;
+  padding: var(--cn-space-md) 0;
+}
+
+.cn-flow-vertical-head {
+  padding: 0 var(--cn-space-md) var(--cn-space-sm);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-flow-step {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cn-space-md);
+  width: 100%;
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border: 1px solid transparent;
+  border-radius: var(--cn-radius-base);
+  background: transparent;
+  color: var(--cn-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.cn-flow-step:hover {
+  background: var(--cn-bg-page);
+}
+
+.cn-flow-step.is-active {
+  border-color: var(--cn-brand-color);
+  background: var(--cn-bg-page);
+}
+
+.cn-flow-step:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 25px;
+  top: 32px;
+  bottom: -10px;
+  width: 2px;
+  background: var(--cn-border);
+}
+
+.cn-flow-step-marker {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--cn-border);
+  border-radius: 50%;
+  background: var(--cn-bg-container);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-flow-step.is-active .cn-flow-step-marker {
+  border-color: var(--cn-brand-color);
+  background: var(--cn-brand-color);
+  color: #fff;
+}
+
+.cn-flow-step.is-approval .cn-flow-step-marker {
+  border-style: dashed;
+}
+
+.cn-flow-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+  min-width: 0;
+}
+
+.cn-flow-step-title {
+  font-size: var(--cn-text-sm);
+  font-weight: var(--cn-weight-medium);
+}
+
+.cn-flow-step-meta {
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-flow-detail {
+  flex: 1;
+  min-width: 0;
+}
+
+.cn-flow-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-md);
+  padding-bottom: var(--cn-space-sm);
+  border-bottom: 1px solid var(--cn-border-soft);
+  margin-bottom: var(--cn-space-md);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-flow-detail-title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--cn-space-md);
+  flex-wrap: wrap;
+  margin-bottom: var(--cn-space-md);
+}
+
+@media (max-width: 767.98px) {
+  .cn-flow-workbench {
+    flex-direction: column;
+  }
+
+  .cn-flow-vertical {
+    flex: none;
+    width: 100%;
+    max-height: 300px;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--cn-border-soft);
+    margin-bottom: var(--cn-space-md);
+  }
+
+  .cn-flow-node {
+    min-width: 210px;
+  }
+}

@@ -113,6 +113,11 @@ describe('DataFlowPage', () => {
     renderPage()
     expect(await screen.findByTestId('data-flow-page')).toBeInTheDocument()
     expect(screen.getByText(/科研项目全生命周期管理/)).toBeInTheDocument()
+    // 横向大过程 + 纵向子过程节点流
+    expect(screen.getByTestId('data-flow-cards')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-steps')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-step-apply')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-step-approve')).toBeInTheDocument()
     expect(await screen.findByText('智能监测项目')).toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('data-flow-create'))

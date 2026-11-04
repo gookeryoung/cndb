@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Alert, App as AntApp, Button, Card, Empty, Input, Modal, Popconfirm, Space,
-  Steps, Table, Tag, Typography,
+  Table, Tag, Typography,
 } from 'antd'
 import {
   ApartmentOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
@@ -285,12 +285,6 @@ export default function DataFlowPage() {
     }] : []),
   ] : []
 
-  const stepItems = (flow?.steps ?? []).map(s => ({
-    title: s.name,
-    description: s.form ? `表单：${s.form.name}` : '审批 / 确认节点',
-    status: s.form ? 'process' as const : 'wait' as const,
-  }))
-
   return (
     <div style={{ padding: 16, maxWidth: 1240, margin: '0 auto' }} data-testid="data-flow-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -309,112 +303,139 @@ export default function DataFlowPage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="多流程并列展示：选择流程 → 选择步骤 → 维护该步骤表单数据。"
-        description="无表单步骤为审批 / 确认节点；列表按模板配置字段展示与搜索，完整数据仍可在数据表中查看。"
+        message="横向节点选择大过程，纵向节点选择子过程；选中子过程后维护对应表单数据。"
+        description="无表单的纵向节点为审批 / 确认节点；列表按模板配置字段展示与搜索，完整数据仍可在数据表中查看。"
       />
 
-      {/* 多流程卡片：同时展示全部端到端流程 */}
-      <div
-        data-testid="data-flow-cards"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-          gap: 10,
-          marginBottom: 16,
-        }}
-      >
+      {/* 横向节点流：每条大过程一个节点，箭头连接，可横向滚动 */}
+      <div className="cn-flow-rail" data-testid="data-flow-cards" aria-label="流程大过程">
         {flows.map((f, index) => (
-          <Card
-            key={f.key}
-            size="small"
-            hoverable
-            data-testid={`data-flow-card-${f.key}`}
-            onClick={() => { setFlowKey(f.key); setSearch('') }}
-            style={{
-              borderColor: f.key === flow?.key ? 'var(--cn-brand-color)' : undefined,
-              boxShadow: f.key === flow?.key ? '0 0 0 1px var(--cn-brand)' : undefined,
-              cursor: 'pointer',
-            }}
-          >
-            <Space direction="vertical" size={2} style={{ width: '100%' }}>
-              <Space wrap>
-                <Text strong>{f.name}</Text>
-                {index === flowIndex && <Tag color="blue">当前查看</Tag>}
-                {f.key === 'project_lifecycle' && <Tag color="gold">主流程</Tag>}
-              </Space>
-              <Text type="secondary" style={{ fontSize: 12 }}>{f.description || '—'}</Text>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                {f.step_count} 步 · {f.form_count} 个表单 · {f.record_count} 条记录
-              </Text>
-            </Space>
-          </Card>
+          <div className="cn-flow-rail-item" key={f.key}>
+            <button
+              type="button"
+              className={`cn-flow-node${f.key === flow?.key ? ' is-active' : ''}`}
+              data-testid={`data-flow-card-${f.key}`}
+              aria-current={f.key === flow?.key ? 'step' : undefined}
+              onClick={() => { setFlowKey(f.key); setSearch('') }}
+            >
+              <span className="cn-flow-node-index" aria-hidden>{index + 1}</span>
+              <span className="cn-flow-node-body">
+                <span className="cn-flow-node-title">
+                  {f.name}
+                  {index === flowIndex && <Tag color="blue">当前查看</Tag>}
+                  {f.key === 'project_lifecycle' && <Tag color="gold">主流程</Tag>}
+                </span>
+                <span className="cn-flow-node-desc">{f.description || '—'}</span>
+                <span className="cn-flow-node-meta">
+                  {f.step_count} 步子过程 · {f.form_count} 个表单 · {f.record_count} 条记录
+                </span>
+              </span>
+            </button>
+            {index < flows.length - 1 && <span className="cn-flow-connector" aria-hidden />}
+          </div>
         ))}
       </div>
 
       {!flow ? (
         <Card><Empty description="模板还没有配置端到端流程" /></Card>
       ) : (
-        <>
-          <Steps
-            current={stepIndex}
-            items={stepItems}
-            onChange={index => { setStepKey(flow.steps[index]?.key ?? null); setSearch('') }}
-            style={{ marginBottom: 16, overflowX: 'auto' }}
-          />
-
-          {!step || !form ? (
-            <Card data-testid="data-flow-step-info">
-              <Empty description={step?.description || '该步骤为审批 / 确认节点，无表单数据'}>
-                <Text type="secondary">
-                  当前步骤「{step?.name ?? '—'}」不绑定表单；流程本身仍可在上方步骤条中查看。
-                </Text>
-              </Empty>
-            </Card>
-          ) : (
-            <>
-              <Space wrap style={{ marginBottom: 10 }}>
-                <Text strong>{step.name}</Text>
-                <Text type="secondary">{form.description}</Text>
-                <Input
-                  allowClear
-                  prefix={<SearchOutlined />}
-                  placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  style={{ width: 300 }}
-                  data-testid="data-flow-search"
-                />
-                {form.can_create && (
-                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} data-testid="data-flow-create">
-                    新建{form.name}
-                  </Button>
-                )}
-              </Space>
-              <Card
-                size="small"
-                title={<Space><span>{form.name}</span><Tag>{form.record_count} 条</Tag></Space>}
-                extra={<Text type="secondary">{flow.name} · 步骤 {stepIndex + 1}/{flow.steps.length}</Text>}
+        <div className="cn-flow-workbench">
+          {/* 纵向节点流：当前大过程的子过程 */}
+          <div className="cn-flow-vertical" data-testid="data-flow-steps" aria-label={`${flow.name} 子过程`}>
+            <div className="cn-flow-vertical-head">
+              <Text strong>{flow.name}</Text>
+              <Text type="secondary"> · {flow.steps.length} 个子过程</Text>
+            </div>
+            {flow.steps.map((item, index) => (
+              <button
+                key={item.key}
+                type="button"
+                className={`cn-flow-step${item.key === step?.key ? ' is-active' : ''}${item.form ? '' : ' is-approval'}`}
+                data-testid={`data-flow-step-${item.key}`}
+                aria-current={item.key === step?.key ? 'step' : undefined}
+                onClick={() => { setStepKey(item.key); setSearch('') }}
               >
-                <Table
-                  size="small"
-                  rowKey="id"
-                  loading={rowsQuery.isLoading}
-                  dataSource={filteredRows}
-                  columns={columns}
-                  pagination={{ pageSize: 20, showSizeChanger: false }}
-                  locale={{ emptyText: form.flow.empty_text || '还没有记录，点击右上角新建' }}
-                  scroll={{ x: 'max-content' }}
-                  data-testid="data-flow-table"
-                />
-                {(rowsQuery.data?.total ?? 0) > rows.length && (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
-                    当前仅加载前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
+                <span className="cn-flow-step-marker" aria-hidden>{index + 1}</span>
+                <span className="cn-flow-step-body">
+                  <span className="cn-flow-step-title">{item.name}</span>
+                  <span className="cn-flow-step-meta">
+                    {item.form ? `表单 · ${item.form.name}` : '审批 / 确认节点'}
+                  </span>
+                  {item.form && (
+                    <span className="cn-flow-step-meta">{item.form.record_count} 条记录</span>
+                  )}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* 子过程详情：表单 CRUD 或审批节点说明 */}
+          <div className="cn-flow-detail">
+            <div className="cn-flow-detail-head">
+              <div>
+                <Text strong>{flow.name}</Text>
+                <Text type="secondary"> · 子过程 {stepIndex + 1}/{flow.steps.length}</Text>
+              </div>
+              <Tag color={form ? 'blue' : 'orange'}>{form ? '数据表单' : '审批 / 确认'}</Tag>
+            </div>
+            <div className="cn-flow-detail-title">
+              <Title level={5} style={{ margin: 0 }}>{step?.name ?? '—'}</Title>
+              {step?.description && <Text type="secondary">{step.description}</Text>}
+            </div>
+
+            {!step || !form ? (
+              <Card data-testid="data-flow-step-info">
+                <Empty description={step?.description || '该步骤为审批 / 确认节点，无表单数据'}>
+                  <Text type="secondary">
+                    当前子过程「{step?.name ?? '—'}」不绑定表单；可在纵向节点中切换其他子过程。
                   </Text>
-                )}
+                </Empty>
               </Card>
-            </>
-          )}
-        </>
+            ) : (
+              <>
+                <Space wrap style={{ marginBottom: 10 }}>
+                  <Text type="secondary">{form.description}</Text>
+                  <Input
+                    allowClear
+                    prefix={<SearchOutlined />}
+                    placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    style={{ width: 300 }}
+                    data-testid="data-flow-search"
+                  />
+                  {form.can_create && (
+                    <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} data-testid="data-flow-create">
+                      新建{form.name}
+                    </Button>
+                  )}
+                </Space>
+                <Card
+                  size="small"
+                  title={<Space><span>{form.name}</span><Tag>{form.record_count} 条</Tag></Space>}
+                  extra={<Text type="secondary">{flow.name} · {step.name}</Text>}
+                >
+                  <Table
+                    size="small"
+                    rowKey="id"
+                    loading={rowsQuery.isLoading}
+                    dataSource={filteredRows}
+                    columns={columns}
+                    pagination={{ pageSize: 20, showSizeChanger: false }}
+                    locale={{ emptyText: form.flow.empty_text || '还没有记录，点击右上角新建' }}
+                    scroll={{ x: 'max-content' }}
+                    data-testid="data-flow-table"
+                  />
+                  {(rowsQuery.data?.total ?? 0) > rows.length && (
+                    <Text type="secondary" style={{ fontSize: 12 }}>
+                      当前仅加载前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
+                    </Text>
+                  )}
+                </Card>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       <Modal
