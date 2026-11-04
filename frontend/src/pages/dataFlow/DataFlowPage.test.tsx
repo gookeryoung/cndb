@@ -109,16 +109,28 @@ describe('DataFlowPage', () => {
     )
   })
 
-  it('renders stage/form list and creates a record through the configured groups', async () => {
+  it('renders the matrix with only level-1 processes by default and expands sub-processes on demand', async () => {
     renderPage()
     expect(await screen.findByTestId('data-flow-page')).toBeInTheDocument()
     expect(screen.getByText(/科研项目全生命周期管理/)).toBeInTheDocument()
-    // 横向大过程 + 纵向子过程节点流
-    expect(screen.getByTestId('data-flow-cards')).toBeInTheDocument()
-    expect(screen.getByTestId('data-flow-steps')).toBeInTheDocument()
+    // 一级过程 × 二级子过程矩阵
+    expect(screen.getByTestId('data-flow-matrix')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-card-project_lifecycle')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-card-archive_flow')).toBeInTheDocument()
+    // 默认只显示一级过程
+    expect(screen.queryByTestId('data-flow-step-apply')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('data-flow-step-approve')).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('data-flow-card-project_lifecycle'))
+    expect(await screen.findByTestId('data-flow-steps-project_lifecycle')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-step-apply')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-step-approve')).toBeInTheDocument()
     expect(await screen.findByText('智能监测项目')).toBeInTheDocument()
+
+    // 内容列表在独立区块内，不嵌在矩阵里
+    const content = screen.getByTestId('data-flow-content')
+    expect(content).toContainElement(screen.getByTestId('data-flow-table'))
+    expect(screen.getByTestId('data-flow-matrix')).not.toContainElement(screen.getByTestId('data-flow-table'))
 
     await userEvent.click(screen.getByTestId('data-flow-create'))
     expect(await screen.findByTestId('data-flow-editor')).toBeInTheDocument()
@@ -136,10 +148,29 @@ describe('DataFlowPage', () => {
     expect(await screen.findByTestId('data-flow-card-project_lifecycle')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-card-archive_flow')).toBeInTheDocument()
 
+    // 二级子过程默认收起
+    expect(screen.queryByTestId('data-flow-step-archive')).not.toBeInTheDocument()
     await userEvent.click(screen.getByTestId('data-flow-card-archive_flow'))
+    expect(await screen.findByTestId('data-flow-step-archive')).toBeInTheDocument()
     expect(await screen.findByTestId('data-flow-step-info')).toBeInTheDocument()
     expect(screen.getByText(/不绑定表单/)).toBeInTheDocument()
     expect(screen.queryByTestId('data-flow-create')).not.toBeInTheDocument()
+  })
+
+  it('expands all sub-processes at once and collapses them back to level 1', async () => {
+    renderPage()
+    await screen.findByTestId('data-flow-matrix')
+
+    await userEvent.click(screen.getByTestId('data-flow-expand-all'))
+    expect(await screen.findByTestId('data-flow-step-apply')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-step-approve')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-step-archive')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('data-flow-collapse-all'))
+    expect(screen.queryByTestId('data-flow-step-apply')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('data-flow-step-archive')).not.toBeInTheDocument()
+    // 收起矩阵不影响下方内容列表
+    expect(screen.getByTestId('data-flow-content')).toBeInTheDocument()
   })
 
   it('filters rows by configured search fields', async () => {

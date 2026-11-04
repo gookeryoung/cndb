@@ -22,6 +22,7 @@ import type {
 } from '@/api'
 import { FieldEditor } from '@/pages/grid/layout/RowDetailDrawer'
 import { extractSelectOptions } from '@/pages/grid/cells/fieldOps'
+import DataFlowMatrix from './DataFlowMatrix'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -131,6 +132,7 @@ export default function DataFlowPage() {
   const flows = useMemo(() => (data ? resolveFlows(data) : []), [data])
   const [flowKey, setFlowKey] = useState<string | null>(null)
   const [stepKey, setStepKey] = useState<string | null>(null)
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([])
   const [search, setSearch] = useState('')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<RowResponse | null>(null)
@@ -143,7 +145,6 @@ export default function DataFlowPage() {
   }, [flows, flowKey])
 
   const flow = flows.find(f => f.key === flowKey) ?? flows[0]
-  const flowIndex = Math.max(0, flows.findIndex(f => f.key === flow?.key))
 
   useEffect(() => {
     if (!flow) return
@@ -210,6 +211,27 @@ export default function DataFlowPage() {
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
   })
+
+  const selectFlow = (key: string) => {
+    setFlowKey(key)
+    setSearch('')
+    const next = flows.find(f => f.key === key)
+    if (next && !next.steps.some(s => s.key === stepKey)) {
+      setStepKey(next.steps[0]?.key ?? null)
+    }
+  }
+
+  const toggleFlow = (key: string) => {
+    setExpandedKeys(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]))
+    selectFlow(key)
+  }
+
+  const selectStep = (nextFlowKey: string, nextStepKey: string) => {
+    setFlowKey(nextFlowKey)
+    setStepKey(nextStepKey)
+    setSearch('')
+    setExpandedKeys(prev => (prev.includes(nextFlowKey) ? prev : [...prev, nextFlowKey]))
+  }
 
   const rows = rowsQuery.data?.items ?? []
   const q = search.trim().toLowerCase()
@@ -303,139 +325,95 @@ export default function DataFlowPage() {
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="横向节点选择大过程，纵向节点选择子过程；选中子过程后维护对应表单数据。"
-        description="无表单的纵向节点为审批 / 确认节点；列表按模板配置字段展示与搜索，完整数据仍可在数据表中查看。"
+        message="横向列是一级过程，纵向行是二级子过程；点击流程展开子过程，选中子过程后在下方独立区域维护表单数据。"
+        description="无表单的子过程为审批 / 确认节点；列表按模板配置字段展示与搜索，完整数据仍可在数据表中查看。"
       />
 
-      {/* 横向节点流：每条大过程一个节点，箭头连接，可横向滚动 */}
-      <div className="cn-flow-rail" data-testid="data-flow-cards" aria-label="流程大过程">
-        {flows.map((f, index) => (
-          <div className="cn-flow-rail-item" key={f.key}>
-            <button
-              type="button"
-              className={`cn-flow-node${f.key === flow?.key ? ' is-active' : ''}`}
-              data-testid={`data-flow-card-${f.key}`}
-              aria-current={f.key === flow?.key ? 'step' : undefined}
-              onClick={() => { setFlowKey(f.key); setSearch('') }}
-            >
-              <span className="cn-flow-node-index" aria-hidden>{index + 1}</span>
-              <span className="cn-flow-node-body">
-                <span className="cn-flow-node-title">
-                  {f.name}
-                  {index === flowIndex && <Tag color="blue">当前查看</Tag>}
-                  {f.key === 'project_lifecycle' && <Tag color="gold">主流程</Tag>}
-                </span>
-                <span className="cn-flow-node-desc">{f.description || '—'}</span>
-                <span className="cn-flow-node-meta">
-                  {f.step_count} 步子过程 · {f.form_count} 个表单 · {f.record_count} 条记录
-                </span>
-              </span>
-            </button>
-            {index < flows.length - 1 && <span className="cn-flow-connector" aria-hidden />}
-          </div>
-        ))}
-      </div>
-
-      {!flow ? (
+      {!flows.length ? (
         <Card><Empty description="模板还没有配置端到端流程" /></Card>
       ) : (
-        <div className="cn-flow-workbench">
-          {/* 纵向节点流：当前大过程的子过程 */}
-          <div className="cn-flow-vertical" data-testid="data-flow-steps" aria-label={`${flow.name} 子过程`}>
-            <div className="cn-flow-vertical-head">
-              <Text strong>{flow.name}</Text>
-              <Text type="secondary"> · {flow.steps.length} 个子过程</Text>
-            </div>
-            {flow.steps.map((item, index) => (
-              <button
-                key={item.key}
-                type="button"
-                className={`cn-flow-step${item.key === step?.key ? ' is-active' : ''}${item.form ? '' : ' is-approval'}`}
-                data-testid={`data-flow-step-${item.key}`}
-                aria-current={item.key === step?.key ? 'step' : undefined}
-                onClick={() => { setStepKey(item.key); setSearch('') }}
-              >
-                <span className="cn-flow-step-marker" aria-hidden>{index + 1}</span>
-                <span className="cn-flow-step-body">
-                  <span className="cn-flow-step-title">{item.name}</span>
-                  <span className="cn-flow-step-meta">
-                    {item.form ? `表单 · ${item.form.name}` : '审批 / 确认节点'}
-                  </span>
-                  {item.form && (
-                    <span className="cn-flow-step-meta">{item.form.record_count} 条记录</span>
-                  )}
-                </span>
-              </button>
-            ))}
-          </div>
+        <>
+          {/* 一级过程 × 二级子过程矩阵：默认只显示一级，展开后子过程横向对齐 */}
+          <DataFlowMatrix
+            flows={flows}
+            activeFlowKey={flow?.key ?? null}
+            activeStepKey={step?.key ?? null}
+            expandedKeys={expandedKeys}
+            onToggleFlow={toggleFlow}
+            onSelectStep={selectStep}
+            onExpandAll={() => setExpandedKeys(flows.map(f => f.key))}
+            onCollapseAll={() => setExpandedKeys([])}
+          />
 
-          {/* 子过程详情：表单 CRUD 或审批节点说明 */}
-          <div className="cn-flow-detail">
-            <div className="cn-flow-detail-head">
-              <div>
-                <Text strong>{flow.name}</Text>
-                <Text type="secondary"> · 子过程 {stepIndex + 1}/{flow.steps.length}</Text>
+          {/* 子过程内容：与矩阵独立成块，表格 / 搜索 / 新建不会压住流程节点 */}
+          <section className="cn-flow-content" data-testid="data-flow-content" aria-label="子过程内容">
+            <div className="cn-flow-content-head">
+              <div className="cn-flow-content-title">
+                <Space size={6} wrap>
+                  <Tag color="blue">{flow?.name ?? '—'}</Tag>
+                  <span className="cn-flow-content-sep" aria-hidden>/</span>
+                  <Text strong>{step?.name ?? '—'}</Text>
+                  {(flow?.steps.length ?? 0) > 0 && (
+                    <Text type="secondary">
+                      子过程 {stepIndex + 1}/{flow?.steps.length}
+                    </Text>
+                  )}
+                </Space>
+                {step?.description && <Text type="secondary">{step.description}</Text>}
               </div>
               <Tag color={form ? 'blue' : 'orange'}>{form ? '数据表单' : '审批 / 确认'}</Tag>
-            </div>
-            <div className="cn-flow-detail-title">
-              <Title level={5} style={{ margin: 0 }}>{step?.name ?? '—'}</Title>
-              {step?.description && <Text type="secondary">{step.description}</Text>}
             </div>
 
             {!step || !form ? (
               <Card data-testid="data-flow-step-info">
                 <Empty description={step?.description || '该步骤为审批 / 确认节点，无表单数据'}>
                   <Text type="secondary">
-                    当前子过程「{step?.name ?? '—'}」不绑定表单；可在纵向节点中切换其他子过程。
+                    当前子过程「{step?.name ?? '—'}」不绑定表单；可在上方矩阵中展开其他流程或子过程。
                   </Text>
                 </Empty>
               </Card>
             ) : (
               <>
-                <Space wrap style={{ marginBottom: 10 }}>
-                  <Text type="secondary">{form.description}</Text>
-                  <Input
-                    allowClear
-                    prefix={<SearchOutlined />}
-                    placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    style={{ width: 300 }}
-                    data-testid="data-flow-search"
-                  />
+                <div className="cn-flow-content-toolbar">
+                  <Space wrap size={8}>
+                    <Input
+                      allowClear
+                      prefix={<SearchOutlined />}
+                      placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                      style={{ width: 300 }}
+                      data-testid="data-flow-search"
+                    />
+                    <Tag>{form.record_count} 条记录</Tag>
+                    <Text type="secondary">{form.description}</Text>
+                  </Space>
                   {form.can_create && (
                     <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} data-testid="data-flow-create">
                       新建{form.name}
                     </Button>
                   )}
-                </Space>
-                <Card
+                </div>
+                <Table
                   size="small"
-                  title={<Space><span>{form.name}</span><Tag>{form.record_count} 条</Tag></Space>}
-                  extra={<Text type="secondary">{flow.name} · {step.name}</Text>}
-                >
-                  <Table
-                    size="small"
-                    rowKey="id"
-                    loading={rowsQuery.isLoading}
-                    dataSource={filteredRows}
-                    columns={columns}
-                    pagination={{ pageSize: 20, showSizeChanger: false }}
-                    locale={{ emptyText: form.flow.empty_text || '还没有记录，点击右上角新建' }}
-                    scroll={{ x: 'max-content' }}
-                    data-testid="data-flow-table"
-                  />
-                  {(rowsQuery.data?.total ?? 0) > rows.length && (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                      当前仅加载前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
-                    </Text>
-                  )}
-                </Card>
+                  rowKey="id"
+                  loading={rowsQuery.isLoading}
+                  dataSource={filteredRows}
+                  columns={columns}
+                  pagination={{ pageSize: 20, showSizeChanger: false }}
+                  locale={{ emptyText: form.flow.empty_text || '还没有记录，点击右上角新建' }}
+                  scroll={{ x: 'max-content' }}
+                  data-testid="data-flow-table"
+                />
+                {(rowsQuery.data?.total ?? 0) > rows.length && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    当前仅加载前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
+                  </Text>
+                )}
               </>
             )}
-          </div>
-        </div>
+          </section>
+        </>
       )}
 
       <Modal

@@ -86,7 +86,7 @@ flows: [
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| 页面 | `frontend/src/pages/dataFlow/DataFlowPage.tsx` | 流程卡片并列展示 + 步骤条 + 步骤表单 CRUD / 审批节点空态 |
+| 页面 | `frontend/src/pages/dataFlow/DataFlowPage.tsx` | 多流程并列展示（需求 0098 起为「一级过程 × 二级子过程」矩阵视图，见 `DataFlowMatrix.tsx`）+ 步骤表单 CRUD / 审批节点空态 |
 | 类型 | `frontend/src/api/types/templates.ts` | `TemplateSpecFlow`、`DataFlowFlow`、`DataFlowStep`、counts / diff 扩展 |
 | 模板编辑 | `frontend/src/pages/templates/` | JSON 规格新增 `flows` 配置（沿用现有编辑器） |
 
