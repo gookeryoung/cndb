@@ -7226,3 +7226,117 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-flow-diagram-step .cn-list-meta {
   align-items: center;
 }
+
+/* 数据流程左右栏边界：左栏流程图 / 右栏数据维护，视觉上明确分区 */
+.cn-flow-split {
+  grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
+  gap: var(--cn-space-xl);
+  align-items: stretch;
+}
+
+.cn-flow-diagram-box {
+  background: var(--cn-bg-container);
+  border-color: var(--cn-border);
+}
+
+.cn-flow-diagram-box .cn-box-head {
+  background: var(--cn-bg-page);
+}
+
+.cn-flow-detail-box {
+  border-color: var(--cn-border);
+  border-inline-start: 2px solid var(--cn-brand-color);
+}
+
+.cn-flow-detail-box .cn-box-head {
+  background: var(--cn-bg-subtle);
+}
+
+/* 一级流程：大图标 + 大字号，明显强于二级子过程 */
+.cn-flow-diagram-flow {
+  padding-block: var(--cn-space-md);
+}
+
+.cn-flow-diagram-flow-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-page);
+  color: var(--cn-brand-color);
+  font-size: var(--cn-text-md);
+}
+
+.cn-flow-diagram-flow-name {
+  font-size: var(--cn-text-md);
+  line-height: 1.35;
+}
+
+.cn-flow-diagram-flow-meta {
+  font-size: var(--cn-text-xs);
+}
+
+/* 二级子过程：缩进 + 小图标 + 小字号，形成清晰层级 */
+.cn-flow-diagram-step {
+  position: relative;
+  padding-left: var(--cn-space-4xl);
+  padding-block: var(--cn-space-sm);
+}
+
+.cn-flow-diagram-step::before {
+  content: '';
+  position: absolute;
+  left: var(--cn-space-2xl);
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--cn-border-soft);
+}
+
+.cn-flow-diagram-step-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--cn-border-soft);
+  border-radius: 50%;
+  background: var(--cn-bg-container);
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-2xs);
+}
+
+.cn-flow-diagram-step-icon.is-form {
+  color: var(--cn-brand-color);
+  border-color: var(--cn-border);
+}
+
+.cn-flow-diagram-step-icon.is-approval {
+  border-style: dashed;
+}
+
+.cn-flow-diagram-step-title {
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-secondary);
+}
+
+.cn-qc-row--active .cn-flow-diagram-step-title {
+  color: var(--cn-text-primary);
+  font-weight: var(--cn-weight-medium);
+}
+
+.cn-flow-diagram-step-meta {
+  font-size: var(--cn-text-2xs);
+}
+
+@media (max-width: 767.98px) {
+  .cn-flow-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--cn-space-md);
+  }
+}

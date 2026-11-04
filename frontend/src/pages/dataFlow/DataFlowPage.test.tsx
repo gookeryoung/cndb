@@ -122,6 +122,11 @@ describe('DataFlowPage', () => {
     expect(await screen.findByTestId('data-flow-steps-project_lifecycle')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-step-apply')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-step-approve')).toBeInTheDocument()
+    // 一级 / 二级差异化：一级大图标 + 「一级」标签，二级表单 / 审批图标
+    expect(screen.getAllByText('一级')).toHaveLength(2)
+    expect(document.querySelector('.cn-flow-diagram-flow-icon')).toBeInTheDocument()
+    expect(document.querySelector('.cn-flow-diagram-step-icon.is-form')).toBeInTheDocument()
+    expect(document.querySelector('.cn-flow-diagram-step-icon.is-approval')).toBeInTheDocument()
     // 未展开的流程不渲染子过程
     expect(screen.queryByTestId('data-flow-step-archive')).not.toBeInTheDocument()
     expect(await screen.findByText('智能监测项目')).toBeInTheDocument()

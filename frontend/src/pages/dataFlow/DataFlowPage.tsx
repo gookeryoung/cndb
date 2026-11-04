@@ -348,7 +348,7 @@ export default function DataFlowPage() {
           <div className="cn-qc-empty"><Empty description="模板还没有配置端到端流程" /></div>
         </SectionBox>
       ) : (
-        <div className="cn-qc-split" data-testid="data-flow-split">
+        <div className="cn-qc-split cn-flow-split" data-testid="data-flow-split">
           {/* 左栏：流程图（大过程 → 子过程的嵌套列表） */}
           <SectionBox
             title="流程图"
@@ -369,8 +369,9 @@ export default function DataFlowPage() {
             )}
             flush
             testId="data-flow-diagram"
+            className="cn-flow-diagram-box"
           >
-            {flows.map((item, index) => {
+            {flows.map(item => {
               const open = expandedKeys.includes(item.key)
               const isActiveFlow = item.key === flow?.key
               return (
@@ -380,6 +381,7 @@ export default function DataFlowPage() {
                       'cn-list-item',
                       'cn-qc-row',
                       'cn-qc-row--selectable',
+                      'cn-flow-diagram-flow',
                       isActiveFlow ? 'cn-qc-row--active' : '',
                     ].filter(Boolean).join(' ')}
                     data-testid={`data-flow-card-${item.key}`}
@@ -388,16 +390,21 @@ export default function DataFlowPage() {
                   >
                     <div className="cn-list-item-main">
                       <CnListMeta
-                        avatar={<span className="cn-flow-diagram-index" aria-hidden>{index + 1}</span>}
+                        avatar={(
+                          <span className="cn-flow-diagram-flow-icon" aria-hidden>
+                            <ApartmentOutlined />
+                          </span>
+                        )}
                         title={(
                           <Space size={8} wrap>
-                            <Text strong>{item.name}</Text>
+                            <Text strong className="cn-flow-diagram-flow-name">{item.name}</Text>
+                            <Tag color="default">一级</Tag>
                             {item.key === 'project_lifecycle' && <Tag color="gold">主流程</Tag>}
                           </Space>
                         )}
                         description={(
-                          <Text type="secondary">
-                            {item.step_count} 步子过程 · {item.form_count} 个表单
+                          <Text type="secondary" className="cn-flow-diagram-flow-meta">
+                            {item.step_count} 个子过程 · {item.form_count} 个表单
                           </Text>
                         )}
                       />
@@ -428,11 +435,18 @@ export default function DataFlowPage() {
                           >
                             <div className="cn-list-item-main">
                               <CnListMeta
-                                avatar={<span className="cn-flow-diagram-step-no" aria-hidden>{stepNo + 1}</span>}
-                                title={<Text strong={isActiveStep}>{child.name}</Text>}
+                                avatar={(
+                                  <span
+                                    className={`cn-flow-diagram-step-icon${child.form ? ' is-form' : ' is-approval'}`}
+                                    aria-hidden
+                                  >
+                                    {child.form ? <TableOutlined /> : <AuditOutlined />}
+                                  </span>
+                                )}
+                                title={<Text className="cn-flow-diagram-step-title">{child.name}</Text>}
                                 description={(
-                                  <Text type="secondary">
-                                    {child.form ? `${child.form.name} · ${child.form.record_count} 条` : '审批 / 确认节点'}
+                                  <Text type="secondary" className="cn-flow-diagram-step-meta">
+                                    第 {stepNo + 1} 步 · {child.form ? `${child.form.name} · ${child.form.record_count} 条` : '审批 / 确认节点'}
                                   </Text>
                                 )}
                               />
@@ -462,6 +476,7 @@ export default function DataFlowPage() {
               </Space>
             ) : <Tag color="orange">审批 / 确认</Tag>}
             testId="data-flow-content"
+            className="cn-flow-detail-box"
           >
             {!step || !form ? (
               <div className="cn-qc-empty" data-testid="data-flow-step-info">
