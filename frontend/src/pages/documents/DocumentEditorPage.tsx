@@ -1280,7 +1280,13 @@ export default function DocumentEditorPage() {
             </Button>
             )}
             {isPptxAsset && (
-              <Button icon={<PlayCircleOutlined />} data-testid="doc-pptx-present" onClick={() => setAssetPresenting(true)}>
+              <Button
+                type="primary"
+                icon={<PlayCircleOutlined />}
+                data-testid="doc-pptx-present"
+                onClick={() => setAssetPresenting(true)}
+                style={{ minWidth: 88 }}
+              >
                 放映
               </Button>
             )}
@@ -1376,12 +1382,15 @@ export default function DocumentEditorPage() {
           <Divider vertical style={{ margin: '0 2px' }} />
           {/* 组 3：协作（放映 / 下载 / 修改申请 / 分享）；原件族文档在分享左侧提供下载原件图标按钮 */}
           {isPptxAsset && (
-            <IconBtn
+            <Button
+              type="primary"
               icon={<PlayCircleOutlined />}
-              label="放映"
               data-testid="doc-pptx-present"
               onClick={() => setAssetPresenting(true)}
-            />
+              style={{ minWidth: 96, marginInlineEnd: 4 }}
+            >
+              放映
+            </Button>
           )}
           {isAssetDoc && (
             <IconBtn

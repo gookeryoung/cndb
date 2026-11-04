@@ -1814,6 +1814,10 @@ describe('DocumentEditorPage 原件族文档（ADR 0025）', () => {
         // 放映按钮在顶栏（不再压在预览内容里）
         const present = screen.getByTestId('doc-pptx-present')
         expect(document.querySelector('[data-testid="doc-asset-view"]')?.contains(present)).toBe(false)
+        // 主按钮 + 加宽（与普通图标按钮区分，作为进入放映的主操作）
+        expect(present).toHaveClass('ant-btn-primary')
+        expect(present).toHaveStyle({ minWidth: '96px' })
+        expect(present).toHaveTextContent('放映')
 
         fireEvent.click(present)
         expect(await screen.findByTestId('pptx-slideshow-stub')).toBeInTheDocument()
