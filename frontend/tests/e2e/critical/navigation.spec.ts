@@ -49,9 +49,9 @@ test.describe("MainLayout Header 导航按钮", () => {
     expect(idx("工作区设置")).toBe(3)
 
     // 二级页签顺序（2026-11-03 用户口径）：
-    // 数据列表 → 数据分析 → 数据同步 → 智能采集 → 质量检查 → 修改申请 → 问题清单
+    // 数据列表 → 数据分析 → 数据同步 → 质量检查 → 修改申请 → 问题清单
     const tabs = page.getByRole("tablist").first().getByRole("tab")
-    const expectedOrder = ["数据列表", "数据分析", "数据同步", "智能采集", "质量检查", "修改申请", "问题清单"]
+    const expectedOrder = ["数据列表", "数据分析", "数据同步", "质量检查", "修改申请", "问题清单"]
     for (const label of expectedOrder) {
       await expect(tabs.filter({ hasText: label })).toHaveCount(1)
     }

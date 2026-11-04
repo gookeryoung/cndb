@@ -1,8 +1,7 @@
 """Provider 注册表 —— 内置适配器在此登记，UI 由 ``params_schema`` 自动发现.
 
 内置适配器：``http_json``（声明式任意 HTTP/JSON 接口）/ ``llm_prompt``（大模型提示词，
-OpenAI 兼容）/ ``rss_atom``（RSS/Atom）/ ``academic``（arXiv、OpenAlex、Crossref）/
-``sitemap``（站点 URL 发现，ADR 0085 P2）。
+OpenAI 兼容）。
 新增 provider 只需实现 ``SourceProvider`` 协议并在此 ``register_provider``。
 """
 
@@ -12,7 +11,6 @@ from collections.abc import Iterable
 from typing import Any
 
 from cndb.plugins.datasource.providers.base import ProviderError, SourceProvider
-from cndb.plugins.datasource.providers.feeds import AcademicProvider, RssAtomProvider, SitemapProvider
 from cndb.plugins.datasource.providers.http_json import HttpJsonProvider
 from cndb.plugins.datasource.providers.llm_prompt import LlmPromptProvider
 
@@ -59,9 +57,6 @@ def register_builtins(providers: Iterable[SourceProvider] | None = None) -> None
     builtins: tuple[SourceProvider, ...] = (
         HttpJsonProvider(),
         LlmPromptProvider(),
-        RssAtomProvider(),
-        AcademicProvider(),
-        SitemapProvider(),
     )
     for provider in providers if providers is not None else builtins:
         if provider.name in PROVIDERS:
