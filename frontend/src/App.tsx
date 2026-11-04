@@ -42,6 +42,7 @@ const DesignsPage = lazy(() => import('@/pages/design/DesignsPage'))
 const DesignEditorPage = lazy(() => import('@/pages/design/DesignEditorPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const HelpDocsPage = lazy(() => import('@/pages/help/HelpDocsPage'))
+const TemplatesPage = lazy(() => import('@/pages/templates/TemplatesPage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -166,6 +167,10 @@ function AuthenticatedApp() {
               <Suspense fallback={<PageFallback />}><DocumentEditorPage /></Suspense>
             } />
           </Route>
+          {/* 工作区模板中心（需求 0094）：全局资源，无工作区上下文 */}
+          <Route path="templates" element={
+            <Suspense fallback={<PageFallback />}><TemplatesPage /></Suspense>
+          } />
           <Route path="admin" element={
             <Suspense fallback={<PageFallback />}><AdminPanel /></Suspense>
           } />

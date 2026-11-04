@@ -25,6 +25,7 @@
 | `pipelines` | pipelines/*.yaml 质量检查流水线种子（编译校验 + 表引用解析） |
 | `designs` | designs/*.cnmd 结构设计种子（编译校验，文件名即标题） |
 | `templates`| 部门/员工业务表与报告模板种子 |
+| `workspace_templates` | 工作区模板种子（科研项目全生命周期，需求 0094） |
 | `samples`  | 示例报告模板定义与落盘生成 |
 | `runner`   | `seed()` 编排入口 |
 

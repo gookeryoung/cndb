@@ -25,6 +25,8 @@ class WorkspaceCreate(BaseModel):
     tags: list[str] = []
     allow_edit: bool = True
     modules: list[str] = DEFAULT_WORKSPACE_MODULES
+    #: 选用模板创建（需求 0094）：模板存在时按模板 modules 与 spec 初始化
+    template_id: int | None = None
 
     @field_validator("modules", mode="before")
     @classmethod
@@ -66,6 +68,10 @@ class WorkspaceResponse(BaseModel):
     modules: list[str] = DEFAULT_WORKSPACE_MODULES
     # 存储配额（字节），默认 100MB；由系统管理员在管理台「空间分配」调整
     storage_quota_bytes: int = DEFAULT_STORAGE_QUOTA_BYTES
+    # 工作区模板引用（需求 0094）：NULL = 自由工作区
+    template_id: int | None = None
+    template_version: int | None = None
+    template_stage: str | None = None
     created_by_id: int | None
     created_at: datetime
     updated_at: datetime

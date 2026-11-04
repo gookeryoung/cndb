@@ -20,7 +20,7 @@ import {
   SettingOutlined, BarChartOutlined,
   FileTextOutlined, EyeOutlined, HddOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
-  ReadOutlined, ToolOutlined,
+  ReadOutlined, ToolOutlined, RocketOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -38,6 +38,7 @@ import {
   DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules, workspaceModulesFeatures,
 } from '@/utils/workspaceModules'
 import AddMemberModal from './AddMemberModal'
+import WorkspaceLifecyclePanel from './WorkspaceLifecyclePanel'
 import MemberZones from './MemberZones'
 import TransferOwnerModal from './TransferOwnerModal'
 import { ROLE_LABEL, VISIBILITY_LABEL, getAssignableRoles } from './workspaceRoles'
@@ -45,7 +46,7 @@ import { WEIGHT } from '@/theme/tokens'
 
 interface Props {
   wid: string
-  initialTab?: 'basic' | 'permissions' | 'stats'
+  initialTab?: 'basic' | 'permissions' | 'lifecycle' | 'stats'
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
   /** 删除工作区成功后回调（Modal 模式下用于关闭弹窗，回到工作区列表视图） */
@@ -442,6 +443,17 @@ export default function WorkspaceSettingsContent({
       key: 'permissions',
       label: <span><SafetyOutlined /> 权限</span>,
       children: membersTabChildren,
+    },
+    {
+      key: 'lifecycle',
+      label: <span><RocketOutlined /> 生命周期</span>,
+      children: (
+        <WorkspaceLifecyclePanel
+          wid={wid}
+          canAdvance={myRole === 'owner' || myRole === 'editor'}
+          canManageTemplate={myRole === 'owner'}
+        />
+      ),
     },
     {
       key: 'stats',

@@ -15,6 +15,7 @@
 
 export { authApi } from './auth'
 export { workspaceApi } from './workspaces'
+export { workspaceTemplateApi, workspaceLifecycleApi } from './workspaceTemplates'
 export { preferencesApi } from './preferences'
 export { chartApi } from './charts'
 export type {

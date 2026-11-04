@@ -14,7 +14,7 @@ import {
   SafetyCertificateOutlined, ToolOutlined, ExperimentOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
-  LockOutlined, ApartmentOutlined,
+  LockOutlined, ApartmentOutlined, AppstoreOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
@@ -565,6 +565,7 @@ export default function MainLayout() {
     ...(isMobile
       ? [
         { key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') },
+        { key: 'templates', icon: <AppstoreOutlined />, label: '工作区模板', onClick: () => navigate('/templates') },
         { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助文档', onClick: () => navigate('/help') },
       ]
       : []),
@@ -582,6 +583,8 @@ export default function MainLayout() {
   const inAdminConsole = location.startsWith('/admin')
   /** 帮助文档页（/help）：无工作区语义，侧栏由帮助页自带的两级导航承担 */
   const inHelpDocs = location.startsWith('/help')
+  /** 模板中心（/templates）：全局资源，无工作区上下文，不渲染侧栏 */
+  const inTemplates = location.startsWith('/templates')
 
   if (!wid) {
     if (wsLoading) {
@@ -864,6 +867,17 @@ export default function MainLayout() {
               />
             </Tooltip>
           )}
+          {/* 工作区模板中心（需求 0094）—— 桌面端常驻图标；移动端收进用户菜单 */}
+          {!isMobile && (
+            <Tooltip title="工作区模板：表单 / 文档规则 / 流程驱动">
+              <Button
+                icon={<AppstoreOutlined />}
+                aria-label="工作区模板"
+                data-testid="templates-btn"
+                onClick={() => navigate('/templates')}
+              />
+            </Tooltip>
+          )}
           {/* 帮助文档入口（ADR 0029）—— 桌面端常驻图标，整页路由；移动端收进用户菜单 */}
           {!isMobile && (
             <Tooltip title="帮助文档与新手引导">
@@ -909,7 +923,7 @@ export default function MainLayout() {
             侧栏形态随功能段切换（需求 0065 / ADR 0084）：文档段=文档导航，设计段=装配结构树，
             数据表 / 分析 / 同步 / 工作区设置段=表导航保持展开，
             无 tables 能力的类型不渲染侧栏 */}
-        {!isMobile && !inAdminConsole && !inHelpDocs && siderMode !== 'hidden' && (
+        {!isMobile && !inAdminConsole && !inHelpDocs && !inTemplates && siderMode !== 'hidden' && (
           <Sider
             collapsible collapsed={collapsed} onCollapse={setCollapsed}
             width={240} collapsedWidth={60}

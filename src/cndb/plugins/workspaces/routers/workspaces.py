@@ -19,6 +19,7 @@ from cndb.plugins.workspaces.models import (
     Workspace,
     WorkspaceMember,
     WorkspaceRole,
+    WorkspaceTemplate,
     WorkspaceVisibility,
 )
 from cndb.plugins.workspaces.modules import workspace_modules_from_meta
@@ -163,14 +164,21 @@ def create_workspace(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Workspace:
-    """创建工作区并把创建者登记为 OWNER."""
+    """创建工作区并把创建者登记为 OWNER；选模板时同步表单 / 文档占位与首阶段."""
+    template: WorkspaceTemplate | None = None
+    if payload.template_id is not None:
+        template = db.get(WorkspaceTemplate, payload.template_id)
+        if template is None:
+            raise HTTPException(status_code=404, detail="模板不存在")
     ws = Workspace(
         name=payload.name,
         description=payload.description,
         visibility=payload.visibility,
         tags=payload.tags,
         allow_edit=payload.allow_edit,
-        modules=payload.modules,
+        # 模板自带模块口径（需求 0094）：选模板时以模板 modules 为准
+        modules=list(template.modules) if template is not None else payload.modules,
+        template_id=template.id if template is not None else None,
         created_by_id=current_user.id,
     )
     db.add(ws)
@@ -178,8 +186,22 @@ def create_workspace(
     member = WorkspaceMember(workspace_id=ws.id, user_id=current_user.id, role=WorkspaceRole.OWNER)
     db.add(member)
     db.commit()
-    invalidate_workspace_list_cache(ws.id)
     db.refresh(ws)
+    if template is not None:
+        from cndb.plugins.workspaces.services.templates.engine import apply_spec_to_workspace
+        from cndb.plugins.workspaces.services.templates.spec import normalize_spec
+
+        try:
+            apply_spec_to_workspace(
+                db, ws, normalize_spec(template.spec), current_user, template=template, version=template.version
+            )
+        except Exception:
+            # 模板实例化失败：清理刚创建的工作区，避免留下半成品
+            db.delete(ws)
+            db.commit()
+            raise
+        db.refresh(ws)
+    invalidate_workspace_list_cache(ws.id)
     return ws
 
 
