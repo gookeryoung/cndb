@@ -7224,6 +7224,11 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-flow-diagram-chevron {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm, 4px);
   color: var(--cn-text-muted);
   font-size: var(--cn-text-xs);
 }

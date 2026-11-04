@@ -351,7 +351,6 @@ export default function DataFlowPage() {
               <Space size={4}>
                 <span>共 {flows.length} 条</span>
                 <Button
-                  type="text"
                   size="small"
                   icon={allExpanded ? <UpOutlined /> : <DownOutlined />}
                   aria-label={allExpanded ? '收起全部子过程' : '展开全部子过程'}
