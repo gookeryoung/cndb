@@ -7149,291 +7149,6 @@ body.cn-doc-focus-view .cn-doc-stats {
   display: none;
 }
 
-/* ─────────────── 数据流程：一级过程 × 二级子过程矩阵（需求 0098） ───────────────
- * 横向列 = 一级过程（flows），纵向行 = 二级子过程（steps）；默认只渲染一级过程，
- * 展开后子过程按行对齐（矩阵左侧轨道给出子过程序号）。
- * 矩阵与下方内容列表是两个独立区块（普通文档流，无浮层 / 绝对定位跨块），
- * 只在列内部用绝对定位画连接箭头。列色调走 data-tone，弱色底用 rgba，
- * 深色主题与 Chrome 81 均可用（不依赖 color-mix）。 */
-.cn-flow-matrix {
-  --cn-flow-matrix-head-h: 92px;
-  --cn-flow-matrix-step-h: 46px;
-  padding: var(--cn-space-lg) var(--cn-space-xl) var(--cn-space-xl);
-  border: 1px solid var(--cn-border-soft);
-  border-radius: var(--cn-radius-lg);
-  background: var(--cn-bg-container);
-  margin-bottom: var(--cn-space-xl);
-}
-
-.cn-flow-matrix-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--cn-space-md);
-  flex-wrap: wrap;
-  margin-bottom: var(--cn-space-lg);
-}
-
-.cn-flow-matrix-scroll {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--cn-space-lg);
-  overflow-x: auto;
-  padding-bottom: var(--cn-space-sm);
-}
-
-.cn-flow-matrix-rail {
-  display: grid;
-  gap: var(--cn-space-lg);
-  flex: 0 0 58px;
-  padding-right: var(--cn-space-md);
-  position: sticky;
-  left: 0;
-  z-index: 2;
-  background: var(--cn-bg-container);
-}
-
-.cn-flow-matrix-rail-head {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--cn-text-2xs);
-  color: var(--cn-text-muted);
-}
-
-.cn-flow-matrix-rail-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: var(--cn-flow-matrix-step-h);
-  border-radius: var(--cn-radius-base);
-  background: var(--cn-bg-muted);
-  font-size: var(--cn-text-2xs);
-  color: var(--cn-text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.cn-flow-matrix-columns {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--cn-space-xl);
-  flex: 1 0 auto;
-}
-
-.cn-flow-matrix-col {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  gap: var(--cn-space-lg);
-  flex: 1 1 232px;
-  min-width: 232px;
-}
-
-/* 列色调：0 蓝 / 1 绿 / 2 橙 / 3 紫 / 4 青 */
-.cn-flow-matrix-col[data-tone="0"] {
-  --cn-flow-tone: #2f6fed;
-  --cn-flow-tone-soft: rgba(47, 111, 237, 0.1);
-  --cn-flow-tone-border: rgba(47, 111, 237, 0.42);
-}
-
-.cn-flow-matrix-col[data-tone="1"] {
-  --cn-flow-tone: #15803d;
-  --cn-flow-tone-soft: rgba(21, 128, 61, 0.1);
-  --cn-flow-tone-border: rgba(21, 128, 61, 0.42);
-}
-
-.cn-flow-matrix-col[data-tone="2"] {
-  --cn-flow-tone: #c2410c;
-  --cn-flow-tone-soft: rgba(194, 65, 12, 0.1);
-  --cn-flow-tone-border: rgba(194, 65, 12, 0.42);
-}
-
-.cn-flow-matrix-col[data-tone="3"] {
-  --cn-flow-tone: #7c3aed;
-  --cn-flow-tone-soft: rgba(124, 58, 237, 0.1);
-  --cn-flow-tone-border: rgba(124, 58, 237, 0.42);
-}
-
-.cn-flow-matrix-col[data-tone="4"] {
-  --cn-flow-tone: #0f766e;
-  --cn-flow-tone-soft: rgba(15, 118, 110, 0.1);
-  --cn-flow-tone-border: rgba(15, 118, 110, 0.42);
-}
-
-.cn-flow-matrix-head {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: var(--cn-space-hairline);
-  height: var(--cn-flow-matrix-head-h);
-  padding: var(--cn-space-md) var(--cn-space-lg);
-  border: 1px solid var(--cn-flow-tone);
-  border-radius: var(--cn-radius-lg);
-  background: var(--cn-flow-tone);
-  color: #fff;
-  text-align: left;
-  cursor: pointer;
-  overflow: hidden;
-  transition: box-shadow 0.2s ease;
-}
-
-.cn-flow-matrix-head:hover {
-  box-shadow: 0 0 0 3px var(--cn-flow-tone-soft);
-}
-
-.cn-flow-matrix-head.is-active {
-  box-shadow: 0 0 0 3px var(--cn-flow-tone-soft), inset 0 0 0 2px rgba(255, 255, 255, 0.72);
-}
-
-.cn-flow-matrix-head-title {
-  display: flex;
-  align-items: center;
-  gap: var(--cn-space-sm);
-  min-width: 0;
-}
-
-.cn-flow-matrix-index {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  border-radius: var(--cn-radius-pill);
-  background: rgba(255, 255, 255, 0.22);
-  font-size: var(--cn-text-2xs);
-  font-variant-numeric: tabular-nums;
-}
-
-.cn-flow-matrix-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--cn-text-md);
-  font-weight: var(--cn-weight-semibold);
-}
-
-.cn-flow-matrix-chevron {
-  flex: 0 0 auto;
-  font-size: var(--cn-text-2xs);
-  opacity: 0.85;
-}
-
-.cn-flow-matrix-desc,
-.cn-flow-matrix-stats {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--cn-text-2xs);
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.cn-flow-matrix-col.is-open .cn-flow-matrix-head::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -10px;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 6px solid var(--cn-flow-tone);
-  transform: translateX(-50%);
-}
-
-.cn-flow-matrix-steps {
-  display: grid;
-  gap: var(--cn-space-lg);
-}
-
-.cn-flow-matrix-gap {
-  height: var(--cn-flow-matrix-step-h);
-}
-
-.cn-flow-matrix-step {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--cn-space-md);
-  height: var(--cn-flow-matrix-step-h);
-  padding: 0 var(--cn-space-md);
-  border: 1px solid var(--cn-flow-tone-border);
-  border-radius: var(--cn-radius-base);
-  background: var(--cn-bg-container);
-  color: var(--cn-text-primary);
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease;
-}
-
-.cn-flow-matrix-step:hover {
-  background: var(--cn-flow-tone-soft);
-}
-
-.cn-flow-matrix-step.is-active {
-  border-color: var(--cn-flow-tone);
-  box-shadow: inset 0 0 0 1px var(--cn-flow-tone);
-  background: var(--cn-flow-tone-soft);
-}
-
-.cn-flow-matrix-step.is-approval {
-  border-style: dashed;
-}
-
-.cn-flow-matrix-step-no {
-  flex: 0 0 auto;
-  font-size: var(--cn-text-2xs);
-  color: var(--cn-flow-tone);
-  font-variant-numeric: tabular-nums;
-}
-
-.cn-flow-matrix-step-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: var(--cn-text-sm);
-}
-
-.cn-flow-matrix-step-badge {
-  flex: 0 0 auto;
-  color: var(--cn-text-muted);
-  font-size: var(--cn-text-xs);
-}
-
-.cn-flow-matrix-step:not(.is-last)::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -13px;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 6px solid var(--cn-flow-tone-border);
-  transform: translateX(-50%);
-}
-
-.cn-flow-matrix-arrow {
-  position: absolute;
-  top: 44px;
-  right: calc(-1 * var(--cn-space-xl) - 1px);
-  width: var(--cn-space-xl);
-  height: 2px;
-  background: var(--cn-border);
-}
-
-.cn-flow-matrix-arrow::after {
-  content: '';
-  position: absolute;
-  right: -1px;
-  top: -4px;
-  border-top: 5px solid transparent;
-  border-bottom: 5px solid transparent;
-  border-left: 7px solid var(--cn-border);
-}
-
-/* 子过程内容区：与矩阵上下分开，列表 / 搜索 / 新建都在自己的区块内 */
 .cn-flow-content {
   padding: var(--cn-space-xl);
   border: 1px solid var(--cn-border-soft);
@@ -7473,16 +7188,41 @@ body.cn-doc-focus-view .cn-doc-stats {
 }
 
 @media (max-width: 767.98px) {
-  .cn-flow-matrix {
-    padding: var(--cn-space-md);
-  }
-
-  .cn-flow-matrix-col {
-    flex: 0 0 220px;
-    min-width: 220px;
-  }
-
   .cn-flow-content {
     padding: var(--cn-space-lg);
   }
+}
+
+
+/* ─────────────── 数据流程：左侧流程图（大过程 → 子过程嵌套列表）+ 右侧数据维护 ─────────────── */
+.cn-flow-diagram-index,
+.cn-flow-diagram-step-no {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--cn-border);
+  border-radius: 50%;
+  background: var(--cn-bg-page);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-flow-diagram-chevron {
+  display: inline-flex;
+  align-items: center;
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-xs);
+}
+
+/* 子过程行缩进，形成两级流程图 */
+.cn-flow-diagram-step {
+  padding-left: var(--cn-space-4xl);
+}
+
+.cn-flow-diagram-step .cn-list-meta {
+  align-items: center;
 }

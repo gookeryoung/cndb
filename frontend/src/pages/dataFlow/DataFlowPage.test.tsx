@@ -109,28 +109,27 @@ describe('DataFlowPage', () => {
     )
   })
 
-  it('renders the matrix with only level-1 processes by default and expands sub-processes on demand', async () => {
+  it('renders the left-right flow diagram and maintains data in the right pane', async () => {
     renderPage()
     expect(await screen.findByTestId('data-flow-page')).toBeInTheDocument()
     expect(screen.getByText(/科研项目全生命周期管理/)).toBeInTheDocument()
-    // 一级过程 × 二级子过程矩阵
-    expect(screen.getByTestId('data-flow-matrix')).toBeInTheDocument()
+    // 左右列表布局 + 左侧两级流程图
+    expect(screen.getByTestId('data-flow-split')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-diagram')).toHaveTextContent('流程图')
     expect(screen.getByTestId('data-flow-card-project_lifecycle')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-card-archive_flow')).toBeInTheDocument()
-    // 默认只显示一级过程
-    expect(screen.queryByTestId('data-flow-step-apply')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('data-flow-step-approve')).not.toBeInTheDocument()
-
-    await userEvent.click(screen.getByTestId('data-flow-card-project_lifecycle'))
+    // 默认展开第一条流程的子过程
     expect(await screen.findByTestId('data-flow-steps-project_lifecycle')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-step-apply')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-step-approve')).toBeInTheDocument()
+    // 未展开的流程不渲染子过程
+    expect(screen.queryByTestId('data-flow-step-archive')).not.toBeInTheDocument()
     expect(await screen.findByText('智能监测项目')).toBeInTheDocument()
 
-    // 内容列表在独立区块内，不嵌在矩阵里
+    // 内容列表在右栏，不与左侧流程图混排
     const content = screen.getByTestId('data-flow-content')
     expect(content).toContainElement(screen.getByTestId('data-flow-table'))
-    expect(screen.getByTestId('data-flow-matrix')).not.toContainElement(screen.getByTestId('data-flow-table'))
+    expect(screen.getByTestId('data-flow-diagram')).not.toContainElement(screen.getByTestId('data-flow-table'))
 
     await userEvent.click(screen.getByTestId('data-flow-create'))
     expect(await screen.findByTestId('data-flow-editor')).toBeInTheDocument()
@@ -153,23 +152,27 @@ describe('DataFlowPage', () => {
     await userEvent.click(screen.getByTestId('data-flow-card-archive_flow'))
     expect(await screen.findByTestId('data-flow-step-archive')).toBeInTheDocument()
     expect(await screen.findByTestId('data-flow-step-info')).toBeInTheDocument()
-    expect(screen.getByText(/不绑定表单/)).toBeInTheDocument()
+    expect(screen.getByText('核对原件与清单')).toBeInTheDocument()
     expect(screen.queryByTestId('data-flow-create')).not.toBeInTheDocument()
   })
 
-  it('expands all sub-processes at once and collapses them back to level 1', async () => {
+  it('uses one icon button to expand all sub-processes and collapse them back', async () => {
     renderPage()
-    await screen.findByTestId('data-flow-matrix')
+    await screen.findByTestId('data-flow-diagram')
+    expect(screen.getByTestId('data-flow-step-apply')).toBeInTheDocument()
+    expect(screen.queryByTestId('data-flow-step-archive')).not.toBeInTheDocument()
 
-    await userEvent.click(screen.getByTestId('data-flow-expand-all'))
-    expect(await screen.findByTestId('data-flow-step-apply')).toBeInTheDocument()
+    const toggle = screen.getByTestId('data-flow-toggle-all')
+    expect(toggle).toHaveAttribute('aria-label', '展开全部子过程')
+    await userEvent.click(toggle)
+    expect(await screen.findByTestId('data-flow-step-archive')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-step-approve')).toBeInTheDocument()
-    expect(screen.getByTestId('data-flow-step-archive')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-toggle-all')).toHaveAttribute('aria-label', '收起全部子过程')
 
-    await userEvent.click(screen.getByTestId('data-flow-collapse-all'))
+    await userEvent.click(screen.getByTestId('data-flow-toggle-all'))
     expect(screen.queryByTestId('data-flow-step-apply')).not.toBeInTheDocument()
     expect(screen.queryByTestId('data-flow-step-archive')).not.toBeInTheDocument()
-    // 收起矩阵不影响下方内容列表
+    // 收起流程图不影响右侧数据维护
     expect(screen.getByTestId('data-flow-content')).toBeInTheDocument()
   })
 

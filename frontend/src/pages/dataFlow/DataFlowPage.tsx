@@ -7,11 +7,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Card, Empty, Input, Modal, Popconfirm, Space,
-  Table, Tag, Typography,
+  Alert, App as AntApp, Button, Card, Empty, Input, Modal, Popconfirm, Space, Table, Tag, Typography,
 } from 'antd'
 import {
-  ApartmentOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined,
+  ApartmentOutlined, AuditOutlined, DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined,
+  ReloadOutlined, RightOutlined, SearchOutlined, TableOutlined, UpOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -20,11 +20,12 @@ import type {
   DataFlowField, DataFlowFlow, DataFlowForm, DataFlowStep, Field, RowResponse, RowValues,
   WorkspaceDataFlow,
 } from '@/api'
+import CnListMeta from '@/components/CnListMeta'
+import SectionBox from '@/components/SectionBox'
 import { FieldEditor } from '@/pages/grid/layout/RowDetailDrawer'
 import { extractSelectOptions } from '@/pages/grid/cells/fieldOps'
-import DataFlowMatrix from './DataFlowMatrix'
 
-const { Title, Text, Paragraph } = Typography
+const { Text, Paragraph } = Typography
 
 const EMPTY_VALUE = (v: unknown) => v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)
 
@@ -133,6 +134,7 @@ export default function DataFlowPage() {
   const [flowKey, setFlowKey] = useState<string | null>(null)
   const [stepKey, setStepKey] = useState<string | null>(null)
   const [expandedKeys, setExpandedKeys] = useState<string[]>([])
+  const [initialized, setInitialized] = useState(false)
   const [search, setSearch] = useState('')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<RowResponse | null>(null)
@@ -144,6 +146,13 @@ export default function DataFlowPage() {
     if (!flowKey || !flows.some(f => f.key === flowKey)) setFlowKey(flows[0].key)
   }, [flows, flowKey])
 
+  // 首次进入展开第一条流程，保证右侧内容在左侧有对应的子过程节点
+  useEffect(() => {
+    if (!data || initialized || !flows.length) return
+    setExpandedKeys([flows[0].key])
+    setInitialized(true)
+  }, [data, flows, initialized])
+
   const flow = flows.find(f => f.key === flowKey) ?? flows[0]
 
   useEffect(() => {
@@ -154,7 +163,6 @@ export default function DataFlowPage() {
   }, [flow, stepKey])
 
   const step = flow?.steps.find(s => s.key === stepKey) ?? flow?.steps[0]
-  const stepIndex = Math.max(0, flow?.steps.findIndex(s => s.key === step?.key) ?? 0)
   const form = step?.form ?? null
   const fieldMap = useMemo(() => new Map((form?.fields ?? []).map(f => [f.name, f])), [form])
 
@@ -261,6 +269,9 @@ export default function DataFlowPage() {
     setEditorOpen(true)
   }
 
+  const allExpanded = flows.length > 0 && flows.every(f => expandedKeys.includes(f.key))
+  const toggleAll = () => setExpandedKeys(allExpanded ? [] : flows.map(f => f.key))
+
   if (isLoading) return <div className="cn-state">加载中…</div>
 
   if (error || !data) {
@@ -308,91 +319,167 @@ export default function DataFlowPage() {
   ] : []
 
   return (
-    <div style={{ padding: 16, maxWidth: 1240, margin: '0 auto' }} data-testid="data-flow-page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-        <div>
-          <Title level={3} style={{ marginBottom: 2 }}><ApartmentOutlined /> 数据流程</Title>
-          <Space wrap>
-            <Text type="secondary">模板：{data.template_name}</Text>
-            <Text type="secondary">当前生命周期阶段：{data.stages.find(s => s.key === data.current_stage)?.name ?? '—'}</Text>
-            <Tag color="blue">{flows.length} 条流程</Tag>
-          </Space>
+    <div className="cn-page cn-qc-page" data-testid="data-flow-page">
+      <header className="cn-page-head">
+        <div className="cn-page-head-main">
+          <span className="cn-page-head-icon" aria-hidden><ApartmentOutlined /></span>
+          <div className="cn-page-head-text">
+            <h1 className="cn-page-head-title">数据流程</h1>
+            <div className="cn-page-head-sub">
+              <span className="cn-page-head-meta">
+                {data.template_name} · 当前阶段 {data.stages.find(s => s.key === data.current_stage)?.name ?? '—'} · {flows.length} 条流程
+              </span>
+            </div>
+          </div>
         </div>
-        <Button icon={<ReloadOutlined />} onClick={() => rowsQuery.refetch()} loading={rowsQuery.isFetching}>刷新</Button>
-      </div>
-
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 12 }}
-        message="横向列是一级过程，纵向行是二级子过程；点击流程展开子过程，选中子过程后在下方独立区域维护表单数据。"
-        description="无表单的子过程为审批 / 确认节点；列表按模板配置字段展示与搜索，完整数据仍可在数据表中查看。"
-      />
+        <div className="cn-page-head-actions">
+          <Button
+            type="text"
+            icon={<ReloadOutlined />}
+            aria-label="刷新数据流程"
+            onClick={() => rowsQuery.refetch()}
+            loading={rowsQuery.isFetching}
+          />
+        </div>
+      </header>
 
       {!flows.length ? (
-        <Card><Empty description="模板还没有配置端到端流程" /></Card>
+        <SectionBox title="流程图" icon={<ApartmentOutlined />}>
+          <div className="cn-qc-empty"><Empty description="模板还没有配置端到端流程" /></div>
+        </SectionBox>
       ) : (
-        <>
-          {/* 一级过程 × 二级子过程矩阵：默认只显示一级，展开后子过程横向对齐 */}
-          <DataFlowMatrix
-            flows={flows}
-            activeFlowKey={flow?.key ?? null}
-            activeStepKey={step?.key ?? null}
-            expandedKeys={expandedKeys}
-            onToggleFlow={toggleFlow}
-            onSelectStep={selectStep}
-            onExpandAll={() => setExpandedKeys(flows.map(f => f.key))}
-            onCollapseAll={() => setExpandedKeys([])}
-          />
-
-          {/* 子过程内容：与矩阵独立成块，表格 / 搜索 / 新建不会压住流程节点 */}
-          <section className="cn-flow-content" data-testid="data-flow-content" aria-label="子过程内容">
-            <div className="cn-flow-content-head">
-              <div className="cn-flow-content-title">
-                <Space size={6} wrap>
-                  <Tag color="blue">{flow?.name ?? '—'}</Tag>
-                  <span className="cn-flow-content-sep" aria-hidden>/</span>
-                  <Text strong>{step?.name ?? '—'}</Text>
-                  {(flow?.steps.length ?? 0) > 0 && (
-                    <Text type="secondary">
-                      子过程 {stepIndex + 1}/{flow?.steps.length}
-                    </Text>
+        <div className="cn-qc-split" data-testid="data-flow-split">
+          {/* 左栏：流程图（大过程 → 子过程的嵌套列表） */}
+          <SectionBox
+            title="流程图"
+            icon={<ApartmentOutlined />}
+            extra={(
+              <Space size={4}>
+                <span>共 {flows.length} 条</span>
+                <Button
+                  type="text"
+                  size="small"
+                  icon={allExpanded ? <UpOutlined /> : <DownOutlined />}
+                  aria-label={allExpanded ? '收起全部子过程' : '展开全部子过程'}
+                  title={allExpanded ? '收起全部子过程' : '展开全部子过程'}
+                  data-testid="data-flow-toggle-all"
+                  onClick={toggleAll}
+                />
+              </Space>
+            )}
+            flush
+            testId="data-flow-diagram"
+          >
+            {flows.map((item, index) => {
+              const open = expandedKeys.includes(item.key)
+              const isActiveFlow = item.key === flow?.key
+              return (
+                <div key={item.key}>
+                  <div
+                    className={[
+                      'cn-list-item',
+                      'cn-qc-row',
+                      'cn-qc-row--selectable',
+                      isActiveFlow ? 'cn-qc-row--active' : '',
+                    ].filter(Boolean).join(' ')}
+                    data-testid={`data-flow-card-${item.key}`}
+                    aria-expanded={open}
+                    onClick={() => toggleFlow(item.key)}
+                  >
+                    <div className="cn-list-item-main">
+                      <CnListMeta
+                        avatar={<span className="cn-flow-diagram-index" aria-hidden>{index + 1}</span>}
+                        title={(
+                          <Space size={8} wrap>
+                            <Text strong>{item.name}</Text>
+                            {item.key === 'project_lifecycle' && <Tag color="gold">主流程</Tag>}
+                          </Space>
+                        )}
+                        description={(
+                          <Text type="secondary">
+                            {item.step_count} 步子过程 · {item.form_count} 个表单
+                          </Text>
+                        )}
+                      />
+                    </div>
+                    <div className="cn-list-item-actions">
+                      <span className="cn-flow-diagram-chevron" aria-hidden>
+                        {open ? <DownOutlined /> : <RightOutlined />}
+                      </span>
+                    </div>
+                  </div>
+                  {open && (
+                    <div data-testid={`data-flow-steps-${item.key}`}>
+                      {item.steps.map((child, stepNo) => {
+                        const isActiveStep = isActiveFlow && child.key === step?.key
+                        return (
+                          <div
+                            key={child.key}
+                            className={[
+                              'cn-list-item',
+                              'cn-qc-row',
+                              'cn-qc-row--selectable',
+                              'cn-flow-diagram-step',
+                              isActiveStep ? 'cn-qc-row--active' : '',
+                            ].filter(Boolean).join(' ')}
+                            data-testid={`data-flow-step-${child.key}`}
+                            aria-current={isActiveStep ? 'step' : undefined}
+                            onClick={() => selectStep(item.key, child.key)}
+                          >
+                            <div className="cn-list-item-main">
+                              <CnListMeta
+                                avatar={<span className="cn-flow-diagram-step-no" aria-hidden>{stepNo + 1}</span>}
+                                title={<Text strong={isActiveStep}>{child.name}</Text>}
+                                description={(
+                                  <Text type="secondary">
+                                    {child.form ? `${child.form.name} · ${child.form.record_count} 条` : '审批 / 确认节点'}
+                                  </Text>
+                                )}
+                              />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
                   )}
-                </Space>
-                {step?.description && <Text type="secondary">{step.description}</Text>}
-              </div>
-              <Tag color={form ? 'blue' : 'orange'}>{form ? '数据表单' : '审批 / 确认'}</Tag>
-            </div>
+                </div>
+              )
+            })}
+          </SectionBox>
 
+          {/* 右栏：当前子过程的数据维护 */}
+          <SectionBox
+            title={step ? `${flow?.name ?? '—'} / ${step.name}` : '数据维护'}
+            icon={form ? <TableOutlined /> : <AuditOutlined />}
+            extra={form ? (
+              <Space size={6}>
+                <Tag>{form.record_count} 条记录</Tag>
+                {form.can_create && (
+                  <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openCreate} data-testid="data-flow-create">
+                    新建
+                  </Button>
+                )}
+              </Space>
+            ) : <Tag color="orange">审批 / 确认</Tag>}
+            testId="data-flow-content"
+          >
             {!step || !form ? (
-              <Card data-testid="data-flow-step-info">
-                <Empty description={step?.description || '该步骤为审批 / 确认节点，无表单数据'}>
-                  <Text type="secondary">
-                    当前子过程「{step?.name ?? '—'}」不绑定表单；可在上方矩阵中展开其他流程或子过程。
-                  </Text>
-                </Empty>
-              </Card>
+              <div className="cn-qc-empty" data-testid="data-flow-step-info">
+                <Empty description={step?.description || '该子过程为审批 / 确认节点，无表单数据'} />
+              </div>
             ) : (
               <>
                 <div className="cn-flow-content-toolbar">
-                  <Space wrap size={8}>
-                    <Input
-                      allowClear
-                      prefix={<SearchOutlined />}
-                      placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
-                      value={search}
-                      onChange={e => setSearch(e.target.value)}
-                      style={{ width: 300 }}
-                      data-testid="data-flow-search"
-                    />
-                    <Tag>{form.record_count} 条记录</Tag>
-                    <Text type="secondary">{form.description}</Text>
-                  </Space>
-                  {form.can_create && (
-                    <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} data-testid="data-flow-create">
-                      新建{form.name}
-                    </Button>
-                  )}
+                  <Input
+                    allowClear
+                    prefix={<SearchOutlined />}
+                    placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    style={{ width: 300 }}
+                    data-testid="data-flow-search"
+                  />
+                  {step.description && <Text type="secondary">{step.description}</Text>}
                 </div>
                 <Table
                   size="small"
@@ -407,13 +494,13 @@ export default function DataFlowPage() {
                 />
                 {(rowsQuery.data?.total ?? 0) > rows.length && (
                   <Text type="secondary" style={{ fontSize: 12 }}>
-                    当前仅加载前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
+                    仅显示前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
                   </Text>
                 )}
               </>
             )}
-          </section>
-        </>
+          </SectionBox>
+        </div>
       )}
 
       <Modal

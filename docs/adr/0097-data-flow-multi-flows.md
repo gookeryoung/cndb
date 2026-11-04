@@ -86,7 +86,7 @@ flows: [
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| 页面 | `frontend/src/pages/dataFlow/DataFlowPage.tsx` | 多流程并列展示（需求 0098 起为「一级过程 × 二级子过程」矩阵视图，见 `DataFlowMatrix.tsx`）+ 步骤表单 CRUD / 审批节点空态 |
+| 页面 | `frontend/src/pages/dataFlow/DataFlowPage.tsx` | 质量检查式左右双栏：左栏「流程图」两级嵌套（大过程 → 子过程），右栏步骤表单 CRUD / 审批节点空态（UI 细化见需求 0098） |
 | 类型 | `frontend/src/api/types/templates.ts` | `TemplateSpecFlow`、`DataFlowFlow`、`DataFlowStep`、counts / diff 扩展 |
 | 模板编辑 | `frontend/src/pages/templates/` | JSON 规格新增 `flows` 配置（沿用现有编辑器） |
 
@@ -125,7 +125,7 @@ flows: [
 ## Consequences
 
 - **正向**：数据流程从单主线升级为多业务流程工作台；页面并列展示流程；审批节点与表单 CRUD 统一。
-- **负向**：模板 spec 更复杂；横向节点数量多时需要横向滚动。
+- **负向**：模板 spec 更复杂；左侧流程图在流程 / 子过程较多时需要滚动。
 - **风险与缓解**：流程配置字段写错 → 保存时校验；旧模板无 flows → 自动派生。
 
 ## 与既有 ADR 的关系
