@@ -196,6 +196,58 @@ describe('DataFlowPage', () => {
     expect(screen.queryByText('智能监测项目')).not.toBeInTheDocument()
   })
 
+  it('does not clear fields hidden from the current role when editing a row', async () => {
+    // 列表接口按角色剔除隐藏字段（响应里没有该键）。编辑时不能把「读不到」当成「用户清空」，
+    // 否则保存会把隐藏字段静默写成 NULL（数据丢失）。
+    const hiddenField = {
+      name: '保密备注', field_type: 'text', required: false, config: {}, order: 2, hidden: false,
+    }
+    const form = {
+      ...FLOW_FORM,
+      fields: [...FLOW_FORM.fields, hiddenField],
+    }
+    const flow = {
+      ...FLOW,
+      flows: [
+        {
+          ...FLOW.flows[0],
+          steps: [
+            { ...FLOW.flows[0].steps[0], form },
+            FLOW.flows[0].steps[1],
+          ],
+        },
+        FLOW.flows[1],
+      ],
+    }
+    const captured: { values?: Record<string, unknown> } = {}
+    server.use(
+      http.get('/api/v1/workspaces/:wid/data-flow', () => HttpResponse.json(flow)),
+      http.get('/api/v1/workspaces/:wid/tables/:tid/records', () =>
+        HttpResponse.json({
+          // 保密备注被角色隐藏，响应中不含该键
+          items: [{ id: 1, 项目名称: '智能监测项目', 负责人: '张伟' }],
+          total: 1, offset: 0, limit: 500,
+        }),
+      ),
+      http.patch('/api/v1/workspaces/:wid/tables/:tid/records/:rid', async ({ request }) => {
+        captured.values = (await request.json() as { values: Record<string, unknown> }).values
+        return HttpResponse.json({ id: 1 })
+      }),
+    )
+
+    renderPage()
+    await screen.findByText('智能监测项目')
+    await userEvent.click(screen.getAllByText('编辑')[0])
+    const inputs = await screen.findAllByPlaceholderText('请输入...')
+    await userEvent.clear(inputs[1])
+    await userEvent.type(inputs[1], '李伟')
+    await userEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+    expect(await screen.findByText('记录已更新')).toBeInTheDocument()
+    expect(captured.values).toEqual({ 项目名称: '智能监测项目', 负责人: '李伟' })
+    expect(captured.values).not.toHaveProperty('保密备注')
+  })
+
   it('shows template hint when workspace has no data flow', async () => {
     server.use(
       http.get('/api/v1/workspaces/:wid/data-flow', () =>
