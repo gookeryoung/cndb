@@ -71,6 +71,8 @@ const FLOW = {
       key: 'project_lifecycle',
       name: '科研项目全生命周期',
       description: '从立项到结题',
+      stage: 'proposal',
+      stage_name: '立项申报',
       step_count: 2,
       form_count: 1,
       record_count: 1,
@@ -83,6 +85,8 @@ const FLOW = {
       key: 'archive_flow',
       name: '成果归档',
       description: '归档登记流程',
+      stage: 'execution',
+      stage_name: '过程实施',
       step_count: 1,
       form_count: 0,
       record_count: 0,
@@ -113,6 +117,9 @@ describe('DataFlowPage', () => {
     renderPage()
     expect(await screen.findByTestId('data-flow-page')).toBeInTheDocument()
     expect(screen.getByText(/科研项目全生命周期管理/)).toBeInTheDocument()
+    expect(screen.getByText(/当前阶段 立项申报/)).toBeInTheDocument()
+    // 右侧刷新按钮已移除
+    expect(screen.queryByLabelText('刷新数据流程')).not.toBeInTheDocument()
     // 左右列表布局 + 左侧两级流程图
     expect(screen.getByTestId('data-flow-split')).toBeInTheDocument()
     expect(screen.getByTestId('data-flow-diagram')).toHaveTextContent('流程图')
@@ -155,6 +162,7 @@ describe('DataFlowPage', () => {
     // 二级子过程默认收起
     expect(screen.queryByTestId('data-flow-step-archive')).not.toBeInTheDocument()
     await userEvent.click(screen.getByTestId('data-flow-card-archive_flow'))
+    expect(await screen.findByText(/当前阶段 过程实施/)).toBeInTheDocument()
     expect(await screen.findByTestId('data-flow-step-archive')).toBeInTheDocument()
     expect(await screen.findByTestId('data-flow-step-info')).toBeInTheDocument()
     expect(screen.getByText('核对原件与清单')).toBeInTheDocument()

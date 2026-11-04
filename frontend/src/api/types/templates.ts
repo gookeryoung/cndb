@@ -256,6 +256,8 @@ export interface DataFlowFlow {
   key: string
   name: string
   description: string
+  stage?: string | null
+  stage_name?: string | null
   steps: DataFlowStep[]
   form_count: number
   step_count: number

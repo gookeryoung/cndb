@@ -11,7 +11,7 @@ import {
 } from 'antd'
 import {
   ApartmentOutlined, AuditOutlined, DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined,
-  ReloadOutlined, RightOutlined, SearchOutlined, TableOutlined, UpOutlined,
+  RightOutlined, SearchOutlined, TableOutlined, UpOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -271,6 +271,9 @@ export default function DataFlowPage() {
 
   const allExpanded = flows.length > 0 && flows.every(f => expandedKeys.includes(f.key))
   const toggleAll = () => setExpandedKeys(allExpanded ? [] : flows.map(f => f.key))
+  const currentStageLabel = flow?.stage_name
+    ?? data?.stages.find(stage => stage.key === data.current_stage)?.name
+    ?? '—' 
 
   if (isLoading) return <div className="cn-state">加载中…</div>
 
@@ -327,19 +330,10 @@ export default function DataFlowPage() {
             <h1 className="cn-page-head-title">数据流程</h1>
             <div className="cn-page-head-sub">
               <span className="cn-page-head-meta">
-                {data.template_name} · 当前阶段 {data.stages.find(s => s.key === data.current_stage)?.name ?? '—'} · {flows.length} 条流程
+                {data.template_name} · 当前阶段 {currentStageLabel} · {flows.length} 条流程
               </span>
             </div>
           </div>
-        </div>
-        <div className="cn-page-head-actions">
-          <Button
-            type="text"
-            icon={<ReloadOutlined />}
-            aria-label="刷新数据流程"
-            onClick={() => rowsQuery.refetch()}
-            loading={rowsQuery.isFetching}
-          />
         </div>
       </header>
 

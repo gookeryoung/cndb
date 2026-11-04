@@ -211,7 +211,7 @@ def diff_specs(old_spec: dict[str, Any], new_spec: dict[str, Any]) -> dict[str, 
         kind="flow",
         label="流程",
         name_key="name",
-        extra_compare=("description", "steps"),
+        extra_compare=("description", "stage", "steps"),
     )
     changes.extend(flow_changes)
     for key in old_stages.keys() | new_stages.keys():

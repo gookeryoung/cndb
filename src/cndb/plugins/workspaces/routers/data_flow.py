@@ -135,6 +135,22 @@ def get_data_flow(
         record_total = sum(int(counts.get(table_id, 0) or 0) for table_id in tables if isinstance(table_id, int))
         return len(tables), len(steps), record_total
 
+    stage_names = {stage["key"]: stage["name"] for stage in spec.get("stages", [])}
+
+    def _resolve_flow_stage(flow: dict[str, Any], steps: list[DataFlowStep]) -> str | None:
+        explicit = flow.get("stage")
+        if explicit:
+            return explicit
+        # 未显式声明的旧流程：按步骤表单在 stages 中的归属推断（首个命中优先）
+        for step in steps:
+            form_key = step.form.key if step.form is not None else None
+            if form_key is None:
+                continue
+            for stage in spec.get("stages", []):
+                if form_key in stage.get("forms", []):
+                    return stage["key"]
+        return None
+
     flows: list[DataFlowFlow] = []
     if spec.get("flows"):
         for flow in spec["flows"]:
@@ -149,11 +165,14 @@ def get_data_flow(
                 for step in flow.get("steps", [])
             ]
             form_count, step_count, record_total = _flow_stats(steps)
+            stage_key = _resolve_flow_stage(flow, steps)
             flows.append(
                 DataFlowFlow(
                     key=flow["key"],
                     name=flow["name"],
                     description=flow.get("description", ""),
+                    stage=stage_key,
+                    stage_name=stage_names.get(stage_key) if stage_key else None,
                     steps=steps,
                     form_count=form_count,
                     step_count=step_count,
@@ -191,6 +210,8 @@ def get_data_flow(
                     key=f"stage-{stage['key']}",
                     name=stage["name"],
                     description=stage.get("description", ""),
+                    stage=stage["key"],
+                    stage_name=stage["name"],
                     steps=steps,
                     form_count=form_count,
                     step_count=step_count,

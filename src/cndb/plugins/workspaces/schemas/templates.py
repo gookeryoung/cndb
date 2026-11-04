@@ -216,6 +216,8 @@ class DataFlowFlow(BaseModel):
     key: str
     name: str
     description: str = ""
+    stage: str | None = None
+    stage_name: str | None = None
     steps: list[DataFlowStep] = Field(default_factory=list)
     form_count: int = 0
     step_count: int = 0

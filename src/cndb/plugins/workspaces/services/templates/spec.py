@@ -42,7 +42,7 @@ _FORM_FLOW_KEYS = {
     "empty_text",
 }
 _GROUP_KEYS = {"title", "fields"}
-_DATA_FLOW_KEYS = {"key", "name", "description", "steps"}
+_DATA_FLOW_KEYS = {"key", "name", "description", "stage", "steps"}
 _STEP_KEYS = {"key", "name", "description", "form", "documents"}
 
 
@@ -342,7 +342,7 @@ def _normalize_documents(raw_documents: Any) -> list[dict[str, Any]]:
 
 
 def _normalize_data_flows(
-    raw_flows: Any, form_keys: set[str], doc_keys: set[str]
+    raw_flows: Any, form_keys: set[str], doc_keys: set[str], stage_keys: set[str]
 ) -> tuple[list[dict[str, Any]], set[str], set[str]]:
     """端到端流程：一条流程 = 有序步骤；步骤可绑定表单（数据 CRUD）/ 文档规则.
 
@@ -364,6 +364,11 @@ def _normalize_data_flows(
         if key in seen_keys:
             raise _err(f"{path}.key", f"流程 key 重复：{key}")
         seen_keys.add(key)
+        stage_key = item.get("stage")
+        if stage_key is not None:
+            stage_key = _require_str(stage_key, f"{path}.stage", max_len=64)
+            if stage_key not in stage_keys:
+                raise _err(f"{path}.stage", f"引用了不存在的阶段：{stage_key}")
         steps_raw = _require_list(item.get("steps"), f"{path}.steps")
         if not steps_raw:
             raise _err(f"{path}.steps", "至少定义一个流程步骤")
@@ -410,6 +415,7 @@ def _normalize_data_flows(
                 "description": _require_str(
                     item.get("description", ""), f"{path}.description", max_len=2000, allow_empty=True
                 ),
+                "stage": stage_key,
                 "steps": steps,
             }
         )
@@ -486,8 +492,10 @@ def normalize_spec(raw: Any) -> dict[str, Any]:
         raise _err("spec", "至少定义一个表单或文档规则")
     form_keys = {f["key"] for f in forms}
     doc_keys = {d["key"] for d in documents}
-    flows, flow_forms, flow_docs = _normalize_data_flows(spec.get("flows"), form_keys, doc_keys)
     stages = _normalize_stages(spec.get("stages"), form_keys, doc_keys)
+    flows, flow_forms, flow_docs = _normalize_data_flows(
+        spec.get("flows"), form_keys, doc_keys, {stage["key"] for stage in stages}
+    )
     used_forms = {ref for stage in stages for ref in stage["forms"]} | flow_forms
     used_docs = {ref for stage in stages for ref in stage["documents"]} | flow_docs
     orphan_forms = sorted(form_keys - used_forms)
