@@ -459,7 +459,16 @@ export default function DataFlowPage() {
             title={step ? `${flow?.name ?? '—'} / ${step.name}` : '数据维护'}
             icon={form ? <TableOutlined /> : <AuditOutlined />}
             extra={form ? (
-              <Space size={6}>
+              <Space size={6} wrap>
+                <Input
+                  allowClear
+                  prefix={<SearchOutlined />}
+                  placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  style={{ width: 200 }}
+                  data-testid="data-flow-search"
+                />
                 <Tag>{form.record_count} 条记录</Tag>
                 {form.can_create && (
                   <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openCreate} data-testid="data-flow-create">
@@ -477,18 +486,11 @@ export default function DataFlowPage() {
               </div>
             ) : (
               <>
-                <div className="cn-flow-content-toolbar">
-                  <Input
-                    allowClear
-                    prefix={<SearchOutlined />}
-                    placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                    style={{ width: 300 }}
-                    data-testid="data-flow-search"
-                  />
-                  {step.description && <Text type="secondary">{step.description}</Text>}
-                </div>
+                {step.description && (
+                  <div className="cn-flow-content-toolbar">
+                    <Text type="secondary">{step.description}</Text>
+                  </div>
+                )}
                 <Table
                   size="small"
                   rowKey="id"
