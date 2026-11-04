@@ -1059,3 +1059,26 @@ def test_explicit_multi_flows_validation_and_crud(client, auth_headers, db):
     }
     with pytest.raises(TemplateSpecError):
         normalize_spec(bad_stage)
+
+
+def test_data_flow_infers_flow_stage_from_step_form(client, auth_headers):
+    spec = {
+        "forms": [
+            {"key": "apply", "name": "申请单", "fields": [{"name": "事项", "type": "text"}]},
+            {"key": "archive", "name": "归档单", "fields": [{"name": "归档号", "type": "text"}]},
+        ],
+        "documents": [],
+        "stages": [{"key": "only", "name": "唯一阶段", "forms": ["apply"], "documents": []}],
+        "flows": [
+            {"key": "main", "name": "主流程", "steps": [{"key": "a", "name": "申请", "form": "apply"}]},
+            {"key": "archive", "name": "归档流程", "steps": [{"key": "b", "name": "归档", "form": "archive"}]},
+        ],
+    }
+    template = _create_template(client, auth_headers, spec=spec, name="阶段推断模板")
+    ws = _create_workspace(client, auth_headers, template["id"])
+    data = client.get(f"/api/v1/workspaces/{ws['id']}/data-flow", headers=auth_headers).json()
+    assert data["flows"][0]["stage"] == "only"
+    assert data["flows"][0]["stage_name"] == "唯一阶段"
+    # flow-only 表单不在任何阶段 → 不强行归属阶段
+    assert data["flows"][1]["stage"] is None
+    assert data["flows"][1]["stage_name"] is None

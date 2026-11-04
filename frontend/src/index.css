@@ -4081,7 +4081,8 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-help-docs-toc-link.is-active {
-  background: var(--cn-bg-subtle);
+  background: var(--cn-mix-brand-color-12-bg-container);
+  background: color-mix(in srgb, var(--cn-brand-color) 14%, var(--cn-bg-container));
   color: var(--cn-brand-color);
   font-weight: var(--cn-weight-medium);
 }
@@ -6491,9 +6492,18 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   background: var(--cn-bg-subtle);
 }
 
+/* 选中行：用品牌色浅混合底，与未选中的容器底色拉开差异（仅 bg-subtle 对比不足）。
+ * 同时保留左侧品牌色指示条；旧浏览器回退到主题预生成的 mix 变量。 */
 .cn-qc-row--active {
-  background: var(--cn-bg-subtle);
+  background: var(--cn-mix-brand-color-12-bg-container);
+  background: color-mix(in srgb, var(--cn-brand-color) 14%, var(--cn-bg-container));
   border-inline-start-color: var(--cn-brand-color);
+}
+
+/* 数据流程一级流程的选中态再强一档：与二级子过程同时选中时仍能区分主次 */
+.cn-flow-diagram-flow.cn-qc-row--active {
+  background: var(--cn-mix-brand-color-12-bg-container);
+  background: color-mix(in srgb, var(--cn-brand-color) 18%, var(--cn-bg-container));
 }
 
 /* 空态：flush 盒体没有内边距，用自己的留白保持与其他盒子一致的视觉节奏 */

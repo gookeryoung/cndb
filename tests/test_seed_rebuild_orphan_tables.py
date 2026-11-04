@@ -138,5 +138,13 @@ class TestSeedRebuildOrphanTables:
         try:
             usernames = {row[0] for row in con.execute("SELECT username FROM accounts_user")}
             assert "admin" in usernames
+            # 模板示例工作区须在 datasets 之后创建，不得抢占比数据集工作区小的 id
+            from cndb.cli.seed.workspace_templates import EXAMPLE_WORKSPACE_NAME
+
+            dataset_ws_id = con.execute("SELECT id FROM workspaces_workspace WHERE name = '演示'").fetchone()[0]
+            example_ws_id = con.execute(
+                "SELECT id FROM workspaces_workspace WHERE name = ?", (EXAMPLE_WORKSPACE_NAME,)
+            ).fetchone()[0]
+            assert example_ws_id > dataset_ws_id
         finally:
             con.close()
