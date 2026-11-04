@@ -185,14 +185,19 @@ export default function DataFlowPage() {
   const save = useMutation({
     mutationFn: async () => {
       if (!form?.table_id) throw new Error('表单未映射到数据表')
+      // 列表响应会按角色剔除隐藏字段：响应里没有该字段的键，不能当成「用户清空」，
+      // 否则编辑任一记录都会把当前用户看不到的字段静默写成 NULL（数据丢失）。
+      const editableFields = editingRow
+        ? form.fields.filter(f => f.name in editingRow)
+        : form.fields
       const payload: RowValues = {}
-      for (const field of form.fields) {
+      for (const field of editableFields) {
         const value = values[field.name]
         if (field.field_type === 'lookup') continue
         if (!EMPTY_VALUE(value)) payload[field.name] = value
         else if (editingRow) payload[field.name] = null
       }
-      const missing = form.fields
+      const missing = editableFields
         .filter(f => f.required && f.field_type !== 'lookup' && EMPTY_VALUE(values[f.name]))
         .map(f => f.name)
       if (missing.length) throw new Error(`请填写必填字段：${missing.join('、')}`)
