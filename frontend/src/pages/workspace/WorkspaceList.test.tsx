@@ -112,7 +112,16 @@ describe('WorkspaceList 路由跳转', () => {
 // ─────────────── 列表渲染 / 搜索 / 进入工作区 / 置顶 / 创建分支 ───────────────
 
 /** 构造带统计信息的工作区卡片数据 */
-function makeWs(overrides: Partial<Workspace> & { id: number; name: string }): Workspace {
+function makeWs(
+  overrides: Partial<Workspace> & {
+    id: number
+    name: string
+    table_count?: number
+    member_count?: number
+    document_count?: number
+    design_count?: number
+  },
+): Workspace {
   return {
     description: '', visibility: 'member', tags: [], allow_edit: true,
     created_at: '', updated_at: '',
@@ -272,6 +281,29 @@ describe('WorkspaceList 可折叠行列表', () => {
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables/101'))
   })
 
+  it('展开详情显示文档 / 设计统计与入口（需求 0093）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([
+          makeWs({ id: 10, name: '测试工作区', document_count: 5, design_count: 2 }),
+        ])),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('workspace-expand-10'))
+
+    const docs = await screen.findByTestId('workspace-detail-documents-10')
+    expect(docs).toHaveTextContent('文档')
+    expect(docs).toHaveTextContent('共 5 篇')
+    const design = screen.getByTestId('workspace-detail-design-10')
+    expect(design).toHaveTextContent('共 2 个')
+
+    // 入口直达对应模块页
+    await user.click(within(docs).getByTestId('workspace-detail-documents-open-10'))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/documents'))
+  })
+
   it('文档类工作区展开后不请求数据表，仅保留操作入口', async () => {
     let tableRequests = 0
     server.use(
@@ -287,6 +319,9 @@ describe('WorkspaceList 可折叠行列表', () => {
     const user = userEvent.setup()
     await user.click(await screen.findByTestId('workspace-expand-10'))
     await screen.findByTestId('workspace-detail-10')
+    // 文档模块启用：展示文档统计区块（无文档时给空态），设计模块未启用则不渲染
+    expect(screen.getByTestId('workspace-detail-documents-10')).toHaveTextContent('还没有文档')
+    expect(screen.queryByTestId('workspace-detail-design-10')).not.toBeInTheDocument()
 
     expect(tableRequests).toBe(0)
     expect(screen.queryByTestId('workspace-detail-table-100')).not.toBeInTheDocument()

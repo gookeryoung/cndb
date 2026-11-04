@@ -489,21 +489,111 @@ class TestWorkspaceDetailWithStats:
         assert isinstance(data["member_count"], int)
         assert isinstance(data["view_count"], int)
         assert isinstance(data["total_rows"], int)
-        # 新工作区 0 表 1 成员
+        assert isinstance(data["document_count"], int)
+        assert isinstance(data["design_count"], int)
+        # 新工作区 0 表 0 文档 0 设计 1 成员
         assert data["table_count"] == 0
+        assert data["document_count"] == 0
+        assert data["design_count"] == 0
         assert data["member_count"] == 1
 
-    def test_list_workspaces_includes_stats(self, client, owner_user):
-        """列表接口附带 table_count / member_count."""
+    def test_detail_counts_documents_and_designs(self, client, db, owner_user, member_user):
+        """需求 0093：详情统计包含文档 / 设计（文件夹与回收站 / 软删不计入）."""
+        from cndb.plugins.design.models import DesignDesign
+        from cndb.plugins.documents.models import Document
+
         token = _login_token(client, "owner", "passw0rd")
-        self._create_ws(client, token)
+        ws_id = self._create_ws(client, token)
+
+        def doc(title: str, *, is_folder: bool = False, is_deleted: bool = False) -> Document:
+            return Document(
+                workspace_id=ws_id,
+                title=title,
+                content_type="folder" if is_folder else "markdown",
+                is_folder=is_folder,
+                is_deleted=is_deleted,
+                status="published",
+                created_by_id=owner_user.id,
+            )
+
+        db.add_all(
+            [
+                doc("文档一"),
+                doc("文档二"),
+                doc("文件夹", is_folder=True),
+                doc("回收站文档", is_deleted=True),
+                DesignDesign(
+                    workspace_id=ws_id,
+                    title="零件A",
+                    file_key="part-a",
+                    kind="part",
+                    content="param size = 10\n",
+                    created_by_id=owner_user.id,
+                ),
+                DesignDesign(
+                    workspace_id=ws_id,
+                    title="已删设计",
+                    file_key="part-b",
+                    kind="part",
+                    is_deleted=True,
+                    created_by_id=owner_user.id,
+                ),
+            ]
+        )
+        db.commit()
+
+        data = client.get(f"/api/v1/workspaces/{ws_id}", headers=_headers(token)).json()
+        assert data["document_count"] == 2
+        assert data["design_count"] == 1
+
+    def test_list_workspaces_includes_stats(self, client, db, owner_user):
+        """列表接口附带 table_count / member_count / document_count / design_count."""
+        from cndb.plugins.design.models import DesignDesign
+        from cndb.plugins.documents.models import Document
+
+        token = _login_token(client, "owner", "passw0rd")
+        ws_id = self._create_ws(client, token)
+        db.add_all(
+            [
+                Document(
+                    workspace_id=ws_id,
+                    title="文档",
+                    content_type="markdown",
+                    is_deleted=False,
+                    is_folder=False,
+                    status="published",
+                    created_by_id=owner_user.id,
+                ),
+                Document(
+                    workspace_id=ws_id,
+                    title="文件夹",
+                    content_type="folder",
+                    is_deleted=False,
+                    is_folder=True,
+                    status="published",
+                    created_by_id=owner_user.id,
+                ),
+                DesignDesign(
+                    workspace_id=ws_id,
+                    title="零件",
+                    file_key="part-x",
+                    kind="part",
+                    content="param a = 1\n",
+                    created_by_id=owner_user.id,
+                ),
+            ]
+        )
+        db.commit()
+
         r = client.get("/api/v1/workspaces", headers=_headers(token))
         assert r.status_code == 200
         items = r.json()
-        assert len(items) >= 1
-        item = items[0]
+        item = next(it for it in items if it["id"] == ws_id)
         assert isinstance(item["table_count"], int)
         assert isinstance(item["member_count"], int)
+        # 需求 0093：列表也带文档 / 设计计数（展开详情页展示）；文件夹不计入
+        assert item["document_count"] == 1
+        assert item["design_count"] == 1
 
     def _create_ws(self, client, owner_token: str) -> int:
         r = client.post("/api/v1/workspaces", json={"name": "WS"}, headers=_headers(owner_token))

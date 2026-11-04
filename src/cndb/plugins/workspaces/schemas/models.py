@@ -77,6 +77,9 @@ class WorkspaceWithPinnedResponse(WorkspaceResponse):
     pinned: bool = False
     table_count: int = 0
     member_count: int = 0
+    # 文档 / 设计计数（需求 0093；展开详情页展示）
+    document_count: int = 0
+    design_count: int = 0
     current_user_role: WorkspaceRole | None = None
 
 
@@ -91,6 +94,9 @@ class WorkspaceDetailResponse(WorkspaceResponse):
     member_count: int = 0
     view_count: int = 0
     total_rows: int = 0
+    # 文档 / 设计计数（需求 0093）：文件夹与回收站内容不计入
+    document_count: int = 0
+    design_count: int = 0
     # 已用存储空间（字节）：附件 + 文档外存内容
     storage_bytes: int = 0
     # 当前请求用户在该工作区的角色（null 表示非成员）

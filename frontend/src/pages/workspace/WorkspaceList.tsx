@@ -50,6 +50,7 @@ const { Title, Text } = Typography
 /** 工作区列表页携带统计信息的工作区视图模型 */
 type WSWithStats = Workspace & {
   table_count?: number; member_count?: number;
+  document_count?: number; design_count?: number;
   current_user_role?: WorkspaceRole | null;
 }
 
@@ -651,6 +652,56 @@ function WorkspaceRowDetail({
         </div>
       )}
 
+      {features.documents && (
+        <div className="cn-ws-detail-section" data-testid={`workspace-detail-documents-${ws.id}`}>
+          <div className="cn-ws-detail-section-head">
+            <span>文档</span>
+            <span className="cn-ws-detail-section-count">共 {ws.document_count ?? 0} 篇</span>
+          </div>
+          {(ws.document_count ?? 0) > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>进入文档区查看目录与最近更新</Text>
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: 'auto' }}
+                data-testid={`workspace-detail-documents-open-${ws.id}`}
+                onClick={() => navigate(`/w/${ws.id}/documents`)}
+              >
+                查看 <ArrowRightOutlined />
+              </Button>
+            </div>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>还没有文档</Text>
+          )}
+        </div>
+      )}
+
+      {features.design && (
+        <div className="cn-ws-detail-section" data-testid={`workspace-detail-design-${ws.id}`}>
+          <div className="cn-ws-detail-section-head">
+            <span>设计</span>
+            <span className="cn-ws-detail-section-count">共 {ws.design_count ?? 0} 个</span>
+          </div>
+          {(ws.design_count ?? 0) > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>进入设计区查看零件 / 装配文件</Text>
+              <Button
+                type="link"
+                size="small"
+                style={{ padding: 0, height: 'auto' }}
+                data-testid={`workspace-detail-design-open-${ws.id}`}
+                onClick={() => navigate(`/w/${ws.id}/design`)}
+              >
+                查看 <ArrowRightOutlined />
+              </Button>
+            </div>
+          ) : (
+            <Text type="secondary" style={{ fontSize: 12 }}>还没有设计</Text>
+          )}
+        </div>
+      )}
+
       <div className="cn-ws-detail-actions">
         <Button type="primary" size="small" icon={<LoginOutlined />} onClick={onOpen} data-testid={`enter-btn-${ws.id}`}>
           进入工作区
@@ -799,13 +850,9 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
       destroyOnHidden
       width={isMobile ? 'calc(100vw - 32px)' : 600}
     >
-      <Alert
-        type="info"
-        showIcon
-        title="从全量归档（.tar.gz）导入"
-        description="默认创建新工作区，不覆盖任何现有数据；仅当归档目标工作区已存在且你是其 owner 时，才会出现「覆盖恢复到已有工作区」的危险选项。"
-        style={{ marginBottom: 16 }}
-      />
+      <Text type="secondary" style={{ display: 'block', fontSize: 'var(--cn-text-xs)', marginBottom: 12 }}>
+        默认导入为新工作区，不覆盖现有数据
+      </Text>
 
       {!importResult && (
         <div style={{ marginBottom: 16 }}>
@@ -816,9 +863,10 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
             disabled={importing || inspecting}
             showUploadList={false}
           >
-            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-            <p className="ant-upload-text">点击或拖拽归档文件到此处</p>
-            <p className="ant-upload-hint">全量归档（.tar.gz）文件</p>
+            <p className="ant-upload-text" style={{ margin: 0, fontSize: 'var(--cn-text-sm)' }}>
+              <InboxOutlined style={{ marginInlineEnd: 6 }} />
+              点击或拖拽 .tar.gz 全量归档到此处
+            </p>
           </Upload.Dragger>
         </div>
       )}
@@ -833,12 +881,16 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
         <div data-testid="import-archive-inspect" style={{ marginBottom: 16 }}>
           <Space size={8} wrap>
             <Text strong>{inspect.workspace_name}</Text>
-            <Tag>v{inspect.backup_version}</Tag>
-            {inspect.stats?.tables !== undefined && <Tag>{inspect.stats.tables} 张表</Tag>}
-            {inspect.stats?.documents !== undefined && <Tag>{inspect.stats.documents} 篇文档</Tag>}
-            <Tag color={inspect.include_secrets ? 'warning' : 'default'}>
-              {inspect.include_secrets ? '含数据源密钥' : '不含密钥'}
-            </Tag>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+              {[
+                `v${inspect.backup_version}`,
+                inspect.stats?.tables !== undefined ? `${inspect.stats.tables} 表` : '',
+                inspect.stats?.documents !== undefined ? `${inspect.stats.documents} 篇文档` : '',
+                inspect.include_secrets ? '含数据源密钥' : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
           </Space>
 
           <Radio.Group
@@ -846,11 +898,7 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
             onChange={e => setMode(e.target.value as 'new' | 'restore')}
             style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}
           >
-            <Radio value="new">
-              导入为新工作区
-              <Tag color="success" style={{ marginInlineStart: 8 }}>推荐</Tag>
-              <Text type="secondary" style={{ marginInlineStart: 8 }}>不覆盖任何现有数据</Text>
-            </Radio>
+            <Radio value="new">导入为新工作区</Radio>
             {existing && (
               <Radio value="restore">
                 覆盖恢复到已有工作区「{existing.name}」
@@ -861,17 +909,13 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
 
           {mode === 'new' && (
             <div style={{ marginTop: 12 }}>
-              <Text type="secondary" style={{ display: 'block', marginBottom: 4 }}>新工作区名称</Text>
               <Input
                 value={newName}
                 maxLength={255}
                 aria-label="新工作区名称"
-                placeholder="默认使用归档名称 + 导入时间，可修改"
+                placeholder="新工作区名称（默认归档名 + 导入时间）"
                 onChange={e => setNewName(e.target.value)}
               />
-              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-                默认带导入时间后缀，便于与已有同名工作区区分。
-              </Text>
             </div>
           )}
 
@@ -882,7 +926,7 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
                 showIcon
                 icon={<WarningOutlined />}
                 title="危险操作：覆盖恢复"
-                description={`将清空「${existing.name}」现有全部业务数据，用归档内容全量重建；工作区名称与成员保持不变，且不可撤销。仅工作区 owner 可执行。`}
+                description={`将清空「${existing.name}」现有业务数据并用归档全量重建，不可撤销。`}
                 style={{ marginBottom: 12 }}
               />
               <Space direction="vertical" style={{ width: '100%' }} size={8}>

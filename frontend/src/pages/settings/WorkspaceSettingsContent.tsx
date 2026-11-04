@@ -20,6 +20,7 @@ import {
   SettingOutlined, BarChartOutlined,
   FileTextOutlined, EyeOutlined, HddOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
+  ReadOutlined, ToolOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -34,7 +35,7 @@ import HelpTip from '@/components/HelpTip'
 import ModuleCheckCards from '@/components/ModuleCheckCards'
 import { formatSize } from '@/utils/formatSize'
 import {
-  DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules,
+  DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules, workspaceModulesFeatures,
 } from '@/utils/workspaceModules'
 import AddMemberModal from './AddMemberModal'
 import MemberZones from './MemberZones'
@@ -219,11 +220,22 @@ export default function WorkspaceSettingsContent({
 
   const statItems = useMemo(() => {
     if (!detail) return []
+    const features = workspaceModulesFeatures(detail.modules)
     return [
-      { label: '数据表', value: (detail.table_count ?? 0).toLocaleString(), icon: <FileTextOutlined />, color: 'var(--cn-brand-color)' },
+      ...(features.tables
+        ? [
+            { label: '数据表', value: (detail.table_count ?? 0).toLocaleString(), icon: <FileTextOutlined />, color: 'var(--cn-brand-color)' },
+            { label: '视图', value: (detail.view_count ?? 0).toLocaleString(), icon: <EyeOutlined />, color: '#10b981' },
+            { label: '数据行', value: (detail.total_rows ?? 0).toLocaleString(), icon: <ColumnWidthOutlined />, color: '#f59e0b' },
+          ]
+        : []),
+      ...(features.documents
+        ? [{ label: '文档', value: (detail.document_count ?? 0).toLocaleString(), icon: <ReadOutlined />, color: '#08979c' }]
+        : []),
+      ...(features.design
+        ? [{ label: '设计', value: (detail.design_count ?? 0).toLocaleString(), icon: <ToolOutlined />, color: '#7c3aed' }]
+        : []),
       { label: '成员', value: (detail.member_count ?? 0).toLocaleString(), icon: <UserOutlined />, color: '#8b5cf6' },
-      { label: '视图', value: (detail.view_count ?? 0).toLocaleString(), icon: <EyeOutlined />, color: '#10b981' },
-      { label: '数据行', value: (detail.total_rows ?? 0).toLocaleString(), icon: <ColumnWidthOutlined />, color: '#f59e0b' },
       { label: '占用空间', value: formatSize(detail.storage_bytes ?? 0), icon: <HddOutlined />, color: '#0ea5e9' },
     ]
   }, [detail])

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from cndb.plugins.accounts.models import User
@@ -95,6 +96,53 @@ def compute_workspace_stats(db: Session, workspace_id: int) -> dict[str, int]:
     }
 
 
+def compute_content_counts(db: Session, workspace_ids: Sequence[int]) -> dict[int, dict[str, int]]:
+    """批量文档 / 设计计数（需求 0093）：返回 workspace_id → {document_count, design_count}.
+
+    与表格统计不同，这两个数不放进 30s 统计缓存：文档 / 设计写路径没有统一的缓存事件，
+    短 TTL 会让设置页显示旧值；两次分组 COUNT 都走 ``workspace_id`` 索引，成本可忽略。
+    文件夹节点与回收站内容不计入文档数；设计按未软删的文件计数。
+    """
+    from sqlalchemy import func
+
+    from cndb.plugins.design.models import DesignDesign
+    from cndb.plugins.documents.models import Document
+
+    ids = list(dict.fromkeys(int(wid) for wid in workspace_ids))
+    if not ids:
+        return {}
+    doc_rows = (
+        db.query(Document.workspace_id, func.count(Document.id))
+        .filter(
+            Document.workspace_id.in_(ids),
+            Document.is_deleted.is_(False),
+            Document.is_folder.is_(False),
+        )
+        .group_by(Document.workspace_id)
+        .all()
+    )
+    design_rows = (
+        db.query(DesignDesign.workspace_id, func.count(DesignDesign.id))
+        .filter(
+            DesignDesign.workspace_id.in_(ids),
+            DesignDesign.is_deleted.is_(False),
+        )
+        .group_by(DesignDesign.workspace_id)
+        .all()
+    )
+    counts = {wid: {"document_count": 0, "design_count": 0} for wid in ids}
+    for wid, count in doc_rows:
+        counts[int(wid)]["document_count"] = int(count)
+    for wid, count in design_rows:
+        counts[int(wid)]["design_count"] = int(count)
+    return counts
+
+
+def compute_content_stats(db: Session, workspace_id: int) -> dict[str, int]:
+    """单个工作区的文档 / 设计计数（详情接口用）."""
+    return compute_content_counts(db, [workspace_id]).get(int(workspace_id), {"document_count": 0, "design_count": 0})
+
+
 def get_workspace_stats(db: Session, workspace_id: int) -> dict[str, int]:
     """读缓存的工作区统计（未命中时计算并写缓存，TTL 见 WS_STATS_TTL_SECONDS）."""
     from cndb.core.cache import list_cache
@@ -122,6 +170,8 @@ def invalidate_workspace_stats(workspace_id: int) -> int:
 __all__ = [
     "WS_STATS_CACHE_PREFIX",
     "WS_STATS_TTL_SECONDS",
+    "compute_content_counts",
+    "compute_content_stats",
     "compute_workspace_stats",
     "get_workspace_stats",
     "invalidate_workspace_stats",

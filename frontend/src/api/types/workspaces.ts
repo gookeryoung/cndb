@@ -15,6 +15,10 @@ export interface Workspace {
 export interface WorkspaceDetail extends Workspace {
   member_count?: number; table_count?: number
   view_count?: number; total_rows?: number
+  /** 文档数（不含文件夹与回收站内容） */
+  document_count?: number
+  /** 设计文件数（不含已软删） */
+  design_count?: number
   /** 已用存储空间（字节）：附件 + 文档（外存文件/内联正文）+ 数据表记录 */
   storage_bytes?: number
   owner?: { id: ID; username: string; nickname?: string } | null

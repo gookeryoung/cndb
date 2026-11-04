@@ -70,7 +70,7 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 |---|---|
 | `GET /{wid}/tables/{tid}/records` | 接入 `list_cache`（cache key 与 POST `/records/list` 同构：`records` 前缀 + wid + tid + user + include_trashed + 查询体签名 + engine 身份，TTL 5s）；计数走分离缓存；排序索引惰性建 |
 | `POST /{wid}/tables/{tid}/records/list` | 计数走分离缓存（响应缓存维持现状）；排序索引惰性建 |
-| `GET /{wid}`（工作区详情） | `total_rows` 改用 `_batch_record_counts` 同款 UNION ALL（去掉逐表 `Table(autoload_with=...)` 反射）；整个统计块（table_count / member_count / view_count / total_rows）挂 `list_cache("workspace-stats", wid)`，TTL 30s，`table./record./row_rule./datasource.` 事件失效 |
+| `GET /{wid}`（工作区详情） | `total_rows` 改用 `_batch_record_counts` 同款 UNION ALL（去掉逐表 `Table(autoload_with=...)` 反射）；整个统计块（table_count / member_count / view_count / total_rows）挂 `list_cache("workspace-stats", wid)`，TTL 30s，`table./record./row_rule./datasource.` 事件失效。文档 / 设计计数（需求 0093）不进该缓存：写路径无统一缓存事件，实时两次索引 COUNT |
 | `GET /{wid}/tables/{tid}`（表详情）、`GET /{wid}/tables/{tid}/fields` | options > 500 截断为前 500 + `options_truncated: true` + `options_total` |
 | `GET /{wid}/tables/{tid}/fields?full=1` | 新增查询参数：返回全量 options（字段编辑器 / 筛选配置专用；权限同既有 GET） |
 

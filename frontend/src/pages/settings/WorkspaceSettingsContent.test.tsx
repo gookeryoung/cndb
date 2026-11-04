@@ -142,7 +142,10 @@ const MEMBERS = [
 ]
 
 /** 按角色渲染设置内容（detail.current_user_role 决定权限分支） */
-function renderContent(role: 'owner' | 'editor' | 'viewer' = 'owner') {
+function renderContent(
+  role: 'owner' | 'editor' | 'viewer' = 'owner',
+  detailOverrides: Record<string, unknown> = {},
+) {
   server.use(
     http.get('/api/v1/workspaces/10', () =>
       HttpResponse.json({
@@ -150,7 +153,9 @@ function renderContent(role: 'owner' | 'editor' | 'viewer' = 'owner') {
         allow_edit: true, created_by_id: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '',
         owner: { id: 1, username: 'alice', nickname: null },
         table_count: 3, member_count: 2, view_count: 2, total_rows: 120,
+        document_count: 8, design_count: 2,
         current_user_role: role,
+        ...detailOverrides,
       })),
     http.get('/api/v1/workspaces/10/members', () => HttpResponse.json(MEMBERS)),
     http.get('/api/v1/workspaces/10/members/candidates', () =>
@@ -254,6 +259,23 @@ describe('WorkspaceSettingsContent 统计信息 Tab', () => {
     const stats = within(screen.getByTestId('ws-stats-grid'))
     expect(stats.getByText('数据表')).toBeInTheDocument()
     expect(stats.getByText('数据行')).toBeInTheDocument()
+    // 需求 0093：补充文档 / 设计统计（默认三模块全开）；数值取卡片内文本，避免与其它卡片的数字撞车
+    const cardText = (label: string) =>
+      stats.getByText(label).parentElement?.parentElement?.textContent ?? ''
+    expect(stats.getByText('文档')).toBeInTheDocument()
+    expect(cardText('文档')).toContain('8')
+    expect(stats.getByText('设计')).toBeInTheDocument()
+    expect(cardText('设计')).toContain('2')
+  })
+
+  it('未启用的模块不展示对应统计卡片（tables-only 工作区）', async () => {
+    renderContent('owner', { modules: ['tables'] })
+    fireEvent.click(await screen.findByText('统计信息'))
+
+    const stats = within(await screen.findByTestId('ws-stats-grid'))
+    expect(stats.getByText('数据表')).toBeInTheDocument()
+    expect(stats.queryByText('文档')).not.toBeInTheDocument()
+    expect(stats.queryByText('设计')).not.toBeInTheDocument()
   })
 })
 
