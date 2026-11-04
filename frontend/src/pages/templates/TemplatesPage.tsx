@@ -95,6 +95,39 @@ function TemplateDetail({ template }: { template: WorkspaceTemplate }) {
           ) : <Empty />,
         },
         {
+          key: 'flows',
+          label: <span><ApartmentOutlined /> 端到端流程（{spec.flows?.length ?? 0}）</span>,
+          children: (spec.flows?.length ?? 0) ? (
+            <Collapse
+              size="small"
+              items={(spec.flows ?? []).map(flow => ({
+                key: flow.key,
+                label: <span>{flow.name} <Text type="secondary">· {flow.steps.length} 步</Text></span>,
+                children: (
+                  <div>
+                    <Paragraph type="secondary" style={{ marginBottom: 8 }}>{flow.description || '—'}</Paragraph>
+                    <Timeline
+                      items={flow.steps.map((step, index) => ({
+                        color: step.form ? 'blue' : 'gray',
+                        children: (
+                          <div>
+                            <Text strong>步骤 {index + 1} · {step.name}</Text>
+                            <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+                              {step.form ? `表单：${spec.forms.find(f => f.key === step.form)?.name ?? step.form}` : '审批 / 确认节点'}
+                              {step.documents?.length ? ` · 文档：${step.documents.join('、')}` : ''}
+                            </div>
+                            {step.description && <div style={{ fontSize: 12 }}>{step.description}</div>}
+                          </div>
+                        ),
+                      }))}
+                    />
+                  </div>
+                ),
+              }))}
+            />
+          ) : <Empty description="未配置端到端流程（旧模板由阶段自动派生）" />,
+        },
+        {
           key: 'documents',
           label: <span><FileTextOutlined /> 文档规则（{spec.documents.length}）</span>,
           children: spec.documents.length ? (
@@ -167,6 +200,7 @@ export default function TemplatesPage() {
                 {t.category && <Tag>{t.category}</Tag>}
                 <Text type="secondary" style={{ fontSize: 12 }}>
                   {t.counts.stage_count} 阶段 / {t.counts.form_count} 表单 / {t.counts.document_rule_count} 文档规则
+                  {t.counts.flow_count ? ` / ${t.counts.flow_count} 流程` : ''}
                   · {t.workspace_count} 个工作区使用
                 </Text>
               </Space>

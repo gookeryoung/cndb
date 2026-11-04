@@ -1,12 +1,13 @@
-/** 工作区「数据流程」二级模块（需求 0095）.
+/** 工作区「数据流程」二级模块（需求 0095 / 0097）.
  *
- * 模板驱动：阶段 → 表单 → 可配置列表 / 搜索 / 分组表单 / 增删改；
- * 真正写操作复用 records API（权限 / 修改申请 / 行级权限口径与数据表一致）。
+ * 模板驱动：多条端到端流程并列展示 → 流程步骤 → 绑定表单的列表 / 搜索 / 增删改；
+ * 无表单步骤作为审批 / 确认节点展示。真正写操作复用 records API
+ * （权限 / 修改申请 / 行级权限口径与数据表一致）。
  */
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Card, Empty, Input, Modal, Popconfirm, Segmented, Space,
+  Alert, App as AntApp, Button, Card, Empty, Input, Modal, Popconfirm, Space,
   Steps, Table, Tag, Typography,
 } from 'antd'
 import {
@@ -15,7 +16,10 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { isChangeRequestResponse, recordApi, workspaceDataFlowApi } from '@/api'
-import type { DataFlowField, DataFlowForm, Field, RowResponse, RowValues, WorkspaceDataFlow } from '@/api'
+import type {
+  DataFlowField, DataFlowFlow, DataFlowForm, DataFlowStep, Field, RowResponse, RowValues,
+  WorkspaceDataFlow,
+} from '@/api'
 import { FieldEditor } from '@/pages/grid/layout/RowDetailDrawer'
 import { extractSelectOptions } from '@/pages/grid/cells/fieldOps'
 
@@ -80,6 +84,37 @@ function buildInitialValues(form: DataFlowForm, row?: RowResponse | null): RowVa
   return values
 }
 
+/** 兼容旧后端：没有 flows 时按阶段派生「一阶段一流程」. */
+function resolveFlows(data: WorkspaceDataFlow): DataFlowFlow[] {
+  if (data.flows?.length) return data.flows
+  return data.stages.map(stage => {
+    const steps: DataFlowStep[] = stage.forms.length
+      ? stage.forms.map(form => ({
+          key: `${stage.key}-${form.key}`,
+          name: form.name,
+          description: form.description,
+          form,
+          documents: [],
+        }))
+      : [{
+          key: `${stage.key}-steps`,
+          name: stage.name,
+          description: stage.description,
+          form: null,
+          documents: [],
+        }]
+    return {
+      key: `stage-${stage.key}`,
+      name: stage.name,
+      description: stage.description,
+      steps,
+      form_count: stage.forms.length,
+      step_count: steps.length,
+      record_count: stage.forms.reduce((sum, form) => sum + form.record_count, 0),
+    }
+  })
+}
+
 export default function DataFlowPage() {
   const { wid } = useParams<{ wid: string }>()
   const { message } = AntApp.useApp()
@@ -93,8 +128,9 @@ export default function DataFlowPage() {
     retry: false,
   })
 
-  const [stageKey, setStageKey] = useState<string | null>(null)
-  const [formKey, setFormKey] = useState<string | null>(null)
+  const flows = useMemo(() => (data ? resolveFlows(data) : []), [data])
+  const [flowKey, setFlowKey] = useState<string | null>(null)
+  const [stepKey, setStepKey] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [editorOpen, setEditorOpen] = useState(false)
   const [editingRow, setEditingRow] = useState<RowResponse | null>(null)
@@ -102,23 +138,23 @@ export default function DataFlowPage() {
   const [valueError, setValueError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!data) return
-    if (!stageKey || !data.stages.some(s => s.key === stageKey)) {
-      setStageKey(data.stages.find(s => s.is_current)?.key ?? data.stages[0]?.key ?? null)
-    }
-  }, [data, stageKey])
+    if (!flows.length) return
+    if (!flowKey || !flows.some(f => f.key === flowKey)) setFlowKey(flows[0].key)
+  }, [flows, flowKey])
 
-  const stage = data?.stages.find(s => s.key === stageKey) ?? data?.stages[0]
-  const stageIndex = data ? Math.max(0, data.stages.findIndex(s => s.key === stage?.key)) : 0
+  const flow = flows.find(f => f.key === flowKey) ?? flows[0]
+  const flowIndex = Math.max(0, flows.findIndex(f => f.key === flow?.key))
 
   useEffect(() => {
-    if (!stage) return
-    if (!formKey || !stage.forms.some(f => f.key === formKey)) {
-      setFormKey(stage.forms[0]?.key ?? null)
+    if (!flow) return
+    if (!stepKey || !flow.steps.some(s => s.key === stepKey)) {
+      setStepKey(flow.steps[0]?.key ?? null)
     }
-  }, [stage, formKey])
+  }, [flow, stepKey])
 
-  const form = stage?.forms.find(f => f.key === formKey) ?? stage?.forms[0]
+  const step = flow?.steps.find(s => s.key === stepKey) ?? flow?.steps[0]
+  const stepIndex = Math.max(0, flow?.steps.findIndex(s => s.key === step?.key) ?? 0)
+  const form = step?.form ?? null
   const fieldMap = useMemo(() => new Map((form?.fields ?? []).map(f => [f.name, f])), [form])
 
   const rowsQuery = useQuery({
@@ -211,7 +247,7 @@ export default function DataFlowPage() {
       <div style={{ padding: 16 }} data-testid="data-flow-unavailable">
         <Empty description="数据流程需要工作区使用模板">
           <Paragraph type="secondary">
-            {msg || '当前工作区未绑定模板。使用模板后，可在「数据流程」中按阶段填写表单、查看与维护记录。'}
+            {msg || '当前工作区未绑定模板。使用模板后，可在「数据流程」中按流程与步骤填写表单、查看与维护记录。'}
           </Paragraph>
           <Space>
             <Button type="primary" onClick={() => navigate(`/w/${wid}/settings`)}>去工作区设置选择模板</Button>
@@ -249,97 +285,134 @@ export default function DataFlowPage() {
     }] : []),
   ] : []
 
-  const stageItems = data.stages.map(s => ({
+  const stepItems = (flow?.steps ?? []).map(s => ({
     title: s.name,
-    description: (
-      <span>
-        {s.gate_satisfied ? <Tag color="green">门禁已通过</Tag> : <Tag color="orange">门禁未通过</Tag>}
-        {s.is_current && <Tag color="blue">当前阶段</Tag>}
-      </span>
-    ),
-    status: s.is_completed ? 'finish' as const : s.is_current ? 'process' as const : 'wait' as const,
+    description: s.form ? `表单：${s.form.name}` : '审批 / 确认节点',
+    status: s.form ? 'process' as const : 'wait' as const,
   }))
 
   return (
-    <div style={{ padding: 16, maxWidth: 1200, margin: '0 auto' }} data-testid="data-flow-page">
+    <div style={{ padding: 16, maxWidth: 1240, margin: '0 auto' }} data-testid="data-flow-page">
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
         <div>
           <Title level={3} style={{ marginBottom: 2 }}><ApartmentOutlined /> 数据流程</Title>
-          <Text type="secondary">
-            模板：{data.template_name} · 当前阶段 {data.stages.find(s => s.key === data.current_stage)?.name ?? '—'}
-          </Text>
+          <Space wrap>
+            <Text type="secondary">模板：{data.template_name}</Text>
+            <Text type="secondary">当前生命周期阶段：{data.stages.find(s => s.key === data.current_stage)?.name ?? '—'}</Text>
+            <Tag color="blue">{flows.length} 条流程</Tag>
+          </Space>
         </div>
-        <Space>
-          <Button icon={<ReloadOutlined />} onClick={() => rowsQuery.refetch()} loading={rowsQuery.isFetching}>刷新</Button>
-        </Space>
+        <Button icon={<ReloadOutlined />} onClick={() => rowsQuery.refetch()} loading={rowsQuery.isFetching}>刷新</Button>
       </div>
 
       <Alert
         type="info"
         showIcon
         style={{ marginBottom: 12 }}
-        message="按流程录入：先选阶段，再选表单；列表可按模板配置的字段搜索与展示。"
-        description="阶段推进与门禁在「工作区设置 → 生命周期」执行；本页只负责表单数据的增删查改。"
+        message="多流程并列展示：选择流程 → 选择步骤 → 维护该步骤表单数据。"
+        description="无表单步骤为审批 / 确认节点；列表按模板配置字段展示与搜索，完整数据仍可在数据表中查看。"
       />
 
-      <Steps
-        current={stageIndex}
-        items={stageItems}
-        onChange={index => setStageKey(data.stages[index]?.key ?? null)}
-        style={{ marginBottom: 16, overflowX: 'auto' }}
-      />
+      {/* 多流程卡片：同时展示全部端到端流程 */}
+      <div
+        data-testid="data-flow-cards"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
+          gap: 10,
+          marginBottom: 16,
+        }}
+      >
+        {flows.map((f, index) => (
+          <Card
+            key={f.key}
+            size="small"
+            hoverable
+            data-testid={`data-flow-card-${f.key}`}
+            onClick={() => { setFlowKey(f.key); setSearch('') }}
+            style={{
+              borderColor: f.key === flow?.key ? 'var(--cn-brand-color)' : undefined,
+              boxShadow: f.key === flow?.key ? '0 0 0 1px var(--cn-brand)' : undefined,
+              cursor: 'pointer',
+            }}
+          >
+            <Space direction="vertical" size={2} style={{ width: '100%' }}>
+              <Space wrap>
+                <Text strong>{f.name}</Text>
+                {index === flowIndex && <Tag color="blue">当前查看</Tag>}
+                {f.key === 'project_lifecycle' && <Tag color="gold">主流程</Tag>}
+              </Space>
+              <Text type="secondary" style={{ fontSize: 12 }}>{f.description || '—'}</Text>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                {f.step_count} 步 · {f.form_count} 个表单 · {f.record_count} 条记录
+              </Text>
+            </Space>
+          </Card>
+        ))}
+      </div>
 
-      {!stage || stage.forms.length === 0 ? (
-        <Card><Empty description="该阶段没有可在数据流程中维护的表单" /></Card>
+      {!flow ? (
+        <Card><Empty description="模板还没有配置端到端流程" /></Card>
       ) : (
         <>
-          <Space wrap style={{ marginBottom: 10 }}>
-            {stage.forms.length > 1 && (
-              <Segmented
-                value={form?.key}
-                onChange={value => { setFormKey(String(value)); setSearch('') }}
-                options={stage.forms.map(f => ({ value: f.key, label: `${f.name}（${f.record_count}）` }))}
-              />
-            )}
-            <Input
-              allowClear
-              prefix={<SearchOutlined />}
-              placeholder={`搜索 ${form?.flow.search_fields.join(' / ') || '记录'}`}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ width: 300 }}
-              data-testid="data-flow-search"
-            />
-            {form?.can_create && (
-              <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} data-testid="data-flow-create">
-                新建{form?.name ?? '记录'}
-              </Button>
-            )}
-          </Space>
+          <Steps
+            current={stepIndex}
+            items={stepItems}
+            onChange={index => { setStepKey(flow.steps[index]?.key ?? null); setSearch('') }}
+            style={{ marginBottom: 16, overflowX: 'auto' }}
+          />
 
-          {form && (
-            <Card
-              size="small"
-              title={<Space><span>{form.name}</span><Tag>{form.record_count} 条</Tag></Space>}
-              extra={<Text type="secondary">{form.description}</Text>}
-            >
-              <Table
-                size="small"
-                rowKey="id"
-                loading={rowsQuery.isLoading}
-                dataSource={filteredRows}
-                columns={columns}
-                pagination={{ pageSize: 20, showSizeChanger: false }}
-                locale={{ emptyText: form.flow.empty_text || '还没有记录，点击右上角新建' }}
-                scroll={{ x: 'max-content' }}
-                data-testid="data-flow-table"
-              />
-              {(rowsQuery.data?.total ?? 0) > rows.length && (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  当前仅加载前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
+          {!step || !form ? (
+            <Card data-testid="data-flow-step-info">
+              <Empty description={step?.description || '该步骤为审批 / 确认节点，无表单数据'}>
+                <Text type="secondary">
+                  当前步骤「{step?.name ?? '—'}」不绑定表单；流程本身仍可在上方步骤条中查看。
                 </Text>
-              )}
+              </Empty>
             </Card>
+          ) : (
+            <>
+              <Space wrap style={{ marginBottom: 10 }}>
+                <Text strong>{step.name}</Text>
+                <Text type="secondary">{form.description}</Text>
+                <Input
+                  allowClear
+                  prefix={<SearchOutlined />}
+                  placeholder={`搜索 ${form.flow.search_fields.join(' / ') || '记录'}`}
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  style={{ width: 300 }}
+                  data-testid="data-flow-search"
+                />
+                {form.can_create && (
+                  <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} data-testid="data-flow-create">
+                    新建{form.name}
+                  </Button>
+                )}
+              </Space>
+              <Card
+                size="small"
+                title={<Space><span>{form.name}</span><Tag>{form.record_count} 条</Tag></Space>}
+                extra={<Text type="secondary">{flow.name} · 步骤 {stepIndex + 1}/{flow.steps.length}</Text>}
+              >
+                <Table
+                  size="small"
+                  rowKey="id"
+                  loading={rowsQuery.isLoading}
+                  dataSource={filteredRows}
+                  columns={columns}
+                  pagination={{ pageSize: 20, showSizeChanger: false }}
+                  locale={{ emptyText: form.flow.empty_text || '还没有记录，点击右上角新建' }}
+                  scroll={{ x: 'max-content' }}
+                  data-testid="data-flow-table"
+                />
+                {(rowsQuery.data?.total ?? 0) > rows.length && (
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    当前仅加载前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
+                  </Text>
+                )}
+              </Card>
+            </>
           )}
         </>
       )}

@@ -36,10 +36,26 @@ export interface TemplateSpecStage {
   documents: string[]
 }
 
+export interface TemplateSpecFlowStep {
+  key: string
+  name: string
+  description?: string
+  form?: string | null
+  documents?: string[]
+}
+
+export interface TemplateSpecFlow {
+  key: string
+  name: string
+  description?: string
+  steps: TemplateSpecFlowStep[]
+}
+
 export interface TemplateSpec {
   forms: TemplateSpecForm[]
   documents: TemplateSpecDocument[]
   stages: TemplateSpecStage[]
+  flows?: TemplateSpecFlow[]
 }
 
 export interface WorkspaceTemplate {
@@ -53,7 +69,10 @@ export interface WorkspaceTemplate {
   is_builtin: boolean
   created_by_id: ID | null
   updated_at: string
-  counts: { stage_count: number; form_count: number; field_count: number; document_rule_count: number }
+  counts: {
+    stage_count: number; form_count: number; field_count: number; document_rule_count: number;
+    flow_count?: number; step_count?: number;
+  }
   workspace_count: number
 }
 
@@ -76,6 +95,7 @@ export interface TemplateDiff {
   forms: { added: Array<{ key: string; name: string }>; removed: Array<{ key: string; name: string }>; modified: Array<{ key: string; name: string; changes: string[] }> }
   documents: { added: Array<{ key: string; name: string }>; removed: Array<{ key: string; name: string }>; modified: Array<{ key: string; name: string; changes: string[] }> }
   stages: { added: Array<{ key: string; name: string }>; removed: Array<{ key: string; name: string }>; modified: Array<{ key: string; name: string; changes: string[] }> }
+  flows?: { added: Array<{ key: string; name: string }>; removed: Array<{ key: string; name: string }>; modified: Array<{ key: string; name: string; changes: string[] }> }
   changes: TemplateDiffChange[]
   counts: { added: number; removed: number; modified: number; total: number }
   requires_force: boolean
@@ -224,6 +244,24 @@ export interface DataFlowStage {
   forms: DataFlowForm[]
 }
 
+export interface DataFlowStep {
+  key: string
+  name: string
+  description: string
+  form: DataFlowForm | null
+  documents: string[]
+}
+
+export interface DataFlowFlow {
+  key: string
+  name: string
+  description: string
+  steps: DataFlowStep[]
+  form_count: number
+  step_count: number
+  record_count: number
+}
+
 export interface WorkspaceDataFlow {
   template_id: number
   template_name: string
@@ -234,4 +272,5 @@ export interface WorkspaceDataFlow {
   can_advance: boolean
   next_stage: { key: string; name: string } | null
   stages: DataFlowStage[]
+  flows?: DataFlowFlow[]
 }

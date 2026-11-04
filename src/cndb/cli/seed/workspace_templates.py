@@ -147,6 +147,118 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
                 },
             ],
         },
+        {
+            "key": "expense_claim",
+            "name": "经费报销",
+            "description": "项目经费报销申请，审批通过后登记到经费使用台账",
+            "fields": [
+                {
+                    "name": "所属项目",
+                    "type": "link",
+                    "required": True,
+                    "config": {"target_form": "project_application", "multiple": False},
+                },
+                {"name": "报销人", "type": "text", "required": True},
+                {"name": "报销日期", "type": "date", "required": True},
+                {
+                    "name": "报销科目",
+                    "type": "select",
+                    "required": True,
+                    "config": {"options": ["设备费", "材料费", "测试化验加工费", "差旅费", "劳务费", "其他"]},
+                },
+                {"name": "金额（元）", "type": "number", "required": True},
+                {"name": "报销事由", "type": "longtext", "required": True},
+                {
+                    "name": "审批状态",
+                    "type": "select",
+                    "required": True,
+                    "config": {"options": ["待审批", "已通过", "已驳回"]},
+                },
+                {"name": "审批意见", "type": "text"},
+            ],
+            "flow": {
+                "list_fields": ["所属项目", "报销日期", "报销科目", "金额（元）", "审批状态"],
+                "search_fields": ["报销人", "报销事由", "审批意见"],
+                "form_groups": [
+                    {"title": "报销信息", "fields": ["所属项目", "报销人", "报销日期", "报销科目", "金额（元）"]},
+                    {"title": "事由与审批", "fields": ["报销事由", "审批状态", "审批意见"]},
+                ],
+                "hints": {"金额（元）": "只填数字，单位元", "审批状态": "审批完成后回填"},
+                "default_values": {"审批状态": "待审批"},
+                "default_sort": {"field": "报销日期", "order": "desc"},
+            },
+        },
+        {
+            "key": "achievement_registry",
+            "name": "成果登记",
+            "description": "项目成果登记与归档清单维护",
+            "fields": [
+                {
+                    "name": "所属项目",
+                    "type": "link",
+                    "required": True,
+                    "config": {"target_form": "project_application", "multiple": False},
+                },
+                {"name": "成果名称", "type": "text", "required": True},
+                {
+                    "name": "成果类型",
+                    "type": "multiselect",
+                    "config": {"options": ["论文", "专利", "标准", "软件著作权", "样机", "报告"]},
+                },
+                {"name": "完成人", "type": "text"},
+                {"name": "登记日期", "type": "date"},
+                {"name": "归档位置", "type": "text"},
+                {"name": "备注", "type": "longtext"},
+            ],
+            "flow": {
+                "list_fields": ["所属项目", "成果名称", "成果类型", "完成人", "登记日期"],
+                "search_fields": ["成果名称", "完成人", "备注"],
+                "form_groups": [
+                    {"title": "成果信息", "fields": ["所属项目", "成果名称", "成果类型", "完成人"]},
+                    {"title": "归档信息", "fields": ["登记日期", "归档位置", "备注"]},
+                ],
+                "hints": {"成果类型": "可多选；论文 / 专利 / 标准等"},
+                "default_sort": {"field": "登记日期", "order": "desc"},
+            },
+        },
+        {
+            "key": "project_change",
+            "name": "项目变更",
+            "description": "项目负责人 / 周期 / 预算等变更申请与审批",
+            "fields": [
+                {
+                    "name": "所属项目",
+                    "type": "link",
+                    "required": True,
+                    "config": {"target_form": "project_application", "multiple": False},
+                },
+                {
+                    "name": "变更类型",
+                    "type": "select",
+                    "required": True,
+                    "config": {"options": ["负责人变更", "周期变更", "预算变更", "研究内容变更", "其他"]},
+                },
+                {"name": "申请日期", "type": "date", "required": True},
+                {"name": "变更内容", "type": "longtext", "required": True},
+                {"name": "变更原因", "type": "longtext"},
+                {
+                    "name": "审批状态",
+                    "type": "select",
+                    "required": True,
+                    "config": {"options": ["待审批", "已通过", "已驳回"]},
+                },
+            ],
+            "flow": {
+                "list_fields": ["所属项目", "变更类型", "申请日期", "审批状态"],
+                "search_fields": ["变更内容", "变更原因"],
+                "form_groups": [
+                    {"title": "变更申请", "fields": ["所属项目", "变更类型", "申请日期"]},
+                    {"title": "变更说明与审批", "fields": ["变更内容", "变更原因", "审批状态"]},
+                ],
+                "default_values": {"审批状态": "待审批"},
+                "default_sort": {"field": "申请日期", "order": "desc"},
+            },
+        },
     ],
     "documents": [
         {
@@ -183,6 +295,57 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "required": False,
             "naming": "{项目名称}-成果归档清单",
             "content": "# 成果归档清单\n\n| 序号 | 成果名称 | 类型 | 存放位置 | 备注 |\n|---|---|---|---|---|\n",
+        },
+    ],
+    "flows": [
+        {
+            "key": "project_lifecycle",
+            "name": "科研项目全生命周期",
+            "description": "从立项申报、过程实施到结题验收的主流程",
+            "steps": [
+                {"key": "apply", "name": "立项申报", "form": "project_application", "documents": ["proposal_doc"]},
+                {"key": "progress", "name": "进展填报", "form": "project_progress", "documents": ["midterm_doc"]},
+                {"key": "budget", "name": "经费执行", "form": "project_budget", "documents": ["budget_doc"]},
+                {
+                    "key": "closure",
+                    "name": "结题验收",
+                    "form": "project_closure",
+                    "documents": ["closure_doc", "archive_doc"],
+                },
+            ],
+        },
+        {
+            "key": "expense_reimbursement",
+            "name": "经费报销",
+            "description": "报销申请 → 审批确认 → 财务入账",
+            "steps": [
+                {"key": "claim", "name": "填报报销", "form": "expense_claim"},
+                {"key": "approve", "name": "审批确认", "description": "项目负责人 / 财务审核报销事由与金额"},
+                {"key": "post", "name": "财务入账", "form": "project_budget", "documents": ["budget_doc"]},
+            ],
+        },
+        {
+            "key": "achievement_registration",
+            "name": "成果登记",
+            "description": "成果登记 → 归档确认",
+            "steps": [
+                {"key": "register", "name": "登记成果", "form": "achievement_registry"},
+                {
+                    "key": "archive",
+                    "name": "归档确认",
+                    "description": "核对成果原件与归档清单",
+                    "documents": ["archive_doc"],
+                },
+            ],
+        },
+        {
+            "key": "project_change",
+            "name": "项目变更",
+            "description": "变更申请 → 审批生效",
+            "steps": [
+                {"key": "submit", "name": "提交变更", "form": "project_change"},
+                {"key": "approve", "name": "审批生效", "description": "管理部门审批通过后更新项目信息"},
+            ],
         },
     ],
     "stages": [
@@ -227,7 +390,8 @@ def _seed_research_template(db: Any, owner_id: int | None) -> int:
     template = WorkspaceTemplate(
         name=TEMPLATE_NAME,
         description=(
-            "覆盖科研项目立项、实施、结题三个阶段：内置项目申报 / 进展 / 经费 / 结题四张表单，"
+            "覆盖科研项目立项、实施、结题三个阶段，并提供项目全生命周期 / 经费报销 / 成果登记 /"
+            " 项目变更四条端到端流程；内置申报 / 进展 / 经费 / 结题 / 报销 / 成果 / 变更七张表单，"
             "以及立项申请书、中期检查、经费决算、结题报告等文档规则，阶段推进按门禁校验。"
         ),
         category=TEMPLATE_CATEGORY,
@@ -409,6 +573,62 @@ def _seed_research_example(db: Any, owner: Any, template: Any) -> int:
             "验收结论": "通过",
             "成果摘要": "完成多源异构数据融合平台建设，接入 3 个业务系统，形成 1 项软件著作权与 2 项企业标准。",
             "成果类型": ["软件著作权", "标准"],
+        },
+    )
+
+    expense = table("expense_claim")
+    achievement = table("achievement_registry")
+    change = table("project_change")
+    expense_rows = [
+        (created_projects[0], "张伟", "2026-05-06", "材料费", 8600, "采购传感器标定耗材", "待审批", ""),
+        (created_projects[1], "李娜", "2026-05-12", "差旅费", 3200, "参加可靠性评测标准研讨会", "已通过", "同意报销"),
+    ]
+    for project, person, day, subject, amount, reason, status, opinion in expense_rows:
+        assert project is not None
+        create_row(
+            engine,
+            expense,
+            values={
+                "所属项目": [project["id"]],
+                "报销人": person,
+                "报销日期": day,
+                "报销科目": subject,
+                "金额（元）": amount,
+                "报销事由": reason,
+                "审批状态": status,
+                "审批意见": opinion,
+            },
+        )
+
+    achievement_rows = [
+        (created_projects[0], "复杂工况设备故障诊断方法", ["论文", "专利"], "张伟、王磊", "2026-06-18", "档案室 A-03"),
+        (created_projects[2], "多源异构数据融合平台 V1.0", ["软件著作权"], "王强", "2027-05-20", "档案室 B-01"),
+    ]
+    for project, title, kinds, authors, day, location in achievement_rows:
+        assert project is not None
+        create_row(
+            engine,
+            achievement,
+            values={
+                "所属项目": [project["id"]],
+                "成果名称": title,
+                "成果类型": kinds,
+                "完成人": authors,
+                "登记日期": day,
+                "归档位置": location,
+            },
+        )
+
+    create_row(
+        engine,
+        change,
+        values={
+            "所属项目": [created_projects[1]["id"]],
+            "变更类型": "周期变更",
+            "申请日期": "2026-07-01",
+            "变更内容": "项目结束时间由 2027-12 延长至 2028-03，增加现场验证环节。",
+            "变更原因": "客户现场环境比预期复杂，需要补充一轮验证。",
+            "审批状态": "待审批",
         },
     )
 

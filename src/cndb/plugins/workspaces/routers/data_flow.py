@@ -25,9 +25,11 @@ from cndb.plugins.workspaces.models import WorkspaceRole, WorkspaceTemplate
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404
 from cndb.plugins.workspaces.schemas.templates import (
     DataFlowField,
+    DataFlowFlow,
     DataFlowForm,
     DataFlowResponse,
     DataFlowStage,
+    DataFlowStep,
 )
 from cndb.plugins.workspaces.services.templates.engine import lifecycle_state
 from cndb.plugins.workspaces.services.templates.spec import normalize_spec
@@ -88,48 +90,113 @@ def get_data_flow(
     lifecycle = lifecycle_state(db, workspace, template)
     gate_by_stage = {s["key"]: s for s in lifecycle["stages"]}
 
+    # 表单 payload 一次构建，阶段与流程共用（同一表单可在多条流程中复用）
+    form_payloads: dict[str, DataFlowForm] = {}
+    for form_key, form in forms_by_key.items():
+        table = mapped.get(form_key)
+        if table is None:
+            continue
+        if not preload.check(db, table, current_user, TableAction.READ):
+            continue
+        can_edit = preload.check(db, table, current_user, TableAction.EDIT_RECORDS)
+        flow = form.get("flow") or {}
+        form_payloads[form_key] = DataFlowForm(
+            key=form_key,
+            name=form["name"],
+            description=form.get("description", ""),
+            table_id=table.id,
+            table_name=table.name,
+            flow=flow,
+            fields=[_field_payload(f) for f in table.active_fields()],
+            record_count=int(counts.get(table.id, 0) or 0),
+            can_create=bool(can_edit and flow.get("allow_create", True)),
+            can_edit=bool(can_edit and flow.get("allow_edit", True)),
+            can_delete=bool(can_edit and flow.get("allow_delete", True)),
+        )
+
     stages: list[DataFlowStage] = []
     for stage in spec.get("stages", []):
-        stage_forms: list[DataFlowForm] = []
-        for form_key in stage.get("forms", []):
-            form = forms_by_key.get(form_key)
-            if form is None:
-                continue
-            table = mapped.get(form_key)
-            if table is None:
-                continue
-            if not preload.check(db, table, current_user, TableAction.READ):
-                continue
-            can_edit = preload.check(db, table, current_user, TableAction.EDIT_RECORDS)
-            flow = form.get("flow") or {}
-            stage_forms.append(
-                DataFlowForm(
-                    key=form_key,
-                    name=form["name"],
-                    description=form.get("description", ""),
-                    table_id=table.id,
-                    table_name=table.name,
-                    flow=flow,
-                    fields=[_field_payload(f) for f in table.active_fields()],
-                    record_count=int(counts.get(table.id, 0) or 0),
-                    can_create=bool(can_edit and flow.get("allow_create", True)),
-                    can_edit=bool(can_edit and flow.get("allow_edit", True)),
-                    can_delete=bool(can_edit and flow.get("allow_delete", True)),
-                )
-            )
-        gate = gate_by_stage.get(stage["key"], {})
+        flow = gate_by_stage.get(stage["key"], {})
         stages.append(
             DataFlowStage(
                 key=stage["key"],
                 name=stage["name"],
                 description=stage.get("description", ""),
                 order=stage.get("order", 0),
-                is_current=bool(gate.get("is_current")),
-                is_completed=bool(gate.get("is_completed")),
-                gate_satisfied=bool(gate.get("gate_satisfied")),
-                forms=stage_forms,
+                is_current=bool(flow.get("is_current")),
+                is_completed=bool(flow.get("is_completed")),
+                gate_satisfied=bool(flow.get("gate_satisfied")),
+                forms=[form_payloads[k] for k in stage.get("forms", []) if k in form_payloads],
             )
         )
+
+    def _flow_stats(steps: list[DataFlowStep]) -> tuple[int, int, int]:
+        tables = {s.form.table_id for s in steps if s.form is not None and s.form.table_id is not None}
+        record_total = sum(int(counts.get(table_id, 0) or 0) for table_id in tables if isinstance(table_id, int))
+        return len(tables), len(steps), record_total
+
+    flows: list[DataFlowFlow] = []
+    if spec.get("flows"):
+        for flow in spec["flows"]:
+            steps = [
+                DataFlowStep(
+                    key=step["key"],
+                    name=step["name"],
+                    description=step.get("description", ""),
+                    form=form_payloads.get(step["form"]) if step.get("form") else None,
+                    documents=list(step.get("documents", [])),
+                )
+                for step in flow.get("steps", [])
+            ]
+            form_count, step_count, record_total = _flow_stats(steps)
+            flows.append(
+                DataFlowFlow(
+                    key=flow["key"],
+                    name=flow["name"],
+                    description=flow.get("description", ""),
+                    steps=steps,
+                    form_count=form_count,
+                    step_count=step_count,
+                    record_count=record_total,
+                )
+            )
+    else:
+        # 旧模板没有 flows：按阶段派生「一阶段一流程」，保证前端始终有多流程视图
+        for stage in spec.get("stages", []):
+            steps: list[DataFlowStep] = []
+            for idx, form_key in enumerate(stage.get("forms", [])):
+                payload = form_payloads.get(form_key)
+                steps.append(
+                    DataFlowStep(
+                        key=f"{stage['key']}-{form_key}",
+                        name=payload.name if payload is not None else form_key,
+                        description=payload.description if payload is not None else "",
+                        form=payload,
+                        documents=list(stage.get("documents", [])) if idx == 0 else [],
+                    )
+                )
+            if not steps:
+                steps.append(
+                    DataFlowStep(
+                        key=f"{stage['key']}-steps",
+                        name=stage["name"],
+                        description=stage.get("description", ""),
+                        form=None,
+                        documents=list(stage.get("documents", [])),
+                    )
+                )
+            form_count, step_count, record_total = _flow_stats(steps)
+            flows.append(
+                DataFlowFlow(
+                    key=f"stage-{stage['key']}",
+                    name=stage["name"],
+                    description=stage.get("description", ""),
+                    steps=steps,
+                    form_count=form_count,
+                    step_count=step_count,
+                    record_count=record_total,
+                )
+            )
 
     return DataFlowResponse(
         template_id=template.id,
@@ -141,6 +208,7 @@ def get_data_flow(
         can_advance=bool(lifecycle.get("can_advance")),
         next_stage=lifecycle.get("next_stage"),
         stages=stages,
+        flows=flows,
     )
 
 

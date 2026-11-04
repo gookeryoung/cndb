@@ -2071,3 +2071,51 @@ describe('DocumentEditorPage 未配置大模型时隐藏 AI 入口（需求 0069
         responsiveState = { deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true, width: 1280, height: 800 }
     })
 })
+
+describe('DocumentEditorPage 专注模式（需求 0096）', () => {
+    beforeEach(() => {
+        server.resetHandlers()
+        document.body.classList.remove('cn-doc-focus', 'cn-doc-focus-view')
+    })
+
+    afterEach(() => {
+        document.body.classList.remove('cn-doc-focus', 'cn-doc-focus-view')
+    })
+
+    it('查看态进入专注模式：隐藏常规顶栏 / 大纲，正文进入演讲样式，退出后恢复', async () => {
+        renderEditor()
+        await screen.findByRole('heading', { level: 4, name: '需求说明' })
+        fireEvent.click(within(screen.getByTestId('doc-mode-switch')).getByText('查看'))
+
+        fireEvent.click(screen.getByTestId('doc-focus-toggle'))
+        expect(await screen.findByTestId('doc-focus-bar')).toBeInTheDocument()
+        expect(screen.getByTestId('doc-focus-mode')).toBeInTheDocument()
+        expect(document.body.classList.contains('cn-doc-focus')).toBe(true)
+        expect(document.body.classList.contains('cn-doc-focus-view')).toBe(true)
+        // 常规操作区（查看 / 编辑切换、保存 / 提交）被极简条替换
+        expect(screen.queryByTestId('doc-mode-switch')).not.toBeInTheDocument()
+        expect(screen.queryByTestId('doc-save-btn')).not.toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-focus-exit'))
+        await waitFor(() => expect(screen.queryByTestId('doc-focus-bar')).not.toBeInTheDocument())
+        expect(document.body.classList.contains('cn-doc-focus')).toBe(false)
+        expect(document.body.classList.contains('cn-doc-focus-view')).toBe(false)
+        expect(await screen.findByTestId('doc-mode-switch')).toBeInTheDocument()
+    })
+
+    it('专注态可切到编辑并保留保存 / 提交；Esc 退出（非全屏兜底）', async () => {
+        renderEditor()
+        await screen.findByRole('heading', { level: 4, name: '需求说明' })
+        fireEvent.click(screen.getByTestId('doc-focus-toggle'))
+        const bar = await screen.findByTestId('doc-focus-bar')
+
+        fireEvent.click(within(bar).getByText('编辑'))
+        await waitFor(() => expect(document.body.classList.contains('cn-doc-focus-view')).toBe(false))
+        expect(within(bar).getByText('草稿')).toBeInTheDocument()
+        expect(within(bar).getByText('提交')).toBeInTheDocument()
+
+        fireEvent.keyDown(window, { key: 'Escape' })
+        await waitFor(() => expect(screen.queryByTestId('doc-focus-bar')).not.toBeInTheDocument())
+        expect(document.body.classList.contains('cn-doc-focus')).toBe(false)
+    })
+})

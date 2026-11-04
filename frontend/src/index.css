@@ -7073,3 +7073,78 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-design-outline-detail {
   font-size: var(--cn-text-xs);
 }
+
+/* ─────────────── 文档专注模式（需求 0096） ───────────────
+ * 隐藏应用顶栏 / 工作区页签 / 侧栏，只保留极简文档操作条；
+ * 查看态用于演讲（标题条半透明、正文居中放大），编辑态用于沉浸写作。 */
+body.cn-doc-focus .ant-layout-header.cn-app-header,
+body.cn-doc-focus .cn-ws-tabs,
+body.cn-doc-focus .ant-layout-sider {
+  display: none !important;
+}
+
+body.cn-doc-focus .ant-layout-content {
+  background: var(--cn-bg-container) !important;
+}
+
+.cn-doc-focus-page {
+  background: var(--cn-bg-container);
+}
+
+.cn-doc-focus-page:fullscreen,
+.cn-doc-focus-page:-webkit-full-screen {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+.cn-doc-focus-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-lg);
+  flex-shrink: 0;
+  padding: var(--cn-space-sm) var(--cn-space-xl);
+  border-bottom: 1px solid var(--cn-border-soft);
+  background: var(--cn-bg-container);
+  position: relative;
+  z-index: 2;
+}
+
+.cn-doc-focus-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  min-width: 0;
+  max-width: 58%;
+}
+
+.cn-doc-focus-title .ant-typography {
+  margin: 0;
+}
+
+/* 查看态（演讲）：标题条默认弱化，鼠标移入 / 聚焦时恢复；正文居中放大 */
+body.cn-doc-focus-view .cn-doc-focus-bar {
+  opacity: 0.28;
+  transition: opacity 0.2s ease;
+}
+
+body.cn-doc-focus-view .cn-doc-focus-bar:hover,
+body.cn-doc-focus-view .cn-doc-focus-bar:focus-within {
+  opacity: 1;
+}
+
+body.cn-doc-focus-view .cn-doc-view-scroll {
+  padding: var(--cn-space-4xl) var(--cn-space-3xl) !important;
+}
+
+body.cn-doc-focus-view .doc-md-preview {
+  max-width: 880px;
+  margin: 0 auto;
+  font-size: var(--cn-text-lg);
+  line-height: 1.95;
+}
+
+body.cn-doc-focus-view .cn-doc-stats {
+  display: none;
+}

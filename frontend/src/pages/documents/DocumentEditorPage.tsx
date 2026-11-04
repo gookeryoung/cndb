@@ -42,6 +42,8 @@ import {
   FileMarkdownOutlined,
   FilePdfOutlined,
   FileWordOutlined,
+  FullscreenExitOutlined,
+  FullscreenOutlined,
   HistoryOutlined,
   InfoCircleOutlined,
   LinkOutlined,
@@ -187,8 +189,60 @@ export default function DocumentEditorPage() {
   const outlinePrefsRef = useRef(outlinePrefs)
   /** 顶层查看/编辑模式：已发布文档默认查看；有个人草稿或未发布文档默认编辑 */
   const [viewMode, setViewMode] = useState<'view' | 'edit'>('view')
+  /** 专注模式：隐藏应用外壳 / 文档操作栏，可进入浏览器全屏；查看态用于演讲 */
+  const [focusMode, setFocusMode] = useState(false)
+  const pageRef = useRef<HTMLDivElement | null>(null)
   /** 编辑器的渲染模式：实时预览（Obsidian 风格）/ 源码 */
   const [editorMode, setEditorMode] = useState<MarkdownEditorMode>('live')
+
+  const enterFocusMode = useCallback(() => {
+    setFocusMode(true)
+    const el = pageRef.current
+    if (el && typeof el.requestFullscreen === 'function') {
+      try {
+        const result = el.requestFullscreen()
+        if (result && typeof result.catch === 'function') {
+          void result.catch(() => { /* 浏览器拒绝全屏时退化为普通专注布局 */ })
+        }
+      } catch {
+        /* 非安全上下文 / 浏览器策略拒绝：退化为普通专注布局 */
+      }
+    }
+  }, [])
+
+  const exitFocusMode = useCallback(() => {
+    setFocusMode(false)
+    if (document.fullscreenElement && typeof document.exitFullscreen === 'function') {
+      try {
+        const result = document.exitFullscreen()
+        if (result && typeof result.catch === 'function') void result.catch(() => {})
+      } catch {
+        /* 已是退出态：忽略 */
+      }
+    }
+  }, [])
+
+  // 浏览器 Esc / 系统退出全屏时同步状态（非全屏的专注布局由下方 Esc 监听兜底）
+  useEffect(() => {
+    const onChange = () => {
+      if (!document.fullscreenElement) setFocusMode(false)
+    }
+    document.addEventListener('fullscreenchange', onChange)
+    return () => document.removeEventListener('fullscreenchange', onChange)
+  }, [])
+
+  useEffect(() => {
+    if (!focusMode) return
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || document.fullscreenElement) return
+      // 弹层打开时 Esc 先由 antd 关闭弹层，不退出专注模式
+      if (document.querySelector('.ant-modal-wrap, .ant-drawer-open')) return
+      exitFocusMode()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [focusMode, exitFocusMode])
+
   /** 并排查看：编辑区与渲染预览左右并排（桌面端；偏好在 localStorage） */
   const [splitOpen, setSplitOpen] = useState<boolean>(() => loadSplitOpen())
   /** PPTX 放映覆盖层（原件族）：按钮在顶栏，状态由页面持有 */
@@ -548,6 +602,20 @@ export default function DocumentEditorPage() {
   })
 
   const doc = docQuery.data
+
+  // 应用外壳（顶栏 / 工作区页签 / 侧栏）由 body class 隐藏；离开页面自动清理
+  useEffect(() => {
+    const body = document.body
+    body.classList.toggle('cn-doc-focus', focusMode)
+    body.classList.toggle(
+      'cn-doc-focus-view',
+      focusMode && viewMode === 'view' && !!doc && !doc.is_folder && !isAssetContentType(doc.content_type),
+    )
+    return () => {
+      body.classList.remove('cn-doc-focus')
+      body.classList.remove('cn-doc-focus-view')
+    }
+  }, [focusMode, viewMode, doc])
 
   /** 是否有未提交的修改：与最新版本正文一致时禁止保存草稿 / 提交 */
   const hasChanges = content !== latestContent
@@ -1143,6 +1211,7 @@ export default function DocumentEditorPage() {
    *  避免 9 个按钮在 390px 屏上折成三行挤掉正文。
    *  插入图片 / 插入表格引用仅编辑模式注入：查看模式只读，不出现写入口（ADR 0042）。 */
   const docMoreItems = [
+    { key: 'focus', icon: <FullscreenOutlined />, label: '专注模式', onClick: enterFocusMode },
     ...(isAssetDoc
       ? []
       : [
@@ -1192,8 +1261,60 @@ export default function DocumentEditorPage() {
   ]
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* 顶栏 */}
+    <div
+      ref={pageRef}
+      className={`cn-doc-page${focusMode ? ' cn-doc-focus-page' : ''}${focusMode && viewMode === 'view' && !isAssetDoc ? ' cn-doc-focus-view' : ''}`}
+      data-testid={focusMode ? 'doc-focus-mode' : 'doc-page'}
+      style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
+    >
+      {/* 顶栏（专注模式下替换为极简条，隐藏应用外壳与常规操作区） */}
+      {focusMode ? (
+        <div className="cn-doc-focus-bar" data-testid="doc-focus-bar">
+          <div className="cn-doc-focus-title">
+            <Text strong ellipsis>{doc.title}</Text>
+            {viewMode === 'edit' && <Tag color="blue">编辑</Tag>}
+            {viewMode === 'view' && <Tag>查看</Tag>}
+          </div>
+          <Space size={6} wrap>
+            {!isAssetDoc && !doc.is_folder && doc.status !== 'archived' && (
+              <Space.Compact size="small">
+                <Button size="small" type={viewMode === 'view' ? 'primary' : 'default'} onClick={() => handleModeChange('view')}>
+                  查看
+                </Button>
+                <Button size="small" type={viewMode === 'edit' ? 'primary' : 'default'} onClick={() => handleModeChange('edit')}>
+                  编辑
+                </Button>
+              </Space.Compact>
+            )}
+            {viewMode === 'edit' && !isAssetDoc && (
+              <Space.Compact size="small">
+                <Button
+                  size="small"
+                  icon={<SaveOutlined />}
+                  loading={draftMut.isPending}
+                  disabled={!hasChanges || !hasUnsaved}
+                  onClick={handleSave}
+                >
+                  草稿
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<SendOutlined />}
+                  loading={submitMut.isPending}
+                  disabled={!hasChanges}
+                  onClick={openSubmit}
+                >
+                  提交
+                </Button>
+              </Space.Compact>
+            )}
+            <Button size="small" icon={<FullscreenExitOutlined />} onClick={exitFocusMode} data-testid="doc-focus-exit">
+              退出专注
+            </Button>
+          </Space>
+        </div>
+      ) : (
       <div
         style={{
           // 窄屏收窄留白：顶栏与正文左右对齐（12px），把横向空间还给标题与操作
@@ -1499,6 +1620,13 @@ export default function DocumentEditorPage() {
           )}
             </>
           )}
+          {/* 专注模式：隐藏应用外壳与文档操作栏；查看态用于演讲，编辑态用于沉浸写作 */}
+          <IconBtn
+            icon={<FullscreenOutlined />}
+            label="专注模式"
+            data-testid="doc-focus-toggle"
+            onClick={enterFocusMode}
+          />
           {/* 组 1 收尾：大纲视图开关，展开 / 收起用不同图标，不做高亮以与普通入口保持一致 */}
           {!isAssetDoc && (
             <IconBtn
@@ -1512,6 +1640,7 @@ export default function DocumentEditorPage() {
         </div>
         )}
       </div>
+      )}
 
       {saveError && (
         <Alert
@@ -1552,6 +1681,7 @@ export default function DocumentEditorPage() {
         ) : viewMode === 'view' ? (
           <>
             <div
+              className="cn-doc-view-scroll"
               style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: isMobile ? 16 : '20px 24px' }}
               data-testid="doc-view-mode"
             >
@@ -1687,7 +1817,7 @@ export default function DocumentEditorPage() {
           </>
         )}
         </div>
-        {!isAssetDoc && isDesktop && outlinePrefs.open && (
+        {!isAssetDoc && !focusMode && isDesktop && outlinePrefs.open && (
           <OutlinePanel
             width={outlinePrefs.width}
             outline={outline}

@@ -84,7 +84,14 @@ def test_spec_validation_rejects_bad_references_and_orphans():
 def test_template_crud_and_instantiation(client, auth_headers, db):
     template = _create_template(client, auth_headers)
     assert template["version"] == 1
-    assert template["counts"] == {"stage_count": 2, "form_count": 2, "field_count": 4, "document_rule_count": 2}
+    assert template["counts"] == {
+        "stage_count": 2,
+        "form_count": 2,
+        "field_count": 4,
+        "document_rule_count": 2,
+        "flow_count": 0,
+        "step_count": 0,
+    }
 
     ws = _create_workspace(client, auth_headers, template["id"])
     assert ws["template_id"] == template["id"]
@@ -317,8 +324,18 @@ def test_builtin_research_template_spec_is_valid():
         "project_progress",
         "project_budget",
         "project_closure",
+        "expense_claim",
+        "achievement_registry",
+        "project_change",
     }
     assert len(spec["documents"]) == 5
+    assert {f["key"] for f in spec["flows"]} == {
+        "project_lifecycle",
+        "expense_reimbursement",
+        "achievement_registration",
+        "project_change",
+    }
+    assert spec["flows"][1]["steps"][1]["form"] is None
 
 
 # ── 规格校验 / 路由分支覆盖 ──────────────────────────
@@ -880,6 +897,9 @@ def test_data_flow_endpoint_returns_stages_forms_and_permissions(client, auth_he
     assert data["template_id"] == template["id"]
     assert data["current_stage"] == "proposal"
     assert [s["key"] for s in data["stages"]] == ["proposal", "execution"]
+    # 旧模板没有显式 flows：按阶段派生，保证前端多流程视图
+    assert [f["key"] for f in data["flows"]] == ["stage-proposal", "stage-execution"]
+    assert data["flows"][0]["steps"][0]["form"]["key"] == "apply"
     proposal = data["stages"][0]
     assert proposal["is_current"] is True
     form = proposal["forms"][0]
@@ -945,5 +965,81 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
 
     count = db.execute(text(f'SELECT COUNT(*) FROM "{applications.db_table_name}"')).scalar()
     assert count == 3
+    # 多流程专用表单（未出现在 stages）同样实例化并写入示例数据
+    from cndb.plugins.workspaces.models import WorkspaceTemplate
+
+    template = db.query(WorkspaceTemplate).filter(WorkspaceTemplate.name == "科研项目全生命周期管理").one()
+    data = normalize_spec(template.spec)
+    assert {f["key"] for f in data["flows"]} == {
+        "project_lifecycle",
+        "expense_reimbursement",
+        "achievement_registration",
+        "project_change",
+    }
+    for form_key, expected in (("expense_claim", 2), ("achievement_registry", 2), ("project_change", 1)):
+        table = (
+            db.query(DataTable)
+            .filter(
+                DataTable.workspace_id == ws.id,
+                DataTable.name == next(f["name"] for f in data["forms"] if f["key"] == form_key),
+            )
+            .one()
+        )
+        rows = db.execute(text(f'SELECT COUNT(*) FROM "{table.db_table_name}"')).scalar()
+        assert rows == expected, (form_key, rows)
     # 再执行一次幂等跳过
     assert _seed_workspace_templates(db, owner=owner) == 0
+
+
+def test_explicit_multi_flows_validation_and_crud(client, auth_headers, db):
+    spec = {
+        "forms": [
+            {"key": "apply", "name": "申请单", "fields": [{"name": "事项", "type": "text", "required": True}]},
+            {"key": "archive", "name": "归档单", "fields": [{"name": "归档号", "type": "text"}]},
+        ],
+        "documents": [],
+        "stages": [{"key": "only", "name": "主阶段", "forms": ["apply"], "documents": []}],
+        "flows": [
+            {
+                "key": "main",
+                "name": "主业务流程",
+                "description": "申请 → 审批",
+                "steps": [
+                    {"key": "apply", "name": "提交申请", "form": "apply"},
+                    {"key": "approve", "name": "人工审批", "description": "审批节点无表单"},
+                ],
+            },
+            {
+                "key": "archive",
+                "name": "归档流程",
+                "description": "归档登记",
+                "steps": [{"key": "archive", "name": "登记归档", "form": "archive"}],
+            },
+        ],
+    }
+    template = _create_template(client, auth_headers, spec=spec, name="多流程模板")
+    ws = _create_workspace(client, auth_headers, template["id"])
+    data = client.get(f"/api/v1/workspaces/{ws['id']}/data-flow", headers=auth_headers).json()
+    assert [f["key"] for f in data["flows"]] == ["main", "archive"]
+    main = data["flows"][0]
+    assert main["step_count"] == 2 and main["form_count"] == 1
+    assert main["steps"][1]["form"] is None
+    assert main["steps"][1]["description"] == "审批节点无表单"
+    archive_form = data["flows"][1]["steps"][0]["form"]
+    assert archive_form["key"] == "archive"
+    assert archive_form["table_id"]
+
+    # 流程专用表单（未出现在 stages）同样已建表，可 CRUD
+    rec = client.post(
+        f"/api/v1/workspaces/{ws['id']}/tables/{archive_form['table_id']}/records",
+        json={"values": {"归档号": "A-001"}},
+        headers=auth_headers,
+    )
+    assert rec.status_code == 201, rec.text
+    data = client.get(f"/api/v1/workspaces/{ws['id']}/data-flow", headers=auth_headers).json()
+    assert data["flows"][1]["record_count"] == 1
+    assert data["flows"][1]["steps"][0]["form"]["record_count"] == 1
+
+    bad = {**spec, "flows": [{"key": "bad", "name": "坏流程", "steps": [{"key": "x", "name": "X", "form": "missing"}]}]}
+    with pytest.raises(TemplateSpecError):
+        normalize_spec(bad)

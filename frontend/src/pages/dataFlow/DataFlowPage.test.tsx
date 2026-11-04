@@ -66,6 +66,31 @@ const FLOW = {
       is_current: false, is_completed: false, gate_satisfied: false, forms: [],
     },
   ],
+  flows: [
+    {
+      key: 'project_lifecycle',
+      name: '科研项目全生命周期',
+      description: '从立项到结题',
+      step_count: 2,
+      form_count: 1,
+      record_count: 1,
+      steps: [
+        { key: 'apply', name: '提交申报', description: '填写申报表', form: FLOW_FORM, documents: [] },
+        { key: 'approve', name: '人工审批', description: '管理部门审批', form: null, documents: [] },
+      ],
+    },
+    {
+      key: 'archive_flow',
+      name: '成果归档',
+      description: '归档登记流程',
+      step_count: 1,
+      form_count: 0,
+      record_count: 0,
+      steps: [
+        { key: 'archive', name: '归档确认', description: '核对原件与清单', form: null, documents: ['archive_doc'] },
+      ],
+    },
+  ],
 }
 
 describe('DataFlowPage', () => {
@@ -99,6 +124,17 @@ describe('DataFlowPage', () => {
     await userEvent.type(inputs[0], '新项目')
     await userEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
     expect(await screen.findByText('记录已创建')).toBeInTheDocument()
+  })
+
+  it('shows multiple flows and a no-form approval step without CRUD actions', async () => {
+    renderPage()
+    expect(await screen.findByTestId('data-flow-card-project_lifecycle')).toBeInTheDocument()
+    expect(screen.getByTestId('data-flow-card-archive_flow')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('data-flow-card-archive_flow'))
+    expect(await screen.findByTestId('data-flow-step-info')).toBeInTheDocument()
+    expect(screen.getByText(/不绑定表单/)).toBeInTheDocument()
+    expect(screen.queryByTestId('data-flow-create')).not.toBeInTheDocument()
   })
 
   it('filters rows by configured search fields', async () => {

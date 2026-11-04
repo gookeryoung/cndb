@@ -200,8 +200,30 @@ class DataFlowStage(BaseModel):
     forms: list[DataFlowForm] = Field(default_factory=list)
 
 
+class DataFlowStep(BaseModel):
+    """端到端流程的一步：可绑定表单（CRUD）/ 文档规则，或仅为审批 / 确认节点."""
+
+    key: str
+    name: str
+    description: str = ""
+    form: DataFlowForm | None = None
+    documents: list[str] = Field(default_factory=list)
+
+
+class DataFlowFlow(BaseModel):
+    """一条端到端业务流程（多流程并列显示）."""
+
+    key: str
+    name: str
+    description: str = ""
+    steps: list[DataFlowStep] = Field(default_factory=list)
+    form_count: int = 0
+    step_count: int = 0
+    record_count: int = 0
+
+
 class DataFlowResponse(BaseModel):
-    """工作区数据流程：模板 → 阶段 → 表单 → 可配置增删查改."""
+    """工作区数据流程：模板 → 流程 / 阶段 → 表单 → 可配置增删查改."""
 
     template_id: int
     template_name: str
@@ -212,6 +234,8 @@ class DataFlowResponse(BaseModel):
     can_advance: bool = False
     next_stage: dict[str, Any] | None = None
     stages: list[DataFlowStage] = Field(default_factory=list)
+    #: 端到端流程（显式配置优先；旧模板由阶段派生，保证前端始终可多流程展示）
+    flows: list[DataFlowFlow] = Field(default_factory=list)
 
 
 __all__ = [
@@ -219,9 +243,11 @@ __all__ = [
     "ApplyTemplateRequest",
     "ApplyTemplateResponse",
     "DataFlowField",
+    "DataFlowFlow",
     "DataFlowForm",
     "DataFlowResponse",
     "DataFlowStage",
+    "DataFlowStep",
     "LifecycleResponse",
     "TemplateCreate",
     "TemplatePreviewRequest",

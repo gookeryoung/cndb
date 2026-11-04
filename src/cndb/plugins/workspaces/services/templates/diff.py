@@ -204,6 +204,16 @@ def diff_specs(old_spec: dict[str, Any], new_spec: dict[str, Any]) -> dict[str, 
         extra_compare=("order", "description"),
     )
     changes.extend(stage_changes)
+
+    flows, flow_changes = _diff_named(
+        list(old_spec.get("flows") or []),
+        list(new_spec.get("flows") or []),
+        kind="flow",
+        label="流程",
+        name_key="name",
+        extra_compare=("description", "steps"),
+    )
+    changes.extend(flow_changes)
     for key in old_stages.keys() | new_stages.keys():
         old = old_stages.get(key, {})
         new = new_stages.get(key, {})
@@ -231,15 +241,19 @@ def diff_specs(old_spec: dict[str, Any], new_spec: dict[str, Any]) -> dict[str, 
     requires_force = any(c["severity"] == SEVERITY_BREAKING for c in changes)
 
     counts = {
-        "added": len(forms["added"]) + len(documents["added"]) + len(stages["added"]),
-        "removed": len(forms["removed"]) + len(documents["removed"]) + len(stages["removed"]),
-        "modified": len(forms["modified"]) + len(documents["modified"]) + len(stages["modified"]),
+        "added": len(forms["added"]) + len(documents["added"]) + len(stages["added"]) + len(flows["added"]),
+        "removed": len(forms["removed"]) + len(documents["removed"]) + len(stages["removed"]) + len(flows["removed"]),
+        "modified": len(forms["modified"])
+        + len(documents["modified"])
+        + len(stages["modified"])
+        + len(flows["modified"]),
         "total": len(changes),
     }
     return {
         "forms": forms,
         "documents": documents,
         "stages": stages,
+        "flows": flows,
         "changes": changes,
         "counts": counts,
         "requires_force": requires_force,

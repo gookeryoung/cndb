@@ -27,7 +27,7 @@ _STAGE_KEYS = {"key", "name", "description", "order", "forms", "documents"}
 _FORM_KEYS = {"key", "name", "description", "fields", "flow"}
 _DOC_KEYS = {"key", "title", "required", "naming", "content"}
 _FIELD_KEYS = {"name", "type", "required", "is_unique", "config", "default_value", "hidden"}
-_FLOW_KEYS = {
+_FORM_FLOW_KEYS = {
     "enabled",
     "list_fields",
     "search_fields",
@@ -42,6 +42,8 @@ _FLOW_KEYS = {
     "empty_text",
 }
 _GROUP_KEYS = {"title", "fields"}
+_DATA_FLOW_KEYS = {"key", "name", "description", "steps"}
+_STEP_KEYS = {"key", "name", "description", "form", "documents"}
 
 
 class TemplateSpecError(ValueError):
@@ -224,7 +226,7 @@ def _normalize_flow(raw: Any, fields: list[dict[str, Any]], path: str) -> dict[s
     if raw is None:
         return default
     flow = _require_dict(raw, path)
-    _check_keys(flow, _FLOW_KEYS, path)
+    _check_keys(flow, _FORM_FLOW_KEYS, path)
     field_names = {f["name"] for f in fields}
     list_fields = _normalize_field_refs(
         flow.get("list_fields"), field_names, f"{path}.list_fields", default=default["list_fields"]
@@ -339,6 +341,81 @@ def _normalize_documents(raw_documents: Any) -> list[dict[str, Any]]:
     return result
 
 
+def _normalize_data_flows(
+    raw_flows: Any, form_keys: set[str], doc_keys: set[str]
+) -> tuple[list[dict[str, Any]], set[str], set[str]]:
+    """端到端流程：一条流程 = 有序步骤；步骤可绑定表单（数据 CRUD）/ 文档规则.
+
+    与生命周期 ``stages`` 解耦：stages 负责阶段门禁，flows 负责业务过程展示。
+    表单 / 文档只要被 stages 或 flows 任一引用即不算孤儿。
+    """
+    if raw_flows is None:
+        return [], set(), set()
+    flows = _require_list(raw_flows, "flows")
+    result: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    used_forms: set[str] = set()
+    used_docs: set[str] = set()
+    for idx, raw in enumerate(flows):
+        path = f"flows[{idx}]"
+        item = _require_dict(raw, path)
+        _check_keys(item, _DATA_FLOW_KEYS, path)
+        key = _normalize_key(item.get("key"), f"{path}.key")
+        if key in seen_keys:
+            raise _err(f"{path}.key", f"流程 key 重复：{key}")
+        seen_keys.add(key)
+        steps_raw = _require_list(item.get("steps"), f"{path}.steps")
+        if not steps_raw:
+            raise _err(f"{path}.steps", "至少定义一个流程步骤")
+        steps: list[dict[str, Any]] = []
+        seen_steps: set[str] = set()
+        for s_idx, raw_step in enumerate(steps_raw):
+            step_path = f"{path}.steps[{s_idx}]"
+            step = _require_dict(raw_step, step_path)
+            _check_keys(step, _STEP_KEYS, step_path)
+            step_key = _normalize_key(step.get("key"), f"{step_path}.key")
+            if step_key in seen_steps:
+                raise _err(f"{step_path}.key", f"步骤 key 重复：{step_key}")
+            seen_steps.add(step_key)
+            form_key = step.get("form")
+            if form_key is not None:
+                form_key = _require_str(form_key, f"{step_path}.form", max_len=64)
+                if form_key not in form_keys:
+                    raise _err(f"{step_path}.form", f"引用了不存在的表单：{form_key}")
+                used_forms.add(form_key)
+            doc_refs = _require_list(step.get("documents", []), f"{step_path}.documents")
+            step_docs: list[str] = []
+            for ref in doc_refs:
+                doc_key = _require_str(ref, f"{step_path}.documents", max_len=64)
+                if doc_key not in doc_keys:
+                    raise _err(f"{step_path}.documents", f"引用了不存在的文档规则：{doc_key}")
+                if doc_key not in step_docs:
+                    step_docs.append(doc_key)
+                used_docs.add(doc_key)
+            steps.append(
+                {
+                    "key": step_key,
+                    "name": _require_str(step.get("name"), f"{step_path}.name", max_len=120),
+                    "description": _require_str(
+                        step.get("description", ""), f"{step_path}.description", max_len=2000, allow_empty=True
+                    ),
+                    "form": form_key,
+                    "documents": step_docs,
+                }
+            )
+        result.append(
+            {
+                "key": key,
+                "name": _require_str(item.get("name"), f"{path}.name", max_len=120),
+                "description": _require_str(
+                    item.get("description", ""), f"{path}.description", max_len=2000, allow_empty=True
+                ),
+                "steps": steps,
+            }
+        )
+    return result, used_forms, used_docs
+
+
 def _normalize_stages(raw_stages: Any, form_keys: set[str], doc_keys: set[str]) -> list[dict[str, Any]]:
     stages = _require_list(raw_stages, "stages")
     if not stages:
@@ -395,12 +472,6 @@ def _normalize_stages(raw_stages: Any, form_keys: set[str], doc_keys: set[str]) 
                 "documents": stage_docs,
             }
         )
-    orphan_forms = sorted(form_keys - used_forms)
-    if orphan_forms:
-        raise _err("forms", f"表单未被任何阶段引用：{', '.join(orphan_forms)}")
-    orphan_docs = sorted(doc_keys - used_docs)
-    if orphan_docs:
-        raise _err("documents", f"文档规则未被任何阶段引用：{', '.join(orphan_docs)}")
     result.sort(key=lambda s: s["order"])
     return result
 
@@ -408,15 +479,24 @@ def _normalize_stages(raw_stages: Any, form_keys: set[str], doc_keys: set[str]) 
 def normalize_spec(raw: Any) -> dict[str, Any]:
     """校验并归一化模板规格；非法时抛 :class:`TemplateSpecError`（中文可读）."""
     spec = _require_dict(raw, "spec")
-    _check_keys(spec, {"forms", "documents", "stages"}, "spec")
+    _check_keys(spec, {"forms", "documents", "stages", "flows"}, "spec")
     forms = _normalize_forms(spec.get("forms", []))
     documents = _normalize_documents(spec.get("documents", []))
     if not forms and not documents:
         raise _err("spec", "至少定义一个表单或文档规则")
     form_keys = {f["key"] for f in forms}
     doc_keys = {d["key"] for d in documents}
+    flows, flow_forms, flow_docs = _normalize_data_flows(spec.get("flows"), form_keys, doc_keys)
     stages = _normalize_stages(spec.get("stages"), form_keys, doc_keys)
-    return {"forms": forms, "documents": documents, "stages": stages}
+    used_forms = {ref for stage in stages for ref in stage["forms"]} | flow_forms
+    used_docs = {ref for stage in stages for ref in stage["documents"]} | flow_docs
+    orphan_forms = sorted(form_keys - used_forms)
+    if orphan_forms:
+        raise _err("forms", f"表单未被任何阶段 / 流程引用：{', '.join(orphan_forms)}")
+    orphan_docs = sorted(doc_keys - used_docs)
+    if orphan_docs:
+        raise _err("documents", f"文档规则未被任何阶段 / 流程引用：{', '.join(orphan_docs)}")
+    return {"forms": forms, "documents": documents, "stages": stages, "flows": flows}
 
 
 def spec_counts(spec: dict[str, Any]) -> dict[str, int]:
@@ -426,6 +506,8 @@ def spec_counts(spec: dict[str, Any]) -> dict[str, int]:
         "form_count": len(spec.get("forms", [])),
         "field_count": sum(len(f.get("fields", [])) for f in spec.get("forms", [])),
         "document_rule_count": len(spec.get("documents", [])),
+        "flow_count": len(spec.get("flows", [])),
+        "step_count": sum(len(f.get("steps", [])) for f in spec.get("flows", [])),
     }
 
 
