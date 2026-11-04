@@ -335,6 +335,12 @@ def test_builtin_research_template_spec_is_valid():
         "achievement_registration",
         "project_change",
     }
+    assert {f["key"]: f["stage"] for f in spec["flows"]} == {
+        "project_lifecycle": "proposal",
+        "expense_reimbursement": "execution",
+        "achievement_registration": "completion",
+        "project_change": "execution",
+    }
     assert spec["flows"][1]["steps"][1]["form"] is None
 
 
@@ -1004,6 +1010,7 @@ def test_explicit_multi_flows_validation_and_crud(client, auth_headers, db):
                 "key": "main",
                 "name": "主业务流程",
                 "description": "申请 → 审批",
+                "stage": "only",
                 "steps": [
                     {"key": "apply", "name": "提交申请", "form": "apply"},
                     {"key": "approve", "name": "人工审批", "description": "审批节点无表单"},
@@ -1013,6 +1020,7 @@ def test_explicit_multi_flows_validation_and_crud(client, auth_headers, db):
                 "key": "archive",
                 "name": "归档流程",
                 "description": "归档登记",
+                "stage": "only",
                 "steps": [{"key": "archive", "name": "登记归档", "form": "archive"}],
             },
         ],
@@ -1022,6 +1030,8 @@ def test_explicit_multi_flows_validation_and_crud(client, auth_headers, db):
     data = client.get(f"/api/v1/workspaces/{ws['id']}/data-flow", headers=auth_headers).json()
     assert [f["key"] for f in data["flows"]] == ["main", "archive"]
     main = data["flows"][0]
+    assert main["stage"] == "only" and main["stage_name"] == "主阶段"
+    assert data["flows"][1]["stage_name"] == "主阶段"
     assert main["step_count"] == 2 and main["form_count"] == 1
     assert main["steps"][1]["form"] is None
     assert main["steps"][1]["description"] == "审批节点无表单"
@@ -1043,3 +1053,9 @@ def test_explicit_multi_flows_validation_and_crud(client, auth_headers, db):
     bad = {**spec, "flows": [{"key": "bad", "name": "坏流程", "steps": [{"key": "x", "name": "X", "form": "missing"}]}]}
     with pytest.raises(TemplateSpecError):
         normalize_spec(bad)
+    bad_stage = {
+        **spec,
+        "flows": [{"key": "bad", "name": "坏阶段", "stage": "missing", "steps": [{"key": "x", "name": "X"}]}],
+    }
+    with pytest.raises(TemplateSpecError):
+        normalize_spec(bad_stage)

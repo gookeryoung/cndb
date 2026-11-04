@@ -302,6 +302,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_lifecycle",
             "name": "科研项目全生命周期",
             "description": "从立项申报、过程实施到结题验收的主流程",
+            "stage": "proposal",
             "steps": [
                 {"key": "apply", "name": "立项申报", "form": "project_application", "documents": ["proposal_doc"]},
                 {"key": "progress", "name": "进展填报", "form": "project_progress", "documents": ["midterm_doc"]},
@@ -318,6 +319,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "expense_reimbursement",
             "name": "经费报销",
             "description": "报销申请 → 审批确认 → 财务入账",
+            "stage": "execution",
             "steps": [
                 {"key": "claim", "name": "填报报销", "form": "expense_claim"},
                 {"key": "approve", "name": "审批确认", "description": "项目负责人 / 财务审核报销事由与金额"},
@@ -328,6 +330,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "achievement_registration",
             "name": "成果登记",
             "description": "成果登记 → 归档确认",
+            "stage": "completion",
             "steps": [
                 {"key": "register", "name": "登记成果", "form": "achievement_registry"},
                 {
@@ -342,6 +345,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_change",
             "name": "项目变更",
             "description": "变更申请 → 审批生效",
+            "stage": "execution",
             "steps": [
                 {"key": "submit", "name": "提交变更", "form": "project_change"},
                 {"key": "approve", "name": "审批生效", "description": "管理部门审批通过后更新项目信息"},

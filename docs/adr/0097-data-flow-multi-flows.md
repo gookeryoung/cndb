@@ -49,6 +49,7 @@ flows: [
     "key": "expense_reimbursement",
     "name": "经费报销",
     "description": "报销申请 → 审批确认 → 财务入账",
+    "stage": "execution",
     "steps": [
       {"key": "claim", "name": "填报报销", "form": "expense_claim", "documents": []},
       {"key": "approve", "name": "审批确认", "description": "人工审批"},
@@ -68,7 +69,7 @@ flows: [
 
 | 端点 | 变更 |
 |---|---|
-| `GET /api/v1/workspaces/{wid}/data-flow` | 响应新增 `flows[]`（steps / form / form_count / step_count / record_count）；`stages` 保留 |
+| `GET /api/v1/workspaces/{wid}/data-flow` | 响应新增 `flows[]`（stage / stage_name / steps / form / form_count / step_count / record_count）；`stages` 保留 |
 
 ### 4. 边界与例外
 
@@ -121,6 +122,7 @@ flows: [
 | D4 | 旧模板 | 无 flows 时按阶段派生 | 0095 模板零迁移，前端始终多流程视图 | 要求旧模板补 flows（迁移成本） | `resolveFlows` / `data_flow.py` |
 | D5 | 孤儿校验 | stages ∪ flows 引用 | flow-only 表单合法；真正未引用仍拦截 | 只认 stages（新功能不可用） | `normalize_spec` |
 | D6 | 示例数据 | 科研模板新增 3 张流程专用表单 + 4 条流程 | 覆盖报销 / 成果 / 变更等常见端到端过程 | 只复用原有 4 张表（流程演示不完整） | `workspace_templates.py` |
+| D7 | 流程所属阶段 | `flows[].stage` 可选并校验；未声明时按首个表单在 stages 的归属推断 | 顶部「当前阶段」需随选中流程变化；推断保证旧模板开箱可用 | 强制每个流程写 stage（旧模板 / 自定义流程无法保存） | `spec.py` / `data_flow.py` |
 
 ## Consequences
 

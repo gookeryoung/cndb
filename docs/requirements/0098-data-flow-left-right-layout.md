@@ -21,7 +21,9 @@
 | C4 | 「描述说明精简，UI 设计得更紧凑」 | 一级节点只保留名称 / 「一级」/ 主流程标识 / 子过程数 / 表单数；二级节点只保留名称 / 第 N 步 / 表单或审批标识 / 记录数；不展示长 description | 同上 | 断言长描述不出现在列表 |
 | C5 | 「展开收起按钮合并为单个图标按钮」 | 移除「展开全部 / 收起全部」两个文字按钮，合并为一个图标按钮（全部展开时显示收起图标，否则展开图标），通过 aria-label / title 说明 | 同上 | 单测：一个 `data-flow-toggle-all` 按钮完成展开 / 收起切换 |
 | C6 | （数据 CRUD 不变） | 右栏保留列表 / 搜索 / 新建 / 编辑 / 删除；审批 / 确认节点展示空态；写路径仍复用 records API | 同上 | 既有 CRUD 用例通过 |
-| C7 | （响应式 / 工程口径） | `cn-qc-split` 窄屏单列；使用已登记断点与 `--cn-*` token；不新增接口 / 数据模型；CHANGELOG / CONTEXT 同步 | `index.css`、文档 | `tokens.test.ts`、前端全量测试、`make check-fast` |
+| C7 | （顶部阶段联动） | 顶部 meta 的「当前阶段」不再固定为工作区生命周期阶段，而是随左侧选中的流程变化：优先取 `flows[].stage_name`，未声明时回退工作区当前阶段；流程 `stage` 可配置并校验必须存在 | `DataFlowPage.tsx`、`spec.py`、`data_flow.py` | 单测：切换流程后顶部阶段随之变化；未知 stage 保存 422 |
+| C8 | （顶部操作精简） | 移除页头右侧刷新按钮，页头只保留图标 + 标题 + 单行 meta | `DataFlowPage.tsx` | 前端断言：刷新按钮不存在 |
+| C9 | （响应式 / 工程口径） | `cn-qc-split` 窄屏单列；使用已登记断点与 `--cn-*` token；不新增接口 / 数据模型；CHANGELOG / CONTEXT 同步 | `index.css`、文档 | `tokens.test.ts`、前端全量测试、`make check-fast` |
 
 约束编号在实现中原样引用；不重编号、不合并。
 
