@@ -790,3 +790,160 @@ def test_add_unique_field_to_non_empty_table(client, auth_headers, db):
     indexes = sa_inspect(db.get_bind()).get_indexes(table.db_table_name)
     unique_cols = {col for idx in indexes if idx.get("unique") for col in idx.get("column_names") or []}
     assert unique_fields["唯一编号"].db_column_name in unique_cols
+
+
+# ── 数据流程（需求 0095）────────────────────────────
+
+
+def test_flow_defaults_and_validation():
+    spec = normalize_spec(SPEC)
+    flow = spec["forms"][0]["flow"]
+    assert flow["enabled"] is True
+    assert flow["list_fields"] == ["项目名称", "负责人"]
+    assert flow["allow_create"] is True
+
+    raw = {
+        **SPEC,
+        "forms": [
+            {
+                **SPEC["forms"][0],
+                "flow": {
+                    "list_fields": ["项目名称"],
+                    "search_fields": ["负责人"],
+                    "form_groups": [{"title": "主信息", "fields": ["项目名称"]}],
+                    "hints": {"负责人": "填写项目负责人"},
+                    "default_values": {"负责人": "待定"},
+                    "allow_delete": False,
+                    "default_sort": {"field": "项目名称", "order": "asc"},
+                    "empty_text": "还没有项目",
+                },
+            },
+            SPEC["forms"][1],
+        ],
+    }
+    normalized = normalize_spec(raw)
+    flow = normalized["forms"][0]["flow"]
+    assert flow["allow_delete"] is False
+    assert flow["default_sort"] == {"field": "项目名称", "order": "asc"}
+    # 未纳入分组的字段自动补进「其他信息」，不丢字段
+    assert flow["form_groups"][-1] == {"title": "其他信息", "fields": ["负责人"]}
+
+    # 空列表按默认派生（不报错）
+    fallback = normalize_spec(
+        {
+            **SPEC,
+            "forms": [
+                {**SPEC["forms"][0], "flow": {"list_fields": [], "form_groups": []}},
+                SPEC["forms"][1],
+            ],
+        }
+    )
+    assert fallback["forms"][0]["flow"]["list_fields"] == ["项目名称", "负责人"]
+    assert fallback["forms"][0]["flow"]["form_groups"][0]["title"] == "基本信息"
+
+    bad_flows = [
+        {"list_fields": ["不存在"]},
+        {"search_fields": ["不存在"]},
+        {"form_groups": [{"title": "G", "fields": ["不存在"]}]},
+        {"form_groups": [{"title": "G", "fields": ["项目名称"]}, {"title": "G2", "fields": ["项目名称"]}]},
+        {"hints": {"不存在": "x"}},
+        {"default_values": {"不存在": 1}},
+        {"default_sort": {"field": "不存在"}},
+        {"default_sort": {"field": "项目名称", "order": "up"}},
+        {"unknown": True},
+        {"list_fields": [1]},
+        {"form_groups": [{"title": "G", "fields": []}]},
+        {"hints": []},
+        {"default_values": []},
+    ]
+    for bad in bad_flows:
+        with pytest.raises(TemplateSpecError):
+            normalize_spec(
+                {
+                    **SPEC,
+                    "forms": [{**SPEC["forms"][0], "flow": bad}, SPEC["forms"][1]],
+                }
+            )
+
+
+def test_data_flow_endpoint_returns_stages_forms_and_permissions(client, auth_headers):
+    template = _create_template(client, auth_headers)
+    ws = _create_workspace(client, auth_headers, template["id"])
+
+    # 无模板工作区 404
+    free = client.post("/api/v1/workspaces", json={"name": "自由流程区"}, headers=auth_headers).json()
+    assert client.get(f"/api/v1/workspaces/{free['id']}/data-flow", headers=auth_headers).status_code == 404
+
+    resp = client.get(f"/api/v1/workspaces/{ws['id']}/data-flow", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["template_id"] == template["id"]
+    assert data["current_stage"] == "proposal"
+    assert [s["key"] for s in data["stages"]] == ["proposal", "execution"]
+    proposal = data["stages"][0]
+    assert proposal["is_current"] is True
+    form = proposal["forms"][0]
+    assert form["key"] == "apply"
+    assert form["table_id"]
+    assert form["can_create"] is True
+    assert form["flow"]["list_fields"] == ["项目名称", "负责人"]
+    assert [f["name"] for f in form["fields"]] == ["项目名称", "负责人"]
+    assert form["record_count"] == 0
+
+    rec = client.post(
+        f"/api/v1/workspaces/{ws['id']}/tables/{form['table_id']}/records",
+        json={"values": {"项目名称": "流程项目"}},
+        headers=auth_headers,
+    )
+    assert rec.status_code == 201, rec.text
+    data = client.get(f"/api/v1/workspaces/{ws['id']}/data-flow", headers=auth_headers).json()
+    assert data["stages"][0]["forms"][0]["record_count"] == 1
+
+
+def test_data_flow_handles_missing_template_and_broken_mapping(client, auth_headers, db):
+    from cndb.plugins.workspaces.models import Workspace
+
+    template = _create_template(client, auth_headers)
+    ws = _create_workspace(client, auth_headers, template["id"])
+    # 引用一个不存在的模板 id（模拟模板被外部删除）
+    row = db.get(Workspace, ws["id"])
+    row.template_id = 999999
+    db.commit()
+    assert client.get(f"/api/v1/workspaces/{ws['id']}/data-flow", headers=auth_headers).status_code == 404
+
+    # 恢复有效模板，但映射里放入非整数 / 已失效表 id → 该表单被安全跳过
+    row.template_id = template["id"]
+    row.template_state = {"form_tables": {"apply": "bad", "progress": 999999}, "documents": {}, "history": []}
+    db.commit()
+    resp = client.get(f"/api/v1/workspaces/{ws['id']}/data-flow", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert all(stage["forms"] == [] for stage in resp.json()["stages"])
+
+
+def test_seed_research_template_has_flow_and_example_workspace(db):
+    from cndb.cli.seed.workspace_templates import (
+        EXAMPLE_WORKSPACE_NAME,
+        _seed_workspace_templates,
+    )
+    from cndb.plugins.accounts.models import User
+    from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.workspaces.models import Workspace
+
+    owner = User(username="seedowner", email="seed@example.com", nickname="seed")
+    owner.set_password("passw0rd")
+    db.add(owner)
+    db.commit()
+    db.refresh(owner)
+    created = _seed_workspace_templates(db, owner=owner)
+    assert created >= 2
+
+    ws = db.query(Workspace).filter(Workspace.name == EXAMPLE_WORKSPACE_NAME).one()
+    assert ws.template_id
+    assert ws.template_stage == "proposal"
+    applications = db.query(DataTable).filter(DataTable.workspace_id == ws.id, DataTable.name == "项目申报").one()
+    from sqlalchemy import text
+
+    count = db.execute(text(f'SELECT COUNT(*) FROM "{applications.db_table_name}"')).scalar()
+    assert count == 3
+    # 再执行一次幂等跳过
+    assert _seed_workspace_templates(db, owner=owner) == 0

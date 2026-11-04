@@ -154,3 +154,80 @@ __all__ = [
     "TemplateUpdate",
     "TemplateUpdateResponse",
 ]
+
+
+# ── 数据流程（需求 0095）────────────────────────────
+
+
+class DataFlowField(BaseModel):
+    """数据流程表单字段（由模板 spec 归一化后的字段定义）."""
+
+    name: str
+    field_type: str
+    required: bool = False
+    config: dict[str, Any] = Field(default_factory=dict)
+    order: int = 0
+    hidden: bool = False
+    default_value: Any = None
+
+
+class DataFlowForm(BaseModel):
+    """数据流程中的一个表单（映射到工作区数据表）与可配置交互."""
+
+    key: str
+    name: str
+    description: str = ""
+    table_id: int | None = None
+    table_name: str | None = None
+    flow: dict[str, Any]
+    fields: list[DataFlowField] = Field(default_factory=list)
+    record_count: int = 0
+    can_create: bool = False
+    can_edit: bool = False
+    can_delete: bool = False
+
+
+class DataFlowStage(BaseModel):
+    """数据流程阶段（流程驱动的主要视觉分组）."""
+
+    key: str
+    name: str
+    description: str = ""
+    order: int = 0
+    is_current: bool = False
+    is_completed: bool = False
+    gate_satisfied: bool = False
+    forms: list[DataFlowForm] = Field(default_factory=list)
+
+
+class DataFlowResponse(BaseModel):
+    """工作区数据流程：模板 → 阶段 → 表单 → 可配置增删查改."""
+
+    template_id: int
+    template_name: str
+    template_version: int
+    current_version: int
+    current_stage: str | None = None
+    current_stage_index: int = 0
+    can_advance: bool = False
+    next_stage: dict[str, Any] | None = None
+    stages: list[DataFlowStage] = Field(default_factory=list)
+
+
+__all__ = [
+    "AdvanceStageRequest",
+    "ApplyTemplateRequest",
+    "ApplyTemplateResponse",
+    "DataFlowField",
+    "DataFlowForm",
+    "DataFlowResponse",
+    "DataFlowStage",
+    "LifecycleResponse",
+    "TemplateCreate",
+    "TemplatePreviewRequest",
+    "TemplatePreviewResponse",
+    "TemplateResponse",
+    "TemplateRevisionResponse",
+    "TemplateUpdate",
+    "TemplateUpdateResponse",
+]

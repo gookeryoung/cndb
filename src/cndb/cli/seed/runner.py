@@ -110,7 +110,7 @@ def seed(_args: argparse.Namespace) -> None:
         owner = admin
 
         # 0) 工作区模板：内置科研项目全生命周期模板（需求 0094）
-        workspace_templates._seed_workspace_templates(db, owner_id=owner.id)
+        workspace_templates._seed_workspace_templates(db, owner=owner, owner_id=owner.id)
 
         # 1) datasets CSV：每个子文件夹 → 工作区，每个 CSV → 数据表
         csv_count, ws_map, tables_map = datasets._seed_datasets(db, engine, owner)

@@ -24,9 +24,24 @@ from cndb.plugins.tables.field_types import default_registry, normalize_field_ty
 #: key 允许字母 / 数字 / 下划线 / 连字符 / 中文（模板作者可读），不超过 64 字符
 _KEY_RE = re.compile(r"^[\w\u4e00-\u9fff-]{1,64}$")
 _STAGE_KEYS = {"key", "name", "description", "order", "forms", "documents"}
-_FORM_KEYS = {"key", "name", "description", "fields"}
+_FORM_KEYS = {"key", "name", "description", "fields", "flow"}
 _DOC_KEYS = {"key", "title", "required", "naming", "content"}
 _FIELD_KEYS = {"name", "type", "required", "is_unique", "config", "default_value", "hidden"}
+_FLOW_KEYS = {
+    "enabled",
+    "list_fields",
+    "search_fields",
+    "form_groups",
+    "detail_groups",
+    "hints",
+    "default_values",
+    "allow_create",
+    "allow_edit",
+    "allow_delete",
+    "default_sort",
+    "empty_text",
+}
+_GROUP_KEYS = {"title", "fields"}
 
 
 class TemplateSpecError(ValueError):
@@ -109,6 +124,160 @@ def _normalize_fields(raw_fields: Any, path: str) -> list[dict[str, Any]]:
     return result
 
 
+def _default_flow(fields: list[dict[str, Any]]) -> dict[str, Any]:
+    """未配置 flow 时派生一份可用默认值（列表前 6 字段、全部字段一组）."""
+    names = [f["name"] for f in fields if not f.get("hidden")]
+    all_names = [f["name"] for f in fields]
+    searchable = [
+        f["name"]
+        for f in fields
+        if not f.get("hidden")
+        and f.get("type") in {"text", "longtext", "email", "url", "phone", "select", "multiselect"}
+    ]
+    return {
+        "enabled": True,
+        "list_fields": names[:6] or all_names[:6],
+        "search_fields": searchable[:3] or names[:3],
+        "form_groups": [{"title": "基本信息", "fields": names or all_names}],
+        "detail_groups": [{"title": "基本信息", "fields": names or all_names}],
+        "hints": {},
+        "default_values": {},
+        "allow_create": True,
+        "allow_edit": True,
+        "allow_delete": True,
+        "default_sort": None,
+        "empty_text": "",
+    }
+
+
+def _normalize_field_refs(
+    value: Any,
+    field_names: set[str],
+    path: str,
+    *,
+    default: list[str],
+) -> list[str]:
+    if value is None:
+        return list(default)
+    refs = _require_list(value, path)
+    if not refs:
+        return list(default)
+    result: list[str] = []
+    for ref in refs:
+        name = _require_str(ref, path, max_len=255)
+        if name not in field_names:
+            raise _err(path, f"引用了不存在的字段：{name}")
+        if name not in result:
+            result.append(name)
+    return result
+
+
+def _normalize_groups(
+    value: Any,
+    fields: list[dict[str, Any]],
+    path: str,
+    *,
+    fallback: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    field_names = {f["name"] for f in fields}
+    if value is None:
+        return [
+            {"title": g["title"], "fields": list(g["fields"])}
+            for g in (fallback or _default_flow(fields)["form_groups"])
+        ]
+    groups = _require_list(value, path)
+    if not groups:
+        return [
+            {"title": g["title"], "fields": list(g["fields"])}
+            for g in (fallback or _default_flow(fields)["form_groups"])
+        ]
+    result: list[dict[str, Any]] = []
+    used: set[str] = set()
+    for idx, raw in enumerate(groups):
+        item_path = f"{path}[{idx}]"
+        item = _require_dict(raw, item_path)
+        _check_keys(item, _GROUP_KEYS, item_path)
+        title = _require_str(item.get("title"), f"{item_path}.title", max_len=120)
+        names = _require_list(item.get("fields"), f"{item_path}.fields")
+        if not names:
+            raise _err(f"{item_path}.fields", "至少包含一个字段")
+        group_fields: list[str] = []
+        for ref in names:
+            name = _require_str(ref, f"{item_path}.fields", max_len=255)
+            if name not in field_names:
+                raise _err(f"{item_path}.fields", f"引用了不存在的字段：{name}")
+            if name in used:
+                raise _err(f"{item_path}.fields", f"字段重复分组：{name}")
+            used.add(name)
+            group_fields.append(name)
+        result.append({"title": title, "fields": group_fields})
+    # 新加字段未纳入配置时自动补进「其他信息」，避免数据流程里看不到字段
+    remaining = [f["name"] for f in fields if f["name"] not in used and not f.get("hidden")]
+    if remaining:
+        result.append({"title": "其他信息", "fields": remaining})
+    return result
+
+
+def _normalize_flow(raw: Any, fields: list[dict[str, Any]], path: str) -> dict[str, Any]:
+    """表单数据流程配置（可配置的增删查改界面）."""
+    default = _default_flow(fields)
+    if raw is None:
+        return default
+    flow = _require_dict(raw, path)
+    _check_keys(flow, _FLOW_KEYS, path)
+    field_names = {f["name"] for f in fields}
+    list_fields = _normalize_field_refs(
+        flow.get("list_fields"), field_names, f"{path}.list_fields", default=default["list_fields"]
+    )
+    search_fields = _normalize_field_refs(
+        flow.get("search_fields"), field_names, f"{path}.search_fields", default=default["search_fields"]
+    )
+    form_groups = _normalize_groups(flow.get("form_groups"), fields, f"{path}.form_groups", fallback=None)
+    detail_groups = _normalize_groups(flow.get("detail_groups"), fields, f"{path}.detail_groups", fallback=form_groups)
+    hints_raw = flow.get("hints", {})
+    if not isinstance(hints_raw, dict):
+        raise _err(f"{path}.hints", "必须是对象（字段名 → 提示文案）")
+    hints: dict[str, str] = {}
+    for key, value in hints_raw.items():
+        if key not in field_names:
+            raise _err(f"{path}.hints", f"引用了不存在的字段：{key}")
+        hints[str(key)] = _require_str(value, f"{path}.hints.{key}", max_len=500, allow_empty=True)
+    defaults_raw = flow.get("default_values", {})
+    if not isinstance(defaults_raw, dict):
+        raise _err(f"{path}.default_values", "必须是对象（字段名 → 默认值）")
+    default_values: dict[str, Any] = {}
+    for key, value in defaults_raw.items():
+        if key not in field_names:
+            raise _err(f"{path}.default_values", f"引用了不存在的字段：{key}")
+        default_values[str(key)] = value
+    default_sort: dict[str, str] | None = None
+    sort_raw = flow.get("default_sort")
+    if sort_raw is not None:
+        sort = _require_dict(sort_raw, f"{path}.default_sort")
+        _check_keys(sort, {"field", "order"}, f"{path}.default_sort")
+        field = _require_str(sort.get("field"), f"{path}.default_sort.field", max_len=255)
+        if field not in field_names:
+            raise _err(f"{path}.default_sort.field", f"引用了不存在的字段：{field}")
+        order = _require_str(sort.get("order", "asc"), f"{path}.default_sort.order", max_len=8)
+        if order not in {"asc", "desc"}:
+            raise _err(f"{path}.default_sort.order", "只能是 asc / desc")
+        default_sort = {"field": field, "order": order}
+    return {
+        "enabled": bool(flow.get("enabled", True)),
+        "list_fields": list_fields,
+        "search_fields": search_fields,
+        "form_groups": form_groups,
+        "detail_groups": detail_groups,
+        "hints": hints,
+        "default_values": default_values,
+        "allow_create": bool(flow.get("allow_create", True)),
+        "allow_edit": bool(flow.get("allow_edit", True)),
+        "allow_delete": bool(flow.get("allow_delete", True)),
+        "default_sort": default_sort,
+        "empty_text": _require_str(flow.get("empty_text", ""), f"{path}.empty_text", max_len=200, allow_empty=True),
+    }
+
+
 def _normalize_forms(raw_forms: Any) -> list[dict[str, Any]]:
     forms = _require_list(raw_forms, "forms")
     result: list[dict[str, Any]] = []
@@ -126,6 +295,7 @@ def _normalize_forms(raw_forms: Any) -> list[dict[str, Any]]:
         if name in seen_names:
             raise _err(f"{path}.name", f"表单名重复：{name}")
         seen_names.add(name)
+        fields = _normalize_fields(item.get("fields"), f"{path}.fields")
         result.append(
             {
                 "key": key,
@@ -133,7 +303,8 @@ def _normalize_forms(raw_forms: Any) -> list[dict[str, Any]]:
                 "description": _require_str(
                     item.get("description", ""), f"{path}.description", max_len=2000, allow_empty=True
                 ),
-                "fields": _normalize_fields(item.get("fields"), f"{path}.fields"),
+                "fields": fields,
+                "flow": _normalize_flow(item.get("flow"), fields, f"{path}.flow"),
             }
         )
     return result

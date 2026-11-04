@@ -304,7 +304,7 @@ export default function RowDetailDrawer({ open, row, fields: fieldsProp, wid, ti
 }
 
 /** 根据字段类型渲染合适的编辑控件. */
-function FieldEditor({
+export function FieldEditor({
   field,
   value,
   onChange = () => { },

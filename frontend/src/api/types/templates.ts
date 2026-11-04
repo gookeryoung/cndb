@@ -174,3 +174,64 @@ export interface WorkspaceLifecycle {
   }>
   version_mismatch: boolean
 }
+
+/** 数据流程（需求 0095）：模板驱动的表单式增删查改元数据. */
+export interface DataFlowField {
+  name: string
+  field_type: string
+  required: boolean
+  config: Record<string, unknown>
+  order: number
+  hidden: boolean
+  default_value?: unknown
+}
+
+export interface DataFlowForm {
+  key: string
+  name: string
+  description: string
+  table_id: number | null
+  table_name: string | null
+  flow: {
+    enabled: boolean
+    list_fields: string[]
+    search_fields: string[]
+    form_groups: Array<{ title: string; fields: string[] }>
+    detail_groups: Array<{ title: string; fields: string[] }>
+    hints: Record<string, string>
+    default_values: Record<string, unknown>
+    allow_create: boolean
+    allow_edit: boolean
+    allow_delete: boolean
+    default_sort: { field: string; order: 'asc' | 'desc' } | null
+    empty_text: string
+  }
+  fields: DataFlowField[]
+  record_count: number
+  can_create: boolean
+  can_edit: boolean
+  can_delete: boolean
+}
+
+export interface DataFlowStage {
+  key: string
+  name: string
+  description: string
+  order: number
+  is_current: boolean
+  is_completed: boolean
+  gate_satisfied: boolean
+  forms: DataFlowForm[]
+}
+
+export interface WorkspaceDataFlow {
+  template_id: number
+  template_name: string
+  template_version: number
+  current_version: number
+  current_stage: string | null
+  current_stage_index: number
+  can_advance: boolean
+  next_stage: { key: string; name: string } | null
+  stages: DataFlowStage[]
+}

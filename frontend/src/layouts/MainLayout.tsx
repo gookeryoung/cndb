@@ -265,6 +265,8 @@ export default function MainLayout() {
           ? 'change-requests'
           : location.startsWith(`/w/${wid}/tables/issues`)
             ? 'issues'
+        : location.startsWith(`/w/${wid}/data-flow`)
+          ? 'data-flow'
         : location.includes('/analytics')
           ? 'analytics'
           : location.includes('/datasource')
@@ -285,6 +287,7 @@ export default function MainLayout() {
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
     || activeWsTab === 'acquisition' || activeWsTab === 'pipelines'
     || activeWsTab === 'change-requests' || activeWsTab === 'issues'
+    || activeWsTab === 'data-flow'
 
   /** 当前所在的一级导航段 —— 切换工作区时保持（0081 C4）。
    * 二级派生段（数据分析 / 数据同步 / 质量检查 / 智能采集）属数据表域，折算为 `tables`；
@@ -344,6 +347,15 @@ export default function MainLayout() {
       label: (
         <span>
           <TableOutlined /> 数据列表
+        </span>
+      ),
+    }] : []),
+    // 数据流程（需求 0095）：仅模板工作区开放，是数据表模块的二级功能入口
+    ...(currentWs?.template_id && wsFeatures.tables && tablesDerivedActive ? [{
+      key: 'data-flow',
+      label: (
+        <span>
+          <ApartmentOutlined /> 数据流程
         </span>
       ),
     }] : []),

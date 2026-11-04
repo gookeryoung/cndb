@@ -160,7 +160,7 @@ def diff_specs(old_spec: dict[str, Any], new_spec: dict[str, Any]) -> dict[str, 
     forms, changes = _diff_named(
         list(old_forms.values()), list(new_forms.values()), kind="form", label="表单", name_key="name"
     )
-    # 字段级差异（仅对同 key 表单）
+    # 字段级 / 数据流程配置差异（仅对同 key 表单）
     for key in old_forms.keys() & new_forms.keys():
         field_changes = _diff_fields(old_forms[key].get("fields", []), new_forms[key].get("fields", []), key)
         if field_changes:
@@ -172,6 +172,16 @@ def diff_specs(old_spec: dict[str, Any], new_spec: dict[str, Any]) -> dict[str, 
                 }
             )
             changes.extend(field_changes)
+        if old_forms[key].get("flow") != new_forms[key].get("flow"):
+            forms["modified"].append({"key": key, "name": new_forms[key]["name"], "changes": ["数据流程配置变化"]})
+            changes.append(
+                _change(
+                    "form_flow_changed",
+                    key,
+                    f"表单「{new_forms[key]['name']}」的数据流程配置（列表 / 搜索 / 分组 / 操作）发生变化",
+                    detail={"key": key},
+                )
+            )
 
     documents, doc_changes = _diff_named(
         list(old_spec.get("documents", [])),

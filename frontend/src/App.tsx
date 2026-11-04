@@ -43,6 +43,7 @@ const DesignEditorPage = lazy(() => import('@/pages/design/DesignEditorPage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const HelpDocsPage = lazy(() => import('@/pages/help/HelpDocsPage'))
 const TemplatesPage = lazy(() => import('@/pages/templates/TemplatesPage'))
+const DataFlowPage = lazy(() => import('@/pages/dataFlow/DataFlowPage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -88,6 +89,10 @@ function AuthenticatedApp() {
           <Route path="w" element={<WorkspaceList />} />
           <Route path="w/:wid" element={<WorkspaceLanding />} />
           <Route path="w/:wid/tables" element={<TablesList />} />
+          {/* 数据流程（需求 0095）：模板驱动的表单式增删查改 */}
+          <Route path="w/:wid/data-flow" element={
+            <Suspense fallback={<PageFallback />}><DataFlowPage /></Suspense>
+          } />
           <Route path="w/:wid/analytics" element={
             <Suspense fallback={<PageFallback />}><AnalyticsPage /></Suspense>
           } />
