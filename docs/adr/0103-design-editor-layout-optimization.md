@@ -90,7 +90,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 1. **布尔块粒度**：一个布尔块（`group`）是单个顶层 CSG 树 → 其下所有 `part` 的 `node_index` 相同，选中任一 `part` 高亮**整块**网格；这是 CSG 网格粒度上限，接受（无 BREP）。
 2. **v4 旧快照**：无 `node_index` → 联动高亮静默跳过，`?line=` 定位源行照常；重新保存后自然升 v5。
 3. **零产出实例**（空模块 / 空装配）：`node_index = null`，点击只定位源行。
-4. **反向定位归属**（D9）：同一父节点下按 `line` 升序取「最后一个 `line ≤ revealLine`」的节点；早于首行不选中。启发式，够用（大纲节点只有起始行）。
+4. **反向定位归属**（D9）：当前文件里取 `line ≤ revealLine` 中**行号最大**的节点（同号取更深者），再从根拼出祖先链；早于全部行不选中。启发式（大纲节点只有起始行）：既满足「同父下取最后一个 ≤ revealLine」的直觉，也能处理 module 的**行号倒挂**——组件实例节点带的是调用行（如第 10 行），其内部零件声明在第 3–6 行，只按同父逐层下探会在实例行晚于 revealLine 时完全落空；`use` 子树的 `line` 属于被引用文件，按 `file_id` 过滤。
 5. **高亮时序**：编译进行中（布尔网格未就绪）触发高亮 → 对已就绪的 `nodeGroups` 生效，未就绪节点在就绪后不补高亮（避免闪烁；再次点击可重触发）。
 6. **viewer 权限**：全部新交互为只读，viewer 可用；改参 / 保存仍 403（不变）。
 7. **窄屏**：<1024px 堆叠态 splitter 不渲染，比例不生效；工具条 / 状态条 / 参数面板随视口列正常渲染。
@@ -155,7 +155,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 | D6 | 工具栏溢出收纳 | 版本历史 / 导出**恒**收进「更多」Dropdown（非断点式）；保存 / 状态常显 | 单行恒成立、断言稳定；次要动作使用频度低 | 按屏宽断点动态迁移按钮（断点抖动、e2e 不稳定） | `DesignEditorPage.tsx` |
 | D7 | IR v5 契约形态 | 仅 outline 节点增 `node_index`（首个所属顶层下标，空产出 `null`）；父节点不聚合，前端按 `children` 递归聚合 | `_emit_instance` 一次产出两侧（`compile.py:389-490`），单字段回填最小且无漂移面 | 全节点携带聚合数组（冗余、双份真相）；`nodes` 内嵌反向指针（渲染热路径加字段） | `compile.py`、`api/design.ts` |
 | D8 | 联动高亮视觉 | 材质 emissive tint + 3s 渐隐；再次点击重触发（卡片未决项落点） | 零后处理、零新依赖，视觉足够醒目 | `OutlinePass` 描边（引 postprocessing 依赖 + GPU 成本） | `PreviewCanvas.tsx` |
-| D9 | 反向定位归属规则 | 同父下 `line` 升序取「最后一个 `line ≤ revealLine`」；早于首行不选中 | 大纲节点只有起始行，区间启发式够用；无结束行契约可用 | 为 outline 增结束行（DSL 无块结束标记，解析器需大改，收益不匹配） | `DesignStructureNav.tsx` |
+| D9 | 反向定位归属规则 | 全局取 `line ≤ revealLine` 中行号最大者（同号取更深）并拼祖先链；`use` 子树按 `file_id` 过滤；早于全部行不选中 | 大纲节点只有起始行，区间启发式够用；全局取最大同时覆盖同父直觉与 module 调用 / 声明行倒挂（`plate` 实例行 10 晚于其零件行 4） | 同父逐层下探（行号倒挂时落空，e2e 实测点击「零件 · 第 4 行」不选中）；为 outline 增结束行（DSL 无块结束标记，解析器需大改，收益不匹配） | `designOutline.ts` |
 | D10 | 分栏默认档 | 均分 50/50（用户 2026-11-05 确认）；预设：编辑器优先 60/40、视口优先 40/60 | 与现状连续，老用户零感知 | 视口优先为默认（首次进入改变习惯） | `DesignEditorPage.tsx` |
 | D11 | 视图定向术语 | 主视 / 俯视 / 仰视 / 左视 / 右视 / 后视 / 等轴测（机械制图惯例，与既有三视图导出语言一致） | 需求要求结合机械结构设计最佳实践；中文用户群 | CAD 英文方位（Front/Top/…）或 ViewCube 数字方位（与工程图语言割裂） | `PreviewCanvas.tsx` |
 | D12 | 管理页组织 | `folder` 分组（空 → 「未分组」置底）+ `kind` Segmented 筛选（全部 / 零件 / 装配） | 0086 既有字段零后端；对齐 CAD 文件库「目录 + 类型过滤」惯例 | 目录树左栏（管理页体量小，树形过重） | `DesignsPage.tsx` |

@@ -177,6 +177,31 @@ describe('resolveOutlinePath（D9 归属规则）', () => {
     expect(resolveOutlinePath(INDEXED, 1, 20)).toEqual([])
   })
 
+  it('module 行号倒挂：实例调用行晚于零件声明行时仍能命中零件（C1② 实际口径）', () => {
+    // plate 在 10 行被调用，其组 / 零件声明在第 3–6 行；revealLine=4（侧栏点击「零件 · 第 4 行」）
+    const nodes: DesignOutlineNode[] = [{
+      kind: 'assembly',
+      name: 'plate',
+      line: 10,
+      col: 1,
+      node_index: 0,
+      children: [{
+        kind: 'group',
+        op: 'difference',
+        line: 3,
+        col: 3,
+        node_index: 0,
+        children: [
+          { kind: 'part', primitive: 'box', line: 4, col: 5, node_index: 0 },
+          { kind: 'part', primitive: 'cyl', line: 6, col: 7, node_index: 0 },
+        ],
+      }],
+    }]
+    const path = resolveOutlinePath(nodes, 4, 20)
+    expect(path.map(node => node.kind)).toEqual(['assembly', 'group', 'part'])
+    expect(path[path.length - 1]).toMatchObject({ line: 4 })
+  })
+
   it('忽略其他文件的节点（use 子树的 line 属于被引用文件）', () => {
     const nodes: DesignOutlineNode[] = [{
       kind: 'assembly',

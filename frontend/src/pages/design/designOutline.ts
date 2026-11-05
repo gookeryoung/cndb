@@ -137,25 +137,36 @@ export function designEditorPath(workspaceId: number | string, designId: number,
   return line && line > 0 ? `${path}?line=${line}` : path
 }
 
-/** 反向定位（ADR 0103 D9 / C1②）：按「同父下 line 升序取最后一个 line ≤ revealLine」逐层下探.
+/** 反向定位（ADR 0103 D9 / C1②）：源行 → 大纲节点路径（根 → 最深命中）.
  *
- * 只考虑**当前文件**的节点（use 实例子树的 line 属于被引用文件，跨文件行号不可比）；
- * 早于首行（首节点 line > revealLine）或全部无命中时返回空数组 = 不选中。
- * 返回从根到最深命中节点的路径（含自身），供侧栏展开祖先链 + 选中 + 视口高亮复用。
+ * 归属规则：在**当前文件**的节点里取 `line ≤ revealLine` 中行号最大者（同号取更深者），
+ * 再从根拼出它的祖先链。这样同时满足「同父下取最后一个 `line ≤ revealLine`」的直觉，
+ * 又能处理 module 的行号倒挂——组件实例节点带的是**调用行**（晚于其内部零件的声明行），
+ * 只按同父规则逐层下探会在实例行晚于 revealLine 时完全落空。
+ * `use` 实例子树的行号属于被引用文件（跨文件不可比），按 `file_id` 过滤掉。
+ * 早于全部行 → 返回空数组（不选中）。
  */
 export function resolveOutlinePath(
   nodes: DesignOutlineNode[],
   revealLine: number,
   designId: number,
 ): DesignOutlineNode[] {
-  let best: DesignOutlineNode | null = null
-  for (const node of nodes) {
-    if (node.file_id != null && node.file_id !== designId) continue
-    if (node.line <= revealLine && (best == null || node.line >= best.line)) best = node
+  let bestPath: DesignOutlineNode[] = []
+  let bestLine = -Infinity
+  const walk = (level: DesignOutlineNode[], path: DesignOutlineNode[]) => {
+    for (const node of level) {
+      if (node.file_id != null && node.file_id !== designId) continue
+      const nextPath = [...path, node]
+      if (node.line <= revealLine
+        && (node.line > bestLine || (node.line === bestLine && nextPath.length > bestPath.length))) {
+        bestPath = nextPath
+        bestLine = node.line
+      }
+      if (node.kind !== 'part') walk(node.children, nextPath)
+    }
   }
-  if (best == null) return []
-  if (best.kind === 'part' || best.children.length === 0) return [best]
-  return [best, ...resolveOutlinePath(best.children, revealLine, designId)]
+  walk(nodes, [])
+  return bestPath
 }
 
 /** 选中节点 → 需高亮的顶层 nodes 下标集合（自身子树递归，去重；v4 快照为空 = 不高亮） */
