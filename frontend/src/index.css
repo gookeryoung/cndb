@@ -6893,7 +6893,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .cn-qc-run-finding-code mark {
-  padding: 0 2px;
+  padding: 0 var(--cn-space-hairline);
   border-radius: var(--cn-radius-xs);
   background: var(--cn-bg-warning-subtle);
   color: var(--cn-text-primary);

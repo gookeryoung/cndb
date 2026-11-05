@@ -6,11 +6,13 @@ from pathlib import Path
 
 import pytest
 
+from cndb.plugins.pipeline.models import PipelineFinding, PipelineWorkflow
 from cndb.plugins.pipeline.services.checks.base import CheckContext
 from cndb.plugins.pipeline.services.checks.document import sensitive
 from cndb.plugins.pipeline.services.checks.registry import coerce_params
 from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
 from cndb.plugins.pipeline.services.errors import CheckError
+from cndb.plugins.pipeline.services.runner import create_run, execute_pipeline_run
 from tests.pipeline_helpers import make_document, make_user, make_workspace
 
 
@@ -137,6 +139,32 @@ def test_all_logic_skips_document_missing_a_rule(db, ws, owner):
     assert list(sensitive.run(_ctx(db, ws), {"rules": rules, "logic": "all"})) == []
 
 
+def test_and_expression_of_three_rules_requires_all(db, ws, owner):
+    rules = [
+        {"name": "身份证号", "patterns": [r"\b\d{17}[\dXx]\b"]},
+        {"name": "邮箱地址", "patterns": [r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"]},
+        {"name": "内部资料", "keywords": ["内部资料"]},
+    ]
+    logic = "身份证号 and 邮箱地址 and 内部资料"
+    _doc(db, ws, owner, "只有邮箱 zhangsan@example.com")
+    assert list(sensitive.run(_ctx(db, ws), {"rules": rules, "logic": logic})) == []
+
+    other_ws = make_workspace(db, owner, "SensitiveCheckWS3")
+    _doc(
+        db,
+        other_ws,
+        owner,
+        "身份证号 110101199001011234，邮箱 zhangsan@example.com，内部资料仅限内部。",
+    )
+    findings = list(sensitive.run(_ctx(db, other_ws), {"rules": rules, "logic": logic}))
+    assert {item.locator["rule"] for item in findings} == {"身份证号", "邮箱地址", "内部资料"}
+
+    # 部分命中（邮箱 + 内部资料，缺证件号）仍不告警
+    partial_ws = make_workspace(db, owner, "SensitiveCheckWS4")
+    _doc(db, partial_ws, owner, "邮箱 zhangsan@example.com，内部资料仅限内部。")
+    assert list(sensitive.run(_ctx(db, partial_ws), {"rules": rules, "logic": logic})) == []
+
+
 def test_logic_expression_and_parentheses(db, ws, owner):
     _doc(db, ws, owner, "赌博广告，附证件号 110101199001011234")
     rules = [
@@ -256,6 +284,79 @@ def test_seed_example_pipeline_flags_example_document(db, ws, owner):
     assert {item.locator["rule"] for item in findings} == {"身份证号", "邮箱地址", "内部资料"}
     assert len(findings) == 3
     assert {item.target_id for item in findings} == {doc.id}
+
+    # 对照项：只有邮箱，logic=and 不成立 → 不产发现
+    contrast_content = (
+        root
+        / "examples"
+        / "datasets"
+        / "工作区-某企业销售管理"
+        / "documents"
+        / "02-交付与协作"
+        / "05-客户资料交接（仅邮箱对照）.md"
+    ).read_text(encoding="utf-8")
+    contrast = make_document(db, ws, "客户资料交接（仅邮箱对照）", contrast_content, user=owner)
+    findings = list(sensitive.run(_ctx(db, ws), params))
+    assert {item.target_id for item in findings} == {doc.id}
+    assert contrast.id not in {item.target_id for item in findings}
+
+
+def test_pipeline_run_honors_and_logic_end_to_end(db, ws, owner):
+    root = Path(__file__).resolve().parents[1]
+    content = (
+        root / "examples" / "datasets" / "工作区-某企业销售管理" / "pipelines" / "文档敏感内容巡检.yaml"
+    ).read_text(encoding="utf-8")
+    ir = compile_workflow(content)
+    workflow = PipelineWorkflow(
+        workspace_id=ws.id,
+        name=ir.name,
+        content=content,
+        compiled=ir.to_dict(),
+        enabled=True,
+        created_by_id=owner.id,
+    )
+    db.add(workflow)
+    db.commit()
+    db.refresh(workflow)
+
+    demo = make_document(
+        db,
+        ws,
+        "客户资料交接（敏感内容示例）",
+        (
+            root
+            / "examples"
+            / "datasets"
+            / "工作区-某企业销售管理"
+            / "documents"
+            / "02-交付与协作"
+            / "04-客户资料交接（敏感内容示例）.md"
+        ).read_text(encoding="utf-8"),
+        user=owner,
+    )
+    make_document(
+        db,
+        ws,
+        "客户资料交接（仅邮箱对照）",
+        (
+            root
+            / "examples"
+            / "datasets"
+            / "工作区-某企业销售管理"
+            / "documents"
+            / "02-交付与协作"
+            / "05-客户资料交接（仅邮箱对照）.md"
+        ).read_text(encoding="utf-8"),
+        user=owner,
+    )
+
+    run = create_run(db, workflow)
+    execute_pipeline_run(db, run.id)
+    db.refresh(run)
+    findings = db.query(PipelineFinding).filter(PipelineFinding.run_id == run.id).all()
+    assert run.status == "partial"
+    assert {item.target_id for item in findings} == {demo.id}
+    assert {item.locator["rule"] for item in findings} == {"身份证号", "邮箱地址", "内部资料"}
 
 
 def test_compiled_dsl_accepts_structured_rules():

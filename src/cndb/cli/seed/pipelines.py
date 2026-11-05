@@ -37,8 +37,9 @@ def _seed_pipelines(
 ) -> int:
     """按各工作区文件夹下的 pipelines/*.yaml 注入流水线定义.
 
-    幂等：同 ``(workspace_id, name)`` 已有定义则跳过；编译失败 / 表引用缺失
-    打印告警并跳过该文件。Returns: 新建定义数量。
+    幂等：同 ``(workspace_id, name)`` 已有定义时，未被编辑过的种子随示例内容更新，
+    已修改过的保留现状只告警；编译失败 / 表引用缺失打印告警并跳过该文件。
+    Returns: 新建定义数量（更新不计入）。
     """
     from cndb.plugins.pipeline.models import PipelineWorkflow
     from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
@@ -77,7 +78,26 @@ def _seed_pipelines(
                 .first()
             )
             if existing is not None:
-                print(f"[seed-流水线] 已存在，跳过: {label} → {ir.name}")
+                if existing.content == content:
+                    print(f"[seed-流水线] 已存在，跳过: {label} → {ir.name}")
+                    continue
+                # 从未被编辑过的种子（created_at == updated_at，秒级精度）跟随示例更新；
+                # 用户改过内容 / 启用状态的保留现状，只提示，避免覆盖自定义定义。
+                untouched = (
+                    existing.created_at is not None
+                    and existing.updated_at is not None
+                    and abs((existing.updated_at - existing.created_at).total_seconds()) <= 1
+                )
+                if untouched:
+                    existing.content = content
+                    existing.compiled = ir.to_dict()
+                    db.flush()
+                    print(f"[seed-流水线] 示例内容已更新: {label} → {ir.name}")
+                else:
+                    print(
+                        f"[seed-流水线] 已存在且已被修改，保留现有定义: {label} → {ir.name}"
+                        "（如需更新示例，请删除该流水线后重种，或直接在质量检查页编辑）"
+                    )
                 continue
             db.add(
                 PipelineWorkflow(

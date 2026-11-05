@@ -25,7 +25,7 @@
 | C6 | （安全 / 隐私） | 发现物带规则名、命中的关键词 / 正则原文、`field`（title / content）、文档标题、行号与**有界上下文片段**（命中行前后各 80 字符、最长 240 字符），便于按 GitHub 注解式定位；不返回整篇正文。接口按文档可见性裁剪：文档对当前查看者不可见（他人草稿 / 归档）时移除标题 / 片段并标记 `redacted`。单次最多 50 条规则；规则名不能含空白 / 括号 | 同上 + `pipeline/routers/workflows.py` | 单测：上下文片段 / 高亮偏移 / 长行截断 / 标题命中 / 规则数上限 / 非法规则名；接口测试：草稿对普通成员脱敏、owner 可见全文片段 |
 | C7 | （DSL 支持） | 检查动作输入新增 `json` 类型（对象 / 数组），保存期校验 JSON 可序列化（拒绝 YAML 日期等），`with` 表达式校验递归到嵌套值；非 `json` 参数传对象仍被拒绝 | `checks/base.py`、`checks/registry.py`、`dsl/parse.py` | 单测：嵌套 `with` 编译通过 / 非 json 参数嵌套被拒 |
 | C8 | 完善测试 | 新增动作单测覆盖命中口径、逻辑组合、参数校验、隐私字段、DSL 编译；既有 pipeline / seed 测试回归 | `tests/test_pipeline_sensitive_check.py` 等 | `make flow` 全绿 |
-| C9 | 典型示例 | seed 示例新增「文档敏感内容巡检」流水线（身份证号正则 / 邮箱正则 / 公司内部资料关键词三条规则，`or` 组合），并新增「客户资料交接（敏感内容示例）」文档（虚构身份证号、邮箱、内部资料标记，运行后应命中 3 条发现，其余文档作为对照组）；文档 / 帮助同步动作目录、参数说明与示例 | `examples/datasets/工作区-某企业销售管理/pipelines/文档敏感内容巡检.yaml`、`examples/datasets/工作区-某企业销售管理/documents/02-交付与协作/04-客户资料交接（敏感内容示例）.md`、`docs/PIPELINE_DSL.md`、`frontend/src/pages/help/content/tutorials.tsx`、CHANGELOG | seed 测试断言示例存在且编译通过；帮助文案含该动作 |
+| C9 | 典型示例 | seed 示例新增「文档敏感内容巡检」流水线（身份证号正则 / 邮箱正则 / 公司内部资料关键词三条规则，`and` 组合），并新增「客户资料交接（敏感内容示例）」文档（虚构身份证号、邮箱、内部资料标记，运行后应命中 3 条发现；另加「客户资料交接（仅邮箱对照）」只有邮箱、`and` 不成立不产出发现作为对照）；文档 / 帮助同步动作目录、参数说明与示例 | `examples/datasets/工作区-某企业销售管理/pipelines/文档敏感内容巡检.yaml`、`examples/datasets/工作区-某企业销售管理/documents/02-交付与协作/04-客户资料交接（敏感内容示例）.md`、`docs/PIPELINE_DSL.md`、`frontend/src/pages/help/content/tutorials.tsx`、CHANGELOG | seed 测试断言示例存在且编译通过；帮助文案含该动作 |
 
 约束编号在实现中原样引用；不重编号、不合并。
 

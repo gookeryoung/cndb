@@ -20,7 +20,7 @@
 | C1 | 典型 SEED 数据 | `cndb seed` 注入典型流水线定义（覆盖 table 检查族、document 检查族、事件 / 定时 / 手动触发、表达式用法） | `src/cndb/cli/seed/` | `tests/test_seed_pipelines.py` |
 | C2 | 结合已有工作区 | 示例只引用 examples/datasets 既有工作区与真实表 / 字段（某企业销售管理、数据源示例）；表引用在 seed 期校验，引用不存在则告警跳过 | `examples/datasets/` | 同上（真实配置用例） |
 | C3 | 声明式种子载体 | 对齐 `documents/` 目录范式：每工作区 `pipelines/*.yaml`，一份 YAML = 一条定义；保存期经 `compile_workflow` 全量编译校验，非法样例跳过不落库 | `src/cndb/cli/seed/pipelines.py` | 单测：坏 YAML 跳过、合法样例落库 |
-| C4 | 幂等与降级 | 同 `(workspace_id, name)` 已存在则跳过；datasets 目录缺失 / 无 pipelines/ 目录返回 0 优雅降级；只注入定义不触发运行 | `seed/runner.py` | 单测：重复注入 0 新增、缺目录 0 |
+| C4 | 幂等与降级 | 同 `(workspace_id, name)` 已存在时：内容与示例一致则跳过；未被编辑过的种子（`created_at == updated_at`）跟随示例内容更新；已修改过的保留现状并打印告警。datasets 目录缺失 / 无 pipelines/ 目录返回 0 优雅降级；只注入定义不触发运行 | `seed/runner.py` | 单测：重复注入 0 新增、缺目录 0 |
 | C5 | 文档同步 | PIPELINE_DSL.md 入口节注明 seed 来源；CONTEXT.md 种子清单补一行；CHANGELOG 记录 | `docs/` | `make check-docs` |
 
 ## 现状影响面（候选，待核实）

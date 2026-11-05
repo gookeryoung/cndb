@@ -115,6 +115,49 @@ def test_seed_pipelines_idempotent(pipeline_seed, db):
     assert db.query(PipelineWorkflow).count() == 1
 
 
+def test_seed_pipelines_updates_untouched_example(pipeline_seed, db):
+    """未被编辑过的种子随示例内容更新（避免改 YAML 后旧定义仍在跑旧逻辑）."""
+    from cndb.plugins.pipeline.models import PipelineWorkflow
+
+    tables_map, ws_map, user, datasets_dir = pipeline_seed
+    assert _seed_pipelines(db, user, ws_map, tables_map, datasets_dir) == 1
+
+    ws_dir = Path(datasets_dir) / "工作区-销售示例"
+    yaml_path = next((ws_dir / "pipelines").glob("*.yaml"))
+    yaml_path.write_text(
+        yaml_path.read_text(encoding="utf-8").replace("max_rate: 0", "max_rate: 0.5"),
+        encoding="utf-8",
+    )
+    assert _seed_pipelines(db, user, ws_map, tables_map, datasets_dir) == 0
+    workflow = db.query(PipelineWorkflow).one()
+    assert "max_rate: 0.5" in workflow.content
+    assert workflow.compiled["jobs"][0]["steps"][0]["with"]["max_rate"] == 0.5
+
+
+def test_seed_pipelines_keeps_edited_definition(pipeline_seed, db):
+    """用户改过的定义不随 seed 覆盖."""
+    from datetime import timedelta
+
+    from cndb.plugins.pipeline.models import PipelineWorkflow
+
+    tables_map, ws_map, user, datasets_dir = pipeline_seed
+    _seed_pipelines(db, user, ws_map, tables_map, datasets_dir)
+    workflow = db.query(PipelineWorkflow).one()
+    workflow.content = workflow.content.replace("uses: table/null-rate", "uses: table/duplicates")
+    workflow.updated_at = workflow.created_at + timedelta(seconds=30)
+    db.commit()
+
+    ws_dir = Path(datasets_dir) / "工作区-销售示例"
+    yaml_path = next((ws_dir / "pipelines").glob("*.yaml"))
+    yaml_path.write_text(
+        yaml_path.read_text(encoding="utf-8").replace("max_rate: 0", "max_rate: 0.5"),
+        encoding="utf-8",
+    )
+    _seed_pipelines(db, user, ws_map, tables_map, datasets_dir)
+    db.refresh(workflow)
+    assert "uses: table/duplicates" in workflow.content
+
+
 def test_seed_pipelines_bad_yaml_skipped(db, db_engine, tmp_path):
     """坏 YAML / 未知动作：编译失败告警跳过，不抛异常、不落库."""
     from cndb.cli.seed import _seed_datasets
