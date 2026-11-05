@@ -60,12 +60,7 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
 
     DDL drop 前先 commit 释放 SQLite RESERVED 锁（与 backup_io 导入同款先例）。
     """
-    from cndb.plugins.datasource.models import (
-        DatasourceEntrantCursor,
-        DatasourceSession,
-        DatasourceSyncJob,
-        DatasourceSyncRun,
-    )
+    from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, DatasourceSyncRun
     from cndb.plugins.documents.models import (
         Document,
         DocumentChangeRequest,
@@ -106,7 +101,7 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
     for model in (DocumentIssue, DocumentChart, Document, Tag):
         db.execute(delete(model).where(model.workspace_id == workspace_id))
 
-    for model in (DatasourceEntrantCursor, DatasourceSyncRun, DatasourceSyncJob, DatasourceSession):
+    for model in (DatasourceSyncRun, DatasourceSyncJob, DatasourceSession):
         _delete_by_workspace_cascade(db, model, workspace_id)
 
     db.execute(delete(FileOwner).where(FileOwner.workspace_id == workspace_id))

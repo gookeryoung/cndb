@@ -4,8 +4,7 @@
 
 - 批大小 10,000 与 5,000 分片写入结果等价（行集合与插入计数一致）；
 - ``ensure_match_keys_index`` 进程内只执行一次 DDL 与提交，索引真实存在；
-- ``_advance_backfill`` 不自行提交（水位与进度同批一次提交）；
-- 落库失败时不推进水位（断点续跑口径不变）。
+- ``on_batch`` 落库计数与窗口游标同批推进；落库失败时不推进游标。
 """
 
 from __future__ import annotations
@@ -17,7 +16,7 @@ import pytest
 from sqlalchemy import MetaData, select, text
 from sqlalchemy.orm import Session
 
-from cndb.plugins.datasource.models import DatasourceEntrantCursor, DatasourceSyncJob, DatasourceSyncRun
+from cndb.plugins.datasource.models import DatasourceSyncJob, DatasourceSyncRun
 from cndb.plugins.datasource.services import runner, write
 from cndb.plugins.datasource.services.cursor import CursorConfig
 from cndb.plugins.datasource.services.runner import _StreamingState
@@ -27,7 +26,7 @@ from cndb.plugins.tables.services.core import ddl
 
 UTC = dt.UTC
 NOW = dt.datetime(2026, 10, 26, 8, 0, tzinfo=UTC)
-BACKFILL = {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"}
+WINDOW = {"strategy": "date", "field": "日期"}
 
 
 def _make_sync_table(session: Session, engine: Any, name: str = "同步宽表") -> DataTable:
@@ -144,7 +143,7 @@ class TestMatchKeysIndexCached:
 def _make_job(db: Session, table: DataTable) -> DatasourceSyncJob:
     job = DatasourceSyncJob(
         workspace_id=1,
-        name="日线回补",
+        name="日线窗口",
         provider="http_json",
         table_id=table.id,
         request_spec={"url_template": "https://api.example.com/k?sym={symbol}&end={end}"},
@@ -157,7 +156,7 @@ def _make_job(db: Session, table: DataTable) -> DatasourceSyncJob:
             "日期": {"name": "日期", "field_type": "date"},
             "close": {"name": "收盘", "field_type": "float"},
         },
-        cursor=dict(BACKFILL),
+        cursor=dict(WINDOW),
         schedule={"mode": "manual"},
         enabled=True,
         last_status="",
@@ -180,7 +179,7 @@ def _state(db: Session, job: DatasourceSyncJob, run: DatasourceSyncRun) -> _Stre
     return _StreamingState(
         db,
         job,
-        CursorConfig(**BACKFILL),
+        CursorConfig(**WINDOW),
         user=None,
         lease=None,
         run=run,
@@ -188,53 +187,28 @@ def _state(db: Session, job: DatasourceSyncJob, run: DatasourceSyncRun) -> _Stre
 
 
 class TestBatchCommitAggregation:
-    def test_advance_backfill_does_not_commit(self, db: Session, db_engine, monkeypatch):
-        """水位只写 session，不自行提交（由进度写入口统一提交，ADR 0039 D5）."""
-        table = _make_sync_table(db, db_engine, name="同步宽表（水位提交）")
-        job = _make_job(db, table)
-        state = _state(db, job, _make_run(db, job))
-
-        commits: list[int] = []
-        original_commit = db.commit
-
-        def spy_commit(*args: Any, **kwargs: Any):
-            commits.append(1)
-            return original_commit(*args, **kwargs)
-
-        monkeypatch.setattr(db, "commit", spy_commit)
-        state._advance_backfill([{"代码": "sh600519", "日期": "2026-09-01", "收盘": 1500.0}])
-
-        assert commits == []
-        assert state._watermarks == {"sh600519": "2026-09-01"}
-
-        # 进度写入口一次性提交：水位随之落库，且计数一并回写
-        state._publish_progress()
-        assert len(commits) == 1
-        cursors = {
-            item.entrant: item.cursor_value for item in db.query(DatasourceEntrantCursor).filter_by(job_id=job.id).all()
-        }
-        assert cursors == {"sh600519": "2026-09-01"}
-
-    def test_on_batch_persists_counts_and_watermark_in_one_commit(self, db: Session, db_engine):
-        """整批：落库计数与水位在同一批内落库，用一次进度提交串起来."""
+    def test_on_batch_persists_counts_and_advances_cursor(self, db: Session, db_engine):
+        """整批：落库计数与窗口游标在同一个 on_batch 回调里落地（批间一次提交）."""
         table = _make_sync_table(db, db_engine, name="同步宽表（整批提交）")
         job = _make_job(db, table)
         run = _make_run(db, job)
         state = _state(db, job, run)
 
+        assert state.cursor_to == ""
         state.on_batch([{"代码": "sh600519", "日期": "2026-09-01", "收盘": 1500.0}])
 
         db.expire_all()
         persisted = db.get(DatasourceSyncRun, run.id)
         assert persisted is not None
         assert (persisted.fetched, persisted.inserted, persisted.skipped) == (1, 1, 0)
-        cursors = {
-            item.entrant: item.cursor_value for item in db.query(DatasourceEntrantCursor).filter_by(job_id=job.id).all()
-        }
-        assert cursors == {"sh600519": "2026-09-01"}
+        # 窗口游标只向更晚前移（与 advance 语义一致）
+        assert state.cursor_to == "2026-09-01"
 
-    def test_failed_persist_does_not_advance_watermark(self, db: Session, db_engine, monkeypatch):
-        """落库抛错时 on_batch 外抛且水位不推进（断点续跑口径不变，ADR 0039 I3）."""
+        state.on_batch([{"代码": "sh600519", "日期": "2026-08-31", "收盘": 1490.0}])
+        assert state.cursor_to == "2026-09-01"
+
+    def test_failed_persist_does_not_advance_cursor(self, db: Session, db_engine, monkeypatch):
+        """落库抛错时 on_batch 外抛且游标不推进（重跑覆盖失败行）."""
         table = _make_sync_table(db, db_engine, name="同步宽表（落库失败）")
         job = _make_job(db, table)
         state = _state(db, job, _make_run(db, job))
@@ -246,4 +220,4 @@ class TestBatchCommitAggregation:
         with pytest.raises(RuntimeError, match="落库失败"):
             state.on_batch([{"代码": "sh600519", "日期": "2026-09-01", "收盘": 1500.0}])
 
-        assert db.query(DatasourceEntrantCursor).filter_by(job_id=job.id).count() == 0
+        assert state.cursor_to == ""

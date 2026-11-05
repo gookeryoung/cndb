@@ -142,7 +142,7 @@ Related: `src/cndb/plugins/datasource/`、`src/cndb/core/http.py`、`frontend/sr
 |---|---|---|---|
 | 同步任务 / 调度 | `datasource_sync_job`、scheduler | 推送复用现有任务、租约、运行记录，不新建调度 | ADR 0006 |
 | 工作区备份 | `sync_jobs[]` | 推送配置随任务导出 / 导入，旧备份默认 pull | ADR 0075 |
-| HTTP 安全 | `core/http.py` | 推送与抓取共用 SSRF / 超时 / 重定向口径 | ADR 0006 / 0053 |
+| HTTP 安全 | `core/http.py` | 推送与抓取共用 SSRF / 超时 / 重定向口径 | ADR 0006 |
 | 表字段口径 | `tables` DDL / field_types | 只推送物理列，link / lookup 不进入载荷 | ADR 0038 |
 
 ## 落地状态

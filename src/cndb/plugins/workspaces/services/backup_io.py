@@ -687,11 +687,11 @@ def _import_v9_extras(
     """还原 v9（ADR 0075）新增的备份数据，返回错误明细（不阻断整体导入）.
 
     覆盖：文档版本历史、草稿、置顶、分享、议题+评论、修改申请、数据源会话
-    （含密钥）、entrant 游标、附件文件与归属记录。旧版备份无对应键时按空处理。
+    （含密钥）、附件文件与归属记录。旧版备份无对应键时按空处理。
     """
     import datetime as _dt
 
-    from cndb.plugins.datasource.models import DatasourceEntrantCursor, DatasourceSession, DatasourceSyncJob
+    from cndb.plugins.datasource.models import DatasourceSession
     from cndb.plugins.documents.models import (
         DocumentChangeRequest,
         DocumentDraft,
@@ -952,38 +952,7 @@ def _import_v9_extras(
             db.rollback()
             errors.append(f"数据源会话 {name} 还原失败: {exc}")
 
-    # ── 8) entrant 游标（按 job 名关联；job 不存在时跳过） ──
-    job_ids = {
-        row[0]: row[1]
-        for row in db.query(DatasourceSyncJob.name, DatasourceSyncJob.id)
-        .filter(DatasourceSyncJob.workspace_id == workspace_id)
-        .all()
-    }
-    for cd in json_data.get("entrant_cursors", []) or []:
-        if not isinstance(cd, dict):
-            continue
-        job_id = job_ids.get(cd.get("job_name") or "")
-        if job_id is None:
-            continue
-        exists = (
-            db.query(DatasourceEntrantCursor)
-            .filter(
-                DatasourceEntrantCursor.job_id == job_id,
-                DatasourceEntrantCursor.entrant == str(cd.get("entrant") or ""),
-            )
-            .first()
-        )
-        if exists is None:
-            db.add(
-                DatasourceEntrantCursor(
-                    job_id=job_id,
-                    entrant=str(cd.get("entrant") or ""),
-                    cursor_value=str(cd.get("cursor_value") or ""),
-                )
-            )
-    db.commit()
-
-    # ── 9) 附件：文件落盘 + 归属记录（table/row id 重映射） ──
+    # ── 8) 附件：文件落盘 + 归属记录（table/row id 重映射） ──
     for fo in json_data.get("file_owners", []) or []:
         if not isinstance(fo, dict):
             continue

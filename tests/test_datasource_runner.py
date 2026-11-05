@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from sqlalchemy import MetaData, func, select
@@ -10,7 +11,6 @@ from sqlalchemy.orm import Session
 
 from cndb.core.crypto import encrypt_secrets
 from cndb.plugins.datasource.models import (
-    DatasourceEntrantCursor,
     DatasourceSession,
     DatasourceSyncJob,
     DatasourceSyncRun,
@@ -559,7 +559,7 @@ class TestBuildJobSpecWithConnection:
         assert spec.request.llm["model"] == "model-a"
 
 
-# ── 单序列宽表：快照当日 + 回补同日覆盖 ─────────────────
+# ── 单序列表：date 游标窗口 + 按标的拆分 ─────────────
 
 
 def _make_series_table(session: Session, engine) -> DataTable:
@@ -590,27 +590,16 @@ def _make_series_table(session: Session, engine) -> DataTable:
     return table
 
 
-def _make_series_job(
-    db: Session, table: DataTable, *, backfill: bool = False, **request_spec: object
-) -> DatasourceSyncJob:
-    """按示例配置的形态建单序列任务（快照 / 回补只差回补专属声明）."""
-    request: dict[str, object] = {"url_template": "https://api.example.com/k?symbol={entrant}", **request_spec}
-    if backfill:
-        request.setdefault("record_mode", "rows_array")
-        request.setdefault("data_path", "data.{entrant}.day")
-        request.setdefault("record_layout", {"日期": 0, "开盘": 1, "收盘": 2, "最高": 3, "最低": 4, "成交量": 5})
-        cursor: dict[str, object] = {
-            "strategy": "backfill_date",
-            "field": "日期",
-            "backfill_start": "2024-01-01",
-            "page_size": 2,
-        }
-    else:
-        request.setdefault("row_defaults", {"日期": "{today}"})
-        cursor = {"strategy": "none"}
+def _make_series_job(db: Session, table: DataTable, **request_spec: object) -> DatasourceSyncJob:
+    """按示例配置的形态建单序列表任务（date 游标 + 时间窗口，ADR 0104 保留能力）."""
+    request: dict[str, object] = {
+        "url_template": "https://api.example.com/k?symbol={entrant}&start={start}&end={end}",
+        "time_window": {"mode": "range", "start_param": "start", "end_param": "end"},
+        **request_spec,
+    }
     job = DatasourceSyncJob(
         workspace_id=1,
-        name="同步宽表（回补）" if backfill else "同步宽表（快照）",
+        name="同步宽表（窗口）",
         provider="http_json",
         table_id=table.id,
         request_spec=request,
@@ -627,7 +616,7 @@ def _make_series_job(
             "low": {"name": "最低", "field_type": "float"},
             "volume": {"name": "成交量", "field_type": "number"},
         },
-        cursor=cursor,
+        cursor={"strategy": "date", "field": "日期", "backfill_start": "2024-06-28"},
         schedule={"mode": "manual"},
         enabled=True,
         last_status="",
@@ -647,27 +636,7 @@ def _read_all(engine, table: DataTable) -> list[dict[str, object]]:
     return [{field.name: value for field, value in zip(fields, row, strict=True)} for row in raw]
 
 
-SNAPSHOT_ROWS = [
-    {
-        "symbol": "item-a",
-        "day": "2024-07-01",
-        "open": "1503.20",
-        "close": "1519.60",
-        "high": "1524.10",
-        "low": "1496.30",
-        "volume": "3100500",
-    },
-    {
-        "symbol": "item-b",
-        "day": "2024-07-01",
-        "open": "11.39",
-        "close": "11.47",
-        "high": "11.53",
-        "low": "11.36",
-        "volume": "57912000",
-    },
-]
-BACKFILL_RAW = [
+SERIES_RAW = [
     ["2024-06-28", "1502.00", "1518.50", "1523.00", "1495.00", "3125400"],
     ["2024-07-01", "1503.20", "1519.60", "1524.10", "1496.30", "3100500"],
 ]
@@ -677,70 +646,63 @@ def _series_fetch(rows_by_symbol: dict[str, list[dict[str, object]]]):
     """按请求 URL 的 symbol 参数返回该标的的行（模拟真实响应按标的拆分）."""
 
     def fetch(config: FetchConfig) -> list[dict[str, object]]:
-        symbol = config.url.split("symbol=")[1]
+        symbol = parse_qs(urlparse(config.url).query)["symbol"][0]
         return [dict(row) for row in rows_by_symbol.get(symbol, [])]
 
     return fetch
 
 
-class TestSingleSeriesSameTable:
-    """单序列写同一张表：同日只留一行、幂等可重跑、不回退到双源结构."""
+def _window_starts(configs: list[FetchConfig]) -> list[str]:
+    return [parse_qs(urlparse(config.url).query)["start"][0] for config in configs]
 
-    def test_snapshot_fills_today_and_is_idempotent(self, db_engine, db):
+
+def _series_rows() -> list[dict[str, object]]:
+    return [dict(zip(("日期", "开盘", "收盘", "最高", "最低", "成交量"), item, strict=True)) for item in SERIES_RAW]
+
+
+class TestDateWindowSeries:
+    """date 游标：首跑从 backfill_start 起、次跑从 value 继续；同日幂等去重."""
+
+    def test_window_run_writes_history_and_advances_cursor(self, db_engine, db):
         table = _make_series_table(db, db_engine)
         job = _make_series_job(db, table)
-        fetch = _series_fetch({"item-a": [SNAPSHOT_ROWS[0]], "item-b": [SNAPSHOT_ROWS[1]]})
+        parsed = _series_rows()
+        inner = _series_fetch({"item-a": parsed, "item-b": parsed})
+        configs: list[FetchConfig] = []
 
-        first = execute_job(db, job, fetch=fetch, now=NOW)
-        assert first.run.status == "success"
-        assert (first.run.inserted, first.run.updated) == (2, 0)
-        rows = _read_all(db_engine, table)
-        assert {row["日期"].isoformat() for row in rows} == {"2024-07-01"}
-        assert {row["代码"] for row in rows} == {"item-a", "item-b"}
-
-        second = execute_job(db, job, fetch=fetch, now=NOW)
-        assert second.run.inserted == 0
-        assert second.run.updated == 2
-        assert _row_count(db_engine, table) == 2
-
-    def test_backfill_writes_history_and_advances_watermark(self, db_engine, db):
-        table = _make_series_table(db, db_engine)
-        job = _make_series_job(db, table, backfill=True)
-        parsed = [
-            dict(zip(("日期", "开盘", "收盘", "最高", "最低", "成交量"), item, strict=True)) for item in BACKFILL_RAW
-        ]
-        fetch = _series_fetch({"item-a": parsed, "item-b": parsed})
+        def fetch(config: FetchConfig) -> list[dict[str, object]]:
+            configs.append(config)
+            return inner(config)
 
         execution = execute_job(db, job, fetch=fetch, now=NOW)
         assert execution.run.status == "success"
         # 两标的 × 两行 = 4 行（代码由请求维度补齐）
-        assert execution.run.inserted == 4
+        assert (execution.run.inserted, execution.run.updated) == (4, 0)
+        assert (execution.cursor_from, execution.cursor_to) == ("2024-06-28", "2024-07-01")
+        assert _window_starts(configs) == ["2024-06-28", "2024-06-28"]
+
         rows = _read_all(db_engine, table)
         assert {row["代码"] for row in rows} == {"item-a", "item-b"}
-        # 成交量存数据源原值（合并任务不声明 scale，ADR 0053 D8）
+        # 成交量存数据源原值（不做 scale 换算，ADR 0104）
         assert {row["成交量"] for row in rows} == {3125400, 3100500}
-        watermarks = {
-            cursor.entrant: cursor.cursor_value for cursor in db.query(DatasourceEntrantCursor).filter_by(job_id=job.id)
-        }
-        assert watermarks == {"item-a": "2024-06-28", "item-b": "2024-06-28"}
 
-    def test_snapshot_and_backfill_share_same_row(self, db_engine, db):
-        """快照与回补同日命中同一行（幂等键 [代码, 日期]，后写者覆盖）."""
+    def test_rerun_from_cursor_is_idempotent(self, db_engine, db):
         table = _make_series_table(db, db_engine)
-        snapshot = _make_series_job(db, table)
-        backfill = _make_series_job(db, table, backfill=True)
-        parsed = [
-            dict(zip(("日期", "开盘", "收盘", "最高", "最低", "成交量"), item, strict=True)) for item in BACKFILL_RAW
-        ]
+        job = _make_series_job(db, table)
+        parsed = _series_rows()
+        inner = _series_fetch({"item-a": parsed, "item-b": parsed})
+        execute_job(db, job, fetch=inner, now=NOW)
 
-        execute_job(
-            db, snapshot, fetch=_series_fetch({"item-a": [SNAPSHOT_ROWS[0]], "item-b": [SNAPSHOT_ROWS[1]]}), now=NOW
-        )
-        execute_job(db, backfill, fetch=_series_fetch({"item-a": parsed, "item-b": parsed}), now=NOW)
+        configs: list[FetchConfig] = []
 
-        rows = _read_all(db_engine, table)
-        keys = [(row["代码"], row["日期"].isoformat()) for row in rows]
-        assert len(keys) == len(set(keys)), "单序列下 (代码, 日期) 必须唯一"
-        first_today = [row for row in rows if row["代码"] == "item-a" and row["日期"].isoformat() == "2024-07-01"]
-        assert len(first_today) == 1
-        assert float(first_today[0]["收盘"]) == 1519.6
+        def fetch(config: FetchConfig) -> list[dict[str, object]]:
+            configs.append(config)
+            return inner(config)
+
+        second = execute_job(db, job, fetch=fetch, now=NOW)
+        assert second.run.status == "success"
+        assert (second.run.inserted, second.run.updated) == (0, 4)
+        # 次轮窗口起点 = 上轮推进后的游标
+        assert second.cursor_from == "2024-07-01"
+        assert _window_starts(configs) == ["2024-07-01", "2024-07-01"]
+        assert _row_count(db_engine, table) == 4

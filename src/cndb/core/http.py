@@ -233,9 +233,6 @@ class FetchConfig:
     # - 字符串 "tencent_stock"：腾讯实时股票快照格式
     # - 自定义 callable(text, FetchConfig) -> list[dict]
     response_handler: str | ResponseHandler = "json"
-    # 备用主机 URL（ADR 0053 D4）：主 URL 出现网络错误 / 429 / 5xx 时按序尝试，
-    # 每个候选都单独过 SSRF 校验；为空时行为与单 URL 完全一致
-    fallback_urls: tuple[str, ...] = ()
     # 响应编码：默认 utf-8；腾讯股票为 gbk
     encoding: str = "utf-8"
     # 查询间隔（秒），用于定时刷新场景；默认 60 秒
@@ -573,40 +570,17 @@ def fetch_json(config: FetchConfig, *, client: httpx2.Client | None = None) -> l
     return _fetch_json_with_client(config, client)
 
 
-# 命中即切备用主机的 HTTP 状态（ADR 0053 D4）：限流与网关类错误说明「这家主机当前不行」，
-# 换等价主机重试才有意义；4xx 参数类错误换主机也是同样结果，不切
-_HOST_SWITCH_STATUS = frozenset({429, 500, 501, 502, 503, 504})
-
-
-class _HostUnavailableError(ValueError):
-    """当前主机不可用（网络错误 / 限流 / 网关错误）：可切换到备用主机重试.
-
-    仍是 :class:`ValueError` 子类，单 URL 场景对外语义与历史一致。
-    """
+# 命中即切备用主机的 HTTP 状态已随 ADR 0104 删除；限流与网关类错误与其他失败一样
+# 直接以可读的 ValueError 上抛，由运行记录留痕。
 
 
 def _fetch_json_with_client(config: FetchConfig, client: httpx2.Client) -> list[dict[str, Any]]:
-    """用给定客户端完成一次抓取（连接由调用方管理）.
-
-    声明了 ``fallback_urls`` 时按序尝试：仅当主机的失败属于「主机不可用」
-    （网络错误 / 429 / 5xx）才切换，解析类错误不切换（换主机也一样）。
-    """
-    candidates = (config.url, *config.fallback_urls)
-    last_error: Exception | None = None
-    for index, url in enumerate(candidates):
-        try:
-            return _fetch_json_from_url(config, client, url)
-        except _HostUnavailableError as exc:
-            last_error = exc
-            if index + 1 >= len(candidates):
-                raise
-            logger.warning("主机不可用（%s），切换到备用主机: %s", exc, candidates[index + 1])
-    # 循环要么返回、要么抛出最后一个错误；此处仅静态收窄
-    raise last_error or ValueError("请求未获得响应")  # pragma: no cover
+    """用给定客户端完成一次抓取（连接由调用方管理）."""
+    return _fetch_json_from_url(config, client, config.url)
 
 
 def _fetch_json_from_url(config: FetchConfig, client: httpx2.Client, url: str) -> list[dict[str, Any]]:
-    """单个候选 URL 的抓取（含重试 / 重定向 / 解析）；主机不可用抛 ``_HostUnavailableError``."""
+    """单个 URL 的抓取（含重试 / 重定向 / 解析）."""
     validate_url(url, allow_hosts=config.allow_hosts)
 
     method = config.method.upper()
@@ -701,19 +675,16 @@ def _fetch_json_from_url(config: FetchConfig, client: httpx2.Client, url: str) -
             # 连接被对端直接掐断时，绝大多数不是本地配置写错了，
             # 直接把"疑似限流"告诉用户，省得去查 URL / 字段映射
             if throttled:
-                raise _HostUnavailableError(f"{THROTTLE_HINT}：{exc}") from exc
-            # 网络层失败（超时 / 连接拒绝）同样意味着这家主机此刻不可用（ADR 0053 D4）
-            raise _HostUnavailableError(f"请求失败: {exc}") from exc
+                raise ValueError(f"{THROTTLE_HINT}：{exc}") from exc
+            # 网络层失败（超时 / 连接拒绝）同样以可读错误上抛
+            raise ValueError(f"请求失败: {exc}") from exc
         break
     # resp 经上方 while True 循环至少赋值一次并 break，必非空
     if resp is None:  # pragma: no cover - 防御性收窄，静态分析兜底
         raise ValueError("请求未获得响应")
     # 检查状态码
     if resp.status_code >= 400:
-        message = f"API 返回 {resp.status_code}: {resp.text[:200]}"
-        if resp.status_code in _HOST_SWITCH_STATUS:
-            raise _HostUnavailableError(message)
-        raise ValueError(message)
+        raise ValueError(f"API 返回 {resp.status_code}: {resp.text[:200]}")
 
     # 检查响应大小
     body = resp.content

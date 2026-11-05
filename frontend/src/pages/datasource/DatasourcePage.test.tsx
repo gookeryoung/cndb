@@ -733,9 +733,9 @@ describe('DatasourcePage · 大模型提示词', () => {
     expect(screen.queryByTestId('datasource-llm-model')).not.toBeInTheDocument()
   })
 
-  it('编辑 http 任务保留表单未挂载的声明键（record_mode / row_defaults / workers / entrant_source）', async () => {
-    // ADR 0008/0034：种子任务的 rows_array / 常量列 / 并发 / 动态标的声明不在表单里，
-    // 编辑保存必须原样回传，避免一保存就静默丢配置
+  it('编辑 http 任务不保留已删除声明（ADR 0104），保留 record_layout / entrant_source / rate_limit_ms', async () => {
+    // ADR 0104：rows_array / row_defaults / row_filter / workers / backfill_date 已删除，
+    // 编辑保存必须剔除这些旧键；其余未挂载声明（record_layout 等）仍原样保留
     setupHandlers([
       makeJob({
         request_spec: {
@@ -746,24 +746,33 @@ describe('DatasourcePage · 大模型提示词', () => {
           row_filter: { field: '收盘', op: '>', value: 0 },
           workers: 6,
           paging: { mode: 'none' },
-        },
+        } as unknown as SyncJob['request_spec'],
+        cursor: { strategy: 'backfill_date', field: '日期' } as unknown as SyncJob['cursor'],
         entrant_source: { table: '股票清单', field: '代码', prefix_in: ['sh60'] },
+        rate_limit_ms: 1200,
       }),
     ])
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
+    // 抽屉提示旧任务含已删除配置，保存时自动清理
+    expect(await screen.findByTestId('datasource-legacy-config-warning')).toBeInTheDocument()
+    // 展开高级设置让增量策略字段挂载：backfill_date 已删除，下拉回落到按日增量
+    fireEvent.click(await screen.findByText('增量与调度'))
     fireEvent.click(await screen.findByTestId('datasource-save-btn'))
     await waitFor(() => expect(jobBodies).toHaveLength(1))
     const body = jobBodies[0] as Record<string, unknown>
     const spec = body.request_spec as Record<string, unknown>
-    expect(spec.record_mode).toBe('rows_array')
+    expect(spec).not.toHaveProperty('row_defaults')
+    expect(spec).not.toHaveProperty('row_filter')
+    expect(spec).not.toHaveProperty('workers')
+    expect(spec).not.toHaveProperty('record_mode')
     expect(spec.record_layout).toEqual({ 日期: 0, 收盘: 2 })
-    expect(spec.row_defaults).toEqual({ 来源: '新浪快照' })
-    expect(spec.row_filter).toEqual({ field: '收盘', op: '>', value: 0 })
-    expect(spec.workers).toBe(6)
     // 表单管理的键仍以表单值为准（URL 模板可改）
     expect(spec.url_template).toContain('api.example.com')
     expect(body.entrant_source).toEqual({ table: '股票清单', field: '代码', prefix_in: ['sh60'] })
+    expect(body.rate_limit_ms).toBe(1200)
+    // backfill_date 游标已删除，保存时回落到按日增量
+    expect((body.cursor as Record<string, unknown>).strategy).toBe('date')
   })
 })
 

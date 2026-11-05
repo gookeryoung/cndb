@@ -1,10 +1,9 @@
-"""按标的状态 —— ``backfill_date`` 水位表读写 + 标的动态来源解析（ADR 0034 D2/D3）.
+"""标的动态来源解析（ADR 0034 D3）.
 
 职责边界：
 
-- 水位推进的**纯函数判定**（锚点 / 前移 / 截断）在 ``services/cursor.py``；
-- 本模块负责 DB 侧：读 ``datasource_entrant_cursor``、写水位（只向更早前移）、
-  解析 ``entrant_source``（查同工作区数据表目标字段 distinct 值，可按前缀过滤）。
+- 解析 ``entrant_source``：查同工作区数据表目标字段 distinct 值，可按前缀过滤；
+- 与静态 ``entrant_keys`` 并集去重。
 
 与领域无关：标的叫 ``entrant``，来源表 / 字段 / 前缀全部由 job 配置声明。
 """
@@ -13,50 +12,12 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from cndb.plugins.datasource.models import DatasourceEntrantCursor, DatasourceSyncJob
+from cndb.plugins.datasource.models import DatasourceSyncJob
 
 logger = logging.getLogger(__name__)
-
-
-def load_backfill_cursors(db: Session, job_id: int) -> dict[str, str]:
-    """读某任务全部标的的回补水位（``entrant → 最早已补日期``）."""
-    rows = db.execute(
-        select(DatasourceEntrantCursor.entrant, DatasourceEntrantCursor.cursor_value).where(
-            DatasourceEntrantCursor.job_id == job_id
-        )
-    ).all()
-    return {str(entrant): str(value) for entrant, value in rows}
-
-
-def save_backfill_cursor(db: Session, job_id: int, entrant: str, value: str) -> None:
-    """写某标的的回补水位（只向更早前移：已有更早 / 相等水位时不覆盖）.
-
-    由 :func:`cndb.plugins.datasource.services.cursor.backfill_advance` 保证
-    传入值不晚于现水位；此处再防御一次（DB 层的旧值可能来自并发执行者）。
-    """
-    existing = db.execute(
-        select(DatasourceEntrantCursor.cursor_value).where(
-            DatasourceEntrantCursor.job_id == job_id,
-            DatasourceEntrantCursor.entrant == entrant,
-        )
-    ).scalar_one_or_none()
-    if existing is not None and existing <= value:
-        return
-    if existing is None:
-        db.add(DatasourceEntrantCursor(job_id=job_id, entrant=entrant, cursor_value=value))
-    else:
-        db.execute(
-            update(DatasourceEntrantCursor)
-            .where(
-                DatasourceEntrantCursor.job_id == job_id,
-                DatasourceEntrantCursor.entrant == entrant,
-            )
-            .values(cursor_value=value)
-            .execution_options(synchronize_session=False)
-        )
 
 
 def resolve_entrant_values(
@@ -109,4 +70,4 @@ def resolve_entrant_values(
     return tuple(seen)
 
 
-__all__ = ["load_backfill_cursors", "resolve_entrant_values", "save_backfill_cursor"]
+__all__ = ["resolve_entrant_values"]

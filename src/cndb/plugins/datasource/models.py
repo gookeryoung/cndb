@@ -1,11 +1,10 @@
-"""datasource 插件 ORM 模型：同步任务定义 + 运行记录 + 凭证会话 + 按标的水位.
+"""datasource 插件 ORM 模型：同步任务定义 + 运行记录 + 凭证会话.
 
-四张表（见 ADR 0006「数据模型」、ADR 0034 D2；个人大模型连接已迁到 llm 插件的 ``llm_user_config``，ADR 0020）：
+三张表（见 ADR 0006「数据模型」；个人大模型连接已迁到 llm 插件的 ``llm_user_config``，ADR 0020）：
 
-- ``datasource_session``         凭证会话：请求头 + 加密密钥（读接口只回显键名）
-- ``datasource_sync_job``        任务定义：Provider 引用 + 目标表 + 标的集合 + 幂等键 + 游标 + 调度 + 租约
-- ``datasource_sync_run``        每次运行：状态 / 游标区间 / 增删改计数 / 逐请求明细
-- ``datasource_entrant_cursor``  按标的回补水位：``backfill_date`` 游标每 (job, entrant) 一行（ADR 0034）
+- ``datasource_session``   凭证会话：请求头 + 加密密钥（读接口只回显键名）
+- ``datasource_sync_job``  任务定义：Provider 引用 + 目标表 + 标的集合 + 幂等键 + 游标 + 调度 + 租约
+- ``datasource_sync_run``  每次运行：状态 / 游标区间 / 增删改计数 / 逐请求明细
 
 半结构化配置一律存 JSON 列（``request_spec`` / ``cursor`` / ``schedule`` 等），
 与 ``ImportTask`` 的口径一致：不把用户配置拆成强类型列，避免每加一种 provider 就改表。
@@ -17,7 +16,7 @@ import datetime as dt
 import enum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cndb.models.base import Base, TimestampMixin
@@ -174,31 +173,7 @@ class DatasourceSyncRun(TimestampMixin, Base):
     detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
-class DatasourceEntrantCursor(TimestampMixin, Base):
-    """按标的回补水位（ADR 0034 D2）：``backfill_date`` 游标每 (job, entrant) 一行.
-
-    ``cursor_value`` 为该标的「已回补到的最早日期」（ISO 串，如 ``2024-01-05``）；
-    请求按水位生成 end 锚点，响应内最早日期推进水位（只向更早前移、不后退），
-    ``backfill_start`` 截断收敛；随 job 删除级联清理，重跑可重算。
-    """
-
-    __tablename__ = "datasource_entrant_cursor"
-    __table_args__ = (
-        Index("uq_datasource_entrant_cursor_job_entrant", "job_id", "entrant", unique=True),
-        {"extend_existing": True},
-    )
-
-    job_id: Mapped[int] = mapped_column(
-        ForeignKey("datasource_sync_job.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    # 标的值（与 job 的 entrant_keys / 动态来源取值同域，如 "sh600519"）
-    entrant: Mapped[str] = mapped_column(String(255), nullable=False)
-    # 已回补到的最早日期（ISO 日期串）
-    cursor_value: Mapped[str] = mapped_column(String(64), nullable=False)
-
-
 __all__ = [
-    "DatasourceEntrantCursor",
     "DatasourceSession",
     "DatasourceSyncJob",
     "DatasourceSyncRun",

@@ -7,30 +7,23 @@
 - 分页遇到空页即停止该组（entrant × 窗口）的后续请求，避免无谓翻页；
 - 全部请求失败 → ``status="failed"``；部分失败 → ``partial``；否则 ``success``。
 
-ADR 0034 扩展（大规模任务形态）：
+ADR 0034 / 0039 扩展（大规模任务形态）：
 
-- **并发**（D5）：``request.workers > 1`` 时按 (entrant × 窗口) 分组提交线程池，
-  组内分页保持串行（空页停止语义不变）；``rate_limit_ms`` 升级为全局相邻请求
-  最小出发间隔（并发下同样成立，``workers=1`` 时与旧的顺序 sleep 等价）。
 - **流式落表**（D1）：``on_batch`` 回调下，归一后的行攒满 ``batch_size`` 即回调，
   不再全量攒内存；回调异常终止整轮（已回调批次由调用方保证幂等可续跑）。
-- **行过滤 / 常量模板**（D4）：``row_filter`` 数值条件剔除行（如零值快照），
-  ``row_defaults`` 的值支持 ``{today}`` / ``{entrant}`` 模板渲染。
+- **串行限速**：``rate_limit_ms`` 表示相邻请求的最小出发间隔，首个请求不等待。
 """
 
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Any, cast
 
 from cndb.plugins.datasource.providers.base import FetchFn, NormalizeLike, RequestPlan, SourceProvider, SyncJobSpec
 from cndb.plugins.datasource.providers.registry import get_provider
-from cndb.plugins.datasource.providers.template import render_text
 from cndb.plugins.tables.services.importing.api_fetch import fetch_json, open_http_client
 
 logger = logging.getLogger(__name__)
@@ -38,16 +31,6 @@ logger = logging.getLogger(__name__)
 # 流式落表的默认批大小（行）：足够摊薄单行开销，又不至于单批过大撑爆事务
 # ADR 0039 D4：实测 10,000 行/批比 5,000 行/批吞吐高约 40%，更大批次无进一步收益
 DEFAULT_BATCH_SIZE = 10000
-
-# row_filter 支持的数值比较符
-_FILTER_OPS: Mapping[str, Callable[[float, float], bool]] = {
-    ">": lambda a, b: a > b,
-    ">=": lambda a, b: a >= b,
-    "<": lambda a, b: a < b,
-    "<=": lambda a, b: a <= b,
-    "==": lambda a, b: a == b,
-    "!=": lambda a, b: a != b,
-}
 
 
 @dataclass(slots=True)
@@ -75,16 +58,8 @@ class PipelineOutcome:
     normalize: NormalizeLike | None = None
     # 逐请求响应元信息（模型名 / token 用量等），由 provider 写入 plan.metadata
     metadata: list[dict[str, Any]] = field(default_factory=list)
-    # row_filter 剔除的行数（ADR 0034 D4；不过滤时为 0）
-    filtered: int = 0
     # 流式模式下已交给回调的行数（与非流式的 len(rows) 口径对应）
     flushed: int = 0
-    # 每标的**抓取行数**（归一 / 过滤之前）：单轮翻页的短页判定用（ADR 0053 D3）
-    entrant_rows: dict[str, int] = field(default_factory=dict)
-    # 实际执行的轮数（单轮翻页回补 >1；其它形态恒为 1，运行记录留痕用）
-    passes: int = 0
-    # 达到单轮翻页上限而提前退出（ADR 0053 D3）：按 partial 留痕，不静默成功
-    truncated: bool = False
 
     @property
     def failed(self) -> int:
@@ -95,7 +70,7 @@ class PipelineOutcome:
         """``success`` / ``partial`` / ``failed``."""
         if self.plans and self.succeeded == 0:
             return "failed"
-        if self.failures or self.truncated:
+        if self.failures:
             return "partial"
         return "success"
 
@@ -108,8 +83,6 @@ class _GroupResult:
     succeeded: int = 0
     failures: list[FetchFailure] = field(default_factory=list)
     metadata: list[dict[str, Any]] = field(default_factory=list)
-    # 该组每标的抓取行数（原始响应行数，归一 / 过滤之前）
-    entrant_rows: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -139,71 +112,58 @@ class _NormalizeAggregate:
 
 
 class RequestProgress:
-    """线程安全的请求级进度计数器（ADR 0037 D4）.
+    """请求级进度计数器（ADR 0037 D4；串行执行，读写同线程）.
 
     ``total`` = 本轮展开的计划请求数；``done`` = 已结束的请求数（成功 + 失败，
     空页提前停止后未发出的请求不计）。``entrant`` = 最近完成的标的，供运行记录展示。
     """
 
-    __slots__ = ("_done", "_entrant", "_lock", "_total")
+    __slots__ = ("_done", "_entrant", "_total")
 
     def __init__(self) -> None:
-        self._lock = threading.Lock()
         self._total = 0
         self._done = 0
         self._entrant = ""
 
     def set_total(self, total: int) -> None:
-        """设置本轮计划请求数（展开后调用一次；允许并发线程读取）."""
-        with self._lock:
-            self._total = max(0, total)
-
-    def add_total(self, extra: int) -> None:
-        """累加计划请求数（单轮翻页回补多轮展开时用，ADR 0053 D3）.
-
-        ``run_pipeline`` 每轮调用一次；单轮任务下与 :meth:`set_total` 结果相同。
-        """
-        with self._lock:
-            self._total = max(0, self._total + max(0, extra))
+        """设置本轮计划请求数（展开后调用一次）."""
+        self._total = max(0, total)
 
     def tick(self, entrant: str | None) -> None:
         """完成一个请求（成功或失败）后调用."""
-        with self._lock:
-            self._done += 1
-            if entrant:
-                self._entrant = entrant[:64]
+        self._done += 1
+        if entrant:
+            self._entrant = entrant[:64]
 
     def snapshot(self) -> tuple[int, int, str]:
-        """返回 ``(total, done, entrant)`` 的一致快照."""
-        with self._lock:
-            return self._total, self._done, self._entrant
+        """返回 ``(total, done, entrant)`` 快照."""
+        return self._total, self._done, self._entrant
 
 
 class _RateLimiter:
-    """全局请求限速器：任意相邻两个请求的出发间隔 ≥ ``rate_limit_ms``（ADR 0034 D5）.
+    """串行请求限速：相邻两个请求的出发间隔 ≥ ``rate_limit_ms``.
 
-    锁内预约「下一个允许出发时刻」，锁外等待——并发线程排队出发，
-    ``workers=1`` 时退化为顺序等待，与旧的 ``sent > 0 → sleep`` 行为一致。
+    首个请求不等待；``rate_limit_ms <= 0`` 时完全关闭。
     """
 
-    __slots__ = ("_gap", "_lock", "_next_at", "_sleep")
+    __slots__ = ("_gap", "_last", "_sleep")
 
     def __init__(self, rate_limit_ms: int, sleep: Callable[[float], None] | None = None) -> None:
         self._gap = rate_limit_ms / 1000.0 if rate_limit_ms > 0 else 0.0
-        self._lock = threading.Lock()
-        self._next_at = 0.0
+        self._last: float | None = None
         self._sleep = sleep or time.sleep
 
     def wait(self) -> None:
-        """出发前调用；需要等待时睡到预约时刻."""
+        """出发前调用；需要等待时补足与上次出发的间隔."""
         if self._gap <= 0.0:
             return
-        with self._lock:
-            now = time.monotonic()
-            delay = self._next_at - now
-            self._next_at = max(now, self._next_at) + self._gap
-        if delay > 0.0:
-            self._sleep(delay)
+        now = time.monotonic()
+        if self._last is not None:
+            delay = self._gap - (now - self._last)
+            if delay > 0.0:
+                self._sleep(delay)
+                now = time.monotonic()
+        self._last = now
 
 
 def run_pipeline(
@@ -233,61 +193,36 @@ def run_pipeline(
     """
     active = provider or get_provider(job.provider)
     plans = active.build_requests(job)
-    outcome = PipelineOutcome(plans=len(plans), passes=1)
+    outcome = PipelineOutcome(plans=len(plans))
     if progress is not None:
-        progress.add_total(len(plans))
+        progress.set_total(len(plans))
     groups = _group_plans(plans)
     limiter = _RateLimiter(rate_limit_ms, sleep)
-    cancel = threading.Event()
     sink = _BatchSink(active, job, on_batch, batch_size, outcome)
 
     def absorb(result: _GroupResult) -> None:
         outcome.succeeded += result.succeeded
         outcome.failures.extend(result.failures)
         outcome.metadata.extend(result.metadata)
-        for entrant, count in result.entrant_rows.items():
-            outcome.entrant_rows[entrant] = outcome.entrant_rows.get(entrant, 0) + count
         sink.add(result.rows)
 
     def execute(default_fetch: FetchFn) -> None:
-        workers = _resolve_workers(job)
-        if workers <= 1 or len(groups) <= 1:
-            for group in groups:
-                if cancel.is_set():
-                    break
-                absorb(_run_group(group, job, fetch, limiter, cancel, progress, default_fetch))
-        else:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = [
-                    pool.submit(_run_group, group, job, fetch, limiter, cancel, progress, default_fetch)
-                    for group in groups
-                ]
-                try:
-                    for future in as_completed(futures):
-                        absorb(future.result())
-                except BaseException:
-                    # on_batch（sink.add 内）失败：停掉未开始的组，等运行中的组自然结束
-                    cancel.set()
-                    raise
+        for group in groups:
+            absorb(_run_group(group, job, fetch, limiter, progress, default_fetch))
 
     if fetch is None:
         # 缺省抓取器：整轮运行共用一个客户端（TLS 会话复用），退出即关闭
         with open_http_client() as client:
-            execute(lambda config: fetch_json(config, client=client))
+
+            def shared_fetch(config: Any) -> list[dict[str, Any]]:
+                return fetch_json(config, client=client)
+
+            execute(shared_fetch)
     else:
         execute(fetch_json)
 
     sink.flush()
     return outcome
-
-
-def _resolve_workers(job: SyncJobSpec) -> int:
-    """解析并发数：``request.workers``；LLM 类 provider 一律按 1（避免打爆配额）."""
-    declared = max(1, int(getattr(job.request, "workers", 1) or 1))
-    if job.provider == "llm_prompt" and declared > 1:
-        logger.warning("任务声明 workers=%d，但 llm_prompt 不支持并发，按 1 执行", declared)
-        return 1
-    return declared
 
 
 def _group_plans(plans: Sequence[RequestPlan]) -> list[list[RequestPlan]]:
@@ -303,15 +238,12 @@ def _run_group(
     job: SyncJobSpec,
     fetch: FetchFn | None,
     limiter: _RateLimiter,
-    cancel: threading.Event,
     progress: RequestProgress | None = None,
     default_fetch: FetchFn = fetch_json,
 ) -> _GroupResult:
-    """串行执行一个分组内的全部请求（空页停止；取消标记只在请求间检查）."""
+    """串行执行一个分组内的全部请求（空页停止）."""
     result = _GroupResult()
     for plan in group:
-        if cancel.is_set():
-            break
         limiter.wait()
         # ADR 0020：plan 级抓取器优先（LLM 请求走平台客户端）；显式注入的 fetch 最高优先
         plan_fetcher: FetchFn = fetch or plan.fetcher or default_fetch
@@ -331,28 +263,8 @@ def _run_group(
         if plan.page is not None and not rows:
             # 空页即停该组（ADR 0006 I3）：后续页码不再请求
             break
-        if plan.entrant is not None:
-            # 抓取行数按标的累计（归一 / 过滤之前）：单轮翻页的短页判定依据（ADR 0053 D3）
-            result.entrant_rows[plan.entrant] = result.entrant_rows.get(plan.entrant, 0) + len(rows)
-        result.rows.extend(
-            apply_row_defaults(
-                fill_entrant(to_records(rows), job.entrant_param, plan.entrant, inplace=True),
-                job.row_defaults,
-                variables=_row_variables(job, plan),
-                inplace=True,
-            )
-        )
+        result.rows.extend(fill_entrant(to_records(rows), job.entrant_param, plan.entrant, inplace=True))
     return result
-
-
-def _row_variables(job: SyncJobSpec, plan: RequestPlan) -> dict[str, Any]:
-    """行级常量渲染变量：会话密钥等额外变量铺底 + today（runner 注入）+ 当前标的."""
-    variables: dict[str, Any] = dict(job.extra_variables)
-    if plan.entrant is not None:
-        variables["entrant"] = plan.entrant
-        if job.entrant_param:
-            variables[job.entrant_param] = plan.entrant
-    return variables
 
 
 class _BatchSink:
@@ -404,8 +316,7 @@ class _BatchSink:
         normalized = self._active.normalize(chunk, self._job)
         self._aggregate.dropped += normalized.dropped
         self._aggregate.add_failures(normalized.failures)
-        kept, removed = apply_row_filter(normalized.rows, getattr(self._job.request, "row_filter", None), inplace=True)
-        self._outcome.filtered += removed
+        kept = normalized.rows
         if self._on_batch is not None:
             if kept:
                 self._on_batch(kept)
@@ -447,84 +358,11 @@ def fill_entrant(
     return filled
 
 
-def apply_row_defaults(
-    rows: Sequence[Mapping[str, Any]],
-    defaults: Mapping[str, Any],
-    *,
-    variables: Mapping[str, Any] | None = None,
-    inplace: bool = False,
-) -> list[dict[str, Any]]:
-    """行级常量列（``setdefault`` 语义，响应自带同名值优先）.
-
-    用于响应不回显来源维度的场景：多源写同一张表时补「来源 / 复权方式」等列。
-    ``variables`` 给出时常量值先经模板渲染（``{today}`` / ``{entrant}`` 等，
-    ADR 0034 D4——快照写当日行的日期列用）；非字符串值原样使用。
-    ``inplace=True`` 就地 ``setdefault``（ADR 0043 D2），默认仍返回新 dict 列表。
-    """
-    if not defaults:
-        return cast("list[dict[str, Any]]", list(rows)) if inplace else [dict(row) for row in rows]
-    rendered = {
-        key: (render_text(value, dict(variables)) if variables and isinstance(value, str) else value)
-        for key, value in defaults.items()
-    }
-    filled: list[dict[str, Any]] = []
-    if inplace:
-        for row in rows:
-            for key, value in rendered.items():
-                row.setdefault(key, value)  # type: ignore[attr-defined]
-            filled.append(row)  # type: ignore[arg-type]
-        return filled
-    for row in rows:
-        record = dict(row)
-        for key, value in rendered.items():
-            record.setdefault(key, value)
-        filled.append(record)
-    return filled
-
-
-def apply_row_filter(
-    rows: Sequence[Mapping[str, Any]],
-    row_filter: Mapping[str, Any] | None,
-    *,
-    inplace: bool = False,
-) -> tuple[list[dict[str, Any]], int]:
-    """按数值条件过滤行（ADR 0034 D4）：返回 ``(保留行, 剔除数)``.
-
-    字段缺失 / 非数值（不可转 float）的行一律剔除（如停牌标的零值快照行）；
-    ``row_filter`` 为 ``None`` 时原样返回（零剔除）。
-    ``inplace=True`` 时保留行沿用入参对象（只挑引用、不复制）；默认仍复制。
-    """
-    copy = (lambda row: row) if inplace else dict  # type: ignore[arg-type]
-    if not row_filter:
-        return [copy(row) for row in rows], 0
-    field = str(row_filter.get("field") or "")
-    op = _FILTER_OPS.get(str(row_filter.get("op") or ""))
-    threshold = row_filter.get("value")
-    if not field or op is None or threshold is None:
-        return [copy(row) for row in rows], 0
-    kept: list[dict[str, Any]] = []
-    removed = 0
-    for row in rows:
-        value = row.get(field)
-        try:
-            number = float(value)  # type: ignore[arg-type]
-        except (TypeError, ValueError):
-            removed += 1
-            continue
-        if op(number, float(threshold)):
-            kept.append(copy(row))
-        else:
-            removed += 1
-    return kept, removed
-
-
 __all__ = [
     "DEFAULT_BATCH_SIZE",
     "FetchFailure",
     "PipelineOutcome",
     "RequestProgress",
-    "apply_row_defaults",
-    "apply_row_filter",
     "fill_entrant",
     "run_pipeline",
     "to_records",

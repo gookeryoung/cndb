@@ -124,7 +124,7 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 
 ## Consequences
 
-- **正向**：单批落库约 0.9s → 0.45s（≈2×）；全市场回补一轮从十几分钟降到约一半；运行中可见请求级进度；长任务不再被 30s 前端超时误报失败。
+- **正向**：单批落库约 0.9s → 0.45s（≈2×）；运行中可见请求级进度；长任务不再被 30s 前端超时误报失败。
 - **负向**：新增后台线程与三列迁移；进度最多滞后一个批次。
 - **风险与缓解**：后台线程与请求 session 隔离（新建工厂 + 仅主线程回写）；测试用同步桩（沿用导入后台任务的既有约定）；迁移 downgrade 可回退。
 
@@ -133,7 +133,7 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/tables/services/core/records.py` | `tests/test_import_pipeline.py` | `f976829b` |
-| P1 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/alembic/versions/c4d5e6f7a8b9_add_datasource_sync_run_progress.py` | `tests/test_datasource_runner.py`、`tests/test_datasource_migration.py`、`tests/test_datasource_pipeline_concurrency.py` | `f976829b` |
+| P1 | 已落地 | `src/cndb/plugins/datasource/models.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/alembic/versions/c4d5e6f7a8b9_add_datasource_sync_run_progress.py` | `tests/test_datasource_runner.py`、`tests/test_datasource_migration.py` | `f976829b` |
 | P2 | 已落地 | `src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/datasource/schemas.py`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_api.py`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `f976829b` |
 
 ## 交接（会话结束更新）
@@ -264,7 +264,7 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 | 轴 | 载体 | 决定 | 由谁 |
 |---|---|---|---|
 | 运行进度与轮询 | `datasource_sync_run.progress_*`、前端 2s 轮询 | 进度语义与轮询频率沿用，不新增通道 | ADR 0037 D4/D5 |
-| 抓取并发 / 限速 | `request.workers`、`rate_limit_ms` | 语义不变，只调示例任务取值 | ADR 0034 D5 |
+| 串行限速 | `rate_limit_ms` | 语义不变（ADR 0104 已删除并发实现） | ADR 0104 D6 |
 | 网络层 | `core/http.py` | 本次补上 ADR 0039 交接中「连接复用」这一遗留项 | ADR 0039 交接 |
 | 落库幂等 | 先查后写 + 非唯一索引 | 不引入唯一索引 / `ON CONFLICT` | ADR 0006、ADR 0034 D6 |
 
@@ -273,13 +273,13 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/datasource/schemas.py`、`frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/syncProgress.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx` | `tests/test_datasource_sync_speed.py`、`tests/test_datasource_api.py`、`frontend/src/pages/datasource/syncProgress.test.ts`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `5cc0a440` |
-| P1 | 已落地 | `src/cndb/core/http.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`examples/datasets/工作区-数据源示例/datasource.json` | `tests/test_api_fetch.py`、`tests/test_datasource_pipeline_concurrency.py`、`tests/test_seed_datasource.py` | `5cc0a440` |
+| P1 | 已落地 | `src/cndb/core/http.py`、`src/cndb/plugins/datasource/services/pipeline.py` | `tests/test_api_fetch.py`、`tests/test_seed_datasource.py` | `5cc0a440` |
 | P2 | 已落地 | `src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/datasource/services/write.py` | `tests/test_import_preview_and_reuse.py`、`tests/test_datasource_write_throughput.py`、`tests/test_import_light_mode_equivalence.py` | `5cc0a440` |
 
 ### 交接（原 ADR 0040）
 
 - 当前阶段：P0-P2 已落地（2026-10-26），待人工做真源端到端复测
-- 已完成：P0 速度字段与前端展示、P1 共享客户端与示例任务限速 10ms、P2 预览关闭与归一复用；写路径实测 10,000 行更新批 16.4-17.5k → 24.8-26.8k 行/秒
-- 下一步（待人工）：① 在存量实例重跑腾讯日线回补，按 D8 口径记录端到端耗时并回填「行业对照」；② 观察限速 10ms 是否触发对端风控，必要时把任务 `rate_limit_ms` 调回
+- 已完成：P0 速度字段与前端展示、P1 共享客户端、P2 预览关闭与归一复用；写路径实测 10,000 行更新批 16.4-17.5k → 24.8-26.8k 行/秒
+- 下一步（待人工）：在存量实例上按 D8 口径记录端到端耗时并回填「行业对照」
 - 已知坑：基准为同机单次测量，绝对吞吐受网络与机器负载影响，只做同机横向对比；`preview=False` / 归一复用只能由数据同步链路传入，防止导入预览回归；共享 Client 必须在异常路径也关闭；`bulk_update_rows(reuse_normalized=True)` 对 `updates` 条目里没有 `normalized` 的字段仍走逐格校验，不改变数据质量
 - 最近一次全绿：`make check` @ `5cc0a440`（2026-10-26，后端 5482 passed / 覆盖率 96.99%）

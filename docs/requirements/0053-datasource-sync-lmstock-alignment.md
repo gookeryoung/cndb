@@ -3,7 +3,7 @@
 - 编号：0053（与 ADR `docs/adr/0053-*.md` 同号）
 - 来源 / 提出人：用户（2026-10-27 会话，前序分析：cndb 同步实测 / lmstock 机制对照）
 - 日期：2026-10-27
-- 关联 ADR：`docs/adr/0053-datasource-sync-lmstock-alignment.md`（Implemented（P0-P2 已落地，））
+- 关联 ADR：已随 ADR 0104 删除（原 `docs/adr/0053-datasource-sync-lmstock-alignment.md`；本文仅作需求存档，能力不再存在）
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

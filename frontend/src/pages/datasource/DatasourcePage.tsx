@@ -47,8 +47,35 @@ const CURSOR_LABEL: Record<string, string> = {
   date: '按日增量',
   datetime: '按时刻增量',
   key_set: '按幂等键去重',
-  backfill_date: '按标的回补（水位前推）',
   none: '每次全量',
+}
+
+/** ADR 0104 已删除的请求声明键：编辑旧任务时不再保留 */
+const REMOVED_REQUEST_KEYS = ['url_hosts', 'row_defaults', 'row_filter', 'workers'] as const
+
+/** 旧任务命中 ADR 0104 删除口径的声明（抽屉提示 + 保存时剔除） */
+function removedLegacyConfig(job: SyncJob | null): string[] {
+  if (!job) return []
+  const found: string[] = []
+  const spec = job.request_spec as Record<string, unknown> | undefined
+  if (spec) {
+    for (const key of REMOVED_REQUEST_KEYS) if (key in spec) found.push(key)
+    if (spec.record_mode === 'rows_array') found.push('record_mode=rows_array')
+    if (typeof spec.data_path === 'string' && spec.data_path.includes('|')) found.push('data_path 的 | 候选')
+  }
+  if ((job.cursor as { strategy?: string } | undefined)?.strategy === 'backfill_date') {
+    found.push('cursor.strategy=backfill_date')
+  }
+  return found
+}
+
+/** 合并表单值前剔除已删除声明；record_layout / entrant_source / rate_limit_ms 等仍原样保留 */
+function mergeRequestSpec(base: SyncRequestSpec, built: SyncRequestSpec): SyncRequestSpec {
+  const merged: Record<string, unknown> = { ...base, ...built }
+  for (const key of REMOVED_REQUEST_KEYS) delete merged[key]
+  if (merged.record_mode === 'rows_array') delete merged.record_mode
+  if (typeof merged.data_path === 'string' && merged.data_path.includes('|')) delete merged.data_path
+  return merged as SyncRequestSpec
 }
 
 /** 方向提示：放进「方向」标签的 ? tooltip，不再用 Alert 占一行 */
@@ -617,6 +644,8 @@ function JobDrawer({
   // 保存并预览后抽屉保持打开（不关闭），此时任务已落库；后续保存必须走更新而不是再建一条
   const activeJob = job ?? savedJob
   const watchedName = Form.useWatch('name', form) as string | undefined
+  /** 旧任务包含 ADR 0104 已删除的声明：抽屉提示，保存时剔除 */
+  const legacyConfig = useMemo(() => removedLegacyConfig(job), [job])
 
   useEffect(() => {
     if (!open) return
@@ -651,7 +680,10 @@ function JobDrawer({
         entrant_param: job.entrant_param ?? undefined,
         entrant_keys: job.entrant_keys ?? [],
         match_keys: job.match_keys ?? [],
-        cursor_strategy: job.cursor?.strategy ?? 'date',
+        // ADR 0104 删除了 backfill_date；旧任务回落到按日增量，保存时剔除旧声明
+        cursor_strategy: (job.cursor?.strategy as string | undefined) === 'backfill_date'
+          ? 'date'
+          : (job.cursor?.strategy ?? 'date'),
         cursor_field: job.cursor?.field ?? undefined,
         backfill_start: job.cursor?.backfill_start ?? undefined,
         schedule_mode: job.schedule?.mode ?? 'manual',
@@ -787,12 +819,13 @@ function JobDrawer({
       ? { ...(form.getFieldsValue(true) as Record<string, unknown>), ...validated }
       : validated
     // 表单只覆盖它管理的键；编辑既有任务时以原 request_spec 铺底，
-    // 保留表单未挂载的声明（record_mode / record_layout / row_defaults /
-    // row_filter / workers 等，ADR 0008/0034），避免一保存就静默丢配置。
+    // 保留表单未挂载的声明（record_mode / record_layout 等，ADR 0008/0034），
+    // 避免一保存就静默丢配置。ADR 0104 已删除的键（url_hosts / row_defaults /
+    // row_filter / workers / rows_array / data_path 候选）不再回传，由抽屉提示后清理。
     // llm_prompt 例外：极简口径（ADR 0019）须剥离 url_template 等抓取声明，不铺底。
     const builtSpec = buildRequestSpec(values)
     const mergeBase = job?.request_spec && values.provider !== 'llm_prompt' ? job.request_spec : undefined
-    const requestSpec = mergeBase ? { ...mergeBase, ...builtSpec } : builtSpec
+    const requestSpec = mergeBase ? mergeRequestSpec(mergeBase, builtSpec) : builtSpec
     return {
       name: String(values.name).trim(),
       direction: 'pull',
@@ -918,6 +951,16 @@ function JobDrawer({
         }
       >
         <Form form={form} layout="vertical" size="small" className="cn-datasource-form">
+          {legacyConfig.length > 0 && (
+            <Alert
+              type="warning"
+              showIcon
+              data-testid="datasource-legacy-config-warning"
+              style={{ marginBottom: 12 }}
+              title="该任务含已删除的同步配置"
+              description={`${legacyConfig.join('、')}（ADR 0104）。保存时会自动移除，请确认后保存。`}
+            />
+          )}
           <div className="cn-datasource-form-head">
             <Form.Item
               name="direction"

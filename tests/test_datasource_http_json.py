@@ -1,7 +1,8 @@
-"""datasource http_json 通用解析扩展：行数组 / 路径模板 / 常量列 / 数值缩放.
+"""datasource http_json：响应解析 / 请求展开 / payload 守卫（ADR 0104 口径）.
 
-对应 ADR 0033 P0：``rows_array`` 记录形态、``data_path`` 模板、``row_defaults``、
-``FieldTransform.scale`` 四项领域无关声明能力。
+保留能力：``rows`` 记录形态、``data_path`` 模板（单路径）、标的展开、分页；
+ADR 0104 删除的 ``rows_array`` / 候选路径 / ``row_defaults`` / ``scale``
+必须被 payload 守卫显式拒绝（不静默忽略）。
 """
 
 from __future__ import annotations
@@ -12,43 +13,20 @@ import pytest
 
 from cndb.plugins.datasource.providers.base import (
     FieldTransform,
+    PagingSpec,
     ProviderError,
     RequestSpec,
     SyncJobSpec,
     normalize_field_mapping,
 )
-from cndb.plugins.datasource.providers.http_json import HttpJsonProvider, rows_array_to_rows
+from cndb.plugins.datasource.providers.http_json import HttpJsonProvider
 from cndb.plugins.datasource.services.normalize import apply_field_mapping
-from cndb.plugins.datasource.services.pipeline import apply_row_defaults, run_pipeline
 from cndb.plugins.datasource.services.runner import (
     field_mapping_from_payload,
     request_spec_from_payload,
 )
 
 PROVIDER = HttpJsonProvider()
-
-# 嵌套行数组形态：外层带 code，标的键下是「行数组的数组」
-NESTED_PAYLOAD = {
-    "code": 0,
-    "msg": "",
-    "data": {
-        "item-a": {
-            "primary": [
-                ["2026-10-20", "1500.00", "1510.00", "1520.00", "1490.00", "12345"],
-                ["2026-10-21", "1510.00", "1520.00", "1530.00", "1500.00", "23456"],
-            ]
-        }
-    },
-}
-
-DAY_LAYOUT = {
-    "日期": 0,
-    "开盘": 1,
-    "收盘": 2,
-    "最高": 3,
-    "最低": 4,
-    "成交量": 5,
-}
 
 
 def _job(**overrides: object) -> SyncJobSpec:
@@ -58,323 +36,131 @@ def _job(**overrides: object) -> SyncJobSpec:
     return SyncJobSpec(**base)  # type: ignore[arg-type]
 
 
-class TestRowsArrayToRows:
-    def test_parses_nested_array_rows(self):
-        rows = rows_array_to_rows(NESTED_PAYLOAD, "data.item-a.primary", DAY_LAYOUT)
-        assert len(rows) == 2
-        assert rows[0]["日期"] == "2026-10-20"
-        assert rows[1]["成交量"] == "23456"
+class TestRowsParse:
+    def test_parse_uses_data_path(self):
+        payload = {"data": {"items": [{"a": 1}, {"a": 2}]}}
+        rows = PROVIDER.parse(
+            json.dumps(payload), _job(request=RequestSpec(url_template="https://x.test", data_path="data.items"))
+        )
+        assert rows == [{"a": 1}, {"a": 2}]
 
-    def test_accepts_digit_string_index(self):
-        rows = rows_array_to_rows([["a", "b"]], None, {"第一列": "0", "第二列": "1"})
-        assert rows == [{"第一列": "a", "第二列": "b"}]
+    def test_parse_filters_non_object_rows(self):
+        payload = [{"a": 1}, "坏行", 3]
+        assert PROVIDER.parse(json.dumps(payload), _job()) == [{"a": 1}]
 
-    def test_short_row_fills_none_without_dropping(self):
-        rows = rows_array_to_rows([["a"]], None, {"x": 0, "y": 1})
-        assert rows == [{"x": "a", "y": None}]
+    def test_parse_invalid_json_raises(self):
+        with pytest.raises(ProviderError, match="不是合法 JSON"):
+            PROVIDER.parse("not-json", _job())
 
-    def test_empty_series_returns_empty(self):
-        assert rows_array_to_rows({"data": {"s": {"primary": []}}}, "data.s.primary", DAY_LAYOUT) == []
-
-    def test_missing_path_raises(self):
-        with pytest.raises(ProviderError, match="指向一个数组"):
-            rows_array_to_rows(NESTED_PAYLOAD, "data.item-a.fallback", DAY_LAYOUT)
-
-    def test_row_not_array_raises(self):
-        with pytest.raises(ProviderError, match="元素必须是数组"):
-            rows_array_to_rows([{"x": 1}], None, {"x": 0})
-
-    def test_missing_layout_raises(self):
-        with pytest.raises(ProviderError, match="必须声明 record_layout"):
-            rows_array_to_rows([["a"]], None, {})
-
-    def test_bool_index_raises(self):
-        with pytest.raises(ProviderError, match="不能是布尔值"):
-            rows_array_to_rows([["a"]], None, {"x": True})
-
-    def test_non_numeric_index_raises(self):
-        with pytest.raises(ProviderError, match="必须是整数"):
-            rows_array_to_rows([["a"]], None, {"x": "第一列"})
-
-    def test_negative_index_raises(self):
-        with pytest.raises(ProviderError, match="不能为负"):
-            rows_array_to_rows([["a"]], None, {"x": -1})
+    def test_parse_columns_mode_delegates(self):
+        payload = {"daily": {"time": ["2026-10-20"], "temp": [20.5]}}
+        job = _job(
+            request=RequestSpec(
+                url_template="https://api.example.com/v1",
+                record_mode="columns",
+                data_path="daily",
+            )
+        )
+        assert PROVIDER.parse(json.dumps(payload), job) == [{"time": "2026-10-20", "temp": 20.5}]
 
 
-class TestProviderDispatch:
-    def test_rows_array_mode_uses_custom_handler(self):
-        job = _job(request=RequestSpec(url_template="https://api.example.com/v1", record_mode="rows_array"))
-        assert PROVIDER.response_handler_for(job) is not None
+class TestBuildRequests:
+    def test_data_path_rendered_per_entrant(self):
+        job = _job(
+            request=RequestSpec(url_template="https://api.example.com/v1", data_path="data.{entrant}.items"),
+            entrant_param="symbol",
+            entrant_values=("item-a", "item-b"),
+        )
+        configs = [plan.config for plan in PROVIDER.build_requests(job)]
+        assert [config.data_path for config in configs] == ["data.item-a.items", "data.item-b.items"]
+        assert [config.url for config in configs] == ["https://api.example.com/v1", "https://api.example.com/v1"]
 
-    def test_rows_mode_has_no_custom_handler(self):
+    def test_paging_expands_to_pages(self):
+        job = _job(
+            request=RequestSpec(
+                url_template="https://api.example.com/v1?page={page}",
+                paging=PagingSpec(mode="page", page_size=2, max_pages=3),
+            )
+        )
+        plans = PROVIDER.build_requests(job)
+        assert [plan.page for plan in plans] == [1, 2, 3]
+        assert plans[1].config.url.endswith("page=2")
+
+    def test_no_entrant_yields_single_request(self):
+        assert len(PROVIDER.build_requests(_job())) == 1
+
+    def test_response_handler_only_for_custom_parse(self):
         assert PROVIDER.response_handler_for(_job()) is None
 
-    def test_parse_dispatches_rows_array(self):
-        job = _job(
-            request=RequestSpec(
-                url_template="https://api.example.com/v1",
-                record_mode="rows_array",
-                data_path="data.{symbol}.primary",
-                record_layout=DAY_LAYOUT,
-            ),
-            entrant_param="symbol",
-            entrant_values=("item-a",),
-        )
-        config = PROVIDER.build_requests(job)[0].config
-        # data_path 按标的渲染
-        assert config.data_path == "data.item-a.primary"
-        rows = PROVIDER.parse(json.dumps(NESTED_PAYLOAD), job, data_path=config.data_path)
-        assert rows[0]["收盘"] == "1510.00"
+        class _Custom(HttpJsonProvider):
+            uses_custom_parse = True
 
-    def test_parse_uses_spec_data_path_without_override(self):
-        job = _job(
-            request=RequestSpec(
-                url_template="https://api.example.com/v1",
-                record_mode="rows_array",
-                data_path="data.item-a.primary",
-                record_layout={"日期": 0},
-            )
-        )
-        rows = PROVIDER.parse(json.dumps(NESTED_PAYLOAD), job)
-        assert rows[0]["日期"] == "2026-10-20"
-
-    def test_parse_rows_mode_still_works(self):
-        payload = {"items": [{"a": 1}]}
-        rows = PROVIDER.parse(json.dumps(payload), _job())
-        assert rows == [{"a": 1}]
-
-    def test_parse_rows_array_invalid_json_raises(self):
-        job = _job(request=RequestSpec(url_template="https://api.example.com/v1", record_mode="rows_array"))
-        with pytest.raises(ProviderError, match="不是合法 JSON"):
-            PROVIDER.parse("not-json", job)
+        assert _Custom().response_handler_for(_job()) is not None
 
 
-class TestDataPathCandidates:
-    """``data_path`` 候选回退（ADR 0039 D1/D3）：同一资源可能只回首个或回退路径."""
-
-    DAY_ONLY_PAYLOAD = {
-        "code": 0,
-        "data": {
-            "item-b": {
-                "fallback": [
-                    ["2026-10-20", "1.100", "1.120", "1.130", "1.090", "1234"],
-                    ["2026-10-21", "1.120", "1.130", "1.140", "1.110", "2345"],
-                ]
-            }
-        },
-    }
-
-    @staticmethod
-    def _mk_job(data_path: str) -> SyncJobSpec:
-        return _job(
-            request=RequestSpec(
-                url_template="https://proxy.example.com/series?param={symbol}",
-                record_mode="rows_array",
-                data_path=data_path,
-                record_layout={"日期": 0, "收盘": 2},
-            ),
-            entrant_param="symbol",
-            entrant_values=("item-b",),
-        )
-
-    def test_falls_back_to_secondary_when_primary_absent(self):
-        job = self._mk_job("data.{entrant}.primary|data.{entrant}.fallback")
-        config = PROVIDER.build_requests(job)[0].config
-        # 候选串整体渲染，分隔符保留
-        assert config.data_path == "data.item-b.primary|data.item-b.fallback"
-        rows = PROVIDER.parse(json.dumps(self.DAY_ONLY_PAYLOAD), job, data_path=config.data_path)
-        assert rows == [
-            {"日期": "2026-10-20", "收盘": "1.120"},
-            {"日期": "2026-10-21", "收盘": "1.130"},
-        ]
-
-    def test_prefers_first_non_empty_candidate(self):
-        payload = {"data": {"item-b": {"primary": NESTED_PAYLOAD["data"]["item-a"]["primary"], "fallback": []}}}
-        rows = PROVIDER.parse(
-            json.dumps(payload),
-            self._mk_job("data.item-b.primary|data.item-b.fallback"),
-            data_path="data.item-b.primary|data.item-b.fallback",
-        )
-        assert rows[0]["日期"] == "2026-10-20"
-
-    def test_empty_first_candidate_tries_next(self):
-        payload = {"data": {"item-b": {"primary": [], "fallback": [["2026-10-20", "1.100", "1.120"]]}}}
-        rows = PROVIDER.parse(
-            json.dumps(payload),
-            self._mk_job("data.item-b.primary|data.item-b.fallback"),
-            data_path="data.item-b.primary|data.item-b.fallback",
-        )
-        assert rows == [{"日期": "2026-10-20", "收盘": "1.120"}]
-
-    def test_all_candidates_empty_returns_empty(self):
-        payload = {"data": {"item-b": {"primary": [], "fallback": []}}}
-        rows = PROVIDER.parse(
-            json.dumps(payload),
-            self._mk_job("data.item-b.primary|data.item-b.fallback"),
-            data_path="data.item-b.primary|data.item-b.fallback",
-        )
-        assert rows == []
-
-    def test_all_candidates_missing_returns_empty(self):
-        """路径全部缺失 = 无数据（不是失败）：北交所等品种只回空对象."""
-        payload = {"data": {"item-b": {"qt": {}}}}
-        rows = PROVIDER.parse(
-            json.dumps(payload),
-            self._mk_job("data.item-b.primary|data.item-b.fallback"),
-            data_path="data.item-b.primary|data.item-b.fallback",
-        )
-        assert rows == []
-
-    def test_candidate_hit_non_array_raises(self):
-        payload = {"data": {"item-b": {"primary": {"收盘": "1.12"}, "fallback": []}}}
-        with pytest.raises(ProviderError) as excinfo:
-            PROVIDER.parse(
-                json.dumps(payload),
-                self._mk_job("data.item-b.primary|data.item-b.fallback"),
-                data_path="data.item-b.primary|data.item-b.fallback",
-            )
-        message = str(excinfo.value)
-        assert "命中非数组的候选" in message
-        assert "data.item-b.primary" in message
-
-    def test_single_path_missing_returns_empty(self):
-        """单路径缺失（如北交所品种的 data.{entrant}.fallback）不报错，按空批落地."""
-        payload = {"data": {"bj920010": {}}}
-        rows = PROVIDER.parse(
-            json.dumps(payload),
-            self._mk_job("data.bj920010.fallback"),
-            data_path="data.bj920010.fallback",
-        )
-        assert rows == []
-
-
-class TestRowDefaults:
-    def test_setdefault_semantics(self):
-        rows = apply_row_defaults([{"a": 1, "来源": "响应自带"}], {"来源": "新浪"})
-        assert rows == [{"a": 1, "来源": "响应自带"}]
-
-    def test_fills_missing_columns(self):
-        rows = apply_row_defaults([{"a": 1}], {"来源": "新浪", "版本": "不复权"})
-        assert rows == [{"a": 1, "来源": "新浪", "版本": "不复权"}]
-
-    def test_without_defaults_copies_rows(self):
-        rows = apply_row_defaults([{"a": 1}], {})
-        assert rows == [{"a": 1}]
-
-    def test_sync_job_spec_falls_back_to_request_defaults(self):
-        job = _job(request=RequestSpec(url_template="https://api.example.com/v1", row_defaults={"来源": "接口A"}))
-        assert job.row_defaults == {"来源": "接口A"}
-
-    def test_pipeline_applies_defaults_and_entrant(self):
-        job = _job(
-            request=RequestSpec(
-                url_template="https://api.example.com/v1",
-                record_mode="rows_array",
-                record_layout={"日期": 0, "收盘": 1},
-                row_defaults={"来源": "接口A", "版本": "最新"},
-            ),
-            entrant_param="symbol",
-            entrant_values=("item-a",),
-        )
-        outcome = run_pipeline(job, fetch=lambda _config: [{"日期": "2026-10-20", "收盘": "1510.00"}])
-        assert outcome.rows == [
-            {"日期": "2026-10-20", "收盘": "1510.00", "symbol": "item-a", "来源": "接口A", "版本": "最新"}
-        ]
-
-
-class TestFieldScale:
-    def test_scale_multiplies_numeric(self):
+class TestNormalize:
+    def test_apply_field_mapping_converts_types(self):
         result = apply_field_mapping(
-            [{"volume": 12}], {"volume": FieldTransform(name="成交量", field_type="int", scale=100)}
+            [{"volume": "12", "name": 3}],
+            {
+                "volume": FieldTransform(name="成交量", field_type="int"),
+                "name": FieldTransform(name="名称", field_type="text"),
+            },
         )
-        assert result.rows == [{"成交量": 1200}]
+        assert result.rows == [{"成交量": 12, "名称": "3"}]
 
-    def test_scale_keeps_none(self):
-        result = apply_field_mapping(
-            [{"volume": None}], {"volume": FieldTransform(name="成交量", field_type="int", scale=100)}
+    def test_normalize_field_mapping_reads_name_and_type(self):
+        mapping = normalize_field_mapping({"volume": {"name": "成交量", "field_type": "int"}})
+        assert mapping["volume"] == FieldTransform(name="成交量", field_type="int")
+
+
+class TestRequestSpecGuards:
+    @pytest.mark.parametrize("key", ["url_hosts", "row_defaults", "row_filter", "workers"])
+    def test_removed_keys_rejected(self, key: str):
+        with pytest.raises(ValueError, match=f"已删除的声明键.*{key}"):
+            request_spec_from_payload({"url_template": "https://api.example.com/v1", key: {}})
+
+    def test_rows_array_mode_rejected(self):
+        with pytest.raises(ValueError, match="record_mode 非法"):
+            request_spec_from_payload({"url_template": "https://api.example.com/v1", "record_mode": "rows_array"})
+
+    def test_data_path_candidates_rejected(self):
+        with pytest.raises(ValueError, match="不再支持 \\| 候选路径"):
+            request_spec_from_payload({"url_template": "https://api.example.com/v1", "data_path": "a|b"})
+
+    def test_single_data_path_accepted(self):
+        spec = request_spec_from_payload(
+            {"url_template": "https://api.example.com/v1", "data_path": "data.{entrant}.items"}
         )
-        assert result.rows == [{"成交量": None}]
+        assert spec.data_path == "data.{entrant}.items"
 
-    def test_scale_applies_to_numeric_strings(self):
-        # 行情接口多以字符串返回数值，缩放须同样生效
-        result = apply_field_mapping(
-            [{"volume": "12"}], {"volume": FieldTransform(name="成交量", field_type="int", scale=100)}
-        )
-        assert result.rows == [{"成交量": 1200}]
-
-    def test_scale_passes_through_unconvertible_string(self):
-        result = apply_field_mapping(
-            [{"volume": "N/A"}], {"volume": FieldTransform(name="成交量", field_type="int", scale=100)}
-        )
-        assert result.rows == [{"成交量": None}]
-        assert result.failures and result.failures[0].field == "成交量"
-
-    def test_scale_ignored_for_text_target(self):
-        result = apply_field_mapping(
-            [{"volume": "12"}], {"volume": FieldTransform(name="成交量", field_type="text", scale=100)}
-        )
-        assert result.rows == [{"成交量": "12"}]
-
-    def test_scale_ignores_bool(self):
-        result = apply_field_mapping(
-            [{"flag": True}], {"flag": FieldTransform(name="标志", field_type="bool", scale=100)}
-        )
-        assert result.rows == [{"标志": True}]
-
-    def test_without_scale_is_unchanged(self):
-        result = apply_field_mapping([{"volume": 12}], {"volume": FieldTransform(name="成交量", field_type="int")})
-        assert result.rows == [{"成交量": 12}]
-
-    def test_scale_rejects_non_numeric_declaration(self):
-        with pytest.raises(ProviderError, match="scale 必须是数值"):
-            FieldTransform(name="x", scale="100")  # type: ignore[arg-type]
-
-    def test_normalize_field_mapping_parses_scale(self):
-        mapping = normalize_field_mapping({"volume": {"name": "成交量", "field_type": "int", "scale": 100}})
-        assert mapping["volume"] == FieldTransform(name="成交量", field_type="int", scale=100.0)
-
-    def test_normalize_field_mapping_blank_scale(self):
-        mapping = normalize_field_mapping({"volume": {"name": "成交量", "scale": ""}})
-        assert mapping["volume"] == FieldTransform(name="成交量")
-
-    def test_normalize_field_mapping_bool_scale_raises(self):
-        with pytest.raises(ProviderError, match="scale 必须是数值"):
-            normalize_field_mapping({"volume": {"name": "成交量", "scale": True}})
-
-    def test_normalize_field_mapping_bad_scale_raises(self):
-        with pytest.raises(ProviderError, match="scale 必须是数值"):
-            normalize_field_mapping({"volume": {"name": "成交量", "scale": "abc"}})
-
-
-class TestPayloadParsing:
-    def test_request_spec_accepts_rows_array(self):
+    def test_columns_mode_accepted(self):
         spec = request_spec_from_payload(
             {
                 "url_template": "https://api.example.com/v1",
-                "record_mode": "rows_array",
-                "record_layout": {"日期": 0},
-                "row_defaults": {"来源": "接口A"},
+                "record_mode": "columns",
+                "record_layout": {"日期": "time"},
             }
         )
-        assert spec.record_mode == "rows_array"
-        assert spec.row_defaults == {"来源": "接口A"}
+        assert spec.record_mode == "columns"
+        assert spec.record_layout == {"日期": "time"}
 
-    def test_request_spec_rejects_unknown_mode(self):
-        with pytest.raises(ValueError, match="record_mode 非法"):
-            request_spec_from_payload({"url_template": "https://api.example.com/v1", "record_mode": "matrix"})
 
-    def test_field_mapping_payload_parses_scale(self):
-        mapping = field_mapping_from_payload({"volume": {"name": "成交量", "field_type": "int", "scale": 100}})
-        assert mapping["volume"] == FieldTransform(name="成交量", field_type="int", scale=100.0)
+class TestFieldMappingGuards:
+    def test_scale_rejected(self):
+        with pytest.raises(ValueError, match="scale 已删除"):
+            field_mapping_from_payload({"volume": {"name": "成交量", "field_type": "int", "scale": 100}})
 
-    def test_field_mapping_payload_blank_scale(self):
-        mapping = field_mapping_from_payload({"volume": {"name": "成交量", "scale": None}})
-        assert mapping["volume"] == FieldTransform(name="成交量")
+    def test_plain_mapping_accepted(self):
+        mapping = field_mapping_from_payload({"volume": {"name": "成交量", "field_type": "int"}})
+        assert mapping["volume"] == FieldTransform(name="成交量", field_type="int")
 
-    def test_field_mapping_payload_bool_scale_raises(self):
-        with pytest.raises(ValueError, match="scale 必须是数值"):
-            field_mapping_from_payload({"volume": {"name": "成交量", "scale": True}})
+    def test_null_drops_field(self):
+        assert field_mapping_from_payload({"raw": None}) == {"raw": None}
 
-    def test_field_mapping_payload_bad_scale_raises(self):
-        with pytest.raises(ValueError, match="scale 必须是数值"):
-            field_mapping_from_payload({"volume": {"name": "成交量", "scale": "abc"}})
+    def test_string_shorthand_renames(self):
+        assert field_mapping_from_payload({"volume": "成交量"}) == {"volume": FieldTransform(name="成交量")}
+
+    def test_invalid_value_rejected(self):
+        with pytest.raises(ValueError, match="必须是对象 / 字符串 / null"):
+            field_mapping_from_payload({"volume": 100})

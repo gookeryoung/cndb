@@ -100,11 +100,13 @@ class TestBuildRequests:
         assert config.headers["X-Key"] == "abc"
         assert config.body == {"query": "abc", "n": 1}
 
-    def test_exhausted_entrants_make_zero_plans(self):
-        """标的集合解析为空（回补全达标 / 清单尚无行）→ 零请求，不发明 entrant 伪请求."""
-        spec = RequestSpec(url_template="https://api.example.com/q?sym={entrant}&end={end}")
-        job = _job(request=spec, entrant_param="symbol", entrant_values=(), entrants_exhausted=True)
-        assert PROVIDER.build_requests(job) == []
+    def test_empty_entrant_values_fall_back_to_single_request(self):
+        """标的集合为空 → 单个无 entrant 的请求（ADR 0104 以删掉「零请求」概念）."""
+        spec = RequestSpec(url_template="https://api.example.com/q")
+        job = _job(request=spec, entrant_param="symbol", entrant_values=())
+        plans = PROVIDER.build_requests(job)
+        assert len(plans) == 1
+        assert plans[0].entrant is None
 
     def test_missing_placeholder_surfaces_at_build_time(self):
         spec = RequestSpec(url_template="https://api.example.com/q?k={k}")

@@ -168,10 +168,11 @@ class TestArchiveStructure:
                 "drafts",
                 "doc_change_requests",
                 "datasource_sessions",
-                "entrant_cursors",
                 "file_owners",
             ):
                 assert key in backup, key
+            # ADR 0104：回补水位表已删，新归档不再产生该键
+            assert "entrant_cursors" not in backup
             # 表行附 __row_id；表 members 键存在
             table = backup["tables"][0]
             assert table["rows"] and "__row_id" in table["rows"][0]
@@ -205,7 +206,6 @@ class TestArchiveStructure:
             "drafts",
             "doc_change_requests",
             "datasource_sessions",
-            "entrant_cursors",
             "file_owners",
             "pipelines",
             "designs",

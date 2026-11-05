@@ -1,4 +1,4 @@
-"""增量游标 —— 五种策略统一在这里推进（ADR 0006 D4；backfill_date 见 ADR 0034 D2）.
+"""增量游标 —— 四种策略统一在这里推进（ADR 0006 D4）.
 
 | 策略 | 语义 | 游标推进 |
 |---|---|---|
@@ -6,19 +6,14 @@
 | ``datetime`` | 按时间戳增量 | 取本轮最大时刻 |
 | ``key_set`` | 无稳定时序（榜单 / RSS），靠幂等键去重 | 不推进 |
 | ``none`` | 每次全量覆盖（快照类） | 不推进 |
-| ``backfill_date`` | 按标的回补水位（历史回补，end 锚点逐轮前推） | 每标的取本轮**最早**日期，存 ``datasource_entrant_cursor`` |
 
 两条边界（I3）：
 - **无新数据不推进**：本轮没有可比字段值时保留原游标，与「同步失败」区分开；
-- **只前进不后退**：源侧乱序返回旧数据时，游标取 ``max(原值, 本轮最大值)``；
-  ``backfill_date`` 对称地**只向更早前移**（``min(原值, 本轮最早值)``）。
-
-``backfill_date`` 的水位读写（DB）在 ``services/entrant_state.py``，本模块只做纯函数判定。
+- **只前进不后退**：源侧乱序返回旧数据时，游标取 ``max(原值, 本轮最大值)``。
 """
 
 from __future__ import annotations
 
-import datetime as dt
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, cast
@@ -27,7 +22,7 @@ from cndb.plugins.datasource.providers.base import CursorStrategy, ProviderError
 from cndb.plugins.datasource.services.normalize import coerce_value
 
 _WINDOWED: frozenset[CursorStrategy] = frozenset({"date", "datetime"})
-_STRATEGIES: frozenset[str] = frozenset({"date", "datetime", "key_set", "none", "backfill_date"})
+_STRATEGIES: frozenset[str] = frozenset({"date", "datetime", "key_set", "none"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,49 +33,25 @@ class CursorConfig:
     field: str = ""
     backfill_start: str = ""
     value: str | None = None
-    # 单轮翻页回补（ADR 0053 D2）：一轮运行内按标的水位反复翻页，直到该标的
-    # 到头；未声明时仍是「一轮一页」的旧行为（I4）
-    page_to_start: bool = False
-    # 单页预期根数（ADR 0053 D3）：抓取行数小于它即判定该标的已到头；0 = 不按短页判定
-    page_size: int = 0
 
     def __post_init__(self) -> None:
         if self.strategy in _WINDOWED and not self.field:
             raise ProviderError(f"游标策略 {self.strategy} 必须指定增量字段 field")
-        if self.strategy == "backfill_date" and not self.field:
-            raise ProviderError("游标策略 backfill_date 必须指定日期字段 field")
-        if self.strategy == "backfill_date" and not self.backfill_start:
-            raise ProviderError("游标策略 backfill_date 必须指定回补起点 backfill_start")
         if self.strategy not in _STRATEGIES:
             raise ProviderError(f"未知游标策略: {self.strategy}")
-        if self.page_to_start and self.strategy != "backfill_date":
-            raise ProviderError("page_to_start 只能与游标策略 backfill_date 搭配使用")
-        if self.page_size < 0:
-            raise ProviderError("page_size 不能为负")
 
     @property
     def is_windowed(self) -> bool:
         """是否需要按时间区间请求（date / datetime）."""
         return self.strategy in _WINDOWED
 
-    @property
-    def is_backfill(self) -> bool:
-        """是否为按标的回补水位（backfill_date）."""
-        return self.strategy == "backfill_date"
-
     def to_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {
+        return {
             "strategy": self.strategy,
             "field": self.field,
             "backfill_start": self.backfill_start,
             "value": self.value,
         }
-        # 单轮翻页声明只在启用时写入：未启用任务的游标 JSON 保持旧形态（I4 存量兼容）
-        if self.page_to_start:
-            payload["page_to_start"] = True
-        if self.page_size:
-            payload["page_size"] = self.page_size
-        return payload
 
     @classmethod
     def from_dict(cls, data: Mapping[str, Any] | None) -> CursorConfig:
@@ -96,16 +67,13 @@ class CursorConfig:
             field=str(data.get("field") or ""),
             backfill_start=str(data.get("backfill_start") or ""),
             value=str(raw_value) if raw_value else None,
-            page_to_start=bool(data.get("page_to_start") or False),
-            page_size=_as_int(data.get("page_size"), 0),
         )
 
 
 def window_start(config: CursorConfig, *, today: str) -> str | None:
     """本轮抓取区间的起点：``value`` → ``backfill_start`` → ``today``.
 
-    非窗口策略返回 ``None``（不注入时间参数）；``backfill_date`` 的请求锚点
-    由 :func:`backfill_anchor` 按标的给出，不走本函数。
+    非窗口策略返回 ``None``（不注入时间参数）。
     """
     if not config.is_windowed:
         return None
@@ -130,7 +98,7 @@ def max_field_value(
     strategy: CursorStrategy,
 ) -> str | None:
     """取 ``field`` 的归一最大值（date → ``YYYY-MM-DD``，datetime → ``YYYY-MM-DD HH:MM:SS``）."""
-    kind = "date" if strategy in ("date", "backfill_date") else "datetime"
+    kind = "date" if strategy == "date" else "datetime"
     best: str | None = None
     for row in rows:
         value, reason = coerce_value(row.get(field), kind)
@@ -142,98 +110,9 @@ def max_field_value(
     return best
 
 
-def min_field_value(rows: Sequence[Mapping[str, Any]], field: str) -> str | None:
-    """取 ``field`` 的归一最早日期（``YYYY-MM-DD``；backfill_date 水位推进用）."""
-    best: str | None = None
-    for row in rows:
-        value, reason = coerce_value(row.get(field), "date")
-        if reason is not None or value is None:
-            continue
-        text = str(value)
-        if best is None or text < best:
-            best = text
-    return best
-
-
-def backfill_anchor(
-    watermark: str | None,
-    *,
-    backfill_start: str,
-    today: str,
-) -> str | None:
-    """按标的回补的请求 end 锚点：``watermark − 1 天``；已达回补起点返回 ``None``（跳过）.
-
-    无水位（首轮）锚点为 ``today``（拉最近一段，含当日）；水位只表达「已补到的
-    最早日期」，下一批的终点是它前一天。
-    """
-    anchor = _previous_day(watermark) if watermark else today
-    if anchor < backfill_start:
-        return None
-    return anchor
-
-
-def backfill_advance(
-    watermark: str | None,
-    rows: Sequence[Mapping[str, Any]],
-    *,
-    field: str,
-    backfill_start: str,
-) -> str | None:
-    """按标的推进回补水位：本轮最早日期向 ``backfill_start`` 截断，只前移不后退.
-
-    空响应 / 无可比日期 → 原样返回（不推进）；已到 ``backfill_start`` 的标的
-    由 :func:`backfill_anchor` 判跳过，本函数返回值不会晚于 ``backfill_start``。
-    """
-    candidate = min_field_value(rows, field)
-    if candidate is None:
-        return watermark
-    floor = max(candidate, backfill_start) if candidate < backfill_start else candidate
-    if watermark is not None and floor >= watermark:
-        # 只向更早前移：本轮最早日期不比现水位早就保留原值
-        return watermark
-    return floor
-
-
-def _previous_day(value: str) -> str:
-    """ISO 日期串减一天；非法日期抛 ProviderError（水位由本模块写入，格式理应可控）."""
-    try:
-        day = dt.date.fromisoformat(value)
-    except ValueError as exc:
-        raise ProviderError(f"回补水位必须是 ISO 日期（YYYY-MM-DD）: {value!r}") from exc
-    return (day - dt.timedelta(days=1)).isoformat()
-
-
-def _as_int(value: Any, default: int) -> int:
-    """宽容解析整型声明（JSON 里可能是字符串）；非法值报配置错误而非静默归零."""
-    if value is None or value == "":
-        return default
-    if isinstance(value, bool):
-        raise ProviderError("page_size 必须是整数")
-    try:
-        return int(value)
-    except (TypeError, ValueError) as exc:
-        raise ProviderError(f"page_size 必须是整数: {value!r}") from exc
-
-
-def validate_page_to_start(config: CursorConfig, url_template: str) -> None:
-    """单轮翻页回补的前置校验（ADR 0053 D2）：必须能按 ``{end}`` 锚点翻页.
-
-    ``CursorConfig`` 看不到请求模板，故这项校验放在创建 / 更新入口单独调用；
-    缺 ``{end}`` 时每一页都会请求同一区间，翻页永不前进（配置错误须尽早报）。
-    """
-    if not config.page_to_start:
-        return
-    if "{end}" not in (url_template or ""):
-        raise ProviderError("page_to_start 要求 url_template 含 {end} 锚点占位符")
-
-
 __all__ = [
     "CursorConfig",
     "advance",
-    "backfill_advance",
-    "backfill_anchor",
     "max_field_value",
-    "min_field_value",
-    "validate_page_to_start",
     "window_start",
 ]

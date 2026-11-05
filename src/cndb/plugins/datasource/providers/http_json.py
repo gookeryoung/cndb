@@ -43,7 +43,7 @@ HTTP_JSON_PARAMS_SCHEMA: dict[str, Any] = {
         {"name": "headers_template", "type": "json", "label": "请求头模板"},
         {"name": "params_template", "type": "json", "label": "查询参数模板"},
         {"name": "body_template", "type": "json", "label": "请求体模板"},
-        {"name": "data_path", "type": "text", "label": "响应数组路径（a.b.c，可用 | 分隔候选）"},
+        {"name": "data_path", "type": "text", "label": "响应数组路径（a.b.c）"},
         {"name": "encoding", "type": "text", "default": "utf-8"},
     ],
     "placeholders": ["entrant", "start", "end", "page", "page_size", "offset"],
@@ -63,22 +63,14 @@ class HttpJsonProvider:
     uses_custom_parse = False
 
     def build_requests(self, job: SyncJobSpec) -> list[RequestPlan]:
-        """展开为具体请求列表（entrant × 窗口 × 页码，顺序稳定便于断言）.
-
-        ``job.entrant_ends``（backfill_date 游标，ADR 0034 D2）非空时，
-        该标的的 ``{end}`` 模板变量注入其专属锚点（水位 − 1 天），
-        不出现在映射里的标的无锚点（历史配置零影响）。
-        """
+        """展开为具体请求列表（entrant × 窗口 × 页码，顺序稳定便于断言）."""
         spec = job.request
         handler = self.response_handler_for(job)
         plans: list[RequestPlan] = []
-        # 标的集合已解析为空（回补全达标 / 清单尚无行）→ 零请求；未声明标的才发单条请求
-        values: tuple[str | None, ...] = () if job.entrants_exhausted else (job.entrant_values or (None,))
-        for entrant in values:
-            entrant_end = job.entrant_ends.get(entrant) if (job.entrant_ends and entrant is not None) else None
+        for entrant in job.entrant_values or (None,):
             for window_start, window_end in iter_windows(spec.time_window):
                 for page in iter_pages(spec.paging):
-                    variables = self._variables(job, entrant, window_start, window_end, page, entrant_end)
+                    variables = self._variables(job, entrant, window_start, window_end, page)
                     plans.append(
                         RequestPlan(
                             config=self._build_config(spec, variables, handler),
@@ -86,18 +78,17 @@ class HttpJsonProvider:
                             entrant=entrant,
                             page=page,
                             window_start=window_start,
-                            window_end=window_end or entrant_end,
+                            window_end=window_end,
                         )
                     )
         return plans
 
     def response_handler_for(self, job: SyncJobSpec) -> ResponseHandler | None:
-        """返回响应处理器：专用 provider 用自己的 ``parse`` 处理原始文本.
+        """返回响应处理器：专用 provider（llm_prompt）用自己的 ``parse`` 处理原始文本.
 
-        ``rows_array`` 模式也必须走自定义 handler——通用 ``fetch_json`` 的数组探测
-        会把「数组的数组」过滤成空行。
+        通用 ``fetch_json`` 的数组探测会把嵌套结构解析成错误的一行。
         """
-        if not (self.uses_custom_parse or job.request.record_mode == "rows_array"):
+        if not self.uses_custom_parse:
             return None
 
         def handler(text: str, config: FetchConfig) -> list[dict[str, Any]]:
@@ -120,8 +111,6 @@ class HttpJsonProvider:
         path = data_path if data_path is not None else spec.data_path
         if spec.record_mode == "columns":
             return columns_to_rows(payload, path, spec.record_layout)
-        if spec.record_mode == "rows_array":
-            return _rows_array_from_candidates(payload, path, spec.record_layout)
         return _extract_array(payload, path, True)
 
     def normalize(self, rows: Sequence[Mapping[str, Any]], job: SyncJobSpec) -> NormalizeResult:
@@ -136,7 +125,6 @@ class HttpJsonProvider:
         window_start: str | None,
         window_end: str | None,
         page: int | None,
-        entrant_end: str | None = None,
     ) -> dict[str, Any]:
         spec = job.request
         # 会话密钥等额外变量先铺底，内置变量（entrant / 窗口 / 分页）随后覆盖
@@ -149,10 +137,6 @@ class HttpJsonProvider:
             variables[spec.time_window.end_param] = window_end
             variables["start"] = window_start
             variables["end"] = window_end
-        elif entrant_end is not None:
-            # backfill_date 锚点（ADR 0034 D2）：无窗口区间时只注入 end（start 位由模板留空）
-            variables[spec.time_window.end_param] = entrant_end
-            variables["end"] = entrant_end
         if page is not None:
             paging = spec.paging
             offset = (page - paging.start_page) * paging.page_size
@@ -171,17 +155,8 @@ class HttpJsonProvider:
         response_handler: ResponseHandler | None = None,
     ) -> FetchConfig:
         headers = {key: render_text(value, variables) for key, value in spec.headers_template.items()}
-        # 主机回退（ADR 0053 D4）：{host} 逐候选求值，首个为主 URL，其余进 fallback_urls；
-        # 未声明 url_hosts 时 {host} 不参与渲染，行为与单 URL 完全一致
-        urls = []
-        for host in spec.url_hosts or [None]:
-            host_variables = dict(variables)
-            if host is not None:
-                host_variables["host"] = host
-            urls.append(render_text(spec.url_template, host_variables))
         return FetchConfig(
-            url=urls[0],
-            fallback_urls=tuple(urls[1:]),
+            url=render_text(spec.url_template, variables),
             method=spec.method,
             headers=headers,
             params=render_value(dict(spec.params_template), variables),
@@ -223,88 +198,6 @@ def columns_to_rows(
     for index in range(width):
         rows.append({name: (series[index] if index < len(series) else None) for name, series in columns.items()})
     return rows
-
-
-def rows_array_to_rows(
-    payload: Any,
-    data_path: str | None = None,
-    layout: Mapping[str, str | int] | None = None,
-) -> list[dict[str, Any]]:
-    """把「行数组的数组」响应拼成对象数组（按 ``layout`` 的位置索引取值）.
-
-    ``layout`` 形如 ``{"日期": 0, "开盘": 1}``：目标列名 → 行内元素下标。
-    行长度不足最大下标时该字段补 ``None``（不丢行）；``data_path`` 未命中数组即报错。
-
-    Raises:
-        ProviderError: ``data_path`` 未指向数组、行不是数组、下标非法.
-    """
-    node: Any = _resolve_path(payload, data_path) if data_path else payload
-    if not isinstance(node, list):
-        raise ProviderError("行数组记录要求 data_path 指向一个数组")
-    positions = _layout_positions(layout)
-    rows: list[dict[str, Any]] = []
-    for item in node:
-        if not isinstance(item, list):
-            raise ProviderError(f"行数组记录的元素必须是数组，实际为 {type(item).__name__}")
-        rows.append({name: (item[index] if index < len(item) else None) for name, index in positions.items()})
-    return rows
-
-
-def _rows_array_from_candidates(
-    payload: Any,
-    data_path: str | None,
-    layout: Mapping[str, str | int] | None,
-) -> list[dict[str, Any]]:
-    """按候选路径（``|`` 分隔）取第一个命中数组的响应节点，再拼成行（ADR 0039 D1/D2）.
-
-    同一接口对不同品种可能返回不同键（腾讯日线：有除权事件回 ``qfqday``、否则只回 ``day``），
-    因此声明可写 ``data.{entrant}.qfqday|data.{entrant}.day``：
-
-    - 依声明顺序取第一个**非空**数组；
-    - 命中空数组记为「已命中但无数据」，继续尝试下一候选；
-    - 路径缺失 / 值为 ``null``（如北交所品种回 ``data: {"bj920010": {}}``）记为「无数据」，
-      继续尝试下一候选，全部如此时返回 ``[]``（合法无数据响应，不是失败）；
-    - 命中存在但**不是数组**的节点（字典 / 标量）才是配置与接口形态不符，报错并列出候选；
-    - 单路径（无 ``|``）走同一实现。
-    """
-    candidates: list[str] = [part.strip() for part in data_path.split("|")] if data_path else []
-    candidates = [candidate for candidate in candidates if candidate]
-    if not candidates:
-        return rows_array_to_rows(payload, None, layout)
-    invalid: list[str] = []
-    for candidate in candidates:
-        node = _resolve_path(payload, candidate)
-        if node is None:
-            continue
-        if isinstance(node, list):
-            if not node:
-                continue
-            return rows_array_to_rows(node, None, layout)
-        invalid.append(candidate)
-    if invalid:
-        raise ProviderError(f"行数组记录要求 data_path 指向一个数组（命中非数组的候选: {', '.join(invalid)}）")
-    return []
-
-
-def _layout_positions(layout: Mapping[str, str | int] | None) -> dict[str, int]:
-    """把 ``rows_array`` 的布局声明规范为 ``{目标列名: 位置索引}``（接受数字字符串）."""
-    if not layout:
-        raise ProviderError("rows_array 模式必须声明 record_layout（目标列名 → 位置索引）")
-    positions: dict[str, int] = {}
-    for name, raw in layout.items():
-        if isinstance(raw, bool):
-            raise ProviderError(f"record_layout[{name!r}] 的位置索引不能是布尔值")
-        if isinstance(raw, int):
-            index = raw
-        else:
-            try:
-                index = int(raw.strip())
-            except (TypeError, ValueError) as exc:
-                raise ProviderError(f"record_layout[{name!r}] 的位置索引必须是整数: {raw!r}") from exc
-        if index < 0:
-            raise ProviderError(f"record_layout[{name!r}] 的位置索引不能为负: {index}")
-        positions[name] = index
-    return positions
 
 
 def iter_windows(spec: TimeWindowSpec) -> list[tuple[str | None, str | None]]:
@@ -368,7 +261,6 @@ __all__ = [
     "columns_to_rows",
     "iter_pages",
     "iter_windows",
-    "rows_array_to_rows",
 ]
 
 if TYPE_CHECKING:

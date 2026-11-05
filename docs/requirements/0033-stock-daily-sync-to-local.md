@@ -3,7 +3,7 @@
 - 编号：0033（与 ADR `docs/adr/0033-*.md` 同号，卡片存 `docs/requirements/0033-stock-daily-sync-to-local.md`）
 - 来源 / 提出人：用户（会话提出）
 - 日期：2026-10-25
-- 关联 ADR：`docs/adr/0033-stock-daily-dual-source-sync.md`
+- 关联 ADR：已随 ADR 0104 删除（原 `docs/adr/0033-stock-daily-dual-source-sync.md`；本文仅作需求存档，能力不再存在）
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
 

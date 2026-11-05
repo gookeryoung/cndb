@@ -17,7 +17,7 @@ v9 在 v8 顶层结构（workspace/tables/document_tags/documents/sync_jobs/char
 - 新增顶层 document_versions[] / drafts[] / doc_change_requests[]；
 - tables[] 增加 members[]，行数据附 ``__row_id``（供导入端回填附件归属）；
 - 新增 datasource_sessions[]（含密钥，include_secrets=false 时置 null）、
-  entrant_cursors[]、file_owners[]（附件归属元数据）；
+  file_owners[]（附件归属元数据）；
 - 二进制内容不入 JSON：附件与文档外存正文以文件条目（``payload/files/…``）
   随归档携带，backup.json 内以相对路径引用。
 
@@ -116,7 +116,7 @@ def build_workspace_backup_v9(
     """
     from sqlalchemy import MetaData, select
 
-    from cndb.plugins.datasource.models import DatasourceEntrantCursor, DatasourceSession, DatasourceSyncJob
+    from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
     from cndb.plugins.documents.models import (
         Document,
         DocumentChangeRequest,
@@ -473,7 +473,6 @@ def build_workspace_backup_v9(
         .order_by(DatasourceSyncJob.id)
         .all()
     )
-    job_name_by_id = {job.id: job.name for job in sync_jobs}
     sessions = (
         db.query(DatasourceSession)
         .filter(DatasourceSession.workspace_id == workspace_id)
@@ -513,19 +512,6 @@ def build_workspace_backup_v9(
         }
         for s in sessions
     ]
-
-    cursors_data: list[dict[str, Any]] = []
-    if sync_jobs:
-        cursor_rows = (
-            db.query(DatasourceEntrantCursor)
-            .join(DatasourceSyncJob, DatasourceSyncJob.id == DatasourceEntrantCursor.job_id)
-            .filter(DatasourceSyncJob.workspace_id == workspace_id)
-            .all()
-        )
-        cursors_data = [
-            {"job_name": job_name_by_id.get(c.job_id), "entrant": c.entrant, "cursor_value": c.cursor_value}
-            for c in cursor_rows
-        ]
 
     # ── 附件归属（v9）：FileOwner 元数据 + 文件条目 ──
     file_owners_data = []
@@ -609,7 +595,6 @@ def build_workspace_backup_v9(
         "doc_change_requests": dcr_data,
         "sync_jobs": sync_jobs_data,
         "datasource_sessions": sessions_data,
-        "entrant_cursors": cursors_data,
         "file_owners": file_owners_data,
         "charts": charts_data,
         "pipelines": pipelines_data,
@@ -632,7 +617,6 @@ def downsample_v8(backup_v9: dict[str, Any]) -> dict[str, Any]:
         "drafts",
         "doc_change_requests",
         "datasource_sessions",
-        "entrant_cursors",
         "file_owners",
         "pipelines",
         "designs",
