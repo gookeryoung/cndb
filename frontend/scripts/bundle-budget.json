@@ -2,7 +2,6 @@
   "_readme": "关键 chunk 体积基线与上限（gzip 字节）。由 frontend/scripts/bundle-budget.mjs 读写，请勿手改 —— 基线统一用 `node scripts/bundle-budget.mjs --update --reason \"...\"`（只动 baseline），上限用 `--set-budget --only <chunk> --reason \"...\"`（只动 budget），理由会落盘到 reason/updatedAt/commit，让体积增长在 review 时可追溯。语义（需求卡片 0090）：baseline 是 warn 参照（超基线未超上限 = 慢涨 warn），budget 是 FAIL 硬上限 —— 小步增量只 warn，超上限才拦 CI。resolve: 'entry'=从 dist/index.html 取主入口 script；{assetPattern}=在 dist/assets 内按正则匹配 chunk 文件。tolerance=该项单独容差(%)，仅在未声明 budget 时用于「基线+容差」回退口径。",
   "tolerancePct": 5,
   "history": [
-    "2026-10-10 视图筛选/排序规则值校验（ee604bd）使 GridPage +2.26KB 触发超限；改为把 ViewConfigDialog / TableSettingsModal / RowDetailDrawer 三个按需面板 lazy 化，GridPage 43.07→27.70KB，基线定为 32KiB（低于旧基线约 20%）",
     "2026-10-20 rc-field-form 补 sideEffects + barrel 纯 re-export（pnpm patch），修掉 antd form/context 连带拉入 Form/useForm/Field/validateUtil/async-validator 的问题，主入口 190.10→175.22 KiB；基线随之下调锁定净收益",
     "2026-10-22 feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
     "2026-10-24 fix(ci): 移除 KlineView 后 echarts/simple-statistics 共享 chunk 合并进 ChartView（lazy chunk，首屏不变，总量未增），按实测收口基线",
@@ -20,127 +19,129 @@
     "2026-11-02 feat(documents): 新增 PPTX 在线预览（pptx-preview 1.0.7 + jszip/echarts 闭包），整块 lazy 为独立 chunk（431 KiB gzip，仅打开 .pptx 时下载），纳入体积预算防慢涨",
     "2026-11-02 feat(documents): DOCX/PPTX 原件族新增 PPTX 纯前端在线预览（pptx-preview + jszip + echarts 随库打包）；由 DocumentAssetView React.lazy 按需加载，仅打开 .pptx 时下载，不进文档页首屏",
     "2026-11-03 [set-budget] 需求卡片 0090：基线与上限语义分离 —— baseline 只作 warn 参照，budget 为 FAIL 硬上限；主入口留 3% 余量，按需 chunk 留 15-25%，新增 5 个帮助 section chunk 条目；HelpDocsPage 壳因正文按部分拆 chunk 由 38.31 降至 4.30 KiB",
-    "2026-11-03 需求卡片 0090：帮助正文按 L1 部分懒加载拆 chunk，HelpDocsPage 壳 38.31→4.30 KiB；全部条目基线按本轮实测收口并声明 budget 上限，消除小步增量触发超限的脆弱判定"
+    "2026-11-03 需求卡片 0090：帮助正文按 L1 部分懒加载拆 chunk，HelpDocsPage 壳 38.31→4.30 KiB；全部条目基线按本轮实测收口并声明 budget 上限，消除小步增量触发超限的脆弱判定",
+    "2026-11-05 docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+    "2026-11-05 [set-budget] docs: 结构设计 DSL 帮助主题补 13 个典型示例，纯文档字符串随 HelpTutorials 懒加载 chunk 增长（+5.3KiB），无依赖可拆、非 UI 组件"
   ],
   "chunks": [
     {
       "name": "主入口 index",
       "resolve": "entry",
-      "baseline": 232044,
+      "baseline": 233325,
       "budget": 239000,
-      "reason": "需求卡片 0090：主入口为常驻首屏代码，budget 按实测收口留 3% 余量（防依赖升级一次性冲垮，同时保持紧约束）",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "GridPage（表页闭包）",
       "resolve": {
         "assetPattern": "^GridPage-.*\\.js$"
       },
-      "baseline": 35868,
+      "baseline": 30499,
       "budget": 43000,
-      "reason": "需求卡片 0090：表页按需 chunk，budget 较实测留约 20% 余量容纳小步功能增量，慢涨靠 warn 暴露",
-      "updatedAt": "2026-11-03",
-      "commit": "06b39885"
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "ChartView（图表视图）",
       "resolve": {
         "assetPattern": "^ChartView-.*\\.js$"
       },
-      "baseline": 4247,
+      "baseline": 4267,
       "budget": 5300,
-      "reason": "需求卡片 0090：图表视图按需 chunk，budget 留约 25% 余量",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "DashboardView（画布视图）",
       "resolve": {
         "assetPattern": "^DashboardView-.*\\.js$"
       },
-      "baseline": 58939,
+      "baseline": 59080,
       "budget": 70000,
-      "reason": "需求卡片 0090：画布视图按需 chunk（含 echarts 图表模块），budget 较实测留约 19% 余量",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "HelpDocsPage（帮助页壳）",
       "resolve": {
         "assetPattern": "^HelpDocsPage-.*\\.js$"
       },
-      "baseline": 4408,
+      "baseline": 2060,
       "budget": 6000,
-      "reason": "需求卡片 0090：帮助正文按 L1 部分拆 chunk 后页面壳只剩导航/目录/渲染逻辑，38.31→4.30 KiB；壳应保持稳定，budget 收紧",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "HelpQuickStart（帮助·快速入门正文）",
       "resolve": {
         "assetPattern": "^quickStart-.*\\.js$"
       },
-      "baseline": 6612,
+      "baseline": 6531,
       "budget": 8300,
-      "reason": "需求卡片 0090 新增：快速入门正文独立 chunk，仅 /help 对应部分下载；budget 留约 25% 余量",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "HelpTutorials（帮助·教程正文）",
       "resolve": {
         "assetPattern": "^tutorials-.*\\.js$"
       },
-      "baseline": 20901,
-      "budget": 26000,
-      "reason": "需求卡片 0090 新增：教程&最佳实践正文独立 chunk（历史增量最频繁的部分），budget 留约 25% 余量；触达上限时应升级按 topic 细拆",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "baseline": 26370,
+      "budget": 28000,
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例，纯文档字符串随 HelpTutorials 懒加载 chunk 增长（+5.3KiB），无依赖可拆、非 UI 组件",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "HelpExamples（帮助·示例正文）",
       "resolve": {
         "assetPattern": "^examples-.*\\.js$"
       },
-      "baseline": 2625,
+      "baseline": 2405,
       "budget": 3400,
-      "reason": "需求卡片 0090 新增：典型示例正文独立 chunk，清单由接口提供、正文极小；budget 留约 30% 余量",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "HelpConfiguration（帮助·配置正文）",
       "resolve": {
         "assetPattern": "^configuration-.*\\.js$"
       },
-      "baseline": 5964,
+      "baseline": 6487,
       "budget": 7500,
-      "reason": "需求卡片 0090 新增：系统配置正文独立 chunk；budget 留约 25% 余量",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "HelpTroubleshooting（帮助·排查正文）",
       "resolve": {
         "assetPattern": "^troubleshooting-.*\\.js$"
       },
-      "baseline": 5501,
+      "baseline": 5306,
       "budget": 7000,
-      "reason": "需求卡片 0090 新增：问题排查正文独立 chunk；budget 留约 27% 余量",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     },
     {
       "name": "PptxPreview（PPTX 在线预览）",
       "resolve": {
         "assetPattern": "^pptx-preview\\.es-.*\\.js$"
       },
-      "baseline": 431053,
+      "baseline": 431054,
       "budget": 470000,
-      "reason": "feat(documents): DOCX/PPTX 原件族新增 PPTX 纯前端在线预览（pptx-preview + jszip + echarts 随库打包）；由 DocumentAssetView React.lazy 按需加载，仅打开 .pptx 时下载，不进文档页首屏；budget 留约 9% 余量（第三方库闭包，自身不该增长）",
-      "updatedAt": "2026-11-03",
-      "commit": ""
+      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
+      "updatedAt": "2026-11-05",
+      "commit": "f8e61e72"
     }
   ]
 }

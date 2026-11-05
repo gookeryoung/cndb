@@ -966,6 +966,303 @@ const designDsl: HelpTopic = {
             ),
         },
         {
+            key: 'examples',
+            label: '典型示例（由浅入深）',
+            summary: '全部示例均通过编译器验证；照抄即可运行，改参数即出变体。',
+            items: [
+                {
+                    key: 'ex-minimal',
+                    label: '示例 1：最小设计（单图元）',
+                    body: (
+                        <>
+                            <P>一份设计只要「顶层实例」就有几何。下面的 <code>box</code> 用宽高深三个命名参数声明一个长方体（单位 mm）：</P>
+                            <CodeBlock
+                                title="最小设计"
+                                code={'// 一个 60×40×10 的长方体（mm）\nbox(w = 60, h = 40, d = 10)\n'}
+                            />
+                            <Bullets
+                                items={[
+                                    <>
+                                        <code>box(w=, h=, d=)</code> 与 <code>box(size = [宽, 高, 深])</code> 等价；
+                                    </>,
+                                    '图元只接受「名 = 值」形式的命名参数，不能按位置传参（见本节「常见错误对照」）。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-param',
+                    label: '示例 2：参数化（param）',
+                    body: (
+                        <>
+                            <P>把尺寸收口到 <code>param</code>，编辑器「参数」抽屉可临时改值试算，不改原文：</P>
+                            <CodeBlock
+                                title="参数化垫块"
+                                code={
+                                    '// 参数化垫块：改一处参数，全几何联动\nparam width = 80\nparam depth = 40\nparam height = 20\n\nbox(size = [width, depth, height])\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    'param 只能出现在顶层，标识符限字母 / 数字 / 下划线，最多 64 个；',
+                                    '参数值可以是表达式（引用更早声明的参数），编译期求值为数值。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-difference',
+                    label: '示例 3：布尔差集打孔（difference）',
+                    body: (
+                        <>
+                            <P>
+                                <code>difference</code> 的第一个子实例是保留体，其余都是切割体。打通孔的惯例是让切割圆柱两端各出头 1mm，保证切透：
+                            </P>
+                            <CodeBlock
+                                title="四角打孔底板"
+                                code={
+                                    'param width = 80\nparam depth = 40\nparam thick = 8\nparam hole_d = 6\n\ndifference {\n  box(size = [width, depth, thick])\n  // 四角通孔：切割体两端各出头 1mm，保证切透\n  translate([10, 10, -1]) cyl(d = hole_d, h = thick + 2)\n  translate([width - 10, 10, -1]) cyl(d = hole_d, h = thick + 2)\n  translate([10, depth - 10, -1]) cyl(d = hole_d, h = thick + 2)\n  translate([width - 10, depth - 10, -1]) cyl(d = hole_d, h = thick + 2)\n}\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    '布尔块（union / difference / intersection）不能为空，至少一个子实例；',
+                                    '布尔可任意嵌套：保留体本身可以是另一个布尔块（见示例 4）。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-union',
+                    label: '示例 4：布尔并集拼接（union）',
+                    body: (
+                        <>
+                            <P>把底板与立板两个部件拼成一个零件，底板自身先做差集打孔：</P>
+                            <CodeBlock
+                                title="L 型支座"
+                                code={
+                                    'param base_w = 60\nparam base_d = 40\nparam thick = 6\n\nunion {\n  // 底板：四角沉孔（差集结果作为并集的子实例）\n  difference {\n    box(size = [base_w, base_d, thick])\n    translate([8, 8, -1]) cyl(d = 5, h = thick + 2)\n    translate([base_w - 8, 8, -1]) cyl(d = 5, h = thick + 2)\n    translate([8, base_d - 8, -1]) cyl(d = 5, h = thick + 2)\n    translate([base_w - 8, base_d - 8, -1]) cyl(d = 5, h = thick + 2)\n  }\n  // 立板：贴底板后沿立起\n  translate([0, base_d / 2 - thick / 2, thick]) box(size = [base_w, thick, 30])\n}\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    'union 把全部子实例合并为一个实体，常用于「多部件拼零件」；',
+                                    '嵌套深度上限 32 层，超限保存时报诊断。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-intersection',
+                    label: '示例 5：布尔交集（intersection）',
+                    body: (
+                        <>
+                            <P>两个绕 Z 轴错开 45° 的长方体取交集，得到八棱柱——典型的「旋转错切」造型手法：</P>
+                            <CodeBlock
+                                title="八棱柱"
+                                code={
+                                    'intersection {\n  box(size = [40, 40, 60])\n  rotate([0, 0, 45]) box(size = [40, 40, 60])\n}\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    'intersection 取全部子实例的公共部分；常配合 rotate / mirror 造对称截面；',
+                                    '交集结果为空（无公共体积）同样合法，预览显示空画布。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-transform',
+                    label: '示例 6：变换组合（translate / rotate / scale / mirror）',
+                    body: (
+                        <>
+                            <P>变换包裹单个实例或一个 <code>{'{ … }'}</code> 块；嵌套时矩阵按「外 → 内」复合：</P>
+                            <CodeBlock
+                                title="斜臂、镜像与压扁球"
+                                code={
+                                    'param arm_len = 60\n\n// 斜臂：先绕 Y 轴倾斜 30°（角度单位 deg），再平移到安装位\ntranslate([40, 0, 20]) rotate([0, -30, 0]) box(size = [arm_len, 8, 8])\n\n// 镜像：以 XZ 平面（法向 Y）复制出另一侧\nmirror([0, 1, 0]) translate([40, 0, 20]) rotate([0, -30, 0]) box(size = [arm_len, 8, 8])\n\n// 顶部标记球压扁成椭球；斜臂顶端高度 = 20 + arm_len·sin30°\ntranslate([40, 0, 20 + arm_len * sin(30 * PI / 180)]) scale([1, 1, 0.5]) sphere(r = 6)\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    'rotate 的角度是角度制（deg）；sin / cos 等三角函数的入参是弧度，用 PI 换算；',
+                                    'mirror 向量是镜像面的法向；scale 各轴缩放系数独立。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-primitives',
+                    label: '示例 7：六种图元一览',
+                    body: (
+                        <>
+                            <P>六种图元并排各放一个，对照观察形状与轴向（cyl 沿 Z 轴，torus 平铺在 XY 平面）：</P>
+                            <CodeBlock
+                                title="图元全家福"
+                                code={
+                                    'cyl(d = 20, h = 40, fn = 96)                                   // 圆柱（沿 Z 轴）\ntranslate([40, 0, 0]) cone(d1 = 24, d2 = 0, h = 30, fn = 96)   // 圆锥\ntranslate([80, 0, 0]) torus(r = 16, tube = 4, fn = 96)          // 圆环\ntranslate([120, 0, 0]) tube(od = 20, id = 12, h = 30, fn = 96)  // 空心圆管\ntranslate([160, 0, 0]) sphere(r = 12, fn = 96)                  // 球\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    'box 之外五种都是圆类图元，可用 fn 控制圆周分段数（默认 64，上限 256）；',
+                                    'fn 越大越圆、网格越重；预览卡顿时优先调小 fn。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-module',
+                    label: '示例 8：模块复用与默认参数（module + as 标签）',
+                    body: (
+                        <>
+                            <P>模块是可复用的结构单元：形参可带默认值，实例化支持位置参数与命名参数：</P>
+                            <CodeBlock
+                                title="定位柱三种规格"
+                                code={
+                                    'param post_d = 12\n\n// 定位柱：高度默认 20，分段数默认 64\nmodule post(d, h = 20, fn = 64) {\n  cyl(d = d, h = h, fn = fn)\n  translate([0, 0, h]) sphere(r = d / 2 * 0.6, fn = fn)\n}\n\n// 三种实例化：全默认 / 位置参数 / 命名参数；as 标签供约束引用\npost(post_d) as p1\ntranslate([40, 0, 0]) post(post_d, 30) as p2\ntranslate([80, 0, 0]) post(post_d, h = 45, fn = 96) as p3\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    '调用时位置参数必须在命名参数之前；只传部分参数时，其余用默认值；',
+                                    'as 标签在同级作用域内唯一，是装配约束（constraint）的引用入口。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-expression',
+                    label: '示例 9：表达式与三角函数布孔',
+                    body: (
+                        <>
+                            <P>
+                                表达式支持四则运算、取模、一元负号与白名单函数（sin / cos / sqrt / min / max / pow 等，常量 PI）。
+                                DSL 没有循环，圆周均布的孔位用三角函数逐个算出：
+                            </P>
+                            <CodeBlock
+                                title="三孔法兰"
+                                code={
+                                    '// 三孔 120° 均布：三角函数入参为弧度，方位角 = 2π/3 的倍数\nparam R = 22\nparam hole_d = 6\n\ndifference {\n  cyl(d = 60, h = 8)\n  translate([R * cos(0), R * sin(0), -1]) cyl(d = hole_d, h = 10)\n  translate([R * cos(2 * PI / 3), R * sin(2 * PI / 3), -1]) cyl(d = hole_d, h = 10)\n  translate([R * cos(4 * PI / 3), R * sin(4 * PI / 3), -1]) cyl(d = hole_d, h = 10)\n}\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    'rotate 的角度用度、三角函数用弧度，两套口径别混（换算：deg · PI / 180）；',
+                                    '除零、负尺寸等非法值在编译期报诊断，不做静默截断。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-system',
+                    label: '示例 10：系统装配（system）',
+                    body: (
+                        <>
+                            <P>
+                                <code>system</code> 是顶层单例根，把组件与零件组织成完整系统；只影响侧栏装配大纲层级，不改变几何：
+                            </P>
+                            <CodeBlock
+                                title="四轮小车"
+                                code={
+                                    'param body_len = 100\nparam body_w = 50\nparam wheel_d = 36\n\n// 车轮：轮辋减轮毂孔，可多实例复用\nmodule wheel(d, w) {\n  rotate([90, 0, 0])\n    difference {\n      cyl(d = d, h = w)\n      translate([0, 0, -1]) cyl(d = d * 0.35, h = w + 2)\n    }\n}\n\nsystem rover {\n  // 车体\n  box(size = [body_len, body_w, 8])\n  // 四个车轮（as 标签在系统内唯一）\n  translate([30, body_w / 2 + 8, 0]) wheel(wheel_d, 14) as w_fr\n  translate([30, -body_w / 2 - 8, 0]) wheel(wheel_d, 14) as w_fl\n  translate([-30, body_w / 2 + 8, 0]) wheel(wheel_d, 14) as w_rr\n  translate([-30, -body_w / 2 - 8, 0]) wheel(wheel_d, 14) as w_rl\n}\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    'system 不接受参数表（可配置性用顶层 param）；一份设计可声明多个并列 system；',
+                                    '演示工作区附有「四轮小车」「六轴机械臂」完整种子，可复制改造。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-use',
+                    label: '示例 11：分文件引用（use）',
+                    body: (
+                        <>
+                            <P>
+                                装配文件用 <code>use</code> 把零件文件（part）装配进来：按不可变的 <code>file_key</code> 引用，可传参覆盖零件的顶层
+                                param，多实例互不影响：
+                            </P>
+                            <CodeBlock
+                                title="装配文件（kind=assembly）"
+                                code={
+                                    '// 引用零件库：不传参用零件默认值，as 标签供约束引用\nuse "底板" as base\nuse "轮毂"(d = 36, w = 14) as wheel_l\ntranslate([80, 0, 0]) use "轮毂"(d = 36, w = 14) as wheel_r\n\n// 底板接地（见下一示例），两个车轮保持作者位姿\nconstraint c1 fixed(a = base.origin)\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    '只允许引用同工作区的 part 文件，禁止循环引用，越界编译期报诊断；',
+                                    '被引用零件改过后，编辑器顶部出现「依赖已更新」横幅，一键刷新重编译。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-constraint',
+                    label: '示例 12：装配约束（constraint）',
+                    body: (
+                        <>
+                            <P>五类约束按声明顺序求解：先 fixed 接地，再沿约束传播位姿。点类约束（coincident / distance）配 origin 基准，轴类约束（concentric / angle）配 x / y / z 轴基准：</P>
+                            <CodeBlock
+                                title="点类约束：接地 + 同点贴合 + 定距"
+                                code={
+                                    'use "底板" as base\nuse "立柱" as post\nuse "横梁" as beam\n\nconstraint c1 fixed(a = base.origin)                                              // 底板接地\nconstraint c2 coincident(a = base.origin, b = post.origin, offset = [0, 0, 8])    // 立柱贴合底板面\nconstraint c3 distance(a = post.origin, b = beam.origin, value = 60)              // 横梁距立柱 60mm\n'
+                                }
+                            />
+                            <CodeBlock
+                                title="轴类约束：同轴 + 定角"
+                                code={
+                                    'use "轮毂" as wheel_l\nuse "轮毂" as wheel_r\nuse "横梁" as beam\n\nconstraint c1 fixed(a = wheel_l.origin)\nconstraint c2 concentric(a = wheel_l.z, b = wheel_r.z)          // 两轮同轴\nconstraint c3 angle(a = wheel_l.x, b = beam.x, value = 90)      // 横梁与轮轴成 90°\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    'fixed 只接受 a 端；concentric / angle 两端都必须是轴向基准（x / y / z）；distance / angle 必须给 value；',
+                                    '同一对组件上叠加语义重叠的约束（如同点既 coincident 又 distance）会判冲突，保存被拒；',
+                                    '约束只约束「带 as 标签的实例」：未被触达的组件保持作者位姿并给欠约束警告。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+                {
+                    key: 'ex-pitfalls',
+                    label: '示例 13：常见错误对照（保存前自查）',
+                    body: (
+                        <>
+                            <P>以下写法都会在保存 / 预览期被编译器拒绝，诊断会给出具体行号：</P>
+                            <CodeBlock
+                                title="反面示例（均编译不过）"
+                                code={
+                                    '// ✗ 模块名与图元重名 → 模块名「box」与关键字 / 图元重名\nmodule box(a) { box(w = 1, h = 1, d = 1) }\n\n// ✗ 布尔块为空 → union 块不能为空（至少一个子实例）\nunion { }\n\n// ✗ 图元按位置传参 → 图元参数须为「名 = 值」形式\nbox(60, 40, 10)\n\n// ✗ system 带参数表 → system 不接受参数表（可配置性请用顶层 param）\nsystem rover(len) { box(w = 1, h = 1, d = 1) }\n\n// ✗ 未知函数 → 未知函数「foo」（可用：abs/acos/asin/atan2/ceil/cos/…）\nparam x = foo(1)\n'
+                                }
+                            />
+                            <Bullets
+                                items={[
+                                    '标识符仅限 ASCII 字母 / 数字 / 下划线，不能用中文或关键字（param / module / system / use / as / constraint / 布尔 / 变换名）；',
+                                    '编译期限制超限同样报诊断：原文 256KB、嵌套 32 层、图元 2000 个、param 64 个、模块递归 16 层。',
+                                ]}
+                            />
+                        </>
+                    ),
+                },
+            ],
+        },
+        {
             key: 'workflow',
             label: '编辑与实时预览',
             summary: '保存即编译：原文入库同时落 IR 快照，运行期零语法错误。',
