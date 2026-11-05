@@ -14,7 +14,7 @@ import {
 } from 'antd'
 import { ArrowLeftOutlined, CheckOutlined, RedoOutlined, SyncOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FieldDiffTable } from '@/components/DiffView'
 import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi, workspaceApi } from '@/api'
@@ -49,6 +49,7 @@ const ACTION_TEXT: Record<ChangeActionItem['action'], string> = {
 export default function ChangeRequestDetailPage() {
   const { wid = '', tid = '', requestId = '' } = useParams<{ wid: string; tid: string; requestId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   const user = useAuthStore(s => s.user)
@@ -163,7 +164,12 @@ export default function ChangeRequestDetailPage() {
       <Button
         type="text"
         icon={<ArrowLeftOutlined />}
-        onClick={() => navigate(`/w/${wid}/tables/${tid}/change-requests`)}
+        // 来源为工作区级分栏列表（需求 0107）时回到工作区列表，否则回单表列表
+        onClick={() => navigate(
+          (location.state as { from?: string } | null)?.from === 'workspace'
+            ? `/w/${wid}/tables/change-requests`
+            : `/w/${wid}/tables/${tid}/change-requests`,
+        )}
         style={{ marginBottom: 8 }}
       >
         返回修改申请

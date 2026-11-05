@@ -455,8 +455,9 @@ export default function ChangeRequestsPage() {
   const flatItems = flatQuery.data?.items ?? []
   const isEmpty = groupedMode ? groups.length === 0 && ungrouped.length === 0 : flatItems.length === 0
 
+  // 工作区级入口跳详情携带 from=workspace，详情页「返回修改申请」据此回到工作区列表（需求 0107）
   const goDetail = (item: ChangeRequest) =>
-    navigate(`/w/${wid}/tables/${item.table_id}/change-requests/${item.id}`)
+    navigate(`/w/${wid}/tables/${item.table_id}/change-requests/${item.id}`, workspaceMode ? { state: { from: 'workspace' } } : undefined)
 
   const selectedCountByRow = useMemo(() => {
     const m: Record<string, number> = {}

@@ -10,6 +10,7 @@ import { http, HttpResponse } from 'msw'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import ChangeRequestsPage from './ChangeRequestsPage'
+import ChangeRequestDetailPage from './ChangeRequestDetailPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockUser, server } from '@/test/msw'
 import type { ChangeRequest, ID, TableWriteMode } from '@/api'
@@ -356,6 +357,30 @@ describe('ChangeRequestsPage 工作区级左右分栏（需求 0107）', () => {
     expect(await screen.findByText('修改前')).toBeInTheDocument()
     expect(screen.getByText(/当前行上下文/)).toBeInTheDocument()
     expect(screen.getByText(/电话: 13800000000/)).toBeInTheDocument()
+  })
+
+  it('详情页「返回修改申请」从工作区入口回到工作区列表（而非单表列表）', async () => {
+    server.use(
+      workspaceHandler(),
+      detailHandler(),
+      http.get('/api/v1/workspaces/10', () =>
+        HttpResponse.json({ id: 10, name: '测试工作区', description: '', visibility: 'member', tags: [], current_user_role: 'owner' })),
+      http.get('/api/v1/workspaces/10/members', () => HttpResponse.json([])),
+    )
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/tables/change-requests" element={<ChangeRequestsPage />} />
+        <Route path="/w/:wid/tables/:tid/change-requests/:requestId" element={<ChangeRequestDetailPage />} />
+      </Routes>,
+      { route: '/w/10/tables/change-requests', ...AUTH },
+    )
+
+    fireEvent.click(await screen.findByText('调整客户分级'))
+    fireEvent.click(await screen.findByText('返回修改申请'))
+    // 回到工作区分栏列表（左栏工作表清单），而非单表列表页
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /客户表/ })).toBeInTheDocument()
+    })
   })
 
   it('展开只读上下文不提供审批入口；行已删除时提示且不渲染行上下文', async () => {
