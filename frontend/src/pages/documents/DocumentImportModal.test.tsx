@@ -282,6 +282,8 @@ describe('通用导入弹窗', () => {
     const attachmentsSwitch = await screen.findByTestId('file-import-attachments')
     expect(attachmentsSwitch).toBeEnabled()
     fireEvent.click(screen.getByLabelText(/跳过同名文档/))
+    // 状态与处理方式同一套分段 UI（都是 Segmented，靠右收尾）
+    expect(screen.getByTestId('import-status-mode')).toHaveClass('ant-segmented')
     fireEvent.click(screen.getByLabelText('已发布'))
     fireEvent.click(attachmentsSwitch)
     fireEvent.click(screen.getByTestId('file-import-submit'))
@@ -318,9 +320,13 @@ describe('通用导入弹窗', () => {
       WID,
       expect.objectContaining({ mhtmlMode: 'archive', docxMode: 'archive' }),
     )
-    // 重解析期间选项区卸载后重挂载，需重新取节点断言选中态
+    // 原地刷新：选项区不卸载（节点同一），只进入 loading，解析回来后替换预览
     const remounted = await screen.findByTestId('file-import-process-mode')
-    expect(within(remounted).getByRole('radio', { name: '原样存档' })).toBeChecked()
+    expect(remounted).toBe(mode)
+    // rc-segmented 的输入在 jsdom 中不回写 checked，按选中态断言
+    await waitFor(() => expect(
+      remounted.querySelector('.ant-segmented-item-selected')?.textContent,
+    ).toContain('原样存档'))
     // 原样存档的 MHTML 素材已随原件保留，内嵌图片开关不适用
     expect(screen.getByTestId('file-import-attachments')).toBeDisabled()
 

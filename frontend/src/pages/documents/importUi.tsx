@@ -3,13 +3,13 @@
  * 口径统一在这里，三种模式只传内容不各自拼样式：
  * - ``ImportDropzone``：虚线拖放区（图标徽标 + 强标题 + 次要副标题 + 主按钮 + 说明气泡 + 已选状态）；
  * - ``ImportSummary``：解析结果的单行紧凑统计（零值走次要色）；
- * - ``ImportConflictOptions`` / ``ImportSwitch`` / ``ImportStatusRadio`` / ``ImportOptionsPanel``：选项区同一套排布；
+ * - ``ImportChoice`` / ``ImportConflictOptions`` / ``ImportSwitch`` / ``ImportStatusRadio`` / ``ImportOptionsPanel``：选项区同一套排布；
  * - ``ImportTruncatedHint``：预览截断提示。
  *
  * 图标语言也统一：模式选择器、拖放区、主按钮都用同一枚图标（单文件 / 文件夹 / zip 库）。
  */
 import type { ReactNode } from 'react'
-import { Button, Popover, Radio, Space, Switch, Tooltip, Typography } from 'antd'
+import { Button, Popover, Radio, Segmented, Space, Switch, Tooltip, Typography } from 'antd'
 import { QuestionCircleOutlined } from '@ant-design/icons'
 import type { VaultConflictPolicy } from '@/api/documents'
 
@@ -218,7 +218,55 @@ export function ImportSwitch({
   return tooltip ? <Tooltip title={tooltip}>{content}</Tooltip> : content
 }
 
-/** 文档状态（草稿 / 已发布）选择器，靠右收尾 */
+/** 选项区统一的「标签 + 分段控件」：处理方式 / 状态共用同一尺寸与排布 */
+export function ImportChoice<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+  disabled = false,
+  tooltip,
+  testId,
+  pushRight = false,
+}: {
+  label: string
+  value: T
+  onChange: (value: T) => void
+  options: Array<{ value: T; label: string }>
+  disabled?: boolean
+  tooltip?: string
+  testId: string
+  /** 靠右收尾（状态这类末位选项） */
+  pushRight?: boolean
+}) {
+  const content = (
+    <Space size={6} style={pushRight ? { marginLeft: 'auto' } : undefined}>
+      <Typography.Text type={disabled ? 'secondary' : undefined} style={{ fontSize: 12 }}>
+        {label}
+      </Typography.Text>
+      <Segmented
+        size="small"
+        value={value}
+        onChange={next => onChange(next as T)}
+        options={options}
+        disabled={disabled}
+        data-testid={testId}
+        aria-label={label}
+      />
+      {tooltip ? (
+        <Tooltip title={tooltip}>
+          <QuestionCircleOutlined
+            style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}
+            aria-label={`${label}说明`}
+          />
+        </Tooltip>
+      ) : null}
+    </Space>
+  )
+  return content
+}
+
+/** 文档状态（草稿 / 已发布）选择器：与处理方式同一套分段 UI，靠右收尾 */
 export function ImportStatusRadio({
   value,
   onChange,
@@ -227,21 +275,17 @@ export function ImportStatusRadio({
   onChange: (value: 'draft' | 'published') => void
 }) {
   return (
-    <Space size={6} style={{ marginLeft: 'auto' }}>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        状态
-      </Typography.Text>
-      <Radio.Group
-        value={value}
-        onChange={event => onChange(event.target.value as 'draft' | 'published')}
-        optionType="button"
-        size="small"
-        options={[
-          { value: 'draft', label: '草稿' },
-          { value: 'published', label: '已发布' },
-        ]}
-      />
-    </Space>
+    <ImportChoice<'draft' | 'published'>
+      label="状态"
+      value={value}
+      onChange={onChange}
+      options={[
+        { value: 'draft', label: '草稿' },
+        { value: 'published', label: '已发布' },
+      ]}
+      testId="import-status-mode"
+      pushRight
+    />
   )
 }
 

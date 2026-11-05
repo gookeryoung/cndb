@@ -16,19 +16,17 @@ import {
   Empty,
   Modal,
   Radio,
-  Segmented,
   Space,
+  Spin,
   Table,
   Tag as AntTag,
-  Tooltip,
   Typography,
 } from 'antd'
-import {
-  AppstoreOutlined, FileTextOutlined, FileZipOutlined, QuestionCircleOutlined,
-} from '@ant-design/icons'
+import { AppstoreOutlined, FileTextOutlined, FileZipOutlined } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { VaultImportForm } from './ObsidianImportModal'
 import {
+  ImportChoice,
   ImportConflictOptions,
   ImportDropzone,
   ImportFooter,
@@ -108,6 +106,8 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const [importAttachments, setImportAttachments] = useState(true)
   /** 处理方式：转 Markdown / 原样存档（互斥，统一作用于 Word 与 MHTML） */
   const [processMode, setProcessMode] = useState<ProcessMode>('convert')
+  /** 最近一次请求的处理方式：切换分段后旧请求晚到时不覆盖新结果 */
+  const latestModeRef = useRef<ProcessMode>('convert')
   const [status, setStatus] = useState<'draft' | 'published'>('draft')
 
   /** 批次里是否含 MHTML（.mhtml / .mht） */
@@ -140,7 +140,9 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         mhtmlMode: payload.processMode,
         docxMode: payload.processMode,
       }),
-    onSuccess: data => {
+    onSuccess: (data, variables) => {
+      // 只接受与当前选择一致的结果；切换分段期间保留旧预览原地刷新，不卸载选项区
+      if (variables.processMode !== latestModeRef.current) return
       setAnalysis(data)
       setConflict('rename')
     },
@@ -178,17 +180,22 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const pick = (files: FileList | null) => {
     const batch = toEntries(files)
     if (batch.length === 0) return
+    latestModeRef.current = processMode
     setEntries(batch)
     setAnalysis(null)
     setResult(null)
     analyzeMut.mutate({ batch, processMode })
   }
 
-  /** 切换处理方式会改变落库渲染族（markdown ↔ 原件），已选批次需要重新解析 */
+  /** 切换处理方式会改变落库渲染族（markdown ↔ 原件），已选批次需要重新解析.
+   *
+   * 不把 analysis 置空：选项区与预览保持挂载，只进入 loading 态，解析回来后原地替换，
+   * 避免弹窗内容「消失再出现」的闪烁；旧请求晚到的结果由 latestModeRef 丢弃。
+   */
   const changeProcessMode = (next: ProcessMode) => {
     setProcessMode(next)
+    latestModeRef.current = next
     if (entries.length > 0) {
-      setAnalysis(null)
       analyzeMut.mutate({ batch: entries, processMode: next })
     }
   }
@@ -280,7 +287,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
           key="submit"
           type="primary"
           data-testid="file-import-submit"
-          disabled={entries.length === 0 || !analysis}
+          disabled={entries.length === 0 || !analysis || analyzeMut.isPending}
           loading={importMut.isPending}
           onClick={() => importMut.mutate(entries)}
         >
@@ -456,29 +463,15 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                 )}
 
                 <ImportOptionsPanel testId="file-import-options">
-                  <Space size={6}>
-                    <Typography.Text
-                      type={hasProcessChoice ? undefined : 'secondary'}
-                      style={{ fontSize: 12 }}
-                    >
-                      处理方式
-                    </Typography.Text>
-                    <Segmented
-                      size="small"
-                      value={processMode}
-                      onChange={value => changeProcessMode(value as ProcessMode)}
-                      options={PROCESS_OPTIONS}
-                      disabled={!hasProcessChoice}
-                      data-testid="file-import-process-mode"
-                      aria-label="处理方式"
-                    />
-                    <Tooltip title="仅对 Word / MHTML 生效：转 Markdown 得到可编辑文档；原样存档保留原件，可预览 / 下载、不可编辑。Markdown / HTML 始终转 Markdown，PDF / Office / 图片始终原样存档。">
-                      <QuestionCircleOutlined
-                        style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}
-                        aria-label="处理方式说明"
-                      />
-                    </Tooltip>
-                  </Space>
+                  <ImportChoice<ProcessMode>
+                    label="处理方式"
+                    value={processMode}
+                    onChange={changeProcessMode}
+                    options={PROCESS_OPTIONS}
+                    disabled={!hasProcessChoice}
+                    tooltip="仅对 Word / MHTML 生效：转 Markdown 得到可编辑文档；原样存档保留原件，可预览 / 下载、不可编辑。Markdown / HTML 始终转 Markdown，PDF / Office / 图片始终原样存档。"
+                    testId="file-import-process-mode"
+                  />
                   <ImportSwitch
                     testId="file-import-attachments"
                     label="导入内嵌图片"
@@ -493,17 +486,19 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                 {analysis.items.length === 0 ? (
                   <Empty description="没有可导入的文件" />
                 ) : (
-                  <div data-testid="file-import-preview">
-                    <Table<FileImportPreviewItem>
-                      size="small"
-                      rowKey="path"
-                      columns={columns}
-                      dataSource={analysis.items}
-                      pagination={{ pageSize: 8, size: 'small', hideOnSinglePage: true }}
-                      scroll={{ y: 220 }}
-                    />
-                    {analysis.preview_truncated && <ImportTruncatedHint count={analysis.items.length} />}
-                  </div>
+                  <Spin spinning={analyzeMut.isPending} size="small">
+                    <div data-testid="file-import-preview">
+                      <Table<FileImportPreviewItem>
+                        size="small"
+                        rowKey="path"
+                        columns={columns}
+                        dataSource={analysis.items}
+                        pagination={{ pageSize: 8, size: 'small', hideOnSinglePage: true }}
+                        scroll={{ y: 220 }}
+                      />
+                      {analysis.preview_truncated && <ImportTruncatedHint count={analysis.items.length} />}
+                    </div>
+                  </Spin>
                 )}
               </>
             )}
