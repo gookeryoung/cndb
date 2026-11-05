@@ -122,7 +122,7 @@ CHART_TEMPLATES: dict[str, ChartTemplate] = {
             row_min=2,
             row_max=24,
             row_kind="dual-axis",
-            row_columns=tuple(_DUAL_AXIS_COLUMNS),  # type: ignore[arg-type]
+            row_columns=tuple(_DUAL_AXIS_COLUMNS),
             label_fields=(
                 {"key": "legendActual", "label": "图例 · 主值（实际）"},
                 {"key": "legendProjected", "label": "图例 · 主值（测算）"},

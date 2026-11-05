@@ -394,11 +394,11 @@ def import_table_confirm(
                 new_dropped = [k.strip() for k in dropped_columns.split(",") if k.strip()]
         except _json.JSONDecodeError:
             new_dropped = [k.strip() for k in dropped_columns.split(",") if k.strip()]
-        task.dropped_columns = new_dropped  # type: ignore[assignment]
+        task.dropped_columns = new_dropped
 
     # V3: 保存用户勾选的清洗动作（execute 阶段会重新 analyze 以拿到清洗后的数据画像）
     if cleaning_actions is not None:
-        task.cleaning_actions = _normalize_cleaning_actions(cleaning_actions)  # type: ignore[assignment]
+        task.cleaning_actions = _normalize_cleaning_actions(cleaning_actions)
 
     # V6（ADR 0020）：列映射 —— 源列名 → 目标字段名（AI 建议 / 用户编辑后确认）
     if column_mapping is not None:

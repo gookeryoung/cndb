@@ -91,7 +91,7 @@ def _rare_text_values(texts: list[str], threshold_ratio: float = 0.02) -> list[s
     threshold_count = max(1, int(total * threshold_ratio))
     rare = [v for v, c in counter.items() if c <= threshold_count]
     # 按出现次数升序
-    rare.sort(key=lambda v: counter[v])  # type: ignore[implicit-any-lambda]
+    rare.sort(key=lambda v: counter[v])
     return rare[:MAX_OUTLIER_SAMPLES]
 
 

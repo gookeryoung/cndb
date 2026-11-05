@@ -135,7 +135,7 @@ def _validate_field_config(
         source_field_id = (payload_config or {}).get("source_field_id")
         source = db.get(DataField, source_field_id) if isinstance(source_field_id, int) else None
         if source is not None:
-            cfg.source_field_type = source.field_type  # type: ignore[attr-defined]
+            cfg.source_field_type = source.field_type
 
     if field_type == "formula":
         if not isinstance(cfg, FormulaFieldConfig):

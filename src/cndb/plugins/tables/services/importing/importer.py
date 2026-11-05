@@ -769,12 +769,12 @@ class Importer:
         # 字符串 vs 数字：尝试宽松比较
         if isinstance(a, (int, float)) and isinstance(b, str):
             try:
-                return a == type(a)(b)  # type: ignore[arg-type]
+                return a == type(a)(b)
             except (ValueError, TypeError):
                 return str(a).strip() == b.strip()
         if isinstance(b, (int, float)) and isinstance(a, str):
             try:
-                return b == type(b)(a)  # type: ignore[arg-type]
+                return b == type(b)(a)
             except (ValueError, TypeError):
                 return str(b).strip() == a.strip()
         # 字符串去空白比较

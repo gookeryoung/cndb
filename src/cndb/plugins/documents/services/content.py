@@ -472,7 +472,7 @@ def rollback_version(db: Session, workspace_id: int, doc_id: int, user: User, ta
         change_summary=f"回滚到 v{target_version}",
         base_updated_at=None,
         change_type=CHANGE_TYPE_ROLLBACK,
-    )  # type: ignore[return-value]
+    )
 
 
 def move_target_reason(db: Session, workspace_id: int, doc: Document, parent_id: int | None) -> str | None:

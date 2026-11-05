@@ -86,7 +86,7 @@ def _before_cursor_execute(
     _conn: Any, _cursor: Any, _statement: str, _parameters: Any, context: Any, _executemany: Any
 ) -> None:
     """记录 SQL 执行起始时间，供慢查询检测."""
-    context._cndb_query_start = time.perf_counter()  # type: ignore[attr-defined]
+    context._cndb_query_start = time.perf_counter()
 
 
 @event.listens_for(engine, "after_cursor_execute")

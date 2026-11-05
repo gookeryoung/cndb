@@ -53,7 +53,7 @@ def resolve_source_fields(
             raise ValueError(f"源表不存在这些字段 id: {sorted(missing)}")
         # 按传入 field_ids 顺序输出
         order_index = {fid: idx for idx, fid in enumerate(field_ids)}
-        selected.sort(key=lambda f: order_index[f.id])  # type: ignore[implicit-any-lambda]
+        selected.sort(key=lambda f: order_index[f.id])
         return selected
 
     if field_names:
@@ -64,11 +64,11 @@ def resolve_source_fields(
             raise ValueError(f"源表不存在这些字段名: {sorted(missing)}")
         # 按传入 field_names 顺序输出
         order_index = {name: idx for idx, name in enumerate(field_names)}
-        selected.sort(key=lambda f: order_index[f.name])  # type: ignore[implicit-any-lambda]
+        selected.sort(key=lambda f: order_index[f.name])
         return selected
 
     # 未指定则取全部（按展示顺序）
-    selected = sorted(pool, key=lambda f: (f.order, f.id))  # type: ignore[implicit-any-lambda]
+    selected = sorted(pool, key=lambda f: (f.order, f.id))
     return selected
 
 

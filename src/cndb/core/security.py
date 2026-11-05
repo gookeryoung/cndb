@@ -26,7 +26,7 @@ def _check_auth_deps() -> None:
     层会报 ImportError。我们在这里把原始异常包成带上下文的 RuntimeError，便于排障。
     """
     try:
-        import bcrypt  # type: ignore  # noqa: F401 (运行时探测)
+        import bcrypt  # noqa: F401 (运行时探测)
         import jose  # type: ignore  # noqa: F401
     except ImportError as exc:  # pragma: no cover - 依赖探测分支
         raise RuntimeError(
@@ -65,7 +65,7 @@ def verify_password(plain: str, hashed: str) -> bool:
     import bcrypt
 
     try:
-        import bcrypt  # type: ignore
+        import bcrypt
 
         return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
     except (ValueError, TypeError) as exc:

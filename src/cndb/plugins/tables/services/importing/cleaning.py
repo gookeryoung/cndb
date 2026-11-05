@@ -170,7 +170,7 @@ def generate_cleaning_suggestions(
         "fill_null": 4,
         "trim_whitespace": 5,
     }
-    suggestions.sort(key=lambda s: _PRIORITY.get(s["action"], 99))  # type: ignore[implicit-any-lambda]
+    suggestions.sort(key=lambda s: _PRIORITY.get(s["action"], 99))
 
     return suggestions
 

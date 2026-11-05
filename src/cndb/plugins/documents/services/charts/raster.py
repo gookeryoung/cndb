@@ -98,7 +98,7 @@ def _dashed_line(draw: ImageDraw, x1: float, y1: float, x2: float, y2: float, da
         return
     ux, uy = dx / dist, dy / dist
     t = 0.0
-    line = draw.line  # type: ignore[attr-defined]
+    line = draw.line
     while t < dist:
         t2 = min(t + on, dist)
         line([(x1 + ux * t, y1 + uy * t), (x1 + ux * t2, y1 + uy * t2)], fill=fill, width=width)

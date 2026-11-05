@@ -512,7 +512,7 @@ def apply_row_filter(
             removed += 1
             continue
         if op(number, float(threshold)):
-            kept.append(copy(row))  # type: ignore[arg-type]
+            kept.append(copy(row))
         else:
             removed += 1
     return kept, removed

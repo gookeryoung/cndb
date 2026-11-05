@@ -735,7 +735,7 @@ def _import_v9_extras(
         doc = db.get(Document, doc_id)
         if doc is None:
             return content, content
-        stored_value = _store_content_bytes(doc, vn, content, size)  # type: ignore[arg-type]
+        stored_value = _store_content_bytes(doc, vn, content, size)
         return stored_value, content
 
     # ── 1) 文档版本历史 ──
