@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
-from cndb.plugins.tables.field_types import FieldTypeConfig, LinkFieldConfig, default_registry, normalize_field_type
+from cndb.plugins.tables.field_types import (
+    FieldTypeConfig,
+    FormulaFieldConfig,
+    LinkFieldConfig,
+    default_registry,
+    normalize_field_type,
+)
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.schemas import (
     FieldCreate,
@@ -90,7 +96,13 @@ def _validate_link_business_key(cfg: LinkFieldConfig, target: DataTable) -> None
             )
 
 
-def _validate_field_config(field_type: str, payload_config: dict[str, Any], db: Session) -> dict[str, Any]:
+def _validate_field_config(
+    field_type: str,
+    payload_config: dict[str, Any],
+    db: Session,
+    *,
+    table_id: int | None = None,
+) -> dict[str, Any]:
     """用字段类型对应的 config_schema 校验并归一化 config.
 
     link 字段额外校验 target_table_id 存在性；lookup 字段从源字段派生
@@ -124,6 +136,32 @@ def _validate_field_config(field_type: str, payload_config: dict[str, Any], db: 
         source = db.get(DataField, source_field_id) if isinstance(source_field_id, int) else None
         if source is not None:
             cfg.source_field_type = source.field_type  # type: ignore[attr-defined]
+
+    if field_type == "formula":
+        if not isinstance(cfg, FormulaFieldConfig):
+            raise HTTPException(status_code=400, detail="formula 字段 config 缺少 formula")
+        # 延迟导入：analytics 依赖 tables，模块级导入会形成插件循环
+        from cndb.plugins.analytics.services.formula import (
+            FormulaError,
+            parse,
+            referenced_fields,
+            validate_formula,
+        )
+
+        try:
+            validate_formula(cfg.formula)
+            refs = referenced_fields(parse(cfg.formula))
+        except FormulaError as exc:
+            raise HTTPException(status_code=400, detail=f"派生字段公式非法: {exc}") from exc
+        if table_id is not None:
+            table = db.get(DataTable, table_id)
+            names = {f.name for f in table.active_fields()} if table is not None else set()
+            missing = sorted(refs - names)
+            if missing:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"派生字段公式引用了不存在的字段: {', '.join(missing)}",
+                )
 
     # 归一化输出（去掉基类 FieldTypeConfig 的通用字段）
     exclude = set()
@@ -173,7 +211,7 @@ def create_field(
     )
 
     # 用字段类型专属 schema 校验并归一化 config
-    config = _validate_field_config(payload.field_type, payload.config or {}, db)
+    config = _validate_field_config(payload.field_type, payload.config or {}, db, table_id=table_id)
 
     engine = db.get_bind()
 
@@ -299,6 +337,11 @@ def update_field(
 
     # ── config 校验：create_field 已覆盖，update_field 需补齐 ──
     # 当 config 或 field_type 发生变化时，用字段类型专属 schema 校验并归一化 config
+    effective_field_type = update_data.get("field_type", old_field_type)
+    if effective_field_type == "formula" and old_field_type != "formula":
+        raise HTTPException(status_code=400, detail="已有字段不能改为派生字段；请新建派生字段")
+    if old_field_type == "formula" and effective_field_type != "formula":
+        raise HTTPException(status_code=400, detail="派生字段不支持切换为其它类型；请新建普通字段")
     needs_config_validation = "config" in update_data or (
         "field_type" in update_data and update_data["field_type"] != old_field_type
     )
@@ -306,7 +349,7 @@ def update_field(
     if needs_config_validation:
         effective_field_type = update_data.get("field_type", old_field_type)
         raw_config = update_data.get("config", df.config or {})
-        update_data["config"] = _validate_field_config(effective_field_type, raw_config, db)
+        update_data["config"] = _validate_field_config(effective_field_type, raw_config, db, table_id=dt.id)
         # select/multiselect 选项变更 → 需同步存量数据（改名改写/删除清空）；
         # 纯新增/重排/配色 diff 为空，同步函数内部直接短路
         needs_select_data_sync = old_field_type in ("select", "multiselect") and effective_field_type in (

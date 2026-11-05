@@ -21,6 +21,7 @@ export const TYPE_CATEGORIES = {
   link: ['link'],
   attachment: ['attachment'],
   image: ['image'],
+  formula: ['formula'],
 }
 
 /** 把后端 SelectOption 格式归一化为前端编辑用的 { key, label, value, color }.
@@ -68,6 +69,8 @@ export function defaultConfigForType(fieldType: FieldType): Record<string, unkno
       return { max_size_mb: 10, allowed_mime_types: [], multiple: true, max_count: 0 }
     case 'image':
       return { max_size_mb: 10, allowed_mime_types: [], multiple: true, max_count: 0 }
+    case 'formula':
+      return { formula: '', decimals: null }
     default:
       return {}
   }
@@ -79,6 +82,8 @@ interface ConfigEditorProps {
   wid: string
   tid: string
   tables: TableSummary[]
+  /** 当前表全部字段，用于派生字段展示可用字段名 */
+  fields?: Field[]
   /** 是否为编辑已有字段（编辑时不覆盖既有 config，避免 options 等配置被默认值清空） */
   isEdit?: boolean
   /** 正在编辑的字段 id（null 表示新建），用于强制 SelectOptionsEditor 在不同字段间切换时重挂载 */
@@ -93,10 +98,11 @@ const HAS_CONFIG_TYPES = new Set<string>([
   ...TYPE_CATEGORIES.link,
   ...TYPE_CATEGORIES.attachment,
   ...TYPE_CATEGORIES.image,
+  ...TYPE_CATEGORIES.formula,
 ])
 
 /** 字段类型对应的 config 编辑器 */
-export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false, editTargetId = null }: ConfigEditorProps) {
+export function ConfigEditor({ fieldType, form, wid, tid, tables, fields = [], isEdit = false, editTargetId = null }: ConfigEditorProps) {
   // 关键：<Form.Item name="config" hidden /> 注册后，Form.useWatch('config', form)
   // 才能真正订阅 config 变化。此前未注册 Form.Item 导致 useWatch 永远返回 undefined，
   // ConfigEditor 不会因 form.setFieldValue 触发重渲染，SelectOptionsEditor 收到的 config
@@ -204,6 +210,36 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, isEdit = false
           tables={tables}
           editTargetId={editTargetId}
         />
+      )}
+
+      {/* ── 派生字段 formula ── */}
+      {TYPE_CATEGORIES.formula.includes(fieldType) && (
+        <>
+          <Form.Item
+            {...configField('formula')}
+            label="计算公式"
+            extra="用 [字段名] 引用字段；支持 + - * /、括号与 round / abs / sqrt / pow / ceil / floor 等函数（聚合 / 窗口函数按表内行序列计算）。"
+            rules={[{ required: true, message: '请输入计算公式' }]}
+          >
+            <Input.TextArea
+              rows={3}
+              placeholder="例如：round([金额] / [数量], 2)"
+              style={{ fontFamily: 'var(--cn-font-mono, monospace)' }}
+            />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item {...configField('decimals')} label="结果小数位" style={{ marginBottom: 8 }}>
+                <InputNumber min={0} max={10} style={{ width: '100%' }} placeholder="不额外取整" />
+              </Form.Item>
+            </Col>
+            <Col span={16}>
+              <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)', paddingTop: 28 }}>
+                可用字段：{fields.filter(f => f.field_type !== 'formula' || f.id !== editTargetId).map(f => `[${f.name}]`).join(' ') || '（暂无）'}
+              </div>
+            </Col>
+          </Row>
+        </>
       )}
 
       {/* ── 附件 attachment ── */}

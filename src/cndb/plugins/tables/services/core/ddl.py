@@ -212,7 +212,9 @@ def add_column(engine: Any, table: DataTable, field: DataField) -> None:
         raise ValueError(f"未知字段类型: {field.field_type}")
 
     if not ft.has_physical_column:
-        create_link_table(engine, field)
+        # 只有 link 需要关联表；lookup / formula 等虚拟字段不产生任何物理结构
+        if field.field_type == "link":
+            create_link_table(engine, field)
         return
 
     col = ft.make_column(field.db_column_name, nullable=not field.required)
@@ -244,7 +246,8 @@ def drop_column(engine: Any, table: DataTable, field: DataField) -> None:
     """
     ft = default_registry.get(field.field_type)
     if ft is not None and not ft.has_physical_column:
-        drop_link_table(engine, field)
+        if field.field_type == "link":
+            drop_link_table(engine, field)
         return
 
     sql = f'ALTER TABLE "{table.db_table_name}" DROP COLUMN "{field.db_column_name}"'

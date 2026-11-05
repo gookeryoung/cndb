@@ -11,7 +11,7 @@ import dayjs, { Dayjs } from 'dayjs'
 
 /** 只读字段（无物理列、由源表实时解析）不能 inline 编辑 */
 export function isReadonlyField(field: Field): boolean {
-  return field.field_type === 'lookup'
+  return field.field_type === 'lookup' || field.field_type === 'formula'
 }
 
 /** 进入编辑态前：把后端值转换成编辑器能吃的 JS 值 */

@@ -5,6 +5,7 @@ from __future__ import annotations
 from cndb.plugins.tables.field_types.base import FieldType
 from cndb.plugins.tables.field_types.date import DateFieldType, DateTimeFieldType, TimestampFieldType
 from cndb.plugins.tables.field_types.files import AttachmentFieldType, ImageFieldType
+from cndb.plugins.tables.field_types.formula import FormulaFieldType
 from cndb.plugins.tables.field_types.lookup import LookupFieldType
 from cndb.plugins.tables.field_types.number import (
     BooleanFieldType,
@@ -109,6 +110,7 @@ def build_default_registry() -> FieldTypeRegistry:
     reg.register(AttachmentFieldType())
     reg.register(ImageFieldType())
     reg.register(JsonFieldType())
+    reg.register(FormulaFieldType())
     return reg
 
 

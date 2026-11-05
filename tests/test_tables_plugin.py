@@ -56,6 +56,7 @@ class TestDefaultRegistry:
                 "attachment",
                 "image",
                 "json",
+                "formula",
             ]
         )
 
@@ -83,7 +84,7 @@ class TestFieldTypeRegistry:
 
     def test_build_default(self):
         reg = build_default_registry()
-        assert len(reg.all()) == 19
+        assert len(reg.all()) == 20
 
 
 class TestTextFieldType:

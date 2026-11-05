@@ -21,7 +21,7 @@ const { Title, Text } = Typography
  * 无物理列的只读虚拟字段类型：值由后端实时解析，不参与写入。
  * 整行表单提交时必须剔除，否则后端写入会因缺少物理列报错。
  */
-const READONLY_VIRTUAL_FIELD_TYPES = new Set(['lookup'])
+const READONLY_VIRTUAL_FIELD_TYPES = new Set(['lookup', 'formula'])
 
 /**
  * 提取 link 字段值中的目标行 id 列表.
@@ -364,8 +364,8 @@ export function FieldEditor({
     )
   }
 
-  if (ft === 'lookup') {
-    // lookup 为只读引用字段：值由后端按 link 关联实时解析，不允许编辑也不参与提交
+  if (ft === 'lookup' || ft === 'formula') {
+    // lookup / formula 为只读虚拟字段：值由后端按关联 / 公式实时解析，不允许编辑也不参与提交
     const text = Array.isArray(value)
       ? value.map(v => (v === null || v === undefined ? '' : String(v))).join(', ')
       : (value === null || value === undefined ? '' : String(value))

@@ -15,7 +15,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest'
 import { StrictMode } from 'react'
 import type { ReactNode } from 'react'
-import { act, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import FieldManager, { fieldNoteText, formatIncrementExample } from './index'
 import { renderProviders } from '@/test/render-providers'
 import { fieldApi, tableApi, workspaceApi } from '@/api'
@@ -1286,5 +1286,25 @@ describe('FieldManager 切换字段类型时重置 config', () => {
             const payload = updateSpy.mock.calls[0]![3] as unknown as Record<string, unknown>
             expect(payload.config ?? {}).not.toHaveProperty('options')
         })
+    })
+})
+
+describe('FieldManager 派生字段（formula）', () => {
+    it('新建派生字段：填写公式与小位数后提交 formula config', async () => {
+        const createSpy = vi.spyOn(fieldApi, 'create').mockResolvedValue({} as any)
+        await openNewDialogAndSelectType('派生字段')
+
+        const formulaInput = await screen.findByPlaceholderText('例如：round([金额] / [数量], 2)')
+        fireEvent.change(formulaInput, { target: { value: 'round([金额] / [数量], 2)' } })
+        const decimals = screen.getByRole('spinbutton')
+        fireEvent.change(decimals, { target: { value: '2' } })
+
+        fireEvent.click(within(document.querySelector('.ant-modal-footer') as HTMLElement).getByRole('button', { name: /创\s*建/ }))
+        await waitFor(() => expect(createSpy).toHaveBeenCalled())
+        const payload = createSpy.mock.calls[0]![2] as unknown as Record<string, unknown>
+        expect(payload.field_type).toBe('formula')
+        const config = payload.config as Record<string, unknown>
+        expect(config.formula).toBe('round([金额] / [数量], 2)')
+        expect(config.decimals).toBe(2)
     })
 })

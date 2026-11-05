@@ -214,7 +214,7 @@ export interface FieldDetectOptionsResponse {
 export type FieldType =
   | 'text' | 'longtext' | 'number' | 'float' | 'boolean'
   | 'date' | 'datetime' | 'timestamp' | 'select' | 'multiselect'
-  | 'email' | 'url' | 'phone' | 'link' | 'lookup' | 'attachment' | 'percentage' | 'image'
+  | 'email' | 'url' | 'phone' | 'link' | 'lookup' | 'formula' | 'attachment' | 'percentage' | 'image'
   // 历史别名（后端 _FIELD_TYPE_ALIASES 自动归一化，见 field_types/registry.py）
   | 'long_text' | 'decimal' | 'multi_select' | 'json'
 

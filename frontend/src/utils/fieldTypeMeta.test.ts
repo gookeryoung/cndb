@@ -49,8 +49,8 @@ describe('fieldTypeMeta 字段类型元数据', () => {
     }
   })
 
-  it('FIELD_TYPE_OPTIONS 恰含 17 个主类型且不含别名', () => {
-    expect(FIELD_TYPE_OPTIONS).toHaveLength(17)
+  it('FIELD_TYPE_OPTIONS 恰含 18 个主类型且不含别名', () => {
+    expect(FIELD_TYPE_OPTIONS).toHaveLength(18)
     const values = FIELD_TYPE_OPTIONS.map(o => o.value)
     expect(values).toContain('text')
     expect(values).toContain('image')

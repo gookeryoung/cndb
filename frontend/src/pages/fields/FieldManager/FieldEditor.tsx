@@ -21,6 +21,8 @@ interface FieldEditorProps {
   wid: string
   tid: string
   tables: TableSummary[]
+  /** 当前表全部字段（派生字段展示可用字段名） */
+  fields?: Field[]
   submitPending: boolean
   onSubmit: () => void
   onCancel: () => void
@@ -31,7 +33,7 @@ interface FieldEditorProps {
 }
 
 /** 新建 / 编辑字段的内部 Modal（Modal 与嵌入模式共用） */
-export default function FieldEditor({ open, editTarget, fieldType, form, wid, tid, tables, submitPending, onSubmit, onCancel, onFieldTypeChange, onValuesChange }: FieldEditorProps) {
+export default function FieldEditor({ open, editTarget, fieldType, form, wid, tid, tables, fields = [], submitPending, onSubmit, onCancel, onFieldTypeChange, onValuesChange }: FieldEditorProps) {
   return (
     <Modal
       title={editTarget ? '编辑字段' : '新建字段'}
@@ -86,6 +88,7 @@ export default function FieldEditor({ open, editTarget, fieldType, form, wid, ti
           wid={wid}
           tid={tid}
           tables={tables}
+          fields={fields}
           isEdit={!!editTarget}
           editTargetId={editTarget?.id ?? null}
         />

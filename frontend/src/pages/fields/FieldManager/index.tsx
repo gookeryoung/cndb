@@ -342,6 +342,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
   /** 编辑对话框（FieldEditor 组件） */
   const editDialog = (
     <FieldEditor
+          fields={editFields}
       open={innerOpen}
       editTarget={liveEditTarget}
       fieldType={fieldType}

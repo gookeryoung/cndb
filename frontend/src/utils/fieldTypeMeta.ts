@@ -38,6 +38,7 @@ export const FIELD_TYPE_META: Record<string, FieldTypeMeta> = {
     phone: { label: '电话', category: '高级', color: 'geekblue' },
     link: { label: '关联', category: '关联', color: 'magenta' },
     lookup: { label: '引用', category: '关联', color: 'magenta' },
+    formula: { label: '派生字段', category: '计算', color: 'purple' },
     attachment: { label: '附件', category: '高级', color: 'volcano' },
     image: { label: '图片', category: '高级', color: 'pink' },
     // ── 历史别名（后端自动归一化，展示兜底）──
@@ -61,7 +62,7 @@ export function getFieldTypeColor(type: string): string {
 export const FIELD_TYPE_OPTIONS: Array<{ value: FieldType; label: string; category: string }> = [
     'text', 'longtext', 'boolean', 'number', 'float', 'percentage', 'date',
     'datetime', 'timestamp', 'select', 'multiselect', 'email', 'url', 'phone',
-    'link', 'attachment', 'image',
+    'link', 'formula', 'attachment', 'image',
 ].map((value) => {
     const meta = FIELD_TYPE_META[value]!
     return { value: value as FieldType, label: meta.label, category: meta.category }

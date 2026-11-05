@@ -28,6 +28,7 @@ from cndb.plugins.tables.field_types.files import (
     ImageFieldType,
     is_image_meta,
 )
+from cndb.plugins.tables.field_types.formula import FORMULA_FIELD_TYPE, FormulaFieldConfig, FormulaFieldType
 from cndb.plugins.tables.field_types.lookup import LOOKUP_FIELD_TYPE, LookupFieldConfig, LookupFieldType
 from cndb.plugins.tables.field_types.number import (
     BooleanFieldType,
@@ -65,6 +66,7 @@ from cndb.plugins.tables.field_types.text import (
 )
 
 __all__ = [
+    "FORMULA_FIELD_TYPE",
     "IMAGE_EXTENSIONS",
     "LOOKUP_FIELD_TYPE",
     "MULTI_SELECT_SPLIT_RE",
@@ -81,6 +83,8 @@ __all__ = [
     "FieldTypeConfig",
     "FieldTypeRegistry",
     "FloatFieldType",
+    "FormulaFieldConfig",
+    "FormulaFieldType",
     "ImageFieldConfig",
     "ImageFieldType",
     "JsonFieldType",

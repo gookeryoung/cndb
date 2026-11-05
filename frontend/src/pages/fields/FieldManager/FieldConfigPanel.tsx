@@ -22,6 +22,8 @@ interface FieldConfigPanelProps {
   wid: string
   tid: string
   tables: TableSummary[]
+  /** 当前表全部字段（派生字段展示可用字段名） */
+  fields?: Field[]
   /** 是否为编辑已有字段（透传给 ConfigEditor，编辑时不覆盖既有 config） */
   isEdit?: boolean
   /** 正在编辑的字段 id（null 表示新建） */
@@ -41,7 +43,7 @@ function Section({ title, icon, children, extra }: { title: string; icon: React.
   )
 }
 
-export default function FieldConfigPanel({ fieldType, form, wid, tid, tables, isEdit = false, editTargetId = null }: FieldConfigPanelProps) {
+export default function FieldConfigPanel({ fieldType, form, wid, tid, tables, fields = [], isEdit = false, editTargetId = null }: FieldConfigPanelProps) {
   return (
     <>
       {/* ── 分区 1：基础属性 ── */}
@@ -89,6 +91,7 @@ export default function FieldConfigPanel({ fieldType, form, wid, tid, tables, is
           wid={wid}
           tid={tid}
           tables={tables}
+          fields={fields}
           isEdit={isEdit}
           editTargetId={editTargetId}
         />
@@ -100,7 +103,7 @@ export default function FieldConfigPanel({ fieldType, form, wid, tid, tables, is
 // ─────────────── 动态默认值输入组件 ───────────────
 
 /** 哪些字段类型不支持默认值（link 需指定具体关联行，attachment/image 是二进制） */
-const NO_DEFAULT_VALUE_TYPES = new Set<FieldType>(['link', 'attachment', 'image', 'timestamp'])
+const NO_DEFAULT_VALUE_TYPES = new Set<FieldType>(['link', 'attachment', 'image', 'timestamp', 'formula'])
 
 /** 把 config.options（后端格式：[{label,value,color}] 或字符串数组）转成 antd Select options */
 function buildSelectOptions(raw: unknown): Array<{ label: string; value: string }> {

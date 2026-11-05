@@ -441,6 +441,9 @@ def get_row(
         from cndb.plugins.tables.services.core.lookups import attach_lookup_values
 
         result = attach_lookup_values(engine, table, [result], db=db)[0]
+    from cndb.plugins.tables.services.core.formulas import attach_formula_values
+
+    result = attach_formula_values(table, [result])[0]
     if db is not None and user is not None:
         from cndb.plugins.tables.services.core.access import apply_field_hiding, get_hidden_field_names
 
@@ -702,6 +705,9 @@ def list_rows(
         from cndb.plugins.tables.services.core.lookups import attach_lookup_values
 
         result = attach_lookup_values(engine, table, result, db=db)
+    from cndb.plugins.tables.services.core.formulas import attach_formula_values
+
+    result = attach_formula_values(table, result)
 
     # lookup 内存过滤（含嵌套分组与混合物理列条件）/ 排序 / 分页
     if lk_filters:

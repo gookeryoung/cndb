@@ -253,9 +253,10 @@ export function buildColumns(
         ellipsis: true,
         // 视图级覆盖优先，否则按字段类型估算（拖拽 resize 期间的实时预览也走此受控 width）
         width: clampColumnWidth(options?.columnWidths?.[String(f.id)]) ?? estimateColumnWidth(f),
-        sorter: true,
+        // 派生字段是读取期虚拟列：SQL 排序 / 过滤无法下推，先关闭列头入口（后续可做内存排序）
+        sorter: f.field_type === 'formula' ? false : true,
         sortOrder,
-        filterDropdown: ({ confirm, clearFilters }) => (
+        filterDropdown: f.field_type === 'formula' ? undefined : ({ confirm, clearFilters }) => (
           <ColumnFilterDropdown
             field={f}
             wid={wid}
@@ -265,7 +266,7 @@ export function buildColumns(
             onReset={() => { onFilterReset(f.name); clearFilters?.(); confirm?.() }}
           />
         ),
-        filterIcon: (filtered) => (
+        filterIcon: f.field_type === 'formula' ? undefined : (filtered) => (
           <FilterOutlined style={{ color: filtered || currentFilter ? '#1677ff' : undefined }} />
         ),
         render: (v: unknown, record: RowResponse) => {
