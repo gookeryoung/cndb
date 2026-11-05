@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { CheckOutlined, CopyOutlined } from '@ant-design/icons'
+import { COPIED_MS, copyText } from '@/utils/clipboard'
 import { highlightCode, languageLabel, normalizeLanguage } from './codeHighlight'
 import type { CodeToken } from './codeHighlight'
 
@@ -15,41 +16,6 @@ interface CodeBlockProps {
   code: string
   /** fence info 里的语言标识，如 `ts` / `python` / `language-sql` */
   language?: string | null
-}
-
-/** 复制成功后的「已复制」提示保持时长 */
-const COPIED_MS = 1500
-
-/** 非安全上下文（http）下 clipboard API 不可用，退回 textarea + execCommand */
-function fallbackCopy(text: string): boolean {
-  if (typeof document.execCommand !== 'function') return false
-  const area = document.createElement('textarea')
-  area.value = text
-  area.setAttribute('readonly', '')
-  area.style.position = 'fixed'
-  area.style.top = '-9999px'
-  area.style.opacity = '0'
-  document.body.appendChild(area)
-  area.select()
-  try {
-    return document.execCommand('copy')
-  } catch {
-    return false
-  } finally {
-    area.remove()
-  }
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-      return true
-    }
-  } catch {
-    // 权限被拒 / 非安全上下文：走兜底
-  }
-  return fallbackCopy(text)
 }
 
 /** token 序列 → React 节点（未覆盖的区间按纯文本渲染） */

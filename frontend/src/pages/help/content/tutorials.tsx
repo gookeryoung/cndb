@@ -968,7 +968,7 @@ const designDsl: HelpTopic = {
         {
             key: 'examples',
             label: '典型示例（由浅入深）',
-            summary: '全部示例均通过编译器验证；照抄即可运行，改参数即出变体。',
+            summary: '全部示例均通过编译器验证；点代码块右上角「复制」即可照抄运行，改参数即出变体。',
             items: [
                 {
                     key: 'ex-minimal',

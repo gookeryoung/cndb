@@ -4235,11 +4235,43 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   overflow: hidden;
 }
 
-.cn-help-docs-code-title {
+.cn-help-docs-code-head {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
   padding: var(--cn-space-xs) var(--cn-space-md);
   border-bottom: 1px solid var(--cn-border-soft);
+}
+
+.cn-help-docs-code-title {
   color: var(--cn-text-muted);
   font-size: var(--cn-text-sm);
+}
+
+.cn-help-docs-code-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  margin-left: auto;
+  padding: var(--cn-space-hairline) var(--cn-space-sm);
+  border: none;
+  border-radius: var(--cn-radius-sm);
+  background: transparent;
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  line-height: 1.6;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.cn-help-docs-code-copy:hover {
+  background: var(--cn-bg-container);
+  color: var(--cn-text-primary);
+}
+
+.cn-help-docs-code-copy:focus {
+  outline: 2px solid var(--cn-brand-color);
+  outline-offset: 1px;
 }
 
 .cn-help-docs-code pre {

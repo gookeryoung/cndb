@@ -5,8 +5,11 @@
  * 交叉引用走 `helpLink`，让「同一事实只写一遍」在代码里也可执行（链接而非复制段落）。
  */
 
-import { Link } from 'react-router-dom'
+import { CheckOutlined, CopyOutlined } from '@ant-design/icons'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Link } from 'react-router-dom'
+import { COPIED_MS, copyText } from '@/utils/clipboard'
 import { helpLink, subsectionAnchor } from '../helpNav'
 
 export function P({ children }: { children: ReactNode }) {
@@ -70,11 +73,43 @@ export function Strong({ children }: { children: ReactNode }) {
     return <strong className="cn-help-docs-strong">{children}</strong>
 }
 
-/** 多行代码示例（DSL 等）：等宽字体 + 浅底色，横向可滚动，原文空格 / 缩进原样保留。 */
+/** 多行代码示例（DSL 等）：标题栏 + 复制按钮，等宽字体 + 浅底色，
+ * 横向可滚动，原文空格 / 缩进原样保留。 */
 export function CodeBlock({ code, title }: { code: string; title?: string }) {
+    const [copied, setCopied] = useState(false)
+    const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    useEffect(
+        () => () => {
+            if (timerRef.current) clearTimeout(timerRef.current)
+        },
+        [],
+    )
+
+    const handleCopy = async () => {
+        // 复制内容与展示一致：裁掉结尾换行，避免粘贴后多出空行
+        if (!(await copyText(code.replace(/\n$/, '')))) return
+        setCopied(true)
+        if (timerRef.current) clearTimeout(timerRef.current)
+        timerRef.current = setTimeout(() => setCopied(false), COPIED_MS)
+    }
+
     return (
-        <div className="cn-help-docs-code">
-            {title && <div className="cn-help-docs-code-title">{title}</div>}
+        <div className="cn-help-docs-code" data-testid="help-codeblock">
+            <div className="cn-help-docs-code-head">
+                {title && <div className="cn-help-docs-code-title">{title}</div>}
+                <button
+                    type="button"
+                    className="cn-help-docs-code-copy"
+                    aria-label="复制示例代码"
+                    title="复制示例代码"
+                    data-testid="help-codeblock-copy"
+                    onClick={() => void handleCopy()}
+                >
+                    {copied ? <CheckOutlined /> : <CopyOutlined />}
+                    <span>{copied ? '已复制' : '复制'}</span>
+                </button>
+            </div>
             <pre>
                 <code>{code}</code>
             </pre>
