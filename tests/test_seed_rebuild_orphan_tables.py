@@ -123,7 +123,8 @@ class TestSeedRebuildOrphanTables:
 
         # 修复前：drop_all 在 DROP TABLE accounts_user 处抛
         # OperationalError: no such table: main.tables_datatable
-        seed(argparse.Namespace())
+        # 本用例模拟「已有数据的用户库」，显式 --force 才允许重建（需求 0106 C1）
+        seed(argparse.Namespace(force=True))
 
         tables = _table_names(legacy_db_env)
         # 残留表已被清理（seed 语义是清空重建演示库）
