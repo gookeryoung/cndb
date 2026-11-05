@@ -101,11 +101,33 @@ describe('PipelineRunDetail 运行详情', () => {
     // Collapse 面板首次展开才挂载 children，先点 job 标题
     fireEvent.click(await screen.findByText('体检'))
     expect(await screen.findByText('table/null-rate')).toBeInTheDocument()
-    expect(screen.getByText('严重度 告警')).toBeInTheDocument()
-    // step.findings 是按严重度计数的对象，展示时汇总为条数而非 [object Object]
+    expect(within(screen.getByTestId('qc-jobs-box')).getByTitle('严重度 告警')).toBeInTheDocument()
+    // step.findings 是按严重度计数的对象，展示时汇总为条数而非 [object Object]；0 项不占位
     expect(screen.getByText('发现 1 项')).toBeInTheDocument()
-    expect(screen.getByText('发现 0 项')).toBeInTheDocument()
+    expect(screen.queryByText('发现 0 项')).toBeNull()
     expect(await screen.findByText('城市存在空值')).toBeInTheDocument()
+  })
+
+  it('执行结果 / 发现物支持逐行展开折叠', async () => {
+    defaultHandlers()
+    renderPage()
+
+    // 左侧「展开全部」图标按钮直接展开所有 job，不必逐个点；展开后切换为「全部收起」
+    const toggleAll = await screen.findByTestId('qc-jobs-toggle-all')
+    expect(toggleAll).toHaveAttribute('aria-label', '展开全部')
+    fireEvent.click(toggleAll)
+    expect(toggleAll).toHaveAttribute('aria-label', '全部收起')
+    const step = await screen.findByRole('button', { name: /table\/null-rate/ })
+    expect(step).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(step)
+    expect(step).toHaveAttribute('aria-expanded', 'true')
+    expect(await screen.findByText(/发现明细：错误 0 · 告警 1 · 提示 0/)).toBeInTheDocument()
+
+    // 右侧发现物默认单行，点折叠箭头展开完整消息与 locator
+    const caret = await screen.findAllByRole('button', { name: '展开发现物' })
+    fireEvent.click(caret[0]!)
+    expect(await screen.findByText('field: 城市')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '收起发现物' })).toBeInTheDocument()
   })
 
   it('按严重度过滤时携带 severity 参数', async () => {

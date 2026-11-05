@@ -8,24 +8,30 @@
  * 视觉口径与质量检查规则页（PipelinesPage）共用一套原语：
  * 紧凑页头（cn-page-head）+ 概要计数条 + 左右双栏 SectionBox（左=执行结果，右=检查发现物）。
  * 两栏都走 flush 盒体，外框由盒子承担、行间分隔线满宽绘制，避免双层描边。
+ * 行内容按 GitHub 口径压成单行（状态图标 + 名称 / 消息，超长省略 + title），
+ * job 组可一键展开全部，step 与发现物逐行展开查看完整错误 / 消息与 locator。
  * queryKey 约定：['pipeline-run', wid, rid] / ['pipeline-findings', wid, rid, severity, offset]。
  */
 
 import { useEffect, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Collapse, Empty, Pagination, Segmented, Space, Spin, Tag, Typography,
+  Alert, App as AntApp, Button, Collapse, Empty, Pagination, Segmented, Space, Spin, Tag, Tooltip,
+  Typography, theme,
 } from 'antd'
 import {
-  AlertOutlined, ApartmentOutlined, ArrowLeftOutlined, FlagOutlined, HistoryOutlined,
+  AlertOutlined, ApartmentOutlined, ArrowLeftOutlined, CheckCircleFilled, CloseCircleFilled,
+  DownOutlined, ExclamationCircleFilled, FlagOutlined, HistoryOutlined, InfoCircleFilled,
+  MinusCircleOutlined, RightOutlined, UpOutlined,
 } from '@ant-design/icons'
 import type { ReactNode } from 'react'
-import CnListMeta from '@/components/CnListMeta'
 import SectionBox from '@/components/SectionBox'
 import { useMutation, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { pipelinesApi } from '@/api'
-import type { PipelineCheckDomain, PipelineFinding, PipelineSeverity, PipelineStepStat } from '@/api'
+import type {
+  PipelineCheckDomain, PipelineFinding, PipelineJobStat, PipelineSeverity, PipelineStepStat,
+} from '@/api'
 import {
   PIPELINE_SEVERITY_META, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, isActiveRun,
 } from './checkCatalog'
@@ -34,11 +40,11 @@ const { Text } = Typography
 
 const PAGE_SIZE = 50
 
-/** job / step 结论 → 标签文案与颜色 */
-const CONCLUSION_META: Record<string, { label: string; color: string }> = {
-  success: { label: '成功', color: 'success' },
-  failed: { label: '失败', color: 'error' },
-  skipped: { label: '跳过', color: 'default' },
+/** job / step 结论 → 图标文案（颜色由状态图标按主题 token 着色） */
+const CONCLUSION_META: Record<string, { label: string }> = {
+  success: { label: '成功' },
+  failed: { label: '失败' },
+  skipped: { label: '跳过' },
 }
 
 type SeverityFilter = 'all' | PipelineSeverity
@@ -50,15 +56,44 @@ const SEVERITY_OPTIONS: Array<{ label: string; value: SeverityFilter }> = [
   { label: '提示', value: 'info' },
 ]
 
-function ConclusionTag({ conclusion }: { conclusion: string }) {
-  const meta = CONCLUSION_META[conclusion] ?? { label: conclusion, color: 'default' }
-  return <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
+/** 结论图标：GitHub 风格状态点（成功勾 / 失败叉 / 跳过横线），替代占宽的 Tag */
+function ConclusionIcon({ conclusion }: { conclusion: string }) {
+  const { token } = theme.useToken()
+  const label = CONCLUSION_META[conclusion]?.label ?? conclusion
+  if (conclusion === 'failed') {
+    return <CloseCircleFilled className="cn-qc-status-icon" style={{ color: token.colorError }} aria-label={label} />
+  }
+  if (conclusion === 'skipped') {
+    return <MinusCircleOutlined className="cn-qc-status-icon" style={{ color: token.colorTextTertiary }} aria-label={label} />
+  }
+  return <CheckCircleFilled className="cn-qc-status-icon" style={{ color: token.colorSuccess }} aria-label={label} />
+}
+
+/** 严重度徽标：图标 + 文案同色，替代占宽的 Tag，保证行内不换行 */
+function SeverityBadge({ severity }: { severity: PipelineSeverity }) {
+  const { token } = theme.useToken()
+  const meta = PIPELINE_SEVERITY_META[severity] ?? { label: severity }
+  const color = severity === 'error' ? token.colorError : severity === 'warn' ? token.colorWarning : token.colorInfo
+  const icon = severity === 'error'
+    ? <CloseCircleFilled />
+    : severity === 'warn' ? <ExclamationCircleFilled /> : <InfoCircleFilled />
+  return (
+    <span className="cn-qc-sev" style={{ color }} title={`严重度 ${meta.label}`}>
+      {icon}
+      <span>{meta.label}</span>
+    </span>
+  )
 }
 
 /** step.findings 是 { error, warn, info } 计数对象，展示时汇总成条数 */
 function stepFindingTotal(step: PipelineStepStat): number {
   return Object.values(step.findings ?? {})
     .reduce((sum, count) => sum + (typeof count === 'number' ? count : 0), 0)
+}
+
+/** job 下各 step 的发现物合计（折叠头右侧一行展示） */
+function jobFindingTotal(job: PipelineJobStat): number {
+  return job.steps.reduce((sum, step) => sum + stepFindingTotal(step), 0)
 }
 
 /** 概要条单元格：标签在上、数值在下（错误 / 告警命中有色，0 保持弱化） */
@@ -83,6 +118,10 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
   const { message } = AntApp.useApp()
   const [severity, setSeverity] = useState<SeverityFilter>('all')
   const [offset, setOffset] = useState(0)
+  // GitHub 风格折叠：job 组、step 行、发现物行各自展开状态（默认全收起，逐行点开）
+  const [activeJobs, setActiveJobs] = useState<string[]>([])
+  const [openSteps, setOpenSteps] = useState<string[]>([])
+  const [openFindings, setOpenFindings] = useState<number[]>([])
 
   /** 返回按钮回到本域的质量检查页：文档运行详情不跳回数据表段 */
   const listPath = domain === 'document' ? `/w/${wid}/documents/pipelines` : `/w/${wid}/pipelines`
@@ -125,6 +164,14 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
   const statusMeta = PIPELINE_STATUS_META[run.status] ?? { label: run.status, color: 'default' }
   const jobs = run.stats.jobs ?? []
   const totalSteps = jobs.reduce((sum, job) => sum + job.steps.length, 0)
+  const allJobsExpanded = jobs.length > 0 && activeJobs.length === jobs.length
+
+  const toggleStep = (key: string) => setOpenSteps(list => (
+    list.includes(key) ? list.filter(item => item !== key) : [...list, key]
+  ))
+  const toggleFinding = (id: number) => setOpenFindings(list => (
+    list.includes(id) ? list.filter(item => item !== id) : [...list, id]
+  ))
 
   return (
     <div className="cn-page cn-qc-run-page" data-testid="pipeline-run-detail">
@@ -186,7 +233,23 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
         <SectionBox
           title="执行结果"
           icon={<ApartmentOutlined />}
-          extra={<span>{jobs.length} 个 job</span>}
+          extra={(
+            <Space size={8}>
+              <span>{jobs.length} 个 job</span>
+              {jobs.length > 0 && (
+                <Tooltip title={allJobsExpanded ? '全部收起' : '展开全部'}>
+                  <Button
+                    type="text"
+                    size="small"
+                    aria-label={allJobsExpanded ? '全部收起' : '展开全部'}
+                    data-testid="qc-jobs-toggle-all"
+                    icon={allJobsExpanded ? <UpOutlined /> : <DownOutlined />}
+                    onClick={() => setActiveJobs(allJobsExpanded ? [] : jobs.map(job => job.id))}
+                  />
+                </Tooltip>
+              )}
+            </Space>
+          )}
           flush
           testId="qc-jobs-box"
         >
@@ -198,44 +261,60 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
             <Collapse
               ghost
               size="small"
+              expandIconPosition="end"
               className="cn-qc-run-jobs"
+              activeKey={activeJobs}
+              onChange={(keys) => setActiveJobs((Array.isArray(keys) ? keys : [keys]).map(String))}
               items={jobs.map(job => ({
                 key: job.id,
                 label: (
                   <div className="cn-qc-run-job-head">
-                    <Space size={8} wrap>
-                      <Text strong>{job.id}</Text>
-                      <ConclusionTag conclusion={job.conclusion} />
-                    </Space>
-                    <Text type="secondary" className="cn-qc-run-job-meta">{job.steps.length} 个 step</Text>
+                    <ConclusionIcon conclusion={job.conclusion} />
+                    <Text strong className="cn-qc-run-job-name">{job.id}</Text>
+                    <span className="cn-qc-run-job-meta">
+                      {job.steps.length} step
+                      {jobFindingTotal(job) > 0 ? ` · ${jobFindingTotal(job)} 项发现` : ''}
+                    </span>
                   </div>
                 ),
                 children: (
                   <div className="cn-qc-run-steps">
-                    {job.steps.map((step, index) => (
-                      <div key={`${job.id}-${step.uses}-${index}`} className="cn-list-item cn-qc-run-step">
-                        <div className="cn-list-item-main">
-                          <CnListMeta
-                            title={(
-                              <Space size={8} wrap>
-                                <Text code>{step.uses}</Text>
-                                <ConclusionTag conclusion={step.conclusion} />
-                                <Tag color={PIPELINE_SEVERITY_META[step.severity as PipelineSeverity]?.color ?? 'default'} style={{ marginInlineEnd: 0 }}>
-                                  严重度 {PIPELINE_SEVERITY_META[step.severity as PipelineSeverity]?.label ?? step.severity}
-                                </Tag>
-                              </Space>
+                    {job.steps.map((step, index) => {
+                      const key = `${job.id}-${step.uses}-${index}`
+                      const open = openSteps.includes(key)
+                      const counts = step.findings ?? {}
+                      return (
+                        <div key={key} className="cn-qc-run-step-wrap">
+                          <button
+                            type="button"
+                            className="cn-qc-run-step"
+                            aria-expanded={open}
+                            onClick={() => toggleStep(key)}
+                          >
+                            <ConclusionIcon conclusion={step.conclusion} />
+                            <code className="cn-qc-run-step-uses">{step.uses}</code>
+                            <SeverityBadge severity={step.severity as PipelineSeverity} />
+                            {stepFindingTotal(step) > 0 && (
+                              <span className="cn-qc-run-step-meta">发现 {stepFindingTotal(step)} 项</span>
                             )}
-                            description={(
-                              <Text type={step.error ? 'danger' : 'secondary'}>
-                                {step.error ? step.error : `发现 ${stepFindingTotal(step)} 项`}
-                              </Text>
+                            {step.error && (
+                              <span className="cn-qc-run-step-error" title={step.error}>{step.error}</span>
                             )}
-                          />
+                            <RightOutlined className={`cn-qc-run-caret${open ? ' is-open' : ''}`} aria-hidden />
+                          </button>
+                          {open && (
+                            <div className="cn-qc-run-step-detail">
+                              <span>
+                                发现明细：错误 {counts.error ?? 0} · 告警 {counts.warn ?? 0} · 提示 {counts.info ?? 0}
+                              </span>
+                              {step.error && <pre>{step.error}</pre>}
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                     {job.steps.length === 0 && (
-                      <Text type="secondary" className="cn-qc-run-step-empty">该 job 没有 step</Text>
+                      <div className="cn-qc-run-step-empty">该 job 没有 step</div>
                     )}
                   </div>
                 ),
@@ -278,44 +357,64 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
                 <Empty description="没有匹配的发现物" />
               </div>
             ) : (
-              (findings?.items ?? []).map((finding: PipelineFinding) => (
-                <div key={finding.id} className="cn-list-item cn-qc-row cn-qc-run-finding">
-                  <div className="cn-list-item-main">
-                    <CnListMeta
-                      title={(
-                        <Space size={8} wrap>
-                          <Tag color={PIPELINE_SEVERITY_META[finding.severity]?.color ?? 'default'} style={{ marginInlineEnd: 0 }}>
-                            {PIPELINE_SEVERITY_META[finding.severity]?.label ?? finding.severity}
-                          </Tag>
-                          <Text>{finding.message}</Text>
-                        </Space>
+              (findings?.items ?? []).map((finding: PipelineFinding) => {
+                const open = openFindings.includes(finding.id)
+                const locators = Object.entries(finding.locator ?? {})
+                return (
+                  <div key={finding.id} className="cn-qc-run-finding-wrap">
+                    <div
+                      className="cn-qc-run-finding"
+                      onClick={() => toggleFinding(finding.id)}
+                    >
+                      <SeverityBadge severity={finding.severity} />
+                      <span className="cn-qc-run-finding-msg" title={finding.message}>{finding.message}</span>
+                      <span className="cn-qc-run-finding-meta">
+                        {finding.check} · {finding.target_type}
+                        {finding.target_id != null ? ` #${finding.target_id}` : ''}
+                      </span>
+                      {finding.target_type === 'table' && (
+                        <span className="cn-qc-run-finding-action" onClick={(event) => event.stopPropagation()}>
+                          <Button
+                            type="link"
+                            size="small"
+                            icon={<FlagOutlined />}
+                            loading={convertIssue.isPending && convertIssue.variables?.id === finding.id}
+                            onClick={() => convertIssue.mutate(finding)}
+                          >
+                            转问题
+                          </Button>
+                        </span>
                       )}
-                      description={(
-                        <Text type="secondary">
-                          {finding.check} · {finding.target_type}
-                          {finding.target_id != null ? ` #${finding.target_id}` : ''}
-                          {Object.keys(finding.locator ?? {}).length > 0
-                            ? ` · ${JSON.stringify(finding.locator)}`
-                            : ''}
-                        </Text>
-                      )}
-                    />
-                  </div>
-                  {finding.target_type === 'table' && (
-                    <div className="cn-list-item-actions">
-                      <Button
-                        type="link"
-                        size="small"
-                        icon={<FlagOutlined />}
-                        loading={convertIssue.isPending && convertIssue.variables?.id === finding.id}
-                        onClick={() => convertIssue.mutate(finding)}
+                      <button
+                        type="button"
+                        className="cn-qc-run-caret-btn"
+                        aria-expanded={open}
+                        aria-label={open ? '收起发现物' : '展开发现物'}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          toggleFinding(finding.id)
+                        }}
                       >
-                        转问题
-                      </Button>
+                        <RightOutlined className={`cn-qc-run-caret${open ? ' is-open' : ''}`} aria-hidden />
+                      </button>
                     </div>
-                  )}
-                </div>
-              ))
+                    {open && (
+                      <div className="cn-qc-run-finding-detail">
+                        <div className="cn-qc-run-finding-detail-msg">{finding.message}</div>
+                        {locators.length > 0 && (
+                          <div className="cn-qc-run-finding-locator">
+                            {locators.map(([key, value]) => (
+                              <code key={key}>
+                                {key}: {typeof value === 'string' ? value : JSON.stringify(value)}
+                              </code>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
             )}
           </Spin>
         </SectionBox>

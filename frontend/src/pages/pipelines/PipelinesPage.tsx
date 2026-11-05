@@ -86,21 +86,16 @@ function RunItem({ run, showWorkflow, onOpen }: {
       onClick={onOpen}
     >
       <div className="cn-list-item-main">
-        <CnListMeta
-          title={(
-            <Space size={8} wrap>
-              <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
-              <Text strong>#{run.id}</Text>
-              {showWorkflow && <Text type="secondary">{run.workflow_name}</Text>}
-              <Text type="secondary">{PIPELINE_TRIGGER_LABEL[run.trigger] ?? run.trigger}触发</Text>
-            </Space>
-          )}
-          description={(
-            <Text type="secondary">
-              {formatDateTime(run.created_at)}{summary ? ` · ${summary}` : ''}
-            </Text>
-          )}
-        />
+        {/* 单行（GitHub 运行列表口径）：状态 / #id / 规则名（省略）/ 触发·时间·摘要右对齐 */}
+        <div className="cn-qc-run-item">
+          <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
+          <Text strong className="cn-qc-run-item-id">#{run.id}</Text>
+          {showWorkflow && <span className="cn-qc-run-item-name">{run.workflow_name}</span>}
+          <span className="cn-qc-run-item-meta">
+            {PIPELINE_TRIGGER_LABEL[run.trigger] ?? run.trigger}触发 · {formatDateTime(run.created_at)}
+            {summary ? ` · ${summary}` : ''}
+          </span>
+        </div>
       </div>
       <div className="cn-list-item-actions">
         <RightOutlined style={{ color: 'var(--cn-text-muted)' }} aria-hidden />

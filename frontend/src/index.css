@@ -6587,52 +6587,243 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: 0 !important;
 }
 
+/* 结论图标：与行内文字同一视觉基线，宽度固定不挤压后续列 */
+.cn-qc-status-icon {
+  flex: none;
+  font-size: var(--cn-text-sm);
+}
+
+/* 严重度徽标：图标 + 文案同色，替代占宽的 Tag；始终单行 */
+.cn-qc-sev {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cn-space-hairline);
+  font-size: var(--cn-text-2xs);
+  font-weight: var(--cn-weight-medium);
+  white-space: nowrap;
+}
+
+/* job 折叠头：状态图标 + 名称 + 右侧计数同排，名称过长省略、计数不换行 */
 .cn-qc-run-job-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--cn-space-md);
   width: 100%;
   min-width: 0;
 }
 
-.cn-qc-run-job-meta.ant-typography {
-  flex: none;
-  font-size: var(--cn-text-2xs);
+.cn-qc-run-job-name.ant-typography {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* step 行：缩进一格表达层级，行间用满宽细线分隔；描述压到与规则行一致的 12px */
-.cn-qc-run-step {
-  padding: var(--cn-space-sm) var(--cn-space-lg);
-  padding-inline-start: var(--cn-space-2xl);
+.cn-qc-run-job-meta {
+  flex: none;
+  margin-inline-start: auto;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* step 行（GitHub 风格单行按钮）：状态 / uses / 严重度 / 发现数 / 错误省略 / 折叠箭头 */
+.cn-qc-run-step-wrap {
   border-top: 1px solid var(--cn-border);
 }
 
-.cn-qc-run-step .cn-list-meta-title {
-  margin-block-end: var(--cn-space-hairline);
+.cn-qc-run-step {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  width: 100%;
+  min-width: 0;
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  padding-inline-start: var(--cn-space-2xl);
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
 }
 
-/* 让 Typography 继承行内字号：描述 12px、标题保持 14px，不被 antd 默认 14px 反向覆盖 */
-.cn-qc-run-step .ant-typography {
-  font-size: inherit;
-  line-height: inherit;
+.cn-qc-run-step:hover {
+  background: var(--cn-bg-subtle);
 }
 
-.cn-qc-run-step .cn-list-meta-description {
+.cn-qc-run-step-uses {
+  flex: none;
+  font-family: var(--cn-font-mono, monospace);
   font-size: var(--cn-text-xs);
-  line-height: 1.4;
 }
 
-.cn-qc-run-step-empty.ant-typography {
-  display: block;
+.cn-qc-run-step-meta {
+  flex: none;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-qc-run-step-error {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-xs);
+}
+
+/* 发现物行的折叠按钮：去原生按钮外观，只留可点的 chevron */
+.cn-qc-run-caret-btn {
+  display: inline-flex;
+  flex: none;
+  padding: var(--cn-space-hairline);
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+/* 折叠箭头：收起指向右、展开转 90°（与 GitHub 行内 chevron 一致） */
+.cn-qc-run-caret {
+  flex: none;
+  margin-inline-start: auto;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.cn-qc-run-caret.is-open {
+  transform: rotate(90deg);
+}
+
+/* step 展开：发现明细 + 完整错误（等宽、允许换行） */
+.cn-qc-run-step-detail {
+  padding: var(--cn-space-xs) var(--cn-space-lg) var(--cn-space-md);
+  padding-inline-start: var(--cn-space-2xl);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-qc-run-step-detail pre {
+  margin: var(--cn-space-xs) 0 0;
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-subtle);
+  font-family: var(--cn-font-mono, monospace);
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.cn-qc-run-step-empty {
   padding: var(--cn-space-sm) var(--cn-space-lg);
   padding-inline-start: var(--cn-space-2xl);
   font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
 }
 
-/* 发现物描述含 check / target / locator，长 JSON 允许断行不撑破盒子 */
-.cn-qc-run-finding .cn-list-meta-description {
+/* 发现物行：单行（严重度 / 消息省略 / 元信息右对齐 / 操作 / 折叠箭头），点整行展开详情 */
+.cn-qc-run-finding-wrap + .cn-qc-run-finding-wrap {
+  border-top: 1px solid var(--cn-border);
+}
+
+.cn-qc-run-finding {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  min-width: 0;
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  cursor: pointer;
+}
+
+.cn-qc-run-finding:hover {
+  background: var(--cn-bg-subtle);
+}
+
+.cn-qc-run-finding-msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-qc-run-finding-meta {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-qc-run-finding-action {
+  display: inline-flex;
+  flex: none;
+}
+
+.cn-qc-run-finding-detail {
+  padding: var(--cn-space-xs) var(--cn-space-lg) var(--cn-space-md);
+  border-top: 1px dashed var(--cn-border);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-qc-run-finding-detail-msg {
+  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.cn-qc-run-finding-locator {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs);
+  margin-top: var(--cn-space-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-qc-run-finding-locator code {
+  font-family: var(--cn-font-mono, monospace);
+  font-size: var(--cn-text-2xs);
+}
+
+/* 运行历史行（规则页右栏）：单行不换行，规则名可省略、右侧触发/时间/摘要固定不挤 */
+.cn-qc-run-item {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  width: 100%;
+  min-width: 0;
+}
+
+.cn-qc-run-item-id.ant-typography {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-qc-run-item-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-qc-run-item-meta {
+  flex: none;
+  margin-inline-start: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
 }
 
 /* 分页贴盒子底边：flush 盒体无内边距，footer 自行补横向留白并与末行用分隔线隔开 */
@@ -7289,8 +7480,6 @@ body.cn-doc-focus-view .cn-doc-stats {
   justify-content: center;
   width: 24px;
   height: 24px;
-  border: 1px solid var(--cn-border);
-  border-radius: var(--cn-radius-sm, 4px);
   color: var(--cn-text-muted);
   font-size: var(--cn-text-xs);
 }
