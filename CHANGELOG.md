@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+### 变更
+- **【UI】全主题切换 GitHub 式 1px 线条系统（需求 0101）**：此前不同组件混用 `1.5px` 粗描边 / `--cn-border` 强线色 / 聚焦光晕，10 套主题下按钮、搜索框、卡片与表格的线条语言不一致。现：① **主题 token 归一**：所有主题默认线色统一为 GitHub 中性线（浅色 `#6e7781` / 深色 `#8b949e`），`colorBorder` / `colorBorderSecondary` / `colorSplit` 同值、`lineWidth=1`；`--cn-border` 与 `--cn-border-soft` 同值并写到 body 覆盖主题 class；② **全站 1px 化**：`index.css` 的 `1.5px` 描边全部收为 1px，旧强描边改用 `--cn-border-soft`；③ **按钮 / 输入 / 选择 / 搜索框**：默认 1px 中性线，hover 加深一级，聚焦只保留 1px 品牌色线 + 1px ring，不做厚光晕；④ **表格 / 卡片 / 方盒**：细描边表达边界、静态面不靠重投影；Modal / Drawer / Popover / Dropdown 保留轻投影但收细描边；⑤ **顶栏搜索** `.cn-gs-box` 聚焦只描一条品牌色线。测试：`theme.test.ts` 新增 10 主题线色归一断言；前端全量测试通过。改动：`frontend/src/index.css`、`frontend/src/theme/theme.ts`、`frontend/src/theme/theme.test.ts`、`docs/DESIGN_SYSTEM.md`、`docs/requirements/0101-github-line-style.md`。
+
 ### 新增
 - **【数据表】字段编辑支持新建派生字段（公式 / 函数生成）（需求 0100 / ADR 0100）**：此前字段只能存用户输入，无法表达「由其它字段计算得到」的只读结果。现：① **新字段类型 `formula`（派生字段）**：字段管理新建下拉可选，配置公式 + 结果小数位；公式用 `[字段名]` 引用本表字段，复用 analytics 受限公式引擎（白名单 AST，无 eval），保存时校验语法与字段引用；② **读取期计算**：无物理列，列表 / 单行读取后由 `attach_formula_values` 计算并附加；lookup 先解析、formula 后计算，formula 之间按字段顺序可互相引用；单列公式异常回退 None，不拖垮整行；③ **只读**：写入一律忽略，网格 / 行详情只读展示；普通字段与派生字段禁止互转（请新建）；④ **DDL 边界**：非物理字段不再误建关联表，只有 link 建关联表；⑤ **前端**：字段管理器新增公式配置区与可用字段提示，类型元数据 / 默认值控件 / 行详情只读口径同步。测试：`tests/test_formula_fields.py` 2 例（创建 / 读取计算 / 只读回传 / 非法公式与类型切换）、`FieldManager.test.tsx` 新增派生字段创建用例。改动：`src/cndb/plugins/tables/{field_types/formula.py,field_types/registry.py,services/core/formulas.py,services/core/records.py,services/core/ddl.py,routers/fields.py}`、`frontend/src/{api/types/tables.ts,utils/fieldTypeMeta.ts,pages/grid/cells/cellValueUtils.ts,pages/grid/layout/RowDetailDrawer.tsx,pages/fields/FieldManager/}`、`docs/requirements/0100-*.md`、`docs/adr/0100-*.md`。
 

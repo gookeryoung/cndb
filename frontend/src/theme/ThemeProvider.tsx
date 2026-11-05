@@ -58,8 +58,14 @@ function applyBodyClass(mode: ThemeMode) {
 /** 把主题派生的圆角档位下发到 :root，index.css 里手写的卡片/浮层据此跟随主题 */
 function applyThemeVars(mode: ThemeMode) {
   const root = document.documentElement
+  const body = document.body
   for (const [name, value] of Object.entries(themeCssVars(mode))) {
     root.style.setProperty(name, value)
+    // 边框变量同时写到 body：body 主题 class 也声明了同名变量，仅写 root 会被 body 覆盖。
+    // 线条颜色需在所有主题间保持统一，故用 body 内联值压过主题 class。
+    if (name === '--cn-border' || name === '--cn-border-soft') {
+      body.style.setProperty(name, value)
+    }
   }
 }
 

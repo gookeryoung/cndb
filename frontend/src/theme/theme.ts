@@ -8,7 +8,7 @@
 
 import type { ThemeConfig } from 'antd'
 
-import { THEME_PREFERENCES } from './meta'
+import { THEME_META, THEME_PREFERENCES } from './meta'
 import type { ThemeMode, ThemePreference } from './meta'
 import { RADIUS, radiusFamily } from './tokens'
 import { baseTokens, compactComponents } from './presets/common'
@@ -110,12 +110,27 @@ function mergeComponents(base: ThemeComponents, overrides?: ThemeComponents): Th
   return out as ThemeComponents
 }
 
+/** GitHub 线型统一色：浅色主题取 Primer muted 线色，深色主题取 GitHub Dark 的次级文字线色。
+ *  不再按主题色相派生边框，避免 10 套主题的边界线深浅 / 冷暖不一致。 */
+export function lineColor(mode: ThemeMode): string {
+  return THEME_META[mode].isDark ? '#8b949e' : '#6e7781'
+}
+
 export function getThemeConfig(mode: ThemeMode): ThemeConfig {
   const config = THEMES[mode]
+  const rawToken = config.token ?? {}
+  const line = lineColor(mode)
   return {
     ...config,
-    // 顺序：全局标尺 → 主题配色，主题显式声明的键优先
-    token: { ...baseTokens, ...config.token },
+    // 顺序：全局标尺 → 主题配色 → 线型归一化（所有主题统一 1px 中性线）
+    token: {
+      ...baseTokens,
+      ...rawToken,
+      colorBorder: line,
+      colorBorderSecondary: line,
+      colorSplit: line,
+      lineWidth: 1,
+    },
     components: mergeComponents(
       {
         ...compactComponents,
@@ -135,9 +150,12 @@ export function getThemeConfig(mode: ThemeMode): ThemeConfig {
 export function themeCssVars(mode: ThemeMode): Record<string, string> {
   const base = THEMES[mode].token?.borderRadius ?? RADIUS.base
   const { sm, lg } = radiusFamily(base)
+  const line = lineColor(mode)
   return {
     '--cn-radius-base': `${base}px`,
     '--cn-radius-sm': `${sm}px`,
     '--cn-radius-lg': `${lg}px`,
+    '--cn-border': line,
+    '--cn-border-soft': line,
   }
 }

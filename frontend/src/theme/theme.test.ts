@@ -136,10 +136,22 @@ describe('saveThemeMode / getThemeConfig', () => {
     expect(loadThemeMode()).toBe('auto')
   })
 
+  it('所有主题默认线色统一为 GitHub 1px 中性线', () => {
+    for (const mode of THEME_MODES) {
+      const expected = THEME_META[mode].isDark ? '#8b949e' : '#6e7781'
+      const config = getThemeConfig(mode)
+      expect(config.token?.colorBorder, mode).toBe(expected)
+      expect(config.token?.colorBorderSecondary, mode).toBe(expected)
+      expect(config.token?.colorSplit, mode).toBe(expected)
+      expect(config.token?.lineWidth, mode).toBe(1)
+    }
+  })
+
   it('getThemeConfig 返回对应主题配置并注入 Segmented 强对比 token', () => {
     // 保留原主题 token / components，且 Segmented 激活滑块=主题色、文字=反色
     const modern = getThemeConfig('modern')
-    expect(modern.token).toMatchObject(THEMES.modern.token ?? {})
+    const { colorBorder: _b, colorBorderSecondary: _bs, colorSplit: _cs, ...modernRaw } = THEMES.modern.token ?? {}
+    expect(modern.token).toMatchObject(modernRaw)
     expect(modern.components?.Segmented).toEqual({
       itemSelectedBg: '#3b82f6',
       itemSelectedColor: '#ffffff',
