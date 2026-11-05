@@ -253,6 +253,8 @@ def _tokenize_logic(text: str) -> list[str]:
             tokens.append("not")
             index += 1
             continue
+        if char in "&|":
+            raise CheckError(f"document/sensitive logic 不支持单个运算符 {char}，请使用 && 或 ||")
         end = index
         while end < len(text) and not text[end].isspace() and text[end] not in "()!&|":
             end += 1
