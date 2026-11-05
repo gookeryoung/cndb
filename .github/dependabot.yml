@@ -14,6 +14,17 @@ updates:
     groups:
       dev-dependencies:
         dependency-type: development
+    # Windows(Win7/8) 运行时钉版依赖：上限见 pyproject.toml 的「平台相关钉版约定」。
+    # 这些库在 win32 上有版本上限 / 与 pydantic-core、kernel32、ProcessPrng 等绑定，
+    # 自动升级（哪怕只是抬非 win32 那条下限）会让 Windows 打包或运行时崩，必须人工改。
+    # ignore 只作用于普通版本更新，安全更新仍会照常提出。
+    ignore:
+      - dependency-name: "fastapi"
+      - dependency-name: "fastapi-offline"
+      - dependency-name: "pydantic"
+      - dependency-name: "pydantic-settings"
+      - dependency-name: "bcrypt"
+      - dependency-name: "cryptography"
   # GitHub Actions：workflow 内 action 版本对齐
   - package-ecosystem: github-actions
     directory: /
