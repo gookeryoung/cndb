@@ -621,6 +621,11 @@ export default function DocumentEditorPage() {
   const hasChanges = content !== latestContent
   /** 是否有尚未保存到草稿的修改：驱动「草稿未保存 / 已保存」标签与保存按钮禁用 */
   const hasUnsaved = content !== savedContent
+  /**
+   * 是否有未提交的草稿（未保存改动或已保存待提交）。
+   * 发布只切换状态、不写入正文，带草稿发布会让成员看到旧内容，因此必须先提交或丢弃。
+   */
+  const hasUncommittedDraft = hasChanges || !!serverDraft
 
   /** 保存：只写个人草稿，不产生版本、不触发审核；提交由「提交修改」显式触发 */
   const handleSave = useCallback(() => {
@@ -1381,14 +1386,25 @@ export default function DocumentEditorPage() {
               </Space.Compact>
             )}
             {editable && doc.status === 'draft' && (
-              <Button
-                size="small"
-                data-testid="doc-publish-toggle"
-                loading={publishMut.isPending}
-                onClick={() => publishMut.mutate()}
+              <Tooltip
+                title={
+                  hasUncommittedDraft
+                    ? '有未提交的草稿，请先提交或丢弃草稿后再发布'
+                    : undefined
+                }
               >
-                发布
-              </Button>
+                <span>
+                  <Button
+                    size="small"
+                    data-testid="doc-publish-toggle"
+                    loading={publishMut.isPending}
+                    disabled={hasUncommittedDraft}
+                    onClick={() => publishMut.mutate()}
+                  >
+                    发布
+                  </Button>
+                </span>
+              </Tooltip>
             )}
           </Space>
         </div>

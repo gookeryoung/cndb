@@ -1306,6 +1306,42 @@ describe('草稿发布控件', () => {
     )
   })
 
+  it('有已保存未提交的草稿时禁止直接发布', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>
+        HttpResponse.json({
+          ...mockDocuments[1],
+          status: 'draft',
+          content: '# 需求说明\n\n正文段落。\n',
+          version_number: 1,
+          draft: {
+            content: '# 需求说明\n\n草稿改动。\n',
+            content_size: 12,
+            base_version_number: 1,
+            current_version_number: 1,
+            stale: false,
+            updated_at: '2026-01-02T00:00:00Z',
+          },
+          write_mode: 'direct',
+        })),
+    )
+
+    renderEditor()
+
+    const toggle = await screen.findByTestId('doc-publish-toggle')
+    expect(toggle).toBeDisabled()
+    expect(screen.getByTestId('doc-pending-tag')).toHaveTextContent('待提交')
+  })
+
+  it('有未保存到草稿的改动时禁止直接发布', async () => {
+    renderEditor()
+    const ta = await enterSourceMode()
+    await waitFor(() => expect(ta.value).toContain('需求说明'))
+    fireEvent.change(ta, { target: { value: '# 需求说明\n\n未保存的改动。\n' } })
+
+    await waitFor(() => expect(screen.getByTestId('doc-publish-toggle')).toBeDisabled())
+  })
+
   it('已发布文档不提供「转为草稿」入口', async () => {
     server.use(
       http.get('/api/v1/workspaces/:wid/documents/:docId/content', () =>

@@ -191,6 +191,25 @@ class TestSaveDraft:
         assert r.status_code == 200
         assert r.json()["draft"] is None
 
+    def test_publish_blocked_while_draft_uncommitted(self, client, ws, owner, db):
+        """带未提交草稿不允许直接发布：先提交 / 丢弃，避免成员看到旧正文."""
+        auth = _login(client, owner.username)
+        doc = _create_doc(client, ws.id, auth, status="draft")
+        _save_draft(client, ws.id, doc["id"], auth, "标题\n\n未提交的草稿\n")
+
+        url = DOCS.format(ws=ws.id) + f"/{doc['id']}"
+        r = client.patch(url, json={"status": "published"}, headers=auth)
+
+        assert r.status_code == 409, r.text
+        assert r.json()["code"] == "uncommitted_draft"
+        assert client.get(url, headers=auth).json()["status"] == "draft"
+
+        # 丢弃草稿后即可发布
+        assert client.delete(url + "/draft", headers=auth).status_code == 204
+        r = client.patch(url, json={"status": "published"}, headers=auth)
+        assert r.status_code == 200, r.text
+        assert r.json()["status"] == "published"
+
 
 # ── 未修改不可提交 ────────────────────────────────────
 

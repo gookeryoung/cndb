@@ -906,6 +906,17 @@ def update_document_meta(
         doc.title = payload.title
         doc.slug = services.parse.generate_slug(payload.title, doc.id)
     if payload.status is not None:
+        # 发布只切换状态、不写入正文：本人仍有未提交草稿时必须先提交 / 丢弃，
+        # 否则成员看到的发布版会与编辑中的草稿不一致。
+        if (
+            payload.status == "published"
+            and doc.status != "published"
+            and services.drafts.draft_payload(db, doc, current_user) is not None
+        ):
+            raise ConflictError(
+                "存在未提交的个人草稿，请先提交或丢弃草稿后再发布",
+                code="uncommitted_draft",
+            )
         doc.status = payload.status
     if payload.sort_order is not None:
         doc.sort_order = payload.sort_order
