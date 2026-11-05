@@ -1079,7 +1079,7 @@ const qualityChecks: HelpTopic = {
                         <><strong>jobs</strong>：<code>needs</code> 声明前置作业形成 DAG，<code>if</code> 用 <code>{'${{ }}'}</code> 白名单表达式（无 eval、无任意代码），<code>with.table</code> 引用工作区真实数据表。</>,
                         <><strong>steps</strong>：<code>uses:</code> 引用检查动作（<code>域/动作</code>，如 <code>table/null-rate</code>），<code>with:</code> 传参数，<code>severity</code> 决定命中后的严重度，<code>continue-on-error</code> 让失败不中断后续步骤。</>,
                         '保存 / 修改时整份 YAML 编译为 IR：未知动作、非法参数、非法表达式都当场 400 拒绝，运行期只会出现业务数据层面的问题，不会出现语法错误。',
-                        '列表页可直接打开 YAML 编辑抽屉；示例工作区带 3 条示例流水线（随 <code>cndb seed</code> 注入，只注入定义不触发运行）。',
+                        '列表页可直接打开 YAML 编辑抽屉；示例工作区带 4 条示例流水线（随 <code>cndb seed</code> 注入，只注入定义不触发运行），其中「文档敏感内容组合巡检」演示单规则与 `and / or / not` + 括号组合。',
                     ]}
                 />
             ),

@@ -139,6 +139,73 @@ def test_all_logic_skips_document_missing_a_rule(db, ws, owner):
     assert list(sensitive.run(_ctx(db, ws), {"rules": rules, "logic": "all"})) == []
 
 
+def test_single_rule_mapping(db, ws, owner):
+    """单规则可直接写映射（无需数组），未配置 logic 时按单规则命中."""
+    _doc(db, ws, owner, "证件号 110101199001011234")
+    findings = list(sensitive.run(_ctx(db, ws), {"rules": {"name": "证件号", "patterns": [r"\b\d{17}[\dXx]\b"]}}))
+    assert [item.locator["rule"] for item in findings] == ["证件号"]
+
+    _doc(db, ws, owner, "无证件号")
+    findings = list(
+        sensitive.run(
+            _ctx(db, ws),
+            {"rules": {"name": "证件号", "patterns": [r"\b\d{17}[\dXx]\b"]}, "logic": "证件号"},
+        )
+    )
+    assert {item.target_id for item in findings} == {
+        item_id for item_id in [findings[0].target_id] if item_id is not None
+    }
+
+
+def test_single_named_rule_with_all_logic(db, ws, owner):
+    _doc(db, ws, owner, "证件号 110101199001011234")
+    findings = list(
+        sensitive.run(
+            _ctx(db, ws),
+            {"rules": [{"name": "证件号", "patterns": [r"\b\d{17}[\dXx]\b"]}], "logic": "all"},
+        )
+    )
+    assert [item.locator["rule"] for item in findings] == ["证件号"]
+
+
+def test_complex_logic_precedence_and_not(db, ws, owner):
+    """and 优先于 or；括号与 not 可任意组合."""
+    rules = [
+        {"name": "A", "keywords": ["甲"]},
+        {"name": "B", "keywords": ["乙"]},
+        {"name": "C", "keywords": ["丙"]},
+    ]
+
+    def run_on(content: str) -> set[str]:
+        make_workspace_name = f"ComplexWS{abs(hash(content)) % 100000}"
+        target = make_workspace(db, owner, make_workspace_name)
+        _doc(db, target, owner, content)
+        return {
+            item.locator["rule"] for item in sensitive.run(_ctx(db, target), {"rules": rules, "logic": "A and B or C"})
+        }
+
+    # A and B or C == (A and B) or C：只有 C 也命中；输出列出表达式为真时的全部命中规则
+    assert run_on("丙") == {"C"}
+    assert run_on("甲 丙") == {"A", "C"}
+    assert run_on("甲 乙") == {"A", "B"}
+    assert run_on("甲") == set()
+
+    target = make_workspace(db, owner, "ComplexNotWS")
+    _doc(db, target, owner, "甲 丙")
+    findings = list(sensitive.run(_ctx(db, target), {"rules": rules, "logic": "(A or B) and not C"}))
+    assert findings == []
+
+    target2 = make_workspace(db, owner, "ComplexNotWS2")
+    _doc(db, target2, owner, "甲")
+    findings = list(sensitive.run(_ctx(db, target2), {"rules": rules, "logic": "A and not (B or C)"}))
+    assert [item.locator["rule"] for item in findings] == ["A"]
+
+    target3 = make_workspace(db, owner, "ComplexNotWS3")
+    _doc(db, target3, owner, "乙 丙")
+    findings = list(sensitive.run(_ctx(db, target3), {"rules": rules, "logic": "(A or B) and not C"}))
+    assert findings == []
+
+
 def test_and_expression_of_three_rules_requires_all(db, ws, owner):
     rules = [
         {"name": "身份证号", "patterns": [r"\b\d{17}[\dXx]\b"]},
@@ -226,7 +293,7 @@ def test_only_referenced_rules_emit_findings(db, ws, owner):
     [
         ({}, "至少需要"),
         ({"rules": []}, "至少需要"),
-        ({"rules": "赌博"}, "必须是规则数组"),
+        ({"rules": "赌博"}, "规则映射或规则数组"),
         ({"rules": ["赌博"]}, "必须是映射"),
         ({"rules": [{"keywords": ["赌博"]}]}, "缺少 name"),
         ({"rules": [{"name": "a"}]}, "至少需要 keywords 或 patterns"),
@@ -357,6 +424,52 @@ def test_pipeline_run_honors_and_logic_end_to_end(db, ws, owner):
     assert run.status == "partial"
     assert {item.target_id for item in findings} == {demo.id}
     assert {item.locator["rule"] for item in findings} == {"身份证号", "邮箱地址", "内部资料"}
+
+
+def test_single_and_complex_rule_examples_end_to_end(db, ws, owner):
+    root = Path(__file__).resolve().parents[1]
+    base = root / "examples" / "datasets" / "工作区-某企业销售管理"
+    content = (base / "pipelines" / "文档敏感内容组合巡检.yaml").read_text(encoding="utf-8")
+    ir = compile_workflow(content)
+    single = ir.jobs[0].steps[0].params
+    complex_ = ir.jobs[1].steps[0].params
+    assert isinstance(single["rules"], dict)  # 单规则允许直接写映射
+    assert complex_["logic"] == "手机号 and not (白名单 or 内部资料)"
+
+    workflow = PipelineWorkflow(
+        workspace_id=ws.id,
+        name=ir.name,
+        content=content,
+        compiled=ir.to_dict(),
+        enabled=True,
+        created_by_id=owner.id,
+    )
+    db.add(workflow)
+    db.commit()
+    db.refresh(workflow)
+
+    documents = base / "documents" / "02-交付与协作"
+    ids = {
+        name: make_document(db, ws, name, (documents / f"{name}.md").read_text(encoding="utf-8"), user=owner).id
+        for name in (
+            "04-客户资料交接（敏感内容示例）",
+            "05-客户资料交接（仅邮箱对照）",
+            "06-客户联系方式（组合规则示例）",
+            "07-客户联系方式（公开联系人对照）",
+        )
+    }
+
+    run = create_run(db, workflow)
+    execute_pipeline_run(db, run.id)
+    db.refresh(run)
+    findings = db.query(PipelineFinding).filter(PipelineFinding.run_id == run.id).all()
+    assert run.status == "partial"
+    assert {(item.target_id, item.locator["rule"]) for item in findings} == {
+        (ids["04-客户资料交接（敏感内容示例）"], "证件号"),
+        (ids["06-客户联系方式（组合规则示例）"], "手机号"),
+    }
+    # 公开联系人对照被 not 白名单抑制；仅邮箱对照不含手机号 / 证件号
+    assert ids["07-客户联系方式（公开联系人对照）"] not in {item.target_id for item in findings}
 
 
 def test_compiled_dsl_accepts_structured_rules():

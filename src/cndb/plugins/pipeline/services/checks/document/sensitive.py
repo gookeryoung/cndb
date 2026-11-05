@@ -3,8 +3,8 @@
 配置（``with``）：
 
 - ``keywords`` / ``patterns``：简写，合并为名为 ``default`` 的隐式规则；
-- ``rules``：命名规则数组，每项 ``{name, keywords?, patterns?}``，任一关键词或正则命中
-  即算该规则命中；规则名不能含空白与括号（便于在 ``logic`` 中引用）；
+- ``rules``：命名规则映射或数组，每项 ``{name, keywords?, patterns?}``，任一关键词或正则命中
+  即算该规则命中；单规则直接写映射即可；规则名不能含空白与括号（便于在 ``logic`` 中引用）；
 - ``logic``：``any``（默认，任一规则命中）/ ``all``（全部规则命中）/ 布尔表达式，
   支持 ``and`` / ``or`` / ``not`` / 括号（也可写 ``&&`` / ``||`` / ``!``）。
 
@@ -143,8 +143,11 @@ def _parse_rules(params: dict[str, Any]) -> list[_Rule]:
 
     raw_rules = params.get("rules")
     if raw_rules is not None:
+        # 单规则允许直接写映射（rules: {name: 证件号, patterns: [...]}），等价于单元素数组
+        if isinstance(raw_rules, dict):
+            raw_rules = [raw_rules]
         if not isinstance(raw_rules, list):
-            raise CheckError("document/sensitive 参数 rules 必须是规则数组")
+            raise CheckError("document/sensitive 参数 rules 必须是规则映射或规则数组")
         for index, raw in enumerate(raw_rules, start=1):
             if not isinstance(raw, dict):
                 raise CheckError(f"document/sensitive rules 第 {index} 项必须是映射")

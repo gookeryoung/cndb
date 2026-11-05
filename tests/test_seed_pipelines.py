@@ -241,6 +241,7 @@ def test_real_pipeline_examples_are_valid(db, db_engine, tmp_path):
     assert [p.name for p in ws_yamls["某企业销售管理"]] == [
         "工作区综合巡检.yaml",
         "文档敏感内容巡检.yaml",
+        "文档敏感内容组合巡检.yaml",
         "销售数据质量巡检.yaml",
     ]
 

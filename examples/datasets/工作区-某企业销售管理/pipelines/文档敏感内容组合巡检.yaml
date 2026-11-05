@@ -1,0 +1,29 @@
+# 文档敏感内容组合巡检（需求 0102 示例）：
+# - 单一规则：rules 直接写映射，只查证件号；
+# - 复杂组合：手机号 and not (白名单 or 内部资料) —— 命中手机号且不在公开联系人 /
+#   内部资料上下文中才告警（and / or / not / 括号组合）。
+# 对照组：「客户联系方式（公开联系人对照）」有手机号但属公开联系人，不告警。
+name: 文档敏感内容组合巡检
+on:
+  manual: true
+  events: [document.saved]
+jobs:
+  单一规则:
+    steps:
+      - uses: document/sensitive
+        with:
+          rules: {name: 证件号, patterns: ['\b\d{17}[\dXx]\b']}
+        severity: warn
+  组合规则:
+    steps:
+      - uses: document/sensitive
+        with:
+          rules:
+            - name: 手机号
+              patterns: ['\b1[3-9]\d{9}\b']
+            - name: 白名单
+              keywords: [公开联系人, 客服热线, 白名单]
+            - name: 内部资料
+              keywords: [内部资料, 内部底价]
+          logic: 手机号 and not (白名单 or 内部资料)
+        severity: warn

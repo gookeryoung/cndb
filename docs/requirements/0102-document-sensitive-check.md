@@ -20,7 +20,7 @@
 | C1 | 增加敏感内容检查 | 新增检查动作 `document/sensitive`（文档域），扫描工作区 Markdown 文档的标题与正文；发现物沿用 `FindingDraft`（document 目标），无新表 / 迁移 | `pipeline/services/checks/document/sensitive.py`、`checks/registry.py` | 单测：命中 / 未命中 / 标题命中；目录端点包含该动作 |
 | C2 | 支持关键词 | `keywords` 参数（`string_list`）：任一关键词命中即算命中；不区分大小写 | 同上 | 单测：中文 / 英文大小写 / 多关键词 |
 | C3 | 支持正则表达式 | `patterns` 参数（`string_list`）：Python `re` 语义，任一命中即算命中；非法正则在运行期抛 `CheckError`（step 失败、不静默） | 同上 | 单测：证件号正则 / 非法正则 |
-| C4 | 逻辑组合规则（多个敏感检查规则） | `rules` 参数（`json` 数组）：每项 `{name, keywords?, patterns?}` 为一条命名规则，规则内任一关键词 / 正则命中即算该规则命中；`logic` 参数（`string`，默认 `any`）支持 `any` / `all` / 布尔表达式（`and` / `or` / `not` / 括号，兼容 `&&` / `||` / `!`），规则名按字面引用；未被引用规则不产发现 | 同上 | 单测：any / all / and·or·not / 括号 / 未知规则 / 未引用规则 |
+| C4 | 逻辑组合规则（多个敏感检查规则） | `rules` 参数（`json` 映射或数组）：单个映射等价单条规则；每项 `{name, keywords?, patterns?}` 为一条命名规则，规则内任一关键词 / 正则命中即算该规则命中；`logic` 参数（`string`，默认 `any`）支持 `any` / `all` / 布尔表达式（`and` / `or` / `not` / 括号，兼容 `&&` / `||` / `!`），规则名按字面引用；未被引用规则不产发现 | 同上 | 单测：any / all / and·or·not / 括号 / 未知规则 / 未引用规则 |
 | C5 | （简写） | 顶层 `keywords` / `patterns` 合并为名为 `default` 的隐式规则，可与 `rules` 混用并在 `logic` 中引用 | 同上 | 单测：简写 + 命名规则混用 |
 | C6 | （安全 / 隐私） | 发现物带规则名、命中的关键词 / 正则原文、`field`（title / content）、文档标题、行号与**有界上下文片段**（命中行前后各 80 字符、最长 240 字符），便于按 GitHub 注解式定位；不返回整篇正文。接口按文档可见性裁剪：文档对当前查看者不可见（他人草稿 / 归档）时移除标题 / 片段并标记 `redacted`。单次最多 50 条规则；规则名不能含空白 / 括号 | 同上 + `pipeline/routers/workflows.py` | 单测：上下文片段 / 高亮偏移 / 长行截断 / 标题命中 / 规则数上限 / 非法规则名；接口测试：草稿对普通成员脱敏、owner 可见全文片段 |
 | C7 | （DSL 支持） | 检查动作输入新增 `json` 类型（对象 / 数组），保存期校验 JSON 可序列化（拒绝 YAML 日期等），`with` 表达式校验递归到嵌套值；非 `json` 参数传对象仍被拒绝 | `checks/base.py`、`checks/registry.py`、`dsl/parse.py` | 单测：嵌套 `with` 编译通过 / 非 json 参数嵌套被拒 |
