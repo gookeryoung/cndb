@@ -316,6 +316,12 @@ describe('DatasourcePage', () => {
     await screen.findByText(/编辑同步任务 · 北京天气日报/)
 
     fireEvent.click(screen.getByRole('radio', { name: /推送/ }))
+    // 推送说明收进「方向」标签的 ? tooltip，不再用 Alert 占一行
+    expect(await screen.findByText('源数据表')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    const dirTip = document.querySelector('.cn-datasource-dir .ant-form-item-tooltip') as HTMLElement
+    expect(dirTip).toBeTruthy()
+    fireEvent.mouseEnter(dirTip)
     expect(await screen.findByText(/对外推送：按批把源数据表的行发送到外部接口/)).toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('https://example.com/api/ingest'), {

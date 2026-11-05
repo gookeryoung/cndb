@@ -51,6 +51,11 @@ const CURSOR_LABEL: Record<string, string> = {
   none: '每次全量',
 }
 
+/** 方向提示：放进「方向」标签的 ? tooltip，不再用 Alert 占一行 */
+const PULL_DIRECTION_HINT = '抓取：外部数据写入数据表（按适配器请求 → 幂等键落表）；推送：把数据表行发给外部接口'
+const PUSH_DIRECTION_HINT =
+  '对外推送：按批把源数据表的行发送到外部接口 —— 读取源表 → 按字段白名单组装 JSON → POST/PUT/PATCH；可用增量字段只推送游标之后的新行，失败批次记入运行历史。'
+
 /** 方向选择：抓取（外部→表）/ 推送（表→外部）；紧凑分段控件，方向语义用副标注明 */
 const DIRECTION_OPTIONS = [
   {
@@ -917,7 +922,7 @@ function JobDrawer({
             <Form.Item
               name="direction"
               label="方向"
-              tooltip="抓取＝外部数据写入数据表；推送＝把数据表行发给外部接口"
+              tooltip={isPush ? PUSH_DIRECTION_HINT : PULL_DIRECTION_HINT}
               className="cn-datasource-dir"
             >
               <Segmented block options={DIRECTION_OPTIONS} />
@@ -942,13 +947,6 @@ function JobDrawer({
 
           {isPush ? (
             <>
-              <Alert
-                type="info"
-                showIcon
-                style={{ marginBottom: 12 }}
-                title="对外推送：按批把源数据表的行发送到外部接口"
-                description="读取源表 → 按字段白名单组装 JSON → POST/PUT/PATCH；可用增量字段只推送游标之后的新行。失败批次会记入运行历史。"
-              />
               <div className="cn-datasource-form-row">
                 <Form.Item name="table_id" label="源数据表" rules={[{ required: true, message: '请选择源数据表' }]} style={{ flex: 1 }}>
                   <Select
