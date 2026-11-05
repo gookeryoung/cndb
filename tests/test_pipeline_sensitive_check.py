@@ -308,6 +308,8 @@ def test_only_referenced_rules_emit_findings(db, ws, owner):
         ({"keywords": ["x"], "logic": "(default"}, "括号不匹配"),
         ({"keywords": ["x"], "logic": "default)"}, "多余内容"),
         ({"keywords": ["x"], "logic": "not"}, "表达式不完整"),
+        ({"keywords": ["x"], "logic": "default & default"}, "不支持单个运算符"),
+        ({"keywords": ["x"], "logic": "default | default"}, "不支持单个运算符"),
     ],
 )
 def test_invalid_params_raise_check_error(db, ws, params, match):
