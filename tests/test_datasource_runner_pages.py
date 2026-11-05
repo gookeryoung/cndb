@@ -28,8 +28,8 @@ NOW = dt.datetime(2026, 10, 25, 16, 0, tzinfo=UTC)
 TODAY = "2026-10-25"
 
 
-def _make_kline_table(session: Session, engine) -> DataTable:
-    table = DataTable(workspace_id=1, name="股市日线")
+def _make_sync_table(session: Session, engine) -> DataTable:
+    table = DataTable(workspace_id=1, name="同步宽表")
     table.ensure_db_name()
     session.add(table)
     session.commit()
@@ -53,7 +53,7 @@ def _make_job(db: Session, table: DataTable, **overrides: object) -> DatasourceS
         "request_spec": {"url_template": "https://api.example.com/k?sym={symbol}&end={end}"},
         "parser": "json",
         "entrant_param": "symbol",
-        "entrant_keys": ["sh600519"],
+        "entrant_keys": ["item-a"],
         "match_keys": ["代码", "日期"],
         "field_mapping": {
             "symbol": {"name": "代码", "field_type": "text"},
@@ -103,7 +103,7 @@ def _end(config: FetchConfig) -> str:
 class TestSingleRunPaging:
     def test_pages_until_short_page(self, db_engine, db):
         """pass1/pass2 取满页（2 行），pass3 只有 1 行（短页）→ 本轮即停，水位到最早日期."""
-        table = _make_kline_table(db, db_engine)
+        table = _make_sync_table(db, db_engine)
         job = _make_job(db, table)
         pages = {
             TODAY: [{"日期": "2026-09-01", "close": 1.0}, {"日期": "2026-08-01", "close": 2.0}],
@@ -114,21 +114,21 @@ class TestSingleRunPaging:
 
         def fetch(config: FetchConfig) -> list[dict[str, object]]:
             seen.append(f"{_symbol(config)}@{_end(config)}")
-            assert _symbol(config) == "sh600519"
+            assert _symbol(config) == "item-a"
             return [dict(row) for row in pages[_end(config)]]
 
         execution = execute_job(db, job, fetch=fetch, now=NOW)
         assert execution.run.status == "success"
         # 三轮请求，锚点逐轮前移（today → 水位−1 天 → 再前移）
-        assert seen == ["sh600519@2026-10-25", "sh600519@2026-07-31", "sh600519@2026-04-30"]
+        assert seen == ["item-a@2026-10-25", "item-a@2026-07-31", "item-a@2026-04-30"]
         assert execution.outcome is not None
         assert execution.outcome.passes == 3
         assert execution.run.inserted == 5
-        assert _watermarks(db, job) == {"sh600519": "2016-01-05"}
+        assert _watermarks(db, job) == {"item-a": "2016-01-05"}
         assert _row_count(db_engine, table) == 5
 
     def test_empty_response_finishes_in_one_pass(self, db_engine, db):
-        table = _make_kline_table(db, db_engine)
+        table = _make_sync_table(db, db_engine)
         job = _make_job(db, table)
         seen: list[str] = []
 
@@ -144,7 +144,7 @@ class TestSingleRunPaging:
 
     def test_stops_when_reaching_backfill_start(self, db_engine, db):
         """每页都满页（不触发短页），水位被截断到 backfill_start 后自然收敛."""
-        table = _make_kline_table(db, db_engine)
+        table = _make_sync_table(db, db_engine)
         job = _make_job(
             db,
             table,
@@ -167,18 +167,18 @@ class TestSingleRunPaging:
         # 第 1 pass 水位即被截断到 backfill_start；第 2 pass 无可补标的（零请求），循环退出
         assert seen == [TODAY]
         assert execution.outcome is not None and execution.outcome.passes == 1
-        assert _watermarks(db, job) == {"sh600519": "2016-01-01"}
+        assert _watermarks(db, job) == {"item-a": "2016-01-01"}
 
     def test_failure_stops_only_that_entrant(self, db_engine, db):
         """单标的请求失败：该标的本轮剔除，另一标的继续翻页；运行落 partial."""
-        table = _make_kline_table(db, db_engine)
-        job = _make_job(db, table, entrant_keys=["sh600519", "sz000001"])
+        table = _make_sync_table(db, db_engine)
+        job = _make_job(db, table, entrant_keys=["item-a", "sz000001"])
         calls: list[str] = []
 
         def fetch(config: FetchConfig) -> list[dict[str, object]]:
             symbol = _symbol(config)
             calls.append(f"{symbol}@{_end(config)}")
-            if symbol == "sh600519":
+            if symbol == "item-a":
                 raise RuntimeError("boom")
             # 该标的每页都满页，第 2 页短页结束
             if len([call for call in calls if call.startswith("sz000001")]) == 1:
@@ -187,13 +187,13 @@ class TestSingleRunPaging:
 
         execution = execute_job(db, job, fetch=fetch, now=NOW)
         assert execution.run.status == "partial"
-        assert [call for call in calls if call.startswith("sh600519")] == ["sh600519@2026-10-25"]
+        assert [call for call in calls if call.startswith("item-a")] == ["item-a@2026-10-25"]
         assert _watermarks(db, job) == {"sz000001": "2016-02-01"}
         assert execution.outcome is not None
-        assert [failure.entrant for failure in execution.outcome.failures] == ["sh600519"]
+        assert [failure.entrant for failure in execution.outcome.failures] == ["item-a"]
 
     def test_pass_cap_marks_partial(self, db_engine, db, monkeypatch):
-        table = _make_kline_table(db, db_engine)
+        table = _make_sync_table(db, db_engine)
         job = _make_job(
             db,
             table,
@@ -222,7 +222,7 @@ class TestSingleRunPaging:
 
     def test_default_single_pass_without_page_to_start(self, db_engine, db):
         """未声明 page_to_start：保持一轮一页（I4 兼容）."""
-        table = _make_kline_table(db, db_engine)
+        table = _make_sync_table(db, db_engine)
         job = _make_job(
             db, table, cursor={"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"}
         )
@@ -237,8 +237,8 @@ class TestSingleRunPaging:
         assert execution.outcome is not None and execution.outcome.passes == 1
 
     def test_progress_total_accumulates_over_passes(self, db_engine, db):
-        table = _make_kline_table(db, db_engine)
-        job = _make_job(db, table, entrant_keys=["sh600519", "sz000001"])
+        table = _make_sync_table(db, db_engine)
+        job = _make_job(db, table, entrant_keys=["item-a", "sz000001"])
         page_counts: dict[str, int] = {}
 
         def fetch(config: FetchConfig) -> list[dict[str, object]]:

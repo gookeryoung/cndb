@@ -35,12 +35,12 @@ def test_list_examples_requires_auth(client):
 
 
 def test_list_examples_returns_manifest(client, auth_headers):
-    """登录后返回三套场景，字段完整且表信息可用."""
+    """登录后返回两套场景，字段完整且表信息可用."""
     resp = client.get(LIST_URL, headers=auth_headers)
     assert resp.status_code == 200, resp.text
 
     items = resp.json()["items"]
-    assert [item["key"] for item in items] == ["sales", "research", "datasource"]
+    assert [item["key"] for item in items] == ["sales", "research"]
     for item in items:
         assert item["name"] and item["summary"]
         assert item["tables"] and item["highlights"] and item["steps"]

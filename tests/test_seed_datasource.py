@@ -4,13 +4,11 @@
 - 单任务多标的（entrant_keys）注入，目标表名解析为 table_id
 - 幂等：重复注入不重复建
 - 目标表 / 字段引用不存在时打印告警并跳过（不阻断其它任务）
-- 真实 examples/datasets/工作区-数据源示例/datasource.json 结构合法性
 """
 
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import pytest
@@ -47,8 +45,8 @@ WEATHER_JOB = {
 
 
 def _build_datasets_dir(tmp_path: Path, jobs: list[dict]) -> Path:
-    """构建仅含「数据源示例」workspace 的临时 datasets 目录."""
-    ws_dir = tmp_path / "datasets" / "工作区-数据源示例"
+    """构建仅含「同步示例」workspace 的临时 datasets 目录."""
+    ws_dir = tmp_path / "datasets" / "工作区-同步示例"
     ws_dir.mkdir(parents=True)
     (ws_dir / "天气每日.csv").write_text(WEATHER_CSV, encoding="utf-8-sig")
     (ws_dir / "datasource.json").write_text(json.dumps({"jobs": jobs}, ensure_ascii=False), encoding="utf-8")
@@ -87,7 +85,7 @@ def test_seed_datasource_injects_multi_entrant_job(datasource_seed, db):
     assert created == 1
 
     job = db.query(DatasourceSyncJob).filter(DatasourceSyncJob.name == WEATHER_JOB["name"]).one()
-    target = tables_map["数据源示例"]["天气每日"]
+    target = tables_map["同步示例"]["天气每日"]
     assert job.table_id == target.id
     assert job.provider == "http_json"
     assert job.entrant_param == "city"
@@ -108,7 +106,7 @@ def test_seed_datasource_persists_entrant_source(datasource_seed, db):
         "entrant_keys": [],
         "entrant_source": {"table": "天气每日", "field": "城市", "prefix_in": ["北"]},
     }
-    ws_dir = Path(datasets_dir) / "工作区-数据源示例"
+    ws_dir = Path(datasets_dir) / "工作区-同步示例"
     (ws_dir / "datasource.json").write_text(json.dumps({"jobs": [dynamic]}, ensure_ascii=False), encoding="utf-8")
     created = _seed_datasource(db, user, ws_map, tables_map, datasets_dir)
     assert created == 1
@@ -163,7 +161,7 @@ def test_seed_datasource_invalid_field_skipped(datasource_seed, db):
 
     tables_map, ws_map, user, datasets_dir = datasource_seed
     bad = {**WEATHER_JOB, "name": "坏字段映射", "field_mapping": {"rain": {"name": "不存在列", "field_type": "float"}}}
-    ws_dir = Path(datasets_dir) / "工作区-数据源示例"
+    ws_dir = Path(datasets_dir) / "工作区-同步示例"
     (ws_dir / "datasource.json").write_text(
         json.dumps({"jobs": [WEATHER_JOB, bad]}, ensure_ascii=False), encoding="utf-8"
     )
@@ -186,118 +184,3 @@ def test_validate_job_fields_accepts_drop_and_detects_missing():
     assert not _validate_job_fields(
         {"match_keys": [], "field_mapping": {"rain": {"name": "不存在", "field_type": "float"}}}, valid, "w", "t"
     )
-
-
-def test_real_datasource_json_is_valid():
-    """真实 examples 配置（ADR 0053 3 条 http_json + 2 条 llm_prompt），引用自洽."""
-    base = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-数据源示例"
-    cfg = json.loads((base / "datasource.json").read_text(encoding="utf-8-sig"))
-    jobs = cfg["jobs"]
-    assert len(jobs) == 5
-    assert [job["provider"] for job in jobs] == ["http_json"] * 3 + ["llm_prompt"] * 2
-    assert [job["table"] for job in jobs] == [
-        "股票清单",
-        "股市日线",
-        "股市日线",
-        "行业政策与合规台账",
-        "国际形势发展动态",
-    ]
-
-    # 所有任务：目标表的示例数据文件必须存在，映射目标列与幂等键必须真实存在于 CSV 表头
-    for job in jobs:
-        assert (base / f"{job['table']}.csv").is_file(), f"缺少示例数据文件 {job['table']}.csv"
-        header = (base / f"{job['table']}.csv").read_text(encoding="utf-8-sig").splitlines()[0].split(",")
-        targets = {t["name"] for t in job["field_mapping"].values() if t}
-        assert targets <= set(header), f"{job['name']} 映射到不存在的列 {targets - set(header)}"
-        assert set(job["match_keys"]) <= set(header), f"{job['name']} 幂等键不在表内"
-        assert job["schedule"] == {"mode": "manual"}, "示例任务不自动触发"
-
-    # ① 清单任务：两节点快照维护股票清单，类型 / 更新日期由模板渲染
-    list_job = jobs[0]
-    assert list_job["entrant_keys"] == ["hs_a", "etf_hq_fund"]
-    assert list_job["match_keys"] == ["代码"]
-    assert list_job["request_spec"]["row_defaults"] == {"类型": "{entrant}", "更新日期": "{today}"}
-    assert "{entrant}" in list_job["request_spec"]["url_template"]
-    assert list_job["request_spec"]["paging"]["mode"] == "page"
-
-    # ② 当日快照：日期={today} 直写当日 bar，零值行剔除；单序列幂等键 [股票代码, 日期]
-    snapshot = jobs[1]
-    assert snapshot["match_keys"] == ["股票代码", "日期"]
-    assert snapshot["request_spec"]["row_defaults"] == {"日期": "{today}"}
-    assert snapshot["request_spec"]["row_filter"] == {"field": "收盘", "op": ">", "value": 0}
-    assert "trade" in snapshot["field_mapping"]
-    assert all("scale" not in t for t in snapshot["field_mapping"].values())
-
-    # ①② 快照类：4 线程串行分页 + 50ms 全局间隔（ADR 0035 D3）
-    snapshots = jobs[:2]
-    for job in snapshots:
-        assert job["request_spec"]["workers"] == 4
-        assert job["rate_limit_ms"] == 50
-
-    # ③ 历史回补（ADR 0053 D2/D5/D7/D11）：单条全市场任务、单轮翻页、不复权、直连优先
-    backfill = jobs[2]
-    assert backfill["name"] == "股市日线（腾讯回补 · 全市场）"
-    assert backfill["entrant_source"] == {"table": "股票清单", "field": "代码"}
-    assert "prefix_in" not in backfill["entrant_source"], "板块拆分已撤销"
-    assert backfill["match_keys"] == ["股票代码", "日期"]
-    assert backfill["cursor"] == {
-        "strategy": "backfill_date",
-        "field": "日期",
-        "backfill_start": "2016-01-01",
-        "page_to_start": True,
-        "page_size": 800,
-    }
-    spec = backfill["request_spec"]
-    assert spec["record_mode"] == "rows_array"
-    assert spec["record_layout"] == {
-        "日期": 0,
-        "开盘": 1,
-        "收盘": 2,
-        "最高": 3,
-        "最低": 4,
-        "成交量": 5,
-    }
-    # 并发与限速取值（ADR 0035 D3 / ADR 0037 / 原 0040 D4）：10 线程 + 10ms 全局间隔（100 req/s 天花板）
-    assert spec["workers"] == 10
-    assert backfill["rate_limit_ms"] == 10
-    assert "{end}" in spec["url_template"], "回补请求须带 end 锚点占位"
-    assert spec["url_template"].startswith("{host}/ifzqgtimg/")
-    assert ",qfq" not in spec["url_template"], "回补改不复权（ADR 0053 D7）"
-    assert spec["data_path"] == "data.{entrant}.day"
-    assert "qfqday" not in spec["data_path"]
-    assert not spec.get("row_defaults"), "单序列后不再产出来源 / 复权方式常量列"
-    # 主机顺序：直连优先，proxy 作 failover；浏览器 UA / Referer 防 WAF 挑战（D11）
-    assert spec["url_hosts"] == ["https://web.ifzq.gtimg.cn", "https://proxy.finance.qq.com"]
-    assert spec["headers_template"]["Referer"] == "https://gu.qq.com/"
-    assert "Mozilla/5.0" in spec["headers_template"]["User-Agent"]
-    # 合并后不声明 scale：成交量取数据源原值（D8）
-    assert all("scale" not in t for t in backfill["field_mapping"].values())
-
-    # 股市日线 / 股票清单 CSV 表头与新任务口径一致：单序列（无来源 / 复权方式列）
-    day_lines = (base / "股市日线.csv").read_text(encoding="utf-8-sig").splitlines()
-    day_header = day_lines[0].split(",")
-    assert day_header == ["股票代码", "日期", "开盘", "收盘", "最高", "最低", "成交量", "成交额"]
-    assert "来源" not in day_header and "复权方式" not in day_header
-    day_keys = [tuple(line.split(",")[:2]) for line in day_lines[1:] if line.strip()]
-    assert len(day_keys) == len(set(day_keys)), "股市日线示例必须 (股票代码, 日期) 唯一"
-    list_header = (base / "股票清单.csv").read_text(encoding="utf-8-sig").splitlines()[0].split(",")
-    assert list_header == ["代码", "名称", "类型", "最新价", "成交额", "市值", "换手率", "更新日期"]
-    # 旧的「股市日线-新浪」按源分表结构不再回归
-    assert not (base / "股市日线-新浪.csv").exists()
-    # 来源筛选视图不再保留（D6）；默认「全部」视图由系统内置，示例不重复定义
-    views = json.loads((base / "views.json").read_text(encoding="utf-8-sig"))
-    assert "股市日线" not in views
-
-    # 大模型动态拉取：中文字段 + 中文幂等键，只配提示词与模型参数，手动触发
-    llm_jobs = [job for job in jobs if job["provider"] == "llm_prompt"]
-    for job in llm_jobs:
-        request_spec = job["request_spec"]
-        assert request_spec["prompt"]["user_template"].strip()
-        assert "{today}" in request_spec["prompt"]["user_template"]
-        assert "字段名用中文" in request_spec["prompt"]["user_template"]
-        assert request_spec["llm"]["json_mode"] is True
-        assert "url_template" not in request_spec, "地址应由个人大模型连接提供"
-        assert job["cursor"] == {"strategy": "none"}
-        assert job["entrant_keys"] == []
-        # 字段映射与幂等键全中文（与表内字段、视图一致）
-        assert all(re.search(r"[\u4e00-\u9fa5]", name) for name in job["match_keys"])

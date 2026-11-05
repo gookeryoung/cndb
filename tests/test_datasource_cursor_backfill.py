@@ -108,33 +108,33 @@ class TestMinFieldValue:
 
 class TestEntrantCursorStore:
     def test_save_then_load_roundtrip(self, db_engine, db):
-        save_backfill_cursor(db, 101, "sh600519", "2020-01-01")
+        save_backfill_cursor(db, 101, "item-a", "2020-01-01")
         save_backfill_cursor(db, 101, "sz000001", "2019-01-01")
         db.commit()
-        assert load_backfill_cursors(db, 101) == {"sh600519": "2020-01-01", "sz000001": "2019-01-01"}
+        assert load_backfill_cursors(db, 101) == {"item-a": "2020-01-01", "sz000001": "2019-01-01"}
         assert load_backfill_cursors(db, 102) == {}
 
     def test_save_only_moves_earlier(self, db_engine, db):
-        save_backfill_cursor(db, 101, "sh600519", "2020-01-01")
+        save_backfill_cursor(db, 101, "item-a", "2020-01-01")
         db.commit()
-        save_backfill_cursor(db, 101, "sh600519", "2021-01-01")  # 更晚 → 不覆盖
+        save_backfill_cursor(db, 101, "item-a", "2021-01-01")  # 更晚 → 不覆盖
         db.commit()
-        assert load_backfill_cursors(db, 101) == {"sh600519": "2020-01-01"}
-        save_backfill_cursor(db, 101, "sh600519", "2019-01-01")  # 更早 → 覆盖
+        assert load_backfill_cursors(db, 101) == {"item-a": "2020-01-01"}
+        save_backfill_cursor(db, 101, "item-a", "2019-01-01")  # 更早 → 覆盖
         db.commit()
-        assert load_backfill_cursors(db, 101) == {"sh600519": "2019-01-01"}
+        assert load_backfill_cursors(db, 101) == {"item-a": "2019-01-01"}
 
     def test_save_equal_watermark_no_duplicate(self, db_engine, db):
-        save_backfill_cursor(db, 101, "sh600519", "2020-01-01")
+        save_backfill_cursor(db, 101, "item-a", "2020-01-01")
         db.commit()
-        save_backfill_cursor(db, 101, "sh600519", "2020-01-01")  # 相等 → 不覆盖
+        save_backfill_cursor(db, 101, "item-a", "2020-01-01")  # 相等 → 不覆盖
         db.commit()
         assert db.query(DatasourceEntrantCursor).count() == 1
 
 
 def _make_source_table(session: Session, engine) -> DataTable:
-    """建「股票清单」表（单 text 字段「代码」）并落物理 DDL."""
-    table = DataTable(workspace_id=1, name="股票清单")
+    """建「标的清单」表（单 text 字段「代码」）并落物理 DDL."""
+    table = DataTable(workspace_id=1, name="标的清单")
     table.ensure_db_name()
     session.add(table)
     session.commit()
@@ -160,27 +160,27 @@ class TestResolveEntrantValues:
     def test_static_only_without_source(self, db_engine, db):
         from cndb.plugins.datasource.models import DatasourceSyncJob
 
-        job = DatasourceSyncJob(workspace_id=1, name="j", provider="http_json", entrant_keys=["sh600519"])
+        job = DatasourceSyncJob(workspace_id=1, name="j", provider="http_json", entrant_keys=["item-a"])
         db.add(job)
         db.commit()
-        assert resolve_entrant_values(db, job) == ("sh600519",)
+        assert resolve_entrant_values(db, job) == ("item-a",)
 
     def test_dynamic_union_static_and_prefix_filter(self, db_engine, db):
         from cndb.plugins.datasource.models import DatasourceSyncJob
 
         table = _make_source_table(db, db_engine)
-        _insert_codes(db_engine, table, ["sh600519", "sh688001", "sz000001", "sh600519", ""])
+        _insert_codes(db_engine, table, ["item-a", "sh688001", "sz000001", "item-a", ""])
         job = DatasourceSyncJob(
             workspace_id=1,
             name="j",
             provider="http_json",
-            entrant_keys=["sh601318"],
-            entrant_source={"table": "股票清单", "field": "代码", "prefix_in": ["sh60"]},
+            entrant_keys=["item1318"],
+            entrant_source={"table": "标的清单", "field": "代码", "prefix_in": ["item"]},
         )
         db.add(job)
         db.commit()
         # 动态 distinct（sh688001 / sz000001 不满足 prefix_in）+ 静态键并集；空值剔除
-        assert resolve_entrant_values(db, job) == ("sh601318", "sh600519")
+        assert resolve_entrant_values(db, job) == ("item1318", "item-a")
 
     def test_empty_source_table_is_allowed(self, db_engine, db):
         from cndb.plugins.datasource.models import DatasourceSyncJob
@@ -191,7 +191,7 @@ class TestResolveEntrantValues:
             workspace_id=1,
             name="j",
             provider="http_json",
-            entrant_source={"table": "股票清单", "field": "代码"},
+            entrant_source={"table": "标的清单", "field": "代码"},
         )
         db.add(job)
         db.commit()
@@ -220,7 +220,7 @@ class TestResolveEntrantValues:
             workspace_id=1,
             name="j",
             provider="http_json",
-            entrant_source={"table": "股票清单", "field": "没有这列"},
+            entrant_source={"table": "标的清单", "field": "没有这列"},
         )
         db.add(job)
         db.commit()

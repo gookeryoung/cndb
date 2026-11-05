@@ -170,16 +170,6 @@ export const mockHelpExamples: HelpExampleList = {
       highlights: ['工作分解视图组织层级'],
       steps: ['下载 CSV', '导入为数据表'],
     },
-    {
-      key: 'datasource',
-      name: '数据源示例',
-      summary: '把外部数据按计划写入数据表。',
-      tables: [
-        { file: '天气每日.csv', title: '天气每日', description: '天气观测', rows: 276 },
-      ],
-      highlights: ['画廊视图阅读政策与情报简报'],
-      steps: ['下载示例 CSV', '配置数据同步'],
-    },
   ],
 }
 
@@ -191,7 +181,7 @@ const HELP_FIGURE_KEYS = [
   'permission-model',
   'import-flow',
   'datasource-sync',
-  ...['sales', 'research', 'datasource'].flatMap((scenario) =>
+  ...['sales', 'research'].flatMap((scenario) =>
     [1, 2, 3, 4].map((index) => `example-${scenario}-table-${index}`)),
 ]
 

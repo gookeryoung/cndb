@@ -2,7 +2,7 @@
 
 Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-25
-Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/field_types/select.py`、`src/cndb/plugins/tables/services/fields/select_options.py`、`examples/datasets/工作区-数据源示例/datasource.json`、ADR 0006、ADR 0034
+Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/field_types/select.py`、`src/cndb/plugins/tables/services/fields/select_options.py`、ADR 0006、ADR 0034
 需求卡片: `docs/requirements/0035-datasource-sync-throughput.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -153,7 +153,7 @@ Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/tables/field_types/select.py` | `tests/test_sync_select_options.py` | 5bdf927c |
 | P1 | 已落地 | `src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/datasource/services/write.py`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_import_light_mode_equivalence.py`、`tests/test_datasource_runner_streaming.py` | 5bdf927c |
-| P2 | 已落地 | `examples/datasets/工作区-数据源示例/datasource.json` | `tests/test_seed_datasource.py` | 5bdf927c |
+| P2 | 已落地 | `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/write.py` | `tests/test_datasource_write_throughput.py` | 5bdf927c |
 
 ## 交接（会话结束更新）
 

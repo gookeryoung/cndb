@@ -30,8 +30,8 @@ NOW = dt.datetime(2026, 10, 26, 8, 0, tzinfo=UTC)
 BACKFILL = {"strategy": "backfill_date", "field": "日期", "backfill_start": "2016-01-01"}
 
 
-def _make_kline_table(session: Session, engine: Any, name: str = "股市日线") -> DataTable:
-    """「股市日线」表：代码 / 日期 / 收盘 三列（幂等键 = 代码 + 日期）."""
+def _make_sync_table(session: Session, engine: Any, name: str = "同步宽表") -> DataTable:
+    """「同步宽表」表：代码 / 日期 / 收盘 三列（幂等键 = 代码 + 日期）."""
     table = DataTable(workspace_id=1, name=name)
     table.ensure_db_name()
     session.add(table)
@@ -79,10 +79,10 @@ class TestBatchSizeEquivalence:
         rows = _daily_rows(2000)
         keys = ["代码", "日期"]
 
-        whole_table = _make_kline_table(db, db_engine, name="股市日线（整批）")
+        whole_table = _make_sync_table(db, db_engine, name="同步宽表（整批）")
         whole = upsert_rows(db_engine, db, whole_table, rows, match_keys=keys, light=True)
 
-        split_table = _make_kline_table(db, db_engine, name="股市日线（分片）")
+        split_table = _make_sync_table(db, db_engine, name="同步宽表（分片）")
         inserted = updated = 0
         for offset in range(0, len(rows), 500):
             outcome = upsert_rows(db_engine, db, split_table, rows[offset : offset + 500], match_keys=keys, light=True)
@@ -98,7 +98,7 @@ class TestBatchSizeEquivalence:
 class TestMatchKeysIndexCached:
     def test_repeated_calls_create_index_once(self, db: Session, db_engine, monkeypatch):
         """同表同键连续调用只执行一次 DDL 与提交，且索引真实存在（ADR 0039 D5）."""
-        table = _make_kline_table(db, db_engine, name="股市日线（索引缓存）")
+        table = _make_sync_table(db, db_engine, name="同步宽表（索引缓存）")
         monkeypatch.setattr(write, "_INDEXED_KEY_SETS", set())
 
         statements: list[str] = []
@@ -131,7 +131,7 @@ class TestMatchKeysIndexCached:
 
     def test_upsert_after_cached_index_still_writes(self, db: Session, db_engine, monkeypatch):
         """索引命中缓存后落表照常工作（不因跳过 DDL 影响幂等匹配）."""
-        table = _make_kline_table(db, db_engine, name="股市日线（缓存后落表）")
+        table = _make_sync_table(db, db_engine, name="同步宽表（缓存后落表）")
         monkeypatch.setattr(write, "_INDEXED_KEY_SETS", set())
 
         first = upsert_rows(db_engine, db, table, _daily_rows(10), match_keys=["代码", "日期"], light=True)
@@ -190,7 +190,7 @@ def _state(db: Session, job: DatasourceSyncJob, run: DatasourceSyncRun) -> _Stre
 class TestBatchCommitAggregation:
     def test_advance_backfill_does_not_commit(self, db: Session, db_engine, monkeypatch):
         """水位只写 session，不自行提交（由进度写入口统一提交，ADR 0039 D5）."""
-        table = _make_kline_table(db, db_engine, name="股市日线（水位提交）")
+        table = _make_sync_table(db, db_engine, name="同步宽表（水位提交）")
         job = _make_job(db, table)
         state = _state(db, job, _make_run(db, job))
 
@@ -217,7 +217,7 @@ class TestBatchCommitAggregation:
 
     def test_on_batch_persists_counts_and_watermark_in_one_commit(self, db: Session, db_engine):
         """整批：落库计数与水位在同一批内落库，用一次进度提交串起来."""
-        table = _make_kline_table(db, db_engine, name="股市日线（整批提交）")
+        table = _make_sync_table(db, db_engine, name="同步宽表（整批提交）")
         job = _make_job(db, table)
         run = _make_run(db, job)
         state = _state(db, job, run)
@@ -235,7 +235,7 @@ class TestBatchCommitAggregation:
 
     def test_failed_persist_does_not_advance_watermark(self, db: Session, db_engine, monkeypatch):
         """落库抛错时 on_batch 外抛且水位不推进（断点续跑口径不变，ADR 0039 I3）."""
-        table = _make_kline_table(db, db_engine, name="股市日线（落库失败）")
+        table = _make_sync_table(db, db_engine, name="同步宽表（落库失败）")
         job = _make_job(db, table)
         state = _state(db, job, _make_run(db, job))
 

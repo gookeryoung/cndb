@@ -27,13 +27,13 @@ from cndb.plugins.datasource.services.runner import (
 
 PROVIDER = HttpJsonProvider()
 
-# 腾讯日线形态：外层带 code，标的键下是「行数组的数组」
-TENCENT_PAYLOAD = {
+# 嵌套行数组形态：外层带 code，标的键下是「行数组的数组」
+NESTED_PAYLOAD = {
     "code": 0,
     "msg": "",
     "data": {
-        "sh600519": {
-            "qfqday": [
+        "item-a": {
+            "primary": [
                 ["2026-10-20", "1500.00", "1510.00", "1520.00", "1490.00", "12345"],
                 ["2026-10-21", "1510.00", "1520.00", "1530.00", "1500.00", "23456"],
             ]
@@ -60,7 +60,7 @@ def _job(**overrides: object) -> SyncJobSpec:
 
 class TestRowsArrayToRows:
     def test_parses_nested_array_rows(self):
-        rows = rows_array_to_rows(TENCENT_PAYLOAD, "data.sh600519.qfqday", DAY_LAYOUT)
+        rows = rows_array_to_rows(NESTED_PAYLOAD, "data.item-a.primary", DAY_LAYOUT)
         assert len(rows) == 2
         assert rows[0]["日期"] == "2026-10-20"
         assert rows[1]["成交量"] == "23456"
@@ -74,11 +74,11 @@ class TestRowsArrayToRows:
         assert rows == [{"x": "a", "y": None}]
 
     def test_empty_series_returns_empty(self):
-        assert rows_array_to_rows({"data": {"s": {"qfqday": []}}}, "data.s.qfqday", DAY_LAYOUT) == []
+        assert rows_array_to_rows({"data": {"s": {"primary": []}}}, "data.s.primary", DAY_LAYOUT) == []
 
     def test_missing_path_raises(self):
         with pytest.raises(ProviderError, match="指向一个数组"):
-            rows_array_to_rows(TENCENT_PAYLOAD, "data.sh600519.day", DAY_LAYOUT)
+            rows_array_to_rows(NESTED_PAYLOAD, "data.item-a.fallback", DAY_LAYOUT)
 
     def test_row_not_array_raises(self):
         with pytest.raises(ProviderError, match="元素必须是数组"):
@@ -114,16 +114,16 @@ class TestProviderDispatch:
             request=RequestSpec(
                 url_template="https://api.example.com/v1",
                 record_mode="rows_array",
-                data_path="data.{symbol}.qfqday",
+                data_path="data.{symbol}.primary",
                 record_layout=DAY_LAYOUT,
             ),
             entrant_param="symbol",
-            entrant_values=("sh600519",),
+            entrant_values=("item-a",),
         )
         config = PROVIDER.build_requests(job)[0].config
         # data_path 按标的渲染
-        assert config.data_path == "data.sh600519.qfqday"
-        rows = PROVIDER.parse(json.dumps(TENCENT_PAYLOAD), job, data_path=config.data_path)
+        assert config.data_path == "data.item-a.primary"
+        rows = PROVIDER.parse(json.dumps(NESTED_PAYLOAD), job, data_path=config.data_path)
         assert rows[0]["收盘"] == "1510.00"
 
     def test_parse_uses_spec_data_path_without_override(self):
@@ -131,11 +131,11 @@ class TestProviderDispatch:
             request=RequestSpec(
                 url_template="https://api.example.com/v1",
                 record_mode="rows_array",
-                data_path="data.sh600519.qfqday",
+                data_path="data.item-a.primary",
                 record_layout={"日期": 0},
             )
         )
-        rows = PROVIDER.parse(json.dumps(TENCENT_PAYLOAD), job)
+        rows = PROVIDER.parse(json.dumps(NESTED_PAYLOAD), job)
         assert rows[0]["日期"] == "2026-10-20"
 
     def test_parse_rows_mode_still_works(self):
@@ -150,13 +150,13 @@ class TestProviderDispatch:
 
 
 class TestDataPathCandidates:
-    """``data_path`` 候选回退（ADR 0039 D1/D3）：同一资源可能只回 qfqday 或 day."""
+    """``data_path`` 候选回退（ADR 0039 D1/D3）：同一资源可能只回首个或回退路径."""
 
     DAY_ONLY_PAYLOAD = {
         "code": 0,
         "data": {
-            "sh562550": {
-                "day": [
+            "item-b": {
+                "fallback": [
                     ["2026-10-20", "1.100", "1.120", "1.130", "1.090", "1234"],
                     ["2026-10-21", "1.120", "1.130", "1.140", "1.110", "2345"],
                 ]
@@ -168,20 +168,20 @@ class TestDataPathCandidates:
     def _mk_job(data_path: str) -> SyncJobSpec:
         return _job(
             request=RequestSpec(
-                url_template="https://proxy.example.com/kline?param={symbol}",
+                url_template="https://proxy.example.com/series?param={symbol}",
                 record_mode="rows_array",
                 data_path=data_path,
                 record_layout={"日期": 0, "收盘": 2},
             ),
             entrant_param="symbol",
-            entrant_values=("sh562550",),
+            entrant_values=("item-b",),
         )
 
-    def test_falls_back_to_day_when_qfqday_absent(self):
-        job = self._mk_job("data.{entrant}.qfqday|data.{entrant}.day")
+    def test_falls_back_to_secondary_when_primary_absent(self):
+        job = self._mk_job("data.{entrant}.primary|data.{entrant}.fallback")
         config = PROVIDER.build_requests(job)[0].config
         # 候选串整体渲染，分隔符保留
-        assert config.data_path == "data.sh562550.qfqday|data.sh562550.day"
+        assert config.data_path == "data.item-b.primary|data.item-b.fallback"
         rows = PROVIDER.parse(json.dumps(self.DAY_ONLY_PAYLOAD), job, data_path=config.data_path)
         assert rows == [
             {"日期": "2026-10-20", "收盘": "1.120"},
@@ -189,61 +189,61 @@ class TestDataPathCandidates:
         ]
 
     def test_prefers_first_non_empty_candidate(self):
-        payload = {"data": {"sh562550": {"qfqday": TENCENT_PAYLOAD["data"]["sh600519"]["qfqday"], "day": []}}}
+        payload = {"data": {"item-b": {"primary": NESTED_PAYLOAD["data"]["item-a"]["primary"], "fallback": []}}}
         rows = PROVIDER.parse(
             json.dumps(payload),
-            self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
-            data_path="data.sh562550.qfqday|data.sh562550.day",
+            self._mk_job("data.item-b.primary|data.item-b.fallback"),
+            data_path="data.item-b.primary|data.item-b.fallback",
         )
         assert rows[0]["日期"] == "2026-10-20"
 
     def test_empty_first_candidate_tries_next(self):
-        payload = {"data": {"sh562550": {"qfqday": [], "day": [["2026-10-20", "1.100", "1.120"]]}}}
+        payload = {"data": {"item-b": {"primary": [], "fallback": [["2026-10-20", "1.100", "1.120"]]}}}
         rows = PROVIDER.parse(
             json.dumps(payload),
-            self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
-            data_path="data.sh562550.qfqday|data.sh562550.day",
+            self._mk_job("data.item-b.primary|data.item-b.fallback"),
+            data_path="data.item-b.primary|data.item-b.fallback",
         )
         assert rows == [{"日期": "2026-10-20", "收盘": "1.120"}]
 
     def test_all_candidates_empty_returns_empty(self):
-        payload = {"data": {"sh562550": {"qfqday": [], "day": []}}}
+        payload = {"data": {"item-b": {"primary": [], "fallback": []}}}
         rows = PROVIDER.parse(
             json.dumps(payload),
-            self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
-            data_path="data.sh562550.qfqday|data.sh562550.day",
+            self._mk_job("data.item-b.primary|data.item-b.fallback"),
+            data_path="data.item-b.primary|data.item-b.fallback",
         )
         assert rows == []
 
     def test_all_candidates_missing_returns_empty(self):
         """路径全部缺失 = 无数据（不是失败）：北交所等品种只回空对象."""
-        payload = {"data": {"sh562550": {"qt": {}}}}
+        payload = {"data": {"item-b": {"qt": {}}}}
         rows = PROVIDER.parse(
             json.dumps(payload),
-            self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
-            data_path="data.sh562550.qfqday|data.sh562550.day",
+            self._mk_job("data.item-b.primary|data.item-b.fallback"),
+            data_path="data.item-b.primary|data.item-b.fallback",
         )
         assert rows == []
 
     def test_candidate_hit_non_array_raises(self):
-        payload = {"data": {"sh562550": {"qfqday": {"收盘": "1.12"}, "day": []}}}
+        payload = {"data": {"item-b": {"primary": {"收盘": "1.12"}, "fallback": []}}}
         with pytest.raises(ProviderError) as excinfo:
             PROVIDER.parse(
                 json.dumps(payload),
-                self._mk_job("data.sh562550.qfqday|data.sh562550.day"),
-                data_path="data.sh562550.qfqday|data.sh562550.day",
+                self._mk_job("data.item-b.primary|data.item-b.fallback"),
+                data_path="data.item-b.primary|data.item-b.fallback",
             )
         message = str(excinfo.value)
         assert "命中非数组的候选" in message
-        assert "data.sh562550.qfqday" in message
+        assert "data.item-b.primary" in message
 
     def test_single_path_missing_returns_empty(self):
-        """单路径缺失（如北交所品种的 data.{entrant}.day）不报错，按空批落地."""
+        """单路径缺失（如北交所品种的 data.{entrant}.fallback）不报错，按空批落地."""
         payload = {"data": {"bj920010": {}}}
         rows = PROVIDER.parse(
             json.dumps(payload),
-            self._mk_job("data.bj920010.day"),
-            data_path="data.bj920010.day",
+            self._mk_job("data.bj920010.fallback"),
+            data_path="data.bj920010.fallback",
         )
         assert rows == []
 
@@ -254,16 +254,16 @@ class TestRowDefaults:
         assert rows == [{"a": 1, "来源": "响应自带"}]
 
     def test_fills_missing_columns(self):
-        rows = apply_row_defaults([{"a": 1}], {"来源": "新浪", "复权方式": "不复权"})
-        assert rows == [{"a": 1, "来源": "新浪", "复权方式": "不复权"}]
+        rows = apply_row_defaults([{"a": 1}], {"来源": "新浪", "版本": "不复权"})
+        assert rows == [{"a": 1, "来源": "新浪", "版本": "不复权"}]
 
     def test_without_defaults_copies_rows(self):
         rows = apply_row_defaults([{"a": 1}], {})
         assert rows == [{"a": 1}]
 
     def test_sync_job_spec_falls_back_to_request_defaults(self):
-        job = _job(request=RequestSpec(url_template="https://api.example.com/v1", row_defaults={"来源": "腾讯"}))
-        assert job.row_defaults == {"来源": "腾讯"}
+        job = _job(request=RequestSpec(url_template="https://api.example.com/v1", row_defaults={"来源": "接口A"}))
+        assert job.row_defaults == {"来源": "接口A"}
 
     def test_pipeline_applies_defaults_and_entrant(self):
         job = _job(
@@ -271,14 +271,14 @@ class TestRowDefaults:
                 url_template="https://api.example.com/v1",
                 record_mode="rows_array",
                 record_layout={"日期": 0, "收盘": 1},
-                row_defaults={"来源": "腾讯", "复权方式": "前复权"},
+                row_defaults={"来源": "接口A", "版本": "最新"},
             ),
             entrant_param="symbol",
-            entrant_values=("sh600519",),
+            entrant_values=("item-a",),
         )
         outcome = run_pipeline(job, fetch=lambda _config: [{"日期": "2026-10-20", "收盘": "1510.00"}])
         assert outcome.rows == [
-            {"日期": "2026-10-20", "收盘": "1510.00", "symbol": "sh600519", "来源": "腾讯", "复权方式": "前复权"}
+            {"日期": "2026-10-20", "收盘": "1510.00", "symbol": "item-a", "来源": "接口A", "版本": "最新"}
         ]
 
 
@@ -353,11 +353,11 @@ class TestPayloadParsing:
                 "url_template": "https://api.example.com/v1",
                 "record_mode": "rows_array",
                 "record_layout": {"日期": 0},
-                "row_defaults": {"来源": "腾讯"},
+                "row_defaults": {"来源": "接口A"},
             }
         )
         assert spec.record_mode == "rows_array"
-        assert spec.row_defaults == {"来源": "腾讯"}
+        assert spec.row_defaults == {"来源": "接口A"}
 
     def test_request_spec_rejects_unknown_mode(self):
         with pytest.raises(ValueError, match="record_mode 非法"):

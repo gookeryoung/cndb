@@ -30,9 +30,9 @@ NOW = dt.datetime(2026, 10, 25, 16, 0, tzinfo=UTC)
 TODAY = "2026-10-25"
 
 
-def _make_kline_table(session: Session, engine) -> DataTable:
-    """「股市日线」表：代码 / 日期 / 收盘 三列."""
-    table = DataTable(workspace_id=1, name="股市日线")
+def _make_sync_table(session: Session, engine) -> DataTable:
+    """「同步宽表」表：代码 / 日期 / 收盘 三列."""
+    table = DataTable(workspace_id=1, name="同步宽表")
     table.ensure_db_name()
     session.add(table)
     session.commit()
@@ -56,7 +56,7 @@ def _make_backfill_job(db: Session, table: DataTable, **overrides: object) -> Da
         "request_spec": {"url_template": "https://api.example.com/k?sym={symbol}&end={end}"},
         "parser": "json",
         "entrant_param": "symbol",
-        "entrant_keys": ["sh600519"],
+        "entrant_keys": ["item-a"],
         "match_keys": ["代码", "日期"],
         "field_mapping": {
             # 与真实种子一致：标的源键 symbol 映射到目标列（归一后行内无 symbol 键）
@@ -97,13 +97,13 @@ def _row_count(engine, table: DataTable) -> int:
 
 class TestBackfillExecution:
     def test_first_run_anchors_today_and_saves_watermarks(self, db_engine, db):
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519", "sz000001"])
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a", "sz000001"])
         seen: list[str] = []
         fetch = _capture_fetch(
             seen,
             {
-                "sh600519": [{"日期": "2026-09-01", "close": 1500.0}],
+                "item-a": [{"日期": "2026-09-01", "close": 1500.0}],
                 "sz000001": [{"日期": "2026-08-15", "close": 11.0}],
             },
         )
@@ -119,14 +119,14 @@ class TestBackfillExecution:
             cursor.entrant: cursor.cursor_value
             for cursor in db.query(DatasourceEntrantCursor).filter_by(job_id=job.id).all()
         }
-        assert watermarks == {"sh600519": "2026-09-01", "sz000001": "2026-08-15"}
+        assert watermarks == {"item-a": "2026-09-01", "sz000001": "2026-08-15"}
         assert _row_count(db_engine, table) == 2
 
     def test_second_run_anchors_watermark_minus_one_day(self, db_engine, db):
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a"])
         seen: list[str] = []
-        fetch = _capture_fetch(seen, {"sh600519": [{"日期": "2020-06-30", "close": 1400.0}]})
+        fetch = _capture_fetch(seen, {"item-a": [{"日期": "2020-06-30", "close": 1400.0}]})
 
         execute_job(db, job, fetch=fetch, now=NOW)  # 首轮：水位 2020-06-30
         seen.clear()
@@ -136,47 +136,47 @@ class TestBackfillExecution:
             cursor.entrant: cursor.cursor_value
             for cursor in db.query(DatasourceEntrantCursor).filter_by(job_id=job.id).all()
         }
-        assert watermarks == {"sh600519": "2020-06-30"}
+        assert watermarks == {"item-a": "2020-06-30"}
 
     def test_preview_injects_watermark_anchor(self, db_engine, db):
         """预览与执行同口径：按标的水位注入 end 锚点（只读，不写水位）."""
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
-        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="sh600519", cursor_value="2020-06-30"))
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a"])
+        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="item-a", cursor_value="2020-06-30"))
         db.commit()
         seen: list[str] = []
-        fetch = _capture_fetch(seen, {"sh600519": [{"日期": "2020-06-29", "close": 1400.0}]})
+        fetch = _capture_fetch(seen, {"item-a": [{"日期": "2020-06-29", "close": 1400.0}]})
 
         preview = preview_job(job, db=db, fetch=fetch, now=NOW)
         assert preview.status == "success"
-        assert seen == ["https://api.example.com/k?sym=sh600519&end=2020-06-29"]
+        assert seen == ["https://api.example.com/k?sym=item-a&end=2020-06-29"]
 
     def test_finished_entrant_makes_zero_requests(self, db_engine, db):
         """水位已达 backfill_start 的标的剔除出标的集合 → 零请求."""
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519", "sz000001"])
-        # sh600519 已回补到位；sz000001 还有待补区间
-        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="sh600519", cursor_value="2016-01-01"))
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a", "sz000001"])
+        # item-a 已回补到位；sz000001 还有待补区间
+        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="item-a", cursor_value="2016-01-01"))
         db.commit()
         seen: list[str] = []
         fetch = _capture_fetch(seen, {"sz000001": [{"日期": "2018-01-01", "close": 10.0}]})
 
         execution = execute_job(db, job, fetch=fetch, now=NOW)
         assert execution.run.status == "success"
-        # sh600519 已达标零请求；sz000001 无水位 → 首轮锚点 today
+        # item-a 已达标零请求；sz000001 无水位 → 首轮锚点 today
         assert seen == [f"https://api.example.com/k?sym=sz000001&end={TODAY}"]
         watermarks = {
             cursor.entrant: cursor.cursor_value
             for cursor in db.query(DatasourceEntrantCursor).filter_by(job_id=job.id).all()
         }
-        assert watermarks == {"sh600519": "2016-01-01", "sz000001": "2018-01-01"}
+        assert watermarks == {"item-a": "2016-01-01", "sz000001": "2018-01-01"}
 
     def test_watermark_truncated_to_backfill_start(self, db_engine, db):
         """响应最早日期早于 backfill_start → 水位截断到 backfill_start（下一轮即达标）."""
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a"])
         seen: list[str] = []
-        fetch = _capture_fetch(seen, {"sh600519": [{"日期": "2010-01-01", "close": 100.0}]})
+        fetch = _capture_fetch(seen, {"item-a": [{"日期": "2010-01-01", "close": 100.0}]})
 
         execute_job(db, job, fetch=fetch, now=NOW)
         seen.clear()
@@ -185,27 +185,27 @@ class TestBackfillExecution:
         # 达标后标的集合为空：整轮零请求且落 success（不得退回空标的伪请求而失败）
         assert execution.run.status == "success"
         assert execution.outcome is not None and execution.outcome.plans == 0
-        cursor = db.query(DatasourceEntrantCursor).filter_by(job_id=job.id, entrant="sh600519").one()
+        cursor = db.query(DatasourceEntrantCursor).filter_by(job_id=job.id, entrant="item-a").one()
         assert cursor.cursor_value == "2016-01-01"
 
     def test_watermark_never_moves_later(self, db_engine, db):
         """断点续跑：本轮最早日期不比现水位更早 → 水位不动（乱序 / 重叠窗口安全）."""
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
-        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="sh600519", cursor_value="2015-06-01"))
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a"])
+        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="item-a", cursor_value="2015-06-01"))
         db.commit()
         seen: list[str] = []
-        fetch = _capture_fetch(seen, {"sh600519": [{"日期": "2024-01-01", "close": 1700.0}]})
+        fetch = _capture_fetch(seen, {"item-a": [{"日期": "2024-01-01", "close": 1700.0}]})
 
         execute_job(db, job, fetch=fetch, now=NOW)
-        cursor = db.query(DatasourceEntrantCursor).filter_by(job_id=job.id, entrant="sh600519").one()
+        cursor = db.query(DatasourceEntrantCursor).filter_by(job_id=job.id, entrant="item-a").one()
         assert cursor.cursor_value == "2015-06-01"
 
     def test_missing_entrant_param_fails(self, db_engine, db):
         """backfill 任务未声明 entrant_param → 无法按标的推进水位，落 failed."""
-        table = _make_kline_table(db, db_engine)
+        table = _make_sync_table(db, db_engine)
         job = _make_backfill_job(db, table, entrant_param=None)
-        fetch = _capture_fetch([], {"sh600519": [{"日期": "2024-01-01", "close": 1.0}]})
+        fetch = _capture_fetch([], {"item-a": [{"日期": "2024-01-01", "close": 1.0}]})
 
         execution = execute_job(db, job, fetch=fetch, now=NOW)
         assert execution.run.status == "failed"
@@ -213,9 +213,9 @@ class TestBackfillExecution:
 
     def test_entrant_source_dynamic_values(self, db_engine, db):
         """entrant_source 动态标的 + backfill 锚点组合：distinct 代码进请求."""
-        table = _make_kline_table(db, db_engine)
+        table = _make_sync_table(db, db_engine)
         # 另建清单表并插入代码
-        source = DataTable(workspace_id=1, name="股票清单")
+        source = DataTable(workspace_id=1, name="标的清单")
         source.ensure_db_name()
         db.add(source)
         db.commit()
@@ -230,29 +230,29 @@ class TestBackfillExecution:
         metadata = MetaData()
         sa_source = ddl.build_sa_table(metadata, source)
         with db_engine.begin() as conn:
-            conn.execute(sa_source.insert(), [{column: code} for code in ("sz000001", "sh600519")])
+            conn.execute(sa_source.insert(), [{column: code} for code in ("sz000001", "item-a")])
 
         job = _make_backfill_job(
             db,
             table,
             entrant_keys=[],
-            entrant_source={"table": "股票清单", "field": "代码", "prefix_in": ["sh6"]},
+            entrant_source={"table": "标的清单", "field": "代码", "prefix_in": ["item"]},
         )
         seen: list[str] = []
         fetch = _capture_fetch(seen, {})
 
         execute_job(db, job, fetch=fetch, now=NOW)
-        assert seen == [f"https://api.example.com/k?sym=sh600519&end={TODAY}"]
+        assert seen == [f"https://api.example.com/k?sym=item-a&end={TODAY}"]
 
 
 class TestStreamingMisc:
     def test_large_run_flushes_in_batches(self, db_engine, db):
         """5001 行跨 2 批落库：write 计数跨批累积（DEFAULT_BATCH_SIZE=5000）."""
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a"])
         rows = [{"日期": f"2026-{(i % 12) + 1:02d}-{(i % 28) + 1:02d}", "close": float(i)} for i in range(5001)]
         # 同日期多次 upsert（幂等键合并），最终行数少但 fetched 计全量
-        fetch = _capture_fetch([], {"sh600519": rows})
+        fetch = _capture_fetch([], {"item-a": rows})
 
         execution = execute_job(db, job, fetch=fetch, now=NOW)
         assert execution.run.status == "success"
@@ -261,12 +261,12 @@ class TestStreamingMisc:
 
     def test_lease_renewal_failure_aborts(self, db_engine, db):
         """租约易主（被他者抢占）→ 批间续期失败 → run 落 failed 且带原因."""
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a"])
         # 先让别人持有租约（本执行的 lease 句柄 owner 与之不符 → 续期必失败）
         acquire_lease(db, job.id, "someone-else", now=NOW)
         lease = LeaseHandle(job_id=job.id, owner="scheduler-me")
-        fetch = _capture_fetch([], {"sh600519": [{"日期": "2026-01-05", "close": 1.0}]})
+        fetch = _capture_fetch([], {"item-a": [{"日期": "2026-01-05", "close": 1.0}]})
 
         execution = execute_job(db, job, fetch=fetch, now=NOW, lease=lease)
         assert execution.run.status == "failed"
@@ -274,11 +274,11 @@ class TestStreamingMisc:
 
     def test_lease_renewal_ok_when_owner_matches(self, db_engine, db):
         """租约自持：批间续期成功，运行正常完成."""
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a"])
         lease = LeaseHandle(job_id=job.id, owner="scheduler-me")
         acquire_lease(db, job.id, "scheduler-me", now=NOW)
-        fetch = _capture_fetch([], {"sh600519": [{"日期": "2026-01-05", "close": 1.0}]})
+        fetch = _capture_fetch([], {"item-a": [{"日期": "2026-01-05", "close": 1.0}]})
 
         execution = execute_job(db, job, fetch=fetch, now=NOW, lease=lease)
         assert execution.run.status == "success"
@@ -286,7 +286,7 @@ class TestStreamingMisc:
 
     def test_run_detail_records_filtered(self, db_engine, db):
         """row_filter 剔除数进 run.detail（快照零值行可观测）."""
-        table = _make_kline_table(db, db_engine)
+        table = _make_sync_table(db, db_engine)
         payload: dict[str, object] = {
             "url_template": "https://api.example.com/k?sym={symbol}",
             # row_filter 字段是归一后的目标字段名（field_mapping 先行）
@@ -295,7 +295,7 @@ class TestStreamingMisc:
         job = _make_backfill_job(db, table, request_spec=payload, cursor={"strategy": "none"})
         fetch = _capture_fetch(
             [],
-            {"sh600519": [{"日期": "2026-01-05", "close": 0.0}, {"日期": "2026-01-06", "close": 5.0}]},
+            {"item-a": [{"日期": "2026-01-05", "close": 0.0}, {"日期": "2026-01-06", "close": 5.0}]},
         )
 
         execution = execute_job(db, job, fetch=fetch, now=NOW)
@@ -310,23 +310,23 @@ class TestRunnerInternals:
         from cndb.plugins.datasource.services.cursor import CursorConfig
         from cndb.plugins.datasource.services.runner import _inject_backfill_ends, build_job_spec
 
-        table = _make_kline_table(db, db_engine)
-        job = _make_backfill_job(db, table, entrant_keys=["sh600519", "sz000001", "sh601318"])
-        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="sh600519", cursor_value="2016-01-01"))
+        table = _make_sync_table(db, db_engine)
+        job = _make_backfill_job(db, table, entrant_keys=["item-a", "sz000001", "item01318"])
+        db.add(DatasourceEntrantCursor(job_id=job.id, entrant="item-a", cursor_value="2016-01-01"))
         db.add(DatasourceEntrantCursor(job_id=job.id, entrant="sz000001", cursor_value="2020-06-01"))
         db.commit()
 
         cursor_config = CursorConfig.from_dict(job.cursor)
         spec = build_job_spec(job, cursor_from="", today=TODAY, session=None, db=db)
         injected = _inject_backfill_ends(db, job, spec, cursor_config, today=TODAY)
-        assert injected.entrant_values == ("sz000001", "sh601318")
-        assert injected.entrant_ends == {"sz000001": "2020-05-31", "sh601318": TODAY}
+        assert injected.entrant_values == ("sz000001", "item01318")
+        assert injected.entrant_ends == {"sz000001": "2020-05-31", "item01318": TODAY}
 
 
 def test_persist_rows_uses_light_mode(db_engine, db, monkeypatch):
     """同步落表走轻量模式（ADR 0035 D2）：upsert_rows 收到 light=True."""
-    table = _make_kline_table(db, db_engine)
-    job = _make_backfill_job(db, table, entrant_keys=["sh600519"])
+    table = _make_sync_table(db, db_engine)
+    job = _make_backfill_job(db, table, entrant_keys=["item-a"])
     captured: dict[str, object] = {}
 
     def fake_upsert(*_args, **kwargs):
@@ -341,7 +341,7 @@ def test_persist_rows_uses_light_mode(db_engine, db, monkeypatch):
 
 def test_streaming_state_not_leaked_into_llm_path(db_engine, db, monkeypatch):
     """llm_prompt 仍走全量路径：不注入 on_batch（回归保护）."""
-    table = _make_kline_table(db, db_engine)
+    table = _make_sync_table(db, db_engine)
     job = _make_backfill_job(
         db,
         table,

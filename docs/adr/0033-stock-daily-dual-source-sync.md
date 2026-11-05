@@ -2,7 +2,7 @@
 
 Status: Implemented
 Date: 2026-10-25
-Related: `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/cli/seed/datasource.py`、`examples/datasets/工作区-数据源示例/`；上游 ADR 0006（适配器收敛）、0029/0032（示例内容口径）；示例口径由 ADR 0053 修订（单序列）
+Related: `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/cli/seed/datasource.py`；上游 ADR 0006（适配器收敛）、0029/0032（示例内容口径）；示例口径由 ADR 0053 修订（单序列）
 需求卡片: `docs/requirements/0033-stock-daily-sync-to-local.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -162,7 +162,7 @@ Related: `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugin
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/plugins/datasource/services/pipeline.py` | `tests/test_datasource_http_json.py` | `bfbefb33` |
-| P1 | 已落地 | `examples/datasets/工作区-数据源示例/`、`src/cndb/plugins/datasource/services/runner.py` | `tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | `bfbefb33` |
+| P1 | 已落地 | `src/cndb/plugins/datasource/services/runner.py` | `tests/test_seed_datasource.py`、`tests/test_datasource_runner.py` | `bfbefb33` |
 | P2 | 已落地 | `CHANGELOG.md`、`CONTEXT.md`、`src/cndb/plugins/help/services/examples.py` | `tests/test_help_examples_api.py` | `bfbefb33` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。

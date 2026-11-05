@@ -559,18 +559,18 @@ class TestBuildJobSpecWithConnection:
         assert spec.request.llm["model"] == "model-a"
 
 
-# ── ADR 0053：股市日线单序列（快照当日 + 腾讯回补同日覆盖） ─────────────────
+# ── 单序列宽表：快照当日 + 回补同日覆盖 ─────────────────
 
 
-def _make_stock_table(session: Session, engine) -> DataTable:
-    """建「股市日线」表：与示例 CSV 表头一致（单序列，无来源 / 复权方式）."""
-    table = DataTable(workspace_id=1, name="股市日线")
+def _make_series_table(session: Session, engine) -> DataTable:
+    """建「同步宽表」表：单序列宽表（代码 / 日期 / 开高低收 / 成交量）."""
+    table = DataTable(workspace_id=1, name="同步宽表")
     table.ensure_db_name()
     session.add(table)
     session.commit()
     session.refresh(table)
     specs = (
-        ("股票代码", "text"),
+        ("代码", "text"),
         ("日期", "date"),
         ("开盘", "float"),
         ("收盘", "float"),
@@ -590,7 +590,7 @@ def _make_stock_table(session: Session, engine) -> DataTable:
     return table
 
 
-def _make_stock_job(
+def _make_series_job(
     db: Session, table: DataTable, *, backfill: bool = False, **request_spec: object
 ) -> DatasourceSyncJob:
     """按示例配置的形态建单序列任务（快照 / 回补只差回补专属声明）."""
@@ -610,16 +610,16 @@ def _make_stock_job(
         cursor = {"strategy": "none"}
     job = DatasourceSyncJob(
         workspace_id=1,
-        name="股市日线（回补）" if backfill else "股市日线（快照）",
+        name="同步宽表（回补）" if backfill else "同步宽表（快照）",
         provider="http_json",
         table_id=table.id,
         request_spec=request,
         parser="json",
         entrant_param="symbol",
-        entrant_keys=["sh600519", "sz000001"],
-        match_keys=["股票代码", "日期"],
+        entrant_keys=["item-a", "item-b"],
+        match_keys=["代码", "日期"],
         field_mapping={
-            "symbol": {"name": "股票代码", "field_type": "text"},
+            "symbol": {"name": "代码", "field_type": "text"},
             "day": {"name": "日期", "field_type": "date"},
             "open": {"name": "开盘", "field_type": "float"},
             "close": {"name": "收盘", "field_type": "float"},
@@ -649,7 +649,7 @@ def _read_all(engine, table: DataTable) -> list[dict[str, object]]:
 
 SNAPSHOT_ROWS = [
     {
-        "symbol": "sh600519",
+        "symbol": "item-a",
         "day": "2024-07-01",
         "open": "1503.20",
         "close": "1519.60",
@@ -658,7 +658,7 @@ SNAPSHOT_ROWS = [
         "volume": "3100500",
     },
     {
-        "symbol": "sz000001",
+        "symbol": "item-b",
         "day": "2024-07-01",
         "open": "11.39",
         "close": "11.47",
@@ -673,7 +673,7 @@ BACKFILL_RAW = [
 ]
 
 
-def _stock_fetch(rows_by_symbol: dict[str, list[dict[str, object]]]):
+def _series_fetch(rows_by_symbol: dict[str, list[dict[str, object]]]):
     """按请求 URL 的 symbol 参数返回该标的的行（模拟真实响应按标的拆分）."""
 
     def fetch(config: FetchConfig) -> list[dict[str, object]]:
@@ -683,20 +683,20 @@ def _stock_fetch(rows_by_symbol: dict[str, list[dict[str, object]]]):
     return fetch
 
 
-class TestStockDailySingleSequenceExample:
+class TestSingleSeriesSameTable:
     """单序列写同一张表：同日只留一行、幂等可重跑、不回退到双源结构."""
 
     def test_snapshot_fills_today_and_is_idempotent(self, db_engine, db):
-        table = _make_stock_table(db, db_engine)
-        job = _make_stock_job(db, table)
-        fetch = _stock_fetch({"sh600519": [SNAPSHOT_ROWS[0]], "sz000001": [SNAPSHOT_ROWS[1]]})
+        table = _make_series_table(db, db_engine)
+        job = _make_series_job(db, table)
+        fetch = _series_fetch({"item-a": [SNAPSHOT_ROWS[0]], "item-b": [SNAPSHOT_ROWS[1]]})
 
         first = execute_job(db, job, fetch=fetch, now=NOW)
         assert first.run.status == "success"
         assert (first.run.inserted, first.run.updated) == (2, 0)
         rows = _read_all(db_engine, table)
         assert {row["日期"].isoformat() for row in rows} == {"2024-07-01"}
-        assert {row["股票代码"] for row in rows} == {"sh600519", "sz000001"}
+        assert {row["代码"] for row in rows} == {"item-a", "item-b"}
 
         second = execute_job(db, job, fetch=fetch, now=NOW)
         assert second.run.inserted == 0
@@ -704,45 +704,43 @@ class TestStockDailySingleSequenceExample:
         assert _row_count(db_engine, table) == 2
 
     def test_backfill_writes_history_and_advances_watermark(self, db_engine, db):
-        table = _make_stock_table(db, db_engine)
-        job = _make_stock_job(db, table, backfill=True)
+        table = _make_series_table(db, db_engine)
+        job = _make_series_job(db, table, backfill=True)
         parsed = [
             dict(zip(("日期", "开盘", "收盘", "最高", "最低", "成交量"), item, strict=True)) for item in BACKFILL_RAW
         ]
-        fetch = _stock_fetch({"sh600519": parsed, "sz000001": parsed})
+        fetch = _series_fetch({"item-a": parsed, "item-b": parsed})
 
         execution = execute_job(db, job, fetch=fetch, now=NOW)
         assert execution.run.status == "success"
-        # 两标的 × 两行 = 4 行（股票代码由请求维度补齐）
+        # 两标的 × 两行 = 4 行（代码由请求维度补齐）
         assert execution.run.inserted == 4
         rows = _read_all(db_engine, table)
-        assert {row["股票代码"] for row in rows} == {"sh600519", "sz000001"}
+        assert {row["代码"] for row in rows} == {"item-a", "item-b"}
         # 成交量存数据源原值（合并任务不声明 scale，ADR 0053 D8）
         assert {row["成交量"] for row in rows} == {3125400, 3100500}
         watermarks = {
             cursor.entrant: cursor.cursor_value for cursor in db.query(DatasourceEntrantCursor).filter_by(job_id=job.id)
         }
-        assert watermarks == {"sh600519": "2024-06-28", "sz000001": "2024-06-28"}
+        assert watermarks == {"item-a": "2024-06-28", "item-b": "2024-06-28"}
 
     def test_snapshot_and_backfill_share_same_row(self, db_engine, db):
-        """快照与回补同日命中同一行（幂等键 [股票代码, 日期]，后写者覆盖）."""
-        table = _make_stock_table(db, db_engine)
-        snapshot = _make_stock_job(db, table)
-        backfill = _make_stock_job(db, table, backfill=True)
+        """快照与回补同日命中同一行（幂等键 [代码, 日期]，后写者覆盖）."""
+        table = _make_series_table(db, db_engine)
+        snapshot = _make_series_job(db, table)
+        backfill = _make_series_job(db, table, backfill=True)
         parsed = [
             dict(zip(("日期", "开盘", "收盘", "最高", "最低", "成交量"), item, strict=True)) for item in BACKFILL_RAW
         ]
 
         execute_job(
-            db, snapshot, fetch=_stock_fetch({"sh600519": [SNAPSHOT_ROWS[0]], "sz000001": [SNAPSHOT_ROWS[1]]}), now=NOW
+            db, snapshot, fetch=_series_fetch({"item-a": [SNAPSHOT_ROWS[0]], "item-b": [SNAPSHOT_ROWS[1]]}), now=NOW
         )
-        execute_job(db, backfill, fetch=_stock_fetch({"sh600519": parsed, "sz000001": parsed}), now=NOW)
+        execute_job(db, backfill, fetch=_series_fetch({"item-a": parsed, "item-b": parsed}), now=NOW)
 
         rows = _read_all(db_engine, table)
-        keys = [(row["股票代码"], row["日期"].isoformat()) for row in rows]
-        assert len(keys) == len(set(keys)), "单序列下 (股票代码, 日期) 必须唯一"
-        moutai_today = [
-            row for row in rows if row["股票代码"] == "sh600519" and row["日期"].isoformat() == "2024-07-01"
-        ]
-        assert len(moutai_today) == 1
-        assert float(moutai_today[0]["收盘"]) == 1519.6
+        keys = [(row["代码"], row["日期"].isoformat()) for row in rows]
+        assert len(keys) == len(set(keys)), "单序列下 (代码, 日期) 必须唯一"
+        first_today = [row for row in rows if row["代码"] == "item-a" and row["日期"].isoformat() == "2024-07-01"]
+        assert len(first_today) == 1
+        assert float(first_today[0]["收盘"]) == 1519.6

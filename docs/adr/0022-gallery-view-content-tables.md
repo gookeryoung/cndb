@@ -2,7 +2,7 @@
 
 Status: Implemented（P0-P1 已落地，2026-10-22）
 Date: 2026-10-22
-Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/0003-view-visibility-permission-model.md`、`docs/adr/0021-home-favorite-views-panel.md`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/views/viewModes.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/cli/seed/views.py`、`examples/datasets/工作区-数据源示例/views.json`
+Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/0003-view-visibility-permission-model.md`、`docs/adr/0021-home-favorite-views-panel.md`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/views/viewModes.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py`、`src/cndb/cli/seed/views.py`
 需求卡片: `docs/requirements/0022-gallery-view-content-tables.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -13,7 +13,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 针对这两种通过LLM抓取的数据表 | 两张 CSV 去掉系统 `id` 列后放入 `examples/datasets/工作区-数据源示例/`，seed 按文件名建表；字段名按 ADR 0019 C9 统一用中文（日期 / 地区 / 标题 / 发文机构…），视图配置可直接复用到用户同结构表；同轮补两条 `llm_prompt` 同步任务（`schedule.mode=manual`） |
+| C1 | 针对这两种通过LLM抓取的数据表 | gallery 视图类型 + 7 项配置 + 后端 / seed 校验白名单；内容型示例工作区已移除，视图配置可按同结构表复用 |
 | C2 | 设计合适的视图 | 新增 `view_type=gallery`：卡片栅格（标题 / 摘要 / 彩色标签 / 日期 / 元信息），点击卡片打开行详情；`view_options` 七项由 `GALLERY_OPTIONS` 定义 |
 | C3 | 用于用户查看资讯 | 两表各 5-7 个视图（画廊默认 + grid + kanban + matrix / calendar + chart + 过滤视图），配置见 §Decision 9 |
 | C4 | 用于分享资讯 | 视图仍走 ADR 0003 三档可见性；seed `scope=global` → `ViewVisibility.TABLE`，表内成员均可见；分享用深链与收藏，不扩匿名公开分享（ADR 0003 D5） |
@@ -120,7 +120,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 **迁移 / 备份**：`tests/test_backup_seed_roundtrip.py`（10 种类型全覆盖、列表型字段引用可解析、CSV 表头静态校验通过）。
 
-**e2e（前端）**：`frontend/tests/e2e/critical/gallery-view.spec.ts`（默认落画廊、卡片数与标签、点击展开行详情、第二张表同样渲染）。
+**前端（单测）**：`frontend/src/pages/grid/views/GalleryView.test.tsx`（卡片数、标签 / 摘要、点击展开行详情）。
 
 ### 8. 分期
 
@@ -188,7 +188,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `frontend/src/pages/grid/views/GalleryView.tsx`、`frontend/src/pages/grid/views/galleryBoard.ts`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`src/cndb/plugins/tables/routers/views.py` | `frontend/src/pages/grid/views/GalleryView.test.tsx`、`frontend/src/pages/grid/views/galleryBoard.test.ts`、`tests/test_views_api.py` | 1da65a0f |
-| P1 | 已落地 | `examples/datasets/工作区-数据源示例/views.json`、`src/cndb/cli/seed/views.py` | `tests/test_backup_seed_roundtrip.py`、`frontend/tests/e2e/critical/gallery-view.spec.ts` | 1da65a0f |
+| P1 | 已落地 | `src/cndb/cli/seed/views.py` | `tests/test_backup_seed_roundtrip.py`、`frontend/src/pages/grid/views/GalleryView.test.tsx` | 1da65a0f |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -196,7 +196,7 @@ Related: `docs/requirements/0022-gallery-view-content-tables.md`、`docs/adr/000
 
 - 当前阶段：P0-P1 已落地（gallery 类型 + 组件 + 配置 schema + 注册清单 + 后端/seed 校验；两表 CSV + 12 个 seed 视图）
 - 追加（2026-10-23，ADR 0019 C9）：两表字段随 ADR 0019 C9 中文化（`日期,地区,来源,摘要,标题,主题,趋势判断,链接` / `日期,发文机构,政策类型,标题,摘要,合规要求,适用部门,风险等级,落实状态,生效日期,链接`；后者由 ADR 0032 替换原生活类示例而来），`views.json` 的 12 个视图字段引用、`fields.json` 必填设置、`datasource.json` 新增的两条 `llm_prompt` 任务（中文映射 / 幂等键，`manual` 调度）同轮改完；e2e 只按卡片数与文案断言，不依赖字段名
-- 已完成：前端 `172` 个测试文件 / `2115` 例全绿；后端 `make test` 通过；`make check-fast` 全绿；e2e `gallery-view.spec.ts` 本地实跑通过；`bundle:budget` 全绿
+- 已完成：前端 `172` 个测试文件 / `2115` 例全绿；后端 `make test` 通过；`make check-fast` 全绿；`GalleryView.test.tsx` 全绿；`bundle:budget` 全绿
 - 下一步：合并后由人确认 `Status`；如需超 2000 行全量画廊另立行虚拟化 ADR；观察默认画廊视图下「新增行」入口的发现性反馈
-- 已知坑：① 手工构造 / 旧版导出的 CSV 若首列是 `id` 必须先删（数据表导出已不带 `id`；带 `id` 建表会生成同名业务字段，`_row_to_dict` 又用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部情报 / 全部政策」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在；⑥ **视图状态是单例 store，离开表页不清理**：`reset()` 与「视图匹配」effect 在同一 commit 内先后执行，匹配逻辑必须读 `useGridViewStore.getState()` 的实时值（用渲染闭包会误判「目标已就位」跳过 `loadView`，返回表页时默认画廊退化成空表格）；跨表首帧由 `store.tableKey` 归属校验兜住脏 `filters` / `sortings`。回归用例：`GridPage.landingView.test.tsx`、e2e `gallery-view.spec.ts`
+- 已知坑：① 手工构造 / 旧版导出的 CSV 若首列是 `id` 必须先删（数据表导出已不带 `id`；带 `id` 建表会生成同名业务字段，`_row_to_dict` 又用物理 id 覆盖同名字段，数据不可读）；② 列表型 option 直接 `in set` 会 TypeError → 500，必须逐项校验；③ 非 grid 上限 2000，画廊每批 48 +「加载更多」；④ 默认画廊会让「新增行」不在首屏（切「全部情报 / 全部政策」一键可达，有意取舍）；⑤ e2e 不能等 grid 专属的「新增行」按钮作就绪信号，画廊默认视图下不存在；⑥ **视图状态是单例 store，离开表页不清理**：`reset()` 与「视图匹配」effect 在同一 commit 内先后执行，匹配逻辑必须读 `useGridViewStore.getState()` 的实时值（用渲染闭包会误判「目标已就位」跳过 `loadView`，返回表页时默认画廊退化成空表格）；跨表首帧由 `store.tableKey` 归属校验兜住脏 `filters` / `sortings`。回归用例：`GridPage.landingView.test.tsx`、`GalleryView.test.tsx`
 - 最近一次全绿：2026-10-23（`make check-fast` + 前端全量 vitest 2115 passed + 画廊切页往返浏览器实测）

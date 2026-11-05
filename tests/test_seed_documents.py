@@ -428,7 +428,7 @@ class TestRealDatasetDocuments:
         all_workspaces = {
             _workspace_display_name(p.name) for p in datasets_dir.iterdir() if p.is_dir() and not p.name.startswith(".")
         }
-        # 含 documents/ 的工作区必须是真实工作区子集；纯数据示例工作区（如数据源示例）可以没有文档
+        # 含 documents/ 的工作区必须是真实工作区子集；纯数据示例工作区可以没有文档
         assert set(self._workspace_dirs(datasets_dir)) <= all_workspaces
 
         counts: dict[str, int] = {}

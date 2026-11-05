@@ -553,7 +553,10 @@ class TestSeedViewsIntegrity:
             if isinstance(view_list, list)  # 跳过 _comment 等元数据字符串
             for vc in view_list
         }
-        assert types == self.VALID_VIEW_TYPES, f"11 种视图模式应全部覆盖，实际: {types}"
+        # gallery 示例视图随「数据源示例」工作区移除，seed 只覆盖其余 10 种；
+        # gallery 能力由 frontend/src/pages/grid/views/GalleryView.test.tsx 覆盖
+        expected = self.VALID_VIEW_TYPES - {"gallery"}
+        assert types == expected, f"10 种 seed 视图模式应全部覆盖（gallery 示例已移除），实际: {types}"
 
 
 class TestCoerceRowValueTypes:

@@ -188,15 +188,14 @@ def test_seed_pipelines_no_pipeline_dir_returns_zero(db, db_engine, tmp_path):
 
 
 def test_real_pipeline_examples_are_valid(db, db_engine, tmp_path):
-    """真实 examples 三个示例：编译通过、表引用真实存在于对应 CSV 表头、触发声明合法."""
+    """真实 examples 两个示例：编译通过、表引用真实存在于对应 CSV 表头、触发声明合法."""
     from cndb.cli.seed import paths as seed_paths
     from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
 
     base = Path(__file__).resolve().parents[1] / "examples" / "datasets"
     ws_yamls = seed_paths._get_workspace_pipeline_yamls(base)
-    assert set(ws_yamls) == {"某企业销售管理", "数据源示例"}
+    assert set(ws_yamls) == {"某企业销售管理"}
     assert [p.name for p in ws_yamls["某企业销售管理"]] == ["工作区综合巡检.yaml", "销售数据质量巡检.yaml"]
-    assert [p.name for p in ws_yamls["数据源示例"]] == ["同步后行情校验.yaml", "政策台账体检.yaml"]
 
     names: set[str] = set()
     for ws_name, yamls in ws_yamls.items():

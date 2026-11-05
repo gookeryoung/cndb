@@ -85,7 +85,7 @@ const overview: HelpTopic = {
                             <Strong>教程&amp;最佳实践</Strong>：具体功能怎么配、怎么用才不出错。
                         </>,
                         <>
-                            <Strong>典型示例</Strong>：三套可下载的业务场景数据，照着练一遍。
+                            <Strong>典型示例</Strong>：两套可下载的业务场景数据，照着练一遍。
                         </>,
                         <>
                             <Strong>系统配置</Strong>：工作区、个人、数据源、管理台与部署。
