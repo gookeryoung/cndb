@@ -291,7 +291,8 @@ dependencies = [
     { name = "alembic" },
     { name = "bcrypt" },
     { name = "chardet" },
-    { name = "cryptography" },
+    { name = "cryptography", version = "42.0.5", source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }, marker = "sys_platform == 'win32'" },
+    { name = "cryptography", version = "42.0.8", source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }, marker = "sys_platform != 'win32'" },
     { name = "fastapi" },
     { name = "fastapi-offline" },
     { name = "httpx2" },
@@ -345,11 +346,11 @@ dev = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14.0" },
     { name = "bcrypt", marker = "sys_platform != 'win32'", specifier = ">=3.2.2" },
-    { name = "bcrypt", marker = "sys_platform == 'win32'", specifier = ">=3.2.2,<6.0.0" },
+    { name = "bcrypt", marker = "sys_platform == 'win32'", specifier = ">=3.2.2,<4.0.0" },
     { name = "chardet", specifier = ">=7.6.0" },
     { name = "cndb", extras = ["lint", "test"], marker = "extra == 'dev'" },
     { name = "cryptography", marker = "sys_platform != 'win32'", specifier = ">=42.0.4" },
-    { name = "cryptography", marker = "sys_platform == 'win32'", specifier = ">=42.0.4,<51.0.0" },
+    { name = "cryptography", marker = "sys_platform == 'win32'", specifier = ">=42.0.4,<42.0.6" },
     { name = "fastapi", marker = "sys_platform != 'win32'", specifier = ">=0.115.0" },
     { name = "fastapi", marker = "sys_platform == 'win32'", specifier = ">=0.115.0,<0.126.0" },
     { name = "fastapi-offline", specifier = ">=1.7.0" },
@@ -466,8 +467,31 @@ wheels = [
 
 [[package]]
 name = "cryptography"
+version = "42.0.5"
+source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform == 'win32'",
+    "python_full_version < '3.14' and sys_platform == 'win32'",
+]
+dependencies = [
+    { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
+]
+sdist = { url = "https://mirrors.cloud.tencent.com/pypi/packages/13/9e/a55763a32d340d7b06d045753c186b690e7d88780cafce5f88cb931536be/cryptography-42.0.5.tar.gz", hash = "sha256:6fe07eec95dfd477eb9530aef5bead34fec819b3aaf6c5bd6d20565da607bfe1" }
+wheels = [
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/86/7f/1c6bb9ef3c4e5e2a438ab2b7ac85af52a9aa9a9a9a326b89e1b25659b598/cryptography-42.0.5-cp37-abi3-win32.whl", hash = "sha256:b6cd2203306b63e41acdf39aa93b86fb566049aeb6dc489b70e34bcd07adca74" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/36/33/ed48350d38a6a151dd3cf1850a5966b86c5752212ddaaceb44e65bf412e5/cryptography-42.0.5-cp37-abi3-win_amd64.whl", hash = "sha256:98d8dc6d012b82287f2c3d26ce1d2dd130ec200c8679b6213b3c73c08b2b7940" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/93/56/2d8d8903513185743bc6f763797fcba1718093190943735aa2ce8f3f0328/cryptography-42.0.5-cp39-abi3-win32.whl", hash = "sha256:1f71c10d1e88467126f0efd484bd44bca5e14c664ec2ede64c32f20875c0d413" },
+    { url = "https://mirrors.cloud.tencent.com/pypi/packages/e3/14/13acd84f2a8303d9410ba2e24534a9d90c2817583636a91c4f314224768d/cryptography-42.0.5-cp39-abi3-win_amd64.whl", hash = "sha256:a011a644f6d7d03736214d38832e030d8268bcff4a41f728e6030325fea3e400" },
+]
+
+[[package]]
+name = "cryptography"
 version = "42.0.8"
 source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }
+resolution-markers = [
+    "python_full_version >= '3.14' and sys_platform != 'win32'",
+    "python_full_version < '3.14' and sys_platform != 'win32'",
+]
 dependencies = [
     { name = "cffi", marker = "platform_python_implementation != 'PyPy'" },
 ]
@@ -483,8 +507,6 @@ wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/25/c9/86f04e150c5d5d5e4a731a2c1e0e43da84d901f388e3fea3d5de98d689a7/cryptography-42.0.8-cp37-abi3-musllinux_1_1_x86_64.whl", hash = "sha256:ad803773e9df0b92e0a817d22fd8a3675493f690b96130a5e24f1b8fabbea9c7" },
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/53/c2/903014dafb7271fb148887d4355b2e90319cad6e810663be622b0c933fc9/cryptography-42.0.8-cp37-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:2f66d9cd9147ee495a8374a45ca445819f8929a3efcd2e3df6428e46c3cbb10b" },
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/95/26/82d704d988a193cbdc69ac3b41c687c36eaed1642cce52530ad810c35645/cryptography-42.0.8-cp37-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:d45b940883a03e19e944456a558b67a41160e367a719833c53de6911cabba2b7" },
-    { url = "https://mirrors.cloud.tencent.com/pypi/packages/cf/71/4e0d05c9acd638a225f57fb6162aa3d03613c11b76893c23ea4675bb28c5/cryptography-42.0.8-cp37-abi3-win32.whl", hash = "sha256:a0c5b2b0585b6af82d7e385f55a8bc568abff8923af147ee3c07bd8b42cda8b2" },
-    { url = "https://mirrors.cloud.tencent.com/pypi/packages/06/0f/78da3cad74f2ba6c45321dc90394d70420ea846730dc042ef527f5a224b5/cryptography-42.0.8-cp37-abi3-win_amd64.whl", hash = "sha256:57080dee41209e556a9a4ce60d229244f7a66ef52750f813bfbe18959770cfba" },
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/60/12/f064af29190cdb1d38fe07f3db6126091639e1dece7ec77c4ff037d49193/cryptography-42.0.8-cp39-abi3-macosx_10_12_universal2.whl", hash = "sha256:dea567d1b0e8bc5764b9443858b673b734100c2871dc93163f58c46a97a83d28" },
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/43/c2/4a3eef67e009a522711ebd8ac89424c3a7fe591ece7035d964419ad52a1d/cryptography-42.0.8-cp39-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:c4783183f7cb757b73b2ae9aed6599b96338eb957233c58ca8f49a49cc32fd5e" },
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/49/1c/9f6d13cc8041c05eebff1154e4e71bedd1db8e174fff999054435994187a/cryptography-42.0.8-cp39-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:a0608251135d0e03111152e41f0cc2392d1e74e35703960d4190b2e0f4ca9c70" },
@@ -494,8 +516,6 @@ wheels = [
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/0f/38/85c74d0ac4c540780e072b1e6f148ecb718418c1062edcb20d22f3ec5bbb/cryptography-42.0.8-cp39-abi3-musllinux_1_1_x86_64.whl", hash = "sha256:cafb92b2bc622cd1aa6a1dce4b93307792633f4c5fe1f46c6b97cf67073ec961" },
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/89/f4/a8b982e88eb5350407ebdbf4717b55043271d878705329e107f4783555f2/cryptography-42.0.8-cp39-abi3-musllinux_1_2_aarch64.whl", hash = "sha256:31f721658a29331f895a5a54e7e82075554ccfb8b163a18719d342f5ffe5ecb1" },
     { url = "https://mirrors.cloud.tencent.com/pypi/packages/fd/2b/be327b580645927bb1a1f32d5a175b897a9b956bc085b095e15c40bac9ed/cryptography-42.0.8-cp39-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:b297f90c5723d04bcc8265fc2a0f86d4ea2e0f7ab4b6994459548d3a6b992a14" },
-    { url = "https://mirrors.cloud.tencent.com/pypi/packages/3c/d5/c6a78ffccdbe4516711ebaa9ed2c7eb6ac5dfa3dc920f2c7e920af2418b0/cryptography-42.0.8-cp39-abi3-win32.whl", hash = "sha256:2f88d197e66c65be5e42cd72e5c18afbfae3f741742070e3019ac8f4ac57262c" },
-    { url = "https://mirrors.cloud.tencent.com/pypi/packages/a2/7b/b0d330852dd5953daee6b15f742f15d9f18e9c0154eb4cfcc8718f0436da/cryptography-42.0.8-cp39-abi3-win_amd64.whl", hash = "sha256:fa76fbb7596cc5839320000cdd5d0955313696d9511debab7ee7278fc8b5c84a" },
 ]
 
 [[package]]
@@ -1319,7 +1339,8 @@ wheels = [
 
 [package.optional-dependencies]
 cryptography = [
-    { name = "cryptography" },
+    { name = "cryptography", version = "42.0.5", source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }, marker = "sys_platform == 'win32'" },
+    { name = "cryptography", version = "42.0.8", source = { registry = "https://mirrors.cloud.tencent.com/pypi/simple" }, marker = "sys_platform != 'win32'" },
 ]
 
 [[package]]
