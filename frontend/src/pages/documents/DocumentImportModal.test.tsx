@@ -211,17 +211,20 @@ describe('通用导入弹窗', () => {
 
     const summary = await screen.findByTestId('file-import-summary')
     expect(summary).toHaveTextContent('文件 4 个')
-    expect(summary).toHaveTextContent('可导入 3 篇')
+    expect(summary).toHaveTextContent('转 Markdown 3 篇')
     expect(summary).toHaveTextContent('原样存档 1 个')
     expect(summary).toHaveTextContent('同名冲突 1 篇')
     expect(screen.getByTestId('file-import-conflict')).toBeInTheDocument()
     expect(screen.getByTestId('file-import-preview')).toHaveTextContent('笔记/设计.docx')
+    // 转换与存档两种口径在预览中显式标注（统一说法：转 Markdown / 原样存档）
+    expect(screen.getAllByTestId('file-import-convert-tag')[0]).toHaveTextContent('转 Markdown')
+    expect(screen.getAllByTestId('file-import-asset-tag')[0]).toHaveTextContent('原样存档')
     expect(screen.getByText(/bad.txt：不支持的格式/)).toBeInTheDocument()
     expect(screen.getByTestId('file-import-picked')).toHaveTextContent('已选 1 个文件')
     expect(documentsApi.fileImportAnalyze).toHaveBeenCalledWith(WID, {
       entries: [{ file: expect.any(File), path: '说明.md' }],
       parentId: null,
-      mhtmlMode: 'archive',
+      mhtmlMode: 'convert',
       docxMode: 'convert',
     })
   })
@@ -275,8 +278,7 @@ describe('通用导入弹窗', () => {
     pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' }), new File(['x'], '网页.mhtml')])
     await screen.findByTestId('file-import-summary')
 
-    // 先切到转换模式（重解析期间开关行卸载），稳定后再点选项与关闭内嵌图片开关
-    fireEvent.click(screen.getByTestId('file-import-mhtml-convert'))
+    // 默认「转 Markdown」：内嵌图片开关可用（原样存档的 MHTML 才不适用）
     const attachmentsSwitch = await screen.findByTestId('file-import-attachments')
     expect(attachmentsSwitch).toBeEnabled()
     fireEvent.click(screen.getByLabelText(/跳过同名文档/))
@@ -298,83 +300,79 @@ describe('通用导入弹窗', () => {
     )
   })
 
-  it('MHTML 模式开关：默认关、切换传 convert 并重解析、归档态禁用内嵌图片开关', async () => {
+  it('处理方式分段：默认转 Markdown，切到原样存档后两种模式同时下发并重解析', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
     pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' }), new File(['x'], '网页.mhtml')])
     await screen.findByTestId('file-import-summary')
 
-    // 开关行随预览出现：默认关，archive 态内嵌图片开关禁用（原样存档时不适用）
-    const convertSwitch = screen.getByTestId('file-import-mhtml-convert')
-    expect(convertSwitch).not.toBeChecked()
-    expect(screen.getByTestId('file-import-attachments')).toBeDisabled()
+    const mode = await screen.findByTestId('file-import-process-mode')
+    expect(within(mode).getByText('转 Markdown')).toBeInTheDocument()
+    expect(within(mode).getByText('原样存档')).toBeInTheDocument()
+    // 两个互斥项：默认「转 Markdown」，内嵌图片开关可用
+    expect(within(mode).getByRole('radio', { name: '转 Markdown' })).toBeChecked()
+    expect(screen.getByTestId('file-import-attachments')).toBeEnabled()
 
-    fireEvent.click(convertSwitch)
+    fireEvent.click(within(mode).getByRole('radio', { name: '原样存档' }))
     await waitFor(() => expect(documentsApi.fileImportAnalyze).toHaveBeenCalledTimes(2))
     expect(documentsApi.fileImportAnalyze).toHaveBeenLastCalledWith(
       WID,
-      expect.objectContaining({ mhtmlMode: 'convert' }),
+      expect.objectContaining({ mhtmlMode: 'archive', docxMode: 'archive' }),
     )
-    // convert 态：内嵌图片开关恢复可用（默认开）
-    expect(screen.getByTestId('file-import-attachments')).toBeEnabled()
+    // 重解析期间选项区卸载后重挂载，需重新取节点断言选中态
+    const remounted = await screen.findByTestId('file-import-process-mode')
+    expect(within(remounted).getByRole('radio', { name: '原样存档' })).toBeChecked()
+    // 原样存档的 MHTML 素材已随原件保留，内嵌图片开关不适用
+    expect(screen.getByTestId('file-import-attachments')).toBeDisabled()
 
     fireEvent.click(screen.getByTestId('file-import-submit'))
     await waitFor(() => expect(documentsApi.fileImport).toHaveBeenCalledTimes(1))
     expect(documentsApi.fileImport).toHaveBeenCalledWith(
       WID,
-      expect.objectContaining({ importAttachments: true, mhtmlMode: 'convert' }),
+      expect.objectContaining({ importAttachments: true, mhtmlMode: 'archive', docxMode: 'archive' }),
     )
   })
 
-  it('Word 原样存档开关：默认关、切换传 archive 并重解析、导入带 docxMode', async () => {
+  it('Word 批次切「原样存档」同样重解析并同时下发 docxMode', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
     pick([new File(['PK'], '说明书.docx', { type: 'application/octet-stream' })])
     await screen.findByTestId('file-import-summary')
 
-    const archiveSwitch = screen.getByTestId('file-import-docx-archive')
-    expect(archiveSwitch).not.toBeChecked()
-
-    fireEvent.click(archiveSwitch)
+    const mode = screen.getByTestId('file-import-process-mode')
+    fireEvent.click(within(mode).getByRole('radio', { name: '原样存档' }))
     await waitFor(() => expect(documentsApi.fileImportAnalyze).toHaveBeenCalledTimes(2))
     expect(documentsApi.fileImportAnalyze).toHaveBeenLastCalledWith(
       WID,
-      expect.objectContaining({ docxMode: 'archive' }),
+      expect.objectContaining({ mhtmlMode: 'archive', docxMode: 'archive' }),
     )
 
     fireEvent.click(screen.getByTestId('file-import-submit'))
     await waitFor(() => expect(documentsApi.fileImport).toHaveBeenCalledTimes(1))
     expect(documentsApi.fileImport).toHaveBeenCalledWith(
       WID,
-      expect.objectContaining({ docxMode: 'archive' }),
+      expect.objectContaining({ mhtmlMode: 'archive', docxMode: 'archive' }),
     )
   })
 
-  it('批次无 Word（如 PDF）时「Word 原样存档」开关禁用', async () => {
+  it('批次没有 Word / MHTML（如 PDF）时「处理方式」分段整体禁用', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
     pick([new File(['%PDF'], '报告.pdf', { type: 'application/pdf' })])
     await screen.findByTestId('file-import-summary')
 
-    expect(screen.getByTestId('file-import-docx-archive')).toBeDisabled()
-    expect(screen.getByText('Word 原样存档')).toBeInTheDocument()
-  })
-
-  it('批次无 MHTML（如 PDF）时「MHTML 转 Markdown」开关禁用', async () => {
-    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
-    pick([new File(['%PDF'], '报告.pdf', { type: 'application/pdf' })])
-    await screen.findByTestId('file-import-summary')
-
-    const convertSwitch = screen.getByTestId('file-import-mhtml-convert')
-    expect(convertSwitch).toBeDisabled()
-    expect(screen.getByText('MHTML 转 Markdown')).toBeInTheDocument()
-    // 内嵌图片开关与 MHTML 无关的批次保持可用（原样存档不适用只针对批次含 MHTML 时）
+    const mode = screen.getByTestId('file-import-process-mode')
+    expect(within(mode).getByRole('radio', { name: '转 Markdown' })).toBeDisabled()
+    expect(within(mode).getByRole('radio', { name: '原样存档' })).toBeDisabled()
+    // 内嵌图片开关与 Word / MHTML 无关的批次保持可用
     expect(screen.getByTestId('file-import-attachments')).toBeEnabled()
   })
 
-  it('批次仅含 .mht（MHTML 别名）时「MHTML 转 Markdown」开关可用', async () => {
+  it('批次仅含 .mht（MHTML 别名）时「处理方式」分段可用', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
     pick([new File(['x'], '网页存档.mht')])
     await screen.findByTestId('file-import-summary')
 
-    expect(screen.getByTestId('file-import-mhtml-convert')).toBeEnabled()
+    const mode = screen.getByTestId('file-import-process-mode')
+    expect(within(mode).getByRole('radio', { name: '转 Markdown' })).toBeEnabled()
+    expect(within(mode).getByRole('radio', { name: '原样存档' })).toBeEnabled()
   })
 
   it('导入完成后展示统计、告警与跳过明细', async () => {

@@ -22,7 +22,7 @@
 | C3 | （安全口径） | 预览 HTML 一律在 `sandbox` 禁脚本 iframe 渲染；后端输出全部文本转义、加 `Content-Security-Policy: sandbox` + `X-Content-Type-Options: nosniff`；预览读权限与 `/asset` 同源（工作区成员 + 文档可见性） | `documents/services/preview/`、`documents/routers/documents.py`、`frontend/src/pages/documents/DocumentAssetView.tsx` | 接口层断言响应头与 404；前端单测断言 sandbox 属性 |
 | C4 | （有界口径） | 解析与渲染有硬上限：工作表数 / 单表行列 / 总单元格 / 单元格文本长度 / 内嵌图片数量与总字节 / 输出 HTML 体积；超限截断并在页面提示，不随原件体积线性膨胀内存 | `documents/services/preview/office.py` | 判定层单测：超限截断标记、空文档、损坏原件报错 |
 | C5 | （兼容口径） | 默认导入行为不变：`.docx` 仍转 Markdown、`xlsx/xls/pptx/ppt/pdf/图片` 仍原样存档；旧版二进制 `.xls` / `.doc` 无预览能力时保持下载卡；未 archive 的普通 Markdown 文档不受影响；备份 / 恢复无需协议变更 | `documents/services/importers/`、`workspaces/services/` | 既有导入 / 备份单测回归通过 |
-| C6 | （展示口径） | 格式映射新增 `word` → 原件族（Word 图标 / 蓝色 / 只读标记），文档树 / 列表 / 搜索统一取用；导入弹窗新增「Word 原样存档」开关，切换后重新解析预览 | `frontend/src/components/Document/docFormat.ts`、`frontend/src/pages/documents/DocumentImportModal.tsx` | 前端单测：格式映射 / 开关切换触发重解析 |
+| C6 | （展示口径） | 格式映射新增 `word` → 原件族（Word 图标 / 蓝色 / 只读标记），文档树 / 列表 / 搜索统一取用；导入弹窗用统一「处理方式」分段（转 Markdown / 原样存档，与 MHTML 共用），切换后重新解析预览 | `frontend/src/components/Document/docFormat.ts`、`frontend/src/pages/documents/DocumentImportModal.tsx` | 前端单测：格式映射 / 开关切换触发重解析 |
 | C7 | （文档口径） | 帮助教程「文档导入」条目补充 Word 原样存档与在线预览说明；CHANGELOG 记录新增能力；CONTEXT.md 术语补 `word` 原件族与预览口径 | `frontend/src/pages/help/content/tutorials.tsx`、`CHANGELOG.md`、`CONTEXT.md` | `make check-docs` |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。

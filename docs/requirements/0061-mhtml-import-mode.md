@@ -1,4 +1,4 @@
-# 需求卡片：MHTML 导入可选转换（转 Markdown 或原样存档，默认不转换）
+# 需求卡片：MHTML 导入可选转换（转 Markdown 或原样存档）
 
 - 编号：0061（与 ADR `docs/adr/0061-*.md` 同号，卡片存 `docs/requirements/0061-mhtml-import-mode.md`）
 - 来源 / 提出人：需求方（会话）
@@ -11,20 +11,22 @@
 
 > 导入的MTHML能否选择转MD或者不转换，默认不转换。
 
-方案口径（需求方已确认的讨论结论）：批次级开关、默认原样存档、保留 ADR 0049 转换链路、预览随模式联动、默认值变更需文档说明。
+方案口径（需求方已确认的讨论结论）：批次级开关、保留 ADR 0049 转换链路、预览随模式联动、默认值变更需文档说明。
+
+> 2026-11-05 用户追加：通用导入弹窗的「转 Markdown / 原样存档」统一为一个互斥分段控件（D 处理方式），同时作用于 Word 与 MHTML；默认改为「转 Markdown」，术语统一为「转 Markdown」「原样存档」。后端 `mhtml_mode` 缺省值仍为 `archive`（兼容不传参调用）。
 
 ## 可实施约束（C1..Cn）
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
 | C1 | 能否选择转MD或者不转换 | `POST /import/files/analyze` 与 `POST /import/files` 新增可选表单参数 `mhtml_mode: 'convert' \| 'archive'`；缺省 `archive`（向后兼容调用方不传参） | documents plugin `routers/file_import.py` | 接口单测：缺省 / convert / archive 三种取值 |
-| C2 | 默认不转换 | 缺省（`archive`）时 `.mhtml` / `.mht` 走原样存档 assets 通道（与 PDF 同口径：`is_asset`、不转 Markdown、不参与编辑、可下载原件） | `services/importers/reader.py`、`importer.py` | 后端单测：默认导入后生成素材文档而非 Markdown 文档 |
+| C2 | 默认值 | 接口缺省（`archive`）时 `.mhtml` / `.mht` 走原样存档 assets 通道（与 PDF 同口径：`is_asset`、不转 Markdown、不参与编辑、可下载原件）；前端导入弹窗默认提交 `convert`（统一「处理方式」分段，见 C6） | `services/importers/reader.py`、`importer.py`、`DocumentImportModal.tsx` | 后端单测：缺省参数生成素材文档；前端单测：默认选中「转 Markdown」 |
 | C3 | 选择转MD | `mhtml_mode='convert'` 时沿用 ADR 0049 转换链路（`convert_mhtml` → Markdown + 素材展开），行为与现状一致 | `services/importers/mhtml.py` | 后端单测：convert 模式产物与现状快照一致 |
 | C4 | （性能口径） | `_expand_mhtml_resources` 仅在 convert 模式执行，archive 模式不解包素材索引 | `services/importers/importer.py:130` | 后端单测：archive 模式不触发素材展开 |
 | C5 | （预览一致性） | analyze 预览随 `mhtml_mode` 联动：archive 时 mhtml 项标记原样存档（`is_asset` / format 正确），convert 时为可导入文档；预览计数与落库结果一致 | `services/importers/reader.py`、`importer.py` | 后端单测：同一批次两种模式的 analyze 断言 |
-| C6 | （前端开关） | 通用导入弹窗确认区新增「MHTML 转 Markdown」开关，默认关；开关状态随 analyze / import 提交传递；archive（开关关）且批次含 MHTML 时「导入内嵌图片」开关禁用并提示不适用（批次不含 MHTML 时保持可用） | frontend `DocumentImportModal.tsx`、`api/documents.ts` | 前端单测：默认值、开关切换后提交参数、禁用态 |
+| C6 | （前端处理方式） | 通用导入弹窗确认区用「处理方式」分段控件（`Segmented`）表达两个互斥项：「转 Markdown」「原样存档」，默认「转 Markdown」；同一选择同时下发 `mhtml_mode` 与 `docx_mode`（Word / MHTML 共用）；批次不含 Word / MHTML 时分段整体禁用；选「原样存档」且批次含 MHTML 时「导入内嵌图片」开关禁用并提示不适用 | frontend `DocumentImportModal.tsx`、`api/documents.ts` | 前端单测：默认值、切换后两个参数同时下发并重解析、禁用态 |
 | C7 | （阅读体验，best effort） | DocumentAssetView 对 `content_type=mhtml` 尝试 `<iframe>` 内嵌预览；若现有白名单机制不支持则退化为仅下载（不阻塞验收） | frontend `DocumentAssetView.tsx` | 前端单测或人工验证 |
-| C8 | （行为变更说明） | 默认值从「转换」变为「不转换」属行为变更：CHANGELOG 记录，帮助教程文案同步（含两种模式差异） | `CHANGELOG`、`frontend/src/pages/help/content/tutorials.tsx` | `make check-docs` |
+| C8 | （行为变更说明） | 2026-11-05 起默认值改为「转 Markdown」（Word 维持原默认，MHTML 由原样存档改为转 Markdown）：CHANGELOG 记录，帮助教程文案同步为「转 Markdown / 原样存档」统一说法 | `CHANGELOG`、`frontend/src/pages/help/content/tutorials.tsx` | `make check-docs` |
 | C9 | （回归口径） | Obsidian 库导入（vault）不受影响：vault 链路不新增 `mhtml_mode`，行为不变 | `services/importers/` vault 相关 | 后端 vault 导入单测回归通过 |
 
 约束编号在 ADR 中原样引用；不重编号、不合并。
@@ -48,7 +50,7 @@
 ## 未决问题
 
 - [x] 开关粒度：批次级开关（不做每文件勾选）——需求方已确认
-- [x] 默认值：`archive`（不转换）——需求方已确认；行为变更经 C8 说明
+- [x] 默认值：接口缺省 `archive`；前端统一分段默认「转 Markdown」（2026-11-05 用户追加）
 - [x] mhtml 原样存档后的阅读体验：优先尝试 iframe 内嵌预览，不支持则退化为仅下载，不阻塞验收（C7 为 best effort）——待需求方确认
 - [x] 方案分级：S1（跨前后端 + 默认值口径变化，无架构分叉），写卡片不强制 ADR；若实现中预览字段联动扩散再升级 S2——待需求方确认
 

@@ -6,7 +6,7 @@
  * 2. ``POST /import/files`` 按确认的冲突策略 / 状态 / 附件开关真正导入。
  *
  * 格式化口径由后端决定（docx / html → Markdown、标题识别、清理多余空白；docx 可选原件存档），前端只把「会发生什么」
- * 讲清楚：可导入篇数、待建文件夹、同名冲突、被跳过的文件与告警。
+ * 讲清楚：转 Markdown / 原样存档的篇数、待建文件夹、同名冲突、被跳过的文件与告警。
  */
 import { useMemo, useRef, useState } from 'react'
 import {
@@ -16,12 +16,16 @@ import {
   Empty,
   Modal,
   Radio,
+  Segmented,
   Space,
   Table,
   Tag as AntTag,
+  Tooltip,
   Typography,
 } from 'antd'
-import { AppstoreOutlined, FileTextOutlined, FileZipOutlined } from '@ant-design/icons'
+import {
+  AppstoreOutlined, FileTextOutlined, FileZipOutlined, QuestionCircleOutlined,
+} from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { VaultImportForm } from './ObsidianImportModal'
 import {
@@ -40,9 +44,7 @@ import {
   type FileImportAnalyzeResult,
   type FileImportEntry,
   type FileImportPreviewItem,
-  type DocxImportMode,
   type FileImportResult,
-  type MhtmlImportMode,
   type VaultConflictPolicy,
 } from '@/api/documents'
 
@@ -57,6 +59,14 @@ interface Props {
 }
 
 type ImportMode = 'single' | 'archive' | 'vault'
+
+/** 处理方式（互斥）：把源格式转成可编辑 Markdown，或保留原件原样存档 */
+type ProcessMode = 'convert' | 'archive'
+
+const PROCESS_OPTIONS: Array<{ value: ProcessMode; label: string }> = [
+  { value: 'convert', label: '转 Markdown' },
+  { value: 'archive', label: '原样存档' },
+]
 
 const FORMAT_LABEL: Record<string, string> = {
   '.md': 'Markdown',
@@ -96,18 +106,18 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const [result, setResult] = useState<FileImportResult | null>(null)
   const [conflict, setConflict] = useState<VaultConflictPolicy>('rename')
   const [importAttachments, setImportAttachments] = useState(true)
-  /** MHTML 处理模式：默认原样存档，打开后转 Markdown（0061 C6） */
-  const [mhtmlMode, setMhtmlMode] = useState<MhtmlImportMode>('archive')
-  /** Word 处理模式：默认转 Markdown（兼容 0010），打开后原件存档 + 在线预览（0087 C2） */
-  const [docxMode, setDocxMode] = useState<DocxImportMode>('convert')
+  /** 处理方式：转 Markdown / 原样存档（互斥，统一作用于 Word 与 MHTML） */
+  const [processMode, setProcessMode] = useState<ProcessMode>('convert')
   const [status, setStatus] = useState<'draft' | 'published'>('draft')
 
-  /** 批次里是否含 MHTML（.mhtml / .mht）：不含时「MHTML 转 Markdown」开关禁用（仅对 MHTML 生效） */
+  /** 批次里是否含 MHTML（.mhtml / .mht） */
   const hasMhtml = entries.some(entry => /\.(mhtml|mht)$/i.test(entry.path))
-  /** 批次里是否含 Word（.docx）：不含时「Word 原样存档」开关禁用（仅对 docx 生效） */
+  /** 批次里是否含 Word（.docx） */
   const hasDocx = entries.some(entry => /\.docx$/i.test(entry.path))
+  /** 只有 Word / MHTML 支持两种处理方式；Markdown / HTML 固定转 Markdown，PDF / Office / 图片固定原样存档 */
+  const hasProcessChoice = hasDocx || hasMhtml
   /** 内嵌图片开关只在「MHTML 原样存档」时无意义（素材已随原件保留），其余批次均可用 */
-  const attachmentsDisabled = hasMhtml && mhtmlMode === 'archive'
+  const attachmentsDisabled = hasMhtml && processMode === 'archive'
 
   const reset = () => {
     setEntries([])
@@ -122,12 +132,13 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   }
 
   const analyzeMut = useMutation({
-    mutationFn: (payload: { batch: FileImportEntry[]; mhtmlMode: MhtmlImportMode; docxMode: DocxImportMode }) =>
+    mutationFn: (payload: { batch: FileImportEntry[]; processMode: ProcessMode }) =>
       documentsApi.fileImportAnalyze(workspaceId, {
         entries: payload.batch,
         parentId,
-        mhtmlMode: payload.mhtmlMode,
-        docxMode: payload.docxMode,
+        // 统一处理方式：Word 与 MHTML 同取一个值（互斥项，不再各配一个开关）
+        mhtmlMode: payload.processMode,
+        docxMode: payload.processMode,
       }),
     onSuccess: data => {
       setAnalysis(data)
@@ -149,8 +160,8 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         conflict,
         status,
         importAttachments,
-        mhtmlMode,
-        docxMode,
+        mhtmlMode: processMode,
+        docxMode: processMode,
       }),
     onSuccess: data => {
       setResult(data)
@@ -170,24 +181,15 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     setEntries(batch)
     setAnalysis(null)
     setResult(null)
-    analyzeMut.mutate({ batch, mhtmlMode, docxMode })
+    analyzeMut.mutate({ batch, processMode })
   }
 
-  /** 切换 MHTML 模式后预览口径随之变化（is_asset / format），已选批次需要重新解析 */
-  const changeMhtmlMode = (next: MhtmlImportMode) => {
-    setMhtmlMode(next)
+  /** 切换处理方式会改变落库渲染族（markdown ↔ 原件），已选批次需要重新解析 */
+  const changeProcessMode = (next: ProcessMode) => {
+    setProcessMode(next)
     if (entries.length > 0) {
       setAnalysis(null)
-      analyzeMut.mutate({ batch: entries, mhtmlMode: next, docxMode })
-    }
-  }
-
-  /** 切换 Word 模式同样会改变落库渲染族（markdown ↔ word），已选批次需要重新解析 */
-  const changeDocxMode = (next: DocxImportMode) => {
-    setDocxMode(next)
-    if (entries.length > 0) {
-      setAnalysis(null)
-      analyzeMut.mutate({ batch: entries, mhtmlMode, docxMode: next })
+      analyzeMut.mutate({ batch: entries, processMode: next })
     }
   }
 
@@ -222,10 +224,10 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
           return (
             <Space size={4} wrap>
               <AntTag color="blue">{label}</AntTag>
-              {record.is_asset && (
-                <AntTag color="default" data-testid="file-import-asset-tag">
-                  原样存档
-                </AntTag>
+              {record.is_asset ? (
+                <AntTag color="default" data-testid="file-import-asset-tag">原样存档</AntTag>
+              ) : (
+                <AntTag color="green" data-testid="file-import-convert-tag">转 Markdown</AntTag>
               )}
             </Space>
           )
@@ -250,7 +252,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const summaryItems = analysis
     ? [
         { key: 'files', label: '文件', value: `${analysis.total_files} 个`, zero: analysis.total_files === 0 },
-        { key: 'docs', label: '可导入', value: `${analysis.total_documents} 篇`, zero: analysis.total_documents === 0 },
+        { key: 'docs', label: '转 Markdown', value: `${analysis.total_documents} 篇`, zero: analysis.total_documents === 0 },
         { key: 'assets', label: '原样存档', value: `${analysis.assets ?? 0} 个`, zero: (analysis.assets ?? 0) === 0 },
         { key: 'folders', label: '新建文件夹', value: `${analysis.total_folders} 个`, zero: analysis.total_folders === 0 },
         { key: 'conflicts', label: '同名冲突', value: `${analysis.conflicts} 篇`, zero: analysis.conflicts === 0 },
@@ -421,8 +423,8 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               helpTitle="格式与处理方式"
               help={
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
-                  <li>转换：Markdown / HTML 直接转换；Word、MHTML 可勾选转换后编辑</li>
-                  <li>原样存档：PDF / Excel / PPT / 图片，以及勾选存档的 Word、MHTML；可预览、可下载，不可编辑</li>
+                  <li>转 Markdown：Markdown / HTML 直接转换；Word、MHTML 选「转 Markdown」后转为可编辑文档</li>
+                  <li>原样存档：PDF / Excel / PPT / 图片固定原样存档；Word、MHTML 选「原样存档」时保留原件，可预览、可下载，不可编辑</li>
                   <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>
                 </ul>
               }
@@ -454,29 +456,36 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                 )}
 
                 <ImportOptionsPanel testId="file-import-options">
-                  <ImportSwitch
-                    testId="file-import-mhtml-convert"
-                    label="MHTML 转 Markdown"
-                    checked={mhtmlMode === 'convert'}
-                    onChange={checked => changeMhtmlMode(checked ? 'convert' : 'archive')}
-                    disabled={!hasMhtml}
-                    tooltip="MHTML 默认原样存档；开启后按网页转换链路转成可编辑文档"
-                  />
-                  <ImportSwitch
-                    testId="file-import-docx-archive"
-                    label="Word 原样存档"
-                    checked={docxMode === 'archive'}
-                    onChange={checked => changeDocxMode(checked ? 'archive' : 'convert')}
-                    disabled={!hasDocx}
-                    tooltip="Word 默认转 Markdown；开启后保留原件，阅读器内预览、不可编辑"
-                  />
+                  <Space size={6}>
+                    <Typography.Text
+                      type={hasProcessChoice ? undefined : 'secondary'}
+                      style={{ fontSize: 12 }}
+                    >
+                      处理方式
+                    </Typography.Text>
+                    <Segmented
+                      size="small"
+                      value={processMode}
+                      onChange={value => changeProcessMode(value as ProcessMode)}
+                      options={PROCESS_OPTIONS}
+                      disabled={!hasProcessChoice}
+                      data-testid="file-import-process-mode"
+                      aria-label="处理方式"
+                    />
+                    <Tooltip title="仅对 Word / MHTML 生效：转 Markdown 得到可编辑文档；原样存档保留原件，可预览 / 下载、不可编辑。Markdown / HTML 始终转 Markdown，PDF / Office / 图片始终原样存档。">
+                      <QuestionCircleOutlined
+                        style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}
+                        aria-label="处理方式说明"
+                      />
+                    </Tooltip>
+                  </Space>
                   <ImportSwitch
                     testId="file-import-attachments"
                     label="导入内嵌图片"
                     checked={importAttachments}
                     onChange={setImportAttachments}
                     disabled={attachmentsDisabled}
-                    tooltip="转换 Word / HTML / MHTML 时一并导入内嵌图片；MHTML 原样存档时素材已随原件保留"
+                    tooltip="转 Markdown 的 Word / HTML / MHTML 一并导入内嵌图片；原样存档时素材已随原件保留"
                   />
                   <ImportStatusRadio value={status} onChange={setStatus} />
                 </ImportOptionsPanel>

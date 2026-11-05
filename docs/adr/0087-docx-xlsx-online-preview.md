@@ -22,7 +22,7 @@ Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/se
 | C3 | （安全口径） | 预览 HTML 只由后端模板拼接且所有来源文本 `html.escape`；响应带 `Content-Security-Policy: sandbox` / `X-Content-Type-Options: nosniff` / `Content-Disposition: inline`；前端 `<iframe sandbox="">`（禁脚本、禁同源、禁表单）；权限走 `visibility.get_visible_document_or_404` 与 `/asset` 同源 |
 | C4 | （有界口径） | `preview/office.py` 固定上限：工作表 20 / 单表 2000 行 × 100 列 / 全局 50000 单元格 / 单元格文本 2000 字符 / 图片 200 张且合计 16MB / 输出 HTML 4MB；触顶即截断并在页面尾部提示「已截断」 |
 | C5 | （兼容口径） | `convert` 默认值保持 `.docx → Markdown`；`xlsx/xls/pptx/ppt/pdf/图片` 导入行为不变；`.xls`（`application/vnd.ms-excel`）与 `.doc` 保持下载卡（后端返回 400、前端不请求预览）；无 DDL / 无备份协议变更（`content_type` 与原件字段本就随备份导出） |
-| C6 | （展示口径） | `docFormat.ts` 的 `word` 映射改为原件族（`asset: true`），并把 `word` 加入 `DOC_ASSET_CONTENT_TYPES`；导入弹窗新增「Word 原样存档」开关（默认关 = 转换），切换后重新 `analyze` 以刷新 `is_asset` / `format` |
+| C6 | （展示口径） | `docFormat.ts` 的 `word` 映射改为原件族（`asset: true`），并把 `word` 加入 `DOC_ASSET_CONTENT_TYPES`；导入弹窗用统一「处理方式」分段（转 Markdown / 原样存档，与 MHTML 共用，默认「转 Markdown」），切换后重新 `analyze` 以刷新 `is_asset` / `format` |
 | C7 | （文档口径） | 帮助教程「文档导入」条目补 Word 原样存档与在线预览说明；CHANGELOG 增条目（本 ADR 号）；CONTEXT.md 补 `word` 原件族与 Office 预览术语 |
 
 ## Context
@@ -37,7 +37,7 @@ Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/se
 | 4 | 预览端点硬编码 `content_type != "mhtml"` → 400 | `src/cndb/plugins/documents/routers/documents.py:782-825` | 预览能力锁死在 MHTML | 确认（C1-C3） |
 | 5 | 导入端点 / 编排只有 `mhtml_mode`，无 Word 模式 | `src/cndb/plugins/documents/routers/file_import.py:66-116`、`importers/importer.py:169-200` | 无法选择原件存档 | 确认（C2） |
 | 6 | 前端 `word` 映射 `asset: false`，不在 `DOC_ASSET_CONTENT_TYPES` | `frontend/src/components/Document/docFormat.ts:39-52` | 存档的 Word 会被当成可编辑 Markdown | 确认（C6） |
-| 7 | 导入弹窗只有 MHTML 模式开关 | `frontend/src/pages/documents/DocumentImportModal.tsx:101-165` | 无 Word 模式入口 | 确认（C6） |
+| 7 | 导入弹窗只有 MHTML 模式选项 | `frontend/src/pages/documents/DocumentImportModal.tsx:101-165` | 无 Word 模式入口 | 确认（C6） |
 | 8 | `python-docx` / `openpyxl` 已是运行依赖（导入、导出、表格传输均使用） | `src/cndb/plugins/documents/services/importers/docx.py:15`、`src/cndb/plugins/tables/services/transfer/xlsx_rows.py:42` | 预览渲染无需新增依赖、无包体积增量 | 复用 |
 | 9 | MHTML 预览已建立「后端 HTML + 沙箱 iframe」范式与响应头口径 | `routers/documents.py:791-825`、`frontend/src/pages/documents/DocumentAssetView.tsx:161-172` | Office 预览按同一范式扩展，避免重复设计 | 复用 |
 | 10 | 前端已有 `PptxPreview`（纯前端渲染 PPTX）先例 | `frontend/src/pages/documents/PptxPreview.tsx` | 若 Office 也走前端库会破 `bundle-budget` 基线（SheetJS / mammoth 数百 KB） | 排除前端库路线（D2） |
@@ -105,14 +105,14 @@ def build_office_preview(content_type: str, mime: str, data: bytes) -> str: ... 
 - `docFormat.ts`：`word` → `{ label: 'Word', Icon: FileWordOutlined, color: '#2f54eb', asset: true }`，加入 `DOC_ASSET_CONTENT_TYPES`；
 - `DocumentAssetView`：预览分支由「仅 MHTML」抽象为「MHTML / Office」——MHTML 取 blob 走 `sandbox=""` iframe；Office（`xlsx` / `word`）取文本交给 `OfficeHtmlPreview`：把后端 HTML 拆成「样式 + body 片段」注入 **Shadow DOM**（样式隔离、不污染页面、剔除 `<script>`），正文区只保留一条滚动条（与 PPTX 预览同模型），不再套 iframe 视口；预览失败时为下载卡 + 提示；`assetSuffix` 补 docx / xlsx 的 MIME 映射；后端预览 CSS 颜色改用 `var(--cn-*)` 主题变量（自定义属性继承进影子根），避免系统深色偏好导致「黑底预览块」；
 - `OfficeHtmlPreview.tsx`：Shadow DOM 渲染器 + `splitPreviewHtml`（拆 style / body、兜底剔脚本），宿主补 `:host` 基础字体与前景色；
-- `DocumentImportModal`：新增「Word 原样存档」开关（默认关），切换后重新 `analyze`；导入请求带 `docxMode`；
+- `DocumentImportModal`：把 Word / MHTML 的处理方式合并为一个互斥分段（转 Markdown / 原样存档，默认「转 Markdown」），切换后重新 `analyze`；导入请求同时带 `docxMode` / `mhtmlMode`；
 - `api/documents.ts`：`DocxImportMode` 类型 + `FileImportPayload.docxMode` + 表单字段 `docx_mode`。
 
 ### 7. 测试清单
 
 - 判定层（`tests/test_documents_asset_import.py`）：`docx_mode` 分派（convert 仍 markdown / archive 落 word）、非法模式 400、xlsx 预览 HTML（多表 / 表头 / 数值 / 日期）、docx 预览 HTML（标题 / 列表 / 表格 / 图片 `data:`）、截断标记、损坏原件报错、旧版 `.xls` 拒绝；
 - 接口层：`archive` 导入后 `content_type=word` 且 `asset` 端点可下载；预览端点响应头（CSP / nosniff / inline）、非预览类型 400、权限与可见性 404、缺失原件 404；
-- 前端（`DocumentAssetView.test.tsx`、`OfficeHtmlPreview.test.tsx`、`DocumentImportModal.test.tsx`、`docFormat.test.ts`）：xlsx / word 走 `DIV + shadowRoot`（无 iframe）、Shadow DOM 拆分 / 剔除脚本 / 更新不叠加、旧版 xls 回落下载卡、Word 开关默认关 / 切换重解析 / 导入带 `docxMode`、`word` 属原件族。
+- 前端（`DocumentAssetView.test.tsx`、`OfficeHtmlPreview.test.tsx`、`DocumentImportModal.test.tsx`、`docFormat.test.ts`）：xlsx / word 走 `DIV + shadowRoot`（无 iframe）、Shadow DOM 拆分 / 剔除脚本 / 更新不叠加、旧版 xls 回落下载卡、处理方式分段默认「转 Markdown」/ 切换重解析 / 导入同时带 `docxMode` 与 `mhtmlMode`、`word` 属原件族。
 
 ### 8. 分期
 

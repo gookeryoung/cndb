@@ -68,10 +68,10 @@ async def analyze_document_files(
     paths: Annotated[list[str] | None, Form(description="与 files 一一对应的批次内相对路径")] = None,
     parent_id: Annotated[int | None, Form(description="导入到哪个文件夹（空 = 根目录）")] = None,
     mhtml_mode: Annotated[
-        str, Form(description="MHTML 处理模式：archive=原样存档（默认）/ convert=转 Markdown")
+        str, Form(description="MHTML 处理方式：convert=转 Markdown / archive=原样存档（前端统一处理方式同时下发）")
     ] = "archive",
     docx_mode: Annotated[
-        str, Form(description="Word 处理模式：convert=转 Markdown（默认）/ archive=原样存档")
+        str, Form(description="Word 处理方式：convert=转 Markdown / archive=原样存档（前端统一处理方式同时下发）")
     ] = "convert",
 ) -> dict[str, Any]:
     """解析文件批次并返回导入预览（不写任何数据）."""
@@ -106,10 +106,10 @@ async def import_document_files(
         Form(description="是否导入 docx / html / mhtml 内嵌图片；关闭时 MHTML 素材落为 _assets 素材文档"),
     ] = True,
     mhtml_mode: Annotated[
-        str, Form(description="MHTML 处理模式：archive=原样存档（默认）/ convert=转 Markdown")
+        str, Form(description="MHTML 处理方式：convert=转 Markdown / archive=原样存档（前端统一处理方式同时下发）")
     ] = "archive",
     docx_mode: Annotated[
-        str, Form(description="Word 处理模式：convert=转 Markdown（默认）/ archive=原样存档")
+        str, Form(description="Word 处理方式：convert=转 Markdown / archive=原样存档（前端统一处理方式同时下发）")
     ] = "convert",
 ) -> dict[str, Any]:
     """把文件批次导入为文档树（文件夹 + 文档 + 附件）."""

@@ -349,10 +349,10 @@ export interface FileImportEntry {
   path: string
 }
 
-/** MHTML 处理模式（0061）：archive=原样存档（默认），convert=转 Markdown */
+/** MHTML 处理方式（0061）：archive=原样存档，convert=转 Markdown；导入弹窗用统一「处理方式」同时下发 */
 export type MhtmlImportMode = 'convert' | 'archive'
 
-/** Word 处理模式（0087）：convert=转 Markdown（默认），archive=原样存档 */
+/** Word 处理方式（0087）：convert=转 Markdown，archive=原样存档；导入弹窗用统一「处理方式」同时下发 */
 export type DocxImportMode = 'convert' | 'archive'
 
 export interface FileImportPayload {
@@ -407,7 +407,7 @@ export interface FileImportAnalyzeResult {
   total_documents: number
   /** 待新建文件夹数 */
   total_folders: number
-  /** 原样存档（PDF / Office / 图片）的文件数 */
+  /** 原样存档的文件数（PDF / Office / 图片，以及选择原样存档的 Word / MHTML） */
   assets: number
   conflicts: number
   skipped: FileImportSkip[]
@@ -426,7 +426,7 @@ export interface FileImportResult {
   folders_created: number
   attachments: number
   attachment_bytes: number
-  /** 原样存档（PDF / Office / 图片）的文件数 */
+  /** 原样存档的文件数（PDF / Office / 图片，以及选择原样存档的 Word / MHTML） */
   assets: number
   documents: { id: number; title: string; path: string; format?: string }[]
   skipped_files: FileImportSkip[]
