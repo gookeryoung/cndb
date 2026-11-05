@@ -211,9 +211,9 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/core/http.py`、`src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/` | `tests/test_datasource_http_json.py`、`tests/test_datasource_migration.py` | 待提交 |
-| P1 | 已落地 | `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/entrant_state.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py` | `tests/test_datasource_pipeline.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_runner_streaming.py`、`tests/test_workspace_backup_v9.py` | 待提交 |
-| P2 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`docs/adr/README.md` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | 待提交 |
+| P0 | 已落地 | `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/datasource/providers/http_json.py`、`src/cndb/plugins/datasource/services/cursor.py`、`src/cndb/plugins/datasource/services/normalize.py`、`src/cndb/core/http.py`、`src/cndb/plugins/datasource/models.py`、`src/cndb/alembic/versions/` | `tests/test_datasource_http_json.py`、`tests/test_datasource_migration.py` | `b32129ed` |
+| P1 | 已落地 | `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/services/entrant_state.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py` | `tests/test_datasource_pipeline.py`、`tests/test_datasource_runner.py`、`tests/test_datasource_runner_streaming.py`、`tests/test_workspace_backup_v9.py` | `b32129ed` |
+| P2 | 已落地 | `frontend/src/api/datasource.ts`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`docs/adr/README.md` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | `b32129ed` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -221,6 +221,6 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 
 - 当前阶段：P0-P2 全部落地，`Status` 已改 `Implemented`
 - 已完成：P0 / P1 / P2；后端声明面 / 执行链 / 迁移 / 备份恢复裁剪，前端类型与旧配置剔除，测试清理，六个 ADR 处置（0033 / 0053 删除，0034 / 0035 / 0039 / 0043 改写）
-- 下一步：无（门禁 `make flow` 全绿后提交）
+- 下一步：无（已提交 `b32129ed`）
 - 已知坑：存量 `backfill_date` 任务会在下次运行报「未知游标策略」，需运维重配或删除；旧备份归档的 `entrant_cursors` 键按忽略处理；`LD_LIBRARY_PATH` 注入旧 libsqlite3 会使后端测试卡在 import，需 `unset LD_LIBRARY_PATH`
-- 最近一次全绿：`make check-fast` + `make test` @ 待提交（2026-11-05，后端 6656 passed / 3 skipped；adr-check 0 error）
+- 最近一次全绿：`make check-fast` + `make test` @ `b32129ed`（2026-11-05，后端 6656 passed / 3 skipped；adr-check 0 error）
