@@ -611,6 +611,12 @@ body.theme-oled {
   min-width: 0;
 }
 
+/* 顶栏右侧图标按钮宽高 1:1（antd 默认尺寸高度 32px，宽度随内边距浮动，此处锁定为正方形） */
+.cn-header-right .ant-btn-icon-only {
+  width: 32px;
+  padding-inline: 0;
+}
+
 /* ── 顶栏一级模块导航（需求 0081 C4）──
  * GitHub 顶栏 nav 风格：默认次级文字色，激活项品牌色 + 内嵌底部墨条
  * （与内容区页签行的墨条激活形状区分层级：一级=顶栏墨条，二级=页签墨条）。 */
