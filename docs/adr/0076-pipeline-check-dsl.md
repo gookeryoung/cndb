@@ -88,6 +88,7 @@ Related: `src/cndb/plugins/tables/services/governance/detect.py`、`src/cndb/plu
 | `target_type` | String(16) | `table` / `document` / `field` |
 | `target_id` | Integer | 表 ID / 文档 ID（定位到行级用 `locator`） |
 | `locator` | JSON | 精确定位：`{field_name, row_id, block_index, ref}` 等；**不含字段值**（D7） |
+| `detail` | JSON | 检查口径补充与定位上下文；`document/sensitive` 例外地携带文档标题 / 行号 / 有界命中片段（见 D7 例外） |
 | `message` | String(500) | 人类可读中文描述 |
 | `detail` | JSON | 数值明细（如 `{rate: 0.08, limit: 0.05}`），不含业务数据值 |
 
@@ -180,7 +181,7 @@ jobs:
 4. 检查实现抛异常 → 该 step `failed` + `error_message`，不牵连其他 step / job（引擎级隔离）。
 5. finding 有界（每检查 1000 条，超出聚合一条 `info`）。
 6. `enabled=false` 的 workflow 不响应事件 / 定时触发，但显式手动运行允许（调试语义）。
-7. finding 不携带字段值与单元格内容，仅字段名 / 行 ID / 计数 / 阈值（D7 侧信道口径）。
+7. finding 不携带字段值与单元格内容，仅字段名 / 行 ID / 计数 / 阈值（D7 侧信道口径）；例外：`document/sensitive` 在 `detail` 中返回命中行的有界上下文片段（≤240 字符）与文档标题用于定位，接口按文档可见性裁剪（他人草稿 / 归档对普通成员 `redacted`）。
 8. 不做自动修复、不做"检查失败阻断写入"（本期纯检测；阻断属独立需求另行立项）。
 
 ### 6. 迁移
@@ -227,7 +228,7 @@ jobs:
 | D4 | 检查扩展机制 | `uses:` 命名空间注册表（`域/动作`）+ 声明式输入 schema，目录端点只读 | 对标既有图表模板注册表与 LLM 动作目录（ADR 0020）两处范式，团队心智一致 | DSL 内嵌检查逻辑（等于引入可编程执行，违背 I1/I5）；每格式一个硬编码页面（回到散落现状） | `pipeline/checks/registry.py` |
 | D5 | 触发模型 | P0 手动；P1 事件分发点（三个既有写路径末尾）+ `core_event` 留痕；P2 cron tick | 手动先闭环价值，事件点改动可控；tick 复用 `cndb sync tick` + cron 部署范式 | 轮询 `core_event` 表作触发源（延迟高、全表扫描）；P0 直接做全量触发（写路径侵入面过大，先验证引擎） | `pipeline/services/runner.py`、`pipeline/services/triggers.py` |
 | D6 | 结果模型 | `pipeline_run` 快照 + `pipeline_finding` 结构化行 + `run.stats` 汇总 | finding 需按严重度 / 目标 / 动作过滤与分页，纯 JSON 报告做不到（治理任务 `report` 列的局限）；快照汇总让列表页免聚合查询 | 纯 JSON 报告（同 GovernanceTask，不可过滤）；全量 finding 进 `core_event`（事件表语义污染，粒度不匹配） | `pipeline/models.py` |
-| D7 | 只读保障与侧信道 | 检查上下文无写 API；finding 不携带字段值 / 单元格内容，仅字段名 / 行 ID / 计数 / 阈值 | I1；对齐 ADR 0004 行级权限的侧信道保护口径 | 检查携带样例值（对 viewer 泄露隐藏字段内容） | `pipeline/checks/base.py`（`CheckContext`） |
+| D7 | 只读保障与侧信道 | 检查上下文无写 API；finding 不携带字段值 / 单元格内容，仅字段名 / 行 ID / 计数 / 阈值；`document/sensitive` 例外：`detail` 带命中行的有界上下文片段（≤240 字符）与文档标题，列表接口按文档可见性裁剪（他人草稿 / 归档对普通成员标 `redacted`） | I1；对齐 ADR 0004 行级权限的侧信道保护口径；敏感内容检查需要「GitHub 注解式」定位（需求 0102），文档正文本身受文档可见性约束 | 检查携带样例值（对 viewer 泄露隐藏字段内容）；对不可见文档直出上下文 | `pipeline/checks/base.py`（`CheckContext`）、`pipeline/routers/workflows.py` |
 | D8 | 并发口径 | workflow 级单飞：状态条件 UPDATE 抢占，冲突 409 | 对齐数据同步单飞语义（`runner.py:125`）；P0 无租约（检查只读、可中断性弱，无需批间续期复杂度） | 立即引入 DB 租约（过度设计，检查任务粒度短）；允许并发 run（结果交叉，stats 无意义） | `pipeline/services/runner.py` |
 | D9 | 严重度与结论映射 | `error/warn/info` 三档；error 使 step 失败（`continue-on-error` 豁免）→ job 失败 → run `failed`；仅 warn/info → `partial`；全无 → `success` | GitHub Actions 的 conclusion 模型 + annotation severity 的合体；`partial` 区分"全绿"与"有告警" | 两档 error/warn（info 类截断提示无处安放）；warn 也判失败（巡检类告警不该红） | `pipeline/services/runner.py` |
 | D10 | 权限口径 | workflow CRUD 与触发 owner/editor；run / finding 查看为工作区成员 | 与数据源任务（创建编辑受限）+ 治理报告（成员可见）口径一致 | 仅 owner 可看结果（质量信息对团队有普适价值）；viewer 可运行（写入口子） | `pipeline/routers/` |

@@ -48,13 +48,44 @@ def test_keywords_implicit_rule_reports_configured_keyword_only(db, ws, owner):
     }
     # D7：不回传命中的正文片段（只带配置值与定位）
     assert "网站" not in str(finding.locator)
-    assert finding.detail == {"rule": "default", "kind": "keyword", "field": "content"}
+    assert finding.detail["rule"] == "default"
+    assert finding.detail["kind"] == "keyword"
+    assert finding.detail["field"] == "content"
+    # 有界上下文：文档标题 + 命中行 + 高亮区间（不回传整篇正文）
+    assert finding.detail["document_title"] == "说明"
+    assert finding.detail["line"] == 2
+    assert finding.detail["snippet"] == "这里提到赌博网站，请勿访问。"
+    assert finding.detail["match"] == "赌博"
+    assert finding.detail["snippet"][finding.detail["match_start"] : finding.detail["match_end"]] == "赌博"
 
 
 def test_single_string_keyword_is_normalized(db, ws, owner):
     _doc(db, ws, owner, "有博彩内容")
     findings = list(sensitive.run(_ctx(db, ws), {"keywords": "博彩"}))
     assert [item.locator["keyword"] for item in findings] == ["博彩"]
+
+
+def test_long_line_context_is_trimmed_with_ellipsis(db, ws, owner):
+    leading = "甲" * 200
+    content = f"{leading}身份证 110101199001011234 结束{leading}"
+    _doc(db, ws, owner, content)
+    finding = next(iter(sensitive.run(_ctx(db, ws), {"patterns": [r"\b\d{17}[\dXx]\b"]})))
+
+    snippet = finding.detail["snippet"]
+    assert snippet.startswith("…") and snippet.endswith("…")
+    assert len(snippet) <= sensitive.MAX_SNIPPET_CHARS + 2
+    start, end = finding.detail["match_start"], finding.detail["match_end"]
+    assert snippet[start:end] == "110101199001011234"
+    assert finding.detail["match"] == "110101199001011234"
+
+
+def test_title_match_context_is_title(db, ws, owner):
+    _doc(db, ws, owner, "正文", title="联系人邮箱 zhang.san@example.com")
+    finding = next(iter(sensitive.run(_ctx(db, ws), {"keywords": ["邮箱"]})))
+    assert finding.detail["field"] == "title"
+    assert finding.detail["line"] == 1
+    assert finding.detail["snippet"] == "联系人邮箱 zhang.san@example.com"
+    assert finding.detail["snippet"][finding.detail["match_start"] : finding.detail["match_end"]] == "邮箱"
 
 
 def test_keywords_are_case_insensitive(db, ws, owner):

@@ -194,6 +194,35 @@ describe('PipelinesPage 列表与编辑', () => {
     expect(within(item).getByText(/已用时/)).toBeInTheDocument()
   })
 
+  it('「全部」行的一键运行只触发启用的规则，并汇总进行中 / 停用', async () => {
+    defaultHandlers()
+    const other: PipelineWorkflow = { ...WORKFLOW, id: 8, name: '文档体检' }
+    const disabled: PipelineWorkflow = { ...WORKFLOW, id: 9, name: '已停用规则', enabled: false }
+    const calls: number[] = []
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines', () => HttpResponse.json([WORKFLOW, other, disabled])),
+      http.post('/api/v1/workspaces/10/pipelines/7/run', () => {
+        calls.push(7)
+        return HttpResponse.json(RUN, { status: 202 })
+      }),
+      http.post('/api/v1/workspaces/10/pipelines/8/run', () => {
+        calls.push(8)
+        return HttpResponse.json(
+          { detail: '流水线「文档体检」已有进行中的运行，请稍后再试' },
+          { status: 409 },
+        )
+      }),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('pipeline-run-all'))
+    await waitFor(() => expect(calls.sort((a, b) => a - b)).toEqual([7, 8]))
+    // 停用的规则不触发，且汇总里明确跳过
+    expect(calls).not.toContain(9)
+    expect(await screen.findByText('已触发 1 条规则运行')).toBeInTheDocument()
+    expect(await screen.findByText(/1 条已有进行中的运行；1 条已停用已跳过/)).toBeInTheDocument()
+  })
+
   it('删除需二次确认并调用删除接口', async () => {
     defaultHandlers()
     let deleted = false

@@ -20,7 +20,7 @@ import {
 } from 'antd'
 import {
   AlertOutlined, ApartmentOutlined, ArrowLeftOutlined, CheckCircleFilled, CloseCircleFilled,
-  DownOutlined, ExclamationCircleFilled, FlagOutlined, HistoryOutlined, InfoCircleFilled,
+  DownOutlined, ExclamationCircleFilled, FileTextOutlined, FlagOutlined, HistoryOutlined, InfoCircleFilled,
   MinusCircleOutlined, RightOutlined, SyncOutlined, UpOutlined,
 } from '@ant-design/icons'
 import type { ReactNode } from 'react'
@@ -94,6 +94,47 @@ function stepFindingTotal(step: PipelineStepStat): number {
 /** job 下各 step 的发现物合计（折叠头右侧一行展示） */
 function jobFindingTotal(job: PipelineJobStat): number {
   return job.steps.reduce((sum, step) => sum + stepFindingTotal(step), 0)
+}
+
+/** document/sensitive 的命中上下文（GitHub 注解口径：文档 + 行号 + 片段高亮） */
+interface SensitiveContext {
+  redacted: boolean
+  title: string
+  line: number | null
+  rule: string
+  kind: string
+  value: string
+  snippet: string
+  matchStart: number
+  matchEnd: number
+}
+
+function sensitiveContext(finding: PipelineFinding): SensitiveContext | null {
+  if (finding.check !== "document/sensitive") return null
+  const detail = finding.detail ?? {}
+  const locator = finding.locator ?? {}
+  const rule = typeof locator.rule === "string" ? locator.rule : ""
+  const kind = typeof locator.kind === "string" ? locator.kind : ""
+  const value =
+    typeof locator.keyword === "string"
+      ? locator.keyword
+      : typeof locator.pattern === "string" ? locator.pattern : ""
+  if (!rule) return null
+  const context: SensitiveContext = {
+    redacted: detail.redacted === true,
+    title: typeof detail.document_title === "string" ? detail.document_title : "",
+    line: typeof detail.line === "number" ? detail.line : null,
+    rule,
+    kind,
+    value,
+    snippet: typeof detail.snippet === "string" ? detail.snippet : "",
+    matchStart: typeof detail.match_start === "number" ? detail.match_start : -1,
+    matchEnd: typeof detail.match_end === "number" ? detail.match_end : -1,
+  }
+  if (!context.redacted && (!context.snippet || context.matchStart < 0 || context.matchEnd <= context.matchStart)) {
+    return null
+  }
+  return context
 }
 
 /** 概要条单元格：标签在上、数值在下（错误 / 告警命中有色，0 保持弱化） */
@@ -371,6 +412,12 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
               (findings?.items ?? []).map((finding: PipelineFinding) => {
                 const open = openFindings.includes(finding.id)
                 const locators = Object.entries(finding.locator ?? {})
+                const sensitive = sensitiveContext(finding)
+                const meta = sensitive && !sensitive.redacted && sensitive.title
+                  ? `${finding.check} · ${sensitive.title}${sensitive.line != null ? ` · 第 ${sensitive.line} 行` : ""}`
+                  : sensitive?.redacted
+                    ? `${finding.check} · 上下文已隐藏`
+                    : `${finding.check} · ${finding.target_type}${finding.target_id != null ? ` #${finding.target_id}` : ""}`
                 return (
                   <div key={finding.id} className="cn-qc-run-finding-wrap">
                     <div
@@ -379,10 +426,7 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
                     >
                       <SeverityBadge severity={finding.severity} />
                       <span className="cn-qc-run-finding-msg" title={finding.message}>{finding.message}</span>
-                      <span className="cn-qc-run-finding-meta">
-                        {finding.check} · {finding.target_type}
-                        {finding.target_id != null ? ` #${finding.target_id}` : ''}
-                      </span>
+                      <span className="cn-qc-run-finding-meta" title={meta}>{meta}</span>
                       {finding.target_type === 'table' && (
                         <span className="cn-qc-run-finding-action" onClick={(event) => event.stopPropagation()}>
                           <Button
@@ -411,15 +455,64 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
                     </div>
                     {open && (
                       <div className="cn-qc-run-finding-detail">
-                        <div className="cn-qc-run-finding-detail-msg">{finding.message}</div>
-                        {locators.length > 0 && (
-                          <div className="cn-qc-run-finding-locator">
-                            {locators.map(([key, value]) => (
-                              <code key={key}>
-                                {key}: {typeof value === 'string' ? value : JSON.stringify(value)}
-                              </code>
-                            ))}
-                          </div>
+                        {sensitive ? (
+                          sensitive.redacted ? (
+                            <div className="cn-qc-run-finding-redacted">
+                              该文档为草稿或你无权查看，命中上下文已隐藏。
+                            </div>
+                          ) : (
+                            <div className="cn-qc-run-finding-context">
+                              <div className="cn-qc-run-finding-context-head">
+                                <FileTextOutlined aria-hidden />
+                                <span className="cn-qc-run-finding-doc">
+                                  {sensitive.title || `文档 #${finding.target_id ?? ''}`}
+                                </span>
+                                <span className="cn-qc-run-finding-context-meta">
+                                  {sensitive.line != null ? `第 ${sensitive.line} 行 · ` : ''}
+                                  规则「{sensitive.rule}」{sensitive.kind === 'pattern'
+                                    ? `正则 /${sensitive.value}/`
+                                    : `关键词「${sensitive.value}」`}
+                                </span>
+                                {finding.target_id != null && (
+                                  <Button
+                                    type="link"
+                                    size="small"
+                                    icon={<FileTextOutlined />}
+                                    data-testid={`qc-open-document-${finding.id}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation()
+                                      navigate(`/w/${wid}/documents/${finding.target_id}`)
+                                    }}
+                                  >
+                                    打开文档
+                                  </Button>
+                                )}
+                              </div>
+                              <pre className="cn-qc-run-finding-code" aria-label="命中上下文">
+                                <span className="cn-qc-run-finding-code-line">
+                                  {sensitive.line ?? 1}
+                                </span>
+                                <code>
+                                  {sensitive.snippet.slice(0, sensitive.matchStart)}
+                                  <mark>{sensitive.snippet.slice(sensitive.matchStart, sensitive.matchEnd)}</mark>
+                                  {sensitive.snippet.slice(sensitive.matchEnd)}
+                                </code>
+                              </pre>
+                            </div>
+                          )
+                        ) : (
+                          <>
+                            <div className="cn-qc-run-finding-detail-msg">{finding.message}</div>
+                            {locators.length > 0 && (
+                              <div className="cn-qc-run-finding-locator">
+                                {locators.map(([key, value]) => (
+                                  <code key={key}>
+                                    {key}: {typeof value === 'string' ? value : JSON.stringify(value)}
+                                  </code>
+                                ))}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}

@@ -160,6 +160,7 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
   })
 
   const selected = workflows.find(w => w.id === selectedId) ?? null
+  const enabledWorkflows = workflows.filter(workflow => workflow.enabled)
 
   // 右栏运行历史：默认拉取当前域全部规则的运行，选中规则后按 workflow_id 过滤；
   // 活跃运行（pending/running）1.5s 轮询推进状态（与运行详情页一致，GitHub 式实时刷新）
@@ -250,6 +251,36 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
     onSuccess: (_pipelineRun, workflow) => {
       message.success('已开始运行')
       setSelectedId(prev => (prev != null && prev !== workflow.id ? workflow.id : prev))
+      invalidate()
+    },
+    onError: (err) => message.warning(err instanceof Error ? err.message : '触发运行失败'),
+  })
+
+  /** 一键运行全部启用的规则：逐条触发，单条失败（如已有进行中的运行）不影响其余 */
+  const runAll = useMutation({
+    mutationFn: async (input: { targets: PipelineWorkflow[]; disabled: number }) => {
+      let started = 0
+      let active = 0
+      let failed = 0
+      for (const workflow of input.targets) {
+        try {
+          await pipelinesApi.run(wid, workflow.id)
+          started += 1
+        } catch (err) {
+          const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? ''
+          if (detail.includes('进行中的运行')) active += 1
+          else failed += 1
+        }
+      }
+      return { started, active, failed, disabled: input.disabled }
+    },
+    onSuccess: ({ started, active, failed, disabled }) => {
+      if (started > 0) message.success(`已触发 ${started} 条规则运行`)
+      const notes: string[] = []
+      if (active > 0) notes.push(`${active} 条已有进行中的运行`)
+      if (failed > 0) notes.push(`${failed} 条触发失败`)
+      if (disabled > 0) notes.push(`${disabled} 条已停用已跳过`)
+      if (notes.length > 0) message.warning(notes.join('；'))
       invalidate()
     },
     onError: (err) => message.warning(err instanceof Error ? err.message : '触发运行失败'),
@@ -349,6 +380,27 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
                       <Text type="secondary">{workflows.length} 条规则 · 展示全部运行历史</Text>
                     )}
                   />
+                </div>
+                <div className="cn-list-item-actions" onClick={event => event.stopPropagation()}>
+                  <Tooltip
+                    title={enabledWorkflows.length === 0
+                      ? '没有启用的规则'
+                      : `运行全部启用的规则（${enabledWorkflows.length} 条）`}
+                  >
+                    <Button
+                      type="text"
+                      size="small"
+                      aria-label="运行全部规则"
+                      data-testid="pipeline-run-all"
+                      icon={<PlayCircleOutlined />}
+                      loading={runAll.isPending}
+                      disabled={enabledWorkflows.length === 0}
+                      onClick={() => runAll.mutate({
+                        targets: enabledWorkflows,
+                        disabled: workflows.length - enabledWorkflows.length,
+                      })}
+                    />
+                  </Tooltip>
                 </div>
               </div>
             )}

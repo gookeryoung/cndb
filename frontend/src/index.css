@@ -6831,6 +6831,80 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-primary);
 }
 
+/* document/sensitive 命中上下文：GitHub 注解式（文档 + 行号 + 片段高亮） */
+.cn-qc-run-finding-context {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+}
+
+.cn-qc-run-finding-context-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cn-space-md);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-qc-run-finding-context-head .anticon {
+  color: var(--cn-text-secondary);
+}
+
+.cn-qc-run-finding-doc {
+  font-weight: var(--cn-weight-medium);
+}
+
+.cn-qc-run-finding-context-meta {
+  color: var(--cn-text-secondary);
+}
+
+.cn-qc-run-finding-context-head .ant-btn {
+  height: auto;
+  margin-inline-start: auto;
+  padding-inline: 0;
+  font-size: var(--cn-text-xs);
+}
+
+.cn-qc-run-finding-code {
+  display: flex;
+  overflow-x: auto;
+  gap: var(--cn-space-md);
+  margin: 0;
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-subtle);
+  font-family: var(--cn-font-mono, monospace);
+  font-size: var(--cn-text-2xs);
+  line-height: 1.7;
+  white-space: pre;
+}
+
+.cn-qc-run-finding-code-line {
+  flex: none;
+  min-width: 2ch;
+  text-align: end;
+  color: var(--cn-text-muted);
+  user-select: none;
+}
+
+.cn-qc-run-finding-code code {
+  font-family: inherit;
+}
+
+.cn-qc-run-finding-code mark {
+  padding: 0 2px;
+  border-radius: var(--cn-radius-xs);
+  background: var(--cn-bg-warning-subtle);
+  color: var(--cn-text-primary);
+  outline: 1px solid var(--cn-border);
+}
+
+.cn-qc-run-finding-redacted {
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
 /* 分页贴盒子底边：flush 盒体无内边距，footer 自行补横向留白并与末行用分隔线隔开 */
 .cn-qc-run-findings .cn-box-foot {
   margin-top: 0;

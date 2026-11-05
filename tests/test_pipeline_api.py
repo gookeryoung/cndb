@@ -8,7 +8,15 @@ from sqlalchemy import select
 from cndb.plugins.pipeline.models import PipelineFinding, PipelineRun
 from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
 from cndb.plugins.workspaces.models import WorkspaceRole
-from tests.pipeline_helpers import add_member, add_rows, login, make_table, make_user, make_workspace
+from tests.pipeline_helpers import (
+    add_member,
+    add_rows,
+    login,
+    make_document,
+    make_table,
+    make_user,
+    make_workspace,
+)
 
 BASE = "/api/v1/workspaces/{ws}/pipelines"
 
@@ -469,6 +477,85 @@ class TestRuns:
         resp = client.get(url, params={"limit": 1, "offset": 1}, headers=auth_owner)
         assert resp.json()["total"] == 2
         assert len(resp.json()["items"]) == 1
+
+
+class TestFindingContextVisibility:
+    """document/sensitive 的命中上下文按文档可见性裁剪（草稿不对普通成员暴露）."""
+
+    def _finding(self, client, db, ws, headers, target_id: int) -> tuple[int, int]:
+        workflow = _create(
+            client,
+            ws,
+            headers,
+            content="""
+name: 敏感内容巡检
+jobs:
+  文档:
+    steps:
+      - uses: document/sensitive
+        with:
+          keywords: [身份]
+""",
+        ).json()
+        run = PipelineRun(
+            workflow_id=workflow["id"],
+            workspace_id=ws.id,
+            trigger="manual",
+            trigger_payload={},
+            status="partial",
+            stats={},
+            error_message="",
+        )
+        db.add(run)
+        db.flush()
+        finding = PipelineFinding(
+            run_id=run.id,
+            check="document/sensitive",
+            severity="warn",
+            target_type="document",
+            target_id=target_id,
+            locator={
+                "rule": "身份",
+                "kind": "keyword",
+                "keyword": "身份",
+                "field": "content",
+                "line": 1,
+            },
+            message="敏感内容命中：「身份」关键词「身份」",
+            detail={
+                "rule": "身份",
+                "kind": "keyword",
+                "field": "content",
+                "document_title": "他人草稿",
+                "line": 1,
+                "snippet": "身份证号 110101199001011234",
+                "match": "身份",
+                "match_start": 0,
+                "match_end": 2,
+            },
+        )
+        db.add(finding)
+        db.commit()
+        return run.id, finding.id
+
+    def test_hidden_draft_context_is_redacted_for_member(self, client, db, ws, auth_owner, auth_viewer):
+        author = make_user(db, "sensitive_draft_author")
+        draft = make_document(db, ws, "他人草稿", "身份证号 110101199001011234", user=author)
+        run_id, _ = self._finding(client, db, ws, auth_owner, draft.id)
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run_id}/findings"
+
+        viewer_item = client.get(url, headers=auth_viewer).json()["items"][0]
+        assert viewer_item["detail"]["redacted"] is True
+        for key in ("document_title", "snippet", "match", "match_start", "match_end"):
+            assert key not in viewer_item["detail"]
+        # 规则与定位口径仍保留（不返回草稿正文）
+        assert viewer_item["locator"]["rule"] == "身份"
+        assert viewer_item["locator"]["keyword"] == "身份"
+
+        owner_item = client.get(url, headers=auth_owner).json()["items"][0]
+        assert owner_item["detail"]["document_title"] == "他人草稿"
+        assert owner_item["detail"]["snippet"].startswith("身份证号")
+        assert "redacted" not in owner_item["detail"]
 
 
 class TestFindingToIssue:

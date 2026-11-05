@@ -73,6 +73,7 @@ function renderPage(domain: 'table' | 'document' = 'table') {
     <Routes>
       <Route path={`${routePath}/:rid`} element={<PipelineRunDetail domain={domain} />} />
       <Route path={routePath} element={<ListStub />} />
+      <Route path="/w/:wid/documents/:docId" element={<ListStub />} />
     </Routes>,
     { route: `${base}/71`, ...AUTH },
   )
@@ -128,6 +129,75 @@ describe('PipelineRunDetail 运行详情', () => {
     fireEvent.click(caret[0]!)
     expect(await screen.findByText('field: 城市')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '收起发现物' })).toBeInTheDocument()
+  })
+
+  it('敏感发现物展示文档标题 / 行号 / 高亮上下文，并可打开文档', async () => {
+    const sensitive = {
+      ...finding(5, 'warn'),
+      check: 'document/sensitive',
+      target_type: 'document',
+      target_id: 9,
+      message: '敏感内容命中：「身份证号」正则 /\\b\\d{17}[\\dXx]\\b/',
+      locator: {
+        rule: '身份证号',
+        kind: 'pattern',
+        pattern: '\\b\\d{17}[\\dXx]\\b',
+        field: 'content',
+        line: 11,
+      },
+      detail: {
+        rule: '身份证号',
+        kind: 'pattern',
+        field: 'content',
+        document_title: '客户资料交接（敏感内容示例）',
+        line: 11,
+        snippet: '| 身份证号 | 110101199001011234 | 签约人证件 |',
+        match: '110101199001011234',
+        match_start: 9,
+        match_end: 27,
+      },
+    }
+    server.use(
+      http.get('/api/v1/workspaces/10/pipeline-runs/71', () => HttpResponse.json(RUN)),
+      http.get('/api/v1/workspaces/10/pipeline-runs/71/findings', () =>
+        HttpResponse.json({ total: 1, items: [sensitive] })),
+    )
+    renderPage()
+
+    // 折叠态一行：检查动作 + 文档标题 + 行号（不再只显示 document #id）
+    expect(await screen.findByText(/客户资料交接（敏感内容示例） · 第 11 行/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '展开发现物' }))
+    expect(await screen.findByText(/规则「身份证号」正则/)).toBeInTheDocument()
+    const mark = document.querySelector('.cn-qc-run-finding-code mark')
+    expect(mark).toHaveTextContent('110101199001011234')
+    expect(screen.getByLabelText('命中上下文')).toHaveTextContent('| 身份证号 |')
+
+    fireEvent.click(screen.getByRole('button', { name: /打开文档/ }))
+    expect(await screen.findByTestId('list-stub')).toHaveTextContent('/w/10/documents/9')
+  })
+
+  it('不可见文档的敏感发现物只给脱敏提示', async () => {
+    const redacted = {
+      ...finding(6, 'warn'),
+      check: 'document/sensitive',
+      target_type: 'document',
+      target_id: 9,
+      message: '敏感内容命中：「内部资料」关键词「内部资料」',
+      locator: { rule: '内部资料', kind: 'keyword', keyword: '内部资料', field: 'content', line: 3 },
+      detail: { rule: '内部资料', kind: 'keyword', field: 'content', redacted: true },
+    }
+    server.use(
+      http.get('/api/v1/workspaces/10/pipeline-runs/71', () => HttpResponse.json(RUN)),
+      http.get('/api/v1/workspaces/10/pipeline-runs/71/findings', () =>
+        HttpResponse.json({ total: 1, items: [redacted] })),
+    )
+    renderPage()
+
+    expect(await screen.findByText('document/sensitive · 上下文已隐藏')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '展开发现物' }))
+    expect(await screen.findByText(/命中上下文已隐藏/)).toBeInTheDocument()
+    expect(document.querySelector('.cn-qc-run-finding-code')).toBeNull()
   })
 
   it('按严重度过滤时携带 severity 参数', async () => {

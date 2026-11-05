@@ -1093,8 +1093,9 @@ const qualityChecks: HelpTopic = {
                     items={[
                         <><strong>数据表族</strong>：<code>table/null-rate</code>（空值率）、<code>table/duplicates</code>（判重，复用治理的归一化口径）、<code>table/value-range</code>（区间）、<code>table/stale</code>（新鲜度）。</>,
                         <><strong>文档族</strong>：<code>document/broken-refs</code>（图表 / 数据表 / 附件引用失效）、<code>document/chart-blocks</code>（图表块结构与上限）、<code>document/links</code>（站内 wikilink 与文件引用登记）、<code>document/sensitive</code>（敏感内容：关键词 / 正则 / 命名规则逻辑组合）。</>,
-                        <><strong>document/sensitive</strong>：<code>keywords</code> / <code>patterns</code> / <code>rules</code> 声明规则，<code>logic</code> 支持 any / all 或 and·or·not 表达式组合多条规则；发现只带规则名与标题 / 正文行号，不带命中上下文。</>,
+                        <><strong>document/sensitive</strong>：<code>keywords</code> / <code>patterns</code> / <code>rules</code> 声明规则，<code>logic</code> 支持 any / all 或 and·or·not 表达式组合多条规则；发现展示文档标题、行号与命中行的有界上下文（高亮命中，类似 GitHub 注解），不可见草稿会脱敏。</>,
                         '检查按工作区视角运行，不受触发人个人权限影响；隐藏字段不参与、发现里也不带字段值，避免变成侧信道。',
+                        '规则清单「全部」行右侧的运行图标可一键运行本域全部启用规则：停用的规则自动跳过，已有进行中运行的规则单独提示，不影响其余规则触发。',
                         '发现的严重度可筛，表目标发现的「转问题」会在目标表建一条问题（标题带严重度与消息，描述含检查动作与定位，类别 data_error）；非表目标不支持转换。',
                     ]}
                 />
@@ -1109,7 +1110,7 @@ const qualityChecks: HelpTopic = {
                     items={[
                         '定时流水线由 cron 调 <code>cndb pipeline tick</code> 扫描到期定义并同步执行（<code>deploy/pipeline.sh</code> 为现成入口）；分钟槽水位去重保证同一分钟不重复触发。',
                         '事件触发（同步完成 / 文档保存 / 批量变更）由业务路径自行投递，记录批量变更只记一次、不逐行触发。',
-                        '运行历史默认按当前域全部规则展示，运行中每 10s 轮询，结束即停。',
+                        '运行历史默认按当前域全部规则展示，运行中每 1.5s 轮询，结束即停。',
                     ]}
                 />
             ),

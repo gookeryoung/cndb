@@ -9,8 +9,9 @@
   支持 ``and`` / ``or`` / ``not`` / 括号（也可写 ``&&`` / ``||`` / ``!``）。
 
 检查扫描标题与正文：关键词不区分大小写，正则按 Python ``re`` 语义（``(?i)`` 可控大小写）。
-发现物只带规则名、命中的配置值（关键词 / 正则原文）与定位（标题 / 正文行号），
-不回传命中的正文片段（ADR 0076 D7）。
+发现物带规则名、命中的配置值（关键词 / 正则原文）、文档标题、正文行号与**有界上下文片段**
+（命中行前后各 80 字符、单段不超过 240 字符，前端按高亮渲染，便于像 GitHub 注解一样定位）；
+不返回整篇正文；文档不可见时由接口层按文档可见性裁剪上下文（draft 不对普通成员暴露）。
 """
 
 from __future__ import annotations
@@ -38,24 +39,32 @@ MAX_RULES = 50
 #: 命名规则允许的键
 _RULE_KEYS = {"name", "keywords", "patterns"}
 
+#: 上下文片段：命中位置前后各保留的字符数
+CONTEXT_CHARS = 80
+#: 上下文片段最大长度（单行内截断，避免大表格行整段回传）
+MAX_SNIPPET_CHARS = 240
+
 
 @dataclass(frozen=True)
 class _Rule:
     """一条敏感检查规则：任一关键词或正则命中即算命中."""
 
     name: str
-    keywords: tuple[str, ...]
+    keywords: tuple[tuple[str, re.Pattern[str]], ...]
     patterns: tuple[tuple[str, re.Pattern[str]], ...]
 
 
 @dataclass(frozen=True)
 class _Hit:
-    """规则命中的首个位置（只记录配置值与位置，不记录正文片段）."""
+    """规则命中的首个位置（配置值 + 文本区间，用于生成有界上下文）."""
 
     kind: str  # keyword / pattern
     value: str  # 命中的关键词原文或正则原文
     field: str  # title / content
-    line: int | None
+    line: int
+    start: int
+    end: int
+    text: str  # 命中所在文本（title / content），仅用于生成片段
 
 
 SPEC = CheckSpec(
@@ -118,7 +127,7 @@ def run(ctx: CheckContext, params: dict[str, Any]) -> Iterable[FindingDraft]:
                     target_type="document",
                     target_id=doc.id,
                     locator=_locator(rule, hit),
-                    detail={"rule": rule.name, "kind": hit.kind, "field": hit.field},
+                    detail=_detail(rule, hit, doc.title or f"文档 #{doc.id}"),
                 )
             )
     return findings
@@ -178,16 +187,18 @@ def _as_string_list(value: Any, label: str) -> list[str]:
 def _build_rule(name: str, keywords: list[str], patterns: list[str], label: str) -> _Rule:
     if any(ch.isspace() or ch in "()" for ch in name):
         raise CheckError(f"document/sensitive 规则名不能含空白或括号：{name}")
-    deduped_keywords = tuple(dict.fromkeys(keywords))
+    compiled_keywords = tuple(
+        (keyword, re.compile(re.escape(keyword), re.IGNORECASE)) for keyword in dict.fromkeys(keywords)
+    )
     compiled_patterns: list[tuple[str, re.Pattern[str]]] = []
     for pattern in dict.fromkeys(patterns):
         try:
             compiled_patterns.append((pattern, re.compile(pattern)))
         except re.error as exc:
             raise CheckError(f"document/sensitive {label} 的正则不合法：{pattern}（{exc}）") from exc
-    if not deduped_keywords and not compiled_patterns:
+    if not compiled_keywords and not compiled_patterns:
         raise CheckError(f"document/sensitive {label} 至少需要 keywords 或 patterns 之一")
-    return _Rule(name=name, keywords=deduped_keywords, patterns=tuple(compiled_patterns))
+    return _Rule(name=name, keywords=compiled_keywords, patterns=tuple(compiled_patterns))
 
 
 # ── 逻辑组合 ─────────────────────────────────────
@@ -340,15 +351,30 @@ def _match_rule(rule: _Rule, title: str, content: str) -> _Hit | None:
     for field, text in (("title", title), ("content", content)):
         if not text:
             continue
-        folded = text.casefold()
-        for keyword in rule.keywords:
-            index = folded.find(keyword.casefold())
-            if index >= 0:
-                return _Hit("keyword", keyword, field, _line_of(text, index))
+        for keyword, compiled in rule.keywords:
+            match = compiled.search(text)
+            if match is not None:
+                return _Hit(
+                    "keyword",
+                    keyword,
+                    field,
+                    _line_of(text, match.start()),
+                    match.start(),
+                    match.end(),
+                    text,
+                )
         for raw, compiled in rule.patterns:
             match = compiled.search(text)
             if match is not None:
-                return _Hit("pattern", raw, field, _line_of(text, match.start()))
+                return _Hit(
+                    "pattern",
+                    raw,
+                    field,
+                    _line_of(text, match.start()),
+                    match.start(),
+                    match.end(),
+                    text,
+                )
     return None
 
 
@@ -370,6 +396,47 @@ def _locator(rule: _Rule, hit: _Hit) -> dict[str, Any]:
         "field": hit.field,
         "line": hit.line,
     }
+
+
+def _detail(rule: _Rule, hit: _Hit, document_title: str) -> dict[str, Any]:
+    """发现物 detail：规则口径 + 文档标题 + 有界上下文（命中位置按片段内偏移标注）."""
+    snippet, match, match_start, match_end = _context(hit)
+    return {
+        "rule": rule.name,
+        "kind": hit.kind,
+        "field": hit.field,
+        "document_title": document_title,
+        "line": hit.line,
+        "snippet": snippet,
+        "match": match,
+        "match_start": match_start,
+        "match_end": match_end,
+    }
+
+
+def _context(hit: _Hit) -> tuple[str, str, int, int]:
+    """截取命中行内的一段上下文（带省略号），返回 ``(snippet, match, 起点, 终点)``."""
+    text = hit.text
+    line_start = text.rfind("\n", 0, hit.start) + 1
+    line_end = text.find("\n", hit.end)
+    if line_end < 0:
+        line_end = len(text)
+    window_start = max(line_start, hit.start - CONTEXT_CHARS)
+    window_end = min(line_end, max(hit.end, hit.start) + CONTEXT_CHARS, window_start + MAX_SNIPPET_CHARS)
+    match_end = min(hit.end, window_end)
+    snippet = text[window_start:window_end]
+    offset = 0
+    if window_start > line_start:
+        snippet = "…" + snippet
+        offset = 1
+    if window_end < line_end:
+        snippet = snippet + "…"
+    match_start_in_snippet = hit.start - window_start + offset
+    match_end_in_snippet = match_end - window_start + offset
+    match = text[hit.start : match_end]
+    if match_end < hit.end:
+        match += "…"
+    return snippet, match, match_start_in_snippet, match_end_in_snippet
 
 
 register_check(SPEC, run)

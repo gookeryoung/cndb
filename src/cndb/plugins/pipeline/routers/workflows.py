@@ -12,6 +12,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, CndbError, NotFoundError
 from cndb.plugins.accounts.models import User
+from cndb.plugins.documents.services.visibility import visible_document_ids
 from cndb.plugins.issues.services import get_issue_detail
 from cndb.plugins.pipeline.models import (
     PipelineFinding,
@@ -350,6 +351,44 @@ def _finding_response(finding: PipelineFinding) -> FindingResponse:
     return FindingResponse.model_validate(finding)
 
 
+#: document/sensitive 返回的上下文 detail 键（不可见文档必须裁剪）
+_CONTEXT_DETAIL_KEYS = ("document_title", "snippet", "match", "match_start", "match_end")
+
+
+def _redact_hidden_finding_context(
+    db: Session,
+    workspace_id: int,
+    current_user: User,
+    items: list[FindingResponse],
+) -> list[FindingResponse]:
+    """按文档可见性裁剪命中上下文：他人草稿 / 归档文档不对普通成员暴露正文片段."""
+    document_ids = {
+        int(item.target_id)
+        for item in items
+        if item.target_type == "document" and item.target_id is not None and item.detail
+    }
+    if not document_ids:
+        return items
+    visible = visible_document_ids(db, workspace_id, current_user, document_ids)
+    hidden = document_ids - visible
+    if not hidden:
+        return items
+    redacted: list[FindingResponse] = []
+    for item in items:
+        detail = dict(item.detail or {})
+        if (
+            item.target_type == "document"
+            and item.target_id in hidden
+            and any(key in detail for key in _CONTEXT_DETAIL_KEYS)
+        ):
+            for key in _CONTEXT_DETAIL_KEYS:
+                detail.pop(key, None)
+            detail["redacted"] = True
+            item = item.model_copy(update={"detail": detail})
+        redacted.append(item)
+    return redacted
+
+
 def _build_run_router() -> APIRouter:
     """运行详情 / 发现物路由（独立前缀 ``/{workspace_id}/pipeline-runs``）."""
     run_router = APIRouter(prefix="/{workspace_id}/pipeline-runs", tags=["pipeline"])
@@ -412,7 +451,8 @@ def _build_run_router() -> APIRouter:
             query = query.filter(PipelineFinding.check == check)
         total = query.count()
         rows = query.order_by(PipelineFinding.id).offset(offset).limit(limit).all()
-        return FindingListResponse(total=total, items=[_finding_response(row) for row in rows])
+        items = _redact_hidden_finding_context(db, workspace_id, current_user, [_finding_response(row) for row in rows])
+        return FindingListResponse(total=total, items=items)
 
     @run_router.post("/{run_id}/findings/{finding_id}/issue", status_code=status.HTTP_201_CREATED)
     def create_issue_from_finding(
