@@ -1,6 +1,8 @@
 # 冗余梳理与精简：已执行项与待办清单
 
-> 生成时间：2026-10-14（持续更新）。本文件记录「证据驱动」的冗余梳理与精简：
+> 生成时间：2026-10-14（持续更新；2026-11-05 刷新第一节行数与全量清单，删除已不存在的
+> `cli/seed/samples.py` 条目，优先候选新增 obsidian.py / DocumentEditorPage.tsx / DatasourcePage.tsx）。
+> 本文件记录「证据驱动」的冗余梳理与精简：
 > 已完成的改动见 CHANGELOG「未发布」，下面只列**已分析清楚但尚未执行**的项，
 > 每条都附可复现证据与风险判断，便于后续按优先级推进。
 
@@ -33,62 +35,120 @@
 ## 一、超大文件拆分：剩余候选
 
 以下为仍超过 500 行的源码文件中**优先处理的候选**（按收益排序）；全量 >500 行清单见
-本节末尾的「其余 >500 行文件」。
+本节末尾的「其余 >500 行文件」。（数据刷新：2026-11-05）
 
 ### 后端
 
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
-| `src/cndb/gui/main_window.py` | 1041 | 按 Tab 拆 `gui/tabs/{serve,backup,info}.py`；**`main` 必须留在 `main_window.py`**（`pyproject` 的 `cndbw` entry point 指向它）。coverage 已 omit `gui/**`，无覆盖率风险，也没有 gui 测试（缺少回归网，拆分后务必手工冒烟 `cndbw info`） |
-| `src/cndb/plugins/tables/services/core/records.py` | 957 | 拆 `core/{row_values,row_crud,row_bulk}.py`；**本项循环导入风险最高**（与 `query.py`/`ddl.py` 互依，现靠函数内延迟 import 规避，拆分须保留） |
-| `src/cndb/plugins/tables/services/importing/importer.py` | 906 | `Importer` 类单类 776 行 / 19 方法，可按方法族拆 mixin |
-| `src/cndb/plugins/documents/services/content.py` | 905 | 拆 `content/{crud,trash,links,tags,fts,serialize}.py`；FTS/软删子树/标签计数高耦合，成本较高 |
+| `src/cndb/plugins/documents/services/obsidian.py` | 1691 | 现为全仓最大源码文件，按导入 / 导出 / 库（vault）操作三族拆 `obsidian/{import_,export,vault}.py`；导出族与 `export/` 目录职责重叠，需先收口 |
+| `src/cndb/plugins/tables/services/core/records.py` | 1357 | 拆 `core/{row_values,row_crud,row_bulk}.py`；**本项循环导入风险最高**（与 `query.py`/`ddl.py` 互依，现靠函数内延迟 import 规避，拆分须保留） |
+| `src/cndb/plugins/tables/services/importing/importer.py` | 1207 | `Importer` 类单类超大，可按方法族拆 mixin |
+| `src/cndb/plugins/documents/services/content.py` | 1156 | 拆 `content/{crud,trash,links,tags,fts,serialize}.py`；FTS/软删子树/标签计数高耦合，成本较高 |
+| `src/cndb/gui/main_window.py` | 1060 | 按 Tab 拆 `gui/tabs/{serve,backup,info}.py`；**`main` 必须留在 `main_window.py`**（`pyproject` 的 `cndbw` entry point 指向它）。coverage 已 omit `gui/**`，无覆盖率风险，也没有 gui 测试（缺少回归网，拆分后务必手工冒烟 `cndbw info`） |
 
 ### 前端
 
 | 文件 | 行数 | 建议拆分 |
 |---|---|---|
-| `src/pages/grid/GridPage.tsx` | 1276 | 外置 `gridFallbacks.tsx`、`modeSwitch.ts`、`useGridPageRows.ts`、`useGridPageModals.ts`；主组件 1140 行主要是状态与回调，抽 hook 有一定回归风险 |
-| `src/pages/grid/view-config/viewOptionSchema.ts` | 562 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
-| `src/pages/grid/views/WbsView.tsx` | 588 | 树构建与渲染行两分 |
+| `src/pages/documents/DocumentEditorPage.tsx` | 2065 | 现为前端最大文件，编辑器页面状态与工具栏逻辑可抽 hook / 子组件 |
+| `src/pages/datasource/DatasourcePage.tsx` | 1955 | 同步任务 / 运行记录 / 推送配置三区块可各自抽组件 |
+| `src/pages/grid/GridPage.tsx` | 1510 | 外置 `gridFallbacks.tsx`、`modeSwitch.ts`、`useGridPageRows.ts`、`useGridPageModals.ts`；主组件主要是状态与回调，抽 hook 有一定回归风险 |
+| `src/pages/grid/view-config/viewOptionSchema.ts` | 679 | 按视图拆 `options/{kanban,calendar,gantt,wbs,matrix,chart}.ts`；**测试要求保留 7 个具名导出** |
+| `src/pages/grid/views/WbsView.tsx` | 593 | 树构建与渲染行两分 |
 
 ### 其余 >500 行文件（完整清单）
 
-以上为优先候选。全仓共 34 个 >500 行的源码文件，其余 27 个如下 ——
-多数是拆分后落在 500–660 行、且已单一职责的文件，暂不作为优先候选。
+以上为优先候选。全仓共 91 个 >500 行的源码文件（后端 50 + 前端 41，不含 `frontend/src/test/**`
+测试基建），其余 81 个如下 ——
+多数是拆分后落在 500–770 行、或本身就是数据/注册表性质的文件，暂不作为优先候选。
 
-**后端（17）**：
+**后端（45）**：
 
-- `src/cndb/cli/seed/samples.py` 695
-- `src/cndb/plugins/documents/routers/documents.py` 666
-- `src/cndb/plugins/tables/services/importing/api_fetch.py` 628
-- `src/cndb/plugins/tables/services/transfer/table_create.py` 613
+- `src/cndb/plugins/documents/services/charts/registry.py` 1392
+- `src/cndb/plugins/workspaces/services/backup_io.py` 1324
+- `src/cndb/plugins/datasource/services/runner.py` 1210
+- `src/cndb/plugins/documents/routers/documents.py` 1164
+- `src/cndb/plugins/documents/services/charts/layouts.py` 1007
+- `src/cndb/plugins/tables/routers/views.py` 985
+- `src/cndb/plugins/tables/services/core/dashboard_data.py` 963
+- `src/cndb/plugins/analytics/services/recommend.py` 936
+- `src/cndb/plugins/change_requests/services.py` 918
+- `src/cndb/plugins/documents/services/charts/render.py` 875
+- `src/cndb/plugins/workspaces/services/workspace_backup.py` 812
+- `src/cndb/plugins/documents/services/importers/html.py` 789
+- `src/cndb/core/http.py` 788
+- `src/cndb/plugins/tables/services/core/dashboard_config.py` 769
+- `src/cndb/plugins/design/services/dsl/compile.py` 769
+- `src/cndb/plugins/analytics/services/formula.py` 757
+- `src/cndb/plugins/tables/routers/tables.py` 750
+- `src/cndb/plugins/tables/routers/fields.py` 742
+- `src/cndb/cli/seed/workspace_templates.py` 705
+- `src/cndb/plugins/tables/services/importing/import_tasks.py` 696
+- `src/cndb/plugins/tables/services/transfer/table_create.py` 680
+- `src/cndb/plugins/design/routers.py` 680
+- `src/cndb/plugins/tables/services/fields/field_import.py` 670
+- `src/cndb/plugins/tables/models.py` 663
+- `src/cndb/plugins/workspaces/services/templates/engine.py` 661
+- `src/cndb/plugins/workspaces/routers/workspaces.py` 656
+- `src/cndb/plugins/tables/services/core/ddl.py` 633
+- `src/cndb/plugins/tables/services/core/view_access.py` 608
+- `src/cndb/plugins/design/services/refactor.py` 604
 - `src/cndb/cli/backup.py` 601
-- `src/cndb/plugins/tables/routers/fields.py` 590
-- `src/cndb/plugins/tables/routers/tables.py` 582
+- `src/cndb/plugins/tables/schemas/models.py` 588
+- `src/cndb/plugins/tables/routers/bulk_import.py` 584
+- `src/cndb/plugins/tables/services/core/links.py` 574
 - `src/cndb/plugins/tables/services/importing/field_mapping.py` 573
+- `src/cndb/plugins/design/services/dsl/parse.py` 562
 - `src/cndb/gui/checks.py` 560
-- `src/cndb/plugins/change_requests/services.py` 550
+- `src/cndb/plugins/design/services/dsl/constraints.py` 556
 - `src/cndb/plugins/tables/services/core/lookups.py` 541
-- `src/cndb/plugins/tables/routers/views.py` 539
-- `src/cndb/plugins/workspaces/routers/workspaces.py` 509
+- `src/cndb/plugins/datasource/services/pipeline.py` 531
+- `src/cndb/cli/users/commands.py` 525
+- `src/cndb/plugins/workspaces/services/templates/spec.py` 522
+- `src/cndb/plugins/tables/routers/records.py` 513
+- `src/cndb/plugins/accounts/services/user_bulk.py` 513
 - `src/cndb/plugins/tables/services/fields/select_options.py` 508
-- `src/cndb/plugins/tables/services/core/ddl.py` 505
-- `src/cndb/plugins/tables/routers/bulk_import.py` 504
-- `src/cndb/plugins/tables/services/fields/field_import.py` 502
+- `src/cndb/plugins/documents/services/preview/office.py` 501
 
-**前端（10）**：
+**前端（36）**：
 
-- `src/pages/fields/FieldManager/index.tsx` 678
-- `src/pages/grid/views/GanttView.tsx` 655
-- `src/pages/workspace/TablesList.tsx` 617
-- `src/pages/import-export/ImportExportDialog/ImportPanel.tsx` 615
-- `src/pages/documents/DocumentTree.tsx` 607
-- `src/pages/grid/views/ChartView.tsx` 587
-- `src/pages/settings/TableSettingsPage.tsx` 586
-- `src/pages/documents/DocumentsPage.tsx` 553
-- `src/pages/fields/FieldManager/typeConfigPanel.tsx` 544
-- `src/pages/settings/WorkspaceSettingsContent.tsx` 525
+- `src/pages/documents/DocumentsPage.tsx` 1393
+- `src/pages/help/content/tutorials.tsx` 1135
+- `src/pages/analytics/AnalyticsPage.tsx` 1131
+- `src/pages/documents/ChartDesignerModal.tsx` 1106
+- `src/layouts/MainLayout.tsx` 1072
+- `src/pages/workspace/WorkspaceList.tsx` 1000
+- `src/pages/admin/UsersPage.tsx` 1000
+- `src/pages/import-export/ImportExportDialog/ImportPanel.tsx` 916
+- `src/pages/workspace/TablesList.tsx` 879
+- `src/components/Document/MarkdownLiveEditor.tsx` 876
+- `src/api/documents.ts` 863
+- `src/pages/grid/permissions/PermissionEditor.tsx` 805
+- `src/pages/fields/FieldManager/index.tsx` 771
+- `src/pages/fields/FieldManager/typeConfigPanel.tsx` 765
+- `src/pages/grid/views/dashboard/DashboardConfigDrawer.tsx` 756
+- `src/pages/documents/DocumentTree.tsx` 741
+- `src/pages/grid/views/dashboard/DashboardView.tsx` 696
+- `src/pages/grid/views/ChartView.tsx` 673
+- `src/pages/grid/views/dashboard/dashboardModel.ts` 670
+- `src/pages/grid/views/GanttView.tsx` 664
+- `src/components/Document/codeHighlight.ts` 663
+- `src/pages/settings/WorkspaceSettingsContent.tsx` 614
+- `src/pages/settings/TableSettingsPage.tsx` 600
+- `src/pages/pipelines/PipelinesPage.tsx` 600
+- `src/pages/settings/SettingsModal.tsx` 590
+- `src/pages/dataFlow/DataFlowPage.tsx` 566
+- `src/pages/settings/LlmConfigPanel.tsx` 564
+- `src/pages/grid/gridViewBar.tsx` 557
+- `src/pages/admin/AdminPanel.tsx` 546
+- `src/pages/pipelines/PipelineRunDetail.tsx` 528
+- `src/components/GlobalSearch.tsx` 520
+- `src/pages/grid/views/chartBoard.ts` 519
+- `src/pages/grid/layout/RowDetailDrawer.tsx` 519
+- `src/pages/grid/views/dashboard/chart/option.ts` 513
+- `src/pages/documents/DocumentImportModal.tsx` 511
+- `src/pages/grid/governance/GovernanceDialog.tsx` 507
 
 > 拆分通用的两条约束（多次拆分已验证）：
 > 1. **monkeypatch / mock 目标必须指向 canonical 模块**。把实现移出后，若测试仍 patch 原模块的同名属性，patch 会静默失效（seed 的 `_get_datasets_dir`、reports 的 `_run_command` / `_cjk_font_candidates` 都踩过）。

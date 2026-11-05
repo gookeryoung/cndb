@@ -163,9 +163,9 @@ Related: `src/cndb/plugins/workspaces/`、`src/cndb/plugins/tables/`、`src/cndb
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/services/templates/engine.py`、`src/cndb/alembic/versions/134adcb233cb_add_workspace_templates.py` | `tests/test_workspace_templates.py` | 本次 |
-| P1 | 已落地 | `src/cndb/plugins/workspaces/services/templates/diff.py`、`src/cndb/plugins/workspaces/routers/templates.py` | `tests/test_workspace_templates.py` | 本次 |
-| P2 | 已落地 | `frontend/src/pages/templates/`、`frontend/src/pages/settings/WorkspaceLifecyclePanel.tsx`、`src/cndb/cli/seed/workspace_templates.py` | `frontend/src/pages/templates/*.test.ts*`、`frontend/src/pages/settings/WorkspaceLifecyclePanel.test.tsx` | 本次 |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/services/templates/engine.py`、`src/cndb/alembic/versions/134adcb233cb_add_workspace_templates.py` | `tests/test_workspace_templates.py` | 687e4a9d |
+| P1 | 已落地 | `src/cndb/plugins/workspaces/services/templates/diff.py`、`src/cndb/plugins/workspaces/routers/templates.py` | `tests/test_workspace_templates.py` | 687e4a9d |
+| P2 | 已落地 | `frontend/src/pages/templates/`、`frontend/src/pages/settings/WorkspaceLifecyclePanel.tsx`、`src/cndb/cli/seed/workspace_templates.py` | `frontend/src/pages/templates/*.test.ts*`、`frontend/src/pages/settings/WorkspaceLifecyclePanel.test.tsx` | 687e4a9d |
 
 ## 交接
 

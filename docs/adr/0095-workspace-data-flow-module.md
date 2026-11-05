@@ -131,9 +131,9 @@ Related: `src/cndb/plugins/workspaces/`、`src/cndb/plugins/tables/routers/recor
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/routers/data_flow.py` | `tests/test_workspace_templates.py` | 本次 |
-| P1 | 已落地 | `frontend/src/pages/dataFlow/DataFlowPage.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx` | `frontend/src/pages/dataFlow/DataFlowPage.test.tsx` | 本次 |
-| P2 | 已落地 | `src/cndb/cli/seed/workspace_templates.py`、`src/cndb/cli/seed/runner.py` | `tests/test_workspace_templates.py` | 本次 |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/routers/data_flow.py` | `tests/test_workspace_templates.py` | ce9107b3 |
+| P1 | 已落地 | `frontend/src/pages/dataFlow/DataFlowPage.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx` | `frontend/src/pages/dataFlow/DataFlowPage.test.tsx` | ce9107b3 |
+| P2 | 已落地 | `src/cndb/cli/seed/workspace_templates.py`、`src/cndb/cli/seed/runner.py` | `tests/test_workspace_templates.py` | ce9107b3 |
 
 ## 交接
 

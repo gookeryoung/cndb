@@ -160,8 +160,8 @@ Related: `frontend/src/layouts/MainLayout.tsx`、`frontend/src/layouts/MainLayou
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0/P1 已落地并提交（`30e775d1`），等待人工确认是否将 `Status` 转 `Implemented`
-- 已完成：需求卡片与 ADR 评审确认；顶栏版本查询、版本小字与 `.cn-brand-version` 样式；桌面 / 移动 / 失败态单测
-- 下一步：处理与本次无关的既有后端测试失败后跑 `make flow` 收口；确认后转 `Implemented`
-- 已知坑：头部查询与 `AboutModal` 共用 `['system-about']`，修改 queryKey / staleTime 需两处同步；msw 默认版本为 `0.3.0`，单测断言需跟随该 mock；移动端依赖 `useResponsive` mock 切换；后端全量测试被 `examples/datasets/工作区-数据源示例/views.json` 缺少「全部日线」视图阻塞（HEAD `4fa9c947` 既有问题，与本次改动无关）
+- 当前阶段：P0/P1 已落地（`30e775d1`），Status 已于 2026-11-02 人工确认转 `Implemented`
+- 已完成：需求卡片与 ADR 评审确认；顶栏版本查询、版本小字与 `.cn-brand-version` 样式；桌面 / 移动 / 失败态单测；`make flow` 收口
+- 下一步：无（需求已收口；历史交接中的「既有后端测试失败」已由后续提交修复）
+- 已知坑：头部查询与 `AboutModal` 共用 `['system-about']`，修改 queryKey / staleTime 需两处同步；msw 默认版本为 `0.3.0`，单测断言需跟随该 mock；移动端依赖 `useResponsive` mock 切换。（原已知坑「后端全量测试被 `examples/datasets/工作区-数据源示例/views.json` 缺少「全部日线」视图阻塞」随示例数据集一并移除，见 `f732a77f`）
 - 最近一次全绿：`make check-fast`、`pnpm test`（2300 passed）、`make frontend-coverage`（2026-10-28）

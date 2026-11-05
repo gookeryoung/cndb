@@ -142,9 +142,9 @@ flows: [
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/routers/data_flow.py` | `tests/test_workspace_templates.py` | 本次 |
-| P1 | 已落地 | `frontend/src/pages/dataFlow/DataFlowPage.tsx`、`frontend/src/api/types/templates.ts` | `frontend/src/pages/dataFlow/DataFlowPage.test.tsx` | 本次 |
-| P2 | 已落地 | `src/cndb/cli/seed/workspace_templates.py` | `tests/test_workspace_templates.py` | 本次 |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/routers/data_flow.py` | `tests/test_workspace_templates.py` | c6381579 |
+| P1 | 已落地 | `frontend/src/pages/dataFlow/DataFlowPage.tsx`、`frontend/src/api/types/templates.ts` | `frontend/src/pages/dataFlow/DataFlowPage.test.tsx` | c6381579 |
+| P2 | 已落地 | `src/cndb/cli/seed/workspace_templates.py` | `tests/test_workspace_templates.py` | c6381579 |
 
 ## 交接
 

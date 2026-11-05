@@ -130,9 +130,9 @@ Related: `src/cndb/plugins/tables/field_types/formula.py`、`src/cndb/plugins/ta
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/field_types/formula.py`、`src/cndb/plugins/tables/services/core/formulas.py` | `tests/test_formula_fields.py` | 本次 |
-| P1 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/ddl.py` | `tests/test_formula_fields.py` | 本次 |
-| P2 | 已落地 | `frontend/src/pages/fields/FieldManager/`、`frontend/src/pages/grid/` | `frontend/src/pages/fields/FieldManager/FieldManager.test.tsx` | 本次 |
+| P0 | 已落地 | `src/cndb/plugins/tables/field_types/formula.py`、`src/cndb/plugins/tables/services/core/formulas.py` | `tests/test_formula_fields.py` | b6685f20 |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/ddl.py` | `tests/test_formula_fields.py` | b6685f20 |
+| P2 | 已落地 | `frontend/src/pages/fields/FieldManager/`、`frontend/src/pages/grid/` | `frontend/src/pages/fields/FieldManager/FieldManager.test.tsx` | b6685f20 |
 
 ## 交接
 

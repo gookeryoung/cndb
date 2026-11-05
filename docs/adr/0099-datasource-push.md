@@ -149,9 +149,9 @@ Related: `src/cndb/plugins/datasource/`、`src/cndb/core/http.py`、`frontend/sr
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/datasource/services/push.py`、`src/cndb/alembic/versions/19d835337b45_datasource_push_direction.py` | `tests/test_datasource_push.py` | 本次 |
-| P1 | 已落地 | `src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py` | `tests/test_datasource_push.py` | 本次 |
-| P2 | 已落地 | `frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/api/datasource.ts`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | 本次 |
+| P0 | 已落地 | `src/cndb/plugins/datasource/services/push.py`、`src/cndb/alembic/versions/19d835337b45_datasource_push_direction.py` | `tests/test_datasource_push.py` | 23373e67 |
+| P1 | 已落地 | `src/cndb/plugins/datasource/services/runner.py`、`src/cndb/plugins/datasource/routers/sync_jobs.py` | `tests/test_datasource_push.py` | 23373e67 |
+| P2 | 已落地 | `frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/api/datasource.ts`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py` | `frontend/src/pages/datasource/DatasourcePage.test.tsx` | 23373e67 |
 
 ## 交接
 
