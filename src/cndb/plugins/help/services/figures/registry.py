@@ -58,17 +58,20 @@ def _enum_digest(*enums: object) -> str:
 
 
 def _csv_digest(scenario: str, filename: str) -> str:
-    """示例 CSV 摘要：大小 + 修改时间 + 表头（避免每次全量读文件）."""
+    """示例 CSV 摘要：大小 + 修改时间 + 内容前 4KB（避免每次全量读文件）.
+
+    除表头外多读一段内容：部分文件系统 mtime 粒度较粗（同一秒内改写会得到
+    相同 st_mtime_ns），只比表头会让「同尺寸、首行数据变化」的改写漏检。
+    """
     from cndb.plugins.help.services.assets import resolve_example_file
 
     path = resolve_example_file(scenario, filename)
     if path is None:
         return "missing"
     stat = path.stat()
-    header = ""
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        header = handle.readline().strip()
-    return _hash(str(stat.st_size), str(stat.st_mtime_ns), header)
+        sample = handle.read(4096)
+    return _hash(str(stat.st_size), str(stat.st_mtime_ns), sample)
 
 
 @dataclass(frozen=True)

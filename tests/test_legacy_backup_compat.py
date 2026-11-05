@@ -248,7 +248,8 @@ def test_seed_after_restore_regenerates_demo_data(
     monkeypatch.setattr(settings, "DATABASE_URL", f"sqlite:///{target_db}")
 
     try:
-        seed_command(argparse.Namespace())
+        # 恢复出的库已有用户数据，显式 --force 才允许重建（需求 0106 C1）
+        seed_command(argparse.Namespace(force=True))
 
         # seed 数据已保存：演示账号、工作区、数据表均落在升级后的库中
         with seed_session_factory() as db:
