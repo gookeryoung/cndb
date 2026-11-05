@@ -17,7 +17,7 @@ Related: `src/cndb/plugins/tables/services/governance/detect.py`、`src/cndb/plu
 | C2 | 完整系统闭环 | 新插件 `src/cndb/plugins/pipeline/`：`pipeline_workflow` / `pipeline_run` / `pipeline_finding` 三表 + 后台执行器（单飞）+ REST API + 前端质量检查页（数据表域 `/w/:wid/pipelines`、文档域 `/w/:wid/documents/pipelines`，见 D11） |
 | C3 | 专用声明式 DSL | `pipeline/services/dsl/`：YAML 文本入库，保存期编译为校验过的 IR（JSON）；表达式为递归下降求值的白名单子集，无 eval、无任意代码 |
 | C4 | 数据表检查族 | `pipeline/checks/table/`：`table/null-rate`、`table/duplicates`、`table/value-range`、`table/stale`；字段类型语义复用 `tables.field_types.default_registry`，判重归一化复用治理 `normalize_match_value` |
-| C5 | 文档检查族 | `pipeline/checks/document/`：`document/broken-refs`（图表 / 数据表 / 附件引用失效）、`document/chart-blocks`（复用 `validate_document_blocks` 口径）、`document/links`（站内 wikilink 与 `file:` 引用登记） |
+| C5 | 文档检查族 | `pipeline/checks/document/`：`document/broken-refs`（图表 / 数据表 / 附件引用失效）、`document/chart-blocks`（复用 `validate_document_blocks` 口径）、`document/links`（站内 wikilink 与 `file:` 引用登记）、`document/sensitive`（关键词 / 正则 / 逻辑组合，需求 0102 追加） |
 | C6 | 预留更多格式 | 扩展点唯一：检查动作注册表（`域/动作` 命名空间 + 输入 schema）；只读目录端点 `GET /pipelines/checks`；新格式零引擎改动接入（对标图表模板注册表与 LLM 动作目录范式） |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。

@@ -1079,7 +1079,7 @@ const qualityChecks: HelpTopic = {
                         <><strong>jobs</strong>：<code>needs</code> 声明前置作业形成 DAG，<code>if</code> 用 <code>{'${{ }}'}</code> 白名单表达式（无 eval、无任意代码），<code>with.table</code> 引用工作区真实数据表。</>,
                         <><strong>steps</strong>：<code>uses:</code> 引用检查动作（<code>域/动作</code>，如 <code>table/null-rate</code>），<code>with:</code> 传参数，<code>severity</code> 决定命中后的严重度，<code>continue-on-error</code> 让失败不中断后续步骤。</>,
                         '保存 / 修改时整份 YAML 编译为 IR：未知动作、非法参数、非法表达式都当场 400 拒绝，运行期只会出现业务数据层面的问题，不会出现语法错误。',
-                        '列表页可直接打开 YAML 编辑抽屉；示例工作区带 4 条示例流水线（随 <code>cndb seed</code> 注入，只注入定义不触发运行）。',
+                        '列表页可直接打开 YAML 编辑抽屉；示例工作区带 3 条示例流水线（随 <code>cndb seed</code> 注入，只注入定义不触发运行）。',
                     ]}
                 />
             ),
@@ -1092,7 +1092,8 @@ const qualityChecks: HelpTopic = {
                 <Bullets
                     items={[
                         <><strong>数据表族</strong>：<code>table/null-rate</code>（空值率）、<code>table/duplicates</code>（判重，复用治理的归一化口径）、<code>table/value-range</code>（区间）、<code>table/stale</code>（新鲜度）。</>,
-                        <><strong>文档族</strong>：<code>document/broken-refs</code>（图表 / 数据表 / 附件引用失效）、<code>document/chart-blocks</code>（图表块结构与上限）、<code>document/links</code>（站内 wikilink 与文件引用登记）。</>,
+                        <><strong>文档族</strong>：<code>document/broken-refs</code>（图表 / 数据表 / 附件引用失效）、<code>document/chart-blocks</code>（图表块结构与上限）、<code>document/links</code>（站内 wikilink 与文件引用登记）、<code>document/sensitive</code>（敏感内容：关键词 / 正则 / 命名规则逻辑组合）。</>,
+                        <><strong>document/sensitive</strong>：<code>keywords</code> / <code>patterns</code> / <code>rules</code> 声明规则，<code>logic</code> 支持 any / all 或 and·or·not 表达式组合多条规则；发现只带规则名与标题 / 正文行号，不带命中上下文。</>,
                         '检查按工作区视角运行，不受触发人个人权限影响；隐藏字段不参与、发现里也不带字段值，避免变成侧信道。',
                         '发现的严重度可筛，表目标发现的「转问题」会在目标表建一条问题（标题带严重度与消息，描述含检查动作与定位，类别 data_error）；非表目标不支持转换。',
                     ]}

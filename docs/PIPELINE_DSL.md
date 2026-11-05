@@ -157,7 +157,7 @@ vars:
 
 - 声明为 `string` 的参数（如 `table/value-range` 的 `min` / `max`）必须带引号：`min: "0"`，裸 `min: 0` 会被当作整数而校验失败；
 - 声明为 `string_list` 的参数可写单个字符串或字符串列表：`fields: 商品名称` 与 `fields: [商品名称, 库存数量]` 等价；
-- `with` 不支持嵌套对象。
+- 声明为 `json` 的参数可传对象 / 数组（如 `document/sensitive` 的 `rules`）；嵌套里的 `${{ }}` 表达式同样做语法校验，类型不匹配在保存期拒绝；其余参数仍是标量 / 字符串列表。
 
 ## 3. 内置检查动作目录
 
@@ -170,6 +170,7 @@ vars:
 | `document/links` | 站内链接断链检查 | 无 | 无 | warn | document |
 | `document/broken-refs` | 文档引用失效检查 | 无 | `scopes`（`chart` / `table` / `file`，默认三者全查） | warn | document |
 | `document/chart-blocks` | 内嵌图表块检查 | 无 | `max_blocks`、`max_block_bytes` | warn | document |
+| `document/sensitive` | 文档敏感内容检查 | 无 | `keywords`、`patterns`、`rules`、`logic`（默认 `any`） | warn | document |
 
 各动作的数据口径：
 
@@ -180,6 +181,7 @@ vars:
 - `document/links`：检查 `[[标题]]` wikilink 是否指向存在的文档（代码围栏内不计）。
 - `document/broken-refs`：检查 `{{table:<表ID>|view=<视图ID>}}`、内嵌图表模板、`![alt](file:<key>)` 附件引用是否可解析。
 - `document/chart-blocks`：检查单篇块数量、单块字节数与坏块；默认上限与文档编辑器口径一致。
+- `document/sensitive`：扫描标题与正文；`keywords` 不区分大小写、`patterns` 按 Python `re` 语义；`rules` 声明命名规则（每条规则任一关键词 / 正则命中即算命中），`logic` 用 `any` / `all` / 布尔表达式（`and` / `or` / `not` / 括号，规则名按字面引用）组合多条规则。发现物只带规则名、命中的关键词 / 正则原文与标题 / 正文行号，不回传命中的正文片段。
 
 动作目录可通过 `GET /api/v1/workspaces/{wid}/pipelines/checks` 获取（含参数 schema），前端编辑抽屉据此提供插入辅助。
 
@@ -500,6 +502,39 @@ jobs:
 - 数据表检查与文档检查共用同一套 run / finding 模型，一个工作区一条巡检即可覆盖全部内容物；
 - 无 `needs` 时两个 job 并列执行，互不阻断；结论取全部 job 的最差口径；
 - `chart-blocks` 的上限可覆盖文档编辑器默认值（此处放宽到 40 块），用于承接已人工确认的超限文档。
+
+### 4.11 文档敏感内容巡检（关键词 + 正则 + 逻辑组合）
+
+```yaml
+name: 文档敏感内容巡检
+on:
+  manual: true
+  events: [document.saved]
+jobs:
+  敏感内容:
+    steps:
+      - uses: document/sensitive
+        with:
+          rules:
+            - name: 身份证号
+              patterns: ['\b\d{17}[\dXx]\b']
+            - name: 邮箱地址
+              patterns: ['\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b']
+            - name: 内部资料
+              keywords: [内部资料, 内部底价, 商业机密, 仅限内部]
+          logic: 身份证号 or 邮箱地址 or 内部资料
+        severity: warn
+```
+
+示例工作区中「客户资料交接（敏感内容示例）」一文含虚构身份证号、邮箱与内部资料标记，运行后应产出 3 条发现；其余文档为对照组不产出发现。
+
+要点：
+
+- **规则命中口径**：一条规则内「任一关键词或正则命中」即算该规则命中；关键词不区分大小写，正则用 Python `re`（`(?i)` 可忽略大小写）。
+- **逻辑组合**：`logic: any`（默认，任一规则命中）/ `logic: all`（全部规则命中）/ 布尔表达式（`and` / `or` / `not` / 括号，也支持 `&&` / `||` / `!`），例如 `身份证号 and (内部资料 or 邮箱地址)`；未被表达式引用的规则只参与计算、不产出发现物。
+- **简写**：顶层 `keywords` / `patterns` 会合并为名为 `default` 的隐式规则，可与 `rules` 混用（`logic` 里用 `default` 引用）。
+- **定位与隐私**：发现物带规则名、命中的关键词 / 正则原文、`field`（title / content）与正文行号，不带命中上下文；规则名不能含空白 / 括号，单次最多 50 条规则。
+- **校验时机**：规则结构、正则语法与 `logic` 表达式在运行期进入检查时校验（配置错误记为该 step 失败），保存期只校验 JSON 类型；表达式里引用不存在的规则会给出可用规则名。
 
 ## 5. 最佳实践
 

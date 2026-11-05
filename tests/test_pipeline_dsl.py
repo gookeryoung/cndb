@@ -133,11 +133,6 @@ class TestCompileErrors:
                 "with 必须是映射",
             ),
             (
-                "name: 名称\njobs:\n  a:\n    steps:\n      - uses: table/null-rate\n"
-                "        with: {table: 人员, max_rate: {a: 1}}\n",
-                "不支持嵌套对象",
-            ),
-            (
                 "name: 名称\njobs:\n  a:\n    steps:\n      - uses: document/links\n        severity: fatal\n",
                 "severity",
             ),

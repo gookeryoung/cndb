@@ -37,7 +37,9 @@ INPUT_INTEGER = "integer"
 INPUT_NUMBER = "number"
 INPUT_BOOLEAN = "boolean"
 INPUT_STRING_LIST = "string_list"
-INPUT_TYPES = (INPUT_STRING, INPUT_INTEGER, INPUT_NUMBER, INPUT_BOOLEAN, INPUT_STRING_LIST)
+#: 任意 JSON 值（对象 / 数组 / 标量）：用于结构化配置（如 document/sensitive 的 rules）
+INPUT_JSON = "json"
+INPUT_TYPES = (INPUT_STRING, INPUT_INTEGER, INPUT_NUMBER, INPUT_BOOLEAN, INPUT_STRING_LIST, INPUT_JSON)
 
 #: 分页扫描批大小（与治理判重同量级）
 SCAN_BATCH_SIZE = 5000
@@ -229,6 +231,7 @@ def _has_physical_column(field: DataField) -> bool:
 __all__ = [
     "INPUT_BOOLEAN",
     "INPUT_INTEGER",
+    "INPUT_JSON",
     "INPUT_NUMBER",
     "INPUT_STRING",
     "INPUT_STRING_LIST",

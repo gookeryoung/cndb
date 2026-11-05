@@ -14,6 +14,7 @@ from typing import Any
 from cndb.plugins.pipeline.services.checks.base import (
     INPUT_BOOLEAN,
     INPUT_INTEGER,
+    INPUT_JSON,
     INPUT_NUMBER,
     INPUT_STRING,
     INPUT_STRING_LIST,
@@ -111,6 +112,7 @@ def load_builtins() -> None:
         broken_refs,
         chart_blocks,
         links,
+        sensitive,
     )
     from cndb.plugins.pipeline.services.checks.table import (  # noqa: F401 - 导入即注册
         duplicates,
@@ -182,10 +184,23 @@ def _validate_static(input_type: str, value: Any, uses: str, name: str) -> None:
         ok = isinstance(value, bool)
     elif input_type == INPUT_STRING_LIST:
         ok = isinstance(value, str) or (isinstance(value, list) and all(isinstance(v, str) for v in value))
+    elif input_type == INPUT_JSON:
+        ok = _is_json_value(value)
     else:  # pragma: no cover - 注册表只会登记白名单类型
         ok = False
     if not ok:
         raise CheckError(f"{uses} 参数 {name} 类型不匹配（期望 {input_type}）")
+
+
+def _is_json_value(value: Any) -> bool:
+    """值能否原样写进 ``compiled`` JSON 列（拒绝 YAML 日期等非 JSON 类型）."""
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return True
+    if isinstance(value, list):
+        return all(_is_json_value(item) for item in value)
+    if isinstance(value, dict):
+        return all(isinstance(key, str) and _is_json_value(item) for key, item in value.items())
+    return False
 
 
 def coerce_params(spec: CheckSpec, params: dict[str, Any]) -> dict[str, Any]:
@@ -206,6 +221,10 @@ def _coerce(input_type: str, value: Any, uses: str, name: str) -> Any:
         if isinstance(value, list) and all(isinstance(v, str) for v in value):
             return list(value)
         raise CheckError(f"{uses} 参数 {name} 不是字符串列表")
+    if input_type == INPUT_JSON:
+        if _is_json_value(value):
+            return value
+        raise CheckError(f"{uses} 参数 {name} 不是合法 JSON 值")
     if input_type == INPUT_STRING:
         if isinstance(value, str):
             return value

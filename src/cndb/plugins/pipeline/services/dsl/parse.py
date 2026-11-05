@@ -301,18 +301,23 @@ def _compile_steps(raw: Any, job_id: str) -> tuple[StepIR, ...]:
 
 
 def _validate_expression_values(params: dict[str, Any], what: str) -> None:
-    """``with`` 静态值中的表达式逐个做语法校验."""
+    """``with`` 静态值中的表达式逐个做语法校验（支持 ``json`` 参数的嵌套结构）."""
     for key, value in params.items():
-        if is_expression(value):
-            parse_expression(str(value))
-        elif isinstance(value, list):
-            for item in value:
-                if is_expression(item):
-                    parse_expression(str(item))
-        elif isinstance(value, (dict,)):
-            raise DslError(f"{what}.{key} 不支持嵌套对象")
-        elif not isinstance(value, (str, int, float, bool)) and value is not None:
-            raise DslError(f"{what}.{key} 类型不受支持")
+        _validate_expression_value(value, f"{what}.{key}")
+
+
+def _validate_expression_value(value: Any, what: str) -> None:
+    if is_expression(value):
+        parse_expression(str(value))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            _validate_expression_value(item, f"{what}[{index}]")
+    elif isinstance(value, dict):
+        # 结构化参数（``json`` 类型）允许嵌套对象；类型是否匹配由 validate_static_params 决定
+        for key, item in value.items():
+            _validate_expression_value(item, f"{what}.{key}")
+    elif not isinstance(value, (str, int, float, bool)) and value is not None:
+        raise DslError(f"{what} 类型不受支持")
 
 
 def _detect_cycles(jobs: list[JobIR]) -> None:

@@ -195,7 +195,11 @@ def test_real_pipeline_examples_are_valid(db, db_engine, tmp_path):
     base = Path(__file__).resolve().parents[1] / "examples" / "datasets"
     ws_yamls = seed_paths._get_workspace_pipeline_yamls(base)
     assert set(ws_yamls) == {"某企业销售管理"}
-    assert [p.name for p in ws_yamls["某企业销售管理"]] == ["工作区综合巡检.yaml", "销售数据质量巡检.yaml"]
+    assert [p.name for p in ws_yamls["某企业销售管理"]] == [
+        "工作区综合巡检.yaml",
+        "文档敏感内容巡检.yaml",
+        "销售数据质量巡检.yaml",
+    ]
 
     names: set[str] = set()
     for ws_name, yamls in ws_yamls.items():
