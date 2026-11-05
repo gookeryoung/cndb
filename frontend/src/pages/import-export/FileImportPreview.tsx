@@ -18,10 +18,12 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Modal, Input, Tag, Button, Popover, Select, Alert, App as AntApp } from 'antd'
+import { Link } from 'react-router-dom'
+import { Modal, Input, Tag, Button, Popover, Select, Alert, App as AntApp, Tooltip } from 'antd'
 import { CheckOutlined, FileTextOutlined, InfoCircleOutlined, PlusOutlined, WarningOutlined } from '@ant-design/icons'
 import { importApi } from '@/api'
 import type { FileAnalyzeResult, FileImportResult, HeaderDetectionCandidate } from '@/api'
+import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
 
 
 interface Props {
@@ -277,7 +279,7 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
       {/* 表名输入（固定，不随主体滚动） */}
       <div style={{ flexShrink: 0, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ fontWeight: WEIGHT.medium, whiteSpace: 'nowrap' }}>表名：</span>
-        <Input value={tableName} onChange={e => setTableName(e.target.value)} style={{ flex: 1 }} placeholder="自动使用文件名" />
+        <Input value={tableName} onChange={e => setTableName(e.target.value)} style={{ flex: 1 }} placeholder="默认使用文件名，可修改" />
         <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
           {currentResult?.format?.toUpperCase() ?? '-'} · {currentResult?.total_rows ?? 0} 行
         </span>
@@ -295,19 +297,25 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
               <span>
                 {headerDetection.message}
                 {headerDetection.requires_review && (
-                  <span style={{ marginLeft: 6 }}>建议人工确认识别到的表头行</span>
+                  <span style={{ marginLeft: 6 }}>
+                    系统把握不大，请人工确认表头行（选错会导致整张表的列名不对）
+                  </span>
                 )}
               </span>
             }
           />
-          <Tag
-            color={headerDetection.requires_review ? 'orange' : 'blue'}
-            style={{ margin: '2px 0 0', flexShrink: 0 }}
-          >
-            置信度 {Math.round(headerDetection.confidence * 100)}%
-          </Tag>
+          <Tooltip title="置信度是系统对「这一行是表头」的把握：百分比越低越要人工核对">
+            <Tag
+              color={headerDetection.requires_review ? 'orange' : 'blue'}
+              style={{ margin: '2px 0 0', flexShrink: 0 }}
+            >
+              置信度 {Math.round(headerDetection.confidence * 100)}%
+            </Tag>
+          </Tooltip>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-            <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)', whiteSpace: 'nowrap' }}>表头行：</span>
+            <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)', whiteSpace: 'nowrap' }}>
+              表头行（列名取自这一行）：
+            </span>
             <Select
               data-testid="header-row-select"
               size="small"
@@ -318,6 +326,13 @@ export default function FileImportPreview({ open, wid, file, analyzeResult, onCl
               disabled={headerLoading || headerCandidateOptions.length === 0}
               onChange={(row: number) => { void handleHeaderRowChange(row) }}
             />
+            <Link
+              className="cn-help-inline-link"
+              to={helpLink('tutorials', 'import-export', subsectionAnchor('header'))}
+              data-testid="import-header-help-link"
+            >
+              看不准？看帮助
+            </Link>
           </div>
         </div>
       )}

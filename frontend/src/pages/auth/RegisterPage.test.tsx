@@ -30,10 +30,10 @@ function renderRegister() {
 }
 
 async function fillAndSubmit(username: string, password: string, email?: string) {
-  fireEvent.change(screen.getByPlaceholderText('用户名'), { target: { value: username } })
-  fireEvent.change(screen.getByPlaceholderText('密码'), { target: { value: password } })
+  fireEvent.change(screen.getByPlaceholderText('登录时使用的用户名'), { target: { value: username } })
+  fireEvent.change(screen.getByPlaceholderText('设置登录密码'), { target: { value: password } })
   if (email !== undefined) {
-    fireEvent.change(screen.getByPlaceholderText('your@email.com'), { target: { value: email } })
+    fireEvent.change(screen.getByPlaceholderText('name@example.com（可选）'), { target: { value: email } })
   }
   // antd 两字按钮会自动插入空格（"注 册"），用正则兼容
   fireEvent.click(screen.getByRole('button', { name: /^注\s*册$/ }))

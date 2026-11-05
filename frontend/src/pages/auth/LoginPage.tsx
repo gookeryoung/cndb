@@ -19,7 +19,7 @@ export default function LoginPage() {
       message.success('登录成功')
       navigate(returnTo, { replace: true })
     } catch {
-      message.error('用户名或密码错误')
+      message.error('用户名或密码错误，请检查后重试')
     }
   }
 
@@ -33,10 +33,20 @@ export default function LoginPage() {
         <Text type="secondary">登录以继续</Text>
       </div>
       <Form layout="vertical" onFinish={onFinish} initialValues={{ remember: true }}>
-        <Form.Item name="login" label="用户名" rules={[{ required: true, message: '请输入用户名或邮箱' }]}>
+        <Form.Item
+          name="login"
+          label="用户名"
+          extra="用户名或邮箱都可以登录"
+          rules={[{ required: true, message: '请输入用户名或邮箱' }]}
+        >
           <Input prefix={<UserOutlined />} placeholder="用户名或邮箱" size="large" />
         </Form.Item>
-        <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
+        <Form.Item
+          name="password"
+          label="密码"
+          extra="区分大小写"
+          rules={[{ required: true, message: '请输入密码' }]}
+        >
           <Input.Password prefix={<LockOutlined />} placeholder="密码" size="large" />
         </Form.Item>
         <Form.Item name="remember" valuePropName="checked" style={{ marginBottom: 16 }}>

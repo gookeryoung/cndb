@@ -777,7 +777,7 @@ export default function AnalyticsPage() {
           <Select
             data-testid="analytics-template-select"
             style={{ width: 200 }}
-            placeholder="加载已保存模板"
+            placeholder="选择已保存模板"
             value={activeTemplateId ?? undefined}
             allowClear
             options={templates.map(t => ({ value: t.id, label: t.name }))}
@@ -919,7 +919,7 @@ export default function AnalyticsPage() {
                 size="small"
                 allowClear
                 data-testid="analytics-scope-field"
-                placeholder="不限（全表）"
+                placeholder="不限（全部数据）"
                 value={scopeField ?? undefined}
                 options={tableFields.map(name => ({ value: name, label: name }))}
                 onChange={value => setScopeField(value ?? null)}

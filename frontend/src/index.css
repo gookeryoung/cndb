@@ -845,6 +845,27 @@ body.theme-oled {
   font-size: var(--cn-text-xs);
 }
 
+/* 无结果：一句话原因 + 下一步指引 + 帮助链接（ADR 0105 R3 / R5） */
+.cn-gs-state-empty {
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.cn-gs-state-hint {
+  color: var(--cn-text-secondary);
+}
+
+.cn-gs-state-link {
+  color: var(--cn-brand-color);
+  text-decoration: none;
+}
+
+.cn-gs-state-link:hover {
+  text-decoration: underline;
+}
+
 .cn-gs-footer {
   display: flex;
   justify-content: space-between;
@@ -4093,6 +4114,24 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-weight: var(--cn-weight-medium);
 }
 
+/* 侧栏就地 L3（ADR 0105 §5.1）：仅当前主题展开，字号比 L2 小一档 */
+.cn-help-docs-nav-sub.ant-menu-item {
+  height: auto;
+  min-height: 30px;
+  margin-block: var(--cn-space-hairline);
+  padding-block: var(--cn-space-xs);
+  font-size: var(--cn-text-xs);
+  line-height: 1.5;
+  color: var(--cn-text-muted);
+}
+
+.cn-help-docs-nav-sub.ant-menu-item.is-active {
+  background: var(--cn-mix-brand-color-12-bg-container);
+  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
+  color: var(--cn-brand-color);
+  font-weight: var(--cn-weight-medium);
+}
+
 /* 正文层级（L2 标题 / L3 小节 / L4 条目） */
 .cn-help-docs-lead {
   margin-bottom: var(--cn-space-lg);
@@ -6986,6 +7025,24 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-datasource-form .ant-form-item-extra {
   margin-top: var(--cn-space-hairline);
   font-size: var(--cn-text-xs);
+}
+
+/* 抽屉顶部的一句话帮助入口（ADR 0105 R5） */
+.cn-datasource-form-help {
+  margin-bottom: var(--cn-space-md);
+  font-size: var(--cn-text-xs);
+  line-height: 1.6;
+}
+
+.cn-datasource-form-help a,
+.cn-help-inline-link {
+  color: var(--cn-brand-color);
+  text-decoration: none;
+}
+
+.cn-datasource-form-help a:hover,
+.cn-help-inline-link:hover {
+  text-decoration: underline;
 }
 
 /* 抽屉首行：方向 / 名称 / 适配器 / 启用 同排，标签在控件上方对齐 */

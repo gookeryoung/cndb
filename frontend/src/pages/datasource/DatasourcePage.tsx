@@ -17,9 +17,10 @@ import {
   EyeOutlined, HistoryOutlined, KeyOutlined, PlayCircleOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import { datasourceApi, tableApi, useLlmConfigured } from '@/api'
 import { analyticsApi } from '@/api/analytics'
+import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
 import { materializeDomainTemplate } from './domainTemplate'
 import { LLM_PROMPT_PRESETS, type LlmPromptPreset } from './llmPromptPresets'
 import { RUNNING_ROWS_LIMIT, formatElapsed, formatRate, visibleRunningJobs } from './syncProgress'
@@ -951,6 +952,13 @@ function JobDrawer({
         }
       >
         <Form form={form} layout="vertical" size="small" className="cn-datasource-form">
+          <div className="cn-datasource-form-help">
+            <Text type="secondary">
+              第一次配置？先看
+              <Link to={helpLink('configuration', 'datasource', subsectionAnchor('schedule'))}> 数据同步帮助 </Link>
+              ：抓取与推送的方向、幂等键与调度都用一句话说明。
+            </Text>
+          </div>
           {legacyConfig.length > 0 && (
             <Alert
               type="warning"
@@ -1031,14 +1039,19 @@ function JobDrawer({
                 <Form.Item name="push_max_rows" label="单次最多行数" style={{ width: 120 }}>
                   <InputNumber min={1} max={100000} style={{ width: '100%' }} />
                 </Form.Item>
-                <Form.Item name="push_watermark_field" label="增量字段（可选）" style={{ flex: 1, minWidth: 160 }}>
+                <Form.Item
+                  name="push_watermark_field"
+                  label="增量字段（可选）"
+                  tooltip="只推送这个字段大于上次推送值的新行；留空则每次全量推送。字段必须是源表的物理列"
+                  style={{ flex: 1, minWidth: 160 }}
+                >
                   <Input placeholder="updated_at / day；留空每次全量" />
                 </Form.Item>
               </div>
               <Form.Item
                 name="push_fields"
-                label="推送字段（留空=全部未隐藏字段）"
-                tooltip="按源表字段名选择；未知字段保存时会被拒绝"
+                label="推送字段（留空 = 全部未隐藏字段）"
+                tooltip="按源表字段名选择；未知字段保存时会被拒绝。link / lookup 等虚拟列不会进入推送载荷"
               >
                 <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 项目名称, 负责人" />
               </Form.Item>
@@ -1342,7 +1355,7 @@ function JobDrawer({
                 >
                   <Select
                     allowClear
-                    placeholder="不使用会话（凭据内联在请求模板里）"
+                    placeholder="不使用会话（密钥直接写在请求模板里）"
                     options={sessions.map(item => ({
                       value: item.id,
                       label: item.secret_keys.length ? `${item.name}（密钥: ${item.secret_keys.join(', ')}）` : item.name,
@@ -1377,7 +1390,12 @@ function JobDrawer({
               </Form.Item>
 
               <div className="cn-datasource-form-row">
-                <Form.Item name="data_path" label="响应数组路径" style={{ flex: 1 }}>
+                <Form.Item
+                  name="data_path"
+                  label="响应数组路径"
+                  tooltip="告诉系统从响应 JSON 的哪一层取数据行；留空自动探测 data / items / results"
+                  style={{ flex: 1 }}
+                >
                   <Input placeholder="data.items（留空自动探测 data / items / results）" />
                 </Form.Item>
                 <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 150 }}>
@@ -1420,7 +1438,12 @@ function JobDrawer({
                               options={Object.entries(CURSOR_LABEL).map(([value, label]) => ({ value, label }))}
                             />
                           </Form.Item>
-                          <Form.Item name="cursor_field" label="增量字段" style={{ flex: 1 }}>
+                          <Form.Item
+                            name="cursor_field"
+                            label="增量字段"
+                            tooltip="按这个日期字段只抓新数据：每轮从上次位置继续，已抓过的不会重复入库"
+                            style={{ flex: 1 }}
+                          >
                             <Input disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'} placeholder="day / published_at" />
                           </Form.Item>
                           <Form.Item name="backfill_start" label="回填起点" style={{ width: 140 }}>

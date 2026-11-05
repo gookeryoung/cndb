@@ -79,6 +79,11 @@ describe('GlobalSearch 顶栏工作区搜索', () => {
     await typeKeyword('需求')
     expect(await screen.findByTestId('global-search-empty')).toBeInTheDocument()
     expect(screen.queryByTestId('global-search-doc-2')).toBeNull()
+    // 空态带下一步指引与帮助链接（ADR 0105 R3/R5），链接落到搜索主题的 L3 锚点
+    expect(screen.getByTestId('global-search-help-link')).toHaveAttribute(
+      'href',
+      '/help/tutorials/search#help-global',
+    )
   })
 
   it('工作区范围不按当前视图收敛：不回显视图范围', async () => {
@@ -187,7 +192,7 @@ describe('GlobalSearch 主页模式（0081 C3）', () => {
     renderGlobalSearch()
     const input = screen.getByTestId('global-search-input')
     expect(input).toHaveAttribute('aria-label', '搜索全部工作区')
-    expect(input).toHaveAttribute('placeholder', '搜索全部工作区，或输入 > 执行命令…')
+    expect(input).toHaveAttribute('placeholder', '搜索全部工作区，输入 > 执行命令…')
     // 范围选择器只属于工作区模式（C3：主页不收敛范围）
     expect(screen.queryByTestId('global-search-scope')).toBeNull()
 

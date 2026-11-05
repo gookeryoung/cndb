@@ -10,7 +10,7 @@ import { Bullets, HelpLink, Note, P, Steps, Strong } from './primitives'
 const faq: HelpTopic = {
     key: 'faq',
     label: '常见问题',
-    intro: <P>高频短问答，按主题分组；每条只回答一个问题，需要完整步骤时点进对应主题。</P>,
+    intro: <P>本页你能学到什么：常见问题的一句话答案与对应详细主题。适合谁：遇到具体疑问、想快速确认的成员。</P>,
     subsections: [
         {
             key: 'data',
@@ -137,7 +137,7 @@ const faq: HelpTopic = {
 const guide: HelpTopic = {
     key: 'guide',
     label: '使用与故障排查',
-    intro: <P>按症状定位：每一条给出「先查什么 → 常见原因 → 怎么处理」，仍无法解决时按诊断与反馈收集信息。</P>,
+    intro: <P>本页你能学到什么：按症状定位问题（先查什么 → 常见原因 → 怎么处理）。适合谁：操作卡住或数据看起来不对的成员。</P>,
     subsections: [
         {
             key: 'login',
@@ -323,7 +323,7 @@ const guide: HelpTopic = {
 const feedback: HelpTopic = {
     key: 'feedback',
     label: '诊断与反馈',
-    intro: <P>提交问题前花一分钟收集信息，能显著缩短定位时间；本页说明需要准备什么、去哪里提交。</P>,
+    intro: <P>本页你能学到什么：提交问题前要准备哪些信息、去哪里提交。适合谁：排查后仍未解决、需要求助的成员。</P>,
     subsections: [
         {
             key: 'collect',

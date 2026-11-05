@@ -61,7 +61,7 @@ describe('LoginPage 登录', () => {
     renderLogin()
     await fillAndSubmit('alice', 'wrong')
 
-    expect(await screen.findByText('用户名或密码错误')).toBeInTheDocument()
+    expect(await screen.findByText('用户名或密码错误，请检查后重试')).toBeInTheDocument()
     expect(screen.queryByTestId('ws-probe')).not.toBeInTheDocument()
   })
 })

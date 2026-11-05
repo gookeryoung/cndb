@@ -857,7 +857,7 @@ export default function MainLayout() {
           {/* 大模型设置入口 —— 个人级连接与调用记录；桌面端常驻图标（帮助左侧），
               移动端顶栏空间紧张，入口收进用户菜单（见 userMenuItems） */}
           {!isMobile && (
-            <Tooltip title="大模型设置：连接配置与调用记录">
+            <Tooltip title="大模型设置：配置连接、查看调用记录">
               <Button
                 icon={<RobotOutlined />}
                 aria-label="大模型设置"
@@ -868,7 +868,7 @@ export default function MainLayout() {
           )}
           {/* 工作区模板中心（需求 0094）—— 桌面端常驻图标；移动端收进用户菜单 */}
           {!isMobile && (
-            <Tooltip title="工作区模板：表单 / 文档规则 / 流程驱动">
+            <Tooltip title="工作区模板：按模板快速建工作区">
               <Button
                 icon={<AppstoreOutlined />}
                 aria-label="工作区模板"
@@ -879,7 +879,7 @@ export default function MainLayout() {
           )}
           {/* 帮助文档入口（ADR 0029）—— 桌面端常驻图标，整页路由；移动端收进用户菜单 */}
           {!isMobile && (
-            <Tooltip title="帮助文档与新手引导">
+            <Tooltip title="帮助文档：使用说明、操作教程与新手引导">
               <Button
                 icon={<QuestionCircleOutlined />}
                 aria-label="帮助文档"
@@ -891,7 +891,7 @@ export default function MainLayout() {
           {/* 系统管理台入口 —— 仅管理员可见，置于用户头像左侧以区别于常规导航；
               /admin 上下文时以品牌色描边高亮（cn-header-icon-btn-active） */}
           {isAdmin && (
-            <Tooltip title="系统管理台">
+            <Tooltip title="管理台：账号、空间、备份与实例设置">
               <Button
                 icon={<SafetyOutlined />}
                 aria-label="管理台"

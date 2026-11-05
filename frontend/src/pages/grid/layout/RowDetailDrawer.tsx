@@ -432,7 +432,7 @@ export function FieldEditor({
     case 'phone':
       return <Input value={value as string} onChange={e => onChange(e.target.value)} placeholder="手机号" disabled={disabled} />
     case 'json':
-      return <Input.TextArea rows={3} value={typeof value === 'string' ? value : JSON.stringify(value ?? '', null, 2)} onChange={e => onChange(e.target.value)} placeholder="JSON" disabled={disabled} />
+      return <Input.TextArea rows={3} value={typeof value === 'string' ? value : JSON.stringify(value ?? '', null, 2)} onChange={e => onChange(e.target.value)} placeholder={'{"key": "value"}（原样保存）'} disabled={disabled} />
     case 'attachment': {
       const files: AttachmentFile[] = Array.isArray(value)
         ? (value as AttachmentFile[])

@@ -319,6 +319,9 @@ describe('DatasourcePage', () => {
     // 推送说明收进「方向」标签的 ? tooltip，不再用 Alert 占一行
     expect(await screen.findByText('源数据表')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    // 推送字段与增量字段的口径白话化（ADR 0105 R1/R2）
+    expect(screen.getByText('推送字段（留空 = 全部未隐藏字段）')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('updated_at / day；留空每次全量')).toBeInTheDocument()
     const dirTip = document.querySelector('.cn-datasource-dir .ant-form-item-tooltip') as HTMLElement
     expect(dirTip).toBeTruthy()
     fireEvent.mouseEnter(dirTip)
@@ -493,6 +496,12 @@ describe('DatasourcePage · 凭证会话与领域模板', () => {
     const drawer = screen.getByText(/编辑同步任务 · 北京天气日报/).closest('.ant-drawer-section') as HTMLElement
     expect(within(drawer).getByText('凭证会话')).toBeInTheDocument()
     expect(within(drawer).getByText('请求间隔（毫秒）')).toBeInTheDocument()
+    // 初级用户指路：抽屉顶部帮助链接 + 会话空选项的白话解释（ADR 0105 R1/R5）
+    expect(within(drawer).getByRole('link', { name: /数据同步帮助/ })).toHaveAttribute(
+      'href',
+      '/help/configuration/datasource#help-schedule',
+    )
+    expect(within(drawer).getByText('不使用会话（密钥直接写在请求模板里）')).toBeInTheDocument()
   })
 
   it('会话管理：列表展示已有会话，可进入新建表单', async () => {

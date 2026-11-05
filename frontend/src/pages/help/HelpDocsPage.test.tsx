@@ -48,16 +48,17 @@ describe('HelpDocsPage 桌面端', () => {
             // 面包屑会重复一级标题，故限定在侧栏内断言
             expect(within(aside).getByText(section.label)).toBeInTheDocument()
         }
-        // 二级主题也能展开看到；当前主题选中
+        // 二级主题也能展开看到；当前主题选中（有 L3 的当前主题是 SubMenu）
         const current = screen.getByRole('menuitem', { name: '认识晶格协同' })
-        expect(current.className).toContain('ant-menu-item-selected')
+        expect(current.closest('li')?.className).toContain('ant-menu-submenu-selected')
     })
 
     it('深链 /help/tutorials/roles 渲染对应主题并选中二级项', async () => {
         renderHelp('/help/tutorials/roles')
 
         expect(await screen.findByRole('heading', { name: '权限与角色' })).toBeVisible()
-        expect(screen.getByRole('menuitem', { name: '权限与角色' }).className).toContain('ant-menu-item-selected')
+        expect(screen.getByRole('menuitem', { name: '权限与角色' }).closest('li')?.className)
+            .toContain('ant-menu-submenu-selected')
         expect(within(screen.getByTestId('help-docs-aside')).getByText('教程&最佳实践')).toBeInTheDocument()
     })
 
@@ -131,6 +132,54 @@ describe('HelpDocsPage 页内目录（L3 / L4）', () => {
             expect(screen.getByTestId('help-toc-row-level').className).toContain('is-active')
         })
         expect(document.getElementById('help-row-level')).toBeTruthy()
+    })
+})
+
+describe('HelpDocsPage 侧栏就地 L3 目录（ADR 0105 §5.1）', () => {
+    it('选中主题在侧栏就地展开 L3，未选中主题不展开', async () => {
+        renderHelp('/help/tutorials/field-types')
+
+        const aside = screen.getByTestId('help-docs-aside')
+        // 当前主题的 L3 直接出现在侧栏（数据复用正文，不走额外请求）
+        expect(await within(aside).findByRole('menuitem', { name: '分类总览' })).toBeVisible()
+        expect(within(aside).getByRole('menuitem', { name: '高级类型' })).toBeVisible()
+        // 其它主题保持单层：roles 的 L3 不会出现
+        expect(within(aside).queryByRole('menuitem', { name: '角色模型' })).toBeNull()
+    })
+
+    it('点击侧栏 L3 定位到对应小节并高亮', async () => {
+        renderHelp('/help/tutorials/roles')
+
+        const aside = screen.getByTestId('help-docs-aside')
+        fireEvent.click(await within(aside).findByRole('menuitem', { name: '行级权限规则' }))
+        await waitFor(() => {
+            expect(screen.getByTestId('help-toc-row-level').className).toContain('is-active')
+        })
+        expect(document.getElementById('help-row-level')).toBeTruthy()
+    })
+
+    it('页首导语回答「本页你能学到什么」与「适合谁」', async () => {
+        renderHelp('/help/tutorials/roles')
+
+        const intro = await screen.findByTestId('help-topic-intro')
+        expect(intro).toHaveTextContent('本页你能学到什么')
+        expect(intro).toHaveTextContent('适合谁')
+    })
+
+    it('新增主题工作区模板路由直达，并展开自己的 L3', async () => {
+        renderHelp('/help/tutorials/templates')
+
+        expect(await screen.findByRole('heading', { name: '工作区模板' })).toBeVisible()
+        const aside = screen.getByTestId('help-docs-aside')
+        expect(await within(aside).findByRole('menuitem', { name: '模板是什么' })).toBeVisible()
+    })
+
+    it('新增主题数据流程路由直达，并展开自己的 L3', async () => {
+        renderHelp('/help/tutorials/data-flow')
+
+        expect(await screen.findByRole('heading', { name: '数据流程' })).toBeVisible()
+        const aside = screen.getByTestId('help-docs-aside')
+        expect(await within(aside).findByRole('menuitem', { name: '流程图与步骤' })).toBeVisible()
     })
 })
 

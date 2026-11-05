@@ -89,14 +89,16 @@ export default function RegisterPage() {
         <Form.Item
           name="username"
           label="用户名"
+          extra="登录时使用，2 个字符以上，注册后不可修改"
           rules={[{ required: true, message: '请输入用户名' }, { min: 2, message: '至少 2 个字符' }]}
         >
-          <Input prefix={<UserOutlined />} placeholder="用户名" size="large" />
+          <Input prefix={<UserOutlined />} placeholder="登录时使用的用户名" size="large" />
         </Form.Item>
 
         <Form.Item
           name="nickname"
           label="昵称"
+          extra="同事在成员列表里看到的名字，可留空"
         >
           <Input prefix={<UserOutlined />} placeholder="显示昵称（可选）" size="large" />
         </Form.Item>
@@ -104,17 +106,19 @@ export default function RegisterPage() {
         <Form.Item
           name="email"
           label="邮箱"
+          extra="用于账号找回，可留空"
           rules={[{ type: 'email', message: '邮箱格式不正确' }]}
         >
-          <Input prefix={<MailOutlined />} placeholder="your@email.com" size="large" />
+          <Input prefix={<MailOutlined />} placeholder="name@example.com（可选）" size="large" />
         </Form.Item>
 
         <Form.Item
           name="password"
           label="密码"
+          extra="至少 6 位，区分大小写"
           rules={[{ required: true, message: '请输入密码' }, { min: 6, message: '至少 6 位' }]}
         >
-          <Input.Password prefix={<LockOutlined />} placeholder="密码" size="large" />
+          <Input.Password prefix={<LockOutlined />} placeholder="设置登录密码" size="large" />
         </Form.Item>
 
         <Button type="primary" htmlType="submit" block size="large">注册</Button>

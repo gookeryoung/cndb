@@ -25,6 +25,7 @@ import {
 } from 'antd'
 import { ApiOutlined, HistoryOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   llmApi,
@@ -33,6 +34,7 @@ import {
   type LlmRun,
 } from '@/api'
 import { SPACE, TEXT } from '@/theme/tokens'
+import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
 import { CUSTOM_PROVIDER_ID, LLM_PROVIDERS, findProviderByBaseUrl } from './llmProviders'
 
 const { Text, Paragraph } = Typography
@@ -324,6 +326,15 @@ export default function LlmConfigPanel() {
             </Text>
           </Space>
         )}
+        description={(
+          <span>
+            填服务商、模型与 API Key 就能用；不确定怎么填？看
+            <Link className="cn-help-inline-link" to={helpLink('configuration', 'personal', subsectionAnchor('llm'))}>
+              大模型连接说明
+            </Link>
+            。
+          </span>
+        )}
       />
       <Form
         form={form}
@@ -373,6 +384,7 @@ export default function LlmConfigPanel() {
         <Form.Item
           name="api_key"
           label="API Key"
+          tooltip="模型服务商发给你的密钥，相当于调用密码；保存后只显示「已配置」，不会再回显全文"
           extra={(
             <Space size={SPACE.md} wrap>
               <span>

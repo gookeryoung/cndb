@@ -80,6 +80,15 @@ export default function HelpDocsPage() {
         setOpenKeys((keys) => (keys.includes(section.key) ? keys : [...keys, section.key]))
     }, [section.key])
 
+    // 选中主题的就地 L3 目录：切换主题时只保留当前主题的展开态（ADR 0105 §5.1）。
+    useEffect(() => {
+        setOpenKeys((keys) => {
+            const sectionKeys = new Set<string>(HELP_SECTIONS.map((item) => item.key))
+            const next = keys.filter((key) => sectionKeys.has(key))
+            return next.includes(canonical) ? next : [...next, canonical]
+        })
+    }, [canonical])
+
     // 换主题时重置页内选中态，并按 hash 定位（`#help-<小节>` / `#help-<小节>--<条目>`）。
     useEffect(() => {
         const hash = location.hash.replace(/^#/, '')
@@ -94,11 +103,33 @@ export default function HelpDocsPage() {
         key: item.key,
         icon: item.icon,
         label: item.label,
-        children: item.topics.map((t) => ({ key: topicPath(item.key, t.key), label: t.label })),
+        children: item.topics.map((t) => {
+            const path = topicPath(item.key, t.key)
+            // 未选中主题保持单层；当前主题就地展开 L3（正文已懒加载，零额外 请求）
+            if (path !== canonical || !topic) return { key: path, label: t.label }
+            return {
+                key: path,
+                label: t.label,
+                onTitleClick: () => {
+                    navigate(canonical)
+                    setNavOpen(false)
+                },
+                children: topic.subsections.map((subsection) => {
+                    const anchor = subsectionAnchor(subsection.key)
+                    return {
+                        key: anchor,
+                        label: subsection.label,
+                        className: `cn-help-docs-nav-sub${activeAnchor === anchor ? ' is-active' : ''}`,
+                    }
+                }),
+            }
+        }),
     }))
 
     const handleMenuClick: MenuProps['onClick'] = ({ key }) => {
         if (key.startsWith('/help/')) navigate(key)
+        // 侧栏 L3：与页内目录同一份锚点，点击即滚动并写 hash
+        else if (key.startsWith('help-')) goAnchor(key)
         setNavOpen(false)
     }
 

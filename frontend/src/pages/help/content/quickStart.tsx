@@ -11,7 +11,7 @@ import { Bullets, HelpLink, Note, P, Strong } from './primitives'
 const overview: HelpTopic = {
     key: 'overview',
     label: '认识晶格协同',
-    intro: <P>晶格协同（cndb）是自托管的数据与文档协作工具：把表格数据、文档和基于它们的视图放在同一个工作区里管理。</P>,
+    intro: <P>本页你能学到什么：工作区、数据表、视图、文档与成员这几个核心概念怎么串起来。适合谁：第一次打开晶格协同、还没建过工作区的新成员。</P>,
     subsections: [
         {
             key: 'concepts',
@@ -105,8 +105,8 @@ const philosophy: HelpTopic = {
     label: '设计理念',
     intro: (
         <P>
-            cndb 的功能设计遵循几条一以贯之的原则。理解它们，就能解释你在产品里看到的大多数行为——为什么这样做、
-            以及换一种需求时该去哪里找。
+            本页你能学到什么：几条设计原则，以及它们如何解释产品里的常见行为。
+            适合谁：想理解「为什么这样设计」的成员。
         </P>
     ),
     subsections: [
@@ -215,7 +215,21 @@ const philosophy: HelpTopic = {
 const workflow: HelpTopic = {
     key: 'workflow',
     label: '十分钟上手',
-    intro: <P>从零到「有数据、有视图、有协作者」的最小路径，五步走完即可正常使用。</P>,
+    intro: (
+        <>
+            <P>本页你能学到什么：五步从零建起一个可用的工作区。适合谁：第一次使用的成员。</P>
+            <P>从零到「有数据、有视图、有协作者」的最小路径，五步走完即可正常使用。</P>
+            <P>
+                拿到的是模板工作区？按这条路径走：先看
+                <HelpLink section="tutorials" topic="templates">工作区模板</HelpLink>
+                ，再按
+                <HelpLink section="tutorials" topic="data-flow">数据流程</HelpLink>
+                填报，最后用
+                <HelpLink section="tutorials" topic="view-types">视图类型</HelpLink>
+                挑一个合适视图查看结果。
+            </P>
+        </>
+    ),
     subsections: [
         {
             key: 'steps',
@@ -303,7 +317,7 @@ const workflow: HelpTopic = {
 const uiTour: HelpTopic = {
     key: 'ui-tour',
     label: '界面导航',
-    intro: <P>记住三块区域即可：顶栏（全局）、工作区页签（当前工作区）、视图栏（当前表或文档）。</P>,
+    intro: <P>本页你能学到什么：顶栏、工作区页签与视图栏分别管什么。适合谁：刚登录、找不到入口的新成员。</P>,
     subsections: [
         {
             key: 'layout',

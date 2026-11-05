@@ -97,6 +97,8 @@ export const HELP_SECTIONS: HelpSectionMeta[] = [
             { key: 'view-config', label: '视图配置实践' },
             { key: 'quality-checks', label: '质量检查与流水线' },
             { key: 'design-dsl', label: '结构设计（DSL）' },
+            { key: 'templates', label: '工作区模板' },
+            { key: 'data-flow', label: '数据流程' },
         ],
     },
     {

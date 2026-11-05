@@ -7,7 +7,7 @@
 
 import { Link } from 'react-router-dom'
 import type { ReactNode } from 'react'
-import { helpLink } from '../helpNav'
+import { helpLink, subsectionAnchor } from '../helpNav'
 
 export function P({ children }: { children: ReactNode }) {
     return <p className="cn-help-docs-text">{children}</p>
@@ -54,8 +54,12 @@ export function HelpLink({
     anchor?: string
     children: ReactNode
 }) {
+    // 裸 key 补齐 `help-` 前缀；`itemAnchor` 返回的完整 id 原样使用。
+    const target = anchor
+        ? helpLink(section, topic, anchor.startsWith('help-') ? anchor : subsectionAnchor(anchor))
+        : helpLink(section, topic)
     return (
-        <Link className="cn-help-docs-link" to={helpLink(section, topic, anchor)}>
+        <Link className="cn-help-docs-link" to={target}>
             {children}
         </Link>
     )

@@ -26,13 +26,13 @@ function scenarioTopic(key: string, label: string, intro: string): HelpTopic {
 const sales = scenarioTopic(
     'sales',
     '某企业销售管理',
-    '一套销售运营场景：订单级销售明细、客户流失、营销活动与团队待办，适合练视图组合与图表分析。',
+    '本页你能学到什么：用一套销售数据练视图组合与图表分析，并跟着步骤导入练习。适合谁：想找现成数据上手的新成员。',
 )
 
 const research = scenarioTopic(
     'research',
     '科研项目管理',
-    '一套科研管理场景：课题主数据、任务分解、经费台账与资源排期，适合练层级结构、关联字段与时间视图。',
+    '本页你能学到什么：用科研项目数据练层级结构、关联字段与时间视图，并跟着步骤导入练习。适合谁：要搭项目管理场景的成员。',
 )
 
 export const exampleTopics: HelpTopic[] = [sales, research]

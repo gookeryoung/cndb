@@ -59,7 +59,7 @@ describe('FileImportPreview 文件导入预览', () => {
     setup()
 
     expect(screen.getByText(/导入数据预览/)).toBeInTheDocument()
-    const nameInput = screen.getByPlaceholderText('自动使用文件名') as HTMLInputElement
+    const nameInput = screen.getByPlaceholderText('默认使用文件名，可修改') as HTMLInputElement
     expect(nameInput.value).toBe('客户数据')
     expect(screen.getByText('字段与类型（2）')).toBeInTheDocument()
     expect(screen.getByText('CSV · 3 行')).toBeInTheDocument()
@@ -119,7 +119,7 @@ describe('FileImportPreview 文件导入预览', () => {
   it('表名为空白时提示请输入表名且不发起请求', async () => {
     const { onClose, onSuccess } = setup()
 
-    fireEvent.change(screen.getByPlaceholderText('自动使用文件名'), { target: { value: '  ' } })
+    fireEvent.change(screen.getByPlaceholderText('默认使用文件名，可修改'), { target: { value: '  ' } })
     fireEvent.click(screen.getByRole('button', { name: /建表并导入$/ }))
 
     expect(await screen.findByText('请输入表名')).toBeInTheDocument()
@@ -217,6 +217,12 @@ describe('FileImportPreview 表头行自动识别与人工改选', () => {
     expect(select).toBeInTheDocument()
     // 下拉当前值 = header_detection.row（选中的标签文本包含候选预览）
     expect(select.textContent).toContain('第 2 行 · 93% · 姓名 / 分数')
+    // 表头行口径白话化 + 帮助链接落到导入主题的 L3 锚点（ADR 0105 R1/R5）
+    expect(screen.getByText('表头行（列名取自这一行）：')).toBeInTheDocument()
+    expect(screen.getByTestId('import-header-help-link')).toHaveAttribute(
+      'href',
+      '/help/tutorials/import-export#help-header',
+    )
   })
 
   it('改选表头行触发重新 analyze，并用新结果刷新字段列表与预览', async () => {

@@ -11,7 +11,7 @@ import { Bullets, HelpLink, Note, P } from './primitives'
 const workspace: HelpTopic = {
     key: 'workspace',
     label: '工作区设置',
-    intro: <P>工作区设置决定「谁能进、能改什么、数据怎么管」，分基本设置、成员管理、统计信息三块。</P>,
+    intro: <P>本页你能学到什么：工作区的基本设置、成员邀请与角色分配、用量统计分别在哪里改。适合谁：工作区所有者与管理员。</P>,
     subsections: [
         {
             key: 'basic',
@@ -106,7 +106,7 @@ const workspace: HelpTopic = {
 const personal: HelpTopic = {
     key: 'personal',
     label: '个人设置与大模型',
-    intro: <P>个人设置只影响自己：账号资料、界面主题、表格交互偏好与大模型连接，都不改变工作区里其他人的视图。</P>,
+    intro: <P>本页你能学到什么：账号资料、界面主题、表格偏好与大模型连接在哪里改，以及哪些设置只影响自己。适合谁：所有成员。</P>,
     subsections: [
         {
             key: 'account',
@@ -155,7 +155,7 @@ const personal: HelpTopic = {
 const datasource: HelpTopic = {
     key: 'datasource',
     label: '数据同步',
-    intro: <P>数据同步把外部数据按计划写进数据表：任务是声明式的（Provider + 请求 + 字段映射 + 调度），运行时按幂等键去重。</P>,
+    intro: <P>本页你能学到什么：把外部数据按计划拉进数据表，或把表里的行推送到外部接口；任务、凭证与调度怎么配。适合谁：要接入第三方接口或定期同步数据的编辑者。</P>,
     subsections: [
         {
             key: 'entry',
@@ -217,6 +217,46 @@ const datasource: HelpTopic = {
             ),
         },
         {
+            key: 'push',
+            label: '对外推送',
+            summary: '方向反过来：把数据表里的行按批发送到外部接口。',
+            items: [
+                {
+                    key: 'target',
+                    label: '配一个推送任务',
+                    body: (
+                        <P>
+                            任务抽屉里把方向切到「推送」：推送任务不抓取数据，而是绑定一张源表，
+                            把行按批发送到你填写的目标地址。地址必须是 http / https，方法支持 POST / PUT / PATCH；
+                            请求头与请求体可以用 <code>{'{api_key}'}</code> 这类占位符，值从凭证会话解密注入，缺失变量会直接报错。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'fields',
+                    label: '字段与分批',
+                    body: (
+                        <P>
+                            推送字段只允许源表里的真实列；link / lookup 这类虚拟列不会进入载荷。
+                            批大小控制每批发多少行，单次最多行数控制一轮的上限；
+                            填了增量字段就只推送「该字段大于上次值」的新行，留空则每次全量推送（按上限截断）。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'failure',
+                    label: '失败重试与安全',
+                    body: (
+                        <P>
+                            某一批失败不会中断后续批次，但只要本轮有失败，游标就不会推进：修好目标接口后重跑，
+                            会从上次成功的位置继续，不会漏数据。目标地址会做 SSRF 校验，
+                            内网 / 本机地址默认不允；推送任务不提供「抓取预览」，用「立即运行」与运行历史确认结果。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
             key: 'incremental',
             label: '大规模同步与增量',
             body: (
@@ -246,7 +286,7 @@ const datasource: HelpTopic = {
 const admin: HelpTopic = {
     key: 'admin',
     label: '管理台',
-    intro: <P>管理台是跨工作区的实例级配置：账号、事件、空间、备份、恢复与运行信息，仅管理员可见。</P>,
+    intro: <P>本页你能学到什么：账号、事件、空间、备份恢复与运行信息这些实例级配置在哪里管。适合谁：系统管理员。</P>,
     subsections: [
         {
             key: 'users',
@@ -309,7 +349,7 @@ const admin: HelpTopic = {
 const storage: HelpTopic = {
     key: 'storage',
     label: '存储、备份与部署',
-    intro: <P>实例级配置：数据落在哪、占多少空间、怎么备份恢复、离线环境怎么装与升级。</P>,
+    intro: <P>本页你能学到什么：数据落在哪、空间怎么分配、如何备份恢复，以及离线环境怎么安装升级。适合谁：部署与运维负责人。</P>,
     subsections: [
         {
             key: 'where',

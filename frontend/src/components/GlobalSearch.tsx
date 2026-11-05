@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Dropdown, Input, Spin } from 'antd'
 import type { InputRef } from 'antd'
 import {
@@ -35,6 +35,7 @@ import { useTheme } from '@/theme/ThemeProvider'
 import { useUiStore } from '@/store'
 import { buildCommands } from '@/components/commands'
 import type { Command } from '@/components/commands'
+import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
 
 const SCOPE_STORAGE_KEY = 'cndb:search-scope'
 const MAX_ITEMS = 20
@@ -42,9 +43,9 @@ const MAX_ITEMS = 20
 const GLOBAL_LIMIT = 10
 
 const SCOPES: { key: SearchScope; label: string; icon: React.ReactNode; hint: string }[] = [
-  { key: 'all', label: '工作区', icon: <SearchOutlined />, hint: '文档 + 数据表' },
-  { key: 'tables', label: '数据表', icon: <DatabaseOutlined />, hint: '仅表名与表内数据' },
-  { key: 'documents', label: '文档', icon: <FileTextOutlined />, hint: '仅文档标题与正文' },
+  { key: 'all', label: '工作区', icon: <SearchOutlined />, hint: '文档与数据表一起搜' },
+  { key: 'tables', label: '数据表', icon: <DatabaseOutlined />, hint: '只搜表名与表内数据' },
+  { key: 'documents', label: '文档', icon: <FileTextOutlined />, hint: '只搜文档标题与正文' },
 ]
 
 function readScope(): SearchScope {
@@ -340,10 +341,10 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
           className="cn-gs-input"
           data-testid="global-search-input"
           placeholder={isGlobal
-            ? '搜索全部工作区，或输入 > 执行命令…'
+            ? '搜索全部工作区，输入 > 执行命令…'
             : workspaceName
-              ? `搜索「${workspaceName}」，或输入 > 执行命令…`
-              : '搜索工作区，或输入 > 执行命令…'}
+              ? `搜索「${workspaceName}」，输入 > 执行命令…`
+              : '搜索工作区，输入 > 执行命令…'}
           value={input}
           onChange={e => { setInput(e.target.value); setOpen(true) }}
           onFocus={() => setOpen(true)}
@@ -399,8 +400,19 @@ export default function GlobalSearch({ workspaceId, workspaceName, tableId, view
           )}
 
           {!isCommandMode && !hasResult && !query.isFetching && (
-            <div className="cn-gs-state" data-testid="global-search-empty">
-              未找到与「{keyword}」相关的内容
+            <div className="cn-gs-state cn-gs-state-empty" data-testid="global-search-empty">
+              <span>没有找到与「{keyword}」相关的内容</span>
+              <span className="cn-gs-state-hint">
+                换个关键词，或在左侧范围里切到「数据表 / 文档」再试一次。
+              </span>
+              <Link
+                className="cn-gs-state-link"
+                to={helpLink('tutorials', 'search', subsectionAnchor('global'))}
+                data-testid="global-search-help-link"
+                onClick={close}
+              >
+                查看「搜索范围」怎么选
+              </Link>
             </div>
           )}
 
