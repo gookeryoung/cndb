@@ -7175,26 +7175,39 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   overflow: hidden;
 }
 
-/* 顶部工具栏：左身份 / 状态标签，右动作按钮；窄屏换行 */
+/* 顶部工具栏：左身份 / 状态标签，右动作按钮；恒单行不换行（ADR 0103 C6 D6），
+ * 标题在空间不足时省略，次要动作恒收进「更多」，任何屏宽都不挤压视口高度 */
 .cn-dsl-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--cn-space-sm) var(--cn-space-md);
   padding: var(--cn-space-xs) var(--cn-space-md);
   border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
   border-radius: var(--cn-radius-lg);
   background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
   flex: 0 0 auto;
+  min-width: 0;
 }
 .cn-dsl-toolbar-main,
 .cn-dsl-toolbar-actions {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: var(--cn-space-sm);
   min-width: 0;
+}
+.cn-dsl-toolbar-main {
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.cn-dsl-toolbar-actions {
+  flex: 0 0 auto;
+}
+.cn-dsl-toolbar-tags {
+  flex-wrap: nowrap;
+  overflow: hidden;
 }
 .cn-dsl-title {
   font-size: var(--cn-text-lg);
@@ -7230,11 +7243,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: nowrap;
 }
 
-/* 左右两栏：min-height 0 保证子项内部滚动而不是撑破页面 */
+/* 左右两栏（可拖分栏，ADR 0103 C2/D3）：列宽由内联 grid-template-columns 给出，
+ * 中间一列是 splitter；min-height 0 保证子项内部滚动而不是撑破页面 */
 .cn-dsl-workbench {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--cn-space-lg);
+  grid-template-columns: minmax(0, 1fr) 6px minmax(0, 1fr);
+  gap: var(--cn-space-sm);
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -7247,6 +7261,33 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 .cn-dsl-pane--preview {
   gap: var(--cn-space-sm);
+}
+
+/* 分栏拖拽手柄：细竖条，悬停 / 拖拽时以品牌色提亮（触发区 6px 已足够鼠标命中） */
+.cn-dsl-splitter {
+  position: relative;
+  align-self: stretch;
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-border, rgba(255, 255, 255, 0.08));
+  cursor: col-resize;
+  touch-action: none;
+  transition: background-color 0.15s ease;
+}
+.cn-dsl-splitter::after {
+  content: '';
+  position: absolute;
+  inset: 40% 1px;
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-text-secondary, rgba(255, 255, 255, 0.35));
+  opacity: 0.5;
+}
+.cn-dsl-splitter:hover,
+.cn-dsl-splitter:active {
+  background: var(--cn-brand-color, #3b82f6);
+}
+.cn-dsl-splitter:hover::after,
+.cn-dsl-splitter:active::after {
+  opacity: 0;
 }
 
 /* CodeMirror 容器：编辑器撑满宿主高度（滚动交给 .cm-scroller 内置） */
@@ -7277,28 +7318,96 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   gap: var(--cn-space-xs);
   padding: var(--cn-space-hairline) 0;
 }
-/* 预览画布：占满右栏剩余高度；约束面板固定在底、横向滚动 */
+/* 视口区：画布 + 悬浮工具条 + 状态条共用一个定位容器（ADR 0103 C3/C4） */
+.cn-dsl-viewport {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+/* 预览画布：占满视口区 */
 .cn-dsl-preview-host {
   flex: 1 1 auto;
   min-height: 0;
   border-radius: var(--cn-radius-lg);
   overflow: hidden;
+  position: relative;
 }
-.cn-dsl-pane--preview .cn-dsl-constraints {
+
+/* 视口悬浮工具条：右上胶囊，不占视口布局高度（D4） */
+.cn-dsl-viewport-toolbar {
+  position: absolute;
+  top: var(--cn-space-sm);
+  right: var(--cn-space-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-hairline);
+  padding: 1px var(--cn-space-xs);
+  border-radius: var(--cn-radius-pill);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(20, 26, 34, 0.72);
+  backdrop-filter: blur(6px);
+  color: rgba(255, 255, 255, 0.86);
+  z-index: 2;
+}
+.cn-dsl-viewport-toolbar .ant-btn {
+  color: rgba(255, 255, 255, 0.86);
+}
+.cn-dsl-viewport-toolbar .ant-btn:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* 视口状态条：左下常驻细条（单位 / 节点数 / 三角数，C4 D5） */
+.cn-dsl-statusbar {
+  position: absolute;
+  left: var(--cn-space-sm);
+  bottom: var(--cn-space-sm);
+  padding: 1px var(--cn-space-sm);
+  border-radius: var(--cn-radius-pill);
+  background: rgba(20, 26, 34, 0.72);
+  color: rgba(255, 255, 255, 0.78);
+  font-size: var(--cn-text-xs);
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* 参数｜约束常驻面板（ADR 0103 C5 D2）：预览栏底部 Tabs，展开上限 280px 内部滚动 */
+.cn-dsl-params {
   flex: 0 0 auto;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: var(--cn-space-xs) var(--cn-space-md);
+  max-height: 280px;
+  overflow: auto;
+  padding: 0 var(--cn-space-sm) var(--cn-space-xs);
   border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
   border-radius: var(--cn-radius-lg);
   background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
 }
-.cn-dsl-pane--preview .cn-dsl-constraints .ant-space {
-  flex-wrap: nowrap;
-  white-space: nowrap;
+.cn-dsl-params--collapsed {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  max-height: none;
+  padding: 0 var(--cn-space-sm);
+  min-height: 36px;
+}
+.cn-dsl-params .ant-tabs-nav {
+  margin-bottom: var(--cn-space-xs);
+}
+.cn-dsl-params-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+}
+/* 约束列表在面板内按行换行（原预览底部横条已退役） */
+.cn-dsl-constraints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs) var(--cn-space-sm);
+  padding: var(--cn-space-xs) 0;
 }
 
-/* 参数抽屉：名称 / 默认值 / 已覆盖 + 输入 */
+/* 参数行：名称 / 默认值 / 已覆盖 + 输入 */
 .cn-dsl-param-list {
   display: flex;
   flex-direction: column;
@@ -7361,7 +7470,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   overflow: auto;
 }
 
-/* 窄屏：两栏堆叠，各自仍可内部滚动 */
+/* 窄屏：两栏堆叠（不渲染 splitter、比例不生效，ADR 0103 §4#7），各自仍可内部滚动 */
 @media (max-width: 1023.98px) {
   .cn-dsl-page {
     padding: var(--cn-space-md);
@@ -7369,6 +7478,9 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   .cn-dsl-workbench {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(240px, 1fr) minmax(240px, 1fr);
+  }
+  .cn-dsl-splitter {
+    display: none;
   }
   .cn-dsl-title {
     max-width: 180px;
@@ -7413,6 +7525,22 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   min-width: 0;
 }
 .cn-design-outline-detail {
+  font-size: var(--cn-text-xs);
+}
+/* 设计管理页目录分组（ADR 0103 C8）：组标题 + 组内列表，未分组置底 */
+.cn-design-folder + .cn-design-folder {
+  margin-top: var(--cn-space-sm);
+}
+.cn-design-folder-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  padding: var(--cn-space-xs) var(--cn-space-lg) var(--cn-space-hairline);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  border-bottom: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
+}
+.cn-design-folder-count {
   font-size: var(--cn-text-xs);
 }
 

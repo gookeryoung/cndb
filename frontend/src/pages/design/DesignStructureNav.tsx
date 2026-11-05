@@ -6,19 +6,20 @@
  * 侧栏只读（D6）：改名 / 删除在设计管理页完成。
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import { Tag, Tree, Typography } from 'antd'
 import type { DataNode, TreeProps } from 'antd/es/tree'
 import {
   ApartmentOutlined, AppstoreOutlined, ClusterOutlined, NodeIndexOutlined, ToolOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { designsApi } from '@/api'
 import type { DesignIRResponse, DesignListItem, DesignOutlineNode } from '@/api'
 import SearchInput from '@/components/SearchInput'
 import {
-  designEditorPath, type DesignTreeEntry, type DesignTreeMeta, outlineToTree,
+  designEditorPath, type DesignTreeEntry, type DesignTreeMeta, outlineKeyPath, outlineToTree,
+  resolveOutlinePath,
 } from './designOutline'
 
 const { Text } = Typography
@@ -87,6 +88,10 @@ export default function DesignStructureNav({
   const [loadingIds, setLoadingIds] = useState<Record<number, boolean>>({})
 
   const activeDesignId = activeDesignIdFrom(pathname, workspaceId)
+  // 编辑器 ?line= 反向通知侧栏（ADR 0103 C1② / D9）：按大纲归属选中节点并滚动到可视区
+  const [searchParams] = useSearchParams()
+  const revealLine = Number(searchParams.get('line')) || undefined
+  const treeRef = useRef<ComponentRef<typeof Tree> | null>(null)
 
   const { data: designs = [], isLoading } = useQuery({
     queryKey: ['designs', workspaceId],
@@ -141,6 +146,24 @@ export default function DesignStructureNav({
     filteredDesigns.forEach(item => void loadOutline(item.id))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [keyword, designs])
+
+  const activeOutline = activeDesignId === undefined ? undefined : outlines[activeDesignId]?.nodes
+  /** 反向定位：源行 → 大纲节点路径 → 树 key 路径（无大纲 / 无命中为空数组） */
+  const revealKeyPath = useMemo(() => {
+    if (!activeOutline || revealLine === undefined || activeDesignId === undefined) return []
+    const path = resolveOutlinePath(activeOutline, revealLine, activeDesignId)
+    return outlineKeyPath(activeOutline, path, activeDesignId)
+  }, [activeOutline, revealLine, activeDesignId])
+
+  // 反向定位生效：展开祖先链 + 滚动到选中节点（virtual 滚动由 Tree.scrollTo 处理）
+  useEffect(() => {
+    if (revealKeyPath.length === 0) return
+    const ancestors = revealKeyPath.slice(0, -1)
+    setExpandedKeys(prev => Array.from(new Set([...prev, `design-${activeDesignId}`, ...ancestors])))
+    const key = revealKeyPath[revealKeyPath.length - 1]!
+    const timer = window.setTimeout(() => treeRef.current?.scrollTo({ key }), 0)
+    return () => window.clearTimeout(timer)
+  }, [revealKeyPath, activeDesignId])
 
   const treeData = useMemo<DesignTreeDataNode[]>(
     () => filteredDesigns.map(item => {
@@ -233,6 +256,7 @@ export default function DesignStructureNav({
       ) : (
         <div style={{ padding: '0 var(--cn-space-sm) var(--cn-space-sm) var(--cn-space-xs)' }}>
           <Tree
+            ref={treeRef}
             blockNode
             showIcon
             className="cn-doc-sider-tree"
@@ -241,7 +265,11 @@ export default function DesignStructureNav({
             virtual
             height={640}
             expandedKeys={expandedKeys}
-            selectedKeys={activeDesignId === undefined ? [] : [`design-${activeDesignId}`]}
+            selectedKeys={activeDesignId === undefined
+              ? []
+              : revealKeyPath.length > 0
+                ? [revealKeyPath[revealKeyPath.length - 1]!]
+                : [`design-${activeDesignId}`]}
             onExpand={keys => setExpandedKeys(keys as string[])}
             loadData={(node) => {
               const meta = (node as DesignTreeDataNode).meta

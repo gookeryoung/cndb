@@ -1,25 +1,28 @@
-/** 设计编辑器页 —— DSL 源码（CodeMirror）+ 3D 实时预览（three.js）+ 参数面板.
+/** 设计编辑器页 —— DSL 源码（CodeMirror）+ 3D 实时预览（three.js）+ 参数｜约束常驻面板.
  *
  * 数据流（ADR 0079 I1/D3/D4）：
  * - 编辑防抖 300ms → POST /designs/preview（无落库）→ 结构化诊断回显错误行；
  * - 渲染只消费后端编译的 IR（前端零解析零求值），three 相关全部在 lazy chunk；
  * - 保存：编译在后端通过才落库并落新版本，失败保留草稿（边界 #2）；
- * - P2：版本历史支持回看（侧栏抽屉看原文）与恢复（旧版重编译落新版本）；
- *   导出（STL / OBJ / GLB / 三视图）与 PreviewCanvas 同属 lazy 边界（D4/D5）。
+ * - 版本历史（回看 / 恢复）与导出收进「更多」菜单（ADR 0103 D6），功能不变。
  *
- * 编辑区布局（UI 优化）：顶部一条工具栏收拢全部动作 —— 标题 / 版本标签 / 编译状态标签
- * （错误时下方展开诊断条）/ 参数按钮（抽屉）/ 版本历史按钮（侧栏抽屉）/ 导出 / 保存；
- * 左右两栏各自内置滚动，页面本身不产生纵向滚动条。
+ * 布局（ADR 0103）：
+ * - 工具栏恒单行：返回 / 标题 / 版本 / 编译状态 / 分栏预设 / 更多 / 保存（C6 D6）；
+ * - 左右可拖分栏 + 三档预设，比例存 localStorage（C2 D3 D10，窄屏纵向堆叠）；
+ * - 视口右上悬浮工具条（七向定向 / 布满 / 网格）+ 左下状态条（单位 / 节点 / 三角）（C3 C4）；
+ * - 预览栏底部「参数｜约束」常驻可折叠面板替代参数抽屉（C5 D2）；
+ * - 树↔视口联动：`?line=` 变化 → 大纲归属 → 顶层 nodes 下标 → 视口高亮 3s 渐隐（C7 D8/D9）。
  */
 
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Drawer, Empty, InputNumber, Popconfirm, Skeleton, Space, Tag, Typography,
+  Alert, App as AntApp, Button, Drawer, Dropdown, Empty, Popconfirm, Segmented, Skeleton, Space, Tag, Tooltip,
+  Typography,
 } from 'antd'
 import type { InputNumberProps } from 'antd'
 import {
-  ArrowLeftOutlined, CheckCircleFilled, CloseCircleFilled, ExperimentOutlined, HistoryOutlined,
-  LoadingOutlined, RollbackOutlined, SaveOutlined, SlidersOutlined,
+  ArrowLeftOutlined, BorderOutlined, CheckCircleFilled, CloseCircleFilled, CompassOutlined,
+  ExperimentOutlined, ExpandOutlined, LoadingOutlined, RollbackOutlined, SaveOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
@@ -27,15 +30,63 @@ import { designsApi, workspaceApi } from '@/api'
 import type { DesignDiagnostic, DesignVersionItem } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
 import DslEditor from './DslEditor'
-import DesignConstraintsPanel from './DesignConstraintsPanel'
+import DesignParamsPanel from './DesignParamsPanel'
+import { collectNodeIndices, resolveOutlinePath } from './designOutline'
 import { useDesignPreview } from './useDesignPreview'
+import type { PreviewStats, ViewportApi } from './PreviewCanvas'
+import { VIEW_PRESETS, type ViewOrientation } from './viewOrient'
 
 // three 渲染整块 lazy：three + three-bvh-csg 只进设计编辑器 chunk（D4 体积预算）
 const PreviewCanvas = lazy(() => import('./PreviewCanvas'))
-// 导出菜单同样落在 three lazy 边界（exporters 引 three，D5）
-const DesignExportMenu = lazy(() => import('./DesignExportMenu'))
+// 「更多」菜单同样落在 three lazy 边界（exporters 引 three，ADR 0079 D5）
+const DesignMoreMenu = lazy(() => import('./DesignMoreMenu'))
 
 const { Text } = Typography
+
+/** UI 偏好键（I5：只存本地，不进后端 / 备份） */
+export const SPLIT_KEY = 'cn-design-editor-split'
+export const PARAMS_COLLAPSED_KEY = 'cn-design-params-collapsed'
+export const DEFAULT_SPLIT = 50
+/** 分栏比例上下限（D3）：任一侧不窄于 25% */
+export const SPLIT_MIN = 25
+export const SPLIT_MAX = 75
+/** 窄屏断点：与 index.css 的 1023.98px 媒体查询口径一致（C2 降级路径） */
+const NARROW_QUERY = '(max-width: 1023.98px)'
+
+function readSplit(): number {
+  try {
+    const raw = window.localStorage.getItem(SPLIT_KEY)
+    const value = raw == null ? NaN : Number(raw)
+    if (!Number.isFinite(value)) return DEFAULT_SPLIT
+    return Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, value))
+  } catch {
+    return DEFAULT_SPLIT
+  }
+}
+
+function readCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(PARAMS_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+/** 窄屏判定（splitter 不渲染、比例不生效，§4#7） */
+function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => (
+    typeof window.matchMedia === 'function' ? window.matchMedia(NARROW_QUERY).matches : false
+  ))
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const query = window.matchMedia(NARROW_QUERY)
+    const onChange = (event: MediaQueryListEvent) => setNarrow(event.matches)
+    setNarrow(query.matches)
+    query.addEventListener?.('change', onChange)
+    return () => query.removeEventListener?.('change', onChange)
+  }, [])
+  return narrow
+}
 
 export default function DesignEditorPage() {
   const { wid = '', designId = '' } = useParams<{ wid: string; designId: string }>()
@@ -69,9 +120,18 @@ export default function DesignEditorPage() {
   const [contentReady, setContentReady] = useState(false)
   const [overrides, setOverrides] = useState<Record<string, number>>({})
   const [saveError, setSaveError] = useState('')
-  // 顶部工具栏抽屉：参数面板 / 版本历史（点击按钮从右侧展开）
-  const [paramsOpen, setParamsOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  // 布局偏好：分栏比例 / 参数面板折叠态（I5）
+  const [split, setSplit] = useState<number>(readSplit)
+  const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(readCollapsed)
+  const narrow = useNarrow()
+  const [stats, setStats] = useState<PreviewStats>({ nodes: 0, triangles: 0 })
+  const [gridVisible, setGridVisible] = useState(true)
+  const viewportApiRef = useRef<ViewportApi | null>(null)
+  /** 待高亮的源行（api 未就绪或 IR 未到达时暂存，就绪后补一次） */
+  const pendingHighlightLine = useRef<number | null>(null)
+  const workbenchRef = useRef<HTMLDivElement>(null)
+  const draggingRef = useRef(false)
   // 详情到达只回填一次（此后编辑权归用户；保存成功后 dirty 归零再回填最新态）
   const [loadedId, setLoadedId] = useState('')
   useEffect(() => {
@@ -174,7 +234,103 @@ export default function DesignEditorPage() {
       return next
     })
   }
-  const overrideCount = Object.keys(overrides).length
+
+  /** 树↔视口联动（C7）：按大纲归属把源行映射到顶层 nodes 下标并高亮 */
+  const irRef = useRef(preview.ir)
+  irRef.current = preview.ir
+  const runHighlight = useCallback((line: number | undefined) => {
+    const outline = irRef.current?.outline?.children
+    const api = viewportApiRef.current
+    if (line == null || !outline || !api) {
+      pendingHighlightLine.current = line ?? null
+      return
+    }
+    const path = resolveOutlinePath(outline, line, Number(designId))
+    const target = path[path.length - 1]
+    if (!target) return
+    const indices = collectNodeIndices(target)
+    pendingHighlightLine.current = null
+    // v4 旧快照无 node_index → 空集合 = 静默不高亮（I2）
+    if (indices.length > 0) api.highlight(indices)
+  }, [designId])
+
+  useEffect(() => {
+    runHighlight(revealLine)
+  }, [revealLine, runHighlight])
+
+  // 首屏竞态：IR / 视口 API 比 ?line= 晚到时补一次（pending 只在未成功时保留，
+  // 已高亮的场景不会因重编译重复触发，§4#5）
+  useEffect(() => {
+    if (pendingHighlightLine.current != null) runHighlight(pendingHighlightLine.current)
+  }, [preview.ir, runHighlight])
+
+  /** 视口能力就绪：补一次待处理高亮（编译完成前点击也不丢） */
+  const onViewportApi = useCallback((api: ViewportApi | null) => {
+    viewportApiRef.current = api
+    if (!api) return
+    api.setGridVisible(gridVisible)
+    if (pendingHighlightLine.current != null) runHighlight(pendingHighlightLine.current)
+  }, [gridVisible, runHighlight])
+
+  const toggleGrid = () => {
+    const next = !gridVisible
+    setGridVisible(next)
+    viewportApiRef.current?.setGridVisible(next)
+  }
+
+  /** 分栏：预设 / 拖拽 / 持久化（D3 D10） */
+  const applySplit = (value: number, persist = true) => {
+    const clamped = Math.min(SPLIT_MAX, Math.max(SPLIT_MIN, Math.round(value)))
+    setSplit(clamped)
+    if (persist) {
+      try {
+        window.localStorage.setItem(SPLIT_KEY, String(clamped))
+      } catch {
+        // localStorage 不可用（隐私模式）时仅本次会话生效
+      }
+    }
+  }
+
+  const splitPreset = split >= 55 ? 'editor' : split <= 45 ? 'viewport' : 'even'
+  const onPreset = (value: string | number) => {
+    applySplit(value === 'editor' ? 60 : value === 'viewport' ? 40 : DEFAULT_SPLIT)
+  }
+
+  const onSplitterDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    draggingRef.current = true
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+  const onSplitterMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return
+    const host = workbenchRef.current
+    const rect = host?.getBoundingClientRect()
+    if (!rect || rect.width === 0) return
+    // 每侧至少 320px：按容器宽度换算成百分比下限，再夹到 25%–75%
+    const minRatio = (320 / rect.width) * 100
+    const floor = Math.max(SPLIT_MIN, minRatio)
+    const ceil = Math.min(SPLIT_MAX, 100 - minRatio)
+    const ratio = ((event.clientX - rect.left) / rect.width) * 100
+    applySplit(Math.min(ceil, Math.max(floor, ratio)))
+  }
+  const onSplitterUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!draggingRef.current) return
+    draggingRef.current = false
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    applySplit(split)
+  }
+
+  const toggleParamsCollapsed = () => {
+    setParamsCollapsed(prev => {
+      const next = !prev
+      try {
+        window.localStorage.setItem(PARAMS_COLLAPSED_KEY, next ? '1' : '0')
+      } catch {
+        // 忽略存储失败（隐私模式）
+      }
+      return next
+    })
+  }
 
   const diagnostics: DesignDiagnostic[] = useMemo(() => preview.diagnostics, [preview.diagnostics])
   const errorCount = diagnostics.length
@@ -185,16 +341,25 @@ export default function DesignEditorPage() {
     setViewingVersion(null)
   }
 
+  const revealSourceLine = (line: number) => setSearchParams(
+    prev => {
+      const next = new URLSearchParams(prev)
+      next.set('line', String(line))
+      return next
+    },
+    { replace: true },
+  )
+
   return (
     <div className="cn-dsl-page">
-      {/* 顶部工具栏：身份 / 状态标签在左，动作按钮在右 */}
+      {/* 顶部工具栏：身份 / 状态标签在左，动作按钮在右；恒单行（C6 D6） */}
       <div className="cn-dsl-toolbar">
         <div className="cn-dsl-toolbar-main">
           <Link to={`/w/${wid}/design`} aria-label="返回设计列表">
             <Button icon={<ArrowLeftOutlined />} type="text" />
           </Link>
           <Text strong className="cn-dsl-title">{detail?.title ?? '设计'}</Text>
-          <Space size={4} wrap>
+          <Space size={4} className="cn-dsl-toolbar-tags">
             {detail && (
               <Tag className="cn-dsl-status-tag" data-testid="design-version-tag">
                 v{detail.version_number}
@@ -218,24 +383,27 @@ export default function DesignEditorPage() {
             {isViewer && <Tag className="cn-dsl-status-tag">只读</Tag>}
           </Space>
         </div>
-        <Space size={8} wrap className="cn-dsl-toolbar-actions">
-          <Button
-            icon={<SlidersOutlined />}
-            aria-label="参数"
-            onClick={() => setParamsOpen(true)}
-          >
-            参数{params.length > 0 ? `（${params.length}）` : ''}
-            {overrideCount > 0 && <Tag color="processing" className="cn-dsl-btn-tag">{overrideCount} 覆盖</Tag>}
-          </Button>
-          <Button
-            icon={<HistoryOutlined />}
-            aria-label="版本历史"
-            onClick={() => setHistoryOpen(true)}
-          >
-            版本历史（{versions.length}）
-          </Button>
-          <Suspense fallback={null}>
-            <DesignExportMenu ir={preview.ir} title={detail?.title ?? '设计'} />
+        <Space size={8} className="cn-dsl-toolbar-actions">
+          {!narrow && (
+            <Segmented
+              size="small"
+              value={splitPreset}
+              onChange={onPreset}
+              data-testid="design-split-preset"
+              options={[
+                { value: 'editor', label: '编辑' },
+                { value: 'even', label: '均分' },
+                { value: 'viewport', label: '视口' },
+              ]}
+            />
+          )}
+          <Suspense fallback={<Button icon={<CompassOutlined />} disabled>更多</Button>}>
+            <DesignMoreMenu
+              ir={preview.ir}
+              title={detail?.title ?? '设计'}
+              versionCount={versions.length}
+              onHistory={() => setHistoryOpen(true)}
+            />
           </Suspense>
           <Button
             icon={<SaveOutlined />}
@@ -294,8 +462,15 @@ export default function DesignEditorPage() {
         </div>
       )}
 
-      {/* 左右两栏：编辑器 / 预览各自内置滚动，页面不整体滚动 */}
-      <div className="cn-dsl-workbench">
+      {/* 左右两栏（可拖分栏）：编辑器 / 预览各自内置滚动，页面不整体滚动 */}
+      <div
+        ref={workbenchRef}
+        className="cn-dsl-workbench"
+        data-testid="design-workbench"
+        style={narrow
+          ? undefined
+          : { gridTemplateColumns: `minmax(0, ${split}fr) 6px minmax(0, ${100 - split}fr)` }}
+      >
         <div className="cn-dsl-pane cn-dsl-pane--editor">
           <div className="cn-dsl-editor-host">
             {isLoading ? <Skeleton active /> : (
@@ -312,66 +487,78 @@ export default function DesignEditorPage() {
           </div>
         </div>
 
+        {!narrow && (
+          <div
+            className="cn-dsl-splitter"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="调整编辑器与预览宽度"
+            data-testid="design-splitter"
+            onPointerDown={onSplitterDown}
+            onPointerMove={onSplitterMove}
+            onPointerUp={onSplitterUp}
+            onPointerCancel={onSplitterUp}
+          />
+        )}
+
         <div className="cn-dsl-pane cn-dsl-pane--preview">
-          <div className="cn-dsl-preview-host">
-            <Suspense fallback={<Skeleton active style={{ height: '100%' }} />}>
-              <PreviewCanvas ir={preview.ir} />
-            </Suspense>
+          <div className="cn-dsl-viewport">
+            <div className="cn-dsl-preview-host">
+              <Suspense fallback={<Skeleton active style={{ height: '100%' }} />}>
+                <PreviewCanvas ir={preview.ir} onStats={setStats} onViewportApi={onViewportApi} />
+              </Suspense>
+            </div>
+            {/* 视口悬浮工具条（C3）：七向定向 / 布满 / 网格 */}
+            <div className="cn-dsl-viewport-toolbar" data-testid="design-viewport-toolbar">
+              <Dropdown
+                trigger={['click']}
+                menu={{
+                  items: VIEW_PRESETS.map(preset => ({ key: preset.key, label: preset.label })),
+                  onClick: ({ key }) => viewportApiRef.current?.orientTo(key as ViewOrientation),
+                }}
+              >
+                <Button size="small" type="text" icon={<CompassOutlined />} aria-label="视图定向">
+                  定向
+                </Button>
+              </Dropdown>
+              <Tooltip title="布满视图">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<ExpandOutlined />}
+                  aria-label="布满视图"
+                  onClick={() => viewportApiRef.current?.fit()}
+                />
+              </Tooltip>
+              <Tooltip title={gridVisible ? '隐藏网格' : '显示网格'}>
+                <Button
+                  size="small"
+                  type={gridVisible ? 'text' : 'default'}
+                  icon={<BorderOutlined />}
+                  aria-label="网格显示开关"
+                  aria-pressed={gridVisible}
+                  data-testid="design-grid-toggle"
+                  onClick={toggleGrid}
+                />
+              </Tooltip>
+            </div>
+            {/* 视口状态条（C4）：单位取 IR 显式声明（D5），统计来自 onStats */}
+            <div className="cn-dsl-statusbar" data-testid="design-statusbar">
+              {preview.ir?.units.length ?? '—'} · 节点 {stats.nodes} · 三角 {stats.triangles}
+            </div>
           </div>
-          <DesignConstraintsPanel
+          <DesignParamsPanel
+            params={params}
             constraints={preview.ir?.constraints ?? []}
-            onReveal={(line) => setSearchParams(
-              prev => {
-                const next = new URLSearchParams(prev)
-                next.set('line', String(line))
-                return next
-              },
-              { replace: true },
-            )}
+            overrides={overrides}
+            collapsed={paramsCollapsed}
+            onToggleCollapsed={toggleParamsCollapsed}
+            onParamChange={onParamChange}
+            onReset={() => setOverrides({})}
+            onReveal={revealSourceLine}
           />
         </div>
       </div>
-
-      {/* 参数抽屉：顶部「参数」按钮打开，改参即重编译 */}
-      <Drawer
-        title="参数"
-        open={paramsOpen}
-        size={380}
-        onClose={() => setParamsOpen(false)}
-        extra={overrideCount > 0 ? (
-          <Button size="small" icon={<RollbackOutlined />} onClick={() => setOverrides({})}>
-            重置
-          </Button>
-        ) : null}
-      >
-        {params.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前设计没有参数" />
-        ) : (
-          <div className="cn-dsl-param-list">
-            {params.map(param => {
-              const overridden = overrides[param.name] != null
-              return (
-                <div key={param.name} className="cn-dsl-param-row">
-                  <div className="cn-dsl-param-name">
-                    <Text code>{param.name}</Text>
-                    <Text type="secondary" className="cn-dsl-param-default">
-                      默认 {param.value}
-                    </Text>
-                    {overridden && <Tag color="processing" className="cn-dsl-status-tag">已覆盖</Tag>}
-                  </div>
-                  <InputNumber
-                    size="small"
-                    value={overrides[param.name] ?? param.value}
-                    step={1}
-                    aria-label={`参数 ${param.name}`}
-                    onChange={value => onParamChange(param.name, value)}
-                  />
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </Drawer>
 
       {/* 版本历史侧栏：列表 → 选中版本回看原文 + 恢复入口（viewer 只读） */}
       <Drawer

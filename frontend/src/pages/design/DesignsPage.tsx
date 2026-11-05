@@ -5,9 +5,10 @@
  * 装配结构树已迁至侧栏（`DesignStructureNav`），本页不再渲染大纲树。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
-  App as AntApp, Button, Empty, Form, Input, List, Modal, Popconfirm, Select, Skeleton, Space, Tag, Typography,
+  App as AntApp, Button, Empty, Form, Input, List, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Tag,
+  Typography,
 } from 'antd'
 import { ApartmentOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -110,6 +111,8 @@ export default function DesignsPage() {
   })
   const isViewer = wsDetail?.current_user_role === 'viewer'
 
+  // 类型筛选（ADR 0103 C8 / D12）：全部 / 零件 / 装配（kind 为 0086 既有字段，零后端）
+  const [kindFilter, setKindFilter] = useState<'all' | 'part' | 'assembly'>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [createForm] = Form.useForm<DesignFormValues>()
   const [renaming, setRenaming] = useState<DesignListItem | null>(null)
@@ -176,6 +179,82 @@ export default function DesignsPage() {
     setRenaming(item)
   }
 
+  /** 目录分组（ADR 0103 C8 / D12）：folder 升序，空目录归「未分组」置底 */
+  const groups = useMemo(() => {
+    const visible = designs.filter(item => kindFilter === 'all' || item.kind === kindFilter)
+    const buckets = new Map<string, DesignListItem[]>()
+    for (const item of visible) {
+      const folder = item.folder || ''
+      buckets.set(folder, [...(buckets.get(folder) ?? []), item])
+    }
+    return [...buckets.entries()]
+      .sort(([a], [b]) => {
+        if (a === b) return 0
+        if (a === '') return 1
+        if (b === '') return -1
+        return a.localeCompare(b)
+      })
+      .map(([folder, items]) => ({ folder, items }))
+  }, [designs, kindFilter])
+
+  const renderRow = (item: DesignListItem) => (
+    <List.Item
+      data-testid={`design-row-${item.id}`}
+      actions={[
+        <Button key="open" size="small" type="link" onClick={() => navigate(designEditorPath(wid, item.id))}>
+          打开
+        </Button>,
+        ...(isViewer
+          ? []
+          : [
+              <Button
+                key="edit"
+                size="small"
+                type="link"
+                icon={<EditOutlined />}
+                onClick={() => openRename(item)}
+              >
+                编辑
+              </Button>,
+              <Popconfirm
+                key="delete"
+                title={`删除设计「${item.title}」？`}
+                description="版本历史会一并隐藏，操作不可撤销。"
+                okText="删除"
+                okButtonProps={{ danger: true }}
+                onConfirm={() => remove.mutate(item)}
+              >
+                <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
+              </Popconfirm>,
+            ]),
+      ]}
+    >
+      <List.Item.Meta
+        title={(
+          <Space size={6} wrap>
+            <Text strong>{item.title}</Text>
+            <Tag bordered={false} color={item.kind === 'part' ? 'blue' : 'geekblue'}>
+              {item.kind === 'part' ? '零件' : '装配'}
+            </Tag>
+            {item.folder && <Tag bordered={false}>{item.folder}</Tag>}
+            {item.dependencies_stale && (
+              <Tag color="gold" bordered={false} data-testid={`design-list-stale-${item.id}`}>依赖陈旧</Tag>
+            )}
+          </Space>
+        )}
+        description={(
+          <span className="cn-design-tree-meta">
+            {item.file_key && <Text code style={{ fontSize: 12 }}>{item.file_key}</Text>}
+            {' '}
+            {item.description || '（无描述）'}
+            {' · '}v{item.version_count}
+            {' · '}更新于 {formatDateTime(item.updated_at)}
+          </span>
+        )}
+      />
+    </List.Item>
+  )
+
   return (
     <div style={{ padding: '16px 24px', maxWidth: 960, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -190,9 +269,22 @@ export default function DesignsPage() {
             </Text>
           </div>
         </div>
-        {!isViewer && (
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建设计</Button>
-        )}
+        <Space size={8}>
+          <Segmented
+            size="small"
+            value={kindFilter}
+            onChange={value => setKindFilter(value as 'all' | 'part' | 'assembly')}
+            data-testid="design-kind-filter"
+            options={[
+              { value: 'all', label: '全部' },
+              { value: 'part', label: '零件' },
+              { value: 'assembly', label: '装配' },
+            ]}
+          />
+          {!isViewer && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建设计</Button>
+          )}
+        </Space>
       </div>
 
       {isLoading ? (
@@ -201,66 +293,18 @@ export default function DesignsPage() {
         <Empty description="还没有结构设计" style={{ padding: 48 }} />
       ) : (
         <div className="cn-design-structure" data-testid="design-list">
-          <List
-            dataSource={designs}
-            renderItem={(item) => (
-              <List.Item
-                data-testid={`design-row-${item.id}`}
-                actions={[
-                  <Button key="open" size="small" type="link" onClick={() => navigate(designEditorPath(wid, item.id))}>
-                    打开
-                  </Button>,
-                  ...(isViewer
-                    ? []
-                    : [
-                        <Button
-                          key="edit"
-                          size="small"
-                          type="link"
-                          icon={<EditOutlined />}
-                          onClick={() => openRename(item)}
-                        >
-                          编辑
-                        </Button>,
-                        <Popconfirm
-                          key="delete"
-                          title={`删除设计「${item.title}」？`}
-                          description="版本历史会一并隐藏，操作不可撤销。"
-                          okText="删除"
-                          okButtonProps={{ danger: true }}
-                          onConfirm={() => remove.mutate(item)}
-                        >
-                          <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
-                        </Popconfirm>,
-                      ]),
-                ]}
-              >
-                <List.Item.Meta
-                  title={(
-                    <Space size={6} wrap>
-                      <Text strong>{item.title}</Text>
-                      <Tag bordered={false} color={item.kind === 'part' ? 'blue' : 'geekblue'}>
-                        {item.kind === 'part' ? '零件' : '装配'}
-                      </Tag>
-                      {item.folder && <Tag bordered={false}>{item.folder}</Tag>}
-                      {item.dependencies_stale && (
-                        <Tag color="gold" bordered={false} data-testid={`design-list-stale-${item.id}`}>依赖陈旧</Tag>
-                      )}
-                    </Space>
-                  )}
-                  description={(
-                    <span className="cn-design-tree-meta">
-                      {item.file_key && <Text code style={{ fontSize: 12 }}>{item.file_key}</Text>}
-                      {' '}
-                      {item.description || '（无描述）'}
-                      {' · '}v{item.version_count}
-                      {' · '}更新于 {formatDateTime(item.updated_at)}
-                    </span>
-                  )}
-                />
-              </List.Item>
-            )}
-          />
+          {groups.length === 0 ? (
+            <Empty description="该类型下暂无设计" style={{ padding: 24 }} />
+          ) : groups.map(group => (
+            <section key={group.folder || '__ungrouped'} className="cn-design-folder" data-testid={`design-folder-${group.folder || 'ungrouped'}`}>
+              <div className="cn-design-folder-title">
+                <ApartmentOutlined />
+                <Text strong>{group.folder || '未分组'}</Text>
+                <Text type="secondary" className="cn-design-folder-count">{group.items.length}</Text>
+              </div>
+              <List dataSource={group.items} renderItem={renderRow} />
+            </section>
+          ))}
           <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)' }}>
             <Text type="secondary">
               <Tag bordered={false}>提示</Tag>

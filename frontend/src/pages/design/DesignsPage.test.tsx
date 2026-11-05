@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import DesignsPage, { DEFAULT_DESIGN_CONTENT, DEFAULT_PART_CONTENT } from './DesignsPage'
 import { renderProviders } from '@/test/render-providers'
@@ -139,10 +139,54 @@ describe('设计管理页（0084 D5）', () => {
     useListHandler([{ ...DESIGN, kind: 'part', folder: 'parts/demo', dependencies_stale: true }])
     renderPage()
 
-    expect(await screen.findByText('零件')).toBeInTheDocument()
-    expect(screen.getByText('parts/demo')).toBeInTheDocument()
+    // 等行渲染完成再断言（「零件」也出现在类型筛选里，不能作为就绪信号）
+    expect(await screen.findByTestId('design-row-20')).toBeInTheDocument()
+    expect(screen.getAllByText('零件').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('parts/demo').length).toBeGreaterThan(0)
     expect(screen.getByTestId('design-list-stale-20')).toBeInTheDocument()
     expect(screen.getByText('flange-plate')).toBeInTheDocument()
+  })
+
+  it('按目录分组展示，未分组排最后（ADR 0103 C8 / D12）', async () => {
+    useListHandler([
+      { ...DESIGN, id: 20, title: '法兰板', folder: '' },
+      { ...DESIGN, id: 21, title: '轮毂', folder: 'parts', kind: 'part' },
+      { ...DESIGN, id: 22, title: '底板', folder: 'parts', kind: 'part' },
+    ])
+    renderPage()
+
+    expect(await screen.findByTestId('design-row-21')).toBeInTheDocument()
+    const folders = screen.getAllByTestId(/design-folder-/)
+    // 分组顺序：parts 在前、未分组置底
+    expect(folders.map(node => node.getAttribute('data-testid'))).toEqual([
+      'design-folder-parts',
+      'design-folder-ungrouped',
+    ])
+    expect(screen.getByTestId('design-folder-parts')).toHaveTextContent('2')
+  })
+
+  it('按类型筛选：零件 / 装配 / 全部（ADR 0103 C8）', async () => {
+    useListHandler([
+      { ...DESIGN, id: 20, title: '法兰板', kind: 'assembly' },
+      { ...DESIGN, id: 21, title: '轮毂', kind: 'part' },
+    ])
+    renderPage()
+
+    expect(await screen.findByTestId('design-row-21')).toBeInTheDocument()
+    expect(screen.getByTestId('design-row-20')).toBeInTheDocument()
+
+    // 筛选控件为 Segmented：点击「零件」只剩零件文件
+    const filter = screen.getByTestId('design-kind-filter')
+    fireEvent.click(within(filter).getByText('零件'))
+    await waitFor(() => expect(screen.queryByTestId('design-row-20')).toBeNull())
+    expect(screen.getByTestId('design-row-21')).toBeInTheDocument()
+
+    fireEvent.click(within(filter).getByText('装配'))
+    await waitFor(() => expect(screen.queryByTestId('design-row-21')).toBeNull())
+    expect(screen.getByTestId('design-row-20')).toBeInTheDocument()
+
+    fireEvent.click(within(filter).getByText('全部'))
+    expect(await screen.findByTestId('design-row-21')).toBeInTheDocument()
   })
 
   it('viewer 只读：隐藏新建与删除，保留打开', async () => {

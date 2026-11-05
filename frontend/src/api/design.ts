@@ -63,7 +63,7 @@ export interface DesignOutlineRef {
   kind: 'part' | 'assembly' | string
 }
 
-/** 设计 IR（v4 = v3 + constraints + 大纲 file_id/ref（ADR 0086）；单位固定 mm / deg，I5） */
+/** 设计 IR（v5 = v4 + 大纲 node_index（ADR 0103）；单位固定 mm / deg，I5） */
 export interface DesignIR {
   version: number
   units: { length: string; angle: string }
@@ -75,9 +75,16 @@ export interface DesignIR {
   constraints?: DesignIRConstraint[]
 }
 
+/** 大纲节点公共字段：`node_index` 为首个所属顶层 `nodes` 下标（IR v5，ADR 0103 D7）.
+ * v4 及更早快照无该字段 → 联动高亮静默降级（I2）。 */
+interface DesignOutlineIndex {
+  node_index?: number | null
+  file_id?: number
+}
+
 /** 装配大纲节点（ADR 0083 D3 / ADR 0084 D2）：
  * 系统（system 声明，复杂系统级）/ 组件（module 实例，可嵌套）/ 布尔分组 / 零件（图元） */
-export interface DesignOutlineSystemNode {
+export interface DesignOutlineSystemNode extends DesignOutlineIndex {
   kind: 'system'
   name: string
   line: number
@@ -85,7 +92,7 @@ export interface DesignOutlineSystemNode {
   children: DesignOutlineNode[]
 }
 
-export interface DesignOutlineAssemblyNode {
+export interface DesignOutlineAssemblyNode extends DesignOutlineIndex {
   kind: 'assembly'
   name: string
   line: number
@@ -95,7 +102,7 @@ export interface DesignOutlineAssemblyNode {
   ref?: DesignOutlineRef
 }
 
-export interface DesignOutlineGroupNode {
+export interface DesignOutlineGroupNode extends DesignOutlineIndex {
   kind: 'group'
   op: 'union' | 'difference' | 'intersection'
   line: number
@@ -103,7 +110,7 @@ export interface DesignOutlineGroupNode {
   children: DesignOutlineNode[]
 }
 
-export interface DesignOutlinePartNode {
+export interface DesignOutlinePartNode extends DesignOutlineIndex {
   kind: 'part'
   primitive: 'box' | 'cyl' | 'sphere' | 'cone' | 'torus' | 'tube'
   line: number

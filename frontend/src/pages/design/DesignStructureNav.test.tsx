@@ -135,6 +135,32 @@ describe('DesignStructureNav 侧栏装配结构（0084）', () => {
     expect(screen.getByText('系统 · 第 27 行 · 3 个零件')).toBeInTheDocument()
   })
 
+  it('编辑器 ?line= 反选大纲节点并展开祖先链（ADR 0103 C1② / D9）', async () => {
+    useListHandler()
+    useOutlineHandler()
+    // 第 34 行 = system 下的球体零件（同父下最后一个 line ≤ 34）
+    renderNav('/w/10/design/20?line=34')
+
+    expect(await screen.findByText('rover')).toBeInTheDocument()
+    await waitFor(() => {
+      const node = screen.getByText('球体').closest('.ant-tree-treenode')
+      expect(node?.className).toContain('ant-tree-treenode-selected')
+    })
+    // 祖先链自动展开（system → 其子节点可见；球体是 system 直接子节点）
+    expect(screen.getByText('chassis')).toBeInTheDocument()
+  })
+
+  it('?line= 早于首行时不选中大纲节点（D9 边界）', async () => {
+    useListHandler()
+    useOutlineHandler()
+    renderNav('/w/10/design/20?line=1')
+
+    expect(await screen.findByText('rover')).toBeInTheDocument()
+    // 无命中 → 回落到设计根选中态
+    const root = screen.getByTestId('design-node-20').closest('.ant-tree-treenode')
+    expect(root?.className).toContain('ant-tree-treenode-selected')
+  })
+
   it('点击零件节点进入编辑器并定位源行（?line=）', async () => {
     useListHandler()
     useOutlineHandler()

@@ -1,12 +1,12 @@
-/** DesignExportMenu 测试（ADR 0079 D5）：菜单接线、空模型禁用、导出失败提示.
+/** 设计「更多」菜单测试（ADR 0103 D6 / 承接 ADR 0079 D5）：入口接线、空模型禁用、导出失败提示.
  *
  * exporters 本体由 exporters.test.ts 覆盖；此处 mock exporters 断言
- * 菜单 → 导出函数 → 下载的接线与异常分支。
+ * 菜单 → 导出函数 → 下载的接线与异常分支，以及版本历史入口回调。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import DesignExportMenu from './DesignExportMenu'
+import DesignMoreMenu from './DesignMoreMenu'
 import { renderProviders } from '@/test/render-providers'
 import type { DesignIR } from '@/api'
 import { DesignExportError } from './exporters'
@@ -27,7 +27,7 @@ vi.mock('./exporters', async (importOriginal) => {
 })
 
 const IR: DesignIR = {
-  version: 2,
+  version: 5,
   units: { length: 'mm', angle: 'deg' },
   params: [],
   nodes: [{ op: 'box', size: [10, 10, 10] }],
@@ -37,38 +37,52 @@ const EMPTY_IR: DesignIR = { ...IR, nodes: [] }
 
 import { buildGLB, buildOBJ, buildSTL, captureViews, downloadBlob, downloadDataURL } from './exporters'
 
-function openMenu(ir: DesignIR | null) {
-  renderProviders(<DesignExportMenu ir={ir} title="法兰板" />)
-  return screen.getByRole('button', { name: '导出' })
+function renderMenu(ir: DesignIR | null, onHistory = vi.fn()) {
+  renderProviders(<DesignMoreMenu ir={ir} title="法兰板" versionCount={3} onHistory={onHistory} />)
+  return { button: screen.getByRole('button', { name: '更多' }), onHistory }
+}
+
+function openMenu() {
+  fireEvent.click(screen.getByRole('button', { name: '更多' }))
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe('DesignExportMenu', () => {
-  it('空 IR（顶层无实例）导出按钮禁用（边界 #3）', () => {
-    const button = openMenu(EMPTY_IR)
-    expect(button).toBeDisabled()
+describe('DesignMoreMenu', () => {
+  it('版本历史入口显示版本数并触发回调（D6）', async () => {
+    const { onHistory } = renderMenu(IR)
+    openMenu()
+    fireEvent.click(await screen.findByText('版本历史（3）'))
+    expect(onHistory).toHaveBeenCalled()
+  })
+
+  it('空 IR（顶层无实例）导出项禁用（边界 #3）', async () => {
+    renderMenu(EMPTY_IR)
+    openMenu()
+    const item = await screen.findByText('STL（二进制，3D 打印）')
+    expect(item.closest('.ant-dropdown-menu-item')).toHaveClass('ant-dropdown-menu-item-disabled')
   })
 
   it('点击菜单项分派到对应导出函数并下载', async () => {
-    fireEvent.click(openMenu(IR))
+    renderMenu(IR)
+    openMenu()
     fireEvent.click(await screen.findByText('STL（二进制，3D 打印）'))
     await waitFor(() => expect(buildSTL).toHaveBeenCalled())
     expect(downloadBlob).toHaveBeenCalledWith(expect.any(ArrayBuffer), '法兰板.stl')
 
-    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    openMenu()
     fireEvent.click(await screen.findByText('OBJ（网格交换）'))
     await waitFor(() => expect(buildOBJ).toHaveBeenCalled())
     expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), '法兰板.obj')
 
-    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    openMenu()
     fireEvent.click(await screen.findByText('GLB（glTF 2.0 预览交付）'))
     await waitFor(() => expect(buildGLB).toHaveBeenCalled())
     await waitFor(() => expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), '法兰板.glb'))
 
-    fireEvent.click(screen.getByRole('button', { name: '导出' }))
+    openMenu()
     fireEvent.click(await screen.findByText('三视图 PNG（前 / 上 / 右）'))
     await waitFor(() => expect(captureViews).toHaveBeenCalled())
     // 前上右三张各下载一次
@@ -82,7 +96,8 @@ describe('DesignExportMenu', () => {
     vi.mocked(captureViews).mockImplementation(() => {
       throw new DesignExportError('当前环境不支持 WebGL')
     })
-    fireEvent.click(openMenu(IR))
+    renderMenu(IR)
+    openMenu()
     fireEvent.click(await screen.findByText('三视图 PNG（前 / 上 / 右）'))
     expect(await screen.findByText('当前环境不支持 WebGL')).toBeInTheDocument()
   })
@@ -91,7 +106,8 @@ describe('DesignExportMenu', () => {
     vi.mocked(buildSTL).mockImplementation(() => {
       throw new Error('序列化失败')
     })
-    fireEvent.click(openMenu(IR))
+    renderMenu(IR)
+    openMenu()
     fireEvent.click(await screen.findByText('STL（二进制，3D 打印）'))
     expect(await screen.findByText('序列化失败')).toBeInTheDocument()
   })

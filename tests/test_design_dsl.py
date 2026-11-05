@@ -224,7 +224,7 @@ class TestParser:
 class TestCompileBasics:
     def test_full_example_ir(self):
         ir = _ok(_EXAMPLE)
-        assert ir["version"] == 4
+        assert ir["version"] == 5
         assert ir["constraints"] == []
         assert ir["units"] == {"length": "mm", "angle": "deg"}
         assert ir["params"] == [
@@ -679,12 +679,14 @@ class TestOutline:
         assert group["op"] == "difference"
         assert (group["line"], group["col"]) == (8, 3)
         part_box, part_cyl = group["children"]
-        assert part_box == {"kind": "part", "primitive": "box", "line": 9, "col": 5}
-        assert part_cyl == {"kind": "part", "primitive": "cyl", "line": 11, "col": 7}
+        # 整块是一个顶层 CSG 节点：组内所有零件共享块下标（ADR 0103 §4#1）
+        assert (assembly["node_index"], group["node_index"]) == (0, 0)
+        assert part_box == {"kind": "part", "primitive": "box", "line": 9, "col": 5, "node_index": 0}
+        assert part_cyl == {"kind": "part", "primitive": "cyl", "line": 11, "col": 7, "node_index": 0}
 
     def test_top_level_part(self):
         ir = _ok("box(w=1,h=1,d=1)")
-        assert _outline(ir) == [{"kind": "part", "primitive": "box", "line": 1, "col": 1}]
+        assert _outline(ir) == [{"kind": "part", "primitive": "box", "line": 1, "col": 1, "node_index": 0}]
 
     def test_nested_modules_hierarchy(self):
         content = "module inner() {\n  box(w=1,h=1,d=1)\n}\nmodule outer() {\n  inner()\n}\nouter()"
@@ -693,7 +695,7 @@ class TestOutline:
         assert (outer["kind"], outer["name"], outer["line"], outer["col"]) == ("assembly", "outer", 7, 1)
         (inner,) = outer["children"]
         assert (inner["kind"], inner["name"], inner["line"], inner["col"]) == ("assembly", "inner", 5, 3)
-        assert inner["children"] == [{"kind": "part", "primitive": "box", "line": 2, "col": 3}]
+        assert inner["children"] == [{"kind": "part", "primitive": "box", "line": 2, "col": 3, "node_index": 0}]
 
     def test_boolean_group_node(self):
         content = "difference {\n  box(w=2,h=2,d=2)\n  cyl(d=1,h=4)\n}"
@@ -709,7 +711,7 @@ class TestOutline:
         content = "translate([1,2,3]) {\n  box(w=1,h=1,d=1)\n}"
         ir = _ok(content)
         # 变换不建大纲节点，零件保持顶层层级；几何仍带 transform 栈
-        assert _outline(ir) == [{"kind": "part", "primitive": "box", "line": 2, "col": 3}]
+        assert _outline(ir) == [{"kind": "part", "primitive": "box", "line": 2, "col": 3, "node_index": 0}]
         assert ir["nodes"][0]["transform"] == {"ops": [["translate", [1.0, 2.0, 3.0]]]}
 
     def test_empty_program_outline(self):
@@ -721,8 +723,11 @@ class TestOutline:
         ir = _ok(content)
         assert len(_outline(ir)) == 2
         assert [node["line"] for node in _outline(ir)] == [4, 5]
+        assert [node["node_index"] for node in _outline(ir)] == [0, 1]
         for node in _outline(ir):
-            assert node["children"] == [{"kind": "part", "primitive": "box", "line": 2, "col": 3}]
+            assert node["children"] == [
+                {"kind": "part", "primitive": "box", "line": 2, "col": 3, "node_index": node["node_index"]}
+            ]
 
     def test_outline_parts_match_geometry(self):
         """I1：大纲零件数 = 几何图元数（同源同次编译）."""
@@ -737,13 +742,71 @@ class TestOutline:
             assert outline_total == geometry_total
 
     def test_outline_has_no_param_bindings(self):
-        """D3：大纲只带名称 / 类型 / 源位置，不写模块参数绑定值."""
+        """D3：大纲只带名称 / 类型 / 源位置 / 节点下标，不写模块参数绑定值."""
         ir = _ok("module m(a) {\n  box(w=a,h=1,d=1)\n}\nm(3)")
         (assembly,) = _outline(ir)
-        assert set(assembly) == {"kind", "name", "line", "col", "children"}
+        assert set(assembly) == {"kind", "name", "line", "col", "children", "node_index"}
 
     def test_outline_absent_on_failure(self):
         assert compile_design("box(").ir is None
+
+
+def _walk_outline(nodes: list[dict[str, Any]]):
+    """深度遍历大纲子树（含自身）."""
+    for node in nodes:
+        yield node
+        yield from _walk_outline(node.get("children") or [])
+
+
+class TestOutlineNodeIndex:
+    """IR v5：大纲节点携带首个所属顶层 ``nodes`` 下标（ADR 0103 D7 / I3）."""
+
+    def test_version_is_5(self):
+        assert _ok("box(w=1,h=1,d=1)")["version"] == 5
+
+    def test_index_within_nodes_range(self):
+        for content in (
+            _EXAMPLE,
+            _SYSTEM_EXAMPLE,
+            "translate([1,0,0]) box(w=1,h=1,d=1)\nsphere(r=2)",
+        ):
+            ir = _ok(content)
+            total = len(ir["nodes"])
+            for node in _walk_outline(_outline(ir)):
+                index = node["node_index"]
+                assert index is None or 0 <= index < total
+
+    def test_toplevel_instances_index_in_order(self):
+        ir = _ok("box(w=1,h=1,d=1)\ncyl(d=2,h=3)\nsphere(r=1)")
+        assert [node["node_index"] for node in _outline(ir)] == [0, 1, 2]
+
+    def test_group_children_share_block_index(self):
+        """布尔块是单个顶层 CSG 节点：组内所有零件共享块下标（§4#1）."""
+        ir = _ok("difference {\n  box(w=2,h=2,d=2)\n  cyl(d=1,h=4)\n}\nbox(w=1,h=1,d=1)")
+        group, part = _outline(ir)
+        assert group["node_index"] == 0
+        assert [child["node_index"] for child in group["children"]] == [0, 0]
+        assert part["node_index"] == 1
+
+    def test_transform_does_not_change_index(self):
+        ir = _ok("translate([1,0,0]) {\n  box(w=1,h=1,d=1)\n  cyl(d=1,h=1)\n}")
+        assert [node["node_index"] for node in _outline(ir)] == [0, 1]
+        assert len(ir["nodes"]) == 2
+
+    def test_empty_module_index_is_none(self):
+        ir = _ok("module empty() {\n}\nempty()\nbox(w=1,h=1,d=1)")
+        assembly, part = _outline(ir)
+        assert assembly["node_index"] is None
+        assert part["node_index"] == 0
+
+    def test_use_instance_index_shifted_to_caller(self):
+        """被引用文件模板下标是文件内相对值，注入引用方后整体平移到顶层基址."""
+        resolver = _make_resolver({"wheel": (11, "param d = 40\ncyl(d = d, h = 16)\n")})
+        ir = _ok('box(w=1,h=1,d=1)\nuse "wheel"(d = 30) as w1', resolver=resolver)
+        top, used = _outline_children(ir)
+        assert top["node_index"] == 0
+        assert used["node_index"] == 1
+        assert used["children"][0]["node_index"] == 1
 
 
 # ── 系统装配声明（ADR 0084 D1 / D3） ─────────────────────
@@ -834,11 +897,11 @@ class TestSystem:
         assert ir["nodes"] == []
 
     def test_no_system_outline_matches_v2_shape(self):
-        """I5：无 system 的原文大纲仍只有 assembly / group / part."""
+        """I5：无 system 的原文大纲仍只有 assembly / group / part（v5 只多 node_index）."""
         ir = _ok("module m() { box(w=1,h=1,d=1) } m()")
         (node,) = _outline(ir)
         assert node["kind"] == "assembly"
-        assert set(node) == {"kind", "name", "line", "col", "children"}
+        assert set(node) == {"kind", "name", "line", "col", "children", "node_index"}
 
     def test_system_cannot_be_instantiated(self):
         diagnostic = _err("system s { box(w=1,h=1,d=1) }\ns()")
@@ -871,7 +934,7 @@ class TestSystem:
     def test_system_body_uses_global_params(self):
         ir = _ok("param g = 3\nsystem s { box(w=g, h=g, d=g) }")
         (system,) = _outline(ir)
-        assert system["children"] == [{"kind": "part", "primitive": "box", "line": 2, "col": 12}]
+        assert system["children"] == [{"kind": "part", "primitive": "box", "line": 2, "col": 12, "node_index": 0}]
         assert ir["nodes"] == [{"op": "box", "size": [3.0, 3.0, 3.0]}]
 
     def test_system_outline_parts_match_geometry(self):

@@ -21,6 +21,8 @@ export interface DesignTreeMeta {
   fileId?: number
   /** 子树内的零件计数（一次后序遍历派生，ADR 0086 C7） */
   partCount: number
+  /** 渲染实体下标（IR v5，ADR 0103 D7）：选中该节点时高亮的顶层 nodes 集合来源 */
+  nodeIndex?: number | null
 }
 
 export interface DesignTreeEntry {
@@ -80,7 +82,9 @@ export function outlineToTree(
         title: primitiveLabel(node.primitive),
         detail: `零件 · 第 ${node.line} 行`,
         isLeaf: true,
-        meta: { type: 'part', designId, line: node.line, col: node.col, partCount: 1 },
+        meta: {
+          type: 'part', designId, line: node.line, col: node.col, partCount: 1, nodeIndex: node.node_index ?? null,
+        },
       }
     }
     // use 实例（IR v4）：带 ref 时点击打开源文件（fileId），否则定位当前设计源行
@@ -88,7 +92,14 @@ export function outlineToTree(
     const children = outlineToTree(node.children, designId, key)
     // 一次后序计数：父节点计数 = 子节点计数求和，每条边只遍历一次（ADR 0086 C7）
     const partCount = children.reduce((total, child) => total + child.meta.partCount, 0)
-    const base = { designId, line: node.line, col: node.col, partCount, ...(ref ? { fileId: ref.file_id } : {}) }
+    const base = {
+      designId,
+      line: node.line,
+      col: node.col,
+      partCount,
+      nodeIndex: node.node_index ?? null,
+      ...(ref ? { fileId: ref.file_id } : {}),
+    }
     if (node.kind === 'system') {
       return {
         key,
@@ -124,4 +135,69 @@ export function outlineToTree(
 export function designEditorPath(workspaceId: number | string, designId: number, line?: number): string {
   const path = `/w/${workspaceId}/design/${designId}`
   return line && line > 0 ? `${path}?line=${line}` : path
+}
+
+/** 反向定位（ADR 0103 D9 / C1②）：按「同父下 line 升序取最后一个 line ≤ revealLine」逐层下探.
+ *
+ * 只考虑**当前文件**的节点（use 实例子树的 line 属于被引用文件，跨文件行号不可比）；
+ * 早于首行（首节点 line > revealLine）或全部无命中时返回空数组 = 不选中。
+ * 返回从根到最深命中节点的路径（含自身），供侧栏展开祖先链 + 选中 + 视口高亮复用。
+ */
+export function resolveOutlinePath(
+  nodes: DesignOutlineNode[],
+  revealLine: number,
+  designId: number,
+): DesignOutlineNode[] {
+  let best: DesignOutlineNode | null = null
+  for (const node of nodes) {
+    if (node.file_id != null && node.file_id !== designId) continue
+    if (node.line <= revealLine && (best == null || node.line >= best.line)) best = node
+  }
+  if (best == null) return []
+  if (best.kind === 'part' || best.children.length === 0) return [best]
+  return [best, ...resolveOutlinePath(best.children, revealLine, designId)]
+}
+
+/** 选中节点 → 需高亮的顶层 nodes 下标集合（自身子树递归，去重；v4 快照为空 = 不高亮） */
+export function collectNodeIndices(node: DesignOutlineNode): number[] {
+  const indices = new Set<number>()
+  const walk = (current: DesignOutlineNode) => {
+    if (current.node_index != null) indices.add(current.node_index)
+    if (current.kind !== 'part') current.children.forEach(walk)
+  }
+  walk(node)
+  return [...indices]
+}
+
+/** 大纲节点同一定位判定：接口来源不同（/outline 与 /ir 快照）时对象身份不同，按位置签名比较 */
+function sameOutlineNode(a: DesignOutlineNode, b: DesignOutlineNode): boolean {
+  if (a.kind !== b.kind || a.line !== b.line || a.col !== b.col) return false
+  if (a.kind === 'assembly' && b.kind === 'assembly') return a.name === b.name
+  if (a.kind === 'system' && b.kind === 'system') return a.name === b.name
+  return true
+}
+
+/** 反向定位 → 树节点 key 路径（与 outlineToTree 的 `parentKey-index` 口径一致） */
+export function outlineKeyPath(
+  nodes: DesignOutlineNode[],
+  path: DesignOutlineNode[],
+  designId: number,
+): string[] {
+  if (path.length === 0) return []
+  const keys: string[] = []
+  const locate = (level: DesignOutlineNode[], key: string, depth: number): boolean => {
+    for (let index = 0; index < level.length; index += 1) {
+      const node = level[index]
+      if (!sameOutlineNode(node, path[depth])) continue
+      const nodeKey = `${key}-${index}`
+      keys.push(nodeKey)
+      if (depth + 1 < path.length && node.kind !== 'part') {
+        return locate(node.children, nodeKey, depth + 1)
+      }
+      return true
+    }
+    return false
+  }
+  locate(nodes, `design-${designId}`, 0)
+  return keys
 }

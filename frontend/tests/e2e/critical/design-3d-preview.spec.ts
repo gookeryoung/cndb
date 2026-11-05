@@ -70,10 +70,10 @@ test.describe("设计模块（结构 DSL）", () => {
       await expect(page.getByText("第2行").first()).toBeHidden({ timeout: 15_000 })
       await expect(page.getByTestId("design-compile-ok")).toBeVisible({ timeout: 15_000 })
 
-      // 5) 导出 STL：点击导出菜单 → 二进制头为 'cndb design stl'
+      // 5) 导出 STL：导出收进「更多」菜单（ADR 0103 D6）→ 二进制头为 'cndb design stl'
       // 文件名含中文设计名，Chromium suggestedFilename 不稳定（同 workspace-backup 用例），以内容为准则
       const downloadPromise = page.waitForEvent("download", { timeout: 30_000 })
-      await page.getByRole("button", { name: "导出" }).click()
+      await page.getByRole("button", { name: "更多" }).click()
       await page.getByText("STL（二进制，3D 打印）").click()
       const download = await downloadPromise
       const buf = readFileSync(await download.path())

@@ -3,7 +3,8 @@
 import { describe, expect, it } from 'vitest'
 import type { DesignOutlineNode } from '@/api'
 import {
-  countParts, designEditorPath, groupLabel, outlineToTree, primitiveLabel,
+  collectNodeIndices, countParts, designEditorPath, groupLabel, outlineKeyPath, outlineToTree,
+  primitiveLabel, resolveOutlinePath,
 } from './designOutline'
 
 const OUTLINE: DesignOutlineNode[] = [
@@ -118,5 +119,103 @@ describe('辅助映射', () => {
     expect(designEditorPath(10, 20)).toBe('/w/10/design/20')
     expect(designEditorPath('10', 20, 12)).toBe('/w/10/design/20?line=12')
     expect(designEditorPath(10, 20, 0)).toBe('/w/10/design/20')
+  })
+})
+
+/** 反向定位 / 高亮用大纲（ADR 0103 C1② / C7 / D9）：带 node_index 的 v5 快照 */
+const INDEXED: DesignOutlineNode[] = [{
+  kind: 'system',
+  name: 'rover',
+  line: 10,
+  col: 1,
+  node_index: 0,
+  children: [
+    {
+      kind: 'assembly',
+      name: 'chassis',
+      line: 12,
+      col: 3,
+      node_index: 0,
+      children: [{
+        kind: 'group',
+        op: 'difference',
+        line: 13,
+        col: 5,
+        node_index: 0,
+        children: [
+          { kind: 'part', primitive: 'box', line: 14, col: 7, node_index: 0 },
+          { kind: 'part', primitive: 'cyl', line: 15, col: 7, node_index: 0 },
+        ],
+      }],
+    },
+    { kind: 'part', primitive: 'sphere', line: 20, col: 3, node_index: 1 },
+  ],
+}]
+
+describe('resolveOutlinePath（D9 归属规则）', () => {
+  it('同父下取最后一个 line ≤ revealLine 的节点并逐层下探', () => {
+    const path = resolveOutlinePath(INDEXED, 14, 20)
+    expect(path.map(node => node.kind)).toEqual(['system', 'assembly', 'group', 'part'])
+    expect(path[path.length - 1]).toMatchObject({ line: 14, primitive: 'box' })
+  })
+
+  it('命中父节点行时保持在该父层（子节点行更晚）', () => {
+    const path = resolveOutlinePath(INDEXED, 12, 20)
+    expect(path.map(node => (node.kind === 'part'
+      ? node.primitive
+      : node.kind === 'group'
+        ? node.op
+        : node.name))).toEqual(['rover', 'chassis'])
+  })
+
+  it('行号落在两个顶层实例之间时取前一个', () => {
+    const path = resolveOutlinePath(INDEXED, 18, 20)
+    expect(path.map(node => node.kind)).toEqual(['system', 'assembly', 'group', 'part'])
+  })
+
+  it('早于首行不选中（返回空路径）', () => {
+    expect(resolveOutlinePath(INDEXED, 1, 20)).toEqual([])
+  })
+
+  it('忽略其他文件的节点（use 子树的 line 属于被引用文件）', () => {
+    const nodes: DesignOutlineNode[] = [{
+      kind: 'assembly',
+      name: 'chassis',
+      line: 3,
+      col: 1,
+      file_id: 30,
+      node_index: 0,
+      children: [{ kind: 'part', primitive: 'box', line: 1, col: 1, node_index: 0 }],
+    }]
+    expect(resolveOutlinePath(nodes, 5, 20)).toEqual([])
+  })
+})
+
+describe('collectNodeIndices / outlineKeyPath', () => {
+  it('选中节点收集自身子树下标（去重，布尔块共享同一块下标）', () => {
+    const [system] = INDEXED
+    expect(collectNodeIndices(system!)).toEqual([0, 1])
+    // 布尔分组：组与其下两个零件共享块下标 0 → 去重后只有一个
+    const assembly = (system as { children: DesignOutlineNode[] }).children[0]!
+    const group = (assembly as { children: DesignOutlineNode[] }).children[0]!
+    expect(collectNodeIndices(group)).toEqual([0])
+  })
+
+  it('v4 旧快照无 node_index：收集结果为空（静默降级）', () => {
+    expect(collectNodeIndices(OUTLINE[0]!)).toEqual([])
+  })
+
+  it('key 路径与 outlineToTree 口径一致（末项为选中节点）', () => {
+    const path = resolveOutlinePath(INDEXED, 14, 20)
+    expect(outlineKeyPath(INDEXED, path, 20)).toEqual([
+      'design-20-0',
+      'design-20-0-0',
+      'design-20-0-0-0',
+      'design-20-0-0-0-0',
+    ])
+  })
+
+  it('空路径返回空 key 列表', () => {
+    expect(outlineKeyPath(INDEXED, [], 20)).toEqual([])
   })
 })

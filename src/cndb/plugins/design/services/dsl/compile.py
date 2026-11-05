@@ -67,8 +67,9 @@ from cndb.plugins.design.services.dsl.nodes import (
 from cndb.plugins.design.services.dsl.parse import parse_program
 
 #: IR 协议版本（前后端契约，随语法演进递增；v3 = v2 + 大纲 system 节点，ADR 0084 D2；
-#: v4 = v3 + constraints[] + 大纲节点 file_id / use ref，ADR 0086 D2）
-IR_VERSION = 4
+#: v4 = v3 + constraints[] + 大纲节点 file_id / use ref，ADR 0086 D2；
+#: v5 = v4 + 大纲节点 node_index（首个所属顶层 nodes 下标，ADR 0103 D7））
+IR_VERSION = 5
 
 #: 伪 file_id：独立编译（无文件身份）时的根文件占位
 _ROOT_FILE_ID = 0
@@ -359,9 +360,15 @@ _PRIMITIVE_EVALUATORS = {
 # ── 装配大纲节点（ADR 0083 D3） ──────────────────────────
 
 
-def _part_outline(call: PrimitiveCall) -> dict[str, Any]:
+def _part_outline(call: PrimitiveCall, node_index: int) -> dict[str, Any]:
     """图元 → 零件大纲节点（叶）；行 / 列为调用语句起点（1 基，I4）."""
-    return {"kind": "part", "primitive": call.name, "line": call.line, "col": call.col}
+    return {
+        "kind": "part",
+        "primitive": call.name,
+        "line": call.line,
+        "col": call.col,
+        "node_index": node_index,
+    }
 
 
 # ── 实例展开 ─────────────────────────────────────────────
@@ -405,7 +412,10 @@ class _Emitter:
             if isinstance(item, SystemDecl):
                 insts = tuple(i for i in item.body if isinstance(i, Instance))
                 cons = tuple(c for c in item.body if isinstance(c, ConstraintDecl))
-                sys_nodes, sys_children, sys_entries, sys_warnings = self.emit_scope(insts, cons, env, (), {}, [], {})
+                sys_base = len(nodes)
+                sys_nodes, sys_children, sys_entries, sys_warnings = self.emit_scope(
+                    insts, cons, env, (), {}, [], {}, base=sys_base
+                )
                 nodes.extend(sys_nodes)
                 outline.append(
                     {
@@ -413,6 +423,7 @@ class _Emitter:
                         "name": item.name,
                         "line": item.line,
                         "col": item.col,
+                        "node_index": sys_base if sys_nodes else None,
                         "children": sys_children,
                     }
                 )
@@ -420,7 +431,7 @@ class _Emitter:
                 warnings.extend(sys_warnings)
                 continue
             if isinstance(item, Instance):
-                inst_nodes, inst_outline = self._emit_instance(item, env, (), 0, labels, ordered, poses)
+                inst_nodes, inst_outline = self._emit_instance(item, env, (), 0, labels, ordered, poses, len(nodes))
                 nodes.extend(inst_nodes)
                 outline.extend(inst_outline)
         if program.constraints:
@@ -438,17 +449,20 @@ class _Emitter:
         labels: dict[str, list[dict[str, Any]]],
         ordered: list[str],
         poses: dict[str, Pose],
+        base: int = 0,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[tuple[str, int, int, str]]]:
         """展开一个约束作用域（文件顶层或 system 体）并求解装配约束（ADR 0086 §3）.
 
         返回 ``(nodes, outline 子节点, IR 约束记录, 警告)``；位姿下推在
         ``solve_constraints`` 内原地完成。``labels`` / ``ordered`` / ``poses``
-        由调用方持有（顶层作用域跨语句累计）。
+        由调用方持有（顶层作用域跨语句累计）。``base`` 是本作用域 ``nodes``
+        在**顶层 nodes 数组**中的起始下标（大纲 ``node_index`` 回填用，ADR 0103 §2）；
+        独立编译（被引用文件模板）从 0 起算，由引用方整体平移。
         """
         nodes: list[dict[str, Any]] = []
         outline: list[dict[str, Any]] = []
         for inst in instances:
-            inst_nodes, inst_outline = self._emit_instance(inst, env, xf, 0, labels, ordered, poses)
+            inst_nodes, inst_outline = self._emit_instance(inst, env, xf, 0, labels, ordered, poses, base + len(nodes))
             nodes.extend(inst_nodes)
             outline.extend(inst_outline)
         if not constraints:
@@ -465,11 +479,15 @@ class _Emitter:
         labels: dict[str, list[dict[str, Any]]],
         ordered: list[str],
         poses: dict[str, Pose],
+        base: int = 0,
+        fixed_base: bool = False,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         nodes: list[dict[str, Any]] = []
         outline: list[dict[str, Any]] = []
         for inst in instances:
-            inst_nodes, inst_outline = self._emit_instance(inst, env, xf, depth, labels, ordered, poses)
+            # fixed_base：布尔块内的子实例共享块的单个顶层下标（ADR 0103 §4#1）
+            start = base if fixed_base else base + len(nodes)
+            inst_nodes, inst_outline = self._emit_instance(inst, env, xf, depth, labels, ordered, poses, start)
             nodes.extend(inst_nodes)
             outline.extend(inst_outline)
         return nodes, outline
@@ -483,17 +501,23 @@ class _Emitter:
         labels: dict[str, list[dict[str, Any]]],
         ordered: list[str],
         poses: dict[str, Pose],
+        base: int = 0,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-        """展开单个实例：同时产出几何节点与大纲节点（ADR 0083 D3）."""
+        """展开单个实例：同时产出几何节点与大纲节点（ADR 0083 D3）.
+
+        ``base`` 为本实例产出的首个顶层节点下标；零产出（空模块 / 空装配）时
+        大纲节点的 ``node_index`` 为 ``None``（ADR 0103 D7）。
+        """
         if isinstance(inst, PrimitiveCall):
-            return [self._emit_primitive(inst, env, xf)], [_part_outline(inst)]
+            return [self._emit_primitive(inst, env, xf)], [_part_outline(inst, base)]
         if isinstance(inst, ModuleCall):
-            nodes, children = self._emit_module_call(inst, env, xf, depth)
+            nodes, children = self._emit_module_call(inst, env, xf, depth, base)
             assembly = {
                 "kind": "assembly",
                 "name": inst.name,
                 "line": inst.line,
                 "col": inst.col,
+                "node_index": base if nodes else None,
                 "children": children,
             }
             self._register_label(inst.label, nodes, xf, labels, ordered, poses, inst.line, inst.col)
@@ -501,18 +525,24 @@ class _Emitter:
                 assembly["label"] = inst.label
             return nodes, [assembly]
         if isinstance(inst, UseCall):
-            return self._emit_use_call(inst, env, xf, labels, ordered, poses)
+            return self._emit_use_call(inst, env, xf, labels, ordered, poses, base)
         if isinstance(inst, TransformCall):
-            # 变换透明穿透：不建大纲节点，其子实例保持在当前父节点层级
+            # 变换透明穿透：不建大纲节点，其子实例保持在当前父节点层级（下标照常累加）
             vector = [eval_expr(item, env) for item in inst.vector]
-            return self._emit_instances(inst.children, env, (*xf, (inst.kind, vector)), depth, labels, ordered, poses)
-        # BooleanCall：children 一定非空（语法层已保证）
-        nodes, children = self._emit_instances(inst.children, env, xf, depth, labels, ordered, poses)
+            return self._emit_instances(
+                inst.children, env, (*xf, (inst.kind, vector)), depth, labels, ordered, poses, base
+            )
+        # BooleanCall：children 一定非空（语法层已保证）；整块是单个顶层 CSG 节点，
+        # 故其下所有子节点共享块下标（ADR 0103 §4#1）
+        nodes, children = self._emit_instances(
+            inst.children, env, xf, depth, labels, ordered, poses, base, fixed_base=True
+        )
         group = {
             "kind": "group",
             "op": inst.kind,
             "line": inst.line,
             "col": inst.col,
+            "node_index": base if nodes else None,
             "children": children,
         }
         return [{"op": inst.kind, "children": nodes}], [group]
@@ -545,6 +575,7 @@ class _Emitter:
         labels: dict[str, list[dict[str, Any]]],
         ordered: list[str],
         poses: dict[str, Pose],
+        base: int = 0,
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """分文件零件引用：解析 → 预算 → 递归编译 → 深拷贝注入并标注来源（ADR 0086 §2）."""
         source = self._resolve_source(call)
@@ -560,6 +591,7 @@ class _Emitter:
         if xf:
             _prepend_xf(nodes, xf)
         name = call.label or source.file_key
+        # 被引用文件模板的下标是文件内相对值，注入到引用方需整体平移到顶层基址
         assembly = {
             "kind": "assembly",
             "name": name,
@@ -567,7 +599,8 @@ class _Emitter:
             "col": call.col,
             "file_id": source.file_id,
             "ref": {"file_id": source.file_id, "file_key": source.file_key, "kind": source.kind},
-            "children": _stamp_file_id(children, source.file_id),
+            "node_index": base if nodes else None,
+            "children": _shift_node_index(_stamp_file_id(children, source.file_id), base),
         }
         self._register_label(call.label, nodes, xf, labels, ordered, poses, call.line, call.col)
         if call.label:
@@ -639,7 +672,7 @@ class _Emitter:
         return node
 
     def _emit_module_call(
-        self, call: ModuleCall, env: dict[str, float], xf: _XfStack, depth: int
+        self, call: ModuleCall, env: dict[str, float], xf: _XfStack, depth: int, base: int = 0
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """展开模块实例化：绑参（位置 + 命名 + 默认值）后以模块作用域求值体."""
         if depth + 1 > MAX_MODULE_RECURSION:
@@ -652,7 +685,7 @@ class _Emitter:
         bindings = self._bind_module_args(decl, call, env)
         module_env = dict(self._global_env)
         module_env.update(bindings)
-        return self._emit_instances(decl.body, module_env, xf, depth + 1, {}, [], {})
+        return self._emit_instances(decl.body, module_env, xf, depth + 1, {}, [], {}, base)
 
     def _bind_module_args(self, decl: ModuleDecl, call: ModuleCall, env: dict[str, float]) -> dict[str, float]:
         """绑模块实参：位置按序、命名对名、缺省取默认值（重复绑定报错）.
@@ -749,6 +782,17 @@ def _prepend_xf_node(node: dict[str, Any], ops: list[list[Any]]) -> None:
         return
     existing = (node.get("transform") or {}).get("ops", [])
     node["transform"] = {"ops": [*ops, *existing]}
+
+
+def _shift_node_index(outline: list[dict[str, Any]], delta: int) -> list[dict[str, Any]]:
+    """把大纲子树的 ``node_index`` 整体平移 ``delta``（被引用文件模板注入引用方时用）."""
+    for node in outline:
+        index = node.get("node_index")
+        if index is not None:
+            node["node_index"] = index + delta
+        if node.get("children"):
+            _shift_node_index(node["children"], delta)
+    return outline
 
 
 def _stamp_file_id(outline: list[dict[str, Any]], file_id: int) -> list[dict[str, Any]]:

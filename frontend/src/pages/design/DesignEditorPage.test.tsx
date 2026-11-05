@@ -1,37 +1,75 @@
-/** DesignEditorPage 测试 —— 编辑器主流程（ADR 0079 §7）.
+/** DesignEditorPage 测试 —— 编辑器主流程 + 布局（ADR 0079 §7 / ADR 0103 §7）.
  *
- * jsdom 无 WebGL：PreviewCanvas 与 DesignExportMenu 必须 mock（lazy chunk 的
+ * jsdom 无 WebGL：PreviewCanvas 与 DesignMoreMenu 必须 mock（lazy chunk 的
  * 真实渲染与导出由 exporters 单测 + e2e 覆盖）；
  * 编辑器内容变更经 EditorView.findFromDOM 驱动真实 CodeMirror transaction，
- * 覆盖：源码展示 / 诊断回显 / 保存（Ctrl+S）/ 保存失败保留草稿 / 参数面板 overrides /
- * viewer 只读 / 版本回看（P2）/ 版本恢复（P2）.
+ * 覆盖：源码展示 / 诊断回显 / 保存（Ctrl+S）/ 保存失败保留草稿 / 参数常驻面板 /
+ * 视口工具条与状态条 / 分栏预设持久化 / 参数面板折叠 / 树↔视口高亮 /
+ * viewer 只读 / 版本回看与恢复（「更多」菜单入口）.
  */
 
 import { describe, expect, it, vi } from 'vitest'
+import { useEffect } from 'react'
 import { http, HttpResponse } from 'msw'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { EditorView } from '@codemirror/view'
 import { Routes, Route } from 'react-router-dom'
-import DesignEditorPage from './DesignEditorPage'
+import DesignEditorPage, { PARAMS_COLLAPSED_KEY, SPLIT_KEY } from './DesignEditorPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockWorkspace, server } from '@/test/msw'
 import type {
   DesignDetail, DesignIR, DesignPreviewResult, DesignVersionDetail, DesignVersionItem,
 } from '@/api'
 
-const previewCanvas = vi.hoisted(() => vi.fn())
+/** PreviewCanvas stub：上报统计 / 暴露视口 API / 记录高亮与网格调用 */
+const viewport = vi.hoisted(() => ({
+  highlight: vi.fn(),
+  orientTo: vi.fn(),
+  fit: vi.fn(),
+  setGridVisible: vi.fn(),
+  stats: [] as Array<{ nodes: number; triangles: number }>,
+}))
+
 vi.mock('./PreviewCanvas', () => ({
-  default: function PreviewCanvasStub({ ir }: { ir: DesignIR | null }) {
-    previewCanvas(ir)
+  default: function PreviewCanvasStub({
+    ir, onStats, onViewportApi,
+  }: {
+    ir: DesignIR | null
+    onStats?: (stats: { nodes: number; triangles: number }) => void
+    onViewportApi?: (api: typeof viewport | null) => void
+  }) {
+    // 等价真实组件挂载：上报统计与暴露视口 API（在 effect 中，避免渲染期改父状态）
+    useEffect(() => {
+      onStats?.({ nodes: ir?.nodes.length ?? 0, triangles: 42 })
+    }, [ir, onStats])
+    useEffect(() => {
+      onViewportApi?.({
+        highlight: viewport.highlight,
+        orientTo: viewport.orientTo,
+        fit: viewport.fit,
+        setGridVisible: viewport.setGridVisible,
+        stats: [],
+      })
+      return () => onViewportApi?.(null)
+    }, [onViewportApi])
     return <div data-testid="preview-canvas-stub">{ir ? `节点数:${ir.nodes.length}` : '空'}</div>
   },
 }))
 
-const exportMenu = vi.hoisted(() => vi.fn())
-vi.mock('./DesignExportMenu', () => ({
-  default: function DesignExportMenuStub({ ir, title }: { ir: DesignIR | null; title: string }) {
-    exportMenu({ ir, title })
-    return <div data-testid="export-menu-stub">导出:{title}</div>
+const moreMenu = vi.hoisted(() => vi.fn())
+vi.mock('./DesignMoreMenu', () => ({
+  default: function DesignMoreMenuStub({ ir, title, onHistory }: {
+    ir: DesignIR | null
+    title: string
+    versionCount: number
+    onHistory: () => void
+  }) {
+    moreMenu({ ir, title })
+    return (
+      <button type="button" data-testid="more-menu-stub" onClick={onHistory}>
+        更多:{title}
+      </button>
+    )
   },
 }))
 
@@ -43,10 +81,13 @@ const CONTENT = [
 ].join('\n')
 
 const IR: DesignIR = {
-  version: 2,
+  version: 5,
   units: { length: 'mm', angle: 'deg' },
   params: [{ name: 'width', value: 80 }],
   nodes: [{ op: 'box', size: [80, 40, 12] }],
+  outline: {
+    children: [{ kind: 'part', primitive: 'box', line: 2, col: 1, node_index: 0 }],
+  },
 }
 
 const DETAIL: DesignDetail = {
@@ -85,6 +126,8 @@ const previewBodies: Array<{ content: string; overrides?: Record<string, number>
 
 function useDefaultHandlers(preview: () => DesignPreviewResult = () => ({ ok: true, ir: IR, diagnostics: [] })) {
   previewBodies.length = 0
+  viewport.highlight.mockClear()
+  viewport.setGridVisible.mockClear()
   server.use(
     http.get('/api/v1/workspaces/10/designs/20', () => HttpResponse.json(DETAIL)),
     http.get('/api/v1/workspaces/10/designs/20/ir', () =>
@@ -146,10 +189,8 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(cmText(container)).toContain('box(size = [width, 40, 12])')
     // 预览走防抖 → 编译通过 → stub 收到 IR（节点数 1）
     expect(await screen.findByText('节点数:1')).toBeInTheDocument()
-    // 版本历史：顶部按钮打开侧栏，列表在抽屉内
-    expect(screen.getByText('版本历史（2）')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
-    expect(await screen.findByText('调宽度')).toBeInTheDocument()
+    // 版本历史入口收进「更多」菜单（ADR 0103 D6）
+    expect(screen.getByTestId('more-menu-stub')).toHaveTextContent('更多:法兰板')
   })
 
   it('?line= 定位源行并选中整行（0083 D7）', async () => {
@@ -172,6 +213,34 @@ describe('DesignEditorPage 编辑器主流程', () => {
     await waitForEditorReady(container)
     const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)
     await waitFor(() => expect(view!.state.selection.main.from).toBe(CONTENT.indexOf('\n') + 1))
+  })
+
+  it('?line= 触发树↔视口高亮（ADR 0103 C7 / D9）', async () => {
+    useDefaultHandlers()
+    renderPage('/w/10/design/20?line=2')
+
+    await waitFor(() => expect(viewport.highlight).toHaveBeenCalledWith([0]))
+  })
+
+  it('IR 无 node_index（v4 旧快照）时高亮静默降级（I2）', async () => {
+    useDefaultHandlers()
+    server.use(http.get('/api/v1/workspaces/10/designs/20/ir', () =>
+      HttpResponse.json({
+        design_id: 20,
+        version_number: 2,
+        content_hash: 'abc',
+        ir: {
+          version: 4,
+          units: { length: 'mm', angle: 'deg' },
+          params: [],
+          nodes: [{ op: 'box', size: [1, 1, 1] }],
+          outline: { children: [{ kind: 'part', primitive: 'box', line: 1, col: 1 }] },
+        },
+      })))
+    renderPage('/w/10/design/20?line=1')
+
+    expect(await screen.findByTestId('preview-canvas-stub')).toBeInTheDocument()
+    expect(viewport.highlight).not.toHaveBeenCalled()
   })
 
   it('preview 返回诊断时回显错误行与消息', async () => {
@@ -243,11 +312,11 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(screen.getByTestId('design-compile-ok')).toBeInTheDocument()
   })
 
-  it('参数面板从 IR 渲染，改参后 overrides 进入 preview 请求', async () => {
+  it('参数面板常驻：直接渲染 IR 参数，改参后 overrides 进入 preview 请求（C5）', async () => {
     useDefaultHandlers()
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: '参数' }))
+    // 不再需要点按钮打开抽屉（面板常驻，ADR 0103 D2）
     const input = await screen.findByLabelText('参数 width')
     expect((input as HTMLInputElement).value).toBe('80')
 
@@ -256,6 +325,98 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(previewBodies[previewBodies.length - 1]!.overrides).toEqual({ width: 100 })
     expect(previewBodies[previewBodies.length - 1]!.design_id).toBe(20)
     expect(await screen.findByRole('button', { name: /重置/ })).toBeInTheDocument()
+  })
+
+  it('参数面板折叠态持久化到 localStorage（C5 / I5）', async () => {
+    useDefaultHandlers()
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('design-params-collapse'))
+    expect(window.localStorage.getItem(PARAMS_COLLAPSED_KEY)).toBe('1')
+    expect(await screen.findByTestId('design-params-expand')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('design-params-expand'))
+    expect(window.localStorage.getItem(PARAMS_COLLAPSED_KEY)).toBe('0')
+  })
+
+  it('视口状态条显示单位与统计（C4 / D5）', async () => {
+    useDefaultHandlers()
+    renderPage()
+
+    // 单位取 IR units.length（不硬编码），三角数来自 onStats；IR 异步到达，等一次
+    expect(await screen.findByText('mm · 节点 1 · 三角 42')).toBeInTheDocument()
+  })
+
+  it('视口工具条：七向定向 / 布满视图 / 网格开关（C3）', async () => {
+    useDefaultHandlers()
+    renderPage()
+
+    expect(await screen.findByTestId('design-viewport-toolbar')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '视图定向' }))
+    fireEvent.click(await screen.findByText('俯视'))
+    expect(viewport.orientTo).toHaveBeenCalledWith('top')
+
+    fireEvent.click(screen.getByRole('button', { name: '布满视图' }))
+    expect(viewport.fit).toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('design-grid-toggle'))
+    expect(viewport.setGridVisible).toHaveBeenLastCalledWith(false)
+    // antd Button 变更 props 后重挂 DOM 节点：重新查询再断言属性
+    expect(screen.getByTestId('design-grid-toggle')).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  it('分栏三档预设切换并持久化（C2 / D10）', async () => {
+    useDefaultHandlers()
+    renderPage()
+
+    const preset = await screen.findByTestId('design-split-preset')
+    expect(preset).toBeInTheDocument()
+    expect(await screen.findByTestId('design-splitter')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByText('编辑'))
+    await waitFor(() => expect(window.localStorage.getItem(SPLIT_KEY)).toBe('60'))
+    fireEvent.click(screen.getByText('视口'))
+    await waitFor(() => expect(window.localStorage.getItem(SPLIT_KEY)).toBe('40'))
+    fireEvent.click(screen.getByText('均分'))
+    await waitFor(() => expect(window.localStorage.getItem(SPLIT_KEY)).toBe('50'))
+  })
+
+  it('分栏比例从 localStorage 恢复（C2 / I5）', async () => {
+    window.localStorage.setItem(SPLIT_KEY, '70')
+    useDefaultHandlers()
+    renderPage()
+
+    const workbench = await screen.findByTestId('design-workbench')
+    await waitFor(() => expect(workbench.getAttribute('style')).toContain('70fr'))
+  })
+
+  it('窄屏（<1024px）不渲染 splitter、不套用比例（C2 降级路径）', async () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('1023.98px'),
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })) as unknown as typeof window.matchMedia
+    try {
+      window.localStorage.setItem(SPLIT_KEY, '70')
+      useDefaultHandlers()
+      renderPage()
+
+      const workbench = await screen.findByTestId('design-workbench')
+      expect(screen.queryByTestId('design-splitter')).toBeNull()
+      expect(workbench.getAttribute('style')).toBeNull()
+      // 视口工具条 / 状态条 / 参数面板在窄屏同样可达（I4）
+      expect(screen.getByTestId('design-viewport-toolbar')).toBeInTheDocument()
+      expect(screen.getByTestId('design-statusbar')).toBeInTheDocument()
+      expect(screen.getByTestId('design-params-panel')).toBeInTheDocument()
+    } finally {
+      window.matchMedia = original
+    }
   })
 
   it('依赖陈旧显示横幅，刷新落新版本（ADR 0086 D6）', async () => {
@@ -285,19 +446,19 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(screen.getByRole('button', { name: /保\s*存/ })).toBeDisabled()
   })
 
-  it('P2 版本回看：点击历史版本打开抽屉展示该版原文', async () => {
+  it('版本回看：从「更多」菜单打开抽屉展示该版原文', async () => {
     useDefaultHandlers()
     server.use(http.get('/api/v1/workspaces/10/designs/20/versions/1', () => HttpResponse.json(V1_DETAIL)))
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: '版本历史' }))
+    fireEvent.click(await screen.findByTestId('more-menu-stub'))
     fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
     expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
     // detail 走 react-query 异步加载，Skeleton 先渲染，须等 pre 出现再断言
     expect(await screen.findByTestId('design-version-content')).toHaveTextContent('param width = 60')
   })
 
-  it('P2 版本恢复：确认后恢复旧版为新版本并刷新编辑器', async () => {
+  it('版本恢复：确认后恢复旧版为新版本并刷新编辑器', async () => {
     useDefaultHandlers()
     server.use(http.get('/api/v1/workspaces/10/designs/20/versions/1', () => HttpResponse.json(V1_DETAIL)))
     let restored = false
@@ -307,7 +468,7 @@ describe('DesignEditorPage 编辑器主流程', () => {
     }))
     const { container } = renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: '版本历史' }))
+    fireEvent.click(await screen.findByTestId('more-menu-stub'))
     fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
     expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
 
@@ -320,14 +481,14 @@ describe('DesignEditorPage 编辑器主流程', () => {
     await waitFor(() => expect(cmText(container)).toContain('param width = 60'))
   })
 
-  it('P2 viewer 回看无恢复入口', async () => {
+  it('viewer 回看无恢复入口', async () => {
     useDefaultHandlers()
     server.use(http.get('/api/v1/workspaces/10', () =>
       HttpResponse.json({ ...mockWorkspace, id: 10, current_user_role: 'viewer' })))
     server.use(http.get('/api/v1/workspaces/10/designs/20/versions/1', () => HttpResponse.json(V1_DETAIL)))
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: '版本历史' }))
+    fireEvent.click(await screen.findByTestId('more-menu-stub'))
     fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
     expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /恢复此版本/ })).not.toBeInTheDocument()

@@ -89,7 +89,7 @@ class TestCreate:
         assert body["file_key"] == "法兰板"
         assert "compiled" not in body, "详情移除 compiled（ADR 0086 D10）"
         ir = _ir(client, ws, body["id"], auth_owner)
-        assert ir["ir"]["version"] == 4
+        assert ir["ir"]["version"] == 5
         assert ir["ir"]["units"] == {"length": "mm", "angle": "deg"}
         assert ir["ir"]["nodes"], "顶层实例应产出几何"
         assert ir["content_hash"], "详情带 content_hash（与 /ir ETag 同源）"
@@ -480,6 +480,11 @@ class TestOutline:
         assert group["op"] == "difference"
         assert [part["primitive"] for part in group["children"]] == ["box", "cyl"]
         assert all(part["line"] >= 1 and part["col"] >= 1 for part in group["children"])
+        # IR v5：大纲节点下标落在顶层 nodes 范围内（ADR 0103 D7）
+        nodes = client.get(_url(ws, f"/{created['id']}/ir"), headers=auth_owner).json()["ir"]["nodes"]
+        assert assembly["node_index"] == 0
+        assert group["node_index"] == 0
+        assert all(0 <= part["node_index"] < len(nodes) for part in group["children"])
 
     def test_outline_viewer_readable(self, client, ws, auth_owner, auth_viewer):
         created = _create(client, ws, auth_owner).json()
@@ -511,6 +516,23 @@ class TestOutline:
 
         db.refresh(design)
         assert "outline" not in design.compiled, "只读派生不落库"
+
+    def test_outline_v4_snapshot_without_node_index(self, client, db, ws, auth_owner):
+        """IR v4 旧快照无 node_index：大纲端点照常 200，字段缺省（ADR 0103 I2）."""
+        created = _create(client, ws, auth_owner).json()
+        design = db.scalar(select(DesignDesign).where(DesignDesign.id == created["id"]))
+        design.compiled = {
+            "version": 4,
+            "units": {"length": "mm", "angle": "deg"},
+            "params": [],
+            "nodes": [{"op": "box", "size": [1, 1, 1]}],
+            "outline": {"children": [{"kind": "part", "primitive": "box", "line": 1, "col": 1}]},
+        }
+        db.commit()
+
+        body = client.get(self._outline_url(ws, created["id"]), headers=auth_owner).json()
+        assert body["source"] == "compiled"
+        assert "node_index" not in body["outline"]["children"][0]
 
     def test_outline_empty_design(self, client, ws, auth_owner):
         created = _create(client, ws, auth_owner, title="空白设计", content="").json()
@@ -577,7 +599,7 @@ class TestFileLibrary:
         body = first.json()
         assert body["design_id"] == created["id"]
         assert body["version_number"] == 1
-        assert body["ir"]["version"] == 4
+        assert body["ir"]["version"] == 5
         again = client.get(_url(ws, f"/{created['id']}/ir"), headers={**auth_owner, "If-None-Match": etag})
         assert again.status_code == 304
         # 保存后 ETag 变化

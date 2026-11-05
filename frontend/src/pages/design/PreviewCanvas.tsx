@@ -14,8 +14,10 @@ import {
   approximatePrimitives,
   buildIRMeshes,
   deserializeGeometry,
+  evalNode,
   type SerializedGeometry,
 } from './renderTree'
+import { viewPreset, type ViewOrientation } from './viewOrient'
 
 // 机械制图 Z 轴向上：模块加载时置一次（本 chunk 才会 import three）
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1)
@@ -36,11 +38,29 @@ export interface PreviewStats {
   triangles: number
 }
 
+/** 视口控制 API（ADR 0103 D4）：工具条 UI 在编辑器页，能力由本组件按引用暴露 */
+export interface ViewportApi {
+  /** 七向定向（D11 术语表） */
+  orientTo: (key: ViewOrientation) => void
+  /** 布满视图（框住当前包围盒） */
+  fit: () => void
+  /** 地面网格受控显隐 */
+  setGridVisible: (visible: boolean) => void
+  /** 树↔视口联动高亮（D8）：顶层 nodes 下标集合，emissive tint 3s 渐隐 */
+  highlight: (indices: number[]) => void
+}
+
 interface PreviewCanvasProps {
   ir: DesignIR | null
   /** 渲染完成 / IR 清空时回传统计（信息条展示） */
   onStats?: (stats: PreviewStats) => void
+  /** 视口能力就绪回调（挂载后调用一次；卸载时回调 null） */
+  onViewportApi?: (api: ViewportApi | null) => void
 }
+
+/** 高亮渐隐时长（ms）：常亮 2.4s 后 0.6s 线性淡出（D8） */
+const HIGHLIGHT_HOLD = 2400
+const HIGHLIGHT_FADE = 600
 
 /** Worker 节点结果消息 */
 interface WorkerNodeMessage {
@@ -83,14 +103,21 @@ export function frameCamera(camera: THREE.PerspectiveCamera, box: THREE.Box3, fi
   return true
 }
 
-export default function PreviewCanvas({ ir, onStats }: PreviewCanvasProps) {
+export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const groupRef = useRef<THREE.Group | null>(null)
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null)
   const controlsRef = useRef<OrbitControls | null>(null)
   const statsRef = useRef(onStats)
   statsRef.current = onStats
+  const viewportApiRef = useRef(onViewportApi)
+  viewportApiRef.current = onViewportApi
+  // 最新 IR：高亮按所需下标即时求值单个节点（不额外常驻几何，ADR 0103 D8）
+  const irRef = useRef<DesignIR | null>(ir)
+  irRef.current = ir
   const [unsupported, setUnsupported] = useState(false)
+  // 高亮中的实体数：写进宿主 data 属性，供 e2e 断言联动（canvas 内部状态无法外部观测）
+  const [highlightCount, setHighlightCount] = useState(0)
   // Worker（C8）：惰性创建一次；消息处理经 handlerRef 转发到最新 IR effect
   const workerRef = useRef<Worker | null>(null)
   const handlerRef = useRef<((event: MessageEvent) => void) | null>(null)
@@ -143,7 +170,7 @@ export default function PreviewCanvas({ ir, onStats }: PreviewCanvasProps) {
     fill.position.set(-180, 120, -80)
     scene.add(fill)
 
-    // 地面网格（XY 平面，Z-up）：机械图视角参考系
+    // 地面网格（XY 平面，Z-up）：机械图视角参考系；显隐由视口工具条控制（C3）
     const grid = new THREE.GridHelper(400, 20, 0x3a4656, 0x2a3342)
     grid.rotation.x = Math.PI / 2
     scene.add(grid)
@@ -156,6 +183,94 @@ export default function PreviewCanvas({ ir, onStats }: PreviewCanvasProps) {
     const group = new THREE.Group()
     groupRef.current = group
     scene.add(group)
+
+    // ── 视口能力（ADR 0103 C3 / C4 / C7）：定向 / fit / 网格 / 高亮 ──
+    const highlightGroup = new THREE.Group()
+    scene.add(highlightGroup)
+    const highlightMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffb44d,
+      emissive: 0xff8a1e,
+      emissiveIntensity: 0.9,
+      transparent: true,
+      opacity: 0.85,
+      // 与静态合并网格同面高亮：深度偏移避免 z-fighting
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2,
+    })
+    let fadeTimer = 0
+    let fadeFrame = 0
+    let disposed = false
+    const clearHighlight = () => {
+      window.clearTimeout(fadeTimer)
+      window.cancelAnimationFrame(fadeFrame)
+      for (const child of highlightGroup.children) {
+        if (child instanceof THREE.Mesh) child.geometry.dispose()
+      }
+      highlightGroup.clear()
+      highlightMaterial.opacity = 0.85
+      if (!disposed) setHighlightCount(0)
+    }
+    const fadeHighlight = () => {
+      const started = performance.now()
+      const step = () => {
+        if (disposed) return
+        const progress = Math.min(1, (performance.now() - started) / HIGHLIGHT_FADE)
+        highlightMaterial.opacity = 0.85 * (1 - progress)
+        if (progress < 1) fadeFrame = window.requestAnimationFrame(step)
+        else clearHighlight()
+      }
+      fadeFrame = window.requestAnimationFrame(step)
+    }
+    const highlight = (indices: number[]) => {
+      clearHighlight()
+      const current = irRef.current
+      if (!current || indices.length === 0) return
+      let count = 0
+      for (const index of indices) {
+        const node = current.nodes[index]
+        if (!node) continue
+        const geometry = evalNode(node)
+        if (!geometry) continue
+        highlightGroup.add(new THREE.Mesh(geometry, highlightMaterial))
+        count += 1
+      }
+      if (count === 0) return
+      setHighlightCount(count)
+      fadeTimer = window.setTimeout(fadeHighlight, HIGHLIGHT_HOLD)
+    }
+    const boxOf = (): THREE.Box3 | null => {
+      const box = new THREE.Box3().setFromObject(group)
+      return box.isEmpty() ? null : box
+    }
+    const orientTo = (key: ViewOrientation) => {
+      const preset = viewPreset(key)
+      if (!preset) return
+      const box = boxOf()
+      const center = box ? box.getCenter(new THREE.Vector3()) : controls.target.clone()
+      const radius = box ? Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1) : 1
+      const distance = Math.max(camera.position.distanceTo(controls.target), radius * 0.5)
+      camera.up.set(preset.up[0], preset.up[1], preset.up[2])
+      camera.position.copy(center).addScaledVector(
+        new THREE.Vector3(preset.dir[0], preset.dir[1], preset.dir[2]).normalize(),
+        distance,
+      )
+      camera.lookAt(center)
+      controls.target.copy(center)
+      controls.update()
+    }
+    const fit = () => {
+      const box = boxOf()
+      if (!box || !frameCamera(camera, box)) return
+      controls.target.copy(box.getCenter(new THREE.Vector3()))
+      controls.update()
+    }
+    viewportApiRef.current?.({
+      orientTo,
+      fit,
+      setGridVisible: (visible: boolean) => { grid.visible = visible },
+      highlight,
+    })
 
     const resize = () => {
       const w = host.clientWidth || 1
@@ -177,9 +292,14 @@ export default function PreviewCanvas({ ir, onStats }: PreviewCanvasProps) {
     raf = window.requestAnimationFrame(tick)
 
     return () => {
+      disposed = true
+      viewportApiRef.current?.(null)
+      window.clearTimeout(fadeTimer)
+      window.cancelAnimationFrame(fadeFrame)
       window.cancelAnimationFrame(raf)
       observer.disconnect()
       controls.dispose()
+      highlightMaterial.dispose()
       renderer.dispose()
       renderer.domElement.remove()
       // 几何与材质在 IR 切换 effect 中清理，这里只兜底清空
@@ -362,5 +482,12 @@ export default function PreviewCanvas({ ir, onStats }: PreviewCanvasProps) {
     )
   }
 
-  return <div ref={hostRef} style={{ width: '100%', height: '100%', minHeight: 320 }} />
+  return (
+    <div
+      ref={hostRef}
+      data-testid="design-preview-host"
+      data-highlight-nodes={highlightCount > 0 ? highlightCount : undefined}
+      style={{ width: '100%', height: '100%', minHeight: 320 }}
+    />
+  )
 }

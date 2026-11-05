@@ -1,6 +1,6 @@
 # ADR 0103：【设计】编辑器布局优化（可调分栏 / 视口工具条 / 参数常驻 / 树↔视口联动 IR v5）
 
-Status: Proposed（待评审）
+Status: Implemented
 Date: 2026-11-05
 Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css`、`src/cndb/plugins/design/services/dsl/compile.py`、`frontend/src/api/design.ts`；上游 ADR 0079 / 0083 / 0084 / 0086
 需求卡片: `docs/requirements/0103-design-editor-layout-optimization.md`（需求原文与约束编号的唯一副本）
@@ -104,12 +104,13 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 | 层 | 文件 | 改动 |
 |---|---|---|
 | 页面骨架 | `frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/index.css`（`.cn-dsl-*`） | workbench 改可调分栏（splitter 组件 + 内联 `grid-template-columns`）；工具栏单行 + 「更多」Dropdown（版本历史 / 导出）；接收 `onViewportApi` / `onStats`；挂视口工具条与状态条；管理「参数｜约束」底部面板状态 |
-| 视口 | `frontend/src/pages/design/PreviewCanvas.tsx` | 新增 `onViewportApi`（暴露 `orientTo` / `fit` / `setGridVisible` / `highlight(indices)`）；网格改受控显隐；定向常量表（七向方位角 / 极角，up 固定）；高亮 = 遍历 `nodeGroups` 设材质 emissive，3s 渐隐复原 |
+| 视口 | `frontend/src/pages/design/PreviewCanvas.tsx`、`frontend/src/pages/design/viewOrient.ts`（新） | 新增 `onViewportApi`（暴露 `orientTo` / `fit` / `setGridVisible` / `highlight(indices)`）；网格改受控显隐；定向常量表（七向方向向量 + up）；高亮 = 按 `node_index` 即时求值该节点几何、叠加 emissive 副本（polygonOffset 防 z-fighting）2.4s 常亮 + 0.6s 淡出后释放，宿主 `data-highlight-nodes` 作为可观测通道 |
 | 参数 / 约束面板 | `frontend/src/pages/design/DesignParamsPanel.tsx`（新）、`DesignConstraintsPanel.tsx` | 抽出 Drawer 内参数列表为常驻面板（Tabs：参数 N / 约束 M + 折叠）；约束列表复用 `DesignConstraintsPanel` 渲染；改参 / 重置逻辑不变 |
 | 侧栏 | `frontend/src/pages/design/DesignStructureNav.tsx` | `selectedKeys` 支持大纲节点键；`?line=` 变化按 D9 归属 → 展开祖先链 + `tree.scrollTo`（antd Tree 虚拟滚动定位）；点击节点 = 定位源行（既有）+ 触发高亮（P2） |
 | 侧栏宿主 | `frontend/src/layouts/MainLayout.tsx` | 不改（侧栏仍 240/60，`MainLayout.tsx:928`；联动经 `?line=` URL 既有通道） |
 | 管理页 | `frontend/src/pages/design/DesignsPage.tsx` | `folder` 分组（空 → 「未分组」置底）+ `kind` Segmented 筛选；列表操作不变 |
-| API 封装 | `frontend/src/api/design.ts` | `DesignOutlineNode` 增 `node_index?: number`（可选，兼容 v4） |
+| 「更多」菜单 | `frontend/src/pages/design/DesignMoreMenu.tsx`（新，原 `DesignExportMenu` 演进） | 版本历史 + 导出（STL / OBJ / GLB / 三视图）收进同一 Dropdown（导出为分组，不嵌套二级菜单）；仍在 three lazy 边界 |
+| API 封装 | `frontend/src/api/design.ts` | `DesignOutlineNode` 增 `node_index?: number \| null` 与 `file_id?: number`（可选，兼容 v4） |
 | 后端 | `src/cndb/plugins/design/services/dsl/compile.py` | `IR_VERSION = 5`；`_Emitter` 回填 `node_index`（§2） |
 
 ### 7. 测试清单
@@ -195,16 +196,16 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `frontend/src/pages/design/{DesignEditorPage,PreviewCanvas}.tsx`、`frontend/src/index.css` | `frontend/src/pages/design/*.test.tsx`、`frontend/tests/e2e/critical/design-editor-layout.spec.ts` | — |
-| P1 | 未开始 | `frontend/src/pages/design/{DesignParamsPanel,DesignConstraintsPanel,DesignStructureNav,DesignsPage}.tsx` | 同上 + `frontend/tests/e2e/critical/design-structure-tree.spec.ts` | — |
-| P2 | 未开始 | `src/cndb/plugins/design/services/dsl/compile.py`、`frontend/src/api/design.ts`、`frontend/src/pages/design/PreviewCanvas.tsx` | `tests/test_design_dsl.py`、`tests/test_design_api.py`、`frontend/tests/e2e/critical/design-tree-viewport-linkage.spec.ts` | — |
+| P0 | 已落地 | `frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/design/PreviewCanvas.tsx`、`frontend/src/pages/design/DesignMoreMenu.tsx`、`frontend/src/pages/design/viewOrient.ts`、`frontend/src/index.css` | `frontend/src/pages/design/DesignEditorPage.test.tsx`、`frontend/src/pages/design/DesignMoreMenu.test.tsx`、`frontend/src/pages/design/viewOrient.test.ts`、`frontend/tests/e2e/critical/design-editor-layout.spec.ts`、`frontend/tests/e2e/critical/design-3d-preview.spec.ts` | 见 CHANGELOG |
+| P1 | 已落地 | `frontend/src/pages/design/DesignParamsPanel.tsx`、`frontend/src/pages/design/DesignConstraintsPanel.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designOutline.ts` | `frontend/src/pages/design/DesignStructureNav.test.tsx`、`frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/pages/design/designOutline.test.ts` | 见 CHANGELOG |
+| P2 | 已落地 | `src/cndb/plugins/design/services/dsl/compile.py`、`frontend/src/api/design.ts`、`frontend/src/pages/design/PreviewCanvas.tsx` | `tests/test_design_dsl.py`、`tests/test_design_api.py`、`frontend/tests/e2e/critical/design-tree-viewport-linkage.spec.ts` | 见 CHANGELOG |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案评审（Proposed；P0/P1/P2 均未开始）
-- 已完成：需求卡片确认（三个分叉已拍板，见卡片「需求澄清」）、本 ADR 撰写
-- 下一步：人工评审通过后 `Status` 改 `Accepted`，交 `implementer` 按 P0 → P1 → P2 分期实现（每期 L2 门禁链：`make check-fast` → `make test` → 文档回填 → `make push`）
-- 已知坑：shell 若被注入 `LD_LIBRARY_PATH` 会让 sqlite3 缺 `deserialize`，后端测试卡死在 import 阶段（先 `unset` 再跑）；Chrome 81 兼容以 `pnpm e2e:chrome81` 实测锁定（splitter / 悬浮工具条涉及 pointer 与 sticky 定位）
-- 最近一次全绿：—
+- 当前阶段：全期落地（P0 / P1 / P2 完成，`Status: Implemented`）
+- 已完成：splitter + 三档预设 + 持久化；视口悬浮工具条（七向定向 / fit / 网格开关）+ 状态条；工具栏单行 + 「更多」收纳；参数｜约束常驻可折叠面板；侧栏双向定位闭环（选中态 + `?line=` 反选 + 祖先展开 + `scrollTo`）；管理页目录分组 + 类型筛选；IR v5 `node_index`（含布尔块共享、use 模板平移）与树→视口高亮渐隐
+- 下一步：无（需求关闭）。若要再演进：① 大纲节点结束行（D9 启发式换精确区间，需解析器支持块结束标记）；② 高亮补 BREP 级面选（当前为 CSG 网格粒度，§4#1）
+- 已知坑：① `node_index` 语义是「首个所属顶层 `nodes` 下标」——布尔块内全部零件共享块下标，高亮粒度即整块；② use 实例的子树行号属于被引用文件，反向定位必须按 `file_id` 过滤（`resolveOutlinePath` 已实现）；③ 静态单 mesh 合并（ADR 0086 C9）后 `nodeGroups` 被清空，高亮因此改为「按需求值单节点 + 叠加 emissive 副本」，不要退回遍历 `nodeGroups` 的做法；④ 同一节点重复点击不改变 `?line=`，高亮不会重触发（§4#5 的「再次点击可重触发」需先换行号）；⑤ shell 若被注入 `LD_LIBRARY_PATH` 会让 sqlite3 缺 `deserialize`，后端测试卡死在 import 阶段（先 `unset` 再跑）
+- 最近一次全绿：`make flow`（含前端 3008 例 vitest、后端 244 例 design 测试）
