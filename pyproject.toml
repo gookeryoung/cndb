@@ -25,7 +25,6 @@ dependencies = [
     "pydantic>=2.6.0,<2.7.0; sys_platform == 'win32'",
     "pydantic>=2.6.0; sys_platform != 'win32'",
     "sqlalchemy>=2.0.0",
-    "psycopg[binary]>=3.1.0",
     "uvicorn[standard]>=0.34.0",
     "alembic>=1.14.0",
     "bcrypt>=3.2.2,<4.0.0; sys_platform == 'win32'", # bcrypt 4.x 用 Rust 重写，Rust 1.75+ 停止 Win7 支持，_bcrypt.pyd 在 Win7 上因 ProcessPrng 缺失无法加载；3.x 是 CFFI 实现，Win7 兼容

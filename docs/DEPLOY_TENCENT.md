@@ -546,6 +546,8 @@ docker compose --env-file .env -f docker-compose.prod.yml exec app \
 
 数据量增长或需要高可用时，**无需改代码**，只改 `.env`：
 
+> PostgreSQL 驱动（`psycopg[binary]`）已不在默认依赖中（SQLite 场景零引用）；切库前需在镜像内补装，或把它加回 `pyproject.toml` 重新出镜像。
+
 ```env
 CNDATABASE_URL=postgresql+psycopg://cndb:密码@内网地址:5432/cndb
 ```
