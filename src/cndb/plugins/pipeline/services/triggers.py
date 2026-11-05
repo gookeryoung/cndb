@@ -3,7 +3,8 @@
 三个既有写路径在事务提交后调用 :func:`dispatch_event`：
 
 - 记录批量变更（批量建行 / 删行 / 改行）→ ``record.updated``
-- 文档正文保存（直编落库）→ ``document.saved``
+- 文档正文写入（直编保存 / 草稿提交 / 修改申请合并 / 回滚 / 链接修复等统一经
+  ``content.update_content``）→ ``document.saved``
 - 数据同步完成（成功或失败）→ ``sync.finished``
 
 分发是**尽力而为**：异常只记日志，绝不把调用方的业务事务带崩（与 ``record_event``

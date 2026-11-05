@@ -10,6 +10,7 @@ from sqlalchemy import select
 
 from cndb.plugins.datasource.models import DatasourceSyncJob
 from cndb.plugins.datasource.services.runner import execute_job
+from cndb.plugins.documents.services import change_requests
 from cndb.plugins.pipeline.models import (
     TRIGGER_EVENT,
     TRIGGER_MANUAL,
@@ -18,7 +19,16 @@ from cndb.plugins.pipeline.models import (
 )
 from cndb.plugins.pipeline.services import runner, triggers
 from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
-from tests.pipeline_helpers import add_rows, login, make_document, make_table, make_user, make_workspace
+from cndb.plugins.workspaces.models import WorkspaceRole
+from tests.pipeline_helpers import (
+    add_member,
+    add_rows,
+    login,
+    make_document,
+    make_table,
+    make_user,
+    make_workspace,
+)
 
 BASE = "/api/v1/workspaces/{ws}/pipelines"
 NOW = dt.datetime(2024, 7, 1, 9, 0, tzinfo=dt.UTC)
@@ -213,6 +223,61 @@ class TestDocumentSavedDispatch:
         assert run.trigger == TRIGGER_EVENT
         assert run.trigger_payload["document_id"] == doc.id
         assert run.trigger_payload["event"] == triggers.EVENT_DOCUMENT_SAVED
+
+    def test_draft_submit_triggers(self, db, client, ws, owner, auth):
+        """草稿提交（显式提交修改）也触发 document.saved."""
+        workflow = _make_workflow(db, ws, [triggers.EVENT_DOCUMENT_SAVED], name="文档巡检")
+        doc = make_document(db, ws, "会议纪要", "# 第一版", user=owner)
+        resp = client.post(
+            f"/api/v1/workspaces/{ws.id}/documents/{doc.id}/submit",
+            json={"content": "# 第二版"},
+            headers=auth,
+        )
+        assert resp.status_code == 200, resp.text
+        run = _runs(db, workflow)[0]
+        assert run.trigger_payload["document_id"] == doc.id
+
+    def test_change_request_merge_triggers(self, db, ws, owner):
+        """修改申请合并落库也触发 document.saved（审核通过后才算保存生效）."""
+        ws.allow_edit = False
+        editor = make_user(db, "trigger_editor")
+        add_member(db, ws, editor, WorkspaceRole.EDITOR)
+        db.commit()
+        workflow = _make_workflow(db, ws, [triggers.EVENT_DOCUMENT_SAVED], name="文档巡检")
+        doc = make_document(db, ws, "会议纪要", "# 第一版", user=owner, status="published")
+        cr = change_requests.create_request(db, ws.id, doc.id, editor, content="# 第二版")
+        change_requests.merge_request(db, ws.id, cr.id, owner)
+
+        run = _runs(db, workflow)[0]
+        assert run.trigger_payload["document_id"] == doc.id
+
+    def test_direct_save_dispatches_once(self, db, client, ws, owner, auth, monkeypatch):
+        """直编保存只分发一次（分发收口到 content.update_content，路由不再重复）."""
+        calls: list[dict[str, Any]] = []
+
+        def fake_dispatch(*_args: Any, **kwargs: Any):
+            calls.append(kwargs)
+            return []
+
+        monkeypatch.setattr(triggers, "dispatch_event", fake_dispatch)
+        doc = make_document(db, ws, "会议纪要", "# 第一版", user=owner)
+        resp = client.put(
+            f"/api/v1/workspaces/{ws.id}/documents/{doc.id}/content",
+            json={"content": "# 第二版"},
+            headers=auth,
+        )
+        assert resp.status_code == 200, resp.text
+        assert len(calls) == 1
+        assert calls[0]["workspace_id"] == ws.id
+
+        # 内容未变化：不生成新版本，也不再分发
+        resp = client.put(
+            f"/api/v1/workspaces/{ws.id}/documents/{doc.id}/content",
+            json={"content": "# 第二版"},
+            headers=auth,
+        )
+        assert resp.status_code == 200, resp.text
+        assert len(calls) == 1
 
 
 class TestSyncFinishedDispatch:

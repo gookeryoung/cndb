@@ -418,7 +418,28 @@ def update_content(
     db.refresh(doc)
     # 新版本落地：同文档其它待审修改申请的内容基准即过期
     _mark_open_change_requests_stale(db, doc.id)
+    # 正文写入后统一分发 document.saved：直编保存 / 草稿提交 / 修改申请合并 / 回滚 / 链接修复
+    # 都走本函数，避免只在某个路由里分发导致事件漏触发（ADR 0076 P1）。
+    _dispatch_document_saved(db, doc)
     return doc
+
+
+def _dispatch_document_saved(db: Session, doc: Document) -> None:
+    """正文落库后触发 ``document.saved`` 流水线（尽力而为，失败不影响保存）."""
+    try:
+        from cndb.plugins.pipeline.services.triggers import (
+            EVENT_DOCUMENT_SAVED,
+            dispatch_event,
+        )
+
+        dispatch_event(
+            db,
+            EVENT_DOCUMENT_SAVED,
+            workspace_id=doc.workspace_id,
+            payload={"document_id": doc.id, "title": doc.title},
+        )
+    except Exception:
+        logger.warning("文档保存事件分发失败，跳过", exc_info=True)
 
 
 def _mark_open_change_requests_stale(db: Session, document_id: int) -> None:
