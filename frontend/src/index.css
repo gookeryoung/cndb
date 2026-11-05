@@ -6704,6 +6704,62 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: var(--cn-space-xl);
 }
 
+/* 同步任务抽屉：紧凑表单 —— 一行多字段、标签贴控件，长提示改走 tooltip */
+.cn-datasource-form .ant-form-item {
+  margin-bottom: var(--cn-space-lg);
+}
+
+.cn-datasource-form .ant-form-item-label {
+  padding-bottom: var(--cn-space-hairline);
+}
+
+.cn-datasource-form .ant-form-item-extra {
+  margin-top: var(--cn-space-hairline);
+  font-size: var(--cn-text-xs);
+}
+
+/* 抽屉首行：方向 / 名称 / 适配器 / 启用 同排，标签在控件上方对齐 */
+.cn-datasource-form-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cn-space-lg);
+  margin-bottom: var(--cn-space-lg);
+}
+
+.cn-datasource-form-head .ant-form-item {
+  margin-bottom: 0;
+}
+
+.cn-datasource-form-row {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--cn-space-lg);
+}
+
+.cn-datasource-dir {
+  width: 244px;
+}
+
+.cn-datasource-dir .ant-segmented {
+  width: 100%;
+}
+
+.cn-datasource-dir-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+}
+
+.cn-datasource-dir-note {
+  color: inherit;
+  font-size: var(--cn-text-2xs);
+  opacity: 0.72;
+}
+
+.cn-datasource-form .ant-collapse-content-box {
+  padding-block: var(--cn-space-xs) var(--cn-space-md) !important;
+}
+
 @media (max-width: 767.98px) {
   .cn-ws-settings-page {
     padding: var(--cn-space-lg);

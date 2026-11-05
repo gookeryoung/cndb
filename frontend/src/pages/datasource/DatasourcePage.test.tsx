@@ -315,7 +315,7 @@ describe('DatasourcePage', () => {
     fireEvent.click(await screen.findByRole('button', { name: '编辑 北京天气日报' }))
     await screen.findByText(/编辑同步任务 · 北京天气日报/)
 
-    fireEvent.click(screen.getByText('推送（表→外部）'))
+    fireEvent.click(screen.getByRole('radio', { name: /推送/ }))
     expect(await screen.findByText(/对外推送：按批把源数据表的行发送到外部接口/)).toBeInTheDocument()
 
     fireEvent.change(screen.getByPlaceholderText('https://example.com/api/ingest'), {

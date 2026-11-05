@@ -10,11 +10,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, App as AntApp, Button, Collapse, Drawer, Dropdown, Empty, Form, Input, InputNumber, Modal,
-  Progress, Radio, Select, Space, Switch, Table, Tag, Tooltip, Typography,
+  Progress, Segmented, Select, Space, Switch, Table, Tag, Tooltip, Typography,
 } from 'antd'
 import {
-  CloudDownloadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined, EyeOutlined,
-  HistoryOutlined, KeyOutlined, PlayCircleOutlined, PlusOutlined,
+  CloudDownloadOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, ExperimentOutlined,
+  EyeOutlined, HistoryOutlined, KeyOutlined, PlayCircleOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
@@ -50,6 +50,30 @@ const CURSOR_LABEL: Record<string, string> = {
   backfill_date: '按标的回补（水位前推）',
   none: '每次全量',
 }
+
+/** 方向选择：抓取（外部→表）/ 推送（表→外部）；紧凑分段控件，方向语义用副标注明 */
+const DIRECTION_OPTIONS = [
+  {
+    value: 'pull',
+    label: (
+      <span className="cn-datasource-dir-label">
+        <CloudDownloadOutlined />
+        <span>抓取</span>
+        <span className="cn-datasource-dir-note">外部→表</span>
+      </span>
+    ),
+  },
+  {
+    value: 'push',
+    label: (
+      <span className="cn-datasource-dir-label">
+        <CloudUploadOutlined />
+        <span>推送</span>
+        <span className="cn-datasource-dir-note">表→外部</span>
+      </span>
+    ),
+  },
+]
 
 /** 运行进度查询 key：带任务最近一次运行开始时间，换 run 即换 key（ADR 0041 D4）.*/
 function watchRunKey(
@@ -888,38 +912,44 @@ function JobDrawer({
           </Space>
         }
       >
-        <Form form={form} layout="vertical" size="small">
-          <Space size={12} style={{ display: 'flex', flexWrap: 'wrap' }}>
-            <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }]} style={{ flex: 1, minWidth: 220 }}>
+        <Form form={form} layout="vertical" size="small" className="cn-datasource-form">
+          <div className="cn-datasource-form-head">
+            <Form.Item
+              name="direction"
+              label="方向"
+              tooltip="抓取＝外部数据写入数据表；推送＝把数据表行发给外部接口"
+              className="cn-datasource-dir"
+            >
+              <Segmented block options={DIRECTION_OPTIONS} />
+            </Form.Item>
+            <Form.Item
+              name="name"
+              label="任务名称"
+              rules={[{ required: true, message: '请输入任务名称' }]}
+              style={{ flex: 1, minWidth: 160 }}
+            >
               <Input data-testid="datasource-name-input" placeholder="例如：北京天气日报" />
             </Form.Item>
-            <Form.Item name="direction" label="方向" style={{ width: 180 }}>
-              <Radio.Group
-                optionType="button"
-                buttonStyle="solid"
-                options={[
-                  { value: 'pull', label: '抓取（外部→表）' },
-                  { value: 'push', label: '推送（表→外部）' },
-                ]}
-              />
-            </Form.Item>
             {!isPush && (
-              <Form.Item name="provider" label="适配器" rules={[{ required: true }]} style={{ width: 220 }}>
+              <Form.Item name="provider" label="适配器" rules={[{ required: true }]} style={{ width: 160 }}>
                 <Select options={providerOptions} onChange={onProviderChange} />
               </Form.Item>
             )}
-          </Space>
+            <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 52 }}>
+              <Switch data-testid="datasource-enabled" />
+            </Form.Item>
+          </div>
 
           {isPush ? (
             <>
               <Alert
                 type="info"
                 showIcon
-                style={{ marginBottom: 16 }}
+                style={{ marginBottom: 12 }}
                 title="对外推送：按批把源数据表的行发送到外部接口"
                 description="读取源表 → 按字段白名单组装 JSON → POST/PUT/PATCH；可用增量字段只推送游标之后的新行。失败批次会记入运行历史。"
               />
-              <Space size={12} style={{ display: 'flex' }}>
+              <div className="cn-datasource-form-row">
                 <Form.Item name="table_id" label="源数据表" rules={[{ required: true, message: '请选择源数据表' }]} style={{ flex: 1 }}>
                   <Select
                     showSearch
@@ -928,54 +958,7 @@ function JobDrawer({
                     options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
                   />
                 </Form.Item>
-                <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
-                  <Switch />
-                </Form.Item>
-              </Space>
-              <Form.Item
-                name="push_url_template"
-                label="目标 URL"
-                rules={[
-                  { required: true, message: '请输入推送地址' },
-                  { pattern: /^https?:\/\//, message: '必须是 http/https 地址' },
-                ]}
-                extra="支持 {api_key} 等会话密钥占位符；SSRF 校验与抓取一致"
-              >
-                <Input placeholder="https://example.com/api/ingest" />
-              </Form.Item>
-              <Space size={12} style={{ display: 'flex', flexWrap: 'wrap' }}>
-                <Form.Item name="push_method" label="方法" style={{ width: 120 }}>
-                  <Select options={[{ value: 'POST' }, { value: 'PUT' }, { value: 'PATCH' }].map(o => ({ ...o, label: o.value }))} />
-                </Form.Item>
-                <Form.Item name="push_batch_size" label="每批行数" style={{ width: 130 }}>
-                  <InputNumber min={1} max={1000} style={{ width: '100%' }} />
-                </Form.Item>
-                <Form.Item name="push_max_rows" label="单次最多行数" style={{ width: 150 }}>
-                  <InputNumber min={1} max={100000} style={{ width: '100%' }} />
-                </Form.Item>
-                <Form.Item name="push_watermark_field" label="增量字段（可选）" style={{ flex: 1, minWidth: 180 }}>
-                  <Input placeholder="updated_at / day；留空每次全量" />
-                </Form.Item>
-              </Space>
-              <Form.Item name="push_fields" label="推送字段（留空=全部未隐藏字段）" extra="按源表字段名选择；未知字段保存时会被拒绝">
-                <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 项目名称, 负责人" />
-              </Form.Item>
-              <Form.Item
-                name="push_headers_json"
-                label="请求头（JSON）"
-                extra='如 {"Authorization": "Bearer {api_key}"}；键值必须是字符串'
-              >
-                <Input.TextArea rows={3} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 12 }} />
-              </Form.Item>
-              <Form.Item
-                name="push_body_json"
-                label="请求体模板（JSON，可选）"
-                extra='留空发送 {"rows":[...]}；可用 {"data":"{rows}","count":"{count}","source":"{table}"}'
-              >
-                <Input.TextArea rows={4} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 12 }} />
-              </Form.Item>
-              <Space size={12} style={{ display: 'flex', flexWrap: 'wrap' }}>
-                <Form.Item name="session_id" label="凭证会话（可选）" style={{ flex: 1, minWidth: 220 }}>
+                <Form.Item name="session_id" label="凭证会话（可选）" style={{ flex: 1, minWidth: 180 }}>
                   <Select
                     allowClear
                     placeholder="不使用会话"
@@ -985,7 +968,55 @@ function JobDrawer({
                     }))}
                   />
                 </Form.Item>
-                <Form.Item name="schedule_mode" label="调度" style={{ width: 150 }}>
+              </div>
+              <Form.Item
+                name="push_url_template"
+                label="目标 URL"
+                tooltip="支持 {api_key} 等会话密钥占位符；SSRF 校验与抓取一致"
+                rules={[
+                  { required: true, message: '请输入推送地址' },
+                  { pattern: /^https?:\/\//, message: '必须是 http/https 地址' },
+                ]}
+              >
+                <Input placeholder="https://example.com/api/ingest" />
+              </Form.Item>
+              <div className="cn-datasource-form-row">
+                <Form.Item name="push_method" label="方法" style={{ width: 100 }}>
+                  <Select options={[{ value: 'POST' }, { value: 'PUT' }, { value: 'PATCH' }].map(o => ({ ...o, label: o.value }))} />
+                </Form.Item>
+                <Form.Item name="push_batch_size" label="每批行数" style={{ width: 110 }}>
+                  <InputNumber min={1} max={1000} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item name="push_max_rows" label="单次最多行数" style={{ width: 120 }}>
+                  <InputNumber min={1} max={100000} style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item name="push_watermark_field" label="增量字段（可选）" style={{ flex: 1, minWidth: 160 }}>
+                  <Input placeholder="updated_at / day；留空每次全量" />
+                </Form.Item>
+              </div>
+              <Form.Item
+                name="push_fields"
+                label="推送字段（留空=全部未隐藏字段）"
+                tooltip="按源表字段名选择；未知字段保存时会被拒绝"
+              >
+                <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 项目名称, 负责人" />
+              </Form.Item>
+              <Form.Item
+                name="push_headers_json"
+                label="请求头（JSON）"
+                tooltip='如 {"Authorization": "Bearer {api_key}"}；键值必须是字符串'
+              >
+                <Input.TextArea rows={2} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 12 }} />
+              </Form.Item>
+              <Form.Item
+                name="push_body_json"
+                label="请求体模板（JSON，可选）"
+                tooltip='留空发送 {"rows":[...]}；可用 {"data":"{rows}","count":"{count}","source":"{table}"}'
+              >
+                <Input.TextArea rows={3} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 12 }} />
+              </Form.Item>
+              <div className="cn-datasource-form-row">
+                <Form.Item name="schedule_mode" label="调度" style={{ width: 140 }}>
                   <Select
                     options={[
                       { value: 'manual', label: '手动' },
@@ -996,21 +1027,21 @@ function JobDrawer({
                   />
                 </Form.Item>
                 {scheduleMode === 'daily' && (
-                  <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 150 }}>
+                  <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 140 }}>
                     <Input placeholder="17:10" />
                   </Form.Item>
                 )}
                 {scheduleMode === 'interval' && (
-                  <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 150 }}>
+                  <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 140 }}>
                     <InputNumber min={1} style={{ width: '100%' }} />
                   </Form.Item>
                 )}
                 {scheduleMode === 'cron' && (
-                  <Form.Item name="schedule_expr" label="cron 表达式" style={{ flex: 1, minWidth: 180 }}>
+                  <Form.Item name="schedule_expr" label="cron 表达式" style={{ flex: 1, minWidth: 160 }}>
                     <Input placeholder="0 7 * * *" />
                   </Form.Item>
                 )}
-              </Space>
+              </div>
             </>
           ) : isLlm ? (
             <>
@@ -1018,7 +1049,7 @@ function JobDrawer({
                 data-testid="datasource-llm-personal-hint"
                 type="info"
                 showIcon
-                style={{ marginBottom: 16 }}
+                style={{ marginBottom: 12 }}
                 title={LLM_PERSONAL_HINT}
                 description="API 地址 / 模型 / API Key 在个人设置里配置一次即可，所有提示词任务共用你的个人配置。"
               />
@@ -1041,12 +1072,12 @@ function JobDrawer({
               >
                 <Input.TextArea
                   data-testid="datasource-llm-user"
-                  rows={6}
+                  rows={5}
                   placeholder={'例如：请汇总 {today} 的每日新闻摘要，只输出 JSON 对象数组，字段用英文 snake_case。'}
                 />
               </Form.Item>
 
-              <Space size={8} style={{ marginBottom: 16 }} wrap>
+              <Space size={8} style={{ marginBottom: 12 }} wrap>
                 <Button
                   icon={<ExperimentOutlined />}
                   data-testid="datasource-llm-presets-btn"
@@ -1105,7 +1136,7 @@ function JobDrawer({
                           <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 date, city" />
                         </Form.Item>
 
-                        <Space size={12} style={{ display: 'flex' }}>
+                        <div className="cn-datasource-form-row">
                           <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 160 }}>
                             <Input placeholder="city / symbol" />
                           </Form.Item>
@@ -1117,9 +1148,9 @@ function JobDrawer({
                           >
                             <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="输入后回车，如 北京" />
                           </Form.Item>
-                        </Space>
+                        </div>
 
-                        <Space size={12} style={{ display: 'flex' }}>
+                        <div className="cn-datasource-form-row">
                           <Form.Item name="schedule_mode" label="调度" style={{ width: 150 }}>
                             <Select
                               options={[
@@ -1145,9 +1176,9 @@ function JobDrawer({
                               <Input placeholder="0 7 * * *" />
                             </Form.Item>
                           )}
-                        </Space>
+                        </div>
 
-                        <Space size={12} style={{ display: 'flex' }}>
+                        <div className="cn-datasource-form-row">
                           <Form.Item name="cursor_strategy" label="增量策略" style={{ width: 180 }}>
                             <Select options={Object.entries(CURSOR_LABEL).map(([value, label]) => ({ value, label }))} />
                           </Form.Item>
@@ -1163,9 +1194,9 @@ function JobDrawer({
                               placeholder="2024-01-01"
                             />
                           </Form.Item>
-                        </Space>
+                        </div>
 
-                        <Space size={12} style={{ display: 'flex' }}>
+                        <div className="cn-datasource-form-row">
                           <Form.Item name="time_window_mode" label="时间区间" style={{ width: 150 }}>
                             <Select
                               options={[
@@ -1179,9 +1210,9 @@ function JobDrawer({
                               <InputNumber min={0} max={3650} style={{ width: '100%' }} />
                             </Form.Item>
                           )}
-                        </Space>
+                        </div>
 
-                        <Space size={12} style={{ display: 'flex' }}>
+                        <div className="cn-datasource-form-row">
                           <Form.Item
                             name="session_id"
                             label={
@@ -1215,9 +1246,9 @@ function JobDrawer({
                           <Form.Item name="rate_limit_ms" label="请求间隔（毫秒）" style={{ width: 190 }}>
                             <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} />
                           </Form.Item>
-                        </Space>
+                        </div>
 
-                        <Space size={12} style={{ display: 'flex' }}>
+                        <div className="cn-datasource-form-row">
                           <Form.Item name="temperature" label="temperature" style={{ width: 140 }}>
                             <InputNumber min={0} max={2} step={0.1} style={{ width: '100%' }} />
                           </Form.Item>
@@ -1227,10 +1258,7 @@ function JobDrawer({
                           <Form.Item name="json_mode" label="JSON 模式" valuePropName="checked" style={{ width: 110 }}>
                             <Switch />
                           </Form.Item>
-                          <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
-                            <Switch data-testid="datasource-enabled" />
-                          </Form.Item>
-                        </Space>
+                        </div>
                       </>
                     ),
                   },
@@ -1239,7 +1267,7 @@ function JobDrawer({
             </>
           ) : (
             <>
-              <Space size={12} style={{ display: 'flex' }}>
+              <div className="cn-datasource-form-row">
                 <Form.Item name="table_id" label="目标表（留空则只抓不写）" style={{ flex: 1 }}>
                   <Select
                     allowClear
@@ -1249,12 +1277,9 @@ function JobDrawer({
                     options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
                   />
                 </Form.Item>
-                <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ width: 90 }}>
-                  <Switch />
-                </Form.Item>
-              </Space>
+              </div>
 
-              <Space size={12} style={{ display: 'flex' }}>
+              <div className="cn-datasource-form-row">
                 <Form.Item
                   name="session_id"
                   label={
@@ -1272,7 +1297,7 @@ function JobDrawer({
                     </Space>
                   }
                   style={{ flex: 1 }}
-                  extra="会话提供请求头与密钥；请求模板里可用 {密钥名} 占位"
+                  tooltip="会话提供请求头与密钥；请求模板里可用 {密钥名} 占位"
                 >
                   <Select
                     allowClear
@@ -1286,12 +1311,12 @@ function JobDrawer({
                 <Form.Item
                   name="rate_limit_ms"
                   label="请求间隔（毫秒）"
-                  style={{ width: 190 }}
-                  extra="同一任务相邻请求最小间隔，0 = 不限速"
+                  style={{ width: 170 }}
+                  tooltip="同一任务相邻请求最小间隔，0 = 不限速"
                 >
                   <InputNumber min={0} max={60000} step={100} style={{ width: '100%' }} />
                 </Form.Item>
-              </Space>
+              </div>
 
               <Form.Item
                 name="url_template"
@@ -1310,26 +1335,34 @@ function JobDrawer({
                 />
               </Form.Item>
 
-              <Space size={12} style={{ display: 'flex' }}>
+              <div className="cn-datasource-form-row">
                 <Form.Item name="data_path" label="响应数组路径" style={{ flex: 1 }}>
                   <Input placeholder="data.items（留空自动探测 data / items / results）" />
                 </Form.Item>
-                <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 160 }}>
+                <Form.Item name="entrant_param" label="标的占位符名" style={{ width: 150 }}>
                   <Input placeholder="city / symbol" />
                 </Form.Item>
-              </Space>
+              </div>
 
-              <Form.Item name="entrant_keys" label="标的取值" extra="每个取值各抓一次；留空表示只抓一次">
-                <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="输入后回车，如 北京" />
-              </Form.Item>
+              <div className="cn-datasource-form-row">
+                <Form.Item
+                  name="entrant_keys"
+                  label="标的取值"
+                  style={{ flex: 1 }}
+                  tooltip="每个取值各抓一次；留空表示只抓一次"
+                >
+                  <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="输入后回车，如 北京" />
+                </Form.Item>
 
-              <Form.Item
-                name="match_keys"
-                label="幂等键"
-                extra="必须是目标表字段；留空则纯追加（仅快照类源适用）"
-              >
-                <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 city, day" />
-              </Form.Item>
+                <Form.Item
+                  name="match_keys"
+                  label="幂等键"
+                  style={{ flex: 1 }}
+                  tooltip="必须是目标表字段；留空则纯追加（仅快照类源适用）"
+                >
+                  <Select mode="tags" tokenSeparators={[',', ' ']} placeholder="如 city, day" />
+                </Form.Item>
+              </div>
 
               <Collapse
                 size="small"
@@ -1340,8 +1373,8 @@ function JobDrawer({
                     label: '增量与调度',
                     children: (
                       <>
-                        <Space size={12} style={{ display: 'flex' }}>
-                          <Form.Item name="cursor_strategy" label="增量策略" style={{ width: 180 }}>
+                        <div className="cn-datasource-form-row">
+                          <Form.Item name="cursor_strategy" label="增量策略" style={{ width: 170 }}>
                             <Select
                               options={Object.entries(CURSOR_LABEL).map(([value, label]) => ({ value, label }))}
                             />
@@ -1349,16 +1382,16 @@ function JobDrawer({
                           <Form.Item name="cursor_field" label="增量字段" style={{ flex: 1 }}>
                             <Input disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'} placeholder="day / published_at" />
                           </Form.Item>
-                          <Form.Item name="backfill_start" label="回填起点" style={{ width: 150 }}>
+                          <Form.Item name="backfill_start" label="回填起点" style={{ width: 140 }}>
                             <Input
                               disabled={cursorStrategy === 'none' || cursorStrategy === 'key_set'}
                               placeholder="2024-01-01"
                             />
                           </Form.Item>
-                        </Space>
+                        </div>
 
-                        <Space size={12} style={{ display: 'flex' }}>
-                          <Form.Item name="schedule_mode" label="调度" style={{ width: 150 }}>
+                        <div className="cn-datasource-form-row">
+                          <Form.Item name="schedule_mode" label="调度" style={{ width: 140 }}>
                             <Select
                               options={[
                                 { value: 'manual', label: '手动' },
@@ -1369,12 +1402,12 @@ function JobDrawer({
                             />
                           </Form.Item>
                           {scheduleMode === 'daily' && (
-                            <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 150 }}>
+                            <Form.Item name="schedule_at" label="时刻（HH:MM）" style={{ width: 140 }}>
                               <Input placeholder="17:10" />
                             </Form.Item>
                           )}
                           {scheduleMode === 'interval' && (
-                            <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 150 }}>
+                            <Form.Item name="schedule_seconds" label="间隔（秒）" style={{ width: 140 }}>
                               <InputNumber min={1} style={{ width: '100%' }} />
                             </Form.Item>
                           )}
@@ -1383,9 +1416,9 @@ function JobDrawer({
                               <Input placeholder="0 7 * * *" />
                             </Form.Item>
                           )}
-                        </Space>
+                        </div>
 
-                        <Space size={12} style={{ display: 'flex' }}>
+                        <div className="cn-datasource-form-row">
                           <Form.Item name="paging_mode" label="分页" style={{ width: 150 }}>
                             <Select
                               options={[
@@ -1413,7 +1446,7 @@ function JobDrawer({
                               <InputNumber min={0} max={3650} style={{ width: '100%' }} />
                             </Form.Item>
                           )}
-                        </Space>
+                        </div>
                       </>
                     ),
                   },
