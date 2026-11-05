@@ -215,10 +215,10 @@ Related: `frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/HelpDo
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/auth/LoginPage.tsx`、`frontend/src/pages/auth/RegisterPage.tsx`、`frontend/src/components/GlobalSearch.tsx`、`frontend/src/pages/import-export/FileImportPreview.tsx`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/pages/auth/LoginPage.test.tsx`、`frontend/src/pages/auth/RegisterPage.test.tsx`、`frontend/src/components/GlobalSearch.test.tsx`、`frontend/src/pages/import-export/FileImportPreview.test.tsx`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | 未提交（工作区改动） |
-| P1 | 已落地 | `frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.tsx`（其余目录巡检判定不改，留痕见交接） | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.test.tsx` | 未提交（工作区改动） |
-| P2 | 已落地 | `frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/content/*.tsx` | `frontend/src/pages/help/helpNav.test.tsx`、`frontend/src/pages/help/HelpDocsPage.test.tsx` | 未提交（工作区改动） |
-| P3 | 已落地 | `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/help/HelpDocsPage.test.tsx`、`frontend/tests/e2e/critical/help-docs.spec.ts` | 未提交（工作区改动） |
+| P0 | 已落地 | `frontend/src/pages/auth/LoginPage.tsx`、`frontend/src/pages/auth/RegisterPage.tsx`、`frontend/src/components/GlobalSearch.tsx`、`frontend/src/pages/import-export/FileImportPreview.tsx`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/pages/settings/LlmConfigPanel.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/pages/auth/LoginPage.test.tsx`、`frontend/src/pages/auth/RegisterPage.test.tsx`、`frontend/src/components/GlobalSearch.test.tsx`、`frontend/src/pages/import-export/FileImportPreview.test.tsx`、`frontend/src/pages/datasource/DatasourcePage.test.tsx` | `03fda834` |
+| P1 | 已落地 | `frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.tsx`（其余目录巡检判定不改，留痕见交接） | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/src/pages/grid/layout/RowDetailDrawer.test.tsx` | `03fda834` |
+| P2 | 已落地 | `frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/content/*.tsx` | `frontend/src/pages/help/helpNav.test.tsx`、`frontend/src/pages/help/HelpDocsPage.test.tsx` | `03fda834` |
+| P3 | 已落地 | `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/help/HelpDocsPage.test.tsx`、`frontend/tests/e2e/critical/help-docs.spec.ts` | `03fda834` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
