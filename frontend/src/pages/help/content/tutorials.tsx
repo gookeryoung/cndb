@@ -10,7 +10,7 @@
 import { Table } from 'antd'
 import HelpFigure from '../HelpFigure'
 import type { HelpTopic } from '../helpNav'
-import { Bullets, HelpLink, P, Steps } from './primitives'
+import { Bullets, CodeBlock, HelpLink, P, Steps } from './primitives'
 
 const roleColumns = [
     { title: '角色', dataIndex: 'role', key: 'role', width: 90 },

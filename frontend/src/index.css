@@ -4227,6 +4227,32 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-weight: var(--cn-weight-medium);
 }
 
+.cn-help-docs-code {
+  margin: 0 0 var(--cn-space-md);
+  border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-subtle);
+  overflow: hidden;
+}
+
+.cn-help-docs-code-title {
+  padding: var(--cn-space-xs) var(--cn-space-md);
+  border-bottom: 1px solid var(--cn-border-soft);
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-sm);
+}
+
+.cn-help-docs-code pre {
+  margin: 0;
+  padding: var(--cn-space-md);
+  overflow-x: auto;
+  font-family: var(--cn-font-mono);
+  font-size: var(--cn-text-sm);
+  line-height: 1.7;
+  color: var(--cn-text-primary);
+  white-space: pre;
+}
+
 .cn-help-docs-link {
   color: var(--cn-brand-color);
   text-decoration: none;

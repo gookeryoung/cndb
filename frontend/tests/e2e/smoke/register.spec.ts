@@ -22,10 +22,10 @@ test.describe("注册流程（仅 chromium-anon）", () => {
     await page.goto("/register")
 
     // 表单元素
-    await expect(page.getByPlaceholder("用户名")).toBeVisible()
+    await expect(page.getByPlaceholder("登录时使用的用户名")).toBeVisible()
     await expect(page.getByPlaceholder("显示昵称（可选）")).toBeVisible()
-    await expect(page.getByPlaceholder("your@email.com")).toBeVisible()
-    await expect(page.getByPlaceholder("密码")).toBeVisible()
+    await expect(page.getByPlaceholder("name@example.com（可选）")).toBeVisible()
+    await expect(page.getByPlaceholder("设置登录密码")).toBeVisible()
     // 提交按钮（公开注册页按钮文字为"注册"）
     await expect(page.getByRole("button", { name: /^注\s*册$/ })).toBeVisible()
   })

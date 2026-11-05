@@ -69,3 +69,15 @@ export function HelpLink({
 export function Strong({ children }: { children: ReactNode }) {
     return <strong className="cn-help-docs-strong">{children}</strong>
 }
+
+/** 多行代码示例（DSL 等）：等宽字体 + 浅底色，横向可滚动，原文空格 / 缩进原样保留。 */
+export function CodeBlock({ code, title }: { code: string; title?: string }) {
+    return (
+        <div className="cn-help-docs-code">
+            {title && <div className="cn-help-docs-code-title">{title}</div>}
+            <pre>
+                <code>{code}</code>
+            </pre>
+        </div>
+    )
+}
