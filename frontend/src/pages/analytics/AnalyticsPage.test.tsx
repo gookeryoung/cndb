@@ -425,6 +425,24 @@ describe('AnalyticsPage', () => {
     await waitFor(() => expect(computeBodies).toHaveLength(1))
   })
 
+  it('下拉（Select）展开时 Ctrl+Enter 留给下拉确认，不触发运行分析', async () => {
+    renderPage('/w/1/analytics?template=7')
+    await waitTemplateLoaded()
+    await waitFor(() => expect(screen.getByTestId('analytics-run-btn')).toBeEnabled())
+
+    // 展开范围字段下拉后，焦点在下拉/Select 内按键不触发运行
+    fireEvent.mouseDown(screen.getByTestId('analytics-scope-field'))
+    const openSelect = screen.getByTestId('analytics-scope-field').closest('.ant-select-open')
+    expect(openSelect).not.toBeNull()
+    fireEvent.keyDown(openSelect!, { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(computeBodies).toHaveLength(0))
+
+    // 关闭下拉后同键位恢复触发运行
+    fireEvent.keyDown(openSelect!, { key: 'Escape' })
+    fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+  })
+
   it('分析范围：设置起止值后请求体带扫描过滤', async () => {
     renderPage('/w/1/analytics?template=7')
     await waitTemplateLoaded()

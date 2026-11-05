@@ -644,6 +644,9 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+        // 下拉（Select）展开时按键留给下拉确认，不触发运行分析
+        const target = e.target
+        if (target instanceof Element && (target.closest('.ant-select-dropdown:not(.ant-select-dropdown-hidden)') || target.closest('.ant-select-open'))) return
         e.preventDefault()
         runAnalysis()
       }
