@@ -583,7 +583,7 @@ def create_workspace_from_archive(
     ``name`` 非空时用作新工作区名称（前端默认填「归档名 + 导入时间后缀」便于区分，
     并允许用户修改）；为空时回落到归档内的 workspace.name。
     """
-    from cndb.plugins.workspaces.services.workspace_backup import parse_workspace_archive
+    from cndb.plugins.workspaces.services.workspace_import import create_workspace_from_archive_file
 
     fd, tmp_name = tempfile.mkstemp(prefix="cndb-ws-import-", suffix=".tar.gz")
     tmp_path = Path(tmp_name)
@@ -593,63 +593,26 @@ def create_workspace_from_archive(
     try:
         with os.fdopen(fd, "wb") as out:
             shutil.copyfileobj(file.file, out)
-        archive = parse_workspace_archive(tmp_path)
     except Exception:
         tmp_path.unlink(missing_ok=True)
         raise
 
     try:
-        data = archive.backup
-        if not isinstance(data, dict) or "tables" not in data:
-            raise HTTPException(status_code=400, detail="无效的备份归档格式")
-
-        ws_meta = data.get("workspace") or {}
-        backup_name = (name or "").strip()[:255] or (ws_meta.get("name") or "").strip() or "未命名工作区"
-        try:
-            visibility = WorkspaceVisibility(ws_meta.get("visibility", "member"))
-        except (ValueError, TypeError):
-            visibility = WorkspaceVisibility.MEMBER
-        # v12 写 modules；≤v11 旧备份按 workspace_type 映射，未知值回退全模块并记 errors（ADR 0080 D7）
-        modules, module_warning = workspace_modules_from_meta(ws_meta)
-
-        ws = Workspace(
-            name=backup_name,
-            description=ws_meta.get("description", "") or "",
-            visibility=visibility,
-            tags=ws_meta.get("tags", []) or [],
-            allow_edit=bool(ws_meta.get("allow_edit", True)),
-            modules=modules,
-            created_by_id=current_user.id,
-        )
-        db.add(ws)
-        db.flush()
-        member = WorkspaceMember(workspace_id=ws.id, user_id=current_user.id, role=WorkspaceRole.OWNER)
-        db.add(member)
-        db.commit()
-        db.refresh(ws)
-
-        try:
-            import_result = _import_backup_into_workspace(ws.id, data, current_user, db, files_dir=archive.files_dir)
-        except HTTPException:
-            db.delete(ws)
-            db.commit()
-            raise
+        result = create_workspace_from_archive_file(tmp_path, current_user, db, name=name)
     finally:
-        archive.cleanup()
         tmp_path.unlink(missing_ok=True)
 
-    invalidate_workspace_list_cache(ws.id)
-    if module_warning:
-        import_result.errors.append(module_warning)
+    invalidate_workspace_list_cache(result.workspace.id)
     return WorkspaceCreateFromBackupResponse(
-        workspace=ws,
-        imported_tables=import_result.imported_tables,
-        imported_rows=import_result.imported_rows,
-        imported_views=import_result.imported_views,
-        imported_documents=import_result.imported_documents,
-        imported_sync_jobs=import_result.imported_sync_jobs,
-        imported_charts=import_result.imported_charts,
-        errors=import_result.errors,
+        workspace=result.workspace,
+        imported_tables=result.imported_tables,
+        imported_rows=result.imported_rows,
+        imported_views=result.imported_views,
+        imported_documents=result.imported_documents,
+        imported_sync_jobs=result.imported_sync_jobs,
+        imported_charts=result.imported_charts,
+        imported_pipelines=result.imported_pipelines,
+        errors=result.errors,
     )
 
 

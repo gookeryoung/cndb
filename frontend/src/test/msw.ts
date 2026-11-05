@@ -562,6 +562,17 @@ export const handlers = [
       status: 200,
       headers: { 'Content-Type': 'text/csv; charset=utf-8' },
     })),
+  // 一键创建示例工作区（需求 0106）
+  http.post('/api/v1/help/examples/:scenario/workspace', ({ params }) =>
+    HttpResponse.json({
+      workspace_id: 9001,
+      name: `示例工作区-${String(params.scenario)}`,
+      imported_tables: 2,
+      imported_rows: 12,
+      imported_views: 3,
+      imported_documents: 1,
+      errors: [],
+    }, { status: 201 })),
 
   // 帮助文档图示清单 / SVG（ADR 0030）
   http.get('/api/v1/help/figures', () => HttpResponse.json(mockHelpFigures)),

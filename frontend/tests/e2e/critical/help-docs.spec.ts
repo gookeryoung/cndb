@@ -108,7 +108,7 @@ test.describe("帮助文档整页", () => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
     await page.goto("/help/examples/sales");
-    // 示例正文拆成 4 个 L3 小节（ADR 0036），表清单在「数据表与下载」小节内
+    // 示例正文拆成 5 个 L3 小节（ADR 0036 / 需求 0106），表清单在「数据表与下载」小节内
     const tables = page.getByTestId("help-subsection-tables");
     await expect(tables).toBeVisible({ timeout: 10000 });
     await expect(tables.getByText("电商销售", { exact: true })).toBeVisible();

@@ -294,7 +294,12 @@ def main() -> None:
 
     sub.add_parser("build", help="构建前后端（需源码目录）")
     sub.add_parser("info", help="打印版本/配置/运行环境")
-    sub.add_parser("seed", help="向数据库注入演示数据")
+    p_seed = sub.add_parser("seed", help="向数据库注入开发 / e2e 演示数据（会重建库）")
+    p_seed.add_argument(
+        "--force",
+        action="store_true",
+        help="目标库已有用户或工作区时仍强制重建（会清空数据；仅开发环境使用）",
+    )
 
     # backup 子命令
     p_backup = sub.add_parser("backup", help="备份数据库和附件（输出到 .tar.gz 归档或文件夹）")

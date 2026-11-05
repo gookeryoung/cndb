@@ -6,7 +6,13 @@
  */
 
 import type { HelpTopic } from '../helpNav'
-import { ExamplePractice, ExamplePreviews, ExampleSummary, ExampleTables } from './ExamplesSection'
+import {
+    ExampleCreateWorkspace,
+    ExamplePractice,
+    ExamplePreviews,
+    ExampleSummary,
+    ExampleTables,
+} from './ExamplesSection'
 import { P } from './primitives'
 
 function scenarioTopic(key: string, label: string, intro: string): HelpTopic {
@@ -16,6 +22,7 @@ function scenarioTopic(key: string, label: string, intro: string): HelpTopic {
         intro: <P>{intro}</P>,
         subsections: [
             { key: 'scenario', label: '场景说明', body: <ExampleSummary scenarioKey={key} /> },
+            { key: 'create', label: '创建示例工作区', body: <ExampleCreateWorkspace scenarioKey={key} /> },
             { key: 'tables', label: '数据表与下载', body: <ExampleTables scenarioKey={key} /> },
             { key: 'preview', label: '数据预览', body: <ExamplePreviews scenarioKey={key} /> },
             { key: 'practice', label: '怎么练与导入步骤', body: <ExamplePractice scenarioKey={key} /> },

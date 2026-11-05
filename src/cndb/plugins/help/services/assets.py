@@ -26,9 +26,25 @@ def _candidate_dirs() -> tuple[Path, Path]:
     return packaged, repo
 
 
+def _demo_pack_candidate_dirs() -> tuple[Path, Path]:
+    """返回 (包内 demo-packs, 仓库根 examples/demo-packs) 两个候选目录."""
+    here = Path(__file__).resolve()
+    packaged = here.parents[3] / "demo-packs"
+    repo = here.parents[5] / "examples" / "demo-packs"
+    return packaged, repo
+
+
 def datasets_dir() -> Path | None:
     """定位 datasets 根目录；两处都不存在时返回 None."""
     for candidate in _candidate_dirs():
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
+def demo_packs_dir() -> Path | None:
+    """定位示例工作区归档目录；两处都不存在时返回 None."""
+    for candidate in _demo_pack_candidate_dirs():
         if candidate.is_dir():
             return candidate
     return None
@@ -53,4 +69,18 @@ def resolve_example_file(scenario: str, filename: str) -> Path | None:
     return path if path.is_file() else None
 
 
-__all__ = ["datasets_dir", "resolve_example_file"]
+def resolve_demo_pack(scenario: str) -> Path | None:
+    """返回场景对应的示例工作区归档路径；未知场景或文件缺失时返回 None.
+
+    归档只按清单登记的 `<scenario>.tar.gz` 读取，不接受任何路径片段。
+    """
+    if find_example(scenario) is None:
+        return None
+    root = demo_packs_dir()
+    if root is None:
+        return None
+    path = root / f"{scenario}.tar.gz"
+    return path if path.is_file() else None
+
+
+__all__ = ["datasets_dir", "demo_packs_dir", "resolve_demo_pack", "resolve_example_file"]

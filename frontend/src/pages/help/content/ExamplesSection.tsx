@@ -3,15 +3,16 @@
  * 场景内容完全由后端 `/api/v1/help/examples` 清单驱动：表格、亮点、步骤与
  * CSV 下载都来自接口，前端不维护第二份示例清单。
  *
- * 四个 L3 小节各自只渲染自己那一块，标题与锚点由 `HelpDoc` 统一生成 ——
+ * 五个 L3 小节各自只渲染自己那一块，标题与锚点由 `HelpDoc` 统一生成 ——
  * 因此「页内目录里的标题」与正文标题必然一致。
  */
 
-import { DownloadOutlined, ReloadOutlined } from '@ant-design/icons'
+import { DownloadOutlined, FolderAddOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Alert, App, Button, Skeleton, Table, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { helpApi, type HelpExampleTable } from '@/api/help'
 import HelpFigure from '../HelpFigure'
 
@@ -81,7 +82,56 @@ export function ExampleSummary({ scenarioKey }: { scenarioKey: string }) {
     )
 }
 
-/** L3-2 数据表清单与 CSV 下载。 */
+/** L3-2 一键创建示例工作区（需求 0106）：非破坏，只在当前用户名下新建。 */
+export function ExampleCreateWorkspace({ scenarioKey }: { scenarioKey: string }) {
+    const { message } = App.useApp()
+    const navigate = useNavigate()
+    const [creating, setCreating] = useState(false)
+    const { example } = useExample(scenarioKey)
+
+    if (!example) return null
+
+    const handleCreate = async () => {
+        setCreating(true)
+        try {
+            const result = await helpApi.createExampleWorkspace(scenarioKey)
+            message.success(`已创建示例工作区「${result.name}」，正在打开…`)
+            if (result.errors.length > 0) {
+                message.warning(`示例已创建，但有 ${result.errors.length} 项内容跳过：${result.errors[0]}`)
+            }
+            navigate(`/w/${result.workspace_id}`)
+        } catch (err) {
+            message.error(err instanceof Error ? err.message : '创建失败，请稍后重试')
+        } finally {
+            setCreating(false)
+        }
+    }
+
+    return (
+        <div
+            style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
+            data-testid="help-example-create-workspace"
+        >
+            <Paragraph type="secondary" style={{ margin: 0 }}>
+                不想从零搭表？可以直接把整套示例（数据表、视图、文档与分析模板）创建成你的工作区。
+                不会修改或覆盖你已有的任何工作区，不需要时可整组删除。
+            </Paragraph>
+            <div>
+                <Button
+                    type="primary"
+                    icon={<FolderAddOutlined />}
+                    loading={creating}
+                    onClick={() => void handleCreate()}
+                    data-testid={`help-example-create-${scenarioKey}`}
+                >
+                    创建示例工作区
+                </Button>
+            </div>
+        </div>
+    )
+}
+
+/** L3-3 数据表清单与 CSV 下载。 */
 export function ExampleTables({ scenarioKey }: { scenarioKey: string }) {
     const { message } = App.useApp()
     const [downloading, setDownloading] = useState<string | null>(null)

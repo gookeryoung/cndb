@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import argparse
+import sys
+from typing import Any
 
 from cndb.cli.seed import (
     analytics,
@@ -22,8 +24,28 @@ from cndb.cli.seed import (
 )
 
 
-def seed(_args: argparse.Namespace) -> None:
-    """向数据库注入演示数据（datasets CSV + 硬编码业务表 + 视图种子 + 三员演示账号）."""
+def _database_has_data(engine: Any) -> bool:
+    """目标库是否已有用户或工作区（seed 会整库重建，需显式 --force）."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    with engine.connect() as conn:
+        for table in ("accounts_user", "workspaces_workspace"):
+            if table in tables:
+                count = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar()
+                if count:
+                    return True
+    return False
+
+
+def seed(args: argparse.Namespace) -> None:
+    """向数据库注入开发 / e2e 演示数据（datasets CSV + 硬编码业务表 + 视图种子 + 三员演示账号）.
+
+    安全口径（需求 0106）：目标库已有用户或工作区时默认拒绝执行，避免用户
+    误用 `make seed` 覆盖真实数据；仅 `--force` 显式重建。空库（首次安装 /
+    e2e 临时库）行为不变。
+    """
     from cndb.core.database import SessionLocal, engine
     from cndb.core.plugin_registry import plugin_registry
     from cndb.models.base import Base
@@ -31,6 +53,16 @@ def seed(_args: argparse.Namespace) -> None:
 
     # 触发所有插件 register_models，确保 Base.metadata 完整注册
     plugin_registry.discover_and_load()
+
+    if not getattr(args, "force", False) and _database_has_data(engine):
+        print(
+            "[seed] 目标数据库已有用户或工作区数据，已拒绝覆盖。\n"
+            "       演示 / 试用：登录后在「帮助文档 → 典型示例」点击「创建示例工作区」，\n"
+            "       不会影响已有数据。\n"
+            "       开发环境确需重建：`cndb seed --force`（会清空当前数据库）。",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
 
     seed_pragma_handler = sqlite._set_seed_sqlite_pragmas(engine)
     if engine.dialect.name == "sqlite":

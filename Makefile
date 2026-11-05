@@ -50,7 +50,7 @@ free-dev-ports: ## 结束占用开发端口的旧进程（后端 DEV_PORT=8772�
 dev: env-guard free-dev-ports $(FRONTEND_DEPS) ## 开发模式：先释放旧端口，再启动前后端（uvicorn + Vite，Ctrl+C 一起停）
 	uv run cndb dev --host $(DEV_HOST) --port $(DEV_PORT)
 
-seed: ## 注入演示数据（幂等：重建工作区/表/视图/文档并创建演示账号）
+seed: ## 注入开发 / e2e 演示数据（会重建库；已有用户数据时拒绝，需 cndb seed --force）
 	uv run cndb seed
 
 # ── 前端 ──────────────────────────────────────────────────────────────

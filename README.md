@@ -35,7 +35,7 @@
 # 克隆 + 依赖
 uv sync --extra dev
 
-# 建表 + 注入演示数据（含典型数据表 / 视图 / 文档，幂等）
+# 建表 + 注入开发 / e2e 演示数据（重建库；已有用户数据时会拒绝，需 --force）
 uv run cndb seed
 
 # 启动服务（默认绑定 0.0.0.0，http://localhost:8000）
@@ -169,7 +169,7 @@ src/cndb/
 | `cndb dev` | 开发模式：同时启动前后端 |
 | `cndb build` | 构建前后端（需源码目录） |
 | `cndb info` | 打印版本 / 配置 / 运行环境 |
-| `cndb seed` | 注入演示数据（幂等） |
+| `cndb seed` | 注入开发 / e2e 演示数据（重建库；已有数据需 `--force`） |
 | `cndb backup` | 备份数据库和附件为 .tar.gz 归档或文件夹 |
 | `cndb restore` | 从归档或文件夹恢复（自动识别源类型） |
 | `cndb users` | 用户管理（create / delete / list / import） |
@@ -210,7 +210,7 @@ src/cndb/
 ```bash
 make help          # 查看全部目标
 make sync          # 安装后端依赖 + pre-commit 钩子（前端依赖由 dev / 前端目标按需自动安装）
-make seed          # 注入演示数据（幂等）
+make seed          # 注入开发 / e2e 演示数据（重建库；已有数据会拒绝）
 make dev           # 开发模式：同时启动后端 8772 + 前端 5173（Ctrl+C 一起停）
 make docker-dev    # Docker 开发模式：容器内跑同样的前后端（源码挂载 + 热重载）
 make docker-dev-down  # 停止 Docker 开发模式（保留数据卷）
@@ -226,7 +226,8 @@ make push          # 推送全部 remote（含 tags）
 与前端（Vite，:5173）—— 仓库根 bind mount 进容器，改源码即热更，适合本机未装 Python / Node
 或想隔离运行环境的场景。开发数据落独立命名卷 `cndb-dev-data`（不碰宿主 `~/.cndb`），前端依赖落
 `cndb-dev-node-modules` 卷（容器重建不重复下载）。容器内需要演示数据时：
-`docker compose -f docker-compose.dev.yml exec backend cndb seed`。
+`docker compose -f docker-compose.dev.yml exec backend cndb seed`
+（空库直接执行；数据卷已有数据时需 `--force`）。
 
 镜像构建源由 `deploy/docker-sources.sh` 统一解析，`make docker-build` / `docker-dev` / `docker-export`
 共用同一 profile：

@@ -31,6 +31,18 @@ class HelpExampleListResponse(BaseModel):
     items: list[HelpExampleResponse] = Field(description="全部示例场景")
 
 
+class HelpExampleWorkspaceResponse(BaseModel):
+    """一键创建示例工作区的结果（需求 0106）."""
+
+    workspace_id: int = Field(description="新建工作区 ID")
+    name: str = Field(description="新建工作区名称（重名时自动加后缀）")
+    imported_tables: int = Field(description="导入的数据表数")
+    imported_rows: int = Field(description="导入的数据行数")
+    imported_views: int = Field(description="导入的视图数")
+    imported_documents: int = Field(description="导入的文档数")
+    errors: list[str] = Field(default_factory=list, description="部分内容跳过 / 失败明细")
+
+
 class HelpFigureResponse(BaseModel):
     """一张帮助图示的元信息（ADR 0030）."""
 
@@ -59,6 +71,7 @@ __all__ = [
     "HelpExampleListResponse",
     "HelpExampleResponse",
     "HelpExampleTableResponse",
+    "HelpExampleWorkspaceResponse",
     "HelpFigureListResponse",
     "HelpFigureRefreshResponse",
     "HelpFigureResponse",

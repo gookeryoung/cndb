@@ -29,6 +29,17 @@ export interface HelpExampleList {
   items: HelpExample[]
 }
 
+/** 一键创建示例工作区的结果（需求 0106） */
+export interface HelpExampleWorkspace {
+  workspace_id: number
+  name: string
+  imported_tables: number
+  imported_rows: number
+  imported_views: number
+  imported_documents: number
+  errors: string[]
+}
+
 /** 一张帮助图示的元信息（ADR 0030） */
 export interface HelpFigureMeta {
   key: string
@@ -60,6 +71,12 @@ export const helpApi = {
       .get<Blob>(`${EXAMPLES_URL}/${encodeURIComponent(scenario)}/files/${encodeURIComponent(filename)}`, {
         responseType: 'blob',
       })
+      .then((res) => res.data),
+
+  /** 在当前用户名下创建示例工作区（不修改既有工作区） */
+  createExampleWorkspace: (scenario: string) =>
+    api
+      .post<HelpExampleWorkspace>(`${EXAMPLES_URL}/${encodeURIComponent(scenario)}/workspace`)
       .then((res) => res.data),
 
   /** 拉取图示例清单（含指纹与生成时间） */

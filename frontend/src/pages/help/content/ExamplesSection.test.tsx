@@ -1,21 +1,28 @@
-/** 典型示例（ADR 0029 P1 / ADR 0036）—— 四个 L3 小节渲染、CSV 下载、失败重试与缺省场景. */
+/** 典型示例（ADR 0029 P1 / ADR 0036 / 需求 0106）—— 五个 L3 小节渲染、创建示例工作区、CSV 下载、失败重试与缺省场景. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
-import { ExamplePractice, ExamplePreviews, ExampleSummary, ExampleTables } from './ExamplesSection'
+import {
+    ExampleCreateWorkspace,
+    ExamplePractice,
+    ExamplePreviews,
+    ExampleSummary,
+    ExampleTables,
+} from './ExamplesSection'
 
 afterEach(() => {
     vi.restoreAllMocks()
 })
 
-/** 四个小节在真实页面里由 `HelpDoc` 拆开渲染，这里拼回同一页便于断言。 */
+/** 五个小节在真实页面里由 `HelpDoc` 拆开渲染，这里拼回同一页便于断言。 */
 function Scenario({ scenarioKey }: { scenarioKey: string }) {
     return (
         <div>
             <ExampleSummary scenarioKey={scenarioKey} />
+            <ExampleCreateWorkspace scenarioKey={scenarioKey} />
             <ExampleTables scenarioKey={scenarioKey} />
             <ExamplePreviews scenarioKey={scenarioKey} />
             <ExamplePractice scenarioKey={scenarioKey} />
@@ -59,6 +66,27 @@ describe('ExamplesSection', () => {
 
         fireEvent.click(screen.getByRole('button', { name: /重试/ }))
         expect(await screen.findByTestId('help-examples-section')).toBeVisible()
+    })
+
+    it('点击「创建示例工作区」调用接口并提示成功', async () => {
+        renderProviders(<Scenario scenarioKey="sales" />)
+
+        fireEvent.click(await screen.findByTestId('help-example-create-sales'))
+
+        expect(await screen.findByText(/已创建示例工作区/)).toBeInTheDocument()
+    })
+
+    it('创建失败时提示错误而不是跳转', async () => {
+        server.use(
+            http.post('/api/v1/help/examples/:scenario/workspace', () =>
+                HttpResponse.json({ detail: '示例工作区包暂不可用' }, { status: 404 }), { once: true }),
+        )
+
+        renderProviders(<Scenario scenarioKey="research" />)
+
+        fireEvent.click(await screen.findByTestId('help-example-create-research'))
+
+        expect(await screen.findByText('示例工作区包暂不可用')).toBeInTheDocument()
     })
 
     it('场景不在清单中时给出提示而不是空白', async () => {

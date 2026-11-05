@@ -2,7 +2,7 @@
 
 Status: Implemented（已评审；2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-25
-Related: `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/helpNav.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx`、`frontend/src/components/HelpTip.tsx`、`frontend/src/components/onboarding/OnboardingTour.tsx`、`src/cndb/cli/seed/runner.py`、`src/cndb/cli/seed/paths.py`、`pyproject.toml`、`docs/adr/README.md`
+Related: `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/helpNav.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx`、`frontend/src/components/HelpTip.tsx`、`frontend/src/components/onboarding/OnboardingTour.tsx`、`src/cndb/cli/seed/runner.py`、`src/cndb/cli/seed/paths.py`、`pyproject.toml`、`docs/adr/README.md`；承接：`docs/requirements/0106-demo-workspace-pack.md`
 需求卡片: `docs/requirements/0029-help-docs-refactor.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -17,9 +17,9 @@ Related: `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/h
 | C2 | 设置独立路由进入，而不是弹出DRAWER | 新增 `/help` 与 `/help/:section/:topic` 两条登录后路由（`App.tsx` 内 `ProtectedRoute`）；`MainLayout` 入口 `navigate('/help')`；删除 `HelpCenterDrawer.tsx`、`helpOpen` 状态与 lazy 引用 |
 | C3 | 采用两级侧边栏导航 | `helpNav.tsx` 定义「部分 → 主题」两级树；`HelpDocsPage` 用 antd `Menu` 的 `SubMenu` 渲染一级、`Item` 渲染二级；`selectedKeys` / `openKeys` 由 URL 派生；窄屏 `Menu` 收进左侧 `Drawer`，顶部「目录」按钮唤出 |
 | C4 | 按照快速入门、教程&最佳实践、典型示例、系统配置、问题排查等部分进行组织 | 一级固定 5 项且顺序固定（见 §2 映射表）；现有 6 个主题全部迁入且无孤儿内容；空主题不允许存在 |
-| C5 | 典型示例请融入MAKE SEED对应的示例，后续将移除MAKE SEED的内容，仅保留帮助中的示例 | 新增独立后端插件 `src/cndb/plugins/help/`：静态清单 `HELP_EXAMPLE_MANIFEST` 描述三套 `examples/datasets` 场景，文件读取只走白名单；**不 import `cndb.cli.seed`、不查演示工作区 / 演示账号**；seed 命令与数据本期一行不改 |
-| C6 | （需求澄清）图文说明 + CSV 下载 | 每个示例返回 `scenario / summary / tables[] / highlights[] / steps[]`；下载端点仅暴露清单登记的文件；前端提供 `<a download>`，不提供一键导入 |
-| C7 | （需求澄清）仅登录用户 | 前端路由在 `ProtectedRoute` 内；后端两个端点均依赖 `get_current_user`，未登录 401 |
+| C5 | 典型示例请融入MAKE SEED对应的示例，后续将移除MAKE SEED的内容，仅保留帮助中的示例 | 新增独立后端插件 `src/cndb/plugins/help/`：静态清单 `HELP_EXAMPLE_MANIFEST` 描述三套 `examples/datasets` 场景，文件读取只走白名单；**不 import `cndb.cli.seed`、不查演示工作区 / 演示账号**；seed 命令与数据本期一行不改（防误伤守卫由需求 0106 C1 承接） |
+| C6 | （需求澄清）图文说明 + CSV 下载 | 每个示例返回 `scenario / summary / tables[] / highlights[] / steps[]`；下载端点仅暴露清单登记的文件；前端提供 `<a download>`。完整示例工作区的一键**新建**由需求 0106 C3 承接，不导入既有工作区 |
+| C7 | （需求澄清）仅登录用户 | 前端路由在 `ProtectedRoute` 内；后端示例端点均依赖 `get_current_user`，未登录 401 |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
 
@@ -129,7 +129,7 @@ export function topicPath(sectionKey: string, topicKey: string): string   // `/h
 | `GET /api/v1/help/examples/{scenario}/files/{filename}` | 新增：下载清单登记的 CSV。`scenario` 必须在清单内、`filename` 必须匹配 `^[^/\\]+\.csv$` 且在该场景 `tables[].file` 内，否则 404；`Content-Disposition: attachment; filename*=UTF-8''<encoded>`；`media_type="text/csv; charset=utf-8"` |
 | 资产定位 | 新增 `services/assets.py`：包内 `cndb/datasets` 优先、仓库根 `examples/datasets` 兜底（与 `src/cndb/cli/seed/paths.py:12` 同口径），**不 import seed 模块**；目录缺失时清单接口仍返回，下载 404 |
 
-不做：上传、编辑、一键导入工作区、示例数据库查询。
+不做：上传、编辑、把归档导入既有工作区、示例数据库查询；完整示例工作区的一键**新建**由需求 0106 承接（新建工作区，非导入既有）。
 
 ### 4. 边界与例外
 
@@ -241,6 +241,6 @@ export function topicPath(sectionKey: string, topicKey: string): string   // `/h
 
 - 当前阶段：P0 / P1 / P2 全部落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：P0 —— `/help` 与深链路由、两级侧栏（桌面常驻 / 窄屏抽屉）、5 部分导航与内容迁移（含系统配置 4 主题、问题排查 2 主题）、名称统一、删除抽屉与旧测试、重放引导迁移、`/help` 不渲染工作区 Sider。P1 —— `plugins/help`（`HELP_EXAMPLE_MANIFEST` 三套场景 + 白名单 CSV 下载，`get_current_user` 鉴权、RFC 5987 文件名、资产包内优先 / 仓库兜底、目录缺失清单仍可读下载 404）、`frontend/src/api/help.ts`、`ExamplesSection`（TanStack Query `['help','examples']`，表格 / 亮点 / 步骤 / 鉴权 blob 下载 / 失败重试 / 场景缺失提示）。P2 —— `frontend/tests/e2e/critical/help-docs.spec.ts`（入口 → 两级导航 → 刷新 / 后退 → 示例清单 → CSV 下载 → 窄屏目录）与 `HelpDocsPage` 独立 lazy chunk 的体积基线（10.06 KiB gzip）
-- 下一步：seed 内容移除另行立需求（`cndb seed` 与帮助已解耦，移除不影响帮助）
+- 下一步：seed 内容移除另行立需求；用户演示已由需求 0106（示例工作区包 + 一键新建 + seed 防误伤守卫）承接，不再依赖 seed 运行结果
 - 已知坑：`/help` 不在 `/w` 下，`MainLayout` 无 wid 分支会先等 `wsLoading`；深链纠正依赖 `findTopic`，新增主题必须同时挂到 `HELP_SECTIONS`；示例文件在 wheel 中位于 `cndb/datasets`、源码态位于 `examples/datasets`，`assets.py` 按此两处探测且**不得 import seed**；下载需登录，前端必须走 axios blob（`<a href>` 带不上 Authorization）；e2e 需独占 `:8000`，本地开着 `cndb serve` 时先停掉；`HelpTip` 与本次重构无关，勿动
 - 最近一次全绿：`make flow`（`check-fast` + 后端 5283 passed / 8 skipped）+ `make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.40%）+ `make e2e`（71 passed / 21 skipped）+ `pnpm build` 与 `bundle-budget`（全部关键 chunk 在预算内）
