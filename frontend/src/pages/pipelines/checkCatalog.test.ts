@@ -42,6 +42,29 @@ describe('checkCatalog', () => {
     expect(buildStepSnippet({ ...SPEC, inputs: [] })).toBe('      - uses: table/null-rate')
   })
 
+  it('buildStepSnippet 把数组默认值写成 YAML 列表，不输出 CSV 字符串', () => {
+    const snippet = buildStepSnippet({
+      uses: 'document/broken-refs',
+      title: '文档引用失效检查',
+      category: 'document',
+      severity: 'warn',
+      target_types: ['document'],
+      inputs: [
+        { name: 'scopes', type: 'array', description: '', required: false, default: ['chart', 'table', 'file'] },
+      ],
+    })
+    expect(snippet).toContain('          scopes: [chart, table, file]')
+    expect(snippet).not.toContain('scopes: chart,table,file')
+  })
+
+  it('buildStepSnippet 给含特殊字符的字符串默认值加引号', () => {
+    const snippet = buildStepSnippet({
+      ...SPEC,
+      inputs: [{ name: 'note', type: 'string', description: '', required: true, default: 'a: b' }],
+    })
+    expect(snippet).toContain("          note: 'a: b'")
+  })
+
   it('默认模板可被前端直接填入抽屉', () => {
     expect(defaultWorkflowContent()).toContain('name: 数据质量巡检')
     expect(defaultWorkflowContent()).toContain('uses: table/null-rate')

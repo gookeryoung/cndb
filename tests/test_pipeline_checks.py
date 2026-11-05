@@ -308,6 +308,17 @@ class TestDocumentBrokenRefs:
         with pytest.raises(CheckError, match="不支持的范围"):
             list(broken_refs.run(ctx, {"scopes": ["unknown"]}))
 
+    def test_scopes_accepts_comma_separated_string(self, db, ws, owner):
+        make_document(db, ws, "坏表", "{{table:999999}}", user=owner)
+        ctx = CheckContext(db, ws.id)
+        # DSL 的 string_list 会把裸字符串转成单元素列表，逗号分隔仍应按多值解释
+        findings = list(broken_refs.run(ctx, {"scopes": ["table, file"]}))
+        assert {item.locator["scope"] for item in findings} == {"table"}
+        # 直接调用 run 传入裸字符串同样可用
+        assert len(list(broken_refs.run(ctx, {"scopes": "table,chart"}))) == 1
+        # 空列表回落到全量范围
+        assert len(list(broken_refs.run(ctx, {"scopes": []}))) == 1
+
 
 class TestDocumentChartBlocks:
     def test_valid_block(self, db, ws, owner):

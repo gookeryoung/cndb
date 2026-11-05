@@ -60,7 +60,7 @@ SPEC = CheckSpec(
 
 def run(ctx: CheckContext, params: dict[str, Any]) -> Iterable[FindingDraft]:
     """逐文档检查引用可解析性."""
-    scopes = set(params.get("scopes") or SCOPES)
+    scopes = _parse_scopes(params.get("scopes"))
     unknown = sorted(scopes - set(SCOPES))
     if unknown:
         raise CheckError(f"document/broken-refs 不支持的范围：{', '.join(unknown)}")
@@ -73,6 +73,18 @@ def run(ctx: CheckContext, params: dict[str, Any]) -> Iterable[FindingDraft]:
         if "file" in scopes:
             findings.extend(_check_file_refs(ctx, doc.id, content))
     return findings
+
+
+def _parse_scopes(raw: Any) -> set[str]:
+    """归一 ``with.scopes``：YAML 列表，或逗号分隔字符串（scope 名不含逗号）.
+
+    DSL 把字符串列表的裸字符串转成单元素列表，``scopes: chart, table, file``
+    会变成 ``["chart, table, file"]``；这里再按逗号拆开，避免把合法 scope
+    报成「不支持的范围」。空值回落到全量范围。
+    """
+    values = [raw] if isinstance(raw, str) else list(raw or ())
+    scopes = {part.strip() for value in values for part in str(value).split(",") if part.strip()}
+    return scopes or set(SCOPES)
 
 
 def _check_table_refs(ctx: CheckContext, doc_id: int, content: str) -> list[FindingDraft]:

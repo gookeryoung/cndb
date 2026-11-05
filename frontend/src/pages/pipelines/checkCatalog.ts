@@ -63,6 +63,20 @@ function inputPlaceholder(spec: PipelineCheckSpec, name: string, type: string): 
   return spec.target_types[0] ?? '值'
 }
 
+/** YAML 标量：含特殊字符或看起来像数字 / 布尔时加单引号，避免被解析成别的类型 */
+function yamlScalar(text: string): string {
+  const plain = /^[\w\u4e00-\u9fff][\w\u4e00-\u9fff ./()%-]*$/.test(text) && !/\s$/.test(text)
+  const typed = /^(?:true|false|null|yes|no|on|off|~|-?\d+(?:\.\d+)?)$/i.test(text)
+  return plain && !typed ? text : `'${text.replace(/'/g, "''")}'`
+}
+
+/** 默认值 → YAML 字面量：数组要输出流式列表，不能 `String(array)` 变成 CSV 字符串 */
+function yamlValue(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(item => yamlScalar(String(item))).join(', ')}]`
+  if (typeof value === 'string') return yamlScalar(value)
+  return String(value)
+}
+
 /** 生成可插入 jobs.steps 下的 YAML 片段（缩进 6 空格，与编辑器示例同口径） */
 export function buildStepSnippet(spec: PipelineCheckSpec): string {
   const lines = [`      - uses: ${spec.uses}`]
@@ -71,7 +85,7 @@ export function buildStepSnippet(spec: PipelineCheckSpec): string {
   lines.push('        with:')
   for (const input of required) {
     const value = input.default !== null && input.default !== undefined
-      ? String(input.default)
+      ? yamlValue(input.default)
       : inputPlaceholder(spec, input.name, input.type)
     lines.push(`          ${input.name}: ${value}`)
   }
