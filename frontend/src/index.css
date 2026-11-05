@@ -6826,6 +6826,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-secondary);
 }
 
+/* 运行中的历史行：整行浅品牌色底，配合 spinner 标签表达「正在进行」 */
+.cn-qc-run-item--active .cn-qc-run-item-meta {
+  color: var(--cn-text-primary);
+}
+
 /* 分页贴盒子底边：flush 盒体无内边距，footer 自行补横向留白并与末行用分隔线隔开 */
 .cn-qc-run-findings .cn-box-foot {
   margin-top: 0;

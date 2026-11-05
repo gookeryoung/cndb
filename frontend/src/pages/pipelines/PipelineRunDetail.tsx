@@ -21,7 +21,7 @@ import {
 import {
   AlertOutlined, ApartmentOutlined, ArrowLeftOutlined, CheckCircleFilled, CloseCircleFilled,
   DownOutlined, ExclamationCircleFilled, FlagOutlined, HistoryOutlined, InfoCircleFilled,
-  MinusCircleOutlined, RightOutlined, UpOutlined,
+  MinusCircleOutlined, RightOutlined, SyncOutlined, UpOutlined,
 } from '@ant-design/icons'
 import type { ReactNode } from 'react'
 import SectionBox from '@/components/SectionBox'
@@ -33,7 +33,7 @@ import type {
   PipelineCheckDomain, PipelineFinding, PipelineJobStat, PipelineSeverity, PipelineStepStat,
 } from '@/api'
 import {
-  PIPELINE_SEVERITY_META, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, isActiveRun,
+  PIPELINE_SEVERITY_META, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, formatElapsed, isActiveRun,
 } from './checkCatalog'
 
 const { Text } = Typography
@@ -162,6 +162,10 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
 
   const counts = run.stats.findings ?? {}
   const statusMeta = PIPELINE_STATUS_META[run.status] ?? { label: run.status, color: 'default' }
+  const active = isActiveRun(run.status)
+  const startedAt = Date.parse(run.created_at)
+  // 活跃运行没有耗时（终态才写 stats.duration_ms），按开始时间算已用时；轮询随渲染刷新
+  const elapsed = active && !Number.isNaN(startedAt) ? formatElapsed(Date.now() - startedAt) : ''
   const jobs = run.stats.jobs ?? []
   const totalSteps = jobs.reduce((sum, job) => sum + job.steps.length, 0)
   const allJobsExpanded = jobs.length > 0 && activeJobs.length === jobs.length
@@ -182,9 +186,16 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
           <div className="cn-page-head-text">
             <h1 className="cn-page-head-title">{run.workflow_name || `运行 #${run.id}`}</h1>
             <div className="cn-page-head-sub">
-              <Tag color={statusMeta.color} style={{ marginInlineEnd: 0 }}>{statusMeta.label}</Tag>
+              <Tag
+                color={statusMeta.color}
+                style={{ marginInlineEnd: 0 }}
+                icon={active ? <SyncOutlined spin /> : undefined}
+              >
+                {statusMeta.label}
+              </Tag>
               <span className="cn-page-head-meta">
                 #{run.id} · {PIPELINE_TRIGGER_LABEL[run.trigger] ?? run.trigger}触发 · {formatDateTime(run.created_at)}
+                {active ? ` · 已用时 ${elapsed}` : ''}
               </span>
             </div>
           </div>
@@ -196,7 +207,7 @@ export default function PipelineRunDetail({ domain = 'table' }: { domain?: Pipel
         </div>
       </header>
 
-      {isActiveRun(run.status) && (
+      {active && (
         <Alert type="info" showIcon title="运行中，页面会自动刷新" />
       )}
       {run.status === 'failed' && run.error_message && (

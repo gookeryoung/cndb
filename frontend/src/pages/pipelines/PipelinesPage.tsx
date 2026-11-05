@@ -7,7 +7,9 @@
  * 左栏：流水线规则清单（「全部」置顶且默认激活，其下为启用开关 / 运行 / 编辑 / 删除，
  * 点击规则选中 / 再点取消回「全部」）；
  * 右栏：运行历史——默认展示当前域全部规则的运行（行内带规则名），
- * 选中某条规则后只展示其对应的运行，再点一次、点「全部」或点「查看全部」回到全部（run → 点击进运行详情）。
+ * 选中某条规则后只展示其对应的运行，再点一次、点「全部」或点「查看全部」回到全部。
+ * 手动运行后停留在本页并刷新历史（不自动跳详情，点运行行才进运行详情）；
+ * 运行期间右栏每 1.5s 轮询、状态标签带转圈图标并显示「已用时」（GitHub 的 in-progress 口径）。
  * 两栏均为「带边框列表」：SectionBox 承担外框，flush 内容区里的行自带分隔线与
  * hover / 选中态，与数据分析页的分区方盒同一套语言。
  * 检查动作目录按已启用模块 + 当前域过滤；目录为空时页面给提示。
@@ -22,7 +24,7 @@ import {
 } from 'antd'
 import {
   AppstoreOutlined, DeleteOutlined, EditOutlined, HistoryOutlined, PlayCircleOutlined, PlusOutlined,
-  RightOutlined, SafetyCertificateOutlined, UnorderedListOutlined,
+  RightOutlined, SafetyCertificateOutlined, SyncOutlined, UnorderedListOutlined,
 } from '@ant-design/icons'
 import CnListMeta from '@/components/CnListMeta'
 import SectionBox from '@/components/SectionBox'
@@ -33,7 +35,7 @@ import { pipelinesApi } from '@/api'
 import type { PipelineCheckDomain, PipelineRun, PipelineValidateResult, PipelineWorkflow } from '@/api'
 import {
   CHECK_CATEGORY_LABEL, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, buildStepSnippet,
-  defaultWorkflowContent, describeTriggers, isActiveRun,
+  defaultWorkflowContent, describeTriggers, formatElapsed, isActiveRun,
 } from './checkCatalog'
 
 const { Text } = Typography
@@ -71,14 +73,34 @@ function runSummary(run: PipelineRun): string {
   ].filter(Boolean).join(' · ')
 }
 
+/** 运行状态标签：活跃运行带转圈图标（GitHub 的 in-progress 口径，列表与规则行共用） */
+function RunStatusTag({ status }: { status: PipelineRun['status'] }) {
+  const meta = PIPELINE_STATUS_META[status] ?? { label: status, color: 'default' }
+  return (
+    <Tag
+      color={meta.color}
+      style={{ marginInlineEnd: 0 }}
+      icon={isActiveRun(status) ? <SyncOutlined spin /> : undefined}
+    >
+      {meta.label}
+    </Tag>
+  )
+}
+
 /** 运行行 —— 右栏单条历史记录（全部规则模式下带规则名；活跃运行轮询提示交给详情页） */
 function RunItem({ run, showWorkflow, onOpen }: {
   run: PipelineRun
   showWorkflow: boolean
   onOpen: () => void
 }) {
-  const meta = PIPELINE_STATUS_META[run.status] ?? { label: run.status, color: 'default' }
+  const active = isActiveRun(run.status)
   const summary = runSummary(run)
+  const startedAt = Date.parse(run.created_at)
+  // 活跃运行没有后端耗时（stats.duration_ms 终态才写），按开始时间算「已用时」；
+  // 列表在运行期间每 1.5s 轮询，文案随轮询刷新
+  const elapsed = active && !Number.isNaN(startedAt)
+    ? `已用时 ${formatElapsed(Date.now() - startedAt)}`
+    : ''
   return (
     <div
       className="cn-list-item cn-qc-row cn-qc-row--selectable"
@@ -87,13 +109,13 @@ function RunItem({ run, showWorkflow, onOpen }: {
     >
       <div className="cn-list-item-main">
         {/* 单行（GitHub 运行列表口径）：状态 / #id / 规则名（省略）/ 触发·时间·摘要右对齐 */}
-        <div className="cn-qc-run-item">
-          <Tag color={meta.color} style={{ marginInlineEnd: 0 }}>{meta.label}</Tag>
+        <div className={`cn-qc-run-item${active ? ' cn-qc-run-item--active' : ''}`}>
+          <RunStatusTag status={run.status} />
           <Text strong className="cn-qc-run-item-id">#{run.id}</Text>
           {showWorkflow && <span className="cn-qc-run-item-name">{run.workflow_name}</span>}
           <span className="cn-qc-run-item-meta">
             {PIPELINE_TRIGGER_LABEL[run.trigger] ?? run.trigger}触发 · {formatDateTime(run.created_at)}
-            {summary ? ` · ${summary}` : ''}
+            {active ? ` · ${elapsed}` : summary ? ` · ${summary}` : ''}
           </span>
         </div>
       </div>
@@ -123,6 +145,12 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
     queryKey: ['pipelines', wid, domain],
     queryFn: () => pipelinesApi.list(wid, domain),
     enabled: !!wid,
+    // 有运行处于排队 / 执行中时轮询，左栏「最近运行」状态与右栏历史同步推进
+    refetchInterval: (query) => (
+      (query.state.data ?? []).some(flow => flow.last_run && isActiveRun(flow.last_run.status))
+        ? 2000
+        : false
+    ),
   })
 
   const { data: checks = [] } = useQuery({
@@ -134,7 +162,7 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
   const selected = workflows.find(w => w.id === selectedId) ?? null
 
   // 右栏运行历史：默认拉取当前域全部规则的运行，选中规则后按 workflow_id 过滤；
-  // 活跃运行（pending/running）10s 轮询推进状态
+  // 活跃运行（pending/running）1.5s 轮询推进状态（与运行详情页一致，GitHub 式实时刷新）
   const { data: runPage, isLoading: runsLoading } = useQuery({
     queryKey: ['pipelines', wid, domain, 'runs', selectedId ?? 'all'],
     queryFn: () => pipelinesApi.listWorkspaceRuns(wid, {
@@ -145,7 +173,7 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
     enabled: !!wid,
     refetchInterval: (query) => {
       const runs = query.state.data?.items ?? []
-      return runs.some(r => isActiveRun(r.status)) ? 10_000 : false
+      return runs.some(r => isActiveRun(r.status)) ? 1500 : false
     },
   })
 
@@ -217,9 +245,12 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
 
   const run = useMutation({
     mutationFn: (workflow: PipelineWorkflow) => pipelinesApi.run(wid, workflow.id),
-    onSuccess: (pipelineRun) => {
+    // 手动运行后停留在运行列表（不跳详情）：刷新规则与历史，新运行以「运行中」出现在右栏；
+    // 当前正按某条规则过滤时切到刚运行的规则，保证新运行可见
+    onSuccess: (_pipelineRun, workflow) => {
       message.success('已开始运行')
-      navigate(runDetailPath(pipelineRun.id))
+      setSelectedId(prev => (prev != null && prev !== workflow.id ? workflow.id : prev))
+      invalidate()
     },
     onError: (err) => message.warning(err instanceof Error ? err.message : '触发运行失败'),
   })
@@ -353,14 +384,7 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
                       title={(
                         <Space size={8} wrap>
                           <Text strong>{workflow.name}</Text>
-                          {workflow.last_run && (
-                            <Tag
-                              color={PIPELINE_STATUS_META[workflow.last_run.status]?.color ?? 'default'}
-                              style={{ marginInlineEnd: 0 }}
-                            >
-                              {PIPELINE_STATUS_META[workflow.last_run.status]?.label ?? workflow.last_run.status}
-                            </Tag>
-                          )}
+                          {workflow.last_run && <RunStatusTag status={workflow.last_run.status} />}
                           {!workflow.enabled && <Tag style={{ marginInlineEnd: 0 }}>已停用</Tag>}
                         </Space>
                       )}

@@ -32,6 +32,16 @@ export const PIPELINE_SEVERITY_META: Record<PipelineSeverity, { label: string; c
   info: { label: '提示', color: 'default' },
 }
 
+/** 已用毫秒 → 中文短文案（GitHub 运行列表的「已用时」口径，如 `12秒` / `1分40秒`） */
+export function formatElapsed(ms: number): string {
+  const totalSeconds = Number.isFinite(ms) && ms > 0 ? Math.floor(ms / 1000) : 0
+  if (totalSeconds < 60) return `${totalSeconds}秒`
+  const minutes = Math.floor(totalSeconds / 60)
+  if (minutes < 60) return `${minutes}分${totalSeconds % 60}秒`
+  const hours = Math.floor(minutes / 60)
+  return `${hours}小时${String(minutes % 60).padStart(2, '0')}分`
+}
+
 /** 检查类别 → 中文标签（后端 category 为自由字符串，未知类别原样展示） */
 export const CHECK_CATEGORY_LABEL: Record<string, string> = {
   table: '数据表',

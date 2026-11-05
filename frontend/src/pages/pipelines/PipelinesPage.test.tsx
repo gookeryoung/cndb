@@ -160,13 +160,38 @@ describe('PipelinesPage 列表与编辑', () => {
     await waitFor(() => expect(enabled).toBe(false))
   })
 
-  it('运行成功后跳转运行详情', async () => {
+  it('运行成功后停留在运行历史，并以「运行中」实时展示', async () => {
     defaultHandlers()
-    server.use(http.post('/api/v1/workspaces/10/pipelines/7/run', () => HttpResponse.json(RUN, { status: 202 })))
+    let runsCalls = 0
+    const running: PipelineRun = {
+      ...RUN,
+      status: 'running',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }
+    server.use(
+      http.post('/api/v1/workspaces/10/pipelines/7/run', () => HttpResponse.json(running, { status: 202 })),
+      // 首次为空历史；触发运行后接口失效重查返回运行中的记录
+      http.get('/api/v1/workspaces/10/pipeline-runs', () => {
+        runsCalls += 1
+        return HttpResponse.json(
+          runsCalls === 1 ? { total: 0, items: [] } : { total: 1, items: [running] },
+        )
+      }),
+    )
     renderPage()
 
     fireEvent.click((await screen.findAllByRole('button', { name: /运行 空值巡检/ }))[0]!)
-    expect(await screen.findByTestId('run-detail-stub')).toBeInTheDocument()
+    // 不跳运行详情，停在列表并重查运行历史
+    await waitFor(() => expect(runsCalls).toBeGreaterThan(1))
+    expect(screen.queryByTestId('run-detail-stub')).toBeNull()
+
+    const runsBox = await screen.findByTestId('qc-runs-box')
+    const item = await within(runsBox).findByTestId('run-item-71')
+    expect(within(item).getByText('运行中')).toBeInTheDocument()
+    // GitHub 的 in-progress 口径：转圈图标 + 已用时
+    expect(item.querySelector('.anticon-sync')).not.toBeNull()
+    expect(within(item).getByText(/已用时/)).toBeInTheDocument()
   })
 
   it('删除需二次确认并调用删除接口', async () => {
@@ -408,15 +433,23 @@ describe('PipelinesPage 文档域', () => {
     expect((editor as HTMLTextAreaElement).value).not.toContain('table/null-rate')
   })
 
-  it('运行与运行历史跳转留在文档域路由', async () => {
+  it('手动运行停留在文档运行列表，点运行记录才进详情且留在文档域', async () => {
     docHandlers()
+    const running: PipelineRun = { ...RUN, status: 'running', workflow_name: '文档体检' }
     server.use(
-      http.post('/api/v1/workspaces/10/pipelines/9/run', () => HttpResponse.json(RUN, { status: 202 })),
+      http.post('/api/v1/workspaces/10/pipelines/9/run', () => HttpResponse.json(running, { status: 202 })),
+      http.get('/api/v1/workspaces/10/pipeline-runs', () =>
+        HttpResponse.json({ total: 1, items: [running] })),
     )
     renderPage('document')
 
     fireEvent.click(await screen.findByRole('button', { name: /运行 文档体检/ }))
-    // 运行详情留在文档上下文：不跳到工作区级 /pipelines/:rid
+    // 运行后仍在运行列表：不跳详情
+    expect(await screen.findByTestId('run-item-71')).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByTestId('run-detail-stub')).toBeNull())
+
+    // 点运行记录才进详情，且详情路由留在文档上下文
+    fireEvent.click(screen.getByTestId('run-item-71'))
     expect(await screen.findByTestId('run-detail-stub')).toHaveTextContent('/w/10/documents/pipelines/71')
   })
 })

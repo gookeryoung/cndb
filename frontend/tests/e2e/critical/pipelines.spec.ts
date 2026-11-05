@@ -120,12 +120,23 @@ test.describe("质量检查", () => {
       await page.locator(".ant-drawer").getByRole("button", { name: /保\s*存/ }).click()
       await expect(page.getByText(workflowName).first()).toBeVisible({ timeout: 15_000 })
 
-      // 3) 手动运行 → 进入运行详情，等待终态
+      // 3) 手动运行 → 停留在运行列表并刷新历史，新运行到达终态后点行才进详情
       const item = page.locator('[data-testid^="pipeline-item-"]').filter({ hasText: workflowName })
       await expect(item).toBeVisible()
       await item.getByRole("button", { name: /运行/ }).click()
+      // 不自动跳详情（URL 仍是列表页）
+      await expect(page).toHaveURL(new RegExp(`/w/${WID}/pipelines$`))
+      // 新建成功会自动选中该规则（右栏只显示它的运行，不再带规则名），因此按 testid 取第一条
+      const runRow = page.locator('[data-testid^="run-item-"]').first()
+      await expect(runRow).toBeVisible({ timeout: 30_000 })
+      // 运行中显示转圈图标 + 已用时；终态后为「有告警」
+      await expect(runRow.getByText("有告警")).toBeVisible({ timeout: 30_000 })
+      await runRow.click()
       await page.waitForURL(/\/w\/\d+\/pipelines\/\d+/)
-      await expect(page.getByText("有告警")).toBeVisible({ timeout: 30_000 })
+      // 详情页内断言，避免与列表页残留的规则行 / 历史行标签撞车
+      const detail = page.getByTestId("pipeline-run-detail")
+      await expect(detail).toBeVisible({ timeout: 30_000 })
+      await expect(detail.getByText("有告警")).toBeVisible({ timeout: 30_000 })
 
       // 4) finding 可见，按严重度过滤（warn 命中、error 为空）
       await expect(page.getByText(/字段「城市」空值率/)).toBeVisible({ timeout: 15_000 })

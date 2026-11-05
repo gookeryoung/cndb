@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  PIPELINE_STATUS_META, buildStepSnippet, defaultWorkflowContent, describeTriggers, isActiveRun,
+  PIPELINE_STATUS_META, buildStepSnippet, defaultWorkflowContent, describeTriggers, formatElapsed, isActiveRun,
 } from './checkCatalog'
 import type { PipelineCheckSpec } from '@/api'
 
@@ -68,6 +68,14 @@ describe('checkCatalog', () => {
   it('默认模板可被前端直接填入抽屉', () => {
     expect(defaultWorkflowContent()).toContain('name: 数据质量巡检')
     expect(defaultWorkflowContent()).toContain('uses: table/null-rate')
+  })
+
+  it('formatElapsed 按秒 / 分 / 小时给中文短文案', () => {
+    expect(formatElapsed(0)).toBe('0秒')
+    expect(formatElapsed(12_500)).toBe('12秒')
+    expect(formatElapsed(100_000)).toBe('1分40秒')
+    expect(formatElapsed(3_720_000)).toBe('1小时02分')
+    expect(formatElapsed(Number.NaN)).toBe('0秒')
   })
 
   it('isActiveRun 仅在排队 / 运行中为真', () => {
