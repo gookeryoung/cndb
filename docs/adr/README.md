@@ -135,8 +135,9 @@ DSL 内核 / 结构导航 / 系统级装配 / 分文件与约束。
 | [0029](0029-help-docs-refactor.md) | 帮助功能重构为独立「帮助文档」路由（两级导航 + 典型示例下载） | Implemented | P0-P2 已落地 | `frontend/src/pages/help/`、`frontend/src/App.tsx`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/pages/help/*.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0030](0030-help-figures.md) | 帮助文档图示例（服务端生成 SVG + 后台定期重建） | Implemented | P0-P1 已落地 | `src/cndb/plugins/help/services/figures/`、`src/cndb/plugins/help/routers/figures.py`、`frontend/src/pages/help/HelpFigure.tsx` | `tests/test_help_figures.py`、`frontend/src/pages/help/HelpFigure.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0036](0036-help-docs-hierarchy.md) | 帮助文档四级层级（部分 / 主题 / 小节 / 条目）与内容补全 | Implemented | P0-P2 已落地 | `frontend/src/pages/help/helpNav.tsx`、`frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/content/`、`frontend/src/index.css` | `frontend/src/pages/help/helpNav.test.tsx`、`frontend/src/pages/help/HelpDocsPage.test.tsx`、`frontend/src/pages/help/content/ExamplesSection.test.tsx`、`frontend/tests/e2e/critical/help-docs.spec.ts` | [未发布](../../CHANGELOG.md) |
+| [0105](0105-beginner-hints-and-help-hierarchy.md) | 面向初级用户的界面提示易读性与帮助文档层级下沉（文案口径 + 内容补全 + 侧栏就地 L3 目录） | Proposed | 方案制定完成待评审 | `frontend/src/pages/help/`、`frontend/src/pages/datasource/DatasourcePage.tsx`、`frontend/src/components/GlobalSearch.tsx` | 待实现（见 ADR 测试清单） | 待实现 |
 
-承接关系：原 0015（搜索缓存与 `scope=all` 全表覆盖）已并入 0012 的「续作」小节；0036 在 0029 的路由与内容底座上加四级层级规则，0030 的图示引擎由 0036 的层级承载。
+承接关系：原 0015（搜索缓存与 `scope=all` 全表覆盖）已并入 0012 的「续作」小节；0036 在 0029 的路由与内容底座上加四级层级规则，0030 的图示引擎由 0036 的层级承载；0105 在 0036 的四级模型上补新功能内容并把侧栏导航下沉到选中主题的 L3（层级定义与懒加载口径不变）。
 
 ## 质量检查
 
