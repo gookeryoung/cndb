@@ -1,27 +1,37 @@
 /** 修改申请列表页 — scope 筛选（待审核/已合并/全部/我的）+ 视图切换（同行合并/平铺）+ 批量审批 + 写模式权限标注.
  *
  * 数据源 changeRequestsApi：
- * - 同行合并视图（scope=open 时默认）：listGrouped（group_by=row），按目标行聚合行组，组间/组内按时间倒序；
- *   reviewer 可勾选组内多份申请后「批量审批」——无冲突直接批量 merge，有冲突跳转冲突处理页。
+ * - 工作区级（无 :tid，数据表模块「修改申请」页签）：左右分栏（需求 0107）——左栏为涉及的
+ *   工作表清单（按 table_id 分组 + 申请计数），右栏为选中表的修改项列表；每条修改项支持展开，
+ *   懒加载详情（items 的 base_values/values/current_values 三态 + 当前行上下文），只读展示，
+ *   审批入口仍跳详情页。
+ * - 单表视图（有 :tid）：同行合并视图（scope=open 时默认）listGrouped（group_by=row），按目标行
+ *   聚合行组，组间/组内按时间倒序；reviewer 可勾选组内多份申请后「批量审批」——无冲突直接批量
+ *   merge，有冲突跳转冲突处理页。
  * - 平铺视图：list（scope 查询参数），维持旧契约（历史留痕用，merged/closed 视图恒为平铺）。
  * 响应附带 write_mode（direct/change_request/denied，与写路径双轨分派同源）。
- * queryKey 约定：平铺 ['change-requests', wid, tid, scope]；分组 ['change-requests', wid, tid, scope, 'row']。
+ * queryKey 约定：平铺 ['change-requests', wid, tid, scope]；分组 ['change-requests', wid, tid, scope, 'row']；
+ * 展开详情复用详情页 queryKey ['change-request', wid, tid, requestId]。
  */
 
 import { useMemo, useState } from 'react'
 import {
   Alert, App as AntApp, Badge, Button, Card, Checkbox, Empty, Listy, Segmented, Space, Spin, Tag, Typography,
 } from 'antd'
-import { CheckOutlined, PlusOutlined } from '@ant-design/icons'
+import { CheckOutlined, DownOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons'
 import CnListMeta from '@/components/CnListMeta'
+import { FieldDiffTable } from '@/components/DiffView'
+import { formatValue } from '@/components/DiffView/FieldDiffTable'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi, workspaceApi } from '@/api'
-import type { ChangeRequest, ChangeRowGroup, TableWriteMode, WorkspaceRole } from '@/api'
+import type {
+  ChangeItemDetail, ChangeRequest, ChangeRowGroup, ID, TableWriteMode, WorkspaceRole,
+} from '@/api'
 import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
 
-const { Text } = Typography
+const { Text, Paragraph } = Typography
 
 type Scope = 'open' | 'merged' | 'all' | 'mine'
 type View = 'grouped' | 'flat'
@@ -42,6 +52,13 @@ const STATUS_META: Record<ChangeRequest['status'], { label: string; color: strin
   open: { label: '待审核', color: 'green' },
   merged: { label: '已合并', color: 'purple' },
   closed: { label: '已关闭', color: 'default' },
+}
+
+/** 变更项操作类型 → Tag（与详情页口径一致） */
+const OP_META: Record<ChangeItemDetail['op'], { label: string; color: string }> = {
+  create: { label: '新增', color: 'green' },
+  update: { label: '修改', color: 'blue' },
+  delete: { label: '删除', color: 'red' },
 }
 
 /** 写模式 → 列表头部权限标注（type 直接复用 AntD Alert 语义色） */
@@ -131,6 +148,200 @@ function RequestLine({
           <Checkbox checked={!!selected} onChange={(e) => onToggleSelect(e.target.checked)} />
         </div>
       ) : undefined}
+    </div>
+  )
+}
+
+// ── 工作区级左右分栏（需求 0107） ──────────────────────
+
+/** 左栏工作表分组：table_id → 表名 + 该表申请清单 */
+interface TableGroup {
+  tableId: ID
+  name: string
+  items: ChangeRequest[]
+}
+
+/** 当前行上下文：列出整行所有字段值（修改涉及的字段加粗），便于理解行全貌 */
+function RowContextValues({ item }: { item: ChangeItemDetail }) {
+  const entries = Object.entries(item.current_values ?? {})
+  if (entries.length === 0) return null
+  const involved = new Set([...Object.keys(item.base_values), ...Object.keys(item.values)])
+  return (
+    <div className="cn-cr-rowcontext">
+      <Text type="secondary" style={{ fontSize: 12 }}>当前行上下文（{entries.length} 个字段）：</Text>
+      <div className="cn-cr-rowcontext-grid">
+        {entries.map(([k, v]) => (
+          <span key={k} className={involved.has(k) ? 'cn-cr-rowcontext-field cn-cr-rowcontext-involved' : 'cn-cr-rowcontext-field'}>
+            {k}: {formatValue(v)}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** 展开后的只读上下文面板：懒加载详情（items 三态 diff + 行上下文），无审批入口 */
+function RequestContext({ wid, tableId, requestId }: { wid: string; tableId: ID; requestId: ID }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['change-request', wid, tableId, String(requestId)],
+    queryFn: () => changeRequestsApi.get(wid, tableId, requestId),
+  })
+  if (isLoading) return <div style={{ padding: '8px 0' }}><Spin size="small" /></div>
+  if (!data) return <Text type="secondary">上下文加载失败，可点击标题进入详情查看</Text>
+  return (
+    <div className="cn-cr-context">
+      {data.description && (
+        <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap', marginBottom: 8 }}>{data.description}</Paragraph>
+      )}
+      {data.items.length === 0 && <Text type="secondary">（无变更项）</Text>}
+      {data.items.map((item: ChangeItemDetail) => (
+        <div key={item.id} className="cn-cr-context-item">
+          <Space size={8} wrap style={{ marginBottom: 4 }}>
+            <Tag color={OP_META[item.op].color} style={{ marginInlineEnd: 0 }}>{OP_META[item.op].label}</Tag>
+            {item.row_id != null && <Text type="secondary">行 #{item.row_id}</Text>}
+            {item.row_missing && <Tag color="default" style={{ marginInlineEnd: 0 }}>行已删除</Tag>}
+            {item.field_conflicts.length > 0 && (
+              <Text type="danger" style={{ fontSize: 12 }}>{item.field_conflicts.length} 个字段基准已漂移</Text>
+            )}
+          </Space>
+          <FieldDiffTable item={item} />
+          {item.row_id != null && !item.row_missing && <RowContextValues item={item} />}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/** 工作区级左右分栏视图：左栏工作表清单（计数 + 选中态），右栏选中表的修改项（支持展开看行上下文） */
+function WorkspaceSplitView({ wid, items, nameById, showStatus, goDetail }: {
+  wid: string
+  items: ChangeRequest[]
+  nameById: Map<string, string>
+  showStatus: boolean
+  goDetail: (item: ChangeRequest) => void
+}) {
+  const [selected, setSelected] = useState<ID | null>(null)
+  /** 展开的申请（同页可多开） */
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+
+  const groups = useMemo<TableGroup[]>(() => {
+    const map = new Map<string, TableGroup>()
+    for (const it of items) {
+      const key = String(it.table_id)
+      let g = map.get(key)
+      if (!g) {
+        g = { tableId: it.table_id, name: it.table_name || `表 #${it.table_id}`, items: [] }
+        map.set(key, g)
+      }
+      g.items.push(it)
+    }
+    return Array.from(map.values())
+  }, [items])
+
+  // 默认选中：申请数最多的表；并列取最新一条申请时间更近者（列表本身已按时间倒序，取组内首条比较即可）
+  const defaultTableId = useMemo<ID | null>(() => {
+    let best: TableGroup | null = null
+    for (const g of groups) {
+      if (
+        !best
+        || g.items.length > best.items.length
+        || (g.items.length === best.items.length
+          && String(g.items[0]?.created_at ?? '') > String(best.items[0]?.created_at ?? ''))
+      ) best = g
+    }
+    return best?.tableId ?? null
+  }, [groups])
+
+  const activeTableId = groups.some(g => g.tableId === selected) ? selected : defaultTableId
+  const activeGroup = groups.find(g => g.tableId === activeTableId) ?? null
+
+  const toggleExpand = (id: ID) => {
+    setExpanded(prev => {
+      const next = new Set(prev)
+      const key = String(id)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  if (groups.length === 0) return <Empty description="暂无修改申请" style={{ padding: 48 }} />
+
+  return (
+    <div className="cn-cr-split">
+      {/* 左栏：涉及的工作表清单（窄屏收为横向胶囊标签） */}
+      <div className="cn-cr-split-side" role="listbox" aria-label="涉及的工作表">
+        {groups.map(g => (
+          <button
+            key={String(g.tableId)}
+            type="button"
+            role="option"
+            aria-selected={g.tableId === activeTableId}
+            className={g.tableId === activeTableId ? 'cn-cr-side-item cn-cr-side-active' : 'cn-cr-side-item'}
+            onClick={() => setSelected(g.tableId)}
+          >
+            <span className="cn-cr-side-name">{g.name}</span>
+            <Badge count={g.items.length} color="blue" title="申请数" />
+          </button>
+        ))}
+      </div>
+      {/* 右栏：选中表的修改项列表，每条支持展开看行上下文 */}
+      <div className="cn-cr-split-main">
+        {activeGroup && (
+          <Listy
+            className="cn-listy-plain"
+            items={activeGroup.items}
+            rowKey={item => item.id}
+            itemRender={(item: ChangeRequest) => {
+              const key = String(item.id)
+              const isOpen = expanded.has(key)
+              return (
+                <div className="cn-cr-row">
+                  <div className="cn-list-item" style={{ paddingInline: 8 }}>
+                    <Button
+                      type="text"
+                      size="small"
+                      className="cn-cr-expand-btn"
+                      icon={isOpen ? <DownOutlined /> : <RightOutlined />}
+                      aria-expanded={isOpen}
+                      aria-label={isOpen ? '收起详情' : '展开详情'}
+                      onClick={() => toggleExpand(item.id)}
+                    />
+                    <div className="cn-list-item-main" style={{ cursor: 'pointer' }} onClick={() => goDetail(item)}>
+                      <CnListMeta
+                        title={(
+                          <Space size={8} wrap>
+                            {showStatus && (
+                              <Tag color={STATUS_META[item.status].color} style={{ marginInlineEnd: 0 }}>
+                                {STATUS_META[item.status].label}
+                              </Tag>
+                            )}
+                            <Text strong>{item.title}</Text>
+                            {item.stale && <Tag color="warning" style={{ marginInlineEnd: 0 }}>基准已过期</Tag>}
+                            {(item.conflicts_count ?? 0) > 0 && (
+                              <Tag color="orange" style={{ marginInlineEnd: 0 }}>与 {item.conflicts_count} 行待审批申请冲突</Tag>
+                            )}
+                            {item.item_count != null && item.item_count > 1 && (
+                              <Tag style={{ marginInlineEnd: 0 }}>{item.item_count} 个变更项</Tag>
+                            )}
+                          </Space>
+                        )}
+                        description={(
+                          <Text type="secondary">
+                            #{item.id} · {memberDisplayName(nameById, item.submitted_by_id, '未知')} 提交于 {formatDateTime(item.created_at)}
+                            {item.fields && item.fields.length > 0 ? ` · 涉及字段：${item.fields.join('、')}` : ''}
+                          </Text>
+                        )}
+                      />
+                    </div>
+                  </div>
+                  {isOpen && <RequestContext wid={wid} tableId={item.table_id} requestId={item.id} />}
+                </div>
+              )
+            }}
+          />
+        )}
+      </div>
     </div>
   )
 }
@@ -254,7 +465,7 @@ export default function ChangeRequestsPage() {
   }, [selected])
 
   return (
-    <div style={{ padding: '16px 24px', maxWidth: 860, margin: '0 auto' }}>
+    <div style={{ padding: '16px 24px', maxWidth: workspaceMode ? 1100 : 860, margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, gap: 12, flexWrap: 'wrap' }}>
         <Space size={12} wrap>
           <Segmented options={SCOPE_OPTIONS} value={scope} onChange={(v) => { setScope(v as Scope); setSelected({}) }} />
@@ -284,6 +495,14 @@ export default function ChangeRequestsPage() {
       <Spin spinning={isLoading}>
         {isEmpty ? (
           <Empty description="暂无修改申请" style={{ padding: 48 }} />
+        ) : workspaceMode ? (
+          <WorkspaceSplitView
+            wid={wid}
+            items={flatItems}
+            nameById={nameById}
+            showStatus={scope !== 'open'}
+            goDetail={goDetail}
+          />
         ) : groupedMode ? (
           <Space orientation="vertical" size={12} style={{ display: 'flex' }}>
             {groups.map((group: ChangeRowGroup) => {

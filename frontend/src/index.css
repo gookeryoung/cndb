@@ -8035,3 +8035,129 @@ body.cn-doc-focus-view .cn-doc-stats {
 .ant-divider {
   border-color: var(--cn-border);
 }
+
+/* ─────────────── 修改申请工作区级左右分栏（需求 0107） ───────────────
+ * 左栏为涉及的工作表清单（计数徽标 + 选中态），右栏为选中表的修改项列表；
+ * 修改项展开后懒加载详情展示字段级 diff 与当前行上下文。窄屏（<768px）左栏
+ * 收为顶部横向滚动的胶囊标签，右栏占满宽度。 */
+.cn-cr-split {
+  display: flex;
+  align-items: stretch;
+  gap: var(--cn-space-lg);
+}
+
+.cn-cr-split-side {
+  flex: 0 0 216px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-inline-end: 1px solid var(--cn-border);
+  padding-inline-end: var(--cn-space-md);
+}
+
+.cn-cr-side-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-sm);
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: transparent;
+  border-radius: var(--cn-radius-base);
+  cursor: pointer;
+  text-align: start;
+  color: inherit;
+}
+
+.cn-cr-side-item:hover {
+  background: rgb(var(--cn-shadow-color) / 0.08);
+}
+
+.cn-cr-side-item.cn-cr-side-active {
+  background: rgb(var(--cn-shadow-color) / 0.14);
+  font-weight: 600;
+}
+
+.cn-cr-side-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-cr-split-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 展开行：头部 + 只读上下文面板（字段级 diff + 当前行全值） */
+.cn-cr-context {
+  margin: 0 8px var(--cn-space-sm) 30px;
+  padding-top: var(--cn-space-sm);
+  border-top: 1px dashed var(--cn-border);
+}
+
+.cn-cr-context-item {
+  padding-block: var(--cn-space-xs);
+}
+
+.cn-cr-rowcontext {
+  margin-top: var(--cn-space-xs);
+}
+
+.cn-cr-rowcontext-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+  margin-top: 2px;
+}
+
+.cn-cr-rowcontext-field {
+  font-size: 12px;
+  color: var(--cn-text-secondary);
+  word-break: break-all;
+}
+
+.cn-cr-rowcontext-field.cn-cr-rowcontext-involved {
+  font-weight: 600;
+  color: inherit;
+}
+
+@media (max-width: 767.98px) {
+  .cn-cr-split {
+    flex-direction: column;
+    gap: var(--cn-space-sm);
+  }
+
+  .cn-cr-split-side {
+    flex: none;
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    overflow-x: auto;
+    border-inline-end: none;
+    border-block-end: 1px solid var(--cn-border);
+    padding: 0 0 var(--cn-space-sm);
+  }
+
+  .cn-cr-side-item {
+    flex: 0 0 auto;
+    width: auto;
+    border: 1px solid var(--cn-border);
+    border-radius: var(--cn-radius-pill);
+    padding: 2px 12px;
+  }
+
+  .cn-cr-side-item.cn-cr-side-active {
+    border-color: var(--cn-brand-color);
+    color: var(--cn-brand-color);
+    background: transparent;
+  }
+
+  .cn-cr-context {
+    margin-inline: 0;
+  }
+}

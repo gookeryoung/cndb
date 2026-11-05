@@ -283,21 +283,51 @@ describe('ChangeRequestsPage 同行合并视图', () => {
   })
 })
 
-describe('ChangeRequestsPage 工作区级列表', () => {
-  it('跨表聚合展示数据表名，并跳转到对应表的详情', async () => {
-    let scope = ''
-    server.use(http.get('/api/v1/workspaces/10/change-requests', ({ request }) => {
-      scope = new URL(request.url).searchParams.get('scope') ?? ''
+describe('ChangeRequestsPage 工作区级左右分栏（需求 0107）', () => {
+  /** 工作区级列表响应：两张表、三条申请（表 20 两条 / 表 21 一条） */
+  function workspaceHandler() {
+    return http.get('/api/v1/workspaces/10/change-requests', ({ request }) => {
+      const scope = new URL(request.url).searchParams.get('scope') ?? ''
       return HttpResponse.json({
-        items: CRS.map(item => ({ ...item, table_name: item.table_id === 20 ? '客户表' : '订单表' })),
-        total: CRS.length,
+        items: [
+          ...CRS.map(item => ({ ...item, table_name: '客户表' })),
+          {
+            ...CRS[0], id: 52, table_id: 21, title: '补录交付日期', stale: false, conflicts_count: 0,
+            created_at: '2026-10-03T09:00:00', updated_at: '2026-10-03T09:00:00', table_name: '订单表',
+          },
+        ],
+        total: 3,
+        scope,
       })
+    })
+  }
+
+  /** 详情端点：返回 items（三态 diff + 当前行值）供展开上下文渲染 */
+  function detailHandler(payload?: { rowMissing?: boolean }) {
+    return http.get('/api/v1/workspaces/10/tables/20/change-requests/51', () => HttpResponse.json({
+      ...CRS[0],
+      items: [
+        {
+          id: 1, op: 'update', row_id: 12,
+          base_values: { 分级: 'B' }, values: { 分级: 'A' },
+          current_values: payload?.rowMissing ? {} : { 分级: 'B', 姓名: '甲', 电话: '13800000000' },
+          field_conflicts: [], row_missing: payload?.rowMissing ?? false,
+        },
+      ],
+      actions: [],
     }))
+  }
+
+  it('左栏按工作表分组并显示计数，默认选中申请数最多的表；点击标题跳详情', async () => {
+    server.use(workspaceHandler())
     renderPage('/w/10/tables/change-requests')
 
+    // 左栏两张表 + 计数徽标；默认选中申请数更多的客户表，右栏只展示该表申请
+    expect(await screen.findByRole('option', { name: /客户表/ })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /订单表/ })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('option', { name: /客户表/ })).toHaveAttribute('aria-selected', 'true')
     expect(await screen.findByText('调整客户分级')).toBeInTheDocument()
-    expect(scope).toBe('open')
-    expect(screen.getAllByText('表：客户表').length).toBeGreaterThan(0)
+    expect(screen.queryByText('补录交付日期')).toBeNull()
     // 跨表列表没有同行合并视图与单一写模式标注
     expect(screen.queryByText('同行合并')).toBeNull()
     expect(screen.queryByText('申请模式')).toBeNull()
@@ -306,5 +336,35 @@ describe('ChangeRequestsPage 工作区级列表', () => {
     await waitFor(() => {
       expect(screen.getByTestId('cr-detail-stub')).toBeInTheDocument()
     })
+  })
+
+  it('切换左栏工作表后右栏随之刷新', async () => {
+    server.use(workspaceHandler())
+    renderPage('/w/10/tables/change-requests')
+
+    fireEvent.click(await screen.findByRole('option', { name: /订单表/ }))
+    expect(await screen.findByText('补录交付日期')).toBeInTheDocument()
+    expect(screen.queryByText('调整客户分级')).toBeNull()
+  })
+
+  it('展开修改项懒加载详情：字段级 diff + 当前行上下文', async () => {
+    server.use(workspaceHandler(), detailHandler())
+    renderPage('/w/10/tables/change-requests')
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '展开详情' }))[0])
+    // 三态 diff（修改前 / 修改后）与当前行上下文（含未涉及字段 电话）
+    expect(await screen.findByText('修改前')).toBeInTheDocument()
+    expect(screen.getByText(/当前行上下文/)).toBeInTheDocument()
+    expect(screen.getByText(/电话: 13800000000/)).toBeInTheDocument()
+  })
+
+  it('展开只读上下文不提供审批入口；行已删除时提示且不渲染行上下文', async () => {
+    server.use(workspaceHandler(), detailHandler({ rowMissing: true }))
+    renderPage('/w/10/tables/change-requests')
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '展开详情' }))[0])
+    expect(await screen.findByText('行已删除')).toBeInTheDocument()
+    expect(screen.queryByText(/当前行上下文/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /执行合并/ })).toBeNull()
   })
 })
