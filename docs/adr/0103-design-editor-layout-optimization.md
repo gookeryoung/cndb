@@ -208,4 +208,4 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 - 已完成：splitter + 三档预设 + 持久化；视口悬浮工具条（七向定向 / fit / 网格开关）+ 状态条；工具栏单行 + 「更多」收纳；参数｜约束常驻可折叠面板；侧栏双向定位闭环（选中态 + `?line=` 反选 + 祖先展开 + `scrollTo`）；管理页目录分组 + 类型筛选；IR v5 `node_index`（含布尔块共享、use 模板平移）与树→视口高亮渐隐
 - 下一步：无（需求关闭）。若要再演进：① 大纲节点结束行（D9 启发式换精确区间，需解析器支持块结束标记）；② 高亮补 BREP 级面选（当前为 CSG 网格粒度，§4#1）
 - 已知坑：① `node_index` 语义是「首个所属顶层 `nodes` 下标」——布尔块内全部零件共享块下标，高亮粒度即整块；② use 实例的子树行号属于被引用文件，反向定位必须按 `file_id` 过滤（`resolveOutlinePath` 已实现）；③ 静态单 mesh 合并（ADR 0086 C9）后 `nodeGroups` 被清空，高亮因此改为「按需求值单节点 + 叠加 emissive 副本」，不要退回遍历 `nodeGroups` 的做法；④ 同一节点重复点击不改变 `?line=`，高亮不会重触发（§4#5 的「再次点击可重触发」需先换行号）；⑤ shell 若被注入 `LD_LIBRARY_PATH` 会让 sqlite3 缺 `deserialize`，后端测试卡死在 import 阶段（先 `unset` 再跑）
-- 最近一次全绿：`make flow`（含前端 3008 例 vitest、后端 244 例 design 测试）
+- 最近一次全绿：`make flow`（后端 6758 例）+ 前端全量 vitest（3008 例）+ 设计类 e2e 7 例（`design-editor-layout` / `design-tree-viewport-linkage` / `design-structure-tree` / `design-3d-preview` / `design-sidebar-assembly`）
