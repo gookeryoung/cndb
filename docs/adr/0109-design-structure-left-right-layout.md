@@ -171,9 +171,9 @@ Related: `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/desig
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designDefaults.ts`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | — |
-| P1 | 已落地 | `frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx` | `frontend/src/pages/design/DesignStructureNav.test.tsx`、`frontend/src/pages/design/DesignEditorPage.test.tsx` | — |
-| P2 | 已落地 | `frontend/src/index.css`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`docs/adr/0084-design-sidebar-assembly-and-system-level.md`、`docs/adr/0103-design-editor-layout-optimization.md`、`CHANGELOG.md` | `frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`frontend/tests/e2e/critical/design-3d-preview.spec.ts`、`frontend/tests/e2e/critical/navigation.spec.ts`、`frontend/tests/e2e/perf/design-assembly-open.spec.ts` | — |
+| P0 | 已落地 | `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designDefaults.ts`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | 3bbfaf1b |
+| P1 | 已落地 | `frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx` | `frontend/src/pages/design/DesignStructureNav.test.tsx`、`frontend/src/pages/design/DesignEditorPage.test.tsx` | 3bbfaf1b |
+| P2 | 已落地 | `frontend/src/index.css`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`docs/adr/0084-design-sidebar-assembly-and-system-level.md`、`docs/adr/0103-design-editor-layout-optimization.md`、`CHANGELOG.md` | `frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`frontend/tests/e2e/critical/design-3d-preview.spec.ts`、`frontend/tests/e2e/critical/navigation.spec.ts`、`frontend/tests/e2e/perf/design-assembly-open.spec.ts` | 3bbfaf1b |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
