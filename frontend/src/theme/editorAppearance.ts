@@ -98,6 +98,20 @@ function buildTheme(palette: EditorPalette, font: EditorFontSettings): Extension
         backgroundColor: palette.accent,
         outline: `1px solid ${palette.border}`,
       },
+      // 空白可视化（流水线编辑器）：空格点与 Tab 箭头用当前主题弱化色，默认点略小避免抢视线
+      '.cm-highlightSpace': {
+        backgroundImage: `radial-gradient(circle at 50% 50%, ${palette.muted} 1px, transparent 1px)`,
+        backgroundSize: '.3em .3em',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        opacity: '0.35',
+      },
+      // Tab 箭头默认占满行高，缩小到 70% 并贴右，避免过大
+      '.cm-highlightTab': {
+        backgroundSize: 'auto 70%',
+        backgroundPosition: 'right 90% center',
+        opacity: '0.45',
+      },
       '.cm-tooltip': {
         backgroundColor: palette.bg,
         border: `1px solid ${palette.border}`,

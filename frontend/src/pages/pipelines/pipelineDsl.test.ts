@@ -83,4 +83,41 @@ describe('pipelineDsl 自动缩进（C3）', () => {
     expect(pressEnter(view)).toBe('    steps:\n      ')
     view.destroy()
   })
+
+  it('列表项内的映射块按内容列进一级（`- with:` → 10 空格）', () => {
+    const view = makeView('      - with:')
+    expect(pressEnter(view)).toBe('      - with:\n          ')
+    view.destroy()
+  })
+
+  it('裸列表短横回车进入列表项内容层', () => {
+    const view = makeView('      -')
+    expect(pressEnter(view)).toBe('      -\n        ')
+    view.destroy()
+  })
+
+  it('空行回车回退一级缩进', () => {
+    const view = makeView('jobs:\n      ')
+    expect(pressEnter(view)).toBe('jobs:\n      \n    ')
+    view.destroy()
+  })
+
+  it('行尾注释不影响冒号判定的进级', () => {
+    const view = makeView('    steps: # 检查步骤列表')
+    expect(pressEnter(view)).toBe('    steps: # 检查步骤列表\n      ')
+    view.destroy()
+  })
+
+  it('纯注释行回车继承当前缩进，不按空行回退', () => {
+    const view = makeView('    # 说明')
+    expect(pressEnter(view)).toBe('    # 说明\n    ')
+    view.destroy()
+  })
+
+  it('非空选区回车只替换选区，不猜缩进', () => {
+    const view = makeView('jobs:\n  a: b', 8)
+    view.dispatch({ selection: { anchor: 5, head: 8 } })
+    expect(pressEnter(view)).toBe('jobs:\na: b')
+    view.destroy()
+  })
 })

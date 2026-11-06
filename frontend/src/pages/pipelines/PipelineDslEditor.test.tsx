@@ -6,6 +6,7 @@
 import { createRef } from 'react'
 import { describe, expect, it } from 'vitest'
 import { act, render } from '@testing-library/react'
+import { indentMore } from '@codemirror/commands'
 import { EditorView } from '@codemirror/view'
 import PipelineDslEditor, { type PipelineDslEditorHandle } from './PipelineDslEditor'
 
@@ -29,6 +30,17 @@ describe('PipelineDslEditor', () => {
     const { container, view } = mount('name: 巡检\njobs:')
     expect(container.querySelector('.cm-lineNumbers')).not.toBeNull()
     expect(view.state.doc.toString()).toBe('name: 巡检\njobs:')
+  })
+
+  it('空白可视化常显，缩进固定 2 空格且 Tab 只写空格', () => {
+    const { container, view } = mount('name: 巡检')
+    expect(container.querySelectorAll('.cm-highlightSpace').length).toBeGreaterThan(0)
+    expect(view.state.tabSize).toBe(2)
+    act(() => {
+      view.dispatch({ selection: { anchor: 0 } })
+      indentMore(view)
+    })
+    expect(view.state.doc.toString()).toBe('  name: 巡检')
   })
 
   it('外部 value 变化同步进编辑器', () => {

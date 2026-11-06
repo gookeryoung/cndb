@@ -1,14 +1,15 @@
 /** 流水线 DSL 编辑器 —— CodeMirror 6 封装（需求卡 0111 P0-P2）.
  *
  * 口径对齐设计模块 `design/DslEditor.tsx`：受控 value 同步 / updateListener /
- * 个人设置里的编辑器配色与字体 / StreamLanguage 高亮；本组件额外挂 `lineNumbers`、2 空格缩进、
- * 列表行回车延续与自动完成（关键字 / 规则引用 / 本地引用 / 片段）。
+ * 个人设置里的编辑器配色与字体 / StreamLanguage 高亮；本组件额外挂 `lineNumbers`、
+ * 空白可视化、2 空格智能缩进与自动完成（关键字 / 规则引用 / 本地引用 / 片段）。
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import { Compartment, EditorState } from '@codemirror/state'
 import {
   EditorView,
+  highlightWhitespace,
   keymap,
   lineNumbers,
   placeholder as cmPlaceholder,
@@ -18,7 +19,7 @@ import { indentUnit } from '@codemirror/language'
 import { autocompletion } from '@codemirror/autocomplete'
 import { useEditorAppearance } from '@/theme/ThemeProvider'
 import { editorAppearanceExtensions } from '@/theme/editorAppearance'
-import { insertDslNewline, pipelineDslLanguage } from './pipelineDsl'
+import { DSL_INDENT_UNIT, insertDslNewline, pipelineDslLanguage } from './pipelineDsl'
 import { pipelineCompletionSource, type PipelineCheckLike } from './pipelineCompletion'
 
 /** 外观仓：跟随个人设置里的编辑器主题 / 字体实时重配 */
@@ -63,6 +64,8 @@ const PipelineDslEditor = forwardRef<PipelineDslEditorHandle, PipelineDslEditorP
           doc: value,
           extensions: [
             lineNumbers(),
+            // 空白可视化：空格显示为点、Tab 显示为箭头（C4）
+            highlightWhitespace(),
             history(),
             keymap.of([
               { key: 'Enter', run: insertDslNewline },
@@ -70,7 +73,9 @@ const PipelineDslEditor = forwardRef<PipelineDslEditorHandle, PipelineDslEditorP
               ...historyKeymap,
               indentWithTab,
             ]),
-            indentUnit.of('  '),
+            // 缩进固定 2 空格，Tab / 自动缩进都只写空格（C3-C5）
+            indentUnit.of(DSL_INDENT_UNIT),
+            EditorState.tabSize.of(DSL_INDENT_UNIT.length),
             pipelineDslLanguage,
             appearanceCompartment.of(
               editorAppearanceExtensions(editor.theme, isDark, editor.font),

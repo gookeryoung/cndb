@@ -142,26 +142,61 @@ const parser: StreamParser<PipelineTokenState> = {
 /** 流水线 DSL 语言实例（编辑器唯一入口） */
 export const pipelineDslLanguage = StreamLanguage.define(parser)
 
-/** 回车：继承当前行缩进；`key:` 结尾再进一级；`- ` 列表行延续列表前缀（C3）.
+/** 缩进单位：固定 2 空格，编辑器内的 Tab 也只写空格（C3） */
+export const DSL_INDENT_UNIT = '  '
+
+/** 去掉行尾注释（`#` 前必须有空白，避免误伤值里的 `#`），并清掉尾随空白 */
+function stripLineComment(text: string): string {
+  // 纯注释行原样保留：回车应继承当前缩进，而不是按「空行」回退
+  if (text.trimStart().startsWith('#')) return text.trimEnd()
+  return text.replace(/\s+#.*$/, '').trimEnd()
+}
+
+/** 回车后的下一行缩进：YAML 结构感知（C3-C5）.
+ *
+ * - 空行 / 纯空白行：回退一级，便于退出当前块；
+ * - `key:` 结尾：进入下一层；
+ * - `- key:`：子级对齐到列表内容列再进一级；
+ * - 普通列表项：延续同一层 `- `；
+ * - 裸 `-` / `- `：进入列表项内容层；
+ * - 其余（含注释行）：继承当前行缩进。
+ */
+function nextDslIndent(before: string): string {
+  const indent = /^[ \t]*/.exec(before)?.[0] ?? ''
+  const content = stripLineComment(before)
+  if (!content.trim()) {
+    return indent.length >= DSL_INDENT_UNIT.length
+      ? indent.slice(0, indent.length - DSL_INDENT_UNIT.length)
+      : ''
+  }
+
+  const list = /^([ \t]*)-(?:[ \t]+|$)/.exec(content)
+  if (list) {
+    const base = list[1]
+    const afterDash = content.slice(list[0].length).trimEnd()
+    if (!afterDash) return `${base}${DSL_INDENT_UNIT}`
+    if (afterDash.endsWith(':')) return `${base}${DSL_INDENT_UNIT}${DSL_INDENT_UNIT}`
+    // 普通列表项：回车继续同一层列表（与 buildStepSnippet 的 6 空格层级同口径）
+    return `${base}- `
+  }
+
+  if (content.endsWith(':')) return `${indent}${DSL_INDENT_UNIT}`
+  return indent
+}
+
+/** 回车：按 YAML 结构计算下一行缩进；缩进只用空格（C3-C5）.
  *
  * 非空选区时按普通回车替换选区，不猜缩进。
  */
 export function insertDslNewline(view: EditorView): boolean {
   const { state } = view
   const range = state.selection.main
+  if (!range.empty) {
+    view.dispatch(state.replaceSelection('\n'))
+    return true
+  }
   const line = state.doc.lineAt(range.head)
   const before = line.text.slice(0, range.head - line.from)
-  const indent = /^\s*/.exec(before)?.[0] ?? ''
-  const content = before.trimEnd()
-  const list = /^(\s*)-(?:\s|$)/.exec(before)
-  let next = indent
-  if (list && !content.endsWith(':')) {
-    // 列表项行：回车继续同一层列表（与 buildStepSnippet 的 6 空格层级同口径）
-    next = `${list[1]}- `
-  } else if (content.endsWith(':')) {
-    // 映射键：进入下一层（YAML 2 空格，C3）
-    next = `${indent}  `
-  }
-  view.dispatch(state.replaceSelection(`\n${next}`))
+  view.dispatch(state.replaceSelection(`\n${nextDslIndent(before)}`))
   return true
 }
