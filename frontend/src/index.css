@@ -8272,32 +8272,65 @@ body.cn-doc-focus-view .cn-doc-stats {
   border-top: 1px solid var(--cn-border);
 }
 
-/* 变更项方盒头：数据表引用（可跳转）+ 计数，表名过长省略 */
+/* 变更项方盒头：标签 + 数据表引用胶囊 + 计数徽标；表名过长省略，整组随窄屏收缩 */
 .cn-cr-items-extra {
   display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
-  gap: var(--cn-space-md);
+  gap: var(--cn-space-sm);
   min-width: 0;
+  overflow: hidden;
   font-size: var(--cn-text-xs);
+  line-height: 18px;
 }
 
+.cn-cr-items-label {
+  flex: none;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+/* 表名胶囊：1px 细描边 + 圆角，hover 品牌色描边（点击跳转数据表） */
 .cn-cr-table-ref {
   display: inline-flex;
   align-items: center;
-  gap: var(--cn-space-hairline);
+  gap: var(--cn-space-xs);
+  min-width: 0;
   max-width: 16em;
-  overflow: hidden;
+  padding: var(--cn-space-hairline) var(--cn-space-sm);
+  border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-pill);
+  background: var(--cn-bg-container);
   color: var(--cn-brand-color);
-  text-overflow: ellipsis;
   white-space: nowrap;
+  transition: border-color 0.15s, background-color 0.15s;
 }
 
 .cn-cr-table-ref:hover {
-  text-decoration: underline;
+  border-color: var(--cn-brand-color);
+  color: var(--cn-brand-color);
+  text-decoration: none;
 }
 
 .cn-cr-table-ref .anticon {
   flex: none;
+  font-size: var(--cn-text-2xs);
+}
+
+.cn-cr-table-ref-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 计数徽标：无描边的浅底胶囊，数字等宽避免变更项增减时抖动 */
+.cn-cr-items-count {
+  flex: none;
+  padding: var(--cn-space-hairline) var(--cn-space-sm);
+  border-radius: var(--cn-radius-pill);
+  background: var(--cn-bg-container);
+  color: var(--cn-text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .cn-cr-change-head {
@@ -8480,6 +8513,11 @@ body.cn-doc-focus-view .cn-doc-stats {
 
   .cn-cr-change-decision {
     margin-inline-start: 0;
+  }
+
+  /* 变更项方盒头：窄屏收紧表名胶囊，保留标签与计数不换行溢出 */
+  .cn-cr-table-ref {
+    max-width: 10em;
   }
 
   .cn-cr-context {

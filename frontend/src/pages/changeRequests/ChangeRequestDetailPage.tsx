@@ -285,15 +285,18 @@ export default function ChangeRequestDetailPage() {
           icon={<PullRequestOutlined />}
           extra={(
             <span className="cn-cr-items-extra">
-              <Text type="secondary">变更数据表：</Text>
+              <span className="cn-cr-items-label">变更数据表：</span>
               <Link
                 className="cn-cr-table-ref"
                 to={`/w/${wid}/tables/${tid}`}
                 title={`打开数据表：${tableName}`}
               >
-                <TableOutlined aria-hidden />{tableName}
+                <TableOutlined aria-hidden />
+                <span className="cn-cr-table-ref-name">{tableName}</span>
               </Link>
-              <span>共 {cr.items.length} 项</span>
+              <span className="cn-cr-items-count" title={`共 ${cr.items.length} 项变更`}>
+                共 {cr.items.length} 项
+              </span>
             </span>
           )}
           flush

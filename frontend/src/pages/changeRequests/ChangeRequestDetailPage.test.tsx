@@ -103,6 +103,8 @@ describe('ChangeRequestDetailPage 修改申请详情', () => {
     expect(within(itemsBox).getByText('变更数据表：')).toBeInTheDocument()
     const tableLink = await within(itemsBox).findByRole('link', { name: '客户表' })
     expect(tableLink).toHaveAttribute('href', '/w/10/tables/20')
+    // 变更项计数：方盒头胶囊内「共 N 项」，与数据表引用同行
+    expect(within(itemsBox).getByText('共 2 项')).toBeInTheDocument()
     // update 项：字段级「旧值 → 新值」摘要（完整明细仍由下方 diff 表承载）
     expect(within(itemsBox).getByText('分级：A → B；备注：老客户 → 空')).toBeInTheDocument()
     // delete 项：整行快照规模

@@ -122,6 +122,7 @@
 | `.cn-cr-side-list` / `.cn-cr-side-item` / `.cn-cr-side-main` / `.cn-cr-side-title` / `.cn-cr-side-name` / `.cn-cr-side-preview` | 修改申请左栏清单：按钮复位后继承 `.cn-qc-row` 行态（hover / 选中底色 / 品牌色左边线），行分组为标题 + 值预览 + 状态标签多行堆叠，工作表清单为单行 + 计数徽标 |
 | `.cn-cr-item-wrap` / `.cn-cr-item` / `.cn-cr-item-line` / `.cn-cr-tags` / `.cn-cr-item-title` / `.cn-cr-item-meta` | 修改申请单行申请行（GitHub 运行行）：标签换行、标题省略、右侧 `#id · 提交人 · 时间` 省略且 tabular-nums；相邻行分隔线满宽 |
 | `.cn-cr-detail-split` / `.cn-cr-detail-main` / `.cn-cr-detail-side` | 修改申请详情 / 冲突处理左宽右窄双栏（`1fr` + 360px），≤1023.98px 单列堆叠 |
+| `.cn-cr-items-extra` / `.cn-cr-items-label` / `.cn-cr-table-ref` / `-name` / `.cn-cr-items-count` | 变更项方盒头：弱化标签 + 数据表引用胶囊（1px 细描边 + 圆角，hover 品牌色描边，超长表名省略）+ 浅底计数胶囊（数字 tabular-nums）；≤767.98px 表名胶囊收紧到 10em |
 | `.cn-cr-change-item` / `-head` / `-body` / `.cn-cr-op` | 变更项分块：头部单行（操作类型徽标 / 行号 / 字段摘要 / 逐项 apply·skip），下方字段级 diff 表 |
 | `.cn-cr-action` / `.cn-cr-composer` / `.cn-cr-approval-form` / `.cn-cr-approval-line` | 讨论动态行、评论输入区、审批备注表单与非 open 的处理人 / 时间 / 备注两列信息 |
 | `.cn-cr-groupnote` / `.cn-cr-context*` / `.cn-cr-rowcontext*` | 冲突 / 基准漂移提示块、展开只读上下文（三态 diff + 当前行全字段，涉及字段加粗） |
