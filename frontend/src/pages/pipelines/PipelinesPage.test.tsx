@@ -133,6 +133,36 @@ describe('PipelinesPage 列表与编辑', () => {
     expect(screen.getByText(/检查动作目录（1）/)).toBeInTheDocument()
   })
 
+  it('顶部动作条列出内置动作，点击插入到编辑器', async () => {
+    defaultHandlers()
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines/checks', () => HttpResponse.json([
+        ...CHECKS,
+        {
+          uses: 'table/duplicate-rows',
+          title: '重复行',
+          category: 'table',
+          severity: 'warn',
+          target_types: ['table'],
+          inputs: [],
+        },
+      ])),
+      http.post('/api/v1/workspaces/10/pipelines/validate', () => HttpResponse.json({
+        ok: true, error: '', name: '空值巡检', job_count: 1, step_count: 1,
+      })),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: /编\s*辑/ }))
+    const bar = await screen.findByTestId('pipeline-action-bar')
+    expect(within(bar).getByText('检查动作目录（2）')).toBeInTheDocument()
+    expect(within(bar).getByText('table/duplicate-rows')).toBeInTheDocument()
+
+    fireEvent.click(within(bar).getByText('重复行'))
+    const editor = screen.getByTestId('pipeline-dsl-editor')
+    await waitFor(() => expect(editor).toHaveTextContent('uses: table/duplicate-rows'))
+  })
+
   it('DSL 非法时展示错误并禁用保存', async () => {
     defaultHandlers()
     server.use(http.post('/api/v1/workspaces/10/pipelines/validate', () => HttpResponse.json({

@@ -7419,10 +7419,91 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   border-radius: var(--cn-radius-lg);
 }
 /* 字体族 / 字号由编辑器外观主题下发（个人设置 → 主题 → 编辑器），这里不写死 */
-/* 流水线编辑抽屉：固定高度（滚动交给 .cm-scroller），边框与输入框同款 */
-.cn-pipeline-editor .cm-editor {
-  height: 360px;
+/* 流水线编辑抽屉：顶部动作条 + 编辑器撑满剩余高度，校验回显贴底 */
+.cn-pipeline-drawer-body {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.cn-pipeline-editor-layout {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+  height: 100%;
+  min-height: 0;
+}
+/* 内置动作条：常驻可见、可换行，动作多时自身滚动，不挤占编辑器 */
+.cn-pipeline-action-bar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  padding: var(--cn-space-sm) var(--cn-space-md);
   border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-lg);
+  background: var(--cn-bg-subtle);
+}
+.cn-pipeline-action-bar-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--cn-space-sm);
+}
+.cn-pipeline-action-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs);
+  max-height: 88px;
+  overflow-y: auto;
+}
+.cn-pipeline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 2px var(--cn-space-sm);
+  border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-container);
+  color: var(--cn-text-primary);
+  font-size: var(--cn-text-xs);
+  line-height: 20px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+.cn-pipeline-action:hover {
+  border-color: var(--cn-brand-color);
+  color: var(--cn-brand-color);
+}
+.cn-pipeline-action .anticon {
+  font-size: 11px;
+}
+.cn-pipeline-action-uses {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--cn-text-muted);
+  font-family: var(--cn-font-mono);
+}
+.cn-pipeline-editor-main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cn-pipeline-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.cn-pipeline-editor .cm-editor {
+  height: 100%;
+  border: 1px solid var(--cn-border-soft);
+}
+.cn-pipeline-validate {
+  flex: 0 0 auto;
+}
+.cn-pipeline-validate:empty {
+  display: none;
 }
 /* 编译诊断：错误行底色（诊断由 preview 端点按行 / 列回推） */
 .cn-dsl-editor .cm-line.cn-dsl-diag-error {

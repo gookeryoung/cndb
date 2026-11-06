@@ -105,13 +105,16 @@ test.describe("性能基准：装配设计打开（ADR 0086 C9）", () => {
       });
 
       // 预热（不计入指标）：SPA 落地后自动打开最近更新产品并加载编辑器 chunk；
-      // 再切回侧栏产品列表态，模拟用户从列表打开装配的路径（ADR 0109 D3 / D4）
+      // 再切回侧栏产品列表态，模拟用户从列表打开装配的路径（ADR 0109 D3 / D4）。
+      // 必须等自动落地到 /design/:id 之后再点「产品列表」：根页只是瞬时列表帧，
+      // 落地完成后侧栏会切回结构树态，提前拿到的行会在 2.2s 空闲窗内被卸载。
       await page.goto(`/w/${WID}/design`);
-      await page.waitForURL(/\/w\/1\/design(?:\/\d+)?$/, { timeout: 30_000 });
+      await page.waitForURL(/\/w\/1\/design\/\d+$/, { timeout: 30_000 });
       await expect(page.getByTestId("sider-designs")).toBeVisible({ timeout: 30_000 });
       const backToProducts = page.getByTestId("design-nav-back");
-      if (await backToProducts.isVisible()) await backToProducts.click();
-      await expect(page.getByTestId(`design-row-${asm.id}`)).toBeVisible({ timeout: 30_000 });
+      await expect(backToProducts).toBeVisible({ timeout: 15_000 });
+      await backToProducts.click();
+      await expect(page.getByTestId(`design-row-${asm.id}`)).toBeVisible({ timeout: 15_000 });
       // 编辑器 chunk 已在自动落地时加载；留出空闲窗口再开始计时
       await page.waitForTimeout(2200);
 
@@ -145,10 +148,13 @@ test.describe("性能基准：装配设计打开（ADR 0086 C9）", () => {
         );
         runs.push({ editorMs, canvasMs, sidebarMs, maxLongTaskMs });
 
-        // 返回产品列表（浏览器回退 + 侧栏「产品列表」键，不整页刷新；ADR 0109 D4）
+        // 返回产品列表（浏览器回退 + 侧栏「产品列表」键，不整页刷新；ADR 0109 D4）。
+        // 回退到根页后同样要等自动落地完成，再点「产品列表」，避免停留在瞬时列表帧。
         await page.goBack();
+        await page.waitForURL(/\/w\/1\/design\/\d+$/, { timeout: 15_000 });
         const back = page.getByTestId("design-nav-back");
-        if (await back.isVisible()) await back.click();
+        await expect(back).toBeVisible({ timeout: 15_000 });
+        await back.click();
         await expect(page.getByTestId(`design-row-${asm.id}`)).toBeVisible({ timeout: 15_000 });
       }
 

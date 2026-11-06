@@ -19,7 +19,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Collapse, Drawer, Empty, Popconfirm, Space, Spin,
+  Alert, App as AntApp, Button, Drawer, Empty, Popconfirm, Space, Spin,
   Switch, Tag, Tooltip, Typography,
 } from 'antd'
 import {
@@ -540,62 +540,71 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
         title={editing ? `编辑流水线：${editing.name}` : '新建流水线'}
         open={editorOpen}
         onClose={() => { setEditorOpen(false); setEditing(null) }}
-        size={760}
+        size="min(1080px, 96vw)"
         destroyOnHidden
+        classNames={{ body: 'cn-pipeline-drawer-body' }}
         extra={(
           <Button type="primary" onClick={() => save.mutate()} disabled={saveDisabled} loading={save.isPending}>
             保存
           </Button>
         )}
       >
-        <PipelineDslEditor
-          ref={editorRef}
-          value={content}
-          onChange={setContent}
-          checks={checks}
-          domain={domain}
-        />
-        <div style={{ marginTop: 8 }}>
-          {validating && <Text type="secondary">校验中…</Text>}
-          {!validating && validation && (
-            validation.ok ? (
-              <Alert
-                type="success"
-                showIcon
-                title={`校验通过：${validation.name}（${validation.job_count} 个 job / ${validation.step_count} 个 step）`}
-              />
-            ) : (
-              <Alert type="error" showIcon title="DSL 校验未通过" description={validation.error} />
-            )
-          )}
-        </div>
-
-        <Collapse
-          style={{ marginTop: 16 }}
-          size="small"
-          items={[{
-            key: 'checks',
-            label: `检查动作目录（${checks.length}）`,
-            children: checks.length === 0 ? (
+        <div className="cn-pipeline-editor-layout">
+          {/* 顶部动作条：内置动作目录常驻可见，点击插入到光标处；余下高度全部交给编辑器 */}
+          <div className="cn-pipeline-action-bar" data-testid="pipeline-action-bar">
+            <div className="cn-pipeline-action-bar-head">
+              <Text strong>检查动作目录（{checks.length}）</Text>
+              {checks.length > 0 && <Text type="secondary">点击插入到光标处</Text>}
+            </div>
+            {checks.length === 0 ? (
               <Text type="secondary">暂无可用检查动作</Text>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div className="cn-pipeline-action-list">
                 {checks.map(check => (
-                  <div key={check.uses}>
-                    <Space size={8} wrap>
-                      <Text strong>{check.title}</Text>
-                      <Tag style={{ marginInlineEnd: 0 }}>{CHECK_CATEGORY_LABEL[check.category] ?? check.category}</Tag>
-                      <Text type="secondary">{check.uses}</Text>
-                      <Button size="small" type="link" onClick={() => insertSnippet(buildStepSnippet(check))}>
-                        插入
-                      </Button>
-                    </Space>
-                  </div>
+                  <Tooltip
+                    key={check.uses}
+                    title={`${CHECK_CATEGORY_LABEL[check.category] ?? check.category} · ${check.uses}`}
+                  >
+                    <button
+                      type="button"
+                      className="cn-pipeline-action"
+                      onClick={() => insertSnippet(buildStepSnippet(check))}
+                    >
+                      <PlusOutlined />
+                      <span className="cn-pipeline-action-title">{check.title}</span>
+                      <span className="cn-pipeline-action-uses">{check.uses}</span>
+                    </button>
+                  </Tooltip>
                 ))}
               </div>
-            ),
-          }]}
-        />
+            )}
+          </div>
+
+          <div className="cn-pipeline-editor-main">
+            <PipelineDslEditor
+              ref={editorRef}
+              value={content}
+              onChange={setContent}
+              checks={checks}
+              domain={domain}
+            />
+          </div>
+
+          <div className="cn-pipeline-validate" role="status" aria-live="polite">
+            {validating && <Text type="secondary">校验中…</Text>}
+            {!validating && validation && (
+              validation.ok ? (
+                <Alert
+                  type="success"
+                  showIcon
+                  title={`校验通过：${validation.name}（${validation.job_count} 个 job / ${validation.step_count} 个 step）`}
+                />
+              ) : (
+                <Alert type="error" showIcon title="DSL 校验未通过" description={validation.error} />
+              )
+            )}
+          </div>
+        </div>
       </Drawer>
     </div>
   )
