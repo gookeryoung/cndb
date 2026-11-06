@@ -407,11 +407,11 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.getByTestId('design-tab-structure')).toHaveAttribute('aria-selected', 'true')
     })
 
-    it('设计编辑器页显示设计区页签但无子页激活（0083 C1）', async () => {
+    it('设计编辑器页仍选中「设计结构」子页（ADR 0109 D1）', async () => {
         renderLayout(mockUser, '/w/10/design/20')
         await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toHaveTextContent('/w/10/design/20'))
         expect(screen.getByTestId('design-crumb')).toBeVisible()
-        expect(screen.getByTestId('design-tab-structure')).toHaveAttribute('aria-selected', 'false')
+        expect(screen.getByTestId('design-tab-structure')).toHaveAttribute('aria-selected', 'true')
     })
 
     it('主页（/w）顶栏渲染全局搜索：进入工作区前也可搜索（C3）', async () => {
@@ -1224,17 +1224,19 @@ describe('MainLayout 工作区设置段侧栏沿用来源模块（2026-11-03 用
     })
 })
 
-describe('MainLayout 设计段侧栏（ADR 0084 / 0109 D4）', () => {
-    it('设计根页不渲染侧栏：主区自带左右分栏（ADR 0109 D4）', async () => {
+describe('MainLayout 设计段侧栏（ADR 0084 / 0109 D4 / D8）', () => {
+    it('设计根页同样渲染侧栏，且为产品列表态', async () => {
         useDesignSidebar()
         renderLayout(mockUser, '/w/10/design')
 
         await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toBeVisible())
-        // 根页右栏承担结构浏览，侧栏装配树收窄到编辑器页；也不回落为数据表侧栏
-        expect(screen.queryByTestId('sider-designs')).toBeNull()
+        // 根页与编辑器共用同一侧栏（D8）：根页落在产品列表态（D4）
+        expect(await screen.findByTestId('sider-designs')).toBeVisible()
+        expect(await screen.findByTestId('design-products-panel')).toBeVisible()
+        expect(await screen.findByTestId('design-row-20')).toBeVisible()
+        expect(screen.queryByTestId('design-outline-panel')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
         expect(screen.queryByTestId('sider-documents')).toBeNull()
-        expect(document.querySelector('.ant-layout-sider')).toBeNull()
     })
 
     it('设计编辑器页：自动展开当前设计并加载大纲，选中态高亮', async () => {

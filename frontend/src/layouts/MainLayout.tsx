@@ -432,9 +432,11 @@ export default function MainLayout() {
           : ''
   const activeDocumentSubpage = DOCUMENT_SUBPAGES.find(p => p.key === activeDocumentTab)
 
-  // 设计区二级页激活态（0083 C1）：仅模块根页 /w/:wid/design 激活「设计结构」，
-  // 编辑器 /w/:wid/design/:id 显示页签但无子页激活。
-  const activeDesignSubpage = location === `/w/${wid}/design`
+  // 设计区二级页激活态（0083 C1 / ADR 0109 D1）：设计模块收敛为单一工作台后，
+  // 「设计结构」在整个设计上下文（根页 / 编辑器页）保持激活，不再出现「进了设计却没有选中子页」。
+  const inDesignModuleContext = !!wid
+    && (location === `/w/${wid}/design` || location.startsWith(`/w/${wid}/design/`))
+  const activeDesignSubpage = inDesignModuleContext
     ? DESIGN_SUBPAGES.find(p => p.key === 'structure')
     : undefined
 
@@ -445,11 +447,10 @@ export default function MainLayout() {
   // 2026-11-03 用户口径：进入「工作区设置」保持已进入模块的侧栏（从文档 / 设计进入就沿用文档树 /
   // 装配结构树），不再切回数据表侧栏；仅当没有可沿用的模块（刷新 / 直接打开设置页、
   // 目标工作区未启用该模块）时回落到数据表侧栏。
-  // 2026-11-06 用户口径（ADR 0109 D4）：设计根页 /w/:wid/design 主区自带左右分栏
-  // （左产品列表 / 右结构树），该页不再渲染侧栏；侧栏装配树只保留在编辑器页，
-  // 避免同屏两棵树与双份懒加载状态（编辑器内树 ↔ 代码双向定位闭环不变）。
+  // 2026-11-06 用户口径（ADR 0109 D8）：设计模块收敛为单一工作台，根页 /w/:wid/design
+  // 与编辑器页 /w/:wid/design/:id 都渲染同一设计侧栏（产品列表 ↔ 结构树两态）；
+  // 根页只负责默认选中最近更新的产品并跳转，不再隐藏侧栏。
   type SiderMode = 'documents' | 'design' | 'tables' | 'hidden'
-  const onDesignRoot = !!wid && (location === `/w/${wid}/design` || location === `/w/${wid}/design/`)
   const moduleSiderMode: 'documents' | 'design' | null =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
@@ -462,18 +463,16 @@ export default function MainLayout() {
 
   const previousModuleSider = lastModuleSiderRef.current
   const siderMode: SiderMode =
-    onDesignRoot
-      ? 'hidden'
-      : moduleSiderMode
-        ?? (
-          activeWsTab === 'settings'
-          && previousModuleSider
-          && wsFeatures[previousModuleSider]
-            ? previousModuleSider
-            : wsFeatures.tables
-              ? 'tables'
-              : 'hidden'
-        )
+    moduleSiderMode
+      ?? (
+        activeWsTab === 'settings'
+        && previousModuleSider
+        && wsFeatures[previousModuleSider]
+          ? previousModuleSider
+          : wsFeatures.tables
+            ? 'tables'
+            : 'hidden'
+      )
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -759,9 +758,9 @@ export default function MainLayout() {
     )
   }
 
-  /** 设计导航内容 —— 设计段下 Sider 与移动端抽屉共用（ADR 0084 D4）.
-   * 装配树（设计 → 系统 → 组件 → 分组 → 零件），按设计懒加载 outline 端点；
-   * 点设计进编辑器、点大纲节点带 ?line= 定位（ADR 0083 D7）；侧栏只读（0084 D6）。 */
+  /** 设计导航内容 —— 设计段下 Sider 与移动端抽屉共用（ADR 0109 D8）.
+   * 单侧栏两态：产品列表（搜索 / 筛选 / 新建 / 改名 / 删除）↔ 当前产品结构树；
+   * 点产品进编辑器、点大纲节点带 ?line= 定位（ADR 0083 D7）；侧栏只读（0084 D6）。 */
   const renderDesignNav = (mobile: boolean, collapsed = false) => {
     if (!wid) return null
     return (
@@ -925,8 +924,8 @@ export default function MainLayout() {
         {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
             管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
-            侧栏形态随功能段切换（需求 0065 / ADR 0084 / ADR 0109 D4）：文档段=文档导航，
-            设计编辑器页=装配结构树（设计根页自带左右分栏，不渲染侧栏），
+            侧栏形态随功能段切换（需求 0065 / ADR 0084 / ADR 0109 D8）：文档段=文档导航，
+            设计段（根页 + 编辑器页）=产品列表 / 结构树两态侧栏，
             数据表 / 分析 / 同步 / 工作区设置段=表导航保持展开，
             无 tables 能力的类型不渲染侧栏 */}
         {!isMobile && !inAdminConsole && !inHelpDocs && !inTemplates && siderMode !== 'hidden' && (

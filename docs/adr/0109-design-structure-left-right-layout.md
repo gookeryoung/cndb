@@ -1,6 +1,6 @@
 # ADR 0109: 【设计】设计模块单一工作台（侧栏产品列表 ↔ 结构树，Content = DSL / 视图）
 
-Status: Proposed（待评审）
+Status: Implemented（2026-11-06 落地）
 Date: 2026-11-06
 Related: `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/design/designTree.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/App.tsx`、`frontend/src/index.css`、`frontend/src/pages/help/content/*`、`docs/adr/0083-design-structure-subnav-and-assembly-tree.md`、`docs/adr/0084-design-sidebar-assembly-and-system-level.md`、`docs/adr/0103-design-editor-layout-optimization.md`
 需求卡片: `docs/requirements/0109-design-structure-left-right-layout.md`（需求原文与约束编号的唯一副本）
@@ -122,7 +122,7 @@ Related: `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/desig
 
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
 |---|---|---|---|---|---|
-| D1 | 整体方案选型 | 合并为单一工作台：侧栏 = 产品列表 / 结构树两态，Content = 现有编辑器工作台；根页 `/design` 只负责选择 / 重定向 | 用户明确「共享侧边栏、就地切入结构树、Content 留给 DSL 与视图」；编辑器已是完整工作台，零重写 | 保留根页双栏（与需求直接冲突，Content 被列表占用）；侧栏常驻「清单 + 嵌套树」一棵树（产品与结构语义混杂，选中产品后仍看到全部产品） | `DesignsPage.tsx`、`MainLayout.tsx` |
+| D1 | 整体方案选型 | 合并为单一工作台：侧栏 = 产品列表 / 结构树两态，Content = 现有编辑器工作台；根页 `/design` 只负责选择 / 重定向；「设计结构」二级页签在整个设计上下文保持激活 | 用户明确「共享侧边栏、就地切入结构树、Content 留给 DSL 与视图」；编辑器已是完整工作台，零重写；进入设计即落编辑器后子页仍应保持选中 | 保留根页双栏（与需求直接冲突，Content 被列表占用）；侧栏常驻「清单 + 嵌套树」一棵树（产品与结构语义混杂，选中产品后仍看到全部产品）；编辑器页取消子页激活（进入设计却无选中项） | `DesignsPage.tsx`、`MainLayout.tsx` |
 | D2 | 产品列表态形态 | 侧栏内扁平可选列表 + 行内 Tag（类型 / 目录 / 依赖陈旧 / 版本）；顶部搜索 + 类型筛选 + 新建；行尾 打开 / 编辑 / 删除；新建 / 改名 / 删除 Modal 迁入侧栏 | 入口收进侧栏（用户确认）；0109 既有扁平列表与 0103 D12「目录分组退役为行内 Tag」口径不变 | 保留 Content 页头（与「Content 留给编辑器」冲突）；侧栏使用目录树（240px 内层级过重） | `DesignsPage.tsx`、`index.css` |
 | D3 | 默认选中 | 进入 `/design` 自动选中最近更新的设计并 `replace` 到 `/design/:id`；无设计时停留根页显示空态 | 用户确认「自动打开最近更新」；对齐需求 0107 默认选中口径；编辑器即默认落地视图 | 空态等待点击（多一次交互，与用户确认相反）；默认选第一个（列表顺序不等于最近工作） | `DesignsPage.tsx` |
 | D4 | 侧栏两态切换 | `view` 为侧栏本地状态，初始由路由推导（有 `designId` = `tree`，否则 `list`）；「产品列表」返回键只切 `view`，不改 URL、不卸载 Content；选产品才改 URL | 「就地切入」的语义是侧栏内部切换；返回列表时保留当前编辑器上下文，避免无意义重载与草稿丢失 | 用 `?view=list` 表达（URL 噪声，刷新后语义反直觉）；返回即跳 `/design`（会触发重定向到最近更新，可能换掉用户当前产品） | `DesignsPage.tsx` |
@@ -171,16 +171,16 @@ Related: `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/desig
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | — |
-| P1 | 未开始 | `frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx` | `frontend/src/pages/design/DesignStructureNav.test.tsx`、`frontend/src/pages/design/DesignEditorPage.test.tsx` | — |
-| P2 | 未开始 | `frontend/src/index.css`、`frontend/src/pages/help/content/*`、`docs/adr/0084-*.md`、`docs/adr/0103-*.md` | `frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`design-sidebar-assembly.spec.ts` | — |
+| P0 | 已落地 | `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designDefaults.ts`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/layouts/MainLayout.tsx` | `frontend/src/pages/design/DesignsPage.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx` | — |
+| P1 | 已落地 | `frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx` | `frontend/src/pages/design/DesignStructureNav.test.tsx`、`frontend/src/pages/design/DesignEditorPage.test.tsx` | — |
+| P2 | 已落地 | `frontend/src/index.css`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx`、`docs/adr/0084-design-sidebar-assembly-and-system-level.md`、`docs/adr/0103-design-editor-layout-optimization.md`、`CHANGELOG.md` | `frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`frontend/tests/e2e/critical/design-3d-preview.spec.ts`、`frontend/tests/e2e/critical/navigation.spec.ts`、`frontend/tests/e2e/perf/design-assembly-open.spec.ts` | — |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：需求修订，`Status: Proposed`，等待人工评审后进入实现
-- 已完成：需求卡片与 ADR 按新口径重写（单一工作台 / 侧栏两态 / Content 归编辑器）；旧「根页左右分栏」方案行已删除
-- 下一步：评审通过后按 P0 → P1 → P2 实施；P0 先做侧栏宿主与根页重定向，再迁移结构树态
-- 已知坑：① 根页重定向需在清单 loading 完成后执行，避免闪空态；② 结构树缓存键必须与编辑器一致（`['designs', wid, String(id), 'ir']`）；③ 侧栏两态为本地状态，刷新回到树态属预期；④ 移动端点击产品后需收起抽屉
-- 最近一次全绿：不适用（本版尚未实现）
+- 当前阶段：P0-P2 全部落地，`Status: Implemented`，待提交
+- 已完成：侧栏宿主与根页重定向（P0）、单产品结构树与编辑器 Content 归位（P1）、样式退役 / 单测与 e2e 改写 / 帮助文案 / 0084·0103 失效行清理 / CHANGELOG（P2）
+- 下一步：提交后回填本表「提交」列；如需发版按 release 流程走人工卡点
+- 已知坑：① 根页重定向需在清单 loading 完成后执行，避免闪空态；② 结构树缓存键必须与编辑器一致（`['designs', wid, String(id), 'ir']`）；③ 侧栏两态为本地状态，刷新回到树态属预期；④ 移动端点击产品后需收起抽屉；⑤ 测试环境 `gcTime` 为 0，IR 缓存优先用例需在缓存写入后同步点击
+- 最近一次全绿：2026-11-06 `make check-fast` / `make test`（6667 passed）通过，前端全量 `253 files / 3092 tests` 通过，目标 e2e（`design-structure-tree` / `design-sidebar-assembly` / `design-3d-preview` / `navigation`，15 例）通过

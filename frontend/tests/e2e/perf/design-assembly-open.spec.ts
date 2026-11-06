@@ -104,19 +104,23 @@ test.describe("性能基准：装配设计打开（ADR 0086 C9）", () => {
         observer.observe({ type: "longtask", buffered: true });
       });
 
-      // 预热（不计入指标）：SPA 落地到列表页，CodeMirror / three / 编辑器 chunk 全部拉取解析
+      // 预热（不计入指标）：SPA 落地后自动打开最近更新产品并加载编辑器 chunk；
+      // 再切回侧栏产品列表态，模拟用户从列表打开装配的路径（ADR 0109 D3 / D4）
       await page.goto(`/w/${WID}/design`);
+      await page.waitForURL(/\/w\/1\/design(?:\/\d+)?$/, { timeout: 30_000 });
+      await expect(page.getByTestId("sider-designs")).toBeVisible({ timeout: 30_000 });
+      const backToProducts = page.getByTestId("design-nav-back");
+      if (await backToProducts.isVisible()) await backToProducts.click();
       await expect(page.getByTestId(`design-row-${asm.id}`)).toBeVisible({ timeout: 30_000 });
-      // 列表页空闲预取窗口（DesignsPage requestIdleCallback timeout=2s）：真实用户在列表
-      // 页有停留，编辑器 chunk 已预取；这里等待窗口结束再开始计时
+      // 编辑器 chunk 已在自动落地时加载；留出空闲窗口再开始计时
       await page.waitForTimeout(2200);
 
       const runs: OpenMetrics[] = [];
       for (let i = 0; i < RUNS; i += 1) {
-        // 口径（C9）：「打开装配设计」= SPA 内从列表点击「打开」到编辑器可交互
+        // 口径（C9）：「打开装配设计」= SPA 内从列表点击产品行到编辑器可交互
         //（无整页 reload，vendor 求值不计入；这正是用户点开大装配的路径）
         const t0Page = await page.evaluate(() => performance.now());
-        await page.getByTestId(`design-row-${asm.id}`).getByRole("button", { name: "打开" }).click();
+        await page.getByTestId(`design-row-${asm.id}`).click();
         await expect(page.locator(".cm-content").first()).toBeVisible({ timeout: 15_000 });
         const editorMs = Math.round((await page.evaluate(() => performance.now())) - t0Page);
 
@@ -141,8 +145,10 @@ test.describe("性能基准：装配设计打开（ADR 0086 C9）", () => {
         );
         runs.push({ editorMs, canvasMs, sidebarMs, maxLongTaskMs });
 
-        // 返回列表（SPA history back，不整页刷新）
+        // 返回产品列表（浏览器回退 + 侧栏「产品列表」键，不整页刷新；ADR 0109 D4）
         await page.goBack();
+        const back = page.getByTestId("design-nav-back");
+        if (await back.isVisible()) await back.click();
         await expect(page.getByTestId(`design-row-${asm.id}`)).toBeVisible({ timeout: 15_000 });
       }
 

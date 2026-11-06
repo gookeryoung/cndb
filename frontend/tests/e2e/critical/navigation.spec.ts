@@ -135,11 +135,12 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(page.getByTestId("document-tab-issues")).toBeVisible()
   })
 
-  test("设计区「设计结构」为默认页：页签可见且激活", async ({ page }) => {
+  test("设计区默认落在设计工作台：「设计结构」页签保持激活", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 
+    // ADR 0109 D3：根页自动打开最近更新的产品，URL 落到 /design/:id（无设计时留在根页）
     await page.goto(`/w/${WID}/design`)
-    await page.waitForURL(/\/design$/)
+    await page.waitForURL(/\/design(?:\/\d+)?$/, { timeout: 15_000 })
     await expect(page.getByTestId("design-crumb")).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId("design-tab-structure")).toBeVisible()
     await expect(page.getByTestId("design-tab-structure")).toHaveAttribute("aria-selected", "true")

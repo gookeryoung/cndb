@@ -7418,10 +7418,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   height: 100%;
   border-radius: var(--cn-radius-lg);
 }
-.cn-dsl-editor .cm-scroller {
-  font-family: var(--cn-font-mono, monospace);
-  font-size: var(--cn-text-sm);
-}
+/* 字体族 / 字号由编辑器外观主题下发（个人设置 → 主题 → 编辑器），这里不写死 */
 /* 流水线编辑抽屉：固定高度（滚动交给 .cm-scroller），边框与输入框同款 */
 .cn-pipeline-editor .cm-editor {
   height: 360px;
@@ -7607,11 +7604,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
-/* ─────────────── 设计结构页（ADR 0109：根页左右分栏） ───────────────
+/* ─────────────── 设计模块单一工作台（ADR 0109：侧栏两态，Content = DSL / 视图） ───────────────
  * 树本体用 antd Tree；这里只补「名称 + 元信息 + 行号描述」的排版：
  * 元信息单行省略，操作区不参与压缩，命中按钮时不触发整行跳转。
- * 布局原语（cn-page-head / cn-qc-split / cn-qc-row / cn-qc-empty）直接复用质量检查页，
- * 本页只补右栏树内容区的留白与透明底。 */
+ * 侧栏两态（cn-design-nav-*）复用 cn-table-nav / cn-doc-sider-tree 骨架，
+ * 根页双栏（cn-qc-split）与页头已退役。 */
 .cn-design-tree-title {
   display: inline-flex;
   align-items: center;
@@ -7643,12 +7640,144 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-design-outline-detail {
   font-size: var(--cn-text-xs);
 }
-/* 「设计结构」根页右栏（ADR 0109 D1）：flush 方盒内的装配树，外框由方盒承担 */
-.cn-ds-outline-tree {
-  padding: var(--cn-space-xs) var(--cn-space-sm) var(--cn-space-sm);
+/* 设计侧栏两态（ADR 0109 D2 / D4）：产品列表 ↔ 结构树，桌面 Sider 与移动抽屉共用 */
+.cn-design-nav {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
-.cn-ds-outline-tree .ant-tree {
+.cn-design-nav-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.cn-design-nav-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-sm) var(--cn-space-md) var(--cn-space-xs);
+}
+.cn-design-nav-caption {
+  font-size: var(--cn-text-xs);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-secondary);
+}
+.cn-design-nav-count {
+  font-size: var(--cn-text-3xs);
+  color: var(--cn-text-muted);
+}
+.cn-design-nav-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  padding: 0 var(--cn-space-md) var(--cn-space-sm);
+}
+.cn-design-nav-list {
+  padding-bottom: var(--cn-space-sm);
+}
+.cn-design-nav-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cn-space-xs);
+  padding: var(--cn-space-xs) var(--cn-space-md);
+  border-inline-start: 2px solid transparent;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.cn-design-nav-row:hover {
+  background: var(--cn-bg-subtle);
+}
+.cn-design-nav-row--active {
+  background: var(--cn-mix-brand-color-12-bg-container);
+  background: color-mix(in srgb, var(--cn-brand-color) 14%, var(--cn-bg-container));
+  border-inline-start-color: var(--cn-brand-color);
+}
+.cn-design-nav-row-icon {
+  flex: 0 0 auto;
+  margin-top: var(--cn-space-hairline);
+  color: var(--cn-text-muted);
+}
+.cn-design-nav-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.cn-design-nav-row-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  min-width: 0;
+}
+.cn-design-nav-row-title .ant-typography {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--cn-text-sm);
+  line-height: 1.4;
+}
+.cn-design-nav-row-version {
+  flex: 0 0 auto;
+  font-size: var(--cn-text-3xs);
+  color: var(--cn-text-muted);
+}
+.cn-design-nav-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cn-space-hairline);
+  margin-top: var(--cn-space-hairline);
+  font-size: var(--cn-text-3xs);
+  color: var(--cn-text-muted);
+}
+.cn-design-nav-row-meta .ant-tag {
+  margin: 0;
+  padding-inline: var(--cn-space-xs);
+  font-size: var(--cn-text-3xs);
+  line-height: 16px;
+}
+.cn-design-nav-row-time {
+  flex-basis: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cn-design-nav-row-more {
+  flex: 0 0 auto;
+  transform: translateY(-4px);
+  margin-inline-end: calc(var(--cn-space-xs) * -1);
+}
+.cn-design-nav-tree {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 var(--cn-space-xs) var(--cn-space-sm);
+  overflow: auto;
+}
+.cn-design-nav-tree .ant-tree {
   background: transparent;
+}
+/* 侧栏树根节点带产品标签：允许换行，避免 240px 宽度下把标题挤没 */
+.cn-design-nav-tree .cn-design-tree-title {
+  flex-wrap: wrap;
+  row-gap: var(--cn-space-hairline);
+}
+.cn-design-nav-tree .ant-tree-node-content-wrapper {
+  height: auto;
+  min-height: 26px;
+  padding-block: var(--cn-space-hairline);
+}
+
+/* 设计根页 Content 空态 / 重定向占位（ADR 0109 D3 / C5） */
+.cn-design-root-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cn-space-sm);
+  min-height: 60vh;
+  padding: var(--cn-space-xl);
+}
+.cn-design-root-hint {
+  font-size: var(--cn-text-xs);
 }
 
 /* ─────────────── 文档专注模式（需求 0096） ───────────────

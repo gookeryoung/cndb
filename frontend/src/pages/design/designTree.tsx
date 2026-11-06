@@ -1,6 +1,6 @@
 /** 装配大纲 → antd Tree 节点（ADR 0083 D7；ADR 0109 D2 / D5）.
  *
- * 「设计结构」根页右栏（DesignsPage）与编辑器侧栏（DesignStructureNav）共用这一套
+ * 设计侧栏结构树态（DesignStructureNav）与编辑器共用这一套
  * 图标 / 标题 / 类型与行号描述的映射，避免两处树形口径漂移；
  * 纯展示层，数据仍来自 `designOutline.ts` 的纯函数映射（ADR 0083 D3 / D4）。
  */

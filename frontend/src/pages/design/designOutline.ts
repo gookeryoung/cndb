@@ -5,7 +5,16 @@
  * 后端只提供结构（kind / 名称 / 类型 / 1 基行列），前端不做任何 DSL 解析（ADR 0079 I1）。
  */
 
-import type { DesignOutlineNode } from '../../api/design'
+import type { DesignListItem, DesignOutlineNode } from '../../api/design'
+
+/** 最近更新的设计 id（默认打开口径，ADR 0109 D3；列表按 updated_at 字符串比较） */
+export function latestDesignId(items: DesignListItem[]): number | null {
+  let best: DesignListItem | undefined
+  for (const item of items) {
+    if (!best || String(item.updated_at) > String(best.updated_at)) best = item
+  }
+  return best?.id ?? null
+}
 
 /** 树节点负载：供点击跳转 / 图标 / 文案渲染使用 */
 export interface DesignTreeMeta {

@@ -41,8 +41,13 @@ test.describe("设计模块（结构 DSL）", () => {
     let designId = 0
 
     try {
-      // 1) 列表页新建设计（示例模板）→ 创建后自动进入编辑器
+      // 1) 设计侧栏「产品列表」态新建设计（示例模板）→ 创建后自动进入编辑器
+      //    ADR 0109：根页会自动打开最近更新的产品并切到结构树态，先等就绪再切回产品列表
       await page.goto(`/w/${WID}/design`)
+      await page.waitForURL(/\/w\/1\/design(?:\/\d+)?$/, { timeout: 15_000 })
+      await expect(page.getByTestId("sider-designs")).toBeVisible({ timeout: 10_000 })
+      const backToProducts = page.getByTestId("design-nav-back")
+      if (await backToProducts.isVisible()) await backToProducts.click()
       await page.getByRole("button", { name: /新建设计/ }).click()
       const modal = page.locator(".ant-modal")
       await modal.getByLabel("名称").fill(title)

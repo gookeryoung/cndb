@@ -21,11 +21,11 @@ import {
 } from 'antd'
 import type { InputNumberProps } from 'antd'
 import {
-  ArrowLeftOutlined, BorderOutlined, CheckCircleFilled, CloseCircleFilled, CompassOutlined,
+  BorderOutlined, CheckCircleFilled, CloseCircleFilled, CompassOutlined,
   ExperimentOutlined, ExpandOutlined, LoadingOutlined, RollbackOutlined, SaveOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { designsApi, workspaceApi } from '@/api'
 import type { DesignDiagnostic, DesignVersionItem } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
@@ -91,17 +91,23 @@ function useNarrow(): boolean {
 
 export default function DesignEditorPage() {
   const { wid = '', designId = '' } = useParams<{ wid: string; designId: string }>()
+  const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
   // 结构树节点带 ?line= 打开编辑器并定位源行（ADR 0083 D7）
   const [searchParams, setSearchParams] = useSearchParams()
   const revealLine = Number(searchParams.get('line')) || undefined
 
-  const { data: detail, isLoading } = useQuery({
+  const { data: detail, isLoading, isError: detailError } = useQuery({
     queryKey: ['designs', wid, designId],
     queryFn: () => designsApi.get(wid, designId),
     enabled: !!wid && !!designId,
   })
+
+  // 产品不存在 / 已被删除：回根页由默认选中回落（ADR 0109 边界 #3）
+  useEffect(() => {
+    if (detailError) navigate(`/w/${wid}/design`, { replace: true })
+  }, [detailError, wid, navigate])
 
   // IR 快照（ADR 0086 D7 / I6）：首屏直用持久化 IR，干净状态不发 preview
   const { data: irResp } = useQuery({
@@ -377,9 +383,6 @@ export default function DesignEditorPage() {
       {/* 顶部工具栏：身份 / 状态标签在左，动作按钮在右；恒单行（C6 D6） */}
       <div className="cn-dsl-toolbar">
         <div className="cn-dsl-toolbar-main">
-          <Link to={`/w/${wid}/design`} aria-label="返回设计列表">
-            <Button icon={<ArrowLeftOutlined />} type="text" />
-          </Link>
           <Text strong className="cn-dsl-title">{detail?.title ?? '设计'}</Text>
           <Space size={4} className="cn-dsl-toolbar-tags">
             {detail && (
