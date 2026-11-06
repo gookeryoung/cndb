@@ -126,8 +126,9 @@ describe('PipelinesPage 列表与编辑', () => {
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: /编\s*辑/ }))
-    const editor = await screen.findByLabelText('流水线 YAML')
-    expect((editor as HTMLTextAreaElement).value).toContain('name: 空值巡检')
+    // 编辑器换成 CodeMirror（需求 0111）：内容以文档文本断言
+    const editor = await screen.findByTestId('pipeline-dsl-editor')
+    expect(editor).toHaveTextContent('name: 空值巡检')
     expect(await screen.findByText(/校验通过/)).toBeInTheDocument()
     expect(screen.getByText(/检查动作目录（1）/)).toBeInTheDocument()
   })
@@ -457,9 +458,9 @@ describe('PipelinesPage 文档域', () => {
 
     // 新建模板默认带文档动作（数据表模板不出现）
     fireEvent.click(screen.getByRole('button', { name: /新建流水线/ }))
-    const editor = await screen.findByLabelText('流水线 YAML')
-    expect((editor as HTMLTextAreaElement).value).toContain('document/broken-refs')
-    expect((editor as HTMLTextAreaElement).value).not.toContain('table/null-rate')
+    const editor = await screen.findByTestId('pipeline-dsl-editor')
+    expect(editor).toHaveTextContent('document/broken-refs')
+    expect(editor).not.toHaveTextContent('table/null-rate')
   })
 
   it('手动运行停留在文档运行列表，点运行记录才进详情且留在文档域', async () => {

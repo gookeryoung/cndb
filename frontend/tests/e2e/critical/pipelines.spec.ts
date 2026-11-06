@@ -61,6 +61,16 @@ async function deleteWorkflow(request: APIRequestContext, id: number) {
   await safeDelete(request, `/api/v1/workspaces/${WID}/pipelines/${id}`)
 }
 
+/** 用 API 建流水线定义（E2E 准备数据，避免表单输入受补全菜单干扰） */
+async function createWorkflow(request: APIRequestContext, content: string): Promise<number> {
+  const resp = await request.post(`/api/v1/workspaces/${WID}/pipelines`, {
+    headers: await authHeaders(request),
+    data: { content },
+  })
+  expect(resp.status()).toBe(201)
+  return ((await resp.json()) as { id: number }).id
+}
+
 /** 最小可产生发现的 DSL（空值率阈值 0 → 任一空值都命中） */
 function pipelineYaml(name: string, tableName: string) {
   return [
@@ -150,6 +160,46 @@ test.describe("质量检查", () => {
       const workflows = await listWorkflows(request)
       const created = workflows.find(workflow => workflow.name === workflowName)
       if (created) await deleteWorkflow(request, created.id)
+    }
+  })
+
+  test("编辑器补全：输入触发候选 → 选择插入 → 校验与保存不回归", async ({ page, request }) => {
+    test.setTimeout(90_000)
+    const stamp = Date.now()
+    const tableName = `E2E 补全表 ${stamp}`
+    const workflowName = `E2E 补全流水线 ${stamp}`
+    const tableId = await createFixtureTable(request, tableName)
+    let workflowId = 0
+
+    try {
+      workflowId = await createWorkflow(request, pipelineYaml(workflowName, tableName))
+      await page.goto(`/w/${WID}/pipelines`)
+      const item = page.locator('[data-testid^="pipeline-item-"]').filter({ hasText: workflowName })
+      await expect(item).toBeVisible({ timeout: 15_000 })
+      await item.getByRole("button", { name: /编\s*辑/ }).click()
+
+      const drawer = page.locator(".ant-drawer-section")
+      const editor = drawer.locator(".cm-content")
+      // 光标移到文末（with 块内）另起一行输入 `tab` → 触发 with 键位补全
+      await editor.click()
+      await page.keyboard.press("Control+End")
+      await page.keyboard.press("Enter")
+      await page.keyboard.type("tab")
+
+      const menu = page.locator(".cm-tooltip-autocomplete")
+      await expect(menu).toBeVisible()
+      await menu.getByText("table", { exact: true }).click()
+      // 补全只插入键名，继续补值确保 DSL 仍可编译
+      await page.keyboard.type(`: ${tableName}`)
+
+      // 400ms 防抖校验链路不回归
+      await expect(drawer.getByText(/校验通过/)).toBeVisible({ timeout: 15_000 })
+
+      await page.locator(".ant-drawer").getByRole("button", { name: /保\s*存/ }).click()
+      await expect(page.getByText(workflowName).first()).toBeVisible({ timeout: 15_000 })
+    } finally {
+      if (workflowId) await deleteWorkflow(request, workflowId)
+      await deleteTable(request, tableId)
     }
   })
 })

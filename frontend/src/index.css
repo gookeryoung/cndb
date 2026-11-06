@@ -7422,6 +7422,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   font-family: var(--cn-font-mono, monospace);
   font-size: var(--cn-text-sm);
 }
+/* 流水线编辑抽屉：固定高度（滚动交给 .cm-scroller），边框与输入框同款 */
+.cn-pipeline-editor .cm-editor {
+  height: 360px;
+  border: 1px solid var(--cn-border-soft);
+}
 /* 编译诊断：错误行底色（诊断由 preview 端点按行 / 列回推） */
 .cn-dsl-editor .cm-line.cn-dsl-diag-error {
   background: rgba(255, 99, 94, 0.18);

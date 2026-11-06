@@ -17,9 +17,9 @@
  * queryKey 约定：['pipelines', wid, domain]。
  */
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Collapse, Drawer, Empty, Input, Popconfirm, Space, Spin,
+  Alert, App as AntApp, Button, Collapse, Drawer, Empty, Popconfirm, Space, Spin,
   Switch, Tag, Tooltip, Typography,
 } from 'antd'
 import {
@@ -37,6 +37,7 @@ import {
   CHECK_CATEGORY_LABEL, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, buildStepSnippet,
   defaultWorkflowContent, describeTriggers, formatElapsed, isActiveRun,
 } from './checkCatalog'
+import PipelineDslEditor, { type PipelineDslEditorHandle } from './PipelineDslEditor'
 
 const { Text } = Typography
 
@@ -138,6 +139,8 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
   const [content, setContent] = useState('')
   const [validation, setValidation] = useState<PipelineValidateResult | null>(null)
   const [validating, setValidating] = useState(false)
+  /** 检查动作目录「插入」按钮经编辑器实例插到光标处（需求 0111 C7） */
+  const editorRef = useRef<PipelineDslEditorHandle>(null)
   /** 左栏当前选中的流水线（null = 全部规则，决定右栏展示哪些运行历史） */
   const [selectedId, setSelectedId] = useState<string | number | null>(null)
 
@@ -311,7 +314,7 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
   }
 
   const insertSnippet = (snippet: string) => {
-    setContent(prev => (prev.trim() ? `${prev.replace(/\s+$/, '')}\n${snippet}` : snippet))
+    editorRef.current?.insertSnippet(snippet)
   }
 
   const saveDisabled = !validation?.ok || save.isPending
@@ -545,13 +548,12 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
           </Button>
         )}
       >
-        <Input.TextArea
-          aria-label="流水线 YAML"
+        <PipelineDslEditor
+          ref={editorRef}
           value={content}
-          onChange={(event) => setContent(event.target.value)}
-          autoSize={{ minRows: 16, maxRows: 30 }}
-          style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 13 }}
-          spellCheck={false}
+          onChange={setContent}
+          checks={checks}
+          domain={domain}
         />
         <div style={{ marginTop: 8 }}>
           {validating && <Text type="secondary">校验中…</Text>}
