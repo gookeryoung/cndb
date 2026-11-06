@@ -8,8 +8,10 @@ import zhCN from 'antd/locale/zh_CN'
 import {
   getThemeConfig, themeCssVars, loadThemeMode, saveThemeMode,
   loadFontSettings, saveFontSettings,
-  FONT_SCALE_META, THEME_META, AUTO_LIGHT, AUTO_DARK,
+  loadEditorSettings, saveEditorSettings,
+  FONT_SCALE_META, THEME_META, AUTO_LIGHT, AUTO_DARK, DEFAULT_EDITOR_SETTINGS,
   type ThemeMode, type ThemePreference, type FontScale, type FontSettings,
+  type EditorSettings, type EditorSettingsPatch,
 } from '@/theme/theme'
 import { applyThemeMixVars } from '@/theme/themeMix'
 import { WEIGHT } from '@/theme/tokens'
@@ -26,6 +28,10 @@ interface ThemeContextValue {
   font: FontSettings
   setFontScale: (s: FontScale) => void
   setFontBold: (b: boolean) => void
+  /** 编辑器外观设置（配色主题 / 等宽字体 / 字号） */
+  editor: EditorSettings
+  /** 局部更新编辑器设置并持久化 */
+  updateEditorSettings: (patch: EditorSettingsPatch) => void
 }
 
 /** 系统当前是否偏好深色 — jsdom / 老内核无 matchMedia 时按浅色兜底. */
@@ -118,6 +124,16 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  const [editor, setEditorState] = useState<EditorSettings>(loadEditorSettings)
+
+  const updateEditorSettings = useCallback((patch: EditorSettingsPatch) => {
+    setEditorState(prev => {
+      const next = { ...prev, ...patch, font: { ...prev.font, ...patch.font } }
+      saveEditorSettings(next)
+      return next
+    })
+  }, [])
+
   // 用 layout effect：Chrome 81 的首帧必须已挂好主题 class 与变量，避免闪一下默认主题
   const mountedRef = useRef(false)
   useLayoutEffect(() => {
@@ -160,8 +176,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const isDark = THEME_META[mode].isDark
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ mode, pref, setMode, isDark, font, setFontScale, setFontBold }),
-    [mode, pref, setMode, isDark, font, setFontScale, setFontBold],
+    () => ({
+      mode, pref, setMode, isDark,
+      font, setFontScale, setFontBold,
+      editor, updateEditorSettings,
+    }),
+    [mode, pref, setMode, isDark, font, setFontScale, setFontBold, editor, updateEditorSettings],
   )
 
   // cssVar 模式：antd 6 默认开启 CSS variables（组件样式引用 --ant-* 变量，切主题只更新
@@ -209,4 +229,15 @@ export function useTheme(): ThemeContextValue {
   const ctx = useContext(ThemeContext)
   if (!ctx) throw new Error('useTheme must be used inside <ThemeProvider>')
   return ctx
+}
+
+/** 编辑器外观（主题明暗 + 编辑器设置）—— 无 Provider 时回退默认值。
+ *
+ * 编辑器组件会被独立挂载在单测 / 预览中，不强制要求 ThemeProvider；
+ * 有 Provider 时随主题与设置变化重新渲染，保证切换即时生效。 */
+export function useEditorAppearance(): { isDark: boolean; editor: EditorSettings } {
+  const ctx = useContext(ThemeContext)
+  return ctx
+    ? { isDark: ctx.isDark, editor: ctx.editor }
+    : { isDark: false, editor: DEFAULT_EDITOR_SETTINGS }
 }

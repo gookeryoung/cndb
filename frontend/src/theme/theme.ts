@@ -37,6 +37,36 @@ export {
   saveFontSettings,
 } from './fonts'
 export type { FontScale, FontScaleMeta, FontSettings } from './fonts'
+export {
+  DEFAULT_EDITOR_SETTINGS,
+  EDITOR_FONT_FAMILIES,
+  EDITOR_FONT_META,
+  EDITOR_FONT_SIZES,
+  EDITOR_FONT_SIZE_LABEL,
+  loadEditorSettings,
+  saveEditorSettings,
+} from './editorSettings'
+export type {
+  EditorFontFamily,
+  EditorFontFamilyMeta,
+  EditorFontSettings,
+  EditorFontSize,
+  EditorSettings,
+  EditorSettingsPatch,
+} from './editorSettings'
+export {
+  EDITOR_THEME_IDS,
+  EDITOR_THEME_META,
+  editorAppearanceExtensions,
+  getEditorPalette,
+  resolveEditorTheme,
+} from './editorThemes'
+export type {
+  EditorPalette,
+  EditorThemeId,
+  EditorThemeMeta,
+  ResolvedEditorThemeId,
+} from './editorThemes'
 
 /* ─────────────── Ant Design ThemeConfig ─────────────── */
 

@@ -77,9 +77,10 @@ describe('SettingsModal 个人设置', () => {
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     const grid = document.querySelector('[data-testid="theme-grid"]')
     expect(grid?.querySelectorAll('[data-theme-card]')).toHaveLength(10)
-    // 首节标题为「配色」（不再叫「主题」），并新增「字体」节
-    expect(screen.getByText('配色')).toBeInTheDocument()
-    expect(screen.getByText('字体')).toBeInTheDocument()
+    // 首节标题为「配色」（不再叫「主题」），并新增「字体」节（编辑器节另有同名控件标签）
+    expect(screen.getAllByText('配色').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('字体').length).toBeGreaterThan(0)
+    expect(screen.getByText('编辑器')).toBeInTheDocument()
   })
 
   it('initialTab="table" 打开时直接定位表格页签', () => {
@@ -142,7 +143,7 @@ describe('SettingsModal 个人设置', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     // mousedown 需派发到 rc-select 的 combobox 输入元素才能打开下拉
-    fireEvent.mouseDown(screen.getByRole('combobox'))
+    fireEvent.mouseDown(screen.getByTestId('font-scale-select').querySelector('input')!)
     fireEvent.click(await screen.findByText('大', { selector: '.ant-select-item-option-content' }))
 
     await waitFor(() => {
@@ -223,6 +224,10 @@ describe('SettingsModal 个人设置', () => {
   it('主题 Tab：恢复默认重置配色与字体（默认=跟随系统 auto，0066 C5）', () => {
     localStorage.setItem('cndb_theme', 'oled')
     localStorage.setItem('cndb_font', JSON.stringify({ scale: 'huge', bold: false }))
+    localStorage.setItem(
+      'cndb_editor_settings',
+      JSON.stringify({ theme: 'one-dark', font: { family: 'system', size: 16 } }),
+    )
     renderProviders(<SettingsModal open initialTab="theme" onClose={() => { }} />)
 
     expect(screen.getByText('特大')).toBeInTheDocument()
@@ -230,10 +235,53 @@ describe('SettingsModal 个人设置', () => {
 
     expect(localStorage.getItem('cndb_theme')).toBe('auto')
     expect(JSON.parse(localStorage.getItem('cndb_font') ?? '{}')).toEqual({ scale: 'standard', bold: false })
+    expect(JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}')).toEqual({
+      theme: 'auto',
+      font: { family: 'jetbrains', size: 'auto' },
+    })
     expect(screen.getByText('标准')).toBeInTheDocument()
     expect(screen.queryByText('特大')).not.toBeInTheDocument()
     // auto 生效回显：jsdom polyfill 系统浅色 → 解析「浅色」（github-light）
     expect(screen.getByText(/跟随系统中/)).toBeInTheDocument()
+  })
+
+  it('编辑器节：配色 / 字体 / 字号可独立选择并持久化', async () => {
+    renderProviders(<SettingsModal open initialTab="theme" onClose={() => { }} />)
+
+    expect(screen.getByText('编辑器')).toBeInTheDocument()
+    expect(screen.getByTestId('editor-theme-preview')).toBeInTheDocument()
+
+    // 配色：跟随应用 → One Dark
+    fireEvent.mouseDown(screen.getByTestId('editor-theme-select').querySelector('input')!)
+    fireEvent.click(await screen.findByText('One Dark', { selector: '.ant-select-item-option-content' }))
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}') as {
+        theme?: string
+      }
+      expect(persisted.theme).toBe('one-dark')
+    })
+
+    // 字体：JetBrains Mono → 系统等宽
+    fireEvent.mouseDown(screen.getByTestId('editor-font-select').querySelector('input')!)
+    fireEvent.click(await screen.findByText('系统等宽', { selector: '.ant-select-item-option-content' }))
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}') as {
+        font?: { family?: string }
+      }
+      expect(persisted.font?.family).toBe('system')
+    })
+
+    // 字号：跟随全站 → 16 px
+    fireEvent.mouseDown(screen.getByTestId('editor-font-size-select').querySelector('input')!)
+    fireEvent.click(await screen.findByText('16 px', { selector: '.ant-select-item-option-content' }))
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}') as {
+        font?: { size?: number }
+      }
+      expect(persisted.font?.size).toBe(16)
+    })
+    // 预览随配色切换（One Dark 背景）
+    expect(screen.getByTestId('editor-theme-preview').style.background).toBe('rgb(40, 44, 52)')
   })
 })
 

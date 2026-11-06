@@ -1,12 +1,12 @@
 /** 流水线 DSL 编辑器 —— CodeMirror 6 封装（需求卡 0111 P0-P2）.
  *
  * 口径对齐设计模块 `design/DslEditor.tsx`：受控 value 同步 / updateListener /
- * oneDark 主题 / StreamLanguage 高亮；本组件额外挂 `lineNumbers`、2 空格缩进、
+ * 个人设置里的编辑器配色与字体 / StreamLanguage 高亮；本组件额外挂 `lineNumbers`、2 空格缩进、
  * 列表行回车延续与自动完成（关键字 / 规则引用 / 本地引用 / 片段）。
  */
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
-import { EditorState } from '@codemirror/state'
+import { Compartment, EditorState } from '@codemirror/state'
 import {
   EditorView,
   keymap,
@@ -14,11 +14,15 @@ import {
   placeholder as cmPlaceholder,
 } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { defaultHighlightStyle, indentUnit, syntaxHighlighting } from '@codemirror/language'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { indentUnit } from '@codemirror/language'
 import { autocompletion } from '@codemirror/autocomplete'
+import { useEditorAppearance } from '@/theme/ThemeProvider'
+import { editorAppearanceExtensions } from '@/theme/theme'
 import { insertDslNewline, pipelineDslLanguage } from './pipelineDsl'
 import { pipelineCompletionSource, type PipelineCheckLike } from './pipelineCompletion'
+
+/** 外观仓：跟随个人设置里的编辑器主题 / 字体实时重配 */
+const appearanceCompartment = new Compartment()
 
 /** 编辑器对宿主暴露的操作（检查目录「插入」按钮用，C7） */
 export interface PipelineDslEditorHandle {
@@ -47,6 +51,7 @@ const PipelineDslEditor = forwardRef<PipelineDslEditorHandle, PipelineDslEditorP
     checksRef.current = checks
     const domainRef = useRef(domain)
     domainRef.current = domain
+    const { isDark, editor } = useEditorAppearance()
 
     // 视图只建一次；外部 value 变化（保存失败回显 / 草稿恢复）以 transaction 同步
     useEffect(() => {
@@ -67,8 +72,9 @@ const PipelineDslEditor = forwardRef<PipelineDslEditorHandle, PipelineDslEditorP
             ]),
             indentUnit.of('  '),
             pipelineDslLanguage,
-            syntaxHighlighting(defaultHighlightStyle),
-            oneDark,
+            appearanceCompartment.of(
+              editorAppearanceExtensions(editor.theme, isDark, editor.font),
+            ),
             EditorView.lineWrapping,
             EditorView.contentAttributes.of({ 'aria-label': '流水线 YAML' }),
             autocompletion({
@@ -100,6 +106,15 @@ const PipelineDslEditor = forwardRef<PipelineDslEditorHandle, PipelineDslEditorP
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } })
       }
     }, [value])
+
+    // 编辑器配色 / 字体变更（个人设置 → 主题 → 编辑器）即时生效，不重建视图
+    useEffect(() => {
+      viewRef.current?.dispatch({
+        effects: appearanceCompartment.reconfigure(
+          editorAppearanceExtensions(editor.theme, isDark, editor.font),
+        ),
+      })
+    }, [editor, isDark])
 
     useImperativeHandle(ref, () => ({
       insertSnippet: (text: string) => {

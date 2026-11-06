@@ -6,9 +6,12 @@ import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, Ap
 import { useTheme } from '@/theme/ThemeProvider'
 import {
   THEME_META, THEME_MODES, FONT_SCALES, FONT_SCALE_META,
+  EDITOR_THEME_IDS, EDITOR_THEME_META, EDITOR_FONT_FAMILIES, EDITOR_FONT_META,
+  EDITOR_FONT_SIZES, EDITOR_FONT_SIZE_LABEL, getEditorPalette,
+  DEFAULT_EDITOR_SETTINGS,
   type ThemePreference,
   DEFAULT_FONT_SETTINGS, DEFAULT_THEME_MODE,
-  type ThemeMode,
+  type ThemeMode, type EditorThemeId, type EditorFontFamily, type EditorFontSize,
 } from '@/theme/theme'
 import { useTableSettingsStore, useDocSettingsStore, useAuthStore, type SettingsTab } from '@/store'
 import { authApi } from '@/api'
@@ -279,16 +282,63 @@ function SecurityPanel({ onClose }: { onClose: () => void }) {
   )
 }
 
-/** 主题分页内容 — 配色 + 字体 */
+/** 编辑器配色 / 字体实时预览（DSL 片段，不依赖 CodeMirror，避免设置页拉编辑器包） */
+function EditorPreview({ theme, family }: {
+  theme: EditorThemeId
+  family: EditorFontFamily
+}) {
+  const { isDark } = useTheme()
+  const p = getEditorPalette(theme, isDark)
+  const keyword = (text: string) => <span style={{ color: p.keyword }}>{text}</span>
+  const number = (text: string) => <span style={{ color: p.number }}>{text}</span>
+  const comment = (text: string) => <span style={{ color: p.comment }}>{text}</span>
+  return (
+    <div
+      data-testid="editor-theme-preview"
+      style={{
+        marginTop: 12,
+        background: p.bg,
+        border: `1px solid ${p.border}`,
+        borderRadius: 8,
+        padding: '10px 12px',
+        fontFamily: EDITOR_FONT_META[family].css,
+        fontSize: 12,
+        lineHeight: 1.7,
+        color: p.text,
+        overflow: 'hidden',
+      }}
+    >
+      <div>
+        <span style={{ color: p.muted, marginRight: 10 }}>1</span>
+        {keyword('param')} width = {number('120')}
+      </div>
+      <div>
+        <span style={{ color: p.muted, marginRight: 10 }}>2</span>
+        {keyword('module')} base {'{'}
+      </div>
+      <div>
+        <span style={{ color: p.muted, marginRight: 10 }}>3</span>
+        {'  '}{keyword('box')}(size = [{number('width')}, {number('80')}, {number('40')}]) {comment('// 底座')}
+      </div>
+      <div>
+        <span style={{ color: p.muted, marginRight: 10 }}>4</span>
+        {'}'}
+      </div>
+    </div>
+  )
+}
+
+/** 主题分页内容 — 配色 + 字体 + 编辑器 */
 function ThemePanel() {
   const { message } = App.useApp()
-  const { mode, pref, setMode, font, setFontScale, setFontBold } = useTheme()
+  const { mode, pref, setMode, font, setFontScale, setFontBold, editor, updateEditorSettings } = useTheme()
 
-  // 恢复默认：复用既有 setter 即时持久化（偏好跟随系统 auto / 字号标准 / 不加粗）
+  // 恢复默认：复用既有 setter 即时持久化（偏好跟随系统 auto / 字号标准 / 不加粗 / 编辑器跟随应用）
   const handleReset = () => {
     setMode(DEFAULT_THEME_MODE)
     setFontScale(DEFAULT_FONT_SETTINGS.scale)
     setFontBold(DEFAULT_FONT_SETTINGS.bold)
+    updateEditorSettings(DEFAULT_EDITOR_SETTINGS)
     message.info('已恢复主题设置为默认值')
   }
 
@@ -368,6 +418,59 @@ function ThemePanel() {
           />
         </div>
       </div>
+
+      <Divider style={{ margin: '20px 0 12px' }} />
+      <div style={{ marginBottom: 12 }}>
+        <Text strong style={{ fontSize: 14 }}>编辑器</Text>
+        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+          结构 DSL 与流水线编辑器独立配色，避免与页面主题相互迁就
+        </Text>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 13 }}>配色</Text>
+          <Select
+            data-testid="editor-theme-select"
+            value={editor.theme}
+            onChange={(v: EditorThemeId) => updateEditorSettings({ theme: v })}
+            style={{ width: 148 }}
+            options={EDITOR_THEME_IDS.map(id => ({
+              value: id,
+              label: EDITOR_THEME_META[id].label,
+            }))}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 13 }}>字体</Text>
+          <Select
+            data-testid="editor-font-select"
+            value={editor.font.family}
+            onChange={(v: EditorFontFamily) => updateEditorSettings({ font: { family: v } })}
+            style={{ width: 150 }}
+            options={EDITOR_FONT_FAMILIES.map(id => ({
+              value: id,
+              label: EDITOR_FONT_META[id].label,
+            }))}
+          />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Text style={{ fontSize: 13 }}>字号</Text>
+          <Select
+            data-testid="editor-font-size-select"
+            value={editor.font.size}
+            onChange={(v: EditorFontSize) => updateEditorSettings({ font: { size: v } })}
+            style={{ width: 110 }}
+            options={EDITOR_FONT_SIZES.map(size => ({
+              value: size,
+              label: EDITOR_FONT_SIZE_LABEL[size],
+            }))}
+          />
+        </div>
+      </div>
+      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+        {EDITOR_THEME_META[editor.theme].description}
+      </Text>
+      <EditorPreview theme={editor.theme} family={editor.font.family} />
 
       <Button size="small" style={{ marginTop: 20 }} onClick={handleReset}>
         恢复默认

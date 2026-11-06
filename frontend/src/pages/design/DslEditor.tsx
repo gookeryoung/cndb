@@ -16,10 +16,10 @@ import {
   type DecorationSet,
 } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { oneDark } from '@codemirror/theme-one-dark'
 import { autocompletion } from '@codemirror/autocomplete'
 import type { DesignDiagnostic } from '@/api'
+import { useEditorAppearance } from '@/theme/ThemeProvider'
+import { editorAppearanceExtensions } from '@/theme/theme'
 import { cnDslLanguage } from './designLang'
 import { dslCompletionSource, type DslPartOption } from './designCompletion'
 
@@ -50,6 +50,8 @@ const diagnosticsField = StateField.define<DecorationSet>({
 const editableCompartment = new Compartment()
 /** 自动完成仓：只读 viewer 不挂补全扩展（C5） */
 const completionCompartment = new Compartment()
+/** 外观仓：跟随个人设置里的编辑器主题 / 字体实时重配 */
+const appearanceCompartment = new Compartment()
 
 interface DslEditorProps {
   value: string
@@ -81,6 +83,7 @@ export default function DslEditor({
   onChangeRef.current = onChange
   const fetchPartsRef = useRef(fetchParts)
   fetchPartsRef.current = fetchParts
+  const { isDark, editor } = useEditorAppearance()
 
   // 视图只建一次；外部 value 变化（保存后回写等）以 transaction 同步
   useEffect(() => {
@@ -95,8 +98,9 @@ export default function DslEditor({
           history(),
           keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
           cnDslLanguage,
-          syntaxHighlighting(defaultHighlightStyle),
-          oneDark,
+          appearanceCompartment.of(
+            editorAppearanceExtensions(editor.theme, isDark, editor.font),
+          ),
           diagnosticsField,
           EditorView.lineWrapping,
           placeholder ? cmPlaceholder(placeholder) : [],
@@ -133,6 +137,15 @@ export default function DslEditor({
       ],
     })
   }, [readOnly])
+
+  // 编辑器配色 / 字体变更（个人设置 → 主题 → 编辑器）即时生效，不重建视图
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: appearanceCompartment.reconfigure(
+        editorAppearanceExtensions(editor.theme, isDark, editor.font),
+      ),
+    })
+  }, [editor, isDark])
 
   // 诊断装饰同步（错误行底色）
   useEffect(() => {

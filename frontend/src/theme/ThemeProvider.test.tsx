@@ -36,6 +36,21 @@ function FontProbe() {
   )
 }
 
+/** 编辑器设置探针 —— 展示并局部更新配色 / 字体 */
+function EditorProbe() {
+  const { editor, updateEditorSettings } = useTheme()
+  return (
+    <div>
+      <span data-testid="editor-theme">{editor.theme}</span>
+      <span data-testid="editor-family">{editor.font.family}</span>
+      <span data-testid="editor-size">{String(editor.font.size)}</span>
+      <button onClick={() => updateEditorSettings({ theme: 'solarized-dark' })}>换编辑器主题</button>
+      <button onClick={() => updateEditorSettings({ font: { family: 'system' } })}>换编辑器字体</button>
+      <button onClick={() => updateEditorSettings({ font: { size: 16 } })}>换编辑器字号</button>
+    </div>
+  )
+}
+
 /** 可控 matchMedia 桩：返回值可变、change 监听可手动派发（0066 C3 用） */
 function stubMatchMedia(initialDark: boolean) {
   const listeners = new Set<(e: { matches: boolean }) => void>()
@@ -294,5 +309,59 @@ describe('ThemeProvider 字体设置', () => {
     expect(screen.getByTestId('font-bold')).toHaveTextContent('true')
     expect(document.body.style.fontSize).toBe('18px')
     expect(document.body.style.fontWeight).toBe('600')
+  })
+})
+
+describe('ThemeProvider 编辑器设置', () => {
+  it('默认跟随应用 / JetBrains Mono / 跟随全站', () => {
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <EditorProbe />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByTestId('editor-theme')).toHaveTextContent('auto')
+    expect(screen.getByTestId('editor-family')).toHaveTextContent('jetbrains')
+    expect(screen.getByTestId('editor-size')).toHaveTextContent('auto')
+  })
+
+  it('局部更新配色不影响字体，反之亦然，且均持久化', () => {
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <EditorProbe />
+      </ThemeProvider>,
+    )
+
+    fireEvent.click(screen.getByText('换编辑器主题'))
+    expect(screen.getByTestId('editor-theme')).toHaveTextContent('solarized-dark')
+    expect(screen.getByTestId('editor-family')).toHaveTextContent('jetbrains')
+
+    fireEvent.click(screen.getByText('换编辑器字体'))
+    fireEvent.click(screen.getByText('换编辑器字号'))
+    expect(screen.getByTestId('editor-family')).toHaveTextContent('system')
+    expect(screen.getByTestId('editor-size')).toHaveTextContent('16')
+    expect(JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}')).toEqual({
+      theme: 'solarized-dark',
+      font: { family: 'system', size: 16 },
+    })
+  })
+
+  it('localStorage 已有编辑器设置时以其为初始值', () => {
+    localStorage.clear()
+    localStorage.setItem(
+      'cndb_editor_settings',
+      JSON.stringify({ theme: 'high-contrast', font: { family: 'inter', size: 12 } }),
+    )
+    render(
+      <ThemeProvider>
+        <EditorProbe />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByTestId('editor-theme')).toHaveTextContent('high-contrast')
+    expect(screen.getByTestId('editor-family')).toHaveTextContent('inter')
+    expect(screen.getByTestId('editor-size')).toHaveTextContent('12')
   })
 })
