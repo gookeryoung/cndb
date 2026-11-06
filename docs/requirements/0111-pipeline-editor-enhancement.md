@@ -80,8 +80,8 @@
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/pages/pipelines/{pipelineDsl.ts,PipelineDslEditor.tsx,PipelinesPage.tsx}`、`frontend/src/index.css` | `pipelineDsl.test.ts`、`PipelineDslEditor.test.tsx`、`PipelinesPage.test.tsx` | 待提交 |
-| P1 | 已落地 | `frontend/src/pages/pipelines/pipelineCompletion.ts` | `pipelineCompletion.test.ts` | 待提交 |
-| P2 | 已落地 | `frontend/src/pages/pipelines/{pipelineCompletion.ts,PipelineDslEditor.tsx}` | `pipelineCompletion.test.ts`、`frontend/tests/e2e/critical/pipelines.spec.ts` | 待提交 |
+| P0 | 已落地 | `frontend/src/pages/pipelines/{pipelineDsl.ts,PipelineDslEditor.tsx,PipelinesPage.tsx}`、`frontend/src/index.css` | `pipelineDsl.test.ts`、`PipelineDslEditor.test.tsx`、`PipelinesPage.test.tsx` | `ba817ab2` |
+| P1 | 已落地 | `frontend/src/pages/pipelines/pipelineCompletion.ts` | `pipelineCompletion.test.ts` | `ba817ab2` |
+| P2 | 已落地 | `frontend/src/pages/pipelines/{pipelineCompletion.ts,PipelineDslEditor.tsx}` | `pipelineCompletion.test.ts`、`frontend/tests/e2e/critical/pipelines.spec.ts` | `ba817ab2` |
 
 - 最近一次全绿：`make flow`（`check-fast` + `test`）@ 2026-11-06（e2e 在 CI 4 分片执行）
