@@ -163,6 +163,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@rc-component/form@1.8.6': 406bf1ad761664c33f4d8ca68289b4f48af331e74cc7a068703687cd892375b9
   '@rc-component/util': cfdd6ef23045f681347afd249a3a876e368c9ddcd648f5947c8f6e3fb86e17f0
   react-dom@19.3.1: e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55
 
@@ -4502,7 +4503,7 @@ snapshots:
       react: 19.3.1
       react-dom: 19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1)
 
-  '@rc-component/form@1.8.6(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)':
+  '@rc-component/form@1.8.6(patch_hash=406bf1ad761664c33f4d8ca68289b4f48af331e74cc7a068703687cd892375b9)(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@rc-component/async-validator': 6.0.0
       '@rc-component/util': 1.14.0(patch_hash=cfdd6ef23045f681347afd249a3a876e368c9ddcd648f5947c8f6e3fb86e17f0)(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
@@ -5199,7 +5200,7 @@ snapshots:
       '@rc-component/dialog': 1.10.0(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
       '@rc-component/drawer': 1.4.2(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
       '@rc-component/dropdown': 1.0.3(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
-      '@rc-component/form': 1.8.6(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
+      '@rc-component/form': 1.8.6(patch_hash=406bf1ad761664c33f4d8ca68289b4f48af331e74cc7a068703687cd892375b9)(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
       '@rc-component/image': 1.10.0(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
       '@rc-component/input': 1.3.1(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
       '@rc-component/input-number': 1.6.2(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)

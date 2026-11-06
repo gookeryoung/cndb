@@ -1,13 +1,7 @@
 {
-  "_readme": "关键 chunk 体积基线与上限（gzip 字节）。由 frontend/scripts/bundle-budget.mjs 读写，请勿手改 —— 基线统一用 `node scripts/bundle-budget.mjs --update --reason \"...\"`（只动 baseline），上限用 `--set-budget --only <chunk> --reason \"...\"`（只动 budget），理由会落盘到 reason/updatedAt/commit，让体积增长在 review 时可追溯。语义（需求卡片 0090）：baseline 是 warn 参照（超基线未超上限 = 慢涨 warn），budget 是 FAIL 硬上限 —— 小步增量只 warn，超上限才拦 CI。resolve: 'entry'=从 dist/index.html 取主入口 script；{assetPattern}=在 dist/assets 内按正则匹配 chunk 文件。tolerance=该项单独容差(%)，仅在未声明 budget 时用于「基线+容差」回退口径。",
+  "_readme": "关键 chunk 体积基线与上限（gzip 字节）。由 frontend/scripts/bundle-budget.mjs 读写，请勿手改 —— 基线统一用 `node scripts/bundle-budget.mjs --update --reason \"...\"`（只动 baseline），上限用 `--set-budget --only <chunk> --reason \"...\"`（只动 budget），理由会落盘到 reason/updatedAt/commit，让体积增长在 review 时可追溯。语义（需求卡片 0090）：baseline 是 warn 参照（超基线未超上限 = 慢涨 warn），budget 是 FAIL 硬上限 —— 小步增量只 warn，超上限才拦 CI。resolve: 'entry'=从 dist/index.html 取主入口 script；'entryCss'=主入口样式表；'fonts'=全部 woff2 传输量；{assetPattern}=在 dist/assets 内按正则匹配 chunk 文件；{moduleMarker}=按 dist/.vite/chunk-modules.json 的模块归属定位 chunk（hash 改名后仍有效，可命中多个 chunk 时求和）。tolerance=该项单独容差(%)，仅在未声明 budget 时用于「基线+容差」回退口径。",
   "tolerancePct": 5,
   "history": [
-    "2026-10-20 rc-field-form 补 sideEffects + barrel 纯 re-export（pnpm patch），修掉 antd form/context 连带拉入 Form/useForm/Field/validateUtil/async-validator 的问题，主入口 190.10→175.22 KiB；基线随之下调锁定净收益",
-    "2026-10-22 feat: ADR 0020 AI 能力（文档/表格/分析入口，重组件均 lazy；按 P1-P3 实测收口基线）",
-    "2026-10-24 fix(ci): 移除 KlineView 后 echarts/simple-statistics 共享 chunk 合并进 ChartView（lazy chunk，首屏不变，总量未增），按实测收口基线",
-    "2026-10-25 feat(help): 帮助文档整页为独立 lazy chunk（ADR 0029 P2），锁定体积防回归",
-    "2026-10-26 feat(help): 帮助文档四级层级（ADR 0036）把正文拆为 L3 小节 + L4 条目并新增 6 个主题，帮助正文体积由 10.06 涨到 25.60 KiB；该 chunk 已是 /help 单独 lazy chunk，不进首屏，正文为静态文案无可 lazy 化依赖",
-    "2026-10-28 ADR 0060 文档预览缩放/大纲修复的新增教程说明文案，属帮助文档页静态内容，随 chunk 必然加载，无 Dialog 可 lazy",
     "2026-10-30 feat(documents): MHTML 预览/导入功能的帮助文档（quickStart 教程 + tutorials 章节），属帮助页静态文案，该 chunk 已是 /help 单独 lazy chunk，不进首屏，无 Dialog 可 lazy",
     "2026-10-30 chore: React 19 + antd 6 升级（ADR 0074 P0）—— react-dom 19 与 @rc-component/* 生态为运行时固有依赖，无法懒加载；主入口 +45 KiB 属依赖升级确定性增量",
     "2026-10-31 feat(dashboard): ADR 0023 P0 只读画布新增 DashboardView lazy chunk（含契约归一/栅格/四类组件），按需打开不进首屏",
@@ -21,17 +15,23 @@
     "2026-11-03 [set-budget] 需求卡片 0090：基线与上限语义分离 —— baseline 只作 warn 参照，budget 为 FAIL 硬上限；主入口留 3% 余量，按需 chunk 留 15-25%，新增 5 个帮助 section chunk 条目；HelpDocsPage 壳因正文按部分拆 chunk 由 38.31 降至 4.30 KiB",
     "2026-11-03 需求卡片 0090：帮助正文按 L1 部分懒加载拆 chunk，HelpDocsPage 壳 38.31→4.30 KiB；全部条目基线按本轮实测收口并声明 budget 上限，消除小步增量触发超限的脆弱判定",
     "2026-11-05 docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
-    "2026-11-05 [set-budget] docs: 结构设计 DSL 帮助主题补 13 个典型示例，纯文档字符串随 HelpTutorials 懒加载 chunk 增长（+5.3KiB），无依赖可拆、非 UI 组件"
+    "2026-11-05 [set-budget] docs: 结构设计 DSL 帮助主题补 13 个典型示例，纯文档字符串随 HelpTutorials 懒加载 chunk 增长（+5.3KiB），无依赖可拆、非 UI 组件",
+    "2026-11-06 feat(perf): ADR 0116 P1 axios 改为按需加载 + rc-form 摇树优化，入口 gzip 230→198 KiB（C5）",
+    "2026-11-06 feat(perf): ADR 0116 P0 首轮实测回填主入口 CSS 基线（C2）",
+    "2026-11-06 feat(perf): ADR 0116 P1 字体裁剪到 7 个字重（Inter 4 + Outfit 2 + Mono 1），233→142 KiB（C4）",
+    "2026-11-06 feat(perf): ADR 0116 P2 编辑器与图表弹窗改 lazy，文档页 118→29 KiB（C6）",
+    "2026-11-06 [set-budget] feat(perf): ADR 0116 P1 入口上限按 C5 目标收紧到 215 KiB",
+    "2026-11-06 [set-budget] feat(perf): ADR 0116 P2 文档页上限按 C6 目标收紧到 150 KiB"
   ],
   "chunks": [
     {
       "name": "主入口 index",
       "resolve": "entry",
-      "baseline": 233325,
-      "budget": 239000,
-      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
-      "updatedAt": "2026-11-05",
-      "commit": "f8e61e72"
+      "baseline": 203042,
+      "budget": 220160,
+      "reason": "feat(perf): ADR 0116 P1 入口上限按 C5 目标收紧到 215 KiB",
+      "updatedAt": "2026-11-06",
+      "commit": "3ebf4b1"
     },
     {
       "name": "GridPage（表页闭包）",
@@ -142,6 +142,90 @@
       "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
       "updatedAt": "2026-11-05",
       "commit": "f8e61e72"
+    },
+    {
+      "name": "主入口 CSS（全局样式）",
+      "resolve": "entryCss",
+      "baseline": 22812,
+      "budget": 26000,
+      "reason": "feat(perf): ADR 0116 P0 首轮实测回填主入口 CSS 基线（C2）",
+      "updatedAt": "2026-11-06",
+      "commit": "3ebf4b1"
+    },
+    {
+      "name": "首屏字体（woff2 传输）",
+      "resolve": "fonts",
+      "baseline": 145878,
+      "budget": 153600,
+      "reason": "feat(perf): ADR 0116 P1 字体裁剪到 7 个字重（Inter 4 + Outfit 2 + Mono 1），233→142 KiB（C4）",
+      "updatedAt": "2026-11-06",
+      "commit": "3ebf4b1"
+    },
+    {
+      "name": "DocumentEditorPage（文档页）",
+      "resolve": {
+        "moduleMarker": "src/pages/documents/DocumentEditorPage.tsx"
+      },
+      "baseline": 29989,
+      "budget": 153600,
+      "reason": "feat(perf): ADR 0116 P2 文档页上限按 C6 目标收紧到 150 KiB",
+      "updatedAt": "2026-11-06",
+      "commit": "3ebf4b1"
+    },
+    {
+      "name": "CodeMirror（编辑器共享 chunk）",
+      "resolve": {
+        "moduleMarker": "@codemirror/view"
+      },
+      "baseline": 113741,
+      "budget": 135000,
+      "reason": "feat(perf): ADR 0116 P0 新增 CodeMirror 共享 chunk 预算，防编辑器依赖进首屏",
+      "updatedAt": "2026-11-06",
+      "commit": ""
+    },
+    {
+      "name": "MainLayout（应用外壳）",
+      "resolve": {
+        "moduleMarker": "src/layouts/MainLayout.tsx"
+      },
+      "baseline": 16546,
+      "budget": 20000,
+      "reason": "feat(perf): ADR 0116 P0 新增应用外壳预算（首轮实测基线，C2）",
+      "updatedAt": "2026-11-06",
+      "commit": ""
+    },
+    {
+      "name": "WorkspaceList（工作区列表）",
+      "resolve": {
+        "moduleMarker": "src/pages/workspace/WorkspaceList.tsx"
+      },
+      "baseline": 10940,
+      "budget": 13000,
+      "reason": "feat(perf): ADR 0116 P0 新增工作区列表预算（首轮实测基线，C2）",
+      "updatedAt": "2026-11-06",
+      "commit": ""
+    },
+    {
+      "name": "DesignEditorPage（设计编辑器页）",
+      "resolve": {
+        "moduleMarker": "src/pages/design/DesignEditorPage.tsx"
+      },
+      "baseline": 12117,
+      "budget": 15000,
+      "reason": "feat(perf): ADR 0116 P0 新增设计编辑器页预算（首轮实测基线，C2）",
+      "updatedAt": "2026-11-06",
+      "commit": ""
+    },
+    {
+      "name": "AnalyticsPage（分析页）",
+      "resolve": {
+        "moduleMarker": "src/pages/analytics/AnalyticsPage.tsx"
+      },
+      "baseline": 19753,
+      "budget": 24000,
+      "reason": "feat(perf): ADR 0116 P0 新增分析页预算（首轮实测基线，C2）",
+      "updatedAt": "2026-11-06",
+      "commit": ""
     }
   ]
 }

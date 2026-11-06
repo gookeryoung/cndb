@@ -100,6 +100,7 @@ describe('sendBeacon 上报', () => {
             const payload = JSON.parse(text)
             expect(payload).toMatchObject({ name: 'TTFB', value: 88, rating: 'good' })
             expect(payload.path).toBe(window.location.pathname)
+            expect(payload.navigationType).toBe('navigate')
         })
     })
 

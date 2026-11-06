@@ -18,8 +18,12 @@
  * `typeof window` 守卫——浏览器中 window 恒存在，行为零变化；上游若修复可撤补丁。
  *
  * 历史背景：antd 5 时代还有一枚 `rc-field-form` 摇树补丁；antd 6 依赖已迁移
- * 到 `@rc-component/*`，该补丁随之删除（ADR 0074 D5）。若 P0 后实测发现
- * `@rc-component/form` 存在同类 barrel 不可摇树问题，再按 pnpm patch 流程重建。
+ * 到 `@rc-component/*`，该补丁随之删除（ADR 0074 D5）。
+ *
+ * `@rc-component/form@1.8.6` 的补丁（ADR 0116 C5）：antd 6 的表单入口把成员挂到
+ * `RefForm.Field = Field` 这类属性赋值上，ES barrel 因此不可摇树，入口静态带上约
+ * 46 KB 原始体积。补丁移除属性赋值、保留 named export 与默认导出，并给 package.json
+ * 补 `sideEffects: false`；行为不变，仅让未被引用的成员可被 tree-shaking 去掉。
  *
  * 依赖解析注意：pnpm 严格 node_modules 下项目无法直接解析 @rc-component/util，
  * 必须从 antd 的包位置解析。
@@ -34,6 +38,30 @@ const require = createRequire(import.meta.url)
 
 /** @type {Array<{name: string, check: () => string[]}>} */
 const CHECKS = [
+  {
+    name: '@rc-component/form 入口可摇树',
+    check: () => {
+      const antdPkg = require.resolve('antd/package.json')
+      const antdRequire = createRequire(antdPkg)
+      let entry
+      try {
+        entry = antdRequire.resolve('@rc-component/form/es/index.js')
+      } catch {
+        return ['无法解析 @rc-component/form/es/index.js（依赖是否已安装？跑 pnpm install）']
+      }
+      const source = fs.readFileSync(entry, 'utf8')
+      const errors = []
+      // 补丁要点：移除 `RefForm.Field = ...` 等属性赋值，保留 named export 与默认导出
+      if (/RefForm\.(Field|List|FormProvider|useForm|useWatch)\s*=/.test(source)) {
+        errors.push(`${entry}\n    入口仍把成员挂到 RefForm 上（barrel 不可摇树，入口体积会反弹）`)
+      }
+      const pkgPath = path.resolve(path.dirname(entry), '..', 'package.json')
+      if (!fs.readFileSync(pkgPath, 'utf8').includes('"sideEffects": false')) {
+        errors.push(`${pkgPath}\n    缺少 sideEffects: false（tree-shaking 不生效）`)
+      }
+      return errors
+    },
+  },
   {
     name: '@rc-component/util isEqual',
     check: () => {

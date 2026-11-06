@@ -28,8 +28,9 @@
 | [0054](0054-dev-port-cleanup.md) | `make dev` 启动前检查并释放开发端口 | Implemented | P0 已落地 | `scripts/free_ports.py`、`Makefile` | `tests/test_free_ports.py` | [未发布](../../CHANGELOG.md) |
 | [0055](0055-header-brand-version.md) | 顶栏品牌字右侧显示应用版本小字 | Implemented | P0-P1 已落地（2026-11-02 人工确认） | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/layouts/MainLayout.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0074](0074-react19-antd6-upgrade.md) | 前端迁移 React 19 + antd 6 | Implemented | P0-P2 已落地（含 List→Listy 迁移专项，e14d48b0） | `frontend/package.json`、`frontend/patches/`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/pages/**` | `frontend/src/theme/ThemeProvider.compat.test.tsx`、`frontend/tests/e2e/critical/antd-deprecation.spec.ts` | [未发布](../../CHANGELOG.md) |
+| [0116](0116-frontend-performance-program.md) | 前端性能提升专项（首屏 / 文档按需加载 / 路由预取 / 性能门禁） | Accepted | P0-P2 已落地，P3 进行中（2026-11-06） | `frontend/src/main.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/scripts/bundle-budget.mjs` | `frontend/tests/e2e/perf/journeys.spec.ts` | [未发布](../../CHANGELOG.md) |
 
-承接关系：0074 取代 0026 的版本前提（React 19 + antd 6 不承诺旧内核，冒烟仍是兜底）；0031 的字重 / 字体口径被 `docs/DESIGN_SYSTEM.md` 引用。
+承接关系：0074 取代 0026 的版本前提（React 19 + antd 6 不承诺旧内核，冒烟仍是兜底）；0031 的字重 / 字体口径被 `docs/DESIGN_SYSTEM.md` 引用；0116 在 0046 的读路径优化上补前端预取与性能门禁，字体字重调整以 0031 的排版 token 为界。
 
 ## 工作区、权限与账号
 

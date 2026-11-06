@@ -10,7 +10,11 @@
  *     路由守卫重定向到 login。
  */
 
-import axios, { type InternalAxiosRequestConfig } from 'axios'
+import type {
+  AxiosInstance,
+  AxiosRequestConfig,
+  InternalAxiosRequestConfig,
+} from 'axios'
 
 const TOKEN_KEY = 'cndb_access_token'
 const REFRESH_KEY = 'cndb_refresh_token'
@@ -90,13 +94,35 @@ async function _refreshAccessToken(): Promise<string | null> {
   return _refreshInFlight
 }
 
-const api = axios.create({
-  baseURL: '/api',
-  timeout: 30000,
-  headers: { 'Content-Type': 'application/json' },
+// ── axios 按需加载 ──────────────────────────────────────
+//
+// 入口 chunk（ADR 0116 C5）不再静态携带 axios：模块加载时先发起动态 import，
+// chunk 与主入口并行下载；真正发请求前 await 加载完成。渲染外壳与首屏不依赖 axios。
+
+let _axiosPromise: Promise<typeof import('axios')> | null = null
+function _loadAxios(): Promise<typeof import('axios')> {
+  _axiosPromise ??= import('axios')
+  return _axiosPromise
+}
+// 模块求值即开始下载，避免把「下载 axios」推迟到首个请求
+void _loadAxios()
+
+let _instancePromise: Promise<AxiosInstance> | null = null
+
+/** 测试可覆写的 defaults（client.test.ts 通过 api.defaults.adapter 注入自定义 adapter） */
+const _defaultsTarget: Record<string, unknown> = {}
+let _instance: AxiosInstance | null = null
+const _defaults = new Proxy(_defaultsTarget, {
+  set(target, key, value) {
+    target[key as string] = value
+    if (_instance) (_instance.defaults as Record<string, unknown>)[key as string] = value
+    return true
+  },
 })
 
-api.interceptors.request.use((config) => {
+/** 请求拦截器只注册一次；测试通过 api.interceptors.request.handlers 直接读取 */
+const _requestHandlers: Array<{ fulfilled: (config: InternalAxiosRequestConfig) => InternalAxiosRequestConfig }> = []
+const _requestInterceptor = (config: InternalAxiosRequestConfig) => {
   const token = getToken()
   if (token) {
     config.headers = config.headers ?? {}
@@ -106,7 +132,104 @@ api.interceptors.request.use((config) => {
     delete (config.headers as Record<string, unknown>)['Content-Type']
   }
   return config
-})
+}
+_requestHandlers.push({ fulfilled: _requestInterceptor })
+
+/** 响应拦截器 —— 401 刷新 / detail 归一化（逻辑与静态引入版本一致） */
+async function _responseErrorHandler(err: any) {
+  // responseType: 'blob' 的请求失败时，响应体是 Blob 而非 JSON 对象；
+  // 若实际是 JSON（FastAPI detail），先解析出来再走统一的 detail 提取，
+  // 否则 blob 请求（备份下载/报告渲染）失败时用户只能看到英文状态码文案
+  if (err?.response?.data instanceof Blob && err.response.data.type.includes('application/json')) {
+    try {
+      err.response.data = JSON.parse(
+        await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result))
+          reader.onerror = () => reject(reader.error)
+          reader.readAsText(err.response.data)
+        }),
+      )
+    } catch { /* 非 JSON 内容，保持原样 */ }
+  }
+  // 将 FastAPI 的 detail（字符串或校验错误数组）归一化进 err.message
+  const detail = err?.response?.data?.detail
+  if (detail) {
+    err.message =
+      typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: { msg?: string }) => d?.msg ?? JSON.stringify(d)).join('; ')
+          : String(detail?.msg ?? JSON.stringify(detail))
+  }
+
+  if (err.response?.status === 401) {
+    const url = String(err?.config?.url ?? '')
+    const isAuthEndpoint = AUTH_ENDPOINTS.some((p) => url.includes(p))
+    const alreadyRetried = Boolean((err?.config as { __retried?: boolean } | undefined)?.__retried)
+
+    if (!isAuthEndpoint) {
+      if (!alreadyRetried) {
+        const fresh = await _refreshAccessToken()
+        if (fresh) {
+          const config = err.config as InternalAxiosRequestConfig & { __retried?: boolean }
+          config.__retried = true
+          config.headers = config.headers ?? {}
+          ;(config.headers as Record<string, string>).Authorization = `Bearer ${fresh}`
+          return (await _getInstance()).request(config)
+        }
+      }
+
+      clearToken()
+      _emitAuthExpired()
+    }
+  }
+
+  return Promise.reject(err)
+}
+
+async function _getInstance(): Promise<AxiosInstance> {
+  if (!_instancePromise) {
+    _instancePromise = _loadAxios().then(({ default: axios }) => {
+      const instance = axios.create({
+        baseURL: '/api',
+        timeout: 30000,
+        headers: { 'Content-Type': 'application/json' },
+      })
+      instance.interceptors.request.use(_requestInterceptor)
+      instance.interceptors.response.use((res) => res, _responseErrorHandler as any)
+      _instance = instance
+      for (const [key, value] of Object.entries(_defaultsTarget)) {
+        ;(instance.defaults as Record<string, unknown>)[key] = value
+      }
+      return instance
+    })
+  }
+  return _instancePromise
+}
+
+/** 与 axios 实例方法同签名的门面 —— 调用点无需改动，仅在首次请求时等待 axios chunk */
+const api = {
+  defaults: _defaults as Record<string, unknown> & { adapter?: AxiosRequestConfig['adapter'] },
+  interceptors: {
+    request: { handlers: _requestHandlers },
+  },
+  get<T = unknown>(url: string, config?: AxiosRequestConfig) {
+    return _getInstance().then((instance) => instance.get<T>(url, config))
+  },
+  delete<T = unknown>(url: string, config?: AxiosRequestConfig) {
+    return _getInstance().then((instance) => instance.delete<T>(url, config))
+  },
+  post<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    return _getInstance().then((instance) => instance.post<T>(url, data, config))
+  },
+  put<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    return _getInstance().then((instance) => instance.put<T>(url, data, config))
+  },
+  patch<T = unknown>(url: string, data?: unknown, config?: AxiosRequestConfig) {
+    return _getInstance().then((instance) => instance.patch<T>(url, data, config))
+  },
+} satisfies Record<string, unknown>
 
 // ── auth:expired 事件总线 ──────────────────────────────────
 
@@ -136,67 +259,6 @@ function _emitAuthExpired() {
   }, EXPIRED_DEBOUNCE_MS)
 }
 
-// ── 响应拦截器 ──────────────────────────────────────────
-
-api.interceptors.response.use(
-  (res) => res,
-  async (err) => {
-    // responseType: 'blob' 的请求失败时，响应体是 Blob 而非 JSON 对象；
-    // 若实际是 JSON（FastAPI detail），先解析出来再走统一的 detail 提取，
-    // 否则 blob 请求（备份下载/报告渲染）失败时用户只能看到英文状态码文案
-    if (err?.response?.data instanceof Blob && err.response.data.type.includes('application/json')) {
-      try {
-        err.response.data = JSON.parse(
-          await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader()
-            reader.onload = () => resolve(String(reader.result))
-            reader.onerror = () => reject(reader.error)
-            reader.readAsText(err.response.data)
-          }),
-        )
-      } catch { /* 非 JSON 内容，保持原样 */ }
-    }
-    // 将 FastAPI 的 detail（字符串或校验错误数组）归一化进 err.message，
-    // 各调用点的 `err.message` 展示即可拿到可读的后端文案
-    const detail = err?.response?.data?.detail
-    if (detail) {
-      err.message =
-        typeof detail === 'string'
-          ? detail
-          : Array.isArray(detail)
-            ? detail.map((d: { msg?: string }) => d?.msg ?? JSON.stringify(d)).join('; ')
-            : String(detail?.msg ?? JSON.stringify(detail))
-    }
-
-    if (err.response?.status === 401) {
-      const url = String(err?.config?.url ?? '')
-      const isAuthEndpoint = AUTH_ENDPOINTS.some((p) => url.includes(p))
-      const alreadyRetried = Boolean((err?.config as { __retried?: boolean } | undefined)?.__retried)
-
-      if (!isAuthEndpoint) {
-        if (!alreadyRetried) {
-          // 尝试用刷新令牌换新访问令牌，成功则重放原请求（仅一次）
-          const fresh = await _refreshAccessToken()
-          if (fresh) {
-            const config = err.config as InternalAxiosRequestConfig & { __retried?: boolean }
-            config.__retried = true
-            config.headers = config.headers ?? {}
-            ;(config.headers as Record<string, string>).Authorization = `Bearer ${fresh}`
-            return api.request(config)
-          }
-        }
-
-        clearToken()
-        // 防抖发出事件 —— 应用层订阅后负责更新 store + 友好提示 + 路由跳转
-        _emitAuthExpired()
-      }
-      // 鉴权端点自身的 401（密码错误等）不是「会话过期」：既不 clearToken 也不发过期事件。
-      // 否则会踩竞态 —— 用户输错一次密码后 500ms 防抖窗口内改对并登录成功，
-      // 延迟触发的 notifyExpired 会把刚拿到的会话清掉，用户被弹回登录页。
-    }
-
-    return Promise.reject(err)
-  },
-)
+// ── 响应拦截器（已在 _responseErrorHandler 中注册到惰性实例） ──────────
 
 export default api

@@ -1,0 +1,27 @@
+diff --git a/es/index.js b/es/index.js
+index da6e5b920cd5acdc664ee945eeb7640d8d07dc21..b0d87336d89fe9e0e7c42e6663c8d35171da9870 100644
+--- a/es/index.js
++++ b/es/index.js
+@@ -9,10 +9,5 @@ import ListContext from "./ListContext";
+ import useWatch from "./hooks/useWatch";
+ const InternalForm = /*#__PURE__*/React.forwardRef(FieldForm);
+ const RefForm = InternalForm;
+-RefForm.FormProvider = FormProvider;
+-RefForm.Field = Field;
+-RefForm.List = List;
+-RefForm.useForm = useForm;
+-RefForm.useWatch = useWatch;
+ export { Field, List, useForm, FormProvider, FieldContext, ListContext, useWatch };
+ export default RefForm;
+diff --git a/package.json b/package.json
+index 6ab53ccc824efc52ea7186e14a124b5cb450b7c4..333520bbcba50bdf88f7dfdf978d4b200a3c11a1 100644
+--- a/package.json
++++ b/package.json
+@@ -29,6 +29,7 @@
+   "license": "MIT",
+   "main": "./lib/index",
+   "module": "./es/index",
++  "sideEffects": false,
+   "scripts": {
+     "start": "dumi dev",
+     "build": "npm run docs:build",

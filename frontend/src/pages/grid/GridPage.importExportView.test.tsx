@@ -13,6 +13,7 @@ import { Routes, Route } from 'react-router-dom'
 import { renderProviders } from '@/test/render-providers'
 import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store/tableSettings'
+import { useGridViewStore } from '@/store/gridView'
 import GridPage from './GridPage'
 
 beforeAll(async () => {
@@ -72,6 +73,10 @@ beforeEach(() => {
     viewsRef.current = VIEWS
     dialogProps.current = null
     useTableSettingsStore.setState({ density: 'comfortable', defaultPageSize: 20 })
+    // GridPage 不再在每次挂载时清空视图状态（同表重挂载保留上轮视图，ADR 0116 C8），
+    // 用例间必须显式复位，否则上一例的 activeViewId 会被下一例读到
+    useGridViewStore.getState().reset()
+    sessionStorage.clear()
     localStorage.setItem('cndb_current_mode', 'grid')
 })
 
