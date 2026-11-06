@@ -1,8 +1,8 @@
-# ADR 0016: 认证页 JS 动态背景（Perlin 流场粒子 / 多星系宇宙星系，可切换，青紫渐变，固定深色舞台）
+# ADR 0016: 认证页静态晶格背景（JS 一次生成，固定深色舞台，青紫渐变）
 
-Status: Implemented（2026-10-21 评审通过；同日改为 Perlin 流场粒子，并新增可切换的多座宇宙星系）
-Date: 2026-10-21
-Related: `frontend/src/layouts/AuthLayout.tsx`、`frontend/src/components/auth-background/`、`frontend/src/index.css`、`frontend/src/theme/meta.ts`、`frontend/scripts/bundle-budget.json`
+Status: Implemented
+Date: 2026-10-21（2026-11-07 由「流场粒子 / 宇宙星系双动效」改为静态晶格）
+Related: `frontend/src/components/auth-background/lattice.ts`、`frontend/src/components/auth-background/engine.ts`、`frontend/src/components/auth-background/AuthBackground.tsx`、`frontend/src/layouts/AuthLayout.tsx`、`frontend/src/index.css`、`frontend/scripts/bundle-budget.json`
 需求卡片: `docs/requirements/0016-auth-background-animation.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -11,210 +11,174 @@ Related: `frontend/src/layouts/AuthLayout.tsx`、`frontend/src/components/auth-b
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | Perlin 流场粒子 + 新增宇宙星系 + 更多星系与多轴旋转 | 两种动效共用同一引擎与色板：`flowfield`（固定种子 Perlin 噪声方向场驱动粒子漂移，每颗粒子环形尾迹连成流线）与 `galaxy`（固定种子多座旋臂星系：桌面 3 座共 1600 星点 / 移动 2 座共 700 星点，每座核球 + 两条对数螺线星臂 + 弥散星尘，大小 / 倾角 / 色相 / 自转方向各异，pitch / yaw / roll 三轴不同相位缓慢进动）；默认 `flowfield`（D2） |
-| C2 | 白色底色科技感不足，考虑改为黑色 | `.auth-shell` 页面底色固定近黑 `--cn-auth-bg`；登录卡片继续跟随 10 套主题，不强制深色卡片（D11） |
-| C3 | 科技感 + 青紫渐变 | 深色舞台 + 青紫渐变：流线用 `--cn-auth-accent` 青 → `--cn-auth-accent-alt` 紫 → 青；星系用青 / 紫星点 + 紫色星云；页面双色径向光晕；零新增依赖（D7 / D12） |
-| C4 | 可切换的背景动图 | 右下角原生按钮循环切换 `flowfield` ↔ `galaxy`，即时生效；偏好写 `localStorage['cndb_auth_bg']`，刷新保持；非法值 / 存储不可用回落 `flowfield`（D3） |
-| C5 | 性能与资源 | 单 rAF；桌面 DPR ≤ 2，移动端 DPR ≤ 1.5 且 30fps；`document.hidden` 暂停；resize 150ms 节流；桌面指针扰动（流场偏转 / 星系视差）；切换先 dispose 旧实例再挂载新实例（D6） |
-| C6 | 可访问性 | `prefers-reduced-motion: reduce` 只画一次静态帧；画布与背景容器 `aria-hidden` + `pointer-events: none`；切换器独立于背景层，`type="button"` + 明确 `aria-label`，可键盘操作（D5 / D8） |
-| C7 | 降级 | `getContext('2d')` 为空或 auth token（accent / accent-alt / ink）缺失时不挂载画布，保留 `.auth-shell` 固定深色 CSS 背景（D9） |
-| C8 | 体积与测试 | 双动效 / 切换器 / 偏好同属背景 lazy chunk，不进入主入口；chunk gzip ≤ 8 KiB，不抬 `bundle-budget.json` 基线；单测 + login / register e2e 覆盖切换与刷新保持（D10） |
+| C1 | 「更换为固定的晶格背景图（js生成）」 | 新增 `lattice.ts`：尖顶六边形铺满画布，奇数行横向错开半个步长；每 3 行 / 3 列交点放一颗结点，青（accent）紫（accent-alt）按行列奇偶交替。挂载时绘制一次，之后不随时间 / 指针变化（D1） |
+| C2 | 「是否性能更好」 | 引擎只做一次静态绘制；删掉 rAF、`visibilitychange`、`pointermove`；仅保留 resize 150ms 节流后的重绘。桌面 DPR ≤ 2、移动端 ≤ 1.5（D2） |
+| C3 | 「适配chrome81」 | 绘制只用 `clearRect` / `beginPath` / `moveTo` / `lineTo` / `closePath` / `stroke` / `arc` / `fill` / `setTransform` 等 Chrome 81 已支持的 Canvas 2D API；不引入 `roundRect`、`ctx.reset()`、`structuredClone` 等新 API；构建基线仍为 chrome81（D5） |
+| C4 | 替换旧背景 | 删除 `flowfield.ts`、`galaxy.ts`、`AuthBackgroundSwitcher.tsx`、`preference.ts` 及其单测；`AuthBackground` 不再有 `data-effect`、切换器与 `localStorage['cndb_auth_bg']`（D3） |
+| C5 | 视觉口径不变 | `.auth-shell` 仍为近黑舞台 + 双色径向光晕 + 低透明度 CSS 网格；画布晶格线用 `--cn-auth-ink`（alpha 0.085），结点用 `--cn-auth-accent` / `--cn-auth-accent-alt`（alpha 0.34）；登录卡片继续跟随 10 套主题（D4 / D7） |
+| C6 | 可访问性与降级 | 背景层 `aria-hidden` + `pointer-events: none`；`getContext('2d')` 为空或 auth token 缺失时返回 noop，保留 `.auth-shell` 固定深色 CSS 背景；静态背景无动画，天然满足 `prefers-reduced-motion`（D6） |
+| C7 | 体积与测试 | `AuthBackground` 继续 `lazy` 引入，晶格 / 引擎 / 色板同属背景 chunk；单测覆盖晶格绘制、引擎、组件与布局；login / register e2e 断言画布可见、`aria-hidden`、`pointer-events:none` 且无切换器（D6） |
 
 决策结论只在「决策记录」写一次。
 
 ## Context
 
-现状逐条核对（以代码为准）：
+变更前现状逐条核对（以代码为准）：
 
 | # | 现状 | 位置 | 影响 | 与卡片的关系 |
 |---|---|---|---|---|
-| 1 | 认证页只有单一 `flowfield` 动效，无第二个变体 | `frontend/src/components/auth-background/flowfield.ts`、`engine.ts` | 引擎写死 `createFlowField`，无法按偏好切换 | 需求变更的直接原因 |
-| 2 | 背景层 `aria-hidden` + `pointer-events: none`，层内无交互元素 | `AuthBackground.tsx`、`index.css` | 切换器不能放进背景层，需独立定位层 | 约束切换器结构 |
-| 3 | 无效果偏好模块 | `frontend/src/components/auth-background/` | 切换结果刷新即丢 | 恢复单键偏好 |
-| 4 | 10 套主题通过 `body.theme-*` 与 `--cn-*` 变量切换；登录卡片跟随主题 | `frontend/src/theme/meta.ts`、`ThemeProvider.tsx` | 页面底色不跟主题；卡片仍需跟主题 | 约束深色范围（D11） |
-| 5 | `AuthLayout` 被 `App.tsx` 静态 import，页面级才是 lazy | `frontend/src/App.tsx` | 背景实现必须继续走独立 lazy chunk | 约束体积（D10） |
-| 6 | jsdom 未实现 `HTMLCanvasElement#getContext` | `frontend/src/test/setup.ts` | 单测需显式 mock canvas | 约束测试 |
-| 7 | 主入口体积基线 175.22 KiB（gzip） | `frontend/scripts/bundle-budget.json` | 切换器与偏好必须留在背景 chunk 内 | 约束体积 |
+| 1 | 认证页背景为 `flowfield` 与 `galaxy` 两种动效 | `frontend/src/components/auth-background/flowfield.ts`、`galaxy.ts` | 桌面流场约 800 粒子 × 40 点尾迹、星系 1600 星点，每帧持续重绘 | 本次要替换的对象 |
+| 2 | 引擎持有一个持续 rAF 循环 | `engine.ts` | 登录页停留期间持续占用 CPU / GPU 与电量，低端机掉帧 | 性能诉求的直接原因 |
+| 3 | 右下角切换器 + 本地偏好 | `AuthBackgroundSwitcher.tsx`、`preference.ts` | 两种效果与持久化在静态方案下没有意义 | 需要随旧动效一起移除 |
+| 4 | 背景层已 `aria-hidden` + `pointer-events:none` | `AuthBackground.tsx`、`index.css` | 可访问性契约可原样保留 | 约束新方案 |
+| 5 | 固定舞台 token `--cn-auth-*` 与卡片主题解耦 | `frontend/src/index.css`、`theme/meta.ts` | 晶格可以继续复用同一套颜色 | 约束配色 |
+| 6 | `AuthLayout` 被 `App.tsx` 静态 import，背景必须 lazy | `frontend/src/App.tsx` | 防止晶格代码进入主入口 | 约束体积 |
+| 7 | 浏览器基线 Chromium 81，构建由 esbuild 降级 | `frontend/scripts/browser-baseline.mjs`、`vite.config.ts` | 新绘制代码必须落在基线 API 内 | 约束兼容性 |
 
-**核心缺陷（需求要补的）**：只有一种动效，无法按偏好切换；需求方要保留流场粒子并新增宇宙星系，两者共享深色舞台与青紫色板。
+**核心缺陷（需求要补的）**：背景是持续动画，登录页空闲时仍不断重绘；需求方要求换成由 JS 一次生成、之后静止的晶格背景图。
 
 设计目标（不变量）：
 
-- **I1 不干扰**：背景层 `aria-hidden` + `pointer-events: none`，切换器只在右下角占一个小按钮，不改变表单 Tab 顺序起点、不遮挡卡片。
-- **I2 单循环**：任一时刻至多一个 rAF；切换效果先 dispose 旧实例再挂载；StrictMode 双挂载、resize、可见性切换都不产生双循环。
-- **I3 颜色单源**：画布颜色只来自 `--cn-auth-accent` / `--cn-auth-accent-alt` / `--cn-auth-ink`，不在 JS 写色值。
-- **I4 静态优先**：`prefers-reduced-motion: reduce` 下无持续 rAF，两种动效都只画一次完整静态帧（流场预热流线 / 星系星点）。
-- **I5 优雅降级**：无 Canvas / auth token 缺失 / 0 尺寸时保持固定深色 CSS 背景，不抛错、不白屏；偏好非法时回落 `flowfield`。
-- **I6 体积隔离**：引擎、两种动效、切换器与偏好模块都不进入主入口 chunk。
-- **I7 卸载干净**：dispose 幂等，移除 resize / visibility / pointer 监听与定时器。
-- **I8 双动效可切换**：只保留 `flowfield` 与 `galaxy` 两个效果；`galaxy` 为多座星系（桌面 3 / 移动 2）且每座各自多轴进动；默认 `flowfield`；切换即时生效并持久化。
+- **I1 不干扰**：背景层 `aria-hidden` + `pointer-events: none`，不新增任何可聚焦元素，不改变表单焦点顺序。
+- **I2 无持续循环**：任一时刻都不存在 rAF 或定时器驱动的重绘；只有挂载与 resize 节流后的各一次静态绘制。
+- **I3 颜色单源**：画布颜色只来自 `--cn-auth-accent` / `--cn-auth-accent-alt` / `--cn-auth-ink`，不在 JS 写死色值。
+- **I4 静态优先**：`prefers-reduced-motion` 与普通模式看到同一张静帧；没有需要降级的动画。
+- **I5 优雅降级**：无 Canvas / auth token 缺失 / 0 尺寸时保持固定深色 CSS 背景，不抛错、不白屏。
+- **I6 体积与兼容隔离**：晶格模块留在背景 lazy chunk；绘制只用 Chrome 81 基线 API。
 
 ## Decision
 
 ### 1. 数据模型
 
-无后端模型。前端只有 4 个纯数据概念：
+无后端模型。前端只有 3 个纯数据概念：
 
 | 概念 | 形态 | 说明 |
 |---|---|---|
-| `AuthEffect` | `'flowfield' \| 'galaxy'` | 效果 id；同时是 `localStorage['cndb_auth_bg']` 的合法取值 |
-| `AuthEffectMeta` | `{ id, label }` | 切换器文案；`AUTH_EFFECTS` 固定顺序 = 循环顺序 |
-| `Palette` | `{ accent, accentAlt, ink }` | 固定舞台 token 的运行期快照；accent = 青紫渐变两端（青），accentAlt = 中段（紫），ink = 中性星点 / 网格 |
-| `FrameContext` | `{ ctx, width, height, palette, isMobile, pointer }` | 单帧绘制上下文 |
-| `BackgroundVariant` | `resize` + `frame` | 两个实现：`createFlowField` / `createGalaxy` |
+| `Palette` | `{ accent, accentAlt, ink }` | 固定舞台 token 的运行期快照 |
+| `LatticeFrame` | `{ ctx, width, height, dpr, palette, isMobile }` | 一次静态绘制所需的上下文；`width/height` 为设备像素 |
+| 尺寸常量 | `latticeCell(isMobile)` | 六边形外接圆半径：桌面 46px / 移动端 34px |
 
-绘制状态（粒子数组、星点数组、渐变缓存）只存在于动效实例内部，切换或卸载即丢弃；Perlin 置换表是模块级固定种子常量（只读）；不使用全局单例。
+晶格不保存跨帧状态，也不使用全局单例；每次绘制都由 `drawLattice(frame)` 从头生成。
 
 ### 2. 判定算法（唯一入口）
 
 ```ts
-// mountAuthBackground(canvas, options): () => void
-type MountOptions = {
-  isMobile: boolean
-  reducedMotion: boolean
-  effect: AuthEffect
-}
+// mountAuthBackground(canvas, { isMobile }): () => void
 ```
 
 生命周期（唯一入口）：
 
 1. `canvas.getContext('2d')` 为空 → 返回 `noop`（I5）。
 2. `readPalette()` 读取 `--cn-auth-accent` / `--cn-auth-accent-alt` / `--cn-auth-ink`；失败 → 返回 `noop`，CSS 背景兜底（I5）。
-3. `effect === 'galaxy' ? createGalaxy(isMobile) : createFlowField(isMobile)`。
-4. 按 `clientWidth/Height × dpr` 设置位图尺寸，`ctx.setTransform(dpr, 0, 0, dpr, 0, 0)`；0 尺寸时跳过绘制等待 resize。
-5. `reducedMotion` 为真 → 绘制一帧 `frame(ctx, 0)` 后不启动 rAF（I4）。
-6. 否则启动唯一 rAF 循环；移动端以 `1000 / 30` 为最小帧间隔跳帧。
-7. `visibilitychange`：隐藏时 `cancelAnimationFrame`，恢复且非 reduced 时重启（I2）。
-8. `resize`：150ms 节流后重新测量并调用 `variant.resize`。
-9. 桌面非 reduced：`pointermove`（passive）更新归一化指针；流场叠加 ≤ 0.36 rad 方向偏转，星系作为 ≤ 22px 视差偏移。
-10. dispose：取消 rAF、移除全部监听、清空定时器，可重复调用（I7）。
+3. `layout()`：按 `getBoundingClientRect()` 取得 CSS 尺寸，`dpr = min(devicePixelRatio, isMobile ? 1.5 : 2)`；设置 `canvas.width/height` 后 `clearRect` 并调用 `drawLattice`。
+4. 0 尺寸 → 跳过绘制，等待下一次 resize。
+5. 监听 `resize`（passive），150ms 节流后重跑 `layout()`。
+6. dispose：清定时器、移除 resize 监听，可重复调用（I2）。
 
-偏好（`preference.ts`）：
+绘制算法（`drawLattice`）：
 
-```ts
-const AUTH_EFFECT_STORAGE_KEY = 'cndb_auth_bg'
-loadAuthEffect(): AuthEffect     // 缺失 / 非法 / 读失败 → 'flowfield'
-saveAuthEffect(effect: AuthEffect): void  // 写失败静默忽略
-nextAuthEffect(effect: AuthEffect): AuthEffect // 按 AUTH_EFFECTS 顺序循环
-```
-
-组件层（`AuthBackground.tsx`）：`useState(loadAuthEffect)` 持有当前效果；点击切换器 → `saveAuthEffect(next)` + `setEffect(next)`；`effect` 进入引擎 effect 依赖，变化时先 dispose 旧实例再挂载新实例（I2）。
-
-动效接口：
-
-```ts
-interface BackgroundVariant {
-  resize(c: FrameContext): void
-  frame(c: FrameContext, timeMs: number): void
-}
-```
+1. 尖顶六边形：宽 `√3·s`、高 `2s`；行距 `1.5s`，奇数行横向错开 `√3·s/2`。
+2. 覆盖范围为画布外加一行一列，边缘六边形自然被裁切。
+3. 六边形线宽 `max(1, dpr × 0.75)`，颜色 `withAlpha(ink, 0.085)`，整批 `beginPath` 后一次 `stroke`。
+4. 每 3 行 / 3 列交点取一颗结点，半径 `1.7 × dpr`；按 `(row + col) % 2` 分青 / 紫两组，各批量设置一次 `fillStyle` 后 `arc + fill`。
 
 ### 3. API 变更清单
 
-无。不新增 / 修改任何后端端点，不写用户偏好表；仅恢复前端 `localStorage['cndb_auth_bg']` 读写（合法值只有两个效果 id）。
+无。不新增 / 修改任何后端端点；删除 `localStorage['cndb_auth_bg']` 的读写（旧值不再读取，也不做迁移）。
 
 ### 4. 边界与例外
 
-1. **深色范围**：仅 `.auth-shell` 页面背景固定近黑；登录卡片仍由 antd token / 主题决定（D11）。
-2. **主题切换**：画布颜色来自固定 auth token，主题切换不重建引擎；主题只影响卡片。
-3. **颜色解析**：auth token 为 `#rgb` / `#rrggbb` / `rgb()`；`withAlpha` 统一转 `rgba()`，不可解析时原样返回（渐变仍可建）。
-4. **叠加方式**：黑底由 CSS 提供；画布保持透明。流场用环形尾迹整段描边（单帧位移仅 0.x px，只画单帧线段不可见）并以 `lighter` 让交叉处增亮；星系逐座先铺缓存的外晕 + 核球两层径向渐变（按包围盒裁剪到画布内），再用 `lighter` 批量 `fillRect` 星点；绘制结束还原 `source-over` 与 `globalAlpha = 1`，每帧先 `clearRect`。
-5. **切换语义**：循环顺序固定 `flowfield → galaxy → flowfield`；切换立即重建画布，不做交叉淡入（避免两实例并行违反 I2）；按钮文案随当前效果更新。
-6. **移动端**：DPR 1.5、目标 30fps；流场粒子 320 / 尾迹 26 点，星系 2 座共 700 星点；关闭指针扰动；桌面流场 800 粒子 / 40 点尾迹，星系 3 座共 1600 星点与每座 ≤ 22px 视差。
-7. **窗口极小 / 0 尺寸**：不绘制，等待下一次 resize；不抛异常。
-8. **首帧闪烁**：背景 chunk 未就绪时显示固定深色 CSS 背景，加载完成后 canvas 淡入（≤ 240ms，reduced-motion 无过渡）。
-9. **偏好**：历史版本可能写入过已删除的 5 个旧变体 id；凡不在 `AUTH_EFFECTS` 内的值一律按 `flowfield` 处理，不做迁移或清理。
-10. **切换器定位**：绝对定位右下角（桌面 24px、移动端 12px），`z-index: 2`（高于卡片层 1）；仅按钮接收指针事件与键盘焦点，`aria-label` 含「切换登录背景动效」；不进入 `aria-hidden` 背景层。
+1. **深色范围**：仅 `.auth-shell` 页面背景固定近黑；登录卡片仍由 antd token / 主题决定（D4）。
+2. **主题切换**：晶格颜色来自固定 auth token，主题切换不重绘；主题只影响卡片。
+3. **颜色解析**：auth token 为 `#rgb` / `#rrggbb` / `rgb()`；`withAlpha` 统一转 `rgba()`。
+4. **叠加方式**：黑底与页面光晕由 CSS 提供；画布保持透明，只画低透明度晶格线与结点。
+5. **移动端**：晶格更密（34px），DPR 封顶 1.5；无指针 / 视差。
+6. **窗口极小 / 0 尺寸**：不绘制，等待下一次 resize；不抛异常。
+7. **首帧闪烁**：背景 chunk 未就绪时显示固定深色 CSS 背景，加载完成后 canvas 淡入（≤ 240ms，reduced-motion 无过渡）。
+8. **旧偏好**：`cndb_auth_bg` 不再读取；历史值保留在用户本地存储中，不做清理。
+9. **Chrome 81**：不使用 `CanvasRenderingContext2D.roundRect`、`ctx.reset()`、`structuredClone`、`Array.prototype.at` 等基线外 API；CSS 侧沿用现有 `check-browser-compat` 门禁。
 
 ### 5. 迁移
 
-无（不涉及数据库、备份格式或存量数据）；`cndb_auth_bg` 旧值按非法值回落默认。
+无（不涉及数据库、备份格式或存量数据）。
 
 ### 6. 前端
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| 组件入口 | `frontend/src/components/auth-background/AuthBackground.tsx` | 效果状态 + `loadAuthEffect` / `saveAuthEffect`；背景层 + 切换器兄弟节点；`data-effect` 跟随效果 |
-| 类型与元数据 | `frontend/src/components/auth-background/types.ts` | 新增 `AuthEffect` / `AuthEffectMeta` / `AUTH_EFFECTS`；保留 `Palette` / `FrameContext` / `BackgroundVariant` |
-| 偏好 | `frontend/src/components/auth-background/preference.ts` | 读 / 写 / 循环 / 文案；非法值与存储异常回落 `flowfield` |
-| 切换器 | `frontend/src/components/auth-background/AuthBackgroundSwitcher.tsx` | 原生按钮 + 效果圆点 + 文案；`aria-label` / `title` |
-| 引擎 | `frontend/src/components/auth-background/engine.ts` | `MountOptions.effect`；按效果创建 `flowfield` 或 `galaxy` |
-| 动效 | `frontend/src/components/auth-background/flowfield.ts` | 保留 Perlin 流场粒子实现 |
-| 动效 | `frontend/src/components/auth-background/galaxy.ts` | 宇宙星系：多座星系的固定种子旋臂采样、差分自转、三轴倾斜矩阵与多轴进动、闪烁、每座外晕 / 核球渐变、指针视差 |
+| 组件入口 | `frontend/src/components/auth-background/AuthBackground.tsx` | 去掉效果状态与切换器；只渲染 `aria-hidden` 背景层 + canvas；按 `isMobile` 挂载引擎 |
+| 类型 | `frontend/src/components/auth-background/types.ts` | 保留 `Palette`；`FrameContext` / `BackgroundVariant` 改为 `LatticeFrame` |
+| 晶格 | `frontend/src/components/auth-background/lattice.ts` | 新增：六边形晶格与青紫结点的静态绘制 |
+| 引擎 | `frontend/src/components/auth-background/engine.ts` | 改为一次绘制 + resize 节流重绘；移除 rAF / visibility / pointer |
+| 色板 | `frontend/src/components/auth-background/palette.ts` | 逻辑不变，仅更新注释引用 |
+| 删除 | `flowfield.ts`、`galaxy.ts`、`AuthBackgroundSwitcher.tsx`、`preference.ts` 及对应测试 | 动效、切换器与本地偏好整体移除 |
 | 布局 | `frontend/src/layouts/AuthLayout.tsx` | 无结构变化：仍 `lazy` 引入 `AuthBackground` |
-| 样式 | `frontend/src/index.css` | 新增 `.auth-bg-switch` 胶囊按钮（固定舞台 token、hover / focus-visible、移动端内缩、reduced-motion 去过渡） |
+| 样式 | `frontend/src/index.css` | 删除 `.auth-bg-switch*`、`[data-effect]` 与移动端切换器规则；更新背景层注释 |
+| 混色注册表 | `frontend/src/theme/themeMix.ts` | 删除仅切换器使用的 `auth-*` 混色条目 |
 
 ### 7. 测试清单
 
 **判定层（单测）**
 
-- `flowfield.test.ts`：resize 后 frame 有一次流线描边、坐标有限；每颗粒子输出多段 `lineTo`；0 尺寸不绘制；移动端可绘制；首帧预热后每帧只描边一次；青紫渐变三个色标；固定种子下两次实例流线一致；噪声在 -1..1 且确定。
-- `galaxy.test.ts`：resize 后 frame 清屏一次、3 座星系各自外晕 / 核球渐变与星点 `fillRect` 数量正确、裁剪在画布内、坐标有限；每座按色相换主色且三组星点批量着色；0 尺寸不绘制；移动端 2 座星系；渐变跨帧复用；固定种子下两次实例星点一致；指针改变星系中心形成视差。
-- `preference.test.ts`：无值 / 非法值 / 读失败回落 `flowfield`；写入后读回；循环顺序；文案。
-- `palette.test.ts`：三个 auth token 正常读取、任一缺失返回 `null`、空字符串视为失败；`withAlpha` 覆盖 hex / rgb / 非法值。
-- `engine.test.ts`：无 canvas context 返回 noop；token 缺失返回 noop；reduced-motion 不调用 rAF；可见性隐藏暂停 / 恢复重启；resize 节流；dispose 幂等；移动端 30fps 跳帧；`effect=galaxy` 时使用星系构建器（可绘制）。
+- `lattice.test.ts`：六边形数量与 `moveTo`/`lineTo` 比例正确；线宽与结点半径随 DPR 放大；坐标有限且在边缘裁切范围内；0 尺寸不绘制；同参数两次绘制完全一致；移动端晶格更密；颜色来自色板 token。
+- `engine.test.ts`：挂载只绘制一次且不调用 `requestAnimationFrame`；无 context / token 缺失返回 noop；桌面 DPR 封顶 2、移动端封顶 1.5；resize 150ms 节流后重绘一次；dispose 后不再重绘且可重复调用；0 尺寸跳过绘制。
+- `palette.test.ts`：三个 auth token 正常读取、任一缺失返回 `null`；`withAlpha` 覆盖 hex / rgb / 非法值。
 
 **组件层（单测）**
 
-- `AuthBackground.test.tsx`：默认 `data-effect="flowfield"`；挂载时把 `effect` 交给引擎；点击切换器后 `data-effect="galaxy"` 并写入 `cndb_auth_bg`；卸载后 dispose。
-- `AuthBackgroundSwitcher.test.tsx`：渲染当前文案 / `data-effect` / `aria-label`；点击调用切换。
-- `AuthLayout.test.tsx`：children 仍渲染；背景层与切换器存在；420px 容器不变。
+- `AuthBackground.test.tsx`：背景层 `aria-hidden`；渲染 canvas 且无切换器 / `data-effect`；挂载时把 canvas 与 `{ isMobile }` 交给引擎；卸载调用 dispose。
+- `AuthLayout.test.tsx`：children 仍渲染；背景层懒加载后存在且 `aria-hidden`；无切换器。
 
 **e2e（前端）**
 
-- `frontend/tests/e2e/smoke/login.spec.ts`、`smoke/register.spec.ts`：认证页背景 canvas 可见、`aria-hidden`、`pointer-events: none`、默认 `data-effect="flowfield"`，且不拦截表单点击；点击切换器后 `data-effect="galaxy"`，刷新后仍为 `galaxy`。
+- `frontend/tests/e2e/smoke/login.spec.ts`、`smoke/register.spec.ts`：认证页背景 canvas 可见、`aria-hidden`、`pointer-events: none`，无切换器，且不拦截表单点击。
 
-**体积**
+**体积与兼容**
 
-- `pnpm build` 后 `bundle:budget` 通过；背景 chunk gzip ≤ 8 KiB。
+- `pnpm build` 后 `bundle:budget` 通过；背景 chunk gzip 不超过既有上限。
+- `check-browser-compat --strict` 通过；`pnpm e2e:chrome81` 冒烟可用。
 
 ### 8. 分期
 
 | 期 | 内容 | 风险 |
 |---|---|---|
-| **P0** | 引擎 + Perlin 流场粒子 + `AuthLayout` 接入 + 单测 | 低 |
-| **P1** | 固定深色舞台 + 青紫 auth token + 移动端 / reduced-motion 调优 + 体积与 e2e 收尾 | 中 |
-| **P2** | 宇宙星系动效 + 效果元数据 / 偏好 + 右下角切换器 + 单测与 e2e 切换断言 | 中 |
+| **P0** | 静态晶格绘制 + 引擎简化为一次绘制 + 组件 / CSS 接入 + 单测 | 低 |
+| **P1** | 删除双动效 / 切换器 / 偏好，更新 e2e、体积与兼容收尾 | 低 |
 
 ## 决策记录（唯一决策台账）
 
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
 |---|---|---|---|---|---|
-| D1 | 动效实现选型 | 原生 Canvas 2D + rAF，无第三方库 | 体积可控、可读固定舞台 token、两种动效都能用 2D 表达 | CSS keyframes（无法做逐帧噪声 / 差分自转）；three.js（~150KB gzip，超 C8）；GIF / 视频（体积大、无法随卡片主题共存） | `engine.ts` |
-| D2 | 动效集合 | `flowfield`：固定种子 improved Perlin 2D 方向场 + 环形尾迹（桌面 800 / 移动 320 粒子，40 / 26 点尾迹）；`galaxy`：固定种子多座旋臂星系（桌面 3 座共 1600 星点 / 移动 2 座共 700 星点，每座核球 18% / 星臂 36% / 星尘 46%，内快外慢差分自转，三轴倾斜 + 多轴进动 + 闪烁 + 外晕 / 核球渐变 + 视差）；默认 `flowfield` | 保留已交付的流场基线，多座星系满足更多星系与多轴旋转；两个实现共用 `BackgroundVariant` 与色板，切换成本最低 | 用星系替换流场（用户要求再增加而非替换）；单座星系（不满足更多星系与相互旋转感）；再恢复旧 5 变体（视觉语言发散） | `flowfield.ts`、`galaxy.ts` |
-| D3 | 切换与持久化 | 右下角原生按钮循环切换；偏好写 `localStorage['cndb_auth_bg']`；默认 `flowfield`；非法值 / 存储不可用回落默认 | 用户要求可切换；两选项下循环按钮比下拉更轻；刷新保持符合预期 | 下拉选择器（两选项过重）；只切换不持久化（刷新丢失）；后端用户偏好（更重） | `AuthBackgroundSwitcher.tsx`、`preference.ts`、`AuthBackground.tsx` |
-| D4 | 覆盖范围 | 仅 `/login`、`/register` | 两页共用 `AuthLayout`，改动面最小 | 覆盖 `/public`（公开页样式与权限语境不同） | `AuthLayout.tsx` |
-| D5 | 减少动态偏好 | `prefers-reduced-motion: reduce` 只画一次完整静态帧 | 与现有 CSS 约定一致；两种动效首帧都完整可见 | 直接隐藏背景（丢失氛围）；只对其中一种降级（口径分裂） | `AuthBackground.tsx`、`flowfield.ts`、`galaxy.ts` |
-| D6 | 移动端与交互档位 | 移动端 DPR 1.5 / 30fps / 流场 320 粒子 / 26 点尾迹 / 星系 2 座共 700 星点 / 无视口扰动；桌面流场 800 粒子 / 40 点尾迹 + 指针偏转 ≤ 0.36 rad，星系 3 座共 1600 星点 + 每座视差 ≤ 22px | 移动端 GPU 与电池成本高；关闭指针扰动避免触屏滑动改变画面 | 全端同档（耗电）；移动端保留指针扰动（无鼠标语义） | `flowfield.ts`、`galaxy.ts`、`engine.ts` |
-| D7 | 颜色来源与叠加 | 运行期读固定 `--cn-auth-*`；流场青紫渐变三色标；星系星点按 accent / accent-alt / ink 分三组批量绘制，每座星系用外晕 5 色标 + 核球 3 色标径向渐变（按色相权重决定青 / 紫主色），均以 `lighter` 叠加 | 黑底对比度稳定；与浅色主题品牌色解耦；分组批量设置样式减少状态切换 | 跟随 `--cn-brand-color`（部分主题在黑底上偏暗）；逐星写独立色值（状态切换成本高、体积大） | `palette.ts`、`flowfield.ts`、`galaxy.ts` |
-| D8 | 可访问性 | 背景层 `aria-hidden` + `pointer-events:none`；切换器独立于背景层，是唯一新增可聚焦元素，`type="button"` + `aria-label` + `title`，可见 focus 环 | 切换需要交互入口；不能把按钮藏进 `aria-hidden` 层；不干扰表单焦点与读屏 | 画布可聚焦 / 可点击；把切换器放进背景层（读屏失效） | `AuthBackground.tsx`、`AuthBackgroundSwitcher.tsx`、`index.css` |
-| D9 | 降级策略 | 保留 `.auth-shell` 固定深色 CSS 背景作为兜底，失败即不挂画布；偏好非法回落 `flowfield` | 现有视觉已可用，避免白屏 | 移除 CSS 背景（失败时白屏）；偏好非法时报错（登录页不可用） | `index.css`、`engine.ts`、`preference.ts` |
-| D10 | 体积边界 | `AuthBackground` 用 `lazy(() => import())` 独立 chunk；两种动效 / 切换器 / 偏好都留在 chunk 内；背景 gzip ≤ 8 KiB，主入口基线不抬 | `AuthLayout` 静态进主入口（`App.tsx`），必须切断静态链；切换器放组件内可随 chunk 懒加载 | 静态 import（撑大主入口）；把切换器单独做成主入口组件（破坏隔离） | `AuthLayout.tsx`、`bundle-budget.json` |
-| D11 | 深色范围 | 仅页面背景固定近黑；登录卡片继续跟随 10 套主题 | 需求方确认；改动面最小；卡片可读性由主题保证 | 整页强制深色卡片（改动大、与主题体系冲突） | `index.css`、`AuthLayout.tsx` |
-| D12 | 配色 token | accent `#22d3ee`（青）、accent-alt `#a855f7`（紫）、ink `#dbe4f3`、底色 `#05070c` | 需求方确认青紫渐变；黑底对比度高；两种动效共用一套 token | 跟随主题品牌色（部分主题在黑底上偏暗）；纯单色（层次不足） | `index.css` |
+| D1 | 背景形态 | JS 生成的固定六边形晶格，挂载时绘制一次后常驻 | 满足「固定晶格背景图」诉求；一次绘制即可稳定呈现 | 继续流场粒子 / 星系动画（持续占用）；纯 CSS 网格（已有 `.auth-shell::before`，缺乏结点层次）；图片资源（增加请求与主题耦合） | `lattice.ts` |
+| D2 | 生命周期 | 删除 rAF、visibilitychange、pointermove；仅 resize 150ms 节流重绘 | 静态图不需要逐帧循环，空闲时零持续开销是本方案的主要收益 | 保留低频 rAF 做微动（仍有功耗且违背「固定」）；用 CSS 动画平移晶格（同样持续合成） | `engine.ts` |
+| D3 | 旧动效与偏好 | 删除 `flowfield` / `galaxy` / 切换器 / `preference.ts` / `cndb_auth_bg` | 静态方案只有一种背景，切换与持久化没有语义 | 保留切换器作为「静态 / 动画」开关（需求方明确替换） | `AuthBackground.tsx`、`index.css` |
+| D4 | 深色范围 | 仅页面背景固定近黑；登录卡片继续跟随 10 套主题 | 沿用既有已确认口径，改动面最小 | 整页强制深色卡片（与主题体系冲突） | `index.css`、`AuthLayout.tsx` |
+| D5 | 兼容口径 | 只用 Chrome 81 基线 Canvas 2D API；不新增 polyfill | 现有构建 / 静态门禁与老内核冒烟均以 chrome81 为基线 | 使用 `roundRect` / `ctx.reset()` 等新 API（81 不支持）；引入图形库（超体积预算） | `lattice.ts`、`browser-baseline.mjs` |
+| D6 | 体积与可访问性 | 晶格 / 引擎 / 色板留在背景 lazy chunk；背景层 `aria-hidden` + `pointer-events:none`，不新增可聚焦元素 | 不抬主入口体积；静态背景不干扰表单 | 静态图直接内联到主入口（破坏隔离）；把背景做成可交互（无必要） | `AuthBackground.tsx`、`AuthLayout.tsx` |
+| D7 | 配色与纹理 | 晶格线用 ink（alpha 0.085），结点用 accent / accent-alt（alpha 0.34），青紫交替 | 延续「科技感 + 青紫渐变」品牌语言，对比度稳定 | 纯单色晶格（层次不足）；跟随主题品牌色（部分主题在近黑底上偏暗） | `palette.ts`、`index.css` |
+| D8 | 降级策略 | 无 Canvas / token 缺失 / 0 尺寸时不挂画布，保留 `.auth-shell` 固定深色 CSS 背景 | 登录页永不因背景失败 | 失败时报错或白屏 | `engine.ts` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
 ## Consequences
 
-- **正向**：认证页可在“流场粒子 / 宇宙星系”之间切换，偏好刷新保持；两种动效共用固定黑底 + 青紫色板与同一引擎，代码与视觉语言保持收敛。
-- **负向**：切换器新增一个可聚焦元素；背景 chunk 体积与首帧绘制成本随第二种动效上升；切换会重建画布，切换瞬间动画从首帧开始。
-- **风险与缓解**：低端设备掉帧 → 流场 800 / 320 粒子、星系 3 座 1600 / 2 座 700 星点（桌面 / 移动），移动端 30fps；星系多层渐变填充 → 每座外晕 / 核球渐变缓存、按包围盒裁剪到画布内、移动端降低星点；切换双循环风险 → 由 effect 依赖的 dispose / remount 保证；token 解析失败 → CSS 背景兜底；懒加载失败 → Suspense `null` + 固定深色背景。
+- **正向**：登录页背景从持续 rAF 改为一次绘制，空闲期不再占用 CPU / GPU；删除两套动效、切换器与偏好后代码与测试面显著收缩；Chrome 81 兼容风险低于原动画方案。
+- **负向**：背景失去动态氛围，视觉效果固定；用户不再能切换背景；旧的 `cndb_auth_bg` 本地值成为无主数据（不做清理）。
+- **风险与缓解**：晶格在超宽屏铺满 → 一次绘制的六边形数量随面积增长，但只在挂载 / resize 时发生；高 DPR 内存 → DPR 封顶 2 / 1.5；token 解析失败 → CSS 背景兜底；懒加载失败 → Suspense `null` + 固定深色背景。
 
 ## 落地状态（随实现更新）
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/components/auth-background/flowfield.ts`、`frontend/src/components/auth-background/engine.ts`、`frontend/src/components/auth-background/types.ts`、`frontend/src/components/auth-background/palette.ts`、`frontend/src/components/auth-background/AuthBackground.tsx`、`frontend/src/layouts/AuthLayout.tsx` | `frontend/src/components/auth-background/flowfield.test.ts`、`frontend/src/components/auth-background/engine.test.ts`、`frontend/src/components/auth-background/palette.test.ts`、`frontend/src/components/auth-background/AuthBackground.test.tsx`、`frontend/src/layouts/AuthLayout.test.tsx` | `6d8adbe0` |
-| P1 | 已落地 | `frontend/src/index.css` | `frontend/tests/e2e/smoke/login.spec.ts`、`frontend/tests/e2e/smoke/register.spec.ts` | `6d8adbe0` |
-| P2 | 已落地 | `frontend/src/components/auth-background/galaxy.ts`、`frontend/src/components/auth-background/preference.ts`、`frontend/src/components/auth-background/AuthBackgroundSwitcher.tsx`、`frontend/src/components/auth-background/AuthBackground.tsx`、`frontend/src/components/auth-background/engine.ts`、`frontend/src/components/auth-background/types.ts`、`frontend/src/index.css` | `frontend/src/components/auth-background/galaxy.test.ts`、`frontend/src/components/auth-background/preference.test.ts`、`frontend/src/components/auth-background/AuthBackgroundSwitcher.test.tsx`、`frontend/src/components/auth-background/AuthBackground.test.tsx`、`frontend/src/components/auth-background/engine.test.ts`、`frontend/tests/e2e/smoke/login.spec.ts`、`frontend/tests/e2e/smoke/register.spec.ts` | `b06362c7` |
+| P0 | 已落地 | `frontend/src/components/auth-background/lattice.ts`、`frontend/src/components/auth-background/types.ts`、`frontend/src/components/auth-background/engine.ts`、`frontend/src/components/auth-background/AuthBackground.tsx`、`frontend/src/index.css` | `frontend/src/components/auth-background/lattice.test.ts`、`frontend/src/components/auth-background/engine.test.ts`、`frontend/src/components/auth-background/AuthBackground.test.tsx`、`frontend/src/layouts/AuthLayout.test.tsx` | 未提交 |
+| P1 | 已落地 | `frontend/src/components/auth-background/`（删除双动效 / 切换器 / 偏好）、`frontend/src/theme/themeMix.ts` | `frontend/tests/e2e/smoke/login.spec.ts`、`frontend/tests/e2e/smoke/register.spec.ts` | 未提交 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地（双动效 + 多座星系 + 切换器 + 偏好；代码 / 测试 / 文档已提交 `b06362c7`）
-- 已完成：新增 `galaxy` 多座宇宙星系（桌面 3 座 / 移动 2 座，每座独立倾角 / 色相 / 自转方向，pitch / yaw / roll 多轴进动）、效果元数据 / `cndb_auth_bg` 偏好 / 右下角循环切换器；引擎按 `effect` 选择实现，切换时先 dispose 再挂载；单测与 login / register e2e 覆盖默认流场、切换星系与刷新保持
-- 下一步：无（本 ADR 范围内交付完毕）；如需视觉微调，改 `flowfield.ts` 的粒子数 / `FIELD_SCALE` / 速度，或 `galaxy.ts` 的 `DESKTOP_GALAXIES` / `MOBILE_GALAXIES` 位置 / 星点数 / 倾角 / 进动速度，或调 `--cn-auth-*` token
-- 已知坑：`AuthLayout` 被 `App.tsx` 静态引入，背景必须 lazy 才能守住主入口体积；jsdom 无 `getContext`，单测需 mock；切换器是唯一可聚焦的背景元素，不能移入 `aria-hidden` 层；星系每座每帧两层径向渐变（外晕 + 核球）并按包围盒裁剪，桌面 3 座共 1600 星点 / 移动 2 座共 700 星点；两种动效都必须保持固定种子（去掉后单测的确定性断言会失败）；e2e 登录按钮定位必须保持 `/^登\s*录$/` 首尾锚定，避免被「切换登录背景动效」按钮污染
-- 最近一次全绿：2026-10-21 —— 前端 `pnpm check` / `pnpm test`（155 文件 / 1949 用例）/ `pnpm build` + `bundle:budget`（AuthBackground chunk gzip 4.69 KiB ≤ 8 KiB）全绿；根目录 `make check-docs`（adr-check 0 error / 0 warning）与 `make flow`（ruff / pyrefly 0 error；pytest 5136 passed / 8 skipped）全绿；e2e smoke：authed 10 passed、anon 11 passed（含切换 galaxy 与刷新保持）
+- 当前阶段：P0-P1 已落地（静态晶格替换双动效与切换器；代码 / 测试 / 文档已改完，尚未提交）
+- 已完成：新增 `lattice.ts` 一次性绘制六边形晶格与青紫结点；`engine.ts` 去掉 rAF / 可见性 / 指针监听，只保留 resize 150ms 节流重绘；`AuthBackground` 去掉效果状态、切换器与本地偏好；删除 `flowfield` / `galaxy` / `AuthBackgroundSwitcher` / `preference` 及对应单测；同步更新 CSS、混色注册表、e2e 与需求卡片 / ADR / CHANGELOG
+- 下一步：门禁已全绿，由人确认提交与推送；提交后把落地表「提交」列的 `未提交` 回填为 commit sha
+- 已知坑：`AuthLayout` 被 `App.tsx` 静态引入，背景必须保持 lazy；jsdom 无 `getContext`，单测需 mock；晶格尺寸按设备像素计算，DPR 已封顶；`cndb_auth_bg` 旧偏好不再读取；e2e 登录按钮定位必须保持 `/^登\s*录$/` 首尾锚定
+- 最近一次全绿：2026-11-07 `pnpm check` / `pnpm test` / `pnpm test:coverage` / `pnpm build`（含 `check-browser-compat --strict`）/ `pnpm bundle:budget` / login + register smoke e2e / `make check-fast` / `make test`

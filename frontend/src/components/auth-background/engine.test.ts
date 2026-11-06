@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountAuthBackground } from './engine'
 
 function createFakeContext() {
-  const gradient = { addColorStop: vi.fn() }
   return {
     clearRect: vi.fn(),
     beginPath: vi.fn(),
@@ -11,20 +10,13 @@ function createFakeContext() {
     lineTo: vi.fn(),
     closePath: vi.fn(),
     stroke: vi.fn(),
-    fill: vi.fn(),
     arc: vi.fn(),
-    fillRect: vi.fn(),
-    fillText: vi.fn(),
-    createRadialGradient: vi.fn(() => gradient),
-    createLinearGradient: vi.fn(() => gradient),
+    fill: vi.fn(),
     setTransform: vi.fn(),
     globalAlpha: 1,
-    globalCompositeOperation: 'source-over' as GlobalCompositeOperation,
     fillStyle: '',
     strokeStyle: '',
     lineWidth: 1,
-    font: '',
-    textBaseline: 'top' as CanvasTextBaseline,
   }
 }
 
@@ -54,65 +46,42 @@ const paletteStyle = {
   '--cn-auth-ink': '#dbe4f3',
 }
 
-let frameCallbacks: Map<number, FrameRequestCallback>
-let sequence = 0
-
-function takeFrame(): FrameRequestCallback {
-  const entries = [...frameCallbacks.entries()]
-  const last = entries[entries.length - 1]
-  if (!last) throw new Error('没有待执行的 rAF')
-  frameCallbacks.delete(last[0])
-  return last[1]
-}
-
 beforeEach(() => {
-  frameCallbacks = new Map()
-  sequence = 0
-  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
-    sequence += 1
-    frameCallbacks.set(sequence, callback)
-    return sequence
-  })
-  vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(id => {
-    frameCallbacks.delete(id)
-  })
   vi.spyOn(window, 'getComputedStyle').mockReturnValue({
     getPropertyValue: (name: string) =>
       (paletteStyle as Record<string, string>)[name] ?? '',
   } as CSSStyleDeclaration)
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
 })
 
 afterEach(() => {
   vi.restoreAllMocks()
   vi.useRealTimers()
+  Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 })
 })
 
-const baseOptions = {
-  isMobile: false,
-  reducedMotion: false,
-  effect: 'flowfield' as const,
-}
-
 describe('mountAuthBackground', () => {
-  it('启动单 rAF 循环并绘制首帧，dispose 后停止', () => {
+  it('挂载时只绘制一次静态晶格，不启动 rAF', () => {
     const ctx = createFakeContext()
     const canvas = createCanvas(ctx)
-    const dispose = mountAuthBackground(canvas, baseOptions)
+    const dispose = mountAuthBackground(canvas, { isMobile: false })
 
     expect(ctx.clearRect).toHaveBeenCalledTimes(1)
-    expect(frameCallbacks.size).toBe(1)
+    expect(ctx.stroke).toHaveBeenCalledTimes(1)
+    expect(ctx.arc).toHaveBeenCalled()
+    expect(window.requestAnimationFrame).not.toHaveBeenCalled()
+    expect(canvas.width).toBe(320)
+    expect(canvas.height).toBe(180)
 
     dispose()
-    expect(frameCallbacks.size).toBe(0)
-    expect(() => dispose()).not.toThrow()
   })
 
   it('没有 2D context 时降级为 noop', () => {
     const canvas = createCanvas(null)
-    const dispose = mountAuthBackground(canvas, baseOptions)
+    const dispose = mountAuthBackground(canvas, { isMobile: false })
 
-    expect(window.requestAnimationFrame).not.toHaveBeenCalled()
     expect(() => dispose()).not.toThrow()
+    expect(window.requestAnimationFrame).not.toHaveBeenCalled()
   })
 
   it('取色失败时降级为 noop', () => {
@@ -120,46 +89,33 @@ describe('mountAuthBackground', () => {
       getPropertyValue: () => '',
     } as unknown as CSSStyleDeclaration)
 
-    const canvas = createCanvas(createFakeContext())
-    mountAuthBackground(canvas, baseOptions)
-
-    expect(window.requestAnimationFrame).not.toHaveBeenCalled()
-  })
-
-  it('reduced-motion 只画静态首帧，不启动 rAF', () => {
     const ctx = createFakeContext()
-    const canvas = createCanvas(ctx)
-    const dispose = mountAuthBackground(canvas, { ...baseOptions, reducedMotion: true })
+    mountAuthBackground(createCanvas(ctx), { isMobile: false })
 
-    expect(ctx.clearRect).toHaveBeenCalledTimes(1)
-    expect(window.requestAnimationFrame).not.toHaveBeenCalled()
-    dispose()
+    expect(ctx.stroke).not.toHaveBeenCalled()
   })
 
-  it('页面隐藏时暂停，恢复后重启', () => {
-    let hidden = false
-    Object.defineProperty(document, 'hidden', { configurable: true, get: () => hidden })
+  it('桌面 DPR 封顶 2、移动端封顶 1.5', () => {
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 3 })
 
-    const canvas = createCanvas(createFakeContext())
-    const dispose = mountAuthBackground(canvas, baseOptions)
-    expect(frameCallbacks.size).toBe(1)
+    const desktopCtx = createFakeContext()
+    const desktopCanvas = createCanvas(desktopCtx)
+    mountAuthBackground(desktopCanvas, { isMobile: false })
+    expect(desktopCanvas.width).toBe(640)
+    expect(desktopCanvas.height).toBe(360)
 
-    hidden = true
-    document.dispatchEvent(new Event('visibilitychange'))
-    expect(frameCallbacks.size).toBe(0)
-
-    hidden = false
-    document.dispatchEvent(new Event('visibilitychange'))
-    expect(frameCallbacks.size).toBe(1)
-
-    dispose()
+    const mobileCtx = createFakeContext()
+    const mobileCanvas = createCanvas(mobileCtx)
+    mountAuthBackground(mobileCanvas, { isMobile: true })
+    expect(mobileCanvas.width).toBe(480)
+    expect(mobileCanvas.height).toBe(270)
   })
 
-  it('resize 事件 150ms 节流后重新测量', () => {
+  it('resize 事件 150ms 节流后重新绘制一次', () => {
     vi.useFakeTimers()
     const ctx = createFakeContext()
     const canvas = createCanvas(ctx)
-    const dispose = mountAuthBackground(canvas, baseOptions)
+    const dispose = mountAuthBackground(canvas, { isMobile: false })
     expect(ctx.setTransform).toHaveBeenCalledTimes(1)
 
     window.dispatchEvent(new Event('resize'))
@@ -171,43 +127,29 @@ describe('mountAuthBackground', () => {
     dispose()
   })
 
-  it('dispose 后 resize 不再触发测量', () => {
+  it('dispose 后 resize 不再触发重绘，且可重复调用', () => {
     vi.useFakeTimers()
     const ctx = createFakeContext()
     const canvas = createCanvas(ctx)
-    const dispose = mountAuthBackground(canvas, baseOptions)
+    const dispose = mountAuthBackground(canvas, { isMobile: false })
     dispose()
 
     window.dispatchEvent(new Event('resize'))
     vi.advanceTimersByTime(150)
     expect(ctx.setTransform).toHaveBeenCalledTimes(1)
+    expect(() => dispose()).not.toThrow()
   })
 
-  it('移动端按 30fps 跳帧', () => {
+  it('0 尺寸时跳过绘制，等待后续 resize', () => {
     const ctx = createFakeContext()
     const canvas = createCanvas(ctx)
-    const dispose = mountAuthBackground(canvas, { ...baseOptions, isMobile: true })
-    expect(ctx.clearRect).toHaveBeenCalledTimes(1)
+    Object.defineProperty(canvas, 'getBoundingClientRect', {
+      configurable: true,
+      value: () => ({ width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0 }),
+    })
 
-    takeFrame()(16)
-    expect(ctx.clearRect).toHaveBeenCalledTimes(1)
-
-    takeFrame()(40)
-    expect(ctx.clearRect).toHaveBeenCalledTimes(2)
-
-    dispose()
-  })
-
-  it('effect=galaxy 时改用多座星系绘制（多层星云 + 星点）', () => {
-    const ctx = createFakeContext()
-    const canvas = createCanvas(ctx)
-    const dispose = mountAuthBackground(canvas, { ...baseOptions, effect: 'galaxy' })
-
-    expect(ctx.clearRect).toHaveBeenCalledTimes(1)
-    // 桌面 3 座星系，每座外晕 + 核球各一层渐变
-    expect(ctx.createRadialGradient).toHaveBeenCalledTimes(6)
-    expect(ctx.fillRect.mock.calls.length).toBeGreaterThan(1600)
-
+    const dispose = mountAuthBackground(canvas, { isMobile: false })
+    expect(ctx.clearRect).not.toHaveBeenCalled()
     dispose()
   })
 })

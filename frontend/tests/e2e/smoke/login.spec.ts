@@ -24,29 +24,15 @@ test.describe("匿名（chromium-anon only）", () => {
     await expect(page.getByRole("button", { name: /^登\s*录$/ })).toBeVisible();
   });
 
-  test("动态背景可见且不拦截表单点击", async ({ page }) => {
+  test("静态晶格背景可见且不拦截表单点击", async ({ page }) => {
     await page.goto("/login");
     await expect(page.locator(".auth-bg-canvas")).toBeVisible();
     await expect(page.locator(".auth-bg-layer")).toHaveAttribute("aria-hidden", "true");
-    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "flowfield");
     await expect(page.locator(".auth-bg-layer")).toHaveCSS("pointer-events", "none");
+    await expect(page.locator(".auth-bg-switch")).toHaveCount(0);
 
     await page.getByPlaceholder("用户名或邮箱").click();
     await expect(page.getByPlaceholder("用户名或邮箱")).toBeFocused();
-  });
-
-  test("切换背景动效为宇宙星系并刷新保持", async ({ page }) => {
-    await page.goto("/login");
-    const switcher = page.getByTestId("auth-bg-switch");
-    await expect(switcher).toHaveAttribute("data-effect", "flowfield");
-
-    await switcher.click();
-    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "galaxy");
-    await expect(page.getByTestId("auth-bg-switch")).toContainText("宇宙星系");
-
-    await page.reload();
-    await expect(page.locator(".auth-bg-layer")).toHaveAttribute("data-effect", "galaxy");
-    await expect(page.getByTestId("auth-bg-switch")).toContainText("宇宙星系");
   });
 
   test("表单登录成功 → 进入工作区列表 /w", async ({ page }) => {
