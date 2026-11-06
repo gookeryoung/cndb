@@ -1,4 +1,4 @@
-"""流水线迁移 y3z4a5b6c7d8 往返测试（ADR 0076 P0）."""
+"""流水线迁移往返测试（ADR 0076 P0 / ADR 0114 P0）."""
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ PREVIOUS = "x2y3z4a5b6c7"
 WORKFLOW = "pipeline_workflow"
 RUN = "pipeline_run"
 FINDING = "pipeline_finding"
+VERSION_REVISION = "4c6e8a0b2d3f"
+VERSION_PREVIOUS = "3b5d7f9a1c2e"
+VERSION_TABLE = "pipeline_workflow_version"
 
 
 def _upgrade(url: str, revision: str = REVISION) -> None:
@@ -107,3 +110,65 @@ class TestPipelineMigration:
         command.stamp(_build_config(url), PREVIOUS)
         _upgrade(url)
         assert {WORKFLOW, RUN, FINDING} <= _tables(db_path)
+
+
+class TestPipelineVersionMigration:
+    """``pipeline_workflow_version`` 建表 / 降级 / 幂等（ADR 0114 §5）."""
+
+    def test_upgrade_creates_version_table_and_indexes(self, tmp_path: Path):
+        db_path = tmp_path / "pipeline_version.db"
+        _upgrade(f"sqlite:///{db_path}", VERSION_REVISION)
+
+        assert VERSION_TABLE in _tables(db_path)
+        indexes = _indexes(db_path, VERSION_TABLE)
+        assert "ix_pipeline_workflow_version_workspace_id" in indexes
+        assert "ix_pipeline_workflow_version_workflow_id" in indexes
+        assert "ix_pipeline_workflow_version_created_by_id" in indexes
+        assert "ix_pipeline_workflow_version_ws_created" in indexes
+
+    def test_version_schema_matches_model(self, tmp_path: Path):
+        from cndb.plugins.pipeline.models import PipelineWorkflowVersion
+
+        db_path = tmp_path / "pipeline_version_model.db"
+        _upgrade(f"sqlite:///{db_path}", VERSION_REVISION)
+        assert _columns(db_path, VERSION_TABLE) == {column.name for column in PipelineWorkflowVersion.__table__.columns}
+
+    def test_downgrade_removes_only_version_table(self, tmp_path: Path):
+        db_path = tmp_path / "pipeline_version_down.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, VERSION_REVISION)
+        _downgrade(url, VERSION_PREVIOUS)
+
+        tables = _tables(db_path)
+        assert VERSION_TABLE not in tables
+        assert {WORKFLOW, RUN, FINDING} <= tables
+
+    def test_reupgrade_after_downgrade(self, tmp_path: Path):
+        db_path = tmp_path / "pipeline_version_round.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, VERSION_REVISION)
+        _downgrade(url, VERSION_PREVIOUS)
+        _upgrade(url, VERSION_REVISION)
+        assert VERSION_TABLE in _tables(db_path)
+
+    def test_upgrade_idempotent_when_table_exists(self, tmp_path: Path):
+        """create_all 已建表：stamp 到上一版再 upgrade，迁移跳过建表不报错."""
+        from sqlalchemy import create_engine
+
+        import cndb.core.events
+        import cndb.plugins.accounts.models
+        import cndb.plugins.documents.models
+        import cndb.plugins.pipeline.models
+        import cndb.plugins.tables.models
+        import cndb.plugins.workspaces.models  # noqa: F401
+        from cndb.models.base import Base
+
+        db_path = tmp_path / "pipeline_version_idempotent.db"
+        url = f"sqlite:///{db_path}"
+        engine = create_engine(url)
+        Base.metadata.create_all(engine)
+        engine.dispose()
+
+        command.stamp(_build_config(url), VERSION_PREVIOUS)
+        _upgrade(url, VERSION_REVISION)
+        assert VERSION_TABLE in _tables(db_path)

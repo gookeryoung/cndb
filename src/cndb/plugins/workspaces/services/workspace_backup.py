@@ -532,16 +532,39 @@ def build_workspace_backup_v9(
     charts_data = [{"title": c.title, "template_key": c.template_key, "config": c.config or {}} for c in charts_rows]
 
     # ── 流水线定义（v10，ADR 0076 D12）：只导出配置，运行 / 发现物属流水 ──
-    from cndb.plugins.pipeline.models import PipelineWorkflow
+    # v13 起带版本历史（ADR 0114 C11）：只导出版本原文与备注，compiled 不导出
+    from cndb.plugins.pipeline.models import PipelineWorkflow, PipelineWorkflowVersion
 
-    pipelines_data = [
-        {"name": wf.name, "content": wf.content, "enabled": wf.enabled}
-        for wf in (
-            db.query(PipelineWorkflow)
-            .filter(PipelineWorkflow.workspace_id == workspace_id)
-            .order_by(PipelineWorkflow.id)
-            .all()
+    workflow_rows = (
+        db.query(PipelineWorkflow)
+        .filter(PipelineWorkflow.workspace_id == workspace_id)
+        .order_by(PipelineWorkflow.id)
+        .all()
+    )
+    workflow_versions = (
+        db.query(PipelineWorkflowVersion)
+        .filter(PipelineWorkflowVersion.workspace_id == workspace_id)
+        .order_by(PipelineWorkflowVersion.workflow_id, PipelineWorkflowVersion.version_number)
+        .all()
+    )
+    versions_by_workflow: dict[int, list[dict[str, Any]]] = {}
+    for v in workflow_versions:
+        versions_by_workflow.setdefault(v.workflow_id, []).append(
+            {
+                "version_number": v.version_number,
+                "change_type": v.change_type,
+                "content": v.content,
+                "comment": v.comment,
+            }
         )
+    pipelines_data = [
+        {
+            "name": wf.name,
+            "content": wf.content,
+            "enabled": wf.enabled,
+            "versions": versions_by_workflow.get(wf.id, []),
+        }
+        for wf in workflow_rows
     ]
 
     # ── 结构设计（v11，ADR 0079 D9）：DSL 原文 + 版本原文；compiled 不导出 ──

@@ -1050,12 +1050,19 @@ def _import_pipelines(
 ) -> tuple[int, list[str]]:
     """还原流水线定义（v10 起，ADR 0076 D12），返回 (成功数, 错误明细).
 
-    - 同名定义已存在则跳过（与表 / 文档 / 同步任务的幂等口径一致）；
+    - 同名定义已存在则跳过（与表 / 文档 / 同步任务的幂等口径一致），其版本也不导入；
     - 不导入 ``compiled`` 快照，按 ``content`` 重新编译：历史快照可能与当前
       注册表版本不兼容，重编译能在导入期暴露 DSL 问题；
+    - v13 起重建 ``versions[]``（ADR 0114 C11）；旧备份无 ``versions`` 时
+      只还原当前定义；
     - 单条定义非法跳过并记错误，不阻断整体导入。
     """
-    from cndb.plugins.pipeline.models import PipelineWorkflow
+    from cndb.plugins.pipeline.models import (
+        CHANGE_TYPE_MANUAL,
+        CHANGE_TYPE_VALUES,
+        PipelineWorkflow,
+        PipelineWorkflowVersion,
+    )
     from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
     from cndb.plugins.pipeline.services.errors import DslError
 
@@ -1082,16 +1089,44 @@ def _import_pipelines(
         )
         if exists is not None:
             continue
-        db.add(
-            PipelineWorkflow(
-                workspace_id=workspace_id,
-                name=ir.name,
-                content=content,
-                compiled=ir.to_dict(),
-                enabled=bool(item.get("enabled", True)),
-                created_by_id=current_user.id,
-            )
+        workflow = PipelineWorkflow(
+            workspace_id=workspace_id,
+            name=ir.name,
+            content=content,
+            compiled=ir.to_dict(),
+            enabled=bool(item.get("enabled", True)),
+            created_by_id=current_user.id,
         )
+        db.add(workflow)
+        db.flush()
+        seen_numbers: set[int] = set()
+        for version in item.get("versions") or []:
+            if not isinstance(version, dict):
+                continue
+            raw_number = version.get("version_number")
+            if raw_number is None:
+                continue
+            try:
+                version_number = int(raw_number)
+            except (TypeError, ValueError):
+                continue
+            if version_number < 1 or version_number in seen_numbers:
+                continue
+            seen_numbers.add(version_number)
+            change_type = str(version.get("change_type") or CHANGE_TYPE_MANUAL)
+            if change_type not in CHANGE_TYPE_VALUES:
+                change_type = CHANGE_TYPE_MANUAL
+            db.add(
+                PipelineWorkflowVersion(
+                    workspace_id=workspace_id,
+                    workflow_id=workflow.id,
+                    version_number=version_number,
+                    change_type=change_type,
+                    content=str(version.get("content") or ""),
+                    comment=str(version.get("comment") or "")[:200],
+                    created_by_id=current_user.id,
+                )
+            )
         imported += 1
     if imported:
         db.commit()

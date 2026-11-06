@@ -1,4 +1,4 @@
-"""工作区备份 v13：设计文件身份 / 依赖闭包往返（ADR 0086 D11）."""
+"""工作区备份 v13：设计文件身份 / 依赖闭包往返（ADR 0086 D11）/ 流水线版本（ADR 0114）."""
 
 from __future__ import annotations
 
@@ -125,3 +125,109 @@ class TestBackupV13DesignFiles:
         ).scalar_one()
         assert version.dependencies[0]["version_number"] == 1
         assert version.change_type == "auto"
+
+
+PIPELINE_OLD = "name: 文档巡检\njobs:\n  文档:\n    steps:\n      - uses: document/links\n"
+PIPELINE_NEW = "name: 文档巡检\njobs:\n  文档:\n    steps:\n      - uses: document/broken-refs\n"
+
+
+class TestBackupPipelineVersions:
+    """v13 pipelines 段版本历史往返与旧备份兼容（ADR 0114 C11）."""
+
+    def _seed(self, db: Session, ws, user):
+        from cndb.plugins.pipeline.models import PipelineWorkflow, PipelineWorkflowVersion
+
+        workflow = PipelineWorkflow(
+            workspace_id=ws.id,
+            name="文档巡检",
+            content=PIPELINE_NEW,
+            compiled={},
+            enabled=True,
+            created_by_id=user.id,
+        )
+        db.add(workflow)
+        db.flush()
+        db.add_all(
+            [
+                PipelineWorkflowVersion(
+                    workspace_id=ws.id,
+                    workflow_id=workflow.id,
+                    version_number=1,
+                    change_type="manual",
+                    content=PIPELINE_OLD,
+                    comment="",
+                    created_by_id=user.id,
+                ),
+                PipelineWorkflowVersion(
+                    workspace_id=ws.id,
+                    workflow_id=workflow.id,
+                    version_number=2,
+                    change_type="rollback",
+                    content=PIPELINE_NEW,
+                    comment="恢复自 v1",
+                    created_by_id=user.id,
+                ),
+            ]
+        )
+        db.commit()
+        return workflow
+
+    def test_pipeline_versions_roundtrip(self, db_engine, db) -> None:
+        from cndb.plugins.pipeline.models import PipelineWorkflow, PipelineWorkflowVersion
+
+        ws, user = _make_workspace(db, "v13 流水线源")
+        self._seed(db, ws, user)
+
+        backup, _files = build_workspace_backup_v9(db, ws.id, user, include_secrets=False)
+        item = backup["pipelines"][0]
+        assert [v["version_number"] for v in item["versions"]] == [1, 2]
+        assert item["versions"][1]["change_type"] == "rollback"
+        assert item["versions"][1]["comment"] == "恢复自 v1"
+
+        target_ws, target_user = _make_workspace(db, "v13 流水线目标")
+        result = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        assert result.errors == []
+        assert result.imported_pipelines == 1
+
+        workflow = db.execute(
+            select(PipelineWorkflow).where(PipelineWorkflow.workspace_id == target_ws.id)
+        ).scalar_one()
+        versions = (
+            db.execute(
+                select(PipelineWorkflowVersion)
+                .where(PipelineWorkflowVersion.workflow_id == workflow.id)
+                .order_by(PipelineWorkflowVersion.version_number)
+            )
+            .scalars()
+            .all()
+        )
+        assert [v.version_number for v in versions] == [1, 2]
+        assert versions[0].content == PIPELINE_OLD
+        assert versions[1].change_type == "rollback"
+        assert versions[1].comment == "恢复自 v1"
+        assert versions[0].workspace_id == target_ws.id
+
+    def test_old_backup_without_versions_imports_current_only(self, db_engine, db) -> None:
+        from cndb.plugins.pipeline.models import PipelineWorkflow, PipelineWorkflowVersion
+
+        ws, user = _make_workspace(db, "v13 旧备份源")
+        self._seed(db, ws, user)
+        backup, _files = build_workspace_backup_v9(db, ws.id, user, include_secrets=False)
+        for item in backup["pipelines"]:
+            item.pop("versions", None)
+
+        target_ws, target_user = _make_workspace(db, "v13 旧备份目标")
+        result = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        assert result.errors == []
+        assert result.imported_pipelines == 1
+
+        workflow = db.execute(
+            select(PipelineWorkflow).where(PipelineWorkflow.workspace_id == target_ws.id)
+        ).scalar_one()
+        assert workflow.content == PIPELINE_NEW
+        assert (
+            db.execute(select(PipelineWorkflowVersion).where(PipelineWorkflowVersion.workflow_id == workflow.id))
+            .scalars()
+            .all()
+            == []
+        )

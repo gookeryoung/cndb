@@ -15,9 +15,12 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.services.visibility import visible_document_ids
 from cndb.plugins.issues.services import get_issue_detail
 from cndb.plugins.pipeline.models import (
+    CHANGE_TYPE_MANUAL,
+    CHANGE_TYPE_ROLLBACK,
     PipelineFinding,
     PipelineRun,
     PipelineWorkflow,
+    PipelineWorkflowVersion,
 )
 from cndb.plugins.pipeline.schemas import (
     CheckInputResponse,
@@ -32,6 +35,9 @@ from cndb.plugins.pipeline.schemas import (
     WorkflowCreate,
     WorkflowResponse,
     WorkflowUpdate,
+    WorkflowVersionDetail,
+    WorkflowVersionDiff,
+    WorkflowVersionItem,
 )
 from cndb.plugins.pipeline.services.checks.registry import (
     CHECK_DOMAINS,
@@ -48,6 +54,11 @@ from cndb.plugins.pipeline.services.issue_bridge import convert_finding_to_issue
 from cndb.plugins.pipeline.services.runner import (
     create_run,
     run_pipeline_in_background,
+)
+from cndb.plugins.pipeline.services.versions import (
+    add_workflow_version,
+    get_workflow_version,
+    workflow_diff,
 )
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
@@ -181,6 +192,9 @@ def create_workflow(
         created_by_id=current_user.id,
     )
     db.add(workflow)
+    db.flush()
+    # 新建成功即落 v1（ADR 0114 C2）
+    add_workflow_version(db, workflow, current_user, content=payload.content, change_type=CHANGE_TYPE_MANUAL)
     db.commit()
     db.refresh(workflow)
     return _workflow_response(db, workflow)
@@ -259,6 +273,88 @@ def get_workflow(
     return _workflow_response(db, _workflow_or_404(db, workspace_id, workflow_id))
 
 
+@router.get("/{workflow_id}/versions", response_model=list[WorkflowVersionItem])
+def list_workflow_versions(
+    workspace_id: int,
+    workflow_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> list[WorkflowVersionItem]:
+    """版本列表（版本号倒序，不含原文；成员可读）."""
+    _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    workflow = _workflow_or_404(db, workspace_id, workflow_id)
+    rows = (
+        db.query(PipelineWorkflowVersion)
+        .filter(PipelineWorkflowVersion.workflow_id == workflow.id)
+        .order_by(PipelineWorkflowVersion.version_number.desc())
+        .all()
+    )
+    return [WorkflowVersionItem.model_validate(row) for row in rows]
+
+
+@router.get("/{workflow_id}/versions/{version_number}", response_model=WorkflowVersionDetail)
+def get_workflow_version_detail(
+    workspace_id: int,
+    workflow_id: int,
+    version_number: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkflowVersionDetail:
+    """单版详情（含 DSL 原文；成员可读）."""
+    _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    workflow = _workflow_or_404(db, workspace_id, workflow_id)
+    return WorkflowVersionDetail.model_validate(get_workflow_version(db, workflow, version_number))
+
+
+@router.get("/{workflow_id}/diff", response_model=WorkflowVersionDiff)
+def diff_workflow_versions(
+    workspace_id: int,
+    workflow_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    base: Annotated[int, Query(ge=1)],
+    head: Annotated[int, Query(ge=1)],
+) -> WorkflowVersionDiff:
+    """两版对比（unified diff + 增删行数；成员可读）."""
+    _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    workflow = _workflow_or_404(db, workspace_id, workflow_id)
+    return WorkflowVersionDiff(**workflow_diff(db, workflow, base, head))
+
+
+@router.post("/{workflow_id}/versions/{version_number}/restore", response_model=WorkflowResponse)
+def restore_workflow_version(
+    workspace_id: int,
+    workflow_id: int,
+    version_number: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkflowResponse:
+    """按历史原文恢复（重新编译后写回内容 / 编译产物 / 名称，保留启用状态）.
+
+    失败零写入（I5）：DSL 非法 400，名称冲突 409；成功落一条 ``rollback`` 版本。
+    """
+    _require(db, workspace_id, current_user, WorkspaceRole.EDITOR)
+    workflow = _workflow_or_404(db, workspace_id, workflow_id)
+    version = get_workflow_version(db, workflow, version_number)
+    ir = compile_workflow(version.content, fallback_name=workflow.name)
+    assert_steps_in_enabled_modules(ir, _enabled_modules(db, workspace_id))
+    _assert_name_available(db, workspace_id, ir.name, exclude_id=workflow.id)
+    workflow.content = version.content
+    workflow.compiled = ir.to_dict()
+    workflow.name = ir.name
+    add_workflow_version(
+        db,
+        workflow,
+        current_user,
+        content=version.content,
+        change_type=CHANGE_TYPE_ROLLBACK,
+        comment=f"恢复自 v{version_number}",
+    )
+    db.commit()
+    db.refresh(workflow)
+    return _workflow_response(db, workflow)
+
+
 @router.put("/{workflow_id}", response_model=WorkflowResponse)
 def update_workflow(
     workspace_id: int,
@@ -271,17 +367,22 @@ def update_workflow(
     _require(db, workspace_id, current_user, WorkspaceRole.EDITOR)
     workflow = _workflow_or_404(db, workspace_id, workflow_id)
     target_name = payload.name if payload.name is not None else workflow.name
-    if payload.content is not None:
-        ir = compile_workflow(payload.content, fallback_name=target_name)
+    new_content = payload.content
+    content_changed = new_content is not None and new_content != workflow.content
+    if new_content is not None:
+        ir = compile_workflow(new_content, fallback_name=target_name)
         # 更新期拒绝已禁用域的动作（ADR 0080 C4）
         assert_steps_in_enabled_modules(ir, _enabled_modules(db, workspace_id))
         target_name = ir.name
-        workflow.content = payload.content
+        workflow.content = new_content
         workflow.compiled = ir.to_dict()
     _assert_name_available(db, workspace_id, target_name, exclude_id=workflow.id)
     workflow.name = target_name
     if payload.enabled is not None:
         workflow.enabled = payload.enabled
+    if new_content is not None and content_changed:
+        # 仅内容实际变化时落版；只切 enabled 不产生版本（ADR 0114 §4）
+        add_workflow_version(db, workflow, current_user, content=new_content, change_type=CHANGE_TYPE_MANUAL)
     db.commit()
     db.refresh(workflow)
     return _workflow_response(db, workflow)
@@ -300,6 +401,8 @@ def delete_workflow(
     run_ids = select(PipelineRun.id).where(PipelineRun.workflow_id == workflow.id)
     db.execute(delete(PipelineFinding).where(PipelineFinding.run_id.in_(run_ids)))
     db.execute(delete(PipelineRun).where(PipelineRun.workflow_id == workflow.id))
+    # 版本行显式清理（ADR 0114 §4.8）
+    db.execute(delete(PipelineWorkflowVersion).where(PipelineWorkflowVersion.workflow_id == workflow.id))
     db.delete(workflow)
     db.commit()
 

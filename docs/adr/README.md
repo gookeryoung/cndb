@@ -143,11 +143,14 @@ DSL 内核 / 结构导航 / 系统级装配 / 分文件与约束。
 
 ## 质量检查
 
-流水线检查 DSL。
+流水线检查 DSL / 规则版本历史。
 
 | 编号 | 标题 | Status | 落地阶段 | 代码 | 测试 | CHANGELOG |
 |---|---|---|---|---|---|---|
 | [0076](0076-pipeline-check-dsl.md) | 流水线检查系统与专用 DSL（数据表 / 文档质量检查 + 检查动作注册表） | Implemented | P0-P2 已落地（2026-11-02 人工确认）；D11 入口口径已由 ADR 0080 P3 修订为按域双入口 | `src/cndb/plugins/pipeline/`、`src/cndb/cli/pipeline.py`、`deploy/pipeline.sh`、`src/cndb/alembic/versions/y3z4a5b6c7d8_add_pipeline_plugin.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/src/pages/pipelines/`、`frontend/src/api/pipelines.ts` | `tests/test_pipeline_dsl.py`、`tests/test_pipeline_checks.py`、`tests/test_pipeline_runner.py`、`tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py`、`tests/test_pipeline_triggers.py`、`tests/test_pipeline_scheduler.py`、`tests/test_pipeline_issue_bridge.py`、`tests/test_workspace_backup_v9.py`、`frontend/src/pages/pipelines/*.test.*`、`frontend/tests/e2e/critical/pipelines.spec.ts` | [未发布](../../CHANGELOG.md) |
+| [0114](0114-pipeline-rule-version-history.md) | 流水线规则版本历史（手动保存 / 恢复版本 / 两版 DIFF） | Accepted | P0-P2 已落地（2026-11-06，待人工验收） | `src/cndb/plugins/pipeline/models.py`、`src/cndb/plugins/pipeline/services/versions.py`、`src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/plugins/pipeline/schemas.py`、`src/cndb/alembic/versions/4c6e8a0b2d3f_pipeline_workflow_version.py`、`frontend/src/pages/pipelines/PipelineVersionsDrawer.tsx`、`frontend/src/api/pipelines.ts` | `tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py`、`tests/test_workspace_backup_v13.py`、`frontend/src/pages/pipelines/*.test.tsx`、`frontend/tests/e2e/critical/pipelines.spec.ts` | [未发布](../../CHANGELOG.md) |
+
+承接关系：0114 在 0076 的定义 / 运行模型上加规则版本表，版本只快照 DSL 原文，运行仍读当前 `compiled`；备份仍属 0076 D12 口径（运行与发现物不进备份），只是 `pipelines[]` 增加可选 `versions[]`。
 
 
 ## 示例数据与内容口径

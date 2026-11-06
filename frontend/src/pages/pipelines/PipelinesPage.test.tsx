@@ -97,6 +97,7 @@ function renderPage(domain: 'table' | 'document' = 'table') {
 
 function defaultHandlers() {
   server.use(
+    http.get('/api/v1/workspaces/10', () => HttpResponse.json({ id: 10, name: '测试工作区', current_user_role: 'editor' })),
     http.get('/api/v1/workspaces/10/pipelines', () => HttpResponse.json([WORKFLOW])),
     http.get('/api/v1/workspaces/10/pipelines/checks', () => HttpResponse.json(CHECKS)),
     http.get('/api/v1/workspaces/10/pipeline-runs', () =>
@@ -270,6 +271,25 @@ describe('PipelinesPage 列表与编辑', () => {
     const confirmButtons = await screen.findAllByRole('button', { name: /删\s*除/ })
     fireEvent.click(confirmButtons[confirmButtons.length - 1]!)
     await waitFor(() => expect(deleted).toBe(true))
+  })
+
+  it('规则行可打开版本历史抽屉', async () => {
+    defaultHandlers()
+    server.use(
+      http.get('/api/v1/workspaces/10/pipelines/7/versions', () => HttpResponse.json([{
+        id: 11,
+        workflow_id: 7,
+        version_number: 1,
+        change_type: 'manual',
+        comment: '',
+        created_by_id: 1,
+        created_at: '2026-10-01T08:00:00Z',
+      }])),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '版本历史 空值巡检' }))
+    expect(await screen.findByTestId('pipeline-version-row-1')).toBeInTheDocument()
   })
 })
 

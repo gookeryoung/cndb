@@ -175,6 +175,34 @@ export interface PipelineFindingQuery {
   offset?: number
 }
 
+/** 版本变更类型（与后端 change_type 对齐） */
+export type PipelineVersionChangeType = 'manual' | 'rollback'
+
+/** 版本列表项（不含 DSL 原文） */
+export interface PipelineVersionItem {
+  id: number
+  workflow_id: number
+  version_number: number
+  change_type: PipelineVersionChangeType
+  comment: string
+  created_by_id: number | null
+  created_at: string
+}
+
+/** 单版详情（含 DSL 原文） */
+export interface PipelineVersionDetail extends PipelineVersionItem {
+  content: string
+}
+
+/** 两版 unified diff */
+export interface PipelineVersionDiff {
+  base_version: number
+  head_version: number
+  diff: string
+  added: number
+  removed: number
+}
+
 const base = (wid: number | string) => `/v1/workspaces/${wid}/pipelines`
 const runsBase = (wid: number | string) => `/v1/workspaces/${wid}/pipeline-runs`
 
@@ -219,4 +247,19 @@ export const pipelinesApi = {
   /** 发现物一键转问题（仅表目标；非表目标后端 400） */
   convertFindingToIssue: (wid: number | string, runId: number | string, findingId: number | string) =>
     api.post<Issue>(`${runsBase(wid)}/${runId}/findings/${findingId}/issue`).then(r => r.data),
+  /** 版本列表（版本号倒序，不含原文） */
+  listVersions: (wid: number | string, workflowId: number | string) =>
+    api.get<PipelineVersionItem[]>(`${base(wid)}/${workflowId}/versions`).then(r => r.data),
+  /** 单版详情（含 DSL 原文） */
+  getVersion: (wid: number | string, workflowId: number | string, versionNumber: number | string) =>
+    api.get<PipelineVersionDetail>(`${base(wid)}/${workflowId}/versions/${versionNumber}`).then(r => r.data),
+  /** 两版对比 */
+  getVersionDiff: (
+    wid: number | string,
+    workflowId: number | string,
+    params: { base: number | string; head: number | string },
+  ) => api.get<PipelineVersionDiff>(`${base(wid)}/${workflowId}/diff`, { params }).then(r => r.data),
+  /** 恢复历史版本（editor；非法 DSL 400 / 名称冲突 409） */
+  restoreVersion: (wid: number | string, workflowId: number | string, versionNumber: number | string) =>
+    api.post<PipelineWorkflow>(`${base(wid)}/${workflowId}/versions/${versionNumber}/restore`).then(r => r.data),
 }

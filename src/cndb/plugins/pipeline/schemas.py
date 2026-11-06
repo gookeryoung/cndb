@@ -135,3 +135,33 @@ class RunListResponse(BaseModel):
 
     total: int
     items: list[RunResponse] = Field(default_factory=list)
+
+
+class WorkflowVersionItem(BaseModel):
+    """版本列表项（不含 DSL 原文，ADR 0114）."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workflow_id: int
+    version_number: int
+    change_type: str
+    comment: str
+    created_by_id: int | None
+    created_at: Any
+
+
+class WorkflowVersionDetail(WorkflowVersionItem):
+    """单版详情（含 DSL 原文与备注）."""
+
+    content: str
+
+
+class WorkflowVersionDiff(BaseModel):
+    """两版统一 diff 与增删行数."""
+
+    base_version: int
+    head_version: int
+    diff: str
+    added: int
+    removed: int

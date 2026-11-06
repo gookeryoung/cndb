@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from cndb.plugins.pipeline.models import PipelineFinding, PipelineRun
+from cndb.plugins.pipeline.models import (
+    CHANGE_TYPE_MANUAL,
+    CHANGE_TYPE_ROLLBACK,
+    PipelineFinding,
+    PipelineRun,
+    PipelineWorkflowVersion,
+)
 from cndb.plugins.pipeline.services.dsl.parse import compile_workflow
 from cndb.plugins.workspaces.models import WorkspaceRole
 from tests.pipeline_helpers import (
@@ -95,6 +101,10 @@ def _create(client, ws, headers, content: str = CLEAN_CONTENT, name: str | None 
 
 def _trigger(client, ws, headers, workflow_id: int):
     return client.post(f"{BASE.format(ws=ws.id)}/{workflow_id}/run", headers=headers)
+
+
+def _versions_url(ws, workflow_id: int) -> str:
+    return f"{BASE.format(ws=ws.id)}/{workflow_id}/versions"
 
 
 def _expire(db):
@@ -309,6 +319,194 @@ class TestCrud:
         assert resp.status_code == 204
         assert db.execute(select(PipelineRun)).scalars().all() == []
         assert db.execute(select(PipelineFinding)).scalars().all() == []
+        assert db.execute(select(PipelineWorkflowVersion)).scalars().all() == []
+
+
+class TestVersions:
+    """版本历史：新建落 v1 / 保存落版 / 列表 / 详情 / diff / 恢复（ADR 0114）."""
+
+    def test_create_writes_first_manual_version(self, client, ws, auth_owner, db):
+        workflow = _create(client, ws, auth_owner).json()
+        rows = db.execute(select(PipelineWorkflowVersion)).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].workflow_id == workflow["id"]
+        assert rows[0].version_number == 1
+        assert rows[0].change_type == CHANGE_TYPE_MANUAL
+        assert rows[0].content == CLEAN_CONTENT
+        assert rows[0].comment == ""
+
+    def test_update_content_writes_new_version(self, client, ws, auth_owner, db):
+        workflow = _create(client, ws, auth_owner).json()
+        new_content = CLEAN_CONTENT.replace("文档巡检", "文档巡检改")
+        assert (
+            client.put(
+                f"{BASE.format(ws=ws.id)}/{workflow['id']}",
+                json={"content": new_content},
+                headers=auth_owner,
+            ).status_code
+            == 200
+        )
+        rows = (
+            db.execute(select(PipelineWorkflowVersion).order_by(PipelineWorkflowVersion.version_number)).scalars().all()
+        )
+        assert [row.version_number for row in rows] == [1, 2]
+        assert rows[1].content == new_content
+        assert rows[1].change_type == CHANGE_TYPE_MANUAL
+
+    def test_update_same_content_or_enabled_only_keeps_version(self, client, ws, auth_owner, db):
+        workflow = _create(client, ws, auth_owner).json()
+        url = f"{BASE.format(ws=ws.id)}/{workflow['id']}"
+        assert client.put(url, json={"content": CLEAN_CONTENT}, headers=auth_owner).status_code == 200
+        assert client.put(url, json={"enabled": False}, headers=auth_owner).status_code == 200
+        assert len(db.execute(select(PipelineWorkflowVersion)).scalars().all()) == 1
+
+    def test_list_versions_desc_without_content(self, client, ws, auth_owner):
+        workflow = _create(client, ws, auth_owner).json()
+        client.put(
+            f"{BASE.format(ws=ws.id)}/{workflow['id']}",
+            json={"content": CLEAN_CONTENT.replace("文档巡检", "文档巡检改")},
+            headers=auth_owner,
+        )
+        resp = client.get(_versions_url(ws, workflow["id"]), headers=auth_owner)
+        assert resp.status_code == 200
+        items = resp.json()
+        assert [item["version_number"] for item in items] == [2, 1]
+        assert all("content" not in item for item in items)
+        assert items[0]["change_type"] == CHANGE_TYPE_MANUAL
+
+    def test_version_detail_and_not_found(self, client, ws, auth_owner):
+        workflow = _create(client, ws, auth_owner).json()
+        resp = client.get(f"{_versions_url(ws, workflow['id'])}/1", headers=auth_owner)
+        assert resp.status_code == 200
+        assert resp.json()["content"] == CLEAN_CONTENT
+
+        missing = client.get(f"{_versions_url(ws, workflow['id'])}/99", headers=auth_owner)
+        assert missing.status_code == 404
+        assert missing.json()["code"] == "pipeline_version_not_found"
+
+    def test_diff_between_versions(self, client, ws, auth_owner):
+        workflow = _create(client, ws, auth_owner).json()
+        client.put(
+            f"{BASE.format(ws=ws.id)}/{workflow['id']}",
+            json={"content": CLEAN_CONTENT.replace("文档巡检", "文档巡检改")},
+            headers=auth_owner,
+        )
+        resp = client.get(
+            f"{BASE.format(ws=ws.id)}/{workflow['id']}/diff",
+            params={"base": 1, "head": 2},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["base_version"] == 1
+        assert body["head_version"] == 2
+        assert "文档巡检改" in body["diff"]
+        assert body["added"] >= 1
+        assert body["removed"] >= 1
+
+    def test_diff_missing_version(self, client, ws, auth_owner):
+        workflow = _create(client, ws, auth_owner).json()
+        resp = client.get(
+            f"{BASE.format(ws=ws.id)}/{workflow['id']}/diff",
+            params={"base": 1, "head": 2},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "pipeline_version_not_found"
+
+    def test_restore_writes_rollback_version_and_preserves_enabled(self, client, ws, auth_owner, db):
+        workflow = _create(client, ws, auth_owner).json()
+        url = f"{BASE.format(ws=ws.id)}/{workflow['id']}"
+        client.put(
+            url,
+            json={"content": CLEAN_CONTENT.replace("文档巡检", "文档巡检改"), "enabled": False},
+            headers=auth_owner,
+        )
+        resp = client.post(f"{_versions_url(ws, workflow['id'])}/1/restore", headers=auth_owner)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["content"] == CLEAN_CONTENT
+        assert body["name"] == "文档巡检"
+        assert body["enabled"] is False
+
+        _expire(db)
+        rows = (
+            db.execute(select(PipelineWorkflowVersion).order_by(PipelineWorkflowVersion.version_number)).scalars().all()
+        )
+        assert [row.version_number for row in rows] == [1, 2, 3]
+        assert rows[2].change_type == CHANGE_TYPE_ROLLBACK
+        assert rows[2].comment == "恢复自 v1"
+        assert rows[2].content == CLEAN_CONTENT
+
+    def test_restore_invalid_historical_content_writes_nothing(self, client, ws, auth_owner, db):
+        workflow = _create(client, ws, auth_owner).json()
+        db.add(
+            PipelineWorkflowVersion(
+                workspace_id=ws.id,
+                workflow_id=workflow["id"],
+                version_number=2,
+                change_type=CHANGE_TYPE_MANUAL,
+                content="name: 坏\njobs: []\n",
+                comment="",
+            )
+        )
+        db.commit()
+
+        resp = client.post(f"{_versions_url(ws, workflow['id'])}/2/restore", headers=auth_owner)
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "pipeline_dsl_invalid"
+
+        _expire(db)
+        current = client.get(f"{BASE.format(ws=ws.id)}/{workflow['id']}", headers=auth_owner).json()
+        assert current["content"] == CLEAN_CONTENT
+        assert len(db.execute(select(PipelineWorkflowVersion)).scalars().all()) == 2
+
+    def test_restore_name_conflict_writes_nothing(self, client, ws, auth_owner, db):
+        first = _create(client, ws, auth_owner).json()
+        second = _create(client, ws, auth_owner, content=CLEAN_CONTENT.replace("文档巡检", "文档巡检二")).json()
+        # 人为让 first 的历史版本名称与 second 当前名称冲突
+        db.add(
+            PipelineWorkflowVersion(
+                workspace_id=ws.id,
+                workflow_id=first["id"],
+                version_number=2,
+                change_type=CHANGE_TYPE_MANUAL,
+                content=CLEAN_CONTENT.replace("文档巡检", "文档巡检二"),
+                comment="",
+            )
+        )
+        db.commit()
+
+        resp = client.post(f"{_versions_url(ws, first['id'])}/2/restore", headers=auth_owner)
+        assert resp.status_code == 409
+        _expire(db)
+        current = client.get(f"{BASE.format(ws=ws.id)}/{first['id']}", headers=auth_owner).json()
+        assert current["name"] == first["name"]
+        assert second["name"] == "文档巡检二"
+
+    def test_viewer_can_read_but_not_restore(self, client, ws, auth_owner, auth_viewer):
+        workflow = _create(client, ws, auth_owner).json()
+        assert client.get(_versions_url(ws, workflow["id"]), headers=auth_viewer).status_code == 200
+        assert client.get(f"{_versions_url(ws, workflow['id'])}/1", headers=auth_viewer).status_code == 200
+        assert (
+            client.get(
+                f"{BASE.format(ws=ws.id)}/{workflow['id']}/diff",
+                params={"base": 1, "head": 1},
+                headers=auth_viewer,
+            ).status_code
+            == 200
+        )
+        assert client.post(f"{_versions_url(ws, workflow['id'])}/1/restore", headers=auth_viewer).status_code == 403
+
+    def test_versions_isolated_by_workspace(self, client, db, auth_owner, ws, owner, auth_outsider):
+        workflow = _create(client, ws, auth_owner).json()
+        other = make_workspace(db, owner, "PipelineVersionOtherWS")
+        # owner 同时是 other 的 OWNER，但定义属于 ws：按工作区 + ID 定位应 404
+        resp = client.get(_versions_url(other, workflow["id"]), headers=auth_owner)
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "pipeline_not_found"
+
+        assert client.get(_versions_url(ws, workflow["id"]), headers=auth_outsider).status_code == 403
 
 
 class TestRuns:

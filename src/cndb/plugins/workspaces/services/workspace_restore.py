@@ -106,13 +106,19 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
 
     db.execute(delete(FileOwner).where(FileOwner.workspace_id == workspace_id))
 
-    # 流水线：发现物经 run 关联，先删 finding → run → workflow（v10 定义随备份重建）
-    from cndb.plugins.pipeline.models import PipelineFinding, PipelineRun, PipelineWorkflow
+    # 流水线：版本 → 发现物 → run → workflow（定义与版本随备份重建）
+    from cndb.plugins.pipeline.models import (
+        PipelineFinding,
+        PipelineRun,
+        PipelineWorkflow,
+        PipelineWorkflowVersion,
+    )
 
     run_ids = [row[0] for row in db.query(PipelineRun.id).filter(PipelineRun.workspace_id == workspace_id).all()]
     if run_ids:
         db.execute(delete(PipelineFinding).where(PipelineFinding.run_id.in_(run_ids)))
     db.execute(delete(PipelineRun).where(PipelineRun.workspace_id == workspace_id))
+    db.execute(delete(PipelineWorkflowVersion).where(PipelineWorkflowVersion.workspace_id == workspace_id))
     db.execute(delete(PipelineWorkflow).where(PipelineWorkflow.workspace_id == workspace_id))
 
     # 结构设计：版本先删（design_id 关联），再删设计本体（v11 随备份重建）

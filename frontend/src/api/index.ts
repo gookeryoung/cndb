@@ -105,6 +105,10 @@ export type {
   PipelineStepStat,
   PipelineTrigger,
   PipelineValidateResult,
+  PipelineVersionChangeType,
+  PipelineVersionDetail,
+  PipelineVersionDiff,
+  PipelineVersionItem,
   PipelineWorkflow,
   PipelineWorkflowPayload,
 } from './pipelines'

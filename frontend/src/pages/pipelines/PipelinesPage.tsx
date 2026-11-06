@@ -31,13 +31,14 @@ import SectionBox from '@/components/SectionBox'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
-import { pipelinesApi } from '@/api'
+import { pipelinesApi, workspaceApi } from '@/api'
 import type { PipelineCheckDomain, PipelineRun, PipelineValidateResult, PipelineWorkflow } from '@/api'
 import {
   CHECK_CATEGORY_LABEL, PIPELINE_STATUS_META, PIPELINE_TRIGGER_LABEL, buildStepSnippet,
   defaultWorkflowContent, describeTriggers, formatElapsed, isActiveRun,
 } from './checkCatalog'
 import PipelineDslEditor, { type PipelineDslEditorHandle } from './PipelineDslEditor'
+import PipelineVersionsDrawer from './PipelineVersionsDrawer'
 
 const { Text } = Typography
 
@@ -143,6 +144,15 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
   const editorRef = useRef<PipelineDslEditorHandle>(null)
   /** 左栏当前选中的流水线（null = 全部规则，决定右栏展示哪些运行历史） */
   const [selectedId, setSelectedId] = useState<string | number | null>(null)
+  /** 版本历史抽屉的目标规则（null = 抽屉关闭） */
+  const [versionsFor, setVersionsFor] = useState<PipelineWorkflow | null>(null)
+
+  const { data: wsDetail } = useQuery({
+    queryKey: ['workspace-detail', wid],
+    queryFn: () => workspaceApi.get(wid),
+    enabled: !!wid,
+  })
+  const canRestore = wsDetail?.current_user_role !== 'viewer'
 
   const { data: workflows = [], isLoading } = useQuery({
     queryKey: ['pipelines', wid, domain],
@@ -496,6 +506,15 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
                         onClick={() => openEdit(workflow)}
                       />
                     </Tooltip>
+                    <Tooltip title="版本历史">
+                      <Button
+                        type="text"
+                        size="small"
+                        aria-label={`版本历史 ${workflow.name}`}
+                        icon={<HistoryOutlined />}
+                        onClick={() => setVersionsFor(workflow)}
+                      />
+                    </Tooltip>
                     <Popconfirm
                       title={`删除流水线「${workflow.name}」？`}
                       description="运行历史与检查发现物会一并删除。"
@@ -599,6 +618,16 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
                 <Text type="secondary">插入到光标处</Text>
               </>
             )}
+            {editing && (
+              <Button
+                size="small"
+                icon={<HistoryOutlined />}
+                data-testid="pipeline-editor-history"
+                onClick={() => setVersionsFor(editing)}
+              >
+                版本历史
+              </Button>
+            )}
           </div>
 
           <div className="cn-pipeline-editor-main">
@@ -627,6 +656,14 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
           </div>
         </div>
       </Drawer>
+
+      <PipelineVersionsDrawer
+        wid={wid}
+        workflow={versionsFor}
+        open={versionsFor != null}
+        canRestore={canRestore}
+        onClose={() => setVersionsFor(null)}
+      />
     </div>
   )
 }

@@ -7,6 +7,8 @@
   ``pipeline_finding`` 行，便于按严重度 / 目标 / 动作过滤与分页（D6）。
 - 三表均工作区级（``workspace_id`` 级联删除）；定义随工作区备份导出，运行与发现物
   属流水、不进备份（D12）。
+- 版本历史（``pipeline_workflow_version``，ADR 0114）只追加不修改：每条记录一份
+  DSL 原文快照，内容来自手动保存或版本恢复，随定义级联删除。
 """
 
 from __future__ import annotations
@@ -58,6 +60,12 @@ CONCLUSION_SUCCESS = "success"
 CONCLUSION_FAILED = "failed"
 CONCLUSION_SKIPPED = "skipped"
 
+# ── 版本变更类型（ADR 0114）──
+
+CHANGE_TYPE_MANUAL = "manual"
+CHANGE_TYPE_ROLLBACK = "rollback"
+CHANGE_TYPE_VALUES = (CHANGE_TYPE_MANUAL, CHANGE_TYPE_ROLLBACK)
+
 
 class PipelineWorkflow(TimestampMixin, Base):
     """流水线定义：工作区内同名唯一，绑定一份 YAML DSL 与编译产物."""
@@ -86,6 +94,48 @@ class PipelineWorkflow(TimestampMixin, Base):
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"PipelineWorkflow(id={self.id}, name={self.name!r}, ws={self.workspace_id})"
+
+
+class PipelineWorkflowVersion(TimestampMixin, Base):
+    """流水线定义的历史版本快照（ADR 0114）.
+
+    只存 DSL 原文：``compiled`` / ``enabled`` / ``name`` 都是当前定义属性，
+    恢复时由原文重新编译派生。版本号在单个定义内单序列递增，只追加不更新。
+    """
+
+    __tablename__ = "pipeline_workflow_version"
+    __table_args__ = (
+        UniqueConstraint("workflow_id", "version_number", name="uniq_pipeline_workflow_version_number"),
+        Index("ix_pipeline_workflow_version_ws_created", "workspace_id", "created_at"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    workflow_id: Mapped[int] = mapped_column(
+        ForeignKey("pipeline_workflow.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: ``manual`` 主动保存 / ``rollback`` 版本恢复
+    change_type: Mapped[str] = mapped_column(String(20), nullable=False, default=CHANGE_TYPE_MANUAL)
+    #: DSL 原文快照
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 恢复时写「恢复自 vN」，主动保存留空
+    comment: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return (
+            f"PipelineWorkflowVersion(id={self.id}, workflow={self.workflow_id}, "
+            f"version={self.version_number}, type={self.change_type!r})"
+        )
 
 
 class PipelineRun(TimestampMixin, Base):
@@ -153,6 +203,9 @@ class PipelineFinding(TimestampMixin, Base):
 
 __all__ = [
     "ACTIVE_RUN_STATUSES",
+    "CHANGE_TYPE_MANUAL",
+    "CHANGE_TYPE_ROLLBACK",
+    "CHANGE_TYPE_VALUES",
     "CONCLUSION_FAILED",
     "CONCLUSION_SKIPPED",
     "CONCLUSION_SUCCESS",
@@ -175,4 +228,5 @@ __all__ = [
     "PipelineFinding",
     "PipelineRun",
     "PipelineWorkflow",
+    "PipelineWorkflowVersion",
 ]

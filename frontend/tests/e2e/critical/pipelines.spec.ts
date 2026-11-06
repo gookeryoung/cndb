@@ -163,6 +163,56 @@ test.describe("质量检查", () => {
     }
   })
 
+  test("版本历史：列表 → 回看 → 恢复历史版本", async ({ page, request }) => {
+    test.setTimeout(60_000)
+    const stamp = Date.now()
+    const tableName = `E2E 版本表 ${stamp}`
+    const baseName = `E2E 版本流水线 ${stamp}`
+    const changedName = `${baseName}改`
+    const tableId = await createFixtureTable(request, tableName)
+
+    try {
+      const workflowId = await createWorkflow(request, pipelineYaml(baseName, tableName))
+      // 第二次保存内容变更 → 落 v2
+      const updated = await request.put(`/api/v1/workspaces/${WID}/pipelines/${workflowId}`, {
+        headers: await authHeaders(request),
+        data: { content: pipelineYaml(changedName, tableName) },
+      })
+      expect(updated.ok()).toBeTruthy()
+
+      await page.goto(`/w/${WID}/pipelines`)
+      const item = page.locator('[data-testid^="pipeline-item-"]').filter({ hasText: changedName })
+      await expect(item).toBeVisible({ timeout: 15_000 })
+      await item.getByRole("button", { name: `版本历史 ${changedName}` }).click()
+
+      await expect(page.getByTestId("pipeline-version-row-2")).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByTestId("pipeline-version-row-1")).toBeVisible()
+
+      // 回看 v1：默认与 v2 对比，原文与 DIFF 同时可见
+      await page.getByTestId("pipeline-version-row-1").click()
+      await expect(page.getByTestId("pipeline-version-content")).toContainText(baseName)
+      await expect(page.getByTestId("document-diff")).toBeVisible()
+
+      // 恢复 v1：二次确认后写回原名并落 v3
+      await page.getByTestId("pipeline-version-restore").click()
+      await page.getByRole("button", { name: /确\s*定/ }).click()
+      await expect(page.getByTestId("pipeline-version-row-3")).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByTestId("pipeline-version-row-3")).toContainText("恢复自 v1")
+
+      const restored = await request.get(`/api/v1/workspaces/${WID}/pipelines/${workflowId}`, {
+        headers: await authHeaders(request),
+      })
+      expect(((await restored.json()) as { name: string }).name).toBe(baseName)
+    } finally {
+      await deleteTable(request, tableId)
+      const workflows = await listWorkflows(request)
+      for (const name of [baseName, changedName]) {
+        const created = workflows.find(workflow => workflow.name === name)
+        if (created) await deleteWorkflow(request, created.id)
+      }
+    }
+  })
+
   test("编辑器补全：输入触发候选 → 选择插入 → 校验与保存不回归", async ({ page, request }) => {
     test.setTimeout(90_000)
     const stamp = Date.now()
