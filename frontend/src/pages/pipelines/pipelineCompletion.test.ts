@@ -129,6 +129,73 @@ describe('pipelineCompletion 规则引用与片段（C5 / C7）', () => {
   })
 })
 
+describe('pipelineCompletion 内置动作参数值提示（C12）', () => {
+  const SENSITIVE = [
+    'jobs:',
+    '  体检:',
+    '    steps:',
+    '      - uses: document/sensitive',
+    '        with:',
+    '          rules:',
+    '            - name: 手机号',
+    "              patterns: ['\\b1\\d{10}\\b']",
+    '            - name: 白名单',
+    '              keywords: [公开联系人]',
+  ].join('\n')
+
+  it('logic 值位提示 any / all 与 rules 里已定义的规则名', () => {
+    const doc = `${SENSITIVE}\n          logic: |`
+    const result = optionsAt(doc)
+    expect(labels(result)).toEqual(['any', 'all', '手机号', '白名单'])
+    expect(result!.options[2]!.detail).toBe('敏感规则名')
+  })
+
+  it('logic 布尔表达式中继续提示规则名', () => {
+    const doc = `${SENSITIVE}\n          logic: 手机号 and 白|`
+    expect(labels(optionsAt(doc))).toEqual(['any', 'all', '手机号', '白名单'])
+  })
+
+  it('顶层 keywords / patterns 会提示隐式规则 default', () => {
+    const doc = [
+      'jobs:',
+      '  体检:',
+      '    steps:',
+      '      - uses: document/sensitive',
+      '        with:',
+      '          keywords: [内部资料]',
+      '          logic: |',
+    ].join('\n')
+    expect(labels(optionsAt(doc))).toEqual(['any', 'all', 'default'])
+  })
+
+  it('rules 列表项键位提示 name / keywords / patterns', () => {
+    const doc = `${SENSITIVE}\n          logic: any\n          rules:\n            - |`
+    expect(labels(optionsAt(doc))).toEqual(['name', 'keywords', 'patterns'])
+  })
+
+  it('非敏感动作不提供 logic / rules 值级提示', () => {
+    const doc = [
+      'jobs:',
+      '  体检:',
+      '    steps:',
+      '      - uses: table/null-rate',
+      '        with:',
+      '          rules:',
+      '            - |',
+    ].join('\n')
+    expect(optionsAt(doc)).toBeNull()
+    const logicDoc = [
+      'jobs:',
+      '  体检:',
+      '    steps:',
+      '      - uses: table/null-rate',
+      '        with:',
+      '          logic: |',
+    ].join('\n')
+    expect(optionsAt(logicDoc)).toBeNull()
+  })
+})
+
 describe('pipelineCompletion 本地引用（C6）', () => {
   const MULTI_JOB = [
     'jobs:',

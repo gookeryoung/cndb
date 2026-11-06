@@ -162,6 +162,97 @@ function findUsesAbove(lines: string[], fromIndex: number): string | null {
   return null
 }
 
+/** 值级提示的目标动作（C12；新增动作在此登记值提示口径） */
+const SENSITIVE_USES = 'document/sensitive'
+
+/** `document/sensitive` 的 `logic` 固定取值（C12） */
+const SENSITIVE_LOGIC_PRESETS = [
+  { label: 'any', detail: '任一规则命中' },
+  { label: 'all', detail: '全部规则命中' },
+] as const
+
+/** `document/sensitive` 命名规则项允许的键（与后端 `_RULE_KEYS` 对齐，C12） */
+const SENSITIVE_RULE_KEYS = [
+  { label: 'name', detail: '规则名（logic 中按字面引用）' },
+  { label: 'keywords', detail: '关键词列表（任一命中算该规则命中）' },
+  { label: 'patterns', detail: '正则表达式列表（任一命中算该规则命中）' },
+] as const
+
+/** `with` 块的直接子键行（如 `rules:`），找不到返回 null */
+function findChildKeyLine(lines: string[], withIndex: number, key: string): number | null {
+  const base = indentOf(lines[withIndex]!)
+  let childIndent: number | null = null
+  for (let i = withIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i]!
+    if (!line.trim()) continue
+    const indent = indentOf(line)
+    if (indent <= base) return null
+    if (childIndent === null) childIndent = indent
+    if (indent === childIndent && new RegExp(`^\\s*${key}:`).test(line)) return i
+  }
+  return null
+}
+
+/** 去掉 YAML 标量两侧引号 */
+function unquote(text: string): string {
+  return text.trim().replace(/^['"]|['"]$/g, '').trim()
+}
+
+/** 从 `rules` 值提取命名规则（块式 / 单行流式都尽量识别，C12） */
+function extractSensitiveRuleNames(lines: string[], rulesIndex: number): string[] {
+  const names: string[] = []
+  const seen = new Set<string>()
+  const push = (raw: string) => {
+    const name = unquote(raw)
+    if (name && !seen.has(name)) {
+      seen.add(name)
+      names.push(name)
+    }
+  }
+  const rulesLine = lines[rulesIndex]!
+  const inline = rulesLine.replace(/^\s*rules:\s*/, '')
+  if (inline) {
+    for (const match of inline.matchAll(/name:\s*("[^"]*"|'[^']*'|[^,}\]\s][^,}\]\n]*)/g)) {
+      if (match[1]) push(match[1])
+    }
+  }
+  const base = indentOf(rulesLine)
+  for (let i = rulesIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i]!
+    if (!line.trim()) continue
+    if (indentOf(line) <= base) break
+    const match = /^\s*(?:-\s*)?name:\s*(.+)$/.exec(line)
+    if (match?.[1]) push(match[1])
+  }
+  return names
+}
+
+/** `with` 块顶层是否写了 `keywords` / `patterns`（会合并为隐式规则 `default`） */
+function hasImplicitDefaultRule(lines: string[], withIndex: number): boolean {
+  const base = indentOf(lines[withIndex]!)
+  let childIndent: number | null = null
+  for (let i = withIndex + 1; i < lines.length; i += 1) {
+    const line = lines[i]!
+    if (!line.trim()) continue
+    const indent = indentOf(line)
+    if (indent <= base) break
+    if (childIndent === null) childIndent = indent
+    if (indent !== childIndent) continue
+    const match = /^(?:keywords|patterns):\s*(.*)$/.exec(line.trim())
+    if (!match) continue
+    if (match[1]) return true
+    // 空值后跟列表项同样算写了顶层关键词 / 正则
+    for (let j = i + 1; j < lines.length; j += 1) {
+      const next = lines[j]!
+      if (!next.trim()) continue
+      if (indentOf(next) <= childIndent) break
+      if (/^\s*-/.test(next)) return true
+      break
+    }
+  }
+  return false
+}
+
 /** 是否位于未闭合的 `${{ ... }}` 表达式内（C6） */
 function inExpression(before: string): boolean {
   const open = before.lastIndexOf('${{')
@@ -267,6 +358,35 @@ export function pipelineCompletionSource(
         detail: '流水线变量',
       })),
       validFor: /^[A-Za-z0-9_.]*$/,
+    }
+  }
+
+  // C12：`document/sensitive` 的 `logic` 值位 → any / all / 已定义规则名
+  const sensitiveLogic = /(?:^|\s)logic:\s*([^\n#]*)$/.exec(before)
+  if (sensitiveLogic && parent?.key === 'with'
+    && findUsesAbove(lines, parent.index) === SENSITIVE_USES) {
+    const typed = /[^\s()&|!]*$/.exec(sensitiveLogic[1] ?? '')?.[0] ?? ''
+    const rulesIndex = findChildKeyLine(lines, parent.index, 'rules')
+    const ruleNames = rulesIndex === null ? [] : extractSensitiveRuleNames(lines, rulesIndex)
+    if (hasImplicitDefaultRule(lines, parent.index)) ruleNames.unshift('default')
+    return {
+      from: pos - typed.length,
+      options: [
+        ...SENSITIVE_LOGIC_PRESETS.map(item => ({ label: item.label, type: 'keyword' as const, detail: item.detail })),
+        ...ruleNames.map(name => ({ label: name, type: 'variable' as const, detail: '敏感规则名' })),
+      ],
+      validFor: /^[^\s()&|!]*$/,
+    }
+  }
+
+  // C12：`document/sensitive` 的 `rules` 列表项键位 → name / keywords / patterns
+  if (parent?.key === 'rules'
+    && /^\s*-\s*[\w-]*$|^\s*[\w-]*$/.test(before)
+    && findUsesAbove(lines, parent.index) === SENSITIVE_USES) {
+    return {
+      from,
+      options: SENSITIVE_RULE_KEYS.map(item => ({ label: item.label, type: 'property', detail: item.detail })),
+      validFor: /^[\w-]*$/,
     }
   }
 

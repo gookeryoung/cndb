@@ -47,6 +47,7 @@
 | C9 | （依赖） | 新增依赖 `@codemirror/autocomplete`（CodeMirror 官方包 6.x；与 0110 共享，先落地者先加并锁版本） | `frontend/package.json` | `make check-fast`（lock 更新 + 前端构建门禁） |
 | C10 | （测试与门禁） | 测试分层：`pipelineDsl.test.ts` / `pipelineCompletion.test.ts` / `PipelinesPage.test.tsx` 更新 / e2e 新增 1 条（输入 → 补全 → 插入 → 保存校验不回归） | `frontend/src/pages/pipelines/`、`frontend/tests/e2e/critical/` | `make flow` 全绿 |
 | C11 | （文档口径） | CHANGELOG 记增强条目；帮助文档快速上手补一句编辑器补全用法（可选） | `CHANGELOG.md`、`frontend/src/pages/help/content/` | `make check-docs` |
+| C12 | 「敏感内容检查等内置流水线动作，也应实现自动完成提示功能」（2026-11-06 追加） | `with:` 参数值级提示：`document/sensitive` 的 `logic` 值位提示 `any` / `all` 与 `rules` 中已定义的规则名（顶层 `keywords` / `patterns` 提示隐式规则 `default`）；`rules` 列表项键位提示 `name` / `keywords` / `patterns`；其他动作不触发值级提示 | `frontend/src/pages/pipelines/pipelineCompletion.ts` | 前端单测：logic 值候选（含布尔表达式续写 / 隐式 default）、rules 项键候选、非敏感动作无候选 |
 
 约束编号在实现中原样引用；不重编号、不合并。
 
@@ -83,5 +84,6 @@
 | P0 | 已落地 | `frontend/src/pages/pipelines/{pipelineDsl.ts,PipelineDslEditor.tsx,PipelinesPage.tsx}`、`frontend/src/index.css` | `pipelineDsl.test.ts`、`PipelineDslEditor.test.tsx`、`PipelinesPage.test.tsx` | `ba817ab2` |
 | P1 | 已落地 | `frontend/src/pages/pipelines/pipelineCompletion.ts` | `pipelineCompletion.test.ts` | `ba817ab2` |
 | P2 | 已落地 | `frontend/src/pages/pipelines/{pipelineCompletion.ts,PipelineDslEditor.tsx}` | `pipelineCompletion.test.ts`、`frontend/tests/e2e/critical/pipelines.spec.ts` | `ba817ab2` |
+| 追加（C12） | 已落地 | `frontend/src/pages/pipelines/pipelineCompletion.ts` | `pipelineCompletion.test.ts`（新增 5 例） | 待提交 |
 
 - 最近一次全绿：`make flow`（`check-fast` + `test`）@ 2026-11-06（e2e 在 CI 4 分片执行）
