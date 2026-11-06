@@ -294,6 +294,93 @@ class TestSaveContent:
         )
         assert resp.status_code == 403
 
+    @staticmethod
+    def _versions(db, design_id: int) -> list[DesignDesignVersion]:
+        return list(
+            db.scalars(
+                select(DesignDesignVersion)
+                .where(DesignDesignVersion.design_id == design_id)
+                .order_by(DesignDesignVersion.version_number)
+            ).all()
+        )
+
+    def test_save_defaults_manual_change_type(self, client, db, ws, auth_owner):
+        """保存缺省 change_type=manual；创建即 v1 也是 manual（C1 / ADR 0113 §2）."""
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": "box(size = [2, 2, 2])"},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        assert [v.change_type for v in self._versions(db, created["id"])] == ["manual", "manual"]
+
+    def test_auto_save_change_type(self, client, db, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": "box(size = [3, 3, 3])", "change_type": "auto"},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        versions = self._versions(db, created["id"])
+        assert [v.version_number for v in versions] == [1, 2]
+        assert versions[1].change_type == "auto"
+
+    def test_auto_same_content_no_new_version(self, client, db, ws, auth_owner):
+        """自动保存内容与最新版一致不落版（D7）."""
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": GOOD_CONTENT, "change_type": "auto"},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version_number"] == 1
+        assert [v.version_number for v in self._versions(db, created["id"])] == [1]
+
+    def test_manual_promotes_latest_auto(self, client, db, ws, auth_owner):
+        """主动保存同内容且最新为 auto：提升为 manual，不新增版本（D7）."""
+        created = _create(client, ws, auth_owner).json()
+        auto_content = "box(size = [4, 4, 4])"
+        client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": auto_content, "change_type": "auto"},
+            headers=auth_owner,
+        )
+        resp = client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": auto_content, "change_type": "manual", "comment": "里程碑"},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version_number"] == 2
+        versions = self._versions(db, created["id"])
+        assert [v.version_number for v in versions] == [1, 2]
+        assert versions[1].change_type == "manual"
+        assert versions[1].comment == "里程碑"
+
+    def test_manual_same_content_manual_no_new_version(self, client, db, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": GOOD_CONTENT, "change_type": "manual"},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["version_number"] == 1
+        assert [v.version_number for v in self._versions(db, created["id"])] == [1]
+
+    def test_invalid_change_type_rejected(self, client, ws, auth_owner):
+        """客户端只可传 manual / auto（I4）."""
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": "box(size = [5, 5, 5])", "change_type": "rollback"},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 422
+
 
 class TestDelete:
     def test_soft_delete(self, client, db, ws, auth_editor):
@@ -455,6 +542,112 @@ class TestVersions:
         resp = client.post(_url(ws, f"/{created['id']}/versions/99/restore"), headers=auth_owner)
         assert resp.status_code == 404
         assert resp.json()["code"] == "design_version_not_found"
+
+    def test_versions_expose_change_type(self, client, ws, auth_owner, auth_viewer):
+        """列表 / 详情返回 change_type（C1）."""
+        created = self._make_two_versions(client, ws, auth_owner)
+        client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": "box(size = [9, 9, 9])", "change_type": "auto"},
+            headers=auth_owner,
+        )
+        items = client.get(_url(ws, f"/{created['id']}/versions"), headers=auth_viewer).json()
+        assert [i["version_number"] for i in items] == [3, 2, 1]
+        assert [i["change_type"] for i in items] == ["auto", "manual", "manual"]
+        detail = client.get(_url(ws, f"/{created['id']}/versions/3"), headers=auth_viewer).json()
+        assert detail["change_type"] == "auto"
+
+    def test_refresh_and_restore_change_types(self, client, db, ws, auth_editor):
+        """refresh / rollback 由服务端强制赋值（I4）."""
+        created = self._make_two_versions(client, ws, auth_editor)
+        refreshed = client.post(_url(ws, f"/{created['id']}/refresh"), json={}, headers=auth_editor)
+        assert refreshed.status_code == 200
+        assert refreshed.json()["version_number"] == 3
+        restored = client.post(_url(ws, f"/{created['id']}/versions/1/restore"), headers=auth_editor)
+        assert restored.status_code == 200
+        assert restored.json()["version_number"] == 4
+        versions = db.scalars(
+            select(DesignDesignVersion)
+            .where(DesignDesignVersion.design_id == created["id"])
+            .order_by(DesignDesignVersion.version_number)
+        ).all()
+        assert [v.change_type for v in versions] == ["manual", "manual", "refresh", "rollback"]
+
+
+class TestVersionDiff:
+    def test_diff_text_and_structure_summary(self, client, ws, auth_owner, auth_viewer):
+        """两版本对比：文本 diff + 参数 / 节点结构摘要，viewer 可读（C5 / C7）."""
+        created = _create(client, ws, auth_owner).json()
+        client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": GOOD_CONTENT.replace("width = 80", "width = 100")},
+            headers=auth_owner,
+        )
+        resp = client.get(
+            _url(ws, f"/{created['id']}/diff"),
+            params={"base": 1, "head": 2},
+            headers=auth_viewer,
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["base_version"] == 1 and body["head_version"] == 2
+        assert "-param width = 80" in body["diff"]
+        assert "+param width = 100" in body["diff"]
+        assert body["added"] >= 1 and body["removed"] >= 1
+        summary = body["summary"]
+        assert summary["available"] is True
+        assert summary["params"]["changed"] == [{"name": "width", "base": 80, "head": 100}]
+        assert summary["nodes"]["base"] == summary["nodes"]["head"]
+
+    def test_diff_same_version_empty(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.get(_url(ws, f"/{created['id']}/diff"), params={"base": 1, "head": 1}, headers=auth_owner)
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["diff"] == "" and body["added"] == 0 and body["removed"] == 0
+        assert body["summary"]["available"] is True
+
+    def test_diff_missing_version_404(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.get(_url(ws, f"/{created['id']}/diff"), params={"base": 1, "head": 99}, headers=auth_owner)
+        assert resp.status_code == 404
+        assert resp.json()["code"] == "design_version_not_found"
+
+    def test_diff_outsider_403(self, client, ws, auth_owner, auth_outsider):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.get(_url(ws, f"/{created['id']}/diff"), params={"base": 1, "head": 1}, headers=auth_outsider)
+        assert resp.status_code == 403
+
+
+class TestStructureSummary:
+    """结构摘要判定层单测（ADR 0113 §2 / D8）."""
+
+    def test_unavailable_when_snapshot_missing(self):
+        from cndb.plugins.design.services.diff import structure_summary
+
+        assert structure_summary(None, {"nodes": []})["available"] is False
+        assert structure_summary({"nodes": []}, {})["available"] is False
+
+    def test_params_nodes_and_assemblies_diff(self):
+        from cndb.plugins.design.services.diff import structure_summary
+
+        base = {
+            "nodes": [{}, {}],
+            "params": [{"name": "a", "value": 1}, {"name": "gone", "value": 2}],
+            "outline": {"children": [{"kind": "system", "name": "旧系统"}, {"kind": "part"}]},
+        }
+        head = {
+            "nodes": [{}],
+            "params": [{"name": "a", "value": 5}, {"name": "fresh", "value": 3}],
+            "outline": {"children": [{"kind": "assembly", "name": "新装配"}]},
+        }
+        summary = structure_summary(base, head)
+        assert summary["available"] is True
+        assert summary["nodes"] == {"base": 2, "head": 1}
+        assert summary["params"]["added"] == ["fresh"]
+        assert summary["params"]["removed"] == ["gone"]
+        assert summary["params"]["changed"] == [{"name": "a", "base": 1, "head": 5}]
+        assert summary["assemblies"] == {"added": ["新装配"], "removed": ["旧系统"]}
 
 
 class TestOutline:

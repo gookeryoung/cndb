@@ -86,6 +86,7 @@ class TestBackupV13DesignFiles:
                 design_id=asm.id,
                 workspace_id=ws.id,
                 version_number=1,
+                change_type="auto",
                 content=ASM,
                 compiled=result.ir,
                 dependencies=deps,
@@ -102,6 +103,7 @@ class TestBackupV13DesignFiles:
         assert design_items["销"]["folder"] == "parts"
         assert design_items["装配"]["dependencies"][0]["file_key"] == "pin"
         assert design_items["装配"]["versions"][0]["dependencies"][0]["content_hash"] == content_hash(PART)
+        assert design_items["装配"]["versions"][0]["change_type"] == "auto"
 
         target_ws, target_user = _make_workspace(db, "v13 设计目标")
         import_result = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
@@ -122,3 +124,4 @@ class TestBackupV13DesignFiles:
             select(DesignDesignVersion).where(DesignDesignVersion.design_id == rows["装配"].id)
         ).scalar_one()
         assert version.dependencies[0]["version_number"] == 1
+        assert version.change_type == "auto"

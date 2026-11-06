@@ -930,7 +930,9 @@ class TestParseExtra:
         assert parse.extract_wikilinks(content) == ["real"]
 
     def test_unified_diff_counts(self):
-        _diff, added, removed = parse.unified_diff("a\n", "a\nb\n")
+        from cndb.core.textdiff import unified_diff
+
+        _diff, added, removed = unified_diff("a\n", "a\nb\n")
         assert added == 1
         assert removed == 0
 

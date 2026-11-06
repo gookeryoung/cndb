@@ -190,11 +190,15 @@ export interface DesignDependenciesResponse {
   referrers: DesignDependencyItem[]
 }
 
+/** 版本来源类型（ADR 0113）：manual 主动保存 / auto 自动小版本 / refresh 依赖刷新 / rollback 版本恢复 */
+export type DesignVersionChangeType = 'manual' | 'auto' | 'refresh' | 'rollback'
+
 /** 版本列表项（不含原文；回看走单版本端点） */
 export interface DesignVersionItem {
   id: number
   design_id: number
   version_number: number
+  change_type: DesignVersionChangeType | string
   comment: string
   created_by_id: number | null
   created_at: string | null
@@ -205,6 +209,28 @@ export interface DesignVersionDetail extends DesignVersionItem {
   content: string
   compiled: DesignIR | Record<string, never>
   dependencies: Array<{ file_id: number; file_key: string; version_number: number; content_hash: string }>
+}
+
+/** 两版本对比的结构摘要：参数增删改 / 节点数 / 顶层装配增删（ADR 0113 D5 / D8） */
+export interface DesignVersionDiffSummary {
+  available: boolean
+  params: {
+    added: string[]
+    removed: string[]
+    changed: Array<{ name: string; base: number | string | null; head: number | string | null }>
+  }
+  nodes: { base: number; head: number }
+  assemblies: { added: string[]; removed: string[] }
+}
+
+/** GET /{id}/diff：unified diff + 增删行数 + 结构摘要 */
+export interface DesignVersionDiff {
+  base_version: number
+  head_version: number
+  diff: string
+  added: number
+  removed: number
+  summary: DesignVersionDiffSummary
 }
 
 const base = (wid: number | string) => `/v1/workspaces/${wid}/designs`
@@ -229,8 +255,13 @@ export const designsApi = {
   /** 改名 / 描述 / 目录（不触发重编译；file_key 不可改） */
   update: (wid: number | string, designId: number | string, data: { title?: string; description?: string; folder?: string }) =>
     api.put<DesignDetail>(`${base(wid)}/${designId}`, data).then(r => r.data),
-  /** 保存原文（编译通过才落库并生成新版本；失败旧 IR 不动） */
-  saveContent: (wid: number | string, designId: number | string, data: { content: string; comment?: string }) =>
+  /** 保存原文（编译通过才落库并生成新版本；失败旧 IR 不动）
+   * change_type 仅可传 manual / auto（refresh / rollback 由服务端端点强制，ADR 0113 I4） */
+  saveContent: (wid: number | string, designId: number | string, data: {
+    content: string
+    comment?: string
+    change_type?: 'manual' | 'auto'
+  }) =>
     api.put<DesignDetail>(`${base(wid)}/${designId}/content`, data).then(r => r.data),
   /** 软删 */
   remove: (wid: number | string, designId: number | string) =>
@@ -256,6 +287,11 @@ export const designsApi = {
   /** 恢复历史版：以该版原文重编译保存为新版本（editor 权限） */
   restoreVersion: (wid: number | string, designId: number | string, versionNumber: number) =>
     api.post<DesignDetail>(`${base(wid)}/${designId}/versions/${versionNumber}/restore`).then(r => r.data),
+  /** 两版本对比：unified diff + 结构摘要（成员可读，ADR 0113 §3） */
+  getDiff: (wid: number | string, designId: number | string, baseVersion: number, headVersion: number) =>
+    api.get<DesignVersionDiff>(`${base(wid)}/${designId}/diff`, {
+      params: { base: baseVersion, head: headVersion },
+    }).then(r => r.data),
   /** 装配大纲（组件 / 分组 / 零件树 + 1 基源位置；成员可读，ADR 0083 D4） */
   outline: (wid: number | string, designId: number | string) =>
     api.get<DesignOutlineResult>(`${base(wid)}/${designId}/outline`).then(r => r.data),

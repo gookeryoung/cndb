@@ -215,23 +215,6 @@ def content_hash(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def unified_diff(base: str, head: str, context_lines: int = 3) -> tuple[str, int, int]:
-    """计算两版本 unified diff.
-
-    Returns:
-        (diff 文本, 新增行数, 删除行数)
-    """
-    import difflib
-
-    base_lines = base.splitlines(keepends=True)
-    head_lines = head.splitlines(keepends=True)
-    diff_gen = difflib.unified_diff(base_lines, head_lines, fromfile="base", tofile="head", n=context_lines)
-    diff_text = "".join(diff_gen)
-    added = sum(1 for ln in diff_text.splitlines() if ln.startswith("+") and not ln.startswith("+++"))
-    removed = sum(1 for ln in diff_text.splitlines() if ln.startswith("-") and not ln.startswith("---"))
-    return diff_text, added, removed
-
-
 __all__ = [
     "content_hash",
     "extract_author",
@@ -244,5 +227,4 @@ __all__ = [
     "parse_front_matter",
     "parse_wikilink",
     "rewrite_wikilink_target",
-    "unified_diff",
 ]

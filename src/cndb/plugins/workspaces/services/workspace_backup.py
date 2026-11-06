@@ -562,6 +562,7 @@ def build_workspace_backup_v9(
         versions_by_design.setdefault(v.design_id, []).append(
             {
                 "version_number": v.version_number,
+                "change_type": v.change_type,
                 "content": v.content,
                 "comment": v.comment,
                 "dependencies": list(v.dependencies or []),

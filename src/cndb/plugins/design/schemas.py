@@ -34,10 +34,17 @@ class DesignUpdate(BaseModel):
 
 
 class DesignContentSave(BaseModel):
-    """保存原文：编译通过才落库并生成新版本（失败旧 IR 不动，边界 #2）."""
+    """保存原文：编译通过才落库并生成新版本（失败旧 IR 不动，边界 #2）.
+
+    ``change_type``（ADR 0113 D10）：客户端仅可请求 ``manual`` / ``auto``；
+    ``refresh`` / ``rollback`` 由服务端在对应端点强制赋值。
+    """
 
     content: str = Field(description="结构 DSL 原文")
     comment: str = Field(default="", max_length=200, description="版本备注")
+    change_type: Literal["manual", "auto"] = Field(
+        default="manual", description="版本来源：manual 主动保存 / auto 自动保存"
+    )
 
 
 class PreviewRequest(BaseModel):
@@ -156,6 +163,7 @@ class DesignVersionItem(BaseModel):
     id: int
     design_id: int
     version_number: int
+    change_type: str = "manual"
     comment: str
     created_by_id: int | None
     created_at: Any
@@ -167,6 +175,56 @@ class DesignVersionDetail(DesignVersionItem):
     content: str
     compiled: dict[str, Any]
     dependencies: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class DesignDiffParamChange(BaseModel):
+    """参数变化项（同名参数值不同）."""
+
+    name: str
+    base: Any
+    head: Any
+
+
+class DesignDiffParamSummary(BaseModel):
+    """参数增删改摘要."""
+
+    added: list[str] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)
+    changed: list[DesignDiffParamChange] = Field(default_factory=list)
+
+
+class DesignDiffNodeSummary(BaseModel):
+    """节点数摘要."""
+
+    base: int = 0
+    head: int = 0
+
+
+class DesignDiffAssemblySummary(BaseModel):
+    """顶层装配增删摘要."""
+
+    added: list[str] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)
+
+
+class DesignVersionDiffSummary(BaseModel):
+    """结构变化摘要（ADR 0113 D5 / D8）：快照缺失时 ``available=false``."""
+
+    available: bool = False
+    params: DesignDiffParamSummary = Field(default_factory=DesignDiffParamSummary)
+    nodes: DesignDiffNodeSummary = Field(default_factory=DesignDiffNodeSummary)
+    assemblies: DesignDiffAssemblySummary = Field(default_factory=DesignDiffAssemblySummary)
+
+
+class DesignVersionDiffResponse(BaseModel):
+    """两版本对比响应：unified diff + 增删行数 + 结构摘要（ADR 0113 §3）."""
+
+    base_version: int
+    head_version: int
+    diff: str
+    added: int
+    removed: int
+    summary: DesignVersionDiffSummary
 
 
 class DesignOutlineResult(BaseModel):
@@ -188,12 +246,18 @@ __all__ = [
     "DesignDependenciesResponse",
     "DesignDependencyItem",
     "DesignDetail",
+    "DesignDiffAssemblySummary",
+    "DesignDiffNodeSummary",
+    "DesignDiffParamChange",
+    "DesignDiffParamSummary",
     "DesignIRResponse",
     "DesignListItem",
     "DesignOutlineResult",
     "DesignRefreshRequest",
     "DesignUpdate",
     "DesignVersionDetail",
+    "DesignVersionDiffResponse",
+    "DesignVersionDiffSummary",
     "DesignVersionItem",
     "DiagnosticItem",
     "PreviewRequest",

@@ -45,6 +45,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.config import settings
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, CndbError, ConflictError, NotFoundError
+from cndb.core.textdiff import unified_diff
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.models import Document, DocumentVersion, Tag
@@ -1053,7 +1054,7 @@ def diff_versions(
             raise NotFoundError(f"版本 v{num} 不存在")
         return services.content.load_content(v, doc)
 
-    diff_text, added, removed = services.parse.unified_diff(_load(base), _load(head))
+    diff_text, added, removed = unified_diff(_load(base), _load(head))
     return {
         "document_id": doc_id,
         "base_version": base,

@@ -22,6 +22,13 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from cndb.models.base import Base, TimestampMixin
 
+#: 版本来源类型（ADR 0113 D10）：客户端只可请求 manual / auto，refresh / rollback 由服务端强制
+CHANGE_TYPE_MANUAL = "manual"
+CHANGE_TYPE_AUTO = "auto"
+CHANGE_TYPE_REFRESH = "refresh"
+CHANGE_TYPE_ROLLBACK = "rollback"
+CHANGE_TYPE_VALUES = (CHANGE_TYPE_MANUAL, CHANGE_TYPE_AUTO, CHANGE_TYPE_REFRESH, CHANGE_TYPE_ROLLBACK)
+
 
 class DesignDesign(TimestampMixin, Base):
     """一份设计文件：工作区内 (folder, title) 唯一，绑定一份 DSL 原文与编译产物."""
@@ -91,6 +98,8 @@ class DesignDesignVersion(TimestampMixin, Base):
         index=True,
     )
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: 版本来源：manual 主动保存 / auto 自动小版本 / refresh 依赖刷新 / rollback 版本恢复（ADR 0113）
+    change_type: Mapped[str] = mapped_column(String(20), nullable=False, default=CHANGE_TYPE_MANUAL)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     compiled: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     #: 保存时的依赖闭包快照：历史版本按此解析编译（缺失依赖报错，I5）
@@ -133,6 +142,11 @@ class DesignDesignref(TimestampMixin, Base):
 
 
 __all__ = [
+    "CHANGE_TYPE_AUTO",
+    "CHANGE_TYPE_MANUAL",
+    "CHANGE_TYPE_REFRESH",
+    "CHANGE_TYPE_ROLLBACK",
+    "CHANGE_TYPE_VALUES",
     "DesignDesign",
     "DesignDesignVersion",
     "DesignDesignref",

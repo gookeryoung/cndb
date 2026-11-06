@@ -109,8 +109,8 @@ const DETAIL: DesignDetail = {
 }
 
 const VERSIONS: DesignVersionItem[] = [
-  { id: 202, design_id: 20, version_number: 2, comment: '调宽度', created_by_id: 1, created_at: '2026-10-02T08:00:00Z' },
-  { id: 201, design_id: 20, version_number: 1, comment: '', created_by_id: 1, created_at: '2026-10-01T08:00:00Z' },
+  { id: 202, design_id: 20, version_number: 2, change_type: 'manual', comment: '调宽度', created_by_id: 1, created_at: '2026-10-02T08:00:00Z' },
+  { id: 201, design_id: 20, version_number: 1, change_type: 'manual', comment: '', created_by_id: 1, created_at: '2026-10-01T08:00:00Z' },
 ]
 
 const V1_CONTENT = 'param width = 60\nbox(size = [width, 40, 12])'
@@ -134,6 +134,19 @@ function useDefaultHandlers(preview: () => DesignPreviewResult = () => ({ ok: tr
     http.get('/api/v1/workspaces/10/designs/20/ir', () =>
       HttpResponse.json({ design_id: 20, version_number: 2, content_hash: 'abc123', ir: IR })),
     http.get('/api/v1/workspaces/10/designs/20/versions', () => HttpResponse.json(VERSIONS)),
+    http.get('/api/v1/workspaces/10/designs/20/diff', () => HttpResponse.json({
+      base_version: 1,
+      head_version: 2,
+      diff: '',
+      added: 0,
+      removed: 0,
+      summary: {
+        available: true,
+        params: { added: [], removed: [], changed: [] },
+        nodes: { base: 1, head: 1 },
+        assemblies: { added: [], removed: [] },
+      },
+    })),
     http.post('/api/v1/workspaces/10/designs/preview', async ({ request }) => {
       const body = await request.json() as { content: string; overrides?: Record<string, number> | null }
       previewBodies.push(body)
@@ -527,5 +540,115 @@ describe('DesignEditorPage 编辑器主流程', () => {
     fireEvent.click(await screen.findByRole('button', { name: '回看版本 1' }))
     expect(await screen.findByText('版本回看：v1')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /恢复此版本/ })).not.toBeInTheDocument()
+  })
+
+  it('停止输入 3s 后自动保存为 auto 版本（Q1 / D2）', async () => {
+    useDefaultHandlers()
+    let autoBody: { content: string; change_type?: string } | undefined
+    server.use(http.put('/api/v1/workspaces/10/designs/20/content', async ({ request }) => {
+      autoBody = await request.json() as { content: string; change_type?: string }
+      return HttpResponse.json({ ...DETAIL, content: autoBody.content, version_number: 3, version_count: 3 })
+    }))
+    const { container } = renderPage()
+
+    await waitForEditorReady(container)
+    editViaCodeMirror(container, '\n// 自动保存草稿')
+    expect(await screen.findByText('未保存')).toBeInTheDocument()
+
+    await waitFor(() => expect(autoBody).toBeDefined(), { timeout: 6000 })
+    expect(autoBody!.change_type).toBe('auto')
+    expect(autoBody!.content).toBe(`${CONTENT}\n// 自动保存草稿`)
+    // 自动保存成功不回写编辑器（用户可能已继续输入），只提示状态
+    expect(cmText(container)).toContain('// 自动保存草稿')
+    expect(await screen.findByTestId('design-autosave-status')).toHaveTextContent('已自动保存')
+  }, 10000)
+
+  it('自动保存失败只提示状态，不弹错误且草稿保留（I3 / C8）', async () => {
+    useDefaultHandlers()
+    server.use(http.put('/api/v1/workspaces/10/designs/20/content', () =>
+      HttpResponse.json({ detail: '服务暂不可用' }, { status: 500 })))
+    const { container } = renderPage()
+
+    await waitForEditorReady(container)
+    editViaCodeMirror(container, '\n// 自动保存失败草稿')
+
+    await waitFor(
+      () => expect(screen.getByTestId('design-autosave-status')).toHaveTextContent('自动保存失败'),
+      { timeout: 6000 },
+    )
+    expect(screen.queryByText('保存被拒绝（草稿已保留）')).not.toBeInTheDocument()
+    expect(cmText(container)).toContain('// 自动保存失败草稿')
+  }, 10000)
+
+  it('版本历史：类型徽标 + 连续自动版本折叠可展开（C4）', async () => {
+    useDefaultHandlers()
+    server.use(http.get('/api/v1/workspaces/10/designs/20/versions', () => HttpResponse.json([
+      { id: 204, design_id: 20, version_number: 4, change_type: 'auto', comment: '', created_by_id: 1, created_at: '2026-10-04T08:00:00Z' },
+      { id: 203, design_id: 20, version_number: 3, change_type: 'auto', comment: '', created_by_id: 1, created_at: '2026-10-03T08:00:00Z' },
+      ...VERSIONS,
+    ])))
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('more-menu-stub'))
+    expect((await screen.findAllByText('主动保存')).length).toBe(2)
+    const group = screen.getByTestId('design-auto-group-v-4')
+    expect(group).toHaveTextContent('2 个自动小版本')
+    expect(screen.queryByRole('button', { name: '回看版本 3' })).not.toBeInTheDocument()
+
+    fireEvent.click(group)
+    expect(await screen.findByRole('button', { name: '回看版本 3' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '回看版本 4' })).toBeInTheDocument()
+  })
+
+  it('版本 DIFF：默认本版 vs 上一版，结构摘要先于文本差异（C5 / C6）', async () => {
+    useDefaultHandlers()
+    server.use(http.get('/api/v1/workspaces/10/designs/20/versions/2', () => HttpResponse.json({
+      ...VERSIONS[0]!,
+      content: CONTENT,
+      compiled: IR,
+      dependencies: [],
+    })))
+    server.use(http.get('/api/v1/workspaces/10/designs/20/diff', ({ request }) => {
+      const url = new URL(request.url)
+      const base = Number(url.searchParams.get('base'))
+      const head = Number(url.searchParams.get('head'))
+      return HttpResponse.json({
+        base_version: base,
+        head_version: head,
+        diff: [
+          '--- base',
+          '+++ head',
+          '@@ -1 +1 @@',
+          '-param width = 60',
+          '+param width = 80',
+          '',
+        ].join('\n'),
+        added: 1,
+        removed: 1,
+        summary: {
+          available: true,
+          params: { added: [], removed: [], changed: [{ name: 'width', base: 60, head: 80 }] },
+          nodes: { base: 1, head: 1 },
+          assemblies: { added: [], removed: [] },
+        },
+      })
+    }))
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('more-menu-stub'))
+    fireEvent.click(await screen.findByRole('button', { name: '回看版本 2' }))
+    expect(await screen.findByText('版本回看：v2')).toBeInTheDocument()
+
+    // 默认本版 vs 上一版
+    expect(await screen.findByTestId('design-diff-base')).toBeInTheDocument()
+    expect(screen.getByTestId('design-diff-head')).toBeInTheDocument()
+    // 摘要先于文本差异：参数变化 + 节点数
+    const summary = await screen.findByTestId('design-version-diff-summary')
+    expect(summary).toHaveTextContent('参数 +0 / -0 / ~1（width）')
+    expect(summary).toHaveTextContent('节点 1 → 1')
+    const diffView = await screen.findByTestId('document-diff')
+    expect(diffView).toHaveTextContent('param width = 80')
+    // 摘要先于文本差异（DOM 顺序）
+    expect(summary.compareDocumentPosition(diffView) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

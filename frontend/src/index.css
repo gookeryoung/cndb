@@ -7586,6 +7586,35 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: pre-wrap;
   overflow: auto;
 }
+/* 自动小版本分组：折叠行弱化，展开后逐条回看（ADR 0113 C4） */
+.cn-dsl-version-group {
+  display: flex;
+  flex-direction: column;
+}
+.cn-dsl-version-row--auto {
+  opacity: 0.75;
+}
+.cn-dsl-version-row--auto[aria-expanded='true'] {
+  opacity: 1;
+}
+.cn-dsl-version-group > .cn-dsl-version-row:not(.cn-dsl-version-row--auto) {
+  padding-inline-start: var(--cn-space-lg);
+}
+/* 版本 DIFF：双版本选择 + 结构摘要（摘要先于文本差异） */
+.cn-dsl-diff-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  margin: var(--cn-space-md) 0 var(--cn-space-sm);
+}
+.cn-dsl-diff-summary {
+  margin-bottom: var(--cn-space-sm);
+  padding: var(--cn-space-sm) var(--cn-space-md);
+  border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
+  font-size: var(--cn-text-xs);
+}
 
 /* 窄屏：两栏堆叠（不渲染 splitter、比例不生效，ADR 0103 §4#7），各自仍可内部滚动 */
 @media (max-width: 1023.98px) {

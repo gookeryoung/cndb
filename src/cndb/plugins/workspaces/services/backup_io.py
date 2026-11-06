@@ -1252,6 +1252,7 @@ def _import_designs(
                     design_id=design.id,
                     workspace_id=workspace_id,
                     version_number=int(v.get("version_number") or 0),
+                    change_type=str(v.get("change_type") or "manual"),
                     content=str(v.get("content") or ""),
                     compiled=version_result.ir,
                     dependencies=version_deps,

@@ -26,7 +26,15 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
 from cndb.plugins.accounts.models import User
-from cndb.plugins.design.models import DesignDesign, DesignDesignref, DesignDesignVersion
+from cndb.plugins.design.models import (
+    CHANGE_TYPE_AUTO,
+    CHANGE_TYPE_MANUAL,
+    CHANGE_TYPE_REFRESH,
+    CHANGE_TYPE_ROLLBACK,
+    DesignDesign,
+    DesignDesignref,
+    DesignDesignVersion,
+)
 from cndb.plugins.design.schemas import (
     DesignContentSave,
     DesignCreate,
@@ -39,11 +47,13 @@ from cndb.plugins.design.schemas import (
     DesignRefreshRequest,
     DesignUpdate,
     DesignVersionDetail,
+    DesignVersionDiffResponse,
     DesignVersionItem,
     DiagnosticItem,
     PreviewRequest,
     PreviewResponse,
 )
+from cndb.plugins.design.services.diff import design_diff
 from cndb.plugins.design.services.dsl.compile import IR_VERSION, CompileResult, compile_design
 from cndb.plugins.design.services.files import (
     build_resolver,
@@ -191,16 +201,22 @@ def _add_version(
     *,
     content: str,
     compiled: dict[str, Any],
+    change_type: str,
     comment: str = "",
     dependencies: list[dict[str, Any]] | None = None,
 ) -> int:
-    """为设计落一个新版本，返回版本号（D7：每次保存落一版；I5 依赖闭包）."""
+    """为设计落一个新版本，返回版本号（D7：每次保存落一版；I5 依赖闭包）.
+
+    ``change_type`` 必填（I1 单一落版入口 / I4 类型不可伪造）：四类来源由调用
+    方显式传入，``refresh`` / ``rollback`` 仅服务端端点赋值（ADR 0113）。
+    """
     number = latest_version_number(db, design.id) + 1
     db.add(
         DesignDesignVersion(
             design_id=design.id,
             workspace_id=design.workspace_id,
             version_number=number,
+            change_type=change_type,
             content=content,
             compiled=compiled,
             dependencies=[dict(item) for item in (dependencies or [])],
@@ -209,6 +225,16 @@ def _add_version(
         )
     )
     return number
+
+
+def _latest_version(db: Session, design_id: int) -> DesignDesignVersion | None:
+    """取设计最新版本行（无版本返回 None；保存去重与主动提升用，ADR 0113 §2）."""
+    return (
+        db.query(DesignDesignVersion)
+        .filter(DesignDesignVersion.design_id == design_id)
+        .order_by(DesignDesignVersion.version_number.desc())
+        .first()
+    )
 
 
 def _dependency_tuples(result: CompileResult) -> list[dict[str, Any]]:
@@ -322,6 +348,7 @@ def create_design(
         current_user,
         content=payload.content,
         compiled=result.ir,
+        change_type=CHANGE_TYPE_MANUAL,
         dependencies=_dependency_tuples(result),
     )
     sync_refs(db, design, direct_use_keys(design.content))
@@ -439,9 +466,22 @@ def save_design_content(
     """保存原文：按文件身份编译（resolver 解析 use），写依赖闭包并同步引用索引.
 
     成功后沿反向引用图把直接 / 传递引用方置 ``dependencies_stale``（D6）。
+
+    去重与主动提升（ADR 0113 §2 / D7）：内容与最新版一致时 —— ``auto`` 不落版；
+    ``manual`` 且最新版为 ``auto`` 时把该行提升为 ``manual``（不新增版本），其余
+    不落版直接返回当前详情。
     """
     _require_editor(db, workspace_id, current_user)
     design = _design_or_404(db, workspace_id, design_id)
+    latest = _latest_version(db, design.id)
+    if latest is not None and latest.content == payload.content:
+        if payload.change_type == CHANGE_TYPE_MANUAL and latest.change_type == CHANGE_TYPE_AUTO:
+            latest.change_type = CHANGE_TYPE_MANUAL
+            if payload.comment:
+                latest.comment = payload.comment
+            db.commit()
+            db.refresh(design)
+        return _detail(db, design, version_number=latest.version_number)
     result = _compile_for_design(db, design, payload.content)
     assert result.ir is not None
     design.content = payload.content
@@ -454,6 +494,7 @@ def save_design_content(
         current_user,
         content=payload.content,
         compiled=result.ir,
+        change_type=payload.change_type,
         comment=payload.comment,
         dependencies=_dependency_tuples(result),
     )
@@ -487,6 +528,7 @@ def refresh_design(
         current_user,
         content=design.content,
         compiled=result.ir,
+        change_type=CHANGE_TYPE_REFRESH,
         comment=payload.comment or "依赖更新",
         dependencies=_dependency_tuples(result),
     )
@@ -628,6 +670,21 @@ def get_design_version(
     return detail
 
 
+@router.get("/{design_id}/diff", response_model=DesignVersionDiffResponse)
+def get_design_version_diff(
+    workspace_id: int,
+    design_id: int,
+    base: Annotated[int, Query(ge=1, description="基准版本号")],
+    head: Annotated[int, Query(ge=1, description="目标版本号")],
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DesignVersionDiffResponse:
+    """两版本对比（成员可读）：unified diff + 增删行数 + 结构变化摘要（ADR 0113 §3）."""
+    _require_member(db, workspace_id, current_user)
+    design = _design_or_404(db, workspace_id, design_id)
+    return DesignVersionDiffResponse(**design_diff(db, design, base, head))
+
+
 @router.post("/{design_id}/versions/{version_number}/restore", response_model=DesignDetail)
 def restore_design_version(
     workspace_id: int,
@@ -667,6 +724,7 @@ def restore_design_version(
         current_user,
         content=version.content,
         compiled=result.ir,
+        change_type=CHANGE_TYPE_ROLLBACK,
         comment=f"恢复自 v{version_number}",
         dependencies=_dependency_tuples(result),
     )

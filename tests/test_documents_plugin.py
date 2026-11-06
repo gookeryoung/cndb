@@ -520,7 +520,7 @@ class TestParseService:
         assert content_hash("abc") != content_hash("abd")
 
     def test_unified_diff_counts(self):
-        from cndb.plugins.documents.services.parse import unified_diff
+        from cndb.core.textdiff import unified_diff
 
         diff, added, removed = unified_diff("a\nb\nc\n", "a\nx\nc\n")
         assert added == 1 and removed == 1

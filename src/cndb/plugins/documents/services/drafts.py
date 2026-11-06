@@ -21,6 +21,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
+from cndb.core.textdiff import unified_diff
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import Document, DocumentDraft, DocumentVersion
 from cndb.plugins.documents.services import change_requests as change_request_service
@@ -151,7 +152,7 @@ def draft_diff(db: Session, workspace_id: int, doc_id: int, user: User) -> dict[
     else:
         base_text, base_num = latest_text, latest_num
 
-    diff_text, added, removed = parse_service.unified_diff(base_text, draft.content)
+    diff_text, added, removed = unified_diff(base_text, draft.content)
     return {
         "base_version": base_num,
         "diff": diff_text,

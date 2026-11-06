@@ -10,6 +10,7 @@ from alembic import command
 from cndb.core.migrations import _build_config
 
 REVISION = "c8e2f4a6b8d0"
+HEAD = "3b5d7f9a1c2e"  # 当前 alembic head：设计版本 change_type（ADR 0113）
 PREVIOUS = "z4a5b6c7d8e9"
 DESIGN = "design_design"
 VERSION = "design_designversion"
@@ -76,7 +77,7 @@ class TestDesignMigration:
         from cndb.plugins.design.models import DesignDesign, DesignDesignref, DesignDesignVersion
 
         db_path = tmp_path / "design_model.db"
-        _upgrade(f"sqlite:///{db_path}")
+        _upgrade(f"sqlite:///{db_path}", HEAD)
         assert _columns(db_path, DESIGN) == {column.name for column in DesignDesign.__table__.columns}
         assert _columns(db_path, VERSION) == {column.name for column in DesignDesignVersion.__table__.columns}
         assert _columns(db_path, REF) == {column.name for column in DesignDesignref.__table__.columns}

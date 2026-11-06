@@ -252,6 +252,38 @@ class TestDesignImportDetails:
         )
         assert [v.version_number for v in versions] == [1], "无版本备份按当前原文补 v1"
 
+    def test_versions_without_change_type_default_manual(self, client, auth_headers, db):
+        """旧备份缺 change_type：按 manual 还原（ADR 0113 C10 / I6）."""
+        from cndb.plugins.accounts.models import User
+        from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
+        from cndb.plugins.workspaces.services.backup_io import _import_designs
+
+        wid = _new_workspace(client, auth_headers, "旧备份版本类型")
+        user = db.query(User).first()
+        imported, errors = _import_designs(
+            wid,
+            {
+                "designs": [
+                    {
+                        "title": "旧备份设计",
+                        "content": GOOD_CONTENT,
+                        "versions": [{"version_number": 1, "content": GOOD_CONTENT, "comment": "旧版本"}],
+                    }
+                ]
+            },
+            user,
+            db,
+        )
+        assert imported == 1
+        assert errors == []
+        version = (
+            db.query(DesignDesignVersion)
+            .join(DesignDesign, DesignDesign.id == DesignDesignVersion.design_id)
+            .filter(DesignDesignVersion.workspace_id == wid)
+            .one()
+        )
+        assert version.change_type == "manual"
+
     def test_bad_version_isolated(self, client, auth_headers, db):
         """某版本 DSL 非法只跳过该版本，不阻断设计本体与其它版本."""
         from cndb.plugins.accounts.models import User

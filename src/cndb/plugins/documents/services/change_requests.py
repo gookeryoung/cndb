@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
+from cndb.core.textdiff import unified_diff
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import (
     DCR_STATUS_CLOSED,
@@ -152,7 +153,7 @@ def _load_base_content(db: Session, cr: DocumentChangeRequest, doc: Document) ->
 def diff_payload(db: Session, cr: DocumentChangeRequest, doc: Document) -> dict[str, Any]:
     """计算「基准正文 → 待审正文」的 unified diff 载荷."""
     base = _load_base_content(db, cr, doc)
-    diff_text, added, removed = parse_service.unified_diff(base, cr.proposed_content)
+    diff_text, added, removed = unified_diff(base, cr.proposed_content)
     return {
         "diff": diff_text,
         "added": added,
