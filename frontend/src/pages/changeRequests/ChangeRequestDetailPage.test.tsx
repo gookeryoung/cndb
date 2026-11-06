@@ -99,7 +99,8 @@ describe('ChangeRequestDetailPage 修改申请详情', () => {
     renderPage()
 
     const itemsBox = await screen.findByTestId('cr-items-box')
-    // 数据表引用：方盒头表名可跳转到数据表页
+    // 数据表引用：方盒头「变更数据表：」标签 + 可跳转到数据表页的表名链接
+    expect(within(itemsBox).getByText('变更数据表：')).toBeInTheDocument()
     const tableLink = await within(itemsBox).findByRole('link', { name: '客户表' })
     expect(tableLink).toHaveAttribute('href', '/w/10/tables/20')
     // update 项：字段级「旧值 → 新值」摘要（完整明细仍由下方 diff 表承载）

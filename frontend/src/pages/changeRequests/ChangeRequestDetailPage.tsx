@@ -285,6 +285,7 @@ export default function ChangeRequestDetailPage() {
           icon={<PullRequestOutlined />}
           extra={(
             <span className="cn-cr-items-extra">
+              <Text type="secondary">变更数据表：</Text>
               <Link
                 className="cn-cr-table-ref"
                 to={`/w/${wid}/tables/${tid}`}
