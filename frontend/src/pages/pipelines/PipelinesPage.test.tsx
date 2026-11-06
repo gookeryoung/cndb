@@ -156,9 +156,11 @@ describe('PipelinesPage 列表与编辑', () => {
     fireEvent.click(await screen.findByRole('button', { name: /编\s*辑/ }))
     const bar = await screen.findByTestId('pipeline-action-bar')
     expect(within(bar).getByText('检查动作目录（2）')).toBeInTheDocument()
-    expect(within(bar).getByText('table/duplicate-rows')).toBeInTheDocument()
 
-    fireEvent.click(within(bar).getByText('重复行'))
+    // 动作目录收在「插入动作」下拉里，展开后可见标题与 uses
+    fireEvent.click(within(bar).getByRole('button', { name: /插入内置动作/ }))
+    expect(await screen.findByText('table/duplicate-rows')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('重复行'))
     const editor = screen.getByTestId('pipeline-dsl-editor')
     await waitFor(() => expect(editor).toHaveTextContent('uses: table/duplicate-rows'))
   })
@@ -466,8 +468,8 @@ describe('PipelinesPage 文档域', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /编\s*辑/ }))
     expect(await screen.findByText('检查动作目录（1）')).toBeInTheDocument()
-    // Collapse 首次展开才挂载 children
-    fireEvent.click(screen.getByText('检查动作目录（1）'))
+    // 动作目录在下拉菜单里，展开后才挂载菜单项
+    fireEvent.click(screen.getByRole('button', { name: /插入内置动作/ }))
     expect(await screen.findByText('document/broken-refs')).toBeInTheDocument()
     expect(screen.queryByText('table/null-rate')).not.toBeInTheDocument()
   })

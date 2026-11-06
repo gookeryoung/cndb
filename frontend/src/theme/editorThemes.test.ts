@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest'
 import {
   EDITOR_THEME_IDS,
   EDITOR_THEME_META,
-  editorAppearanceExtensions,
   getEditorPalette,
   resolveEditorTheme,
 } from './editorThemes'
+import { editorAppearanceExtensions } from './editorAppearance'
 import { DEFAULT_EDITOR_SETTINGS } from './editorSettings'
 
 describe('EDITOR_THEME_IDS / EDITOR_THEME_META', () => {

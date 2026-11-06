@@ -57,7 +57,6 @@ export type {
 export {
   EDITOR_THEME_IDS,
   EDITOR_THEME_META,
-  editorAppearanceExtensions,
   getEditorPalette,
   resolveEditorTheme,
 } from './editorThemes'

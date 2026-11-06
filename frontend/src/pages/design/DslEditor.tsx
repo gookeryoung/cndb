@@ -19,7 +19,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { autocompletion } from '@codemirror/autocomplete'
 import type { DesignDiagnostic } from '@/api'
 import { useEditorAppearance } from '@/theme/ThemeProvider'
-import { editorAppearanceExtensions } from '@/theme/theme'
+import { editorAppearanceExtensions } from '@/theme/editorAppearance'
 import { cnDslLanguage } from './designLang'
 import { dslCompletionSource, type DslPartOption } from './designCompletion'
 

@@ -6,14 +6,10 @@
  *
  * 色板口径参考各主题官方实现（GitHub Primer / One Dark / Solarized），
  * 只保留语法高亮需要的语义色，避免逐主题维护一套完整调色板。
+ *
+ * 本模块只放元信息与纯数据色板（无 @codemirror/* 运行时依赖），可被设置面板与
+ * 主入口安全引用；需要 CodeMirror API 的外观组装在 `editorAppearance`。
  */
-
-import type { Extension } from '@codemirror/state'
-import { EditorView } from '@codemirror/view'
-import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
-import { tags as t } from '@lezer/highlight'
-
-import type { EditorFontSettings } from './editorSettings'
 
 /** 可选编辑器主题 ID（auto = 跟随全站主题明暗） */
 export const EDITOR_THEME_IDS = [

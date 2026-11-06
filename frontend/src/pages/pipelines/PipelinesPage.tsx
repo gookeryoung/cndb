@@ -19,8 +19,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Drawer, Empty, Popconfirm, Space, Spin,
-  Switch, Tag, Tooltip, Typography,
+  Alert, App as AntApp, Button, Drawer, Dropdown, Empty, Popconfirm, Space, Spin,
+  Switch, Tag, Tooltip, Typography, type MenuProps,
 } from 'antd'
 import {
   AppstoreOutlined, DeleteOutlined, EditOutlined, HistoryOutlined, PlayCircleOutlined, PlusOutlined,
@@ -319,6 +319,30 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
 
   const saveDisabled = !validation?.ok || save.isPending
 
+  // 内置动作按类别分组的菜单项：动作多时只占一行工具栏，展开后在菜单内滚动
+  const actionMenuItems: MenuProps['items'] = (() => {
+    const groups = new Map<string, typeof checks>()
+    for (const check of checks) {
+      const category = CHECK_CATEGORY_LABEL[check.category] ?? check.category
+      const bucket = groups.get(category)
+      if (bucket) bucket.push(check)
+      else groups.set(category, [check])
+    }
+    return [...groups.entries()].map(([category, items]) => ({
+      type: 'group' as const,
+      label: category,
+      children: items.map(check => ({
+        key: check.uses,
+        label: (
+          <span className="cn-pipeline-action-item">
+            <span className="cn-pipeline-action-title">{check.title}</span>
+            <span className="cn-pipeline-action-uses">{check.uses}</span>
+          </span>
+        ),
+      })),
+    }))
+  })()
+
   return (
     <div className="cn-page cn-qc-page" data-testid="pipelines-page">
       {/* ── 页头：标题 + 口径说明 + 新建入口（与数据分析页同款紧凑页头） ── */}
@@ -550,33 +574,30 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
         )}
       >
         <div className="cn-pipeline-editor-layout">
-          {/* 顶部动作条：内置动作目录常驻可见，点击插入到光标处；余下高度全部交给编辑器 */}
+          {/* 顶部动作条：单行工具栏 + 分组下拉菜单，动作再多也只占一行；余下高度全部交给编辑器 */}
           <div className="cn-pipeline-action-bar" data-testid="pipeline-action-bar">
-            <div className="cn-pipeline-action-bar-head">
-              <Text strong>检查动作目录（{checks.length}）</Text>
-              {checks.length > 0 && <Text type="secondary">点击插入到光标处</Text>}
-            </div>
+            <Text strong>检查动作目录（{checks.length}）</Text>
             {checks.length === 0 ? (
               <Text type="secondary">暂无可用检查动作</Text>
             ) : (
-              <div className="cn-pipeline-action-list">
-                {checks.map(check => (
-                  <Tooltip
-                    key={check.uses}
-                    title={`${CHECK_CATEGORY_LABEL[check.category] ?? check.category} · ${check.uses}`}
-                  >
-                    <button
-                      type="button"
-                      className="cn-pipeline-action"
-                      onClick={() => insertSnippet(buildStepSnippet(check))}
-                    >
-                      <PlusOutlined />
-                      <span className="cn-pipeline-action-title">{check.title}</span>
-                      <span className="cn-pipeline-action-uses">{check.uses}</span>
-                    </button>
-                  </Tooltip>
-                ))}
-              </div>
+              <>
+                <Dropdown
+                  trigger={['click']}
+                  menu={{
+                    items: actionMenuItems,
+                    style: { maxHeight: 320, overflowY: 'auto', minWidth: 240 },
+                    onClick: ({ key }) => {
+                      const check = checks.find(item => item.uses === key)
+                      if (check) insertSnippet(buildStepSnippet(check))
+                    },
+                  }}
+                >
+                  <Button size="small" icon={<PlusOutlined />} aria-label="插入内置动作">
+                    插入动作
+                  </Button>
+                </Dropdown>
+                <Text type="secondary">插入到光标处</Text>
+              </>
             )}
           </div>
 

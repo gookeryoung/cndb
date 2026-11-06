@@ -17,7 +17,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { indentUnit } from '@codemirror/language'
 import { autocompletion } from '@codemirror/autocomplete'
 import { useEditorAppearance } from '@/theme/ThemeProvider'
-import { editorAppearanceExtensions } from '@/theme/theme'
+import { editorAppearanceExtensions } from '@/theme/editorAppearance'
 import { insertDslNewline, pipelineDslLanguage } from './pipelineDsl'
 import { pipelineCompletionSource, type PipelineCheckLike } from './pipelineCompletion'
 
