@@ -4,7 +4,7 @@
  * 展示 Owner / MyAccess / MemberCount 三个权限元信息列, 并提供按访问级别筛选.
  */
 
-import { Suspense, createContext, lazy, useCallback, useContext, useMemo, useState } from 'react'
+import { Suspense, createContext, lazy, useContext, useMemo, useState } from 'react'
 import {
   Button, Modal, Form, Input, Table, Typography, Empty, App as AntApp, Space, Tag, Upload, Dropdown,
   Avatar, Segmented, Badge, Tooltip, Pagination,
@@ -28,6 +28,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { tableApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
+import { useTableHoverPrefetch } from './tablePrefetch'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import { useCreateParam } from '@/hooks/useCreateParam'
@@ -150,12 +151,14 @@ function SortableTableCard({
   menu,
   onOpen,
   onPrefetch,
+  onPrefetchEnd,
 }: {
   record: TableSummary
   canReorder: boolean
   menu: MenuProps['items']
   onOpen: () => void
   onPrefetch: () => void
+  onPrefetchEnd?: () => void
 }) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } =
     useSortable({ id: String(record.id) })
@@ -176,6 +179,7 @@ function SortableTableCard({
         }}
         onClick={onOpen}
         onMouseEnter={onPrefetch}
+        onMouseLeave={onPrefetchEnd}
       >
         <div className="cn-table-list-card-head">
           <TableOutlined style={{ color: '#3b82f6' }} />
@@ -245,15 +249,8 @@ export default function TablesList() {
     enabled: !!wid,
   })
 
-  /** hover 预取表详情 —— 点击进表时 useTable 命中缓存，减少冷启动白屏（queryKey 与 useTable 一致）. */
-  const prefetchTable = useCallback((targetTid: string | number) => {
-    if (!wid) return
-    void queryClient.prefetchQuery({
-      queryKey: ['table', `${wid}/${targetTid}`],
-      queryFn: () => tableApi.get(wid, String(targetTid)),
-      staleTime: 60_000,
-    })
-  }, [wid, queryClient])
+  /** hover 预取表详情 / 视图 / 首帧行数据 / GridPage chunk —— 200ms 防抖，离开即取消（ADR 0116 C7）. */
+  const prefetchTable = useTableHoverPrefetch(queryClient, wid)
 
   // ── 筛选后的表列表 ──
   const filteredTables = useMemo(() => {
@@ -714,7 +711,8 @@ export default function TablesList() {
                   canReorder={canReorder}
                   menu={buildTableMenu(record)}
                   onOpen={() => navigate(`/w/${wid}/tables/${record.id}`)}
-                  onPrefetch={() => prefetchTable(record.id)}
+                  onPrefetch={() => prefetchTable.onEnter(record.id)}
+                  onPrefetchEnd={() => prefetchTable.onLeave(record.id)}
                 />
               ))}
             </div>
@@ -732,7 +730,8 @@ export default function TablesList() {
               components={{ body: { row: DraggableRow } }}
               onRow={(record) => ({
                 onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
-                onMouseEnter: () => prefetchTable(record.id),
+                onMouseEnter: () => prefetchTable.onEnter(record.id),
+                onMouseLeave: () => prefetchTable.onLeave(record.id),
                 'data-testid': `table-row-${record.id}`,
               })}
               locale={{

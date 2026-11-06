@@ -9,5 +9,6 @@ allowBuilds:
 # 补丁清单见 scripts/check-patches.mjs（ADR 0074 D5：rc-field-form 摇树补丁随 antd 6 移除；
 # @rc-component/util 的 isEqual 补丁由 pnpm patch-commit 自动登记）
 patchedDependencies:
+  '@rc-component/form@1.8.6': patches/@rc-component__form@1.8.6.patch
   '@rc-component/util': patches/@rc-component__util.patch
   react-dom@19.3.1: patches/react-dom@19.3.1.patch

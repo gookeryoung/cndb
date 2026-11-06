@@ -39,6 +39,7 @@ import { finalizeCellValue, isBlankCellValue, isEditableInlineField, normalizeCe
 import { defaultValueForNewRow } from './cells/fieldOps'
 import { isAutoIncrementField } from '@/utils/fieldIncrement'
 import { type ViewMode, VALID_MODES, deriveModeSwitch } from './views/viewModes'
+import { normalizeFilters, viewModeOf } from './gridViewParams'
 import { useTableSettingsStore, useGridViewStore, useUiStore } from '@/store'
 import { useElementSize, useDebouncedCallback } from '@/hooks'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -49,6 +50,7 @@ import GridAggregationBar from './gridAggregationBar'
 import GridViewModals from './gridViewModals'
 import { resolvePresentTarget, copyDashboardShareLink } from './views/dashboard/dashboardShare'
 import { useGridData, usePendingChanges } from './useGridData'
+import { readGridViewSnapshot, writeGridViewSnapshot } from './gridViewSeed'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
@@ -167,6 +169,16 @@ export default function GridPage() {
   /** 表标识（`wid/tid`）—— store 里的视图状态以它为归属校验，跨表首帧不得沿用上表参数 */
   const tableKey = `${wid}/${tid}`
 
+  // 冷进表 / 跨表返回：首帧渲染前按 sessionStorage 快照种子化视图状态（ADR 0116 C8）。
+  // 命中快照时第一笔行请求即带筛选/排序，不再先发空筛选请求等视图加载后重发。
+  if (useGridViewStore.getState().tableKey !== tableKey) {
+    useGridViewStore.getState().hydrate(tableKey)
+  }
+  /** 是否有本表视图快照：命中时首帧直接按快照参数请求行（无需等视图列表） */
+  const hasSnapshot = readGridViewSnapshot(tableKey) != null
+  /** 视图列表已加载且落地视图已写入 store（没有快照时，首笔行请求必须等它，避免空筛选 + 重发） */
+  const [viewReady, setViewReady] = useState(false)
+
   // —— 视图状态从 GridViewStore 订阅 ——
   const mode = useGridViewStore(s => s.mode)
   const setMode = useGridViewStore(s => s.setMode)
@@ -193,16 +205,19 @@ export default function GridPage() {
   const limit = useGridViewStore(s => s.limit)
   const setLimit = useGridViewStore(s => s.setLimit)
   const patchView = useGridViewStore(s => s.patch)
-  const resetView = useGridViewStore(s => s.reset)
   const storeTableKey = useGridViewStore(s => s.tableKey)
   /** store 状态是否属于当前表：离开表页再返回时 store 仍残留上一轮的视图状态，
    *  在 reset effect 生效前的那一帧必须按「空状态」取值，否则会用上表的 filters/sorts
    *  发一次脏请求（字段在新表不存在时后端 400 → 视图空态）。 */
   const viewStateOwned = storeTableKey === tableKey
 
-  // wid/tid 变化时重置 store + 初始化 mode
+  // wid/tid 变化时种子化 store（命中快照则恢复上次视图参数）+ 初始化 mode
   useEffect(() => {
-    resetView(tableKey)
+    if (useGridViewStore.getState().tableKey !== tableKey) {
+      useGridViewStore.getState().hydrate(tableKey)
+    }
+    // 视图列表重新加载期间先挂起首笔行请求（有快照时不挂起，ADR 0116 C8）
+    setViewReady(false)
     // 行内编辑状态重置
     setEditingRowId(null)
     setNewRowActive(false)
@@ -211,7 +226,9 @@ export default function GridPage() {
     const spMode = searchParams.get('mode') as ViewMode | null
     if (spMode && (VALID_MODES as readonly string[]).includes(spMode)) {
       setMode(spMode)
-    } else {
+    } else if (useGridViewStore.getState().activeViewId == null) {
+      // 同一张表重挂载时 store 已保留上一轮的 activeViewId，其 mode 由该视图决定；
+      // 此时读 localStorage 会把画廊 / 看板覆盖回 grid（ADR 0116 C8 保留视图状态后的回归）
       const lsMode = _readModeFromStorage()
       if (lsMode) setMode(lsMode)
     }
@@ -220,6 +237,36 @@ export default function GridPage() {
     if (q) setSearchQuery(q)
     setLimit(settings.defaultPageSize)
   }, [wid, tid]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 视图参数变化后延迟写入 sessionStorage 快照（防抖 200ms，搜索逐键输入不频繁写盘），
+  // 供下次冷进表首帧种子化（ADR 0116 C8）。storage 不可用时静默。
+  useEffect(() => {
+    if (!viewStateOwned) return
+    let timer: number | undefined
+    const save = () => {
+      const s = useGridViewStore.getState()
+      if (s.tableKey !== tableKey) return
+      writeGridViewSnapshot(tableKey, {
+        activeViewId: s.activeViewId,
+        viewFilters: s.viewFilters,
+        viewSortings: s.viewSortings,
+        viewFilterLogic: s.viewFilterLogic,
+        mode: s.mode,
+        offset: s.offset,
+        limit: s.limit,
+      })
+    }
+    const schedule = () => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(save, 200)
+    }
+    const unsubscribe = useGridViewStore.subscribe(schedule)
+    schedule()
+    return () => {
+      unsubscribe()
+      window.clearTimeout(timer)
+    }
+  }, [tableKey, viewStateOwned])
 
   const openSettings = useUiStore(s => s.openSettings)
 
@@ -329,41 +376,12 @@ export default function GridPage() {
     return pendingChanges?.has(String(rowId)) ?? false
   }, [pendingChanges])
   const { data: views = [], isLoading: viewsLoading } = useTableViews(wid!, tid!)
-  /** 把后端存储的 filters（dict 或 list）归一化成 list 形式 */
-  function normalizeFilters(raw: unknown): FilterRule[] {
-    if (!raw) return []
-    if (Array.isArray(raw)) {
-      return raw
-        .filter((r): r is Record<string, unknown> => typeof r === 'object' && r !== null)
-        .map(r => ({
-          field_name: String(r.field_name ?? ''),
-          op: String(r.op ?? '='),
-          ...(r.value !== undefined && r.value !== null ? { value: r.value } : {}),
-        }))
-    }
-    if (typeof raw === 'object') {
-      const result: FilterRule[] = []
-      for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-        if (k === '$query') continue  // 特殊 key 跳过
-        if (typeof v === 'object' && v !== null && 'op' in v) {
-          const vv = v as { op: string; value?: unknown }
-          result.push({ field_name: k, op: vv.op, ...(vv.value !== undefined ? { value: vv.value } : {}) })
-        } else {
-          result.push({ field_name: k, op: '=', value: v })
-        }
-      }
-      return result
-    }
-    return []
-  }
 
   // 加载 active view 的 filters + view_options
   const loadView = (v: View | null, updateUrl = true, persistMode = true) => {
     skipSaveRef.current = true // 切换视图期间阻止自动保存
     if (v) {
-      const MODE_VIEW_TYPES = new Set<string>(['tree', 'kanban', 'gallery', 'calendar', 'gantt', 'wbs', 'matrix', 'chart', 'flow', 'dashboard'])
-      const vt = v.view_type ?? ''
-      const newMode: ViewMode = MODE_VIEW_TYPES.has(vt) ? (vt as ViewMode) : 'grid'
+      const newMode = viewModeOf(v.view_type)
 
       patchView({
         activeViewId: v.id,
@@ -450,7 +468,12 @@ export default function GridPage() {
   // ?mode= / localStorage 仅在表缺少默认视图时兜底（正常情况下每张表都有「全部」默认视图）。
   // 每次 wid/tid/searchParams/views 变化时都重新评估，但只在目标和当前 activeViewId 不同时才切换，避免无限循环.
   useEffect(() => {
-    if (!views.length) return
+    if (viewsLoading) return
+    if (!views.length) {
+      // 表没有任何视图：按空筛选请求行，不能一直挂起
+      setViewReady(true)
+      return
+    }
 
     // ── 计算最匹配的目标视图 ──
     let target: View | null = null
@@ -501,7 +524,9 @@ export default function GridPage() {
     } else if (liveActiveViewId !== null) {
       loadView(null, false, false)
     }
-  }, [views, searchParams, wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
+    // 落地视图的 filters/sorts 已写入 store，此时才放行首笔行请求
+    setViewReady(true)
+  }, [views, viewsLoading, searchParams, wid, tid])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // searchQuery URL 深链：?q=关键词
   useEffect(() => {
@@ -526,6 +551,8 @@ export default function GridPage() {
     viewSortings: viewStateOwned ? viewSortings : EMPTY_RULES,
     viewFilterLogic: viewStateOwned ? viewFilterLogic : 'AND',
     searchQuery: viewStateOwned ? searchQuery : '',
+    // 无快照时等落地视图参数就位再请求首帧行，避免「空筛选请求 + 视图加载后重发」（ADR 0116 C8）
+    enabled: hasSnapshot || viewReady,
   })
 
   // 当前用户在本表的权限（来自后端 current_user_actions）

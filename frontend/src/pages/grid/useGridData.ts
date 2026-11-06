@@ -16,12 +16,14 @@ interface UseGridDataParams {
   viewSortings: unknown[]
   viewFilterLogic: 'AND' | 'OR'
   searchQuery: string
+  /** false 时挂起行请求（首帧等落地视图参数就位，ADR 0116 C8） */
+  enabled?: boolean
 }
 
 /** 非 grid 视图需要数据做分组/聚合。降低上限到 2000（覆盖 99% 使用场景，避免每次切换拉 5000 条的网络+渲染压力） */
 export const VIEW_FETCH_ALL_LIMIT = 2000
 
-export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSortings, viewFilterLogic, searchQuery }: UseGridDataParams) {
+export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSortings, viewFilterLogic, searchQuery, enabled = true }: UseGridDataParams) {
   // 当前生效的筛选条件（视图筛选 + 全局关键词）
   const effectiveFilters = useMemo(() => {
     const list: Array<Record<string, unknown>> = [...(viewFilters as unknown as Array<Record<string, unknown>>)]
@@ -46,6 +48,7 @@ export function useGridData({ wid, tid, mode, limit, offset, viewFilters, viewSo
       sorts: sortsParam,
       filter_logic: viewFilterLogic,
     },
+    enabled,
   )
 
   return { effectiveFilters, sortsParam, effectiveLimit, effectiveOffset, rowList, isFetching, isError, refetch }

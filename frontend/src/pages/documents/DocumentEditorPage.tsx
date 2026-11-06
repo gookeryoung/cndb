@@ -25,6 +25,7 @@ import {
   Modal,
   Popconfirm,
   Popover,
+  Skeleton,
   Space,
   Tag,
   Tooltip,
@@ -71,10 +72,10 @@ import { ancestorChain } from './DocumentTree'
 import { pushRecentDoc } from './recentDocs'
 import { loadSplitOpen, saveSplitOpen } from './splitPrefs'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
-import MarkdownLiveEditor, {
-  type MarkdownEditorHandle,
-  type MarkdownEditorMode,
-  type MarkdownEditorShortcut,
+import type {
+  MarkdownEditorHandle,
+  MarkdownEditorMode,
+  MarkdownEditorShortcut,
 } from '@/components/Document/MarkdownLiveEditor'
 import MarkdownToolbar, { type MarkdownAction } from '@/components/Document/MarkdownToolbar'
 import { findMatches, nextMatchIndex, replaceAllMatches, replaceMatch } from '@/components/Document/documentSearch'
@@ -120,7 +121,7 @@ import BacklinksDrawer from './BacklinksDrawer'
 import DocumentAssetView, { assetSuffix } from './DocumentAssetView'
 import DocumentChangeRequestsDrawer from './DocumentChangeRequestsDrawer'
 import DocumentShareModal from './DocumentShareModal'
-import ChartDesignerModal, { type ChartDesignResult, type ChartDesignTarget } from './ChartDesignerModal'
+import { type ChartDesignResult, type ChartDesignTarget } from './ChartDesignerModal'
 import InsertChartModal from './InsertChartModal'
 import InsertTableModal from './InsertTableModal'
 import LinksDrawer from './LinksDrawer'
@@ -139,6 +140,25 @@ import TagEditor from './TagEditor'
 // 页面本身已是路由级 lazy chunk，这里再拆一层是为了不让 AI 弹层代码进文档页首帧。
 const AiDocEntry = lazy(() => import('@/components/Ai/AiDocEntry'))
 const AiResultDrawer = lazy(() => import('@/components/Ai/AiResultDrawer'))
+
+// 编辑器（CodeMirror + lezer 语言包）与图表设计器仅在编辑态 / 弹窗打开时需要，
+// 查看态不得下载（ADR 0116 C6 / D7）。
+const MarkdownLiveEditor = lazy(() => import('@/components/Document/MarkdownLiveEditor'))
+const ChartDesignerModal = lazy(() => import('./ChartDesignerModal'))
+
+/** 悬停编辑入口时预取编辑器 chunk：查看态保持无 CodeMirror 请求，切换编辑时命中缓存 */
+function prefetchEditorChunk() {
+  void import('@/components/Document/MarkdownLiveEditor').catch(() => undefined)
+}
+
+/** 编辑器 chunk 下载期间的占位 —— 与正文编辑器同高度，避免查看/编辑切换时页面跳动 */
+function EditorFallback() {
+  return (
+    <div style={{ flex: 1, minHeight: 0, padding: 24 }} data-testid="doc-editor-fallback">
+      <Skeleton active paragraph={{ rows: 8 }} />
+    </div>
+  )
+}
 
 /** 选区改写指令 → 中文标签（抽屉标题 / 结果分区用） */
 const AI_INSTRUCTION_LABELS: Record<DocumentAiInstruction, string> = {
@@ -1286,7 +1306,12 @@ export default function DocumentEditorPage() {
                 <Button size="small" type={viewMode === 'view' ? 'primary' : 'default'} onClick={() => handleModeChange('view')}>
                   查看
                 </Button>
-                <Button size="small" type={viewMode === 'edit' ? 'primary' : 'default'} onClick={() => handleModeChange('edit')}>
+                <Button
+                  size="small"
+                  type={viewMode === 'edit' ? 'primary' : 'default'}
+                  onMouseEnter={prefetchEditorChunk}
+                  onClick={() => handleModeChange('edit')}
+                >
                   编辑
                 </Button>
               </Space.Compact>
@@ -1379,6 +1404,7 @@ export default function DocumentEditorPage() {
                   type={viewMode === 'edit' ? 'primary' : 'default'}
                   icon={<EditOutlined />}
                   title="进入编辑，修改先保存为个人草稿"
+                  onMouseEnter={prefetchEditorChunk}
                   onClick={() => handleModeChange('edit')}
                 >
                   编辑
@@ -1781,16 +1807,18 @@ export default function DocumentEditorPage() {
               <div data-testid="doc-split-view" style={{ flex: 1, minHeight: 0, display: 'flex' }}>
                 {/* 左：编辑（沿用实时预览 / 源码开关） */}
                 <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-                  <MarkdownLiveEditor
-                    ref={editorRef}
-                    value={content}
-                    mode={editorMode}
-                    workspaceId={workspaceId}
-                    placeholder="输入 Markdown 内容…"
-                    onChange={setContent}
-                    onPasteImages={handlePasteImages}
-                    onShortcut={applyEditorShortcut}
-                  />
+                  <Suspense fallback={<EditorFallback />}>
+                    <MarkdownLiveEditor
+                      ref={editorRef}
+                      value={content}
+                      mode={editorMode}
+                      workspaceId={workspaceId}
+                      placeholder="输入 Markdown 内容…"
+                      onChange={setContent}
+                      onPasteImages={handlePasteImages}
+                      onShortcut={applyEditorShortcut}
+                    />
+                  </Suspense>
                   <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
                 </div>
                 {/* 右：渲染预览（与查看模式同一渲染器，随正文实时更新） */}
@@ -1817,16 +1845,18 @@ export default function DocumentEditorPage() {
               </div>
             ) : (
               <>
-                <MarkdownLiveEditor
-                  ref={editorRef}
-                  value={content}
-                  mode={editorMode}
-                  workspaceId={workspaceId}
-                  placeholder="输入 Markdown 内容…"
-                  onChange={setContent}
-                  onPasteImages={handlePasteImages}
-                  onShortcut={applyEditorShortcut}
-                />
+                <Suspense fallback={<EditorFallback />}>
+                  <MarkdownLiveEditor
+                    ref={editorRef}
+                    value={content}
+                    mode={editorMode}
+                    workspaceId={workspaceId}
+                    placeholder="输入 Markdown 内容…"
+                    onChange={setContent}
+                    onPasteImages={handlePasteImages}
+                    onShortcut={applyEditorShortcut}
+                  />
+                </Suspense>
                 <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
               </>
             )}
@@ -1998,32 +2028,34 @@ export default function DocumentEditorPage() {
       />
 
       {/* 图表设计器（ADR 0052）：新建保存后插入定义副本；编辑按块序号替换 */}
-      <ChartDesignerModal
-        open={chartDesign !== null}
-        workspaceId={workspaceId}
-        target={chartDesign}
-        onCancel={() => setChartDesign(null)}
-        onSaved={(result: ChartDesignResult) => {
-          const design = chartDesign
-          setChartDesign(null)
-          if (result.kind === 'chart') {
-            void qc.invalidateQueries({ queryKey: ['charts', workspaceId] })
-            insertChartSpec({
-              version: 1,
-              templateKey: result.chart.template_key,
-              title: result.chart.title,
-              width: DEFAULT_CHART_WIDTH,
-              config: result.chart.config,
-            })
-            message.success('图表已创建并插入（提交后生效）')
-            return
-          }
-          if (design?.kind === 'editBlock') {
-            setContent(prev => rewriteChartBlock(prev, design.occurrence, result.spec))
-            message.success('图表已更新')
-          }
-        }}
-      />
+      <Suspense fallback={null}>
+        <ChartDesignerModal
+          open={chartDesign !== null}
+          workspaceId={workspaceId}
+          target={chartDesign}
+          onCancel={() => setChartDesign(null)}
+          onSaved={(result: ChartDesignResult) => {
+            const design = chartDesign
+            setChartDesign(null)
+            if (result.kind === 'chart') {
+              void qc.invalidateQueries({ queryKey: ['charts', workspaceId] })
+              insertChartSpec({
+                version: 1,
+                templateKey: result.chart.template_key,
+                title: result.chart.title,
+                width: DEFAULT_CHART_WIDTH,
+                config: result.chart.config,
+              })
+              message.success('图表已创建并插入（提交后生效）')
+              return
+            }
+            if (design?.kind === 'editBlock') {
+              setContent(prev => rewriteChartBlock(prev, design.occurrence, result.spec))
+              message.success('图表已更新')
+            }
+          }}
+        />
+      </Suspense>
 
       {/* 分享弹层：匿名只读链接的创建 / 复制 / 访问次数 / 撤销（ADR 0017） */}
       <DocumentShareModal

@@ -1,12 +1,14 @@
 /** store/gridView 单元测试 —— setters、函数式更新、patch 批量、reset */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useGridViewStore } from './gridView'
+import { writeGridViewSnapshot } from '@/pages/grid/gridViewSeed'
 import type { FilterRule, SortRule } from '@/pages/grid/view-config/ViewConfigDialog'
 
 const filter: FilterRule = { field_name: 'status', op: '=', value: 'active' }
 const sorting: SortRule = { field_name: 'created_at', direction: 'desc' }
 
 beforeEach(() => {
+  sessionStorage.clear()
   useGridViewStore.getState().reset()
 })
 
@@ -120,5 +122,42 @@ describe('reset 回初值', () => {
 
     useGridViewStore.getState().reset()
     expect(useGridViewStore.getState().tableKey).toBeNull()
+  })
+})
+
+describe('hydrate 首帧种子化（ADR 0116 C8）', () => {
+  it('命中 sessionStorage 快照时恢复视图参数并登记归属表', () => {
+    writeGridViewSnapshot('7/12', {
+      activeViewId: 3,
+      viewFilters: [filter],
+      viewSortings: [sorting],
+      viewFilterLogic: 'OR',
+      mode: 'kanban',
+      offset: 0,
+      limit: 50,
+    })
+
+    useGridViewStore.getState().hydrate('7/12')
+
+    const st = useGridViewStore.getState()
+    expect(st.tableKey).toBe('7/12')
+    expect(st.activeViewId).toBe(3)
+    expect(st.viewFilters).toEqual([filter])
+    expect(st.viewSortings).toEqual([sorting])
+    expect(st.viewFilterLogic).toBe('OR')
+    expect(st.mode).toBe('kanban')
+  })
+
+  it('未命中快照时等价于 reset(tableKey)', () => {
+    const s = useGridViewStore.getState()
+    s.setMode('calendar')
+    s.setViewFilters([filter])
+
+    useGridViewStore.getState().hydrate('8/13')
+
+    const st = useGridViewStore.getState()
+    expect(st.tableKey).toBe('8/13')
+    expect(st.mode).toBe('grid')
+    expect(st.viewFilters).toEqual([])
   })
 })

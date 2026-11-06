@@ -7,6 +7,7 @@
  */
 
 import { create } from 'zustand'
+import { readGridViewSnapshot } from '@/pages/grid/gridViewSeed'
 import type { FilterRule, SortRule } from '@/pages/grid/view-config/ViewConfigDialog'
 import type { ViewMode } from '@/pages/grid/views/viewModes'
 
@@ -51,6 +52,8 @@ interface GridViewState {
   patch: (partial: Partial<Omit<GridViewState, 'patch' | 'reset' | 'tableKey'>>) => void
   /** 跨表导航时重置所有视图状态，并登记新归属表（tableKey 缺省表示未归属任何表） */
   reset: (tableKey?: string | null) => void
+  /** 首帧种子化：优先使用该表的 sessionStorage 快照，未命中时等价于 reset(tableKey) */
+  hydrate: (tableKey: string) => void
 }
 
 const INITIAL_STATE: Pick<
@@ -95,4 +98,12 @@ export const useGridViewStore = create<GridViewState>()((set) => ({
 
   patch: (partial) => set(partial),
   reset: (tableKey = null) => set({ ...INITIAL_STATE, tableKey }),
+  hydrate: (tableKey) => {
+    const snapshot = readGridViewSnapshot(tableKey)
+    set({
+      ...INITIAL_STATE,
+      ...(snapshot ?? {}),
+      tableKey,
+    })
+  },
 }))

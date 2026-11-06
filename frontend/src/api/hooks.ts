@@ -48,11 +48,36 @@ function _stableStr(value: unknown): string {
   try { return JSON.stringify(value) } catch { return String(value) }
 }
 
+/** 行数据 queryKey 的唯一构造器 —— useTableRecords 与 hover 预取（tablePrefetch）共用，
+ *  保证预取写入的缓存与首帧正式请求完全一致（ADR 0116 C7 / I3）。 */
+export function tableRecordsQueryKey(
+  wid: string,
+  tid: string,
+  mode: string,
+  params: RecordsQueryParams = {},
+) {
+  const tableKey = `${wid}/${tid}`
+  const { offset = 0, limit = 25 } = params
+  const filters = params.filters?.length ? params.filters : undefined
+  const sorts = params.sorts?.length ? params.sorts : undefined
+  return [
+    'table-records',
+    tableKey,
+    mode,
+    offset,
+    limit,
+    _stableStr(filters),
+    _stableStr(sorts),
+    params.filter_logic ?? 'AND',
+  ] as const
+}
+
 export function useTableRecords(
   wid: string,
   tid: string,
   mode: string,
   params: RecordsQueryParams,
+  enabled = true,
 ) {
   const tableKey = `${wid}/${tid}`
   const { offset = 0, limit = 25 } = params
@@ -60,12 +85,8 @@ export function useTableRecords(
   const sorts = params.sorts?.length ? params.sorts : undefined
 
   // 用序列化字符串进 queryKey，避免数组引用每次 render 都变导致 cache miss
-  const filtersKey = _stableStr(filters)
-  const sortsKey = _stableStr(sorts)
-  const filterLogic = params.filter_logic ?? 'AND'
-
   return useQuery<RowListResponse>({
-    queryKey: ['table-records', tableKey, mode, offset, limit, filtersKey, sortsKey, filterLogic],
+    queryKey: tableRecordsQueryKey(wid, tid, mode, params),
     queryFn: () =>
       recordApi.list(wid, tid, {
         offset,
@@ -74,7 +95,7 @@ export function useTableRecords(
         sorts,
         filter_logic: params.filter_logic,
       }),
-    enabled: !!wid && !!tid,
+    enabled: enabled && !!wid && !!tid,
     // 同表（翻页/筛选/排序/切视图）保留上一份数据，请求期间 isFetching 驱动 loading 遮罩；
     // 跨表（tableKey 变化）返回 undefined 走正常 loading，避免旧表行配新表列
     placeholderData: (prev, prevQuery) =>

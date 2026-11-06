@@ -86,19 +86,57 @@ const indexHtml = readFileSync(path.join(distDir, 'index.html'), 'utf8')
 
 const assets = existsSync(assetsDir) ? readdirSync(assetsDir) : []
 
-function resolveFile(spec, name) {
+/** 模块归属表（build 期 chunk-attribution 插件产出，见 vite.config.ts） */
+function readChunkModules() {
+  if (!existsSync(attributionPath)) {
+    fail('未找到 dist/.vite/chunk-modules.json，请先执行 pnpm build（本文件由 chunk-attribution 插件生成）')
+  }
+  return JSON.parse(readFileSync(attributionPath, 'utf8'))
+}
+
+/** 把 resolve 声明解析为一组待测文件（多文件时体积求和，如 CSS / 字体总量）。
+ *
+ * 支持：
+ *  - "entry"                 主入口 script（dist/index.html）
+ *  - "entryCss"              主入口 <link rel=stylesheet> 的 CSS
+ *  - "fonts"                 全部 woff2（实际按需传输的字体格式）
+ *  - { assetPattern }        文件名正则
+ *  - { moduleMarker }        模块路径子串（按 chunk-modules.json 归属定位，避免 hash 改名失效）
+ */
+function resolveFiles(spec, name) {
   if (spec === 'entry') {
     const m = indexHtml.match(/src="\/assets\/([^"]+\.js)"/)
     if (!m) fail(`${name}：dist/index.html 未找到主入口 script`)
-    return m[1]
+    return [m[1]]
+  }
+  if (spec === 'entryCss') {
+    const links = [...indexHtml.matchAll(/href="\/assets\/([^"]+\.css)"/g)].map((m) => m[1])
+    const hits = links.filter((f) => assets.includes(f))
+    if (!hits.length) fail(`${name}：dist/index.html 未找到主入口样式表`)
+    return hits
+  }
+  if (spec === 'fonts') {
+    const hits = assets.filter((f) => f.endsWith('.woff2'))
+    if (!hits.length) fail(`${name}：dist/assets 内未找到 woff2 字体（构建是否启用了 @fontsource？）`)
+    return hits
   }
   if (spec && typeof spec === 'object' && spec.assetPattern) {
     const re = new RegExp(spec.assetPattern)
     const hit = assets.find((f) => re.test(f))
     if (!hit) fail(`${name}：dist/assets 内未匹配到 ${spec.assetPattern} 的 chunk（是否为重命名/拆分导致该 chunk 消失？）`)
-    return hit
+    return [hit]
   }
-  fail(`${name}：resolve 字段无法识别（应为 "entry" 或 { assetPattern }）`)
+  if (spec && typeof spec === 'object' && spec.moduleMarker) {
+    const table = readChunkModules()
+    const marker = String(spec.moduleMarker).replace(/\\/g, '/')
+    const hits = Object.entries(table)
+      .filter(([file]) => file.endsWith('.js') && assets.includes(file.replace(/^assets\//, '')))
+      .filter(([, modules]) => modules.some((m) => String(m.id).replace(/\\/g, '/').includes(marker)))
+      .map(([file]) => file.replace(/^assets\//, ''))
+    if (!hits.length) fail(`${name}：没有 chunk 包含模块 ${spec.moduleMarker}（模块是否被改名/移出包？）`)
+    return hits
+  }
+  fail(`${name}：resolve 字段无法识别（应为 "entry" / "entryCss" / "fonts" / { assetPattern } / { moduleMarker }）`)
 }
 
 /** gzip 字节数，与生产服务器 Content-Encoding: gzip 的实际传输体积一致 */
@@ -143,13 +181,13 @@ function printAttribution(file, limitTopN = 10) {
 const results = []
 for (const item of config.chunks) {
   if (only && !item.name.includes(only)) continue
-  const file = resolveFile(item.resolve, item.name)
-  const actual = gzipSize(file)
+  const files = resolveFiles(item.resolve, item.name)
+  const actual = files.reduce((sum, file) => sum + gzipSize(file), 0)
   const tolerance = item.tolerance != null ? item.tolerance / 100 : globalTolerance
   // 0090 C3：上限优先取显式 budget；未声明时回退旧的「基线 + 容差」口径
   const limit = item.budget ?? Math.ceil(item.baseline * (1 + tolerance))
   const delta = actual - item.baseline
-  results.push({ item, file, actual, limit, delta })
+  results.push({ item, files, actual, limit, delta })
 }
 
 const overs = results.filter((r) => r.actual > r.limit)
@@ -209,14 +247,15 @@ if (doUpdate) {
 }
 
 for (const r of results) {
-  const { item, file, actual, limit, delta } = r
+  const { item, files, actual, limit, delta } = r
   const status = actual > limit ? 'FAIL' : delta > 0 ? 'warn' : 'ok'
   const deltaPct = ((delta / item.baseline) * 100).toFixed(1)
   const deltaTxt = `${delta >= 0 ? '+' : '-'}${formatKB(Math.abs(delta))} / ${deltaPct >= 0 ? '+' : '-'}${Math.abs(Number(deltaPct)).toFixed(1)}%`
   const limitSrc = item.budget != null ? 'budget' : '基线+容差'
+  const fileTxt = files.length > 1 ? `${files.length} 个文件` : files[0]
   console.log(
     `[bundle-budget] ${status.padEnd(4)} ${item.name}: ${formatKB(actual)}` +
-    `（基线 ${formatKB(item.baseline)}，上限 ${formatKB(limit)}〔${limitSrc}〕，偏差 ${deltaTxt}）  ${file}`,
+    `（基线 ${formatKB(item.baseline)}，上限 ${formatKB(limit)}〔${limitSrc}〕，偏差 ${deltaTxt}）  ${fileTxt}`,
   )
 }
 
@@ -232,7 +271,14 @@ if (overs.length) {
     console.log(
       `\n[bundle-budget] ── ${o.item.name} 超限 ${formatKB(o.actual - o.limit)}（当前 ${formatKB(o.actual)}，上限 ${formatKB(o.limit)}）`,
     )
-    printAttribution(o.file)
+    // 多文件条目（CSS / 字体 / 跨 chunk 模块）无法用单 chunk 归因，逐文件列体积
+    if (o.files.length === 1) {
+      printAttribution(o.files[0])
+    } else {
+      for (const file of o.files) {
+        console.log(`  ${formatKB(gzipSize(file)).padStart(10)}  ${file}`)
+      }
+    }
   }
   console.log(
     '\n[bundle-budget] 处置顺序（跳过第 1 步直接加基线是本工具要防的行为）：\n' +

@@ -20,6 +20,16 @@ interface WebVitalsWindow extends Window {
 
 const BUFFER_LIMIT = 50
 
+/** 页面导航类型（navigate / reload / back_forward / prerender）—— RUM 侧区分冷启与回退 */
+function navigationType(): string {
+  try {
+    const entry = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+    return entry?.type || 'navigate'
+  } catch {
+    return 'navigate'
+  }
+}
+
 function pushMetric(metric: Metric): void {
   const w = window as WebVitalsWindow
   const buffer = (w.__cndWebVitals ??= [])
@@ -34,7 +44,13 @@ function pushMetric(metric: Metric): void {
   // 配置了上报端点时静默尝试投递；埋点失败不得影响主流程
   const endpoint = w.__cndVitalsEndpoint
   if (endpoint) {
-    const payload = JSON.stringify({ name: metric.name, value: metric.value, rating: metric.rating, path: window.location.pathname })
+    const payload = JSON.stringify({
+      name: metric.name,
+      value: metric.value,
+      rating: metric.rating,
+      path: window.location.pathname,
+      navigationType: navigationType(),
+    })
     navigator.sendBeacon?.(endpoint, new Blob([payload], { type: 'application/json' }))
   }
 }

@@ -18,6 +18,7 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { systemApi, tableApi, workspaceApi } from '@/api'
+import { useTableHoverPrefetch } from '@/pages/workspace/tablePrefetch'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
 import DesignStructureNav from '@/pages/design/DesignStructureNav'
@@ -166,14 +167,8 @@ export default function MainLayout() {
     navigate(`/w/${targetWid}/tables/${targetTid}${qs ? `?${qs}` : ''}`)
   }, [searchParams, navigate])
 
-  /** hover 预取表详情 —— 点击进表时 useTable 命中缓存，减少冷启动白屏（queryKey 与 useTable 一致）. */
-  const prefetchTable = useCallback((targetWid: string, targetTid: string | number) => {
-    void queryClient.prefetchQuery({
-      queryKey: ['table', `${targetWid}/${targetTid}`],
-      queryFn: () => tableApi.get(targetWid, String(targetTid)),
-      staleTime: 60_000,
-    })
-  }, [queryClient])
+  /** hover 预取表详情 / 视图 / 首帧行数据 / GridPage chunk —— 200ms 防抖，离开即取消（ADR 0116 C7）. */
+  const prefetchTable = useTableHoverPrefetch(queryClient, wid)
 
   const { data: workspaces = [], isLoading: wsLoading } = useQuery({
     queryKey: ['workspaces'],
@@ -646,7 +641,14 @@ export default function MainLayout() {
             items={orderedTables.map(t => ({
               key: String(t.id),
               icon: <TableOutlined />,
-              label: <span onMouseEnter={() => prefetchTable(wid!, t.id)}>{t.name}</span>,
+              label: (
+                <span
+                  onMouseEnter={() => prefetchTable.onEnter(t.id)}
+                  onMouseLeave={() => prefetchTable.onLeave(t.id)}
+                >
+                  {t.name}
+                </span>
+              ),
               onClick: () => {
                 navigateToTable(wid!, t.id)
                 if (mobile) setMobileNavOpen(false)
