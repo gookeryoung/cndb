@@ -1,14 +1,14 @@
-/** 设计编辑器「更多」菜单（ADR 0103 D6）：版本历史 + 导出（STL / OBJ / GLB / 三视图）.
+/** 设计编辑器工具栏动作（ADR 0103 D6 修订）：版本历史 / 导出为两个独立图标按钮.
  *
- * 工具栏单行化的溢出收纳：次要动作恒收进菜单（非断点式，D6），保存与编译状态常显。
- * 本组件与 PreviewCanvas 同属 three lazy 边界（ADR 0079 D4）：exporters 引 three，
- * 由 DesignEditorPage 以 lazy 挂载，不进编辑器主 chunk。
+ * 工具栏单行化下的次要动作：版本历史直接打开抽屉，导出以图标按钮展开格式菜单，
+ * 保存与编译状态常显。本组件与 PreviewCanvas 同属 three lazy 边界（ADR 0079 D4）：
+ * exporters 引 three，由 DesignEditorPage 以 lazy 挂载，不进编辑器主 chunk。
  * 网格求值（含 CSG，大装配可达数百 ms）延迟到真正导出时（ADR 0086 C9）。
  */
 
 import { useState } from 'react'
-import { App as AntApp, Button, Dropdown } from 'antd'
-import { EllipsisOutlined } from '@ant-design/icons'
+import { App as AntApp, Button, Dropdown, Space, Tooltip } from 'antd'
+import { DownloadOutlined, HistoryOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import type { DesignIR } from '@/api'
 import {
@@ -27,7 +27,7 @@ type ExportKind = 'stl' | 'obj' | 'glb' | 'views'
 interface Props {
   ir: DesignIR | null
   title: string
-  /** 版本数量（菜单项文案「版本历史（N）」） */
+  /** 版本数量（版本历史按钮 tooltip） */
   versionCount: number
   /** 打开版本历史抽屉 */
   onHistory: () => void
@@ -63,33 +63,36 @@ export default function DesignMoreMenu({ ir, title, versionCount, onHistory }: P
     }
   }
 
-  const items: MenuProps['items'] = [
-    { key: 'history', label: `版本历史（${versionCount}）` },
-    { type: 'divider' },
-    {
-      type: 'group',
-      label: '导出',
-      children: [
-        { key: 'stl', label: 'STL（二进制，3D 打印）', disabled: empty || busy },
-        { key: 'obj', label: 'OBJ（网格交换）', disabled: empty || busy },
-        { key: 'glb', label: 'GLB（glTF 2.0 预览交付）', disabled: empty || busy },
-        { key: 'views', label: '三视图 PNG（前 / 上 / 右）', disabled: empty || busy },
-      ],
-    },
+  const exportItems: MenuProps['items'] = [
+    { key: 'stl', label: 'STL（二进制，3D 打印）', disabled: empty || busy },
+    { key: 'obj', label: 'OBJ（网格交换）', disabled: empty || busy },
+    { key: 'glb', label: 'GLB（glTF 2.0 预览交付）', disabled: empty || busy },
+    { key: 'views', label: '三视图 PNG（前 / 上 / 右）', disabled: empty || busy },
   ]
 
   return (
-    <Dropdown
-      trigger={['click']}
-      menu={{
-        items,
-        onClick: ({ key }) => {
-          if (key === 'history') onHistory()
-          else void onExport(key as ExportKind)
-        },
-      }}
-    >
-      <Button icon={<EllipsisOutlined />} aria-label="更多" loading={busy}>更多</Button>
-    </Dropdown>
+    <Space size={8}>
+      <Tooltip title={`版本历史（${versionCount}）`}>
+        <Button
+          icon={<HistoryOutlined />}
+          aria-label="版本历史"
+          data-testid="design-history-btn"
+          onClick={onHistory}
+        />
+      </Tooltip>
+      <Dropdown
+        trigger={['click']}
+        menu={{ items: exportItems, onClick: ({ key }) => void onExport(key as ExportKind) }}
+      >
+        <Tooltip title="导出模型（STL / OBJ / GLB / 三视图）">
+          <Button
+            icon={<DownloadOutlined />}
+            aria-label="导出"
+            data-testid="design-export-btn"
+            loading={busy}
+          />
+        </Tooltip>
+      </Dropdown>
+    </Space>
   )
 }

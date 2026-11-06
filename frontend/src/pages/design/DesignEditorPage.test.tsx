@@ -5,7 +5,7 @@
  * 编辑器内容变更经 EditorView.findFromDOM 驱动真实 CodeMirror transaction，
  * 覆盖：源码展示 / 诊断回显 / 保存（Ctrl+S）/ 保存失败保留草稿 / 参数常驻面板 /
  * 视口工具条与状态条 / 分栏预设持久化 / 参数面板折叠 / 树↔视口高亮 /
- * viewer 只读 / 版本回看与恢复（「更多」菜单入口）.
+ * viewer 只读 / 版本回看与恢复（工具栏版本历史图标入口）.
  */
 
 import { describe, expect, it, vi } from 'vitest'
@@ -203,7 +203,7 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(cmText(container)).toContain('box(size = [width, 40, 12])')
     // 预览走防抖 → 编译通过 → stub 收到 IR（节点数 1）
     expect(await screen.findByText('节点数:1')).toBeInTheDocument()
-    // 版本历史入口收进「更多」菜单（ADR 0103 D6）
+    // 版本历史 / 导出入口由工具栏动作组件渲染（ADR 0103 D6 修订）
     expect(screen.getByTestId('more-menu-stub')).toHaveTextContent('更多:法兰板')
   })
 

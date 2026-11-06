@@ -20,7 +20,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 | C3 | 视口悬浮工具条：七向定向 / 布满 / 网格开关 | 视口右上悬浮胶囊（D4）：视图定向 Dropdown（主视 / 俯视 / 仰视 / 左视 / 右视 / 后视 / 等轴测，术语 D11）+ 布满视图（fit，复用现有 frame 逻辑）+ 网格显隐开关；`PreviewCanvas` 经 `onViewportApi` 回调暴露 `{ orientTo, fit, setGridVisible }`，工具条 UI 在编辑器页渲染 |
 | C4 | 视口底部状态条：单位 / 节点数 / 三角数 | 视口左下常驻细条：`{units.length} · 节点 {n} · 三角 {m}`；单位取 IR `units.length`（不硬编码，D5），统计接通既有 `onStats` 回调（现状无消费者） |
 | C5 | 参数面板常驻：预览栏底部「参数｜约束」可折叠 Tabs | 参数抽屉退役；预览栏纵向 flex = 视口（flex:1）+ 底部面板（展开上限 280px 内部滚动 / 折叠为 36px 细条，折叠态存 localStorage `cn-design-params-collapsed`）；Tab 徽标 = 覆盖数 / 约束数；参数改值即时重编译（沿用 preview 端点 + 一键重置覆盖，行为不变）；约束列表复用 `DesignConstraintsPanel` 内容渲染，原预览底部横条退役 |
-| C6 | 工具栏单行化 + 次要动作溢出收纳 | `.cn-dsl-toolbar` 恒单行（nowrap，标题 truncate）；版本历史、导出恒收进「更多」Dropdown（D6，非断点式）；返回 / 标题 / 版本标签 / 编译状态 / 保存常显；诊断条保留 |
+| C6 | 工具栏单行化 + 次要动作图标化 | `.cn-dsl-toolbar` 恒单行（nowrap，标题 truncate）；版本历史与导出为两个独立图标按钮（D6）：版本历史图标直接打开抽屉，导出图标展开格式菜单；标题 / 版本标签 / 编译状态 / 保存常显；诊断条保留 |
 | C7 | 树↔视口实体联动高亮（IR v4→v5） | outline 节点增 `node_index`（首个所属顶层 `nodes` 数组下标，D7）；侧栏点击大纲节点 → 既有 `?line=` 定位源行 + 编辑器页按大纲归属收集 `node_index` 集合 → `PreviewCanvas` emissive tint 高亮 3s 渐隐（D8）；v4 旧快照无字段时静默降级（不高亮，不报错） |
 | C8 | 管理页按目录分组 + 类型筛选 | `DesignsPage` 列表按 `folder` 分组（空目录归「未分组」置底）、`kind` Segmented 筛选（全部 / 零件 / 装配，D12）；字段为 0086 既有 `design_design.folder` / `kind`，零后端变更；新建 / 打开 / 改名 / 删除 / 描述能力不减少。目录分组形态由 ADR 0109 D2 修订为行内目录 Tag，筛选随管理入口移入侧栏产品列表态 |
 
@@ -152,7 +152,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 | D3 | 分栏拖拽实现 | 自研 splitter（pointer 事件 + 内联 grid 比例），clamp 25%–75%、每侧 ≥320px，`localStorage: cn-design-editor-split` | 需求仅三档 + 拖拽，自研 ~百行内；Chrome 81 PointerEvent 可用 | `react-resizable-panels` 等三方库（违背零依赖）；CSS `resize`（单向、样式不可控） | `DesignEditorPage.tsx`、`index.css` |
 | D4 | 视口工具条形态 | 视口内右上悬浮胶囊；`PreviewCanvas` 经 `onViewportApi` 暴露受控 API，UI 在编辑器页渲染 | 不占视口布局高度；three lazy chunk 与 antd UI 边界清晰（工具条与 canvas 同生命周期） | 常驻顶部横条（吃视口高度）；工具条塞进 `PreviewCanvas` 内部（lazy chunk 内引 antd，边界混乱） | `PreviewCanvas.tsx` |
 | D5 | 状态条数据源 | 单位取 IR `units.length`（显式契约，不硬编码）；节点 / 三角接通既有 `onStats` | IR 已显式携带单位声明（0079 D3），硬编码是第二真相源；`onStats` 属接通死数据 | 硬编码 "mm"（契约漂移风险） | `PreviewCanvas.tsx`、`DesignEditorPage.tsx` |
-| D6 | 工具栏溢出收纳 | 版本历史 / 导出**恒**收进「更多」Dropdown（非断点式）；保存 / 状态常显 | 单行恒成立、断言稳定；次要动作使用频度低 | 按屏宽断点动态迁移按钮（断点抖动、e2e 不稳定） | `DesignEditorPage.tsx` |
+| D6 | 工具栏动作形态 | 版本历史与导出为两个独立图标按钮：版本历史图标直接打开抽屉，导出图标展开格式菜单；保存 / 状态常显 | 图标按钮省横向空间且两个动作各有独立入口，不与保存争层级；单行恒成立、断言稳定 | 版本历史 / 导出合并进「更多」Dropdown（多一层点击，两个动作不可分别发现） | `DesignEditorPage.tsx`、`DesignMoreMenu.tsx` |
 | D7 | IR v5 契约形态 | 仅 outline 节点增 `node_index`（首个所属顶层下标，空产出 `null`）；父节点不聚合，前端按 `children` 递归聚合 | `_emit_instance` 一次产出两侧（`compile.py:389-490`），单字段回填最小且无漂移面 | 全节点携带聚合数组（冗余、双份真相）；`nodes` 内嵌反向指针（渲染热路径加字段） | `compile.py`、`api/design.ts` |
 | D8 | 联动高亮视觉 | 材质 emissive tint + 3s 渐隐；再次点击重触发（卡片未决项落点） | 零后处理、零新依赖，视觉足够醒目 | `OutlinePass` 描边（引 postprocessing 依赖 + GPU 成本） | `PreviewCanvas.tsx` |
 | D9 | 反向定位归属规则 | 全局取 `line ≤ revealLine` 中行号最大者（同号取更深）并拼祖先链；`use` 子树按 `file_id` 过滤；早于全部行不选中 | 大纲节点只有起始行，区间启发式够用；全局取最大同时覆盖同父直觉与 module 调用 / 声明行倒挂（`plate` 实例行 10 晚于其零件行 4） | 同父逐层下探（行号倒挂时落空，e2e 实测点击「零件 · 第 4 行」不选中）；为 outline 增结束行（DSL 无块结束标记，解析器需大改，收益不匹配） | `designOutline.ts` |

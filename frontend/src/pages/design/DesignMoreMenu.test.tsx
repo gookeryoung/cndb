@@ -1,7 +1,7 @@
-/** 设计「更多」菜单测试（ADR 0103 D6 / 承接 ADR 0079 D5）：入口接线、空模型禁用、导出失败提示.
+/** 设计工具栏动作测试（ADR 0103 D6 修订 / 承接 ADR 0079 D5）：入口接线、空模型禁用、导出失败提示.
  *
- * exporters 本体由 exporters.test.ts 覆盖；此处 mock exporters 断言
- * 菜单 → 导出函数 → 下载的接线与异常分支，以及版本历史入口回调。
+ * 版本历史与导出为两个独立图标按钮；exporters 本体由 exporters.test.ts 覆盖，
+ * 此处 mock exporters 断言菜单 → 导出函数 → 下载的接线与异常分支，以及版本历史入口回调。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -39,11 +39,11 @@ import { buildGLB, buildOBJ, buildSTL, captureViews, downloadBlob, downloadDataU
 
 function renderMenu(ir: DesignIR | null, onHistory = vi.fn()) {
   renderProviders(<DesignMoreMenu ir={ir} title="法兰板" versionCount={3} onHistory={onHistory} />)
-  return { button: screen.getByRole('button', { name: '更多' }), onHistory }
+  return { onHistory }
 }
 
 function openMenu() {
-  fireEvent.click(screen.getByRole('button', { name: '更多' }))
+  fireEvent.click(screen.getByRole('button', { name: '导出' }))
 }
 
 beforeEach(() => {
@@ -51,10 +51,9 @@ beforeEach(() => {
 })
 
 describe('DesignMoreMenu', () => {
-  it('版本历史入口显示版本数并触发回调（D6）', async () => {
+  it('版本历史为独立图标按钮，点击直接触发回调（D6）', () => {
     const { onHistory } = renderMenu(IR)
-    openMenu()
-    fireEvent.click(await screen.findByText('版本历史（3）'))
+    fireEvent.click(screen.getByRole('button', { name: '版本历史' }))
     expect(onHistory).toHaveBeenCalled()
   })
 

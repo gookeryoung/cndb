@@ -51,8 +51,7 @@ async function safeDeleteDesign(request: APIRequestContext, designId: number) {
 }
 
 async function openHistory(page: Page) {
-  await page.getByRole("button", { name: "更多" }).click()
-  await page.getByText(/版本历史（\d+）/).click()
+  await page.getByRole("button", { name: "版本历史" }).click()
 }
 
 test.describe("设计版本历史与 DIFF（0113 P2）", () => {

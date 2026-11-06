@@ -42,12 +42,18 @@ test.describe("设计模块（结构 DSL）", () => {
 
     try {
       // 1) 设计侧栏「产品列表」态新建设计（示例模板）→ 创建后自动进入编辑器
-      //    ADR 0109：根页会自动打开最近更新的产品并切到结构树态，先等就绪再切回产品列表
+      //    ADR 0109：根页会自动打开最近更新的产品并切到结构树态；先等根页跳转落定
+      //    再切回产品列表，否则「返回产品列表」可能在跳转前不可见而被跳过
       await page.goto(`/w/${WID}/design`)
-      await page.waitForURL(/\/w\/1\/design(?:\/\d+)?$/, { timeout: 15_000 })
       await expect(page.getByTestId("sider-designs")).toBeVisible({ timeout: 10_000 })
-      const backToProducts = page.getByTestId("design-nav-back")
-      if (await backToProducts.isVisible()) await backToProducts.click()
+      // 根页要么 replace 到最近更新的产品（编辑器），要么展示空态；等任一到齐即跳转落定
+      await expect(
+        page.getByTestId("designs-empty").or(page.locator(".cm-content")),
+      ).toBeVisible({ timeout: 15_000 })
+      if (/\/w\/1\/design\/\d+/.test(page.url())) {
+        await page.getByTestId("design-nav-back").click()
+      }
+      await expect(page.getByTestId("design-products-panel")).toBeVisible({ timeout: 10_000 })
       await page.getByRole("button", { name: /新建设计/ }).click()
       const modal = page.locator(".ant-modal")
       await modal.getByLabel("名称").fill(title)
@@ -75,10 +81,10 @@ test.describe("设计模块（结构 DSL）", () => {
       await expect(page.getByText("第2行").first()).toBeHidden({ timeout: 15_000 })
       await expect(page.getByTestId("design-compile-ok")).toBeVisible({ timeout: 15_000 })
 
-      // 5) 导出 STL：导出收进「更多」菜单（ADR 0103 D6）→ 二进制头为 'cndb design stl'
+      // 5) 导出 STL：导出为工具栏独立图标按钮（ADR 0103 D6 修订）→ 二进制头为 'cndb design stl'
       // 文件名含中文设计名，Chromium suggestedFilename 不稳定（同 workspace-backup 用例），以内容为准则
       const downloadPromise = page.waitForEvent("download", { timeout: 30_000 })
-      await page.getByRole("button", { name: "更多" }).click()
+      await page.getByRole("button", { name: "导出" }).click()
       await page.getByText("STL（二进制，3D 打印）").click()
       const download = await downloadPromise
       const buf = readFileSync(await download.path())

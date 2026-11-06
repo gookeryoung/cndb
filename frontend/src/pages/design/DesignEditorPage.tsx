@@ -4,10 +4,10 @@
  * - 编辑防抖 300ms → POST /designs/preview（无落库）→ 结构化诊断回显错误行；
  * - 渲染只消费后端编译的 IR（前端零解析零求值），three 相关全部在 lazy chunk；
  * - 保存：编译在后端通过才落库并落新版本，失败保留草稿（边界 #2）；
- * - 版本历史（回看 / 恢复）与导出收进「更多」菜单（ADR 0103 D6），功能不变。
+ * - 版本历史（回看 / 恢复）与导出为工具栏独立图标按钮（ADR 0103 D6 修订），功能不变。
  *
  * 布局（ADR 0103）：
- * - 工具栏恒单行：返回 / 标题 / 版本 / 编译状态 / 分栏预设 / 更多 / 保存（C6 D6）；
+ * - 工具栏恒单行：标题 / 版本 / 编译状态 / 分栏预设 / 版本历史 / 导出 / 保存（C6 D6）；
  * - 左右可拖分栏 + 三档预设，比例存 localStorage（C2 D3 D10，窄屏纵向堆叠）；
  * - 视口右上悬浮工具条（七向定向 / 布满 / 网格）+ 左下状态条（单位 / 节点 / 三角）（C3 C4）；
  * - 预览栏底部「参数｜约束」常驻可折叠面板替代参数抽屉（C5 D2）；
@@ -21,8 +21,8 @@ import {
 } from 'antd'
 import type { InputNumberProps } from 'antd'
 import {
-  BorderOutlined, CheckCircleFilled, CloseCircleFilled, CompassOutlined,
-  ExperimentOutlined, ExpandOutlined, LoadingOutlined, RollbackOutlined, SaveOutlined,
+  BorderOutlined, CheckCircleFilled, CloseCircleFilled, CompassOutlined, DownloadOutlined,
+  ExperimentOutlined, ExpandOutlined, HistoryOutlined, LoadingOutlined, RollbackOutlined, SaveOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -41,7 +41,7 @@ import { VIEW_PRESETS, type ViewOrientation } from './viewOrient'
 
 // three 渲染整块 lazy：three + three-bvh-csg 只进设计编辑器 chunk（D4 体积预算）
 const PreviewCanvas = lazy(() => import('./PreviewCanvas'))
-// 「更多」菜单同样落在 three lazy 边界（exporters 引 three，ADR 0079 D5）
+// 工具栏动作（版本历史 / 导出）同样落在 three lazy 边界（exporters 引 three，ADR 0079 D5）
 const DesignMoreMenu = lazy(() => import('./DesignMoreMenu'))
 
 const { Text } = Typography
@@ -573,7 +573,14 @@ export default function DesignEditorPage() {
               ]}
             />
           )}
-          <Suspense fallback={<Button icon={<CompassOutlined />} disabled>更多</Button>}>
+          <Suspense
+            fallback={(
+              <Space size={8}>
+                <Button icon={<HistoryOutlined />} aria-label="版本历史" disabled />
+                <Button icon={<DownloadOutlined />} aria-label="导出" disabled />
+              </Space>
+            )}
+          >
             <DesignMoreMenu
               ir={preview.ir}
               title={detail?.title ?? '设计'}
