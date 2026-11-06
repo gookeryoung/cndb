@@ -22,7 +22,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 | C5 | 参数面板常驻：预览栏底部「参数｜约束」可折叠 Tabs | 参数抽屉退役；预览栏纵向 flex = 视口（flex:1）+ 底部面板（展开上限 280px 内部滚动 / 折叠为 36px 细条，折叠态存 localStorage `cn-design-params-collapsed`）；Tab 徽标 = 覆盖数 / 约束数；参数改值即时重编译（沿用 preview 端点 + 一键重置覆盖，行为不变）；约束列表复用 `DesignConstraintsPanel` 内容渲染，原预览底部横条退役 |
 | C6 | 工具栏单行化 + 次要动作溢出收纳 | `.cn-dsl-toolbar` 恒单行（nowrap，标题 truncate）；版本历史、导出恒收进「更多」Dropdown（D6，非断点式）；返回 / 标题 / 版本标签 / 编译状态 / 保存常显；诊断条保留 |
 | C7 | 树↔视口实体联动高亮（IR v4→v5） | outline 节点增 `node_index`（首个所属顶层 `nodes` 数组下标，D7）；侧栏点击大纲节点 → 既有 `?line=` 定位源行 + 编辑器页按大纲归属收集 `node_index` 集合 → `PreviewCanvas` emissive tint 高亮 3s 渐隐（D8）；v4 旧快照无字段时静默降级（不高亮，不报错） |
-| C8 | 管理页按目录分组 + 类型筛选 | `DesignsPage` 列表按 `folder` 分组（空目录归「未分组」置底）、`kind` Segmented 筛选（全部 / 零件 / 装配，D12）；字段为 0086 既有 `design_design.folder` / `kind`，零后端变更；新建 / 打开 / 改名 / 删除 / 描述能力不减少。目录分组形态由 ADR 0109 D2 修订为行内目录 Tag（筛选上移页头） |
+| C8 | 管理页按目录分组 + 类型筛选 | `DesignsPage` 列表按 `folder` 分组（空目录归「未分组」置底）、`kind` Segmented 筛选（全部 / 零件 / 装配，D12）；字段为 0086 既有 `design_design.folder` / `kind`，零后端变更；新建 / 打开 / 改名 / 删除 / 描述能力不减少。目录分组形态由 ADR 0109 D2 修订为行内目录 Tag，筛选随管理入口移入侧栏产品列表态 |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
 
@@ -43,7 +43,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 | 9 | 骨架渲染按顶层 `nodes` 下标存 `nodeGroups` | `frontend/src/pages/design/PreviewCanvas.tsx:283` | 高亮可直接复用该映射（index → mesh group） | 确认（C7 前端落点） |
 | 10 | 侧栏树 `selectedKeys` 仅含设计根键，大纲节点无选中态 | `frontend/src/pages/design/DesignStructureNav.tsx:244` | 点击大纲节点后无持续视觉反馈 | 确认（C1①） |
 | 11 | 树→编辑器单向定位（读 `?line=` reveal），编辑器不反向通知侧栏 | `frontend/src/pages/design/DesignStructureNav.tsx:127-133`、`frontend/src/pages/design/DesignEditorPage.tsx:308-310` | 半条链路：树能定位代码，代码位置不同步树 | 确认（C1② 补反向） |
-| 12 | 管理页为平面 `List`，`folder` / `kind` 字段已有但无分组 / 筛选（分组形态后由 ADR 0109 D2 修订为行内 Tag） | `frontend/src/pages/design/DesignsPage.tsx:100-271`、`design_design.folder` / `kind`（ADR 0086） | 文件多时无组织维度，低于 CAD 文件库基线 | 确认（C8，零后端） |
+| 12 | 管理页为平面 `List`，`folder` / `kind` 字段已有但无分组 / 筛选（分组形态后由 ADR 0109 D2 修订为行内 Tag，筛选移入侧栏） | `frontend/src/pages/design/DesignsPage.tsx:100-271`、`design_design.folder` / `kind`（ADR 0086） | 文件多时无组织维度，低于 CAD 文件库基线 | 确认（C8，零后端） |
 | 13 | 既有单测 / e2e 断言工具栏、参数抽屉、约束横条形态 | `frontend/src/pages/design/*.test.tsx`、`frontend/tests/e2e/critical/design-*.spec.ts` | C5/C6 改布局后断言需同步迁移 | 确认（测试清单） |
 | 14 | 版本历史抽屉（回看 / 恢复）功能完整 | `frontend/src/pages/design/DesignEditorPage.tsx:377-451` | 只改入口位置（收进「更多」），功能不动 | 确认（C6） |
 
@@ -108,7 +108,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 | 参数 / 约束面板 | `frontend/src/pages/design/DesignParamsPanel.tsx`（新）、`DesignConstraintsPanel.tsx` | 抽出 Drawer 内参数列表为常驻面板（Tabs：参数 N / 约束 M + 折叠）；约束列表复用 `DesignConstraintsPanel` 渲染；改参 / 重置逻辑不变 |
 | 侧栏 | `frontend/src/pages/design/DesignStructureNav.tsx` | `selectedKeys` 支持大纲节点键；`?line=` 变化按 D9 归属 → 展开祖先链 + `tree.scrollTo`（antd Tree 虚拟滚动定位）；点击节点 = 定位源行（既有）+ 触发高亮（P2） |
 | 侧栏宿主 | `frontend/src/layouts/MainLayout.tsx` | 不改（侧栏仍 240/60，`MainLayout.tsx:928`；联动经 `?line=` URL 既有通道） |
-| 管理页 | `frontend/src/pages/design/DesignsPage.tsx` | `folder` 分组（空 → 「未分组」置底）+ `kind` Segmented 筛选；列表操作不变（现行形态见 ADR 0109：左右分栏 + 行内目录 Tag + 页头筛选） |
+| 管理页 | `frontend/src/pages/design/DesignsPage.tsx` | `folder` 分组（空 → 「未分组」置底）+ `kind` Segmented 筛选；列表操作不变（现行形态见 ADR 0109：管理入口收进侧栏产品列表态，行内目录 Tag + 筛选） |
 | 「更多」菜单 | `frontend/src/pages/design/DesignMoreMenu.tsx`（新，原 `DesignExportMenu` 演进） | 版本历史 + 导出（STL / OBJ / GLB / 三视图）收进同一 Dropdown（导出为分组，不嵌套二级菜单）；仍在 three lazy 边界 |
 | API 封装 | `frontend/src/api/design.ts` | `DesignOutlineNode` 增 `node_index?: number \| null` 与 `file_id?: number`（可选，兼容 v4） |
 | 后端 | `src/cndb/plugins/design/services/dsl/compile.py` | `IR_VERSION = 5`；`_Emitter` 回填 `node_index`（§2） |
@@ -158,7 +158,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 | D9 | 反向定位归属规则 | 全局取 `line ≤ revealLine` 中行号最大者（同号取更深）并拼祖先链；`use` 子树按 `file_id` 过滤；早于全部行不选中 | 大纲节点只有起始行，区间启发式够用；全局取最大同时覆盖同父直觉与 module 调用 / 声明行倒挂（`plate` 实例行 10 晚于其零件行 4） | 同父逐层下探（行号倒挂时落空，e2e 实测点击「零件 · 第 4 行」不选中）；为 outline 增结束行（DSL 无块结束标记，解析器需大改，收益不匹配） | `designOutline.ts` |
 | D10 | 分栏默认档 | 均分 50/50（用户 2026-11-05 确认）；预设：编辑器优先 60/40、视口优先 40/60 | 与现状连续，老用户零感知 | 视口优先为默认（首次进入改变习惯） | `DesignEditorPage.tsx` |
 | D11 | 视图定向术语 | 主视 / 俯视 / 仰视 / 左视 / 右视 / 后视 / 等轴测（机械制图惯例，与既有三视图导出语言一致） | 需求要求结合机械结构设计最佳实践；中文用户群 | CAD 英文方位（Front/Top/…）或 ViewCube 数字方位（与工程图语言割裂） | `PreviewCanvas.tsx` |
-| D12 | 管理页组织 | `folder` 分组（空 → 「未分组」置底）+ `kind` Segmented 筛选（全部 / 零件 / 装配）；分组形态由 ADR 0109 D2 修订为行内目录 Tag + 页头筛选（管理页改为左右分栏） | 0086 既有字段零后端；对齐 CAD 文件库「目录 + 类型过滤」惯例 | 目录树左栏（管理页体量小，树形过重） | `DesignsPage.tsx` |
+| D12 | 管理页组织 | `folder` 分组（空 → 「未分组」置底）+ `kind` Segmented 筛选（全部 / 零件 / 装配）；分组形态由 ADR 0109 D2 修订为行内目录 Tag，筛选随管理入口移入侧栏 | 0086 既有字段零后端；对齐 CAD 文件库「目录 + 类型过滤」惯例 | 目录树左栏（管理页体量小，树形过重） | `DesignsPage.tsx` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -205,7 +205,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 ## 交接（会话结束更新）
 
 - 当前阶段：全期落地（P0 / P1 / P2 完成，`Status: Implemented`）
-- 已完成：splitter + 三档预设 + 持久化；视口悬浮工具条（七向定向 / fit / 网格开关）+ 状态条；工具栏单行 + 「更多」收纳；参数｜约束常驻可折叠面板；侧栏双向定位闭环（选中态 + `?line=` 反选 + 祖先展开 + `scrollTo`）；管理页目录分组 + 类型筛选（分组形态后由 ADR 0109 D2 修订为行内 Tag + 页头筛选，管理页改为左右分栏）；IR v5 `node_index`（含布尔块共享、use 模板平移）与树→视口高亮渐隐
+- 已完成：splitter + 三档预设 + 持久化；视口悬浮工具条（七向定向 / fit / 网格开关）+ 状态条；工具栏单行 + 「更多」收纳；参数｜约束常驻可折叠面板；侧栏双向定位闭环（选中态 + `?line=` 反选 + 祖先展开 + `scrollTo`）；管理页目录分组 + 类型筛选（分组形态后由 ADR 0109 D2 修订为行内 Tag，筛选移入侧栏产品列表态，管理入口不再占用 Content）；IR v5 `node_index`（含布尔块共享、use 模板平移）与树→视口高亮渐隐
 - 下一步：无（需求关闭）。若要再演进：① 大纲节点结束行（D9 启发式换精确区间，需解析器支持块结束标记）；② 高亮补 BREP 级面选（当前为 CSG 网格粒度，§4#1）
 - 已知坑：① `node_index` 语义是「首个所属顶层 `nodes` 下标」——布尔块内全部零件共享块下标，高亮粒度即整块；② use 实例的子树行号属于被引用文件，反向定位必须按 `file_id` 过滤（`resolveOutlinePath` 已实现）；③ 静态单 mesh 合并（ADR 0086 C9）后 `nodeGroups` 被清空，高亮因此改为「按需求值单节点 + 叠加 emissive 副本」，不要退回遍历 `nodeGroups` 的做法；④ 同一节点重复点击不改变 `?line=`，高亮不会重触发（§4#5 的「再次点击可重触发」需先换行号）；⑤ shell 若被注入 `LD_LIBRARY_PATH` 会让 sqlite3 缺 `deserialize`，后端测试卡死在 import 阶段（先 `unset` 再跑）
 - 最近一次全绿：`make flow`（后端 6758 例）+ 前端全量 vitest（3008 例）+ 设计类 e2e 7 例（`design-editor-layout` / `design-tree-viewport-linkage` / `design-structure-tree` / `design-3d-preview` / `design-sidebar-assembly`）
