@@ -1,30 +1,54 @@
 /** 结构 DSL（.cnmd）语言支持 —— CodeMirror StreamLanguage 高亮（ADR 0079 D11）.
  *
  * DSL v1 语法面（与后端 lexer 同口径，仅为高亮不做判定）：
- * - 语句关键字：param / module / system（系统装配声明，ADR 0084）
+ * - 语句关键字：param / module / system / use / as / constraint
  * - 布尔块：union / difference / intersection
  * - 变换：translate / rotate / scale / mirror
  * - 图元：box / cyl / sphere / cone / torus / tube
+ * - 约束类型（ADR 0086 D4）：fixed / coincident / concentric / distance / angle
+ * - 约束锚点（ADR 0086 D4）：origin / x / y / z
  * - 白名单函数与常量 PI；`//` 与 `/* *`` 注释；数值支持 `12` / `3.14` / `.5`。
+ *
+ * 常量表是高亮与自动完成的**单一来源**（需求卡 0110 C6），逐项对齐后端
+ * `services/dsl/parse.py` 的 KEYWORD_* / BOOLEANS / TRANSFORMS / PRIMITIVES /
+ * CONSTRAINT_TYPES / CONSTRAINT_ANCHORS / _FUNCTION_NAMES；改语法先改这里。
  */
 
 import { StreamLanguage, type StreamParser } from '@codemirror/language'
 
-/** 语句与结构关键字（高亮为 keyword） */
-const KEYWORDS = new Set([
-  'param', 'module', 'system',
-  'union', 'difference', 'intersection',
-  'translate', 'rotate', 'scale', 'mirror',
-])
+/** 语句关键字（高亮为 keyword） */
+export const STATEMENT_KEYWORDS = ['param', 'module', 'system', 'use', 'as', 'constraint'] as const
+
+/** 布尔块关键字 */
+export const BOOLEANS = ['union', 'difference', 'intersection'] as const
+
+/** 变换关键字 */
+export const TRANSFORMS = ['translate', 'rotate', 'scale', 'mirror'] as const
 
 /** 六种图元（高亮为 typeName） */
-const PRIMITIVES = new Set(['box', 'cyl', 'sphere', 'cone', 'torus', 'tube'])
+export const PRIMITIVES = ['box', 'cyl', 'sphere', 'cone', 'torus', 'tube'] as const
 
-/** 白名单函数与常量（高亮为 atom） */
-const BUILTINS = new Set([
-  'PI', 'sin', 'cos', 'tan', 'asin', 'acos', 'atan2', 'sqrt',
+/** 约束类型（ADR 0086 D4，高亮为 keyword） */
+export const CONSTRAINT_TYPES = ['fixed', 'coincident', 'concentric', 'distance', 'angle'] as const
+
+/** 约束引用端锚点（ADR 0086 D4，高亮为 atom） */
+export const CONSTRAINT_ANCHORS = ['origin', 'x', 'y', 'z'] as const
+
+/** 白名单函数 */
+export const FUNCTIONS = [
+  'sin', 'cos', 'tan', 'asin', 'acos', 'atan2', 'sqrt',
   'abs', 'min', 'max', 'pow', 'floor', 'ceil', 'round',
-])
+] as const
+
+/** 白名单常量（与 FUNCTIONS 同属内建，高亮为 atom） */
+export const CONSTANTS = ['PI'] as const
+
+/** 顶层 / 结构关键字集合（高亮口径） */
+const KEYWORDS = new Set<string>([...STATEMENT_KEYWORDS, ...BOOLEANS, ...TRANSFORMS, ...CONSTRAINT_TYPES])
+
+const PRIMITIVE_SET = new Set<string>(PRIMITIVES)
+const BUILTIN_SET = new Set<string>([...CONSTANTS, ...FUNCTIONS])
+const ANCHOR_SET = new Set<string>(CONSTRAINT_ANCHORS)
 
 /** 块注释状态：跨行 `/* ... *`` 需要 state（StreamParser per-line state） */
 interface DslTokenState {
@@ -44,8 +68,8 @@ export function isIdentChar(ch: string): boolean {
 /** 按首字符分类标识符（关键字 / 图元 / 内建 / 普通名字）——单测直接覆盖该口径 */
 export function identStyle(name: string): string {
   if (KEYWORDS.has(name)) return 'keyword'
-  if (PRIMITIVES.has(name)) return 'typeName'
-  if (BUILTINS.has(name)) return 'atom'
+  if (PRIMITIVE_SET.has(name)) return 'typeName'
+  if (BUILTIN_SET.has(name) || ANCHOR_SET.has(name)) return 'atom'
   return 'variableName'
 }
 

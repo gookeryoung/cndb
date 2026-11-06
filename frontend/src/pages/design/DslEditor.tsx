@@ -18,8 +18,10 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { oneDark } from '@codemirror/theme-one-dark'
+import { autocompletion } from '@codemirror/autocomplete'
 import type { DesignDiagnostic } from '@/api'
 import { cnDslLanguage } from './designLang'
+import { dslCompletionSource, type DslPartOption } from './designCompletion'
 
 /** 诊断更新效果（编辑器外部把编译结果推进来） */
 export const setDiagnostics = StateEffect.define<DesignDiagnostic[]>()
@@ -46,6 +48,8 @@ const diagnosticsField = StateField.define<DecorationSet>({
 
 /** 只读切换仓（viewer 只读看源码） */
 const editableCompartment = new Compartment()
+/** 自动完成仓：只读 viewer 不挂补全扩展（C5） */
+const completionCompartment = new Compartment()
 
 interface DslEditorProps {
   value: string
@@ -56,13 +60,27 @@ interface DslEditorProps {
   readOnly?: boolean
   /** 定位到指定源行（1 基，来自设计结构树节点；越界钳制到末行，ADR 0083 D7） */
   revealLine?: number
+  /** 跨文件零件名获取函数（P2，由宿主页注入；编辑器组件不直接依赖 api 层） */
+  fetchParts?: () => Promise<readonly DslPartOption[]>
 }
 
-export default function DslEditor({ value, onChange, diagnostics, placeholder, readOnly, revealLine }: DslEditorProps) {
+/** 补全扩展：标识符输入自动触发，Ctrl+Space 手动唤起（C5） */
+function makeCompletionExtension(fetch?: () => Promise<readonly DslPartOption[]>) {
+  return autocompletion({
+    activateOnTyping: true,
+    override: [context => dslCompletionSource(context, { fetchParts: fetch })],
+  })
+}
+
+export default function DslEditor({
+  value, onChange, diagnostics, placeholder, readOnly, revealLine, fetchParts,
+}: DslEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
+  const fetchPartsRef = useRef(fetchParts)
+  fetchPartsRef.current = fetchParts
 
   // 视图只建一次；外部 value 变化（保存后回写等）以 transaction 同步
   useEffect(() => {
@@ -83,6 +101,7 @@ export default function DslEditor({ value, onChange, diagnostics, placeholder, r
           EditorView.lineWrapping,
           placeholder ? cmPlaceholder(placeholder) : [],
           editableCompartment.of(EditorView.editable.of(!readOnly)),
+          completionCompartment.of(readOnly ? [] : makeCompletionExtension(fetchPartsRef.current)),
           EditorView.updateListener.of(update => {
             if (update.docChanged) onChangeRef.current(update.state.doc.toString())
           }),
@@ -105,10 +124,13 @@ export default function DslEditor({ value, onChange, diagnostics, placeholder, r
     }
   }, [value])
 
-  // 只读切换（viewer 也能看设计源）
+  // 只读切换（viewer 也能看设计源；补全扩展同步摘除，C5）
   useEffect(() => {
     viewRef.current?.dispatch({
-      effects: editableCompartment.reconfigure(EditorView.editable.of(!readOnly)),
+      effects: [
+        editableCompartment.reconfigure(EditorView.editable.of(!readOnly)),
+        completionCompartment.reconfigure(readOnly ? [] : makeCompletionExtension(fetchPartsRef.current)),
+      ],
     })
   }, [readOnly])
 

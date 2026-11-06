@@ -176,6 +176,9 @@ importers:
       '@ant-design/icons':
         specifier: ^6.3.4
         version: 6.3.4(react-dom@19.3.1(patch_hash=e506e8d04615f2a0d8b1b2cf88caf8cce17205bf6c830d2e98f7df5002144c55)(react@19.3.1))(react@19.3.1)
+      '@codemirror/autocomplete':
+        specifier: ^6.20.3
+        version: 6.20.3
       '@codemirror/commands':
         specifier: ^6.11.1
         version: 6.11.1

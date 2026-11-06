@@ -31,6 +31,7 @@ import type { DesignDiagnostic, DesignVersionItem } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
 import DslEditor from './DslEditor'
 import DesignParamsPanel from './DesignParamsPanel'
+import type { DslPartOption } from './designCompletion'
 import { collectNodeIndices, resolveOutlinePath } from './designOutline'
 import { useDesignPreview } from './useDesignPreview'
 import type { PreviewStats, ViewportApi } from './PreviewCanvas'
@@ -166,6 +167,27 @@ export default function DesignEditorPage() {
   const invalidate = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['designs', wid] })
   }, [queryClient, wid])
+
+  // 跨文件零件名补全（C10）：首次触发懒加载 + 会话内缓存；请求失败静默降级为空候选
+  const partsCache = useRef<DslPartOption[] | null>(null)
+  const partsPending = useRef<Promise<DslPartOption[]> | null>(null)
+  const fetchParts = useCallback(async () => {
+    if (partsCache.current) return partsCache.current
+    if (!partsPending.current) {
+      partsPending.current = designsApi.list(wid)
+        .then(items => items.map(item => ({
+          label: item.file_key,
+          detail: `${item.title}（${item.kind === 'assembly' ? '装配' : '零件'}）`,
+        })))
+        .catch(() => [])
+        .then(options => {
+          partsCache.current = options
+          partsPending.current = null
+          return options
+        })
+    }
+    return partsPending.current
+  }, [wid])
 
   const save = useMutation({
     mutationFn: () => designsApi.saveContent(wid, designId, { content }),
@@ -480,6 +502,7 @@ export default function DesignEditorPage() {
                 diagnostics={diagnostics}
                 placeholder="param width = 80&#10;box(size = [width, 40, 12])"
                 readOnly={isViewer}
+                fetchParts={fetchParts}
                 // 原文回填完成后才定位，避免首帧空文档把行号钳到第 1 行
                 revealLine={contentReady ? revealLine : undefined}
               />

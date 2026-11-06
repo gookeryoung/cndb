@@ -6,11 +6,18 @@ import { cnDslLanguage, identStyle, isIdentChar, isIdentStart } from './designLa
 describe('designLang 分词口径', () => {
   it('语句与结构关键字高亮为 keyword', () => {
     for (const keyword of [
-      'param', 'module', 'system',
+      'param', 'module', 'system', 'use', 'as', 'constraint',
       'union', 'difference', 'intersection',
       'translate', 'rotate', 'scale', 'mirror',
+      'fixed', 'coincident', 'concentric', 'distance', 'angle',
     ]) {
       expect(identStyle(keyword)).toBe('keyword')
+    }
+  })
+
+  it('约束锚点高亮为 atom（ADR 0086 D4）', () => {
+    for (const anchor of ['origin', 'x', 'y', 'z']) {
+      expect(identStyle(anchor)).toBe('atom')
     }
   })
 

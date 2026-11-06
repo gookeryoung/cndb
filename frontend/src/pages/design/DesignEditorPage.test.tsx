@@ -13,6 +13,7 @@ import { useEffect } from 'react'
 import { http, HttpResponse } from 'msw'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { EditorView } from '@codemirror/view'
+import { startCompletion } from '@codemirror/autocomplete'
 import { Routes, Route } from 'react-router-dom'
 import DesignEditorPage, { PARAMS_COLLAPSED_KEY, SPLIT_KEY } from './DesignEditorPage'
 import { renderProviders } from '@/test/render-providers'
@@ -191,6 +192,40 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(await screen.findByText('节点数:1')).toBeInTheDocument()
     // 版本历史入口收进「更多」菜单（ADR 0103 D6）
     expect(screen.getByTestId('more-menu-stub')).toHaveTextContent('更多:法兰板')
+  })
+
+  it('use 字符串位经注入的 designsApi.list 返回零件名候选（0110 C10）', async () => {
+    useDefaultHandlers()
+    let listCalls = 0
+    server.use(
+      http.get('/api/v1/workspaces/10/designs', () => {
+        listCalls += 1
+        return HttpResponse.json([
+          {
+            id: 21, workspace_id: 10, title: '车轮', description: '', kind: 'part',
+            file_key: 'wheel', folder: '', dependencies_stale: false, version_count: 1,
+            created_at: null, updated_at: null,
+          },
+        ])
+      }),
+    )
+    const { container } = renderPage()
+    await waitForEditorReady(container)
+
+    const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)!
+    const insert = '\nuse "'
+    act(() => {
+      view.dispatch({
+        changes: { from: view.state.doc.length, insert },
+        selection: { anchor: view.state.doc.length + insert.length },
+      })
+      startCompletion(view)
+    })
+
+    // 候选来自 mock 列表；再次唤起命中会话内缓存，不重复请求
+    expect(await screen.findByText('wheel')).toBeInTheDocument()
+    act(() => { startCompletion(view) })
+    await waitFor(() => expect(listCalls).toBe(1))
   })
 
   it('?line= 定位源行并选中整行（0083 D7）', async () => {
