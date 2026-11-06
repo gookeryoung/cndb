@@ -70,3 +70,13 @@
 
 - [x] 每条需求句都有 C 编号约束（无遗漏、无「待定」）
 - [x] 未决问题全部有结论（2026-11-06 用户拍板）
+
+## 落地记录
+
+| 期 | 状态 | 代码落点 | 测试 | 提交 |
+|---|---|---|---|---|
+| P0 | 已落地 | `frontend/src/pages/design/{designLang.ts,designCompletion.ts,DslEditor.tsx}` | `designLang.test.ts`、`designCompletion.test.ts`、`DslEditor.test.tsx` | `385e75d8` |
+| P1 | 已落地 | `frontend/src/pages/design/designCompletion.ts` | `designCompletion.test.ts` | `385e75d8` |
+| P2 | 已落地 | `frontend/src/pages/design/{designCompletion.ts,DslEditor.tsx,DesignEditorPage.tsx}` | `designCompletion.test.ts`、`DesignEditorPage.test.tsx`、`frontend/tests/e2e/critical/design-dsl-completion.spec.ts` | `385e75d8` |
+
+- 最近一次全绿：`make check-fast` + `make test` + `pnpm test` + `make frontend-coverage` + 新增 e2e `design-dsl-completion` @ 2026-11-06
