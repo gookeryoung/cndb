@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { useEffect } from 'react'
-import { http, HttpResponse } from 'msw'
+import { delay, http, HttpResponse } from 'msw'
 import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import { EditorView } from '@codemirror/view'
 import { startCompletion } from '@codemirror/autocomplete'
@@ -562,6 +562,33 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(cmText(container)).toContain('// 自动保存草稿')
     expect(await screen.findByTestId('design-autosave-status')).toHaveTextContent('已自动保存')
   }, 10000)
+
+  it('自动保存在途时 Ctrl+S 不并发发起手动保存（§4.1 单飞）', async () => {
+    useDefaultHandlers()
+    const bodies: Array<{ content: string; change_type?: string }> = []
+    server.use(http.put('/api/v1/workspaces/10/designs/20/content', async ({ request }) => {
+      const body = await request.json() as { content: string; change_type?: string }
+      bodies.push(body)
+      await delay(1200)
+      return HttpResponse.json({ ...DETAIL, content: body.content, version_number: 3, version_count: 3 })
+    }))
+    const { container } = renderPage()
+
+    await waitForEditorReady(container)
+    editViaCodeMirror(container, '\n// 单飞草稿')
+    await waitFor(() => expect(bodies.length).toBe(1), { timeout: 6000 })
+    expect(bodies[0].change_type).toBe('auto')
+
+    // 自动保存在途：全局快捷键不应再发起一次手动保存
+    fireEvent.keyDown(window, { key: 's', ctrlKey: true })
+    await new Promise(resolve => setTimeout(resolve, 250))
+    expect(bodies).toHaveLength(1)
+
+    await waitFor(
+      () => expect(screen.getByTestId('design-autosave-status')).toHaveTextContent('已自动保存'),
+      { timeout: 4000 },
+    )
+  }, 12000)
 
   it('自动保存失败只提示状态，不弹错误且草稿保留（I3 / C8）', async () => {
     useDefaultHandlers()

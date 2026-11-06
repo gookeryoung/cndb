@@ -322,7 +322,8 @@ export default function DesignEditorPage() {
     const onKey = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault()
-        if (dirty && !isViewer && !save.isPending) save.mutate()
+        // §4.1 单飞：自动保存在途时不并发发起手动保存，避免旧快照后落覆盖新内容
+        if (dirty && !isViewer && !save.isPending && !autoSave.isPending) save.mutate()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -753,7 +754,13 @@ export default function DesignEditorPage() {
               title={`以 v${viewingVersion.version_number} 原文重新编译并保存为新版本？`}
               onConfirm={() => restore.mutate()}
             >
-              <Button type="primary" danger icon={<RollbackOutlined />} loading={restore.isPending}>
+              <Button
+                type="primary"
+                danger
+                icon={<RollbackOutlined />}
+                loading={restore.isPending}
+                disabled={autoSave.isPending || save.isPending || refresh.isPending}
+              >
                 恢复此版本
               </Button>
             </Popconfirm>
