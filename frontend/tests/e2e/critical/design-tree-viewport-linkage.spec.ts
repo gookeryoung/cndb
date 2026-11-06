@@ -76,16 +76,17 @@ test.describe("树↔视口联动（0103 P2）", () => {
     try {
       designId = await createDesign(request, title)
 
-      // 1) 侧栏展开装配树：设计 → 组件 → 布尔分组 → 零件
-      await page.goto(`/w/${WID}/design`)
+      // 1) 编辑器页侧栏展开装配树：设计（自动展开）→ 组件 → 布尔分组 → 零件
+      //    （设计根页不渲染侧栏，ADR 0109 D4）
+      await page.goto(`/w/${WID}/design/${designId}`)
+      await expect(page.getByTestId("sider-designs")).toBeVisible({ timeout: 15_000 })
       await expect(page.getByTestId(`design-node-${designId}`)).toBeVisible({ timeout: 15_000 })
-      await expandNode(page, `design-node-${designId}`)
       await expandNode(page, `design-outline-node-design-${designId}-0`)
       await expandNode(page, `design-outline-node-design-${designId}-0-0`)
-      await expect(page.getByText("零件 · 第 4 行")).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByTestId("sider-designs").getByText("零件 · 第 4 行")).toBeVisible({ timeout: 15_000 })
 
       // 2) 点击零件节点 → 编辑器带 ?line=4，视口就绪
-      await page.getByText("零件 · 第 4 行").click()
+      await page.getByTestId("sider-designs").getByText("零件 · 第 4 行").click()
       await page.waitForURL(new RegExp(`/w/1/design/${designId}\\?line=4`))
       const host = page.getByTestId("design-preview-host")
       await expect(host).toBeVisible({ timeout: 30_000 })

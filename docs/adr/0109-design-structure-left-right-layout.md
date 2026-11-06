@@ -1,6 +1,6 @@
 # ADR 0109: 【设计】「设计结构」根页左右分栏（左产品列表 / 右结构树）
 
-Status: Proposed（待评审）
+Status: Implemented
 Date: 2026-11-06
 Related: `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/designOutline.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css`、`frontend/src/pages/help/content/*`、`docs/adr/0083-design-structure-subnav-and-assembly-tree.md`、`docs/adr/0084-design-sidebar-assembly-and-system-level.md`、`docs/adr/0103-design-editor-layout-optimization.md`
 需求卡片: `docs/requirements/0109-design-structure-left-right-layout.md`（需求原文与约束编号的唯一副本）
@@ -152,16 +152,16 @@ Related: `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/desig
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
-| P1 | 未开始 | — | — | — |
-| P2 | 未开始 | — | — | — |
+| P0 | 已落地 | `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/index.css` | `frontend/src/pages/design/DesignsPage.test.tsx` | `__SHA__` |
+| P1 | 已落地 | `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/design/designTree.tsx`、`frontend/src/pages/design/designOutline.ts` | `frontend/src/pages/design/DesignsPage.test.tsx` | `__SHA__` |
+| P2 | 已落地 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/help/content/quickStart.tsx`、`frontend/src/pages/help/content/tutorials.tsx` | `frontend/src/layouts/MainLayout.test.tsx`、`frontend/tests/e2e/critical/design-structure-tree.spec.ts`、`frontend/tests/e2e/critical/design-sidebar-assembly.spec.ts` | `__SHA__` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：Proposed（ADR 待评审；实现未开始）
-- 已完成：需求卡片 `docs/requirements/0109-design-structure-left-right-layout.md` 与本 ADR；文档门禁 `make check-docs` 通过
-- 下一步：评审通过（`Accepted`）后按 P0 → P1 → P2 实现；实现时先清理 ADR 0084 D4 / D5、ADR 0103 D12 失效行再改代码
-- 已知坑：antd Tree 展开动画窗口（约 600ms）会吞点击，单测 / e2e 展开前先等待（沿用 ADR 0084 交接口径）；右栏大纲缓存键须与编辑器 `useQuery` 一致才能命中 IR 快照
-- 最近一次全绿：`make check-docs`（64 ADR，0 error / 0 warning）@ 2026-11-06
+- 当前阶段：P0 / P1 / P2 全部落地（`Status: Implemented`）
+- 已完成：根页改为 `cn-page cn-qc-page` + `cn-page-head` + `cn-qc-split` 双栏；左栏扁平可选列表（行内 Tag / 选中与取消 / hover 动作 / viewer 门控）；右栏装配树（`designTree.tsx` 与侧栏共用映射，outline 懒加载 + IR 快照缓存优先、默认选最近更新、失效回落、失败重试、`?line=` 定位）；侧栏收窄为编辑器页（`siderMode='design'` 只在 `/design/:id`）；ADR 0084 D4 / D5 与 0103 D12 失效行已改写；帮助文案、CHANGELOG、单测与两个 e2e 同步
+- 下一步：无（后续「设计结构」页演进沿用同一套 `cn-qc-*` 原语与 `designTree.tsx` 映射；如需列表搜索 / 目录折叠再单开需求）
+- 已知坑：① antd Tree 展开动画窗口（约 600ms）会吞点击 —— 侧栏单测 / e2e 展开前先等待（ADR 0084 口径），根页右栏用 `defaultExpandAll` 免去展开；② 右栏大纲缓存键须与编辑器 `useQuery` 一致（`['designs', wid, String(id), 'ir']`）才能命中 IR 快照，改动键名要三处同改；③ 根页 `siderMode='hidden'` 时移动端汉堡入口不再渲染（无侧栏可开），勿把它当「总能打开导航」使用
+- 最近一次全绿：`make check`（lint / typecheck / frontend-static / frontend-coverage / cov）+ 前端设计相关单测 / e2e 用例 @ 2026-11-06

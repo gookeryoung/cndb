@@ -445,7 +445,11 @@ export default function MainLayout() {
   // 2026-11-03 用户口径：进入「工作区设置」保持已进入模块的侧栏（从文档 / 设计进入就沿用文档树 /
   // 装配结构树），不再切回数据表侧栏；仅当没有可沿用的模块（刷新 / 直接打开设置页、
   // 目标工作区未启用该模块）时回落到数据表侧栏。
+  // 2026-11-06 用户口径（ADR 0109 D4）：设计根页 /w/:wid/design 主区自带左右分栏
+  // （左产品列表 / 右结构树），该页不再渲染侧栏；侧栏装配树只保留在编辑器页，
+  // 避免同屏两棵树与双份懒加载状态（编辑器内树 ↔ 代码双向定位闭环不变）。
   type SiderMode = 'documents' | 'design' | 'tables' | 'hidden'
+  const onDesignRoot = !!wid && (location === `/w/${wid}/design` || location === `/w/${wid}/design/`)
   const moduleSiderMode: 'documents' | 'design' | null =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
@@ -458,16 +462,18 @@ export default function MainLayout() {
 
   const previousModuleSider = lastModuleSiderRef.current
   const siderMode: SiderMode =
-    moduleSiderMode
-    ?? (
-      activeWsTab === 'settings'
-      && previousModuleSider
-      && wsFeatures[previousModuleSider]
-        ? previousModuleSider
-        : wsFeatures.tables
-          ? 'tables'
-          : 'hidden'
-    )
+    onDesignRoot
+      ? 'hidden'
+      : moduleSiderMode
+        ?? (
+          activeWsTab === 'settings'
+          && previousModuleSider
+          && wsFeatures[previousModuleSider]
+            ? previousModuleSider
+            : wsFeatures.tables
+              ? 'tables'
+              : 'hidden'
+        )
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -778,8 +784,8 @@ export default function MainLayout() {
       }}>
         {/* ── 左区（需求 0081 C1）：品牌 + 工作区切换 + 一级模块导航 ── */}
         <div className="cn-header-left">
-          {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航 */}
-          {isMobile && (
+          {/* 移动端汉堡入口：替代常驻 Sider，点击打开抽屉导航；无可渲染侧栏时不显示，避免死按钮 */}
+          {isMobile && siderMode !== 'hidden' && (
             <Button
               type="text"
               icon={<MenuOutlined />}
@@ -919,7 +925,8 @@ export default function MainLayout() {
         {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
             管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
-            侧栏形态随功能段切换（需求 0065 / ADR 0084）：文档段=文档导航，设计段=装配结构树，
+            侧栏形态随功能段切换（需求 0065 / ADR 0084 / ADR 0109 D4）：文档段=文档导航，
+            设计编辑器页=装配结构树（设计根页自带左右分栏，不渲染侧栏），
             数据表 / 分析 / 同步 / 工作区设置段=表导航保持展开，
             无 tables 能力的类型不渲染侧栏 */}
         {!isMobile && !inAdminConsole && !inHelpDocs && !inTemplates && siderMode !== 'hidden' && (

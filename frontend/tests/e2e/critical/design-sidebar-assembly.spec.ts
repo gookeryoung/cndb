@@ -1,8 +1,9 @@
-/** 设计侧栏三级装配 E2E（ADR 0084 C1/C2/C3）—— 系统 → 组件 → 零件.
+/** 设计侧栏三级装配 E2E（ADR 0084 C1/C2/C3；ADR 0109 D4 起侧栏只在编辑器页）—— 系统 → 组件 → 零件.
  *
- * 走完整 UI 链路：经 API 建一份带 `system` 声明的设计，进入设计模块后
+ * 走完整 UI 链路：经 API 建一份带 `system` 声明的设计，进入编辑器页（/w/:wid/design/:id）
  * 在侧栏展开设计 → 系统 → 组件，断言三级装配层级与源行元信息；
  * 再点击零件节点，校验跳转到编辑器并带 `?line=` 源行参数。
+ * 设计根页不再渲染侧栏（ADR 0109 D4），根页左右分栏由 design-structure-tree 覆盖。
  * 清理统一走 API，避免失败用例残留设计。
  */
 
@@ -54,16 +55,19 @@ async function safeDeleteDesign(request: APIRequestContext, designId: number) {
     .catch(() => undefined)
 }
 
-/** 点击某个树节点所在行的展开箭头（testid 在标题内，需回溯到 treenode） */
+/** 点击某个树节点所在行的展开箭头（testid 在标题内，需回溯到 treenode）。
+ * 每次展开后等 650ms：antd 展开动画窗口内的下一次点击会被吞（同 DesignStructureNav
+ * 单测的 expandNode 等待口径）。 */
 async function expandNode(page: import("@playwright/test").Page, testId: string) {
   await page
     .locator(".ant-tree-treenode")
     .filter({ has: page.getByTestId(testId) })
     .locator(".ant-tree-switcher")
     .click()
+  await page.waitForTimeout(650)
 }
 
-test.describe("设计侧栏三级装配（0084）", () => {
+test.describe("设计编辑器侧栏三级装配（0084 / 0109 D4）", () => {
   test.beforeEach(async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     void page
@@ -78,26 +82,27 @@ test.describe("设计侧栏三级装配（0084）", () => {
     try {
       designId = await createDesign(request, title)
 
-      // 1) 进入设计模块，侧栏出现设计清单
-      await page.goto(`/w/${WID}/design`)
-      await page.waitForURL(/\/w\/1\/design$/)
+      // 1) 进入编辑器页：侧栏出现设计清单，当前设计自动展开并加载大纲
+      await page.goto(`/w/${WID}/design/${designId}`)
       await expect(page.getByTestId("sider-designs")).toBeVisible({ timeout: 10_000 })
       await expect(page.getByTestId(`design-node-${designId}`)).toBeVisible({ timeout: 10_000 })
 
-      // 2) 展开设计 → 系统级节点（system 声明）
-      await expandNode(page, `design-node-${designId}`)
-      await expect(page.getByText("rover")).toBeVisible({ timeout: 15_000 })
-      await expect(page.getByText("系统 · 第 11 行 · 3 个零件")).toBeVisible()
+      // 断言收在侧栏内：编辑器工作台可能渲染同名的 system / 图元标题（strict mode）
+      const nav = page.getByTestId("sider-designs")
+
+      // 2) 系统级节点（system 声明）随当前设计自动展开可见
+      await expect(nav.getByText("rover")).toBeVisible({ timeout: 15_000 })
+      await expect(nav.getByText("系统 · 第 11 行 · 3 个零件")).toBeVisible()
 
       // 3) 展开系统 → 组件（module 实例）与系统直属零件
       await expandNode(page, `design-outline-node-design-${designId}-0`)
-      await expect(page.getByText("chassis")).toBeVisible({ timeout: 15_000 })
-      await expect(page.getByText("组件 · 第 12 行 · 2 个零件")).toBeVisible()
-      await expect(page.getByText("球体")).toBeVisible()
-      await expect(page.getByText("零件 · 第 13 行")).toBeVisible()
+      await expect(nav.getByText("chassis")).toBeVisible({ timeout: 15_000 })
+      await expect(nav.getByText("组件 · 第 12 行 · 2 个零件")).toBeVisible()
+      await expect(nav.getByText("球体")).toBeVisible()
+      await expect(nav.getByText("零件 · 第 13 行")).toBeVisible()
 
       // 4) 点击零件节点 → 编辑器带 ?line=13 定位源行
-      await page.getByText("零件 · 第 13 行").click()
+      await nav.getByText("零件 · 第 13 行").click()
       await page.waitForURL(new RegExp(`/w/1/design/${designId}\\?line=13`))
       await expect(page.locator(".cm-content")).toContainText("sphere(r = 6)", { timeout: 15_000 })
     } finally {

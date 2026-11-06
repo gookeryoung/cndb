@@ -8,56 +8,23 @@
 
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import { Tag, Tree, Typography } from 'antd'
-import type { DataNode, TreeProps } from 'antd/es/tree'
-import {
-  ApartmentOutlined, AppstoreOutlined, ClusterOutlined, NodeIndexOutlined, ToolOutlined,
-} from '@ant-design/icons'
+import type { TreeProps } from 'antd/es/tree'
+import { ToolOutlined } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { designsApi } from '@/api'
 import type { DesignIRResponse, DesignListItem, DesignOutlineNode } from '@/api'
 import SearchInput from '@/components/SearchInput'
 import {
-  designEditorPath, type DesignTreeEntry, type DesignTreeMeta, outlineKeyPath, outlineToTree,
-  resolveOutlinePath,
+  designEditorPath, outlineKeyPath, outlineToTree, resolveOutlinePath,
 } from './designOutline'
+import { entryToTreeNode, type DesignTreeDataNode } from './designTree'
 
 const { Text } = Typography
-
-/** 大纲节点图标：系统 / 组件 / 分组 / 零件各一类（设计根用工具图标） */
-const ENTRY_ICONS = {
-  system: ApartmentOutlined,
-  assembly: ClusterOutlined,
-  group: NodeIndexOutlined,
-  part: AppstoreOutlined,
-} as const
-
-interface DesignTreeDataNode extends DataNode {
-  meta?: DesignTreeMeta
-  children?: DesignTreeDataNode[]
-}
 
 interface OutlineState {
   nodes: DesignOutlineNode[]
   source: 'compiled' | 'content'
-}
-
-/** 大纲条 → antd Tree 节点（标题 + 类型 / 行号 / 零件数描述） */
-function entryToTreeNode(entry: DesignTreeEntry): DesignTreeDataNode {
-  const Icon = ENTRY_ICONS[entry.meta.type as keyof typeof ENTRY_ICONS]
-  return {
-    key: entry.key,
-    meta: entry.meta,
-    isLeaf: entry.isLeaf,
-    icon: <Icon />,
-    title: (
-      <span className="cn-design-outline-title" data-testid={`design-outline-node-${entry.key}`}>
-        <span>{entry.title}</span>
-        <Text type="secondary" className="cn-design-outline-detail">{entry.detail}</Text>
-      </span>
-    ),
-    children: entry.children?.map(entryToTreeNode),
-  }
 }
 
 interface DesignStructureNavProps {

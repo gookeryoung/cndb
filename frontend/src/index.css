@@ -7602,15 +7602,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
-/* ─────────────── 设计结构树（ADR 0083：设计模块默认页） ───────────────
- * 树本体用 antd Tree；这里只补「名称 + 元信息 + 行号描述 + 节点内联操作」的排版：
- * 元信息单行省略，操作区不参与压缩，命中按钮时不触发整行跳转。 */
-.cn-design-structure {
-  padding: var(--cn-space-sm) var(--cn-space-xs);
-  border: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
-  border-radius: var(--cn-radius-lg);
-  background: var(--cn-bg-container, rgba(255, 255, 255, 0.04));
-}
+/* ─────────────── 设计结构页（ADR 0109：根页左右分栏） ───────────────
+ * 树本体用 antd Tree；这里只补「名称 + 元信息 + 行号描述」的排版：
+ * 元信息单行省略，操作区不参与压缩，命中按钮时不触发整行跳转。
+ * 布局原语（cn-page-head / cn-qc-split / cn-qc-row / cn-qc-empty）直接复用质量检查页，
+ * 本页只补右栏树内容区的留白与透明底。 */
 .cn-design-tree-title {
   display: inline-flex;
   align-items: center;
@@ -7642,21 +7638,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-design-outline-detail {
   font-size: var(--cn-text-xs);
 }
-/* 设计管理页目录分组（ADR 0103 C8）：组标题 + 组内列表，未分组置底 */
-.cn-design-folder + .cn-design-folder {
-  margin-top: var(--cn-space-sm);
+/* 「设计结构」根页右栏（ADR 0109 D1）：flush 方盒内的装配树，外框由方盒承担 */
+.cn-ds-outline-tree {
+  padding: var(--cn-space-xs) var(--cn-space-sm) var(--cn-space-sm);
 }
-.cn-design-folder-title {
-  display: flex;
-  align-items: center;
-  gap: var(--cn-space-xs);
-  padding: var(--cn-space-xs) var(--cn-space-lg) var(--cn-space-hairline);
-  color: var(--cn-text-secondary);
-  font-size: var(--cn-text-xs);
-  border-bottom: 1px solid var(--cn-border, rgba(255, 255, 255, 0.08));
-}
-.cn-design-folder-count {
-  font-size: var(--cn-text-xs);
+.cn-ds-outline-tree .ant-tree {
+  background: transparent;
 }
 
 /* ─────────────── 文档专注模式（需求 0096） ───────────────

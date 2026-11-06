@@ -1,22 +1,32 @@
-/** 设计管理页（设计模块默认页，ADR 0084 D5）
+/** 「设计结构」页 —— 设计模块默认根页（ADR 0109 D1 / D2 / D3）
  *
- * 形态对齐文档模块分工：侧栏 = 装配结构树（导航），主区 = 设计管理列表
- * （新建 / 打开 / 改名 / 描述 / 删除 + 版本与更新时间摘要）。
- * 装配结构树已迁至侧栏（`DesignStructureNav`），本页不再渲染大纲树。
+ * 形态对齐质量检查 / 修改申请：`cn-page` 紧凑页头 + `cn-qc-split` 左右分栏。
+ * 左栏 = 产品（设计文件）清单：扁平可选列表，行内 Tag 承载类型 / 目录 / 依赖陈旧 / 版本，
+ * 行尾保留打开 / 编辑 / 删除（viewer 只读时收紧）；
+ * 右栏 = 选中产品的装配结构树：按需加载 outline（IR 快照缓存优先），
+ * 节点点击打开编辑器并带 `?line=` 定位源行（ADR 0083 D4 / D7）。
+ * 模块侧栏的装配树收窄到编辑器页（ADR 0109 D4），根页不再渲染侧栏。
  */
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  App as AntApp, Button, Empty, Form, Input, List, Modal, Popconfirm, Segmented, Select, Skeleton, Space, Tag,
-  Typography,
+  App as AntApp, Button, Empty, Form, Input, Modal, Popconfirm, Segmented, Select, Space, Spin, Tag,
+  Tree, Typography,
 } from 'antd'
-import { ApartmentOutlined, DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import type { TreeProps } from 'antd/es/tree'
+import {
+  ApartmentOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, ToolOutlined,
+  UnorderedListOutlined,
+} from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { designsApi, workspaceApi } from '@/api'
-import type { DesignListItem } from '@/api'
+import type { DesignIRResponse, DesignListItem, DesignOutlineNode } from '@/api'
+import CnListMeta from '@/components/CnListMeta'
+import SectionBox from '@/components/SectionBox'
 import { formatDateTime } from '@/utils/datetime'
-import { designEditorPath } from './designOutline'
+import { designEditorPath, outlineToTree } from './designOutline'
+import { entryToTreeNode, type DesignTreeDataNode } from './designTree'
 import { prefetchDesignEditorChunks } from './prefetchEditor'
 
 const { Text } = Typography
@@ -92,6 +102,111 @@ interface DesignFormValues {
   file_key?: string
 }
 
+interface OutlineState {
+  nodes: DesignOutlineNode[]
+  source: 'compiled' | 'content'
+}
+
+/** 右栏：选中产品的装配结构树（ADR 0109 C4 / D5 / D6）
+ *
+ * 数据流唯一入口为 `GET /designs/{id}/outline`：IR 快照缓存优先（缓存键与编辑器 / 侧栏一致，
+ * 三处共享同一份数据），无缓存再按需请求；节点点击与侧栏同口径 —— `use` 实例打开源文件，
+ * 其余大纲节点打开当前设计并带 `?line=` 定位源行。 */
+function DesignOutlineTree({ workspaceId, design }: { workspaceId: string; design: DesignListItem }) {
+  const navigate = useNavigate()
+  const queryClient = useQueryClient()
+  const [outline, setOutline] = useState<OutlineState | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  // 重试计数：失败后点「重试」重跑加载副作用
+  const [reloadKey, setReloadKey] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    // IR 快照缓存优先（键与编辑器 useQuery 一致，designId 为字符串）
+    const cached = queryClient
+      .getQueryData<DesignIRResponse>(['designs', workspaceId, String(design.id), 'ir'])
+      ?.ir?.outline?.children
+    if (cached) {
+      setOutline({ nodes: cached, source: 'compiled' })
+      setLoading(false)
+      setError(null)
+      return () => { cancelled = true }
+    }
+    setLoading(true)
+    setError(null)
+    designsApi
+      .outline(workspaceId, design.id)
+      .then((result) => {
+        if (cancelled) return
+        setOutline({ nodes: result.outline.children, source: result.source })
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setOutline(null)
+        setError(err instanceof Error ? err.message : '结构加载失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [workspaceId, design.id, queryClient, reloadKey])
+
+  const treeData = useMemo(
+    () => (outline ? outlineToTree(outline.nodes, design.id).map(entryToTreeNode) : []),
+    [outline, design.id],
+  )
+
+  const onSelectNode: TreeProps['onSelect'] = (_keys, info) => {
+    const meta = (info.node as DesignTreeDataNode).meta
+    if (!meta) return
+    if (meta.fileId) navigate(designEditorPath(workspaceId, meta.fileId))
+    else navigate(designEditorPath(workspaceId, meta.designId ?? design.id, meta.line))
+  }
+
+  return (
+    <SectionBox
+      title={`结构树：${design.title}`}
+      icon={<ApartmentOutlined />}
+      extra={outline?.source === 'content'
+        ? <Tag color="orange" bordered={false}>历史快照派生</Tag>
+        : undefined}
+      flush
+      testId="design-outline-box"
+    >
+      {loading ? (
+        <div className="cn-qc-empty" data-testid="design-outline-loading"><Spin /></div>
+      ) : error ? (
+        <div className="cn-qc-empty" data-testid="design-outline-error">
+          <Space direction="vertical" size={8}>
+            <Text type="danger">结构加载失败：{error}</Text>
+            <Button size="small" icon={<ReloadOutlined />} onClick={() => setReloadKey(key => key + 1)}>
+              重试
+            </Button>
+          </Space>
+        </div>
+      ) : treeData.length === 0 ? (
+        <div className="cn-qc-empty">
+          <Empty description="该设计还没有结构节点，点「打开」进入编辑器补充" />
+        </div>
+      ) : (
+        <div className="cn-ds-outline-tree" data-testid="design-outline-tree">
+          <Tree
+            // 重试后按新数据重建（defaultExpandAll 只在初始化生效）
+            key={reloadKey}
+            blockNode
+            showIcon
+            defaultExpandAll
+            className="cn-doc-sider-tree"
+            treeData={treeData as DesignTreeDataNode[]}
+            onSelect={onSelectNode}
+          />
+        </div>
+      )}
+    </SectionBox>
+  )
+}
+
 export default function DesignsPage() {
   const { wid = '' } = useParams<{ wid: string }>()
   const navigate = useNavigate()
@@ -113,6 +228,9 @@ export default function DesignsPage() {
 
   // 类型筛选（ADR 0103 C8 / D12）：全部 / 零件 / 装配（kind 为 0086 既有字段，零后端）
   const [kindFilter, setKindFilter] = useState<'all' | 'part' | 'assembly'>('all')
+  /** 左栏选中态（ADR 0109 D2 / D3）：
+   *  undefined = 跟随默认（最近更新的设计）、null = 用户主动取消、number = 显式选中 */
+  const [pickedId, setPickedId] = useState<number | null | undefined>(undefined)
   const [createOpen, setCreateOpen] = useState(false)
   const [createForm] = Form.useForm<DesignFormValues>()
   const [renaming, setRenaming] = useState<DesignListItem | null>(null)
@@ -179,45 +297,95 @@ export default function DesignsPage() {
     setRenaming(item)
   }
 
-  /** 目录分组（ADR 0103 C8 / D12）：folder 升序，空目录归「未分组」置底 */
-  const groups = useMemo(() => {
-    const visible = designs.filter(item => kindFilter === 'all' || item.kind === kindFilter)
-    const buckets = new Map<string, DesignListItem[]>()
-    for (const item of visible) {
-      const folder = item.folder || ''
-      buckets.set(folder, [...(buckets.get(folder) ?? []), item])
-    }
-    return [...buckets.entries()]
-      .sort(([a], [b]) => {
-        if (a === b) return 0
-        if (a === '') return 1
-        if (b === '') return -1
-        return a.localeCompare(b)
-      })
-      .map(([folder, items]) => ({ folder, items }))
-  }, [designs, kindFilter])
+  /** 左栏可见清单（类型筛选后），目录信息降级为行内 Tag（ADR 0109 D2） */
+  const visibleDesigns = useMemo(
+    () => designs.filter(item => kindFilter === 'all' || item.kind === kindFilter),
+    [designs, kindFilter],
+  )
 
-  const renderRow = (item: DesignListItem) => (
-    <List.Item
-      data-testid={`design-row-${item.id}`}
-      actions={[
-        <Button key="open" size="small" type="link" onClick={() => navigate(designEditorPath(wid, item.id))}>
-          打开
-        </Button>,
-        ...(isViewer
-          ? []
-          : [
+  // 默认选中：最近更新的设计（ADR 0109 D3，对齐需求 0107「默认选中」口径）
+  const latestId = useMemo(() => {
+    let best: DesignListItem | undefined
+    for (const item of visibleDesigns) {
+      if (!best || String(item.updated_at) > String(best.updated_at)) best = item
+    }
+    return best?.id ?? null
+  }, [visibleDesigns])
+
+  /** 实际激活项：显式选中失效（被删 / 被筛掉）回落到列表首个；主动取消则为空 */
+  const activeId = useMemo(() => {
+    if (pickedId === null) return null
+    if (pickedId !== undefined) {
+      return visibleDesigns.some(item => item.id === pickedId)
+        ? pickedId
+        : (visibleDesigns[0]?.id ?? null)
+    }
+    return latestId
+  }, [pickedId, visibleDesigns, latestId])
+  const activeDesign = visibleDesigns.find(item => item.id === activeId) ?? null
+
+  /** 单击选中 / 再点取消（ADR 0109 C3） */
+  const togglePick = (item: DesignListItem) => {
+    setPickedId(prev => (prev === item.id ? null : item.id))
+  }
+
+  const renderRow = (item: DesignListItem) => {
+    const active = item.id === activeId
+    return (
+      <div
+        key={item.id}
+        role="option"
+        aria-selected={active}
+        data-testid={`design-row-${item.id}`}
+        className={[
+          'cn-list-item',
+          'cn-qc-row',
+          'cn-qc-row--selectable',
+          active ? 'cn-qc-row--active' : '',
+        ].filter(Boolean).join(' ')}
+        onClick={() => togglePick(item)}
+      >
+        <div className="cn-list-item-main">
+          <CnListMeta
+            avatar={<ToolOutlined style={{ color: 'var(--cn-text-muted)' }} />}
+            title={(
+              <Space size={6} wrap>
+                <Text strong>{item.title}</Text>
+                <Tag bordered={false} color={item.kind === 'part' ? 'blue' : 'geekblue'}>
+                  {item.kind === 'part' ? '零件' : '装配'}
+                </Tag>
+                {item.folder && <Tag bordered={false}>{item.folder}</Tag>}
+                {item.dependencies_stale && (
+                  <Tag color="gold" bordered={false} data-testid={`design-list-stale-${item.id}`}>依赖陈旧</Tag>
+                )}
+              </Space>
+            )}
+            description={(
+              <span className="cn-design-tree-meta">
+                {item.file_key && <Text code style={{ fontSize: 12 }}>{item.file_key}</Text>}
+                {' '}
+                {item.description || '（无描述）'}
+                {' · '}v{item.version_count}
+                {' · '}更新于 {formatDateTime(item.updated_at)}
+              </span>
+            )}
+          />
+        </div>
+        <div className="cn-list-item-actions" onClick={event => event.stopPropagation()}>
+          <Button size="small" type="link" onClick={() => navigate(designEditorPath(wid, item.id))}>
+            打开
+          </Button>
+          {!isViewer && (
+            <>
               <Button
-                key="edit"
                 size="small"
                 type="link"
                 icon={<EditOutlined />}
                 onClick={() => openRename(item)}
               >
                 编辑
-              </Button>,
+              </Button>
               <Popconfirm
-                key="delete"
                 title={`删除设计「${item.title}」？`}
                 description="版本历史会一并隐藏，操作不可撤销。"
                 okText="删除"
@@ -225,51 +393,28 @@ export default function DesignsPage() {
                 onConfirm={() => remove.mutate(item)}
               >
                 <Button size="small" type="link" danger icon={<DeleteOutlined />}>删除</Button>
-              </Popconfirm>,
-            ]),
-      ]}
-    >
-      <List.Item.Meta
-        title={(
-          <Space size={6} wrap>
-            <Text strong>{item.title}</Text>
-            <Tag bordered={false} color={item.kind === 'part' ? 'blue' : 'geekblue'}>
-              {item.kind === 'part' ? '零件' : '装配'}
-            </Tag>
-            {item.folder && <Tag bordered={false}>{item.folder}</Tag>}
-            {item.dependencies_stale && (
-              <Tag color="gold" bordered={false} data-testid={`design-list-stale-${item.id}`}>依赖陈旧</Tag>
-            )}
-          </Space>
-        )}
-        description={(
-          <span className="cn-design-tree-meta">
-            {item.file_key && <Text code style={{ fontSize: 12 }}>{item.file_key}</Text>}
-            {' '}
-            {item.description || '（无描述）'}
-            {' · '}v{item.version_count}
-            {' · '}更新于 {formatDateTime(item.updated_at)}
-          </span>
-        )}
-      />
-    </List.Item>
-  )
+              </Popconfirm>
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
-    <div style={{ padding: '16px 24px', maxWidth: 960, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <div>
-          <Space size={8}>
-            <ApartmentOutlined />
-            <Text strong style={{ fontSize: 18 }}>设计结构</Text>
-          </Space>
-          <div>
-            <Text type="secondary">
-              侧栏按装配层级（系统 → 组件 → 零件）浏览设计；本页管理设计，点击进入结构 DSL 编辑器。
-            </Text>
+    <div className="cn-page cn-qc-page" data-testid="designs-page">
+      {/* ── 页头：标题 + 口径说明 + 类型筛选 / 新建入口（与质量检查页同款紧凑页头） ── */}
+      <header className="cn-page-head">
+        <div className="cn-page-head-main">
+          <span className="cn-page-head-icon" aria-hidden><ApartmentOutlined /></span>
+          <div className="cn-page-head-text">
+            <h1 className="cn-page-head-title">设计结构</h1>
+            <div className="cn-page-head-sub">
+              <span className="cn-page-head-meta">左侧产品列表、右侧选中产品的结构树</span>
+            </div>
           </div>
         </div>
-        <Space size={8}>
+        <div className="cn-page-head-actions">
           <Segmented
             size="small"
             value={kindFilter}
@@ -284,35 +429,45 @@ export default function DesignsPage() {
           {!isViewer && (
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建设计</Button>
           )}
-        </Space>
-      </div>
-
-      {isLoading ? (
-        <Skeleton active />
-      ) : designs.length === 0 ? (
-        <Empty description="还没有结构设计" style={{ padding: 48 }} />
-      ) : (
-        <div className="cn-design-structure" data-testid="design-list">
-          {groups.length === 0 ? (
-            <Empty description="该类型下暂无设计" style={{ padding: 24 }} />
-          ) : groups.map(group => (
-            <section key={group.folder || '__ungrouped'} className="cn-design-folder" data-testid={`design-folder-${group.folder || 'ungrouped'}`}>
-              <div className="cn-design-folder-title">
-                <ApartmentOutlined />
-                <Text strong>{group.folder || '未分组'}</Text>
-                <Text type="secondary" className="cn-design-folder-count">{group.items.length}</Text>
-              </div>
-              <List dataSource={group.items} renderItem={renderRow} />
-            </section>
-          ))}
-          <div style={{ padding: '0 var(--cn-space-lg) var(--cn-space-sm)' }}>
-            <Text type="secondary">
-              <Tag bordered={false}>提示</Tag>
-              展开侧栏中的设计可查看系统 / 组件 / 零件层级，点击节点定位到源行。
-            </Text>
-          </div>
         </div>
-      )}
+      </header>
+
+      {/* GitHub 风格双栏：左=产品清单，右=选中产品的装配结构树；窄屏由 cn-qc-split 收为纵向堆叠 */}
+      <div className="cn-qc-split" data-testid="designs-split">
+        <SectionBox
+          title="产品列表"
+          icon={<UnorderedListOutlined />}
+          extra={<span>共 {visibleDesigns.length} 个</span>}
+          flush
+          testId="design-products-box"
+        >
+          <Spin spinning={isLoading}>
+            {designs.length === 0 && !isLoading ? (
+              <div className="cn-qc-empty">
+                <Empty description="还没有结构设计" />
+              </div>
+            ) : visibleDesigns.length === 0 ? (
+              <div className="cn-qc-empty">
+                <Empty description="该类型下暂无设计" />
+              </div>
+            ) : (
+              <div role="listbox" aria-label="产品列表" data-testid="design-list">
+                {visibleDesigns.map(renderRow)}
+              </div>
+            )}
+          </Spin>
+        </SectionBox>
+
+        {activeDesign ? (
+          <DesignOutlineTree key={activeDesign.id} workspaceId={wid} design={activeDesign} />
+        ) : (
+          <SectionBox title="结构树" icon={<ApartmentOutlined />} flush testId="design-outline-box">
+            <div className="cn-qc-empty">
+              <Empty description={designs.length === 0 ? '还没有结构设计' : '选择左侧产品查看结构树'} />
+            </div>
+          </SectionBox>
+        )}
+      </div>
 
       <Modal
         title="新建设计"

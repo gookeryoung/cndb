@@ -1,9 +1,10 @@
-/** 设计结构 E2E（需求 0083 C1–C4 / ADR 0084 C1）—— 侧栏装配树展示层级 + 节点定位源行.
+/** 设计结构 E2E（ADR 0109 D1 / D2 / D3 / D5）—— 根页左右分栏：左产品列表 + 右装配树.
  *
  * 走完整 UI 链路：经 API 建一份带模块 / 布尔分组 / 图元的设计，进入设计模块默认页
- * （/w/:wid/design），在侧栏展开装配树，断言 组件 → 结构分组 → 零件 三层与源行元信息；
- * 再点击零件节点，校验跳转到编辑器并带 `?line=` 源行参数。
- * 主区已恢复设计管理页（ADR 0084 C5），装配树迁到侧栏。
+ * （/w/:wid/design，ADR 0109 起为左右分栏），断言左栏产品列表与右栏装配树同时可见，
+ * 树层级为 组件 → 结构分组 → 零件并带源行元信息；再点击零件节点，
+ * 校验跳转到编辑器并带 `?line=` 源行参数。
+ * 侧栏装配树已收窄到编辑器页（ADR 0109 D4），由 design-sidebar-assembly 覆盖。
  * 清理统一走 API，避免失败用例残留设计。
  */
 
@@ -52,25 +53,13 @@ async function safeDeleteDesign(request: APIRequestContext, designId: number) {
     .catch(() => undefined)
 }
 
-/** 点击某个树节点所在行的展开箭头（testid 在标题内，需回溯到 treenode）。
- * 每次展开后等 650ms：antd 展开动画窗口内的下一次点击会被吞（同 DesignStructureNav
- * 单测的 expandNode 等待口径）；列表页 idle 预取编辑器 chunk 的求值也会挤进该窗口。 */
-async function expandNode(page: import("@playwright/test").Page, testId: string) {
-  await page
-    .locator(".ant-tree-treenode")
-    .filter({ has: page.getByTestId(testId) })
-    .locator(".ant-tree-switcher")
-    .click()
-  await page.waitForTimeout(650)
-}
-
-test.describe("设计结构（0083 / 0084）", () => {
+test.describe("设计结构根页左右分栏（0109）", () => {
   test.beforeEach(async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     void page
   })
 
-  test("侧栏展开装配树 → 组件 / 分组 / 零件带源行 → 点击零件定位编辑器", async ({ page, request }) => {
+  test("左产品列表 / 右装配树 → 组件 / 分组 / 零件带源行 → 点击零件定位编辑器", async ({ page, request }) => {
     test.setTimeout(90_000)
     const stamp = Date.now()
     const title = `E2E 装配树 ${stamp}`
@@ -79,31 +68,35 @@ test.describe("设计结构（0083 / 0084）", () => {
     try {
       designId = await createDesign(request, title)
 
-      // 1) 设计模块默认页为设计管理页，页签激活；装配树落在侧栏（ADR 0084 D4 / C5）
+      // 1) 设计模块默认页为左右分栏（ADR 0109 D1 / D2）：页签激活、左栏产品列表、右栏结构树
       await page.goto(`/w/${WID}/design`)
       await page.waitForURL(/\/w\/1\/design$/)
       await expect(page.getByTestId("design-crumb")).toBeVisible({ timeout: 10_000 })
       await expect(page.getByTestId("design-tab-structure")).toHaveAttribute("aria-selected", "true")
-      await expect(page.getByTestId("sider-designs")).toBeVisible({ timeout: 10_000 })
-      await expect(page.getByTestId(`design-node-${designId}`)).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByTestId("design-products-box")).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByTestId("design-outline-box")).toBeVisible()
+      // 根页不再渲染侧栏装配树（ADR 0109 D4）
+      await expect(page.getByTestId("sider-designs")).toHaveCount(0)
 
-      // 2) 展开设计 → 懒加载大纲，出现组件（module 实例）
-      await expandNode(page, `design-node-${designId}`)
+      // 2) 左栏出现设计行；确保本用例的产品为选中态后，右栏展示其结构树
+      //    （默认选中「最近更新」，并行用例会各自建设计，故不是本产品时显式点选；
+      //      点已选中行会取消选中，故先判断再点）
+      const row = page.getByTestId(`design-row-${designId}`)
+      await expect(row).toBeVisible({ timeout: 10_000 })
+      if ((await row.getAttribute("aria-selected")) !== "true") await row.click()
+      await expect(row).toHaveAttribute("aria-selected", "true")
+      await expect(page.getByTestId("design-outline-box")).toContainText(title)
+
+      // 3) 右栏树层级：组件（module 实例）→ 结构分组（布尔块）→ 零件（图元）
       await expect(page.getByText("plate")).toBeVisible({ timeout: 15_000 })
       await expect(page.getByText("组件 · 第 10 行 · 2 个零件")).toBeVisible()
-
-      // 3) 展开组件 → 结构分组（布尔块）
-      await expandNode(page, `design-outline-node-design-${designId}-0`)
-      await expect(page.getByText("差集")).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText("差集")).toBeVisible()
       await expect(page.getByText("结构分组 · 第 3 行 · 2 个零件")).toBeVisible()
-
-      // 4) 展开分组 → 零件（图元）与源行
-      await expandNode(page, `design-outline-node-design-${designId}-0-0`)
-      await expect(page.getByText("立方体")).toBeVisible({ timeout: 15_000 })
+      await expect(page.getByText("立方体")).toBeVisible()
       await expect(page.getByText("圆柱")).toBeVisible()
       await expect(page.getByText("零件 · 第 4 行")).toBeVisible()
 
-      // 5) 点击零件节点 → 编辑器带 ?line=4 定位源行
+      // 4) 点击零件节点 → 编辑器带 ?line=4 定位源行
       await page.getByText("零件 · 第 4 行").click()
       await page.waitForURL(new RegExp(`/w/1/design/${designId}\\?line=4`))
       await expect(page.locator(".cm-content")).toContainText("box(size = [w, 40, t])", { timeout: 15_000 })

@@ -17,7 +17,7 @@ Related: `src/cndb/plugins/design/services/dsl/parse.py`、`src/cndb/plugins/des
 | C2 | 「还应显示组件级和复杂系统级」 | DSL 新增顶层 `system` 声明，编译大纲新增 `kind: "system"` 节点，IR `version` 2 → 3；树层级 设计 → 系统 → 组件 → 分组 → 零件（D1 / D2） |
 | C3 | 「完善DSL设计」 | `system` 仅顶层、无参数表、不可实例化、名空间与 module 共享、计入 `MAX_MODULES`、纯组织层（几何与平铺等价）（D3） |
 | C4 | 「给出系统装配结构的示例」 | 默认模板与帮助示例改为「四轮小车」三级装配示例（§9），新建即见系统 / 组件 / 零件三级（D8） |
-| C5 | 主区与侧栏分工 | 结构树迁侧栏，`/w/:wid/design` 主区恢复设计管理页（新建 / 打开 / 改名 / 描述 / 删除 + 版本 / 更新时间摘要），路由与二级页签不变（D5） |
+| C5 | 主区与侧栏分工 | 结构树迁侧栏，`/w/:wid/design` 主区恢复设计管理页（新建 / 打开 / 改名 / 描述 / 删除 + 版本 / 更新时间摘要），路由与二级页签不变（D5；主区形态后由 ADR 0109 D1 / D2 修订为左产品列表 / 右结构树双栏） |
 | C6 | 配套回归 | `designLang.ts` 补 `system` 关键字；无 `system` 原文与 v2 快照兼容（I5）；CHANGELOG；e2e 侧栏装配树 + 既有结构树回归 |
 
 决策结论只在「决策记录」写一次；本节与正文不再罗列「已确认决策」。
@@ -145,7 +145,7 @@ system_decl  := "system" IDENT "{" instance* "}"
 | Sider 形态 | `frontend/src/layouts/MainLayout.tsx` | `SiderMode` 增 `'design'`；`inFocusContext` 移除 `inDesignContext`（设计段不再自动折叠）；新增 `renderDesignNav(mobile, collapsed)`：设计清单（懒加载 outline 展开）+ 标题过滤，点击设计进编辑器、点击大纲节点带 `?line=` 定位；移动端抽屉共用 |
 | 侧栏树组件 | `frontend/src/pages/design/DesignStructureNav.tsx`（新） | 装配树渲染与懒加载逻辑（自 `DesignsPage` 迁出）：设计根 → 系统 → 组件 → 分组 → 零件，复用 `designOutline.ts` 映射；编辑器页高亮当前设计 |
 | 大纲映射 | `frontend/src/pages/design/designOutline.ts` | `DesignTreeMeta.type` 增 `'system'`；`outlineToTree` 增 system 分支（标签「系统 · 第 N 行 · N 个零件」，图标与组件区分） |
-| 主区管理页 | `frontend/src/pages/design/DesignsPage.tsx` | 主区由结构树恢复为设计管理页（列表：新建 / 打开 / 改名 / 描述 / 删除 + 版本 / 更新时间摘要）；`DEFAULT_DESIGN_CONTENT` 换为 §9 三级装配示例（C4） |
+| 主区管理页 | `frontend/src/pages/design/DesignsPage.tsx` | 主区由结构树恢复为设计管理页（列表：新建 / 打开 / 改名 / 描述 / 删除 + 版本 / 更新时间摘要）；`DEFAULT_DESIGN_CONTENT` 换为 §9 三级装配示例（C4）。现行形态由 ADR 0109 改为左右分栏（左产品列表 / 右装配结构树），新建 / 打开 / 改名 / 删除能力不变 |
 | 类型 | `frontend/src/api/design.ts` | `DesignOutlineSystemNode`（`kind: 'system'`）并入 `DesignOutlineNode` 联合；`DesignIR.version` 注释改 v3 |
 | 高亮 | `frontend/src/pages/design/designLang.ts` | `KEYWORDS` 增 `'system'` |
 | 帮助 | `frontend/src/pages/help/content/*` | 设计主题补 `system` 语法与三级装配说明，示例同步 §9 |
@@ -255,8 +255,8 @@ system rover {
 | D1 | 复杂系统级载体 | DSL 新增顶层 `system` 声明：命名、只组装配、不实例化；大纲映射为 `kind: "system"`（C2/C3） | 系统级需要显式命名与「根」语义；module 兼任则树无法分级；数据由既有编译链路派生，零新表零迁移 | 让 module 兼任系统（同名不同义，树无法区分层级）；前端推断「顶层 assembly 即系统」（无语义依据，脆弱，违反 I1） | `parse.py`、`compile.py` |
 | D2 | IR 契约演进 | `IR_VERSION` 2 → 3，`outline` 增 `system` kind；`nodes` / `params` / `units` 原样不动（I2） | 与几何必须同源同次编译；旧消费方按字段名读取，未知 kind 不崩（I5）；版本递增符合 ADR 0079 §2 口径 | `assembly` 节点加 `level` 字段（v2 快照缺字段双口径，新旧树文案分叉）；独立「系统树」端点（重复编译、版本语义割裂） | `compile.py`、`frontend/src/api/design.ts` |
 | D3 | `system` 语法形态 | 无参数表、不可实例化、仅顶层、可多个；名空间与 module 共享；计入 `MAX_MODULES` | 系统是单例根，参数无调用方（可配置性走顶层 param）；多个系统覆盖「产品 + 工装」场景；有界计数沿用既有限制（I3） | 带参数表（死配置面，参数面板无法覆盖）；允许 system 被实例化（退化为 module，分级语义消失）；限定单 system（表达力受限，且无校验收益） | `parse.py`、`limits.py` |
-| D4 | 侧栏形态 | `SiderMode` 增 `'design'` + `renderDesignNav`，照抄文档段范式；设计段退出 `inFocusContext` 折叠集合；移动抽屉共用；复用 0083 D4 端点与 D7 定位交互 | 用户明确「参考文档结构」；文档侧栏（需求 0065）已验证同一渲染函数双端复用；零新增端点 | 在编辑器内做大纲抽屉（「进入模块即见」不满足）；主区大树 + 侧栏小树并存（双树冗余、状态双份） | `MainLayout.tsx`、`DesignStructureNav.tsx` |
-| D5 | 主区「设计结构」页形态 | 恢复为设计管理页（新建 / 打开 / 改名 / 描述 / 删除 + 摘要），路由与二级页签不变 | 对齐文档模块「侧栏 = 导航树、主区 = 管理列表 / 编辑器」分工；管理操作在窄侧栏中交互降级；二级页签语义（ADR 0083 C1/C2）原样保留 | 主区保留结构树（与侧栏重复，两处懒加载状态）；删除主区页（「设计结构」页签失去落点） | `DesignsPage.tsx` |
+| D4 | 侧栏形态 | `SiderMode` 增 `'design'` + `renderDesignNav`，照抄文档段范式；设计段退出 `inFocusContext` 折叠集合；移动抽屉共用；复用 0083 D4 端点与 D7 定位交互。渲染范围由 ADR 0109 D4 修订：仅 `/design/:id` 编辑器页，设计根页不渲染侧栏 | 用户明确「参考文档结构」；文档侧栏（需求 0065）已验证同一渲染函数双端复用；零新增端点 | 在编辑器内做大纲抽屉（「进入模块即见」不满足）；主区大树 + 侧栏小树并存（双树冗余、状态双份） | `MainLayout.tsx`、`DesignStructureNav.tsx` |
+| D5 | 主区「设计结构」页形态 | 恢复为设计管理页（新建 / 打开 / 改名 / 描述 / 删除 + 摘要），路由与二级页签不变。形态由 ADR 0109 D1 / D2 修订：左右双栏（左产品列表 / 右结构树） | 对齐文档模块「侧栏 = 导航树、主区 = 管理列表 / 编辑器」分工；管理操作在窄侧栏中交互降级；二级页签语义（ADR 0083 C1/C2）原样保留 | 主区保留结构树（与侧栏重复，两处懒加载状态）；删除主区页（「设计结构」页签失去落点） | `DesignsPage.tsx` |
 | D6 | 权限与写入面 | 侧栏树成员（含 viewer）可见；大纲只读；不新增写路径 | 沿用 ADR 0083 D8（成员可读 / owner-editor 可写）；侧栏是导航不是编辑面 | viewer 隐藏侧栏树（与模块读权限口径冲突）；侧栏节点提供改名 / 删除（与「原文唯一真相源」冲突） | `DesignStructureNav.tsx` |
 | D7 | 兼容口径 | 无 system 原文与 v2 快照照常编译 / 渲染，树缺系统级层不报错；不迁移、不强制重编译 | 读路径无副作用（沿用 0083 D5）；下次保存自然落 v3 快照 | 批量重编译迁移（写放大 + 版本语义污染）；对无 system 设计前端伪造「系统 = 设计根」层（假数据，树语义漂移） | `compile.py`、`designOutline.ts` |
 | D8 | 示例落点 | 默认模板与帮助示例统一换为「四轮小车」三级装配示例（§9）；既有法兰板示例保留在帮助中作为组件级用例 | 用户明确要求「给出系统装配结构的示例」；新建即见三级层级，示范 `system` 写法 | 保留法兰板为默认模板（新建后树无系统级，新语法无示范入口）；示例只进帮助不进模板（示范触达低） | `DesignsPage.tsx`、`help/content/*` |
@@ -281,7 +281,7 @@ system rover {
 | 大纲获取与定位交互 | `GET /designs/{id}/outline` + `?line=` | 端点与交互协议零变更，侧栏复用 | ADR 0083 D4/D7 / 本 ADR D4 |
 | 权限口径 | 设计读写边界 | 侧栏树只读、成员（含 viewer）可见 | ADR 0083 D8 / 本 ADR D6 |
 | 备份协议 | `payload/backup.json` v12 | 原文导出 + 导入重编译，协议不变 | ADR 0075 / 0079 D9 / 本 ADR §5 |
-| 侧栏范式 | `renderDocumentNav` / `SiderMode` | 设计段同形接入，自动折叠集合移除 design | 需求 0065 / 本 ADR D4 |
+| 侧栏范式 | `renderDocumentNav` / `SiderMode` | 设计编辑器页同形接入，自动折叠集合移除 design；根页不渲染（ADR 0109 D4） | 需求 0065 / 本 ADR D4 / ADR 0109 D4 |
 
 ## 落地状态（随实现更新）
 

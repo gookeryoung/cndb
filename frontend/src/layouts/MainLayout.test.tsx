@@ -1190,9 +1190,9 @@ describe('MainLayout 工作区设置段侧栏沿用来源模块（2026-11-03 用
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('从设计模块进入工作区设置：侧栏保持装配结构树，不切回数据表', async () => {
+    it('从设计编辑器进入工作区设置：侧栏保持装配结构树，不切回数据表', async () => {
         useDesignSidebar()
-        renderLayout(mockUser, '/w/10/design')
+        renderLayout(mockUser, '/w/10/design/20')
 
         await waitFor(() => expect(screen.getByTestId('sider-designs')).toBeVisible())
         fireEvent.click(screen.getByTestId('ws-nav-settings'))
@@ -1224,17 +1224,17 @@ describe('MainLayout 工作区设置段侧栏沿用来源模块（2026-11-03 用
     })
 })
 
-describe('MainLayout 设计段侧栏（ADR 0084）', () => {
-    it('设计列表页：侧栏渲染装配结构导航，不再渲染数据表列表', async () => {
+describe('MainLayout 设计段侧栏（ADR 0084 / 0109 D4）', () => {
+    it('设计根页不渲染侧栏：主区自带左右分栏（ADR 0109 D4）', async () => {
         useDesignSidebar()
         renderLayout(mockUser, '/w/10/design')
 
-        await waitFor(() => expect(screen.getByTestId('sider-designs')).toBeVisible())
+        await waitFor(() => expect(screen.getByTestId('designs-page-stub')).toBeVisible())
+        // 根页右栏承担结构浏览，侧栏装配树收窄到编辑器页；也不回落为数据表侧栏
+        expect(screen.queryByTestId('sider-designs')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
         expect(screen.queryByTestId('sider-documents')).toBeNull()
-        // 大纲按设计懒加载：未展开时仍渲染设计根节点与版本号
-        await waitFor(() => expect(screen.getByTestId('design-node-20')).toBeVisible())
-        expect(screen.getByTestId('design-node-20')).toHaveTextContent('v2')
+        expect(document.querySelector('.ant-layout-sider')).toBeNull()
     })
 
     it('设计编辑器页：自动展开当前设计并加载大纲，选中态高亮', async () => {
