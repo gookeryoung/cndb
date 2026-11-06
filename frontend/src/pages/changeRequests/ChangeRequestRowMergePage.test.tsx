@@ -64,6 +64,21 @@ function renderPage() {
 }
 
 describe('ChangeRequestRowMergePage 冲突处理页', () => {
+  it('页面骨架：页头 + 左当前值/待合并申请、右裁决与提交双栏', async () => {
+    setup({
+      group: { conflict_fields: ['数量'], has_conflict: true, row_values: { 名称: '甲', 数量: 1 } },
+      details: { 51: detail(51, { 数量: 10 }), 52: detail(52, { 数量: 20 }) },
+    })
+    renderPage()
+
+    expect(await screen.findByTestId('change-request-row-merge')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '冲突处理 · 行 #12' })).toBeInTheDocument()
+    expect(screen.getByTestId('cr-rowvalues-box')).toBeInTheDocument()
+    expect(screen.getByTestId('cr-merge-requests-box')).toBeInTheDocument()
+    expect(screen.getByTestId('cr-resolutions-box')).toBeInTheDocument()
+    expect(screen.getByTestId('cr-merge-submit-box')).toBeInTheDocument()
+  })
+
   it('渲染冲突字段裁决表，未裁决时禁用提交，裁决后可提交并携带裁决', async () => {
     const captured: { body?: CRRowMergePayload } = {}
     setup({

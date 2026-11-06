@@ -8036,128 +8036,419 @@ body.cn-doc-focus-view .cn-doc-stats {
   border-color: var(--cn-border);
 }
 
-/* ─────────────── 修改申请工作区级左右分栏（需求 0107） ───────────────
- * 左栏为涉及的工作表清单（计数徽标 + 选中态），右栏为选中表的修改项列表；
- * 修改项展开后懒加载详情展示字段级 diff 与当前行上下文。窄屏（<768px）左栏
- * 收为顶部横向滚动的胶囊标签，右栏占满宽度。 */
-.cn-cr-split {
-  display: flex;
-  align-items: stretch;
-  gap: var(--cn-space-lg);
-}
+/* ─────────────── 修改申请（对齐质量检查：页头 + 双栏 + 行态 + 概要条） ───────────────
+ * 列表页 / 详情页 / 冲突处理页复用质量检查的 cn-page-head、cn-qc-split、cn-qc-row、
+ * cn-qc-run-summary 与 cn-qc-empty 原语；本节只补修改申请专属排版。
+ * 尺寸 / 颜色全部走 --cn-* token，断点沿用全站 1023.98px / 767.98px。 */
 
-.cn-cr-split-side {
-  flex: 0 0 216px;
-  min-width: 0;
+/* ── 列表页：左栏清单（工作表 / 行分组） ── */
+.cn-cr-side-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  border-inline-end: 1px solid var(--cn-border);
-  padding-inline-end: var(--cn-space-md);
+  min-width: 0;
 }
 
+/* 按钮复位为 QC 行态：继承 .cn-qc-row 的内边距 / hover / 选中底色，
+ * 仅补按钮自身的字体与对齐；边框交给相邻选择器与 QC 选中态绘制 */
 .cn-cr-side-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--cn-space-sm);
+  gap: var(--cn-space-md);
   width: 100%;
-  padding: 6px 10px;
   border: none;
+  /* 预留选中指示条同宽，避免选中时行内容发生 1px 跳动 */
+  border-inline-start: 1px solid transparent;
   background: transparent;
-  border-radius: var(--cn-radius-base);
-  cursor: pointer;
-  text-align: start;
   color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
 }
 
-.cn-cr-side-item:hover {
-  background: rgb(var(--cn-shadow-color) / 0.08);
+.cn-cr-side-item + .cn-cr-side-item {
+  border-top: 1px solid var(--cn-border);
 }
 
-.cn-cr-side-item.cn-cr-side-active {
-  background: rgb(var(--cn-shadow-color) / 0.14);
-  font-weight: 600;
+.cn-cr-side-item.cn-qc-row--active {
+  border-inline-start: 1px solid var(--cn-brand-color);
+}
+
+/* 行分组：内容多行堆叠，顶部对齐；工作表清单保持单行居中 */
+.cn-cr-side-item.cn-cr-group-item {
+  align-items: flex-start;
 }
 
 .cn-cr-side-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--cn-text-sm);
 }
 
-.cn-cr-split-main {
+.cn-cr-side-main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+  min-width: 0;
+}
+
+.cn-cr-side-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+.cn-cr-side-title .ant-typography {
+  font-size: var(--cn-text-sm);
+}
+
+.cn-cr-side-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+/* ── 申请行（工作区 / 分组 / 平铺共用）：单行 GitHub 运行行风格 ── */
+.cn-cr-item-wrap + .cn-cr-item-wrap {
+  border-top: 1px solid var(--cn-border);
+}
+
+.cn-cr-item {
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.cn-cr-item:hover {
+  background: var(--cn-bg-subtle);
+}
+
+.cn-cr-item-main {
   flex: 1 1 auto;
   min-width: 0;
 }
 
-/* 展开行：头部 + 只读上下文面板（字段级 diff + 当前行全值） */
-.cn-cr-context {
-  margin: 0 8px var(--cn-space-sm) 30px;
-  padding-top: var(--cn-space-sm);
-  border-top: 1px dashed var(--cn-border);
+.cn-cr-item-line {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  min-width: 0;
 }
 
-.cn-cr-context-item {
-  padding-block: var(--cn-space-xs);
+.cn-cr-tags {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs);
+  min-width: 0;
+}
+
+.cn-cr-tags .ant-tag {
+  margin-inline-end: 0;
+  line-height: 18px;
+}
+
+.cn-cr-item-title.ant-typography {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-md);
+}
+
+.cn-cr-item-meta {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 冲突 / 漂移提示块：列表上方整宽提示，与行分隔线同色 */
+.cn-cr-groupnote {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-xs);
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  border-bottom: 1px solid var(--cn-border);
+  background: var(--cn-bg-subtle);
+}
+
+.cn-cr-groupnote-line.ant-typography {
+  font-size: var(--cn-text-xs);
+}
+
+/* ── 展开行：只读上下文面板（字段级三态 diff + 当前行全值） ── */
+.cn-cr-context {
+  padding: var(--cn-space-sm) var(--cn-space-lg) var(--cn-space-md);
+  padding-inline-start: var(--cn-space-3xl);
+  border-top: 1px dashed var(--cn-border);
+  background: var(--cn-bg-subtle);
+}
+
+.cn-cr-context-desc.ant-typography {
+  margin-bottom: var(--cn-space-xs);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-cr-context-tags {
+  margin-bottom: var(--cn-space-xs);
+}
+
+.cn-cr-context-hint.ant-typography {
+  font-size: var(--cn-text-2xs);
+}
+
+.cn-cr-context-item + .cn-cr-context-item {
+  margin-top: var(--cn-space-sm);
+  padding-top: var(--cn-space-sm);
+  border-top: 1px dashed var(--cn-border-soft);
 }
 
 .cn-cr-rowcontext {
   margin-top: var(--cn-space-xs);
 }
 
+.cn-cr-rowcontext-label.ant-typography {
+  font-size: var(--cn-text-2xs);
+}
+
 .cn-cr-rowcontext-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 16px;
-  margin-top: 2px;
+  gap: var(--cn-space-hairline) var(--cn-space-xl);
+  margin-top: var(--cn-space-hairline);
 }
 
 .cn-cr-rowcontext-field {
-  font-size: 12px;
+  font-size: var(--cn-text-xs);
   color: var(--cn-text-secondary);
   word-break: break-all;
 }
 
 .cn-cr-rowcontext-field.cn-cr-rowcontext-involved {
-  font-weight: 600;
-  color: inherit;
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-primary);
+}
+
+/* ── 详情 / 冲突处理：左宽右窄双栏（左变更项 / 裁决素材，右审批 / 裁决与提交） ── */
+.cn-cr-detail-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+  gap: var(--cn-space-md);
+  align-items: start;
+}
+
+.cn-cr-detail-main,
+.cn-cr-detail-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-md);
+  min-width: 0;
+}
+
+/* 申请描述：变更项方盒顶部整宽说明，与首个变更项以细线分隔 */
+.cn-cr-desc.ant-typography {
+  margin: 0;
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  border-bottom: 1px solid var(--cn-border);
+  font-size: var(--cn-text-xs);
+  white-space: pre-wrap;
+}
+
+/* 变更项分块：头部单行（操作类型 / 行号 / 字段摘要 / 决策），下方 diff 表 */
+.cn-cr-change-item + .cn-cr-change-item {
+  border-top: 1px solid var(--cn-border);
+}
+
+.cn-cr-change-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  border-bottom: 1px solid var(--cn-border-soft);
+}
+
+.cn-cr-change-fields.ant-typography,
+.cn-cr-change-drift.ant-typography {
+  font-size: var(--cn-text-xs);
+}
+
+/* 逐项 apply / skip 决策靠右收尾，窄屏回落左对齐 */
+.cn-cr-change-decision {
+  margin-inline-start: auto;
+}
+
+.cn-cr-change-body {
+  padding: var(--cn-space-sm) var(--cn-space-lg) var(--cn-space-md);
+}
+
+.cn-cr-change-body .cn-fielddiff-wrap + .cn-fielddiff-wrap {
+  margin-top: var(--cn-space-sm);
+}
+
+/* 操作类型徽标：图标 + 文案同色（create / delete 由 Typography 语义色绘制） */
+.cn-cr-op {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: var(--cn-space-hairline);
+  font-size: var(--cn-text-2xs);
+  font-weight: var(--cn-weight-medium);
+  white-space: nowrap;
+}
+
+.cn-cr-op--update {
+  color: var(--cn-brand-color);
+}
+
+/* 审批 / 备注表单：控件满宽、按钮自然宽度 */
+.cn-cr-approval-form {
+  display: grid;
+  justify-items: start;
+  gap: var(--cn-space-sm);
+}
+
+.cn-cr-approval-form .ant-input {
+  width: 100%;
+}
+
+/* 非 open 的处理信息：标签 + 值两列 */
+.cn-cr-approval-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+}
+
+.cn-cr-approval-line {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--cn-space-md);
+  align-items: baseline;
+  font-size: var(--cn-text-xs);
+}
+
+/* 动作流水行：操作人 + 动作 + 评论 + 时间同段排版 */
+.cn-cr-action {
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+}
+
+.cn-cr-action + .cn-cr-action {
+  border-top: 1px solid var(--cn-border);
+}
+
+.cn-cr-action-meta.ant-typography {
+  display: block;
+  font-size: var(--cn-text-xs);
+  line-height: 1.5;
+}
+
+/* 评论输入区：固定在讨论方盒底部，与动态列表以分隔线相隔 */
+.cn-cr-composer {
+  display: grid;
+  justify-items: start;
+  gap: var(--cn-space-sm);
+  padding: var(--cn-space-md) var(--cn-space-lg);
+  border-top: 1px solid var(--cn-border);
+  background: var(--cn-bg-subtle);
+}
+
+.cn-cr-composer .ant-input {
+  width: 100%;
+}
+
+/* ── 冲突处理页：待合并申请 / 冲突裁决 / 自动应用 ── */
+.cn-cr-merge-request {
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+}
+
+.cn-cr-merge-request + .cn-cr-merge-request {
+  border-top: 1px solid var(--cn-border);
+}
+
+.cn-cr-merge-request-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  margin-bottom: var(--cn-space-sm);
+}
+
+.cn-cr-merge-request-head .ant-typography {
+  font-size: var(--cn-text-sm);
+}
+
+.cn-cr-merge-request-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+}
+
+.cn-cr-resolution + .cn-cr-resolution {
+  margin-top: var(--cn-space-md);
+  padding-top: var(--cn-space-md);
+  border-top: 1px solid var(--cn-border-soft);
+}
+
+.cn-cr-resolution-options {
+  display: block;
+  margin-top: var(--cn-space-xs);
+}
+
+.cn-cr-auto-field {
+  font-size: var(--cn-text-sm);
+}
+
+.cn-cr-auto-field + .cn-cr-auto-field {
+  margin-top: var(--cn-space-xs);
+}
+
+.cn-cr-unresolved.ant-typography {
+  margin: 0;
+  font-size: var(--cn-text-xs);
+}
+
+@media (max-width: 1023.98px) {
+  /* 详情 / 冲突处理：右栏 360px 在中等宽度下过窄，纵向堆叠 */
+  .cn-cr-detail-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 @media (max-width: 767.98px) {
-  .cn-cr-split {
-    flex-direction: column;
-    gap: var(--cn-space-sm);
+  /* 列表页：QC 双栏（左定宽 + 右自适应）在窄屏纵向堆叠 */
+  .cn-cr-page .cn-qc-split {
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .cn-cr-split-side {
-    flex: none;
+  /* 申请行：meta 另起一行，避免与标签挤在同一行 */
+  .cn-cr-item-line {
+    flex-wrap: wrap;
+  }
+
+  .cn-cr-item-meta {
+    max-width: 100%;
     width: 100%;
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-    overflow-x: auto;
-    border-inline-end: none;
-    border-block-end: 1px solid var(--cn-border);
-    padding: 0 0 var(--cn-space-sm);
+    white-space: normal;
   }
 
-  .cn-cr-side-item {
-    flex: 0 0 auto;
-    width: auto;
-    border: 1px solid var(--cn-border);
-    border-radius: var(--cn-radius-pill);
-    padding: 2px 12px;
-  }
-
-  .cn-cr-side-item.cn-cr-side-active {
-    border-color: var(--cn-brand-color);
-    color: var(--cn-brand-color);
-    background: transparent;
+  .cn-cr-change-decision {
+    margin-inline-start: 0;
   }
 
   .cn-cr-context {
-    margin-inline: 0;
+    padding-inline-start: var(--cn-space-lg);
   }
 }

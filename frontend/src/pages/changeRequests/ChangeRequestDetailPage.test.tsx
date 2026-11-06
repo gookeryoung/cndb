@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import ChangeRequestDetailPage from './ChangeRequestDetailPage'
 import { renderProviders } from '@/test/render-providers'
@@ -69,6 +69,28 @@ function renderPage() {
 }
 
 describe('ChangeRequestDetailPage 修改申请详情', () => {
+  it('页面骨架：页头 + 概要条 + 左变更项 / 右审批与讨论双栏', async () => {
+    setupDetailHandlers()
+    renderPage()
+
+    expect(await screen.findByTestId('change-request-detail')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '调整客户分级' })).toBeInTheDocument()
+
+    // 概要条 6 格：变更项 2（1 修改 + 1 删除）/ 讨论 1
+    const summary = screen.getByTestId('cr-summary')
+    expect(within(summary).getByText('变更项')).toBeInTheDocument()
+    expect(within(summary).getByText('2')).toBeInTheDocument()
+    expect(within(summary).getByText('讨论')).toBeInTheDocument()
+
+    // 双栏方盒：左变更项 / 右审批 + 讨论动态
+    expect(screen.getByTestId('cr-items-box')).toBeInTheDocument()
+    const approval = screen.getByTestId('cr-approval-box')
+    expect(within(approval).getByRole('button', { name: /执\s*行\s*合\s*并/ })).toBeInTheDocument()
+    const discussion = screen.getByTestId('cr-discussion-box')
+    expect(within(discussion).getByPlaceholderText('写下评论…')).toBeInTheDocument()
+    expect(within(discussion).getByText('请尽快处理')).toBeInTheDocument()
+  })
+
   it('渲染标题/状态/提交人/items diff 与动作流水', async () => {
     setupDetailHandlers()
     renderPage()

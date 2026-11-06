@@ -23,7 +23,7 @@
 
 ## 口径（S1 方案，无 ADR）
 
-- 改动面：仅前端（`ChangeRequestsPage.tsx` workspaceMode 分支 + 相关 API 类型 / 单测）；单表视图（`:tid` 路由）与同行合并视图（group_by=row）不改动。
+- 改动面：仅前端（`ChangeRequestsPage.tsx` workspaceMode 分支 + 相关 API 类型 / 单测）；单表视图（`:tid` 路由）与同行合并视图（group_by=row）的数据与交互逻辑不变，其视觉改版（对齐质量检查的双栏 / 方盒语言）由需求 0108 承接。
 - 数据来源：工作区级列表端点 `GET /{wid}/change-requests` 现有响应已含 `table_id/table_name/item_count/row_ids/conflicts_count`，左栏与右栏过滤纯前端派生；展开上下文懒加载既有详情端点，**零后端改动、零迁移**。
 - 展开性能：详情响应按 requestId 内存缓存（组件级 state / react-query cache），重复展开不重复请求。
 - 「上下文」口径：`current_values` 即当前整行字段值（含未修改字段），配合 `base_values/values` 形成三态对照；行不存在时降级展示「行已删除」提示（复用详情响应 `row_missing`）。

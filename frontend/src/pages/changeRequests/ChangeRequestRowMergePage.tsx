@@ -6,20 +6,26 @@
  * - changeRequestsApi.get 取选中申请详情（items 提供字段写者 item_id 与基准值）；
  * 提交：changeRequestsApi.mergeRow（resolutions 逐字段裁决 + row_action 处理 delete 互斥）。
  * 参考 git merge：无冲突字段自动应用（只读汇总预览），冲突字段必须显式裁决，不静默覆盖。
+ * 页面骨架对齐质量检查运行详情页：cn-page 页头 + 左当前值/待合并申请、右裁决与提交双栏。
  */
 
 import { useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Card, Divider, Empty, Input, Radio, Space, Spin, Table, Tag, Typography,
+  Alert, App as AntApp, Button, Empty, Input, Radio, Space, Spin, Table, Tag, Typography,
 } from 'antd'
-import { ArrowLeftOutlined, CheckOutlined } from '@ant-design/icons'
+import {
+  AlertOutlined, ApartmentOutlined, ArrowLeftOutlined, CheckCircleOutlined, CheckOutlined,
+  DeleteOutlined, PullRequestOutlined, TableOutlined,
+} from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { FieldDiffTable } from '@/components/DiffView'
+import SectionBox from '@/components/SectionBox'
+import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi, workspaceApi } from '@/api'
 import type { ChangeItemDetail, CRResolution, ID, WorkspaceRole } from '@/api'
 
-const { Text, Title, Paragraph } = Typography
+const { Text, Paragraph } = Typography
 
 type RowAction = 'keep' | 'delete'
 
@@ -141,10 +147,14 @@ export default function ChangeRequestRowMergePage() {
   const canSubmit = canReview && unresolved.length === 0 && requestIds.length > 0 && !merge.isPending
 
   if (groupLoading || detailLoading) {
-    return <div style={{ padding: 48, textAlign: 'center' }}><Spin /></div>
+    return <div className="cn-page cn-state"><Spin /></div>
   }
   if (!group) {
-    return <div style={{ padding: 24 }}><Empty description="未找到该行的待审申请" /></div>
+    return (
+      <div className="cn-page cn-state">
+        <Empty description="未找到该行的待审申请" />
+      </div>
+    )
   }
 
   /** 非冲突字段自动应用汇总（单一写者或写入值一致） */
@@ -155,142 +165,196 @@ export default function ChangeRequestRowMergePage() {
   }
 
   return (
-    <div style={{ padding: '16px 24px', maxWidth: 860, margin: '0 auto' }}>
-      <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(listUrl)} style={{ marginBottom: 8 }}>
-        返回修改申请
-      </Button>
+    <div className="cn-page" data-testid="change-request-row-merge">
+      {/* ── 页头：行号 + 待合并 / 冲突计数 + 返回（与质量检查页同款紧凑页头） ── */}
+      <header className="cn-page-head">
+        <div className="cn-page-head-main">
+          <span className="cn-page-head-icon" aria-hidden><ApartmentOutlined /></span>
+          <div className="cn-page-head-text">
+            <h1 className="cn-page-head-title">冲突处理 · 行 #{group.row_id}</h1>
+            <div className="cn-page-head-sub">
+              <span className="cn-page-head-meta">
+                待合并 {details.length} 份申请 · 冲突字段 {conflictFields.length} 个
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="cn-page-head-actions">
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(listUrl)}>返回修改申请</Button>
+        </div>
+      </header>
 
-      <Title level={4} style={{ marginBottom: 8 }}>冲突处理 · 行 #{group.row_id}</Title>
       {group.row_missing && (
-        <Alert type="warning" showIcon style={{ marginBottom: 12 }} title="目标行已删除：本行变更可能无法落库，请确认后处理。" />
+        <Alert type="warning" showIcon title="目标行已删除：本行变更可能无法落库，请确认后处理。" />
       )}
       {!canReview && (
-        <Alert type="info" showIcon style={{ marginBottom: 12 }} title="仅 owner/editor 可处理并合并冲突，当前为只读预览。" />
+        <Alert type="info" showIcon title="仅 owner/editor 可处理并合并冲突，当前为只读预览。" />
       )}
 
-      {/* 1. 行摘要（ours：当前值） */}
-      <Card size="small" title="当前行值（当前基准）" style={{ marginBottom: 12 }}>
-        <Table
-          size="small"
-          pagination={false}
-          rowKey="field"
-          dataSource={Object.entries(rowValues).map(([field, value]) => ({ field, value }))}
-          columns={[
-            { title: '字段', dataIndex: 'field', width: 180 },
-            { title: '当前值', dataIndex: 'value', render: (v: unknown) => displayValue(v) },
-          ]}
-          locale={{ emptyText: '（行值不可用）' }}
-        />
-      </Card>
+      <div className="cn-cr-detail-split">
+        {/* 左栏：当前行值 + 待合并申请（git merge 的 ours / theirs 对照） */}
+        <div className="cn-cr-detail-main">
+          <SectionBox
+            title="当前行值"
+            icon={<TableOutlined />}
+            extra={<span>{Object.keys(rowValues).length} 个字段</span>}
+            testId="cr-rowvalues-box"
+          >
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="field"
+              dataSource={Object.entries(rowValues).map(([field, value]) => ({ field, value }))}
+              columns={[
+                { title: '字段', dataIndex: 'field', width: 180 },
+                { title: '当前值', dataIndex: 'value', render: (v: unknown) => displayValue(v) },
+              ]}
+              locale={{ emptyText: '（行值不可用）' }}
+            />
+          </SectionBox>
 
-      {/* 2. 待合并申请（theirs） */}
-      <Card size="small" title={`待合并申请（${details.length}）`} style={{ marginBottom: 12 }}>
-        {details.map(d => (
-          <div key={d.id} style={{ marginBottom: 8 }}>
-            <Space size={8} wrap style={{ marginBottom: 4 }}>
-              <Text strong>#{d.id}</Text>
-              <Text strong>{d.title}</Text>
-              <Text type="secondary">{d.created_at ?? ''}</Text>
-            </Space>
-            {d.items.map((item: ChangeItemDetail) => (
-              <FieldDiffTable key={item.id} item={item} />
-            ))}
-          </div>
-        ))}
-      </Card>
+          <SectionBox
+            title={`待合并申请（${details.length}）`}
+            icon={<PullRequestOutlined />}
+            flush
+            testId="cr-merge-requests-box"
+          >
+            {details.length === 0 ? (
+              <div className="cn-qc-empty">
+                <Empty description="没有待合并的申请" />
+              </div>
+            ) : (
+              details.map(d => (
+                <div key={d.id} className="cn-cr-merge-request">
+                  <div className="cn-cr-merge-request-head">
+                    <Text strong>#{d.id}</Text>
+                    <Text strong>{d.title}</Text>
+                    <Text type="secondary">{formatDateTime(d.created_at)}</Text>
+                  </div>
+                  <div className="cn-cr-merge-request-body">
+                    {d.items.map((item: ChangeItemDetail) => (
+                      <FieldDiffTable key={item.id} item={item} />
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </SectionBox>
+        </div>
 
-      {/* 3. 冲突字段裁决表 */}
-      <Card size="small" style={{ marginBottom: 12 }}
-        title={<Space size={8}>冲突字段裁决{conflictFields.length > 0 && <Tag color="red">{conflictFields.length}</Tag>}</Space>}
-        extra={canReview && conflictFields.length > 0 && (
-          <Space size={8}>
-            <Button size="small" onClick={pickLatest}>全部采用最新</Button>
-            <Button size="small" onClick={keepAll}>全部保留当前</Button>
-          </Space>
-        )}
-      >
-        {conflictFields.length === 0 ? (
-          <Text type="secondary">无字段级冲突，将自动合并。</Text>
-        ) : conflictFields.map(f => (
-          <div key={f} style={{ marginBottom: 12 }}>
-            <Text strong>{f}</Text>
-            <Text type="secondary"> · 当前值：{displayValue(rowValues[f])}</Text>
-            <Radio.Group
-              style={{ display: 'block', marginTop: 6 }}
-              value={resolutions[f]
-                ? (resolutions[f].strategy === 'current' ? 'current' : `item:${resolutions[f].item_id}`)
-                : ''}
-              onChange={(e) => {
-                const val = String(e.target.value)
-                if (val === 'current') setResolution(f, { strategy: 'current' })
-                else setResolution(f, { strategy: 'item', item_id: Number(val.split(':')[1]) })
-              }}
-            >
-              <Space orientation="vertical" size={4}>
-                {(writersByField[f] ?? []).map(w => (
-                  <Radio key={w.item_id} value={`item:${w.item_id}`}>
-                    <Text>采用 #{w.request_id} 的值：</Text>
-                    <Text code>{displayValue(w.value)}</Text>
-                  </Radio>
-                ))}
-                <Radio value="current">
-                  <Text>保留当前值：{displayValue(rowValues[f])}</Text>
-                </Radio>
+        {/* 右栏：冲突裁决 + 自动应用 + 行级裁决 + 备注与提交 */}
+        <div className="cn-cr-detail-side">
+          <SectionBox
+            title={(
+              <Space size={8}>
+                冲突字段裁决
+                {conflictFields.length > 0 && <Tag color="red">{conflictFields.length}</Tag>}
               </Space>
-            </Radio.Group>
-          </div>
-        ))}
-      </Card>
+            )}
+            icon={<AlertOutlined />}
+            extra={canReview && conflictFields.length > 0 ? (
+              <Space size={8}>
+                <Button size="small" onClick={pickLatest}>全部采用最新</Button>
+                <Button size="small" onClick={keepAll}>全部保留当前</Button>
+              </Space>
+            ) : undefined}
+            testId="cr-resolutions-box"
+          >
+            {conflictFields.length === 0 ? (
+              <Text type="secondary">无字段级冲突，将自动合并。</Text>
+            ) : conflictFields.map(f => (
+              <div key={f} className="cn-cr-resolution">
+                <Text strong>{f}</Text>
+                <Text type="secondary"> · 当前值：{displayValue(rowValues[f])}</Text>
+                <Radio.Group
+                  className="cn-cr-resolution-options"
+                  value={resolutions[f]
+                    ? (resolutions[f].strategy === 'current' ? 'current' : `item:${resolutions[f].item_id}`)
+                    : ''}
+                  onChange={(e) => {
+                    const val = String(e.target.value)
+                    if (val === 'current') setResolution(f, { strategy: 'current' })
+                    else setResolution(f, { strategy: 'item', item_id: Number(val.split(':')[1]) })
+                  }}
+                >
+                  <Space orientation="vertical" size={4}>
+                    {(writersByField[f] ?? []).map(w => (
+                      <Radio key={w.item_id} value={`item:${w.item_id}`}>
+                        <Text>采用 #{w.request_id} 的值：</Text>
+                        <Text code>{displayValue(w.value)}</Text>
+                      </Radio>
+                    ))}
+                    <Radio value="current">
+                      <Text>保留当前值：{displayValue(rowValues[f])}</Text>
+                    </Radio>
+                  </Space>
+                </Radio.Group>
+              </div>
+            ))}
+          </SectionBox>
 
-      {/* 4. 非冲突字段自动应用预览 */}
-      {autoFields.size > 0 && (
-        <Card size="small" title="自动应用字段（无冲突）" style={{ marginBottom: 12 }}>
-          {Array.from(autoFields.entries()).map(([f, v]) => (
-            <div key={f}>
-              <Text type="secondary">{f}：</Text> <Text code>{displayValue(v)}</Text>
+          {autoFields.size > 0 && (
+            <SectionBox
+              title="自动应用字段"
+              icon={<CheckCircleOutlined />}
+              extra={<span>{autoFields.size} 个</span>}
+              testId="cr-auto-fields-box"
+            >
+              {Array.from(autoFields.entries()).map(([f, v]) => (
+                <div key={f} className="cn-cr-auto-field">
+                  <Text type="secondary">{f}：</Text> <Text code>{displayValue(v)}</Text>
+                </div>
+              ))}
+            </SectionBox>
+          )}
+
+          {rowOpConflict && (
+            <SectionBox
+              title={(
+                <Space size={8}>
+                  行级操作裁决
+                  <Tag color="red">删除与修改互斥</Tag>
+                </Space>
+              )}
+              icon={<DeleteOutlined />}
+              testId="cr-rowop-box"
+            >
+              <Radio.Group value={rowAction} onChange={(e) => setRowAction(e.target.value as RowAction)}>
+                <Space orientation="vertical">
+                  <Radio value="keep">保留行，应用修改（忽略删除）</Radio>
+                  <Radio value="delete">执行删除（忽略修改）</Radio>
+                </Space>
+              </Radio.Group>
+            </SectionBox>
+          )}
+
+          <SectionBox title="合并备注与提交" icon={<CheckOutlined />} testId="cr-merge-submit-box">
+            <div className="cn-cr-approval-form">
+              <Input.TextArea
+                rows={2}
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="合并备注（可选，记录处理说明）"
+                maxLength={2000}
+              />
+              {unresolved.length > 0 && (
+                <Paragraph type="danger" className="cn-cr-unresolved">
+                  请先裁决冲突字段：{unresolved.join('、')}
+                </Paragraph>
+              )}
+              <Button
+                type="primary"
+                icon={<CheckOutlined />}
+                disabled={!canSubmit}
+                loading={merge.isPending}
+                onClick={() => merge.mutate()}
+              >
+                执行批量合并
+              </Button>
             </div>
-          ))}
-        </Card>
-      )}
-
-      {/* 5. 行级 op 互斥裁决（delete vs 修改） */}
-      {rowOpConflict && (
-        <Card size="small" style={{ marginBottom: 12 }}
-          title={<Space size={8}>行级操作裁决 <Tag color="red">删除与修改互斥</Tag></Space>}
-        >
-          <Radio.Group value={rowAction} onChange={(e) => setRowAction(e.target.value as RowAction)}>
-            <Space orientation="vertical">
-              <Radio value="keep">保留行，应用修改（忽略删除）</Radio>
-              <Radio value="delete">执行删除（忽略修改）</Radio>
-            </Space>
-          </Radio.Group>
-        </Card>
-      )}
-
-      {/* 6. 备注 + 执行 */}
-      <Divider />
-      <Input.TextArea
-        rows={2}
-        value={comment}
-        onChange={(e) => setComment(e.target.value)}
-        placeholder="合并备注（可选，记录处理说明）"
-        maxLength={2000}
-      />
-      {unresolved.length > 0 && (
-        <Paragraph type="danger" style={{ marginTop: 8, marginBottom: 0 }}>
-          请先裁决冲突字段：{unresolved.join('、')}
-        </Paragraph>
-      )}
-      <Button
-        type="primary"
-        icon={<CheckOutlined />}
-        style={{ marginTop: 8 }}
-        disabled={!canSubmit}
-        loading={merge.isPending}
-        onClick={() => merge.mutate()}
-      >
-        执行批量合并
-      </Button>
+          </SectionBox>
+        </div>
+      </div>
     </div>
   )
 }

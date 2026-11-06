@@ -1,4 +1,4 @@
-/** 修改申请详情页 — items 字段级 diff + 逐项 merge 决策 + 流转 + 评论 + update-base.
+/** 修改申请详情页 — 对齐质量检查运行详情页：页头 + 概要条 + 左变更项 / 右审批与讨论.
  *
  * 数据源 changeRequestsApi.get（本体 + items[base_values/values/current_values/field_conflicts] + actions）。
  * 门控（前端仅隐藏入口，后端 403 兜底）：
@@ -9,27 +9,32 @@
  */
 
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import {
-  App as AntApp, Button, Card, Empty, Input, Segmented, Space, Spin, Tag, Typography,
+  Alert, App as AntApp, Button, Empty, Input, Segmented, Spin, Tag, Typography,
 } from 'antd'
-import { ArrowLeftOutlined, CheckOutlined, RedoOutlined, SyncOutlined } from '@ant-design/icons'
+import {
+  ArrowLeftOutlined, CheckOutlined, DeleteOutlined, EditOutlined, MessageOutlined,
+  PlusCircleOutlined, PullRequestOutlined, RedoOutlined, SyncOutlined,
+} from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FieldDiffTable } from '@/components/DiffView'
+import SectionBox from '@/components/SectionBox'
 import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi, workspaceApi } from '@/api'
 import type { ChangeActionItem, ChangeItemDetail, ChangeOp, WorkspaceRole } from '@/api'
 import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
 import { useAuthStore } from '@/store'
 
-const { Text, Title, Paragraph } = Typography
+const { Text, Paragraph } = Typography
 
 type Decision = 'apply' | 'skip'
 
-const OP_META: Record<ChangeOp, { label: string; color: string }> = {
-  create: { label: '新增', color: 'green' },
-  update: { label: '修改', color: 'blue' },
-  delete: { label: '删除', color: 'red' },
+const OP_META: Record<ChangeOp, { label: string; icon: ReactNode; textType?: 'success' | 'danger' }> = {
+  create: { label: '新增', icon: <PlusCircleOutlined />, textType: 'success' },
+  update: { label: '修改', icon: <EditOutlined /> },
+  delete: { label: '删除', icon: <DeleteOutlined />, textType: 'danger' },
 }
 
 const STATUS_META: Record<string, { label: string; color: string }> = {
@@ -44,6 +49,23 @@ const ACTION_TEXT: Record<ChangeActionItem['action'], string> = {
   close: '关闭了申请',
   reopen: '重开了申请',
   update_base: '刷新了基准快照',
+}
+
+/** 变更项字段摘要：新增 / 修改列出字段名，删除标注整行 */
+function itemFieldSummary(item: ChangeItemDetail): string {
+  if (item.op === 'delete') return '整行删除'
+  const fields = Object.keys(item.op === 'update' ? item.values : item.base_values)
+  return fields.length > 0 ? `字段：${fields.join('、')}` : '（无字段）'
+}
+
+/** 概要条单元格（与质量检查运行详情同款） */
+function Stat({ label, value, tone }: { label: string; value: ReactNode; tone?: 'danger' | 'warning' }) {
+  return (
+    <div className="cn-qc-run-stat">
+      <span className="cn-qc-run-stat-label">{label}</span>
+      <Text strong type={tone} className="cn-qc-run-stat-value">{value}</Text>
+    </div>
+  )
 }
 
 export default function ChangeRequestDetailPage() {
@@ -150,139 +172,256 @@ export default function ChangeRequestDetailPage() {
   const handleMerge = () => merge.mutate()
 
   if (isLoading) {
-    return <div style={{ padding: 48, textAlign: 'center' }}><Spin /></div>
+    return <div className="cn-page cn-state"><Spin /></div>
   }
   if (!cr) {
-    return <div style={{ padding: 24 }}><Empty description="未找到该修改申请" /></div>
+    return (
+      <div className="cn-page cn-state">
+        <Empty description="未找到该修改申请" />
+      </div>
+    )
   }
 
   const canMergeNow = canReview && cr.status === 'open'
   const showUpdateBase = isSubmitter && cr.status === 'open' && cr.stale
+  const statusMeta = STATUS_META[cr.status] ?? { label: cr.status, color: 'default' }
+
+  // 概要计数：操作类型分布 / 漂移字段（按字段去重）/ 讨论条数
+  const driftFields = Array.from(new Set(cr.items.flatMap(it => it.field_conflicts)))
+  const rowMissing = cr.items.some(it => it.row_missing)
+  const opCount = (op: ChangeOp) => cr.items.filter(it => it.op === op).length
+
+  // 非 open 时的处理信息：优先取审批字段，回退到最近一条处理动作
+  const lastHandled = [...cr.actions]
+    .reverse()
+    .find(a => a.action === 'merge' || a.action === 'close' || a.action === 'reopen')
+  const handledById = cr.reviewed_by_id ?? lastHandled?.acted_by_id ?? null
+  const handledAt = cr.reviewed_at ?? lastHandled?.created_at ?? null
+  const handledComment = cr.review_comment ?? lastHandled?.comment ?? null
 
   return (
-    <div style={{ padding: '16px 24px', maxWidth: 860, margin: '0 auto' }}>
-      <Button
-        type="text"
-        icon={<ArrowLeftOutlined />}
-        // 来源为工作区级分栏列表（需求 0107）时回到工作区列表，否则回单表列表
-        onClick={() => navigate(
-          (location.state as { from?: string } | null)?.from === 'workspace'
-            ? `/w/${wid}/tables/change-requests`
-            : `/w/${wid}/tables/${tid}/change-requests`,
-        )}
-        style={{ marginBottom: 8 }}
-      >
-        返回修改申请
-      </Button>
-
-      <Title level={4} style={{ marginBottom: 8 }}>
-        <Text type="secondary">#{cr.id} </Text>
-        {cr.title}
-      </Title>
-      <Space size={8} wrap style={{ marginBottom: 8 }}>
-        <Tag color={STATUS_META[cr.status]?.color ?? 'default'}>{STATUS_META[cr.status]?.label ?? cr.status}</Tag>
-        {cr.stale && <Tag color="warning">基准已过期</Tag>}
-        <Text type="secondary">
-          {memberDisplayName(nameById, cr.submitted_by_id, '未知')} 提交于 {formatDateTime(cr.created_at)}
-        </Text>
-      </Space>
-      {cr.description && <Paragraph type="secondary" style={{ whiteSpace: 'pre-wrap' }}>{cr.description}</Paragraph>}
-
-      <Space size={8} wrap style={{ marginBottom: 16 }}>
-        {showUpdateBase && (
-          <Button size="small" icon={<SyncOutlined />} loading={updateBase.isPending} onClick={() => updateBase.mutate()}>
-            刷新基准快照
-          </Button>
-        )}
-        {(canReview || isSubmitter) && cr.status === 'open' && (
-          <Button size="small" onClick={() => close.mutate()} loading={close.isPending}>关闭申请</Button>
-        )}
-        {canReview && cr.status === 'closed' && (
-          <Button size="small" icon={<RedoOutlined />} loading={reopen.isPending} onClick={() => reopen.mutate()}>
-            重开申请
-          </Button>
-        )}
-      </Space>
-
-      {/* 变更项列表（含逐项决策） */}
-      <Title level={5}>变更项（{cr.items.length}）</Title>
-      {cr.items.map((item: ChangeItemDetail) => (
-        <Card key={item.id} size="small" style={{ marginBottom: 8 }}>
-          <Space size={8} wrap style={{ marginBottom: item.field_conflicts.length ? undefined : 4 }}>
-            <Tag color={OP_META[item.op].color} style={{ marginInlineEnd: 0 }}>{OP_META[item.op].label}</Tag>
-            {item.row_id != null && <Text type="secondary">行 #{item.row_id}</Text>}
-            {item.field_conflicts.length > 0 && (
-              <Text type="danger" style={{ fontSize: 12 }}>{item.field_conflicts.length} 个字段基准已漂移</Text>
-            )}
-            {canMergeNow && (
-              <Segmented
-                size="small"
-                value={decisions[String(item.id)] ?? 'apply'}
-                onChange={(v) => setDecisions(prev => ({ ...prev, [String(item.id)]: v as Decision }))}
-                options={[
-                  { label: '应用', value: 'apply' },
-                  { label: '跳过', value: 'skip' },
-                ]}
-              />
-            )}
-          </Space>
-          <FieldDiffTable item={item} />
-        </Card>
-      ))}
-
-      {canMergeNow && (
-        <Card size="small" style={{ marginBottom: 24 }}>
-          <Input.TextArea
-            rows={2}
-            value={mergeComment}
-            onChange={(e) => setMergeComment(e.target.value)}
-            placeholder="合并备注（可选，记录处理说明）"
-            maxLength={2000}
-          />
+    <div className="cn-page cn-qc-run-page" data-testid="change-request-detail">
+      {/* ── 页头：申请标题 + 状态 / 元信息 + 操作（与运行详情页同款紧凑页头） ── */}
+      <header className="cn-page-head">
+        <div className="cn-page-head-main">
+          <span className="cn-page-head-icon" aria-hidden><PullRequestOutlined /></span>
+          <div className="cn-page-head-text">
+            <h1 className="cn-page-head-title">{cr.title}</h1>
+            <div className="cn-page-head-sub">
+              <Tag color={statusMeta.color} style={{ marginInlineEnd: 0 }}>{statusMeta.label}</Tag>
+              {cr.stale && <Tag color="warning" style={{ marginInlineEnd: 0 }}>基准已过期</Tag>}
+              <span className="cn-page-head-meta">
+                #{cr.id} · {memberDisplayName(nameById, cr.submitted_by_id, '未知')} 提交于 {formatDateTime(cr.created_at)}
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="cn-page-head-actions">
           <Button
-            type="primary"
-            icon={<CheckOutlined />}
-            style={{ marginTop: 8 }}
-            loading={merge.isPending}
-            onClick={handleMerge}
+            icon={<ArrowLeftOutlined />}
+            // 来源为工作区级分栏列表（需求 0107）时回到工作区列表，否则回单表列表
+            onClick={() => navigate(
+              (location.state as { from?: string } | null)?.from === 'workspace'
+                ? `/w/${wid}/tables/change-requests`
+                : `/w/${wid}/tables/${tid}/change-requests`,
+            )}
           >
-            执行合并
+            返回修改申请
           </Button>
-        </Card>
+          {showUpdateBase && (
+            <Button icon={<SyncOutlined />} loading={updateBase.isPending} onClick={() => updateBase.mutate()}>
+              刷新基准快照
+            </Button>
+          )}
+          {(canReview || isSubmitter) && cr.status === 'open' && (
+            <Button onClick={() => close.mutate()} loading={close.isPending}>关闭申请</Button>
+          )}
+          {canReview && cr.status === 'closed' && (
+            <Button icon={<RedoOutlined />} loading={reopen.isPending} onClick={() => reopen.mutate()}>
+              重开申请
+            </Button>
+          )}
+        </div>
+      </header>
+
+      {/* ── 告警区：基准过期 / 字段漂移 / 目标行缺失，运行式叠放 ── */}
+      {cr.stale && (
+        <Alert
+          type="warning"
+          showIcon
+          title="基准已过期：提交后表内数据已变化，合并前请确认差异。"
+        />
+      )}
+      {driftFields.length > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          title={`基准漂移字段：${driftFields.join('、')}`}
+          description="这些字段的当前值与提交时基准不一致，合并将以当前值为准或按项跳过。"
+        />
+      )}
+      {rowMissing && (
+        <Alert
+          type="error"
+          showIcon
+          title="存在目标行已删除的变更项"
+          description="对应变更项落库时可能被跳过，请确认后处理。"
+        />
       )}
 
-      {/* 评论 */}
-      <Title level={5}>讨论</Title>
-      <Input.TextArea
-        rows={3}
-        value={commentDraft}
-        onChange={(e) => setCommentDraft(e.target.value)}
-        placeholder="写下评论…"
-        maxLength={2000}
-      />
-      <Button
-        type="primary"
-        style={{ marginTop: 8, marginBottom: 16 }}
-        disabled={!commentDraft.trim()}
-        loading={addComment.isPending}
-        onClick={submitComment}
-      >
-        发表评论
-      </Button>
+      {/* ── 概要计数条：变更项 / 新增 / 修改 / 删除 / 漂移字段 / 讨论 ── */}
+      <section className="cn-qc-run-summary" aria-label="申请概要" data-testid="cr-summary">
+        <Stat label="变更项" value={cr.items.length} />
+        <Stat label="新增" value={opCount('create')} />
+        <Stat label="修改" value={opCount('update')} />
+        <Stat label="删除" value={opCount('delete')} />
+        <Stat label="漂移字段" value={driftFields.length} tone={driftFields.length ? 'warning' : undefined} />
+        <Stat label="讨论" value={cr.actions.length} />
+      </section>
 
-      {/* 动作流水 */}
-      <Title level={5}>动态</Title>
-      <div style={{ marginBottom: 24 }}>
-        {cr.actions.map((a: ChangeActionItem) => (
-          <div key={a.id} style={{ padding: '4px 0' }}>
-            <Text type="secondary">
-              <Text strong>{memberDisplayName(nameById, a.acted_by_id)}</Text>
-              {' '}{ACTION_TEXT[a.action] ?? a.action}
-              {a.comment && <>：<Text>{a.comment}</Text></>}
-              {' '}· {formatDateTime(a.created_at)}
-            </Text>
-          </div>
-        ))}
+      {/* ── 双栏：左=变更项（字段级 diff + 逐项决策），右=审批 + 讨论与动态 ── */}
+      <div className="cn-cr-detail-split">
+        <SectionBox
+          title="变更项"
+          icon={<PullRequestOutlined />}
+          extra={<span>共 {cr.items.length} 项</span>}
+          flush
+          testId="cr-items-box"
+        >
+          {cr.description && (
+            <Paragraph type="secondary" className="cn-cr-desc">{cr.description}</Paragraph>
+          )}
+          {cr.items.length === 0 ? (
+            <div className="cn-qc-empty">
+              <Empty description="没有变更项" />
+            </div>
+          ) : (
+            cr.items.map((item: ChangeItemDetail) => (
+              <div key={item.id} className="cn-cr-change-item">
+                <div className="cn-cr-change-head">
+                  <Text
+                    type={OP_META[item.op].textType}
+                    className={`cn-cr-op cn-cr-op--${item.op}`}
+                  >
+                    {OP_META[item.op].icon}
+                    {OP_META[item.op].label}
+                  </Text>
+                  {item.row_id != null && <Text type="secondary">行 #{item.row_id}</Text>}
+                  <Text type="secondary" className="cn-cr-change-fields">{itemFieldSummary(item)}</Text>
+                  {item.row_missing && <Tag>行已删除</Tag>}
+                  {item.field_conflicts.length > 0 && (
+                    <Text type="danger" className="cn-cr-change-drift">
+                      {item.field_conflicts.length} 个字段基准已漂移
+                    </Text>
+                  )}
+                  <span className="cn-cr-change-decision">
+                    {canMergeNow && (
+                      <Segmented
+                        size="small"
+                        value={decisions[String(item.id)] ?? 'apply'}
+                        onChange={(v) => setDecisions(prev => ({ ...prev, [String(item.id)]: v as Decision }))}
+                        options={[
+                          { label: '应用', value: 'apply' },
+                          { label: '跳过', value: 'skip' },
+                        ]}
+                      />
+                    )}
+                  </span>
+                </div>
+                <div className="cn-cr-change-body">
+                  <FieldDiffTable item={item} />
+                </div>
+              </div>
+            ))
+          )}
+        </SectionBox>
+
+        <div className="cn-cr-detail-side">
+          <SectionBox
+            title="审批"
+            icon={<CheckOutlined />}
+            testId="cr-approval-box"
+          >
+            {canMergeNow ? (
+              <div className="cn-cr-approval-form">
+                <Input.TextArea
+                  rows={3}
+                  value={mergeComment}
+                  onChange={(e) => setMergeComment(e.target.value)}
+                  placeholder="合并备注（可选，记录处理说明）"
+                  maxLength={2000}
+                />
+                <Button
+                  type="primary"
+                  icon={<CheckOutlined />}
+                  loading={merge.isPending}
+                  onClick={handleMerge}
+                >
+                  执行合并
+                </Button>
+              </div>
+            ) : cr.status === 'open' ? (
+              <Text type="secondary">当前为只读预览，仅 owner/editor 可审批合并。</Text>
+            ) : (
+              <div className="cn-cr-approval-meta">
+                <div className="cn-cr-approval-line">
+                  <Text type="secondary">处理人</Text>
+                  <Text>{handledById != null ? memberDisplayName(nameById, handledById, '未知') : '—'}</Text>
+                </div>
+                <div className="cn-cr-approval-line">
+                  <Text type="secondary">处理时间</Text>
+                  <Text>{handledAt ? formatDateTime(handledAt) : '—'}</Text>
+                </div>
+                <div className="cn-cr-approval-line">
+                  <Text type="secondary">处理备注</Text>
+                  <Text>{handledComment || '—'}</Text>
+                </div>
+              </div>
+            )}
+          </SectionBox>
+
+          <SectionBox
+            title="讨论与动态"
+            icon={<MessageOutlined />}
+            extra={<span>{cr.actions.length} 条</span>}
+            flush
+            testId="cr-discussion-box"
+          >
+            {cr.actions.length === 0 ? (
+              <div className="cn-qc-empty">
+                <Empty description="暂无动态" />
+              </div>
+            ) : (
+              cr.actions.map((a: ChangeActionItem) => (
+                <div key={a.id} className="cn-cr-action">
+                  <Text type="secondary" className="cn-cr-action-meta">
+                    <Text strong>{memberDisplayName(nameById, a.acted_by_id)}</Text>
+                    {' '}{ACTION_TEXT[a.action] ?? a.action}
+                    {a.comment && <>：<Text>{a.comment}</Text></>}
+                    {' '}· {formatDateTime(a.created_at)}
+                  </Text>
+                </div>
+              ))
+            )}
+            <div className="cn-cr-composer">
+              <Input.TextArea
+                rows={3}
+                value={commentDraft}
+                onChange={(e) => setCommentDraft(e.target.value)}
+                placeholder="写下评论…"
+                maxLength={2000}
+              />
+              <Button
+                type="primary"
+                disabled={!commentDraft.trim()}
+                loading={addComment.isPending}
+                onClick={submitComment}
+              >
+                发表评论
+              </Button>
+            </div>
+          </SectionBox>
+        </div>
       </div>
     </div>
   )

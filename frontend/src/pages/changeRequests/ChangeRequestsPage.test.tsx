@@ -213,7 +213,7 @@ describe('ChangeRequestsPage 修改申请列表', () => {
 })
 
 describe('ChangeRequestsPage 同行合并视图', () => {
-  it('按行聚合，组内/组间时间倒序，新增行归 ungrouped', async () => {
+  it('左栏按行分组（组间时间倒序）+ 新增行申请；右栏只展示选中组的申请', async () => {
     const g12a = makeReq({ id: 51, title: '改名称', created_at: '2026-10-02T09:00:00', row_ids: [12] })
     const g12b = makeReq({ id: 52, title: '改数量', created_at: '2026-10-02T10:00:00', row_ids: [12] })
     const g30 = makeReq({ id: 53, title: '改备注', created_at: '2026-10-02T11:00:00', row_ids: [30] })
@@ -227,13 +227,41 @@ describe('ChangeRequestsPage 同行合并视图', () => {
     }))
     renderPage()
 
-    expect(await screen.findByText('行 #12')).toBeInTheDocument()
-    // 组间倒序（行 #30 在前）、组内倒序（改数量 在 改名称 前）
-    const order = screen.getAllByText(/改备注|改数量|改名称/).map(e => e.textContent)
-    expect(order).toEqual(['改备注', '改数量', '改名称'])
-    // create-only 归入「新增行申请」区
-    expect(screen.getByText('新增行申请')).toBeInTheDocument()
-    expect(screen.getByText('新增行')).toBeInTheDocument()
+    // 左栏两组 + 新增行申请，默认选中首组（行 #30）
+    expect(await screen.findByRole('option', { name: /行 #30/ })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('option', { name: /行 #12/ })).toHaveAttribute('aria-selected', 'false')
+    expect(screen.getByRole('option', { name: /新增行申请/ })).toHaveAttribute('aria-selected', 'false')
+
+    // 右栏只渲染选中组的申请（改备注），其余组不出现
+    expect(screen.getByTestId('cr-group-requests-box')).toHaveTextContent('改备注')
+    expect(screen.queryByText('改数量')).toBeNull()
+    expect(screen.queryByText('改名称')).toBeNull()
+
+    // 切到行 #12：组内时间倒序（改数量 在 改名称 前）
+    fireEvent.click(screen.getByRole('option', { name: /行 #12/ }))
+    expect(await screen.findByText('改数量')).toBeInTheDocument()
+    const order = screen.getAllByText(/改数量|改名称/).map(e => e.textContent)
+    expect(order).toEqual(['改数量', '改名称'])
+    expect(screen.queryByText('改备注')).toBeNull()
+
+    // create-only 归入「新增行申请」，切换后右栏展示该申请
+    fireEvent.click(screen.getByRole('option', { name: /新增行申请/ }))
+    expect(await screen.findByText('新增行')).toBeInTheDocument()
+    expect(screen.getByText('新增行申请 · 申请清单')).toBeInTheDocument()
+    expect(screen.queryByText('改数量')).toBeNull()
+  })
+
+  it('页面骨架：同行合并为左行分组 / 右申请清单双栏', async () => {
+    server.use(groupedHandler({
+      groups: [{ row_id: 12, requests: [makeReq({ id: 51, title: '改数量', row_ids: [12] })] }],
+    }))
+    renderPage()
+
+    expect(await screen.findByTestId('change-requests-page')).toBeInTheDocument()
+    expect(screen.getByTestId('cr-grouped-split')).toBeInTheDocument()
+    expect(screen.getByTestId('cr-groups-box')).toBeInTheDocument()
+    expect(screen.getByTestId('cr-group-requests-box')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '修改申请' })).toBeInTheDocument()
   })
 
   it('reviewer 勾选多份申请后批量审批，无冲突直接合并', async () => {
@@ -322,6 +350,13 @@ describe('ChangeRequestsPage 工作区级左右分栏（需求 0107）', () => {
   it('左栏按工作表分组并显示计数，默认选中申请数最多的表；点击标题跳详情', async () => {
     server.use(workspaceHandler())
     renderPage('/w/10/tables/change-requests')
+
+    // 页面骨架：页头 + 左工作表 / 右修改项双栏
+    expect(await screen.findByTestId('change-requests-page')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { level: 1, name: '修改申请' })).toBeInTheDocument()
+    expect(screen.getByTestId('cr-workspace-split')).toBeInTheDocument()
+    expect(screen.getByTestId('cr-tables-box')).toBeInTheDocument()
+    expect(screen.getByTestId('cr-requests-box')).toBeInTheDocument()
 
     // 左栏两张表 + 计数徽标；默认选中申请数更多的客户表，右栏只展示该表申请
     expect(await screen.findByRole('option', { name: /客户表/ })).toBeInTheDocument()

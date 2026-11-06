@@ -110,14 +110,21 @@
 
 ### 工作台原语：`.cn-page-head` / `.cn-box`
 
-数据分析与质量检查两页共用一套 GitHub 方盒语言，样式只在 `index.css` 定义一次，组件实现为 `components/SectionBox.tsx`（方盒）：
+数据分析、质量检查与修改申请三页共用一套 GitHub 方盒语言，样式只在 `index.css` 定义一次，组件实现为 `components/SectionBox.tsx`（方盒）：
 
 | 类名 | 用途 |
 | --- | --- |
 | `.cn-page-head` / `-main` / `-icon` / `-text` / `-title` / `-sub` / `-meta` / `-actions` | 紧凑页头：图标 + 标题 + 单行副标题（长文案由 `-meta` 省略、悬停看全）+ 右侧主操作；窄屏操作区独占整行 |
 | `.cn-box` / `-head` / `-icon` / `-title` / `-extra` / `-body` / `-foot` / `-hint` | 分区方盒：1px 描边 + 主题圆角 + 浅底标题条，无投影；标题过长自动省略 |
 | `.cn-box--flush > .cn-box-body` | 内容区去内边距与间距，专供「带边框列表」—— 外框由盒子承担，行分隔线满宽，避免双层描边 |
-| `.cn-qc-split` / `.cn-qc-row` / `.cn-qc-row--selectable` / `.cn-qc-row--active` / `.cn-qc-empty` | 质量检查双栏与行态：选中行浅底 + 品牌色左边线；行上下内边距 6px、行内 Meta 垂直居中（开关 / 图标与标题 + 描述中线对齐）、标题行高 1.4、描述 12px、状态标签行高 18px；窄屏（≤1023.98px）单列堆叠 |
+| `.cn-qc-split` / `.cn-qc-row` / `.cn-qc-row--selectable` / `.cn-qc-row--active` / `.cn-qc-empty` | 质量检查双栏与行态：选中行浅底 + 品牌色左边线；行上下内边距 6px、行内 Meta 垂直居中（开关 / 图标与标题 + 描述中线对齐）、标题行高 1.4、描述 12px、状态标签行高 18px；窄屏降级由使用页作用域定义（修改申请在 ≤767.98px 单列堆叠） |
+| `.cn-qc-run-summary` / `.cn-qc-run-stat` / `-label` / `-value` | 运行式概要条：6 格等宽单元格 + 1px 描边 + 内部分隔线，标签 11px 弱化、数值 14px tabular-nums（质量检查运行详情与修改申请详情共用） |
+| `.cn-cr-side-list` / `.cn-cr-side-item` / `.cn-cr-side-main` / `.cn-cr-side-title` / `.cn-cr-side-name` / `.cn-cr-side-preview` | 修改申请左栏清单：按钮复位后继承 `.cn-qc-row` 行态（hover / 选中底色 / 品牌色左边线），行分组为标题 + 值预览 + 状态标签多行堆叠，工作表清单为单行 + 计数徽标 |
+| `.cn-cr-item-wrap` / `.cn-cr-item` / `.cn-cr-item-line` / `.cn-cr-tags` / `.cn-cr-item-title` / `.cn-cr-item-meta` | 修改申请单行申请行（GitHub 运行行）：标签换行、标题省略、右侧 `#id · 提交人 · 时间` 省略且 tabular-nums；相邻行分隔线满宽 |
+| `.cn-cr-detail-split` / `.cn-cr-detail-main` / `.cn-cr-detail-side` | 修改申请详情 / 冲突处理左宽右窄双栏（`1fr` + 360px），≤1023.98px 单列堆叠 |
+| `.cn-cr-change-item` / `-head` / `-body` / `.cn-cr-op` | 变更项分块：头部单行（操作类型徽标 / 行号 / 字段摘要 / 逐项 apply·skip），下方字段级 diff 表 |
+| `.cn-cr-action` / `.cn-cr-composer` / `.cn-cr-approval-form` / `.cn-cr-approval-line` | 讨论动态行、评论输入区、审批备注表单与非 open 的处理人 / 时间 / 备注两列信息 |
+| `.cn-cr-groupnote` / `.cn-cr-context*` / `.cn-cr-rowcontext*` | 冲突 / 基准漂移提示块、展开只读上下文（三态 diff + 当前行全字段，涉及字段加粗） |
 
 新增带边框列表时优先复用 `.cn-box--flush` + 行类，不要另起「外层卡片 + 内层 List 边框」的双层描边。
 
