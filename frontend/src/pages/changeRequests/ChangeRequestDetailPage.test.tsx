@@ -46,6 +46,9 @@ function setupDetailHandlers(overrides: Partial<ChangeRequestDetail> = {}) {
   server.use(
     http.get('/api/v1/workspaces/10/tables/20/change-requests/51', () =>
       HttpResponse.json({ ...DETAIL, ...overrides })),
+    // 变更项的数据表引用：表名来自 table 查询
+    http.get('/api/v1/workspaces/10/tables/20', () =>
+      HttpResponse.json({ id: 20, workspace_id: 10, name: '客户表', fields: [], views: [] })),
     http.get('/api/v1/workspaces/10', () =>
       HttpResponse.json({
         id: 10, name: '测试工作区', description: '', visibility: 'member', tags: [],
@@ -89,6 +92,20 @@ describe('ChangeRequestDetailPage 修改申请详情', () => {
     const discussion = screen.getByTestId('cr-discussion-box')
     expect(within(discussion).getByPlaceholderText('写下评论…')).toBeInTheDocument()
     expect(within(discussion).getByText('请尽快处理')).toBeInTheDocument()
+  })
+
+  it('变更项标注所属数据表引用与变更内容摘要', async () => {
+    setupDetailHandlers()
+    renderPage()
+
+    const itemsBox = await screen.findByTestId('cr-items-box')
+    // 数据表引用：方盒头表名可跳转到数据表页
+    const tableLink = await within(itemsBox).findByRole('link', { name: '客户表' })
+    expect(tableLink).toHaveAttribute('href', '/w/10/tables/20')
+    // update 项：字段级「旧值 → 新值」摘要（完整明细仍由下方 diff 表承载）
+    expect(within(itemsBox).getByText('分级：A → B；备注：老客户 → 空')).toBeInTheDocument()
+    // delete 项：整行快照规模
+    expect(within(itemsBox).getByText('整行删除 · 2 个字段快照')).toBeInTheDocument()
   })
 
   it('渲染标题/状态/提交人/items diff 与动作流水', async () => {

@@ -28,6 +28,25 @@ export function diffFields(item: ChangeItemDetail): string[] {
   return Array.from(new Set([...Object.keys(item.base_values), ...Object.keys(item.values)]))
 }
 
+/** 变更内容单行摘要（列表展开区 / 详情页变更项头部共用，完整明细仍由本表承载）：
+ * - update：`字段：旧值 → 新值`，最多展示 2 个字段后折叠为计数；
+ * - create：`字段=新增值`；
+ * - delete：整行快照规模。 */
+export function changeSummary(item: ChangeItemDetail): string {
+  if (item.op === 'delete') {
+    const count = Object.keys(item.base_values).length
+    return count > 0 ? `整行删除 · ${count} 个字段快照` : '整行删除'
+  }
+  const fields = item.op === 'update' ? diffFields(item) : Object.keys(item.values)
+  if (fields.length === 0) return '（无字段变更）'
+  const preview = fields.slice(0, 2).map((field) => (
+    item.op === 'create'
+      ? `${field}=${formatValue(item.values[field])}`
+      : `${field}：${formatValue(item.base_values[field])} → ${formatValue(item.values[field])}`
+  ))
+  return preview.join('；') + (fields.length > 2 ? ` 等 ${fields.length} 个字段` : '')
+}
+
 /** 表格行模型：before / after 为 null 表示该侧不适用（新增无 before、删除无 after） */
 interface FieldRow {
   field: string

@@ -25,7 +25,7 @@ import {
   CheckOutlined, PlusOutlined, PullRequestOutlined, RightOutlined, TableOutlined, UnorderedListOutlined,
 } from '@ant-design/icons'
 import { FieldDiffTable } from '@/components/DiffView'
-import { formatValue } from '@/components/DiffView/FieldDiffTable'
+import { changeSummary, formatValue } from '@/components/DiffView/FieldDiffTable'
 import SectionBox from '@/components/SectionBox'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -230,6 +230,9 @@ function RequestContext({ wid, tableId, requestId }: { wid: string; tableId: ID;
           <Space size={8} wrap className="cn-cr-context-tags">
             <Tag color={OP_META[item.op].color}>{OP_META[item.op].label}</Tag>
             {item.row_id != null && <Text type="secondary">行 #{item.row_id}</Text>}
+            <Text type="secondary" className="cn-cr-change-fields" title={changeSummary(item)}>
+              {changeSummary(item)}
+            </Text>
             {item.row_missing && <Tag>行已删除</Tag>}
             {item.field_conflicts.length > 0 && (
               <Text type="danger" className="cn-cr-context-hint">{item.field_conflicts.length} 个字段基准已漂移</Text>

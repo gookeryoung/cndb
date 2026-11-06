@@ -15,14 +15,16 @@ import {
 } from 'antd'
 import {
   ArrowLeftOutlined, CheckOutlined, DeleteOutlined, EditOutlined, MessageOutlined,
-  PlusCircleOutlined, PullRequestOutlined, RedoOutlined, SyncOutlined,
+  PlusCircleOutlined, PullRequestOutlined, RedoOutlined, SyncOutlined, TableOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { FieldDiffTable } from '@/components/DiffView'
+import { changeSummary } from '@/components/DiffView/FieldDiffTable'
 import SectionBox from '@/components/SectionBox'
 import { formatDateTime } from '@/utils/datetime'
 import { changeRequestsApi, workspaceApi } from '@/api'
+import { useTable } from '@/api/hooks'
 import type { ChangeActionItem, ChangeItemDetail, ChangeOp, WorkspaceRole } from '@/api'
 import { memberDisplayName, useMemberNameMap } from '@/hooks/useMemberNames'
 import { useAuthStore } from '@/store'
@@ -49,13 +51,6 @@ const ACTION_TEXT: Record<ChangeActionItem['action'], string> = {
   close: '关闭了申请',
   reopen: '重开了申请',
   update_base: '刷新了基准快照',
-}
-
-/** 变更项字段摘要：新增 / 修改列出字段名，删除标注整行 */
-function itemFieldSummary(item: ChangeItemDetail): string {
-  if (item.op === 'delete') return '整行删除'
-  const fields = Object.keys(item.op === 'update' ? item.values : item.base_values)
-  return fields.length > 0 ? `字段：${fields.join('、')}` : '（无字段）'
 }
 
 /** 概要条单元格（与质量检查运行详情同款） */
@@ -94,6 +89,9 @@ export default function ChangeRequestDetailPage() {
     queryFn: () => workspaceApi.get(wid),
     enabled: !!wid,
   })
+
+  // 变更项的数据表引用：详情响应不含表名，复用表格页的 table 查询（queryKey 共享缓存）
+  const { data: table } = useTable(wid, tid)
 
   const myRole = (wsDetail?.current_user_role ?? null) as WorkspaceRole | null
   const canReview = myRole === 'owner' || myRole === 'editor'
@@ -185,6 +183,7 @@ export default function ChangeRequestDetailPage() {
   const canMergeNow = canReview && cr.status === 'open'
   const showUpdateBase = isSubmitter && cr.status === 'open' && cr.stale
   const statusMeta = STATUS_META[cr.status] ?? { label: cr.status, color: 'default' }
+  const tableName = table?.name || cr.table_name || `表 #${cr.table_id}`
 
   // 概要计数：操作类型分布 / 漂移字段（按字段去重）/ 讨论条数
   const driftFields = Array.from(new Set(cr.items.flatMap(it => it.field_conflicts)))
@@ -284,7 +283,18 @@ export default function ChangeRequestDetailPage() {
         <SectionBox
           title="变更项"
           icon={<PullRequestOutlined />}
-          extra={<span>共 {cr.items.length} 项</span>}
+          extra={(
+            <span className="cn-cr-items-extra">
+              <Link
+                className="cn-cr-table-ref"
+                to={`/w/${wid}/tables/${tid}`}
+                title={`打开数据表：${tableName}`}
+              >
+                <TableOutlined aria-hidden />{tableName}
+              </Link>
+              <span>共 {cr.items.length} 项</span>
+            </span>
+          )}
           flush
           testId="cr-items-box"
         >
@@ -306,8 +316,16 @@ export default function ChangeRequestDetailPage() {
                     {OP_META[item.op].icon}
                     {OP_META[item.op].label}
                   </Text>
-                  {item.row_id != null && <Text type="secondary">行 #{item.row_id}</Text>}
-                  <Text type="secondary" className="cn-cr-change-fields">{itemFieldSummary(item)}</Text>
+                  <Text type="secondary">
+                    {item.row_id != null ? `行 #${item.row_id}` : '新增行'}
+                  </Text>
+                  <Text
+                    type="secondary"
+                    className="cn-cr-change-fields"
+                    title={changeSummary(item)}
+                  >
+                    {changeSummary(item)}
+                  </Text>
                   {item.row_missing && <Tag>行已删除</Tag>}
                   {item.field_conflicts.length > 0 && (
                     <Text type="danger" className="cn-cr-change-drift">

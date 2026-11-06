@@ -8267,9 +8267,37 @@ body.cn-doc-focus-view .cn-doc-stats {
   white-space: pre-wrap;
 }
 
-/* 变更项分块：头部单行（操作类型 / 行号 / 字段摘要 / 决策），下方 diff 表 */
+/* 变更项分块：头部单行（操作类型 / 行号 / 变更内容摘要 / 决策），下方 diff 表 */
 .cn-cr-change-item + .cn-cr-change-item {
   border-top: 1px solid var(--cn-border);
+}
+
+/* 变更项方盒头：数据表引用（可跳转）+ 计数，表名过长省略 */
+.cn-cr-items-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-md);
+  min-width: 0;
+  font-size: var(--cn-text-xs);
+}
+
+.cn-cr-table-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-hairline);
+  max-width: 16em;
+  overflow: hidden;
+  color: var(--cn-brand-color);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-cr-table-ref:hover {
+  text-decoration: underline;
+}
+
+.cn-cr-table-ref .anticon {
+  flex: none;
 }
 
 .cn-cr-change-head {
@@ -8284,6 +8312,12 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-cr-change-fields.ant-typography,
 .cn-cr-change-drift.ant-typography {
   font-size: var(--cn-text-xs);
+}
+
+/* 变更内容摘要允许折行，长字段值不撑破头部 */
+.cn-cr-change-fields.ant-typography {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* 逐项 apply / skip 决策靠右收尾，窄屏回落左对齐 */

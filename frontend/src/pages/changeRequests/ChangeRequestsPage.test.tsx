@@ -392,6 +392,8 @@ describe('ChangeRequestsPage 工作区级左右分栏（需求 0107）', () => {
     expect(await screen.findByText('修改前')).toBeInTheDocument()
     expect(screen.getByText(/当前行上下文/)).toBeInTheDocument()
     expect(screen.getByText(/电话: 13800000000/)).toBeInTheDocument()
+    // 变更项头部标注变更内容摘要（字段级旧值 → 新值）
+    expect(screen.getByText('分级：B → A')).toBeInTheDocument()
   })
 
   it('详情页「返回修改申请」从工作区入口回到工作区列表（而非单表列表）', async () => {
