@@ -28,6 +28,7 @@ const TEMPLATE = {
 
 describe('TemplateEditorDrawer', () => {
   beforeEach(() => {
+    window.localStorage.clear()
     server.use(
       http.post('/api/v1/workspace-templates/1/preview', async ({ request }) => {
         const body = await request.json() as { spec: typeof TEMPLATE.spec }
@@ -99,6 +100,25 @@ describe('TemplateEditorDrawer', () => {
     expect(screen.queryByTestId('outline-form-apply')).not.toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: '展开表单' }))
     expect(await screen.findByTestId('outline-form-apply')).toBeInTheDocument()
+  })
+
+  it('saves an incomplete draft locally on demand', async () => {
+    renderProviders(
+      <TemplateEditorDrawer open template={null} onClose={vi.fn()} />,
+    )
+    await screen.findByTestId('template-editor-drawer')
+    await userEvent.type(screen.getByTestId('template-name'), '草稿模板A')
+
+    await userEvent.click(screen.getByTestId('outline-form-form_1'))
+    const formName = await screen.findByLabelText(/表单名称/)
+    await userEvent.clear(formName)
+
+    expect(await screen.findByText(/表单名称不能为空/)).toBeInTheDocument()
+    expect(screen.getByTestId('template-save-btn')).toBeDisabled()
+
+    await userEvent.click(screen.getByTestId('template-save-draft-btn'))
+    expect(await screen.findByText('草稿已保存到本机，下次打开可继续编辑')).toBeInTheDocument()
+    expect(window.localStorage.getItem('cndb_template_draft_v1:new:0')).toContain('草稿模板A')
   })
 
   it('restores an unsaved local draft when reopening', async () => {

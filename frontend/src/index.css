@@ -8831,6 +8831,12 @@ body.cn-doc-focus-view .cn-doc-stats {
   line-height: 1.5;
 }
 
+/* 抽屉头部：本机草稿保存状态，避免与主操作按钮抢视觉 */
+.cn-tpl-draft-saved {
+  font-size: var(--cn-text-xs);
+  white-space: nowrap;
+}
+
 .cn-tpl-hint .anticon {
   margin-top: 2px;
   color: var(--cn-text-muted);

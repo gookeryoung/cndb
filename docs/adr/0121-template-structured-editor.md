@@ -198,7 +198,7 @@ DraftField = { uid, name, type, required, is_unique, hidden, default_value?, con
 | D9 | 错误定位 | 统一 `path → uid` 映射，检查面板点击跳转 | 服务端错误文本已带路径；可渐进增强 | 仅弹 toast（无法定位） | `templateDraft.ts`、`TemplateCheckPanel.tsx` |
 | D10 | JSON 应用 | 显式「应用」；失败不覆盖当前草稿 | 避免边输边解析导致结构跳变 | 实时双向同步（输入中间态破坏草稿） | `TemplateJsonTab.tsx` |
 | D11 | 加载方式 | 抽屉按 H31 懒加载 | 编辑器代码与字段配置体积较大，不应进模板中心首屏 | 静态引入（增大受控 chunk） | `TemplatesPage.tsx` |
-| D12 | 本地草稿 | P2 用 `localStorage` 按模板 id + 版本暂存，保存成功清除 | 复杂模板编辑耗时长，防误关丢失；不影响服务端权威 | 不提供草稿恢复（误关即丢） | `TemplateEditorDrawer.tsx` |
+| D12 | 本地草稿 | P2 用 `localStorage` 按模板 id + 版本暂存；抽屉提供「保存草稿」显式按钮（不依赖校验结果，允许保存未完成 / 有问题的大模板），保存成功清除 | 复杂模板编辑耗时长，防误关丢失；不影响服务端权威 | 不提供草稿恢复（误关即丢） | `TemplateEditorDrawer.tsx` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -230,7 +230,7 @@ DraftField = { uid, name, type, required, is_unique, hidden, default_value?, con
 ## 交接（会话结束更新）
 
 - 当前阶段：P0 / P1 / P2 均已实现；本地 `make flow`、`pnpm vitest run src/pages/templates src/pages/help` 与结构化编辑 e2e 全绿。
-- 已完成：草稿模型与唯一序列化入口 `draftToSpec`；全屏三栏抽屉（目录 / 编辑 / 检查预览）；元信息、阶段、表单与字段（含类型配置、`form.flow`）、文档、流程步骤结构化编辑；JSON 高级页签显式应用、失败保留草稿；引用级联删除；服务端无状态 `validate` 端点与 `{path, message}` 错误定位；目录按名称 / key 搜索与分组折叠；按「模板 id + 版本」把未保存草稿暂存 localStorage（打开时恢复、保存成功 / 回到初始态清除）；帮助中心「结构化编辑模板」小节；e2e `template-structured-edit.spec.ts` 覆盖新建 → 结构化新增字段 → 大纲搜索 / 无匹配 → JSON 页签确认 → 保存 → 详情展示。
+- 已完成：草稿模型与唯一序列化入口 `draftToSpec`；全屏三栏抽屉（目录 / 编辑 / 检查预览）；元信息、阶段、表单与字段（含类型配置、`form.flow`）、文档、流程步骤结构化编辑；JSON 高级页签显式应用、失败保留草稿；引用级联删除；服务端无状态 `validate` 端点与 `{path, message}` 错误定位；目录按名称 / key 搜索与分组折叠；按「模板 id + 版本」把未保存草稿暂存 localStorage（打开时恢复、保存成功 / 回到初始态清除），抽屉头部提供「保存草稿」显式按钮，未通过结构校验或未填完的复杂模板也可立即暂存，关闭确认改为「放弃修改会清除本机草稿」；帮助中心「结构化编辑模板」小节；e2e `template-structured-edit.spec.ts` 覆盖新建 → 结构化新增字段 → 大纲搜索 / 无匹配 → JSON 页签确认 → 保存 → 详情展示。
 - 下一步：本轮无必做项；若继续演进，可推进目录键盘导航、历史版本 diff 与跨设备草稿同步，并在改动 `TemplateEditorDrawer.tsx` 时同步 `TemplateEditorDrawer.test.tsx` 与 e2e。
 - 已知坑：`normalize_spec` 首错即抛，服务端一次只回一条，前端需先跑本地全量校验；字段重命名等于删旧增新；`localStorage` 不可用时静默降级；e2e 依赖 `src/cndb/static` 最新构建（改前端后先 `pnpm build` 再跑）；`AntD Drawer width` 与 `Timeline items.children/dot`、`Alert message`、`Space direction` 仍为弃用告警（不影响门禁，后续统一迁移）。
 - 最近一次全绿：`make flow`（6745 passed / 3 skipped）、`pnpm vitest run src/pages/templates src/pages/help`（62 例）、结构化编辑 e2e（chromium-authed）、`pnpm typecheck` / `pnpm lint`。

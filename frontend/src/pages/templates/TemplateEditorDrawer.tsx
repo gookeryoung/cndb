@@ -5,7 +5,7 @@ import type { ReactNode } from 'react'
 import { App as AntApp, Button, Drawer, Input, Modal, Space, Tag, Typography } from 'antd'
 import {
   ApartmentOutlined, AppstoreOutlined, CodeOutlined, DownOutlined, FileTextOutlined, PlusOutlined,
-  SearchOutlined, TableOutlined,
+  SaveOutlined, SearchOutlined, TableOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceTemplateApi } from '@/api'
@@ -92,6 +92,7 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
   const [serverError, setServerError] = useState('')
   const [keyword, setKeyword] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -101,6 +102,7 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
     setBaseline(baselineOf(next))
     setActive('overview')
     setSummary(stored?.summary ?? '')
+    setDraftSavedAt(stored?.savedAt ?? null)
     setPreview(null)
     setForce(false)
     setServerError('')
@@ -112,23 +114,34 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
   const issues = useMemo(() => validateDraft(draft), [draft])
   const dirty = useMemo(() => baselineOf(draft) !== baseline || summary.trim() !== '', [draft, baseline, summary])
 
+  /** 立即把当前草稿写入本机：不依赖校验结果，允许保存未完成 / 有问题的复杂模板。 */
+  const persistDraft = (notify: boolean) => {
+    const savedAt = new Date().toISOString()
+    try {
+      const payload: StoredDraft = { draft, summary, savedAt }
+      localStorage.setItem(draftStorageKey(template), JSON.stringify(payload))
+      setDraftSavedAt(savedAt)
+      if (notify) message.success('草稿已保存到本机，下次打开可继续编辑')
+      return true
+    } catch {
+      if (notify) message.error('本机存储不可用（隐私模式或空间不足），草稿未能保存')
+      return false
+    }
+  }
+
   // 编辑中的草稿按「模板 id + 版本」暂存到本地，防误关丢失；保存成功或回到初始态时清除。
   useEffect(() => {
     if (!open) return
     const key = draftStorageKey(template)
     if (!dirty) {
       localStorage.removeItem(key)
+      setDraftSavedAt(null)
       return
     }
-    const timer = window.setTimeout(() => {
-      const payload: StoredDraft = { draft, summary, savedAt: new Date().toISOString() }
-      try {
-        localStorage.setItem(key, JSON.stringify(payload))
-      } catch {
-        // 本地存储不可用（隐私模式 / 配额）时静默降级，不影响编辑与保存
-      }
-    }, 800)
+    const timer = window.setTimeout(() => persistDraft(false), 800)
     return () => window.clearTimeout(timer)
+    // persistDraft 只读当前 draft / summary，依赖已由下面列出
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, template, draft, summary, dirty])
 
   const updateDraft = (fn: (current: TemplateDraft) => TemplateDraft) => {
@@ -306,12 +319,15 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
       return
     }
     Modal.confirm({
-      title: '放弃未保存的修改？',
-      content: '关闭后本次结构化编辑与 JSON 草稿不会保留。',
+      title: '关闭编辑？',
+      content: '当前修改还未生成新版本。如需下次继续编辑，请先点「保存草稿」；选择「放弃修改」会清除本机草稿。',
       okText: '放弃修改',
       okButtonProps: { danger: true },
       cancelText: '继续编辑',
-      onOk: onClose,
+      onOk: () => {
+        localStorage.removeItem(draftStorageKey(template))
+        onClose()
+      },
     })
   }
 
@@ -401,6 +417,19 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
       title={template ? `编辑模板：${template.name}（v${template.version}）` : '新建工作区模板'}
       extra={(
         <Space>
+          {draftSavedAt && (
+            <Text type="secondary" className="cn-tpl-draft-saved" title={new Date(draftSavedAt).toLocaleString()}>
+              草稿已存本机
+            </Text>
+          )}
+          <Button
+            icon={<SaveOutlined />}
+            onClick={() => persistDraft(true)}
+            disabled={!dirty}
+            data-testid="template-save-draft-btn"
+          >
+            保存草稿
+          </Button>
           <Button onClick={close}>取消</Button>
           <Button
             type="primary"
