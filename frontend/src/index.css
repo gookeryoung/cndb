@@ -8802,3 +8802,28 @@ body.cn-doc-focus-view .cn-doc-stats {
     padding-inline-start: var(--cn-space-lg);
   }
 }
+
+/* ─────────────── 工作区模板页（GitHub 双栏：模板清单 + 结构化详情） ───────────────
+ * 复用质量检查 / 修改申请的双栏与行态原语（cn-qc-split / cn-qc-row / cn-cr-side-*）；
+ * 左栏按「内置模板 / 自定义模板」分组，组标题为弱化小字分隔条，行内容与修改申请左栏一致。 */
+
+.cn-tpl-group-label {
+  padding: var(--cn-space-xs) var(--cn-space-lg);
+  background: var(--cn-bg-subtle);
+  border-top: 1px solid var(--cn-border);
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-xs);
+  font-weight: var(--cn-weight-semibold);
+  letter-spacing: 0.02em;
+}
+
+.cn-tpl-group-label:first-child {
+  border-top: none;
+}
+
+@media (max-width: 767.98px) {
+  /* 双栏在窄屏纵向堆叠（与修改申请列表页一致） */
+  .cn-tpl-page .cn-qc-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

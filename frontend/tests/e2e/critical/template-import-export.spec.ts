@@ -46,14 +46,17 @@ test.describe("工作区模板导入导出", () => {
     await page.getByRole("button", { name: "确认导入" }).click()
     await expect(page.getByText(`模板已导入：${templateName}`)).toBeVisible()
 
-    // 列表刷新后新模板可见，并从卡片导出
-    const card = page.locator(".ant-collapse-item").filter({ hasText: templateName }).first()
-    await expect(card).toBeVisible()
+    // 列表刷新后新模板出现在左栏清单，选中后从右栏详情导出
+    const row = page.getByRole("option", { name: new RegExp(templateName) })
+    await expect(row).toBeVisible()
+    await row.click()
+    const detail = page.getByTestId("template-detail-box")
+    await expect(detail.getByText(templateName, { exact: true })).toBeVisible()
     const responsePromise = page.waitForResponse(
       r => r.url().includes("/export") && r.request().method() === "GET",
     )
     const downloadPromise = page.waitForEvent("download")
-    await card.getByRole("button", { name: "导出" }).click()
+    await detail.getByRole("button", { name: "导出" }).click()
     await downloadPromise
     const response = await responsePromise
     expect(response.status()).toBe(200)

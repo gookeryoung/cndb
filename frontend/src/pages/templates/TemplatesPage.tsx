@@ -1,24 +1,31 @@
-/** 工作区模板中心（需求 0094）：模板列表 / 结构化预览 / 编辑与影响预览. */
+/** 工作区模板中心（需求 0094 / 0120）：模板列表 / 结构化预览 / 编辑与影响预览.
+ *
+ * 布局对齐质量检查与修改申请页：cn-page 紧凑页头 + cn-qc-split 双栏。
+ * 左栏为模板清单（按「内置模板 / 自定义模板」分组，选中项高亮），
+ * 右栏为选中模板的元信息与结构化详情（流程阶段 / 表单 / 端到端流程 / 文档规则），
+ * 编辑、复制、导出、删除等操作收敛到右栏方盒标题条，避免左栏行内按钮过密。
+ */
 
 import { useMemo, useState } from 'react'
 import {
   Alert, App as AntApp, Button, Collapse, Descriptions, Empty, Input, List, Popconfirm,
-  Space, Table, Tabs, Tag, Timeline, Typography,
+  Space, Spin, Table, Tabs, Tag, Timeline, Typography,
 } from 'antd'
 import {
-  PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, ApartmentOutlined,
-  FileTextOutlined, TableOutlined, CheckCircleOutlined, ClockCircleOutlined,
-  ImportOutlined, ExportOutlined,
+  AppstoreOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined,
+  ApartmentOutlined, FileTextOutlined, TableOutlined, CheckCircleOutlined,
+  ClockCircleOutlined, ImportOutlined, ExportOutlined, UnorderedListOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
+import SectionBox from '@/components/SectionBox'
 import { workspaceTemplateApi } from '@/api'
 import type { TemplateSpecForm, WorkspaceTemplate } from '@/api'
 import TemplateEditorModal from './TemplateEditorModal'
 import TemplateImportModal from './TemplateImportModal'
 import { formatDateTime } from '@/utils/datetime'
 
-const { Title, Text, Paragraph } = Typography
+const { Text, Paragraph } = Typography
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
@@ -163,6 +170,48 @@ function TemplateDetail({ template }: { template: WorkspaceTemplate }) {
   )
 }
 
+/** 左栏单行：模板名 + 版本 / 分类标签 + 规模摘要（选中态由 cn-qc-row--active 绘制） */
+function TemplateRow({
+  template, active, onClick,
+}: {
+  template: WorkspaceTemplate
+  active: boolean
+  onClick: () => void
+}) {
+  const { counts } = template
+  const summary = [
+    `${counts.stage_count} 阶段`,
+    `${counts.form_count} 表单`,
+    `${counts.document_rule_count} 文档规则`,
+    counts.flow_count ? `${counts.flow_count} 流程` : '',
+  ].filter(Boolean).join(' / ')
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={active}
+      className={[
+        'cn-cr-side-item',
+        'cn-cr-group-item',
+        'cn-qc-row',
+        'cn-qc-row--selectable',
+        active ? 'cn-qc-row--active' : '',
+      ].filter(Boolean).join(' ')}
+      data-testid={`template-item-${template.id}`}
+      onClick={onClick}
+    >
+      <span className="cn-cr-side-main">
+        <span className="cn-cr-side-title">
+          <Text strong>{template.name}</Text>
+          <Tag color="blue">v{template.version}</Tag>
+          {template.category && <Tag>{template.category}</Tag>}
+        </span>
+        <span className="cn-cr-side-preview">{summary}</span>
+      </span>
+    </button>
+  )
+}
+
 export default function TemplatesPage() {
   const { message } = AntApp.useApp()
   const navigate = useNavigate()
@@ -172,6 +221,7 @@ export default function TemplatesPage() {
   const [editing, setEditing] = useState<WorkspaceTemplate | null>(null)
   const [seed, setSeed] = useState<WorkspaceTemplate | null>(null)
   const [importOpen, setImportOpen] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   const { data: templates = [], isLoading, error } = useQuery({
     queryKey: ['workspace-templates', search],
@@ -184,10 +234,16 @@ export default function TemplatesPage() {
     return { builtin, custom }
   }, [templates])
 
+  // 选中项被删除 / 搜索过滤后回落到清单第一条（内置优先，与接口顺序一致）
+  const selected = useMemo(() => (
+    templates.find(t => String(t.id) === selectedId) ?? templates[0] ?? null
+  ), [templates, selectedId])
+
   const remove = useMutation({
     mutationFn: (id: number) => workspaceTemplateApi.remove(id),
     onSuccess: () => {
       message.success('模板已删除')
+      setSelectedId(null)
       queryClient.invalidateQueries({ queryKey: ['workspace-templates'] })
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
@@ -209,82 +265,42 @@ export default function TemplatesPage() {
   const renderGroup = (title: string, items: WorkspaceTemplate[]) => {
     if (!items.length) return null
     return (
-      <div style={{ marginBottom: 20 }}>
-        <Title level={5} style={{ marginBottom: 10 }}>{title}</Title>
-        <Collapse
-          accordion
-          items={items.map(t => ({
-            key: String(t.id),
-            label: (
-              <Space wrap>
-                <Text strong>{t.name}</Text>
-                <Tag color="blue">v{t.version}</Tag>
-                {t.is_builtin && <Tag color="gold">内置</Tag>}
-                {t.category && <Tag>{t.category}</Tag>}
-                <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-                  {t.counts.stage_count} 阶段 / {t.counts.form_count} 表单 / {t.counts.document_rule_count} 文档规则
-                  {t.counts.flow_count ? ` / ${t.counts.flow_count} 流程` : ''}
-                  · {t.workspace_count} 个工作区使用
-                </Text>
-              </Space>
-            ),
-            extra: (
-              <Space onClick={e => e.stopPropagation()}>
-                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(t)}>编辑规格</Button>
-                <Button size="small" icon={<CopyOutlined />} onClick={() => openClone(t)}>复制</Button>
-                <Button
-                  size="small"
-                  icon={<ExportOutlined />}
-                  loading={exportTemplate.isPending && exportTemplate.variables?.id === t.id}
-                  onClick={() => exportTemplate.mutate(t)}
-                  data-testid={`export-template-${t.id}`}
-                >
-                  导出
-                </Button>
-                <Popconfirm
-                  title="删除模板？"
-                  description={t.workspace_count > 0 ? '仍有工作区在使用，无法删除' : '删除后不可恢复（历史版本一并删除）'}
-                  disabled={t.workspace_count > 0}
-                  onConfirm={() => remove.mutate(Number(t.id))}
-                >
-                  <Button size="small" danger disabled={t.workspace_count > 0} icon={<DeleteOutlined />}>删除</Button>
-                </Popconfirm>
-              </Space>
-            ),
-            children: (
-              <div>
-                <Descriptions size="small" column={2} style={{ marginBottom: 8 }}>
-                  <Descriptions.Item label="说明" span={2}>{t.description || '—'}</Descriptions.Item>
-                  <Descriptions.Item label="模块">
-                    {t.modules.length ? t.modules.map(m => <Tag key={m}>{m}</Tag>) : '—'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="更新时间">{formatDateTime(t.updated_at)}</Descriptions.Item>
-                </Descriptions>
-                <TemplateDetail template={t} />
-              </div>
-            ),
-          }))}
-        />
+      <div key={title} role="group" aria-label={title}>
+        <div className="cn-tpl-group-label">{title}（{items.length}）</div>
+        {items.map(t => (
+          <TemplateRow
+            key={t.id}
+            template={t}
+            active={selected != null && String(t.id) === String(selected.id)}
+            onClick={() => setSelectedId(String(t.id))}
+          />
+        ))}
       </div>
     )
   }
 
   return (
-    <div style={{ padding: 16, maxWidth: 1180, margin: '0 auto' }} data-testid="templates-page">
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
-        <div>
-          <Title level={3} style={{ marginBottom: 2 }}>工作区模板</Title>
-          <Text type="secondary">
-            模板定义表单、文档规则与生命周期阶段；更新时先看 diff 与已有数据影响，再确认保存。
-          </Text>
+    <div className="cn-page cn-qc-page cn-tpl-page" data-testid="templates-page">
+      {/* ── 页头：标题 + 口径说明 + 搜索 / 导入 / 新建入口（与质量检查页同款紧凑页头） ── */}
+      <header className="cn-page-head">
+        <div className="cn-page-head-main">
+          <span className="cn-page-head-icon" aria-hidden><AppstoreOutlined /></span>
+          <div className="cn-page-head-text">
+            <h1 className="cn-page-head-title">工作区模板</h1>
+            <div className="cn-page-head-sub">
+              <span className="cn-page-head-meta">
+                左侧为内置与自定义模板清单，右侧为选中模板的结构化详情；更新时先看 diff 与已有数据影响，再确认保存。
+              </span>
+            </div>
+          </div>
         </div>
-        <Space wrap>
+        <div className="cn-page-head-actions">
           <Input.Search
             placeholder="搜索模板 / 分类"
             allowClear
             value={search}
             onChange={e => setSearch(e.target.value)}
-            style={{ width: 220 }}
+            style={{ width: 200 }}
           />
           <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)} data-testid="import-template-btn">
             导入模板
@@ -293,28 +309,100 @@ export default function TemplatesPage() {
             新建模板
           </Button>
           <Button onClick={() => navigate('/w')}>返回工作区</Button>
-        </Space>
-      </div>
+        </div>
+      </header>
 
       <Alert
         type="info"
         showIcon
-        style={{ marginBottom: 14 }}
         message="模板更新不会破坏已有数据"
         description="保存模板时只增量补齐缺失的表 / 字段 / 文档；被移出模板的表、字段、文档一律保留。字段类型切换与删除当前阶段会提示确认。"
       />
 
       {error ? (
         <Alert type="error" showIcon message="模板加载失败" description={error instanceof Error ? error.message : String(error)} />
-      ) : isLoading ? (
-        <div className="cn-state">加载中…</div>
-      ) : templates.length === 0 ? (
-        <Empty description="还没有模板，新建一个或用内置科研项目模板复制" />
       ) : (
-        <>
-          {renderGroup('内置模板', grouped.builtin)}
-          {renderGroup('自定义模板', grouped.custom)}
-        </>
+        <div className="cn-qc-split" data-testid="templates-split">
+          {/* 左栏：模板清单（内置 / 自定义分组） */}
+          <SectionBox
+            title="模板清单"
+            icon={<UnorderedListOutlined />}
+            extra={<span>共 {templates.length} 条</span>}
+            flush
+            testId="template-list-box"
+          >
+            <Spin spinning={isLoading}>
+              {!isLoading && templates.length === 0 ? (
+                <div className="cn-qc-empty">
+                  <Empty description="还没有模板，新建一个或用内置科研项目模板复制" />
+                </div>
+              ) : (
+                <div role="listbox" aria-label="模板清单" className="cn-cr-side-list">
+                  {renderGroup('内置模板', grouped.builtin)}
+                  {renderGroup('自定义模板', grouped.custom)}
+                </div>
+              )}
+            </Spin>
+          </SectionBox>
+
+          {/* 右栏：选中模板的元信息与结构化详情 + 操作 */}
+          <SectionBox
+            title={selected ? selected.name : '模板详情'}
+            icon={<FileTextOutlined />}
+            extra={selected ? (
+              <Space size={8} wrap>
+                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(selected)}>
+                  编辑规格
+                </Button>
+                <Button size="small" icon={<CopyOutlined />} onClick={() => openClone(selected)}>
+                  复制
+                </Button>
+                <Button
+                  size="small"
+                  icon={<ExportOutlined />}
+                  loading={exportTemplate.isPending && exportTemplate.variables?.id === selected.id}
+                  onClick={() => exportTemplate.mutate(selected)}
+                  data-testid={`export-template-${selected.id}`}
+                >
+                  导出
+                </Button>
+                <Popconfirm
+                  title="删除模板？"
+                  description={selected.workspace_count > 0 ? '仍有工作区在使用，无法删除' : '删除后不可恢复（历史版本一并删除）'}
+                  disabled={selected.workspace_count > 0}
+                  onConfirm={() => remove.mutate(Number(selected.id))}
+                >
+                  <Button size="small" danger disabled={selected.workspace_count > 0} icon={<DeleteOutlined />}>
+                    删除
+                  </Button>
+                </Popconfirm>
+              </Space>
+            ) : undefined}
+            testId="template-detail-box"
+          >
+            <Spin spinning={isLoading}>
+              {!selected ? (
+                <div className="cn-qc-empty">
+                  <Empty description="选择左侧模板查看详情" />
+                </div>
+              ) : (
+                <div data-testid="template-detail">
+                  <Descriptions size="small" column={2} style={{ marginBottom: 8 }}>
+                    <Descriptions.Item label="说明" span={2}>{selected.description || '—'}</Descriptions.Item>
+                    <Descriptions.Item label="分类">{selected.category || '—'}</Descriptions.Item>
+                    <Descriptions.Item label="版本">v{selected.version}</Descriptions.Item>
+                    <Descriptions.Item label="模块">
+                      {selected.modules.length ? selected.modules.map(m => <Tag key={m}>{m}</Tag>) : '—'}
+                    </Descriptions.Item>
+                    <Descriptions.Item label="使用情况">{selected.workspace_count} 个工作区使用</Descriptions.Item>
+                    <Descriptions.Item label="更新时间" span={2}>{formatDateTime(selected.updated_at)}</Descriptions.Item>
+                  </Descriptions>
+                  <TemplateDetail template={selected} />
+                </div>
+              )}
+            </Spin>
+          </SectionBox>
+        </div>
       )}
 
       <TemplateEditorModal

@@ -99,7 +99,7 @@ Related: `src/cndb/plugins/workspaces/`、`src/cndb/plugins/tables/`、`src/cndb
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| 页面 | `frontend/src/pages/templates/TemplatesPage.tsx` | 模板中心：列表 / 分组 / 详情 / 复制 / 删除 |
+| 页面 | `frontend/src/pages/templates/TemplatesPage.tsx` | 模板中心：左右双栏（左清单按内置 / 自定义分组，右详情）/ 复制 / 导出 / 删除 |
 | 组件 | `frontend/src/pages/templates/TemplateEditorModal.tsx` | JSON 规格编辑，保存前强制预览 |
 | 组件 | `frontend/src/pages/templates/TemplatePreviewPanel.tsx` | diff + 影响分组展示，breaking 确认 |
 | 工具 | `frontend/src/pages/templates/templateSpec.ts` | JSON 解析 / 影响摘要纯函数 |

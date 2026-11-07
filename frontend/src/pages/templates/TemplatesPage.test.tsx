@@ -61,10 +61,12 @@ describe('TemplatesPage', () => {
 
   it('renders template details and opens the spec editor', async () => {
     renderProviders(<TemplatesPage />)
-    expect(await screen.findByText('科研项目全生命周期管理')).toBeInTheDocument()
-    expect(screen.getByText(/2 个工作区使用/)).toBeInTheDocument()
+    const row = await screen.findByTestId('template-item-1')
+    expect(row).toBeInTheDocument()
+    expect(screen.getByText('内置模板（1）')).toBeInTheDocument()
+    expect(await screen.findByText(/2 个工作区使用/)).toBeInTheDocument()
 
-    await userEvent.click(screen.getByText('科研项目全生命周期管理'))
+    await userEvent.click(row)
     expect(await screen.findByText(/阶段 1 · 立项申报/)).toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('create-template-btn'))
@@ -76,7 +78,7 @@ describe('TemplatesPage', () => {
 
   it('exports a template as a json file', async () => {
     renderProviders(<TemplatesPage />)
-    expect(await screen.findByText('科研项目全生命周期管理')).toBeInTheDocument()
+    expect(await screen.findByTestId('template-item-1')).toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('export-template-1'))
     expect(await screen.findByText('模板已导出')).toBeInTheDocument()
@@ -84,7 +86,7 @@ describe('TemplatesPage', () => {
 
   it('previews and confirms importing a template file', async () => {
     const { container } = renderProviders(<TemplatesPage />)
-    expect(await screen.findByText('科研项目全生命周期管理')).toBeInTheDocument()
+    expect(await screen.findByTestId('template-item-1')).toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('import-template-btn'))
     expect(await screen.findByTestId('template-import-modal')).toBeInTheDocument()
@@ -108,7 +110,7 @@ describe('TemplatesPage', () => {
 
   it('rejects non-json files before upload', async () => {
     const { container } = renderProviders(<TemplatesPage />)
-    expect(await screen.findByText('科研项目全生命周期管理')).toBeInTheDocument()
+    expect(await screen.findByTestId('template-item-1')).toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('import-template-btn'))
     const input = container.ownerDocument.querySelector('input[type="file"]') as HTMLInputElement
