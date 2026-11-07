@@ -31,6 +31,21 @@ def _get_datasets_dir() -> Path | None:
     return None
 
 
+def _get_templates_dir() -> Path | None:
+    """定位模板示例资源目录（``examples/templates``，包内为 ``cndb/templates``）.
+
+    与 datasets 同口径：包内优先（wheel / fspack 安装版），仓库根兜底。
+    """
+    pkg_templates = Path(__file__).resolve().parents[2] / "templates"
+    if pkg_templates.is_dir():
+        return pkg_templates
+    src_root = Path(__file__).resolve().parents[4]
+    candidate = src_root / "examples" / "templates"
+    if candidate.is_dir():
+        return candidate
+    return None
+
+
 def _workspace_display_name(folder_name: str) -> str:
     """工作区文件夹名 → 显示名（剥离 "工作区-" 前缀，让前端显示更友好）."""
     if folder_name.startswith("工作区-"):

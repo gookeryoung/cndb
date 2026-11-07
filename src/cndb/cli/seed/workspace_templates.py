@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
 RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
@@ -423,18 +425,151 @@ def _seed_research_template(db: Any, owner_id: int | None) -> int:
 
 
 EXAMPLE_WORKSPACE_NAME = "科研项目管理（模板示例）"
+EXAMPLE_TEMPLATE_DIR = "科研项目全生命周期管理"
+EXAMPLE_MANIFEST_FILE = "example.json"
+_LINK_FIELD_TYPES = {"link", "lookup"}
+
+
+def _example_template_dir() -> Path | None:
+    """模板示例资源目录（examples/templates/<模板名>，wheel 内为 cndb/templates）."""
+    from cndb.cli.seed import paths
+
+    root = paths._get_templates_dir()
+    if root is None:
+        return None
+    candidate = root / EXAMPLE_TEMPLATE_DIR
+    return candidate if candidate.is_dir() else None
+
+
+def _load_example_manifest() -> dict[str, Any] | None:
+    """读取示例数据清单；缺失或非法时返回 None（seed 降级为只建空模板）。"""
+    dir_path = _example_template_dir()
+    if dir_path is None:
+        return None
+    manifest_path = dir_path / EXAMPLE_MANIFEST_FILE
+    if not manifest_path.is_file():
+        print(f"[seed] 模板示例数据不存在: {manifest_path}")
+        return None
+    try:
+        return json.loads(manifest_path.read_text(encoding="utf-8-sig"))
+    except (json.JSONDecodeError, OSError) as exc:
+        print(f"[seed] 模板示例数据解析失败: {manifest_path}: {exc}")
+        return None
+
+
+def _form_creation_order(forms: list[dict[str, Any]]) -> list[str]:
+    """按 link / lookup 依赖排序：被引用表单先建，避免解析行 ID 时目标尚未写入."""
+    by_key = {form["key"]: form for form in forms}
+    order: list[str] = []
+    done: set[str] = set()
+    visiting: set[str] = set()
+
+    def visit(key: str) -> None:
+        if key in done or key in visiting:
+            return
+        visiting.add(key)
+        for field in by_key[key]["fields"]:
+            if field["type"] not in _LINK_FIELD_TYPES:
+                continue
+            target = (field.get("config") or {}).get("target_form")
+            if isinstance(target, str) and target in by_key:
+                visit(target)
+        visiting.discard(key)
+        done.add(key)
+        order.append(key)
+
+    for key in by_key:
+        visit(key)
+    return order
+
+
+def _display_field(form: dict[str, Any]) -> str:
+    """链接引用的显示字段：优先唯一字段，其次文本字段，最后第一个字段."""
+    for field in form["fields"]:
+        if field.get("is_unique"):
+            return field["name"]
+    for field in form["fields"]:
+        if field["type"] in {"text", "longtext"}:
+            return field["name"]
+    return form["fields"][0]["name"]
+
+
+def _create_example_records(
+    engine: Any,
+    spec: dict[str, Any],
+    tables: dict[str, Any],
+    records: dict[str, list[dict[str, Any]]],
+) -> None:
+    """按 spec 字段类型写入示例记录；link 字段用目标表单显示值解析为行 ID."""
+    from cndb.plugins.tables.services.core.records import create_row
+
+    forms = {form["key"]: form for form in spec["forms"]}
+    created: dict[str, dict[str, int]] = {}
+    for key in _form_creation_order(spec["forms"]):
+        table = tables.get(key)
+        if table is None:
+            continue
+        form = forms[key]
+        display = _display_field(form)
+        created[key] = {}
+        for raw in records.get(key) or []:
+            values = dict(raw)
+            for field in form["fields"]:
+                if field["type"] not in _LINK_FIELD_TYPES:
+                    continue
+                ref = values.get(field["name"])
+                if not isinstance(ref, str) or not ref:
+                    continue
+                target = (field.get("config") or {}).get("target_form")
+                if not isinstance(target, str):
+                    continue
+                target_id = created.get(target, {}).get(ref)
+                if target_id is None:
+                    raise ValueError(f"模板示例数据引用不存在：{key}.{field['name']}={ref}")
+                values[field["name"]] = [target_id]
+            row = create_row(engine, table, values)
+            if row is None:
+                continue
+            display_value = raw.get(display)
+            if isinstance(display_value, str):
+                created[key][display_value] = row["id"]
+
+
+def _apply_example_documents(db: Any, ws: Any, owner: Any, manifest: dict[str, Any]) -> None:
+    """把 examples 下的 Markdown 正文写入模板占位文档（仅示例工作区）."""
+    from cndb.plugins.documents.models import Document
+    from cndb.plugins.documents.services.content import update_content
+
+    dir_path = _example_template_dir()
+    if dir_path is None:
+        return
+    doc_state = (ws.template_state or {}).get("documents", {})
+    for key, relative in (manifest.get("documents") or {}).items():
+        doc_id = doc_state.get(key)
+        if not isinstance(doc_id, int) or db.get(Document, doc_id) is None:
+            continue
+        path = dir_path / relative
+        if not path.is_file():
+            print(f"[seed] 模板示例文档不存在: {path}")
+            continue
+        update_content(
+            db,
+            ws.id,
+            doc_id,
+            owner,
+            content=path.read_text(encoding="utf-8"),
+            change_summary="写入示例内容",
+        )
 
 
 def _seed_research_example(db: Any, owner: Any, template: Any) -> int:
     """用科研模板建一个示例工作区，并写入各阶段的典型记录 / 文档内容.
 
-    数据流程模块（需求 0095）需要一个可直接体验的真实工作区：立项申报表 3 个项目、
-    过程实施 3 条进展 + 4 条经费、结题验收 1 条结论，阶段文档填入示例正文。
+    示例数据不在代码里重复：统一读取 ``examples/templates/科研项目全生命周期管理/``
+    下的 ``example.json``（7 张表单的典型记录）与 ``documents/*.md``（阶段文档正文），
+    便于直接阅读与对比。
     """
-    from cndb.plugins.documents.models import Document
-    from cndb.plugins.documents.services.content import update_content
     from cndb.plugins.tables.models import DataTable
-    from cndb.plugins.tables.services.core.records import create_row
     from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole, WorkspaceVisibility
     from cndb.plugins.workspaces.services.templates.engine import apply_spec_to_workspace
     from cndb.plugins.workspaces.services.templates.spec import normalize_spec
@@ -458,227 +593,21 @@ def _seed_research_example(db: Any, owner: Any, template: Any) -> int:
     apply_spec_to_workspace(db, ws, normalize_spec(template.spec), owner, template=template, version=template.version)
     db.refresh(ws)
 
-    def table(key: str) -> DataTable:
+    def table(key: str) -> DataTable | None:
         table_id = (ws.template_state or {}).get("form_tables", {}).get(key)
-        return db.get(DataTable, table_id)
+        return db.get(DataTable, table_id) if isinstance(table_id, int) else None
+
+    manifest = _load_example_manifest()
+    if manifest is None:
+        print("[seed] 未找到模板示例数据，跳过示例记录与文档正文")
+        db.commit()
+        return 1
 
     engine = db.get_bind()
-    application = table("project_application")
-    progress = table("project_progress")
-    budget = table("project_budget")
-    closure = table("project_closure")
-
-    projects = [
-        {
-            "项目名称": "面向高端装备的智能监测关键技术研究",
-            "项目编号": "2026-GJ-001",
-            "项目类别": "国家级",
-            "负责人": "张伟",
-            "依托单位": "某大学机械工程学院",
-            "起止时间": "2026-01 至 2028-12",
-            "预算金额（万元）": 120,
-            "研究内容": "研究复杂工况下高端装备多源信号采集、故障特征提取与剩余寿命预测方法，形成可移植的智能监测软件模块。",
-        },
-        {
-            "项目名称": "工业软件可靠性评测方法研究",
-            "项目编号": "2026-SB-014",
-            "项目类别": "省部级",
-            "负责人": "李娜",
-            "依托单位": "某工业技术研究院",
-            "起止时间": "2026-03 至 2027-12",
-            "预算金额（万元）": 60,
-            "研究内容": "建立工业软件可靠性指标体系与自动化评测流程，覆盖单元、集成与系统三个层级。",
-        },
-        {
-            "项目名称": "多源异构数据融合平台",
-            "项目编号": "2026-HX-007",
-            "项目类别": "横向课题",
-            "负责人": "王强",
-            "依托单位": "某科技有限公司",
-            "起止时间": "2026-02 至 2027-06",
-            "预算金额（万元）": 45,
-            "研究内容": "面向企业多业务系统，构建数据接入、清洗、主数据对齐与指标服务能力。",
-        },
-    ]
-    created_projects: list[dict[str, Any]] = []
-    for values in projects:
-        row = create_row(engine, application, values)
-        assert row is not None
-        created_projects.append(row)
-
-    progress_rows = [
-        (
-            created_projects[0],
-            "2026-04-15",
-            "正常",
-            0.25,
-            "完成需求调研与总体方案设计，关键传感器选型通过评审。",
-            "样机联调窗口与实验室排期冲突，已申请夜间时段。",
-        ),
-        (
-            created_projects[1],
-            "2026-05-20",
-            "正常",
-            0.40,
-            "完成可靠性指标初稿与两个典型模块的测试用例。",
-            "部分历史缺陷数据缺失，采用同类项目数据补充。",
-        ),
-        (
-            created_projects[2],
-            "2026-05-08",
-            "存在风险",
-            0.30,
-            "完成三个业务系统的数据接入，主数据对齐规则待确认。",
-            "客户侧口径未统一，需在 5 月底前完成确认。",
-        ),
-    ]
-    for project, day, state, percent, summary, issue in progress_rows:
-        assert project is not None
-        create_row(
-            engine,
-            progress,
-            values={
-                "所属项目": [project["id"]],
-                "填报日期": day,
-                "进展状态": state,
-                "完成度": percent,
-                "阶段进展": summary,
-                "存在问题与措施": issue,
-            },
-        )
-
-    budget_rows = [
-        (created_projects[0], "2026-02-10", "设备费", 180000, "采购高频振动传感器与采集卡", "PZ-2026-0007"),
-        (created_projects[0], "2026-03-18", "差旅费", 12600, "项目启动会与现场调研差旅", "CL-2026-0031"),
-        (created_projects[1], "2026-04-02", "测试化验加工费", 86000, "第三方可靠性测试服务", "CS-2026-0012"),
-        (created_projects[2], "2026-03-25", "劳务费", 42000, "数据治理与接入开发劳务", "LW-2026-0009"),
-    ]
-    for project, day, subject, amount, purpose, voucher in budget_rows:
-        assert project is not None
-        create_row(
-            engine,
-            budget,
-            values={
-                "所属项目": [project["id"]],
-                "支出日期": day,
-                "支出科目": subject,
-                "金额（元）": amount,
-                "用途说明": purpose,
-                "凭证编号": voucher,
-            },
-        )
-
-    create_row(
-        engine,
-        closure,
-        values={
-            "所属项目": [created_projects[2]["id"]],
-            "验收日期": "2027-06-30",
-            "验收结论": "通过",
-            "成果摘要": "完成多源异构数据融合平台建设，接入 3 个业务系统，形成 1 项软件著作权与 2 项企业标准。",
-            "成果类型": ["软件著作权", "标准"],
-        },
-    )
-
-    expense = table("expense_claim")
-    achievement = table("achievement_registry")
-    change = table("project_change")
-    expense_rows = [
-        (created_projects[0], "张伟", "2026-05-06", "材料费", 8600, "采购传感器标定耗材", "待审批", ""),
-        (created_projects[1], "李娜", "2026-05-12", "差旅费", 3200, "参加可靠性评测标准研讨会", "已通过", "同意报销"),
-    ]
-    for project, person, day, subject, amount, reason, status, opinion in expense_rows:
-        assert project is not None
-        create_row(
-            engine,
-            expense,
-            values={
-                "所属项目": [project["id"]],
-                "报销人": person,
-                "报销日期": day,
-                "报销科目": subject,
-                "金额（元）": amount,
-                "报销事由": reason,
-                "审批状态": status,
-                "审批意见": opinion,
-            },
-        )
-
-    achievement_rows = [
-        (created_projects[0], "复杂工况设备故障诊断方法", ["论文", "专利"], "张伟、王磊", "2026-06-18", "档案室 A-03"),
-        (created_projects[2], "多源异构数据融合平台 V1.0", ["软件著作权"], "王强", "2027-05-20", "档案室 B-01"),
-    ]
-    for project, title, kinds, authors, day, location in achievement_rows:
-        assert project is not None
-        create_row(
-            engine,
-            achievement,
-            values={
-                "所属项目": [project["id"]],
-                "成果名称": title,
-                "成果类型": kinds,
-                "完成人": authors,
-                "登记日期": day,
-                "归档位置": location,
-            },
-        )
-
-    create_row(
-        engine,
-        change,
-        values={
-            "所属项目": [created_projects[1]["id"]],
-            "变更类型": "周期变更",
-            "申请日期": "2026-07-01",
-            "变更内容": "项目结束时间由 2027-12 延长至 2028-03，增加现场验证环节。",
-            "变更原因": "客户现场环境比预期复杂，需要补充一轮验证。",
-            "审批状态": "待审批",
-        },
-    )
-
-    doc_state = (ws.template_state or {}).get("documents", {})
-    doc_samples = {
-        "proposal_doc": """# 立项申请书
-
-## 一、项目基本信息
-
-- 项目名称：面向高端装备的智能监测关键技术研究
-- 项目编号：2026-GJ-001
-- 负责人：张伟
-- 依托单位：某大学机械工程学院
-
-## 二、研究背景与意义
-
-高端装备服役环境复杂，现有监测手段对早期故障识别不足。
-
-## 三、研究目标与内容
-
-形成多源信号融合、故障特征提取与剩余寿命预测三项关键技术。
-""",
-        "midterm_doc": """# 中期检查报告
-
-## 一、计划执行情况
-
-已完成总体方案与传感器选型，进度符合计划。
-
-## 二、阶段性成果
-
-完成监测原型系统 v0.1，申请发明专利 1 项。
-
-## 三、经费使用情况
-
-设备费支出 18 万元，差旅费 1.26 万元。
-
-## 四、存在问题与下一步计划
-
-加快样机联调，按节点完成数据采集与算法验证。
-""",
-    }
-    for key, content in doc_samples.items():
-        doc_id = doc_state.get(key)
-        if isinstance(doc_id, int) and db.get(Document, doc_id) is not None:
-            update_content(db, ws.id, doc_id, owner, content=content, change_summary="写入示例内容")
-
+    spec = normalize_spec(template.spec)
+    records = manifest.get("records") or {}
+    _create_example_records(engine, spec, {key: table(key) for key in records}, records)
+    _apply_example_documents(db, ws, owner, manifest)
     db.commit()
     print(f"[seed] 创建模板示例工作区: {EXAMPLE_WORKSPACE_NAME} (id={ws.id})")
     return 1

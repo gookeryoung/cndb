@@ -970,7 +970,7 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
     from sqlalchemy import text
 
     count = db.execute(text(f'SELECT COUNT(*) FROM "{applications.db_table_name}"')).scalar()
-    assert count == 3
+    assert count == 6
     # 多流程专用表单（未出现在 stages）同样实例化并写入示例数据
     from cndb.plugins.workspaces.models import WorkspaceTemplate
 
@@ -982,7 +982,7 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
         "achievement_registration",
         "project_change",
     }
-    for form_key, expected in (("expense_claim", 2), ("achievement_registry", 2), ("project_change", 1)):
+    for form_key, expected in (("expense_claim", 6), ("achievement_registry", 6), ("project_change", 5)):
         table = (
             db.query(DataTable)
             .filter(
@@ -993,6 +993,20 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
         )
         rows = db.execute(text(f'SELECT COUNT(*) FROM "{table.db_table_name}"')).scalar()
         assert rows == expected, (form_key, rows)
+    # 五份阶段文档均写入 examples 下的示例正文
+    from cndb.plugins.documents.models import Document, DocumentVersion
+
+    documents = (ws.template_state or {}).get("documents", {})
+    assert set(documents) == {"proposal_doc", "midterm_doc", "budget_doc", "closure_doc", "archive_doc"}
+    closure_doc = db.get(Document, documents["closure_doc"])
+    assert closure_doc is not None
+    latest = (
+        db.query(DocumentVersion)
+        .filter(DocumentVersion.document_id == closure_doc.id)
+        .order_by(DocumentVersion.version_number.desc())
+        .first()
+    )
+    assert latest is not None and "结题报告" in latest.content
     # 再执行一次幂等跳过
     assert _seed_workspace_templates(db, owner=owner) == 0
 
