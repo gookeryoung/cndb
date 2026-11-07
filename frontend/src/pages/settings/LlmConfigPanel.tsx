@@ -23,7 +23,7 @@ import {
   Alert, App, AutoComplete, Button, Collapse, Empty, Form, Input, Select, Space, Table, Tag,
   Tooltip, Typography,
 } from 'antd'
-import { ApiOutlined, HistoryOutlined, ReloadOutlined } from '@ant-design/icons'
+import { ApiOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -33,8 +33,10 @@ import {
   type LlmConnectionTestResult,
   type LlmRun,
 } from '@/api'
+import HelpTip from '@/components/HelpTip'
 import { SPACE } from '@/theme/tokens'
 import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
+import SectionHeader from './SectionHeader'
 import { CUSTOM_PROVIDER_ID, LLM_PROVIDERS, findProviderByBaseUrl } from './llmProviders'
 
 const { Text, Paragraph } = Typography
@@ -313,27 +315,31 @@ export default function LlmConfigPanel() {
 
   return (
     <div style={{ padding: '12px 0' }} data-testid="llm-config-panel">
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: SPACE.lg }}
-        title={(
+      {/* 与其余页签一致的 GitHub 风格分区头：标题 + 辅助说明 + 右侧帮助按钮 / 配置状态 */}
+      <SectionHeader
+        title="连接配置"
+        description="个人级配置，所有「大模型提示词」任务共用"
+        extra={(
           <Space size={SPACE.md} wrap>
-            <span>个人级配置，所有「大模型提示词」任务共用</span>
             {configuredTag}
-            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-              仅本人可见，其他成员读不到你的地址与 Key
-            </Text>
+            <HelpTip
+              title="大模型连接"
+              content={(
+                <div style={{ maxWidth: 320 }}>
+                  <Paragraph style={{ marginBottom: SPACE.md, fontSize: 'var(--cn-text-xs)' }}>
+                    个人级配置，所有「大模型提示词」任务共用；仅本人可见，其他成员读不到你的地址与 Key。
+                  </Paragraph>
+                  <Paragraph style={{ marginBottom: 0, fontSize: 'var(--cn-text-xs)' }}>
+                    填服务商、模型与 API Key 就能用；不确定怎么填？看
+                    <Link className="cn-help-inline-link" to={helpLink('configuration', 'personal', subsectionAnchor('llm'))}>
+                      大模型连接说明
+                    </Link>
+                    。
+                  </Paragraph>
+                </div>
+              )}
+            />
           </Space>
-        )}
-        description={(
-          <span>
-            填服务商、模型与 API Key 就能用；不确定怎么填？看
-            <Link className="cn-help-inline-link" to={helpLink('configuration', 'personal', subsectionAnchor('llm'))}>
-              大模型连接说明
-            </Link>
-            。
-          </span>
         )}
       />
       <Form
@@ -488,26 +494,11 @@ export default function LlmConfigPanel() {
       </Form>
 
       {/* ── 调用记录：本人最近 20 条（只读，不展示提示词 / 输出全文） ── */}
-      <div data-testid="llm-runs" style={{ marginTop: SPACE.lg }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            flexWrap: 'wrap',
-            gap: SPACE.md,
-            paddingBottom: SPACE.md,
-            marginBottom: SPACE.md,
-            borderBottom: '1px solid var(--cn-border)',
-          }}
-        >
-          <Space size={SPACE.md} wrap>
-            <HistoryOutlined />
-            <Text strong>调用记录</Text>
-            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-              最近 {RUNS_LIMIT} 条（仅本人）
-            </Text>
-          </Space>
+      <SectionHeader
+        title="调用记录"
+        description={`最近 ${RUNS_LIMIT} 条（仅本人）`}
+        topGap={20}
+        extra={(
           <Button
             size="small"
             icon={<ReloadOutlined />}
@@ -517,7 +508,9 @@ export default function LlmConfigPanel() {
           >
             刷新
           </Button>
-        </div>
+        )}
+      />
+      <div data-testid="llm-runs">
 
         {runsError ? (
           <div data-testid="llm-runs-error">

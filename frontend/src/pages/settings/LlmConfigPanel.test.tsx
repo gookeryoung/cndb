@@ -149,6 +149,23 @@ describe('个人设置 · 大模型', () => {
     expect(screen.getByTestId('llm-config-default-system')).toHaveTextContent('不得编造无法核实的数据。')
   })
 
+  it('标题区与其他页签一致：连接配置 / 调用记录各带分隔线，右侧帮助按钮展开提示内容', async () => {
+    setupHandlers()
+    const panel = await openLlmTab()
+
+    expect(screen.getByText('连接配置')).toBeInTheDocument()
+    expect(screen.getByText('调用记录')).toBeInTheDocument()
+    const headers = panel.querySelectorAll('.settings-section-header')
+    expect(headers).toHaveLength(2)
+    headers.forEach(header => {
+      expect((header as HTMLElement).style.borderBottom).toContain('1px solid')
+    })
+
+    fireEvent.click(screen.getByLabelText('帮助'))
+    expect(await screen.findByText(/仅本人可见，其他成员读不到你的地址与 Key/)).toBeInTheDocument()
+    expect(screen.getByText('大模型连接说明')).toBeInTheDocument()
+  })
+
   it('选择服务商后自动填好 API 地址与默认模型', async () => {
     setupHandlers()
     await openLlmTab()
