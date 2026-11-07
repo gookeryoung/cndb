@@ -38,6 +38,8 @@ Related: <涉及的代码文件 / 上游 ADR>
 - **I1 <不变量>**：<判定口径>
 - **I2 <不变量>**：<判定口径>
 
+> 跨需求长期生效的不变量须在 ADR `Proposed → Accepted` 前登记入 [CONSTRAINTS.md](../CONSTRAINTS.md)，来源写 `ADR NNNN I#`（ADR 0119）；本 ADR 作废删除前，先迁移仍在生效的 H 条目。
+
 ## Decision
 
 以下小节按需增减；不适用的小节保留标题写「无」，便于横向对照（范式见 `0004-row-level-permission-rules.md`）。

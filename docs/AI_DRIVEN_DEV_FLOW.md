@@ -104,24 +104,24 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 1. **`.trae/rules/`**：写死每阶段约束（禁止 `--no-verify`、覆盖率不得注水、迁移必须幂等 + downgrade）。
 2. **`.trae/skills/`**：把阶段做成角色 Skill —— requirement-intake / adr-writer / implementer / test-writer / gate-runner / release-manager，每个绑定到具体 `make` 命令。
 3. **闭环**：门禁失败输出回灌 → 自动修复 → 重跑，直到全绿。
-4. **工具化入口（按改动类型分级）**：`make check-docs`（L0 纯文档：`gitkeep-check` + `adr-check`）/ `make check-fast`（L1 纯配置）/ `make flow`（L2 代码：`check-fast` 含 `adr-check` → `test`）。分级规则见 [AGENTS.md](../AGENTS.md)「门禁分级」，混合改动取最高级；文档更新与 `make push` 仍需人工判断，不纳入。
+4. **工具化入口（按改动类型分级）**：`make check-docs`（L0 纯文档：`gitkeep-check` + `adr-check` + `constraint-check`）/ `make check-fast`（L1 纯配置）/ `make flow`（L2 代码：`check-fast` 含 `adr-check` / `constraint-check` → `test`）。分级规则见 [AGENTS.md](../AGENTS.md)「门禁分级」，混合改动取最高级；文档更新与 `make push` 仍需人工判断，不纳入。
 5. **落地与交接门禁**：`make adr-check`（[check_adr_landing.py](../scripts/check_adr_landing.py)）校 ADR 落地状态表 / 交接节 / Related 链接 / CHANGELOG 关联；换会话或换 agent 时按 [AGENTS.md](../AGENTS.md) 的「开工前 / 收工前」回填与恢复上下文。
 6. **Hook**：编辑后自动触发 `make check-fast`（提交侧已由 prek 覆盖）。
 7. **审批点收敛为 3 个**：需求确认 / ADR 评审 / 上线 tag。
+8. **硬约束台账（ADR 0119）**：全仓硬约束唯一编号源 [CONSTRAINTS.md](CONSTRAINTS.md)（H1..Hn，开工前对表 / 提交前自查 / 冲突从严），`make constraint-check` 校验格式、编号唯一、来源 ADR 存在与机器命令存在（已并入 `check-docs` / `check-fast`）。
 
 ## 5. 项目特定护栏
 
-- 禁 `--no-verify`、禁跳过 prek；conventional commits。
-- 门禁按改动类型分级（L0 文档 → `make check-docs`；L1 配置 → `make check-fast`；L2 代码 → `make flow`），只改文档 / 配置不跑全量 `make flow`；混合改动与拿不准的情况按 L2 全链执行。
-- 环境体检前置：`make env-guard` 是 `check-fast` / `test` / `cov` / `check` / `dev` 的前置（[check_env.py](../scripts/check_env.py)）。门禁卡住超过 1 分钟先看体检结论——`LD_LIBRARY_PATH` 注入的旧版 libsqlite3 缺 `sqlite3_deserialize` 会让后端测试卡死在 import 阶段而非失败，清变量后重跑即可，不要用 pytest 参数或加超时绕过。
-- ADR 标「已落地」的期必须有代码落点与测试文件；落地状态与交接每期回填（`make adr-check` 校验）。
-- 需求移除 / 变更先清理 ADR（删失效段落与决策行），不保留历史方案段；ADR 被替代或需求作废则**直接删除**该文件、`docs/adr/README.md` 索引行与全仓引用（git 历史可追溯），不保留 `Superseded` / `Deprecated` 文档，编号不复用。
-- 覆盖率不得注水（阈值 95%，omit 白名单固定）。
-- 迁移幂等 + downgrade 可还原 + 存量零迁移。
-- 新表须纳入 `backup_io`，旧备份按缺省还原。
-- 权限不变量：I1 天花板 / I3 存量不变 / I6 无泄露（见 [ADR 0004](adr/0004-row-level-permission-rules.md)）。
-- 规则变更后清记录缓存，防收紧后泄漏。
-- 单机部署串行（`concurrency: deploy-tencent-prod`），失败自动回滚。
+> 硬约束唯一编号源是 [CONSTRAINTS.md](CONSTRAINTS.md)（H1..H23，ADR 0119）；本节只做 H# 索引，完整口径以台账为准。
+
+- 流程禁令与提交规范：H1（禁 `--no-verify` / prek）、H2（conventional commits）、H6（git 授权边界）。
+- 门禁分级 fail-safe 与执行链：H3（混合改动取最高级）、H4（L2 执行链）。
+- 方案先行与人工卡点：H5（S0/S1/S2 分级、卡片确认与 ADR 评审由人拍板）。
+- ADR 门禁与生命周期：H7（Accepted 前无待定）、H8（作废直接删除、删除前迁移 H 条目）。
+- 测试与覆盖率：H9（同轮）、H10（95% 不注水）、H11（e2e 硬门禁）、H12（分层覆盖）。
+- 数据与迁移：H13（幂等 + downgrade + 存量零迁移）、H14（新表纳入 `backup_io`）。
+- 权限与安全不变量：H15（I1 天花板）/ H16（I3 存量不变）/ H17（I6 无泄露，见 [ADR 0004](adr/0004-row-level-permission-rules.md)）、H18（规则变更清缓存）、H19（原件族只读）、H20（装配版本闭包可复现）。
+- 发布与部署：H21（bundle budget +5%）、H22（部署串行 + 自动回滚）、H23（环境体检前置，不用 pytest 参数 / 超时绕过）。
 
 ## 6. 落地清单
 
@@ -133,3 +133,4 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 - [ ] （可选）编辑后自动 `check-fast` 的 hook
 - [x] ADR 落地门禁 `make adr-check` + CI 的 ADR Landing job —— [check_adr_landing.py](../scripts/check_adr_landing.py)、[ci.yml](../.github/workflows/ci.yml)
 - [x] ADR 索引与开工/收工交接协议 —— [docs/adr/README.md](adr/README.md)、[AGENTS.md](../AGENTS.md)
+- [x] 硬约束台账 + `make constraint-check` 门禁（ADR 0119）—— [docs/CONSTRAINTS.md](CONSTRAINTS.md)、[check_constraints.py](../scripts/check_constraints.py)

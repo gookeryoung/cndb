@@ -27,7 +27,7 @@ UVX_INDEX := --default-index https://mirrors.cloud.tencent.com/pypi/simple
 FRONTEND_DEPS := frontend/node_modules/.make-sync
 
 .PHONY: help env-guard sync free-dev-ports dev seed frontend-sync frontend-static frontend-coverage frontend-build \
-        build clean test cov lint typecheck e2e e2e-dev bench gitkeep-check adr-check \
+        build clean test cov lint typecheck e2e e2e-dev bench gitkeep-check adr-check constraint-check \
         check-fast check-docs flow check bump pub push pack-doctor pack pack-cache-clean \
         docker-dev docker-dev-down docker-stop docker-build docker-export dd ds ddd db de \
         patch minor major
@@ -92,6 +92,9 @@ gitkeep-check: ## 校验关键 .gitkeep 文件（缺失会导致 CI/打包失败
 adr-check: ## 校验 ADR 落地状态、交接节与 CHANGELOG 关联
 	uv run python scripts/check_adr_landing.py
 
+constraint-check: ## 校验硬约束台账格式、编号唯一、来源 ADR 与 make 目标存在（ADR 0119）
+	uv run python scripts/check_constraints.py
+
 e2e: frontend-build ## 前端 E2E（Playwright；webServer 自动起隔离后端，首次先 npx playwright install chromium）
 	cd frontend && pnpm e2e
 
@@ -105,9 +108,9 @@ bench: env-guard ## 性能基准（临时 SQLite 库跑 10k 行导入 + 查询�
 	uv run python scripts/bench_10k_rows.py --rows $(ROWS)
 
 # L1 配置改动：轻量静态门禁（无测试）
-check-fast: env-guard gitkeep-check adr-check lint typecheck frontend-static ## 轻量静态门禁（无测试，实现期快速反馈）
+check-fast: env-guard gitkeep-check adr-check constraint-check lint typecheck frontend-static ## 轻量静态门禁（无测试，实现期快速反馈）
 # L0 文档改动：只跑文档级校验
-check-docs: gitkeep-check adr-check ## 文档级门禁（只改 *.md 时用）
+check-docs: gitkeep-check adr-check constraint-check ## 文档级门禁（只改 *.md 时用）
 # L2 代码改动：轻量静态门禁 + 全量后端测试
 flow: check-fast test ## AI 开发流：轻量静态门禁 + 全量后端测试
 
