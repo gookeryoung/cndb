@@ -11,7 +11,7 @@ import re
 
 from sqlalchemy.orm import Session
 
-from cndb.plugins.design.models import DesignDesign
+from cndb.plugins.design.models import DesignDesign, DesignLibraryModule
 
 #: file_key 列宽（models.DesignDesign.file_key String(64)）
 _MAX_KEY_LEN = 64
@@ -49,4 +49,25 @@ def generate_file_key(db: Session, workspace_id: int, title: str, *, preferred: 
     return key
 
 
-__all__ = ["generate_file_key"]
+def generate_module_key(db: Session, title: str) -> str:
+    """生成全局唯一的复用模块 ``module_key``（ADR 0118 D2）.
+
+    ``module_key`` 全局唯一且创建后不可变；冲突时追加 ``-2`` / ``-3`` 后缀。
+    """
+    base = _slugify(title)
+    taken = {
+        row[0]
+        for row in db.query(DesignLibraryModule.module_key)
+        .filter(DesignLibraryModule.module_key.like(f"{base}%"))
+        .all()
+    }
+    key = base
+    n = 2
+    while key in taken:
+        suffix = f"-{n}"
+        key = base[: _MAX_KEY_LEN - len(suffix)] + suffix
+        n += 1
+    return key
+
+
+__all__ = ["generate_file_key", "generate_module_key"]

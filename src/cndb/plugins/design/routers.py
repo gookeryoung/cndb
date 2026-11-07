@@ -44,6 +44,8 @@ from cndb.plugins.design.schemas import (
     DesignIRResponse,
     DesignListItem,
     DesignOutlineResult,
+    DesignPublishRequest,
+    DesignPublishResponse,
     DesignRefreshRequest,
     DesignUpdate,
     DesignVersionDetail,
@@ -56,16 +58,20 @@ from cndb.plugins.design.schemas import (
 from cndb.plugins.design.services.diff import design_diff
 from cndb.plugins.design.services.dsl.compile import IR_VERSION, CompileResult, compile_design
 from cndb.plugins.design.services.files import (
+    build_library_resolver,
     build_resolver,
     compile_design_file,
     content_hash,
+    direct_library_refs,
     direct_use_keys,
     latest_version_map,
     latest_version_number,
+    library_grants,
     mark_referrers_stale,
     sync_refs,
 )
 from cndb.plugins.design.services.keys import generate_file_key
+from cndb.plugins.design.services.library import LibraryPublishError, publish_design
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
 
@@ -119,9 +125,16 @@ def _compile_for_design(
     content: str | None = None,
     *,
     pinned: dict[str, int] | None = None,
+    granted_library_keys: frozenset[tuple[str, int]] | None = None,
 ) -> CompileResult:
-    """以设计文件身份编译（kind / file_id / 工作区 resolver），失败 400."""
-    result = compile_design_file(db, design, content, pinned=pinned)
+    """以设计文件身份编译（kind / file_id / 工作区 resolver / 库解析器），失败 400."""
+    result = compile_design_file(
+        db,
+        design,
+        content,
+        pinned=pinned,
+        granted_library_keys=granted_library_keys,
+    )
     if not result.ok:
         raise BadRequestError(
             "；".join(f"第{d.line}行第{d.col}列：{d.message}" for d in result.diagnostics) or "编译失败",
@@ -238,16 +251,27 @@ def _latest_version(db: Session, design_id: int) -> DesignDesignVersion | None:
 
 
 def _dependency_tuples(result: CompileResult) -> list[dict[str, Any]]:
-    """CompileResult.dependencies → 可 JSON 化的闭包列表."""
-    return [
-        {
-            "file_id": item.file_id,
+    """CompileResult.dependencies → 可 JSON 化的闭包列表（ADR 0118 C8 超集）."""
+    items: list[dict[str, Any]] = []
+    for item in result.dependencies:
+        entry: dict[str, Any] = {
+            "source": item.source,
             "file_key": item.file_key,
             "version_number": item.version_number,
             "content_hash": item.content_hash,
         }
-        for item in result.dependencies
-    ]
+        if item.source == "library":
+            entry.update(
+                {
+                    "module_id": item.module_id,
+                    "module_version_id": item.module_version_id,
+                    "bundle_hash": item.bundle_hash,
+                }
+            )
+        else:
+            entry["file_id"] = item.file_id
+        items.append(entry)
+    return items
 
 
 def _detail(db: Session, design: DesignDesign, *, version_number: int | None = None) -> DesignDetail:
@@ -319,6 +343,7 @@ def create_design(
         payload.content,
         file_kind=payload.kind,
         resolver=build_resolver(db, workspace_id),
+        library_resolver=build_library_resolver(db, workspace_id),
     )
     if not result.ok:
         raise BadRequestError(
@@ -351,7 +376,7 @@ def create_design(
         change_type=CHANGE_TYPE_MANUAL,
         dependencies=_dependency_tuples(result),
     )
-    sync_refs(db, design, direct_use_keys(design.content))
+    sync_refs(db, design, direct_use_keys(design.content), direct_library_refs(design.content))
     db.commit()
     db.refresh(design)
     return _detail(db, design, version_number=number)
@@ -377,9 +402,14 @@ def preview_design(
             file_kind=design.kind,
             file_id=design.id,
             resolver=build_resolver(db, workspace_id),
+            library_resolver=build_library_resolver(db, workspace_id, granted_keys=library_grants(db, design.id)),
         )
     else:
-        result: CompileResult = compile_design(payload.content, payload.overrides)
+        result: CompileResult = compile_design(
+            payload.content,
+            payload.overrides,
+            library_resolver=build_library_resolver(db, workspace_id),
+        )
     return PreviewResponse(
         ok=result.ok,
         ir=result.ir,
@@ -498,7 +528,7 @@ def save_design_content(
         comment=payload.comment,
         dependencies=_dependency_tuples(result),
     )
-    sync_refs(db, design, [item.file_key for item in result.dependencies])
+    sync_refs(db, design, direct_use_keys(design.content), direct_library_refs(design.content))
     mark_referrers_stale(db, design.id)
     db.commit()
     db.refresh(design)
@@ -532,10 +562,50 @@ def refresh_design(
         comment=payload.comment or "依赖更新",
         dependencies=_dependency_tuples(result),
     )
-    sync_refs(db, design, direct_use_keys(design.content))
+    sync_refs(db, design, direct_use_keys(design.content), direct_library_refs(design.content))
     db.commit()
     db.refresh(design)
     return _detail(db, design, version_number=number)
+
+
+@router.post("/{design_id}/publish", response_model=DesignPublishResponse)
+def publish_design_module(
+    workspace_id: int,
+    design_id: int,
+    payload: DesignPublishRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> DesignPublishResponse:
+    """发布为复用模块 / 新版本（editor+，ADR 0118 §4 / D1-D3）.
+
+    发布前编译并快照依赖闭包；失败 400 且不落半成品版本。模块内部禁止再
+    使用 ``lib:`` 引用（MVP 边界）。
+    """
+    _require_editor(db, workspace_id, current_user)
+    design = _design_or_404(db, workspace_id, design_id)
+    try:
+        module, version = publish_design(
+            db,
+            design,
+            current_user,
+            visibility=payload.visibility,
+            name=payload.name,
+            description=payload.description,
+            comment=payload.comment,
+        )
+    except LibraryPublishError as exc:
+        raise BadRequestError(
+            f"第{exc.line}行第{exc.col}列：{exc.message}",
+            code="design_publish_failed",
+        ) from exc
+    db.commit()
+    return DesignPublishResponse(
+        module_id=module.id,
+        module_key=module.module_key,
+        version_number=version.version_number,
+        visibility=module.visibility,
+        name=module.name,
+    )
 
 
 @router.get("/{design_id}/dependencies", response_model=DesignDependenciesResponse)
@@ -703,8 +773,13 @@ def restore_design_version(
     design = _design_or_404(db, workspace_id, design_id)
     version = _version_or_404(db, design, version_number)
     pinned: dict[str, int] = {}
+    granted_library_keys: set[tuple[str, int]] = set()
     for item in version.dependencies or []:
-        if isinstance(item, dict) and item.get("file_key") and item.get("version_number"):
+        if not isinstance(item, dict) or not item.get("file_key") or not item.get("version_number"):
+            continue
+        if item.get("source") == "library":
+            granted_library_keys.add((str(item["file_key"]), int(item["version_number"])))
+        else:
             pinned[str(item["file_key"])] = int(item["version_number"])
     missing = [key for key in pinned if build_resolver(db, workspace_id, pinned=pinned)(key) is None]
     if missing:
@@ -712,7 +787,13 @@ def restore_design_version(
             f"依赖快照缺失，无法按历史复现编译：{'、'.join(missing)}",
             code="design_dependency_missing",
         )
-    result = _compile_for_design(db, design, version.content, pinned=pinned or None)
+    result = _compile_for_design(
+        db,
+        design,
+        version.content,
+        pinned=pinned or None,
+        granted_library_keys=frozenset(granted_library_keys),
+    )
     assert result.ir is not None
     design.content = version.content
     design.compiled = result.ir
@@ -728,7 +809,7 @@ def restore_design_version(
         comment=f"恢复自 v{version_number}",
         dependencies=_dependency_tuples(result),
     )
-    sync_refs(db, design, [item.file_key for item in result.dependencies])
+    sync_refs(db, design, direct_use_keys(design.content), direct_library_refs(design.content))
     mark_referrers_stale(db, design.id)
     db.commit()
     db.refresh(design)

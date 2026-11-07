@@ -10,7 +10,7 @@ from alembic import command
 from cndb.core.migrations import _build_config
 
 REVISION = "c8e2f4a6b8d0"
-HEAD = "3b5d7f9a1c2e"  # 当前 alembic head：设计版本 change_type（ADR 0113）
+HEAD = "d7e8f9a0b1c2"  # 当前 alembic head：复用模块库（ADR 0118）
 PREVIOUS = "z4a5b6c7d8e9"
 DESIGN = "design_design"
 VERSION = "design_designversion"

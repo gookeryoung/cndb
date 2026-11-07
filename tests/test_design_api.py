@@ -89,7 +89,7 @@ class TestCreate:
         assert body["file_key"] == "法兰板"
         assert "compiled" not in body, "详情移除 compiled（ADR 0086 D10）"
         ir = _ir(client, ws, body["id"], auth_owner)
-        assert ir["ir"]["version"] == 5
+        assert ir["ir"]["version"] == 6
         assert ir["ir"]["units"] == {"length": "mm", "angle": "deg"}
         assert ir["ir"]["nodes"], "顶层实例应产出几何"
         assert ir["content_hash"], "详情带 content_hash（与 /ir ETag 同源）"
@@ -792,7 +792,7 @@ class TestFileLibrary:
         body = first.json()
         assert body["design_id"] == created["id"]
         assert body["version_number"] == 1
-        assert body["ir"]["version"] == 5
+        assert body["ir"]["version"] == 6
         again = client.get(_url(ws, f"/{created['id']}/ir"), headers={**auth_owner, "If-None-Match": etag})
         assert again.status_code == 304
         # 保存后 ETag 变化

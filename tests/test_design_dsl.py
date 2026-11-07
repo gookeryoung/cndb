@@ -224,7 +224,7 @@ class TestParser:
 class TestCompileBasics:
     def test_full_example_ir(self):
         ir = _ok(_EXAMPLE)
-        assert ir["version"] == 5
+        assert ir["version"] == 6
         assert ir["constraints"] == []
         assert ir["units"] == {"length": "mm", "angle": "deg"}
         assert ir["params"] == [
@@ -761,8 +761,8 @@ def _walk_outline(nodes: list[dict[str, Any]]):
 class TestOutlineNodeIndex:
     """IR v5：大纲节点携带首个所属顶层 ``nodes`` 下标（ADR 0103 D7 / I3）."""
 
-    def test_version_is_5(self):
-        assert _ok("box(w=1,h=1,d=1)")["version"] == 5
+    def test_version_is_6(self):
+        assert _ok("box(w=1,h=1,d=1)")["version"] == 6
 
     def test_index_within_nodes_range(self):
         for content in (
@@ -986,7 +986,7 @@ class TestUseCall:
         (outline,) = _outline_children(ir)
         assert outline["kind"] == "assembly"
         assert outline["name"] == "w1"
-        assert outline["ref"] == {"file_id": 11, "file_key": "wheel", "kind": "part"}
+        assert outline["ref"] == {"source": "workspace", "file_id": 11, "file_key": "wheel", "kind": "part"}
         assert outline["file_id"] == 11
 
     def test_use_without_label_keeps_author_pose(self):

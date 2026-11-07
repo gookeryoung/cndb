@@ -120,9 +120,25 @@ class ModuleCall:
     label: str | None = None
 
 
+#: 库引用保留前缀（ADR 0118 D2）：本地 file_key 字符集不含冒号，无歧义
+LIBRARY_PREFIX = "lib:"
+
+
+@dataclass(frozen=True, slots=True)
+class LibraryRef:
+    """已解析的库引用：``lib:<module_key>@<version>``（ADR 0118 D2）."""
+
+    module_key: str
+    version_number: int
+
+
 @dataclass(frozen=True, slots=True)
 class UseCall:
-    """分文件零件引用：``use "file_key"(参数...) as 标签``（ADR 0086 D2）."""
+    """分文件零件引用：``use "file_key"(参数...) as 标签``（ADR 0086 D2）.
+
+    ``file_key`` 以 ``lib:`` 开头时 ``library`` 非空，表示跨工作区复用模块引用；
+    其余情况 ``library`` 为 None，按同工作区文件解析（ADR 0118 D2）。
+    """
 
     file_key: str
     positional: tuple[Expr, ...]
@@ -130,6 +146,7 @@ class UseCall:
     line: int
     col: int
     label: str | None = None
+    library: LibraryRef | None = None
 
 
 Instance = PrimitiveCall | TransformCall | BooleanCall | ModuleCall | UseCall
@@ -240,7 +257,11 @@ class Diagnostic:
 
 @dataclass(frozen=True, slots=True)
 class FileSource:
-    """跨文件编译的输入快照（ADR 0086 §2）：一个设计文件的内容 + 身份."""
+    """跨文件编译的输入快照（ADR 0086 §2）：一个设计文件的内容 + 身份.
+
+    ``source=library`` 表示来自复用模块版本快照的依赖文件（ADR 0118 C6）：
+    ``file_id`` 无本工作区意义（固定 0），``module_version_id`` 标识来源版本。
+    """
 
     file_id: int
     file_key: str
@@ -248,16 +269,44 @@ class FileSource:
     content: str
     version_number: int
     content_hash: str
+    source: str = "workspace"
+    module_id: int | None = None
+    module_version_id: int | None = None
+    module_key: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LibrarySource:
+    """复用模块版本快照（ADR 0118 D1/D3）：根原文 + 自包含依赖包."""
+
+    module_id: int
+    module_version_id: int
+    module_key: str
+    version_number: int
+    content: str
+    content_hash: str
+    bundle_hash: str
+    files: tuple[FileSource, ...] = ()
+    params: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class DependencySnapshot:
-    """依赖闭包项：装配版本保存时用于可复现编译（ADR 0086 D6）."""
+    """依赖闭包项：装配版本保存时用于可复现编译（ADR 0086 D6 / ADR 0118 C8）.
+
+    工作区文件条目 ``source=workspace``，以 ``file_id`` 标识；
+    库模块条目 ``source=library``，以 ``(module_key, version_number, content_hash)``
+    自然键标识（备份跨环境可移植，ADR 0118 D9）。
+    """
 
     file_id: int
     file_key: str
     version_number: int
     content_hash: str
+    source: str = "workspace"
+    module_id: int | None = None
+    module_version_id: int | None = None
+    bundle_hash: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -275,6 +324,7 @@ class CompileResult:
 
 
 __all__ = [
+    "LIBRARY_PREFIX",
     "BinOp",
     "BooleanCall",
     "CompileResult",
@@ -286,6 +336,8 @@ __all__ = [
     "FileSource",
     "FuncCall",
     "Instance",
+    "LibraryRef",
+    "LibrarySource",
     "ModuleCall",
     "ModuleDecl",
     "ModuleParam",

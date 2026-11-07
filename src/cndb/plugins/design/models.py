@@ -29,6 +29,11 @@ CHANGE_TYPE_REFRESH = "refresh"
 CHANGE_TYPE_ROLLBACK = "rollback"
 CHANGE_TYPE_VALUES = (CHANGE_TYPE_MANUAL, CHANGE_TYPE_AUTO, CHANGE_TYPE_REFRESH, CHANGE_TYPE_ROLLBACK)
 
+#: 复用模块可见性（ADR 0118 D4）：public 全员可跨工作区引用；workspace 仅所有者工作区可用
+LIBRARY_VISIBILITY_PUBLIC = "public"
+LIBRARY_VISIBILITY_WORKSPACE = "workspace"
+LIBRARY_VISIBILITY_VALUES = (LIBRARY_VISIBILITY_PUBLIC, LIBRARY_VISIBILITY_WORKSPACE)
+
 
 class DesignDesign(TimestampMixin, Base):
     """一份设计文件：工作区内 (folder, title) 唯一，绑定一份 DSL 原文与编译产物."""
@@ -141,13 +146,138 @@ class DesignDesignref(TimestampMixin, Base):
         return f"DesignDesignref(design={self.design_id}, target={self.target_design_id})"
 
 
+class DesignLibraryModule(TimestampMixin, Base):
+    """复用模块（全局）：稳定 ``module_key`` + 可见性 + 归档状态（ADR 0118 D2/D4）."""
+
+    __tablename__ = "design_library_module"
+    __table_args__ = (
+        UniqueConstraint("module_key", name="uniq_design_library_module_key"),
+        Index("ix_design_library_module_visibility_updated", "visibility", "updated_at"),
+        Index("ix_design_library_module_owner", "owner_workspace_id"),
+        {"extend_existing": True},
+    )
+
+    #: 全局唯一、创建后不可变；DSL ``use "lib:<module_key>@<version>"`` 引用它
+    module_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str] = mapped_column(String(500), nullable=False, default="")
+    #: public / workspace（ADR 0118 D4）
+    visibility: Mapped[str] = mapped_column(String(16), nullable=False, default=LIBRARY_VISIBILITY_WORKSPACE)
+    #: 发布工作区；工作区删除后模块保留（公开模块继续可用，ADR 0118 §4）
+    owner_workspace_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="SET NULL"), nullable=True
+    )
+    #: 溯源设计；仅展示，不参与编译
+    source_design_id: Mapped[int | None] = mapped_column(
+        ForeignKey("design_design.id", ondelete="SET NULL"), nullable=True
+    )
+    #: 归档后禁止新引用；已锁定引用继续可编译（ADR 0118 C5）
+    is_archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    updated_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DesignLibraryModule(id={self.id}, key={self.module_key!r})"
+
+
+class DesignLibraryVersion(TimestampMixin, Base):
+    """复用模块版本（不可变）：根原文 + 自包含依赖包 + 参数签名（ADR 0118 D1/D3）."""
+
+    __tablename__ = "design_library_version"
+    __table_args__ = (
+        UniqueConstraint("module_id", "version_number", name="uniq_design_library_version"),
+        {"extend_existing": True},
+    )
+
+    module_id: Mapped[int] = mapped_column(
+        ForeignKey("design_library_module.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    #: 依赖包 [{file_key, kind, content, content_hash}]，按 file_key 排序；不含根文件
+    files: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    #: 公开参数签名 [{name, default}]，供检索 / 补全 / 调用提示
+    params: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bundle_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    comment: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DesignLibraryVersion(module={self.module_id}, no={self.version_number})"
+
+
+class DesignLibraryref(TimestampMixin, Base):
+    """设计 → 复用模块版本的当前直接引用索引（ADR 0118 D7/D8）."""
+
+    __tablename__ = "design_libraryref"
+    __table_args__ = (
+        UniqueConstraint("design_id", "module_version_id", name="uniq_design_libraryref_pair"),
+        Index("ix_design_libraryref_module", "module_id"),
+        Index("ix_design_libraryref_ws", "workspace_id"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces_workspace.id", ondelete="CASCADE"), nullable=False)
+    design_id: Mapped[int] = mapped_column(ForeignKey("design_design.id", ondelete="CASCADE"), nullable=False)
+    module_id: Mapped[int] = mapped_column(ForeignKey("design_library_module.id", ondelete="CASCADE"), nullable=False)
+    module_version_id: Mapped[int] = mapped_column(
+        ForeignKey("design_library_version.id", ondelete="CASCADE"), nullable=False
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DesignLibraryref(design={self.design_id}, version={self.module_version_id})"
+
+
+class DesignLibraryVendor(TimestampMixin, Base):
+    """工作区级备份内置模块快照（只读，ADR 0118 D9/P2）."""
+
+    __tablename__ = "design_library_vendor"
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id",
+            "module_key",
+            "version_number",
+            "content_hash",
+            name="uniq_design_library_vendor_snapshot",
+        ),
+        Index("ix_design_library_vendor_ws", "workspace_id"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspaces_workspace.id", ondelete="CASCADE"), nullable=False)
+    module_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    version_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    bundle_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    files: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    params: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DesignLibraryVendor(ws={self.workspace_id}, key={self.module_key!r})"
+
+
 __all__ = [
     "CHANGE_TYPE_AUTO",
     "CHANGE_TYPE_MANUAL",
     "CHANGE_TYPE_REFRESH",
     "CHANGE_TYPE_ROLLBACK",
     "CHANGE_TYPE_VALUES",
+    "LIBRARY_VISIBILITY_PUBLIC",
+    "LIBRARY_VISIBILITY_VALUES",
+    "LIBRARY_VISIBILITY_WORKSPACE",
     "DesignDesign",
     "DesignDesignVersion",
     "DesignDesignref",
+    "DesignLibraryModule",
+    "DesignLibraryVendor",
+    "DesignLibraryVersion",
+    "DesignLibraryref",
 ]

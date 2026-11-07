@@ -59,6 +59,25 @@ class PreviewRequest(BaseModel):
     design_id: int | None = Field(default=None, description="编辑中的设计文件（同工作区），用于解析引用")
 
 
+class DesignPublishRequest(BaseModel):
+    """发布为复用模块（ADR 0118 §4）：默认私有，公开需显式选择."""
+
+    visibility: Literal["public", "workspace"] = Field(default="workspace", description="可见性：public / workspace")
+    name: str | None = Field(default=None, min_length=1, max_length=200, description="模块展示名（缺省用设计标题）")
+    description: str | None = Field(default=None, max_length=500, description="模块说明")
+    comment: str = Field(default="", max_length=200, description="本次发布备注")
+
+
+class DesignPublishResponse(BaseModel):
+    """发布结果：稳定 module_key + 新版本号（ADR 0118 §4）."""
+
+    module_id: int
+    module_key: str
+    version_number: int
+    visibility: str
+    name: str
+
+
 class DesignRefreshRequest(BaseModel):
     """依赖刷新重编译（ADR 0086 §4）：以最新依赖落新版本并清 stale."""
 
@@ -253,6 +272,8 @@ __all__ = [
     "DesignIRResponse",
     "DesignListItem",
     "DesignOutlineResult",
+    "DesignPublishRequest",
+    "DesignPublishResponse",
     "DesignRefreshRequest",
     "DesignUpdate",
     "DesignVersionDetail",

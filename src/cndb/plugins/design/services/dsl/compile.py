@@ -56,6 +56,7 @@ from cndb.plugins.design.services.dsl.nodes import (
     Expr,
     FileSource,
     Instance,
+    LibrarySource,
     ModuleCall,
     ModuleDecl,
     PrimitiveCall,
@@ -68,8 +69,9 @@ from cndb.plugins.design.services.dsl.parse import parse_program
 
 #: IR 协议版本（前后端契约，随语法演进递增；v3 = v2 + 大纲 system 节点，ADR 0084 D2；
 #: v4 = v3 + constraints[] + 大纲节点 file_id / use ref，ADR 0086 D2；
-#: v5 = v4 + 大纲节点 node_index（首个所属顶层 nodes 下标，ADR 0103 D7））
-IR_VERSION = 5
+#: v5 = v4 + 大纲节点 node_index（首个所属顶层 nodes 下标，ADR 0103 D7）；
+#: v6 = v5 + 大纲 ref.source / 复用模块来源（ADR 0118 D11））
+IR_VERSION = 6
 
 #: 伪 file_id：独立编译（无文件身份）时的根文件占位
 _ROOT_FILE_ID = 0
@@ -82,17 +84,23 @@ def compile_design(
     file_kind: str = "assembly",
     file_id: int | None = None,
     resolver: Callable[[str], FileSource | None] | None = None,
+    library_resolver: Callable[[str, int], LibrarySource | None] | None = None,
 ) -> CompileResult:
     """编译结构 DSL：成功返回 IR，失败返回结构化诊断（不产出半截 IR，I6）.
 
     ``overrides`` 为参数面板的实时覆盖（param 名 → 数值）；``file_kind`` 为
     根文件类型（part / assembly，part 禁止 system）；``resolver`` 按
-    ``file_key`` 返回被引用文件快照（ADR 0086 §2）。编译不通过时 ``ir`` 为
-    ``None``，调用方不得落库（I2）。
+    ``file_key`` 返回被引用文件快照（ADR 0086 §2）；``library_resolver`` 按
+    ``(module_key, version)`` 返回复用模块版本快照（ADR 0118 C2/C6）。编译不
+    通过时 ``ir`` 为 ``None``，调用方不得落库（I2）。
     """
-    closure = _Closure(resolver=resolver, root_id=file_id if file_id is not None else _ROOT_FILE_ID)
-    closure.files_seen.add(closure.root_id)
-    closure.stack.append(closure.root_id)
+    closure = _Closure(
+        resolver=resolver,
+        root_id=file_id if file_id is not None else _ROOT_FILE_ID,
+        library_resolver=library_resolver,
+    )
+    closure.files_seen.add(_ws_identity(closure.root_id))
+    closure.stack.append(_ws_identity(closure.root_id))
     closure.total_bytes = len(content.encode("utf-8"))
     if closure.total_bytes > MAX_CLOSURE_BYTES:
         return _error_result(f"依赖闭包原文累计超过 {MAX_CLOSURE_BYTES // 1024}KB 上限", 1, 1)
@@ -105,7 +113,10 @@ def compile_design(
         return _error_result(message, line, col)
     warnings = ir.pop("_warnings", [])
     diagnostics = tuple(Diagnostic(severity="warning", line=w[1], col=w[2], message=w[3]) for w in warnings)
-    dependencies = tuple(closure.deps[k] for k in sorted(closure.deps, key=lambda fid: closure.deps[fid].file_key))
+    dependencies = tuple(
+        closure.deps[k]
+        for k in sorted(closure.deps, key=lambda item: (closure.deps[item].file_key, closure.deps[item].version_number))
+    )
     return CompileResult(ok=True, ir=ir, diagnostics=diagnostics, dependencies=dependencies)
 
 
@@ -123,16 +134,22 @@ class _Closure:
 
     resolver: Callable[[str], FileSource | None] | None
     root_id: int
-    #: 已计入预算的文件（含根文件）
-    files_seen: set[int] = field(default_factory=set)
+    #: 已计入预算的文件身份（含根文件）：ws:<file_id> / libver:<version_id> / libfile:<version_id>:<key>
+    files_seen: set[str] = field(default_factory=set)
     total_bytes: int = 0
     module_count: int = 0
-    #: file_id → 依赖快照（不含根文件）
-    deps: dict[int, DependencySnapshot] = field(default_factory=dict)
-    #: (file_id, version, 参数覆盖) → (nodes, outline children) 模板（注入前深拷贝）
+    #: 文件身份 → 依赖快照（不含根文件）
+    deps: dict[str, DependencySnapshot] = field(default_factory=dict)
+    #: (来源, 身份, version, 参数覆盖) → (nodes, outline children) 模板（注入前深拷贝）
     cache: dict[tuple[Any, ...], tuple[list[dict[str, Any]], list[dict[str, Any]]]] = field(default_factory=dict)
-    #: 当前正在编译的文件链（循环引用检测；元素为 file_id）
-    stack: list[int] = field(default_factory=list)
+    #: 当前正在编译的文件链（循环引用检测；元素为文件身份）
+    stack: list[str] = field(default_factory=list)
+    #: 复用模块解析器（ADR 0118 C2）
+    library_resolver: Callable[[str, int], LibrarySource | None] | None = None
+    #: 当前正在编译的库版本快照栈：内部 use 只在该版本依赖包内解析（C6）
+    library_stack: list[LibrarySource] = field(default_factory=list)
+    #: module_version_id → 已解析的完整版本快照（含依赖包）
+    libraries: dict[int, LibrarySource] = field(default_factory=dict)
 
 
 def _compile(content: str, overrides: dict[str, float], *, file_kind: str, closure: _Closure) -> dict[str, Any]:
@@ -580,35 +597,83 @@ class _Emitter:
         """分文件零件引用：解析 → 预算 → 递归编译 → 深拷贝注入并标注来源（ADR 0086 §2）."""
         source = self._resolve_source(call)
         bindings = self._bind_use_args(source, call, env)
-        key = (source.file_id, source.version_number, tuple(sorted(bindings.items())))
+        binding_key = tuple(sorted(bindings.items()))
+        if call.library is not None:
+            key: tuple[Any, ...] = ("library", source.module_version_id, source.version_number, binding_key)
+        elif source.source == "library":
+            key = (
+                "library_file",
+                source.module_version_id,
+                source.file_key,
+                source.version_number,
+                binding_key,
+            )
+        else:
+            key = ("workspace", source.file_id, source.version_number, binding_key)
         cached = self._closure.cache.get(key)
         if cached is None:
-            nodes, children = _compile_file_source(source, bindings, self._closure, call)
+            if call.library is not None:
+                nodes, children = _compile_library_source(source, bindings, self._closure, call)
+            else:
+                nodes, children = _compile_file_source(source, bindings, self._closure, call)
             # 模板存深拷贝：原节点随后会被引用方变换 / 约束位姿原地修改
             self._closure.cache[key] = (copy.deepcopy(nodes), copy.deepcopy(children))
         else:
             nodes, children = copy.deepcopy(cached[0]), copy.deepcopy(cached[1])
         if xf:
             _prepend_xf(nodes, xf)
-        name = call.label or source.file_key
-        # 被引用文件模板的下标是文件内相对值，注入到引用方需整体平移到顶层基址
-        assembly = {
-            "kind": "assembly",
-            "name": name,
-            "line": call.line,
-            "col": call.col,
-            "file_id": source.file_id,
-            "ref": {"file_id": source.file_id, "file_key": source.file_key, "kind": source.kind},
-            "node_index": base if nodes else None,
-            "children": _shift_node_index(_stamp_file_id(children, source.file_id), base),
-        }
+        if source.source == "library":
+            module_key = source.module_key or (call.library.module_key if call.library else source.file_key)
+            name = call.label or module_key
+            assembly: dict[str, Any] = {
+                "kind": "assembly",
+                "name": name,
+                "line": call.line,
+                "col": call.col,
+                "ref": {
+                    "source": "library",
+                    "module_key": module_key,
+                    "module_version_id": source.module_version_id,
+                    "version_number": source.version_number,
+                    "file_key": source.file_key,
+                    "kind": source.kind,
+                },
+                "node_index": base if nodes else None,
+                "children": _shift_node_index(children, base),
+            }
+        else:
+            name = call.label or source.file_key
+            # 被引用文件模板的下标是文件内相对值，注入到引用方需整体平移到顶层基址
+            assembly = {
+                "kind": "assembly",
+                "name": name,
+                "line": call.line,
+                "col": call.col,
+                "file_id": source.file_id,
+                "ref": {
+                    "source": "workspace",
+                    "file_id": source.file_id,
+                    "file_key": source.file_key,
+                    "kind": source.kind,
+                },
+                "node_index": base if nodes else None,
+                "children": _shift_node_index(_stamp_file_id(children, source.file_id), base),
+            }
         self._register_label(call.label, nodes, xf, labels, ordered, poses, call.line, call.col)
         if call.label:
             assembly["label"] = call.label
         return nodes, [assembly]
 
     def _resolve_source(self, call: UseCall) -> FileSource:
-        """按 file_key 解析被引用文件：缺失 / 非 part / 循环 / 预算超限均报错（I2/I4）."""
+        """解析 use 目标：库引用 / 库快照内部 / 同工作区文件（ADR 0086 / 0118）."""
+        if call.library is not None:
+            return self._resolve_library_source(call)
+        if self._closure.library_stack:
+            return self._resolve_bundle_source(call)
+        return self._resolve_workspace_source(call)
+
+    def _resolve_workspace_source(self, call: UseCall) -> FileSource:
+        """按 file_key 解析同工作区文件：缺失 / 非 part / 循环 / 预算超限均报错（I2/I4）."""
         if self._closure.resolver is None:
             raise DslEvalError("当前编译未提供文件解析器，无法使用 use 引用", call.line, call.col)
         if len(self._closure.stack) > MAX_REF_DEPTH:
@@ -618,23 +683,92 @@ class _Emitter:
             raise DslEvalError(f"未找到引用的文件 '{call.file_key}'", call.line, call.col)
         if source.kind != "part":
             raise DslEvalError(f"use 目标必须是 part 文件（'{call.file_key}' 是 {source.kind}）", call.line, call.col)
-        if source.file_id in self._closure.stack:
-            chain = " → ".join([*map(str, self._closure.stack), str(source.file_id)])
+        identity = _ws_identity(source.file_id)
+        if identity in self._closure.stack:
+            chain = " → ".join([*self._closure.stack, identity])
             raise DslEvalError(f"循环引用：{chain}", call.line, call.col)
-        if source.file_id not in self._closure.files_seen:
-            self._closure.files_seen.add(source.file_id)
-            if len(self._closure.files_seen) > MAX_CLOSURE_FILES:
-                raise DslEvalError(f"依赖闭包文件数超过上限 {MAX_CLOSURE_FILES}", call.line, call.col)
-            self._closure.total_bytes += len(source.content.encode("utf-8"))
-            if self._closure.total_bytes > MAX_CLOSURE_BYTES:
-                raise DslEvalError(f"依赖闭包原文累计超过 {MAX_CLOSURE_BYTES // 1024}KB 上限", call.line, call.col)
-            self._closure.deps[source.file_id] = DependencySnapshot(
+        if identity not in self._closure.files_seen:
+            self._count_closure_file(identity, source.content, call)
+            self._closure.deps[identity] = DependencySnapshot(
                 file_id=source.file_id,
                 file_key=source.file_key,
                 version_number=source.version_number,
                 content_hash=hashlib.sha256(source.content.encode("utf-8")).hexdigest(),
             )
         return source
+
+    def _resolve_library_source(self, call: UseCall) -> FileSource:
+        """解析库引用：版本快照自包含，缺失 / 归档 / 越权统一报通用诊断（ADR 0118 C2/C4）."""
+        if self._closure.library_stack:
+            raise DslEvalError("复用模块快照内不允许再引用复用模块", call.line, call.col)
+        assert call.library is not None
+        if self._closure.library_resolver is None:
+            raise DslEvalError("当前编译未提供复用模块解析器，无法使用 lib 引用", call.line, call.col)
+        if len(self._closure.stack) > MAX_REF_DEPTH:
+            raise DslEvalError(f"跨文件引用深度超过上限 {MAX_REF_DEPTH}", call.line, call.col)
+        ref = call.library
+        source = self._closure.library_resolver(ref.module_key, ref.version_number)
+        if source is None:
+            raise DslEvalError(f"未找到引用的复用模块 '{ref.module_key}@v{ref.version_number}'", call.line, call.col)
+        self._closure.libraries[source.module_version_id] = source
+        identity = _lib_module_identity(source)
+        if identity in self._closure.stack:
+            chain = " → ".join([*self._closure.stack, identity])
+            raise DslEvalError(f"循环引用：{chain}", call.line, call.col)
+        if identity not in self._closure.files_seen:
+            self._count_closure_file(identity, source.content, call)
+            for file in source.files:
+                file_identity = _lib_file_identity(source, file.file_key)
+                if file_identity not in self._closure.files_seen:
+                    self._count_closure_file(file_identity, file.content, call)
+            self._closure.deps[identity] = DependencySnapshot(
+                file_id=0,
+                file_key=source.module_key,
+                version_number=source.version_number,
+                content_hash=source.content_hash,
+                source="library",
+                module_id=source.module_id,
+                module_version_id=source.module_version_id,
+                bundle_hash=source.bundle_hash,
+            )
+        return FileSource(
+            file_id=0,
+            file_key=source.module_key,
+            kind="part",
+            content=source.content,
+            version_number=source.version_number,
+            content_hash=source.content_hash,
+            source="library",
+            module_id=source.module_id,
+            module_version_id=source.module_version_id,
+            module_key=source.module_key,
+        )
+
+    def _resolve_bundle_source(self, call: UseCall) -> FileSource:
+        """库快照内部只查版本依赖包，不回落消费方工作区（ADR 0118 C6/I3）."""
+        library = self._closure.library_stack[-1]
+        for file in library.files:
+            if file.file_key != call.file_key:
+                continue
+            identity = _lib_file_identity(library, call.file_key)
+            if identity in self._closure.stack:
+                chain = " → ".join([*self._closure.stack, identity])
+                raise DslEvalError(f"循环引用：{chain}", call.line, call.col)
+            return file
+        raise DslEvalError(
+            f"复用模块 '{library.module_key}@v{library.version_number}' 缺少依赖文件 '{call.file_key}'",
+            call.line,
+            call.col,
+        )
+
+    def _count_closure_file(self, identity: str, content: str, call: UseCall) -> None:
+        """累计闭包预算：文件数 + 原文字节（工作区文件与库快照同口径，ADR 0118 C7）."""
+        self._closure.files_seen.add(identity)
+        if len(self._closure.files_seen) > MAX_CLOSURE_FILES:
+            raise DslEvalError(f"依赖闭包文件数超过上限 {MAX_CLOSURE_FILES}", call.line, call.col)
+        self._closure.total_bytes += len(content.encode("utf-8"))
+        if self._closure.total_bytes > MAX_CLOSURE_BYTES:
+            raise DslEvalError(f"依赖闭包原文累计超过 {MAX_CLOSURE_BYTES // 1024}KB 上限", call.line, call.col)
 
     def _bind_use_args(self, source: FileSource, call: UseCall, env: dict[str, float]) -> dict[str, float]:
         """把 use 实参绑定为被引用文件的 param 覆盖（位置按序 + 命名对名）."""
@@ -725,6 +859,46 @@ class _Emitter:
         return bindings
 
 
+def _ws_identity(file_id: int) -> str:
+    """工作区文件身份（预算 / 循环检测键）."""
+    return f"ws:{file_id}"
+
+
+def _lib_module_identity(source: LibrarySource) -> str:
+    """复用模块版本身份."""
+    return f"libver:{source.module_version_id}"
+
+
+def _lib_file_identity(source: LibrarySource, file_key: str) -> str:
+    """复用模块版本依赖包内的文件身份."""
+    return f"libfile:{source.module_version_id}:{file_key}"
+
+
+def _source_identity(source: FileSource) -> str:
+    if source.source == "library":
+        return f"libfile:{source.module_version_id}:{source.file_key}"
+    return _ws_identity(source.file_id)
+
+
+def _compile_library_source(
+    source: FileSource,
+    bindings: dict[str, float],
+    closure: _Closure,
+    call: UseCall,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """编译复用模块版本根文件：快照作用域内 use 只在依赖包解析（ADR 0118 C6）."""
+    library = closure.libraries.get(source.module_version_id or 0)
+    if library is None:  # pragma: no cover - 解析阶段已登记
+        raise DslEvalError(f"复用模块 '{source.file_key}' 的快照缺失", call.line, call.col)
+    closure.stack.append(f"libver:{source.module_version_id}")
+    closure.library_stack.append(library)
+    try:
+        return _compile_source_body(source.content, source.file_key, bindings, closure, call)
+    finally:
+        closure.library_stack.pop()
+        closure.stack.pop()
+
+
 def _compile_file_source(
     source: FileSource,
     bindings: dict[str, float],
@@ -732,40 +906,51 @@ def _compile_file_source(
     call: UseCall,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """递归编译被引用 part 文件，返回 (nodes, outline 子节点) 模板（ADR 0086 §2）."""
-    closure.stack.append(source.file_id)
+    closure.stack.append(_source_identity(source))
     try:
-        if len(source.content.encode("utf-8")) > MAX_CONTENT_BYTES:
-            raise DslEvalError(f"DSL 原文超过 {MAX_CONTENT_BYTES // 1024}KB 上限", call.line, call.col)
-        program = parse_program(source.content)
-        if program.systems:
-            bad = program.systems[0]
-            raise DslEvalError(f"part 文件 '{source.file_key}' 不允许声明 system", bad.line, bad.col)
-        closure.module_count += len(program.modules) + len(program.systems)
-        if closure.module_count > MAX_CLOSURE_MODULES:
-            raise DslEvalError(f"依赖闭包 module / system 声明数超过上限 {MAX_CLOSURE_MODULES}", call.line, call.col)
-        if len(program.params) > MAX_PARAMS:
-            bad = program.params[MAX_PARAMS]
-            raise DslEvalError(f"param 数量超过上限 {MAX_PARAMS}", bad.line, bad.col)
-        decls = [item for item in program.items if isinstance(item, (ModuleDecl, SystemDecl))]
-        if len(decls) > MAX_MODULES:
-            bad = decls[MAX_MODULES]
-            raise DslEvalError(f"module / system 声明数量超过上限 {MAX_MODULES}", bad.line, bad.col)
-
-        env, _params_out = _eval_params(program, bindings)
-        modules, _systems = _collect_decls(program)
-        emitter = _Emitter(
-            modules=modules,
-            systems=_systems,
-            global_env=env,
-            closure=closure,
-        )
-        top_instances = [item for item in program.items if isinstance(item, Instance)]
-        nodes, outline, _entries, _warnings = emitter.emit_scope(
-            tuple(top_instances), program.constraints, env, (), {}, [], {}
-        )
-        return nodes, outline
+        return _compile_source_body(source.content, source.file_key, bindings, closure, call)
     finally:
         closure.stack.pop()
+
+
+def _compile_source_body(
+    content: str,
+    file_key: str,
+    bindings: dict[str, float],
+    closure: _Closure,
+    call: UseCall,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """被引用 part 文件的公共编译体（工作区文件与库快照共用）."""
+    if len(content.encode("utf-8")) > MAX_CONTENT_BYTES:
+        raise DslEvalError(f"DSL 原文超过 {MAX_CONTENT_BYTES // 1024}KB 上限", call.line, call.col)
+    program = parse_program(content)
+    if program.systems:
+        bad = program.systems[0]
+        raise DslEvalError(f"part 文件 '{file_key}' 不允许声明 system", bad.line, bad.col)
+    closure.module_count += len(program.modules) + len(program.systems)
+    if closure.module_count > MAX_CLOSURE_MODULES:
+        raise DslEvalError(f"依赖闭包 module / system 声明数超过上限 {MAX_CLOSURE_MODULES}", call.line, call.col)
+    if len(program.params) > MAX_PARAMS:
+        bad = program.params[MAX_PARAMS]
+        raise DslEvalError(f"param 数量超过上限 {MAX_PARAMS}", bad.line, bad.col)
+    decls = [item for item in program.items if isinstance(item, (ModuleDecl, SystemDecl))]
+    if len(decls) > MAX_MODULES:
+        bad = decls[MAX_MODULES]
+        raise DslEvalError(f"module / system 声明数量超过上限 {MAX_MODULES}", bad.line, bad.col)
+
+    env, _params_out = _eval_params(program, bindings)
+    modules, _systems = _collect_decls(program)
+    emitter = _Emitter(
+        modules=modules,
+        systems=_systems,
+        global_env=env,
+        closure=closure,
+    )
+    top_instances = [item for item in program.items if isinstance(item, Instance)]
+    nodes, outline, _entries, _warnings = emitter.emit_scope(
+        tuple(top_instances), program.constraints, env, (), {}, [], {}
+    )
+    return nodes, outline
 
 
 def _prepend_xf(nodes: list[dict[str, Any]], xf: _XfStack) -> None:

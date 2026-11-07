@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import re
+
 from cndb.plugins.design.services.dsl.lexer import (
     EOF,
     IDENT,
@@ -17,6 +19,7 @@ from cndb.plugins.design.services.dsl.lexer import (
 )
 from cndb.plugins.design.services.dsl.limits import MAX_NESTING_DEPTH
 from cndb.plugins.design.services.dsl.nodes import (
+    LIBRARY_PREFIX,
     BinOp,
     BooleanCall,
     ConstraintDecl,
@@ -24,6 +27,7 @@ from cndb.plugins.design.services.dsl.nodes import (
     Expr,
     FuncCall,
     Instance,
+    LibraryRef,
     ModuleCall,
     ModuleDecl,
     ModuleParam,
@@ -53,6 +57,8 @@ KEYWORD_AS = "as"
 KEYWORD_CONSTRAINT = "constraint"
 #: 约束类型（MVP 五类，ADR 0086 D4）
 CONSTRAINT_TYPES = ("fixed", "coincident", "concentric", "distance", "angle")
+#: 库引用字面量：lib:<module_key>@<version>；module_key 字符集与 file_key 一致（ADR 0118 D2）
+_LIBRARY_REF_RE = re.compile(r"^lib:([0-9A-Za-z_\u4e00-\u9fff-]{1,64})@([1-9][0-9]*)$")
 #: 约束引用端的默认命名基准（ADR 0086 D4）
 CONSTRAINT_ANCHORS = ("origin", "x", "y", "z")
 #: 布尔块关键字
@@ -408,6 +414,7 @@ class Parser:
         self._next()
         if not key.value:
             raise DslSyntaxError("文件 key 不能为空", key.line, key.col)
+        library = self._parse_library_ref(key.value, key.line, key.col)
         # 参数表可选：``use "wheel"`` 与 ``use "wheel"(d = 30)`` 均合法
         positional: list[Expr] = []
         named: dict[str, Expr] = {}
@@ -422,7 +429,22 @@ class Parser:
             line=head.line,
             col=head.col,
             label=label,
+            library=library,
         )
+
+    @staticmethod
+    def _parse_library_ref(value: str, line: int, col: int) -> LibraryRef | None:
+        """解析 ``lib:<module_key>@<version>``；非 ``lib:`` 前缀返回 None（ADR 0118 D2）."""
+        if not value.startswith(LIBRARY_PREFIX):
+            return None
+        match = _LIBRARY_REF_RE.match(value)
+        if match is None:
+            raise DslSyntaxError(
+                '库引用格式应为 lib:<module_key>@<版本号>（版本号从 1 开始），如 "lib:轮毂-标准件@2"',
+                line,
+                col,
+            )
+        return LibraryRef(module_key=match.group(1), version_number=int(match.group(2)))
 
     def _parse_optional_label(self) -> str | None:
         """可选 ``as 标签``：仅模块 / use 实例可带（ADR 0086 D4）."""
