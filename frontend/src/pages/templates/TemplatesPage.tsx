@@ -8,8 +8,8 @@
 
 import { useMemo, useState } from 'react'
 import {
-  Alert, App as AntApp, Button, Collapse, Descriptions, Empty, Input, List, Popconfirm,
-  Space, Spin, Table, Tabs, Tag, Timeline, Typography,
+  Alert, App as AntApp, Button, Collapse, Empty, Input, List, Popconfirm,
+  Space, Spin, Table, Tabs, Tag, Timeline, Tooltip, Typography,
 } from 'antd'
 import {
   AppstoreOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined,
@@ -213,6 +213,16 @@ function TemplateRow({
   )
 }
 
+/** 概要条单元格：复用质量检查运行概要的样式（标签在上、数值在下） */
+function TemplateStat({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="cn-qc-run-stat">
+      <span className="cn-qc-run-stat-label">{label}</span>
+      <Text strong className="cn-qc-run-stat-value">{value}</Text>
+    </div>
+  )
+}
+
 export default function TemplatesPage() {
   const { message } = AntApp.useApp()
   const navigate = useNavigate()
@@ -339,36 +349,57 @@ export default function TemplatesPage() {
             </Spin>
           </SectionBox>
 
-          {/* 右栏：选中模板的元信息与结构化详情 + 操作 */}
+          {/* 右栏：选中模板的元信息与结构化详情 + 操作（编辑为主动作，其余为图标操作） */}
           <SectionBox
-            title={selected ? selected.name : '模板详情'}
+            title="模板详情"
             icon={<FileTextOutlined />}
             extra={selected ? (
-              <Space size={8} wrap>
-                <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(selected)}>
+              <Space size={4} wrap>
+                <Button
+                  type="primary"
+                  size="small"
+                  icon={<EditOutlined />}
+                  onClick={() => openEdit(selected)}
+                  data-testid="edit-template-btn"
+                >
                   编辑规格
                 </Button>
-                <Button size="small" icon={<CopyOutlined />} onClick={() => openClone(selected)}>
-                  复制
-                </Button>
-                <Button
-                  size="small"
-                  icon={<ExportOutlined />}
-                  loading={exportTemplate.isPending && exportTemplate.variables?.id === selected.id}
-                  onClick={() => exportTemplate.mutate(selected)}
-                  data-testid={`export-template-${selected.id}`}
-                >
-                  导出
-                </Button>
+                <Tooltip title="复制为新模板">
+                  <Button
+                    size="small"
+                    type="text"
+                    aria-label="复制模板"
+                    icon={<CopyOutlined />}
+                    onClick={() => openClone(selected)}
+                  />
+                </Tooltip>
+                <Tooltip title="导出为 JSON 文件">
+                  <Button
+                    size="small"
+                    type="text"
+                    aria-label="导出模板"
+                    icon={<ExportOutlined />}
+                    loading={exportTemplate.isPending && exportTemplate.variables?.id === selected.id}
+                    onClick={() => exportTemplate.mutate(selected)}
+                    data-testid={`export-template-${selected.id}`}
+                  />
+                </Tooltip>
                 <Popconfirm
                   title="删除模板？"
                   description={selected.workspace_count > 0 ? '仍有工作区在使用，无法删除' : '删除后不可恢复（历史版本一并删除）'}
                   disabled={selected.workspace_count > 0}
                   onConfirm={() => remove.mutate(Number(selected.id))}
                 >
-                  <Button size="small" danger disabled={selected.workspace_count > 0} icon={<DeleteOutlined />}>
-                    删除
-                  </Button>
+                  <Tooltip title={selected.workspace_count > 0 ? '仍有工作区在使用，无法删除' : '删除模板'}>
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      disabled={selected.workspace_count > 0}
+                      aria-label="删除模板"
+                      icon={<DeleteOutlined />}
+                    />
+                  </Tooltip>
                 </Popconfirm>
               </Space>
             ) : undefined}
@@ -386,18 +417,51 @@ export default function TemplatesPage() {
                   <Empty description="选择左侧模板查看详情" />
                 </div>
               ) : (
-                <div data-testid="template-detail">
-                  <Descriptions size="small" column={2} style={{ marginBottom: 8 }}>
-                    <Descriptions.Item label="说明" span={2}>{selected.description || '—'}</Descriptions.Item>
-                    <Descriptions.Item label="分类">{selected.category || '—'}</Descriptions.Item>
-                    <Descriptions.Item label="版本">v{selected.version}</Descriptions.Item>
-                    <Descriptions.Item label="模块">
-                      {selected.modules.length ? selected.modules.map(m => <Tag key={m}>{m}</Tag>) : '—'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="使用情况">{selected.workspace_count} 个工作区使用</Descriptions.Item>
-                    <Descriptions.Item label="更新时间" span={2}>{formatDateTime(selected.updated_at)}</Descriptions.Item>
-                  </Descriptions>
-                  <TemplateDetail template={selected} />
+                <div className="cn-tpl-detail" data-testid="template-detail">
+                  {/* 模板头：完整名称 + 标签 + 说明 + 更新信息（名称不截断，便于查阅） */}
+                  <div className="cn-tpl-detail-head">
+                    <div className="cn-tpl-detail-title">
+                      <Text strong className="cn-tpl-detail-name">{selected.name}</Text>
+                      {selected.is_builtin && <Tag color="gold">内置</Tag>}
+                      <Tag color="blue">v{selected.version}</Tag>
+                      {selected.category && <Tag>{selected.category}</Tag>}
+                    </div>
+                    <Paragraph
+                      type="secondary"
+                      className="cn-tpl-detail-desc"
+                      ellipsis={{ rows: 2, tooltip: selected.description || undefined }}
+                    >
+                      {selected.description || '暂无说明'}
+                    </Paragraph>
+                    <div className="cn-tpl-detail-meta">
+                      <span>{selected.workspace_count} 个工作区使用</span>
+                      <span aria-hidden>·</span>
+                      <span>更新于 {formatDateTime(selected.updated_at)}</span>
+                      {selected.modules.length > 0 && (
+                        <>
+                          <span aria-hidden>·</span>
+                          <span className="cn-tpl-detail-modules">
+                            模块：{selected.modules.map(m => <Tag key={m}>{m}</Tag>)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 概要计数条：规模与使用情况一眼可读（复用质量检查的运行概要样式） */}
+                  <section className="cn-qc-run-summary" aria-label="模板概要">
+                    <TemplateStat label="阶段" value={selected.counts.stage_count} />
+                    <TemplateStat label="表单" value={selected.counts.form_count} />
+                    <TemplateStat label="字段" value={selected.counts.field_count} />
+                    <TemplateStat label="文档规则" value={selected.counts.document_rule_count} />
+                    <TemplateStat label="流程" value={selected.counts.flow_count ?? 0} />
+                    <TemplateStat label="使用工作区" value={selected.workspace_count} />
+                  </section>
+
+                  {/* 详情页签：内容区独立滚动，长表单 / 文档清单不把整页撑高 */}
+                  <div className="cn-tpl-detail-body">
+                    <TemplateDetail template={selected} />
+                  </div>
                 </div>
               )}
             </Spin>

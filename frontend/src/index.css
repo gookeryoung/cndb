@@ -8836,6 +8836,68 @@ body.cn-doc-focus-view .cn-doc-stats {
   color: var(--cn-text-muted);
 }
 
+/* 右栏详情：模板头（完整名称 / 说明 / 元信息）+ 概要计数条 + 可滚动页签内容 */
+.cn-tpl-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-md);
+  min-width: 0;
+}
+
+.cn-tpl-detail-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+.cn-tpl-detail-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+.cn-tpl-detail-name.ant-typography {
+  font-size: var(--cn-text-lg);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.cn-tpl-detail-desc.ant-typography {
+  margin: 0;
+  font-size: var(--cn-text-sm);
+}
+
+.cn-tpl-detail-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-tpl-detail-modules {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+}
+
+.cn-tpl-detail-modules .ant-tag {
+  margin-inline-end: 0;
+  line-height: 18px;
+}
+
+/* 页签内容独立滚动：长表单 / 文档清单不把整页撑高，模板头与概要始终可见 */
+.cn-tpl-detail-body {
+  min-height: 0;
+  max-height: min(58vh, 680px);
+  overflow-y: auto;
+  padding-inline-end: var(--cn-space-xs);
+}
+
 @media (max-width: 767.98px) {
   /* 双栏在窄屏纵向堆叠（与修改申请列表页一致） */
   .cn-tpl-page .cn-qc-split {
