@@ -124,7 +124,7 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 | 样式 | `frontend/src/index.css` | 每条 `color-mix()` 前补同属性 `var(--cn-mix-*)` 声明；含 `var()` 的 `color-mix()` 声明再包进 `@supports`（边界 9）；5 条 `:focus-visible` 改 `:focus`；作者逻辑属性交给 `postcss-logical` |
 | 静态 TSX 颜色 | `frontend/src/pages/**` 等 22 处 | `color-mix(...)` 改为 `var(--cn-mix-*)`（两代浏览器结果一致） |
 | 导出 | `frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts` | 动态导入 `html2canvas-pro` 前按需加载 `@formatjs/intl-segmenter` |
-| 采集 | `frontend/src/utils/webVitals.ts` | 删除局部 `Array.prototype.at` 补丁，统一由入口 polyfill 提供；按 `PerformanceObserver.supportedEntryTypes` 逐项注册，旧内核缺少 `visibility-state` / `event` 时跳过 CLS / INP，避免 `Deprecated API for given entry type` |
+| 采集 | `frontend/src/utils/webVitals.ts`、`frontend/src/compat/polyfills.ts` | 删除局部 `Array.prototype.at` 补丁，统一由入口 polyfill 提供；按 `PerformanceObserver.supportedEntryTypes` 逐项注册，旧内核缺少 `visibility-state` / `event` 时跳过 CLS / INP；同时在缺少 `visibility-state` 时把 `performance.getEntriesByType` 的该类型查询短路为空数组（web-vitals 的 FCP / LCP 也会经 `getVisibilityWatcher` 查询它，否则打印 `Deprecated API for given entry type`） |
 | 静态门禁 | `frontend/scripts/check-browser-compat.mjs` | 校验 target 与产物 / 源码中的禁用写法；挂在 `pnpm build` 之后 |
 | 老内核冒烟 | `frontend/scripts/chrome81-smoke.mjs` | `puppeteer-core` + 固定 Chromium 81 revision；`pnpm e2e:chrome81` |
 | 文档 | `README.md`、`CONTEXT.md` | 写明浏览器基线与不承诺范围（CONTEXT 词条已补） |
@@ -138,6 +138,7 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 - **`:focus-visible`**：5 条规则改为 `:focus`；Chrome 81 上鼠标点击也会出现焦点样式，作为可接受降级，不引入额外 polyfill。
 - **polyfill 采用定向模块且按消费方加载**：不使用全量 `core-js/stable`，也不用 `plugin-legacy` 的 `modernPolyfills`（后者会把 Babel polyfill 链引入构建）。实测入口常驻 `structured-clone` 会让主入口超预算 10 KiB（连带 Map/Set internals），而它的唯一调用点已被 `typeof` 守卫，故移除；`at` / `has-own` / `replace-all` 下沉到懒加载消费模块，入口回到预算内。`reportError` 同样已由 `typeof reportError === 'function'` 守卫，不补。
 - **`replace-all` 是导出链的隐性依赖**：`@formatjs/intl-segmenter` 内部调用 `String.prototype.replaceAll`（Chrome 85+）。真机 Chromium 81 冒烟实测：只补 `Intl.Segmenter` 时 html2canvas 能完成渲染，但此后导出静默失败、无 toast —— 缺 `replaceAll` 时抛错发生在 jsPDF 生成阶段且被链路吞掉。故 `polyfills.ts` 必须包含 `core-js/actual/string/replace-all`。
+- **`performance.getEntriesByType` 噪音守卫**：web-vitals v6 的 FCP / CLS / INP / LCP 都经 `getVisibilityWatcher` 查询 `visibility-state` 性能条目，Chrome 81 对该未知类型会打印 `Deprecated API for given entry type`。`polyfills.ts` 在 `PerformanceObserver.supportedEntryTypes` 缺失该类型时改写 `performance` 原型的 `getEntriesByType`，对 `visibility-state` 直接返回空数组（与浏览器实际返回值一致），其余类型透传；现代内核不改写。
 
 ### 7. 测试清单
 
@@ -147,6 +148,7 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 - `flexGap`：特性探测（含「grid gap 为真但 flex gap 为假」的用例）、`gap` / `rowGap` / `columnGap` 解析、行 / 列 / wrap 三类间距规则、已有 margin 叠加、grid 跳过、kill switch。
 - `ThemeProvider`：`StyleProvider` 包裹关系、body class 与 mix 变量在首帧前写入。
 - polyfill 边界：`polyfills.ts` 只含 `at` / `has-own` / `replace-all`，不含 `structured-clone`；四个消费模块都必须静态导入它，入口 `main.tsx` 不得常驻导入。
+- 性能条目守卫：旧内核缺 `visibility-state` 时 `getEntriesByType('visibility-state')` 返回空数组且不调用原生实现，其他类型透传；现代内核与无 `PerformanceObserver` 环境不改写原型。
 - 导出垫片：`ensureIntlSegmenter()` 在原生 `Intl.Segmenter` 存在时零加载，缺失时才加载 `@formatjs/intl-segmenter`。
 
 **构建层**：

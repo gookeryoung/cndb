@@ -15,3 +15,33 @@
 import 'core-js/actual/array/at'
 import 'core-js/actual/object/has-own'
 import 'core-js/actual/string/replace-all'
+
+/**
+ * performance.getEntriesByType 噪音守卫（ADR 0026）。
+ *
+ * web-vitals v6 的 FCP / CLS / INP / LCP 都会经 getVisibilityWatcher 查询
+ * `visibility-state` 性能条目；Chrome 81 不认识该条目类型，调用时会在控制台
+ * 打印「Deprecated API for given entry type」。缺失该条目类型时直接返回空数组，
+ * 与浏览器实际返回值一致，仅消除噪音。现代内核不受影响。
+ */
+let perfEntryTypesGuarded = false
+
+export function guardUnsupportedPerfEntryTypes(): void {
+  if (perfEntryTypesGuarded) return
+  const supported =
+    typeof PerformanceObserver === 'undefined' ? undefined : PerformanceObserver.supportedEntryTypes
+  if (!Array.isArray(supported) || supported.includes('visibility-state')) return
+  const perf = globalThis.performance
+  const proto = perf ? (Object.getPrototypeOf(perf) as Performance) : undefined
+  // lib.dom 的重载只接受 keyof PerformanceEntryMap，这里按字符串统一签名
+  const getEntriesByType = proto?.getEntriesByType as unknown as
+    | ((this: Performance, type: string) => PerformanceEntry[])
+    | undefined
+  if (!proto || typeof getEntriesByType !== 'function') return
+  perfEntryTypesGuarded = true
+  proto.getEntriesByType = function (this: Performance, type: string) {
+    return type === 'visibility-state' ? [] : getEntriesByType.call(this, type)
+  } as Performance['getEntriesByType']
+}
+
+guardUnsupportedPerfEntryTypes()
