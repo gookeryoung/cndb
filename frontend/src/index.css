@@ -8989,6 +8989,20 @@ body.cn-doc-focus-view .cn-doc-stats {
   overflow-wrap: anywhere;
 }
 
+.cn-tpl-outline-group .cn-tpl-outline-toggle {
+  flex: 0 0 auto;
+  width: 22px;
+  min-width: 22px;
+  padding: 0;
+  color: var(--cn-text-secondary);
+}
+
+.cn-tpl-outline-empty {
+  padding: 8px;
+  font-size: var(--cn-text-xs);
+  overflow-wrap: anywhere;
+}
+
 .cn-tpl-editor-main {
   min-width: 0;
   overflow-y: auto;

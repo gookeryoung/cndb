@@ -225,12 +225,12 @@ DraftField = { uid, name, type, required, is_unique, hidden, default_value?, con
 |---|---|---|---|---|
 | P0 | 已落地 | `frontend/src/pages/templates/TemplateEditorDrawer.tsx` `frontend/src/pages/templates/templateDraft.ts` `frontend/src/pages/templates/TemplateEditorSections.tsx` `frontend/src/pages/templates/TemplateJsonTab.tsx` `frontend/src/pages/templates/TemplateCheckPanel.tsx` `frontend/src/pages/templates/TemplateDetail.tsx` | `frontend/src/pages/templates/templateDraft.test.ts` `frontend/src/pages/templates/TemplateEditorDrawer.test.tsx` `frontend/src/pages/templates/TemplatesPage.test.tsx` | 未提交 |
 | P1 | 已落地 | `frontend/src/pages/templates/TemplateEditorSections.tsx` `frontend/src/api/workspaceTemplates.ts` `src/cndb/plugins/workspaces/routers/templates.py` `src/cndb/plugins/workspaces/schemas/templates.py` | `tests/test_workspace_templates.py` | 未提交 |
-| P2 | 未开始 | 目录搜索 / 折叠、本地草稿恢复、e2e、帮助文档均未落（错误跳转已在 P0 的检查面板实现） | — | — |
+| P2 | 已落地 | `frontend/src/pages/templates/TemplateEditorDrawer.tsx` `frontend/src/index.css` `frontend/src/pages/help/content/tutorials.tsx` | `frontend/src/pages/templates/TemplateEditorDrawer.test.tsx` `frontend/tests/e2e/critical/template-structured-edit.spec.ts` `frontend/src/pages/help/HelpDocsPage.test.tsx` | 未提交 |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 已实现并通过 `make flow`；P2 未开始。
-- 已完成：草稿模型与唯一序列化入口 `draftToSpec`；全屏三栏抽屉（目录 / 编辑 / 检查预览）；元信息、阶段、表单与字段（含类型配置、`form.flow`）、文档、流程步骤结构化编辑；JSON 高级页签显式应用、失败保留草稿；引用级联删除；服务端无状态 `validate` 端点与 `{path, message}` 错误定位。
-- 下一步（P2）：大纲搜索与分组折叠；按模板 id + 版本写 `localStorage` 草稿并在保存成功后清除；补 `frontend/tests/e2e/critical/template-structured-edit.spec.ts`；帮助中心补结构化编辑入门。
-- 已知坑：`normalize_spec` 首错即抛，服务端一次只回一条，前端需先跑本地全量校验；字段重命名等于删旧增新；`AntD Drawer width` 与 `Timeline items.children/dot`、`Alert message`、`Space direction` 仍为弃用告警（不影响门禁，后续统一迁移）。
-- 最近一次全绿：`make flow`（6745 passed / 3 skipped）、`pnpm vitest run src/pages/templates`（16 例）、`pnpm typecheck` / `pnpm lint`。
+- 当前阶段：P0 / P1 / P2 均已实现；本地 `make flow`、`pnpm vitest run src/pages/templates src/pages/help` 与结构化编辑 e2e 全绿。
+- 已完成：草稿模型与唯一序列化入口 `draftToSpec`；全屏三栏抽屉（目录 / 编辑 / 检查预览）；元信息、阶段、表单与字段（含类型配置、`form.flow`）、文档、流程步骤结构化编辑；JSON 高级页签显式应用、失败保留草稿；引用级联删除；服务端无状态 `validate` 端点与 `{path, message}` 错误定位；目录按名称 / key 搜索与分组折叠；按「模板 id + 版本」把未保存草稿暂存 localStorage（打开时恢复、保存成功 / 回到初始态清除）；帮助中心「结构化编辑模板」小节；e2e `template-structured-edit.spec.ts` 覆盖新建 → 结构化新增字段 → 大纲搜索 / 无匹配 → JSON 页签确认 → 保存 → 详情展示。
+- 下一步：本轮无必做项；若继续演进，可推进目录键盘导航、历史版本 diff 与跨设备草稿同步，并在改动 `TemplateEditorDrawer.tsx` 时同步 `TemplateEditorDrawer.test.tsx` 与 e2e。
+- 已知坑：`normalize_spec` 首错即抛，服务端一次只回一条，前端需先跑本地全量校验；字段重命名等于删旧增新；`localStorage` 不可用时静默降级；e2e 依赖 `src/cndb/static` 最新构建（改前端后先 `pnpm build` 再跑）；`AntD Drawer width` 与 `Timeline items.children/dot`、`Alert message`、`Space direction` 仍为弃用告警（不影响门禁，后续统一迁移）。
+- 最近一次全绿：`make flow`（6745 passed / 3 skipped）、`pnpm vitest run src/pages/templates src/pages/help`（62 例）、结构化编辑 e2e（chromium-authed）、`pnpm typecheck` / `pnpm lint`。

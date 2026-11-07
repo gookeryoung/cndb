@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { App as AntApp, Button, Drawer, Modal, Space, Tag, Typography } from 'antd'
+import { App as AntApp, Button, Drawer, Input, Modal, Space, Tag, Typography } from 'antd'
 import {
-  ApartmentOutlined, AppstoreOutlined, CodeOutlined, FileTextOutlined, PlusOutlined, TableOutlined,
+  ApartmentOutlined, AppstoreOutlined, CodeOutlined, DownOutlined, FileTextOutlined, PlusOutlined,
+  SearchOutlined, TableOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { workspaceTemplateApi } from '@/api'
@@ -54,6 +55,31 @@ function baselineOf(draft: TemplateDraft): string {
   })
 }
 
+const DRAFT_STORAGE_PREFIX = 'cndb_template_draft_v1'
+
+interface StoredDraft {
+  draft: TemplateDraft
+  summary: string
+  savedAt: string
+}
+
+function draftStorageKey(template: WorkspaceTemplate | null): string {
+  return `${DRAFT_STORAGE_PREFIX}:${template?.id ?? 'new'}:${template?.version ?? 0}`
+}
+
+function readStoredDraft(key: string): StoredDraft | null {
+  try {
+    const raw = localStorage.getItem(key)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as StoredDraft
+    if (!parsed || typeof parsed !== 'object' || !parsed.draft) return null
+    if (!Array.isArray(parsed.draft.forms) || !Array.isArray(parsed.draft.stages)) return null
+    return parsed
+  } catch {
+    return null
+  }
+}
+
 export default function TemplateEditorDrawer({ open, template, seed, onClose, onSaved }: Props) {
   const { message } = AntApp.useApp()
   const queryClient = useQueryClient()
@@ -64,21 +90,46 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
   const [preview, setPreview] = useState<TemplatePreview | null>(null)
   const [force, setForce] = useState(false)
   const [serverError, setServerError] = useState('')
+  const [keyword, setKeyword] = useState('')
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   useEffect(() => {
     if (!open) return
     const next = initialDraft(template, seed)
-    setDraft(next)
+    const stored = readStoredDraft(draftStorageKey(template))
+    setDraft(stored?.draft ?? next)
     setBaseline(baselineOf(next))
     setActive('overview')
-    setSummary('')
+    setSummary(stored?.summary ?? '')
     setPreview(null)
     setForce(false)
     setServerError('')
-  }, [open, template, seed])
+    setKeyword('')
+    setCollapsed({})
+    if (stored) message.info('已恢复上次未保存的本地草稿')
+  }, [open, template, seed, message])
 
   const issues = useMemo(() => validateDraft(draft), [draft])
   const dirty = useMemo(() => baselineOf(draft) !== baseline || summary.trim() !== '', [draft, baseline, summary])
+
+  // 编辑中的草稿按「模板 id + 版本」暂存到本地，防误关丢失；保存成功或回到初始态时清除。
+  useEffect(() => {
+    if (!open) return
+    const key = draftStorageKey(template)
+    if (!dirty) {
+      localStorage.removeItem(key)
+      return
+    }
+    const timer = window.setTimeout(() => {
+      const payload: StoredDraft = { draft, summary, savedAt: new Date().toISOString() }
+      try {
+        localStorage.setItem(key, JSON.stringify(payload))
+      } catch {
+        // 本地存储不可用（隐私模式 / 配额）时静默降级，不影响编辑与保存
+      }
+    }, 800)
+    return () => window.clearTimeout(timer)
+  }, [open, template, draft, summary, dirty])
 
   const updateDraft = (fn: (current: TemplateDraft) => TemplateDraft) => {
     setDraft(fn)
@@ -193,6 +244,7 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
           : '模板已创建',
       )
       queryClient.invalidateQueries({ queryKey: ['workspace-templates'] })
+      localStorage.removeItem(draftStorageKey(template))
       setBaseline(baselineOf(draft))
       setSummary('')
       onSaved?.(saved)
@@ -266,6 +318,17 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
   const issueCount = (scope: string, uid?: string) => issues.filter(issue => (
     issue.scope === scope && (!uid || issue.uid === uid)
   )).length
+
+  const normalizedKeyword = keyword.trim().toLowerCase()
+  const matchText = (text: string) => !normalizedKeyword || text.toLowerCase().includes(normalizedKeyword)
+  const visibleStages = draft.stages.filter(stage => matchText(`${stage.name} ${stage.key}`))
+  const visibleForms = draft.forms.filter(form => matchText(`${form.name} ${form.key}`))
+  const visibleDocuments = draft.documents.filter(doc => matchText(`${doc.title} ${doc.key}`))
+  const visibleFlows = draft.flows.filter(flow => matchText(`${flow.name} ${flow.key}`))
+  const groupOpen = (group: string) => !!normalizedKeyword || !collapsed[group]
+  const toggleGroup = (group: string) => setCollapsed(current => ({ ...current, [group]: !current[group] }))
+  const noMatch = !!normalizedKeyword
+    && !visibleStages.length && !visibleForms.length && !visibleDocuments.length && !visibleFlows.length
 
   const renderMain = () => {
     if (active === 'json') {
@@ -353,6 +416,16 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
     >
       <div className="cn-tpl-editor" data-testid="template-editor-drawer">
         <aside className="cn-tpl-outline" aria-label="模板目录">
+          <Input
+            allowClear
+            size="small"
+            prefix={<SearchOutlined />}
+            placeholder="搜索阶段 / 表单 / 文档 / 流程"
+            value={keyword}
+            onChange={e => setKeyword(e.target.value)}
+            aria-label="搜索模板结构"
+            data-testid="template-outline-search"
+          />
           <button type="button" className={`cn-tpl-outline-item ${active === 'overview' ? 'is-active' : ''}`} onClick={() => setActive('overview')}>
             <AppstoreOutlined /> 概览
           </button>
@@ -364,8 +437,10 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
             onAdd={addStage}
             active={active === 'stages'}
             onSelect={() => setActive('stages')}
+            open={groupOpen('stages')}
+            onToggle={() => toggleGroup('stages')}
           />
-          {draft.stages.map(stage => (
+          {groupOpen('stages') && visibleStages.map(stage => (
             <button
               key={stage.uid}
               type="button"
@@ -384,8 +459,10 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
             onAdd={addForm}
             active={active === 'forms'}
             onSelect={() => setActive(draft.forms[0] ? `form:${draft.forms[0].uid}` : 'forms')}
+            open={groupOpen('forms')}
+            onToggle={() => toggleGroup('forms')}
           />
-          {draft.forms.map(form => (
+          {groupOpen('forms') && visibleForms.map(form => (
             <button
               key={form.uid}
               type="button"
@@ -405,8 +482,10 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
             onAdd={addDocument}
             active={active === 'documents'}
             onSelect={() => setActive('documents')}
+            open={groupOpen('documents')}
+            onToggle={() => toggleGroup('documents')}
           />
-          {draft.documents.map(doc => (
+          {groupOpen('documents') && visibleDocuments.map(doc => (
             <button
               key={doc.uid}
               type="button"
@@ -425,8 +504,10 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
             onAdd={addFlow}
             active={active === 'flows'}
             onSelect={() => setActive('flows')}
+            open={groupOpen('flows')}
+            onToggle={() => toggleGroup('flows')}
           />
-          {draft.flows.map(flow => (
+          {groupOpen('flows') && visibleFlows.map(flow => (
             <button
               key={flow.uid}
               type="button"
@@ -437,6 +518,8 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
               {issueCount('flows', flow.uid) > 0 && <Tag color="red">{issueCount('flows', flow.uid)}</Tag>}
             </button>
           ))}
+
+          {noMatch && <Text type="secondary" className="cn-tpl-outline-empty">没有匹配「{keyword.trim()}」的结构</Text>}
 
           <button type="button" className={`cn-tpl-outline-item ${active === 'json' ? 'is-active' : ''}`} onClick={() => setActive('json')}>
             <CodeOutlined /> JSON（高级）
@@ -465,7 +548,7 @@ export default function TemplateEditorDrawer({ open, template, seed, onClose, on
 }
 
 function OutlineGroup({
-  title, icon, count, onAdd, active, onSelect,
+  title, icon, count, onAdd, active, onSelect, open, onToggle,
 }: {
   title: string
   icon: ReactNode
@@ -473,9 +556,20 @@ function OutlineGroup({
   onAdd: () => void
   active: boolean
   onSelect: () => void
+  open: boolean
+  onToggle: () => void
 }) {
   return (
     <div className="cn-tpl-outline-group">
+      <Button
+        size="small"
+        type="text"
+        className="cn-tpl-outline-toggle"
+        icon={<DownOutlined rotate={open ? 0 : -90} />}
+        aria-label={`${open ? '收起' : '展开'}${title}`}
+        aria-expanded={open}
+        onClick={onToggle}
+      />
       <button type="button" className={`cn-tpl-outline-item ${active ? 'is-active' : ''}`} onClick={onSelect}>
         {icon} {title} {count > 0 && <Tag color="red">{count}</Tag>}
       </button>
