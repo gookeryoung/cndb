@@ -62,15 +62,28 @@ function EditorStub() {
   return <div data-testid="editor-stub">{loc.pathname}{loc.search}</div>
 }
 
+function LocationProbe() {
+  const loc = useLocation()
+  return <div data-testid="location-probe">{loc.pathname}</div>
+}
+
 function renderNav(route: string) {
   return renderProviders(
-    <Routes>
-      <Route path="/w/:wid/design" element={<DesignStructureNav workspaceId="10" />} />
+    <>
+      <Routes>
+        <Route path="/w/:wid/design" element={<DesignStructureNav workspaceId="10" />} />
+      <Route
+        path="/w/:wid/design/library/:moduleId"
+        element={<><DesignStructureNav workspaceId="10" /><EditorStub /></>}
+      />
       <Route
         path="/w/:wid/design/:designId"
         element={<><DesignStructureNav workspaceId="10" /><EditorStub /></>}
       />
-    </Routes>,
+      <Route path="*" element={<EditorStub />} />
+      </Routes>
+      <LocationProbe />
+    </>,
     { route, ...AUTH },
   )
 }
@@ -382,5 +395,43 @@ describe('设计侧栏 · 新建 / 改名 / 删除（ADR 0109 D2）', () => {
     fireEvent.click(await screen.findByRole('button', { name: /删\s*除/ }))
 
     await waitFor(() => expect(removed).toBe(1))
+  })
+})
+
+describe('设计侧栏 · 复用模块库（ADR 0118 P1）', () => {
+  const MODULE = {
+    id: 7,
+    module_key: 'flange',
+    name: '法兰模块',
+    description: '',
+    visibility: 'public',
+    owner_workspace_id: 10,
+    is_archived: false,
+    version_count: 2,
+    latest_version: 2,
+    params: [{ name: 'd', default: 10 }],
+    updated_at: '2026-10-02T08:00:00Z',
+  }
+
+  it('从产品列表切到模块库，点击模块打开只读页', async () => {
+    useListHandler([])
+    server.use(http.get('/api/v1/workspaces/10/design-library/modules', () => HttpResponse.json([MODULE])))
+    renderNav('/w/10/design')
+
+    fireEvent.click(await screen.findByTestId('design-library-open'))
+    expect(await screen.findByTestId('library-row-7')).toBeInTheDocument()
+    expect(screen.getByText('法兰模块')).toBeInTheDocument()
+    expect(screen.getByText('v2')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('library-row-7'))
+    await waitFor(() => {
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('/w/10/design/library/7')
+    })
+    // 模块库路由同样保持库态（不被重置回产品列表）
+    expect(screen.getByTestId('design-library-panel')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('design-library-back'))
+    await waitFor(() => {
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(/^\/w\/10\/design$/)
+    })
   })
 })

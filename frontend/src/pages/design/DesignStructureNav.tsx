@@ -11,18 +11,20 @@
 
 import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import {
-  App as AntApp, Button, Dropdown, Empty, Form, Input, Modal, Segmented, Select, Space, Spin, Tag, Tree,
+  App as AntApp, Button, Checkbox, Dropdown, Empty, Form, Input, Modal, Segmented, Select, Space, Spin, Tag, Tree,
   Typography,
 } from 'antd'
 import type { TreeProps } from 'antd/es/tree'
 import {
-  ArrowLeftOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, ReloadOutlined,
+  ArrowLeftOutlined, BookOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, ReloadOutlined,
   ToolOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
-import { designsApi, workspaceApi } from '@/api'
-import type { DesignIRResponse, DesignListItem, DesignOutlineNode } from '@/api'
+import { designLibraryApi, designsApi, workspaceApi } from '@/api'
+import type {
+  DesignIRResponse, DesignListItem, DesignOutlineNode, LibraryModuleItem,
+} from '@/api'
 import SearchInput from '@/components/SearchInput'
 import { formatDateTime } from '@/utils/datetime'
 import {
@@ -63,7 +65,13 @@ function activeDesignIdFrom(pathname: string, workspaceId: string): number | und
   return match ? Number(match[1]) : undefined
 }
 
-type NavView = 'list' | 'tree'
+/** 模块库只读页 id（/w/:wid/design/library/:moduleId） */
+function activeLibraryIdFrom(pathname: string, workspaceId: string): number | undefined {
+  const match = new RegExp(`^/w/${workspaceId}/design/library/(\\d+)$`).exec(pathname)
+  return match ? Number(match[1]) : undefined
+}
+
+type NavView = 'list' | 'tree' | 'library'
 
 export default function DesignStructureNav({
   workspaceId, mobile = false, collapsed = false, onNavigate,
@@ -74,12 +82,21 @@ export default function DesignStructureNav({
   const { message, modal } = AntApp.useApp()
 
   const activeDesignId = activeDesignIdFrom(pathname, workspaceId)
-  // 侧栏两态：路由带 designId = 树态；根页 = 列表态。「返回产品列表」只改本地状态（D4）
-  const [view, setView] = useState<NavView>(() => (activeDesignId === undefined ? 'list' : 'tree'))
+  const activeLibraryId = activeLibraryIdFrom(pathname, workspaceId)
+  // 侧栏三态：路由带 designId = 树态；模块库页 = 库态；根页 = 列表态。「返回产品列表」只改本地状态（D4）
+  const [view, setView] = useState<NavView>(() => {
+    if (activeDesignId !== undefined) return 'tree'
+    return activeLibraryId !== undefined ? 'library' : 'list'
+  })
 
   const [keyword, setKeyword] = useState('')
   // 类型筛选（ADR 0103 C8 / D12）：全部 / 零件 / 装配（kind 为 0086 既有字段，零后端）
   const [kindFilter, setKindFilter] = useState<'all' | 'part' | 'assembly'>('all')
+  // 模块库筛选（ADR 0118 P1）：可见范围 / 仅本工作区发布 / 含归档（owner）
+  const [libraryScope, setLibraryScope] = useState<'all' | 'public' | 'workspace'>('all')
+  const [libraryOwnedOnly, setLibraryOwnedOnly] = useState(false)
+  const [libraryIncludeArchived, setLibraryIncludeArchived] = useState(false)
+  const [libraryKeyword, setLibraryKeyword] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createForm] = Form.useForm<DesignFormValues>()
   const [renaming, setRenaming] = useState<DesignListItem | null>(null)
@@ -97,6 +114,21 @@ export default function DesignStructureNav({
     enabled: !!workspaceId,
   })
   const isViewer = wsDetail?.current_user_role === 'viewer'
+  const isOwner = wsDetail?.current_user_role === 'owner'
+
+  // 模块库浏览（ADR 0118 P1）：公开 + 当前工作区发布；含归档仅 owner
+  const { data: libraryModules = [], isLoading: libraryLoading } = useQuery({
+    queryKey: [
+      'design-library', workspaceId, libraryKeyword, libraryScope, libraryOwnedOnly, libraryIncludeArchived,
+    ],
+    queryFn: () => designLibraryApi.list(workspaceId, {
+      q: libraryKeyword.trim() || undefined,
+      visibility: libraryScope === 'all' ? undefined : libraryScope,
+      owned_only: libraryOwnedOnly || undefined,
+      include_archived: libraryIncludeArchived || undefined,
+    }),
+    enabled: !!workspaceId && view === 'library',
+  })
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['designs', workspaceId] })
 
@@ -157,10 +189,12 @@ export default function DesignStructureNav({
     onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
   })
 
-  /** 路由进入编辑器（含从列表选择产品）自动切树态；回根页切列表态 */
+  /** 路由进入编辑器（含从列表选择产品）自动切树态；模块库页切库态；回根页切列表态 */
   useEffect(() => {
-    setView(activeDesignId === undefined ? 'list' : 'tree')
-  }, [activeDesignId])
+    if (activeDesignId !== undefined) setView('tree')
+    else if (activeLibraryId !== undefined) setView('library')
+    else setView('list')
+  }, [activeDesignId, activeLibraryId])
 
   /** 列表可见项：标题搜索 + 类型筛选 */
   const visibleDesigns = useMemo(() => {
@@ -207,12 +241,12 @@ export default function DesignStructureNav({
             <span className="cn-design-nav-row-version">v{item.version_count}</span>
           </div>
           <div className="cn-design-nav-row-meta">
-            <Tag bordered={false} color={item.kind === 'part' ? 'blue' : 'geekblue'}>
+            <Tag variant="filled" color={item.kind === 'part' ? 'blue' : 'geekblue'}>
               {item.kind === 'part' ? '零件' : '装配'}
             </Tag>
-            {item.folder && <Tag bordered={false}>{item.folder}</Tag>}
+            {item.folder && <Tag variant="filled">{item.folder}</Tag>}
             {item.dependencies_stale && (
-              <Tag color="gold" bordered={false} data-testid={`design-list-stale-${item.id}`}>依赖陈旧</Tag>
+              <Tag color="gold" variant="filled" data-testid={`design-list-stale-${item.id}`}>依赖陈旧</Tag>
             )}
             <span className="cn-design-nav-row-time">{formatDateTime(item.updated_at)}</span>
           </div>
@@ -340,16 +374,16 @@ export default function DesignStructureNav({
     return (
       <span className="cn-design-tree-title" data-testid={`design-node-${designId}`}>
         <Text strong>{item?.title ?? `设计 #${designId}`}</Text>
-        {item?.kind === 'part' && <Tag bordered={false} className="cn-design-tree-tag">零件</Tag>}
-        {item?.folder && <Tag bordered={false} className="cn-design-tree-tag">{item.folder}</Tag>}
+        {item?.kind === 'part' && <Tag variant="filled" className="cn-design-tree-tag">零件</Tag>}
+        {item?.folder && <Tag variant="filled" className="cn-design-tree-tag">{item.folder}</Tag>}
         {item && <Text type="secondary" className="cn-design-tree-meta">v{item.version_count}</Text>}
         {item?.dependencies_stale && (
-          <Tag color="gold" bordered={false} className="cn-design-tree-tag" data-testid={`design-stale-${designId}`}>
+          <Tag color="gold" variant="filled" className="cn-design-tree-tag" data-testid={`design-stale-${designId}`}>
             依赖陈旧
           </Tag>
         )}
         {current.source === 'content' && (
-          <Tag color="orange" bordered={false} className="cn-design-tree-tag">历史快照派生</Tag>
+          <Tag color="orange" variant="filled" className="cn-design-tree-tag">历史快照派生</Tag>
         )}
       </span>
     )
@@ -379,6 +413,47 @@ export default function DesignStructureNav({
   }
 
   const showTree = view === 'tree' && activeDesignId !== undefined
+
+  /** 模块库行：只读打开模块详情 / 预览页（ADR 0118 P1） */
+  const renderLibraryRow = (item: LibraryModuleItem) => {
+    const active = item.id === activeLibraryId
+    return (
+      <div
+        key={item.id}
+        role="option"
+        aria-selected={active}
+        data-testid={`library-row-${item.id}`}
+        className={[
+          'cn-design-nav-row',
+          active ? 'cn-design-nav-row--active' : '',
+        ].filter(Boolean).join(' ')}
+        onClick={() => {
+          navigate(`/w/${workspaceId}/design/library/${item.id}`)
+          if (mobile) onNavigate?.()
+        }}
+      >
+        <BookOutlined className="cn-design-nav-row-icon" />
+        <div className="cn-design-nav-row-main">
+          <div className="cn-design-nav-row-title">
+            <Text strong ellipsis={{ tooltip: item.name }}>{item.name}</Text>
+            <span className="cn-design-nav-row-version">v{item.latest_version}</span>
+          </div>
+          <div className="cn-design-nav-row-meta">
+            <Tag variant="filled" color={item.visibility === 'public' ? 'green' : 'default'}>
+              {item.visibility === 'public' ? '公开' : '私有'}
+            </Tag>
+            {item.is_archived && <Tag color="red" variant="filled">已归档</Tag>}
+            <span className="cn-design-nav-row-time">{item.module_key}</span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const backToList = () => {
+    setView('list')
+    if (activeLibraryId !== undefined) navigate(`/w/${workspaceId}/design`)
+  }
 
   return (
     <>
@@ -433,6 +508,74 @@ export default function DesignStructureNav({
               </div>
             )}
           </div>
+        ) : view === 'library' ? (
+          <div data-testid="design-library-panel" className="cn-design-nav-panel">
+            <div className="cn-design-nav-head">
+              <Button
+                size="small"
+                type="text"
+                icon={<ArrowLeftOutlined />}
+                data-testid="design-library-back"
+                onClick={backToList}
+              >
+                产品列表
+              </Button>
+              <span className="cn-design-nav-count">共 {libraryModules.length} 个</span>
+            </div>
+            <div className="cn-design-nav-toolbar">
+              <SearchInput
+                placeholder="搜索模块名称 / key…"
+                value={libraryKeyword}
+                onChange={event => setLibraryKeyword(event.target.value)}
+                data-testid="design-library-filter"
+                style={{ width: '100%' }}
+              />
+              <Segmented
+                size="small"
+                block
+                value={libraryScope}
+                onChange={value => setLibraryScope(value as 'all' | 'public' | 'workspace')}
+                options={[
+                  { value: 'all', label: '全部' },
+                  { value: 'public', label: '公开' },
+                  { value: 'workspace', label: '私有' },
+                ]}
+              />
+              <Checkbox
+                checked={libraryOwnedOnly}
+                onChange={event => setLibraryOwnedOnly(event.target.checked)}
+              >
+                仅本工作区发布
+              </Checkbox>
+              {isOwner && (
+                <Checkbox
+                  checked={libraryIncludeArchived}
+                  onChange={event => setLibraryIncludeArchived(event.target.checked)}
+                >
+                  含已归档
+                </Checkbox>
+              )}
+            </div>
+            <Spin spinning={libraryLoading}>
+              {libraryModules.length === 0 && !libraryLoading ? (
+                <div className="cn-state">
+                  <Empty
+                    image={Empty.PRESENTED_IMAGE_SIMPLE}
+                    description="暂无可见的复用模块"
+                  />
+                </div>
+              ) : (
+                <div
+                  role="listbox"
+                  aria-label="复用模块库"
+                  data-testid="design-library-list"
+                  className="cn-design-nav-list"
+                >
+                  {libraryModules.map(renderLibraryRow)}
+                </div>
+              )}
+            </Spin>
+          </div>
         ) : (
           <div data-testid="design-products-panel" className="cn-design-nav-panel">
             <div className="cn-design-nav-head">
@@ -470,6 +613,15 @@ export default function DesignStructureNav({
                   新建设计
                 </Button>
               )}
+              <Button
+                size="small"
+                block
+                icon={<BookOutlined />}
+                data-testid="design-library-open"
+                onClick={() => setView('library')}
+              >
+                复用模块库
+              </Button>
             </div>
             <Spin spinning={isLoading}>
               {designs.length === 0 && !isLoading ? (

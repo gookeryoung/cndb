@@ -106,8 +106,10 @@ def reset_user_password(
 ```python
 class UserPasswordResetRequest(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid")
-    new_password: str | None = Field(default=None, min_length=6, max_length=128,
-                                     description="留空则由服务端生成 12 位随机密码")
+    new_password: str | None = Field(
+        default=None, min_length=6, max_length=128, description="留空则由服务端生成 12 位随机密码"
+    )
+
 
 class UserPasswordResetResponse(BaseModel):
     ok: bool

@@ -73,10 +73,11 @@ JSON 集合载体对齐同表 `tags` 列先例（`models.py:141-144`），白名
 
 ```python
 MODULE_FEATURES: dict[str, frozenset[str]] = {
-    "tables": frozenset({"tables", "analytics", "datasource"}),   # C2 强绑定
+    "tables": frozenset({"tables", "analytics", "datasource"}),  # C2 强绑定
     "documents": frozenset({"documents"}),
     "design": frozenset({"design"}),
 }
+
 
 def resolve_features(modules: list[str]) -> dict[str, bool]: ...
 def legacy_type_to_modules(workspace_type: str) -> list[str]: ...  # data_doc/data/doc 映射（D5）

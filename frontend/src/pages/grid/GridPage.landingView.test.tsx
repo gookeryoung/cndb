@@ -7,8 +7,8 @@
  */
 
 import { describe, expect, it, vi, beforeEach, beforeAll } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
-import { Routes, Route } from 'react-router-dom'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { Routes, Route, useNavigate } from 'react-router-dom'
 import { renderProviders } from '@/test/render-providers'
 import { preloadGridViews } from '@/test/preloadGridViews'
 import { useTableSettingsStore } from '@/store/tableSettings'
@@ -137,5 +137,32 @@ describe('GridPage 落地视图 — 默认视图优先', () => {
         renderGrid()
         await screen.findByTestId('gallery-view')
         expect(selectedViewName()).toContain('资讯画廊')
+    })
+
+    it('跨表导航时不在渲染期写 store（回归：Cannot update a component while rendering）', async () => {
+        /** 切表不卸载 GridPage —— 与真实路由参数变化一致，会让 store 归属落后于路由 */
+        function TableSwitcher() {
+            const navigate = useNavigate()
+            return <button onClick={() => navigate('/w/2/tables/2')}>切表</button>
+        }
+        const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => { })
+
+        renderProviders(
+            <>
+                <TableSwitcher />
+                <Routes>
+                    <Route path="w/:wid/tables/:tid" element={<GridPage />} />
+                </Routes>
+            </>,
+            { route: '/w/1/tables/1', initialAuth: { user: { id: 1, username: 'admin', role: 'admin' } as any, token: 'tok' } },
+        )
+        await waitFor(() => expect(useGridViewStore.getState().tableKey).toBe('1/1'))
+
+        fireEvent.click(screen.getByRole('button', { name: '切表' }))
+        await waitFor(() => expect(useGridViewStore.getState().tableKey).toBe('2/2'))
+
+        const messages = errorSpy.mock.calls.map(args => String(args[0]))
+        expect(messages.some(m => m.includes('Cannot update a component'))).toBe(false)
+        errorSpy.mockRestore()
     })
 })

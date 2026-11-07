@@ -25,10 +25,12 @@ class DesignPlugin(PluginBase):
 
     @override
     def register_routes(self, router: APIRouter) -> None:
-        """挂载 design 路由：CRUD / 即时编译 / 版本列表（ADR 0079 §3）."""
+        """挂载 design 路由：设计 CRUD / 即时编译 / 版本；复用模块库 API（ADR 0118 §6）."""
+        from cndb.plugins.design.routers import library_router
         from cndb.plugins.design.routers import router as designs_router
 
         router.include_router(designs_router)
+        router.include_router(library_router)
 
 
 plugin = DesignPlugin()

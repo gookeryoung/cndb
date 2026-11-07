@@ -344,13 +344,13 @@ def compile_design(
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/design/models.py`、`src/cndb/alembic/versions/d7e8f9a0b1c2_design_library.py`、`src/cndb/plugins/design/services/dsl/nodes.py`、`src/cndb/plugins/design/services/dsl/parse.py`、`src/cndb/plugins/design/services/dsl/compile.py`、`src/cndb/plugins/design/services/files.py`、`src/cndb/plugins/design/services/keys.py`、`src/cndb/plugins/design/services/library.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/schemas.py` | `tests/test_design_dsl.py`、`tests/test_design_library.py`、`tests/test_design_library_migration.py` | - |
-| P1 | 未开始 | `src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/schemas.py`、`src/cndb/plugins/design/services/files.py`、`frontend/src/api/design.ts`、`frontend/src/pages/design/` | `tests/test_design_api.py`、`frontend/src/pages/design/*.test.tsx` | - |
+| P1 | 已落地 | `src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/schemas.py`、`src/cndb/plugins/design/services/library.py`、`src/cndb/plugins/design/plugin.py`、`frontend/src/api/design.ts`、`frontend/src/api/index.ts`、`frontend/src/App.tsx`、`frontend/src/pages/design/DesignStructureNav.tsx`、`frontend/src/pages/design/LibraryModulePage.tsx`、`frontend/src/pages/design/PublishModuleModal.tsx`、`frontend/src/pages/design/DesignMoreMenu.tsx`、`frontend/src/pages/design/DesignEditorPage.tsx`、`frontend/src/pages/design/DslEditor.tsx`、`frontend/src/pages/design/designCompletion.ts` | `tests/test_design_library.py`、`frontend/src/pages/design/DesignStructureNav.test.tsx`、`frontend/src/pages/design/LibraryModulePage.test.tsx`、`frontend/src/pages/design/PublishModuleModal.test.tsx`、`frontend/src/pages/design/DesignEditorPage.test.tsx`、`frontend/src/pages/design/designCompletion.test.ts` | - |
 | P2 | 未开始 | `src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`frontend/tests/e2e/critical/design-library.spec.ts` | `tests/test_workspace_backup_v14.py`、`frontend/tests/e2e/critical/design-library.spec.ts` | - |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地，待 P1（模块库 API / 依赖面板 / 前端）
-- 已完成：P0 四表 + 迁移；`use "lib:<key>@<n>"` 解析与语法校验；`library_resolver` + 快照作用域 + 统一预算 + IR v6；`POST /{design_id}/publish` 发布流程；可见性 / 归档判定与既有引用授权；判定层与迁移测试
-- 下一步：P1 模块库 API（列表 / 详情 / 版本 / 预览 / PATCH）、依赖快照 `source` 前端展示、依赖面板升级改写、前端模块库 / 发布 / 补全 / 只读页
-- 已知坑：`lib:` 为本地 `file_key` 保留前缀，创建 / 生成 / 备份导入三处都要校验；库快照解析必须与消费方工作区 resolver 隔离；既有引用按 `design_libraryref` 授权放行，不能每次编译重查可见性；`backup_io._import_designs` 目前用工作区 resolver 重编译，接 vendor 时先写 vendor 再编译
-- 最近一次全绿：2026-11-07，`make check-fast` + `make test`（6721 passed, 3 skipped）+ `make cov`（95.23%）
+- 当前阶段：P1 已落地，待 P2（备份 v14 + vendor 恢复、跨环境 e2e、文档收尾）
+- 已完成：P0 四表 + 迁移；`use "lib:<key>@<n>"` 解析与语法校验；`library_resolver` + 快照作用域 + 统一预算 + IR v6；`POST /{design_id}/publish` 发布流程；可见性 / 归档判定与既有引用授权；判定层与迁移测试。P1 模块库 API（列表 / 详情 / 版本 / 预览 / PATCH）；依赖快照 `source` 与 `design_libraryref`；恢复历史版本时库依赖缺失即 400；依赖面板升级改写；前端侧栏模块库 / 发布弹窗 / DSL 补全 / 只读模块页
+- 下一步：P2 备份 v14 `library_refs[]` + `design_library_vendor` 写入 / 恢复、`backup_io._import_designs` 接 vendor、跨环境 e2e、帮助文档收尾
+- 已知坑：`lib:` 为本地 `file_key` 保留前缀，创建 / 生成 / 备份导入三处都要校验；库快照解析必须与消费方工作区 resolver 隔离；既有引用按 `design_libraryref` 授权放行，不能每次编译重查可见性；`backup_io._import_designs` 目前用工作区 resolver 重编译，接 vendor 时先写 vendor 再编译；`GET /modules?include_archived` 仅工作区 OWNER 或系统管理员可用；`PATCH /modules/{id}` 的 owner 工作区缺失返回 400 `design_library_owner_missing`
+- 最近一次全绿：2026-11-07，`make check-fast` + `make test`（6728 passed, 3 skipped）；前端 `typecheck` / `lint` / 相关 vitest（71 passed）全绿

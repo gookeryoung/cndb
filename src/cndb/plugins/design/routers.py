@@ -18,13 +18,13 @@ import dataclasses
 import re
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
-from cndb.core.errors import BadRequestError, ConflictError, NotFoundError
+from cndb.core.errors import BadRequestError, CndbError, ConflictError, NotFoundError, PermissionDeniedError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.design.models import (
     CHANGE_TYPE_AUTO,
@@ -34,6 +34,9 @@ from cndb.plugins.design.models import (
     DesignDesign,
     DesignDesignref,
     DesignDesignVersion,
+    DesignLibraryModule,
+    DesignLibraryref,
+    DesignLibraryVersion,
 )
 from cndb.plugins.design.schemas import (
     DesignContentSave,
@@ -42,6 +45,7 @@ from cndb.plugins.design.schemas import (
     DesignDependencyItem,
     DesignDetail,
     DesignIRResponse,
+    DesignLibraryDependencyItem,
     DesignListItem,
     DesignOutlineResult,
     DesignPublishRequest,
@@ -52,6 +56,13 @@ from cndb.plugins.design.schemas import (
     DesignVersionDiffResponse,
     DesignVersionItem,
     DiagnosticItem,
+    LibraryFileItem,
+    LibraryModuleDetail,
+    LibraryModuleItem,
+    LibraryModulePatch,
+    LibraryPreviewRequest,
+    LibraryVersionDetail,
+    LibraryVersionItem,
     PreviewRequest,
     PreviewResponse,
 )
@@ -71,11 +82,23 @@ from cndb.plugins.design.services.files import (
     sync_refs,
 )
 from cndb.plugins.design.services.keys import generate_file_key
-from cndb.plugins.design.services.library import LibraryPublishError, publish_design
+from cndb.plugins.design.services.library import (
+    LibraryPublishError,
+    can_manage_module,
+    is_system_admin,
+    list_library_modules,
+    module_latest_versions,
+    module_version,
+    module_version_stats,
+    module_versions,
+    preview_library_version,
+    publish_design,
+)
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole
 
 router = APIRouter(prefix="/{workspace_id}/designs", tags=["design"])
+library_router = APIRouter(prefix="/{workspace_id}/design-library", tags=["design-library"])
 
 
 def _require_member(db: Session, workspace_id: int, user: User) -> None:
@@ -641,9 +664,33 @@ def get_design_dependencies(
         )
         .all()
     )
+    library_rows = (
+        db.query(DesignLibraryModule, DesignLibraryVersion)
+        .select_from(DesignLibraryref)
+        .join(DesignLibraryModule, DesignLibraryModule.id == DesignLibraryref.module_id)
+        .join(DesignLibraryVersion, DesignLibraryVersion.id == DesignLibraryref.module_version_id)
+        .filter(DesignLibraryref.design_id == design.id)
+        .all()
+    )
+    stats = module_version_stats(db, [module.id for module, _version in library_rows])
     return DesignDependenciesResponse(
         design_id=design.id,
         items=[_item(row) for row in targets],
+        library_items=[
+            DesignLibraryDependencyItem(
+                module_id=module.id,
+                module_key=module.module_key,
+                name=module.name,
+                version_number=version.version_number,
+                latest_version=stats.get(module.id, (0, 0))[1],
+                has_update=version.version_number < stats.get(module.id, (0, 0))[1],
+                visibility=module.visibility,
+                is_archived=module.is_archived,
+                owner_workspace_id=module.owner_workspace_id,
+                bundle_hash=version.bundle_hash,
+            )
+            for module, version in library_rows
+        ],
         referrers=[_item(row) for row in _referrers(db, design)],
     )
 
@@ -787,6 +834,17 @@ def restore_design_version(
             f"依赖快照缺失，无法按历史复现编译：{'、'.join(missing)}",
             code="design_dependency_missing",
         )
+    library_resolver = build_library_resolver(db, workspace_id, granted_keys=frozenset(granted_library_keys))
+    missing_library = [
+        f"{key}@v{version_number}"
+        for key, version_number in sorted(granted_library_keys)
+        if library_resolver(key, version_number) is None
+    ]
+    if missing_library:
+        raise BadRequestError(
+            f"复用模块依赖缺失，无法按历史复现编译：{'、'.join(missing_library)}",
+            code="design_library_dependency_missing",
+        )
     result = _compile_for_design(
         db,
         design,
@@ -816,4 +874,242 @@ def restore_design_version(
     return _detail(db, design, version_number=number)
 
 
-__all__ = ["router"]
+def _library_visible(module: DesignLibraryModule, workspace_id: int) -> bool:
+    """浏览可见性：公开模块，或当前工作区自己发布的模块（归档不改变可见性，ADR 0118 §5）."""
+    return module.visibility == "public" or module.owner_workspace_id == workspace_id
+
+
+def _library_granted(db: Session, workspace_id: int, design_id: int | None, module_id: int) -> bool:
+    """既有引用授权：该设计已落库引用此模块时放行跨工作区私有 / 归档模块的只读查看."""
+    if design_id is None:
+        return False
+    return (
+        db.query(DesignLibraryref.id)
+        .join(DesignDesign, DesignDesign.id == DesignLibraryref.design_id)
+        .filter(
+            DesignLibraryref.design_id == design_id,
+            DesignLibraryref.module_id == module_id,
+            DesignDesign.workspace_id == workspace_id,
+        )
+        .first()
+        is not None
+    )
+
+
+def _library_module_or_404(
+    db: Session,
+    workspace_id: int,
+    module_id: int,
+    *,
+    design_id: int | None = None,
+) -> DesignLibraryModule:
+    """取可见模块（无权与不存在统一 404，不泄露私有 / 归档原因）."""
+    module = db.query(DesignLibraryModule).filter(DesignLibraryModule.id == module_id).first()
+    if module is None or not (
+        _library_visible(module, workspace_id) or _library_granted(db, workspace_id, design_id, module_id)
+    ):
+        raise NotFoundError("复用模块不存在", code="design_library_module_not_found")
+    return module
+
+
+def _library_version_or_404(db: Session, module: DesignLibraryModule, version_number: int) -> DesignLibraryVersion:
+    version = module_version(db, module.id, version_number)
+    if version is None:
+        raise NotFoundError("复用模块版本不存在", code="design_library_version_not_found")
+    return version
+
+
+def _can_manage_library(db: Session, module: DesignLibraryModule, user: User) -> bool:
+    """模块管理权限：系统管理员，或所有者工作区 owner（owner_workspace_id 为空仅管理员）."""
+    if can_manage_module(user):
+        return True
+    if module.owner_workspace_id is None:
+        return False
+    try:
+        check_workspace_permission(db, module.owner_workspace_id, user, WorkspaceRole.OWNER)
+    except (HTTPException, CndbError):
+        return False
+    return True
+
+
+def _require_library_manager(db: Session, module: DesignLibraryModule, user: User) -> None:
+    if _can_manage_library(db, module, user):
+        return
+    raise PermissionDeniedError(
+        "仅模块所有者工作区的拥有者或系统管理员可修改模块",
+        code="design_library_forbidden",
+    )
+
+
+def _library_version_item(version: DesignLibraryVersion) -> LibraryVersionItem:
+    return LibraryVersionItem(
+        id=version.id,
+        version_number=version.version_number,
+        content_hash=version.content_hash,
+        bundle_hash=version.bundle_hash,
+        comment=version.comment,
+        created_by_id=version.created_by_id,
+        created_at=version.created_at,
+    )
+
+
+def _library_module_item(
+    module: DesignLibraryModule,
+    stats: dict[int, tuple[int, int]],
+    latest: DesignLibraryVersion | None,
+) -> LibraryModuleItem:
+    count, latest_number = stats.get(module.id, (0, 0))
+    return LibraryModuleItem(
+        id=module.id,
+        module_key=module.module_key,
+        name=module.name,
+        description=module.description,
+        visibility=module.visibility,
+        owner_workspace_id=module.owner_workspace_id,
+        is_archived=module.is_archived,
+        version_count=count,
+        latest_version=latest_number,
+        params=list(latest.params) if latest is not None else [],
+        updated_at=module.updated_at,
+    )
+
+
+@library_router.get("/modules", response_model=list[LibraryModuleItem])
+def list_library(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    q: Annotated[str | None, Query(max_length=200)] = None,
+    visibility: Annotated[Literal["public", "workspace"] | None, Query()] = None,
+    owned_only: Annotated[bool, Query()] = False,
+    include_archived: Annotated[bool, Query()] = False,
+) -> list[LibraryModuleItem]:
+    """模块库浏览：公开 + 当前工作区发布；``include_archived`` 仅所有者工作区 owner（ADR 0118 §5）."""
+    _require_member(db, workspace_id, current_user)
+    if include_archived and not is_system_admin(current_user):
+        check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.OWNER)
+    modules = list_library_modules(
+        db,
+        workspace_id,
+        q=q,
+        visibility=visibility,
+        owned_only=owned_only,
+        include_archived=include_archived,
+    )
+    stats = module_version_stats(db, [module.id for module in modules])
+    latest = module_latest_versions(db, [module.id for module in modules])
+    return [_library_module_item(module, stats, latest.get(module.id)) for module in modules]
+
+
+@library_router.get("/modules/{module_id}", response_model=LibraryModuleDetail)
+def get_library_module(
+    workspace_id: int,
+    module_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    design_id: Annotated[int | None, Query(description="既有引用所在设计（私有 / 归档授权）")] = None,
+) -> LibraryModuleDetail:
+    """模块详情 + 版本列表 + 参数签名；无权 404（ADR 0118 §5）."""
+    _require_member(db, workspace_id, current_user)
+    module = _library_module_or_404(db, workspace_id, module_id, design_id=design_id)
+    versions = module_versions(db, module.id)
+    latest = versions[0] if versions else None
+    stats = {module.id: (len(versions), versions[0].version_number if versions else 0)}
+    item = _library_module_item(module, stats, latest)
+    return LibraryModuleDetail(
+        **item.model_dump(),
+        versions=[_library_version_item(version) for version in versions],
+        can_manage=_can_manage_library(db, module, current_user),
+    )
+
+
+@library_router.get("/modules/{module_id}/versions/{version_number}", response_model=LibraryVersionDetail)
+def get_library_version(
+    workspace_id: int,
+    module_id: int,
+    version_number: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    design_id: Annotated[int | None, Query(description="既有引用所在设计（私有 / 归档授权）")] = None,
+) -> LibraryVersionDetail:
+    """版本详情：根原文 + 依赖包元数据（不回传依赖全文，ADR 0118 §6）."""
+    _require_member(db, workspace_id, current_user)
+    module = _library_module_or_404(db, workspace_id, module_id, design_id=design_id)
+    version = _library_version_or_404(db, module, version_number)
+    return LibraryVersionDetail(
+        **_library_version_item(version).model_dump(),
+        content=version.content,
+        params=list(version.params),
+        files=[
+            LibraryFileItem(
+                file_key=str(item.get("file_key", "")),
+                kind=str(item.get("kind", "part")),
+                content_hash=str(item.get("content_hash", "")),
+            )
+            for item in version.files
+        ],
+    )
+
+
+@library_router.post("/modules/{module_id}/versions/{version_number}/preview", response_model=PreviewResponse)
+def preview_library_module_version(
+    workspace_id: int,
+    module_id: int,
+    version_number: int,
+    payload: LibraryPreviewRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    design_id: Annotated[int | None, Query(description="既有引用所在设计（私有 / 归档授权）")] = None,
+) -> PreviewResponse:
+    """只读预览模块版本（参数覆盖，无落库，与设计预览同口径）."""
+    _require_member(db, workspace_id, current_user)
+    module = _library_module_or_404(db, workspace_id, module_id, design_id=design_id)
+    version = _library_version_or_404(db, module, version_number)
+    result = preview_library_version(version, payload.overrides)
+    return PreviewResponse(
+        ok=result.ok,
+        ir=result.ir,
+        diagnostics=[DiagnosticItem(**dataclasses.asdict(item)) for item in result.diagnostics],
+    )
+
+
+@library_router.patch("/modules/{module_id}", response_model=LibraryModuleDetail)
+def patch_library_module(
+    workspace_id: int,
+    module_id: int,
+    payload: LibraryModulePatch,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> LibraryModuleDetail:
+    """改名称 / 描述 / 可见性 / 归档；仅所有者工作区 owner 或系统管理员（ADR 0118 §5）."""
+    _require_member(db, workspace_id, current_user)
+    module = _library_module_or_404(db, workspace_id, module_id)
+    _require_library_manager(db, module, current_user)
+    if payload.visibility == "workspace" and module.owner_workspace_id is None:
+        raise BadRequestError(
+            "所有者工作区已移除，私有模块无法恢复可见性",
+            code="design_library_owner_missing",
+        )
+    if payload.name is not None:
+        module.name = payload.name
+    if payload.description is not None:
+        module.description = payload.description
+    if payload.visibility is not None:
+        module.visibility = payload.visibility
+    if payload.is_archived is not None:
+        module.is_archived = payload.is_archived
+    module.updated_by_id = current_user.id
+    db.commit()
+    db.refresh(module)
+    versions = module_versions(db, module.id)
+    latest = versions[0] if versions else None
+    stats = {module.id: (len(versions), versions[0].version_number if versions else 0)}
+    item = _library_module_item(module, stats, latest)
+    return LibraryModuleDetail(
+        **item.model_dump(),
+        versions=[_library_version_item(version) for version in versions],
+        can_manage=_can_manage_library(db, module, current_user),
+    )
+
+
+__all__ = ["library_router", "router"]

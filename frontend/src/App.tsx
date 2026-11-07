@@ -39,6 +39,7 @@ const PipelinesPage = lazy(() => import('@/pages/pipelines/PipelinesPage'))
 const PipelineRunDetail = lazy(() => import('@/pages/pipelines/PipelineRunDetail'))
 const DesignsPage = lazy(() => import('@/pages/design/DesignsPage'))
 const DesignEditorPage = lazy(() => import('@/pages/design/DesignEditorPage'))
+const LibraryModulePage = lazy(() => import('@/pages/design/LibraryModulePage'))
 const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const HelpDocsPage = lazy(() => import('@/pages/help/HelpDocsPage'))
 const TemplatesPage = lazy(() => import('@/pages/templates/TemplatesPage'))
@@ -108,6 +109,9 @@ function AuthenticatedApp() {
           {/* 设计模块（ADR 0079）：列表 + DSL 编辑器（3D 实时预览） */}
           <Route path="w/:wid/design" element={
             <Suspense fallback={<PageFallback />}><DesignsPage /></Suspense>
+          } />
+          <Route path="w/:wid/design/library/:moduleId" element={
+            <Suspense fallback={<PageFallback />}><LibraryModulePage /></Suspense>
           } />
           <Route path="w/:wid/design/:designId" element={
             <Suspense fallback={<PageFallback />}><DesignEditorPage /></Suspense>

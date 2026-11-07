@@ -36,9 +36,18 @@ export interface DslSymbols {
   labels: string[]
 }
 
+/** 复用模块候选（ADR 0118 P1，`use "lib:` 字符串位使用） */
+export interface DslLibraryOption {
+  moduleKey: string
+  name: string
+  latestVersion: number
+}
+
 /** 补全源可选依赖：零件名获取函数（P2；缺省时字符串位不出候选） */
 export interface DslCompletionOptions {
   fetchParts?: () => Promise<readonly DslPartOption[]>
+  /** 复用模块库候选（P1；缺省时 `lib:` 位不出候选） */
+  fetchLibrary?: () => Promise<readonly DslLibraryOption[]>
 }
 
 /** 图元命名参数（与 `_eval_*` 的 allowed 集合一致）与一句话说明 */
@@ -248,6 +257,50 @@ export async function dslCompletionSource(
   // P2：`use "` 字符串位 → 跨文件零件名（异步，失败静默降级为空候选）
   const useString = /(?:^|[\s;(])use\s+"([^"]*)$/.exec(before)
   if (useString) {
+    const typed = useString[1]!
+    const from = line.from + before.length - typed.length
+    // P1：`lib:` 位 → 模块 key 与最新版本（ADR 0118）
+    if (typed.startsWith('lib:')) {
+      if (!options.fetchLibrary) return null
+      let modules: readonly DslLibraryOption[] = []
+      try {
+        modules = await options.fetchLibrary()
+      } catch {
+        modules = []
+      }
+      if (modules.length === 0) return null
+      const versionMatch = /^lib:([^@"]*)@([0-9]*)$/.exec(typed)
+      if (versionMatch) {
+        const hit = modules.find(module => module.moduleKey === versionMatch[1])
+        const versionText = versionMatch[2]!
+        return {
+          from: pos - versionText.length,
+          options: hit
+            ? [{
+                label: String(hit.latestVersion),
+                type: 'constant',
+                detail: `最新版本 v${hit.latestVersion}`,
+              }]
+            : [],
+          validFor: /^[0-9]*$/,
+        }
+      }
+      const keyMatch = /^lib:([^@"]*)$/.exec(typed)
+      const prefix = (keyMatch?.[1] ?? '').toLowerCase()
+      const matched = modules.filter(module => (
+        !prefix || module.moduleKey.toLowerCase().includes(prefix) || module.name.toLowerCase().includes(prefix)
+      ))
+      if (matched.length === 0) return null
+      return {
+        from,
+        options: matched.map(module => ({
+          label: `lib:${module.moduleKey}@${module.latestVersion}`,
+          type: 'text',
+          detail: `${module.name} · v${module.latestVersion}`,
+        })),
+        validFor: /^lib:[^"]*$/,
+      }
+    }
     if (!options.fetchParts) return null
     let parts: readonly DslPartOption[] = []
     try {
@@ -257,7 +310,7 @@ export async function dslCompletionSource(
     }
     if (parts.length === 0) return null
     return {
-      from: line.from + before.length - useString[1]!.length,
+      from,
       options: parts.map(part => ({ label: part.label, type: 'text', detail: part.detail ?? '设计文件' })),
       validFor: /^[^"]*$/,
     }

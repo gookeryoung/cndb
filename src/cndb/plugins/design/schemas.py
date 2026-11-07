@@ -78,6 +78,87 @@ class DesignPublishResponse(BaseModel):
     name: str
 
 
+class LibraryModuleItem(BaseModel):
+    """复用模块列表项（ADR 0118 §6）：最新版本与可见性标记."""
+
+    id: int
+    module_key: str
+    name: str
+    description: str = ""
+    visibility: str
+    owner_workspace_id: int | None = None
+    is_archived: bool = False
+    version_count: int = 0
+    latest_version: int = 0
+    params: list[dict[str, Any]] = Field(default_factory=list)
+    updated_at: Any = None
+
+
+class LibraryVersionItem(BaseModel):
+    """模块版本列表项：哈希 / 备注 / 时间（不含原文与依赖包全文）."""
+
+    id: int
+    version_number: int
+    content_hash: str
+    bundle_hash: str = ""
+    comment: str = ""
+    created_by_id: int | None = None
+    created_at: Any = None
+
+
+class LibraryModuleDetail(LibraryModuleItem):
+    """模块详情：版本列表 + 当前版本参数签名 + 是否可管理."""
+
+    versions: list[LibraryVersionItem] = Field(default_factory=list)
+    can_manage: bool = False
+
+
+class LibraryFileItem(BaseModel):
+    """版本依赖包条目元数据（只回传 key / kind / 哈希，不回传全文）."""
+
+    file_key: str
+    kind: str = "part"
+    content_hash: str = ""
+
+
+class LibraryVersionDetail(LibraryVersionItem):
+    """版本详情：根原文 + 依赖包元数据（ADR 0118 §6）."""
+
+    content: str
+    params: list[dict[str, Any]] = Field(default_factory=list)
+    files: list[LibraryFileItem] = Field(default_factory=list)
+
+
+class LibraryPreviewRequest(BaseModel):
+    """模块版本只读预览：参数覆盖，无落库（与设计预览同口径）."""
+
+    overrides: dict[str, float] | None = Field(default=None, description="参数覆盖")
+
+
+class LibraryModulePatch(BaseModel):
+    """模块元数据 / 可见性 / 归档（None = 不改，ADR 0118 §6）."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=500)
+    visibility: Literal["public", "workspace"] | None = None
+    is_archived: bool | None = None
+
+
+class DesignLibraryDependencyItem(BaseModel):
+    """设计当前直接引用的库模块（依赖面板数据源）."""
+
+    module_id: int
+    module_key: str
+    name: str
+    version_number: int
+    latest_version: int = 0
+    has_update: bool = False
+    visibility: str = "workspace"
+    is_archived: bool = False
+    owner_workspace_id: int | None = None
+    bundle_hash: str = ""
+
+
 class DesignRefreshRequest(BaseModel):
     """依赖刷新重编译（ADR 0086 §4）：以最新依赖落新版本并清 stale."""
 
@@ -167,10 +248,11 @@ class DesignDependencyItem(BaseModel):
 
 
 class DesignDependenciesResponse(BaseModel):
-    """当前直接引用（``items``）与引用方清单（``referrers``）."""
+    """当前直接引用（``items`` / ``library_items``）与引用方清单（``referrers``）."""
 
     design_id: int
     items: list[DesignDependencyItem] = Field(default_factory=list)
+    library_items: list[DesignLibraryDependencyItem] = Field(default_factory=list)
     referrers: list[DesignDependencyItem] = Field(default_factory=list)
 
 
@@ -270,6 +352,7 @@ __all__ = [
     "DesignDiffParamChange",
     "DesignDiffParamSummary",
     "DesignIRResponse",
+    "DesignLibraryDependencyItem",
     "DesignListItem",
     "DesignOutlineResult",
     "DesignPublishRequest",
@@ -281,6 +364,13 @@ __all__ = [
     "DesignVersionDiffSummary",
     "DesignVersionItem",
     "DiagnosticItem",
+    "LibraryFileItem",
+    "LibraryModuleDetail",
+    "LibraryModuleItem",
+    "LibraryModulePatch",
+    "LibraryPreviewRequest",
+    "LibraryVersionDetail",
+    "LibraryVersionItem",
     "PreviewRequest",
     "PreviewResponse",
 ]

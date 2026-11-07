@@ -60,9 +60,7 @@ def main() -> None:
                 if workspace is None:
                     raise SystemExit(f"[demo-packs] 未找到演示工作区: {workspace_name}")
 
-                backup, files = build_workspace_backup_v9(
-                    db, workspace.id, owner, include_secrets=False
-                )
+                backup, files = build_workspace_backup_v9(db, workspace.id, owner, include_secrets=False)
                 target = output_dir / f"{key}.tar.gz"
                 pack_workspace_archive(backup, files, target)
                 print(f"[demo-packs] {key}: {target.relative_to(root)} ({target.stat().st_size} bytes)")

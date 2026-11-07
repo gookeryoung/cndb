@@ -187,7 +187,65 @@ export interface DesignDependencyItem {
 export interface DesignDependenciesResponse {
   design_id: number
   items: DesignDependencyItem[]
+  /** 库模块引用（ADR 0118 P1；依赖面板数据源） */
+  library_items: DesignLibraryDependencyItem[]
   referrers: DesignDependencyItem[]
+}
+
+/** 设计直接引用的复用模块（锁定版本 + 是否可升级） */
+export interface DesignLibraryDependencyItem {
+  module_id: number
+  module_key: string
+  name: string
+  version_number: number
+  latest_version: number
+  has_update: boolean
+  visibility: 'public' | 'workspace' | string
+  is_archived: boolean
+  owner_workspace_id: number | null
+  bundle_hash: string
+}
+
+/** 模块参数签名项 */
+export interface LibraryParam {
+  name: string
+  default: number
+}
+
+/** 模块库列表项（ADR 0118 §6） */
+export interface LibraryModuleItem {
+  id: number
+  module_key: string
+  name: string
+  description: string
+  visibility: 'public' | 'workspace' | string
+  owner_workspace_id: number | null
+  is_archived: boolean
+  version_count: number
+  latest_version: number
+  params: LibraryParam[]
+  updated_at: string | null
+}
+
+export interface LibraryVersionItem {
+  id: number
+  version_number: number
+  content_hash: string
+  bundle_hash: string
+  comment: string
+  created_by_id: number | null
+  created_at: string | null
+}
+
+export interface LibraryModuleDetail extends LibraryModuleItem {
+  versions: LibraryVersionItem[]
+  can_manage: boolean
+}
+
+export interface LibraryVersionDetail extends LibraryVersionItem {
+  content: string
+  params: LibraryParam[]
+  files: Array<{ file_key: string; kind: string; content_hash: string }>
 }
 
 /** 版本来源类型（ADR 0113）：manual 主动保存 / auto 自动小版本 / refresh 依赖刷新 / rollback 版本恢复 */
@@ -208,7 +266,17 @@ export interface DesignVersionItem {
 export interface DesignVersionDetail extends DesignVersionItem {
   content: string
   compiled: DesignIR | Record<string, never>
-  dependencies: Array<{ file_id: number; file_key: string; version_number: number; content_hash: string }>
+  /** 依赖快照：工作区文件带 `file_id`；库文件带 `module_id` / `module_version_id` / `bundle_hash`（ADR 0118 P0） */
+  dependencies: Array<{
+    source?: 'workspace' | 'library'
+    file_id?: number
+    file_key: string
+    version_number: number
+    content_hash: string
+    module_id?: number
+    module_version_id?: number
+    bundle_hash?: string
+  }>
 }
 
 /** 两版本对比的结构摘要：参数增删改 / 节点数 / 顶层装配增删（ADR 0113 D5 / D8） */
@@ -295,4 +363,63 @@ export const designsApi = {
   /** 装配大纲（组件 / 分组 / 零件树 + 1 基源位置；成员可读，ADR 0083 D4） */
   outline: (wid: number | string, designId: number | string) =>
     api.get<DesignOutlineResult>(`${base(wid)}/${designId}/outline`).then(r => r.data),
+  /** 发布为复用模块（仅 part；ADR 0118 P0 / P1） */
+  publish: (wid: number | string, designId: number | string, data: {
+    visibility: 'public' | 'workspace'
+    name?: string
+    description?: string
+    comment?: string
+  }) =>
+    api.post<{
+      module_id: number
+      module_key: string
+      version_number: number
+      visibility: string
+      name: string
+    }>(`${base(wid)}/${designId}/publish`, data).then(r => r.data),
+}
+
+const libraryBase = (wid: number | string) => `/v1/workspaces/${wid}/design-library`
+
+/** 复用模块库 API —— /api/v1/workspaces/{wid}/design-library（ADR 0118 §6） */
+export const designLibraryApi = {
+  /** 浏览可见模块：公开 + 当前工作区发布 */
+  list: (wid: number | string, params?: {
+    q?: string
+    visibility?: 'public' | 'workspace'
+    owned_only?: boolean
+    include_archived?: boolean
+  }) =>
+    api.get<LibraryModuleItem[]>(`${libraryBase(wid)}/modules`, { params }).then(r => r.data),
+  /** 模块详情 + 版本列表；designId 用于既有引用的私有 / 归档授权 */
+  get: (wid: number | string, moduleId: number | string, designId?: number | string) =>
+    api.get<LibraryModuleDetail>(`${libraryBase(wid)}/modules/${moduleId}`, {
+      params: designId != null ? { design_id: designId } : undefined,
+    }).then(r => r.data),
+  /** 版本详情（根原文 + 依赖元数据） */
+  getVersion: (wid: number | string, moduleId: number | string, version: number, designId?: number | string) =>
+    api.get<LibraryVersionDetail>(`${libraryBase(wid)}/modules/${moduleId}/versions/${version}`, {
+      params: designId != null ? { design_id: designId } : undefined,
+    }).then(r => r.data),
+  /** 只读预览（参数覆盖，无落库） */
+  preview: (
+    wid: number | string,
+    moduleId: number | string,
+    version: number,
+    data: { overrides?: Record<string, number> | null } = {},
+    designId?: number | string,
+  ) =>
+    api.post<DesignPreviewResult>(
+      `${libraryBase(wid)}/modules/${moduleId}/versions/${version}/preview`,
+      data,
+      { params: designId != null ? { design_id: designId } : undefined },
+    ).then(r => r.data),
+  /** 改名 / 描述 / 可见性 / 归档（owner 或系统管理员） */
+  patch: (wid: number | string, moduleId: number | string, data: {
+    name?: string
+    description?: string
+    visibility?: 'public' | 'workspace'
+    is_archived?: boolean
+  }) =>
+    api.patch<LibraryModuleDetail>(`${libraryBase(wid)}/modules/${moduleId}`, data).then(r => r.data),
 }

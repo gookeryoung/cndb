@@ -21,7 +21,7 @@ import type { DesignDiagnostic } from '@/api'
 import { useEditorAppearance } from '@/theme/ThemeProvider'
 import { editorAppearanceExtensions } from '@/theme/editorAppearance'
 import { cnDslLanguage } from './designLang'
-import { dslCompletionSource, type DslPartOption } from './designCompletion'
+import { dslCompletionSource, type DslLibraryOption, type DslPartOption } from './designCompletion'
 
 /** 诊断更新效果（编辑器外部把编译结果推进来） */
 export const setDiagnostics = StateEffect.define<DesignDiagnostic[]>()
@@ -64,18 +64,23 @@ interface DslEditorProps {
   revealLine?: number
   /** 跨文件零件名获取函数（P2，由宿主页注入；编辑器组件不直接依赖 api 层） */
   fetchParts?: () => Promise<readonly DslPartOption[]>
+  /** 复用模块候选获取函数（ADR 0118 P1；`use "lib:` 位使用） */
+  fetchLibrary?: () => Promise<readonly DslLibraryOption[]>
 }
 
 /** 补全扩展：标识符输入自动触发，Ctrl+Space 手动唤起（C5） */
-function makeCompletionExtension(fetch?: () => Promise<readonly DslPartOption[]>) {
+function makeCompletionExtension(
+  fetchParts?: () => Promise<readonly DslPartOption[]>,
+  fetchLibrary?: () => Promise<readonly DslLibraryOption[]>,
+) {
   return autocompletion({
     activateOnTyping: true,
-    override: [context => dslCompletionSource(context, { fetchParts: fetch })],
+    override: [context => dslCompletionSource(context, { fetchParts, fetchLibrary })],
   })
 }
 
 export default function DslEditor({
-  value, onChange, diagnostics, placeholder, readOnly, revealLine, fetchParts,
+  value, onChange, diagnostics, placeholder, readOnly, revealLine, fetchParts, fetchLibrary,
 }: DslEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null)
   const viewRef = useRef<EditorView | null>(null)
@@ -83,6 +88,8 @@ export default function DslEditor({
   onChangeRef.current = onChange
   const fetchPartsRef = useRef(fetchParts)
   fetchPartsRef.current = fetchParts
+  const fetchLibraryRef = useRef(fetchLibrary)
+  fetchLibraryRef.current = fetchLibrary
   const { isDark, editor } = useEditorAppearance()
 
   // 视图只建一次；外部 value 变化（保存后回写等）以 transaction 同步
@@ -105,7 +112,9 @@ export default function DslEditor({
           EditorView.lineWrapping,
           placeholder ? cmPlaceholder(placeholder) : [],
           editableCompartment.of(EditorView.editable.of(!readOnly)),
-          completionCompartment.of(readOnly ? [] : makeCompletionExtension(fetchPartsRef.current)),
+          completionCompartment.of(
+            readOnly ? [] : makeCompletionExtension(fetchPartsRef.current, fetchLibraryRef.current),
+          ),
           EditorView.updateListener.of(update => {
             if (update.docChanged) onChangeRef.current(update.state.doc.toString())
           }),
@@ -133,7 +142,9 @@ export default function DslEditor({
     viewRef.current?.dispatch({
       effects: [
         editableCompartment.reconfigure(EditorView.editable.of(!readOnly)),
-        completionCompartment.reconfigure(readOnly ? [] : makeCompletionExtension(fetchPartsRef.current)),
+        completionCompartment.reconfigure(
+          readOnly ? [] : makeCompletionExtension(fetchPartsRef.current, fetchLibraryRef.current),
+        ),
       ],
     })
   }, [readOnly])

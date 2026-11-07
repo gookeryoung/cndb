@@ -678,4 +678,47 @@ describe('DesignEditorPage 编辑器主流程', () => {
     // 摘要先于文本差异（DOM 顺序）
     expect(summary.compareDocumentPosition(diffView) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  it('依赖面板列出库引用并一键升级（ADR 0118 P1）', async () => {
+    useDefaultHandlers()
+    const saves: Array<{ content: string }> = []
+    const CONTENT_WITH_LIB = 'use "lib:flange@1"'
+    server.use(
+      http.get('/api/v1/workspaces/10/designs/20', () =>
+        HttpResponse.json({ ...DETAIL, kind: 'part', content: CONTENT_WITH_LIB })),
+      http.get('/api/v1/workspaces/10/designs/20/dependencies', () => HttpResponse.json({
+        design_id: 20,
+        items: [],
+        referrers: [],
+        library_items: [{
+          module_id: 7,
+          module_key: 'flange',
+          name: '法兰模块',
+          version_number: 1,
+          latest_version: 2,
+          has_update: true,
+          visibility: 'public',
+          is_archived: false,
+          owner_workspace_id: 10,
+          bundle_hash: 'b1',
+        }],
+      })),
+      http.put('/api/v1/workspaces/10/designs/20/content', async ({ request }) => {
+        const body = await request.json() as { content: string }
+        saves.push(body)
+        return HttpResponse.json({ ...DETAIL, content: body.content, version_number: 3 })
+      }),
+    )
+    const { container } = renderPage()
+    await waitForEditorReady(container)
+
+    fireEvent.click(screen.getByTestId('design-library-refs-btn'))
+    expect(await screen.findByTestId('design-library-ref-7')).toBeInTheDocument()
+    expect(screen.getByText('法兰模块')).toBeInTheDocument()
+    expect(screen.getByText(/最新 v2/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('design-library-upgrade-7'))
+    await waitFor(() => expect(saves).toHaveLength(1))
+    expect(saves[0]!.content).toBe('use "lib:flange@2"')
+  })
 })

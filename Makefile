@@ -27,7 +27,7 @@ UVX_INDEX := --default-index https://mirrors.cloud.tencent.com/pypi/simple
 FRONTEND_DEPS := frontend/node_modules/.make-sync
 
 .PHONY: help env-guard sync free-dev-ports dev seed frontend-sync frontend-static frontend-coverage frontend-build \
-        build clean test cov lint typecheck e2e e2e-dev gitkeep-check adr-check \
+        build clean test cov lint typecheck e2e e2e-dev bench gitkeep-check adr-check \
         check-fast check-docs flow check bump pub push pack-doctor pack pack-cache-clean \
         docker-dev docker-dev-down docker-stop docker-build docker-export dd ds ddd db de \
         patch minor major
@@ -97,6 +97,12 @@ e2e: frontend-build ## 前端 E2E（Playwright；webServer 自动起隔离后端
 
 e2e-dev: $(FRONTEND_DEPS) ## dev 模式 E2E（vite dev 源码直出，兜住只在 dev 现形的回归）
 	cd frontend && pnpm e2e:dev
+
+# 性能基准导入行数：make bench ROWS=100000 覆盖
+ROWS ?= 10000
+
+bench: env-guard ## 性能基准（临时 SQLite 库跑 10k 行导入 + 查询吞吐；make bench ROWS=100000 改规模）
+	uv run python scripts/bench_10k_rows.py --rows $(ROWS)
 
 # L1 配置改动：轻量静态门禁（无测试）
 check-fast: env-guard gitkeep-check adr-check lint typecheck frontend-static ## 轻量静态门禁（无测试，实现期快速反馈）

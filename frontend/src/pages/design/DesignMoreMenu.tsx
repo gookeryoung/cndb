@@ -8,7 +8,7 @@
 
 import { useState } from 'react'
 import { App as AntApp, Button, Dropdown, Space, Tooltip } from 'antd'
-import { DownloadOutlined, HistoryOutlined } from '@ant-design/icons'
+import { CloudUploadOutlined, DownloadOutlined, HistoryOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import type { DesignIR } from '@/api'
 import {
@@ -31,9 +31,15 @@ interface Props {
   versionCount: number
   /** 打开版本历史抽屉 */
   onHistory: () => void
+  /** 可发布为复用模块（仅 part 且非 viewer，ADR 0118 P1） */
+  canPublish?: boolean
+  /** 打开发布为复用模块弹窗 */
+  onPublish?: () => void
 }
 
-export default function DesignMoreMenu({ ir, title, versionCount, onHistory }: Props) {
+export default function DesignMoreMenu({
+  ir, title, versionCount, onHistory, canPublish = false, onPublish,
+}: Props) {
   const { message } = AntApp.useApp()
   const [busy, setBusy] = useState(false)
 
@@ -80,6 +86,16 @@ export default function DesignMoreMenu({ ir, title, versionCount, onHistory }: P
           onClick={onHistory}
         />
       </Tooltip>
+      {canPublish && (
+        <Tooltip title="发布为复用模块">
+          <Button
+            icon={<CloudUploadOutlined />}
+            aria-label="发布为复用模块"
+            data-testid="design-publish-btn"
+            onClick={onPublish}
+          />
+        </Tooltip>
+      )}
       <Dropdown
         trigger={['click']}
         menu={{ items: exportItems, onClick: ({ key }) => void onExport(key as ExportKind) }}

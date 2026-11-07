@@ -243,9 +243,7 @@ def main() -> int:
         target = Path(f"{stem}-{suffix}.sh")
         size = content_estimate(command)
         if size >= MAX_CONTENT_BYTES:
-            raise SystemExit(
-                f"[build] 第 {i} 条命令过大（Content 约 {size} 字节 ≥ {MAX_CONTENT_BYTES}）：{target}"
-            )
+            raise SystemExit(f"[build] 第 {i} 条命令过大（Content 约 {size} 字节 ≥ {MAX_CONTENT_BYTES}）：{target}")
         target.write_text(command, encoding="utf-8")
         output_files.append(target)
 

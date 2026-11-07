@@ -91,11 +91,19 @@ Related: `src/cndb/plugins/pipeline/models.py`、`src/cndb/plugins/pipeline/rout
 ```python
 def latest_version_number(db: Session, workflow_id: int) -> int: ...
 def add_workflow_version(
-    db: Session, workflow: PipelineWorkflow, user: User, *,
-    content: str, change_type: str, comment: str = "",
+    db: Session,
+    workflow: PipelineWorkflow,
+    user: User,
+    *,
+    content: str,
+    change_type: str,
+    comment: str = "",
 ) -> int: ...
 def workflow_diff(
-    db: Session, workflow: PipelineWorkflow, base: int, head: int,
+    db: Session,
+    workflow: PipelineWorkflow,
+    base: int,
+    head: int,
 ) -> dict[str, Any]: ...
 ```
 

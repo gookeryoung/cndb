@@ -12,7 +12,6 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent / ".." / "src"))
 
-from cndb.plugins.tables.ddl import create_table
 from sqlalchemy import MetaData, create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -20,6 +19,7 @@ from cndb.core.config import settings
 from cndb.models.base import Base
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services import transfer
+from cndb.plugins.tables.services.core.ddl import create_table
 
 
 def setup_db() -> tuple[Any, Any]:
@@ -29,6 +29,9 @@ def setup_db() -> tuple[Any, Any]:
         db_path.unlink()
     settings.DATABASE_URL = f"sqlite:///{db_path}"
     engine = create_engine(settings.DATABASE_URL, connect_args={"check_same_thread": False})
+    from cndb.core.plugin_registry import plugin_registry
+
+    plugin_registry.discover_and_load()
     Base.metadata.create_all(engine)
     return engine, str(db_path)
 

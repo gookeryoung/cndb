@@ -183,3 +183,33 @@ describe('designCompletion 跨文件零件名（C10 / P2）', () => {
     expect(result).toBeNull()
   })
 })
+
+describe('复用模块库补全（ADR 0118 P1）', () => {
+  const fetchLibrary = vi.fn(async () => [
+    { moduleKey: 'flange', name: '法兰模块', latestVersion: 3 },
+    { moduleKey: 'washer', name: '垫圈模块', latestVersion: 1 },
+  ])
+
+  it('use "lib: 位列出 key@最新版本', async () => {
+    const result = await dslCompletionSource(contextAt('use "lib:|'), { fetchLibrary })
+    expect(labels(result)).toEqual(['lib:flange@3', 'lib:washer@1'])
+    expect(result?.options[0]?.detail).toBe('法兰模块 · v3')
+    expect(fetchLibrary).toHaveBeenCalled()
+  })
+
+  it('lib: 前缀按 key / 名称过滤', async () => {
+    const result = await dslCompletionSource(contextAt('use "lib:垫|'), { fetchLibrary })
+    expect(labels(result)).toEqual(['lib:washer@1'])
+  })
+
+  it('lib:key@ 位提示最新版本号', async () => {
+    const doc = 'use "lib:flange@|'
+    const result = await dslCompletionSource(contextAt(doc), { fetchLibrary })
+    expect(labels(result)).toEqual(['3'])
+    expect(result?.from).toBe(doc.replace('|', '').length)
+  })
+
+  it('未注入 fetchLibrary 时静默不出候选', async () => {
+    expect(await dslCompletionSource(contextAt('use "lib:|'))).toBeNull()
+  })
+})

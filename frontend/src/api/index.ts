@@ -112,7 +112,7 @@ export type {
   PipelineWorkflow,
   PipelineWorkflowPayload,
 } from './pipelines'
-export { designsApi } from './design'
+export { designLibraryApi, designsApi } from './design'
 export type {
   DesignBooleanNode,
   DesignDependencyItem,
@@ -124,6 +124,7 @@ export type {
   DesignIRNode,
   DesignIRParam,
   DesignIRResponse,
+  DesignLibraryDependencyItem,
   DesignListItem,
   DesignOutline,
   DesignOutlineNode,
@@ -134,6 +135,11 @@ export type {
   DesignTransformKind,
   DesignVersionDetail,
   DesignVersionItem,
+  LibraryModuleDetail,
+  LibraryModuleItem,
+  LibraryParam,
+  LibraryVersionDetail,
+  LibraryVersionItem,
 } from './design'
 export { searchApi } from './search'
 export type {

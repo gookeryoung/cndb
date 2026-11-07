@@ -74,8 +74,8 @@ Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/se
 `plugins/documents/services/preview/office.py`：
 
 ```python
-def build_spreadsheet_html(data: bytes) -> str: ...   # xlsx → 多工作表表格 HTML
-def build_document_html(data: bytes) -> str: ...      # docx → 标题 / 段落 / 列表 / 表格 / 图片 HTML
+def build_spreadsheet_html(data: bytes) -> str: ...  # xlsx → 多工作表表格 HTML
+def build_document_html(data: bytes) -> str: ...  # docx → 标题 / 段落 / 列表 / 表格 / 图片 HTML
 def build_office_preview(content_type: str, mime: str, data: bytes) -> str: ...  # 分派 + 旧版格式拒绝
 ```
 

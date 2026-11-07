@@ -21,19 +21,21 @@ import {
 } from 'antd'
 import type { InputNumberProps } from 'antd'
 import {
-  BorderOutlined, CheckCircleFilled, CloseCircleFilled, CompassOutlined, DownloadOutlined,
-  ExperimentOutlined, ExpandOutlined, HistoryOutlined, LoadingOutlined, RollbackOutlined, SaveOutlined,
+  ArrowUpOutlined, BookOutlined, BorderOutlined, CheckCircleFilled, CloseCircleFilled, CompassOutlined,
+  DownloadOutlined, ExperimentOutlined, ExpandOutlined, HistoryOutlined, LoadingOutlined, RollbackOutlined,
+  SaveOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { designsApi, workspaceApi } from '@/api'
-import type { DesignDiagnostic, DesignVersionItem } from '@/api'
+import { designLibraryApi, designsApi, workspaceApi } from '@/api'
+import type { DesignDiagnostic, DesignLibraryDependencyItem, DesignVersionItem } from '@/api'
 import DocumentDiffView from '@/components/DiffView/DocumentDiffView'
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback'
 import { formatDateTime } from '@/utils/datetime'
 import DslEditor from './DslEditor'
 import DesignParamsPanel from './DesignParamsPanel'
-import type { DslPartOption } from './designCompletion'
+import PublishModuleModal from './PublishModuleModal'
+import type { DslLibraryOption, DslPartOption } from './designCompletion'
 import { collectNodeIndices, resolveOutlinePath } from './designOutline'
 import { useDesignPreview } from './useDesignPreview'
 import type { PreviewStats, ViewportApi } from './PreviewCanvas'
@@ -150,6 +152,8 @@ export default function DesignEditorPage() {
   const [overrides, setOverrides] = useState<Record<string, number>>({})
   const [saveError, setSaveError] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [publishOpen, setPublishOpen] = useState(false)
+  const [libraryPanelOpen, setLibraryPanelOpen] = useState(false)
   // 布局偏好：分栏比例 / 参数面板折叠态（I5）
   const [split, setSplit] = useState<number>(readSplit)
   const [paramsCollapsed, setParamsCollapsed] = useState<boolean>(readCollapsed)
@@ -217,8 +221,33 @@ export default function DesignEditorPage() {
     return partsPending.current
   }, [wid])
 
+  // 复用模块补全（ADR 0118 P1）：公开 + 本工作区发布，会话内缓存；失败降级空候选
+  const libraryCache = useRef<DslLibraryOption[] | null>(null)
+  const libraryPending = useRef<Promise<DslLibraryOption[]> | null>(null)
+  const fetchLibrary = useCallback(async () => {
+    if (libraryCache.current) return libraryCache.current
+    if (!libraryPending.current) {
+      libraryPending.current = designLibraryApi.list(wid)
+        .then(items => items.map(item => ({
+          moduleKey: item.module_key,
+          name: item.name,
+          latestVersion: item.latest_version,
+        })))
+        .catch(() => [])
+        .then(options => {
+          libraryCache.current = options
+          libraryPending.current = null
+          return options
+        })
+    }
+    return libraryPending.current
+  }, [wid])
+
   const save = useMutation({
-    mutationFn: () => designsApi.saveContent(wid, designId, { content, change_type: 'manual' }),
+    mutationFn: (nextContent?: string) => designsApi.saveContent(wid, designId, {
+      content: nextContent ?? content,
+      change_type: 'manual',
+    }),
     onMutate: () => {
       // 手动保存前取消 pending 自动保存，保证同一时刻只有一个保存在途（§4.1）
       cancelAutoSave()
@@ -236,6 +265,27 @@ export default function DesignEditorPage() {
       setSaveError(err instanceof Error ? err.message : '保存失败')
     },
   })
+
+  // 辅助：依赖面板（ADR 0118 P1）——按需拉取当前直接引用的库模块
+  const { data: libraryRefs = [], isLoading: libraryRefsLoading } = useQuery({
+    queryKey: ['designs', wid, designId, 'dependencies'],
+    queryFn: () => designsApi.dependencies(wid, designId),
+    enabled: !!wid && !!designId && libraryPanelOpen,
+    select: data => data.library_items,
+  })
+
+  /** 一键升级：把正文中锁定的 `lib:key@old` 改写为最新版本并立即保存（ADR 0118 P1） */
+  const upgradeLibraryRef = (item: DesignLibraryDependencyItem) => {
+    const from = `lib:${item.module_key}@${item.version_number}`
+    const to = `lib:${item.module_key}@${item.latest_version}`
+    const next = content.split(from).join(to)
+    if (next === content) {
+      message.warning('正文中未找到该库引用，请手动修改')
+      return
+    }
+    setContent(next)
+    save.mutate(next)
+  }
 
   const { data: versions = [] } = useQuery({
     queryKey: ['designs', wid, designId, 'versions'],
@@ -586,8 +636,18 @@ export default function DesignEditorPage() {
               title={detail?.title ?? '设计'}
               versionCount={versions.length}
               onHistory={() => setHistoryOpen(true)}
+              canPublish={!isViewer && detail?.kind === 'part'}
+              onPublish={() => setPublishOpen(true)}
             />
           </Suspense>
+          <Tooltip title="复用模块引用">
+            <Button
+              icon={<BookOutlined />}
+              aria-label="复用模块引用"
+              data-testid="design-library-refs-btn"
+              onClick={() => setLibraryPanelOpen(true)}
+            />
+          </Tooltip>
           <Button
             icon={<SaveOutlined />}
             type="primary"
@@ -667,6 +727,7 @@ export default function DesignEditorPage() {
                 placeholder="param width = 80&#10;box(size = [width, 40, 12])"
                 readOnly={isViewer}
                 fetchParts={fetchParts}
+                fetchLibrary={fetchLibrary}
                 // 原文回填完成后才定位，避免首帧空文档把行号钳到第 1 行
                 revealLine={contentReady ? revealLine : undefined}
               />
@@ -899,6 +960,72 @@ export default function DesignEditorPage() {
           </>
         )}
       </Drawer>
+
+      {/* 依赖面板：库引用锁定版本 / 可见性 / 升级（ADR 0118 P1） */}
+      <Drawer
+        title="复用模块引用"
+        open={libraryPanelOpen}
+        size={420}
+        onClose={() => setLibraryPanelOpen(false)}
+      >
+        {libraryRefsLoading ? (
+          <Skeleton active />
+        ) : libraryRefs.length === 0 ? (
+          <Empty description="当前设计未引用复用模块" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        ) : (
+          <Space direction="vertical" size={10} style={{ width: '100%' }}>
+            {libraryRefs.map(item => (
+              <div
+                key={item.module_id}
+                data-testid={`design-library-ref-${item.module_id}`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+                  border: '1px solid var(--cn-border-color, #f0f0f0)', borderRadius: 8,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div>
+                    <Text strong>{item.name}</Text>
+                    <Tag variant="filled" style={{ marginLeft: 6 }}>v{item.version_number}</Tag>
+                    {item.visibility === 'public'
+                      ? <Tag variant="filled" color="green">公开</Tag>
+                      : <Tag variant="filled">私有</Tag>}
+                    {item.is_archived && <Tag variant="filled" color="red">已归档</Tag>}
+                  </div>
+                  <Text type="secondary" code>{item.module_key}</Text>
+                  {item.has_update && (
+                    <Text type="secondary"> · 最新 v{item.latest_version}</Text>
+                  )}
+                </div>
+                {!isViewer && item.has_update && (
+                  <Button
+                    size="small"
+                    icon={<ArrowUpOutlined />}
+                    data-testid={`design-library-upgrade-${item.module_id}`}
+                    loading={save.isPending}
+                    onClick={() => upgradeLibraryRef(item)}
+                  >
+                    升级
+                  </Button>
+                )}
+              </div>
+            ))}
+          </Space>
+        )}
+      </Drawer>
+
+      <PublishModuleModal
+        open={publishOpen}
+        wid={wid}
+        designId={detail?.id ?? 0}
+        defaultName={detail?.title ?? ''}
+        defaultDescription={detail?.description ?? ''}
+        onClose={() => setPublishOpen(false)}
+        onPublished={() => {
+          libraryCache.current = null
+          void queryClient.invalidateQueries({ queryKey: ['design-library'] })
+        }}
+      />
     </div>
   )
 }

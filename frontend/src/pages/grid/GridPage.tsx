@@ -171,38 +171,40 @@ export default function GridPage() {
 
   // 冷进表 / 跨表返回：首帧渲染前按 sessionStorage 快照种子化视图状态（ADR 0116 C8）。
   // 命中快照时第一笔行请求即带筛选/排序，不再先发空筛选请求等视图加载后重发。
-  if (useGridViewStore.getState().tableKey !== tableKey) {
-    useGridViewStore.getState().hydrate(tableKey)
-  }
+  // 注意：这里只读快照、**不能在渲染期间写 store** —— 渲染期写 zustand 会让已订阅的
+  // fiber 在另一个 GridPage fiber 渲染中收到 setState，触发 React
+  // 「Cannot update a component while rendering a different component」并多跑一轮全量渲染。
+  // store 的归属切换统一交给下方 reset effect（提交后执行）。
+  const seedSnapshot = useMemo(() => readGridViewSnapshot(tableKey), [tableKey])
   /** 是否有本表视图快照：命中时首帧直接按快照参数请求行（无需等视图列表） */
-  const hasSnapshot = readGridViewSnapshot(tableKey) != null
+  const hasSnapshot = seedSnapshot != null
   /** 视图列表已加载且落地视图已写入 store（没有快照时，首笔行请求必须等它，避免空筛选 + 重发） */
   const [viewReady, setViewReady] = useState(false)
 
   // —— 视图状态从 GridViewStore 订阅 ——
-  const mode = useGridViewStore(s => s.mode)
+  const storeMode = useGridViewStore(s => s.mode)
   const setMode = useGridViewStore(s => s.setMode)
   // 窄屏：网格需要横向滚动，固定首列（含选择列）才能在滚动中保持行标识
   const { isMobile } = useResponsive()
   // 未配置大模型时不传回调：列头 AI 填充入口整体不渲染（需求 0069）
   const llmConfigured = useLlmConfigured()
-  const activeViewId = useGridViewStore(s => s.activeViewId)
+  const storeActiveViewId = useGridViewStore(s => s.activeViewId)
   const setActiveViewId = useGridViewStore(s => s.setActiveViewId)
-  const viewFilters = useGridViewStore(s => s.viewFilters)
+  const storeViewFilters = useGridViewStore(s => s.viewFilters)
   const setViewFilters = useGridViewStore(s => s.setViewFilters)
   const updateViewFilters = useGridViewStore(s => s.updateViewFilters)
-  const viewSortings = useGridViewStore(s => s.viewSortings)
+  const storeViewSortings = useGridViewStore(s => s.viewSortings)
   const setViewSortings = useGridViewStore(s => s.setViewSortings)
   const updateViewSortings = useGridViewStore(s => s.updateViewSortings)
-  const viewFilterLogic = useGridViewStore(s => s.viewFilterLogic)
+  const storeViewFilterLogic = useGridViewStore(s => s.viewFilterLogic)
   const setViewFilterLogic = useGridViewStore(s => s.setViewFilterLogic)
-  const viewOptionsDraft = useGridViewStore(s => s.viewOptionsDraft)
+  const storeViewOptionsDraft = useGridViewStore(s => s.viewOptionsDraft)
   const setViewOptionsDraft = useGridViewStore(s => s.setViewOptionsDraft)
-  const searchQuery = useGridViewStore(s => s.searchQuery)
+  const storeSearchQuery = useGridViewStore(s => s.searchQuery)
   const setSearchQuery = useGridViewStore(s => s.setSearchQuery)
-  const offset = useGridViewStore(s => s.offset)
+  const storeOffset = useGridViewStore(s => s.offset)
   const setOffset = useGridViewStore(s => s.setOffset)
-  const limit = useGridViewStore(s => s.limit)
+  const storeLimit = useGridViewStore(s => s.limit)
   const setLimit = useGridViewStore(s => s.setLimit)
   const patchView = useGridViewStore(s => s.patch)
   const storeTableKey = useGridViewStore(s => s.tableKey)
@@ -210,6 +212,20 @@ export default function GridPage() {
    *  在 reset effect 生效前的那一帧必须按「空状态」取值，否则会用上表的 filters/sorts
    *  发一次脏请求（字段在新表不存在时后端 400 → 视图空态）。 */
   const viewStateOwned = storeTableKey === tableKey
+  /**
+   * 首帧（store 尚未归属当前表）按本表快照取值，与 hydrate() 的语义一致；
+   * 快照缺失时退化为 store 初始值，因此不会把上一张表的视图参数带进来。
+   */
+  const seed = viewStateOwned ? null : seedSnapshot
+  const mode = viewStateOwned ? storeMode : (seed?.mode ?? 'grid')
+  const activeViewId = viewStateOwned ? storeActiveViewId : (seed?.activeViewId ?? null)
+  const viewFilters = viewStateOwned ? storeViewFilters : (seed?.viewFilters ?? (EMPTY_RULES as FilterRule[]))
+  const viewSortings = viewStateOwned ? storeViewSortings : (seed?.viewSortings ?? (EMPTY_RULES as SortRule[]))
+  const viewFilterLogic = viewStateOwned ? storeViewFilterLogic : (seed?.viewFilterLogic ?? 'AND')
+  const viewOptionsDraft = viewStateOwned ? storeViewOptionsDraft : null
+  const searchQuery = viewStateOwned ? storeSearchQuery : ''
+  const offset = viewStateOwned ? storeOffset : (seed?.offset ?? 0)
+  const limit = viewStateOwned ? storeLimit : (seed?.limit ?? 50)
 
   // wid/tid 变化时种子化 store（命中快照则恢复上次视图参数）+ 初始化 mode
   useEffect(() => {
@@ -540,17 +556,17 @@ export default function GridPage() {
   }, [searchQuery])  // eslint-disable-line react-hooks/exhaustive-deps
 
   // 当前生效的筛选/排序/分页参数 + 行数据（装配逻辑在 useGridData）
-  // 首帧 store 尚未归属当前表（跨表 / 离开再返回）时按空状态取值，避免脏参数请求
+  // 首帧 store 尚未归属当前表时上面的取值已回退到本表快照 / 初始值，不会带上表脏参数
   const { effectiveFilters, sortsParam, rowList, isFetching: rowsFetching, isError: rowsError, refetch: refetchRows } = useGridData({
     wid,
     tid,
-    mode: viewStateOwned ? mode : 'grid',
+    mode,
     limit,
-    offset: viewStateOwned ? offset : 0,
-    viewFilters: viewStateOwned ? viewFilters : EMPTY_RULES,
-    viewSortings: viewStateOwned ? viewSortings : EMPTY_RULES,
-    viewFilterLogic: viewStateOwned ? viewFilterLogic : 'AND',
-    searchQuery: viewStateOwned ? searchQuery : '',
+    offset,
+    viewFilters,
+    viewSortings,
+    viewFilterLogic,
+    searchQuery,
     // 无快照时等落地视图参数就位再请求首帧行，避免「空筛选请求 + 视图加载后重发」（ADR 0116 C8）
     enabled: hasSnapshot || viewReady,
   })
