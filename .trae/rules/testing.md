@@ -1,10 +1,7 @@
 # 测试与覆盖率规范
 
-> 硬约束唯一编号源见 `docs/CONSTRAINTS.md`（ADR 0119）；本文标注 H# 的条目以台账口径为准。
+> 硬约束编号以 [docs/CONSTRAINTS.md](../../docs/CONSTRAINTS.md) 为准；本文只写执行口径，不重复台账中的门槛数值。
 
-- 测试与实现**同轮**编写，不留「以后再补」（H9）。
-- 分层覆盖（H12）：判定层单测、接口层、迁移（幂等 + downgrade）、备份往返（含旧备份兼容）、前端单测、e2e。
-- 后端覆盖率门槛 **95%**（口径固定在 `pyproject.toml` 的 `[tool.coverage]`：`fail_under` + omit 白名单），前端双门槛见 `frontend/scripts/check-coverage.mjs`（H10）。
-- 不得注水覆盖率（不为凑数写无断言用例、不改 omit 白名单放宽门槛）（H10）。
-- 命令：`make test`（不含覆盖率）→ `make cov`（含门槛）→ 前端 `make frontend-coverage` → `make e2e`（4 分片）。
-- e2e 是硬门禁（H11）；抖动由 CI retries 兜底，不要通过跳过用例规避失败。
+- 测试与实现**同轮**编写（H9），按分层覆盖执行（H12），不得注水（H10）。
+- 覆盖率门槛固定在 `pyproject.toml` 的 `[tool.coverage]`（`fail_under` + omit 白名单）；前端双门槛见 `frontend/scripts/check-coverage.mjs`（H10）。
+- 命令链：`make test` → `make cov` → `make frontend-coverage` → `make e2e`（4 分片，H11）；e2e 抖动由 CI retries 兜底，不得跳过用例规避失败。
