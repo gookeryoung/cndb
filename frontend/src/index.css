@@ -36,13 +36,19 @@ body {
 
 /* 主题切换过渡：.theme-switching 仅在切换瞬间由 ThemeProvider 挂载（约 280ms 后移除），
  * 让全页颜色随主题变量平滑渐变；平时不生效，避免拖慢日常交互与悬停反馈。
- * 只过渡颜色类属性（背景/前景/边框/填充），不动 box-shadow / transform 等昂贵属性。 */
-html.theme-switching,
-html.theme-switching *,
-html.theme-switching *::before,
-html.theme-switching *::after {
-  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease,
-    fill 200ms ease, stroke 200ms ease, outline-color 200ms ease !important;
+ * 只过渡颜色类属性（背景/前景/边框/填充），不动 box-shadow / transform 等昂贵属性。
+ *
+ * 仅在支持 color-mix() 的现代内核启用：旧内核（如 Chrome 81）给全页每个元素
+ * （含伪元素）挂 transition 会让一次主题切换触发上万次样式重算与属性动画，
+ * 表现为点击后长时间无响应；旧内核不挂过渡、直接瞬时换色。 */
+@supports (background-color: color-mix(in srgb, red 10%, blue)) {
+  html.theme-switching,
+  html.theme-switching *,
+  html.theme-switching *::before,
+  html.theme-switching *::after {
+    transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease,
+      fill 200ms ease, stroke 200ms ease, outline-color 200ms ease !important;
+  }
 }
 
 /* 等宽数字 token：表格数字列、金额等需要对齐时用，

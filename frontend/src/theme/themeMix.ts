@@ -116,6 +116,26 @@ function cssVarReader(): VarReader {
   }
 }
 
+/** 一次性快照 reader —— 批量求值时只取一次计算样式，并按变量名缓存。
+ *
+ * Chrome 81 的每次 `getComputedStyle` 都会强制同步样式计算；旧实现边读边写
+ * `--cn-mix-*`，每条规格都会让下一轮读取重新触发全量重算（90+ 条 ≈ 上百次），
+ * 主题切换因此卡顿数秒。改为「先读完、再统一写入」后，整轮只有一次样式计算。 */
+function snapshotVarReader(): VarReader {
+  if (typeof window === 'undefined' || typeof document === 'undefined') return () => ''
+  const host = document.body ?? document.documentElement
+  if (!host) return () => ''
+  const computed = window.getComputedStyle(host)
+  const cache = new Map<string, string>()
+  return name => {
+    const cached = cache.get(name)
+    if (cached !== undefined) return cached
+    const value = computed.getPropertyValue(name).trim()
+    cache.set(name, value)
+    return value
+  }
+}
+
 /** 递归展开 var(--x, fallback)，最多 4 层防环 */
 function resolveValue(value: string, readVar: VarReader, depth = 0): string {
   const trimmed = value.trim()
@@ -232,14 +252,19 @@ export function mixColor(colorA: string, pct: number, colorB: string): string {
   }) ?? `color-mix(in srgb, ${colorA} ${pct}%, ${colorB})`
 }
 
-/** 按当前主题重算全部 `--cn-mix-*` 变量（旧内核 CSS 兜底依赖它） */
+/** 按当前主题重算全部 `--cn-mix-*` 变量（旧内核 CSS 兜底依赖它）。
+ *
+ * 两阶段执行：先算完全部值（只读，一次计算样式快照），再统一写入（只写），
+ * 避免读写交替把每一次写入都变成后续读取的强制样式重算。 */
 export function applyThemeMixVars(root?: HTMLElement): void {
   if (typeof document === 'undefined') return
   if (supportsColorMix()) return
   const target = root ?? document.documentElement
-  const readVar = cssVarReader()
+  const readVar = snapshotVarReader()
+  const writes: Array<[string, string]> = []
   for (const [name, spec] of Object.entries(MIX_REGISTRY)) {
     const value = mixToLiteral(spec, readVar)
-    if (value) target.style.setProperty(`--cn-mix-${name}`, value)
+    if (value) writes.push([`--cn-mix-${name}`, value])
   }
+  for (const [name, value] of writes) target.style.setProperty(name, value)
 }
