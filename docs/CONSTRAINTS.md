@@ -1,6 +1,6 @@
 # 硬约束台账（CONSTRAINTS）
 
-> 全仓硬约束的**唯一编号源**（设计见 [ADR 0119](adr/0119-hard-constraint-registry.md)）：[AGENTS.md](../AGENTS.md)、`.trae/rules/*`、ADR、[AI_DRIVEN_DEV_FLOW.md](AI_DRIVEN_DEV_FLOW.md) 引用约束一律写 H#，台账外只允许「一句话摘要 + H#」，不复制完整口径。
+> 全仓硬约束的**唯一编号源**（设计见 [ADR 0119](adr/0119-hard-constraint-registry.md)）：[AGENTS.md](../AGENTS.md)、`.trae/rules/agent.md`、ADR、[AI_DRIVEN_DEV_FLOW.md](AI_DRIVEN_DEV_FLOW.md) 引用约束一律写 H#，台账外只允许「一句话摘要 + H#」，不复制完整口径。
 > 变更规则：H 条目新增 / 修改 / 删除属口径变更，**须人工确认**，LLM 不得自行放宽；删除后编号不复用，在文末「已删除」清单记一行。
 > `make constraint-check` 校验本台账：四列列头、编号唯一、来源 ADR 存在（防孤儿）、机器命令存在。
 

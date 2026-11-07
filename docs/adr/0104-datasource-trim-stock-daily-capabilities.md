@@ -184,7 +184,7 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 | D5 | 迁移形态 | 单条 drop 表迁移（幂等 + downgrade 重建），不删 job 列 | 模型删除必须处理 DDL；`request_spec` / `cursor` 是 JSON 无需列迁移 | 删 `datasource_sync_job` 列（无列可删）；保留空表（孤儿表） | `alembic/versions/` |
 | D6 | 并发删除后的限速实现 | 保留 `rate_limit_ms`，`_RateLimiter` 退化为串行间隔 | 字段在模型 / API / 前端暴露，需求方倾向不动前端 | 删除限速字段（破坏 API 契约）；保留线程池（无消费方） | `pipeline.py` |
 | D7 | 旧配置的处理策略 | 显式报错并列出已删除键；`data_path` 含 `\|` 同 | I3；避免「跑起来但行为变了」的隐性数据差 | 静默忽略未知键（现状，难排查） | `runner.py`、`routers/sync_jobs.py` |
-| D8 | 六个 ADR 的处置 | 0033 / 0053 整体删除（文件 + 索引行 + 引用）；0034 / 0035 / 0039 / 0043 改写保留有效决策 | design.md「需求移除 / 变更」：整体被取代直接删，编号不复用 | 全部保留并标 Superseded（仓库约定不允许）；全部删除（会丢仍在用的流式 / 落表口径） | `docs/adr/` |
+| D8 | 六个 ADR 的处置 | 0033 / 0053 整体删除（文件 + 索引行 + 引用）；0034 / 0035 / 0039 / 0043 改写保留有效决策 | `.trae/rules/agent.md`「需求移除 / 变更」：整体被取代直接删，编号不复用 | 全部保留并标 Superseded（仓库约定不允许）；全部删除（会丢仍在用的流式 / 落表口径） | `docs/adr/` |
 | D9 | 测试与覆盖率 | 整删 4 个专用文件；混合用例改写为保留能力断言；门槛不降 | C6；避免空壳测试 | 保留 skip 用例（无被测对象）；下调覆盖率门槛（掩盖真实缺口） | `tests/`、`frontend/` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。

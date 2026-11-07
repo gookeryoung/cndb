@@ -1,29 +1,26 @@
 ---
 name: implementer
-description: Use when implementing an Accepted ADR or a scoped feature/fix in the cndb repo. Implement in the ADR's phases (P0 -> P2) with small commits, running make check-fast as the inner feedback loop. Follow the plugin architecture and never bypass pre-commit.
+description: Use when implementing a confirmed S0/S1 requirement or an Accepted S2 ADR in cndb. Implement in phases, write tests in the same round, and keep make check-fast green.
 ---
 
-# 实现（cndb）
-
-按已 Accepted 的 ADR 落地代码。遵循该仓库的插件化架构与小步提交。
+# 实现与测试（implementer）
 
 ## 输入
 
-- 已 Accepted 的 ADR（`docs/adr/NNNN-*.md`）
-- 仓库约定：`AGENTS.md`、`.trae/rules/*.md`
+- S0：已确认的意图；S1：需求卡片；S2：Accepted ADR
+- `AGENTS.md`、`docs/AI_DRIVEN_DEV_FLOW.md`、相关 H#
 
 ## 步骤
 
-1. 通读 ADR 的分期与「决策 → 代码落点」表，按 **P0 → P1 → P2** 顺序实现，每期一个内聚改动。
-2. 后端遵循插件分层：`plugins/<name>/` 下 `models.py` / `routers/` / `schemas/` / `services/`；动态表 DDL 走 SQLAlchemy Core。
-3. 迁移用 alembic：**幂等 + downgrade 可还原 + 存量零迁移**；新表须纳入 `plugins/workspaces/services/backup_io.py`。
-4. 前端改动落在 `frontend/src/`，与后端 API 类型（`api/types/*`）对齐。
-5. **内环**：每次改完立即 `make check-fast`（gitkeep + adr-check + ruff + pyrefly + tsc + eslint，秒级），红了先修再继续。
-6. 每期完成后回填 ADR 的「落地状态」（期 / 状态 / 代码落点 / 测试 / 提交）与「交接」（当前阶段 / 下一步 / 已知坑），标「已落地」的期必须有真实代码落点与测试文件。
-7. 小步提交，message 用 conventional commits。
+1. **拆步**：S2 按 P0 → P1 → P2；S0 / S1 按最小内聚改动拆步。
+2. **后端**：遵循 `plugins/<name>/` 分层；动态表 DDL 走 SQLAlchemy Core；迁移幂等 + downgrade + 存量零迁移；新表纳入 `backup_io`。
+3. **前端**：`frontend/src/`，API 类型与后端对齐；样式遵守 `DESIGN_SYSTEM.md` 与 H24 / H25 / H29 / H30。
+4. **测试同轮**：单测 / 接口 / 迁移 / 备份 / 前端 / e2e 按 H12 分层补齐，不注水。
+5. **内环**：每改完跑 `make check-fast`；失败修根因后重跑。
+6. **回填**：每期更新 ADR 落地状态与交接；最后更新 CHANGELOG 与相关文档。
 
-## 门禁
+## 停止条件
 
-- `make check-fast` 全绿方可进入下一期。
-- 不 `--no-verify`、不跳 prek、不 force push。
-- 缓存类收口：涉及记录读/权限收紧时，变更后清相关缓存（见 ADR 缓存条目）。
+- 目标 L 级门禁全绿；
+- S2 的落地表与实际代码 / 测试一致；
+- 不做未授权的提交、推送、打 tag。

@@ -62,4 +62,4 @@
 - [x] 每条需求句都有 C 编号约束（无遗漏、无「待定」）
 - [x] 未决问题全部有结论，需求方确认（2026-10-27，Q1–Q8 全部按建议）
 
-> 「决策记录表无待定」是 ADR 的卡点，不在本卡片判定。需求方已确认本卡片，进入 `adr-writer` 产出 `docs/adr/0052-document-chart-inline-embed.md`。
+> 「决策记录表无待定」是 ADR 的卡点，不在本卡片判定。需求方已确认本卡片，进入 `spec-writer` 产出 `docs/adr/0052-document-chart-inline-embed.md`。

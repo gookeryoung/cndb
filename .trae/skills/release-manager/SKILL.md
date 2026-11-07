@@ -1,29 +1,19 @@
 ---
 name: release-manager
-description: Use when a verified, gate-green change in the cndb repo is ready to publish and deploy. Push remotes, bump version / tag after human approval, then watch the release and Tencent Cloud deploy pipelines. Tagging and deployment are human-gated checkpoints; never tag without explicit approval.
+description: Use when a gate-green cndb change is ready to publish and deploy. Push, bump, tag and deploy only after the required human approvals.
 ---
 
-# 推送与发布部署（cndb）
+# 发布与部署（release-manager）
 
-门禁全绿 + 文档已更新后的收尾链路。打 tag 与部署均为**人工卡点**。
-
-## 步骤
-
-1. **推送**：`make push`（推全部 remote + tags）。若分支无 upstream，先 `git push -u origin <branch>`。
-   推送前确认：ADR「落地状态」与「交接」已回填、CHANGELOG 带 `(ADR NNNN Pn)` 条目、`make adr-check` 无 error。
-2. **版本 / 变更记录**：`make bump patch|minor|major`（bump-my-version，自动打 tag 并写 CHANGELOG）。
-3. **上线卡点**：打 tag `vX.Y.Z` 前必须**人工确认**（属正式上线动作）。
-4. **发布**：tag 触发 `release.yml` → PyPI（OIDC）+ Windows/Linux 原生打包（fspack）+ GitHub Release。
-5. **部署**：`release.yml` 的 pypi job 成功后调用 `deploy-tencent.yml`（TAT 下发、服务器端构建镜像、预备份 → 重建 → 健康探测 → 失败自动回滚）。
-6. **验证**：健康端点 `/health` 通过；失败由自动回滚兜底（单机部署串行，`concurrency: deploy-tencent-prod`）。
-
-## 参照
-
-- 部署链路与服务器准备：`docs/DEPLOY_TENCENT.md`
-- 工作流：`.github/workflows/release.yml`、`.github/workflows/deploy-tencent.yml`
+1. **前置**：目标级别门禁全绿；ADR 交接已回填；CHANGELOG 已更新；`make adr-check` 无 error。
+2. **推送**：`make push`；分支无 upstream 时先 `git push -u origin <branch>`。
+3. **版本**：`make bump patch|minor|major`（写 CHANGELOG、自动打 tag）。
+4. **人工卡点**：打 tag 前必须获得明确授权；未授权不 tag、不触发发布。
+5. **发布**：tag → [release.yml](../../../.github/workflows/release.yml)（PyPI + 原生打包 + GitHub Release）。
+6. **部署**：release 成功后 [deploy-tencent.yml](../../../.github/workflows/deploy-tencent.yml) 自动下发；失败自动回滚。
+7. **验证**：`/health` 通过；异常先查 TAT 日志与 `docker logs --tail 100 cndb`。
 
 ## 铁律
 
-- 未获人工确认，不打 tag、不触发部署。
-- 不 force push、不直推 main/master。
-- 部署失败先看 TAT 回传日志与 `docker logs --tail 100 cndb`，确认是否已自动回滚到上一版本。
+- 不 force push、不直推 main/master、不打未授权 tag。
+- 部署失败先确认是否已回滚，不手工重复触发。

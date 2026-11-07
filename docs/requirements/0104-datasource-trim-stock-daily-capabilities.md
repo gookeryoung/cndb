@@ -25,7 +25,7 @@
 | C2 | 清理…不再用的能力 | 删除 `cursor="backfill_date"` 游标策略、单轮翻页（multi-pass）与按标的水位断点续跑（`entrant_state` 回补水位） | `services/cursor.py`、`services/entrant_state.py`、`services/runner.py`、`providers/base.py` | 同上 |
 | C3 | 清理…不再用的能力 | 删除 `request.workers` 并发分组执行（管线回归串行；`llm_prompt` 强制 1 的分支随之消失）；`rate_limit_ms` 串行限速保留（用户可见 API 字段，实现随之简化） | `services/pipeline.py` | 同上 |
 | C4 | 简化…数据同步代码 | 保留仍在用的能力与口径不变：`record_mode` 的 `rows` / `columns`、`data_path` 模板、`fill_entrant`、流式落表（`on_batch`）、请求级进度、push 方向（ADR 0099）、`date` / `none` / `key_set` 游标、幂等 upsert | 全部同步模块 | 既有保留能力测试全绿；weather 示例任务可正常运行 |
-| C5 | 清理…（需求移除流程） | 按 design.md「需求移除 / 变更」先清 ADR：删除 / 改写 0033 / 0034 / 0035 / 0039 / 0043 / 0053 中失效的口径行、决策行、测试与分期；被本需求整体取代的决策直接删文件与索引行，编号不复用 | `docs/adr/`、`docs/adr/README.md`、代码注释里的旧编号引用 | `make adr-check` 通过 |
+| C5 | 清理…（需求移除流程） | 按 `.trae/rules/agent.md`「需求移除 / 变更」先清 ADR：删除 / 改写 0033 / 0034 / 0035 / 0039 / 0043 / 0053 中失效的口径行、决策行、测试与分期；被本需求整体取代的决策直接删文件与索引行，编号不复用 | `docs/adr/`、`docs/adr/README.md`、代码注释里的旧编号引用 | `make adr-check` 通过 |
 | C6 | 清理…不再用的能力 | 同步删除仅服务于被裁能力的测试（`test_datasource_http_json.py` 中 rows_array/row_defaults/scale/url_hosts 用例、`test_datasource_host_fallback.py`、`test_datasource_cursor_backfill.py`、`test_datasource_pipeline_concurrency.py`、`test_datasource_runner_pages.py` 的多 pass 用例等），保留能力测试相应改写 | `tests/` | `make flow` 全绿，覆盖率门槛不放松 |
 
 ## 现状影响面（候选，待 ADR 核实）

@@ -2,7 +2,7 @@
 
 Status: Implemented（2026-11-07 评审通过，P0-P2 全部落地）
 Date: 2026-11-07
-Related: `AGENTS.md`、`.trae/rules/dev-workflow.md`、`.trae/rules/design.md`、`.trae/rules/testing.md`、`docs/AI_DRIVEN_DEV_FLOW.md`、`docs/adr/TEMPLATE.md`、`scripts/check_adr_landing.py`
+Related: `AGENTS.md`、`.trae/rules/agent.md`、`docs/AI_DRIVEN_DEV_FLOW.md`、`docs/adr/TEMPLATE.md`、`scripts/check_adr_landing.py`
 需求卡片: `docs/requirements/0119-hard-constraint-registry.md`（需求原文与约束编号的唯一副本）
 
 > 无需求卡片（需求直接立项）时，本行写「无卡片」，「口径」中逐字粘贴原句并就地编号 C1..Cn；补卡片时再迁回卡片。
@@ -32,9 +32,9 @@ Related: `AGENTS.md`、`.trae/rules/dev-workflow.md`、`.trae/rules/design.md`�
 
 | # | 现状 | 位置 | 影响 | 与卡片的关系 |
 |---|---|---|---|---|
-| 1 | 流程禁令三处副本：禁 `--no-verify` / prek 在 AGENTS.md、dev-workflow.md、AI_DRIVEN_DEV_FLOW.md §5 各出现一次，措辞不完全一致 | `AGENTS.md:16`、`.trae/rules/dev-workflow.md`（禁令节）、`docs/AI_DRIVEN_DEV_FLOW.md:114` | 改一处漏一处，LLM 换会话后以哪份为准不明确 | 确认 |
-| 2 | 阶段硬约束无编号：需求有 C1..Cn、决策有 D1..Dn、ADR 不变量有 I1..In，但护栏类约束（覆盖率 95% 不注水、迁移幂等 + downgrade、测试同轮）无编号体系 | `.trae/rules/testing.md`、`.trae/rules/design.md` | 无法被 ADR / 代码注释 / 测试引用，也无法机器校验引用完整性 | 确认 |
-| 3 | ADR 长期不变量随 ADR 生死：ADR 0004 的 I1/I3/I6 被 AI_DRIVEN_DEV_FLOW.md §5 引用，但本仓策略是 ADR 作废即**直接删除**（不留 Superseded） | `docs/AI_DRIVEN_DEV_FLOW.md:122`、`.trae/rules/design.md`（需求移除节） | ADR 删除后仍在生效的不变量失去权威载体，引用悬空 | 确认 |
+| 1 | 流程禁令三处副本：禁 `--no-verify` / prek 在 AGENTS.md、agent.md、AI_DRIVEN_DEV_FLOW.md §5 各出现一次，措辞不完全一致 | `AGENTS.md:16`、`.trae/rules/agent.md`（禁令节）、`docs/AI_DRIVEN_DEV_FLOW.md:114` | 改一处漏一处，LLM 换会话后以哪份为准不明确 | 确认 |
+| 2 | 阶段硬约束无编号：需求有 C1..Cn、决策有 D1..Dn、ADR 不变量有 I1..In，但护栏类约束（覆盖率 95% 不注水、迁移幂等 + downgrade、测试同轮）无编号体系 | `.trae/rules/agent.md`、`.trae/rules/agent.md` | 无法被 ADR / 代码注释 / 测试引用，也无法机器校验引用完整性 | 确认 |
+| 3 | ADR 长期不变量随 ADR 生死：ADR 0004 的 I1/I3/I6 被 AI_DRIVEN_DEV_FLOW.md §5 引用，但本仓策略是 ADR 作废即**直接删除**（不留 Superseded） | `docs/AI_DRIVEN_DEV_FLOW.md:122`、`.trae/rules/agent.md`（需求移除节） | ADR 删除后仍在生效的不变量失去权威载体，引用悬空 | 确认 |
 | 4 | 机器门禁可复用：`check_adr_landing.py` 已有 Markdown 表格解析、多基准路径解析、error/warning 双级与退出码约定 | `scripts/check_adr_landing.py:52-78` | 新校验脚本可复用解析约定，独立成文件不混职责 | 确认 |
 | 5 | 开工前必读清单未含约束台账（尚无此文件） | `AGENTS.md:33-38` | 需在清单中加入 `docs/CONSTRAINTS.md` | 确认 |
 | 6 | CHANGELOG / CONTEXT.md 均为收编去重的同步改动面 | `CHANGELOG.md`、`CONTEXT.md` | 新术语「硬约束台账」须入 CONTEXT.md（Accepted 前） | 新增 |
@@ -110,7 +110,7 @@ CI 不需要单独改动：`check-docs` / `check-fast` 已在双 CI 与 `make ch
 ### 6. 与 ADR 的联动
 
 - `docs/adr/TEMPLATE.md`「设计目标（不变量）」节补一句：长期不变量（跨需求仍生效的 I 条目）须在 ADR `Proposed → Accepted` 前登记入台账，来源写 `ADR NNNN I#`。
-- `.trae/rules/design.md` 与 `AGENTS.md`「需求移除 / 变更」节补：删除 ADR 前**先迁移仍在生效的 H 条目**（改来源或并入其他 H 条目），再删文件；`constraint-check` 拦截孤儿。
+- `.trae/rules/agent.md` 与 `AGENTS.md`「需求移除 / 变更」节补：删除 ADR 前**先迁移仍在生效的 H 条目**（改来源或并入其他 H 条目），再删文件；`constraint-check` 拦截孤儿。
 - 存量回填（P2）：ADR 0004 I1/I3/I6（权限不变量）、0025 只读守卫、0086 引用闭包等长期不变量登记入台账；一次性人工确认。
 
 ### 7. 测试清单
@@ -149,7 +149,7 @@ CI 不需要单独改动：`check-docs` / `check-fast` 已在双 CI 与 `make ch
 | D4 | 机器校验载体 | 新增独立脚本 `check_constraints.py`，并入 `check-docs` + `check-fast` | 职责单一；文档级门禁即可拦截，秒级成本 | 并入 `check_adr_landing.py`（ADR 校验与约束校验职责混杂）；纯文档约定（无机器裁判，违背「门禁即裁判」原则） | `scripts/check_constraints.py`、`Makefile` |
 | D5 | 变更流程 | H 条目增删改须人工确认，LLM 不得自行放宽 | 硬约束本质是护栏；放宽即口径变更，视同 S2 | 允许 LLM 自行登记 / 放宽（护栏失去意义，与「人工卡点」原则冲突） | `AGENTS.md`「硬约束」节 |
 | D6 | 冲突处理 | 两条约束冲突从严执行；约束与 ADR 口径冲突先改 ADR + 台账再写码 | 与门禁分级 fail-safe（拿不准按 L2）一致 | 以最新文档为准（时间序不可靠，漂移源头） | `AGENTS.md`「硬约束」节、`docs/CONSTRAINTS.md` 使用方式节 |
-| D7 | ADR 删除联动 | 删除 ADR 前先迁移仍在生效的 H 条目；脚本校验来源 ADR 存在 | 兑现「ADR 直接删除不留 Superseded」策略下长期不变量不失载体（I3） | 保留 Superseded / Deprecated 文档承载旧不变量（违反本仓既定删除策略） | `docs/adr/TEMPLATE.md`、`.trae/rules/design.md` |
+| D7 | ADR 删除联动 | 删除 ADR 前先迁移仍在生效的 H 条目；脚本校验来源 ADR 存在 | 兑现「ADR 直接删除不留 Superseded」策略下长期不变量不失载体（I3） | 保留 Superseded / Deprecated 文档承载旧不变量（违反本仓既定删除策略） | `docs/adr/TEMPLATE.md`、`.trae/rules/agent.md` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -170,16 +170,16 @@ CI 不需要单独改动：`check-docs` / `check-fast` 已在双 CI 与 `make ch
 | 轴 | 载体 | 决定 | 由谁 |
 |---|---|---|---|
 | 硬约束编号 | `docs/CONSTRAINTS.md` | 唯一编号源，ADR / rules / AGENTS 引用 H# | ADR 0119 |
-| ADR 生命周期 | `docs/adr/` + `.trae/rules/design.md` | 删除前迁移仍生效 H 条目，脚本拦截孤儿 | ADR 0119 |
+| ADR 生命周期 | `docs/adr/` + `.trae/rules/agent.md` | 删除前迁移仍生效 H 条目，脚本拦截孤儿 | ADR 0119 |
 | 权限不变量表述 | `docs/adr/0004` I1/I3/I6 | 长期不变量回填台账（来源标 ADR 0004 I#），ADR 正文仍是判定细节权威 | ADR 0119 |
 
 ## 落地状态（随实现更新）
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `docs/CONSTRAINTS.md`、`AGENTS.md`、`.trae/rules/design.md`、`.trae/rules/dev-workflow.md`、`.trae/rules/testing.md`、`docs/AI_DRIVEN_DEV_FLOW.md`、`CONTEXT.md` | `scripts/check_constraints.py` | f0525ff2 |
+| P0 | 已落地 | `docs/CONSTRAINTS.md`、`AGENTS.md`、`.trae/rules/agent.md`、`docs/AI_DRIVEN_DEV_FLOW.md`、`CONTEXT.md` | `scripts/check_constraints.py` | f0525ff2 |
 | P1 | 已落地 | `scripts/check_constraints.py`、`Makefile` | `tests/test_check_constraints.py` | f0525ff2 |
-| P2 | 已落地 | `docs/adr/TEMPLATE.md`、`.trae/rules/design.md`、`AGENTS.md` | `scripts/check_constraints.py` | f0525ff2 |
+| P2 | 已落地 | `docs/adr/TEMPLATE.md`、`.trae/rules/agent.md`、`AGENTS.md` | `scripts/check_constraints.py` | f0525ff2 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
