@@ -2,7 +2,7 @@
  */
 
 import { useMemo } from 'react'
-import { Alert, Button, Checkbox, Collapse, Empty, Space, Tag, Typography } from 'antd'
+import { Alert, Button, Checkbox, Collapse, Empty, Tag, Typography } from 'antd'
 import type { TemplatePreview, WorkspaceTemplate } from '@/api'
 import type { DraftIssue, TemplateDraft } from './templateDraft'
 import { draftToSpec } from './templateDraft'
@@ -94,10 +94,19 @@ export default function TemplateCheckPanel({
 
       <Collapse
         size="small"
-        style={{ marginTop: 16 }}
+        className="cn-tpl-structure-collapse"
+        defaultActiveKey={['structure']}
+        style={{ marginTop: 12 }}
         items={[{
           key: 'structure',
-          label: '结构预览（只读）',
+          label: (
+            <span>
+              结构预览（只读）
+              <Text type="secondary" className="cn-tpl-structure-count">
+                表单 {draft.forms.length} · 文档 {draft.documents.length} · 阶段 {draft.stages.length} · 流程 {draft.flows.length}
+              </Text>
+            </span>
+          ),
           children: <>
             {draft.forms.length || draft.documents.length
               ? <TemplateDetail template={pseudoTemplate} />
@@ -105,15 +114,6 @@ export default function TemplateCheckPanel({
           </>,
         }]}
       />
-      <Space size={4} wrap style={{ marginTop: 12 }}>
-        <Text type="secondary">表单 {draft.forms.length}</Text>
-        <Text type="secondary">·</Text>
-        <Text type="secondary">文档 {draft.documents.length}</Text>
-        <Text type="secondary">·</Text>
-        <Text type="secondary">阶段 {draft.stages.length}</Text>
-        <Text type="secondary">·</Text>
-        <Text type="secondary">流程 {draft.flows.length}</Text>
-      </Space>
     </div>
   )
 }

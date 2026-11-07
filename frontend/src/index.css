@@ -8919,7 +8919,7 @@ body.cn-doc-focus-view .cn-doc-stats {
 
 .cn-tpl-editor {
   display: grid;
-  grid-template-columns: 208px minmax(0, 1fr) 360px;
+  grid-template-columns: 208px minmax(0, 1fr) clamp(480px, 36vw, 680px);
   height: calc(100vh - 56px);
   min-height: 0;
   background: var(--cn-bg-page);
@@ -9204,6 +9204,111 @@ body.cn-doc-focus-view .cn-doc-stats {
 
 .cn-tpl-issue:hover {
   border-color: var(--cn-error);
+}
+
+/* 检查面板：变更 diff / 影响工作区 / 结构预览布局（ADR 0121） */
+.cn-tpl-check-panel .cn-tpl-preview-alert .ant-alert-message {
+  font-size: var(--cn-text-sm);
+}
+
+.cn-tpl-preview-impact-lines {
+  font-size: var(--cn-text-sm);
+  line-height: 1.6;
+}
+
+.cn-tpl-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-sm);
+  margin: 10px 0 6px;
+}
+
+.cn-tpl-preview-counts .ant-tag {
+  margin-inline-end: 0;
+}
+
+.cn-tpl-preview-table .ant-table-thead > tr > th {
+  padding: 4px 8px;
+  font-size: var(--cn-text-xs);
+}
+
+.cn-tpl-preview-table .ant-table-tbody > tr > td {
+  padding: 4px 8px;
+  vertical-align: top;
+}
+
+.cn-tpl-preview-table .ant-tag {
+  margin-inline-end: 0;
+}
+
+.cn-tpl-preview-msg {
+  min-width: 0;
+  font-size: var(--cn-text-sm);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.cn-tpl-impact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.cn-tpl-impact-card {
+  padding: 6px 8px;
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-subtle);
+}
+
+.cn-tpl-impact-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: var(--cn-text-sm);
+}
+
+.cn-tpl-impact-changes {
+  margin: 4px 0 0;
+  padding-inline-start: 16px;
+  font-size: var(--cn-text-xs);
+  line-height: 1.6;
+}
+
+.cn-tpl-structure-count {
+  margin-inline-start: 8px;
+  font-size: var(--cn-text-xs);
+  font-weight: 400;
+}
+
+/* 只读结构页签在窄面板里保持紧凑，长标签横向滚动 */
+.cn-tpl-check-panel .ant-tabs-nav {
+  margin-bottom: 6px;
+}
+
+.cn-tpl-check-panel .ant-tabs-tab {
+  padding: 4px 6px;
+  font-size: var(--cn-text-xs);
+}
+
+.cn-tpl-check-panel .ant-tabs-tab + .ant-tabs-tab {
+  margin-inline-start: 4px;
+}
+
+.cn-tpl-check-panel .cn-tpl-detail-timeline {
+  padding-inline-start: var(--cn-space-sm);
+}
+
+.cn-tpl-structure-collapse .ant-collapse-header {
+  align-items: center;
+}
+
+.cn-tpl-structure-collapse .ant-collapse-content-box {
+  padding: var(--cn-space-sm) var(--cn-space-md);
 }
 
 @media (max-width: 1199.98px) {
