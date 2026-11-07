@@ -166,6 +166,23 @@ describe('saveThemeMode / getThemeConfig', () => {
   })
 })
 
+describe('选中态底色可辨识性', () => {
+  it('10 套主题都声明 --cn-bg-selected / -strong，文字选区使用强选中底色', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf-8')
+    for (const mode of THEME_MODES) {
+      const bodyClass = THEME_META[mode].bodyClass
+      const start = css.indexOf(`body.${bodyClass}`)
+      expect(start, mode).toBeGreaterThan(-1)
+      const block = css.slice(start, css.indexOf('}', start))
+      expect(block, mode).toContain('--cn-bg-selected:')
+      expect(block, mode).toContain('--cn-bg-selected-strong:')
+    }
+    expect(css).toContain('background-color: var(--cn-bg-selected-strong);')
+    // 旧代码的 --cn-primary-bg 语义别名必须存在，否则内联选中背景会失效
+    expect(css).toContain('--cn-primary-bg: var(--cn-bg-selected);')
+  })
+})
+
 describe('深色主题 Segmented 激活项可读性', () => {
   it('标签文字色兜底不得命中激活项，避免灰字压主题色滑块', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf-8')

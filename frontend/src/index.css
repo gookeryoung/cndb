@@ -107,8 +107,8 @@ body {
  * 故必须写 background-color；透明度低于 30% 在浅色 / 极简主题的白底上
  * 近乎不可见，统一抬到 32%（与浏览器默认选区亮度对齐）。 */
 ::selection {
-  background-color: var(--cn-mix-brand-color-32-transparent, rgba(59, 130, 246, 0.32));
-  background-color: color-mix(in srgb, var(--cn-brand-color) 32%, transparent);
+  background-color: var(--cn-bg-selected-strong);
+  color: var(--cn-text-primary);
 }
 
 /* 确保 Ant Design Layout 没有默认边距 */
@@ -187,6 +187,8 @@ body.theme-modern {
   --cn-text-muted: #9ca3af;
   --cn-text-disabled: #d1d5db;
   --cn-brand-color: #3b82f6;
+  --cn-bg-selected: #e8f0fe;
+  --cn-bg-selected-strong: #cfe0fd;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -229,6 +231,8 @@ body.theme-dark {
   --cn-text-muted: #6e7681;
   --cn-text-disabled: #484f58;
   --cn-brand-color: #58a6ff;
+  --cn-bg-selected: #23364d;
+  --cn-bg-selected-strong: #2f5378;
   --cn-bg-danger-subtle: #3b1313;
   --cn-bg-warning-subtle: #3b2e12;
   --cn-bg-success-subtle: #122b13;
@@ -268,6 +272,8 @@ body.theme-github-light {
   --cn-text-muted: #6e7781;
   --cn-text-disabled: #d0d7de;
   --cn-brand-color: #0969da;
+  --cn-bg-selected: #ddf4ff;
+  --cn-bg-selected-strong: #b6e3ff;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -287,6 +293,8 @@ body.theme-minimal {
   --cn-text-muted: #a3a3a3;
   --cn-text-disabled: #d4d4d4;
   --cn-brand-color: #525252;
+  --cn-bg-selected: #e5e5e5;
+  --cn-bg-selected-strong: #cfcfcf;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -307,6 +315,8 @@ body.theme-ocean {
   --cn-text-muted: #8aa7b0;
   --cn-text-disabled: #c2d6dd;
   --cn-brand-color: #0891b2;
+  --cn-bg-selected: #e0f2f6;
+  --cn-bg-selected-strong: #b9e4ee;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -327,6 +337,8 @@ body.theme-forest {
   --cn-text-muted: #8fa894;
   --cn-text-disabled: #c6d8ca;
   --cn-brand-color: #16a34a;
+  --cn-bg-selected: #e3f4e8;
+  --cn-bg-selected-strong: #c3e8ce;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -347,6 +359,8 @@ body.theme-sepia {
   --cn-text-muted: #a89878;
   --cn-text-disabled: #d3c7a8;
   --cn-brand-color: #a16207;
+  --cn-bg-selected: #f3e9d2;
+  --cn-bg-selected-strong: #e7d5ad;
   --cn-bg-danger-subtle: #f9e8d9;
   --cn-bg-warning-subtle: #f7ecd0;
   --cn-bg-success-subtle: #f6ffed;
@@ -367,6 +381,8 @@ body.theme-sakura {
   --cn-text-muted: #bfa3b2;
   --cn-text-disabled: #e8d3de;
   --cn-brand-color: #db2777;
+  --cn-bg-selected: #fbe3ee;
+  --cn-bg-selected-strong: #f6c2da;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fff7fa;
   --cn-bg-success-subtle: #f6ffed;
@@ -387,6 +403,8 @@ body.theme-midnight {
   --cn-text-muted: #7d749c;
   --cn-text-disabled: #4a4366;
   --cn-brand-color: #a78bfa;
+  --cn-bg-selected: #332b4d;
+  --cn-bg-selected-strong: #453a6b;
   --cn-bg-danger-subtle: #421c2e;
   --cn-bg-warning-subtle: #3d2f16;
   --cn-bg-success-subtle: #14301e;
@@ -407,9 +425,16 @@ body.theme-oled {
   --cn-text-muted: #737373;
   --cn-text-disabled: #404040;
   --cn-brand-color: #22d3ee;
+  --cn-bg-selected: #0f3038;
+  --cn-bg-selected-strong: #14505a;
   --cn-bg-danger-subtle: #2d1212;
   --cn-bg-warning-subtle: #2e2410;
   --cn-bg-success-subtle: #0f2412;
+}
+
+/* 语义选中底色 —— 旧代码里的 --cn-primary-bg 统一映射到当前主题的选中底色 */
+body {
+  --cn-primary-bg: var(--cn-bg-selected);
 }
 
 /* ─────────────── 认证页固定深色舞台（ADR 0016 D7） ───────────────
@@ -913,6 +938,23 @@ body.theme-oled {
   height: 18px;
   border-radius: 0 var(--cn-radius-sm) var(--cn-radius-sm) 0;
   background: var(--cn-brand-color);
+}
+
+/* 选中态统一底色 —— antd 默认 controlItemBgActive 在浅色 / 部分主题下与容器底过近，
+ * 列表选中项、下拉选中项、树节点、表格选中行统一使用语义变量，保证与未选中项有明显背景差。 */
+.ant-menu-item-selected,
+.ant-dropdown-menu-item-selected,
+.ant-select-item-option-selected:not(.ant-select-item-option-disabled),
+.ant-cascader-menu-item-active,
+.ant-tree-node-selected,
+.ant-list-item-selected,
+.ant-table-tbody > tr.ant-table-row-selected > td {
+  background-color: var(--cn-bg-selected) !important;
+}
+
+.ant-select-item-option-selected:not(.ant-select-item-option-disabled) {
+  color: var(--cn-brand-color);
+  font-weight: var(--cn-weight-medium);
 }
 
 /* 工作区分页 Tabs：品牌色圆角墨条 + 悬停过渡 */
@@ -2359,12 +2401,12 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 .settings-modal-tabs.is-side > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
-  background: var(--cn-bg-subtle);
+  background: var(--cn-bg-selected);
   box-shadow: inset 2px 0 0 var(--cn-brand-color);
 }
 
 .settings-modal-tabs.is-side > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
-  color: var(--cn-text-primary);
+  color: var(--cn-brand-color);
   font-weight: var(--cn-weight-semibold);
 }
 
