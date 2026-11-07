@@ -8898,6 +8898,12 @@ body.cn-doc-focus-view .cn-doc-stats {
   padding-inline-end: var(--cn-space-xs);
 }
 
+/* 流程阶段 / 端到端流程时间轴：圆点不贴页签左边缘 */
+.cn-tpl-detail-timeline {
+  padding-inline-start: var(--cn-space-lg);
+  padding-block-start: var(--cn-space-xs);
+}
+
 @media (max-width: 767.98px) {
   /* 双栏在窄屏纵向堆叠（与修改申请列表页一致） */
   .cn-tpl-page .cn-qc-split {

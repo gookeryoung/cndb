@@ -70,7 +70,7 @@ export default function TemplateDetail({ template }: { template: WorkspaceTempla
         {
           key: 'stages',
           label: <span><ApartmentOutlined /> 流程阶段</span>,
-          children: spec.stages.length ? <Timeline items={stageItems} /> : <Empty />,
+          children: spec.stages.length ? <Timeline className="cn-tpl-detail-timeline" items={stageItems} /> : <Empty />,
         },
         {
           key: 'forms',
@@ -99,6 +99,7 @@ export default function TemplateDetail({ template }: { template: WorkspaceTempla
                   <div>
                     <Paragraph type="secondary" style={{ marginBottom: 8 }}>{flow.description || '—'}</Paragraph>
                     <Timeline
+                      className="cn-tpl-detail-timeline"
                       items={flow.steps.map((step, index) => ({
                         color: step.form ? 'blue' : 'gray',
                         children: (
