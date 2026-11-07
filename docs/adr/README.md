@@ -29,8 +29,9 @@
 | [0055](0055-header-brand-version.md) | 顶栏品牌字右侧显示应用版本小字 | Implemented | P0-P1 已落地（2026-11-02 人工确认） | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css` | `frontend/src/layouts/MainLayout.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0074](0074-react19-antd6-upgrade.md) | 前端迁移 React 19 + antd 6 | Implemented | P0-P2 已落地（含 List→Listy 迁移专项，e14d48b0） | `frontend/package.json`、`frontend/patches/`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/pages/**` | `frontend/src/theme/ThemeProvider.compat.test.tsx`、`frontend/tests/e2e/critical/antd-deprecation.spec.ts` | [未发布](../../CHANGELOG.md) |
 | [0116](0116-frontend-performance-program.md) | 前端性能提升专项（首屏 / 文档按需加载 / 路由预取 / 性能门禁） | Accepted | P0-P2 已落地，P3 进行中（2026-11-06） | `frontend/src/main.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/scripts/bundle-budget.mjs` | `frontend/tests/e2e/perf/journeys.spec.ts` | [未发布](../../CHANGELOG.md) |
+| [0117](0117-legacy-browser-performance.md) | 低版本浏览器性能专项（Chromium 81 交互时延与兜底成本） | Proposed | 未开始（P1 主题部分进行中） | `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend/src/compat/flexGap.ts`、`frontend/scripts/chrome81-smoke.mjs` | `frontend/src/theme/themeMix.test.ts`、`frontend/src/compat/flexGap.test.ts` | [未发布](../../CHANGELOG.md) |
 
-承接关系：0074 取代 0026 的版本前提（React 19 + antd 6 不承诺旧内核，冒烟仍是兜底）；0031 的字重 / 字体口径被 `docs/DESIGN_SYSTEM.md` 引用；0116 在 0046 的读路径优化上补前端预取与性能门禁，字体字重调整以 0031 的排版 token 为界。
+承接关系：0074 取代 0026 的版本前提（React 19 + antd 6 不承诺旧内核，冒烟仍是兜底）；0031 的字重 / 字体口径被 `docs/DESIGN_SYSTEM.md` 引用；0116 在 0046 的读路径优化上补前端预取与性能门禁，字体字重调整以 0031 的排版 token 为界；0117 在 0026 的兼容基线上补旧内核交互时延与兜底成本口径，与 0116 的现代内核首屏 / 预取并行。
 
 ## 工作区、权限与账号
 
