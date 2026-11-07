@@ -53,7 +53,8 @@ test.describe("密码管理", () => {
             await user.page.getByLabel("当前密码").fill("pw1234");
             await user.page.getByLabel("新密码", { exact: true }).fill("newpass123");
             await user.page.getByLabel("确认新密码").fill("newpass123");
-            await user.page.getByRole("button", { name: /修改密码/ }).click();
+            // 设置页改为 GitHub 风格分区后，资料与密码共用底部「更新资料」按钮
+            await user.page.getByRole("button", { name: "更新资料" }).click();
 
             // 服务端吊销全部会话 + 本地登出 → 回到登录页
             await expect(user.page).toHaveURL(/\/login/, { timeout: 15_000 });
