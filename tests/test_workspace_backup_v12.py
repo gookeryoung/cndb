@@ -43,7 +43,7 @@ class TestBackupV12Modules:
 
         archive = parse_workspace_archive(archive_file)
         try:
-            assert archive.backup["version"] == "13"
+            assert archive.backup["version"] == "14"
             assert archive.backup["workspace"]["modules"] == ["tables", "design"]
             assert "workspace_type" not in archive.backup["workspace"]
         finally:
@@ -134,7 +134,7 @@ class TestArchiveInspect:
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["workspace_name"] == "预检归档"
-        assert body["backup_version"] == "13"
+        assert body["backup_version"] == "14"
         assert body["include_secrets"] is True
         assert body["stats"]["tables"] == 0
         assert body["existing_workspace"] == {"id": ws["id"], "name": "预检归档", "role": "owner"}

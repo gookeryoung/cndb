@@ -157,7 +157,7 @@ class TestArchiveStructure:
             assert m["version"] == "1"
             assert m["include_secrets"] is True
             backup = archive.backup
-            assert backup["version"] == "13"
+            assert backup["version"] == "14"
             assert backup["include_secrets"] is True
             # v10：流水线定义随备份导出
             assert backup["pipelines"][0]["name"] == "库存巡检"

@@ -85,11 +85,11 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13"):
+    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13）。"
+                f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14）。"
                 "请升级程序后再导入。"
             ),
         )
@@ -1139,20 +1139,105 @@ def _import_designs(
     current_user: User,
     db: Session,
 ) -> tuple[int, list[str]]:
-    """还原设计文件库（v13，ADR 0079 D9 / 0086 D11），返回 (成功数, 错误明细).
+    """还原设计文件库（v14，ADR 0079 D9 / 0086 D11 / 0118 D9），返回 (成功数, 错误明细).
 
     - 两阶段注入（与种子同口径）：先建全部文件行（kind / file_key / folder），
       再按工作区身份编译 ``use`` 引用——装配依赖的零件行先于编译存在；
+    - 备份携带的 ``library_refs[]`` 先写工作区级 ``design_library_vendor``
+      （幂等 upsert），库解析优先级为「当前环境同自然键且哈希一致的模块版本
+      → vendor 快照 → 缺失诊断」（ADR 0118 §9）；
     - 同名设计已存在则跳过（与表 / 文档 / 流水线的幂等口径一致）；
     - 不导入 ``compiled`` 快照，按 ``content`` + resolver 重新编译（唯一入口）；
     - 版本行按备份携带的 ``version_number`` / ``content`` / ``comment`` /
       ``dependencies`` 重建，逐版按快照闭包编译；单条非法跳过并记错误，
       不阻断整体导入。
     """
-    from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
+    from cndb.plugins.design.models import DesignDesign, DesignDesignVersion, DesignLibraryVendor
     from cndb.plugins.design.services.dsl.compile import compile_design
-    from cndb.plugins.design.services.dsl.nodes import FileSource
+    from cndb.plugins.design.services.dsl.nodes import FileSource, LibrarySource
+    from cndb.plugins.design.services.files import build_library_resolver, direct_library_refs
     from cndb.plugins.design.services.keys import generate_file_key
+
+    # ── 阶段零：内置模块快照写 vendor（幂等 upsert；v13 及更旧备份无此段，行为不变）──
+    vendor_map: dict[tuple[str, int], DesignLibraryVendor] = {}
+    expected_hash: dict[tuple[str, int], str] = {}
+    for ref in json_data.get("library_refs") or []:
+        if not isinstance(ref, dict):
+            continue
+        module_key = str(ref.get("module_key") or "").strip()
+        content_hash = str(ref.get("content_hash") or "")
+        try:
+            version_number = int(ref.get("version_number") or 0)
+        except (TypeError, ValueError):
+            continue
+        if not module_key or version_number <= 0 or not content_hash:
+            continue
+        expected_hash[(module_key, version_number)] = content_hash
+        vendor = (
+            db.query(DesignLibraryVendor)
+            .filter(
+                DesignLibraryVendor.workspace_id == workspace_id,
+                DesignLibraryVendor.module_key == module_key,
+                DesignLibraryVendor.version_number == version_number,
+                DesignLibraryVendor.content_hash == content_hash,
+            )
+            .first()
+        )
+        if vendor is None:
+            vendor = DesignLibraryVendor(
+                workspace_id=workspace_id,
+                module_key=module_key,
+                version_number=version_number,
+                content_hash=content_hash,
+                bundle_hash=str(ref.get("bundle_hash") or ""),
+                content=str(ref.get("content") or ""),
+                files=list(ref.get("files") or []),
+                params=list(ref.get("params") or []),
+            )
+            db.add(vendor)
+            db.flush()
+        vendor_map[(module_key, version_number)] = vendor
+
+    # 库解析优先级（ADR 0118 §9）：环境模块（哈希一致）→ vendor 快照 → 缺失诊断。
+    # granted_keys 放行全部备份引用：恢复语义等同「既有引用」，不受可见性 / 归档拦截。
+    env_library = (
+        build_library_resolver(db, workspace_id, granted_keys=frozenset(expected_hash)) if expected_hash else None
+    )
+
+    def _library_resolve(module_key: str, version_number: int) -> LibrarySource | None:
+        want_hash = expected_hash.get((module_key, version_number))
+        if env_library is not None:
+            source = env_library(module_key, version_number)
+            if source is not None and source.content_hash == want_hash:
+                return source
+        vendor = vendor_map.get((module_key, version_number))
+        if vendor is None or vendor.content_hash != want_hash:
+            return None
+        files = tuple(
+            FileSource(
+                file_id=0,
+                file_key=str(f.get("file_key") or ""),
+                kind=str(f.get("kind") or "part"),
+                content=str(f.get("content") or ""),
+                version_number=version_number,
+                content_hash=str(f.get("content_hash") or ""),
+                source="library",
+                module_version_id=0,
+            )
+            for f in (vendor.files or [])
+            if isinstance(f, dict)
+        )
+        return LibrarySource(
+            module_id=0,
+            module_version_id=0,
+            module_key=module_key,
+            version_number=version_number,
+            content=vendor.content,
+            content_hash=vendor.content_hash,
+            bundle_hash=vendor.bundle_hash,
+            files=files,
+            params=tuple(p for p in (vendor.params or []) if isinstance(p, dict)),
+        )
 
     items = [item for item in (json_data.get("designs") or []) if isinstance(item, dict)]
     if not items:
@@ -1234,7 +1319,13 @@ def _import_designs(
     for entry in list(created.values()):
         design: DesignDesign = entry["design"]
         versions = entry["versions"]
-        result = compile_design(design.content, file_kind=design.kind, file_id=design.id, resolver=_resolve)
+        result = compile_design(
+            design.content,
+            file_kind=design.kind,
+            file_id=design.id,
+            resolver=_resolve,
+            library_resolver=_library_resolve if expected_hash else None,
+        )
         if not result.ok:
             # 阶段一为解析引用预建的行回滚删除（旧口径：非法 DSL 零残留、计失败）
             db.delete(design)
@@ -1246,10 +1337,15 @@ def _import_designs(
             continue
         deps = [
             {
-                "file_id": d.file_id,
+                "source": d.source,
                 "file_key": d.file_key,
                 "version_number": d.version_number,
                 "content_hash": d.content_hash,
+                **(
+                    {"module_id": d.module_id, "module_version_id": d.module_version_id, "bundle_hash": d.bundle_hash}
+                    if d.source == "library"
+                    else {"file_id": d.file_id}
+                ),
             }
             for d in result.dependencies
         ]
@@ -1262,23 +1358,33 @@ def _import_designs(
             snapshot = {
                 str(dep["file_key"]): int(dep["version_number"])
                 for dep in (v.get("dependencies") or [])
-                if isinstance(dep, dict) and dep.get("file_key")
+                if isinstance(dep, dict) and dep.get("file_key") and dep.get("source") != "library"
             }
             version_result = compile_design(
                 str(v.get("content") or ""),
                 file_kind=design.kind,
                 file_id=design.id,
                 resolver=_resolve_pinned(snapshot) if snapshot else _resolve,
+                library_resolver=_library_resolve if expected_hash else None,
             )
             if not version_result.ok or version_result.ir is None:
                 errors.append(f"设计 {design.title} 的 v{v.get('version_number')} 版本跳过（DSL 非法）")
                 continue
             version_deps = [
                 {
-                    "file_id": d.file_id,
+                    "source": d.source,
                     "file_key": d.file_key,
                     "version_number": d.version_number,
                     "content_hash": d.content_hash,
+                    **(
+                        {
+                            "module_id": d.module_id,
+                            "module_version_id": d.module_version_id,
+                            "bundle_hash": d.bundle_hash,
+                        }
+                        if d.source == "library"
+                        else {"file_id": d.file_id}
+                    ),
                 }
                 for d in version_result.dependencies
             ]
@@ -1310,10 +1416,10 @@ def _import_designs(
                     created_by_id=current_user.id,
                 )
             )
-        # 直接引用索引（导入后删除阻断立即可用）
+        # 直接引用索引（导入后删除阻断立即可用；lib: 引用能解析到模块行时落 design_libraryref）
         from cndb.plugins.design.services.files import direct_use_keys, sync_refs
 
-        sync_refs(db, design, direct_use_keys(design.content))
+        sync_refs(db, design, direct_use_keys(design.content), direct_library_refs(design.content))
     if imported:
         db.commit()
     return imported, errors

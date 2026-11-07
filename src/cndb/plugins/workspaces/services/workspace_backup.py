@@ -1,5 +1,10 @@
 """工作区全量备份（ADR 0075）：v13 备份构建器 + tar.gz 归档打包/解包.
 
+v14 在 v13 基础上新增顶层 ``library_refs[]``（复用模块已锁定快照，ADR 0118 D9）：
+扫描 designs 依赖快照中 ``source=library`` 条目，按自然键去重后内置
+``{module_key, version_number, content_hash, bundle_hash, content, files, params}``；
+模块本体不导出，导入端写 ``design_library_vendor`` 供离线编译。
+
 v13 在 v12 基础上扩展 designs 文件身份 / 依赖闭包（ADR 0086 D11）。
 
 v12 在 v11 基础上把 workspace 元数据的 ``workspace_type`` 替换为 ``modules``
@@ -43,7 +48,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError
 
-BACKUP_VERSION = "13"
+BACKUP_VERSION = "14"
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
 ARCHIVE_KIND = "workspace_backup"
@@ -607,6 +612,48 @@ def build_workspace_backup_v9(
             }
         )
 
+    # ── 复用模块快照（v14，ADR 0118 D9/C9）：内置已锁定 lib: 引用，模块本体不导出 ──
+    from cndb.plugins.design.models import DesignLibraryModule, DesignLibraryVersion
+
+    seen_library_refs: set[tuple[str, int, str]] = set()
+    library_refs_data: list[dict[str, Any]] = []
+    for dep_entries in [list(d.dependencies or []) for d in design_rows] + [
+        list(v.get("dependencies") or []) for vs in versions_by_design.values() for v in vs
+    ]:
+        for dep in dep_entries:
+            if not isinstance(dep, dict) or dep.get("source") != "library":
+                continue
+            module_key = str(dep.get("module_key") or dep.get("file_key") or "")
+            version_number = int(dep.get("version_number") or 0)
+            content_hash = str(dep.get("content_hash") or "")
+            dedupe = (module_key, version_number, content_hash)
+            if not module_key or version_number <= 0 or dedupe in seen_library_refs:
+                continue
+            seen_library_refs.add(dedupe)
+            row = (
+                db.query(DesignLibraryVersion)
+                .join(DesignLibraryModule, DesignLibraryModule.id == DesignLibraryVersion.module_id)
+                .filter(
+                    DesignLibraryModule.module_key == module_key,
+                    DesignLibraryVersion.version_number == version_number,
+                )
+                .first()
+            )
+            if row is None:
+                # 源环境模块版本已缺失：无法内置快照，导入端按缺失诊断
+                continue
+            library_refs_data.append(
+                {
+                    "module_key": module_key,
+                    "version_number": version_number,
+                    "content_hash": row.content_hash,
+                    "bundle_hash": row.bundle_hash,
+                    "content": row.content,
+                    "files": list(row.files or []),
+                    "params": list(row.params or []),
+                }
+            )
+
     backup = {
         "version": BACKUP_VERSION,
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
@@ -623,6 +670,7 @@ def build_workspace_backup_v9(
         "charts": charts_data,
         "pipelines": pipelines_data,
         "designs": designs_data,
+        "library_refs": library_refs_data,
         "include_secrets": include_secrets,
     }
     return backup, files
@@ -644,6 +692,7 @@ def downsample_v8(backup_v9: dict[str, Any]) -> dict[str, Any]:
         "file_owners",
         "pipelines",
         "designs",
+        "library_refs",
         "include_secrets",
     ):
         data.pop(key, None)
@@ -691,6 +740,7 @@ def build_manifest(backup: dict[str, Any], file_count: int) -> dict[str, Any]:
             "sync_jobs": len(backup.get("sync_jobs", [])),
             "pipelines": len(backup.get("pipelines", [])),
             "designs": len(backup.get("designs", [])),
+            "library_refs": len(backup.get("library_refs", [])),
             "files": file_count,
         },
     }
