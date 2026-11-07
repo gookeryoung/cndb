@@ -73,7 +73,7 @@ export default function WorkspaceBackupDialog({ open, wid, workspaceName, onClos
         <Space style={{ width: '100%', justifyContent: 'space-between', marginBottom: 8 }}>
           <Space>
             <Switch checked={includeSecrets} onChange={setIncludeSecrets} />
-            <Text type={includeSecrets ? 'warning' : 'secondary'} style={{ fontSize: 13 }}>
+            <Text type={includeSecrets ? 'warning' : 'secondary'} style={{ fontSize: 'var(--cn-text-sm)' }}>
               包含数据源密钥{includeSecrets ? '（导出文件含敏感信息）' : '（导出后密钥为空）'}
             </Text>
           </Space>

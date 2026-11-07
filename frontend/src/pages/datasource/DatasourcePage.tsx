@@ -1060,14 +1060,14 @@ function JobDrawer({
                 label="请求头（JSON）"
                 tooltip='如 {"Authorization": "Bearer {api_key}"}；键值必须是字符串'
               >
-                <Input.TextArea rows={2} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 12 }} />
+                <Input.TextArea rows={2} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 'var(--cn-text-xs)' }} />
               </Form.Item>
               <Form.Item
                 name="push_body_json"
                 label="请求体模板（JSON，可选）"
                 tooltip='留空发送 {"rows":[...]}；可用 {"data":"{rows}","count":"{count}","source":"{table}"}'
               >
-                <Input.TextArea rows={3} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 12 }} />
+                <Input.TextArea rows={3} style={{ fontFamily: 'var(--cn-font-mono, monospace)', fontSize: 'var(--cn-text-xs)' }} />
               </Form.Item>
               <div className="cn-datasource-form-row">
                 <Form.Item name="schedule_mode" label="调度" style={{ width: 140 }}>
@@ -1139,7 +1139,7 @@ function JobDrawer({
                 >
                   推荐提示词（{LLM_PROMPT_PRESETS.length} 组）
                 </Button>
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                   选择典型场景一键填入，再按需修改；每组含建议目标表字段与幂等键
                 </Text>
               </Space>
@@ -1765,7 +1765,7 @@ function SessionModal({
             <Button size="small" type="primary" icon={<PlusOutlined />} data-testid="datasource-session-new" onClick={openCreate}>
               新建会话
             </Button>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
               密钥加密存储，读接口只回显键名；不随工作区导出
             </Text>
           </div>
@@ -1792,7 +1792,7 @@ function SessionModal({
                       ))}
                     </Space>
                   ) : (
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                       未配置
                     </Text>
                   ),
@@ -1974,7 +1974,7 @@ function LlmPresetModal({
       styles={{ body: { maxHeight: 'min(60vh, 480px)', overflowY: 'auto' } }}
     >
       <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
           选一个典型场景一键填入用户提示词，再按需修改；点击场景名可展开适用场景与建议字段 / 幂等键。
           提示词里的 {'{{ }}'} 是 JSON 花括号的模板转义，运行时会还原为 {'{ }'}。
         </Text>
@@ -2005,11 +2005,11 @@ function LlmPresetModal({
             ),
             children: (
               <Space orientation="vertical" size={4} style={{ width: '100%' }}>
-                <Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
+                <Paragraph type="secondary" style={{ margin: 0, fontSize: 'var(--cn-text-xs)' }}>
                   {preset.description}
                 </Paragraph>
-                <Text style={{ fontSize: 12 }}>建议字段：{preset.target_fields.join(', ')}</Text>
-                <Text style={{ fontSize: 12 }}>建议幂等键：{preset.match_keys.join(', ')}</Text>
+                <Text style={{ fontSize: 'var(--cn-text-xs)' }}>建议字段：{preset.target_fields.join(', ')}</Text>
+                <Text style={{ fontSize: 'var(--cn-text-xs)' }}>建议幂等键：{preset.match_keys.join(', ')}</Text>
               </Space>
             ),
           }))}

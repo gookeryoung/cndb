@@ -34,7 +34,7 @@ export default function TransferOwnerModal({
       okButtonProps={{ disabled: !value }}
       destroyOnHidden
     >
-      <div style={{ marginBottom: 8, color: 'var(--cn-text-secondary)', fontSize: 13 }}>
+      <div style={{ marginBottom: 8, color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)' }}>
         将工作区所有权转让给下列成员。转让后您将失去所有者特权，回落到编辑者角色。
       </div>
       <Select

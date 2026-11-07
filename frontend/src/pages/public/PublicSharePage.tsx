@@ -167,11 +167,11 @@ export default function PublicSharePage() {
             {title}
           </Typography.Title>
           <Space size={8} style={{ marginTop: 6 }}>
-            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
               只读分享
             </Typography.Text>
             {updatedAt && (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                 更新于 {updatedAt}
               </Typography.Text>
             )}

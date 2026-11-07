@@ -114,7 +114,7 @@ function GalleryCard({
             <span
               style={{
                 flexShrink: 0,
-                fontSize: 12,
+                fontSize: 'var(--cn-text-xs)',
                 color: 'var(--cn-text-secondary)',
                 whiteSpace: 'nowrap',
                 lineHeight: '22px',
@@ -128,7 +128,7 @@ function GalleryCard({
       <div
         data-testid="gallery-card-title"
         style={{
-          fontSize: 15,
+          fontSize: 'calc(var(--cn-text-md) + 1px)',
           fontWeight: WEIGHT.semibold,
           lineHeight: 1.45,
           color: 'var(--cn-text-primary)',
@@ -145,7 +145,7 @@ function GalleryCard({
         <div
           data-testid="gallery-summary"
           style={{
-            fontSize: 13,
+            fontSize: 'var(--cn-text-sm)',
             lineHeight: 1.6,
             color: 'var(--cn-text-secondary)',
             whiteSpace: 'pre-wrap',
@@ -168,7 +168,7 @@ function GalleryCard({
             marginTop: 'auto',
             paddingTop: 8,
             borderTop: '1px solid var(--cn-border-soft)',
-            fontSize: 12,
+            fontSize: 'var(--cn-text-xs)',
             color: 'var(--cn-text-muted)',
           }}
         >
@@ -274,7 +274,7 @@ export default memo(function GalleryView({
       data-testid="gallery-view"
       style={{ flex: 1, minHeight: 300, overflow: 'auto', padding: '0 2px 8px' }}
     >
-      <div data-testid="gallery-count" style={{ padding: '0 2px 8px', fontSize: 12, color: 'var(--cn-text-muted)' }}>
+      <div data-testid="gallery-count" style={{ padding: '0 2px 8px', fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)' }}>
         共 {rows.length} 条
       </div>
       <div
@@ -303,7 +303,7 @@ export default memo(function GalleryView({
             加载更多（剩余 {remaining}）
           </Button>
         ) : rows.length > GALLERY_BATCH_SIZE ? (
-          <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>已显示全部</span>
+          <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)' }}>已显示全部</span>
         ) : null}
       </div>
     </div>

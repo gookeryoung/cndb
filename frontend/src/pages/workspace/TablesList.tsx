@@ -460,7 +460,7 @@ export default function TablesList() {
               <Tag
                 color="orange"
                 data-testid={`table-restricted-${record.id}`}
-                style={{ marginLeft: 8, fontSize: 11, lineHeight: '16px' }}
+                style={{ marginLeft: 8, fontSize: 'var(--cn-text-2xs)', lineHeight: '16px' }}
               >
                 受限
               </Tag>
@@ -491,7 +491,7 @@ export default function TablesList() {
             <Avatar size="small" icon={<UserOutlined />} />
             <span>
               {owner.username}
-              {isMe && <Tag color="red" style={{ marginLeft: 4, fontSize: 11, lineHeight: '16px' }}>我</Tag>}
+              {isMe && <Tag color="red" style={{ marginLeft: 4, fontSize: 'var(--cn-text-2xs)', lineHeight: '16px' }}>我</Tag>}
             </span>
           </Space>
         )
@@ -523,7 +523,7 @@ export default function TablesList() {
             size="small"
             color={(n ?? 0) > 0 ? 'var(--cn-brand-color)' : undefined}
           >
-            <TeamOutlined style={{ fontSize: 16, color: 'var(--cn-text-muted)' }} />
+            <TeamOutlined style={{ fontSize: 'var(--cn-text-lg)', color: 'var(--cn-text-muted)' }} />
           </Badge>
         </Tooltip>
       ),
@@ -559,7 +559,7 @@ export default function TablesList() {
               alignItems: 'center',
               gap: 4,
               whiteSpace: 'nowrap',
-              fontSize: 12,
+              fontSize: 'var(--cn-text-xs)',
               fontVariantNumeric: 'tabular-nums',
             }}
           >

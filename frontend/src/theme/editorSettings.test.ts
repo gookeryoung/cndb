@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_EDITOR_SETTINGS,
   EDITOR_FONT_FAMILIES,
+  EDITOR_FONT_META,
   EDITOR_FONT_SIZES,
   loadEditorSettings,
   saveEditorSettings,
@@ -27,6 +28,20 @@ describe('编辑器设置常量', () => {
   })
 })
 
+describe('编辑器字体清单', () => {
+  it('仅提供 JetBrains Mono / Cascadia Code / Maple Mono / 系统等宽', () => {
+    expect(EDITOR_FONT_FAMILIES).toEqual([
+      'jetbrains', 'cascadia-code', 'maple-mono', 'system',
+    ])
+    for (const id of EDITOR_FONT_FAMILIES) {
+      expect(EDITOR_FONT_META[id].label.length).toBeGreaterThan(0)
+      expect(EDITOR_FONT_META[id].css.length).toBeGreaterThan(0)
+    }
+    expect(EDITOR_FONT_META['cascadia-code'].css).toContain("'Cascadia Code'")
+    expect(EDITOR_FONT_META['maple-mono'].css).toContain("'Maple Mono'")
+  })
+})
+
 describe('loadEditorSettings', () => {
   it('无存储值时返回默认设置', () => {
     expect(loadEditorSettings()).toEqual(DEFAULT_EDITOR_SETTINGS)
@@ -41,6 +56,12 @@ describe('loadEditorSettings', () => {
       theme: 'one-dark',
       font: { family: 'system', size: 15 },
     })
+    // 新增字体同样可持久化回读
+    localStorage.setItem(
+      'cndb_editor_settings',
+      JSON.stringify({ theme: 'auto', font: { family: 'maple-mono', size: 'auto' } }),
+    )
+    expect(loadEditorSettings().font.family).toBe('maple-mono')
   })
 
   it('非法主题 / 字体 / 字号逐项回退默认', () => {
@@ -74,7 +95,7 @@ describe('saveEditorSettings', () => {
   it('写入后可往返读取', () => {
     const settings = {
       theme: 'high-contrast' as const,
-      font: { family: 'inter' as const, size: 13 as const },
+      font: { family: 'maple-mono' as const, size: 13 as const },
     }
     saveEditorSettings(settings)
     expect(JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}')).toEqual(settings)

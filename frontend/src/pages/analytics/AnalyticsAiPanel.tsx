@@ -15,7 +15,7 @@ import { RobotOutlined } from '@ant-design/icons'
 
 import type { AnalyticsAiTemplateSuggestion } from '@/api/analytics'
 import AiActionButton from '@/components/Ai/AiActionButton'
-import { SPACE, TEXT } from '@/theme/tokens'
+import { SPACE } from '@/theme/tokens'
 import SectionBox from '@/components/SectionBox'
 import { suggestionWarnings } from './analyticsAi'
 
@@ -62,7 +62,7 @@ export function AnalyticsAiPanel({
         extra={<span className="cn-an-muted">AI 只生成建议，不自动保存</span>}
       >
         <Space orientation="vertical" size={SPACE.md} style={{ width: '100%' }}>
-          <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
             描述想看的分析，AI 会把公式 / 图表 / 分组汇总填进下方编辑区；
             例如「按月份看各城市的平均气温，并标出温差最大的三个城市」。
           </Text>
@@ -92,7 +92,7 @@ export function AnalyticsAiPanel({
               ariaLabel="用一句话生成分析"
               testId="analytics-ai-generate"
             />
-            <Text type="secondary" style={{ fontSize: TEXT['2xs'] }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>
               问题越具体（指标、维度、排序）生成的配置越贴合；结果需你确认后保存。
             </Text>
           </Space>
@@ -128,7 +128,7 @@ export function AnalyticsAiPanel({
                 description={
                   <ul style={{ margin: 0, paddingInlineStart: SPACE.xl }}>
                     {warnings.map(item => (
-                      <li key={item} style={{ fontSize: TEXT.xs }}>{item}</li>
+                      <li key={item} style={{ fontSize: 'var(--cn-text-xs)' }}>{item}</li>
                     ))}
                   </ul>
                 }

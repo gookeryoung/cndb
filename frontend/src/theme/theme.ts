@@ -34,6 +34,7 @@ export {
   FONT_SCALE_META,
   FONT_SCALES,
   loadFontSettings,
+  resolveTextVars,
   saveFontSettings,
 } from './fonts'
 export type { FontScale, FontScaleMeta, FontSettings } from './fonts'

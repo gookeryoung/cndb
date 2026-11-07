@@ -50,7 +50,7 @@ export default function AddMemberModal({
       destroyOnHidden
     >
       <div style={{ marginBottom: 12 }}>
-        <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>选择用户（系统内已注册且未加入本工作区）</div>
+        <div style={{ marginBottom: 6, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>选择用户（系统内已注册且未加入本工作区）</div>
         <Select
           showSearch
           filterOption={false}
@@ -77,14 +77,14 @@ export default function AddMemberModal({
         />
       </div>
       <div>
-        <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>配置权限角色</div>
+        <div style={{ marginBottom: 6, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>配置权限角色</div>
         <Select
           style={{ width: '100%' }}
           value={role}
           onChange={(v: WorkspaceRole) => onRoleChange(v)}
           options={assignableRoles.filter(r => r.value !== 'owner')}
         />
-        <div style={{ marginTop: 6, fontSize: 12, color: 'var(--cn-text-muted)' }}>
+        <div style={{ marginTop: 6, fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)' }}>
           {ROLE_LABEL[role]} — {ROLE_HINTS[role]}
         </div>
       </div>

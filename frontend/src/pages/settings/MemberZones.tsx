@@ -50,7 +50,7 @@ export default function MemberZones({
             }
           >
             {list.length === 0 ? (
-              <div style={{ color: 'var(--cn-text-muted)', fontSize: 13, padding: '6px 0' }}>
+              <div style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-sm)', padding: '6px 0' }}>
                 暂无{ROLE_LABEL[zoneRole]}
               </div>
             ) : (
@@ -72,10 +72,10 @@ export default function MemberZones({
                         <div>
                           <div style={{ fontWeight: WEIGHT.medium }}>
                             {u.username}
-                            {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({u.nickname})</span>}
+                            {u.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 'var(--cn-text-sm)' }}>({u.nickname})</span>}
                             {isMe && <Tag color="blue" style={{ marginLeft: 8 }}>我</Tag>}
                           </div>
-                          {u.email && <div style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>{u.email}</div>}
+                          {u.email && <div style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-xs)' }}>{u.email}</div>}
                         </div>
                       )
                     },
@@ -97,7 +97,7 @@ export default function MemberZones({
                           optionRender={option => (
                             <div>
                               <div>{option.label}</div>
-                              <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', lineHeight: 1.5 }}>
+                              <div style={{ fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-muted)', lineHeight: 1.5 }}>
                                 {ROLE_HINTS[option.value as WorkspaceRole]}
                               </div>
                             </div>

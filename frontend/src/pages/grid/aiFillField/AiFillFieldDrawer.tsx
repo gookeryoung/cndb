@@ -19,7 +19,7 @@ import { isChangeRequestResponse } from '@/api'
 import { tableApi, type TableAiFieldFillValue, type TableAiFillFieldPayload } from '@/api/tables'
 import type { Field, RowResponse } from '@/api'
 import { useLlmAction } from '@/hooks/useLlmAction'
-import { SPACE, TEXT } from '@/theme/tokens'
+import { SPACE } from '@/theme/tokens'
 
 const { Text } = Typography
 
@@ -199,7 +199,7 @@ export default function AiFillFieldDrawer({
       render: (_v, record) => (
         <span data-testid={`ai-fill-row-${record.row_id}`}>
           <Text type="secondary">第 {record.pageNo || '—'} 行</Text>
-          <Text type="secondary" style={{ fontSize: TEXT['2xs'], marginLeft: SPACE.xs }}>#{record.row_id}</Text>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)', marginLeft: SPACE.xs }}>#{record.row_id}</Text>
         </span>
       ),
     },
@@ -268,12 +268,12 @@ export default function AiFillFieldDrawer({
       )}
     >
       <div data-testid="ai-fill-field-drawer" style={{ display: 'flex', flexDirection: 'column', gap: SPACE.lg }}>
-        <Text type="secondary" style={{ fontSize: TEXT.xs }} data-testid="ai-fill-hint">
+        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="ai-fill-hint">
           {headerHint}。结果只是建议，确认后逐行调用原有记录更新接口（无直编资格时自动提交修改申请），不会批量写库。
         </Text>
 
         {meta && (
-          <Text type="secondary" style={{ fontSize: TEXT.xs }} data-testid="ai-fill-meta">{meta}</Text>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="ai-fill-meta">{meta}</Text>
         )}
 
         {fillAi.loading && (
@@ -323,7 +323,7 @@ export default function AiFillFieldDrawer({
 
         {!fillAi.loading && !fillAi.error && (
           <div>
-            <Text strong style={{ display: 'block', fontSize: TEXT.sm, marginBottom: SPACE.xs }}>
+            <Text strong style={{ display: 'block', fontSize: 'var(--cn-text-sm)', marginBottom: SPACE.xs }}>
               补充要求（可选）
             </Text>
             <Input.TextArea
@@ -338,7 +338,7 @@ export default function AiFillFieldDrawer({
           </div>
         )}
 
-        <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
           生成结果中 value 为 null 的行视为「无法确定」，应用时会跳过，不会清空单元格。
         </Text>
         {applicableCount < suggestions.length && suggestions.length > 0 && (
@@ -348,7 +348,7 @@ export default function AiFillFieldDrawer({
         )}
         {fillAi.data && (
           <Tooltip title="AI 只生成建议，不会直接写库">
-            <Text type="secondary" style={{ fontSize: TEXT['2xs'] }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>
               应用使用既有记录更新接口；如当前账号无直编资格，将按双轨制转为修改申请。
             </Text>
           </Tooltip>

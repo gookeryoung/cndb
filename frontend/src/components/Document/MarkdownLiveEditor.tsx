@@ -861,7 +861,7 @@ function MarkdownLiveEditor({ value, mode, workspaceId, placeholder, onChange, o
           boxShadow: 'none',
           borderRadius: 0,
           fontFamily: 'var(--cn-font-mono)',
-          fontSize: 14,
+          fontSize: 'var(--cn-text-md)',
           lineHeight: 1.7,
           padding: 16,
           ...style,

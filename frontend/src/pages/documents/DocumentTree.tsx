@@ -355,7 +355,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
       <PushpinFilled
         aria-label="已置顶"
         data-testid={`doc-tree-pinned-${node.id}`}
-        style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-brand-color)' }}
+        style={{ marginLeft: 6, fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-brand-color)' }}
       />
     ) : null
     if (node.is_folder) {
@@ -389,7 +389,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
           <StatusIcon
             aria-label={`文档状态：${status.label}`}
             data-testid={`doc-status-${node.id}`}
-            style={{ marginLeft: 6, fontSize: 11, color: status.color }}
+            style={{ marginLeft: 6, fontSize: 'var(--cn-text-2xs)', color: status.color }}
           />
         </Tooltip>
         {/* 可见性提示：未发布的文档同事看不到，明确告知以免误以为"文档丢了" */}
@@ -398,7 +398,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
             <LockOutlined
               aria-label="仅自己可见"
               data-testid={`doc-visibility-${node.id}`}
-              style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-text-secondary, #8c8c8c)' }}
+              style={{ marginLeft: 6, fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-secondary, #8c8c8c)' }}
             />
           </Tooltip>
         )}
@@ -591,7 +591,7 @@ export default function DocumentTree({ onNavigate }: { onNavigate?: () => void }
       {/* 树主体 */}
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '0 4px' }}>
         {treeQuery.isLoading ? (
-          <div style={{ padding: 16, color: 'var(--cn-text-muted)', fontSize: 13 }}>加载中…</div>
+          <div style={{ padding: 16, color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-sm)' }}>加载中…</div>
         ) : items.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}

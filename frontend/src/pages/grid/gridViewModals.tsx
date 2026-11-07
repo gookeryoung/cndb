@@ -131,7 +131,7 @@ export default function GridViewModals({
           <p className="ant-upload-hint">支持 .json 格式，内容为视图配置数组</p>
         </Upload.Dragger>
         {importFile && (
-          <div style={{ marginTop: 12, fontSize: 12, color: '#1677ff', textAlign: 'center' }}>
+          <div style={{ marginTop: 12, fontSize: 'var(--cn-text-xs)', color: '#1677ff', textAlign: 'center' }}>
             已选择：{importFile.name}（{(importFile.size / 1024).toFixed(1)} KB）
           </div>
         )}

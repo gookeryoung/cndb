@@ -55,7 +55,7 @@ function fieldTooltip(field: AnalyticsRecommendationField) {
   return (
     <div style={{ lineHeight: 1.8 }}>
       <div>{field.reason || `${formatRecommendationRole(field.role)}字段`}</div>
-      <div style={{ fontSize: 12, opacity: 0.85 }}>
+      <div style={{ fontSize: 'var(--cn-text-xs)', opacity: 0.85 }}>
         类型：{field.field_type || '未知'}
         {typeof field.cardinality === 'number' ? ` · 基数：${field.cardinality}` : ''}
         {typeof field.completeness === 'number' ? ` · 非空率：${Math.round(field.completeness * 100)}%` : ''}
@@ -226,7 +226,7 @@ export function RecommendationPanel({
                         style={{ maxWidth: 340, padding: '2px 0' }}
                       >
                         <div style={{ fontWeight: WEIGHT.medium }}>{example.name}</div>
-                        <div style={{ fontSize: 12, color: '#94a3b8', whiteSpace: 'normal' }}>
+                        <div style={{ fontSize: 'var(--cn-text-xs)', color: '#94a3b8', whiteSpace: 'normal' }}>
                           {example.description || example.reason}
                         </div>
                       </div>

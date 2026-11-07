@@ -133,7 +133,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, style = 'o
         dataIndex: 'path',
         key: 'path',
         ellipsis: true,
-        render: (value: string) => <Typography.Text style={{ fontSize: 12 }}>{value}</Typography.Text>,
+        render: (value: string) => <Typography.Text style={{ fontSize: 'var(--cn-text-xs)' }}>{value}</Typography.Text>,
       },
       {
         title: '标题',
@@ -272,7 +272,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, style = 'o
           {result.skipped_notes.length > 0 && (
             <div>
               <Typography.Text strong>跳过明细</Typography.Text>
-              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12 }}>
+              <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 'var(--cn-text-xs)' }}>
                 {result.skipped_notes.slice(0, 10).map(item => (
                   <li key={item.path}>
                     {item.path}（{item.reason}）
@@ -316,7 +316,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, style = 'o
             onPick={() => inputRef.current?.click()}
             helpTitle={style === 'archive' ? '压缩包导入说明' : '库导入说明'}
             help={
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--cn-text-xs)', lineHeight: 1.9, maxWidth: 360 }}>
                 {style === 'archive' ? (
                   <>
                     <li>文件夹层级按包内路径还原；Markdown 按正文导入（无 front-matter 也适用）</li>
@@ -334,7 +334,7 @@ export function VaultImportForm({ workspaceId, parentId, parentLabel, style = 'o
             }
             selected={
               file ? (
-                <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="vault-import-picked">
+                <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="vault-import-picked">
                   已选 {file.name}
                 </Typography.Text>
               ) : null

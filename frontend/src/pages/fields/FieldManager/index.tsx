@@ -441,18 +441,18 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         {/* 源字段 */}
         <div style={{ width: 160, flexShrink: 0 }}>
           <div style={{ fontWeight: WEIGHT.medium }}>{s.source}</div>
-          <div style={{ fontSize: 11, color: '#999' }}>
+          <div style={{ fontSize: 'var(--cn-text-2xs)', color: '#999' }}>
             {getFieldTypeLabel(sourceFields.find(f => f.name === s.source)?.field_type ?? 'unknown')}
           </div>
           {(() => {
             const sf = sourceFields.find(f => f.name === s.source)
             const hint = sf ? linkTargetHint(sf) : null
-            return hint ? <div style={{ fontSize: 11, color: '#999' }}>{hint}</div> : null
+            return hint ? <div style={{ fontSize: 'var(--cn-text-2xs)', color: '#999' }}>{hint}</div> : null
           })()}
         </div>
 
         {/* 箭头 */}
-        <div style={{ color: isSkipped ? '#999' : '#52c41a', fontSize: 18 }}>
+        <div style={{ color: isSkipped ? '#999' : '#52c41a', fontSize: 'calc(var(--cn-text-lg) + 2px)' }}>
           {isSkipped ? <MinusOutlined /> : <SwapOutlined />}
         </div>
 
@@ -497,13 +497,13 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
         <Tooltip title={s.reason}>
           <Tag
             color={s.will_map ? 'green' : 'orange'}
-            style={{ margin: 0, fontSize: 11 }}
+            style={{ margin: 0, fontSize: 'var(--cn-text-2xs)' }}
             icon={s.will_map ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
           >
             {s.will_map ? '推荐' : '未能自动对应'}
           </Tag>
         </Tooltip>
-        <span style={{ fontSize: 11, color: scoreColor, width: 42, textAlign: 'right' }}>
+        <span style={{ fontSize: 'var(--cn-text-2xs)', color: scoreColor, width: 42, textAlign: 'right' }}>
           {s.score.toFixed(2)}
         </span>
       </div>
@@ -584,7 +584,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
             <div>
               <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: WEIGHT.medium }}>选择要引入的字段</span>
-                <span style={{ color: '#999', fontSize: 12 }}>
+                <span style={{ color: '#999', fontSize: 'var(--cn-text-xs)' }}>
                   已选 {importSelectedIds.length}/{sourceFields.length}（不选 = 全部引入）
                 </span>
               </div>
@@ -616,7 +616,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
                             <Tag color="orange" style={{ marginLeft: 4 }}>重名</Tag>
                           )}
                           {hint && (
-                            <span style={{ fontSize: 11, color: '#999', marginLeft: 4 }}>{hint}</span>
+                            <span style={{ fontSize: 'var(--cn-text-2xs)', color: '#999', marginLeft: 4 }}>{hint}</span>
                           )}
                         </Checkbox>
                       </div>
@@ -646,7 +646,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
       {importMode === 'link' && importPreview && (
         <div style={{ marginTop: 16 }}>
           <Divider style={{ margin: '8px 0' }}>关联字段预览</Divider>
-          <div style={{ color: '#64748b', fontSize: 12, marginBottom: 8 }}>将创建以下关联字段：</div>
+          <div style={{ color: '#64748b', fontSize: 'var(--cn-text-xs)', marginBottom: 8 }}>将创建以下关联字段：</div>
           <div style={{ maxHeight: 240, overflowY: 'auto', border: '1px solid #f0f0f0', borderRadius: 4, padding: 8 }}>
             {(importPreview.gap_analysis?.planned_fields ?? []).map((p, i) => (
               <div key={i} style={{ padding: '4px 0', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -656,7 +656,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
               </div>
             ))}
             {(importPreview.gap_analysis?.planned_fields ?? []).length === 0 && (
-              <div style={{ color: '#999', fontSize: 12 }}>所选表中没有可引入的字段（「关联」「引用」类型的字段暂不支持引入）</div>
+              <div style={{ color: '#999', fontSize: 'var(--cn-text-xs)' }}>所选表中没有可引入的字段（「关联」「引用」类型的字段暂不支持引入）</div>
             )}
           </div>
         </div>
@@ -669,7 +669,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
 
           {/* gap_analysis 概要 */}
           {importPreview.gap_analysis && (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 10, fontSize: 12 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 10, fontSize: 'var(--cn-text-xs)' }}>
               <Tag color="green">已匹配 {importPreview.gap_analysis.matched.length}</Tag>
               {importPreview.gap_analysis.unmapped_source.length > 0 && (
                 <Tag color="orange">待引入 {importPreview.gap_analysis.unmapped_source.length}</Tag>
@@ -713,7 +713,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           })()}
 
           {/* 统计 */}
-          <div style={{ marginTop: 10, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+          <div style={{ marginTop: 10, fontSize: 'var(--cn-text-xs)', color: '#64748b', textAlign: 'center' }}>
             共 {importPreview.suggestions.length} 个源字段 — 目标表当前 {fields.length} 个已有字段
           </div>
         </div>
@@ -725,7 +725,7 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
           <Checkbox checked={importSkipConflicts} onChange={(e) => { setImportSkipConflicts(e.target.checked); setImportPreview(null) }}>
             跳过重名字段（推荐）
           </Checkbox>
-          <div style={{ color: '#999', fontSize: 12, marginTop: 2 }}>
+          <div style={{ color: '#999', fontSize: 'var(--cn-text-xs)', marginTop: 2 }}>
             关闭则在重名时报错，不会执行任何引入
           </div>
         </div>

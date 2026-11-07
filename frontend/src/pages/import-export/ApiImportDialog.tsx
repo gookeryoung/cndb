@@ -165,7 +165,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
       dataIndex: 'name',
       key: 'name',
       width: 160,
-      render: (name: string) => <code style={{ fontSize: 12 }}>{name}</code>,
+      render: (name: string) => <code style={{ fontSize: 'var(--cn-text-xs)' }}>{name}</code>,
     },
     {
       title: '类型推断',
@@ -188,7 +188,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
       title: '样本值',
       key: 'samples',
       render: (_: unknown, col: ApiAnalyzeColumn) => (
-        <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>{renderSamples(col)}</span>
+        <span style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-xs)' }}>{renderSamples(col)}</span>
       ),
     },
   ]
@@ -326,7 +326,7 @@ export default function ApiImportDialog({ open, wid, tid, title, onClose, onSucc
               <Tag color="green">{columnsPreview.length}</Tag>
             </Descriptions.Item>
             <Descriptions.Item label="顶层键">
-              <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
+              <span style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-xs)' }}>
                 {analyzeResult.sample_row_keys.slice(0, 6).join(', ')}
                 {analyzeResult.sample_row_keys.length > 6 ? ` … (+${analyzeResult.sample_row_keys.length - 6})` : ''}
               </span>

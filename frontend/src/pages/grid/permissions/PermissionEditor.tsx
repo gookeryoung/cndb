@@ -374,7 +374,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
             <Avatar icon={<UserOutlined />} />
             <div>
               <div style={{ fontWeight: WEIGHT.medium }}>{owner.username}</div>
-              <div style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
+              <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)' }}>
                 {isOwner ? '（就是您）' : ''}拥有者对该表负全责, 可管理成员与转让所有权
               </div>
             </div>
@@ -410,7 +410,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
             }
           >
             {list.length === 0 ? (
-              <div style={{ color: 'var(--cn-text-muted)', fontSize: 13, padding: '6px 0' }}>暂无{label}</div>
+              <div style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-sm)', padding: '6px 0' }}>暂无{label}</div>
             ) : (
               <Table
                 size="small"
@@ -428,11 +428,11 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
       })}
 
       {/* ─────────────── 隐藏字段（受控 Checkbox.Group，状态由父组件持有） ─────────────── */}
-      <div style={{ fontSize: 13, fontWeight: WEIGHT.semibold, marginBottom: 8, marginTop: 4 }}>
+      <div style={{ fontSize: 'var(--cn-text-sm)', fontWeight: WEIGHT.semibold, marginBottom: 8, marginTop: 4 }}>
         隐藏字段（勾选后用户不可见）
       </div>
       {fields.filter(f => !f.hidden).length === 0 ? (
-        <div style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>暂无可见字段</div>
+        <div style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-xs)' }}>暂无可见字段</div>
       ) : (
         <Checkbox.Group
           value={hiddenNames}
@@ -448,7 +448,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
               <Checkbox key={String(f.id)} value={f.name} style={{ marginInlineStart: 0 }}>
                 <span
                   style={{
-                    fontSize: 13,
+                    fontSize: 'var(--cn-text-sm)',
                     display: 'inline-block',
                     maxWidth: '100%',
                     overflow: 'hidden',
@@ -457,7 +457,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
                     verticalAlign: 'bottom',
                   }}
                 >
-                  {f.name} <span style={{ color: 'var(--cn-text-muted)', fontSize: 11 }}>({f.field_type})</span>
+                  {f.name} <span style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-2xs)' }}>({f.field_type})</span>
                 </span>
               </Checkbox>
             ))}
@@ -482,7 +482,7 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
           )
         }
       >
-        <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)', marginBottom: 8 }}>
+        <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)', marginBottom: 8 }}>
           每条规则 = 一组筛选条件命中的<b>数据行</b>，授予<b>指定成员</b>或<b>表级成员档</b>的「可查看 / 可编辑」权限。
           规则在表默认档（对所有非管理员的行过滤）之上<b>按主体开放</b>；拥有者与管理员不受行规则限制。
         </div>
@@ -494,9 +494,9 @@ export default function PermissionEditor({ fields, wid, tid, owner, hiddenNames,
             description="行级权限规则属敏感配置，仅具备本表「编辑结构」权限者可查看与配置。"
           />
         ) : rulesLoading ? (
-          <div style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>加载中...</div>
+          <div style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-sm)' }}>加载中...</div>
         ) : rowRules.length === 0 ? (
-          <div style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>暂无行级权限规则</div>
+          <div style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-sm)' }}>暂无行级权限规则</div>
         ) : (
           <Table
             size="small"
@@ -555,7 +555,7 @@ function renderRuleSummary(rule: RowPermissionRule) {
   const shown = names.slice(0, 3).join('、')
   const more = names.length > 3 ? ` 等 ${names.length} 项` : ''
   return (
-    <span style={{ fontSize: 12 }}>
+    <span style={{ fontSize: 'var(--cn-text-xs)' }}>
       <Tag>{rule.filter_type}</Tag>
       {shown}{more}
     </span>
@@ -586,7 +586,7 @@ function TransferOwnerModal({
       okButtonProps={{ disabled: selected == null }}
       destroyOnHidden
     >
-      <div style={{ marginBottom: 8, color: 'var(--cn-text-secondary)', fontSize: 13 }}>
+      <div style={{ marginBottom: 8, color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)' }}>
         将表的拥有权转让给下列工作区成员。转让后您将失去拥有者特权，回落到工作区角色默认权限。
       </div>
       <Select
@@ -631,7 +631,7 @@ function AddMemberModal({
       destroyOnHidden
     >
       <div style={{ marginBottom: 12 }}>
-        <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>选择用户</div>
+        <div style={{ marginBottom: 6, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>选择用户</div>
         <Select
           showSearch
           placeholder="搜索工作区成员..."
@@ -645,7 +645,7 @@ function AddMemberModal({
         />
       </div>
       <div>
-        <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>授权级别</div>
+        <div style={{ marginBottom: 6, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>授权级别</div>
         <Select
           style={{ width: '100%' }}
           value={role}
@@ -754,7 +754,7 @@ function RowRuleEditorModal({
       destroyOnHidden
     >
       <div style={{ marginBottom: 12 }}>
-        <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>授权主体</div>
+        <div style={{ marginBottom: 6, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>授权主体</div>
         <Select
           showSearch
           placeholder="选择成员或成员档"
@@ -768,19 +768,19 @@ function RowRuleEditorModal({
           }
         />
         {isEdit && (
-          <div style={{ marginTop: 4, fontSize: 12, color: 'var(--cn-text-muted)' }}>
+          <div style={{ marginTop: 4, fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)' }}>
             主体与动作创建后不可改；如需变更请删除后重建。
           </div>
         )}
       </div>
       <div style={{ marginBottom: 12 }}>
-        <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>动作</div>
+        <div style={{ marginBottom: 6, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>动作</div>
         <Radio.Group value={action} onChange={(e) => setAction(e.target.value)} disabled={isEdit}>
           <Radio value="view"><EyeOutlined /> 可查看（命中行可读，不可编辑）</Radio>
           <Radio value="edit"><EditOutlined /> 可编辑（命中行可读且可直编）</Radio>
         </Radio.Group>
       </div>
-      <div style={{ marginBottom: 6, fontSize: 13, color: 'var(--cn-text-secondary)' }}>命中条件（不填 = 全部行）</div>
+      <div style={{ marginBottom: 6, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>命中条件（不填 = 全部行）</div>
       <FilterConditionEditor
         fields={fields}
         rules={filters}
@@ -795,7 +795,7 @@ function RowRuleEditorModal({
           预览命中行数
         </Button>
         {previewCount != null && (
-          <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+          <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
             预计命中 <b>{previewCount}</b> 行（仅统计您可见的行）
           </span>
         )}

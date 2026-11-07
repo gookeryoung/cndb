@@ -308,7 +308,7 @@ function StatsPanel({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 }}>
-        <span style={{ fontWeight: WEIGHT.semibold, fontSize: 13, color: 'var(--cn-text-primary)' }}>
+        <span style={{ fontWeight: WEIGHT.semibold, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-primary)' }}>
           {countOnly ? '计数统计' : '描述统计'}（{fieldName}）
         </span>
         <Tooltip
@@ -328,7 +328,7 @@ function StatsPanel({
         >
           <span
             data-testid="chart-stats-scope"
-            style={{ fontSize: 12, color: 'var(--cn-text-secondary)', cursor: 'help' }}
+            style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)', cursor: 'help' }}
           >
             样本量 {stats.count}{total !== undefined ? ` / 总行数 ${total}` : ''}
           </span>
@@ -337,7 +337,7 @@ function StatsPanel({
       <div
         style={{
           display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))',
-          gap: '4px 16px', fontSize: 12,
+          gap: '4px 16px', fontSize: 'var(--cn-text-xs)',
         }}
       >
         {items.map(([label, value]) => (
@@ -658,7 +658,7 @@ export default function ChartView({ rows, fields, view, total, onRowClick }: Cha
         >
           <div
             data-testid={`chart-card-title-${i}`}
-            style={{ fontWeight: WEIGHT.semibold, fontSize: 13, color: 'var(--cn-text-primary)' }}
+            style={{ fontWeight: WEIGHT.semibold, fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-primary)' }}
           >
             {CHART_TYPE_LABELS[cfg.chart_type] ?? cfg.chart_type} · {chartKeyFieldLabel(cfg)}
           </div>

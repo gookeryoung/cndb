@@ -13,7 +13,7 @@ import type { ReactNode } from 'react'
 import { Alert, Button, Collapse, Drawer, Empty, Skeleton, Space, Typography } from 'antd'
 
 import type { AnalyticsAiExplainResult } from '@/api/analytics'
-import { LINE, SPACE, TEXT } from '@/theme/tokens'
+import { LINE, SPACE } from '@/theme/tokens'
 
 const { Paragraph, Text } = Typography
 
@@ -72,18 +72,18 @@ export default function AnalyticsAiExplainDrawer({
       destroyOnHidden
     >
       <div data-testid={testId} style={{ display: 'flex', flexDirection: 'column', gap: SPACE.lg }}>
-        <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
           AI 只依据当前汇总结果（最多 50 行）生成解读，不修改模板与数据；结论需结合业务口径自行判断。
         </Text>
 
         {basis && (
-          <Text type="secondary" style={{ fontSize: TEXT['2xs'] }} data-testid="analytics-ai-explain-basis">
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }} data-testid="analytics-ai-explain-basis">
             {basis}
           </Text>
         )}
 
         {meta && (
-          <Text type="secondary" style={{ fontSize: TEXT['2xs'] }} data-testid="analytics-ai-explain-meta">
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }} data-testid="analytics-ai-explain-meta">
             {meta}
           </Text>
         )}
@@ -108,13 +108,13 @@ export default function AnalyticsAiExplainDrawer({
         {!loading && !error && result && (
           <>
             <section data-testid="analytics-ai-insight">
-              <Text strong style={{ display: 'block', fontSize: TEXT.sm, marginBottom: SPACE.xs }}>
+              <Text strong style={{ display: 'block', fontSize: 'var(--cn-text-sm)', marginBottom: SPACE.xs }}>
                 结论
               </Text>
               <Paragraph
                 style={{
                   margin: 0,
-                  fontSize: TEXT.sm,
+                  fontSize: 'var(--cn-text-sm)',
                   lineHeight: LINE.relaxed,
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
@@ -135,7 +135,7 @@ export default function AnalyticsAiExplainDrawer({
                   children: caveats.length > 0 ? (
                     <ul style={{ margin: 0, paddingInlineStart: SPACE.xl }}>
                       {caveats.map(item => (
-                        <li key={item} style={{ fontSize: TEXT.xs }}>{item}</li>
+                        <li key={item} style={{ fontSize: 'var(--cn-text-xs)' }}>{item}</li>
                       ))}
                     </ul>
                   ) : (

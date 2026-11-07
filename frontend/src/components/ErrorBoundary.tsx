@@ -32,10 +32,10 @@ function ErrorFallback({ error, resetErrorBoundary }: FallbackProps) {
       }}
     >
       <WarningOutlined style={{ fontSize: 40, color: 'var(--cn-text-muted)' }} aria-hidden />
-      <h2 style={{ margin: 0, fontSize: 18, fontWeight: WEIGHT.semibold, color: 'var(--cn-text-primary)' }}>
+      <h2 style={{ margin: 0, fontSize: 'calc(var(--cn-text-lg) + 2px)', fontWeight: WEIGHT.semibold, color: 'var(--cn-text-primary)' }}>
         页面出现异常
       </h2>
-      <p style={{ margin: 0, color: 'var(--cn-text-secondary)', fontSize: 13, maxWidth: 480 }}>
+      <p style={{ margin: 0, color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)', maxWidth: 480 }}>
         {error instanceof Error ? error.message : String(error)}
       </p>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>

@@ -228,7 +228,7 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
             checked={!!value}
             onChange={checked => setValue(checked)}
           />
-          <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>
+          <span style={{ color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)' }}>
             {value === undefined || value === null ? '未设置（= false）' : value ? '是' : '否'}
           </span>
         </div>
@@ -303,7 +303,7 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
                 onChange={(e) => setIncrementConfig({ increment_prefix: e.target.value })}
               />
               {/* InputNumber 的 addonBefore 已废弃（触发弃用警告），改用 span 标签 */}
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--cn-text-xs)' }}>
                 补零
                 <InputNumber
                   size="small"
@@ -314,7 +314,7 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
                   onChange={(v) => setIncrementConfig({ increment_padding: v ?? 0 })}
                 />
               </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 12 }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--cn-text-xs)' }}>
                 起始
                 <InputNumber
                   size="small"
@@ -325,7 +325,7 @@ function DefaultValueInput({ fieldType, form }: { fieldType: FieldType | undefin
                   onChange={(v) => setIncrementConfig({ increment_start: v ?? 0 })}
                 />
               </span>
-              <span style={{ color: 'var(--cn-text-secondary)', fontSize: 12 }}>
+              <span style={{ color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-xs)' }}>
                 示例：{formatIncrementExample({ increment_prefix: incrementPrefix, increment_padding: incrementPadding, increment_start: incrementStart })}（新增行保存时自动生成，不预填）
               </span>
             </div>

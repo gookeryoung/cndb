@@ -33,7 +33,7 @@ import {
   type LlmConnectionTestResult,
   type LlmRun,
 } from '@/api'
-import { SPACE, TEXT } from '@/theme/tokens'
+import { SPACE } from '@/theme/tokens'
 import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
 import { CUSTOM_PROVIDER_ID, LLM_PROVIDERS, findProviderByBaseUrl } from './llmProviders'
 
@@ -262,7 +262,7 @@ export default function LlmConfigPanel() {
                 <Text
                   type="secondary"
                   data-testid={`llm-run-error-${run.id}`}
-                  style={{ fontSize: TEXT['2xs'], maxWidth: 110 }}
+                  style={{ fontSize: 'var(--cn-text-2xs)', maxWidth: 110 }}
                   ellipsis
                 >
                   {truncateError(error)}
@@ -287,7 +287,7 @@ export default function LlmConfigPanel() {
       width: 88,
       render: (_value: unknown, run: LlmRun) => (
         <Tooltip title={`prompt ${run.prompt_tokens} / completion ${run.completion_tokens}`}>
-          <Text style={{ fontSize: TEXT.xs }}>{tokenText(run)}</Text>
+          <Text style={{ fontSize: 'var(--cn-text-xs)' }}>{tokenText(run)}</Text>
         </Tooltip>
       ),
     },
@@ -304,7 +304,7 @@ export default function LlmConfigPanel() {
       dataIndex: 'created_at',
       width: 128,
       render: (createdAt: string) => (
-        <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
           {createdAt ? dayjs(createdAt).format('YYYY-MM-DD HH:mm') : '—'}
         </Text>
       ),
@@ -321,7 +321,7 @@ export default function LlmConfigPanel() {
           <Space size={SPACE.md} wrap>
             <span>个人级配置，所有「大模型提示词」任务共用</span>
             {configuredTag}
-            <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
               仅本人可见，其他成员读不到你的地址与 Key
             </Text>
           </Space>
@@ -398,7 +398,7 @@ export default function LlmConfigPanel() {
                   size="small"
                   aria-pressed={clearKey}
                   data-testid="llm-config-clear-key"
-                  style={{ height: 'auto', padding: 0, fontSize: TEXT.xs }}
+                  style={{ height: 'auto', padding: 0, fontSize: 'var(--cn-text-xs)' }}
                   onClick={() => setClearKey(value => !value)}
                 >
                   {clearKey ? '取消清除已保存的 Key' : '清除已保存的 Key'}
@@ -435,14 +435,14 @@ export default function LlmConfigPanel() {
             {
               key: 'default-system-prompt',
               label: (
-                <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+                <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                   查看内置默认系统提示词（留空时使用；填写后覆盖）
                 </Text>
               ),
               forceRender: true,
               children: (
                 <Paragraph
-                  style={{ marginBottom: 0, whiteSpace: 'pre-wrap', fontSize: TEXT.xs }}
+                  style={{ marginBottom: 0, whiteSpace: 'pre-wrap', fontSize: 'var(--cn-text-xs)' }}
                 >
                   {config?.default_system_prompt || '（内置默认系统提示词加载中…）'}
                 </Paragraph>
@@ -467,7 +467,7 @@ export default function LlmConfigPanel() {
           >
             测试连接
           </Button>
-          <Text type="secondary" style={{ fontSize: TEXT['2xs'] }}>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>
             测试连接会发一次真实模型请求（可能产生费用），可用未保存的 Key 直接测试
           </Text>
         </Space>
@@ -504,7 +504,7 @@ export default function LlmConfigPanel() {
           <Space size={SPACE.md} wrap>
             <HistoryOutlined />
             <Text strong>调用记录</Text>
-            <Text type="secondary" style={{ fontSize: TEXT.xs }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
               最近 {RUNS_LIMIT} 条（仅本人）
             </Text>
           </Space>
@@ -567,7 +567,7 @@ export default function LlmConfigPanel() {
 
         <Text
           type="secondary"
-          style={{ display: 'block', marginTop: SPACE.md, fontSize: TEXT['2xs'] }}
+          style={{ display: 'block', marginTop: SPACE.md, fontSize: 'var(--cn-text-2xs)' }}
         >
           记录只保存动作、模型、用量、耗时与失败摘要，不保存提示词与模型输出全文；失败摘要悬停可看完整错误，动作列悬停可看留痕 id。
         </Text>

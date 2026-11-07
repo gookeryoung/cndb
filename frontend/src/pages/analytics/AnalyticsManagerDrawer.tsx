@@ -95,7 +95,7 @@ export function AnalyticsManagerDrawer({
       title={
         <Space>
           <span>分析列表</span>
-          <Text type="secondary" style={{ fontSize: 12, fontWeight: WEIGHT.regular }}>共 {templates.length} 个</Text>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', fontWeight: WEIGHT.regular }}>共 {templates.length} 个</Text>
         </Space>
       }
       size={560}
@@ -167,7 +167,7 @@ export function AnalyticsManagerDrawer({
                       </span>
                       {isActive && <Tag color="blue">当前</Tag>}
                       {isActive && dirty && <Tag color="orange">未保存</Tag>}
-                      <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', whiteSpace: 'nowrap' }}>
                         {templateTableName(tables, template.table_id)} · {formulaCount(template)} 个公式
                       </Text>
                     </Space>
@@ -219,7 +219,7 @@ export function AnalyticsManagerDrawer({
                       {template.description ? (
                         <div style={{ marginBottom: 2 }}>{template.description}</div>
                       ) : null}
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                         数据源：{templateTableName(tables, template.table_id)}
                         {updatedAt ? ` · 更新于 ${updatedAt}` : ''}
                       </Text>

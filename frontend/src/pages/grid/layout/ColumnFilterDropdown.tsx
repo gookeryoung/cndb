@@ -78,7 +78,7 @@ export default function ColumnFilterDropdown({
 
   return (
     <div style={{ padding: 12, width: 280 }}>
-      <div style={{ fontSize: 13, fontWeight: WEIGHT.semibold, marginBottom: 8, color: '#1f2937' }}>
+      <div style={{ fontSize: 'var(--cn-text-sm)', fontWeight: WEIGHT.semibold, marginBottom: 8, color: '#1f2937' }}>
         筛选「{field.name}」
       </div>
       <div style={{ marginBottom: 8 }}>
@@ -133,7 +133,7 @@ export default function ColumnFilterDropdown({
         </div>
       )}
       {noValue && (
-        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12 }}>
+        <div style={{ fontSize: 'var(--cn-text-xs)', color: '#64748b', marginBottom: 12 }}>
           此条件无需输入值
         </div>
       )}

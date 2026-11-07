@@ -86,7 +86,7 @@ export default function ModuleCheckCards({ value, onChange, disabled }: Props) {
           >
             <Space size={6} style={{ justifyContent: 'space-between', width: '100%' }}>
               <Space size={6}>
-                <span style={{ color: MODULE_COLOR[m], fontSize: 16 }}>
+                <span style={{ color: MODULE_COLOR[m], fontSize: 'var(--cn-text-lg)' }}>
                   {MODULE_ICON[m]}
                 </span>
                 <Text strong>{WORKSPACE_MODULE_LABEL[m]}</Text>
@@ -95,7 +95,7 @@ export default function ModuleCheckCards({ value, onChange, disabled }: Props) {
                 <CheckCircleFilled style={{ color: MODULE_COLOR[m] }} />
               )}
             </Space>
-            <Text type="secondary" style={{ fontSize: 12, lineHeight: 1.4 }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', lineHeight: 1.4 }}>
               {WORKSPACE_MODULE_HINT[m]}
             </Text>
           </div>

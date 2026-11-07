@@ -56,7 +56,7 @@ export default function DataPreviewTable({
               <Tooltip title={`原始值 "${t.rawText}" 无法转为 ${col.field_type}`}>
                 <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                   <span style={{ color: '#ef4444', textDecoration: 'line-through' }}>{t.rawText}</span>
-                  <WarningOutlined style={{ color: '#ef4444', fontSize: 12 }} />
+                  <WarningOutlined style={{ color: '#ef4444', fontSize: 'var(--cn-text-xs)' }} />
                 </span>
               </Tooltip>
             )
@@ -65,7 +65,7 @@ export default function DataPreviewTable({
           if (t.convertedText !== t.rawText) {
             return (
               <span>
-                <span style={{ color: 'var(--cn-text-muted)', textDecoration: 'line-through', fontSize: 11 }}>{t.rawText}</span>
+                <span style={{ color: 'var(--cn-text-muted)', textDecoration: 'line-through', fontSize: 'var(--cn-text-2xs)' }}>{t.rawText}</span>
                 <span style={{ color: '#22c55e', marginLeft: 4, fontWeight: WEIGHT.medium }}>→ {t.convertedText}</span>
               </span>
             )
@@ -85,10 +85,10 @@ export default function DataPreviewTable({
     // 统计卡片公共样式
     const statBox = (bg: string, numColor = 'var(--cn-text-primary)', icon: any = null, num: any = 0, label = '') => (
       <div style={{ padding: '4px 6px', background: bg, borderRadius: 4, textAlign: 'center' }}>
-        <div style={{ fontSize: 14, fontWeight: WEIGHT.bold, color: numColor, lineHeight: 1.2 }}>
+        <div style={{ fontSize: 'var(--cn-text-md)', fontWeight: WEIGHT.bold, color: numColor, lineHeight: 1.2 }}>
           {icon}{num}
         </div>
-        <div style={{ fontSize: 10, color: 'var(--cn-text-muted)', marginTop: 1 }}>{label}</div>
+        <div style={{ fontSize: 'var(--cn-text-3xs)', color: 'var(--cn-text-muted)', marginTop: 1 }}>{label}</div>
       </div>
     )
 

@@ -29,10 +29,10 @@ export default function ImportDiffTable({ preview, mode, report, matchKeys }: Im
                 <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     description={
-                        <span style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>
+                        <span style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-sm)' }}>
                             未选择参考列，所有行将作为<b>新增</b>导入
                             <br />
-                            <span style={{ fontSize: 12 }}>选择参考列并执行更新数据比对分析后，此处将显示新旧字段对比</span>
+                            <span style={{ fontSize: 'var(--cn-text-xs)' }}>选择参考列并执行更新数据比对分析后，此处将显示新旧字段对比</span>
                         </span>
                     }
                 />
@@ -40,10 +40,10 @@ export default function ImportDiffTable({ preview, mode, report, matchKeys }: Im
                 <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     description={
-                        <span style={{ color: 'var(--cn-text-muted)', fontSize: 13 }}>
+                        <span style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-sm)' }}>
                             没有需要更新的行
                             <br />
-                            <span style={{ fontSize: 12 }}>按参考列「{matchKeys.join('、')}」未匹配到已有数据</span>
+                            <span style={{ fontSize: 'var(--cn-text-xs)' }}>按参考列「{matchKeys.join('、')}」未匹配到已有数据</span>
                         </span>
                     }
                 />
@@ -166,7 +166,7 @@ export default function ImportDiffTable({ preview, mode, report, matchKeys }: Im
                 style={{ '--diff-row-bg': rowBg, '--diff-row-border': rowBorder } as any}
             />
             {preview.length >= 200 && (
-                <div style={{ color: 'var(--cn-text-muted)', fontSize: 12, marginTop: 4 }}>仅预览前 200 行，完整数据将全部导入</div>
+                <div style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-xs)', marginTop: 4 }}>仅预览前 200 行，完整数据将全部导入</div>
             )}
         </>
     )

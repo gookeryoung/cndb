@@ -9,7 +9,9 @@ import { EDITOR_THEME_IDS, type EditorThemeId } from './editorThemes'
 
 /* ─────────────── 字体 ─────────────── */
 
-export const EDITOR_FONT_FAMILIES = ['jetbrains', 'system', 'inter'] as const
+export const EDITOR_FONT_FAMILIES = [
+  'jetbrains', 'cascadia-code', 'maple-mono', 'system',
+] as const
 export type EditorFontFamily = (typeof EDITOR_FONT_FAMILIES)[number]
 
 export interface EditorFontFamilyMeta {
@@ -27,17 +29,23 @@ export const EDITOR_FONT_META: Record<EditorFontFamily, EditorFontFamilyMeta> = 
     description: '带连字的编程字体，代码最清晰',
     css: "'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
   },
+  'cascadia-code': {
+    id: 'cascadia-code',
+    label: 'Cascadia Code',
+    description: '微软终端字体，支持编程连字（ligature）',
+    css: "'Cascadia Code', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  },
+  'maple-mono': {
+    id: 'maple-mono',
+    label: 'Maple Mono',
+    description: '圆润的中英混排等宽，支持连字与圆角字形',
+    css: "'Maple Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
+  },
   system: {
     id: 'system',
     label: '系统等宽',
     description: '使用操作系统的默认等宽字体',
     css: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-  },
-  inter: {
-    id: 'inter',
-    label: 'Inter',
-    description: '非等宽字体，接近正文观感',
-    css: "'Inter', system-ui, sans-serif",
   },
 }
 

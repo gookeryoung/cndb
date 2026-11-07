@@ -210,10 +210,10 @@ export default function InsertChartModal({
                         key: cat.key,
                         label: (
                           <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <Text strong style={{ fontSize: 13 }}>
+                            <Text strong style={{ fontSize: 'var(--cn-text-sm)' }}>
                               {cat.name}
                             </Text>
-                            <Text type="secondary" style={{ fontSize: 11, fontWeight: 400 }}>
+                            <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)', fontWeight: 400 }}>
                               {cat.description}
                             </Text>
                           </div>
@@ -230,7 +230,7 @@ export default function InsertChartModal({
                             ))}
                             {byChild.map(({ child, templates: tpls }) => (
                               <div key={child.key}>
-                                <Text type="secondary" style={{ fontSize: 12, display: 'block', margin: '4px 0 2px' }}>
+                                <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', display: 'block', margin: '4px 0 2px' }}>
                                   {child.name}
                                 </Text>
                                 {tpls.map(tpl => (
@@ -260,7 +260,7 @@ export default function InsertChartModal({
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       <TemplateThumb workspaceId={workspaceId} template={selectedTemplate} active={open} />
                       <Text strong>{selectedTemplate.name}</Text>
-                      <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0 }}>
+                      <Paragraph type="secondary" style={{ fontSize: 'var(--cn-text-xs)', marginBottom: 0 }}>
                         {selectedTemplate.description}
                       </Paragraph>
                     </div>
@@ -298,7 +298,7 @@ export default function InsertChartModal({
                             </span>
                           }
                           description={
-                            <Text type="secondary" style={{ fontSize: 12 }}>
+                            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                               更新于 {item.updated_at.slice(0, 10)}
                             </Text>
                           }

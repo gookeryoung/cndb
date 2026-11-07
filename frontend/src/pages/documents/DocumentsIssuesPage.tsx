@@ -292,7 +292,7 @@ export default function DocumentsIssuesPage() {
                 {current.description}
               </Paragraph>
             )}
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
               创建于 {formatDateTime(current.created_at)}
             </Text>
 
@@ -330,7 +330,7 @@ export default function DocumentsIssuesPage() {
                 <div key={c.id} style={{ padding: '6px 0', borderBottom: '1px solid var(--cn-border-soft)' }}>
                   <Text>{c.content}</Text>
                   <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                       {formatDateTime(c.created_at)}
                     </Text>
                   </div>
@@ -360,7 +360,7 @@ export default function DocumentsIssuesPage() {
             </Title>
             {current.events.map(e => (
               <div key={e.id} style={{ padding: '2px 0' }}>
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                   <UndoOutlined style={{ marginRight: 4 }} />
                   {EVENT_TEXT[e.action] ?? e.action} · {formatDateTime(e.created_at)}
                 </Text>

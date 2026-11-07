@@ -106,7 +106,7 @@ export default function TrashDrawer({ open, onClose, wid }: TrashDrawerProps) {
                         )
                       }
                       description={
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                           {item.is_folder ? '文件夹' : '文档'} · 删除于{' '}
                           {item.deleted_at ? formatTime(item.deleted_at) : '未知时间'}
                         </Text>

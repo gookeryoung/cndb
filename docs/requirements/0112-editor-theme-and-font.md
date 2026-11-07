@@ -31,7 +31,7 @@
 
 每个色板同时定义背景 / 行号槽 / 当前行 / 选区 / 光标 / 边框 / 关键字 / 字符串 / 注释 / 数字 / 函数 / 类型 / 运算符 / 属性 / 变量 / 错误色，并覆盖补全弹层、搜索命中、括号匹配与面板，避免只换背景导致浮层仍为亮色。
 
-**字体**：提供 `JetBrains Mono`（默认，带连字）、`系统等宽`、`Inter`（非等宽）三档；字号提供「跟随全站」与 12 / 13 / 14 / 15 / 16 px。字号跟随全站时取 `1em`，与个人设置里的全站字号档位联动。
+**字体**：提供 `JetBrains Mono`（默认，带连字）、`Cascadia Code`、`Maple Mono`、`系统等宽` 四档；Cascadia Code / Maple Mono 随设置面板 / 编辑器 chunk 按需加载，不进首屏入口；字号提供「跟随全站」与 12 / 13 / 14 / 15 / 16 px。字号跟随全站时取 `1em`，与个人设置里的全站字号档位联动。`Inter` 只作为全站 UI 字体，不再作为编辑器字族提供。
 
 **设置入口**：个人设置新增独立的「编辑器」页签（排在「文档」之后）：配色 / 字体 / 字号三个下拉 + 一段实时预览（纯 DOM 渲染，不加载 CodeMirror）；页签内「恢复默认」只重置编辑器设置，不影响全站主题与字体。
 
@@ -47,7 +47,7 @@
 |---|---|---|---|---|
 | C1 | 「配色和字体太难看」 | 两个编辑器不再硬编码 `oneDark` / `defaultHighlightStyle` / 固定字号，改为读取编辑器外观设置；全站主题变化时 `auto` 即时重算 | `DslEditor.tsx`、`PipelineDslEditor.tsx`、`theme/editorThemes.ts` | 前端单测：`auto` 明暗解析；编辑器重配不重建视图 |
 | C2 | 「结合编辑器的最佳实践设计可用的主题」 | 至少 6 套固定主题（浅 / 深各 ≥ 2）+ `auto`；每套完整定义编辑区、行号槽、当前行、选区、光标、补全弹层与语法语义色 | `theme/editorThemes.ts` | 前端单测：主题清单 / 元信息 / 色板完整性 |
-| C3 | 「字体」 | 字体族 3 档（JetBrains Mono 默认 / 系统等宽 / Inter），字号 5 档 + 跟随全站；通过 CodeMirror 主题下发，CSS 不再写死 `.cm-scroller` 字号 | `theme/editorSettings.ts`、`index.css` | 前端单测：设置读写与默认值；lint / 构建门禁 |
+| C3 | 「字体」 | 字体族 4 档（JetBrains Mono 默认 / Cascadia Code / Maple Mono / 系统等宽），字号 5 档 + 跟随全站；通过 CodeMirror 主题下发，CSS 不再写死 `.cm-scroller` 字号 | `theme/editorSettings.ts`、`theme/editorFontAssets.ts`、`index.css` | 前端单测：设置读写与默认值、字体资产 / 按需加载；lint / 构建门禁 |
 | C4 | 「在用户个人设置提供编辑器配置」 | 「编辑器」独立页签（位于「文档」之后）：配色 / 字体 / 字号三项可独立选择、即时生效、自动持久化、附实时预览；「恢复默认」只重置编辑器设置 | `pages/settings/SettingsModal.tsx` | 组件测试：选项变更写 `cndb_editor_settings`、预览随配色变化、恢复默认 |
 | C5 | （容错） | `localStorage` 缺失 / 损坏 / 旧字段不合法时逐字段回退默认，不白屏；设置项变更不触发编辑器重建 | `theme/editorSettings.ts`、`ThemeProvider.tsx` | 前端单测：脏数据回退；编辑器视图实例复用 |
 | C6 | （测试与文档） | 覆盖色板 / 设置读写 / Provider 状态 / 设置面板 / 编辑器接入；CHANGELOG 记条目 | `frontend/src/theme/`、`pages/settings/`、`CHANGELOG.md` | `make flow` 全绿 |

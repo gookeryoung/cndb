@@ -98,11 +98,11 @@ export default function InsertTableModal({
               if (typeof v === 'number') onWidthChange(v)
             }}
           />
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
             默认 {DEFAULT_REF_WIDTH}%，范围 {MIN_REF_WIDTH}–{MAX_REF_WIDTH}%；插入后也可在预览中调整。
           </Text>
         </div>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
           以只读表格形式在文档中动态引用所选数据表，数据随表内容实时更新；选择视图后按该视图的过滤 / 排序取数。
         </Text>
       </Space>

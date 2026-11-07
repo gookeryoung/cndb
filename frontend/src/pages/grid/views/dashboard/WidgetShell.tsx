@@ -59,7 +59,7 @@ export default function WidgetShell({
     body = (
       <div
         data-testid={`${testId}-error`}
-        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cn-danger, #cf1322)', fontSize: 12 }}
+        style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--cn-danger, #cf1322)', fontSize: 'var(--cn-text-xs)' }}
       >
         {error}
       </div>
@@ -110,7 +110,7 @@ export default function WidgetShell({
           <div
             data-testid={`${testId}-title`}
             style={{
-              flex: 1, minWidth: 0, fontWeight: WEIGHT.semibold, fontSize: 13,
+              flex: 1, minWidth: 0, fontWeight: WEIGHT.semibold, fontSize: 'var(--cn-text-sm)',
               color: 'var(--cn-text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
             }}
           >
@@ -121,7 +121,7 @@ export default function WidgetShell({
               data-testid={`${testId}-meta`}
               title={metaText}
               style={{
-                flexShrink: 0, fontSize: 11, color: 'var(--cn-text-muted)',
+                flexShrink: 0, fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-muted)',
                 whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums',
               }}
             >

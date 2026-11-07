@@ -126,14 +126,14 @@ export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, 
       />
       {selectedFormat === 'pdf' ? (
         <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'var(--cn-bg-subtle)', borderRadius: 6, marginBottom: 8 }}>
-          <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)' }}>
+          <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>
             导出当前视图可见内容画面（不含顶部栏），按屏幕实际大小输出：内容较宽时 PDF 纸张会相应变宽，字号不会缩小
           </span>
         </div>
       ) : viewId != null && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'var(--cn-bg-subtle)', borderRadius: 6, marginBottom: 8 }}>
           <Switch size="small" checked={useViewFilter} onChange={setUseViewFilter} />
-          <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)' }}>
+          <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>
             {useViewFilter
               ? `按当前视图「${viewName || ''}」筛选后导出`
               : '导出全表数据（忽略视图筛选）'}

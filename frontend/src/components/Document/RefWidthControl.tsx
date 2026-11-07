@@ -65,7 +65,7 @@ export default function RefWidthControl({
               onChange={apply}
             />
           </div>
-          <Text type="secondary" style={{ fontSize: 11 }}>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>
             默认 {DEFAULT_REF_WIDTH}%，范围 {MIN_REF_WIDTH}–{MAX_REF_WIDTH}%
           </Text>
         </div>

@@ -7,6 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { screen, render, act } from '@testing-library/react'
+import { theme as antdTheme } from 'antd'
 import { fireEvent } from '@testing-library/react'
 import { ThemeProvider, useTheme } from './ThemeProvider'
 
@@ -48,6 +49,16 @@ function EditorProbe() {
       <button onClick={() => updateEditorSettings({ font: { family: 'system' } })}>换编辑器字体</button>
       <button onClick={() => updateEditorSettings({ font: { size: 16 } })}>换编辑器字号</button>
     </div>
+  )
+}
+
+/** antd token 探针 —— 验证组件级字号 token 是否随字体档位一起缩放 */
+function TokenProbe() {
+  const { token } = antdTheme.useToken()
+  return (
+    <span data-testid="font-tokens">
+      {token.fontSize}/{token.fontSizeSM}/{token.fontSizeHeading1}
+    </span>
   )
 }
 
@@ -261,6 +272,10 @@ describe('ThemeProvider 字体设置', () => {
     expect(screen.getByTestId('font-bold')).toHaveTextContent('false')
     expect(document.body.style.fontSize).toBe('14px')
     expect(document.body.style.fontWeight).toBe('400')
+    // 显式写了 --cn-text-* 的 CSS / 行内字号同样按档位走，默认档等于基准值
+    expect(document.documentElement.style.getPropertyValue('--cn-font-scale')).toBe('1')
+    expect(document.documentElement.style.getPropertyValue('--cn-text-md')).toBe('14px')
+    expect(document.documentElement.style.getPropertyValue('--cn-text-xs')).toBe('12px')
   })
 
   it('切换字号档位：body 字号同步更新并持久化到 localStorage', () => {
@@ -275,9 +290,26 @@ describe('ThemeProvider 字体设置', () => {
 
     expect(screen.getByTestId('font-scale')).toHaveTextContent('large')
     expect(document.body.style.fontSize).toBe('16px')
+    // t-shirt 字号变量整体等比放大，而不仅是 body 基础字号
+    expect(document.documentElement.style.getPropertyValue('--cn-text-md')).toBe('16px')
+    expect(document.documentElement.style.getPropertyValue('--cn-text-xs')).toBe('13.7px')
     const persisted = JSON.parse(localStorage.getItem('cndb_font') ?? '{}') as { scale?: string; bold?: boolean }
     expect(persisted.scale).toBe('large')
     expect(persisted.bold).toBe(false)
+  })
+
+  it('antd 组件级字号 token（fontSizeSM / Heading）随档位一起缩放', () => {
+    localStorage.clear()
+    render(
+      <ThemeProvider>
+        <FontProbe />
+        <TokenProbe />
+      </ThemeProvider>,
+    )
+
+    expect(screen.getByTestId('font-tokens')).toHaveTextContent('14/12/24')
+    fireEvent.click(screen.getByText('切到 large'))
+    expect(screen.getByTestId('font-tokens')).toHaveTextContent('16/14/27')
   })
 
   it('开启全局加粗：body 字重同步更新并持久化', () => {
@@ -309,6 +341,7 @@ describe('ThemeProvider 字体设置', () => {
     expect(screen.getByTestId('font-bold')).toHaveTextContent('true')
     expect(document.body.style.fontSize).toBe('18px')
     expect(document.body.style.fontWeight).toBe('600')
+    expect(document.documentElement.style.getPropertyValue('--cn-text-lg')).toBe('20.6px')
   })
 })
 
@@ -352,7 +385,7 @@ describe('ThemeProvider 编辑器设置', () => {
     localStorage.clear()
     localStorage.setItem(
       'cndb_editor_settings',
-      JSON.stringify({ theme: 'high-contrast', font: { family: 'inter', size: 12 } }),
+      JSON.stringify({ theme: 'high-contrast', font: { family: 'maple-mono', size: 12 } }),
     )
     render(
       <ThemeProvider>
@@ -361,7 +394,7 @@ describe('ThemeProvider 编辑器设置', () => {
     )
 
     expect(screen.getByTestId('editor-theme')).toHaveTextContent('high-contrast')
-    expect(screen.getByTestId('editor-family')).toHaveTextContent('inter')
+    expect(screen.getByTestId('editor-family')).toHaveTextContent('maple-mono')
     expect(screen.getByTestId('editor-size')).toHaveTextContent('12')
   })
 })

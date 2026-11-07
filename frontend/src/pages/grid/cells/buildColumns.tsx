@@ -205,27 +205,27 @@ export function buildColumns(
 
             {/* 唯一约束 —— 金橙 KeyOutlined */}
             {f.is_unique && flagIcon(
-              <KeyOutlined style={{ fontSize: 11, color: HEADER_FLAG.unique }} />, '唯一', HEADER_FLAG.unique,
+              <KeyOutlined style={{ fontSize: 'var(--cn-text-2xs)', color: HEADER_FLAG.unique }} />, '唯一', HEADER_FLAG.unique,
             )}
 
             {/* 关联字段 —— 品红 LinkOutlined */}
             {f.field_type === 'link' && flagIcon(
-              <LinkOutlined style={{ fontSize: 11, color: HEADER_FLAG.link }} />, '关联', HEADER_FLAG.link,
+              <LinkOutlined style={{ fontSize: 'var(--cn-text-2xs)', color: HEADER_FLAG.link }} />, '关联', HEADER_FLAG.link,
             )}
 
             {/* 引用字段 —— 紫 BulbOutlined */}
             {f.field_type === 'lookup' && flagIcon(
-              <BulbOutlined style={{ fontSize: 11, color: HEADER_FLAG.lookup }} />, '引用', HEADER_FLAG.lookup,
+              <BulbOutlined style={{ fontSize: 'var(--cn-text-2xs)', color: HEADER_FLAG.lookup }} />, '引用', HEADER_FLAG.lookup,
             )}
 
             {/* 排序箭头 / 过滤图标 —— 保留原有逻辑 */}
             {hasSortIndicator && (
               sortRule!.direction === 'asc'
-                ? <SortAscendingOutlined style={{ fontSize: 12, color: '#1677ff' }} />
-                : <SortDescendingOutlined style={{ fontSize: 12, color: '#1677ff' }} />
+                ? <SortAscendingOutlined style={{ fontSize: 'var(--cn-text-xs)', color: '#1677ff' }} />
+                : <SortDescendingOutlined style={{ fontSize: 'var(--cn-text-xs)', color: '#1677ff' }} />
             )}
             {currentFilter && (
-              <FilterOutlined style={{ fontSize: 11, color: '#1677ff' }} />
+              <FilterOutlined style={{ fontSize: 'var(--cn-text-2xs)', color: '#1677ff' }} />
             )}
 
             {/* AI 填充本列入口：仅在提供回调时渲染；点击不冒泡到 th（否则会同时触发排序） */}
@@ -236,7 +236,7 @@ export function buildColumns(
                   size="small"
                   aria-label={`AI 填充本列：${f.name}`}
                   data-testid={`header-ai-fill-${f.id}`}
-                  style={{ height: 20, minWidth: 20, padding: '0 4px', marginInlineStart: 2, fontSize: 11 }}
+                  style={{ height: 20, minWidth: 20, padding: '0 4px', marginInlineStart: 2, fontSize: 'var(--cn-text-2xs)' }}
                   onClick={(event) => {
                     event.stopPropagation()
                     options.onAiFillField?.(f)

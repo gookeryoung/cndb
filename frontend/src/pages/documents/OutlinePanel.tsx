@@ -109,7 +109,7 @@ export default function OutlinePanel({
           flexShrink: 0,
           padding: '10px 12px',
           borderBottom: '1px solid var(--cn-border, #e8e8e8)',
-          fontSize: 12,
+          fontSize: 'var(--cn-text-xs)',
           color: 'var(--cn-text-secondary, #666)',
         }}
       >

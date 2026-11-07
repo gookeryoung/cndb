@@ -62,7 +62,7 @@ export default function TableWidget({ widget, rows, dataset, onRowClick }: Table
 
   return (
     <div data-testid={`dashboard-table-${widget.id}`} style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--cn-text-xs)' }}>
         <thead>
           <tr>
             {columns.map((name) => {
@@ -113,7 +113,7 @@ export default function TableWidget({ widget, rows, dataset, onRowClick }: Table
         </tbody>
       </table>
       {body.length === 0 && (
-        <div data-testid={`dashboard-table-empty-${widget.id}`} style={{ padding: 12, fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+        <div data-testid={`dashboard-table-empty-${widget.id}`} style={{ padding: 12, fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
           暂无数据
         </div>
       )}

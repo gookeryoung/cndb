@@ -246,7 +246,7 @@ export default function RowDetailDrawer({ open, row, fields: fieldsProp, wid, ti
                   {f.name}
                   {locked && (
                     <Tooltip title="此字段为自动预填，已锁定（可在个人设置 > 表格 > 操作风格中关闭）">
-                      <LockOutlined style={{ fontSize: 11, color: '#bfbfbf' }} />
+                      <LockOutlined style={{ fontSize: 'var(--cn-text-2xs)', color: '#bfbfbf' }} />
                     </Tooltip>
                   )}
                 </span>
@@ -291,7 +291,7 @@ export default function RowDetailDrawer({ open, row, fields: fieldsProp, wid, ti
                 content: (
                   <div>
                     <Tag>{a.action}</Tag>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>{a.actor_name || '系统'} · {a.created_at || ''}</span>
+                    <span style={{ color: '#94a3b8', fontSize: 'var(--cn-text-xs)' }}>{a.actor_name || '系统'} · {a.created_at || ''}</span>
                   </div>
                 ),
               }))}
@@ -452,7 +452,7 @@ export function FieldEditor({
             style={{ padding: '4px 8px', marginBottom: 8 }}
             disabled={disabled}
           >
-            <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
+            <div style={{ fontSize: 'var(--cn-text-xs)', color: '#94a3b8', margin: '2px 0' }}>
               <InboxOutlined /> 点击或拖拽上传
             </div>
           </Upload.Dragger>
@@ -479,7 +479,7 @@ export function FieldEditor({
                   )
                 }
                 return (
-                  <span key={f.file_key} style={{ fontSize: 12, padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
+                  <span key={f.file_key} style={{ fontSize: 'var(--cn-text-xs)', padding: '4px 8px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
                     📎 <AuthedFileLink wid={wid} fileKey={f.file_key} filename={f.filename} />
                     {!disabled && (
                       <Tooltip title="删除该附件">

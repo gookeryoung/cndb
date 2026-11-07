@@ -1088,7 +1088,7 @@ export default function AnalyticsPage() {
             value={formDesc}
             onChange={e => setFormDesc(e.target.value)}
           />
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
             模板保存到后端（含公式、图表与分组汇总配置），工作区成员均可加载；仅编辑者及以上可保存/删除。
           </Text>
         </Space>

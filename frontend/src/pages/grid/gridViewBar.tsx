@@ -55,16 +55,16 @@ function DndViewTab({ view, active, draggable, onClick }: { view: View; active: 
     >
       {/* 拖拽把手：仅视图管理权限（EDIT_VIEWS）启用；个人视图本人可拖自己的排序? 否 —— 排序是表级公共属性，个人视图不开放 */}
       <HolderOutlined
-        style={{ fontSize: 10, color: '#bfbfbf', cursor: draggable ? 'grab' : 'default', opacity: draggable ? 1 : 0.35 }}
+        style={{ fontSize: 'var(--cn-text-3xs)', color: '#bfbfbf', cursor: draggable ? 'grab' : 'default', opacity: draggable ? 1 : 0.35 }}
       />
       <span>{view.name}</span>
-      {view.is_default && <Tag color="blue" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
+      {view.is_default && <Tag color="blue" style={{ marginLeft: 0, fontSize: 'var(--cn-text-2xs)', lineHeight: '14px', padding: '0 4px' }}>默认</Tag>}
       {/* 档位标识：table 档对全表可见，不加标识；private = 仅本人可见；shared = 本人 + 指定成员。
           ****不能再用 `owner_id != null` 判个人视图**** —— 新模型下 table 档视图也带 owner（创建者），
           那样会给每个自建视图都打上「我的」。`visibility` 缺失（老响应 / mock）时回落到旧判据。 */}
-      {view.visibility === 'private' && <Tag color="purple" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>我的</Tag>}
-      {view.visibility === 'shared' && <Tag color="cyan" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>指定成员</Tag>}
-      {view.visibility === undefined && view.owner_id != null && <Tag color="purple" style={{ marginLeft: 0, fontSize: 11, lineHeight: '14px', padding: '0 4px' }}>我的</Tag>}
+      {view.visibility === 'private' && <Tag color="purple" style={{ marginLeft: 0, fontSize: 'var(--cn-text-2xs)', lineHeight: '14px', padding: '0 4px' }}>我的</Tag>}
+      {view.visibility === 'shared' && <Tag color="cyan" style={{ marginLeft: 0, fontSize: 'var(--cn-text-2xs)', lineHeight: '14px', padding: '0 4px' }}>指定成员</Tag>}
+      {view.visibility === undefined && view.owner_id != null && <Tag color="purple" style={{ marginLeft: 0, fontSize: 'var(--cn-text-2xs)', lineHeight: '14px', padding: '0 4px' }}>我的</Tag>}
     </span>
   )
 }
@@ -368,7 +368,7 @@ export default function GridViewBar({
         type="text"
         data-testid="view-mode-dropdown"
         aria-label="切换视图模式"
-        icon={<>{currentModeBtn?.icon}{<DownOutlined style={{ fontSize: 10 }} />}</>}
+        icon={<>{currentModeBtn?.icon}{<DownOutlined style={{ fontSize: 'var(--cn-text-3xs)' }} />}</>}
       />
     </TooltipDropdown>
   )

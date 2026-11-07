@@ -63,13 +63,13 @@ export default function KpiWidget({ widget, rows, dataset }: KpiWidgetProps) {
       <div
         data-testid={`dashboard-kpi-value-${widget.id}`}
         style={{
-          fontSize: 26, fontWeight: 600, lineHeight: 1.2, color: 'var(--cn-text-primary)',
+          fontSize: 'calc(var(--cn-text-xl) + 6px)', fontWeight: 600, lineHeight: 1.2, color: 'var(--cn-text-primary)',
           fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
         }}
       >
         {formatKpi(result)}
       </div>
-      <div style={{ marginTop: 4, fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+      <div style={{ marginTop: 4, fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
         {aggLabel[agg]} · {field}
       </div>
     </div>

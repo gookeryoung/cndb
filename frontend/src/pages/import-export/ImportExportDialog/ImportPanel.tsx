@@ -403,12 +403,12 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                     {/* 左：文件 + 进度 */}
                     <div style={{ flex: 1, minWidth: 280 }}>
-                        <div style={{ fontSize: 13, color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <FileTextOutlined />
                             <span style={{ fontWeight: WEIGHT.medium }}>{task.filename}</span>
                             <span style={{ color: 'var(--cn-text-muted)' }}>· {(task.format || '').toUpperCase()}</span>
                             <span style={{ color: 'var(--cn-text-muted)' }}>·</span>
-                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}>
+                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-xs)' }}>
                                 {textMap[task.status] || task.status}
                                 {task.imported_rows != null && task.status === 'done' && ` · 已导入 ${task.imported_rows} 行`}
                             </span>
@@ -463,7 +463,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
             <div style={{ marginBottom: 12 }}>
                 {/* 参考列选择 */}
                 <div style={{ padding: 12, background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}>
-                    <div style={{ fontSize: 13, fontWeight: WEIGHT.semibold, color: 'var(--cn-text-secondary)', marginBottom: 8 }}>
+                    <div style={{ fontSize: 'var(--cn-text-sm)', fontWeight: WEIGHT.semibold, color: 'var(--cn-text-secondary)', marginBottom: 8 }}>
                         <SwapOutlined style={{ marginRight: 6 }} />
                         选择参考列（按此匹配已有行做更新 / 新增）
                         <HelpTip title="参考列即匹配键：导入时用这些列的值在表中查找同值行，找到则更新该行，找不到则新增一行" />
@@ -495,11 +495,11 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         )}
                     </div>
                     {recommendedFields.length > 0 && (
-                        <div style={{ fontSize: 12, color: '#16a34a', marginTop: 6 }}>
+                        <div style={{ fontSize: 'var(--cn-text-xs)', color: '#16a34a', marginTop: 6 }}>
                             ★ 推荐参考列：{recommendedFields.join('、')}（文件与表内取值唯一，匹配最可靠）
                         </div>
                     )}
-                    <div style={{ fontSize: 12, color: 'var(--cn-text-muted)', marginTop: 6 }}>
+                    <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)', marginTop: 6 }}>
                         提示：选择一个或多个字段（如『ID』、『名称』），系统将用它们匹配表中已有行，相同值视为更新，无匹配视为新增。
                     </div>
                 </div>
@@ -549,11 +549,11 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     >
                         AI 建议列映射
                     </Button>
-                    <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
+                    <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)' }}>
                         建议可编辑；点「确认导入」时按映射把源列写入目标字段（留空 = 不映射）
                     </span>
                     {!hasTargetTable && (
-                        <span data-testid="ai-mapping-need-table" style={{ fontSize: 12, color: '#f59e0b' }}>
+                        <span data-testid="ai-mapping-need-table" style={{ fontSize: 'var(--cn-text-xs)', color: '#f59e0b' }}>
                             请先选择目标表
                         </span>
                     )}
@@ -600,7 +600,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     </div>
                 )}
                 {aiMappingMeta && (
-                    <div data-testid="ai-mapping-meta" style={{ marginTop: 8, fontSize: 11, color: 'var(--cn-text-muted)' }}>{aiMappingMeta}</div>
+                    <div data-testid="ai-mapping-meta" style={{ marginTop: 8, fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-muted)' }}>{aiMappingMeta}</div>
                 )}
             </div>
         )
@@ -637,7 +637,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                     置信度 {Math.round(hd.confidence * 100)}%
                 </Tag>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-                    <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)', whiteSpace: 'nowrap' }}>表头行：</span>
+                    <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)', whiteSpace: 'nowrap' }}>表头行：</span>
                     <Select
                         data-testid="header-row-select"
                         size="small"
@@ -715,7 +715,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                         style={{ marginBottom: 12 }}
                         showIcon
                         title={
-                            <div style={{ fontSize: 12 }}>
+                            <div style={{ fontSize: 'var(--cn-text-xs)' }}>
                                 {plannedColumns.length > 0 && (
                                     <div>
                                         <div style={{ fontWeight: WEIGHT.semibold, marginBottom: 6 }}>
@@ -757,7 +757,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                                         <span style={{ fontWeight: WEIGHT.medium }}>{pc.name}</span>
                                                         <Tag color={isDropped ? 'default' : 'blue'} style={{ margin: 0 }}>{pc.field_type}</Tag>
                                                         {pc.sample_values?.length > 0 && (
-                                                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 11 }}>
+                                                            <span style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-2xs)' }}>
                                                                 样本: {pc.sample_values.join(' / ')}
                                                             </span>
                                                         )}
@@ -769,7 +769,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                             })}
                                         </div>
                                         {unknownColsStrategy === 'add_text_field' && droppedColumns.length > 0 && (
-                                            <div style={{ marginTop: 6, color: '#ef4444', fontSize: 11 }}>
+                                            <div style={{ marginTop: 6, color: '#ef4444', fontSize: 'var(--cn-text-2xs)' }}>
                                                 其中 {droppedColumns.length} 个字段被勾选丢弃，不会自动创建
                                             </div>
                                         )}
@@ -832,7 +832,7 @@ export default function ImportPanel({ open, wid, tid, fields = [], onClose, onIm
                                     )}
                                     {report.warnings.length > 0 && (
                                         <div style={{ marginTop: 12 }}>
-                                            <div style={{ marginBottom: 4, color: '#f59e0b', fontSize: 13 }}>警告</div>
+                                            <div style={{ marginBottom: 4, color: '#f59e0b', fontSize: 'var(--cn-text-sm)' }}>警告</div>
                                             <Table
                                                 size="small" pagination={{ pageSize: 10 }}
                                                 dataSource={report.warnings.map((w: any, i: number) => ({ ...w, __key: `w${i}` }))} rowKey="__key"

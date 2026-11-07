@@ -45,13 +45,13 @@ export default function BacklinksDrawer({
             <Text strong>{b.title}</Text>
             {b.summary && (
               <div>
-                <Text type="secondary" style={{ fontSize: 12 }} ellipsis>
+                <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} ellipsis>
                   {b.summary}
                 </Text>
               </div>
             )}
             <div>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                 {new Date(b.updated_at).toLocaleString('zh-CN', { hour12: false })}
               </Text>
             </div>

@@ -292,10 +292,10 @@ export default function WorkspaceSettingsContent({
             <div>
               <div style={{ fontWeight: WEIGHT.medium }}>
                 {detail.owner.username}
-                {detail.owner.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 13 }}>({detail.owner.nickname})</span>}
+                {detail.owner.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8, fontSize: 'var(--cn-text-sm)' }}>({detail.owner.nickname})</span>}
                 {myRole === 'owner' && <Tag color="blue" style={{ marginLeft: 8 }}>就是您</Tag>}
               </div>
-              <div style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>
+              <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)' }}>
                 所有者对工作区负全责，可管理成员与转让所有权
               </div>
             </div>
@@ -318,7 +318,7 @@ export default function WorkspaceSettingsContent({
             onChange={(checked) => toggleAllowEdit.mutate(checked)}
             loading={toggleAllowEdit.isPending}
           />
-          <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>
+          <span style={{ color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)' }}>
             {detail?.allow_edit ?? true
               ? '已开启：编辑者可以修改数据'
               : '已关闭：仅所有者可以修改数据，其他成员只能查看'}
@@ -327,7 +327,7 @@ export default function WorkspaceSettingsContent({
       </Card>
 
       {!canManageMembers && (
-        <div style={{ marginBottom: 12, padding: 10, ...warningBoxStyle, color: '#92400e', fontSize: 13 }}>
+        <div style={{ marginBottom: 12, padding: 10, ...warningBoxStyle, color: '#92400e', fontSize: 'var(--cn-text-sm)' }}>
           仅所有者可管理成员与权限
         </div>
       )}
@@ -432,7 +432,7 @@ export default function WorkspaceSettingsContent({
             <Input placeholder="例如：研发, 产品, 核心业务" />
           </Form.Item>
           {!canEditBasic && (
-            <div style={{ marginTop: 12, color: '#f59e0b', fontSize: 13 }}>
+            <div style={{ marginTop: 12, color: '#f59e0b', fontSize: 'var(--cn-text-sm)' }}>
               ℹ️ 您的角色（{ROLE_LABEL[myRole ?? 'viewer']}）仅能查看设置，无法修改
             </div>
           )}
@@ -471,7 +471,7 @@ export default function WorkspaceSettingsContent({
                   borderLeft: `3px solid ${item.color}`,
                 }}
               >
-                <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
                   {item.icon} {item.label}
                 </div>
                 <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: WEIGHT.semibold, marginTop: 4, color: 'var(--cn-text-primary)' }}>
@@ -484,15 +484,15 @@ export default function WorkspaceSettingsContent({
           {/* 存储用量：已用 / 配额 + 使用率进度条 */}
           <div style={{ padding: 16, ...subtleBoxStyle, marginBottom: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 <HddOutlined /> 存储用量
               </span>
-              <span style={{ fontSize: 13, color: 'var(--cn-text-secondary)' }}>
+              <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>
                 {formatSize(storageUsed)} / {formatSize(storageQuota)}
               </span>
             </div>
             <Progress percent={Math.round(storagePercent * 10) / 10} strokeColor={storageColor} size="small" />
-            <div style={{ fontSize: 12, color: 'var(--cn-text-muted)', marginTop: 4 }}>
+            <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)', marginTop: 4 }}>
               {storagePercent >= 100
                 ? '存储空间已用尽，请清理文件或联系管理员扩容'
                 : storagePercent >= 80
@@ -561,7 +561,7 @@ export default function WorkspaceSettingsContent({
                 <div style={{ fontWeight: WEIGHT.semibold, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
                   <DeleteOutlined /> 危险操作
                 </div>
-                <div style={{ color: '#991b1b', fontSize: 13, marginBottom: 12 }}>
+                <div style={{ color: '#991b1b', fontSize: 'var(--cn-text-sm)', marginBottom: 12 }}>
                   删除工作区将永久删除所有数据表、数据行、视图和成员关系，无法恢复。
                 </div>
                 <Popconfirm

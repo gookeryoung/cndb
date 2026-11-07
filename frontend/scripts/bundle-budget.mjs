@@ -99,7 +99,7 @@ function readChunkModules() {
  * 支持：
  *  - "entry"                 主入口 script（dist/index.html）
  *  - "entryCss"              主入口 <link rel=stylesheet> 的 CSS
- *  - "fonts"                 全部 woff2（实际按需传输的字体格式）
+ *  - "fonts"                 首屏入口 CSS 引用的 woff2（懒加载 chunk 的字体不计入首屏）
  *  - { assetPattern }        文件名正则
  *  - { moduleMarker }        模块路径子串（按 chunk-modules.json 归属定位，避免 hash 改名失效）
  */
@@ -116,8 +116,19 @@ function resolveFiles(spec, name) {
     return hits
   }
   if (spec === 'fonts') {
-    const hits = assets.filter((f) => f.endsWith('.woff2'))
-    if (!hits.length) fail(`${name}：dist/assets 内未找到 woff2 字体（构建是否启用了 @fontsource？）`)
+    // 只统计「首屏入口 CSS」真正引用的字体；设置面板 / 编辑器 chunk 里按需加载的字体
+    // 不应算进首屏预算（否则每加一套编辑器字体都会误判为首屏体积膨胀）。
+    const cssLinks = [...indexHtml.matchAll(/href="\/assets\/([^"]+\.css)"/g)].map((m) => m[1])
+    const referenced = new Set()
+    for (const css of cssLinks) {
+      if (!assets.includes(css)) continue
+      const text = readFileSync(path.join(assetsDir, css), 'utf8')
+      for (const m of text.matchAll(/url\((?:\.\/)?([^)"']+\.woff2)\)/g)) {
+        referenced.add(path.basename(m[1]))
+      }
+    }
+    const hits = [...referenced].filter((f) => assets.includes(f))
+    if (!hits.length) fail(`${name}：首屏入口 CSS 内未找到 woff2 字体（构建是否启用了 @fontsource？）`)
     return hits
   }
   if (spec && typeof spec === 'object' && spec.assetPattern) {

@@ -7,16 +7,16 @@ export default function MiniStat({ label, value, color, compact }: { label: stri
             padding: '6px 12px', background: color + '12', borderRadius: 6,
             borderLeft: `3px solid ${color}`, minWidth: 72, textAlign: 'center',
         }}>
-            <div style={{ fontSize: 16, fontWeight: WEIGHT.bold, color, lineHeight: 1.2 }}>{value}</div>
-            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>{label}</div>
+            <div style={{ fontSize: 'var(--cn-text-lg)', fontWeight: WEIGHT.bold, color, lineHeight: 1.2 }}>{value}</div>
+            <div style={{ fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-muted)' }}>{label}</div>
         </div>
     ) : (
         <div style={{
             padding: '8px 14px', background: color + '10', borderRadius: 6,
             borderLeft: `3px solid ${color}`, minWidth: 90,
         }}>
-            <div style={{ fontSize: 18, fontWeight: WEIGHT.bold, color }}>{value}</div>
-            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>{label}</div>
+            <div style={{ fontSize: 'calc(var(--cn-text-lg) + 2px)', fontWeight: WEIGHT.bold, color }}>{value}</div>
+            <div style={{ fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-muted)' }}>{label}</div>
         </div>
     )
 }

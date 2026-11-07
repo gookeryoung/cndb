@@ -98,7 +98,7 @@ export default function FieldsList({
 
             {/* 空值率进度条 */}
             {baseCol?.null_ratio != null && baseCol.null_ratio > 0 && (
-              <div style={{ fontSize: 11, color: 'var(--cn-text-muted)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <div style={{ fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-muted)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
                 <span>空值</span>
                 <Progress
                   size="small"
@@ -111,28 +111,28 @@ export default function FieldsList({
 
             {/* 类型识别提示（date/timestamp/longtext/select 特别提示） */}
             {isSelect && (
-              <div style={{ fontSize: 11, color: '#f59e0b', marginBottom: 2 }}>
+              <div style={{ fontSize: 'var(--cn-text-2xs)', color: '#f59e0b', marginBottom: 2 }}>
                 <SwapOutlined /> 低基数 → select（{col.options?.length ?? 0}）
               </div>
             )}
             {isDate && (
-              <div style={{ fontSize: 11, color: '#22c55e', marginBottom: 2 }}>
+              <div style={{ fontSize: 'var(--cn-text-2xs)', color: '#22c55e', marginBottom: 2 }}>
                 <FileTextOutlined /> 识别为日期
               </div>
             )}
             {isTimestamp && (
-              <div style={{ fontSize: 11, color: '#22c55e', marginBottom: 2 }}>
+              <div style={{ fontSize: 'var(--cn-text-2xs)', color: '#22c55e', marginBottom: 2 }}>
                 <ClockCircleOutlined /> 识别为时间戳（秒/毫秒自动归一）
               </div>
             )}
             {isLongtext && (
-              <div style={{ fontSize: 11, color: '#06b6d4', marginBottom: 2 }}>
+              <div style={{ fontSize: 'var(--cn-text-2xs)', color: '#06b6d4', marginBottom: 2 }}>
                 <FileTextOutlined /> 识别为长文本
               </div>
             )}
 
             {/* 样本值 */}
-            <div style={{ fontSize: 11, color: 'var(--cn-text-muted)' }}>
+            <div style={{ fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-muted)' }}>
               样本: {(col.sample_values ?? []).slice(0, 3).map((v, i) => (
                 <Tag key={i} style={{ marginBottom: 1, background: 'var(--cn-bg-muted)' }}>{v}</Tag>
               ))}

@@ -218,7 +218,7 @@ export default function DashboardTemplateDialog({
             placeholder="模板名称（同名模板会被覆盖）"
             data-testid="dashboard-template-name"
           />
-          <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+          <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
             模板只保存「结构 + 字段名/类型快照」，不绑定来源表；应用到其他表时按同名同类型认领字段。
           </span>
         </div>
@@ -253,7 +253,7 @@ export default function DashboardTemplateDialog({
                     <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {template.name}
                     </span>
-                    <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>{count} 个组件</span>
+                    <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>{count} 个组件</span>
                     <Tooltip title="删除模板">
                       <Button
                         type="text"
@@ -276,19 +276,19 @@ export default function DashboardTemplateDialog({
           {selected && plan && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {plan.issues.length === 0 ? (
-                <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+                <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
                   模板中的字段都已按同名同类型自动认领。
                 </span>
               ) : (
                 <>
-                  <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+                  <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
                     以下字段在目标表中未找到同名同类型字段，请指定映射（共 {plan.issues.length} 个）：
                   </span>
                   {plan.issues.map((issue) => (
                     <div key={issue.field} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ width: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {issue.field}
-                        <span style={{ marginLeft: 4, fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+                        <span style={{ marginLeft: 4, fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
                           {issue.type || '未知类型'}
                         </span>
                       </span>

@@ -303,6 +303,17 @@ describe('SettingsModal 个人设置', () => {
       }
       expect(persisted.font?.size).toBe(16)
     })
+    // 新增等宽字体：Maple Mono 可选并即时持久化 / 预览
+    fireEvent.mouseDown(screen.getByTestId('editor-font-select').querySelector('input')!)
+    fireEvent.click(await screen.findByText('Maple Mono', { selector: '.ant-select-item-option-content' }))
+    await waitFor(() => {
+      const persisted = JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}') as {
+        font?: { family?: string }
+      }
+      expect(persisted.font?.family).toBe('maple-mono')
+    })
+    expect(screen.getByTestId('editor-theme-preview').style.fontFamily).toContain('Maple Mono')
+
     // 预览随配色切换（One Dark 背景）
     expect(screen.getByTestId('editor-theme-preview').style.background).toBe('rgb(40, 44, 52)')
 

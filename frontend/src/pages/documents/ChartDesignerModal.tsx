@@ -661,7 +661,7 @@ export default function ChartDesignerModal({
                       data-testid={`chart-designer-caption-${f.key}`}
                     />
                   ))}
-                  <Text type="secondary" style={{ fontSize: 12 }}>图注</Text>
+                  <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>图注</Text>
                   <Input.TextArea
                     value={config.caption.note ?? ''}
                     onChange={e => setCaption('note', e.target.value)}
@@ -675,14 +675,14 @@ export default function ChartDesignerModal({
               <div>
                 <Text strong style={{ display: 'block', marginBottom: 4 }}>
                   数据
-                  <Text type="secondary" style={{ fontWeight: 'normal', marginLeft: 8, fontSize: 12 }}>
+                  <Text type="secondary" style={{ fontWeight: 'normal', marginLeft: 8, fontSize: 'var(--cn-text-xs)' }}>
                     {template.row_min}–{template.row_max} 行
                   </Text>
                 </Text>
 
                 {/* 数据一键导入（需求卡片 0070 C3）：粘贴 TSV / CSV 整表替换 */}
                 <div style={{ marginBottom: 8 }}>
-                  <Text type="secondary" style={{ fontSize: 12 }}>
+                  <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                     导入数据（粘贴表格数据，可含表头行，一键替换下方数据行）
                   </Text>
                   <Input.TextArea
@@ -709,7 +709,7 @@ export default function ChartDesignerModal({
                       导入数据
                     </Button>
                     {importError && (
-                      <Text type="danger" style={{ fontSize: 12 }} data-testid="chart-designer-import-error">
+                      <Text type="danger" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="chart-designer-import-error">
                         {importError}
                       </Text>
                     )}
@@ -718,7 +718,7 @@ export default function ChartDesignerModal({
 
                 {isSeriesTemplate && (
                   <div style={{ marginBottom: 8 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                       系列（{template.series_min}–{template.series_max} 个）
                     </Text>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
@@ -791,7 +791,7 @@ export default function ChartDesignerModal({
                   </div>
                 ) : isDualAxisTemplate ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                       列：标签 / 主值（左轴）/ 次值（右轴，留空按主值推算显示为「(计算)」，点击可编辑；填写后本行主值联动变动）
                     </Text>
                     {rows.map((row, i) =>
@@ -898,7 +898,7 @@ export default function ChartDesignerModal({
                       })() : null,
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Text type="secondary" style={{ fontSize: 12 }}>实际值年份数（规划期分界）</Text>
+                      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>实际值年份数（规划期分界）</Text>
                       <InputNumber
                         min={1}
                         max={Math.max(rows.length, 1)}
@@ -911,7 +911,7 @@ export default function ChartDesignerModal({
                   </div>
                 ) : rowKind === 'xy' ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                       列：横轴值 / 纵轴值（散点，每行一个点）
                     </Text>
                     {rows.map((row, i) =>
@@ -944,7 +944,7 @@ export default function ChartDesignerModal({
                   </div>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                       列：名称 / 数值
                     </Text>
                     {rows.map((row, i) =>
@@ -1053,7 +1053,7 @@ export default function ChartDesignerModal({
                       aria-label={`调色板颜色 ${i + 1}`}
                     />
                   ))}
-                  <Text type="secondary" style={{ fontSize: 12 }}>纸底</Text>
+                  <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>纸底</Text>
                   <input
                     type="color"
                     value={config.theme.paper}
@@ -1076,7 +1076,7 @@ export default function ChartDesignerModal({
               width: isMobile ? '100%' : undefined,
             }}
           >
-            <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
+            <Paragraph type="secondary" style={{ fontSize: 'var(--cn-text-xs)', marginBottom: 8 }}>
               实时预览（输入停顿 0.3 秒后刷新）
             </Paragraph>
             <DesignerPreview

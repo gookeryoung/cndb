@@ -35,7 +35,7 @@ export function changedCountOf(row: { field_diffs?: Record<string, unknown> } | 
 /** 字段级 diff 单元格样式基线（GitHub diff 风格 chip 共用） */
 export function diffChipStyle(): Pick<CSSProperties, 'fontSize' | 'lineHeight' | 'padding' | 'borderRadius' | 'alignSelf' | 'maxWidth' | 'overflowWrap'> {
   return {
-    fontSize: 12,
+    fontSize: 'var(--cn-text-xs)',
     lineHeight: '18px',
     padding: '0 6px',
     borderRadius: 3,

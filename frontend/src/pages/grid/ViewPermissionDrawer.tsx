@@ -190,7 +190,7 @@ export default function ViewPermissionDrawer({
         <Empty description="未选中视图" />
       ) : (
         <Spin spinning={loading}>
-          <Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 12 }}>
+          <Paragraph type="secondary" style={{ fontSize: 'var(--cn-text-xs)', marginBottom: 12 }}>
             视图权限只在数据表权限范围内放宽，不会让看不到这张表的人看到视图。
           </Paragraph>
 
@@ -198,7 +198,7 @@ export default function ViewPermissionDrawer({
           {view.view_type === 'dashboard' && (
             <Paragraph
               type="secondary"
-              style={{ fontSize: 12, marginBottom: 12 }}
+              style={{ fontSize: 'var(--cn-text-xs)', marginBottom: 12 }}
               data-testid="view-permission-dashboard-hint"
             >
               画布视图在「指定成员可见」或「表内所有人可见」档下，成员可通过视图栏「复制只读链接」打开只读展示（不含编辑与行详情）。
@@ -221,14 +221,14 @@ export default function ViewPermissionDrawer({
                     {option.value === 'shared' && members.length > 0 && <Tag color="cyan">{members.length} 人</Tag>}
                     {blocked && (
                       <Tooltip title="需要该数据表的「视图编辑」权限">
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                           <InfoCircleOutlined /> 无权限
                         </Text>
                       </Tooltip>
                     )}
                   </Space>
                   <div>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{option.hint}</Text>
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>{option.hint}</Text>
                   </div>
                 </Radio>
               )
@@ -297,11 +297,11 @@ export default function ViewPermissionDrawer({
                 </div>
               </>
             ) : preservedRoster ? (
-              <Text type="secondary" style={{ fontSize: 12 }} data-testid="view-member-preserved">
+              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="view-member-preserved">
                 已保留 {members.length} 人的共享名单，切回「指定成员可见」后自动恢复生效。
               </Text>
             ) : (
-              <Text type="secondary" style={{ fontSize: 12 }}>切换到「指定成员可见」后即可选择共享对象。</Text>
+              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>切换到「指定成员可见」后即可选择共享对象。</Text>
             )}
           </div>
         </Spin>

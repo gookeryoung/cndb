@@ -19,6 +19,8 @@ import {
 import { useTableSettingsStore, useDocSettingsStore, useAuthStore, type SettingsTab } from '@/store'
 import { authApi } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
+// 编辑器字体只在设置面板 / 编辑器 chunk 中加载（大体积等宽字体不进首屏入口）
+import '@/theme/editorFontAssets'
 import type { Density, NewRowPosition } from '@/theme/tableSettings'
 import LlmConfigPanel from './LlmConfigPanel'
 import { WEIGHT } from '@/theme/tokens'
@@ -69,8 +71,8 @@ function SectionHeader({ title, description, topGap = 0 }: {
         flexWrap: 'wrap',
       }}
     >
-      <Text strong style={{ fontSize: 14 }}>{title}</Text>
-      <Text type="secondary" style={{ fontSize: 12 }}>{description}</Text>
+      <Text strong style={{ fontSize: 'var(--cn-text-md)' }}>{title}</Text>
+      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>{description}</Text>
     </div>
   )
 }
@@ -117,9 +119,9 @@ function ThemeCard({ mode, selected, onSelect }: {
         <div style={{ width: 12, height: 10, borderRadius: 4, background: s.border }} />
       </div>
       <div>
-        <div style={{ fontWeight: selected ? WEIGHT.semibold : WEIGHT.medium, fontSize: 13 }}>{meta.label}</div>
+        <div style={{ fontWeight: selected ? WEIGHT.semibold : WEIGHT.medium, fontSize: 'var(--cn-text-sm)' }}>{meta.label}</div>
         <div style={{
-          fontSize: 11,
+          fontSize: 'var(--cn-text-2xs)',
           color: meta.isDark ? '#8b949e' : '#8c8c8c',
           marginTop: 2,
           lineHeight: 1.4,
@@ -241,7 +243,7 @@ function ProfilePanel({ onClose }: { onClose: () => void }) {
             <Form.Item name="username" label="用户名" style={{ marginBottom: 0 }}>
               <Input disabled />
             </Form.Item>
-            <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', display: 'block', marginTop: 4 }}>
               注册后不可修改
             </Text>
           </div>
@@ -361,7 +363,7 @@ function EditorPreview({ theme, family }: {
         borderRadius: 8,
         padding: '10px 12px',
         fontFamily: EDITOR_FONT_META[family].css,
-        fontSize: 12,
+        fontSize: 'var(--cn-text-xs)',
         lineHeight: 1.7,
         color: p.text,
         overflow: 'hidden',
@@ -440,7 +442,7 @@ function ThemePanel() {
 
       {/* auto 生效回显：当前解析到的实际主题（0066 C7） */}
       {pref === 'auto' && (
-        <Text type="secondary" style={{ fontSize: 12 }}>
+        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
           跟随系统中：当前按系统明暗使用「{THEME_META[mode].label}」
         </Text>
       )}
@@ -448,7 +450,7 @@ function ThemePanel() {
       <SectionHeader title="字体" description="即时生效，自动保存到浏览器" topGap={20} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 13 }}>字号</Text>
+          <Text style={{ fontSize: 'var(--cn-text-sm)' }}>字号</Text>
           <Select
             data-testid="font-scale-select"
             value={font.scale}
@@ -458,7 +460,7 @@ function ThemePanel() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 13 }}>全局加粗</Text>
+          <Text style={{ fontSize: 'var(--cn-text-sm)' }}>全局加粗</Text>
           <Switch
             data-testid="font-bold-switch"
             checked={font.bold}
@@ -492,7 +494,7 @@ function EditorPanel() {
       />
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 13 }}>配色</Text>
+          <Text style={{ fontSize: 'var(--cn-text-sm)' }}>配色</Text>
           <Select
             data-testid="editor-theme-select"
             value={editor.theme}
@@ -505,7 +507,7 @@ function EditorPanel() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 13 }}>字体</Text>
+          <Text style={{ fontSize: 'var(--cn-text-sm)' }}>字体</Text>
           <Select
             data-testid="editor-font-select"
             value={editor.font.family}
@@ -518,7 +520,7 @@ function EditorPanel() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Text style={{ fontSize: 13 }}>字号</Text>
+          <Text style={{ fontSize: 'var(--cn-text-sm)' }}>字号</Text>
           <Select
             data-testid="editor-font-size-select"
             value={editor.font.size}
@@ -531,7 +533,7 @@ function EditorPanel() {
           />
         </div>
       </div>
-      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 8 }}>
+      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', display: 'block', marginTop: 8 }}>
         {EDITOR_THEME_META[editor.theme].description}
       </Text>
       <EditorPreview theme={editor.theme} family={editor.font.family} />
@@ -574,7 +576,7 @@ function TablePanel() {
         data-testid="table-display-row"
         style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}
       >
-        <Text style={{ fontSize: 13 }}>间距</Text>
+        <Text style={{ fontSize: 'var(--cn-text-sm)' }}>间距</Text>
         <Select
           data-testid="density-select"
           value={density}
@@ -582,7 +584,7 @@ function TablePanel() {
           style={{ width: 120 }}
           options={densityOptions}
         />
-        <Text style={{ fontSize: 13 }}>每页行数</Text>
+        <Text style={{ fontSize: 'var(--cn-text-sm)' }}>每页行数</Text>
         <Select
           data-testid="page-size-select"
           value={defaultPageSize}
@@ -591,14 +593,14 @@ function TablePanel() {
           options={[25, 50, 100, 200].map(n => ({ value: n, label: `${n} 条` }))}
         />
       </div>
-      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4, marginBottom: 20 }}>
+      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', display: 'block', marginTop: 4, marginBottom: 20 }}>
         间距同样影响看板、画廊、日历的卡片密度
       </Text>
 
       <SectionHeader title="操作风格" description="新增行的落点与自动填充锁定" topGap={20} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-        <Text style={{ fontSize: 13 }}>新增行默认位置</Text>
+        <Text style={{ fontSize: 'var(--cn-text-sm)' }}>新增行默认位置</Text>
         <Select
           value={newRowPosition}
           onChange={(v: NewRowPosition) => updateSettings({ newRowPosition: v })}
@@ -606,12 +608,12 @@ function TablePanel() {
           options={positionOptions.map(o => ({ value: o.value, label: o.label }))}
         />
       </div>
-      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4, marginBottom: 16 }}>
+      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', display: 'block', marginTop: 4, marginBottom: 16 }}>
         {positionOptions.find(o => o.value === newRowPosition)?.description}
       </Text>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 4 }}>
-        <Text style={{ fontSize: 13 }}>自动填充锁定</Text>
+        <Text style={{ fontSize: 'var(--cn-text-sm)' }}>自动填充锁定</Text>
         <Switch
           checked={autoFillLocked}
           onChange={(checked) => updateSettings({ autoFillLocked: checked })}
@@ -619,7 +621,7 @@ function TablePanel() {
           unCheckedChildren="关闭"
         />
       </div>
-      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', display: 'block', marginTop: 4 }}>
         开启后，新增行时由默认值或自动填充规则预填的字段将设为只读，避免误修改，提高录入速度
       </Text>
 
@@ -653,7 +655,7 @@ function DocPanel() {
     <div style={{ padding: '12px 0' }}>
       <SectionHeader title="对齐方式" description="文档内表格与图片的水平对齐" />
       <div data-testid="doc-align-row" style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
-        <Text style={{ fontSize: 13 }}>表格对齐</Text>
+        <Text style={{ fontSize: 'var(--cn-text-sm)' }}>表格对齐</Text>
         <Select
           data-testid="doc-table-align-select"
           value={tableAlign}
@@ -661,7 +663,7 @@ function DocPanel() {
           style={{ width: 96 }}
           options={alignOptions}
         />
-        <Text style={{ fontSize: 13 }}>图片对齐</Text>
+        <Text style={{ fontSize: 'var(--cn-text-sm)' }}>图片对齐</Text>
         <Select
           data-testid="doc-image-align-select"
           value={imageAlign}
@@ -673,7 +675,7 @@ function DocPanel() {
 
       <SectionHeader title="默认宽度" description="插入时的缺省宽度，正文显式指定不受影响" topGap={20} />
       <div data-testid="doc-width-row" style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
-        <Text style={{ fontSize: 13 }}>表格默认宽度</Text>
+        <Text style={{ fontSize: 'var(--cn-text-sm)' }}>表格默认宽度</Text>
         <Select
           data-testid="doc-table-width-select"
           value={tableDefaultWidth}
@@ -681,7 +683,7 @@ function DocPanel() {
           style={{ width: 96 }}
           options={[50, 75, 100].map(n => ({ value: n, label: `${n}%` }))}
         />
-        <Text style={{ fontSize: 13 }}>图片默认宽度</Text>
+        <Text style={{ fontSize: 'var(--cn-text-sm)' }}>图片默认宽度</Text>
         <Select
           data-testid="doc-image-width-select"
           value={imageDefaultWidth}
@@ -690,7 +692,7 @@ function DocPanel() {
           options={[50, 75].map(n => ({ value: n, label: `${n}%` }))}
         />
       </div>
-      <Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4, marginBottom: 16 }}>
+      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', display: 'block', marginTop: 4, marginBottom: 16 }}>
         仅影响缺省情况：正文中已显式指定宽度的表格引用不受影响
       </Text>
 

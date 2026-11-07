@@ -23,7 +23,7 @@ export default function HelpTip({ title, content, placement = 'top' }: HelpTipPr
         <QuestionCircleOutlined
             aria-label="帮助"
             style={{
-                fontSize: 14,
+                fontSize: 'var(--cn-text-md)',
                 color: 'var(--cn-text-muted)',
                 cursor: 'help',
                 marginLeft: 4,

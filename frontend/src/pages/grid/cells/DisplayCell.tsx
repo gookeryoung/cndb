@@ -113,7 +113,7 @@ export function DisplayCell({ value, field, rowId, wid }: { value: unknown; fiel
             }
             return (
               <AuthedFileLink key={f.file_key} wid={wid} fileKey={f.file_key} filename={f.filename}
-                style={{ fontSize: 12 }}>
+                style={{ fontSize: 'var(--cn-text-xs)' }}>
                 📎 {f.filename}
               </AuthedFileLink>
             )

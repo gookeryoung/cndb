@@ -474,7 +474,7 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
         style={{
           width: '100%', height: '100%', minHeight: 320, display: 'flex',
           alignItems: 'center', justifyContent: 'center',
-          color: 'rgba(128, 128, 128, 0.9)', fontSize: 13,
+          color: 'rgba(128, 128, 128, 0.9)', fontSize: 'var(--cn-text-sm)',
         }}
       >
         当前环境不支持 WebGL，无法渲染 3D 预览（DSL 编辑与保存不受影响）

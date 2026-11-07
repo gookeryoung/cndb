@@ -10,7 +10,9 @@ import { EditorView } from '@codemirror/view'
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language'
 import { tags as t } from '@lezer/highlight'
 
-import type { EditorFontSettings } from './editorSettings'
+import { EDITOR_FONT_META, type EditorFontSettings } from './editorSettings'
+// 编辑器等宽字体随编辑器 / 设置面板 chunk 按需加载，不进入首屏入口 CSS
+import './editorFontAssets'
 import { getEditorPalette, type EditorPalette, type EditorThemeId, type ResolvedEditorThemeId } from './editorThemes'
 
 /* ─────────────── 语法高亮 ─────────────── */
@@ -51,9 +53,10 @@ function fontSizeCss(font: EditorFontSettings): string {
 const themeCache = new Map<string, Extension>()
 
 function buildTheme(palette: EditorPalette, font: EditorFontSettings): Extension {
-  const family = font.family
+  // font.family 是设置 id，真正写进 CodeMirror 的是元信息里的完整字体栈
+  const family = EDITOR_FONT_META[font.family].css
   const size = fontSizeCss(font)
-  const key = `${palette.id}|${family}|${size}`
+  const key = `${palette.id}|${font.family}|${size}`
   const cached = themeCache.get(key)
   if (cached) return cached
 

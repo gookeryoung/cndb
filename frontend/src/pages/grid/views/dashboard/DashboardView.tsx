@@ -489,7 +489,7 @@ export default function DashboardView({
             另存为模板
           </Button>
           {draft.dirty && (
-            <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--cn-text-secondary)' }}>有未保存修改</span>
+            <span style={{ marginLeft: 'auto', fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>有未保存修改</span>
           )}
         </>
       ) : (
@@ -519,7 +519,7 @@ export default function DashboardView({
             刷新
           </Button>
           {refreshInterval > 0 && (
-            <span style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+            <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
               每 {refreshInterval}s 自动刷新
             </span>
           )}
@@ -629,7 +629,7 @@ export default function DashboardView({
       {editing && (
         <div
           data-testid="dashboard-edit-hint"
-          style={{ flexShrink: 0, padding: '4px 12px', fontSize: 12, color: 'var(--cn-text-secondary)' }}
+          style={{ flexShrink: 0, padding: '4px 12px', fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}
         >
           拖拽标题栏移动 · 右下角缩放 · 选中后方向键微调（Shift+方向键改尺寸）· Ctrl/⌘+S 保存 · Esc 退出
         </div>

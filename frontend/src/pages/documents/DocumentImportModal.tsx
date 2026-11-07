@@ -212,7 +212,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         dataIndex: 'path',
         key: 'path',
         ellipsis: true,
-        render: (value: string) => <Typography.Text style={{ fontSize: 12 }}>{value}</Typography.Text>,
+        render: (value: string) => <Typography.Text style={{ fontSize: 'var(--cn-text-xs)' }}>{value}</Typography.Text>,
       },
       {
         title: '标题',
@@ -388,7 +388,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
             {result.skipped_files.length > 0 && (
               <div>
                 <Typography.Text strong>跳过明细</Typography.Text>
-                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 12 }}>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 'var(--cn-text-xs)' }}>
                   {result.skipped_files.slice(0, 10).map(item => (
                     <li key={item.path}>
                       {item.path}（{item.reason}）
@@ -429,7 +429,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               onPick={() => inputRef.current?.click()}
               helpTitle="格式与处理方式"
               help={
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12, lineHeight: 1.9, maxWidth: 360 }}>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--cn-text-xs)', lineHeight: 1.9, maxWidth: 360 }}>
                   <li>转 Markdown：Markdown / HTML 直接转换；Word、MHTML 选「转 Markdown」后转为可编辑文档</li>
                   <li>原样存档：PDF / Excel / PPT / 图片固定原样存档；Word、MHTML 选「原样存档」时保留原件，可预览、可下载，不可编辑</li>
                   <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>
@@ -437,7 +437,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               }
               selected={
                 entries.length > 0 ? (
-                  <Typography.Text type="secondary" style={{ fontSize: 12 }} data-testid="file-import-picked">
+                  <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="file-import-picked">
                     已选 {entries.length} 个文件
                   </Typography.Text>
                 ) : null

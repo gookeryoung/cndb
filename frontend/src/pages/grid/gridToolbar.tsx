@@ -62,7 +62,7 @@ export default function GridToolbar({
 
   return (
     <div className="cn-grid-toolbar" style={{ padding: '6px 12px', borderBottom: '1px solid var(--cn-border)', display: 'flex', gap: 6, alignItems: 'center' }}>
-      <Text strong ellipsis style={{ fontSize: 15, maxWidth: isMobile ? '44vw' : undefined }}>{tableName || '...'}</Text>
+      <Text strong ellipsis style={{ fontSize: 'calc(var(--cn-text-md) + 1px)', maxWidth: isMobile ? '44vw' : undefined }}>{tableName || '...'}</Text>
       {/* 统计小徽标（来自后端增强字段）—— 窄屏隐藏：底部「共 N 条」已给出记录数，
           省下的宽度留给标题与主操作（否则标题会被压成「产…」） */}
       {recordCount != null && recordCount > 0 && !isMobile && (

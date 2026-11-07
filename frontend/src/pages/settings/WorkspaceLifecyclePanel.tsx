@@ -22,7 +22,7 @@ interface Props {
 
 function StageChecks({ stage }: { stage: LifecycleStage }) {
   return (
-    <div style={{ fontSize: 13 }}>
+    <div style={{ fontSize: 'var(--cn-text-sm)' }}>
       {stage.forms.length > 0 && (
         <div style={{ marginBottom: 4 }}>
           <Text strong>表单门禁</Text>
@@ -156,7 +156,7 @@ export default function WorkspaceLifecyclePanel({ wid, canAdvance, canManageTemp
             onChange={setApplyTemplateId}
             options={templates.map(t => ({ value: Number(t.id), label: `${t.name}（v${t.version}）` }))}
           />
-          <Paragraph type="secondary" style={{ marginTop: 8, fontSize: 12 }}>
+          <Paragraph type="secondary" style={{ marginTop: 8, fontSize: 'var(--cn-text-xs)' }}>
             增量同步：只补齐缺失的表 / 字段 / 文档占位，不删除任何已有数据。
           </Paragraph>
         </Modal>
@@ -179,7 +179,7 @@ export default function WorkspaceLifecyclePanel({ wid, canAdvance, canManageTemp
             {stage.gate_satisfied ? '门禁已通过' : '门禁未通过'}
           </Tag>
         </Space>
-        <div style={{ color: 'var(--cn-text-secondary)', fontSize: 13, margin: '2px 0 6px' }}>{stage.description || '—'}</div>
+        <div style={{ color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)', margin: '2px 0 6px' }}>{stage.description || '—'}</div>
         <StageChecks stage={stage} />
       </div>
     ),
@@ -257,7 +257,7 @@ export default function WorkspaceLifecyclePanel({ wid, canAdvance, canManageTemp
           onChange={setApplyTemplateId}
           options={templates.map(t => ({ value: Number(t.id), label: `${t.name}（v${t.version}）` }))}
         />
-        <Paragraph type="secondary" style={{ marginTop: 8, fontSize: 12 }}>
+        <Paragraph type="secondary" style={{ marginTop: 8, fontSize: 'var(--cn-text-xs)' }}>
           增量同步：只补齐缺失的表 / 字段 / 文档占位，不删除任何已有数据；切换模板会保留阶段履历。
         </Paragraph>
       </Modal>

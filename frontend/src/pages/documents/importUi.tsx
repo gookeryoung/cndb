@@ -84,7 +84,7 @@ export function ImportDropzone({
             border: '1px solid var(--cn-border-soft)',
             background: 'var(--cn-bg-container)',
             color: 'var(--cn-brand-color)',
-            fontSize: 20,
+            fontSize: 'var(--cn-text-xl)',
           }}
         >
           {icon}
@@ -95,7 +95,7 @@ export function ImportDropzone({
           {/* 单行省略：不同模式的副标题长短不一，这里保持同样的文字块高度 */}
           <Typography.Text
             type="secondary"
-            style={{ fontSize: 12, display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+            style={{ fontSize: 'var(--cn-text-xs)', display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
             title={subtitle}
           >
             {subtitle}
@@ -156,11 +156,11 @@ export function ImportSummary({ items, testId }: { items: ImportSummaryItem[]; t
   return (
     <div
       data-testid={testId}
-      style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 12 }}
+      style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 20px', fontSize: 'var(--cn-text-xs)' }}
     >
       {items.map(item => (
         <span key={item.key} style={{ whiteSpace: 'nowrap' }}>
-          <Typography.Text type={item.zero ? 'secondary' : undefined} style={{ fontSize: 12 }}>
+          <Typography.Text type={item.zero ? 'secondary' : undefined} style={{ fontSize: 'var(--cn-text-xs)' }}>
             {item.label}
           </Typography.Text>{' '}
           <span style={{ fontWeight: 600 }}>{item.value}</span>
@@ -210,7 +210,7 @@ export function ImportSwitch({
   const content = (
     <Space size={6}>
       <Switch size="small" checked={checked} onChange={onChange} disabled={disabled} data-testid={testId} />
-      <Typography.Text type={disabled ? 'secondary' : undefined} style={{ fontSize: 12 }}>
+      <Typography.Text type={disabled ? 'secondary' : undefined} style={{ fontSize: 'var(--cn-text-xs)' }}>
         {label}
       </Typography.Text>
     </Space>
@@ -241,7 +241,7 @@ export function ImportChoice<T extends string>({
 }) {
   const content = (
     <Space size={6} style={pushRight ? { marginLeft: 'auto' } : undefined}>
-      <Typography.Text type={disabled ? 'secondary' : undefined} style={{ fontSize: 12 }}>
+      <Typography.Text type={disabled ? 'secondary' : undefined} style={{ fontSize: 'var(--cn-text-xs)' }}>
         {label}
       </Typography.Text>
       <Segmented
@@ -256,7 +256,7 @@ export function ImportChoice<T extends string>({
       {tooltip ? (
         <Tooltip title={tooltip}>
           <QuestionCircleOutlined
-            style={{ color: 'var(--cn-text-muted)', fontSize: 12 }}
+            style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-xs)' }}
             aria-label={`${label}说明`}
           />
         </Tooltip>
@@ -301,7 +301,7 @@ export function ImportConflictOptions({
 }) {
   return (
     <div data-testid={testId}>
-      <Typography.Text strong style={{ fontSize: 12 }}>
+      <Typography.Text strong style={{ fontSize: 'var(--cn-text-xs)' }}>
         同名文档处理方式
       </Typography.Text>
       <Radio.Group
@@ -312,7 +312,7 @@ export function ImportConflictOptions({
         {IMPORT_CONFLICT_OPTIONS.map(option => (
           <Radio key={option.value} value={option.value}>
             {option.label}
-            <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
+            <Typography.Text type="secondary" style={{ marginLeft: 8, fontSize: 'var(--cn-text-xs)' }}>
               {option.hint}
             </Typography.Text>
           </Radio>
@@ -325,7 +325,7 @@ export function ImportConflictOptions({
 /** 预览截断提示 */
 export function ImportTruncatedHint({ count }: { count: number }) {
   return (
-    <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+    <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
       预览仅展示前 {count} 篇，其余同样会被导入。
     </Typography.Text>
   )

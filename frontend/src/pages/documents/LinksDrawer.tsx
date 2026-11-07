@@ -111,7 +111,7 @@ export default function LinksDrawer({
             >
               修复断链
             </Button>
-            <Text type="secondary" style={{ fontSize: 12 }}>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
               已选 {Object.keys(repairTargets).length} 条
             </Text>
           </Space>

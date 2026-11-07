@@ -1127,7 +1127,7 @@ export default function DocumentEditorPage() {
         placement="bottomRight"
         title="原件信息"
         content={
-          <div style={{ minWidth: 180, fontSize: 12, lineHeight: 1.9 }} data-testid="doc-asset-info-panel">
+          <div style={{ minWidth: 180, fontSize: 'var(--cn-text-xs)', lineHeight: 1.9 }} data-testid="doc-asset-info-panel">
             <div>
               <Typography.Text type="secondary">格式</Typography.Text> {assetFmt.label}
             </div>
@@ -1361,7 +1361,7 @@ export default function DocumentEditorPage() {
           {pathItems.length > 1 && (
             <Breadcrumb
               data-testid="doc-path-crumb"
-              style={{ fontSize: 12, marginBottom: 2 }}
+              style={{ fontSize: 'var(--cn-text-xs)', marginBottom: 2 }}
               items={pathItems}
             />
           )}

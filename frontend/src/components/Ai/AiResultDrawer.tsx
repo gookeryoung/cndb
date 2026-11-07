@@ -8,7 +8,7 @@
 import type { ReactNode } from 'react'
 import { Alert, Button, Drawer, Skeleton, Space, Typography } from 'antd'
 
-import { RADIUS, SPACE, TEXT } from '@/theme/tokens'
+import { RADIUS, SPACE } from '@/theme/tokens'
 import AiSuggestionList from './AiSuggestionList'
 
 const { Paragraph, Text } = Typography
@@ -69,7 +69,7 @@ export interface AiResultDrawerProps {
 function CompareBlock({ label, text, testId }: { label: string; text: string; testId: string }) {
   return (
     <div style={{ flex: '1 1 220px', minWidth: 0 }}>
-      <Text strong style={{ display: 'block', fontSize: TEXT.sm, marginBottom: SPACE.xs }}>
+      <Text strong style={{ display: 'block', fontSize: 'var(--cn-text-sm)', marginBottom: SPACE.xs }}>
         {label}
       </Text>
       <Paragraph
@@ -85,7 +85,7 @@ function CompareBlock({ label, text, testId }: { label: string; text: string; te
           background: 'var(--cn-bg-subtle, #fafafa)',
           border: '1px solid var(--cn-border, #e8e8e8)',
           borderRadius: RADIUS.sm,
-          fontSize: TEXT.sm,
+          fontSize: 'var(--cn-text-sm)',
           lineHeight: '1.7',
         }}
       >
@@ -156,7 +156,7 @@ export default function AiResultDrawer({
     >
       <div data-testid={testId} style={{ display: 'flex', flexDirection: 'column', gap: SPACE.lg }}>
         {meta && (
-          <Text type="secondary" style={{ fontSize: TEXT.xs }} data-testid="ai-result-meta">
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="ai-result-meta">
             {meta}
           </Text>
         )}
@@ -191,11 +191,11 @@ export default function AiResultDrawer({
         {!loading && !error &&
           sections.map(section => (
             <div key={section.key} data-testid={section.testId ?? `ai-result-section-${section.key}`}>
-              <Text strong style={{ display: 'block', fontSize: TEXT.sm, marginBottom: SPACE.xs }}>
+              <Text strong style={{ display: 'block', fontSize: 'var(--cn-text-sm)', marginBottom: SPACE.xs }}>
                 {section.title}
               </Text>
               {section.text != null && (
-                <Paragraph style={{ margin: 0, fontSize: TEXT.sm, lineHeight: '1.7' }}>
+                <Paragraph style={{ margin: 0, fontSize: 'var(--cn-text-sm)', lineHeight: '1.7' }}>
                   {section.text}
                 </Paragraph>
               )}
@@ -209,7 +209,7 @@ export default function AiResultDrawer({
                 />
               )}
               {section.hint && (
-                <Text type="secondary" style={{ display: 'block', fontSize: TEXT.xs, marginTop: SPACE.xs }}>
+                <Text type="secondary" style={{ display: 'block', fontSize: 'var(--cn-text-xs)', marginTop: SPACE.xs }}>
                   {section.hint}
                 </Text>
               )}
@@ -217,7 +217,7 @@ export default function AiResultDrawer({
           ))}
 
         {hint && !error && (
-          <Text type="secondary" style={{ fontSize: TEXT.xs }} data-testid="ai-result-hint">
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }} data-testid="ai-result-hint">
             {hint}
           </Text>
         )}

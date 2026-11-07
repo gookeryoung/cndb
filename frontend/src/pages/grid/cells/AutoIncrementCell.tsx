@@ -27,7 +27,7 @@ const DISPLAY_STYLE: CSSProperties = {
   alignItems: 'center',
   gap: 2,
   color: '#64748b',
-  fontSize: 12,
+  fontSize: 'var(--cn-text-xs)',
   whiteSpace: 'nowrap',
 }
 

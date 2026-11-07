@@ -106,7 +106,7 @@ export default function FieldList({ fields, isReordering, onEdit, onRemove, onRe
   return (
     <>
       <div className="fm-toolbar">
-        <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>共 {fields.length} 个字段 · 拖拽手柄可调整顺序</span>
+        <span style={{ color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)' }}>共 {fields.length} 个字段 · 拖拽手柄可调整顺序</span>
         <div style={{ display: 'flex', gap: 8 }}>
           <Button icon={<ImportOutlined />} onClick={onOpenImport}>
             从其他表引入

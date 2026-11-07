@@ -40,6 +40,13 @@ export const SPACE = {
 
 /* ─────────────── 字号 ─────────────── */
 
+/**
+ * 字号基准标尺（standard 档位）。
+ *
+ * 注意：这是「基准数值」，用户切换字号档位时 `--cn-text-*` 会被 ThemeProvider
+ * 按比例覆盖；组件内联 style 请写 `var(--cn-text-xs)` 这类 CSS 变量，
+ * 不要把这里的数字直接塞进 `fontSize`（否则该元素不会跟随字号设置）。
+ */
 export const TEXT = {
   /** 10px — 角标 / 图标内文字（下限，再小影响中文可读性） */
   '3xs': 10,

@@ -160,7 +160,7 @@ export function ExampleTables({ scenarioKey }: { scenarioKey: string }) {
                 <div>
                     <Text strong>{table.title}</Text>
                     <br />
-                    <Text type="secondary" style={{ fontSize: 12 }}>
+                    <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                         {table.file}
                     </Text>
                 </div>
@@ -217,7 +217,7 @@ export function ExamplePreviews({ scenarioKey }: { scenarioKey: string }) {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <Paragraph type="secondary" style={{ margin: 0, fontSize: 12 }}>
+            <Paragraph type="secondary" style={{ margin: 0, fontSize: 'var(--cn-text-xs)' }}>
                 预览取自示例 CSV 的真实表头与首批行，文件更新后图示自动重建。
             </Paragraph>
             {example.tables.map((table, index) => (

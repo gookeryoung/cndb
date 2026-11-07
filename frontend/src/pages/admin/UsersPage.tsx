@@ -101,7 +101,7 @@ function DiffSummary({ log }: { log: UserAuditLogRecord }) {
   }
   if (log.action === 'password_reset') {
     return (
-      <div style={{ fontSize: 12 }}>
+      <div style={{ fontSize: 'var(--cn-text-xs)' }}>
         <div>{detail.generated ? '自动生成随机密码' : '管理员手工设定新密码'}</div>
         <div>已吊销 {detail.revoked_sessions ?? 0} 个会话</div>
       </div>
@@ -109,7 +109,7 @@ function DiffSummary({ log }: { log: UserAuditLogRecord }) {
   }
   if (log.action === 'batch') {
     return (
-      <div style={{ fontSize: 12 }}>
+      <div style={{ fontSize: 'var(--cn-text-xs)' }}>
         <div>动作：{ACTION_LABELS[detail.action ?? ''] ?? detail.action}（成功 {detail.succeeded ?? 0} / 失败 {detail.failed ?? 0}）</div>
         {(detail.results ?? []).map((r, i) => (
           <div key={i}>
@@ -121,7 +121,7 @@ function DiffSummary({ log }: { log: UserAuditLogRecord }) {
   }
   if (log.action === 'import') {
     return (
-      <div style={{ fontSize: 12 }}>
+      <div style={{ fontSize: 'var(--cn-text-xs)' }}>
         <div>
           共 {detail.total ?? 0} 行：成功 {detail.created ?? 0} / 跳过 {detail.skipped ?? 0} / 失败 {detail.failed ?? 0}
         </div>
@@ -131,7 +131,7 @@ function DiffSummary({ log }: { log: UserAuditLogRecord }) {
   }
   if (log.action === 'export') {
     return (
-      <div style={{ fontSize: 12 }}>
+      <div style={{ fontSize: 'var(--cn-text-xs)' }}>
         <div>导出 {detail.count ?? 0} 个用户（{String(detail.format ?? 'csv').toUpperCase()}）</div>
       </div>
     )
@@ -140,7 +140,7 @@ function DiffSummary({ log }: { log: UserAuditLogRecord }) {
   const after = detail.after ?? {}
   const fields = Object.keys(after)
   return (
-    <div style={{ fontSize: 12 }}>
+    <div style={{ fontSize: 'var(--cn-text-xs)' }}>
       {fields.map(f => (
         <div key={f}>
           {f}: {String(before[f] ?? '—')} → {String(after[f] ?? '—')}
@@ -398,7 +398,7 @@ export default function UsersPage() {
       modal.confirm({
         title: '确认创建该用户？',
         content: (
-          <div style={{ fontSize: 13 }}>
+          <div style={{ fontSize: 'var(--cn-text-sm)' }}>
             <div>用户名：<Text strong>{values.username}</Text></div>
             <div>角色：{roleMeta(values.role).label}</div>
             {values.email ? <div>邮箱：{values.email}</div> : null}
@@ -447,7 +447,7 @@ export default function UsersPage() {
       modal.confirm({
         title: `确认重置用户「${resetTarget.username}」的密码？`,
         content: (
-          <div style={{ fontSize: 13 }}>
+          <div style={{ fontSize: 'var(--cn-text-sm)' }}>
             <div>
               {newPassword
                 ? '将使用你手工设定的新密码。'
@@ -497,7 +497,7 @@ export default function UsersPage() {
       modal.confirm({
         title: '确认保存对该用户的修改？',
         content: (
-          <div style={{ fontSize: 13 }}>
+          <div style={{ fontSize: 'var(--cn-text-sm)' }}>
             <div style={{ marginBottom: 8 }}>目标用户：<Text strong>{editing.username}</Text></div>
             {changes.map(c => <div key={c}>· {c}</div>)}
             <div style={{ marginTop: 8 }}>
@@ -749,7 +749,7 @@ export default function UsersPage() {
         }
       >
         {resetTarget && (
-          <div style={{ marginBottom: 12, fontSize: 13 }}>
+          <div style={{ marginBottom: 12, fontSize: 'var(--cn-text-sm)' }}>
             目标用户：<Text strong>{resetTarget.username}</Text>
             {resetTarget.nickname ? `（${resetTarget.nickname}）` : ''}
             <div>
@@ -838,7 +838,7 @@ export default function UsersPage() {
                 {previewMutation.isPending ? '正在解析文件…' : '支持 CSV / Excel（.xlsx），单次最多 1000 行'}
               </p>
             </Upload.Dragger>
-            <div style={{ marginTop: 12, fontSize: 12 }}>
+            <div style={{ marginTop: 12, fontSize: 'var(--cn-text-xs)' }}>
               <Text type="secondary">
                 列头：username（用户名，必填）、email（邮箱）、phone（电话）、nickname（昵称）、
                 role（角色）、is_active（启用状态）、password（初始密码）。
@@ -985,7 +985,7 @@ export default function UsersPage() {
               <Tag color={log.action === 'role_change' ? 'orange' : log.action === 'deactivate' ? 'red' : 'blue'} style={{ marginRight: 0 }}>
                 {ACTION_LABELS[log.action] ?? log.action}
               </Tag>
-              <Text type="secondary" style={{ fontSize: 12 }}>
+              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                 {log.created_at ? new Date(log.created_at).toLocaleString() : ''}
               </Text>
             </Space>

@@ -60,11 +60,11 @@ function TemplateDetail({ template }: { template: WorkspaceTemplate }) {
           <Tag>{stage.forms.length} 表单</Tag>
           <Tag>{stage.documents.length} 文档规则</Tag>
         </Space>
-        <div style={{ color: 'var(--cn-text-secondary)', fontSize: 13, marginTop: 2 }}>{stage.description || '—'}</div>
-        <div style={{ marginTop: 4, fontSize: 13 }}>
+        <div style={{ color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)', marginTop: 2 }}>{stage.description || '—'}</div>
+        <div style={{ marginTop: 4, fontSize: 'var(--cn-text-sm)' }}>
           表单：{stage.forms.map(k => stageNames.forms.get(k) ?? k).join('、') || '—'}
         </div>
-        <div style={{ fontSize: 13 }}>
+        <div style={{ fontSize: 'var(--cn-text-sm)' }}>
           文档：{stage.documents.map(k => stageNames.docs.get(k) ?? k).join('、') || '—'}
         </div>
       </div>
@@ -112,11 +112,11 @@ function TemplateDetail({ template }: { template: WorkspaceTemplate }) {
                         children: (
                           <div>
                             <Text strong>步骤 {index + 1} · {step.name}</Text>
-                            <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)' }}>
+                            <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
                               {step.form ? `表单：${spec.forms.find(f => f.key === step.form)?.name ?? step.form}` : '审批 / 确认节点'}
                               {step.documents?.length ? ` · 文档：${step.documents.join('、')}` : ''}
                             </div>
-                            {step.description && <div style={{ fontSize: 12 }}>{step.description}</div>}
+                            {step.description && <div style={{ fontSize: 'var(--cn-text-xs)' }}>{step.description}</div>}
                           </div>
                         ),
                       }))}
@@ -198,7 +198,7 @@ export default function TemplatesPage() {
                 <Tag color="blue">v{t.version}</Tag>
                 {t.is_builtin && <Tag color="gold">内置</Tag>}
                 {t.category && <Tag>{t.category}</Tag>}
-                <Text type="secondary" style={{ fontSize: 12 }}>
+                <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                   {t.counts.stage_count} 阶段 / {t.counts.form_count} 表单 / {t.counts.document_rule_count} 文档规则
                   {t.counts.flow_count ? ` / ${t.counts.flow_count} 流程` : ''}
                   · {t.workspace_count} 个工作区使用

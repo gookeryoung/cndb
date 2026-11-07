@@ -112,7 +112,7 @@ export default function EventsPage() {
       width: 130,
       render: (v: string | null) =>
         v ? (
-          <Text code style={{ fontSize: 12 }} title={v}>
+          <Text code style={{ fontSize: 'var(--cn-text-xs)' }} title={v}>
             {v.slice(0, 8)}
           </Text>
         ) : (

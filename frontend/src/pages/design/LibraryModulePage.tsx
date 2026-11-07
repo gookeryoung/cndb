@@ -155,7 +155,7 @@ export default function LibraryModulePage() {
                 )}
                 <pre
                   data-testid="library-dsl-content"
-                  style={{ margin: 0, padding: 16, fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}
+                  style={{ margin: 0, padding: 16, fontSize: 'var(--cn-text-xs)', fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}
                 >
                   {currentVersion.content}
                 </pre>

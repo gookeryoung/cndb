@@ -147,7 +147,7 @@ export default function IssueDetailPage() {
         : issue.comments.map((c: IssueComment) => (
           <Card key={c.id} size="small" style={{ marginBottom: 8 }}>
             <Text strong>{memberDisplayName(nameById, c.created_by_id, '已注销用户')}</Text>
-            <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>{formatDateTime(c.created_at)}</Text>
+            <Text type="secondary" style={{ marginLeft: 8, fontSize: 'var(--cn-text-xs)' }}>{formatDateTime(c.created_at)}</Text>
             <Paragraph style={{ marginBottom: 0, marginTop: 4, whiteSpace: 'pre-wrap' }}>{c.content}</Paragraph>
           </Card>
         ))}

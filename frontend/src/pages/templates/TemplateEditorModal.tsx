@@ -178,7 +178,7 @@ export default function TemplateEditorModal({ open, template, seed, onClose, onS
           <Input value={summary} onChange={e => setSummary(e.target.value)} placeholder="本次变更说明（写入版本历史）" />
         )}
         <div>
-          <Text type="secondary" style={{ fontSize: 12 }}>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
             规格 JSON：forms（表单 / 字段）、documents（文档规则）、stages（生命周期阶段与门禁）。
             阶段必须引用已定义的表单 / 文档 key，且所有表单 / 文档都要被某个阶段引用。
           </Text>
@@ -187,7 +187,7 @@ export default function TemplateEditorModal({ open, template, seed, onClose, onS
           value={text}
           onChange={e => { setText(e.target.value); setPreview(null); setForce(false) }}
           autoSize={{ minRows: 12, maxRows: 24 }}
-          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12 }}
+          style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 'var(--cn-text-xs)' }}
           data-testid="template-spec-text"
           aria-label="模板规格 JSON"
         />

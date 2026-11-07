@@ -412,7 +412,7 @@ export default function WorkspaceList() {
             <Form.Item name="allow_edit" label="允许成员编辑数据" valuePropName="checked">
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <Switch />
-                <span style={{ color: '#64748b', fontSize: 13 }}>
+                <span style={{ color: '#64748b', fontSize: 'var(--cn-text-sm)' }}>
                   {form.getFieldValue('allow_edit') !== false ? '已开启' : '已关闭（仅所有者可编辑）'}
                 </span>
               </div>
@@ -674,7 +674,7 @@ function WorkspaceRowDetail({
             </div>
           )}
           {!isLoading && tables.length === 0 && (
-            <Text type="secondary" style={{ fontSize: 12 }}>还没有数据表</Text>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>还没有数据表</Text>
           )}
         </div>
       )}
@@ -687,7 +687,7 @@ function WorkspaceRowDetail({
           </div>
           {(ws.document_count ?? 0) > 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>进入文档区查看目录与最近更新</Text>
+              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>进入文档区查看目录与最近更新</Text>
               <Button
                 type="link"
                 size="small"
@@ -699,7 +699,7 @@ function WorkspaceRowDetail({
               </Button>
             </div>
           ) : (
-            <Text type="secondary" style={{ fontSize: 12 }}>还没有文档</Text>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>还没有文档</Text>
           )}
         </div>
       )}
@@ -712,7 +712,7 @@ function WorkspaceRowDetail({
           </div>
           {(ws.design_count ?? 0) > 0 ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>进入设计区查看零件 / 装配文件</Text>
+              <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>进入设计区查看零件 / 装配文件</Text>
               <Button
                 type="link"
                 size="small"
@@ -724,7 +724,7 @@ function WorkspaceRowDetail({
               </Button>
             </div>
           ) : (
-            <Text type="secondary" style={{ fontSize: 12 }}>还没有设计</Text>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>还没有设计</Text>
           )}
         </div>
       )}
@@ -988,7 +988,7 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
           borderRadius: 8,
           textAlign: 'center',
         }}>
-          <FileTextOutlined style={{ color: '#22c55e', fontSize: 20 }} />
+          <FileTextOutlined style={{ color: '#22c55e', fontSize: 'var(--cn-text-xl)' }} />
           <span style={{ marginLeft: 8, color: '#15803d' }}>
             {mode === 'restore' ? '恢复完成' : '导入完成'}：{importResult.tables} 表 / {importResult.rows} 行
             / {importResult.views} 视图{importResult.documents ? ` / ${importResult.documents} 文档` : ''}

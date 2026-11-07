@@ -40,14 +40,14 @@ export default function ImportQualityPanel({
             {/* 清洗建议（如果有） */}
             {suggestions.length > 0 && (
                 <div style={{ marginBottom: 16, padding: 12, background: 'var(--cn-bg-subtle)', borderRadius: 8, border: '1px solid var(--cn-border-soft)' }}>
-                    <div style={{ fontWeight: WEIGHT.semibold, marginBottom: 8, fontSize: 13 }}>
+                    <div style={{ fontWeight: WEIGHT.semibold, marginBottom: 8, fontSize: 'var(--cn-text-sm)' }}>
                         <SettingOutlined /> 清洗建议（勾选后将在确认导入时执行）
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {suggestions.map((s: any, i: number) => {
                             const isChecked = selectedCleaningActions.some((a: any) => a.id === s.id)
                             return (
-                                <label key={s.id || i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                                <label key={s.id || i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 'var(--cn-text-xs)' }}>
                                     <Checkbox
                                         checked={isChecked}
                                         onChange={(e) => {
@@ -83,7 +83,7 @@ export default function ImportQualityPanel({
                         </div>
                     ),
                     children: (
-                        <div style={{ fontSize: 13 }}>
+                        <div style={{ fontSize: 'var(--cn-text-sm)' }}>
                             <div style={{ display: 'flex', gap: 24, marginBottom: 10 }}>
                                 <span>唯一值 <b>{p.unique_count}</b></span>
                                 <span>空值 <b>{p.null_count}</b></span>

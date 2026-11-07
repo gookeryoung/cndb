@@ -234,7 +234,7 @@ export function ConfigEditor({ fieldType, form, wid, tid, tables, fields = [], i
               </Form.Item>
             </Col>
             <Col span={16}>
-              <div style={{ fontSize: 12, color: 'var(--cn-text-secondary)', paddingTop: 28 }}>
+              <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)', paddingTop: 28 }}>
                 可用字段：{fields.filter(f => f.field_type !== 'formula' || f.id !== editTargetId).map(f => `[${f.name}]`).join(' ') || '（暂无）'}
               </div>
             </Col>
@@ -697,7 +697,7 @@ function SelectOptionsEditor({ form, fieldType, wid, tid, isEdit = false, editTa
           <Button size="small" type="dashed" icon={<ScanOutlined />} loading={detecting} onClick={handleDetect}>
             识别
           </Button>
-          <span style={{ color: 'var(--cn-text-secondary)', fontSize: 12 }}>
+          <span style={{ color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-xs)' }}>
             {fieldType === 'multiselect'
               ? '按分隔符拆分该字段已有内容，识别出选项（保留已有选项）'
               : '把该字段已有内容识别为选项（保留已有选项）'}

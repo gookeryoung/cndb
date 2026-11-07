@@ -9,7 +9,7 @@ import {
   getThemeConfig, themeCssVars, loadThemeMode, saveThemeMode,
   loadFontSettings, saveFontSettings,
   loadEditorSettings, saveEditorSettings,
-  FONT_SCALE_META, THEME_META, AUTO_LIGHT, AUTO_DARK, DEFAULT_EDITOR_SETTINGS,
+  FONT_SCALE_META, THEME_META, AUTO_LIGHT, AUTO_DARK, DEFAULT_EDITOR_SETTINGS, resolveTextVars,
   type ThemeMode, type ThemePreference, type FontScale, type FontSettings,
   type EditorSettings, type EditorSettingsPatch,
 } from '@/theme/theme'
@@ -73,6 +73,29 @@ function applyThemeVars(mode: ThemeMode) {
       body.style.setProperty(name, value)
     }
   }
+}
+
+/** 递归缩放 antd token 中所有字号类键（fontSize / fontSizeSM / contentFontSize / cellFontSize ...）。
+ *
+ * 只覆盖 `fontSize` 键，不动 padding / controlHeight / lineHeight：
+ * 字号档位是「文本可读性」偏好，容器尺寸仍由主题与密度控制，避免整页被等比放成另一种布局。
+ */
+function scaleFontTokens<T>(input: T, factor: number): T {
+  const walk = (key: string, value: unknown): unknown => {
+    if (typeof value === 'number' && /fontsize/i.test(key)) {
+      return Math.round(value * factor)
+    }
+    if (Array.isArray(value)) return value.map(item => walk(key, item))
+    if (value && typeof value === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const [childKey, childValue] of Object.entries(value)) {
+        out[childKey] = walk(childKey, childValue)
+      }
+      return out
+    }
+    return value
+  }
+  return walk('', input) as T
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
@@ -167,8 +190,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // 字体设置：注入 body 基础字号与字重（antd 组件字号经 ConfigProvider token 下发）
   // 未开启加粗时显式写 400，避免 body 继承其他样式抬到 600
   useEffect(() => {
-    document.body.style.fontSize = `${FONT_SCALE_META[font.scale].px}px`
+    const root = document.documentElement
+    const basePx = FONT_SCALE_META[font.scale].px
+    document.body.style.fontSize = `${basePx}px`
     document.body.style.fontWeight = String(font.bold ? WEIGHT.semibold : WEIGHT.regular)
+    // 同步全部 --cn-text-*：CSS / 行内 style 里显式写字号的地方也跟随档位（否则只有继承字号的文本变化）
+    for (const [name, value] of Object.entries(resolveTextVars(font.scale))) {
+      root.style.setProperty(name, value)
+    }
+    root.style.setProperty('--cn-font-scale', String(basePx / FONT_SCALE_META.standard.px))
   }, [font])
 
   // 主题配置按 mode 记忆：避免无关渲染重建对象，导致 cssinjs 误判主题变化而全量重算样式
@@ -187,21 +217,25 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   // cssVar 模式：antd 6 默认开启 CSS variables（组件样式引用 --ant-* 变量，切主题只更新
   // 变量值，不再全量重建样式 —— 主题切换卡顿的主修复），无需显式声明；
   // hashed 关闭减少类名与样式冗余
-  const themeConfig = useMemo(
-    () => ({
-      ...baseConfig,
+  const themeConfig = useMemo(() => {
+    // antd 除 token.fontSize 外还有 fontSizeSM / fontSizeLG / Heading* 以及组件级 contentFontSize /
+    // cellFontSize 等独立字号 token，只改 fontSize 会让这些元素「看起来没变」；统一按档位缩放。
+    const fontPx = FONT_SCALE_META[font.scale].px
+    const fontFactor = fontPx / FONT_SCALE_META.standard.px
+    const scaledBase = scaleFontTokens(baseConfig, fontFactor)
+    return {
+      ...scaledBase,
       hashed: false as const,
       algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
       // 字体设置覆盖主题 token 的字号/字重，其余 token（配色等）保持主题原值
       token: {
-        ...baseConfig.token,
-        fontSize: FONT_SCALE_META[font.scale].px,
+        ...scaledBase.token,
+        fontSize: fontPx,
         // 强调字重默认 600，开启全局加粗时抬升一档到 700
         fontWeightStrong: font.bold ? WEIGHT.bold : WEIGHT.semibold,
       },
-    }),
-    [baseConfig, isDark, font],
-  )
+    }
+  }, [baseConfig, isDark, font])
 
   return (
     <ThemeContext.Provider value={value}>

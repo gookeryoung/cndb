@@ -433,9 +433,9 @@ export default function TableSettingsPage() {
           children: (
             <div style={{ paddingTop: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ color: 'var(--cn-text-secondary)', fontSize: 13 }}>
+                <span style={{ color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-sm)' }}>
                   共 {views.length} 个视图
-                  {views.length > 1 && <span style={{ marginLeft: 8, fontSize: 12 }}>· 拖拽左侧手柄调整顺序</span>}
+                  {views.length > 1 && <span style={{ marginLeft: 8, fontSize: 'var(--cn-text-xs)' }}>· 拖拽左侧手柄调整顺序</span>}
                 </span>
                 <Button
                   type="primary"
@@ -496,7 +496,7 @@ export default function TableSettingsPage() {
           children: table ? (
             <div style={{ paddingTop: 4 }}>
               <div style={{ marginBottom: 10 }}>
-                <span style={{ fontSize: 13, color: 'var(--cn-text-primary)', marginRight: 8 }}>您当前在本表的权限：</span>
+                <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-primary)', marginRight: 8 }}>您当前在本表的权限：</span>
                 <Space size={[4, 4]} wrap>
                   {canEditRecords && <Tag color="blue">编辑记录</Tag>}
                   {canEditViews && <Tag color="purple">编辑视图</Tag>}
@@ -508,7 +508,7 @@ export default function TableSettingsPage() {
 
               {/* 数据治理角色阈值：最低需要什么工作区角色才能执行合并/清洗 */}
               <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13 }}>数据治理权限（合并/清洗）：</span>
+                <span style={{ fontSize: 'var(--cn-text-sm)' }}>数据治理权限（合并/清洗）：</span>
                 <Select
                   size="small"
                   style={{ width: 160 }}

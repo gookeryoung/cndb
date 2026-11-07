@@ -136,7 +136,7 @@ const mdComponents = {
         borderCollapse: 'collapse',
         margin: '0.8em 0',
         width: '100%',
-        fontSize: 13,
+        fontSize: 'var(--cn-text-sm)',
       }}
       {...props}
     />

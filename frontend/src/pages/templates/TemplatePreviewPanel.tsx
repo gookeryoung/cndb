@@ -17,7 +17,7 @@ export default function TemplatePreviewPanel({ preview }: { preview: TemplatePre
         style={{ marginBottom: 12 }}
         message={preview.requires_force ? '包含破坏性变更，保存需显式确认' : '变更非破坏：只增量补齐，不删除已有数据'}
         description={
-          <div style={{ fontSize: 13 }}>
+          <div style={{ fontSize: 'var(--cn-text-sm)' }}>
             {lines.map(line => <div key={line}>{line}</div>)}
             {impact.truncated && <div>（工作区明细过多，已截断）</div>}
           </div>
@@ -34,7 +34,7 @@ export default function TemplatePreviewPanel({ preview }: { preview: TemplatePre
           {diff.changes.map((change, idx) => (
             <li key={`${change.kind}-${change.target}-${idx}`} style={{ marginBottom: 4 }}>
               <Tag color={SEVERITY_COLOR[change.severity]}>{change.kind}</Tag>
-              <span style={{ fontSize: 13 }}>{change.message}</span>
+              <span style={{ fontSize: 'var(--cn-text-sm)' }}>{change.message}</span>
             </li>
           ))}
         </ul>
@@ -45,7 +45,7 @@ export default function TemplatePreviewPanel({ preview }: { preview: TemplatePre
           <div style={{ marginBottom: 6, fontWeight: 600 }}>受影响工作区</div>
           <div style={{ maxHeight: 220, overflow: 'auto' }}>
             {impact.workspaces.map(ws => (
-              <div key={ws.workspace_id} style={{ marginBottom: 10, fontSize: 13 }}>
+              <div key={ws.workspace_id} style={{ marginBottom: 10, fontSize: 'var(--cn-text-sm)' }}>
                 <Text strong>{ws.workspace_name}</Text>
                 <Text type="secondary"> · 当前阶段 {ws.current_stage ?? '—'}</Text>
                 {ws.requires_force && <Tag color="red" style={{ marginLeft: 8 }}>需确认</Tag>}

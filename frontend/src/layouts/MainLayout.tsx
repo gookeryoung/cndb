@@ -94,7 +94,7 @@ function toTreeNode(node: DocTreeNode): DataNode {
             <LockOutlined
               aria-label="仅自己可见"
               data-testid={`doc-visibility-${node.id}`}
-              style={{ marginLeft: 6, fontSize: 11, color: 'var(--cn-text-secondary, #8c8c8c)' }}
+              style={{ marginLeft: 6, fontSize: 'var(--cn-text-2xs)', color: 'var(--cn-text-secondary, #8c8c8c)' }}
             />
           </Tooltip>
         )}
@@ -623,7 +623,7 @@ export default function MainLayout() {
         }}>
           <SearchInput placeholder="搜索表…" value={tableKeyword} onChange={e => setTableKeyword(e.target.value)} style={{ width: '100%' }} />
         </div>
-        <div style={{ padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold, color: 'var(--cn-text-secondary)', fontSize: 12, display: collapsed ? 'none' : 'block' }}>
+        <div style={{ padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold, color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-xs)', display: collapsed ? 'none' : 'block' }}>
           数据表 ({orderedTables.length})
         </div>
         {tables.length === 0 ? (
@@ -672,7 +672,7 @@ export default function MainLayout() {
       <div data-testid="sider-documents" className="cn-table-nav">
         <div style={{
           padding: 'var(--cn-space-sm) var(--cn-space-lg)', fontWeight: WEIGHT.semibold,
-          color: 'var(--cn-text-secondary)', fontSize: 12, display: 'flex',
+          color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-xs)', display: 'flex',
           alignItems: 'center', justifyContent: 'space-between',
         }}>
           <span>文档</span>

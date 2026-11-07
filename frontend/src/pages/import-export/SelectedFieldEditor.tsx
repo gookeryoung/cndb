@@ -31,7 +31,7 @@ export default function SelectedFieldEditor({
 
     return (
       <div style={{ marginTop: 8, padding: 12, background: 'var(--cn-bg-warning-subtle)', border: '1px solid var(--cn-mix-amber-45-transparent)', borderRadius: 6 }}>
-        <div style={{ fontSize: 12, fontWeight: WEIGHT.semibold, color: 'var(--cn-mix-amber-70-text-primary)', marginBottom: 8 }}>
+        <div style={{ fontSize: 'var(--cn-text-xs)', fontWeight: WEIGHT.semibold, color: 'var(--cn-mix-amber-70-text-primary)', marginBottom: 8 }}>
           <SwapOutlined /> 编辑 {col.name} 的选项（{options.length} 个）
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
@@ -39,7 +39,7 @@ export default function SelectedFieldEditor({
             <Tag
               key={i}
               closable
-              style={{ padding: '2px 8px', fontSize: 12 }}
+              style={{ padding: '2px 8px', fontSize: 'var(--cn-text-xs)' }}
               onClose={() => updateOptions(col.name, options.filter((_, idx) => idx !== i))}
             >
               {opt}

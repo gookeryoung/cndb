@@ -34,6 +34,14 @@ const ENTRY_WEIGHTS: Record<keyof typeof FONT_PACKAGES, readonly number[]> = {
 
 const FONT_BUDGET_BYTES = 150 * 1024
 
+/** 编辑器可选等宽字体：只在设置面板 / 编辑器 chunk 中按需加载，不计入首屏入口预算 */
+const LAZY_EDITOR_FONT_PACKAGES = {
+  'cascadia-code': { pkg: '@fontsource/cascadia-code', family: 'cascadia-code' },
+  'maple-mono': { pkg: '@fontsource/maple-mono', family: 'maple-mono' },
+} as const
+
+const EDITOR_FONT_BUDGET_BYTES = 150 * 1024
+
 const pkg = JSON.parse(readFileSync(path.join(ROOT, 'package.json'), 'utf8')) as {
   dependencies?: Record<string, string>
 }
@@ -76,6 +84,36 @@ describe('字体依赖与资产', () => {
       }
     }
     expect(total).toBeLessThanOrEqual(FONT_BUDGET_BYTES)
+  })
+
+  it.each(Object.values(LAZY_EDITOR_FONT_PACKAGES))('$pkg（编辑器字体）已声明为运行时依赖', ({ pkg: name }) => {
+    expect(pkg.dependencies?.[name]).toBeTruthy()
+  })
+
+  it.each(Object.values(LAZY_EDITOR_FONT_PACKAGES))('$pkg 的 latin-400 字体文件已安装', ({ pkg: name, family }) => {
+    const file = path.join(ROOT, 'node_modules', name, 'files', `${family}-latin-400-normal.woff2`)
+    expect(existsSync(file), `缺少 ${file}`).toBe(true)
+    expect(statSync(file).size).toBeGreaterThan(1000)
+  })
+
+  it('编辑器字体只在专用模块中引入，不进入 main.tsx 首屏入口', () => {
+    const lazy = readFileSync(path.join(ROOT, 'src/theme/editorFontAssets.ts'), 'utf8')
+    const main = readFileSync(path.join(ROOT, 'src/main.tsx'), 'utf8')
+    for (const [family, config] of Object.entries(LAZY_EDITOR_FONT_PACKAGES)) {
+      expect(lazy).toContain(`@fontsource/${family}/latin-400.css`)
+      expect(main).not.toContain(config.pkg)
+    }
+    expect(main).not.toContain('editorFontAssets')
+  })
+
+  it('编辑器字体 woff2 传输总量 ≤150 KB', () => {
+    let total = 0
+    for (const [family, config] of Object.entries(LAZY_EDITOR_FONT_PACKAGES)) {
+      total += statSync(
+        path.join(ROOT, 'node_modules', config.pkg, 'files', `${family}-latin-400-normal.woff2`),
+      ).size
+    }
+    expect(total).toBeLessThanOrEqual(EDITOR_FONT_BUDGET_BYTES)
   })
 
   it('public/fonts 不再保留本地字体文件', () => {

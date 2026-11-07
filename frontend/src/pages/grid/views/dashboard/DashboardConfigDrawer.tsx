@@ -79,7 +79,7 @@ const fieldOptions = (fields: Field[], predicate?: (f: Field) => boolean) =>
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-      <span style={{ width: 76, flexShrink: 0, color: 'var(--cn-text-secondary)', fontSize: 12 }}>{label}</span>
+      <span style={{ width: 76, flexShrink: 0, color: 'var(--cn-text-secondary)', fontSize: 'var(--cn-text-xs)' }}>{label}</span>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>
   )
@@ -619,7 +619,7 @@ export default function DashboardConfigDrawer({
               ['h', 1, DASHBOARD_MAX_H],
             ] as const).map(([key, min, max]) => (
               <div key={key} style={{ width: 120 }}>
-                <Typography.Text type="secondary" style={{ fontSize: 12 }}>{key.toUpperCase()}</Typography.Text>
+                <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>{key.toUpperCase()}</Typography.Text>
                 <InputNumber
                   min={min}
                   max={max}

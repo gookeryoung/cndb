@@ -56,7 +56,7 @@ export default function DoneFlagFields({ fields, doneField, doneOp, doneValue, o
   // 按字段类型渲染匹配值控件（无值操作符下不渲染）
   let valueControl: React.ReactNode = null
   if (!selectedField) {
-    valueControl = <span style={{ fontSize: 12, color: 'var(--cn-text-muted)' }}>先选择字段</span>
+    valueControl = <span style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)' }}>先选择字段</span>
   } else if (opValueless) {
     valueControl = null
   } else if (ft === 'boolean') {

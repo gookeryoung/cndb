@@ -81,7 +81,7 @@ export default function FindReplaceBar({
         />
         <Typography.Text
           type={total === 0 && query ? 'danger' : 'secondary'}
-          style={{ fontSize: 12, minWidth: 46, display: 'inline-block' }}
+          style={{ fontSize: 'var(--cn-text-xs)', minWidth: 46, display: 'inline-block' }}
           data-testid="doc-find-count"
         >
           {countText}

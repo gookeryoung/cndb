@@ -6,7 +6,7 @@
 
 import { Empty, Tag } from 'antd'
 
-import { SPACE, TEXT } from '@/theme/tokens'
+import { SPACE } from '@/theme/tokens'
 
 export interface AiSuggestionListProps {
   /** 建议项（标签 / 要点文本） */
@@ -54,7 +54,7 @@ export default function AiSuggestionList({
             checked={selected!.includes(item)}
             onChange={() => toggle(item)}
             data-testid={`${testId}-item-${item}`}
-            style={{ fontSize: TEXT.xs }}
+            style={{ fontSize: 'var(--cn-text-xs)' }}
           >
             {item}
           </Tag.CheckableTag>
@@ -63,7 +63,7 @@ export default function AiSuggestionList({
             key={item}
             color="blue"
             data-testid={`${testId}-item-${item}`}
-            style={{ marginInlineEnd: 0, fontSize: TEXT.xs }}
+            style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-xs)' }}
           >
             {item}
           </Tag>

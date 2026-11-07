@@ -39,8 +39,8 @@
 - `md`(14) = 正文，与 antd 默认 `fontSize` 一致
 - 表头 / 标签用 `xs`(12)，密集正文与页签用 `sm`(13)
 - **不存在的档位**：9 / 15 / 17 / 18px —— 历史代码用过，已全部收进上表
-- 用户的「字体大小」设置只驱动 antd token（`FONT_SCALE_META`）；
-  样式表里的字号是页面骨架，按固定档位走，不跟着缩放
+- 用户的「字体大小」设置同时驱动两层：antd 的全部字号 token（`fontSize` / `fontSizeSM` / `Heading*` / 组件级 `contentFontSize` 等）与 `--cn-text-*`（按 `standard=14px` 等比缩放，运行时写到 `:root`）；
+  CSS 与行内 style 统一引用 `var(--cn-text-*)`，不再把 `TEXT.*` 的 px 数值直接写进 `fontSize`，否则该元素不会跟随档位
 
 ### 字重
 
@@ -215,5 +215,5 @@
 | 行内 style 收敛 | 1276 处 | 优先收敛「重复出现 ≥3 次」的样式块为 `.cn-*` 类，用 `pnpm lint` + review 拦新增 |
 | `[style*="..."]` 兜底 | 281 条 | 每修一个组件就删掉对应兜底；目标是把深色补丁缩到「第三方组件」范围 |
 | 颜色字面量 | CSS 内约 300 处 | 只保留 `body.theme-*` 变量定义块与认证页固定舞台 `:root` 块（`--cn-auth-bg` / `--cn-auth-ink` / `--cn-auth-accent` / `--cn-auth-accent-alt`，不随主题）里的字面量，其余换 `var(--cn-*)` |
-| 字号档位 | 已统一 | 行内 `fontSize: 11/12/13` 仍散落，新增代码请用 `TEXT.*` 常量 |
+| 字号档位 | 已统一 | CSS / 行内 `fontSize` 一律用 `var(--cn-text-*)`（可随档位缩放）；`TEXT.*` 仅用于设计标尺与 antd token 基准值 |
 | 空态/加载态 | 三套写法 | 统一 `.cn-state`，同时去掉各页 `padding: 24 + textAlign: center` |

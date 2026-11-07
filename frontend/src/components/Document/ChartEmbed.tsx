@@ -173,7 +173,7 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
                 loading={saving}
                 data-testid={`chart-embed-save-${refOrdinal ?? 0}`}
               >
-                保存图片 <DownOutlined style={{ fontSize: 10 }} />
+                保存图片 <DownOutlined style={{ fontSize: 'var(--cn-text-3xs)' }} />
               </Button>
             </Dropdown>
           )}
@@ -199,7 +199,7 @@ export default function ChartEmbed({ workspaceId, block, shareToken, onEditChart
               disabled={previewZoom <= 50}
               onClick={() => setPreviewZoom(z => Math.max(50, z - 10))}
             />
-            <span data-testid="chart-embed-zoom-level" style={{ fontSize: 12, minWidth: 40, textAlign: 'center' }}>
+            <span data-testid="chart-embed-zoom-level" style={{ fontSize: 'var(--cn-text-xs)', minWidth: 40, textAlign: 'center' }}>
               {previewZoom}%
             </span>
             <Button

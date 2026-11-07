@@ -64,7 +64,7 @@ export default function TagEditor({
                     checkedNow ? [...selectedIds, tag.id] : selectedIds.filter(x => x !== tag.id),
                   )
                 }}
-                style={{ fontSize: 13, padding: '4px 12px', borderColor: tag.color }}
+                style={{ fontSize: 'var(--cn-text-sm)', padding: '4px 12px', borderColor: tag.color }}
               >
                 {tag.name} ({tag.doc_count})
               </Tag.CheckableTag>

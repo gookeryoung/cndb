@@ -7,7 +7,7 @@ export default function TextWidget({ widget }: { widget: DashboardTextWidget }) 
       data-testid={`dashboard-text-${widget.id}`}
       style={{
         flex: 1, minHeight: 0, overflow: 'auto', whiteSpace: 'pre-wrap',
-        fontSize: 13, lineHeight: 1.7, color: 'var(--cn-text-primary)',
+        fontSize: 'var(--cn-text-sm)', lineHeight: 1.7, color: 'var(--cn-text-primary)',
       }}
     >
       {widget.text.content}

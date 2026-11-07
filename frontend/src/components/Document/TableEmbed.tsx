@@ -123,7 +123,7 @@ export default function TableEmbed({ workspaceId, tableRef, refOrdinal, onWidthC
       data-align={tableAlign}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <Text type="secondary" style={{ fontSize: 12 }}>
+        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
           {tableQuery.data.name}
           {tableRef.view
             ? ` · ${viewQuery.data?.name ?? `视图 #${tableRef.view}`}`

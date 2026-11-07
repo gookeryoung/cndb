@@ -80,7 +80,7 @@ function SectionTitle({ label, count, compact = false }: { label: string; count:
       style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginBottom: compact ? 4 : 8 }}
     >
       <Text strong>{label}</Text>
-      <Text type="secondary" style={{ fontSize: 12 }}>{count} 项</Text>
+      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>{count} 项</Text>
     </div>
   )
 }
@@ -762,7 +762,7 @@ export default function DocumentsPage() {
                         <Tag
                           color="blue"
                           data-testid={`doc-pinned-tag-${doc.id}`}
-                          style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '16px', paddingInline: 4 }}
+                          style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
                         >
                           置顶
                         </Tag>
@@ -780,14 +780,14 @@ export default function DocumentsPage() {
                             icon={<LockOutlined />}
                             data-testid={`doc-list-visibility-${doc.id}`}
                             aria-label="仅自己可见"
-                            style={{ fontSize: 11, lineHeight: '18px' }}
+                            style={{ fontSize: 'var(--cn-text-2xs)', lineHeight: '18px' }}
                           >
                             仅自己可见
                           </Tag>
                         </Tooltip>
                       )}
                       {doc.tag_ids.length > 0 && (
-                        <Text type="secondary" style={{ fontSize: 12 }}>
+                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                           {doc.tag_ids.length} 个标签
                         </Text>
                       )}
@@ -801,7 +801,7 @@ export default function DocumentsPage() {
                     <Space size={6} wrap>
                       <Tag
                         color={STATUS_COLORS[doc.status]}
-                        style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '16px', paddingInline: 4 }}
+                        style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
                       >
                         {STATUS_LABELS[doc.status]}
                       </Tag>
@@ -811,32 +811,32 @@ export default function DocumentsPage() {
                             icon={<LockOutlined />}
                             data-testid={`doc-list-visibility-${doc.id}`}
                             aria-label="仅自己可见"
-                            style={{ fontSize: 11, lineHeight: '16px', paddingInline: 4, marginInlineEnd: 0 }}
+                            style={{ fontSize: 'var(--cn-text-2xs)', lineHeight: '16px', paddingInline: 4, marginInlineEnd: 0 }}
                           />
                         </Tooltip>
                       )}
-                      <Text type="secondary" style={{ fontSize: 11 }}>
+                      <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>
                         更新于 {formatTime(doc.updated_at)}
                       </Text>
                       {!doc.is_folder && (
-                        <Text type="secondary" style={{ fontSize: 11 }}>
+                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>
                           {formatSize(doc.content_size)} · v{doc.version_count}
                         </Text>
                       )}
                     </Space>
                   ) : (
                     <Space size={16} wrap>
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                         更新于 {formatTime(doc.updated_at)}
                       </Text>
                       {!doc.is_folder && (
                         <>
-                          <Text type="secondary" style={{ fontSize: 12 }}>{formatSize(doc.content_size)}</Text>
-                          <Text type="secondary" style={{ fontSize: 12 }}>v{doc.version_count}</Text>
+                          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>{formatSize(doc.content_size)}</Text>
+                          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>v{doc.version_count}</Text>
                         </>
                       )}
                       {doc.summary && (
-                        <Text type="secondary" style={{ fontSize: 12, maxWidth: 480 }} ellipsis>
+                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', maxWidth: 480 }} ellipsis>
                           {doc.summary}
                         </Text>
                       )}
@@ -930,7 +930,7 @@ export default function DocumentsPage() {
         <div className="cn-doc-recent" data-testid="doc-recent">
           <Space size={4} wrap>
             <ClockCircleOutlined style={{ color: 'var(--cn-text-muted)' }} />
-            <Text type="secondary" style={{ fontSize: 12 }}>最近打开</Text>
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>最近打开</Text>
             {recentDocs.map(it => (
               <Button
                 key={it.id}
@@ -1045,15 +1045,15 @@ export default function DocumentsPage() {
                       onChange={() => toggleSelected(s.folder.id)}
                     />
                   </span>
-                  <FolderOutlined style={{ fontSize: 18, color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
-                  <Text strong className="cn-doc-title-ellipsis" title={s.folder.title} style={{ fontSize: 14 }}>
+                  <FolderOutlined style={{ fontSize: 'calc(var(--cn-text-lg) + 2px)', color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
+                  <Text strong className="cn-doc-title-ellipsis" title={s.folder.title} style={{ fontSize: 'var(--cn-text-md)' }}>
                     {s.folder.title}
                   </Text>
                   {s.folder.pinned && (
                     <Tag
                       color="blue"
                       data-testid={`doc-pinned-tag-${s.folder.id}`}
-                      style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: '16px', paddingInline: 4 }}
+                      style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
                     >
                       置顶
                     </Tag>
@@ -1070,8 +1070,8 @@ export default function DocumentsPage() {
                       onChange={() => toggleSelected(s.folder.id)}
                     />
                   </span>
-                  <FolderOutlined style={{ fontSize: 20, color: 'var(--cn-warning, #faad14)' }} />
-                  <Text strong style={{ fontSize: 15 }}>{s.folder.title}</Text>
+                  <FolderOutlined style={{ fontSize: 'var(--cn-text-xl)', color: 'var(--cn-warning, #faad14)' }} />
+                  <Text strong style={{ fontSize: 'calc(var(--cn-text-md) + 1px)' }}>{s.folder.title}</Text>
                   {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
                 </Space>
               )}
@@ -1093,7 +1093,7 @@ export default function DocumentsPage() {
                   <Tag
                     key={st}
                     color={STATUS_COLORS[st] ?? 'default'}
-                    style={{ marginRight: 0, fontSize: 10, lineHeight: '16px', paddingInline: 4 }}
+                    style={{ marginRight: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
                   >
                     {STATUS_LABELS[st] ?? st} {n}
                   </Tag>

@@ -173,7 +173,7 @@ export default function OutlineList({
                     userSelect: 'none',
                   }}
                 >
-                  <RightOutlined className="cn-outline-caret-icon" style={{ fontSize: 8 }} />
+                  <RightOutlined className="cn-outline-caret-icon" style={{ fontSize: 'calc(var(--cn-text-3xs) - 2px)' }} />
                 </span>
               )}
             </span>

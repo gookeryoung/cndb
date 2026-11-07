@@ -319,14 +319,14 @@ export function EditCell({ field, draft, onChange, inputRef, onSave, onCancel, s
             beforeUpload={f => { upload(f); return false }}
             style={{ padding: '4px 8px', marginBottom: 4 }}
           >
-            <div style={{ fontSize: 12, color: '#94a3b8', margin: '2px 0' }}>
+            <div style={{ fontSize: 'var(--cn-text-xs)', color: '#94a3b8', margin: '2px 0' }}>
               <InboxOutlined /> 点击或拖拽上传
             </div>
           </Upload.Dragger>
           {files.length > 0 && (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
               {files.map((f, i) => (
-                <span key={f.file_key} style={{ fontSize: 12, padding: '2px 6px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
+                <span key={f.file_key} style={{ fontSize: 'var(--cn-text-xs)', padding: '2px 6px', border: '1px solid #e2e8f0', borderRadius: 4 }}>
                   📎 {f.filename}
                   <Tooltip title="删除该附件">
                     <Button type="text" size="small" danger icon={<DeleteOutlined />}

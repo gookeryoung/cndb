@@ -130,14 +130,14 @@ export default function DocumentShareModal({ open, onClose, workspaceId, docId, 
                     title={
                       <Space size={8}>
                         <Tag color={share.is_active ? 'green' : 'default'}>{share.is_active ? '有效' : '已撤销'}</Tag>
-                        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                           创建于 {formatTime(share.created_at)}
                         </Typography.Text>
                         {share.has_password && <Tag>需密码</Tag>}
                       </Space>
                     }
                     description={
-                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                      <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                         访问 {share.view_count} 次
                       </Typography.Text>
                     }

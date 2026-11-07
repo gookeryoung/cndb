@@ -508,7 +508,7 @@ export default function DataFlowPage() {
                   data-testid="data-flow-table"
                 />
                 {(rowsQuery.data?.total ?? 0) > rows.length && (
-                  <Text type="secondary" style={{ fontSize: 12 }}>
+                  <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
                     仅显示前 {rows.length} 条（共 {rowsQuery.data?.total} 条），完整数据请到数据表查看。
                   </Text>
                 )}
@@ -540,7 +540,7 @@ export default function DataFlowPage() {
                   if (!field) return null
                   return (
                     <div key={name} style={{ marginBottom: 10 }}>
-                      <div style={{ marginBottom: 4, fontSize: 13 }}>
+                      <div style={{ marginBottom: 4, fontSize: 'var(--cn-text-sm)' }}>
                         <Text strong>{name}</Text>
                         {field.required && <Text type="danger"> *</Text>}
                         {form.flow.hints[name] && <Text type="secondary"> · {form.flow.hints[name]}</Text>}

@@ -191,7 +191,7 @@ export default function StoragePage() {
   const activeKeys = openKeys ?? groups.map((g) => g.key)
 
   /** 尚未统计：不显示 0，明确告知正在统计（首次部署 / 新工作区） */
-  const pendingText = <Text type="secondary" style={{ fontSize: 12 }}>统计中</Text>
+  const pendingText = <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>统计中</Text>
 
   const columns: ColumnsType<WorkspaceStorageItem> = [
     {
@@ -201,7 +201,7 @@ export default function StoragePage() {
       render: (_: unknown, row) => (
         <Space size={6}>
           <Text strong>{row.name}</Text>
-          <Text type="secondary" style={{ fontSize: 12 }}>#{row.workspace_id}</Text>
+          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>#{row.workspace_id}</Text>
         </Space>
       ),
     },
