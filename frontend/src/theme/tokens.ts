@@ -145,6 +145,8 @@ export const BREAKPOINT = {
   mobile: 768,
   /** 平板 */
   tablet: 992,
+  /** antd xl 分界 — 三栏编辑器（大纲 / 主区 / 检查栏）收为双栏的下限 */
+  xl: 1200,
 } as const
 
 /* ─────────────── CSS 变量名映射（供 index.css 与单测共用） ─────────────── */

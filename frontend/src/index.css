@@ -8838,7 +8838,7 @@ body.cn-doc-focus-view .cn-doc-stats {
 }
 
 .cn-tpl-hint .anticon {
-  margin-top: 2px;
+  margin-top: var(--cn-space-hairline);
   color: var(--cn-text-muted);
 }
 
@@ -8934,7 +8934,7 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-outline {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--cn-space-hairline);
   padding: var(--cn-space-sm);
   border-inline-end: 1px solid var(--cn-border);
   background: var(--cn-bg-container);
@@ -8944,8 +8944,8 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-outline-group {
   display: flex;
   align-items: center;
-  gap: 2px;
-  margin-top: 6px;
+  gap: var(--cn-space-hairline);
+  margin-top: var(--cn-space-sm);
 }
 
 .cn-tpl-outline-group .cn-tpl-outline-item {
@@ -8956,10 +8956,10 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-outline-sub {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--cn-space-sm);
   width: 100%;
   min-height: 30px;
-  padding: 5px 8px;
+  padding: var(--cn-space-xs) var(--cn-space-md);
   border: 0;
   border-radius: var(--cn-radius-sm);
   background: transparent;
@@ -8978,7 +8978,7 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-outline-sub.is-active {
   background: var(--cn-primary-bg);
   color: var(--cn-primary);
-  font-weight: 600;
+  font-weight: var(--cn-weight-semibold);
 }
 
 .cn-tpl-outline-sub {
@@ -8993,8 +8993,8 @@ body.cn-doc-focus-view .cn-doc-stats {
 }
 
 .cn-tpl-outline-error {
-  margin-top: 8px;
-  padding: 6px;
+  margin-top: var(--cn-space-md);
+  padding: var(--cn-space-sm);
   border-radius: var(--cn-radius-sm);
   background: var(--cn-error-bg);
   font-size: var(--cn-text-xs);
@@ -9010,7 +9010,7 @@ body.cn-doc-focus-view .cn-doc-stats {
 }
 
 .cn-tpl-outline-empty {
-  padding: 8px;
+  padding: var(--cn-space-md);
   font-size: var(--cn-text-xs);
   overflow-wrap: anywhere;
 }
@@ -9061,7 +9061,7 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--cn-space-xs);
   margin-bottom: var(--cn-space-sm);
   color: var(--cn-text-secondary);
   font-size: var(--cn-text-xs);
@@ -9071,7 +9071,7 @@ body.cn-doc-focus-view .cn-doc-stats {
   margin-bottom: var(--cn-space-sm);
   padding: var(--cn-space-sm);
   border: 1px solid var(--cn-border);
-  border-radius: var(--cn-radius-md);
+  border-radius: var(--cn-radius-base);
   background: var(--cn-bg-container);
 }
 
@@ -9095,13 +9095,13 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-sortable {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--cn-space-sm);
 }
 
 .cn-tpl-sortable-item {
   display: flex;
   align-items: stretch;
-  gap: 4px;
+  gap: var(--cn-space-xs);
 }
 
 .cn-tpl-sortable-body {
@@ -9131,7 +9131,7 @@ body.cn-doc-focus-view .cn-doc-stats {
   align-items: center;
   justify-content: space-between;
   gap: var(--cn-space-sm);
-  padding: 6px 8px;
+  padding: var(--cn-space-sm) var(--cn-space-md);
   border: 1px solid var(--cn-border);
   border-radius: var(--cn-radius-sm);
   background: var(--cn-bg-container);
@@ -9146,8 +9146,8 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-inline-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: var(--cn-space-sm);
+  margin-bottom: var(--cn-space-sm);
 }
 
 .cn-tpl-flow-config .ant-collapse-content-box {
@@ -9163,10 +9163,10 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-json-issues {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--cn-space-xs);
   max-height: 220px;
-  margin-top: 8px;
-  padding: 8px;
+  margin-top: var(--cn-space-md);
+  padding: var(--cn-space-md);
   border-radius: var(--cn-radius-sm);
   background: var(--cn-error-bg);
   overflow-y: auto;
@@ -9188,7 +9188,7 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-issue-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--cn-space-xs);
   max-height: 260px;
   overflow-y: auto;
 }
@@ -9196,9 +9196,9 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-issue {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--cn-space-hairline);
   width: 100%;
-  padding: 6px 8px;
+  padding: var(--cn-space-sm) var(--cn-space-md);
   border: 1px solid var(--cn-error-border, var(--cn-border));
   border-radius: var(--cn-radius-sm);
   background: var(--cn-error-bg);
@@ -9227,7 +9227,7 @@ body.cn-doc-focus-view .cn-doc-stats {
   align-items: center;
   justify-content: space-between;
   gap: var(--cn-space-sm);
-  margin: 10px 0 6px;
+  margin: var(--cn-space-md) 0 var(--cn-space-sm);
 }
 
 .cn-tpl-preview-counts .ant-tag {
@@ -9235,12 +9235,12 @@ body.cn-doc-focus-view .cn-doc-stats {
 }
 
 .cn-tpl-preview-table .ant-table-thead > tr > th {
-  padding: 4px 8px;
+  padding: var(--cn-space-xs) var(--cn-space-md);
   font-size: var(--cn-text-xs);
 }
 
 .cn-tpl-preview-table .ant-table-tbody > tr > td {
-  padding: 4px 8px;
+  padding: var(--cn-space-xs) var(--cn-space-md);
   vertical-align: top;
 }
 
@@ -9264,13 +9264,13 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-impact-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--cn-space-sm);
   max-height: 240px;
   overflow-y: auto;
 }
 
 .cn-tpl-impact-card {
-  padding: 6px 8px;
+  padding: var(--cn-space-sm) var(--cn-space-md);
   border: 1px solid var(--cn-border);
   border-radius: var(--cn-radius-sm);
   background: var(--cn-bg-subtle);
@@ -9280,12 +9280,12 @@ body.cn-doc-focus-view .cn-doc-stats {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--cn-space-sm);
   font-size: var(--cn-text-sm);
 }
 
 .cn-tpl-impact-changes {
-  margin: 4px 0 0;
+  margin: var(--cn-space-xs) 0 0;
   padding-inline-start: 16px;
   font-size: var(--cn-text-xs);
   line-height: 1.6;
@@ -9294,16 +9294,16 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-tpl-structure-count {
   margin-inline-start: 8px;
   font-size: var(--cn-text-xs);
-  font-weight: 400;
+  font-weight: var(--cn-weight-regular);
 }
 
 /* 只读结构页签在窄面板里保持紧凑，长标签横向滚动 */
 .cn-tpl-check-panel .ant-tabs-nav {
-  margin-bottom: 6px;
+  margin-bottom: var(--cn-space-sm);
 }
 
 .cn-tpl-check-panel .ant-tabs-tab {
-  padding: 4px 6px;
+  padding: var(--cn-space-xs) var(--cn-space-sm);
   font-size: var(--cn-text-xs);
 }
 
