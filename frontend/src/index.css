@@ -9238,6 +9238,14 @@ body.cn-doc-focus-view .cn-doc-stats {
   vertical-align: top;
 }
 
+/* 「变更」列固定 96px、不换行；「说明」列吃满剩余宽度，两列不再重叠 */
+.cn-tpl-preview-table .ant-table-tbody > tr > td:first-child,
+.cn-tpl-preview-table .ant-table-thead > tr > th:first-child {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cn-tpl-preview-table .ant-tag {
   margin-inline-end: 0;
 }
