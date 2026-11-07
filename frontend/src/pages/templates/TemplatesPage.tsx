@@ -8,15 +8,28 @@ import {
 import {
   PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined, ApartmentOutlined,
   FileTextOutlined, TableOutlined, CheckCircleOutlined, ClockCircleOutlined,
+  ImportOutlined, ExportOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { workspaceTemplateApi } from '@/api'
 import type { TemplateSpecForm, WorkspaceTemplate } from '@/api'
 import TemplateEditorModal from './TemplateEditorModal'
+import TemplateImportModal from './TemplateImportModal'
 import { formatDateTime } from '@/utils/datetime'
 
 const { Title, Text, Paragraph } = Typography
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
 
 function FormDetail({ form }: { form: TemplateSpecForm }) {
   return (
@@ -158,6 +171,7 @@ export default function TemplatesPage() {
   const [editorOpen, setEditorOpen] = useState(false)
   const [editing, setEditing] = useState<WorkspaceTemplate | null>(null)
   const [seed, setSeed] = useState<WorkspaceTemplate | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
 
   const { data: templates = [], isLoading, error } = useQuery({
     queryKey: ['workspace-templates', search],
@@ -177,6 +191,15 @@ export default function TemplatesPage() {
       queryClient.invalidateQueries({ queryKey: ['workspace-templates'] })
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
+  })
+
+  const exportTemplate = useMutation({
+    mutationFn: (t: WorkspaceTemplate) => workspaceTemplateApi.exportFile(t.id),
+    onSuccess: ({ blob, filename }) => {
+      downloadBlob(blob, filename)
+      message.success('模板已导出')
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '导出失败'),
   })
 
   const openCreate = () => { setEditing(null); setSeed(null); setEditorOpen(true) }
@@ -209,6 +232,15 @@ export default function TemplatesPage() {
               <Space onClick={e => e.stopPropagation()}>
                 <Button size="small" icon={<EditOutlined />} onClick={() => openEdit(t)}>编辑规格</Button>
                 <Button size="small" icon={<CopyOutlined />} onClick={() => openClone(t)}>复制</Button>
+                <Button
+                  size="small"
+                  icon={<ExportOutlined />}
+                  loading={exportTemplate.isPending && exportTemplate.variables?.id === t.id}
+                  onClick={() => exportTemplate.mutate(t)}
+                  data-testid={`export-template-${t.id}`}
+                >
+                  导出
+                </Button>
                 <Popconfirm
                   title="删除模板？"
                   description={t.workspace_count > 0 ? '仍有工作区在使用，无法删除' : '删除后不可恢复（历史版本一并删除）'}
@@ -254,6 +286,9 @@ export default function TemplatesPage() {
             onChange={e => setSearch(e.target.value)}
             style={{ width: 220 }}
           />
+          <Button icon={<ImportOutlined />} onClick={() => setImportOpen(true)} data-testid="import-template-btn">
+            导入模板
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openCreate} data-testid="create-template-btn">
             新建模板
           </Button>
@@ -288,6 +323,7 @@ export default function TemplatesPage() {
         seed={seed}
         onClose={() => setEditorOpen(false)}
       />
+      <TemplateImportModal open={importOpen} onClose={() => setImportOpen(false)} />
     </div>
   )
 }

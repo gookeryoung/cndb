@@ -99,6 +99,37 @@ class TemplatePreviewResponse(BaseModel):
     spec: dict[str, Any]
 
 
+class TemplateImportPayload(BaseModel):
+    """导入文件载荷（需求 0120）: ``.workspace-template.json`` 的完整内容."""
+
+    format: str = "cndb.workspace-template"
+    schema_version: int = 1
+    name: str = Field(min_length=1, max_length=120)
+    description: str = ""
+    category: str = Field(default="", max_length=64)
+    modules: list[str] = DEFAULT_WORKSPACE_MODULES
+    spec: dict[str, Any]
+    version: int | None = Field(default=None, ge=1)
+
+    @field_validator("modules", mode="before")
+    @classmethod
+    def _normalize_modules(cls, v: Any) -> list[str]:
+        return normalize_modules(v)
+
+
+class TemplateImportPreviewResponse(BaseModel):
+    """导入预览：归一化后的 spec、建议名称与规模统计（不落库）."""
+
+    name: str
+    description: str
+    category: str
+    modules: list[str]
+    spec: dict[str, Any]
+    counts: dict[str, int] = Field(default_factory=dict)
+    source_version: int | None = None
+    renamed: bool = False
+
+
 class ApplyTemplateRequest(BaseModel):
     """把模板应用到已存在工作区（增量、非破坏）."""
 
@@ -147,6 +178,8 @@ __all__ = [
     "ApplyTemplateResponse",
     "LifecycleResponse",
     "TemplateCreate",
+    "TemplateImportPayload",
+    "TemplateImportPreviewResponse",
     "TemplatePreviewRequest",
     "TemplatePreviewResponse",
     "TemplateResponse",
@@ -252,6 +285,8 @@ __all__ = [
     "DataFlowStep",
     "LifecycleResponse",
     "TemplateCreate",
+    "TemplateImportPayload",
+    "TemplateImportPreviewResponse",
     "TemplatePreviewRequest",
     "TemplatePreviewResponse",
     "TemplateResponse",

@@ -1,9 +1,10 @@
 /** 工作区模板 / 生命周期 API — /api/v1/workspace-templates 与 /workspaces/:id/lifecycle */
 
 import api from './client'
+import { parseContentDispositionFilename } from '@/utils/disposition'
 import type {
-  LifecycleStage, TemplatePreview, TemplateRevision, TemplateSpec, TemplateUpdateResult,
-  WorkspaceLifecycle, WorkspaceTemplate,
+  LifecycleStage, TemplateImportPayload, TemplateImportPreview, TemplatePreview, TemplateRevision,
+  TemplateSpec, TemplateUpdateResult, WorkspaceLifecycle, WorkspaceTemplate,
 } from './types'
 
 export const workspaceTemplateApi = {
@@ -26,6 +27,20 @@ export const workspaceTemplateApi = {
     api.get<TemplateRevision[]>(`/v1/workspace-templates/${id}/revisions`).then(r => r.data),
   remove: (id: number | string) =>
     api.delete(`/v1/workspace-templates/${id}`).then(() => true),
+  /** 导出单个模板为 .workspace-template.json（文件名取后端 Content-Disposition） */
+  exportFile: (id: number | string) =>
+    api.get<Blob>(`/v1/workspace-templates/${id}/export`, { responseType: 'blob' })
+      .then(r => ({
+        blob: r.data,
+        filename: parseContentDispositionFilename(r.headers?.['content-disposition'])
+          ?? 'workspace-template.json',
+      })),
+  /** 导入预览：只校验不落库，返回归一化规格与建议名称 */
+  importPreview: (payload: TemplateImportPayload) =>
+    api.post<TemplateImportPreview>('/v1/workspace-templates/import/preview', payload).then(r => r.data),
+  /** 导入创建：同名自动重命名，返回新模板 */
+  importFile: (payload: TemplateImportPayload) =>
+    api.post<WorkspaceTemplate>('/v1/workspace-templates/import', payload).then(r => r.data),
 }
 
 export const workspaceLifecycleApi = {

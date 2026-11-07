@@ -1082,3 +1082,97 @@ def test_data_flow_infers_flow_stage_from_step_form(client, auth_headers):
     # flow-only 表单不在任何阶段 → 不强行归属阶段
     assert data["flows"][1]["stage"] is None
     assert data["flows"][1]["stage_name"] is None
+
+
+# ── 模板导入导出（需求 0120）────────────────────────
+
+
+def test_export_template_returns_json_file(client, auth_headers):
+    template = _create_template(client, auth_headers, name="导出模板")
+
+    resp = client.get(f"/api/v1/workspace-templates/{template['id']}/export", headers=auth_headers)
+    assert resp.status_code == 200, resp.text
+    disposition = resp.headers["content-disposition"]
+    assert "attachment" in disposition
+    assert "filename*=UTF-8''" in disposition
+    assert ".workspace-template.json" in disposition
+
+    body = resp.json()
+    assert body["format"] == "cndb.workspace-template"
+    assert body["schema_version"] == 1
+    assert body["name"] == "导出模板"
+    assert body["category"] == ""
+    assert body["version"] == 1
+    assert body["modules"]
+    assert [form["key"] for form in body["spec"]["forms"]] == ["apply", "progress"]
+
+    # 未登录 401；不存在 404
+    assert client.get(f"/api/v1/workspace-templates/{template['id']}/export").status_code == 401
+    assert client.get("/api/v1/workspace-templates/9999/export", headers=auth_headers).status_code == 404
+
+
+def test_import_preview_and_create_with_auto_rename(client, auth_headers):
+    template = _create_template(client, auth_headers, name="导入模板")
+    exported = client.get(f"/api/v1/workspace-templates/{template['id']}/export", headers=auth_headers).json()
+
+    # 任意登录用户都能预览 / 导入；同名自动重命名
+    other = _register_other_user(client)
+    preview = client.post("/api/v1/workspace-templates/import/preview", json=exported, headers=other)
+    assert preview.status_code == 200, preview.text
+    data = preview.json()
+    assert data["renamed"] is True
+    assert data["name"] == "导入模板（导入）"
+    assert data["source_version"] == 1
+    assert data["counts"]["stage_count"] == 2
+    assert data["counts"]["form_count"] == 2
+    assert data["counts"]["document_rule_count"] == 2
+    # 预览不落库
+    assert all(t["name"] != "导入模板（导入）" for t in client.get("/api/v1/workspace-templates", headers=other).json())
+
+    created = client.post("/api/v1/workspace-templates/import", json=exported, headers=other)
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["name"] == "导入模板（导入）"
+    assert body["is_builtin"] is False
+    assert body["version"] == 1
+    assert body["counts"]["stage_count"] == 2
+    revisions = client.get(f"/api/v1/workspace-templates/{body['id']}/revisions", headers=other).json()
+    assert [(r["version"], r["change_summary"]) for r in revisions] == [(1, "从文件导入")]
+
+    # 再次导入：名称继续递增
+    again = client.post("/api/v1/workspace-templates/import", json=exported, headers=other)
+    assert again.status_code == 201, again.text
+    assert again.json()["name"] == "导入模板（导入 2）"
+
+    # 第三方导出文件里的大版本号不沿用：导入模板版本恒为 1
+    assert exported["version"] == 1
+
+
+def test_import_rejects_invalid_files(client, auth_headers):
+    spec_bad = {"forms": [], "documents": [], "stages": []}
+    base = {
+        "format": "cndb.workspace-template",
+        "schema_version": 1,
+        "name": "坏模板",
+        "spec": spec_bad,
+    }
+    assert client.post("/api/v1/workspace-templates/import/preview", json=base, headers=auth_headers).status_code == 422
+
+    wrong_format = {**base, "format": "other"}
+    assert (
+        client.post("/api/v1/workspace-templates/import/preview", json=wrong_format, headers=auth_headers).status_code
+        == 422
+    )
+
+    wrong_version = {**base, "schema_version": 2}
+    assert (
+        client.post("/api/v1/workspace-templates/import/preview", json=wrong_version, headers=auth_headers).status_code
+        == 422
+    )
+
+    bad_modules = {**base, "spec": SPEC, "modules": ["nope"]}
+    assert client.post("/api/v1/workspace-templates/import", json=bad_modules, headers=auth_headers).status_code == 422
+
+    # 未登录不可导入
+    valid = {**base, "spec": SPEC}
+    assert client.post("/api/v1/workspace-templates/import", json=valid).status_code == 401

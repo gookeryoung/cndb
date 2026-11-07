@@ -139,6 +139,33 @@ export interface TemplatePreview {
   spec: TemplateSpec
 }
 
+/** 模板导入文件载荷（需求 0120）：.workspace-template.json 的完整内容. */
+export interface TemplateImportPayload {
+  format: 'cndb.workspace-template'
+  schema_version: number
+  name: string
+  description?: string
+  category?: string
+  modules?: WorkspaceModule[]
+  spec: TemplateSpec
+  version?: number | null
+}
+
+/** 导入预览：服务端归一化后的规格、建议名称与统计. */
+export interface TemplateImportPreview {
+  name: string
+  description: string
+  category: string
+  modules: WorkspaceModule[]
+  spec: TemplateSpec
+  counts: {
+    stage_count: number; form_count: number; field_count: number; document_rule_count: number;
+    flow_count: number; step_count: number
+  }
+  source_version: number | null
+  renamed: boolean
+}
+
 export interface TemplateUpdateResult {
   template: WorkspaceTemplate
   diff: TemplateDiff

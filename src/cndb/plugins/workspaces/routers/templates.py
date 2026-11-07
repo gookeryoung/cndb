@@ -8,9 +8,12 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -20,6 +23,8 @@ from cndb.plugins.accounts.models import User, UserRole
 from cndb.plugins.workspaces.models import Workspace, WorkspaceTemplate, WorkspaceTemplateRevision
 from cndb.plugins.workspaces.schemas.templates import (
     TemplateCreate,
+    TemplateImportPayload,
+    TemplateImportPreviewResponse,
     TemplatePreviewRequest,
     TemplatePreviewResponse,
     TemplateResponse,
@@ -106,6 +111,48 @@ def _name_conflict(db: Session, name: str, *, exclude_id: int | None = None) -> 
     return query.first() is not None
 
 
+# ── 模板导入导出（需求 0120）────────────────────────
+
+_IMPORT_FORMAT = "cndb.workspace-template"
+_IMPORT_SCHEMA_VERSION = 1
+_NAME_MAX_LEN = 120
+_UNSAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|\r\n]+')
+
+
+def _validate_import(payload: TemplateImportPayload) -> dict[str, Any]:
+    """校验导入文件头与规格，返回归一化后的 spec（非法统一 422）."""
+    if payload.format != _IMPORT_FORMAT:
+        raise HTTPException(status_code=422, detail=f"不支持的文件格式：{payload.format}")
+    if payload.schema_version != _IMPORT_SCHEMA_VERSION:
+        raise HTTPException(status_code=422, detail=f"不支持的文件版本：{payload.schema_version}")
+    return _validate_spec(payload.spec)
+
+
+def _unique_import_name(db: Session, base: str) -> tuple[str, bool]:
+    """同名自动重命名：``原名（导入）`` / ``原名（导入 2）``…，绝不覆盖已有模板."""
+    base = base.strip() or "未命名模板"
+
+    def fit(suffix: str) -> str:
+        return base[: max(1, _NAME_MAX_LEN - len(suffix))] + suffix
+
+    if not _name_conflict(db, fit("")):
+        return fit(""), False
+    candidate = fit("（导入）")
+    if not _name_conflict(db, candidate):
+        return candidate, True
+    index = 2
+    while True:
+        candidate = fit(f"（导入 {index}）")
+        if not _name_conflict(db, candidate):
+            return candidate, True
+        index += 1
+
+
+def _export_filename(name: str) -> str:
+    safe = _UNSAFE_FILENAME_RE.sub("-", name).strip(" .-") or "workspace-template"
+    return f"{safe}.workspace-template.json"
+
+
 @router.get("", response_model=list[TemplateResponse])
 def list_templates(
     _current_user: Annotated[User, Depends(get_current_user)],
@@ -120,6 +167,90 @@ def list_templates(
     templates = query.order_by(WorkspaceTemplate.is_builtin.desc(), WorkspaceTemplate.updated_at.desc()).all()
     counts = _workspace_counts(db, [t.id for t in templates])
     return [_to_response(t, counts.get(t.id, 0)) for t in templates]
+
+
+@router.post("/import/preview", response_model=TemplateImportPreviewResponse)
+def preview_import_template(
+    payload: TemplateImportPayload,
+    _current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TemplateImportPreviewResponse:
+    """解析并校验导入文件（不落库）：返回归一化规格、建议名称与规模统计."""
+    spec = _validate_import(payload)
+    name, renamed = _unique_import_name(db, payload.name)
+    return TemplateImportPreviewResponse(
+        name=name,
+        description=payload.description,
+        category=payload.category.strip(),
+        modules=payload.modules,
+        spec=spec,
+        counts=spec_counts(spec),
+        source_version=payload.version,
+        renamed=renamed,
+    )
+
+
+@router.post("/import", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)
+def import_template(
+    payload: TemplateImportPayload,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> TemplateResponse:
+    """导入模板：同名自动重命名，创建为当前用户的自定义模板并落 v1 快照."""
+    spec = _validate_import(payload)
+    name, _renamed = _unique_import_name(db, payload.name)
+    template = WorkspaceTemplate(
+        name=name,
+        description=payload.description,
+        category=payload.category.strip(),
+        modules=payload.modules,
+        spec=spec,
+        version=1,
+        is_builtin=False,
+        created_by_id=current_user.id,
+        updated_by_id=current_user.id,
+    )
+    db.add(template)
+    db.flush()
+    db.add(
+        WorkspaceTemplateRevision(
+            template_id=template.id,
+            version=1,
+            spec=spec,
+            change_summary="从文件导入",
+            created_by_id=current_user.id,
+        )
+    )
+    db.commit()
+    db.refresh(template)
+    return _to_response(template)
+
+
+@router.get("/{template_id}/export")
+def export_template(
+    template_id: int,
+    _current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> JSONResponse:
+    """导出单个模板为 ``.workspace-template.json``（任意登录用户可读）."""
+    template = _get_template_or_404(db, template_id)
+    filename = _export_filename(template.name)
+    content = {
+        "format": _IMPORT_FORMAT,
+        "schema_version": _IMPORT_SCHEMA_VERSION,
+        "name": template.name,
+        "description": template.description,
+        "category": template.category,
+        "modules": list(template.modules or []),
+        "spec": template.spec or {},
+        "version": template.version,
+    }
+    return JSONResponse(
+        content=content,
+        headers={
+            "Content-Disposition": (f"attachment; filename=\"template.json\"; filename*=UTF-8''{quote(filename)}")
+        },
+    )
 
 
 @router.get("/{template_id}", response_model=TemplateResponse)
