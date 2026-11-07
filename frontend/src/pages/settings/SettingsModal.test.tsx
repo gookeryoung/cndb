@@ -82,6 +82,13 @@ describe('SettingsModal 个人设置', () => {
     expect(screen.getByRole('button', { name: '更新资料' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /保\s*存/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /修改密码/ })).not.toBeInTheDocument()
+    // GitHub 风格分区：每节标题下紧跟分隔线，而不是在两个内容块之间插 Divider
+    const profileSections = document.querySelectorAll('.settings-section-header')
+    expect(profileSections).toHaveLength(2)
+    profileSections.forEach(section => {
+      expect((section as HTMLElement).style.borderBottom).toContain('1px solid')
+    })
+    expect(document.querySelector('.settings-modal .ant-divider')).toBeNull()
     // 主题卡片惰性渲染，切到主题 Tab 后才能查到
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     const grid = document.querySelector('[data-testid="theme-grid"]')

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App, Divider } from 'antd'
+import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
 import {
   UserOutlined, BgColorsOutlined, TableOutlined, FileTextOutlined, RobotOutlined, CodeOutlined,
 } from '@ant-design/icons'
@@ -46,12 +46,31 @@ const themeSwatches: Record<ThemeMode, { primary: string; bg: string; text: stri
 
 const { Text } = Typography
 
-/** 分区标题：节名 + 行内辅助说明（用户资料页签各节统一头部，替代大块 Alert / 分散提示） */
-function SectionHeader({ title, description }: { title: string; description: string }) {
+/** 分区标题：GitHub 风格 —— 标题行下紧跟分隔线，而不是在内容块之间插分隔符.
+ *
+ * 标题与行内辅助说明同一行，底线明确每节的起点；`topGap` 供同页多节时拉开节奏。
+ */
+function SectionHeader({ title, description, topGap = 0 }: {
+  title: string
+  description: string
+  topGap?: number
+}) {
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div
+      className="settings-section-header"
+      style={{
+        marginTop: topGap,
+        paddingBottom: 8,
+        marginBottom: 16,
+        borderBottom: '1px solid var(--cn-border)',
+        display: 'flex',
+        alignItems: 'baseline',
+        gap: 8,
+        flexWrap: 'wrap',
+      }}
+    >
       <Text strong style={{ fontSize: 14 }}>{title}</Text>
-      <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>{description}</Text>
+      <Text type="secondary" style={{ fontSize: 12 }}>{description}</Text>
     </div>
   )
 }
@@ -248,8 +267,11 @@ function ProfilePanel({ onClose }: { onClose: () => void }) {
         </div>
       </Form>
 
-      <Divider style={{ margin: '20px 0 4px' }} />
-      <SectionHeader title="账号安全" description="填写后随「更新资料」一并提交；修改成功后全部会话失效，需用新密码重新登录" />
+      <SectionHeader
+        title="账号安全"
+        description="填写后随「更新资料」一并提交；修改成功后全部会话失效，需用新密码重新登录"
+        topGap={20}
+      />
       {/* 桌面端三个密码框并排一行（与上方基本资料单行结构呼应，降低纵向高度）；
           移动端纵向堆叠，避免窄屏输入框被压缩 */}
       <Form form={passwordForm} layout="vertical">
@@ -380,12 +402,7 @@ function ThemePanel() {
 
   return (
     <div style={{ padding: '12px 0' }}>
-      <div style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>配色</Text>
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          设置会自动保存到浏览器
-        </Text>
-      </div>
+      <SectionHeader title="配色" description="设置会自动保存到浏览器" />
 
       {/* 「跟随系统」虚拟档（0066 C7）：持久化 auto，生效主题按系统明暗实时解析 */}
       <Radio.Group
@@ -428,12 +445,7 @@ function ThemePanel() {
         </Text>
       )}
 
-      <div style={{ marginTop: 20, marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>字体</Text>
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          即时生效，自动保存到浏览器
-        </Text>
-      </div>
+      <SectionHeader title="字体" description="即时生效，自动保存到浏览器" topGap={20} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 13 }}>字号</Text>
@@ -474,12 +486,10 @@ function EditorPanel() {
 
   return (
     <div style={{ padding: '12px 0' }}>
-      <div style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>编辑器外观</Text>
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          结构 DSL 与流水线编辑器独立配色，避免与页面主题相互迁就
-        </Text>
-      </div>
+      <SectionHeader
+        title="编辑器外观"
+        description="结构 DSL 与流水线编辑器独立配色，避免与页面主题相互迁就"
+      />
       <div style={{ display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Text style={{ fontSize: 13 }}>配色</Text>
@@ -557,12 +567,7 @@ function TablePanel() {
 
   return (
     <div style={{ padding: '12px 0' }}>
-      <div style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>显示模式</Text>
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          全局生效，适用于所有数据表
-        </Text>
-      </div>
+      <SectionHeader title="显示模式" description="全局生效，适用于所有数据表" />
 
       {/* 间距 + 每页行数：窄屏放不下时换行，避免两个下拉被压缩 */}
       <div
@@ -590,9 +595,7 @@ function TablePanel() {
         间距同样影响看板、画廊、日历的卡片密度
       </Text>
 
-      <div style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>操作风格</Text>
-      </div>
+      <SectionHeader title="操作风格" description="新增行的落点与自动填充锁定" topGap={20} />
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
         <Text style={{ fontSize: 13 }}>新增行默认位置</Text>
@@ -648,12 +651,7 @@ function DocPanel() {
 
   return (
     <div style={{ padding: '12px 0' }}>
-      <div style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>对齐方式</Text>
-        <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
-          文档内表格与图片的水平对齐
-        </Text>
-      </div>
+      <SectionHeader title="对齐方式" description="文档内表格与图片的水平对齐" />
       <div data-testid="doc-align-row" style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
         <Text style={{ fontSize: 13 }}>表格对齐</Text>
         <Select
@@ -673,9 +671,7 @@ function DocPanel() {
         />
       </div>
 
-      <div style={{ marginTop: 20, marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>默认宽度</Text>
-      </div>
+      <SectionHeader title="默认宽度" description="插入时的缺省宽度，正文显式指定不受影响" topGap={20} />
       <div data-testid="doc-width-row" style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8, flexWrap: 'wrap' }}>
         <Text style={{ fontSize: 13 }}>表格默认宽度</Text>
         <Select
@@ -728,7 +724,7 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
         tabPlacement={isMobile ? 'top' : 'start'}
         className={`settings-modal-tabs ${isMobile ? 'is-top' : 'is-side'}`}
         items={[
-          // 修改密码表单并入用户资料页签下方，不再单设「安全」页签；两节用 Divider 分隔
+          // 修改密码表单并入用户资料页签下方，不再单设「安全」页签；两节各自标题带分隔线
           {
             key: 'profile',
             label: <span><UserOutlined aria-hidden />用户资料</span>,

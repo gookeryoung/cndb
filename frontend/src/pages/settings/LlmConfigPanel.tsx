@@ -20,7 +20,7 @@
 
 import { useEffect, useState } from 'react'
 import {
-  Alert, App, AutoComplete, Button, Collapse, Divider, Empty, Form, Input, Select, Space, Table, Tag,
+  Alert, App, AutoComplete, Button, Collapse, Empty, Form, Input, Select, Space, Table, Tag,
   Tooltip, Typography,
 } from 'antd'
 import { ApiOutlined, HistoryOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -488,8 +488,7 @@ export default function LlmConfigPanel() {
       </Form>
 
       {/* ── 调用记录：本人最近 20 条（只读，不展示提示词 / 输出全文） ── */}
-      <Divider style={{ margin: `${SPACE.lg}px 0 ${SPACE.md}px` }} />
-      <div data-testid="llm-runs">
+      <div data-testid="llm-runs" style={{ marginTop: SPACE.lg }}>
         <div
           style={{
             display: 'flex',
@@ -497,7 +496,9 @@ export default function LlmConfigPanel() {
             justifyContent: 'space-between',
             flexWrap: 'wrap',
             gap: SPACE.md,
+            paddingBottom: SPACE.md,
             marginBottom: SPACE.md,
+            borderBottom: '1px solid var(--cn-border)',
           }}
         >
           <Space size={SPACE.md} wrap>
