@@ -44,6 +44,7 @@
 | # | 约束 | 校验 | 来源 |
 |---|---|---|---|
 | H24 | 列表 / 菜单 / 下拉 / 表格选中项必须使用 `--cn-bg-selected`（一级流程可 `--cn-bg-selected-strong`）；相对 `--cn-bg-container` 的 WCAG 对比度普通 ≥1.35:1、强选中 ≥1.5:1，且强选中不得低于普通；禁止回退到 `--cn-bg-subtle` 或手写低比例 `color-mix` | `make frontend-coverage` | 全局 |
+| H25 | 界面线条统一 GitHub 式 1px 中性线：静态边界（卡片 / 列表 / 表格 / 方盒 / 分割线 / 按钮 / 输入 / 选择 / 日期 / 数字 / 搜索）默认 1px，线色只用 `--cn-border`（浅色 `#6e7781` / 深色 `#8b949e`），`--cn-border-soft` 同值；hover / active / focus 才可用品牌色；禁止 1.5px 静态粗描边与静态重投影（状态指示条 / focus ring / 浮层轻投影等非静态边界可例外） | `make frontend-coverage` | 全局 |
 
 ## 权限与安全
 

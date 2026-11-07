@@ -16,6 +16,7 @@ import {
   AUTO_LIGHT,
   AUTO_DARK,
   getThemeConfig,
+  themeCssVars,
   loadThemeMode,
   saveThemeMode,
   FONT_SCALES,
@@ -237,6 +238,18 @@ describe('选中态底色可辨识性（H24 硬约束）', () => {
       expect(strongRatio, `${mode} 一级流程对比度 ${strongRatio.toFixed(2)}`).toBeGreaterThanOrEqual(SELECTED_STRONG_MIN_CONTRAST)
       expect(strongRatio, `${mode} 一级流程必须比普通选中更强`).toBeGreaterThanOrEqual(selectedRatio)
     }
+  })
+})
+
+describe('界面线条硬约束（H25）', () => {
+  it('--cn-border / --cn-border-soft 同值、lineWidth=1，CSS 不含 1.5px 静态描边', () => {
+    const css = fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf-8')
+    for (const mode of THEME_MODES) {
+      const vars = themeCssVars(mode)
+      expect(vars['--cn-border'], mode).toBe(vars['--cn-border-soft'])
+      expect(getThemeConfig(mode).token?.lineWidth, mode).toBe(1)
+    }
+    expect(css).not.toMatch(/border[^:;{}]*:\s*1\.5px/)
   })
 })
 
