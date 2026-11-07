@@ -176,6 +176,6 @@ Related: `frontend/src/main.tsx`、`frontend/src/components/ProtectedRoute.tsx`�
 
 - 当前阶段：P3 进行中（代码与测试已随 `204f60ec` 提交，仅剩 LCP 阈值收紧需连续 10 次 CI 基线）
 - 已完成：P0 预算扩展与性能旅程；P1 认证并行预取 / 字体 7 字重 / 入口 198 KiB；P2 文档页 lazy 后 29 KiB；P3 表格 hover 预取（无快照时先视图后行）/ sessionStorage 种子化 / 无快照首笔行请求挂起到落地视图 / RUM `navigationType`
-- 下一步：CI 连续采 10 次 journeys 与 grid-lcp 读数后，把 LCP 改为「中位数 +10%，硬上限 4500ms」，并把 CI 中位数写回 `baselines.json` 的 `ci` 环境
-- 已知坑：`baselines.json` 首轮为空（只记录不 FAIL），必须用 CI artifact 的 `test-results/perf/journeys.json` 回填；`dist/.vite/chunk-modules.json` 只在 build 后存在；CodeMirror chunk 归属靠模块路径匹配，改文件名不影响断言；axios 按需加载后首个请求需等 chunk，本地 dev 会多一次请求但无功能变化；性能用例必须走已发布文档（`?parent=&status=published` 深链），草稿默认进编辑态会把编辑器 chunk 带进来
-- 最近一次全绿：`make check-fast`、`PYTEST_JOBS=3 make test`、前端全量单测（257 文件 / 3138 用例）、`pnpm build` 与 `pnpm bundle:budget`、`pnpm e2e --project=chromium-authed tests/e2e/perf --workers=1`（10 passed）（2026-11-06）
+- 下一步：CI 连续采 10 次 journeys 与 grid-lcp 读数后，把 LCP 改为「中位数 +10%，硬上限 4500ms」，并把 CI 中位数写回 `baselines.json` 的 `ci` 环境；回填在 CI job 内直接跑 `pnpm perf:baseline:ci`（默认连采 10 轮、自动取中位数写入，`--runs` / `--reason` 可调），已有现成读数时用 `pnpm perf:baseline <run1.json> <run2.json> <run3.json> --reason "..."`
+- 已知坑：`baselines.json` 的 `local` / `ci` 目前仍为空（结果：只记录不 FAIL），必须用 CI artifact 的 `test-results/perf/journeys.json` 回填，且至少 3 轮——`perf-baseline.mjs` 会拒绝单次读数，避免把抖动固化进门槛；`perf-baseline-ci.mjs` 的每轮快照放在系统临时目录而非 `test-results/`，因为 Playwright 每轮启动会清空该目录、跨轮快照会丢；首屏字体 preload 在 `vite.config.ts` 的 `font-preload` 插件里按 `inter-latin-(400|500)` 产物名注入，改字体包或字重口径时要同步正则；`dist/.vite/chunk-modules.json` 只在 build 后存在；CodeMirror chunk 归属靠模块路径匹配，改文件名不影响断言；axios 按需加载后首个请求需等 chunk，本地 dev 会多一次请求但无功能变化；性能用例必须走已发布文档（`?parent=&status=published` 深链），草稿默认进编辑态会把编辑器 chunk 带进来
+- 最近一次全绿：`make flow`（6704 passed / 3 skipped）、前端全量单测、`pnpm build` 与 `pnpm bundle:budget`、`pnpm e2e --project=chromium-authed tests/e2e/perf --workers=1`（10 passed）、`pnpm perf:baseline:ci --runs 3` 端到端自检（写入后已还原）（2026-11-07）

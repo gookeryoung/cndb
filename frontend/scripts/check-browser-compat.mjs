@@ -158,6 +158,11 @@ for (const file of walk(SRC_DIR)) {
     // 注册表本身允许出现 color-mix 表达式
     continue
   }
+  if (rel === 'src/compat/capabilities.ts') {
+    // 能力探测必须把 color-mix 字面量交给 CSS.supports 判断，
+    // 它描述的是「内核是否支持」而非实际使用（ADR 0117 C7）
+    continue
+  }
   if (rel.endsWith('.css')) {
     const countable = stripColorMixSupports(source)
     colorMixTotal += (countable.match(/color-mix\(/g) ?? []).length

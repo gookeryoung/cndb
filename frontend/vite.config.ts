@@ -117,6 +117,37 @@ function chunkAttributionPlugin(): Plugin {
   }
 }
 
+// ── 首屏字体 preload ─────────────────────────────────────────────────
+// 字体由入口 CSS 的 @font-face 间接发现，浏览器要先解析 CSS 才知道要下载字体，
+// 关键路径多一跳。这里在构建产物 index.html 的 <head> 注入 Inter 400/500 的
+// preload（正文与界面最常用字重），让字体与入口 JS/CSS 并行下载。
+// 只 preload latin 子集的两个字重，其余字重仍按需发现，避免过度预取。
+function fontPreloadPlugin(): Plugin {
+  return {
+    name: 'font-preload',
+    apply: 'build',
+    // 必须晚于 Vite 的 build-html 插件：否则 generateBundle 时 bundle 里还没有 index.html
+    enforce: 'post',
+    generateBundle(_options, bundle) {
+      const htmlKey = Object.keys(bundle).find((fileName) => fileName === 'index.html')
+      const htmlAsset = htmlKey ? bundle[htmlKey] : undefined
+      if (!htmlAsset || htmlAsset.type !== 'asset' || typeof htmlAsset.source !== 'string') return
+
+      const fonts = Object.keys(bundle)
+        .filter((fileName) => /(?:^|\/)inter-latin-(?:400|500)-normal-.*\.woff2$/.test(fileName))
+        .sort()
+      if (fonts.length === 0) return
+
+      const tags = fonts
+        .map((fileName) =>
+          `<link rel="preload" href="/${fileName}" as="font" type="font/woff2" crossorigin>`,
+        )
+        .join('\n    ')
+      htmlAsset.source = htmlAsset.source.replace('</head>', `${tags}\n  </head>`)
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
@@ -130,6 +161,7 @@ export default defineConfig(({ mode }) => ({
       })]
       : []),
     chunkAttributionPlugin(),
+    fontPreloadPlugin(),
     syncStaticPlugin(),
   ],
   resolve: {

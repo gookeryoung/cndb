@@ -353,7 +353,13 @@ export function ImageFieldEditor({
                 ) : (
                   <div key={item.key} className={`cn-image-field__tile is-${item.status}`} style={tileStyle}>
                     {item.previewUrl ? (
-                      <img src={item.previewUrl} alt="" className="cn-image-field__preview" />
+                      <img
+                        src={item.previewUrl}
+                        alt=""
+                        className="cn-image-field__preview"
+                        loading="lazy"
+                        decoding="async"
+                      />
                     ) : (
                       <span className="cn-image-field__preview cn-image-field__preview--empty" />
                     )}

@@ -97,6 +97,9 @@ services:
       - ./deploy/nginx/templates:/etc/nginx/templates:ro
       # 反代片段（HTTP/HTTPS 共用，含 WS 规则）
       - ./deploy/nginx/snippets:/etc/nginx/snippets:ro
+      # http 级配置（/assets 代理缓存池 + gzip）。必须单文件挂载：
+      # 整目录只读会让镜像的 envsubst 无法写 default.conf
+      - ./deploy/nginx/conf.d/10-cndb-http.conf:/etc/nginx/conf.d/10-cndb-http.conf:ro
       # 可选扩展（HTTPS server 块等；目录为空也不报错）
       - ./deploy/nginx/extra:/etc/nginx/extra:ro
       # 证书目录（启用 HTTPS 时放 fullchain.pem / privkey.pem）

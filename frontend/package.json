@@ -10,6 +10,8 @@
     "analyze": "vite build --mode analyze",
     "bundle:budget": "node scripts/bundle-budget.mjs",
     "bundle:budget:update": "node scripts/bundle-budget.mjs --update",
+    "perf:baseline": "node scripts/perf-baseline.mjs",
+    "perf:baseline:ci": "node scripts/perf-baseline-ci.mjs",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit --incremental",
     "lint": "eslint . --cache --cache-location .eslintcache",
