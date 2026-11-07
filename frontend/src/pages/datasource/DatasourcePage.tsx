@@ -951,7 +951,7 @@ function JobDrawer({
           </Space>
         }
       >
-        <Form form={form} layout="vertical" size="small" className="cn-datasource-form">
+        <Form form={form} name="datasource-task" layout="vertical" size="small" className="cn-datasource-form">
           <div className="cn-datasource-form-help">
             <Text type="secondary">
               第一次配置？先看
@@ -1928,7 +1928,7 @@ function SessionFormModal({
         </Space>
       }
     >
-      <Form form={form} layout="vertical" size="small">
+      <Form form={form} name="datasource-session" layout="vertical" size="small">
         <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入会话名称' }]}>
           <Input data-testid="datasource-session-name" placeholder="如：行情源 A" />
         </Form.Item>
