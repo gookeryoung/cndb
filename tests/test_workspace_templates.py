@@ -1176,3 +1176,34 @@ def test_import_rejects_invalid_files(client, auth_headers):
     # 未登录不可导入
     valid = {**base, "spec": SPEC}
     assert client.post("/api/v1/workspace-templates/import", json=valid).status_code == 401
+
+
+def test_validate_spec_is_stateless(client, auth_headers):
+    """结构化编辑器预检：只归一化与统计，不落库（需求 0121）."""
+    before = client.get("/api/v1/workspace-templates", headers=auth_headers).json()
+    r = client.post("/api/v1/workspace-templates/validate", json={"spec": SPEC}, headers=auth_headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["spec"]["forms"][0]["fields"][0]["name"] == "项目名称"
+    assert body["counts"] == {
+        "stage_count": 2,
+        "form_count": 2,
+        "field_count": 4,
+        "document_rule_count": 2,
+        "flow_count": 0,
+        "step_count": 0,
+    }
+    after = client.get("/api/v1/workspace-templates", headers=auth_headers).json()
+    assert [t["id"] for t in after] == [t["id"] for t in before]
+
+    # 非法规格返回可定位的 422：path + message
+    bad = client.post(
+        "/api/v1/workspace-templates/validate",
+        json={"spec": {"forms": [], "documents": [], "stages": []}},
+        headers=auth_headers,
+    )
+    assert bad.status_code == 422
+    detail = bad.json()["detail"]
+    assert detail == {"path": "spec", "message": "至少定义一个表单或文档规则"}
+
+    assert client.post("/api/v1/workspace-templates/validate", json={"spec": SPEC}).status_code == 401

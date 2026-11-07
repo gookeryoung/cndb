@@ -8904,3 +8904,335 @@ body.cn-doc-focus-view .cn-doc-stats {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── 模板结构化编辑器（ADR 0121）──────────────────────────── */
+.cn-tpl-editor-drawer .ant-drawer-body {
+  padding: 0;
+  overflow: hidden;
+}
+
+.cn-tpl-editor {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr) 360px;
+  height: calc(100vh - 56px);
+  min-height: 0;
+  background: var(--cn-bg-page);
+}
+
+.cn-tpl-outline {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--cn-space-sm);
+  border-inline-end: 1px solid var(--cn-border);
+  background: var(--cn-bg-container);
+  overflow-y: auto;
+}
+
+.cn-tpl-outline-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.cn-tpl-outline-group .cn-tpl-outline-item {
+  flex: 1;
+}
+
+.cn-tpl-outline-item,
+.cn-tpl-outline-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--cn-radius-sm);
+  background: transparent;
+  color: var(--cn-text);
+  font-size: var(--cn-text-sm);
+  text-align: start;
+  cursor: pointer;
+}
+
+.cn-tpl-outline-item:hover,
+.cn-tpl-outline-sub:hover {
+  background: var(--cn-bg-hover);
+}
+
+.cn-tpl-outline-item.is-active,
+.cn-tpl-outline-sub.is-active {
+  background: var(--cn-primary-bg);
+  color: var(--cn-primary);
+  font-weight: 600;
+}
+
+.cn-tpl-outline-sub {
+  padding-inline-start: 24px;
+  color: var(--cn-text-secondary);
+}
+
+.cn-tpl-outline-sub span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-tpl-outline-error {
+  margin-top: 8px;
+  padding: 6px;
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-error-bg);
+  font-size: var(--cn-text-xs);
+  overflow-wrap: anywhere;
+}
+
+.cn-tpl-editor-main {
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--cn-space-lg);
+}
+
+.cn-tpl-editor-main > .cn-tpl-section {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.cn-tpl-editor-side {
+  min-height: 0;
+  padding: var(--cn-space-sm) var(--cn-space-sm) var(--cn-space-lg);
+  border-inline-start: 1px solid var(--cn-border);
+  background: var(--cn-bg-container);
+  overflow-y: auto;
+}
+
+.cn-tpl-section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--cn-space-sm);
+  margin-bottom: var(--cn-space-sm);
+}
+
+.cn-tpl-hint,
+.cn-tpl-muted {
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-tpl-section .ant-divider {
+  margin: var(--cn-space-md) 0 var(--cn-space-sm);
+}
+
+.cn-tpl-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--cn-space-sm);
+}
+
+.cn-tpl-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: var(--cn-space-sm);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+}
+
+.cn-tpl-card {
+  margin-bottom: var(--cn-space-sm);
+  padding: var(--cn-space-sm);
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-md);
+  background: var(--cn-bg-container);
+}
+
+.cn-tpl-card.is-active {
+  border-color: var(--cn-primary);
+  box-shadow: 0 0 0 1px var(--cn-primary-bg);
+}
+
+.cn-tpl-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-sm);
+  margin-bottom: var(--cn-space-sm);
+}
+
+.cn-tpl-card--nested {
+  background: var(--cn-bg-page);
+}
+
+.cn-tpl-sortable {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cn-tpl-sortable-item {
+  display: flex;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.cn-tpl-sortable-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.cn-tpl-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  border: 0;
+  border-radius: var(--cn-radius-sm);
+  background: transparent;
+  color: var(--cn-text-tertiary);
+  cursor: grab;
+}
+
+.cn-tpl-drag-handle:hover {
+  background: var(--cn-bg-hover);
+  color: var(--cn-text-secondary);
+}
+
+.cn-tpl-field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-sm);
+  padding: 6px 8px;
+  border: 1px solid var(--cn-border);
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-bg-container);
+}
+
+.cn-tpl-subsection {
+  margin-top: var(--cn-space-sm);
+  padding-top: var(--cn-space-sm);
+  border-top: 1px dashed var(--cn-border);
+}
+
+.cn-tpl-inline-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.cn-tpl-flow-config .ant-collapse-content-box {
+  padding-block: var(--cn-space-sm) !important;
+}
+
+.cn-tpl-code,
+.cn-tpl-json-editor {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: var(--cn-text-xs);
+}
+
+.cn-tpl-json-issues {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-error-bg);
+  overflow-y: auto;
+  font-size: var(--cn-text-xs);
+}
+
+.cn-tpl-check-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+}
+
+.cn-tpl-check-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cn-tpl-issue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.cn-tpl-issue {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--cn-error-border, var(--cn-border));
+  border-radius: var(--cn-radius-sm);
+  background: var(--cn-error-bg);
+  color: var(--cn-text);
+  font-size: var(--cn-text-xs);
+  text-align: start;
+  cursor: pointer;
+}
+
+.cn-tpl-issue:hover {
+  border-color: var(--cn-error);
+}
+
+@media (max-width: 1199.98px) {
+  .cn-tpl-editor {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
+
+  .cn-tpl-editor-side {
+    grid-column: 1 / -1;
+    max-height: 42vh;
+    border-inline-start: 0;
+    border-top: 1px solid var(--cn-border);
+  }
+}
+
+@media (max-width: 767.98px) {
+  .cn-tpl-editor {
+    display: flex;
+    flex-direction: column;
+    height: calc(100vh - 56px);
+  }
+
+  .cn-tpl-outline {
+    flex-direction: row;
+    flex-wrap: wrap;
+    max-height: 132px;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--cn-border);
+  }
+
+  .cn-tpl-outline-group {
+    width: 100%;
+    margin-top: 0;
+  }
+
+  .cn-tpl-outline-sub {
+    display: none;
+  }
+
+  .cn-tpl-editor-main {
+    flex: 1;
+    padding: var(--cn-space-sm);
+  }
+
+  .cn-tpl-editor-side {
+    max-height: 36vh;
+  }
+
+  .cn-tpl-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -99,6 +99,13 @@ class TemplatePreviewResponse(BaseModel):
     spec: dict[str, Any]
 
 
+class TemplateValidateResponse(BaseModel):
+    """无状态规格预检结果（需求 0121）：归一化 spec + 规模，不落库."""
+
+    spec: dict[str, Any]
+    counts: dict[str, int] = Field(default_factory=dict)
+
+
 class TemplateImportPayload(BaseModel):
     """导入文件载荷（需求 0120）: ``.workspace-template.json`` 的完整内容."""
 

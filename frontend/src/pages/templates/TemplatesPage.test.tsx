@@ -40,6 +40,13 @@ describe('TemplatesPage', () => {
   beforeEach(() => {
     server.use(
       http.get('/api/v1/workspace-templates', () => HttpResponse.json([TEMPLATE])),
+      http.post('/api/v1/workspace-templates/validate', async ({ request }) => {
+        const body = await request.json() as { spec: typeof TEMPLATE.spec }
+        return HttpResponse.json({
+          spec: body.spec,
+          counts: { stage_count: 1, form_count: 1, field_count: 1, document_rule_count: 0, flow_count: 0, step_count: 0 },
+        })
+      }),
       http.post('/api/v1/workspace-templates', async ({ request }) => {
         const body = await request.json() as Record<string, unknown>
         return HttpResponse.json({ ...TEMPLATE, id: 2, name: body.name, is_builtin: false, version: 1 })
@@ -70,7 +77,7 @@ describe('TemplatesPage', () => {
     expect(await screen.findByText(/阶段 1 · 立项申报/)).toBeInTheDocument()
 
     await userEvent.click(screen.getByTestId('create-template-btn'))
-    expect(await screen.findByTestId('template-editor-modal')).toBeInTheDocument()
+    expect(await screen.findByTestId('template-editor-drawer')).toBeInTheDocument()
     await userEvent.type(screen.getByTestId('template-name'), '我的科研模板')
     await userEvent.click(screen.getByRole('button', { name: '创建模板' }))
     expect(await screen.findByText('模板已创建')).toBeInTheDocument()

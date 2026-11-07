@@ -12,11 +12,32 @@ export interface TemplateSpecField {
   default_value?: unknown
 }
 
+export interface TemplateSpecGroup {
+  title: string
+  fields: string[]
+}
+
+export interface TemplateSpecFormFlow {
+  enabled?: boolean
+  list_fields?: string[]
+  search_fields?: string[]
+  form_groups?: TemplateSpecGroup[]
+  detail_groups?: TemplateSpecGroup[]
+  hints?: Record<string, string>
+  default_values?: Record<string, unknown>
+  allow_create?: boolean
+  allow_edit?: boolean
+  allow_delete?: boolean
+  default_sort?: { field: string; order: 'asc' | 'desc' } | null
+  empty_text?: string
+}
+
 export interface TemplateSpecForm {
   key: string
   name: string
   description?: string
   fields: TemplateSpecField[]
+  flow?: TemplateSpecFormFlow
 }
 
 export interface TemplateSpecDocument {
@@ -48,6 +69,7 @@ export interface TemplateSpecFlow {
   key: string
   name: string
   description?: string
+  stage?: string | null
   steps: TemplateSpecFlowStep[]
 }
 
@@ -137,6 +159,15 @@ export interface TemplatePreview {
   impact: TemplateImpact
   requires_force: boolean
   spec: TemplateSpec
+}
+
+/** 模板规格预检（需求 0121）：只读校验，不落库. */
+export interface TemplateValidateResult {
+  spec: TemplateSpec
+  counts: {
+    stage_count: number; form_count: number; field_count: number; document_rule_count: number;
+    flow_count: number; step_count: number
+  }
 }
 
 /** 模板导入文件载荷（需求 0120）：.workspace-template.json 的完整内容. */

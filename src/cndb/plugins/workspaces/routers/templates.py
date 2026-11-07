@@ -31,6 +31,7 @@ from cndb.plugins.workspaces.schemas.templates import (
     TemplateRevisionResponse,
     TemplateUpdate,
     TemplateUpdateResponse,
+    TemplateValidateResponse,
 )
 from cndb.plugins.workspaces.services.templates.diff import diff_specs
 from cndb.plugins.workspaces.services.templates.engine import (
@@ -104,6 +105,17 @@ def _validate_spec(raw: Any) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+_SPEC_ERROR_PATH_RE = re.compile(r"^([^：:]+)[：:](.*)$")
+
+
+def _split_spec_error(message: str) -> tuple[str, str]:
+    """把 ``normalize_spec`` 的「路径：消息」拆成结构化字段（需求 0121）."""
+    match = _SPEC_ERROR_PATH_RE.match(message)
+    if match is None:
+        return "spec", message
+    return match.group(1).strip(), match.group(2).strip()
+
+
 def _name_conflict(db: Session, name: str, *, exclude_id: int | None = None) -> bool:
     query = db.query(WorkspaceTemplate).filter(WorkspaceTemplate.name == name)
     if exclude_id is not None:
@@ -167,6 +179,20 @@ def list_templates(
     templates = query.order_by(WorkspaceTemplate.is_builtin.desc(), WorkspaceTemplate.updated_at.desc()).all()
     counts = _workspace_counts(db, [t.id for t in templates])
     return [_to_response(t, counts.get(t.id, 0)) for t in templates]
+
+
+@router.post("/validate", response_model=TemplateValidateResponse)
+def validate_template_spec(
+    payload: TemplatePreviewRequest,
+    _current_user: Annotated[User, Depends(get_current_user)],
+) -> TemplateValidateResponse:
+    """无状态预检：只复用 ``normalize_spec``，不读写数据库、不要求模板 id."""
+    try:
+        spec = normalize_spec(payload.spec)
+    except TemplateSpecError as exc:
+        path, message = _split_spec_error(str(exc))
+        raise HTTPException(status_code=422, detail={"path": path, "message": message}) from exc
+    return TemplateValidateResponse(spec=spec, counts=spec_counts(spec))
 
 
 @router.post("/import/preview", response_model=TemplateImportPreviewResponse)

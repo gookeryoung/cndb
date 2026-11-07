@@ -4,7 +4,7 @@ import api from './client'
 import { parseContentDispositionFilename } from '@/utils/disposition'
 import type {
   LifecycleStage, TemplateImportPayload, TemplateImportPreview, TemplatePreview, TemplateRevision,
-  TemplateSpec, TemplateUpdateResult, WorkspaceLifecycle, WorkspaceTemplate,
+  TemplateSpec, TemplateUpdateResult, TemplateValidateResult, WorkspaceLifecycle, WorkspaceTemplate,
 } from './types'
 
 export const workspaceTemplateApi = {
@@ -19,6 +19,9 @@ export const workspaceTemplateApi = {
   }) => api.post<WorkspaceTemplate>('/v1/workspace-templates', data).then(r => r.data),
   preview: (id: number | string, spec: TemplateSpec) =>
     api.post<TemplatePreview>(`/v1/workspace-templates/${id}/preview`, { spec }).then(r => r.data),
+  /** 无状态预检：不要求模板 id、不落库，返回归一化规格与规模 */
+  validate: (spec: TemplateSpec) =>
+    api.post<TemplateValidateResult>('/v1/workspace-templates/validate', { spec }).then(r => r.data),
   update: (id: number | string, data: {
     name?: string; description?: string; category?: string;
     modules?: string[]; spec?: TemplateSpec; change_summary?: string; force?: boolean
