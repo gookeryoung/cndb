@@ -1,5 +1,7 @@
 # 需求卡片：<标题>
 
+> 需求原文与约束编号 C1..Cn 的唯一副本在本卡片，ADR 只引用不复制（H26）。
+
 - 编号：NNNN（与 ADR `docs/adr/NNNN-*.md` 同号，卡片存 `docs/requirements/NNNN-<topic>.md`）
 - 来源 / 提出人：<…>
 - 日期：YYYY-MM-DD

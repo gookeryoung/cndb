@@ -63,7 +63,7 @@
 
 - 正文字体与展示 / 等宽字体统一走 npm 运行时依赖 `@fontsource/inter`、
   `@fontsource/outfit` 与 `@fontsource/jetbrains-mono`，**只导入 latin 子集四档字重**（`main.tsx`），
-  不引 CDN、不保留 `public/fonts` 本地字体，离线部署随依赖安装
+  不引 CDN、不保留 `public/fonts` 本地字体，离线部署随依赖安装（H29）
 - 展示位负字距 `--cn-tracking-display: -0.02em` 只用于 `.cn-display-tight`；
   中文标题不加负字距（CJK 收紧伤可读性）
 
@@ -148,9 +148,9 @@
 
 浅色系取 GitHub Light 口径，深色系取 GitHub Dark 口径；其余主题（ocean / forest / sepia / sakura / minimal）
 沿用浅色一套，不再单独配色 —— 换主题时只改背景，不重排语法色，避免「每套主题一套高亮」的维护成本。
-新增语言只加词法配置，**不要在组件里写死颜色**。
+新增语言只加词法配置，**不要在组件里写死颜色**（H30）。
 
-## 4. 硬规则
+## 4. 硬规则（H29 / H30）
 
 1. **CSS 里不写数字间距 / 字号 / 圆角**（例外：`0` / `auto` / `1px` 光学微调 / `50%`）。
    需要新档位 → 先加进 `tokens.ts` 与 `:root`，再用变量。`tokens.test.ts` 会拦。

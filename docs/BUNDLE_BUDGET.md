@@ -54,7 +54,7 @@
    比任何压缩手段都有效。
 
 2. **检查是否误把重型依赖拉进了关键路径**：`echarts`、`jspdf`、
-   `html2canvas-pro`、`nunjucks` 等必须走 lazy，绝不静态链入首屏 chunk。
+   `html2canvas-pro`、`nunjucks` 等必须走 lazy，绝不静态链入首屏 chunk（H31）。
 
 3. **确认增长不可避免**，才更新基线 —— 见下一节。
 
@@ -119,7 +119,7 @@ Help 各部分等）留 15–25%。效果：日常小步增量只产生 warn、�
 **判据**：首屏 chunk 里出现「只有点了才出现的东西」= 代码问题；出现「整块库的边角
 模块」= 依赖声明问题。前者拆 lazy，后者补 sideEffects 或 patch，都不该直接抬基线。
 
-## 怎样调整基线与上限
+## 怎样调整基线与上限（H32）
 
 **不要手改 JSON。** 统一走脚本，理由会落盘到 `reason` / `updatedAt` / `commit`：
 
@@ -147,7 +147,7 @@ node scripts/bundle-budget.mjs --set-budget 43000 --only GridPage --reason "…"
 - `bundle-budget.json` 的 `history` 字段自动追加每次调整的日期与理由（保留最近 20 条，
   `--set-budget` 的条目带 `[set-budget]` 前缀）。
 
-## 第一道防线：ESLint 规则
+## 第一道防线：ESLint 规则（H31）
 
 `frontend/eslint.config.js` 中对 `src/pages/grid/GridPage.tsx`、`gridViewModals.tsx`
 启用了 `no-restricted-imports`，禁止静态引入以 `Dialog` / `Modal` / `Drawer` /

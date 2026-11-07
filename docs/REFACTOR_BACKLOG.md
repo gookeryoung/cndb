@@ -150,7 +150,7 @@
 - `src/pages/documents/DocumentImportModal.tsx` 511
 - `src/pages/grid/governance/GovernanceDialog.tsx` 507
 
-> 拆分通用的两条约束（多次拆分已验证）：
+> 拆分通用的两条约束（多次拆分已验证，H28）：
 > 1. **monkeypatch / mock 目标必须指向 canonical 模块**。把实现移出后，若测试仍 patch 原模块的同名属性，patch 会静默失效（seed 的 `_get_datasets_dir`、reports 的 `_run_command` / `_cjk_font_candidates` 都踩过）。
 > 2. 测试使用的具名导出要在原文件 `export { ... } from '...'` 或 `__all__` 里保留（GridCell 4 个、DocumentsPage 的 `buildSeriesStats`、DocumentTree 4 个、viewOptionSchema 7 个、FieldManager 2 个、ViewConfigDialog 的 `FilterRule`/`SortRule`）。
 

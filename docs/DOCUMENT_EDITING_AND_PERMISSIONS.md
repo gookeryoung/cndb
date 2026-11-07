@@ -24,7 +24,7 @@
 
 ---
 
-## 2. 文档状态与可见性
+## 2. 文档状态与可见性（H33）
 
 `Document.status ∈ {draft, published, archived}`（默认 `draft`），`is_folder` 区分文档与文件夹。
 
@@ -61,7 +61,7 @@
 
 ## 4. 编辑流程
 
-### 4.1 个人草稿（保存与提交解耦）
+### 4.1 个人草稿（保存与提交解耦，H35）
 
 产品语义：**保存只写草稿，提交才生效**。表 `documents_draft`，每位用户对每篇文档至多一份，**仅本人可读写，管理员也看不到他人草稿**（`documents/services/drafts.py`）。
 
@@ -188,7 +188,7 @@
 
 ---
 
-## 6. 分享与公开访问
+## 6. 分享与公开访问（H34）
 
 - **仅已发布文档可创建分享**：`POST /{wid}/documents/{doc_id}/share` 要求 **editor+**，且 `status == published`，否则 409（避免把未发布内容放给外部）。支持密码与过期时间。
 - **匿名访问**（`routers/public.py`，无需登录）：`GET /api/v1/documents/share/{token}`（有密码返回 401 提示）、`POST`（校验密码）、`GET /{token}/meta`。

@@ -186,7 +186,7 @@ CI 不需要单独改动：`check-docs` / `check-fast` 已在双 CI 与 `make ch
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P2 全部落地（2026-11-07 用户评审通过后实现）
-- 已完成：台账 H1..H25（H1..H23 收编四源，H24 为设计系统选中态对比度、H25 为 GitHub 式 1px 线条硬约束）；`make constraint-check` 并入 `check-docs` / `check-fast`；TEMPLATE.md 与删除流程联动；CONTEXT.md 术语「硬约束台账」
+- 已完成：台账 H1..H38（H1..H23 收编四源，H24/H25 为设计系统选中态对比度与 GitHub 式 1px 线条，H26..H38 收编 `docs/` 其余文档的强制性口径：需求卡片 / ADR 不变量登记 / 拆分约束 / 设计标尺与字体 / 布局原语与代码高亮 / 首屏懒加载 / bundle 调整程序 / 文档可见性与分享 / 写路径 409 / 部署安全 / 云资源与备份 / 流水线检查）；`make constraint-check` 并入 `check-docs` / `check-fast`；TEMPLATE.md 与删除流程联动；CONTEXT.md 术语「硬约束台账」
 - 下一步：无（后续新增长期不变量按 TEMPLATE.md 约定随 ADR 登记；H 条目变更走人工确认）
 - 已知坑：台账列头须与 `check_constraints.py` 严格一致（单测锁定）；`校验` 列只识别 `make <t>` 形态的机器命令，脚本 / workflow 路径不做存在性校验
 - 最近一次全绿：`make flow` @ 本提交（2026-11-07）
