@@ -166,14 +166,51 @@ describe('saveThemeMode / getThemeConfig', () => {
   })
 })
 
-describe('选中态底色可辨识性', () => {
-  it('10 套主题都声明 --cn-bg-selected / -strong，文字选区使用强选中底色', () => {
+describe('选中态底色可辨识性（H24 硬约束）', () => {
+  const SELECTED_MIN_CONTRAST = 1.35
+  const SELECTED_STRONG_MIN_CONTRAST = 1.5
+
+  function stripComments(css: string): string {
+    return css.replace(/\/\*[\s\S]*?\*\//g, '')
+  }
+
+  /** 取某个主题最后一条包含容器底色的声明块（深色主题前面有共享组，后面才是个体覆盖） */
+  function themeDeclarations(css: string, mode: (typeof THEME_MODES)[number]): string {
+    const target = `body.${THEME_META[mode].bodyClass}`
+    let block: string | null = null
+    for (const match of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      const selectors = match[1].split(',').map(selector => selector.trim())
+      if (selectors.includes(target) && match[2].includes('--cn-bg-container')) {
+        block = match[2]
+      }
+    }
+    expect(block, `${mode} 缺少主题变量块`).not.toBeNull()
+    return block as string
+  }
+
+  function readHex(block: string, name: string): string {
+    const match = block.match(new RegExp(`${name}:\\s*(#[0-9a-fA-F]{6})`))
+    expect(match, `缺少 ${name}`).not.toBeNull()
+    return match![1]
+  }
+
+  function relativeLuminance(hex: string): number {
+    const channels = [1, 3, 5].map(start => parseInt(hex.slice(start, start + 2), 16) / 255)
+    const linear = channels.map(channel =>
+      channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+    )
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+  }
+
+  function contrastRatio(a: string, b: string): number {
+    const [high, low] = [relativeLuminance(a), relativeLuminance(b)].sort((x, y) => y - x)
+    return (high + 0.05) / (low + 0.05)
+  }
+
+  it('10 套主题都声明 --cn-bg-selected / -strong，文字选区与列表行使用语义变量', () => {
     const css = fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf-8')
     for (const mode of THEME_MODES) {
-      const bodyClass = THEME_META[mode].bodyClass
-      const start = css.indexOf(`body.${bodyClass}`)
-      expect(start, mode).toBeGreaterThan(-1)
-      const block = css.slice(start, css.indexOf('}', start))
+      const block = themeDeclarations(stripComments(css), mode)
       expect(block, mode).toContain('--cn-bg-selected:')
       expect(block, mode).toContain('--cn-bg-selected-strong:')
     }
@@ -185,6 +222,21 @@ describe('选中态底色可辨识性', () => {
     expect(qcActive?.[1]).toContain('background: var(--cn-bg-selected);')
     const flowActive = css.match(/\.cn-flow-diagram-flow\.cn-qc-row--active\s*\{([^}]*)\}/)
     expect(flowActive?.[1]).toContain('background: var(--cn-bg-selected-strong);')
+  })
+
+  it('CONSTRAINTS H24：普通选中 ≥1.35:1，一级流程 ≥1.5:1 且不低于普通', () => {
+    const css = stripComments(fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf-8'))
+    for (const mode of THEME_MODES) {
+      const block = themeDeclarations(css, mode)
+      const container = readHex(block, '--cn-bg-container')
+      const selected = readHex(block, '--cn-bg-selected')
+      const strong = readHex(block, '--cn-bg-selected-strong')
+      const selectedRatio = contrastRatio(container, selected)
+      const strongRatio = contrastRatio(container, strong)
+      expect(selectedRatio, `${mode} 普通选中行对比度 ${selectedRatio.toFixed(2)}`).toBeGreaterThanOrEqual(SELECTED_MIN_CONTRAST)
+      expect(strongRatio, `${mode} 一级流程对比度 ${strongRatio.toFixed(2)}`).toBeGreaterThanOrEqual(SELECTED_STRONG_MIN_CONTRAST)
+      expect(strongRatio, `${mode} 一级流程必须比普通选中更强`).toBeGreaterThanOrEqual(selectedRatio)
+    }
   })
 })
 

@@ -187,8 +187,8 @@ body.theme-modern {
   --cn-text-muted: #9ca3af;
   --cn-text-disabled: #d1d5db;
   --cn-brand-color: #3b82f6;
-  --cn-bg-selected: #dbeafe;
-  --cn-bg-selected-strong: #bfdbfe;
+  --cn-bg-selected: #c7ddfe;
+  --cn-bg-selected-strong: #aecffd;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -272,8 +272,8 @@ body.theme-github-light {
   --cn-text-muted: #6e7781;
   --cn-text-disabled: #d0d7de;
   --cn-brand-color: #0969da;
-  --cn-bg-selected: #cfe8ff;
-  --cn-bg-selected-strong: #b6e3ff;
+  --cn-bg-selected: #b9dcff;
+  --cn-bg-selected-strong: #9fd8ff;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -293,7 +293,7 @@ body.theme-minimal {
   --cn-text-muted: #a3a3a3;
   --cn-text-disabled: #d4d4d4;
   --cn-brand-color: #525252;
-  --cn-bg-selected: #dedede;
+  --cn-bg-selected: #d6d6d6;
   --cn-bg-selected-strong: #c8c8c8;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
@@ -315,8 +315,8 @@ body.theme-ocean {
   --cn-text-muted: #8aa7b0;
   --cn-text-disabled: #c2d6dd;
   --cn-brand-color: #0891b2;
-  --cn-bg-selected: #c9e9f0;
-  --cn-bg-selected-strong: #a8dce8;
+  --cn-bg-selected: #b6e2eb;
+  --cn-bg-selected-strong: #98d5e3;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -337,8 +337,8 @@ body.theme-forest {
   --cn-text-muted: #8fa894;
   --cn-text-disabled: #c6d8ca;
   --cn-brand-color: #16a34a;
-  --cn-bg-selected: #cfe9d8;
-  --cn-bg-selected-strong: #b4dfc2;
+  --cn-bg-selected: #bce2c8;
+  --cn-bg-selected-strong: #a4d9b4;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fffbe6;
   --cn-bg-success-subtle: #f6ffed;
@@ -359,8 +359,8 @@ body.theme-sepia {
   --cn-text-muted: #a89878;
   --cn-text-disabled: #d3c7a8;
   --cn-brand-color: #a16207;
-  --cn-bg-selected: #ecd9b8;
-  --cn-bg-selected-strong: #e0c99a;
+  --cn-bg-selected: #e4cba0;
+  --cn-bg-selected-strong: #dec78e;
   --cn-bg-danger-subtle: #f9e8d9;
   --cn-bg-warning-subtle: #f7ecd0;
   --cn-bg-success-subtle: #f6ffed;
@@ -381,7 +381,7 @@ body.theme-sakura {
   --cn-text-muted: #bfa3b2;
   --cn-text-disabled: #e8d3de;
   --cn-brand-color: #db2777;
-  --cn-bg-selected: #f9cfe2;
+  --cn-bg-selected: #f7c4d9;
   --cn-bg-selected-strong: #f5b8d3;
   --cn-bg-danger-subtle: #fff2f0;
   --cn-bg-warning-subtle: #fff7fa;

@@ -112,7 +112,7 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 
 ## 5. 项目特定护栏
 
-> 硬约束唯一编号源是 [CONSTRAINTS.md](CONSTRAINTS.md)（H1..H23，ADR 0119）；本节只做 H# 索引，完整口径以台账为准。
+> 硬约束唯一编号源是 [CONSTRAINTS.md](CONSTRAINTS.md)（H1..H24，ADR 0119）；本节只做 H# 索引，完整口径以台账为准。
 
 - 流程禁令与提交规范：H1（禁 `--no-verify` / prek）、H2（conventional commits）、H6（git 授权边界）。
 - 门禁分级 fail-safe 与执行链：H3（混合改动取最高级）、H4（L2 执行链）。
@@ -122,6 +122,7 @@ release 经 pypi job 成功后调用 [deploy-tencent.yml](../.github/workflows/d
 - 数据与迁移：H13（幂等 + downgrade + 存量零迁移）、H14（新表纳入 `backup_io`）。
 - 权限与安全不变量：H15（I1 天花板）/ H16（I3 存量不变）/ H17（I6 无泄露，见 [ADR 0004](adr/0004-row-level-permission-rules.md)）、H18（规则变更清缓存）、H19（原件族只读）、H20（装配版本闭包可复现）。
 - 发布与部署：H21（bundle budget +5%）、H22（部署串行 + 自动回滚）、H23（环境体检前置，不用 pytest 参数 / 超时绕过）。
+- 设计与前端：H24（列表 / 菜单 / 下拉 / 表格选中项对比度：普通 ≥1.35:1、一级流程 ≥1.5:1，统一使用语义选中底色）。
 
 ## 6. 落地清单
 

@@ -39,6 +39,12 @@
 | H13 | 迁移幂等 + downgrade 可还原 + 存量零迁移 | `make test` | 全局 |
 | H14 | 新表须纳入 `backup_io`，旧备份按缺省还原 | `make test` | 全局 |
 
+## 设计与前端
+
+| # | 约束 | 校验 | 来源 |
+|---|---|---|---|
+| H24 | 列表 / 菜单 / 下拉 / 表格选中项必须使用 `--cn-bg-selected`（一级流程可 `--cn-bg-selected-strong`）；相对 `--cn-bg-container` 的 WCAG 对比度普通 ≥1.35:1、强选中 ≥1.5:1，且强选中不得低于普通；禁止回退到 `--cn-bg-subtle` 或手写低比例 `color-mix` | `make frontend-coverage` | 全局 |
+
 ## 权限与安全
 
 | # | 约束 | 校验 | 来源 |
