@@ -102,6 +102,7 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 6. `Intl.Segmenter` 垫片只在导出路径加载，不得进入首屏 chunk。
 7. 老内核冒烟需要外网下载固定 revision 的 Chromium 81，只进定时 CI，不作为每次提交的必跑门禁；每次提交由静态门禁兜底。
 8. 构建产物体积受 `bundle-budget.json` 约束；兼容性增量超限时先拆 lazy，再按 `--update --reason` 记录基线（D10）。
+9. 含 `var()` 的 `color-mix()` 声明不能依赖「前一条兜底 + 后一条原生」：Chrome 81 见到 `var()` 会延迟校验并保留该声明，计算期因 `color-mix()` 不识别而把整个属性置为初始值（`background: none` / `box-shadow: none`），前面的兜底不会生效。此类声明必须把 `color-mix()` 版本放进 `@supports (background: color-mix(in srgb, red 10%, transparent))`，旧内核直接跳过；认证页 `.auth-shell` / `::before` 已按此修正（ADR 0016，Chromium 737027 实测）。静态门禁 `check-browser-compat.mjs` 统计 `--cn-mix-*` 兜底时跳过条件含 `color-mix` 的 `@supports` 块，块内声明不计为兜底缺口。
 
 ### 5. 迁移
 
@@ -120,10 +121,10 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 | 能力探测 / 垫片 | `frontend/src/compat/flexGap.ts`、`frontend/src/compat/index.ts` | `isFlexGapSupported()`、flex-gap shim、`initCompat()` 唯一装载入口 |
 | 主题 | `frontend/src/theme/ThemeProvider.tsx` | `ConfigProvider` 外包裹 `StyleProvider`（`hashPriority="high"` + `legacyLogicalPropertiesTransformer`）；body class 与 mix 变量移到 `useLayoutEffect` |
 | 颜色兜底 | `frontend/src/theme/themeMix.ts` | 77 种唯一表达式注册表、`applyThemeMixVars()`、`mixColor()` |
-| 样式 | `frontend/src/index.css` | 每条 `color-mix()` 前补同属性 `var(--cn-mix-*)` 声明；5 条 `:focus-visible` 改 `:focus`；作者逻辑属性交给 `postcss-logical` |
+| 样式 | `frontend/src/index.css` | 每条 `color-mix()` 前补同属性 `var(--cn-mix-*)` 声明；含 `var()` 的 `color-mix()` 声明再包进 `@supports`（边界 9）；5 条 `:focus-visible` 改 `:focus`；作者逻辑属性交给 `postcss-logical` |
 | 静态 TSX 颜色 | `frontend/src/pages/**` 等 22 处 | `color-mix(...)` 改为 `var(--cn-mix-*)`（两代浏览器结果一致） |
 | 导出 | `frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts` | 动态导入 `html2canvas-pro` 前按需加载 `@formatjs/intl-segmenter` |
-| 采集 | `frontend/src/utils/webVitals.ts` | 删除局部 `Array.prototype.at` 补丁，统一由入口 polyfill 提供 |
+| 采集 | `frontend/src/utils/webVitals.ts` | 删除局部 `Array.prototype.at` 补丁，统一由入口 polyfill 提供；按 `PerformanceObserver.supportedEntryTypes` 逐项注册，旧内核缺少 `visibility-state` / `event` 时跳过 CLS / INP，避免 `Deprecated API for given entry type` |
 | 静态门禁 | `frontend/scripts/check-browser-compat.mjs` | 校验 target 与产物 / 源码中的禁用写法；挂在 `pnpm build` 之后 |
 | 老内核冒烟 | `frontend/scripts/chrome81-smoke.mjs` | `puppeteer-core` + 固定 Chromium 81 revision；`pnpm e2e:chrome81` |
 | 文档 | `README.md`、`CONTEXT.md` | 写明浏览器基线与不承诺范围（CONTEXT 词条已补） |
@@ -132,7 +133,7 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 
 - **antd 样式降级**：`@ant-design/cssinjs` 与 antd 5.29 解析到的 1.24.0 同 major，作为直接依赖固定版本；transformer 的 `keyMap` 已覆盖 `inset`、`insetInline*`、`marginInline*`、`paddingInline*` 与逻辑边框 / 圆角（`node_modules/@ant-design/cssinjs/es/transformers/legacyLogicalProperties.js`），因此 antd 生成的样式不再需要逐组件覆盖。
 - **作者 CSS 逻辑属性**：`postcss-logical` 只处理源码里手写的 `padding-inline` / `margin-inline-*`，与 cssinjs transformer 覆盖不同来源，二者不可互相替代；项目固定 `zh-CN`，无 RTL 需求，转物理属性无副作用。
-- **`color-mix` 双层声明**：保留原生声明为主，前一条写兜底变量；Chrome 81 丢弃第二条，现代浏览器用第二条，视觉不变。22 处静态 TSX 表达式再改写为 `var(--cn-mix-*)`；6 处动态表达式（`FlowView` / `MatrixView` / `ImportPanel` / `kanbanVisuals` 等）在渲染时调 `mixColor()` 解析 CSS 变量。
+- **`color-mix` 双层声明**：保留原生声明为主，前一条写兜底变量；Chrome 81 丢弃不含 `var()` 的第二条，现代浏览器用第二条，视觉不变。**但第二条里一旦出现 `var()`（如 `var(--cn-auth-bg)` 或 `var(--cn-auth-ink)` 嵌在 `color-mix` 内），Chrome 81 会保留它并在计算期把整个属性置为初始值，前面的兜底失效**——这类声明必须把 `color-mix` 版本放进 `@supports`（边界 9，认证页 `.auth-shell` / `::before` 已按此修正）。22 处静态 TSX 表达式再改写为 `var(--cn-mix-*)`；6 处动态表达式（`FlowView` / `MatrixView` / `ImportPanel` / `kanbanVisuals` 等）在渲染时调 `mixColor()` 解析 CSS 变量。
 - **flex-gap shim**：读取 `getComputedStyle` 的 `display` / `flexDirection` / `flexWrap` / `rowGap` / `columnGap`（Chrome 81 的 CSSOM 会返回声明值，即使布局不消费）。单行横向用 `> * + *` 补 `margin-left`，单列纵向补 `margin-top`，换行时子元素加 margin、容器加等量负 margin 抵消首尾空隙。`MutationObserver` + `requestIdleCallback` 分批处理新增节点，`WeakMap` 去重。该机制同时覆盖业务内联 `gap` 与 antd Space / Grid 的运行时 `rowGap` / `columnGap`，无需改造 333 处调用点。
 - **`:focus-visible`**：5 条规则改为 `:focus`；Chrome 81 上鼠标点击也会出现焦点样式，作为可接受降级，不引入额外 polyfill。
 - **polyfill 采用定向模块且按消费方加载**：不使用全量 `core-js/stable`，也不用 `plugin-legacy` 的 `modernPolyfills`（后者会把 Babel polyfill 链引入构建）。实测入口常驻 `structured-clone` 会让主入口超预算 10 KiB（连带 Map/Set internals），而它的唯一调用点已被 `typeof` 守卫，故移除；`at` / `has-own` / `replace-all` 下沉到懒加载消费模块，入口回到预算内。`reportError` 同样已由 `typeof reportError === 'function'` 守卫，不补。

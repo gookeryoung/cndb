@@ -101,6 +101,44 @@ let colorMixTotal = 0
 let colorMixFallback = 0
 let tsxColorMix = 0
 
+/** 返回 `{` 对应的 `}` 下标；找不到返回 -1。调用前已去除注释。 */
+function findBlockEnd(text, openIndex) {
+  let depth = 0
+  for (let i = openIndex; i < text.length; i++) {
+    if (text[i] === '{') depth++
+    else if (text[i] === '}') {
+      depth--
+      if (depth === 0) return i
+    }
+  }
+  return -1
+}
+
+/** 去掉条件里含 color-mix 的 `@supports { ... }` 整块：
+ * 这类声明只在支持 color-mix 的内核生效，Chrome 81 直接跳过，
+ * 因此不需要 `--cn-mix-*` 兜底（ADR 0026 边界 9）。 */
+function stripColorMixSupports(css) {
+  let out = ''
+  let cursor = 0
+  while (cursor < css.length) {
+    const at = css.indexOf('@supports', cursor)
+    if (at === -1) {
+      out += css.slice(cursor)
+      break
+    }
+    const open = css.indexOf('{', at)
+    const close = open === -1 ? -1 : findBlockEnd(css, open)
+    if (close === -1) {
+      out += css.slice(cursor)
+      break
+    }
+    if (css.slice(at, open).includes('color-mix')) out += css.slice(cursor, at)
+    else out += css.slice(cursor, close + 1)
+    cursor = close + 1
+  }
+  return out
+}
+
 for (const file of walk(SRC_DIR)) {
   const rel = path.relative(root, file).replace(/\\/g, '/')
   const text = readFileSync(file, 'utf8')
@@ -121,8 +159,9 @@ for (const file of walk(SRC_DIR)) {
     continue
   }
   if (rel.endsWith('.css')) {
-    colorMixTotal += colorMixCount
-    colorMixFallback += (source.match(/var\(--cn-mix-[^)]*\)/g) ?? []).length
+    const countable = stripColorMixSupports(source)
+    colorMixTotal += (countable.match(/color-mix\(/g) ?? []).length
+    colorMixFallback += (countable.match(/var\(--cn-mix-[^)]*\)/g) ?? []).length
   } else {
     tsxColorMix += colorMixCount
   }

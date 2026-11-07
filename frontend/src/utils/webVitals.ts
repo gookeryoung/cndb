@@ -55,10 +55,18 @@ function pushMetric(metric: Metric): void {
   }
 }
 
+/** 旧内核（如 Chromium 81）缺少对应条目类型，web-vitals 读取时会打印
+ * “Deprecated API for given entry type”；按条目能力逐项注册，避免控制台噪音。 */
+function supportsEntryType(type: string): boolean {
+  const supported =
+    typeof PerformanceObserver === 'undefined' ? undefined : PerformanceObserver.supportedEntryTypes
+  return Array.isArray(supported) && supported.includes(type)
+}
+
 /** 注册全部核心指标监听；模块只动态加载一次，天然幂等。 */
 export function reportWebVitals(): void {
-  onCLS(pushMetric)
-  onINP(pushMetric)
+  if (supportsEntryType('visibility-state')) onCLS(pushMetric)
+  if (supportsEntryType('event')) onINP(pushMetric)
   onLCP(pushMetric)
   onFCP(pushMetric)
   onTTFB(pushMetric)

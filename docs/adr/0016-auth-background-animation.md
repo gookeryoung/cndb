@@ -96,7 +96,7 @@ Related: `frontend/src/components/auth-background/lattice.ts`、`frontend/src/co
 6. **窗口极小 / 0 尺寸**：不绘制，等待下一次 resize；不抛异常。
 7. **首帧闪烁**：背景 chunk 未就绪时显示固定深色 CSS 背景，加载完成后 canvas 淡入（≤ 240ms，reduced-motion 无过渡）。
 8. **旧偏好**：`cndb_auth_bg` 不再读取；历史值保留在用户本地存储中，不做清理。
-9. **Chrome 81**：不使用 `CanvasRenderingContext2D.roundRect`、`ctx.reset()`、`structuredClone`、`Array.prototype.at` 等基线外 API；CSS 侧沿用现有 `check-browser-compat` 门禁。
+9. **Chrome 81**：不使用 `CanvasRenderingContext2D.roundRect`、`ctx.reset()`、`structuredClone`、`Array.prototype.at` 等基线外 API；CSS 侧沿用现有 `check-browser-compat` 门禁。固定深色舞台的 `color-mix()` 声明含 `var()`，Chrome 81 会把整个 `background` 计算为 `none`（页面变白、浅色晶格不可见），因此 `.auth-shell` / `::before` 的现代写法已移入 `@supports`（ADR 0026 边界 9）；`reportWebVitals` 在缺少 `visibility-state` / `event` 条目的内核上跳过 CLS / INP，避免 `Deprecated API for given entry type` 控制台噪音。
 
 ### 5. 迁移
 
@@ -170,15 +170,15 @@ Related: `frontend/src/components/auth-background/lattice.ts`、`frontend/src/co
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/src/components/auth-background/lattice.ts`、`frontend/src/components/auth-background/types.ts`、`frontend/src/components/auth-background/engine.ts`、`frontend/src/components/auth-background/AuthBackground.tsx`、`frontend/src/index.css` | `frontend/src/components/auth-background/lattice.test.ts`、`frontend/src/components/auth-background/engine.test.ts`、`frontend/src/components/auth-background/AuthBackground.test.tsx`、`frontend/src/layouts/AuthLayout.test.tsx` | 未提交 |
-| P1 | 已落地 | `frontend/src/components/auth-background/`（删除双动效 / 切换器 / 偏好）、`frontend/src/theme/themeMix.ts` | `frontend/tests/e2e/smoke/login.spec.ts`、`frontend/tests/e2e/smoke/register.spec.ts` | 未提交 |
+| P0 | 已落地 | `frontend/src/components/auth-background/lattice.ts`、`frontend/src/components/auth-background/types.ts`、`frontend/src/components/auth-background/engine.ts`、`frontend/src/components/auth-background/AuthBackground.tsx`、`frontend/src/index.css` | `frontend/src/components/auth-background/lattice.test.ts`、`frontend/src/components/auth-background/engine.test.ts`、`frontend/src/components/auth-background/AuthBackground.test.tsx`、`frontend/src/layouts/AuthLayout.test.tsx` | 29f52579 |
+| P1 | 已落地 | `frontend/src/components/auth-background/`（删除双动效 / 切换器 / 偏好）、`frontend/src/theme/themeMix.ts` | `frontend/tests/e2e/smoke/login.spec.ts`、`frontend/tests/e2e/smoke/register.spec.ts` | 29f52579 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P1 已落地（静态晶格替换双动效与切换器；代码 / 测试 / 文档已改完，尚未提交）
-- 已完成：新增 `lattice.ts` 一次性绘制六边形晶格与青紫结点；`engine.ts` 去掉 rAF / 可见性 / 指针监听，只保留 resize 150ms 节流重绘；`AuthBackground` 去掉效果状态、切换器与本地偏好；删除 `flowfield` / `galaxy` / `AuthBackgroundSwitcher` / `preference` 及对应单测；同步更新 CSS、混色注册表、e2e 与需求卡片 / ADR / CHANGELOG
-- 下一步：门禁已全绿，由人确认提交与推送；提交后把落地表「提交」列的 `未提交` 回填为 commit sha
-- 已知坑：`AuthLayout` 被 `App.tsx` 静态引入，背景必须保持 lazy；jsdom 无 `getContext`，单测需 mock；晶格尺寸按设备像素计算，DPR 已封顶；`cndb_auth_bg` 旧偏好不再读取；e2e 登录按钮定位必须保持 `/^登\s*录$/` 首尾锚定
+- 当前阶段：P0-P1 已落地并提交（29f52579）；Chrome 81 兼容修复已完成并通过前端门禁，待提交
+- 已完成：新增 `lattice.ts` 一次性绘制六边形晶格与青紫结点；`engine.ts` 去掉 rAF / 可见性 / 指针监听，只保留 resize 150ms 节流重绘；`AuthBackground` 去掉效果状态、切换器与本地偏好；删除 `flowfield` / `galaxy` / `AuthBackgroundSwitcher` / `preference` 及对应单测；同步更新 CSS、混色注册表、e2e 与需求卡片 / ADR / CHANGELOG。Chrome 81 修复：`.auth-shell` / `::before` 的 `color-mix` 现代写法移入 `@supports`（否则深色舞台变白、晶格不可见）；`reportWebVitals` 按条目能力跳过 CLS / INP，消除 `Deprecated API for given entry type`；`check-browser-compat.mjs` 统计兜底时跳过 `@supports (... color-mix ...)` 块
+- 下一步：提交 Chrome 81 修复（待用户授权）
+- 已知坑：`AuthLayout` 被 `App.tsx` 静态引入，背景必须保持 lazy；jsdom 无 `getContext`，单测需 mock；晶格尺寸按设备像素计算，DPR 已封顶；`cndb_auth_bg` 旧偏好不再读取；e2e 登录按钮定位必须保持 `/^登\s*录$/` 首尾锚定；Chrome 81 下含 `var()` 的 `color-mix()` 声明会让整个属性变初始值，认证页已用 `@supports` 隔离，新增 auth 样式时不要再用「前兜底 + 后 color-mix」双层写法；静态门禁对 `@supports (... color-mix ...)` 块内的 `color-mix` 不计兜底缺口，因此现代写法必须放进该块而不是裸写
 - 最近一次全绿：2026-11-07 `pnpm check` / `pnpm test` / `pnpm test:coverage` / `pnpm build`（含 `check-browser-compat --strict`）/ `pnpm bundle:budget` / login + register smoke e2e / `make check-fast` / `make test`

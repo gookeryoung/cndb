@@ -3401,17 +3401,25 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .auth-shell {
   position: relative;
   overflow: hidden;
+  /* Chrome 81 无 color-mix()：先用运行期注入的 --cn-mix-* 兜底 */
   background: radial-gradient(1100px 620px at 18% 18%,
       var(--cn-mix-auth-accent-16-transparent), transparent 62%),
     radial-gradient(1000px 680px at 84% 78%,
       var(--cn-mix-auth-accent-alt-15-transparent), transparent 64%),
     var(--cn-auth-bg);
-  background:
-    radial-gradient(1100px 620px at 18% 18%,
-      color-mix(in srgb, var(--cn-auth-accent) 16%, transparent), transparent 62%),
-    radial-gradient(1000px 680px at 84% 78%,
-      color-mix(in srgb, var(--cn-auth-accent-alt) 15%, transparent), transparent 64%),
-    var(--cn-auth-bg);
+}
+
+/* color-mix() 语法在旧内核里合法但计算时失效，会覆盖上面的兜底并让背景变 none；
+ * 因此现代内核的写法必须放在 @supports 里（ADR 0016 / ADR 0026）。 */
+@supports (background: color-mix(in srgb, red 10%, transparent)) {
+  .auth-shell {
+    background:
+      radial-gradient(1100px 620px at 18% 18%,
+        color-mix(in srgb, var(--cn-auth-accent) 16%, transparent), transparent 62%),
+      radial-gradient(1000px 680px at 84% 78%,
+        color-mix(in srgb, var(--cn-auth-accent-alt) 15%, transparent), transparent 64%),
+      var(--cn-auth-bg);
+  }
 }
 
 /* 细网格纹理：极低透明度，仅提供质感；中心清晰边缘淡出 */
@@ -3421,13 +3429,18 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   inset: 0;
   background-image: linear-gradient(var(--cn-mix-auth-ink-5-transparent) 1px, transparent 1px),
     linear-gradient(90deg, var(--cn-mix-auth-ink-5-transparent) 1px, transparent 1px);
-  background-image:
-    linear-gradient(color-mix(in srgb, var(--cn-auth-ink) 5%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--cn-auth-ink) 5%, transparent) 1px, transparent 1px);
   background-size: 32px 32px;
   -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
   mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
   pointer-events: none;
+}
+
+@supports (background-image: color-mix(in srgb, red 10%, transparent)) {
+  .auth-shell::before {
+    background-image:
+      linear-gradient(color-mix(in srgb, var(--cn-auth-ink) 5%, transparent) 1px, transparent 1px),
+      linear-gradient(90deg, color-mix(in srgb, var(--cn-auth-ink) 5%, transparent) 1px, transparent 1px);
+  }
 }
 
 /* 认证卡片：中性描边环 + 深色投影，在固定黑底上与浅色 / 深色卡片都能分层 */

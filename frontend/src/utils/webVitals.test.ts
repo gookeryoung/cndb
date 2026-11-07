@@ -22,6 +22,17 @@ function makeMetric(name: string, value: number, rating: Metric['rating'] = 'goo
 
 beforeEach(() => {
     vi.clearAllMocks()
+    // 模拟现代内核支持的条目类型；旧内核对应用例会在测试内改小该列表
+    class FakePerformanceObserver {
+        static supportedEntryTypes = [
+            'visibility-state',
+            'event',
+            'largest-contentful-paint',
+            'paint',
+            'navigation',
+        ]
+    }
+    vi.stubGlobal('PerformanceObserver', FakePerformanceObserver)
     // 统一吞掉 dev 分支的 console.debug，避免污染其他测试的 stdout；
     // 单独验证 debug 输出的用例会基于同一个 spy 做断言。
     vi.spyOn(console, 'debug').mockImplementation(() => {})
@@ -35,6 +46,7 @@ beforeEach(() => {
 
 afterEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
 })
 
 describe('reportWebVitals 注册', () => {
@@ -43,6 +55,21 @@ describe('reportWebVitals 注册', () => {
         reportWebVitals()
         expect(onCLS).toHaveBeenCalledTimes(1)
         expect(onINP).toHaveBeenCalledTimes(1)
+        expect(onLCP).toHaveBeenCalledTimes(1)
+        expect(onFCP).toHaveBeenCalledTimes(1)
+        expect(onTTFB).toHaveBeenCalledTimes(1)
+    })
+
+    it('旧内核缺少 visibility-state / event 条目时跳过 CLS / INP', async () => {
+        ;(
+            PerformanceObserver as unknown as { supportedEntryTypes: string[] }
+        ).supportedEntryTypes = ['largest-contentful-paint', 'paint', 'navigation']
+        const { onCLS, onINP, onLCP, onFCP, onTTFB } = await import('web-vitals')
+
+        reportWebVitals()
+
+        expect(onCLS).not.toHaveBeenCalled()
+        expect(onINP).not.toHaveBeenCalled()
         expect(onLCP).toHaveBeenCalledTimes(1)
         expect(onFCP).toHaveBeenCalledTimes(1)
         expect(onTTFB).toHaveBeenCalledTimes(1)
