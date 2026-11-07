@@ -213,7 +213,7 @@ flex-gap 判定规则（`isFlexGapSupported`）：
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `frontend/scripts/browser-baseline.mjs`、`frontend/vite.config.ts`、`frontend/.browserslistrc`、`frontend/src/compat/polyfills.ts`、`frontend/src/main.tsx`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/index.css`、`frontend/scripts/check-browser-compat.mjs`、`frontend/package.json` | `frontend/src/compat/polyfills.test.ts`、`frontend/src/theme/ThemeProvider.compat.test.tsx` | 5496668a |
-| P1 | 已落地 | `frontend/src/theme/themeMix.ts`、`frontend/src/compat/flexGap.ts`、`frontend/src/compat/flexGapSupport.ts`、`frontend/src/compat/index.ts`、`frontend/src/index.css`、`frontend/src/pages/`（22 处静态色改为 cn-mix 变量） | `frontend/src/theme/themeMix.test.ts`、`frontend/src/compat/flexGap.test.ts` | 5496668a |
+| P1 | 已落地 | `frontend/src/theme/themeMix.ts`、`frontend/src/compat/flexGap.ts`、`frontend/src/compat/capabilities.ts`、`frontend/src/compat/index.ts`、`frontend/src/index.css`、`frontend/src/pages/`（22 处静态色改为 cn-mix 变量） | `frontend/src/theme/themeMix.test.ts`、`frontend/src/compat/flexGap.test.ts` | 5496668a |
 | P2 | 已落地 | `frontend/scripts/chrome81-smoke.mjs`、`.github/workflows/chrome81-smoke.yml`、`frontend/scripts/check-browser-compat.mjs`、`frontend/src/pages/import-export/ImportExportDialog/exportPdf.ts`、`README.md` | `frontend/src/pages/import-export/ImportExportDialog/exportPdf.test.ts`、`frontend/tests/e2e/critical/browser-compat.spec.ts` | 5496668a |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。

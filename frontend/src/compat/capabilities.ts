@@ -1,8 +1,20 @@
-/** flex gap 能力探测 —— Chrome 81 只支持 grid gap，不能用 @supports (gap: 1px) 判断。
+/** 旧内核能力探测唯一入口（ADR 0117 C7 / D3、ADR 0026）。
  *
- * 单独成模块，让入口能在不下载 shim 的前提下完成探测（ADR 0026 D5）。
+ * 降级只按能力判断，不按 UA 版本号：主题兜底、flex-gap 垫片与未来任何低版本分支
+ * 都必须复用本模块，禁止新增 `navigator.userAgent` 判断。
  */
 
+/** 原生 color-mix()（Chrome 111+）；不支持时由 themeMix 写入 `--cn-mix-*` 兜底变量 */
+export function supportsColorMix(): boolean {
+  return typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
+    && CSS.supports('background-color', 'color-mix(in srgb, red 10%, blue)')
+}
+
+/** flex gap 能力探测 —— Chrome 81 只支持 grid gap，不能用 @supports (gap: 1px) 判断。
+ *
+ * 单独成函数，让装载入口能在不下载 shim 的前提下完成探测（ADR 0026 D5）：
+ * 插入一对真实元素量间距，唯一可靠的旧内核判断方式。
+ */
 export function isFlexGapSupported(doc?: Document): boolean {
   const target = doc ?? (typeof document !== 'undefined' ? document : null)
   if (!target || !target.body) return true

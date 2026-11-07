@@ -145,4 +145,25 @@ describe('applyThemeMixVars', () => {
     applyThemeMixVars()
     expect(document.documentElement.style.getPropertyValue('--cn-mix-brand-color-12-bg-container')).toBe('')
   })
+
+  it('整轮重算只做一次计算样式快照', () => {
+    stubColorMixSupport(false)
+    setTokens({ '--cn-brand-color': '#1677ff', '--cn-bg-container': '#ffffff' })
+    const spy = vi.spyOn(window, 'getComputedStyle')
+
+    applyThemeMixVars()
+
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
+
+  it('值未变化时不重复写样式（切回同一主题命中缓存）', () => {
+    stubColorMixSupport(false)
+    setTokens({ '--cn-brand-color': '#1677ff', '--cn-bg-container': '#ffffff' })
+    applyThemeMixVars()
+
+    const setProperty = vi.spyOn(document.documentElement.style, 'setProperty')
+    applyThemeMixVars()
+
+    expect(setProperty).not.toHaveBeenCalled()
+  })
 })

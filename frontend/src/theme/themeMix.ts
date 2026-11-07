@@ -9,6 +9,8 @@
  * 求值遵循 CSS Color 5 的预乘 alpha 插值，避免「透明色混出灰边」。
  */
 
+import { supportsColorMix } from '@/compat/capabilities'
+
 export interface MixSpec {
   a: string
   aPct: number
@@ -98,12 +100,6 @@ interface RGBA {
 const HEX_RE = /^#([0-9a-f]{3,8})$/i
 const RGB_RE = /^rgba?\(([^)]*)\)$/i
 const TRIPLE_RE = /^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)$/
-
-/** 原生支持 color-mix 时直接交给浏览器（保留主题变量联动与渐变得以按规范插值） */
-function supportsColorMix(): boolean {
-  return typeof CSS !== 'undefined' && typeof CSS.supports === 'function'
-    && CSS.supports('background-color', 'color-mix(in srgb, red 10%, blue)')
-}
 
 type VarReader = (name: string) => string
 
@@ -255,7 +251,10 @@ export function mixColor(colorA: string, pct: number, colorB: string): string {
 /** 按当前主题重算全部 `--cn-mix-*` 变量（旧内核 CSS 兜底依赖它）。
  *
  * 两阶段执行：先算完全部值（只读，一次计算样式快照），再统一写入（只写），
- * 避免读写交替把每一次写入都变成后续读取的强制样式重算。 */
+ * 避免读写交替把每一次写入都变成后续读取的强制样式重算。
+ *
+ * P1（ADR 0117 C3）：写入前比对该变量当前的**内联值**（读 inline style 不触发布局），
+ * 值未变则跳过 —— 切回同一主题或多主题共用同一品牌色时不会重复写样式、重复触发重算。 */
 export function applyThemeMixVars(root?: HTMLElement): void {
   if (typeof document === 'undefined') return
   if (supportsColorMix()) return
@@ -266,5 +265,8 @@ export function applyThemeMixVars(root?: HTMLElement): void {
     const value = mixToLiteral(spec, readVar)
     if (value) writes.push([`--cn-mix-${name}`, value])
   }
-  for (const [name, value] of writes) target.style.setProperty(name, value)
+  for (const [name, value] of writes) {
+    if (target.style.getPropertyValue(name) === value) continue
+    target.style.setProperty(name, value)
+  }
 }

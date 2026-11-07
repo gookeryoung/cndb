@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* global document, window, navigator, MouseEvent, getComputedStyle, fetch, setTimeout, URL */
+/* global document, window, navigator, MouseEvent, getComputedStyle, fetch, setTimeout, URL, performance, requestAnimationFrame, PerformanceObserver */
 /**
  * chrome81-smoke.mjs — 真实 Chromium 81 冒烟（ADR 0026 C1 / C5 / D9）.
  *
@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url'
 import { Browser, detectBrowserPlatform, install } from '@puppeteer/browsers'
 import puppeteer from 'puppeteer-core'
 import { BROWSER_BASELINE, CHROMIUM81_REVISION } from './browser-baseline.mjs'
+import { PERF_BUDGET } from './perf-budget.mjs'
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(scriptDir, '..')
@@ -57,6 +58,96 @@ const consoleErrors = []
 let activePage = null
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+
+/** 采集「点击 → 下一帧」时延（Chromium 81 无 Event Timing，只能手工计时） */
+async function clickToNextFrame(page, selector) {
+  return page.evaluate((sel) => new Promise((resolve) => {
+    const target = document.querySelector(sel)
+    if (!target) {
+      resolve(null)
+      return
+    }
+    const started = performance.now()
+    target.click()
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve(performance.now() - started))
+    })
+  }), selector)
+}
+
+/** 清空 longtask 采集，避免上一段负载计入本次测量 */
+async function resetLongTasks(page) {
+  await page.evaluate(() => {
+    if (window.__cndbPerf) window.__cndbPerf.longTasks.length = 0
+  })
+}
+
+/** 自上次 reset 以来的最长长任务（毫秒） */
+async function maxLongTask(page) {
+  return page.evaluate(() => {
+    const tasks = window.__cndbPerf?.longTasks ?? []
+    return tasks.length ? Math.max(...tasks) : 0
+  })
+}
+
+/** 打开「个人设置 → 主题」页签，供主题切换时延测量使用 */
+async function openThemePanel(page) {
+  await page.hover('[data-testid="user-menu-trigger"]')
+  const opened = await page
+    .waitForFunction(
+      () => Array.from(document.querySelectorAll('.ant-dropdown-menu-item'))
+        .some((el) => (el.textContent || '').includes('个人设置')),
+      { timeout: 10_000 },
+    )
+    .then(() => true)
+    .catch(() => false)
+  if (!opened) return false
+  await page.evaluate(() => {
+    const item = Array.from(document.querySelectorAll('.ant-dropdown-menu-item'))
+      .find((el) => (el.textContent || '').includes('个人设置'))
+    item?.click()
+  })
+  await page.waitForFunction(
+    () => Boolean(document.querySelector('.settings-modal .ant-tabs-tab-btn')),
+    { timeout: 15_000 },
+  )
+  await page.evaluate(() => {
+    const tab = Array.from(document.querySelectorAll('.settings-modal .ant-tabs-tab-btn'))
+      .find((el) => (el.textContent || '').trim() === '主题')
+    tab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    tab?.click()
+  })
+  await page.waitForSelector('.settings-modal [data-theme-card]', { timeout: 10_000 })
+  return true
+}
+
+/** 测量主题切换时延：切到深色再切回默认，取较慢一次（ADR 0117 C2 / C3） */
+async function measureThemeSwitch(page) {
+  let themeSwitchMs = null
+  let longTaskMs = 0
+  try {
+    if (!(await openThemePanel(page))) return { themeSwitchMs, longTaskMs }
+    await resetLongTasks(page)
+    const durations = []
+    for (const mode of ['github-dark', 'modern']) {
+      const latency = await clickToNextFrame(page, `.settings-modal [data-theme-card="${mode}"]`)
+      if (latency != null) durations.push(latency)
+      await sleep(250)
+    }
+    longTaskMs = await maxLongTask(page)
+    if (durations.length) themeSwitchMs = Math.max(...durations)
+  } catch {
+    return { themeSwitchMs: null, longTaskMs }
+  } finally {
+    await page.evaluate(() => {
+      document.querySelector('.settings-modal .ant-modal-close')?.click()
+    })
+    await page
+      .waitForFunction(() => !document.querySelector('.settings-modal'), { timeout: 10_000 })
+      .catch(() => {})
+  }
+  return { themeSwitchMs, longTaskMs }
+}
 
 const check = (name, ok, detail = '') => {
   if (ok) {
@@ -185,6 +276,18 @@ async function main() {
       seed.token,
     )
 
+    // 旧内核性能采集（ADR 0117 C2 / C6）：longtask 是唯一可用的长任务口径
+    await page.evaluateOnNewDocument(() => {
+      window.__cndbPerf = { longTasks: [] }
+      try {
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) window.__cndbPerf.longTasks.push(entry.duration)
+        }).observe({ entryTypes: ['longtask'] })
+      } catch {
+        // 极老内核不支持 longtask 时按 0 处理，不阻断功能冒烟
+      }
+    })
+
     // ── 1. 登录态进入工作区（C1：不白屏、无未捕获异常）────────────────
     await page.goto(`${baseUrl}/w`, { waitUntil: 'domcontentloaded', timeout: 30_000 })
     await page.waitForFunction(
@@ -192,6 +295,12 @@ async function main() {
       { timeout: 30_000 },
     )
     check('工作区列表渲染', page.url().includes('/w'), page.url())
+    const firstInteractiveMs = await page.evaluate(() => performance.now())
+    check(
+      `首屏可交互 ≤ ${PERF_BUDGET.firstInteractiveMs}ms`,
+      firstInteractiveMs <= PERF_BUDGET.firstInteractiveMs,
+      `${firstInteractiveMs.toFixed(1)}ms`,
+    )
 
     // ── 2. 兼容层自检（C2 / C3 / C4）────────────────────────────────
     const compat = await page.evaluate(() => {
@@ -241,16 +350,57 @@ async function main() {
     const modes = await page.$$eval('[data-mode]', (els) =>
       els.map((el) => el.getAttribute('data-mode')).filter(Boolean),
     )
+    const viewDurations = []
+    await resetLongTasks(page)
     for (const mode of modes) {
-      await page.evaluate((value) => {
-        const btn = document.querySelector(`[data-mode="${value}"]`)
-        btn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      }, mode)
+      const latency = await clickToNextFrame(page, `[data-mode="${mode}"]`)
+      if (latency != null) viewDurations.push(latency)
       await sleep(1200)
       const rendered = await page.evaluate(() => document.body.innerText.length > 0)
       check(`视图切换 ${mode}`, rendered)
     }
+    const viewLongTaskMs = await maxLongTask(page)
     if (!modes.length) notes.push('当前表没有多视图按钮（跳过视图切换）')
+
+    // ── 3.5 旧内核性能基线（C2 / C6；阈值唯一来源 perf-budget.mjs）───────
+    const viewSwitchMs = viewDurations.length ? Math.max(...viewDurations) : null
+    if (viewSwitchMs != null) {
+      check(
+        `视图切换 ≤ ${PERF_BUDGET.viewSwitchMs}ms`,
+        viewSwitchMs <= PERF_BUDGET.viewSwitchMs,
+        `${viewSwitchMs.toFixed(1)}ms`,
+      )
+    }
+    check(
+      `视图切换最长任务 ≤ ${PERF_BUDGET.maxLongTaskMs}ms`,
+      viewLongTaskMs <= PERF_BUDGET.maxLongTaskMs,
+      `${viewLongTaskMs.toFixed(1)}ms`,
+    )
+
+    const themePerf = await measureThemeSwitch(page)
+    if (themePerf.themeSwitchMs != null) {
+      check(
+        `主题切换 ≤ ${PERF_BUDGET.themeSwitchMs}ms`,
+        themePerf.themeSwitchMs <= PERF_BUDGET.themeSwitchMs,
+        `${themePerf.themeSwitchMs.toFixed(1)}ms`,
+      )
+      check(
+        `主题切换最长任务 ≤ ${PERF_BUDGET.maxLongTaskMs}ms`,
+        themePerf.longTaskMs <= PERF_BUDGET.maxLongTaskMs,
+        `${themePerf.longTaskMs.toFixed(1)}ms`,
+      )
+    } else {
+      notes.push('主题切换未能测量（未找到主题卡片），性能基线缺项')
+    }
+    const perf = {
+      firstInteractiveMs: Math.round(firstInteractiveMs),
+      themeSwitchMs: themePerf.themeSwitchMs == null ? null : Math.round(themePerf.themeSwitchMs),
+      themeLongTaskMs: Math.round(themePerf.longTaskMs),
+      viewSwitchMs: viewSwitchMs == null ? null : Math.round(viewSwitchMs),
+      viewLongTaskMs: Math.round(viewLongTaskMs),
+    }
+    console.log(`[chrome81] perf: ${JSON.stringify(perf)}`)
+    notes.push(`性能基线 ${JSON.stringify(perf)}`)
 
     // ── 4. 文档页（C5）─────────────────────────────────────────────
     await page.goto(`${baseUrl}/w/${seed.workspace.id}/documents`, {

@@ -231,16 +231,16 @@ def workflow_diff(
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/pipeline/models.py`、`src/cndb/plugins/pipeline/services/versions.py`、`src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/alembic/versions/4c6e8a0b2d3f_pipeline_workflow_version.py` | `tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py` | — |
-| P1 | 已落地 | `src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/plugins/pipeline/schemas.py` | `tests/test_pipeline_api.py` | — |
-| P2 | 已落地 | `frontend/src/api/pipelines.ts`、`frontend/src/pages/pipelines/PipelineVersionsDrawer.tsx`、`frontend/src/pages/pipelines/PipelinesPage.tsx`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py` | `frontend/src/pages/pipelines/PipelineVersionsDrawer.test.tsx`、`frontend/src/pages/pipelines/PipelinesPage.test.tsx`、`frontend/tests/e2e/critical/pipelines.spec.ts`、`tests/test_workspace_backup_v13.py` | — |
+| P0 | 已落地 | `src/cndb/plugins/pipeline/models.py`、`src/cndb/plugins/pipeline/services/versions.py`、`src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/alembic/versions/4c6e8a0b2d3f_pipeline_workflow_version.py` | `tests/test_pipeline_api.py`、`tests/test_pipeline_migration.py` | `abc52d26` |
+| P1 | 已落地 | `src/cndb/plugins/pipeline/routers/workflows.py`、`src/cndb/plugins/pipeline/schemas.py` | `tests/test_pipeline_api.py` | `abc52d26` |
+| P2 | 已落地 | `frontend/src/api/pipelines.ts`、`frontend/src/pages/pipelines/PipelineVersionsDrawer.tsx`、`frontend/src/pages/pipelines/PipelinesPage.tsx`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py` | `frontend/src/pages/pipelines/PipelineVersionsDrawer.test.tsx`、`frontend/src/pages/pipelines/PipelinesPage.test.tsx`、`frontend/tests/e2e/critical/pipelines.spec.ts`、`tests/test_workspace_backup_v13.py` | `abc52d26` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地，等待人工验收与提交
+- 当前阶段：P0-P2 已落地并提交（`abc52d26`），Status 保持 Accepted，待人工验收
 - 已完成：版本表 + 迁移、落版服务、4 个版本端点、前端抽屉与双入口、备份 `versions[]` 往返、后端 / 前单测与 e2e
-- 下一步：人工验收后提交并回填各期提交 sha；本轮无后续期
+- 下一步：人工验收后由人决定 `Status` 是否置 `Implemented`；本轮无后续期
 - 已知坑：迁移 head 现为 `4c6e8a0b2d3f`；备份协议保持 v13，导入需兼容无 `versions` 的旧载荷并去重版本号；恢复必须排除自身做名称唯一校验；恢复保留当前 `enabled`
 - 最近一次全绿：`make check-fast` / `make test` @ 2026-11-06

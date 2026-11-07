@@ -5,7 +5,7 @@
  * 同时覆盖业务内联 gap、CSS 类与 antd Space / Grid 的运行时 rowGap/columnGap（ADR 0026 D5）。
  */
 
-import { isFlexGapSupported } from './flexGapSupport'
+import { isFlexGapSupported } from './capabilities'
 
 export { isFlexGapSupported }
 
@@ -30,7 +30,13 @@ interface Applied {
 
 const appliedContainers = new WeakMap<HTMLElement, Applied>()
 
+/** 垫片自己写入过 style 的元素：MutationObserver 收到对应记录时跳过，避免自触发扫描 */
+const selfWritten = new WeakSet<HTMLElement>()
+
 const SHIM_CLASS = 'cn-no-flex-gap'
+
+/** 单次空闲切片扫描预算（ADR 0117 C4）；超出则让出主线程，下一片继续 */
+const SCAN_BUDGET_MS = 8
 
 /** 现场 kill switch：置 true 后已生效的 margin 会在下一次扫描时还原 */
 function shimDisabled(): boolean {
@@ -64,19 +70,25 @@ export function readFlexGaps(el: Element): { rowGap: number; columnGap: number }
   return { rowGap, columnGap }
 }
 
+function writeMargin(el: HTMLElement, prop: MarginProp, value: string | null): void {
+  const current = el.style.getPropertyValue(MARGIN_CSS[prop])
+  if ((value ?? '') === current) return
+  selfWritten.add(el)
+  if (value) el.style.setProperty(MARGIN_CSS[prop], value)
+  else el.style.removeProperty(MARGIN_CSS[prop])
+}
+
 function restore(el: HTMLElement): void {
   const record = appliedContainers.get(el)
   if (!record) return
   appliedContainers.delete(el)
   for (const child of record.children) {
     for (const [prop, original] of Object.entries(child.margins) as [MarginProp, string][]) {
-      if (original) child.el.style.setProperty(MARGIN_CSS[prop], original)
-      else child.el.style.removeProperty(MARGIN_CSS[prop])
+      writeMargin(child.el, prop, original || null)
     }
   }
   for (const [prop, original] of Object.entries(record.containerMargins) as [MarginProp, string][]) {
-    if (original) el.style.setProperty(MARGIN_CSS[prop], original)
-    else el.style.removeProperty(MARGIN_CSS[prop])
+    writeMargin(el, prop, original || null)
   }
 }
 
@@ -121,7 +133,7 @@ function shimContainer(el: HTMLElement): void {
   const addMargin = (child: HTMLElement, prop: MarginProp, delta: number) => {
     saveChild(child, prop)
     const base = Number.parseFloat(getComputedStyle(child)[prop]) || 0
-    child.style.setProperty(MARGIN_CSS[prop], `${base + delta}px`)
+    writeMargin(child, prop, `${base + delta}px`)
   }
   const saveContainer = (prop: MarginProp) => {
     record.containerMargins[prop] = el.style.getPropertyValue(MARGIN_CSS[prop])
@@ -138,18 +150,18 @@ function shimContainer(el: HTMLElement): void {
     // 换行：子元素统一补 right/bottom，容器负 margin 抵消末列末行多出的空隙
     if (columnGap > 0) {
       for (const child of children) addMargin(child, 'marginRight', columnGap)
-      el.style.setProperty('margin-right', `${saveContainer('marginRight') - columnGap}px`)
+      writeMargin(el, 'marginRight', `${saveContainer('marginRight') - columnGap}px`)
     }
     if (rowGap > 0) {
       for (const child of children) addMargin(child, 'marginBottom', rowGap)
-      el.style.setProperty('margin-bottom', `${saveContainer('marginBottom') - rowGap}px`)
+      writeMargin(el, 'marginBottom', `${saveContainer('marginBottom') - rowGap}px`)
     }
   }
 
   if (record.children.length) appliedContainers.set(el, record)
 }
 
-/** 对 root 自身及其后代应用垫片（测试与首次全量扫描共用） */
+/** 深扫：root 自身及全部后代（新增子树必须展开，否则新节点拿不到间距） */
 export function applyFlexGapShim(root: ParentNode): void {
   const elements: HTMLElement[] = []
   if (root instanceof HTMLElement) elements.push(root)
@@ -161,12 +173,35 @@ interface IdleDeadlineLike {
   timeRemaining: () => number
 }
 
-const pending: HTMLElement[] = []
+interface PendingRoot {
+  el: HTMLElement
+  /** true = 新增子树，需要向下展开；false = class/style 变更，只处理自身 */
+  deep: boolean
+}
+
+const pending: PendingRoot[] = []
 let scheduled = false
 let activeDoc: Document | null = null
 
-function scheduleScan(doc: Document, roots?: HTMLElement[]): void {
-  if (roots) pending.push(...roots)
+/** 待扫描根入队：同元素合并，祖先已覆盖的后代不再重复扫描（ADR 0117 C4） */
+function enqueue(el: HTMLElement, deep: boolean): void {
+  const same = pending.findIndex(item => item.el === el)
+  if (same >= 0) {
+    if (deep) pending[same].deep = true
+    return
+  }
+  // 浅扫节点若已被某个深扫祖先覆盖，直接丢弃
+  if (!deep && pending.some(item => item.deep && item.el.contains(el))) return
+  if (deep) {
+    for (let i = pending.length - 1; i >= 0; i -= 1) {
+      if (el.contains(pending[i].el)) pending.splice(i, 1)
+    }
+  }
+  pending.push({ el, deep })
+}
+
+function scheduleScan(doc: Document, roots?: PendingRoot[]): void {
+  for (const root of roots ?? []) enqueue(root.el, root.deep)
   if (scheduled) return
   scheduled = true
   activeDoc = doc
@@ -174,9 +209,12 @@ function scheduleScan(doc: Document, roots?: HTMLElement[]): void {
     scheduled = false
     const started = Date.now()
     while (pending.length) {
-      if (deadline ? deadline.timeRemaining() < 4 : Date.now() - started > 12) break
+      // 空闲切片预算：浏览器空闲余量不足或自计时超过 8ms 即让出主线程
+      if (deadline ? deadline.timeRemaining() < 4 : false) break
+      if (Date.now() - started >= SCAN_BUDGET_MS) break
       const root = pending.shift()!
-      applyFlexGapShim(root)
+      if (root.deep) applyFlexGapShim(root.el)
+      else shimContainer(root.el)
     }
     if (pending.length && activeDoc) scheduleScan(activeDoc)
   }
@@ -191,17 +229,23 @@ export function initFlexGapShim(doc?: Document): () => void {
   if (!target || !target.body || isFlexGapSupported(target)) return () => {}
 
   target.documentElement.classList.add(SHIM_CLASS)
-  scheduleScan(target, [target.body])
+  scheduleScan(target, [{ el: target.body, deep: true }])
 
   const observer = new MutationObserver(records => {
-    const roots: HTMLElement[] = []
+    const roots: PendingRoot[] = []
     for (const record of records) {
+      if (record.type === 'attributes' && record.target instanceof HTMLElement && selfWritten.has(record.target)) {
+        // 垫片自己写出的 margin：消费掉标记，不再触发下一轮扫描
+        selfWritten.delete(record.target)
+        continue
+      }
       if (record.type === 'childList') {
         record.addedNodes.forEach(node => {
-          if (node instanceof HTMLElement) roots.push(node)
+          if (node instanceof HTMLElement) roots.push({ el: node, deep: true })
         })
-      } else if (record.target instanceof HTMLElement) {
-        roots.push(record.target)
+      } else if (record.type === 'attributes' && record.target instanceof HTMLElement) {
+        // class/style 变化不改变后代的 flex 判定，浅扫自身即可（避免主题切换时全树展开）
+        roots.push({ el: record.target, deep: false })
       }
     }
     if (roots.length && activeDoc) scheduleScan(activeDoc, roots)

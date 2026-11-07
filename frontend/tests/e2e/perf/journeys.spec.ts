@@ -221,5 +221,14 @@ test.describe("性能旅程基线（ADR 0116 C1）", () => {
     // C10：交互响应与主线程长任务硬上限（观察期取保守值，避免 runner 抖动误伤）
     expect(metrics.eventMax, `eventMax=${metrics.eventMax}ms`).toBeLessThan(600)
     expect(metrics.longTaskMax, `longTaskMax=${metrics.longTaskMax}ms`).toBeLessThan(400)
+
+    // ADR 0117 C5：主表沿用虚拟滚动，挂载行数与总 DOM 不得随数据量线性增长。
+    // 上限与数据集规模无关，参考规模（5000 行 × 20 列）下同样必须成立。
+    const dom = await page.evaluate(() => ({
+      mountedRows: document.querySelectorAll("[data-row-key]").length,
+      elements: document.querySelectorAll("*").length,
+    }))
+    expect(dom.mountedRows, `挂载行数 ${dom.mountedRows}`).toBeLessThanOrEqual(100)
+    expect(dom.elements, `DOM 元素 ${dom.elements}`).toBeLessThanOrEqual(8000)
   })
 })

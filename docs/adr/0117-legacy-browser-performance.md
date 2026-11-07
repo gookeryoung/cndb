@@ -1,6 +1,6 @@
 # ADR 0117: 低版本浏览器性能专项（Chromium 81 交互时延与兜底成本）
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-11-07
 Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend/src/compat/flexGap.ts`、`frontend/src/compat/index.ts`、`frontend/src/main.tsx`、`frontend/scripts/chrome81-smoke.mjs`、`frontend/scripts/browser-baseline.mjs`、`frontend/src/pages/grid/gridTableSection.tsx`、`docs/adr/0026-chrome81-compat.md`、`docs/adr/0116-frontend-performance-program.md`
 需求卡片: `docs/requirements/0117-legacy-browser-performance.md`（需求原文与约束编号的唯一副本）
@@ -35,12 +35,12 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 | # | 现状 | 位置 | 影响 | 与卡片的关系 |
 |---|---|---|---|---|
 | 1 | flex-gap 垫片监听 `body` 子树 `childList` + `class/style`，新增节点走 `querySelectorAll('*')` 全量展开，每个容器 / 子元素多次 `getComputedStyle` | `frontend/src/compat/flexGap.ts:153-158`、`:196-214`、`:87-129` | 旧内核常驻成本随 DOM 规模与交互频率放大；弹窗 / 表格滚动时反复触发扫描 | 确认 |
-| 2 | 主题 `--cn-mix-*` 兜底重算已改为「快照读 + 批量写」 | `frontend/src/theme/themeMix.ts:124`、`:259-270` | 同步样式重算由上百次降为一次；切回同一主题仍会重算并重写 | 确认（C3 已完成一半） |
+| 2 | 主题 `--cn-mix-*` 兜底重算已改为「快照读 + 批量写」，且写入前比对内联值、值未变不重写 | `frontend/src/theme/themeMix.ts:124`、`:259-286` | 同步样式重算由上百次降为一次；切回同一主题不再重复写样式 | 确认（C3 已完成） |
 | 3 | 全页主题过渡已收进能力门控 | `frontend/src/index.css:44` | Chromium 81 跳过该规则，瞬时换色；现代内核保持平滑渐变 | 确认（C8 已满足） |
 | 4 | 旧内核冒烟只断言功能 / 视觉，无时延与长任务断言；`browser-compat.spec.ts` 无 performance 断言 | `frontend/scripts/chrome81-smoke.mjs:170-357`、`frontend/tests/e2e/critical/browser-compat.spec.ts` | 性能回退不可见，只能靠人工体感 | 确认 |
 | 5 | 主表已开虚拟滚动，看板 / 甘特用 `useVirtualizer` | `frontend/src/pages/grid/gridTableSection.tsx:224`、`frontend/src/pages/grid/views/kanban/KanbanColumn.tsx:50`、`frontend/src/pages/grid/views/GanttView.tsx:236` | 可排除「整表重挂」为旧内核卡顿主因 | 排除（C5 只补断言） |
 | 6 | 兼容层在首次渲染后按能力动态加载，唯一入口 `initCompat()` | `frontend/src/main.tsx:101-102`、`frontend/src/compat/index.ts:10-15` | 现代内核不下载垫片；旧内核的垫片与主题兜底是常驻成本 | 确认 |
-| 7 | 图表 / Dashboard 在主题切换时是否重建实例未核实（可能存在 `key` 或 option 全量重建） | `frontend/src/pages/grid/views/dashboard/` | 若重建，旧内核切主题会叠加一次重渲染，放大卡顿 | 新增（P0 测量确认） |
+| 7 | 图表 / Dashboard 在主题切换时**不重建实例**：`ChartCanvas` 只在挂载时 `init` 一次，主题变化走 `setOption(option, true)`；每个图表每次切换读 4 个主题色 | `frontend/src/pages/grid/views/dashboard/chart/ChartCanvas.tsx`、`widgets/ChartWidget.tsx` | 旧内核切主题的图表成本是「4 次 getComputedStyle + 一次 option 全量下发」，无实例销毁 / 重建 | 确认（P0 核实，无需改渲染路径） |
 
 **核心缺陷（需求要补的）**：现有兼容层只解决「能不能用」（功能与视觉等价），没有「够不够快」的口径、预算与门禁；而兜底实现（mix 变量、flex-gap 观察器）本身是旧内核的常驻成本，既无量化基线，也无随 DOM 规模解耦的约束。
 
@@ -62,7 +62,7 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 | 入口 | 签名 | 职责 |
 |---|---|---|
 | `frontend/scripts/perf-budget.mjs` | `export const PERF_BUDGET = { themeSwitchMs, viewSwitchMs, firstInteractiveMs, maxLongTaskMs }` | 旧内核性能阈值唯一来源；冒烟与 e2e 共用，禁止散落数字 |
-| `frontend/src/compat/capabilities.ts` | `supportsColorMix()` / `isFlexGapSupported()` / `supportsBackdropFilter()` | 运行时能力探测唯一入口；主题兜底与垫片只调用它 |
+| `frontend/src/compat/capabilities.ts` | `supportsColorMix()` / `isFlexGapSupported()` | 运行时能力探测唯一入口；主题兜底与垫片只调用它 |
 | `initCompat()` | `(): void` | 兼容层装载唯一入口（保持 ADR 0026 口径），不新增第二入口 |
 | `applyThemeMixVars()` | `(root?: HTMLElement): void` | `--cn-mix-*` 唯一写入方；内部保证「先读完、再统一写」 |
 
@@ -87,23 +87,23 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 
 | 层 | 文件 | 改动 |
 |---|---|---|
-| 主题兜底 | `frontend/src/theme/themeMix.ts` | 快照读 + 批量写（已完成）；增加按模式的结果缓存与「值未变不写」 |
-| 主题过渡 | `frontend/src/index.css` | 全页过渡由 `@supports (color-mix(...))` 门控（已完成） |
-| 兼容探测 | `frontend/src/compat/capabilities.ts`（新增） | 收敛 `supportsColorMix` / `isFlexGapSupported` 等能力判断 |
-| flex-gap 垫片 | `frontend/src/compat/flexGap.ts` | 待扫描根去重、非 flex 根短路、空闲切片预算 ≤ 8ms、扫描自身写入不再触发新扫描 |
-| 旧内核冒烟 | `frontend/scripts/chrome81-smoke.mjs` | 新增性能段：longtask 统计、主题切换与视图切换时延、超阈值非 0 退出 |
+| 主题兜底 | `frontend/src/theme/themeMix.ts` | 快照读 + 批量写；写入前比对内联值，值未变不写 |
+| 主题过渡 | `frontend/src/index.css` | 全页过渡由 `@supports (color-mix(...))` 门控 |
+| 兼容探测 | `frontend/src/compat/capabilities.ts`（新增） | 收敛 `supportsColorMix` / `isFlexGapSupported`；删除旧的 `flexGapSupport.ts` |
+| flex-gap 垫片 | `frontend/src/compat/flexGap.ts` | 待扫描根去重、class/style 变更浅扫（不展开子树）、空闲切片预算 ≤ 8ms、自身写入不触发重扫 |
+| 旧内核冒烟 | `frontend/scripts/chrome81-smoke.mjs` | 性能段：longtask 统计、首屏可交互 / 主题切换 / 视图切换时延，超阈值非 0 退出 |
 | 阈值常量 | `frontend/scripts/perf-budget.mjs`（新增） | 阈值单点定义 |
-| 图表主题 | `frontend/src/pages/grid/views/dashboard/` | P0 测量确认是否重建实例；若是，改为仅更新颜色 option，不重建 |
+| 图表主题 | `frontend/src/pages/grid/views/dashboard/` | 已核实：图表实例复用、仅 `setOption`，无需改渲染路径 |
 
 ### 7. 测试清单
 
-**判定层（单测）**：`themeMix` 快照读次数（mock `getComputedStyle` 计数，断言常数次）与缓存命中不重写；`flexGap` 的去重 / 非 flex 短路 / 单次扫描预算；`capabilities` 在各能力缺失时的返回值。
+**判定层（单测）**：`themeMix` 快照读次数（mock `getComputedStyle` 计数，断言 1 次）与值未变不重写；`flexGap` 新增子树扫描、class/style 变更不展开子树、自身写入不触发重扫；`capabilities` 在各能力缺失时的返回值。
 
 **接口层**：无。
 
 **迁移 / 备份**：无。
 
-**e2e（前端）**：`chrome81-smoke.mjs` 性能断言（主题切换、视图切换、最长任务）；`browser-compat.spec.ts` 保持功能断言；参考规模 DOM 行数上限断言。
+**e2e（前端）**：`chrome81-smoke.mjs` 性能断言（首屏可交互、主题切换、视图切换、最长任务，阈值取 `perf-budget.mjs`）；`browser-compat.spec.ts` 保持功能断言；`perf/journeys.spec.ts` 断言主表挂载行数 ≤ 100、DOM 元素 ≤ 8000（与数据规模无关的虚拟化上限）。
 
 ### 8. 分期
 
@@ -144,16 +144,29 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `frontend/scripts/perf-budget.mjs`、`frontend/scripts/chrome81-smoke.mjs` | 定时 CI | — |
-| P1 | 进行中 | `frontend/src/theme/themeMix.ts:124`、`:259-270`、`frontend/src/index.css:44` | `frontend/src/theme/themeMix.test.ts`、`frontend/src/theme/ThemeProvider.test.tsx` | 待提交 |
-| P2 | 未开始 | `frontend/src/compat/flexGap.ts`、`frontend/src/pages/grid/views/dashboard/` | `frontend/src/compat/flexGap.test.ts`、e2e | — |
+| P0 | 已落地 | `frontend/scripts/perf-budget.mjs`、`frontend/scripts/chrome81-smoke.mjs` | `.github/workflows/chrome81-smoke.yml` | 工作区未提交 |
+| P1 | 已落地 | `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend/src/compat/capabilities.ts` | `frontend/src/theme/themeMix.test.ts`、`frontend/src/theme/ThemeProvider.test.tsx`、`frontend/src/compat/capabilities.test.ts` | `70d7da02` + 工作区未提交 |
+| P2 | 已落地 | `frontend/src/compat/flexGap.ts`、`frontend/tests/e2e/perf/journeys.spec.ts` | `frontend/src/compat/flexGap.test.ts`、`frontend/tests/e2e/perf/journeys.spec.ts` | 工作区未提交 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
+### 基线（Chromium 81，同机采集）
+
+阈值唯一来源 `frontend/scripts/perf-budget.mjs`；冒烟每次运行打印 `[chrome81] perf: {...}`，CI 日志留存读数，只允许与同机历史比较。
+
+| 指标 | 采集口径 | 阈值 |
+|---|---|---|
+| 首屏可交互 | 导航开始 → 应用头部出现且内容非空 | ≤ 3000ms |
+| 主题切换 | 点击主题卡片 → 下一帧（React 提交 + 主题变量重算 + 重绘） | ≤ 200ms |
+| 视图切换 | 点击视图按钮 → 下一帧（同步渲染，不含网络） | ≤ 800ms |
+| 单次长任务 | `PerformanceObserver('longtask')` 最长 duration（主题 / 视图切换窗口） | ≤ 250ms |
+
+> 首次同机读数由 CI 定时任务采集后回填本表；本机无 Chromium 81 运行环境时不伪造数字。
+
 ## 交接（会话结束更新）
 
-- 当前阶段：P1（主题切换两项低风险优化已在工作区完成，待 ADR 评审后纳入）
-- 已完成：`--cn-mix-*` 快照读 + 批量写；全页过渡按 `color-mix()` 能力门控
-- 下一步：P0 在 `chrome81-smoke.mjs` 增加 longtask 与「点击→下一帧」采集，落基线表；核实图表主题重建热点
+- 当前阶段：P0 / P1 / P2 全部落地，等待人工确认 `Status` 是否改 `Implemented` 与同机基线回填
+- 已完成：冒烟性能段（longtask + 首屏 / 主题 / 视图时延，超阈值非 0 退出）；`perf-budget.mjs` 阈值单点；`applyThemeMixVars` 快照读 + 批量写 + 值未变不写；全页过渡能力门控；`capabilities.ts` 收敛能力探测；flex-gap 垫片去重 / 浅扫 / 8ms 切片 / 自写抑制；图表主题核实为实例复用
+- 下一步：CI 首次采集后把读数回填「基线」表；如某项超阈值，先看是 runner 抖动还是真实回退
 - 已知坑：Chromium 81 无 Event Timing / INP，只能用 `PerformanceObserver('longtask')` + `requestAnimationFrame` 手工计时；无头 Chromium 81 无 WebGL，设计预览走降级提示；运行后端测试前需 `unset LD_LIBRARY_PATH`
-- 最近一次全绿：`make check-fast` + `make test` + 前端全量单测 @ 工作区未提交（2026-11-07）
+- 最近一次全绿：`make flow` + 前端全量单测 + `make check-docs` @ 工作区未提交（2026-11-07）

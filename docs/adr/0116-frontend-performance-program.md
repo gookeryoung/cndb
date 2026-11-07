@@ -165,16 +165,16 @@ Related: `frontend/src/main.tsx`、`frontend/src/components/ProtectedRoute.tsx`�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/scripts/bundle-budget.mjs`（entryCss / fonts / moduleMarker 三种 resolve）、`frontend/scripts/bundle-budget.json`（9 个新条目）、`frontend/tests/e2e/perf/journeys.spec.ts`、`frontend/tests/e2e/perf/baselines.json` | `frontend/tests/e2e/perf/journeys.spec.ts`、`frontend/tests/e2e/perf/design-assembly-open.spec.ts` | 待提交 |
-| P1 | 已落地 | `frontend/src/main.tsx`（认证并行预取 + 7 字重）、`frontend/src/api/client.ts`（axios 按需加载）、`frontend/patches/@rc-component__form@1.8.6.patch`（barrel 摇树）、`frontend/scripts/check-patches.mjs`（补丁形态守门） | `frontend/src/theme/fontAssets.test.ts`、`frontend/src/api/client.test.ts`；入口实测 198 KiB / 字体 142 KiB | 待提交 |
-| P2 | 已落地 | `frontend/src/pages/documents/DocumentEditorPage.tsx`（编辑器 / 图表弹窗 lazy + 编辑入口 hover 预取） | `frontend/tests/e2e/perf/document-open.spec.ts`；文档页实测 29 KiB | 待提交 |
-| P3 | 进行中 | `frontend/src/pages/workspace/tablePrefetch.ts`、`frontend/src/pages/grid/gridViewSeed.ts`、`frontend/src/pages/grid/gridViewParams.ts`、`frontend/src/store/gridView.ts`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/useGridData.ts`、`frontend/src/api/hooks.ts`、`frontend/src/utils/webVitals.ts`、`frontend/tests/e2e/perf/grid-lcp.spec.ts`（INP / longtask 在 journeys） | `frontend/src/pages/workspace/tablePrefetch.test.ts`、`frontend/src/pages/grid/gridViewSeed.test.ts`、`frontend/src/pages/grid/gridViewParams.test.ts`、`frontend/src/store/gridView.test.ts`、`frontend/src/utils/webVitals.test.ts`、`frontend/tests/e2e/perf/grid-prefetch.spec.ts`；LCP 收紧待 10 次 CI 基线 | 待提交 |
+| P0 | 已落地 | `frontend/scripts/bundle-budget.mjs`（entryCss / fonts / moduleMarker 三种 resolve）、`frontend/scripts/bundle-budget.json`（9 个新条目）、`frontend/tests/e2e/perf/journeys.spec.ts`、`frontend/tests/e2e/perf/baselines.json` | `frontend/tests/e2e/perf/journeys.spec.ts`、`frontend/tests/e2e/perf/design-assembly-open.spec.ts` | `204f60ec` |
+| P1 | 已落地 | `frontend/src/main.tsx`（认证并行预取 + 7 字重）、`frontend/src/api/client.ts`（axios 按需加载）、`frontend/patches/@rc-component__form@1.8.6.patch`（barrel 摇树）、`frontend/scripts/check-patches.mjs`（补丁形态守门） | `frontend/src/theme/fontAssets.test.ts`、`frontend/src/api/client.test.ts`；入口实测 198 KiB / 字体 142 KiB | `204f60ec` |
+| P2 | 已落地 | `frontend/src/pages/documents/DocumentEditorPage.tsx`（编辑器 / 图表弹窗 lazy + 编辑入口 hover 预取） | `frontend/tests/e2e/perf/document-open.spec.ts`；文档页实测 29 KiB | `204f60ec` |
+| P3 | 进行中 | `frontend/src/pages/workspace/tablePrefetch.ts`、`frontend/src/pages/grid/gridViewSeed.ts`、`frontend/src/pages/grid/gridViewParams.ts`、`frontend/src/store/gridView.ts`、`frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/useGridData.ts`、`frontend/src/api/hooks.ts`、`frontend/src/utils/webVitals.ts`、`frontend/tests/e2e/perf/grid-lcp.spec.ts`（INP / longtask 在 journeys） | `frontend/src/pages/workspace/tablePrefetch.test.ts`、`frontend/src/pages/grid/gridViewSeed.test.ts`、`frontend/src/pages/grid/gridViewParams.test.ts`、`frontend/src/store/gridView.test.ts`、`frontend/src/utils/webVitals.test.ts`、`frontend/tests/e2e/perf/grid-prefetch.spec.ts`；LCP 收紧待 10 次 CI 基线 | `204f60ec` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P3 进行中（代码与测试已落地，仅剩 LCP 阈值收紧需连续 10 次 CI 基线）
+- 当前阶段：P3 进行中（代码与测试已随 `204f60ec` 提交，仅剩 LCP 阈值收紧需连续 10 次 CI 基线）
 - 已完成：P0 预算扩展与性能旅程；P1 认证并行预取 / 字体 7 字重 / 入口 198 KiB；P2 文档页 lazy 后 29 KiB；P3 表格 hover 预取（无快照时先视图后行）/ sessionStorage 种子化 / 无快照首笔行请求挂起到落地视图 / RUM `navigationType`
 - 下一步：CI 连续采 10 次 journeys 与 grid-lcp 读数后，把 LCP 改为「中位数 +10%，硬上限 4500ms」，并把 CI 中位数写回 `baselines.json` 的 `ci` 环境
 - 已知坑：`baselines.json` 首轮为空（只记录不 FAIL），必须用 CI artifact 的 `test-results/perf/journeys.json` 回填；`dist/.vite/chunk-modules.json` 只在 build 后存在；CodeMirror chunk 归属靠模块路径匹配，改文件名不影响断言；axios 按需加载后首个请求需等 chunk，本地 dev 会多一次请求但无功能变化；性能用例必须走已发布文档（`?parent=&status=published` 深链），草稿默认进编辑态会把编辑器 chunk 带进来

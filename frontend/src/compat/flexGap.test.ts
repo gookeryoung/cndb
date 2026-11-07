@@ -196,3 +196,59 @@ describe('initFlexGapShim', () => {
     vi.useRealTimers()
   })
 })
+
+describe('initFlexGapShim 增量扫描（ADR 0117 C4）', () => {
+  /** 推进假定时器并让 MutationObserver 的微任务回调落地 */
+  async function flush() {
+    await Promise.resolve()
+    await Promise.resolve()
+    vi.runAllTimers()
+    await Promise.resolve()
+  }
+
+  it('新增子树在空闲切片中补上间距', async () => {
+    vi.useFakeTimers()
+    mockProbeGap(false)
+    const cleanup = initFlexGapShim()
+    await flush()
+
+    const el = container('display:flex;gap:10px')
+    await flush()
+    expect(children(el)[1].style.marginLeft).toBe('10px')
+
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it('class / style 变更只浅扫自身，不展开整棵子树', async () => {
+    vi.useFakeTimers()
+    mockProbeGap(false)
+    document.body.innerHTML = '<div id="wrap"><div style="display:flex;gap:10px"><span>a</span><span>b</span></div></div>'
+    const cleanup = initFlexGapShim()
+    await flush()
+
+    const spy = vi.spyOn(Element.prototype, 'querySelectorAll')
+    document.body.classList.add('theme-modern')
+    await flush()
+    expect(spy).not.toHaveBeenCalled()
+
+    cleanup()
+    vi.useRealTimers()
+  })
+
+  it('垫片自身写入的 style 不触发二次扫描', async () => {
+    vi.useFakeTimers()
+    mockProbeGap(false)
+    container('display:flex;gap:10px')
+    const cleanup = initFlexGapShim()
+    await flush()
+
+    const spy = vi.spyOn(window, 'getComputedStyle')
+    vi.runAllTimers()
+    await flush()
+    expect(spy).not.toHaveBeenCalled()
+
+    cleanup()
+    vi.useRealTimers()
+  })
+})
