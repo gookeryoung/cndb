@@ -177,9 +177,9 @@ CI 不需要单独改动：`check-docs` / `check-fast` 已在双 CI 与 `make ch
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `docs/CONSTRAINTS.md`、`AGENTS.md`、`.trae/rules/design.md`、`.trae/rules/dev-workflow.md`、`.trae/rules/testing.md`、`docs/AI_DRIVEN_DEV_FLOW.md`、`CONTEXT.md` | `scripts/check_constraints.py` | 待回填 |
-| P1 | 已落地 | `scripts/check_constraints.py`、`Makefile` | `tests/test_check_constraints.py` | 待回填 |
-| P2 | 已落地 | `docs/adr/TEMPLATE.md`、`.trae/rules/design.md`、`AGENTS.md` | `scripts/check_constraints.py` | 待回填 |
+| P0 | 已落地 | `docs/CONSTRAINTS.md`、`AGENTS.md`、`.trae/rules/design.md`、`.trae/rules/dev-workflow.md`、`.trae/rules/testing.md`、`docs/AI_DRIVEN_DEV_FLOW.md`、`CONTEXT.md` | `scripts/check_constraints.py` | f0525ff2 |
+| P1 | 已落地 | `scripts/check_constraints.py`、`Makefile` | `tests/test_check_constraints.py` | f0525ff2 |
+| P2 | 已落地 | `docs/adr/TEMPLATE.md`、`.trae/rules/design.md`、`AGENTS.md` | `scripts/check_constraints.py` | f0525ff2 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
