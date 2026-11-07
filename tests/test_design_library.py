@@ -74,6 +74,17 @@ class TestLibraryDsl:
         assert dep.bundle_hash == "bundle"
         assert json.dumps(ir["nodes"]).find("20") >= 0
 
+    def test_vendor_snapshots_keep_distinct_identity(self):
+        """vendor 快照 module_version_id 为 0：多个模块不得共享缓存 / 依赖槽位."""
+        alpha = _source("alpha", module_id=0, version_id=0, content="cyl(d = 11, h = 1)\n")
+        beta = _source("beta", module_id=0, version_id=0, content="cyl(d = 77, h = 2)\n")
+        result = _ok(
+            'use "lib:alpha@1" as a\nuse "lib:beta@1" as b\n',
+            library_resolver=lambda key, version: {"alpha": alpha, "beta": beta}.get(key),
+        )
+        assert [node["d"] for node in result.ir["nodes"]] == [11.0, 77.0]
+        assert [item.file_key for item in result.dependencies] == ["alpha", "beta"]
+
     def test_snapshot_wins_over_consumer_file_key(self):
         """I3：库快照内部同名 key 优先，消费方本地文件不得改变模块几何."""
         wheel = "cyl(d = 99, h = 1)\n"
