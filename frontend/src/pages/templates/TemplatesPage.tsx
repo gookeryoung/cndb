@@ -362,7 +362,7 @@ export default function TemplatesPage() {
                   onClick={() => openEdit(selected)}
                   data-testid="edit-template-btn"
                 >
-                  编辑规格
+                  编辑模板
                 </Button>
                 <Tooltip title="复制为新模板">
                   <Button
