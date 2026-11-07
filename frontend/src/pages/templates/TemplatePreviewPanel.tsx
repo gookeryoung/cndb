@@ -10,7 +10,6 @@ const CHANGE_COLUMNS = [
   {
     title: '变更',
     dataIndex: 'kind',
-    width: 96,
     render: (kind: string, change: TemplateDiffChange) => (
       <Tag color={SEVERITY_COLOR[change.severity]}>{kind}</Tag>
     ),
@@ -55,7 +54,6 @@ export default function TemplatePreviewPanel({ preview }: { preview: TemplatePre
         <Table<TemplateDiffChange>
           className="cn-tpl-preview-table"
           size="small"
-          tableLayout="fixed"
           rowKey={(_record, index) => String(index)}
           pagination={false}
           dataSource={diff.changes}
