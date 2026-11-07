@@ -1,4 +1,4 @@
-/** 编辑器外观设置读写测试（个人设置 → 主题 → 编辑器）. */
+/** 编辑器外观设置读写测试（个人设置 → 编辑器）. */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {

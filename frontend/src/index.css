@@ -2335,29 +2335,79 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: var(--cn-space-xs) var(--cn-space-xl) var(--cn-space-xl) var(--cn-space-xs);
 }
 
-/* ─────────────── 个人设置 Modal — Tab 内容区独立滚动 ───────────────
- * 大模型页签内容最长（连接表单 + 调用记录），整对话框滚动会把页签栏和底部「关闭」推出视口；
- * 把滚动限制在 Tab 内容区，页签栏与底部按钮保持可见。细滚动条与 .cevf-modal / .vcvd-modal 一致。 */
-.settings-modal .ant-tabs-content-holder {
+/* ─────────────── 个人设置 Modal — GitHub 风格：左侧列表 + 右侧独立滚动 ───────────────
+ * 桌面端导航在左、内容在右，两侧各自滚动（导航项少、内容常很长），
+ * 参考 GitHub Settings：无下划线 tab、圆角悬停、激活项加粗带左侧色条。 */
+.settings-modal-tabs.is-side > .ant-tabs-nav {
+  min-width: 156px;
+  padding-right: var(--cn-space-lg);
+  margin-bottom: 0;
+}
+
+.settings-modal-tabs.is-side > .ant-tabs-nav .ant-tabs-tab {
+  justify-content: flex-start;
+  margin: var(--cn-space-hairline) 0;
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  border-radius: var(--cn-radius-base);
+  color: var(--cn-text-secondary);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.settings-modal-tabs.is-side > .ant-tabs-nav .ant-tabs-tab:hover {
+  background: var(--cn-bg-subtle);
+  color: var(--cn-text-primary);
+}
+
+.settings-modal-tabs.is-side > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active {
+  background: var(--cn-bg-subtle);
+  box-shadow: inset 2px 0 0 var(--cn-brand-color);
+}
+
+.settings-modal-tabs.is-side > .ant-tabs-nav .ant-tabs-tab.ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--cn-text-primary);
+  font-weight: 600;
+}
+
+.settings-modal-tabs.is-side > .ant-tabs-nav .ant-tabs-tab .anticon {
+  margin-right: var(--cn-space-sm);
+}
+
+/* 左侧列表不需要 antd 的右侧 ink bar（激活态由背景 + 左侧色条表达） */
+.settings-modal-tabs.is-side > .ant-tabs-nav .ant-tabs-ink-bar {
+  display: none;
+}
+
+.settings-modal-tabs.is-side > .ant-tabs-body-holder {
+  border-left: 1px solid var(--cn-border);
+  padding-left: var(--cn-space-xl);
+  min-width: 0;
+}
+
+/* 移动端顶部横排：保持 antd 默认的横向下划线 tab，仅去掉桌面端的左内边距 */
+.settings-modal-tabs.is-top > .ant-tabs-nav .ant-tabs-tab .anticon {
+  margin-right: var(--cn-space-xs);
+}
+
+.settings-modal .ant-tabs-body-holder {
   max-height: min(62vh, 560px);
   overflow-y: auto;
   padding-right: var(--cn-space-sm);
 }
 
-.settings-modal .ant-tabs-content-holder::-webkit-scrollbar {
+.settings-modal .ant-tabs-body-holder::-webkit-scrollbar {
   width: 6px;
 }
 
-.settings-modal .ant-tabs-content-holder::-webkit-scrollbar-track {
+.settings-modal .ant-tabs-body-holder::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.settings-modal .ant-tabs-content-holder::-webkit-scrollbar-thumb {
+.settings-modal .ant-tabs-body-holder::-webkit-scrollbar-thumb {
   background: var(--cn-border);
   border-radius: var(--cn-radius-sm);
 }
 
-.settings-modal .ant-tabs-content-holder::-webkit-scrollbar-thumb:hover {
+.settings-modal .ant-tabs-body-holder::-webkit-scrollbar-thumb:hover {
   background: var(--cn-text-muted);
 }
 
@@ -7373,7 +7423,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   height: 100%;
   border-radius: var(--cn-radius-lg);
 }
-/* 字体族 / 字号由编辑器外观主题下发（个人设置 → 主题 → 编辑器），这里不写死 */
+/* 字体族 / 字号由编辑器外观主题下发（个人设置 → 编辑器），这里不写死 */
 /* 流水线编辑抽屉：顶部动作条 + 编辑器撑满剩余高度，校验回显贴底 */
 .cn-pipeline-drawer-body {
   display: flex;

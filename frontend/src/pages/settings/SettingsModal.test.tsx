@@ -62,25 +62,38 @@ describe('SettingsModal 个人设置', () => {
     useTableSettingsStore.setState({ ...rest, ...DEFAULT_TABLE_SETTINGS })
   })
 
-  it('渲染五个 Tab 与全部主题卡片（10 张），主题页含配色与字体两节', () => {
+  it('渲染六个 Tab 与全部主题卡片（10 张），主题页含配色与字体、编辑器独立成页', () => {
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
     // 页签顺序：修改密码已并入用户资料页签，不再单设「安全」
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
-      '用户资料', '主题', '表格', '文档', '大模型',
+      '用户资料', '主题', '表格', '文档', '编辑器', '大模型',
     ])
+    // GitHub 风格布局：桌面端左侧竖向列表 + 右侧内容区（独立滚动由样式承担）
+    const tabs = document.querySelector('.settings-modal-tabs')
+    expect(tabs?.classList.contains('is-side')).toBe(true)
+    expect(tabs?.querySelector('.ant-tabs-nav')).not.toBeNull()
+    expect(tabs?.querySelector('.ant-tabs-body-holder')).not.toBeNull()
     // 用户资料页签默认激活，修改密码表单（账号安全节）直接可见
     const activeTab = document.querySelector('.ant-tabs-tab.ant-tabs-tab-active')
     expect(activeTab?.textContent).toContain('用户资料')
     expect(screen.getByText('账号安全')).toBeInTheDocument()
+    // 两个表单不再各带按钮，只在底部保留统一的「更新资料」
+    expect(screen.getByRole('button', { name: '更新资料' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /保\s*存/ })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /修改密码/ })).not.toBeInTheDocument()
     // 主题卡片惰性渲染，切到主题 Tab 后才能查到
     fireEvent.click(screen.getByRole('tab', { name: '主题' }))
     const grid = document.querySelector('[data-testid="theme-grid"]')
     expect(grid?.querySelectorAll('[data-theme-card]')).toHaveLength(10)
-    // 首节标题为「配色」（不再叫「主题」），并新增「字体」节（编辑器节另有同名控件标签）
+    // 首节标题为「配色」（不再叫「主题」），并含「字体」节；编辑器配置已拆到独立页签
     expect(screen.getAllByText('配色').length).toBeGreaterThan(0)
     expect(screen.getAllByText('字体').length).toBeGreaterThan(0)
-    expect(screen.getByText('编辑器')).toBeInTheDocument()
+    expect(screen.queryByTestId('editor-theme-select')).not.toBeInTheDocument()
+    // 编辑器页签排在「文档」之后，内部含独立配色 / 字体 / 字号与预览
+    fireEvent.click(screen.getByRole('tab', { name: '编辑器' }))
+    expect(screen.getByTestId('editor-theme-select')).toBeInTheDocument()
+    expect(screen.getByTestId('editor-theme-preview')).toBeInTheDocument()
   })
 
   it('initialTab="table" 打开时直接定位表格页签', () => {
@@ -95,7 +108,7 @@ describe('SettingsModal 个人设置', () => {
     expect(screen.getByText('新增行默认位置')).toBeInTheDocument()
   })
 
-  it('用户资料 Tab：用户名只读，昵称邮箱同行紧凑排布，保存后刷新 auth store', async () => {
+  it('用户资料 Tab：用户名只读，点击底部「更新资料」保存并刷新 auth store（密码留空不改密）', async () => {
     const refreshSpy = vi.spyOn(useAuthStore.getState(), 'refresh').mockResolvedValue(undefined)
     renderProviders(<SettingsModal open onClose={() => { }} />, {
       initialAuth: { user: profileUser, token: 't' },
@@ -115,13 +128,15 @@ describe('SettingsModal 个人设置', () => {
     expect(nicknameInput).toHaveValue('旧昵称')
     fireEvent.change(nicknameInput, { target: { value: '新昵称' } })
     fireEvent.change(screen.getByLabelText('邮箱'), { target: { value: 'me@x.com' } })
-    fireEvent.click(screen.getByRole('button', { name: '保 存' }))
+    fireEvent.click(screen.getByRole('button', { name: '更新资料' }))
 
     const { authApi } = await import('@/api')
     await waitFor(() =>
       expect(authApi.updateProfile).toHaveBeenCalledWith({ nickname: '新昵称', email: 'me@x.com' }),
     )
     await waitFor(() => expect(refreshSpy).toHaveBeenCalled())
+    // 三个密码字段都留空时不应触发改密
+    expect(authApi.changePassword).not.toHaveBeenCalled()
     refreshSpy.mockRestore()
   })
 
@@ -235,9 +250,10 @@ describe('SettingsModal 个人设置', () => {
 
     expect(localStorage.getItem('cndb_theme')).toBe('auto')
     expect(JSON.parse(localStorage.getItem('cndb_font') ?? '{}')).toEqual({ scale: 'standard', bold: false })
+    // 编辑器配置已独立，主题页的「恢复默认」不再连带重置
     expect(JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}')).toEqual({
-      theme: 'auto',
-      font: { family: 'jetbrains', size: 'auto' },
+      theme: 'one-dark',
+      font: { family: 'system', size: 16 },
     })
     expect(screen.getByText('标准')).toBeInTheDocument()
     expect(screen.queryByText('特大')).not.toBeInTheDocument()
@@ -245,10 +261,10 @@ describe('SettingsModal 个人设置', () => {
     expect(screen.getByText(/跟随系统中/)).toBeInTheDocument()
   })
 
-  it('编辑器节：配色 / 字体 / 字号可独立选择并持久化', async () => {
-    renderProviders(<SettingsModal open initialTab="theme" onClose={() => { }} />)
+  it('编辑器 Tab：配色 / 字体 / 字号可独立选择并持久化', async () => {
+    renderProviders(<SettingsModal open initialTab="editor" onClose={() => { }} />)
 
-    expect(screen.getByText('编辑器')).toBeInTheDocument()
+    expect(screen.getByText('编辑器外观')).toBeInTheDocument()
     expect(screen.getByTestId('editor-theme-preview')).toBeInTheDocument()
 
     // 配色：跟随应用 → One Dark
@@ -282,6 +298,13 @@ describe('SettingsModal 个人设置', () => {
     })
     // 预览随配色切换（One Dark 背景）
     expect(screen.getByTestId('editor-theme-preview').style.background).toBe('rgb(40, 44, 52)')
+
+    // 编辑器页签自己的「恢复默认」只重置编辑器外观
+    fireEvent.click(screen.getByRole('button', { name: '恢复默认' }))
+    expect(JSON.parse(localStorage.getItem('cndb_editor_settings') ?? '{}')).toEqual({
+      theme: 'auto',
+      font: { family: 'jetbrains', size: 'auto' },
+    })
   })
 })
 
@@ -372,7 +395,7 @@ describe('SettingsModal 用户资料页签（自助改密）', () => {
     fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'oldpass1' } })
     fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'newpass1' } })
     fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'newpass2' } })
-    fireEvent.click(screen.getByRole('button', { name: /修改密码/ }))
+    fireEvent.click(screen.getByRole('button', { name: '更新资料' }))
 
     expect(await screen.findByText('两次输入的新密码不一致')).toBeInTheDocument()
     const { authApi } = await import('@/api')
@@ -387,7 +410,7 @@ describe('SettingsModal 用户资料页签（自助改密）', () => {
     fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'samepass' } })
     fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'samepass' } })
     fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'samepass' } })
-    fireEvent.click(screen.getByRole('button', { name: /修改密码/ }))
+    fireEvent.click(screen.getByRole('button', { name: '更新资料' }))
 
     expect(await screen.findByText('新密码不能与当前密码相同')).toBeInTheDocument()
     const { authApi } = await import('@/api')
@@ -402,7 +425,7 @@ describe('SettingsModal 用户资料页签（自助改密）', () => {
     fireEvent.change(screen.getByLabelText('当前密码'), { target: { value: 'oldpass1' } })
     fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'newpass1' } })
     fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'newpass1' } })
-    fireEvent.click(screen.getByRole('button', { name: /修改密码/ }))
+    fireEvent.click(screen.getByRole('button', { name: '更新资料' }))
 
     const { authApi } = await import('@/api')
     await waitFor(() =>
@@ -451,5 +474,17 @@ describe('SettingsModal 移动端适配', () => {
     expect(row.style.flexWrap).toBe('wrap')
     expect(screen.getByTestId('density-select')).toBeInTheDocument()
     expect(screen.getByTestId('page-size-select')).toBeInTheDocument()
+  })
+
+  it('窄屏下导航回落为顶部横排，不再挤压内容宽度', () => {
+    responsiveState = {
+      deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+      width: 390, height: 844,
+    }
+    renderProviders(<SettingsModal open onClose={() => { }} />)
+
+    const tabs = document.querySelector('.settings-modal-tabs')
+    expect(tabs?.classList.contains('is-top')).toBe(true)
+    expect(tabs?.classList.contains('is-side')).toBe(false)
   })
 })

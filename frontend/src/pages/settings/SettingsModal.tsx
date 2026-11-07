@@ -1,8 +1,11 @@
 /** 用户设置面板 — 用户资料（含修改密码）+ 主题（配色/字体）+ 表格（显示/操作）+ 大模型（个人连接配置）. */
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App, Divider } from 'antd'
+import {
+  UserOutlined, BgColorsOutlined, TableOutlined, FileTextOutlined, RobotOutlined, CodeOutlined,
+} from '@ant-design/icons'
 import { useTheme } from '@/theme/ThemeProvider'
 import {
   THEME_META, THEME_MODES, FONT_SCALES, FONT_SCALE_META,
@@ -107,48 +110,106 @@ function ThemeCard({ mode, selected, onSelect }: {
   )
 }
 
-/** 用户资料分页内容 — 用户名只读，昵称/邮箱自助更新 */
-function ProfilePanel() {
+/** 取后端错误响应里的 detail（如邮箱已被使用、当前密码错误） */
+function apiDetail(err: unknown): string | undefined {
+  return typeof err === 'object' && err !== null && 'response' in err
+    ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
+    : undefined
+}
+
+type ProfileValues = { username?: string; nickname?: string; email?: string }
+type PasswordValues = { current_password?: string; new_password?: string; confirm_password?: string }
+
+/** 用户资料分页内容 — 基本资料 + 账号安全，由底部「更新资料」统一提交.
+ *
+ * 两个表单不再各带按钮：密码三个字段全空时只更新昵称 / 邮箱；
+ * 填了任一密码字段则随「更新资料」一并校验并修改密码（成功后全部会话失效，强制重新登录）。
+ */
+function ProfilePanel({ onClose }: { onClose: () => void }) {
   const { isMobile } = useResponsive()
   const { message } = App.useApp()
+  const navigate = useNavigate()
   const user = useAuthStore(s => s.user)
   const refresh = useAuthStore(s => s.refresh)
-  const [form] = Form.useForm()
+  const logout = useAuthStore(s => s.logout)
+  const [profileForm] = Form.useForm<ProfileValues>()
+  const [passwordForm] = Form.useForm<PasswordValues>()
+  const [submitting, setSubmitting] = useState(false)
 
   // 每次打开/用户变化时用 store 中最新值重置表单
   useEffect(() => {
     if (user) {
-      form.setFieldsValue({
+      profileForm.setFieldsValue({
         username: user.username,
         nickname: user.nickname ?? '',
         email: user.email ?? '',
       })
     }
-  }, [user, form])
+  }, [user, profileForm])
 
-  const handleSave = async (values: { nickname: string; email: string }) => {
+  const handleUpdate = async () => {
+    let profile: ProfileValues
     try {
-      await authApi.updateProfile({ nickname: values.nickname, email: values.email })
-      await refresh()
-      message.success('用户资料已保存')
-    } catch (err: unknown) {
-      // axios 错误响应里带后端 400 明细（如邮箱已被使用）
-      const detail =
-        typeof err === 'object' && err !== null && 'response' in err
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : undefined
-      message.error(detail ?? '保存失败，请稍后重试')
+      profile = await profileForm.validateFields()
+    } catch {
+      return // 字段校验失败，错误提示已在表单内展示
     }
+
+    // 密码字段全空视为「不改密码」，避免 required 规则拦住只更新资料的场景
+    const rawPassword = passwordForm.getFieldsValue()
+    const wantsPasswordChange = Object.values(rawPassword).some(
+      v => typeof v === 'string' && v.trim() !== '',
+    )
+    let password: PasswordValues | null = null
+    if (wantsPasswordChange) {
+      try {
+        password = await passwordForm.validateFields()
+      } catch {
+        return
+      }
+    }
+
+    setSubmitting(true)
+    try {
+      await authApi.updateProfile({
+        nickname: profile.nickname ?? '',
+        email: profile.email ?? '',
+      })
+      await refresh()
+    } catch (err: unknown) {
+      message.error(apiDetail(err) ?? '保存失败，请稍后重试')
+      setSubmitting(false)
+      return
+    }
+
+    if (!password) {
+      message.success('用户资料已更新')
+      setSubmitting(false)
+      return
+    }
+
+    try {
+      await authApi.changePassword({
+        current_password: password.current_password ?? '',
+        new_password: password.new_password ?? '',
+      })
+    } catch (err: unknown) {
+      message.error(apiDetail(err) ?? '修改失败，请稍后重试')
+      setSubmitting(false)
+      return
+    }
+
+    message.success('用户资料已更新，密码已修改，请用新密码重新登录')
+    onClose()
+    // 服务端已吊销全部会话，本地登出后回到登录页
+    logout()
+    navigate('/login', { replace: true })
   }
 
   return (
     <div style={{ padding: '12px 0' }}>
-      <SectionHeader title="基本资料" description="昵称、邮箱自助更新，保存后即时生效" />
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSave}
-      >
+      <SectionHeader title="基本资料" description="昵称、邮箱自助更新，点击底部「更新资料」即时生效" />
+      <Form form={profileForm} layout="vertical">
         {/* 用户名/昵称/邮箱同行紧凑排布；用户名只读。
             说明文字统一用 Text secondary 12px（与主题/表格页签提示一致），
             不用 Form.Item extra（其默认色为 colorTextDescription，比其他提示浅）。
@@ -185,46 +246,13 @@ function ProfilePanel() {
             <Input placeholder="输入邮箱" allowClear />
           </Form.Item>
         </div>
-        <Button type="primary" htmlType="submit" style={{ marginTop: 16 }}>保存</Button>
       </Form>
-    </div>
-  )
-}
 
-/** 修改密码表单（并入「用户资料」页签下方）— 成功后全部会话失效并强制重新登录 */
-function SecurityPanel({ onClose }: { onClose: () => void }) {
-  const { isMobile } = useResponsive()
-  const { message } = App.useApp()
-  const navigate = useNavigate()
-  const logout = useAuthStore(s => s.logout)
-  const [form] = Form.useForm<{ current_password: string; new_password: string; confirm_password: string }>()
-
-  const handleSubmit = async (values: { current_password: string; new_password: string }) => {
-    try {
-      await authApi.changePassword({
-        current_password: values.current_password,
-        new_password: values.new_password,
-      })
-      message.success('密码已修改，请用新密码重新登录')
-      onClose()
-      // 服务端已吊销全部会话，本地登出后回到登录页
-      logout()
-      navigate('/login', { replace: true })
-    } catch (err: unknown) {
-      const detail =
-        typeof err === 'object' && err !== null && 'response' in err
-          ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-          : undefined
-      message.error(detail ?? '修改失败，请稍后重试')
-    }
-  }
-
-  return (
-    <div style={{ padding: '12px 0' }}>
-      <SectionHeader title="账号安全" description="修改成功后全部会话失效，需用新密码重新登录" />
+      <Divider style={{ margin: '20px 0 4px' }} />
+      <SectionHeader title="账号安全" description="填写后随「更新资料」一并提交；修改成功后全部会话失效，需用新密码重新登录" />
       {/* 桌面端三个密码框并排一行（与上方基本资料单行结构呼应，降低纵向高度）；
           移动端纵向堆叠，避免窄屏输入框被压缩 */}
-      <Form form={form} layout="vertical" onFinish={handleSubmit}>
+      <Form form={passwordForm} layout="vertical">
         <div
           data-testid="password-fields"
           style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: 12 }}
@@ -276,8 +304,17 @@ function SecurityPanel({ onClose }: { onClose: () => void }) {
             <Input.Password placeholder="再次输入新密码" autoComplete="new-password" />
           </Form.Item>
         </div>
-        <Button type="primary" htmlType="submit" style={{ marginTop: 16 }}>修改密码</Button>
       </Form>
+
+      {/* 两个表单共用一个底部动作，不再各自散落「保存」「修改密码」按钮 */}
+      <Button
+        type="primary"
+        loading={submitting}
+        style={{ marginTop: 16 }}
+        onClick={handleUpdate}
+      >
+        更新资料
+      </Button>
     </div>
   )
 }
@@ -328,17 +365,16 @@ function EditorPreview({ theme, family }: {
   )
 }
 
-/** 主题分页内容 — 配色 + 字体 + 编辑器 */
+/** 主题分页内容 — 全站配色 + 字体（编辑器外观已拆到独立页签） */
 function ThemePanel() {
   const { message } = App.useApp()
-  const { mode, pref, setMode, font, setFontScale, setFontBold, editor, updateEditorSettings } = useTheme()
+  const { mode, pref, setMode, font, setFontScale, setFontBold } = useTheme()
 
-  // 恢复默认：复用既有 setter 即时持久化（偏好跟随系统 auto / 字号标准 / 不加粗 / 编辑器跟随应用）
+  // 恢复默认：只重置全站配色与字体（偏好跟随系统 auto / 字号标准 / 不加粗），不动编辑器外观
   const handleReset = () => {
     setMode(DEFAULT_THEME_MODE)
     setFontScale(DEFAULT_FONT_SETTINGS.scale)
     setFontBold(DEFAULT_FONT_SETTINGS.bold)
-    updateEditorSettings(DEFAULT_EDITOR_SETTINGS)
     message.info('已恢复主题设置为默认值')
   }
 
@@ -419,9 +455,27 @@ function ThemePanel() {
         </div>
       </div>
 
-      <Divider style={{ margin: '20px 0 12px' }} />
+      <Button size="small" style={{ marginTop: 20 }} onClick={handleReset}>
+        恢复默认
+      </Button>
+    </div>
+  )
+}
+
+/** 编辑器分页内容 — 结构 DSL 与流水线编辑器独立的配色 / 字体 / 字号，可单独恢复默认 */
+function EditorPanel() {
+  const { message } = App.useApp()
+  const { editor, updateEditorSettings } = useTheme()
+
+  const handleReset = () => {
+    updateEditorSettings(DEFAULT_EDITOR_SETTINGS)
+    message.info('已恢复编辑器设置为默认值')
+  }
+
+  return (
+    <div style={{ padding: '12px 0' }}>
       <div style={{ marginBottom: 12 }}>
-        <Text strong style={{ fontSize: 14 }}>编辑器</Text>
+        <Text strong style={{ fontSize: 14 }}>编辑器外观</Text>
         <Text type="secondary" style={{ marginLeft: 8, fontSize: 12 }}>
           结构 DSL 与流水线编辑器独立配色，避免与页面主题相互迁就
         </Text>
@@ -655,6 +709,8 @@ function DocPanel() {
 }
 
 export default function SettingsModal({ open, onClose, initialTab }: Props) {
+  const { isMobile } = useResponsive()
+
   return (
     <Modal
       title="个人设置"
@@ -667,25 +723,25 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
     >
       <Tabs
         defaultActiveKey={initialTab ?? 'profile'}
+        // GitHub 风格：桌面端左侧竖向列表 + 右侧独立滚动内容区；
+        // 移动端竖排导航会挤占本就有限的宽度，回落为顶部横排（可横向滚动）。
+        tabPlacement={isMobile ? 'top' : 'start'}
+        className={`settings-modal-tabs ${isMobile ? 'is-top' : 'is-side'}`}
         items={[
           // 修改密码表单并入用户资料页签下方，不再单设「安全」页签；两节用 Divider 分隔
           {
             key: 'profile',
-            label: '用户资料',
-            children: (
-              <>
-                <ProfilePanel />
-                <Divider style={{ margin: '4px 0' }} />
-                <SecurityPanel onClose={onClose} />
-              </>
-            ),
+            label: <span><UserOutlined aria-hidden />用户资料</span>,
+            children: <ProfilePanel onClose={onClose} />,
           },
-          { key: 'theme', label: '主题', children: <ThemePanel /> },
-          { key: 'table', label: '表格', children: <TablePanel /> },
+          { key: 'theme', label: <span><BgColorsOutlined aria-hidden />主题</span>, children: <ThemePanel /> },
+          { key: 'table', label: <span><TableOutlined aria-hidden />表格</span>, children: <TablePanel /> },
           // 文档渲染配置：表格/图片对齐与默认宽度，排在「表格」之后
-          { key: 'doc', label: '文档', children: <DocPanel /> },
-          // 大模型入口已在顶栏常驻（桌面图标 / 移动端用户菜单），设置内排在「表格」右侧，避免与高频的资料 / 主题争前排
-          { key: 'llm', label: '大模型', children: <LlmConfigPanel /> },
+          { key: 'doc', label: <span><FileTextOutlined aria-hidden />文档</span>, children: <DocPanel /> },
+          // 编辑器外观独立成页签，排在「文档」之后，避免与全站配色 / 字体相互牵连
+          { key: 'editor', label: <span><CodeOutlined aria-hidden />编辑器</span>, children: <EditorPanel /> },
+          // 大模型入口已在顶栏常驻（桌面图标 / 移动端用户菜单），设置内排在末位，避免与高频的资料 / 主题争前排
+          { key: 'llm', label: <span><RobotOutlined aria-hidden />大模型</span>, children: <LlmConfigPanel /> },
         ]}
       />
     </Modal>

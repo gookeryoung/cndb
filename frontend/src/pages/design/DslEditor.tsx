@@ -149,7 +149,7 @@ export default function DslEditor({
     })
   }, [readOnly])
 
-  // 编辑器配色 / 字体变更（个人设置 → 主题 → 编辑器）即时生效，不重建视图
+  // 编辑器配色 / 字体变更（个人设置 → 编辑器）即时生效，不重建视图
   useEffect(() => {
     viewRef.current?.dispatch({
       effects: appearanceCompartment.reconfigure(
