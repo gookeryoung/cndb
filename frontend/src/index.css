@@ -8821,6 +8821,21 @@ body.cn-doc-focus-view .cn-doc-stats {
   border-top: none;
 }
 
+/* 右栏方盒底部提示：更新口径常驻，替代页级 Alert 占块 */
+.cn-tpl-hint {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--cn-space-sm);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-xs);
+  line-height: 1.5;
+}
+
+.cn-tpl-hint .anticon {
+  margin-top: 2px;
+  color: var(--cn-text-muted);
+}
+
 @media (max-width: 767.98px) {
   /* 双栏在窄屏纵向堆叠（与修改申请列表页一致） */
   .cn-tpl-page .cn-qc-split {

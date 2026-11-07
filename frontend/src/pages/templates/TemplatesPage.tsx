@@ -15,6 +15,7 @@ import {
   AppstoreOutlined, PlusOutlined, EditOutlined, DeleteOutlined, CopyOutlined,
   ApartmentOutlined, FileTextOutlined, TableOutlined, CheckCircleOutlined,
   ClockCircleOutlined, ImportOutlined, ExportOutlined, UnorderedListOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -312,13 +313,6 @@ export default function TemplatesPage() {
         </div>
       </header>
 
-      <Alert
-        type="info"
-        showIcon
-        message="模板更新不会破坏已有数据"
-        description="保存模板时只增量补齐缺失的表 / 字段 / 文档；被移出模板的表、字段、文档一律保留。字段类型切换与删除当前阶段会提示确认。"
-      />
-
       {error ? (
         <Alert type="error" showIcon message="模板加载失败" description={error instanceof Error ? error.message : String(error)} />
       ) : (
@@ -378,6 +372,12 @@ export default function TemplatesPage() {
                 </Popconfirm>
               </Space>
             ) : undefined}
+            footer={(
+              <span className="cn-tpl-hint">
+                <InfoCircleOutlined aria-hidden />
+                模板更新不会破坏已有数据：保存时只增量补齐缺失的表 / 字段 / 文档，被移出模板的对象一律保留；字段类型切换与删除当前阶段会提示确认。
+              </span>
+            )}
             testId="template-detail-box"
           >
             <Spin spinning={isLoading}>
