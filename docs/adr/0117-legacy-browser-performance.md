@@ -144,9 +144,9 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `frontend/scripts/perf-budget.mjs`、`frontend/scripts/chrome81-smoke.mjs` | `.github/workflows/chrome81-smoke.yml` | 工作区未提交 |
-| P1 | 已落地 | `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend/src/compat/capabilities.ts` | `frontend/src/theme/themeMix.test.ts`、`frontend/src/theme/ThemeProvider.test.tsx`、`frontend/src/compat/capabilities.test.ts` | `70d7da02` + 工作区未提交 |
-| P2 | 已落地 | `frontend/src/compat/flexGap.ts`、`frontend/tests/e2e/perf/journeys.spec.ts` | `frontend/src/compat/flexGap.test.ts`、`frontend/tests/e2e/perf/journeys.spec.ts` | 工作区未提交 |
+| P0 | 已落地 | `frontend/scripts/perf-budget.mjs`、`frontend/scripts/chrome81-smoke.mjs` | `.github/workflows/chrome81-smoke.yml` | `6cec1837` |
+| P1 | 已落地 | `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend/src/compat/capabilities.ts` | `frontend/src/theme/themeMix.test.ts`、`frontend/src/theme/ThemeProvider.test.tsx`、`frontend/src/compat/capabilities.test.ts` | `6cec1837` |
+| P2 | 已落地 | `frontend/src/compat/flexGap.ts`、`frontend/tests/e2e/perf/journeys.spec.ts` | `frontend/src/compat/flexGap.test.ts`、`frontend/tests/e2e/perf/journeys.spec.ts` | `6cec1837` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
@@ -169,4 +169,4 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 - 已完成：冒烟性能段（longtask + 首屏 / 主题 / 视图时延，超阈值非 0 退出）；`perf-budget.mjs` 阈值单点；`applyThemeMixVars` 快照读 + 批量写 + 值未变不写；全页过渡能力门控；`capabilities.ts` 收敛能力探测；flex-gap 垫片去重 / 浅扫 / 8ms 切片 / 自写抑制；图表主题核实为实例复用
 - 下一步：CI 首次采集后把读数回填「基线」表；如某项超阈值，先看是 runner 抖动还是真实回退
 - 已知坑：Chromium 81 无 Event Timing / INP，只能用 `PerformanceObserver('longtask')` + `requestAnimationFrame` 手工计时；无头 Chromium 81 无 WebGL，设计预览走降级提示；运行后端测试前需 `unset LD_LIBRARY_PATH`
-- 最近一次全绿：`make flow` + 前端全量单测 + `make check-docs` @ 工作区未提交（2026-11-07）
+- 最近一次全绿：`make flow` + 前端全量单测 + `make check-docs` @ `6cec1837`（2026-11-07）
