@@ -58,6 +58,32 @@ export interface WorkspaceMember {
   user: MemberUserBrief
 }
 
+/** 工作区贡献统计行（需求 0126，按编辑者） */
+export interface WorkspaceContributionItem {
+  user_id: ID
+  username?: string | null
+  nickname?: string | null
+  /** 当前角色；null = 已移出工作区的曾为编辑者 */
+  role?: WorkspaceRole | null
+  is_member: boolean
+  /** 当前不是 owner/editor（含已移出）但存在直接写活动 */
+  is_former_editor: boolean
+  rows_created: number
+  rows_updated: number
+  documents_created: number
+  documents_edited: number
+  designs_created: number
+  designs_edited: number
+  total: number
+  last_active_at?: string | null
+}
+
+/** 工作区贡献统计响应（全部时间，按合计降序） */
+export interface WorkspaceContributions {
+  generated_at: string
+  items: WorkspaceContributionItem[]
+}
+
 /** 归档导入预检：可覆盖恢复的既有工作区（当前用户为 owner） */
 export interface WorkspaceArchiveTarget {
   id: ID; name: string; role: WorkspaceRole

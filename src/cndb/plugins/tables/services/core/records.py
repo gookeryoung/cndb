@@ -377,8 +377,14 @@ def create_row(
     table: DataTable,
     values: dict[str, Any],
     db: Any = None,
+    *,
+    user: Any = None,
 ) -> dict[str, Any] | None:
-    """创建一行，返回完整行数据（含自增 id 和默认值字段）；link 字段同步写关联表."""
+    """创建一行，返回完整行数据（含自增 id 和默认值字段）；link 字段同步写关联表.
+
+    ``user`` 为操作人（需求 0126）：写入 ``tables_auditlog.actor_id`` 供贡献统计归属；
+    批量导入 / 数据同步等无用户上下文时保持 ``None``。
+    """
     sa_table = _get_sa_table(engine, table)
     normalized, link_values = _normalize_values(table, values)
     _apply_auto_increment_defaults(engine, table, values, normalized)
@@ -409,7 +415,14 @@ def create_row(
     row = get_row(engine, table, row_id, db=db)
     if row is not None:
         try:
-            log_action(db, table, ACTION_CREATE, target_id=row_id, detail=row)
+            log_action(
+                db,
+                table,
+                ACTION_CREATE,
+                target_id=row_id,
+                actor_id=getattr(user, "id", None),
+                detail=row,
+            )
         except Exception as exc:
             logger.debug("audit create_row 失败: %s", exc)
     return row
@@ -788,7 +801,14 @@ def update_row(
     row = get_row(engine, table, row_id, db=db, user=read_user)
     if row is not None:
         try:
-            log_action(db, table, ACTION_UPDATE, target_id=row_id, detail=row)
+            log_action(
+                db,
+                table,
+                ACTION_UPDATE,
+                target_id=row_id,
+                actor_id=getattr(user, "id", None),
+                detail=row,
+            )
         except Exception as exc:
             logger.debug("audit update_row 失败: %s", exc)
     return row

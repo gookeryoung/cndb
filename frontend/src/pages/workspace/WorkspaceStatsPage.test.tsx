@@ -25,6 +25,45 @@ function setupWorkspaceDetailHandler(overrides: Record<string, unknown> = {}) {
   )
 }
 
+const CONTRIBUTION_ITEMS = [
+  {
+    user_id: 1, username: 'alice', nickname: 'Alice', role: 'owner',
+    is_member: true, is_former_editor: false,
+    rows_created: 5, rows_updated: 2, documents_created: 1, documents_edited: 3,
+    designs_created: 0, designs_edited: 0, total: 11,
+    last_active_at: '2026-01-05T10:00:00',
+  },
+  {
+    user_id: 2, username: 'bob', nickname: 'Bob', role: 'viewer',
+    is_member: true, is_former_editor: true,
+    rows_created: 0, rows_updated: 2, documents_created: 1, documents_edited: 0,
+    designs_created: 1, designs_edited: 0, total: 4,
+    last_active_at: '2026-01-04T09:00:00',
+  },
+  {
+    user_id: 3, username: 'carol', nickname: 'Carol', role: null,
+    is_member: false, is_former_editor: true,
+    rows_created: 0, rows_updated: 0, documents_created: 0, documents_edited: 0,
+    designs_created: 1, designs_edited: 1, total: 2,
+    last_active_at: '2026-01-03T09:00:00',
+  },
+]
+
+function setupContributionHandler(
+  items = CONTRIBUTION_ITEMS,
+  status = 200,
+) {
+  server.use(
+    http.get('/api/v1/workspaces/:wid/stats/contributions', () => {
+      if (status !== 200) return HttpResponse.json({ detail: 'boom' }, { status })
+      return HttpResponse.json({
+        generated_at: '2026-11-08T12:00:00',
+        items,
+      })
+    }),
+  )
+}
+
 function renderPage(initialPath = '/w/10/stats') {
   return renderProviders(
     <Routes>
@@ -83,13 +122,56 @@ describe('WorkspaceStatsPage 工作区统计页', () => {
     expect(stats.queryByText('设计')).not.toBeInTheDocument()
   })
 
-  it('?section=contribution 只渲染贡献统计占位空态，不渲染概览网格', async () => {
+  it('?section=contribution 按编辑者展示贡献，含曾为编辑者与已移出成员', async () => {
     setupWorkspaceDetailHandler()
+    setupContributionHandler()
     renderPage('/w/10/stats?section=contribution')
 
     expect(screen.getByTestId('ws-stats-contribution')).toBeInTheDocument()
-    expect(screen.getByText('暂无贡献数据')).toBeInTheDocument()
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
+    expect(screen.getByText('Bob')).toBeInTheDocument()
+    expect(screen.getByText('Carol')).toBeInTheDocument()
+    // 当前角色 / 曾为编辑者 / 已移出
+    expect(screen.getByText('所有者')).toBeInTheDocument()
+    expect(screen.getByText('查看者')).toBeInTheDocument()
+    expect(screen.getByText('已移出')).toBeInTheDocument()
+    expect(screen.getAllByText('曾为编辑者')).toHaveLength(2)
+    // 计数与合计（数字使用 toLocaleString）
+    expect(screen.getByText('合计')).toBeInTheDocument()
+    expect(screen.getByText('11')).toBeInTheDocument()
+    expect(screen.getByText('4')).toBeInTheDocument()
+    expect(screen.getAllByText('2').length).toBeGreaterThan(0)
+    // 历史行归属提示
+    expect(screen.getByText(/数据行贡献自本版本起统计/)).toBeInTheDocument()
     expect(screen.queryByTestId('ws-stats-grid')).not.toBeInTheDocument()
+  })
+
+  it('贡献统计按启用模块隐藏数据行 / 文档 / 设计列', async () => {
+    setupWorkspaceDetailHandler({ modules: ['tables'] })
+    setupContributionHandler()
+    renderPage('/w/10/stats?section=contribution')
+
+    await screen.findByText('Alice')
+    expect(screen.getByText('数据行新建')).toBeInTheDocument()
+    expect(screen.queryByText('文档新建')).not.toBeInTheDocument()
+    expect(screen.queryByText('设计新建')).not.toBeInTheDocument()
+    expect(screen.queryByText('文档保存')).not.toBeInTheDocument()
+  })
+
+  it('贡献统计空数据显示空态', async () => {
+    setupWorkspaceDetailHandler()
+    setupContributionHandler([])
+    renderPage('/w/10/stats?section=contribution')
+
+    expect(await screen.findByText('暂无贡献数据')).toBeInTheDocument()
+  })
+
+  it('贡献统计接口失败显示错误提示', async () => {
+    setupWorkspaceDetailHandler()
+    setupContributionHandler(CONTRIBUTION_ITEMS, 500)
+    renderPage('/w/10/stats?section=contribution')
+
+    expect(await screen.findByText('贡献统计加载失败')).toBeInTheDocument()
   })
 
   it('未知 section 回落概览分项', async () => {

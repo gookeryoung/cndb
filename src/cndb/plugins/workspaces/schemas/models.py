@@ -111,6 +111,37 @@ class WorkspaceDetailResponse(WorkspaceResponse):
     current_user_role: WorkspaceRole | None = None
 
 
+# ── 贡献统计 schemas（需求 0126） ──────────────────────
+
+
+class WorkspaceContributionItem(BaseModel):
+    """单个用户的贡献统计行."""
+
+    user_id: int
+    username: str | None = None
+    nickname: str | None = None
+    # 当前工作区角色；None = 已移出工作区的曾为编辑者
+    role: WorkspaceRole | None = None
+    is_member: bool = False
+    # 当前不是 owner / editor（含已移出）但存在直接写活动
+    is_former_editor: bool = False
+    rows_created: int = 0
+    rows_updated: int = 0
+    documents_created: int = 0
+    documents_edited: int = 0
+    designs_created: int = 0
+    designs_edited: int = 0
+    total: int = 0
+    last_active_at: datetime | None = None
+
+
+class WorkspaceContributionsResponse(BaseModel):
+    """工作区贡献统计响应（全部时间，按合计降序）."""
+
+    generated_at: datetime
+    items: list[WorkspaceContributionItem] = []
+
+
 # ── 成员 schemas ──────────────────────────────────────
 
 

@@ -31,6 +31,7 @@ from cndb.plugins.workspaces.schemas import (
     PinToggleResponse,
     WorkspaceArchiveInspectResponse,
     WorkspaceArchiveTarget,
+    WorkspaceContributionsResponse,
     WorkspaceCreate,
     WorkspaceCreateFromBackup,
     WorkspaceCreateFromBackupResponse,
@@ -262,6 +263,24 @@ def get_workspace(
         }
     )
     return WorkspaceDetailResponse.model_validate(d)
+
+
+@router.get(
+    "/{workspace_id}/stats/contributions",
+    response_model=WorkspaceContributionsResponse,
+    summary="工作区贡献统计（按编辑者）",
+)
+def get_workspace_contributions(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkspaceContributionsResponse:
+    """按工作区编辑者聚合贡献（需求 0126，成员可读，全部时间）."""
+    from cndb.plugins.workspaces.services.contributions import compute_workspace_contributions
+
+    ws = _get_workspace_or_404(workspace_id, db)
+    _require_member(ws, current_user, db)
+    return WorkspaceContributionsResponse.model_validate(compute_workspace_contributions(db, workspace_id))
 
 
 @router.patch("/{workspace_id}", response_model=WorkspaceResponse)

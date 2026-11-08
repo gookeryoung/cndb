@@ -278,7 +278,7 @@ def create_record(
         return _cr_response(db, dt, current_user, op=CHANGE_OP_CREATE, row_id=None, values=payload.values)
 
     try:
-        row = create_row(db.get_bind(), dt, payload.values, db=db)
+        row = create_row(db.get_bind(), dt, payload.values, db=db, user=current_user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:

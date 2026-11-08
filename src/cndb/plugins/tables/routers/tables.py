@@ -657,7 +657,7 @@ def copy_table(
                     if src_f.name in dst_field_by_name:
                         values[src_f.name] = r[src_f.name]
                 if values:
-                    rec.create_row(db.get_bind(), dst, values, db=db)
+                    rec.create_row(db.get_bind(), dst, values, db=db, user=current_user)
 
     return dst
 
