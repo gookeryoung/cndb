@@ -28,6 +28,9 @@
 | C10 | 「类似 GITHUB 的图表曲线」（形态） | 贡献统计新增两段图表：① **GitHub 主页式日历热力图**：近 12 个月按天着色（0–4 五档），行 = 星期、列 = 周，单元格悬停显示「日期：N 次贡献」；② **按月折线趋势**：按自然月汇总所选范围贡献总量，平滑折线 + 面积。图表与成员贡献表同页展示。 | `frontend/src/pages/workspace/` | 前端单测：日历 / 趋势容器与按天着色数据渲染 |
 | C11 | 「图表曲线表示数据」（维度 / 时间） | 趋势默认「工作区总量」，可切换单个成员；日历与趋势共用同一时间窗口 **近 12 个月（含今天共 365 天）**，不提供其他时间范围控件。 | 聚合服务、前端图表组件 | 单测：窗口外活动只进累计值、不进时序 |
 | C12 | （接口） | `GET /api/v1/workspaces/{wid}/stats/contributions` 响应新增 `timeline_start` / `timeline_end`（日期）与 `daily`（仅窗口内、计数非零的 `{date, user_id, count}`），累计字段仍为全部时间；不新增接口、不引入缓存。 | `workspaces/services/contributions.py`、`schemas/` | 接口层：时序字段、同日合并、窗口过滤 |
+| C13 | 「布局显得很空」（摘要 / 分栏） | 贡献统计页顶部新增 KPI 摘要条（近 12 个月贡献、活跃成员 / 成员总数、日均贡献、连续贡献天数、最活跃成员）；宽屏 **≥1280px 两栏**（左侧贡献概览卡 2.2fr，右侧洞察 1fr），窄屏单列；原日历与按月趋势合并为同一张「贡献概览」卡（共用成员切换）。 | `frontend/src/pages/workspace/{WorkspaceStatsPage,ContributionCharts,ContributionInsights}.tsx`、`frontend/src/index.css` | 前端单测：KPI / 两栏容器 / 概览卡渲染 |
+| C14 | 「增加功能」（构成 / 排行 / 明细） | 纯前端补充三项，不新增接口：① **活动构成卡**：六类直接写活动的全部时间累计横向堆叠条 + 图例，按启用模块隐藏类别；② **成员贡献排行卡**：按累计贡献取 Top 5（前三名序号高亮），榜首归一化条宽 + 占比；③ **成员明细增强**：头像、占比条、数值 / 最近活动排序、姓名搜索与角色 / 曾为编辑者 / 已移出筛选、相对时间 + 精确时间 tooltip。 | 同上 | 前端单测：构成 / 排行 / 筛选与排序入口 |
+| C15 | （空态 / 时间 / 响应式） | 无贡献数据时展示「暂无贡献数据」空态并说明贡献产生方式；页头展示接口 `generated_at` 的「更新于」时间；KPI / 两块洞察 / 明细表在窄屏回落单列，明细表横向滚动。 | 同上 | 前端单测：空态说明与 KPI 不渲染；窄屏单列由 CSS 断点保证 |
 
 约束编号在实现中原样引用；不重编号、不合并。
 
@@ -111,5 +114,6 @@ GET /api/v1/workspaces/{wid}/stats/contributions
 
 - C1-C9 已实现：`workspaces/services/contributions.py`（新增）、`GET /workspaces/{wid}/stats/contributions`、数据行审计 `actor_id` 透传、前端贡献表与模块列隐藏。
 - C10-C12 已实现：贡献统计页新增 GitHub 风格日历热力图与按月折线趋势（`frontend/src/pages/workspace/ContributionCharts.tsx`），趋势默认工作区总量、可切换单个成员；接口新增 `timeline_start` / `timeline_end` / `daily`（近 365 天、仅非零日），累计值仍为全部时间。
-- 测试：`tests/test_workspace_contributions.py` 7 例（含同日合并与窗口外过滤）、`WorkspaceStatsPage.test.tsx` 8 例；`make check-fast` 绿。
+- C13-C15 已实现（布局优化）：新增 `ContributionInsights.tsx` 承载 KPI 摘要条、活动构成卡、成员贡献排行卡；日历与趋势合并为「贡献概览」卡；宽屏 ≥1280px 两栏（2.2fr / 1fr）、窄屏单列；成员明细表补充头像、占比条、排序、姓名搜索与角色筛选、相对时间 tooltip；空态展示「暂无贡献数据」与贡献产生说明，页头展示 `generated_at` 的「更新于」时间。全部为前端聚合，无接口与后端改动。
+- 测试：`tests/test_workspace_contributions.py` 7 例（含同日合并与窗口外过滤）、`WorkspaceStatsPage.test.tsx` 8 例（含 KPI / 构成 / 排行 / 空态说明断言）；`make check-fast` 绿。
 - 边界：历史数据行无 `actor_id` 不计入；成员角色变更史未新增，曾为编辑者按历史活动推断；按天时序只覆盖近 12 个月，更早活动只体现在累计值。

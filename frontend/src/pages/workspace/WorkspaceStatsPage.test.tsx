@@ -151,22 +151,9 @@ describe('WorkspaceStatsPage 工作区统计页', () => {
     renderPage('/w/10/stats?section=contribution')
 
     expect(screen.getByTestId('ws-stats-contribution')).toBeInTheDocument()
-    expect(await screen.findByText('Alice')).toBeInTheDocument()
-    expect(screen.getByText('Bob')).toBeInTheDocument()
-    expect(screen.getByText('Carol')).toBeInTheDocument()
-    // 当前角色 / 曾为编辑者 / 已移出
-    expect(screen.getByText('所有者')).toBeInTheDocument()
-    expect(screen.getByText('查看者')).toBeInTheDocument()
-    expect(screen.getByText('已移出')).toBeInTheDocument()
-    expect(screen.getAllByText('曾为编辑者')).toHaveLength(2)
-    // 计数与合计（数字使用 toLocaleString）
-    expect(screen.getByText('合计')).toBeInTheDocument()
-    expect(screen.getByText('11')).toBeInTheDocument()
-    expect(screen.getByText('4')).toBeInTheDocument()
-    expect(screen.getAllByText('2').length).toBeGreaterThan(0)
-    // 历史行归属提示
-    expect(screen.getByText(/数据行贡献自本版本起统计/)).toBeInTheDocument()
-    expect(screen.queryByTestId('ws-stats-grid')).not.toBeInTheDocument()
+    expect((await screen.findAllByText('Alice')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Bob').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Carol').length).toBeGreaterThan(0)
     // 图表：GitHub 风格日历 + 可按成员切换的按月趋势
     expect(screen.getByTestId('ws-contribution-calendar')).toBeInTheDocument()
     expect(screen.getByTestId('ws-contribution-trend')).toBeInTheDocument()
@@ -174,6 +161,32 @@ describe('WorkspaceStatsPage 工作区统计页', () => {
     expect(screen.getByLabelText('2026-01-01 共 5 次贡献')).toBeInTheDocument()
     expect(echartsMock.init).toHaveBeenCalled()
     expect(echartsMock.setOption).toHaveBeenCalled()
+
+    // KPI 摘要条：近 12 个月总量（5 + 1 + 2）、活跃成员、最活跃成员
+    const kpis = within(screen.getByTestId('ws-contribution-kpis'))
+    expect(kpis.getByText('近 12 个月贡献')).toBeInTheDocument()
+    expect(kpis.getByText('8')).toBeInTheDocument()
+    expect(kpis.getByText('活跃成员')).toBeInTheDocument()
+    expect(kpis.getByText('最活跃成员')).toBeInTheDocument()
+
+    // 右侧洞察：活动构成与成员排行
+    expect(screen.getByTestId('ws-contribution-breakdown')).toBeInTheDocument()
+    expect(screen.getByTestId('ws-contribution-ranking')).toBeInTheDocument()
+
+    // 成员贡献明细：角色 / 曾为编辑者 / 已移出与计数
+    const table = within(screen.getByTestId('ws-stats-contribution-table'))
+    expect(table.getByText('合计')).toBeInTheDocument()
+    expect(table.getByText('占比')).toBeInTheDocument()
+    expect(table.getByText('所有者')).toBeInTheDocument()
+    expect(table.getByText('查看者')).toBeInTheDocument()
+    expect(table.getByText('已移出')).toBeInTheDocument()
+    expect(table.getAllByText('曾为编辑者')).toHaveLength(2)
+    expect(table.getByText('11')).toBeInTheDocument()
+    expect(table.getByText('4')).toBeInTheDocument()
+    expect(table.getAllByText('2').length).toBeGreaterThan(0)
+    // 历史行归属提示
+    expect(screen.getByText(/数据行贡献自本版本起统计/)).toBeInTheDocument()
+    expect(screen.queryByTestId('ws-stats-grid')).not.toBeInTheDocument()
   })
 
   it('贡献统计按启用模块隐藏数据行 / 文档 / 设计列', async () => {
@@ -181,19 +194,27 @@ describe('WorkspaceStatsPage 工作区统计页', () => {
     setupContributionHandler()
     renderPage('/w/10/stats?section=contribution')
 
-    await screen.findByText('Alice')
-    expect(screen.getByText('数据行新建')).toBeInTheDocument()
-    expect(screen.queryByText('文档新建')).not.toBeInTheDocument()
-    expect(screen.queryByText('设计新建')).not.toBeInTheDocument()
-    expect(screen.queryByText('文档保存')).not.toBeInTheDocument()
+    await screen.findAllByText('Alice')
+    const table = within(screen.getByTestId('ws-stats-contribution-table'))
+    expect(table.getByText('数据行新建')).toBeInTheDocument()
+    expect(table.queryByText('文档新建')).not.toBeInTheDocument()
+    expect(table.queryByText('设计新建')).not.toBeInTheDocument()
+    expect(table.queryByText('文档保存')).not.toBeInTheDocument()
+    // 活动构成只展示已启用模块的类别
+    const breakdown = within(screen.getByTestId('ws-contribution-breakdown'))
+    expect(breakdown.getByText('数据行新建')).toBeInTheDocument()
+    expect(breakdown.queryByText('文档新建')).not.toBeInTheDocument()
   })
 
-  it('贡献统计空数据显示空态', async () => {
+  it('贡献统计空数据显示空态与贡献说明', async () => {
     setupWorkspaceDetailHandler()
     setupContributionHandler([])
     renderPage('/w/10/stats?section=contribution')
 
-    expect(await screen.findByText('暂无贡献数据')).toBeInTheDocument()
+    expect(await screen.findByTestId('ws-contribution-empty')).toBeInTheDocument()
+    expect(screen.getByText('暂无贡献数据')).toBeInTheDocument()
+    expect(screen.getByText(/这里会自动生成贡献趋势/)).toBeInTheDocument()
+    expect(screen.queryByTestId('ws-contribution-kpis')).not.toBeInTheDocument()
   })
 
   it('贡献统计接口失败显示错误提示', async () => {

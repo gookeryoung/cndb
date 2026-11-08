@@ -1,7 +1,8 @@
-/** 贡献统计图表 —— GitHub 风格日历热力图 + 按月折线趋势（需求 0126）.
+/** 贡献统计「贡献概览」卡 —— GitHub 风格日历热力图 + 按月折线趋势（需求 0126）.
  *
- * - 日历：近 12 个月按天着色，行 = 星期，列 = 周；单元格用原生 title 提示，避免数百个 Tooltip 组件。
  * - 趋势：默认工作区总量，可切换单个成员；按自然月汇总 `daily`，ECharts 平滑折线 + 面积。
+ * - 日历：近 12 个月按天着色，行 = 星期，列 = 周；单元格用原生 title 提示，避免数百个 Tooltip 组件。
+ * - 趋势与日历共用页头右侧的成员切换，合并为一张卡减少页面割裂。
  * - 数据为空时仍渲染日历骨架（GitHub 同形）与空态趋势说明。
  */
 
@@ -14,6 +15,7 @@ import { SVGRenderer } from 'echarts/renderers'
 import type { EChartsCoreOption, EChartsType } from 'echarts/core'
 import type { WorkspaceContributionItem, WorkspaceContributions } from '@/api'
 import { useTheme } from '@/theme/ThemeProvider'
+import { memberName } from './ContributionInsights'
 
 echarts.use([LineChart, GridComponent, TooltipComponent, SVGRenderer])
 
@@ -125,10 +127,6 @@ function readCssVar(name: string, fallback: string): string {
   return value || fallback
 }
 
-function memberName(item: WorkspaceContributionItem): string {
-  return item.nickname?.trim() || item.username?.trim() || `用户 ${item.user_id}`
-}
-
 function TrendChart({ labels, values }: { labels: string[]; values: number[] }) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<EChartsType | null>(null)
@@ -185,7 +183,7 @@ function TrendChart({ labels, values }: { labels: string[]; values: number[] }) 
     chartRef.current?.setOption(option, true)
   }, [option])
 
-  return <div ref={containerRef} data-testid="ws-contribution-trend-chart" style={{ height: 220 }} />
+  return <div ref={containerRef} data-testid="ws-contribution-trend-chart" style={{ height: 240 }} />
 }
 
 export default function ContributionCharts({
@@ -230,9 +228,42 @@ export default function ContributionCharts({
   const hasActivity = calendarCounts.size > 0
 
   return (
-    <div className="cn-contrib-charts">
-      <section className="cn-ws-stats-section" data-testid="ws-contribution-calendar">
-        <div className="cn-ws-stats-section-title">近 12 个月贡献日历</div>
+    <section className="cn-contrib-card cn-contrib-overview" data-testid="ws-contribution-calendar">
+      <div className="cn-contrib-card-head">
+        <div>
+          <div className="cn-ws-stats-section-title">贡献概览</div>
+          <div className="cn-contrib-card-hint">近 12 个月按天汇总，趋势按自然月聚合</div>
+        </div>
+        <Select
+          data-testid="ws-contribution-trend-scope"
+          size="small"
+          value={scope}
+          onChange={setScope}
+          style={{ width: 180 }}
+          options={[
+            { value: ALL_USERS, label: '工作区总量' },
+            ...items.map(item => ({ value: String(item.user_id), label: memberName(item) })),
+          ]}
+        />
+      </div>
+
+      <div data-testid="ws-contribution-trend">
+        {hasActivity ? (
+          <TrendChart labels={monthly.labels} values={monthly.values} />
+        ) : (
+          <div className="cn-contrib-sparse">
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="所选范围暂无贡献数据" />
+            <div className="cn-contrib-sparse-hint">
+              成员在工作区创建或保存内容后，这里会按天记录趋势与热力分布。
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="cn-contrib-divider" />
+
+      <div className="cn-contrib-calendar-block">
+        <div className="cn-contrib-calendar-title">贡献日历</div>
         {calendar.weeks.length === 0 ? (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无贡献数据" />
         ) : (
@@ -276,29 +307,7 @@ export default function ContributionCharts({
             </div>
           </>
         )}
-      </section>
-
-      <section className="cn-ws-stats-section" data-testid="ws-contribution-trend">
-        <div className="cn-contrib-trend-head">
-          <div className="cn-ws-stats-section-title">贡献趋势（按月）</div>
-          <Select
-            data-testid="ws-contribution-trend-scope"
-            size="small"
-            value={scope}
-            onChange={setScope}
-            style={{ width: 180 }}
-            options={[
-              { value: ALL_USERS, label: '工作区总量' },
-              ...items.map(item => ({ value: String(item.user_id), label: memberName(item) })),
-            ]}
-          />
-        </div>
-        {hasActivity ? (
-          <TrendChart labels={monthly.labels} values={monthly.values} />
-        ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="所选范围暂无贡献数据" />
-        )}
-      </section>
-    </div>
+      </div>
+    </section>
   )
 }
