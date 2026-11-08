@@ -129,6 +129,10 @@ const parser: StreamParser<DslTokenState> = {
   },
   languageData: {
     commentTokens: { line: '//', block: { open: '/*', close: '*/' } },
+    // 只配对括号，不自动补引号，避免干扰 use 字符串补全（0127 C4）
+    closeBrackets: { brackets: ['(', '[', '{'] },
+    // 输入 / 粘贴出独占一行的 `}` 时按缩进服务自动回退（0127 C4）
+    indentOnInput: /^\s*\}$/,
   },
 }
 

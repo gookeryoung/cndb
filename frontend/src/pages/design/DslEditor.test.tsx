@@ -2,14 +2,16 @@
 
 import { describe, expect, it } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { EditorState } from '@codemirror/state'
 import { EditorView } from '@codemirror/view'
+import { getIndentUnit } from '@codemirror/language'
 import { completionStatus, startCompletion } from '@codemirror/autocomplete'
 import { ThemeProvider, useTheme } from '@/theme/ThemeProvider'
 import DslEditor from './DslEditor'
 
-function mount(readOnly: boolean) {
+function mount(readOnly: boolean, value = 'bo') {
   const { container } = render(
-    <DslEditor value="bo" onChange={() => {}} diagnostics={[]} readOnly={readOnly} />,
+    <DslEditor value={value} onChange={() => {}} diagnostics={[]} readOnly={readOnly} />,
   )
   const view = EditorView.findFromDOM(container.querySelector('.cm-editor') as HTMLElement)
   if (!view) throw new Error('编辑器视图未挂载')
@@ -27,6 +29,21 @@ describe('DslEditor 补全扩展', () => {
     const view = mount(true)
     act(() => { startCompletion(view) })
     expect(completionStatus(view.state)).toBeNull()
+  })
+})
+
+describe('DslEditor 编辑体验（0127）', () => {
+  it('编辑态显示空白标记，只读态不显示', () => {
+    const editable = mount(false, 'param w = 1')
+    expect(editable.contentDOM.querySelector('.cm-highlightSpace')).not.toBeNull()
+    const readonly = mount(true, 'param w = 1')
+    expect(readonly.contentDOM.querySelector('.cm-highlightSpace')).toBeNull()
+  })
+
+  it('固定 2 空格缩进单位与 tabSize', () => {
+    const view = mount(false)
+    expect(getIndentUnit(view.state)).toBe(2)
+    expect(view.state.facet(EditorState.tabSize)).toBe(2)
   })
 })
 

@@ -10,18 +10,21 @@ import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/s
 import {
   Decoration,
   EditorView,
+  highlightWhitespace,
   keymap,
   lineNumbers,
   placeholder as cmPlaceholder,
   type DecorationSet,
 } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
-import { autocompletion } from '@codemirror/autocomplete'
+import { autocompletion, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
+import { bracketMatching, indentOnInput, indentService, indentUnit } from '@codemirror/language'
 import type { DesignDiagnostic } from '@/api'
 import { useEditorAppearance } from '@/theme/ThemeProvider'
 import { editorAppearanceExtensions } from '@/theme/editorAppearance'
 import { cnDslLanguage } from './designLang'
 import { dslCompletionSource, type DslLibraryOption, type DslPartOption } from './designCompletion'
+import { DSL_INDENT_UNIT, dslIndentService, insertDslNewline } from './designIndent'
 
 /** 诊断更新效果（编辑器外部把编译结果推进来） */
 export const setDiagnostics = StateEffect.define<DesignDiagnostic[]>()
@@ -50,6 +53,8 @@ const diagnosticsField = StateField.define<DecorationSet>({
 const editableCompartment = new Compartment()
 /** 自动完成仓：只读 viewer 不挂补全扩展（C5） */
 const completionCompartment = new Compartment()
+/** 空白显示仓：仅编辑态常显（0127 C2） */
+const whitespaceCompartment = new Compartment()
 /** 外观仓：跟随个人设置里的编辑器主题 / 字体实时重配 */
 const appearanceCompartment = new Compartment()
 
@@ -103,7 +108,22 @@ export default function DslEditor({
         extensions: [
           lineNumbers(),
           history(),
-          keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+          keymap.of([
+            { key: 'Enter', run: insertDslNewline },
+            ...closeBracketsKeymap,
+            ...defaultKeymap,
+            ...historyKeymap,
+            indentWithTab,
+          ]),
+          // 花括号 / 圆括号 / 方括号配对，不自动补引号（0127 C4）
+          closeBrackets(),
+          bracketMatching(),
+          // 固定 2 空格，Tab / 自动缩进都只写空格（0127 C3）
+          indentUnit.of(DSL_INDENT_UNIT),
+          EditorState.tabSize.of(DSL_INDENT_UNIT.length),
+          indentService.of(dslIndentService),
+          indentOnInput(),
+          whitespaceCompartment.of(readOnly ? [] : highlightWhitespace()),
           cnDslLanguage,
           appearanceCompartment.of(
             editorAppearanceExtensions(editor.theme, isDark, editor.font),
@@ -145,6 +165,8 @@ export default function DslEditor({
         completionCompartment.reconfigure(
           readOnly ? [] : makeCompletionExtension(fetchPartsRef.current, fetchLibraryRef.current),
         ),
+        // 空白显示仅编辑态常显（0127 C2）
+        whitespaceCompartment.reconfigure(readOnly ? [] : highlightWhitespace()),
       ],
     })
   }, [readOnly])

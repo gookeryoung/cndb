@@ -16,6 +16,7 @@ import {
   CONSTRAINT_TYPES,
   CONSTANTS,
   FUNCTIONS,
+  PRIMITIVES,
   STATEMENT_KEYWORDS,
   TRANSFORMS,
 } from './designLang'
@@ -93,8 +94,8 @@ export const DSL_KEYWORDS: string[] = [
 /** 片段模板（C4）：`$` 槽位由 CodeMirror `snippet()` 展开，Tab 跳转 */
 export const DSL_SNIPPET_TEMPLATES: Record<string, string> = {
   param: 'param ${name} = ${1:1}',
-  module: 'module ${name}(${1:a}) {\n\t${2:box(size = [10, 10, 10])}\n}',
-  system: 'system ${name} {\n\t${1:box(size = [10, 10, 10])}\n}',
+  module: 'module ${name}(${1:a}) {\n  ${2:box(size = [10, 10, 10])}\n}',
+  system: 'system ${name} {\n  ${1:box(size = [10, 10, 10])}\n}',
   use: 'use "${1:file_key}"(${2}) as ${3:label}',
   constraint: 'constraint ${1:c1} ${2:fixed}(a = ${3:label.origin})',
   box: 'box(size = [${1:10}, ${2:10}, ${3:10}])',
@@ -103,9 +104,9 @@ export const DSL_SNIPPET_TEMPLATES: Record<string, string> = {
   cone: 'cone(d1 = ${1:10}, d2 = ${2:5}, h = ${3:10})',
   torus: 'torus(r = ${1:10}, tube = ${2:2})',
   tube: 'tube(od = ${1:10}, id = ${2:6}, h = ${3:10})',
-  union: 'union {\n\t${1:box(size = [10, 10, 10])}\n\t${2:cyl(d = 6, h = 10)}\n}',
-  difference: 'difference {\n\t${1:box(size = [10, 10, 10])}\n\t${2:cyl(d = 6, h = 10)}\n}',
-  intersection: 'intersection {\n\t${1:box(size = [10, 10, 10])}\n\t${2:sphere(r = 4)}\n}',
+  union: 'union {\n  ${1:box(size = [10, 10, 10])}\n  ${2:cyl(d = 6, h = 10)}\n}',
+  difference: 'difference {\n  ${1:box(size = [10, 10, 10])}\n  ${2:cyl(d = 6, h = 10)}\n}',
+  intersection: 'intersection {\n  ${1:box(size = [10, 10, 10])}\n  ${2:sphere(r = 4)}\n}',
   translate: 'translate([${1:0}, ${2:0}, ${3:0}]) ${4:box(size = [10, 10, 10])}',
   rotate: 'rotate([${1:0}, ${2:0}, ${3:0}]) ${4:box(size = [10, 10, 10])}',
   scale: 'scale([${1:1}, ${2:1}, ${3:1}]) ${4:box(size = [10, 10, 10])}',
@@ -174,6 +175,14 @@ export function stripCommentsAndStrings(doc: string): string {
   return out.join('')
 }
 
+/** 解析形参表（`d` / `d = 10` 混合；忽略非法名字） */
+function splitParams(raw: string): string[] {
+  return raw
+    .split(',')
+    .map(item => item.trim().split('=')[0]!.trim())
+    .filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
+}
+
 /** 从当前文档提取可补全符号（C2）：param 名 / module 名与形参 / use as 标签 */
 export function extractSymbols(doc: string): DslSymbols {
   const params = new Set<string>()
@@ -183,13 +192,7 @@ export function extractSymbols(doc: string): DslSymbols {
     const paramMatch = /^\s*param\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(line)
     if (paramMatch?.[1]) params.add(paramMatch[1])
     const moduleMatch = /^\s*module\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)/.exec(line)
-    if (moduleMatch?.[1]) {
-      const names = moduleMatch[2]!
-        .split(',')
-        .map(item => item.trim().split('=')[0]!.trim())
-        .filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name))
-      modules.set(moduleMatch[1], names)
-    }
+    if (moduleMatch?.[1]) modules.set(moduleMatch[1], splitParams(moduleMatch[2]!))
     const labelMatch = /\buse\b[^\n]*?\bas\s+([A-Za-z_][A-Za-z0-9_]*)/.exec(line)
     if (labelMatch?.[1]) labels.add(labelMatch[1])
   }
@@ -198,6 +201,38 @@ export function extractSymbols(doc: string): DslSymbols {
     modules: [...modules].map(([name, names]) => ({ name, params: names })),
     labels: [...labels],
   }
+}
+
+/** 从 `{` 起找匹配的 `}`（已剥离字符串 / 注释） */
+function matchBrace(strippedDoc: string, open: number): number {
+  let depth = 0
+  for (let i = open; i < strippedDoc.length; i += 1) {
+    if (strippedDoc[i] === '{') depth += 1
+    else if (strippedDoc[i] === '}') {
+      depth -= 1
+      if (depth === 0) return i
+    }
+  }
+  return -1
+}
+
+/** 光标所在 module 块的形参（0127 C6）：嵌套布尔块不影响作用域，不在模块体内返回空 */
+export function enclosingModuleParams(strippedDoc: string, pos: number): string[] {
+  const pattern = /\bmodule\s+[A-Za-z_][A-Za-z0-9_]*\s*\(([^)]*)\)\s*\{/g
+  let bestOpen = -1
+  let bestParams: string[] = []
+  for (let match = pattern.exec(strippedDoc); match; match = pattern.exec(strippedDoc)) {
+    const open = match.index + match[0].length - 1
+    if (open >= pos) continue
+    const close = matchBrace(strippedDoc, open)
+    if (close === -1 || pos > close) continue
+    // 取最内层模块（嵌套场景以开块位置最大者为准）
+    if (open > bestOpen) {
+      bestOpen = open
+      bestParams = splitParams(match[1] ?? '')
+    }
+  }
+  return bestParams
 }
 
 /** 光标所在最近一层 `(` 的调用名（跳过字符串 / 注释；向量内返回 null） */
@@ -228,20 +263,63 @@ function keywordOptions(): Completion[] {
   return DSL_KEYWORDS.map(label => ({ label, type: 'keyword', detail: KEYWORD_DETAILS[label] ?? label }))
 }
 
-function expressionOptions(symbols: DslSymbols): Completion[] {
-  return [
+/** 约束类型候选（0127 C9） */
+function constraintTypeOptions(): Completion[] {
+  return CONSTRAINT_TYPES.map(label => ({
+    label,
+    type: 'keyword',
+    detail: KEYWORD_DETAILS[label] ?? '约束类型',
+  }))
+}
+
+/** 候选去重（0127 C10）：保留首次出现，本地符号由调用方排在前面 */
+function dedupeOptions(options: Completion[]): Completion[] {
+  const seen = new Set<string>()
+  return options.filter(option => {
+    if (seen.has(option.label)) return false
+    seen.add(option.label)
+    return true
+  })
+}
+
+/** 候选包装：统一去重 */
+function result(from: number, options: Completion[]): CompletionResult {
+  return { from, options: dedupeOptions(options) }
+}
+
+/** 表达式位候选（0127 C6）：模块形参优先，其次顶层 param / 常量 / 函数 */
+function expressionOptions(symbols: DslSymbols, localParams: string[] = []): Completion[] {
+  return dedupeOptions([
+    ...localParams.map(label => ({ label, type: 'variable', detail: '模块形参' })),
     ...symbols.params.map(label => ({ label, type: 'variable', detail: '参数' })),
     ...CONSTANTS.map(label => ({ label, type: 'constant', detail: '常量' })),
     ...FUNCTIONS.map(label => ({ label, type: 'function', detail: '白名单函数' })),
-  ]
+  ])
+}
+
+/** 实例位候选（0127 C8）：图元 / 模块名 / 实例类片段，不出语句关键字 */
+const INSTANCE_SNIPPET_NAMES = new Set<string>([
+  ...PRIMITIVES, ...BOOLEANS, ...TRANSFORMS,
+])
+
+function instanceOptions(symbols: DslSymbols): Completion[] {
+  return dedupeOptions([
+    ...PRIMITIVES.map(label => ({
+      label,
+      type: 'type',
+      detail: PRIMITIVE_SIGNATURES[label]?.detail ?? '图元',
+    })),
+    ...symbols.modules.map(module => ({ label: module.name, type: 'class', detail: '模块调用' })),
+    ...dslSnippets.filter(item => INSTANCE_SNIPPET_NAMES.has(item.label.replace(' 片段', ''))),
+  ])
 }
 
 function statementOptions(symbols: DslSymbols): Completion[] {
-  return [
+  return dedupeOptions([
     ...keywordOptions(),
     ...symbols.modules.map(module => ({ label: module.name, type: 'class', detail: '模块调用' })),
     ...dslSnippets,
-  ]
+  ])
 }
 
 /** 自动完成源（C1-C5 / C10）：按光标上下文分流候选 */
@@ -321,60 +399,64 @@ export async function dslCompletionSource(
   if (!word && !context.explicit) return null
   const from = word ? word.from : pos
   const symbols = extractSymbols(doc)
+  const strippedDoc = stripCommentsAndStrings(doc)
+  const localParams = enclosingModuleParams(strippedDoc, pos)
 
-  // 约束行：类型位 / 标签.锚点位 / 其余（实例标签）
+  // 约束行（0127 C9）：锚点位 / 类型位 / 参数位 / 类型未定
   if (/^\s*constraint\b/.test(before)) {
     if (/[A-Za-z_][A-Za-z0-9_]*\.[A-Za-z0-9_]*$/.test(before)) {
-      return {
-        from,
-        options: CONSTRAINT_ANCHORS.map(label => ({ label, type: 'atom', detail: '约束锚点' })),
-      }
+      return result(from, CONSTRAINT_ANCHORS.map(label => ({ label, type: 'atom', detail: '约束锚点' })))
     }
     if (/^\s*constraint\s+[A-Za-z_][A-Za-z0-9_]*\s+[A-Za-z0-9_]*$/.test(before)) {
-      return {
-        from,
-        options: CONSTRAINT_TYPES.map(label => ({ label, type: 'keyword', detail: KEYWORD_DETAILS[label] ?? '约束类型' })),
-      }
+      return result(from, constraintTypeOptions())
     }
-    return {
-      from,
-      options: [
-        ...CONSTRAINT_TYPES.map(label => ({ label, type: 'keyword', detail: KEYWORD_DETAILS[label] ?? '约束类型' })),
+    if (/^\s*constraint\b[^\n]*\([^)]*$/.test(before)) {
+      return result(from, [
         ...symbols.labels.map(label => ({ label, type: 'variable', detail: '实例标签' })),
         ...CONSTRAINT_ANCHORS.map(label => ({ label, type: 'atom', detail: '约束锚点' })),
-      ],
+        ...expressionOptions(symbols, localParams),
+      ])
     }
+    return result(from, [
+      ...constraintTypeOptions(),
+      ...symbols.labels.map(label => ({ label, type: 'variable', detail: '实例标签' })),
+      ...CONSTRAINT_ANCHORS.map(label => ({ label, type: 'atom', detail: '约束锚点' })),
+    ])
   }
 
   const prev = before.trimEnd().slice(-1)
   // 表达式位：`=` 之后或运算符之后
   if (prev === '=' || '+-*/%'.includes(prev)) {
-    return { from, options: expressionOptions(symbols) }
+    return result(from, expressionOptions(symbols, localParams))
   }
 
-  // 调用括号内：模块形参 / 图元命名参数
-  const callName = findCallContext(stripCommentsAndStrings(doc), pos)
+  // 变换后的内联实例位（0127 C8）：出图元 / 模块 / 实例片段
+  if (/(?:^|\s)(?:translate|rotate|scale|mirror)\s*\(.*\)\s+[A-Za-z_][A-Za-z0-9_]*$/.test(before.trim())) {
+    return result(from, instanceOptions(symbols))
+  }
+
+  // 调用括号内：模块命名实参 / 图元命名参数
+  const callName = findCallContext(strippedDoc, pos)
   if (callName) {
     const module = symbols.modules.find(item => item.name === callName)
     if (module) {
-      return {
-        from,
-        options: module.params.map(label => ({ label, type: 'variable', detail: `${module.name} 形参` })),
-      }
+      return result(from, module.params.map(label => ({
+        label,
+        type: 'property',
+        detail: `${module.name} 形参`,
+        apply: `${label} = `,
+      })))
     }
     const signature = PRIMITIVE_SIGNATURES[callName]
     if (signature) {
-      return {
-        from,
-        options: signature.params.map(label => ({ label, type: 'property', detail: signature.detail })),
-      }
+      return result(from, signature.params.map(label => ({ label, type: 'property', detail: signature.detail })))
     }
   }
 
   // 行首 / 块内实例位：语句关键字 + 模块名 + 骨架片段
   if (/^\s*[A-Za-z_][A-Za-z0-9_]*$/.test(before)) {
-    return { from, options: statementOptions(symbols) }
+    return result(from, statementOptions(symbols))
   }
 
-  return { from, options: expressionOptions(symbols) }
+  return result(from, expressionOptions(symbols, localParams))
 }

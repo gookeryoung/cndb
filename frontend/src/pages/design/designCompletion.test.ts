@@ -13,6 +13,7 @@ import {
   PRIMITIVE_SIGNATURES,
   dslCompletionSource,
   dslSnippets,
+  enclosingModuleParams,
   extractSymbols,
   findCallContext,
   stripCommentsAndStrings,
@@ -72,6 +73,10 @@ describe('designCompletion 片段（C4）', () => {
     }
     expect(dslSnippets.map(item => item.label)).toContain('box 片段')
     expect(dslSnippets.every(item => typeof item.apply === 'function')).toBe(true)
+  })
+
+  it('片段模板只用空格缩进（0127 C3）', () => {
+    expect(Object.values(DSL_SNIPPET_TEMPLATES).every(template => !template.includes('\t'))).toBe(true)
   })
 })
 
@@ -143,9 +148,10 @@ describe('designCompletion 上下文分流（C3 / C5）', () => {
     expect(labels(result)).toContain('width')
   })
 
-  it('模块调用括号内只出该模块形参', async () => {
+  it('模块调用括号内只出该模块形参，命名实参带等号', async () => {
     const result = await optionsAt(`${DOC}\nplate(d|)`)
     expect(labels(result)).toEqual(['d', 'h'])
+    expect(result?.options[0]?.apply).toBe('d = ')
   })
 
   it('图元括号内出命名参数', async () => {
@@ -153,13 +159,53 @@ describe('designCompletion 上下文分流（C3 / C5）', () => {
     expect(labels(result)).toEqual(['size', 'w', 'h', 'd'])
   })
 
-  it('constraint 行分流：类型位 / 锚点位 / 实例标签', async () => {
+  it('constraint 行分流：类型位 / 锚点位 / 参数位', async () => {
     expect(labels(await optionsAt(`${DOC}\nconstraint c1 fi`)))
       .toEqual(['fixed', 'coincident', 'concentric', 'distance', 'angle'])
     expect(labels(await optionsAt(`${DOC}\nconstraint c1 fixed(a = base.o|)`)))
       .toEqual(['origin', 'x', 'y', 'z'])
-    expect(labels(await optionsAt(`${DOC}\nconstraint c1 fixed(a = |)`, true)))
-      .toEqual(expect.arrayContaining(['fixed', 'base', 'origin']))
+    const args = labels(await optionsAt(`${DOC}\nconstraint c1 fixed(a = |)`, true))
+    expect(args).toEqual(expect.arrayContaining(['base', 'origin', 'width', 'sin']))
+    expect(args).not.toContain('fixed')
+  })
+})
+
+describe('designCompletion 变量补全增强（0127 C6-C9）', () => {
+  it('模块体内补全当前模块形参', async () => {
+    const result = await optionsAt('module plate(d = 10) {\n  box(size = [|])\n}', true)
+    const names = labels(result)
+    expect(names).toContain('d')
+    expect(result?.options.find(option => option.label === 'd')?.detail).toBe('模块形参')
+  })
+
+  it('嵌套布尔块仍归属外层模块', async () => {
+    const result = await optionsAt('module plate(d = 10) {\n  union {\n    box(size = [|])\n  }\n}', true)
+    expect(labels(result)).toContain('d')
+  })
+
+  it('模块体外不出现模块形参', async () => {
+    const result = await optionsAt('module plate(d = 10) {\n  box(size = [1, 1, 1])\n}\nbox(size = [|])', true)
+    expect(labels(result)).not.toContain('d')
+  })
+
+  it('enclosingModuleParams 只返回最内层模块形参', () => {
+    const doc = 'module plate(d = 10) {\n  union {\n    box(size = [d, d, d])\n  }\n}'
+    expect(enclosingModuleParams(doc, doc.indexOf('    box'))).toEqual(['d'])
+    expect(enclosingModuleParams(doc, doc.indexOf('module'))).toEqual([])
+  })
+
+  it('变换后的内联实例位出图元 / 模块 / 实例片段', async () => {
+    const doc = 'module plate(d = 10) {\n  box(size = [d, d, d])\n}\ntranslate([1, 0, 0]) b|'
+    const names = labels(await optionsAt(doc))
+    expect(names).toEqual(expect.arrayContaining(['box', 'plate', 'box 片段']))
+    expect(names).not.toContain('param')
+  })
+
+  it('候选去重：同名模块形参优先于顶层 param', async () => {
+    const result = await optionsAt('param d = 1\nmodule plate(d = 10) {\n  box(size = [|])\n}', true)
+    const hits = result!.options.filter(option => option.label === 'd')
+    expect(hits).toHaveLength(1)
+    expect(hits[0]?.detail).toBe('模块形参')
   })
 })
 
