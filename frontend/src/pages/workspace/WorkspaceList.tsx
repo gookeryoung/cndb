@@ -353,7 +353,7 @@ export default function WorkspaceList() {
           confirmLoading={create.isPending}
           okText="创建"
           data-testid="create-workspace-modal"
-          width={isMobile ? 'calc(100vw - 32px)' : 520}
+          width={520}
         >
           <Form
             form={form}
@@ -764,7 +764,6 @@ interface ImportWorkspaceModalProps {
 }
 
 function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError }: ImportWorkspaceModalProps) {
-  const { isMobile } = useResponsive()
   const [importing, setImporting] = useState(false)
   const [inspecting, setInspecting] = useState(false)
   const [importResult, setImportResult] = useState<{ tables: number; rows: number; views: number; documents: number } | null>(null)
@@ -876,7 +875,7 @@ function ImportWorkspaceModal({ open, onCancel, onImported, onRestored, onError 
       }}
       cancelText="取消"
       destroyOnHidden
-      width={isMobile ? 'calc(100vw - 32px)' : 600}
+      width={600}
     >
       <Text type="secondary" style={{ display: 'block', fontSize: 'var(--cn-text-xs)', marginBottom: 12 }}>
         默认导入为新工作区，不覆盖现有数据

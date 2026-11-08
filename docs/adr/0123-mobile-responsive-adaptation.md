@@ -1,6 +1,6 @@
 # ADR 0123: 全站移动端显示适配专项（响应式优先）
 
-Status: Proposed（待评审）
+Status: Accepted（2026-11-08 人工评审通过）
 Date: 2026-11-08
 Related: `frontend/src/index.css`、`frontend/src/hooks/useResponsive.ts`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/**`、ADR 0044（文档页移动端紧凑化范式）、ADR 0026（Chrome 81 兼容基线）
 需求卡片: `docs/requirements/0123-mobile-responsive-adaptation.md`（需求原文与约束编号的唯一副本）
@@ -156,8 +156,8 @@ Related: `frontend/src/index.css`、`frontend/src/hooks/useResponsive.ts`、`fro
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 首屏痛点 | 已落地 | `frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/index.css`（工作区列表行内名称修复，S0 热修复先行；同类扫描并入 P1 走查） | `frontend/src/pages/workspace/WorkspaceList.test.tsx` | `<待提交>` |
-| P1 适配底座 | 未开始 | — | — | — |
+| P0 首屏痛点 | 已落地 | `frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/index.css`（工作区列表行内名称修复，S0 热修复先行；同类扫描结论见 P1） | `frontend/src/pages/workspace/WorkspaceList.test.tsx` | `<待提交>` |
+| P1 适配底座 | 已落地 | `frontend/src/index.css`、`frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/pages/documents/ChartDesignerModal.tsx`、`frontend/src/layouts/MainLayout.tsx`（明细见「交接」） | `frontend/src/mobileCaliber.test.ts`、`frontend/src/pages/workspace/WorkspaceList.test.tsx`、`frontend/src/layouts/MainLayout.test.tsx`、`frontend/src/pages/documents/ChartDesignerModal.test.tsx` | `<待提交>` |
 | P2 高频页走查 | 未开始 | — | — | — |
 | P3 低频页与门禁 | 未开始 | — | — | — |
 
@@ -165,8 +165,8 @@ Related: `frontend/src/index.css`、`frontend/src/hooks/useResponsive.ts`、`fro
 
 ## 交接（会话结束更新）
 
-- 当前阶段：ADR 0123 Proposed，待人工评审
-- 已完成：S0 热修复（工作区列表移动端名称可见性，`make check-fast` 全绿，34 用例通过）；需求卡片与 ADR 成稿
-- 下一步：人工评审 ADR → Accepted 后，implementer 按 P1（适配底座）开始
-- 已知坑：无（本轮无环境异常）
-- 最近一次全绿：`make check-fast` @ 工作区（未提交，2026-11-08）
+- 当前阶段：P1（适配底座）已落地（2026-11-08），待进入 P2（高频页走查）
+- 已完成：S0 热修复（P0）与 P1 全部四项——①「移动端全局适配」分节统一 D7 口径（Modal / 左右抽屉 `calc(100vw - 32px)` 上限，顶部抽屉豁免，修正原 `92vw` 全局上限误伤顶部抽屉）；② `WorkspaceList` 两处 Modal + `ChartDesignerModal` 内联宽度迁入统一口径；③ MainLayout 顶栏 `padding`/`gap` 内联 `isMobile` 分叉迁入 CSS（C7），壳层走查无功能缺口（汉堡抽屉 / 移动搜索 / 页签简化 / 菜单收纳均完备）；④ 同类「徽标挤占名称」扫描：MyViewsPanel / TablesList 窄屏卡片 / 全局搜索项 / 用户卡片均合规，唯一缺口 `.cn-ws-detail-table-name` 已补 `min-width: 0`
+- 下一步：P2 高频页走查（网格页视图栏 / 工具栏 / RowDetailDrawer + 文档编辑页编辑态），复用 `mobileCaliber.test.ts` 口径契约范式补页面级 375px 用例
+- 已知坑：jsdom 不加载样式表，弹窗移动宽度无法在组件测试里断言计算样式，靠 `mobileCaliber.test.ts` 直读 index.css 文本守卫（同 `headerBorders.test.ts` 范式）；P0+P1 改动均未提交（用户未要求提交）
+- 最近一次全绿：`make check-fast` + 前端全量 vitest（264 文件 / 3202 例）@ 工作区（未提交，2026-11-08）

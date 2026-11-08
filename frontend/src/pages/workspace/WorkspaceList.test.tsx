@@ -419,19 +419,22 @@ describe('WorkspaceList 移动端适配', () => {
     expect(screen.getByTestId('import-workspace-btn')).toHaveStyle({ flex: '1 1 0%' })
   })
 
-  it('移动端创建弹窗宽度收窄为视口宽度减边距，不再固定 520px', async () => {
+  it('移动端创建弹窗保持静态宽度，移动宽度由全局 CSS 口径收敛（D7）', async () => {
     setViewportWidth(375)
     renderWorkspaceList()
 
     fireEvent.click(screen.getByTestId('create-workspace-btn'))
     await screen.findByTestId('create-workspace-modal')
 
+    // ADR 0123 D7/C7：弹窗移动宽度统一由 index.css「移动端全局适配」分节
+    // .ant-modal { max-width: calc(100vw - 32px) } 收敛（口径契约见 mobileCaliber.test.ts），
+    // 组件侧不再 isMobile 分叉，保持桌面静态宽度
     const modal = document.querySelector('.ant-modal') as HTMLElement
     expect(modal).not.toBeNull()
-    expect(modal.style.width).toBe('calc(100vw - 32px)')
+    expect(modal.style.width).toBe('520px')
   })
 
-  it('移动端导入弹窗宽度收窄为视口宽度减边距，不再固定 560px', async () => {
+  it('移动端导入弹窗保持静态宽度，移动宽度由全局 CSS 口径收敛（D7）', async () => {
     setViewportWidth(375)
     renderWorkspaceList()
 
@@ -440,7 +443,7 @@ describe('WorkspaceList 移动端适配', () => {
 
     const modal = document.querySelector('.ant-modal') as HTMLElement
     expect(modal).not.toBeNull()
-    expect(modal.style.width).toBe('calc(100vw - 32px)')
+    expect(modal.style.width).toBe('600px')
   })
 
   it('移动端收起态行内不渲染模块徽标（名称不被挤压），角色徽标保留', async () => {

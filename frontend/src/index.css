@@ -590,6 +590,9 @@ body {
   background: var(--cn-bg-container);
   border-bottom: 1px solid var(--cn-border);
   box-shadow: none;
+  /* 桌面基准留白与控件间距；移动端在「移动端全局适配」分节统一收窄（ADR 0123 C7） */
+  gap: var(--cn-space-md);
+  padding: 0 var(--cn-space-lg);
 }
 
 /* 顶栏控件（搜索框 / 图标按钮）统一线条：1px + 小圆角 + 中性描边，
@@ -1476,6 +1479,9 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 }
 
 .cn-ws-detail-table-name {
+  /* D6（ADR 0123）：flex 行内名称必须可收缩（min-width: 0），否则长表名把计数
+     徽标一起顶出胶囊边框，省略号永远不生效 */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3688,13 +3694,15 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
 /* ─────────────── 移动端全局适配（< 768px，与 useResponsive BREAKPOINTS.mobile 对齐） ───────────────
  * 目标：弹层（Modal / Drawer）在窄视口不溢出；页面留白收窄。
- * 仅约束尺寸，不改布局结构；组件级响应式分支由 useResponsive 在 TSX 中驱动。 */
+ * 仅约束尺寸，不改布局结构；组件级响应式分支由 useResponsive 在 TSX 中驱动。
+ * D7（ADR 0123）：Modal / Drawer 移动宽度统一 calc(100vw - 32px) 上限口径，
+ * 全局兜底在此收敛，页面不再各自用 JS 分叉写弹窗移动宽度。 */
 
 @media (max-width: 767.98px) {
 
-  /* AntD Modal 默认 width 520px，在 375px 视口会溢出；此处统一收窄 */
+  /* AntD Modal 默认 width 520px，在 375px 视口会溢出；按 D7 统一上限口径收敛 */
   .ant-modal {
-    max-width: calc(100vw - 16px);
+    max-width: calc(100vw - 32px);
     margin: var(--cn-space-md) auto;
   }
 
@@ -3703,9 +3711,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     padding: var(--cn-space-xl);
   }
 
-  /* Drawer 宽度为组件内联样式（如 640px），须用 !important 覆盖 */
-  .ant-drawer-content-wrapper {
-    max-width: 92vw !important;
+  /* Drawer 宽度是组件内联样式（如 640px），按 D7 统一上限口径收敛；
+     只约束左右抽屉 —— 顶部 / 底部抽屉（移动搜索等）本就铺满视口宽，不受此限 */
+  .ant-drawer-left .ant-drawer-content-wrapper,
+  .ant-drawer-right .ant-drawer-content-wrapper {
+    max-width: calc(100vw - 32px);
   }
 
   /* 列表行尾操作区（回收站抽屉等）：收窄与主内容的间距，避免长标题被挤溢出 */
@@ -3713,9 +3723,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     margin-inline-start: var(--cn-space-sm);
   }
 
-  /* 顶部 Header 两侧留白收窄，给内容让出横向空间 */
-  .ant-layout-header {
+  /* 顶部 Header 两侧留白与控件间距收窄，给内容让出横向空间
+     （原 MainLayout 内联 isMobile 分支迁移至此，C7：CSS 承样式） */
+  .ant-layout-header.cn-app-header {
     padding: 0 var(--cn-space-md) !important;
+    gap: var(--cn-space-xs);
   }
 }
 

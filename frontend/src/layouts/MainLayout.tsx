@@ -854,11 +854,10 @@ export default function MainLayout() {
 
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
+      {/* 留白与控件间距走 index.css（桌面基准 + 移动端收窄），不再 JS 分叉（ADR 0123 C7） */}
       <Header className="cn-app-header" style={{
-        // 移动端收窄左右留白与控件间距，给搜索/导航留出横向空间
-        padding: isMobile ? '0 var(--cn-space-md)' : '0 var(--cn-space-lg)',
         height: 44, lineHeight: '44px', flexShrink: 0,
-        display: 'flex', alignItems: 'center', gap: isMobile ? 4 : 8,
+        display: 'flex', alignItems: 'center',
       }}>
         {/* ── 左区（需求 0081 C1）：品牌 + 工作区切换 + 一级模块导航 ── */}
         <div className="cn-header-left">

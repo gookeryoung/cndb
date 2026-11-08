@@ -589,7 +589,7 @@ export default function ChartDesignerModal({
       open={open}
       onCancel={onCancel}
       width={1200}
-      style={{ maxWidth: 'calc(100vw - 24px)' }}
+      style={{ maxWidth: 'calc(100vw - 32px)' }}
       destroyOnHidden
       footer={[
         <Button key="cancel" onClick={onCancel}>取消</Button>,
