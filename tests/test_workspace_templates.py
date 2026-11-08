@@ -1042,6 +1042,20 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
         .first()
     )
     assert latest is not None and "结题报告" in latest.content
+    # 技术体系「技术脉络」树视图随示例一并合并进模板示例工作区
+    from cndb.plugins.tables.models import DataView
+
+    tech_table = (
+        db.query(DataTable)
+        .filter(
+            DataTable.workspace_id == ws.id,
+            DataTable.name == next(f["name"] for f in data["forms"] if f["key"] == "tech_system"),
+        )
+        .one()
+    )
+    tree_view = db.query(DataView).filter(DataView.table_id == tech_table.id, DataView.name == "技术脉络").one()
+    assert tree_view.view_type == "tree"
+    assert tree_view.view_options.get("parent_field") == "父技术编号"
     # 再执行一次幂等跳过
     assert _seed_workspace_templates(db, owner=owner) == 0
 

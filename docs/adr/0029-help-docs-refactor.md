@@ -38,7 +38,7 @@ Related: `frontend/src/pages/help/HelpDocsPage.tsx`、`frontend/src/pages/help/h
 | 7 | 「重新播放新手引导」按钮位于抽屉 footer，点击后关抽屉并发 `requestTour()`（P0 迁到帮助页工具条） | `frontend/src/pages/help/HelpDocsPage.tsx` | 入口需迁移到帮助文档页；`useOnboardingStore.requestTour` 保持不变 | 确认（C2） |
 | 8 | `cndb seed` 从 `examples/datasets` 注入三套工作区（销售 / 科研 / 数据源）及视图、文档、分析、数据源任务 | `src/cndb/cli/seed/runner.py:22`、`src/cndb/cli/seed/datasets.py:145` | 帮助示例的内容来源明确，但帮助不得依赖 seed 运行结果 | 确认（C5） |
 | 9 | `examples/datasets` 已通过 hatch `force-include` 打包为 `cndb/datasets`，seed 侧有包内优先、仓库根兜底的路径解析 | `pyproject.toml:84`、`src/cndb/cli/seed/paths.py:12` | 帮助可复用同一资产源，wheel 安装版也能取到文件 | 确认（C5/C6） |
-| 10 | 示例 CSV 三套场景共 18 个表文件 | `examples/datasets/工作区-某企业销售管理/`、`工作区-科研项目管理/`、`工作区-数据源示例/` | 示例需精选子集并写清单，避免把全部演示数据当「典型示例」 | 新增（C5/C6） |
+| 10 | 示例 CSV 三套场景共 18 个表文件 | `examples/datasets/工作区-某企业销售管理/`、`examples/help/科研项目管理/`、`工作区-数据源示例/` | 示例需精选子集并写清单，避免把全部演示数据当「典型示例」 | 新增（C5/C6） |
 | 11 | `HelpTip` 为行内问号提示，被设置页 / 字段页 / 视图配置复用，与帮助抽屉无代码耦合 | `frontend/src/components/HelpTip.tsx:21` | 不受本次重构影响 | 排除（C1-C7） |
 | 12 | 后端尚无 help 插件；插件路由前缀由插件名或 `route_prefix` 决定 | `src/cndb/core/plugin_registry.py:90`、`:108` | 新插件按同一机制挂载 `/api/v1/help`，无需改核心 | 新增（C5/C6/C7） |
 

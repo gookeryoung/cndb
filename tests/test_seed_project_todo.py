@@ -2,7 +2,7 @@
 
 覆盖：
 - 科研待办事项 CSV 结构（9 列 × 16 行，含 7 行空责任人）
-- 真实 datasets 目录解析：fields.json + views.json
+- 模板 spec / 示例数据：编号必填唯一、16 行待办集中 7 行空责任人
 - seed 流程：CSV 建表、课题关联字段、settings 应用、views 注入
 - kanban 分组：按责任人分组时空值行进入「未分派」分组
 """
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-# ── CSV 原文（与 examples/datasets/工作区-科研项目管理/科研待办事项.csv 一致） ────
+# ── CSV 原文（已并入 examples/templates/科研项目全生命周期管理/example.json） ────
 
 TODO_CSV = """编号,类别,事项,创建时间,要求节点,完成日期,责任人,课题编号,备注
 TB001,数据,完成多中心影像数据脱敏与入库,2026-09-15,2026-09-30,2026-09-28,毕思嘉,KT2024001,覆盖 3 家医院 1.2 万例
@@ -245,57 +245,33 @@ def test_todo_csv_empty_assignee_distribution(tmp_path):
     assert empty_ids == EMPTY_ASSIGNEE_IDS
 
 
-# ── 2. 真实 datasets 目录解析 ────────────────────────────
+# ── 2. 模板示例 / spec 解析 ──────────────────────────────
 
 
-def test_real_datasets_fields_json_has_todo_settings():
-    """真实 datasets：科研项目管理 fields.json 包含科研待办事项 settings."""
-    from cndb.cli.seed import _get_datasets_dir, _load_field_settings
+def test_template_spec_has_todo_settings():
+    """模板 spec：科研待办事项 编号 required+unique、事项 required."""
+    from cndb.cli.seed.workspace_templates import RESEARCH_LIFECYCLE_SPEC
 
-    datasets_dir = _get_datasets_dir()
-    if datasets_dir is None:
-        pytest.skip("examples/datasets 目录不可用")
-
-    cfg = _load_field_settings(datasets_dir)
-    assert "科研项目管理" in cfg
-    pm = cfg["科研项目管理"]
-    assert "settings" in pm
-    assert "科研待办事项" in pm["settings"]
-    assert pm["settings"]["科研待办事项"]["编号"] == {"required": True, "unique": True}
-    assert pm["settings"]["科研待办事项"]["事项"] == {"required": True}
+    form = next(f for f in RESEARCH_LIFECYCLE_SPEC["forms"] if f["key"] == "project_todo")
+    fields = {f["name"]: f for f in form["fields"]}
+    assert fields["编号"].get("required") is True
+    assert fields["编号"].get("is_unique") is True
+    assert fields["事项"].get("required") is True
 
 
-def test_real_datasets_views_json_has_todo_views():
-    """真实 datasets：科研项目管理 views.json 包含科研待办事项 7 个视图."""
-    from cndb.cli.seed import _get_datasets_dir, _get_workspace_view_configs
+def test_template_example_todo_rows_are_complete():
+    """模板示例数据：科研待办事项 16 行，含 7 行空责任人."""
+    from cndb.cli.seed.workspace_templates import EXAMPLE_TEMPLATE_DIR
 
-    datasets_dir = _get_datasets_dir()
-    if datasets_dir is None:
-        pytest.skip("examples/datasets 目录不可用")
-
-    configs = _get_workspace_view_configs(datasets_dir)
-    pm_views = configs.get("科研项目管理")
-    assert pm_views is not None
-    todo_views = pm_views.get("科研待办事项")
-    assert todo_views is not None, "views.json 应包含科研待办事项"
-    assert len(todo_views) == 7, f"期望 7 个科研待办事项视图，实际 {len(todo_views)}"
-
-    names = {v["name"] for v in todo_views}
-    assert names == {
-        "全部",
-        "按责任人看板",
-        "按类别看板",
-        "事项日历",
-        "待分派事项",
-        "未完成事项",
-        "类别占比",
-    }
-
-    assignee_kanban = next(v for v in todo_views if v["name"] == "按责任人看板")
-    assert assignee_kanban["view_type"] == "kanban"
-    opts = assignee_kanban["view_options"]
-    assert opts["group_field"] == "责任人"
-    assert opts["ungrouped_label"] == "未分派"
+    manifest_path = (
+        Path(__file__).resolve().parents[1] / "examples" / "templates" / EXAMPLE_TEMPLATE_DIR / "example.json"
+    )
+    if not manifest_path.exists():
+        pytest.skip(f"{manifest_path} 不可用")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    rows = (manifest.get("records") or {}).get("project_todo") or []
+    assert len(rows) == 16
+    assert sum(1 for row in rows if not str(row.get("责任人") or "").strip()) == 7
 
 
 # ── 3. seed 端到端 ──────────────────────────────────────

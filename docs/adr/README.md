@@ -164,7 +164,7 @@ DSL 内核 / 结构导航 / 系统级装配 / 分文件与约束。
 
 | 编号 | 标题 | Status | 落地阶段 | 代码 | 测试 | CHANGELOG |
 |---|---|---|---|---|---|---|
-| [0027](0027-tech-system-tree.md) | 科研项目管理新增技术体系表与「技术脉络」树形视图 | Implemented | P0-P1 已落地；零迁移 / 零接口 / 零前端改动 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py` | [未发布](../../CHANGELOG.md) |
+| [0027](0027-tech-system-tree.md) | 科研项目管理新增技术体系表与「技术脉络」树形视图 | Implemented | P0-P1 已落地；零迁移 / 零接口 / 零前端改动 | `examples/templates/科研项目全生命周期管理/example.json`、`src/cndb/cli/seed/workspace_templates.py`、`src/cndb/cli/seed/views.py` | `tests/test_seed_tech_system.py` | [未发布](../../CHANGELOG.md) |
 
 承接关系：两者都只约束 `examples/datasets/` 与帮助示例内容，不影响平台契约。
 

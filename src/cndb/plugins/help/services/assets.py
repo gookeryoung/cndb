@@ -1,7 +1,8 @@
 """示例资产定位（ADR 0029 §3）.
 
-搜索顺序与 `cndb seed` 同口径：包内 `cndb/datasets` 优先（wheel 由 hatch 打包），
-仓库根 `examples/datasets` 兜底（源码开发版）。本模块**不 import seed**，
+搜索顺序与 `cndb seed` 同口径：包内优先（wheel 由 hatch 打包），仓库根兜底
+（源码开发版）。下载资产先查 `help`（纯下载文件，不参与 seed 建工作区），
+再查 `datasets`（销售示例仍复用工作区目录）。本模块**不 import seed**，
 目录缺失时返回 None，由路由决定「清单可读、下载 404」。
 """
 
@@ -23,6 +24,14 @@ def _candidate_dirs() -> tuple[Path, Path]:
     packaged = here.parents[3] / "datasets"
     # 再向上两级即仓库根（src 的上层）
     repo = here.parents[5] / "examples" / "datasets"
+    return packaged, repo
+
+
+def _help_candidate_dirs() -> tuple[Path, Path]:
+    """返回 (包内 help, 仓库根 examples/help) 两个候选目录."""
+    here = Path(__file__).resolve()
+    packaged = here.parents[3] / "help"
+    repo = here.parents[5] / "examples" / "help"
     return packaged, repo
 
 
@@ -50,6 +59,14 @@ def demo_packs_dir() -> Path | None:
     return None
 
 
+def help_dir() -> Path | None:
+    """定位纯下载资产根目录（examples/help）；两处都不存在时返回 None."""
+    for candidate in _help_candidate_dirs():
+        if candidate.is_dir():
+            return candidate
+    return None
+
+
 def resolve_example_file(scenario: str, filename: str) -> Path | None:
     """校验白名单并返回 CSV 文件路径；不合法或文件缺失时返回 None.
 
@@ -62,11 +79,13 @@ def resolve_example_file(scenario: str, filename: str) -> Path | None:
     if filename not in {table["file"] for table in example["tables"]}:
         return None
 
-    root = datasets_dir()
-    if root is None:
-        return None
-    path = root / SCENARIO_DIRECTORIES[scenario] / filename
-    return path if path.is_file() else None
+    for root in (help_dir(), datasets_dir()):
+        if root is None:
+            continue
+        path = root / SCENARIO_DIRECTORIES[scenario] / filename
+        if path.is_file():
+            return path
+    return None
 
 
 def resolve_demo_pack(scenario: str) -> Path | None:
@@ -83,4 +102,4 @@ def resolve_demo_pack(scenario: str) -> Path | None:
     return path if path.is_file() else None
 
 
-__all__ = ["datasets_dir", "demo_packs_dir", "resolve_demo_pack", "resolve_example_file"]
+__all__ = ["datasets_dir", "demo_packs_dir", "help_dir", "resolve_demo_pack", "resolve_example_file"]

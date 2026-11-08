@@ -134,6 +134,99 @@ def _validate_view_fields(
     return True
 
 
+def apply_view_config(
+    db: Any,
+    table: Any,
+    vc: dict[str, Any],
+    index: int,
+    *,
+    ws_name: str,
+    table_name: str,
+    personal_owner_id: int | None = None,
+) -> bool:
+    """校验并 upsert 单条视图配置；返回 True 表示新建了一条视图.
+
+    字段引用不合法 / view_type 不支持 / scope 非法时跳过并返回 False。
+    """
+    from cndb.plugins.tables.models import DataView, ViewVisibility, scope_key_for
+
+    valid_fields = {f.name for f in table.fields}
+    field_types = {f.name: f.field_type for f in table.fields}
+    if not _validate_view_fields(vc, valid_fields, ws_name, table_name, field_types):
+        return False
+
+    # scope 决定归属与可见性档位：
+    #   global   → table 档（继承表权限，表内所有人可见）
+    #   personal → private 档（仅创建者可见）
+    # 显式写好 visibility 时以配置为准（值域同 ADR 0003 §1）
+    scope = vc.get("scope", "global")
+    if scope == "global":
+        owner_id: int | None = None
+        visibility = ViewVisibility.TABLE
+    elif scope == "personal":
+        if personal_owner_id is None:
+            print(f"[seed-视图] 跳过: {ws_name}/{table_name} 视图'{vc.get('name')}' 缺少 personal 归属用户")
+            return False
+        owner_id = personal_owner_id
+        visibility = ViewVisibility.PRIVATE
+    else:
+        print(
+            f"[seed-视图] 非法 scope={scope!r}（仅接受 global/personal），"
+            f"默认当作 global: {ws_name}/{table_name} / {vc.get('name')}"
+        )
+        owner_id = None
+        visibility = ViewVisibility.TABLE
+    raw_visibility = str(vc.get("visibility") or "")
+    if raw_visibility in tuple(ViewVisibility):
+        visibility = ViewVisibility(raw_visibility)
+
+    # 默认视图必须为 table 档（让所有成员进入时都看得到）
+    is_default = bool(vc.get("is_default", False)) and visibility == ViewVisibility.TABLE
+    if is_default:
+        # 与 views API 同口径：每张表只保留一个默认视图
+        db.query(DataView).filter(DataView.table_id == table.id).update(
+            {"is_default": False}, synchronize_session=False
+        )
+
+    payload = {
+        "table_id": table.id,
+        "owner_id": owner_id,
+        "visibility": visibility,
+        "scope_key": scope_key_for(visibility, owner_id),
+        "name": vc["name"],
+        "view_type": vc.get("view_type", "grid"),
+        "filter_type": vc.get("filter_type", "AND"),
+        "filters": vc.get("filters", []),
+        "sortings": vc.get("sortings", []),
+        "field_options": vc.get("field_options", {}),
+        "field_order": vc.get("field_order", []),
+        "view_options": vc.get("view_options", {}),
+        "is_default": is_default,
+        "order": vc.get("order", index),
+    }
+    # 同名视图已存在则用配置更新（自动生成的「全部」默认视图需要被丰富化）
+    # 同名判定按命名空间（scope_key）：私有视图不与表内共享视图抢名
+    existing = (
+        db.query(DataView)
+        .filter(
+            DataView.table_id == table.id,
+            DataView.scope_key == payload["scope_key"],
+            DataView.name == vc["name"],
+        )
+        .first()
+    )
+    if existing is not None:
+        for key, value in payload.items():
+            setattr(existing, key, value)
+        db.flush()
+        print(f"[seed-视图] 更新已存在: {ws_name}/{table_name} → {payload['name']} ({payload['view_type']})")
+        return False
+    db.add(DataView(**payload))
+    db.flush()
+    print(f"[seed-视图] {ws_name}/{table_name} → {payload['name']} ({payload['view_type']})")
+    return True
+
+
 def _seed_views(
     db: Any,
     user: Any,
@@ -152,8 +245,6 @@ def _seed_views(
 
     新增的演示用 personal 视图不会占用表的"默认视图"槽位——默认视图始终为 global。
     """
-    from cndb.plugins.tables.models import DataView, ViewVisibility, scope_key_for
-
     if datasets_dir is None:
         print("[seed-视图] examples/datasets 目录不存在，跳过视图注入")
         return 0
@@ -178,83 +269,18 @@ def _seed_views(
             if dt is None:
                 print(f"[seed-视图] 配置中的表 '{ws_name}/{table_name}' 不存在，跳过")
                 continue
-            valid_fields = {f.name for f in dt.fields}
-            field_types = {f.name: f.field_type for f in dt.fields}
             for idx, vc in enumerate(view_list):
                 try:
-                    if not _validate_view_fields(vc, valid_fields, ws_name, table_name, field_types):
-                        continue
-
-                    # scope 决定归属与可见性档位：
-                    #   global   → table 档（继承表权限，表内所有人可见）
-                    #   personal → private 档（仅创建者可见）
-                    # 显式写好 visibility 时以配置为准（值域同 ADR 0003 §1）
-                    scope = vc.get("scope", "global")
-                    if scope == "global":
-                        owner_id: int | None = None
-                        visibility = ViewVisibility.TABLE
-                    elif scope == "personal":
-                        owner_id = personal_owner_id
-                        visibility = ViewVisibility.PRIVATE
-                    else:
-                        print(
-                            f"[seed-视图] 非法 scope={scope!r}（仅接受 global/personal），"
-                            f"默认当作 global: {ws_name}/{table_name} / {vc.get('name')}"
-                        )
-                        owner_id = None
-                        visibility = ViewVisibility.TABLE
-                    raw_visibility = str(vc.get("visibility") or "")
-                    if raw_visibility in tuple(ViewVisibility):
-                        visibility = ViewVisibility(raw_visibility)
-
-                    # 默认视图必须为 table 档（让所有成员进入时都看得到）
-                    is_default = bool(vc.get("is_default", False)) and visibility == ViewVisibility.TABLE
-                    if is_default:
-                        # 与 views API 同口径：每张表只保留一个默认视图
-                        db.query(DataView).filter(DataView.table_id == dt.id).update(
-                            {"is_default": False}, synchronize_session=False
-                        )
-
-                    dv_payload = {
-                        "table_id": dt.id,
-                        "owner_id": owner_id,
-                        "visibility": visibility,
-                        "scope_key": scope_key_for(visibility, owner_id),
-                        "name": vc["name"],
-                        "view_type": vc.get("view_type", "grid"),
-                        "filter_type": vc.get("filter_type", "AND"),
-                        "filters": vc.get("filters", []),
-                        "sortings": vc.get("sortings", []),
-                        "field_options": vc.get("field_options", {}),
-                        "field_order": vc.get("field_order", []),
-                        "view_options": vc.get("view_options", {}),
-                        "is_default": is_default,
-                        "order": vc.get("order", idx),
-                    }
-                    # 同名视图已存在则用配置更新（自动生成的「全部」默认视图需要被丰富化）
-                    # 同名判定按命名空间（scope_key）：私有视图不与表内共享视图抢名
-                    existing = (
-                        db.query(DataView)
-                        .filter(
-                            DataView.table_id == dt.id,
-                            DataView.scope_key == dv_payload["scope_key"],
-                            DataView.name == vc["name"],
-                        )
-                        .first()
-                    )
-                    if existing is not None:
-                        for key, value in dv_payload.items():
-                            setattr(existing, key, value)
-                        db.flush()
-                        print(
-                            f"[seed-视图] 更新已存在: {ws_name}/{table_name} → {dv_payload['name']} ({dv_payload['view_type']})"
-                        )
-                        continue
-                    dv = DataView(**dv_payload)
-                    db.add(dv)
-                    db.flush()
-                    created += 1
-                    print(f"[seed-视图] {ws_name}/{table_name} → {dv.name} ({dv.view_type})")
+                    if apply_view_config(
+                        db,
+                        dt,
+                        vc,
+                        idx,
+                        ws_name=ws_name,
+                        table_name=table_name,
+                        personal_owner_id=personal_owner_id,
+                    ):
+                        created += 1
                 except Exception as exc:  # 单视图失败不阻断其它
                     db.rollback()
                     print(f"[seed-视图] 跳过: {ws_name}/{table_name} / {vc.get('name', '<无>')}: {exc}")

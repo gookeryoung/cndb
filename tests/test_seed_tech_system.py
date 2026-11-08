@@ -1,23 +1,22 @@
-"""科研项目管理「技术体系」数据集与「技术脉络」树视图测试.
+"""科研项目模板「技术体系」示例数据与「技术脉络」树视图测试.
 
 覆盖：
-- 真实 CSV：6 列 × 43 行，技术编号唯一、父子引用完整、无环、层级语义一致
-- 真实 datasets 目录：fields.json 设置与 views.json 双视图配置
+- 示例数据：6 列 × 43 行，技术编号唯一、父子引用完整、无环、层级语义一致
+- 模板 spec：技术编号 required + unique、技术名称 required
 - seed 流程：CSV 建表、select 推断、settings 应用、tree 视图配置落库
 """
 
 from __future__ import annotations
 
 import csv
+import io
 import json
 from pathlib import Path
 
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATASETS_DIR = PROJECT_ROOT / "examples" / "datasets"
-WORKSPACE_DIR = DATASETS_DIR / "工作区-科研项目管理"
-CSV_PATH = WORKSPACE_DIR / "技术体系.csv"
+EXAMPLE_JSON = PROJECT_ROOT / "examples" / "templates" / "科研项目全生命周期管理" / "example.json"
 
 EXPECTED_HEADER = ["技术编号", "父技术编号", "技术名称", "技术方向", "技术层级", "成熟度"]
 EXPECTED_ROW_COUNT = 43
@@ -36,10 +35,10 @@ TREE_VIEW_OPTIONS = {
 
 
 def _load_rows() -> list[dict[str, str]]:
-    if not CSV_PATH.exists():
-        pytest.skip(f"{CSV_PATH} 不可用")
-    with CSV_PATH.open(encoding="utf-8-sig") as f:
-        return list(csv.DictReader(f))
+    if not EXAMPLE_JSON.exists():
+        pytest.skip(f"{EXAMPLE_JSON} 不可用")
+    manifest = json.loads(EXAMPLE_JSON.read_text(encoding="utf-8"))
+    return list((manifest.get("records") or {}).get("tech_system") or [])
 
 
 def _parents(rows: list[dict[str, str]]) -> dict[str, str]:
@@ -113,52 +112,45 @@ def test_tech_system_dimension_and_level_semantics():
     assert max_depth == 4
 
 
-# ── 2. 真实 datasets 目录配置 ────────────────────────────
+# ── 2. 模板 spec 配置 ────────────────────────────────────
 
 
-def test_real_datasets_fields_json_has_tech_system_settings():
-    """真实 datasets：技术体系 settings 为技术编号 required+unique、技术名称 required."""
-    from cndb.cli.seed import _get_datasets_dir, _load_field_settings
+def test_template_spec_has_tech_system_settings():
+    """模板 spec：技术体系 技术编号 required+unique、技术名称 required."""
+    from cndb.cli.seed.workspace_templates import RESEARCH_LIFECYCLE_SPEC
 
-    datasets_dir = _get_datasets_dir()
-    if datasets_dir is None:
-        pytest.skip("examples/datasets 目录不可用")
-
-    cfg = _load_field_settings(datasets_dir)
-    settings = cfg["科研项目管理"]["settings"]["技术体系"]
-    assert settings["技术编号"] == {"required": True, "unique": True}
-    assert settings["技术名称"] == {"required": True}
+    form = next(f for f in RESEARCH_LIFECYCLE_SPEC["forms"] if f["key"] == "tech_system")
+    fields = {f["name"]: f for f in form["fields"]}
+    assert fields["技术编号"].get("required") is True
+    assert fields["技术编号"].get("is_unique") is True
+    assert fields["技术名称"].get("required") is True
 
 
-def test_real_datasets_views_json_has_tech_system_views():
-    """真实 datasets：技术体系含默认 grid「全部」与 tree「技术脉络」."""
-    from cndb.cli.seed import _get_datasets_dir, _get_workspace_view_configs
-
-    datasets_dir = _get_datasets_dir()
-    if datasets_dir is None:
-        pytest.skip("examples/datasets 目录不可用")
-
-    configs = _get_workspace_view_configs(datasets_dir)
-    views = configs["科研项目管理"]["技术体系"]
-    assert len(views) == 2, f"期望 2 个技术体系视图，实际 {len(views)}"
-
-    by_name = {v["name"]: v for v in views}
-    assert set(by_name) == {"全部", "技术脉络"}
-    assert by_name["全部"]["view_type"] == "grid"
-    assert by_name["全部"]["is_default"] is True
-    assert by_name["技术脉络"]["view_type"] == "tree"
-    assert by_name["技术脉络"]["view_options"] == TREE_VIEW_OPTIONS
-    assert by_name["技术脉络"]["sortings"] == [{"field_name": "技术编号", "direction": "asc"}]
+def test_template_example_tech_system_rows_are_unique():
+    """模板示例数据：技术编号与技术名称唯一，行数 43."""
+    rows = _load_rows()
+    assert len(rows) == EXPECTED_ROW_COUNT
+    assert len({row["技术编号"] for row in rows}) == EXPECTED_ROW_COUNT
+    assert len({row["技术名称"] for row in rows}) == EXPECTED_ROW_COUNT
 
 
 # ── 3. seed 端到端 ──────────────────────────────────────
+
+
+def _tech_system_csv_text() -> str:
+    """把示例数据转回 CSV 文本，供 seed 端到端用例复用."""
+    buffer = io.StringIO()
+    writer = csv.DictWriter(buffer, fieldnames=EXPECTED_HEADER)
+    writer.writeheader()
+    writer.writerows(_load_rows())
+    return buffer.getvalue()
 
 
 def _build_datasets_dir(tmp_path: Path) -> Path:
     """构建仅含技术体系表的临时 datasets 目录（只带新表 settings / views）."""
     ws_dir = tmp_path / "datasets" / "工作区-科研项目管理"
     ws_dir.mkdir(parents=True)
-    ws_dir.joinpath("技术体系.csv").write_text(CSV_PATH.read_text(encoding="utf-8-sig"), encoding="utf-8-sig")
+    ws_dir.joinpath("技术体系.csv").write_text(_tech_system_csv_text(), encoding="utf-8-sig")
     ws_dir.joinpath("fields.json").write_text(
         json.dumps(
             {

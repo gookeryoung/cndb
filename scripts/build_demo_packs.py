@@ -22,7 +22,7 @@ from pathlib import Path
 
 SCENARIOS: dict[str, str] = {
     "sales": "某企业销售管理",
-    "research": "科研项目管理",
+    "research": "科研项目管理（模板示例）",
 }
 
 

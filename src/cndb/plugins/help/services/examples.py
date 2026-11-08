@@ -117,10 +117,12 @@ HELP_EXAMPLE_MANIFEST: list[HelpExample] = [
     },
 ]
 
-# 场景 key → examples/datasets 下的目录名（仅服务端使用，接口不暴露）
+# 场景 key → 示例资产目录名（仅服务端使用，接口不暴露）
+# research 的下载资产已从 datasets 迁到 examples/help，避免 seed 再建同名工作区；
+# sales 仍复用 datasets 下的示例工作区目录。
 SCENARIO_DIRECTORIES: dict[str, str] = {
     "sales": "工作区-某企业销售管理",
-    "research": "工作区-科研项目管理",
+    "research": "科研项目管理",
 }
 
 

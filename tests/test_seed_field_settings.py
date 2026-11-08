@@ -1,7 +1,7 @@
 """seed 字段设置种子（fields.json）单元测试.
 
 覆盖：
-- _load_field_settings：解析真实 datasets 配置 / 顶层非对象 / 目录缺失；
+- _load_field_settings：解析完整配置 / 顶层非对象 / 目录缺失；
 - _apply_field_settings：必填/唯一标志应用、关联引入（link+lookup）、
   match 行关联回填、backfills 物理列数据回填、缺表/缺字段优雅跳过、
   重复执行幂等；
@@ -16,7 +16,7 @@ from typing import Any
 
 import pytest
 
-from cndb.cli.seed import _apply_field_settings, _get_datasets_dir, _load_field_settings
+from cndb.cli.seed import _apply_field_settings, _load_field_settings
 
 
 @pytest.fixture
@@ -60,40 +60,44 @@ def _write_fields_json(tmp_path: Path, payload: dict) -> Path:
     return tmp_path / "datasets"
 
 
-def test_load_field_settings_from_real_datasets():
-    """真实 datasets 目录中的 fields.json 可被解析且结构合法."""
-    datasets_dir = _get_datasets_dir()
-    if datasets_dir is None:
-        pytest.skip("examples/datasets 目录不可用（wheel 安装环境）")
+def test_load_field_settings_full_config(tmp_path):
+    """完整 fields.json 可被解析：settings / link_lookups / backfills 三段保真."""
+    datasets_dir = _write_fields_json(
+        tmp_path,
+        {
+            "settings": {"科研项目": {"课题编号": {"required": True, "unique": True}}},
+            "link_lookups": [
+                {
+                    "table": "课题负责人",
+                    "source_table": "科研项目",
+                    "link_name": "所属课题",
+                    "multiple": False,
+                    "fields": ["项目状态"],
+                    "match": {"local": "课题编号", "source": "课题编号"},
+                }
+            ],
+            "backfills": [
+                {
+                    "table": "项目进展",
+                    "source_table": "科研项目",
+                    "fields": ["项目状态", "立项年份"],
+                    "match": {"local": "课题编号", "source": "课题编号"},
+                }
+            ],
+        },
+    )
 
     result = _load_field_settings(datasets_dir)
-    assert "科研项目管理" in result, "科研工作区应包含 fields.json 字段设置种子"
-    cfg = result["科研项目管理"]
-    assert "settings" in cfg and "link_lookups" in cfg
-    # 唯一示例字段存在且同时声明 required + unique
-    topic_cfg = cfg["settings"]["科研项目"]["课题编号"]
-    assert topic_cfg == {"required": True, "unique": True}
-    # 关联引入规则覆盖全部克隆表，引用真实表名，且声明 match（行关联回填）
-    assert {rule["table"] for rule in cfg["link_lookups"]} == {
-        "课题负责人",
-        "项目进展",
-        "科研经费",
-        "科研任务分解",
-        "科研待办事项",
-        "科研资源排期",
-    }
-    for rule in cfg["link_lookups"]:
-        assert rule["source_table"] == "科研项目"
-        assert rule.get("multiple") is False
-        assert rule.get("match") == {"local": "课题编号", "source": "课题编号"}
-    # backfills 覆盖全部克隆字段的数据回填
-    backfills = cfg.get("backfills") or []
-    backfill_map = {r["table"]: r for r in backfills}
-    assert backfill_map["课题负责人"]["fields"] == ["项目状态"]
-    assert backfill_map["项目进展"]["fields"] == ["项目状态", "立项年份"]
-    assert backfill_map["科研经费"]["fields"] == ["项目状态", "项目类别"]
-    for rule in backfills:
-        assert rule["match"] == {"local": "课题编号", "source": "课题编号"}
+    cfg = result["演示"]
+    assert cfg["settings"]["科研项目"]["课题编号"] == {"required": True, "unique": True}
+    rule = cfg["link_lookups"][0]
+    assert rule["table"] == "课题负责人"
+    assert rule["source_table"] == "科研项目"
+    assert rule.get("multiple") is False
+    assert rule.get("match") == {"local": "课题编号", "source": "课题编号"}
+    backfill = cfg["backfills"][0]
+    assert backfill["fields"] == ["项目状态", "立项年份"]
+    assert backfill["match"] == {"local": "课题编号", "source": "课题编号"}
 
 
 def test_load_field_settings_invalid_top_level(tmp_path):

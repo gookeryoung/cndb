@@ -2,7 +2,7 @@
 
 Status: Implemented（已评审；2026-10-27 人工确认 P0-P1 全期落地）
 Date: 2026-10-24
-Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/seed/datasets.py`、`src/cndb/cli/seed/fields.py`、`src/cndb/cli/seed/views.py`、`frontend/src/pages/grid/views/TreeView.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`examples/datasets/工作区-科研项目管理/views.json`、`examples/datasets/工作区-科研项目管理/fields.json`
+Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/seed/datasets.py`、`src/cndb/cli/seed/views.py`、`src/cndb/cli/seed/workspace_templates.py`、`frontend/src/pages/grid/views/TreeView.tsx`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts`、`examples/templates/科研项目全生命周期管理/example.json`
 需求卡片: `docs/requirements/0027-research-tech-system-tree.md`（需求原文与约束编号的唯一副本）
 
 ## 口径（需求 → 设计落点）
@@ -13,11 +13,11 @@ Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/s
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 科研项目管理，数据表，增加技术体系数据 | 新增 `examples/datasets/工作区-科研项目管理/技术体系.csv`；seed 按文件名自动建表，无需注册表或写代码 |
-| C2 | 增加技术体系数据 | 列固定为 `技术编号,父技术编号,技术名称,技术方向,技术层级,成熟度`；`技术方向 / 技术层级 / 成熟度` 为低基数列，由 CSV 推断提升为 select |
+| C1 | 科研项目管理，数据表，增加技术体系数据 | 技术体系随科研模板并入「科研项目管理（模板示例）」工作区：表单定义在 `src/cndb/cli/seed/workspace_templates.py`，43 行种子在 `examples/templates/科研项目全生命周期管理/example.json` 的 `records.tech_system`，seed 按模板 spec 建表 |
+| C2 | 增加技术体系数据 | 列固定为 `技术编号,父技术编号,技术名称,技术方向,技术层级,成熟度`；`技术方向 / 技术层级 / 成熟度` 为低基数列，模板 spec 声明为 select |
 | C3 | 增加技术体系数据 | 种子 43 行：6 个技术方向、4 层（领域 / 方向 / 技术 / 专项）；根节点 `父技术编号=ROOT`，其余父引用必须是已存在的 `技术编号`，无环、无孤儿 |
-| C4 | 增加技术体系数据 | `fields.json` 的 `技术体系.settings`：`技术编号` required + unique，`技术名称` required；不新增 `link_lookups` / `backfills` |
-| C5 | 树形视图标识技术脉络 | `views.json` 的 `技术体系`：`grid`「全部」（默认，按 `技术编号` 升序）+ `tree`「技术脉络」（`parent_field=父技术编号`、`title_field=技术名称`、`status_field=成熟度`、`show_numbering=false`、`expand_all=true`） |
+| C4 | 增加技术体系数据 | 模板 spec 的 `tech_system` 表单声明：`技术编号` required + unique，`技术名称` required；不新增 `link_lookups` / `backfills` |
+| C5 | 树形视图标识技术脉络 | `example.json` 的 `views.tech_system`：`grid`「全部」（默认，按 `技术编号` 升序）+ `tree`「技术脉络」（`parent_field=父技术编号`、`title_field=技术名称`、`status_field=成熟度`、`show_numbering=false`、`expand_all=true`），seed 通过 `apply_view_config` 写入 |
 | C6 | 树形视图标识技术脉络 | 复用已注册的 `tree` 模式与 `TREE_OPTIONS`；不改前端组件、视图 schema、路由与后端接口 |
 | C7 | （交付约束） | 不补文档、不建项目表字段、不加跨表关联；既有 7 张表的结构与关联保持不变 |
 
@@ -36,9 +36,9 @@ Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/s
 | 5 | 视图种子按表名写入；同名「全部」更新自动生成的默认视图；`scope=global` → `ViewVisibility.TABLE` | `src/cndb/cli/seed/views.py:210-293` | 新表默认视图与树视图均走表内共享，不新增权限面 | 确认 |
 | 6 | Tree 视图把 `parent_field` 业务值反查到父行；`ROOT` 等无法命中的值按根节点处理；含循环检测 | `frontend/src/pages/grid/views/TreeView.tsx:95-195` | 文本父编号方案可用，无需 link 自关联 | 确认 |
 | 7 | `tree` 模式已在 `ViewMode` / `VALID_MODES` 注册，配置项由 `TREE_OPTIONS` 定义 | `frontend/src/pages/grid/views/viewModes.ts:11-14`、`frontend/src/pages/grid/view-config/viewOptionSchema.ts:229-253` | 零前端改动即可打开树视图 | 确认 |
-| 8 | 既有 tree 种子范例为「科研任务分解 / 任务层级树」，同为文本父编号 | `examples/datasets/工作区-科研项目管理/views.json:799-816` | 本次配置形态可对齐，降低校验风险 | 确认 |
+| 8 | 既有 tree / wbs 种子范例为「科研任务分解」的任务层级树与 WBS，同为文本父编号 | `examples/templates/科研项目全生命周期管理/example.json` → `views.project_task` | 本次配置形态可对齐，降低校验风险 | 确认 |
 | 9 | 真实数据集完整性测试会静态解析 CSV 表头 + `views.json` 引用，并校验视图类型与字段可达 | `tests/test_backup_seed_roundtrip.py:335-562`、`tests/test_seed_project_todo.py:252-298` | 新表 / 新视图自动纳入，另需专属父子完整性测试 | 新增 |
-| 10 | 现有科研项目管理工作区共 7 张表（科研项目 / 课题负责人 / 科研经费 / 项目进展 / 科研任务分解 / 科研待办事项 / 科研资源排期），无跨项目技术对象 | `examples/datasets/工作区-科研项目管理/`、`src/cndb/cli/seed/fields.py:20-27` | 任务分解树只表达单项目 WBS，不能表达跨项目技术脉络 | 新增 |
+| 10 | 原独立「科研项目管理」示例工作区共 7 张表（科研项目 / 课题负责人 / 科研经费 / 项目进展 / 科研任务分解 / 科研待办事项 / 科研资源排期），无跨项目技术对象；该工作区已整体并入「科研项目管理（模板示例）」 | `examples/templates/科研项目全生命周期管理/example.json`、`src/cndb/cli/seed/workspace_templates.py` | 任务分解树只表达单项目 WBS，不能表达跨项目技术脉络 | 新增 |
 
 **核心缺陷（需求要补的）**：现有示例工作区只有「项目 / 任务 / 经费 / 进展」等管理对象，缺少可跨项目复用的技术能力对象及其层级关系；`科研任务分解` 树是单项目 WBS，父节点语义是任务拆分，无法用来标识技术演进脉络。
 
@@ -128,12 +128,12 @@ Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/s
 
 | # | 议题 | 结论 | 依据 | 被否决项（及理由） | 代码落点 |
 |---|---|---|---|---|---|
-| D1 | 技术体系数据的载体 | 新建独立 `技术体系` 表 | 「技术脉络」是独立于项目的技术能力图谱，需多层级、可复用；独立表可直接用 tree 视图 | 只在 `科研项目` 加分类字段（单值、无法表达层级）；并入 `科研任务分解`（任务拆分与长期技术脉络语义混叠） | `examples/datasets/工作区-科研项目管理/技术体系.csv` |
-| D2 | 父子关系的表达 | 文本业务编号 `父技术编号` + `ROOT` | 与既有 WBS 树同口径；CSV 建表即用，TreeView 支持业务值反查，无需 link 结构与回填 | link 自关联（需 `fields.json` link_lookups + 行关联回填，seed 步骤更多、失败面更大）；物化路径 / 层级编码（需额外维护，收益仅排序） | `技术体系.csv`、`cli/seed/views.py` |
-| D3 | 树视图形态 | `tree`「技术脉络」：标题=技术名称、状态=成熟度、默认展开、不显示编号 | 通用层级浏览语义，不引入任务进度 / 负责人等 WBS 语义；成熟度是技术脉络最有信息量的状态 | `wbs`（带进度汇总与编号，语义偏任务）；`leader_line` 类新视图（需新前端类型，超出需求） | `views.json`、`viewOptionSchema.ts:229-253` |
-| D4 | 数据口径 | 6 个技术方向、4 层（领域 / 方向 / 技术 / 专项）、43 个节点；成熟度 4 档 | 覆盖多领域与多层演进，满足「标识脉络」；低基数列可稳定推断 select | 只放 1-2 个方向（看不出跨领域脉络）；每列自由文本（无法提升 select、状态徽章失效） | `技术体系.csv` |
-| D5 | 与 `科研项目` 的关系 | 不建关联 | 需求只要求技术体系数据与树形视图；建 link 会牵动 fields.json 回填与项目表结构 | 在项目表加 `技术体系` 关联字段（改动既有表，违反 C7）；新建项目-技术映射表（超出需求） | `examples/datasets/工作区-科研项目管理/科研项目.csv`（不改） |
-| D6 | 代码改动范围 | 零后端接口、零前端代码、零迁移 | 现有 seed 机制与 tree 模式已能承载；最小改动降低回归面 | 为新表写专用 seed 代码或新视图类型（重复既有能力） | `cli/seed/datasets.py`、`views/TreeView.tsx`（不改） |
+| D1 | 技术体系数据的载体 | 新建独立 `技术体系` 表 | 「技术脉络」是独立于项目的技术能力图谱，需多层级、可复用；独立表可直接用 tree 视图 | 只在 `科研项目` 加分类字段（单值、无法表达层级）；并入 `科研任务分解`（任务拆分与长期技术脉络语义混叠） | `examples/templates/科研项目全生命周期管理/example.json` |
+| D2 | 父子关系的表达 | 文本业务编号 `父技术编号` + `ROOT` | 与既有 WBS 树同口径；模板 spec 建表即用，TreeView 支持业务值反查，无需 link 结构与回填 | link 自关联（需 `fields.json` link_lookups + 行关联回填，seed 步骤更多、失败面更大）；物化路径 / 层级编码（需额外维护，收益仅排序） | `examples/templates/科研项目全生命周期管理/example.json`、`cli/seed/views.py` |
+| D3 | 树视图形态 | `tree`「技术脉络」：标题=技术名称、状态=成熟度、默认展开、不显示编号 | 通用层级浏览语义，不引入任务进度 / 负责人等 WBS 语义；成熟度是技术脉络最有信息量的状态 | `wbs`（带进度汇总与编号，语义偏任务）；`leader_line` 类新视图（需新前端类型，超出需求） | `example.json`、`viewOptionSchema.ts:229-253` |
+| D4 | 数据口径 | 6 个技术方向、4 层（领域 / 方向 / 技术 / 专项）、43 个节点；成熟度 4 档 | 覆盖多领域与多层演进，满足「标识脉络」；select 由模板 spec 显式声明 | 只放 1-2 个方向（看不出跨领域脉络）；每列自由文本（无法提升 select、状态徽章失效） | `example.json` |
+| D5 | 与 `科研项目` 的关系 | 不建关联 | 需求只要求技术体系数据与树形视图；建 link 会牵动回填规则与项目表结构 | 在项目表加 `技术体系` 关联字段（改动既有表，违反 C7）；新建项目-技术映射表（超出需求） | `examples/templates/科研项目全生命周期管理/example.json`（不改项目记录） |
+| D6 | 代码改动范围 | 零后端接口、零前端代码、零迁移 | 复用模板 spec + 示例清单（example.json）+ 通用 `apply_view_config`；不新增专用接口或视图类型 | 为新表写专用 seed 代码或新视图类型（重复既有能力） | `cli/seed/workspace_templates.py`、`cli/seed/views.py`（复用）、`views/TreeView.tsx`（不改） |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -155,15 +155,15 @@ Related: `docs/requirements/0027-research-tech-system-tree.md`、`src/cndb/cli/s
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py` | 0dc2e12f |
-| P1 | 已落地 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/fields.json`、`examples/datasets/工作区-科研项目管理/views.json` | `tests/test_seed_tech_system.py`、`tests/test_backup_seed_roundtrip.py` | 0dc2e12f |
+| P0 | 已落地 | `examples/templates/科研项目全生命周期管理/example.json`（records.tech_system）、`src/cndb/cli/seed/workspace_templates.py` | `tests/test_seed_tech_system.py` | 0dc2e12f |
+| P1 | 已落地 | `examples/templates/科研项目全生命周期管理/example.json`（views.tech_system）、`src/cndb/cli/seed/workspace_templates.py`、`src/cndb/cli/seed/views.py` | `tests/test_seed_tech_system.py`、`tests/test_backup_seed_roundtrip.py` | 0dc2e12f |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
 - 当前阶段：P0-P1 已落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
-- 已完成：`技术体系.csv`（43 行 / 6 方向 / 4 层）、`fields.json` 设置、`views.json` 双视图、`tests/test_seed_tech_system.py` 9 例；真实数据集完整性回归随 `make flow` 全量通过
+- 已完成：`example.json` 的 `records.tech_system`（43 行 / 6 方向 / 4 层）、模板 spec 字段设置、`views.tech_system` 双视图（grid + tree）、`views.project_task` WBS 示例；旧独立「科研项目管理」工作区已整体并入「科研项目管理（模板示例）」并从 datasets 移除，`tests/test_seed_tech_system.py` 9 例改为读取模板示例数据。
 - 下一步：无（落地表「提交」列已回填 `0dc2e12f`）
-- 已知坑：视图种子对字段名逐字校验，CSV 表头与 `views.json` 必须完全一致；`ROOT` 不是合法技术编号，仅作为根标记；低基数 select 推断依赖行数与唯一值比例，新增行时勿让 `技术方向 / 技术层级 / 成熟度` 变成高基数列
-- 最近一次全绿：`make flow`（2026-10-24，5329 passed / 3 skipped）
+- 已知坑：视图种子对字段名逐字校验，`example.json` 记录字段与模板 spec 必须一致；`ROOT` 不是合法技术编号，仅作为根标记；select 由模板 spec 显式声明，新增行时勿让 `技术方向 / 技术层级 / 成熟度` 变成高基数列
+- 最近一次全绿：`make flow`（2026-11-08，6745 passed / 3 skipped）

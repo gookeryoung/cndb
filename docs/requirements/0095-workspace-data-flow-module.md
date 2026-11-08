@@ -19,7 +19,7 @@
 | C2 | 「可配置设计」 | 模板 spec 的表单增加 `flow` 配置：列表字段 / 搜索字段 / 创建编辑分组 / 字段提示 / 默认值 / 增删改开关 / 默认排序 / 空态文案；未配置时派生默认值 | `services/templates/spec.py` | 单测：默认 flow 派生；非法字段引用 / 重复分组 / 未知 key 抛 `TemplateSpecError`；未分组字段自动补「其他信息」 |
 | C3 | （数据流程元数据） | 新增只读端点 `GET /workspaces/{wid}/data-flow`：返回阶段 / 当前阶段 / 门禁状态 / 表单映射（table_id）/ 字段 / flow / 记录数 / 操作开关；操作开关 = 模板开关 ∩ 表级 `EDIT_RECORDS` | `routers/data_flow.py`、`schemas/templates.py` | 接口层：阶段与表单结构、记录数、权限开关；无模板 404 |
 | C4 | 「处理数据的增删查改」 | 写操作复用既有 records API（create / list / update / delete），不另建写路径；保留字段校验、修改申请、行级权限、附件归属等口径 | `frontend/src/pages/dataFlow/DataFlowPage.tsx` | 前端：列表 / 搜索 / 新建 / 编辑 / 删除；查看者按既有双轨制转修改申请 |
-| C5 | 「科研项目管理模板配置典型示例数据」 | 科研模板的四张表单配置数据流程；种子额外创建「科研项目管理（模板示例）」工作区，典型数据外置在 `examples/templates/科研项目全生命周期管理/`：6 个项目 / 10 条进展 / 10 条经费 / 3 条结题 / 6 条报销 / 6 项成果 / 5 条变更与 5 份阶段文档正文 | `cli/seed/workspace_templates.py`、`cli/seed/runner.py`、`examples/templates/` | 单测：种子幂等；示例工作区有 6 条项目申报记录；结题文档写入示例正文；流程配置可读取 |
+| C5 | 「科研项目管理模板配置典型示例数据」 | 科研模板的表单配置数据流程；种子额外创建「科研项目管理（模板示例）」工作区，典型数据外置在 `examples/templates/科研项目全生命周期管理/`：13 张表单 / 46 个项目 / 358 条进展 / 10 条项目经费 / 220 条科研经费 / 3 条结题 / 6 条报销 / 6 项成果 / 5 条变更 / 43 个技术体系节点 / 31 条任务 / 16 条待办 / 26 条资源排期，技术体系 tree + 任务 WBS 视图与 5 份阶段文档正文；旧独立「科研项目管理」示例工作区已并入并移除 | `cli/seed/workspace_templates.py`、`cli/seed/runner.py`、`examples/templates/` | 单测：种子幂等；示例工作区有 46 条项目申报记录；结题文档与技术脉络视图写入；流程配置可读取 |
 | C6 | （版本与 diff） | `flow` 属于模板 spec：保存时参与 diff（`form_flow_changed`），不触发数据迁移 / 不需要 force | `services/templates/diff.py` | 单测：flow 变更出现在 diff；已有数据零影响 |
 | C7 | （工程口径） | 更新 CHANGELOG / CONTEXT / ADR 索引；`make check-docs`、`make flow` 通过 | 文档 | 门禁 |
 

@@ -916,12 +916,40 @@ def _apply_example_documents(db: Any, ws: Any, owner: Any, manifest: dict[str, A
         )
 
 
+def _apply_example_views(db: Any, ws: Any, manifest: dict[str, Any]) -> None:
+    """按示例清单的 ``views`` 段写入典型视图（当前为技术体系的 grid + tree）."""
+    from cndb.cli.seed.views import apply_view_config
+    from cndb.plugins.tables.models import DataTable
+
+    views = manifest.get("views") or {}
+    form_tables = (ws.template_state or {}).get("form_tables", {})
+    for form_key, view_list in views.items():
+        table_id = form_tables.get(form_key)
+        table = db.get(DataTable, table_id) if isinstance(table_id, int) else None
+        if table is None:
+            print(f"[seed] 模板示例视图配置的表不存在: {form_key}")
+            continue
+        for index, config in enumerate(view_list):
+            try:
+                apply_view_config(
+                    db,
+                    table,
+                    config,
+                    index,
+                    ws_name=EXAMPLE_WORKSPACE_NAME,
+                    table_name=table.name,
+                )
+            except Exception as exc:  # 单视图失败不阻断示例创建
+                db.rollback()
+                print(f"[seed] 模板示例视图写入失败 {form_key}/{config.get('name')}: {exc}")
+
+
 def _seed_research_example(db: Any, owner: Any, template: Any) -> int:
     """用科研模板建一个示例工作区，并写入各阶段的典型记录 / 文档内容.
 
     示例数据不在代码里重复：统一读取 ``examples/templates/科研项目全生命周期管理/``
-    下的 ``example.json``（7 张表单的典型记录）与 ``documents/*.md``（阶段文档正文），
-    便于直接阅读与对比。
+    下的 ``example.json``（全部表单的典型记录 + 技术体系视图）与 ``documents/*.md``
+    （阶段文档正文），便于直接阅读与对比。
     """
     from cndb.plugins.tables.models import DataTable
     from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole, WorkspaceVisibility
@@ -961,6 +989,7 @@ def _seed_research_example(db: Any, owner: Any, template: Any) -> int:
     spec = normalize_spec(template.spec)
     records = manifest.get("records") or {}
     _create_example_records(engine, spec, {key: table(key) for key in records}, records)
+    _apply_example_views(db, ws, manifest)
     _apply_example_documents(db, ws, owner, manifest)
     db.commit()
     print(f"[seed] 创建模板示例工作区: {EXAMPLE_WORKSPACE_NAME} (id={ws.id})")

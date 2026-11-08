@@ -9371,5 +9371,62 @@
     "budget_doc": "documents/经费决算表.md",
     "closure_doc": "documents/结题报告.md",
     "archive_doc": "documents/成果归档清单.md"
+  },
+  "views": {
+    "tech_system": [
+      {
+        "name": "全部",
+        "view_type": "grid",
+        "sortings": [
+          {
+            "field_name": "技术编号",
+            "direction": "asc"
+          }
+        ],
+        "is_default": true,
+        "order": 0
+      },
+      {
+        "name": "技术脉络",
+        "view_type": "tree",
+        "sortings": [
+          {
+            "field_name": "技术编号",
+            "direction": "asc"
+          }
+        ],
+        "view_options": {
+          "parent_field": "父技术编号",
+          "title_field": "技术名称",
+          "status_field": "成熟度",
+          "show_numbering": false,
+          "expand_all": true
+        },
+        "order": 1
+      }
+    ],
+    "project_task": [
+      {
+        "name": "WBS 工作分解结构",
+        "view_type": "wbs",
+        "sortings": [
+          {
+            "field_name": "任务ID",
+            "direction": "asc"
+          }
+        ],
+        "view_options": {
+          "parent_field": "父任务ID",
+          "title_field": "任务名称",
+          "status_field": "任务状态",
+          "assignee_field": "负责人",
+          "start_date_field": "开始日期",
+          "end_date_field": "结束日期",
+          "show_numbering": true,
+          "expand_all": false
+        },
+        "order": 1
+      }
+    ]
   }
 }
