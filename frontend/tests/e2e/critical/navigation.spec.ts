@@ -1,7 +1,7 @@
 /** MainLayout Header 导航 E2E.
  *
  * 覆盖（需求 0081 后的导航形态）：
- * 顶栏一级导航顺序（数据表 → 文档 → 设计 → 工作区设置）+ 三区划分、
+ * 顶栏一级导航顺序（数据表 → 文档 → 设计 → 统计 → 工作区设置）+ 三区划分、
  * 二级页签（数据列表 / 数据分析 / 数据同步 / 质量检查 / 修改申请 / 问题清单）维持在内容区上方、
  * 文档模块的质量检查由文档区胶囊页签承载（/documents/pipelines，不跳数据表段）、
  * Header 导航按钮可达性 — 文档、数据分析。
@@ -29,7 +29,7 @@ test.describe("MainLayout Header 导航按钮", () => {
 
   // 需求 0081：四个一级模块上移顶栏（桌面端），回归导航被误调序的问题；
   // 二级模块（数据分析等）维持在内容区上方页签行（C5）。
-  test("顶栏一级导航顺序为 数据表 → 文档 → 设计 → 工作区设置，二级页签仅承载二级模块", async ({ page }) => {
+  test("顶栏一级导航顺序为 数据表 → 文档 → 设计 → 统计 → 工作区设置，二级页签仅承载二级模块", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
     await start(page)
 
@@ -46,7 +46,8 @@ test.describe("MainLayout Header 导航按钮", () => {
     expect(idx("数据表")).toBe(0)
     expect(idx("文档")).toBe(1)
     expect(idx("设计")).toBe(2)
-    expect(idx("工作区设置")).toBe(3)
+    expect(idx("统计")).toBe(3)
+    expect(idx("工作区设置")).toBe(4)
 
     // 二级页签顺序（2026-11-03 用户口径）：
     // 数据列表 → 数据分析 → 数据同步 → 质量检查 → 修改申请 → 问题清单
