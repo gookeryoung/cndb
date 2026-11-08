@@ -261,6 +261,244 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
                 "default_sort": {"field": "申请日期", "order": "desc"},
             },
         },
+        {
+            "key": "project_owner",
+            "name": "课题负责人",
+            "description": "课题负责人与骨干成员名录，关联所属课题",
+            "fields": [
+                {"name": "负责人编号", "type": "text", "required": True, "is_unique": True},
+                {"name": "姓名", "type": "text", "required": True},
+                {
+                    "name": "所属课题",
+                    "type": "link",
+                    "required": True,
+                    "config": {"target_form": "project_application", "multiple": False},
+                },
+                {"name": "性别", "type": "select", "config": {"options": ["男", "女"]}},
+                {
+                    "name": "职称",
+                    "type": "select",
+                    "config": {
+                        "options": [
+                            "教授",
+                            "研究员",
+                            "副教授",
+                            "副研究员",
+                            "讲师",
+                            "助理研究员",
+                            "高级工程师",
+                            "工程师",
+                        ]
+                    },
+                },
+                {"name": "所属单位", "type": "text"},
+                {"name": "研究方向", "type": "text"},
+                {"name": "电子邮箱", "type": "text"},
+                {"name": "是否PI", "type": "select", "config": {"options": ["是", "否"]}, "default_value": "否"},
+            ],
+            "flow": {
+                "list_fields": ["负责人编号", "姓名", "所属课题", "职称", "是否PI"],
+                "search_fields": ["姓名", "所属单位", "研究方向", "电子邮箱"],
+                "form_groups": [
+                    {"title": "人员信息", "fields": ["负责人编号", "姓名", "性别", "职称"]},
+                    {"title": "课题与单位", "fields": ["所属课题", "所属单位", "研究方向", "电子邮箱", "是否PI"]},
+                ],
+                "hints": {
+                    "负责人编号": "按「FZR + 4 位序号」填写，例如 FZR0001",
+                    "是否PI": "课题第一负责人标记为「是」",
+                },
+                "default_sort": {"field": "负责人编号", "order": "asc"},
+            },
+        },
+        {
+            "key": "tech_system",
+            "name": "技术体系",
+            "description": "技术方向与能力树维护，用于课题技术路线对照",
+            "fields": [
+                {"name": "技术编号", "type": "text", "required": True, "is_unique": True},
+                {"name": "父技术编号", "type": "text"},
+                {"name": "技术名称", "type": "text", "required": True},
+                {"name": "技术方向", "type": "text"},
+                {
+                    "name": "技术层级",
+                    "type": "select",
+                    "config": {"options": ["领域", "方向", "技术", "专项"]},
+                },
+                {
+                    "name": "成熟度",
+                    "type": "select",
+                    "config": {"options": ["探索期", "培育期", "成长期", "成熟期"]},
+                },
+            ],
+            "flow": {
+                "list_fields": ["技术编号", "技术名称", "技术方向", "技术层级", "成熟度"],
+                "search_fields": ["技术编号", "技术名称", "技术方向"],
+                "form_groups": [
+                    {"title": "技术信息", "fields": ["技术编号", "父技术编号", "技术名称", "技术方向"]},
+                    {"title": "层级与成熟度", "fields": ["技术层级", "成熟度"]},
+                ],
+                "hints": {"父技术编号": "根节点填 ROOT；子节点填上级技术编号"},
+                "default_sort": {"field": "技术编号", "order": "asc"},
+            },
+        },
+        {
+            "key": "project_task",
+            "name": "科研任务分解",
+            "description": "课题 WBS 任务分解、执行跟踪与交付物管理",
+            "fields": [
+                {"name": "任务ID", "type": "text", "required": True, "is_unique": True},
+                {"name": "父任务ID", "type": "text"},
+                {"name": "任务名称", "type": "text", "required": True},
+                {
+                    "name": "所属课题",
+                    "type": "link",
+                    "required": True,
+                    "config": {"target_form": "project_application", "multiple": False},
+                },
+                {"name": "负责人", "type": "text"},
+                {
+                    "name": "任务状态",
+                    "type": "select",
+                    "config": {"options": ["未开始", "进行中", "已完成", "已暂停"]},
+                },
+                {"name": "进度百分比", "type": "percentage"},
+                {"name": "开始日期", "type": "date"},
+                {"name": "结束日期", "type": "date"},
+                {"name": "优先级", "type": "select", "config": {"options": ["高", "中", "低"]}},
+                {"name": "工期（天）", "type": "number"},
+                {"name": "交付物", "type": "text"},
+            ],
+            "flow": {
+                "list_fields": ["任务ID", "任务名称", "所属课题", "负责人", "任务状态", "进度百分比"],
+                "search_fields": ["任务ID", "任务名称", "负责人", "交付物"],
+                "form_groups": [
+                    {"title": "任务结构", "fields": ["任务ID", "父任务ID", "任务名称", "所属课题", "负责人"]},
+                    {
+                        "title": "执行计划",
+                        "fields": ["任务状态", "进度百分比", "开始日期", "结束日期", "优先级", "工期（天）"],
+                    },
+                    {"title": "交付物", "fields": ["交付物"]},
+                ],
+                "hints": {"父任务ID": "顶层任务填 ROOT；子任务填上级任务ID", "进度百分比": "填写 0~100 的百分比"},
+                "default_sort": {"field": "任务ID", "order": "asc"},
+            },
+        },
+        {
+            "key": "project_todo",
+            "name": "科研待办事项",
+            "description": "课题日常待办与节点跟进",
+            "fields": [
+                {"name": "编号", "type": "text", "required": True, "is_unique": True},
+                {
+                    "name": "类别",
+                    "type": "select",
+                    "config": {"options": ["数据", "实验", "论文", "经费", "沟通", "评审", "归档", "其他"]},
+                },
+                {"name": "事项", "type": "longtext", "required": True},
+                {"name": "创建时间", "type": "date"},
+                {"name": "要求节点", "type": "date"},
+                {"name": "完成日期", "type": "date"},
+                {"name": "责任人", "type": "text"},
+                {
+                    "name": "所属课题",
+                    "type": "link",
+                    "required": True,
+                    "config": {"target_form": "project_application", "multiple": False},
+                },
+                {"name": "备注", "type": "text"},
+            ],
+            "flow": {
+                "list_fields": ["编号", "类别", "事项", "要求节点", "责任人", "完成日期"],
+                "search_fields": ["编号", "事项", "责任人", "备注"],
+                "form_groups": [
+                    {"title": "事项信息", "fields": ["编号", "类别", "事项", "所属课题"]},
+                    {"title": "节点与责任", "fields": ["创建时间", "要求节点", "完成日期", "责任人", "备注"]},
+                ],
+                "hints": {"完成日期": "办结后回填；留空表示未完成"},
+                "default_sort": {"field": "要求节点", "order": "asc"},
+            },
+        },
+        {
+            "key": "resource_schedule",
+            "name": "科研资源排期",
+            "description": "团队人员投入排期与工时确认",
+            "fields": [
+                {"name": "排期编号", "type": "text", "required": True, "is_unique": True},
+                {
+                    "name": "团队",
+                    "type": "select",
+                    "config": {"options": ["数据组", "实验组", "算法组", "论文组", "工程组"]},
+                },
+                {"name": "任务名称", "type": "text", "required": True},
+                {"name": "排期日期", "type": "date", "required": True},
+                {"name": "投入人天", "type": "number"},
+                {"name": "负责人", "type": "text"},
+                {
+                    "name": "状态",
+                    "type": "select",
+                    "config": {"options": ["已确认", "待确认", "已取消"]},
+                },
+                {
+                    "name": "所属课题",
+                    "type": "link",
+                    "required": True,
+                    "config": {"target_form": "project_application", "multiple": False},
+                },
+            ],
+            "flow": {
+                "list_fields": ["排期编号", "团队", "任务名称", "排期日期", "投入人天", "状态"],
+                "search_fields": ["排期编号", "任务名称", "团队", "负责人"],
+                "form_groups": [
+                    {"title": "排期信息", "fields": ["排期编号", "团队", "任务名称", "所属课题"]},
+                    {"title": "投入与确认", "fields": ["排期日期", "投入人天", "负责人", "状态"]},
+                ],
+                "default_values": {"状态": "待确认"},
+                "default_sort": {"field": "排期日期", "order": "asc"},
+            },
+        },
+        {
+            "key": "funding_budget",
+            "name": "科研经费",
+            "description": "课题经费预算、拨付与执行台账",
+            "fields": [
+                {"name": "经费编号", "type": "text", "required": True, "is_unique": True},
+                {
+                    "name": "所属课题",
+                    "type": "link",
+                    "required": True,
+                    "config": {"target_form": "project_application", "multiple": False},
+                },
+                {
+                    "name": "预算科目",
+                    "type": "select",
+                    "config": {
+                        "options": ["人员费", "设备费", "材料费", "测试化验加工费", "差旅费", "协作费", "间接费用"]
+                    },
+                },
+                {"name": "预算金额（万元）", "type": "number"},
+                {"name": "已拨金额（万元）", "type": "number"},
+                {"name": "已支金额（万元）", "type": "number"},
+                {"name": "拨付日期", "type": "date"},
+                {
+                    "name": "经费状态",
+                    "type": "select",
+                    "config": {"options": ["待拨付", "正常", "冻结", "超支预警", "已结清"]},
+                },
+            ],
+            "flow": {
+                "list_fields": ["经费编号", "所属课题", "预算科目", "预算金额（万元）", "已拨金额（万元）", "经费状态"],
+                "search_fields": ["经费编号", "预算科目", "经费状态"],
+                "form_groups": [
+                    {"title": "经费归属", "fields": ["经费编号", "所属课题", "预算科目"]},
+                    {
+                        "title": "预算与执行",
+                        "fields": ["预算金额（万元）", "已拨金额（万元）", "已支金额（万元）", "拨付日期", "经费状态"],
+                    },
+                ],
+                "hints": {"已支金额（万元）": "超过预算时状态应标记为「超支预警」"},
+                "default_sort": {"field": "经费编号", "order": "asc"},
+            },
+        },
     ],
     "documents": [
         {
@@ -353,6 +591,82 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
                 {"key": "approve", "name": "审批生效", "description": "管理部门审批通过后更新项目信息"},
             ],
         },
+        {
+            "key": "owner_management",
+            "name": "课题负责人管理",
+            "description": "负责人登记 → 课题匹配 → 资质复核",
+            "stage": "proposal",
+            "steps": [
+                {"key": "register", "name": "负责人登记", "form": "project_owner"},
+                {
+                    "key": "assign",
+                    "name": "课题匹配",
+                    "form": "project_application",
+                    "description": "确认负责人与课题的对应关系",
+                },
+                {"key": "review", "name": "资质复核", "description": "科研管理部门复核职称、单位与在研课题数量"},
+            ],
+        },
+        {
+            "key": "tech_system_management",
+            "name": "技术体系管理",
+            "description": "技术登记 → 成熟度评审 → 技术发布",
+            "stage": "proposal",
+            "steps": [
+                {"key": "register", "name": "技术登记", "form": "tech_system"},
+                {"key": "review", "name": "成熟度评审", "description": "按技术层级评估成熟度与补齐计划"},
+                {"key": "publish", "name": "技术发布", "description": "发布到技术体系目录并同步课题技术路线"},
+            ],
+        },
+        {
+            "key": "task_breakdown_management",
+            "name": "任务分解管理",
+            "description": "任务分解 → 执行跟踪 → 交付确认",
+            "stage": "execution",
+            "steps": [
+                {"key": "breakdown", "name": "任务分解", "form": "project_task"},
+                {
+                    "key": "track",
+                    "name": "执行跟踪",
+                    "form": "project_task",
+                    "description": "更新任务状态、进度与负责人",
+                },
+                {"key": "deliver", "name": "交付确认", "description": "核对交付物与验收标准"},
+            ],
+        },
+        {
+            "key": "todo_followup",
+            "name": "待办事项跟进",
+            "description": "事项登记 → 责任分派 → 跟进关闭",
+            "stage": "execution",
+            "steps": [
+                {"key": "register", "name": "事项登记", "form": "project_todo"},
+                {"key": "dispatch", "name": "责任分派", "description": "指定责任人与要求节点"},
+                {"key": "close", "name": "跟进关闭", "description": "回填完成日期并确认办理结果"},
+            ],
+        },
+        {
+            "key": "resource_schedule_management",
+            "name": "资源排期管理",
+            "description": "排期编制 → 团队确认 → 投入统计",
+            "stage": "execution",
+            "steps": [
+                {"key": "plan", "name": "排期编制", "form": "resource_schedule"},
+                {"key": "confirm", "name": "团队确认", "description": "团队负责人确认投入人天与档期"},
+                {"key": "stat", "name": "投入统计", "description": "按团队与课题汇总人天投入"},
+            ],
+        },
+        {
+            "key": "funding_management",
+            "name": "经费拨付管理",
+            "description": "预算登记 → 拨付执行 → 支出登记",
+            "stage": "execution",
+            "steps": [
+                {"key": "budget", "name": "预算登记", "form": "funding_budget"},
+                {"key": "allocate", "name": "拨付执行", "description": "财务按预算科目拨付并更新已拨金额"},
+                {"key": "spend", "name": "支出登记", "form": "project_budget"},
+            ],
+        },
     ],
     "stages": [
         {
@@ -396,9 +710,11 @@ def _seed_research_template(db: Any, owner_id: int | None) -> int:
     template = WorkspaceTemplate(
         name=TEMPLATE_NAME,
         description=(
-            "覆盖科研项目立项、实施、结题三个阶段，并提供项目全生命周期 / 经费报销 / 成果登记 /"
-            " 项目变更四条端到端流程；内置申报 / 进展 / 经费 / 结题 / 报销 / 成果 / 变更七张表单，"
-            "以及立项申请书、中期检查、经费决算、结题报告等文档规则，阶段推进按门禁校验。"
+            "覆盖科研项目立项、实施、结题三个阶段，并提供项目全生命周期 / 经费报销 / 成果登记 / 项目变更 /"
+            " 课题负责人管理 / 技术体系管理 / 任务分解管理 / 待办事项跟进 / 资源排期管理 / 经费拨付管理"
+            " 十条端到端流程；内置申报 / 进展 / 经费 / 结题 / 报销 / 成果 / 变更 / 负责人 / 技术体系 /"
+            " 任务分解 / 待办事项 / 资源排期 / 经费预算十三张表单，以及立项申请书、中期检查、经费决算、"
+            "结题报告等文档规则，阶段推进按门禁校验。"
         ),
         category=TEMPLATE_CATEGORY,
         modules=["tables", "documents", "design"],

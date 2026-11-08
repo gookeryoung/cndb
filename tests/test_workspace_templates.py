@@ -327,6 +327,12 @@ def test_builtin_research_template_spec_is_valid():
         "expense_claim",
         "achievement_registry",
         "project_change",
+        "project_owner",
+        "tech_system",
+        "project_task",
+        "project_todo",
+        "resource_schedule",
+        "funding_budget",
     }
     assert len(spec["documents"]) == 5
     assert {f["key"] for f in spec["flows"]} == {
@@ -334,12 +340,24 @@ def test_builtin_research_template_spec_is_valid():
         "expense_reimbursement",
         "achievement_registration",
         "project_change",
+        "owner_management",
+        "tech_system_management",
+        "task_breakdown_management",
+        "todo_followup",
+        "resource_schedule_management",
+        "funding_management",
     }
     assert {f["key"]: f["stage"] for f in spec["flows"]} == {
         "project_lifecycle": "proposal",
         "expense_reimbursement": "execution",
         "achievement_registration": "completion",
         "project_change": "execution",
+        "owner_management": "proposal",
+        "tech_system_management": "proposal",
+        "task_breakdown_management": "execution",
+        "todo_followup": "execution",
+        "resource_schedule_management": "execution",
+        "funding_management": "execution",
     }
     assert spec["flows"][1]["steps"][1]["form"] is None
 
@@ -981,8 +999,24 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
         "expense_reimbursement",
         "achievement_registration",
         "project_change",
+        "owner_management",
+        "tech_system_management",
+        "task_breakdown_management",
+        "todo_followup",
+        "resource_schedule_management",
+        "funding_management",
     }
-    for form_key, expected in (("expense_claim", 6), ("achievement_registry", 6), ("project_change", 5)):
+    for form_key, expected in (
+        ("expense_claim", 6),
+        ("achievement_registry", 6),
+        ("project_change", 5),
+        ("project_owner", 12),
+        ("tech_system", 43),
+        ("project_task", 31),
+        ("project_todo", 16),
+        ("resource_schedule", 26),
+        ("funding_budget", 24),
+    ):
         table = (
             db.query(DataTable)
             .filter(
