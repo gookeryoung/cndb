@@ -51,7 +51,7 @@
 | [0095](0095-workspace-data-flow-module.md) | 工作区数据流程二级模块（模板驱动的表单式 CRUD） | Implemented | P0-P2 已落地 | `src/cndb/plugins/workspaces/routers/data_flow.py`、`src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/cli/seed/workspace_templates.py`、`frontend/src/pages/dataFlow/`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_workspace_templates.py`、`frontend/src/pages/dataFlow/DataFlowPage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0097](0097-data-flow-multi-flows.md) | 数据流程支持多端到端流程与多流程展示 | Implemented | P0-P2 已落地 | `src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/routers/data_flow.py`、`src/cndb/cli/seed/workspace_templates.py`、`frontend/src/pages/dataFlow/` | `tests/test_workspace_templates.py`、`frontend/src/pages/dataFlow/DataFlowPage.test.tsx` | [未发布](../../CHANGELOG.md) |
 | [0121](0121-template-structured-editor.md) | 工作区模板结构化编辑模式（结构化为主 + JSON 高级页签） | Accepted | P0-P2 未开始 | — | — | [未发布](../../CHANGELOG.md) |
-| [0122](0122-workspace-project-context.md) | 工作区项目上下文（多项目清单 / 单项目工作台 / 项目级生命周期与文档） | Proposed | P0-P2 未开始 | — | — | [未发布](../../CHANGELOG.md) |
+| [0122](0122-workspace-project-context.md) | 工作区项目上下文（多项目清单 / 单项目工作台 / 项目级生命周期与文档） | Accepted | P0-P2 实施中 | — | — | [未发布](../../CHANGELOG.md) |
 
 承接关系：0080 取代旧 `workspace_type` 三值枚举（0003 / 0004 的权限模型不变）；0075 承接 0024 的存储口径（备份含用量数据不导）；0094 复用 0080 的模块推导，模板全局资源不随 0075 的工作区备份导出；0095 在 0094 的 spec 上加 `flow` 配置与数据流程页面，写路径仍走 0003/0004/0005 的表权限与修改申请；0097 在 0095 上加顶层 `flows[]`（多端到端流程）与流程卡片 / 步骤视图，stages 门禁不变；0121 在 0094 的保存链路前替换编辑入口，spec 契约、数据库与导入导出格式不变；0122 在 0094/0095 上增加项目上下文与项目级生命周期，单项目是根表单 1 行的退化，项目文档实例化复用 0075 的备份口径。
 

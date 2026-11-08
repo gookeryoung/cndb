@@ -14,7 +14,7 @@ import {
   RightOutlined, SearchOutlined, TableOutlined, UpOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { isChangeRequestResponse, recordApi, workspaceDataFlowApi } from '@/api'
 import type {
   DataFlowField, DataFlowFlow, DataFlowForm, DataFlowStep, Field, RowResponse, RowValues,
@@ -122,10 +122,14 @@ export default function DataFlowPage() {
   const { message } = AntApp.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const [searchParams] = useSearchParams()
+  // 项目上下文（ADR 0122）：URL ?project= 深链；单项目后端会自动选中
+  const projectParam = searchParams.get('project')
+  const projectId = projectParam ? Number(projectParam) : null
 
   const { data, isLoading, error } = useQuery<WorkspaceDataFlow>({
-    queryKey: ['workspace-data-flow', wid],
-    queryFn: () => workspaceDataFlowApi.get(wid!),
+    queryKey: ['workspace-data-flow', wid, projectId],
+    queryFn: () => workspaceDataFlowApi.get(wid!, projectId),
     enabled: !!wid,
     retry: false,
   })
@@ -166,10 +170,15 @@ export default function DataFlowPage() {
   const form = step?.form ?? null
   const fieldMap = useMemo(() => new Map((form?.fields ?? []).map(f => [f.name, f])), [form])
 
+  const projectLinkField = form?.scope === 'project' ? form.project_link_field : null
   const rowsQuery = useQuery({
-    queryKey: ['data-flow-rows', wid, form?.table_id, form?.flow.default_sort],
+    queryKey: ['data-flow-rows', wid, form?.table_id, form?.flow.default_sort, projectId, projectLinkField],
     queryFn: () => recordApi.list(wid!, form!.table_id!, {
       limit: 500,
+      // 项目级表单只取当前项目关联的行；工作区级表单保持全量
+      filters: projectId && projectLinkField
+        ? [{ field_name: projectLinkField, op: 'has_any', value: [projectId] }]
+        : undefined,
       sorts: form!.flow.default_sort
         ? [{ field_name: form!.flow.default_sort.field, direction: form!.flow.default_sort.order }]
         : undefined,
@@ -260,8 +269,13 @@ export default function DataFlowPage() {
 
   const openCreate = () => {
     if (!form) return
+    const initial = buildInitialValues(form)
+    // 项目级表单：新建记录默认带出当前项目（ADR 0122 C7）
+    if (projectId && form.project_link_field && !(form.project_link_field in initial)) {
+      initial[form.project_link_field] = [projectId]
+    }
     setEditingRow(null)
-    setValues(buildInitialValues(form))
+    setValues(initial)
     setValueError(null)
     setEditorOpen(true)
   }
@@ -284,6 +298,26 @@ export default function DataFlowPage() {
 
   if (error || !data) {
     const msg = error instanceof Error ? error.message : ''
+    // 项目上下文未就绪：422 多项目未选择 / 409 尚无项目 → 引导到项目清单
+    const detail = (error as { response?: { data?: { detail?: { code?: string } } } } | null)
+      ?.response?.data?.detail
+    const projectBlocked = detail?.code === 'project_required' || detail?.code === 'project_empty'
+    if (projectBlocked) {
+      return (
+        <div style={{ padding: 16 }} data-testid="data-flow-project-required">
+          <Empty
+            description={detail?.code === 'project_empty' ? '工作区还没有项目' : '请先选择项目'}
+          >
+            <Paragraph type="secondary">
+              {detail?.code === 'project_empty'
+                ? '先创建一个项目后，数据流程会按项目隔离展示与填写。'
+                : '当前工作区有多个项目，数据流程、生命周期与文档均按项目隔离。'}
+            </Paragraph>
+            <Button type="primary" onClick={() => navigate(`/w/${wid}/projects`)}>去项目清单</Button>
+          </Empty>
+        </div>
+      )
+    }
     return (
       <div style={{ padding: 16 }} data-testid="data-flow-unavailable">
         <Empty description="数据流程需要工作区使用模板">

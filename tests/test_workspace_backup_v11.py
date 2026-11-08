@@ -65,7 +65,7 @@ class TestArchiveStructure:
         archive = parse_workspace_archive(archive_file)
         try:
             backup = archive.backup
-            assert backup["version"] == "14"
+            assert backup["version"] == "15"
             assert archive.manifest["stats"]["designs"] == 1
             designs = backup["designs"]
             assert len(designs) == 1

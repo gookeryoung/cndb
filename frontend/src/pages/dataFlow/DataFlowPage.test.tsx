@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { screen } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import { Route, Routes } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import DataFlowPage from './DataFlowPage'
@@ -152,6 +152,55 @@ describe('DataFlowPage', () => {
     await userEvent.type(inputs[0], '新项目')
     await userEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
     expect(await screen.findByText('记录已创建')).toBeInTheDocument()
+  })
+
+  it('passes project context to data-flow and record queries (ADR 0122)', async () => {
+    const projectForm = {
+      ...FLOW_FORM,
+      scope: 'project',
+      project_link_field: '所属项目',
+    }
+    let flowUrl = ''
+    let recordsUrl = ''
+    server.use(
+      http.get('/api/v1/workspaces/:wid/data-flow', ({ request }) => {
+        flowUrl = request.url
+        return HttpResponse.json({
+          ...FLOW,
+          project_id: 7,
+          project_mode: 'project',
+          flows: [{
+            ...FLOW.flows[0],
+            steps: [{ ...FLOW.flows[0].steps[0], form: projectForm }],
+          }],
+        })
+      }),
+      http.get('/api/v1/workspaces/:wid/tables/:tid/records', ({ request }) => {
+        recordsUrl = request.url
+        return HttpResponse.json({ items: [], total: 0, offset: 0, limit: 500 })
+      }),
+    )
+
+    renderPage('/w/10/data-flow?project=7')
+    expect(await screen.findByTestId('data-flow-page')).toBeInTheDocument()
+    await waitFor(() => expect(flowUrl).toContain('project_id=7'))
+    await waitFor(() => expect(recordsUrl).toContain('filters='))
+    expect(decodeURIComponent(recordsUrl)).toContain('"field_name":"所属项目"')
+    expect(decodeURIComponent(recordsUrl)).toContain('"value":[7]')
+  })
+
+  it('guides to the project list when project context is required', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/data-flow', () =>
+        HttpResponse.json(
+          { detail: { code: 'project_required', message: '请先选择项目' } },
+          { status: 422 },
+        ),
+      ),
+    )
+    renderPage()
+    expect(await screen.findByTestId('data-flow-project-required')).toBeInTheDocument()
+    expect(screen.getByText('请先选择项目')).toBeInTheDocument()
   })
 
   it('shows multiple flows and a no-form approval step without CRUD actions', async () => {

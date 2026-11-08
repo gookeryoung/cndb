@@ -188,18 +188,23 @@ def create_workspace(
     db.commit()
     db.refresh(ws)
     if template is not None:
+        from cndb.plugins.workspaces.services.templates import project_context
         from cndb.plugins.workspaces.services.templates.engine import apply_spec_to_workspace
         from cndb.plugins.workspaces.services.templates.spec import normalize_spec
 
+        spec = normalize_spec(template.spec)
         try:
-            apply_spec_to_workspace(
-                db, ws, normalize_spec(template.spec), current_user, template=template, version=template.version
-            )
+            apply_spec_to_workspace(db, ws, spec, current_user, template=template, version=template.version)
         except Exception:
             # 模板实例化失败：清理刚创建的工作区，避免留下半成品
             db.delete(ws)
             db.commit()
             raise
+        # 模板声明 project 块：新建工作区直接进入项目模式（存量工作区不受影响）
+        if project_context.project_config(spec) is not None:
+            ws.project_mode = "project"
+            db.add(ws)
+            db.commit()
         db.refresh(ws)
     invalidate_workspace_list_cache(ws.id)
     return ws

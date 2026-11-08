@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -31,6 +31,7 @@ from cndb.plugins.workspaces.schemas.templates import (
     DataFlowStage,
     DataFlowStep,
 )
+from cndb.plugins.workspaces.services.templates import project_context
 from cndb.plugins.workspaces.services.templates.engine import lifecycle_state
 from cndb.plugins.workspaces.services.templates.spec import normalize_spec
 
@@ -58,6 +59,41 @@ def _mapped_tables(db: Session, workspace: Any) -> dict[str, DataTable]:
     return result
 
 
+def _resolve_project(
+    db: Session, workspace: Any, spec: dict[str, Any], project_id: int | None
+) -> tuple[int | None, str]:
+    """解析当前项目上下文：工作区模式返回 (None, workspace)；项目模式返回 (pid, project).
+
+    多项目未选择 → 422 ``project_required``；根表单 0 行 → 409 ``project_empty``；
+    跨工作区 / 跨表 → 404（不泄露存在性）。
+    """
+    project = project_context.project_config(spec)
+    if workspace.project_mode != "project" or project is None:
+        return None, "workspace"
+    table = project_context.root_table(db, workspace, spec)
+    rows: list[dict[str, Any]] = []
+    total = 0
+    if table is not None:
+        from cndb.plugins.tables.services.core.records import list_rows
+
+        rows, total = list_rows(db.get_bind(), table, limit=2, db=db)
+    if not total:
+        raise HTTPException(
+            status_code=409, detail={"code": "project_empty", "message": "工作区还没有项目，请先创建项目"}
+        )
+    if project_id is None:
+        if total == 1:
+            return int(rows[0]["id"]), "project"
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "project_required", "message": "当前工作区有多个项目，请先选择项目"},
+        )
+    try:
+        return project_context.resolve_project_row(db, workspace, spec, project_id), "project"
+    except project_context.ProjectContextError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 def _field_payload(field: Any) -> DataFlowField:
     return DataFlowField(
         name=field.name,
@@ -75,19 +111,26 @@ def get_data_flow(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    project_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> DataFlowResponse:
-    """读取模板驱动的数据流程配置（成员可读；阶段 / 表单 / 字段 / 操作开关）."""
+    """读取模板驱动的数据流程配置（成员可读；阶段 / 表单 / 字段 / 操作开关）.
+
+    ``project_id``：项目模式下按项目过滤；单项目自动选中，多项目必填。
+    """
     workspace = _get_workspace_or_404(workspace_id, db)
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
     template = _template_or_404(db, workspace)
 
     spec = normalize_spec(template.spec)
+    project_id, project_mode = _resolve_project(db, workspace, spec, project_id)
     forms_by_key = {f["key"]: f for f in spec.get("forms", [])}
+    project = project_context.project_config(spec)
+    root_form = project.get("root_form") if project else None
     mapped = _mapped_tables(db, workspace)
     tables = list(mapped.values())
     preload = preload_table_access(db, tables, current_user)
     counts: dict[int, int | None] = batch_record_counts(db, tables) if tables else {}
-    lifecycle = lifecycle_state(db, workspace, template)
+    lifecycle = lifecycle_state(db, workspace, template, project_id)
     gate_by_stage = {s["key"]: s for s in lifecycle["stages"]}
 
     # 表单 payload 一次构建，阶段与流程共用（同一表单可在多条流程中复用）
@@ -100,15 +143,35 @@ def get_data_flow(
             continue
         can_edit = preload.check(db, table, current_user, TableAction.EDIT_RECORDS)
         flow = form.get("flow") or {}
+        scope = project_context.form_scope(spec, form_key) if project_mode == "project" else "workspace"
+        if project_mode == "project" and scope == "project":
+            if form_key == root_form:
+                record_count = 1 if project_id is not None else 0
+            else:
+                record_count = (
+                    project_context.count_project_rows(
+                        db, table, project_context.link_field_for(project, form_key), project_id
+                    )
+                    if project_id is not None
+                    else 0
+                )
+        else:
+            record_count = int(counts.get(table.id, 0) or 0)
         form_payloads[form_key] = DataFlowForm(
             key=form_key,
             name=form["name"],
             description=form.get("description", ""),
+            scope=scope,
+            project_link_field=(
+                project_context.link_field_for(project, form_key)
+                if project_mode == "project" and scope == "project"
+                else None
+            ),
             table_id=table.id,
             table_name=table.name,
             flow=flow,
             fields=[_field_payload(f) for f in table.active_fields()],
-            record_count=int(counts.get(table.id, 0) or 0),
+            record_count=record_count,
             can_create=bool(can_edit and flow.get("allow_create", True)),
             can_edit=bool(can_edit and flow.get("allow_edit", True)),
             can_delete=bool(can_edit and flow.get("allow_delete", True)),
@@ -131,9 +194,12 @@ def get_data_flow(
         )
 
     def _flow_stats(steps: list[DataFlowStep]) -> tuple[int, int, int]:
-        tables = {s.form.table_id for s in steps if s.form is not None and s.form.table_id is not None}
-        record_total = sum(int(counts.get(table_id, 0) or 0) for table_id in tables if isinstance(table_id, int))
-        return len(tables), len(steps), record_total
+        table_ids = {s.form.table_id for s in steps if s.form is not None and s.form.table_id is not None}
+        by_table = {
+            s.form.table_id: s.form.record_count for s in steps if s.form is not None and s.form.table_id is not None
+        }
+        record_total = sum(int(by_table.get(table_id, 0) or 0) for table_id in table_ids)
+        return len(table_ids), len(steps), record_total
 
     stage_names = {stage["key"]: stage["name"] for stage in spec.get("stages", [])}
 
@@ -230,6 +296,8 @@ def get_data_flow(
         next_stage=lifecycle.get("next_stage"),
         stages=stages,
         flows=flows,
+        project_id=project_id,
+        project_mode=project_mode,
     )
 
 

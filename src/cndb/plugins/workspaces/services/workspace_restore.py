@@ -77,6 +77,12 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
     )
     from cndb.plugins.files.models import FileOwner
     from cndb.plugins.tables.models import DataField, DataTable, DataView, RowPermission, TableMember, TablePermission
+    from cndb.plugins.workspaces.models import WorkspaceProjectDocument, WorkspaceProjectState
+
+    # 项目状态 / 文档映射先删（避免文档删除后留下悬挂映射）
+    db.execute(delete(WorkspaceProjectDocument).where(WorkspaceProjectDocument.workspace_id == workspace_id))
+    db.execute(delete(WorkspaceProjectState).where(WorkspaceProjectState.workspace_id == workspace_id))
+    db.commit()
 
     doc_ids = [row[0] for row in db.query(Document.id).filter(Document.workspace_id == workspace_id).all()]
     dynamic_tables = db.query(DataTable.db_table_name).filter(DataTable.workspace_id == workspace_id).all()

@@ -14,6 +14,8 @@ export interface Workspace {
   template_id?: number | null
   template_version?: number | null
   template_stage?: string | null
+  /** 项目上下文模式（ADR 0122）：project 时显示项目清单 / 切换器 */
+  project_mode?: 'workspace' | 'project'
   current_user_role?: WorkspaceRole | null
 }
 export interface WorkspaceDetail extends Workspace {

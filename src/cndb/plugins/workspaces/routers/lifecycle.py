@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -12,6 +12,7 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.services.core.access import check_workspace_permission
 from cndb.plugins.workspaces.models import WorkspaceRole, WorkspaceTemplate
+from cndb.plugins.workspaces.routers.data_flow import _resolve_project
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_owner
 from cndb.plugins.workspaces.routers.workspaces import invalidate_workspace_list_cache
 from cndb.plugins.workspaces.schemas.templates import (
@@ -46,12 +47,15 @@ def get_lifecycle(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    project_id: Annotated[int | None, Query(ge=1)] = None,
 ) -> LifecycleResponse:
-    """读取当前生命周期状态（成员可读；逐阶段门禁明细）."""
+    """读取当前生命周期状态（成员可读；项目模式下按项目隔离）."""
     workspace = _get_workspace_or_404(workspace_id, db)
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
     template = _template_for_workspace(db, workspace)
-    return LifecycleResponse(**lifecycle_state(db, workspace, template))
+    spec = normalize_spec(template.spec)
+    project_id, _ = _resolve_project(db, workspace, spec, project_id)
+    return LifecycleResponse(**lifecycle_state(db, workspace, template, project_id))
 
 
 @router.post("/{workspace_id}/lifecycle/advance", response_model=LifecycleResponse)
@@ -65,6 +69,8 @@ def post_advance_stage(
     workspace = _get_workspace_or_404(workspace_id, db)
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
     template = _template_for_workspace(db, workspace)
+    spec = normalize_spec(template.spec)
+    project_id, _ = _resolve_project(db, workspace, spec, payload.project_id)
     try:
         state = advance_stage(
             db,
@@ -74,6 +80,7 @@ def post_advance_stage(
             target_stage=payload.target_stage,
             force=payload.force,
             reason=payload.reason,
+            project_row_id=project_id,
         )
     except GateError as exc:
         raise HTTPException(status_code=409, detail={"message": str(exc), **exc.details}) from exc

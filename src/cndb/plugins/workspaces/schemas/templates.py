@@ -160,6 +160,8 @@ class AdvanceStageRequest(BaseModel):
     target_stage: str | None = None
     force: bool = False
     reason: str = Field(default="", max_length=500)
+    #: 项目模式下必填（单项目可由前端自动带出）
+    project_id: int | None = None
 
 
 class LifecycleResponse(BaseModel):
@@ -177,6 +179,8 @@ class LifecycleResponse(BaseModel):
     stages: list[dict[str, Any]] = Field(default_factory=list)
     history: list[dict[str, Any]] = Field(default_factory=list)
     version_mismatch: bool = False
+    project_id: int | None = None
+    project_mode: str = "workspace"
 
 
 __all__ = [
@@ -217,6 +221,10 @@ class DataFlowForm(BaseModel):
     key: str
     name: str
     description: str = ""
+    #: project：按项目行统计；workspace：工作区级共享（不参与项目门禁）
+    scope: str = "workspace"
+    #: 项目级表单的关联字段名（前端按项目过滤行 / 新建时默认带出）
+    project_link_field: str | None = None
     table_id: int | None = None
     table_name: str | None = None
     flow: dict[str, Any]
@@ -278,6 +286,8 @@ class DataFlowResponse(BaseModel):
     stages: list[DataFlowStage] = Field(default_factory=list)
     #: 端到端流程（显式配置优先；旧模板由阶段派生，保证前端始终可多流程展示）
     flows: list[DataFlowFlow] = Field(default_factory=list)
+    project_id: int | None = None
+    project_mode: str = "workspace"
 
 
 __all__ = [

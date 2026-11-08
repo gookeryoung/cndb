@@ -6,6 +6,7 @@ import {
 } from 'antd'
 import { CheckCircleFilled, ClockCircleOutlined, MinusCircleOutlined, RocketOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useSearchParams } from 'react-router-dom'
 import { workspaceLifecycleApi, workspaceTemplateApi } from '@/api'
 import type { LifecycleStage, WorkspaceLifecycle } from '@/api'
 import { formatDateTime } from '@/utils/datetime'
@@ -65,10 +66,14 @@ export default function WorkspaceLifecyclePanel({ wid, canAdvance, canManageTemp
   const queryClient = useQueryClient()
   const [applyOpen, setApplyOpen] = useState(false)
   const [applyTemplateId, setApplyTemplateId] = useState<number | null>(null)
+  const [searchParams] = useSearchParams()
+  // 项目上下文（ADR 0122）：生命周期按当前项目隔离
+  const projectParam = searchParams.get('project')
+  const projectId = projectParam ? Number(projectParam) : null
 
   const { data: lifecycle, isLoading, error } = useQuery<WorkspaceLifecycle>({
-    queryKey: ['workspace-lifecycle', wid],
-    queryFn: () => workspaceLifecycleApi.get(wid),
+    queryKey: ['workspace-lifecycle', wid, projectId],
+    queryFn: () => workspaceLifecycleApi.get(wid, projectId),
     enabled: !!wid,
     retry: false,
   })
@@ -83,10 +88,17 @@ export default function WorkspaceLifecyclePanel({ wid, canAdvance, canManageTemp
     queryClient.invalidateQueries({ queryKey: ['workspace-lifecycle', wid] })
     queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
     queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+    queryClient.invalidateQueries({ queryKey: ['workspace-projects', wid] })
+    queryClient.invalidateQueries({ queryKey: ['workspace-data-flow', wid] })
   }
 
   const advance = useMutation({
-    mutationFn: (force: boolean) => workspaceLifecycleApi.advance(wid, { force, reason: force ? '门禁未通过，人工强制推进' : '' }),
+    mutationFn: (force: boolean) =>
+      workspaceLifecycleApi.advance(wid, {
+        force,
+        reason: force ? '门禁未通过，人工强制推进' : '',
+        project_id: projectId,
+      }),
     onSuccess: (state) => {
       message.success(`已推进到「${state.stages[state.current_stage_index]?.name ?? state.current_stage}」`)
       invalidate()
@@ -126,6 +138,17 @@ export default function WorkspaceLifecyclePanel({ wid, canAdvance, canManageTemp
   if (isLoading) return <div className="cn-state">加载中…</div>
 
   if (error || !lifecycle) {
+    const detail = (error as { response?: { data?: { detail?: { code?: string } } } } | null)
+      ?.response?.data?.detail
+    if (detail?.code === 'project_required' || detail?.code === 'project_empty') {
+      return (
+        <div data-testid="workspace-lifecycle-project-required">
+          <Empty description={detail.code === 'project_empty' ? '工作区还没有项目' : '请先选择项目'}>
+            <Text type="secondary">生命周期按项目独立推进；请先在项目清单中选择或创建项目。</Text>
+          </Empty>
+        </div>
+      )
+    }
     return (
       <div data-testid="workspace-lifecycle-empty">
         <Empty description="该工作区还没有使用模板">

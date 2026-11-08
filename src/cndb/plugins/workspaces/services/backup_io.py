@@ -85,11 +85,11 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14"):
+    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14）。"
+                f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15）。"
                 "请升级程序后再导入。"
             ),
         )
@@ -423,6 +423,16 @@ def _import_backup_into_workspace(
         imported_documents += doc_imported
         errors.extend(doc_errors)
 
+        # ── v15（ADR 0122）：项目模式 / 项目状态 / 项目文档映射 ──
+        _import_project_context(
+            workspace_id,
+            json_data,
+            db,
+            doc_id_map=doc_id_map,
+            table_id_map=table_id_map,
+            old_row_id_map=old_row_id_map,
+        )
+
         # ── v5：外部数据同步任务（旧备份无该键时按空处理） ──
         job_imported, job_errors = _import_sync_jobs(workspace_id, json_data, current_user, db)
         imported_sync_jobs += job_imported
@@ -476,6 +486,70 @@ def _import_backup_into_workspace(
         imported_designs=imported_designs,
         errors=errors,
     )
+
+
+def _import_project_context(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    db: Session,
+    *,
+    doc_id_map: dict[int, int],
+    table_id_map: dict[int, int],
+    old_row_id_map: dict[tuple[int, int], int],
+) -> None:
+    """还原项目模式、项目状态与项目文档映射（ADR 0122 I6；旧包缺省为空）."""
+    from cndb.plugins.workspaces.models import (
+        Workspace,
+        WorkspaceProjectDocument,
+        WorkspaceProjectState,
+    )
+
+    workspace = db.get(Workspace, workspace_id)
+    meta = json_data.get("workspace") or {}
+    if workspace is not None:
+        mode = meta.get("project_mode") or "workspace"
+        workspace.project_mode = mode if mode in ("workspace", "project") else "workspace"
+        db.add(workspace)
+
+    for item in json_data.get("project_states", []) or []:
+        old_table_id = item.get("table_id")
+        old_row_id = item.get("project_row_id")
+        if not isinstance(old_table_id, int) or not isinstance(old_row_id, int):
+            continue
+        new_table_id = table_id_map.get(old_table_id)
+        new_row_id = old_row_id_map.get((old_table_id, old_row_id))
+        if new_table_id is None or new_row_id is None:
+            continue
+        db.add(
+            WorkspaceProjectState(
+                workspace_id=workspace_id,
+                project_row_id=new_row_id,
+                stage_key=item.get("stage_key") or "",
+                history=list(item.get("history") or []),
+            )
+        )
+
+    for item in json_data.get("project_documents", []) or []:
+        old_row_id = item.get("project_row_id")
+        old_doc_id = item.get("document_id")
+        new_doc_id = doc_id_map.get(old_doc_id) if isinstance(old_doc_id, int) else None
+        if not isinstance(old_row_id, int) or new_doc_id is None:
+            continue
+        # 项目行 id 需要经根表映射；映射缺失时跳过，避免写入悬挂引用
+        row_candidates = [
+            new_row for (old_table_id, old_rid), new_row in old_row_id_map.items() if old_rid == old_row_id
+        ]
+        if len(row_candidates) != 1:
+            continue
+        db.add(
+            WorkspaceProjectDocument(
+                workspace_id=workspace_id,
+                project_row_id=row_candidates[0],
+                doc_key=item.get("doc_key") or "",
+                document_id=new_doc_id,
+            )
+        )
+    db.commit()
 
 
 def _import_documents(

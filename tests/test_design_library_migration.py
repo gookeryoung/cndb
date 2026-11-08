@@ -9,7 +9,7 @@ from alembic import command
 
 from cndb.core.migrations import _build_config
 
-HEAD = "d7e8f9a0b1c2"
+HEAD = "b0c1d2e3f4a5"
 PREVIOUS = "4c6e8a0b2d3f"
 TABLES = (
     "design_library_module",

@@ -246,6 +246,8 @@ export interface WorkspaceLifecycle {
   can_advance: boolean
   next_stage: { key: string; name: string } | null
   stages: LifecycleStage[]
+  project_id?: number | null
+  project_mode?: 'workspace' | 'project'
   history: Array<{
     from: string | null; to: string; at: string; by: number | null
     reason: string; forced: boolean
@@ -268,6 +270,10 @@ export interface DataFlowForm {
   key: string
   name: string
   description: string
+  /** project：按项目行统计；workspace：工作区级共享（ADR 0122） */
+  scope?: 'project' | 'workspace'
+  /** 项目级表单的关联字段名（按项目过滤行 / 新建默认带出） */
+  project_link_field?: string | null
   table_id: number | null
   table_name: string | null
   flow: {
@@ -333,4 +339,7 @@ export interface WorkspaceDataFlow {
   next_stage: { key: string; name: string } | null
   stages: DataFlowStage[]
   flows?: DataFlowFlow[]
+  /** 当前项目上下文（工作区模式为 null） */
+  project_id?: number | null
+  project_mode?: 'workspace' | 'project'
 }

@@ -1028,11 +1028,22 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
         )
         rows = db.execute(text(f'SELECT COUNT(*) FROM "{table.db_table_name}"')).scalar()
         assert rows == expected, (form_key, rows)
-    # 五份阶段文档均写入 examples 下的示例正文
+    # 项目级文档（ADR 0122）：第一个项目生成五份阶段文档，并写入示例正文
     from cndb.plugins.documents.models import Document, DocumentVersion
+    from cndb.plugins.workspaces.models import WorkspaceProjectDocument
 
-    documents = (ws.template_state or {}).get("documents", {})
+    project_row_id = db.execute(text(f'SELECT id FROM "{applications.db_table_name}" ORDER BY id LIMIT 1')).scalar()
+    mappings = (
+        db.query(WorkspaceProjectDocument)
+        .filter(
+            WorkspaceProjectDocument.workspace_id == ws.id,
+            WorkspaceProjectDocument.project_row_id == project_row_id,
+        )
+        .all()
+    )
+    documents = {m.doc_key: m.document_id for m in mappings}
     assert set(documents) == {"proposal_doc", "midterm_doc", "budget_doc", "closure_doc", "archive_doc"}
+    assert ws.project_mode == "project"
     closure_doc = db.get(Document, documents["closure_doc"])
     assert closure_doc is not None
     latest = (

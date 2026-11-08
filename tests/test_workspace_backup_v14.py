@@ -127,7 +127,7 @@ class TestBackupV14LibraryRefs:
         module_key = _seed_source(db, ws, user)
 
         backup, _files = build_workspace_backup_v9(db, ws.id, user, include_secrets=False)
-        assert backup["version"] == "14"
+        assert backup["version"] == "15"
         assert len(backup["library_refs"]) == 1
         ref = backup["library_refs"][0]
         assert ref["module_key"] == module_key

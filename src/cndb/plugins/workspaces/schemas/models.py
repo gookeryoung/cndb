@@ -72,6 +72,8 @@ class WorkspaceResponse(BaseModel):
     template_id: int | None = None
     template_version: int | None = None
     template_stage: str | None = None
+    #: 项目上下文模式（ADR 0122）：workspace / project
+    project_mode: str = "workspace"
     created_by_id: int | None
     created_at: datetime
     updated_at: datetime

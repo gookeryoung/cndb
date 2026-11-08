@@ -27,6 +27,7 @@ import {
   useDocTitleFilter, valueToSort,
 } from '@/pages/documents/docTreeSort'
 import GlobalSearch from '@/components/GlobalSearch'
+import ProjectSwitcher from '@/components/ProjectSwitcher'
 import SearchInput from '@/components/SearchInput'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
@@ -205,11 +206,13 @@ export default function MainLayout() {
   const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
   // 设计模块上下文：页签行不再渲染工作区级质量检查（2026-11-02 用户口径）
   const inDesignContext = !!wid && location.startsWith(`/w/${wid}/design`)
+  // 项目上下文（ADR 0122）：文档树按 ?project= 过滤；工作区模式保持全量
+  const activeProjectId = searchParams.get('project')
   const { data: docsTreeData, isSuccess: docsTreeReady } = useQuery({
     // 注意 key 用数字 wid：文档页 invalidateQueries 按 ['documents', <number>] 前缀失效，
     // 字符串 wid 与数字 workspaceId 严格不等会导致前缀匹配不上、侧边栏不随页面变更刷新
-    queryKey: ['documents', Number(wid), 'tree'],
-    queryFn: () => documentsApi.tree(Number(wid)),
+    queryKey: ['documents', Number(wid), 'tree', activeProjectId],
+    queryFn: () => documentsApi.tree(Number(wid), activeProjectId),
     enabled: !!wid && wsFeatures.documents && inDocumentsContext,
   })
   const docTree = useMemo(() => buildDocTree(docsTreeData ?? []), [docsTreeData])
@@ -260,6 +263,8 @@ export default function MainLayout() {
           ? 'change-requests'
           : location.startsWith(`/w/${wid}/tables/issues`)
             ? 'issues'
+        : location.startsWith(`/w/${wid}/projects`)
+          ? 'projects'
         : location.startsWith(`/w/${wid}/data-flow`)
           ? 'data-flow'
         : location.includes('/analytics')
@@ -315,6 +320,13 @@ export default function MainLayout() {
       key: 'design',
       icon: <ToolOutlined />,
       label: '设计',
+      count: undefined,
+    }] : []),
+    // 项目清单（ADR 0122）：仅在项目模式工作区出现
+    ...(currentWs?.project_mode === 'project' ? [{
+      key: 'projects',
+      icon: <AppstoreOutlined />,
+      label: '项目',
       count: undefined,
     }] : []),
     { key: 'settings', icon: <SettingOutlined />, label: '工作区设置', count: undefined },
@@ -823,6 +835,9 @@ export default function MainLayout() {
               {!isMobile && (currentWs?.name || '工作区')}
             </Button>
           </Dropdown>
+
+          {/* 项目切换器（ADR 0122）：项目模式多项目显示；单项目自动选中并隐藏 */}
+          {wid && <ProjectSwitcher wid={wid} />}
 
           {/* 一级模块导航（需求 0081 C4）—— 数据表 / 文档 / 设计 / 工作区设置上移顶栏；
               仅桌面端渲染（移动端一级模块维持在下方页签行，C5）。

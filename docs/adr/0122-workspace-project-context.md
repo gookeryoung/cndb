@@ -1,6 +1,6 @@
 # ADR 0122: 工作区项目上下文（多项目清单与单项目工作台）
 
-Status: Proposed（待评审）
+Status: Accepted（2026-11-08 人工确认，按 P0 → P1 → P2 实施）
 Date: 2026-11-08
 Related: `src/cndb/plugins/workspaces/services/templates/engine.py`、`src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/routers/data_flow.py`、`src/cndb/plugins/workspaces/routers/lifecycle.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/models.py`、`frontend/src/pages/dataFlow/DataFlowPage.tsx`、`docs/adr/0094-workspace-configurable-templates.md`
 需求卡片: `docs/requirements/0122-workspace-project-context.md`（需求原文与约束编号的唯一副本）
@@ -47,7 +47,7 @@ Related: `src/cndb/plugins/workspaces/services/templates/engine.py`、`src/cndb/
 
 设计目标（不变量）：
 
-- **I1 项目上下文边界**：`project_row_id` 必须属于当前工作区模板的根表单；跨工作区或跨表一律 404；所有项目级读写必须携带同一 `project_row_id`，不得回落到工作区级。
+- **I1 项目上下文边界**：`project_row_id` 必须是当前工作区根表单中存在的行（动态表行 ID 按表自增，跨表同号无法区分，按本表查无处理）；查无此行一律 404；所有项目级读写必须携带同一 `project_row_id`，不得回落到工作区级。
 - **I2 生命周期唯一入口**：项目级阶段读取、门禁与推进只经 `lifecycle_state` / `advance_stage`；禁止业务代码直接改 `workspace_project_states`。
 - **I3 门禁计数口径**：只统计 `scope=project` 且 `所属项目 = project_row_id` 的表单行；`scope=workspace` 的表单与其他项目行一律不计入；文档按项目映射且存活。
 - **I4 单项目退化**：根表单只有 1 行时，项目模式与“单项目工作台”等价；前端自动选中并隐藏切换器，不产生第二套模板 / 路由。
@@ -111,7 +111,7 @@ Related: `src/cndb/plugins/workspaces/services/templates/engine.py`、`src/cndb/
 校验口径（写入 `normalize_spec`）：
 
 1. `project` 为可选顶层对象；出现时 `root_form` 必须存在于 `forms`。
-2. `link_field` 必须是所有非根 `scope=project` 表单上的字段名，类型为 link / lookup，`target_form = root_form`，`multiple = false`。
+2. `link_field` 支持字符串或按表单映射（`{form_key: 字段名}`），以兼容内置科研模板中「所属项目」/「所属课题」两种命名；归一化后同时产出 `link_fields` 映射。每个非根 `scope=project` 表单都必须能解析到关联字段，类型为 link，`target_form = root_form`，`multiple = false`。
 3. `title_field` 必须是根表单上的文本字段；缺省取 `项目名称`，再缺省取根表单第一个文本字段。
 4. 存在 `project` 时，非根表单必须显式声明 `scope`（`project` / `workspace`），避免静默默认造成门禁漏算。
 5. `documents` 取 `workspace` / `per_project`，默认 `workspace`；`per_project` 时文档规则按项目实例化。
@@ -264,14 +264,20 @@ advance_stage(db, workspace, template, user, project_row_id: int | None = None, 
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | — | — | — |
-| P1 | 未开始 | — | — | — |
-| P2 | 未开始 | — | — | — |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/alembic/versions/b0c1d2e3f4a5_add_workspace_project_context.py`、`src/cndb/plugins/workspaces/services/templates/`、`src/cndb/plugins/workspaces/routers/`、`src/cndb/plugins/workspaces/schemas/`、`frontend/src/components/ProjectSwitcher.tsx`、`frontend/src/pages/projects/ProjectsPage.tsx`、`frontend/src/pages/dataFlow/DataFlowPage.tsx`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_workspace_project_context.py`、`tests/test_workspace_project_context_migration.py`、`frontend/src/pages/dataFlow/DataFlowPage.test.tsx`、`frontend/src/components/ProjectSwitcher.test.tsx`、`frontend/src/pages/projects/ProjectsPage.test.tsx` | 未提交（待人工确认） |
+| P1 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/services/templates/engine.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/cli/seed/workspace_templates.py` | `tests/test_workspace_backup_v15.py`、`tests/test_workspace_templates.py`、`frontend/tests/e2e/critical/workspace-projects.spec.ts` | 未提交（待人工确认） |
+| P2 | 已落地 | `frontend/src/pages/projects/ProjectsPage.tsx`（项目清单统计列与「全部补文档」；提醒不实现，未初始化修复由启用接口幂等初始化 + 首次推进承担） | `frontend/src/pages/projects/ProjectsPage.test.tsx`（批量补建用例） | 未提交（待人工确认） |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 未开始（ADR 待评审）
-- 已完成：需求卡片与 ADR 初稿、索引与术语登记
-- 下一步：人工评审 ADR 0122；确认 I1-I6 是否登记入 CONSTRAINTS；通过后按 P0 实现
-- 已知坑：根表单是动态表，`project_row_id` 无跨表 FK；项目行删除与文档保留需按 D9；旧备份必须回落到 `workspace` 模式
-- 最近一次全绿：`make check-docs`（2026-11-08，0 error；3 warning 来自 0121）
+- 当前阶段：P0 / P1 / P2 已完成，门禁全绿，待人工确认后提交与推送。
+- 已完成：数据模型与迁移；项目级生命周期 / 门禁 / 数据流程过滤；项目清单与项目切换器；项目文档映射、`naming` 实例化与文档树过滤；备份 v15 与 v14 回落；内置科研模板 `project` 块；单测 / 接口 / 迁移 / 备份 / 前端单测 / e2e 同轮补齐；ADR / README / CONSTRAINTS / CHANGELOG 回填。
+- 下一步：人工复核项目清单与切换器交互；确认后 `make push` 并处理发布流程（打 tag / 部署仍为人工卡点）。
+- 已知坑：
+  - 根表单是动态表，`project_row_id` 无跨表 FK；跨表 / 跨工作区 / 查无此行一律 404（同号无法区分）。
+  - 删除项目行只级联删状态与文档映射，**文档正文保留**为普通文档（D9）。
+  - 旧 v14 备份恢复后固定为 `workspace` 模式，不自动拆分共享文档。
+  - 项目模式不支持回退 `workspace`；需要回退时用升级前备份恢复（D10 例外 10）。
+  - `scope=workspace` 表单在项目模式下只展示、不计入门禁；新建根表单行后需显式推进或调用补文档才会产生项目状态 / 文档映射。
+  - 备份版本断言分散在 v9 / v11 / v12 / v14 / v15 测试，后续升版需同步。
+- 最近一次全绿：`make check-fast`、`make flow`、前端 `vitest`（DataFlowPage / ProjectSwitcher / ProjectsPage 15 例）、e2e `workspace-projects.spec.ts`（4 例，2026-11-08）。

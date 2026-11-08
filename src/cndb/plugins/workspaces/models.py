@@ -192,6 +192,13 @@ class Workspace(TimestampMixin, Base):
         server_default="{}",
         comment="模板实例化映射与阶段履历：{form_tables, documents, history}",
     )
+    project_mode: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="workspace",
+        server_default="workspace",
+        comment="项目上下文模式：workspace（工作区级单实例）/ project（按根表单项目行隔离，ADR 0122）",
+    )
 
     # 关系
     created_by: Mapped[User | None] = relationship("User", foreign_keys=[created_by_id])
@@ -335,6 +342,68 @@ class WorkspaceTemplateRevision(TimestampMixin, Base):
         return f"WorkspaceTemplateRevision(template_id={self.template_id}, version={self.version})"
 
 
+class WorkspaceProjectState(TimestampMixin, Base):
+    """项目级生命周期状态（ADR 0122 D3）.
+
+    ``project_row_id`` 是模板根表单（``project.root_form``）的行 ID；动态表无法建
+    跨表 FK，归属由服务层 ``resolve_project_row`` 校验。唯一键保证同一项目只有
+    一条状态，推进用 upsert 语义。
+    """
+
+    __tablename__ = "workspaces_workspace_project_state"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "project_row_id", name="uniq_workspace_project_state"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_row_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    stage_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    history: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=list,
+        server_default="[]",
+        comment="项目级阶段推进履历",
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"WorkspaceProjectState(workspace_id={self.workspace_id}, project_row_id={self.project_row_id})"
+
+
+class WorkspaceProjectDocument(TimestampMixin, Base):
+    """项目级文档映射（ADR 0122 D4）：文档本体不加项目列，映射独立备份与清理."""
+
+    __tablename__ = "workspaces_workspace_project_document"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "project_row_id", "doc_key", name="uniq_workspace_project_document"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    project_row_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    doc_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents_document.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return (
+            f"WorkspaceProjectDocument(workspace_id={self.workspace_id}, "
+            f"project_row_id={self.project_row_id}, doc_key={self.doc_key!r})"
+        )
+
+
 class WorkspaceStorageSnapshot(Base):
     """工作区存储用量快照（ADR 0024）.
 
@@ -389,6 +458,8 @@ __all__ = [
     "Workspace",
     "WorkspaceMember",
     "WorkspaceModule",
+    "WorkspaceProjectDocument",
+    "WorkspaceProjectState",
     "WorkspaceRole",
     "WorkspaceStorageSnapshot",
     "WorkspaceTemplate",

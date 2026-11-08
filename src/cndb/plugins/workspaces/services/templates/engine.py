@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable, ensure_default_view
 from cndb.plugins.tables.services.core.record_counts import batch_record_counts
+from cndb.plugins.workspaces.services.templates import project_context
 from cndb.plugins.workspaces.services.templates.diff import SEVERITY_BREAKING, SEVERITY_INFO, SEVERITY_WARN
 
 #: 预览详情最多返回的工作区条数（聚合计数不受此限制）
@@ -140,6 +141,37 @@ def _document_alive(db: Session, ws_id: int, doc_id: Any) -> bool:
         return False
     doc = db.get(Document, doc_id)
     return bool(doc is not None and doc.workspace_id == ws_id and not doc.is_deleted and not doc.is_folder)
+
+
+def _create_shared_documents(
+    db: Session,
+    ws: Any,
+    user: Any,
+    spec: dict[str, Any],
+    state: dict[str, Any],
+) -> int:
+    """创建工作区级文档占位（已有存活文档跳过，不覆盖正文）."""
+    from cndb.plugins.documents.services.content import create_document
+
+    created = 0
+    for rule in spec.get("documents", []):
+        if _document_alive(db, ws.id, state["documents"].get(rule["key"])):
+            continue
+        stage = _find_stage_for_doc(spec, rule["key"])
+        parent_id = None
+        if stage is not None:
+            parent_id = _ensure_stage_folder(db, ws, user, stage["name"]).id
+        doc = create_document(
+            db,
+            ws.id,
+            user,
+            title=rule["title"],
+            content=rule.get("content", "") or f"# {rule['title']}\n",
+            parent_id=parent_id,
+        )
+        state["documents"][rule["key"]] = doc.id
+        created += 1
+    return created
 
 
 # ── 模板同步（增量、幂等） ────────────────────────
@@ -264,25 +296,9 @@ def apply_spec_to_workspace(
     db.commit()
 
     # 4) 文档占位：已有占位且未删除则不动，避免覆盖用户正文
-    for rule in spec.get("documents", []):
-        if _document_alive(db, ws.id, state["documents"].get(rule["key"])):
-            continue
-        stage = _find_stage_for_doc(spec, rule["key"])
-        parent_id = None
-        if stage is not None:
-            parent_id = _ensure_stage_folder(db, ws, user, stage["name"]).id
-        from cndb.plugins.documents.services.content import create_document
-
-        doc = create_document(
-            db,
-            ws.id,
-            user,
-            title=rule["title"],
-            content=rule.get("content", "") or f"# {rule['title']}\n",
-            parent_id=parent_id,
-        )
-        state["documents"][rule["key"]] = doc.id
-        created_documents += 1
+    #    项目级文档（documents=per_project）由启用 / 补建接口按项目实例化，不建共享占位
+    if not _is_per_project(spec):
+        created_documents += _create_shared_documents(db, ws, user, spec, state)
 
     # 5) 模板引用与阶段回填（阶段被删时回落到第一阶段）
     stage_keys = [s["key"] for s in spec.get("stages", [])]
@@ -521,18 +537,69 @@ def preview_impact(db: Session, template: Any, new_spec: dict[str, Any]) -> dict
 # ── 生命周期与门禁 ─────────────────────────────────
 
 
-def lifecycle_state(db: Session, ws: Any, template: Any) -> dict[str, Any]:
-    """计算工作区当前生命周期：阶段列表 + 当前阶段门禁逐项状态."""
+def _project_state(db: Session, ws: Any, project_row_id: int) -> Any:
+    from cndb.plugins.workspaces.models import WorkspaceProjectState
+
+    return (
+        db.query(WorkspaceProjectState)
+        .filter(
+            WorkspaceProjectState.workspace_id == ws.id,
+            WorkspaceProjectState.project_row_id == project_row_id,
+        )
+        .one_or_none()
+    )
+
+
+def _project_document_alive(db: Session, ws: Any, project_row_id: int, doc_key: str) -> bool:
+    from cndb.plugins.workspaces.models import WorkspaceProjectDocument
+
+    mapping = (
+        db.query(WorkspaceProjectDocument)
+        .filter(
+            WorkspaceProjectDocument.workspace_id == ws.id,
+            WorkspaceProjectDocument.project_row_id == project_row_id,
+            WorkspaceProjectDocument.doc_key == doc_key,
+        )
+        .one_or_none()
+    )
+    return bool(mapping is not None and _document_alive(db, ws.id, mapping.document_id))
+
+
+def _is_per_project(spec: dict[str, Any]) -> bool:
+    project = project_context.project_config(spec)
+    return bool(project and project.get("documents") == "per_project")
+
+
+def lifecycle_state(
+    db: Session,
+    ws: Any,
+    template: Any,
+    project_row_id: int | None = None,
+) -> dict[str, Any]:
+    """计算生命周期：阶段列表 + 当前阶段门禁逐项状态.
+
+    项目模式（``project_mode=project`` 且模板声明 ``project``）下按
+    ``project_row_id`` 隔离阶段、门禁与文档（ADR 0122 I1-I3）；其余情况完全沿用
+    工作区级旧逻辑，保证存量零变化。
+    """
     spec = template.spec or {}
     state = _state(ws)
     tables = _table_map(db, ws, state)
     counts = _row_counts(db, list(tables.values()))
     stages = spec.get("stages", [])
-    current_key = (
-        ws.template_stage if _stage_by_key(spec, ws.template_stage) else (stages[0]["key"] if stages else None)
-    )
+    project = project_context.project_config(spec)
+    use_project = bool(ws.project_mode == "project" and project is not None)
+    if use_project and project_row_id is None:
+        raise project_context.ProjectContextError("项目模式下必须选择项目")
+    if use_project:
+        project_context.resolve_project_row(db, ws, spec, project_row_id)
+    project_state = _project_state(db, ws, project_row_id) if use_project and project_row_id else None
+    project_stage = project_state.stage_key if project_state is not None else None
+    fallback_stage = ws.template_stage if not use_project else project_stage
+    current_key = fallback_stage if _stage_by_key(spec, fallback_stage) else (stages[0]["key"] if stages else None)
     forms_by_key = {f["key"]: f for f in spec.get("forms", [])}
     docs_by_key = {d["key"]: d for d in spec.get("documents", [])}
+    per_project_docs = bool(project and project.get("documents") == "per_project")
 
     result_stages: list[dict[str, Any]] = []
     current_index = next((i for i, s in enumerate(stages) if s["key"] == current_key), 0)
@@ -540,21 +607,40 @@ def lifecycle_state(db: Session, ws: Any, template: Any) -> dict[str, Any]:
         form_checks = []
         for key in stage.get("forms", []):
             table = tables.get(key)
-            row_count = counts.get(table.id, 0) if table is not None else 0
+            scope = project_context.form_scope(spec, key) if use_project else "workspace"
+            if use_project and scope == "project":
+                # 根表单：该项目行存在即满足；其余项目级表单按关联字段统计
+                if project and key == project.get("root_form"):
+                    row_count = 1
+                else:
+                    row_count = (
+                        project_context.count_project_rows(
+                            db, table, project_context.link_field_for(project, key), project_row_id
+                        )
+                        if table is not None and project_row_id is not None
+                        else 0
+                    )
+            else:
+                row_count = counts.get(table.id, 0) if table is not None else 0
             form_checks.append(
                 {
                     "key": key,
                     "name": forms_by_key.get(key, {}).get("name", key),
+                    "scope": scope,
                     "required": True,
                     "table_exists": table is not None,
                     "row_count": row_count,
-                    "satisfied": table is not None and row_count >= 1,
+                    # 项目模式下工作区级表单只做展示，不参与项目门禁（ADR 0122 I3）
+                    "satisfied": True if use_project and scope == "workspace" else table is not None and row_count >= 1,
                 }
             )
         doc_checks = []
         for key in stage.get("documents", []):
             rule = docs_by_key.get(key, {})
-            exists = _document_alive(db, ws.id, state["documents"].get(key))
+            if use_project and per_project_docs and project_row_id is not None:
+                exists = _project_document_alive(db, ws, project_row_id, key)
+            else:
+                exists = _document_alive(db, ws.id, state["documents"].get(key))
             doc_checks.append(
                 {
                     "key": key,
@@ -591,7 +677,9 @@ def lifecycle_state(db: Session, ws: Any, template: Any) -> dict[str, Any]:
         "can_advance": bool(current and current["gate_satisfied"] and next_stage),
         "next_stage": {"key": next_stage["key"], "name": next_stage["name"]} if next_stage else None,
         "stages": result_stages,
-        "history": state.get("history", []),
+        "history": (project_state.history if project_state is not None else state.get("history", [])),
+        "project_id": project_row_id if use_project else None,
+        "project_mode": "project" if use_project else "workspace",
         "version_mismatch": bool(ws.template_version and ws.template_version != template.version),
     }
 
@@ -605,9 +693,10 @@ def advance_stage(
     target_stage: str | None = None,
     force: bool = False,
     reason: str = "",
+    project_row_id: int | None = None,
 ) -> dict[str, Any]:
     """推进到下一阶段（或显式目标阶段）；门禁未通过时抛 :class:`GateError`."""
-    state = lifecycle_state(db, ws, template)
+    state = lifecycle_state(db, ws, template, project_row_id)
     stages = state["stages"]
     keys = [s["key"] for s in stages]
     if not stages:
@@ -631,31 +720,252 @@ def advance_stage(
             f"阶段「{current['name']}」门禁未通过，补齐表单 / 文档或强制推进",
             {"reason": "gate", "stage": current, "can_advance": state["can_advance"]},
         )
-    old_stage = ws.template_stage
-    ws.template_stage = target["key"]
-    state_data = _state(ws)
-    state_data["history"].append(
-        {
-            "from": old_stage,
-            "to": target["key"],
-            "at": _now(),
-            "by": getattr(user, "id", None),
-            "reason": reason,
-            "forced": bool(force and not current["gate_satisfied"]),
-        }
-    )
-    ws.template_state = state_data
-    db.add(ws)
+    spec = template.spec or {}
+    use_project = bool(ws.project_mode == "project" and project_context.project_config(spec) is not None)
+    entry = {
+        "from": state.get("current_stage"),
+        "to": target["key"],
+        "at": _now(),
+        "by": getattr(user, "id", None),
+        "reason": reason,
+        "forced": bool(force and not current["gate_satisfied"]),
+    }
+    if use_project and project_row_id is not None:
+        from cndb.plugins.workspaces.models import WorkspaceProjectState
+
+        project_state = _project_state(db, ws, project_row_id)
+        if project_state is None:
+            project_state = WorkspaceProjectState(
+                workspace_id=ws.id,
+                project_row_id=project_row_id,
+                stage_key=target["key"],
+                history=[],
+            )
+            db.add(project_state)
+        project_state.stage_key = target["key"]
+        project_state.history = [*(project_state.history or []), entry]
+        db.add(project_state)
+    else:
+        ws.template_stage = target["key"]
+        state_data = _state(ws)
+        state_data["history"].append(entry)
+        ws.template_state = state_data
+        db.add(ws)
     db.commit()
     db.refresh(ws)
-    return lifecycle_state(db, ws, template)
+    return lifecycle_state(db, ws, template, project_row_id)
+
+
+class ProjectModeError(ValueError):
+    """项目模式不可用（模板未声明 project 或根表单未实例化）."""
+
+
+def project_list(
+    db: Session,
+    ws: Any,
+    template: Any,
+    *,
+    limit: int | None = 500,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """项目清单：根表单行 + 阶段 + 门禁摘要（ADR 0122 C1）.
+
+    只读汇总，不提供跨项目写入；写操作必须落到具体 ``project_row_id``。
+    """
+    from cndb.plugins.tables.services.core.records import list_rows
+
+    spec = template.spec or {}
+    project = project_context.project_config(spec)
+    if ws.project_mode != "project" or project is None:
+        return {
+            "project_mode": "workspace",
+            "root_form": None,
+            "link_field": None,
+            "title_field": None,
+            "items": [],
+            "total": 0,
+        }
+    table = project_context.root_table(db, ws, spec)
+    if table is None:
+        return {
+            "project_mode": "project",
+            "root_form": project.get("root_form"),
+            "link_field": project.get("link_field"),
+            "title_field": project.get("title_field"),
+            "items": [],
+            "total": 0,
+        }
+    rows, total = list_rows(db.get_bind(), table, limit=limit or 0, offset=offset, db=db)
+    title_field = project.get("title_field")
+    items = []
+    for row in rows:
+        pid = int(row["id"])
+        state = lifecycle_state(db, ws, template, pid)
+        current = next((s for s in state["stages"] if s["is_current"]), None)
+        missing_forms = [c["name"] for c in (current or {}).get("forms", []) if not c["satisfied"]]
+        missing_docs = [c["title"] for c in (current or {}).get("documents", []) if not c["satisfied"]]
+        title = row.get(title_field) if title_field else None
+        items.append(
+            {
+                "project_row_id": pid,
+                "title": str(title) if title not in (None, "") else f"#{pid}",
+                "stage_key": state["current_stage"],
+                "stage_name": current["name"] if current else None,
+                "gate_satisfied": bool(current and current["gate_satisfied"]),
+                "missing_forms": missing_forms,
+                "missing_documents": missing_docs,
+                "initialized": _project_state(db, ws, pid) is not None,
+                "updated_at": row.get("updated_at"),
+            }
+        )
+    return {
+        "project_mode": "project",
+        "root_form": project.get("root_form"),
+        "link_field": project.get("link_field"),
+        "title_field": title_field,
+        "items": items,
+        "total": int(total or 0),
+    }
+
+
+def enable_project_mode(
+    db: Session,
+    ws: Any,
+    template: Any,
+    user: Any,
+    *,
+    generate_documents: bool = False,
+) -> dict[str, Any]:
+    """显式启用项目级管理（幂等，ADR 0122 D8 / C9）.
+
+    为现有根表单行按当前阶段初始化项目状态；不拆分已有共享文档。
+    ``generate_documents`` 仅为缺失的项目文档补占位，不覆盖正文。
+    """
+    from cndb.plugins.tables.services.core.records import list_rows
+    from cndb.plugins.workspaces.models import WorkspaceProjectState
+
+    spec = template.spec or {}
+    project = project_context.project_config(spec)
+    if project is None:
+        raise ProjectModeError("模板未声明 project 块，无法启用项目级管理")
+    if ws.project_mode != "project":
+        ws.project_mode = "project"
+        db.add(ws)
+    table = project_context.root_table(db, ws, spec)
+    rows: list[dict[str, Any]] = []
+    if table is not None:
+        rows, _ = list_rows(db.get_bind(), table, limit=0, db=db)
+    stage_keys = [s["key"] for s in spec.get("stages", [])]
+    default_stage = ws.template_stage if ws.template_stage in stage_keys else (stage_keys[0] if stage_keys else None)
+    initialized = 0
+    for row in rows:
+        pid = int(row["id"])
+        if _project_state(db, ws, pid) is not None:
+            continue
+        db.add(
+            WorkspaceProjectState(
+                workspace_id=ws.id,
+                project_row_id=pid,
+                stage_key=default_stage or "",
+                history=[],
+            )
+        )
+        initialized += 1
+    db.commit()
+    db.refresh(ws)
+    documents_created = 0
+    if generate_documents:
+        for row in rows:
+            documents_created += ensure_project_documents(db, ws, template, user, int(row["id"]))["created"]
+    return {
+        "project_mode": "project",
+        "projects": len(rows),
+        "initialized": initialized,
+        "documents_created": documents_created,
+    }
+
+
+def ensure_project_documents(
+    db: Session,
+    ws: Any,
+    template: Any,
+    user: Any,
+    project_row_id: int,
+) -> dict[str, Any]:
+    """为单个项目补建缺失文档占位（幂等；已存在映射且存活则跳过）."""
+    from cndb.plugins.documents.models import Document
+    from cndb.plugins.documents.services.content import create_document
+    from cndb.plugins.workspaces.models import WorkspaceProjectDocument
+
+    spec = template.spec or {}
+    project = project_context.project_config(spec)
+    if project is None:
+        raise ProjectModeError("模板未声明 project 块")
+    project_context.resolve_project_row(db, ws, spec, project_row_id)
+    if project.get("documents") != "per_project":
+        return {"created": 0, "project_row_id": project_row_id}
+    title = project_context.project_title(db, ws, spec, project_row_id)
+    folder = (
+        db.query(Document)
+        .filter(
+            Document.workspace_id == ws.id,
+            Document.title == title,
+            Document.is_folder.is_(True),
+            Document.is_deleted.is_(False),
+        )
+        .order_by(Document.id)
+        .first()
+    )
+    if folder is None:
+        folder = create_document(db, ws.id, user, title=title, is_folder=True)
+    created = 0
+    for rule in spec.get("documents", []):
+        mapping = (
+            db.query(WorkspaceProjectDocument)
+            .filter(
+                WorkspaceProjectDocument.workspace_id == ws.id,
+                WorkspaceProjectDocument.project_row_id == project_row_id,
+                WorkspaceProjectDocument.doc_key == rule["key"],
+            )
+            .one_or_none()
+        )
+        if mapping is not None and _document_alive(db, ws.id, mapping.document_id):
+            continue
+        doc_title = project_context.render_doc_title(rule, title, rule.get("title", rule["key"]))
+        doc = create_document(
+            db,
+            ws.id,
+            user,
+            title=doc_title,
+            content=rule.get("content", "") or f"# {doc_title}\n",
+            parent_id=folder.id,
+        )
+        if mapping is None:
+            db.add(
+                WorkspaceProjectDocument(
+                    workspace_id=ws.id,
+                    project_row_id=project_row_id,
+                    doc_key=rule["key"],
+                    document_id=doc.id,
+                )
+            )
+        else:
+            mapping.document_id = doc.id
+            db.add(mapping)
+        created += 1
+    db.commit()
+    return {"created": created, "project_row_id": project_row_id}
 
 
 __all__ = [
     "IMPACT_DETAIL_LIMIT",
     "GateError",
+    "ProjectModeError",
     "advance_stage",
     "apply_spec_to_workspace",
+    "enable_project_mode",
+    "ensure_project_documents",
     "lifecycle_state",
     "preview_impact",
+    "project_list",
 ]

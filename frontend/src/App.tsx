@@ -44,6 +44,7 @@ const PublicSharePage = lazy(() => import('@/pages/public/PublicSharePage'))
 const HelpDocsPage = lazy(() => import('@/pages/help/HelpDocsPage'))
 const TemplatesPage = lazy(() => import('@/pages/templates/TemplatesPage'))
 const DataFlowPage = lazy(() => import('@/pages/dataFlow/DataFlowPage'))
+const ProjectsPage = lazy(() => import('@/pages/projects/ProjectsPage'))
 
 /** 页面级骨架占位 —— 与内容区同形状，替代居中文字，避免切换时高度跳动 */
 function PageFallback() {
@@ -89,6 +90,10 @@ function AuthenticatedApp() {
           <Route path="w" element={<WorkspaceList />} />
           <Route path="w/:wid" element={<WorkspaceLanding />} />
           <Route path="w/:wid/tables" element={<TablesList />} />
+          {/* 项目清单（ADR 0122）：一个工作区多项目的阶段 / 门禁摘要 */}
+          <Route path="w/:wid/projects" element={
+            <Suspense fallback={<PageFallback />}><ProjectsPage /></Suspense>
+          } />
           {/* 数据流程（需求 0095）：模板驱动的表单式增删查改 */}
           <Route path="w/:wid/data-flow" element={
             <Suspense fallback={<PageFallback />}><DataFlowPage /></Suspense>

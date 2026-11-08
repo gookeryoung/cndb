@@ -48,7 +48,7 @@ from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError
 
-BACKUP_VERSION = "14"
+BACKUP_VERSION = "15"
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
 ARCHIVE_KIND = "workspace_backup"
@@ -162,6 +162,8 @@ def build_workspace_backup_v9(
         "allow_edit": workspace.allow_edit,
         # v12：模块集合替代旧 workspace_type（ADR 0080 D7）
         "modules": list(workspace.modules),
+        # v15（ADR 0122）：项目上下文模式；旧包缺省按 workspace 还原
+        "project_mode": workspace.project_mode or "workspace",
     }
 
     # ── 表（含字段/行/视图/权限/成员） ──
@@ -654,6 +656,38 @@ def build_workspace_backup_v9(
                 }
             )
 
+    # ── v15（ADR 0122）：项目状态与项目文档映射 ──
+    from cndb.plugins.workspaces.models import WorkspaceProjectDocument, WorkspaceProjectState
+
+    root_table_id: int | None = None
+    if workspace.template_id is not None:
+        from cndb.plugins.workspaces.models import WorkspaceTemplate
+
+        template = db.get(WorkspaceTemplate, workspace.template_id)
+        raw_project = template.spec.get("project") if template and template.spec else None
+        project = raw_project if isinstance(raw_project, dict) else {}
+        root_form = project.get("root_form")
+        root_table_id = ((workspace.template_state or {}).get("form_tables") or {}).get(root_form)
+    project_states_data = [
+        {
+            "table_id": root_table_id,
+            "project_row_id": item.project_row_id,
+            "stage_key": item.stage_key,
+            "history": list(item.history or []),
+        }
+        for item in db.query(WorkspaceProjectState).filter(WorkspaceProjectState.workspace_id == workspace_id).all()
+    ]
+    project_documents_data = [
+        {
+            "project_row_id": item.project_row_id,
+            "doc_key": item.doc_key,
+            "document_id": item.document_id,
+        }
+        for item in db.query(WorkspaceProjectDocument)
+        .filter(WorkspaceProjectDocument.workspace_id == workspace_id)
+        .all()
+    ]
+
     backup = {
         "version": BACKUP_VERSION,
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
@@ -671,6 +705,9 @@ def build_workspace_backup_v9(
         "pipelines": pipelines_data,
         "designs": designs_data,
         "library_refs": library_refs_data,
+        # v15（ADR 0122）：项目级状态与文档映射（旧包缺省为空）
+        "project_states": project_states_data,
+        "project_documents": project_documents_data,
         "include_secrets": include_secrets,
     }
     return backup, files
@@ -693,6 +730,8 @@ def downsample_v8(backup_v9: dict[str, Any]) -> dict[str, Any]:
         "pipelines",
         "designs",
         "library_refs",
+        "project_states",
+        "project_documents",
         "include_secrets",
     ):
         data.pop(key, None)

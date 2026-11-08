@@ -24,7 +24,10 @@ from cndb.plugins.tables.field_types import default_registry, normalize_field_ty
 #: key 允许字母 / 数字 / 下划线 / 连字符 / 中文（模板作者可读），不超过 64 字符
 _KEY_RE = re.compile(r"^[\w\u4e00-\u9fff-]{1,64}$")
 _STAGE_KEYS = {"key", "name", "description", "order", "forms", "documents"}
-_FORM_KEYS = {"key", "name", "description", "fields", "flow"}
+_FORM_KEYS = {"key", "name", "description", "fields", "flow", "scope"}
+_PROJECT_KEYS = {"root_form", "link_field", "link_fields", "title_field", "documents"}
+_PROJECT_DOC_SCOPES = {"workspace", "per_project"}
+_FORM_SCOPES = {"project", "workspace"}
 _DOC_KEYS = {"key", "title", "required", "naming", "content"}
 _FIELD_KEYS = {"name", "type", "required", "is_unique", "config", "default_value", "hidden"}
 _FORM_FLOW_KEYS = {
@@ -298,6 +301,7 @@ def _normalize_forms(raw_forms: Any) -> list[dict[str, Any]]:
             raise _err(f"{path}.name", f"表单名重复：{name}")
         seen_names.add(name)
         fields = _normalize_fields(item.get("fields"), f"{path}.fields")
+        scope = _normalize_scope(item.get("scope"), f"{path}.scope")
         result.append(
             {
                 "key": key,
@@ -307,9 +311,90 @@ def _normalize_forms(raw_forms: Any) -> list[dict[str, Any]]:
                 ),
                 "fields": fields,
                 "flow": _normalize_flow(item.get("flow"), fields, f"{path}.flow"),
+                "scope": scope,
             }
         )
     return result
+
+
+def _normalize_scope(value: Any, path: str) -> str | None:
+    """表单作用域：project / workspace；未声明返回 None（由 project 块决定缺省）."""
+    if value is None:
+        return None
+    scope = _require_str(value, path, max_len=16)
+    if scope not in _FORM_SCOPES:
+        raise _err(path, "只能是 project / workspace")
+    return scope
+
+
+def _normalize_project(raw_project: Any, forms: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """校验顶层 ``project`` 块（ADR 0122 D6）；无该块时返回 None，旧模板行为不变."""
+    if raw_project is None:
+        return None
+    project = _require_dict(raw_project, "project")
+    _check_keys(project, _PROJECT_KEYS, "project")
+    forms_by_key = {f["key"]: f for f in forms}
+    root_form = _require_str(project.get("root_form"), "project.root_form", max_len=64)
+    if root_form not in forms_by_key:
+        raise _err("project.root_form", f"引用了不存在的表单：{root_form}")
+    root = forms_by_key[root_form]
+    raw_link = project.get("link_field")
+    if isinstance(raw_link, dict):
+        # 兼容不同表单使用不同关联字段名（如「所属项目」/「所属课题」）
+        link_fields = {
+            str(key): _require_str(value, f"project.link_field.{key}", max_len=255) for key, value in raw_link.items()
+        }
+        link_field: str | None = None
+    else:
+        link_field = _require_str(raw_link, "project.link_field", max_len=255)
+        link_fields: dict[str, str] = {}
+
+    # 非根表单必须显式声明作用域，避免静默缺省导致门禁漏算
+    for form in forms:
+        if form["key"] != root_form and form["scope"] is None:
+            raise _err("forms", f"存在 project 块时表单「{form['name']}」必须声明 scope（project / workspace）")
+
+    # link_field 必须出现在每个 scope=project 的非根表单上，且指向根表单
+    project_forms = [f for f in forms if f["key"] != root_form and f["scope"] == "project"]
+    for form in project_forms:
+        field_name = link_fields.get(form["key"], link_field)
+        if field_name is None:
+            raise _err("project.link_field", f"表单「{form['name']}」未配置关联字段")
+        field = next((f for f in form["fields"] if f["name"] == field_name), None)
+        if field is None:
+            raise _err("project.link_field", f"表单「{form['name']}」缺少关联字段：{field_name}")
+        if field["type"] != "link":
+            raise _err("project.link_field", f"表单「{form['name']}」的「{field_name}」必须是 link 类型")
+        config = field.get("config") or {}
+        if config.get("target_form") != root_form:
+            raise _err("project.link_field", f"表单「{form['name']}」的「{field_name}」必须指向根表单 {root_form}")
+        if bool(config.get("multiple", True)):
+            raise _err("project.link_field", f"表单「{form['name']}」的「{field_name}」必须为单选（multiple=false）")
+        link_fields[form["key"]] = field_name
+
+    title_field = project.get("title_field")
+    if title_field is not None:
+        title_field = _require_str(title_field, "project.title_field", max_len=255)
+        target = next((f for f in root["fields"] if f["name"] == title_field), None)
+        if target is None:
+            raise _err("project.title_field", f"根表单缺少字段：{title_field}")
+    else:
+        preferred = next((f for f in root["fields"] if f["name"] == "项目名称"), None)
+        text_field = next((f for f in root["fields"] if f["type"] in {"text", "longtext"}), None)
+        chosen = preferred or text_field or (root["fields"][0] if root["fields"] else None)
+        title_field = chosen["name"] if chosen is not None else None
+
+    documents = _require_str(project.get("documents", "workspace"), "project.documents", max_len=16)
+    if documents not in _PROJECT_DOC_SCOPES:
+        raise _err("project.documents", "只能是 workspace / per_project")
+
+    return {
+        "root_form": root_form,
+        "link_field": link_field,
+        "link_fields": link_fields,
+        "title_field": title_field,
+        "documents": documents,
+    }
 
 
 def _normalize_documents(raw_documents: Any) -> list[dict[str, Any]]:
@@ -485,8 +570,16 @@ def _normalize_stages(raw_stages: Any, form_keys: set[str], doc_keys: set[str]) 
 def normalize_spec(raw: Any) -> dict[str, Any]:
     """校验并归一化模板规格；非法时抛 :class:`TemplateSpecError`（中文可读）."""
     spec = _require_dict(raw, "spec")
-    _check_keys(spec, {"forms", "documents", "stages", "flows"}, "spec")
+    _check_keys(spec, {"forms", "documents", "stages", "flows", "project"}, "spec")
     forms = _normalize_forms(spec.get("forms", []))
+    project = _normalize_project(spec.get("project"), forms)
+    # 无 project 块的旧模板全部按工作区级处理，输出结构保持兼容
+    for form in forms:
+        if project is None:
+            form["scope"] = "workspace"
+        elif form["key"] == project["root_form"]:
+            form["scope"] = "project"
+        form["scope"] = form["scope"] or "workspace"
     documents = _normalize_documents(spec.get("documents", []))
     if not forms and not documents:
         raise _err("spec", "至少定义一个表单或文档规则")
@@ -504,7 +597,10 @@ def normalize_spec(raw: Any) -> dict[str, Any]:
     orphan_docs = sorted(doc_keys - used_docs)
     if orphan_docs:
         raise _err("documents", f"文档规则未被任何阶段 / 流程引用：{', '.join(orphan_docs)}")
-    return {"forms": forms, "documents": documents, "stages": stages, "flows": flows}
+    result: dict[str, Any] = {"forms": forms, "documents": documents, "stages": stages, "flows": flows}
+    if project is not None:
+        result["project"] = project
+    return result
 
 
 def spec_counts(spec: dict[str, Any]) -> dict[str, int]:

@@ -4,6 +4,11 @@ import api from './client'
 import type { WorkspaceDataFlow } from './types'
 
 export const workspaceDataFlowApi = {
-  get: (wid: number | string) =>
-    api.get<WorkspaceDataFlow>(`/v1/workspaces/${wid}/data-flow`).then(r => r.data),
+  /** projectId：项目模式下按项目过滤；单项目可省略（后端自动选中） */
+  get: (wid: number | string, projectId?: number | string | null) =>
+    api
+      .get<WorkspaceDataFlow>(`/v1/workspaces/${wid}/data-flow`, {
+        params: projectId ? { project_id: projectId } : undefined,
+      })
+      .then(r => r.data),
 }

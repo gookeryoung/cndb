@@ -12,11 +12,31 @@ from pathlib import Path
 from typing import Any
 
 RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
+    # 项目上下文（ADR 0122）：一行项目申报 = 一个项目；其余表单按关联字段归属项目
+    "project": {
+        "root_form": "project_application",
+        "link_field": {
+            "project_progress": "所属项目",
+            "project_budget": "所属项目",
+            "project_closure": "所属项目",
+            "expense_claim": "所属项目",
+            "achievement_registry": "所属项目",
+            "project_change": "所属项目",
+            "project_owner": "所属课题",
+            "project_task": "所属课题",
+            "project_todo": "所属课题",
+            "resource_schedule": "所属课题",
+            "funding_budget": "所属课题",
+        },
+        "title_field": "项目名称",
+        "documents": "per_project",
+    },
     "forms": [
         {
             "key": "project_application",
             "name": "项目申报",
             "description": "立项申报阶段的主表，一条记录对应一个科研项目",
+            "scope": "project",
             "flow": {
                 "list_fields": ["项目名称", "项目编号", "课题编号", "项目类别", "负责人", "项目状态"],
                 "search_fields": ["项目名称", "项目编号", "课题编号", "负责人", "依托单位"],
@@ -79,6 +99,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_progress",
             "name": "项目进展",
             "description": "过程实施阶段的定期进展填报",
+            "scope": "project",
             "flow": {
                 "list_fields": ["所属项目", "报告季度", "填报日期", "进展阶段", "进展状态", "完成度"],
                 "search_fields": ["报告季度", "阶段进展", "存在问题与措施"],
@@ -122,6 +143,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_budget",
             "name": "经费使用",
             "description": "过程实施阶段的经费支出台账",
+            "scope": "project",
             "flow": {
                 "list_fields": ["所属项目", "支出日期", "支出科目", "金额（元）", "用途说明", "凭证编号"],
                 "search_fields": ["用途说明", "凭证编号"],
@@ -155,6 +177,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_closure",
             "name": "结题验收",
             "description": "结题验收阶段的结论与成果登记",
+            "scope": "project",
             "flow": {
                 "list_fields": ["所属项目", "验收日期", "验收结论", "成果类型", "成果摘要"],
                 "search_fields": ["成果摘要"],
@@ -191,6 +214,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "expense_claim",
             "name": "经费报销",
             "description": "项目经费报销申请，审批通过后登记到经费使用台账",
+            "scope": "project",
             "fields": [
                 {
                     "name": "所属项目",
@@ -232,6 +256,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "achievement_registry",
             "name": "成果登记",
             "description": "项目成果登记与归档清单维护",
+            "scope": "project",
             "fields": [
                 {
                     "name": "所属项目",
@@ -265,6 +290,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_change",
             "name": "项目变更",
             "description": "项目负责人 / 周期 / 预算等变更申请与审批",
+            "scope": "project",
             "fields": [
                 {
                     "name": "所属项目",
@@ -303,6 +329,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_owner",
             "name": "课题负责人",
             "description": "课题负责人与骨干成员名录，关联所属课题",
+            "scope": "project",
             "fields": [
                 {"name": "负责人编号", "type": "text", "required": True, "is_unique": True},
                 {"name": "姓名", "type": "text", "required": True},
@@ -352,6 +379,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "tech_system",
             "name": "技术体系",
             "description": "技术方向与能力树维护，用于课题技术路线对照",
+            "scope": "workspace",
             "fields": [
                 {"name": "技术编号", "type": "text", "required": True, "is_unique": True},
                 {"name": "父技术编号", "type": "text"},
@@ -383,6 +411,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_task",
             "name": "科研任务分解",
             "description": "课题 WBS 任务分解、执行跟踪与交付物管理",
+            "scope": "project",
             "fields": [
                 {"name": "任务ID", "type": "text", "required": True, "is_unique": True},
                 {"name": "父任务ID", "type": "text"},
@@ -425,6 +454,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "project_todo",
             "name": "科研待办事项",
             "description": "课题日常待办与节点跟进",
+            "scope": "project",
             "fields": [
                 {"name": "编号", "type": "text", "required": True, "is_unique": True},
                 {
@@ -460,6 +490,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "resource_schedule",
             "name": "科研资源排期",
             "description": "团队人员投入排期与工时确认",
+            "scope": "project",
             "fields": [
                 {"name": "排期编号", "type": "text", "required": True, "is_unique": True},
                 {
@@ -498,6 +529,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "key": "funding_budget",
             "name": "科研经费",
             "description": "课题经费预算、拨付与执行台账",
+            "scope": "project",
             "fields": [
                 {"name": "经费编号", "type": "text", "required": True, "is_unique": True},
                 {
@@ -890,14 +922,31 @@ def _create_example_records(
 
 
 def _apply_example_documents(db: Any, ws: Any, owner: Any, manifest: dict[str, Any]) -> None:
-    """把 examples 下的 Markdown 正文写入模板占位文档（仅示例工作区）."""
+    """把 examples 下的 Markdown 正文写入模板占位文档（仅示例工作区）.
+
+    项目级文档（ADR 0122）按第一个项目的映射写入；无项目映射时回退到工作区级
+    ``template_state.documents``（旧模板行为）。
+    """
     from cndb.plugins.documents.models import Document
     from cndb.plugins.documents.services.content import update_content
+    from cndb.plugins.workspaces.models import WorkspaceProjectDocument
 
     dir_path = _example_template_dir()
     if dir_path is None:
         return
-    doc_state = (ws.template_state or {}).get("documents", {})
+    doc_state = dict((ws.template_state or {}).get("documents", {}))
+    project_id = _first_project_row_id(db, ws)
+    if project_id is not None:
+        mappings = (
+            db.query(WorkspaceProjectDocument)
+            .filter(
+                WorkspaceProjectDocument.workspace_id == ws.id,
+                WorkspaceProjectDocument.project_row_id == project_id,
+            )
+            .all()
+        )
+        if mappings:
+            doc_state = {m.doc_key: m.document_id for m in mappings}
     for key, relative in (manifest.get("documents") or {}).items():
         doc_id = doc_state.get(key)
         if not isinstance(doc_id, int) or db.get(Document, doc_id) is None:
@@ -914,6 +963,20 @@ def _apply_example_documents(db: Any, ws: Any, owner: Any, manifest: dict[str, A
             content=path.read_text(encoding="utf-8"),
             change_summary="写入示例内容",
         )
+
+
+def _first_project_row_id(db: Any, ws: Any) -> int | None:
+    """读取根表单第一行（示例文档 / 项目上下文用）."""
+    from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.core.records import list_rows
+
+    form_tables = (ws.template_state or {}).get("form_tables", {})
+    table_id = form_tables.get("project_application")
+    table = db.get(DataTable, table_id) if isinstance(table_id, int) else None
+    if table is None:
+        return None
+    rows, _ = list_rows(db.get_bind(), table, limit=1, db=db)
+    return int(rows[0]["id"]) if rows else None
 
 
 def _apply_example_views(db: Any, ws: Any, manifest: dict[str, Any]) -> None:
@@ -972,7 +1035,8 @@ def _seed_research_example(db: Any, owner: Any, template: Any) -> int:
     db.add(WorkspaceMember(workspace_id=ws.id, user_id=owner.id, role=WorkspaceRole.OWNER))
     db.commit()
     db.refresh(ws)
-    apply_spec_to_workspace(db, ws, normalize_spec(template.spec), owner, template=template, version=template.version)
+    spec = normalize_spec(template.spec)
+    apply_spec_to_workspace(db, ws, spec, owner, template=template, version=template.version)
     db.refresh(ws)
 
     def table(key: str) -> DataTable | None:
@@ -986,9 +1050,19 @@ def _seed_research_example(db: Any, owner: Any, template: Any) -> int:
         return 1
 
     engine = db.get_bind()
-    spec = normalize_spec(template.spec)
     records = manifest.get("records") or {}
     _create_example_records(engine, spec, {key: table(key) for key in records}, records)
+    # 示例工作区按项目模式初始化，并按第一个项目生成一套项目级文档
+    from cndb.plugins.workspaces.services.templates.engine import (
+        enable_project_mode,
+        ensure_project_documents,
+    )
+
+    if spec.get("project"):
+        enable_project_mode(db, ws, template, owner)
+    project_id = _first_project_row_id(db, ws)
+    if project_id is not None:
+        ensure_project_documents(db, ws, template, owner, project_id)
     _apply_example_views(db, ws, manifest)
     _apply_example_documents(db, ws, owner, manifest)
     db.commit()
