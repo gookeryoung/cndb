@@ -94,7 +94,7 @@ const workspace: HelpTopic = {
             label: '危险操作',
             body: (
                 <Note kind="warn">
-                    删除工作区会永久删除其中的数据表、数据行、视图、文档与成员关系，无法恢复。删除前先用
+                    「基本设置」底部的危险操作区集中提供「转移所有权」与「删除工作区」。删除工作区会永久删除其中的数据表、数据行、视图、文档与成员关系，无法恢复。删除前先用
                     <HelpLink section="configuration" topic="admin" anchor="backup"> 管理台 · 系统备份 </HelpLink>
                     做一次整库备份。所有权可转让给其他成员，转让后自己降为编辑者。
                 </Note>

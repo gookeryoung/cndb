@@ -7194,8 +7194,50 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   margin-top: var(--cn-space-md);
 }
 
+/* 危险操作区：参考 GitHub 设置页放在内容底部，转移 / 删除两行同构。 */
 .cn-ws-settings-danger {
-  padding: var(--cn-space-md);
+  margin-top: var(--cn-space-lg);
+  padding: var(--cn-space-lg);
+}
+
+.cn-ws-settings-danger-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  margin-bottom: var(--cn-space-xs);
+  font-size: var(--cn-text-md);
+  font-weight: var(--cn-weight-semibold);
+  color: #dc2626;
+}
+
+.cn-ws-settings-danger-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--cn-space-lg);
+  padding-block: var(--cn-space-md);
+}
+
+.cn-ws-settings-danger-row + .cn-ws-settings-danger-row {
+  border-top: 1px solid #fecaca;
+}
+
+.cn-ws-settings-danger-row-title {
+  margin-bottom: var(--cn-space-xs);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-primary);
+}
+
+.cn-ws-settings-danger-row-desc {
+  font-size: var(--cn-text-sm);
+  color: #991b1b;
+}
+
+@media (max-width: 767.98px) {
+  .cn-ws-settings-danger-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 @media (max-width: 991.98px) {

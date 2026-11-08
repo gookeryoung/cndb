@@ -20,7 +20,7 @@ import { App as AntApp } from 'antd'
 import {
   FileTextOutlined, EyeOutlined, HddOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
-  ReadOutlined, ToolOutlined, SettingOutlined,
+  ReadOutlined, ToolOutlined, SettingOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -368,25 +368,6 @@ export default function WorkspaceSettingsContent({
         assignableRoles={assignableRoles}
         submitting={addMember.isPending}
       />
-
-      {/* ── 转让所有权 Modal ── */}
-      <TransferOwnerModal
-        open={transferOpen}
-        onCancel={() => setTransferOpen(false)}
-        onOk={() => {
-          const selected = members.find(m => m.role !== 'owner' && String(m.user.id) === String(transferTargetId))
-          if (selected) transferOwner.mutate(Number(selected.user.id))
-        }}
-        options={members
-          .filter(m => m.role !== 'owner')
-          .map(m => ({
-            value: String(m.user.id),
-            label: `${m.user.username}${m.user.nickname ? ` (${m.user.nickname})` : ''}`,
-          }))}
-        value={transferTargetId}
-        onChange={setTransferTargetId}
-        confirming={transferOwner.isPending}
-      />
     </div>
   )
 
@@ -544,32 +525,53 @@ export default function WorkspaceSettingsContent({
                   </Descriptions.Item>
                 </Descriptions>
               </Card>
-
-              {/* 危险操作区 — 仅 owner 可见 */}
-              {canDeleteWorkspace && (
-                <div className="cn-ws-settings-danger" style={dangerBoxStyle}>
-                  <div style={{ fontWeight: WEIGHT.semibold, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <DeleteOutlined /> 危险操作
-                  </div>
-                  <div style={{ color: '#991b1b', fontSize: 'var(--cn-text-sm)', marginBottom: 12 }}>
-                    删除工作区将永久删除所有数据表、数据行、视图和成员关系，无法恢复。
-                  </div>
-                  <Popconfirm
-                    title={`确认删除工作区「${detail?.name}」？`}
-                    description="此操作不可撤销，所有数据将永久丢失。"
-                    okText="我确定，删除"
-                    okType="danger"
-                    cancelText="取消"
-                    onConfirm={() => removeWs.mutate()}
-                  >
-                    <Button danger icon={<DeleteOutlined />} loading={removeWs.isPending} block={isMobile}>
-                      删除工作区
-                    </Button>
-                  </Popconfirm>
-                </div>
-              )}
             </aside>
           </div>
+
+          {/* 危险操作区：参考 GitHub 设置页置于底部，仅 owner 可见。
+           * 「转移所有权」与「删除工作区」都是不可逆操作，集中放在同一区域并用危险色提示。 */}
+          {canDeleteWorkspace && (
+            <div className="cn-ws-settings-danger" style={dangerBoxStyle}>
+              <div className="cn-ws-settings-danger-title">
+                <ExclamationCircleOutlined /> 危险操作
+              </div>
+              <div className="cn-ws-settings-danger-row">
+                <div>
+                  <div className="cn-ws-settings-danger-row-title">转移工作区所有权</div>
+                  <div className="cn-ws-settings-danger-row-desc">
+                    将工作区转让给其他成员；转让后您将失去所有者特权，回落到编辑者角色。
+                  </div>
+                </div>
+                <Button
+                  danger
+                  icon={<SwapOutlined />}
+                  onClick={() => setTransferOpen(true)}
+                >
+                  转移所有权
+                </Button>
+              </div>
+              <div className="cn-ws-settings-danger-row">
+                <div>
+                  <div className="cn-ws-settings-danger-row-title">删除此工作区</div>
+                  <div className="cn-ws-settings-danger-row-desc">
+                    删除后将永久删除所有数据表、数据行、视图和成员关系，无法恢复。
+                  </div>
+                </div>
+                <Popconfirm
+                  title={`确认删除工作区「${detail?.name}」？`}
+                  description="此操作不可撤销，所有数据将永久丢失。"
+                  okText="我确定，删除"
+                  okType="danger"
+                  cancelText="取消"
+                  onConfirm={() => removeWs.mutate()}
+                >
+                  <Button danger icon={<DeleteOutlined />} loading={removeWs.isPending}>
+                    删除工作区
+                  </Button>
+                </Popconfirm>
+              </div>
+            </div>
+          )}
         </div>
       ),
     },
@@ -606,6 +608,24 @@ export default function WorkspaceSettingsContent({
           size={isMobile ? 'small' : 'middle'}
         />
       )}
+      {/* 转移所有权弹窗：基本设置危险区与权限页共用同一实例，避免重复挂载 */}
+      <TransferOwnerModal
+        open={transferOpen}
+        onCancel={() => setTransferOpen(false)}
+        onOk={() => {
+          const selected = members.find(m => m.role !== 'owner' && String(m.user.id) === String(transferTargetId))
+          if (selected) transferOwner.mutate(Number(selected.user.id))
+        }}
+        options={members
+          .filter(m => m.role !== 'owner')
+          .map(m => ({
+            value: String(m.user.id),
+            label: `${m.user.username}${m.user.nickname ? ` (${m.user.nickname})` : ''}`,
+          }))}
+        value={transferTargetId}
+        onChange={setTransferTargetId}
+        confirming={transferOwner.isPending}
+      />
     </div>
   )
 }

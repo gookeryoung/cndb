@@ -264,6 +264,21 @@ describe('WorkspaceSettingsContent 统计信息并入基本设置', () => {
     expect(cardText('设计')).toContain('2')
   })
 
+  it('危险操作区位于内容底部：提供转移所有权与删除工作区两项', async () => {
+    renderContent('owner')
+    await waitDetailLoaded()
+
+    const danger = document.querySelector('.cn-ws-settings-danger')!
+    expect(danger.parentElement).toHaveClass('cn-ws-basic-settings')
+    expect(danger.parentElement?.lastElementChild).toBe(danger)
+    expect(within(danger as HTMLElement).getByText('转移工作区所有权')).toBeInTheDocument()
+    expect(within(danger as HTMLElement).getByText('删除此工作区')).toBeInTheDocument()
+
+    // 转移入口复用所有权转让弹窗
+    fireEvent.click(within(danger as HTMLElement).getByRole('button', { name: /转移所有权/ }))
+    expect(await screen.findByText('转让工作区所有权')).toBeInTheDocument()
+  })
+
   it('未启用的模块不展示对应统计卡片（tables-only 工作区）', async () => {
     renderContent('owner', { modules: ['tables'] })
     await waitDetailLoaded()
