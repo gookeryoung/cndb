@@ -61,7 +61,7 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 
 | 入口 | 签名 | 职责 |
 |---|---|---|
-| `frontend/scripts/perf-budget.mjs` | `export const PERF_BUDGET = { themeSwitchMs, viewSwitchMs, firstInteractiveMs, maxLongTaskMs }` | 旧内核性能阈值唯一来源；冒烟与 e2e 共用，禁止散落数字 |
+| `frontend/scripts/perf-budget.mjs` | `export const PERF_BUDGET = { themeSwitchMs, viewSwitchMs, firstInteractiveMs, themeLongTaskMs, viewLongTaskMs, viewLongTaskByModeMs }` | 旧内核性能阈值唯一来源；冒烟与 e2e 共用，禁止散落数字 |
 | `frontend/src/compat/capabilities.ts` | `supportsColorMix()` / `isFlexGapSupported()` | 运行时能力探测唯一入口；主题兜底与垫片只调用它 |
 | `initCompat()` | `(): void` | 兼容层装载唯一入口（保持 ADR 0026 口径），不新增第二入口 |
 | `applyThemeMixVars()` | `(root?: HTMLElement): void` | `--cn-mix-*` 唯一写入方；内部保证「先读完、再统一写」 |
@@ -74,7 +74,7 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 
 1. 低版本定义：Chromium 81 / Edge 81（含内嵌 WebView）为硬基线；Firefox ESR / Safari 等只保「可打开、无未捕获异常」。
 2. 参考数据集：5000 行 × 20 列、10 个视图；固定机器（CI runner）采集，跨机器数字不作横向比较，只比同机基线。
-3. 阈值初值：主题切换 ≤ 200ms、视图切换 ≤ 800ms、首屏可交互 ≤ 3000ms、单次长任务 ≤ 250ms；P0 实测后只允许收紧，放宽须在「决策记录」追加理由。
+3. 阈值按首次同机实测标定（D7）：主题切换 ≤ 200ms、视图切换 ≤ 800ms、首屏可交互 ≤ 3000ms、主题长任务 ≤ 250ms、视图长任务 ≤ 250ms（看板单独 ≤ 1000ms）。测量前先预热一轮，首次懒加载 chunk 不计入「切换（不含网络）」口径；标定后只允许收紧，放宽须在「决策记录」追加理由。
 4. 允许的降级：旧内核关闭装饰性过渡 / 阴影 / 模糊；不允许牺牲文字与背景的对比度、边框可见性等可读性口径。
 5. 主题兜底缓存以「主题模式 + 字体等影响 token 的偏好」为键；仅当输入变化时重算并重写。
 6. 垫片熔断：`window.__CNDB_DISABLE_FLEX_GAP_SHIM__ = true` 后，已写入的 margin 在下一轮扫描还原；冒烟验证熔断后页面仍可操作。
@@ -90,20 +90,20 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 | 主题兜底 | `frontend/src/theme/themeMix.ts` | 快照读 + 批量写；写入前比对内联值，值未变不写 |
 | 主题过渡 | `frontend/src/index.css` | 全页过渡由 `@supports (color-mix(...))` 门控 |
 | 兼容探测 | `frontend/src/compat/capabilities.ts`（新增） | 收敛 `supportsColorMix` / `isFlexGapSupported`；删除旧的 `flexGapSupport.ts` |
-| flex-gap 垫片 | `frontend/src/compat/flexGap.ts` | 待扫描根去重、class/style 变更浅扫（不展开子树）、空闲切片预算 ≤ 8ms、自身写入不触发重扫 |
-| 旧内核冒烟 | `frontend/scripts/chrome81-smoke.mjs` | 性能段：longtask 统计、首屏可交互 / 主题切换 / 视图切换时延，超阈值非 0 退出 |
+| flex-gap 垫片 | `frontend/src/compat/flexGap.ts` | 待扫描根去重、class/style 变更浅扫（不展开子树）、深扫按元素在 8ms 预算处断点续扫、自身写入不触发重扫 |
+| 旧内核冒烟 | `frontend/scripts/chrome81-smoke.mjs` | 性能段：预热后采集首屏可交互 / 主题切换 / 视图切换时延与按视图划分的长任务，超阈值非 0 退出 |
 | 阈值常量 | `frontend/scripts/perf-budget.mjs`（新增） | 阈值单点定义 |
 | 图表主题 | `frontend/src/pages/grid/views/dashboard/` | 已核实：图表实例复用、仅 `setOption`，无需改渲染路径 |
 
 ### 7. 测试清单
 
-**判定层（单测）**：`themeMix` 快照读次数（mock `getComputedStyle` 计数，断言 1 次）与值未变不重写；`flexGap` 新增子树扫描、class/style 变更不展开子树、自身写入不触发重扫；`capabilities` 在各能力缺失时的返回值。
+**判定层（单测）**：`themeMix` 快照读次数（mock `getComputedStyle` 计数，断言 1 次）与值未变不重写；`flexGap` 新增子树扫描、class/style 变更不展开子树、自身写入不触发重扫、深扫预算耗尽后断点续扫；`capabilities` 在各能力缺失时的返回值。
 
 **接口层**：无。
 
 **迁移 / 备份**：无。
 
-**e2e（前端）**：`chrome81-smoke.mjs` 性能断言（首屏可交互、主题切换、视图切换、最长任务，阈值取 `perf-budget.mjs`）；`browser-compat.spec.ts` 保持功能断言；`perf/journeys.spec.ts` 断言主表挂载行数 ≤ 100、DOM 元素 ≤ 8000（与数据规模无关的虚拟化上限）。
+**e2e（前端）**：`chrome81-smoke.mjs` 性能断言（首屏可交互、主题切换、视图切换、按视图划分的最长任务；预热后测量，阈值取 `perf-budget.mjs`）；`browser-compat.spec.ts` 保持功能断言；`perf/journeys.spec.ts` 断言主表挂载行数 ≤ 100、DOM 元素 ≤ 8000（与数据规模无关的虚拟化上限）。
 
 ### 8. 分期
 
@@ -123,6 +123,7 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 | D4 | flex-gap 垫片 | 保留运行时垫片，加去重 / 短路 / 预算 / 熔断 | ADR 0026 已落地且 e2e 覆盖；构建期 CSS 后处理需改写 200+ 处写法，风险高 | 移除垫片（旧内核间距塌陷）；构建期转换（改动面与回归成本过大） | `frontend/src/compat/flexGap.ts` |
 | D5 | 性能门禁载体 | `chrome81-smoke.mjs` 增性能断言，阈值集中在 `perf-budget.mjs` | 已有 Chromium 81 真实内核冒烟与定时 CI，复用成本最低 | 仅靠人工体验记录（不可判定、不可回归）；只看 Web Vitals 上报（旧内核无 INP / Event Timing） | `frontend/scripts/chrome81-smoke.mjs` |
 | D6 | 长列表 | 沿用现有虚拟化，只补规模断言 | 主表、看板、甘特已虚拟化，无证据表明需另建路径 | 为旧内核单独实现渲染路径（维护双路径，收益未证实） | `frontend/src/pages/grid/gridTableSection.tsx` |
+| D7 | 首次同机标定与视图分级预算 | 长任务预算拆为主题 / 视图两类；视图默认 ≤ 250ms，看板 ≤ 1000ms；视图与主题测量前各预热一轮，首次懒加载 chunk 不计入「切换（不含网络）」口径；同轮把垫片深扫改为按元素断点续扫 | Chromium 81 本地实测：看板切换长任务 367–401ms（预热后 354ms，CI run 16 为 837ms）；关闭垫片 377ms、overscan 5→2 仅 −5%、移除 55 个 `Progress` 仅 −22%，证明是引擎渲染成本而非懒加载或垫片缺陷；阈值留 20% 余量 | 维持单值 250ms（500 行看板在 Chromium 81 不可达，门禁长期红）；放宽为全局 1000ms（削弱其他视图的回归检测）；并发时间切片（需 S2 改渲染架构，Chrome 81 收益未验证） | `frontend/scripts/perf-budget.mjs`、`frontend/scripts/chrome81-smoke.mjs`、`frontend/src/compat/flexGap.ts` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -154,19 +155,21 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 
 阈值唯一来源 `frontend/scripts/perf-budget.mjs`；冒烟每次运行打印 `[chrome81] perf: {...}`，CI 日志留存读数，只允许与同机历史比较。
 
-| 指标 | 采集口径 | 阈值 |
-|---|---|---|
-| 首屏可交互 | 导航开始 → 应用头部出现且内容非空 | ≤ 3000ms |
-| 主题切换 | 点击主题卡片 → 下一帧（React 提交 + 主题变量重算 + 重绘） | ≤ 200ms |
-| 视图切换 | 点击视图按钮 → 下一帧（同步渲染，不含网络） | ≤ 800ms |
-| 单次长任务 | `PerformanceObserver('longtask')` 最长 duration（主题 / 视图切换窗口） | ≤ 250ms |
+| 指标 | 采集口径 | 阈值 | 首次实测 |
+|---|---|---|---|
+| 首屏可交互 | 导航开始 → 应用头部出现且内容非空 | ≤ 3000ms | CI run 16 885ms；本地 719–764ms |
+| 主题切换 | 预热后，点击主题卡片 → 下一帧（React 提交 + 主题变量重算 + 重绘） | ≤ 200ms | 预热前 CI 350ms；预热后本地 159–169ms |
+| 主题长任务 | 预热后 `PerformanceObserver('longtask')` 最长 duration | ≤ 250ms | 预热前 CI 294ms；预热后本地 110–127ms |
+| 视图切换 | 预热后，点击视图按钮 → 下一帧（同步渲染，不含网络） | ≤ 800ms | CI 120ms；本地 394–430ms |
+| 视图长任务（看板） | 预热后，看板切换窗口内的最长 duration | ≤ 1000ms | 预热前 CI 837ms；预热后本地 342–379ms |
+| 视图长任务（其他视图） | 预热后，各视图切换窗口内的最长 duration | ≤ 250ms | 本地 0–114ms |
 
-> 首次同机读数由 CI 定时任务采集后回填本表；本机无 Chromium 81 运行环境时不伪造数字。
+> 读数来自 2026-11-08 本地 Chromium 81 r737027 与 CI run 16（`0a6ce34a`）；跨机器数字不作横向比较，只与同机历史比较。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 全部落地，等待人工确认 `Status` 是否改 `Implemented` 与同机基线回填
-- 已完成：冒烟性能段（longtask + 首屏 / 主题 / 视图时延，超阈值非 0 退出）；`perf-budget.mjs` 阈值单点；`applyThemeMixVars` 快照读 + 批量写 + 值未变不写；全页过渡能力门控；`capabilities.ts` 收敛能力探测；flex-gap 垫片去重 / 浅扫 / 8ms 切片 / 自写抑制；图表主题核实为实例复用
-- 下一步：CI 首次采集后把读数回填「基线」表；如某项超阈值，先看是 runner 抖动还是真实回退
-- 已知坑：Chromium 81 无 Event Timing / INP，只能用 `PerformanceObserver('longtask')` + `requestAnimationFrame` 手工计时；无头 Chromium 81 无 WebGL，设计预览走降级提示；运行后端测试前需 `unset LD_LIBRARY_PATH`
-- 最近一次全绿：`make flow` + 前端全量单测 + `make check-docs` @ `6cec1837`（2026-11-07）
+- 当前阶段：P0 / P1 / P2 全部落地；D7 首次同机标定已回填基线表，等待 CI 复测与人工确认 `Status` 是否改 `Implemented`
+- 已完成：冒烟性能段（longtask + 首屏 / 主题 / 视图时延，超阈值非 0 退出）；`perf-budget.mjs` 阈值单点；`applyThemeMixVars` 快照读 + 批量写 + 值未变不写；全页过渡能力门控；`capabilities.ts` 收敛能力探测；flex-gap 垫片去重 / 浅扫 / 深扫断点续扫 / 自写抑制；图表主题核实为实例复用；D7：阈值按实测拆分为主题 / 视图两类，看板单独 1000ms，测量前预热
+- 下一步：推送后触发 `chrome81-smoke` CI 运行，确认 0 失败；若同机读数仍超阈值，先区分 runner 抖动与真实回退，再按 D7 流程调整
+- 已知坑：Chromium 81 无 Event Timing / INP，只能用 `PerformanceObserver('longtask')` + `requestAnimationFrame` 手工计时；无头 Chromium 81 无 WebGL，设计预览走降级提示；运行后端测试前需 `unset LD_LIBRARY_PATH`；本地复现需 `CNDB_CHROME81_PATH` 指向 r737027 快照（系统 glib 冲突时用 `env -u LD_LIBRARY_PATH`）；看板切换在 Chromium 81 上是渲染热点（500 行 × 55 张卡片），预热与垫片优化都无法降到 250ms
+- 最近一次全绿：本地 Chromium 81 冒烟 + `flexGap.test.ts` + `make check-docs` @ 2026-11-08（D7 改动，待提交）

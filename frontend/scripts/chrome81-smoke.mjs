@@ -121,12 +121,17 @@ async function openThemePanel(page) {
   return true
 }
 
-/** 测量主题切换时延：切到深色再切回默认，取较慢一次（ADR 0117 C2 / C3） */
+/** 测量主题切换时延：预热一轮后切到深色再切回默认，取较慢一次（ADR 0117 C2 / C3 / D7） */
 async function measureThemeSwitch(page) {
   let themeSwitchMs = null
   let longTaskMs = 0
   try {
     if (!(await openThemePanel(page))) return { themeSwitchMs, longTaskMs }
+    // 预热：首次切换包含一次性主题快照 / 样式计算，不计入「切换」口径（D7）
+    for (const mode of ['github-dark', 'modern']) {
+      await clickToNextFrame(page, `.settings-modal [data-theme-card="${mode}"]`)
+      await sleep(250)
+    }
     await resetLongTasks(page)
     const durations = []
     for (const mode of ['github-dark', 'modern']) {
@@ -350,7 +355,14 @@ async function main() {
     const modes = await page.$$eval('[data-mode]', (els) =>
       els.map((el) => el.getAttribute('data-mode')).filter(Boolean),
     )
+    // 预热：首次进入视图会拉取懒加载 chunk（KanbanView / ChartView 等），属于一次性加载成本，
+    // 不计入「视图切换（不含网络）」口径（ADR 0117 D7）
+    for (const mode of modes) {
+      await clickToNextFrame(page, `[data-mode="${mode}"]`)
+      await sleep(1200)
+    }
     const viewDurations = []
+    const viewLongTasks = {}
     await resetLongTasks(page)
     for (const mode of modes) {
       const latency = await clickToNextFrame(page, `[data-mode="${mode}"]`)
@@ -358,8 +370,9 @@ async function main() {
       await sleep(1200)
       const rendered = await page.evaluate(() => document.body.innerText.length > 0)
       check(`视图切换 ${mode}`, rendered)
+      viewLongTasks[mode] = await maxLongTask(page)
+      await resetLongTasks(page)
     }
-    const viewLongTaskMs = await maxLongTask(page)
     if (!modes.length) notes.push('当前表没有多视图按钮（跳过视图切换）')
 
     // ── 3.5 旧内核性能基线（C2 / C6；阈值唯一来源 perf-budget.mjs）───────
@@ -371,11 +384,14 @@ async function main() {
         `${viewSwitchMs.toFixed(1)}ms`,
       )
     }
-    check(
-      `视图切换最长任务 ≤ ${PERF_BUDGET.maxLongTaskMs}ms`,
-      viewLongTaskMs <= PERF_BUDGET.maxLongTaskMs,
-      `${viewLongTaskMs.toFixed(1)}ms`,
-    )
+    for (const [mode, longTaskMs] of Object.entries(viewLongTasks)) {
+      const budget = PERF_BUDGET.viewLongTaskByModeMs[mode] ?? PERF_BUDGET.viewLongTaskMs
+      check(
+        `视图切换 ${mode} 最长任务 ≤ ${budget}ms`,
+        longTaskMs <= budget,
+        `${longTaskMs.toFixed(1)}ms`,
+      )
+    }
 
     const themePerf = await measureThemeSwitch(page)
     if (themePerf.themeSwitchMs != null) {
@@ -385,8 +401,8 @@ async function main() {
         `${themePerf.themeSwitchMs.toFixed(1)}ms`,
       )
       check(
-        `主题切换最长任务 ≤ ${PERF_BUDGET.maxLongTaskMs}ms`,
-        themePerf.longTaskMs <= PERF_BUDGET.maxLongTaskMs,
+        `主题切换最长任务 ≤ ${PERF_BUDGET.themeLongTaskMs}ms`,
+        themePerf.longTaskMs <= PERF_BUDGET.themeLongTaskMs,
         `${themePerf.longTaskMs.toFixed(1)}ms`,
       )
     } else {
@@ -397,7 +413,9 @@ async function main() {
       themeSwitchMs: themePerf.themeSwitchMs == null ? null : Math.round(themePerf.themeSwitchMs),
       themeLongTaskMs: Math.round(themePerf.longTaskMs),
       viewSwitchMs: viewSwitchMs == null ? null : Math.round(viewSwitchMs),
-      viewLongTaskMs: Math.round(viewLongTaskMs),
+      viewLongTasksMs: Object.fromEntries(
+        Object.entries(viewLongTasks).map(([mode, ms]) => [mode, Math.round(ms)]),
+      ),
     }
     console.log(`[chrome81] perf: ${JSON.stringify(perf)}`)
     notes.push(`性能基线 ${JSON.stringify(perf)}`)

@@ -48,6 +48,7 @@ function children(el: Element): HTMLElement[] {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
   document.body.innerHTML = ''
   delete (window as unknown as Record<string, unknown>).__CNDB_DISABLE_FLEX_GAP_SHIM__
 })
@@ -250,5 +251,32 @@ describe('initFlexGapShim 增量扫描（ADR 0117 C4）', () => {
 
     cleanup()
     vi.useRealTimers()
+  })
+
+  it('深扫在空闲预算耗尽时中断，下一片从断点继续', () => {
+    mockProbeGap(false)
+    document.body.innerHTML = `
+      <div id="root">
+        <div id="a" style="display:flex;gap:10px"><span>a1</span><span>a2</span></div>
+        <div id="b" style="display:flex;gap:10px"><span>b1</span><span>b2</span></div>
+      </div>`
+    const queue: Array<() => void> = []
+    const remaining = [5, 5, 3, 30, 30, 30, 30, 30, 30, 30]
+    vi.stubGlobal('requestIdleCallback', (cb: IdleRequestCallback) => {
+      queue.push(() => cb({ timeRemaining: () => remaining.shift() ?? 30, didTimeout: false } as IdleDeadline))
+      return queue.length
+    })
+    const cleanup = initFlexGapShim()
+    const a2 = document.querySelector('#a span:nth-child(2)') as HTMLElement
+    const b2 = document.querySelector('#b span:nth-child(2)') as HTMLElement
+
+    // 第一片只处理 body 与 #root，预算耗尽后剩余子树必须留到下一片
+    queue.shift()!()
+    expect([a2.style.marginLeft, b2.style.marginLeft]).not.toEqual(['10px', '10px'])
+    while (queue.length) queue.shift()!()
+    expect(a2.style.marginLeft).toBe('10px')
+    expect(b2.style.marginLeft).toBe('10px')
+
+    cleanup()
   })
 })

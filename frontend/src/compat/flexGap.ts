@@ -180,6 +180,8 @@ interface PendingRoot {
 }
 
 const pending: PendingRoot[] = []
+/** 深扫待处理元素栈：单个大子树也能在 8ms 预算处让出，下一片从断点继续（ADR 0117 C4） */
+const deepStack: HTMLElement[] = []
 let scheduled = false
 let activeDoc: Document | null = null
 
@@ -208,15 +210,24 @@ function scheduleScan(doc: Document, roots?: PendingRoot[]): void {
   const run = (deadline?: IdleDeadlineLike) => {
     scheduled = false
     const started = Date.now()
-    while (pending.length) {
+    while (true) {
       // 空闲切片预算：浏览器空闲余量不足或自计时超过 8ms 即让出主线程
       if (deadline ? deadline.timeRemaining() < 4 : false) break
       if (Date.now() - started >= SCAN_BUDGET_MS) break
-      const root = pending.shift()!
-      if (root.deep) applyFlexGapShim(root.el)
+      const next = deepStack.pop()
+      if (next) {
+        shimContainer(next)
+        for (const child of next.children) {
+          if (child instanceof HTMLElement) deepStack.push(child)
+        }
+        continue
+      }
+      const root = pending.shift()
+      if (!root) break
+      if (root.deep) deepStack.push(root.el)
       else shimContainer(root.el)
     }
-    if (pending.length && activeDoc) scheduleScan(activeDoc)
+    if ((pending.length || deepStack.length) && activeDoc) scheduleScan(activeDoc)
   }
   const ric = typeof window !== 'undefined' ? window.requestIdleCallback : undefined
   if (ric) ric(run)
@@ -260,6 +271,7 @@ export function initFlexGapShim(doc?: Document): () => void {
   return () => {
     observer.disconnect()
     pending.length = 0
+    deepStack.length = 0
     activeDoc = null
   }
 }
