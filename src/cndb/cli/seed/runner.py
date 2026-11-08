@@ -20,7 +20,6 @@ from cndb.cli.seed import (
     sqlite,
     templates,
     views,
-    workspace_templates,
 )
 
 
@@ -144,11 +143,6 @@ def seed(args: argparse.Namespace) -> None:
         # 1) datasets CSV：每个子文件夹 → 工作区，每个 CSV → 数据表
         csv_count, ws_map, tables_map = datasets._seed_datasets(db, engine, owner)
 
-        # 1b) 工作区模板：内置科研项目全生命周期模板与模板示例工作区（需求 0094）。
-        #     须在 datasets 之后注入：示例工作区会占用一个新 id，若提前创建会把
-        #     「某企业销售管理」挤到 id=2，破坏 seed 后 ws id=1 的既有约定
-        #     （e2e 深链与大量演示断言都按该 id 定位）。
-        workspace_templates._seed_workspace_templates(db, owner=owner, owner_id=owner.id)
         datasets_dir = paths._get_datasets_dir()
 
         # 2) 硬编码业务表挂到 "某企业销售管理" 工作区

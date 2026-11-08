@@ -16,7 +16,7 @@
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 「按照项目编辑者」 | **范围 = 当前工作区**（`workspace_id`），不按模板项目上下文的项目行拆分；统计页 `?section=contribution` 分项展示。 | `workspaces` 插件、`frontend/src/pages/workspace/` | 接口只返回当前 `wid` 数据；前端分项渲染 |
+| C1 | 「按照项目编辑者」 | **范围 = 当前工作区**（`workspace_id`），不再有项目上下文拆分；统计页 `?section=contribution` 分项展示。 | `workspaces` 插件、`frontend/src/pages/workspace/` | 接口只返回当前 `wid` 数据；前端分项渲染 |
 | C2 | 「显示贡献情况」 | **纳入人员**：当前角色为 `owner` / `editor` 的成员（0 贡献也展示）+ 有直接写活动痕迹的曾为编辑者。按 `user_id` 去重；`owner` 与 `editor` 一并在「编辑者」口径内展示。 | `workspaces/models.py`、聚合服务 | 单测：当前 editor 0 贡献也出现；viewer 无活动不出现 |
 | C3 | 「曾经是编辑者的情况」（判定） | **判定 = 历史活动推断**：当前已是 `viewer` 或已移出工作区（无 `WorkspaceMember` 行）的用户，只要存在 C4 任一直接写活动，即纳入并标记「曾为编辑者」；已移出另标「已移出」。不新增成员角色变更历史表。 | 聚合服务 | 单测：editor→viewer 仍出现且带标记；移出成员仍出现 |
 | C4 | 「贡献情况」（活动口径） | 只统计**直接写入**（不含查看、不含 viewer 生成的修改申请）：① 数据行新建 `tables_auditlog.action=create`；② 数据行更新 `action=update`；③ 文档新建（`documents_document.created_by_id`）；④ 文档保存（`documents_documentversion.version_number > 1` 的 `created_by_id`）；⑤ 设计新建（`design_design.created_by_id`）；⑥ 设计保存（`design_designversion.version_number > 1` 的 `created_by_id`）。六项相加为 `total`。 | `tables` / `documents` / `design` 模型与审计 | 判定层单测逐项计数与合计 |
@@ -98,7 +98,7 @@ GET /api/v1/workspaces/{wid}/stats/contributions
 
 ## 未决问题（已确认）
 
-- [x] ① 「项目」范围：**结论**当前工作区，不按项目上下文拆分（2026-11-08 用户确认）。
+- [x] ① 「项目」范围：**结论**当前工作区，不拆分项目上下文（2026-11-08 用户确认；项目上下文已于 2026-11-09 随功能移除）。
 - [x] ② 贡献活动：**结论**数据表记录创建 / 编辑 + 文档创建 / 保存 + 设计保存；不含查看与 viewer 修改申请（2026-11-08 用户确认）。
 - [x] ③ 曾经是编辑者：**结论**历史活动推断，不新增成员角色变更历史表（2026-11-08 用户确认）。
 - [x] ④ 时间窗口：**结论**全部时间（2026-11-08 用户确认）。

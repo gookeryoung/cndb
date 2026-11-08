@@ -219,15 +219,6 @@ const workflow: HelpTopic = {
         <>
             <P>本页你能学到什么：五步从零建起一个可用的工作区。适合谁：第一次使用的成员。</P>
             <P>从零到「有数据、有视图、有协作者」的最小路径，五步走完即可正常使用。</P>
-            <P>
-                拿到的是模板工作区？按这条路径走：先看
-                <HelpLink section="tutorials" topic="templates">工作区模板</HelpLink>
-                ，再按
-                <HelpLink section="tutorials" topic="data-flow">数据流程</HelpLink>
-                填报，最后用
-                <HelpLink section="tutorials" topic="view-types">视图类型</HelpLink>
-                挑一个合适视图查看结果。
-            </P>
         </>
     ),
     subsections: [
@@ -336,8 +327,6 @@ const uiTour: HelpTopic = {
                             搜索框固定在右侧操作按钮左侧，主页与工作区两种视图位置一致。
                             工作区切换保持当前一级模块：例如在「文档」里切到另一个工作区，仍进入该工作区的文档模块
                             （目标工作区未勾选该模块时，回到它勾选的第一个一级模块，顺序同导航：数据表 → 文档 → 设计）。
-                            项目模式工作区另有项目切换器：选中项目后，数据流程、生命周期与文档树都只显示该项目的数据，
-                            地址栏带 <code>?project=</code>，分享链接会停在同一项目。
                             窄屏下一级模块收进页签行、帮助入口收进用户菜单。
                         </P>
                     ),

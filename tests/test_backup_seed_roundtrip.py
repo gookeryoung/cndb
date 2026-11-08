@@ -26,8 +26,6 @@ from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
 from cndb.plugins.workspaces.routers.workspaces import _coerce_row_value_types
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE_WORKSPACE_NAME = "科研项目管理（模板示例）"
-TEMPLATE_MANIFEST = PROJECT_ROOT / "examples" / "templates" / "科研项目全生命周期管理" / "example.json"
 
 
 def _make_sales_workspace(db, owner: User) -> Workspace:
@@ -419,18 +417,6 @@ class TestSeedViewsIntegrity:
         if datasets_dir is None:
             pytest.skip("examples/datasets 目录不可用（wheel 安装环境）")
         configs = _get_workspace_view_configs(datasets_dir)
-        # 旧「科研项目管理」数据集已并入科研模板示例，示例视图统一从
-        # examples/templates/科研项目全生命周期管理/example.json 读取
-        if TEMPLATE_MANIFEST.is_file():
-            from cndb.cli.seed.workspace_templates import RESEARCH_LIFECYCLE_SPEC
-
-            manifest = json.loads(TEMPLATE_MANIFEST.read_text(encoding="utf-8"))
-            form_names = {f["key"]: f["name"] for f in RESEARCH_LIFECYCLE_SPEC["forms"]}
-            configs[TEMPLATE_WORKSPACE_NAME] = {
-                form_names[key]: view_list
-                for key, view_list in (manifest.get("views") or {}).items()
-                if key in form_names
-            }
         if not configs:
             pytest.skip("未发现任何 views 配置")
         return datasets_dir, configs
@@ -491,18 +477,6 @@ class TestSeedViewsIntegrity:
         hardcoded = cls.HARDCODED_TABLE_FIELDS.get(ws_name, {})
         if table_name in hardcoded:
             return set(hardcoded[table_name])
-        if ws_name == TEMPLATE_WORKSPACE_NAME:
-            from cndb.cli.seed.workspace_templates import RESEARCH_LIFECYCLE_SPEC
-
-            manifest = json.loads(TEMPLATE_MANIFEST.read_text(encoding="utf-8"))
-            form = next((f for f in RESEARCH_LIFECYCLE_SPEC["forms"] if f["name"] == table_name), None)
-            if form is None:
-                return None
-            fields = {f["name"] for f in form["fields"]}
-            rows = (manifest.get("records") or {}).get(form["key"]) or []
-            if rows:
-                fields.update(rows[0].keys())
-            return fields
         ws_dir = datasets_dir / f"工作区-{ws_name}"
         # API 建表通道：tencent_stock 处理器字段为常量产出可静态解析；
         # json 等数据驱动 handler 字段取决于响应内容，返回 None 仅校验 view_type

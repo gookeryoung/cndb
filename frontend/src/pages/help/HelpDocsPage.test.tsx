@@ -165,22 +165,6 @@ describe('HelpDocsPage 侧栏就地 L3 目录（ADR 0105 §5.1）', () => {
         expect(intro).toHaveTextContent('本页你能学到什么')
         expect(intro).toHaveTextContent('适合谁')
     })
-
-    it('新增主题工作区模板路由直达，并展开自己的 L3', async () => {
-        renderHelp('/help/tutorials/templates')
-
-        expect(await screen.findByRole('heading', { name: '工作区模板' })).toBeVisible()
-        const aside = screen.getByTestId('help-docs-aside')
-        expect(await within(aside).findByRole('menuitem', { name: '模板是什么' })).toBeVisible()
-    })
-
-    it('新增主题数据流程路由直达，并展开自己的 L3', async () => {
-        renderHelp('/help/tutorials/data-flow')
-
-        expect(await screen.findByRole('heading', { name: '数据流程' })).toBeVisible()
-        const aside = screen.getByTestId('help-docs-aside')
-        expect(await within(aside).findByRole('menuitem', { name: '流程图与步骤' })).toBeVisible()
-    })
 })
 
 describe('HelpDocsPage 窄屏', () => {

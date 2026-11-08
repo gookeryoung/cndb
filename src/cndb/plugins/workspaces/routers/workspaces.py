@@ -19,7 +19,6 @@ from cndb.plugins.workspaces.models import (
     Workspace,
     WorkspaceMember,
     WorkspaceRole,
-    WorkspaceTemplate,
     WorkspaceVisibility,
 )
 from cndb.plugins.workspaces.modules import workspace_modules_from_meta
@@ -165,21 +164,14 @@ def create_workspace(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> Workspace:
-    """创建工作区并把创建者登记为 OWNER；选模板时同步表单 / 文档占位与首阶段."""
-    template: WorkspaceTemplate | None = None
-    if payload.template_id is not None:
-        template = db.get(WorkspaceTemplate, payload.template_id)
-        if template is None:
-            raise HTTPException(status_code=404, detail="模板不存在")
+    """创建工作区并把创建者登记为 OWNER."""
     ws = Workspace(
         name=payload.name,
         description=payload.description,
         visibility=payload.visibility,
         tags=payload.tags,
         allow_edit=payload.allow_edit,
-        # 模板自带模块口径（需求 0094）：选模板时以模板 modules 为准
-        modules=list(template.modules) if template is not None else payload.modules,
-        template_id=template.id if template is not None else None,
+        modules=payload.modules,
         created_by_id=current_user.id,
     )
     db.add(ws)
@@ -188,25 +180,6 @@ def create_workspace(
     db.add(member)
     db.commit()
     db.refresh(ws)
-    if template is not None:
-        from cndb.plugins.workspaces.services.templates import project_context
-        from cndb.plugins.workspaces.services.templates.engine import apply_spec_to_workspace
-        from cndb.plugins.workspaces.services.templates.spec import normalize_spec
-
-        spec = normalize_spec(template.spec)
-        try:
-            apply_spec_to_workspace(db, ws, spec, current_user, template=template, version=template.version)
-        except Exception:
-            # 模板实例化失败：清理刚创建的工作区，避免留下半成品
-            db.delete(ws)
-            db.commit()
-            raise
-        # 模板声明 project 块：新建工作区直接进入项目模式（存量工作区不受影响）
-        if project_context.project_config(spec) is not None:
-            ws.project_mode = "project"
-            db.add(ws)
-            db.commit()
-        db.refresh(ws)
     invalidate_workspace_list_cache(ws.id)
     return ws
 

@@ -520,12 +520,9 @@ export const documentsApi = {
   list: (wid: number | string, params?: Record<string, unknown>) =>
     api.get<{ items: DocumentItem[]; total: number }>(base(wid), { params }).then(r => r.data),
 
-  /** projectId：只返回该项目映射文档及祖先文件夹（ADR 0122） */
-  tree: (wid: number | string, projectId?: number | string | null) =>
+  tree: (wid: number | string) =>
     api
-      .get<{ items: DocumentItem[] }>(`${base(wid)}/tree`, {
-        params: projectId ? { project_id: projectId } : undefined,
-      })
+      .get<{ items: DocumentItem[] }>(`${base(wid)}/tree`)
       .then(r => r.data.items),
 
   create: (wid: number | string, data: Partial<DocumentItem> & { content?: string }) =>

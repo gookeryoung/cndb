@@ -14,7 +14,7 @@ import {
   SafetyCertificateOutlined, ToolOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
-  LockOutlined, ApartmentOutlined, AppstoreOutlined,
+  LockOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { designsApi, systemApi, tableApi, workspaceApi } from '@/api'
@@ -33,7 +33,6 @@ import {
   useDocTitleFilter, valueToSort,
 } from '@/pages/documents/docTreeSort'
 import GlobalSearch from '@/components/GlobalSearch'
-import ProjectSwitcher from '@/components/ProjectSwitcher'
 import SearchInput from '@/components/SearchInput'
 import { BrandMark } from '@/components/BrandMark'
 import { useAuthStore, useUiStore } from '@/store'
@@ -253,13 +252,11 @@ export default function MainLayout() {
   const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
   // 设计模块上下文：页签行不再渲染工作区级质量检查（2026-11-02 用户口径）
   const inDesignContext = !!wid && location.startsWith(`/w/${wid}/design`)
-  // 项目上下文（ADR 0122）：文档树按 ?project= 过滤；工作区模式保持全量
-  const activeProjectId = searchParams.get('project')
   const { data: docsTreeData, isSuccess: docsTreeReady } = useQuery({
     // 注意 key 用数字 wid：文档页 invalidateQueries 按 ['documents', <number>] 前缀失效，
     // 字符串 wid 与数字 workspaceId 严格不等会导致前缀匹配不上、侧边栏不随页面变更刷新
-    queryKey: ['documents', Number(wid), 'tree', activeProjectId],
-    queryFn: () => documentsApi.tree(Number(wid), activeProjectId),
+    queryKey: ['documents', Number(wid), 'tree'],
+    queryFn: () => documentsApi.tree(Number(wid)),
     enabled: !!wid && wsFeatures.documents && inDocumentsContext,
   })
   const docTree = useMemo(() => buildDocTree(docsTreeData ?? []), [docsTreeData])
@@ -336,10 +333,6 @@ export default function MainLayout() {
           ? 'change-requests'
           : location.startsWith(`/w/${wid}/tables/issues`)
             ? 'issues'
-        : location.startsWith(`/w/${wid}/projects`)
-          ? 'projects'
-        : location.startsWith(`/w/${wid}/data-flow`)
-          ? 'data-flow'
         : location.includes('/analytics')
           ? 'analytics'
           : location.includes('/datasource')
@@ -360,7 +353,6 @@ export default function MainLayout() {
     activeWsTab === 'tables' || activeWsTab === 'analytics' || activeWsTab === 'datasource'
     || activeWsTab === 'pipelines'
     || activeWsTab === 'change-requests' || activeWsTab === 'issues'
-    || activeWsTab === 'data-flow'
 
   /** 当前所在的一级导航段 —— 切换工作区时保持（0081 C4）。
    * 二级派生段（数据分析 / 数据同步 / 质量检查）属数据表域，折算为 `tables`；
@@ -399,13 +391,6 @@ export default function MainLayout() {
       label: '设计',
       count: designsReady ? designs.length : undefined,
     }] : []),
-    // 项目清单（ADR 0122）：仅在项目模式工作区出现
-    ...(currentWs?.project_mode === 'project' ? [{
-      key: 'projects',
-      icon: <AppstoreOutlined />,
-      label: '项目',
-      count: undefined,
-    }] : []),
     { key: 'stats', icon: <BarChartOutlined />, label: '统计', count: undefined },
     { key: 'settings', icon: <SettingOutlined />, label: '工作区设置', count: undefined },
   ] as const
@@ -431,15 +416,6 @@ export default function MainLayout() {
       label: (
         <span>
           <TableOutlined /> 数据列表
-        </span>
-      ),
-    }] : []),
-    // 数据流程（需求 0095）：仅模板工作区开放，是数据表模块的二级功能入口
-    ...(currentWs?.template_id && wsFeatures.tables && tablesDerivedActive ? [{
-      key: 'data-flow',
-      label: (
-        <span>
-          <ApartmentOutlined /> 数据流程
         </span>
       ),
     }] : []),
@@ -533,7 +509,7 @@ export default function MainLayout() {
   // stats → 统计分项侧栏（「概览 / 贡献统计」，与工作区设置同形）；
   // 其余（数据表 / 分析 / 同步）→ 数据表导航始终展开，不再自动折叠。
   // 2026-11-08 用户口径：工作区设置不再沿用来源模块侧栏，
-  // 侧栏固定为「常规设置 / 权限管理 / 生命周期」，分项由 ?section= 驱动。
+  // 侧栏固定为「常规设置 / 权限管理」，分项由 ?section= 驱动。
   // 2026-11-06 用户口径（ADR 0109 D8）：设计模块收敛为单一工作台，根页 /w/:wid/design
   // 与编辑器页 /w/:wid/design/:id 都渲染同一设计侧栏（产品列表 ↔ 结构树两态）；
   // 根页只负责默认选中最近更新的产品并跳转，不再隐藏侧栏。
@@ -647,7 +623,6 @@ export default function MainLayout() {
     ...(isMobile
       ? [
         { key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') },
-        { key: 'templates', icon: <AppstoreOutlined />, label: '工作区模板', onClick: () => navigate('/templates') },
         { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助文档', onClick: () => navigate('/help') },
       ]
       : []),
@@ -665,8 +640,6 @@ export default function MainLayout() {
   const inAdminConsole = location.startsWith('/admin')
   /** 帮助文档页（/help）：无工作区语义，侧栏由帮助页自带的两级导航承担 */
   const inHelpDocs = location.startsWith('/help')
-  /** 模板中心（/templates）：全局资源，无工作区上下文，不渲染侧栏 */
-  const inTemplates = location.startsWith('/templates')
 
   if (!wid) {
     if (wsLoading) {
@@ -974,9 +947,6 @@ export default function MainLayout() {
             </Button>
           </Dropdown>
 
-          {/* 项目切换器（ADR 0122）：项目模式多项目显示；单项目自动选中并隐藏 */}
-          {wid && <ProjectSwitcher wid={wid} />}
-
           {/* 一级模块导航（需求 0081 C4）—— 数据表 / 文档 / 设计 / 工作区设置上移顶栏；
               仅桌面端渲染（移动端一级模块维持在下方页签行，C5）。
               激活态由路由段驱动：表级子页（/tables/:tid/settings 等）一律落在「数据表」，
@@ -1026,17 +996,6 @@ export default function MainLayout() {
               />
             </Tooltip>
           )}
-          {/* 工作区模板中心（需求 0094）—— 桌面端常驻图标；移动端收进用户菜单 */}
-          {!isMobile && (
-            <Tooltip title="工作区模板：按模板快速建工作区">
-              <Button
-                icon={<AppstoreOutlined />}
-                aria-label="工作区模板"
-                data-testid="templates-btn"
-                onClick={() => navigate('/templates')}
-              />
-            </Tooltip>
-          )}
           {/* 帮助文档入口（ADR 0029）—— 桌面端常驻图标，整页路由；移动端收进用户菜单 */}
           {!isMobile && (
             <Tooltip title="帮助文档：使用说明、操作教程与新手引导">
@@ -1083,7 +1042,7 @@ export default function MainLayout() {
             设计段（根页 + 编辑器页）=产品列表 / 结构树两态侧栏，
             工作区设置段=设置分项侧栏；数据表 / 分析 / 同步段=表导航保持展开，
             无 tables 能力的类型不渲染侧栏 */}
-        {!isMobile && !inAdminConsole && !inHelpDocs && !inTemplates && siderMode !== 'hidden' && (
+        {!isMobile && !inAdminConsole && !inHelpDocs && siderMode !== 'hidden' && (
           <Sider
             collapsible collapsed={collapsed} onCollapse={setCollapsed}
             width={240} collapsedWidth={60}

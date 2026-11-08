@@ -1,0 +1,263 @@
+{
+  "settings": {
+    "项目申报": {
+      "项目名称": {
+        "required": true,
+        "unique": true
+      },
+      "项目编号": {
+        "unique": true
+      }
+    },
+    "经费使用": {
+      "凭证编号": {
+        "unique": true
+      }
+    },
+    "课题负责人": {
+      "负责人编号": {
+        "required": true,
+        "unique": true
+      },
+      "姓名": {
+        "required": true
+      }
+    },
+    "技术体系": {
+      "技术编号": {
+        "required": true,
+        "unique": true
+      },
+      "技术名称": {
+        "required": true
+      }
+    },
+    "科研任务分解": {
+      "任务ID": {
+        "required": true,
+        "unique": true
+      },
+      "任务名称": {
+        "required": true
+      }
+    },
+    "科研待办事项": {
+      "编号": {
+        "required": true,
+        "unique": true
+      },
+      "事项": {
+        "required": true
+      }
+    },
+    "科研资源排期": {
+      "排期编号": {
+        "required": true,
+        "unique": true
+      },
+      "任务名称": {
+        "required": true
+      }
+    },
+    "科研经费": {
+      "经费编号": {
+        "required": true,
+        "unique": true
+      }
+    }
+  },
+  "link_lookups": [
+    {
+      "table": "项目进展",
+      "source_table": "项目申报",
+      "link_name": "所属项目",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "经费使用",
+      "source_table": "项目申报",
+      "link_name": "所属项目",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "结题验收",
+      "source_table": "项目申报",
+      "link_name": "所属项目",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "经费报销",
+      "source_table": "项目申报",
+      "link_name": "所属项目",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "成果登记",
+      "source_table": "项目申报",
+      "link_name": "所属项目",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "项目变更",
+      "source_table": "项目申报",
+      "link_name": "所属项目",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "课题负责人",
+      "source_table": "项目申报",
+      "link_name": "所属课题",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "科研任务分解",
+      "source_table": "项目申报",
+      "link_name": "所属课题",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "科研待办事项",
+      "source_table": "项目申报",
+      "link_name": "所属课题",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "科研资源排期",
+      "source_table": "项目申报",
+      "link_name": "所属课题",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "科研经费",
+      "source_table": "项目申报",
+      "link_name": "所属课题",
+      "multiple": false,
+      "fields": [
+        "项目状态",
+        "课题编号"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    }
+  ],
+  "backfills": [
+    {
+      "table": "项目进展",
+      "source_table": "项目申报",
+      "fields": [
+        "项目状态",
+        "立项年份",
+        "项目类别"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "科研经费",
+      "source_table": "项目申报",
+      "fields": [
+        "项目状态",
+        "项目类别"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    },
+    {
+      "table": "课题负责人",
+      "source_table": "项目申报",
+      "fields": [
+        "项目状态"
+      ],
+      "match": {
+        "local": "项目名称",
+        "source": "项目名称"
+      }
+    }
+  ]
+}

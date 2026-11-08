@@ -1,11 +1,11 @@
 /** 工作区设置分项定义 —— 侧栏导航与页内内容共用同一份 key / 文案 / 图标. */
 
 import {
-  SettingOutlined, SafetyOutlined, RocketOutlined,
+  SettingOutlined, SafetyOutlined,
 } from '@ant-design/icons'
 import type { ReactNode } from 'react'
 
-export type WorkspaceSettingsSectionKey = 'basic' | 'permissions' | 'lifecycle'
+export type WorkspaceSettingsSectionKey = 'basic' | 'permissions'
 
 export interface WorkspaceSettingsSection {
   key: WorkspaceSettingsSectionKey
@@ -16,7 +16,6 @@ export interface WorkspaceSettingsSection {
 export const WORKSPACE_SETTINGS_SECTIONS: WorkspaceSettingsSection[] = [
   { key: 'basic', label: '常规设置', icon: <SettingOutlined /> },
   { key: 'permissions', label: '权限管理', icon: <SafetyOutlined /> },
-  { key: 'lifecycle', label: '生命周期', icon: <RocketOutlined /> },
 ]
 
 /** URL 的 ?section= 归一化：未知 / 缺失一律落到「常规设置」. */

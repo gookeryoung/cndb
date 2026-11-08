@@ -83,7 +83,6 @@
 - `src/cndb/plugins/analytics/services/formula.py` 757
 - `src/cndb/plugins/tables/routers/tables.py` 750
 - `src/cndb/plugins/tables/routers/fields.py` 742
-- `src/cndb/cli/seed/workspace_templates.py` 705
 - `src/cndb/plugins/tables/services/importing/import_tasks.py` 696
 - `src/cndb/plugins/tables/services/transfer/table_create.py` 680
 - `src/cndb/plugins/design/routers.py` 680

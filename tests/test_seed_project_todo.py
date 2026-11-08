@@ -2,7 +2,7 @@
 
 覆盖：
 - 科研待办事项 CSV 结构（9 列 × 16 行，含 7 行空责任人）
-- 模板 spec / 示例数据：编号必填唯一、16 行待办集中 7 行空责任人
+- 模板/数据集：编号必填唯一、16 行待办集中 7 行空责任人
 - seed 流程：CSV 建表、课题关联字段、settings 应用、views 注入
 - kanban 分组：按责任人分组时空值行进入「未分派」分组
 """
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-# ── CSV 原文（已并入 examples/templates/科研项目全生命周期管理/example.json） ────
+# ── CSV 原文（与 examples/datasets/工作区-科研项目管理/科研待办事项.csv 同构） ────
 
 TODO_CSV = """编号,类别,事项,创建时间,要求节点,完成日期,责任人,课题编号,备注
 TB001,数据,完成多中心影像数据脱敏与入库,2026-09-15,2026-09-30,2026-09-28,毕思嘉,KT2024001,覆盖 3 家医院 1.2 万例
@@ -245,31 +245,28 @@ def test_todo_csv_empty_assignee_distribution(tmp_path):
     assert empty_ids == EMPTY_ASSIGNEE_IDS
 
 
-# ── 2. 模板示例 / spec 解析 ──────────────────────────────
+# ── 2. 数据集示例 / fields.json 解析 ──────────────────────
 
 
-def test_template_spec_has_todo_settings():
-    """模板 spec：科研待办事项 编号 required+unique、事项 required."""
-    from cndb.cli.seed.workspace_templates import RESEARCH_LIFECYCLE_SPEC
+def test_dataset_has_todo_settings():
+    """fields.json：科研待办事项 编号 required+unique、事项 required."""
+    dataset_dir = Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-科研项目管理"
+    config = json.loads((dataset_dir / "fields.json").read_text(encoding="utf-8"))
+    settings = config["settings"]["科研待办事项"]
+    assert settings["编号"].get("required") is True
+    assert settings["编号"].get("unique") is True
+    assert settings["事项"].get("required") is True
 
-    form = next(f for f in RESEARCH_LIFECYCLE_SPEC["forms"] if f["key"] == "project_todo")
-    fields = {f["name"]: f for f in form["fields"]}
-    assert fields["编号"].get("required") is True
-    assert fields["编号"].get("is_unique") is True
-    assert fields["事项"].get("required") is True
 
-
-def test_template_example_todo_rows_are_complete():
-    """模板示例数据：科研待办事项 16 行，含 7 行空责任人."""
-    from cndb.cli.seed.workspace_templates import EXAMPLE_TEMPLATE_DIR
-
-    manifest_path = (
-        Path(__file__).resolve().parents[1] / "examples" / "templates" / EXAMPLE_TEMPLATE_DIR / "example.json"
+def test_dataset_todo_rows_are_complete():
+    """数据集示例数据：科研待办事项 16 行，含 7 行空责任人."""
+    todo_csv = (
+        Path(__file__).resolve().parents[1] / "examples" / "datasets" / "工作区-科研项目管理" / "科研待办事项.csv"
     )
-    if not manifest_path.exists():
-        pytest.skip(f"{manifest_path} 不可用")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    rows = (manifest.get("records") or {}).get("project_todo") or []
+    if not todo_csv.exists():
+        pytest.skip(f"{todo_csv} 不可用")
+    with todo_csv.open(encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.DictReader(f))
     assert len(rows) == 16
     assert sum(1 for row in rows if not str(row.get("责任人") or "").strip()) == 7
 

@@ -64,23 +64,6 @@ test.describe("帮助文档整页", () => {
     await expect(page).toHaveURL(/#help-row-level$/);
     await expect(page.locator("#help-row-level")).toBeVisible();
 
-    // 新增主题直达，并展开自己的 L3
-    await page.goto("/help/tutorials/templates");
-    await expect(
-      page.getByRole("heading", { name: "工作区模板", exact: true }),
-    ).toBeVisible({ timeout: 10000 });
-    await expect(
-      aside.getByRole("menuitem", { name: "模板是什么", exact: true }),
-    ).toBeVisible();
-
-    await page.goto("/help/tutorials/data-flow");
-    await expect(
-      page.getByRole("heading", { name: "数据流程", exact: true }),
-    ).toBeVisible({ timeout: 10000 });
-    await expect(
-      aside.getByRole("menuitem", { name: "流程图与步骤", exact: true }),
-    ).toBeVisible();
-
     // L4 深链：派生字段（公式）直达条目
     await page.goto("/help/tutorials/field-types#help-advanced--formula");
     await expect(

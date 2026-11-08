@@ -48,13 +48,8 @@
 | [0050](0050-user-password-management.md) | 用户自助修改密码与管理员重置他人密码 | Implemented | P0-P2 已落地 | `src/cndb/plugins/accounts/services/users.py`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/pages/admin/UsersPage.tsx` | `tests/test_users_management.py`、`frontend/src/pages/settings/SettingsModal.test.tsx`、`frontend/src/pages/admin/UsersPage.test.tsx`、`frontend/tests/e2e/critical/user-password.spec.ts` | [未发布](../../CHANGELOG.md) |
 | [0075](0075-workspace-full-backup.md) | 工作区全量备份与恢复（归档格式 + 覆盖恢复） | Implemented | P0-P2 已落地（2026-11-02 人工确认） | `src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/services/workspace_restore.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`frontend/src/pages/settings/WorkspaceBackupDialog.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx` | `tests/test_workspace_backup_v9.py`、`frontend/src/pages/settings/WorkspaceBackupDialog.test.tsx`、`frontend/tests/e2e/critical/workspace-backup.spec.ts` | [未发布](../../CHANGELOG.md) |
 | [0080](0080-workspace-module-selection.md) | 工作区类型改为可勾选功能模块与顶部导航适配 | Implemented | 全期落地（P0 / P1 / P2 / P3：质量检查按域拆分） | `src/cndb/plugins/workspaces/modules.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/alembic/versions/b6c7d8e9f0a1_workspace_modules.py`、`frontend/src/utils/workspaceModules.ts`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_workspace_modules.py`、`tests/test_workspace_modules_api.py`、`tests/test_workspace_modules_migration.py`、`tests/test_workspace_backup_v12.py`、`frontend/src/utils/workspaceModules.test.ts`、`frontend/tests/e2e/critical/workspace-modules.spec.ts` | [未发布](../../CHANGELOG.md) |
-| [0094](0094-workspace-configurable-templates.md) | 工作区可配置模板与流程驱动（科研项目全生命周期） | Implemented | P0-P2 已落地 | `src/cndb/plugins/workspaces/services/templates/`、`src/cndb/plugins/workspaces/routers/{templates,lifecycle}.py`、`src/cndb/alembic/versions/134adcb233cb_add_workspace_templates.py`、`frontend/src/pages/templates/`、`frontend/src/pages/settings/WorkspaceLifecyclePanel.tsx` | `tests/test_workspace_templates.py`、`frontend/src/pages/templates/{templateSpec,TemplatesPage}.test.tsx`、`frontend/src/pages/settings/WorkspaceLifecyclePanel.test.tsx` | [未发布](../../CHANGELOG.md) |
-| [0095](0095-workspace-data-flow-module.md) | 工作区数据流程二级模块（模板驱动的表单式 CRUD） | Implemented | P0-P2 已落地 | `src/cndb/plugins/workspaces/routers/data_flow.py`、`src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/cli/seed/workspace_templates.py`、`frontend/src/pages/dataFlow/`、`frontend/src/layouts/MainLayout.tsx` | `tests/test_workspace_templates.py`、`frontend/src/pages/dataFlow/DataFlowPage.test.tsx` | [未发布](../../CHANGELOG.md) |
-| [0097](0097-data-flow-multi-flows.md) | 数据流程支持多端到端流程与多流程展示 | Implemented | P0-P2 已落地 | `src/cndb/plugins/workspaces/services/templates/spec.py`、`src/cndb/plugins/workspaces/routers/data_flow.py`、`src/cndb/cli/seed/workspace_templates.py`、`frontend/src/pages/dataFlow/` | `tests/test_workspace_templates.py`、`frontend/src/pages/dataFlow/DataFlowPage.test.tsx` | [未发布](../../CHANGELOG.md) |
-| [0121](0121-template-structured-editor.md) | 工作区模板结构化编辑模式（结构化为主 + JSON 高级页签） | Accepted | P0-P2 未开始 | — | — | [未发布](../../CHANGELOG.md) |
-| [0122](0122-workspace-project-context.md) | 工作区项目上下文（多项目清单 / 单项目工作台 / 项目级生命周期与文档） | Accepted | P0-P2 实施中 | — | — | [未发布](../../CHANGELOG.md) |
 
-承接关系：0080 取代旧 `workspace_type` 三值枚举（0003 / 0004 的权限模型不变）；0075 承接 0024 的存储口径（备份含用量数据不导）；0094 复用 0080 的模块推导，模板全局资源不随 0075 的工作区备份导出；0095 在 0094 的 spec 上加 `flow` 配置与数据流程页面，写路径仍走 0003/0004/0005 的表权限与修改申请；0097 在 0095 上加顶层 `flows[]`（多端到端流程）与流程卡片 / 步骤视图，stages 门禁不变；0121 在 0094 的保存链路前替换编辑入口，spec 契约、数据库与导入导出格式不变；0122 在 0094/0095 上增加项目上下文与项目级生命周期，单项目是根表单 1 行的退化，项目文档实例化复用 0075 的备份口径。
+承接关系：0080 取代旧 `workspace_type` 三值枚举（0003 / 0004 的权限模型不变）；0075 承接 0024 的存储口径（备份含用量数据不导）。
 
 ## 数据表、视图与协作
 
@@ -167,7 +162,7 @@ DSL 内核 / 结构导航 / 系统级装配 / 分文件与约束。
 
 | 编号 | 标题 | Status | 落地阶段 | 代码 | 测试 | CHANGELOG |
 |---|---|---|---|---|---|---|
-| [0027](0027-tech-system-tree.md) | 科研项目管理新增技术体系表与「技术脉络」树形视图 | Implemented | P0-P1 已落地；零迁移 / 零接口 / 零前端改动 | `examples/templates/科研项目全生命周期管理/example.json`、`src/cndb/cli/seed/workspace_templates.py`、`src/cndb/cli/seed/views.py` | `tests/test_seed_tech_system.py` | [未发布](../../CHANGELOG.md) |
+| [0027](0027-tech-system-tree.md) | 科研项目管理新增技术体系表与「技术脉络」树形视图 | Implemented | P0-P1 已落地；零迁移 / 零接口 / 零前端改动 | `examples/datasets/工作区-科研项目管理/技术体系.csv`、`examples/datasets/工作区-科研项目管理/views.json`、`src/cndb/cli/seed/views.py` | `tests/test_seed_tech_system.py` | [未发布](../../CHANGELOG.md) |
 
 承接关系：两者都只约束 `examples/datasets/` 与帮助示例内容，不影响平台契约。
 

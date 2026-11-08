@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+### 移除
+- **移除工作区模板、数据流程、生命周期与项目上下文（需求 0094/0095/0097/0098/0120/0121/0122 作废）**：删除模板中心 / 模板实例化 / 数据流程 / 生命周期门禁 / 项目清单与项目文档映射的前后端代码、接口、模型与测试；新增迁移 `d2e3f4a5b6c7` 删除 `workspaces_template`、`workspaces_templaterevision`、`workspaces_workspace_project_state`、`workspaces_workspace_project_document` 及工作区 `template_*` / `project_mode` 列。原「科研项目管理（模板示例）」改为 datasets 普通工作区「科研项目管理」，13 张表、43 条技术体系、项目 / 进度 / 经费 / 文档等数据迁入 `examples/datasets/工作区-科研项目管理/`，文档进 `documents/项目文档/`，视图进 `views.json`，字段约束与关联回填进 `fields.json`；对应 ADR 与需求卡片、帮助主题、e2e 用例同步删除。测试：`test_seed_tech_system` / `test_seed_project_todo` / `test_backup_seed_roundtrip` / `test_seed_rebuild_orphan_tables` 改为读取 datasets；删除模板 / 项目上下文 / v15 备份相关用例。改动：`src/cndb/plugins/workspaces/`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/cli/seed/`、`src/cndb/alembic/versions/d2e3f4a5b6c7_remove_workspace_templates.py`、`frontend/src/`、`examples/datasets/工作区-科研项目管理/`、`docs/`、`tests/`、`CHANGELOG.md`。
+
 ### 修复
 - **【前端性能】bundle-budget CI 失败：HelpTutorials 教程 chunk 超上限 2.39 KiB**：9b40a157 补充项目级管理 / 流水线帮助正文（设计草稿与检查点、流水线版本、四份 YAML 示例）后，`tutorials` chunk 达 29.74 KiB、超过 27.34 KiB 上限。按 `chunk-modules.json` 归因：该 chunk 100% 为 `tutorials.tsx` 静态文案，无弹层 / 重型依赖可 lazy，且已是 `/help` 按 L1 部分懒加载的独立 chunk。现按 H32 经脚本留痕调整：基线 25.75→29.74 KiB、上限 27.34→31.25 KiB（按实测留约 5% 余量），`node scripts/bundle-budget.mjs` 全绿。改动：`frontend/scripts/bundle-budget.json`、`CHANGELOG.md`。
 - **【样式】顶栏搜索框聚焦后右侧出现双边框**：点击进入搜索框时外框已有 1px 品牌色边框，文末规则又给 `.cn-gs-box:focus-within` 叠加了 `box-shadow: 0 0 0 1px` 品牌色 ring，两条线平行叠成双边框；内层 borderless Input 的聚焦 ring 也未被完全压掉。现移除聚焦态的 shadow ring，并给 `.cn-gs-box .cn-gs-input` 的 `outline` / `box-shadow` 收线声明加 `!important` 压过文末 antd 聚焦规则，聚焦只保留外框一条 1px 线。测试：`headerBorders.test.ts` 新增「任何搜索框聚焦规则不得再叠加 shadow ring」「内层收线带 `!important`」2 例。改动：`frontend/src/index.css`、`frontend/src/layouts/headerBorders.test.ts`、`CHANGELOG.md`。

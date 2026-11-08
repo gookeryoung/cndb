@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import datetime as dt
 import enum
-from typing import TYPE_CHECKING, Any, override
+from typing import TYPE_CHECKING, override
 
 from sqlalchemy import (
     JSON,
@@ -168,38 +168,6 @@ class Workspace(TimestampMixin, Base):
         comment="工作区存储配额（字节），默认 100MB，由管理员在管理台分配",
     )
 
-    # 工作区模板（需求 0094）：模板是全局定义，工作区只持有引用与生命周期快照
-    template_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workspaces_template.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-        comment="创建工作区时选用的模板；NULL = 自由工作区",
-    )
-    template_version: Mapped[int | None] = mapped_column(
-        Integer,
-        nullable=True,
-        comment="工作区最近一次同步的模板版本",
-    )
-    template_stage: Mapped[str | None] = mapped_column(
-        String(64),
-        nullable=True,
-        comment="当前所处生命周期阶段 key（模板 stages[].key）",
-    )
-    template_state: Mapped[dict[str, Any]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=dict,
-        server_default="{}",
-        comment="模板实例化映射与阶段履历：{form_tables, documents, history}",
-    )
-    project_mode: Mapped[str] = mapped_column(
-        String(16),
-        nullable=False,
-        default="workspace",
-        server_default="workspace",
-        comment="项目上下文模式：workspace（工作区级单实例）/ project（按根表单项目行隔离，ADR 0122）",
-    )
-
     # 关系
     created_by: Mapped[User | None] = relationship("User", foreign_keys=[created_by_id])
     members: Mapped[list[WorkspaceMember]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
@@ -276,134 +244,6 @@ class Role(TimestampMixin, Base):
         self.permissions = perms
 
 
-class WorkspaceTemplate(TimestampMixin, Base):
-    """工作区模板（需求 0094）：定义表单、文档规则与生命周期阶段.
-
-    模板是全局资源（不挂工作区），``spec`` 为经过校验的 JSON 规格；
-    每次保存都会复制一份到 ``WorkspaceTemplateRevision``，用于 diff 与回滚追溯。
-    """
-
-    __tablename__ = "workspaces_template"
-    __table_args__ = (
-        UniqueConstraint("name", name="uniq_workspace_template_name"),
-        {"extend_existing": True},
-    )
-
-    name: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
-    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    category: Mapped[str] = mapped_column(String(64), nullable=False, default="")
-    modules: Mapped[list[str]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=default_workspace_modules,
-        server_default='["tables", "documents", "design"]',
-        comment="使用该模板创建的工作区默认启用的功能模块",
-    )
-    spec: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
-    is_builtin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    created_by_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    updated_by_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-
-    revisions: Mapped[list[WorkspaceTemplateRevision]] = relationship(
-        back_populates="template", cascade="all, delete-orphan"
-    )
-
-    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
-        return f"WorkspaceTemplate(id={self.id}, name={self.name!r}, version={self.version})"
-
-
-class WorkspaceTemplateRevision(TimestampMixin, Base):
-    """模板版本快照：每保存一次落一版，供 diff / 影响预览与审计."""
-
-    __tablename__ = "workspaces_templaterevision"
-    __table_args__ = (
-        UniqueConstraint("template_id", "version", name="uniq_workspace_template_version"),
-        {"extend_existing": True},
-    )
-
-    template_id: Mapped[int] = mapped_column(
-        ForeignKey("workspaces_template.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    version: Mapped[int] = mapped_column(Integer, nullable=False)
-    spec: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
-    change_summary: Mapped[str] = mapped_column(String(500), nullable=False, default="")
-    created_by_id: Mapped[int | None] = mapped_column(
-        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
-    )
-
-    template: Mapped[WorkspaceTemplate] = relationship(back_populates="revisions")
-
-    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
-        return f"WorkspaceTemplateRevision(template_id={self.template_id}, version={self.version})"
-
-
-class WorkspaceProjectState(TimestampMixin, Base):
-    """项目级生命周期状态（ADR 0122 D3）.
-
-    ``project_row_id`` 是模板根表单（``project.root_form``）的行 ID；动态表无法建
-    跨表 FK，归属由服务层 ``resolve_project_row`` 校验。唯一键保证同一项目只有
-    一条状态，推进用 upsert 语义。
-    """
-
-    __tablename__ = "workspaces_workspace_project_state"
-    __table_args__ = (
-        UniqueConstraint("workspace_id", "project_row_id", name="uniq_workspace_project_state"),
-        {"extend_existing": True},
-    )
-
-    workspace_id: Mapped[int] = mapped_column(
-        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    project_row_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    stage_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    history: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON,
-        nullable=False,
-        default=list,
-        server_default="[]",
-        comment="项目级阶段推进履历",
-    )
-
-    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
-        return f"WorkspaceProjectState(workspace_id={self.workspace_id}, project_row_id={self.project_row_id})"
-
-
-class WorkspaceProjectDocument(TimestampMixin, Base):
-    """项目级文档映射（ADR 0122 D4）：文档本体不加项目列，映射独立备份与清理."""
-
-    __tablename__ = "workspaces_workspace_project_document"
-    __table_args__ = (
-        UniqueConstraint("workspace_id", "project_row_id", "doc_key", name="uniq_workspace_project_document"),
-        {"extend_existing": True},
-    )
-
-    workspace_id: Mapped[int] = mapped_column(
-        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    project_row_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
-    doc_key: Mapped[str] = mapped_column(String(64), nullable=False)
-    document_id: Mapped[int] = mapped_column(
-        ForeignKey("documents_document.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-
-    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
-        return (
-            f"WorkspaceProjectDocument(workspace_id={self.workspace_id}, "
-            f"project_row_id={self.project_row_id}, doc_key={self.doc_key!r})"
-        )
-
-
 class WorkspaceStorageSnapshot(Base):
     """工作区存储用量快照（ADR 0024）.
 
@@ -458,12 +298,8 @@ __all__ = [
     "Workspace",
     "WorkspaceMember",
     "WorkspaceModule",
-    "WorkspaceProjectDocument",
-    "WorkspaceProjectState",
     "WorkspaceRole",
     "WorkspaceStorageSnapshot",
-    "WorkspaceTemplate",
-    "WorkspaceTemplateRevision",
     "WorkspaceVisibility",
     "default_workspace_modules",
 ]

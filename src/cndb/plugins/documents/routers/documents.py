@@ -155,12 +155,8 @@ def list_documents(
     order: str = Query(default="sort", pattern="^(sort|updated|created|title)$"),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    project_id: int | None = Query(default=None, ge=1),
 ) -> dict[str, Any]:
-    """文档列表（工作区成员）。
-
-    ``project_id``：按项目文档映射过滤（ADR 0122 C6）；不传保持现状。
-    """
+    """文档列表（工作区成员）."""
     _require_member(db, workspace_id, current_user)
 
     # 共享筛选条件（数据查询与 total 计数一致）
@@ -170,8 +166,6 @@ def list_documents(
         # 可见性：草稿/归档仅创建者与工作区所有者可见（不暴露他人未发布内容）
         services.visibility.visible_condition(db, workspace_id, current_user),
     ]
-    if project_id is not None:
-        filters.append(Document.id.in_(_project_document_ids(db, workspace_id, project_id)))
     if parent_id is not None:
         filters.append(Document.parent_id == parent_id)
     if status:
@@ -206,17 +200,9 @@ def document_tree(
     workspace_id: int,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-    project_id: int | None = Query(default=None, ge=1),
 ) -> dict[str, Any]:
-    """全量文档树（工作区成员，含文件夹层级）.
-
-    ``project_id``：只返回该项目映射文档及其祖先文件夹（ADR 0122 C6）。
-    非项目过滤走缓存；项目过滤结果随映射变化，直接查库。
-    """
+    """全量文档树（工作区成员，含文件夹层级）."""
     _require_member(db, workspace_id, current_user)
-
-    if project_id is not None:
-        return _document_tree_uncached(db, workspace_id, current_user, project_id=project_id)
 
     from cndb.core.cache import cache_key, list_cache
 
@@ -229,27 +215,10 @@ def document_tree(
     return data
 
 
-def _project_document_ids(db: Session, workspace_id: int, project_id: int) -> set[int]:
-    """项目映射的文档 ID 集合（只读，不校验项目行归属——越权由可见性兜底）."""
-    from sqlalchemy import select as sa_select
-
-    from cndb.plugins.workspaces.models import WorkspaceProjectDocument
-
-    rows = db.execute(
-        sa_select(WorkspaceProjectDocument.document_id).where(
-            WorkspaceProjectDocument.workspace_id == workspace_id,
-            WorkspaceProjectDocument.project_row_id == project_id,
-        )
-    ).all()
-    return {int(row[0]) for row in rows}
-
-
 def _document_tree_uncached(
     db: Session,
     workspace_id: int,
     current_user: User,
-    *,
-    project_id: int | None = None,
 ) -> dict[str, Any]:
     all_docs = list(
         db.execute(
@@ -262,9 +231,6 @@ def _document_tree_uncached(
     )
     # 可见性：隐藏他人草稿；同时保留可见节点的祖先文件夹，避免目录树出现孤儿节点
     visible = services.visibility.filter_visible_documents(db, workspace_id, all_docs, current_user)
-    if project_id is not None:
-        mapped_ids = _project_document_ids(db, workspace_id, project_id)
-        visible = [d for d in visible if d.id in mapped_ids]
     visible_ids = {d.id for d in visible}
     visible_ids |= services.visibility.visible_ancestor_ids(all_docs, visible)
     ordered_docs = [d for d in all_docs if d.id in visible_ids]

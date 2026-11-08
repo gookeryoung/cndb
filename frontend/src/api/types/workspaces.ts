@@ -10,12 +10,6 @@ export interface Workspace {
   modules?: WorkspaceModule[]
   /** 存储配额（字节），默认 100MB；由系统管理员在管理台「空间分配」调整 */
   storage_quota_bytes?: number
-  /** 工作区模板引用（需求 0094）；null/缺失 = 自由工作区 */
-  template_id?: number | null
-  template_version?: number | null
-  template_stage?: string | null
-  /** 项目上下文模式（ADR 0122）：project 时显示项目清单 / 切换器 */
-  project_mode?: 'workspace' | 'project'
   current_user_role?: WorkspaceRole | null
 }
 export interface WorkspaceDetail extends Workspace {
@@ -33,10 +27,8 @@ export interface WorkspaceDetail extends Workspace {
 export interface WorkspaceCreate {
   name: string; description?: string; default_role?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
-  /** 功能模块集合，默认全三模块（ADR 0080 D8）；选模板时以后端模板 modules 为准 */
+  /** 功能模块集合，默认全三模块（ADR 0080 D8） */
   modules?: WorkspaceModule[]
-  /** 选用工作区模板（需求 0094），创建时按模板建立表单 / 文档占位与首阶段 */
-  template_id?: number | null
 }
 export interface WorkspaceUpdate {
   name?: string; description?: string; default_role?: string

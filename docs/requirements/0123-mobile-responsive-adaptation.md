@@ -44,7 +44,7 @@
 | 5 | 网格数据表页移动端形态未定 | `frontend/src/pages/grid/GridPage.tsx`、`frontend/src/pages/grid/gridViewBar.tsx` | C4 主缺口 |
 | 6 | Modal / Drawer 移动端宽度未全量规约（部分已 `calc(100vw - 32px)`） | 各页 Modal（如 `WorkspaceList.tsx:356`、`:878`） | P1 规约 |
 | 7 | 设计 3D 编辑器移动端可用性未知 | `frontend/src/pages/design/DesignEditorPage.tsx` | C8 |
-| 8 | 模板结构化编辑器（ADR 0121，未实施）移动端形态 | `frontend/src/pages/templates/`（规划中） | 实施时按 C7/C1 一并考虑 |
+| 8 | 模板结构化编辑器（ADR 0121，已随功能移除）移动端形态 | — | 不再实施 |
 | 9 | admin 管理台页面移动端未适配 | `frontend/src/pages/admin/` | P3 兜底 |
 | 10 | e2e 无移动视口用例 | `frontend/tests/e2e/` | C9 |
 

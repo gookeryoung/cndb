@@ -2,7 +2,7 @@
 
 覆盖：
 - 示例数据：6 列 × 43 行，技术编号唯一、父子引用完整、无环、层级语义一致
-- 模板 spec：技术编号 required + unique、技术名称 required
+- fields.json：技术编号 required + unique、技术名称 required
 - seed 流程：CSV 建表、select 推断、settings 应用、tree 视图配置落库
 """
 
@@ -16,7 +16,9 @@ from pathlib import Path
 import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-EXAMPLE_JSON = PROJECT_ROOT / "examples" / "templates" / "科研项目全生命周期管理" / "example.json"
+DATASET_DIR = PROJECT_ROOT / "examples" / "datasets" / "工作区-科研项目管理"
+TECH_CSV = DATASET_DIR / "技术体系.csv"
+FIELDS_JSON = DATASET_DIR / "fields.json"
 
 EXPECTED_HEADER = ["技术编号", "父技术编号", "技术名称", "技术方向", "技术层级", "成熟度"]
 EXPECTED_ROW_COUNT = 43
@@ -35,10 +37,10 @@ TREE_VIEW_OPTIONS = {
 
 
 def _load_rows() -> list[dict[str, str]]:
-    if not EXAMPLE_JSON.exists():
-        pytest.skip(f"{EXAMPLE_JSON} 不可用")
-    manifest = json.loads(EXAMPLE_JSON.read_text(encoding="utf-8"))
-    return list((manifest.get("records") or {}).get("tech_system") or [])
+    if not TECH_CSV.exists():
+        pytest.skip(f"{TECH_CSV} 不可用")
+    with TECH_CSV.open(encoding="utf-8-sig", newline="") as f:
+        return list(csv.DictReader(f))
 
 
 def _parents(rows: list[dict[str, str]]) -> dict[str, str]:
@@ -112,22 +114,20 @@ def test_tech_system_dimension_and_level_semantics():
     assert max_depth == 4
 
 
-# ── 2. 模板 spec 配置 ────────────────────────────────────
+# ── 2. 数据集字段配置 ────────────────────────────────────
 
 
-def test_template_spec_has_tech_system_settings():
-    """模板 spec：技术体系 技术编号 required+unique、技术名称 required."""
-    from cndb.cli.seed.workspace_templates import RESEARCH_LIFECYCLE_SPEC
-
-    form = next(f for f in RESEARCH_LIFECYCLE_SPEC["forms"] if f["key"] == "tech_system")
-    fields = {f["name"]: f for f in form["fields"]}
-    assert fields["技术编号"].get("required") is True
-    assert fields["技术编号"].get("is_unique") is True
-    assert fields["技术名称"].get("required") is True
+def test_dataset_has_tech_system_settings():
+    """fields.json：技术体系 技术编号 required+unique、技术名称 required."""
+    config = json.loads(FIELDS_JSON.read_text(encoding="utf-8"))
+    settings = config["settings"]["技术体系"]
+    assert settings["技术编号"].get("required") is True
+    assert settings["技术编号"].get("unique") is True
+    assert settings["技术名称"].get("required") is True
 
 
-def test_template_example_tech_system_rows_are_unique():
-    """模板示例数据：技术编号与技术名称唯一，行数 43."""
+def test_dataset_tech_system_rows_are_unique():
+    """数据集示例数据：技术编号与技术名称唯一，行数 43."""
     rows = _load_rows()
     assert len(rows) == EXPECTED_ROW_COUNT
     assert len({row["技术编号"] for row in rows}) == EXPECTED_ROW_COUNT

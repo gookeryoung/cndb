@@ -29,10 +29,9 @@ import { useResponsive } from '@/hooks/useResponsive'
 import SearchInput from '@/components/SearchInput'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { usePreferences, useSetWorkspaceOrder } from '@/hooks/useFavoriteViews'
-import { workspaceApi, tableApi, workspaceTemplateApi } from '@/api'
+import { workspaceApi, tableApi } from '@/api'
 import type {
   Workspace, WorkspaceRole, WorkspaceVisibility, TableSummary, WorkspaceArchiveInspect,
-  WorkspaceTemplate,
 } from '@/api'
 import {
   DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules,
@@ -109,7 +108,6 @@ export default function WorkspaceList() {
   /** 已展开的工作区 id 集合（允许多行同时展开，与 GitHub 文件树一致） */
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [form] = Form.useForm()
-  const selectedTemplateId = Form.useWatch('template_id', form) as number | undefined
 
   const { data: workspaces = [], isLoading } = useQuery<WSWithStats[]>({
     queryKey: ['workspaces'],
@@ -123,18 +121,11 @@ export default function WorkspaceList() {
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   )
 
-  // 模板列表：只在新建弹窗打开时拉取，避免主页首屏多一次请求
-  const { data: templates = [] } = useQuery<WorkspaceTemplate[]>({
-    queryKey: ['workspace-templates'],
-    queryFn: () => workspaceTemplateApi.list(),
-    enabled: createOpen,
-  })
-
   const create = useMutation({
     mutationFn: (v: {
       name: string; description?: string;
       visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean;
-      modules?: WorkspaceModule[]; template_id?: number | null;
+      modules?: WorkspaceModule[];
     }) => workspaceApi.create({
       name: v.name,
       description: v.description ?? '',
@@ -142,7 +133,6 @@ export default function WorkspaceList() {
       tags: v.tags ?? [],
       allow_edit: v.allow_edit ?? true,
       modules: normalizeModules(v.modules),
-      template_id: v.template_id ?? null,
     }),
     onSuccess: (w) => {
       message.success(`已创建 "${w.name}"`)
@@ -358,7 +348,7 @@ export default function WorkspaceList() {
           <Form
             form={form}
             layout="vertical"
-            initialValues={{ visibility: 'member', allow_edit: true, modules: [...DEFAULT_WORKSPACE_MODULES], template_id: null }}
+            initialValues={{ visibility: 'member', allow_edit: true, modules: [...DEFAULT_WORKSPACE_MODULES] }}
             onFinish={(v) => {
               const tagsStr = (v.tags as string) || ''
               create.mutate({
@@ -374,28 +364,11 @@ export default function WorkspaceList() {
               <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
             </Form.Item>
             <Form.Item
-              name="template_id"
-              label="工作区模板（可选）"
-              extra={selectedTemplateId
-                ? '使用模板创建：按模板建立表单、文档占位与生命周期阶段；功能模块以模板定义为准。'
-                : '不选模板则创建自由工作区；模板中心可配置科研项目等全生命周期流程。'}
-            >
-              <Select
-                allowClear
-                placeholder="不使用模板"
-                options={templates.map(t => ({
-                  value: Number(t.id),
-                  label: `${t.name}（v${t.version}${t.is_builtin ? ' · 内置' : ''}）`,
-                }))}
-                data-testid="create-workspace-template"
-              />
-            </Form.Item>
-            <Form.Item
               name="modules"
               label="功能模块"
               extra="按需勾选工作区开放的功能；数据分析与数据同步随数据表一并启用，质量检查恒可用。"
             >
-              <ModuleCheckCards disabled={!!selectedTemplateId} />
+              <ModuleCheckCards />
             </Form.Item>
             <Form.Item name="visibility" label="公开性">
               <Select

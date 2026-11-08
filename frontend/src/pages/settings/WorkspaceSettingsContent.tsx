@@ -1,6 +1,6 @@
 /** 工作区设置 — 内容组件（可嵌入 Modal 或独立页面）.
  *
- * 包含三个分项：常规设置 / 权限管理 / 生命周期（统计信息为独立一级导航「统计」）
+ * 包含两个分项：常规设置 / 权限管理（统计信息为独立一级导航「统计」）
  * 常规设置只保留可编辑项，危险操作固定在内容底部（参考 GitHub 设置页）；
  * 角色信息与工作区只读信息并入「统计」页的概览分项。
  * 所有颜色均使用 CSS 变量，自动适配深浅主题。
@@ -37,7 +37,6 @@ import {
   DEFAULT_WORKSPACE_MODULES, normalizeModules,
 } from '@/utils/workspaceModules'
 import AddMemberModal from './AddMemberModal'
-import WorkspaceLifecyclePanel from './WorkspaceLifecyclePanel'
 import MemberZones from './MemberZones'
 import TransferOwnerModal from './TransferOwnerModal'
 import { ROLE_LABEL, VISIBILITY_LABEL, getAssignableRoles } from './workspaceRoles'
@@ -463,17 +462,6 @@ export default function WorkspaceSettingsContent({
       key: 'permissions',
       label: tabLabel('permissions'),
       children: membersTabChildren,
-    },
-    {
-      key: 'lifecycle',
-      label: tabLabel('lifecycle'),
-      children: (
-        <WorkspaceLifecyclePanel
-          wid={wid}
-          canAdvance={myRole === 'owner' || myRole === 'editor'}
-          canManageTemplate={myRole === 'owner'}
-        />
-      ),
     },
   ]
 
