@@ -12,8 +12,9 @@ test("关键页面无 antd 弃用告警", async ({ page, request }) => {
     if (msg.type() === "warning") warnings.push(msg.text());
   });
 
-  const wid = await getWorkspaceId(request, "科研项目管理");
-  const tid = await getTableId(request, wid, "科研项目");
+  // 旧「科研项目管理」示例工作区已并入模板示例，改用稳定的销售示例工作区
+  const wid = await getWorkspaceId(request, "某企业销售管理");
+  const tid = await getTableId(request, wid, "电商销售");
 
   await page.goto(`/w/${wid}/tables/${tid}`);
   await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible({

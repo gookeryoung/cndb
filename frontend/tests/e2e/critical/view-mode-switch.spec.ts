@@ -7,9 +7,9 @@
  *          若仅 grid 一种视图类型则整个按钮组隐藏（避免单按钮视觉噪音）.
  *
  * 精简说明（2026-09，测试金字塔下沉）：
- *      原 5 条"换表+换按钮数"矩阵收敛为代表性 1 例（科研项目 2 按钮）；
+ *      原 5 条"换表+换按钮数"矩阵收敛为代表性 1 例（客户流失 3 按钮）；
  *      矩阵全量断言下沉至单元层 src/pages/grid/viewModes.test.ts（deriveModeSwitch，
- *      与 seed 数据 1:1 对应：部门表 0/科研项目 4/项目进展 4/科研任务分解 6/产品开发 6）；
+ *      与 seed 数据 1:1 对应：部门表 0/客户流失 3/电商销售 5/产品开发 6）；
  *      保留"点击切换"与"跨表导航"两条端到端链路断言.
  */
 import { test, expect } from "../fixtures/auth";
@@ -73,7 +73,6 @@ const ANON = ["setup", "chromium-anon"];
 
 /** 与 seed 真实数据对齐的按钮数预期（2026-10 校准，chart 全面注入 + matrix/calendar 补充）：
  *  部门表 → 0（仅 grid，按钮组隐藏）
- *  科研项目 → 4（grid+kanban+calendar+chart，2026-10 补结题日历）
  *  产品开发 → 6（grid+kanban+calendar+gantt+chart+flow）
  *  客户流失 → 3（grid+kanban+chart）
  *  电商销售 → 5（grid+kanban+calendar+matrix+chart，2026-10 补日历/矩阵视图）
@@ -81,28 +80,28 @@ const ANON = ["setup", "chromium-anon"];
 
 test.describe("视图类型切换按钮 — 按数据表 views 动态配置", () => {
   // 代表性 1 例（矩阵全量断言已下沉至 viewModes.test.ts）
-  test("科研项目（科研项目管理）→ 模式按钮组显示 4 个按钮", async ({
+  test("客户流失（某企业销售管理）→ 模式按钮组显示 3 个按钮", async ({
     page,
     request,
   }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
-    const wid = await getWorkspaceId(request, "科研项目管理");
-    await gotoTable(page, request, wid, "科研项目");
-    await assertModeButtonCount(page, 4);
+    const wid = await getWorkspaceId(request, "某企业销售管理");
+    await gotoTable(page, request, wid, "客户流失");
+    await assertModeButtonCount(page, 3);
   });
 });
 
 // ──────────────────────────── 切换行为回归 ────────────────────────────
 
 test.describe("动态按钮组 — 点击切换行为回归", () => {
-  test("科研项目表点看板按钮 → 切到 kanban 视图", async ({ page, request }) => {
+  test("客户流失表点看板按钮 → 切到 kanban 视图", async ({ page, request }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 跳过");
 
-    const wid = await getWorkspaceId(request, "科研项目管理");
-    await gotoTable(page, request, wid, "科研项目");
+    const wid = await getWorkspaceId(request, "某企业销售管理");
+    await gotoTable(page, request, wid, "客户流失");
 
-    await assertModeButtonCount(page, 4);
+    await assertModeButtonCount(page, 3);
 
     // 点击看板按钮 → Segmented 跳转到 kanban 类型的视图
     const kanbanBtn = page.locator('.ant-btn[data-mode="kanban"]');

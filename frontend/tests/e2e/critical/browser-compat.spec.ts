@@ -11,8 +11,9 @@ test("现代 Chromium 不启用旧内核兜底，且颜色 / 间距保持原生"
   page,
   request,
 }) => {
-  const wid = await getWorkspaceId(request, "科研项目管理");
-  const tid = await getTableId(request, wid, "科研项目");
+  // 旧「科研项目管理」示例工作区已并入模板示例，改用稳定的销售示例工作区
+  const wid = await getWorkspaceId(request, "某企业销售管理");
+  const tid = await getTableId(request, wid, "电商销售");
   await page.goto(`/w/${wid}/tables/${tid}`);
   await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible({
     timeout: 10_000,
