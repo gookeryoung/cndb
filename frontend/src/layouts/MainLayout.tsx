@@ -23,6 +23,9 @@ import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
 import DesignStructureNav from '@/pages/design/DesignStructureNav'
 import {
+  WORKSPACE_SETTINGS_SECTIONS, normalizeWorkspaceSettingsSection,
+} from '@/pages/settings/workspaceSettingsSections'
+import {
   describeSort, DOC_SORT_OPTIONS, setDocTitleFilter, sortDocTree, sortToValue, useDocSortPref,
   useDocTitleFilter, valueToSort,
 } from '@/pages/documents/docTreeSort'
@@ -516,43 +519,25 @@ export default function MainLayout() {
 
   // ── 侧边栏形态：按当前功能段切换（需求 0065）──
   // documents → 文档侧栏（文档树）；design → 设计侧栏（装配结构树，ADR 0084 D4）；
+  // settings → 设置分项侧栏（与个人设置同形：侧栏列分项，内容区渲染选中分项）；
   // 其余（数据表 / 分析 / 同步）→ 数据表导航始终展开，不再自动折叠。
-  // 2026-11-02 用户口径：进入工作区设置也保持侧栏展开（含表级子页 /tables/:tid/settings，本就不受影响）。
-  // 2026-11-03 用户口径：进入「工作区设置」保持已进入模块的侧栏（从文档 / 设计进入就沿用文档树 /
-  // 装配结构树），不再切回数据表侧栏；仅当没有可沿用的模块（刷新 / 直接打开设置页、
-  // 目标工作区未启用该模块）时回落到数据表侧栏。
+  // 2026-11-08 用户口径：工作区设置不再沿用来源模块侧栏，
+  // 侧栏固定为「基本设置 / 权限 / 生命周期 / 统计信息」，分项由 ?section= 驱动。
   // 2026-11-06 用户口径（ADR 0109 D8）：设计模块收敛为单一工作台，根页 /w/:wid/design
   // 与编辑器页 /w/:wid/design/:id 都渲染同一设计侧栏（产品列表 ↔ 结构树两态）；
   // 根页只负责默认选中最近更新的产品并跳转，不再隐藏侧栏。
-  type SiderMode = 'documents' | 'design' | 'tables' | 'hidden'
+  type SiderMode = 'documents' | 'design' | 'tables' | 'settings' | 'hidden'
   const moduleSiderMode: 'documents' | 'design' | null =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
       : inDesignContext && wsFeatures.design
         ? 'design'
         : null
-  // 记录最近一次非设置段所属模块（文档 / 设计）；工作区设置页据此沿用同一侧栏。
-  // 会话级持久化：刷新后直接打开设置页仍沿用同一侧栏，而不是回落数据表。
-  const [lastModuleSider, setLastModuleSider] = usePersistedState<'documents' | 'design' | null>(
-    'cndb_last_module_sider', null, 'session',
-  )
-  useEffect(() => {
-    if (moduleSiderMode && moduleSiderMode !== lastModuleSider) setLastModuleSider(moduleSiderMode)
-  }, [moduleSiderMode, lastModuleSider, setLastModuleSider])
-
-  // 当前模块优先；设置段沿用最近模块
-  const previousModuleSider = moduleSiderMode ?? lastModuleSider
   const siderMode: SiderMode =
-    moduleSiderMode
-      ?? (
-        activeWsTab === 'settings'
-        && previousModuleSider
-        && wsFeatures[previousModuleSider]
-          ? previousModuleSider
-          : wsFeatures.tables
-            ? 'tables'
-            : 'hidden'
-      )
+    activeWsTab === 'settings'
+      ? 'settings'
+      : moduleSiderMode
+        ?? (wsFeatures.tables ? 'tables' : 'hidden')
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -860,6 +845,40 @@ export default function MainLayout() {
     )
   }
 
+  /** 设置导航内容 —— 工作区设置段下 Sider 与移动端抽屉共用.
+   * 与个人设置同形：侧栏列出设置分项，选中项由 ?section= 驱动，内容区渲染对应分项。 */
+  const renderSettingsNav = (mobile: boolean, collapsed = false) => {
+    if (!wid) return null
+    const activeSection = normalizeWorkspaceSettingsSection(searchParams.get('section'))
+    return (
+      <div data-testid="sider-settings" className="cn-table-nav">
+        <div style={{
+          padding: 'var(--cn-space-md) var(--cn-space-lg)',
+          borderBottom: '1px solid var(--cn-border)',
+          fontWeight: WEIGHT.semibold,
+          color: 'var(--cn-text-secondary)',
+          fontSize: 'var(--cn-text-xs)',
+          display: collapsed ? 'none' : 'block',
+        }}>
+          工作区设置
+        </div>
+        <Menu
+          mode="inline"
+          selectedKeys={[activeSection]}
+          items={WORKSPACE_SETTINGS_SECTIONS.map(s => ({
+            key: s.key,
+            icon: s.icon,
+            label: s.label,
+            onClick: () => {
+              navigate(`/w/${wid}/settings?section=${s.key}`)
+              if (mobile) setMobileNavOpen(false)
+            },
+          }))}
+        />
+      </div>
+    )
+  }
+
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       {/* 留白与控件间距走 index.css（桌面基准 + 移动端收窄），不再 JS 分叉（ADR 0123 C7） */}
@@ -1015,7 +1034,7 @@ export default function MainLayout() {
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
             侧栏形态随功能段切换（需求 0065 / ADR 0084 / ADR 0109 D8）：文档段=文档导航，
             设计段（根页 + 编辑器页）=产品列表 / 结构树两态侧栏，
-            数据表 / 分析 / 同步 / 工作区设置段=表导航保持展开，
+            工作区设置段=设置分项侧栏；数据表 / 分析 / 同步段=表导航保持展开，
             无 tables 能力的类型不渲染侧栏 */}
         {!isMobile && !inAdminConsole && !inHelpDocs && !inTemplates && siderMode !== 'hidden' && (
           <Sider
@@ -1027,7 +1046,9 @@ export default function MainLayout() {
               ? renderDocumentNav(false, collapsed)
               : siderMode === 'design'
                 ? renderDesignNav(false, collapsed)
-                : renderTableNav(false, collapsed)}
+                : siderMode === 'settings'
+                  ? renderSettingsNav(false, collapsed)
+                  : renderTableNav(false, collapsed)}
           </Sider>
         )}
 
@@ -1130,7 +1151,9 @@ export default function MainLayout() {
           ? renderDocumentNav(true)
           : siderMode === 'design'
             ? renderDesignNav(true)
-            : siderMode === 'tables' && renderTableNav(true)}
+            : siderMode === 'settings'
+              ? renderSettingsNav(true)
+              : siderMode === 'tables' && renderTableNav(true)}
       </Drawer>
 
       {/* 移动端搜索：顶部抽屉承载与桌面同款搜索面板（主页模式 = 跨工作区，0081 C3） */}

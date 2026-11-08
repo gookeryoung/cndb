@@ -88,10 +88,10 @@ function DocumentsStub() {
     return <div data-testid="documents-page-stub">{loc.pathname}{loc.search}</div>
 }
 
-/** 工作区设置路由桩 —— 展示当前 pathname 供断言 */
+/** 工作区设置路由桩 —— 展示当前 pathname + query 供断言（分项由 ?section= 驱动） */
 function SettingsStub() {
     const loc = useLocation()
-    return <div data-testid="settings-page-stub">{loc.pathname}</div>
+    return <div data-testid="settings-page-stub">{loc.pathname}{loc.search}</div>
 }
 
 /** 分析 / 同步 / 质量检查路由桩 —— 展示当前 pathname 供断言 */
@@ -1110,11 +1110,13 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         })
     })
 
-    it('设置页沿用最近模块侧栏：刷新后直接进设置仍显示文档树', async () => {
+    it('工作区设置页：侧栏显示设置分项，不再沿用最近模块侧栏', async () => {
         sessionStorage.setItem('cndb_last_module_sider', '"documents"')
         renderLayout(mockUser, '/w/10/settings')
 
-        await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
+        await waitFor(() => expect(screen.getByTestId('sider-settings')).toBeVisible())
+        expect(screen.getByText('基本设置')).toBeVisible()
+        expect(screen.queryByTestId('sider-documents')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
@@ -1139,7 +1141,7 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('工作区设置段：侧栏保持展开不折叠', async () => {
+    it('工作区设置段：侧栏保持展开并显示设置分项', async () => {
         renderLayout(mockUser, '/w/10/settings')
 
         await waitFor(() => expect(screen.getByTestId('settings-page-stub')).toBeVisible())
@@ -1147,9 +1149,9 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         const sider = document.querySelector('.ant-layout-sider')
         expect(sider).not.toBeNull()
         expect(sider).not.toHaveClass('ant-layout-sider-collapsed')
-        // 仍是数据表导航内容
-        expect(screen.getByTestId('sider-tables')).toBeVisible()
-        expect(screen.queryByTestId('sider-documents')).toBeNull()
+        // 侧栏内容为设置分项，不再显示数据表导航
+        expect(screen.getByTestId('sider-settings')).toBeVisible()
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
     it.each(['/w/10/analytics', '/w/10/datasource', '/w/10/pipelines'])(
@@ -1249,8 +1251,8 @@ async function expandDesignNode(testId: string) {
     })
 }
 
-describe('MainLayout 工作区设置段侧栏沿用来源模块（2026-11-03 用户口径）', () => {
-    it('从文档模块进入工作区设置：侧栏保持文档树，不切回数据表', async () => {
+describe('MainLayout 工作区设置段侧栏（2026-11-08 用户口径）', () => {
+    it('从文档模块进入工作区设置：侧栏切换为设置分项，不再保留文档树', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
@@ -1258,11 +1260,12 @@ describe('MainLayout 工作区设置段侧栏沿用来源模块（2026-11-03 用
         await waitFor(() => {
             expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
         })
-        expect(screen.getByTestId('sider-documents')).toBeVisible()
+        expect(screen.getByTestId('sider-settings')).toBeVisible()
+        expect(screen.queryByTestId('sider-documents')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('从设计编辑器进入工作区设置：侧栏保持装配结构树，不切回数据表', async () => {
+    it('从设计编辑器进入工作区设置：侧栏切换为设置分项，不再保留装配结构树', async () => {
         useDesignSidebar()
         renderLayout(mockUser, '/w/10/design/20')
 
@@ -1271,28 +1274,32 @@ describe('MainLayout 工作区设置段侧栏沿用来源模块（2026-11-03 用
         await waitFor(() => {
             expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
         })
-        expect(screen.getByTestId('sider-designs')).toBeVisible()
+        expect(screen.getByTestId('sider-settings')).toBeVisible()
+        expect(screen.queryByTestId('sider-designs')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('直接打开工作区设置（无来源模块）回落数据表侧栏', async () => {
+    it('直接打开工作区设置：侧栏显示设置分项', async () => {
         renderLayout(mockUser, '/w/10/settings')
 
         await waitFor(() => {
             expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
         })
-        expect(screen.getByTestId('sider-tables')).toBeVisible()
+        expect(screen.getByTestId('sider-settings')).toBeVisible()
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
 
-    it('从数据表进入工作区设置：侧栏仍是数据表（来源即数据表）', async () => {
-        renderLayout(mockUser, '/w/10/tables')
+    it('点击侧栏分项：写入 ?section= 并同步选中态', async () => {
+        renderLayout(mockUser, '/w/10/settings')
 
-        await waitFor(() => expect(screen.getByTestId('sider-tables')).toBeVisible())
-        fireEvent.click(screen.getByTestId('ws-nav-settings'))
+        await waitFor(() => expect(screen.getByTestId('sider-settings')).toBeVisible())
+        fireEvent.click(screen.getByText('统计信息'))
+
         await waitFor(() => {
-            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings')
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings?section=stats')
         })
-        expect(screen.getByTestId('sider-tables')).toBeVisible()
+        const selected = screen.getByTestId('sider-settings').querySelector('.ant-menu-item-selected')
+        expect(selected).toHaveTextContent('统计信息')
     })
 })
 

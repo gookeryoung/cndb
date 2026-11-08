@@ -175,6 +175,30 @@ test.describe("MainLayout Header 导航按钮", () => {
 
   // ── 需求 0065：侧边栏随工作区功能段切换 ──
 
+  test("工作区设置段：侧栏切换为设置分项，内容区渲染选中分项", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+
+    // 从文档段进入设置，验证侧栏不再沿用文档树
+    await page.goto(`/w/${WID}/documents`)
+    await page.waitForURL(/\/documents$/)
+    await expect(page.getByTestId("sider-documents")).toBeVisible({ timeout: 10_000 })
+
+    await page.getByTestId("ws-nav-settings").click()
+    await page.waitForURL(/\/settings$/)
+    const sider = page.getByTestId("sider-settings")
+    await expect(sider).toBeVisible()
+    await expect(page.getByTestId("sider-documents")).toHaveCount(0)
+    await expect(page.getByTestId("sider-tables")).toHaveCount(0)
+    // 默认渲染基本设置分项
+    await expect(page.getByTestId("ws-settings-section-basic")).toBeVisible()
+
+    // 侧栏分项驱动内容区：?section=stats
+    await sider.getByText("统计信息").click()
+    await page.waitForURL(/\/settings\?section=stats$/)
+    await expect(page.getByTestId("ws-settings-section-stats")).toBeVisible()
+    await expect(page.getByTestId("ws-settings-section-basic")).toHaveCount(0)
+  })
+
   test("切到文档段：侧栏由数据表列表切换为文档树，进入文档后侧栏保持文档树并高亮当前文档", async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
 

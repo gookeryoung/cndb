@@ -39,20 +39,38 @@ function renderPage(initialPath = '/w/10/settings') {
 }
 
 describe('WorkspaceSettingsPage 工作区设置页', () => {
-  it('仅渲染设置内容（WorkspaceSettingsContent 的基本设置 Tab）', async () => {
+  it('默认渲染「基本设置」分项内容（分项导航由 MainLayout 侧栏承担）', async () => {
     setupWorkspaceDetailHandler()
     renderPage()
 
-    expect(await screen.findByText('基本设置')).toBeVisible()
+    expect(await screen.findByTestId('ws-settings-section-basic')).toBeVisible()
+    expect(await screen.findByLabelText('工作区名称')).toBeVisible()
   })
 
-  it('不再渲染面包屑、页内标题与返回按钮（导航由分页 tab 承担）', async () => {
+  it('不再渲染面包屑、页内标题、返回按钮与页内 Tabs', async () => {
     setupWorkspaceDetailHandler()
     renderPage()
 
-    expect(await screen.findByText('基本设置')).toBeVisible()
+    expect(await screen.findByTestId('ws-settings-section-basic')).toBeVisible()
     expect(screen.queryByTestId('settings-back-btn')).toBeNull()
     // 面包屑（含工作区名的链接）不再渲染
     expect(screen.queryByRole('navigation')).toBeNull()
+    // 分项导航在侧栏，页内不再重复渲染 Tabs
+    expect(document.querySelector('.ant-tabs')).toBeNull()
+  })
+
+  it('?section=stats 直接渲染统计信息分项', async () => {
+    setupWorkspaceDetailHandler()
+    renderPage('/w/10/settings?section=stats')
+
+    expect(await screen.findByTestId('ws-settings-section-stats')).toBeVisible()
+    expect(await screen.findByTestId('ws-stats-grid')).toBeVisible()
+  })
+
+  it('未知分项回落到基本设置', async () => {
+    setupWorkspaceDetailHandler()
+    renderPage('/w/10/settings?section=unknown')
+
+    expect(await screen.findByTestId('ws-settings-section-basic')).toBeVisible()
   })
 })

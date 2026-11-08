@@ -17,10 +17,9 @@ import {
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
-  SettingOutlined, BarChartOutlined,
   FileTextOutlined, EyeOutlined, HddOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
-  ReadOutlined, ToolOutlined, RocketOutlined,
+  ReadOutlined, ToolOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -42,11 +41,17 @@ import WorkspaceLifecyclePanel from './WorkspaceLifecyclePanel'
 import MemberZones from './MemberZones'
 import TransferOwnerModal from './TransferOwnerModal'
 import { ROLE_LABEL, VISIBILITY_LABEL, getAssignableRoles } from './workspaceRoles'
+import {
+  WORKSPACE_SETTINGS_SECTIONS,
+  type WorkspaceSettingsSectionKey,
+} from './workspaceSettingsSections'
 import { WEIGHT } from '@/theme/tokens'
 
 interface Props {
   wid: string
-  initialTab?: 'basic' | 'permissions' | 'lifecycle' | 'stats'
+  initialTab?: WorkspaceSettingsSectionKey
+  /** 受控分项：独立页面由侧栏驱动时传入，此时不再渲染页内 Tabs */
+  section?: WorkspaceSettingsSectionKey
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
   /** 删除工作区成功后回调（Modal 模式下用于关闭弹窗，回到工作区列表视图） */
@@ -55,7 +60,7 @@ interface Props {
 
 
 export default function WorkspaceSettingsContent({
-  wid, initialTab = 'basic', onUpdated, onDeleted,
+  wid, initialTab = 'basic', section, onUpdated, onDeleted,
 }: Props) {
   const queryClient = useQueryClient()
   const { message } = AntApp.useApp()
@@ -390,11 +395,15 @@ export default function WorkspaceSettingsContent({
   )
 
   // ─────────────────────────────────────────
-  // Tab 定义
+  // Tab 定义（文案 / 图标与侧栏共用 WORKSPACE_SETTINGS_SECTIONS）
+  const tabLabel = (key: WorkspaceSettingsSectionKey) => {
+    const meta = WORKSPACE_SETTINGS_SECTIONS.find(s => s.key === key)!
+    return <span>{meta.icon} {meta.label}</span>
+  }
   const tabs = [
     {
       key: 'basic',
-      label: <span><SettingOutlined /> 基本设置</span>,
+      label: tabLabel('basic'),
       children: (
         <Form
           form={form}
@@ -441,12 +450,12 @@ export default function WorkspaceSettingsContent({
     },
     {
       key: 'permissions',
-      label: <span><SafetyOutlined /> 权限</span>,
+      label: tabLabel('permissions'),
       children: membersTabChildren,
     },
     {
       key: 'lifecycle',
-      label: <span><RocketOutlined /> 生命周期</span>,
+      label: tabLabel('lifecycle'),
       children: (
         <WorkspaceLifecyclePanel
           wid={wid}
@@ -457,7 +466,7 @@ export default function WorkspaceSettingsContent({
     },
     {
       key: 'stats',
-      label: <span><BarChartOutlined /> 统计信息</span>,
+      label: tabLabel('stats'),
       children: (
         <div>
           {/* 统计卡片 */}
@@ -596,15 +605,22 @@ export default function WorkspaceSettingsContent({
     ]
     : []
 
+  const activeKey = section ?? activeTab
+  const activeSection = tabs.find(t => t.key === activeKey)?.children
+
   return (
     <div className="workspace-settings-content">
-      <Tabs
-        activeKey={activeTab}
-        onChange={(k) => setActiveTab(k as typeof initialTab)}
-        items={tabs}
-        size={isMobile ? 'small' : 'middle'}
-      />
-      {footerButtons.length > 0 && (
+      {section ? (
+        <div data-testid={`ws-settings-section-${activeKey}`}>{activeSection}</div>
+      ) : (
+        <Tabs
+          activeKey={activeTab}
+          onChange={(k) => setActiveTab(k as WorkspaceSettingsSectionKey)}
+          items={tabs}
+          size={isMobile ? 'small' : 'middle'}
+        />
+      )}
+      {footerButtons.length > 0 && activeKey === 'basic' && (
         <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
           {footerButtons}
         </div>

@@ -91,7 +91,7 @@ test.describe("工作区模块勾选与导航门控", () => {
 
   test("设置页取消「文档」仅留设计后，未开放段重定向到 /design", async ({ page }) => {
     await page.goto(`/w/${wid}/settings`);
-    // 基本设置页签默认激活；取消勾选「文档」卡片
+    // 默认进入基本设置分项；取消勾选「文档」卡片
     const docCard = page.getByTestId("module-card-documents");
     await expect(docCard).toBeVisible({ timeout: 20_000 });
     await expect(docCard).toHaveAttribute("data-checked", "true");
