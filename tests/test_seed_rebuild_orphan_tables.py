@@ -139,9 +139,7 @@ class TestSeedRebuildOrphanTables:
         try:
             usernames = {row[0] for row in con.execute("SELECT username FROM accounts_user")}
             assert "admin" in usernames
-            # 科研项目管理作为 datasets 普通工作区注入
             names = {row[0] for row in con.execute("SELECT name FROM workspaces_workspace")}
-            assert "科研项目管理" in names
             assert "演示" in names
         finally:
             con.close()

@@ -218,14 +218,12 @@ describe('选中态底色可辨识性（H24 硬约束）', () => {
     expect(css).toContain('background-color: var(--cn-bg-selected-strong);')
     // 旧代码的 --cn-primary-bg 语义别名必须存在，否则内联选中背景会失效
     expect(css).toContain('--cn-primary-bg: var(--cn-bg-selected);')
-    // 数据流程 / 质量检查的列表行使用语义选中底色，而不是低对比度的浅混合
+    // 质量检查的列表行使用语义选中底色，而不是低对比度的浅混合
     const qcActive = css.match(/\.cn-qc-row--active\s*\{([^}]*)\}/)
     expect(qcActive?.[1]).toContain('background: var(--cn-bg-selected);')
-    const flowActive = css.match(/\.cn-flow-diagram-flow\.cn-qc-row--active\s*\{([^}]*)\}/)
-    expect(flowActive?.[1]).toContain('background: var(--cn-bg-selected-strong);')
   })
 
-  it('CONSTRAINTS H24：普通选中 ≥1.35:1，一级流程 ≥1.5:1 且不低于普通', () => {
+  it('CONSTRAINTS H24：普通选中 ≥1.35:1', () => {
     const css = stripComments(fs.readFileSync(path.resolve(process.cwd(), 'src/index.css'), 'utf-8'))
     for (const mode of THEME_MODES) {
       const block = themeDeclarations(css, mode)

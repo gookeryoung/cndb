@@ -40,7 +40,7 @@ Related: `frontend/src/index.css`、`frontend/src/hooks/useResponsive.ts`、`fro
 | 5 | 网格页移动端基础已存在：首列冻结、行选择列 fixed、移动关虚拟滚动 | `frontend/src/pages/grid/GridPage.tsx:1142`、`:1282`、`frontend/src/pages/grid/cells/buildColumns.tsx:376`、`frontend/src/pages/grid/gridTableSection.tsx:219-224` | C4 主体已落地 | 部分确认（P2 只补视图栏 / 工具栏 / Drawer 走查） |
 | 6 | Modal 移动宽度部分已 `calc(100vw - 32px)`（新建 / 导入工作区），但全仓未规约 | `frontend/src/pages/workspace/WorkspaceList.tsx:356`、`:878` | 各弹窗宽窄不一 | 确认（P1 规约） |
 | 7 | 设计编辑器为桌面双栏 + 3D 视口（three.js + Web Worker CSG），移动端未验证 | `frontend/src/pages/design/DesignEditorPage.tsx` | 移动端大概率不可用 | 确认（C8 兜底） |
-| 8 | 模板结构化编辑器（ADR 0121）未实施 | `frontend/src/pages/templates/`（规划） | 实施时按本 ADR C7 口径一并考虑 | 新增（约束传递，不属本 ADR 分期） |
+| 8 | 模板结构化编辑器（ADR 0121）未实施，已随功能移除 | — | 不再实施 | 移除 |
 | 9 | admin 管理台页面移动端未适配 | `frontend/src/pages/admin/` | 低频页，可后置 | 确认（P3） |
 | 10 | e2e 无移动视口用例 | `frontend/tests/e2e/` | 移动回归无门禁 | 确认（C9） |
 | 11 | Chrome 81 兼容基线（ADR 0026）要求生产构建在旧内核可用；本专项新增 CSS（媒体查询 / flex）均为 0026 白名单内基础特性 | `frontend/src/compat/`、`.browserslistrc` | 移动适配不引入新语法缺口 | 排除（复用既有基线） |
