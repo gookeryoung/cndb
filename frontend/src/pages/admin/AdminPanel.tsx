@@ -182,7 +182,7 @@ export default function AdminPanel() {
             ]}
           />
         </div>
-        <div className="cn-field">
+        <div className="cn-field cn-field-spaced">
           <span className="cn-field-label">附件目录</span>
           <Space size={8} wrap>
             <Switch checked={includeUploads} onChange={setIncludeUploads} />
