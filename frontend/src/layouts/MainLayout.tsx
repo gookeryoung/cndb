@@ -28,6 +28,7 @@ import {
 import {
   WORKSPACE_STATS_SECTIONS, normalizeWorkspaceStatsSection,
 } from '@/pages/workspace/workspaceStatsSections'
+import { ADMIN_SECTIONS, normalizeAdminSection } from '@/pages/admin/adminSections'
 import {
   describeSort, DOC_SORT_OPTIONS, setDocTitleFilter, sortDocTree, sortToValue, useDocSortPref,
   useDocTitleFilter, valueToSort,
@@ -146,6 +147,8 @@ export default function MainLayout() {
   const { modal } = AntApp.useApp()
   const { wid, tid, docId } = useParams<{ wid: string; tid?: string; docId?: string }>()
   const location = useLocation().pathname
+  /** 管理台上下文（/admin）：无工作区语义，侧栏改列管理台分项 */
+  const inAdminConsole = location.startsWith('/admin')
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
   const { isMobile } = useResponsive()
@@ -190,7 +193,7 @@ export default function MainLayout() {
 
   // 离开路由 / 卸载时清掉待写定时器，避免把上一页位置写到新路径
   useEffect(() => () => window.clearTimeout(scrollSaveTimerRef.current), [location])
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   // 移动端抽屉导航开关（仅 isMobile 时渲染汉堡入口）
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
@@ -513,7 +516,7 @@ export default function MainLayout() {
   // 2026-11-06 用户口径（ADR 0109 D8）：设计模块收敛为单一工作台，根页 /w/:wid/design
   // 与编辑器页 /w/:wid/design/:id 都渲染同一设计侧栏（产品列表 ↔ 结构树两态）；
   // 根页只负责默认选中最近更新的产品并跳转，不再隐藏侧栏。
-  type SiderMode = 'documents' | 'design' | 'tables' | 'settings' | 'stats' | 'hidden'
+  type SiderMode = 'documents' | 'design' | 'tables' | 'settings' | 'stats' | 'admin' | 'hidden'
   const moduleSiderMode: 'documents' | 'design' | null =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
@@ -521,12 +524,14 @@ export default function MainLayout() {
         ? 'design'
         : null
   const siderMode: SiderMode =
-    activeWsTab === 'settings'
-      ? 'settings'
-      : activeWsTab === 'stats'
-        ? 'stats'
-        : moduleSiderMode
-          ?? (wsFeatures.tables ? 'tables' : 'hidden')
+    inAdminConsole
+      ? 'admin'
+      : activeWsTab === 'settings'
+        ? 'settings'
+        : activeWsTab === 'stats'
+          ? 'stats'
+          : moduleSiderMode
+            ?? (wsFeatures.tables ? 'tables' : 'hidden')
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -632,12 +637,6 @@ export default function MainLayout() {
     { key: 'logout', icon: <LogoutOutlined />, label: '退出登录', onClick: onLogout },
   ]
 
-  /**
-   * 管理台上下文（/admin）：该路径没有工作区语义，侧边栏的数据表导航在这里
-   * 只剩「请先选择工作区」的空占位。此时不渲染 Sider，改由管理台页内的分区
-   * 导航栏承担导航，内容区拿到整幅宽度（页头/分区栏/内容列三者的左边界因此对齐）。
-   */
-  const inAdminConsole = location.startsWith('/admin')
   /** 帮助文档页（/help）：无工作区语义，侧栏由帮助页自带的两级导航承担 */
   const inHelpDocs = location.startsWith('/help')
 
@@ -865,6 +864,44 @@ export default function MainLayout() {
     )
   }
 
+  /** 管理台导航内容 —— /admin 段下 Sider 与移动端抽屉共用.
+   * 布局参考工作区设置 / 统计：侧栏列出管理台分项，选中项由 ?section= 驱动；
+   * 切换分项时保留事件流自身的 ?action= / ?keyword= 筛选参数。 */
+  const renderAdminNav = (mobile: boolean, collapsed = false) => {
+    const activeSection = normalizeAdminSection(searchParams.get('section'))
+    return (
+      <div data-testid="sider-admin" className="cn-table-nav">
+        <div style={{
+          padding: 'var(--cn-space-md) var(--cn-space-lg)',
+          borderBottom: '1px solid var(--cn-border)',
+          fontWeight: WEIGHT.semibold,
+          color: 'var(--cn-text-secondary)',
+          fontSize: 'var(--cn-text-xs)',
+          display: collapsed ? 'none' : 'block',
+        }}>
+          系统管理台
+        </div>
+        <Menu
+          mode="inline"
+          selectedKeys={[activeSection]}
+          items={ADMIN_SECTIONS.map(s => ({
+            key: s.key,
+            icon: s.icon,
+            label: s.label,
+            onClick: () => {
+              setSearchParams((prev) => {
+                const next = new URLSearchParams(prev)
+                next.set('section', s.key)
+                return next
+              }, { replace: true })
+              if (mobile) setMobileNavOpen(false)
+            },
+          }))}
+        />
+      </div>
+    )
+  }
+
   /** 统计导航内容 —— 「统计」段下 Sider 与移动端抽屉共用.
    * 布局参考工作区设置：侧栏列出统计分项（概览 / 贡献统计），选中项由 ?section= 驱动。 */
   const renderStatsNav = (mobile: boolean, collapsed = false) => {
@@ -1036,27 +1073,29 @@ export default function MainLayout() {
 
       <Layout style={{ flex: 1, minHeight: 0 }}>
         {/* 移动端不渲染常驻 Sider，改用下方抽屉导航；桌面端行为不变。
-            管理台（/admin）同样不渲染：无工作区上下文，导航由管理台页内分区栏承担。
             帮助文档（/help）不渲染：导航由帮助页自带的两级侧栏承担，内容区拿整幅宽度。
             侧栏形态随功能段切换（需求 0065 / ADR 0084 / ADR 0109 D8）：文档段=文档导航，
             设计段（根页 + 编辑器页）=产品列表 / 结构树两态侧栏，
-            工作区设置段=设置分项侧栏；数据表 / 分析 / 同步段=表导航保持展开，
-            无 tables 能力的类型不渲染侧栏 */}
-        {!isMobile && !inAdminConsole && !inHelpDocs && siderMode !== 'hidden' && (
+            工作区设置段=设置分项侧栏，统计段=统计分项侧栏，
+            管理台（/admin）=管理台分项侧栏（与设置 / 统计同形）；
+            数据表 / 分析 / 同步段=表导航保持展开，无 tables 能力的类型不渲染侧栏 */}
+        {!isMobile && !inHelpDocs && siderMode !== 'hidden' && (
           <Sider
             collapsible collapsed={collapsed} onCollapse={setCollapsed}
             width={240} collapsedWidth={60}
             style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
           >
-            {siderMode === 'documents'
-              ? renderDocumentNav(false, collapsed)
-              : siderMode === 'design'
-                ? renderDesignNav(false, collapsed)
-                : siderMode === 'settings'
-                  ? renderSettingsNav(false, collapsed)
-                  : siderMode === 'stats'
-                    ? renderStatsNav(false, collapsed)
-                    : renderTableNav(false, collapsed)}
+            {siderMode === 'admin'
+              ? renderAdminNav(false, collapsed)
+              : siderMode === 'documents'
+                ? renderDocumentNav(false, collapsed)
+                : siderMode === 'design'
+                  ? renderDesignNav(false, collapsed)
+                  : siderMode === 'settings'
+                    ? renderSettingsNav(false, collapsed)
+                    : siderMode === 'stats'
+                      ? renderStatsNav(false, collapsed)
+                      : renderTableNav(false, collapsed)}
           </Sider>
         )}
 
@@ -1155,15 +1194,17 @@ export default function MainLayout() {
         size={280}
         styles={{ body: { padding: 0 } }}
       >
-        {siderMode === 'documents'
-          ? renderDocumentNav(true)
-          : siderMode === 'design'
-            ? renderDesignNav(true)
-            : siderMode === 'settings'
-              ? renderSettingsNav(true)
-              : siderMode === 'stats'
-                ? renderStatsNav(true)
-                : siderMode === 'tables' && renderTableNav(true)}
+        {siderMode === 'admin'
+          ? renderAdminNav(true)
+          : siderMode === 'documents'
+            ? renderDocumentNav(true)
+            : siderMode === 'design'
+              ? renderDesignNav(true)
+              : siderMode === 'settings'
+                ? renderSettingsNav(true)
+                : siderMode === 'stats'
+                  ? renderStatsNav(true)
+                  : siderMode === 'tables' && renderTableNav(true)}
       </Drawer>
 
       {/* 移动端搜索：顶部抽屉承载与桌面同款搜索面板（主页模式 = 跨工作区，0081 C3） */}

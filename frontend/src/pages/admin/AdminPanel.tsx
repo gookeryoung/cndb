@@ -1,13 +1,10 @@
 /** 系统管理台 — 用户管理 / 事件流 / 系统信息 / 完整备份 / 完整恢复.
  *
- * 布局口径（与全站一致）：
- *   - 页面根 `·cn-admin`：撑满内容区高度的两栏布局；
- *   - 桌面端左侧是管理台自己的 SIDEBAR（240px，贴边占满高度，风格与工作区
- *     数据表 Sider 一致：bg-container 背景 + 右侧分隔线，选中态沿用
- *     `.cn-table-nav` 的品牌色指示条语言，可折叠为 60px 图标栏），窄屏折叠成
- *     可横滑的胶囊导航；
- *   - 内容列 = 页头（分区标题 + 说明 + 版本徽标）+ 分区内容，纵向 12px 节奏，
- *     滚动只发生在内容列（16px 留白，窄屏 12px）；
+ * 布局口径（参考工作区设置与统计页）：
+ *   - 分项导航由 MainLayout 侧栏承担（`?section=` 驱动，可折叠为 60px 图标栏，
+ *     窄屏收进抽屉），页面本体只渲染当前分项内容；
+ *   - 内容区沿用 `.cn-ws-settings-page` + `.cn-ws-settings-card`：外层留白 +
+ *     卡片内留白，页头为「分项标题 + 说明」；
  *   - 分区状态写入 `?section=`：可深链、刷新保持，且不影响「事件流」自身的
  *     `?action=` / `?keyword=` 筛选参数。
  */
@@ -19,10 +16,9 @@ import {
   Typography, Space, Popconfirm, Tag, Result, Select,
 } from 'antd'
 import {
-  DatabaseOutlined, CloudUploadOutlined, CloudDownloadOutlined,
+  DatabaseOutlined, CloudDownloadOutlined,
   InfoCircleOutlined, InboxOutlined, ExclamationCircleOutlined,
   ReloadOutlined, FileZipOutlined, WarningOutlined, SafetyOutlined,
-  TeamOutlined, HistoryOutlined, HddOutlined, MenuFoldOutlined, MenuUnfoldOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { adminApi } from '@/api'
@@ -31,30 +27,11 @@ import type { BackupManifest } from '@/api'
 import UsersPage from './UsersPage'
 import EventsPage from './EventsPage'
 import StoragePage from './StoragePage'
+import { ADMIN_SECTIONS, normalizeAdminSection, type AdminSectionKey } from './adminSections'
 import { useResponsive } from '@/hooks/useResponsive'
 import { formatSize } from '@/utils/formatSize'
-import { usePersistedState } from '@/utils/persistedState'
 
 const { Text } = Typography
-
-/** 管理台分区 —— 导航栏、页头文案与内容切换共用同一份定义. */
-type AdminSectionKey = 'users' | 'events' | 'storage' | 'info' | 'backup' | 'restore'
-
-interface AdminSection {
-  key: AdminSectionKey
-  label: string
-  desc: string
-  icon: ReactNode
-}
-
-const SECTIONS: readonly AdminSection[] = [
-  { key: 'users', label: '用户管理', desc: '账号资料、角色与启停状态，变更全部写入操作日志。', icon: <TeamOutlined /> },
-  { key: 'events', label: '事件流', desc: '跨插件统一事件视图，可按动作与关键词追溯一次请求。', icon: <HistoryOutlined /> },
-  { key: 'storage', label: '空间分配', desc: '按工作区分配存储上限（默认 100MB），查看已用空间与使用率。', icon: <HddOutlined /> },
-  { key: 'info', label: '系统信息', desc: '版本、数据库与存储路径等运行期信息。', icon: <InfoCircleOutlined /> },
-  { key: 'backup', label: '系统备份', desc: '整库打包为 .tar.gz（含 manifest 元信息与附件目录）。', icon: <CloudDownloadOutlined /> },
-  { key: 'restore', label: '系统恢复', desc: '校验备份包后覆盖式还原，操作不可撤销。', icon: <CloudUploadOutlined /> },
-] as const
 
 export default function AdminPanel() {
   const { message, modal } = AntApp.useApp()
@@ -63,21 +40,10 @@ export default function AdminPanel() {
   // 窄屏：Descriptions 两列会把标签挤成竖排文字（「应用名称」一字一行），改单列 + 标签在上
   const { isMobile } = useResponsive()
 
-  // 分区切换写进 URL —— 刷新/分享后停在同一个分区；缺省回落到用户管理
-  const [searchParams, setSearchParams] = useSearchParams()
-  const rawSection = searchParams.get('section')
-  const section: AdminSectionKey = SECTIONS.some(s => s.key === rawSection)
-    ? (rawSection as AdminSectionKey)
-    : 'users'
-  const activeSection = SECTIONS.find(s => s.key === section) ?? SECTIONS[0]
-
-  const goSection = (key: AdminSectionKey) => {
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev)
-      next.set('section', key)
-      return next
-    }, { replace: true })
-  }
+  // 分区由 URL `?section=` 驱动（侧栏导航在 MainLayout）；缺省回落到用户管理
+  const [searchParams] = useSearchParams()
+  const section: AdminSectionKey = normalizeAdminSection(searchParams.get('section'))
+  const activeSection = ADMIN_SECTIONS.find(s => s.key === section) ?? ADMIN_SECTIONS[0]
 
   // ── 所有 Hook 必须在任何条件 return 之前声明 ──
   // ── 系统信息 ──
@@ -120,9 +86,6 @@ export default function AdminPanel() {
   const [restoring, setRestoring] = useState(false)
   // 恢复模式：auto 跟随备份标记；备份 schema 领先时校验通过自动切 sqlalchemy 降级
   const [restoreMode, setRestoreMode] = useState('auto')
-
-  // 侧栏折叠态 —— 与工作区数据表 Sider 的 collapsible 行为一致（60px 图标栏）；本地偏好持久化
-  const [railCollapsed, setRailCollapsed] = usePersistedState('cndb_admin_rail_collapsed', false)
 
   const inspectMutation = useMutation({
     mutationFn: (file: File) => adminApi.restoreInspect(file),
@@ -462,83 +425,20 @@ export default function AdminPanel() {
     restore: restoreTab,
   }
 
-  /** 分区导航项 —— 桌面导航栏与窄屏胶囊行共用（role=tab 便于键盘与测试定位） */
-  const navItems = SECTIONS.map((s) => {
-    const active = s.key === section
-    return { ...s, active, onClick: () => goSection(s.key) }
-  })
-
-  // 侧栏折叠态见上方 railCollapsed（Hook 须在条件 return 之前声明）
-
   return (
-    <div className="cn-admin" data-testid="admin-panel">
-      {/* 桌面端分区导航 SIDEBAR：贴边占满高度，可折叠（同工作区 Sider），窄屏由下方胶囊行替代 */}
-      {!isMobile && (
-        <aside className={railCollapsed ? 'cn-admin-rail cn-admin-rail-collapsed' : 'cn-admin-rail'}>
-          {!railCollapsed && <div className="cn-admin-rail-title">系统管理台</div>}
-          <nav className="cn-admin-nav" role="tablist" aria-label="管理台分区" aria-orientation="vertical">
-            {navItems.map(item => (
-              <button
-                key={item.key}
-                type="button"
-                role="tab"
-                aria-selected={item.active}
-                title={railCollapsed ? item.label : undefined}
-                data-testid={`admin-nav-${item.key}`}
-                className={item.active ? 'cn-admin-nav-item cn-admin-nav-item-active' : 'cn-admin-nav-item'}
-                onClick={item.onClick}
-              >
-                <span className="cn-admin-nav-icon" aria-hidden>{item.icon}</span>
-                {!railCollapsed && <span className="cn-admin-nav-label">{item.label}</span>}
-              </button>
-            ))}
-          </nav>
-          <div className="cn-admin-rail-foot">
-            <button
-              type="button"
-              className="cn-admin-rail-collapse"
-              aria-label={railCollapsed ? '展开侧栏' : '收起侧栏'}
-              aria-expanded={!railCollapsed}
-              data-testid="admin-rail-collapse"
-              onClick={() => setRailCollapsed(c => !c)}
-            >
-              {railCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-            </button>
-          </div>
-        </aside>
-      )}
-
-      <div className="cn-admin-main">
-        <header className="cn-admin-header">
-          <span className="cn-admin-mark" aria-hidden><SafetyOutlined /></span>
-          <div className="cn-admin-heading">
-            <div className="cn-admin-eyebrow">系统管理台</div>
-            <h1 className="cn-admin-title">{activeSection.label}</h1>
-            <p className="cn-admin-desc">{activeSection.desc}</p>
+    <div className="cn-ws-settings-page" data-testid="admin-panel">
+      <div className="cn-ws-settings-card">
+        <div className="cn-ws-stats-header cn-admin-section-head">
+          <div>
+            <div className="cn-ws-stats-title">
+              {activeSection.icon} {activeSection.label}
+            </div>
+            <div className="cn-ws-stats-desc">{activeSection.desc}</div>
           </div>
           <div className="cn-admin-header-extra">
             <Tag variant="filled" color="blue">系统管理员</Tag>
           </div>
-        </header>
-
-        {isMobile && (
-          <nav className="cn-admin-pills" role="tablist" aria-label="管理台分区">
-            {navItems.map(item => (
-              <button
-                key={item.key}
-                type="button"
-                role="tab"
-                aria-selected={item.active}
-                data-testid={`admin-nav-${item.key}`}
-                className={item.active ? 'cn-admin-pill cn-admin-pill-active' : 'cn-admin-pill'}
-                onClick={item.onClick}
-              >
-                <span aria-hidden>{item.icon}</span>
-                {item.label}
-              </button>
-            ))}
-          </nav>
-        )}
+        </div>
 
         {content[section]}
       </div>

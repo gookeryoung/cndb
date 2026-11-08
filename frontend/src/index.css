@@ -4552,213 +4552,17 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   margin-right: auto;
 }
 
-/* ─────────────── 系统管理台（AdminPanel）布局与视觉 ───────────────
- * 布局：桌面端「SIDEBAR + 内容列」两栏（240px + 自适应），侧栏贴边占满内容区
- * 高度，风格与工作区数据表 Sider 一致（bg-container 背景 + 右侧分隔线，无卡片描边）；
- * 窄屏折叠成横向胶囊行。
- * 口径：/admin 不渲染工作区 Sider（见 MainLayout），侧栏由管理台自带，
- * 选中态沿用 `.cn-table-nav` 的品牌色指示条语言；侧栏固定，滚动只发生在内容列。
- * 颜色 / 间距 / 字号 / 圆角全部取自 var(--cn-*) 标尺。 */
+/* ─────────────── 系统管理台（AdminPanel）内容区 ───────────────
+ * 分项导航由 MainLayout 侧栏承担（与工作区设置 / 统计同形）；
+ * 页面本体沿用 `.cn-ws-settings-page` + `.cn-ws-settings-card` 的留白与卡片口径。
+ * 这里只保留页头右侧徽标与分区内容节奏。 */
 
-.cn-admin {
-  display: flex;
-  align-items: stretch;
-  height: 100%;
-  min-height: 0;
-}
-
-/* 分区导航侧栏：与工作区数据表 Sider 同宽、贴边占满高度，滚动由内容列承担 */
-.cn-admin-rail {
-  flex: 0 0 240px;
-  display: flex;
-  flex-direction: column;
-  gap: var(--cn-space-md);
-  padding: var(--cn-space-md);
-  border-right: 1px solid var(--cn-border);
-  background: var(--cn-bg-container);
-  overflow-y: auto;
-}
-
-.cn-admin-rail-title {
-  padding: var(--cn-space-xs) var(--cn-space-md);
-  font-size: var(--cn-text-xs);
-  font-weight: var(--cn-weight-semibold);
-  letter-spacing: 0.06em;
-  color: var(--cn-text-muted);
-}
-
-.cn-admin-nav {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cn-space-hairline);
-}
-
-.cn-admin-nav-item {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: var(--cn-space-md);
-  width: 100%;
-  padding: var(--cn-space-sm) var(--cn-space-md);
-  border: none;
-  border-radius: var(--cn-radius-base);
-  background: transparent;
-  color: var(--cn-text-secondary);
-  font-family: inherit;
-  font-size: var(--cn-text-sm);
-  line-height: 20px;
-  text-align: left;
-  cursor: pointer;
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
-
-.cn-admin-nav-item:hover {
-  color: var(--cn-text-primary);
-  background: var(--cn-bg-subtle);
-}
-
-.cn-admin-nav-icon .anticon {
-  font-size: var(--cn-text-md);
-}
-
-.cn-admin-nav-item-active,
-.cn-admin-nav-item-active:hover {
-  color: var(--cn-mix-brand-color-82-text-primary);
-  color: color-mix(in srgb, var(--cn-brand-color) 82%, var(--cn-text-primary));
-  background: var(--cn-mix-brand-color-12-bg-container);
-  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
-  font-weight: var(--cn-weight-semibold);
-}
-
-/* 选中项左侧品牌色指示条：与 .cn-table-nav 侧栏选中态同一语言 */
-.cn-admin-nav-item-active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 16px;
-  border-radius: 0 var(--cn-radius-sm) var(--cn-radius-sm) 0;
-  background: var(--cn-brand-color);
-}
-
-.cn-admin-rail-foot {
-  margin-top: auto;
-  padding-top: var(--cn-space-md);
-  border-top: 1px solid var(--cn-border);
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* 折叠开关 —— 与工作区 Sider 的 collapse trigger 同语义 */
-.cn-admin-rail-collapse {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--cn-radius-base);
-  background: transparent;
-  color: var(--cn-text-secondary);
-  font-size: var(--cn-text-md);
-  cursor: pointer;
-  transition: background-color 0.18s ease, color 0.18s ease;
-}
-
-.cn-admin-rail-collapse:hover {
-  color: var(--cn-text-primary);
-  background: var(--cn-bg-subtle);
-}
-
-/* 折叠态：60px 图标栏，与工作区 Sider collapsedWidth 一致 */
-.cn-admin-rail-collapsed {
-  flex-basis: 60px;
-  padding: var(--cn-space-sm);
-  align-items: center;
-}
-
-.cn-admin-rail-collapsed .cn-admin-nav {
-  width: 100%;
-  align-items: stretch;
-}
-
-.cn-admin-rail-collapsed .cn-admin-nav-item {
-  justify-content: center;
-  padding: var(--cn-space-sm) 0;
-}
-
-.cn-admin-rail-collapsed .cn-admin-nav-item-active::before {
-  left: 0;
-  border-radius: 0 var(--cn-radius-sm) var(--cn-radius-sm) 0;
-}
-
-.cn-admin-rail-collapsed .cn-admin-rail-foot {
-  justify-content: center;
-  width: 100%;
-}
-
-/* 内容列：页头 → 分区内容，纵向 12px 节奏；侧栏固定，滚动只发生在这里 */
-.cn-admin-main {
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow-y: auto;
-  padding: var(--cn-space-xl);
-  display: flex;
-  flex-direction: column;
-  gap: var(--cn-space-lg);
-}
-
-.cn-admin-header {
+.cn-admin-section-head {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--cn-space-md);
-}
-
-.cn-admin-mark {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 30px;
-  height: 30px;
-  border-radius: var(--cn-radius-lg);
-  background: var(--cn-mix-brand-color-12-bg-container);
-  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
-  color: var(--cn-brand-color);
-  font-size: var(--cn-text-md);
-}
-
-.cn-admin-heading {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--cn-space-hairline);
-}
-
-.cn-admin-eyebrow {
-  font-size: var(--cn-text-xs);
-  line-height: 1.4;
-  color: var(--cn-text-muted);
-}
-
-.cn-admin-title {
-  margin: 0;
-  font-size: var(--cn-text-xl);
-  font-weight: var(--cn-weight-semibold);
-  line-height: 1.4;
-  color: var(--cn-text-primary);
-}
-
-.cn-admin-desc {
-  margin: 0;
-  font-size: var(--cn-text-xs);
-  line-height: 1.5;
-  color: var(--cn-text-secondary);
 }
 
 .cn-admin-header-extra {
@@ -4766,42 +4570,6 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   align-items: center;
   gap: var(--cn-space-md);
   flex-shrink: 0;
-}
-
-/* 窄屏分区导航：横向可滑胶囊行（替代 200px 侧栏） */
-.cn-admin-pills {
-  display: flex;
-  gap: var(--cn-space-xs);
-  overflow-x: auto;
-  padding-bottom: var(--cn-space-xs);
-  border-bottom: 1px solid var(--cn-border);
-}
-
-.cn-admin-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--cn-space-xs);
-  flex-shrink: 0;
-  padding: var(--cn-space-sm) var(--cn-space-md);
-  border: 1px solid var(--cn-border);
-  border-radius: var(--cn-radius-pill);
-  background: var(--cn-bg-container);
-  color: var(--cn-text-secondary);
-  font-family: inherit;
-  font-size: var(--cn-text-sm);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
-}
-
-.cn-admin-pill-active {
-  border-color: var(--cn-mix-brand-color-40-border);
-  border-color: color-mix(in srgb, var(--cn-brand-color) 40%, var(--cn-border));
-  background: var(--cn-mix-brand-color-12-bg-container);
-  background: color-mix(in srgb, var(--cn-brand-color) 12%, var(--cn-bg-container));
-  color: var(--cn-mix-brand-color-82-text-primary);
-  color: color-mix(in srgb, var(--cn-brand-color) 82%, var(--cn-text-primary));
-  font-weight: var(--cn-weight-semibold);
 }
 
 /* 分区内容：卡片 / 提示条 / 操作区之间统一的纵向节奏 */
@@ -5025,19 +4793,6 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 @media (max-width: 767.98px) {
-  .cn-admin {
-    flex-direction: column;
-  }
-
-  /* 窄屏无侧栏，留白由内容列收紧 */
-  .cn-admin-main {
-    padding: var(--cn-space-lg);
-  }
-
-  .cn-admin-title {
-    font-size: var(--cn-text-lg);
-  }
-
   .cn-toolbar {
     flex-direction: column;
     align-items: stretch;

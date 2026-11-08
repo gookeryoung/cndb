@@ -57,14 +57,8 @@ const MANIFEST: BackupManifest = {
   table_groups: { system: ['workspaces'], user: ['table_ab12cd34ef56'] },
 }
 
-function renderPanel(user = mockUser) {
-  return renderProviders(<AdminPanel />, { route: '/admin', initialAuth: { user, token: 'fake-token' } })
-}
-
-/** 切换到指定 Tab（label 含图标 aria-label 前缀，正则不锚定开头） */
-async function activateTab(name: RegExp) {
-  fireEvent.click(screen.getByRole('tab', { name }))
-  await waitFor(() => expect(screen.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true'))
+function renderPanel(user = mockUser, route = '/admin') {
+  return renderProviders(<AdminPanel />, { route, initialAuth: { user, token: 'fake-token' } })
 }
 
 describe('AdminPanel 系统管理台', () => {
@@ -77,10 +71,9 @@ describe('AdminPanel 系统管理台', () => {
 
   it('管理员加载并展示系统运行信息', async () => {
     server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
-    renderPanel()
+    renderPanel(mockUser, '/admin?section=info')
 
-    // 用户管理为首个 Tab，系统信息需手动切换
-    await activateTab(/系\s*统\s*信\s*息/)
+    // 分项由 URL ?section= 驱动
     expect(await screen.findByText('应用名称')).toBeInTheDocument()
     expect(screen.getByText('晶格协同')).toBeInTheDocument()
     expect(screen.getByText('sqlite:///data/cndb.db')).toBeInTheDocument()
@@ -96,9 +89,8 @@ describe('AdminPanel 系统管理台', () => {
     // jsdom 未实现 createObjectURL，组件 onSuccess 里会调用
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: () => 'blob:mock' })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => { } })
-    renderPanel()
+    renderPanel(mockUser, '/admin?section=backup')
 
-    await activateTab(/系\s*统\s*备\s*份/)
     fireEvent.click(await screen.findByRole('button', { name: /立即备份并下载/ }))
 
     expect(await screen.findByText('系统备份已生成并开始下载')).toBeInTheDocument()
@@ -111,9 +103,8 @@ describe('AdminPanel 系统管理台', () => {
         HttpResponse.json({ detail: '磁盘空间不足' }, { status: 500 }),
       ),
     )
-    renderPanel()
+    renderPanel(mockUser, '/admin?section=backup')
 
-    await activateTab(/系\s*统\s*备\s*份/)
     fireEvent.click(await screen.findByRole('button', { name: /立即备份并下载/ }))
 
     expect(await screen.findByText('磁盘空间不足')).toBeInTheDocument()
@@ -124,9 +115,8 @@ describe('AdminPanel 系统管理台', () => {
     // jsdom+MSW 下 axios 的 FormData 传输不可用（环境级限制，真实浏览器正常），
     // 在 API 边界 mock 校验方法，组件侧"选文件 → 校验 → 渲染摘要"逻辑仍全链路覆盖
     const inspectSpy = vi.spyOn(apiModule.adminApi, 'restoreInspect').mockResolvedValue(MANIFEST)
-    renderPanel()
+    renderPanel(mockUser, '/admin?section=restore')
 
-    await activateTab(/系\s*统\s*恢\s*复/)
     const file = new File(['fake-tar-gz'], 'backup.tar.gz', { type: 'application/gzip' })
     const input = document.querySelector('input[type="file"]')
     expect(input).not.toBeNull()
@@ -153,9 +143,8 @@ describe('AdminPanel 系统管理台', () => {
       schema_known: false,
       backup_ahead: true,
     })
-    renderPanel()
+    renderPanel(mockUser, '/admin?section=restore')
 
-    await activateTab(/系\s*统\s*恢\s*复/)
     const file = new File(['fake-tar-gz'], 'backup.tar.gz', { type: 'application/gzip' })
     const input = document.querySelector('input[type="file"]')
     fireEvent.change(input as Element, { target: { files: [file] } })
@@ -178,9 +167,8 @@ describe('AdminPanel 系统管理台', () => {
         dropped_columns: {},
       },
     })
-    renderPanel()
+    renderPanel(mockUser, '/admin?section=restore')
 
-    await activateTab(/系\s*统\s*恢\s*复/)
     const input = document.querySelector('input[type="file"]')
     fireEvent.change(input as Element, { target: { files: [file] } })
     // 恢复按钮包在 Popconfirm 内：先点开气泡再点确认
@@ -198,39 +186,20 @@ describe('AdminPanel 系统管理台', () => {
     ).toBeInTheDocument()
   })
 
-  it('侧栏不显示版本号说明文字，可折叠为图标栏再展开', async () => {
-    server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
-    renderPanel()
-    await screen.findByTestId('admin-nav-users')
+  it('缺省 / 未知 ?section= 回落到用户管理', async () => {
+    renderPanel(mockUser, '/admin?section=unknown')
 
-    // 页脚不再展示「仅系统管理员可见 · v版本」说明
-    expect(screen.queryByText(/仅系统管理员可见/)).not.toBeInTheDocument()
-
-    // 默认展开：导航项带文字标签；点击折叠后仅剩图标（title 提示 + 无标签）
-    expect(screen.getByTestId('admin-nav-users')).toHaveTextContent('用户管理')
-    fireEvent.click(screen.getByTestId('admin-rail-collapse'))
-    const collapsedItem = screen.getByTestId('admin-nav-users')
-    expect(collapsedItem).not.toHaveTextContent('用户管理')
-    expect(collapsedItem).toHaveAttribute('title', '用户管理')
-    expect(screen.getByTestId('admin-rail-collapse')).toHaveAttribute('aria-label', '展开侧栏')
-    // 折叠偏好写入本地，刷新后保持
-    expect(localStorage.getItem('cndb_admin_rail_collapsed')).toBe('true')
-
-    // 再点一次恢复展开态
-    fireEvent.click(screen.getByTestId('admin-rail-collapse'))
-    expect(screen.getByTestId('admin-nav-users')).toHaveTextContent('用户管理')
-    expect(screen.getByTestId('admin-rail-collapse')).toHaveAttribute('aria-label', '收起侧栏')
-    expect(localStorage.getItem('cndb_admin_rail_collapsed')).toBe('false')
+    expect(await screen.findByTestId('users-page')).toBeInTheDocument()
+    expect(screen.getByText('用户管理')).toBeInTheDocument()
   })
 
-  it('管理台侧栏折叠态本地记忆：刷新后恢复为图标栏', async () => {
-    localStorage.setItem('cndb_admin_rail_collapsed', 'true')
+  it('页头展示当前分项标题与说明（与统计页同形）', async () => {
     server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
-    renderPanel()
-    await screen.findByTestId('admin-nav-users')
+    renderPanel(mockUser, '/admin?section=info')
 
-    expect(screen.getByTestId('admin-nav-users')).not.toHaveTextContent('用户管理')
-    expect(screen.getByTestId('admin-rail-collapse')).toHaveAttribute('aria-label', '展开侧栏')
+    expect(await screen.findByText('系统信息')).toBeInTheDocument()
+    expect(screen.getByText('版本、数据库与存储路径等运行期信息。')).toBeInTheDocument()
+    expect(document.querySelector('.cn-ws-settings-card')).not.toBeNull()
   })
 })
 
@@ -249,8 +218,7 @@ describe('AdminPanel 系统信息窄屏布局', () => {
       deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
       width: 390, height: 844,
     }
-    const { unmount } = renderPanel()
-    await activateTab(/系\s*统\s*信\s*息/)
+    const { unmount } = renderPanel(mockUser, '/admin?section=info')
     await screen.findByText('应用名称')
 
     const mobileRow = document.querySelector('.ant-descriptions-row') as HTMLElement
@@ -262,8 +230,7 @@ describe('AdminPanel 系统信息窄屏布局', () => {
       deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
       width: 1280, height: 800,
     }
-    renderPanel()
-    await activateTab(/系\s*统\s*信\s*息/)
+    renderPanel(mockUser, '/admin?section=info')
     await screen.findByText('应用名称')
 
     const desktopRow = document.querySelector('.ant-descriptions-row') as HTMLElement

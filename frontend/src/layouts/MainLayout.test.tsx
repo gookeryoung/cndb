@@ -30,10 +30,10 @@ vi.mock('@/pages/settings/SettingsModal', () => ({
         open ? <div data-testid="settings-modal-stub">{initialTab ?? 'profile'}</div> : null,
 }))
 
-/** 管理台路由桩 —— 展示当前 pathname 供断言 */
+/** 管理台路由桩 —— 展示当前 pathname + search 供断言 */
 function AdminStub() {
     const loc = useLocation()
-    return <div data-testid="admin-panel-stub">{loc.pathname}</div>
+    return <div data-testid="admin-panel-stub">{loc.pathname}{loc.search}</div>
 }
 
 /** 主页路由桩（/w 工作区列表，需求 0081 C3 主页搜索） */
@@ -802,17 +802,41 @@ describe('MainLayout 侧边栏工作区上下文', () => {
         expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
     })
 
-    it('管理台（/admin 无 wid）不渲染工作区侧栏：导航交给管理台页内分区栏', async () => {
+    it('管理台（/admin 无 wid）侧栏列出管理台分项，不渲染工作区导航', async () => {
         renderLayout(mockUser, '/admin')
 
-        // 管理台没有工作区语义，侧栏只会剩「请先选择工作区」的空占位 →
-        // 整个 Sider 不再渲染，内容区拿到整幅宽度
+        // 管理台没有工作区语义：侧栏与工作区设置 / 统计同形，列管理台分项
         await waitFor(() => {
             expect(screen.getByTestId('admin-panel-stub')).toHaveTextContent('/admin')
         })
-        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+        expect(screen.getByTestId('sider-admin')).toBeVisible()
+        expect(screen.getByText('系统管理台')).toBeVisible()
         expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
+    })
+
+    it('管理台侧栏切换分项写入 ?section= 并保留事件流筛选参数', async () => {
+        renderLayout(mockUser, '/admin?section=events&action=auth.login')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('sider-admin')).toBeVisible()
+        })
+        fireEvent.click(screen.getByRole('menuitem', { name: /用户管理/ }))
+
+        await waitFor(() => {
+            expect(screen.getByTestId('admin-panel-stub').textContent).toContain('section=users')
+        })
+        expect(screen.getByTestId('admin-panel-stub').textContent).toContain('action=auth.login')
+    })
+
+    it('管理台侧栏分项选中态由 ?section= 驱动', async () => {
+        renderLayout(mockUser, '/admin?section=storage')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('sider-admin')).toBeVisible()
+        })
+        const selected = document.querySelector('.cn-table-nav .ant-menu-item-selected')
+        expect(selected).toHaveTextContent('空间分配')
     })
 })
 
