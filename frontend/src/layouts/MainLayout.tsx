@@ -26,6 +26,9 @@ import {
   WORKSPACE_SETTINGS_SECTIONS, normalizeWorkspaceSettingsSection,
 } from '@/pages/settings/workspaceSettingsSections'
 import {
+  WORKSPACE_STATS_SECTIONS, normalizeWorkspaceStatsSection,
+} from '@/pages/workspace/workspaceStatsSections'
+import {
   describeSort, DOC_SORT_OPTIONS, setDocTitleFilter, sortDocTree, sortToValue, useDocSortPref,
   useDocTitleFilter, valueToSort,
 } from '@/pages/documents/docTreeSort'
@@ -527,13 +530,14 @@ export default function MainLayout() {
   // ── 侧边栏形态：按当前功能段切换（需求 0065）──
   // documents → 文档侧栏（文档树）；design → 设计侧栏（装配结构树，ADR 0084 D4）；
   // settings → 设置分项侧栏（与个人设置同形：侧栏列分项，内容区渲染选中分项）；
+  // stats → 统计分项侧栏（「概览 / 贡献统计」，与工作区设置同形）；
   // 其余（数据表 / 分析 / 同步）→ 数据表导航始终展开，不再自动折叠。
   // 2026-11-08 用户口径：工作区设置不再沿用来源模块侧栏，
-  // 侧栏固定为「基本设置 / 权限 / 生命周期」，分项由 ?section= 驱动。
+  // 侧栏固定为「常规设置 / 权限管理 / 生命周期」，分项由 ?section= 驱动。
   // 2026-11-06 用户口径（ADR 0109 D8）：设计模块收敛为单一工作台，根页 /w/:wid/design
   // 与编辑器页 /w/:wid/design/:id 都渲染同一设计侧栏（产品列表 ↔ 结构树两态）；
   // 根页只负责默认选中最近更新的产品并跳转，不再隐藏侧栏。
-  type SiderMode = 'documents' | 'design' | 'tables' | 'settings' | 'hidden'
+  type SiderMode = 'documents' | 'design' | 'tables' | 'settings' | 'stats' | 'hidden'
   const moduleSiderMode: 'documents' | 'design' | null =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
@@ -543,8 +547,10 @@ export default function MainLayout() {
   const siderMode: SiderMode =
     activeWsTab === 'settings'
       ? 'settings'
-      : moduleSiderMode
-        ?? (wsFeatures.tables ? 'tables' : 'hidden')
+      : activeWsTab === 'stats'
+        ? 'stats'
+        : moduleSiderMode
+          ?? (wsFeatures.tables ? 'tables' : 'hidden')
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -886,6 +892,40 @@ export default function MainLayout() {
     )
   }
 
+  /** 统计导航内容 —— 「统计」段下 Sider 与移动端抽屉共用.
+   * 布局参考工作区设置：侧栏列出统计分项（概览 / 贡献统计），选中项由 ?section= 驱动。 */
+  const renderStatsNav = (mobile: boolean, collapsed = false) => {
+    if (!wid) return null
+    const activeSection = normalizeWorkspaceStatsSection(searchParams.get('section'))
+    return (
+      <div data-testid="sider-stats" className="cn-table-nav">
+        <div style={{
+          padding: 'var(--cn-space-md) var(--cn-space-lg)',
+          borderBottom: '1px solid var(--cn-border)',
+          fontWeight: WEIGHT.semibold,
+          color: 'var(--cn-text-secondary)',
+          fontSize: 'var(--cn-text-xs)',
+          display: collapsed ? 'none' : 'block',
+        }}>
+          统计
+        </div>
+        <Menu
+          mode="inline"
+          selectedKeys={[activeSection]}
+          items={WORKSPACE_STATS_SECTIONS.map(s => ({
+            key: s.key,
+            icon: s.icon,
+            label: s.label,
+            onClick: () => {
+              navigate(`/w/${wid}/stats?section=${s.key}`)
+              if (mobile) setMobileNavOpen(false)
+            },
+          }))}
+        />
+      </div>
+    )
+  }
+
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       {/* 留白与控件间距走 index.css（桌面基准 + 移动端收窄），不再 JS 分叉（ADR 0123 C7） */}
@@ -1055,7 +1095,9 @@ export default function MainLayout() {
                 ? renderDesignNav(false, collapsed)
                 : siderMode === 'settings'
                   ? renderSettingsNav(false, collapsed)
-                  : renderTableNav(false, collapsed)}
+                  : siderMode === 'stats'
+                    ? renderStatsNav(false, collapsed)
+                    : renderTableNav(false, collapsed)}
           </Sider>
         )}
 
@@ -1160,7 +1202,9 @@ export default function MainLayout() {
             ? renderDesignNav(true)
             : siderMode === 'settings'
               ? renderSettingsNav(true)
-              : siderMode === 'tables' && renderTableNav(true)}
+              : siderMode === 'stats'
+                ? renderStatsNav(true)
+                : siderMode === 'tables' && renderTableNav(true)}
       </Drawer>
 
       {/* 移动端搜索：顶部抽屉承载与桌面同款搜索面板（主页模式 = 跨工作区，0081 C3） */}

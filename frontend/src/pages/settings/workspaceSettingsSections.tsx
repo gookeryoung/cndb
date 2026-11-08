@@ -14,12 +14,12 @@ export interface WorkspaceSettingsSection {
 }
 
 export const WORKSPACE_SETTINGS_SECTIONS: WorkspaceSettingsSection[] = [
-  { key: 'basic', label: '基本设置', icon: <SettingOutlined /> },
-  { key: 'permissions', label: '权限', icon: <SafetyOutlined /> },
+  { key: 'basic', label: '常规设置', icon: <SettingOutlined /> },
+  { key: 'permissions', label: '权限管理', icon: <SafetyOutlined /> },
   { key: 'lifecycle', label: '生命周期', icon: <RocketOutlined /> },
 ]
 
-/** URL 的 ?section= 归一化：未知 / 缺失一律落到「基本设置」. */
+/** URL 的 ?section= 归一化：未知 / 缺失一律落到「常规设置」. */
 export function normalizeWorkspaceSettingsSection(
   value: string | null | undefined,
 ): WorkspaceSettingsSectionKey {

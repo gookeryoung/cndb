@@ -7139,13 +7139,20 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: var(--cn-space-xl);
 }
 
-/* 基本设置：左表单 / 右信息双列；统计页复用同一套统计卡片。
- * 主列承载可编辑项，侧列收敛角色 / 只读信息，危险操作固定在内容底部，
- * 窄屏（<992px）自动回落单列，避免侧栏被压成窄条。 */
+/* 常规设置：单列表单；统计页复用同一套统计卡片。
+ * 角色 / 只读信息已并入统计页，危险操作固定在内容底部。 */
 .cn-ws-settings-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--cn-space-md);
+  margin-bottom: var(--cn-space-lg);
+}
+
+/* 统计页信息卡：角色信息与工作区只读信息双列，窄屏自动回落单列 */
+.cn-ws-stats-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--cn-space-lg);
   margin-bottom: var(--cn-space-lg);
 }
 
@@ -7184,6 +7191,35 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-muted);
 }
 
+/* 统计页「贡献统计」占位空态（后端聚合接口未接入前） */
+.cn-ws-stats-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  padding: var(--cn-space-3xl) var(--cn-space-xl);
+  text-align: center;
+  background: var(--cn-bg-subtle);
+  border: 1px dashed var(--cn-border);
+  border-radius: var(--cn-radius-base);
+}
+
+.cn-ws-stats-empty-icon {
+  font-size: var(--cn-text-xl);
+  color: var(--cn-text-muted);
+}
+
+.cn-ws-stats-empty-title {
+  font-size: var(--cn-text-md);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-secondary);
+}
+
+.cn-ws-stats-empty-desc {
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-muted);
+}
+
 .cn-ws-settings-stat {
   padding: var(--cn-space-md);
   background: var(--cn-bg-subtle);
@@ -7206,22 +7242,8 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-primary);
 }
 
-.cn-ws-settings-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
-  align-items: start;
-  gap: var(--cn-space-lg);
-}
-
-.cn-ws-settings-main,
-.cn-ws-settings-side {
+.cn-ws-settings-main {
   min-width: 0;
-}
-
-.cn-ws-settings-side {
-  display: flex;
-  flex-direction: column;
-  gap: var(--cn-space-md);
 }
 
 .cn-ws-settings-actions {
@@ -7273,12 +7295,6 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   .cn-ws-settings-danger-row {
     flex-direction: column;
     align-items: stretch;
-  }
-}
-
-@media (max-width: 991.98px) {
-  .cn-ws-settings-layout {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 

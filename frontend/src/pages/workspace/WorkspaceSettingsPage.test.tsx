@@ -39,7 +39,7 @@ function renderPage(initialPath = '/w/10/settings') {
 }
 
 describe('WorkspaceSettingsPage 工作区设置页', () => {
-  it('默认渲染「基本设置」分项内容（分项导航由 MainLayout 侧栏承担）', async () => {
+  it('默认渲染「常规设置」分项内容（分项导航由 MainLayout 侧栏承担）', async () => {
     setupWorkspaceDetailHandler()
     renderPage()
 
@@ -59,7 +59,7 @@ describe('WorkspaceSettingsPage 工作区设置页', () => {
     expect(document.querySelector('.ant-tabs')).toBeNull()
   })
 
-  it('旧的 ?section=stats 回落基本设置（统计已改为一级导航）', async () => {
+  it('旧的 ?section=stats 回落常规设置（统计已改为一级导航）', async () => {
     setupWorkspaceDetailHandler()
     renderPage('/w/10/settings?section=stats')
 
@@ -67,7 +67,7 @@ describe('WorkspaceSettingsPage 工作区设置页', () => {
     expect(screen.queryByTestId('ws-stats-grid')).toBeNull()
   })
 
-  it('未知分项回落到基本设置', async () => {
+  it('未知分项回落到常规设置', async () => {
     setupWorkspaceDetailHandler()
     renderPage('/w/10/settings?section=unknown')
 

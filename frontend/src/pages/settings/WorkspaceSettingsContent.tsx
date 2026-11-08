@@ -1,8 +1,8 @@
 /** 工作区设置 — 内容组件（可嵌入 Modal 或独立页面）.
  *
- * 包含三个分项：基本设置 / 权限 / 生命周期（统计信息为独立一级导航「统计」）
- * 基本设置采用「左表单 / 右侧信息」布局：可编辑项居中，存储 / 角色 / 只读信息收敛到侧列，
- * 危险操作固定在内容底部（参考 GitHub 设置页）。
+ * 包含三个分项：常规设置 / 权限管理 / 生命周期（统计信息为独立一级导航「统计」）
+ * 常规设置只保留可编辑项，危险操作固定在内容底部（参考 GitHub 设置页）；
+ * 角色信息与工作区只读信息并入「统计」页的概览分项。
  * 所有颜色均使用 CSS 变量，自动适配深浅主题。
  *
  * Props:
@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
+  Tabs, Form, Input, Select, Switch, Tag, Button,
   Popconfirm, Card, Space, Avatar,
 } from 'antd'
 import { App as AntApp } from 'antd'
@@ -34,7 +34,7 @@ import { useResponsive } from '@/hooks/useResponsive'
 import HelpTip from '@/components/HelpTip'
 import ModuleCheckCards from '@/components/ModuleCheckCards'
 import {
-  DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules,
+  DEFAULT_WORKSPACE_MODULES, normalizeModules,
 } from '@/utils/workspaceModules'
 import AddMemberModal from './AddMemberModal'
 import WorkspaceLifecyclePanel from './WorkspaceLifecyclePanel'
@@ -244,17 +244,6 @@ export default function WorkspaceSettingsContent({
         size="small"
         title={<Space><SafetyOutlined /> 工作区所有者</Space>}
         style={{ marginBottom: 12 }}
-        extra={
-          myRole === 'owner' ? (
-            <Button
-              size="small"
-              icon={<SwapOutlined />}
-              onClick={() => setTransferOpen(true)}
-            >
-              转让所有权
-            </Button>
-          ) : null
-        }
       >
         {detail?.owner ? (
           <Space>
@@ -352,9 +341,8 @@ export default function WorkspaceSettingsContent({
       label: tabLabel('basic'),
       children: (
         <div className="cn-ws-basic-settings">
-          <div className="cn-ws-settings-layout">
-            {/* 主列：可编辑的基本信息 */}
-            <div className="cn-ws-settings-main">
+          {/* 主列：可编辑的基本信息 */}
+          <div className="cn-ws-settings-main">
               <Form
                 form={form}
                 layout="vertical"
@@ -409,55 +397,6 @@ export default function WorkspaceSettingsContent({
                   </div>
                 )}
               </Form>
-            </div>
-
-            {/* 侧列：角色与只读信息 */}
-            <aside className="cn-ws-settings-side">
-              <Card size="small" title={<Space><UserOutlined /> 角色信息</Space>}>
-                <Descriptions size="small" column={1} colon={false}>
-                  <Descriptions.Item label="您的角色">
-                    {myRole
-                      ? <Tag color={myRole === 'owner' ? 'gold' : 'default'}>{ROLE_LABEL[myRole]}</Tag>
-                      : <Tag>非成员</Tag>}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="拥有者">
-                    {detail?.owner
-                      ? (
-                        <>
-                          {detail.owner.username}
-                          {detail.owner.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8 }}>({detail.owner.nickname})</span>}
-                        </>
-                      )
-                      : '未指定所有者'}
-                  </Descriptions.Item>
-                </Descriptions>
-              </Card>
-
-              <Card size="small" title="工作区信息（只读）">
-                <Descriptions size="small" column={1} colon={false}>
-                  <Descriptions.Item label="ID">{detail?.id}</Descriptions.Item>
-                  <Descriptions.Item label="创建时间">
-                    {detail?.created_at ? new Date(detail.created_at).toLocaleString() : '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="最后更新">
-                    {detail?.updated_at ? new Date(detail.updated_at).toLocaleString() : '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="公开性">
-                    {VISIBILITY_LABEL[detail?.visibility ?? 'member']}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="功能模块">
-                    {normalizeModules(detail?.modules).map(m => (
-                      <Tag key={m} style={{ marginInlineEnd: 4 }}>{WORKSPACE_MODULE_LABEL[m]}</Tag>
-                    ))}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="标签">
-                    {(detail?.tags ?? []).length > 0
-                      ? (detail?.tags ?? []).map(t => <Tag key={t}>{t}</Tag>)
-                      : <span style={{ color: 'var(--cn-text-muted)' }}>暂无标签</span>}
-                  </Descriptions.Item>
-                </Descriptions>
-              </Card>
-            </aside>
           </div>
 
           {/* 危险操作区：参考 GitHub 设置页置于底部，仅 owner 可见。
@@ -540,7 +479,7 @@ export default function WorkspaceSettingsContent({
           size={isMobile ? 'small' : 'middle'}
         />
       )}
-      {/* 转让所有权弹窗：基本设置危险区与权限页共用同一实例，避免重复挂载 */}
+      {/* 转让所有权弹窗：常规设置危险区与权限管理页共用同一实例，避免重复挂载 */}
       <TransferOwnerModal
         open={transferOpen}
         onCancel={() => setTransferOpen(false)}

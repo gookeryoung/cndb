@@ -88,10 +88,10 @@ function DocumentsStub() {
     return <div data-testid="documents-page-stub">{loc.pathname}{loc.search}</div>
 }
 
-/** 工作区统计路由桩 —— 一级导航「统计」/w/:wid/stats */
+/** 工作区统计路由桩 —— 一级导航「统计」/w/:wid/stats（展示 search 供分项断言） */
 function StatsStub() {
     const loc = useLocation()
-    return <div data-testid="stats-page-stub">{loc.pathname}</div>
+    return <div data-testid="stats-page-stub">{loc.pathname}{loc.search}</div>
 }
 
 /** 工作区设置路由桩 —— 展示当前 pathname + query 供断言（分项由 ?section= 驱动） */
@@ -298,6 +298,29 @@ describe('MainLayout 顶部导航', () => {
             expect(screen.getByTestId('stats-page-stub')).toHaveTextContent('/w/10/stats')
         })
         expect(screen.getByTestId('ws-nav-stats')).toHaveAttribute('aria-current', 'page')
+    })
+
+    it('统计段侧栏为统计分项：第一行概览、第二行贡献统计，点击由 ?section= 驱动', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => expect(screen.getByTestId('tables-page-stub')).toBeVisible())
+        fireEvent.click(screen.getByTestId('ws-nav-stats'))
+        await waitFor(() => expect(screen.getByTestId('sider-stats')).toBeVisible())
+
+        const sider = screen.getByTestId('sider-stats')
+        const items = sider.querySelectorAll('.ant-menu-item')
+        expect(items).toHaveLength(2)
+        expect(items[0]).toHaveTextContent('概览')
+        expect(items[1]).toHaveTextContent('贡献统计')
+        // 缺省选中第一行「概览」
+        expect(items[0]).toHaveClass('ant-menu-item-selected')
+
+        fireEvent.click(items[1])
+        await waitFor(() => {
+            expect(screen.getByTestId('stats-page-stub'))
+                .toHaveTextContent('/w/10/stats?section=contribution')
+        })
+        expect(sider.querySelectorAll('.ant-menu-item')[1]).toHaveClass('ant-menu-item-selected')
     })
 
     it('右上角仅保留头像图标：昵称/账号名不再展示在顶栏（仅存在于用户菜单）', async () => {
@@ -1152,7 +1175,7 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         renderLayout(mockUser, '/w/10/settings')
 
         await waitFor(() => expect(screen.getByTestId('sider-settings')).toBeVisible())
-        expect(screen.getByText('基本设置')).toBeVisible()
+        expect(screen.getByText('常规设置')).toBeVisible()
         expect(screen.queryByTestId('sider-documents')).toBeNull()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
     })
@@ -1330,13 +1353,13 @@ describe('MainLayout 工作区设置段侧栏（2026-11-08 用户口径）', () 
         renderLayout(mockUser, '/w/10/settings')
 
         await waitFor(() => expect(screen.getByTestId('sider-settings')).toBeVisible())
-        fireEvent.click(screen.getByText('权限'))
+        fireEvent.click(screen.getByText('权限管理'))
 
         await waitFor(() => {
             expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings?section=permissions')
         })
         const selected = screen.getByTestId('sider-settings').querySelector('.ant-menu-item-selected')
-        expect(selected).toHaveTextContent('权限')
+        expect(selected).toHaveTextContent('权限管理')
     })
 })
 

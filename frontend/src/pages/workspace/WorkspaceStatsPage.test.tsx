@@ -59,6 +59,19 @@ describe('WorkspaceStatsPage 工作区统计页', () => {
     expect(screen.getByText('存储用量')).toBeInTheDocument()
   })
 
+  it('概览展示角色信息与工作区只读信息（由常规设置迁入）', async () => {
+    setupWorkspaceDetailHandler()
+    renderPage()
+
+    await screen.findByText('1.0 MB / 2.0 MB')
+    expect(screen.getByText('角色信息')).toBeInTheDocument()
+    expect(screen.getByText('工作区信息（只读）')).toBeInTheDocument()
+    expect(screen.getByText('所有者')).toBeInTheDocument()
+    expect(screen.getByText('alice')).toBeInTheDocument()
+    expect(screen.getByText('10')).toBeInTheDocument()
+    expect(screen.getByText('成员可见（仅工作区成员可访问）')).toBeInTheDocument()
+  })
+
   it('未启用的模块不展示对应统计卡片（tables-only 工作区）', async () => {
     setupWorkspaceDetailHandler({ modules: ['tables'] })
     renderPage()
@@ -68,5 +81,23 @@ describe('WorkspaceStatsPage 工作区统计页', () => {
     expect(stats.getByText('数据表')).toBeInTheDocument()
     expect(stats.queryByText('文档')).not.toBeInTheDocument()
     expect(stats.queryByText('设计')).not.toBeInTheDocument()
+  })
+
+  it('?section=contribution 只渲染贡献统计占位空态，不渲染概览网格', async () => {
+    setupWorkspaceDetailHandler()
+    renderPage('/w/10/stats?section=contribution')
+
+    expect(screen.getByTestId('ws-stats-contribution')).toBeInTheDocument()
+    expect(screen.getByText('暂无贡献数据')).toBeInTheDocument()
+    expect(screen.queryByTestId('ws-stats-grid')).not.toBeInTheDocument()
+  })
+
+  it('未知 section 回落概览分项', async () => {
+    setupWorkspaceDetailHandler()
+    renderPage('/w/10/stats?section=unknown')
+
+    await screen.findByText('1.0 MB / 2.0 MB')
+    expect(screen.getByTestId('ws-stats-grid')).toBeInTheDocument()
+    expect(screen.queryByTestId('ws-stats-contribution')).not.toBeInTheDocument()
   })
 })

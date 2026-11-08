@@ -218,6 +218,15 @@ test.describe("MainLayout Header 导航按钮", () => {
     await page.waitForURL(/\/stats$/)
     await expect(page.getByTestId("ws-stats-grid")).toBeVisible()
     await expect(page.getByTestId("ws-stats-grid")).toContainText("数据表")
+
+    // 布局参考工作区设置：侧栏分项第一行「概览」、第二行「贡献统计」
+    const sider = page.getByTestId("sider-stats")
+    await expect(sider).toBeVisible()
+    await expect(sider.getByText("概览")).toBeVisible()
+    await sider.getByText("贡献统计").click()
+    await page.waitForURL(/\/stats\?section=contribution$/)
+    await expect(page.getByTestId("ws-stats-contribution")).toBeVisible()
+    await expect(page.getByTestId("ws-stats-grid")).toHaveCount(0)
   })
 
   test("切到文档段：侧栏由数据表列表切换为文档树，进入文档后侧栏保持文档树并高亮当前文档", async ({ page }) => {

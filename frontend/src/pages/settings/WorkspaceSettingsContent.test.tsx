@@ -95,8 +95,8 @@ describe('WorkspaceSettingsContent 删除路由跳转', () => {
       </QueryClientProvider>,
     )
 
-    // 等待基本设置 Tab 出现（危险操作区已并入基本设置侧列）
-    await waitFor(() => expect(screen.getByText('基本设置')).toBeVisible())
+    // 等待常规设置 Tab 出现（危险操作区已固定到内容底部）
+    await waitFor(() => expect(screen.getByText('常规设置')).toBeVisible())
     await waitFor(() => expect(screen.getByText('危险操作')).toBeVisible())
 
     // 点击删除按钮触发 Popconfirm
@@ -185,7 +185,7 @@ async function waitDetailLoaded() {
   await screen.findByDisplayValue('测试')
 }
 
-describe('WorkspaceSettingsContent 基本设置与保存', () => {
+describe('WorkspaceSettingsContent 常规设置与保存', () => {
   it('修改名称后保存发起 PATCH 并提示设置已保存', async () => {
     let patched: Record<string, unknown> | undefined
     server.use(
@@ -244,14 +244,14 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
   })
 })
 
-describe('WorkspaceSettingsContent 基本设置信息区', () => {
-  it('基本设置渲染角色信息与工作区信息，owner 可见危险操作区', async () => {
+describe('WorkspaceSettingsContent 常规设置信息区', () => {
+  it('常规设置不再渲染角色信息与工作区信息（已并入统计页），owner 可见危险操作区', async () => {
     renderContent('owner')
     await waitDetailLoaded()
 
     expect(screen.getByText('危险操作')).toBeInTheDocument()
-    expect(screen.getByText('角色信息')).toBeInTheDocument()
-    expect(screen.getByText('工作区信息（只读）')).toBeInTheDocument()
+    expect(screen.queryByText('角色信息')).not.toBeInTheDocument()
+    expect(screen.queryByText('工作区信息（只读）')).not.toBeInTheDocument()
   })
 
   it('危险操作区位于内容底部：提供转让所有权与删除工作区两项', async () => {
@@ -284,7 +284,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     renderContent('owner')
     await waitDetailLoaded()
 
-    fireEvent.click(screen.getByText('权限'))
+    fireEvent.click(screen.getByText('权限管理'))
     const sw = await screen.findByRole('switch')
     expect(sw).toBeEnabled()
 
@@ -298,7 +298,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     renderContent('owner')
     await waitDetailLoaded()
 
-    fireEvent.click(screen.getByText('权限'))
+    fireEvent.click(screen.getByText('权限管理'))
 
     // carol（editor）在编辑者区，owner（alice）仅在所有者区卡片、不在分区成员表
     const carolCell = await screen.findByText('carol')
@@ -306,6 +306,8 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     expect(editorCard.querySelector('.ant-card-head-title')!.textContent).toContain('编辑者（1）')
     expect(editorCard.textContent).not.toContain('alice')
     expect(screen.getByText('暂无查看者')).toBeInTheDocument()
+    // 转让入口已收敛到常规设置危险操作区，权限管理页不再提供
+    expect(screen.queryByRole('button', { name: /转\s*让\s*所\s*有\s*权/ })).not.toBeInTheDocument()
   })
 
   it('添加成员：从编辑者区打开弹窗，搜索选择候选用户后发起 POST 并提示已添加成员', async () => {
@@ -319,7 +321,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     renderContent('owner')
     await waitDetailLoaded()
 
-    fireEvent.click(screen.getByText('权限'))
+    fireEvent.click(screen.getByText('权限管理'))
     // 编辑者区与查看者区各有一个「添加成员」按钮，取第一个（编辑者区，默认角色 editor）
     const addBtns = await screen.findAllByRole('button', { name: /添\s*加\s*成\s*员/ })
     fireEvent.click(addBtns[0]!)
@@ -355,7 +357,7 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     renderContent('owner')
     await waitDetailLoaded()
 
-    fireEvent.click(screen.getByText('权限'))
+    fireEvent.click(screen.getByText('权限管理'))
 
     // 编辑者区 carol 的角色 Select —— owner 可管理；未开弹窗时它是唯一可访问的 combobox。
     // optionRender 把角色名包在内层 div（直接文本节点），需用 selector 下钻到该节点
@@ -377,9 +379,9 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
     renderContent('owner')
     await waitDetailLoaded()
 
-    fireEvent.click(screen.getByText('权限'))
+    fireEvent.click(screen.getByText('权限管理'))
 
-    // carol 行的移除按钮（图标按钮，danger 样式）；限定成员表格，避免命中基本设置侧列的危险操作按钮
+    // carol 行的移除按钮（图标按钮，danger 样式）；限定成员表格，避免命中常规设置侧列的危险操作按钮
     const removeBtn = await waitFor(() => {
       const btn = document.querySelector('.ant-table button.ant-btn-dangerous')
       expect(btn).not.toBeNull()
@@ -400,12 +402,12 @@ describe('WorkspaceSettingsContent 权限分支', () => {
   it('viewer：表单只读提示、无保存按钮、成员管理受限、无危险操作区', async () => {
     renderContent('viewer')
 
-    // 基本设置 Tab：只读提示 + 无保存按钮
+    // 常规设置 Tab：只读提示 + 无保存按钮
     expect(await screen.findByText(/您的角色（查看者）仅能查看设置，无法修改/)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: '保存设置' })).not.toBeInTheDocument()
 
-    // 权限 Tab：提示无权管理、无添加成员按钮、角色为纯 Tag 展示
-    fireEvent.click(screen.getByText('权限'))
+    // 权限管理 Tab：提示无权管理、无添加成员按钮、角色为纯 Tag 展示
+    fireEvent.click(screen.getByText('权限管理'))
     expect(await screen.findByText('仅所有者可管理成员与权限')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /添\s*加\s*成\s*员/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
@@ -416,8 +418,8 @@ describe('WorkspaceSettingsContent 权限分支', () => {
     // 编辑权限开关禁用
     expect(screen.getByRole('switch')).toBeDisabled()
 
-    // 基本设置侧列：角色信息展示，无危险操作区
-    expect(screen.getByText('角色信息')).toBeInTheDocument()
+    // 常规设置不再承载角色信息（已并入统计页），无危险操作区
+    expect(screen.queryByText('角色信息')).not.toBeInTheDocument()
     expect(screen.queryByText('危险操作')).not.toBeInTheDocument()
   })
 
@@ -425,13 +427,12 @@ describe('WorkspaceSettingsContent 权限分支', () => {
     renderContent('editor')
     await waitDetailLoaded()
 
-    // 基本设置：editor 不可编辑 → 无保存按钮；无危险操作区
+    // 常规设置：editor 不可编辑 → 无保存按钮；无危险操作区
     expect(screen.queryByRole('button', { name: '保存设置' })).not.toBeInTheDocument()
-    expect(screen.getByText('角色信息')).toBeInTheDocument()
     expect(screen.queryByText('危险操作')).not.toBeInTheDocument()
 
-    // 权限 Tab：无添加成员入口，角色 Tag 展示；owner 卡片无"转让所有权"
-    fireEvent.click(screen.getByText('权限'))
+    // 权限管理 Tab：无添加成员入口，角色 Tag 展示；owner 卡片无"转让所有权"
+    fireEvent.click(screen.getByText('权限管理'))
     await screen.findByText('仅所有者可管理成员与权限')
     expect(screen.queryByRole('button', { name: /添\s*加\s*成\s*员/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()

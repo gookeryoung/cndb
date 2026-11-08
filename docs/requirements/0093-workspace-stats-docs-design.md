@@ -21,6 +21,7 @@
 | C4 | （模块门控） | 统计卡片按工作区模块显示：未启用「文档」/「设计」模块的工作区不展示对应卡片（与顶部页签、设置模块开关同口径） | `frontend/src/pages/workspace/WorkspaceStatsPage.tsx`、`utils/workspaceModules.ts` | 前端单测：默认三模块显示两张卡片；`modules: ['tables']` 不显示 |
 | C5 | （文档口径） | CHANGELOG 记录新增；CONTEXT 术语补充统计口径 | `CHANGELOG.md`、`CONTEXT.md` | `make check-docs` |
 | C6 | 「工作区展开详情页需要显示文档、设计等信息（如有）」 | 工作区列表接口（`GET /workspaces`）同样返回 `document_count` / `design_count`（分组 COUNT，随列表 10s 缓存）；展开详情页按已启用模块渲染「文档」「设计」区块：`共 N 篇 / 共 N 个` + 直达模块页入口，计数为 0 时给空态文案，模块未启用不渲染 | `workspaces/routers/workspaces.py`、`workspaces/schemas/models.py`、`frontend/src/pages/workspace/WorkspaceList.tsx` | 后端单测：列表携带计数；前端单测：展开显示文档 5 篇 / 设计 2 个与跳转、模块未启用不渲染 |
+| C7 | 「统计信息参考GITHUB单独设置一个一级导航入口…」 | **2026-11-08 更新**：统计页布局参考工作区设置，采用「侧栏 + Content」：侧栏分项第一行为「概览」、第二行为「贡献统计」，选中项由 `?section=` 驱动（缺省 / 未知回落概览）；概览承载既有统计卡片与存储用量，贡献统计在后端聚合接口接入前只展示空状态占位 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceStatsPage.tsx`、`frontend/src/pages/workspace/workspaceStatsSections.tsx` | 前端单测：侧栏两分项顺序 / `?section=` 联动 / 贡献统计空态；e2e 覆盖分项切换 |
 
 约束编号在实现中原样引用；不重编号、不合并。
 

@@ -51,9 +51,9 @@ describe('WorkspaceSettingsModal', () => {
     const footer = document.querySelector('.ant-modal-footer')
     expect(footer).not.toBeNull()
     expect(within(footer as HTMLElement).getByRole('button', { name: /^关\s*闭$/ })).toBeInTheDocument()
-    // WorkspaceSettingsContent 基本设置 Tab 正常挂载
+    // WorkspaceSettingsContent 常规设置 Tab 正常挂载
     // 注：rc-dialog 过渡期间 tab span 可能被判为不可见，这里断言存在性
-    expect(await screen.findByText('基本设置')).toBeInTheDocument()
+    expect(await screen.findByText('常规设置')).toBeInTheDocument()
   })
 
   it('点击关闭按钮触发 onClose 回调', async () => {
@@ -81,9 +81,9 @@ describe('WorkspaceSettingsModal', () => {
       <WorkspaceSettingsModal open wid="10" onClose={onClose} />,
     )
 
-    // 等基本设置 Tab 挂载（rc-dialog 过渡期可能判不可见，只断言存在性）
-    await screen.findByText('基本设置')
-    // 危险操作区已并入基本设置侧列
+    // 等常规设置 Tab 挂载（rc-dialog 过渡期可能判不可见，只断言存在性）
+    await screen.findByText('常规设置')
+    // 危险操作区已并入常规设置底部
     await screen.findByText('危险操作')
 
     // 点删除按钮并在 Popconfirm 中确认
