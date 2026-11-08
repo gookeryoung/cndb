@@ -189,13 +189,14 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(sider).toBeVisible()
     await expect(page.getByTestId("sider-documents")).toHaveCount(0)
     await expect(page.getByTestId("sider-tables")).toHaveCount(0)
-    // 默认渲染基本设置分项
+    // 默认渲染基本设置分项（统计概览已并入）
     await expect(page.getByTestId("ws-settings-section-basic")).toBeVisible()
+    await expect(page.getByTestId("ws-stats-grid")).toBeVisible()
 
-    // 侧栏分项驱动内容区：?section=stats
-    await sider.getByText("统计信息").click()
-    await page.waitForURL(/\/settings\?section=stats$/)
-    await expect(page.getByTestId("ws-settings-section-stats")).toBeVisible()
+    // 侧栏分项驱动内容区：?section=permissions
+    await sider.getByText("权限").click()
+    await page.waitForURL(/\/settings\?section=permissions$/)
+    await expect(page.getByTestId("ws-settings-section-permissions")).toBeVisible()
     await expect(page.getByTestId("ws-settings-section-basic")).toHaveCount(0)
   })
 

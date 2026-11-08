@@ -83,9 +83,7 @@ describe('WorkspaceSettingsModal', () => {
 
     // 等基本设置 Tab 挂载（rc-dialog 过渡期可能判不可见，只断言存在性）
     await screen.findByText('基本设置')
-
-    // 切到统计信息 Tab（危险操作区在此）
-    fireEvent.click(screen.getByText('统计信息'))
+    // 危险操作区已并入基本设置侧列
     await screen.findByText('危险操作')
 
     // 点删除按钮并在 Popconfirm 中确认

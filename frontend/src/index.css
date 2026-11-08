@@ -7139,6 +7139,71 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: var(--cn-space-xl);
 }
 
+/* 基本设置：顶部概览统计 + 左表单 / 右信息双列。
+ * 概览先给全貌；主列承载可编辑项，侧列收敛存储、角色 / 只读信息与危险操作，
+ * 窄屏（<992px）自动回落单列，避免侧栏被压成窄条。 */
+.cn-ws-settings-stats {
+  display: grid;
+  gap: var(--cn-space-md);
+  margin-bottom: var(--cn-space-lg);
+}
+
+.cn-ws-settings-stat {
+  padding: var(--cn-space-md);
+  background: var(--cn-bg-subtle);
+  border: 1px solid var(--cn-border-soft);
+  border-radius: var(--cn-radius-base);
+}
+
+.cn-ws-settings-stat-label {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-ws-settings-stat-value {
+  margin-top: var(--cn-space-xs);
+  font-size: var(--cn-text-xl);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-primary);
+}
+
+.cn-ws-settings-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
+  align-items: start;
+  gap: var(--cn-space-lg);
+}
+
+.cn-ws-settings-main,
+.cn-ws-settings-side {
+  min-width: 0;
+}
+
+.cn-ws-settings-side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-md);
+}
+
+.cn-ws-settings-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--cn-space-md);
+}
+
+.cn-ws-settings-danger {
+  padding: var(--cn-space-md);
+}
+
+@media (max-width: 991.98px) {
+  .cn-ws-settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ─────────────── 文档子页（问题清单 / 修改申请） ───────────────
  * 页头在窄屏纵向堆叠：说明文字整行，筛选与主操作整行，避免挤成多段折行。 */
 .cn-subpage {
@@ -7247,6 +7312,10 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   .cn-ws-settings-card {
     padding: var(--cn-space-lg);
     border-radius: var(--cn-radius-base);
+  }
+
+  .cn-ws-settings-stat {
+    padding: var(--cn-space-md);
   }
 
   .cn-subpage {

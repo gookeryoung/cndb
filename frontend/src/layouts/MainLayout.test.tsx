@@ -1303,13 +1303,13 @@ describe('MainLayout 工作区设置段侧栏（2026-11-08 用户口径）', () 
         renderLayout(mockUser, '/w/10/settings')
 
         await waitFor(() => expect(screen.getByTestId('sider-settings')).toBeVisible())
-        fireEvent.click(screen.getByText('统计信息'))
+        fireEvent.click(screen.getByText('权限'))
 
         await waitFor(() => {
-            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings?section=stats')
+            expect(screen.getByTestId('settings-page-stub')).toHaveTextContent('/w/10/settings?section=permissions')
         })
         const selected = screen.getByTestId('sider-settings').querySelector('.ant-menu-item-selected')
-        expect(selected).toHaveTextContent('统计信息')
+        expect(selected).toHaveTextContent('权限')
     })
 })
 

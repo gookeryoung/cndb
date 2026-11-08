@@ -1,6 +1,7 @@
 /** 工作区设置 — 内容组件（可嵌入 Modal 或独立页面）.
  *
- * 包含三个 Tab：基本设置 / 成员管理 / 统计信息
+ * 包含三个分项：基本设置（含工作区概览统计）/ 权限 / 生命周期
+ * 基本设置采用「顶部概览 + 左表单 / 右侧信息」布局：概览先行、可编辑项居中、只读与危险操作收敛到侧列。
  * 所有颜色均使用 CSS 变量，自动适配深浅主题。
  *
  * Props:
@@ -13,13 +14,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Popconfirm, Divider, Card, Space, Avatar, Progress,
+  Popconfirm, Card, Space, Avatar, Progress,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
   FileTextOutlined, EyeOutlined, HddOutlined,
   ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
-  ReadOutlined, ToolOutlined,
+  ReadOutlined, ToolOutlined, SettingOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -255,11 +256,6 @@ export default function WorkspaceSettingsContent({
   const storageColor = storagePercent >= 100 ? '#dc2626' : storagePercent >= 80 ? '#f59e0b' : '#0ea5e9'
 
   // 公共样式常量
-  const subtleBoxStyle: React.CSSProperties = {
-    background: 'var(--cn-bg-subtle)',
-    borderRadius: 8,
-    border: '1px solid var(--cn-border-soft)',
-  }
   const dangerBoxStyle: React.CSSProperties = {
     background: 'var(--cn-bg-danger-subtle)',
     borderRadius: 8,
@@ -405,47 +401,176 @@ export default function WorkspaceSettingsContent({
       key: 'basic',
       label: tabLabel('basic'),
       children: (
-        <Form
-          form={form}
-          layout="vertical"
-          initialValues={{ visibility: 'member', tags: '', modules: [...DEFAULT_WORKSPACE_MODULES] }}
-          onFinish={(v) => save.mutate(v)}
-          disabled={!canEditBasic}
-        >
-          <Form.Item
-            name="name"
-            label="工作区名称"
-            rules={[{ required: true, message: '请输入名称' }]}
+        <div className="cn-ws-basic-settings">
+          {/* 概览统计（原「统计信息」分项并入基本设置）：先给全貌，再进入可编辑项 */}
+          <div
+            data-testid="ws-stats-grid"
+            className="cn-ws-settings-stats"
+            style={{
+              gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(140px, 1fr))',
+            }}
           >
-            <Input placeholder="例如：产品研发" />
-          </Form.Item>
-          <Form.Item name="description" label="描述（可选）">
-            <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
-          </Form.Item>
-          <Form.Item
-            name="modules"
-            label={<>功能模块<HelpTip title="勾选工作区开放的功能：数据分析与数据同步随数据表一并启用，质量检查恒可用。修改后顶部页签与导航随之调整" /></>}
-          >
-            <ModuleCheckCards disabled={!canEditBasic} />
-          </Form.Item>
-          <Form.Item
-            name="visibility"
-            label={<>公开性<HelpTip title="修改后立即生效：公开=任何人可读；成员可见=仅工作区成员可访问；私有=仅所有者可见" /></>}
-          >
-            <Select
-              options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
-              disabled={!canEditBasic}
-            />
-          </Form.Item>
-          <Form.Item name="tags" label="标签（逗号分隔）">
-            <Input placeholder="例如：研发, 产品, 核心业务" />
-          </Form.Item>
-          {!canEditBasic && (
-            <div style={{ marginTop: 12, color: '#f59e0b', fontSize: 'var(--cn-text-sm)' }}>
-              ℹ️ 您的角色（{ROLE_LABEL[myRole ?? 'viewer']}）仅能查看设置，无法修改
+            {statItems.map(item => (
+              <div
+                key={item.label}
+                className="cn-ws-settings-stat"
+                style={{ borderLeft: `3px solid ${item.color}` }}
+              >
+                <div className="cn-ws-settings-stat-label">{item.icon} {item.label}</div>
+                <div className="cn-ws-settings-stat-value">{item.value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="cn-ws-settings-layout">
+            {/* 主列：可编辑的基本信息 */}
+            <div className="cn-ws-settings-main">
+              <Form
+                form={form}
+                layout="vertical"
+                initialValues={{ visibility: 'member', tags: '', modules: [...DEFAULT_WORKSPACE_MODULES] }}
+                onFinish={(v) => save.mutate(v)}
+                disabled={!canEditBasic}
+              >
+                <Card size="small" title={<Space><SettingOutlined /> 基本信息</Space>}>
+                  <Form.Item
+                    name="name"
+                    label="工作区名称"
+                    rules={[{ required: true, message: '请输入名称' }]}
+                  >
+                    <Input placeholder="例如：产品研发" />
+                  </Form.Item>
+                  <Form.Item name="description" label="描述（可选）">
+                    <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
+                  </Form.Item>
+                  <Form.Item
+                    name="visibility"
+                    label={<>公开性<HelpTip title="修改后立即生效：公开=任何人可读；成员可见=仅工作区成员可访问；私有=仅所有者可见" /></>}
+                  >
+                    <Select
+                      options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
+                      disabled={!canEditBasic}
+                    />
+                  </Form.Item>
+                  <Form.Item name="tags" label="标签（逗号分隔）">
+                    <Input placeholder="例如：研发, 产品, 核心业务" />
+                  </Form.Item>
+                  <Form.Item
+                    name="modules"
+                    label={<>功能模块<HelpTip title="勾选工作区开放的功能：数据分析与数据同步随数据表一并启用，质量检查恒可用。修改后顶部页签与导航随之调整" /></>}
+                  >
+                    <ModuleCheckCards disabled={!canEditBasic} />
+                  </Form.Item>
+                  {!canEditBasic && (
+                    <div style={{ marginTop: 12, color: '#f59e0b', fontSize: 'var(--cn-text-sm)' }}>
+                      ℹ️ 您的角色（{ROLE_LABEL[myRole ?? 'viewer']}）仅能查看设置，无法修改
+                    </div>
+                  )}
+                </Card>
+
+                {canEditBasic && (
+                  <div className="cn-ws-settings-actions">
+                    <Button
+                      type="primary"
+                      block={isMobile}
+                      onClick={() => form.submit()}
+                      loading={save.isPending}
+                    >保存设置</Button>
+                  </div>
+                )}
+              </Form>
             </div>
-          )}
-        </Form>
+
+            {/* 侧列：存储 / 角色与只读信息 / 危险操作 */}
+            <aside className="cn-ws-settings-side">
+              <Card size="small" title={<Space><HddOutlined /> 存储用量</Space>}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>已用 / 配额</span>
+                  <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>
+                    {formatSize(storageUsed)} / {formatSize(storageQuota)}
+                  </span>
+                </div>
+                <Progress percent={Math.round(storagePercent * 10) / 10} strokeColor={storageColor} size="small" />
+                <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)', marginTop: 4 }}>
+                  {storagePercent >= 100
+                    ? '存储空间已用尽，请清理文件或联系管理员扩容'
+                    : storagePercent >= 80
+                      ? '存储空间即将用尽，建议清理或扩容'
+                      : '可继续上传附件与保存文档'}
+                </div>
+              </Card>
+
+              <Card size="small" title={<Space><UserOutlined /> 角色信息</Space>}>
+                <Descriptions size="small" column={1} colon={false}>
+                  <Descriptions.Item label="您的角色">
+                    {myRole
+                      ? <Tag color={myRole === 'owner' ? 'gold' : 'default'}>{ROLE_LABEL[myRole]}</Tag>
+                      : <Tag>非成员</Tag>}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="拥有者">
+                    {detail?.owner
+                      ? (
+                        <>
+                          {detail.owner.username}
+                          {detail.owner.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8 }}>({detail.owner.nickname})</span>}
+                        </>
+                      )
+                      : '未指定所有者'}
+                  </Descriptions.Item>
+                </Descriptions>
+              </Card>
+
+              <Card size="small" title="工作区信息（只读）">
+                <Descriptions size="small" column={1} colon={false}>
+                  <Descriptions.Item label="ID">{detail?.id}</Descriptions.Item>
+                  <Descriptions.Item label="创建时间">
+                    {detail?.created_at ? new Date(detail.created_at).toLocaleString() : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="最后更新">
+                    {detail?.updated_at ? new Date(detail.updated_at).toLocaleString() : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="公开性">
+                    {VISIBILITY_LABEL[detail?.visibility ?? 'member']}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="功能模块">
+                    {normalizeModules(detail?.modules).map(m => (
+                      <Tag key={m} style={{ marginInlineEnd: 4 }}>{WORKSPACE_MODULE_LABEL[m]}</Tag>
+                    ))}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="标签">
+                    {(detail?.tags ?? []).length > 0
+                      ? (detail?.tags ?? []).map(t => <Tag key={t}>{t}</Tag>)
+                      : <span style={{ color: 'var(--cn-text-muted)' }}>暂无标签</span>}
+                  </Descriptions.Item>
+                </Descriptions>
+              </Card>
+
+              {/* 危险操作区 — 仅 owner 可见 */}
+              {canDeleteWorkspace && (
+                <div className="cn-ws-settings-danger" style={dangerBoxStyle}>
+                  <div style={{ fontWeight: WEIGHT.semibold, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <DeleteOutlined /> 危险操作
+                  </div>
+                  <div style={{ color: '#991b1b', fontSize: 'var(--cn-text-sm)', marginBottom: 12 }}>
+                    删除工作区将永久删除所有数据表、数据行、视图和成员关系，无法恢复。
+                  </div>
+                  <Popconfirm
+                    title={`确认删除工作区「${detail?.name}」？`}
+                    description="此操作不可撤销，所有数据将永久丢失。"
+                    okText="我确定，删除"
+                    okType="danger"
+                    cancelText="取消"
+                    onConfirm={() => removeWs.mutate()}
+                  >
+                    <Button danger icon={<DeleteOutlined />} loading={removeWs.isPending} block={isMobile}>
+                      删除工作区
+                    </Button>
+                  </Popconfirm>
+                </div>
+              )}
+            </aside>
+          </div>
+        </div>
       ),
     },
     {
@@ -464,146 +589,7 @@ export default function WorkspaceSettingsContent({
         />
       ),
     },
-    {
-      key: 'stats',
-      label: tabLabel('stats'),
-      children: (
-        <div>
-          {/* 统计卡片 */}
-          <div data-testid="ws-stats-grid" style={{ display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(140px, 1fr))', gap: 12, marginBottom: 16 }}>
-            {statItems.map(item => (
-              <div
-                key={item.label}
-                style={{
-                  padding: isMobile ? 12 : 16,
-                  ...subtleBoxStyle,
-                  borderLeft: `3px solid ${item.color}`,
-                }}
-              >
-                <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {item.icon} {item.label}
-                </div>
-                <div style={{ fontSize: isMobile ? 20 : 24, fontWeight: WEIGHT.semibold, marginTop: 4, color: 'var(--cn-text-primary)' }}>
-                  {item.value}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* 存储用量：已用 / 配额 + 使用率进度条 */}
-          <div style={{ padding: 16, ...subtleBoxStyle, marginBottom: 20 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                <HddOutlined /> 存储用量
-              </span>
-              <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>
-                {formatSize(storageUsed)} / {formatSize(storageQuota)}
-              </span>
-            </div>
-            <Progress percent={Math.round(storagePercent * 10) / 10} strokeColor={storageColor} size="small" />
-            <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)', marginTop: 4 }}>
-              {storagePercent >= 100
-                ? '存储空间已用尽，请清理文件或联系管理员扩容'
-                : storagePercent >= 80
-                  ? '存储空间即将用尽，建议清理或扩容'
-                  : '可继续上传附件与保存文档'}
-            </div>
-          </div>
-
-          {/* 当前角色 + 拥有者 */}
-          <Descriptions
-            title="角色信息"
-            size="small"
-            bordered
-            column={isMobile ? 1 : 2}
-            layout={isMobile ? 'vertical' : 'horizontal'}
-            style={{ marginBottom: 16 }}
-          >
-            <Descriptions.Item label="您的角色">
-              {myRole
-                ? <Tag color={myRole === 'owner' ? 'gold' : 'default'}>{ROLE_LABEL[myRole]}</Tag>
-                : <Tag>非成员</Tag>}
-            </Descriptions.Item>
-            {detail?.owner && (
-              <Descriptions.Item label="拥有者">
-                {detail.owner.username}
-                {detail.owner.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8 }}>({detail.owner.nickname})</span>}
-              </Descriptions.Item>
-            )}
-          </Descriptions>
-
-          {/* 创建信息（只读） */}
-          <Descriptions
-            title="工作区信息（只读）"
-            size="small"
-            bordered
-            column={isMobile ? 1 : 2}
-            layout={isMobile ? 'vertical' : 'horizontal'}
-          >
-            <Descriptions.Item label="ID">{detail?.id}</Descriptions.Item>
-            <Descriptions.Item label="创建时间">
-              {detail?.created_at ? new Date(detail.created_at).toLocaleString() : '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="最后更新">
-              {detail?.updated_at ? new Date(detail.updated_at).toLocaleString() : '-'}
-            </Descriptions.Item>
-            <Descriptions.Item label="公开性">
-              {VISIBILITY_LABEL[detail?.visibility ?? 'member']}
-            </Descriptions.Item>
-            <Descriptions.Item label="功能模块" span={2}>
-              {normalizeModules(detail?.modules).map(m => (
-                <Tag key={m} style={{ marginInlineEnd: 4 }}>{WORKSPACE_MODULE_LABEL[m]}</Tag>
-              ))}
-            </Descriptions.Item>
-            <Descriptions.Item label="标签" span={2}>
-              {(detail?.tags ?? []).length > 0
-                ? (detail?.tags ?? []).map(t => <Tag key={t}>{t}</Tag>)
-                : <span style={{ color: 'var(--cn-text-muted)' }}>暂无标签</span>}
-            </Descriptions.Item>
-          </Descriptions>
-
-          {/* 危险操作区 — 仅 owner 可见 */}
-          {canDeleteWorkspace && (
-            <>
-              <Divider />
-              <div style={{ padding: 16, ...dangerBoxStyle }}>
-                <div style={{ fontWeight: WEIGHT.semibold, color: '#dc2626', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <DeleteOutlined /> 危险操作
-                </div>
-                <div style={{ color: '#991b1b', fontSize: 'var(--cn-text-sm)', marginBottom: 12 }}>
-                  删除工作区将永久删除所有数据表、数据行、视图和成员关系，无法恢复。
-                </div>
-                <Popconfirm
-                  title={`确认删除工作区「${detail?.name}」？`}
-                  description="此操作不可撤销，所有数据将永久丢失。"
-                  okText="我确定，删除"
-                  okType="danger"
-                  cancelText="取消"
-                  onConfirm={() => removeWs.mutate()}
-                >
-                  <Button danger icon={<DeleteOutlined />} loading={removeWs.isPending}>
-                    删除工作区
-                  </Button>
-                </Popconfirm>
-              </div>
-            </>
-          )}
-        </div>
-      ),
-    },
   ]
-
-  const footerButtons = canEditBasic
-    ? [
-      <Button
-        key="save"
-        type="primary"
-        block={isMobile}
-        onClick={() => form.submit()}
-        loading={save.isPending}
-      >保存设置</Button>,
-    ]
-    : []
 
   const activeKey = section ?? activeTab
   const activeSection = tabs.find(t => t.key === activeKey)?.children
@@ -619,11 +605,6 @@ export default function WorkspaceSettingsContent({
           items={tabs}
           size={isMobile ? 'small' : 'middle'}
         />
-      )}
-      {footerButtons.length > 0 && activeKey === 'basic' && (
-        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
-          {footerButtons}
-        </div>
       )}
     </div>
   )

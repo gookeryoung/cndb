@@ -15,7 +15,7 @@
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 「工作区设置的统计信息」 | 工作区设置 → 统计信息 Tab 的统计卡片补充「文档」「设计」两项：`GET /{wid}` 详情新增 `document_count` / `design_count` | `workspaces/routers/workspaces.py`、`workspaces/schemas/models.py`、`workspaces/services/stats_cache.py`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | 接口层：详情返回两个整数字段且与库内数据一致；前端：统计网格出现两张卡片 |
+| C1 | 「工作区设置的统计信息」 | **2026-11-08 更新**：统计信息已并入「基本设置」顶部统计概览；统计卡片补充「文档」「设计」两项：`GET /{wid}` 详情新增 `document_count` / `design_count` | `workspaces/routers/workspaces.py`、`workspaces/schemas/models.py`、`workspaces/services/stats_cache.py`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | 接口层：详情返回两个整数字段且与库内数据一致；前端：统计网格出现两张卡片 |
 | C2 | （计数口径） | 文档数 = 未删除且非文件夹的 `documents_document`；设计数 = 未软删的 `design_design`；回收站 / 软删内容不计入 | `workspaces/services/stats_cache.py` | 单测：2 文档 + 1 文件夹 + 1 回收站文档 → 2；1 设计 + 1 软删设计 → 1 |
 | C3 | （新鲜度） | 两个计数**不进** 30s 的 `workspace-stats` 缓存：文档 / 设计写路径没有统一缓存事件，缓存会展示旧值；改为详情请求实时两次索引 COUNT（ADR 0046 口径补充） | 同上 + `docs/adr/0046-web-performance-bottlenecks.md` | 单测：新增文档 / 设计后立即读详情即生效 |
 | C4 | （模块门控） | 统计卡片按工作区模块显示：未启用「文档」/「设计」模块的工作区不展示对应卡片（与顶部页签、设置模块开关同口径） | `frontend/src/pages/settings/WorkspaceSettingsContent.tsx`、`utils/workspaceModules.ts` | 前端单测：默认三模块显示两张卡片；`modules: ['tables']` 不显示 |
@@ -28,7 +28,7 @@
 
 | # | 疑似受影响能力 | 候选位置 | 备注 |
 |---|---|---|---|
-| 1 | 工作区设置「统计信息」卡片 | `frontend/src/pages/settings/WorkspaceSettingsContent.tsx`（`statItems`） | C1/C4 新增文档 / 设计卡片 |
+| 1 | 工作区设置「基本设置」顶部统计概览 | `frontend/src/pages/settings/WorkspaceSettingsContent.tsx`（`statItems`） | C1/C4 新增文档 / 设计卡片 |
 | 2 | 工作区详情接口统计字段 | `workspaces/routers/workspaces.py`（`get_workspace`） | C1/C3 新增两个字段 |
 | 3 | 工作区统计缓存 | `workspaces/services/stats_cache.py` | C3 计数不进缓存（避免旧值） |
 | 4 | 详情响应 schema / 前端类型 | `workspaces/schemas/models.py`、`frontend/src/api/types/workspaces.ts` | C1 字段透传 |

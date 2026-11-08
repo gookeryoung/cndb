@@ -95,11 +95,8 @@ describe('WorkspaceSettingsContent 删除路由跳转', () => {
       </QueryClientProvider>,
     )
 
-    // 等待基本设置 Tab 出现
+    // 等待基本设置 Tab 出现（危险操作区已并入基本设置侧列）
     await waitFor(() => expect(screen.getByText('基本设置')).toBeVisible())
-
-    // 切换到「统计信息」Tab（危险操作区在此）
-    fireEvent.click(screen.getByText('统计信息'))
     await waitFor(() => expect(screen.getByText('危险操作')).toBeVisible())
 
     // 点击删除按钮触发 Popconfirm
@@ -247,13 +244,12 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
   })
 })
 
-describe('WorkspaceSettingsContent 统计信息 Tab', () => {
-  it('渲染统计卡片与角色信息，owner 可见危险操作区', async () => {
+describe('WorkspaceSettingsContent 统计信息并入基本设置', () => {
+  it('基本设置顶部渲染统计卡片与角色信息，owner 可见危险操作区', async () => {
     renderContent('owner')
+    await waitDetailLoaded()
 
-    fireEvent.click(await screen.findByText('统计信息'))
-
-    expect(await screen.findByText('危险操作')).toBeInTheDocument()
+    expect(screen.getByText('危险操作')).toBeInTheDocument()
     expect(screen.getByText('角色信息')).toBeInTheDocument()
     // 统计卡片里的「数据表」「数据行」与功能模块勾选项同名，须限定在统计网格内查询
     const stats = within(screen.getByTestId('ws-stats-grid'))
@@ -270,7 +266,7 @@ describe('WorkspaceSettingsContent 统计信息 Tab', () => {
 
   it('未启用的模块不展示对应统计卡片（tables-only 工作区）', async () => {
     renderContent('owner', { modules: ['tables'] })
-    fireEvent.click(await screen.findByText('统计信息'))
+    await waitDetailLoaded()
 
     const stats = within(await screen.findByTestId('ws-stats-grid'))
     expect(stats.getByText('数据表')).toBeInTheDocument()
@@ -386,9 +382,9 @@ describe('WorkspaceSettingsContent 成员管理（owner）', () => {
 
     fireEvent.click(screen.getByText('权限'))
 
-    // carol 行的移除按钮（图标按钮，danger 样式）
+    // carol 行的移除按钮（图标按钮，danger 样式）；限定成员表格，避免命中基本设置侧列的危险操作按钮
     const removeBtn = await waitFor(() => {
-      const btn = document.querySelector('button.ant-btn-dangerous')
+      const btn = document.querySelector('.ant-table button.ant-btn-dangerous')
       expect(btn).not.toBeNull()
       return btn as HTMLElement
     })
@@ -423,9 +419,8 @@ describe('WorkspaceSettingsContent 权限分支', () => {
     // 编辑权限开关禁用
     expect(screen.getByRole('switch')).toBeDisabled()
 
-    // 统计 Tab：无危险操作区
-    fireEvent.click(screen.getByText('统计信息'))
-    await waitFor(() => expect(screen.getByText('角色信息')).toBeVisible())
+    // 基本设置侧列：角色信息展示，无危险操作区
+    expect(screen.getByText('角色信息')).toBeInTheDocument()
     expect(screen.queryByText('危险操作')).not.toBeInTheDocument()
   })
 
@@ -433,8 +428,10 @@ describe('WorkspaceSettingsContent 权限分支', () => {
     renderContent('editor')
     await waitDetailLoaded()
 
-    // 基本设置：editor 不可编辑 → 无保存按钮
+    // 基本设置：editor 不可编辑 → 无保存按钮；无危险操作区
     expect(screen.queryByRole('button', { name: '保存设置' })).not.toBeInTheDocument()
+    expect(screen.getByText('角色信息')).toBeInTheDocument()
+    expect(screen.queryByText('危险操作')).not.toBeInTheDocument()
 
     // 权限 Tab：无添加成员入口，角色 Tag 展示；owner 卡片无"转让所有权"
     fireEvent.click(screen.getByText('权限'))
@@ -442,11 +439,6 @@ describe('WorkspaceSettingsContent 权限分支', () => {
     expect(screen.queryByRole('button', { name: /添\s*加\s*成\s*员/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /转\s*让\s*所\s*有\s*权/ })).not.toBeInTheDocument()
-
-    // 统计 Tab：editor 不可见危险操作区
-    fireEvent.click(screen.getByText('统计信息'))
-    await waitFor(() => expect(screen.getByText('角色信息')).toBeVisible())
-    expect(screen.queryByText('危险操作')).not.toBeInTheDocument()
   })
 })
 
@@ -472,7 +464,6 @@ describe('WorkspaceSettingsContent 移动端布局', () => {
     // 窄屏保存按钮占满整行，避免右下角小按钮难点
     expect(screen.getByRole('button', { name: '保存设置' })).toHaveClass('ant-btn-block')
 
-    fireEvent.click(screen.getByText('统计信息'))
     const grid = await screen.findByTestId('ws-stats-grid')
     // 窄屏固定两列，不再按 minmax(140px) 自适应收缩
     expect(grid.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))')

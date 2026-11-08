@@ -24,7 +24,7 @@
 | C1 | 侧边栏的收起应当记忆，而不是刷新后又变回去了 | 主侧栏折叠态用 localStorage 持久化；点击折叠 / 展开即写入，刷新后恢复 | `frontend/src/layouts/MainLayout.tsx` | `MainLayout.test.tsx` 预置 localStorage 恢复 + 点击写回 |
 | C2 | 页面状态维持 | 管理台侧栏折叠态用 localStorage 持久化，刷新后保持图标栏 / 展开态 | `frontend/src/pages/admin/AdminPanel.tsx` | `AdminPanel.test.tsx` 点击写入 + 预置恢复 |
 | C3 | 页面状态维持 | 文档树展开态按工作区、会话级持久化（`expanded` + `collapsedAll`），刷新 / 返回不丢；写入时剪除已删除文件夹 | `frontend/src/layouts/MainLayout.tsx` | `MainLayout.test.tsx` 预置收起态 + 点击写回 |
-| C4 | 刷新后又变回去了 | **2026-11-08 更新（需求方口径调整）**：工作区设置页侧栏固定为设置分项（基本设置 / 权限 / 生命周期 / 统计信息），不再沿用最近一次文档 / 设计模块侧栏；原 `last_module_sider` 会话持久化随之下线。分项选中态改由 URL `?section=` 承载，可直接分享 / 刷新保持 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceSettingsPage.tsx` | `MainLayout.test.tsx` 侧栏分项渲染与 `?section=` 选中态；`WorkspaceSettingsPage.test.tsx` 分项渲染 |
+| C4 | 刷新后又变回去了 | **2026-11-08 更新（需求方口径调整）**：工作区设置页侧栏固定为设置分项（基本设置 / 权限 / 生命周期），不再沿用最近一次文档 / 设计模块侧栏；原 `last_module_sider` 会话持久化随之下线。分项选中态改由 URL `?section=` 承载，可直接分享 / 刷新保持 | `frontend/src/layouts/MainLayout.tsx`、`frontend/src/pages/workspace/WorkspaceSettingsPage.tsx` | `MainLayout.test.tsx` 侧栏分项渲染与 `?section=` 选中态；`WorkspaceSettingsPage.test.tsx` 分项渲染 |
 | C5 | 页面状态维持 | 数据表侧栏搜索词按工作区、会话级记忆 | `frontend/src/layouts/MainLayout.tsx` | `MainLayout.test.tsx` 预置搜索词后断言输入框值 |
 | C6 | 页面状态维持 | 文档标题过滤关键词会话级记忆（原注释明确不写 localStorage，保持该口径） | `frontend/src/pages/documents/docTreeSort.ts` | `docTreeSort.test.ts` 写入 sessionStorage + 模块重载恢复 |
 | C7 | 页面状态维持 | 设计侧栏筛选（产品搜索 / 类型 / 模块库可见范围等）按工作区、会话级记忆 | `frontend/src/pages/design/DesignStructureNav.tsx` | `DesignStructureNav.test.tsx` 预置筛选后断言搜索框与列表收窄 |

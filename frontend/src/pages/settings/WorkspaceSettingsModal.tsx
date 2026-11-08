@@ -2,6 +2,7 @@
 
 import { Button, Modal } from 'antd'
 import WorkspaceSettingsContent from './WorkspaceSettingsContent'
+import type { WorkspaceSettingsSectionKey } from './workspaceSettingsSections'
 
 interface Props {
   open: boolean
@@ -9,8 +10,8 @@ interface Props {
   onClose: () => void
   /** 设置保存后通知工作区列表刷新 */
   onUpdated?: () => void
-  /** 指定打开时的 Tab，默认 basic */
-  initialTab?: 'basic' | 'permissions' | 'lifecycle' | 'stats'
+  /** 指定打开时的分项，默认 basic */
+  initialTab?: WorkspaceSettingsSectionKey
 }
 
 export default function WorkspaceSettingsModal({

@@ -83,7 +83,7 @@ const workspace: HelpTopic = {
             label: '统计与配额',
             body: (
                 <P>
-                    「统计信息」展示表数、文档数、成员数与存储用量；存储上限由管理员在
+                    「基本设置」顶部的统计概览展示表数、文档数、设计数、成员数与存储用量；存储上限由管理员在
                     <HelpLink section="configuration" topic="admin" anchor="storage"> 管理台 · 空间分配 </HelpLink>
                     中设置，用超后上传会被拒绝。
                 </P>
