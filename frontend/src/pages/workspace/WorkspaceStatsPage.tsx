@@ -4,15 +4,15 @@
  * 布局参考工作区设置：左侧 Sider 由 MainLayout 渲染「概览 / 贡献统计」分项，
  * 选中项由 URL `?section=` 驱动（缺省 / 未知回落「概览」），内容区只渲染当前分项。
  *
- * - 概览：按启用的功能模块汇总数据表 / 视图 / 数据行 / 文档 / 设计 / 成员 / 存储，
- *   再给出角色信息、工作区只读信息与存储用量进度。数据与工作区设置共用
+ * - 概览：统一为「使用概况 / 工作区信息 / 存储用量」三段，按启用的功能模块汇总
+ *   数据表 / 视图 / 数据行 / 文档 / 设计 / 成员 / 存储。数据与工作区设置共用
  *   `workspace-detail` 查询缓存。
  * - 贡献统计：当前后端没有贡献 / 活跃度聚合接口，先展示空状态占位。
  */
 
 import { useQuery } from '@tanstack/react-query'
 import { useParams, useSearchParams } from 'react-router-dom'
-import { Card, Descriptions, Progress, Space, Tag } from 'antd'
+import { Descriptions, Progress, Tag } from 'antd'
 import {
   BarChartOutlined, FileTextOutlined, EyeOutlined, ColumnWidthOutlined,
   ReadOutlined, ToolOutlined, UserOutlined, HddOutlined, TeamOutlined,
@@ -21,7 +21,7 @@ import { workspaceApi } from '@/api'
 import type { WorkspaceDetail } from '@/api'
 import { formatSize } from '@/utils/formatSize'
 import { workspaceModulesFeatures, WORKSPACE_MODULE_LABEL, normalizeModules } from '@/utils/workspaceModules'
-import { ROLE_LABEL, VISIBILITY_LABEL } from '@/pages/settings/workspaceRoles'
+import { VISIBILITY_LABEL } from '@/pages/settings/workspaceRoles'
 import { normalizeWorkspaceStatsSection } from './workspaceStatsSections'
 
 export default function WorkspaceStatsPage() {
@@ -35,23 +35,22 @@ export default function WorkspaceStatsPage() {
   })
 
   const features = workspaceModulesFeatures(detail?.modules)
-  const myRole = detail?.current_user_role ?? null
   const statItems = [
     ...(features.tables
       ? [
-          { label: '数据表', value: detail?.table_count ?? 0, icon: <FileTextOutlined />, color: 'var(--cn-brand-color)' },
-          { label: '视图', value: detail?.view_count ?? 0, icon: <EyeOutlined />, color: '#10b981' },
-          { label: '数据行', value: detail?.total_rows ?? 0, icon: <ColumnWidthOutlined />, color: '#f59e0b' },
+          { label: '数据表', value: detail?.table_count ?? 0, icon: <FileTextOutlined /> },
+          { label: '视图', value: detail?.view_count ?? 0, icon: <EyeOutlined /> },
+          { label: '数据行', value: detail?.total_rows ?? 0, icon: <ColumnWidthOutlined /> },
         ]
       : []),
     ...(features.documents
-      ? [{ label: '文档', value: detail?.document_count ?? 0, icon: <ReadOutlined />, color: '#08979c' }]
+      ? [{ label: '文档', value: detail?.document_count ?? 0, icon: <ReadOutlined /> }]
       : []),
     ...(features.design
-      ? [{ label: '设计', value: detail?.design_count ?? 0, icon: <ToolOutlined />, color: '#7c3aed' }]
+      ? [{ label: '设计', value: detail?.design_count ?? 0, icon: <ToolOutlined /> }]
       : []),
-    { label: '成员', value: detail?.member_count ?? 0, icon: <UserOutlined />, color: '#8b5cf6' },
-    { label: '占用空间', value: formatSize(detail?.storage_bytes ?? 0), icon: <HddOutlined />, color: '#0ea5e9' },
+    { label: '成员', value: detail?.member_count ?? 0, icon: <UserOutlined /> },
+    { label: '占用空间', value: formatSize(detail?.storage_bytes ?? 0), icon: <HddOutlined /> },
   ]
 
   const storageUsed = detail?.storage_bytes ?? 0
@@ -81,69 +80,58 @@ export default function WorkspaceStatsPage() {
         ) : (
           <>
             <div className="cn-ws-stats-header">
-              <div className="cn-ws-stats-title"><BarChartOutlined /> 工作区统计</div>
+              <div className="cn-ws-stats-title"><BarChartOutlined /> 概览</div>
               <div className="cn-ws-stats-desc">按当前启用的功能模块汇总，数据随工作区内容实时更新。</div>
             </div>
 
-            <div data-testid="ws-stats-grid" className="cn-ws-settings-stats">
-              {statItems.map(item => (
-                <div key={item.label} className="cn-ws-settings-stat" style={{ borderLeft: `3px solid ${item.color}` }}>
-                  <div className="cn-ws-settings-stat-label">{item.icon} {item.label}</div>
-                  <div className="cn-ws-settings-stat-value">
-                    {typeof item.value === 'number' ? item.value.toLocaleString() : item.value}
+            <section className="cn-ws-stats-section">
+              <div className="cn-ws-stats-section-title">使用概况</div>
+              <div data-testid="ws-stats-grid" className="cn-ws-settings-stats">
+                {statItems.map(item => (
+                  <div key={item.label} className="cn-ws-settings-stat">
+                    <div className="cn-ws-settings-stat-label">{item.icon} {item.label}</div>
+                    <div className="cn-ws-settings-stat-value">
+                      {typeof item.value === 'number' ? item.value.toLocaleString() : item.value}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </section>
 
-            <div className="cn-ws-stats-meta">
-              <Card size="small" title={<Space><UserOutlined /> 角色信息</Space>}>
-                <Descriptions size="small" column={1} colon={false}>
-                  <Descriptions.Item label="您的角色">
-                    {myRole
-                      ? <Tag color={myRole === 'owner' ? 'gold' : 'default'}>{ROLE_LABEL[myRole]}</Tag>
-                      : <Tag>非成员</Tag>}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="拥有者">
-                    {detail?.owner
-                      ? (
-                        <>
-                          {detail.owner.username}
-                          {detail.owner.nickname && <span style={{ color: 'var(--cn-text-muted)', marginLeft: 8 }}>({detail.owner.nickname})</span>}
-                        </>
-                      )
-                      : '未指定所有者'}
-                  </Descriptions.Item>
-                </Descriptions>
-              </Card>
+            <section className="cn-ws-stats-section">
+              <div className="cn-ws-stats-section-title">工作区信息（只读）</div>
+              <Descriptions
+                bordered
+                size="small"
+                colon={false}
+                column={{ xs: 1, sm: 1, md: 2 }}
+                styles={{ label: { width: 112, whiteSpace: 'nowrap', color: 'var(--cn-text-secondary)' } }}
+              >
+                <Descriptions.Item label="ID">{detail?.id}</Descriptions.Item>
+                <Descriptions.Item label="创建时间">
+                  {detail?.created_at ? new Date(detail.created_at).toLocaleString() : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="最后更新">
+                  {detail?.updated_at ? new Date(detail.updated_at).toLocaleString() : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="公开性">
+                  {VISIBILITY_LABEL[detail?.visibility ?? 'member']}
+                </Descriptions.Item>
+                <Descriptions.Item label="功能模块">
+                  {normalizeModules(detail?.modules).map(m => (
+                    <Tag key={m} style={{ marginInlineEnd: 4 }}>{WORKSPACE_MODULE_LABEL[m]}</Tag>
+                  ))}
+                </Descriptions.Item>
+                <Descriptions.Item label="标签">
+                  {(detail?.tags ?? []).length > 0
+                    ? (detail?.tags ?? []).map(t => <Tag key={t}>{t}</Tag>)
+                    : <span style={{ color: 'var(--cn-text-muted)' }}>暂无标签</span>}
+                </Descriptions.Item>
+              </Descriptions>
+            </section>
 
-              <Card size="small" title="工作区信息（只读）">
-                <Descriptions size="small" column={1} colon={false}>
-                  <Descriptions.Item label="ID">{detail?.id}</Descriptions.Item>
-                  <Descriptions.Item label="创建时间">
-                    {detail?.created_at ? new Date(detail.created_at).toLocaleString() : '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="最后更新">
-                    {detail?.updated_at ? new Date(detail.updated_at).toLocaleString() : '-'}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="公开性">
-                    {VISIBILITY_LABEL[detail?.visibility ?? 'member']}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="功能模块">
-                    {normalizeModules(detail?.modules).map(m => (
-                      <Tag key={m} style={{ marginInlineEnd: 4 }}>{WORKSPACE_MODULE_LABEL[m]}</Tag>
-                    ))}
-                  </Descriptions.Item>
-                  <Descriptions.Item label="标签">
-                    {(detail?.tags ?? []).length > 0
-                      ? (detail?.tags ?? []).map(t => <Tag key={t}>{t}</Tag>)
-                      : <span style={{ color: 'var(--cn-text-muted)' }}>暂无标签</span>}
-                  </Descriptions.Item>
-                </Descriptions>
-              </Card>
-            </div>
-
-            <Card size="small" title={<Space><HddOutlined /> 存储用量</Space>}>
+            <section className="cn-ws-stats-section">
+              <div className="cn-ws-stats-section-title">存储用量</div>
               <div className="cn-ws-stats-storage-meta">
                 <span>已用 / 配额</span>
                 <span>{formatSize(storageUsed)} / {formatSize(storageQuota)}</span>
@@ -156,7 +144,7 @@ export default function WorkspaceStatsPage() {
                     ? '存储空间即将用尽，建议清理或扩容'
                     : '可继续上传附件与保存文档'}
               </div>
-            </Card>
+            </section>
           </>
         )}
       </div>

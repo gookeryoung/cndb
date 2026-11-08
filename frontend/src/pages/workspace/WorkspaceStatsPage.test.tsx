@@ -59,17 +59,17 @@ describe('WorkspaceStatsPage 工作区统计页', () => {
     expect(screen.getByText('存储用量')).toBeInTheDocument()
   })
 
-  it('概览展示角色信息与工作区只读信息（由常规设置迁入）', async () => {
+  it('概览展示工作区只读信息，不再展示角色信息板块', async () => {
     setupWorkspaceDetailHandler()
     renderPage()
 
     await screen.findByText('1.0 MB / 2.0 MB')
-    expect(screen.getByText('角色信息')).toBeInTheDocument()
     expect(screen.getByText('工作区信息（只读）')).toBeInTheDocument()
-    expect(screen.getByText('所有者')).toBeInTheDocument()
-    expect(screen.getByText('alice')).toBeInTheDocument()
     expect(screen.getByText('10')).toBeInTheDocument()
     expect(screen.getByText('成员可见（仅工作区成员可访问）')).toBeInTheDocument()
+    // 2026-11-08 用户口径：移除角色信息板块
+    expect(screen.queryByText('角色信息')).not.toBeInTheDocument()
+    expect(screen.queryByText('您的角色')).not.toBeInTheDocument()
   })
 
   it('未启用的模块不展示对应统计卡片（tables-only 工作区）', async () => {

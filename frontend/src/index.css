@@ -7140,20 +7140,26 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 }
 
 /* 常规设置：单列表单；统计页复用同一套统计卡片。
- * 角色 / 只读信息已并入统计页，危险操作固定在内容底部。 */
+ * 统计页概览统一为「使用概况 / 工作区信息 / 存储用量」三段。 */
 .cn-ws-settings-stats {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--cn-space-md);
+}
+
+.cn-ws-stats-section {
   margin-bottom: var(--cn-space-lg);
 }
 
-/* 统计页信息卡：角色信息与工作区只读信息双列，窄屏自动回落单列 */
-.cn-ws-stats-meta {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: var(--cn-space-lg);
-  margin-bottom: var(--cn-space-lg);
+.cn-ws-stats-section:last-child {
+  margin-bottom: 0;
+}
+
+.cn-ws-stats-section-title {
+  margin-bottom: var(--cn-space-sm);
+  font-size: var(--cn-text-sm);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-primary);
 }
 
 /* 统计页头部与存储条 */
@@ -7246,10 +7252,28 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   min-width: 0;
 }
 
+/* 常规设置「基本信息」：短字段按行并排、字段间距收紧到 16px；
+ * 保存动作作为卡片底部操作条，与表单内容用细线分隔（参考 GitHub 设置页）。 */
+.cn-ws-basic-card .ant-form-item {
+  margin-bottom: var(--cn-space-xl);
+}
+
+.cn-ws-basic-card .cn-ws-basic-modules {
+  margin-bottom: 0;
+}
+
+.cn-ws-basic-readonly-hint {
+  margin-top: var(--cn-space-md);
+  color: #f59e0b;
+  font-size: var(--cn-text-sm);
+}
+
 .cn-ws-settings-actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: var(--cn-space-md);
+  margin-top: var(--cn-space-xl);
+  padding-top: var(--cn-space-lg);
+  border-top: 1px solid var(--cn-border-soft);
 }
 
 /* 危险操作区：参考 GitHub 设置页放在内容底部，转移 / 删除两行同构。 */

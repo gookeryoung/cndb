@@ -14,7 +14,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Tabs, Form, Input, Select, Switch, Tag, Button,
+  Tabs, Form, Input, Select, Switch, Tag, Button, Row, Col,
   Popconfirm, Card, Space, Avatar,
 } from 'antd'
 import { App as AntApp } from 'antd'
@@ -350,52 +350,65 @@ export default function WorkspaceSettingsContent({
                 onFinish={(v) => save.mutate(v)}
                 disabled={!canEditBasic}
               >
-                <Card size="small" title={<Space><SettingOutlined /> 基本信息</Space>}>
-                  <Form.Item
-                    name="name"
-                    label="工作区名称"
-                    rules={[{ required: true, message: '请输入名称' }]}
-                  >
-                    <Input placeholder="例如：产品研发" />
-                  </Form.Item>
+                <Card
+                  size="small"
+                  title={<Space><SettingOutlined /> 基本信息</Space>}
+                  className="cn-ws-basic-card"
+                >
+                  {/* 短字段三列并排（名称 / 公开性 / 标签），窄屏自动堆叠为单列 */}
+                  <Row gutter={16}>
+                    <Col xs={24} md={10}>
+                      <Form.Item
+                        name="name"
+                        label="工作区名称"
+                        rules={[{ required: true, message: '请输入名称' }]}
+                      >
+                        <Input placeholder="例如：产品研发" />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={8}>
+                      <Form.Item
+                        name="visibility"
+                        label={<>公开性<HelpTip title="修改后立即生效：公开=任何人可读；成员可见=仅工作区成员可访问；私有=仅所有者可见" /></>}
+                      >
+                        <Select
+                          options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
+                          disabled={!canEditBasic}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} md={6}>
+                      <Form.Item name="tags" label="标签（逗号分隔）">
+                        <Input placeholder="例如：研发, 产品" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
                   <Form.Item name="description" label="描述（可选）">
                     <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
                   </Form.Item>
                   <Form.Item
-                    name="visibility"
-                    label={<>公开性<HelpTip title="修改后立即生效：公开=任何人可读；成员可见=仅工作区成员可访问；私有=仅所有者可见" /></>}
-                  >
-                    <Select
-                      options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
-                      disabled={!canEditBasic}
-                    />
-                  </Form.Item>
-                  <Form.Item name="tags" label="标签（逗号分隔）">
-                    <Input placeholder="例如：研发, 产品, 核心业务" />
-                  </Form.Item>
-                  <Form.Item
                     name="modules"
+                    className="cn-ws-basic-modules"
                     label={<>功能模块<HelpTip title="勾选工作区开放的功能：数据分析与数据同步随数据表一并启用，质量检查恒可用。修改后顶部页签与导航随之调整" /></>}
                   >
                     <ModuleCheckCards disabled={!canEditBasic} />
                   </Form.Item>
                   {!canEditBasic && (
-                    <div style={{ marginTop: 12, color: '#f59e0b', fontSize: 'var(--cn-text-sm)' }}>
+                    <div className="cn-ws-basic-readonly-hint">
                       ℹ️ 您的角色（{ROLE_LABEL[myRole ?? 'viewer']}）仅能查看设置，无法修改
                     </div>
                   )}
+                  {canEditBasic && (
+                    <div className="cn-ws-settings-actions">
+                      <Button
+                        type="primary"
+                        block={isMobile}
+                        onClick={() => form.submit()}
+                        loading={save.isPending}
+                      >保存设置</Button>
+                    </div>
+                  )}
                 </Card>
-
-                {canEditBasic && (
-                  <div className="cn-ws-settings-actions">
-                    <Button
-                      type="primary"
-                      block={isMobile}
-                      onClick={() => form.submit()}
-                      loading={save.isPending}
-                    >保存设置</Button>
-                  </div>
-                )}
               </Form>
           </div>
 
