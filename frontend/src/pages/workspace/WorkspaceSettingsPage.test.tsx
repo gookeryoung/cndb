@@ -59,12 +59,12 @@ describe('WorkspaceSettingsPage 工作区设置页', () => {
     expect(document.querySelector('.ant-tabs')).toBeNull()
   })
 
-  it('已下线的 ?section=stats 回落基本设置，并在顶部展示统计概览', async () => {
+  it('旧的 ?section=stats 回落基本设置（统计已改为一级导航）', async () => {
     setupWorkspaceDetailHandler()
     renderPage('/w/10/settings?section=stats')
 
     expect(await screen.findByTestId('ws-settings-section-basic')).toBeVisible()
-    expect(await screen.findByTestId('ws-stats-grid')).toBeVisible()
+    expect(screen.queryByTestId('ws-stats-grid')).toBeNull()
   })
 
   it('未知分项回落到基本设置', async () => {

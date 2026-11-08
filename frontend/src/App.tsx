@@ -27,6 +27,7 @@ const ChangeRequestDetailPage = lazy(() => import('@/pages/changeRequests/Change
 const ChangeRequestRowMergePage = lazy(() => import('@/pages/changeRequests/ChangeRequestRowMergePage'))
 const TableSettingsPage = lazy(() => import('@/pages/settings/TableSettingsPage'))
 const WorkspaceSettingsPage = lazy(() => import('@/pages/workspace/WorkspaceSettingsPage'))
+const WorkspaceStatsPage = lazy(() => import('@/pages/workspace/WorkspaceStatsPage'))
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 const DocumentsLayout = lazy(() => import('@/pages/documents/DocumentsLayout'))
 const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
@@ -120,6 +121,9 @@ function AuthenticatedApp() {
           } />
           <Route path="w/:wid/design/:designId" element={
             <Suspense fallback={<PageFallback />}><DesignEditorPage /></Suspense>
+          } />
+          <Route path="w/:wid/stats" element={
+            <Suspense fallback={<PageFallback />}><WorkspaceStatsPage /></Suspense>
           } />
           <Route path="w/:wid/settings" element={
             <Suspense fallback={<PageFallback />}><WorkspaceSettingsPage /></Suspense>

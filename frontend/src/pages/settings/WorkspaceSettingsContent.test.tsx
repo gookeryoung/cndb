@@ -244,49 +244,31 @@ describe('WorkspaceSettingsContent 基本设置与保存', () => {
   })
 })
 
-describe('WorkspaceSettingsContent 统计信息并入基本设置', () => {
-  it('基本设置顶部渲染统计卡片与角色信息，owner 可见危险操作区', async () => {
+describe('WorkspaceSettingsContent 基本设置信息区', () => {
+  it('基本设置渲染角色信息与工作区信息，owner 可见危险操作区', async () => {
     renderContent('owner')
     await waitDetailLoaded()
 
     expect(screen.getByText('危险操作')).toBeInTheDocument()
     expect(screen.getByText('角色信息')).toBeInTheDocument()
-    // 统计卡片里的「数据表」「数据行」与功能模块勾选项同名，须限定在统计网格内查询
-    const stats = within(screen.getByTestId('ws-stats-grid'))
-    expect(stats.getByText('数据表')).toBeInTheDocument()
-    expect(stats.getByText('数据行')).toBeInTheDocument()
-    // 需求 0093：补充文档 / 设计统计（默认三模块全开）；数值取卡片内文本，避免与其它卡片的数字撞车
-    const cardText = (label: string) =>
-      stats.getByText(label).parentElement?.parentElement?.textContent ?? ''
-    expect(stats.getByText('文档')).toBeInTheDocument()
-    expect(cardText('文档')).toContain('8')
-    expect(stats.getByText('设计')).toBeInTheDocument()
-    expect(cardText('设计')).toContain('2')
+    expect(screen.getByText('工作区信息（只读）')).toBeInTheDocument()
   })
 
-  it('危险操作区位于内容底部：提供转移所有权与删除工作区两项', async () => {
+  it('危险操作区位于内容底部：提供转让所有权与删除工作区两项', async () => {
     renderContent('owner')
     await waitDetailLoaded()
 
     const danger = document.querySelector('.cn-ws-settings-danger')!
     expect(danger.parentElement).toHaveClass('cn-ws-basic-settings')
     expect(danger.parentElement?.lastElementChild).toBe(danger)
-    expect(within(danger as HTMLElement).getByText('转移工作区所有权')).toBeInTheDocument()
+    expect(
+      within(danger as HTMLElement).getByText('转让所有权', { selector: '.cn-ws-settings-danger-row-title' }),
+    ).toBeInTheDocument()
     expect(within(danger as HTMLElement).getByText('删除此工作区')).toBeInTheDocument()
 
-    // 转移入口复用所有权转让弹窗
-    fireEvent.click(within(danger as HTMLElement).getByRole('button', { name: /转移所有权/ }))
+    // 转让入口复用所有权转让弹窗
+    fireEvent.click(within(danger as HTMLElement).getByRole('button', { name: /转让所有权/ }))
     expect(await screen.findByText('转让工作区所有权')).toBeInTheDocument()
-  })
-
-  it('未启用的模块不展示对应统计卡片（tables-only 工作区）', async () => {
-    renderContent('owner', { modules: ['tables'] })
-    await waitDetailLoaded()
-
-    const stats = within(await screen.findByTestId('ws-stats-grid'))
-    expect(stats.getByText('数据表')).toBeInTheDocument()
-    expect(stats.queryByText('文档')).not.toBeInTheDocument()
-    expect(stats.queryByText('设计')).not.toBeInTheDocument()
   })
 })
 
@@ -472,15 +454,11 @@ describe('WorkspaceSettingsContent 移动端布局', () => {
     }
   })
 
-  it('保存按钮整行，统计卡片两列', async () => {
+  it('保存按钮整行', async () => {
     renderContent('owner')
     await waitDetailLoaded()
 
     // 窄屏保存按钮占满整行，避免右下角小按钮难点
     expect(screen.getByRole('button', { name: '保存设置' })).toHaveClass('ant-btn-block')
-
-    const grid = await screen.findByTestId('ws-stats-grid')
-    // 窄屏固定两列，不再按 minmax(140px) 自适应收缩
-    expect(grid.style.gridTemplateColumns).toBe('repeat(2, minmax(0, 1fr))')
   })
 })

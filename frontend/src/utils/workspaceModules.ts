@@ -88,8 +88,8 @@ export function workspaceLandingSegment(
   return 'design'
 }
 
-/** 切换工作区时保持的一级导航段（三模块 + 恒开放的工作区设置）. */
-export type WorkspaceNavSegment = WorkspaceModule | 'settings'
+/** 切换工作区时保持的一级导航段（三模块 + 恒开放的统计 / 工作区设置）. */
+export type WorkspaceNavSegment = WorkspaceModule | 'stats' | 'settings'
 
 /** 切换工作区时的目标路由段：保持当前一级模块（目标工作区已启用时）；
  * 目标工作区不存在该模块时，落到它有的**第一个一级模块默认页**（数据表 → 文档 → 设计，
@@ -103,6 +103,7 @@ export function workspaceSwitchSegment(
   current: WorkspaceNavSegment | null | undefined,
   modules?: WorkspaceModule[] | null,
 ): string {
+  if (current === 'stats') return 'stats'
   if (current === 'settings') return 'settings'
   if (current && new Set(normalizeModules(modules)).has(current)) return current
   return workspaceLandingSegment(modules)

@@ -83,7 +83,7 @@ const workspace: HelpTopic = {
             label: '统计与配额',
             body: (
                 <P>
-                    「基本设置」顶部的统计概览展示表数、文档数、设计数、成员数与存储用量；存储上限由管理员在
+                    「统计」页展示表数、文档数、设计数、成员数与存储用量；存储上限由管理员在
                     <HelpLink section="configuration" topic="admin" anchor="storage"> 管理台 · 空间分配 </HelpLink>
                     中设置，用超后上传会被拒绝。
                 </P>
@@ -94,7 +94,7 @@ const workspace: HelpTopic = {
             label: '危险操作',
             body: (
                 <Note kind="warn">
-                    「基本设置」底部的危险操作区集中提供「转移所有权」与「删除工作区」。删除工作区会永久删除其中的数据表、数据行、视图、文档与成员关系，无法恢复。删除前先用
+                    「基本设置」底部的危险操作区集中提供「转让所有权」与「删除工作区」。删除工作区会永久删除其中的数据表、数据行、视图、文档与成员关系，无法恢复。删除前先用
                     <HelpLink section="configuration" topic="admin" anchor="backup"> 管理台 · 系统备份 </HelpLink>
                     做一次整库备份。所有权可转让给其他成员，转让后自己降为编辑者。
                 </Note>

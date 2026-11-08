@@ -1,7 +1,8 @@
 /** 工作区设置 — 内容组件（可嵌入 Modal 或独立页面）.
  *
- * 包含三个分项：基本设置（含工作区概览统计）/ 权限 / 生命周期
- * 基本设置采用「顶部概览 + 左表单 / 右侧信息」布局：概览先行、可编辑项居中、只读与危险操作收敛到侧列。
+ * 包含三个分项：基本设置 / 权限 / 生命周期（统计信息为独立一级导航「统计」）
+ * 基本设置采用「左表单 / 右侧信息」布局：可编辑项居中，存储 / 角色 / 只读信息收敛到侧列，
+ * 危险操作固定在内容底部（参考 GitHub 设置页）。
  * 所有颜色均使用 CSS 变量，自动适配深浅主题。
  *
  * Props:
@@ -14,13 +15,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   Tabs, Form, Input, Select, Switch, Tag, Button, Descriptions,
-  Popconfirm, Card, Space, Avatar, Progress,
+  Popconfirm, Card, Space, Avatar,
 } from 'antd'
 import { App as AntApp } from 'antd'
 import {
-  FileTextOutlined, EyeOutlined, HddOutlined,
-  ColumnWidthOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
-  ReadOutlined, ToolOutlined, SettingOutlined, ExclamationCircleOutlined,
+  EyeOutlined, UserOutlined, DeleteOutlined, SafetyOutlined, SwapOutlined,
+  SettingOutlined, ExclamationCircleOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -33,9 +33,8 @@ import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import HelpTip from '@/components/HelpTip'
 import ModuleCheckCards from '@/components/ModuleCheckCards'
-import { formatSize } from '@/utils/formatSize'
 import {
-  DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules, workspaceModulesFeatures,
+  DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules,
 } from '@/utils/workspaceModules'
 import AddMemberModal from './AddMemberModal'
 import WorkspaceLifecyclePanel from './WorkspaceLifecyclePanel'
@@ -225,36 +224,6 @@ export default function WorkspaceSettingsContent({
     onError: (err) => message.error(err instanceof Error ? err.message : '转让失败'),
   })
 
-  const statItems = useMemo(() => {
-    if (!detail) return []
-    const features = workspaceModulesFeatures(detail.modules)
-    return [
-      ...(features.tables
-        ? [
-            { label: '数据表', value: (detail.table_count ?? 0).toLocaleString(), icon: <FileTextOutlined />, color: 'var(--cn-brand-color)' },
-            { label: '视图', value: (detail.view_count ?? 0).toLocaleString(), icon: <EyeOutlined />, color: '#10b981' },
-            { label: '数据行', value: (detail.total_rows ?? 0).toLocaleString(), icon: <ColumnWidthOutlined />, color: '#f59e0b' },
-          ]
-        : []),
-      ...(features.documents
-        ? [{ label: '文档', value: (detail.document_count ?? 0).toLocaleString(), icon: <ReadOutlined />, color: '#08979c' }]
-        : []),
-      ...(features.design
-        ? [{ label: '设计', value: (detail.design_count ?? 0).toLocaleString(), icon: <ToolOutlined />, color: '#7c3aed' }]
-        : []),
-      { label: '成员', value: (detail.member_count ?? 0).toLocaleString(), icon: <UserOutlined />, color: '#8b5cf6' },
-      { label: '占用空间', value: formatSize(detail.storage_bytes ?? 0), icon: <HddOutlined />, color: '#0ea5e9' },
-    ]
-  }, [detail])
-
-  // 存储用量：已用 / 配额（默认 100MB）与使用率配色
-  const storageUsed = detail?.storage_bytes ?? 0
-  const storageQuota = detail?.storage_quota_bytes ?? 100 * 1024 * 1024
-  const storagePercent = storageQuota > 0
-    ? Math.min(100, (storageUsed / storageQuota) * 100)
-    : 100
-  const storageColor = storagePercent >= 100 ? '#dc2626' : storagePercent >= 80 ? '#f59e0b' : '#0ea5e9'
-
   // 公共样式常量
   const dangerBoxStyle: React.CSSProperties = {
     background: 'var(--cn-bg-danger-subtle)',
@@ -383,26 +352,6 @@ export default function WorkspaceSettingsContent({
       label: tabLabel('basic'),
       children: (
         <div className="cn-ws-basic-settings">
-          {/* 概览统计（原「统计信息」分项并入基本设置）：先给全貌，再进入可编辑项 */}
-          <div
-            data-testid="ws-stats-grid"
-            className="cn-ws-settings-stats"
-            style={{
-              gridTemplateColumns: isMobile ? 'repeat(2, minmax(0, 1fr))' : 'repeat(auto-fit, minmax(140px, 1fr))',
-            }}
-          >
-            {statItems.map(item => (
-              <div
-                key={item.label}
-                className="cn-ws-settings-stat"
-                style={{ borderLeft: `3px solid ${item.color}` }}
-              >
-                <div className="cn-ws-settings-stat-label">{item.icon} {item.label}</div>
-                <div className="cn-ws-settings-stat-value">{item.value}</div>
-              </div>
-            ))}
-          </div>
-
           <div className="cn-ws-settings-layout">
             {/* 主列：可编辑的基本信息 */}
             <div className="cn-ws-settings-main">
@@ -462,25 +411,8 @@ export default function WorkspaceSettingsContent({
               </Form>
             </div>
 
-            {/* 侧列：存储 / 角色与只读信息 / 危险操作 */}
+            {/* 侧列：角色与只读信息 */}
             <aside className="cn-ws-settings-side">
-              <Card size="small" title={<Space><HddOutlined /> 存储用量</Space>}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>已用 / 配额</span>
-                  <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>
-                    {formatSize(storageUsed)} / {formatSize(storageQuota)}
-                  </span>
-                </div>
-                <Progress percent={Math.round(storagePercent * 10) / 10} strokeColor={storageColor} size="small" />
-                <div style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-muted)', marginTop: 4 }}>
-                  {storagePercent >= 100
-                    ? '存储空间已用尽，请清理文件或联系管理员扩容'
-                    : storagePercent >= 80
-                      ? '存储空间即将用尽，建议清理或扩容'
-                      : '可继续上传附件与保存文档'}
-                </div>
-              </Card>
-
               <Card size="small" title={<Space><UserOutlined /> 角色信息</Space>}>
                 <Descriptions size="small" column={1} colon={false}>
                   <Descriptions.Item label="您的角色">
@@ -529,7 +461,7 @@ export default function WorkspaceSettingsContent({
           </div>
 
           {/* 危险操作区：参考 GitHub 设置页置于底部，仅 owner 可见。
-           * 「转移所有权」与「删除工作区」都是不可逆操作，集中放在同一区域并用危险色提示。 */}
+           * 「转让所有权」与「删除工作区」都是不可逆操作，集中放在同一区域并用危险色提示。 */}
           {canDeleteWorkspace && (
             <div className="cn-ws-settings-danger" style={dangerBoxStyle}>
               <div className="cn-ws-settings-danger-title">
@@ -537,7 +469,7 @@ export default function WorkspaceSettingsContent({
               </div>
               <div className="cn-ws-settings-danger-row">
                 <div>
-                  <div className="cn-ws-settings-danger-row-title">转移工作区所有权</div>
+                  <div className="cn-ws-settings-danger-row-title">转让所有权</div>
                   <div className="cn-ws-settings-danger-row-desc">
                     将工作区转让给其他成员；转让后您将失去所有者特权，回落到编辑者角色。
                   </div>
@@ -547,7 +479,7 @@ export default function WorkspaceSettingsContent({
                   icon={<SwapOutlined />}
                   onClick={() => setTransferOpen(true)}
                 >
-                  转移所有权
+                  转让所有权
                 </Button>
               </div>
               <div className="cn-ws-settings-danger-row">
@@ -608,7 +540,7 @@ export default function WorkspaceSettingsContent({
           size={isMobile ? 'small' : 'middle'}
         />
       )}
-      {/* 转移所有权弹窗：基本设置危险区与权限页共用同一实例，避免重复挂载 */}
+      {/* 转让所有权弹窗：基本设置危险区与权限页共用同一实例，避免重复挂载 */}
       <TransferOwnerModal
         open={transferOpen}
         onCancel={() => setTransferOpen(false)}

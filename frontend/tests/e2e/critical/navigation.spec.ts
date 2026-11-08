@@ -189,15 +189,35 @@ test.describe("MainLayout Header 导航按钮", () => {
     await expect(sider).toBeVisible()
     await expect(page.getByTestId("sider-documents")).toHaveCount(0)
     await expect(page.getByTestId("sider-tables")).toHaveCount(0)
-    // 默认渲染基本设置分项（统计概览已并入）
+    // 默认渲染基本设置分项（统计已拆为一级导航）
     await expect(page.getByTestId("ws-settings-section-basic")).toBeVisible()
-    await expect(page.getByTestId("ws-stats-grid")).toBeVisible()
+    await expect(page.getByTestId("ws-stats-grid")).toHaveCount(0)
 
     // 侧栏分项驱动内容区：?section=permissions
     await sider.getByText("权限").click()
     await page.waitForURL(/\/settings\?section=permissions$/)
     await expect(page.getByTestId("ws-settings-section-permissions")).toBeVisible()
     await expect(page.getByTestId("ws-settings-section-basic")).toHaveCount(0)
+  })
+
+  test("统计为一级导航入口，位于工作区设置左侧", async ({ page }) => {
+    test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
+
+    await page.goto(`/w/${WID}/documents`)
+    await page.waitForURL(/\/documents$/)
+
+    const statsNav = page.getByTestId("ws-nav-stats")
+    await expect(statsNav).toHaveText("统计")
+    await expect(statsNav).toBeVisible()
+    // 顺序：统计紧邻工作区设置左侧
+    expect(
+      await statsNav.evaluate(el => el.nextElementSibling?.getAttribute("data-testid")),
+    ).toBe("ws-nav-settings")
+
+    await statsNav.click()
+    await page.waitForURL(/\/stats$/)
+    await expect(page.getByTestId("ws-stats-grid")).toBeVisible()
+    await expect(page.getByTestId("ws-stats-grid")).toContainText("数据表")
   })
 
   test("切到文档段：侧栏由数据表列表切换为文档树，进入文档后侧栏保持文档树并高亮当前文档", async ({ page }) => {

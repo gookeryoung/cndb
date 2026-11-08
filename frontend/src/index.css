@@ -7139,13 +7139,49 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: var(--cn-space-xl);
 }
 
-/* 基本设置：顶部概览统计 + 左表单 / 右信息双列。
- * 概览先给全貌；主列承载可编辑项，侧列收敛存储、角色 / 只读信息与危险操作，
+/* 基本设置：左表单 / 右信息双列；统计页复用同一套统计卡片。
+ * 主列承载可编辑项，侧列收敛角色 / 只读信息，危险操作固定在内容底部，
  * 窄屏（<992px）自动回落单列，避免侧栏被压成窄条。 */
 .cn-ws-settings-stats {
   display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: var(--cn-space-md);
   margin-bottom: var(--cn-space-lg);
+}
+
+/* 统计页头部与存储条 */
+.cn-ws-stats-header {
+  margin-bottom: var(--cn-space-lg);
+}
+
+.cn-ws-stats-title {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  font-size: var(--cn-text-xl);
+  font-weight: var(--cn-weight-semibold);
+  color: var(--cn-text-primary);
+}
+
+.cn-ws-stats-desc {
+  margin-top: var(--cn-space-xs);
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-secondary);
+}
+
+.cn-ws-stats-storage-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--cn-space-xs);
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-secondary);
+}
+
+.cn-ws-stats-storage-hint {
+  margin-top: var(--cn-space-xs);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
 }
 
 .cn-ws-settings-stat {
@@ -7358,6 +7394,10 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 
   .cn-ws-settings-stat {
     padding: var(--cn-space-md);
+  }
+
+  .cn-ws-settings-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .cn-subpage {

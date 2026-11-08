@@ -88,6 +88,12 @@ function DocumentsStub() {
     return <div data-testid="documents-page-stub">{loc.pathname}{loc.search}</div>
 }
 
+/** 工作区统计路由桩 —— 一级导航「统计」/w/:wid/stats */
+function StatsStub() {
+    const loc = useLocation()
+    return <div data-testid="stats-page-stub">{loc.pathname}</div>
+}
+
 /** 工作区设置路由桩 —— 展示当前 pathname + query 供断言（分项由 ?section= 驱动） */
 function SettingsStub() {
     const loc = useLocation()
@@ -122,6 +128,7 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 {/* 文档质量检查：入口留在文档上下文（静态段优先于 :docId） */}
                 <Route path="w/:wid/documents/pipelines" element={<DocumentsStub />} />
                 <Route path="w/:wid/documents/pipelines/:rid" element={<DocumentsStub />} />
+                <Route path="w/:wid/stats" element={<StatsStub />} />
                 <Route path="w/:wid/settings" element={<SettingsStub />} />
                 <Route path="w/:wid/analytics" element={<WsSectionStub />} />
                 <Route path="w/:wid/datasource" element={<WsSectionStub />} />
@@ -267,10 +274,30 @@ describe('MainLayout 顶部导航', () => {
         await waitFor(() => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
-        const navIds = ['ws-nav-tables', 'ws-nav-documents', 'ws-nav-design', 'ws-nav-settings']
+        const navIds = ['ws-nav-tables', 'ws-nav-documents', 'ws-nav-design', 'ws-nav-stats', 'ws-nav-settings']
         for (const id of navIds) {
             expect(screen.getByTestId(id).querySelector('.anticon')).not.toBeNull()
         }
+    })
+
+    it('统计为一级导航入口，位于工作区设置左侧并可跳转', async () => {
+        renderLayout(mockUser)
+
+        await waitFor(() => expect(screen.getByTestId('tables-page-stub')).toBeVisible())
+
+        const nav = screen.getByTestId('ws-module-nav')
+        const statsNav = screen.getByTestId('ws-nav-stats')
+        const settingsNav = screen.getByTestId('ws-nav-settings')
+        expect(statsNav).toHaveTextContent('统计')
+        // 顺序：统计紧邻工作区设置左侧
+        expect(statsNav.nextElementSibling).toBe(settingsNav)
+        expect(nav.contains(statsNav)).toBe(true)
+
+        fireEvent.click(statsNav)
+        await waitFor(() => {
+            expect(screen.getByTestId('stats-page-stub')).toHaveTextContent('/w/10/stats')
+        })
+        expect(screen.getByTestId('ws-nav-stats')).toHaveAttribute('aria-current', 'page')
     })
 
     it('右上角仅保留头像图标：昵称/账号名不再展示在顶栏（仅存在于用户菜单）', async () => {

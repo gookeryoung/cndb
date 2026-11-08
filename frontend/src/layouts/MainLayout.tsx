@@ -343,8 +343,10 @@ export default function MainLayout() {
             ? 'datasource'
             : location.includes('/pipelines')
               ? 'pipelines'
-              : location.includes('/settings')
-                ? 'settings'
+              : location.startsWith(`/w/${wid}/stats`)
+                ? 'stats'
+                : location.includes('/settings')
+                  ? 'settings'
               : 'tables'
 
   /** 数据表派生二级功能（数据分析 / 数据同步）的显示窗口：仅在数据表模块上下文
@@ -363,12 +365,14 @@ export default function MainLayout() {
   const currentNavSegment: WorkspaceNavSegment =
     activeWsTab === 'documents' ? 'documents'
       : activeWsTab === 'design' ? 'design'
-        : activeWsTab === 'settings' ? 'settings'
-          : 'tables'
+        : activeWsTab === 'stats' ? 'stats'
+          : activeWsTab === 'settings' ? 'settings'
+            : 'tables'
 
-  /** 顶栏一级模块导航（需求 0081 C4）：数据表 → 文档 → 设计 → 工作区设置.
+  /** 顶栏一级模块导航（需求 0081 C4）：数据表 → 文档 → 设计 → 项目 → 统计 → 工作区设置.
    *
-   * 前三项按勾选模块门控（ADR 0080 口径），「工作区设置」恒显；
+   * 前三项按勾选模块门控（ADR 0080 口径），「统计」「工作区设置」恒显；
+   * 统计放在工作区设置左侧（GitHub Insights 同形）。
    * 数据表 / 文档 / 设计带数量徽标（仅数据就绪后渲染，0 也显示）；
    * key 即路由段（/w/:wid/{key}），激活态由 activeWsTab 驱动。
    * 仅桌面端渲染：移动端顶栏放不下，一级模块维持页签行承载（C5）。
@@ -399,6 +403,7 @@ export default function MainLayout() {
       label: '项目',
       count: undefined,
     }] : []),
+    { key: 'stats', icon: <BarChartOutlined />, label: '统计', count: undefined },
     { key: 'settings', icon: <SettingOutlined />, label: '工作区设置', count: undefined },
   ] as const
 
