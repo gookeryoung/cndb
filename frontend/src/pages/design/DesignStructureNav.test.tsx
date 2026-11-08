@@ -161,6 +161,22 @@ describe('设计侧栏 · 产品列表态（ADR 0109 D2 / C4）', () => {
     expect(screen.getByTestId('design-row-21')).toBeInTheDocument()
   })
 
+  it('筛选条件按工作区会话记忆：刷新后恢复搜索词并继续收窄列表', async () => {
+    sessionStorage.setItem('cndb_design_nav_filters_v1:10', JSON.stringify({
+      keyword: '小车', kindFilter: 'all', libraryScope: 'all',
+      libraryOwnedOnly: false, libraryIncludeArchived: false, libraryKeyword: '',
+    }))
+    useListHandler([
+      DESIGN,
+      { ...DESIGN, id: 21, title: '法兰板', kind: 'part' },
+    ])
+    renderNav('/w/10/design')
+
+    await screen.findByTestId('design-row-20')
+    expect(screen.getByTestId('design-nav-filter')).toHaveValue('小车')
+    await waitFor(() => expect(screen.queryByTestId('design-row-21')).toBeNull())
+  })
+
   it('空列表显示新建引导，viewer 不显示新建入口', async () => {
     useListHandler([])
     useViewerHandler()

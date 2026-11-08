@@ -1054,6 +1054,52 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         await waitFor(() => expect(toggle.querySelector('.anticon-menu-unfold')).not.toBeNull())
     })
 
+    it('主侧栏折叠态本地记忆：刷新恢复收起，展开后写回偏好', async () => {
+        localStorage.setItem('cndb_sider_collapsed', 'true')
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => expect(screen.getByTestId('sider-tables')).toBeVisible())
+        const sider = document.querySelector('.ant-layout-sider')
+        expect(sider).toHaveClass('ant-layout-sider-collapsed')
+
+        const trigger = document.querySelector('.ant-layout-sider-trigger') as HTMLElement
+        fireEvent.click(trigger)
+        await waitFor(() => expect(localStorage.getItem('cndb_sider_collapsed')).toBe('false'))
+    })
+
+    it('文档树展开态会话记忆：刷新后保持收起，点击展开写回会话', async () => {
+        sessionStorage.setItem(
+            'cndb_doc_tree_state_v1:10',
+            JSON.stringify({ expanded: [], collapsedAll: true }),
+        )
+        renderLayout(mockUser, '/w/10/documents')
+
+        const toggle = await screen.findByTestId('doc-tree-expand-toggle')
+        expect(toggle.querySelector('.anticon-menu-unfold')).not.toBeNull()
+
+        fireEvent.click(toggle)
+        await waitFor(() => {
+            const stored = JSON.parse(sessionStorage.getItem('cndb_doc_tree_state_v1:10') ?? '{}')
+            expect(stored.collapsedAll).toBe(false)
+        })
+    })
+
+    it('设置页沿用最近模块侧栏：刷新后直接进设置仍显示文档树', async () => {
+        sessionStorage.setItem('cndb_last_module_sider', '"documents"')
+        renderLayout(mockUser, '/w/10/settings')
+
+        await waitFor(() => expect(screen.getByTestId('sider-documents')).toBeVisible())
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
+    })
+
+    it('侧栏表搜索词按工作区会话记忆：刷新后仍保留', async () => {
+        sessionStorage.setItem('cndb_table_keyword:10', '"客户"')
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => expect(screen.getByTestId('sider-tables')).toBeVisible())
+        expect(screen.getByPlaceholderText('搜索表…')).toHaveValue('客户')
+    })
+
     it('文档编辑器段：侧栏仍是同一棵文档树并高亮当前文档，不再显示大纲', async () => {
         renderLayout(mockUser, '/w/10/documents/2')
 

@@ -27,6 +27,7 @@ import type {
 } from '@/api'
 import SearchInput from '@/components/SearchInput'
 import { formatDateTime } from '@/utils/datetime'
+import { usePersistedState } from '@/utils/persistedState'
 import {
   designEditorPath, latestDesignId, outlineKeyPath, outlineToTree, resolveOutlinePath,
 } from './designOutline'
@@ -89,14 +90,29 @@ export default function DesignStructureNav({
     return activeLibraryId !== undefined ? 'library' : 'list'
   })
 
-  const [keyword, setKeyword] = useState('')
-  // 类型筛选（ADR 0103 C8 / D12）：全部 / 零件 / 装配（kind 为 0086 既有字段，零后端）
-  const [kindFilter, setKindFilter] = useState<'all' | 'part' | 'assembly'>('all')
-  // 模块库筛选（ADR 0118 P1）：可见范围 / 仅本工作区发布 / 含归档（owner）
-  const [libraryScope, setLibraryScope] = useState<'all' | 'public' | 'workspace'>('all')
-  const [libraryOwnedOnly, setLibraryOwnedOnly] = useState(false)
-  const [libraryIncludeArchived, setLibraryIncludeArchived] = useState(false)
-  const [libraryKeyword, setLibraryKeyword] = useState('')
+  /** 侧栏筛选：产品搜索 / 类型 + 模块库可见范围等，按工作区会话级记忆，刷新不丢 */
+  const [filters, setFilters] = usePersistedState<{
+    keyword: string
+    kindFilter: 'all' | 'part' | 'assembly'
+    libraryScope: 'all' | 'public' | 'workspace'
+    libraryOwnedOnly: boolean
+    libraryIncludeArchived: boolean
+    libraryKeyword: string
+  }>(
+    `cndb_design_nav_filters_v1:${workspaceId}`,
+    {
+      keyword: '',
+      kindFilter: 'all',
+      libraryScope: 'all',
+      libraryOwnedOnly: false,
+      libraryIncludeArchived: false,
+      libraryKeyword: '',
+    },
+    'session',
+  )
+  const { keyword, kindFilter, libraryScope, libraryOwnedOnly, libraryIncludeArchived, libraryKeyword } = filters
+  const patchFilters = (patch: Partial<typeof filters>) =>
+    setFilters(prev => ({ ...prev, ...patch }))
   const [createOpen, setCreateOpen] = useState(false)
   const [createForm] = Form.useForm<DesignFormValues>()
   const [renaming, setRenaming] = useState<DesignListItem | null>(null)
@@ -526,7 +542,7 @@ export default function DesignStructureNav({
               <SearchInput
                 placeholder="搜索模块名称 / key…"
                 value={libraryKeyword}
-                onChange={event => setLibraryKeyword(event.target.value)}
+                onChange={event => patchFilters({ libraryKeyword: event.target.value })}
                 data-testid="design-library-filter"
                 style={{ width: '100%' }}
               />
@@ -534,7 +550,7 @@ export default function DesignStructureNav({
                 size="small"
                 block
                 value={libraryScope}
-                onChange={value => setLibraryScope(value as 'all' | 'public' | 'workspace')}
+                onChange={value => patchFilters({ libraryScope: value as 'all' | 'public' | 'workspace' })}
                 options={[
                   { value: 'all', label: '全部' },
                   { value: 'public', label: '公开' },
@@ -543,14 +559,14 @@ export default function DesignStructureNav({
               />
               <Checkbox
                 checked={libraryOwnedOnly}
-                onChange={event => setLibraryOwnedOnly(event.target.checked)}
+                onChange={event => patchFilters({ libraryOwnedOnly: event.target.checked })}
               >
                 仅本工作区发布
               </Checkbox>
               {isOwner && (
                 <Checkbox
                   checked={libraryIncludeArchived}
-                  onChange={event => setLibraryIncludeArchived(event.target.checked)}
+                  onChange={event => patchFilters({ libraryIncludeArchived: event.target.checked })}
                 >
                   含已归档
                 </Checkbox>
@@ -586,7 +602,7 @@ export default function DesignStructureNav({
               <SearchInput
                 placeholder="搜索设计…"
                 value={keyword}
-                onChange={event => setKeyword(event.target.value)}
+                onChange={event => patchFilters({ keyword: event.target.value })}
                 data-testid="design-nav-filter"
                 style={{ width: '100%' }}
               />
@@ -594,7 +610,7 @@ export default function DesignStructureNav({
                 size="small"
                 block
                 value={kindFilter}
-                onChange={value => setKindFilter(value as 'all' | 'part' | 'assembly')}
+                onChange={value => patchFilters({ kindFilter: value as 'all' | 'part' | 'assembly' })}
                 data-testid="design-kind-filter"
                 options={[
                   { value: 'all', label: '全部' },

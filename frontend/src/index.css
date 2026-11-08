@@ -1504,6 +1504,17 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   .cn-ws-detail {
     padding-left: var(--cn-space-lg);
   }
+
+  /* 名称占满行内剩余宽度（配合组件侧移动端隐藏模块徽标）：
+     flex 项里文字徽标不可收缩、名称可收缩到 0，若名称不主动占满会被徽标挤没 */
+  .cn-ws-row-title {
+    flex: 1 1 auto;
+  }
+
+  .cn-ws-row-title .cn-ws-row-name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

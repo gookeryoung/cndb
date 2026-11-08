@@ -38,6 +38,8 @@ import {
 } from '@/utils/workspaceModules'
 import { formatMeta } from '@/components/Document/docFormat'
 import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
+import { readScrollTop, writeScrollTop } from './scrollMemory'
+import { usePersistedState } from '@/utils/persistedState'
 import { WEIGHT } from '@/theme/tokens'
 
 // Modal 组件 lazy import：点击打开时才加载
@@ -143,7 +145,8 @@ export default function MainLayout() {
   const logout = useAuthStore(s => s.logout)
   const { isMobile } = useResponsive()
   const queryClient = useQueryClient()
-  const [collapsed, setCollapsed] = useState(false)
+  // 侧栏折叠态：本地偏好持久化，刷新 / 重新进入后保持用户最后一次选择
+  const [collapsed, setCollapsed] = usePersistedState('cndb_sider_collapsed', false)
   const settingsOpen = useUiStore(s => s.settingsOpen)
   const settingsTab = useUiStore(s => s.settingsTab)
   const openSettings = useUiStore(s => s.openSettings)
@@ -152,6 +155,36 @@ export default function MainLayout() {
   const [aboutOpen, setAboutOpen] = useState(false)
   /** 顶部导航横滑容器（工作区页签 + 二级页签）—— 窄屏下把激活项滚入可视区 */
   const wsTabsRef = useRef<HTMLDivElement>(null)
+  /** 内容区滚动容器：滚动时记录位置，返回 / 刷新同页后恢复（会话级） */
+  const contentRef = useRef<HTMLDivElement>(null)
+  const scrollSaveTimerRef = useRef<number | undefined>(undefined)
+  const handleContentScroll = useCallback(() => {
+    const el = contentRef.current
+    if (!el) return
+    const top = el.scrollTop
+    window.clearTimeout(scrollSaveTimerRef.current)
+    scrollSaveTimerRef.current = window.setTimeout(() => writeScrollTop(location, top), 150)
+  }, [location])
+
+  // 路由切换后恢复上次滚动位置；内容为懒加载，等两帧让高度稳定后再设置，避免被 clamp 到 0
+  useEffect(() => {
+    const top = readScrollTop(location)
+    if (top <= 0) return
+    let raf2 = 0
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const el = contentRef.current
+        if (el) el.scrollTop = top
+      })
+    })
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+    }
+  }, [location])
+
+  // 离开路由 / 卸载时清掉待写定时器，避免把上一页位置写到新路径
+  useEffect(() => () => window.clearTimeout(scrollSaveTimerRef.current), [location])
   const [searchParams] = useSearchParams()
   // 移动端抽屉导航开关（仅 isMobile 时渲染汉堡入口）
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -222,25 +255,51 @@ export default function MainLayout() {
   const [docTreeKeyword] = useDocTitleFilter()
   // 编辑器路由参数：仅纯数字为真实文档 id（静态子页段不会落入 docId，此处双保险）
   const activeDocId = docId && /^\d+$/.test(docId) ? docId : undefined
-  // 树展开态：用户展开/收起前按「当前文档祖先链 + 一级文件夹」自动展开；交互后以手动状态为准
-  const [manualExpanded, setManualExpanded] = useState<string[] | null>(null)
-  const setDocTreeExpanded = (keys: string[]) => setManualExpanded(keys)
+  // 树展开态：用户展开/收起前按「当前文档祖先链 + 一级文件夹」自动展开；
+  // 首次手动交互后以持久化状态为准（按工作区、会话级），刷新 / 返回不丢。
+  const [docTreeState, setDocTreeState] = usePersistedState<{
+    expanded: string[] | null
+    collapsedAll: boolean
+  }>(
+    `cndb_doc_tree_state_v1:${wid ?? 'none'}`,
+    { expanded: null, collapsedAll: false },
+    'session',
+  )
+  /** 当前树中的文件夹 id —— 写入展开态时剪掉已删除节点，避免持久化集合无限膨胀 */
+  const folderIds = useMemo(() => {
+    const ids = new Set<string>()
+    const walk = (nodes: DocTreeNode[]) => {
+      for (const node of nodes) {
+        if (node.is_folder) ids.add(String(node.id))
+        walk(node.children)
+      }
+    }
+    walk(docTree)
+    return ids
+  }, [docTree])
+  const setDocTreeExpanded = (keys: string[]) => {
+    setDocTreeState(s => ({ ...s, expanded: keys.filter(k => folderIds.has(k)) }))
+  }
   const autoExpanded = useMemo(() => {
     const rootFolders = docTree.filter(n => n.is_folder).map(n => String(n.id))
     if (!activeDocId) return rootFolders
     return [...ancestorChain(docsTreeData ?? [], Number(activeDocId)).map(d => String(d.id)), ...rootFolders]
   }, [docTree, docsTreeData, activeDocId])
-  const docTreeExpanded = manualExpanded ?? autoExpanded
+  const docTreeExpanded = docTreeState.expanded ?? autoExpanded
   // 展开全部 / 收起全部：图标随切换变化（收起态下一键展开全部节点，展开态下一键收起）
-  const [treeCollapsed, setTreeCollapsed] = useState(false)
+  const treeCollapsed = docTreeState.collapsedAll
   const toggleTreeExpanded = () => {
-    setManualExpanded(treeCollapsed ? docTree.map(n => String(n.id)) : [])
-    setTreeCollapsed(!treeCollapsed)
+    setDocTreeState(s => ({
+      collapsedAll: !s.collapsedAll,
+      expanded: s.collapsedAll ? docTree.map(n => String(n.id)) : [],
+    }))
   }
 
   // 后端已按 DataTable.order（用户拖拽顺序）返回，这里直接使用即可。
-  /** 侧栏表搜索关键词：按表名过滤（需求 0068，接入 SearchInput 统一组件） */
-  const [tableKeyword, setTableKeyword] = useState('')
+  /** 侧栏表搜索关键词：按表名过滤，按工作区会话级记忆（去编辑器再回来不丢） */
+  const [tableKeyword, setTableKeyword] = usePersistedState(
+    `cndb_table_keyword:${wid ?? 'none'}`, '', 'session',
+  )
   const orderedTables = useMemo(
     () => tables.filter(t => t.name.toLowerCase().includes(tableKeyword.trim().toLowerCase())),
     [tables, tableKeyword],
@@ -464,11 +523,17 @@ export default function MainLayout() {
       : inDesignContext && wsFeatures.design
         ? 'design'
         : null
-  // 记录最近一次非设置段所属模块（文档 / 设计）；工作区设置页据此沿用同一侧栏
-  const lastModuleSiderRef = useRef<'documents' | 'design' | null>(null)
-  if (moduleSiderMode) lastModuleSiderRef.current = moduleSiderMode
+  // 记录最近一次非设置段所属模块（文档 / 设计）；工作区设置页据此沿用同一侧栏。
+  // 会话级持久化：刷新后直接打开设置页仍沿用同一侧栏，而不是回落数据表。
+  const [lastModuleSider, setLastModuleSider] = usePersistedState<'documents' | 'design' | null>(
+    'cndb_last_module_sider', null, 'session',
+  )
+  useEffect(() => {
+    if (moduleSiderMode && moduleSiderMode !== lastModuleSider) setLastModuleSider(moduleSiderMode)
+  }, [moduleSiderMode, lastModuleSider, setLastModuleSider])
 
-  const previousModuleSider = lastModuleSiderRef.current
+  // 当前模块优先；设置段沿用最近模块
+  const previousModuleSider = moduleSiderMode ?? lastModuleSider
   const siderMode: SiderMode =
     moduleSiderMode
       ?? (
@@ -1032,6 +1097,8 @@ export default function MainLayout() {
           )}
           <Content
             key={location}
+            ref={contentRef}
+            onScroll={handleContentScroll}
             className="cn-page-enter"
             style={{ background: 'var(--cn-bg-page)', flex: 1, minHeight: 0, overflow: 'auto' }}
           >

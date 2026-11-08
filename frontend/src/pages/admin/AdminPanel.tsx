@@ -33,6 +33,7 @@ import EventsPage from './EventsPage'
 import StoragePage from './StoragePage'
 import { useResponsive } from '@/hooks/useResponsive'
 import { formatSize } from '@/utils/formatSize'
+import { usePersistedState } from '@/utils/persistedState'
 
 const { Text } = Typography
 
@@ -120,8 +121,8 @@ export default function AdminPanel() {
   // 恢复模式：auto 跟随备份标记；备份 schema 领先时校验通过自动切 sqlalchemy 降级
   const [restoreMode, setRestoreMode] = useState('auto')
 
-  // 侧栏折叠态 —— 与工作区数据表 Sider 的 collapsible 行为一致（60px 图标栏）
-  const [railCollapsed, setRailCollapsed] = useState(false)
+  // 侧栏折叠态 —— 与工作区数据表 Sider 的 collapsible 行为一致（60px 图标栏）；本地偏好持久化
+  const [railCollapsed, setRailCollapsed] = usePersistedState('cndb_admin_rail_collapsed', false)
 
   const inspectMutation = useMutation({
     mutationFn: (file: File) => adminApi.restoreInspect(file),

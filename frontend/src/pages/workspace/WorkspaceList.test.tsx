@@ -442,6 +442,44 @@ describe('WorkspaceList 移动端适配', () => {
     expect(modal).not.toBeNull()
     expect(modal.style.width).toBe('calc(100vw - 32px)')
   })
+
+  it('移动端收起态行内不渲染模块徽标（名称不被挤压），角色徽标保留', async () => {
+    // 回归背景：3 个文字徽标不可收缩、名称可收缩到 0，375px 视口下名称被挤压为完全不可见
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({
+          id: 10, name: '产品研发工作区', modules: ['tables', 'documents', 'design'],
+          current_user_role: 'owner',
+        })])),
+    )
+    setViewportWidth(375)
+    renderWorkspaceList()
+
+    const row = await screen.findByTestId('workspace-row-10')
+    // 名称与角色徽标可见，模块徽标（数据表/文档/设计）不渲染
+    expect(within(row).getByText('产品研发工作区')).toBeInTheDocument()
+    expect(within(row).getByText('所有者')).toBeInTheDocument()
+    for (const label of ['数据表', '文档', '设计']) {
+      expect(within(row).queryByText(label)).not.toBeInTheDocument()
+    }
+  })
+
+  it('桌面端收起态行内仍渲染模块徽标', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({
+          id: 10, name: '产品研发工作区', modules: ['tables', 'documents', 'design'],
+        })])),
+    )
+    setViewportWidth(1280)
+    renderWorkspaceList()
+
+    const row = await screen.findByTestId('workspace-row-10')
+    expect(within(row).getByText('产品研发工作区')).toBeInTheDocument()
+    expect(within(row).getByText('数据表')).toBeInTheDocument()
+    expect(within(row).getByText('文档')).toBeInTheDocument()
+    expect(within(row).getByText('设计')).toBeInTheDocument()
+  })
 })
 
 describe('WorkspaceList 桌面端布局回归', () => {

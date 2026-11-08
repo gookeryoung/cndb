@@ -152,7 +152,9 @@ export function useDocSortPref(): [DocSort, (sort: DocSort) => void] {
 
 // ── 标题过滤关键词的跨组件共享（侧栏「过滤标题」与内容区过滤框联动，改一处两处同步）──
 
-let cachedTitleFilter = ''
+export const DOC_TITLE_FILTER_STORAGE_KEY = 'cn-doc-title-filter'
+
+let cachedTitleFilter: string | null = null
 const titleFilterListeners = new Set<() => void>()
 
 function subscribeTitleFilter(cb: () => void): () => void {
@@ -162,16 +164,37 @@ function subscribeTitleFilter(cb: () => void): () => void {
   }
 }
 
+/** 读取标题过滤关键词：会话级（sessionStorage），刷新保持、关闭标签页即失效 */
+export function readDocTitleFilter(): string {
+  try {
+    return sessionStorage.getItem(DOC_TITLE_FILTER_STORAGE_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function getTitleFilterSnapshot(): string {
+  if (cachedTitleFilter === null) cachedTitleFilter = readDocTitleFilter()
+  return cachedTitleFilter
+}
+
 /** 读取标题过滤关键词并订阅变化（会话内共享，不写 URL / localStorage） */
 export function useDocTitleFilter(): [string, (kw: string) => void] {
-  const kw = useSyncExternalStore(subscribeTitleFilter, () => cachedTitleFilter)
+  const kw = useSyncExternalStore(subscribeTitleFilter, getTitleFilterSnapshot)
   return [kw, setDocTitleFilter]
 }
 
-/** 更新标题过滤关键词（侧栏 / 内容区输入框共用） */
+/** 更新标题过滤关键词（侧栏 / 内容区输入框共用），并写入会话级存储 */
 export function setDocTitleFilter(kw: string): void {
-  if (kw === cachedTitleFilter) return
+  const current = getTitleFilterSnapshot()
+  if (kw === current) return
   cachedTitleFilter = kw
+  try {
+    if (kw) sessionStorage.setItem(DOC_TITLE_FILTER_STORAGE_KEY, kw)
+    else sessionStorage.removeItem(DOC_TITLE_FILTER_STORAGE_KEY)
+  } catch {
+    /* storage 不可用时不影响本次会话 */
+  }
   for (const cb of titleFilterListeners) cb()
 }
 

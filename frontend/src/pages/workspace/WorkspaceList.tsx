@@ -540,7 +540,8 @@ function WorkspaceRow({
               {vis.icon}
             </span>
           </Tooltip>
-          {modules.map(m => (
+          {/* 模块徽标只在桌面渲染：移动端 3-4 个文字徽标不可收缩，会把名称挤压为 0（模块信息由行首图标与展开详情承载） */}
+          {!isMobile && modules.map(m => (
             <Tag key={m} color={MODULE_TAG_COLOR[m]} className="cn-ws-row-tag">
               {WORKSPACE_MODULE_LABEL[m]}
             </Tag>

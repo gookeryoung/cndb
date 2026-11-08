@@ -3,9 +3,10 @@
  */
 
 import { act, renderHook } from '@testing-library/react'
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import {
   DEFAULT_DOC_SORT,
+  DOC_TITLE_FILTER_STORAGE_KEY,
   setDocSortPref,
   setDocTitleFilter,
   sortFlatByDocSort,
@@ -65,5 +66,14 @@ describe('共享标题过滤关键词（useDocTitleFilter）', () => {
     expect(content.result.current[0]).toBe('需求')
     act(() => content.result.current[1](''))
     expect(sidebar.result.current[0]).toBe('')
+  })
+
+  it('关键词写入 sessionStorage，刷新（模块重载）后恢复', async () => {
+    act(() => setDocTitleFilter('会议'))
+    expect(sessionStorage.getItem(DOC_TITLE_FILTER_STORAGE_KEY)).toBe('会议')
+
+    vi.resetModules()
+    const fresh = await import('./docTreeSort')
+    expect(fresh.readDocTitleFilter()).toBe('会议')
   })
 })

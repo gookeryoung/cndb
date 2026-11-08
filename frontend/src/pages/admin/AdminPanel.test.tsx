@@ -213,11 +213,24 @@ describe('AdminPanel 系统管理台', () => {
     expect(collapsedItem).not.toHaveTextContent('用户管理')
     expect(collapsedItem).toHaveAttribute('title', '用户管理')
     expect(screen.getByTestId('admin-rail-collapse')).toHaveAttribute('aria-label', '展开侧栏')
+    // 折叠偏好写入本地，刷新后保持
+    expect(localStorage.getItem('cndb_admin_rail_collapsed')).toBe('true')
 
     // 再点一次恢复展开态
     fireEvent.click(screen.getByTestId('admin-rail-collapse'))
     expect(screen.getByTestId('admin-nav-users')).toHaveTextContent('用户管理')
     expect(screen.getByTestId('admin-rail-collapse')).toHaveAttribute('aria-label', '收起侧栏')
+    expect(localStorage.getItem('cndb_admin_rail_collapsed')).toBe('false')
+  })
+
+  it('管理台侧栏折叠态本地记忆：刷新后恢复为图标栏', async () => {
+    localStorage.setItem('cndb_admin_rail_collapsed', 'true')
+    server.use(http.get('/api/v1/admin/info', () => HttpResponse.json(INFO)))
+    renderPanel()
+    await screen.findByTestId('admin-nav-users')
+
+    expect(screen.getByTestId('admin-nav-users')).not.toHaveTextContent('用户管理')
+    expect(screen.getByTestId('admin-rail-collapse')).toHaveAttribute('aria-label', '展开侧栏')
   })
 })
 
