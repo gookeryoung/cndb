@@ -4,7 +4,7 @@
  * 数据分析、搜索与收藏、视图配置实践、质量检查与流水线、规则驱动的自动获取、
  * 结构设计（DSL）、工作区模板、数据流程。事实与代码保持一致（视图 10 种模式、字段类型由
  * 注册表生成图示、workspace 三角色、视图可见性三档、检查动作注册表、采集四段规则、
- * 模板 spec 四块、数据流程按模板派生）。
+ * 模板 spec 五块（forms / documents / stages / flows / project）、数据流程按模板派生）。
  */
 
 import { Table } from 'antd'
@@ -1272,7 +1272,10 @@ const designDsl: HelpTopic = {
                         '顶部工具栏汇总全部动作：左侧是版本标签与编译状态标签（通过 / N 处错误 / 编译中），右侧依次为参数、版本历史、导出、保存。',
                         '输入防抖后自动调预览接口：编译通过右侧画布实时渲染，可正交 / 透视切换、拖拽旋转查看；左右两栏各自滚动，互不影响。',
                         '编译不通过时工具栏下方展开诊断条给出行号与消息，编辑器对应行高亮，修正后自动恢复。',
-                        '保存（Ctrl+S）会把当前原文编译并落为新版本；「版本历史」按钮打开右侧抽屉，点版本可回看原文，确认后可以该版原文重新编译恢复为新版本。',
+                        '停止输入 3 秒且最近一次预览无诊断时，只写个人草稿（状态标签显示「草稿保存中 / 草稿已保存 / 草稿保存失败」），不落版本、不改设计正文；重新打开设计时若草稿与最新版不同，会提示「恢复上次编辑 / 丢弃」。',
+                        '手动保存（Ctrl+S）会编译当前原文并落为一个「主动保存」版本；内容没变时重复保存不会产生新版本。',
+                        '距最新版本满 10 分钟且内容有变化时，草稿保存会由服务端补落一个「检查点」版本；编译失败只保留草稿，不影响已有版本。',
+                        '「版本历史」抽屉按主动保存 / 检查点 / 依赖刷新 / 版本恢复分组，点版本可回看原文，恢复后同样作为新版本落库，历史不删除。',
                         '查看者角色只读：可看可回看，不能保存与恢复。',
                     ]}
                 />
@@ -1374,8 +1377,9 @@ const qualityChecks: HelpTopic = {
                 <Bullets
                     items={[
                         <><strong>流水线</strong>：一份 YAML 定义（存 <code>pipeline_workflow</code>），带触发方式与作业 DAG；同名可多域共存，定义随工作区备份导出。</>,
-                        <><strong>运行</strong>：一次执行记录（<code>pipeline_run</code>），状态由「发现的严重度 + 步骤结果」推导，同一流水线同时只允许一个运行中（重复触发 409）。</>,
+                        <><strong>运行</strong>：一次执行记录（<code>pipeline_run</code>），状态由「发现的严重度 + 步骤结果」推导，同一流水线同时只允许一个运行中：手动重复触发返回 409，事件 / 定时撞上运行中记 <code>skipped_conflict</code>，不重复建运行。</>,
                         <><strong>发现</strong>：结构化结果行（<code>pipeline_finding</code>），带严重度、检查动作与定位信息，<strong>不含字段值</strong>；表目标可直接「转问题」。</>,
+                        <><strong>版本</strong>：每次保存 YAML 落一个版本，可回看原文、对比两版差异并一键恢复；详见下方「规则版本与回滚」。</>,
                         '左栏按当前域过滤规则（数据表域只看 table/* 动作，文档域只看 document/*），顶部「全部」展示该域全部规则的运行历史；未选中规则时右栏默认就是全部历史。',
                     ]}
                 />
@@ -1412,6 +1416,92 @@ const qualityChecks: HelpTopic = {
                         '发现的严重度可筛，表目标发现的「转问题」会在目标表建一条问题（标题带严重度与消息，描述含检查动作与定位，类别 data_error）；非表目标不支持转换。',
                     ]}
                 />
+            ),
+        },
+        {
+            key: 'examples',
+            label: '典型示例',
+            summary: '四份可直接使用的 YAML：数据表巡检、事件触发、敏感内容组合与文档引用体检。',
+            body: (
+                <>
+                    <P>
+                        下面四份 YAML 可直接粘贴到「质量检查 → 新建流水线」；表名与字段名换成工作区里的真实名称即可。
+                        示例工作区（随 <code>cndb seed</code> 注入）自带四份同族定义，可在列表里直接运行或复制改造。
+                    </P>
+                    <CodeBlock
+                        title="① 数据表日常巡检：手动 + 每周一定时"
+                        code={
+                            'name: 销售数据质量巡检\non:\n  manual: true\n  schedule: "0 9 * * 1"\nvars:\n  null_limit: 0.02\njobs:\n  订单口径:\n    steps:\n      - uses: table/null-rate\n        with:\n          table: 电商销售\n          fields: [订单号, 销售额, 日期]\n          max_rate: 0\n        severity: error\n      - uses: table/duplicates\n        with:\n          table: 电商销售\n          fields: [订单号]\n        severity: error\n      - uses: table/value-range\n        with:\n          table: 电商销售\n          fields: [单价, 销售额, 评分]\n          min: "0"\n  批次口径:\n    steps:\n      - uses: table/null-rate\n        with:\n          table: 产品批次\n          fields: [批次号, 生产日期, 合格数]\n          max_rate: ${{ vars.null_limit }}\n      - uses: table/stale\n        with:\n          table: 产品批次\n          field: 生产日期\n          max_age_days: 30\n        severity: info\n        continue-on-error: true\n'
+                        }
+                    />
+                    <Bullets
+                        items={[
+                            <><code>max_rate: 0</code> 表示一个空值都不允许；阈值收口到 <code>vars</code>，后调只改一处。</>,
+                            <><code>min</code> / <code>max</code> 是字符串参数，必须带引号（<code>{'min: "0"'}</code>）；裸数字会在保存时被类型校验拒绝。</>,
+                            <><code>severity: info</code> + <code>continue-on-error: true</code> 让新鲜度提醒不阻断作业，「失败」只留给真正需要处理的问题。</>,
+                        ]}
+                    />
+                    <CodeBlock
+                        title="② 记录变更即检：事件触发 + 作业依赖"
+                        code={
+                            'name: 客户台账变更巡检\non:\n  events: [record.updated]\nvars:\n  is_customer_table: ${{ startswith(on.table_name, \'客户\') }}\njobs:\n  判重:\n    if: ${{ vars.is_customer_table }}\n    steps:\n      - uses: table/duplicates\n        with:\n          table: 客户流失\n          fields: [客户ID]\n        severity: error\n  空值:\n    needs: 判重\n    steps:\n      - uses: table/null-rate\n        with:\n          table: 客户流失\n          fields: [客户ID, 在网月数]\n          max_rate: 0.02\n'
+                        }
+                    />
+                    <Bullets
+                        items={[
+                            <><code>record.updated</code> 在数据表批量建行 / 改行 / 删行提交后触发；其他表变更时 <code>if</code> 为假，作业与下游一起跳过。</>,
+                            <><code>needs</code> 保证判重通过后才查空值；上游作业不是 <code>success</code> 时下游直接 <code>skipped</code>。</>,
+                            '事件触发只引用定义里写死的表；需要按事件表动态切换检查目标时，用 on.table_name 做条件分支，不要指望自动改 table。',
+                        ]}
+                    />
+                    <CodeBlock
+                        title="③ 文档敏感内容组合：规则名 + and / or / not"
+                        code={
+                            'name: 文档敏感内容组合巡检\non:\n  events: [document.saved]\njobs:\n  组合规则:\n    steps:\n      - uses: document/sensitive\n        with:\n          rules:\n            - name: 手机号\n              patterns: [\'\\b1[3-9]\\d{9}\\b\']\n            - name: 白名单\n              keywords: [公开联系人, 客服热线, 白名单]\n            - name: 内部资料\n              keywords: [内部资料, 内部底价]\n          logic: 手机号 and not (白名单 or 内部资料)\n        severity: warn\n'
+                        }
+                    />
+                    <Bullets
+                        items={[
+                            <><code>rules</code> 里每条规则命中任一关键词或正则即算命中，规则名在 <code>logic</code> 中按字面引用。</>,
+                            '上面的口径是「命中手机号，且不在公开联系人 / 内部资料上下文里」才告警；客户公开联系方式可作对照组验证不误报。',
+                            <><code>logic</code> 支持 <code>any</code> / <code>all</code> 或 <code>and</code> / <code>or</code> / <code>not</code> 加括号；只有一条规则时可直接写 <code>{'{name: 证件号, patterns: [...]}'}</code>。</>,
+                        ]}
+                    />
+                    <CodeBlock
+                        title="④ 文档引用体检：链接、引用与图表块"
+                        code={
+                            'name: 文档引用体检\non:\n  schedule: "0 6 * * 1"\njobs:\n  文档体检:\n    steps:\n      - uses: document/links\n      - uses: document/broken-refs\n        with:\n          scopes: [table, chart, file]\n      - uses: document/chart-blocks\n        with:\n          max_blocks: 40\n'
+                        }
+                    />
+                    <Bullets
+                        items={[
+                            '文档族三类动作分别覆盖 wikilink、表 / 图表 / 附件引用与图表块结构；发现带文档标题与行号，不携带正文片段。',
+                            <><code>scopes</code> 可只查 <code>table</code> / <code>chart</code> / <code>file</code> 中的一类，默认三者全查。</>,
+                            '检查只读：不会自动修链接或改文档，处理仍由人完成；表目标发现可在运行详情里「转问题」跟踪。',
+                        ]}
+                    />
+                </>
+            ),
+        },
+        {
+            key: 'versions',
+            label: '规则版本与回滚',
+            summary: '保存即落版：回看原文、两版对比、一键恢复，改坏可回到上一版。',
+            body: (
+                <>
+                    <P>
+                        规则列表每行的「版本历史」按钮，或 YAML 编辑抽屉顶部动作条，都能打开同一份版本抽屉。
+                        列表显示版本号、类型（主动保存 / 版本恢复）与保存时间，选中一版即可回看当时的原文。
+                    </P>
+                    <Bullets
+                        items={[
+                            '新建成功落 v1；只有 YAML 原文真正变化才落新版，只切启用状态或重复保存相同内容不会产生新版本。',
+                            '任选两版可看统一 diff（带增删行数）；确认后点「恢复此版本」，系统按该版原文重新编译并保存为一个新的「版本恢复」版本。',
+                            '恢复不删除任何历史；DSL 非法返回 400、名称冲突返回 409，失败时零写入，现有定义不受影响。',
+                            '查看者可回看与对比，但不能恢复；版本随工作区备份导出，恢复工作区时一并还原。',
+                        ]}
+                    />
+                </>
             ),
         },
         {
@@ -1457,6 +1547,7 @@ const templates: HelpTopic = {
                             'documents：文档占位、是否必需与命名规则。',
                             'stages：生命周期阶段，以及每阶段的表单 / 文档门禁。',
                             'flows：数据流程，把阶段里的表单编排成「步骤」。',
+                            'project：项目级模板配置（根表单、关联字段、项目文档），可选；不声明时按工作区级处理。',
                             '普通工作区手工建表、建文档；模板工作区由模板同步建立，多出阶段门禁与「数据流程」页。',
                         ]}
                     />
@@ -1523,6 +1614,26 @@ const templates: HelpTopic = {
                             不配置 flows 时，数据流程会按阶段派生「一阶段一流程」，旧模板无需改造。
                             具体用法见 <HelpLink section="tutorials" topic="data-flow">数据流程</HelpLink>。
                         </P>
+                    ),
+                },
+                {
+                    key: 'project',
+                    label: '项目级模板',
+                    body: (
+                        <>
+                            <P>
+                                模板 spec 顶层可声明 <code>project</code>：<code>root_form</code> 指定项目根表单，
+                                <code>link_field</code> 指定其余表单关联项目的字段，<code>title_field</code> 取项目名称，
+                                <code>documents: per_project</code> 表示每个项目各建一套文档占位。
+                            </P>
+                            <Bullets
+                                items={[
+                                    <><code>scope: project</code> 的表单按「关联字段 = 当前项目行」计入项目门禁；<code>scope: workspace</code> 的表单由全工作区共享，不计入项目门禁。</>,
+                                    '没有 project 的旧模板全部按工作区级处理，行为与之前完全一致；内置科研模板已带项目配置。',
+                                    '项目文档按文档规则的命名占位替换 {项目名称}，只补缺失占位，不覆盖已有正文。',
+                                ]}
+                            />
+                        </>
                     ),
                 },
             ],
@@ -1612,7 +1723,8 @@ const dataFlow: HelpTopic = {
     label: '数据流程',
     intro: (
         <P>
-            本页你能学到什么：在模板工作区里按「流程 → 步骤 → 表单」填报、搜索与维护记录，以及审批 / 确认节点为什么没有表单。
+            本页你能学到什么：在模板工作区里按「流程 → 步骤 → 表单」填报、搜索与维护记录，以及审批 / 确认节点为什么没有表单；
+            多项目工作区还会说明怎样按项目切换与隔离数据。
             适合谁：使用模板工作区做日常填报的成员与项目负责人。
         </P>
     ),
@@ -1651,6 +1763,29 @@ const dataFlow: HelpTopic = {
                             '不绑定表单的步骤是审批 / 确认节点，只展示说明，不提供填报。',
                             '同一表单可以被多条流程引用：记录与计数共享，不重复建表。',
                             '旧模板没有配置多流程时，按阶段派生「一阶段一流程」，无需额外设置。',
+                        ]}
+                    />
+                </>
+            ),
+        },
+        {
+            key: 'projects',
+            label: '多项目工作台',
+            summary: '一个工作区管多个项目：每个项目独立阶段、门禁、文档与流程数据。',
+            body: (
+                <>
+                    <P>
+                        项目模式的工作区在顶栏出现「项目」入口（<code>/w/:wid/projects</code>），列出每个项目的当前阶段、
+                        阶段门禁与缺失项；点击项目名进入该项目上下文。尚未启用的工作区可在项目清单页点「启用项目级管理」。
+                    </P>
+                    <Bullets
+                        items={[
+                            '项目来自模板根表单的一行记录：在根表单里新增一条记录就多一个项目，不需要另建工作区。',
+                            '选中项目后，顶部项目切换器会固定当前项目；地址栏带 ?project= 深链，刷新或分享链接仍停在同一个项目。',
+                            '只有 1 个项目时自动选中并隐藏切换器，体验与单项目工作台一致。',
+                            '数据流程只统计当前项目的记录，新建记录默认写入模板声明的「所属项目」；生命周期也按项目独立推进与记履历。',
+                            '项目级门禁只统计本项目行与 scope=project 的表单；其他项目的数据不计入，文档按项目映射判断是否补齐。',
+                            '项目清单的「全部补文档」只补缺失映射，不覆盖已写好的正文。',
                         ]}
                     />
                 </>
