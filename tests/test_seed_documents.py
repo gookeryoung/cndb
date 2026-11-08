@@ -436,8 +436,8 @@ class TestRealDatasetDocuments:
             docs = [n for n in _flatten_documents(docs_root) if not n["is_folder"]]
             counts[ws_name] = len(docs)
             assert len(docs) >= 5, f"{ws_name} 仅 {len(docs)} 篇典型文档"
-        # 科研项目管理示例工作区已改为 datasets 普通工作区，
-        # 当前 datasets 中带文档的示例工作区仅剩某企业销售管理。
+        # 科研项目管理已改为 datasets 普通工作区并带项目文档，
+        # datasets 中带文档的示例工作区为某企业销售管理与科研项目管理。
         assert len(counts) >= 1
 
     def test_document_metadata_and_structure_valid(self, datasets_dir: Path):
