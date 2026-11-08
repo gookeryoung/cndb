@@ -2,8 +2,6 @@
   "_readme": "关键 chunk 体积基线与上限（gzip 字节）。由 frontend/scripts/bundle-budget.mjs 读写，请勿手改 —— 基线统一用 `node scripts/bundle-budget.mjs --update --reason \"...\"`（只动 baseline），上限用 `--set-budget --only <chunk> --reason \"...\"`（只动 budget），理由会落盘到 reason/updatedAt/commit，让体积增长在 review 时可追溯。语义（需求卡片 0090）：baseline 是 warn 参照（超基线未超上限 = 慢涨 warn），budget 是 FAIL 硬上限 —— 小步增量只 warn，超上限才拦 CI。resolve: 'entry'=从 dist/index.html 取主入口 script；'entryCss'=主入口样式表；'fonts'=全部 woff2 传输量；{assetPattern}=在 dist/assets 内按正则匹配 chunk 文件；{moduleMarker}=按 dist/.vite/chunk-modules.json 的模块归属定位 chunk（hash 改名后仍有效，可命中多个 chunk 时求和）。tolerance=该项单独容差(%)，仅在未声明 budget 时用于「基线+容差」回退口径。",
   "tolerancePct": 5,
   "history": [
-    "2026-10-30 feat(documents): MHTML 预览/导入功能的帮助文档（quickStart 教程 + tutorials 章节），属帮助页静态文案，该 chunk 已是 /help 单独 lazy chunk，不进首屏，无 Dialog 可 lazy",
-    "2026-10-30 chore: React 19 + antd 6 升级（ADR 0074 P0）—— react-dom 19 与 @rc-component/* 生态为运行时固有依赖，无法懒加载；主入口 +45 KiB 属依赖升级确定性增量",
     "2026-10-31 feat(dashboard): ADR 0023 P0 只读画布新增 DashboardView lazy chunk（含契约归一/栅格/四类组件），按需打开不进首屏",
     "2026-10-31 feat: ADR 0023 P1 画布编辑器（拖拽/缩放/预设/草稿撤销栈）必须随画布视图加载；属性面板已改 lazy 从该 chunk 移出",
     "2026-10-31 feat: dashboard P2 注册 14 类图，echarts 图表/组件模块随 dashboard chunk 按需加载，属功能必需增长",
@@ -21,7 +19,9 @@
     "2026-11-06 feat(perf): ADR 0116 P1 字体裁剪到 7 个字重（Inter 4 + Outfit 2 + Mono 1），233→142 KiB（C4）",
     "2026-11-06 feat(perf): ADR 0116 P2 编辑器与图表弹窗改 lazy，文档页 118→29 KiB（C6）",
     "2026-11-06 [set-budget] feat(perf): ADR 0116 P1 入口上限按 C5 目标收紧到 215 KiB",
-    "2026-11-06 [set-budget] feat(perf): ADR 0116 P2 文档页上限按 C6 目标收紧到 150 KiB"
+    "2026-11-06 [set-budget] feat(perf): ADR 0116 P2 文档页上限按 C6 目标收紧到 150 KiB",
+    "2026-11-08 docs: 9b40a157 补充项目级管理与流水线帮助（设计草稿/检查点、流水线版本、四份 YAML 示例），纯静态文案随教程 chunk 加载，无弹层/重型依赖可再 lazy",
+    "2026-11-08 [set-budget] docs: 9b40a157 教程正文净增 3.98 KiB 静态文案（设计草稿/检查点、流水线版本、四份 YAML 示例），chunk 已按 L1 部分懒加载且无 UI/依赖可拆，上限按实测留约 5% 余量"
   ],
   "chunks": [
     {
@@ -93,11 +93,11 @@
       "resolve": {
         "assetPattern": "^tutorials-.*\\.js$"
       },
-      "baseline": 26370,
-      "budget": 28000,
-      "reason": "docs: 结构设计 DSL 帮助主题补 13 个典型示例，纯文档字符串随 HelpTutorials 懒加载 chunk 增长（+5.3KiB），无依赖可拆、非 UI 组件",
-      "updatedAt": "2026-11-05",
-      "commit": "f8e61e72"
+      "baseline": 30449,
+      "budget": 32000,
+      "reason": "docs: 9b40a157 教程正文净增 3.98 KiB 静态文案（设计草稿/检查点、流水线版本、四份 YAML 示例），chunk 已按 L1 部分懒加载且无 UI/依赖可拆，上限按实测留约 5% 余量",
+      "updatedAt": "2026-11-08",
+      "commit": "f6986263"
     },
     {
       "name": "HelpExamples（帮助·示例正文）",
