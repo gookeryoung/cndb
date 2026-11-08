@@ -988,7 +988,7 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
     from sqlalchemy import text
 
     count = db.execute(text(f'SELECT COUNT(*) FROM "{applications.db_table_name}"')).scalar()
-    assert count == 6
+    assert count == 46
     # 多流程专用表单（未出现在 stages）同样实例化并写入示例数据
     from cndb.plugins.workspaces.models import WorkspaceTemplate
 
@@ -1007,15 +1007,16 @@ def test_seed_research_template_has_flow_and_example_workspace(db):
         "funding_management",
     }
     for form_key, expected in (
+        ("project_progress", 358),
         ("expense_claim", 6),
         ("achievement_registry", 6),
         ("project_change", 5),
-        ("project_owner", 12),
+        ("project_owner", 89),
         ("tech_system", 43),
         ("project_task", 31),
         ("project_todo", 16),
         ("resource_schedule", 26),
-        ("funding_budget", 24),
+        ("funding_budget", 220),
     ):
         table = (
             db.query(DataTable)

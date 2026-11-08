@@ -18,12 +18,22 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "name": "项目申报",
             "description": "立项申报阶段的主表，一条记录对应一个科研项目",
             "flow": {
-                "list_fields": ["项目名称", "项目编号", "项目类别", "负责人", "起止时间", "预算金额（万元）"],
-                "search_fields": ["项目名称", "项目编号", "负责人", "依托单位"],
+                "list_fields": ["项目名称", "项目编号", "课题编号", "项目类别", "负责人", "项目状态"],
+                "search_fields": ["项目名称", "项目编号", "课题编号", "负责人", "依托单位"],
                 "form_groups": [
-                    {"title": "基本信息", "fields": ["项目名称", "项目编号", "项目类别", "负责人", "依托单位"]},
-                    {"title": "计划与预算", "fields": ["起止时间", "预算金额（万元）"]},
+                    {
+                        "title": "基本信息",
+                        "fields": ["项目名称", "项目编号", "课题编号", "项目类别", "研究类型", "负责人", "依托单位"],
+                    },
+                    {
+                        "title": "计划与预算",
+                        "fields": ["起止时间", "立项年份", "计划周期（月）", "预算金额（万元）", "项目状态"],
+                    },
                     {"title": "研究内容", "fields": ["研究内容"]},
+                    {
+                        "title": "过程与成果",
+                        "fields": ["成果形式", "结题日期", "论文数", "专利数", "合作单位数"],
+                    },
                 ],
                 "hints": {
                     "项目编号": "按「年度-类别-序号」填写，例如 2026-GJ-001",
@@ -34,17 +44,35 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "fields": [
                 {"name": "项目名称", "type": "text", "required": True, "is_unique": True},
                 {"name": "项目编号", "type": "text", "required": True},
+                {"name": "课题编号", "type": "text"},
                 {
                     "name": "项目类别",
                     "type": "select",
                     "required": True,
-                    "config": {"options": ["国家级", "省部级", "市级", "横向课题", "自主立项"]},
+                    "config": {"options": ["国家级", "省部级", "市级", "校级", "横向课题", "自主立项"]},
+                },
+                {
+                    "name": "研究类型",
+                    "type": "select",
+                    "config": {"options": ["基础研究", "应用研究", "工程技术", "软科学"]},
                 },
                 {"name": "负责人", "type": "text", "required": True},
                 {"name": "依托单位", "type": "text"},
                 {"name": "起止时间", "type": "text"},
+                {"name": "立项年份", "type": "number"},
+                {"name": "计划周期（月）", "type": "number"},
                 {"name": "预算金额（万元）", "type": "number"},
+                {
+                    "name": "项目状态",
+                    "type": "select",
+                    "config": {"options": ["在研", "已结题", "延期整改", "已中止"]},
+                },
                 {"name": "研究内容", "type": "longtext"},
+                {"name": "成果形式", "type": "text"},
+                {"name": "结题日期", "type": "date"},
+                {"name": "论文数", "type": "number"},
+                {"name": "专利数", "type": "number"},
+                {"name": "合作单位数", "type": "number"},
             ],
         },
         {
@@ -52,11 +80,14 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
             "name": "项目进展",
             "description": "过程实施阶段的定期进展填报",
             "flow": {
-                "list_fields": ["所属项目", "填报日期", "进展状态", "完成度", "阶段进展"],
-                "search_fields": ["阶段进展", "存在问题与措施"],
+                "list_fields": ["所属项目", "报告季度", "填报日期", "进展阶段", "进展状态", "完成度"],
+                "search_fields": ["报告季度", "阶段进展", "存在问题与措施"],
                 "form_groups": [
-                    {"title": "关联信息", "fields": ["所属项目", "填报日期", "进展状态", "完成度"]},
-                    {"title": "进展说明", "fields": ["阶段进展", "存在问题与措施"]},
+                    {
+                        "title": "关联信息",
+                        "fields": ["所属项目", "报告季度", "填报日期", "进展阶段", "进展状态", "完成度"],
+                    },
+                    {"title": "进展说明", "fields": ["阶段进展", "存在问题与措施", "下一步计划"]},
                 ],
                 "hints": {"完成度": "填写 0~100 的百分比（界面会显示为百分比）"},
                 "default_sort": {"field": "填报日期", "order": "desc"},
@@ -69,6 +100,12 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
                     "config": {"target_form": "project_application", "multiple": False},
                 },
                 {"name": "填报日期", "type": "date", "required": True},
+                {"name": "报告季度", "type": "text"},
+                {
+                    "name": "进展阶段",
+                    "type": "select",
+                    "config": {"options": ["立项启动", "技术攻关", "中期检查", "成果转化", "验收准备", "验收结题"]},
+                },
                 {
                     "name": "进展状态",
                     "type": "select",
@@ -78,6 +115,7 @@ RESEARCH_LIFECYCLE_SPEC: dict[str, Any] = {
                 {"name": "完成度", "type": "percentage"},
                 {"name": "阶段进展", "type": "longtext", "required": True},
                 {"name": "存在问题与措施", "type": "longtext"},
+                {"name": "下一步计划", "type": "longtext"},
             ],
         },
         {
