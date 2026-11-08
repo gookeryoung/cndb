@@ -408,6 +408,16 @@ describe('MainLayout 顶栏导航重构（需求 0081）', () => {
         expect(screen.getByRole('tab', { name: /质量检查/ })).toBeInTheDocument()
     })
 
+    it('切到工作区设置时页签行不渲染质量检查', async () => {
+        renderLayout(mockUser, '/w/10/settings')
+        await waitFor(() => expect(screen.getByTestId('settings-page-stub')).toBeVisible())
+        expect(screen.queryByRole('tab', { name: /质量检查/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /数据分析/ })).toBeNull()
+        expect(screen.queryByRole('tab', { name: /数据同步/ })).toBeNull()
+        // 页签行整体收敛，不留空页签栏
+        expect(document.querySelector('.cn-ws-tabs .ant-tabs')).toBeNull()
+    })
+
     it('切到文档/设计模块时页签行隐藏数据分析、数据同步与质量检查', async () => {
         // 数据分析 / 数据同步为数据表派生二级功能，仅数据表上下文显示
         const { unmount } = renderLayout(mockUser, '/w/10/documents')
