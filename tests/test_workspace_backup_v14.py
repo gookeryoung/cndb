@@ -138,6 +138,8 @@ class TestBackupV14LibraryRefs:
         assert isinstance(ref["params"], list)
 
         # 装配依赖快照带 source=library
+        # 个人草稿是临时恢复数据，不进入 designs[]（ADR 0125 D7）
+        assert all("draft" not in item for item in backup["designs"])
         design_items = {item["title"]: item for item in backup["designs"]}
         lib_dep = design_items["小车"]["dependencies"][0]
         assert lib_dep["source"] == "library"
@@ -237,8 +239,26 @@ class TestBackupV14LibraryRefs:
         _import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert len(_vendor_rows(db, target_ws.id)) == 1
 
+        # 草稿不进备份，但覆盖恢复必须清空（ADR 0125 D7/C8）
+        from cndb.plugins.design.models import DesignDesign, DesignDesignDraft
+
+        imported_design = (
+            db.execute(select(DesignDesign).where(DesignDesign.workspace_id == target_ws.id)).scalars().first()
+        )
+        assert imported_design is not None
+        db.add(
+            DesignDesignDraft(
+                design_id=imported_design.id,
+                user_id=target_user.id,
+                content="box(size = [1, 1, 1])",
+                content_hash="draft-hash",
+            )
+        )
+        db.commit()
+
         clear_workspace_content(target_ws.id, db)
         assert _vendor_rows(db, target_ws.id) == []
+        assert db.execute(select(DesignDesignDraft)).scalars().all() == []
 
         result = restore_workspace_from_backup(target_ws.id, backup, None, target_user, db)
         assert result.errors == []

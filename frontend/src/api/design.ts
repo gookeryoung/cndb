@@ -248,8 +248,18 @@ export interface LibraryVersionDetail extends LibraryVersionItem {
   files: Array<{ file_key: string; kind: string; content_hash: string }>
 }
 
-/** 版本来源类型（ADR 0113）：manual 主动保存 / auto 自动小版本 / refresh 依赖刷新 / rollback 版本恢复 */
+/** 版本来源类型（ADR 0113 / 0125）：manual 主动保存 / auto 兜底检查点 / refresh 依赖刷新 / rollback 版本恢复 */
 export type DesignVersionChangeType = 'manual' | 'auto' | 'refresh' | 'rollback'
+
+/** 个人草稿（ADR 0125）：stale 表示开始编辑后设计已前进版本，仅提示不拦截 */
+export interface DesignDraftPayload {
+  content: string
+  content_size: number
+  base_version_number: number
+  current_version_number: number
+  stale: boolean
+  updated_at: string | null
+}
 
 /** 版本列表项（不含原文；回看走单版本端点） */
 export interface DesignVersionItem {
@@ -323,14 +333,24 @@ export const designsApi = {
   /** 改名 / 描述 / 目录（不触发重编译；file_key 不可改） */
   update: (wid: number | string, designId: number | string, data: { title?: string; description?: string; folder?: string }) =>
     api.put<DesignDetail>(`${base(wid)}/${designId}`, data).then(r => r.data),
-  /** 保存原文（编译通过才落库并生成新版本；失败旧 IR 不动）
-   * change_type 仅可传 manual / auto（refresh / rollback 由服务端端点强制，ADR 0113 I4） */
+  /** 手动保存原文（编译通过才落库并生成 manual 版本；自动保存走 saveDraft，ADR 0125 D4） */
   saveContent: (wid: number | string, designId: number | string, data: {
     content: string
     comment?: string
-    change_type?: 'manual' | 'auto'
   }) =>
     api.put<DesignDetail>(`${base(wid)}/${designId}/content`, data).then(r => r.data),
+  /** 读取本人草稿（无草稿 / 与最新版相同返回 null） */
+  getDraft: (wid: number | string, designId: number | string) =>
+    api.get<DesignDraftPayload | null>(`${base(wid)}/${designId}/draft`).then(r => r.data),
+  /** 保存本人草稿：不编译、不落版本；到期由服务端顺带落 auto 检查点 */
+  saveDraft: (wid: number | string, designId: number | string, data: {
+    content: string
+    base_version_number?: number
+  }) =>
+    api.put<DesignDraftPayload | null>(`${base(wid)}/${designId}/draft`, data).then(r => r.data),
+  /** 丢弃本人草稿（幂等） */
+  discardDraft: (wid: number | string, designId: number | string) =>
+    api.delete<void>(`${base(wid)}/${designId}/draft`).then(r => r.data),
   /** 软删 */
   remove: (wid: number | string, designId: number | string) =>
     api.delete<void>(`${base(wid)}/${designId}`).then(r => r.data),

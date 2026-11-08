@@ -28,7 +28,9 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { designLibraryApi, designsApi, workspaceApi } from '@/api'
-import type { DesignDiagnostic, DesignLibraryDependencyItem, DesignVersionItem } from '@/api'
+import type {
+  DesignDiagnostic, DesignDraftPayload, DesignLibraryDependencyItem, DesignVersionItem,
+} from '@/api'
 import DocumentDiffView from '@/components/DiffView/DocumentDiffView'
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback'
 import { formatDateTime } from '@/utils/datetime'
@@ -57,12 +59,12 @@ export const SPLIT_MIN = 25
 export const SPLIT_MAX = 75
 /** 窄屏断点：与 index.css 的 1023.98px 媒体查询口径一致（C2 降级路径） */
 const NARROW_QUERY = '(max-width: 1023.98px)'
-/** 自动小版本防抖（ADR 0113 Q1）：停止输入 3s 才落 auto */
+/** 草稿自动保存防抖（ADR 0125 D1）：停止输入 3s 写个人草稿，不落版本 */
 export const AUTO_SAVE_DELAY = 3000
 /** 版本来源徽标文案 / 颜色（C4 / D9） */
 export const VERSION_TYPE_LABEL: Record<string, string> = {
   manual: '主动保存',
-  auto: '自动',
+  auto: '检查点',
   refresh: '依赖刷新',
   rollback: '版本恢复',
 }
@@ -147,6 +149,19 @@ export default function DesignEditorPage() {
   })
   const isViewer = wsDetail?.current_user_role === 'viewer'
 
+  // 个人草稿（ADR 0125 C5）：打开时与最新版不同则提示恢复 / 丢弃；只取一次，不因保存重复弹窗
+  const { data: draftData, isFetched: draftFetched } = useQuery({
+    queryKey: ['designs', wid, designId, 'draft'],
+    queryFn: () => designsApi.getDraft(wid, designId),
+    enabled: !!wid && !!designId && !!detail && !isViewer,
+    staleTime: Infinity,
+    refetchOnWindowFocus: false,
+  })
+  const [draftPrompt, setDraftPrompt] = useState<DesignDraftPayload | null>(null)
+  const [draftResolved, setDraftResolved] = useState(false)
+  /** 开始编辑所基于的版本（草稿 stale 提示，不拦截保存，ADR 0125 D6） */
+  const baseVersionRef = useRef<number | null>(null)
+
   const [content, setContent] = useState('')
   const [contentReady, setContentReady] = useState(false)
   const [overrides, setOverrides] = useState<Record<string, number>>({})
@@ -172,8 +187,21 @@ export default function DesignEditorPage() {
       setContent(detail.content)
       setLoadedId(String(detail.id))
       setContentReady(true)
+      baseVersionRef.current = detail.version_number
     }
   }, [detail, loadedId])
+
+  // 切换设计：重置草稿提示（组件可能复用，不随路由卸载）
+  useEffect(() => {
+    setDraftPrompt(null)
+    setDraftResolved(false)
+  }, [designId])
+
+  useEffect(() => {
+    if (!draftFetched || draftResolved) return
+    if (draftData) setDraftPrompt(draftData)
+    setDraftResolved(true)
+  }, [draftFetched, draftData, draftResolved])
 
   const dirty = contentReady && detail != null && content !== detail.content
   // 干净打开（内容未改且无参数覆盖）：直接消费 IR 快照，不发 preview（I6）
@@ -191,6 +219,9 @@ export default function DesignEditorPage() {
       message.success(`依赖已刷新，保存为第 ${updated.version_number} 版`)
       setContent(updated.content)
       setOverrides({})
+      baseVersionRef.current = updated.version_number
+      setDraftPrompt(null)
+      setDraftResolved(true)
       invalidate()
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '依赖刷新失败'),
@@ -246,10 +277,9 @@ export default function DesignEditorPage() {
   const save = useMutation({
     mutationFn: (nextContent?: string) => designsApi.saveContent(wid, designId, {
       content: nextContent ?? content,
-      change_type: 'manual',
     }),
     onMutate: () => {
-      // 手动保存前取消 pending 自动保存，保证同一时刻只有一个保存在途（§4.1）
+      // 手动保存前取消 pending 草稿保存，保证同一时刻只有一个保存在途（§4.1）
       cancelAutoSave()
       autoInFlight.current = false
     },
@@ -258,6 +288,9 @@ export default function DesignEditorPage() {
       setSaveError('')
       setAutoSaveState('idle')
       setContent(saved.content)
+      baseVersionRef.current = saved.version_number
+      setDraftPrompt(null)
+      setDraftResolved(true)
       invalidate()
     },
     onError: (err) => {
@@ -314,6 +347,9 @@ export default function DesignEditorPage() {
       setContent(restored.content)
       setOverrides({})
       setSaveError('')
+      baseVersionRef.current = restored.version_number
+      setDraftPrompt(null)
+      setDraftResolved(true)
       invalidate()
     },
     onError: (err) => {
@@ -321,21 +357,42 @@ export default function DesignEditorPage() {
     },
   })
 
-  // 自动小版本（ADR 0113 D2/D7）：停止输入 3s 且编译无诊断时静默落一个 auto 版本
+  // 草稿自动保存（ADR 0125 D1/D3）：停止输入 3s 且编译无诊断时静默写个人草稿，不落版本；
+  // 服务端到期（10 分钟）会顺带落 auto 检查点并返回 null，此时才需要刷新版本列表。
   const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const autoInFlight = useRef(false)
   const autoSave = useMutation({
-    mutationFn: (text: string) => designsApi.saveContent(wid, designId, { content: text, change_type: 'auto' }),
-    onSuccess: () => {
-      // 成功不回写编辑器 content（用户可能已继续输入），只失效详情 / 版本查询
+    mutationFn: (text: string) => designsApi.saveDraft(wid, designId, {
+      content: text,
+      base_version_number: baseVersionRef.current ?? undefined,
+    }),
+    onSuccess: (draft) => {
+      // 成功不回写编辑器 content（用户可能已继续输入）；仅检查点落版时才失效版本查询
       setAutoSaveState('saved')
-      invalidate()
+      if (draft === null) invalidate()
     },
     onError: () => setAutoSaveState('error'),
     onSettled: () => {
       autoInFlight.current = false
     },
   })
+
+  // 草稿恢复 / 丢弃（ADR 0125 C5）：恢复只改编辑器内存，不自动落版
+  const discardDraft = useMutation({
+    mutationFn: () => designsApi.discardDraft(wid, designId),
+    onSuccess: () => {
+      setDraftPrompt(null)
+      setDraftResolved(true)
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '丢弃草稿失败'),
+  })
+  const restoreDraft = () => {
+    if (!draftPrompt) return
+    setContent(draftPrompt.content)
+    baseVersionRef.current = draftPrompt.base_version_number
+    setDraftPrompt(null)
+    setDraftResolved(true)
+  }
   // 防抖执行时读取最新状态，避免闭包过期（I3：失败 / 编译失败 / 无变化不落版）
   const autoGuard = useRef({
     content: '', contentReady: false, dirty: false, isViewer: false,
@@ -603,7 +660,7 @@ export default function DesignEditorPage() {
                 color={autoSaveState === 'error' ? 'error' : undefined}
                 data-testid="design-autosave-status"
               >
-                {autoSaveState === 'saving' ? '自动保存中' : autoSaveState === 'error' ? '自动保存失败' : '已自动保存'}
+                {autoSaveState === 'saving' ? '草稿保存中' : autoSaveState === 'error' ? '草稿保存失败' : '草稿已保存'}
               </Tag>
             )}
             {isViewer && <Tag className="cn-dsl-status-tag">只读</Tag>}
@@ -659,6 +716,33 @@ export default function DesignEditorPage() {
           </Button>
         </Space>
       </div>
+
+      {draftPrompt && (
+        <Alert
+          type="info"
+          showIcon
+          data-testid="design-draft-recovery"
+          message="检测到未保存的编辑"
+          description={
+            `上次编辑基于 v${draftPrompt.base_version_number}`
+            + `（当前 v${draftPrompt.current_version_number}），自动保存只写草稿、未生成版本。`
+          }
+          action={(
+            <Space>
+              <Button
+                size="small"
+                loading={discardDraft.isPending}
+                onClick={() => discardDraft.mutate()}
+              >
+                丢弃
+              </Button>
+              <Button size="small" type="primary" onClick={restoreDraft}>
+                恢复上次编辑
+              </Button>
+            </Space>
+          )}
+        />
+      )}
 
       {saveError && (
         <Alert
@@ -857,7 +941,7 @@ export default function DesignEditorPage() {
                       onClick={() => toggleAutoGroup(group.key)}
                     >
                       <Tag color="default" style={{ marginInlineEnd: 8 }}>
-                        {group.items.length} 个自动小版本
+                        {group.items.length} 个检查点
                       </Tag>
                       <span className="cn-dsl-version-text">
                         v{Math.min(...numbers)} – v{Math.max(...numbers)}

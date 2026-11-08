@@ -134,6 +134,7 @@ function useDefaultHandlers(preview: () => DesignPreviewResult = () => ({ ok: tr
     http.get('/api/v1/workspaces/10/designs/20/ir', () =>
       HttpResponse.json({ design_id: 20, version_number: 2, content_hash: 'abc123', ir: IR })),
     http.get('/api/v1/workspaces/10/designs/20/versions', () => HttpResponse.json(VERSIONS)),
+    http.get('/api/v1/workspaces/10/designs/20/draft', () => HttpResponse.json(null)),
     http.get('/api/v1/workspaces/10/designs/20/diff', () => HttpResponse.json({
       base_version: 1,
       head_version: 2,
@@ -542,70 +543,150 @@ describe('DesignEditorPage 编辑器主流程', () => {
     expect(screen.queryByRole('button', { name: /恢复此版本/ })).not.toBeInTheDocument()
   })
 
-  it('停止输入 3s 后自动保存为 auto 版本（Q1 / D2）', async () => {
+  it('停止输入 3s 后保存个人草稿、不落版本（ADR 0125 C1）', async () => {
     useDefaultHandlers()
-    let autoBody: { content: string; change_type?: string } | undefined
-    server.use(http.put('/api/v1/workspaces/10/designs/20/content', async ({ request }) => {
-      autoBody = await request.json() as { content: string; change_type?: string }
-      return HttpResponse.json({ ...DETAIL, content: autoBody.content, version_number: 3, version_count: 3 })
-    }))
+    let draftBody: { content: string; base_version_number?: number } | undefined
+    let contentSaves = 0
+    server.use(
+      http.put('/api/v1/workspaces/10/designs/20/draft', async ({ request }) => {
+        draftBody = await request.json() as { content: string; base_version_number?: number }
+        return HttpResponse.json({
+          content: draftBody.content,
+          content_size: draftBody.content.length,
+          base_version_number: draftBody.base_version_number ?? 2,
+          current_version_number: 2,
+          stale: false,
+          updated_at: '2026-11-08T08:00:00Z',
+        })
+      }),
+      http.put('/api/v1/workspaces/10/designs/20/content', () => {
+        contentSaves += 1
+        return HttpResponse.json(DETAIL)
+      }),
+    )
     const { container } = renderPage()
 
     await waitForEditorReady(container)
-    editViaCodeMirror(container, '\n// 自动保存草稿')
+    editViaCodeMirror(container, '\n// 草稿自动保存')
     expect(await screen.findByText('未保存')).toBeInTheDocument()
 
-    await waitFor(() => expect(autoBody).toBeDefined(), { timeout: 6000 })
-    expect(autoBody!.change_type).toBe('auto')
-    expect(autoBody!.content).toBe(`${CONTENT}\n// 自动保存草稿`)
+    await waitFor(() => expect(draftBody).toBeDefined(), { timeout: 6000 })
+    expect(draftBody!.content).toBe(`${CONTENT}\n// 草稿自动保存`)
+    expect(draftBody!.base_version_number).toBe(2)
     // 自动保存成功不回写编辑器（用户可能已继续输入），只提示状态
-    expect(cmText(container)).toContain('// 自动保存草稿')
-    expect(await screen.findByTestId('design-autosave-status')).toHaveTextContent('已自动保存')
+    expect(cmText(container)).toContain('// 草稿自动保存')
+    expect(await screen.findByTestId('design-autosave-status')).toHaveTextContent('草稿已保存')
+    expect(contentSaves).toBe(0)
   }, 10000)
 
-  it('自动保存在途时 Ctrl+S 不并发发起手动保存（§4.1 单飞）', async () => {
+  it('草稿保存在途时 Ctrl+S 不并发发起手动保存（§4.1 单飞）', async () => {
     useDefaultHandlers()
-    const bodies: Array<{ content: string; change_type?: string }> = []
-    server.use(http.put('/api/v1/workspaces/10/designs/20/content', async ({ request }) => {
-      const body = await request.json() as { content: string; change_type?: string }
-      bodies.push(body)
-      await delay(1200)
-      return HttpResponse.json({ ...DETAIL, content: body.content, version_number: 3, version_count: 3 })
-    }))
+    const draftBodies: Array<{ content: string }> = []
+    let contentSaves = 0
+    server.use(
+      http.put('/api/v1/workspaces/10/designs/20/draft', async ({ request }) => {
+        const body = await request.json() as { content: string }
+        draftBodies.push(body)
+        await delay(1200)
+        return HttpResponse.json({
+          content: body.content,
+          content_size: body.content.length,
+          base_version_number: 2,
+          current_version_number: 2,
+          stale: false,
+          updated_at: '2026-11-08T08:00:00Z',
+        })
+      }),
+      http.put('/api/v1/workspaces/10/designs/20/content', () => {
+        contentSaves += 1
+        return HttpResponse.json(DETAIL)
+      }),
+    )
     const { container } = renderPage()
 
     await waitForEditorReady(container)
     editViaCodeMirror(container, '\n// 单飞草稿')
-    await waitFor(() => expect(bodies.length).toBe(1), { timeout: 6000 })
-    expect(bodies[0].change_type).toBe('auto')
+    await waitFor(() => expect(draftBodies.length).toBe(1), { timeout: 6000 })
 
-    // 自动保存在途：全局快捷键不应再发起一次手动保存
+    // 草稿保存在途：全局快捷键不应再发起一次手动保存
     fireEvent.keyDown(window, { key: 's', ctrlKey: true })
     await new Promise(resolve => setTimeout(resolve, 250))
-    expect(bodies).toHaveLength(1)
+    expect(contentSaves).toBe(0)
 
     await waitFor(
-      () => expect(screen.getByTestId('design-autosave-status')).toHaveTextContent('已自动保存'),
+      () => expect(screen.getByTestId('design-autosave-status')).toHaveTextContent('草稿已保存'),
       { timeout: 4000 },
     )
   }, 12000)
 
-  it('自动保存失败只提示状态，不弹错误且草稿保留（I3 / C8）', async () => {
+  it('草稿保存失败只提示状态，不弹错误且草稿保留（ADR 0125 I5）', async () => {
     useDefaultHandlers()
-    server.use(http.put('/api/v1/workspaces/10/designs/20/content', () =>
+    server.use(http.put('/api/v1/workspaces/10/designs/20/draft', () =>
       HttpResponse.json({ detail: '服务暂不可用' }, { status: 500 })))
     const { container } = renderPage()
 
     await waitForEditorReady(container)
-    editViaCodeMirror(container, '\n// 自动保存失败草稿')
+    editViaCodeMirror(container, '\n// 草稿保存失败')
 
     await waitFor(
-      () => expect(screen.getByTestId('design-autosave-status')).toHaveTextContent('自动保存失败'),
+      () => expect(screen.getByTestId('design-autosave-status')).toHaveTextContent('草稿保存失败'),
       { timeout: 6000 },
     )
     expect(screen.queryByText('保存被拒绝（草稿已保留）')).not.toBeInTheDocument()
-    expect(cmText(container)).toContain('// 自动保存失败草稿')
+    expect(cmText(container)).toContain('// 草稿保存失败')
   }, 10000)
+
+  it('打开时草稿与最新版不同：提示并可恢复上次编辑（ADR 0125 C5）', async () => {
+    useDefaultHandlers()
+    const DRAFT_CONTENT = 'box(size = [12, 34, 56])\n// 未保存编辑'
+    server.use(http.get('/api/v1/workspaces/10/designs/20/draft', () => HttpResponse.json({
+      content: DRAFT_CONTENT,
+      content_size: DRAFT_CONTENT.length,
+      base_version_number: 1,
+      current_version_number: 2,
+      stale: true,
+      updated_at: '2026-11-08T08:00:00Z',
+    })))
+    const { container } = renderPage()
+
+    await waitForEditorReady(container)
+    const alert = await screen.findByTestId('design-draft-recovery')
+    expect(alert).toHaveTextContent('检测到未保存的编辑')
+    expect(alert).toHaveTextContent('上次编辑基于 v1')
+
+    fireEvent.click(screen.getByRole('button', { name: '恢复上次编辑' }))
+    await waitFor(() => expect(cmText(container)).toContain('// 未保存编辑'))
+    expect(screen.queryByTestId('design-draft-recovery')).not.toBeInTheDocument()
+  })
+
+  it('打开时草稿可丢弃：调用 discard 后提示消失（ADR 0125 C5）', async () => {
+    useDefaultHandlers()
+    let discarded = 0
+    const DRAFT_CONTENT = 'box(size = [9, 9, 9])'
+    server.use(
+      http.get('/api/v1/workspaces/10/designs/20/draft', () => HttpResponse.json({
+        content: DRAFT_CONTENT,
+        content_size: DRAFT_CONTENT.length,
+        base_version_number: 1,
+        current_version_number: 2,
+        stale: true,
+        updated_at: '2026-11-08T08:00:00Z',
+      })),
+      http.delete('/api/v1/workspaces/10/designs/20/draft', () => {
+        discarded += 1
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    const { container } = renderPage()
+
+    await waitForEditorReady(container)
+    await screen.findByTestId('design-draft-recovery')
+    fireEvent.click(screen.getByRole('button', { name: /丢\s*弃/ }))
+    await waitFor(() => expect(discarded).toBe(1))
+    expect(screen.queryByTestId('design-draft-recovery')).not.toBeInTheDocument()
+    expect(cmText(container)).toContain('box(size = [width, 40, 12])')
+    expect(cmText(container)).not.toContain('box(size = [9, 9, 9])')
+  })
 
   it('版本历史：类型徽标 + 连续自动版本折叠可展开（C4）', async () => {
     useDefaultHandlers()
@@ -619,7 +700,7 @@ describe('DesignEditorPage 编辑器主流程', () => {
     fireEvent.click(await screen.findByTestId('more-menu-stub'))
     expect((await screen.findAllByText('主动保存')).length).toBe(2)
     const group = screen.getByTestId('design-auto-group-v-4')
-    expect(group).toHaveTextContent('2 个自动小版本')
+    expect(group).toHaveTextContent('2 个检查点')
     expect(screen.queryByRole('button', { name: '回看版本 3' })).not.toBeInTheDocument()
 
     fireEvent.click(group)

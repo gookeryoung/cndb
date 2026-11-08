@@ -7,8 +7,9 @@
   ADR 0086 起升级为「设计文件」：``kind`` 区分零件 / 装配、``file_key``
   承载跨文件引用、``folder`` 仅做展示分组、``dependencies`` 记录当前编译
   的依赖闭包快照。
-- 每次保存落一条 ``design_designversion``（对齐 ``DocumentVersion`` 范式，D7），
-  版本另存 ``dependencies`` 闭包（历史可复现编译，I5）。
+- 手动保存 / 检查点 / 刷新 / 恢复落一条 ``design_designversion``（对齐
+  ``DocumentVersion`` 范式，D7），版本另存 ``dependencies`` 闭包（历史可复现
+  编译，I5）。自动保存只写 ``design_designdraft``（ADR 0125）。
 - ``design_designref`` 是当前直接引用索引（删除阻断与「谁引用了我」查询）。
 - 各表均工作区级（``workspace_id`` 级联删除）；权限完全继承工作区角色（D6/I8）。
 """
@@ -116,6 +117,35 @@ class DesignDesignVersion(TimestampMixin, Base):
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"DesignDesignVersion(id={self.id}, design={self.design_id}, no={self.version_number})"
+
+
+class DesignDesignDraft(TimestampMixin, Base):
+    """设计个人草稿：每位用户对每份设计至多一份，仅供本人读写（ADR 0125）.
+
+    - 3s 自动保存只写本表，不创建版本、不改 ``design_design.content``；
+    - 手动保存 / 10 分钟检查点才落 ``design_designversion``；
+    - ``base_version_number`` 记录开始编辑时所基于的版本，仅用于提示基准漂移。
+    """
+
+    __tablename__ = "design_designdraft"
+    __table_args__ = (
+        UniqueConstraint("design_id", "user_id", name="uniq_design_draft_design_user"),
+        {"extend_existing": True},
+    )
+
+    design_id: Mapped[int] = mapped_column(
+        ForeignKey("design_design.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=False, index=True)
+    #: 草稿 DSL 原文（不存 compiled，高频写不编译）
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    content_size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    #: 开始编辑所基于的版本号（仅展示 / 提示）
+    base_version_number: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"DesignDesignDraft(design={self.design_id}, user={self.user_id})"
 
 
 class DesignDesignref(TimestampMixin, Base):

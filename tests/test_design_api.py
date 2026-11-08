@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from cndb.plugins.design.models import DesignDesign, DesignDesignVersion
+from cndb.plugins.design.models import DesignDesign, DesignDesignDraft, DesignDesignVersion
 from cndb.plugins.workspaces.models import WorkspaceRole
 from tests.pipeline_helpers import add_member, login, make_user, make_workspace
 
@@ -315,42 +315,50 @@ class TestSaveContent:
         assert resp.status_code == 200
         assert [v.change_type for v in self._versions(db, created["id"])] == ["manual", "manual"]
 
-    def test_auto_save_change_type(self, client, db, ws, auth_owner):
+    def test_draft_save_creates_no_version(self, client, db, ws, auth_owner):
+        """3s 自动保存等价路径（PUT /draft）不落版本（ADR 0125 C1）."""
         created = _create(client, ws, auth_owner).json()
         resp = client.put(
-            _url(ws, f"/{created['id']}/content"),
-            json={"content": "box(size = [3, 3, 3])", "change_type": "auto"},
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": "box(size = [3, 3, 3])"},
             headers=auth_owner,
         )
         assert resp.status_code == 200
+        assert resp.json()["content"] == "box(size = [3, 3, 3])"
+        assert [v.version_number for v in self._versions(db, created["id"])] == [1]
+
+    def test_draft_same_content_no_draft(self, client, db, ws, auth_owner):
+        """草稿内容与最新版一致：视为无修改，删除草稿且不落版（ADR 0125 C2）."""
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": GOOD_CONTENT},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        assert resp.json() is None
+        assert [v.version_number for v in self._versions(db, created["id"])] == [1]
+        assert db.execute(select(DesignDesignDraft)).scalars().all() == []
+
+    def test_manual_promotes_latest_auto(self, client, db, ws, auth_owner, monkeypatch: pytest.MonkeyPatch):
+        """检查点落 auto 后，主动保存同内容：提升为 manual，不新增版本（ADR 0113 D7）."""
+        monkeypatch.setattr("cndb.plugins.design.services.drafts.DESIGN_CHECKPOINT_INTERVAL_SECONDS", 0)
+        created = _create(client, ws, auth_owner).json()
+        auto_content = "box(size = [4, 4, 4])"
+        drafted = client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": auto_content},
+            headers=auth_owner,
+        )
+        assert drafted.status_code == 200
+        assert drafted.json() is None, "检查点已把草稿落版"
         versions = self._versions(db, created["id"])
         assert [v.version_number for v in versions] == [1, 2]
         assert versions[1].change_type == "auto"
 
-    def test_auto_same_content_no_new_version(self, client, db, ws, auth_owner):
-        """自动保存内容与最新版一致不落版（D7）."""
-        created = _create(client, ws, auth_owner).json()
         resp = client.put(
             _url(ws, f"/{created['id']}/content"),
-            json={"content": GOOD_CONTENT, "change_type": "auto"},
-            headers=auth_owner,
-        )
-        assert resp.status_code == 200
-        assert resp.json()["version_number"] == 1
-        assert [v.version_number for v in self._versions(db, created["id"])] == [1]
-
-    def test_manual_promotes_latest_auto(self, client, db, ws, auth_owner):
-        """主动保存同内容且最新为 auto：提升为 manual，不新增版本（D7）."""
-        created = _create(client, ws, auth_owner).json()
-        auto_content = "box(size = [4, 4, 4])"
-        client.put(
-            _url(ws, f"/{created['id']}/content"),
-            json={"content": auto_content, "change_type": "auto"},
-            headers=auth_owner,
-        )
-        resp = client.put(
-            _url(ws, f"/{created['id']}/content"),
-            json={"content": auto_content, "change_type": "manual", "comment": "里程碑"},
+            json={"content": auto_content, "comment": "里程碑"},
             headers=auth_owner,
         )
         assert resp.status_code == 200
@@ -364,22 +372,131 @@ class TestSaveContent:
         created = _create(client, ws, auth_owner).json()
         resp = client.put(
             _url(ws, f"/{created['id']}/content"),
-            json={"content": GOOD_CONTENT, "change_type": "manual"},
+            json={"content": GOOD_CONTENT},
             headers=auth_owner,
         )
         assert resp.status_code == 200
         assert resp.json()["version_number"] == 1
         assert [v.version_number for v in self._versions(db, created["id"])] == [1]
 
-    def test_invalid_change_type_rejected(self, client, ws, auth_owner):
-        """客户端只可传 manual / auto（I4）."""
+    def test_change_type_rejected(self, client, ws, auth_owner):
+        """保存请求不再接受 change_type：自动保存必须走 /draft（ADR 0125 D4）."""
         created = _create(client, ws, auth_owner).json()
-        resp = client.put(
-            _url(ws, f"/{created['id']}/content"),
-            json={"content": "box(size = [5, 5, 5])", "change_type": "rollback"},
+        for value in ("auto", "rollback"):
+            resp = client.put(
+                _url(ws, f"/{created['id']}/content"),
+                json={"content": "box(size = [5, 5, 5])", "change_type": value},
+                headers=auth_owner,
+            )
+            assert resp.status_code == 422
+
+
+class TestDraft:
+    """个人草稿端点（ADR 0125 C1/C2/C5/C6 / D6）."""
+
+    def test_get_empty(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.get(_url(ws, f"/{created['id']}/draft"), headers=auth_owner)
+        assert resp.status_code == 200
+        assert resp.json() is None
+
+    def test_put_get_roundtrip(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        saved = client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": "box(size = [6, 6, 6])", "base_version_number": 1},
             headers=auth_owner,
         )
-        assert resp.status_code == 422
+        assert saved.status_code == 200
+        body = saved.json()
+        assert body["base_version_number"] == 1
+        assert body["current_version_number"] == 1
+        assert body["stale"] is False
+        got = client.get(_url(ws, f"/{created['id']}/draft"), headers=auth_owner).json()
+        assert got["content"] == body["content"]
+
+    def test_viewer_cannot_write(self, client, ws, auth_owner, auth_viewer):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": "box(size = [7, 7, 7])"},
+            headers=auth_viewer,
+        )
+        assert resp.status_code == 403
+        assert client.get(_url(ws, f"/{created['id']}/draft"), headers=auth_viewer).json() is None
+
+    def test_discard_idempotent(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": "box(size = [8, 8, 8])"},
+            headers=auth_owner,
+        )
+        assert client.delete(_url(ws, f"/{created['id']}/draft"), headers=auth_owner).status_code == 204
+        assert client.delete(_url(ws, f"/{created['id']}/draft"), headers=auth_owner).status_code == 204
+        assert client.get(_url(ws, f"/{created['id']}/draft"), headers=auth_owner).json() is None
+
+    def test_invalid_base_version(self, client, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": "box(size = [8, 8, 8])", "base_version_number": 99},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "design_draft_base_invalid"
+
+    def test_checkpoint_compile_failure_keeps_draft(self, client, db, ws, auth_owner, monkeypatch: pytest.MonkeyPatch):
+        """到期检查点编译失败：不落版、不改正式内容、草稿保留（ADR 0125 I5）."""
+        monkeypatch.setattr("cndb.plugins.design.services.drafts.DESIGN_CHECKPOINT_INTERVAL_SECONDS", 0)
+        created = _create(client, ws, auth_owner).json()
+        resp = client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": BAD_CONTENT},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["content"] == BAD_CONTENT
+        versions = self._versions(db, created["id"])
+        assert [v.version_number for v in versions] == [1]
+        assert db.get(DesignDesign, created["id"]).content != BAD_CONTENT
+
+    def test_manual_save_deletes_own_draft(self, client, db, ws, auth_owner):
+        created = _create(client, ws, auth_owner).json()
+        draft_content = "box(size = [2, 6, 6])"
+        client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": draft_content},
+            headers=auth_owner,
+        )
+        resp = client.put(
+            _url(ws, f"/{created['id']}/content"),
+            json={"content": draft_content},
+            headers=auth_owner,
+        )
+        assert resp.status_code == 200
+        assert client.get(_url(ws, f"/{created['id']}/draft"), headers=auth_owner).json() is None
+        assert [v.version_number for v in self._versions(db, created["id"])] == [1, 2]
+
+    def test_refresh_clears_all_drafts(self, client, db, ws, auth_editor, auth_owner):
+        created = _create(client, ws, auth_editor).json()
+        for auth in (auth_editor, auth_owner):
+            client.put(
+                _url(ws, f"/{created['id']}/draft"),
+                json={"content": "box(size = [3, 5, 5])"},
+                headers=auth,
+            )
+        assert len(db.execute(select(DesignDesignDraft)).scalars().all()) == 2
+        assert client.post(_url(ws, f"/{created['id']}/refresh"), json={}, headers=auth_editor).status_code == 200
+        assert db.execute(select(DesignDesignDraft)).scalars().all() == []
+
+    @staticmethod
+    def _versions(db, design_id):
+        return db.scalars(
+            select(DesignDesignVersion)
+            .where(DesignDesignVersion.design_id == design_id)
+            .order_by(DesignDesignVersion.version_number)
+        ).all()
 
 
 class TestDelete:
@@ -543,14 +660,16 @@ class TestVersions:
         assert resp.status_code == 404
         assert resp.json()["code"] == "design_version_not_found"
 
-    def test_versions_expose_change_type(self, client, ws, auth_owner, auth_viewer):
-        """列表 / 详情返回 change_type（C1）."""
+    def test_versions_expose_change_type(self, client, ws, auth_owner, auth_viewer, monkeypatch: pytest.MonkeyPatch):
+        """列表 / 详情返回 change_type；auto 仅由检查点产生（ADR 0125 D4）."""
+        monkeypatch.setattr("cndb.plugins.design.services.drafts.DESIGN_CHECKPOINT_INTERVAL_SECONDS", 0)
         created = self._make_two_versions(client, ws, auth_owner)
-        client.put(
-            _url(ws, f"/{created['id']}/content"),
-            json={"content": "box(size = [9, 9, 9])", "change_type": "auto"},
+        checkpoint = client.put(
+            _url(ws, f"/{created['id']}/draft"),
+            json={"content": "box(size = [9, 9, 9])"},
             headers=auth_owner,
         )
+        assert checkpoint.status_code == 200
         items = client.get(_url(ws, f"/{created['id']}/versions"), headers=auth_viewer).json()
         assert [i["version_number"] for i in items] == [3, 2, 1]
         assert [i["change_type"] for i in items] == ["auto", "manual", "manual"]

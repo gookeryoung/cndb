@@ -34,17 +34,35 @@ class DesignUpdate(BaseModel):
 
 
 class DesignContentSave(BaseModel):
-    """保存原文：编译通过才落库并生成新版本（失败旧 IR 不动，边界 #2）.
+    """手动保存原文：编译通过才落库并生成 ``manual`` 版本（失败旧 IR 不动，边界 #2）.
 
-    ``change_type``（ADR 0113 D10）：客户端仅可请求 ``manual`` / ``auto``；
-    ``refresh`` / ``rollback`` 由服务端在对应端点强制赋值。
+    自动保存不走本接口：3s 防抖写 ``/draft``，不落版本（ADR 0125 D4）。
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     content: str = Field(description="结构 DSL 原文")
     comment: str = Field(default="", max_length=200, description="版本备注")
-    change_type: Literal["manual", "auto"] = Field(
-        default="manual", description="版本来源：manual 主动保存 / auto 自动保存"
+
+
+class DesignDraftSave(BaseModel):
+    """保存个人草稿：只写 ``design_designdraft``，不编译、不落版本（ADR 0125 C1/C2）."""
+
+    content: str = Field(description="结构 DSL 原文")
+    base_version_number: int | None = Field(
+        default=None, ge=0, description="开始编辑所基于的版本号（缺省取当前最新版本）"
     )
+
+
+class DesignDraftPayload(BaseModel):
+    """个人草稿载荷：``stale`` 表示开始编辑后设计已前进版本（仅提示，不拦截）."""
+
+    content: str
+    content_size: int = 0
+    base_version_number: int = 0
+    current_version_number: int = 0
+    stale: bool = False
+    updated_at: Any = None
 
 
 class PreviewRequest(BaseModel):

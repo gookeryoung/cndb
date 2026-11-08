@@ -44,6 +44,8 @@ from cndb.plugins.design.schemas import (
     DesignDependenciesResponse,
     DesignDependencyItem,
     DesignDetail,
+    DesignDraftPayload,
+    DesignDraftSave,
     DesignIRResponse,
     DesignLibraryDependencyItem,
     DesignListItem,
@@ -66,19 +68,35 @@ from cndb.plugins.design.schemas import (
     PreviewRequest,
     PreviewResponse,
 )
+from cndb.plugins.design.services.content import (
+    add_version as _add_version,
+)
+from cndb.plugins.design.services.content import (
+    dependency_tuples as _dependency_tuples,
+)
+from cndb.plugins.design.services.content import (
+    latest_version as _latest_version,
+)
+from cndb.plugins.design.services.content import (
+    persist_design_content,
+)
 from cndb.plugins.design.services.diff import design_diff
+from cndb.plugins.design.services.drafts import (
+    delete_all_drafts,
+    discard_design_draft,
+    draft_payload,
+    save_design_draft,
+)
 from cndb.plugins.design.services.dsl.compile import IR_VERSION, CompileResult, compile_design
 from cndb.plugins.design.services.files import (
     build_library_resolver,
     build_resolver,
-    compile_design_file,
     content_hash,
     direct_library_refs,
     direct_use_keys,
     latest_version_map,
     latest_version_number,
     library_grants,
-    mark_referrers_stale,
     sync_refs,
 )
 from cndb.plugins.design.services.keys import generate_file_key
@@ -140,30 +158,6 @@ def _compile_or_400(content: str) -> dict[str, Any]:
             code="design_compile_failed",
         )
     return result.ir or {"version": IR_VERSION, "nodes": [], "outline": {"children": []}}
-
-
-def _compile_for_design(
-    db: Session,
-    design: DesignDesign,
-    content: str | None = None,
-    *,
-    pinned: dict[str, int] | None = None,
-    granted_library_keys: frozenset[tuple[str, int]] | None = None,
-) -> CompileResult:
-    """以设计文件身份编译（kind / file_id / 工作区 resolver / 库解析器），失败 400."""
-    result = compile_design_file(
-        db,
-        design,
-        content,
-        pinned=pinned,
-        granted_library_keys=granted_library_keys,
-    )
-    if not result.ok:
-        raise BadRequestError(
-            "；".join(f"第{d.line}行第{d.col}列：{d.message}" for d in result.diagnostics) or "编译失败",
-            code="design_compile_failed",
-        )
-    return result
 
 
 def _design_outline(design: DesignDesign) -> tuple[dict[str, Any], Literal["compiled", "content"]]:
@@ -228,73 +222,6 @@ def _version_count_map(db: Session, design_ids: list[int]) -> dict[int, int]:
         .all()
     )
     return {int(design_id): int(count) for design_id, count in rows}
-
-
-def _add_version(
-    db: Session,
-    design: DesignDesign,
-    user: User,
-    *,
-    content: str,
-    compiled: dict[str, Any],
-    change_type: str,
-    comment: str = "",
-    dependencies: list[dict[str, Any]] | None = None,
-) -> int:
-    """为设计落一个新版本，返回版本号（D7：每次保存落一版；I5 依赖闭包）.
-
-    ``change_type`` 必填（I1 单一落版入口 / I4 类型不可伪造）：四类来源由调用
-    方显式传入，``refresh`` / ``rollback`` 仅服务端端点赋值（ADR 0113）。
-    """
-    number = latest_version_number(db, design.id) + 1
-    db.add(
-        DesignDesignVersion(
-            design_id=design.id,
-            workspace_id=design.workspace_id,
-            version_number=number,
-            change_type=change_type,
-            content=content,
-            compiled=compiled,
-            dependencies=[dict(item) for item in (dependencies or [])],
-            comment=comment,
-            created_by_id=user.id,
-        )
-    )
-    return number
-
-
-def _latest_version(db: Session, design_id: int) -> DesignDesignVersion | None:
-    """取设计最新版本行（无版本返回 None；保存去重与主动提升用，ADR 0113 §2）."""
-    return (
-        db.query(DesignDesignVersion)
-        .filter(DesignDesignVersion.design_id == design_id)
-        .order_by(DesignDesignVersion.version_number.desc())
-        .first()
-    )
-
-
-def _dependency_tuples(result: CompileResult) -> list[dict[str, Any]]:
-    """CompileResult.dependencies → 可 JSON 化的闭包列表（ADR 0118 C8 超集）."""
-    items: list[dict[str, Any]] = []
-    for item in result.dependencies:
-        entry: dict[str, Any] = {
-            "source": item.source,
-            "file_key": item.file_key,
-            "version_number": item.version_number,
-            "content_hash": item.content_hash,
-        }
-        if item.source == "library":
-            entry.update(
-                {
-                    "module_id": item.module_id,
-                    "module_version_id": item.module_version_id,
-                    "bundle_hash": item.bundle_hash,
-                }
-            )
-        else:
-            entry["file_id"] = item.file_id
-        items.append(entry)
-    return items
 
 
 def _detail(db: Session, design: DesignDesign, *, version_number: int | None = None) -> DesignDetail:
@@ -508,6 +435,53 @@ def update_design(
     return _detail(db, design)
 
 
+@router.get("/{design_id}/draft", response_model=DesignDraftPayload | None)
+def get_design_draft(
+    workspace_id: int,
+    design_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any] | None:
+    """读取本人草稿（成员可读，但只返回自己的草稿；无草稿 / 与最新版相同返回 null）."""
+    _require_member(db, workspace_id, current_user)
+    design = _design_or_404(db, workspace_id, design_id)
+    return draft_payload(db, design, current_user)
+
+
+@router.put("/{design_id}/draft", response_model=DesignDraftPayload | None)
+def put_design_draft(
+    workspace_id: int,
+    design_id: int,
+    payload: DesignDraftSave,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any] | None:
+    """保存本人草稿：不编译、不落版本；到期时顺带落 ``auto`` 检查点（C4）."""
+    _require_editor(db, workspace_id, current_user)
+    design = _design_or_404(db, workspace_id, design_id)
+    return save_design_draft(
+        db,
+        design,
+        current_user,
+        content=payload.content,
+        base_version_number=payload.base_version_number,
+    )
+
+
+@router.delete("/{design_id}/draft", status_code=status.HTTP_204_NO_CONTENT)
+def delete_design_draft(
+    workspace_id: int,
+    design_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """丢弃本人草稿（幂等，恒 204）."""
+    _require_editor(db, workspace_id, current_user)
+    design = _design_or_404(db, workspace_id, design_id)
+    discard_design_draft(db, design, current_user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.put("/{design_id}/content", response_model=DesignDetail)
 def save_design_content(
     workspace_id: int,
@@ -516,44 +490,31 @@ def save_design_content(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DesignDetail:
-    """保存原文：按文件身份编译（resolver 解析 use），写依赖闭包并同步引用索引.
+    """手动保存原文：编译通过才落 ``manual`` 版本（ADR 0125 C3 / D4）.
 
-    成功后沿反向引用图把直接 / 传递引用方置 ``dependencies_stale``（D6）。
-
-    去重与主动提升（ADR 0113 §2 / D7）：内容与最新版一致时 —— ``auto`` 不落版；
-    ``manual`` 且最新版为 ``auto`` 时把该行提升为 ``manual``（不新增版本），其余
-    不落版直接返回当前详情。
+    去重与主动提升（ADR 0113 §2 / D7）：内容与最新版一致时不新增版本；
+    最新版为 ``auto`` 检查点时把该行提升为 ``manual``。成功后删除本人草稿。
     """
     _require_editor(db, workspace_id, current_user)
     design = _design_or_404(db, workspace_id, design_id)
     latest = _latest_version(db, design.id)
     if latest is not None and latest.content == payload.content:
-        if payload.change_type == CHANGE_TYPE_MANUAL and latest.change_type == CHANGE_TYPE_AUTO:
+        if latest.change_type == CHANGE_TYPE_AUTO:
             latest.change_type = CHANGE_TYPE_MANUAL
             if payload.comment:
                 latest.comment = payload.comment
-            db.commit()
-            db.refresh(design)
+        discard_design_draft(db, design, current_user)
+        db.refresh(design)
         return _detail(db, design, version_number=latest.version_number)
-    result = _compile_for_design(db, design, payload.content)
-    assert result.ir is not None
-    design.content = payload.content
-    design.compiled = result.ir
-    design.dependencies = _dependency_tuples(result)
-    design.updated_by_id = current_user.id
-    number = _add_version(
+    number = persist_design_content(
         db,
         design,
         current_user,
         content=payload.content,
-        compiled=result.ir,
-        change_type=payload.change_type,
+        change_type=CHANGE_TYPE_MANUAL,
         comment=payload.comment,
-        dependencies=_dependency_tuples(result),
     )
-    sync_refs(db, design, direct_use_keys(design.content), direct_library_refs(design.content))
-    mark_referrers_stale(db, design.id)
-    db.commit()
+    discard_design_draft(db, design, current_user)
     db.refresh(design)
     return _detail(db, design, version_number=number)
 
@@ -566,26 +527,23 @@ def refresh_design(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> DesignDetail:
-    """依赖刷新（D6）：以当前最新依赖重编译并落新版本，清 ``dependencies_stale``."""
+    """依赖刷新（D6）：以当前最新依赖重编译并落新版本，清 ``dependencies_stale``.
+
+    原文未变，不沿反向引用图重复置陈旧标记；成功后清空该设计全部草稿（ADR 0125 D9）。
+    """
     _require_editor(db, workspace_id, current_user)
     design = _design_or_404(db, workspace_id, design_id)
-    result = _compile_for_design(db, design)
-    assert result.ir is not None
-    design.compiled = result.ir
-    design.dependencies = _dependency_tuples(result)
-    design.dependencies_stale = False
-    design.updated_by_id = current_user.id
-    number = _add_version(
+    number = persist_design_content(
         db,
         design,
         current_user,
         content=design.content,
-        compiled=result.ir,
         change_type=CHANGE_TYPE_REFRESH,
         comment=payload.comment or "依赖更新",
-        dependencies=_dependency_tuples(result),
+        propagate_stale=False,
     )
-    sync_refs(db, design, direct_use_keys(design.content), direct_library_refs(design.content))
+    design.dependencies_stale = False
+    delete_all_drafts(db, design.id)
     db.commit()
     db.refresh(design)
     return _detail(db, design, version_number=number)
@@ -845,30 +803,17 @@ def restore_design_version(
             f"复用模块依赖缺失，无法按历史复现编译：{'、'.join(missing_library)}",
             code="design_library_dependency_missing",
         )
-    result = _compile_for_design(
-        db,
-        design,
-        version.content,
-        pinned=pinned or None,
-        granted_library_keys=frozenset(granted_library_keys),
-    )
-    assert result.ir is not None
-    design.content = version.content
-    design.compiled = result.ir
-    design.dependencies = _dependency_tuples(result)
-    design.updated_by_id = current_user.id
-    number = _add_version(
+    number = persist_design_content(
         db,
         design,
         current_user,
         content=version.content,
-        compiled=result.ir,
         change_type=CHANGE_TYPE_ROLLBACK,
         comment=f"恢复自 v{version_number}",
-        dependencies=_dependency_tuples(result),
+        pinned=pinned or None,
+        granted_library_keys=frozenset(granted_library_keys),
     )
-    sync_refs(db, design, direct_use_keys(design.content), direct_library_refs(design.content))
-    mark_referrers_stale(db, design.id)
+    delete_all_drafts(db, design.id)
     db.commit()
     db.refresh(design)
     return _detail(db, design, version_number=number)

@@ -14,7 +14,7 @@ import logging
 import time
 from typing import Any
 
-from sqlalchemy import delete, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from cndb.core.errors import ConflictError
@@ -129,9 +129,17 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
 
     # 结构设计：版本先删（design_id 关联），再删设计本体（v11 随备份重建）；
     # vendor 快照一并清空（ADR 0118 §9：覆盖恢复后按备份 v14 重建）
-    from cndb.plugins.design.models import DesignDesign, DesignDesignVersion, DesignLibraryVendor
+    from cndb.plugins.design.models import (
+        DesignDesign,
+        DesignDesignDraft,
+        DesignDesignVersion,
+        DesignLibraryVendor,
+    )
 
+    design_ids = select(DesignDesign.id).where(DesignDesign.workspace_id == workspace_id)
     db.execute(delete(DesignLibraryVendor).where(DesignLibraryVendor.workspace_id == workspace_id))
+    # 草稿是个人临时数据、不进备份（ADR 0125 D7）：覆盖恢复时先清，避免旧草稿复活
+    db.execute(delete(DesignDesignDraft).where(DesignDesignDraft.design_id.in_(design_ids)))
     db.execute(delete(DesignDesignVersion).where(DesignDesignVersion.workspace_id == workspace_id))
     db.execute(delete(DesignDesign).where(DesignDesign.workspace_id == workspace_id))
 

@@ -119,6 +119,7 @@ export type {
   DesignDependenciesResponse,
   DesignDetail,
   DesignDiagnostic,
+  DesignDraftPayload,
   DesignIR,
   DesignIRConstraint,
   DesignIRNode,
