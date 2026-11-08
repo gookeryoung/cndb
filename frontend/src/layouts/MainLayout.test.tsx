@@ -235,6 +235,32 @@ describe('MainLayout 顶部导航', () => {
         expect(screen.getByTestId('ws-nav-documents')).toHaveAttribute('aria-current', 'page')
     })
 
+    it('顶栏一级导航「设计」带设计数徽标，点击导航到设计模块', async () => {
+        server.use(http.get('/api/v1/workspaces/:wid/designs', () =>
+            HttpResponse.json([
+                { id: 20, workspace_id: 10, title: '四轮小车', kind: 'assembly' },
+                { id: 21, workspace_id: 10, title: '法兰板', kind: 'part' },
+            ])))
+        renderLayout(mockUser)
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+
+        // 徽标显示设计数（与数据表 / 文档同口径，0 也显示）
+        const designNav = screen.getByTestId('ws-nav-design')
+        await waitFor(() => {
+            expect(designNav).toHaveTextContent('2')
+        })
+
+        // 点击导航到 /w/10/design 且激活态随路由切换
+        fireEvent.click(designNav)
+        await waitFor(() => {
+            expect(screen.getByTestId('designs-page-stub')).toHaveTextContent('/w/10/design')
+        })
+        expect(screen.getByTestId('ws-nav-design')).toHaveAttribute('aria-current', 'page')
+    })
+
     it('顶栏一级导航各项均带图标，直观区分入口类型', async () => {
         renderLayout(mockUser)
 

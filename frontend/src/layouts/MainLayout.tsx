@@ -17,7 +17,7 @@ import {
   LockOutlined, ApartmentOutlined, AppstoreOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { systemApi, tableApi, workspaceApi } from '@/api'
+import { designsApi, systemApi, tableApi, workspaceApi } from '@/api'
 import { useTableHoverPrefetch } from '@/pages/workspace/tablePrefetch'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
@@ -235,6 +235,14 @@ export default function MainLayout() {
     staleTime: 60_000,
   })
 
+  // 设计数徽标：设计列表端点无分页，与设计管理页共用 ['designs', wid] 缓存，新建 / 删除后自动刷新
+  const { data: designs = [], isSuccess: designsReady } = useQuery({
+    queryKey: ['designs', wid],
+    queryFn: () => (wid ? designsApi.list(wid) : Promise.resolve([])),
+    enabled: !!wid && wsFeatures.design,
+    staleTime: 60_000,
+  })
+
   // 文档侧栏的文档树：与文档管理页同源 tree 端点（共享 react-query 缓存），全量文档+文件夹
   const inDocumentsContext = !!wid && location.startsWith(`/w/${wid}/documents`)
   // 设计模块上下文：页签行不再渲染工作区级质量检查（2026-11-02 用户口径）
@@ -358,7 +366,7 @@ export default function MainLayout() {
   /** 顶栏一级模块导航（需求 0081 C4）：数据表 → 文档 → 设计 → 工作区设置.
    *
    * 前三项按勾选模块门控（ADR 0080 口径），「工作区设置」恒显；
-   * 数据表 / 文档带数量徽标（仅数据就绪后渲染，0 也显示）；
+   * 数据表 / 文档 / 设计带数量徽标（仅数据就绪后渲染，0 也显示）；
    * key 即路由段（/w/:wid/{key}），激活态由 activeWsTab 驱动。
    * 仅桌面端渲染：移动端顶栏放不下，一级模块维持页签行承载（C5）。
    */
@@ -379,7 +387,7 @@ export default function MainLayout() {
       key: 'design',
       icon: <ToolOutlined />,
       label: '设计',
-      count: undefined,
+      count: designsReady ? designs.length : undefined,
     }] : []),
     // 项目清单（ADR 0122）：仅在项目模式工作区出现
     ...(currentWs?.project_mode === 'project' ? [{
