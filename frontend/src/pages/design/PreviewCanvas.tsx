@@ -86,6 +86,13 @@ function getMaterial(): THREE.MeshStandardMaterial {
   return sharedMaterial
 }
 
+/** 自适应框选距离（纯数学）：取水平 / 竖直视场角中较小者，保证两个方向都框入 */
+export function fitDistance(fovDeg: number, aspect: number, radius: number, padding = 1.6): number {
+  const halfV = (fovDeg * Math.PI) / 360
+  const halfH = Math.atan(Math.tan(halfV) * Math.max(aspect, 1e-6))
+  return (Math.max(radius, 1) * padding) / Math.tan(Math.min(halfV, halfH))
+}
+
 /** 计算把相机放到能框住包围盒的距离（对角视角） */
 export function frameCamera(camera: THREE.PerspectiveCamera, box: THREE.Box3, fit = 1.6): boolean {
   if (box.isEmpty()) return false
@@ -261,8 +268,21 @@ export default function PreviewCanvas({ ir, onStats, onViewportApi }: PreviewCan
     }
     const fit = () => {
       const box = boxOf()
-      if (!box || !frameCamera(camera, box)) return
-      controls.target.copy(box.getCenter(new THREE.Vector3()))
+      if (!box) return
+      const center = box.getCenter(new THREE.Vector3())
+      // 自适应缩放：沿用当前视线方向与 up，仅按视口宽高比调整相机距离，
+      // 不改视图方位（定向由 orientTo 负责）
+      const dir = camera.position.clone().sub(controls.target)
+      if (dir.lengthSq() < 1e-9) dir.set(1, -1, 0.65) // 尚未定向（相机与目标重合）时借等轴测方向
+      dir.normalize()
+      const size = box.getSize(new THREE.Vector3())
+      const distance = fitDistance(camera.fov, camera.aspect, size.length() / 2)
+      camera.position.copy(center).addScaledVector(dir, distance)
+      camera.near = Math.max(distance / 1000, 0.1)
+      camera.far = distance * 100
+      camera.updateProjectionMatrix()
+      camera.lookAt(center)
+      controls.target.copy(center)
       controls.update()
     }
     viewportApiRef.current?.({

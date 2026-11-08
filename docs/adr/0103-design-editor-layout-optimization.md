@@ -17,7 +17,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 |---|---|---|
 | C1 | 侧边栏保留装配树范式 + 双向定位闭环 | 侧栏信息架构不动（0084 D4/D5）；补两件事：① 大纲节点点击后 `selectedKeys` 持续高亮该节点（现状仅设计根）；② `?line=` 定位源行时按 D9 归属规则滚动到对应大纲节点并展开祖先链（树↔编辑器双向） |
 | C2 | 编辑器 / 预览分栏拖拽 + 三档预设，默认均分 | `.cn-dsl-workbench` 由固定 `1fr 1fr` 改为自研 splitter（D3）：内联 `grid-template-columns` 比例拖拽（clamp 25%–75%、每侧 ≥320px）、预设三档（编辑器优先 60/40 / 均分 50/50（默认，D10）/ 视口优先 40/60）、比例存 localStorage `cn-design-editor-split`；窄屏 <1024px 维持纵向堆叠、不渲染 splitter |
-| C3 | 视口悬浮工具条：七向定向 / 布满 / 网格开关 | 视口右上悬浮胶囊（D4）：视图定向 Dropdown（主视 / 俯视 / 仰视 / 左视 / 右视 / 后视 / 等轴测，术语 D11）+ 布满视图（fit，复用现有 frame 逻辑）+ 网格显隐开关；`PreviewCanvas` 经 `onViewportApi` 回调暴露 `{ orientTo, fit, setGridVisible }`，工具条 UI 在编辑器页渲染 |
+| C3 | 视口悬浮工具条：七向定向 / 布满 / 网格开关 | 视口右上悬浮胶囊（D4）：视图定向 Dropdown（主视 / 俯视 / 仰视 / 左视 / 右视 / 后视 / 等轴测，术语 D11）+ 布满视图（fit：自适应缩放——保持当前视线方向与 up 不变，仅按视口宽高比取水平 / 竖直较小视场角计算相机距离并居中包围盒，不复用 `frameCamera` 的等轴测方位重置）+ 网格显隐开关；`PreviewCanvas` 经 `onViewportApi` 回调暴露 `{ orientTo, fit, setGridVisible }`，工具条 UI 在编辑器页渲染 |
 | C4 | 视口底部状态条：单位 / 节点数 / 三角数 | 视口左下常驻细条：`{units.length} · 节点 {n} · 三角 {m}`；单位取 IR `units.length`（不硬编码，D5），统计接通既有 `onStats` 回调（现状无消费者） |
 | C5 | 参数面板常驻：预览栏底部「参数｜约束」可折叠 Tabs | 参数抽屉退役；预览栏纵向 flex = 视口（flex:1）+ 底部面板（展开上限 280px 内部滚动 / 折叠为 36px 细条，折叠态存 localStorage `cn-design-params-collapsed`）；Tab 徽标 = 覆盖数 / 约束数；参数改值即时重编译（沿用 preview 端点 + 一键重置覆盖，行为不变）；约束列表复用 `DesignConstraintsPanel` 内容渲染，原预览底部横条退役 |
 | C6 | 工具栏单行化 + 次要动作图标化 | `.cn-dsl-toolbar` 恒单行（nowrap，标题 truncate）；版本历史与导出为两个独立图标按钮（D6）：版本历史图标直接打开抽屉，导出图标展开格式菜单；标题 / 版本标签 / 编译状态 / 保存常显；诊断条保留 |
@@ -205,7 +205,7 @@ Related: `frontend/src/pages/design/`、`frontend/src/layouts/MainLayout.tsx`、
 ## 交接（会话结束更新）
 
 - 当前阶段：全期落地（P0 / P1 / P2 完成，`Status: Implemented`）
-- 已完成：splitter + 三档预设 + 持久化；视口悬浮工具条（七向定向 / fit / 网格开关）+ 状态条；工具栏单行 + 「更多」收纳；参数｜约束常驻可折叠面板；侧栏双向定位闭环（选中态 + `?line=` 反选 + 祖先展开 + `scrollTo`）；管理页目录分组 + 类型筛选（分组形态后由 ADR 0109 D2 修订为行内 Tag，筛选移入侧栏产品列表态，管理入口不再占用 Content）；IR v5 `node_index`（含布尔块共享、use 模板平移）与树→视口高亮渐隐
+- 已完成：splitter + 三档预设 + 持久化；视口悬浮工具条（七向定向 / fit / 网格开关）+ 状态条（fit 为自适应缩放：保持当前方位与 up，仅按视口宽高比调整相机距离）；工具栏单行 + 「更多」收纳；参数｜约束常驻可折叠面板；侧栏双向定位闭环（选中态 + `?line=` 反选 + 祖先展开 + `scrollTo`）；管理页目录分组 + 类型筛选（分组形态后由 ADR 0109 D2 修订为行内 Tag，筛选移入侧栏产品列表态，管理入口不再占用 Content）；IR v5 `node_index`（含布尔块共享、use 模板平移）与树→视口高亮渐隐
 - 下一步：无（需求关闭）。若要再演进：① 大纲节点结束行（D9 启发式换精确区间，需解析器支持块结束标记）；② 高亮补 BREP 级面选（当前为 CSG 网格粒度，§4#1）
 - 已知坑：① `node_index` 语义是「首个所属顶层 `nodes` 下标」——布尔块内全部零件共享块下标，高亮粒度即整块；② use 实例的子树行号属于被引用文件，反向定位必须按 `file_id` 过滤（`resolveOutlinePath` 已实现）；③ 静态单 mesh 合并（ADR 0086 C9）后 `nodeGroups` 被清空，高亮因此改为「按需求值单节点 + 叠加 emissive 副本」，不要退回遍历 `nodeGroups` 的做法；④ 同一节点重复点击不改变 `?line=`，高亮不会重触发（§4#5 的「再次点击可重触发」需先换行号）；⑤ shell 若被注入 `LD_LIBRARY_PATH` 会让 sqlite3 缺 `deserialize`，后端测试卡死在 import 阶段（先 `unset` 再跑）
 - 最近一次全绿：`make flow`（后端 6758 例）+ 前端全量 vitest（3008 例）+ 设计类 e2e 7 例（`design-editor-layout` / `design-tree-viewport-linkage` / `design-structure-tree` / `design-3d-preview` / `design-sidebar-assembly`）
