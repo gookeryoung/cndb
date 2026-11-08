@@ -148,8 +148,8 @@ class _Closure:
     library_resolver: Callable[[str, int], LibrarySource | None] | None = None
     #: 当前正在编译的库版本快照栈：内部 use 只在该版本依赖包内解析（C6）
     library_stack: list[LibrarySource] = field(default_factory=list)
-    #: module_version_id → 已解析的完整版本快照（含依赖包）
-    libraries: dict[int, LibrarySource] = field(default_factory=dict)
+    #: 库版本身份 → 已解析的完整版本快照（含依赖包）；vendor 快照无数据库 id
+    libraries: dict[tuple[Any, ...], LibrarySource] = field(default_factory=dict)
 
 
 def _compile(content: str, overrides: dict[str, float], *, file_kind: str, closure: _Closure) -> dict[str, Any]:
@@ -599,11 +599,16 @@ class _Emitter:
         bindings = self._bind_use_args(source, call, env)
         binding_key = tuple(sorted(bindings.items()))
         if call.library is not None:
-            key: tuple[Any, ...] = ("library", source.module_version_id, source.version_number, binding_key)
+            key: tuple[Any, ...] = (
+                "library",
+                *_library_identity(source),
+                source.version_number,
+                binding_key,
+            )
         elif source.source == "library":
             key = (
                 "library_file",
-                source.module_version_id,
+                *_library_identity(source),
                 source.file_key,
                 source.version_number,
                 binding_key,
@@ -710,7 +715,7 @@ class _Emitter:
         source = self._closure.library_resolver(ref.module_key, ref.version_number)
         if source is None:
             raise DslEvalError(f"未找到引用的复用模块 '{ref.module_key}@v{ref.version_number}'", call.line, call.col)
-        self._closure.libraries[source.module_version_id] = source
+        self._closure.libraries[_library_identity(source)] = source
         identity = _lib_module_identity(source)
         if identity in self._closure.stack:
             chain = " → ".join([*self._closure.stack, identity])
@@ -750,7 +755,7 @@ class _Emitter:
         for file in library.files:
             if file.file_key != call.file_key:
                 continue
-            identity = _lib_file_identity(library, call.file_key)
+            identity = _lib_file_identity(file, call.file_key)
             if identity in self._closure.stack:
                 chain = " → ".join([*self._closure.stack, identity])
                 raise DslEvalError(f"循环引用：{chain}", call.line, call.col)
@@ -864,19 +869,32 @@ def _ws_identity(file_id: int) -> str:
     return f"ws:{file_id}"
 
 
-def _lib_module_identity(source: LibrarySource) -> str:
-    """复用模块版本身份."""
-    return f"libver:{source.module_version_id}"
+def _library_identity(source: LibrarySource | FileSource) -> tuple[Any, ...]:
+    """库版本的自然身份：有数据库 id 用 id，vendor 快照退化为自然键 + 内容哈希.
+
+    vendor 快照（备份离线恢复）``module_version_id`` 固定为 0，不能作为身份键；
+    否则多个 vendor 模块会命中同一缓存 / 依赖槽位，导致后者渲染成前者的几何。
+    """
+    if source.module_version_id:
+        return ("id", source.module_version_id)
+    return ("vendor", source.module_key, source.version_number, source.content_hash)
 
 
-def _lib_file_identity(source: LibrarySource, file_key: str) -> str:
+def _lib_module_identity(source: LibrarySource | FileSource) -> str:
+    """复用模块版本身份（预算 / 循环检测 / 依赖去重键）."""
+    if source.module_version_id:
+        return f"libver:{source.module_version_id}"
+    return f"libver:{source.module_key}@{source.version_number}#{source.content_hash}"
+
+
+def _lib_file_identity(source: LibrarySource | FileSource, file_key: str) -> str:
     """复用模块版本依赖包内的文件身份."""
-    return f"libfile:{source.module_version_id}:{file_key}"
+    return f"{_lib_module_identity(source)}:{file_key}"
 
 
 def _source_identity(source: FileSource) -> str:
     if source.source == "library":
-        return f"libfile:{source.module_version_id}:{source.file_key}"
+        return _lib_file_identity(source, source.file_key)
     return _ws_identity(source.file_id)
 
 
@@ -887,10 +905,10 @@ def _compile_library_source(
     call: UseCall,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """编译复用模块版本根文件：快照作用域内 use 只在依赖包解析（ADR 0118 C6）."""
-    library = closure.libraries.get(source.module_version_id or 0)
+    library = closure.libraries.get(_library_identity(source))
     if library is None:  # pragma: no cover - 解析阶段已登记
         raise DslEvalError(f"复用模块 '{source.file_key}' 的快照缺失", call.line, call.col)
-    closure.stack.append(f"libver:{source.module_version_id}")
+    closure.stack.append(_lib_module_identity(source))
     closure.library_stack.append(library)
     try:
         return _compile_source_body(source.content, source.file_key, bindings, closure, call)
