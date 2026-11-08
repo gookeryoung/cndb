@@ -742,8 +742,10 @@ body {
 .cn-gs-box .cn-gs-input,
 .cn-gs-box .cn-gs-input:focus,
 .cn-gs-box .cn-gs-input:focus-within {
-  outline: none;
-  box-shadow: none;
+  outline: none !important;
+  /* !important 用于压过文末 .ant-input-affix-wrapper-focused 的 1px 品牌色 ring，
+   * 否则内层 ring 与外层 .cn-gs-box 的 1px 边框会在右侧叠成双线。 */
+  box-shadow: none !important;
 }
 
 .cn-gs-scope {
@@ -7197,6 +7199,110 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-text-muted);
 }
 
+/* 贡献统计图表（需求 0126）：GitHub 风格日历热力图 + 按月趋势 */
+.cn-contrib-charts {
+  margin-bottom: var(--cn-space-lg);
+}
+
+.cn-contrib-calendar-scroll {
+  overflow-x: auto;
+  padding-bottom: var(--cn-space-xs);
+}
+
+.cn-contrib-months {
+  display: flex;
+  gap: 2px;
+  margin-left: 24px;
+  margin-bottom: var(--cn-space-xs);
+}
+
+.cn-contrib-month {
+  position: relative;
+  width: 12px;
+  font-size: var(--cn-text-xs);
+  line-height: 1;
+  color: var(--cn-text-muted);
+  white-space: nowrap;
+}
+
+.cn-contrib-calendar-body {
+  display: flex;
+  gap: 4px;
+}
+
+.cn-contrib-weekdays {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 20px;
+  flex: none;
+}
+
+.cn-contrib-weekday {
+  height: 12px;
+  line-height: 12px;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+  text-align: right;
+}
+
+.cn-contrib-weekday-hidden {
+  visibility: hidden;
+}
+
+.cn-contrib-weeks {
+  display: flex;
+  gap: 2px;
+}
+
+.cn-contrib-week {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cn-contrib-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: #ebedf0;
+  display: inline-block;
+}
+
+.cn-contrib-cell.lvl-1 { background: #9be9a8; }
+.cn-contrib-cell.lvl-2 { background: #40c463; }
+.cn-contrib-cell.lvl-3 { background: #30a14e; }
+.cn-contrib-cell.lvl-4 { background: #216e39; }
+.cn-contrib-cell.out-of-range { background: transparent; }
+
+.cn-contrib-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: var(--cn-space-sm);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-contrib-trend-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-md);
+  margin-bottom: var(--cn-space-sm);
+}
+
+.cn-contrib-trend-head .cn-ws-stats-section-title {
+  margin-bottom: 0;
+}
+
+body.theme-dark .cn-contrib-cell { background: #161b22; }
+body.theme-dark .cn-contrib-cell.lvl-1 { background: #0e4429; }
+body.theme-dark .cn-contrib-cell.lvl-2 { background: #006d32; }
+body.theme-dark .cn-contrib-cell.lvl-3 { background: #26a641; }
+body.theme-dark .cn-contrib-cell.lvl-4 { background: #39d353; }
+body.theme-dark .cn-contrib-cell.out-of-range { background: transparent; }
+
 /* 统计页「贡献统计」占位空态（后端聚合接口未接入前） */
 .cn-ws-stats-empty {
   display: flex;
@@ -8478,15 +8584,13 @@ body.cn-doc-focus-view .cn-doc-stats {
   box-shadow: 0 0 0 1px var(--cn-brand-color) !important;
 }
 
-/* 顶栏搜索框：保持单层线条，聚焦只描一条品牌色线（与 GitHub header search 对齐） */
+/* 顶栏搜索框：保持单层线条，聚焦只描一条品牌色线（与 GitHub header search 对齐）。
+ * 不要再给聚焦态加 box-shadow ring：外框 1px + ring 1px 就是用户看到的双边框。 */
 .cn-gs-box,
 .cn-gs-box-open,
 .cn-gs-box:focus-within {
   border-width: 1px;
-}
-
-.cn-gs-box:focus-within {
-  box-shadow: 0 0 0 1px var(--cn-brand-color);
+  box-shadow: none;
 }
 
 /* 表格 / 卡片 / 弹层的静态边界统一为 1px 中性线；弹层保留必要投影，仅收细描边 */

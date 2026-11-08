@@ -239,6 +239,35 @@ class TestWorkspaceContributions:
         assert totals == sorted(totals, reverse=True)
         assert removed["last_active_at"].startswith("2026-01-05T09:00")
 
+        # 近 12 个月按天时序：同日多项活动合并计数
+        assert payload["timeline_start"] <= "2026-01-01" <= payload["timeline_end"]
+        daily = {(entry["date"], entry["user_id"]): entry["count"] for entry in payload["daily"]}
+        assert daily[("2026-01-01", users["owner"].id)] == 3
+        assert daily[("2026-01-01", users["editor"].id)] == 1
+        assert daily[("2026-01-03", users["former"].id)] == 2
+        assert daily[("2026-01-04", users["editor"].id)] == 1
+        assert daily[("2026-01-05", users["removed"].id)] == 1
+        assert daily[("2026-01-05", users["editor"].id)] == 1
+        # 回收站表 / 无 actor 的审计不进入时序
+        assert all(entry["user_id"] in {user.id for user in users.values()} for entry in payload["daily"])
+
+    def test_daily_timeline_excludes_activity_outside_window(self, client, db):
+        owner = _user(db, "contrib-window-owner")
+        ws = _workspace(db, owner, name="窗口外活动")
+        table = DataTable(workspace_id=ws.id, name="窗口表", db_table_name=f"t_window_{ws.id}")
+        db.add(table)
+        db.commit()
+        db.refresh(table)
+        _add_audit(db, table, "create", owner, dt.datetime(2020, 1, 1, 9, 0))
+        headers = _login(client, "contrib-window-owner")
+
+        r = client.get(f"{WS}/{ws.id}/stats/contributions", headers=headers)
+        assert r.status_code == 200, r.text
+        payload = r.json()
+        item = next(item for item in payload["items"] if item["user_id"] == owner.id)
+        assert item["rows_created"] == 1  # 累计仍为全部时间
+        assert payload["daily"] == []  # 时序仅近 12 个月
+
     def test_contributions_require_workspace_member(self, client, db):
         ws, _users = _seed(db, client)
         headers = _login(client, "contrib-outsider")

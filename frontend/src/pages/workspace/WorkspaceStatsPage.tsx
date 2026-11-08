@@ -25,6 +25,7 @@ import { formatSize } from '@/utils/formatSize'
 import { workspaceModulesFeatures, WORKSPACE_MODULE_LABEL, normalizeModules } from '@/utils/workspaceModules'
 import { VISIBILITY_LABEL } from '@/pages/settings/workspaceRoles'
 import { normalizeWorkspaceStatsSection } from './workspaceStatsSections'
+import ContributionCharts from './ContributionCharts'
 
 const CONTRIBUTION_ROLE_LABEL: Record<string, string> = {
   owner: '所有者',
@@ -123,6 +124,7 @@ function ContributionSection({
           数据行贡献自本版本起统计：历史行操作未记录操作人，无法回溯归属。
         </div>
       )}
+      {!isError && data && <ContributionCharts data={data} items={data.items} />}
       {isError ? (
         <Alert type="error" showIcon message="贡献统计加载失败" description="请稍后重试。" />
       ) : (

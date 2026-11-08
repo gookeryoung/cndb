@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -135,10 +135,23 @@ class WorkspaceContributionItem(BaseModel):
     last_active_at: datetime | None = None
 
 
+class WorkspaceContributionDailyItem(BaseModel):
+    """按天时序中的非零计数项（近 12 个月）."""
+
+    date: date
+    user_id: int
+    count: int
+
+
 class WorkspaceContributionsResponse(BaseModel):
-    """工作区贡献统计响应（全部时间，按合计降序）."""
+    """工作区贡献统计响应（累计全部时间，另附近 12 个月按天时序）."""
 
     generated_at: datetime
+    #: 按天时序窗口（含端点）
+    timeline_start: date
+    timeline_end: date
+    #: 仅含窗口内且计数非零的 (日期, 用户) 组合
+    daily: list[WorkspaceContributionDailyItem] = []
     items: list[WorkspaceContributionItem] = []
 
 

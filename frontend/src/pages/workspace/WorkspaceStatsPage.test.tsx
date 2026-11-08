@@ -1,12 +1,26 @@
 /** WorkspaceStatsPage 测试 —— 一级导航「统计」页（/w/:wid/stats）. */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { http, HttpResponse } from 'msw'
 import { Routes, Route } from 'react-router-dom'
 import { screen, within } from '@testing-library/react'
 import WorkspaceStatsPage from './WorkspaceStatsPage'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
+
+// ECharts 生命周期在组件单测里不落真实渲染，只断言 option 装配被调用
+const echartsMock = vi.hoisted(() => {
+  const setOption = vi.fn()
+  const resize = vi.fn()
+  const dispose = vi.fn()
+  const init = vi.fn(() => ({ setOption, resize, dispose }))
+  return { init, setOption, resize, dispose }
+})
+
+vi.mock('echarts/core', () => ({ use: vi.fn(), init: echartsMock.init }))
+vi.mock('echarts/charts', () => ({ LineChart: {} }))
+vi.mock('echarts/components', () => ({ GridComponent: {}, TooltipComponent: {} }))
+vi.mock('echarts/renderers', () => ({ SVGRenderer: {} }))
 
 function setupWorkspaceDetailHandler(overrides: Record<string, unknown> = {}) {
   server.use(
@@ -58,6 +72,15 @@ function setupContributionHandler(
       if (status !== 200) return HttpResponse.json({ detail: 'boom' }, { status })
       return HttpResponse.json({
         generated_at: '2026-11-08T12:00:00',
+        timeline_start: '2026-01-01',
+        timeline_end: '2026-01-31',
+        daily: items.length > 0
+          ? [
+              { date: '2026-01-01', user_id: 1, count: 5 },
+              { date: '2026-01-03', user_id: 1, count: 1 },
+              { date: '2026-01-04', user_id: 2, count: 2 },
+            ]
+          : [],
         items,
       })
     }),
@@ -144,6 +167,13 @@ describe('WorkspaceStatsPage 工作区统计页', () => {
     // 历史行归属提示
     expect(screen.getByText(/数据行贡献自本版本起统计/)).toBeInTheDocument()
     expect(screen.queryByTestId('ws-stats-grid')).not.toBeInTheDocument()
+    // 图表：GitHub 风格日历 + 可按成员切换的按月趋势
+    expect(screen.getByTestId('ws-contribution-calendar')).toBeInTheDocument()
+    expect(screen.getByTestId('ws-contribution-trend')).toBeInTheDocument()
+    expect(screen.getByText('工作区总量')).toBeInTheDocument()
+    expect(screen.getByLabelText('2026-01-01 共 5 次贡献')).toBeInTheDocument()
+    expect(echartsMock.init).toHaveBeenCalled()
+    expect(echartsMock.setOption).toHaveBeenCalled()
   })
 
   it('贡献统计按启用模块隐藏数据行 / 文档 / 设计列', async () => {

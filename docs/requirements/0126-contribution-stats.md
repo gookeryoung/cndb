@@ -25,6 +25,9 @@
 | C7 | 「显示贡献情况」（前端） | 替换贡献统计空态：加载 / 错误 / 空态 + 成员贡献表（成员、角色 / 曾为编辑者 / 已移出、数据行新建 / 更新、文档新建 / 保存、设计新建 / 保存、合计、最近活动）；按工作区已启用模块隐藏对应列；文案与操作提示遵循 ADR 0105。 | `frontend/src/pages/workspace/WorkspaceStatsPage.tsx`、`frontend/src/api/workspaces.ts` | 前端单测：有数据表格、模块列隐藏、空态 / 错误态；e2e 更新占位断言 |
 | C8 | （性能 / 缓存） | 聚合按需实时计算（与文档 / 设计计数同口径），不引入新缓存；查询只走既有索引，按 `workspace_id` 限定；列表规模 = 工作区编辑者数量。 | 聚合服务 | 接口层：无缓存仍正确；查询计划人工核对 |
 | C9 | （文档） | CHANGELOG 记录；CONTEXT「工作区统计」条目补充贡献统计口径；移除「贡献统计暂为空状态占位」表述。 | `CHANGELOG.md`、`CONTEXT.md` | `make check-docs` |
+| C10 | 「类似 GITHUB 的图表曲线」（形态） | 贡献统计新增两段图表：① **GitHub 主页式日历热力图**：近 12 个月按天着色（0–4 五档），行 = 星期、列 = 周，单元格悬停显示「日期：N 次贡献」；② **按月折线趋势**：按自然月汇总所选范围贡献总量，平滑折线 + 面积。图表与成员贡献表同页展示。 | `frontend/src/pages/workspace/` | 前端单测：日历 / 趋势容器与按天着色数据渲染 |
+| C11 | 「图表曲线表示数据」（维度 / 时间） | 趋势默认「工作区总量」，可切换单个成员；日历与趋势共用同一时间窗口 **近 12 个月（含今天共 365 天）**，不提供其他时间范围控件。 | 聚合服务、前端图表组件 | 单测：窗口外活动只进累计值、不进时序 |
+| C12 | （接口） | `GET /api/v1/workspaces/{wid}/stats/contributions` 响应新增 `timeline_start` / `timeline_end`（日期）与 `daily`（仅窗口内、计数非零的 `{date, user_id, count}`），累计字段仍为全部时间；不新增接口、不引入缓存。 | `workspaces/services/contributions.py`、`schemas/` | 接口层：时序字段、同日合并、窗口过滤 |
 
 约束编号在实现中原样引用；不重编号、不合并。
 
@@ -47,6 +50,11 @@
 GET /api/v1/workspaces/{wid}/stats/contributions
 200 {
   "generated_at": "2026-11-08T12:00:00Z",
+  "timeline_start": "2025-11-09",
+  "timeline_end": "2026-11-08",
+  "daily": [
+    {"date": "2026-01-03", "user_id": 12, "count": 2}
+  ],
   "items": [{
     "user_id": 12, "username": "alice", "nickname": "Alice",
     "role": "editor" | "viewer" | "owner" | null,
@@ -102,5 +110,6 @@ GET /api/v1/workspaces/{wid}/stats/contributions
 ## 落地状态（2026-11-08）
 
 - C1-C9 已实现：`workspaces/services/contributions.py`（新增）、`GET /workspaces/{wid}/stats/contributions`、数据行审计 `actor_id` 透传、前端贡献表与模块列隐藏。
-- 测试：`tests/test_workspace_contributions.py` 6 例、`WorkspaceStatsPage.test.tsx` 贡献统计 4 例；`make check-fast` 绿。
-- 边界：历史数据行无 `actor_id` 不计入；成员角色变更史未新增，曾为编辑者按历史活动推断。
+- C10-C12 已实现：贡献统计页新增 GitHub 风格日历热力图与按月折线趋势（`frontend/src/pages/workspace/ContributionCharts.tsx`），趋势默认工作区总量、可切换单个成员；接口新增 `timeline_start` / `timeline_end` / `daily`（近 365 天、仅非零日），累计值仍为全部时间。
+- 测试：`tests/test_workspace_contributions.py` 7 例（含同日合并与窗口外过滤）、`WorkspaceStatsPage.test.tsx` 8 例；`make check-fast` 绿。
+- 边界：历史数据行无 `actor_id` 不计入；成员角色变更史未新增，曾为编辑者按历史活动推断；按天时序只覆盖近 12 个月，更早活动只体现在累计值。

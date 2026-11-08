@@ -78,9 +78,20 @@ export interface WorkspaceContributionItem {
   last_active_at?: string | null
 }
 
-/** 工作区贡献统计响应（全部时间，按合计降序） */
+/** 工作区贡献统计按天时序项（近 12 个月，仅非零日） */
+export interface WorkspaceContributionDailyItem {
+  /** YYYY-MM-DD（UTC 日） */
+  date: string
+  user_id: ID
+  count: number
+}
+
+/** 工作区贡献统计响应（累计全部时间，另附近 12 个月按天时序） */
 export interface WorkspaceContributions {
   generated_at: string
+  timeline_start: string
+  timeline_end: string
+  daily: WorkspaceContributionDailyItem[]
   items: WorkspaceContributionItem[]
 }
 
