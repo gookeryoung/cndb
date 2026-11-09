@@ -77,7 +77,7 @@ def scan_external_storage(db: Session, *, root: Path | None = None) -> StorageRe
         )
     ).all()
     referenced: set[Path] = {
-        content_service._external_version_path(int(doc_id), int(number), base) for doc_id, number in rows
+        content_service.external_version_path(int(doc_id), int(number), base) for doc_id, number in rows
     }
 
     for path in sorted(referenced):

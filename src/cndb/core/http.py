@@ -297,7 +297,7 @@ def _retry_after_seconds(resp: httpx2.Response) -> float:
         return 0.0
 
 
-def _resolve_path(data: Any, path: str) -> Any:
+def resolve_path(data: Any, path: str) -> Any:
     """用简化的 a.b.c[0].x 语法提取嵌套值.
 
     不处理复杂的 filter/wildcard，只做 attr + index 链式访问.
@@ -333,7 +333,7 @@ def _resolve_path(data: Any, path: str) -> Any:
     return node
 
 
-def _extract_array(payload: Any, data_path: str | None, try_candidates: bool) -> list[dict[str, Any]]:
+def extract_array(payload: Any, data_path: str | None, try_candidates: bool) -> list[dict[str, Any]]:
     """从任意 JSON 响应中提取对象数组.
 
     策略：
@@ -354,7 +354,7 @@ def _extract_array(payload: Any, data_path: str | None, try_candidates: bool) ->
             return rows
 
     if data_path:
-        found = _resolve_path(payload, data_path)
+        found = resolve_path(payload, data_path)
         if isinstance(found, list):
             explicit_list_found = True
             rows = [r for r in found if isinstance(r, dict)]
@@ -706,7 +706,7 @@ def _fetch_json_from_url(config: FetchConfig, client: httpx2.Client, url: str) -
     except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         raise ValueError(f"响应不是合法 JSON: {exc}") from exc
 
-    return _extract_array(payload, config.data_path, config.try_candidate_paths)
+    return extract_array(payload, config.data_path, config.try_candidate_paths)
 
 
 def validate_query_interval(interval: float | int) -> float:
@@ -745,15 +745,15 @@ __all__ = [
     "USER_AGENT",
     "FetchConfig",
     "ResponseHandler",
-    "_extract_array",
     "_get_response_handler",
     "_is_private_or_reserved_ip",
     "_is_throttle_like_error",
     "_parse_tencent_stock",
-    "_resolve_path",
     "_retry_backoff_seconds",
+    "extract_array",
     "fetch_json",
     "open_http_client",
+    "resolve_path",
     "validate_query_interval",
     "validate_url",
 ]

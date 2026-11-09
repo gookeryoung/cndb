@@ -43,7 +43,7 @@ from cndb.plugins.workspaces.schemas import (
 )
 from cndb.plugins.workspaces.services.backup_io import (
     _coerce_row_value_types,
-    _import_backup_into_workspace,
+    import_backup_into_workspace,
 )
 
 # 工作区列表缓存（进程内，短 TTL；写路径主动失效）
@@ -393,7 +393,7 @@ def create_workspace_from_backup(
 
     # 导入备份中的表/数据/视图
     try:
-        import_result = _import_backup_into_workspace(ws.id, data, current_user, db)
+        import_result = import_backup_into_workspace(ws.id, data, current_user, db)
     except HTTPException:
         # 导入失败：清理刚创建的工作区，避免脏数据残留
         db.delete(ws)
@@ -431,7 +431,7 @@ def import_workspace(
     if not isinstance(data, dict) or "tables" not in data:
         raise HTTPException(status_code=400, detail="无效的导入数据格式")
 
-    return _import_backup_into_workspace(workspace_id, data, current_user, db)
+    return import_backup_into_workspace(workspace_id, data, current_user, db)
 
 
 # ── v9 归档备份 / 覆盖恢复（ADR 0075） ──────────────────────────────

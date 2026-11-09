@@ -146,12 +146,12 @@ class TestExternalContentStorage:
     def test_inline_compressed_roundtrip(self, docs_dir):
         """50KB~2MB 区间内联 gzip+base64 存储可无损读取."""
         text = "中" * (content_service.INLINE_MAX_SIZE // 3 + 100)
-        stored = content_service._store_content_bytes(Document(id=4242), 1, text, len(text.encode("utf-8")))
+        stored = content_service.store_content_bytes(Document(id=4242), 1, text, len(text.encode("utf-8")))
         assert stored.startswith("gz:")
-        assert content_service._decode_inline_compressed(stored) == text
+        assert content_service.decode_inline_compressed(stored) == text
 
     def test_inline_compressed_corrupt_degrades(self, docs_dir):
-        assert content_service._decode_inline_compressed("gz:!!!not-base64!!!") == ""
+        assert content_service.decode_inline_compressed("gz:!!!not-base64!!!") == ""
 
     def test_load_content_none_version(self, docs_dir):
         assert content_service.load_content(None, Document(id=1)) == ""

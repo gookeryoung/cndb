@@ -77,21 +77,21 @@ class TestValidateUrl:
 
 class TestResolvePath:
     def test_simple_key(self):
-        assert af._resolve_path({"data": [1, 2]}, "data") == [1, 2]
+        assert af.resolve_path({"data": [1, 2]}, "data") == [1, 2]
 
     def test_nested(self):
         payload = {"a": {"b": {"c": "value"}}}
-        assert af._resolve_path(payload, "a.b.c") == "value"
+        assert af.resolve_path(payload, "a.b.c") == "value"
 
     def test_array_index(self):
         payload = {"items": [{"id": 1}, {"id": 2}]}
-        assert af._resolve_path(payload, "items[0].id") == 1
-        assert af._resolve_path(payload, "items[1].id") == 2
+        assert af.resolve_path(payload, "items[0].id") == 1
+        assert af.resolve_path(payload, "items[1].id") == 2
 
     def test_missing_returns_none(self):
-        assert af._resolve_path({"a": 1}, "b") is None
-        assert af._resolve_path({"a": {"b": 1}}, "a.c") is None
-        assert af._resolve_path({"a": [1, 2]}, "a[5]") is None
+        assert af.resolve_path({"a": 1}, "b") is None
+        assert af.resolve_path({"a": {"b": 1}}, "a.c") is None
+        assert af.resolve_path({"a": [1, 2]}, "a[5]") is None
 
 
 # ── _extract_array ────────────────────────────────────
@@ -100,40 +100,40 @@ class TestResolvePath:
 class TestExtractArray:
     def test_direct_array(self):
         data = [{"a": 1}, {"b": 2}]
-        assert af._extract_array(data, None, True) == data
+        assert af.extract_array(data, None, True) == data
 
     def test_direct_array_non_dict_ignored(self):
         data = [{"a": 1}, "oops", 42]
-        assert af._extract_array(data, None, True) == [{"a": 1}]
+        assert af.extract_array(data, None, True) == [{"a": 1}]
 
     def test_candidate_data(self):
         payload = {"code": 0, "data": [{"x": 1}]}
-        assert af._extract_array(payload, None, True) == [{"x": 1}]
+        assert af.extract_array(payload, None, True) == [{"x": 1}]
 
     def test_candidate_results(self):
         payload = {"results": [{"id": 1}]}
-        assert af._extract_array(payload, None, True) == [{"id": 1}]
+        assert af.extract_array(payload, None, True) == [{"id": 1}]
 
     def test_candidate_nested(self):
         payload = {"response": {"results": [{"v": 1}]}}
-        assert af._extract_array(payload, None, True) == [{"v": 1}]
+        assert af.extract_array(payload, None, True) == [{"v": 1}]
 
     def test_custom_data_path(self):
         payload = {"envelope": {"list": [{"k": 1}]}}
-        assert af._extract_array(payload, "envelope.list", True) == [{"k": 1}]
+        assert af.extract_array(payload, "envelope.list", True) == [{"k": 1}]
 
     def test_custom_path_not_found_delegates_to_candidates(self):
         payload = {"data": [{"a": 1}]}
         # 指定了一个不存在的 path，会 fallback 到候选
-        assert af._extract_array(payload, "wrong.path", True) == [{"a": 1}]
+        assert af.extract_array(payload, "wrong.path", True) == [{"a": 1}]
 
     def test_no_candidates_no_path_fallback_wraps_dict(self):
         payload = {"single": True}
-        assert af._extract_array(payload, None, False) == [{"single": True}]
+        assert af.extract_array(payload, None, False) == [{"single": True}]
 
     def test_empty(self):
-        assert af._extract_array([], None, True) == []
-        assert af._extract_array({"code": 0}, None, False) == [{"code": 0}]
+        assert af.extract_array([], None, True) == []
+        assert af.extract_array({"code": 0}, None, False) == [{"code": 0}]
 
 
 # ── fetch_json（mock httpx2.Client） ───────────────────

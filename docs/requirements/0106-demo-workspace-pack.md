@@ -21,7 +21,7 @@
 | C2 | 融入帮助文档提供示例数据包 | 以 `examples/datasets` 的销售 / 科研两套场景生成**完整工作区归档**（表 + 字段 + 视图 + 文档 + 分析模板 + 流水线 + 结构设计），随 wheel / fspack 发布；归档不含数据源密钥 | `examples/demo-packs/`、`pyproject.toml`、`scripts/` | 归档可被 `parse_workspace_archive` 解析；构建脚本可复现生成 |
 | C3 | 提供示例数据包而非账号 | 帮助页「典型示例」提供「创建示例工作区」：登录用户在**自己名下新建**工作区，不修改、不覆盖任何既有工作区；同名重复创建自动加后缀区分 | `src/cndb/plugins/help/`、`frontend/src/pages/help/content/ExamplesSection.tsx` | 接口测试：创建后 owner 为当前用户、既有工作区行数不变；重复创建名称不冲突 |
 | C4 | 还是提供演示用户账号 | 本地 / 私有部署**不新增演示账号**；`demo` 账号不随示例包创建。独立线上演示站另议，不纳入本期 | `src/cndb/cli/seed/runner.py` | 代码审查：示例工作区创建路径不建用户 |
-| C5 | 演示功能 | 零数据模型 / 迁移变更；归档导入复用 ADR 0075 的 `parse_workspace_archive` + `_import_backup_into_workspace`（表 / 字段 / 行 / 文档 ID 重映射），不新建第二套导入链路 | `src/cndb/plugins/workspaces/services/`、`src/cndb/plugins/help/` | 复用现有 `tests/test_workspace_backup_v9.py` 往返口径；新接口测试 |
+| C5 | 演示功能 | 零数据模型 / 迁移变更；归档导入复用 ADR 0075 的 `parse_workspace_archive` + `import_backup_into_workspace`（表 / 字段 / 行 / 文档 ID 重映射），不新建第二套导入链路 | `src/cndb/plugins/workspaces/services/`、`src/cndb/plugins/help/` | 复用现有 `tests/test_workspace_backup_v9.py` 往返口径；新接口测试 |
 | C6 | 数据包可用性 | 归档资产缺失（wheel 裁剪 / 本地删文件）时：示例清单仍可读，创建接口返回明确 404 与可读提示，不 500；资产只按清单白名单读取 | `src/cndb/plugins/help/services/assets.py` | 接口测试：删资产后清单 200、创建 404 |
 | C7 | 演示功能 | 仅登录用户可创建；归档名 / 场景 key 白名单校验；不透出服务器路径；创建失败整体回滚，不残留半成品工作区 | `src/cndb/plugins/help/routers/examples.py`、`workspaces` 导入服务 | 接口测试：未登录 401、未知场景 404、导入失败无残留工作区 |
 

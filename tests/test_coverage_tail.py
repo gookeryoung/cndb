@@ -23,7 +23,7 @@ from cndb.plugins.tables.services.core.query import (
     _compile_link_condition,
     _normalize_filters,
 )
-from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, _resolve_path, fetch_json
+from cndb.plugins.tables.services.importing.api_fetch import FetchConfig, fetch_json, resolve_path
 from cndb.plugins.tables.services.importing.column_profiler import profile_columns
 from cndb.plugins.tables.services.importing.diff_reporter import DiffReporter
 from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
@@ -300,7 +300,7 @@ def test_add_column_with_default_and_not_null():
 def test_resolve_path_non_dict_intermediate_returns_none():
     """中间节点不是 dict → return None (L235)."""
     data = {"a": [1, 2, 3]}
-    assert _resolve_path(data, "a[0].b") is None
+    assert resolve_path(data, "a[0].b") is None
 
 
 def test_fetch_json_redirect_missing_location():

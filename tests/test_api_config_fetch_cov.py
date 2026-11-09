@@ -66,23 +66,23 @@ class TestValidateUrlDnsResolution:
 class TestResolvePathEdgeCases:
     def test_empty_part_skipped(self):
         # "a..b" 中间空 part
-        assert af._resolve_path({"a": {"b": 1}}, "a..b") == 1
+        assert af.resolve_path({"a": {"b": 1}}, "a..b") == 1
 
     def test_part_on_non_dict_returns_none(self):
-        assert af._resolve_path([1, 2], "0.x") is None
+        assert af.resolve_path([1, 2], "0.x") is None
 
     def test_array_index_on_non_list_returns_none(self):
-        assert af._resolve_path({"a": {"b": "not-a-list"}}, "a.b[0]") is None
+        assert af.resolve_path({"a": {"b": "not-a-list"}}, "a.b[0]") is None
 
     def test_array_index_out_of_range(self):
-        assert af._resolve_path({"a": [1, 2]}, "a[5]") is None
+        assert af.resolve_path({"a": [1, 2]}, "a[5]") is None
 
     def test_non_numeric_index(self):
-        assert af._resolve_path({"a": [1]}, "a[abc]") is None
+        assert af.resolve_path({"a": [1]}, "a[abc]") is None
 
     def test_nested_array_indices(self):
         payload = {"m": [[{"v": 42}]]}
-        assert af._resolve_path(payload, "m[0][0].v") == 42
+        assert af.resolve_path(payload, "m[0][0].v") == 42
 
 
 # ── _extract_array 更多边界 ─────────────────────────
@@ -93,23 +93,23 @@ class TestExtractArrayEdgeCases:
         """data_path 命中 list 但 list 里全是 non-dict → 退化空数组."""
         payload = {"items": [1, 2, 3]}
         # data_path 命中 items 得到 list，但过滤后 rows 为空
-        result = af._extract_array(payload, "items", True)
+        result = af.extract_array(payload, "items", True)
         # explicit_list_found=True 但 rows 为空 → 返回 []
         assert result == []
 
     def test_candidate_nested_deep_two_levels(self):
         """顶级非候选 key 的 dict 再下一层有候选 key."""
         payload = {"response": {"data": [{"id": 1}]}}
-        assert af._extract_array(payload, None, True) == [{"id": 1}]
+        assert af.extract_array(payload, None, True) == [{"id": 1}]
 
     def test_candidate_top_level_skip_seen(self):
         """第二轮顶级候选查找应跳过第一轮已处理的 key."""
         payload = {"result": {"items": [{"x": 1}]}}
-        assert af._extract_array(payload, None, True) == [{"x": 1}]
+        assert af.extract_array(payload, None, True) == [{"x": 1}]
 
     def test_not_dict_not_list_degenerate(self):
         """整个响应是字符串等非 dict/list → 返回 []."""
-        assert af._extract_array("just text", None, True) == []
+        assert af.extract_array("just text", None, True) == []
 
 
 # ── _parse_tencent_stock ────────────────────────────

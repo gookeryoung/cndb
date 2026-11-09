@@ -69,7 +69,7 @@ def _external_dir(doc_id: int, root: Path | None = None) -> Path:
     return (root if root is not None else _DOCS_DIR) / str(doc_id)
 
 
-def _external_version_path(doc_id: int, version_number: int, root: Path | None = None) -> Path:
+def external_version_path(doc_id: int, version_number: int, root: Path | None = None) -> Path:
     """外存内容文件路径：``data/docs/{doc_id}/v{n}.md.gz``.
 
     文件名自描述版本号，是外存内容的唯一权威定位方式；``Document.content_path``
@@ -161,13 +161,13 @@ def load_content(version: DocumentVersion | None, doc: Document) -> str:
     if raw == "" and version.content_size > 0:
         return _read_external_content(doc, version)
     if raw.startswith(_COMPRESSED_PREFIX):
-        return _decode_inline_compressed(raw)
+        return decode_inline_compressed(raw)
     return raw
 
 
 def _read_external_content(doc: Document, version: DocumentVersion) -> str:
     """读取外存版本内容，失败降级为空串."""
-    path = _external_version_path(doc.id, version.version_number)
+    path = external_version_path(doc.id, version.version_number)
     if not path.is_file() and doc.content_path:
         # 兼容历史非标准落盘位置：仅当冗余路径确为当前版本的文件名时才采用，
         # 避免"多版本共用 doc.content_path"把历史版本读成最新内容。
@@ -184,7 +184,7 @@ def _read_external_content(doc: Document, version: DocumentVersion) -> str:
         return ""
 
 
-def _decode_inline_compressed(raw: str) -> str:
+def decode_inline_compressed(raw: str) -> str:
     """解码内联 gzip+base64 内容，失败降级为空串."""
     try:
         return gzip.decompress(base64.b64decode(raw[len(_COMPRESSED_PREFIX) :])).decode("utf-8")
@@ -210,7 +210,7 @@ def version_count(db: Session, doc_id: int) -> int:
 # ── 写入 ──
 
 
-def _store_content_bytes(doc: Document, next_num: int, content: str, raw_size: int) -> str:
+def store_content_bytes(doc: Document, next_num: int, content: str, raw_size: int) -> str:
     """按分级存储策略落盘，返回 DB content 字段应存的值.
 
     - ≤50KB：原文内联
@@ -222,7 +222,7 @@ def _store_content_bytes(doc: Document, next_num: int, content: str, raw_size: i
         return content
     compressed = gzip.compress(content.encode("utf-8"), compresslevel=6)
     if raw_size > EXTERNAL_MIN_SIZE:
-        path = _external_version_path(doc.id, next_num)
+        path = external_version_path(doc.id, next_num)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(compressed)
         doc.content_path = str(path)
@@ -287,7 +287,7 @@ def create_document(
 
     if not is_folder:
         raw_size = content_size if asset and content_size is not None else len(content.encode("utf-8"))
-        stored = "" if asset else _store_content_bytes(doc, 1, content, raw_size)
+        stored = "" if asset else store_content_bytes(doc, 1, content, raw_size)
         version = DocumentVersion(
             document_id=doc.id,
             version_number=1,
@@ -300,7 +300,7 @@ def create_document(
         )
         db.add(version)
         doc.content_size = raw_size
-        _sync_fts(db, doc, content)
+        sync_fts(db, doc, content)
 
     db.commit()
     db.refresh(doc)
@@ -383,7 +383,7 @@ def update_content(
     if v and v.content_hash == content_hash:
         return doc
 
-    stored = _store_content_bytes(doc, next_num, content, raw_size)
+    stored = store_content_bytes(doc, next_num, content, raw_size)
 
     version = DocumentVersion(
         document_id=doc.id,
@@ -404,7 +404,7 @@ def update_content(
     doc.summary = parse.extract_summary(content)
     doc.toc_json = parse.extract_toc(content)
 
-    _sync_fts(db, doc, content)
+    sync_fts(db, doc, content)
     try:
         db.commit()
     except IntegrityError as exc:
@@ -651,7 +651,7 @@ def _restore_subtree(db: Session, node: Document, batch: dt.datetime | None, vis
     node.deleted_at = None
     node.deleted_by_id = None
     if not node.is_folder:
-        _sync_fts(db, node, load_content(latest_version(db, node.id), node))
+        sync_fts(db, node, load_content(latest_version(db, node.id), node))
 
     children = (
         db.execute(
@@ -993,7 +993,7 @@ def _refresh_tag_counts(db: Session, workspace_id: int) -> None:
 # ── FTS5 同步 ──
 
 
-def _sync_fts(db: Session, doc: Document, content: str) -> None:
+def sync_fts(db: Session, doc: Document, content: str) -> None:
     """将文档同步到 FTS5 索引（content 列截断到 64KB 防索引膨胀）.
 
     FTS5 虚拟表不支持标准 UPSERT，使用 INSERT OR REPLACE（自动删旧插新）。

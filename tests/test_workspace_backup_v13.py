@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from cndb.plugins.workspaces.services.backup_io import _import_backup_into_workspace
+from cndb.plugins.workspaces.services.backup_io import import_backup_into_workspace
 from cndb.plugins.workspaces.services.workspace_backup import (
     build_workspace_backup_v9,
 )
@@ -106,7 +106,7 @@ class TestBackupV13DesignFiles:
         assert design_items["装配"]["versions"][0]["change_type"] == "auto"
 
         target_ws, target_user = _make_workspace(db, "v13 设计目标")
-        import_result = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        import_result = import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert import_result.imported_designs == 2
         assert import_result.errors == []
 
@@ -185,7 +185,7 @@ class TestBackupPipelineVersions:
         assert item["versions"][1]["comment"] == "恢复自 v1"
 
         target_ws, target_user = _make_workspace(db, "v13 流水线目标")
-        result = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        result = import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert result.errors == []
         assert result.imported_pipelines == 1
 
@@ -217,7 +217,7 @@ class TestBackupPipelineVersions:
             item.pop("versions", None)
 
         target_ws, target_user = _make_workspace(db, "v13 旧备份目标")
-        result = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        result = import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert result.errors == []
         assert result.imported_pipelines == 1
 

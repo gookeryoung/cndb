@@ -7,7 +7,7 @@ from dataclasses import asdict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from cndb.plugins.workspaces.services.backup_io import _import_backup_into_workspace
+from cndb.plugins.workspaces.services.backup_io import import_backup_into_workspace
 from cndb.plugins.workspaces.services.workspace_backup import build_workspace_backup_v9
 
 PART = "param dw = 10\ncyl(d = dw, h = 2)"
@@ -146,7 +146,7 @@ class TestBackupV14LibraryRefs:
         assert lib_dep["file_key"] == module_key
 
         target_ws, target_user = _make_workspace(db, "v14 导入目标")
-        result = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        result = import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert result.errors == []
         assert result.imported_designs == 2
 
@@ -180,7 +180,7 @@ class TestBackupV14LibraryRefs:
         db.commit()
 
         target_ws, target_user = _make_workspace(db, "v14 离线目标")
-        result = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        result = import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert result.errors == []
         assert result.imported_designs == 2
 
@@ -202,7 +202,7 @@ class TestBackupV14LibraryRefs:
         backup, _files = build_workspace_backup_v9(db, ws.id, user, include_secrets=False)
 
         target_ws, target_user = _make_workspace(db, "v14 幂等目标")
-        first = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        first = import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert first.errors == []
 
         # 旧备份（v13）无 library_refs：不写 vendor、不提供库解析器，
@@ -211,13 +211,13 @@ class TestBackupV14LibraryRefs:
         v13_backup["version"] = "13"
         v13_backup["library_refs"] = []
         v13_ws, v13_user = _make_workspace(db, "v14 旧备份目标")
-        old_result = _import_backup_into_workspace(v13_ws.id, v13_backup, v13_user, db)
+        old_result = import_backup_into_workspace(v13_ws.id, v13_backup, v13_user, db)
         assert old_result.imported_designs == 1  # 仅零件；装配因无库解析器跳过
         assert any("lib" in error for error in old_result.errors)
         assert _vendor_rows(db, v13_ws.id) == []
 
         # 重复导入：同名设计跳过，vendor 幂等 upsert 不产生重复行
-        second = _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        second = import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert second.imported_designs == 0
         assert second.errors == []
         assert len(_vendor_rows(db, target_ws.id)) == 1
@@ -236,7 +236,7 @@ class TestBackupV14LibraryRefs:
         backup, _files = build_workspace_backup_v9(db, ws.id, user, include_secrets=False)
 
         target_ws, target_user = _make_workspace(db, "v14 恢复目标")
-        _import_backup_into_workspace(target_ws.id, backup, target_user, db)
+        import_backup_into_workspace(target_ws.id, backup, target_user, db)
         assert len(_vendor_rows(db, target_ws.id)) == 1
 
         # 草稿不进备份，但覆盖恢复必须清空（ADR 0125 D7/C8）

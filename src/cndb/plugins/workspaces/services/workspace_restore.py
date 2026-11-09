@@ -3,7 +3,7 @@
 - ``clear_workspace_content``：删除工作区全部业务数据（含动态表 DDL drop、
   版本/草稿/回收站/议题/图表/同步任务/游标/会话/附件归属/流水线），**保留**
   ``workspaces_workspace`` 行与 ``workspaces_workspacemember``（成员是部署级资产）；
-- ``restore_workspace_from_backup``：clear + 复用 ``_import_backup_into_workspace``
+- ``restore_workspace_from_backup``：clear + 复用 ``import_backup_into_workspace``
   单一落库入口（I3），并把 workspace meta 按备份还原。
 """
 
@@ -183,7 +183,7 @@ def restore_workspace_from_backup(
 ) -> WorkspaceImportResponse:
     """覆盖恢复：先清空再按备份全量重建（工作区 id 与成员保留，meta 按备份还原）."""
     from cndb.plugins.workspaces.models import Workspace
-    from cndb.plugins.workspaces.services.backup_io import _import_backup_into_workspace
+    from cndb.plugins.workspaces.services.backup_io import import_backup_into_workspace
 
     ws = db.get(Workspace, workspace_id)
     if ws is None:
@@ -210,7 +210,7 @@ def restore_workspace_from_backup(
         db.add(ws)
         db.commit()
 
-    result = _import_backup_into_workspace(workspace_id, backup, current_user, db, files_dir=files_dir)
+    result = import_backup_into_workspace(workspace_id, backup, current_user, db, files_dir=files_dir)
     if module_warning:
         result.errors.append(module_warning)
     return result

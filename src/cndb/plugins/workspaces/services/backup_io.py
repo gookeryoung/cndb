@@ -1,7 +1,7 @@
 """工作区整体导入的服务层实现.
 
 - ``_coerce_row_value_types``：按反射列类型归一备份 JSON 中的字符串值
-- ``_import_backup_into_workspace``：把备份载荷落库为新工作区（表 / 字段 / 行 / 视图）
+- ``import_backup_into_workspace``：把备份载荷落库为新工作区（表 / 字段 / 行 / 视图）
 
 从 routers/workspaces.py 抽出（后者 270 行、与 HTTP 层无关，供两个导入端点复用）。
 """
@@ -79,7 +79,7 @@ def _load_table_rows(tbl_data: dict[str, Any], files_dir: Path | None) -> list[d
         raise HTTPException(status_code=400, detail=f"归档内表数据分块损坏: {rows_file}") from exc
 
 
-def _import_backup_into_workspace(
+def import_backup_into_workspace(
     workspace_id: int,
     json_data: dict[str, Any],
     current_user: User,
@@ -743,7 +743,7 @@ def _import_v9_extras(
         DocumentShare,
         DocumentVersion,
     )
-    from cndb.plugins.documents.services.content import _external_version_path, _store_content_bytes, latest_version
+    from cndb.plugins.documents.services.content import external_version_path, latest_version, store_content_bytes
     from cndb.plugins.files.models import FileOwner
     from cndb.plugins.files.services import resolve_workspace_file
 
@@ -762,7 +762,7 @@ def _import_v9_extras(
             src = files_dir / content_file
             if src.is_file():
                 raw = src.read_bytes()
-                dest = _external_version_path(doc_id, vn)
+                dest = external_version_path(doc_id, vn)
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(raw)
                 try:
@@ -777,7 +777,7 @@ def _import_v9_extras(
         doc = db.get(Document, doc_id)
         if doc is None:
             return content, content
-        stored_value = _store_content_bytes(doc, vn, content, size)
+        stored_value = store_content_bytes(doc, vn, content, size)
         return stored_value, content
 
     # ── 1) 文档版本历史 ──
@@ -822,11 +822,11 @@ def _import_v9_extras(
 
                 doc = db.get(Document, doc_id)
                 if doc is not None:
-                    from cndb.plugins.documents.services.content import _sync_fts
+                    from cndb.plugins.documents.services.content import sync_fts
 
-                    _sync_fts(db, doc, plain)
+                    sync_fts(db, doc, plain)
                     if stored == "" and int(entry.get("content_size") or 0) > 0:
-                        doc.content_path = str(_external_version_path(doc_id, vn))
+                        doc.content_path = str(external_version_path(doc_id, vn))
                         db.add(doc)
             db.commit()
         except Exception as exc:
@@ -1469,9 +1469,9 @@ def _import_designs(
 
 __all__ = [
     "_coerce_row_value_types",
-    "_import_backup_into_workspace",
     "_import_charts",
     "_import_designs",
     "_import_pipelines",
     "_import_sync_jobs",
+    "import_backup_into_workspace",
 ]

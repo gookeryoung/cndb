@@ -31,8 +31,8 @@ from cndb.plugins.datasource.services.normalize import NormalizeResult, apply_fi
 from cndb.plugins.tables.services.importing.api_fetch import (
     FetchConfig,
     ResponseHandler,
-    _extract_array,
-    _resolve_path,
+    extract_array,
+    resolve_path,
 )
 
 # 供前端动态渲染的表单描述（M3 的「新建向导」消费）
@@ -111,7 +111,7 @@ class HttpJsonProvider:
         path = data_path if data_path is not None else spec.data_path
         if spec.record_mode == "columns":
             return columns_to_rows(payload, path, spec.record_layout)
-        return _extract_array(payload, path, True)
+        return extract_array(payload, path, True)
 
     def normalize(self, rows: Sequence[Mapping[str, Any]], job: SyncJobSpec) -> NormalizeResult:
         """字段映射 + 类型归一."""
@@ -177,7 +177,7 @@ def columns_to_rows(
 
     ``layout`` 给出时按 ``{目标列名: 源键}`` 取列，否则把目标对象下所有数组键都当列。
     """
-    node: Any = _resolve_path(payload, data_path) if data_path else payload
+    node: Any = resolve_path(payload, data_path) if data_path else payload
     if not isinstance(node, dict):
         raise ProviderError("列式记录要求 data_path 指向一个对象（列名 → 数组）")
     columns: dict[str, list[Any]] = {}

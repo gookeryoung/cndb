@@ -176,7 +176,7 @@ def _build_backup(
         DocumentVersion,
         Tag,
     )
-    from cndb.plugins.documents.services.content import _external_version_path, latest_version, load_content
+    from cndb.plugins.documents.services.content import external_version_path, latest_version, load_content
     from cndb.plugins.files.models import FileOwner
     from cndb.plugins.files.services import resolve_workspace_file
     from cndb.plugins.tables.models import DataField, DataTable, DataView, RowPermission, TableMember, TablePermission
@@ -488,15 +488,15 @@ def _build_backup(
             raw = v.content or ""
             if raw == "" and v.content_size > 0:
                 # 外存版本：文件随归档携带，导入端按新 doc id 落回外存路径
-                src = _external_version_path(d.id, v.version_number)
+                src = external_version_path(d.id, v.version_number)
                 arc = f"files/docs/{d.id}/v{v.version_number}.md.gz"
                 add_file(arc, src)
                 if src.is_file():
                     entry["content_file"] = arc
             elif raw:
-                from cndb.plugins.documents.services.content import _decode_inline_compressed
+                from cndb.plugins.documents.services.content import decode_inline_compressed
 
-                entry["content"] = _decode_inline_compressed(raw) if raw.startswith("gz:") else raw
+                entry["content"] = decode_inline_compressed(raw) if raw.startswith("gz:") else raw
             document_versions_data.append(entry)
 
         # 草稿（v9）：user 维度折叠为当前用户（不导 user id）

@@ -77,8 +77,8 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 ### 2. 判定算法（唯一入口）
 
 - **导出唯一入口**：`build_workspace_backup_v9(workspace_id, include_secrets, db) -> (dict, files: list[FileEntry])`，置于 `plugins/workspaces/services/`（新模块 `workspace_backup.py`，现 `workspaces.py:430-585` 的导出逻辑迁入并扩展）。旧 `GET /export` 的 v8 JSON 继续由 v9 构建器**降采样**生成（v9 超集字段按 v8 口径裁剪），保证新旧出口同一份数据来源。
-- **导入唯一入口**：`_import_backup_into_workspace`（`backup_io.py:25`）保持为落库入口，接受 version 1-9；v9 新增键缺失时按「无数据」处理（与既有旧版兼容口径一致）。归档解包层（`parse_workspace_archive`）负责校验 manifest、解出 backup.json 与 files/，再调用该入口。
-- **覆盖恢复**：`restore_workspace(workspace_id, payload, user, db)` = 前置 `clear_workspace_content(workspace_id)` + `_import_backup_into_workspace`。clear 删除该工作区的表（含 DDL drop）、文档（含版本/草稿/回收站/议题/图表）、同步任务、游标、标签、置顶、分享，**保留** `workspaces_workspace` 行与 `workspaces_workspacemember`（成员与 owner 不动，D4）。clear 与 import 同事务边界，失败整体回滚。
+- **导入唯一入口**：`import_backup_into_workspace`（`backup_io.py:25`）保持为落库入口，接受 version 1-9；v9 新增键缺失时按「无数据」处理（与既有旧版兼容口径一致）。归档解包层（`parse_workspace_archive`）负责校验 manifest、解出 backup.json 与 files/，再调用该入口。
+- **覆盖恢复**：`restore_workspace(workspace_id, payload, user, db)` = 前置 `clear_workspace_content(workspace_id)` + `import_backup_into_workspace`。clear 删除该工作区的表（含 DDL drop）、文档（含版本/草稿/回收站/议题/图表）、同步任务、游标、标签、置顶、分享，**保留** `workspaces_workspace` 行与 `workspaces_workspacemember`（成员与 owner 不动，D4）。clear 与 import 同事务边界，失败整体回滚。
 
 ### 3. API 变更清单
 
@@ -176,5 +176,5 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 - 当前阶段：P0-P3 全部落地，门禁全绿
 - 已完成：v9 归档构建/解包、v8 降采样出口、导入端 v9 extras、覆盖恢复（clear + import + meta 还原）、前端备份对话框与导入入口、单测 + e2e；2026-11-10 补 P3（v16 表行 NDJSON 分块，D8）
 - 下一步：`make check` 全绿后提交推送（v16 分块单独一次提交，可回滚）；后续若需进一步降内存，可把恢复端的分块读取也改成逐行批量 INSERT（当前按表整块读入，内存已降到单表行数量级）
-- 已知坑：测试环境 `LD_LIBRARY_PATH` 含旧 libsqlite3 导致 `_sqlite3` ImportError，须 `LD_LIBRARY_PATH= make test`；clear 的 DDL drop 前必须 commit 释放 RESERVED 锁；导出 `_store_content_bytes` 内联 50KB / 外存 2MB 阈值沿用 documents/services/content.py 口径；v16 分块临时目录由导出端点用 TemporaryDirectory 托管，打包完成即清理，异常路径靠 finally 释放
+- 已知坑：测试环境 `LD_LIBRARY_PATH` 含旧 libsqlite3 导致 `_sqlite3` ImportError，须 `LD_LIBRARY_PATH= make test`；clear 的 DDL drop 前必须 commit 释放 RESERVED 锁；导出 `store_content_bytes` 内联 50KB / 外存 2MB 阈值沿用 documents/services/content.py 口径；v16 分块临时目录由导出端点用 TemporaryDirectory 托管，打包完成即清理，异常路径靠 finally 释放
 - 最近一次全绿：make check（2026-11-10，v16 分块改造提交前）

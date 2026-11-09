@@ -2,7 +2,7 @@
 
 `POST /v1/workspaces/import/archive` 与帮助页「创建示例工作区」共用本模块：
 都按「新建工作区 + 归档落库」语义执行，归档内的表 / 字段 / 行 / 文档 ID 由
-`_import_backup_into_workspace` 统一重映射，不新增第二套导入链路。
+`import_backup_into_workspace` 统一重映射，不新增第二套导入链路。
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from cndb.plugins.workspaces.models import (
     WorkspaceVisibility,
 )
 from cndb.plugins.workspaces.modules import workspace_modules_from_meta
-from cndb.plugins.workspaces.services.backup_io import _import_backup_into_workspace
+from cndb.plugins.workspaces.services.backup_io import import_backup_into_workspace
 
 
 @dataclass
@@ -84,7 +84,7 @@ def create_workspace_from_archive_file(
         db.refresh(ws)
 
         try:
-            import_result = _import_backup_into_workspace(ws.id, data, current_user, db, files_dir=archive.files_dir)
+            import_result = import_backup_into_workspace(ws.id, data, current_user, db, files_dir=archive.files_dir)
         except HTTPException:
             db.delete(ws)
             db.commit()

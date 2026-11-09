@@ -38,7 +38,7 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 | 8 | `CursorConfig.page_to_start` / `page_size` 仅服务 backfill 多 pass | `services/cursor.py:41-59`、`:78-82`、`:99-100`、`routers/sync_jobs.py:133-134` | 删除 backfill 后成为死配置，且创建入口仍强制校验 `{end}` | 确认（C2） |
 | 9 | `entrant_cursor` 表参与工作区备份导出、恢复与删除顺序 | `services/workspace_backup.py:520-529`、`:612`、`services/backup_io.py:959-986`、`services/workspace_restore.py:109` | 删模型后若不清理这三处，备份/恢复会 `ImportError` 或写入孤儿表 | 新增（C2 迁移面） |
 | 10 | `request_spec_from_payload` 只认白名单键，未知键被静默忽略 | `services/runner.py:610-647` | 存量 `rows_array` / `url_hosts` / `row_defaults` 等配置会「跑起来但行为变了」，必须改为显式报错 | 新增（I3） |
-| 11 | `data_path` 的 `\|` 候选语义由 `_rows_array_from_candidates` 独占实现；rows 模式的通用候选探测走 `_extract_array(..., True)` | `http_json.py:253-286`、`core/http.py:339-400` | 删除候选解析后，rows 模式的 `data / items / results` 探测不受影响；`\|` 语法需显式拒绝 | 新增（D3） |
+| 11 | `data_path` 的 `\|` 候选语义由 `_rows_array_from_candidates` 独占实现；rows 模式的通用候选探测走 `extract_array(..., True)` | `http_json.py:253-286`、`core/http.py:339-400` | 删除候选解析后，rows 模式的 `data / items / results` 探测不受影响；`\|` 语法需显式拒绝 | 新增（D3） |
 | 12 | 前端类型声明 `'backfill_date'` / `'rows_array'` / `workers` / `row_filter` / `row_defaults` | `frontend/src/api/datasource.ts:19`、`:72-81` | 类型仍接受已删除配置，编辑页会把旧键原样回传；需同步收紧 | 新增（C5 前端） |
 | 13 | 页面「保留未挂载声明键」逻辑会保留 `row_filter` / `workers` 等键 | `frontend/src/pages/datasource/DatasourcePage.tsx:790-805` | 旧键保留后会被后端拒绝，编辑页需给出可理解的报错并允许一键清理 | 新增（C5 前端） |
 | 14 | 旧 ADR（0033 / 0034 / 0035 / 0039 / 0043 / 0053）大量描述被裁能力与示例任务 | `docs/adr/`、`docs/adr/README.md:82-92` | 不清理会让后续会话继续按失效口径实施 | 确认（C5） |
@@ -118,7 +118,7 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 
 ### 4. 边界与例外
 
-1. `data_path` 不再支持 `|` 候选；rows 模式的 `_extract_array(..., True)` 仍会探测 `data / items / results` 等常见键，行为与 ADR 0039 之前一致。
+1. `data_path` 不再支持 `|` 候选；rows 模式的 `extract_array(..., True)` 仍会探测 `data / items / results` 等常见键，行为与 ADR 0039 之前一致。
 2. `record_layout` 保留但只用于 `columns` 模式；`rows_array` 的位置索引语义随分支删除。
 3. `rate_limit_ms <= 0` 时 `wait()` 直接返回；`>0` 时首个请求不等待，其后每个请求间隔不小于该值（与旧串行行为一致）。
 4. `entrant_source` 动态标的、`fill_entrant`、`on_batch` 流式落表、批间租约续期全部保留；`entrant_values` 为空且未声明标的时仍发单条无标的请求（旧行为）。
@@ -179,7 +179,7 @@ Related: `src/cndb/plugins/datasource/providers/base.py`、`src/cndb/plugins/dat
 |---|---|---|---|---|---|
 | D1 | 整体方向：删除还是重构 / 保留最小管线 | 删除无配置声明的能力，保留领域无关内核与仍在用的声明面 | 需求方已拍板；仓库内唯一任务是天气示例（columns + date），llm_prompt 只用模板 / 标的 / 流式 | 纯内部重构（不减少维护面）；回退到最小玩具管线（会丢 entrant_source / 流式 / push 等在用能力） | `providers/`、`services/` |
 | D2 | 删除范围的边界：哪些算「仅股市日线」 | 删除 `rows_array`（含位置索引与 `\|` 候选）、`row_defaults`、`row_filter`、`scale`、`url_hosts`、`backfill_date`（含多 pass / 水位）、`workers`；保留 `record_layout`（columns 用）、`data_path` 单路径、`entrant_source`、`fill_entrant`、`on_batch`、`rate_limit_ms` | 全仓 grep 无配置声明；天气示例与 llm_prompt 只依赖保留项 | 只删游标不删声明键（声明面仍留死键）；把 `row_filter` 与 tables 行级权限一起删（后者在用） | `base.py`、`http_json.py`、`pipeline.py`、`cursor.py` |
-| D3 | `data_path` 候选语法的处置 | 删除 `\|` 候选；rows 模式保留 `_extract_array(..., True)` 的常见键探测 | 候选语义只服务 `rows_array`；rows 探测是通用能力（ADR 0006 既有） | 保留候选但只支持 rows（无消费方，增加解析分支） | `http_json.py`、`core/http.py` |
+| D3 | `data_path` 候选语法的处置 | 删除 `\|` 候选；rows 模式保留 `extract_array(..., True)` 的常见键探测 | 候选语义只服务 `rows_array`；rows 探测是通用能力（ADR 0006 既有） | 保留候选但只支持 rows（无消费方，增加解析分支） | `http_json.py`、`core/http.py` |
 | D4 | 存量 `backfill_date` 任务与水位数据 | 代码层不再支持；表 drop；JSON 不迁移；旧任务下次运行显式报错 | 与 ADR 0033 C4「存量残留由需求方清理」先例一致；水位已无消费方 | 数据迁移到新结构（无目标结构）；静默忽略（用户以为仍在回补） | `cursor.py`、`models.py`、迁移 |
 | D5 | 迁移形态 | 单条 drop 表迁移（幂等 + downgrade 重建），不删 job 列 | 模型删除必须处理 DDL；`request_spec` / `cursor` 是 JSON 无需列迁移 | 删 `datasource_sync_job` 列（无列可删）；保留空表（孤儿表） | `alembic/versions/` |
 | D6 | 并发删除后的限速实现 | 保留 `rate_limit_ms`，`_RateLimiter` 退化为串行间隔 | 字段在模型 / API / 前端暴露，需求方倾向不动前端 | 删除限速字段（破坏 API 契约）；保留线程池（无消费方） | `pipeline.py` |

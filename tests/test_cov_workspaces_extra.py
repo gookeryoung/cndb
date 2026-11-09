@@ -31,9 +31,9 @@ def _import(
     user: Any,
     db: Any,
 ) -> Any:
-    from cndb.plugins.workspaces.services.backup_io import _import_backup_into_workspace
+    from cndb.plugins.workspaces.services.backup_io import import_backup_into_workspace
 
-    return _import_backup_into_workspace(wid, data, user, db)
+    return import_backup_into_workspace(wid, data, user, db)
 
 
 def _new_workspace(client: Any, headers: dict[str, str], name: str = "cov-ws") -> int:

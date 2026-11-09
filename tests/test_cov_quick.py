@@ -442,9 +442,9 @@ def test_name_similarity_ratio_high_not_contains():
 
 def test_api_fetch_resolve_path_non_dict_node():
     """resolve_path 中间节点不是 dict → None."""
-    from cndb.plugins.tables.services.importing.api_fetch import _resolve_path
+    from cndb.plugins.tables.services.importing.api_fetch import resolve_path
 
-    result = _resolve_path({"a": [1, 2]}, "a.b")
+    result = resolve_path({"a": [1, 2]}, "a.b")
     assert result is None
 
 
