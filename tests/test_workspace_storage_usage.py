@@ -89,6 +89,23 @@ class TestTableRecordsCounted:
         # 逐行单元格字节数之和必然不小于业务值本身的字节数
         assert used >= sum(len(v.encode("utf-8")) for v in values)
 
+    def test_row_delta_matches_stored_bytes(self, client: TestClient, auth_headers: dict[str, str], db):
+        """口径：名称按 UTF-8 字节、id 按十进制文本、_trashed 存 0 计 1 字节、_trashed_at 为 NULL 计 0."""
+        ws_id = _create_workspace(client, auth_headers, "storage-delta-ws")
+        tid = _create_table(client, auth_headers, ws_id)
+        before = workspace_table_bytes(db, ws_id)
+
+        r = client.post(
+            f"{TABLES.format(ws=ws_id)}/{tid}/records",
+            json={"values": {"名称": "中文a"}},
+            headers=auth_headers,
+        )
+        assert r.status_code in (200, 201), r.text
+        row_id = int(r.json()["id"])
+
+        delta = workspace_table_bytes(db, ws_id) - before
+        assert delta == len("中文a".encode()) + len(str(row_id)) + 1
+
     def test_storage_total_includes_table_bytes(self, client: TestClient, auth_headers: dict[str, str], db):
         ws_id = _create_workspace(client, auth_headers, "table-total-ws")
         tid = _create_table(client, auth_headers, ws_id)

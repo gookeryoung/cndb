@@ -101,15 +101,17 @@ class TestStorageHelpers:
 
         assert _dir_size(tmp_path / "nope") == 0
 
-    def test_value_bytes_variants(self) -> None:
-        from cndb.plugins.workspaces.services.storage import _value_bytes
+    def test_stored_bytes_expression_uses_storage_encoding(self) -> None:
+        from sqlalchemy import create_engine, select, text
 
-        assert _value_bytes(None) == 0
-        assert _value_bytes(b"abc") == 3
-        assert _value_bytes(bytearray(b"ab")) == 2
-        assert _value_bytes(memoryview(b"abcd")) == 4
-        assert _value_bytes("中") == 3
-        assert _value_bytes(1234) == 4
+        from cndb.plugins.workspaces.services.storage import _stored_bytes
+
+        engine = create_engine("sqlite://")
+        with engine.connect() as conn:
+            # TEXT 计 UTF-8 字节、整数计十进制文本、NULL 计 0（与库内实际存储一致）
+            assert conn.execute(select(_stored_bytes(text("'中'")))).scalar() == 3
+            assert conn.execute(select(_stored_bytes(text("1234")))).scalar() == 4
+            assert conn.execute(select(_stored_bytes(text("NULL")))).scalar() == 0
 
     def test_quota_falls_back_when_invalid(self) -> None:
         from cndb.plugins.workspaces.models import DEFAULT_STORAGE_QUOTA_BYTES

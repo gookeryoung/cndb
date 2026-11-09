@@ -7,7 +7,8 @@
   ``.thumbs/`` 目录，不计入业务占用；
 - **数据库内容**：随工作区落库、不落盘的数据，包括内联在
   ``document_versions.content`` 中的文档正文、``documents_draft`` 个人草稿，
-  以及数据表记录（按物理表逐行汇总单元格字节数）。
+  以及数据表记录（在 SQL 侧按列 ``SUM(LENGTH(CAST(col AS BLOB)))`` 汇总，
+  TEXT 计 UTF-8 字节、BLOB 计原始长度、NULL 计 0）。
 
 只有「版本正文内联存储」的文档才在此计入；外存版本（``content == ""`` 且
 ``content_size > 0``）已由文件系统路径统计过，避免重复计数。
@@ -41,15 +42,15 @@ def _dir_size(path: Path) -> int:
     return total
 
 
-def _value_bytes(value: Any) -> int:
-    """单个单元格/字符串值的字节数（None 计 0，二进制按实际长度）."""
-    if value is None:
-        return 0
-    if isinstance(value, (bytes, bytearray, memoryview)):
-        return len(bytes(value))
-    if isinstance(value, str):
-        return len(value.encode("utf-8"))
-    return len(str(value).encode("utf-8"))
+def _stored_bytes(column: Any) -> Any:
+    """单列「存储字节数」SQL 表达式：TEXT 取 UTF-8 字节、BLOB 取原始长度、NULL 计 0.
+
+    与逐行 Python ``len(value.encode("utf-8"))`` 相比，直接取数据库内的实际字节，
+    避免把整表行对象拉进 Python 再逐单元格求长度。
+    """
+    from sqlalchemy import LargeBinary, func
+
+    return func.coalesce(func.length(func.cast(column, LargeBinary)), 0)
 
 
 def workspace_attachment_bytes(workspace_id: int) -> int:
@@ -66,38 +67,45 @@ def _docs_root() -> Path:
 
 def workspace_document_bytes(db: Session, workspace_id: int) -> int:
     """工作区文档内容占用（字节）：数据库内联正文 + 个人草稿."""
+    from sqlalchemy import func
+
     from cndb.plugins.documents.models import Document, DocumentDraft, DocumentVersion
 
     # 版本正文内联存储：content 非空即为内联（外存版本 content 恒为空串）
-    version_rows = (
-        db.query(DocumentVersion.content)
+    version_total = (
+        db.query(func.coalesce(func.sum(_stored_bytes(DocumentVersion.content)), 0))
         .join(Document, Document.id == DocumentVersion.document_id)
         .filter(
             Document.workspace_id == workspace_id,
             DocumentVersion.content != "",
         )
-        .all()
+        .scalar()
     )
-    total = sum(_value_bytes(row[0]) for row in version_rows)
 
     # 个人草稿：保存不落版本，仅存本表，同样占用数据库空间
-    draft_rows = (
-        db.query(DocumentDraft.content)
+    draft_total = (
+        db.query(func.coalesce(func.sum(_stored_bytes(DocumentDraft.content)), 0))
         .join(Document, Document.id == DocumentDraft.document_id)
         .filter(Document.workspace_id == workspace_id)
-        .all()
+        .scalar()
     )
-    return total + sum(_value_bytes(row[0]) for row in draft_rows)
+    return int(version_total or 0) + int(draft_total or 0)
 
 
 def _physical_table_bytes(db: Session, table_name: str) -> int:
-    """单张物理表的记录占用（字节）：逐行汇总各单元格字节数（表不存在返回 0）."""
-    from sqlalchemy import MetaData, Table
+    """单张物理表的记录占用（字节）：SQL 侧按列汇总存储字节（表不存在返回 0）."""
+    from sqlalchemy import MetaData, Table, func, select
 
     with suppress(Exception):
         sa_table = Table(table_name, MetaData(), autoload_with=db.get_bind())
-        rows = db.execute(sa_table.select()).all()
-        return sum(sum(_value_bytes(value) for value in row) for row in rows)
+        row_bytes = None
+        for column in sa_table.columns:
+            part = _stored_bytes(column)
+            row_bytes = part if row_bytes is None else row_bytes + part
+        if row_bytes is None:  # pragma: no cover - 物理表必有 id 主键
+            return 0
+        total = db.execute(select(func.coalesce(func.sum(row_bytes), 0))).scalar()
+        return int(total or 0)
     return 0
 
 

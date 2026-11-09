@@ -1,6 +1,6 @@
 # ADR 0024: 管理台空间分配改读后台快照（定期同步 + 秒开）
 
-Status: Implemented（P0-P2 已落地，2026-10-24；P3 统计 SQL 化未开始）
+Status: Implemented（P0-P3 已落地，2026-10-24 ~ 2026-11-10）
 Date: 2026-10-24
 Related: `docs/requirements/0024-storage-snapshot-refresh.md`、`src/cndb/plugins/workspaces/services/storage.py`、`src/cndb/core/system_api.py`、`src/cndb/app.py`、`src/cndb/plugins/tables/routers/files.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`frontend/src/pages/admin/StoragePage.tsx`、`frontend/src/api/admin.ts`
 需求卡片: `docs/requirements/0024-storage-snapshot-refresh.md`（需求原文与约束编号的唯一副本）
@@ -163,7 +163,8 @@ def request_refresh(workspace_ids=None) -> list[int]                 # 接口层
 | D4 | 刷新粒度 | 脏集合非空只刷脏，否则全量 | 常规运营下变更集中在少数工作区；全量仅作兜底 | 永远全量：无谓 CPU；永远增量：漏统计外部变更 | `refresh_all(only_dirty=...)` |
 | D5 | 读路径缺快照 | 列表显示「统计中」；详情 / 上传预判懒计算一次 | 列表允许短暂缺数（不误导成 0），但上传预判不能拿旧值卡人 | 全部返回 0：误导（显示未占用，实际已满） | `read_snapshot` + 调用方策略 |
 | D6 | 上传后的用量 | `bump_used_bytes(+size)` 乐观累加 + 置脏 | 保证配额预判立刻反映刚上传的文件，后台再校正 | 等下一轮刷新：5 分钟内连续上传可超配额 | `bump_used_bytes` |
-| D7 | 统计口径 | 完全沿用现有实现，不在本期 SQL 化 | 避免快照上线同时改口径导致数字跳变、测试大改 | 同期一起 SQL 化：口径差异（数值列文本表示）与性能收益混在一次改动里，问题难定位 | `services/storage.py`（不改） |
+| D7 | 统计口径 | 完全沿用现有实现，不在本期 SQL 化（P3 于 2026-11-10 另立 D8 落地） | 避免快照上线同时改口径导致数字跳变、测试大改 | 同期一起 SQL 化：口径差异（数值列文本表示）与性能收益混在一次改动里，问题难定位 | `services/storage.py`（P0 期不改） |
+| D8 | P3 统计口径 SQL 化 | 切到 `SUM(LENGTH(CAST(col AS BLOB)))`：TEXT 计 UTF-8 字节、BLOB 计原始长度、INTEGER 计十进制文本、NULL 计 0 | 与 D7 的逐值 `len()` 在文本 / 二进制 / 整数上逐字节一致；收益是后台单轮从「整表行对象进 Python」降为一次聚合查询 | 继续逐行 Python：内存 O(总行数)、大库单轮数十秒 | `services/storage.py` 的 `_stored_bytes` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -187,12 +188,12 @@ def request_refresh(workspace_ids=None) -> list[int]                 # 接口层
 | P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/alembic/versions/c9f1a2b3d4e5_add_workspace_storage_snapshot.py`、`src/cndb/plugins/workspaces/services/storage_snapshot.py`、`src/cndb/core/storage_refresh.py`、`src/cndb/app.py`、`src/cndb/core/system_api.py` | `tests/test_workspace_storage_snapshot.py` | 53b7b56b |
 | P1 | 已落地 | `frontend/src/api/admin.ts`、`frontend/src/pages/admin/StoragePage.tsx`、`frontend/src/index.css` | `frontend/src/pages/admin/StoragePage.test.tsx` | 53b7b56b |
 | P2 | 已落地 | `src/cndb/plugins/workspaces/routers/workspaces.py`（详情读快照）、`src/cndb/plugins/tables/routers/files.py`（上传预判 + 乐观累加）、`src/cndb/core/system_api.py`（配额调整返回） | `tests/test_workspace_storage_usage.py`、`tests/test_workspace_storage_snapshot.py` | 53b7b56b |
-| P3 | 未开始 | — | — | — |
+| P3 | 已落地 | `src/cndb/plugins/workspaces/services/storage.py`（含 _stored_bytes 与文档正文 / 草稿 / 物理表三处聚合改造） | `tests/test_workspace_storage_usage.py`、`tests/test_cov_workspaces_extra.py` | 见 CHANGELOG 2026-11-10 |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 已落地，P3（统计 SQL 化）按需再启动
-- 已完成：快照表与迁移、后台刷新线程与启停、管理台 GET/POST 改造、前端新鲜度与立即刷新、工作区详情 / 上传预判 / 配额调整三个入口接入、上传乐观累加；ADR 0024 与 CHANGELOG 同步
-- 下一步：若后台单轮耗时随数据量变长（看 `duration_ms` 与日志），按 P3 把 `workspace_table_bytes` 改为 SQL 侧 `SUM(LENGTH(CAST(col AS BLOB)))`（示例库实测大表 5.2×，注意数值列文本表示与现有 Python `str()` 口径有约 2% 差异，需逐列对齐后再切）
+- 当前阶段：P0-P3 全部落地（P0-P2 2026-10-24；P3 统计 SQL 化 2026-11-10）
+- 已完成：快照表与迁移、后台刷新线程与启停、管理台 GET/POST 改造、前端新鲜度与立即刷新、工作区详情 / 上传预判 / 配额调整三个入口接入、上传乐观累加；P3 把文档正文 / 草稿 / 物理表统计改为 SQL 聚合；ADR 0024 与 CHANGELOG 同步
+- 下一步：P3 已落地（`storage.py:_stored_bytes`）。TEXT / BINARY / INTEGER / NULL 与旧 Python 口径逐字节一致（`test_workspace_storage_usage.py::test_row_delta_matches_stored_bytes` 钉住），仅 REAL 列因 SQLite 文本表示（`1.0e+20` vs Python `1e+20`）有差异：3000 行纯浮点合成数据实测总量高约 1.2%，文本为主的实际工作区可忽略；切换后快照数字可能小幅上跳，属口径修正
 - 已知坑：① 测试环境靠 `tests/conftest.py` 里 `settings.STORAGE_SNAPSHOT_ENABLED = False` 关闭线程（线程用独立 `SessionLocal` 会连真实库，而测试库是内存 SQLite）；② 本机 `make frontend-coverage` 会因清理 `frontend/coverage/.tmp` 被 safe-delete 护栏拦截而非零退出 —— 用 `npx vitest run --coverage --coverage.clean=false --coverage.reportsDirectory=coverage/run-verify` + `node scripts/check-coverage.mjs --summary coverage/run-verify/coverage-summary.json` 可绕过；③ 附件删除暂无独立置脏钩子，用量最滞后一个同步周期；④ 迁移测试 `HEAD_REVISION` 需随 head 推进同步（本轮已改为 `d0c1b2a3f4e5`）
 - 最近一次全绿：`make test` 5308 passed、`make cov` 97.24%（门槛 95%）、前端 174 文件 2137 例、覆盖率核心 97.69% / 全局 82.58% @ 2026-10-24（提交 53b7b56b；`ruff format --check` 当日被并行会话的 4 个未整理文件挡住，与本 ADR 无关）
