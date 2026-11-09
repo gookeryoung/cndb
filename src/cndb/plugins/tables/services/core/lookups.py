@@ -11,12 +11,13 @@
 from __future__ import annotations
 
 import logging
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
 from cndb.plugins.tables.models import DataField, DataTable
 
 if TYPE_CHECKING:
-    from sqlalchemy.engine import Engine
+    from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.orm import Session
 
 from sqlalchemy import select
@@ -119,21 +120,24 @@ def attach_lookup_values(
     table: DataTable,
     rows: list[dict[str, Any]],
     db: Session | None = None,
+    conn: Connection | None = None,
 ) -> list[dict[str, Any]]:
     """为行响应附加 lookup 字段的实时解析值；无 lookup 字段或空结果时原样返回.
 
     db 为 None 时无法解析源表元数据，lookup 字段回退 None。
+    所有 lookup 字段的读取共用一个连接（``conn`` 传入则复用调用方的，否则本函数自开）。
     """
     fields = lookup_fields(table)
     if not fields or not rows or db is None:
         return rows
 
     row_ids = [int(row["id"]) for row in rows]
-    for field in fields:
-        config = field.config or {}
-        values_by_row = _resolve_lookup_values(engine, db, table, config, row_ids)
-        for row in rows:
-            row[str(field.name)] = values_by_row.get(int(row["id"]))
+    with nullcontext(conn) if conn is not None else engine.connect() as active:
+        for field in fields:
+            config = field.config or {}
+            values_by_row = _resolve_lookup_values(engine, db, table, config, row_ids, conn=active)
+            for row in rows:
+                row[str(field.name)] = values_by_row.get(int(row["id"]))
     return rows
 
 
@@ -143,6 +147,7 @@ def _resolve_lookup_values(
     table: DataTable,
     config: dict[str, Any],
     row_ids: list[int],
+    conn: Connection | None = None,
 ) -> dict[int, Any]:
     """解析一批行的 lookup 值：row_id -> 聚合列表 / 标量 / None."""
     # 失效回退：config.broken 或配置缺失
@@ -155,12 +160,12 @@ def _resolve_lookup_values(
         return {}
 
     multiple = bool((link_field.config or {}).get("multiple", True))
-    mapping = load_links(engine, link_field, row_ids)
+    mapping = load_links(engine, link_field, row_ids, conn=conn)
     if not mapping:
         return {}
 
     all_targets = [tid for ids in mapping.values() for tid in ids]
-    source_values = _read_source_values(engine, source_field, all_targets)
+    source_values = _read_source_values(engine, source_field, all_targets, conn=conn)
     if source_values is None:
         return {}
 
@@ -501,28 +506,27 @@ def _read_source_values(
     engine: Engine,
     source_field: DataField,
     target_row_ids: list[int],
+    conn: Connection | None = None,
 ) -> dict[int, Any] | None:
-    """从源物理表批量读取字段值：源行 id -> 值；物理表缺列时返回 None."""
-    from sqlalchemy import inspect
+    """从源物理表批量读取字段值：源行 id -> 值；物理表 / 字段缺失时返回 None.
 
+    走 ``get_reflected_table`` 的 engine 级缓存（DDL 变更会主动失效），
+    避免每个 lookup 字段每次请求都用 ``inspect(engine)`` 额外开 3 个连接做存在性检查。
+    """
     from cndb.plugins.tables.services.core.ddl import get_reflected_table
 
     source_table = source_field.table
     if source_table is None:
         return None
-    insp = inspect(engine)
-    if source_table.db_table_name not in insp.get_table_names():
+    try:
+        sa_table = get_reflected_table(engine, source_table.db_table_name)
+    except RuntimeError:
         return None
-    col_names = {c["name"] for c in insp.get_columns(source_table.db_table_name)}
-    if source_field.db_column_name not in col_names:
-        return None
-
-    sa_table = get_reflected_table(engine, source_table.db_table_name)
     col = sa_table.c.get(source_field.db_column_name)
     if col is None:
         return None
-    with engine.connect() as conn:
-        rows = conn.execute(select(sa_table.c.id, col).where(sa_table.c.id.in_(list(target_row_ids)))).all()
+    with nullcontext(conn) if conn is not None else engine.connect() as active:
+        rows = active.execute(select(sa_table.c.id, col).where(sa_table.c.id.in_(list(target_row_ids)))).all()
     return {int(r[0]): r[1] for r in rows}
 
 

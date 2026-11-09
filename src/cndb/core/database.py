@@ -26,10 +26,29 @@ _connect_args: dict[str, object] = {}
 if "sqlite" in settings.DATABASE_URL:
     _connect_args = {"check_same_thread": False, "isolation_level": None}
 
+
+def _pool_kwargs_for(url: str) -> dict[str, object]:
+    """按方言给出显式的连接池容量与等待上限.
+
+    SQLite 文件库默认 `QueuePool(5/10/30s)`：不显式声明时，一旦读写路径漏还连接
+    （历史上读路径一次请求要 6-10 次 check-out），线程会在池上静默排队 30s。
+    这里把容量与上限写明，并把等待上限收到 15s，让「连接不还」尽快暴露成报错而不是卡住。
+
+    SQLite 内存库（测试用 StaticPool / SingletonThreadPool）不接受容量参数，原样跳过；
+    服务端数据库（PostgreSQL/MySQL）按 10 + 20 溢出配置。
+    """
+    if url.startswith("sqlite"):
+        if ":memory:" in url or "mode=memory" in url:
+            return {}
+        return {"pool_size": 5, "max_overflow": 10, "pool_timeout": 15}
+    return {"pool_size": 10, "max_overflow": 20, "pool_timeout": 15}
+
+
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args=_connect_args,
     echo=settings.DEBUG,
+    **_pool_kwargs_for(settings.DATABASE_URL),
 )
 
 

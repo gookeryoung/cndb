@@ -488,6 +488,39 @@ class TestLookupFilterSort:
         assert len(body["rows"]) == 1
 
 
+class TestReadPathConnectionReuse:
+    def test_list_rows_checks_out_single_connection(self, client, auth_headers, _lookup_env, db):
+        """连接收敛：一次列表请求的 count / select / link 摘要 / lookup 解析共用一个连接.
+
+        旧实现每个 link 字段 3 次、每个 lookup 字段 2 次 check-out（1 link + 1 lookup 时 6 次），
+        收敛后整条读路径只在最外层取 1 个连接。
+        """
+        from sqlalchemy import event
+
+        from cndb.core.cache import list_cache
+
+        wid, dst_tid, _link, _lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        url = f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list"
+        payload = {"limit": 10, "offset": 0}
+        assert client.post(url, headers=auth_headers, json=payload).status_code == 200
+        list_cache.clear()  # 预热元数据反射后只测读路径本身，避免把反射连接算进来
+
+        opened: list[int] = []
+
+        def _on_connect(_conn: object) -> None:
+            opened.append(1)
+
+        engine = db.get_bind()
+        event.listen(engine, "engine_connect", _on_connect)
+        try:
+            r = client.post(url, headers=auth_headers, json=payload)
+        finally:
+            event.remove(engine, "engine_connect", _on_connect)
+
+        assert r.status_code == 200, r.text
+        assert len(opened) == 1
+
+
 # ── C2: 嵌套分组（or/and）中的 lookup 条件 ────────────
 
 

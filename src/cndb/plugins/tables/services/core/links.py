@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import Table, inspect, select, text
@@ -20,7 +21,7 @@ from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core.ddl import get_reflected_table
 
 if TYPE_CHECKING:
-    from sqlalchemy.engine import Engine
+    from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.orm import Session
 
 # 摘要取值最多考察目标表前 N 个非关联字段（首个非空值即作为摘要）
@@ -114,14 +115,22 @@ def clear_row_links(
 # ── 读取 ─────────────────────────────────────────────
 
 
-def load_links(engine: Engine, field: DataField, row_ids: Sequence[int]) -> dict[int, list[int]]:
-    """读取多行的关联集合：返回 row_id -> 目标行 id 列表（保关联表写入顺序）."""
+def load_links(
+    engine: Engine,
+    field: DataField,
+    row_ids: Sequence[int],
+    conn: Connection | None = None,
+) -> dict[int, list[int]]:
+    """读取多行的关联集合：返回 row_id -> 目标行 id 列表（保关联表写入顺序）.
+
+    ``conn`` 传入时复用调用方的连接（同一请求内收敛连接数），为 None 时自行开连接。
+    """
     ids = list(dict.fromkeys(row_ids))
     if not ids:
         return {}
     link_table = _get_link_sa_table(engine, field.link_table_name)
-    with engine.connect() as conn:
-        rows = conn.execute(
+    with nullcontext(conn) if conn is not None else engine.connect() as active:
+        rows = active.execute(
             select(link_table.c.row_id, link_table.c.target_row_id)
             .where(link_table.c.row_id.in_(ids))
             .order_by(link_table.c.id)
@@ -133,33 +142,40 @@ def load_links(engine: Engine, field: DataField, row_ids: Sequence[int]) -> dict
 
 
 def attach_links(
-    engine: Engine, table: DataTable, rows: list[dict[str, Any]], db: Session | None = None
+    engine: Engine,
+    table: DataTable,
+    rows: list[dict[str, Any]],
+    db: Session | None = None,
+    conn: Connection | None = None,
 ) -> list[dict[str, Any]]:
     """为行响应附加关联字段的摘要值；无关联字段或空结果时原样返回.
 
     摘要项为 ``{"id", "value", "match"}``：``value`` 取显示字段（单元格展示），
     ``match`` 取匹配字段（导出/回灌口径）；两者都未配置时回退启发式摘要，
     此时 ``match`` 与 ``value`` 相同。db 为 None 时摘要无法解析目标行内容，回退 "#<id>"。
+
+    所有关联字段的读取共用一个连接（``conn`` 传入则复用调用方的，否则本函数自开）。
     """
     fields = link_fields(table)
     if not fields or not rows:
         return rows
     row_ids = [int(row["id"]) for row in rows]
-    for field in fields:
-        mapping = load_links(engine, field, row_ids)
-        all_targets = [target_id for targets in mapping.values() for target_id in targets]
-        display_summaries = _target_summaries(engine, field, all_targets, db=db)
-        match_summaries = _match_summaries(engine, field, all_targets, display_summaries, db=db)
-        for row in rows:
-            targets = mapping.get(int(row["id"]), [])
-            row[str(field.name)] = [
-                {
-                    "id": target_id,
-                    "value": display_summaries.get(target_id, f"#{target_id}"),
-                    "match": match_summaries.get(target_id, f"#{target_id}"),
-                }
-                for target_id in targets
-            ]
+    with nullcontext(conn) if conn is not None else engine.connect() as active:
+        for field in fields:
+            mapping = load_links(engine, field, row_ids, conn=active)
+            all_targets = [target_id for targets in mapping.values() for target_id in targets]
+            display_summaries = _target_summaries(engine, field, all_targets, db=db, conn=active)
+            match_summaries = _match_summaries(engine, field, all_targets, display_summaries, db=db, conn=active)
+            for row in rows:
+                targets = mapping.get(int(row["id"]), [])
+                row[str(field.name)] = [
+                    {
+                        "id": target_id,
+                        "value": display_summaries.get(target_id, f"#{target_id}"),
+                        "match": match_summaries.get(target_id, f"#{target_id}"),
+                    }
+                    for target_id in targets
+                ]
     return rows
 
 
@@ -439,6 +455,7 @@ def _target_summaries(
     field: DataField,
     target_ids: Sequence[int],
     db: Session | None = None,
+    conn: Connection | None = None,
 ) -> dict[int, str]:
     """批量生成目标行摘要：id -> 首个非空字段值（回退 #id）."""
     ids = list(dict.fromkeys(target_ids))
@@ -449,7 +466,7 @@ def _target_summaries(
     target = _target_data_table(db, field)
     if target is None:
         return {target_id: f"#{target_id}" for target_id in ids}
-    return _row_summaries(engine, target, _link_summary_fields(target, field), ids)
+    return _row_summaries(engine, target, _link_summary_fields(target, field), ids, conn=conn)
 
 
 def _match_summaries(
@@ -458,6 +475,7 @@ def _match_summaries(
     target_ids: Sequence[int],
     display_summaries: dict[int, str],
     db: Session | None = None,
+    conn: Connection | None = None,
 ) -> dict[int, str]:
     """批量生成目标行的匹配字段摘要（导出/回灌口径）：id -> 匹配字段值.
 
@@ -480,7 +498,7 @@ def _match_summaries(
     match_key = _resolve_business_key(target, match_key_id)
     if (match_key.id if match_key else None) == (display_key.id if display_key else None):
         return display_summaries
-    return _row_summaries(engine, target, _link_match_fields(target, field), ids)
+    return _row_summaries(engine, target, _link_match_fields(target, field), ids, conn=conn)
 
 
 def _resolve_business_key(target: DataTable, key_id: Any) -> DataField | None:
@@ -522,6 +540,7 @@ def _row_summaries(
     table: DataTable,
     summary_fields: list[DataField],
     row_ids: Sequence[int],
+    conn: Connection | None = None,
 ) -> dict[int, str]:
     """按摘要字段批量读取行，产出 id -> 首个非空值（回退 #id）."""
     ids = list(dict.fromkeys(row_ids))
@@ -529,8 +548,8 @@ def _row_summaries(
         return {}
     sa_table = _get_sa_table_by_name(engine, table.db_table_name)
     columns = [sa_table.c.id, *[sa_table.c[f.db_column_name] for f in summary_fields]]
-    with engine.connect() as conn:
-        db_rows = conn.execute(select(*columns).where(sa_table.c.id.in_(ids))).all()
+    with nullcontext(conn) if conn is not None else engine.connect() as active:
+        db_rows = active.execute(select(*columns).where(sa_table.c.id.in_(ids))).all()
     summaries: dict[int, str] = {}
     for db_row in db_rows:
         row_id = int(db_row[0])

@@ -645,6 +645,9 @@ def _guard_post_filter_scan(engine: Any, plan: _QueryPlan) -> None:
     含 lookup 条件的列表查询无法把过滤 / 排序 / 分页下推 SQL（无物理列），
     只能整表 `select *` + attach 后内存求值；行数超过 :data:`POST_FILTER_SCAN_LIMIT`
     时直接给出可操作提示，避免大表撑爆进程内存。
+
+    独立开连接并在进入主查询前关闭：测试用 StaticPool 单连接共享，
+    与主查询的 ``with engine.connect()`` 重叠会重入同一个底层连接。
     """
     count_query = select(func.count(plan.sa_table.c.id))
     if plan.final_where:
@@ -743,11 +746,14 @@ def list_rows(
 
         rows = conn.execute(query).all()
 
-    result = attach_links(engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db)
-    if db is not None:
-        from cndb.plugins.tables.services.core.lookups import attach_lookup_values
+        # 连接收敛：本次请求的 count / select / link 摘要 / lookup 解析共用同一连接，
+        # 避免一次列表请求在池上反复 check-out（旧实现每个 link / lookup 字段各开一次）。
+        result = attach_links(engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db, conn=conn)
+        if db is not None:
+            from cndb.plugins.tables.services.core.lookups import attach_lookup_values
 
-        result = attach_lookup_values(engine, table, result, db=db)
+            result = attach_lookup_values(engine, table, result, db=db, conn=conn)
+
     from cndb.plugins.tables.services.core.formulas import attach_formula_values
 
     result = attach_formula_values(table, result)

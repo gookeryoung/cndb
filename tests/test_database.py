@@ -44,6 +44,30 @@ def test_get_db_uses_dedicated_session_per_call() -> None:
     db2.close()
 
 
+def test_pool_kwargs_explicit_for_sqlite_file() -> None:
+    """SQLite 文件库显式声明池容量与 15s 等待上限，避免连接不还时静默排队 30s."""
+    assert database._pool_kwargs_for("sqlite:////data/cndb.db") == {
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_timeout": 15,
+    }
+
+
+def test_pool_kwargs_skip_sqlite_memory() -> None:
+    """内存库用 StaticPool / SingletonThreadPool，不接受容量参数."""
+    assert database._pool_kwargs_for("sqlite:///:memory:") == {}
+    assert database._pool_kwargs_for("sqlite:///file:shared?mode=memory&cache=shared") == {}
+
+
+def test_pool_kwargs_for_server_database() -> None:
+    """服务端数据库按 10 + 20 溢出配置."""
+    assert database._pool_kwargs_for("postgresql+psycopg://u:p@localhost/cndb") == {
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_timeout": 15,
+    }
+
+
 def test_register_sqlite_pragmas_sets_wal_and_cache(tmp_path) -> None:
     """register_sqlite_pragmas 应为 SQLite 新连接设置 WAL/NORMAL/busy_timeout/cache_size."""
     from sqlalchemy import create_engine, text
