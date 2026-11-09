@@ -36,7 +36,6 @@ import { useDebouncedCallback } from '@/hooks/useDebouncedCallback'
 import { formatDateTime } from '@/utils/datetime'
 import DslEditor from './DslEditor'
 import DesignParamsPanel from './DesignParamsPanel'
-import PublishModuleModal from './PublishModuleModal'
 import type { DslLibraryOption, DslPartOption } from './designCompletion'
 import { collectNodeIndices, resolveOutlinePath } from './designOutline'
 import { useDesignPreview } from './useDesignPreview'
@@ -47,6 +46,8 @@ import { VIEW_PRESETS, type ViewOrientation } from './viewOrient'
 const PreviewCanvas = lazy(() => import('./PreviewCanvas'))
 // 工具栏动作（版本历史 / 导出）同样落在 three lazy 边界（exporters 引 three，ADR 0079 D5）
 const DesignMoreMenu = lazy(() => import('./DesignMoreMenu'))
+// 发布模块弹窗「点了才出现」：lazy 掉，避免占用编辑器首屏 chunk（ADR 0116 体积预算）
+const PublishModuleModal = lazy(() => import('./PublishModuleModal'))
 
 const { Text } = Typography
 
@@ -1098,18 +1099,20 @@ export default function DesignEditorPage() {
         )}
       </Drawer>
 
-      <PublishModuleModal
-        open={publishOpen}
-        wid={wid}
-        designId={detail?.id ?? 0}
-        defaultName={detail?.title ?? ''}
-        defaultDescription={detail?.description ?? ''}
-        onClose={() => setPublishOpen(false)}
-        onPublished={() => {
-          libraryCache.current = null
-          void queryClient.invalidateQueries({ queryKey: ['design-library'] })
-        }}
-      />
+      <Suspense fallback={null}>
+        <PublishModuleModal
+          open={publishOpen}
+          wid={wid}
+          designId={detail?.id ?? 0}
+          defaultName={detail?.title ?? ''}
+          defaultDescription={detail?.description ?? ''}
+          onClose={() => setPublishOpen(false)}
+          onPublished={() => {
+            libraryCache.current = null
+            void queryClient.invalidateQueries({ queryKey: ['design-library'] })
+          }}
+        />
+      </Suspense>
     </div>
   )
 }
