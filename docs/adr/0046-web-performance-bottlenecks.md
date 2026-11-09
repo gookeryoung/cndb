@@ -169,6 +169,19 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 | 记录列表缓存 | POST `/records/list` 5s `list_cache` + 事件失效 | 机制扩到 GET 与计数 / 工作区统计，失效事件同源 | 本 ADR D2/D3/D5 |
 | select 校验允许值缓存 | `field_types/select.py`（库内全量） | options 截断只在序列化层，校验不截断 | ADR 0035 D1 |
 
+## 后续优化（本次未做：lookup 值冗余列）
+
+含 lookup 字段的过滤 / 排序无物理列，仍只能 attach 后内存求值。本次先加限流兜底
+（`records.POST_FILTER_SCAN_LIMIT = 20000`：基础命中行数超上限直接 400 并提示收窄筛选），
+彻底下推的做法留待后续按下列顺序评估：
+
+1. **写入冗余（首选）**：为 lookup 字段冗余 `_lk_<field>` 物理列，存首值 / 聚合显示值；过滤与排序改走 SQL，
+   分页与 COUNT 恢复下推。代价：迁移回填 + 写入维护（link / 源表值变更时同步）+ 视图排序索引。
+2. **LEFT JOIN 下推**：仅覆盖单值 lookup 的等值过滤，嵌套分组与多值聚合仍回退；不改表结构，
+   但语义映射（首值 / 多值）与现有内存求值必须逐条对齐。
+3. **流式扫描（只解决内存不解决 CPU）**：按 id 分块读取 + 逐块过滤，内存 O(chunk + page)，
+   CPU 仍 O(N)，total 仍为精确值；适合「不能改表结构、但必须扛住大表」的场景。
+
 ## 落地状态（随实现更新）
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
@@ -183,7 +196,7 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 
 - 当前阶段：P0-P2 全部落地，`Status` 已置 `Implemented`（2026-10-27 人工确认）
 - 已完成：瓶颈实测（Context 表，2026-10-27 本地 4.29M 行股市日线表）、需求卡片、本 ADR、P0/P1/P2 代码与测试
-- 下一步：在真实大库复测「分期」表指标（网格冷请求 / 复访 / 翻页 / 目录页 / 表详情体积）作为后续基线；如需更深的翻页体验再单独立项 keyset（本 ADR D8 已否决按现状）
+- 下一步：① 在真实大库复测「分期」表指标（网格冷请求 / 复访 / 翻页 / 目录页 / 表详情体积）作为后续基线；② 如需更深的翻页体验再单独立项 keyset（本 ADR D8 已否决按现状）；③ lookup 过滤 / 排序已加 `POST_FILTER_SCAN_LIMIT` 限流兜底，冗余列 / JOIN / 流式扫描三条彻底方案见「后续优化」节，按真机大表收益决定是否立项
 - 已知坑：dev 服务（Vite + uvicorn --reload）放大前端卡滞，复测须固定同一环境；排序索引首查有一次性建索引耗时（4.29M 行 ~2s），生产建议在视图保存 / seed 预建；`GET /records` 缓存 key 含 engine 身份与 user_id（行级权限按人隔离）；options 截断字段的 Tag 颜色改用值哈希，颜色与历史渲染不完全一致（D6 已声明）
 - 最近一次全绿：`make flow`（5582 passed / 3 skipped）+ `make cov`（96.97%，门槛 95%）+ `make frontend-coverage`（核心集合 lines 97.78% / branches 100%，全局 82.85%）+ Playwright e2e 全量（73 passed / 21 skipped / 2 重试通过）@ 2026-10-27
 - 环境坑（本机）：`:8000` 被无关项目 `stock-strategy` 的 dev 服务长期占用，`make e2e` 的 webServer 会因端口冲突失败；本次以临时配置（`E2E_PORT=8010` + 复制 `playwright.config.ts` 把 url/baseURL 指向 8010，跑完即删）完成等价全量验证，未改动仓库配置。另需 `LD_LIBRARY_PATH=$HOME/.local/share/pw-libs/usr/lib/x86_64-linux-gnu` 才能启动 Chromium（系统缺 `libatk-1.0.so.0`）

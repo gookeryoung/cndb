@@ -442,6 +442,33 @@ class TestLookupFilterSort:
         assert asc == [row_ids[0], row_ids[1], row_ids[2]]  # alpha < beta.. < None
         assert desc == [row_ids[1], row_ids[0], row_ids[2]]  # None 仍排最后
 
+    def test_lookup_filter_over_scan_limit_rejected(self, client, auth_headers, _lookup_env, monkeypatch):
+        """回退路径限流（POST_FILTER_SCAN_LIMIT）：命中行数超上限时 400 并提示收窄筛选."""
+        from cndb.plugins.tables.services.core import records
+
+        wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+
+        def _list() -> object:
+            return client.post(
+                f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+                headers=auth_headers,
+                json={
+                    "filters": [{"field_name": lookup_name, "op": "contains", "value": "alpha"}],
+                    "sorts": [],
+                    "limit": 10,
+                    "offset": 0,
+                },
+            )
+
+        monkeypatch.setattr(records, "POST_FILTER_SCAN_LIMIT", 2)
+        rejected = _list()
+        assert rejected.status_code == 400
+        assert "超过上限" in rejected.json()["detail"]
+
+        # 上限恰好等于命中行数时放行（边界不误伤）
+        monkeypatch.setattr(records, "POST_FILTER_SCAN_LIMIT", 3)
+        assert _list().status_code == 200
+
     def test_lookup_filter_with_pagination(self, client, auth_headers, _lookup_env):
         """lookup 过滤后 total 与分页一致."""
         wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)

@@ -44,6 +44,11 @@ from cndb.plugins.tables.services.core.links import (
 
 logger = logging.getLogger(__name__)
 
+#: lookup 字段无物理列，过滤 / 排序只能在 attach 之后内存求值（ADR 0046 D3）；
+#: 全量回退的扫描行数上限：超过即明确拒绝，避免大表把整表 dict + attach 结果驻留内存。
+#: 彻底解法是写入时冗余 lookup 显示值（`_lk_*` 物理列）后下推 SQL，本次先以限流兜底。
+POST_FILTER_SCAN_LIMIT = 20_000
+
 
 # ── 值规范化 ──────────────────────────────────────────
 
@@ -634,6 +639,25 @@ def count_rows(
         return int(conn.execute(count_query).scalar() or 0)
 
 
+def _guard_post_filter_scan(engine: Any, plan: _QueryPlan) -> None:
+    """回退路径限流：基础 WHERE 命中行数超过上限时明确拒绝，不把整表加载进内存.
+
+    含 lookup 条件的列表查询无法把过滤 / 排序 / 分页下推 SQL（无物理列），
+    只能整表 `select *` + attach 后内存求值；行数超过 :data:`POST_FILTER_SCAN_LIMIT`
+    时直接给出可操作提示，避免大表撑爆进程内存。
+    """
+    count_query = select(func.count(plan.sa_table.c.id))
+    if plan.final_where:
+        count_query = count_query.where(*plan.final_where)
+    with engine.connect() as conn:
+        matched = int(conn.execute(count_query).scalar() or 0)
+    if matched > POST_FILTER_SCAN_LIMIT:
+        raise ValueError(
+            f"含 lookup 字段的筛选 / 排序需在内存中求值，当前命中 {matched} 行、超过上限 "
+            f"{POST_FILTER_SCAN_LIMIT} 行；请补充普通字段筛选（如日期、状态）缩小范围后重试"
+        )
+
+
 def list_rows(
     engine: Any,
     table: DataTable,
@@ -661,6 +685,9 @@ def list_rows(
         user: 当前用户（提供时按 TablePermission.hidden_fields 做字段隐藏）.
         total: 已算好的行数（ADR 0046 D3 计数缓存）；传入即跳过内部 COUNT.
             含 lookup 过滤 / 排序时忽略该值，改由内存过滤结果修正.
+
+    Raises:
+        ValueError: 含 lookup 过滤 / 排序且基础命中行数超过 ``POST_FILTER_SCAN_LIMIT``.
     """
     from cndb.plugins.tables.services.core.lookups import (
         match_row_filters,
@@ -682,6 +709,9 @@ def list_rows(
     needs_post = plan.needs_post
     lk_filters = plan.lk_filters
     lk_sorts = plan.lk_sorts
+
+    if needs_post:
+        _guard_post_filter_scan(engine, plan)
 
     # 构建 base query —— trashed AND 权限 AND 业务过滤
     query = sa_table.select()
