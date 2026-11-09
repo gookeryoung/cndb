@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
-import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -27,6 +26,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from cndb.core import task_runner
 from cndb.core.crypto import decrypt_secrets
 from cndb.core.database import checkpoint_wal
 from cndb.plugins.datasource.models import (
@@ -416,13 +416,10 @@ def _spawn_execution(
     trigger: str,
 ) -> None:
     """默认后台执行器：守护线程（进程退出即回收，不阻塞关闭）."""
-    thread = threading.Thread(
-        target=execute_run_in_background,
-        args=(factory, run_id, job_id, user_id, lease, trigger),
-        name=f"datasource-sync-{run_id}",
-        daemon=True,
+    task_runner.spawn(
+        f"datasource-sync-{run_id}",
+        lambda: execute_run_in_background(factory, run_id, job_id, user_id, lease, trigger),
     )
-    thread.start()
 
 
 def preview_job(

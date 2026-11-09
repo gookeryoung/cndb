@@ -16,27 +16,19 @@ import io
 import json
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from cndb.core import task_runner
 from cndb.plugins.tables.models import DataTable, ImportTask
 from cndb.plugins.tables.services import transfer
 
-# 追踪所有后台线程，供测试 fixture 等待完成
-_background_threads: list[threading.Thread] = []
-_background_lock = threading.Lock()
-
 
 def join_background_threads(timeout: float = 5.0) -> None:
-    """等待所有后台线程结束（用于测试清理前调用）."""
-    with _background_lock:
-        threads = list(_background_threads)
-        _background_threads.clear()
-    for t in threads:
-        if t.is_alive():
-            t.join(timeout=timeout)
+    """等待导入后台线程结束（测试清理前调用；登记表由 ``core.task_runner`` 统一维护）."""
+    task_runner.join_all(timeout=timeout)
 
 
 logger = logging.getLogger(__name__)
@@ -67,30 +59,53 @@ def run_with_stage_timeout[T](fn: Callable[[], T], *, stage: str, timeout_second
     但**任何**解析/校验异常都可能表现为"进度停在 5%、无报错" —— 用户无法区分
     "还在跑"与"已经死了"。这里给出上界：超过 ``IMPORT_TASK_TIMEOUT_SECONDS`` 即失败并说明原因。
 
-    - 超时后线程仍在后台运行（Python 无法强杀线程），但任务已判定失败；
-      该线程后续若再改状态会被 ``_transition_status`` 的合法迁移校验挡住。
-    - 因此这里 ``shutdown(wait=False)``，不阻塞调用方。
+    - 线程由 ``core.task_runner`` 统一登记（不再用 ``ThreadPoolExecutor`` + ``shutdown(wait=False)``
+      丢出无人认领的线程），超时后仍可在 ``join_background_threads`` 里被观测 / 等待；
+    - Python 无法强杀线程，超时后该线程可能继续写库；写阶段用 ``_exclusive_table_write``
+      占住目标表的写闸，重试任务会被明确拒绝，避免两个线程并发写同一张表；
+    - 该线程后续若再改状态会被 ``_transition_status`` 的合法迁移校验挡住。
     """
-    from concurrent.futures import ThreadPoolExecutor
-    from concurrent.futures import TimeoutError as FutureTimeoutError
-
     if timeout_seconds is None:
         from cndb.core.config import settings
 
         timeout_seconds = int(settings.IMPORT_TASK_TIMEOUT_SECONDS)
 
-    pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"import-{stage}")
-    future = pool.submit(fn)
-    try:
-        return future.result(timeout=timeout_seconds)
-    except FutureTimeoutError as exc:
-        raise TimeoutError(
+    return task_runner.run_with_timeout(
+        fn,
+        name=f"import-{stage}",
+        timeout=timeout_seconds,
+        timeout_message=(
             f"导入{stage}阶段超过 {timeout_seconds} 秒仍未完成，已判定失败。"
             "常见原因是文件范围异常（如 WPS/Excel 写入的整列样式）或图片过多；"
             "请用 WPS/Excel 打开后「另存为」一份干净副本，或只保留所需行列后重试。"
-        ) from exc
+        ),
+    )
+
+
+_write_guard_lock = threading.Lock()
+_write_guard_owner: dict[int, str] = {}
+
+
+@contextlib.contextmanager
+def _exclusive_table_write(table_id: int) -> Iterator[None]:
+    """同一张物理表同一时刻只允许一个导入写线程（超时线程仍持闸，直到它自己结束）.
+
+    超时被放弃的线程无法强杀，它可能还在往表里写；若不设闸，用户点重试就会有两个线程
+    并发写同一张表（唯一索引冲突 / 半截数据）。这里用非阻塞占闸：占用中的重试直接得到
+    可操作报错，而不是继续写。
+    """
+    with _write_guard_lock:
+        if table_id in _write_guard_owner:
+            raise RuntimeError(
+                f"数据表 {table_id} 上一次导入的线程仍在执行写入，已拒绝本次导入；"
+                "请稍后重试；若长时间不释放，请重启应用"
+            )
+        _write_guard_owner[table_id] = threading.current_thread().name
+    try:
+        yield
     finally:
-        pool.shutdown(wait=False)
+        with _write_guard_lock:
+            _write_guard_owner.pop(table_id, None)
 
 
 def _decode_content(task: ImportTask) -> bytes | str:
@@ -371,19 +386,22 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
                 db_session.commit()
                 logger.info("[ImportTask %s] 执行子步骤 %d%%：%s", task_id, percent, stage)
 
-            result = run_with_stage_timeout(
-                lambda: importer.execute(
-                    raw,
-                    task.format,
-                    match_keys=list(task.match_keys) if task.match_keys else None,
-                    unknown_cols_strategy=task.unknown_cols_strategy or "drop",
-                    dropped_columns=list(task.dropped_columns) if task.dropped_columns else None,
-                    cleaning_actions=list(task.cleaning_actions) if task.cleaning_actions else None,
-                    progress_cb=_on_progress,
-                    header_row=_header_row_from_report(task),
-                ),
-                stage="执行",
-            )
+            def _write_rows() -> Any:
+                # 写闸覆盖整个 Importer 写入阶段：超时被放弃的线程会一直持闸到它自己结束，
+                # 重试任务因此不会与残留线程并发写同一张物理表。
+                with _exclusive_table_write(table.id):
+                    return importer.execute(
+                        raw,
+                        task.format,
+                        match_keys=list(task.match_keys) if task.match_keys else None,
+                        unknown_cols_strategy=task.unknown_cols_strategy or "drop",
+                        dropped_columns=list(task.dropped_columns) if task.dropped_columns else None,
+                        cleaning_actions=list(task.cleaning_actions) if task.cleaning_actions else None,
+                        progress_cb=_on_progress,
+                        header_row=_header_row_from_report(task),
+                    )
+
+            result = run_with_stage_timeout(_write_rows, stage="执行")
             task.imported_rows = len(result.imported_ids)
             task.result_ids = result.imported_ids
             task.validation_report = json.dumps(result.report, ensure_ascii=False, default=str)
@@ -401,20 +419,21 @@ def execute_import_task(db_session: Session, task_id: int) -> None:
             task.progress = 30
             db_session.commit()
 
-            if task.format == "json":
-                if not isinstance(raw, str):
-                    raise ValueError("JSON 导入内容必须为文本")
-                ids = transfer.import_rows_from_json(engine, table, raw, db=db_session)
-            elif task.format == "csv":
-                if not isinstance(raw, str):
-                    raise ValueError("CSV 导入内容必须为文本")
-                ids = transfer.import_rows_from_csv(engine, table, raw, db=db_session)
-            elif task.format == "xlsx":
-                if not isinstance(raw, bytes):
-                    raise ValueError("XLSX 导入内容必须为字节")
-                ids = transfer.import_rows_from_xlsx(engine, table, raw, db=db_session)
-            else:
-                raise ValueError(f"不支持的格式: {task.format}")
+            with _exclusive_table_write(table.id):
+                if task.format == "json":
+                    if not isinstance(raw, str):
+                        raise ValueError("JSON 导入内容必须为文本")
+                    ids = transfer.import_rows_from_json(engine, table, raw, db=db_session)
+                elif task.format == "csv":
+                    if not isinstance(raw, str):
+                        raise ValueError("CSV 导入内容必须为文本")
+                    ids = transfer.import_rows_from_csv(engine, table, raw, db=db_session)
+                elif task.format == "xlsx":
+                    if not isinstance(raw, bytes):
+                        raise ValueError("XLSX 导入内容必须为字节")
+                    ids = transfer.import_rows_from_xlsx(engine, table, raw, db=db_session)
+                else:
+                    raise ValueError(f"不支持的格式: {task.format}")
 
             task.imported_rows = len(ids)
             task.result_ids = ids
@@ -678,10 +697,7 @@ def run_task_in_background(
         finally:
             session.close()
 
-    thread = threading.Thread(target=_worker, daemon=True)
-    with _background_lock:
-        _background_threads.append(thread)
-    thread.start()
+    task_runner.spawn(f"import-{phase}-{task_id}", _worker)
 
 
 __all__ = [

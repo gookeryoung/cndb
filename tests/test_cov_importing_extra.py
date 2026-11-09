@@ -16,6 +16,7 @@ import pytest
 from openpyxl import Workbook
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
+from cndb.core import task_runner
 from cndb.plugins.tables.models import DataField, DataTable, ImportTask
 from cndb.plugins.tables.services.importing import import_tasks as it
 from cndb.plugins.tables.services.importing import importer as imp_mod
@@ -63,9 +64,15 @@ def kv_table(client, auth_headers, db) -> DataTable:
 # ── import_tasks：工具与落库 ───────────────────────
 
 
+def _claim_table_write(table_id: int) -> None:
+    """占一次写闸后立即释放（供断言重入行为）."""
+    with it._exclusive_table_write(table_id):
+        pass
+
+
 class TestImportTaskHelpers:
     def test_join_background_threads_joins_live_thread(self):
-        """后台线程仍在运行时应被 join —— 覆盖 join_background_threads 的 is_alive 分支."""
+        """后台线程仍在运行时应被 join —— 覆盖 join_all 的 is_alive 分支."""
         started = threading.Event()
         stop = threading.Event()
 
@@ -73,14 +80,26 @@ class TestImportTaskHelpers:
             started.set()
             stop.wait(5)
 
-        worker = threading.Thread(target=_work, daemon=True)
+        worker = threading.Thread(target=_work, daemon=True, name="test-import-live")
         worker.start()
         assert started.wait(5)
-        with it._background_lock:
-            it._background_threads.append(worker)
-        it.join_background_threads(timeout=0.01)
-        stop.set()
-        worker.join(5)
+        with task_runner._lock:
+            task_runner._threads.append(worker)
+        try:
+            it.join_background_threads(timeout=0.01)
+        finally:
+            stop.set()
+            worker.join(5)
+
+    def test_exclusive_table_write_rejects_concurrent_writer(self):
+        """超时残留线程仍持写闸：同表第二个写线程被明确拒绝，且释放后可再次占闸."""
+        with it._exclusive_table_write(424242):
+            assert it._write_guard_owner[424242] == threading.current_thread().name
+            with pytest.raises(RuntimeError, match="仍在执行写入"):
+                _claim_table_write(424242)
+
+        _claim_table_write(424242)  # 释放后可再次占闸
+        assert 424242 not in it._write_guard_owner
 
     def test_readable_error_field_write_conflict(self):
         exc = IntegrityError("stmt", "params", Exception("tables_datafield name conflict"))

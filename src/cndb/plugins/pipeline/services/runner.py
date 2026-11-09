@@ -12,13 +12,13 @@
 from __future__ import annotations
 
 import logging
-import threading
 import time
 from collections.abc import Callable
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from cndb.core import task_runner
 from cndb.core.database import checkpoint_wal
 from cndb.core.events import record_event
 from cndb.plugins.pipeline.models import (
@@ -54,9 +54,6 @@ logger = logging.getLogger(__name__)
 
 #: 单个检查动作在一次运行内的 finding 上限（超出聚合为一条 info）
 MAX_FINDINGS_PER_CHECK = 1000
-
-_background_threads: list[threading.Thread] = []
-_background_lock = threading.Lock()
 
 
 def create_run(
@@ -106,19 +103,12 @@ def run_pipeline_in_background(db_session_factory: Callable[[], Session], run_id
         finally:
             session.close()
 
-    thread = threading.Thread(target=_worker, daemon=True)
-    with _background_lock:
-        _background_threads.append(thread)
-    thread.start()
+    task_runner.spawn(f"pipeline-run-{run_id}", _worker)
 
 
 def join_background_threads(timeout: float = 10.0) -> None:
-    """等待全部流水线后台线程结束（测试收尾与关停时使用）."""
-    with _background_lock:
-        threads = list(_background_threads)
-        _background_threads.clear()
-    for thread in threads:
-        thread.join(timeout=timeout)
+    """等待后台线程结束（测试收尾与关停时使用；登记表由 ``core.task_runner`` 统一维护）."""
+    task_runner.join_all(timeout=timeout)
 
 
 def execute_pipeline_run(db: Session, run_id: int) -> None:

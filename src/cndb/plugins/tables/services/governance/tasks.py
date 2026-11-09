@@ -4,17 +4,17 @@
     pending -> running -> done / failed
 
 执行器独立 Session（线程内新建），通过状态转换做乐观锁；
-与 import_tasks 的执行器为结构同构（第三个任务型需求出现前不合并）。
+与 import_tasks 的执行器为结构同构（执行器本身不合并），线程登记统一走 ``core.task_runner``。
 """
 
 from __future__ import annotations
 
 import logging
-import threading
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from cndb.core import task_runner
 from cndb.plugins.tables.models import DataTable, GovernanceTask
 
 logger = logging.getLogger(__name__)
@@ -33,23 +33,14 @@ _VALID_TRANSITIONS: dict[str, set[str]] = {
 # 活跃状态：同表同时仅允许一个活跃任务
 ACTIVE_STATUSES = {"pending", "running"}
 
-# 追踪所有后台线程，供测试 fixture 等待完成
-_background_threads: list[threading.Thread] = []
-_background_lock = threading.Lock()
-
 
 class GovernanceTaskError(Exception):
     """治理任务业务校验错误（路由层映射为 400）."""
 
 
 def join_background_threads(timeout: float = 10.0) -> None:
-    """等待所有后台线程结束（用于测试清理前调用）."""
-    with _background_lock:
-        threads = list(_background_threads)
-        _background_threads.clear()
-    for t in threads:
-        if t.is_alive():
-            t.join(timeout=timeout)
+    """等待后台线程结束（测试清理前调用；登记表由 ``core.task_runner`` 统一维护）."""
+    task_runner.join_all(timeout=timeout)
 
 
 def create_governance_task(
@@ -155,10 +146,7 @@ def run_governance_task_in_background(db_session_factory: Any, task_id: int) -> 
         finally:
             session.close()
 
-    thread = threading.Thread(target=_worker, daemon=True)
-    with _background_lock:
-        _background_threads.append(thread)
-    thread.start()
+    task_runner.spawn(f"governance-{task_id}", _worker)
 
 
 __all__ = [
