@@ -26,6 +26,7 @@ import os
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -122,8 +123,18 @@ def convertible_command(soffice_bin: str, source: Path, outdir: Path, profile: P
 
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
     """超时后杀掉整个进程组：soffice 会派生 soffice.bin，只杀父进程会留下孤儿."""
-    with suppress(ProcessLookupError, OSError):
-        os.killpg(os.getpgid(process.pid), signal.SIGKILL)  # pyrefly: ignore[missing-attribute]
+    if sys.platform == "win32":
+        # Windows 无进程组信号：taskkill /T 按进程树强杀（含包装脚本派生的子进程）
+        with suppress(OSError, subprocess.TimeoutExpired):
+            _ = subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                capture_output=True,
+                check=False,
+                timeout=5,
+            )
+    else:
+        with suppress(ProcessLookupError, OSError):
+            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
     with suppress(Exception):
         process.communicate(timeout=5)
 

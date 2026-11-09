@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import http.client
+import sys
 import tempfile
 import threading
 from pathlib import Path
@@ -25,6 +26,8 @@ import os
 import pathlib
 import sys
 import time
+import urllib.parse
+import urllib.request
 
 mode = os.environ.get("FAKE_SOFFICE_MODE", "ok")
 if mode == "timeout":
@@ -38,7 +41,8 @@ if mode == "nooutput":
 args = sys.argv[1:]
 if os.environ.get("FAKE_SOFFICE_CHECK_PROFILE") == "1":
     profile_arg = next(a for a in args if a.startswith("-env:UserInstallation="))
-    profile = pathlib.Path(profile_arg.split("file://", 1)[1])
+    profile_url = urllib.parse.unquote(profile_arg.split("file://", 1)[1])
+    profile = pathlib.Path(urllib.request.url2pathname(profile_url))
     text = (profile / "user" / "registrymodifications.xcu").read_text(encoding="utf-8")
     if "MacroSecurityLevel" not in text or "<value>3</value>" not in text:
         sys.exit(3)
@@ -49,12 +53,31 @@ source = pathlib.Path(args[-1])
 """
 
 
+def _write_fake_soffice(tmp_path: Path) -> Path:
+    """生成可被 ``Popen`` 直接执行的伪造 soffice.
+
+    POSIX 用带 shebang 的可执行脚本；Windows 无法执行无扩展名的脚本，
+    改用 ``.bat`` 包一层 ``sys.executable``，并把参数原样透传。
+    """
+    if sys.platform != "win32":
+        script = tmp_path / "soffice"
+        script.write_text(FAKE_SOFFICE, encoding="utf-8")
+        script.chmod(0o755)
+        return script
+    script = tmp_path / "fake_soffice.py"
+    script.write_text(FAKE_SOFFICE, encoding="utf-8")
+    launcher = tmp_path / "soffice.bat"
+    launcher.write_text(
+        f'@echo off\r\n"{sys.executable}" "{script}" %*\r\n',
+        encoding="utf-8",
+    )
+    return launcher
+
+
 @pytest.fixture
 def start_worker(tmp_path, monkeypatch):
     """启动一个监听随机端口的 worker；用例结束统一停止."""
-    script = tmp_path / "soffice"
-    script.write_text(FAKE_SOFFICE, encoding="utf-8")
-    script.chmod(0o755)
+    script = _write_fake_soffice(tmp_path)
     monkeypatch.setenv("FAKE_SOFFICE_PDF", PDF_BYTES.decode("latin-1"))
 
     servers: list[pdf_worker.ThreadingHTTPServer] = []
@@ -216,9 +239,7 @@ class TestCleanup:
         root = tmp_path / "work"
         root.mkdir()
         monkeypatch.setattr(tempfile, "tempdir", str(root))
-        script = tmp_path / "soffice"
-        script.write_text(FAKE_SOFFICE, encoding="utf-8")
-        script.chmod(0o755)
+        script = _write_fake_soffice(tmp_path)
         monkeypatch.setenv("FAKE_SOFFICE_PDF", PDF_BYTES.decode("latin-1"))
 
         config = pdf_worker.WorkerConfig(soffice_bin=str(script))
@@ -231,9 +252,7 @@ class TestCleanup:
         root = tmp_path / "work"
         root.mkdir()
         monkeypatch.setattr(tempfile, "tempdir", str(root))
-        script = tmp_path / "soffice"
-        script.write_text(FAKE_SOFFICE, encoding="utf-8")
-        script.chmod(0o755)
+        script = _write_fake_soffice(tmp_path)
         monkeypatch.setenv("FAKE_SOFFICE_MODE", "fail")
 
         config = pdf_worker.WorkerConfig(soffice_bin=str(script))
@@ -248,6 +267,27 @@ class TestCleanup:
         with pytest.raises(pdf_worker.ConversionError) as excinfo:
             pdf_worker.convert_bytes(PPTX_BYTES, config)
         assert excinfo.value.status_code == 500
+
+
+def test_kill_process_group_uses_taskkill_on_windows(monkeypatch):
+    """Windows 无进程组信号：超时后必须用 ``taskkill /T`` 结束整棵进程树."""
+    calls: list[list[str]] = []
+
+    class _FakeProcess:
+        pid = 4321
+
+        def communicate(self, timeout: float | None = None) -> tuple[bytes, bytes]:
+            return b"", b""
+
+    def _fake_run(command, **kwargs):
+        calls.append(command)
+
+    monkeypatch.setattr(pdf_worker.sys, "platform", "win32")
+    monkeypatch.setattr(pdf_worker.subprocess, "run", _fake_run)
+
+    pdf_worker._kill_process_group(_FakeProcess())  # type: ignore[arg-type]
+
+    assert calls == [["taskkill", "/PID", "4321", "/T", "/F"]]
 
 
 def test_convertible_command_isolates_profile(tmp_path: Path):
