@@ -48,6 +48,12 @@ function docOf(patch: Partial<DocumentItem>): DocumentItem {
   return { ...PDF_DOC, ...patch }
 }
 
+const PPTX_MIME = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+
+function pptxDoc(): DocumentItem {
+  return docOf({ content_type: 'pptx', asset_mime: PPTX_MIME, title: '胶片' })
+}
+
 beforeEach(() => {
   vi.restoreAllMocks()
   vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(new Blob(['%PDF-1.4'], { type: 'application/pdf' }))
@@ -55,6 +61,9 @@ beforeEach(() => {
   vi.spyOn(documentsApi, 'assetPreviewText').mockResolvedValue(
     '<html><head><style>.cn-sheet-panel{display:none}</style></head><body><table class="sheet"><tbody><tr><td>预览</td></tr></tbody></table></body></html>',
   )
+  // 默认「服务端 PDF 未启用」：除新增 PDF 用例外，PPTX 用例保持 0128 客户端预览行为
+  vi.spyOn(documentsApi, 'assetPdf').mockResolvedValue({ status: 409, data: null })
+  vi.spyOn(documentsApi, 'requestAssetPdf').mockResolvedValue({ status: 409 })
 })
 
 describe('DocumentAssetView 原件阅读器', () => {
@@ -228,6 +237,81 @@ describe('DocumentAssetView 原件阅读器', () => {
     void utils
   })
 
+  it('服务端 PDF 就绪后从客户端预览原位切换为 PDF iframe（ADR 0129）', async () => {
+    vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(new Blob(['PK'], { type: PPTX_MIME }))
+    let releasePdf!: (value: { status: number; data: Blob | null }) => void
+    vi.spyOn(documentsApi, 'assetPdf').mockReturnValue(new Promise(resolve => { releasePdf = resolve }))
+
+    renderProviders(<DocumentAssetView workspaceId={7} doc={pptxDoc()} />)
+
+    // 首屏不等待 PDF：先出 0128 客户端预览
+    expect(await screen.findByTestId('pptx-preview-stub')).toHaveTextContent('胶片')
+    expect(screen.queryByTestId('doc-asset-pptx-pdf')).not.toBeInTheDocument()
+
+    releasePdf({ status: 200, data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }) })
+
+    const frame = await screen.findByTestId('doc-asset-pptx-pdf')
+    expect(frame.tagName).toBe('IFRAME')
+    expect(frame).toHaveAttribute('src', expect.stringContaining('blob:'))
+    expect(screen.queryByTestId('pptx-preview-stub')).not.toBeInTheDocument()
+  })
+
+  it('转换中只显示轻量提示，客户端预览保持可用', async () => {
+    vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(new Blob(['PK'], { type: PPTX_MIME }))
+    vi.spyOn(documentsApi, 'assetPdf')
+      .mockResolvedValueOnce({ status: 202, data: null })
+      .mockResolvedValue({ status: 409, data: null })
+
+    const { unmount } = renderProviders(<DocumentAssetView workspaceId={7} doc={pptxDoc()} />)
+
+    expect(await screen.findByTestId('pptx-preview-stub')).toHaveTextContent('胶片')
+    expect(await screen.findByTestId('doc-pptx-pdf-pending')).toHaveTextContent('正在生成高清预览')
+    expect(screen.queryByTestId('doc-asset-pptx-pdf')).not.toBeInTheDocument()
+    unmount()
+  })
+
+  it.each([409, 413, 422, 503] as const)('PDF 不可用（HTTP %s）静默保留客户端预览', async status => {
+    vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(new Blob(['PK'], { type: PPTX_MIME }))
+    vi.spyOn(documentsApi, 'assetPdf').mockResolvedValue({ status, data: null })
+
+    renderProviders(<DocumentAssetView workspaceId={7} doc={pptxDoc()} />)
+
+    expect(await screen.findByTestId('pptx-preview-stub')).toHaveTextContent('胶片')
+    await waitFor(() => expect(documentsApi.assetPdf).toHaveBeenCalled())
+    expect(screen.queryByTestId('doc-asset-pptx-pdf')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('doc-asset-error')).not.toBeInTheDocument()
+  })
+
+  it('转换失败后可手动重试一次（POST 触发 + 重新读取状态）', async () => {
+    vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(new Blob(['PK'], { type: PPTX_MIME }))
+    vi.spyOn(documentsApi, 'assetPdf')
+      .mockResolvedValueOnce({ status: 422, data: null })
+      .mockResolvedValue({ status: 409, data: null })
+    const requestSpy = vi.spyOn(documentsApi, 'requestAssetPdf').mockResolvedValue({ status: 202 })
+
+    renderProviders(<DocumentAssetView workspaceId={7} doc={pptxDoc()} />)
+
+    fireEvent.click(await screen.findByTestId('doc-pptx-pdf-retry'))
+
+    await waitFor(() => expect(requestSpy).toHaveBeenCalledWith(7, 31))
+    await waitFor(() => expect(documentsApi.assetPdf).toHaveBeenCalledTimes(2))
+  })
+
+  it('PDF objectURL 在卸载时释放', async () => {
+    const revokeSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(new Blob(['PK'], { type: PPTX_MIME }))
+    vi.spyOn(documentsApi, 'assetPdf').mockResolvedValue({
+      status: 200,
+      data: new Blob(['%PDF-1.7'], { type: 'application/pdf' }),
+    })
+
+    const { unmount } = renderProviders(<DocumentAssetView workspaceId={7} doc={pptxDoc()} />)
+    await screen.findByTestId('doc-asset-pptx-pdf')
+    unmount()
+
+    expect(revokeSpy).toHaveBeenCalledWith(expect.stringContaining('blob:'))
+  })
+
   it('旧版二进制 PPT 仍回落下载卡（纯前端渲染只支持 .pptx）', async () => {
     vi.spyOn(documentsApi, 'assetBlob').mockResolvedValue(
       new Blob(['\xd0\xcf'], { type: 'application/vnd.ms-powerpoint' }),
@@ -241,6 +325,8 @@ describe('DocumentAssetView 原件阅读器', () => {
 
     expect(await screen.findByTestId('doc-asset-download-card')).toHaveTextContent('不支持在线预览')
     expect(screen.queryByTestId('pptx-preview-stub')).not.toBeInTheDocument()
+    // 旧版 .ppt 不进入服务端转换链路
+    expect(documentsApi.assetPdf).not.toHaveBeenCalled()
   })
 
   it('MIME 缺失时按 content_type 兜底扩展名（assetSuffix 共用于顶栏下载与下载卡）', () => {

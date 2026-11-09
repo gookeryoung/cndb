@@ -187,6 +187,12 @@ fi
 TARGET_IMAGE="${BASE_REPO}:${TARGET_TAG}"
 log "目标镜像: ${TARGET_IMAGE}"
 
+# pdf-worker 镜像与应用同版本、同仓库前缀（ADR 0129 §8）：<应用仓库>-pdf-worker:<版本>
+PDF_WORKER_IMAGE_REPO="${PDF_WORKER_IMAGE_REPO:-${BASE_REPO}-pdf-worker}"
+PDF_WORKER_IMAGE="${PDF_WORKER_IMAGE_REPO}:${TARGET_TAG}"
+# worker 镜像是否可用：TCR / 离线路径拉取失败时降级为「仅部署应用」，前端自动回退
+PDF_WORKER_READY=1
+
 # 依赖基础镜像仓库：与应用镜像同前缀，tag 用依赖指纹（见 build_image 的 ensure_base_image）
 BASE_IMAGE_REPO="${BASE_IMAGE_REPO:-${BASE_REPO}-base}"
 
@@ -220,22 +226,31 @@ pre_backup() {
   fi
 }
 
-# 原子更新 .env 中的镜像地址。
+# 原子更新 .env 中的单个键（读全文 → 替换/追加 → 写临时文件 → mv 覆盖）。
 # 不用 sed -i：它会遗留 .env.bak（每次覆盖同一备份文件反而丢掉历史版本），
-# 且非原子写入中断会损坏配置。这里读全文 → 替换/追加 → 写临时文件 → mv 覆盖。
-set_image_in_env() {
-  local image="$1"
+# 且非原子写入中断会损坏配置。
+set_env_value() {
+  local key="$1" value="$2"
   local tmp
   tmp="$(mktemp "${ENV_FILE}.XXXXXX")"
-  if grep -qE '^CNDB_IMAGE=' "$ENV_FILE"; then
+  if grep -qE "^${key}=" "$ENV_FILE"; then
     # 分隔符用 | 而非 /：镜像地址含 / ，用 / 会破坏 sed 表达式
-    sed -E "s|^CNDB_IMAGE=.*|CNDB_IMAGE=${image}|" "$ENV_FILE" > "$tmp"
+    sed -E "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" > "$tmp"
   else
     cp "$ENV_FILE" "$tmp"
-    printf 'CNDB_IMAGE=%s\n' "$image" >> "$tmp"
+    printf '%s=%s\n' "$key" "$value" >> "$tmp"
   fi
   chmod 600 "$tmp"
   mv "$tmp" "$ENV_FILE"
+}
+
+set_image_in_env() {
+  set_env_value "CNDB_IMAGE" "$1"
+}
+
+# pdf-worker 镜像地址同样由部署脚本维护，避免 .env 与实际镜像版本漂移
+set_pdf_worker_image_in_env() {
+  set_env_value "CNDB_PDF_WORKER_IMAGE" "$1"
 }
 
 # ── 健康探测 ───────────────────────────────────────────────────
@@ -372,7 +387,7 @@ build_image() {
   # 构建上下文最小化：/opt/cndb 下有 backups（可能数 GB）、.env 等，
   # 不排除会把备份数据整个发给 docker daemon。只放行 dist 与 Dockerfile。
   # 注意 dockerignore 语义：父目录被 * 排除后，须先放行父目录再收窄到具体文件。
-  printf '*\n!dist\n!deploy\ndeploy/*\n!deploy/Dockerfile.prod\n!deploy/Dockerfile.base\n' > .dockerignore
+  printf '*\n!dist\n!deploy\ndeploy/*\n!deploy/Dockerfile.prod\n!deploy/Dockerfile.base\n!deploy/Dockerfile.pdf-worker\n' > .dockerignore
 
   ensure_base_image
 
@@ -401,6 +416,31 @@ print('OK cndb', cndb.__version__, '| assets:', len(assets))
     exit 1
   fi
   ok "镜像构建完成: ${TARGET_IMAGE}"
+
+  # ── pdf-worker 镜像（ADR 0129）：同底座 + LibreOffice，tag 与应用版本同源 ──
+  log "构建 pdf-worker 镜像 ${PDF_WORKER_IMAGE} ..."
+  if ! docker build -f deploy/Dockerfile.pdf-worker \
+      --build-arg "BASE_IMAGE=${BASE_TAG}" \
+      --build-arg "APT_MIRROR_HOST=${APT_MIRROR_HOST}" \
+      -t "$PDF_WORKER_IMAGE" \
+      -t "${PDF_WORKER_IMAGE_REPO}:latest" \
+      . ; then
+    rollback "pdf-worker 镜像构建失败"
+    exit 1
+  fi
+
+  # 冒烟：worker 必须能导入模块且找得到 soffice，否则上线后所有转换都会失败
+  if ! docker run --rm --entrypoint python "$PDF_WORKER_IMAGE" -c "
+import shutil
+from cndb.plugins.documents.services.preview import pdf_worker
+assert shutil.which('soffice'), '缺少 soffice'
+assert pdf_worker.DEFAULT_PORT == 8100
+print('OK pdf-worker')
+"; then
+    rollback "pdf-worker 镜像冒烟验证失败"
+    exit 1
+  fi
+  ok "pdf-worker 镜像构建完成: ${PDF_WORKER_IMAGE}"
 }
 
 # ── 离线加载应用镜像（OFFLINE=1）───────────────────────────────
@@ -437,6 +477,14 @@ acquire_offline_image() {
   docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1 || die "加载后仍无目标镜像 ${TARGET_IMAGE}
      请确认交付包内的镜像 tag 与版本一致：导出与部署须用同一 VERSION。"
   ok "离线镜像已就位: ${TARGET_IMAGE}"
+
+  # pdf-worker 是可选的旁路：离线包未打包时只部署应用，前端自动回退客户端预览
+  if docker image inspect "$PDF_WORKER_IMAGE" >/dev/null 2>&1; then
+    ok "离线 pdf-worker 镜像已就位: ${PDF_WORKER_IMAGE}"
+  else
+    warn "离线包未包含 pdf-worker 镜像（${PDF_WORKER_IMAGE}），本次仅部署应用（PDF 预览降级）"
+    PDF_WORKER_READY=0
+  fi
 }
 
 # ── 主流程 ─────────────────────────────────────────────────────
@@ -485,6 +533,13 @@ else
     rollback "镜像拉取失败"
     exit 1
   fi
+
+  # pdf-worker 是旁路：拉不到只降级 PDF 预览，不阻断应用部署
+  log "拉取 pdf-worker 镜像 ${PDF_WORKER_IMAGE}..."
+  if ! docker pull "$PDF_WORKER_IMAGE" >/dev/null 2>&1; then
+    warn "pdf-worker 镜像拉取失败（${PDF_WORKER_IMAGE}），本次仅部署应用（PDF 预览降级）"
+    PDF_WORKER_READY=0
+  fi
 fi
 
 if ! docker image inspect "$TARGET_IMAGE" >/dev/null 2>&1; then
@@ -499,8 +554,18 @@ ok "镜像已就位: ${TARGET_IMAGE}"
 set_image_in_env "$TARGET_IMAGE"
 ok "更新 .env → ${TARGET_IMAGE}"
 
-log "重建容器..."
-if ! dc up -d --force-recreate app; then
+# pdf-worker 是可选旁路：镜像未就位时保留旧 worker（若有）或仅部署应用
+RECREATE_SERVICES=(app)
+if [[ "$PDF_WORKER_READY" == "1" ]]; then
+  set_pdf_worker_image_in_env "$PDF_WORKER_IMAGE"
+  ok "更新 .env → CNDB_PDF_WORKER_IMAGE=${PDF_WORKER_IMAGE}"
+  RECREATE_SERVICES+=(pdf-worker)
+else
+  warn "跳过 pdf-worker 更新；服务端 PDF 预览自动降级为客户端预览"
+fi
+
+log "重建容器（${RECREATE_SERVICES[*]}）..."
+if ! dc up -d --force-recreate "${RECREATE_SERVICES[@]}"; then
   rollback "容器重建失败"
   exit 1
 fi
@@ -603,6 +668,9 @@ prune_repo_images() {
     if [[ "$ref" == "$TARGET_IMAGE" ]]; then
       continue
     fi
+    if [[ -n "${PDF_WORKER_IMAGE:-}" && "$ref" == "$PDF_WORKER_IMAGE" ]]; then
+      continue
+    fi
     if [[ -n "$CURRENT_IMAGE" && "$ref" == "$CURRENT_IMAGE" ]]; then
       continue
     fi
@@ -623,6 +691,8 @@ prune_repo_images() {
 
 log "回收镜像（应用保留 ${KEEP_APP_IMAGES} 个 / 依赖基础镜像保留 ${KEEP_BASE_IMAGES} 个）..."
 prune_repo_images "$BASE_REPO" "$KEEP_APP_IMAGES"
+# pdf-worker 独立仓库名，不被应用镜像的清理命中，需单独保留窗口
+prune_repo_images "$PDF_WORKER_IMAGE_REPO" "$KEEP_APP_IMAGES"
 prune_repo_images "$BASE_IMAGE_REPO" "$KEEP_BASE_IMAGES"
 
 # 不带 filter 时 image prune 的默认语义就是「只删无 tag 且无容器引用的悬空镜像」，

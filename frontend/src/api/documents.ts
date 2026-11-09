@@ -859,6 +859,31 @@ export const documentsApi = {
   assetBlob: (wid: number | string, docId: number) =>
     api.get<Blob>(`${base(wid)}/${docId}/asset`, { responseType: 'blob' }).then(r => r.data),
 
+  // ── PPTX 服务端 PDF 衍生预览（ADR 0129）──
+
+  /**
+   * 读取服务端生成的 PDF 预览（PPTX 专用）。
+   *
+   * 200 返回 PDF blob；202 = 转换中；409 / 413 / 422 / 503 是「PDF 不可用」的
+   * 业务状态，由调用方降级到客户端预览，因此统一接受而不抛错。
+   */
+  assetPdf: (wid: number | string, docId: number, signal?: AbortSignal) =>
+    api
+      .get<Blob>(`${base(wid)}/${docId}/asset/pdf`, {
+        responseType: 'blob',
+        signal,
+        validateStatus: status => [200, 202, 409, 413, 422, 503].includes(status),
+      })
+      .then(r => ({ status: r.status, data: r.status === 200 ? r.data : null })),
+
+  /** 手动请求 / 重试一次 PDF 转换（POST 不返回文件字节，只返回状态码） */
+  requestAssetPdf: (wid: number | string, docId: number) =>
+    api
+      .post(`${base(wid)}/${docId}/asset/pdf`, undefined, {
+        validateStatus: status => [200, 202, 409, 413, 422, 503].includes(status),
+      })
+      .then(r => ({ status: r.status })),
+
   /** 取 MHTML 原件的自包含预览 HTML（0064：后端把图片内联为 data URI，前端沙箱 iframe 渲染） */
   assetPreviewBlob: (wid: number | string, docId: number) =>
     api.get<Blob>(`${base(wid)}/${docId}/asset/preview`, { responseType: 'blob' }).then(r => r.data),

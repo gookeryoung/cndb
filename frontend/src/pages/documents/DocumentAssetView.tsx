@@ -5,18 +5,20 @@
  * MHTML（0064）：浏览器不渲染 multipart/related，改用后端自包含 HTML + 沙箱 iframe；
  * Excel（0087）/ Word archive（0087）：后端自包含 HTML 走 ``OfficeHtmlPreview``（Shadow DOM 内联），
  * 与 PPTX 一样只保留正文区一条滚动条，不再多一层 iframe 视口；下载仍走原件接口。
- * PPTX：纯前端渲染（PptxPreview 懒加载），旧版 .ppt 仍回落下载卡。
+ * PPTX：先纯前端渲染（PptxPreview 懒加载）保证首屏；服务端 PDF 就绪后原位替换为
+ * PDF iframe（ADR 0129），转换不可用 / 失败时静默保留客户端预览。旧版 .ppt 仍回落下载卡。
  */
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Empty, Spin } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { documentsApi, type DocumentItem } from '@/api/documents'
 import { formatMeta } from '@/components/Document/docFormat'
 import OfficeHtmlPreview from './OfficeHtmlPreview'
 import {
   isPreviewablePptx, PPTX_ASSET_GC_MS, PPTX_ASSET_STALE_MS,
 } from './pptxLoader'
+import { fetchPptxPdf, requestPptxPdf, type PptxPdfState } from './pptxPdf'
 
 // PPTX 渲染库体积较大（jszip / echarts），只在打开 .pptx 时按需加载
 const PptxPreview = lazy(() => import('./PptxPreview'))
@@ -61,6 +63,9 @@ export default function DocumentAssetView({
 }: Props) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [retryingPdf, setRetryingPdf] = useState(false)
+  const queryClient = useQueryClient()
   const fmt = formatMeta(doc.content_type)
   const suffix = assetSuffix(doc)
   const isMhtml = doc.content_type === 'mhtml'
@@ -78,6 +83,22 @@ export default function DocumentAssetView({
     staleTime: PPTX_ASSET_STALE_MS,
     gcTime: PPTX_ASSET_GC_MS,
   })
+
+  // 服务端 PDF 衍生预览（ADR 0129）：与原件并行请求；未就绪不阻塞客户端预览。
+  // 轮询中间态由 onState 实时回传，promise 只在链路结束时 resolve。
+  const [pdfLiveState, setPdfLiveState] = useState<PptxPdfState | undefined>(undefined)
+  const pdfQuery = useQuery({
+    queryKey: ['documents', workspaceId, doc.id, 'asset-pdf'],
+    queryFn: ({ signal }) => fetchPptxPdf(workspaceId, doc.id, { signal, onState: setPdfLiveState }),
+    retry: false,
+    enabled: isPptx,
+    staleTime: PPTX_ASSET_STALE_MS,
+    gcTime: PPTX_ASSET_GC_MS,
+  })
+  // 切换文档时清掉上一份的实时态，避免短暂误显示 pending / 重试入口
+  useEffect(() => {
+    setPdfLiveState(undefined)
+  }, [workspaceId, doc.id])
 
   // MHTML 预览取 blob（沙箱 iframe）；Office 预览取文本（Shadow DOM 内联）
   const previewQuery = useQuery({
@@ -114,6 +135,34 @@ export default function DocumentAssetView({
     setPreviewUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [previewBlob])
+
+  // PDF 衍生件到位后切换 iframe；objectURL 在切换 / 卸载时释放
+  const pdfBlob = pdfQuery.data?.blob
+  useEffect(() => {
+    if (!pdfBlob) {
+      setPdfUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(pdfBlob)
+    setPdfUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [pdfBlob])
+
+  const pdfState = pdfLiveState ?? pdfQuery.data?.state
+  const pdfReady = pdfState === 'ready' && Boolean(pdfUrl)
+
+  /** 手动重试一次转换：POST 只触发，随后重新读取最新状态 */
+  const retryPdf = async () => {
+    setRetryingPdf(true)
+    try {
+      await requestPptxPdf(workspaceId, doc.id)
+    } catch {
+      // PDF 是增强路径：重试失败静默保留客户端预览
+    } finally {
+      setRetryingPdf(false)
+    }
+    await queryClient.invalidateQueries({ queryKey: ['documents', workspaceId, doc.id, 'asset-pdf'] })
+  }
 
   const officeHtml = officePreviewQuery.data
   const loading = isMhtml
@@ -179,15 +228,58 @@ export default function DocumentAssetView({
       )
     }
     if (isPptx && blob) {
+      // 服务端 PDF 就绪后原位替换；否则始终保留 0128 客户端逐页预览（ADR 0129 D10）
+      if (pdfReady) {
+        return (
+          <iframe
+            title={doc.title}
+            src={pdfUrl ?? undefined}
+            data-testid="doc-asset-pptx-pdf"
+            style={{ flex: 1, minHeight: 0, width: '100%', border: 'none' }}
+          />
+        )
+      }
       return (
-        <Suspense fallback={(
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Spin />
-          </div>
-        )}
-        >
-          <PptxPreview blob={blob} title={doc.title} />
-        </Suspense>
+        <>
+          <Suspense fallback={(
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Spin />
+            </div>
+          )}
+          >
+            <PptxPreview blob={blob} title={doc.title} />
+          </Suspense>
+          {pdfState === 'pending' && (
+            <div
+              data-testid="doc-pptx-pdf-pending"
+              style={{
+                position: 'absolute',
+                right: 24,
+                bottom: 20,
+                padding: '4px 10px',
+                borderRadius: 12,
+                background: 'rgba(0, 0, 0, 0.6)',
+                color: '#fff',
+                fontSize: 12,
+                pointerEvents: 'none',
+              }}
+            >
+              正在生成高清预览…
+            </div>
+          )}
+          {(pdfState === 'failed' || pdfState === 'busy') && (
+            <Button
+              type="link"
+              size="small"
+              loading={retryingPdf}
+              onClick={() => void retryPdf()}
+              data-testid="doc-pptx-pdf-retry"
+              style={{ position: 'absolute', right: 16, bottom: 12 }}
+            >
+              重试高清预览
+            </Button>
+          )}
+        </>
       )
     }
     if (isMhtml) {
@@ -228,7 +320,7 @@ export default function DocumentAssetView({
 
   return (
     <div
-      style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '12px 24px' }}
+      style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '12px 24px', position: 'relative' }}
       data-testid="doc-asset-view"
     >
       {viewer}

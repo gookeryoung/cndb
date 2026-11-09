@@ -1140,6 +1140,11 @@ export default function DocumentEditorPage() {
             <div>
               <Typography.Text type="secondary">属性</Typography.Text> 原样存档 · 只读（不可编辑正文）
             </div>
+            {isPptxAsset && (
+              <div data-testid="doc-asset-pdf-note" style={{ color: 'var(--cn-text-secondary)' }}>
+                服务端 PDF 预览，版式可能与原件有差异
+              </div>
+            )}
           </div>
         }
       >

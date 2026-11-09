@@ -49,6 +49,16 @@ services:
       # pydantic-settings 对复杂类型一律按 JSON 解析，写成逗号分隔会在启动时抛 SettingsError。
       - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:8000"]}
 
+      # ── PPTX → PDF 衍生预览（ADR 0129）──
+      # 指向仅内网的 pdf-worker；地址留空 = 功能关闭，行为退回 0128 客户端预览。
+      - PPTX_PDF_CONVERTER_URL=${PPTX_PDF_CONVERTER_URL:-http://pdf-worker:8100}
+      - PPTX_PDF_CONVERTER_TOKEN=${PPTX_PDF_CONVERTER_TOKEN:-}
+
+    # 应用需要访问 pdf-worker 的内网网络；对外端口仍走默认网络
+    networks:
+      - default
+      - cndb-internal
+
     # 端口只在宿主机绑定；前面有 nginx / CLB 时建议改 "127.0.0.1:8000:8000" 只对内网开放。
     ports:
       - "${CNDB_BIND:-0.0.0.0:8000}:8000"
@@ -72,6 +82,48 @@ services:
     # SQLite 写入 + 文件备份并发时的文件系统表现
     security_opt:
       - no-new-privileges:true
+
+  # ── PPTX → PDF 转换 worker（ADR 0129）──────────────────────────
+  # 只加入 internal 网络（无外网）、不发布端口；容器被攻破也拿不到数据库与密钥。
+  # 镜像由 deploy.sh 构建 / 拉取，tag 与应用版本同源（<应用仓库>-pdf-worker:<版本>）。
+  pdf-worker:
+    image: ${CNDB_PDF_WORKER_IMAGE:?CNDB_PDF_WORKER_IMAGE 未设置，请重新执行 deploy.sh 或在 .env 中配置}
+    container_name: cndb-pdf-worker
+    restart: unless-stopped
+
+    networks:
+      - cndb-internal
+
+    environment:
+      - PPTX_PDF_WORKER_TOKEN=${PPTX_PDF_CONVERTER_TOKEN:-}
+      - PPTX_PDF_WORKER_PORT=8100
+      # 与 API 侧 PPTX_PDF_MAX_SOURCE_BYTES / PPTX_PDF_TIMEOUT_SECONDS 保持一致
+      - PPTX_PDF_WORKER_MAX_BYTES=${PPTX_PDF_WORKER_MAX_BYTES:-104857600}
+      - PPTX_PDF_WORKER_TIMEOUT_SECONDS=${PPTX_PDF_WORKER_TIMEOUT_SECONDS:-180}
+
+    # 根文件系统只读；LibreOffice 的 HOME / 临时目录都落在 tmpfs
+    read_only: true
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    pids_limit: 256
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8100/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   # ── 反向代理（可选，docker compose --profile proxy 启用）──────────────
   # 提供统一入口 + 域名/HTTPS。
@@ -132,3 +184,10 @@ services:
 volumes:
   cndb-data:
     name: ${CNDB_VOLUME:-cndb-data}
+
+networks:
+  default:
+  # pdf-worker 专用内网：internal: true 表示无外网出口，仅 app 与 worker 互通
+  cndb-internal:
+    internal: true
+

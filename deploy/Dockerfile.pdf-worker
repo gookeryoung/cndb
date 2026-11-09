@@ -1,0 +1,65 @@
+# ═══════════════════════════════════════════════════════════════════
+# cndb pdf-worker 镜像（ADR 0129 P1）—— 唯一的 PPTX → PDF 转换容器
+#
+# 为什么独立成容器：
+#   · 应用镜像保持 slim（LibreOffice + CJK 字体约数百 MB），API 进程永不执行 soffice；
+#   · 不可信 PPTX 只在本容器解析，容器无外网、非 root、只读根、tmpfs 可写，
+#     即使解析漏洞被利用也拿不到数据库与密钥（ADR 0129 D2 / D8）。
+#
+# 复用 deploy/Dockerfile.base 作为底座（已装 Python 依赖与中文字体），
+# 本文件只加 LibreOffice 与业务 wheel，构建上下文与 Dockerfile.prod 一致：
+#   docker build -f deploy/Dockerfile.pdf-worker \
+#     --build-arg BASE_IMAGE=<registry>/cndb-base:deps-<hash> \
+#     -t <registry>/cndb-pdf-worker:<版本> .
+# 正常发布由 deploy/deploy.sh 自动完成，无需手工执行。
+# ═══════════════════════════════════════════════════════════════════
+
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+# 与应用镜像共用 Debian 源镜像策略（国内构建走 mirrors.cloud.tencent.com）。
+ARG APT_MIRROR_HOST=""
+
+# ── 转换器依赖：LibreOffice Impress + CJK 字体 ──
+# 只装 impress（PPTX 实际使用的组件），不装整个 libreoffice 套件；
+# Noto CJK 覆盖 microhei 缺失的字形，减少中文变方框（ADR 0129 D9）。
+RUN set -eux; \
+    if [ -n "${APT_MIRROR_HOST}" ]; then \
+      sed -i \
+        -e "s|deb.debian.org|${APT_MIRROR_HOST}|g" \
+        -e "s|security.debian.org|${APT_MIRROR_HOST}|g" \
+        /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true; \
+    fi; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        libreoffice-impress \
+        fonts-wqy-microhei \
+        fonts-noto-cjk; \
+    fc-cache -fv; \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 依赖已在基础镜像里，禁止联网解析（与 Dockerfile.prod 同口径）
+COPY dist/*.whl ./
+RUN pip install --no-cache-dir --no-index ./*.whl \
+    && rm -f ./*.whl requirements.lock.txt
+
+# ── 非 root 运行 ──
+# LibreOffice 需要可写的 HOME；容器根文件系统只读，改用 /tmp 下的 tmpfs 目录。
+RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 pdfworker \
+    && mkdir -p /tmp/pptx-pdf \
+    && chown -R pdfworker:pdfworker /app /tmp/pptx-pdf
+
+ENV HOME=/tmp/pptx-pdf \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+USER pdfworker
+EXPOSE 8100
+
+# 健康检查只探测 worker 自身，不触发转换（与 /api/health 不依赖 worker 对称）
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8100/health', timeout=3)"]
+
+CMD ["python", "-m", "cndb.plugins.documents.services.preview.pdf_worker"]
