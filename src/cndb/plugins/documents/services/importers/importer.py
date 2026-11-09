@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import logging
 import posixpath
 import uuid
 from collections.abc import Iterable
@@ -16,7 +17,12 @@ from sqlalchemy.orm import Session
 
 from cndb.core.config import settings
 from cndb.core.errors import BadRequestError
-from cndb.plugins.documents.models import CHANGE_TYPE_IMPORT, DOC_STATUSES, Document
+from cndb.plugins.documents.models import (
+    CHANGE_TYPE_IMPORT,
+    CONTENT_TYPE_PPTX,
+    DOC_STATUSES,
+    Document,
+)
 from cndb.plugins.documents.services import content as content_service
 from cndb.plugins.documents.services.obsidian import (
     CONFLICT_POLICIES,
@@ -44,6 +50,8 @@ from .formats import (
     MHTML_MODES,
 )
 from .reader import ImportedDoc, UploadedItem
+
+logger = logging.getLogger(__name__)
 
 
 class _UploadStore:
@@ -300,6 +308,8 @@ def import_files(
         "skipped_files": [],
         "warnings": [],
     }
+    # PPTX 原件在导入提交后入队服务端 PDF 转换（ADR 0129）；失败不影响导入结果
+    pptx_doc_ids: list[int] = []
 
     if not import_attachments and mhtml_mode == "convert":
         # 关态 + 转换模式：素材展开为批次图片条目，落为 _assets 文件夹图片文档（ADR 0049 D4）；
@@ -350,6 +360,8 @@ def import_files(
                 existing = None
             saved = _save_asset(db, workspace_id, user, store, item, doc, existing, parent, title, status, siblings)
             stats["assets"] += 1
+            if saved.content_type == CONTENT_TYPE_PPTX:
+                pptx_doc_ids.append(saved.id)
             if existing is not None:
                 stats["updated"] += 1
             else:
@@ -391,6 +403,15 @@ def import_files(
     stats["attachments"] = store.written - store.asset_written
     stats["attachment_bytes"] = store.bytes_written - store.asset_bytes
     stats["total"] = stats["created"] + stats["updated"] + stats["skipped"]
+
+    if pptx_doc_ids:
+        from cndb.plugins.documents.services.preview import pptx_pdf
+
+        for doc_id in pptx_doc_ids:
+            try:
+                pptx_pdf.enqueue_pptx_pdf(workspace_id, doc_id, db=db)
+            except Exception:  # pragma: no cover - 入队失败不得回滚导入
+                logger.warning("PPTX PDF 入队失败 doc_id=%s workspace_id=%s", doc_id, workspace_id, exc_info=True)
     return stats
 
 
@@ -447,10 +468,13 @@ def _save_asset(
 
 def _drop_previous_asset(db: Session, workspace_id: int, file_key: str) -> None:
     """覆盖导入后清理旧原件（文件 + 归属登记），避免孤儿占用存储配额."""
+    from cndb.plugins.documents.services.preview import pptx_pdf
     from cndb.plugins.files.services import forget_owner, remove_workspace_file
 
     forget_owner(db, file_key)
     remove_workspace_file(workspace_id, file_key)
+    # 原件 key 变化后旧衍生 PDF 必须同步失效（ADR 0129 I4）
+    pptx_pdf.invalidate_pptx_pdf(workspace_id, file_key)
 
 
 __all__ = ["analyze_files", "import_files"]

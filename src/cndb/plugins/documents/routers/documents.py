@@ -37,7 +37,7 @@ from typing import Annotated, Any
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Query, Request, Response
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
@@ -810,6 +810,133 @@ def preview_document_asset(
             "Content-Security-Policy": "sandbox",
         },
     )
+
+
+class _PdfPreviewBusyError(CndbError):
+    """转换队列已满（HTTP 503，带 Retry-After）."""
+
+    status_code = 503
+    code = "pdf_preview_busy"
+    retry_after = 5
+
+
+def _pdf_preview_state_error(state: Any) -> None:
+    """把服务层判定结果映射为统一业务异常（ADR 0129 §2）."""
+    from cndb.plugins.documents.services.preview import pptx_pdf
+
+    if state.status == pptx_pdf.STATUS_DISABLED:
+        raise ConflictError("当前部署未启用服务端 PDF 预览", code="pdf_preview_disabled")
+    if state.status == pptx_pdf.STATUS_UNSUPPORTED:
+        raise ConflictError("该文档类型不支持服务端 PDF 预览", code="pdf_preview_unsupported")
+    if state.status == pptx_pdf.STATUS_TOO_LARGE:
+        raise CndbError(
+            "PPTX 原件超出服务端预览上限，请下载查看",
+            code="pdf_preview_too_large",
+            status_code=413,
+        )
+    if state.status == pptx_pdf.STATUS_BUSY:
+        raise _PdfPreviewBusyError("预览转换排队已满，请稍后重试")
+    raise CndbError(
+        "PDF 预览生成失败，请下载查看",
+        code="pdf_conversion_failed",
+        status_code=422,
+    )
+
+
+def _pdf_preview_pending(state: Any) -> JSONResponse:
+    """202：转换排队 / 进行中，不代表失败，客户端按 Retry-After 轮询."""
+    from cndb.plugins.documents.services.preview import pptx_pdf
+
+    return JSONResponse(
+        status_code=202,
+        content={"status": state.status, "retry_after": pptx_pdf.RETRY_AFTER_SECONDS},
+        headers={
+            "Retry-After": str(pptx_pdf.RETRY_AFTER_SECONDS),
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+def _pdf_preview_file(
+    request: Request,
+    doc: Document,
+) -> Response:
+    """就绪：返回衍生 PDF（支持 ETag / 304，不参与原件权限之外的任何旁路）."""
+    from cndb.plugins.documents.services.preview import pptx_pdf
+
+    path = pptx_pdf.derived_pdf_path(doc.workspace_id, doc.asset_file_key or "")
+    if not path.is_file():
+        raise CndbError("PDF 预览已失效，请重试", code="pdf_conversion_failed", status_code=422)
+    etag = f'"pptxpdf-{doc.asset_file_key}-{pptx_pdf.CONVERTER_CACHE_VERSION}"'
+    headers = {
+        "Content-Disposition": 'inline; filename="preview.pdf"',
+        "X-Content-Type-Options": "nosniff",
+        "Cache-Control": "private, max-age=3600",
+        "ETag": etag,
+    }
+    if (request.headers.get("if-none-match") or "").strip() == etag:
+        return Response(status_code=304, headers=headers)
+    return FileResponse(path, media_type="application/pdf", headers=headers)
+
+
+@router.get("/{doc_id}/asset/pdf")
+def get_document_asset_pdf(
+    workspace_id: int,
+    doc_id: int,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """PPTX 服务端 PDF 预览（ADR 0129）.
+
+    权限与 ``/asset`` 同源；转换默认关闭（未配置 pdf-worker 时 409），
+    就绪返回 200 + PDF，排队 / 进行中返回 202，失败返回 422 并保留客户端降级。
+    """
+    from cndb.plugins.documents.services.preview import pptx_pdf
+
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    if doc.content_type != "pptx":
+        raise ConflictError("该文档类型不支持服务端 PDF 预览", code="pdf_preview_unsupported")
+    if not doc.asset_file_key:
+        raise NotFoundError("该文档没有原件")
+
+    state = pptx_pdf.ensure_pptx_pdf(workspace_id, doc_id, db=db)
+    if state.status == pptx_pdf.STATUS_READY:
+        return _pdf_preview_file(request, doc)
+    if state.status in (pptx_pdf.STATUS_QUEUED, pptx_pdf.STATUS_RUNNING):
+        return _pdf_preview_pending(state)
+    _pdf_preview_state_error(state)
+    raise AssertionError("unreachable")  # pragma: no cover - 判定穷尽
+
+
+@router.post("/{doc_id}/asset/pdf")
+def retry_document_asset_pdf(
+    workspace_id: int,
+    doc_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """手动重试一次 PPTX PDF 转换（幂等）.
+
+    已就绪返回 200 JSON；排队 / 进行中 202；其余错误口径与 GET 一致。
+    """
+    from cndb.plugins.documents.services.preview import pptx_pdf
+
+    _require_member(db, workspace_id, current_user)
+    doc = services.visibility.get_visible_document_or_404(db, workspace_id, doc_id, current_user)
+    if doc.content_type != "pptx":
+        raise ConflictError("该文档类型不支持服务端 PDF 预览", code="pdf_preview_unsupported")
+    if not doc.asset_file_key:
+        raise NotFoundError("该文档没有原件")
+
+    state = pptx_pdf.ensure_pptx_pdf(workspace_id, doc_id, retry=True, db=db)
+    if state.status == pptx_pdf.STATUS_READY:
+        return JSONResponse(content={"status": state.status}, headers={"Cache-Control": "no-store"})
+    if state.status in (pptx_pdf.STATUS_QUEUED, pptx_pdf.STATUS_RUNNING):
+        return _pdf_preview_pending(state)
+    _pdf_preview_state_error(state)
+    raise AssertionError("unreachable")  # pragma: no cover - 判定穷尽
 
 
 @router.post("/batch")

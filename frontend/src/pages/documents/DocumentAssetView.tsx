@@ -14,6 +14,9 @@ import { useQuery } from '@tanstack/react-query'
 import { documentsApi, type DocumentItem } from '@/api/documents'
 import { formatMeta } from '@/components/Document/docFormat'
 import OfficeHtmlPreview from './OfficeHtmlPreview'
+import {
+  isPreviewablePptx, PPTX_ASSET_GC_MS, PPTX_ASSET_STALE_MS,
+} from './pptxLoader'
 
 // PPTX 渲染库体积较大（jszip / echarts），只在打开 .pptx 时按需加载
 const PptxPreview = lazy(() => import('./PptxPreview'))
@@ -62,7 +65,7 @@ export default function DocumentAssetView({
   const suffix = assetSuffix(doc)
   const isMhtml = doc.content_type === 'mhtml'
   // 仅标准 OOXML .pptx 可纯前端渲染；旧版二进制 .ppt 没有 zip 结构，仍下载查看
-  const isPptx = doc.content_type === 'pptx' && suffix === 'pptx'
+  const isPptx = isPreviewablePptx(doc)
   // Excel / Word 预览走后端 HTML：仅标准 .xlsx 与 archive 存档的 .docx；
   // 旧版二进制 .xls / .doc 保持下载卡（后端也会 400）
   const isOfficePreview = (doc.content_type === 'xlsx' && suffix === 'xlsx') || doc.content_type === 'word'
@@ -71,6 +74,9 @@ export default function DocumentAssetView({
     queryKey: ['documents', workspaceId, doc.id, 'asset'],
     queryFn: () => documentsApi.assetBlob(workspaceId, doc.id),
     retry: false,
+    // 大原件在文档页卸载 / 重挂载时优先命中内存缓存（需求 0128 C4）
+    staleTime: PPTX_ASSET_STALE_MS,
+    gcTime: PPTX_ASSET_GC_MS,
   })
 
   // MHTML 预览取 blob（沙箱 iframe）；Office 预览取文本（Shadow DOM 内联）

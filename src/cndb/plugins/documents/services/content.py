@@ -741,9 +741,16 @@ def purge_document(db: Session, workspace_id: int, doc_id: int, user: User) -> d
 
 def _remove_asset_files(workspace_id: int, keys: list[str]) -> int:
     """删原件落盘文件（路径非法 / 已不存在时静默跳过），返回删除数."""
+    from cndb.plugins.documents.services.preview import pptx_pdf
     from cndb.plugins.files.services import remove_workspace_file
 
-    return sum(1 for key in keys if remove_workspace_file(workspace_id, key))
+    removed = 0
+    for key in keys:
+        if remove_workspace_file(workspace_id, key):
+            removed += 1
+        # 原件彻底删除后衍生 PDF 一并失效（ADR 0129 I4），残留由补扫按 TTL 兜底
+        pptx_pdf.invalidate_pptx_pdf(workspace_id, key)
+    return removed
 
 
 def _collect_purge_targets(db: Session, node: Document, targets: list[Document], visited: set[int]) -> int:

@@ -14,12 +14,9 @@ import {
   CloseOutlined, DeleteOutlined, EditOutlined, LeftOutlined, MinusOutlined,
   PlusOutlined, RightOutlined,
 } from '@ant-design/icons'
+import { loadPptxModule } from './pptxLoader'
 
 const { Text } = Typography
-
-// 模块级缓存：StrictMode 双执行 / 重开放映复用同一次动态 import，避免重复下载解析
-let pptxModulePromise: Promise<typeof import('pptx-preview')> | null = null
-const loadPptxModule = () => (pptxModulePromise ??= import('pptx-preview'))
 
 const MIN_ZOOM = 0.5
 const MAX_ZOOM = 2.5

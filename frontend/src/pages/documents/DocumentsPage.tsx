@@ -1,6 +1,6 @@
 /** 文档管理页 — 顶层系列卡片总览 + 文件夹列表 / 树 / 搜索入口. */
 
-import { useCallback, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Alert,
@@ -64,6 +64,7 @@ import TrashDrawer from './TrashDrawer'
 import DocumentImportModal from './DocumentImportModal'
 import type { DocTreeNode } from './DocumentTree'
 import { formatSize } from '@/utils/formatSize'
+import { createPptxPrefetcher, prefetchPptxPreview } from './pptxPrefetch'
 
 const { Text } = Typography
 
@@ -92,6 +93,13 @@ export default function DocumentsPage() {
   const qc = useQueryClient()
   const workspaceId = Number(wid)
   const { isMobile } = useResponsive()
+
+  // 桌面端悬停 PPTX 行时防抖预取渲染库与原件；移出 / 卸载即取消（需求 0128 C5）
+  const pptxPrefetcher = useMemo(
+    () => createPptxPrefetcher(doc => prefetchPptxPreview(qc, workspaceId, doc)),
+    [qc, workspaceId],
+  )
+  useEffect(() => () => pptxPrefetcher.cancel(), [pptxPrefetcher])
 
   // 当前文件夹写入 URL（?parent=）：支持从编辑器面包屑深链、刷新与分享
   const parentParam = searchParams.get('parent')
@@ -718,6 +726,8 @@ export default function DocumentsPage() {
               <div
                 className="cn-list-item"
                 style={{ cursor: 'pointer' }}
+                onMouseEnter={isMobile ? undefined : () => pptxPrefetcher.schedule(doc)}
+                onMouseLeave={isMobile ? undefined : pptxPrefetcher.cancel}
                 onClick={() =>
                   doc.is_folder
                     ? setParentId(doc.id)

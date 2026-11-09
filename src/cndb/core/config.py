@@ -239,6 +239,23 @@ class Settings(BaseSettings):
     # 启动后首轮延迟（秒）：避开迁移与静态资源预热的 IO 争抢
     STORAGE_SNAPSHOT_STARTUP_DELAY_SECONDS: int = 3
 
+    # ── PPTX → PDF 衍生预览件（ADR 0129）────────────────────
+    # 转换由独立 pdf-worker 容器完成；地址为空 = 功能关闭，行为与 0128 客户端预览一致。
+    # 衍生件只写入 CACHE_DIR，可丢弃、可重建，不计配额、不进备份。
+    PPTX_PDF_CONVERTER_URL: str = ""
+    PPTX_PDF_CONVERTER_TOKEN: str = ""
+    # 有界：队列长度 / 单次转换超时 / 源文件上限 / 瞬时失败重试次数
+    PPTX_PDF_QUEUE_MAX: int = 32
+    PPTX_PDF_TIMEOUT_SECONDS: int = 180
+    PPTX_PDF_MAX_SOURCE_BYTES: int = 104857600
+    PPTX_PDF_RETRY: int = 1
+    # 缓存治理：保留天数与全局容量上限（补扫按此清理）
+    PPTX_PDF_CACHE_TTL_DAYS: int = 30
+    PPTX_PDF_CACHE_MAX_BYTES: int = 2147483648
+    # 低频空闲补扫：周期 0 = 不启动线程（P2 使用）
+    PPTX_PDF_SWEEP_INTERVAL_SECONDS: int = 21600
+    PPTX_PDF_SWEEP_STARTUP_DELAY_SECONDS: int = 300
+
     # ── 帮助文档图示例（ADR 0030）────────────────────────────
     # 图示由后端按「代码 + 数据源」生成 SVG 并快照到 CACHE_DIR/help-figures。
     # 请求期按指纹即时重建，后台再按周期全量重建一次兜底 —— 代码更新后

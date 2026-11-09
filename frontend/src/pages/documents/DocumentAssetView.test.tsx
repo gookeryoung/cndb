@@ -1,7 +1,8 @@
 /** 原件族阅读器测试（ADR 0025 / 0087）：PDF / 图片 / Office / 预览失败态. */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { QueryClientProvider } from '@tanstack/react-query'
 import DocumentAssetView, { assetSuffix } from './DocumentAssetView'
 import { renderProviders } from '@/test/render-providers'
 import { documentsApi, type DocumentItem } from '@/api/documents'
@@ -65,6 +66,22 @@ describe('DocumentAssetView 原件阅读器', () => {
     expect(screen.queryByTestId('doc-asset-format')).not.toBeInTheDocument()
     expect(screen.queryByTestId('doc-asset-download')).not.toBeInTheDocument()
     expect(documentsApi.assetBlob).toHaveBeenCalledWith(7, 31)
+  })
+
+  it('原件在 staleTime 内复用缓存，重挂载不重复下载', async () => {
+    const doc = docOf({})
+    const first = renderProviders(<DocumentAssetView workspaceId={7} doc={doc} />)
+    await screen.findByTestId('doc-asset-pdf')
+    expect(documentsApi.assetBlob).toHaveBeenCalledTimes(1)
+
+    first.unmount()
+    render(
+      <QueryClientProvider client={first.queryClient}>
+        <DocumentAssetView workspaceId={7} doc={doc} />
+      </QueryClientProvider>,
+    )
+    await screen.findByTestId('doc-asset-pdf')
+    expect(documentsApi.assetBlob).toHaveBeenCalledTimes(1)
   })
 
   it('图片走 <img> 渲染（不用 object，避免 SVG 脚本执行）', async () => {
