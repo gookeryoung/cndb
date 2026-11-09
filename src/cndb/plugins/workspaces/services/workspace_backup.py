@@ -1,5 +1,10 @@
 """工作区全量备份（ADR 0075）：v13 备份构建器 + tar.gz 归档打包/解包.
 
+v16 在 v15 基础上把表行数据从 ``backup.json`` 外置为按表 NDJSON 分块
+（``payload/tables/<序号>.ndjson``，backup.json 的 ``tables[i].rows_file`` 引用）：
+大表导出不再把整包行数据拼成一份巨型 JSON 字符串，恢复时按表逐块读取。
+``backup.json`` 其余键与 v15 完全一致；≤v15 旧归档的内联 ``rows`` 仍可导入。
+
 v14 在 v13 基础上新增顶层 ``library_refs[]``（复用模块已锁定快照，ADR 0118 D9）：
 扫描 designs 依赖快照中 ``source=library`` 条目，按自然键去重后内置
 ``{module_key, version_number, content_hash, bundle_hash, content, files, params}``；
@@ -49,21 +54,29 @@ from sqlalchemy.orm import Session
 from cndb.core.errors import BadRequestError
 
 BACKUP_VERSION = "15"
+# v16：表行数据外置为按表 NDJSON 分块（当前归档导出版本）；BACKUP_VERSION 仍是内联行版本，
+# 供 GET /export 的 v8 降采样与示例包使用（ADR 0075 D8）
+CHUNKED_BACKUP_VERSION = "16"
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
 ARCHIVE_KIND = "workspace_backup"
+ROWS_CHUNK_DIR = "tables"
 
 __all__ = [
     "ARCHIVE_KIND",
     "ARCHIVE_MANIFEST_VERSION",
     "BACKUP_VERSION",
+    "CHUNKED_BACKUP_VERSION",
+    "ROWS_CHUNK_DIR",
     "BackupArchive",
     "BackupFileEntry",
     "build_workspace_backup_v8",
     "build_workspace_backup_v9",
+    "build_workspace_backup_v16",
     "downsample_v8",
     "pack_workspace_archive",
     "parse_workspace_archive",
+    "read_rows_chunk",
 ]
 
 
@@ -115,10 +128,38 @@ def build_workspace_backup_v9(
     *,
     include_secrets: bool = True,
 ) -> tuple[dict[str, Any], list[BackupFileEntry]]:
-    """构建 v9 全量备份数据（纯数据层，不做权限校验，由路由层把关）.
+    """构建 v9 全量备份数据（内联 ``rows``，v15 口径）.
 
     返回 ``(backup_dict, files)``：``files`` 是需要随归档携带的二进制源文件清单。
     """
+    return _build_backup(db, workspace_id, current_user, include_secrets=include_secrets, rows_dir=None)
+
+
+def build_workspace_backup_v16(
+    db: Session,
+    workspace_id: int,
+    current_user: Any,
+    *,
+    include_secrets: bool = True,
+    rows_dir: Path,
+) -> tuple[dict[str, Any], list[BackupFileEntry]]:
+    """构建 v16 全量备份数据：表行写入 ``rows_dir`` 下的 NDJSON 分块并随归档携带.
+
+    ``rows_dir`` 由调用方提供（通常为临时目录）并负责清理；返回的 ``files`` 里已包含
+    各表的分块文件条目（``tables/<序号>.ndjson``），打包时原样进 ``payload/``。
+    """
+    return _build_backup(db, workspace_id, current_user, include_secrets=include_secrets, rows_dir=rows_dir)
+
+
+def _build_backup(
+    db: Session,
+    workspace_id: int,
+    current_user: Any,
+    *,
+    include_secrets: bool = True,
+    rows_dir: Path | None = None,
+) -> tuple[dict[str, Any], list[BackupFileEntry]]:
+    """备份数据构建器（唯一实现）：``rows_dir`` 为空走内联行，否则表行外置为分块."""
     from sqlalchemy import MetaData, select
 
     from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob
@@ -203,7 +244,14 @@ def build_workspace_backup_v9(
         ]
 
         rows_data: list[dict[str, Any]] = []
+        rows_file: str | None = None
+        rows_path: Path | None = None
+        if rows_dir is not None:
+            rows_file = f"{ROWS_CHUNK_DIR}/{len(tables_data):03d}.ndjson"
+            rows_path = rows_dir / rows_file
+            rows_path.parent.mkdir(parents=True, exist_ok=True)
         colname_to_field = {f.db_column_name: f.name for f in fields}
+        chunk = rows_path.open("w", encoding="utf-8", newline="\n") if rows_path is not None else None
         try:
             sa_table = __import__("sqlalchemy").Table(tbl.db_table_name, metadata, autoload_with=db.bind)
             query = select(sa_table)
@@ -216,17 +264,29 @@ def build_workspace_backup_v9(
                 query = query.where(row_scope)
             if "id" in sa_table.columns:
                 query = query.order_by(sa_table.c.id)
-            result = db.execute(query).mappings().all()
-            for r in result:
+            # 逐行产出：v16 直接落 NDJSON 分块，避免整表行常驻内存（v15 口径仍是内联 rows）
+            idx_map: dict[int, int] = {}
+            for i, r in enumerate(db.execute(query).mappings()):
                 row = {colname_to_field[k]: v for k, v in dict(r).items() if k in colname_to_field}
                 # v9：附旧行 id，导入端据此回填附件行级归属（v8 降采样时剔除）
                 if "id" in sa_table.columns:
-                    row["__row_id"] = int(r["id"])
-                rows_data.append(row)
+                    rid = int(r["id"])
+                    row["__row_id"] = rid
+                    idx_map[rid] = i
+                if chunk is not None:
+                    chunk.write(json.dumps(row, ensure_ascii=False, default=_json_default))
+                    chunk.write("\n")
+                else:
+                    rows_data.append(row)
             if "id" in sa_table.columns:
-                row_index_maps[tbl.id] = {int(r["id"]): i for i, r in enumerate(result)}
+                row_index_maps[tbl.id] = idx_map
         except Exception:  # pragma: no cover - 表结构异常
             pass
+        finally:
+            if chunk is not None:
+                chunk.close()
+        if rows_file is not None and rows_path is not None:
+            files.append(BackupFileEntry(arcname=rows_file, source=rows_path))
 
         views_data = [
             {
@@ -276,20 +336,23 @@ def build_workspace_backup_v9(
         # v9：表级成员授权（user_id 不导出，导入端归当前用户）
         members_data = [{"role": m.role} for m in db.query(TableMember).filter(TableMember.table_id == tbl.id).all()]
 
-        tables_data.append(
-            {
-                "id": tbl.id,
-                "name": tbl.name,
-                "description": tbl.description,
-                "fields": fields_data,
-                "views": views_data,
-                "rows": rows_data,
-                "links": [],
-                "permission": permission_data,
-                "row_permissions": row_permissions_data,
-                "members": members_data,
-            }
-        )
+        table_entry: dict[str, Any] = {
+            "id": tbl.id,
+            "name": tbl.name,
+            "description": tbl.description,
+            "fields": fields_data,
+            "views": views_data,
+            "links": [],
+            "permission": permission_data,
+            "row_permissions": row_permissions_data,
+            "members": members_data,
+        }
+        # v16：行数据外置为分块引用，backup.json 不再内联 ``rows``（≤v15 口径保持内联）
+        if rows_file is not None:
+            table_entry["rows_file"] = rows_file
+        else:
+            table_entry["rows"] = rows_data
+        tables_data.append(table_entry)
 
     # v4：link 字段关联行导出
     from sqlalchemy import Table as SATable
@@ -655,7 +718,7 @@ def build_workspace_backup_v9(
             )
 
     backup = {
-        "version": BACKUP_VERSION,
+        "version": CHUNKED_BACKUP_VERSION if rows_dir is not None else BACKUP_VERSION,
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
         "tables": tables_data,
@@ -773,7 +836,11 @@ def pack_workspace_archive(
     output: Path,
 ) -> dict[str, Any]:
     """把备份数据 + 文件条目打包为 tar.gz 归档，返回写入的 manifest."""
-    manifest = build_manifest(backup, len(files))
+    # stats.files 只统计附件 / 外存内容，v16 的表行分块不计入（口径与 ≤v15 一致）
+    manifest = build_manifest(
+        backup,
+        sum(1 for entry in files if not entry.arcname.startswith(f"{ROWS_CHUNK_DIR}/")),
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(output, "w:gz", format=tarfile.GNU_FORMAT) as tar:
 
@@ -833,9 +900,10 @@ def parse_workspace_archive(path: Path) -> BackupArchive:
             try:
                 for member in tar.getmembers():
                     name = member.name
-                    if not (name.startswith("payload/files/") and member.isfile()):
+                    # v16 起表行分块（tables/）与二进制文件（files/）都解出到 payload/
+                    if not (name.startswith(("payload/files/", f"payload/{ROWS_CHUNK_DIR}/")) and member.isfile()):
                         continue
-                    # 归档是外部输入：只解出 files/ 条目，且解析后必须落在解包目录内，
+                    # 归档是外部输入：只解出 files/ 与 tables/ 条目，且解析后必须落在解包目录内，
                     # 否则 `..` / 绝对路径成员会把文件写到系统其它位置（路径穿越）
                     member_path = (tmp / name).resolve()
                     if not member_path.is_relative_to(root):
@@ -850,12 +918,36 @@ def parse_workspace_archive(path: Path) -> BackupArchive:
                 shutil.rmtree(tmp, ignore_errors=True)
                 raise
             files_dir = tmp / "payload"
+            _check_rows_chunks(backup, files_dir)
     except tarfile.TarError as exc:
         raise BadRequestError(f"归档文件无法解析: {exc}") from exc
     except json.JSONDecodeError as exc:
         raise BadRequestError(f"归档内 JSON 解析失败: {exc}") from exc
 
     return BackupArchive(manifest=manifest, backup=backup, files_dir=files_dir, _tmp=files_dir.parent)
+
+
+def _check_rows_chunks(backup: dict[str, Any], files_dir: Path) -> None:
+    """校验 v16 表行分块引用：不得越界，且分块必须真实存在（缺失即拒，不静默丢行）."""
+    root = files_dir.resolve()
+    for tbl in backup.get("tables") or []:
+        rows_file = tbl.get("rows_file")
+        if not rows_file:
+            continue
+        path = (files_dir / str(rows_file)).resolve()
+        if not path.is_relative_to(root):
+            raise BadRequestError("归档内含越界表数据路径，已拒绝导入")
+        if not path.is_file():
+            raise BadRequestError(f"归档缺少表数据分块: {rows_file}")
+
+
+def read_rows_chunk(path: Path) -> list[dict[str, Any]]:
+    """读取 v16 表行 NDJSON 分块（每行一条记录）.
+
+    分块损坏时抛 ``json.JSONDecodeError``，缺失抛 ``OSError``，由调用方转成对外错误。
+    """
+    with path.open("r", encoding="utf-8") as fh:
+        return [json.loads(line) for line in fh if line.strip()]
 
 
 def _find_member(tar: tarfile.TarFile, suffix: str) -> tarfile.TarInfo:

@@ -43,7 +43,7 @@ class TestBackupV12Modules:
 
         archive = parse_workspace_archive(archive_file)
         try:
-            assert archive.backup["version"] == "15"
+            assert archive.backup["version"] == "16"
             assert archive.backup["workspace"]["modules"] == ["tables", "design"]
             assert "workspace_type" not in archive.backup["workspace"]
         finally:
@@ -134,7 +134,7 @@ class TestArchiveInspect:
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["workspace_name"] == "预检归档"
-        assert body["backup_version"] == "15"
+        assert body["backup_version"] == "16"
         assert body["include_secrets"] is True
         assert body["stats"]["tables"] == 0
         assert body["existing_workspace"] == {"id": ws["id"], "name": "预检归档", "role": "owner"}
@@ -214,7 +214,10 @@ class TestArchiveDateValues:
 
         archive = parse_workspace_archive(archive_file)
         try:
-            row = archive.backup["tables"][0]["rows"][0]
+            from cndb.plugins.workspaces.services.workspace_backup import read_rows_chunk
+
+            rows_file = archive.backup["tables"][0]["rows_file"]
+            row = read_rows_chunk(archive.files_dir / rows_file)[0]
             assert row["启动日期"] == "2026-08-30"
         finally:
             archive.cleanup()

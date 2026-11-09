@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from cndb.plugins.workspaces.services.workspace_backup import parse_workspace_archive
+from cndb.plugins.workspaces.services.workspace_backup import parse_workspace_archive, read_rows_chunk
 
 WS = "/api/v1/workspaces"
 DOCS = "/api/v1/workspaces/{wid}/documents"
@@ -157,7 +157,7 @@ class TestArchiveStructure:
             assert m["version"] == "1"
             assert m["include_secrets"] is True
             backup = archive.backup
-            assert backup["version"] == "15"
+            assert backup["version"] == "16"
             assert backup["include_secrets"] is True
             # v10：流水线定义随备份导出
             assert backup["pipelines"][0]["name"] == "库存巡检"
@@ -173,9 +173,11 @@ class TestArchiveStructure:
                 assert key in backup, key
             # ADR 0104：回补水位表已删，新归档不再产生该键
             assert "entrant_cursors" not in backup
-            # 表行附 __row_id；表 members 键存在
+            # v16：表行外置为 NDJSON 分块（backup.json 只留 rows_file 引用）；表 members 键存在
             table = backup["tables"][0]
-            assert table["rows"] and "__row_id" in table["rows"][0]
+            assert "rows" not in table
+            rows = read_rows_chunk(archive.files_dir / table["rows_file"])
+            assert rows and "__row_id" in rows[0]
             assert "members" in table
             # 软删除文档随备份携带
             docs = {d["title"]: d for d in backup["documents"]}

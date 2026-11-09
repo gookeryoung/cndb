@@ -144,6 +144,7 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 | D5 | 密钥口径 | 会话密钥纳入 v9，导出参数 `include_secrets` 开关（默认 true），manifest 声明；导入端密钥 null 即解绑 | Q2 确认；敏感信息显式化优于暗处理 | 永不导出（Q2 已否决：恢复后须手动重填不符合「完全恢复」）；明文硬编码导出无开关（泄露面不可控） | v9 `datasource_sessions`、manifest 选项 |
 | D6 | 流水类数据 | 审计日志、同步运行历史、议题事件流、core_event 不备份 | Q3 确认；流水无恢复价值且体积大 | 可选开关（需求方明确选「不备份」，不加开关避免口径复杂化） | v9 明确排除清单 |
 | D7 | 个人级 LLM 数据 | `llm_user_config`、`llm_run` 不随工作区备份 | ADR 0019 既定口径；卡片 Q5 | 随工作区导出（越出工作区边界） | — |
+| D8 | 表行数据载体（v16，2026-11-10） | 表行外置为按表 NDJSON 分块 `payload/tables/<序号>.ndjson`，`backup.json` 的 `tables[i]` 只留 `rows_file` 引用；构建器逐行产出（流式），恢复端按表逐块读取；≤v15 内联 `rows` 归档继续支持，版本白名单扩至 16 | 大工作区导出原先要同时持有行对象 + `json.dumps` 字符串 + tar 缓冲，峰值内存约 O(总行数 × 2)；恢复端也只能整体 `json.loads` | 保持单文件 `backup.json`（内存峰值不降）；把行拆成多个 JSON 数组文件（仍需整体 `json.loads`，不如 NDJSON 逐行解析） | `src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/workspaces/routers/workspaces.py` |
 
 ## Consequences
 
@@ -168,11 +169,12 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 | P0 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`（v9 构建器 / v8 降采样 / 归档打包与解包）；`plugins/workspaces/routers/workspaces.py`（GET /{wid}/export/archive） | `tests/test_workspace_backup_v9.py` TestArchiveStructure | `d839ef16` |
 | P1 | 已落地 | `plugins/workspaces/services/backup_io.py`（版本白名单 1-9、v9 extras 落库、files_dir、旧行 id 映射）；`plugins/workspaces/services/workspace_restore.py`（wait_sync_jobs_idle / clear_workspace_content / restore_workspace_from_backup）；`plugins/workspaces/routers/workspaces.py`（POST /{wid}/restore、POST /workspaces/import/archive，独立端点，偏离 D1「同端点分流」，multipart 与 JSON 载荷无法共端点） | `tests/test_workspace_backup_v9.py` TestRestoreRoundtrip；既有 v1-8 回归（version "9"→"99" 修正 2 处） | `d839ef16` |
 | P2 | 已落地 | `frontend/src/api/workspaces.ts`（exportWorkspaceArchive / restoreWorkspace / importWorkspaceArchive / inspectWorkspaceArchive）；`frontend/src/pages/settings/WorkspaceBackupDialog.tsx`（仅全量归档导出 + 密钥开关）；`frontend/src/pages/workspace/WorkspaceList.tsx` 导入弹窗（.tar.gz 预检 → 默认新建并可在「归档名 + 导入时间后缀」基础上改名 / 同名 owner 可覆盖恢复）（2026-11-03 调整） | `frontend/src/pages/settings/WorkspaceBackupDialog.test.tsx` 5 例；`frontend/src/pages/workspace/WorkspaceList.test.tsx` 导入 3 例；后端 `tests/test_workspace_backup_v12.py` TestArchiveInspect 3 例 + TestArchiveDateValues 1 例 + TestArchiveImportName 2 例；e2e `frontend/tests/e2e/critical/workspace-backup.spec.ts` 3 例 | `d839ef16` |
+| P3 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_backup.py`（v16 分块构建器 / 分块校验 / 逐行读取）；`src/cndb/plugins/workspaces/services/backup_io.py`（版本白名单 16、按表读分块）；`src/cndb/plugins/workspaces/routers/workspaces.py`（导出走临时分块目录） | `tests/test_workspace_backup_v16.py` 7 例；`tests/test_workspace_backup_v9.py`、`tests/test_workspace_backup_v11.py`、`tests/test_workspace_backup_v12.py`（版本 / 行断言改为分块口径） | 见 CHANGELOG 2026-11-10 |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 全部落地，门禁全绿
-- 已完成：v9 归档构建/解包、v8 降采样出口、导入端 v9 extras、覆盖恢复（clear + import + meta 还原）、前端备份对话框与导入入口、单测 + e2e
-- 下一步：`make check` 全绿后提交推送（`feat: 工作区全量备份与恢复（ADR 0075）`）；2026-11-03 已调整前端备份 / 导入形态（仅归档 + 导入时选择新建或覆盖恢复）
-- 已知坑：测试环境 `LD_LIBRARY_PATH` 含旧 libsqlite3 导致 `_sqlite3` ImportError，须 `LD_LIBRARY_PATH= make test`；clear 的 DDL drop 前必须 commit 释放 RESERVED 锁；导出 `_store_content_bytes` 内联 50KB / 外存 2MB 阈值沿用 documents/services/content.py 口径
-- 最近一次全绿：make check（本次提交前）
+- 当前阶段：P0-P3 全部落地，门禁全绿
+- 已完成：v9 归档构建/解包、v8 降采样出口、导入端 v9 extras、覆盖恢复（clear + import + meta 还原）、前端备份对话框与导入入口、单测 + e2e；2026-11-10 补 P3（v16 表行 NDJSON 分块，D8）
+- 下一步：`make check` 全绿后提交推送（v16 分块单独一次提交，可回滚）；后续若需进一步降内存，可把恢复端的分块读取也改成逐行批量 INSERT（当前按表整块读入，内存已降到单表行数量级）
+- 已知坑：测试环境 `LD_LIBRARY_PATH` 含旧 libsqlite3 导致 `_sqlite3` ImportError，须 `LD_LIBRARY_PATH= make test`；clear 的 DDL drop 前必须 commit 释放 RESERVED 锁；导出 `_store_content_bytes` 内联 50KB / 外存 2MB 阈值沿用 documents/services/content.py 口径；v16 分块临时目录由导出端点用 TemporaryDirectory 托管，打包完成即清理，异常路径靠 finally 释放
+- 最近一次全绿：make check（2026-11-10，v16 分块改造提交前）

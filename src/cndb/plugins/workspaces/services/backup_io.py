@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from collections.abc import Callable
 from pathlib import Path
@@ -55,6 +56,29 @@ def _coerce_row_value_types(sa_table: Any, row_values: list[dict[str, Any]]) -> 
                 pass  # 非法格式保留原值，交由数据库报出真实错误
 
 
+def _load_table_rows(tbl_data: dict[str, Any], files_dir: Path | None) -> list[dict[str, Any]]:
+    """取表行数据：v16 起按表 NDJSON 分块外置（``rows_file``），≤v15 仍为内联 ``rows``.
+
+    分块缺失 / 损坏按 400 拒绝，不静默丢行（归档是外部输入）。
+    """
+    inline = tbl_data.get("rows")
+    if inline is not None:
+        return list(inline)
+    rows_file = tbl_data.get("rows_file")
+    if not rows_file:
+        return []
+    if files_dir is None:
+        raise HTTPException(status_code=400, detail=f"归档缺少表数据分块: {rows_file}")
+    from cndb.plugins.workspaces.services.workspace_backup import read_rows_chunk
+
+    try:
+        return read_rows_chunk(Path(files_dir) / str(rows_file))
+    except OSError as exc:
+        raise HTTPException(status_code=400, detail=f"归档缺少表数据分块: {rows_file}") from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail=f"归档内表数据分块损坏: {rows_file}") from exc
+
+
 def _import_backup_into_workspace(
     workspace_id: int,
     json_data: dict[str, Any],
@@ -85,11 +109,29 @@ def _import_backup_into_workspace(
 
     # 版本校验：缺失视为旧版 v1 文件；未知版本拒绝，避免静默错读新格式
     version = json_data.get("version", "1")
-    if version not in ("1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12", "13", "14", "15"):
+    if version not in (
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9",
+        "10",
+        "11",
+        "12",
+        "13",
+        "14",
+        "15",
+        "16",
+    ):
         raise HTTPException(
             status_code=400,
             detail=(
-                f"不支持的导出文件版本: {version}（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15）。"
+                f"不支持的导出文件版本: {version}"
+                "（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16）。"
                 "请升级程序后再导入。"
             ),
         )
@@ -206,7 +248,7 @@ def _import_backup_into_workspace(
                 ensure_default_view(db, table, owner_id=current_user.id, commit=False)
 
             # 插入数据行（用 raw INSERT 避免依赖 transfer.py 的复杂逻辑）
-            rows_data = tbl_data.get("rows", [])
+            rows_data = _load_table_rows(tbl_data, files_dir)
             if rows_data and not fields_order:
                 msg = f"表 {table_name} 无字段定义，{len(rows_data)} 行数据无法导入，已跳过"
                 errors.append(msg)

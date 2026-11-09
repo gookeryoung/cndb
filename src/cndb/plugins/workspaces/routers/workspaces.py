@@ -444,9 +444,9 @@ def export_workspace_archive(
     db: Annotated[Session, Depends(get_db)],
     include_secrets: bool = True,
 ) -> FileResponse:
-    """导出工作区全量备份归档（tar.gz：manifest + v9 backup.json + 附件/外存文件）."""
+    """导出工作区全量备份归档（tar.gz：manifest + v16 backup.json + 表行分块 + 附件/外存文件）."""
     from cndb.plugins.workspaces.services.workspace_backup import (
-        build_workspace_backup_v9,
+        build_workspace_backup_v16,
         pack_workspace_archive,
         workspace_backup_filename,
     )
@@ -455,17 +455,21 @@ def export_workspace_archive(
     if not has_role(current_user, ws, WorkspaceRole.EDITOR, db):
         raise_permission_denied(db, ws, current_user, requirement="编辑者及以上权限才能导出工作区")
 
-    backup, files = build_workspace_backup_v9(db, workspace_id, current_user, include_secrets=include_secrets)
-    fd, tmp_name = tempfile.mkstemp(prefix="cndb-ws-export-", suffix=".tar.gz")
-    tmp_path = Path(tmp_name)
-    import os
+    # 表行按表写成 NDJSON 临时分块（ADR 0075 D8）：大工作区导出不再把全部行拼成一份巨型 JSON
+    with tempfile.TemporaryDirectory(prefix="cndb-ws-export-rows-") as rows_dir:
+        backup, files = build_workspace_backup_v16(
+            db, workspace_id, current_user, include_secrets=include_secrets, rows_dir=Path(rows_dir)
+        )
+        fd, tmp_name = tempfile.mkstemp(prefix="cndb-ws-export-", suffix=".tar.gz")
+        tmp_path = Path(tmp_name)
+        import os
 
-    os.close(fd)
-    try:
-        pack_workspace_archive(backup, files, tmp_path)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
+        os.close(fd)
+        try:
+            pack_workspace_archive(backup, files, tmp_path)
+        except Exception:
+            tmp_path.unlink(missing_ok=True)
+            raise
     return FileResponse(
         tmp_path,
         media_type="application/gzip",
