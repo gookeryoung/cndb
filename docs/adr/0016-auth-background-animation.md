@@ -177,8 +177,8 @@ Related: `frontend/src/components/auth-background/lattice.ts`、`frontend/src/co
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P1 已落地并提交（29f52579）；Chrome 81 兼容修复已完成并通过前端门禁，待提交
+- 当前阶段：P0-P1 已落地并提交（29f52579）；Chrome 81 兼容修复已完成并通过前端门禁，已提交（5ee4ac80）
 - 已完成：新增 `lattice.ts` 一次性绘制六边形晶格与青紫结点；`engine.ts` 去掉 rAF / 可见性 / 指针监听，只保留 resize 150ms 节流重绘；`AuthBackground` 去掉效果状态、切换器与本地偏好；删除 `flowfield` / `galaxy` / `AuthBackgroundSwitcher` / `preference` 及对应单测；同步更新 CSS、混色注册表、e2e 与需求卡片 / ADR / CHANGELOG。Chrome 81 修复：`.auth-shell` / `::before` 的 `color-mix` 现代写法移入 `@supports`（否则深色舞台变白、晶格不可见）；`reportWebVitals` 按条目能力跳过 CLS / INP，并在 `polyfills.ts` 对缺失的 `visibility-state` 条目短路 `getEntriesByType`（web-vitals 的 FCP / LCP 也会查询它），消除 `Deprecated API for given entry type`；`check-browser-compat.mjs` 统计兜底时跳过 `@supports (... color-mix ...)` 块
-- 下一步：提交 Chrome 81 修复（待用户授权）
+- 下一步：无（Chrome 81 修复已随 `5ee4ac80` 提交）
 - 已知坑：`AuthLayout` 被 `App.tsx` 静态引入，背景必须保持 lazy；jsdom 无 `getContext`，单测需 mock；晶格尺寸按设备像素计算，DPR 已封顶；`cndb_auth_bg` 旧偏好不再读取；e2e 登录按钮定位必须保持 `/^登\s*录$/` 首尾锚定；Chrome 81 下含 `var()` 的 `color-mix()` 声明会让整个属性变初始值，认证页已用 `@supports` 隔离，新增 auth 样式时不要再用「前兜底 + 后 color-mix」双层写法；静态门禁对 `@supports (... color-mix ...)` 块内的 `color-mix` 不计兜底缺口，因此现代写法必须放进该块而不是裸写
 - 最近一次全绿：2026-11-07 `pnpm check` / `pnpm test`（3119 例）/ `pnpm test:coverage` / `pnpm build`（含 `check-browser-compat --strict`）/ `pnpm bundle:budget` / `make flow`（check-fast + pytest 6704 例）；Chromium 737027 实测登录页无控制台报错、`.auth-shell` 为深色舞台、晶格 canvas 有像素输出

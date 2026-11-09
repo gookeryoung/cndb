@@ -254,16 +254,16 @@ def delete_all_drafts(db, design_id) -> None: ...
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/schemas.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/services/content.py`、`src/cndb/plugins/design/services/drafts.py`、`src/cndb/alembic/versions/c1d2e3f4a5b7_add_design_drafts.py` | `tests/test_design_api.py`、`tests/test_design_draft_migration.py` | 未提交 |
-| P1 | 已落地 | `frontend/src/api/design.ts`、`frontend/src/api/index.ts`、`frontend/src/pages/design/DesignEditorPage.tsx` | `frontend/src/pages/design/DesignEditorPage.test.tsx` | 未提交 |
-| P2 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_restore.py` | `tests/test_workspace_backup_v14.py`（草稿不入备份 / 恢复清空）、`frontend/tests/e2e/critical/design-version-history.spec.ts` | 未提交 |
+| P0 | 已落地 | `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/schemas.py`、`src/cndb/plugins/design/routers.py`、`src/cndb/plugins/design/services/content.py`、`src/cndb/plugins/design/services/drafts.py`、`src/cndb/alembic/versions/c1d2e3f4a5b7_add_design_drafts.py` | `tests/test_design_api.py`、`tests/test_design_draft_migration.py` | 2951ae6b |
+| P1 | 已落地 | `frontend/src/api/design.ts`、`frontend/src/api/index.ts`、`frontend/src/pages/design/DesignEditorPage.tsx` | `frontend/src/pages/design/DesignEditorPage.test.tsx` | 2951ae6b |
+| P2 | 已落地 | `src/cndb/plugins/workspaces/services/workspace_restore.py` | `tests/test_workspace_backup_v14.py`（草稿不入备份 / 恢复清空）、`frontend/tests/e2e/critical/design-version-history.spec.ts` | 2951ae6b |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 全部落地，`make check-fast` / `make flow` 全绿；待提交（未授权 commit / push）
+- 当前阶段：P0-P2 全部落地并提交（2951ae6b，2026-11-08），`make check-fast` / `make flow` 全绿
 - 已完成：需求卡 0125（Q1-Q4 已确认）；ADR 评审通过；草稿表迁移 `c1d2e3f4a5b7`；统一落版入口 `services/content.py`；草稿三端点 + 检查点；前端草稿保存 / 恢复 / 丢弃；备份排除与恢复清空；e2e 重写
-- 下一步：如需发布，按 H4 / H6 由人确认后 commit / push；若后续引入多人协同冲突拦截，另立 ADR 修订 D6
+- 下一步：如需发布，按 H4 / H6 由人确认后 push；若后续引入多人协同冲突拦截，另立 ADR 修订 D6
 - 已知坑：检查点测试用 monkeypatch `DESIGN_CHECKPOINT_INTERVAL_SECONDS`；`PUT /content` 已收紧为 `extra="forbid"`，旧客户端带 `change_type` 会 422；`design_designdraft` 依赖 FK 级联，覆盖恢复已显式先删；SQLite 读回时间为 naive，判定用 `_as_utc` 归一
 - 最近一次全绿：2026-11-08 `make check-fast` + `make flow`（6769 passed / 3 skipped；前端单测 30 例通过）

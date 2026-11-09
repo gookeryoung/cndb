@@ -150,4 +150,4 @@ Related: `src/cndb/plugins/datasource/services/pipeline.py`、`src/cndb/plugins/
 - 已完成：选项值集合有界缓存；轻量落表模式（同步链路默认启用、人工导入不变）；基准复测（13.5 万行库、7,286 行单批：默认 1.33s 新增 / 2.26s 更新，同步链路 0.95s / 1.92s，基线 16.5s / 34.9s）
 - 下一步：无（功能完结）；后续吞吐项（WAL 收尾 / 行拷贝收敛）由 ADR 0043 承接
 - 已知坑：① 选项缓存的键必须带 `len(options)`，否则 batch prefill 追加新选项后仍用旧集合；② `light` 模式仍要走 `_plan_unknown_columns`（执行阶段读 `skipped_columns`）；③ 单批基准须在与生产同规模的库上测，空库测不出选项校验成本；④ 缓存是模块级全局的，同进程内导入与同步互相受益（基准须用独立进程分别测）
-- 最近一次全绿：`make check`（含 `make cov` 97.02%、前端 static）@ 待提交
+- 最近一次全绿：`make check`（含 `make cov` 97.02%、前端 static）@ 5bdf927c

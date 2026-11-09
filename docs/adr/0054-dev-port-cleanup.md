@@ -119,4 +119,4 @@ Related: `Makefile`、`scripts/free_ports.py`、`src/cndb/cli/main.py`
 - 已完成：`scripts/free_ports.py`、Makefile `free-dev-ports` / `dev` 前置、`tests/test_free_ports.py`
 - 下一步：无
 - 已知坑：释放端口不区分进程归属；前端端口在 CLI 中仍固定 5173，若未来支持覆盖需同步 `DEV_PORTS`
-- 最近一次全绿：`make flow` @ 待回填（2026-10-28）
+- 最近一次全绿：`make flow` @ 4fa9c947（2026-10-28）

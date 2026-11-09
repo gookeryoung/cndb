@@ -172,4 +172,4 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 - 已完成：冒烟性能段（longtask + 首屏 / 主题 / 视图时延，超阈值非 0 退出）；`perf-budget.mjs` 阈值单点；`applyThemeMixVars` 快照读 + 批量写 + 值未变不写；全页过渡能力门控；`capabilities.ts` 收敛能力探测；flex-gap 垫片去重 / 浅扫 / 深扫断点续扫 / 自写抑制；图表主题核实为实例复用；D7：阈值按实测拆分为主题 / 视图两类，看板单独 1000ms，测量前预热
 - 下一步：推送后触发 `chrome81-smoke` CI 运行，确认 0 失败；若同机读数仍超阈值，先区分 runner 抖动与真实回退，再按 D7 流程调整
 - 已知坑：Chromium 81 无 Event Timing / INP，只能用 `PerformanceObserver('longtask')` + `requestAnimationFrame` 手工计时；无头 Chromium 81 无 WebGL，设计预览走降级提示；运行后端测试前需 `unset LD_LIBRARY_PATH`；本地复现需 `CNDB_CHROME81_PATH` 指向 r737027 快照（系统 glib 冲突时用 `env -u LD_LIBRARY_PATH`）；看板切换在 Chromium 81 上是渲染热点（500 行 × 55 张卡片），预热与垫片优化都无法降到 250ms
-- 最近一次全绿：本地 Chromium 81 冒烟 + `flexGap.test.ts` + `make check-docs` @ 2026-11-08（D7 改动，待提交）
+- 最近一次全绿：本地 Chromium 81 冒烟 + `flexGap.test.ts` + `make check-docs` @ 2026-11-08（D7 改动已提交 `1bf7de78`）

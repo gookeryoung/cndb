@@ -179,8 +179,8 @@ Related: `frontend/src/pages/design/DesignsPage.tsx`、`frontend/src/pages/desig
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0-P2 全部落地，`Status: Implemented`，待提交
+- 当前阶段：P0-P2 全部落地并提交（3bbfaf1b，回填 5c57cd70），`Status: Implemented`
 - 已完成：侧栏宿主与根页重定向（P0）、单产品结构树与编辑器 Content 归位（P1）、样式退役 / 单测与 e2e 改写 / 帮助文案 / 0084·0103 失效行清理 / CHANGELOG（P2）
-- 下一步：提交后回填本表「提交」列；如需发版按 release 流程走人工卡点
+- 下一步：无（本表「提交」列已回填）；如需发版按 release 流程走人工卡点
 - 已知坑：① 根页重定向需在清单 loading 完成后执行，避免闪空态；② 结构树缓存键必须与编辑器一致（`['designs', wid, String(id), 'ir']`）；③ 侧栏两态为本地状态，刷新回到树态属预期；④ 移动端点击产品后需收起抽屉；⑤ 测试环境 `gcTime` 为 0，IR 缓存优先用例需在缓存写入后同步点击
 - 最近一次全绿：2026-11-06 `make check-fast` / `make test`（6667 passed）通过，前端全量 `253 files / 3092 tests` 通过，目标 e2e（`design-structure-tree` / `design-sidebar-assembly` / `design-3d-preview` / `navigation`，15 例）通过
