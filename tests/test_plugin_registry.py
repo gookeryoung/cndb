@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 from typing import override
 from unittest.mock import patch
 
+import pytest
 from fastapi import APIRouter, FastAPI
 
 from cndb.core.plugin_registry import PluginRegistry
@@ -178,22 +180,68 @@ def test_get_all_apps_no_items_returns_empty() -> None:
     assert r.get_all_apps() == []
 
 
-def test_discover_handles_import_error_gracefully(tmp_path: Path) -> None:
-    """某个插件的 plugin.py 导入失败应被跳过."""
-    import importlib
+def test_discover_skips_shared_module_dir_without_plugin_py(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """没有 plugin.py 的目录（如 files）是共享模块，不是插件：跳过而非报错."""
+    import cndb.core.plugin_registry as registry_module
+
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    (shared / "__init__.py").write_text("")
+    # 临时目录不在 cndb.plugins 命名空间下：直接模拟「父包可导入但没有 plugin 子模块」
+    monkeypatch.setattr(registry_module, "find_spec", lambda name: None)
 
     r = PluginRegistry()
+    r.discover_and_load(tmp_path)
+    assert len(r) == 0
 
-    # 创建一个临时插件目录结构
-    plugin_dir = tmp_path / "broken_plugin"
-    plugin_dir.mkdir()
-    (plugin_dir / "__init__.py").write_text("")
-    (plugin_dir / "plugin.py").write_text("raise ImportError('broken')")
 
-    with patch("cndb.core.plugin_registry.Path") as MockPath:
-        # Mock Path(__file__).resolve().parent.parent → 指向 tmp_path
-        MockPath.return_value = tmp_path
-        with patch.object(importlib, "import_module", side_effect=ImportError("broken")):
-            r.discover_and_load()
+def test_discover_fail_fast_on_import_error_in_debug(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """DEBUG 为真时插件导入失败必须直接抛出，不能静默少路由少模型."""
+    import cndb.core.plugin_registry as registry_module
+
+    (tmp_path / "broken").mkdir()
+    monkeypatch.setattr(registry_module, "find_spec", lambda name: object())
+
+    def _boom(name: str, package: str | None = None) -> None:
+        raise ImportError("broken")
+
+    monkeypatch.setattr(registry_module.importlib, "import_module", _boom)
+    with pytest.raises(ImportError, match="broken"):
+        PluginRegistry().discover_and_load(tmp_path)
+
+
+def test_discover_fail_fast_on_generic_error_in_debug(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """非 ImportError 的加载期异常同样在 DEBUG 下抛出."""
+    import cndb.core.plugin_registry as registry_module
+
+    (tmp_path / "broken").mkdir()
+    monkeypatch.setattr(registry_module, "find_spec", lambda name: object())
+
+    def _boom(name: str, package: str | None = None) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(registry_module.importlib, "import_module", _boom)
+    with pytest.raises(RuntimeError, match="boom"):
+        PluginRegistry().discover_and_load(tmp_path)
+
+
+def test_discover_degrades_broken_plugin_when_debug_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """DEBUG=false（生产）时单个插件加载失败只记 error，不影响其余插件启动."""
+    import cndb.core.plugin_registry as registry_module
+
+    (tmp_path / "broken").mkdir()
+    monkeypatch.setattr(registry_module, "find_spec", lambda name: object())
+    monkeypatch.setattr(registry_module, "settings", SimpleNamespace(DEBUG=False))
+
+    def _boom(name: str, package: str | None = None) -> None:
+        raise ImportError("missing-dep")
+
+    monkeypatch.setattr(registry_module.importlib, "import_module", _boom)
+    r = PluginRegistry()
+    with caplog.at_level("ERROR"):
+        r.discover_and_load(tmp_path)
 
     assert len(r) == 0
+    assert any("broken" in rec.message and "生产环境跳过" in rec.message for rec in caplog.records)

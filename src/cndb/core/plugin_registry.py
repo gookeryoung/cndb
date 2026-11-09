@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import logging
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -50,32 +51,44 @@ class PluginRegistry:
         plugin.register_models()
         logger.info("插件已注册: %s v%s", plugin.name, plugin.version)
 
-    def discover_and_load(self) -> None:
+    def discover_and_load(self, plugins_dir: Path | None = None) -> None:
         """自动发现并加载 plugins 包下的所有插件.
 
         扫描规则：
         - 跳过以 "_" 开头的子包（私有/测试包）
+        - 目录内没有 ``plugin.py`` 视为共享模块目录（如 files：只有 models / services），跳过
         - 导入 `<package>.plugins.<name>.plugin` 模块
         - 查找其中的 PluginBase 非抽象子类并实例化
-        """
-        plugins_dir = Path(__file__).resolve().parent.parent / "plugins"
 
-        if not plugins_dir.is_dir():
-            logger.debug("plugins 目录不存在，跳过插件发现: %s", plugins_dir)
+        失败口径：``DEBUG`` 为真（开发 / 测试 / 默认桌面运行）时导入失败直接抛出，
+        避免拼错 import 或漏依赖被静默降级成「少几个路由、少几张模型」；``DEBUG=false``
+        （生产部署，见部署安全清单）时记 error 后跳过，不让单个插件拖垮整个服务。
+        """
+        base_dir = plugins_dir if plugins_dir is not None else Path(__file__).resolve().parent.parent / "plugins"
+
+        if not base_dir.is_dir():
+            logger.debug("plugins 目录不存在，跳过插件发现: %s", base_dir)
             return
 
-        for item in sorted(plugins_dir.iterdir()):
+        for item in sorted(base_dir.iterdir()):
             if not item.is_dir() or item.name.startswith("_"):
                 continue
 
             plugin_module_path = f"cndb.plugins.{item.name}"
             try:
+                if find_spec(f"{plugin_module_path}.plugin") is None:
+                    logger.debug("跳过 %s: 无 plugin.py（共享模块目录）", item.name)
+                    continue
                 module = importlib.import_module(f"{plugin_module_path}.plugin")
-            except ImportError as exc:  # pragma: no cover - 插件目录缺少 plugin.py
-                logger.debug("跳过 %s: %s", item.name, exc)
+            except ImportError as exc:
+                if settings.DEBUG:
+                    raise
+                logger.error("加载插件 %s 失败（生产环境跳过）: %s", item.name, exc)
                 continue
-            except Exception as exc:  # pragma: no cover - 插件加载异常
-                logger.error("加载插件 %s 失败: %s", item.name, exc)
+            except Exception as exc:  # 插件加载期任意异常：开发期直接暴露，生产降级
+                if settings.DEBUG:
+                    raise
+                logger.error("加载插件 %s 失败（生产环境跳过）: %s", item.name, exc)
                 continue
 
             # 查找 PluginBase 非抽象子类
