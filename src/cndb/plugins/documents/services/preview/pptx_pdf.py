@@ -22,6 +22,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from cndb.core.config import settings
@@ -42,6 +43,8 @@ CACHE_SUBDIR = "document-pdf"
 FAILED_COOLDOWN_SECONDS = 600
 #: 202 响应建议客户端的轮询间隔（秒）
 RETRY_AFTER_SECONDS = 2
+#: 每轮补扫最多入队的文档数：低频治理不能把队列瞬间打满
+SWEEP_BATCH_LIMIT = 50
 
 STATUS_QUEUED = "queued"
 STATUS_RUNNING = "running"
@@ -81,6 +84,17 @@ class _WorkerRuntime:
 
 
 _runtime = _WorkerRuntime()
+
+
+@dataclass
+class _SweeperRuntime:
+    """低频补扫线程（启动延迟 / 停机停止）."""
+
+    thread: threading.Thread | None = None
+    stop_event: threading.Event | None = None
+
+
+_sweeper = _SweeperRuntime()
 
 
 def reset_state() -> None:
@@ -342,6 +356,221 @@ def invalidate_pptx_pdf(workspace_id: int, asset_file_key: str) -> None:
         return
 
 
+# ── 低频补扫与缓存治理（ADR 0129 P2） ──
+
+
+def _queue_busy() -> bool:
+    """队列里还有待执行任务时补扫不投递，避免和用户首次打开抢队列."""
+    with _lock:
+        instance = _runtime.queue
+    return instance is not None and not instance.empty()
+
+
+def _remove_quietly(path: Path) -> bool:
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    return True
+
+
+def _split_cache_path(root: Path, path: Path) -> tuple[str | None, int | None, str]:
+    """把 ``<版本>/<工作区>/<key>.pdf`` 拆回来；层级不符返回空值（不参与孤儿判定）."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return None, None, ""
+    if len(parts) != 3:
+        return None, None, ""
+    version, workspace_raw, filename = parts
+    try:
+        workspace_id = int(workspace_raw)
+    except ValueError:
+        return None, None, ""
+    key = filename[: -len(".pdf")] if filename.endswith(".pdf") else filename
+    return version, workspace_id, key
+
+
+def _accepted_asset_keys(db: Session | None) -> set[tuple[int, str]]:
+    """数据库里仍存在的 (workspace_id, asset_file_key) 集合.
+
+    含回收站文档：软删除只改状态、原件仍在，恢复后缓存可直接复用。
+    """
+    session = db if db is not None else SessionLocal()
+    owns_session = db is None
+    try:
+        rows = session.execute(
+            select(Document.workspace_id, Document.asset_file_key).where(Document.asset_file_key.is_not(None))
+        ).all()
+        return {(workspace_id, key) for workspace_id, key in rows}
+    finally:
+        if owns_session:
+            session.close()
+
+
+def cleanup_cache(*, now: float | None = None, db: Session | None = None) -> dict[str, int]:
+    """清理衍生件缓存：TTL → 孤儿（原件已不存在）→ 全局容量淘汰.
+
+    顺序固定：先删过期 / 孤儿，再按 mtime 从旧到新淘汰到容量上限以内。
+    所有失败都静默（缓存可重建，治理不能影响读取链路）。
+    """
+    stats = {"scanned": 0, "removed_ttl": 0, "removed_orphan": 0, "removed_capacity": 0}
+    root = Path(settings.CACHE_DIR) / CACHE_SUBDIR
+    if not root.is_dir():
+        return stats
+
+    current = time.time() if now is None else now
+    ttl_days = settings.PPTX_PDF_CACHE_TTL_DAYS
+    ttl_seconds = ttl_days * 86400 if ttl_days > 0 else 0
+    accepted = _accepted_asset_keys(db)
+    kept: list[tuple[float, int, Path]] = []
+
+    for path in root.rglob("*.pdf"):
+        try:
+            meta = path.stat()
+        except OSError:
+            continue
+        stats["scanned"] += 1
+        if ttl_seconds and current - meta.st_mtime > ttl_seconds:
+            if _remove_quietly(path):
+                stats["removed_ttl"] += 1
+            continue
+        version, workspace_id, key = _split_cache_path(root, path)
+        if version == CONVERTER_CACHE_VERSION and workspace_id is not None and (workspace_id, key) not in accepted:
+            if _remove_quietly(path):
+                stats["removed_orphan"] += 1
+            continue
+        kept.append((meta.st_mtime, meta.st_size, path))
+
+    limit = settings.PPTX_PDF_CACHE_MAX_BYTES
+    if limit > 0:
+        total = sum(size for _, size, _ in kept)
+        for _, size, path in sorted(kept, key=lambda item: item[0]):
+            if total <= limit:
+                break
+            if _remove_quietly(path):
+                total -= size
+                stats["removed_capacity"] += 1
+    return stats
+
+
+def run_sweep(db: Session | None = None, *, now: float | None = None) -> dict[str, int]:
+    """执行一轮补扫：先治理缓存，队列空闲时给缺缓存的 PPTX 补入队.
+
+    只处理「未删除、非旧版 .ppt、缓存缺失、当前没有排队 / 执行任务」的文档，
+    每轮最多 ``SWEEP_BATCH_LIMIT`` 个，避免后台任务抢占前台首开。
+    """
+    stats = {"queued": 0, "scanned": 0, "removed_ttl": 0, "removed_orphan": 0, "removed_capacity": 0}
+    if not pdf_converter.is_configured():
+        return stats
+
+    started = time.monotonic()
+    session = db if db is not None else SessionLocal()
+    owns_session = db is None
+    try:
+        stats.update(cleanup_cache(now=now, db=session))
+        if not _queue_busy():
+            rows = session.execute(
+                select(
+                    Document.id,
+                    Document.workspace_id,
+                    Document.asset_file_key,
+                    Document.asset_mime,
+                )
+                .where(
+                    Document.content_type == CONTENT_TYPE_PPTX,
+                    Document.is_folder.is_(False),
+                    Document.deleted_at.is_(None),
+                    Document.asset_file_key.is_not(None),
+                )
+                .order_by(Document.id.asc())
+            ).all()
+            for doc_id, workspace_id, asset_file_key, asset_mime in rows:
+                if stats["queued"] >= SWEEP_BATCH_LIMIT:
+                    break
+                if not asset_file_key or asset_mime == LEGACY_PPT_MIME:
+                    continue
+                try:
+                    path = derived_pdf_path(workspace_id, asset_file_key)
+                except ValueError:
+                    continue
+                if _cache_ready(path):
+                    continue
+                with _lock:
+                    state = _jobs.get(doc_id)
+                if state is not None and state.status in (STATUS_QUEUED, STATUS_RUNNING):
+                    continue
+                if enqueue_pptx_pdf(workspace_id, doc_id, db=session).status == STATUS_QUEUED:
+                    stats["queued"] += 1
+    finally:
+        if owns_session:
+            session.close()
+
+    logger.info(
+        "pptx_pdf sweep result=ok queued=%s scanned=%s removed_ttl=%s removed_orphan=%s "
+        "removed_capacity=%s duration_ms=%s",
+        stats["queued"],
+        stats["scanned"],
+        stats["removed_ttl"],
+        stats["removed_orphan"],
+        stats["removed_capacity"],
+        int((time.monotonic() - started) * 1000),
+    )
+    return stats
+
+
+def _sweeper_loop(stop_event: threading.Event) -> None:
+    """启动延迟 → 周期补扫；``stop_event`` 置位后立刻退出（停机 / 测试）."""
+    delay = max(settings.PPTX_PDF_SWEEP_STARTUP_DELAY_SECONDS, 0)
+    if stop_event.wait(delay):
+        return
+    while not stop_event.is_set():
+        try:
+            run_sweep()
+        except Exception:
+            logger.exception("pptx_pdf sweep result=error")
+        interval = settings.PPTX_PDF_SWEEP_INTERVAL_SECONDS
+        if interval <= 0 or stop_event.wait(interval):
+            return
+
+
+def start_pptx_pdf_sweeper() -> None:
+    """启动低频补扫线程；转换器未配置或周期 <= 0 时不启动（桌面端 / 单机）."""
+    if not pdf_converter.is_configured():
+        logger.info("pptx_pdf sweep 跳过：未配置转换器")
+        return
+    interval = settings.PPTX_PDF_SWEEP_INTERVAL_SECONDS
+    if interval <= 0:
+        logger.info("pptx_pdf sweep 跳过：周期为 0")
+        return
+    with _lock:
+        if _sweeper.thread is not None and _sweeper.thread.is_alive():
+            return
+        stop_event = threading.Event()
+        thread = threading.Thread(target=_sweeper_loop, args=(stop_event,), name="pptx-pdf-sweeper", daemon=True)
+        _sweeper.stop_event = stop_event
+        _sweeper.thread = thread
+        thread.start()
+    logger.info(
+        "pptx_pdf sweep 已启动 interval=%ss startup_delay=%ss",
+        interval,
+        settings.PPTX_PDF_SWEEP_STARTUP_DELAY_SECONDS,
+    )
+
+
+def stop_pptx_pdf_sweeper() -> None:
+    """停止补扫线程（应用停机时调用；可重复调用）."""
+    with _lock:
+        stop_event = _sweeper.stop_event
+        thread = _sweeper.thread
+        _sweeper.stop_event = None
+        _sweeper.thread = None
+    if stop_event is not None:
+        stop_event.set()
+    if thread is not None and thread.is_alive():
+        thread.join(timeout=5)
+
+
 __all__ = [
     "CONVERTER_CACHE_VERSION",
     "FAILED_COOLDOWN_SECONDS",
@@ -353,7 +582,9 @@ __all__ = [
     "STATUS_RUNNING",
     "STATUS_TOO_LARGE",
     "STATUS_UNSUPPORTED",
+    "SWEEP_BATCH_LIMIT",
     "PdfJobState",
+    "cleanup_cache",
     "derived_pdf_path",
     "enqueue_pptx_pdf",
     "ensure_pptx_pdf",
@@ -361,4 +592,7 @@ __all__ = [
     "execute_queued_job",
     "invalidate_pptx_pdf",
     "reset_state",
+    "run_sweep",
+    "start_pptx_pdf_sweeper",
+    "stop_pptx_pdf_sweeper",
 ]

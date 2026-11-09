@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 
@@ -32,6 +33,7 @@ def _pdf_env(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "PPTX_PDF_MAX_SOURCE_BYTES", 1024)
     monkeypatch.setattr(settings, "PPTX_PDF_RETRY", 1)
     yield
+    pptx_pdf.stop_pptx_pdf_sweeper()
     pptx_pdf.reset_state()
 
 
@@ -322,3 +324,138 @@ class TestConverterClient:
         with pytest.raises(pdf_converter.PdfConversionError) as exc:
             pdf_converter.convert_pptx_to_pdf(b"data")
         assert exc.value.retryable is True
+
+
+class TestSweeperAndCache:
+    """ADR 0129 P2：低频补扫与衍生件缓存治理."""
+
+    def _write_cache(self, workspace_id: int, asset_file_key: str, *, size: int = len(PDF_BYTES)) -> Path:
+        path = pptx_pdf.derived_pdf_path(workspace_id, asset_file_key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"x" * size)
+        return path
+
+    def test_sweep_enqueues_only_missing_pptx(self, db, monkeypatch):
+        calls = _record_dispatch(monkeypatch)
+        workspace, user = _workspace(db)
+        pending = _doc(db, workspace, user, key="pending.pptx")
+        _doc(db, workspace, user, key="cached.pptx")
+        _doc(db, workspace, user, key="note.md", content_type=CONTENT_TYPE_MARKDOWN, mime="text/markdown")
+        self._write_cache(workspace.id, "cached.pptx")
+
+        stats = pptx_pdf.run_sweep(db=db)
+
+        assert stats["queued"] == 1
+        assert calls == [(workspace.id, pending.id, "pending.pptx")]
+
+    def test_sweep_skips_when_queue_busy(self, db, monkeypatch):
+        calls = _record_dispatch(monkeypatch)
+        monkeypatch.setattr(pptx_pdf, "_queue_busy", lambda: True)
+        workspace, user = _workspace(db)
+        _doc(db, workspace, user)
+
+        stats = pptx_pdf.run_sweep(db=db)
+
+        assert stats["queued"] == 0
+        assert calls == []
+
+    def test_sweep_noop_when_disabled(self, db, monkeypatch):
+        calls = _record_dispatch(monkeypatch)
+        monkeypatch.setattr(settings, "PPTX_PDF_CONVERTER_URL", "")
+        workspace, user = _workspace(db)
+        _doc(db, workspace, user)
+
+        stats = pptx_pdf.run_sweep(db=db)
+
+        assert stats["queued"] == 0
+        assert calls == []
+
+    def test_sweep_skips_legacy_ppt(self, db, monkeypatch):
+        calls = _record_dispatch(monkeypatch)
+        workspace, user = _workspace(db)
+        _doc(db, workspace, user, key="old.ppt", mime=LEGACY_PPT_MIME)
+
+        stats = pptx_pdf.run_sweep(db=db)
+
+        assert stats["queued"] == 0
+        assert calls == []
+
+    def test_sweep_respects_batch_limit(self, db, monkeypatch):
+        _record_dispatch(monkeypatch)
+        monkeypatch.setattr(pptx_pdf, "SWEEP_BATCH_LIMIT", 1)
+        workspace, user = _workspace(db)
+        _doc(db, workspace, user, key="a.pptx")
+        _doc(db, workspace, user, key="b.pptx")
+
+        stats = pptx_pdf.run_sweep(db=db)
+
+        assert stats["queued"] == 1
+
+    def test_cleanup_removes_expired_cache(self, db):
+        workspace, user = _workspace(db)
+        _doc(db, workspace, user, key="ttl.pptx")
+        path = self._write_cache(workspace.id, "ttl.pptx")
+        old = time.time() - 31 * 86400
+        os.utime(path, (old, old))
+
+        stats = pptx_pdf.cleanup_cache(db=db)
+
+        assert stats["removed_ttl"] == 1
+        assert not path.exists()
+
+    def test_cleanup_removes_orphan_cache(self, db):
+        workspace, _ = _workspace(db)
+        path = self._write_cache(workspace.id, "gone.pptx")
+
+        stats = pptx_pdf.cleanup_cache(db=db)
+
+        assert stats["removed_orphan"] == 1
+        assert not path.exists()
+
+    def test_cleanup_evicts_oldest_when_over_capacity(self, db, monkeypatch):
+        workspace, user = _workspace(db)
+        _doc(db, workspace, user, key="old.pptx")
+        _doc(db, workspace, user, key="new.pptx")
+        old_path = self._write_cache(workspace.id, "old.pptx", size=10)
+        new_path = self._write_cache(workspace.id, "new.pptx", size=10)
+        now = time.time()
+        os.utime(old_path, (now - 1000, now - 1000))
+        os.utime(new_path, (now, now))
+        monkeypatch.setattr(settings, "PPTX_PDF_CACHE_MAX_BYTES", 10)
+
+        stats = pptx_pdf.cleanup_cache(db=db)
+
+        assert stats["removed_capacity"] == 1
+        assert not old_path.exists()
+        assert new_path.exists()
+
+    def test_cleanup_ignores_missing_cache_dir(self, db):
+        assert pptx_pdf.cleanup_cache(db=db)["scanned"] == 0
+
+    def test_sweeper_not_started_when_interval_zero(self, monkeypatch):
+        monkeypatch.setattr(settings, "PPTX_PDF_SWEEP_INTERVAL_SECONDS", 0)
+
+        pptx_pdf.start_pptx_pdf_sweeper()
+
+        assert pptx_pdf._sweeper.thread is None
+
+    def test_sweeper_not_started_when_disabled(self, monkeypatch):
+        monkeypatch.setattr(settings, "PPTX_PDF_CONVERTER_URL", "")
+
+        pptx_pdf.start_pptx_pdf_sweeper()
+
+        assert pptx_pdf._sweeper.thread is None
+
+    def test_sweeper_start_and_stop(self, monkeypatch):
+        monkeypatch.setattr(settings, "PPTX_PDF_SWEEP_INTERVAL_SECONDS", 3600)
+        monkeypatch.setattr(settings, "PPTX_PDF_SWEEP_STARTUP_DELAY_SECONDS", 3600)
+
+        pptx_pdf.start_pptx_pdf_sweeper()
+        thread = pptx_pdf._sweeper.thread
+        assert thread is not None
+        assert thread.is_alive()
+
+        pptx_pdf.stop_pptx_pdf_sweeper()
+
+        assert not thread.is_alive()
+        assert pptx_pdf._sweeper.thread is None

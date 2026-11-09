@@ -89,15 +89,31 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     except Exception:
         logger.warning("启动帮助图示刷新线程失败（图示退化为请求期懒重建）", exc_info=True)
 
+    # PPTX → PDF 衍生件补扫 / 缓存治理（ADR 0129 P2）：仅配置了转换器时启动，
+    # 默认启动延迟 5 分钟、6 小时一轮；桌面端 / 未部署 worker 时自动跳过。
+    try:
+        from cndb.plugins.documents.services.preview.pptx_pdf import start_pptx_pdf_sweeper
+
+        start_pptx_pdf_sweeper()
+    except Exception:
+        logger.warning("启动 PPTX PDF 补扫线程失败（PDF 预览仍可用，缓存治理退化为手动）", exc_info=True)
+
     yield
 
-    # 关闭阶段：先停帮助图示线程（无事务），再停快照线程、回收导入任务。
+    # 关闭阶段：先停帮助图示线程（无事务），再停 PDF 补扫、快照线程、回收导入任务。
     try:
         from cndb.plugins.help.services.figures import stop_figure_refresher
 
         stop_figure_refresher()
     except Exception:
         logger.warning("停止帮助图示刷新线程失败（忽略）", exc_info=True)
+
+    try:
+        from cndb.plugins.documents.services.preview.pptx_pdf import stop_pptx_pdf_sweeper
+
+        stop_pptx_pdf_sweeper()
+    except Exception:
+        logger.warning("停止 PPTX PDF 补扫线程失败（忽略）", exc_info=True)
 
     # 关闭阶段：先停后台刷新线程，再回收导入任务（两者都可能有未完成的事务）。
     try:

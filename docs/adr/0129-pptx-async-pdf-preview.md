@@ -283,15 +283,15 @@ def stop_pptx_pdf_sweeper() -> None: ...
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/documents/services/preview/pptx_pdf.py`、`src/cndb/plugins/documents/services/preview/pdf_converter.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/services/importers/importer.py`、`src/cndb/plugins/documents/services/content.py`、`src/cndb/core/config.py` | `tests/test_pptx_pdf_preview.py`、`tests/test_pptx_pdf_preview_api.py` | aa621f8c |
-| P1 | 已落地 | `src/cndb/plugins/documents/services/preview/pdf_worker.py`、`deploy/Dockerfile.pdf-worker`、`docker-compose.prod.yml`、`deploy/deploy.sh`、`deploy/.env.prod.example`、`frontend/src/pages/documents/pptxPdf.ts`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/DocumentAssetView.test.tsx`、`frontend/src/pages/documents/pptxPdf.test.ts`、`tests/test_pptx_pdf_worker.py` | 待提交 |
-| P2 | 未开始 | `src/cndb/app.py`、`src/cndb/plugins/documents/services/content.py`、`frontend/src/pages/help/content/tutorials.tsx`、`CONTEXT.md`、`CHANGELOG.md` | `frontend/tests/e2e/critical/pptx-async-pdf.spec.ts`、`tests/test_workspace_backup_*.py` | — |
+| P1 | 已落地 | `src/cndb/plugins/documents/services/preview/pdf_worker.py`、`deploy/Dockerfile.pdf-worker`、`docker-compose.prod.yml`、`deploy/deploy.sh`、`deploy/.env.prod.example`、`frontend/src/pages/documents/pptxPdf.ts`、`frontend/src/pages/documents/DocumentAssetView.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/DocumentAssetView.test.tsx`、`frontend/src/pages/documents/pptxPdf.test.ts`、`tests/test_pptx_pdf_worker.py` | 9bf8fd1c |
+| P2 | 已落地 | `src/cndb/plugins/documents/services/preview/pptx_pdf.py`、`src/cndb/app.py`、`frontend/src/pages/help/content/tutorials.tsx`、`CONTEXT.md`、`CHANGELOG.md` | `tests/test_pptx_pdf_preview.py`（补扫 / GC 12 例）、`tests/test_backup.py`、`frontend/tests/e2e/critical/pptx-async-pdf.spec.ts` | 待提交 |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：S2 实施（P0 / P1 已落地，P2 未开始）
-- 已完成：需求卡片 0129、本 ADR（Accepted）、H45 / H46 登记；P0 配置项 + 缓存 / 队列 / 状态 + 转换客户端 + 两个端点 + 导入 / 覆盖 / 彻底删除钩子 + 单测 / 接口测试；P1 `pdf_worker.py`（token / 体积 / 超时 / 并发 1 / 临时目录清理）+ `Dockerfile.pdf-worker` + compose `pdf-worker` 内网服务 + deploy.sh 构建 / 拉取 / 降级 / 镜像保留 + env 示例 + 前端 `pptxPdf.ts` 状态机（202 轮询 2s→3s→5s、60s 预算、隐藏暂停、卸载中止）+ `DocumentAssetView` 渐进式 PDF iframe / pending 提示 / 失败重试 + 顶栏版式差异提示 + worker / 前端单测
-- 下一步：P2 做空闲补扫 + 缓存 GC + 日志 / 验收指标 + e2e + 帮助教程 / CONTEXT / 性能记录
-- 已知坑：单进程队列假设；`CONVERTER_CACHE_VERSION` 升级后旧目录由 P2 补扫清理；LibreOffice 字体 / 复杂版式还原有限；桌面端无 worker 必须降级；`CACHE_DIR` 不备份，换机后首次打开需重新生成；旧版 `.ppt` 不转换；生产须同时设置 `PPTX_PDF_CONVERTER_TOKEN`（app 与 worker 同值），否则 worker 仅靠内网隔离；TCR / 离线包缺 worker 镜像时 deploy.sh 只部署应用，PDF 自动降级
-- 最近一次全绿：`make check-fast` / `make check-docs` + `make test`（6785 passed, 3 skipped）+ `frontend: pnpm test:coverage`（核心 97.85% / 全局 83.70%）@ 2026-11-09
+- 当前阶段：S2 实施（P0 / P1 / P2 均已落地，待提交与人工验收）
+- 已完成：需求卡片 0129、本 ADR（Accepted）、H45 / H46 登记；P0 配置项 + 缓存 / 队列 / 状态 + 转换客户端 + 两个端点 + 导入 / 覆盖 / 彻底删除钩子 + 单测 / 接口测试；P1 `pdf_worker.py`（token / 体积 / 超时 / 并发 1 / 临时目录清理）+ `Dockerfile.pdf-worker` + compose `pdf-worker` 内网服务 + deploy.sh 构建 / 拉取 / 降级 / 镜像保留 + env 示例 + 前端 `pptxPdf.ts` 状态机（202 轮询 2s→3s→5s、60s 预算、隐藏暂停、卸载中止）+ `DocumentAssetView` 渐进式 PDF iframe / pending 提示 / 失败重试 + 顶栏版式差异提示 + worker / 前端单测；P2 空闲补扫（启动延迟 300s、周期 6h、队列空闲才投递、每轮 ≤50、`PPTX_PDF_SWEEP_INTERVAL_SECONDS=0` 关闭）+ 缓存 GC（TTL 30 天 → 孤儿 → 全局 2GiB 按最旧 mtime 淘汰，软删除文档保留）+ 补扫日志 + `app.lifespan` 启停 + 备份排除断言 + e2e 三条链路 + 帮助教程 / `CONTEXT.md` / CHANGELOG
+- 下一步：① 人工确认后提交并推送 P2（P1 已提交 `9bf8fd1c`，P2 仍为「待提交」）；② 部署环境按 §7 性能记录实测 20 / 50 / 200 页样本（首张可见时间、PDF 就绪时间、转换耗时、内存峰值），结果回填本 ADR 交接与 CHANGELOG——当前环境无 LibreOffice / worker，未伪造数据；③ 全期落地后可评估 `Status` 是否改 `Implemented`
+- 已知坑：单进程队列假设；`CONVERTER_CACHE_VERSION` 升级后旧目录由补扫按 TTL 清理（不是立即清，最长 30 天）；补扫只投递不等待，队列积压时会跳过本轮；LibreOffice 字体 / 复杂版式还原有限；桌面端无 worker 必须降级；`CACHE_DIR` 不备份，换机后首次打开需重新生成；旧版 `.ppt` 不转换；生产须同时设置 `PPTX_PDF_CONVERTER_TOKEN`（app 与 worker 同值），否则 worker 仅靠内网隔离；TCR / 离线包缺 worker 镜像时 deploy.sh 只部署应用，PDF 自动降级
+- 最近一次全绿：`make check-fast` / `make check-docs` + `make test` / `make cov`（6798 passed, 3 skipped，后端覆盖率 95.01%）+ `frontend: pnpm test:coverage`（核心 97.85% / 分支 100% / 全局 83.70%）@ 2026-11-09；e2e `pptx-async-pdf.spec.ts` 需在部署环境（`pnpm e2e`）执行，本机无浏览器服务端未跑

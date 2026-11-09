@@ -199,6 +199,34 @@ def test_create_backup_native_full_flow(tmp_path: Path) -> None:
         assert manifest["uploads"]["file_count"] == 2
 
 
+def test_backup_excludes_derived_pdf_cache(tmp_path: Path, monkeypatch) -> None:
+    """衍生 PDF 是可丢弃缓存：位于 CACHE_DIR，不得进入备份归档（ADR 0129）。"""
+    db_path = _setup_sqlite(tmp_path)
+    uploads = _setup_uploads(tmp_path)
+    cache = tmp_path / "cache"
+    derived = cache / "document-pdf" / "lo-1" / "1" / "deck.pptx.pdf"
+    derived.parent.mkdir(parents=True)
+    derived.write_bytes(b"%PDF-1.4 cached")
+    monkeypatch.setattr(settings, "CACHE_DIR", cache)
+
+    archive = tmp_path / "backup.tar.gz"
+    create_backup(
+        output=archive,
+        mode="native",
+        include_uploads=True,
+        database_url=f"sqlite:///{db_path}",
+        upload_dir=uploads,
+    )
+
+    import tarfile
+
+    with tarfile.open(archive, "r:gz") as tar:
+        names = tar.getnames()
+
+    assert not any("document-pdf" in name for name in names)
+    assert "backup/uploads/1/f1.txt" in names
+
+
 def test_create_backup_no_uploads(tmp_path: Path) -> None:
     db_path = _setup_sqlite(tmp_path)
     archive = tmp_path / "backup.tar.gz"
