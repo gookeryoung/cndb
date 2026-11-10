@@ -310,6 +310,10 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # listWorkflowRunArtifacts 需要 actions:read；显式声明避免仓库默认权限收紧后等片失败
+    permissions:
+      contents: read
+      actions: read
     steps:
       - uses: actions/checkout@v7
 
@@ -330,6 +334,37 @@ jobs:
           npm_config_registry: https://registry.npmjs.org/
         run: cd frontend && pnpm install --frozen-lockfile
 
+      # 分片 artifact 的登记与查询存在秒级延迟：run 42831093435 里 blob-1 于 14:13:27 上传完成，
+      # 合流 job 14:14:01 查询只看到 2 个 blob（共 3 个 artifact，另一个是静态包），
+      # 于是只合并了 2/3 分片：合并结果 174/261 个测试文件，全局覆盖率 83.70% → 61.17%，
+      # 门槛失败但报错原因失真。这里先轮询等片（最多 3 分钟），再显式断言合并了几个 blob。
+      - name: Wait for all shard blobs
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const expected = ['vitest-blob-1', 'vitest-blob-2', 'vitest-blob-3'];
+            const deadline = Date.now() + 180_000;
+            for (;;) {
+              const { data } = await github.rest.actions.listWorkflowRunArtifacts({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: context.runId,
+                per_page: 100,
+              });
+              const names = new Set(data.artifacts.map((a) => a.name));
+              const missing = expected.filter((n) => !names.has(n));
+              if (missing.length === 0) {
+                core.info(`分片 artifact 已到齐：${expected.join(', ')}`);
+                return;
+              }
+              if (Date.now() > deadline) {
+                core.setFailed(`等待分片 artifact 超时，缺失：${missing.join(', ')}`);
+                return;
+              }
+              core.info(`缺失 ${missing.join(', ')}，5s 后重试`);
+              await new Promise((resolve) => setTimeout(resolve, 5000));
+            }
+
       # merge-multiple 把 3 个 blob 落到同一目录，目录内只有 *.blob 才符合 --mergeReports 要求
       - name: Download blob reports
         uses: actions/download-artifact@v8
@@ -337,6 +372,19 @@ jobs:
           pattern: vitest-blob-*
           path: frontend/blob-report
           merge-multiple: true
+
+      # 缺片时必须显式失败：少一片仍能合出一份"看起来正常"的覆盖率（分母变小、结论失真），
+      # 不能让它混到门槛判定里。期望片数 = frontend-test 的 matrix.shard 长度。
+      - name: Assert all shards merged
+        run: |
+          expected=3
+          got=$(find frontend/blob-report -maxdepth 1 -name '*.blob' | wc -l)
+          if [ "$got" -ne "$expected" ]; then
+            echo "::error::期望 $expected 个分片 blob，实际 $got 个；拒绝在残缺覆盖率上判定门槛"
+            ls -l frontend/blob-report || true
+            exit 1
+          fi
+          echo "已合并 $got 个分片 blob"
 
       # --mergeReports 只回放 blob（不重跑用例，实测 ~5s），据此重算合并覆盖率并判双门槛
       - name: Merge & gate coverage
