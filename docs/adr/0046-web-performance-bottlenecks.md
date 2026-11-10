@@ -172,9 +172,10 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 
 ## 后续优化（本次未做：lookup 值冗余列）
 
-含 lookup 字段的过滤 / 排序无物理列，仍只能 attach 后内存求值。本次先加限流兜底
-（`records.POST_FILTER_SCAN_LIMIT = 20000`：基础命中行数超上限直接 400 并提示收窄筛选），
-彻底下推的做法留待后续按下列顺序评估：
+含 lookup 字段的过滤 / 排序无物理列，仍只能 attach 后内存求值。当前先加限流兜底：
+基础命中行数超过 `TABLES_LOOKUP_SCAN_LIMIT`（默认 20000，非正整数回退
+`records.POST_FILTER_SCAN_LIMIT`）直接 400，正文给出命中行数、生效上限、配置项名与收窄建议。
+彻底下推的做法留待后续按下列顺序评估（冗余列方案已单独立项为 **ADR 0131**，本 ADR 只保留结论）：
 
 1. **写入冗余（首选）**：为 lookup 字段冗余 `_lk_<field>` 物理列，存首值 / 聚合显示值；过滤与排序改走 SQL，
    分页与 COUNT 恢复下推。代价：迁移回填 + 写入维护（link / 源表值变更时同步）+ 视图排序索引。

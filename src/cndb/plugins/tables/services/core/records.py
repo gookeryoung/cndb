@@ -21,6 +21,7 @@ from typing import Any
 
 from sqlalchemy import Table, and_, bindparam, func, or_, select, tuple_
 
+from cndb.core.config import settings
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core.audit import (
@@ -45,9 +46,20 @@ from cndb.plugins.tables.services.core.links import (
 logger = logging.getLogger(__name__)
 
 #: lookup 字段无物理列，过滤 / 排序只能在 attach 之后内存求值（ADR 0046 D3）；
-#: 全量回退的扫描行数上限：超过即明确拒绝，避免大表把整表 dict + attach 结果驻留内存。
-#: 彻底解法是写入时冗余 lookup 显示值（`_lk_*` 物理列）后下推 SQL，本次先以限流兜底。
+#: 全量回退的扫描行数默认上限：超过即明确拒绝，避免大表把整表 dict + attach 结果驻留内存。
+#: 生效值取配置 ``TABLES_LOOKUP_SCAN_LIMIT``，非正整数回退本常量。
+#: 彻底解法是写入时冗余 lookup 显示值（`_lk_*` 物理列）后下推 SQL，见 ADR 0131。
 POST_FILTER_SCAN_LIMIT = 20_000
+
+
+def post_filter_scan_limit() -> int:
+    """当前生效的 lookup 回退扫描上限（配置非法时回退 :data:`POST_FILTER_SCAN_LIMIT`）."""
+    value = getattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", POST_FILTER_SCAN_LIMIT)
+    try:
+        limit = int(value)
+    except (TypeError, ValueError):
+        return POST_FILTER_SCAN_LIMIT
+    return limit if limit > 0 else POST_FILTER_SCAN_LIMIT
 
 
 # ── 值规范化 ──────────────────────────────────────────
@@ -643,7 +655,8 @@ def _guard_post_filter_scan(engine: Any, plan: _QueryPlan) -> None:
     """回退路径限流：基础 WHERE 命中行数超过上限时明确拒绝，不把整表加载进内存.
 
     含 lookup 条件的列表查询无法把过滤 / 排序 / 分页下推 SQL（无物理列），
-    只能整表 `select *` + attach 后内存求值；行数超过 :data:`POST_FILTER_SCAN_LIMIT`
+    只能整表 `select *` + attach 后内存求值；行数超过配置上限
+    （``TABLES_LOOKUP_SCAN_LIMIT``，默认 :data:`POST_FILTER_SCAN_LIMIT`）
     时直接给出可操作提示，避免大表撑爆进程内存。
 
     独立开连接并在进入主查询前关闭：测试用 StaticPool 单连接共享，
@@ -654,10 +667,13 @@ def _guard_post_filter_scan(engine: Any, plan: _QueryPlan) -> None:
         count_query = count_query.where(*plan.final_where)
     with engine.connect() as conn:
         matched = int(conn.execute(count_query).scalar() or 0)
-    if matched > POST_FILTER_SCAN_LIMIT:
+    limit = post_filter_scan_limit()
+    if matched > limit:
         raise ValueError(
-            f"含 lookup 字段的筛选 / 排序需在内存中求值，当前命中 {matched} 行、超过上限 "
-            f"{POST_FILTER_SCAN_LIMIT} 行；请补充普通字段筛选（如日期、状态）缩小范围后重试"
+            f"含 lookup 字段的筛选 / 排序只能在内存中求值：本次基础条件命中 {matched} 行，"
+            f"超过上限 {limit} 行（当前生效值，配置项 TABLES_LOOKUP_SCAN_LIMIT，默认 "
+            f"{POST_FILTER_SCAN_LIMIT}）。请补充普通字段筛选（如日期、状态、编号）缩小范围后重试；"
+            f"若确认实例内存可承受，可在配置中调高 TABLES_LOOKUP_SCAN_LIMIT"
         )
 
 

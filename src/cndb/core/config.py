@@ -176,6 +176,12 @@ class Settings(BaseSettings):
     # 时序表建议配合请求里的 filters（时间区间 / 标的等值）缩小扫描面，而不是直接调大这个值。
     ANALYTICS_MAX_SCAN_ROWS: int = 20000
 
+    # 数据表 lookup 过滤 / 排序的内存回退扫描上限（保护内存，见 ADR 0046）。
+    # lookup 没有物理列，含它的过滤 / 排序只能在 attach 后内存求值；基础条件命中行数
+    # 超上限即 400。默认 20000；调大会线性放大单请求内存（整表 dict + attach 结果），
+    # 非正整数视为未配置，回退默认值。
+    TABLES_LOOKUP_SCAN_LIMIT: int = 20000
+
     # 观测（core/observability.py）：
     # - ACCESS_LOG_ENABLED：是否记录每请求访问日志（慢请求无论开关都会记录）
     # - SLOW_REQUEST_MS：超过该耗时的请求按 WARNING 记录并标注 slow=true

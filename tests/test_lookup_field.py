@@ -443,8 +443,8 @@ class TestLookupFilterSort:
         assert desc == [row_ids[1], row_ids[0], row_ids[2]]  # None 仍排最后
 
     def test_lookup_filter_over_scan_limit_rejected(self, client, auth_headers, _lookup_env, monkeypatch):
-        """回退路径限流（POST_FILTER_SCAN_LIMIT）：命中行数超上限时 400 并提示收窄筛选."""
-        from cndb.plugins.tables.services.core import records
+        """回退路径限流（TABLES_LOOKUP_SCAN_LIMIT）：命中行数超上限时 400 并提示收窄筛选."""
+        from cndb.core.config import settings
 
         wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
 
@@ -460,13 +460,19 @@ class TestLookupFilterSort:
                 },
             )
 
-        monkeypatch.setattr(records, "POST_FILTER_SCAN_LIMIT", 2)
+        monkeypatch.setattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", 2)
         rejected = _list()
         assert rejected.status_code == 400
-        assert "超过上限" in rejected.json()["detail"]
+        detail = rejected.json()["detail"]
+        assert "超过上限" in detail
+        # 400 正文要能定位问题：命中行数、生效上限、可操作建议
+        assert "命中 3 行" in detail
+        assert "上限 2 行" in detail
+        assert "TABLES_LOOKUP_SCAN_LIMIT" in detail
+        assert "补充普通字段筛选" in detail
 
         # 上限恰好等于命中行数时放行（边界不误伤）
-        monkeypatch.setattr(records, "POST_FILTER_SCAN_LIMIT", 3)
+        monkeypatch.setattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", 3)
         assert _list().status_code == 200
 
     def test_lookup_filter_with_pagination(self, client, auth_headers, _lookup_env):
@@ -910,3 +916,36 @@ class TestLookupWritePayloadIgnored:
         assert listing.status_code == 200, listing.text
         heads = {row["姓名"]: row["负责人"] for row in listing.json()["rows"]}
         assert heads == {"张三": "张三", "李四": "李四"}
+
+
+class TestLookupScanLimitConfig:
+    """TABLES_LOOKUP_SCAN_LIMIT 的取值与回退规则（默认值即原硬编码 20000）."""
+
+    def test_default_matches_constant(self):
+        from cndb.plugins.tables.services.core import records
+
+        assert records.POST_FILTER_SCAN_LIMIT == 20_000
+        assert records.post_filter_scan_limit() == 20_000
+
+    def test_reads_setting(self, monkeypatch):
+        from cndb.core.config import settings
+        from cndb.plugins.tables.services.core import records
+
+        monkeypatch.setattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", 50000)
+        assert records.post_filter_scan_limit() == 50000
+
+    def test_non_positive_falls_back(self, monkeypatch):
+        from cndb.core.config import settings
+        from cndb.plugins.tables.services.core import records
+
+        for bad in (0, -5):
+            monkeypatch.setattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", bad)
+            assert records.post_filter_scan_limit() == records.POST_FILTER_SCAN_LIMIT
+
+    def test_non_integer_falls_back(self, monkeypatch):
+        from cndb.core.config import settings
+        from cndb.plugins.tables.services.core import records
+
+        for bad in ("abc", None):
+            monkeypatch.setattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", bad)
+            assert records.post_filter_scan_limit() == records.POST_FILTER_SCAN_LIMIT
