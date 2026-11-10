@@ -60,7 +60,7 @@ class TestValidateUrlDnsResolution:
             af.validate_url("http://0.0.0.0/x")
 
 
-# ── _resolve_path 更多边界 ──────────────────────────
+# ── resolve_path 更多边界 ──────────────────────────
 
 
 class TestResolvePathEdgeCases:
@@ -85,7 +85,7 @@ class TestResolvePathEdgeCases:
         assert af.resolve_path(payload, "m[0][0].v") == 42
 
 
-# ── _extract_array 更多边界 ─────────────────────────
+# ── extract_array 更多边界 ─────────────────────────
 
 
 class TestExtractArrayEdgeCases:

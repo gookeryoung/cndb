@@ -72,7 +72,7 @@ class TestValidateUrl:
         af.validate_url("https://api.github.com/users")
 
 
-# ── _resolve_path ─────────────────────────────────────
+# ── resolve_path ─────────────────────────────────────
 
 
 class TestResolvePath:
@@ -94,7 +94,7 @@ class TestResolvePath:
         assert af.resolve_path({"a": [1, 2]}, "a[5]") is None
 
 
-# ── _extract_array ────────────────────────────────────
+# ── extract_array ────────────────────────────────────
 
 
 class TestExtractArray:
