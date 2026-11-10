@@ -45,7 +45,7 @@ describe('RegisterPage 注册', () => {
     fireEvent.click(screen.getByRole('button', { name: /^注\s*册$/ }))
 
     expect(await screen.findByText('请输入用户名')).toBeInTheDocument()
-    expect(screen.getByText('请输入密码')).toBeInTheDocument()
+    expect(await screen.findByText('请输入密码')).toBeInTheDocument()
     expect(screen.queryByTestId('ws-probe')).not.toBeInTheDocument()
   })
 
@@ -54,7 +54,7 @@ describe('RegisterPage 注册', () => {
     await fillAndSubmit('a', '123')
 
     expect(await screen.findByText('至少 2 个字符')).toBeInTheDocument()
-    expect(screen.getByText('至少 6 位')).toBeInTheDocument()
+    expect(await screen.findByText('至少 6 位')).toBeInTheDocument()
   })
 
   it('注册成功自动登录并跳转 /w', async () => {
