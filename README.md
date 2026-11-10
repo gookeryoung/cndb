@@ -217,7 +217,7 @@ make docker-dev-down  # 停止 Docker 开发模式（保留数据卷）
 make check-fast    # 轻量静态门禁：gitkeep + ADR + ruff + pyrefly + tsc/eslint（实现期内环）
 make flow          # 代码改动门禁：check-fast + 全量后端测试
 make check-backend # 只跑后端门禁：cov + lint + pyrefly + gitkeep + ADR
-make check-frontend# 只跑前端门禁：vitest 覆盖率 + 补丁 + tsc + eslint
+make check-frontend # 只跑前端门禁：vitest 覆盖率 + 补丁 + tsc + eslint
 make check         # 全套门禁：check-backend → check-frontend 串行
 make push          # 推送全部 remote（含 tags）
 ```
