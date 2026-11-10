@@ -10,9 +10,16 @@ unexport LD_LIBRARY_PATH
 
 PACKAGE := cndb
 
-# pytest-xdist worker 数：实测 24 核机器 n16 + worksteal 调度最优（~79s vs 旧 n8/loadfile ~120s）；
-# worksteal 动态窃取任务消除 loadfile 整文件分配的长尾；低配机器用 make test PYTEST_JOBS=8 覆盖
+# 门禁并发度（两阶段串行执行，各自独占 CPU，避免 pytest 与 vitest 互抢）：
+# PYTEST_JOBS：pytest-xdist worker 数，实测 24 核机器 n16 + worksteal 最优（~79s vs 旧 n8/loadfile ~120s）；
+#   worksteal 动态窃取任务消除 loadfile 整文件分配的长尾；低配机器用 make check PYTEST_JOBS=8 覆盖
 PYTEST_JOBS ?= 16
+# VITEST_MAX_WORKERS：vitest worker 数，留空即由 frontend/vite.config.ts 按容器 CPU 配额取 min(16, 配额核数)；
+#   云端 / 低核机器可显式覆盖：make check VITEST_MAX_WORKERS=4。仅在非空时导出，避免空串覆盖自动求值
+VITEST_MAX_WORKERS ?=
+ifneq ($(strip $(VITEST_MAX_WORKERS)),)
+export VITEST_MAX_WORKERS
+endif
 
 # dev 目标绑定地址/端口，可在命令行覆盖：make dev DEV_HOST=127.0.0.1 DEV_PORT=8000
 DEV_HOST ?= 0.0.0.0
@@ -28,7 +35,7 @@ FRONTEND_DEPS := frontend/node_modules/.make-sync
 
 .PHONY: help env-guard sync free-dev-ports dev seed frontend-sync frontend-static frontend-coverage frontend-build \
         build clean test cov lint typecheck e2e e2e-dev bench gitkeep-check adr-check constraint-check \
-        check-fast check-docs flow check bump pub push pack-doctor pack pack-cache-clean \
+        check-fast check-docs check-backend check-frontend flow check bump pub push pack-doctor pack pack-cache-clean \
         docker-dev docker-dev-down docker-stop docker-build docker-export dd ds ddd db de \
         patch minor major
 
@@ -114,8 +121,17 @@ check-docs: gitkeep-check adr-check constraint-check ## 文档级门禁（只改
 # L2 代码改动：轻量静态门禁 + 全量后端测试
 flow: check-fast test ## AI 开发流：轻量静态门禁 + 全量后端测试
 
-check: env-guard $(FRONTEND_DEPS) ## 全套门禁（并行 7 项：gitkeep / adr / lint / 类型 / 前端静态 + 覆盖率 / cov）
-	@$(MAKE) -j4 cov frontend-coverage gitkeep-check adr-check lint typecheck frontend-static
+check-backend: env-guard ## 后端门禁（cov + lint + 类型 + gitkeep + ADR；PYTEST_JOBS 可调）
+	@$(MAKE) --no-print-directory -j1 cov gitkeep-check adr-check lint typecheck
+
+check-frontend: $(FRONTEND_DEPS) ## 前端门禁（vitest 覆盖率 + 补丁 + tsc + eslint；VITEST_MAX_WORKERS 可调）
+	@$(MAKE) --no-print-directory -j1 frontend-coverage frontend-static
+
+# 后端与前端串行：vitest 的 jsdom 用例与 pytest -n 16 同时跑会超卖 CPU，
+# 让 RTL 的 findBy* 默认 1s 等待在拥挤下超时；语义仍是「一条命令跑完全部门禁」。
+check: env-guard $(FRONTEND_DEPS) ## 全套门禁（后端 → 前端串行，两阶段各自独占 CPU）
+	@$(MAKE) --no-print-directory check-backend
+	@$(MAKE) --no-print-directory check-frontend
 
 # ── 构建 / 打包 / 发布 ────────────────────────────────────────────────
 

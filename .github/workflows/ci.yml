@@ -252,6 +252,10 @@ jobs:
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # worker 数与 runner 核数（4 vCPU）对齐，等价本地 make check-frontend VITEST_MAX_WORKERS=4；
+    # 分片之间跑在不同 runner 上，不与后端 pytest 争抢，故无需再降并发。
+    env:
+      VITEST_MAX_WORKERS: "4"
     strategy:
       # 单分片失败即整轮失败，无需等其余分片跑完
       fail-fast: true

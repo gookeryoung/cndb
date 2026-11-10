@@ -216,8 +216,20 @@ make docker-dev    # Docker 开发模式：容器内跑同样的前后端（源�
 make docker-dev-down  # 停止 Docker 开发模式（保留数据卷）
 make check-fast    # 轻量静态门禁：gitkeep + ADR + ruff + pyrefly + tsc/eslint（实现期内环）
 make flow          # 代码改动门禁：check-fast + 全量后端测试
-make check         # 全套门禁：并行跑 lint / 类型 / 前端静态 + 覆盖率 / 后端 cov
+make check-backend # 只跑后端门禁：cov + lint + pyrefly + gitkeep + ADR
+make check-frontend# 只跑前端门禁：vitest 覆盖率 + 补丁 + tsc + eslint
+make check         # 全套门禁：check-backend → check-frontend 串行
 make push          # 推送全部 remote（含 tags）
+```
+
+`make check` 的两个阶段**串行**执行：vitest 的 jsdom 用例与 `pytest -n 16` 同时跑会把 CPU 超卖，
+RTL 的 `findBy*` 默认 1s 等待在拥挤下会超时（表现为随机 1-2 例前端失败）。并发度可用变量覆盖：
+
+```bash
+make check PYTEST_JOBS=8              # 后端 xdist worker 数（默认 16）
+make check VITEST_MAX_WORKERS=4       # 前端 vitest worker 数（未设置时按容器 CPU 配额取 min(16, 配额核数)）
+make check-backend PYTEST_JOBS=4      # 低配机器 / CI 按 runner 核数对齐
+make check-frontend VITEST_MAX_WORKERS=2
 ```
 
 `make dev` 支持覆盖绑定地址与后端端口：`make dev DEV_HOST=127.0.0.1 DEV_PORT=8000`。
