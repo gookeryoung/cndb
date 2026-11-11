@@ -4,6 +4,9 @@
 
 ## [未发布]
 
+### 变更
+- **【文档列表】桌面端列表行改为单行紧凑布局，对齐 ima 知识库列表（需求 0134）**：原桌面行是两行堆叠，标题行并排置顶 / 状态 / 仅自己可见三枚彩色胶囊与标签计数，描述行再放更新时间、大小、版本与摘要，行高约 56–60px，扫读时主次信息互相竞争。现桌面端（≥768px）改为单行：勾选框 + 格式图标 + 标题（超长单行省略、`title` 悬停看全名）→ 置顶图钉 → 状态 `Badge` 圆点 + 文本 → 仅自己可见锁图标 → `N 个标签` 计数 → 右侧固定两列（大小 / 更新时间，右对齐、数字等宽、文件夹大小留空占位）→ 行尾「⋯」。摘要与版本号移出列表（版本仍在版本抽屉查看）；行尾四枚常驻图标桌面端统一收进「⋯」下拉，菜单项与二次确认口径不变，`doc-row-*` / `doc-pinned-tag-*` / `doc-list-visibility-*` testid 与 aria 语义保留。移动端（<768px）两行结构与交互零变化。样式只新增 `cn-doc-row-meta` / `cn-doc-meta-size` / `cn-doc-meta-date` / `cn-doc-title-single`，间距字号沿用 `--cn-*` token，未新增颜色与依赖。测试：`DocumentsPage.test.tsx` 桌面换行布局用例改为单行断言（标题省略、右侧两列、无描述行、无版本号），三处行操作用例改为先展开「⋯」；37 例全绿。改动：`frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/index.css`、`frontend/src/pages/documents/DocumentsPage.test.tsx`、`docs/requirements/0134-documents-list-compact.md`（新增）、`CHANGELOG.md`。
+
 ### 移除
 - **移除工作区模板、数据流程、生命周期与项目上下文（需求 0094/0095/0097/0098/0120/0121/0122 作废）**：删除模板中心 / 模板实例化 / 数据流程 / 生命周期门禁 / 项目清单与项目文档映射的前后端代码、接口、模型与测试；新增迁移 `d2e3f4a5b6c7` 删除 `workspaces_template`、`workspaces_templaterevision`、`workspaces_workspace_project_state`、`workspaces_workspace_project_document` 及工作区 `template_*` / `project_mode` 列（不可逆，存量模板数据不可恢复）。备份包不再导出 `project_states` / `project_documents`，旧 v15 包导入时忽略这两类字段。原「科研项目管理（模板示例）」改为 datasets 普通工作区「科研项目管理」，13 张表、43 条技术体系、项目 / 进度 / 经费 / 文档等数据迁入 `examples/datasets/工作区-科研项目管理/`，文档进 `documents/项目文档/`，视图进 `views.json`，字段约束与关联回填进 `fields.json`；对应 ADR 与需求卡片、帮助主题、e2e 用例同步删除。测试：`test_seed_tech_system` / `test_seed_project_todo` / `test_backup_seed_roundtrip` / `test_seed_rebuild_orphan_tables` 改为读取 datasets；删除模板 / 项目上下文 / v15 备份相关用例。改动：`src/cndb/plugins/workspaces/`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/cli/seed/`、`src/cndb/alembic/versions/d2e3f4a5b6c7_remove_workspace_templates.py`、`frontend/src/`、`examples/datasets/工作区-科研项目管理/`、`docs/`、`tests/`、`CHANGELOG.md`。
 

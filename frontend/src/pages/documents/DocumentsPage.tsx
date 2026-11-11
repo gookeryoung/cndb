@@ -86,6 +86,13 @@ function SectionTitle({ label, count, compact = false }: { label: string; count:
   )
 }
 
+/** 桌面单行列表的状态降噪：圆点 + 文本，沿用既有色义，不引入新色值 */
+const STATUS_BADGE: Record<string, 'default' | 'success' | 'warning'> = {
+  draft: 'default',
+  published: 'success',
+  archived: 'warning',
+}
+
 export default function DocumentsPage() {
   const { wid } = useParams<{ wid: string }>()
   const navigate = useNavigate()
@@ -588,75 +595,8 @@ export default function DocumentsPage() {
   const activeFilterCount = (tagFilter !== undefined ? 1 : 0) + (statusFilter ? 1 : 0)
   const mobileFilterLabel = activeFilterCount > 0 ? `筛选（已应用 ${activeFilterCount} 项）` : '筛选'
 
-  /** 行尾操作：移动端收进单枚「更多」下拉，给标题让出横向空间；桌面保持四个常驻图标 */
+  /** 行尾操作：桌面 / 移动端统一收进单枚「更多」下拉，给标题与右侧 meta 列让出横向空间 */
   const renderRowActions = (doc: DocumentItem) => {
-    if (!isMobile) {
-      return (
-        <div className="cn-list-item-actions">
-          <Tooltip title="重命名">
-            <Button
-              type="text"
-              size="small"
-              icon={<EditOutlined />}
-              aria-label={`重命名 ${doc.title}`}
-              data-testid={`doc-row-rename-${doc.id}`}
-              onClick={e => {
-                e.stopPropagation()
-                setRenameValue(doc.title)
-                setRenameTarget({ id: doc.id, title: doc.title, isSeries: false })
-              }}
-            />
-          </Tooltip>
-          <Tooltip title="移动">
-            <Button
-              type="text"
-              size="small"
-              icon={<ApartmentOutlined />}
-              aria-label={`移动 ${doc.title}`}
-              data-testid={`doc-row-move-${doc.id}`}
-              onClick={e => {
-                e.stopPropagation()
-                setRowMove({ id: doc.id, title: doc.title, parent: doc.parent_id ?? 0 })
-              }}
-            />
-          </Tooltip>
-          <Tooltip title={doc.pinned ? '取消置顶' : '置顶'}>
-            <Button
-              type="text"
-              size="small"
-              icon={<PushpinOutlined />}
-              aria-label={doc.pinned ? `取消置顶 ${doc.title}` : `置顶 ${doc.title}`}
-              data-testid={`doc-row-pin-${doc.id}`}
-              onClick={e => {
-                e.stopPropagation()
-                pinMut.mutate(doc)
-              }}
-            />
-          </Tooltip>
-          <Tooltip title="删除">
-            <Popconfirm
-              title={doc.is_folder ? '删除文件夹将同时删除其中所有文档，确认？' : '确认删除此文档？'}
-              onConfirm={e => {
-                e?.stopPropagation()
-                deleteMut.mutate(doc.id)
-              }}
-              onCancel={e => e?.stopPropagation()}
-            >
-              <Button
-                type="text"
-                danger
-                size="small"
-                icon={<DeleteOutlined />}
-                onClick={e => e.stopPropagation()}
-                aria-label="删除文档"
-                data-testid={`doc-row-delete-${doc.id}`}
-              />
-            </Popconfirm>
-          </Tooltip>
-        </div>
-      )
-    }
-
     const items: MenuProps['items'] = [
       {
         key: 'rename',
@@ -721,7 +661,7 @@ export default function DocumentsPage() {
     )
   }
 
-  /** 单个文档 / 文件夹行（文件夹块与文档块共用） */
+  /** 单个文档 / 文件夹行（文件夹块与文档块共用；桌面单行，移动端两行） */
   const renderDocRow = (doc: DocumentItem) => (
               <div
                 className="cn-list-item"
@@ -779,21 +719,28 @@ export default function DocumentsPage() {
                       )}
                     </div>
                   ) : (
-                    <Space size={8}>
-                      <Text strong>{doc.title}</Text>
-                      {doc.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${doc.id}`}>置顶</Tag>}
-                      <Tag color={STATUS_COLORS[doc.status]}>{STATUS_LABELS[doc.status]}</Tag>
+                    /* 桌面端单行：标题按内容宽度、超长才省略；置顶 / 状态 / 可见性 / 标签计数降噪为图标与计数 */
+                    <div className="cn-doc-row-title-line">
+                      <Text strong className="cn-doc-title-single" title={doc.title}>{doc.title}</Text>
+                      {doc.pinned && (
+                        <PushpinOutlined
+                          aria-label="置顶"
+                          data-testid={`doc-pinned-tag-${doc.id}`}
+                          style={{ color: 'var(--cn-brand-color)', fontSize: 'var(--cn-text-sm)' }}
+                        />
+                      )}
+                      <Badge
+                        status={STATUS_BADGE[doc.status] ?? 'default'}
+                        text={STATUS_LABELS[doc.status]}
+                      />
                       {/* 可见性提示：未发布的文档同事看不到，明确告知以免误以为文档丢失 */}
                       {doc.visibility === 'private' && (
                         <Tooltip title="未发布：仅你与工作区所有者可见">
-                          <Tag
-                            icon={<LockOutlined />}
+                          <LockOutlined
                             data-testid={`doc-list-visibility-${doc.id}`}
                             aria-label="仅自己可见"
-                            style={{ fontSize: 'var(--cn-text-2xs)', lineHeight: '18px' }}
-                          >
-                            仅自己可见
-                          </Tag>
+                            style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-xs)' }}
+                          />
                         </Tooltip>
                       )}
                       {doc.tag_ids.length > 0 && (
@@ -801,7 +748,7 @@ export default function DocumentsPage() {
                           {doc.tag_ids.length} 个标签
                         </Text>
                       )}
-                    </Space>
+                    </div>
                   )
                 }
                 description={
@@ -834,26 +781,20 @@ export default function DocumentsPage() {
                         </Text>
                       )}
                     </Space>
-                  ) : (
-                    <Space size={16} wrap>
-                      <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-                        更新于 {formatTime(doc.updated_at)}
-                      </Text>
-                      {!doc.is_folder && (
-                        <>
-                          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>{formatSize(doc.content_size)}</Text>
-                          <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>v{doc.version_count}</Text>
-                        </>
-                      )}
-                      {doc.summary && (
-                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)', maxWidth: 480 }} ellipsis>
-                          {doc.summary}
-                        </Text>
-                      )}
-                    </Space>
-                  )
+                  ) : undefined
                 }
                 />
+                {!isMobile && (
+                  /* 桌面端右侧 meta 列：大小 / 更新时间右对齐，文件夹大小留空占位保证跨行对齐 */
+                  <div className="cn-doc-row-meta" data-testid={`doc-row-meta-${doc.id}`}>
+                    <span className="cn-doc-meta-size">
+                      {doc.is_folder ? '' : formatSize(doc.content_size)}
+                    </span>
+                    <span className="cn-doc-meta-date" title={formatTime(doc.updated_at)}>
+                      {formatTime(doc.updated_at)}
+                    </span>
+                  </div>
+                )}
                 {renderRowActions(doc)}
               </div>
             )

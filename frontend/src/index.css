@@ -5199,15 +5199,15 @@ body.theme-dark [style*="color:'#94a3b8'"] {
 .cn-doc-list .ant-listy-item {
   border-color: var(--cn-border);
   transition: background-color 0.15s ease;
-  /* 上下 8px（antd 默认 12px）：单文档项占两行文本，压缩纵向空间 */
+  /* 上下 8px（antd 默认 12px）：桌面单行、移动端两行，统一压缩纵向空间 */
   padding: var(--cn-space-md) var(--cn-space-xl);
   padding-inline-start: var(--cn-space-2xl);
   cursor: pointer;
 }
 
-/* 标题与描述行间距收紧；描述行高同步收紧 */
+/* 桌面单行不再有描述行，标题下外边距归零；移动端仍保留一档间距 */
 .cn-doc-list .cn-list-meta-title {
-  margin-block-end: var(--cn-space-hairline);
+  margin-block-end: 0;
 }
 
 .cn-doc-list .cn-list-meta-description {
@@ -5251,6 +5251,43 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: nowrap;
 }
 
+/* 桌面单行：标题按内容宽度，超长才省略；标签紧跟标题，不被推到右侧 */
+.cn-doc-title-single {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 状态降噪：圆点 + 文本按次要信息字号显示 */
+.cn-doc-row-title-line .ant-badge-status-text {
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+/* ─────────────── 文档列表右侧 meta 列（桌面单行） ───────────────
+ * 大小 / 更新时间固定列宽并右对齐，数字等宽；文件夹大小留空占位，保证跨行对齐。 */
+.cn-doc-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-lg);
+  flex: 0 0 auto;
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cn-doc-meta-size {
+  min-width: 7ch;
+  text-align: right;
+}
+
+.cn-doc-meta-date {
+  min-width: 15ch;
+  text-align: right;
+}
+
 /* ── 窄屏（< 768px）：文档列表行紧凑化 ──
  * 操作图标收进单枚「更多」后，行内留白再收紧一档，把宽度让给单行省略标题，
  * 同时保持 24px 的图标点击区。 */
@@ -5263,6 +5300,11 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   /* 图标与「更多」操作都缩到 18px / 24px 后，行内留白同步收紧一档 */
   .cn-doc-list .cn-list-avatar {
     margin-inline-end: var(--cn-space-xs);
+  }
+
+  /* 移动端保留两行结构：标题与描述行之间仍保留一档间距 */
+  .cn-doc-list .cn-list-meta-title {
+    margin-block-end: var(--cn-space-hairline);
   }
 
   .cn-doc-list .cn-list-item-actions {

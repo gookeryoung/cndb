@@ -714,15 +714,25 @@ describe('文档列表边缘线与行操作', () => {
     expect(wrapper.querySelector('.cn-doc-list')).not.toBeNull()
   })
 
-  it('桌面端列表行保持换行布局：标题不走单行省略，状态标签留在标题行', async () => {
+  it('桌面端列表行为单行紧凑布局：标题单行省略，时间与大小收进右侧列', async () => {
     renderPage()
-    // 文本节点命中内层 strong，取外层 Typography span 断言桌面口径
+    // 标题单行省略：完整文件名保留在 title 悬停提示
     const title = (await screen.findByText('需求说明')).closest('.ant-typography')
     expect(title).not.toBeNull()
-    expect(title).not.toHaveClass('cn-doc-title-ellipsis')
-    expect(title).not.toHaveAttribute('title')
-    // 状态标签与标题同行（桌面口径不变；两行均为草稿态，取全部匹配）
+    expect(title).toHaveClass('cn-doc-title-single')
+    expect(title).toHaveAttribute('title', '需求说明')
+
+    // 右侧 meta 列：大小与更新时间右对齐；文件夹大小留空占位
+    const meta = screen.getByTestId('doc-row-meta-2')
+    expect(meta.querySelector('.cn-doc-meta-size')).toHaveTextContent('128 B')
+    expect(meta.querySelector('.cn-doc-meta-date')).toHaveTextContent('2026/1/2')
+    expect(screen.getByTestId('doc-row-meta-3').querySelector('.cn-doc-meta-size')?.textContent?.trim()).toBe('')
+
+    // 状态圆点 + 文本仍在行内；摘要与版本号不再进入列表行
     expect(screen.getAllByText('草稿').length).toBeGreaterThan(0)
+    const list = screen.getByTestId('doc-list')
+    expect(list.querySelector('.cn-list-meta-description')).toBeNull()
+    expect(within(list as HTMLElement).queryByText(/^v\d+$/)).toBeNull()
   })
 
   it('行内重命名：回填原标题，提交 PATCH title', async () => {
@@ -735,6 +745,7 @@ describe('文档列表边缘线与行操作', () => {
     )
     renderPage()
 
+    fireEvent.click(await screen.findByTestId('doc-row-more-2'))
     fireEvent.click(await screen.findByTestId('doc-row-rename-2'))
     const input = await screen.findByTestId('doc-rename-input')
     expect(input).toHaveValue('需求说明')
@@ -754,6 +765,7 @@ describe('文档列表边缘线与行操作', () => {
     )
     renderPage()
 
+    fireEvent.click(await screen.findByTestId('doc-row-more-2'))
     fireEvent.click(await screen.findByTestId('doc-row-move-2'))
     await screen.findByText('移动「需求说明」到…')
     // antd 6：Select 根节点即 data-testid 宿主（.ant-select-selector 已移除）
@@ -776,6 +788,7 @@ describe('文档列表边缘线与行操作', () => {
     )
     renderPage()
 
+    fireEvent.click(await screen.findByTestId('doc-row-more-2'))
     fireEvent.click(await screen.findByTestId('doc-row-pin-2'))
     await waitFor(() => expect(pinned).toEqual(['2']))
   })
