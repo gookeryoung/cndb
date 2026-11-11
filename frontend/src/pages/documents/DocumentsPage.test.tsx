@@ -74,6 +74,11 @@ describe('DocumentsPage 顶层系列卡片总览', () => {
     expect(screen.getByText('1 篇文档')).toBeInTheDocument()
     expect(screen.getByText('1 个子文件夹')).toBeInTheDocument()
     expect(screen.getByText('草稿 1')).toBeInTheDocument()
+    // 文件夹卡片压成两行：元信息（计数 / 状态 / 更新日期）合并到同一行容器
+    const cardMeta = card.querySelector('.cn-folder-card-meta')
+    expect(cardMeta).not.toBeNull()
+    expect(cardMeta).toHaveTextContent('1 篇文档')
+    expect(card.querySelector('.cn-folder-card-date')).toHaveTextContent(/\d{4}-\d{2}-\d{2}/)
     // 树中「需求说明」为子级文档，不进顶层列表（mock 无根级散文档）
     expect(screen.queryByText('需求说明')).toBeNull()
     // 文件夹与文档分块：顶层只有文件夹块（无根级散文档）
@@ -430,7 +435,7 @@ describe('DocumentsPage 最近打开与置顶标识', () => {
         renderPage()
 
         await screen.findByTestId('doc-series-card-1')
-        expect(screen.getByTestId('doc-pinned-tag-1')).toHaveTextContent('置顶')
+        expect(screen.getByTestId('doc-pinned-tag-1')).toHaveAttribute('aria-label', '置顶')
     })
 })
 })
@@ -725,7 +730,7 @@ describe('文档列表边缘线与行操作', () => {
     // 右侧 meta 列：大小与更新时间右对齐；文件夹大小留空占位
     const meta = screen.getByTestId('doc-row-meta-2')
     expect(meta.querySelector('.cn-doc-meta-size')).toHaveTextContent('128 B')
-    expect(meta.querySelector('.cn-doc-meta-date')).toHaveTextContent('2026/1/2')
+    expect(meta.querySelector('.cn-doc-meta-date')).toHaveTextContent('2026-01-02')
     expect(screen.getByTestId('doc-row-meta-3').querySelector('.cn-doc-meta-size')?.textContent?.trim()).toBe('')
 
     // 状态圆点 + 文本仍在行内；摘要与版本号不再进入列表行

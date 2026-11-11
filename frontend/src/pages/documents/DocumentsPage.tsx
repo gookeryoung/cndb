@@ -57,7 +57,7 @@ import { useResponsive } from '@/hooks/useResponsive'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
 import { buildSeriesStats, seriesStatsOf } from './seriesStats'
-import { formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
+import { formatDate, formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
 import { formatMeta } from '@/components/Document/docFormat'
 import CnListMeta from '@/components/CnListMeta'
 import TrashDrawer from './TrashDrawer'
@@ -791,7 +791,7 @@ export default function DocumentsPage() {
                       {doc.is_folder ? '' : formatSize(doc.content_size)}
                     </span>
                     <span className="cn-doc-meta-date" title={formatTime(doc.updated_at)}>
-                      {formatTime(doc.updated_at)}
+                      {formatDate(doc.updated_at)}
                     </span>
                   </div>
                 )}
@@ -982,78 +982,44 @@ export default function DocumentsPage() {
               hoverable
               size="small"
               data-testid={`doc-series-card-${s.folder.id}`}
-              styles={{ body: { padding: isMobile ? 10 : 16 } }}
+              className="cn-folder-card"
+              styles={{ body: { padding: isMobile ? 10 : 12 } }}
               onClick={() => setParentId(s.folder.id)}
             >
-              {isMobile ? (
-                /* 移动端：标题单行省略（完整名在 title 悬停提示），避免长系列名把卡片撑高、标签折行错位 */
-                <div className="cn-doc-row-title-line" style={{ marginBottom: 6 }}>
-                  <span onClick={e => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.includes(s.folder.id)}
-                      data-testid={`doc-select-${s.folder.id}`}
-                      aria-label={`选择 ${s.folder.title}`}
-                      onChange={() => toggleSelected(s.folder.id)}
-                    />
-                  </span>
-                  <FolderOutlined style={{ fontSize: 'calc(var(--cn-text-lg) + 2px)', color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
-                  <Text strong className="cn-doc-title-ellipsis" title={s.folder.title} style={{ fontSize: 'var(--cn-text-md)' }}>
-                    {s.folder.title}
-                  </Text>
-                  {s.folder.pinned && (
-                    <Tag
-                      color="blue"
-                      data-testid={`doc-pinned-tag-${s.folder.id}`}
-                      style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
-                    >
-                      置顶
-                    </Tag>
-                  )}
-                </div>
-              ) : (
-                <Space size={8} style={{ marginBottom: 8 }}>
-                  {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
-                  <span onClick={e => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selectedIds.includes(s.folder.id)}
-                      data-testid={`doc-select-${s.folder.id}`}
-                      aria-label={`选择 ${s.folder.title}`}
-                      onChange={() => toggleSelected(s.folder.id)}
-                    />
-                  </span>
-                  <FolderOutlined style={{ fontSize: 'var(--cn-text-xl)', color: 'var(--cn-warning, #faad14)' }} />
-                  <Text strong style={{ fontSize: 'calc(var(--cn-text-md) + 1px)' }}>{s.folder.title}</Text>
-                  {s.folder.pinned && <Tag color="blue" data-testid={`doc-pinned-tag-${s.folder.id}`}>置顶</Tag>}
-                </Space>
-              )}
-              <div
-                style={{
-                  display: 'flex',
-                  gap: isMobile ? 8 : 12,
-                  flexWrap: 'wrap',
-                  fontSize: isMobile ? 11 : 12,
-                  color: 'var(--cn-text-secondary, #666)',
-                }}
-              >
+              {/* 文件夹卡片压成两行：标题行（勾选 / 图标 / 名称 / 置顶）+ 元信息行（计数 / 状态 / 更新日期） */}
+              <div className="cn-doc-row-title-line" style={{ marginBottom: 'var(--cn-space-xs)' }}>
+                {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
+                <span onClick={e => e.stopPropagation()}>
+                  <Checkbox
+                    checked={selectedIds.includes(s.folder.id)}
+                    data-testid={`doc-select-${s.folder.id}`}
+                    aria-label={`选择 ${s.folder.title}`}
+                    onChange={() => toggleSelected(s.folder.id)}
+                  />
+                </span>
+                <FolderOutlined style={{ fontSize: 'var(--cn-text-lg)', color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
+                <Text strong className="cn-doc-title-single" title={s.folder.title} style={{ fontSize: 'var(--cn-text-md)' }}>
+                  {s.folder.title}
+                </Text>
+                {s.folder.pinned && (
+                  <PushpinOutlined
+                    aria-label="置顶"
+                    data-testid={`doc-pinned-tag-${s.folder.id}`}
+                    style={{ color: 'var(--cn-brand-color)', fontSize: 'var(--cn-text-sm)' }}
+                  />
+                )}
+              </div>
+              <div className="cn-folder-card-meta">
                 <span>{s.docCount} 篇文档</span>
                 {s.subFolderCount > 0 && <span>{s.subFolderCount} 个子文件夹</span>}
                 {s.tagCount > 0 && <span>{s.tagCount} 个标签</span>}
-              </div>
-              <div style={{ marginTop: isMobile ? 4 : 8, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                 {Object.entries(s.statusCounts).map(([st, n]) => (
-                  <Tag
-                    key={st}
-                    color={STATUS_COLORS[st] ?? 'default'}
-                    style={{ marginRight: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
-                  >
-                    {STATUS_LABELS[st] ?? st} {n}
-                  </Tag>
+                  <Badge key={st} status={STATUS_BADGE[st] ?? 'default'} text={`${STATUS_LABELS[st] ?? st} ${n}`} />
                 ))}
+                <span className="cn-folder-card-date" title={formatTime(s.latestUpdate)}>
+                  更新 {formatDate(s.latestUpdate)}
+                </span>
               </div>
-              {/* 更新时间独立成行左对齐：状态标签数量不定，放在同行右侧会导致位置参差 */}
-              <Text type="secondary" style={{ fontSize: isMobile ? 11 : 12, display: 'block', marginTop: 4 }}>
-                更新 {formatTime(s.latestUpdate)}
-              </Text>
             </Card>
           ))}
         </div>

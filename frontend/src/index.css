@@ -5288,6 +5288,27 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   text-align: right;
 }
 
+/* ─────────────── 文件夹卡片（桌面 / 移动统一两行） ───────────────
+ * 计数 / 状态 / 更新日期合并为一行；空间不足时换行，日期靠右，不再单独占一行。 */
+.cn-folder-card-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--cn-space-xs) var(--cn-space-sm);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-folder-card-meta .ant-badge-status-text {
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-secondary);
+}
+
+.cn-folder-card-date {
+  margin-inline-start: auto;
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── 窄屏（< 768px）：文档列表行紧凑化 ──
  * 操作图标收进单枚「更多」后，行内留白再收紧一档，把宽度让给单行省略标题，
  * 同时保持 24px 的图标点击区。 */

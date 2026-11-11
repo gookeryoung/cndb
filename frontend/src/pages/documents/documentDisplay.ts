@@ -8,6 +8,13 @@ export function formatTime(iso: string): string {
   }
 }
 
+/** 紧凑列表 / 卡片用短日期（YYYY-MM-DD）；完整时间仍留在 title 悬停提示里 */
+export function formatDate(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 export const STATUS_COLORS: Record<string, string> = {
   draft: 'default',
   published: 'green',
