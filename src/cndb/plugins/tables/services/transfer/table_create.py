@@ -12,6 +12,7 @@ from cndb.plugins.tables.models import DataField, DataTable, ensure_default_view
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 from cndb.plugins.tables.services.core.ddl import drop_table as ddl_drop
+from cndb.plugins.tables.services.core.links import is_link_field
 from cndb.plugins.tables.services.transfer.exporting import _parse_link_import_value
 from cndb.plugins.tables.services.transfer.normalize import (
     _coerce_long_numeric_to_text,
@@ -311,7 +312,8 @@ def import_rows_from_json(
     rows = json.loads(json_text)
     if not isinstance(rows, list):
         raise ValueError("JSON 必须是对象数组")
-    valid = [_parse_link_import_value(table, r) for r in rows if isinstance(r, dict)]
+    link_names = {f.name for f in table.active_fields() if is_link_field(f)}
+    valid = [_parse_link_import_value(table, r, link_names) for r in rows if isinstance(r, dict)]
     _prefill_before_bulk(db, table, valid)
     ids = rec.bulk_create(engine, table, valid, db=db)
     _sync_after_bulk(db, table)
@@ -331,6 +333,7 @@ def import_rows_from_csv(
     header_len = len(reader.fieldnames or [])
     # 把 CSV 空单元格（空字符串或仅空白）归一为 None — 否则 number/date 等类型校验会因 '' 抛 ValueError
     rows = []
+    link_names = {f.name for f in table.active_fields() if is_link_field(f)}
     for r in reader:
         _check_csv_row_overflow(r, reader.line_num, header_len)
         cleaned: dict[str, Any] = {}
@@ -340,7 +343,7 @@ def import_rows_from_csv(
                 cleaned[k] = None if stripped == "" else stripped
             else:
                 cleaned[k] = v
-        rows.append(_parse_link_import_value(table, cleaned))
+        rows.append(_parse_link_import_value(table, cleaned, link_names))
     _prefill_before_bulk(db, table, rows)
     ids = rec.bulk_create(engine, table, rows, db=db)
     _sync_after_bulk(db, table)
@@ -372,6 +375,7 @@ def import_rows_from_xlsx(
     header: list[str] = []
     # 长数字保护 + WPS 图片单元格解析（落盘到本工作区）
     resolve_image = make_displimg_resolver(xlsx_bytes, make_workspace_image_saver(table.workspace_id))
+    link_names = {f.name for f in table.active_fields() if is_link_field(f)}
     data = []
     has_rows = False
     for sheet_row, row in stream:
@@ -391,7 +395,7 @@ def import_rows_from_xlsx(
         for k, v in zip(header, row, strict=False):
             displimg_id = match_displimg_formula(v) if isinstance(v, str) else None
             row_vals[k] = resolve_image(displimg_id) if displimg_id else _coerce_long_numeric_to_text(v)
-        data.append(_parse_link_import_value(table, row_vals))
+        data.append(_parse_link_import_value(table, row_vals, link_names))
     if not has_rows:
         # 空表（WPS/Excel 新建未填内容的文件）：无表头也无数据，直接返回
         return []
@@ -439,7 +443,8 @@ def create_table_from_json_data(
     try:
         ddl_create(engine, dt)
         ensure_default_view(db, dt, owner_id=owner_id, commit=True)
-        valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
+        link_names = {f.name for f in dt.active_fields() if is_link_field(f)}
+        valid = [_parse_link_import_value(dt, r, link_names) for r in rows if isinstance(r, dict)]
         _prefill_before_bulk(db, dt, valid)
         ids = rec.bulk_create(engine, dt, valid, db=db)
         _sync_after_bulk(db, dt)
@@ -670,7 +675,8 @@ def create_table_from_file_with_detection(
     try:
         ddl_create(engine, dt)
         ensure_default_view(db, dt, owner_id=owner_id, commit=True)
-        valid = [_parse_link_import_value(dt, r) for r in rows if isinstance(r, dict)]
+        link_names = {f.name for f in dt.active_fields() if is_link_field(f)}
+        valid = [_parse_link_import_value(dt, r, link_names) for r in rows if isinstance(r, dict)]
         _prefill_before_bulk(db, dt, valid)
         ids = rec.bulk_create(engine, dt, valid, db=db)
         _sync_after_bulk(db, dt)

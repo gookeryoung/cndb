@@ -26,14 +26,169 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sqlalchemy import String, Table, Text, and_, exists, func, or_, select
+from sqlalchemy import String, Table, Text, and_, exists, false, func, or_, select, type_coerce
 from sqlalchemy import column as sa_column
 from sqlalchemy import table as sa_table_fn
+from sqlalchemy.types import NullType
 
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core.lookup_columns import LOOKUP_SEP, lookup_column_names
 
 logger = logging.getLogger(__name__)
+
+
+# ── lookup 冗余列下推（ADR 0131）────────────────────
+
+
+def _lookup_columns(sa_table: Table, field: DataField) -> tuple[Any, Any, Any] | None:
+    """返回 (joined, first, max) 物理列；冗余列缺失（旧库未迁移）返回 None."""
+    joined, first, max_col = lookup_column_names(field)
+    cols = (sa_table.c.get(joined), sa_table.c.get(first), sa_table.c.get(max_col))
+    if any(col is None for col in cols):
+        return None
+    return cols  # type: ignore[return-value]
+
+
+def _lookup_multiple(table: DataTable, field: DataField) -> bool:
+    """lookup 的 via link 字段是否多值（决定 joined 列的聚合语义）."""
+    via_id = (field.config or {}).get("via_link_field_id")
+    link = next((f for f in table.active_fields() if f.id == via_id), None)
+    return bool(((link.config or {}) if link is not None else {}).get("multiple", True))
+
+
+def _coerce_lookup_value(field: DataField, value: Any) -> Any:
+    """按源字段类型归一筛选值（分段数字字符串 → 数字，与物理列下推口径一致）."""
+    source_type = (field.config or {}).get("source_field_type")
+    ft = default_registry.get(source_type) if source_type else None
+    if ft is None:
+        return value
+    try:
+        return ft.parse_query_value(value, {})
+    except Exception:  # 防御性：归一失败按原值比较
+        return value
+
+
+def _escape_like(text: Any) -> str:
+    """转义 LIKE 通配符（配合 escape='\\' 使用，避免 % / _ 被当作模式）."""
+    return str(text).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _multi_element_equal(col: Any, text: str) -> Any:
+    """多值拼接列中「存在某个元素恰好等于 text」的 SQL 条件."""
+    escaped = _escape_like(text)
+    sep = LOOKUP_SEP
+    return or_(
+        col == text,
+        col.like(f"{escaped}{sep}%", escape="\\"),
+        col.like(f"%{sep}{escaped}", escape="\\"),
+        col.like(f"%{sep}{escaped}{sep}%", escape="\\"),
+    )
+
+
+def _compile_lookup_condition(
+    table: DataTable,
+    sa_table: Table,
+    field: DataField,
+    field_name: str,
+    op: str,
+    value: Any,
+) -> Any:
+    """把 lookup 条件编译为对冗余列的 SQL 条件（语义对齐旧内存实现）."""
+    cols = _lookup_columns(sa_table, field)
+    if cols is None:
+        logger.warning("lookup 冗余列缺失，忽略过滤字段 %s（请执行迁移 / 回填）", field_name)
+        return None
+    joined, first, max_col = cols
+    # BLOB 列的类型处理器只认 bytes；用 type_coerce 把比较 / 绑定侧改为无处理器类型，
+    # 由 SQLite 按存储类做原生比较（不产生 CAST，排序 / 比较语义不变）
+    joined = type_coerce(joined, NullType())
+    first = type_coerce(first, NullType())
+    max_col = type_coerce(max_col, NullType())
+    multiple = _lookup_multiple(table, field)
+    op_lower = (op or "=").lower()
+
+    def _element_equals(text: str) -> Any:
+        return _multi_element_equal(joined, text) if multiple else joined == text
+
+    if op_lower in ("is_empty", "is_null"):
+        if multiple:
+            return or_(joined.is_(None), joined == "")
+        return joined.is_(None)
+    if op_lower in ("is_not_empty", "is_not_null"):
+        if multiple:
+            return and_(joined.isnot(None), joined != "")
+        return joined.isnot(None)
+
+    if op_lower in ("=", "eq"):
+        if multiple and isinstance(value, (list, tuple)):
+            # 多值 + 列表：与旧实现一致，按「关联顺序拼接后整体相等」比较
+            return joined == LOOKUP_SEP.join(str(v) for v in value)
+        if multiple:
+            return _element_equals(str(value))
+        return joined == _coerce_lookup_value(field, value)
+    if op_lower in ("!=", "neq"):
+        if multiple and isinstance(value, (list, tuple)):
+            condition = joined != LOOKUP_SEP.join(str(v) for v in value)
+        elif multiple:
+            condition = ~_element_equals(str(value))
+        else:
+            condition = joined != _coerce_lookup_value(field, value)
+        # Python 侧 None != x 为 True，SQL 的 NULL 比较为 NULL：显式补 NULL 分支
+        return or_(joined.is_(None), condition)
+
+    if op_lower == "in":
+        values = list(value or [])
+        if not values:
+            return false()
+        if multiple:
+            return or_(*[_element_equals(str(v)) for v in values])
+        return joined.in_([_coerce_lookup_value(field, v) for v in values])
+    if op_lower == "not_in":
+        values = list(value or [])
+        if multiple:
+            condition = ~or_(*[_element_equals(str(v)) for v in values]) if values else false()
+            return or_(joined.is_(None), condition)
+        if not values:
+            return joined.isnot(None)
+        return or_(joined.is_(None), ~joined.in_([_coerce_lookup_value(field, v) for v in values]))
+
+    if op_lower == "contains":
+        return joined.contains(str(value))
+    if op_lower == "starts_with":
+        text = str(value)
+        if multiple:
+            return or_(joined.startswith(text), joined.contains(f"{LOOKUP_SEP}{text}"))
+        return joined.startswith(text)
+    if op_lower == "ends_with":
+        text = str(value)
+        if multiple:
+            return or_(joined.endswith(text), joined.contains(f"{text}{LOOKUP_SEP}"))
+        return joined.endswith(text)
+    if op_lower == "contains_any":
+        values = list(value or [])
+        if not values:
+            return false()
+        if multiple:
+            return or_(*[_element_equals(str(v)) for v in values])
+        return joined.in_([_coerce_lookup_value(field, v) for v in values])
+    if op_lower == "contains_all":
+        values = list(value or [])
+        if not values:
+            return false()
+        return and_(*[_element_equals(str(v)) for v in values])
+
+    if op_lower in (">", ">="):
+        # 多值语义「任一元素满足」⟺ 最大值满足
+        expected = _coerce_lookup_value(field, value)
+        return max_col > expected if op_lower == ">" else max_col >= expected
+    if op_lower in ("<", "<="):
+        expected = _coerce_lookup_value(field, value)
+        return first < expected if op_lower == "<" else first <= expected
+
+    # 旧内存实现不支持 between/date_range 与未知操作符（恒不匹配），保持结果一致
+    logger.warning("lookup 过滤不支持操作符 %s，按不匹配处理", op)
+    return false()
 
 
 # ── 操作符表 ──────────────────────────────────────────
@@ -136,6 +291,8 @@ def _build_condition(
     link_field = _is_link_field(table, field_name)
     if link_field is not None:
         return _compile_link_condition(sa_table, link_field, field_name, op, value)
+    if f.field_type == "lookup":
+        return _compile_lookup_condition(table, sa_table, f, field_name, op, value)
     if op.lower() in ("has_any", "has_all"):
         raise ValueError(f"has_any/has_all 仅支持关联字段: {field_name}")
 
@@ -415,6 +572,21 @@ def compile_sorts(
         f = field_map.get(field_name)
         if f is None:
             logger.warning("未知排序字段 %s，跳过", field_name)
+            continue
+
+        if f.field_type == "lookup":
+            # lookup 排序下推到冗余列：asc 取最小解析值、desc 取最大解析值，None 恒最后
+            cols = _lookup_columns(sa_table, f)
+            if cols is None:
+                logger.warning("lookup 冗余列缺失，跳过排序字段 %s（请执行迁移 / 回填）", field_name)
+                continue
+            sort_col = cols[2] if direction == "desc" else cols[1]
+            try:
+                order_clauses.append(
+                    sort_col.desc().nulls_last() if direction == "desc" else sort_col.asc().nulls_last()
+                )
+            except Exception as exc:  # pragma: no cover - 防御性
+                logger.warning("lookup 排序列构建失败 field=%s: %s", field_name, exc)
             continue
 
         col = getattr(sa_table.c, f.db_column_name, None)

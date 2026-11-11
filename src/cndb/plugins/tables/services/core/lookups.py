@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
@@ -56,6 +57,7 @@ def mark_dependent_lookups_broken(db: Session, source_field_id: int) -> int:
         被标记的 lookup 字段数量.
     """
     marked = 0
+    affected: list[DataField] = []
     for f in _dependent_lookups(db, source_field_id):
         config = f.config or {}
         if config.get("broken"):
@@ -63,10 +65,12 @@ def mark_dependent_lookups_broken(db: Session, source_field_id: int) -> int:
         new_config = dict(config)
         new_config["broken"] = True
         f.config = new_config
+        affected.append(f)
         marked += 1
     if marked:
         db.commit()
         logger.info("[lookups] 源字段 %d 失效，已标记 %d 个 lookup 字段为 broken", source_field_id, marked)
+        _resync_after_config_change(db, affected)
     return marked
 
 
@@ -92,6 +96,7 @@ def sync_dependent_lookups_on_source_type_change(db: Session, source_field: Data
     ft = default_registry.get(source_field.field_type)
     readable = ft is not None and ft.has_physical_column
     synced = 0
+    affected: list[DataField] = []
     for f in _dependent_lookups(db, source_field.id):
         config = f.config or {}
         desired_type = source_field.field_type
@@ -102,6 +107,7 @@ def sync_dependent_lookups_on_source_type_change(db: Session, source_field: Data
         new_config["source_field_type"] = desired_type
         new_config["broken"] = desired_broken
         f.config = new_config
+        affected.append(f)
         synced += 1
     if synced:
         db.commit()
@@ -112,7 +118,18 @@ def sync_dependent_lookups_on_source_type_change(db: Session, source_field: Data
             synced,
             not readable,
         )
+        _resync_after_config_change(db, affected)
     return synced
+
+
+def _resync_after_config_change(db: Session, fields: list[DataField]) -> None:
+    """源字段 / lookup 配置变化后重算冗余列（ADR 0131）；失败不阻塞主流程."""
+    from cndb.plugins.tables.services.core.lookup_sync import resync_lookup_fields
+
+    try:
+        resync_lookup_fields(db.get_bind().engine, db, fields)
+    except Exception:  # pragma: no cover - 回填失败时读取仍可用（下推值可能滞后）
+        logger.warning("[lookups] lookup 冗余列重算失败，请在空闲时执行回填", exc_info=True)
 
 
 def attach_lookup_values(
@@ -121,11 +138,13 @@ def attach_lookup_values(
     rows: list[dict[str, Any]],
     db: Session | None = None,
     conn: Connection | None = None,
+    links_cache: dict[int, dict[int, list[int]]] | None = None,
 ) -> list[dict[str, Any]]:
     """为行响应附加 lookup 字段的实时解析值；无 lookup 字段或空结果时原样返回.
 
     db 为 None 时无法解析源表元数据，lookup 字段回退 None。
     所有 lookup 字段的读取共用一个连接（``conn`` 传入则复用调用方的，否则本函数自开）。
+    ``links_cache`` 复用同一请求内已加载的关联映射（与 attach_links 共享）。
     """
     fields = lookup_fields(table)
     if not fields or not rows or db is None:
@@ -135,7 +154,9 @@ def attach_lookup_values(
     with nullcontext(conn) if conn is not None else engine.connect() as active:
         for field in fields:
             config = field.config or {}
-            values_by_row = _resolve_lookup_values(engine, db, table, config, row_ids, conn=active)
+            values_by_row = _resolve_lookup_values(
+                engine, db, table, config, row_ids, conn=active, links_cache=links_cache
+            )
             for row in rows:
                 row[str(field.name)] = values_by_row.get(int(row["id"]))
     return rows
@@ -148,6 +169,7 @@ def _resolve_lookup_values(
     config: dict[str, Any],
     row_ids: list[int],
     conn: Connection | None = None,
+    links_cache: dict[int, dict[int, list[int]]] | None = None,
 ) -> dict[int, Any]:
     """解析一批行的 lookup 值：row_id -> 聚合列表 / 标量 / None."""
     # 失效回退：config.broken 或配置缺失
@@ -160,7 +182,11 @@ def _resolve_lookup_values(
         return {}
 
     multiple = bool((link_field.config or {}).get("multiple", True))
-    mapping = load_links(engine, link_field, row_ids, conn=conn)
+    mapping = links_cache.get(link_field.id) if links_cache is not None else None
+    if mapping is None:
+        mapping = load_links(engine, link_field, row_ids, conn=conn)
+        if links_cache is not None:
+            links_cache[link_field.id] = mapping
     if not mapping:
         return {}
 
@@ -382,24 +408,21 @@ def _match_link_value(value: Any, op: str, expected: Any) -> bool:
     return False
 
 
-def match_row_filters(
+def build_row_filter_matcher(
     table: DataTable,
-    row: dict[str, Any],
     filters: Any,
     logic: str = "AND",
-) -> bool:
-    """对已 attach 的行递归求值过滤条件（lookup / 物理列 / link 混合，支持嵌套分组）.
+) -> Callable[[dict[str, Any]], bool]:
+    """预计算字段分类，返回可复用的行过滤判定函数.
 
-    语义与 SQL 端编译（query.compile_filters）对齐：
-    - lookup 叶子走 match_lookup_value（聚合列表语义）；
-    - 物理列叶子走 _match_physical_value；
-    - link 叶子走 _match_link_value（is_null/has_any/has_all）；
-    - __or__ / __and__ / __query_or__ 嵌套分组递归求值。
+    批量内存过滤（lookup 条件走 needs_post 时）会在一批行上反复求值，
+    字段分类（lookup / link 名称集合）与嵌套分组解析只做一次，
+    避免每行重复扫描 active_fields。
     """
     names = lookup_field_names(table)
     link_names = {f.name for f in table.active_fields() if f.field_type == "link"}
 
-    def _eval(items: list[dict[str, Any]], group_logic: str) -> bool:
+    def _eval(items: list[dict[str, Any]], group_logic: str, row: dict[str, Any]) -> bool:
         all_mode = str(group_logic).upper() != "OR"
         results: list[bool] = []
         for item in items:
@@ -407,7 +430,7 @@ def match_row_filters(
                 continue
             for group_key, group_logic_key in (("__or__", "OR"), ("__and__", "AND"), ("__query_or__", "OR")):
                 if group_key in item:
-                    results.append(_eval(_group_items(item[group_key]), group_logic_key))
+                    results.append(_eval(_group_items(item[group_key]), group_logic_key, row))
                     break
             else:
                 field_name = item.get("field_name") or item.get("field")
@@ -423,9 +446,29 @@ def match_row_filters(
             return True
         return all(results) if all_mode else any(results)
 
-    return _eval(
-        _group_items(filters) if not isinstance(filters, list) else [i for i in filters if isinstance(i, dict)], logic
-    )
+    grouped = _group_items(filters) if not isinstance(filters, list) else [i for i in filters if isinstance(i, dict)]
+
+    def _match_row(row: dict[str, Any]) -> bool:
+        return _eval(grouped, logic, row)
+
+    return _match_row
+
+
+def match_row_filters(
+    table: DataTable,
+    row: dict[str, Any],
+    filters: Any,
+    logic: str = "AND",
+) -> bool:
+    """对已 attach 的行递归求值过滤条件（lookup / 物理列 / link 混合，支持嵌套分组）.
+
+    语义与 SQL 端编译（query.compile_filters）对齐：
+    - lookup 叶子走 match_lookup_value（聚合列表语义）；
+    - 物理列叶子走 _match_physical_value；
+    - link 叶子走 _match_link_value（is_null/has_any/has_all）；
+    - __or__ / __and__ / __query_or__ 嵌套分组递归求值。
+    """
+    return build_row_filter_matcher(table, filters, logic)(row)
 
 
 def _lookup_sort_rank(value: Any, is_desc: bool = False) -> Any:

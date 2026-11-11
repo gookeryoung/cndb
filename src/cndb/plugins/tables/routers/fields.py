@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, Depends, HTTPException, status
@@ -60,6 +61,7 @@ from cndb.plugins.tables.services.fields.field_ops import (
 from cndb.plugins.workspaces.models import Workspace
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fields"])
+logger = logging.getLogger(__name__)
 
 
 def _validate_link_business_key(cfg: LinkFieldConfig, target: DataTable) -> None:
@@ -170,6 +172,33 @@ def _validate_field_config(
     return cfg.model_dump(exclude_unset=False)
 
 
+def _resync_lookup_columns_after_update(
+    engine: Any,
+    db: Session,
+    table: DataTable,
+    old_field: DataField,
+    new_field: DataField,
+) -> None:
+    """lookup 配置 / link 多值语义变化后重算冗余列（ADR 0131）；失败不影响字段保存."""
+    from cndb.plugins.tables.services.core.lookup_sync import (
+        backfill_lookup_columns,
+        lookup_fields_by_via_link,
+        resync_lookup_fields,
+    )
+
+    try:
+        if new_field.field_type == "lookup" and (old_field.config or {}) != (new_field.config or {}):
+            # 源字段 / 关联字段切换：整表按新配置重算
+            backfill_lookup_columns(engine, table, db=db, fields=[new_field])
+        elif is_link_field(new_field):
+            old_multiple = bool((old_field.config or {}).get("multiple", True))
+            new_multiple = bool((new_field.config or {}).get("multiple", True))
+            if old_multiple != new_multiple:
+                resync_lookup_fields(engine, db, lookup_fields_by_via_link(db, new_field.id))
+    except Exception:  # pragma: no cover - 冗余列滞后时读取会自动回退
+        logger.warning("lookup 冗余列重算失败，请在空闲时执行回填", exc_info=True)
+
+
 @router.post("", response_model=FieldResponse, status_code=status.HTTP_201_CREATED)
 def create_field(
     workspace_id: int,
@@ -275,6 +304,12 @@ def create_field(
         target = db.get(DataTable, (df.config or {}).get("target_table_id"))
         if target is not None:
             sync_link_reference_fields(db, df, target)
+    elif df.field_type == "lookup":
+        # ADR 0131：手工创建的 lookup 补齐冗余列并回填已有行
+        from cndb.plugins.tables.services.core.lookup_sync import backfill_lookup_columns
+
+        with contextlib.suppress(Exception):
+            backfill_lookup_columns(engine.engine, dt, db=db, fields=[df])
 
     return df
 
@@ -468,6 +503,9 @@ def update_field(
         from cndb.plugins.tables.services.core.lookups import sync_dependent_lookups_on_source_type_change
 
         sync_dependent_lookups_on_source_type_change(db, df)
+
+    # ADR 0131：lookup 自身配置变化 / link 多值语义变化后重算冗余列
+    _resync_lookup_columns_after_update(engine, db, dt, old_field, df)
 
     # 2. is_unique 切换
     if old_is_unique != df.is_unique:

@@ -50,9 +50,17 @@ def _exportable_rows(
     ]
 
 
-def _parse_link_import_value(table: DataTable, row: dict[str, Any]) -> dict[str, Any]:
-    """导入时把 link 列的字符串/单值归一为 id 列表."""
-    link_names = {f.name for f in table.active_fields() if is_link_field(f)}
+def _parse_link_import_value(
+    table: DataTable,
+    row: dict[str, Any],
+    link_names: set[str] | None = None,
+) -> dict[str, Any]:
+    """导入时把 link 列的字符串/单值归一为 id 列表.
+
+    ``link_names`` 可由批量调用方预先计算，避免逐行扫描字段表。
+    """
+    if link_names is None:
+        link_names = {f.name for f in table.active_fields() if is_link_field(f)}
     if not link_names:
         return row
     result = dict(row)

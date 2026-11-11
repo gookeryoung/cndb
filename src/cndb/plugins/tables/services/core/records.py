@@ -40,7 +40,15 @@ from cndb.plugins.tables.services.core.links import (
     is_link_field,
     load_links,
     set_links,
+    set_links_bulk,
     validate_link_write,
+)
+from cndb.plugins.tables.services.core.lookup_columns import LOOKUP_PREFIX
+from cndb.plugins.tables.services.core.lookup_sync import (
+    lookup_pushdown_available,
+    resync_lookup_consumers,
+    resync_lookup_consumers_for_deleted_rows,
+    sync_lookup_columns,
 )
 
 logger = logging.getLogger(__name__)
@@ -429,6 +437,10 @@ def create_row(
         for field, target_ids in link_values:
             set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
+        # ADR 0131：同事务维护 lookup 冗余列，读取 / 过滤不依赖整表 attach
+        if db is not None:
+            sync_lookup_columns(engine, table, [row_id], db=db, conn=conn)
+
     row = get_row(engine, table, row_id, db=db)
     if row is not None:
         try:
@@ -567,22 +579,29 @@ def _build_query_plan(
     from cndb.plugins.tables.services.core.lookups import lookup_field_names, split_lookup_filters
     from cndb.plugins.tables.services.core.query import compile_filters
 
-    # lookup 条件拆分：含 lookup 的顶层项/嵌套分组改在 attach 后内存求值（无物理列）
-    lk_names = lookup_field_names(table) if db is not None else set()
-    sql_filters: Any = filters
-    lk_filters: list[dict[str, Any]] = []
-    if lk_names and filters:
-        sql_filters, lk_filters = split_lookup_filters(table, filters)
-        # OR 逻辑下 SQL 与 lookup 条件混合时，SQL 条件也并入内存求值，
-        # 避免「SQL 侧 OR 组 AND 内存侧 OR 组」的错误语义
-        if lk_filters and sql_filters and str(filter_logic).upper() == "OR":
-            lk_filters = [item for item in filters if isinstance(item, dict)]
-            sql_filters = None
-    lk_sorts: list[dict[str, str]] = (
-        [s for s in sorts or [] if isinstance(s, dict) and (s.get("field_name") or s.get("field")) in lk_names]
-        if lk_names
-        else []
-    )
+    # lookup 条件（ADR 0131）：冗余列齐全时直接下推 SQL（含排序 / COUNT / 分页），
+    # 不再整表 attach；仅在旧库缺列或开关关闭时回退内存路径。
+    pushdown = lookup_pushdown_available(table, sa_table)
+    if pushdown:
+        sql_filters: Any = filters
+        lk_filters: list[dict[str, Any]] = []
+        lk_sorts: list[dict[str, str]] = []
+    else:
+        lk_names = lookup_field_names(table) if db is not None else set()
+        sql_filters = filters
+        lk_filters = []
+        if lk_names and filters:
+            sql_filters, lk_filters = split_lookup_filters(table, filters)
+            # OR 逻辑下 SQL 与 lookup 条件混合时，SQL 条件也并入内存求值，
+            # 避免「SQL 侧 OR 组 AND 内存侧 OR 组」的错误语义
+            if lk_filters and sql_filters and str(filter_logic).upper() == "OR":
+                lk_filters = [item for item in filters if isinstance(item, dict)]
+                sql_filters = None
+        lk_sorts = (
+            [s for s in sorts or [] if isinstance(s, dict) and (s.get("field_name") or s.get("field")) in lk_names]
+            if lk_names
+            else []
+        )
 
     # 基础 where（trashed 条件始终与业务过滤 AND 组合）
     base_where: list[Any] = []
@@ -709,7 +728,7 @@ def list_rows(
         ValueError: 含 lookup 过滤 / 排序且基础命中行数超过 ``POST_FILTER_SCAN_LIMIT``.
     """
     from cndb.plugins.tables.services.core.lookups import (
-        match_row_filters,
+        build_row_filter_matcher,
         sort_rows_in_memory,
     )
     from cndb.plugins.tables.services.core.query import compile_sorts
@@ -741,6 +760,8 @@ def list_rows(
             query = query.where(and_(*plan.final_where))
 
     # total count（含 lookup 条件时由内存过滤后修正）
+    # 本次请求的关联表映射在 attach_links 与 lookup 解析之间复用，避免同一表重复查询
+    links_cache: dict[int, dict[int, list[int]]] = {}
     with engine.connect() as conn:
         if not needs_post and total is None:
             count_query = select(func.count(sa_table.c.id))
@@ -764,11 +785,18 @@ def list_rows(
 
         # 连接收敛：本次请求的 count / select / link 摘要 / lookup 解析共用同一连接，
         # 避免一次列表请求在池上反复 check-out（旧实现每个 link / lookup 字段各开一次）。
-        result = attach_links(engine, table, [_row_to_dict(table, sa_table, r) for r in rows], db=db, conn=conn)
+        result = attach_links(
+            engine,
+            table,
+            [_row_to_dict(table, sa_table, r) for r in rows],
+            db=db,
+            conn=conn,
+            links_cache=links_cache,
+        )
         if db is not None:
             from cndb.plugins.tables.services.core.lookups import attach_lookup_values
 
-            result = attach_lookup_values(engine, table, result, db=db, conn=conn)
+            result = attach_lookup_values(engine, table, result, db=db, conn=conn, links_cache=links_cache)
 
     from cndb.plugins.tables.services.core.formulas import attach_formula_values
 
@@ -776,7 +804,9 @@ def list_rows(
 
     # lookup 内存过滤（含嵌套分组与混合物理列条件）/ 排序 / 分页
     if lk_filters:
-        result = [row for row in result if match_row_filters(table, row, lk_filters, filter_logic)]
+        # 字段分类与分组结构只解析一次，避免每行重复扫描 active_fields
+        matcher = build_row_filter_matcher(table, lk_filters, filter_logic)
+        result = [row for row in result if matcher(row)]
     if needs_post:
         if sorts:
             result = sort_rows_in_memory(result, sorts)
@@ -850,6 +880,18 @@ def update_row(
         for field, target_ids in link_values:
             set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
+        if db is not None:
+            # ADR 0131：本行 lookup 冗余列重算 + 作为源表时的消费方级联重算
+            sync_lookup_columns(engine, table, [row_id], db=db, conn=conn)
+            resync_lookup_consumers(
+                engine,
+                table,
+                [row_id],
+                db=db,
+                conn=conn,
+                changed_field_names=values.keys(),
+            )
+
     row = get_row(engine, table, row_id, db=db, user=read_user)
     if row is not None:
         try:
@@ -892,6 +934,9 @@ def delete_row(
         result = conn.execute(sa_table.delete().where(*base_where))
         if result.rowcount > 0:
             clear_row_links(engine, table, [row_id], conn=conn)
+            if db is not None:
+                # ADR 0131：目标行被硬删除后，引用它的 lookup 冗余列同步失效值
+                resync_lookup_consumers_for_deleted_rows(engine, table, [row_id], db=db, conn=conn)
             try:
                 log_action(db, table, ACTION_DELETE, target_id=row_id)
             except Exception as exc:
@@ -988,9 +1033,11 @@ def bulk_create(
     # 否则后续行扫描不到前面尚未落库的编号会重复分配
     assigned: dict[int, list[str]] = {}
     split_rows: list[tuple[dict[str, Any], list[tuple[DataField, list[int]]]]] = []
+    # 批级归一化计划只构建一次：字段表 / 日期配置解析不随行数重复
+    plan = _build_normalize_plan(table, for_update=False)
     for r in rows:
         try:
-            normalized, link_values = _normalize_values(table, r, exact=exact_copy)
+            normalized, link_values = _normalize_row_with_plan(plan, r, exact=exact_copy)
             if not exact_copy:
                 _apply_auto_increment_defaults(engine, table, r, normalized, assigned)
             _ensure_required_fields_provided(table, normalized)
@@ -1001,59 +1048,67 @@ def bulk_create(
             continue
         split_rows.append((normalized, link_values))
 
-    # 所有主行提交前预校验全部 link 目标存在，避免部分主行已入库但后续 link 写入失败
+    # 所有主行提交前预校验全部 link 目标存在，避免部分主行已入库但后续 link 写入失败。
+    # 按字段汇总整批目标 id 后一次性校验，避免逐行建连接 / 查库。
     if db is not None:
+        targets_by_field: dict[int, tuple[DataField, set[int]]] = {}
         for _values, link_values in split_rows:
             for field, ids in link_values:
-                if ids:
-                    ensure_link_targets_exist(engine, field, ids, db)
+                if not ids:
+                    continue
+                entry = targets_by_field.get(field.id)
+                if entry is None:
+                    entry = targets_by_field[field.id] = (field, set())
+                entry[1].update(int(i) for i in ids)
+        for field, aggregated in targets_by_field.values():
+            ensure_link_targets_exist(engine, field, sorted(aggregated), db)
 
-    # link 必填/唯一约束校验：batch_signatures 共享以捕获批内多行关联同一集合
+    # link 必填/唯一约束校验：batch_signatures 共享以捕获批内多行关联同一集合；
+    # signature_cache 复用库内签名映射，唯一字段不再逐行全表扫描。
     batch_sigs: dict[int, set[tuple[int, ...]]] = {}
+    signature_cache: dict[int, dict[tuple[int, ...], list[int]]] = {}
     for _values, link_values in split_rows:
         _ensure_required_links_provided(table, link_values)
-        validate_link_write(engine, link_values, batch_signatures=batch_sigs)
+        validate_link_write(
+            engine,
+            link_values,
+            batch_signatures=batch_sigs,
+            signature_cache=signature_cache,
+        )
 
     ids: list[Any] = [None] * len(split_rows)
-    # 主行 + link 字段在同一个事务内写入，link 写入失败时全部回滚
+    # 主行 + link 字段在同一个事务内写入，link 写入失败时全部回滚。
+    # 主行统一走 RETURNING 批量插入（含带 link 的行），拿到全部 id 后再批量写关联表。
     with engine.begin() as conn:
-        i = 0
-        total = len(split_rows)
-        while i < total:
-            values, link_values = split_rows[i]
-            if any(target_ids for _field, target_ids in link_values):
-                # 有 link 值的行：逐行插入（需要 lastrowid 立即写关联表）
-                if values:
-                    result = conn.execute(sa_table.insert().values(**values))
-                else:
-                    # 行仅有 link 值（无物理列值）：显式写软删标记保证 INSERT 合法
-                    result = conn.execute(sa_table.insert().values(_trashed=False))
-                row_id = result.lastrowid
-                ids[i] = row_id
-                for field, target_ids in link_values:
-                    set_links(engine, field, row_id, target_ids, db=db, conn=conn)
-                i += 1
+        groups: dict[tuple[str, ...], list[int]] = {}
+        for k, (values, _link_values) in enumerate(split_rows):
+            key = tuple(sorted(values.keys())) if values else ("_trashed",)
+            groups.setdefault(key, []).append(k)
+        for key, indices in groups.items():
+            if key == ("_trashed",):
+                param_rows: list[dict[str, Any]] = [{"_trashed": False} for _ in indices]
             else:
-                # 无 link 值的连续段 [i, j)：RETURNING 批量插入（单条多值语句，快一个数量级以上）。
-                # executemany 要求各行参数键一致，段内按列集合签名分组执行；
-                # SQLite insertmanyvalues 返回 id 与参数顺序严格一一对应。
-                j = i
-                while j < total and not any(t for _f, t in split_rows[j][1]):
-                    j += 1
-                groups: dict[tuple[str, ...], list[int]] = {}
-                for k in range(i, j):
-                    v = split_rows[k][0]
-                    key = tuple(sorted(v.keys())) if v else ("_trashed",)
-                    groups.setdefault(key, []).append(k)
-                for key, indices in groups.items():
-                    if key == ("_trashed",):
-                        param_rows: list[dict[str, Any]] = [{"_trashed": False} for _ in indices]
-                    else:
-                        param_rows = [split_rows[k][0] for k in indices]
-                    seg_result = conn.execute(sa_table.insert().returning(sa_table.c.id), param_rows)
-                    for k, row in zip(indices, seg_result.all(), strict=True):
-                        ids[k] = row[0]
-                i = j
+                param_rows = [split_rows[k][0] for k in indices]
+            seg_result = conn.execute(sa_table.insert().returning(sa_table.c.id), param_rows)
+            for k, row in zip(indices, seg_result.all(), strict=True):
+                ids[k] = row[0]
+
+        links_by_field: dict[int, tuple[DataField, dict[int, list[int]]]] = {}
+        for k, (_values, link_values) in enumerate(split_rows):
+            for field, target_ids in link_values:
+                if not target_ids:
+                    continue
+                entry = links_by_field.get(field.id)
+                if entry is None:
+                    entry = links_by_field[field.id] = (field, dict[int, list[int]]())
+                entry[1][ids[k]] = target_ids
+        for field, mapping in links_by_field.values():
+            set_links_bulk(engine, field, mapping, conn=conn)
+
+        if db is not None:
+            created_ids = [int(i) for i in ids if i is not None]
+            # ADR 0131：整批一次重算 lookup 冗余列（同事务）
+            sync_lookup_columns(engine, table, created_ids, db=db, conn=conn)
 
     _invalidate_search_cache(table)
     return ids
@@ -1115,6 +1170,18 @@ def bulk_update(
                 for field, target_ids in link_values:
                     set_links(engine, field, row_id, target_ids, db=db, conn=conn)
 
+        if valid_ids and db is not None:
+            # ADR 0131：批量更新重算 lookup 冗余列 + 源字段变更级联
+            sync_lookup_columns(engine, table, valid_ids, db=db, conn=conn)
+            resync_lookup_consumers(
+                engine,
+                table,
+                valid_ids,
+                db=db,
+                conn=conn,
+                changed_field_names=values.keys(),
+            )
+
     _invalidate_search_cache(table)
     return count
 
@@ -1146,6 +1213,9 @@ def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = Non
         # 与 delete 同事务清理关联，避免 delete commit 后 link 清理失败产生孤儿行
         if count > 0:
             clear_row_links(engine, table, valid_ids, conn=conn)
+            if db is not None:
+                # ADR 0131：被删目标行在消费方的 lookup 值同步失效
+                resync_lookup_consumers_for_deleted_rows(engine, table, valid_ids, db=db, conn=conn)
 
     if count > 0:
         for rid in valid_ids:
@@ -1169,6 +1239,9 @@ def _row_to_dict(table: DataTable, _sa_table: Table, row: Any) -> dict[str, Any]
             result["id"] = value
             continue
         if col_name in ("_trashed", "_trashed_at"):
+            continue
+        if col_name.startswith(LOOKUP_PREFIX):
+            # ADR 0131：lookup 冗余列仅用于过滤 / 排序，不暴露给接口契约
             continue
         f = field_map_rev.get(col_name)
         if f is not None:
@@ -1341,12 +1414,17 @@ def bulk_update_rows(
     # 无 link 的行按「归一列集合」签名分组走 executemany（逐行 UPDATE → 分组批量）；
     # 含 link 的行保留逐行写（link 关联表需按行 id 写入）。
     simple_groups: dict[tuple[str, ...], list[tuple[int, dict[str, Any]]]] = defaultdict(list)
+    db_to_name = {f.db_column_name: f.name for f in table.active_fields()}
+    touched: set[int] = set()
+    changed_names: set[str] = set()
     with engine.begin() as conn:
         for row_id, normalized, link_values in prepared:
             if not normalized and not link_values:
                 continue
             if not link_values:
                 simple_groups[tuple(sorted(normalized))].append((row_id, normalized))
+                changed_names.update(db_to_name[col] for col in normalized if col in db_to_name)
+                touched.add(row_id)
                 continue
             # 构造带行级权限的 WHERE 条件
             row_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
@@ -1368,6 +1446,8 @@ def bulk_update_rows(
             # link 同步（复用外层 conn，避免嵌套 engine.begin 破坏事务隔离）
             for field, target_ids in link_values:
                 set_links(engine, field, row_id, target_ids, db=db, conn=conn)
+            changed_names.update(db_to_name[col] for col in normalized if col in db_to_name)
+            touched.add(row_id)
 
         for columns, group in simple_groups.items():
             if row_scope is not None:
@@ -1387,6 +1467,11 @@ def bulk_update_rows(
             params = [{"_rid": row_id, **values} for row_id, values in group]
             result = conn.execute(statement, params)
             total += max(int(result.rowcount or 0), 0)
+
+        if touched and db is not None:
+            # ADR 0131：批量逐行更新后统一重算冗余列，并级联源字段变更
+            sync_lookup_columns(engine, table, touched, db=db, conn=conn)
+            resync_lookup_consumers(engine, table, touched, db=db, conn=conn, changed_field_names=changed_names)
 
     _invalidate_search_cache(table)
     return total

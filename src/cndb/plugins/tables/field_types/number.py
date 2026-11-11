@@ -50,6 +50,16 @@ class NumberFieldType(FieldType):
             if normalized is None:
                 raise ValueError(f"无法将 {value!r} 转为整数")
             value = normalized
+        if not _config:
+            # 空配置没有 min/max 约束：跳过 NumberFieldConfig 构造（批量导入热路径）
+            try:
+                return int(value)
+            except ValueError:
+                # 科学计数法整数值（如 1.5e10）：仅当 float 值恰为整数时接受，否则维持报错
+                f = float(value)
+                if not f.is_integer():
+                    raise ValueError(f"无法将 {value!r} 转为整数") from None
+                return int(f)
         cfg = NumberFieldConfig(**_config)
         try:
             v = int(value)
@@ -101,6 +111,15 @@ class FloatFieldType(FieldType):
             if normalized is None:
                 raise ValueError(f"无法将 {value!r} 转为小数")
             value = normalized
+        if not _config:
+            # 空配置等价于 decimals=0 且无 min/max：跳过 NumberFieldConfig 构造（批量导入热路径）
+            try:
+                v = float(value)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"无法将 {value!r} 转为小数") from exc
+            if not math.isfinite(v):
+                raise ValueError(f"小数必须是有限数字，收到 {value!r}")
+            return round(v, 0)
         cfg = NumberFieldConfig(**_config)
         try:
             v = float(value)

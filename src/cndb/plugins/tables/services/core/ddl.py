@@ -30,11 +30,23 @@ from sqlalchemy.exc import InvalidRequestError
 
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
+from cndb.plugins.tables.services.core.lookup_columns import lookup_column_names
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
 logger = logging.getLogger(__name__)
+
+
+def _lookup_column_type() -> Any:
+    """lookup 冗余列类型：SQLite 用 BLOB（无亲和性，保类型排序），PostgreSQL 用 TEXT."""
+    from sqlalchemy import LargeBinary, Text
+
+    from cndb.core.config import settings
+
+    if str(settings.DATABASE_URL).startswith("postgresql"):
+        return Text()
+    return LargeBinary()
 
 
 # ── sa.Table 反射缓存 ─────────────────────────────────
@@ -136,6 +148,15 @@ def build_sa_table(
         col = ft.make_column(f.db_column_name, nullable=not f.required)
         cols.append(col)
 
+    # lookup 冗余列（ADR 0131）：拼接值 + 最小值 + 最大值，用于过滤/排序/分页下推 SQL
+    for f in fields:
+        if f.trashed or f.field_type != "lookup":
+            continue
+        joined, first, max_col = lookup_column_names(f)
+        cols.append(Column(joined, _lookup_column_type()))
+        cols.append(Column(first, _lookup_column_type()))
+        cols.append(Column(max_col, _lookup_column_type()))
+
     # 软删除字段
     from sqlalchemy import Boolean
     from sqlalchemy import DateTime as SA_DateTime
@@ -194,6 +215,63 @@ def create_table(engine: Any, table: DataTable) -> None:
     for field in table.active_fields():
         if field.field_type == "link":
             create_link_table(engine, field)
+    # 兼容存量表：create_table 也会在升级/导入路径被调用，补齐缺失的 lookup 冗余列与索引
+    ensure_lookup_columns(engine, table)
+
+
+def ensure_lookup_columns(
+    engine: Any,
+    table: DataTable,
+    fields: Iterable[DataField] | None = None,
+    *,
+    conn: Any = None,
+) -> bool:
+    """幂等补齐 lookup 冗余列与排序索引（ADR 0131）.
+
+    - 只处理未回收的 lookup 字段；
+    - 传 ``conn`` 时复用调用方事务（迁移/批量同步），否则自开事务；
+    - 返回是否发生了 DDL 变更。
+    """
+    targets = [
+        f
+        for f in (fields if fields is not None else table.active_fields())
+        if f.field_type == "lookup" and not f.trashed
+    ]
+    if not targets:
+        return False
+
+    active = conn if conn is not None else engine
+    dialect = getattr(active, "dialect", None) or engine.dialect
+    col_type = _lookup_column_type().compile(dialect)
+    existing = {c["name"] for c in inspect(active).get_columns(table.db_table_name)}
+    changed = False
+    statements: list[str] = []
+    for f in targets:
+        joined, first, max_col = lookup_column_names(f)
+        for name in (joined, first, max_col):
+            if name in existing:
+                continue
+            statements.append(f'ALTER TABLE "{table.db_table_name}" ADD COLUMN "{name}" {col_type}')
+            existing.add(name)
+            changed = True
+        idx_name = f"ix_{table.db_table_name}_{first}"
+        statements.append(f'CREATE INDEX IF NOT EXISTS "{idx_name}" ON "{table.db_table_name}" ("{first}")')
+
+    if not statements:
+        return False
+
+    def _run(active_conn: Any) -> None:
+        for sql in statements:
+            active_conn.execute(text(sql))
+
+    if conn is not None:
+        _run(conn)
+    else:
+        with engine.begin() as active_conn:
+            _run(active_conn)
+    invalidate_reflected_table(table.db_table_name)
+    logger.info("物理表 %s 补齐 lookup 冗余列（%d 个 lookup 字段）", table.db_table_name, len(targets))
+    return changed
 
 
 # ── ALTER TABLE: ADD COLUMN ─────────────────────────
@@ -212,9 +290,11 @@ def add_column(engine: Any, table: DataTable, field: DataField) -> None:
         raise ValueError(f"未知字段类型: {field.field_type}")
 
     if not ft.has_physical_column:
-        # 只有 link 需要关联表；lookup / formula 等虚拟字段不产生任何物理结构
+        # link 需关联表；lookup 需冗余列；formula 等其余虚拟字段不产生物理结构
         if field.field_type == "link":
             create_link_table(engine, field)
+        elif field.field_type == "lookup":
+            ensure_lookup_columns(engine, table, fields=[field])
         return
 
     col = ft.make_column(field.db_column_name, nullable=not field.required)
@@ -248,6 +328,15 @@ def drop_column(engine: Any, table: DataTable, field: DataField) -> None:
     if ft is not None and not ft.has_physical_column:
         if field.field_type == "link":
             drop_link_table(engine, field)
+        elif field.field_type == "lookup":
+            joined, first, max_col = lookup_column_names(field)
+            existing = {c["name"] for c in inspect(engine).get_columns(table.db_table_name)}
+            with engine.begin() as conn:
+                conn.execute(text(f'DROP INDEX IF EXISTS "ix_{table.db_table_name}_{first}"'))
+                for name in (joined, first, max_col):
+                    if name in existing:
+                        conn.execute(text(f'ALTER TABLE "{table.db_table_name}" DROP COLUMN "{name}"'))
+            invalidate_reflected_table(table.db_table_name)
         return
 
     sql = f'ALTER TABLE "{table.db_table_name}" DROP COLUMN "{field.db_column_name}"'

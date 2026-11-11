@@ -396,6 +396,29 @@ def generate_column_name() -> str:
 # ── 字段关联引入（lookup） ───────────────────────────
 
 
+def _ensure_lookup_physical(
+    engine: Any,
+    db: Session,
+    table: DataTable,
+    fields: list[DataField],
+) -> None:
+    """为新建的 lookup 字段补齐冗余列并回填（ADR 0131）.
+
+    关联引入 / 引用字段同步都只写元数据，物理冗余列由这里统一补齐；
+    失败不阻塞字段创建，读取路径会自动回退旧的内存实现。
+    """
+    from cndb.plugins.tables.services.core.lookup_sync import backfill_lookup_columns
+
+    lookups = [f for f in fields if f.field_type == "lookup"]
+    if not lookups:
+        return
+    try:
+        _ddl.ensure_lookup_columns(engine, table, fields=lookups)
+        backfill_lookup_columns(engine, table, db=db, fields=lookups)
+    except Exception:  # pragma: no cover - 物理补齐失败时保留可用的回退路径
+        logger.warning("lookup 冗余列补齐失败，读取将回退内存实现", exc_info=True)
+
+
 def _unique_dst_name(dst_table: DataTable, base: str) -> str:
     """在目标表上为 base 取不冲突的字段名（冲突时追加序号后缀）."""
     existing = {f.name for f in dst_table.fields if not f.trashed}
@@ -521,6 +544,7 @@ def import_fields_as_lookup(
     # 把本批 lookup 登记到 link 字段的 reference_fields —— 引用字段归属该关联字段，
     # 之后编辑 link 字段时「引用字段」列表即反映这些项（与 sync_link_reference_fields 口径一致）。
     _register_link_reference_fields(db, link_field)
+    _ensure_lookup_physical(engine, db, dst_table, lookups_to_add)
     lookup_count = sum(1 for f in created if f.field_type == "lookup")
     logger.info(
         "[field_ops] 关联引入 %d 个 lookup 字段到 %s（link 字段: %s）",
@@ -650,6 +674,10 @@ def sync_link_reference_fields(db: Session, link_field: DataField, target_table:
     db.commit()
     for lf in created:
         db.refresh(lf)
+    table = db.get(DataTable, link_field.table_id)
+    if table is not None:
+        # 新建与复用的 lookup 都可能改了源字段 / 关联字段，统一补齐列并重算
+        _ensure_lookup_physical(db.get_bind(), db, table, kept)
     if created or by_source:
         logger.info(
             "[field_ops] 同步关联字段 %r 的引用字段：新建 %d，移除 %d",

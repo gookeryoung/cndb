@@ -442,8 +442,30 @@ class TestLookupFilterSort:
         assert asc == [row_ids[0], row_ids[1], row_ids[2]]  # alpha < beta.. < None
         assert desc == [row_ids[1], row_ids[0], row_ids[2]]  # None 仍排最后
 
-    def test_lookup_filter_over_scan_limit_rejected(self, client, auth_headers, _lookup_env, monkeypatch):
-        """回退路径限流（TABLES_LOOKUP_SCAN_LIMIT）：命中行数超上限时 400 并提示收窄筛选."""
+    def test_lookup_filter_no_longer_limited_by_scan_limit(self, client, auth_headers, _lookup_env, monkeypatch):
+        """ADR 0131：冗余列下推后不再触碰全表 attach，TABLES_LOOKUP_SCAN_LIMIT 不再拦截."""
+        from cndb.core.config import settings
+
+        wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        monkeypatch.setattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", 2)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [{"field_name": lookup_name, "op": "contains", "value": "a"}],
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        # 行 1 [alpha] 与行 2 [beta, alpha] 均含 'a'，行 3 无关联
+        assert listing.json()["total"] == 2
+
+    def test_lookup_fallback_respects_scan_limit_when_columns_disabled(
+        self, client, auth_headers, _lookup_env, monkeypatch
+    ):
+        """回滚开关：关闭冗余列后回到内存路径，超上限仍 400 并提示收窄筛选."""
         from cndb.core.config import settings
 
         wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
@@ -453,13 +475,14 @@ class TestLookupFilterSort:
                 f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
                 headers=auth_headers,
                 json={
-                    "filters": [{"field_name": lookup_name, "op": "contains", "value": "alpha"}],
+                    "filters": [{"field_name": lookup_name, "op": "contains", "value": "a"}],
                     "sorts": [],
                     "limit": 10,
                     "offset": 0,
                 },
             )
 
+        monkeypatch.setattr(settings, "LOOKUP_COLUMNS_ENABLED", False)
         monkeypatch.setattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", 2)
         rejected = _list()
         assert rejected.status_code == 400
@@ -949,3 +972,241 @@ class TestLookupScanLimitConfig:
         for bad in ("abc", None):
             monkeypatch.setattr(settings, "TABLES_LOOKUP_SCAN_LIMIT", bad)
             assert records.post_filter_scan_limit() == records.POST_FILTER_SCAN_LIMIT
+
+
+# ── B7: ADR 0131 lookup 冗余列（写入同步 / 级联 / 回填 / 新旧对拍） ──
+
+
+def _lookup_storage(db, table_id: int, lookup_name: str) -> tuple[str, tuple[str, str, str]]:
+    """返回 (物理表名, (joined, first, max) 列名)."""
+    from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.tables.services.core.lookup_columns import lookup_column_names
+
+    table = db.get(DataTable, table_id)
+    assert table is not None
+    field = next(f for f in table.active_fields() if f.name == lookup_name)
+    return table.db_table_name, lookup_column_names(field)
+
+
+def _read_lk_rows(db, table_name: str, names: tuple[str, str, str]) -> list[tuple]:
+    """直接读物理表的冗余列（绕过接口，验证落库值）."""
+    from sqlalchemy import text
+
+    db.expire_all()
+    cols = ", ".join(f'"{name}"' for name in names)
+    rows = db.execute(text(f'SELECT "id", {cols} FROM "{table_name}" ORDER BY "id"')).all()
+    db.rollback()
+    return [tuple(row) for row in rows]
+
+
+def _src_ids(client, auth_headers, wid: int, src_tid: int) -> dict[str, int]:
+    listing = client.post(
+        f"/api/v1/workspaces/{wid}/tables/{src_tid}/records/list",
+        headers=auth_headers,
+        json={"filters": [], "sorts": [], "limit": 50, "offset": 0},
+    )
+    assert listing.status_code == 200, listing.text
+    return {row["src_title"]: row["id"] for row in listing.json()["rows"]}
+
+
+class TestLookupRedundantColumns:
+    def test_create_writes_redundant_columns(self, client, auth_headers, _lookup_env, db):
+        """创建行时同事务写入 joined / first / max；无关联多值落 ''、first/max 为 NULL."""
+        _wid, dst_tid, _link, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        table_name, names = _lookup_storage(db, dst_tid, lookup_name)
+        rows = _read_lk_rows(db, table_name, names)
+        assert rows == [
+            (row_ids[0], "alpha", "alpha", "alpha"),
+            (row_ids[1], "beta\x1falpha", "alpha", "beta"),
+            (row_ids[2], "", None, None),
+        ]
+
+    def test_columns_are_internal_and_api_stays_live(self, client, auth_headers, _lookup_env):
+        """冗余列不出现在接口返回里；lookup 输出仍是实时解析值."""
+        wid, dst_tid, _link, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={"sorts": [], "limit": 10, "offset": 0},
+        )
+        assert listing.status_code == 200, listing.text
+        row = next(r for r in listing.json()["rows"] if r["id"] == row_ids[1])
+        assert row[lookup_name] == ["beta", "alpha"]
+        assert not any(str(key).startswith("_lk_") for key in row)
+
+    def test_update_link_resyncs_columns(self, client, auth_headers, _lookup_env, db):
+        """修改 link 值后冗余列同步重算（清空关联 → joined=''）."""
+        wid, dst_tid, link_name, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/{row_ids[1]}",
+            headers=auth_headers,
+            json={"values": {link_name: []}},
+        )
+        assert r.status_code == 200, r.text
+        table_name, names = _lookup_storage(db, dst_tid, lookup_name)
+        rows = _read_lk_rows(db, table_name, names)
+        assert rows[1] == (row_ids[1], "", None, None)
+
+    def test_source_value_change_cascades(self, client, auth_headers, _lookup_env, db):
+        """源表字段值更新 → 引用它的消费方冗余列级联重算."""
+        wid, src_tid, dst_tid, _src_field = _lookup_env
+        _wid, _dst, _link, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        alpha_id = _src_ids(client, auth_headers, wid, src_tid)["alpha"]
+        r = client.patch(
+            f"/api/v1/workspaces/{wid}/tables/{src_tid}/records/{alpha_id}",
+            headers=auth_headers,
+            json={"values": {"src_title": "zeta"}},
+        )
+        assert r.status_code == 200, r.text
+
+        table_name, names = _lookup_storage(db, dst_tid, lookup_name)
+        rows = _read_lk_rows(db, table_name, names)
+        assert rows[0] == (row_ids[0], "zeta", "zeta", "zeta")
+        assert rows[1] == (row_ids[1], "beta\x1fzeta", "beta", "zeta")
+
+        listing = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list",
+            headers=auth_headers,
+            json={
+                "filters": [{"field_name": lookup_name, "op": "contains", "value": "zeta"}],
+                "sorts": [],
+                "limit": 10,
+                "offset": 0,
+            },
+        )
+        assert listing.status_code == 200, listing.text
+        assert listing.json()["total"] == 2
+
+    def test_target_row_delete_cascades(self, client, auth_headers, _lookup_env, db):
+        """目标行硬删除后，消费方 lookup 值同步失效（不再返回已删目标的值）."""
+        from cndb.plugins.tables.models import DataTable
+        from cndb.plugins.tables.services.core.records import delete_row
+
+        wid, src_tid, dst_tid, _src_field = _lookup_env
+        _wid, _dst, _link, lookup_name, row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        alpha_id = _src_ids(client, auth_headers, wid, src_tid)["alpha"]
+        src_table = db.get(DataTable, src_tid)
+        assert delete_row(db.get_bind(), src_table, alpha_id, db=db) is True
+
+        table_name, names = _lookup_storage(db, dst_tid, lookup_name)
+        rows = _read_lk_rows(db, table_name, names)
+        assert rows[0] == (row_ids[0], "", None, None)
+        assert rows[1] == (row_ids[1], "beta", "beta", "beta")
+
+    def test_bulk_create_syncs_columns(self, client, auth_headers, _lookup_env, db):
+        """批量创建路径同样维护冗余列."""
+        wid, src_tid, dst_tid, _src_field = _lookup_env
+        _wid, _dst, link_name, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        beta_id = _src_ids(client, auth_headers, wid, src_tid)["beta"]
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/bulk-create",
+            headers=auth_headers,
+            json={"rows": [{"values": {link_name: [beta_id]}}, {"values": {}}]},
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["created"] == 2
+
+        table_name, names = _lookup_storage(db, dst_tid, lookup_name)
+        rows = _read_lk_rows(db, table_name, names)
+        assert rows[-2][1:] == ("beta", "beta", "beta")
+        assert rows[-1][1:] == ("", None, None)
+
+    def test_backfill_restores_stale_columns(self, client, auth_headers, _lookup_env, db):
+        """回填命令把人为清空的冗余列恢复为正确值（幂等可重入）."""
+        from sqlalchemy import text
+
+        from cndb.plugins.tables.models import DataTable
+        from cndb.plugins.tables.services.core.lookup_sync import backfill_lookup_columns
+
+        _wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        table_name, names = _lookup_storage(db, dst_tid, lookup_name)
+        expected = _read_lk_rows(db, table_name, names)
+
+        joined = ", ".join(f'"{name}" = NULL' for name in names)
+        db.execute(text(f'UPDATE "{table_name}" SET {joined}'))
+        db.commit()
+        assert all(row[1:] == (None, None, None) for row in _read_lk_rows(db, table_name, names))
+
+        table = db.get(DataTable, dst_tid)
+        assert backfill_lookup_columns(db.get_bind(), table, db=db) == 3
+        assert _read_lk_rows(db, table_name, names) == expected
+        # 再跑一次仍幂等
+        assert backfill_lookup_columns(db.get_bind(), table, db=db) == 3
+        assert _read_lk_rows(db, table_name, names) == expected
+
+    def test_cli_backfill_reports_tables(self, client, auth_headers, _lookup_env, db, monkeypatch):
+        """cndb lookup backfill：按表回填并返回结构化报告."""
+        import argparse
+
+        from cndb.cli import lookup as cli_lookup
+
+        _wid, dst_tid, _link, _lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        monkeypatch.setattr(cli_lookup, "_get_session", lambda: db)
+        payload = cli_lookup.cmd_backfill(argparse.Namespace(workspace=None, table=str(dst_tid), batch_size=None))
+        assert payload["failures"] == 0
+        assert payload["processed_tables"] == 1
+        assert payload["tables"][0]["table_id"] == dst_tid
+        assert payload["tables"][0]["rows"] == 3
+
+    @pytest.mark.parametrize(
+        ("filters", "filter_logic"),
+        [
+            ([{"field_name": "__lookup__", "op": "contains", "value": "a"}], "AND"),
+            ([{"field_name": "__lookup__", "op": "contains_any", "value": ["beta", "gamma"]}], "AND"),
+            ([{"field_name": "__lookup__", "op": "contains_all", "value": ["alpha", "beta"]}], "AND"),
+            ([{"field_name": "__lookup__", "op": "=", "value": ["beta", "alpha"]}], "AND"),
+            ([{"field_name": "__lookup__", "op": "!=", "value": ["alpha"]}], "AND"),
+            ([{"field_name": "__lookup__", "op": "in", "value": ["alpha"]}], "AND"),
+            ([{"field_name": "__lookup__", "op": "not_in", "value": ["alpha"]}], "AND"),
+            ([{"field_name": "__lookup__", "op": "is_empty", "value": None}], "AND"),
+            ([{"field_name": "__lookup__", "op": "is_not_empty", "value": None}], "AND"),
+            ([{"field_name": "__lookup__", "op": "starts_with", "value": "b"}], "AND"),
+            ([{"field_name": "__lookup__", "op": "ends_with", "value": "a"}], "AND"),
+            ([{"field_name": "__lookup__", "op": ">", "value": "b"}], "AND"),
+            ([{"field_name": "__lookup__", "op": "<=", "value": "alpha"}], "AND"),
+            ([{"field_name": "__lookup__", "op": "contains", "value": "beta"}], "OR"),
+        ],
+    )
+    def test_pushdown_matches_memory_path(self, client, auth_headers, _lookup_env, monkeypatch, filters, filter_logic):
+        """同一数据下新旧路径的命中行与总数一致（ADR 0131 一致性对拍）."""
+        from cndb.core.config import settings
+
+        wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        payload = {
+            "filters": [{**item, "field_name": lookup_name} for item in filters],
+            "filter_logic": filter_logic,
+            "sorts": [],
+            "limit": 10,
+            "offset": 0,
+        }
+        url = f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list"
+
+        monkeypatch.setattr(settings, "LOOKUP_COLUMNS_ENABLED", True)
+        pushed = client.post(url, headers=auth_headers, json=payload)
+        assert pushed.status_code == 200, pushed.text
+
+        monkeypatch.setattr(settings, "LOOKUP_COLUMNS_ENABLED", False)
+        memory = client.post(url, headers=auth_headers, json=payload)
+        assert memory.status_code == 200, memory.text
+
+        assert pushed.json()["total"] == memory.json()["total"]
+        assert [r["id"] for r in pushed.json()["rows"]] == [r["id"] for r in memory.json()["rows"]]
+
+    @pytest.mark.parametrize("direction", ["asc", "desc"])
+    def test_pushdown_sort_matches_memory_path(self, client, auth_headers, _lookup_env, monkeypatch, direction):
+        """lookup 排序下推（asc 用 first / desc 用 max，NULL 最后）与内存排序一致."""
+        from cndb.core.config import settings
+
+        wid, dst_tid, _link, lookup_name, _row_ids = _setup_lookup_rows(client, auth_headers, _lookup_env)
+        url = f"/api/v1/workspaces/{wid}/tables/{dst_tid}/records/list"
+        payload = {"sorts": [{"field_name": lookup_name, "direction": direction}], "limit": 10, "offset": 0}
+
+        monkeypatch.setattr(settings, "LOOKUP_COLUMNS_ENABLED", True)
+        pushed = client.post(url, headers=auth_headers, json=payload)
+        assert pushed.status_code == 200, pushed.text
+
+        monkeypatch.setattr(settings, "LOOKUP_COLUMNS_ENABLED", False)
+        memory = client.post(url, headers=auth_headers, json=payload)
+        assert memory.status_code == 200, memory.text
+
+        assert [r["id"] for r in pushed.json()["rows"]] == [r["id"] for r in memory.json()["rows"]]

@@ -10,7 +10,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import nullcontext
 from typing import TYPE_CHECKING, Any
 
@@ -112,6 +112,29 @@ def clear_row_links(
             _do_clear(_inner)
 
 
+def set_links_bulk(
+    engine: Engine,
+    field: DataField,
+    mapping: Mapping[int, Sequence[int]],
+    *,
+    conn: Any,
+) -> None:
+    """批量写入新行的关联集合（单条 executemany），用于批量创建场景.
+
+    调用方需已完成目标行存在性 / 必填 / 唯一校验，并持有外层事务连接；
+    新建行的关联集合必然为空，因此不需要像 :func:`set_links` 那样先删除。
+    """
+    link_table = _get_link_sa_table(engine, field.link_table_name)
+    pairs: list[dict[str, int]] = []
+    for row_id, target_ids in mapping.items():
+        pairs.extend(
+            {"row_id": int(row_id), "target_row_id": int(target_id)}
+            for target_id in dict.fromkeys(int(t) for t in target_ids)
+        )
+    if pairs:
+        conn.execute(link_table.insert(), pairs)
+
+
 # ── 读取 ─────────────────────────────────────────────
 
 
@@ -147,6 +170,7 @@ def attach_links(
     rows: list[dict[str, Any]],
     db: Session | None = None,
     conn: Connection | None = None,
+    links_cache: dict[int, dict[int, list[int]]] | None = None,
 ) -> list[dict[str, Any]]:
     """为行响应附加关联字段的摘要值；无关联字段或空结果时原样返回.
 
@@ -155,6 +179,8 @@ def attach_links(
     此时 ``match`` 与 ``value`` 相同。db 为 None 时摘要无法解析目标行内容，回退 "#<id>"。
 
     所有关联字段的读取共用一个连接（``conn`` 传入则复用调用方的，否则本函数自开）。
+    ``links_cache`` 可按字段 id 复用本次请求已加载的 row_id→target_ids 映射，
+    避免与 lookup 解析重复查询同一张关联表。
     """
     fields = link_fields(table)
     if not fields or not rows:
@@ -162,7 +188,11 @@ def attach_links(
     row_ids = [int(row["id"]) for row in rows]
     with nullcontext(conn) if conn is not None else engine.connect() as active:
         for field in fields:
-            mapping = load_links(engine, field, row_ids, conn=active)
+            mapping = links_cache.get(field.id) if links_cache is not None else None
+            if mapping is None:
+                mapping = load_links(engine, field, row_ids, conn=active)
+                if links_cache is not None:
+                    links_cache[field.id] = mapping
             all_targets = [target_id for targets in mapping.values() for target_id in targets]
             display_summaries = _target_summaries(engine, field, all_targets, db=db, conn=active)
             match_summaries = _match_summaries(engine, field, all_targets, display_summaries, db=db, conn=active)
@@ -308,12 +338,14 @@ def validate_link_write(
     *,
     exclude_row_ids: Sequence[int] = (),
     batch_signatures: dict[int, set[tuple[int, ...]]] | None = None,
+    signature_cache: dict[int, dict[tuple[int, ...], list[int]]] | None = None,
 ) -> None:
     """写入关联前校验 link 字段必填/唯一元数据约束，违反时抛 ValueError（路由层映射为 400）.
 
     - required：目标列表为空即违反
     - unique：目标集合非空时，数据库中已有其他行（排除 exclude_row_ids）关联同一集合即违反；
       批量调用方共享同一个 batch_signatures 捕获批内多行互撞
+    - signature_cache：批量调用方传入后可复用该字段的库内签名映射，避免逐行全表扫描
     """
     exclude = {int(i) for i in exclude_row_ids}
     for field, ids in link_values:
@@ -326,7 +358,13 @@ def validate_link_write(
         sig = tuple(sorted({int(i) for i in ids}))
         if batch_signatures is not None and sig in batch_signatures.setdefault(field.id, set()):
             raise ValueError(f"唯一字段 {field.name}：批量写入中存在多行关联同一目标集合")
-        conflict = [rid for rid in _link_signature_map(engine, field).get(sig, ()) if rid not in exclude]
+        if signature_cache is not None:
+            sig_map = signature_cache.get(field.id)
+            if sig_map is None:
+                sig_map = signature_cache[field.id] = _link_signature_map(engine, field)
+        else:
+            sig_map = _link_signature_map(engine, field)
+        conflict = [rid for rid in sig_map.get(sig, ()) if rid not in exclude]
         if conflict:
             shown = "、".join(str(r) for r in sorted(conflict)[:5])
             raise ValueError(f"唯一字段 {field.name}：行 {shown} 已关联同一目标集合")

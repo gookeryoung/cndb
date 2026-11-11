@@ -394,6 +394,11 @@ def main() -> None:
 
     register_design_subparser(sub)
 
+    # lookup 子命令组（lookup 冗余列回填 —— ADR 0131）
+    from cndb.cli.lookup import register_lookup_subparser
+
+    register_lookup_subparser(sub)
+
     args = parser.parse_args()
 
     if args.command is None:
@@ -451,6 +456,10 @@ def main() -> None:
         from cndb.cli.design import design_command
 
         design_command(args)
+    elif args.command == "lookup":
+        from cndb.cli.lookup import lookup_command
+
+        lookup_command(args)
     else:
         parser.print_help()  # pragma: no cover - argparse 默认分支
         sys.exit(1)

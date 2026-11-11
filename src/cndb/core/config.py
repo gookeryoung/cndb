@@ -182,6 +182,14 @@ class Settings(BaseSettings):
     # 非正整数视为未配置，回退默认值。
     TABLES_LOOKUP_SCAN_LIMIT: int = 20000
 
+    # lookup 冗余列（ADR 0131）：写入时在持有 lookup 字段的物理表上维护
+    # ``_lk_<db_column>`` / ``_lk_<db_column>_first`` / ``_lk_<db_column>_max``，
+    # 使 lookup 过滤 / 排序 / 计数 / 分页可直接下推 SQL，不再整表 attach。
+    # 关闭后回退旧的内存回退路径（受 TABLES_LOOKUP_SCAN_LIMIT 约束），仅用于回滚。
+    LOOKUP_COLUMNS_ENABLED: bool = True
+    # 回填历史数据时每批处理的行数（`cndb lookup-backfill` / 迁移复用）
+    LOOKUP_BACKFILL_BATCH_SIZE: int = 1000
+
     # 观测（core/observability.py）：
     # - ACCESS_LOG_ENABLED：是否记录每请求访问日志（慢请求无论开关都会记录）
     # - SLOW_REQUEST_MS：超过该耗时的请求按 WARNING 记录并标注 slow=true
