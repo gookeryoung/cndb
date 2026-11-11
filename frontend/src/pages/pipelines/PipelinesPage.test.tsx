@@ -266,7 +266,9 @@ describe('PipelinesPage 列表与编辑', () => {
     }))
     renderPage()
 
-    fireEvent.click(await screen.findByRole('button', { name: /删\s*除/ }))
+    // 运行行也带「删除」入口，规则删除按钮限定在左栏方盒内定位
+    const rulesBox = await screen.findByTestId('qc-rules-box')
+    fireEvent.click(await within(rulesBox).findByRole('button', { name: '删除 空值巡检' }))
     // Popconfirm 为 portal 渲染，等待确认按钮出现后再点击
     const confirmButtons = await screen.findAllByRole('button', { name: /删\s*除/ })
     fireEvent.click(confirmButtons[confirmButtons.length - 1]!)
@@ -416,6 +418,134 @@ describe('PipelinesPage 双栏布局', () => {
 
     expect(await screen.findByTestId('empty-checks-alert')).toBeInTheDocument()
     expect(screen.getByText('暂无可用检查动作')).toBeInTheDocument()
+  })
+})
+
+// ───────────── 运行历史维护（需求卡片 0133）：删除 / 清空 / 滚动翻页 ─────────────
+
+describe('PipelinesPage 运行历史维护', () => {
+  const DONE_RUN: PipelineRun = { ...RUN, status: 'success' }
+
+  it('活跃运行的删除入口禁用', async () => {
+    defaultHandlers()
+    renderPage()
+    // 默认 RUN 为 pending：删除入口存在但禁用
+    expect(await screen.findByTestId('run-delete-71')).toBeDisabled()
+  })
+
+  it('已结束运行二次确认后调用删除接口并刷新', async () => {
+    defaultHandlers()
+    let deleted = false
+    server.use(
+      http.get('/api/v1/workspaces/10/pipeline-runs', () =>
+        HttpResponse.json(
+          deleted ? { total: 0, items: [] } : { total: 1, items: [DONE_RUN] },
+        )),
+      http.delete('/api/v1/workspaces/10/pipeline-runs/71', () => {
+        deleted = true
+        return new HttpResponse(null, { status: 204 })
+      }),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('run-delete-71'))
+    fireEvent.click(await screen.findByRole('button', { name: /^删\s*除$/ }))
+    await waitFor(() => expect(deleted).toBe(true))
+    // 删除按钮不触发行跳转；刷新后记录消失
+    expect(screen.queryByTestId('run-detail-stub')).toBeNull()
+    await waitFor(() => expect(screen.queryByTestId('run-item-71')).toBeNull())
+  })
+
+  it('清空运行历史未选中规则时只带 domain', async () => {
+    defaultHandlers()
+    const cleared: Array<{ workflowId: string | null; domain: string | null }> = []
+    server.use(
+      http.delete('/api/v1/workspaces/10/pipeline-runs', ({ request }) => {
+        const params = new URL(request.url).searchParams
+        cleared.push({ workflowId: params.get('workflow_id'), domain: params.get('domain') })
+        return HttpResponse.json({ deleted: 1 })
+      }),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('qc-clear-runs'))
+    fireEvent.click(await screen.findByRole('button', { name: /^清\s*空$/ }))
+    await waitFor(() => expect(cleared).toHaveLength(1))
+    expect(cleared[0]).toEqual({ workflowId: null, domain: 'table' })
+  })
+
+  it('清空运行历史选中规则时同时带 workflow_id', async () => {
+    defaultHandlers()
+    const cleared: Array<{ workflowId: string | null; domain: string | null }> = []
+    server.use(
+      http.delete('/api/v1/workspaces/10/pipeline-runs', ({ request }) => {
+        const params = new URL(request.url).searchParams
+        cleared.push({ workflowId: params.get('workflow_id'), domain: params.get('domain') })
+        return HttpResponse.json({ deleted: 1 })
+      }),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('pipeline-item-7'))
+    await screen.findByText(/运行历史：空值巡检/)
+    // 新过滤的首次加载期间计数为 0，清空按钮短暂禁用，等运行数回来再点
+    await waitFor(() => expect(screen.getByTestId('qc-clear-runs')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('qc-clear-runs'))
+    fireEvent.click(await screen.findByRole('button', { name: /^清\s*空$/ }))
+    await waitFor(() => expect(cleared).toHaveLength(1))
+    expect(cleared[0]).toEqual({ workflowId: '7', domain: 'table' })
+  })
+
+  it('viewer 不显示单条删除与清空入口', async () => {
+    defaultHandlers()
+    server.use(http.get('/api/v1/workspaces/10', () =>
+      HttpResponse.json({ id: 10, name: '测试工作区', current_user_role: 'viewer' })))
+    renderPage()
+
+    expect(await screen.findByTestId('run-item-71')).toBeInTheDocument()
+    expect(screen.queryByTestId('qc-clear-runs')).toBeNull()
+    expect(screen.queryByTestId('run-delete-71')).toBeNull()
+  })
+
+  it('切换规则后运行历史回到顶部', async () => {
+    defaultHandlers()
+    renderPage()
+
+    const scroll = await screen.findByTestId('qc-runs-scroll')
+    const ruleItem = await screen.findByTestId('pipeline-item-7')
+    scroll.scrollTop = 120
+    fireEvent.click(ruleItem)
+    await screen.findByText(/运行历史：空值巡检/)
+    await waitFor(() => expect(scroll.scrollTop).toBe(0))
+  })
+
+  it('滚动到底自动加载下一页并更新已加载计数', async () => {
+    defaultHandlers()
+    const allRuns: PipelineRun[] = Array.from({ length: 25 }, (_, index) => ({
+      ...DONE_RUN,
+      id: 100 + index,
+    }))
+    const offsets: number[] = []
+    server.use(
+      http.get('/api/v1/workspaces/10/pipeline-runs', ({ request }) => {
+        const offset = Number(new URL(request.url).searchParams.get('offset') ?? '0')
+        offsets.push(offset)
+        return HttpResponse.json({
+          total: allRuns.length,
+          items: allRuns.slice(offset, offset + 20),
+        })
+      }),
+    )
+    renderPage()
+
+    expect(await screen.findByText('已加载 20 / 共 25 次')).toBeInTheDocument()
+    expect(offsets).toEqual([0])
+
+    fireEvent.scroll(screen.getByTestId('qc-runs-scroll'))
+    expect(await screen.findByTestId('run-item-124')).toBeInTheDocument()
+    await waitFor(() => expect(offsets).toContain(20))
+    expect(screen.getByText('共 25 次')).toBeInTheDocument()
+    expect(screen.getByTestId('qc-runs-foot')).toHaveTextContent('已显示全部 25 次')
   })
 })
 

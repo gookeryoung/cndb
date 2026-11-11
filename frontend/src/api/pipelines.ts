@@ -146,6 +146,14 @@ export interface PipelineRunQuery {
   offset?: number
 }
 
+/** 清空运行历史的过滤参数（与列表同口径） */
+export type PipelineRunClearQuery = Pick<PipelineRunQuery, 'workflow_id' | 'domain'>
+
+/** 清空运行历史结果 */
+export interface PipelineRunClearResult {
+  deleted: number
+}
+
 /** 检查发现物 */
 export interface PipelineFinding {
   id: number
@@ -238,6 +246,12 @@ export const pipelinesApi = {
   /** 工作区运行历史（默认全部规则，可按 workflow_id / domain 过滤） */
   listWorkspaceRuns: (wid: number | string, params?: PipelineRunQuery) =>
     api.get<PipelineRunPage>(runsBase(wid), { params }).then(r => r.data),
+  /** 删除单条运行（活跃运行 409；检查发现物级联删除） */
+  removeRun: (wid: number | string, runId: number | string) =>
+    api.delete<void>(`${runsBase(wid)}/${runId}`).then(r => r.data),
+  /** 清空运行历史（过滤口径与列表一致；范围内有活跃运行 409） */
+  clearRuns: (wid: number | string, params?: PipelineRunClearQuery) =>
+    api.delete<PipelineRunClearResult>(runsBase(wid), { params }).then(r => r.data),
   /** 运行详情 */
   getRun: (wid: number | string, runId: number | string) =>
     api.get<PipelineRun>(`${runsBase(wid)}/${runId}`).then(r => r.data),

@@ -88,6 +88,25 @@ function pipelineYaml(name: string, tableName: string) {
   ].join("\n")
 }
 
+/** 手动触发一次运行并等待进入终态（删除 / 清空要求运行已结束） */
+async function runAndWait(request: APIRequestContext, workflowId: number) {
+  const headers = await authHeaders(request)
+  const triggered = await request.post(`/api/v1/workspaces/${WID}/pipelines/${workflowId}/run`, { headers })
+  expect(triggered.status()).toBe(202)
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    const resp = await request.get(`/api/v1/workspaces/${WID}/pipeline-runs`, {
+      headers,
+      params: { workflow_id: workflowId },
+    })
+    const data = (await resp.json()) as { items: Array<{ status: string }> }
+    if (data.items.length > 0 && data.items.every(item => !["pending", "running"].includes(item.status))) {
+      return
+    }
+    await new Promise(resolve => setTimeout(resolve, 500))
+  }
+  throw new Error("运行未在预期时间内结束")
+}
+
 test.describe("质量检查", () => {
   test.beforeEach(async ({ page }) => {
     test.skip(ANON.includes(test.info().project.name), "anon 项目跳过")
@@ -160,6 +179,51 @@ test.describe("质量检查", () => {
       const workflows = await listWorkflows(request)
       const created = workflows.find(workflow => workflow.name === workflowName)
       if (created) await deleteWorkflow(request, created.id)
+    }
+  })
+
+  test("运行历史：单条删除 → 清空恢复空态", async ({ page, request }) => {
+    test.setTimeout(120_000)
+    const stamp = Date.now()
+    const tableName = `E2E 清理表 ${stamp}`
+    const workflowName = `E2E 清理流水线 ${stamp}`
+    const tableId = await createFixtureTable(request, tableName)
+    const workflowId = await createWorkflow(request, pipelineYaml(workflowName, tableName))
+
+    try {
+      // 两次运行都进入终态后再进页面，避免活跃运行被禁止删除
+      await runAndWait(request, workflowId)
+      await runAndWait(request, workflowId)
+
+      await page.goto(`/w/${WID}/pipelines`)
+      const item = page.locator('[data-testid^="pipeline-item-"]').filter({ hasText: workflowName })
+      await expect(item).toBeVisible({ timeout: 15_000 })
+      await item.click()
+      await expect(page.getByText(`运行历史：${workflowName}`)).toBeVisible()
+
+      const runRows = page.locator('[data-testid^="run-item-"]')
+      await expect(runRows).toHaveCount(2, { timeout: 15_000 })
+
+      // 单条删除：二次确认后行消失
+      await page.locator('[data-testid^="run-delete-"]').first().click()
+      await page.locator(".ant-popconfirm").filter({ hasText: "删除运行记录" })
+        .getByRole("button", { name: /删\s*除/ }).click()
+      await expect(runRows).toHaveCount(1, { timeout: 15_000 })
+
+      // 清空：范围限定当前规则，确认后回到空态
+      await page.getByTestId("qc-clear-runs").click()
+      await page.locator(".ant-popconfirm").filter({ hasText: "运行历史" })
+        .getByRole("button", { name: /清\s*空/ }).click()
+      await expect(page.getByText("这条流水线还没有运行记录，点「运行」试试")).toBeVisible({ timeout: 15_000 })
+
+      const remaining = await request.get(`/api/v1/workspaces/${WID}/pipeline-runs`, {
+        headers: await authHeaders(request),
+        params: { workflow_id: workflowId },
+      })
+      expect(((await remaining.json()) as { total: number }).total).toBe(0)
+    } finally {
+      await deleteWorkflow(request, workflowId)
+      await deleteTable(request, tableId)
     }
   })
 

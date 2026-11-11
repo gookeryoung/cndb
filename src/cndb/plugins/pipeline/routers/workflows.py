@@ -15,6 +15,7 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.services.visibility import visible_document_ids
 from cndb.plugins.issues.services import get_issue_detail
 from cndb.plugins.pipeline.models import (
+    ACTIVE_RUN_STATUSES,
     CHANGE_TYPE_MANUAL,
     CHANGE_TYPE_ROLLBACK,
     PipelineFinding,
@@ -27,6 +28,7 @@ from cndb.plugins.pipeline.schemas import (
     CheckSpecResponse,
     FindingListResponse,
     FindingResponse,
+    RunClearResponse,
     RunListResponse,
     RunResponse,
     RunSummary,
@@ -449,6 +451,26 @@ def _run_from_workspace(db: Session, workspace_id: int, run_id: int) -> Pipeline
     return run
 
 
+def _workspace_run_filters(
+    db: Session,
+    workspace_id: int,
+    workflow_id: int | None,
+    domain: str | None,
+) -> list[Any]:
+    """运行历史的统一过滤条件（列表与清空共用，避免两处口径漂移）.
+
+    ``workflow_id`` 与 ``domain`` 同时给定时取交集；``domain`` 未注册直接 400。
+    """
+    filters: list[Any] = [PipelineRun.workspace_id == workspace_id]
+    target = _normalize_domain(domain)
+    if target is not None:
+        workflow_ids = [row.id for row in _workflows_in_domain(db, workspace_id, target)]
+        filters.append(PipelineRun.workflow_id.in_(workflow_ids))
+    if workflow_id is not None:
+        filters.append(PipelineRun.workflow_id == workflow_id)
+    return filters
+
+
 def _finding_response(finding: PipelineFinding) -> FindingResponse:
     """发现物 ORM → 响应."""
     return FindingResponse.model_validate(finding)
@@ -508,16 +530,48 @@ def _build_run_router() -> APIRouter:
     ) -> RunListResponse:
         """工作区运行历史（默认全部规则；``workflow_id`` / ``domain`` 可选过滤，按创建时间倒序分页）."""
         _require(db, workspace_id, current_user, WorkspaceRole.VIEWER)
-        query = db.query(PipelineRun).filter(PipelineRun.workspace_id == workspace_id)
-        target = _normalize_domain(domain)
-        if target is not None:
-            workflow_ids = [row.id for row in _workflows_in_domain(db, workspace_id, target)]
-            query = query.filter(PipelineRun.workflow_id.in_(workflow_ids))
-        if workflow_id is not None:
-            query = query.filter(PipelineRun.workflow_id == workflow_id)
+        filters = _workspace_run_filters(db, workspace_id, workflow_id, domain)
+        query = db.query(PipelineRun).filter(*filters)
         total = query.count()
         rows = query.order_by(PipelineRun.created_at.desc(), PipelineRun.id.desc()).offset(offset).limit(limit).all()
         return RunListResponse(total=total, items=[_run_response(db, run) for run in rows])
+
+    @run_router.delete("", response_model=RunClearResponse)
+    def clear_runs(
+        workspace_id: int,
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[Session, Depends(get_db)],
+        workflow_id: Annotated[int | None, Query()] = None,
+        domain: Annotated[str | None, Query()] = None,
+    ) -> RunClearResponse:
+        """清空运行历史（过滤口径与列表一致；范围内有活跃运行时整体拒绝 409）."""
+        _require(db, workspace_id, current_user, WorkspaceRole.EDITOR)
+        filters = _workspace_run_filters(db, workspace_id, workflow_id, domain)
+        active = db.query(PipelineRun).filter(*filters, PipelineRun.status.in_(ACTIVE_RUN_STATUSES)).count()
+        if active:
+            raise PipelineConflictError(f"还有 {active} 条运行正在进行中，结束后才能清空")
+        deleted = db.query(PipelineRun).filter(*filters).count()
+        run_ids = select(PipelineRun.id).where(*filters)
+        db.execute(delete(PipelineFinding).where(PipelineFinding.run_id.in_(run_ids)))
+        db.execute(delete(PipelineRun).where(*filters))
+        db.commit()
+        return RunClearResponse(deleted=deleted)
+
+    @run_router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+    def delete_run(
+        workspace_id: int,
+        run_id: int,
+        current_user: Annotated[User, Depends(get_current_user)],
+        db: Annotated[Session, Depends(get_db)],
+    ) -> None:
+        """删除单条运行（活跃运行 409；检查发现物一并删除）."""
+        _require(db, workspace_id, current_user, WorkspaceRole.EDITOR)
+        run = _run_from_workspace(db, workspace_id, run_id)
+        if run.status in ACTIVE_RUN_STATUSES:
+            raise PipelineConflictError("运行正在进行中，结束后才能删除")
+        db.execute(delete(PipelineFinding).where(PipelineFinding.run_id == run.id))
+        db.delete(run)
+        db.commit()
 
     @run_router.get("/{run_id}", response_model=RunResponse)
     def get_run(

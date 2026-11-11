@@ -6458,6 +6458,24 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   padding: var(--cn-space-3xl) var(--cn-space-lg);
 }
 
+/* 运行历史滚动容器：右栏固定高度内部滚动，滚动到底自动追加下一页。
+ * 用 min(62vh, 720px) 保证 20 条一页在常见视口下必然出现滚动条，避免「加载更多」不可达。 */
+.cn-qc-runs-scroll {
+  max-height: min(62vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* 列表底部状态行：加载中 / 滚动提示 / 已全部展示 */
+.cn-qc-runs-foot {
+  display: flex;
+  justify-content: center;
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  border-top: 1px solid var(--cn-border);
+  color: var(--cn-text-muted);
+  font-size: var(--cn-text-xs);
+}
+
 /* ─────────────── 质量检查运行详情（概要条 + 左执行结果 / 右发现物） ───────────────
  * 与规则页同一套页头 / 方盒语言：概要条用等宽单元格 + 1px 描边与内部分隔线；
  * 双栏两侧都是 flush SectionBox，外框由盒子承担，行间分隔线满宽绘制。 */

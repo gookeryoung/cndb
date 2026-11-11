@@ -111,6 +111,38 @@ def _expire(db):
     db.expire_all()
 
 
+def _add_run(db, ws, workflow_id: int, status: str = "success") -> PipelineRun:
+    """直接落一条运行记录，避开后台线程，便于构造活跃 / 历史状态."""
+    run = PipelineRun(
+        workflow_id=workflow_id,
+        workspace_id=ws.id,
+        trigger="manual",
+        trigger_payload={},
+        status=status,
+        stats={},
+        error_message="",
+    )
+    db.add(run)
+    db.commit()
+    return run
+
+
+def _add_finding(db, run_id: int) -> PipelineFinding:
+    finding = PipelineFinding(
+        run_id=run_id,
+        check="document/links",
+        severity="warn",
+        target_type="document",
+        target_id=1,
+        locator={},
+        message="链接失效",
+        detail={},
+    )
+    db.add(finding)
+    db.commit()
+    return finding
+
+
 class TestCatalog:
     def test_checks_catalog(self, client, ws, auth_viewer):
         resp = client.get(f"{BASE.format(ws=ws.id)}/checks", headers=auth_viewer)
@@ -675,6 +707,124 @@ class TestRuns:
         resp = client.get(url, params={"limit": 1, "offset": 1}, headers=auth_owner)
         assert resp.json()["total"] == 2
         assert len(resp.json()["items"]) == 1
+
+
+class TestRunHistoryMaintenance:
+    """运行历史删除 / 清空（需求卡片 0133）."""
+
+    def test_delete_run_cascades_findings(self, client, ws, auth_owner, db):
+        workflow = _create(client, ws, auth_owner).json()
+        run = _add_run(db, ws, workflow["id"])
+        finding = _add_finding(db, run.id)
+        run_id, finding_id = run.id, finding.id
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run_id}"
+
+        assert client.delete(url, headers=auth_owner).status_code == 204
+        _expire(db)
+        assert db.get(PipelineRun, run_id) is None
+        assert db.get(PipelineFinding, finding_id) is None
+
+    def test_delete_active_run_rejected(self, client, ws, auth_owner, db):
+        workflow = _create(client, ws, auth_owner).json()
+        run = _add_run(db, ws, workflow["id"], status="running")
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run.id}"
+
+        resp = client.delete(url, headers=auth_owner)
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "pipeline_conflict"
+        _expire(db)
+        assert db.get(PipelineRun, run.id) is not None
+
+    def test_delete_run_permissions_and_workspace_scope(
+        self, client, ws, owner, auth_owner, auth_viewer, auth_outsider, db
+    ):
+        workflow = _create(client, ws, auth_owner).json()
+        run = _add_run(db, ws, workflow["id"])
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs/{run.id}"
+
+        assert client.delete(url, headers=auth_viewer).status_code == 403
+        assert client.delete(url, headers=auth_outsider).status_code == 403
+        other = make_workspace(db, owner, "RunDeleteOtherWs")
+        assert (
+            client.delete(f"/api/v1/workspaces/{other.id}/pipeline-runs/{run.id}", headers=auth_owner).status_code
+            == 404
+        )
+        _expire(db)
+        assert db.get(PipelineRun, run.id) is not None
+
+    def test_clear_runs_by_workflow(self, client, ws, auth_owner, db):
+        first = _create(client, ws, auth_owner, content=CLEAN_CONTENT.replace("name: 文档巡检", "name: 巡检A")).json()
+        second = _create(client, ws, auth_owner, content=CLEAN_CONTENT.replace("name: 文档巡检", "name: 巡检B")).json()
+        kept_run = _add_run(db, ws, second["id"])
+        removed_run = _add_run(db, ws, first["id"])
+        finding = _add_finding(db, removed_run.id)
+        removed_id, finding_id, kept_id = removed_run.id, finding.id, kept_run.id
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs"
+
+        resp = client.delete(url, params={"workflow_id": first["id"]}, headers=auth_owner)
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 1}
+        _expire(db)
+        assert db.get(PipelineRun, removed_id) is None
+        assert db.get(PipelineFinding, finding_id) is None
+        assert db.get(PipelineRun, kept_id) is not None
+
+    def test_clear_runs_by_domain(self, client, ws, auth_owner, db):
+        document = _create(client, ws, auth_owner, content=CLEAN_CONTENT).json()
+        table = _create(client, ws, auth_owner, content=FINDING_CONTENT).json()
+        document_run = _add_run(db, ws, document["id"])
+        table_run = _add_run(db, ws, table["id"])
+        document_id, table_id = document_run.id, table_run.id
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs"
+
+        resp = client.delete(url, params={"domain": "table"}, headers=auth_owner)
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 1}
+        _expire(db)
+        assert db.get(PipelineRun, table_id) is None
+        assert db.get(PipelineRun, document_id) is not None
+
+    def test_clear_runs_rejects_active_in_scope(self, client, ws, auth_owner, db):
+        active_workflow = _create(
+            client, ws, auth_owner, content=CLEAN_CONTENT.replace("name: 文档巡检", "name: 活跃巡检")
+        ).json()
+        done_workflow = _create(
+            client, ws, auth_owner, content=CLEAN_CONTENT.replace("name: 文档巡检", "name: 完成巡检")
+        ).json()
+        active_run = _add_run(db, ws, active_workflow["id"], status="pending")
+        done_run = _add_run(db, ws, done_workflow["id"])
+        active_id, done_id = active_run.id, done_run.id
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs"
+
+        resp = client.delete(url, headers=auth_owner)
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "pipeline_conflict"
+        _expire(db)
+        assert db.get(PipelineRun, active_id) is not None
+        assert db.get(PipelineRun, done_id) is not None
+
+    def test_clear_runs_all_and_permissions(self, client, ws, auth_owner, auth_viewer, auth_outsider, db):
+        workflow = _create(client, ws, auth_owner).json()
+        first_run = _add_run(db, ws, workflow["id"])
+        second_run = _add_run(db, ws, workflow["id"])
+        first_id, second_id = first_run.id, second_run.id
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs"
+
+        assert client.delete(url, headers=auth_viewer).status_code == 403
+        assert client.delete(url, headers=auth_outsider).status_code == 403
+
+        resp = client.delete(url, headers=auth_owner)
+        assert resp.status_code == 200
+        assert resp.json() == {"deleted": 2}
+        _expire(db)
+        assert db.get(PipelineRun, first_id) is None
+        assert db.get(PipelineRun, second_id) is None
+
+    def test_clear_runs_rejects_unknown_domain(self, client, ws, auth_owner):
+        url = f"/api/v1/workspaces/{ws.id}/pipeline-runs"
+        resp = client.delete(url, params={"domain": "bogus"}, headers=auth_owner)
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "bad_request"
 
 
 class TestFindingContextVisibility:

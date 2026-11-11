@@ -137,6 +137,12 @@ class RunListResponse(BaseModel):
     items: list[RunResponse] = Field(default_factory=list)
 
 
+class RunClearResponse(BaseModel):
+    """清空运行历史响应（实际删除条数）."""
+
+    deleted: int = 0
+
+
 class WorkflowVersionItem(BaseModel):
     """版本列表项（不含 DSL 原文，ADR 0114）."""
 

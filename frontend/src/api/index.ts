@@ -94,6 +94,8 @@ export type {
   PipelineFindingQuery,
   PipelineJobStat,
   PipelineRun,
+  PipelineRunClearQuery,
+  PipelineRunClearResult,
   PipelineRunPage,
   PipelineRunQuery,
   PipelineRunStats,

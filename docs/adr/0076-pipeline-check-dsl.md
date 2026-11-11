@@ -168,10 +168,12 @@ jobs:
 | `POST /workspaces/{wid}/pipelines/{pid}/run` | 新增：手动触发（202，单飞冲突 409，后台执行） |
 | `GET /workspaces/{wid}/pipelines/{pid}/runs` | 新增：运行历史（分页） |
 | `GET /workspaces/{wid}/pipeline-runs` | 新增：工作区运行历史（默认全部规则，可选 `workflow_id` / `domain` 过滤，分页） |
+| `DELETE /workspaces/{wid}/pipeline-runs` | 新增（需求 0133）：按 `workflow_id` / `domain` 清空运行历史（与列表同口径），范围内有活跃运行整体 409 |
+| `DELETE /workspaces/{wid}/pipeline-runs/{rid}` | 新增（需求 0133）：删除单条运行（活跃运行 409，finding 级联删除） |
 | `GET /workspaces/{wid}/pipeline-runs/{rid}` | 新增：运行详情（job / step 结论树 + finding 汇总） |
 | `GET /workspaces/{wid}/pipeline-runs/{rid}/findings` | 新增：发现物列表（`severity` / `target_type` / `check` 过滤，分页） |
 
-权限（D10）：workflow CRUD 与运行触发要求 owner / editor；run 与 finding 查看为工作区成员（viewer 只读）。
+权限（D10）：workflow CRUD、运行触发与运行历史删除 / 清空要求 owner / editor；run 与 finding 查看为工作区成员（viewer 只读）。
 
 ### 5. 边界与例外
 

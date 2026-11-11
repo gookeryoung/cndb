@@ -8,6 +8,8 @@
  * 点击规则选中 / 再点取消回「全部」）；
  * 右栏：运行历史——默认展示当前域全部规则的运行（行内带规则名），
  * 选中某条规则后只展示其对应的运行，再点一次、点「全部」或点「查看全部」回到全部。
+ * 运行历史支持单条删除与按当前过滤清空（owner/editor；活跃运行禁止删除），
+ * 并按 20 条一页滚动到底自动加载（需求卡片 0133）。
  * 手动运行后停留在本页并刷新历史（不自动跳详情，点运行行才进运行详情）；
  * 运行期间右栏每 1.5s 轮询、状态标签带转圈图标并显示「已用时」（GitHub 的 in-progress 口径）。
  * 两栏均为「带边框列表」：SectionBox 承担外框，flush 内容区里的行自带分隔线与
@@ -17,7 +19,7 @@
  * queryKey 约定：['pipelines', wid, domain]。
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, App as AntApp, Button, Drawer, Dropdown, Empty, Popconfirm, Space, Spin,
   Switch, Tag, Tooltip, Typography, type MenuProps,
@@ -28,7 +30,7 @@ import {
 } from '@ant-design/icons'
 import CnListMeta from '@/components/CnListMeta'
 import SectionBox from '@/components/SectionBox'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { formatDateTime } from '@/utils/datetime'
 import { pipelinesApi, workspaceApi } from '@/api'
@@ -41,6 +43,11 @@ import PipelineDslEditor, { type PipelineDslEditorHandle } from './PipelineDslEd
 import PipelineVersionsDrawer from './PipelineVersionsDrawer'
 
 const { Text } = Typography
+
+/** 运行历史分页大小（滚动到底自动追加下一页） */
+const RUNS_PAGE_SIZE = 20
+/** 距容器底部多少像素内触发下一页加载 */
+const RUNS_LOAD_THRESHOLD = 64
 
 /** 检查域 → 页面文案（标题后缀 / 作用域说明 / 空目录提示） */
 const DOMAIN_META: Record<PipelineCheckDomain, {
@@ -90,10 +97,13 @@ function RunStatusTag({ status }: { status: PipelineRun['status'] }) {
 }
 
 /** 运行行 —— 右栏单条历史记录（全部规则模式下带规则名；活跃运行轮询提示交给详情页） */
-function RunItem({ run, showWorkflow, onOpen }: {
+function RunItem({ run, showWorkflow, canDelete, deleting, onOpen, onDelete }: {
   run: PipelineRun
   showWorkflow: boolean
+  canDelete: boolean
+  deleting: boolean
   onOpen: () => void
+  onDelete: () => void
 }) {
   const active = isActiveRun(run.status)
   const summary = runSummary(run)
@@ -121,7 +131,40 @@ function RunItem({ run, showWorkflow, onOpen }: {
           </span>
         </div>
       </div>
-      <div className="cn-list-item-actions">
+      <div className="cn-list-item-actions" onClick={event => event.stopPropagation()}>
+        {canDelete && (active ? (
+          <Tooltip title="运行中不可删除">
+            <Button
+              type="text"
+              size="small"
+              danger
+              aria-label={`删除运行 ${run.id}`}
+              data-testid={`run-delete-${run.id}`}
+              icon={<DeleteOutlined />}
+              disabled
+            />
+          </Tooltip>
+        ) : canDelete && (
+          <Popconfirm
+            title={`删除运行记录 #${run.id}？`}
+            description="该次运行的检查发现物会一并删除，且不可恢复。"
+            okText="删除"
+            okButtonProps={{ danger: true }}
+            onConfirm={onDelete}
+          >
+            <Tooltip title="删除">
+              <Button
+                type="text"
+                size="small"
+                danger
+                aria-label={`删除运行 ${run.id}`}
+                data-testid={`run-delete-${run.id}`}
+                icon={<DeleteOutlined />}
+                loading={deleting}
+              />
+            </Tooltip>
+          </Popconfirm>
+        ))}
         <RightOutlined style={{ color: 'var(--cn-text-muted)' }} aria-hidden />
       </div>
     </div>
@@ -153,6 +196,8 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
     enabled: !!wid,
   })
   const canRestore = wsDetail?.current_user_role !== 'viewer'
+  /** 运行历史写操作门槛（owner/editor；工作区详情未回来前不显示入口，避免 viewer 闪一下） */
+  const canEdit = !!wsDetail && wsDetail.current_user_role !== 'viewer'
 
   const { data: workflows = [], isLoading } = useQuery({
     queryKey: ['pipelines', wid, domain],
@@ -176,20 +221,66 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
   const enabledWorkflows = workflows.filter(workflow => workflow.enabled)
 
   // 右栏运行历史：默认拉取当前域全部规则的运行，选中规则后按 workflow_id 过滤；
-  // 活跃运行（pending/running）1.5s 轮询推进状态（与运行详情页一致，GitHub 式实时刷新）
-  const { data: runPage, isLoading: runsLoading } = useQuery({
+  // 分页大小 20，滚动到底自动追加下一页；活跃运行（pending/running）1.5s 轮询推进状态
+  const {
+    data: runPages,
+    isLoading: runsLoading,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteQuery({
     queryKey: ['pipelines', wid, domain, 'runs', selectedId ?? 'all'],
-    queryFn: () => pipelinesApi.listWorkspaceRuns(wid, {
+    queryFn: ({ pageParam }) => pipelinesApi.listWorkspaceRuns(wid, {
       domain,
-      limit: 20,
+      limit: RUNS_PAGE_SIZE,
+      offset: pageParam,
       ...(selectedId != null ? { workflow_id: selectedId } : {}),
     }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((count, page) => count + page.items.length, 0)
+      return loaded < lastPage.total ? loaded : undefined
+    },
     enabled: !!wid,
     refetchInterval: (query) => {
-      const runs = query.state.data?.items ?? []
-      return runs.some(r => isActiveRun(r.status)) ? 1500 : false
+      const pages = query.state.data?.pages ?? []
+      return pages.some(page => page.items.some(r => isActiveRun(r.status))) ? 1500 : false
     },
   })
+
+  /** 轮询期间新运行插到头部会导致页边界重复，按运行 ID 去重后再渲染 */
+  const runs = useMemo(() => {
+    const seen = new Set<number>()
+    const merged: PipelineRun[] = []
+    for (const page of runPages?.pages ?? []) {
+      for (const item of page.items) {
+        if (seen.has(item.id)) continue
+        seen.add(item.id)
+        merged.push(item)
+      }
+    }
+    return merged
+  }, [runPages])
+  const runsTotal = runPages?.pages[0]?.total ?? 0
+  const runsScrollRef = useRef<HTMLDivElement>(null)
+  // 连续 scroll 事件可能在 isFetchingNextPage 更新前重复触发，用同步 ref 防抖
+  const loadingMoreRef = useRef(false)
+
+  // 切换规则 / 域后回到历史顶部，避免停留在上一条规则的中段
+  useEffect(() => {
+    if (runsScrollRef.current) runsScrollRef.current.scrollTop = 0
+  }, [selectedId, domain])
+
+  const handleRunsScroll = () => {
+    const el = runsScrollRef.current
+    if (!el || !hasNextPage || isFetchingNextPage || loadingMoreRef.current) return
+    if (el.scrollHeight - el.scrollTop - el.clientHeight <= RUNS_LOAD_THRESHOLD) {
+      loadingMoreRef.current = true
+      void fetchNextPage().finally(() => {
+        loadingMoreRef.current = false
+      })
+    }
+  }
 
   // 选中项被删除后回落到未选中态
   useEffect(() => {
@@ -307,6 +398,29 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
       invalidate()
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '删除失败'),
+  })
+
+  /** 删除单条运行记录（活跃运行后端 409；检查发现物一并删除） */
+  const deleteRun = useMutation({
+    mutationFn: (target: PipelineRun) => pipelinesApi.removeRun(wid, target.id),
+    onSuccess: () => {
+      message.success('运行记录已删除')
+      invalidate()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除运行记录失败'),
+  })
+
+  /** 清空运行历史：范围跟随当前过滤（选中规则 → 该规则；否则 → 当前检查域） */
+  const clearRuns = useMutation({
+    mutationFn: () => pipelinesApi.clearRuns(wid, {
+      domain,
+      ...(selectedId != null ? { workflow_id: selectedId } : {}),
+    }),
+    onSuccess: (result) => {
+      message.success(`已清空 ${result.deleted} 条运行记录`)
+      invalidate()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '清空运行历史失败'),
   })
 
   const openCreate = () => {
@@ -537,44 +651,96 @@ export default function PipelinesPage({ domain = 'table' }: { domain?: PipelineC
           </Spin>
         </SectionBox>
 
-        {/* 右栏：运行历史（默认全部规则，选中规则后过滤） */}
+        {/* 右栏：运行历史（默认全部规则，选中规则后过滤；滚动到底自动加载下一页） */}
         <SectionBox
           title={selected ? `运行历史：${selected.name}` : '运行历史'}
           icon={<HistoryOutlined />}
-          extra={runPage ? (
+          extra={(
             <Space size={4}>
-              <span>共 {runPage.total} 次</span>
+              <span>{runs.length < runsTotal ? `已加载 ${runs.length} / 共 ${runsTotal} 次` : `共 ${runsTotal} 次`}</span>
               {selected && (
                 <Button type="link" size="small" onClick={() => setSelectedId(null)}>
                   查看全部
                 </Button>
               )}
+              {canEdit && (runsTotal > 0 ? (
+                <Popconfirm
+                  title={selected ? `清空「${selected.name}」的全部运行历史？` : '清空当前检查域的全部运行历史？'}
+                  description={`将删除 ${runsTotal} 次运行及其检查发现物，且不可恢复。`}
+                  okText="清空"
+                  okButtonProps={{ danger: true }}
+                  onConfirm={() => clearRuns.mutate()}
+                >
+                  <Button
+                    type="link"
+                    size="small"
+                    danger
+                    icon={<DeleteOutlined />}
+                    aria-label="清空运行历史"
+                    data-testid="qc-clear-runs"
+                    loading={clearRuns.isPending}
+                  >
+                    清空
+                  </Button>
+                </Popconfirm>
+              ) : (
+                <Button
+                  type="link"
+                  size="small"
+                  danger
+                  disabled
+                  icon={<DeleteOutlined />}
+                  aria-label="清空运行历史"
+                  data-testid="qc-clear-runs"
+                >
+                  清空
+                </Button>
+              ))}
             </Space>
-          ) : undefined}
+          )}
           flush
           testId="qc-runs-box"
         >
           <Spin spinning={runsLoading}>
-            {(runPage?.items.length ?? 0) === 0 && !runsLoading ? (
-              <div className="cn-qc-empty">
-                <Empty
-                  description={selected
-                    ? '这条流水线还没有运行记录，点「运行」试试'
-                    : workflows.length === 0
-                      ? '创建流水线后，这里会展示每次检查的结果'
-                      : '还没有运行记录，运行任一流水线后这里会展示历史'}
-                />
-              </div>
-            ) : (
-              (runPage?.items ?? []).map(item => (
-                <RunItem
-                  key={item.id}
-                  run={item}
-                  showWorkflow={selectedId == null}
-                  onOpen={() => navigate(runDetailPath(item.id))}
-                />
-              ))
-            )}
+            <div
+              className="cn-qc-runs-scroll"
+              data-testid="qc-runs-scroll"
+              ref={runsScrollRef}
+              onScroll={handleRunsScroll}
+            >
+              {runs.length === 0 && !runsLoading ? (
+                <div className="cn-qc-empty">
+                  <Empty
+                    description={selected
+                      ? '这条流水线还没有运行记录，点「运行」试试'
+                      : workflows.length === 0
+                        ? '创建流水线后，这里会展示每次检查的结果'
+                        : '还没有运行记录，运行任一流水线后这里会展示历史'}
+                  />
+                </div>
+              ) : (
+                <>
+                  {runs.map(item => (
+                    <RunItem
+                      key={item.id}
+                      run={item}
+                      showWorkflow={selectedId == null}
+                      canDelete={canEdit}
+                      deleting={deleteRun.isPending && deleteRun.variables?.id === item.id}
+                      onOpen={() => navigate(runDetailPath(item.id))}
+                      onDelete={() => deleteRun.mutate(item)}
+                    />
+                  ))}
+                  {runs.length > 0 && (
+                    <div className="cn-qc-runs-foot" data-testid="qc-runs-foot">
+                      {isFetchingNextPage
+                        ? '正在加载更多…'
+                        : hasNextPage ? '滚动到底自动加载更多' : `已显示全部 ${runs.length} 次`}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
           </Spin>
         </SectionBox>
       </div>
