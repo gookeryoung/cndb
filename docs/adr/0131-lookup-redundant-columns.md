@@ -169,9 +169,9 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/services/core/lookup_columns.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/services/core/query.py`、`src/cndb/plugins/tables/services/core/records.py` | `tests/test_lookup_field.py` | 本次 |
-| P1 | 已落地 | `src/cndb/plugins/tables/services/core/lookup_sync.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_lookup_field.py` | 本次 |
-| P2 | 已落地 | `src/cndb/alembic/versions/e3f4a5b6c7d8_add_lookup_columns.py`、`src/cndb/cli/lookup.py`、`scripts/bench_perf.py` | `tests/test_lookup_columns_migration.py` | 本次 |
+| P0 | 已落地 | `src/cndb/plugins/tables/services/core/lookup_columns.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/services/core/query.py`、`src/cndb/plugins/tables/services/core/records.py` | `tests/test_lookup_field.py` | ea9d6e1b |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/lookup_sync.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_lookup_field.py` | ea9d6e1b |
+| P2 | 已落地 | `src/cndb/alembic/versions/e3f4a5b6c7d8_add_lookup_columns.py`、`src/cndb/cli/lookup.py`、`scripts/bench_perf.py` | `tests/test_lookup_columns_migration.py` | ea9d6e1b |
 | P3（可选） | 未开始 | — | — | — |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
