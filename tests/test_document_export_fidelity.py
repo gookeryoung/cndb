@@ -144,6 +144,21 @@ class TestBlockParsing:
     def test_fit_column_widths_empty(self) -> None:
         assert mb.fit_column_widths([], 100.0) == []
 
+    def test_fit_column_widths_many_columns_never_negative(self) -> None:
+        # 列数过多 / 权重极端时上下界不可同时满足，曾经产出负列宽导致导出报错
+        for weights in ([1.0] * 20, [1000.0] + [1.0] * 9, [1.0] * 5 + [30.0, 30.0, 1.0]):
+            widths = mb.fit_column_widths(weights, 495.0)
+            assert all(width >= 0 for width in widths), weights
+            assert sum(widths) == pytest.approx(495.0)
+
+    def test_wide_table_exports_without_error(self) -> None:
+        columns = 20
+        separator = " | ".join(["---"] * columns)
+        row = " | ".join(["1"] * columns)
+        markdown = "| " + " | ".join(f"c{i}" for i in range(columns)) + f" |\n| {separator} |\n| {row} |"
+        assert pdf_export._render_pdf(markdown, title="宽表").startswith(b"%PDF")
+        assert docx_export._render_docx(markdown)
+
 
 class TestDocxFidelity:
     def test_nested_lists_indent_and_task_markers(self) -> None:

@@ -232,7 +232,12 @@ def fit_column_widths(
     if count == 0:
         return []
     sanitized = [max(1.0, float(w)) for w in weights]
-    low, high = total * min_ratio, total * max_ratio
+    # 列数过多时 ``min_ratio * count > 1``，或「一列取满 high + 其余列取 low」
+    # 超过总宽（``high + (count - 1) * low > total``），都会让剩余宽度为负，
+    # 最终产生负列宽（reportlab / python-docx 直接报错）。这里把上下界
+    # 收敛到可行区间：最宽列不超过其余列都取 low 后的剩余空间。
+    low = min(total * min_ratio, total / count)
+    high = max(low, min(total * max_ratio, total - (count - 1) * low))
     widths = [0.0] * count
     clamped: dict[int, float] = {}
     for _ in range(count + 1):
@@ -257,6 +262,12 @@ def fit_column_widths(
             break
     # 末列吸收浮点余量，保证总宽精确等于 total
     widths[-1] = total - sum(widths[:-1])
+    if any(w < 0 for w in widths):
+        # 权重极端时多列可能同时触碰上界，导致上下界无法同时满足、
+        # 剩余宽度为负；退化为按权重均分，避免负列宽让导出直接报错。
+        total_weight = sum(sanitized)
+        widths = [total * w / total_weight for w in sanitized]
+        widths[-1] = max(0.0, total - sum(widths[:-1]))
     return widths
 
 
