@@ -62,6 +62,7 @@ import {
   SendOutlined,
   ShareAltOutlined,
   SplitCellsOutlined,
+  SyncOutlined,
   TableOutlined,
   TagsOutlined,
   WarningOutlined,
@@ -70,7 +71,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import FindReplaceBar from '@/components/Document/FindReplaceBar'
 import { ancestorChain } from './DocumentTree'
 import { pushRecentDoc } from './recentDocs'
-import { loadSplitOpen, saveSplitOpen } from './splitPrefs'
+import { loadSplitOpen, loadSplitSync, saveSplitOpen, saveSplitSync } from './splitPrefs'
+import { useSplitScrollSync } from './splitScrollSync'
 import MarkdownPreview from '@/components/Document/MarkdownPreview'
 import type {
   MarkdownEditorHandle,
@@ -265,6 +267,8 @@ export default function DocumentEditorPage() {
 
   /** 并排查看：编辑区与渲染预览左右并排（桌面端；偏好在 localStorage） */
   const [splitOpen, setSplitOpen] = useState<boolean>(() => loadSplitOpen())
+  /** 并排查看「同步滚动」：两栏作为一组跟随滚动，默认启用、可单独关闭（需求 0089 C6） */
+  const [splitSyncOpen, setSplitSyncOpen] = useState<boolean>(() => loadSplitSync())
   /** PPTX 放映覆盖层（原件族）：按钮在顶栏，状态由页面持有 */
   const [assetPresenting, setAssetPresenting] = useState(false)
   const [backlinksOpen, setBacklinksOpen] = useState(false)
@@ -311,6 +315,9 @@ export default function DocumentEditorPage() {
   /** 草稿基准版本：首次编辑时锁定，提交时交给服务端做段落级三方合并 */
   const baseVersionRef = useRef(0)
   const editorRef = useRef<MarkdownEditorHandle>(null)
+  /** 并排查看两栏根节点：滚动同步按进度双向映射（需求 0089 C5） */
+  const splitLeftRef = useRef<HTMLDivElement>(null)
+  const splitRightRef = useRef<HTMLDivElement>(null)
   /** 已按哪篇文档完成初始化（避免 query 重取时覆盖正在编辑的正文） */
   const initializedDocRef = useRef<number | null>(null)
 
@@ -684,6 +691,10 @@ export default function DocumentEditorPage() {
   useEffect(() => {
     saveSplitOpen(splitOpen)
   }, [splitOpen])
+
+  useEffect(() => {
+    saveSplitSync(splitSyncOpen)
+  }, [splitSyncOpen])
 
   /** 并排查看开关：开启时若处于查看模式，自动进入编辑（并排 = 编辑 + 预览） */
   const toggleSplit = useCallback(() => {
@@ -1104,14 +1115,19 @@ export default function DocumentEditorPage() {
   /** 版本列表（后端倒序：最新在前）+ 总数；差异对比在抽屉内原地展开，不需要额外拼装时间线节点 */
   const versions = versionsQuery.data?.items ?? []
 
+  // 原件族（PDF / Office / 图片，ADR 0025）：只读，正文区换成阅读器，编辑类入口全部隐藏
+  const isAssetDoc = !!doc && !doc.is_folder && isAssetContentType(doc.content_type)
+  // 并排查看只在桌面编辑态生效：窄屏沿用「编辑 / 预览」页签，查看态仍是纯预览
+  const splitActive = splitOpen && viewMode === 'edit' && !isAssetDoc && isDesktop
+  // 两栏作为一组同步滚动（挂在条件渲染之前，避免 hooks 顺序随视图模式变化）
+  useSplitScrollSync(splitLeftRef, splitRightRef, splitActive && splitSyncOpen)
+
   if (docQuery.isLoading) return <div style={{ padding: 24 }}>加载中…</div>
   if (docQuery.isError || !doc) {
     return <Alert type="error" title="文档不存在或加载失败" style={{ margin: 24 }} showIcon />
   }
 
   const editable = true // viewer 保存转修改申请（202），无需在前端隐藏编辑入口
-  // 原件族（PDF / Office / 图片，ADR 0025）：只读，正文区换成阅读器，编辑类入口全部隐藏
-  const isAssetDoc = !doc.is_folder && isAssetContentType(doc.content_type)
   // 原件族的格式 / 只读标识只在顶栏出现一次（预览区不再重复渲染「XX 原件预览（只读）」）
   const assetFmt = isAssetDoc ? formatMeta(doc.content_type) : null
   const isPptxAsset = isAssetDoc && doc.content_type === 'pptx' && assetSuffix(doc) === 'pptx'
@@ -1158,9 +1174,6 @@ export default function DocumentEditorPage() {
       </Popover>
     </>
   ) : null
-
-  // 并排查看只在桌面编辑态生效：窄屏沿用「编辑 / 预览」页签，查看态仍是纯预览
-  const splitActive = splitOpen && viewMode === 'edit' && !isAssetDoc && isDesktop
 
   // ── AI 抽屉展示数据：按当前动作从对应 hook 取 loading / error / 结果 ──
   const aiLoading =
@@ -1526,6 +1539,17 @@ export default function DocumentEditorPage() {
                   onClick={toggleSplit}
                 />
               )}
+              {/* 同步滚动（需求 0089 C6）：紧邻并排查看右侧，随并排一起出现；默认启用 */}
+              {splitActive && (
+                <IconBtn
+                  icon={<SyncOutlined />}
+                  label={splitSyncOpen ? '关闭同步滚动' : '开启同步滚动（两栏一起滚动）'}
+                  data-testid="doc-split-sync-toggle"
+                  type={splitSyncOpen ? 'primary' : 'default'}
+                  aria-pressed={splitSyncOpen}
+                  onClick={() => setSplitSyncOpen(v => !v)}
+                />
+              )}
               <IconBtn icon={<LinkOutlined />} label="反链" onClick={() => setBacklinksOpen(true)} />
               <IconBtn
                 icon={<BranchesOutlined />}
@@ -1810,8 +1834,12 @@ export default function DocumentEditorPage() {
             </div>
             {splitActive ? (
               <div data-testid="doc-split-view" style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-                {/* 左：编辑（沿用实时预览 / 源码开关） */}
-                <div style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                {/* 左：编辑（沿用实时预览 / 源码开关）；右栏滚动时本栏按进度跟随 */}
+                <div
+                  ref={splitLeftRef}
+                  data-testid="doc-split-left"
+                  style={{ flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}
+                >
                   <Suspense fallback={<EditorFallback />}>
                     <MarkdownLiveEditor
                       ref={editorRef}
@@ -1826,8 +1854,9 @@ export default function DocumentEditorPage() {
                   </Suspense>
                   <div className="cn-doc-stats" data-testid="doc-stats">{formatStatsLabel(stats)}</div>
                 </div>
-                {/* 右：渲染预览（与查看模式同一渲染器，随正文实时更新） */}
+                {/* 右：渲染预览（与查看模式同一渲染器，随正文实时更新）；左栏滚动时同步 */}
                 <div
+                  ref={splitRightRef}
                   data-testid="doc-split-preview"
                   style={{
                     flex: 1,

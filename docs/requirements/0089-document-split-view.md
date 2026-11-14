@@ -19,6 +19,8 @@
 | C2 | 「功能设计在反链左侧」 | 入口固定在桌面顶栏「导航与关联」组、「反链」按钮**左侧**（`Space.Compact` 内第一个按钮），图标）+ 悬停提示；激活态高亮（`aria-pressed` + primary） | 同上 | 前端单测：DOM 顺序在反链之前、`aria-pressed` 随状态变化 |
 | C3 | （模式交互） | 查看模式下点「并排查看」自动进入编辑并开启双栏；查看 / 编辑切换保持既有草稿行为；归档文档不提供入口；窄屏（移动端）不提供（沿用编辑 / 预览页签）；原件族文档（PDF / Office / 图片）不提供 | 同上 | 前端单测：查看态点击自动进编辑、归档 / 窄屏不渲染入口 |
 | C4 | （偏好与文档） | 开关状态按用户持久化（`localStorage`，全局单键 `cndb_doc_split_view`，默认关）；存储不可用 / 脏值回退关闭；帮助教程「编辑模式」补说明；CHANGELOG / CONTEXT 术语更新 | `frontend/src/pages/documents/splitPrefs.ts`、帮助教程、`CONTEXT.md`、`CHANGELOG.md` | `splitPrefs.test.ts`（默认 / 读写 / 脏值 / 存储异常）+ `make check-docs` |
+| C5 | 「右侧增加同步滚动功能，二者作为一组」（2026-11-04 追加） | 两栏作为**一组**同步纵向滚动：同步滚动启用时（见 C6），滚动任意一侧，另一侧按同一滚动进度跟随；两栏渲染高度不同，按 `scrollTop / (scrollHeight - clientHeight)` 比例映射而非逐像素拷贝；目标栏内容未超出视口时不强行拉回；横向滚动（无纵向行程的块）不牵动另一栏；程序化滚动回抛的 scroll 事件不产生来回拽动（已就位即 no-op）；只在并排激活时监听，退出 / 卸载立即解绑 | `frontend/src/pages/documents/splitScrollSync.ts`（新增）、`DocumentEditorPage.tsx` | `splitScrollSync.test.tsx`（进度换算 / 应用 / 容器解析 / 双向监听 / 未激活与卸载）+ `DocumentEditorPage.test.tsx` 同步滚动用例 |
+| C6 | 「同步滚动作为可选按钮，在并排查看右侧，二者一起。默认启用」（2026-11-04 追加） | 同步滚动是**可选开关**：按钮紧邻「并排查看」右侧（同一按钮组，DOM 顺序确定），随并排激活一起出现；默认启用，可单独关闭，关闭后两栏各自独立滚动；偏好按用户持久化（`localStorage` 单键 `cndb_doc_split_sync`，未写过 / 脏值 = 启用，显式 `'0'` = 关闭，存储不可用回退启用）；退出并排后保持用户选择 | `frontend/src/pages/documents/splitPrefs.ts`、`DocumentEditorPage.tsx` | `splitPrefs.test.ts`（默认启用 / 读写 / 脏值 / 存储异常）+ `DocumentEditorPage.test.tsx`（按钮位置与默认态 / 关闭后不同步 / 偏好写回）+ `make check-docs` |
 
 约束编号在实现中原样引用；不重编号、不合并。
 
@@ -31,6 +33,8 @@
 | 3 | 查看 / 编辑切换与草稿保存 | 同上（`handleModeChange`） | C3 复用，不新增保存路径 |
 | 4 | 本地偏好范式（大纲栏） | `frontend/src/pages/documents/outlinePrefs.ts` | C4 复用同一套「读失败回退默认」写法 |
 | 5 | 窄屏编辑 / 预览页签 | `frontend/src/pages/documents/DocumentEditorPage.tsx` | C3 窄屏不启用并排 |
+| 6 | 两栏滚动容器（编辑：CodeMirror `.cm-scroller` / 源码 textarea；预览：右栏 div） | 同上（`doc-split-view` 左右栏） | C5 在栏根节点 capture 监听 scroll，按进度同步 |
+| 7 | 顶栏「导航与关联」按钮组（并排查看 / 反链 / 链接） | 同上（桌面顶栏 `Space.Compact`） | C6 在并排查看右侧插入同步滚动开关 |
 
 ## 未决问题（已确认）
 

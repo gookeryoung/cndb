@@ -22,3 +22,28 @@ export function saveSplitOpen(open: boolean): void {
     /* 隐私模式 / 配额不足：偏好写入失败不影响页面 */
   }
 }
+
+/** 并排查看「同步滚动」开关：两栏作为一组跟随滚动（默认启用，可单独关闭） */
+export const SPLIT_SYNC_PREF_KEY = 'cndb_doc_split_sync'
+
+export const DEFAULT_SPLIT_SYNC = true
+
+export function loadSplitSync(): boolean {
+  try {
+    const raw = localStorage.getItem(SPLIT_SYNC_PREF_KEY)
+    // 未写过 = 默认启用；只有显式存 '0' 才关闭（脏值回退默认）
+    if (raw === '1') return true
+    if (raw === '0') return false
+    return DEFAULT_SPLIT_SYNC
+  } catch {
+    return DEFAULT_SPLIT_SYNC
+  }
+}
+
+export function saveSplitSync(on: boolean): void {
+  try {
+    localStorage.setItem(SPLIT_SYNC_PREF_KEY, on ? '1' : '0')
+  } catch {
+    /* 隐私模式 / 配额不足：偏好写入失败不影响页面 */
+  }
+}

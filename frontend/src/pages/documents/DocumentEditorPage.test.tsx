@@ -11,7 +11,7 @@ import { http, HttpResponse } from 'msw'
 import { message } from 'antd'
 import DocumentEditorPage from './DocumentEditorPage'
 import { OUTLINE_PREFS_KEY } from './outlinePrefs'
-import { SPLIT_PREF_KEY } from './splitPrefs'
+import { SPLIT_PREF_KEY, SPLIT_SYNC_PREF_KEY } from './splitPrefs'
 import { documentsApi } from '@/api/documents'
 import { serializeChartBlock } from '@/components/Document/chartBlock'
 import { renderProviders } from '@/test/render-providers'
@@ -47,6 +47,18 @@ function renderEditor(route = '/w/10/documents/2') {
         </Routes>,
         { route, initialAuth: { user: mockUser, token: 'fake-token' } },
     )
+}
+
+/** jsdom 无布局引擎：给元素装上可控的滚动尺寸与位置（scrollTop 可直接读写） */
+function mockScrollBox(el: HTMLElement, scrollHeight: number, clientHeight: number) {
+    let top = 0
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => scrollHeight })
+    Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => clientHeight })
+    Object.defineProperty(el, 'scrollTop', {
+        configurable: true,
+        get: () => top,
+        set: (v: number) => { top = v },
+    })
 }
 
 /** 打开 antd Select 的下拉：须在内部 combobox 上触发 mousedown（root 上不生效） */
@@ -363,10 +375,12 @@ describe('DocumentEditorPage 并排查看', () => {
     beforeEach(() => {
         server.resetHandlers()
         localStorage.removeItem(SPLIT_PREF_KEY)
+        localStorage.removeItem(SPLIT_SYNC_PREF_KEY)
     })
 
     afterEach(() => {
         localStorage.removeItem(SPLIT_PREF_KEY)
+        localStorage.removeItem(SPLIT_SYNC_PREF_KEY)
     })
 
     it('默认关闭；顶栏按钮位于「反链」左侧，点击后左编辑右预览并持久化', async () => {
@@ -411,6 +425,67 @@ describe('DocumentEditorPage 并排查看', () => {
         await waitFor(() =>
             expect(within(screen.getByTestId('doc-split-preview')).getByRole('heading', { name: '并排新标题' })).toBeInTheDocument(),
         )
+    })
+
+    it('两栏同步滚动：滚动任意一侧，另一侧按同一进度跟随（作为一组）', async () => {
+        localStorage.setItem(SPLIT_PREF_KEY, '1')
+        renderEditor()
+
+        const preview = await screen.findByTestId('doc-split-preview')
+        // 切到源码模式：左栏滚动容器是 textarea（实时预览为 CodeMirror 内部 scroller）
+        fireEvent.click(within(screen.getByTestId('doc-editor-mode-switch')).getByText('源码'))
+        const textarea = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+
+        // jsdom 无布局引擎：用 getter / setter 模拟两栏的滚动尺寸与位置
+        mockScrollBox(preview, 4000, 800)
+        mockScrollBox(textarea, 3400, 400)
+
+        // 预览滚到 50% → 编辑栏 50%（可滚动 3000px → 1500px）
+        preview.scrollTop = 1600
+        fireEvent.scroll(preview)
+        expect(textarea.scrollTop).toBe(1500)
+
+        // 编辑栏回滚到 10% → 预览栏跟随（可滚动 3200px → 320px）
+        textarea.scrollTop = 300
+        fireEvent.scroll(textarea)
+        expect(preview.scrollTop).toBe(320)
+    })
+
+    it('同步滚动是可选的开关按钮：默认启用、紧邻并排查看右侧，可关闭并记住', async () => {
+        renderEditor()
+
+        // 未开并排：同步滚动按钮不出现（无并排可同步）
+        const toggle = await screen.findByTestId('doc-split-toggle')
+        expect(screen.queryByTestId('doc-split-sync-toggle')).not.toBeInTheDocument()
+
+        fireEvent.click(toggle)
+        const syncToggle = await screen.findByTestId('doc-split-sync-toggle')
+        // 需求 0089 C6：紧邻并排查看右侧（DOM 顺序确定），默认启用
+        expect(
+            toggle.compareDocumentPosition(syncToggle) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy()
+        expect(syncToggle).toHaveAttribute('aria-pressed', 'true')
+        expect(syncToggle).toHaveAccessibleName('关闭同步滚动')
+
+        fireEvent.click(syncToggle)
+        expect(syncToggle).toHaveAttribute('aria-pressed', 'false')
+        expect(localStorage.getItem(SPLIT_SYNC_PREF_KEY)).toBe('0')
+        // 关掉后不再同步：滚动预览不牵动编辑栏
+        const preview = screen.getByTestId('doc-split-preview')
+        fireEvent.click(within(screen.getByTestId('doc-editor-mode-switch')).getByText('源码'))
+        const textarea = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        mockScrollBox(preview, 4000, 800)
+        mockScrollBox(textarea, 3400, 400)
+        preview.scrollTop = 1600
+        fireEvent.scroll(preview)
+        expect(textarea.scrollTop).toBe(0)
+
+        // 重新打开：偏好写回 '1'，同步恢复
+        fireEvent.click(syncToggle)
+        expect(localStorage.getItem(SPLIT_SYNC_PREF_KEY)).toBe('1')
+        preview.scrollTop = 1600
+        fireEvent.scroll(preview)
+        expect(textarea.scrollTop).toBe(1500)
     })
 
     it('查看模式下点并排：自动进入编辑并渲染双栏', async () => {
