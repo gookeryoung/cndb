@@ -25,6 +25,45 @@ function renderStateful(initial: string) {
   return render(<Harness />)
 }
 
+/** 带命令句柄的受控包装：模拟真实回车需要先定位光标 */
+function renderWithHandle(initial: string) {
+  const handle: { current: MarkdownEditorHandle | null } = { current: null }
+  function Harness() {
+    const [value, setValue] = useState(initial)
+    return (
+      <>
+        <MarkdownLiveEditor
+          ref={h => { handle.current = h }}
+          value={value}
+          mode="live"
+          workspaceId={1}
+          onChange={setValue}
+        />
+        <output data-testid="doc-value">{value}</output>
+      </>
+    )
+  }
+  return { ...render(<Harness />), handle }
+}
+
+describe('MarkdownLiveEditor 回车', () => {
+  it('loose list 内回车只新增一行，不额外插入空行', () => {
+    const initial = '- aaa\n\n- bbb'
+    const { container, getByTestId, handle } = renderWithHandle(initial)
+    handle.current!.setSelection(initial.length)
+    fireEvent.keyDown(container.querySelector('.cm-content')!, { key: 'Enter' })
+    expect(getByTestId('doc-value').textContent).toBe('- aaa\n\n- bbb\n- ')
+  })
+
+  it('紧凑列表内回车延续标记，且只占一行', () => {
+    const initial = '- aaa\n- bbb'
+    const { container, getByTestId, handle } = renderWithHandle(initial)
+    handle.current!.setSelection(initial.length)
+    fireEvent.keyDown(container.querySelector('.cm-content')!, { key: 'Enter' })
+    expect(getByTestId('doc-value').textContent).toBe('- aaa\n- bbb\n- ')
+  })
+})
+
 describe('MarkdownLiveEditor 代码块高亮', () => {
   it('围栏代码块按语言着色，并区分围栏行与内容行', () => {
     const { container } = renderEditor('```ts\nconst n = 42\n```')

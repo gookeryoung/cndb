@@ -12,7 +12,7 @@
 
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react'
 import type { CSSProperties } from 'react'
-import { EditorState, Facet, StateEffect, StateField, type Range } from '@codemirror/state'
+import { EditorState, Facet, Prec, StateEffect, StateField, type Range } from '@codemirror/state'
 import {
   Decoration,
   type DecorationSet,
@@ -30,6 +30,7 @@ import type { TextAreaRef } from 'antd/es/input/TextArea'
 
 import { loadFileObjectUrl } from '@/hooks/useFileObjectUrl'
 import { highlightCode } from './codeHighlight'
+import { continueMarkupSingleLine } from './markdownEnter'
 import { parseImageRef } from './imageRef'
 import { parseMdTable, type MdTable, type MdTableAlign } from './mdTable'
 import { parseTableRef } from './tableRef'
@@ -778,6 +779,8 @@ function MarkdownLiveEditor({ value, mode, workspaceId, placeholder, onChange, o
             return true
           },
         }),
+        // 最高优先级：列表 / 引用内回车只延续一行，不额外插入空行（见 markdownEnter）
+        Prec.highest(keymap.of([{ key: 'Enter', run: continueMarkupSingleLine() }])),
         keymap.of([
           { key: 'Escape', run: () => { onShortcutRef.current?.('escape'); return true } },
           { key: 'Mod-f', run: () => { onShortcutRef.current?.('find'); return true } },
