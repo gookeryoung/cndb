@@ -154,8 +154,9 @@ fi
 # ── 5. 可选：定时备份 ─────────────────────────────────────────
 if [[ $WITH_CRON -eq 1 ]]; then
   if [[ -f "$APP_DIR/deploy/backup.sh" ]]; then
-    #每天 03:17 备份（避开整点，减少与其他任务撞车）
-    CRON_CMD="17 3 * * * cd $APP_DIR && ./deploy/backup.sh >> $APP_DIR/backups/cron.log 2>&1"
+    # 每天 03:17 备份（避开整点，减少与其他任务撞车）
+    # flock 防并发重入；PATH 兜住 cron 的精简环境（docker/python3/curl 都在 /usr/bin）
+    CRON_CMD="17 3 * * * cd $APP_DIR && PATH=/usr/local/bin:/usr/bin:/bin flock -xn /tmp/cndb-backup.lock ./deploy/backup.sh >> $APP_DIR/backups/cron.log 2>&1"
     if crontab -l 2>/dev/null | grep -qF "deploy/backup.sh"; then
       warn "定时备份已存在，跳过"
     else

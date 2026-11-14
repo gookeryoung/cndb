@@ -500,45 +500,98 @@ cd /opt/cndb && ./deploy/deploy.sh v0.3.0   # 直接指定历史版本
 
 ## 四、定时备份
 
+备份按 3-2-1 组织：**宿主机本地留档 + COS 异地副本 + 定期恢复演练**。归档由
+`cndb backup` 生成（SQLite native 热备，含数据库与 uploads 附件 + `manifest.json`）。
+
+### 1. 装定时任务
+
 ```bash
-# 装 coscmd（仅需上传 COS 时）
+# 每日 03:17（错开整点，避开同机 IO 峰值）。flock 防重入、PATH 兜住 cron 的精简环境
+crontab -e
+# 加入下面这一行：
+17 3 * * * cd /opt/cndb && PATH=/usr/local/bin:/usr/bin:/bin flock -xn /tmp/cndb-backup.lock ./deploy/backup.sh >> /opt/cndb/backups/cron.log 2>&1
+```
+
+`deploy/bootstrap-server.sh --with-cron` 也会装同一条。
+
+**归档落在宿主机 `/opt/cndb/backups`，不在数据卷里** —— 卷损坏、误删卷、容器误操作
+时备份不会跟着数据一起消失。容器内的 `/data/backups` 只用于中转，备份成功后即删除。
+
+### 2. 每次备份做的四件事
+
+| 步骤 | 说明 |
+| --- | --- |
+| 备份 | 容器内 `cndb backup` → `docker cp` 到宿主机（先写 `.partial` 再 `mv`，避免读到半截文件） |
+| 校验 | `tar` 可读 + `manifest.json` 可解析 + SQLite `PRAGMA integrity_check` + 归档内附件数不少于 manifest 声明数。任一项失败即删除该副本并非零退出 |
+| 分层保留 | 日备 `KEEP_DAYS`（默认 14 天）、周日额外留一份 `weekly-`（`KEEP_WEEKS`=8）、每月 1 号留 `monthly-`（`KEEP_MONTHS`=6） |
+| 上传 COS | `COS_ENABLE=true` 时上传异地副本；上传失败不删本地副本 |
+
+### 3. 告警（强烈建议配）
+
+没有告警通道时，备份失败只能靠事后翻 `cron.log` 发现。在 `.env` 填企业微信群机器人：
+
+```bash
+BACKUP_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx
+```
+
+成功会推一条含归档名/大小/校验结果的摘要，失败会推具体失败原因。
+
+### 4. 开启 COS 异地副本
+
+```bash
+# 控制台先建桶：私有读写 + 开启版本控制（版本控制是防勒索/误删的关键）
 pip install coscmd
-coscmd config -a <SecretId> -s <SecretKey> -r ap-guangzhou
+coscmd config -a <SecretId> -s <SecretKey> -r ap-shanghai
 chmod 600 ~/.cos.conf
+
+# .env 里启用
+COS_ENABLE=true
+COS_BUCKET=cndb-backup-1250000000
+COS_REGION=ap-shanghai
+COS_PREFIX=cndb/
 
 # 本地先跑一次验证
 cd /opt/cndb && ./deploy/backup.sh
-
-# 每日 03:17 定时（错开整点，避开同机 IO 峰值）
-crontab -e
-# 加入：
-17 3 * * * /opt/cndb/deploy/backup.sh >> /opt/cndb/backups/backup.log 2>&1
 ```
 
-启用 COS 上传：在 `.env` 里设 `COS_ENABLE=true` 并填 `COS_BUCKET` / `COS_REGION`。
+CAM 子账号只授该桶 `cndb/*` 前缀的上传权限，不要给删桶/删对象权限。再配一条生命周期
+规则（如 90 天转低频、180 天删除），让桶自己控成本。
 
-备份策略：
+### 5. 恢复
 
-- 每次部署前自动预备份一份（`pre-deploy-<版本>-<时间戳>.tar.gz`）
-- 每日定时备份，产物 0 字节或异常时告警退出，不会静默失败
-- 本地保留 14 天（`KEEP_DAYS` 可调），过期的自动清理
-- COS 上传失败**不删本地副本** —— 本地那份仍是有效备份
-
-**恢复**：
+归档在宿主机，**先 `docker cp` 回容器**再恢复：
 
 ```bash
 cd /opt/cndb
-# archive 是位置参数；--force 用于覆盖已有数据的库（不带会拒绝执行）
-# 建议先 --dry-run 预检，确认归档完整后再实际恢复
-docker compose --env-file .env -f docker-compose.prod.yml exec app \
-  cndb restore /data/backups/cndb-20261009-031700.tar.gz --dry-run
+STAMP=20261114-033000   # 换成目标归档的时间戳
 
+# 1. 回传归档
+docker cp "./backups/cndb-${STAMP}.tar.gz" cndb:/data/backups/
+
+# 2. 预检（archive 是位置参数；--force 才允许覆盖已有数据的库）
 docker compose --env-file .env -f docker-compose.prod.yml exec app \
-  cndb restore /data/backups/cndb-20261009-031700.tar.gz --force
+  cndb restore "/data/backups/cndb-${STAMP}.tar.gz" --dry-run
+
+# 3. 实际恢复
+docker compose --env-file .env -f docker-compose.prod.yml exec app \
+  cndb restore "/data/backups/cndb-${STAMP}.tar.gz" --force
 ```
 
-> 恢复会覆盖当前库，**先用 `--dry-run` 确认目标文件无误**。恢复后应用启动时自动跑  
-> `upgrade head`，旧备份可在新版本上恢复。
+> 恢复会覆盖当前库。恢复后应用启动时自动跑 `upgrade head`，旧备份可在新版本上恢复。
+
+### 6. 定期演练（每季度一次）
+
+没验证过的备份只能算"以为有备份"。用独立项目名起一个临时实例，恢复最新归档后确认
+能登录、能看到工作区即可，不要碰生产卷：
+
+```bash
+docker run --rm -v /tmp/cndb-drill:/data \
+  ccr.ccs.tencentyun.com/pydev/cndb:<版本> \
+  cndb restore /data/incoming.tar.gz --dry-run
+```
+
+另外每次部署前 `deploy.sh` 会自动做一份 `pre-deploy-<版本>-<时间戳>.tar.gz`
+（留在容器内 `/data/backups`，只保留最近 3 份），回滚版本时可直接用。
 
 ---
 
