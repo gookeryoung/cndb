@@ -1,4 +1,4 @@
-# ADR 0010: 文档通用文件导入（md / docx / html，单文件与压缩包模式）
+# ADR 0010: 文档通用文件导入（md / docx / html / 纯文本族，单文件与压缩包模式）
 
 Status: Implemented（2026-10-27 人工确认 P0-P2 全期落地）
 Date: 2026-10-20
@@ -18,7 +18,7 @@ Related: `plugins/documents/routers/vault.py`、`plugins/documents/services/obsi
 | C1 | 文档，导入，增加…导入模式 | 新增导入服务 `services/importers/`，新增端点 `POST /{wid}/documents/import/files/analyze` 与 `POST /{wid}/documents/import/files`（multipart 文件批次）；前端新增导入入口弹窗。 |
 | C2 | 单个文件…导入模式 | 批次含 1 个文件即单文件模式：解析为 1 篇文档，落在 `parent_id`；无相对路径或路径仅文件名时即为单文件。 |
 | C3 | …或者文件夹导入模式 | 批次含多个文件且带相对路径：按路径段构建文件夹层级（`_folder_chain` 同款递增去重），每个文件 → 一篇文档。 |
-| C4 | 支持…md、docx、html三种格式 | 格式分派按扩展名：`.md`/`.markdown`、`.docx`、`.html`/`.htm`；其余扩展名进 `skipped`（不中断整批）。 |
+| C4 | 支持…md、docx、html三种格式 | 格式分派按扩展名：`.md`/`.markdown`、`.docx`、`.html`/`.htm`；其余扩展名进 `skipped`（不中断整批）。**纯文本族**（txt / log / csv / tsv / json / yaml / xml / ini / conf / properties / rst / text）自需求 0135 起同样可导入，口径见该卡片 C1-C4（原文入库、标题取文件名、压缩包通道同步支持）。 |
 | C5 | 导入时能够自动格式化 | 三种源格式统一转换为 **Markdown**（项目正文唯一格式）；转换器：md 语义无损规整、docx（`python-docx`）→ md、html（标准库 `html.parser`）→ md。 |
 | C6 | 自动识别标题和正文内容 | 标题提取器：内嵌标题（md front-matter `title` / docx Heading1 或 core properties / html `<title>`/首个 `<h1>`）→ 文件名（去扩展名）；**命中标题行从正文剥离**，不重复出现。 |
 | C7 | 自动清理多余空格 | 规整器 `normalize_markdown`：行尾空白、连续 ≥3 空行折叠为 1、行内连续空格折叠为 1、行首缩进空白清理；**跳过代码围栏 / front-matter / 表格对齐空白**（保语义）。 |
@@ -92,6 +92,8 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 | `importers/markdown.py` | md 源：front-matter 标题提取 + 正文剥离 + 规整 |
 | `importers/docx.py` | docx → Markdown（`python-docx`：Heading→`#`、段落、列表、表格→ pipe table、（可选）图片） |
 | `importers/html.py` | html → Markdown（标准库 `html.parser`：h1-h6/段落/列表/链接/strong/em/code/table） |
+| `importers/text.py` | 纯文本族（需求 0135）：按原文读入（统一换行 / 去首尾空行），不解析 front-matter、不剥标题、不重排空白 |
+| `services/text_formats.py` | 文本族扩展名唯一清单（单文件通道与压缩包通道共用，避免循环导入） |
 | `importers/importer.py` | 落库编排：文件夹层级 / 冲突策略 / 附件登记 / 统计汇总 |
 
 标题识别顺序（唯一）：
@@ -101,6 +103,8 @@ def convert_batch(files: list[UploadedItem]) -> tuple[list[ImportedDoc], list[di
 2. front-matter / 首行的显式标题行（# ...）              （去重：命中的标题行从正文剥离）
 3. 文件名去扩展名（_clean_title 同款清洗，上限 500）
 ```
+
+纯文本族（需求 0135）只有第 3 级：标题取文件名，正文原文入库。
 
 规整规则（C7）：
 

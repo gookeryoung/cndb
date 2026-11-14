@@ -412,13 +412,35 @@ class TestObsidianImportHttp:
         assert r.status_code == 400
 
     def test_import_rejects_vault_without_importable_files(self, client, ws, auth):
-        # 只含无法导入的杂项（.txt）→ 400；纯图片 zip 会作为原件文档导入（需求 0088）
-        r = _post_zip(client, DOCS.format(ws=ws.id) + "/import", _build_zip({"readme.txt": b"hi"}), auth)
+        # 只含无法导入的杂项（.bin）→ 400；纯图片 zip 会作为原件文档导入（需求 0088）
+        r = _post_zip(client, DOCS.format(ws=ws.id) + "/import", _build_zip({"readme.bin": b"hi"}), auth)
         assert r.status_code == 400
 
         r = _post_zip(client, DOCS.format(ws=ws.id) + "/import", _build_zip({"图片.png": b"PNG"}), auth)
         assert r.status_code == 200, r.text
         assert r.json()["assets"] == 1
+
+    def test_import_text_files_as_documents(self, client, ws, auth):
+        data = _build_zip(
+            {
+                "笔记/会议纪要.txt": "第一行\n\n\n  缩进对齐  \n第二行\n".encode(),
+                "配置.yaml": "---\ntitle: 不是元数据\n---\nkey: 1\n".encode(),
+            }
+        )
+        r = _post_zip(client, DOCS.format(ws=ws.id) + "/import", data, auth)
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["created"] == 2
+        assert stats["assets"] == 0
+        tree = client.get(DOCS.format(ws=ws.id) + "/tree", headers=auth).json()["items"]
+        folder = next(item for item in tree if item["title"] == "笔记")
+        note = next(item for item in tree if item["title"] == "会议纪要" and item["parent_id"] == folder["id"])
+        config = next(item for item in tree if item["title"] == "配置")
+        note_body = client.get(f"{DOCS.format(ws=ws.id)}/{note['id']}/content", headers=auth).json()["content"]
+        config_body = client.get(f"{DOCS.format(ws=ws.id)}/{config['id']}/content", headers=auth).json()["content"]
+        # 原文入库：连续空行 / 行内空格 / 缩进都保留；YAML 开头的 --- 不当 front-matter
+        assert note_body.rstrip("\n") == "第一行\n\n\n  缩进对齐  \n第二行"
+        assert config_body.startswith("---\ntitle: 不是元数据")
 
     def test_import_nested_folders_and_duplicate_attachment(self, client, ws, auth):
         data = _build_zip(

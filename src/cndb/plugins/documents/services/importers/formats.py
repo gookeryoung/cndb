@@ -2,8 +2,8 @@
 
 分两类：
 
-- **可转换**（``CONVERTIBLE_SUFFIXES``）：md / docx / html，走 ADR 0010 的
-  「源格式 → Markdown」转换管线，落库后 ``content_type = markdown``；
+- **可转换**（``CONVERTIBLE_SUFFIXES``）：md / docx / html / 纯文本族（需求 0135），走
+  ADR 0010 的「源格式 → Markdown」转换管线，落库后 ``content_type = markdown``；
 - **原件族**（``ASSET_FORMATS``）：PDF / Office / 图片，无法可靠转成 Markdown，
   **原样存档**（原件进上传目录，文档节点记录格式与 MIME），正文走阅读器。
 
@@ -25,9 +25,10 @@ from cndb.plugins.documents.models import (
     CONTENT_TYPE_WORD,
     CONTENT_TYPE_XLSX,
 )
+from cndb.plugins.documents.services.text_formats import TEXT_SUFFIXES
 
-#: 一次能可靠转成 Markdown 的源格式（ADR 0010；MHTML 见 ADR 0049）
-CONVERTIBLE_SUFFIXES = (".md", ".markdown", ".docx", ".html", ".htm", ".mhtml", ".mht")
+#: 一次能可靠转成 Markdown 的源格式（ADR 0010；MHTML 见 ADR 0049；文本族见需求 0135）
+CONVERTIBLE_SUFFIXES = (".md", ".markdown", ".docx", ".html", ".htm", ".mhtml", ".mht", *TEXT_SUFFIXES)
 
 
 @dataclass(frozen=True)

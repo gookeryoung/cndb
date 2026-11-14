@@ -242,6 +242,7 @@ describe('通用导入弹窗', () => {
     expect(inputClick).toHaveBeenCalledTimes(1)
     expect(await screen.findByText('格式与处理方式')).toBeInTheDocument()
     expect(screen.getByText(/原样存档：PDF \/ Excel \/ PPT \/ 图片/)).toBeInTheDocument()
+    expect(screen.getByText(/文本族（txt \/ log \/ csv \/ json \/ yaml 等）按原文入库/)).toBeInTheDocument()
   })
 
   it('预览把 PDF / Office / 图片标为原样存档，accept 覆盖新格式', async () => {
@@ -249,6 +250,9 @@ describe('通用导入弹窗', () => {
     expect(fileInput().getAttribute('accept')).toContain('.pdf')
     expect(fileInput().getAttribute('accept')).toContain('.xlsx')
     expect(fileInput().getAttribute('accept')).toContain('.png')
+    // 需求 0135：纯文本族也可选（按原文入库）
+    expect(fileInput().getAttribute('accept')).toContain('.txt')
+    expect(fileInput().getAttribute('accept')).toContain('.json')
 
     pick([new File(['%PDF-1.4'], '报告.pdf', { type: 'application/pdf' })])
     const preview = await screen.findByTestId('file-import-preview')

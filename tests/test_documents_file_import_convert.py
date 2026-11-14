@@ -741,6 +741,55 @@ class TestHtmlConvertEdges:
             html_converter.convert_html(b"<p>x</p>", "x.html")
 
 
+# ── 纯文本族（需求 0135 / 需求 0010 C9）──
+
+
+class TestTextConverter:
+    def test_plain_text_keeps_body_and_uses_filename_as_title(self):
+        raw = "第一行\n\n\n  缩进对齐  \n第二行\n".encode()
+        doc = reader.convert_file(reader.UploadedItem("资料/会议纪要.txt", raw))
+        assert doc.title == "会议纪要"
+        assert doc.suffix == ".txt"
+        assert doc.asset is False
+        assert doc.content_type == "markdown"
+        # 原文入库：不做空白重排（连续空行 / 行内空格 / 缩进都保留）
+        assert doc.body == "第一行\n\n\n  缩进对齐  \n第二行"
+
+    def test_text_does_not_parse_front_matter_or_strip_heading(self):
+        raw = "---\ntitle: 不是元数据\n---\n# 也不是标题\n".encode()
+        doc = reader.convert_file(reader.UploadedItem("config.yaml", raw))
+        assert doc.title == "config"
+        assert doc.body.startswith("---")
+        assert "# 也不是标题" in doc.body
+
+    def test_text_encoding_fallback_and_crlf(self):
+        raw = "中文日志\r\n第二行\r\n".encode("gb18030")
+        doc = reader.convert_file(reader.UploadedItem("运行.log", raw))
+        assert doc.body == "中文日志\n第二行"
+
+    def test_text_alias_suffixes_supported(self):
+        for suffix in (
+            ".text",
+            ".csv",
+            ".tsv",
+            ".json",
+            ".yaml",
+            ".yml",
+            ".xml",
+            ".ini",
+            ".conf",
+            ".properties",
+            ".rst",
+        ):
+            doc = reader.convert_file(reader.UploadedItem(f"note{suffix}", b"content"))
+            assert doc.body == "content"
+            assert doc.title == "note"
+
+    def test_empty_text_rejected(self):
+        with pytest.raises(UnsupportedImport):
+            reader.convert_file(reader.UploadedItem("empty.txt", b""))
+
+
 # ── reader ──
 
 
@@ -750,7 +799,9 @@ class TestReader:
         assert reader.is_supported("a.MARKDOWN")
         assert reader.is_supported("a.DOCX")
         assert reader.is_supported("a.htm")
-        assert not reader.is_supported("a.txt")
+        assert reader.is_supported("a.txt")
+        assert reader.is_supported("a.CSV")
+        assert not reader.is_supported("a.xyz")
         assert not reader.is_supported("a")
 
     def test_normalize_path(self):
@@ -778,7 +829,7 @@ class TestReader:
 
     def test_convert_file_unsupported(self):
         with pytest.raises(UnsupportedImport):
-            reader.convert_file(reader.UploadedItem("a.txt", b"x"))
+            reader.convert_file(reader.UploadedItem("a.xyz", b"x"))
         with pytest.raises(UnsupportedImport):
             reader.convert_file(reader.UploadedItem("a.md", b""))
 
@@ -834,12 +885,12 @@ class TestReader:
     def test_convert_batch_isolates_failures(self):
         items = [
             reader.UploadedItem("ok.md", b"# T\n"),
-            reader.UploadedItem("bad.txt", b"x"),
+            reader.UploadedItem("bad.xyz", b"x"),
             reader.UploadedItem("broken.docx", b"nope"),
         ]
         docs, skipped = reader.convert_batch(items)
         assert [doc.path for doc in docs] == ["ok.md"]
-        assert {entry["path"] for entry in skipped} == {"bad.txt", "broken.docx"}
+        assert {entry["path"] for entry in skipped} == {"bad.xyz", "broken.docx"}
         assert all(entry["reason"] for entry in skipped)
 
 

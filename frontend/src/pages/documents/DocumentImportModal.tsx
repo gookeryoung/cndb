@@ -1,5 +1,5 @@
 /**
- * 通用文件导入弹窗 —— 单文件 / 文件夹模式，支持 md、docx、html、mhtml。
+ * 通用文件导入弹窗 —— 单文件 / 文件夹模式，支持 md、纯文本族、docx、html、mhtml。
  *
  * 两段式与数据表/Obsidian 导入一致：
  * 1. ``POST /import/files/analyze`` 只解析（本地读取 + 转换）不写库，展示篇数 / 文件夹 / 冲突 / 跳过；
@@ -69,6 +69,19 @@ const PROCESS_OPTIONS: Array<{ value: ProcessMode; label: string }> = [
 const FORMAT_LABEL: Record<string, string> = {
   '.md': 'Markdown',
   '.markdown': 'Markdown',
+  '.txt': '文本',
+  '.text': '文本',
+  '.log': '文本',
+  '.csv': 'CSV',
+  '.tsv': 'TSV',
+  '.json': 'JSON',
+  '.yaml': 'YAML',
+  '.yml': 'YAML',
+  '.xml': 'XML',
+  '.ini': '文本',
+  '.conf': '文本',
+  '.properties': '文本',
+  '.rst': '文本',
   '.docx': 'Word',
   '.html': 'HTML',
   '.htm': 'HTML',
@@ -149,7 +162,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     onError: (err: unknown) => {
       reset()
       message.error(
-        err instanceof Error ? err.message : '解析失败，请确认文件格式在支持范围内（md / docx / html / mhtml / pdf / Office / 图片）',
+        err instanceof Error ? err.message : '解析失败，请确认文件格式在支持范围内（md / 文本 / docx / html / mhtml / pdf / Office / 图片）',
       )
     },
   })
@@ -423,14 +436,14 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               helpTestId="file-import-help"
               icon={<FileTextOutlined />}
               title="选择文件导入"
-              subtitle={`导入到${targetText} · 支持 Markdown / Word / HTML / MHTML / PDF / Excel / PPT / 图片`}
+              subtitle={`导入到${targetText} · 支持 Markdown / 文本 / Word / HTML / MHTML / PDF / Excel / PPT / 图片`}
               actionLabel="选择文件"
               disabled={busy}
               onPick={() => inputRef.current?.click()}
               helpTitle="格式与处理方式"
               help={
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--cn-text-xs)', lineHeight: 1.9, maxWidth: 360 }}>
-                  <li>转 Markdown：Markdown / HTML 直接转换；Word、MHTML 选「转 Markdown」后转为可编辑文档</li>
+                  <li>转 Markdown：Markdown / HTML 直接转换；文本族（txt / log / csv / json / yaml 等）按原文入库；Word、MHTML 选「转 Markdown」后转为可编辑文档</li>
                   <li>原样存档：PDF / Excel / PPT / 图片固定原样存档；Word、MHTML 选「原样存档」时保留原件，可预览、可下载，不可编辑</li>
                   <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>
                 </ul>

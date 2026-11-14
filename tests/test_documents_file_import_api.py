@@ -467,9 +467,9 @@ class TestImportFiles:
             files=_files(
                 ("good.md", MD_NOTE.encode(), "text/markdown"),
                 ("broken.docx", b"not-a-docx", "application/octet-stream"),
-                ("note.txt", b"x", "text/plain"),
+                ("note.xyz", b"x", "text/plain"),
             ),
-            data={"paths": ["good.md", "broken.docx", "note.txt"]},
+            data={"paths": ["good.md", "broken.docx", "note.xyz"]},
             headers=auth,
         )
         assert r.status_code == 200, r.text
@@ -478,7 +478,7 @@ class TestImportFiles:
         assert stats["skipped"] == 2
         reasons = {entry["path"]: entry["reason"] for entry in stats["skipped_files"]}
         assert "broken.docx" in reasons
-        assert "note.txt" in reasons
+        assert "note.xyz" in reasons
         assert len(_flat(_tree(client, ws.id, auth))) == 1
 
     def test_invalid_paths_reported(self, client, ws, auth):
@@ -590,10 +590,10 @@ class TestImportFiles:
         r = client.post(
             IMPORT.format(ws=ws.id),
             files=_files(
-                ("x.txt", b"x", "text/plain"),
-                ("y.txt", b"y", "text/plain"),
+                ("x.xyz", b"x", "text/plain"),
+                ("y.xyz", b"y", "text/plain"),
             ),
-            data={"paths": ["x.txt", "y.txt"]},
+            data={"paths": ["x.xyz", "y.xyz"]},
             headers=auth,
         )
         assert r.status_code == 200, r.text

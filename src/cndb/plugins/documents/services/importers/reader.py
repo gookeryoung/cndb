@@ -14,10 +14,12 @@ from pathlib import Path
 from cndb.core.errors import BadRequestError
 from cndb.plugins.documents.services.obsidian import _is_skipped_path, _normalize_entry_path
 
+from ..text_formats import TEXT_SUFFIXES
 from . import docx as docx_converter
 from . import html as html_converter
 from . import markdown as markdown_converter
 from . import mhtml as mhtml_converter
+from . import text as text_converter
 from .errors import UnsupportedImport
 from .formats import (
     CONTENT_TYPE_IMAGE,
@@ -183,6 +185,16 @@ def convert_file(
 
     if len(item.data) > MAX_FILE_BYTES:
         raise UnsupportedImport(f"文件超过 {MAX_FILE_BYTES // MB}MB")
+    if suffix in TEXT_SUFFIXES:
+        # 纯文本族（需求 0135）：原文入库，不做空白重排 / 转义（先于通用规整返回）
+        title, body, warnings = text_converter.convert_text(item.data, item.path)
+        return ImportedDoc(
+            path=item.path,
+            title=clean_title(title or Path(item.path).stem),
+            body=body,
+            suffix=suffix,
+            warnings=warnings,
+        )
     try:
         if suffix in MARKDOWN_SUFFIXES:
             title, body, warnings = markdown_converter.convert_markdown(item.data, item.path)

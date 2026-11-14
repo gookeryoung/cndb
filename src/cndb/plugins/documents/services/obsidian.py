@@ -2,6 +2,8 @@
 
 导入（zip → 文档树）：
 - ``*.md`` / ``*.markdown`` → 文档，zip 目录层级 → 文件夹；
+- 纯文本族（``TEXT_SUFFIXES``：txt / log / csv / json / yaml 等，需求 0135）→ 文档，
+  正文按原文入库（不解析 front-matter、不剥标题），标题取文件名；
 - front-matter 的 ``title`` 作为文档标题（缺省用文件名），``tags`` → 工作区标签；
 - ``![[img.png]]`` / ``![[报告.pdf]]`` → 上传附件并改写为站内引用 ``![](file:<key>)``；
 - 标准 Markdown 图片 ``![](attachments/x.png)`` 同样按库内路径解析（Obsidian 关闭
@@ -57,6 +59,7 @@ from cndb.plugins.documents.services import content as content_service
 from cndb.plugins.documents.services import parse, visibility
 from cndb.plugins.documents.services.export.images import INLINE_IMAGE_RE, resolve_upload_path
 from cndb.plugins.documents.services.importers.formats import ASSET_FORMATS, DOCX_ASSET_FORMAT
+from cndb.plugins.documents.services.text_formats import TEXT_SUFFIXES
 from cndb.plugins.files.models import FileOwner
 
 # ── 限制与常量 ──
@@ -248,7 +251,12 @@ class VaultArchive:
             return handle.read()
 
     def markdown_paths(self) -> list[str]:
-        return [p for p in self.paths if Path(p).suffix.lower() in MARKDOWN_SUFFIXES]
+        """按文档导入的条目：Markdown + 纯文本族（需求 0135）."""
+        return [
+            p
+            for p in self.paths
+            if Path(p).suffix.lower() in MARKDOWN_SUFFIXES or Path(p).suffix.lower() in TEXT_SUFFIXES
+        ]
 
     def size_of(self, path: str) -> int:
         info = self._entries.get(path)
@@ -511,8 +519,20 @@ def _parse_notes(archive: VaultArchive) -> list[VaultNote]:
         if total > MAX_MARKDOWN_TOTAL_BYTES:
             raise BadRequestError(f"库内 markdown 总体积过大（> {MAX_MARKDOWN_TOTAL_BYTES // MB}MB），请分批导入")
         text = _decode_markdown(data)
-        meta, body = parse_vault_front_matter(text)
         parts = path.split("/")
+        if Path(path).suffix.lower() in TEXT_SUFFIXES:
+            # 纯文本族：原文入库，不解析 front-matter（.yaml 开头的 --- 是内容）
+            notes.append(
+                VaultNote(
+                    path=path,
+                    folder=tuple(parts[:-1]),
+                    title=_clean_title(Path(path).stem),
+                    body=text,
+                    size=len(data),
+                )
+            )
+            continue
+        meta, body = parse_vault_front_matter(text)
         note = VaultNote(
             path=path,
             folder=tuple(parts[:-1]),
@@ -1004,6 +1024,7 @@ def _analyze_warnings(notes: list[VaultNote], archive: VaultArchive) -> list[dic
         path
         for path in archive.paths
         if Path(path).suffix.lower() not in MARKDOWN_SUFFIXES
+        and Path(path).suffix.lower() not in TEXT_SUFFIXES
         and Path(path).suffix.lower() not in ATTACHMENT_EXTENSIONS
         and Path(path).suffix.lower() not in CONVERTIBLE_EXTENSIONS
     ]
