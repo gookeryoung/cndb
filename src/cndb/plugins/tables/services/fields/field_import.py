@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -295,9 +296,7 @@ def execute_field_import(
     except Exception:
         # 逆向清理已成功的 DDL 列
         for f in reversed(ddl_ok):
-            import contextlib as _cl
-
-            with _cl.suppress(Exception):
+            with contextlib.suppress(Exception):
                 if f.is_unique:
                     _ddl.drop_unique_constraint(engine, dst_table, f)
                 drop_column(engine, dst_table, f)
@@ -306,7 +305,18 @@ def execute_field_import(
     # 全部 DDL 成功 → 持久化 DataField 元数据
     for f in plan:
         db.add(f)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        # 元数据落库失败（如同名撞唯一约束）：已加的物理列必须逆向清理，
+        # 否则会留下无元数据的孤儿列，后续重试再次加列（ADR 0038 同款原子性要求）
+        db.rollback()
+        for f in reversed(ddl_ok):
+            with contextlib.suppress(Exception):
+                if f.is_unique:
+                    _ddl.drop_unique_constraint(engine, dst_table, f)
+                drop_column(engine, dst_table, f)
+        raise
     for f in plan:
         db.refresh(f)
 
@@ -372,9 +382,7 @@ def clone_fields_between_tables(
             ddl_ok.append(f)
     except Exception:
         for f in reversed(ddl_ok):
-            import contextlib as _cl
-
-            with _cl.suppress(Exception):
+            with contextlib.suppress(Exception):
                 if f.is_unique:
                     _ddl.drop_unique_constraint(engine, dst_table, f)
                 drop_column(engine, dst_table, f)
@@ -382,7 +390,17 @@ def clone_fields_between_tables(
 
     for f in plan:
         db.add(f)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        # 同 execute_field_import：元数据提交失败时回收已加的物理列，避免孤儿列
+        db.rollback()
+        for f in reversed(ddl_ok):
+            with contextlib.suppress(Exception):
+                if f.is_unique:
+                    _ddl.drop_unique_constraint(engine, dst_table, f)
+                drop_column(engine, dst_table, f)
+        raise
     for f in plan:
         db.refresh(f)
     return list(plan), skipped

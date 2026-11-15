@@ -95,14 +95,36 @@ class TestUnhandledError:
     """未捕获异常 → 统一 500 响应体."""
 
     def test_unmapped_exception_returns_uniform_500(self):
-        """raise_server_exceptions=False 下（生产 uvicorn 语义）客户端拿到统一 JSON."""
+        """raise_server_exceptions=False 下（生产 uvicorn 语义）客户端拿到统一 JSON.
+
+        detail 带可定位信息：DEBUG 下为异常类型 + 消息；生产为 request_id（凭它查服务端日志）。
+        """
         from cndb.app import app
 
         with TestClient(app, raise_server_exceptions=False) as c:
             c.cookies.clear()
             r = c.get("/api/test-error-contract/no-such-kind")
         assert r.status_code == 500
-        assert r.json() == {"detail": "内部服务器错误", "code": "internal_error"}
+        body = r.json()
+        assert body["code"] == "internal_error"
+        assert body["detail"].startswith("内部服务器错误")
+        # 排障信息必须落在 detail 里，不能只剩一句笼统文案
+        assert "RuntimeError: no-such-kind" in body["detail"] or "request_id=" in body["detail"]
+
+    def test_production_detail_carries_request_id(self, monkeypatch):
+        """DEBUG=false（生产）时不给内部异常文本，但给出可检索日志的 request_id."""
+        from cndb.app import app
+        from cndb.core.config import settings
+
+        monkeypatch.setattr(settings, "DEBUG", False)
+        with TestClient(app, raise_server_exceptions=False) as c:
+            c.cookies.clear()
+            r = c.get("/api/test-error-contract/no-such-kind", headers={"X-Request-ID": "probe-req-123"})
+        assert r.status_code == 500
+        body = r.json()
+        assert body["code"] == "internal_error"
+        assert body["detail"] == "内部服务器错误（request_id=probe-req-123）"
+        assert "no-such-kind" not in body["detail"]
 
 
 class TestGetDbRollback:

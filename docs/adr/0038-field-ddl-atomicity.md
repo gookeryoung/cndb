@@ -129,11 +129,12 @@ Related: `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/
 | P0 | 已落地 | `src/cndb/plugins/tables/routers/fields.py`、`src/cndb/plugins/tables/services/core/ddl.py` | `tests/test_field_edit_validation.py`、`tests/test_cov_links_ddl.py` | 4d9456f8 |
 | P1 | 已落地 | `src/cndb/plugins/tables/routers/tables.py`、`src/cndb/plugins/tables/routers/fields.py` | `tests/test_tables_coverage.py`、`tests/test_field_edit_validation.py` | 4d9456f8 |
 | P2 | 已落地 | `src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_fields_import.py` | 4d9456f8 |
+| 补充（2026-11-15） | 已落地 | commit 失败逆向清理，补齐 I1：`src/cndb/plugins/tables/services/fields/field_import.py` | `tests/test_fields_import.py` | 未发布 |
 
 ## 交接（会话结束更新）
 
 - 当前阶段：全部期已落地，`Status` 已于 2026-10-27 经人工评审确认改 `Implemented`
 - 已完成：P0 / P1 / P2
 - 下一步：无（功能完结）
-- 已知坑：SQLite 空表 `ADD COLUMN NOT NULL` 合法、非空表不合法；物理 DDL 事务与 ORM Session 事务相互独立，`db.rollback()` 撤销不了已提交的 metadata；测试须用真实非空物理表复现
+- 已知坑：SQLite 空表 `ADD COLUMN NOT NULL` 合法、非空表不合法；物理 DDL 事务与 ORM Session 事务相互独立，`db.rollback()` 撤销不了已提交的 metadata；测试须用真实非空物理表复现。字段克隆的 DDL 已成功后，metadata `commit` 仍可能失败（如唯一约束），此路径同样必须逆向删列，不能只依赖 DDL 阶段的清理
 - 最近一次全绿：`make cov`（5449 passed / 3 skipped，覆盖率 96.98%）@ 2026-10-26

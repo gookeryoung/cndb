@@ -64,6 +64,50 @@ router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/fields", tags=["fie
 logger = logging.getLogger(__name__)
 
 
+def _import_error_detail(action: str, exc: Exception) -> str:
+    """把引入链路的意外异常转成可排障的 detail（异常类型 + 消息）.
+
+    背景：引入字段的失败分支原来只拼 ``str(exc)``，遇到消息为空的异常（如部分
+    ``ResponseValidationError`` / 底层驱动异常）用户只能看到光秃的前缀，
+    无法判断根因。统一带上异常类名，再配合路由里的 ``logger.exception`` 保留堆栈。
+    """
+    message = str(exc).strip() or "无附加错误信息"
+    return f"{action}（{type(exc).__name__}）: {message}"
+
+
+def _build_import_analysis(
+    payload: FieldImportRequest,
+    src_fields: list[DataField],
+    dst: DataTable,
+) -> tuple[dict[str, Any], list[dict[str, Any]] | None]:
+    """构造字段引入的缺口分析与智能建议（纯计算，不写库）.
+
+    Returns:
+        ``(gap_analysis, suggestions)``；用户显式传了 mapping 时 suggestions 为 None。
+    """
+    from cndb.plugins.tables.services.importing.field_mapping import (
+        analyze_field_gaps,
+        apply_user_mapping,
+        build_default_mapping,
+        suggest_field_mapping,
+    )
+
+    dst_fields_list = [f for f in dst.fields if not f.trashed]
+    dst_names = [f.name for f in dst_fields_list]
+    src_names = [f.name for f in src_fields]
+    base = build_default_mapping(src_names)
+
+    if payload.field_mapping is not None:
+        # 用户显式传了 mapping → 用用户的
+        merged = apply_user_mapping(base, payload.field_mapping, src_names)
+        return analyze_field_gaps(merged, src_names, dst_names), None
+
+    # 未传 field_mapping → 自动推荐一个默认映射（供前端预览 / 服务端直接执行复用）
+    auto_mapping, suggestions = suggest_field_mapping(src_fields, dst_fields_list)
+    merged = apply_user_mapping(base, auto_mapping, src_names)
+    return analyze_field_gaps(merged, src_names, dst_names), suggestions
+
+
 def _validate_link_business_key(cfg: LinkFieldConfig, target: DataTable) -> None:
     """校验 link 字段配置的业务键（显示字段 / 匹配字段）合法.
 
@@ -696,57 +740,45 @@ def import_fields(
             raise HTTPException(status_code=400, detail=f"field_mapping 中存在源表没有的字段: {sorted(unknown)}")
 
     # ── 构造缺口分析 + 智能建议（无论 preview 与否都返回，供前端渲染） ──
-    from cndb.plugins.tables.services.importing.field_mapping import (
-        analyze_field_gaps,
-        apply_user_mapping,
-        build_default_mapping,
-        suggest_field_mapping,
-    )
-
-    dst_names = [f.name for f in dst.fields if not f.trashed]
-    dst_fields_list = [f for f in dst.fields if not f.trashed]
-    src_names_list = [f.name for f in src_fields]
-
-    if payload.field_mapping is not None:
-        # 用户显式传了 mapping → 用用户的
-        base = build_default_mapping(src_names_list)
-        merged = apply_user_mapping(base, payload.field_mapping, src_names_list)
-        gap_analysis = analyze_field_gaps(merged, src_names_list, dst_names)
-        suggestions: list[dict[str, Any]] | None = None
-    else:
-        # 未传 field_mapping → 用 suggest_field_mapping 自动推一个默认（供前端预览用）
-        auto_mapping, suggestions = suggest_field_mapping(src_fields, dst_fields_list)
-        base = build_default_mapping(src_names_list)
-        merged = apply_user_mapping(base, auto_mapping, src_names_list)
-        gap_analysis = analyze_field_gaps(merged, src_names_list, dst_names)
+    # 这段是纯计算，异常说明数据/配置超出预期（如字段配置损坏），
+    # 必须带异常类型与消息返回并落 traceback，否则前端只能看到「内部服务器错误」。
+    try:
+        gap_analysis, suggestions = _build_import_analysis(payload, src_fields, dst)
+    except Exception as exc:
+        logger.exception("[fields.import] 字段引入分析失败 table_id=%s source_table_id=%s", table_id, src.id)
+        raise HTTPException(status_code=500, detail=_import_error_detail("字段引入分析失败", exc)) from exc
 
     # ── 预览模式：直接返回，不执行引入 ──
     if payload.preview_only:
-        if payload.import_mode == "link":
-            # link 模式：给出将创建的字段清单（自动 link 字段 + 每个可关联源字段一个 lookup 字段）
-            existing_names = {f.name for f in dst.fields if not f.trashed}
-            has_link = any(
-                f.field_type == "link" and (f.config or {}).get("target_table_id") == src.id
-                for f in dst.active_fields()
+        try:
+            if payload.import_mode == "link":
+                # link 模式：给出将创建的字段清单（自动 link 字段 + 每个可关联源字段一个 lookup 字段）
+                existing_names = {f.name for f in dst.fields if not f.trashed}
+                has_link = any(
+                    f.field_type == "link" and (f.config or {}).get("target_table_id") == src.id
+                    for f in dst.active_fields()
+                )
+                planned: list[dict[str, Any]] = []
+                if not has_link:
+                    planned.append({"name": f"关联 {src.name}", "field_type": "link"})
+                for sf in src_fields:
+                    if sf.field_type in ("link", "lookup"):
+                        continue
+                    if sf.name in existing_names:
+                        continue
+                    planned.append({"name": sf.name, "field_type": "lookup"})
+                gap_analysis = dict(gap_analysis) if gap_analysis else {}
+                gap_analysis["planned_fields"] = planned
+            return FieldImportResponse(
+                created=[],
+                skipped=[],
+                total_source_count=len(src_fields),
+                gap_analysis=gap_analysis,
+                suggestions=suggestions,
             )
-            planned: list[dict[str, Any]] = []
-            if not has_link:
-                planned.append({"name": f"关联 {src.name}", "field_type": "link"})
-            for sf in src_fields:
-                if sf.field_type in ("link", "lookup"):
-                    continue
-                if sf.name in existing_names:
-                    continue
-                planned.append({"name": sf.name, "field_type": "lookup"})
-            gap_analysis = dict(gap_analysis) if gap_analysis else {}
-            gap_analysis["planned_fields"] = planned
-        return FieldImportResponse(
-            created=[],
-            skipped=[],
-            total_source_count=len(src_fields),
-            gap_analysis=gap_analysis,
-            suggestions=suggestions,
-        )
+        except Exception as exc:
+            logger.exception("[fields.import] 字段引入预览失败 table_id=%s source_table_id=%s", table_id, src.id)
+            raise HTTPException(status_code=500, detail=_import_error_detail("字段引入预览失败", exc)) from exc
 
     # ── 执行引入：link=字段关联模式；copy（默认）=字段定义复制模式 ──
     engine = db.get_bind()
@@ -754,7 +786,8 @@ def import_fields(
         try:
             created, skipped = import_fields_as_lookup(engine, db, src, dst, src_fields)
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"字段关联引入失败: {exc}") from exc
+            logger.exception("[fields.import] 字段关联引入失败 table_id=%s source_table_id=%s", table_id, src.id)
+            raise HTTPException(status_code=500, detail=_import_error_detail("字段关联引入失败", exc)) from exc
     else:
         try:
             created, skipped = clone_fields_between_tables(
@@ -769,7 +802,8 @@ def import_fields(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"字段导入失败: {exc}") from exc
+            logger.exception("[fields.import] 字段导入失败 table_id=%s source_table_id=%s", table_id, src.id)
+            raise HTTPException(status_code=500, detail=_import_error_detail("字段导入失败", exc)) from exc
 
     return FieldImportResponse(
         created=[FieldResponse.model_validate(f, from_attributes=True) for f in created],

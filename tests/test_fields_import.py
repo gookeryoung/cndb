@@ -1348,3 +1348,111 @@ class TestRequiredFieldImportGuard:
 def _field_id(client, headers: dict, wid: int, tid: int, name: str) -> int:
     fields = client.get(f"/api/v1/workspaces/{wid}/tables/{tid}/fields", headers=headers).json()
     return next(f["id"] for f in fields if f["name"] == name)
+
+
+# ── 错误可排障性（失败时给出异常类型 + 消息，而非笼统「内部错误」） ──────────
+
+
+class TestFieldImportErrorDetail:
+    def _make_tables(self, client, auth_headers, db):
+        from cndb.plugins.tables.models import DataTable
+
+        wid = client.post("/api/v1/workspaces", headers=auth_headers, json={"name": "WS_ERR"}).json()["id"]
+        src_tid = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "ErrSrc"}).json()[
+            "id"
+        ]
+        dst_tid = client.post(f"/api/v1/workspaces/{wid}/tables", headers=auth_headers, json={"name": "ErrDst"}).json()[
+            "id"
+        ]
+        client.post(
+            f"/api/v1/workspaces/{wid}/tables/{src_tid}/fields",
+            headers=auth_headers,
+            json={"name": "col_err", "field_type": "text"},
+        )
+        assert db.get(DataTable, src_tid) is not None
+        return wid, src_tid, dst_tid
+
+    def test_preview_unexpected_error_returns_type_and_message(self, client, auth_headers, db, monkeypatch):
+        """预览链路意外异常 → 500 detail 含异常类型与消息（便于定位根因）."""
+        import cndb.plugins.tables.services.importing.field_mapping as fm
+
+        wid, src_tid, dst_tid = self._make_tables(client, auth_headers, db)
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("字段配置损坏")
+
+        monkeypatch.setattr(fm, "suggest_field_mapping", _boom)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": src_tid, "import_all_fields": True, "preview_only": True},
+        )
+        assert r.status_code == 500, r.text
+        detail = r.json()["detail"]
+        assert "字段引入分析失败" in detail
+        assert "RuntimeError" in detail
+        assert "字段配置损坏" in detail
+
+    def test_execute_unexpected_error_returns_type_and_message(self, client, auth_headers, db, monkeypatch):
+        """执行链路意外异常 → 500 detail 含异常类型与消息."""
+        import cndb.plugins.tables.routers.fields as fields_router
+
+        wid, src_tid, dst_tid = self._make_tables(client, auth_headers, db)
+
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("加列时数据库连接中断")
+
+        monkeypatch.setattr(fields_router, "clone_fields_between_tables", _boom)
+        r = client.post(
+            f"/api/v1/workspaces/{wid}/tables/{dst_tid}/fields/import",
+            headers=auth_headers,
+            json={"source_table_id": src_tid, "import_all_fields": True},
+        )
+        assert r.status_code == 500, r.text
+        detail = r.json()["detail"]
+        assert "字段导入失败" in detail
+        assert "RuntimeError" in detail
+        assert "加列时数据库连接中断" in detail
+
+
+def test_execute_field_import_commit_failure_drops_physical_columns(db):
+    """metadata 提交失败 → 已加的物理列逆向清理，不留孤儿列（ADR 0038 同款原子性）."""
+    from unittest.mock import patch
+
+    from sqlalchemy import inspect
+
+    from cndb.plugins.tables.models import DataField, DataTable
+    from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
+    from cndb.plugins.tables.services.fields import field_ops as _fo
+
+    engine = db.get_bind()
+
+    src = DataTable(workspace_id=1, name="S_commit_fail", owner_id=1)
+    src.ensure_db_name()
+    db.add(src)
+    db.flush()
+    dst = DataTable(workspace_id=1, name="D_commit_fail", owner_id=1)
+    dst.ensure_db_name()
+    db.add(dst)
+    db.flush()
+
+    src_f = DataField(table_id=src.id, name="f", field_type="text", order=0)
+    src_f.ensure_db_name()
+    db.add(src_f)
+    db.commit()
+    db.refresh(src_f)
+    ddl_create(engine, dst)
+
+    real_commit = db.commit
+    with (
+        patch.object(db, "commit", side_effect=RuntimeError("commit boom")),
+        pytest.raises(RuntimeError, match="commit boom"),
+    ):
+        _fo.execute_field_import(engine, db, dst, [src_f])
+
+    # 物理列已被回收
+    cols = {c["name"] for c in inspect(engine).get_columns(dst.db_table_name)}
+    assert not any(c.startswith("field_") for c in cols)
+    # metadata 未残留
+    assert db.query(DataField).filter(DataField.table_id == dst.id).count() == 0
+    real_commit()

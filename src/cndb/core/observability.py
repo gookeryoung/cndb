@@ -117,6 +117,9 @@ class RequestObservabilityMiddleware:
         incoming = (headers.get(b"x-request-id") or b"").decode("latin-1").strip()
         request_id = incoming or uuid.uuid4().hex
         token = _request_id_var.set(request_id)
+        # 同时落到 scope.state：ServerErrorMiddleware 位于本中间件之外，
+        # 未捕获异常 handler 运行时 ContextVar 已被 finally 重置，只能靠 scope 拿到同一个 id。
+        scope.setdefault("state", {})["request_id"] = request_id
 
         status_holder: dict[str, int] = {"status": 500}
 

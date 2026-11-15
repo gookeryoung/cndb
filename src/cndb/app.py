@@ -30,7 +30,7 @@ from cndb.core.config import settings
 from cndb.core.errors import CndbError
 from cndb.core.events_api import register_event_routes
 from cndb.core.migrations import ensure_db_migrated
-from cndb.core.observability import RequestObservabilityMiddleware, configure_logging
+from cndb.core.observability import RequestObservabilityMiddleware, configure_logging, get_request_id
 from cndb.core.plugin_registry import plugin_registry
 from cndb.core.system_api import register_system_routes
 from cndb.plugins.documents.routers.public import router as documents_public_router
@@ -235,10 +235,17 @@ async def _unhandled_error_handler(request: Request, exc: Exception) -> Response
     注意：ServerErrorMiddleware 发送本响应后仍会重抛异常（由 uvicorn 记录），
     本 handler 的职责是保证客户端拿到统一 JSON 形状而非空白 500。
     """
-    logger.exception("未处理异常 %s %s: %s", request.method, request.url.path, exc)
+    request_id = get_request_id() or str(getattr(request.state, "request_id", "") or "")
+    logger.exception("未处理异常 %s %s request_id=%s: %s", request.method, request.url.path, request_id, exc)
+    # 面向调用方的信息：DEBUG 下直接给出异常类型与消息（本地排障）；
+    # 生产只给 request_id，用户报障时可凭它检索服务端日志定位完整堆栈，不泄露内部细节。
+    if settings.DEBUG:
+        detail = f"内部服务器错误（{type(exc).__name__}: {exc}）"
+    else:
+        detail = f"内部服务器错误（request_id={request_id}）" if request_id else "内部服务器错误"
     return JSONResponse(
         status_code=500,
-        content={"detail": "内部服务器错误", "code": "internal_error"},
+        content={"detail": detail, "code": "internal_error"},
     )
 
 
