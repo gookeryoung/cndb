@@ -110,6 +110,20 @@ function ConfigItem({ opt, fields, opts, updateOpt }: {
     )
   }
 
+  // 月份输入（YYYY-MM）——受控输入，空值由 updateOpt 清除
+  if (opt.kind === 'month') {
+    return (
+      <Form.Item label={opt.label} tooltip={opt.tooltip}>
+        <Input
+          placeholder="YYYY-MM（如 2026-01）"
+          maxLength={7}
+          value={(currentValue as string) ?? ''}
+          onChange={e => updateOpt(opt.key, e.target.value.trim())}
+        />
+      </Form.Item>
+    )
+  }
+
   // 有序字符串列表（逗号分隔输入，存 string[]）——非受控输入，变更即时解析为数组写回
   if (opt.kind === 'text_list') {
     const list = Array.isArray(currentValue) ? (currentValue as unknown[]).map(String) : []
@@ -243,7 +257,17 @@ export default function CreateEditViewForm({
           </div>
           <div className="cevf-col-1">
             <Form.Item label="视图类型">
-              <Select value={vt} onChange={(v) => { setVt(v); setOpts({}); chartDraft.setActiveIdx(0) }} options={viewTypeOptions} />
+              <Select
+                value={vt}
+                onChange={(v) => {
+                  setVt(v)
+                  // 评分矩阵给一个确定性的默认年份范围（当年 1–12 月），避免出现空列配置
+                  const year = new Date().getFullYear()
+                  setOpts(v === 'matrix' ? { period_start: `${year}-01`, period_end: `${year}-12` } : {})
+                  chartDraft.setActiveIdx(0)
+                }}
+                options={viewTypeOptions}
+              />
             </Form.Item>
           </div>
         </div>

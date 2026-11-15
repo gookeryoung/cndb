@@ -14,6 +14,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.core.errors import CndbError
 from cndb.plugins.accounts.models import User
+from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import (
     KNOWN_VIEW_TYPES,
     AuditLog,
@@ -96,6 +97,68 @@ def _dashboard_fields_resolver(
     return resolve
 
 
+def _parse_view_month(value: Any) -> datetime | None:
+    """解析视图配置里的 ``YYYY-MM`` 月份；非法返回 None."""
+    if not isinstance(value, str) or len(value) != 7 or value[4] != "-":
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m")
+    except ValueError:
+        return None
+
+
+def _validate_matrix_score_options(
+    options: dict[str, Any],
+    filters: list[dict[str, Any]] | None,
+    field_defs: dict[str, DataField],
+) -> str | None:
+    """校验可编辑评分矩阵的配置组合（ADR 0136）；返回错误文案或 None.
+
+    仅在矩阵视图配置了 ``value_field`` 时生效；未配置时保持原有只读矩阵行为。
+    """
+    value_field = options.get("value_field")
+    if not value_field:
+        return None
+    row_field = options.get("row_field")
+    column_field = options.get("column_field")
+    if not row_field or not column_field:
+        return "评分矩阵必须配置行分组字段（对象）与列分组字段（月份）"
+    row_def = field_defs.get(str(row_field))
+    column_def = field_defs.get(str(column_field))
+    value_def = field_defs.get(str(value_field))
+    if row_def is None or column_def is None or value_def is None:
+        return "评分矩阵引用的字段不存在"
+
+    row_ft = default_registry.get(row_def.field_type)
+    column_ft = default_registry.get(column_def.field_type)
+    value_ft = default_registry.get(value_def.field_type)
+    if row_ft is None or row_ft.name != "select":
+        return "评分矩阵的行字段必须是单选类型"
+    if column_ft is None or column_ft.name != "date":
+        return "评分矩阵的月份字段必须是日期类型"
+    if value_ft is None or value_ft.name not in {"number", "float", "percentage"}:
+        return "评分矩阵的评分字段必须是数字类型"
+    if options.get("date_granularity", "month") != "month":
+        return "评分矩阵的日期聚合方式必须为「月」"
+    if filters:
+        return "评分矩阵不支持视图筛选（请用起止月份控制范围），避免隐藏已有行导致重复录入"
+
+    row_options = (row_def.config or {}).get("options") if isinstance(row_def.config, dict) else None
+    if not isinstance(row_options, list) or not row_options:
+        return "评分矩阵的行字段必须配置固定选项（对象清单不能为空）"
+
+    period_start = _parse_view_month(options.get("period_start"))
+    period_end = _parse_view_month(options.get("period_end"))
+    if period_start is None or period_end is None:
+        return "评分矩阵必须配置起止月份（YYYY-MM）"
+    if period_start > period_end:
+        return "评分矩阵的起始月份不能晚于结束月份"
+    span = (period_end.year - period_start.year) * 12 + (period_end.month - period_start.month) + 1
+    if span > 24:
+        return f"评分矩阵的月份范围最多 24 个月（当前 {span} 个月）"
+    return None
+
+
 def _validate_view_fields(
     vc: ViewCreate,
     table_id: int,
@@ -127,9 +190,10 @@ def _validate_view_fields(
         # WBS 工作分解结构
         "parent_field",
         "status_field",
-        # Matrix 矩阵视图（纵横轴字段）
+        # Matrix 矩阵视图（纵横轴字段 + 评分字段）
         "row_field",
         "column_field",
+        "value_field",
         # Chart 图表视图（维度/度量/散点双轴字段；group_field 已在上方）
         "dimension_field",
         "measure_field",
@@ -156,6 +220,10 @@ def _validate_view_fields(
                 return False, f"view_options.{list_key}[{i}] 不是字符串"
             if item and item not in valid_fields:
                 return False, f"view_options.{list_key}[{i}]='{item}' 不存在"
+    if vc.view_type == "matrix":
+        matrix_err = _validate_matrix_score_options(vo, vc.filters, field_defs)
+        if matrix_err:
+            return False, matrix_err
     # chart 多图形态：charts[] 逐条目校验字段引用（detail 定位到 charts[i].<key>）
     charts = vo.get("charts")
     if isinstance(charts, list):
@@ -538,6 +606,15 @@ def update_view(
             raise HTTPException(status_code=400, detail=f"视图字段校验失败: dashboard 配置校验失败: {err}")
         if payload.view_options is not None:
             payload = payload.model_copy(update={"view_options": config})
+
+    # 可编辑评分矩阵：更新时同样校验组合（ADR 0136）；字段 / 筛选取合并后的有效值
+    if effective_type == "matrix":
+        effective_options = payload.view_options if payload.view_options is not None else dv.view_options
+        effective_filters = payload.filters if payload.filters is not None else dv.filters
+        field_defs = {f.name: f for f in db.query(DataField).filter(DataField.table_id == table_id).all()}
+        matrix_err = _validate_matrix_score_options(effective_options or {}, effective_filters or [], field_defs)
+        if matrix_err:
+            raise HTTPException(status_code=400, detail=f"视图字段校验失败: {matrix_err}")
 
     # 如果标记为 default，先把同表其他视图的 default 清掉
     if payload.is_default:

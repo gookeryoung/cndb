@@ -32,6 +32,7 @@ from cndb.plugins.tables.services.core.access import (
 from cndb.plugins.tables.services.core.ddl import create_table as ddl_create
 from cndb.plugins.tables.services.core.field_serialization import field_response
 from cndb.plugins.tables.services.core.record_counts import batch_record_counts
+from cndb.plugins.tables.services.core.row_access import row_rules_active
 from cndb.plugins.tables.services.core.view_access import (
     grants_for_user,
     is_view_visible,
@@ -480,8 +481,10 @@ def get_table(
                 nickname=owner_member.user.nickname,
             )
 
+    base_data = base.model_dump()
+    base_data["row_rules_active"] = row_rules_active(db, dt)
     return TableDetailResponse(
-        **base.model_dump(),
+        **base_data,
         # options 截断：展示链路不传全量选项清单（ADR 0046 D6），编辑入口走 fields?full=1
         fields=[field_response(f) for f in active_fields],
         views=view_briefs,

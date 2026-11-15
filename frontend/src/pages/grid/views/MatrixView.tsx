@@ -16,18 +16,24 @@
  * - row_field（必填）/ column_field（必填）/ date_granularity（默认 month）/ title_field（可选）
  */
 
-import { useMemo } from 'react'
-import { Empty, Tooltip } from 'antd'
-import type { RowResponse, Field, View } from '@/api'
+import { useMemo, useState } from 'react'
+import { App as AntApp, Empty, InputNumber, Spin, Tooltip } from 'antd'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { fieldApi, recordApi } from '@/api'
+import type { RowListResponse, RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, MATRIX_OPTIONS } from '../view-config/viewOptionSchema'
 import { formatFieldDisplayValue } from '../cells/fieldValueFormat'
 import {
   buildMatrixGrid,
+  buildMonthKeys,
+  buildScoreMatrixGrid,
   bucketTitle,
   cellKey,
   type MatrixDateGranularity,
 } from './matrixBoard'
+import { extractSelectOptions } from '../cells/fieldOps'
+import { usePendingChanges } from '../useGridData'
 import { mixColor } from '@/theme/themeMix'
 import { WEIGHT } from '@/theme/tokens'
 
@@ -76,6 +82,12 @@ interface MatrixViewProps {
   view?: View | null
   density: Density
   onRowClick?: (r: RowResponse) => void
+  /** 评分矩阵（ADR 0136）需要的表上下文；缺省时保持原只读矩阵 */
+  workspaceId?: string
+  tableId?: string
+  canEditRecords?: boolean
+  /** 表配置了行级权限时矩阵只读，避免看不到已有行而重复建行 */
+  rowRulesActive?: boolean
 }
 
 /** 单行单元格卡片：显示 title_field 格式化值，点击打开行详情 */
@@ -170,7 +182,26 @@ function MatrixCornerAxis({ axis, name }: { axis: '行' | '列'; name: string })
   )
 }
 
-export default function MatrixView({ rows, fields, view, density, onRowClick }: MatrixViewProps) {
+/** 月份字符串的次月（`2026-12` → `2027-01`），用于 [当月1日, 次月1日) 过滤 */
+function nextMonth(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  if (!y || !m) return month
+  return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`
+}
+
+export default function MatrixView({
+  rows,
+  fields,
+  view,
+  density,
+  onRowClick,
+  workspaceId,
+  tableId,
+  canEditRecords = false,
+  rowRulesActive = false,
+}: MatrixViewProps) {
+  const { message } = AntApp.useApp()
+  const queryClient = useQueryClient()
   const opts = useMemo(
     () => resolveOpts(view?.view_options as Record<string, unknown> | undefined, MATRIX_OPTIONS),
     [view?.view_options],
@@ -179,12 +210,147 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
   const columnField = (opts.column_field as string) || ''
   const granularity = (opts.date_granularity as MatrixDateGranularity) || 'month'
   const titleField = (opts.title_field as string) || undefined
+  const valueField = (opts.value_field as string) || ''
+  const periodStart = (opts.period_start as string) || ''
+  const periodEnd = (opts.period_end as string) || ''
   const style = densityCardStyle(density)
+
+  const scoreMode = !!(rowField && columnField && valueField && periodStart && periodEnd)
+  const baseEditable = !!(scoreMode && workspaceId && tableId && canEditRecords && !rowRulesActive)
+
+  // 可编辑矩阵的 options 必须用全量（表详情默认截断 options，ADR 0046 D6）
+  const { data: fullFields } = useQuery({
+    queryKey: ['fields-full', workspaceId, tableId],
+    queryFn: () => fieldApi.list(workspaceId!, tableId!, false, true),
+    enabled: scoreMode && !!workspaceId && !!tableId,
+    staleTime: 60_000,
+  })
+  const matrixFields = scoreMode ? (fullFields ?? fields) : fields
+  const rowDef = matrixFields.find((f) => f.name === rowField)
+  const colDef = matrixFields.find((f) => f.name === columnField)
+
+  const rowOptions = useMemo(
+    () => (scoreMode && rowDef?.field_type === 'select' ? extractSelectOptions(rowDef.config) : []),
+    [scoreMode, rowDef],
+  )
+  const monthKeys = useMemo(
+    () => (scoreMode ? buildMonthKeys(periodStart, periodEnd) : []),
+    [scoreMode, periodStart, periodEnd],
+  )
+  const rowLabelByValue = useMemo(
+    () => new Map(rowOptions.map((o) => [String(o.value), o.label])),
+    [rowOptions],
+  )
+  const scoreReady = scoreMode && rowOptions.length > 0 && monthKeys.length > 0
+
+  const scoreQueryKey = useMemo(
+    () => [
+      'matrix-scores',
+      workspaceId,
+      tableId,
+      rowField,
+      columnField,
+      valueField,
+      periodStart,
+      periodEnd,
+      rowOptions.map((o) => o.value).join('\u0000'),
+    ],
+    [workspaceId, tableId, rowField, columnField, valueField, periodStart, periodEnd, rowOptions],
+  )
+  const { data: scoreData, isFetching: scoreFetching } = useQuery<RowListResponse>({
+    queryKey: scoreQueryKey,
+    queryFn: () =>
+      recordApi.list(workspaceId!, tableId!, {
+        limit: 5000,
+        filters: [
+          { field_name: columnField, op: 'gte', value: `${periodStart}-01` },
+          { field_name: columnField, op: 'lt', value: `${nextMonth(periodEnd)}-01` },
+          { field_name: rowField, op: 'in', value: rowOptions.map((o) => o.value) },
+        ],
+      }),
+    // 评分矩阵不套视图筛选 / 搜索：否则未加载的已有行会被当成空单元格，保存时重复建行
+    enabled: scoreReady && !!workspaceId && !!tableId,
+    staleTime: 10_000,
+  })
+  const { data: pendingChanges } = usePendingChanges(workspaceId, tableId, baseEditable)
+
+  const [drafts, setDrafts] = useState<Record<string, number | null>>({})
+  const [saving, setSaving] = useState<Record<string, boolean>>({})
 
   const grid = useMemo(
     () => buildMatrixGrid(rows, fields, rowField, columnField, granularity),
     [rows, fields, rowField, columnField, granularity],
   )
+  const scoreRows = useMemo(() => scoreData?.items ?? [], [scoreData])
+  const scoreGrid = useMemo(
+    () => buildScoreMatrixGrid(scoreRows, rowField, columnField, valueField, rowOptions.map((o) => o.value), monthKeys),
+    [scoreRows, rowField, columnField, valueField, rowOptions, monthKeys],
+  )
+
+  const clearDraft = (key: string) => {
+    setDrafts((prev) => {
+      if (!(key in prev)) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+  }
+
+  const saveCell = (rowKey: string, colKey: string, cell: { rowId: number | null; value: number | null } | undefined) => {
+    const key = cellKey(rowKey, colKey)
+    if (!(key in drafts) || !workspaceId || !tableId) return
+    const next = drafts[key]
+    const previous = cell?.value ?? null
+    if (next === previous) {
+      clearDraft(key)
+      return
+    }
+    setSaving((prev) => ({ ...prev, [key]: true }))
+    recordApi
+      .matrixUpsert(workspaceId, tableId, {
+        row_field: rowField,
+        row_value: rowKey,
+        month_field: columnField,
+        month: colKey,
+        value_field: valueField,
+        value: next,
+      })
+      .then((res) => {
+        if (res.action === 'change_request') {
+          message.info('已提交修改申请，审批通过后生效')
+        } else {
+          message.success('已保存')
+        }
+        const savedRow = res.row
+        if (savedRow) {
+          queryClient.setQueryData<RowListResponse>(scoreQueryKey, (old) => {
+            if (!old) return old
+            const exists = old.items.some((r) => String(r.id) === String(savedRow.id))
+            return {
+              ...old,
+              items: exists ? old.items.map((r) => (String(r.id) === String(savedRow.id) ? savedRow : r)) : [...old.items, savedRow],
+              total: old.total + (exists ? 0 : 1),
+            }
+          })
+        }
+        void queryClient.invalidateQueries({ queryKey: scoreQueryKey })
+        void queryClient.invalidateQueries({ queryKey: ['table-records', `${workspaceId}/${tableId}`] })
+        void queryClient.invalidateQueries({ queryKey: ['pending-changes', `${workspaceId}/${tableId}`] })
+        clearDraft(key)
+      })
+      .catch((err) => {
+        message.error(err instanceof Error ? err.message : '评分保存失败')
+        clearDraft(key)
+      })
+      .finally(() => {
+        setSaving((prev) => {
+          if (!(key in prev)) return prev
+          const nextSaving = { ...prev }
+          delete nextSaving[key]
+          return nextSaving
+        })
+      })
+  }
 
   // 未配置轴字段 → 引导空态（后端校验挡新视图，这里兜底历史数据）
   if (!rowField || !columnField) {
@@ -195,6 +361,152 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
     )
   }
 
+  // ── 评分矩阵（ADR 0136）──
+  if (scoreMode) {
+    if (!scoreReady) {
+      return (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Empty
+            description={
+              rowOptions.length === 0
+                ? '评分矩阵的行字段没有固定选项，请先在字段设置中维护对象清单'
+                : '评分矩阵需配置有效的起止月份（视图设置）'
+            }
+          />
+        </div>
+      )
+    }
+    if (scoreFetching && !scoreData) {
+      return (
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Spin tip="加载评分数据…" />
+        </div>
+      )
+    }
+
+    const editable = baseEditable
+    const gridTemplateColumns = `minmax(150px, 200px) repeat(${scoreGrid.columnKeys.length}, minmax(110px, 1fr))`
+    return (
+      <div
+        data-testid="matrix-score-view"
+        style={{
+          flex: 1, minHeight: 0, overflow: 'auto',
+          background: 'var(--cn-bg-container)', border: '1px solid var(--cn-border)', borderRadius: 8,
+        }}
+      >
+        {!editable && (
+          <div
+            data-testid="matrix-score-readonly-hint"
+            style={{ padding: '6px 12px', borderBottom: '1px solid var(--cn-border)', fontSize: 12, color: 'var(--cn-text-secondary)' }}
+          >
+            {rowRulesActive ? '该表配置了行级权限，评分矩阵为只读' : '当前账号无编辑权限，评分矩阵为只读'}
+          </div>
+        )}
+        <div style={{ display: 'grid', gridTemplateColumns, minWidth: 'min-content' }}>
+          <div
+            style={{
+              position: 'sticky', left: 0, top: 0, zIndex: 3,
+              background: 'var(--cn-bg-subtle)',
+              borderBottom: '1px solid var(--cn-border)', borderRight: '1px solid var(--cn-border)',
+              padding: '10px 12px',
+              display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5,
+            }}
+          >
+            <MatrixCornerAxis axis="行" name={rowDef?.name ?? rowField} />
+            <MatrixCornerAxis axis="列" name={colDef?.name ?? columnField} />
+          </div>
+
+          {scoreGrid.columnKeys.map((ck, ci) => (
+            <div
+              key={ck}
+              data-testid="matrix-score-col-header"
+              style={{
+                position: 'sticky', top: 0, zIndex: 2,
+                background: COL_HEADER_BG(axisColor(ci)), borderBottom: '1px solid var(--cn-border)',
+                padding: '8px 10px',
+              }}
+            >
+              <MatrixAxisHeader title={ck} color={axisColor(ci)} />
+            </div>
+          ))}
+
+
+          {scoreGrid.rowKeys.map((rk, ri) => (
+            <div key={rk} style={{ display: 'contents' }}>
+              <div
+                data-testid="matrix-score-row-header"
+                style={{
+                  position: 'sticky', left: 0, zIndex: 1,
+                  background: 'var(--cn-bg-subtle)',
+                  borderRight: '1px solid var(--cn-border)', borderBottom: '1px solid var(--cn-border)',
+                  padding: '10px 10px',
+                  display: 'flex', alignItems: 'center',
+                }}
+              >
+                <MatrixAxisHeader title={rowLabelByValue.get(rk) ?? rk} color={axisColor(ri)} />
+              </div>
+              {scoreGrid.columnKeys.map((ck, ci) => {
+                const key = cellKey(rk, ck)
+                const cell = scoreGrid.cells.get(key)
+                const duplicate = (cell?.duplicateCount ?? 0) > 1
+                const displayed = key in drafts ? drafts[key] : cell?.value ?? null
+                const isSaving = !!saving[key]
+                const hasPending = cell?.rowId != null && (pendingChanges?.has(String(cell.rowId)) ?? false)
+                return (
+                  <div
+                    key={key}
+                    data-testid="matrix-score-cell"
+                    style={{
+                      padding: style.cellPadding,
+                      borderBottom: '1px solid var(--cn-border)',
+                      background: CELL_BG(axisColor(ci)),
+                      minHeight: 36,
+                      display: 'flex', alignItems: 'center', gap: 4,
+                    }}
+                  >
+                    {duplicate ? (
+                      <Tooltip title={`该对象在 ${ck} 存在 ${cell?.duplicateCount} 行重复记录，请在表格视图清理后再录入`}>
+                        <span style={{ fontSize: 12, color: 'var(--cn-status-danger)' }}>重复 {cell?.duplicateCount} 行</span>
+                      </Tooltip>
+                    ) : editable ? (
+                      <>
+                        <InputNumber
+                          size="small"
+                          style={{ width: '100%' }}
+                          value={displayed}
+                          disabled={isSaving}
+                          onChange={(v) => {
+                            setDrafts((prev) => ({ ...prev, [key]: v === null || v === undefined ? null : Number(v) }))
+                          }}
+                          onBlur={() => saveCell(rk, ck, cell)}
+                          onPressEnter={(e) => e.currentTarget.blur()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') clearDraft(key)
+                          }}
+                        />
+                        {isSaving && <Spin size="small" />}
+                        {hasPending && (
+                          <Tooltip title="该行有待审批的修改申请">
+                            <span style={{ fontSize: 11, color: 'var(--cn-status-warning)' }}>待审批</span>
+                          </Tooltip>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ fontSize: style.fontSize, color: displayed === null ? 'var(--cn-text-muted)' : 'var(--cn-text-primary)' }}>
+                        {displayed === null ? '—' : displayed}
+                      </span>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ── 原只读矩阵 ──
   // 无数据 → 引导空态（与看板语义一致）
   if (!rows.length) {
     return (
@@ -203,9 +515,6 @@ export default function MatrixView({ rows, fields, view, density, onRowClick }: 
       </div>
     )
   }
-
-  const rowDef = fields.find((f) => f.name === rowField)
-  const colDef = fields.find((f) => f.name === columnField)
 
   // 行内总计数（行头徽章）；列内总计数（列头徽章）
   const rowTotals = new Map<string, number>()

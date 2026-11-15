@@ -27,6 +27,24 @@ export interface RowUpdate { values: RowValues }
 export interface RowListResponse { items: RowResponse[]; total: number; offset: number; limit: number }
 /** 自动编号预览：字段名 → 建行时将生成的编号值（只读，不落库） */
 export interface AutoIncrementPreview { values: Record<string, string> }
+/** 评分矩阵单元格 upsert 请求（ADR 0136） */
+export interface MatrixUpsertPayload {
+  row_field: string
+  row_value: string
+  month_field: string
+  /** YYYY-MM */
+  month: string
+  value_field: string
+  value: number | null
+}
+
+export interface MatrixUpsertResponse {
+  action: 'created' | 'updated' | 'change_request'
+  row_id?: ID
+  row?: RowResponse
+  change_request?: unknown
+}
+
 export interface RecordListParams {
   offset?: number; limit?: number
   filters?: string | Record<string, unknown> | Array<Record<string, unknown>>

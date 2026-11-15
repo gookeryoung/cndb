@@ -157,3 +157,85 @@ export function buildMatrixGrid(
     cells,
   }
 }
+
+
+// ── 评分矩阵（ADR 0136）────────────────────────────────
+
+/** 月份范围 → `YYYY-MM` 列表（含首尾；调用方保证合法且跨度有界） */
+export function buildMonthKeys(start: string, end: string): string[] {
+  const [sy, sm] = start.split('-').map(Number)
+  const [ey, em] = end.split('-').map(Number)
+  if (!sy || !sm || !ey || !em) return []
+  const out: string[] = []
+  let y = sy
+  let m = sm
+  // 上限保护：即使调用方传入异常范围也不会死循环（视图校验限制 24，这里留余量）
+  for (let guard = 0; guard < 240; guard += 1) {
+    out.push(`${y}-${String(m).padStart(2, '0')}`)
+    if (y === ey && m === em) break
+    m += 1
+    if (m > 12) { m = 1; y += 1 }
+  }
+  return out
+}
+
+/** 评分矩阵单元格：同一（对象, 月份）的多行会被标记为重复 */
+export interface MatrixScoreCell {
+  rowId: number | null
+  value: number | null
+  duplicateCount: number
+}
+
+export interface MatrixScoreGridData {
+  rowKeys: string[]
+  columnKeys: string[]
+  cells: Map<string, MatrixScoreCell>
+}
+
+function toNumericValue(value: unknown): number | null {
+  if (value === null || value === undefined || value === '') return null
+  const n = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+/**
+ * 构建评分矩阵：行 / 列由配置显式给出（不依赖已有行），再把行数据映射到单元格.
+ *
+ * - rowKeys: 单选字段的存储值列表（顺序即展示顺序）
+ * - columnKeys: `YYYY-MM` 月份列表
+ * - 只收 row / month 都在配置范围内的行；同格多行不合并，交给 UI 标重复并禁止写入
+ */
+export function buildScoreMatrixGrid(
+  rows: RowResponse[],
+  rowField: string,
+  monthField: string,
+  valueField: string,
+  rowKeys: string[],
+  columnKeys: string[],
+): MatrixScoreGridData {
+  const rowSet = new Set(rowKeys.map(String))
+  const colSet = new Set(columnKeys)
+  const grouped = new Map<string, RowResponse[]>()
+
+  for (const r of rows) {
+    const rk = r[rowField] === null || r[rowField] === undefined ? '' : String(r[rowField])
+    if (!rowSet.has(rk)) continue
+    const ck = dateBucket(r[monthField], 'month')
+    if (!colSet.has(ck)) continue
+    const key = cellKey(rk, ck)
+    const bucket = grouped.get(key)
+    if (bucket) bucket.push(r)
+    else grouped.set(key, [r])
+  }
+
+  const cells = new Map<string, MatrixScoreCell>()
+  for (const [key, list] of grouped) {
+    cells.set(key, {
+      rowId: list[0]?.id != null ? Number(list[0].id) : null,
+      value: toNumericValue(list[0]?.[valueField]),
+      duplicateCount: list.length,
+    })
+  }
+
+  return { rowKeys: rowKeys.map(String), columnKeys, cells }
+}

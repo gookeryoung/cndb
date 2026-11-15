@@ -133,6 +133,8 @@ export interface TableDetail {
   workspace?: WorkspaceBrief | null
   /** 后端增强 —— 是否在回收站（软删） */
   trashed?: boolean
+  /** 后端增强 —— 表是否配置了行级权限（默认档 row_filters 或任意行规则）；评分矩阵据此禁用录入 */
+  row_rules_active?: boolean
 }
 export interface TableCreate {
   name: string

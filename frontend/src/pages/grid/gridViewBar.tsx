@@ -79,6 +79,8 @@ interface GridViewBarProps {
   showModeSwitch: boolean
   hasFilters: boolean
   hasSorts: boolean
+  /** 评分矩阵（对象 × 月份固定网格）不使用搜索；隐藏搜索入口避免误解 */
+  hideSearch?: boolean
   searchQuery: string
   onSearchChange: (q: string) => void
   onSelectView: (v: View | null) => void
@@ -109,7 +111,7 @@ function computeScrollState(el: HTMLElement | null): { canLeft: boolean; canRigh
 
 export default function GridViewBar({
   wid, tid, views, activeViewId, mode, modeButtons, showModeSwitch,
-  hasFilters, hasSorts, searchQuery, onSearchChange, onSelectView, onModeChange,
+  hasFilters, hasSorts, hideSearch = false, searchQuery, onSearchChange, onSelectView, onModeChange,
   onDragEnd, canManageViews, onCreate, onEdit, onDelete, onImport,
   onOpenViewConfig, onOpenTableSettings, onViewsChanged,
 }: GridViewBarProps) {
@@ -346,7 +348,7 @@ export default function GridViewBar({
       onClick: () => { void handleCopyShareLink() },
     },
     { type: 'divider' },
-    { key: 'search', icon: <SearchOutlined />, label: '搜索当前视图', onClick: () => setMobileSearchOpen(v => !v) },
+    ...(hideSearch ? [] : [{ key: 'search', icon: <SearchOutlined />, label: '搜索当前视图', onClick: () => setMobileSearchOpen(v => !v) }]),
     { key: 'table-settings', icon: <SettingOutlined />, label: '表格设置', onClick: onOpenTableSettings },
   ]
 
@@ -516,7 +518,7 @@ export default function GridViewBar({
               </Space.Compact>
             )}
 
-            {searchInput}
+            {!hideSearch && searchInput}
             {filterButton}
             <Tooltip title="表格设置：显示模式与操作风格（全局偏好，在个人设置中维护）">
               <Button
@@ -531,7 +533,7 @@ export default function GridViewBar({
       </div>
 
       {/* 移动端搜索行 —— 由「更多 → 搜索当前视图」展开；搜索词非空时常显 */}
-      {showMobileSearch && (
+      {showMobileSearch && !hideSearch && (
         <div style={{ padding: '0 8px 6px' }} data-testid="view-search-row">
           {searchInput}
         </div>

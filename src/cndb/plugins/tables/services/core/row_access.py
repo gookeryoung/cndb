@@ -91,6 +91,21 @@ def applicable_row_rules(db: Session, table: DataTable, user: User | None) -> li
     ]
 
 
+def row_rules_active(db: Session, table: DataTable) -> bool:
+    """表是否配置了任何行级限制（默认档 ``row_filters`` 或任意 ``RowPermission``）.
+
+    评分矩阵用它判断能否安全编辑：存在行级限制时，用户可能看不到已有行，
+    空单元格不代表没有数据，直接 upsert 会产生重复行（ADR 0136 D7）。
+    只回答「有没有配置」，不做具体行范围判定。
+    """
+    from cndb.plugins.tables.models import TablePermission
+
+    perm = db.query(TablePermission).filter(TablePermission.table_id == table.id).first()
+    if perm is not None and perm.row_filters:
+        return True
+    return db.query(RowPermission.id).filter(RowPermission.table_id == table.id).first() is not None
+
+
 def _strip_hidden_conditions(items: Any, hidden: set[str]) -> Any:
     """递归剔除引用了 ``hidden`` 字段的条件项（侧信道保护，ADR §7-1）.
 
@@ -318,4 +333,5 @@ __all__ = [
     "row_edit_scope_where",
     "row_read_scope_where",
     "row_rule_subject_label",
+    "row_rules_active",
 ]

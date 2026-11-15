@@ -1,7 +1,7 @@
 /** 行记录 API — /api/v1/workspaces/{wid}/tables/{tid}/records/*（含批量操作） */
 
 import api from './client'
-import type { RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams, ChangeRequestBatchResponse, AutoIncrementPreview } from './types'
+import type { RowCreate, RowUpdate, RowResponse, RowListResponse, RecordListParams, ChangeRequestBatchResponse, AutoIncrementPreview, MatrixUpsertPayload, MatrixUpsertResponse } from './types'
 
 export const recordApi = {
   list: (wid: number | string, tid: number | string, params?: RecordListParams) => {
@@ -15,6 +15,9 @@ export const recordApi = {
   /** 新建行：直编直存（201 RowResponse）；查看者/关闭直编时提交 create 修改申请（202 ChangeRequestDispatchResponse） */
   create: (wid: number | string, tid: number | string, data: RowCreate): Promise<RowResponse | ChangeRequestBatchResponse> =>
     api.post<RowResponse | ChangeRequestBatchResponse>(`/v1/workspaces/${wid}/tables/${tid}/records`, data).then(r => r.data),
+  /** 评分矩阵单元格 upsert：按（对象, 月份）新建 / 更新 / 清空（ADR 0136） */
+  matrixUpsert: (wid: number | string, tid: number | string, data: MatrixUpsertPayload) =>
+    api.post<MatrixUpsertResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/matrix-upsert`, data).then(r => r.data),
   /** 复制行：按源行原值批量创建（后端不套用自动填充 / 默认值 / 自动编号） */
   copyRows: (wid: number | string, tid: number | string, rowIds: Array<number | string>) =>
     api

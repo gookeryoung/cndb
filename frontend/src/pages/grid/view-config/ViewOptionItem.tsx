@@ -53,6 +53,21 @@ export default function ViewOptionItem({ opt, fields, opts, onSet, onPatch }: Vi
     )
   }
 
+  // 月份输入（YYYY-MM）
+  if (opt.kind === 'month') {
+    return (
+      <div className="vcvd-item">
+        {label}
+        <Input
+          placeholder="YYYY-MM（如 2026-01）"
+          maxLength={7}
+          value={(currentValue as string) ?? ''}
+          onChange={e => onSet(opt.key, e.target.value.trim())}
+        />
+      </div>
+    )
+  }
+
   // 有序字符串列表（逗号分隔输入，存 string[]）——非受控输入避免打字过程中的光标跳动，
   // 每次变更即时解析为数组写回（空项剔除；全空 => 空数组，保存时被 cleanOpt 丢弃）
   if (opt.kind === 'text_list') {

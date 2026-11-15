@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 from sqlalchemy import Table, and_, bindparam, func, or_, select, tuple_
@@ -1353,6 +1353,64 @@ def find_rows_by_key(
     return exact_map, conflict_map
 
 
+def month_bounds(month: str) -> tuple[date, date]:
+    """把 ``YYYY-MM`` 解析为 [当月1日, 次月1日) 的日期区间（ADR 0136）.
+
+    Raises:
+        ValueError: 格式不是 ``YYYY-MM`` 或月份不在 1..12。
+    """
+    if not isinstance(month, str) or len(month) != 7 or month[4] != "-":
+        raise ValueError(f"月份格式应为 YYYY-MM: {month!r}")
+    try:
+        year = int(month[:4])
+        month_num = int(month[5:])
+    except ValueError as exc:
+        raise ValueError(f"月份格式应为 YYYY-MM: {month!r}") from exc
+    if not 1 <= month_num <= 12:
+        raise ValueError(f"月份超出范围 1..12: {month!r}")
+    start = date(year, month_num, 1)
+    end = date(year + 1, 1, 1) if month_num == 12 else date(year, month_num + 1, 1)
+    return start, end
+
+
+def find_month_key_rows(
+    engine: Any,
+    table: DataTable,
+    row_field: str,
+    row_value: str,
+    month_field: str,
+    month_start: date,
+    month_end: date,
+) -> list[int]:
+    """按（对象, 月份区间）查已有行 id，供评分矩阵 upsert 判重（ADR 0136）.
+
+    月份按 [month_start, month_end) 匹配，兼容历史数据里存当月任意一天的行；
+    只查未删除行；返回 id 升序，调用方据此判定 0 / 1 / N。
+    """
+    fields = {f.name: f for f in table.fields if not f.trashed}
+    row_def = fields.get(row_field)
+    month_def = fields.get(month_field)
+    if row_def is None or month_def is None:
+        return []
+    sa_table = _get_sa_table(engine, table)
+    row_col_name = row_def.db_column_name
+    month_col_name = month_def.db_column_name
+    if row_col_name not in sa_table.c or month_col_name not in sa_table.c:
+        return []
+    stmt = (
+        select(sa_table.c.id)
+        .where(
+            sa_table.c._trashed.is_(False),
+            sa_table.c[row_col_name] == row_value,
+            sa_table.c[month_col_name] >= month_start,
+            sa_table.c[month_col_name] < month_end,
+        )
+        .order_by(sa_table.c.id)
+    )
+    with engine.connect() as conn:
+        return [int(r[0]) for r in conn.execute(stmt)]
+
+
 def bulk_update_rows(
     engine: Any,
     table: DataTable,
@@ -1505,9 +1563,11 @@ __all__ = [
     "count_rows",
     "create_row",
     "delete_row",
+    "find_month_key_rows",
     "find_rows_by_key",
     "get_row",
     "list_rows",
+    "month_bounds",
     "restore_row",
     "trash_row",
     "update_row",

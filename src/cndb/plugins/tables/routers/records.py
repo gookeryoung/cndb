@@ -8,6 +8,7 @@ import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -20,16 +21,24 @@ from cndb.plugins.change_requests.models import (
     CHANGE_OP_DELETE,
     CHANGE_OP_UPDATE,
 )
+from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.schemas import (
     AutoIncrementPreviewResponse,
+    MatrixUpsertRequest,
     RecordCopyRequest,
     RecordCreate,
     RecordListRequest,
     RecordListResponse,
     RecordUpdate,
 )
-from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
+from cndb.plugins.tables.services.core.access import (
+    TableAction,
+    check_action,
+    get_hidden_field_names,
+    get_table_or_404,
+    row_filters_bypass,
+)
 from cndb.plugins.tables.services.core.ddl import ensure_sort_index
 from cndb.plugins.tables.services.core.records import (
     _get_sa_table,
@@ -38,14 +47,16 @@ from cndb.plugins.tables.services.core.records import (
     count_rows,
     create_row,
     delete_row,
+    find_month_key_rows,
     get_row,
     list_rows,
+    month_bounds,
     preview_auto_increment_values,
     restore_row,
     trash_row,
     update_row,
 )
-from cndb.plugins.tables.services.core.row_access import can_edit_row, can_view_row
+from cndb.plugins.tables.services.core.row_access import can_edit_row, can_view_row, row_rules_active
 from cndb.plugins.workspaces.permissions import raise_permission_denied
 
 logger = logging.getLogger(__name__)
@@ -392,6 +403,142 @@ def auto_increment_preview(
     """
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
     return AutoIncrementPreviewResponse(values=preview_auto_increment_values(db.get_bind(), dt))
+
+
+@router.post("/matrix-upsert", response_model=None)
+def matrix_upsert(
+    workspace_id: int,
+    table_id: int,
+    payload: MatrixUpsertRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object] | JSONResponse | Response:
+    """评分矩阵单元格 upsert（ADR 0136）.
+
+    - 键 =（单选对象字段, 月份字段所在月）；月份按 [当月1日, 次月1日) 匹配；
+    - 0 行 → 新建（月份写当月 1 日）；1 行 → 只更新得分；多行 → 409 不写；
+    - 写入复用现有 create / update 双轨分派（修改申请 202 / 403 / 404 口径不变）；
+    - 表配置行级权限时禁用（避免看不到已有行而重复建行）。
+    """
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+
+    fields = {f.name: f for f in dt.fields if not f.trashed}
+    row_def = fields.get(payload.row_field)
+    month_def = fields.get(payload.month_field)
+    value_def = fields.get(payload.value_field)
+    missing = [
+        name
+        for name, definition in (
+            (payload.row_field, row_def),
+            (payload.month_field, month_def),
+            (payload.value_field, value_def),
+        )
+        if definition is None
+    ]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"评分矩阵字段不存在: {missing}")
+    assert row_def is not None and month_def is not None and value_def is not None
+    if len({payload.row_field, payload.month_field, payload.value_field}) != 3:
+        raise HTTPException(status_code=400, detail="对象 / 月份 / 得分别必须是不同字段")
+
+    row_ft = default_registry.get(row_def.field_type)
+    month_ft = default_registry.get(month_def.field_type)
+    value_ft = default_registry.get(value_def.field_type)
+    if row_ft is None or row_ft.name != "select":
+        raise HTTPException(status_code=400, detail="评分矩阵的对象字段必须是单选类型")
+    if month_ft is None or month_ft.name != "date":
+        raise HTTPException(status_code=400, detail="评分矩阵的月份字段必须是日期类型")
+    if value_ft is None or value_ft.name not in {"number", "float", "percentage"}:
+        raise HTTPException(status_code=400, detail="评分矩阵的得分字段必须是数字类型")
+
+    hidden = get_hidden_field_names(db, dt, current_user)
+    hidden_hit = hidden & {payload.row_field, payload.month_field, payload.value_field}
+    if hidden_hit:
+        raise HTTPException(status_code=403, detail=f"评分矩阵字段被权限隐藏: {sorted(hidden_hit)}")
+    if row_rules_active(db, dt) and not row_filters_bypass(db, dt, current_user):
+        raise HTTPException(status_code=403, detail="该表配置了行级权限，评分矩阵不支持录入")
+
+    try:
+        month_start, month_end = month_bounds(payload.month)
+        row_value = row_ft.validate_value(payload.row_value, row_def.config or {})
+        value = value_ft.validate_value(payload.value, value_def.config or {})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if row_value is None or str(row_value).strip() == "":
+        raise HTTPException(status_code=400, detail="评分矩阵的对象值不能为空")
+
+    row_ids = find_month_key_rows(
+        db.get_bind(),
+        dt,
+        payload.row_field,
+        str(row_value),
+        payload.month_field,
+        month_start,
+        month_end,
+    )
+    if len(row_ids) > 1:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT,
+            content={
+                "detail": f"该对象在 {payload.month} 存在 {len(row_ids)} 行重复记录，未写入；请先在表格视图清理重复行",
+                "row_ids": row_ids,
+            },
+        )
+
+    if not row_ids:
+        if value is None:
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        values = {
+            payload.row_field: str(row_value),
+            payload.month_field: month_start.isoformat(),
+            payload.value_field: value,
+        }
+        if not _dispatch_or_403(db, dt, current_user):
+            return _cr_response(db, dt, current_user, op=CHANGE_OP_CREATE, row_id=None, values=values)
+        try:
+            row = create_row(db.get_bind(), dt, values, db=db, user=current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            logger.exception("matrix_upsert 新建行失败")
+            raise HTTPException(status_code=500, detail="评分单元格保存失败") from exc
+        if row is None:
+            raise HTTPException(status_code=500, detail="评分单元格保存失败")
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content=jsonable_encoder({"action": "created", "row_id": row["id"], "row": row}),
+        )
+
+    row_id = row_ids[0]
+    decision = _row_write_decision(db, dt, current_user, row_id)
+    if decision == ROW_WRITE_NOT_FOUND:
+        raise HTTPException(status_code=404, detail="行不存在")
+    if decision == ROW_WRITE_DENIED:
+        raise_permission_denied(db, dt.workspace, current_user, scope="表级")
+    if decision == ROW_WRITE_CHANGE_REQUEST:
+        return _cr_response(
+            db,
+            dt,
+            current_user,
+            op=CHANGE_OP_UPDATE,
+            row_id=row_id,
+            values={payload.value_field: value},
+        )
+    try:
+        row = update_row(
+            db.get_bind(),
+            dt,
+            row_id,
+            {payload.value_field: value},
+            db=db,
+            user=current_user,
+            enforce_row_rules=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="行不存在")
+    return {"action": "updated", "row_id": row_id, "row": row}
 
 
 @router.post("/copy", status_code=status.HTTP_201_CREATED, response_model=None)

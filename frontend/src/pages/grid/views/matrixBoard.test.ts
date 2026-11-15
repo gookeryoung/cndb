@@ -12,6 +12,8 @@ import {
   UNGROUPED_LABEL,
   axisKeyForRow,
   buildMatrixGrid,
+  buildMonthKeys,
+  buildScoreMatrixGrid,
   bucketTitle,
   cellKey,
   dateBucket,
@@ -150,5 +152,58 @@ describe('buildMatrixGrid 网格构建', () => {
     expect(grid.rowKeys).toEqual([])
     expect(grid.columnKeys).toEqual([])
     expect(grid.cells.size).toBe(0)
+  })
+})
+
+describe('buildMonthKeys 月份范围', () => {
+  it('含首尾、跨年连续', () => {
+    expect(buildMonthKeys('2026-11', '2027-02')).toEqual(['2026-11', '2026-12', '2027-01', '2027-02'])
+  })
+
+  it('单月范围返回一个 key；非法输入返回空数组', () => {
+    expect(buildMonthKeys('2026-05', '2026-05')).toEqual(['2026-05'])
+    expect(buildMonthKeys('', '2026-05')).toEqual([])
+  })
+})
+
+describe('buildScoreMatrixGrid 评分矩阵', () => {
+  const ROWS = [
+    { id: 1, 部门: '研发部', 月份: '2026-11-01', 得分: 88 },
+    { id: 2, 部门: '研发部', 月份: '2026-12-15', 得分: 92 },
+    { id: 3, 部门: '市场部', 月份: '2026-11-20', 得分: 70 },
+    { id: 4, 部门: '范围外部门', 月份: '2026-11-01', 得分: 60 },
+    { id: 5, 部门: '市场部', 月份: '2027-01-01', 得分: 50 },
+  ] as unknown as RowResponse[]
+
+  it('显式行列轴不依赖已有行，只收范围内的行', () => {
+    const grid = buildScoreMatrixGrid(
+      ROWS, '部门', '月份', '得分',
+      ['研发部', '市场部', '财务部'],
+      ['2026-11', '2026-12'],
+    )
+    expect(grid.rowKeys).toEqual(['研发部', '市场部', '财务部'])
+    expect(grid.columnKeys).toEqual(['2026-11', '2026-12'])
+    expect(grid.cells.get(cellKey('研发部', '2026-11'))).toMatchObject({ rowId: 1, value: 88, duplicateCount: 1 })
+    expect(grid.cells.get(cellKey('研发部', '2026-12'))).toMatchObject({ rowId: 2, value: 92 })
+    expect(grid.cells.get(cellKey('市场部', '2026-11'))).toMatchObject({ rowId: 3, value: 70 })
+    // 范围外对象 / 范围外月份不进入网格
+    expect(grid.cells.has(cellKey('范围外部门', '2026-11'))).toBe(false)
+    expect(grid.cells.has(cellKey('市场部', '2027-01'))).toBe(false)
+    // 无数据的对象保留空行
+    expect(grid.cells.has(cellKey('财务部', '2026-11'))).toBe(false)
+  })
+
+  it('同键多行标记重复且保留首行值', () => {
+    const dup = [...ROWS, { id: 9, 部门: '研发部', 月份: '2026-11-28', 得分: 99 }] as unknown as RowResponse[]
+    const grid = buildScoreMatrixGrid(dup, '部门', '月份', '得分', ['研发部'], ['2026-11'])
+    expect(grid.cells.get(cellKey('研发部', '2026-11'))).toMatchObject({
+      rowId: 1, value: 88, duplicateCount: 2,
+    })
+  })
+
+  it('空值 / 非数字得分按 null 处理', () => {
+    const rows = [{ id: 1, 部门: '研发部', 月份: '2026-11-01', 得分: '' }] as unknown as RowResponse[]
+    const grid = buildScoreMatrixGrid(rows, '部门', '月份', '得分', ['研发部'], ['2026-11'])
+    expect(grid.cells.get(cellKey('研发部', '2026-11'))?.value).toBeNull()
   })
 })

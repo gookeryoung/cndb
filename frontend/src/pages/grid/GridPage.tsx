@@ -447,6 +447,8 @@ export default function GridPage() {
 
   // 当前激活的视图对象（含 view_options）
   const activeView = activeViewId != null ? views.find(v => String(v.id) === String(activeViewId)) : null
+  // 评分矩阵的行列由固定对象 × 月份范围决定，不套搜索 / 筛选（ADR 0136 D10）
+  const isScoreMatrix = activeView?.view_type === 'matrix' && !!(activeView.view_options as Record<string, unknown> | undefined)?.value_field
 
   // —— 登录态只读展示（`?view=<id>&mode=dashboard&present=1`，ADR 0023 / 原 0077 P1） ——
   // 链接只负责定位，权限仍由后端下发可见视图列表决定；展示态不回落默认视图（D9）。
@@ -1254,6 +1256,7 @@ export default function GridPage() {
           showModeSwitch={showModeSwitch}
           hasFilters={viewFilters.length > 0}
           hasSorts={viewSortings.length > 0}
+          hideSearch={isScoreMatrix}
           searchQuery={searchQuery}
           onSearchChange={(q) => { setSearchQuery(q); setOffset(0) }}
           onSelectView={(v) => loadView(v)}
@@ -1363,7 +1366,7 @@ export default function GridPage() {
             ) : mode === 'tree' ? (
               <TreeView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'matrix' ? (
-              <MatrixView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} />
+              <MatrixView rows={rowList.items || []} fields={table?.fields || []} view={activeView} density={settings.density} onRowClick={openDetailWithPrefetch} workspaceId={wid} tableId={tid} canEditRecords={canEditRecords} rowRulesActive={table?.row_rules_active} />
             ) : mode === 'chart' ? (
               <ChartView rows={rowList.items || []} fields={table?.fields || []} view={activeView} total={rowList.total} onRowClick={openDetailWithPrefetch} />
             ) : mode === 'flow' ? (

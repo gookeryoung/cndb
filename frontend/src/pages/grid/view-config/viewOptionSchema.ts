@@ -30,6 +30,7 @@ export interface ViewOptionSchema {
   | 'switch'              // 开/关
   | 'number_enum'         // 数值枚举下拉
   | 'text_list'           // 有序字符串列表（逗号分隔输入，存 string[]）
+  | 'month'               // YYYY-MM 月份输入（存字符串）
   | 'done_flag'           // 完成标志：字段下拉 + 判定操作符 + 按字段类型动态切换的匹配值控件（存 done_field + done_op + done_value 三键）
   /** 允许的后端 field_type 原始名 + 历史别名集合（FieldType.name 或别名都可匹配）.
    *  数组顺序即自动推断时的优先级（先排先试）。 */
@@ -278,6 +279,21 @@ export const MATRIX_OPTIONS: ViewOptionSchema[] = [
   {
     key: 'title_field', label: '卡片标题字段', group: '显示', tooltip: '单元格卡片显示的文字；留空取主键字段',
     kind: 'field_select', fieldTypes: ['text', 'longtext'], literalFallback: 'id',
+  },
+  {
+    key: 'value_field', label: '评分字段（可编辑）', group: '评分录入',
+    tooltip: '选择数字字段后，矩阵变为可编辑评分表：行=对象，列=月份，单元格直接填分。留空保持只读卡片',
+    kind: 'field_select', fieldTypes: ['number', 'float', 'percentage'],
+  },
+  {
+    key: 'period_start', label: '起始月份', group: '评分录入',
+    tooltip: '评分矩阵显示的开始月份（YYYY-MM）；配合结束月份最多 24 个月',
+    kind: 'month', visibleWhen: (o) => !!o.value_field,
+  },
+  {
+    key: 'period_end', label: '结束月份', group: '评分录入',
+    tooltip: '评分矩阵显示的结束月份（YYYY-MM）',
+    kind: 'month', visibleWhen: (o) => !!o.value_field,
   },
 ]
 
@@ -533,7 +549,7 @@ export function groupOptionSchema(
  * 因为它们的候选文本较长、两列并排会被压扁。
  */
 export function optionColSpan(kind: ViewOptionSchema['kind']): 1 | 2 {
-  if (kind === 'switch' || kind === 'direction' || kind === 'enum_select' || kind === 'number_enum') {
+  if (kind === 'switch' || kind === 'direction' || kind === 'enum_select' || kind === 'number_enum' || kind === 'month') {
     return 1
   }
   return 2

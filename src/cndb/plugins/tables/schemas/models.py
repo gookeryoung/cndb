@@ -71,6 +71,9 @@ class TableResponse(BaseModel):
     read_role: str = ""
     # 是否对普通成员（viewer）受限：read_role 高于 viewer 时为 True（供管理员看「受限」标记）
     is_restricted: bool = False
+    # 行级权限是否生效（默认档 row_filters 非空或存在任意 RowPermission）——
+    # 评分矩阵据此判断是否禁用单元格录入，避免看不到已有行时重复建行（ADR 0136 D7）
+    row_rules_active: bool = False
 
 
 class ViewBrief(BaseModel):
@@ -229,6 +232,22 @@ class RecordCreate(BaseModel):
 
 class RecordUpdate(BaseModel):
     values: dict[str, Any]
+
+
+class MatrixUpsertRequest(BaseModel):
+    """评分矩阵单元格写入（ADR 0136）：按「对象 + 月份」upsert 一个得分.
+
+    - ``row_value`` 是单选字段的存储值（不是展示标签）；
+    - ``month`` 为 ``YYYY-MM``，服务端按 [当月1日, 次月1日) 匹配已有行；
+    - ``value = None`` 表示清空已有行；没有行时不会创建空行。
+    """
+
+    row_field: str
+    row_value: str
+    month_field: str
+    month: str
+    value_field: str
+    value: float | None = None
 
 
 class RecordListRequest(BaseModel):
