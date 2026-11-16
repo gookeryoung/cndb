@@ -8,7 +8,7 @@
  * PDF 格式为前端视觉快照（exportViewToPdf），不调用后端导出接口、不受范围开关影响.
  */
 import { useCallback, useState } from 'react'
-import { Button, Empty, Select, Space, Switch } from 'antd'
+import { Alert, Button, Select, Switch } from 'antd'
 import { DownloadOutlined } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { exportApi } from '@/api'
@@ -26,6 +26,8 @@ interface ExportPanelProps {
   getPdfTarget?: () => Promise<HTMLElement | null>
   /** PDF 导出结束后调用（GridPage 退出导出模式，恢复虚拟滚动） */
   releasePdfTarget?: () => void
+  /** 关闭对话框（底部动作条与 Modal 的关闭共用同一回调） */
+  onClose: () => void
 }
 
 /** 生成本地时间戳 YYYYMMDD_HHMMSS（PDF 文件名用） */
@@ -56,7 +58,7 @@ function parseContentDispositionFilename(header: string | undefined): string | n
   return null
 }
 
-export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, releasePdfTarget }: ExportPanelProps) {
+export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, releasePdfTarget, onClose }: ExportPanelProps) {
   const { message } = AntApp.useApp()
   const [exporting, setExporting] = useState(false)
   // 默认 XLSX，并记住上次选择（localStorage 单键 `cndb_export_format`）
@@ -124,35 +126,14 @@ export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, 
   }, [wid, tid, selectedFormat, useViewFilter, viewId, handleExportPdf, message])
 
   return (
-    <div>
-      <Empty
-        description={
-          <span style={{ color: 'var(--cn-text-muted)' }}>
-            将表中的数据导出为所选格式（最多 10000 行）
-          </span>
-        }
-      />
-      {selectedFormat === 'pdf' ? (
-        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 12px', background: 'var(--cn-bg-subtle)', borderRadius: 6, marginBottom: 8 }}>
-          <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>
-            导出当前视图可见内容画面（不含顶部栏），按屏幕实际大小输出：内容较宽时 PDF 纸张会相应变宽，字号不会缩小
-          </span>
-        </div>
-      ) : viewId != null && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', background: 'var(--cn-bg-subtle)', borderRadius: 6, marginBottom: 8 }}>
-          <Switch size="small" checked={useViewFilter} onChange={setUseViewFilter} />
-          <span style={{ fontSize: 'var(--cn-text-sm)', color: 'var(--cn-text-secondary)' }}>
-            {useViewFilter
-              ? `按当前视图「${viewName || ''}」筛选后导出`
-              : '导出全表数据（忽略视图筛选）'}
-          </span>
-        </div>
-      )}
-      <Space style={{ justifyContent: 'center', width: '100%', marginTop: 8 }}>
+    <div className="cn-export-panel">
+      {/* 格式：标签定宽，与备份/恢复等表单行同口径 */}
+      <div className="cn-field">
+        <span className="cn-field-label">导出格式</span>
         <Select
           value={selectedFormat}
           onChange={handleFormatChange}
-          style={{ width: 180 }}
+          style={{ width: 'min(240px, 100%)' }}
           options={[
             { value: 'xlsx', label: 'XLSX' },
             { value: 'csv', label: 'CSV（Excel 兼容）' },
@@ -161,13 +142,39 @@ export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, 
           ]}
           disabled={exporting}
         />
+      </div>
+      <div className="cn-dialog-hint">将表中的数据导出为所选格式（最多 10000 行）</div>
+
+      {/* 范围：仅非 PDF 且存在激活视图时可选；PDF 走视觉快照，范围固定为当前画面 */}
+      {selectedFormat === 'pdf' ? (
+        <Alert
+          type="info"
+          showIcon
+          className="cn-dialog-hint cn-dialog-hint-block"
+          title="PDF 导出当前视图可见内容画面（不含顶部栏），按屏幕实际大小输出：内容较宽时纸张会相应变宽，字号不会缩小"
+        />
+      ) : viewId != null && (
+        <div className="cn-field cn-field-spaced">
+          <span className="cn-field-label">导出范围</span>
+          <Switch size="small" checked={useViewFilter} onChange={setUseViewFilter} />
+          <span className="cn-export-note">
+            {useViewFilter
+              ? `按当前视图「${viewName || ''}」筛选后导出`
+              : '导出全表数据（忽略视图筛选）'}
+          </span>
+        </div>
+      )}
+
+      {/* 底部动作条：关闭 + 下载（主操作靠右，与弹窗表单口径一致） */}
+      <div className="cn-export-actions">
+        <Button onClick={onClose}>关闭</Button>
         <Button
           type="primary"
           icon={<DownloadOutlined />}
           loading={exporting}
           onClick={handleExport}
         >下载</Button>
-      </Space>
+      </div>
     </div>
   )
 }

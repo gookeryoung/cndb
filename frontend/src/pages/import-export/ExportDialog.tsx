@@ -3,7 +3,7 @@
  * 只承载导出：格式选择（默认 XLSX + 记住上次选择）/ 按视图筛选 / XLSX / CSV /
  * JSON / PDF 下载。导入与 API 抓取在 `UpdateDialog`。
  */
-import { Modal, Button } from 'antd'
+import { Modal } from 'antd'
 import ExportPanel from './ImportExportDialog/ExportPanel'
 
 interface Props {
@@ -22,13 +22,14 @@ interface Props {
 }
 
 export default function ExportDialog({ open, wid, tid, onClose, viewId, viewName, getPdfTarget, releasePdfTarget }: Props) {
+  // 底部动作条由面板统一渲染（关闭 + 下载），Modal 不再重复放「关闭」
   return (
     <Modal
       title="导出"
       open={open}
       onCancel={onClose}
-      footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
-      width={720}
+      footer={null}
+      width="min(720px, 94vw)"
       destroyOnHidden
     >
       <ExportPanel
@@ -38,6 +39,7 @@ export default function ExportDialog({ open, wid, tid, onClose, viewId, viewName
         viewName={viewName}
         getPdfTarget={getPdfTarget}
         releasePdfTarget={releasePdfTarget}
+        onClose={onClose}
       />
     </Modal>
   )

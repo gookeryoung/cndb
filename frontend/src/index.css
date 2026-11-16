@@ -4650,6 +4650,32 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   margin-top: var(--cn-space-lg);
 }
 
+/* 更新 / 导出对话框：顶部说明、范围说明与底部动作条（与表单行同口径） */
+.cn-dialog-hint {
+  margin-bottom: var(--cn-space-md);
+  font-size: var(--cn-text-xs);
+  color: var(--cn-text-muted);
+  line-height: 1.6;
+}
+
+.cn-dialog-hint-block {
+  margin-top: var(--cn-space-lg);
+}
+
+.cn-export-note {
+  font-size: var(--cn-text-sm);
+  color: var(--cn-text-secondary);
+}
+
+.cn-export-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--cn-space-sm);
+  margin-top: var(--cn-space-lg);
+  padding-top: var(--cn-space-md);
+  border-top: 1px solid var(--cn-border);
+}
+
 .cn-actionbar {
   display: flex;
   align-items: center;

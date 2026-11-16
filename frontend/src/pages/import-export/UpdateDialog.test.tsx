@@ -125,6 +125,16 @@ describe('UpdateDialog 更新对话框', () => {
     expect(screen.getByText('点击或拖拽文件到此处')).toBeInTheDocument()
   })
 
+  it('顶部说明与底部关闭按钮：布局口径与导出对话框一致', () => {
+    const onClose = vi.fn()
+    renderProviders(<UpdateDialog open wid={WID} tid={TID} onClose={onClose} />)
+
+    expect(document.querySelector('.cn-dialog-hint')).toHaveTextContent('先看全量预览与字段差异')
+    // 用弹窗底部动作区定位（Modal 右上角关闭图标同名）
+    fireEvent.click(document.querySelector('.ant-modal-footer button') as HTMLButtonElement)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('上传非法扩展名文件被拒绝', async () => {
     renderProviders(<UpdateDialog open wid={WID} tid={TID} onClose={() => { }} />)
 

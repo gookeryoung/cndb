@@ -17,7 +17,7 @@ from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.tables.services import transfer
 from cndb.plugins.tables.services.core import records as rec
-from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
+from cndb.plugins.tables.services.core.access import TableAction, get_hidden_field_names, get_table_or_404
 from cndb.plugins.tables.services.core.links import is_link_field
 from cndb.plugins.tables.services.core.view_access import ViewAction, get_view_or_404
 from cndb.plugins.workspaces.models import Workspace
@@ -153,7 +153,10 @@ def export_table(
 
     # 导出列顺序 = 字段展示顺序（``DataField.order``），不是物理列 / SELECT 顺序：
     # 用户拖拽调整字段顺序后，导出文件的列序应与网格所见一致（而非“随机”）。
-    export_columns = [f.name for f in table.active_fields()]
+    # 空表没有行可供裁剪隐藏字段，这里按同一权限口径剔除当前用户隐藏的字段，
+    # 避免空表导出的表头泄露不可见列（与 list_rows 的行裁剪一致）。
+    hidden_names = get_hidden_field_names(db, table, current_user)
+    export_columns = [f.name for f in table.active_fields() if f.name not in hidden_names]
 
     body_map = {
         "json": lambda: transfer.export_rows_to_json(rows, link_display=link_display, columns=export_columns),

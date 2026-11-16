@@ -66,6 +66,21 @@ describe('ExportDialog 导出对话框', () => {
     expect(screen.queryByText('点击或拖拽文件到此处')).not.toBeInTheDocument()
   })
 
+  it('底部动作条：关闭与下载同排，关闭回调生效', async () => {
+    const onClose = vi.fn()
+    renderProviders(<ExportDialog open wid={WID} tid={TID} onClose={onClose} />)
+    await screen.findByText('将表中的数据导出为所选格式（最多 10000 行）')
+
+    const actions = document.querySelector('.cn-export-actions')
+    expect(actions).not.toBeNull()
+    expect(actions).toHaveTextContent(/关\s*闭/)
+    expect(actions).toHaveTextContent(/下\s*载/)
+
+    // 用面板动作条内的按钮定位（Modal 右上角关闭图标同名）
+    fireEvent.click(actions!.querySelector('button') as HTMLButtonElement)
+    expect(onClose).toHaveBeenCalledTimes(1)
+  })
+
   it('导出格式下拉按 XLSX / CSV / PDF / JSON 排序', async () => {
     renderProviders(<ExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
 

@@ -30,7 +30,7 @@ export default function UpdateDialog({ open, wid, tid, fields, onClose, onImport
       open={open}
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
-      width={1000}
+      width="min(1000px, 96vw)"
       destroyOnHidden
     >
       {/* 行着色样式（:where 避免 specificity 冲突） */}
@@ -40,6 +40,9 @@ export default function UpdateDialog({ open, wid, tid, fields, onClose, onImport
           border-left: 3px solid var(--diff-row-border, transparent) !important;
         }
       `}</style>
+      <div className="cn-dialog-hint">
+        从文件或接口批量写入当前表：先看全量预览与字段差异，确认后再落库；导入可按参考列更新已有行。
+      </div>
       <Tabs
         defaultActiveKey="import"
         items={[

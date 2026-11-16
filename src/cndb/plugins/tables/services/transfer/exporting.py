@@ -169,12 +169,19 @@ def export_rows_to_csv(
     """把行列表转为 CSV 字符串（link 摘要序列化为分号分隔串）.
 
     columns 指定导出列顺序（字段展示顺序）；缺省时保持行内原顺序。
+    空行列表 + columns 时只输出表头（空表导出仍有列结构）。
     公式注入防护：以 ``=``/``+``/``-``/``@``/Tab/CR 开头的字符串单元格（含表头）
     前加 ``'`` 前缀，避免 Excel/WPS 打开时被当作公式求值.
     """
     rows = _exportable_rows(rows, link_display)
     if not rows:
-        return ""
+        # 空表也要输出表头：列结构可见，导出的文件还能直接当回灌模板
+        if not columns:
+            return ""
+        buf = io.StringIO()
+        writer = csv.DictWriter(buf, fieldnames=[_sanitize_csv_cell(c) for c in columns])
+        writer.writeheader()
+        return buf.getvalue()
     fieldnames = _ordered_fieldnames(rows, columns)
     buf = io.StringIO()
     # 表头一并转义；已知列名同步替换为转义后列名，未知列名保留交由 extrasaction 处理
@@ -224,6 +231,7 @@ def export_rows_to_xlsx(
     """把行列表转为 XLSX 字节串（link 摘要序列化为分号分隔串）.
 
     columns 指定导出列顺序（字段展示顺序）；缺省时保持行内原顺序。
+    空行列表 + columns 时只输出表头（空表导出仍有列结构）。
     公式注入防护：``=`` 开头字符串单元格强制回字符串类型，Excel 打开不被求值.
     类型归一：openpyxl 不接受的类型（list/set/tuple/dict/UUID 等）自动降级序列化.
     """
@@ -235,6 +243,10 @@ def export_rows_to_xlsx(
     ws = cast(Worksheet, wb.active)  # Workbook 始终有 active sheet
     ws.title = "Data"
     if not rows:
+        # 空表也要输出表头（与 CSV 口径一致）
+        if columns:
+            ws.append(list(columns))
+            _fix_xlsx_formula_cells(ws, 1)
         return _wb_to_bytes(wb)
     # Header
     fieldnames = _ordered_fieldnames(rows, columns)

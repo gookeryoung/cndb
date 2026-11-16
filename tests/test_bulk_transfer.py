@@ -31,6 +31,17 @@ class TestTransferPure:
     def test_export_csv_empty(self):
         assert transfer.export_rows_to_csv([]) == ""
 
+    def test_export_empty_rows_with_columns_keep_header(self):
+        """空行 + columns：CSV / XLSX 只输出表头，JSON 仍为空数组."""
+        import io
+
+        from openpyxl import load_workbook
+
+        assert transfer.export_rows_to_csv([], columns=["姓名", "年龄"]) == "姓名,年龄\r\n"
+        wb = load_workbook(io.BytesIO(transfer.export_rows_to_xlsx([], columns=["姓名", "年龄"])))
+        assert [cell.value for cell in wb.active[1]] == ["姓名", "年龄"]
+        assert transfer.export_rows_to_json([], columns=["姓名", "年龄"]) == "[]"
+
     def test_export_xlsx(self):
         rows = [{"姓名": "A", "年龄": 1}]
         data = transfer.export_rows_to_xlsx(rows)
@@ -411,6 +422,49 @@ class TestBulkAPI:
         )
         wb = load_workbook(io.BytesIO(r_xlsx.content))
         assert [cell.value for cell in wb.active[1]] == ["年龄", "姓名"]
+
+    def test_export_empty_table_keeps_header(self, client, db, ws, auth_owner):
+        """空表导出仍带表头：CSV / XLSX 输出列名，JSON 为空数组."""
+        from openpyxl import load_workbook
+
+        engine = db.get_bind()
+        dt = DataTable(workspace_id=ws.id, name="空表")
+        dt.ensure_db_name()
+        db.add(dt)
+        db.flush()
+        f_name = DataField(table_id=dt.id, name="姓名", field_type="text", order=0)
+        f_name.ensure_db_name()
+        f_age = DataField(table_id=dt.id, name="年龄", field_type="number", order=1)
+        f_age.ensure_db_name()
+        db.add_all([f_name, f_age])
+        db.commit()
+        db.refresh(dt)
+        ddl.create_table(engine, dt)
+
+        r_csv = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{dt.id}/export?format=csv",
+            headers=auth_owner,
+        )
+        assert r_csv.status_code == 200
+        lines = [line for line in r_csv.text.strip().splitlines() if line.strip()]
+        assert lines == ["姓名,年龄"]
+
+        r_xlsx = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{dt.id}/export?format=xlsx",
+            headers=auth_owner,
+        )
+        assert r_xlsx.status_code == 200
+        import io
+
+        wb = load_workbook(io.BytesIO(r_xlsx.content))
+        assert [cell.value for cell in wb.active[1]] == ["姓名", "年龄"]
+
+        r_json = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{dt.id}/export?format=json",
+            headers=auth_owner,
+        )
+        assert r_json.status_code == 200
+        assert json.loads(r_json.text) == []
 
     def test_import_csv(self, client, ws, table, auth_owner):
         import io
