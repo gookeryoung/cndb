@@ -253,3 +253,28 @@ describe('gridTableSection 表头交互：调宽 / 列序', () => {
     expect(onOrderMove).not.toHaveBeenCalled()
   })
 })
+
+// ─────────────── 数字字段取值范围符号标签 ───────────────
+
+describe('buildColumns 列头取值范围标签', () => {
+  function renderTitle(field: Field) {
+    const cols = buildColumns([field], 10, [], [], () => { }, () => { })
+    const title = cols[0].title
+    renderProviders(<>{typeof title === 'function' ? null : title}</>)
+  }
+
+  it('配置了 min/max 的整数字段在列头显示符号标签', () => {
+    renderTitle(makeField({ id: 7, name: '年龄', field_type: 'number', order: 0, config: { min: 0, max: 100 } }))
+    expect(screen.getByTestId('header-range-7')).toHaveTextContent('0–100')
+  })
+
+  it('只有单侧边界时显示 ≥ / ≤；未配置范围不渲染', () => {
+    renderTitle(makeField({ id: 8, name: '数量', field_type: 'number', order: 0, config: { max: 10 } }))
+    expect(screen.getByTestId('header-range-8')).toHaveTextContent('≤10')
+  })
+
+  it('无范围配置的字段不渲染标签', () => {
+    renderTitle(makeField({ id: 9, name: '分数', field_type: 'number', order: 0 }))
+    expect(screen.queryByTestId('header-range-9')).toBeNull()
+  })
+})

@@ -217,6 +217,14 @@ describe('fieldNoteText / formatIncrementExample 纯函数矩阵', () => {
         expect(fieldNoteText(f({ default_value: '待办' }))).toBe('默认值：待办')
     })
 
+    it('数字字段配置 min/max 时备注显示取值范围符号标签', () => {
+        expect(fieldNoteText(f({ field_type: 'number', config: { min: 0, max: 100 } }))).toBe('范围 0–100')
+        expect(fieldNoteText(f({ field_type: 'float', config: { min: 0 } }))).toBe('范围 ≥0')
+        expect(fieldNoteText(f({ field_type: 'number', config: { max: 10 } }))).toBe('范围 ≤10')
+        // 非数值类型即使带 min/max 也不显示（百分比值域是类型隐式约束）
+        expect(fieldNoteText(f({ field_type: 'percentage', config: { min: 0, max: 1 } }))).toBe('')
+    })
+
     it('auto_increment 优先于静态默认值，且不显示默认值备注', () => {
         const field = f({
             default_value: '静态值',

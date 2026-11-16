@@ -2670,7 +2670,7 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   flex-shrink: 0;
 }
 
-/* 字段行备注文字（默认值 / 自动填充规则） */
+/* 字段行备注文字（默认值 / 自动填充规则 / 取值范围） */
 .fm-row-note {
   flex: 1;
   min-width: 0;
@@ -2679,6 +2679,21 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   white-space: nowrap;
   font-size: var(--cn-text-xs);
   color: var(--cn-text-muted);
+}
+
+/* 数字字段取值范围的符号标签（网格列头，与字段列表备注同源口径） */
+.cn-range-badge {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 0 var(--cn-space-xs);
+  border-radius: var(--cn-radius-base);
+  background: var(--cn-bg-muted);
+  color: var(--cn-text-secondary);
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.6;
+  white-space: nowrap;
 }
 
 /* 引用字段归属标注（lookup → 所属关联字段） */

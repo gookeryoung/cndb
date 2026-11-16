@@ -28,6 +28,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import type { Field, FieldType } from '@/api'
 import { getFieldTypeColor, getFieldTypeLabel } from '@/utils/fieldTypeMeta'
+import { fieldRangeBadge } from '@/utils/fieldRange'
 import { formatIncrementExample, isAutoIncrementField } from '@/utils/fieldIncrement'
 
 // 历史导出面：FieldManager 与测试从这里取用；实现已收敛到 @/utils/fieldIncrement
@@ -58,6 +59,8 @@ export function fieldNoteText(f: Field): string {
   const parts: string[] = []
   if (f.required) parts.push('必填')
   if (f.is_unique) parts.push('唯一')
+  const range = fieldRangeBadge(f)
+  if (range) parts.push(`范围 ${range.text}`)
   if (isAutoIncrementField(f)) {
     parts.push(`自动编号：${formatIncrementExample(f.config)} 起`)
   } else if (f.default_value !== null && f.default_value !== undefined && f.default_value !== '') {

@@ -9,6 +9,7 @@ import type { RowResponse, Field, RowValues, ID } from '@/api'
 import GridCell from './GridCell'
 import AutoIncrementCell from './AutoIncrementCell'
 import ColumnFilterDropdown from '../layout/ColumnFilterDropdown'
+import { fieldRangeBadge } from '@/utils/fieldRange'
 import { WEIGHT } from '@/theme/tokens'
 
 /** 表头状态标识配色（与 FIELD_TYPE_META 色系对齐、避免冲突） */
@@ -180,6 +181,8 @@ export function buildColumns(
       const currentFilter = filterRule
         ? { op: filterRule.op, value: filterRule.value }
         : undefined
+      // 数字字段的取值范围（config.min / config.max）：紧凑符号标签，配置不全时只显示单边界
+      const rangeBadge = fieldRangeBadge(f)
       /** 生成带 Tooltip 的状态图标 —— 紧凑、11px 字号 */
       const flagIcon = (icon: ReactNode, tooltip: string, _color: string) => (
         <Tooltip title={tooltip}>
@@ -195,6 +198,13 @@ export function buildColumns(
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
             {/* 字段名 */}
             <span>{f.name}</span>
+
+            {/* 取值范围 —— 符号标签（≥0 / ≤100 / 0–100），完整口径见 tooltip */}
+            {rangeBadge && (
+              <Tooltip title={rangeBadge.tooltip}>
+                <span className="cn-range-badge" data-testid={`header-range-${f.id}`}>{rangeBadge.text}</span>
+              </Tooltip>
+            )}
 
             {/* 必填 —— 红 * 号 */}
             {f.required && (
