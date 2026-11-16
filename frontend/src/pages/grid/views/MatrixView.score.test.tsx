@@ -128,6 +128,22 @@ describe('MatrixView 评分矩阵', () => {
     expect(spy.mock.calls[0][2]).toMatchObject({ value: 87 })
   })
 
+  // 回归：202 修改申请载荷（ChangeRequestBatchResponse）没有 action 字段，
+  // 用 res.action 判断会把「已提交修改申请」误报成「已保存」，关闭直编的 editor / 查看者会误以为已落库
+  it('修改申请载荷（202）提示已提交修改申请而非已保存', async () => {
+    const spy = vi.spyOn(recordApi, 'matrixUpsert').mockResolvedValue({
+      change_request: { id: 7, op: 'create', status: 'open', changes: {} },
+    })
+    renderScore()
+    expect(await screen.findByTestId('matrix-score-view')).toBeInTheDocument()
+    const input = screen.getAllByRole('spinbutton').find((i) => (i as HTMLInputElement).value === '88') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '90' } })
+    fireEvent.blur(input)
+    await waitFor(() => expect(spy).toHaveBeenCalled())
+    expect(await screen.findByText('已提交修改申请，审批通过后生效')).toBeInTheDocument()
+    expect(screen.queryByText('已保存')).not.toBeInTheDocument()
+  })
+
   // 回归：列表过滤器操作符必须是后端 query.parse 支持的符号形式，
   // 写成 gte / lt 会被判「未知操作符」返回 400，已有单元格永远读不回来
   it('评分列表过滤器使用后端支持的操作符', async () => {

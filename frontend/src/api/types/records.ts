@@ -39,7 +39,8 @@ export interface MatrixUpsertPayload {
 }
 
 export interface MatrixUpsertResponse {
-  action: 'created' | 'updated' | 'change_request'
+  /** 直存时为 created / updated；202 修改申请载荷不含该字段，需用 isChangeRequestResponse 判定 */
+  action?: 'created' | 'updated' | 'change_request'
   row_id?: ID
   row?: RowResponse
   change_request?: unknown
