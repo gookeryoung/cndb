@@ -66,10 +66,24 @@ function openSelect(select: HTMLElement) {
     fireEvent.mouseDown(within(select).getByRole('combobox'))
 }
 
+/** MarkdownLiveEditor 是 React.lazy（动态 import chunk）：CI 上 4 worker 并行时首帧常超过
+ *  默认 1s 的 findBy 窗口，`源码` 按钮 / textarea 短暂不存在就被误判成功能回归。
+ *  这里统一给 5s 挂载窗口，断言本身不变。 */
+const EDITOR_MOUNT_TIMEOUT = 5000
+
+/** 等编辑器挂载完成后的源码 textarea */
+async function findSourceTextarea(): Promise<HTMLTextAreaElement> {
+    return (await screen.findByPlaceholderText(
+        '输入 Markdown 内容…',
+        {},
+        { timeout: EDITOR_MOUNT_TIMEOUT },
+    )) as HTMLTextAreaElement
+}
+
 /** 切到「源码」模式：既有断言基于 textarea（实时预览用 CodeMirror，无法直接读写 value） */
 async function enterSourceMode() {
-    fireEvent.click(await screen.findByText('源码'))
-    return (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+    fireEvent.click(await screen.findByText('源码', {}, { timeout: EDITOR_MOUNT_TIMEOUT }))
+    return findSourceTextarea()
 }
 
 /** 位置探针：展示当前 pathname 供跳转断言 */
@@ -420,7 +434,7 @@ describe('DocumentEditorPage 并排查看', () => {
 
         // 源码模式下改正文：右侧预览同步（并排的意义所在）
         fireEvent.click(within(screen.getByTestId('doc-editor-mode-switch')).getByText('源码'))
-        const textarea = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const textarea = await findSourceTextarea()
         fireEvent.change(textarea, { target: { value: '# 并排新标题\n\n正文' } })
         await waitFor(() =>
             expect(within(screen.getByTestId('doc-split-preview')).getByRole('heading', { name: '并排新标题' })).toBeInTheDocument(),
@@ -434,7 +448,7 @@ describe('DocumentEditorPage 并排查看', () => {
         const preview = await screen.findByTestId('doc-split-preview')
         // 切到源码模式：左栏滚动容器是 textarea（实时预览为 CodeMirror 内部 scroller）
         fireEvent.click(within(screen.getByTestId('doc-editor-mode-switch')).getByText('源码'))
-        const textarea = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const textarea = await findSourceTextarea()
 
         // jsdom 无布局引擎：用 getter / setter 模拟两栏的滚动尺寸与位置
         mockScrollBox(preview, 4000, 800)
@@ -473,7 +487,7 @@ describe('DocumentEditorPage 并排查看', () => {
         // 关掉后不再同步：滚动预览不牵动编辑栏
         const preview = screen.getByTestId('doc-split-preview')
         fireEvent.click(within(screen.getByTestId('doc-editor-mode-switch')).getByText('源码'))
-        const textarea = (await screen.findByPlaceholderText('输入 Markdown 内容…')) as HTMLTextAreaElement
+        const textarea = await findSourceTextarea()
         mockScrollBox(preview, 4000, 800)
         mockScrollBox(textarea, 3400, 400)
         preview.scrollTop = 1600

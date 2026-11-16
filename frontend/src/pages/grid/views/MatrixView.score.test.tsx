@@ -28,16 +28,21 @@ const ROWS: RowResponse[] = [
   { id: 1, 部门: '研发部', 月份: '2026-11-01', 得分: 88 },
 ] as unknown as RowResponse[]
 
-function mockApi(rows: RowResponse[] = ROWS) {
+function mockApi(rows: RowResponse[] = ROWS, onRecords?: (url: URL) => void) {
   server.use(
     http.get('/api/v1/workspaces/:wid/tables/:tid/fields', () => HttpResponse.json(FIELDS)),
-    http.get('/api/v1/workspaces/:wid/tables/:tid/records', () =>
-      HttpResponse.json({ items: rows, total: rows.length, offset: 0, limit: 5000 })),
+    http.get('/api/v1/workspaces/:wid/tables/:tid/records', ({ request }) => {
+      onRecords?.(new URL(request.url))
+      return HttpResponse.json({ items: rows, total: rows.length, offset: 0, limit: 5000 })
+    }),
   )
 }
 
-function renderScore(props?: { canEditRecords?: boolean; rowRulesActive?: boolean; rows?: RowResponse[] }) {
-  mockApi(props?.rows ?? ROWS)
+function renderScore(
+  props?: { canEditRecords?: boolean; rowRulesActive?: boolean; rows?: RowResponse[] },
+  onRecords?: (url: URL) => void,
+) {
+  mockApi(props?.rows ?? ROWS, onRecords)
   return renderProviders(
     <MatrixView
       rows={[]}
@@ -102,5 +107,41 @@ describe('MatrixView 评分矩阵', () => {
     expect(spy.mock.calls[0][2]).toMatchObject({
       row_field: '部门', row_value: '研发部', month_field: '月份', month: '2026-11', value_field: '得分', value: 90,
     })
+  })
+
+  // 回归：回车必须等同失焦保存（rc-input-number 的 onPressEnter 挂在根 div 上，
+  // currentTarget 不是输入框，直接 blur() 无效会让回车录入静默失效）
+  it('回车确认后直接调用 matrix-upsert', async () => {
+    const spy = vi.spyOn(recordApi, 'matrixUpsert').mockResolvedValue({
+      action: 'created',
+      row_id: 2,
+      row: { id: 2, 部门: '研发部', 月份: '2026-12-01', 得分: 87 },
+    })
+    renderScore()
+    expect(await screen.findByTestId('matrix-score-view')).toBeInTheDocument()
+    const inputs = screen.getAllByRole('spinbutton') as HTMLInputElement[]
+    const empty = inputs.find((i) => i.value === '') as HTMLInputElement
+    empty.focus()
+    fireEvent.change(empty, { target: { value: '87' } })
+    fireEvent.keyDown(empty, { key: 'Enter' })
+    await waitFor(() => expect(spy).toHaveBeenCalled())
+    expect(spy.mock.calls[0][2]).toMatchObject({ value: 87 })
+  })
+
+  // 回归：列表过滤器操作符必须是后端 query.parse 支持的符号形式，
+  // 写成 gte / lt 会被判「未知操作符」返回 400，已有单元格永远读不回来
+  it('评分列表过滤器使用后端支持的操作符', async () => {
+    const seen: URL[] = []
+    renderScore(undefined, (url) => seen.push(url))
+    expect(await screen.findByTestId('matrix-score-view')).toBeInTheDocument()
+    await waitFor(() => expect(seen.length).toBeGreaterThan(0))
+    const filters = JSON.parse(seen[0].searchParams.get('filters') ?? '[]') as Array<{ op: string }>
+    const supported = new Set([
+      '=', '!=', '>', '>=', '<', '<=', 'in', 'not_in', 'contains', 'starts_with', 'ends_with',
+      'is_empty', 'is_not_empty', 'is_null', 'is_not_null', 'contains_any', 'contains_all',
+      'between', 'date_range',
+    ])
+    expect(filters.length).toBe(3)
+    for (const f of filters) expect(supported.has(f.op), `不支持的过滤操作符: ${f.op}`).toBe(true)
   })
 })

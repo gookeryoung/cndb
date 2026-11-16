@@ -262,9 +262,11 @@ export default function MatrixView({
     queryFn: () =>
       recordApi.list(workspaceId!, tableId!, {
         limit: 5000,
+        // 操作符必须是后端 query.parse 支持的符号形式（>= / <）；写成 gte / lt 会被判「未知操作符」返回 400，
+        // 表现为评分单元格永远加载不到已有数据（录入后刷新丢值）。
         filters: [
-          { field_name: columnField, op: 'gte', value: `${periodStart}-01` },
-          { field_name: columnField, op: 'lt', value: `${nextMonth(periodEnd)}-01` },
+          { field_name: columnField, op: '>=', value: `${periodStart}-01` },
+          { field_name: columnField, op: '<', value: `${nextMonth(periodEnd)}-01` },
           { field_name: rowField, op: 'in', value: rowOptions.map((o) => o.value) },
         ],
       }),
@@ -479,7 +481,9 @@ export default function MatrixView({
                             setDrafts((prev) => ({ ...prev, [key]: v === null || v === undefined ? null : Number(v) }))
                           }}
                           onBlur={() => saveCell(rk, ck, cell)}
-                          onPressEnter={(e) => e.currentTarget.blur()}
+                          // rc-input-number 把 onPressEnter 挂在根 div 上，currentTarget 是外层容器，
+                          // 直接 blur() 不会让输入框失焦，下面的 onBlur 保存链路也就永不触发（回车录入无效）。
+                          onPressEnter={(e) => e.currentTarget.querySelector('input')?.blur()}
                           onKeyDown={(e) => {
                             if (e.key === 'Escape') clearDraft(key)
                           }}
