@@ -54,7 +54,8 @@ import { readGridViewSnapshot, writeGridViewSnapshot } from './gridViewSeed'
 
 // Modal 组件 lazy import：点击打开时才加载
 const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
-const ImportExportDialog = lazy(() => import('@/pages/import-export/ImportExportDialog'))
+const UpdateDialog = lazy(() => import('@/pages/import-export/UpdateDialog'))
+const ExportDialog = lazy(() => import('@/pages/import-export/ExportDialog'))
 const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDialog'))
 // 按需加载：以下三类均为「用户点击后才出现」的重型面板（>400 行），静态链入会让
 // GridPage chunk 随每次功能迭代线性膨胀（见 scripts/bundle-budget.mjs 的 GridPage 预算）。
@@ -323,9 +324,9 @@ export default function GridPage() {
   const [fieldMgrOpen, setFieldMgrOpen] = useState(false)
   /** 列头「AI 填充本列」当前目标字段（null = 抽屉关闭）；RowDetailDrawer 同款按需 lazy 挂载 */
   const [aiFillField, setAiFillField] = useState<Field | null>(null)
-  const [importExportOpen, setImportExportOpen] = useState(false)
-  /** 打开「更新 / 导出」对话框时的初始 Tab（工具栏两个入口分别指向更新 / 导出） */
-  const [importExportTab, setImportExportTab] = useState<'import' | 'export'>('import')
+  // 更新（导入）与导出是两个独立对话框：各自维护开关，互不共享 Tab 状态
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [exportOpen, setExportOpen] = useState(false)
   const [governanceOpen, setGovernanceOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
@@ -1236,8 +1237,8 @@ export default function GridPage() {
           canEditSchema={canEditSchema}
           canManageData={canManageData}
           onOpenTableSettings={() => navigate(`/w/${wid}/tables/${tid}/settings`)}
-          onOpenImportExport={() => { setImportExportTab('import'); setImportExportOpen(true) }}
-          onOpenExport={() => { setImportExportTab('export'); setImportExportOpen(true) }}
+          onOpenImportExport={() => setUpdateOpen(true)}
+          onOpenExport={() => setExportOpen(true)}
           onOpenGovernance={() => setGovernanceOpen(true)}
           activeViewName={activeView?.name}
           activeViewId={activeView?.id}
@@ -1463,10 +1464,18 @@ export default function GridPage() {
             }}
           />
         )}
-        {importExportOpen && (
-          <ImportExportDialog open={importExportOpen} wid={wid} tid={tid}
+        {updateOpen && (
+          <UpdateDialog open={updateOpen} wid={wid} tid={tid}
             fields={table?.fields || []}
-            initialTab={importExportTab}
+            onClose={() => setUpdateOpen(false)}
+            onImported={() => {
+              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+            }}
+          />
+        )}
+        {exportOpen && (
+          <ExportDialog open={exportOpen} wid={wid} tid={tid}
             viewId={activeViewId}
             viewName={activeView?.name}
             getPdfTarget={async () => {
@@ -1479,11 +1488,7 @@ export default function GridPage() {
               return gridAreaRef.current
             }}
             releasePdfTarget={() => setPdfExporting(false)}
-            onClose={() => setImportExportOpen(false)}
-            onImported={() => {
-              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
-              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
-            }}
+            onClose={() => setExportOpen(false)}
           />
         )}
         {governanceOpen && (

@@ -7,7 +7,8 @@
  *   4. Diff 视图：新增行绿底 / 更新行蓝底；更新行字段级红/绿 chip old→new 对比 + 变更汇总列，
  *      无更新行时空态区分"未选参考列 / 无匹配行 / 命中但字段无变化"
  *
- * 从 ImportExportDialog 拆出：导入全流程状态与渲染内聚于此，外层 Modal 由容器负责.
+ * 从合并版「导入/导出」对话框拆出：导入全流程状态与渲染内聚于此，外层 Modal 由
+ * `UpdateDialog`（更新 / API 抓取）负责.
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button, Progress, App as AntApp, Space, Select, Alert, Empty, Upload, Table, Tabs, Tag, Collapse, Radio, Descriptions, Tooltip, Checkbox } from 'antd'

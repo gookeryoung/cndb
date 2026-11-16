@@ -1,17 +1,16 @@
-/** 导入/导出对话框 — Tab 容器：更新（导入）/ 导出 / API 抓取.
+/** 更新（导入）对话框 — Tab 容器：更新 / API 抓取.
  *
- * 拆分说明（重构自 1100 行单体）:
+ * 2026 拆分：导出口径已剥离为独立的 `ExportDialog`（不再共用一个 3 Tab 弹窗），
+ * 本组件只承载「更新」相关能力。面板说明：
  *   ImportPanel.tsx  — 导入全流程（上传 / 预览 / DIFF / 进度轮询 / 数据质量）
- *   ExportPanel.tsx  — 导出（格式选择 / 视图筛选 / Blob 下载）
  *   importPreview.ts — 导入预览纯逻辑（阶段常量 / Diff 列构建 / fmtValue）
  *   ApiImportDialog  — API 抓取追加（embed 模式，同目录）
  */
 import { Modal, Tabs, Button } from 'antd'
-import { UploadOutlined, DownloadOutlined, ApiOutlined } from '@ant-design/icons'
+import { UploadOutlined, ApiOutlined } from '@ant-design/icons'
 import type { Field } from '@/api'
-import ApiImportDialog from '../ApiImportDialog'
-import ImportPanel from './ImportPanel'
-import ExportPanel from './ExportPanel'
+import ApiImportDialog from './ApiImportDialog'
+import ImportPanel from './ImportExportDialog/ImportPanel'
 
 interface Props {
   open: boolean
@@ -22,22 +21,12 @@ interface Props {
   onClose: () => void
   /** 导入成功后调用（刷新列表等） */
   onImported?: () => void
-  /** 当前激活的视图 ID（用于按视图筛选导出） */
-  viewId?: number | string | null
-  /** 当前激活的视图名称（仅用于提示） */
-  viewName?: string
-  /** 进入 PDF 导出模式（关闭虚拟滚动、全量渲染）并返回视图内容区根元素，resolve 前须等待重渲染完成 */
-  getPdfTarget?: () => Promise<HTMLElement | null>
-  /** PDF 导出结束后调用（退出导出模式，恢复虚拟滚动） */
-  releasePdfTarget?: () => void
-  /** 入口决定的初始 Tab：更新 / 导出 / API 抓取；缺省为『更新』 */
-  initialTab?: 'import' | 'export' | 'api'
 }
 
-export default function ImportExportDialog({ open, wid, tid, fields, onClose, onImported, viewId, viewName, getPdfTarget, releasePdfTarget, initialTab }: Props) {
+export default function UpdateDialog({ open, wid, tid, fields, onClose, onImported }: Props) {
   return (
     <Modal
-      title={initialTab === 'export' ? '导出' : '更新 / 导出'}
+      title="更新"
       open={open}
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
@@ -52,7 +41,7 @@ export default function ImportExportDialog({ open, wid, tid, fields, onClose, on
         }
       `}</style>
       <Tabs
-        defaultActiveKey={initialTab ?? 'import'}
+        defaultActiveKey="import"
         items={[
           {
             key: 'import',
@@ -67,11 +56,6 @@ export default function ImportExportDialog({ open, wid, tid, fields, onClose, on
                 onImported={onImported}
               />
             ),
-          },
-          {
-            key: 'export',
-            label: <span><DownloadOutlined /> 导出</span>,
-            children: <ExportPanel wid={wid} tid={tid} viewId={viewId} viewName={viewName} getPdfTarget={getPdfTarget} releasePdfTarget={releasePdfTarget} />,
           },
           {
             key: 'api',

@@ -1,6 +1,7 @@
 /** 导出面板 — 多格式选择 + 视图筛选开关 + Blob 下载.
  *
- * 从 ImportExportDialog 拆出：导出状态（格式 / 是否按视图筛选 / loading）内聚于此.
+ * 从合并版「导入/导出」对话框拆出：导出状态（格式 / 是否按视图筛选 / loading）
+ * 内聚于此，外层 Modal 由独立入口 `ExportDialog` 负责.
  * 格式默认 XLSX，并记住上次选择（`exportPrefs.ts`）；
  * 文件名优先从后端 Content-Disposition 头解析（支持 RFC 5987 filename* 中文编码），
  * 格式为「工作区-数据表-视图-YYYYMMDD_HHMMSS.扩展名」；解析失败降级为 table-{tid}-export.{ext}.

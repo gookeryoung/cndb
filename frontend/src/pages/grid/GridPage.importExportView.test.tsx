@@ -1,8 +1,10 @@
 /**
- * GridPage 导出视图接线回归.
+ * GridPage 更新 / 导出对话框接线回归.
  *
- * 语义：打开「更新/导出」对话框时，必须把当前激活视图的 viewId/viewName
- *      传入对话框，使导出 Tab 默认「按当前视图筛选导出」；
+ * 语义：工具栏「更新」与「导出」打开**两个独立对话框**（不再共用一个 3 Tab 弹窗）：
+ *      - 更新 → UpdateDialog，只承载导入 / API 抓取；
+ *      - 导出 → ExportDialog，接收当前激活视图的 viewId/viewName（按视图筛选导出）、
+ *        getPdfTarget / releasePdfTarget（PDF 视觉快照与导出模式复位）。
  *      无激活视图时 viewId 为 null，导出全表数据.
  */
 
@@ -29,13 +31,21 @@ const VIEWS = [
 
 /** hoisted 持有可变 views，供 mock 工厂在调用时读取（避免 TDZ） */
 const viewsRef = vi.hoisted(() => ({ current: [] as any[] }))
-/** 捕获 ImportExportDialog 收到的 props */
-const dialogProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }))
+/** 捕获 ExportDialog 收到的 props（视图接线 / PDF 目标） */
+const exportDialogProps = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }))
 
-vi.mock('@/pages/import-export/ImportExportDialog', () => ({
+vi.mock('@/pages/import-export/UpdateDialog', () => ({
+    default: () => <div data-testid="update-dialog-stub" />,
+}))
+
+vi.mock('@/pages/import-export/ExportDialog', () => ({
     default: (props: Record<string, unknown>) => {
-        dialogProps.current = props
-        return <div data-testid="ie-dialog-stub" data-view-id={props.viewId == null ? '' : String(props.viewId)} data-view-name={(props.viewName as string) ?? ''} data-tab={(props.initialTab as string) ?? 'import'} />
+        exportDialogProps.current = props
+        return (
+            <div data-testid="export-dialog-stub"
+                data-view-id={props.viewId == null ? '' : String(props.viewId)}
+                data-view-name={(props.viewName as string) ?? ''} />
+        )
     },
 }))
 
@@ -71,7 +81,7 @@ vi.mock('@/api', () => ({
 
 beforeEach(() => {
     viewsRef.current = VIEWS
-    dialogProps.current = null
+    exportDialogProps.current = null
     useTableSettingsStore.setState({ density: 'comfortable', defaultPageSize: 20 })
     // GridPage 不再在每次挂载时清空视图状态（同表重挂载保留上轮视图，ADR 0116 C8），
     // 用例间必须显式复位，否则上一例的 activeViewId 会被下一例读到
@@ -89,45 +99,44 @@ function renderGrid(route = '/w/1/tables/1') {
     )
 }
 
-async function openImportExportDialog() {
+async function clickToolbar(testId: string, label: string) {
     fireEvent.click(await waitFor(() => {
-        const btn = document.querySelector('[data-testid="import-export-btn"]') as HTMLButtonElement
-        if (!btn) throw new Error('更新/导出按钮未渲染')
+        const btn = document.querySelector(`[data-testid="${testId}"]`) as HTMLButtonElement
+        if (!btn) throw new Error(`${label}按钮未渲染`)
         return btn
     }))
-    return waitFor(() => {
-        const stub = document.querySelector('[data-testid="ie-dialog-stub"]')
-        if (!stub) throw new Error('对话框未渲染')
-        return stub as HTMLElement
-    })
 }
 
-describe('GridPage 导出视图接线 — 对话框收到激活视图', () => {
-    it('工具栏「导出」单独入口把对话框直接落在导出 Tab', async () => {
+const openExportDialog = () => clickToolbar('export-btn', '导出')
+const openUpdateDialog = () => clickToolbar('import-export-btn', '更新')
+
+describe('GridPage 更新 / 导出对话框接线', () => {
+    it('「导出」入口只打开导出对话框，不打开更新对话框', async () => {
         renderGrid()
-        const btn = await waitFor(() => {
-            const el = document.querySelector('[data-testid="export-btn"]') as HTMLButtonElement
-            if (!el) throw new Error('导出按钮未渲染')
-            return el
+        await openExportDialog()
+        await waitFor(() => {
+            expect(document.querySelector('[data-testid="export-dialog-stub"]')).not.toBeNull()
         })
-        fireEvent.click(btn)
+        expect(document.querySelector('[data-testid="update-dialog-stub"]')).toBeNull()
+    })
+
+    it('「更新」入口只打开更新对话框，不打开导出对话框', async () => {
+        renderGrid()
+        await openUpdateDialog()
+        await waitFor(() => {
+            expect(document.querySelector('[data-testid="update-dialog-stub"]')).not.toBeNull()
+        })
+        expect(document.querySelector('[data-testid="export-dialog-stub"]')).toBeNull()
+    })
+
+    it('有激活视图时导出对话框收到 viewId/viewName，默认按当前视图', async () => {
+        renderGrid()
+        await openExportDialog()
         const stub = await waitFor(() => {
-            const el = document.querySelector('[data-testid="ie-dialog-stub"]')
-            if (!el) throw new Error('对话框未渲染')
+            const el = document.querySelector('[data-testid="export-dialog-stub"]')
+            if (!el) throw new Error('导出对话框未渲染')
             return el as HTMLElement
         })
-        expect(stub.getAttribute('data-tab')).toBe('export')
-    })
-
-    it('工具栏「更新」入口落在更新 Tab', async () => {
-        renderGrid()
-        const stub = await openImportExportDialog()
-        expect(stub.getAttribute('data-tab')).toBe('import')
-    })
-
-    it('有激活视图时传入 viewId/viewName，导出默认按当前视图', async () => {
-        renderGrid()
-        const stub = await openImportExportDialog()
         expect(stub.getAttribute('data-view-id')).toBe('11')
         expect(stub.getAttribute('data-view-name')).toBe('默认视图')
     })
@@ -135,19 +144,27 @@ describe('GridPage 导出视图接线 — 对话框收到激活视图', () => {
     it('无激活视图时 viewId 为 null，导出全表', async () => {
         viewsRef.current = []
         renderGrid()
-        const stub = await openImportExportDialog()
+        await openExportDialog()
+        const stub = await waitFor(() => {
+            const el = document.querySelector('[data-testid="export-dialog-stub"]')
+            if (!el) throw new Error('导出对话框未渲染')
+            return el as HTMLElement
+        })
         expect(stub.getAttribute('data-view-id')).toBe('')
     })
 
-    it('传入 getPdfTarget，调用后返回主内容区元素（PDF 视觉快照目标）', async () => {
+    it('导出对话框收到 getPdfTarget / releasePdfTarget 接线（PDF 视觉快照）', async () => {
         renderGrid()
-        await openImportExportDialog()
-        const getPdfTarget = dialogProps.current?.getPdfTarget as (() => Promise<HTMLElement | null>) | undefined
+        await openExportDialog()
+        await waitFor(() => {
+            expect(exportDialogProps.current).not.toBeNull()
+        })
+        const getPdfTarget = exportDialogProps.current?.getPdfTarget as (() => Promise<HTMLElement | null>) | undefined
         expect(typeof getPdfTarget).toBe('function')
         const el = await getPdfTarget?.()
         expect(el).toBeInstanceOf(HTMLElement)
         // releasePdfTarget 接线：导出结束后退出导出模式
-        const releasePdfTarget = dialogProps.current?.releasePdfTarget
+        const releasePdfTarget = exportDialogProps.current?.releasePdfTarget
         expect(typeof releasePdfTarget).toBe('function')
     })
 })

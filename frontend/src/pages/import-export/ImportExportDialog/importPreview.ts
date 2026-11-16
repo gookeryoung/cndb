@@ -1,6 +1,6 @@
 /** 导入预览纯逻辑 — 阶段常量 / 参考列推荐类型 / Diff 表格列构建.
  *
- * 从 ImportExportDialog 拆出：不依赖 React 渲染，便于单元测试与复用.
+ * 从合并版「导入/导出」对话框拆出：不依赖 React 渲染，便于单元测试与复用.
  */
 import type { CSSProperties } from 'react'
 

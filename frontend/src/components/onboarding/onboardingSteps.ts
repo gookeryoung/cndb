@@ -75,7 +75,7 @@ export function buildSteps(): TourStep[] {
       element: TOUR_SELECTORS.importExport,
       popover: {
         title: '更新 / 导出数据',
-        description: '工具栏的「更新」批量导入或按参考列更新已有数据；右侧「导出」按当前视图把数据导出为 CSV、Excel、JSON 或 PDF，两者是独立入口。',
+        description: '工具栏的「更新」批量导入或按参考列更新已有数据；右侧「导出」按当前视图把数据导出为 CSV、Excel、JSON 或 PDF，两者各自打开独立弹窗。',
       },
     },
     {
