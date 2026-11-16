@@ -23,6 +23,8 @@ class TableCreate(BaseModel):
 
     name: str
     description: str = ""
+    # 分组归属（可空 = 不分组，默认）；必须属于同一工作区
+    group_id: int | None = None
     # 从其他表引入字段（可选）
     import_from_table_id: int | None = None
     import_field_ids: list[int] | None = None
@@ -34,6 +36,8 @@ class TableUpdate(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     name: str | None = None
     description: str | None = None
+    # None = 移出分组（未分组）；更新时显式传 null 才生效
+    group_id: int | None = None
     order: int | None = None
     trashed: bool | None = None
 
@@ -54,6 +58,8 @@ class TableResponse(BaseModel):
     db_table_name: str
     description: str = ""
     order: int
+    # 分组归属（None = 未分组）
+    group_id: int | None = None
     trashed: bool
     trashed_at: datetime | None = None
     created_at: datetime
@@ -117,6 +123,31 @@ class TableDetailResponse(TableResponse):
     workspace_owner: OwnerBrief | None = None
     # 所属工作区摘要
     workspace: WorkspaceBrief | None = None
+
+
+# ── TableGroup schemas ───────────────────────────────
+
+
+class TableGroupCreate(BaseModel):
+    """新建表分组."""
+
+    name: str
+    order: int | None = None
+
+
+class TableGroupUpdate(BaseModel):
+    """更新表分组（改名 / 排序）."""
+
+    name: str | None = None
+    order: int | None = None
+
+
+class TableGroupResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    workspace_id: int
+    name: str
+    order: int
 
 
 # ── DataField schemas ────────────────────────────────
@@ -217,6 +248,8 @@ class FieldResponse(BaseModel):
     default_value: Any = None
     hidden: bool = False
     order: int
+    # 分组归属（None = 未分组）
+    group_id: int | None = None
     trashed: bool
     trashed_at: datetime | None = None
     created_at: datetime

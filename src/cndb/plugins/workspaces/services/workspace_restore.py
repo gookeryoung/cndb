@@ -76,7 +76,15 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
         Tag,
     )
     from cndb.plugins.files.models import FileOwner
-    from cndb.plugins.tables.models import DataField, DataTable, DataView, RowPermission, TableMember, TablePermission
+    from cndb.plugins.tables.models import (
+        DataField,
+        DataTable,
+        DataView,
+        RowPermission,
+        TableGroup,
+        TableMember,
+        TablePermission,
+    )
 
     doc_ids = [row[0] for row in db.query(Document.id).filter(Document.workspace_id == workspace_id).all()]
     dynamic_tables = db.query(DataTable.db_table_name).filter(DataTable.workspace_id == workspace_id).all()
@@ -157,6 +165,8 @@ def clear_workspace_content(workspace_id: int, db: Session) -> None:
 
     if table_ids:
         db.execute(delete(DataTable).where(DataTable.id.in_(table_ids)))
+    # 表分组（需求 0137）：表删完后再清分组，随备份重建
+    db.execute(delete(TableGroup).where(TableGroup.workspace_id == workspace_id))
     db.commit()
 
 

@@ -180,11 +180,13 @@ def create_table(
     db: Annotated[Session, Depends(get_db)],
 ) -> DataTable:
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
+    _validate_group_id(db, workspace_id, payload.group_id)
     dt = DataTable(
         workspace_id=workspace_id,
         owner_id=current_user.id,
         name=payload.name,
         description=payload.description,
+        group_id=payload.group_id,
     )
     dt.ensure_db_name()
     db.add(dt)
@@ -272,6 +274,17 @@ def _invalidate_table_list_cache(workspace_id: int) -> int:
     # 建表 / 删表改变工作区统计（ADR 0046 D5）
     cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
     return cleared
+
+
+def _validate_group_id(db: Session, workspace_id: int, group_id: int | None) -> None:
+    """校验分组归属：必须存在且属于同一工作区（None 表示未分组，直接放行）."""
+    if group_id is None:
+        return
+    from cndb.plugins.tables.models import TableGroup
+
+    exists = db.query(TableGroup.id).filter(TableGroup.id == group_id, TableGroup.workspace_id == workspace_id).first()
+    if exists is None:
+        raise HTTPException(status_code=400, detail="分组不存在或不属于当前工作区")
 
 
 @router.get("", response_model=list[TableResponse])
@@ -504,6 +517,8 @@ def update_table(
 ) -> DataTable:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     update_data = payload.model_dump(exclude_unset=True)
+    if "group_id" in update_data:
+        _validate_group_id(db, workspace_id, update_data["group_id"])
     for key, value in update_data.items():
         setattr(dt, key, value)
     db.commit()
@@ -691,6 +706,8 @@ def move_table(
 
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     dt.workspace_id = target_workspace_id
+    # 分组是工作区级资源：跨工作区移动后回落未分组
+    dt.group_id = None
 
     # 跨工作区移动后清空表级成员列表（成员授权不跨工作区）
     db.query(TableMember).filter(TableMember.table_id == dt.id).delete(synchronize_session=False)

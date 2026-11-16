@@ -1452,3 +1452,40 @@ describe('MainLayout 设计段侧栏（ADR 0084 / 0109 D4 / D8）', () => {
         }
     })
 })
+
+// ─────────────── 侧栏表分组（需求 0137） ───────────────
+
+describe('MainLayout 侧栏表分组', () => {
+    it('有分组时侧栏按组标题展示表，未分组单独一组', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/tables', () => HttpResponse.json([
+                { id: 100, name: '销售明细', record_count: 0, field_count: 1, view_count: 1, group_id: 5 },
+                { id: 101, name: '零散表', record_count: 0, field_count: 1, view_count: 1, group_id: null },
+            ])),
+            http.get('/api/v1/workspaces/:wid/table-groups', () => HttpResponse.json([
+                { id: 5, workspace_id: 10, name: '销售组', order: 0 },
+            ])),
+        )
+        renderLayout(mockUser)
+
+        const sider = await screen.findByTestId('sider-tables')
+        expect(await within(sider).findByText('销售组')).toBeInTheDocument()
+        expect(within(sider).getByText('未分组')).toBeInTheDocument()
+        expect(within(sider).getByText('销售明细')).toBeInTheDocument()
+        expect(within(sider).getByText('零散表')).toBeInTheDocument()
+
+        fireEvent.click(within(sider).getByText('销售明细'))
+        await waitFor(() => expect(screen.getByTestId('grid-page-stub')).toHaveTextContent('/w/10/tables/100'))
+    })
+
+    it('无分组时保持平铺：不渲染分组标题', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/table-groups', () => HttpResponse.json([])),
+        )
+        renderLayout(mockUser)
+
+        const sider = await screen.findByTestId('sider-tables')
+        expect(await within(sider).findByText('客户表')).toBeInTheDocument()
+        expect(within(sider).queryByText('未分组')).toBeNull()
+    })
+})

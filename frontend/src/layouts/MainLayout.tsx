@@ -17,7 +17,8 @@ import {
   LockOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { designsApi, systemApi, tableApi, workspaceApi } from '@/api'
+import { designsApi, systemApi, tableApi, tableGroupApi, workspaceApi } from '@/api'
+import type { TableSummary } from '@/api'
 import { useTableHoverPrefetch } from '@/pages/workspace/tablePrefetch'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
@@ -232,6 +233,13 @@ export default function MainLayout() {
   const { data: tables = [], isSuccess: tablesReady } = useQuery({
     queryKey: ['workspaces', wid, 'tables'],
     queryFn: () => (wid ? tableApi.list(wid) : Promise.resolve([])),
+    enabled: !!wid && wsFeatures.tables,
+  })
+
+  // 表分组（需求 0137）：无分组时侧栏保持平铺，有分组时按组展示（默认不分组）
+  const { data: tableGroups = [] } = useQuery({
+    queryKey: ['workspaces', wid, 'table-groups'],
+    queryFn: () => (wid ? tableGroupApi.list(wid) : Promise.resolve([])),
     enabled: !!wid && wsFeatures.tables,
   })
 
@@ -659,6 +667,59 @@ export default function MainLayout() {
     }
   }
 
+  /** 侧栏表项（分组 / 平铺共用） */
+  const buildTableMenuItem = (t: TableSummary, mobile: boolean): NonNullable<MenuProps['items']>[number] => ({
+    key: String(t.id),
+    icon: <TableOutlined />,
+    label: (
+      <span
+        onMouseEnter={() => prefetchTable.onEnter(t.id)}
+        onMouseLeave={() => prefetchTable.onLeave(t.id)}
+      >
+        {t.name}
+      </span>
+    ),
+    onClick: () => {
+      navigateToTable(wid!, t.id)
+      if (mobile) setMobileNavOpen(false)
+    },
+  })
+
+  /** 侧栏菜单项：无分组（或折叠态）→ 平铺；有分组 → 按组标题展示，未分组单独一组.
+   * 搜索时隐藏没有命中表的空分组，保留分组语义。 */
+  const buildTableMenuItems = (mobile: boolean, collapsed: boolean): NonNullable<MenuProps['items']> => {
+    const flat = orderedTables.map(t => buildTableMenuItem(t, mobile))
+    // 折叠态空间不足，保持图标平铺；无分组时行为与改造前完全一致
+    if (collapsed || tableGroups.length === 0) return flat
+    const keyword = tableKeyword.trim()
+    const byGroup = new Map<string, TableSummary[]>()
+    for (const t of orderedTables) {
+      const key = t.group_id == null ? '' : String(t.group_id)
+      const list = byGroup.get(key) ?? []
+      list.push(t)
+      byGroup.set(key, list)
+    }
+    const items: NonNullable<MenuProps['items']> = []
+    for (const g of tableGroups) {
+      const rows = byGroup.get(String(g.id)) ?? []
+      if (rows.length === 0 && keyword) continue
+      items.push({
+        type: 'group',
+        label: g.name,
+        children: rows.map(t => buildTableMenuItem(t, mobile)),
+      })
+    }
+    const ungrouped = byGroup.get('') ?? []
+    if (ungrouped.length > 0 || !keyword) {
+      items.push({
+        type: 'group',
+        label: '未分组',
+        children: ungrouped.map(t => buildTableMenuItem(t, mobile)),
+      })
+    }
+    return items
+  }
+
   /** 表导航内容 —— 桌面端 Sider 与移动端抽屉共用；mobile=true 时点击表项后自动收起抽屉.
    * collapsed 仅桌面端 Sider 折叠态使用，与既有折叠隐藏逻辑保持一致。 */
   const renderTableNav = (mobile: boolean, collapsed = false) => {
@@ -693,22 +754,7 @@ export default function MainLayout() {
           <Menu
             mode="inline"
             selectedKeys={tid ? [String(tid)] : []}
-            items={orderedTables.map(t => ({
-              key: String(t.id),
-              icon: <TableOutlined />,
-              label: (
-                <span
-                  onMouseEnter={() => prefetchTable.onEnter(t.id)}
-                  onMouseLeave={() => prefetchTable.onLeave(t.id)}
-                >
-                  {t.name}
-                </span>
-              ),
-              onClick: () => {
-                navigateToTable(wid!, t.id)
-                if (mobile) setMobileNavOpen(false)
-              },
-            }))}
+            items={buildTableMenuItems(mobile, collapsed)}
           />
         )}
       </div>

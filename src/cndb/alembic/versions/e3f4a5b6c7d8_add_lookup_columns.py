@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -94,7 +95,6 @@ def _backfill() -> int:
     """按批回填历史数据（复用迁移连接）；单表失败只记录，不阻塞迁移."""
     from sqlalchemy.orm import Session
 
-    from cndb.plugins.tables.models import DataTable
     from cndb.plugins.tables.services.core.lookup_sync import backfill_lookup_columns
 
     bind = op.get_bind()
@@ -104,7 +104,29 @@ def _backfill() -> int:
     db = Session(bind=bind)
     processed = 0
     try:
-        tables = db.query(DataTable).filter(DataTable.trashed == False).all()  # noqa: E712
+        # 历史迁移不可依赖当前 ORM 列集：后续迁移新增的列（如 0137 的 group_id）
+        # 在这一步尚未建出，用 ORM 查询 DataTable 会 SELECT 不存在的列导致升级链断裂。
+        # 因此只取回填所需的元数据，字段仍走 DataField（该表本迁移未扩列）。
+        from types import SimpleNamespace
+
+        from cndb.plugins.tables.models import DataField
+
+        table_rows = bind.execute(
+            sa.text(f"SELECT id, db_table_name, name FROM {_TABLE_TABLE} WHERE trashed = 0")
+        ).all()
+        tables: list[Any] = []
+        for table_id, db_table_name, table_name in table_rows:
+            fields = db.query(DataField).filter(DataField.table_id == table_id).all()
+            active = sorted((f for f in fields if not f.trashed), key=lambda f: (f.order, f.id))
+            tables.append(
+                SimpleNamespace(
+                    id=table_id,
+                    db_table_name=db_table_name,
+                    name=table_name,
+                    fields=fields,
+                    active_fields=lambda active=active: active,
+                )
+            )
         for table in tables:
             if not any(f.field_type == "lookup" and not f.trashed for f in table.active_fields()):
                 continue

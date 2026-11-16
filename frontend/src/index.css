@@ -9753,3 +9753,45 @@ body.cn-doc-focus-view .cn-doc-stats {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* ── 数据表分组（需求 0137）：列表分组分节 + 分组管理行 ── */
+.cn-table-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-lg);
+}
+
+.cn-table-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--cn-space-sm);
+  margin-bottom: var(--cn-space-sm);
+}
+
+.cn-table-group-mgr {
+  display: flex;
+  flex-direction: column;
+}
+
+.cn-table-group-mgr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-md);
+  padding: var(--cn-space-sm) 0;
+  border-bottom: 1px solid var(--cn-border);
+}
+
+.cn-table-group-mgr-row:last-child {
+  border-bottom: none;
+}
+
+.cn-table-group-mgr-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

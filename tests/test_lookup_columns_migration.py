@@ -151,6 +151,14 @@ def _prepare_old_db(tmp_path: Path) -> tuple[Path, str]:
     url = f"sqlite:///{db_path.as_posix()}"
     _upgrade_to(url, PRE_REVISION)
     _create_physical_tables(db_path)
+    # 当前 ORM 的 DataTable 新增了 group_id（需求 0137）：旧 revision 的 schema 没有该列，
+    # 用 ORM 写入测试元数据前补一列；后续 add_table_groups 迁移检测到列已存在会跳过。
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute("ALTER TABLE tables_datatable ADD COLUMN group_id INTEGER")
+        conn.commit()
+    finally:
+        conn.close()
     _insert_metadata(url)
     return db_path, url
 
@@ -211,6 +219,13 @@ class TestLookupColumnsMigration:
         db_path = tmp_path / "missing.db"
         url = f"sqlite:///{db_path.as_posix()}"
         _upgrade_to(url, PRE_REVISION)
+        # 同 _prepare_old_db：当前 ORM 的 DataTable 含 group_id，旧 schema 先补列
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute("ALTER TABLE tables_datatable ADD COLUMN group_id INTEGER")
+            conn.commit()
+        finally:
+            conn.close()
         _insert_metadata(url)  # 不创建物理表
 
         upgrade_to_head(url)  # 不抛 no such table 即通过

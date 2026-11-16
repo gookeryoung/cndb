@@ -3,8 +3,17 @@
 import type { ID } from './common'
 import type { WorkspaceRole } from './workspaces'
 
+export interface TableGroup {
+  id: ID
+  workspace_id?: ID
+  name: string
+  order?: number
+}
+
 export interface TableSummary {
   id: ID; name: string; description?: string
+  /** 分组归属（空 = 未分组，默认） */
+  group_id?: number | null
   record_count?: number | null; field_count?: number | null; view_count?: number | null
   /** 排序权重（后端 DataTable.order） */
   order?: number
@@ -118,6 +127,8 @@ export interface WorkspaceBrief {
 }
 export interface TableDetail {
   id: ID; workspace_id: ID; name: string; db_table_name?: string; description?: string
+  /** 分组归属（空 = 未分组，默认） */
+  group_id?: number | null
   fields: Field[]; created_at?: string; updated_at?: string
   /** 后端增强 —— 可选统计字段 */
   field_count?: number | null; record_count?: number | null; view_count?: number | null
@@ -139,6 +150,8 @@ export interface TableDetail {
 export interface TableCreate {
   name: string
   description?: string
+  /** 分组归属（省略 / null = 不分组） */
+  group_id?: number | null
   /** 可选：从其他表引入字段 —— 建表即带字段 schema */
   import_from_table_id?: number
   import_field_ids?: number[]
@@ -148,6 +161,8 @@ export interface TableCreate {
 export interface TableUpdate {
   name?: string
   description?: string
+  /** 分组归属（null = 移出分组） */
+  group_id?: number | null
 }
 
 // ── 字段从其他表引入 ──

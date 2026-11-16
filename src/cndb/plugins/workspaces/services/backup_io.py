@@ -99,6 +99,7 @@ def import_backup_into_workspace(
         RowAction,
         RowPermission,
         RowSubject,
+        TableGroup,
         TableMember,
         TablePermission,
         ViewVisibility,
@@ -152,6 +153,8 @@ def import_backup_into_workspace(
     # - row_id_maps：表 id → {行索引 → 新物理行 id}，用于回填 link 关联行
     # - pending_link_rows：待回填的 link 关联行 (字段, 所属表, 行索引对)
     table_id_map: dict[int, int] = {}
+    # 旧分组 id → 新分组 id（表按该映射回填 group_id；旧版备份无分组键时为空）
+    group_id_map: dict[int, int] = {}
     field_id_map: dict[int, int] = {}
     pending_field_refs: list[tuple[DataField, dict[str, Any]]] = []
     row_id_maps: dict[int, dict[int, int]] = {}
@@ -167,6 +170,28 @@ def import_backup_into_workspace(
         db.commit()
 
     try:
+        # 先建分组（表需要引用新分组 id）；同名分组复用，不重复建
+        for group_data in json_data.get("table_groups", []) or []:
+            group_name = str(group_data.get("name", "")).strip()
+            if not group_name:
+                continue
+            group = (
+                db.query(TableGroup)
+                .filter(TableGroup.workspace_id == workspace_id, TableGroup.name == group_name)
+                .first()
+            )
+            if group is None:
+                group = TableGroup(
+                    workspace_id=workspace_id,
+                    name=group_name[:80],
+                    order=int(group_data.get("order") or 0),
+                )
+                db.add(group)
+                db.flush()
+            old_group_id = group_data.get("id")
+            if isinstance(old_group_id, int):
+                group_id_map[old_group_id] = group.id
+
         for tbl_data in json_data.get("tables", []):
             table_name = tbl_data.get("name", "").strip()
             if not table_name:
@@ -184,11 +209,13 @@ def import_backup_into_workspace(
             if existing:
                 continue
 
+            old_group_id = tbl_data.get("group_id")
             table = DataTable(
                 workspace_id=workspace_id,
                 owner_id=current_user.id,
                 name=table_name,
                 description=tbl_data.get("description", ""),
+                group_id=group_id_map.get(old_group_id) if isinstance(old_group_id, int) else None,
             )
             table.ensure_db_name()
             db.add(table)

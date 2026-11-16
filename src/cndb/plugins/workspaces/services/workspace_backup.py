@@ -218,6 +218,19 @@ def _build_backup(
     preload = preload_table_access(db, tables, current_user)
     tables = [tbl for tbl in tables if preload.check(db, tbl, current_user, TableAction.READ)]
 
+    # 表分组（需求 0137）：工作区级资源，随表一起导出；旧版备份无此键时导入端按空处理
+    from cndb.plugins.tables.models import TableGroup
+
+    table_groups_data = [
+        {"id": g.id, "name": g.name, "order": g.order}
+        for g in (
+            db.query(TableGroup)
+            .filter(TableGroup.workspace_id == workspace_id)
+            .order_by(TableGroup.order, TableGroup.id)
+            .all()
+        )
+    ]
+
     metadata = MetaData()
     row_index_maps: dict[int, dict[int, int]] = {}
     tables_data: list[dict[str, Any]] = []
@@ -340,6 +353,7 @@ def _build_backup(
             "id": tbl.id,
             "name": tbl.name,
             "description": tbl.description,
+            "group_id": tbl.group_id,
             "fields": fields_data,
             "views": views_data,
             "links": [],
@@ -721,6 +735,7 @@ def _build_backup(
         "version": CHUNKED_BACKUP_VERSION if rows_dir is not None else BACKUP_VERSION,
         "exported_at": dt.datetime.now(dt.UTC).isoformat(),
         "workspace": workspace_meta,
+        "table_groups": table_groups_data,
         "tables": tables_data,
         "document_tags": document_tags_data,
         "documents": documents_data,
@@ -760,7 +775,10 @@ def downsample_v8(backup_v9: dict[str, Any]) -> dict[str, Any]:
     ):
         data.pop(key, None)
     data["version"] = "8"
+    # 表分组是 v17 新增口径，v8 出口保持旧结构
+    data.pop("table_groups", None)
     for tbl in data.get("tables", []):
+        tbl.pop("group_id", None)
         tbl.pop("members", None)
         for row in tbl.get("rows", []):
             row.pop("__row_id", None)

@@ -7,13 +7,14 @@
 import { Suspense, createContext, lazy, useContext, useMemo, useState } from 'react'
 import {
   Button, Modal, Form, Input, Table, Typography, Empty, App as AntApp, Space, Tag, Upload, Dropdown,
-  Avatar, Segmented, Badge, Tooltip, Pagination,
+  Avatar, Segmented, Badge, Tooltip, Pagination, Switch,
 } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
   UploadOutlined, ApiOutlined, TeamOutlined, UserOutlined,
-  LoginOutlined, MoreOutlined, HolderOutlined, DatabaseOutlined,
+  LoginOutlined, MoreOutlined, HolderOutlined, DatabaseOutlined, FolderOutlined,
+  ArrowUpOutlined, ArrowDownOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -26,8 +27,8 @@ import {
   SortableContext, verticalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { tableApi, workspaceApi, importApi } from '@/api'
-import type { TableSummary, TableUpdate, FileAnalyzeResult } from '@/api'
+import { tableApi, tableGroupApi, workspaceApi, importApi } from '@/api'
+import type { TableSummary, TableGroup, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useTableHoverPrefetch } from './tablePrefetch'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -249,6 +250,19 @@ export default function TablesList() {
     enabled: !!wid,
   })
 
+  // 表分组（需求 0137）：默认不分组；建组 / 改名 / 删除要求 owner/editor
+  const { data: groups = [] } = useQuery<TableGroup[]>({
+    queryKey: ['workspaces', wid, 'table-groups'],
+    queryFn: () => tableGroupApi.list(wid!),
+    enabled: !!wid,
+  })
+  // 列表页分组展示是可选开关，默认关闭（平铺），不跨会话记忆
+  const [grouped, setGrouped] = useState(false)
+  const [groupMgrOpen, setGroupMgrOpen] = useState(false)
+  const [newGroupName, setNewGroupName] = useState('')
+  const [editingGroupId, setEditingGroupId] = useState<number | string | null>(null)
+  const [editingGroupName, setEditingGroupName] = useState('')
+
   /** hover 预取表详情 / 视图 / 首帧行数据 / GridPage chunk —— 200ms 防抖，离开即取消（ADR 0116 C7）. */
   const prefetchTable = useTableHoverPrefetch(queryClient, wid)
 
@@ -378,6 +392,96 @@ export default function TablesList() {
     reorderTables.mutate(merged)
   }
 
+  // ── 表分组（需求 0137） ──
+  const invalidateGroups = () => {
+    queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'table-groups'] })
+    queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'tables'] })
+  }
+  const createGroup = useMutation({
+    mutationFn: (name: string) => tableGroupApi.create(wid!, { name }),
+    onSuccess: (g) => {
+      message.success(`已创建分组「${g.name}」`)
+      setNewGroupName('')
+      invalidateGroups()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '创建分组失败'),
+  })
+  const renameGroup = useMutation({
+    mutationFn: ({ gid, name }: { gid: number | string; name: string }) =>
+      tableGroupApi.update(wid!, gid, { name }),
+    onSuccess: () => {
+      message.success('分组已重命名')
+      setEditingGroupId(null)
+      invalidateGroups()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '重命名分组失败'),
+  })
+  const removeGroup = useMutation({
+    mutationFn: (gid: number | string) => tableGroupApi.remove(wid!, gid),
+    onSuccess: () => {
+      message.success('分组已删除，组内表已回到未分组')
+      invalidateGroups()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '删除分组失败'),
+  })
+  const reorderGroups = useMutation({
+    mutationFn: (ids: Array<number | string>) => tableGroupApi.reorder(wid!, ids),
+    onSettled: () => invalidateGroups(),
+    onError: (err) => message.error(err instanceof Error ? err.message : '分组排序失败'),
+  })
+  const moveTableToGroup = useMutation({
+    mutationFn: ({ tid, groupId }: { tid: number | string; groupId: number | null }) =>
+      tableApi.update(wid!, tid, { group_id: groupId }),
+    onSuccess: () => {
+      message.success('已更新表分组')
+      invalidateGroups()
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '更新表分组失败'),
+  })
+
+  const submitCreateGroup = () => {
+    const name = newGroupName.trim()
+    if (!name) {
+      message.warning('请输入分组名称')
+      return
+    }
+    createGroup.mutate(name)
+  }
+
+  /** 分组内拖拽：只重排该组在全局 order 里占用的槽位，其余表位置不变 */
+  const handleGroupDragEnd = (rows: TableSummary[]) => (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = rows.findIndex(t => String(t.id) === String(active.id))
+    const newIndex = rows.findIndex(t => String(t.id) === String(over.id))
+    if (oldIndex < 0 || newIndex < 0) return
+    const moved = arrayMove(rows, oldIndex, newIndex)
+    const groupIds = new Set(rows.map(t => String(t.id)))
+    let cursor = 0
+    const merged = tables.map(t => (groupIds.has(String(t.id)) ? moved[cursor++].id : t.id))
+    reorderTables.mutate(merged)
+  }
+
+  /** 分组展示用的分组分节（过滤后）：按分组顺序，未分组恒在最后 */
+  const groupedSections = useMemo(() => {
+    const sections = groups
+      .slice()
+      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+      .map(g => ({
+        key: String(g.id),
+        name: g.name,
+        group: g as TableGroup | null,
+        rows: filteredTables.filter(t => String(t.group_id ?? '') === String(g.id)),
+      }))
+    sections.push({
+      key: 'ungrouped',
+      name: '未分组',
+      group: null as unknown as TableGroup | null,
+      rows: filteredTables.filter(t => t.group_id == null),
+    })
+    return sections
+  }, [groups, filteredTables])
+
   /** 表行操作菜单（表格操作列与窄屏卡片共用一套入口） */
   const buildTableMenu = (record: TableSummary) => [
     {
@@ -413,6 +517,35 @@ export default function TablesList() {
         },
       ],
     },
+    ...(canReorder && groups.length > 0
+      ? [
+          {
+            key: 'group',
+            icon: <FolderOutlined />,
+            label: '移动到分组',
+            children: [
+              ...groups.map(g => ({
+                key: `group-${g.id}`,
+                label: g.name,
+                disabled: String(record.group_id ?? '') === String(g.id),
+                onClick: (e?: { domEvent?: { stopPropagation?: () => void } }) => {
+                  e?.domEvent?.stopPropagation?.()
+                  moveTableToGroup.mutate({ tid: record.id, groupId: Number(g.id) })
+                },
+              })),
+              {
+                key: 'group-none',
+                label: '未分组',
+                disabled: record.group_id == null,
+                onClick: (e?: { domEvent?: { stopPropagation?: () => void } }) => {
+                  e?.domEvent?.stopPropagation?.()
+                  moveTableToGroup.mutate({ tid: record.id, groupId: null })
+                },
+              },
+            ],
+          },
+        ]
+      : []),
     { type: 'divider' as const },
     {
       key: 'delete',
@@ -650,6 +783,14 @@ export default function TablesList() {
             API 建表
           </Button>
           <Button
+            icon={<FolderOutlined />}
+            onClick={() => setGroupMgrOpen(true)}
+            disabled={!canReorder}
+            data-testid="table-groups-manage-btn"
+          >
+            分组管理
+          </Button>
+          <Button
             type="primary"
             icon={<PlusOutlined />}
             onClick={() => setCreateOpen(true)}
@@ -681,15 +822,95 @@ export default function TablesList() {
             { label: isMobile ? '可读' : '我可读的', value: 'read' },
           ]}
         />
-        <Text
-          type="secondary"
-          style={{ whiteSpace: 'nowrap', marginLeft: isMobile ? 0 : 8, alignSelf: isMobile ? 'flex-start' : undefined }}
-        >
-          共 {filteredTables.length} / {tables.length} 张表
-        </Text>
+        <Space size={8} wrap style={{ marginLeft: isMobile ? 0 : 8, alignSelf: isMobile ? 'flex-start' : undefined }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' }}>
+            <Switch
+              size="small"
+              checked={grouped}
+              onChange={setGrouped}
+              disabled={groups.length === 0}
+              data-testid="tables-group-toggle"
+            />
+            <Text type="secondary" style={{ fontSize: 'var(--cn-text-sm)' }}>分组显示</Text>
+          </span>
+          <Text type="secondary" style={{ whiteSpace: 'nowrap' }}>
+            共 {filteredTables.length} / {tables.length} 张表
+          </Text>
+        </Space>
       </div>
 
-      {/* Table 列表 —— 支持拖拽排序；卡片化容器与 Grid 工作台同构 */}
+      {grouped ? (
+        <div className="cn-table-groups" data-testid="tables-grouped-list">
+          {groupedSections.map(section => (
+            <section className="cn-table-group" key={section.key} data-testid={`table-group-${section.key}`}>
+              <div className="cn-table-group-header">
+                <Space size={8}>
+                  <FolderOutlined style={{ color: 'var(--cn-text-secondary)' }} />
+                  <Text strong>{section.name}</Text>
+                  <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>{section.rows.length} 张表</Text>
+                </Space>
+                {section.group && canReorder && (
+                  <Tooltip title="重命名 / 删除分组">
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<MoreOutlined />}
+                      data-testid={`table-group-menu-${section.key}`}
+                      onClick={() => {
+                        setEditingGroupId(section.group!.id)
+                        setEditingGroupName(section.group!.name)
+                        setGroupMgrOpen(true)
+                      }}
+                    />
+                  </Tooltip>
+                )}
+              </div>
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd(section.rows)}>
+                <SortableContext items={section.rows.map(t => String(t.id))} strategy={verticalListSortingStrategy}>
+                  {isMobile ? (
+                    <div className="cn-table-list-cards">
+                      {section.rows.length === 0 ? (
+                        <Empty description="该分组暂无表" style={{ padding: 24 }} />
+                      ) : section.rows.map(record => (
+                        <SortableTableCard
+                          key={record.id}
+                          record={record}
+                          canReorder={canReorder}
+                          menu={buildTableMenu(record)}
+                          onOpen={() => navigate(`/w/${wid}/tables/${record.id}`)}
+                          onPrefetch={() => prefetchTable.onEnter(record.id)}
+                          onPrefetchEnd={() => prefetchTable.onLeave(record.id)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="cn-grid-card">
+                      <Table
+                        size="small"
+                        className="cn-table-list"
+                        loading={isLoading}
+                        rowKey="id"
+                        columns={visibleColumns}
+                        dataSource={section.rows}
+                        pagination={false}
+                        scroll={{ x: 'max-content' }}
+                        components={{ body: { row: DraggableRow } }}
+                        onRow={(record) => ({
+                          onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
+                          onMouseEnter: () => prefetchTable.onEnter(record.id),
+                          onMouseLeave: () => prefetchTable.onLeave(record.id),
+                          'data-testid': `table-row-${record.id}`,
+                        })}
+                        locale={{ emptyText: <Empty description="该分组暂无表" /> }}
+                      />
+                    </div>
+                  )}
+                </SortableContext>
+              </DndContext>
+            </section>
+          ))}
+        </div>
+      ) : (
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext
           items={filteredTables.map(t => String(t.id))}
@@ -754,9 +975,10 @@ export default function TablesList() {
           )}
         </SortableContext>
       </DndContext>
+      )}
 
       {/* 分页器（需求 0082 C1/C2）：桌面表格与窄屏卡片共用；空列表或不足一页时不渲染 */}
-      {filteredTables.length > pageSize && (
+      {!grouped && filteredTables.length > pageSize && (
         <Pagination
           style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}
           current={safePage}
@@ -836,6 +1058,118 @@ export default function TablesList() {
             <Input.TextArea rows={2} maxLength={255} showCount />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* 分组管理 Modal（需求 0137）：建组 / 改名 / 排序 / 删除 */}
+      <Modal
+        title="分组管理"
+        open={groupMgrOpen}
+        onCancel={() => { setGroupMgrOpen(false); setEditingGroupId(null); setEditingGroupName('') }}
+        footer={null}
+        width={560}
+        destroyOnHidden
+      >
+        <div className="cn-dialog-hint">
+          分组只影响侧栏与列表的展示顺序，不改变表本身；删除分组后组内表回到「未分组」。
+        </div>
+        <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
+          <Input
+            placeholder="新分组名称"
+            value={newGroupName}
+            maxLength={80}
+            onChange={(e) => setNewGroupName(e.target.value)}
+            onPressEnter={submitCreateGroup}
+            data-testid="table-group-name-input"
+          />
+          <Button type="primary" onClick={submitCreateGroup} loading={createGroup.isPending}>
+            新建分组
+          </Button>
+        </Space.Compact>
+        {groups.length === 0 ? (
+          <Empty description="还没有分组 —— 先在上方创建一个" />
+        ) : (
+          <div className="cn-table-group-mgr" data-testid="table-group-mgr-list">
+            {groups.map((g, idx) => (
+              <div className="cn-table-group-mgr-row" key={g.id}>
+                {String(editingGroupId) === String(g.id) ? (
+                  <Input
+                    size="small"
+                    value={editingGroupName}
+                    maxLength={80}
+                    autoFocus
+                    onChange={(e) => setEditingGroupName(e.target.value)}
+                    onPressEnter={() => editingGroupName.trim() && renameGroup.mutate({ gid: g.id, name: editingGroupName.trim() })}
+                  />
+                ) : (
+                  <span className="cn-table-group-mgr-name">{g.name}</span>
+                )}
+                <Space size={2}>
+                  {String(editingGroupId) === String(g.id) ? (
+                    <>
+                      <Button
+                        size="small"
+                        type="link"
+                        loading={renameGroup.isPending}
+                        onClick={() => editingGroupName.trim() && renameGroup.mutate({ gid: g.id, name: editingGroupName.trim() })}
+                      >保存</Button>
+                      <Button size="small" type="link" onClick={() => setEditingGroupId(null)}>取消</Button>
+                    </>
+                  ) : (
+                    <Button
+                      size="small"
+                      type="link"
+                      onClick={() => { setEditingGroupId(g.id); setEditingGroupName(g.name) }}
+                    >重命名</Button>
+                  )}
+                  <Tooltip title="上移">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<ArrowUpOutlined />}
+                      disabled={idx === 0 || reorderGroups.isPending}
+                      onClick={() => {
+                        const next = [...groups]
+                        const j = idx - 1
+                        ;[next[idx], next[j]] = [next[j], next[idx]]
+                        reorderGroups.mutate(next.map(x => x.id))
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title="下移">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<ArrowDownOutlined />}
+                      disabled={idx === groups.length - 1 || reorderGroups.isPending}
+                      onClick={() => {
+                        const next = [...groups]
+                        const j = idx + 1
+                        ;[next[idx], next[j]] = [next[j], next[idx]]
+                        reorderGroups.mutate(next.map(x => x.id))
+                      }}
+                    />
+                  </Tooltip>
+                  <Tooltip title="删除分组（组内表回到未分组）">
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      icon={<DeleteOutlined />}
+                      onClick={() => modal.confirm({
+                        title: `删除分组「${g.name}」？`,
+                        content: '组内表不会被删除，会回到「未分组」。',
+                        okText: '删除',
+                        okType: 'danger',
+                        cancelText: '取消',
+                        onOk: () => removeGroup.mutate(g.id),
+                      })}
+                    />
+                  </Tooltip>
+                </Space>
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
 
       {/* API 建表 Dialog（建表模式） */}

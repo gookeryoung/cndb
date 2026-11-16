@@ -2,7 +2,7 @@
 
 import api from './client'
 import type {
-    TableCreate, TableUpdate, TableSummary, TableDetail,
+    TableCreate, TableUpdate, TableSummary, TableDetail, TableGroup,
     FieldCreate, FieldUpdate, FieldImportRequest, FieldImportResponse, Field,
     FieldDetectOptionsRequest, FieldDetectOptionsResponse,
     AuditLog, Reference,
@@ -78,6 +78,20 @@ export const tableApi = {
     /** AI 字段批量填充建议（只生成建议，不写库；确认后由前端逐行走既有更新接口） */
     aiFillField: (wid: number | string, tid: number | string, payload: TableAiFillFieldPayload) =>
         api.post<TableAiFillFieldResponse>(`/v1/workspaces/${wid}/tables/${tid}/ai/actions/fill_field`, payload).then(r => r.data),
+}
+
+/** 工作区级表分组（需求 0137）：分组成员可读；建组 / 改名 / 排序 / 删除要求 EDITOR */
+export const tableGroupApi = {
+    list: (wid: number | string) =>
+        api.get<TableGroup[]>(`/v1/workspaces/${wid}/table-groups`).then(r => r.data),
+    create: (wid: number | string, data: { name: string; order?: number }) =>
+        api.post<TableGroup>(`/v1/workspaces/${wid}/table-groups`, data).then(r => r.data),
+    update: (wid: number | string, gid: number | string, data: { name?: string; order?: number }) =>
+        api.patch<TableGroup>(`/v1/workspaces/${wid}/table-groups/${gid}`, data).then(r => r.data),
+    remove: (wid: number | string, gid: number | string) =>
+        api.delete(`/v1/workspaces/${wid}/table-groups/${gid}`).then(r => r.data),
+    reorder: (wid: number | string, groupIds: Array<number | string>) =>
+        api.post<TableGroup[]>(`/v1/workspaces/${wid}/table-groups/reorder`, groupIds).then(r => r.data),
 }
 
 export const fieldApi = {

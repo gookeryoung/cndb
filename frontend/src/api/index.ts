@@ -26,7 +26,7 @@ export type {
   ChartTemplateInfo,
   ChartTemplatesPayload,
 } from './charts'
-export { tableApi, fieldApi, auditApi, permissionApi, tableMembersApi, rowPermissionApi } from './tables'
+export { tableApi, tableGroupApi, fieldApi, auditApi, permissionApi, tableMembersApi, rowPermissionApi } from './tables'
 export { recordApi } from './records'
 export { viewApi } from './views'
 export { importApi, exportApi, fileApi } from './importExport'

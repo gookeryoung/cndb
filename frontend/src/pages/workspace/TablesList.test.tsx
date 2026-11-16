@@ -8,7 +8,7 @@
  * 注：组件用 useParams 取 wid，必须包在 Routes 内渲染。
  */
 
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
@@ -66,6 +66,14 @@ vi.mock('@/hooks/useResponsive', async () => {
   return { ...actual, useResponsive: () => responsiveState }
 })
 
+// 用例间复位视口：移动端用例会改变模块级状态，否则后续用例仍按移动端渲染
+afterEach(() => {
+  responsiveState = {
+    deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+    width: 1280, height: 800,
+  }
+})
+
 function LocationProbe() {
   const loc = useLocation()
   return <span data-testid="location">{loc.pathname}</span>
@@ -103,6 +111,8 @@ function setupWorkspace() {
     // 行操作用例（更多菜单等）必然触发，这里统一兜底避免 MSW unhandled 报错
     http.get('/api/v1/workspaces/10/tables/:tid', ({ params }) =>
       HttpResponse.json({ id: Number(params.tid), name: '客户表', description: '' })),
+    // 表分组：默认无分组（用例内按需覆盖）
+    http.get('/api/v1/workspaces/10/table-groups', () => HttpResponse.json([])),
   )
 }
 
@@ -750,5 +760,91 @@ describe('TablesList 分页', () => {
     await screen.findByTestId('table-card-1')
     expect(screen.getByTestId('tables-list-pagination')).toBeInTheDocument()
     expect(screen.getAllByTestId(/^table-card-/)).toHaveLength(50)
+  })
+})
+
+
+// ─────────────── 表分组（需求 0137） ───────────────
+
+const GROUPED_TABLES: TableSummary[] = [
+  { id: 100, name: '销售明细', record_count: 1, field_count: 2, view_count: 1, my_access: 'owner', group_id: 5 },
+  { id: 101, name: '零散表', record_count: 0, field_count: 1, view_count: 0, my_access: 'owner', group_id: null },
+]
+const GROUPS = [{ id: 5, workspace_id: 10, name: '销售组', order: 0 }]
+
+describe('TablesList 表分组', () => {
+  it('默认不分组：有分组数据时列表仍平铺', async () => {
+    setupWorkspace()
+    server.use(
+      http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(GROUPED_TABLES)),
+      http.get('/api/v1/workspaces/10/table-groups', () => HttpResponse.json(GROUPS)),
+    )
+    renderPage()
+
+    expect(await screen.findByText('销售明细')).toBeInTheDocument()
+    expect(await screen.findByText('零散表')).toBeInTheDocument()
+    // 默认平铺：不出现分组分节与「未分组」标题
+    expect(screen.queryByTestId('tables-grouped-list')).toBeNull()
+    expect(screen.queryByText('未分组')).toBeNull()
+    expect(screen.getByTestId('tables-group-toggle')).toBeInTheDocument()
+  })
+
+  it('打开分组显示：按分组分节展示，未分组单独一节', async () => {
+    setupWorkspace()
+    server.use(
+      http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(GROUPED_TABLES)),
+      http.get('/api/v1/workspaces/10/table-groups', () => HttpResponse.json(GROUPS)),
+    )
+    renderPage()
+
+    expect(await screen.findByText('销售明细')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('tables-group-toggle'))
+
+    expect(await screen.findByTestId('tables-grouped-list')).toBeInTheDocument()
+    expect(screen.getByTestId('table-group-5')).toHaveTextContent('销售组')
+    expect(screen.getByTestId('table-group-ungrouped')).toHaveTextContent('未分组')
+    expect(screen.getByTestId('table-group-5')).toHaveTextContent('销售明细')
+    expect(screen.getByTestId('table-group-ungrouped')).toHaveTextContent('零散表')
+  })
+
+  it('行菜单「移动到分组」发 PATCH 更新 group_id', async () => {
+    setupWorkspace()
+    let patched: unknown = null
+    server.use(
+      http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(GROUPED_TABLES)),
+      http.get('/api/v1/workspaces/10/table-groups', () => HttpResponse.json(GROUPS)),
+      http.patch('/api/v1/workspaces/10/tables/101', async ({ request }) => {
+        patched = await request.json()
+        return HttpResponse.json({ id: 101, name: '零散表', group_id: 5 })
+      }),
+    )
+    renderPage()
+
+    await openMoreMenu(101)
+    fireEvent.mouseEnter(screen.getByText('移动到分组'))
+    fireEvent.click(await screen.findByText('销售组'))
+
+    expect(await screen.findByText('已更新表分组')).toBeInTheDocument()
+    expect(patched).toEqual({ group_id: 5 })
+  })
+
+  it('分组管理：新建分组调用 POST 并刷新列表', async () => {
+    setupWorkspace()
+    let created: unknown = null
+    server.use(
+      http.get('/api/v1/workspaces/10/table-groups', () => HttpResponse.json(GROUPS)),
+      http.post('/api/v1/workspaces/10/table-groups', async ({ request }) => {
+        created = await request.json()
+        return HttpResponse.json({ id: 6, workspace_id: 10, name: '运营组', order: 1 })
+      }),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('table-groups-manage-btn'))
+    fireEvent.change(await screen.findByTestId('table-group-name-input'), { target: { value: '运营组' } })
+    fireEvent.click(screen.getByRole('button', { name: /新建分组/ }))
+
+    expect(await screen.findByText('已创建分组「运营组」')).toBeInTheDocument()
+    expect(created).toEqual({ name: '运营组' })
   })
 })

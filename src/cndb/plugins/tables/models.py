@@ -138,6 +138,27 @@ def scope_key_for(visibility: str, owner_id: int | None) -> int:
     return 0
 
 
+# ── 表分组 ──
+
+
+class TableGroup(TimestampMixin, Base):
+    """工作区级数据表分组（侧栏 / 表列表按组展示；表默认不分组）."""
+
+    __tablename__ = "tables_tablegroup"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_tables_tablegroup_ws_name"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 # ── DataTable ──
 
 
@@ -154,6 +175,10 @@ class DataTable(TimestampMixin, Base):
     )
     owner_id: Mapped[int | None] = mapped_column(
         ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # 分组归属（可空 = 未分组，默认状态）；分组删除时表回落未分组
+    group_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tables_tablegroup.id", ondelete="SET NULL"), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -655,6 +680,7 @@ __all__ = [
     "RowAction",
     "RowPermission",
     "RowSubject",
+    "TableGroup",
     "TableMember",
     "TablePermission",
     "ViewType",
