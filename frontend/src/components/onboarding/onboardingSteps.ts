@@ -54,7 +54,7 @@ export function buildSteps(): TourStep[] {
       element: TOUR_SELECTORS.addRow,
       popover: {
         title: '新增一行',
-        description: '在表格末尾添加一条空记录，逐格填写后回车保存。也可以通过「导入 / 导出」批量导入数据。',
+        description: '在表格末尾添加一条空记录，逐格填写后回车保存。也可以通过工具栏的「更新」批量导入数据。',
       },
     },
     {
@@ -74,8 +74,8 @@ export function buildSteps(): TourStep[] {
     {
       element: TOUR_SELECTORS.importExport,
       popover: {
-        title: '导入 / 导出数据',
-        description: '支持 CSV、Excel、JSON 的导入与导出；导入时可按参考列更新已有数据，不用手动重复录入。',
+        title: '更新 / 导出数据',
+        description: '工具栏的「更新」批量导入或按参考列更新已有数据；右侧「导出」按当前视图把数据导出为 CSV、Excel、JSON 或 PDF，两者是独立入口。',
       },
     },
     {

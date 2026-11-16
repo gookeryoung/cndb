@@ -38,6 +38,7 @@ function renderToolbar(overrides: Partial<React.ComponentProps<typeof GridToolba
     canManageData: true,
     onOpenTableSettings: vi.fn(),
     onOpenImportExport: vi.fn(),
+    onOpenExport: vi.fn(),
     onOpenGovernance: vi.fn(),
     activeViewName: '全部',
     activeViewId: 1,
@@ -60,7 +61,7 @@ const resetResponsive = () => {
 afterEach(resetResponsive)
 
 describe('GridToolbar 桌面端', () => {
-  it('常显表设置 / 更新导出 / 数据治理与记录数徽标', () => {
+  it('常显表设置 / 更新 / 导出 / 数据治理与记录数徽标', () => {
     renderToolbar()
 
     expect(screen.getByText('产品开发')).toBeInTheDocument()
@@ -68,8 +69,21 @@ describe('GridToolbar 桌面端', () => {
     expect(screen.getByTestId('add-row-btn')).toBeInTheDocument()
     expect(screen.getByTestId('edit-row-btn')).toBeInTheDocument()
     expect(screen.getByTestId('table-settings-btn')).toBeInTheDocument()
-    expect(screen.getByTestId('import-export-btn')).toBeInTheDocument()
+    // 更新与导出是两个独立入口（各自打开对话框对应 Tab）
+    expect(screen.getByTestId('import-export-btn')).toHaveTextContent('更新')
+    expect(screen.getByTestId('export-btn')).toHaveTextContent('导出')
     expect(screen.getByTestId('governance-btn')).toBeInTheDocument()
+  })
+
+  it('更新 / 导出入口分别触发各自回调', () => {
+    const { props } = renderToolbar()
+
+    fireEvent.click(screen.getByTestId('import-export-btn'))
+    expect(props.onOpenImportExport).toHaveBeenCalledTimes(1)
+    expect(props.onOpenExport).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByTestId('export-btn'))
+    expect(props.onOpenExport).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -88,13 +102,14 @@ describe('GridToolbar 移动端', () => {
     expect(screen.queryByText('500 条记录')).toBeNull()
     expect(screen.queryByTestId('table-settings-btn')).toBeNull()
     expect(screen.queryByTestId('import-export-btn')).toBeNull()
+    expect(screen.queryByTestId('export-btn')).toBeNull()
     expect(screen.queryByTestId('governance-btn')).toBeNull()
     expect(screen.queryByTestId('edit-row-btn')).toBeNull()
     // 权限徽标保留（只读/可编辑对移动端用户同样关键）
     expect(screen.getByTestId('table-permission-pill')).toBeInTheDocument()
   })
 
-  it('「更多」菜单前置编辑行 / 表设置 / 更新导出 / 数据治理并可触发', async () => {
+  it('「更多」菜单前置编辑行 / 表设置 / 更新 / 导出 / 数据治理并可触发', async () => {
     responsiveState = {
       deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
       width: 390, height: 844,
@@ -103,7 +118,7 @@ describe('GridToolbar 移动端', () => {
 
     fireEvent.click(screen.getByTestId('grid-more-menu'))
 
-    for (const label of ['编辑行', '表设置', '更新 / 导出', '数据治理', '刷新', '复制表', '移动到其他工作区', '删除表']) {
+    for (const label of ['编辑行', '表设置', '更新', '导出', '数据治理', '刷新', '复制表', '移动到其他工作区', '删除表']) {
       expect(await screen.findByText(label)).toBeInTheDocument()
     }
 
@@ -115,8 +130,12 @@ describe('GridToolbar 移动端', () => {
     await waitFor(() => expect(props.onOpenTableSettings).toHaveBeenCalled())
 
     fireEvent.click(screen.getByTestId('grid-more-menu'))
-    fireEvent.click(await screen.findByText('更新 / 导出'))
+    fireEvent.click(await screen.findByText('更新'))
     await waitFor(() => expect(props.onOpenImportExport).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByTestId('grid-more-menu'))
+    fireEvent.click(await screen.findByText('导出'))
+    await waitFor(() => expect(props.onOpenExport).toHaveBeenCalled())
 
     fireEvent.click(screen.getByTestId('grid-more-menu'))
     fireEvent.click(await screen.findByText('数据治理'))

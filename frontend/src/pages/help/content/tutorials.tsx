@@ -440,7 +440,7 @@ const importExport: HelpTopic = {
             label: '导出数据',
             body: (
                 <P>
-                    在表格页点击「导入 / 导出」，可将当前表导出为 XLSX / CSV / JSON / PDF：XLSX 便于二次加工，CSV 便于交换，
+                    在表格页点击工具栏的「导出」（与「更新」并列的独立入口），可将当前表导出为 XLSX / CSV / JSON / PDF：XLSX 便于二次加工，CSV 便于交换，
                     JSON 保留嵌套结构，PDF 适合汇报。导出范围遵循当前视图的筛选与行级权限。
                 </P>
             ),

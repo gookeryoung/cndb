@@ -35,7 +35,7 @@ const dialogProps = vi.hoisted(() => ({ current: null as Record<string, unknown>
 vi.mock('@/pages/import-export/ImportExportDialog', () => ({
     default: (props: Record<string, unknown>) => {
         dialogProps.current = props
-        return <div data-testid="ie-dialog-stub" data-view-id={props.viewId == null ? '' : String(props.viewId)} data-view-name={(props.viewName as string) ?? ''} />
+        return <div data-testid="ie-dialog-stub" data-view-id={props.viewId == null ? '' : String(props.viewId)} data-view-name={(props.viewName as string) ?? ''} data-tab={(props.initialTab as string) ?? 'import'} />
     },
 }))
 
@@ -103,6 +103,28 @@ async function openImportExportDialog() {
 }
 
 describe('GridPage 导出视图接线 — 对话框收到激活视图', () => {
+    it('工具栏「导出」单独入口把对话框直接落在导出 Tab', async () => {
+        renderGrid()
+        const btn = await waitFor(() => {
+            const el = document.querySelector('[data-testid="export-btn"]') as HTMLButtonElement
+            if (!el) throw new Error('导出按钮未渲染')
+            return el
+        })
+        fireEvent.click(btn)
+        const stub = await waitFor(() => {
+            const el = document.querySelector('[data-testid="ie-dialog-stub"]')
+            if (!el) throw new Error('对话框未渲染')
+            return el as HTMLElement
+        })
+        expect(stub.getAttribute('data-tab')).toBe('export')
+    })
+
+    it('工具栏「更新」入口落在更新 Tab', async () => {
+        renderGrid()
+        const stub = await openImportExportDialog()
+        expect(stub.getAttribute('data-tab')).toBe('import')
+    })
+
     it('有激活视图时传入 viewId/viewName，导出默认按当前视图', async () => {
         renderGrid()
         const stub = await openImportExportDialog()

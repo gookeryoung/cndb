@@ -249,7 +249,7 @@ const workflow: HelpTopic = {
                     body: (
                         <P>
                             打开一张表，点击右上角「新增一行」逐行录入；点击单元格直接编辑，回车保存。
-                            也可以用「导入 / 导出」批量更新数据。
+                            也可以用工具栏的「更新」批量更新数据。
                         </P>
                     ),
                 },
@@ -367,7 +367,7 @@ const uiTour: HelpTopic = {
                     label: '内容区工具条',
                     body: (
                         <P>
-                            当前表或文档的主操作都收在内容区右上角（新增行、导入 / 导出、分享、设置）。
+                            当前表或文档的主操作都收在内容区右上角（新增行、更新 / 导出、分享、设置）。
                             灰色按钮通常是没有权限或没选工作区，见 <HelpLink section="troubleshooting" topic="guide" anchor="permission">故障排查 · 权限与可见性</HelpLink>。
                         </P>
                     ),

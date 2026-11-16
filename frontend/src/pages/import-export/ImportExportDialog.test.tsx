@@ -152,6 +152,22 @@ describe('ImportExportDialog 导入/导出对话框', () => {
     expect(screen.getByText('点击或拖拽文件到此处')).toBeInTheDocument()
   })
 
+  it('initialTab="export" 直接落在导出 Tab（单独导出入口）', () => {
+    renderProviders(<ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} initialTab="export" />)
+
+    // 标题简化为「导出」，导出面板内容可见，导入面板内容不渲染
+    expect(document.querySelector('.ant-modal-title')).toHaveTextContent('导出')
+    expect(screen.getByText('将表中的数据导出为所选格式（最多 10000 行）')).toBeInTheDocument()
+    expect(screen.queryByText('点击或拖拽文件到此处')).not.toBeInTheDocument()
+  })
+
+  it('initialTab 缺省落在更新 Tab（标题仍为「更新 / 导出」）', () => {
+    renderProviders(<ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
+
+    expect(screen.getByText('更新 / 导出')).toBeInTheDocument()
+    expect(screen.getByText('点击或拖拽文件到此处')).toBeInTheDocument()
+  })
+
   it('导出格式下拉按 XLSX / CSV / PDF / JSON 排序', async () => {
     renderProviders(<ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
 

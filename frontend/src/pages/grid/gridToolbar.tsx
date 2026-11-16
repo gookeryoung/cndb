@@ -6,7 +6,7 @@
 import { Button, Space, Typography, Tooltip } from 'antd'
 import {
   PlusOutlined, DeleteOutlined, ReloadOutlined, EditOutlined,
-  MoreOutlined, CopyOutlined, ImportOutlined,
+  MoreOutlined, CopyOutlined, ImportOutlined, DownloadOutlined,
   SwapOutlined, MenuOutlined, ColumnWidthOutlined, ClearOutlined,
 } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -39,6 +39,8 @@ interface GridToolbarProps {
   canManageData: boolean
   onOpenTableSettings: () => void
   onOpenImportExport: () => void
+  /** 单独导出入口：直接打开导出 Tab（与更新入口共用同一对话框） */
+  onOpenExport: () => void
   onOpenGovernance: () => void
   activeViewName?: string
   activeViewId?: number | string | null
@@ -51,7 +53,7 @@ interface GridToolbarProps {
 export default function GridToolbar({
   wid, tid, tableKey, tableName, recordCount, mode, addRowDisabled, onAddRow,
   permissionLabel, onEditRow, editRowDisabled,
-  canEditSchema, canManageData, onOpenTableSettings, onOpenImportExport, onOpenGovernance,
+  canEditSchema, canManageData, onOpenTableSettings, onOpenImportExport, onOpenExport, onOpenGovernance,
   activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout,
 }: GridToolbarProps) {
   const { message, modal } = AntApp.useApp()
@@ -110,7 +112,7 @@ export default function GridToolbar({
             </Button>
           </Tooltip>
         )}
-        {/* 桌面端：表设置 / 更新导出 / 数据治理常显；窄屏收进「更多」菜单，避免挤占标题 */}
+        {/* 桌面端：表设置 / 更新 / 导出 / 数据治理常显；窄屏收进「更多」菜单，避免挤占标题 */}
         {!isMobile && (
           <>
             <Tooltip title="表设置：管理字段结构、视图列表与权限授权">
@@ -122,8 +124,11 @@ export default function GridToolbar({
                 表设置
               </Button>
             </Tooltip>
-            <Tooltip title="导入 / 导出：批量新增或更新数据、导出 XLSX / CSV / PDF / JSON">
-              <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>更新/导出</Button>
+            <Tooltip title="更新：批量新增或修改数据（导入 XLSX / CSV / JSON）">
+              <Button icon={<ImportOutlined />} data-testid="import-export-btn" onClick={onOpenImportExport}>更新</Button>
+            </Tooltip>
+            <Tooltip title="导出：按当前视图导出 XLSX / CSV / PDF / JSON">
+              <Button icon={<DownloadOutlined />} data-testid="export-btn" onClick={onOpenExport}>导出</Button>
             </Tooltip>
             <Tooltip title="数据治理：重复检测、合并与清洗">
               <Button
@@ -137,7 +142,7 @@ export default function GridToolbar({
             </Tooltip>
           </>
         )}
-        {/* 点击展开：窄屏下该菜单承载编辑行 / 表设置 / 更新导出 / 数据治理等主操作，
+        {/* 点击展开：窄屏下该菜单承载编辑行 / 表设置 / 更新 / 导出 / 数据治理等主操作，
             触摸设备没有 hover，必须用 click 触发 */}
         <TooltipDropdown menu={{
           items: [
@@ -148,7 +153,8 @@ export default function GridToolbar({
                 disabled: editRowDisabled, onClick: onEditRow,
               }] : []),
               { key: 'table-settings', icon: <MenuOutlined />, label: '表设置', onClick: onOpenTableSettings },
-              { key: 'import-export', icon: <ImportOutlined />, label: '更新 / 导出', onClick: onOpenImportExport },
+              { key: 'import', icon: <ImportOutlined />, label: '更新', onClick: onOpenImportExport },
+              { key: 'export', icon: <DownloadOutlined />, label: '导出', onClick: onOpenExport },
               { key: 'governance', icon: <ClearOutlined />, label: '数据治理', disabled: !canManageData, onClick: onOpenGovernance },
               { type: 'divider' as const },
             ] : []),
@@ -187,7 +193,7 @@ export default function GridToolbar({
               }),
             },
           ]
-        }} title="更多操作：编辑行、表设置、更新导出、数据治理、刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></TooltipDropdown>
+        }} title="更多操作：编辑行、表设置、更新、导出、数据治理、刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></TooltipDropdown>
       </Space>
     </div>
   )

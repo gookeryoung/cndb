@@ -198,7 +198,7 @@ export default function GridTableSection({
         locale={{
           emptyText: (
             <div style={{ padding: '32px 0' }} data-testid="grid-empty-state">
-              <Empty description="这张表还没有数据，点击下方按钮录入第一行，或通过「更新/导出」批量导入" />
+              <Empty description="这张表还没有数据，点击下方按钮录入第一行，或通过「更新」批量导入" />
               <Button
                 type="primary"
                 icon={<PlusOutlined />}

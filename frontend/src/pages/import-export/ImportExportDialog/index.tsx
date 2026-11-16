@@ -30,12 +30,14 @@ interface Props {
   getPdfTarget?: () => Promise<HTMLElement | null>
   /** PDF 导出结束后调用（退出导出模式，恢复虚拟滚动） */
   releasePdfTarget?: () => void
+  /** 入口决定的初始 Tab：更新 / 导出 / API 抓取；缺省为『更新』 */
+  initialTab?: 'import' | 'export' | 'api'
 }
 
-export default function ImportExportDialog({ open, wid, tid, fields, onClose, onImported, viewId, viewName, getPdfTarget, releasePdfTarget }: Props) {
+export default function ImportExportDialog({ open, wid, tid, fields, onClose, onImported, viewId, viewName, getPdfTarget, releasePdfTarget, initialTab }: Props) {
   return (
     <Modal
-      title="更新 / 导出"
+      title={initialTab === 'export' ? '导出' : '更新 / 导出'}
       open={open}
       onCancel={onClose}
       footer={[<Button key="close" onClick={onClose}>关闭</Button>]}
@@ -50,6 +52,7 @@ export default function ImportExportDialog({ open, wid, tid, fields, onClose, on
         }
       `}</style>
       <Tabs
+        defaultActiveKey={initialTab ?? 'import'}
         items={[
           {
             key: 'import',

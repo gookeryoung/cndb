@@ -324,6 +324,8 @@ export default function GridPage() {
   /** 列头「AI 填充本列」当前目标字段（null = 抽屉关闭）；RowDetailDrawer 同款按需 lazy 挂载 */
   const [aiFillField, setAiFillField] = useState<Field | null>(null)
   const [importExportOpen, setImportExportOpen] = useState(false)
+  /** 打开「更新 / 导出」对话框时的初始 Tab（工具栏两个入口分别指向更新 / 导出） */
+  const [importExportTab, setImportExportTab] = useState<'import' | 'export'>('import')
   const [governanceOpen, setGovernanceOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
@@ -1234,7 +1236,8 @@ export default function GridPage() {
           canEditSchema={canEditSchema}
           canManageData={canManageData}
           onOpenTableSettings={() => navigate(`/w/${wid}/tables/${tid}/settings`)}
-          onOpenImportExport={() => setImportExportOpen(true)}
+          onOpenImportExport={() => { setImportExportTab('import'); setImportExportOpen(true) }}
+          onOpenExport={() => { setImportExportTab('export'); setImportExportOpen(true) }}
           onOpenGovernance={() => setGovernanceOpen(true)}
           activeViewName={activeView?.name}
           activeViewId={activeView?.id}
@@ -1463,6 +1466,7 @@ export default function GridPage() {
         {importExportOpen && (
           <ImportExportDialog open={importExportOpen} wid={wid} tid={tid}
             fields={table?.fields || []}
+            initialTab={importExportTab}
             viewId={activeViewId}
             viewName={activeView?.name}
             getPdfTarget={async () => {
