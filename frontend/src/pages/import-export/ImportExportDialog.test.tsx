@@ -117,6 +117,8 @@ async function openPreview() {
 }
 
 beforeEach(() => {
+  // 导出格式偏好存在 localStorage：用例间隔离，避免上一例的选择影响下一例
+  localStorage.clear()
   // jsdom 未实现 createObjectURL/revokeObjectURL
   vi.stubGlobal('URL', Object.assign(URL, {
     createObjectURL: vi.fn(() => 'blob:fake'),
@@ -134,6 +136,18 @@ afterEach(() => {
 async function selectPdfFormat() {
   fireEvent.mouseDown(screen.getByRole('combobox'))
   fireEvent.click(await screen.findByText('PDF（当前视图画面）'))
+}
+
+/** 在导出 Tab 中切换为指定格式 */
+async function selectFormat(label: string) {
+  fireEvent.mouseDown(screen.getByRole('combobox'))
+  fireEvent.click(await screen.findByText(label))
+}
+
+/** 当前导出格式下拉的选中文案（antd 6 Select 用 .ant-select-content 承载 title） */
+async function selectedFormatLabel(): Promise<string | null> {
+  const combo = await screen.findByRole('combobox')
+  return combo.closest('.ant-select')?.querySelector('.ant-select-content')?.getAttribute('title') ?? null
 }
 
 describe('ImportExportDialog 导入/导出对话框', () => {
@@ -240,6 +254,36 @@ describe('ImportExportDialog 导入/导出对话框', () => {
     expect(await screen.findByText('任务状态已失效')).toBeInTheDocument()
   })
 
+  it('导出默认格式为 XLSX（未选择过偏好的首次导出）', async () => {
+    let exportQuery = ''
+    server.use(
+      http.get(exportUrl, ({ request }) => {
+        exportQuery = new URL(request.url).search
+        return HttpResponse.json({ rows: [] })
+      }),
+    )
+    renderProviders(<ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
+
+    fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
+    expect(await selectedFormatLabel()).toBe('XLSX')
+
+    fireEvent.click(screen.getByRole('button', { name: /下\s*载$/ }))
+    expect(await screen.findByText('导出完成')).toBeInTheDocument()
+    expect(exportQuery).toContain('format=xlsx')
+  })
+
+  it('记住上次选择的导出格式（重新打开弹窗沿用）', async () => {
+    const first = renderProviders(<ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
+    fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
+    await selectFormat('CSV（Excel 兼容）')
+    expect(await selectedFormatLabel()).toBe('CSV（Excel 兼容）')
+    first.unmount()
+
+    renderProviders(<ImportExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
+    fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
+    expect(await selectedFormatLabel()).toBe('CSV（Excel 兼容）')
+  })
+
   it('导出成功：按视图筛选触发下载并提示完成', async () => {
     let exportQuery = ''
     server.use(
@@ -254,6 +298,7 @@ describe('ImportExportDialog 导入/导出对话框', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: /导出/ }))
     expect(await screen.findByText(/按当前视图「全部数据」筛选后导出/)).toBeInTheDocument()
+    await selectFormat('CSV（Excel 兼容）')
     fireEvent.click(screen.getByRole('button', { name: /下\s*载$/ }))
 
     expect(await screen.findByText('导出完成')).toBeInTheDocument()

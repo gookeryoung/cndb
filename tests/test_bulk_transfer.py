@@ -379,6 +379,39 @@ class TestBulkAPI:
         headers = [cell.value for cell in ws_wb[1]]
         assert headers == ["姓名", "年龄"]
 
+    def test_export_follows_field_display_order(self, client, db, ws, table, auth_owner):
+        """字段拖拽换序后，导出列序按 DataField.order，而不是物理列 / SELECT 顺序."""
+        fields = {f.name: f for f in db.query(DataField).filter(DataField.table_id == table.id).all()}
+        fields["姓名"].order = 2
+        fields["年龄"].order = 1
+        db.commit()
+
+        r_csv = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/export?format=csv",
+            headers=auth_owner,
+        )
+        assert r_csv.status_code == 200
+        assert r_csv.text.splitlines()[0] == "年龄,姓名"
+
+        r_json = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/export?format=json",
+            headers=auth_owner,
+        )
+        assert r_json.status_code == 200
+        row_keys = list(json.loads(r_json.text)[0].keys())
+        assert row_keys == ["年龄", "姓名"]
+
+        import io
+
+        from openpyxl import load_workbook
+
+        r_xlsx = client.get(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/export?format=xlsx",
+            headers=auth_owner,
+        )
+        wb = load_workbook(io.BytesIO(r_xlsx.content))
+        assert [cell.value for cell in wb.active[1]] == ["年龄", "姓名"]
+
     def test_import_csv(self, client, ws, table, auth_owner):
         import io
 

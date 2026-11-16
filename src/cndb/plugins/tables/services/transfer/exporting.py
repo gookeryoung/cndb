@@ -50,6 +50,39 @@ def _exportable_rows(
     ]
 
 
+def _ordered_fieldnames(
+    rows: list[dict[str, Any]],
+    columns: list[str] | None,
+) -> list[str]:
+    """按数据表字段展示顺序（``DataField.order``）排列导出头.
+
+    ``columns`` 由调用方传入 ``table.active_fields()`` 的字段名；只保留当前行真实
+    存在的列（隐藏字段、无物理列的派生列可能不在行里），其余未声明的键追加在末尾，
+    不静默丢列。``columns`` 缺省时回退行内原有顺序（保持旧行为）。
+    """
+    if not rows:
+        return []
+    present = list(rows[0].keys())
+    if not columns:
+        return present
+    present_set = set(present)
+    ordered = [name for name in columns if name in present_set]
+    ordered_set = set(ordered)
+    ordered.extend(name for name in present if name not in ordered_set)
+    return ordered
+
+
+def _ordered_rows(
+    rows: list[dict[str, Any]],
+    columns: list[str] | None,
+) -> list[dict[str, Any]]:
+    """按字段展示顺序重建行 dict（JSON 导出用；dict 插入顺序即 JSON 键顺序）."""
+    if not columns or not rows:
+        return rows
+    fieldnames = _ordered_fieldnames(rows, columns)
+    return [{name: row[name] for name in fieldnames if name in row} for row in rows]
+
+
 def _parse_link_import_value(
     table: DataTable,
     row: dict[str, Any],
@@ -81,13 +114,21 @@ def _parse_link_import_value(
     return result
 
 
-def export_rows_to_json(rows: list[dict[str, Any]], *, link_display: Mapping[str, bool] | None = None) -> str:
+def export_rows_to_json(
+    rows: list[dict[str, Any]],
+    *,
+    link_display: Mapping[str, bool] | None = None,
+    columns: list[str] | None = None,
+) -> str:
     """把行列表序列化为 JSON 字符串.
 
     link_display 指定哪些 link 列导出业务文本；缺省时保持结构化原值（[{id,value}]）。
+    columns 指定导出列顺序（字段展示顺序）；缺省时保持行内原顺序。
     """
     if link_display:
         rows = _exportable_rows(rows, link_display)
+    if columns:
+        rows = _ordered_rows(rows, columns)
     return json.dumps(rows, ensure_ascii=False, indent=2, default=str)
 
 
@@ -119,18 +160,25 @@ def _fix_xlsx_formula_cells(ws: Any, row_idx: int) -> None:
             cell.data_type = "s"
 
 
-def export_rows_to_csv(rows: list[dict[str, Any]], *, link_display: Mapping[str, bool] | None = None) -> str:
+def export_rows_to_csv(
+    rows: list[dict[str, Any]],
+    *,
+    link_display: Mapping[str, bool] | None = None,
+    columns: list[str] | None = None,
+) -> str:
     """把行列表转为 CSV 字符串（link 摘要序列化为分号分隔串）.
 
+    columns 指定导出列顺序（字段展示顺序）；缺省时保持行内原顺序。
     公式注入防护：以 ``=``/``+``/``-``/``@``/Tab/CR 开头的字符串单元格（含表头）
     前加 ``'`` 前缀，避免 Excel/WPS 打开时被当作公式求值.
     """
     rows = _exportable_rows(rows, link_display)
     if not rows:
         return ""
+    fieldnames = _ordered_fieldnames(rows, columns)
     buf = io.StringIO()
     # 表头一并转义；已知列名同步替换为转义后列名，未知列名保留交由 extrasaction 处理
-    key_map = {k: _sanitize_csv_cell(k) for k in rows[0]}
+    key_map = {k: _sanitize_csv_cell(k) for k in fieldnames}
     writer = csv.DictWriter(buf, fieldnames=list(key_map.values()))
     writer.writeheader()
     for row in rows:
@@ -167,9 +215,15 @@ def _to_excel_value(value: Any) -> Any:
     return str(value)
 
 
-def export_rows_to_xlsx(rows: list[dict[str, Any]], *, link_display: Mapping[str, bool] | None = None) -> bytes:
+def export_rows_to_xlsx(
+    rows: list[dict[str, Any]],
+    *,
+    link_display: Mapping[str, bool] | None = None,
+    columns: list[str] | None = None,
+) -> bytes:
     """把行列表转为 XLSX 字节串（link 摘要序列化为分号分隔串）.
 
+    columns 指定导出列顺序（字段展示顺序）；缺省时保持行内原顺序。
     公式注入防护：``=`` 开头字符串单元格强制回字符串类型，Excel 打开不被求值.
     类型归一：openpyxl 不接受的类型（list/set/tuple/dict/UUID 等）自动降级序列化.
     """
@@ -183,7 +237,7 @@ def export_rows_to_xlsx(rows: list[dict[str, Any]], *, link_display: Mapping[str
     if not rows:
         return _wb_to_bytes(wb)
     # Header
-    fieldnames = list(rows[0].keys())
+    fieldnames = _ordered_fieldnames(rows, columns)
     ws.append(fieldnames)
     _fix_xlsx_formula_cells(ws, 1)
     for r in rows:

@@ -151,10 +151,14 @@ def export_table(
         and ((f.config or {}).get("match_field_id") is not None or (f.config or {}).get("display_field_id") is not None)
     }
 
+    # 导出列顺序 = 字段展示顺序（``DataField.order``），不是物理列 / SELECT 顺序：
+    # 用户拖拽调整字段顺序后，导出文件的列序应与网格所见一致（而非“随机”）。
+    export_columns = [f.name for f in table.active_fields()]
+
     body_map = {
-        "json": lambda: transfer.export_rows_to_json(rows, link_display=link_display),
-        "csv": lambda: transfer.export_rows_to_csv(rows, link_display=link_display),
-        "xlsx": lambda: transfer.export_rows_to_xlsx(rows, link_display=link_display),
+        "json": lambda: transfer.export_rows_to_json(rows, link_display=link_display, columns=export_columns),
+        "csv": lambda: transfer.export_rows_to_csv(rows, link_display=link_display, columns=export_columns),
+        "xlsx": lambda: transfer.export_rows_to_xlsx(rows, link_display=link_display, columns=export_columns),
     }
 
     body = body_map[fmt]()

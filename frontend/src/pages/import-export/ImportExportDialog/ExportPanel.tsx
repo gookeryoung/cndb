@@ -1,6 +1,7 @@
 /** 导出面板 — 多格式选择 + 视图筛选开关 + Blob 下载.
  *
  * 从 ImportExportDialog 拆出：导出状态（格式 / 是否按视图筛选 / loading）内聚于此.
+ * 格式默认 XLSX，并记住上次选择（`exportPrefs.ts`）；
  * 文件名优先从后端 Content-Disposition 头解析（支持 RFC 5987 filename* 中文编码），
  * 格式为「工作区-数据表-视图-YYYYMMDD_HHMMSS.扩展名」；解析失败降级为 table-{tid}-export.{ext}.
  * PDF 格式为前端视觉快照（exportViewToPdf），不调用后端导出接口、不受范围开关影响.
@@ -11,8 +12,7 @@ import { DownloadOutlined } from '@ant-design/icons'
 import { App as AntApp } from 'antd'
 import { exportApi } from '@/api'
 import { exportViewToPdf } from './exportPdf'
-
-type ExportFormat = 'json' | 'csv' | 'xlsx' | 'pdf'
+import { loadExportFormat, saveExportFormat, type ExportFormat } from './exportPrefs'
 
 interface ExportPanelProps {
   wid: string
@@ -58,8 +58,15 @@ function parseContentDispositionFilename(header: string | undefined): string | n
 export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, releasePdfTarget }: ExportPanelProps) {
   const { message } = AntApp.useApp()
   const [exporting, setExporting] = useState(false)
-  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('csv')
+  // 默认 XLSX，并记住上次选择（localStorage 单键 `cndb_export_format`）
+  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>(() => loadExportFormat())
   const [useViewFilter, setUseViewFilter] = useState(true)
+
+  /** 格式切换：立即落偏好，下次打开弹窗沿用 */
+  const handleFormatChange = useCallback((format: ExportFormat) => {
+    setSelectedFormat(format)
+    saveExportFormat(format)
+  }, [])
 
   /** PDF 视觉快照导出：进入导出模式取目标 → 生成 PDF → 触发下载 → 退出导出模式 */
   const handleExportPdf = useCallback(async () => {
@@ -143,7 +150,7 @@ export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, 
       <Space style={{ justifyContent: 'center', width: '100%', marginTop: 8 }}>
         <Select
           value={selectedFormat}
-          onChange={setSelectedFormat}
+          onChange={handleFormatChange}
           style={{ width: 180 }}
           options={[
             { value: 'xlsx', label: 'XLSX' },
