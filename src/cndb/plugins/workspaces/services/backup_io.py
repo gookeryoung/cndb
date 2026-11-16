@@ -185,6 +185,7 @@ def import_backup_into_workspace(
                     workspace_id=workspace_id,
                     name=group_name[:80],
                     order=int(group_data.get("order") or 0),
+                    is_ungrouped=bool(group_data.get("is_ungrouped")),
                 )
                 db.add(group)
                 db.flush()

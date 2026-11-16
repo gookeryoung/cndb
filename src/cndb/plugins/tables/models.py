@@ -157,6 +157,8 @@ class TableGroup(TimestampMixin, Base):
     )
     name: Mapped[str] = mapped_column(String(80), nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 「未分组」占位行：每个工作区一条，参与排序但不允许改名 / 删除，成员表 group_id 仍为 NULL
+    is_ungrouped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 # ── DataTable ──

@@ -43,10 +43,11 @@ def test_table_groups_roundtrip(client, auth_headers):
     assert body["imported_tables"] == 1
 
     groups = client.get(GROUPS.format(wid=wid), headers=auth_headers).json()
-    assert [g["name"] for g in groups] == ["销售"]
+    real = [g for g in groups if not g["is_ungrouped"]]
+    assert [g["name"] for g in real] == ["销售"]
     tables = client.get(TABLES.format(wid=wid), headers=auth_headers).json()
     assert [t["name"] for t in tables] == ["客户"]
-    assert tables[0]["group_id"] == groups[0]["id"]
+    assert tables[0]["group_id"] == real[0]["id"]
 
 
 def test_export_payload_contains_groups(client, auth_headers):
@@ -71,7 +72,8 @@ def test_export_payload_contains_groups(client, auth_headers):
         path = Path(fh.name)
     archive = parse_workspace_archive(path)
     try:
-        assert [g["name"] for g in archive.backup["table_groups"]] == ["运营"]
+        real = [g for g in archive.backup["table_groups"] if not g.get("is_ungrouped")]
+        assert [g["name"] for g in real] == ["运营"]
         assert archive.backup["tables"][0]["group_id"] == gid
         assert archive.backup["tables"][0]["id"] == tid
     finally:

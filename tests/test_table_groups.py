@@ -75,10 +75,18 @@ GROUPS_URL = "/api/v1/workspaces/{wid}/table-groups"
 TABLES_URL = "/api/v1/workspaces/{wid}/tables"
 
 
-def test_list_empty(client, ws, auth_owner):
+def _real(groups: list[dict]) -> list[dict]:
+    return [g for g in groups if not g["is_ungrouped"]]
+
+
+def test_list_only_reserved_ungrouped(client, ws, auth_owner):
+    """空工作区列表只返回系统「未分组」占位行（默认不分组）。"""
     r = client.get(GROUPS_URL.format(wid=ws.id), headers=auth_owner)
     assert r.status_code == 200
-    assert r.json() == []
+    groups = r.json()
+    assert len(groups) == 1
+    assert groups[0]["is_ungrouped"] is True
+    assert _real(groups) == []
 
 
 def test_create_list_and_order(client, ws, auth_owner):
@@ -89,13 +97,17 @@ def test_create_list_and_order(client, ws, auth_owner):
     assert r2.status_code == 201
 
     listed = client.get(GROUPS_URL.format(wid=ws.id), headers=auth_owner).json()
-    assert [g["name"] for g in listed] == ["销售", "运营"]
+    assert [g["name"] for g in _real(listed)] == ["销售", "运营"]
+    assert listed[-1]["is_ungrouped"] is True
 
-    # 重排：反序
-    ids = [listed[1]["id"], listed[0]["id"]]
+    # 重排：反序，并把「未分组」提到最前
+    real = _real(listed)
+    reserved = next(g for g in listed if g["is_ungrouped"])
+    ids = [reserved["id"], real[1]["id"], real[0]["id"]]
     reordered = client.post(f"{GROUPS_URL.format(wid=ws.id)}/reorder", json=ids, headers=auth_owner)
     assert reordered.status_code == 200
-    assert [g["name"] for g in reordered.json()] == ["运营", "销售"]
+    assert [g["name"] for g in reordered.json()] == ["__ungrouped__", "运营", "销售"]
+    assert reordered.json()[0]["is_ungrouped"] is True
 
 
 def test_create_validation(client, ws, auth_owner):
@@ -106,6 +118,15 @@ def test_create_validation(client, ws, auth_owner):
     dup = client.post(url, json={"name": "重复"}, headers=auth_owner)
     assert dup.status_code == 400
     assert "已存在" in dup.json()["detail"]
+
+
+def test_ungrouped_reserved_cannot_rename_or_delete(client, ws, auth_owner):
+    url = GROUPS_URL.format(wid=ws.id)
+    reserved = next(g for g in client.get(url, headers=auth_owner).json() if g["is_ungrouped"])
+    assert client.patch(f"{url}/{reserved['id']}", json={"name": "改名"}, headers=auth_owner).status_code == 400
+    assert client.delete(f"{url}/{reserved['id']}", headers=auth_owner).status_code == 400
+    # 保留名不允许用户创建
+    assert client.post(url, json={"name": "__ungrouped__"}, headers=auth_owner).status_code == 400
 
 
 def test_viewer_cannot_write(client, ws, auth_owner, auth_viewer):

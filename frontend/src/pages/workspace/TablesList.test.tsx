@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { delay, http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import TablesList from './TablesList'
@@ -846,5 +846,51 @@ describe('TablesList 表分组', () => {
 
     expect(await screen.findByText('已创建分组「运营组」')).toBeInTheDocument()
     expect(created).toEqual({ name: '运营组' })
+  })
+})
+
+
+// ─────────────── 未分组参与排序（需求 0137 追加） ───────────────
+
+const ORDERED_GROUPS = [
+  { id: 9, workspace_id: 10, name: '__ungrouped__', order: 0, is_ungrouped: true },
+  { id: 5, workspace_id: 10, name: '销售组', order: 1, is_ungrouped: false },
+]
+
+describe('TablesList 未分组参与排序', () => {
+  it('分组分节按占位行位置展示：未分组可以在分组之前', async () => {
+    setupWorkspace()
+    server.use(
+      http.get('/api/v1/workspaces/10/tables', () => HttpResponse.json(GROUPED_TABLES)),
+      http.get('/api/v1/workspaces/10/table-groups', () => HttpResponse.json(ORDERED_GROUPS)),
+    )
+    renderPage()
+
+    await screen.findByText('销售明细')
+    fireEvent.click(screen.getByTestId('tables-group-toggle'))
+
+    const grouped = await screen.findByTestId('tables-grouped-list')
+    const sections = Array.from(grouped.querySelectorAll('.cn-table-group'))
+    expect(sections[0]).toHaveAttribute('data-testid', 'table-group-9')
+    expect(sections[0]).toHaveTextContent('未分组')
+    expect(sections[0]).toHaveTextContent('零散表')
+    expect(sections[1]).toHaveAttribute('data-testid', 'table-group-5')
+    expect(sections[1]).toHaveTextContent('销售组')
+  })
+
+  it('分组管理显示未分组占位行且不可改名 / 删除', async () => {
+    setupWorkspace()
+    server.use(
+      http.get('/api/v1/workspaces/10/table-groups', () => HttpResponse.json(ORDERED_GROUPS)),
+    )
+    renderPage()
+
+    fireEvent.click(await screen.findByTestId('table-groups-manage-btn'))
+    const reserved = await screen.findByTestId('table-group-mgr-9')
+    expect(reserved).toHaveTextContent('未分组（系统占位）')
+    expect(within(reserved).queryByText('重命名')).toBeNull()
+    expect(reserved.querySelector('.anticon-delete')).toBeNull()
+    // 真实分组仍可重命名
+    expect(within(screen.getByTestId('table-group-mgr-5')).getByText('重命名')).toBeInTheDocument()
   })
 })

@@ -25,12 +25,16 @@ from cndb.plugins.workspaces.models import WorkspaceRole
 router = APIRouter(prefix="/{workspace_id}/table-groups", tags=["table-groups"])
 
 _MAX_NAME_LEN = 80
+# 系统「未分组」占位名：不对外展示（前端显示为「未分组」），也不允许用户创建同名分组
+UNGROUPED_GROUP_NAME = "__ungrouped__"
 
 
 def _clean_name(raw: str | None) -> str:
     name = (raw or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="分组名不能为空")
+    if name == UNGROUPED_GROUP_NAME:
+        raise HTTPException(status_code=400, detail="该分组名为系统保留名")
     if len(name) > _MAX_NAME_LEN:
         raise HTTPException(status_code=400, detail=f"分组名不能超过 {_MAX_NAME_LEN} 个字符")
     return name
@@ -41,6 +45,25 @@ def _get_group_or_404(db: Session, workspace_id: int, group_id: int) -> TableGro
     if group is None:
         raise HTTPException(status_code=404, detail="分组不存在")
     return group
+
+
+def _ensure_ungrouped(db: Session, workspace_id: int) -> tuple[TableGroup, bool]:
+    """确保工作区存在「未分组」占位行（参与排序）；返回 (行, 是否新建)."""
+    group = (
+        db.query(TableGroup).filter(TableGroup.workspace_id == workspace_id, TableGroup.is_ungrouped.is_(True)).first()
+    )
+    if group is not None:
+        return group, False
+    max_order = db.query(func.max(TableGroup.order)).filter(TableGroup.workspace_id == workspace_id).scalar()
+    group = TableGroup(
+        workspace_id=workspace_id,
+        name=UNGROUPED_GROUP_NAME,
+        order=int(max_order or 0) + 1,
+        is_ungrouped=True,
+    )
+    db.add(group)
+    db.flush()
+    return group, True
 
 
 def _ensure_unique_name(db: Session, workspace_id: int, name: str, *, exclude_id: int | None = None) -> None:
@@ -61,6 +84,9 @@ def list_table_groups(
     db: Annotated[Session, Depends(get_db)],
 ) -> list[TableGroup]:
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
+    _group, created = _ensure_ungrouped(db, workspace_id)
+    if created:
+        db.commit()
     return (
         db.query(TableGroup)
         .filter(TableGroup.workspace_id == workspace_id)
@@ -124,6 +150,8 @@ def update_table_group(
 ) -> TableGroup:
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
     group = _get_group_or_404(db, workspace_id, group_id)
+    if group.is_ungrouped:
+        raise HTTPException(status_code=400, detail="「未分组」是系统占位，不能改名")
     data = payload.model_dump(exclude_unset=True)
     if "name" in data:
         name = _clean_name(data["name"])
@@ -145,6 +173,8 @@ def delete_table_group(
 ) -> None:
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.EDITOR)
     group = _get_group_or_404(db, workspace_id, group_id)
+    if group.is_ungrouped:
+        raise HTTPException(status_code=400, detail="「未分组」是系统占位，不能删除")
     # 显式回落未分组（不依赖数据库 FK 开关），再删分组
     db.query(DataTable).filter(
         DataTable.workspace_id == workspace_id,

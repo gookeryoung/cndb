@@ -14,11 +14,11 @@ import {
   SafetyCertificateOutlined, ToolOutlined,
   RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
-  LockOutlined, ApartmentOutlined,
+  LockOutlined, ApartmentOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { designsApi, systemApi, tableApi, tableGroupApi, workspaceApi } from '@/api'
-import type { TableSummary } from '@/api'
+import type { TableGroup, TableSummary } from '@/api'
 import { useTableHoverPrefetch } from '@/pages/workspace/tablePrefetch'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
@@ -145,7 +145,7 @@ const { Header, Sider, Content } = Layout
 
 export default function MainLayout() {
   const navigate = useNavigate()
-  const { modal } = AntApp.useApp()
+  const { modal, message } = AntApp.useApp()
   const { wid, tid, docId } = useParams<{ wid: string; tid?: string; docId?: string }>()
   const location = useLocation().pathname
   /** 管理台上下文（/admin）：无工作区语义，侧栏改列管理台分项 */
@@ -242,6 +242,8 @@ export default function MainLayout() {
     queryFn: () => (wid ? tableGroupApi.list(wid) : Promise.resolve([])),
     enabled: !!wid && wsFeatures.tables,
   })
+  /** 侧栏分组拖拽中的分组 id（HTML5 DnD；落点即目标分组位置） */
+  const [dragGroupId, setDragGroupId] = useState<number | null>(null)
 
   // 文档数徽标：limit=1 仅取 total 计数，避免拉全量
   const { data: docCount, isSuccess: docsReady } = useQuery({
@@ -685,12 +687,68 @@ export default function MainLayout() {
     },
   })
 
-  /** 侧栏菜单项：无分组（或折叠态）→ 平铺；有分组 → 按组标题展示，未分组单独一组.
-   * 搜索时隐藏没有命中表的空分组，保留分组语义。 */
+  /** 是否存在真实分组（系统「未分组」占位行不算）；没有则侧栏保持平铺 */
+  const hasRealGroups = tableGroups.some(g => !g.is_ungrouped)
+  /** 当前用户是否可管理分组（owner/editor；后端同样校验） */
+  const canEditGroups = currentWs?.current_user_role === 'owner' || currentWs?.current_user_role === 'editor'
+
+  /** 拖拽分组：把 source 插到 target 位置（含「未分组」占位行，一起持久化排序） */
+  const moveGroupBefore = async (sourceId: number, targetId: number) => {
+    if (!wid || sourceId === targetId) return
+    const ids = tableGroups.map(g => Number(g.id))
+    const from = ids.indexOf(sourceId)
+    const to = ids.indexOf(targetId)
+    if (from < 0 || to < 0) return
+    const next = ids.slice()
+    const [moved] = next.splice(from, 1)
+    next.splice(to, 0, moved)
+    try {
+      await tableGroupApi.reorder(wid, next)
+      queryClient.invalidateQueries({ queryKey: ['workspaces', wid, 'table-groups'] })
+    } catch {
+      message.error('分组排序失败')
+    }
+  }
+
+  /** 侧栏分组标题（可拖拽调整分组顺序） */
+  const renderGroupTitle = (g: TableGroup): React.ReactNode => {
+    const title = g.is_ungrouped ? '未分组' : g.name
+    return (
+      <span
+        className="cn-sider-group-title"
+        draggable={canEditGroups}
+        data-testid={`sider-group-${g.id}`}
+        data-dragging={dragGroupId === Number(g.id) ? 'true' : undefined}
+        onDragStart={(e) => {
+          if (!canEditGroups) return
+          e.stopPropagation()
+          e.dataTransfer?.setData('text/plain', String(g.id))
+          if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
+          setDragGroupId(Number(g.id))
+        }}
+        onDragEnd={() => setDragGroupId(null)}
+        onDragOver={(e) => { if (canEditGroups) e.preventDefault() }}
+        onDrop={(e) => {
+          if (!canEditGroups) return
+          e.preventDefault()
+          e.stopPropagation()
+          const sourceId = Number(e.dataTransfer?.getData('text/plain'))
+          setDragGroupId(null)
+          if (Number.isFinite(sourceId) && sourceId) void moveGroupBefore(sourceId, Number(g.id))
+        }}
+      >
+        <span className="cn-sider-group-title-text">{title}</span>
+        {canEditGroups && <HolderOutlined className="cn-sider-group-grip" />}
+      </span>
+    )
+  }
+
+  /** 侧栏菜单项：无分组（或折叠态）→ 平铺；有分组 → 按组标题展示（按分组排序，
+   * 包含「未分组」占位行的位置）。搜索时隐藏没有命中表的空分组。 */
   const buildTableMenuItems = (mobile: boolean, collapsed: boolean): NonNullable<MenuProps['items']> => {
     const flat = orderedTables.map(t => buildTableMenuItem(t, mobile))
-    // 折叠态空间不足，保持图标平铺；无分组时行为与改造前完全一致
-    if (collapsed || tableGroups.length === 0) return flat
+    // 折叠态空间不足，保持图标平铺；无真实分组时行为与改造前完全一致
+    if (collapsed || !hasRealGroups) return flat
     const keyword = tableKeyword.trim()
     const byGroup = new Map<string, TableSummary[]>()
     for (const t of orderedTables) {
@@ -700,22 +758,28 @@ export default function MainLayout() {
       byGroup.set(key, list)
     }
     const items: NonNullable<MenuProps['items']> = []
+    let ungroupedRendered = false
     for (const g of tableGroups) {
-      const rows = byGroup.get(String(g.id)) ?? []
+      const isUngrouped = !!g.is_ungrouped
+      const rows = isUngrouped ? (byGroup.get('') ?? []) : (byGroup.get(String(g.id)) ?? [])
       if (rows.length === 0 && keyword) continue
+      if (isUngrouped) ungroupedRendered = true
       items.push({
         type: 'group',
-        label: g.name,
+        label: renderGroupTitle(g),
         children: rows.map(t => buildTableMenuItem(t, mobile)),
       })
     }
-    const ungrouped = byGroup.get('') ?? []
-    if (ungrouped.length > 0 || !keyword) {
-      items.push({
-        type: 'group',
-        label: '未分组',
-        children: ungrouped.map(t => buildTableMenuItem(t, mobile)),
-      })
+    // 兼容旧接口 / 尚未懒创建的占位行：未分组兜底追加在最后
+    if (!ungroupedRendered) {
+      const ungrouped = byGroup.get('') ?? []
+      if (ungrouped.length > 0 || !keyword) {
+        items.push({
+          type: 'group',
+          label: '未分组',
+          children: ungrouped.map(t => buildTableMenuItem(t, mobile)),
+        })
+      }
     }
     return items
   }

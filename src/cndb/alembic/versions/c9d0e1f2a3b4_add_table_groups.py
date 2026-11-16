@@ -51,6 +51,7 @@ def upgrade() -> None:
             ),
             sa.Column("name", sa.String(length=80), nullable=False),
             sa.Column("order", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("is_ungrouped", sa.Boolean(), nullable=False, server_default=sa.false()),
             sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
             sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
             sa.UniqueConstraint("workspace_id", "name", name="uq_tables_tablegroup_ws_name"),

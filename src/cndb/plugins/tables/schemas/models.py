@@ -148,6 +148,8 @@ class TableGroupResponse(BaseModel):
     workspace_id: int
     name: str
     order: int
+    # True = 系统「未分组」占位行（参与排序，不可改名 / 删除）
+    is_ungrouped: bool = False
 
 
 # ── DataField schemas ────────────────────────────────

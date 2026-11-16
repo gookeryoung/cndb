@@ -9795,3 +9795,36 @@ body.cn-doc-focus-view .cn-doc-stats {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── 侧栏表分组标题（可拖拽排序，需求 0137） ── */
+.cn-sider-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  max-width: 100%;
+  cursor: grab;
+  user-select: none;
+}
+
+.cn-sider-group-title[data-dragging='true'] {
+  opacity: 0.5;
+}
+
+.cn-sider-group-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-sider-group-grip {
+  flex-shrink: 0;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.cn-sider-group-title:hover .cn-sider-group-grip {
+  opacity: 1;
+}

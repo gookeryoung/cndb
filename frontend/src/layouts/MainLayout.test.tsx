@@ -1489,3 +1489,63 @@ describe('MainLayout 侧栏表分组', () => {
         expect(within(sider).queryByText('未分组')).toBeNull()
     })
 })
+
+// ─────────────── 侧栏分组排序 / 拖拽（需求 0137 追加） ───────────────
+
+const ORDERED_SIDER_GROUPS = [
+    { id: 9, workspace_id: 10, name: '__ungrouped__', order: 0, is_ungrouped: true },
+    { id: 5, workspace_id: 10, name: '销售组', order: 1, is_ungrouped: false },
+]
+
+describe('MainLayout 侧栏分组排序与拖拽', () => {
+    const mockGroupedTables = () =>
+        http.get('/api/v1/workspaces/:wid/tables', () => HttpResponse.json([
+            { id: 100, name: '销售明细', record_count: 0, field_count: 1, view_count: 1, group_id: 5 },
+            { id: 101, name: '零散表', record_count: 0, field_count: 1, view_count: 1, group_id: null },
+        ]))
+
+    it('「未分组」按占位行位置展示（可在分组之前）', async () => {
+        server.use(
+            mockGroupedTables(),
+            http.get('/api/v1/workspaces/:wid/table-groups', () => HttpResponse.json(ORDERED_SIDER_GROUPS)),
+        )
+        renderLayout(mockUser)
+
+        const sider = await screen.findByTestId('sider-tables')
+        const ungrouped = await within(sider).findByTestId('sider-group-9')
+        const sales = within(sider).getByTestId('sider-group-5')
+        expect(ungrouped).toHaveTextContent('未分组')
+        // 未分组占位在销售组之前（DOM 顺序）
+        expect(ungrouped.compareDocumentPosition(sales) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    })
+
+    it('拖拽分组标题：落点后提交新的分组顺序', async () => {
+        let posted: unknown = null
+        server.use(
+            // 侧栏拖拽要求工作区 owner/editor：列表接口带上当前用户角色
+            http.get('/api/v1/workspaces', () => HttpResponse.json([{ ...mockWorkspace, current_user_role: 'owner' }])),
+            mockGroupedTables(),
+            http.get('/api/v1/workspaces/:wid/table-groups', () => HttpResponse.json(ORDERED_SIDER_GROUPS)),
+            http.post('/api/v1/workspaces/:wid/table-groups/reorder', async ({ request }) => {
+                posted = await request.json()
+                return HttpResponse.json(ORDERED_SIDER_GROUPS)
+            }),
+        )
+        renderLayout(mockUser)
+
+        const sider = await screen.findByTestId('sider-tables')
+        const source = await within(sider).findByTestId('sider-group-5')
+        const target = within(sider).getByTestId('sider-group-9')
+        const dataTransfer = {
+            data: '' as string,
+            effectAllowed: 'move',
+            setData: (_type: string, value: string) => { dataTransfer.data = value },
+            getData: () => dataTransfer.data,
+        }
+        fireEvent.dragStart(source, { dataTransfer })
+        fireEvent.dragOver(target, { dataTransfer })
+        fireEvent.drop(target, { dataTransfer })
+
+        await waitFor(() => expect(posted).toEqual([5, 9]))
+    })
+})

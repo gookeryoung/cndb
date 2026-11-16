@@ -222,7 +222,7 @@ def _build_backup(
     from cndb.plugins.tables.models import TableGroup
 
     table_groups_data = [
-        {"id": g.id, "name": g.name, "order": g.order}
+        {"id": g.id, "name": g.name, "order": g.order, "is_ungrouped": g.is_ungrouped}
         for g in (
             db.query(TableGroup)
             .filter(TableGroup.workspace_id == workspace_id)

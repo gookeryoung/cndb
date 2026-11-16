@@ -256,6 +256,8 @@ export default function TablesList() {
     queryFn: () => tableGroupApi.list(wid!),
     enabled: !!wid,
   })
+  /** 是否存在真实分组（系统「未分组」占位行不算）；没有则开关不可用 */
+  const hasRealGroups = groups.some(g => !g.is_ungrouped)
   // 列表页分组展示是可选开关，默认关闭（平铺），不跨会话记忆
   const [grouped, setGrouped] = useState(false)
   const [groupMgrOpen, setGroupMgrOpen] = useState(false)
@@ -462,23 +464,27 @@ export default function TablesList() {
     reorderTables.mutate(merged)
   }
 
-  /** 分组展示用的分组分节（过滤后）：按分组顺序，未分组恒在最后 */
+  /** 分组展示用的分组分节（过滤后）：按分组的 order 排列，
+   * 系统「未分组」占位行按它自己的位置展示（不再恒在最后）。 */
   const groupedSections = useMemo(() => {
-    const sections = groups
-      .slice()
-      .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-      .map(g => ({
-        key: String(g.id),
-        name: g.name,
-        group: g as TableGroup | null,
-        rows: filteredTables.filter(t => String(t.group_id ?? '') === String(g.id)),
-      }))
-    sections.push({
-      key: 'ungrouped',
-      name: '未分组',
-      group: null as unknown as TableGroup | null,
-      rows: filteredTables.filter(t => t.group_id == null),
-    })
+    const ordered = groups.slice().sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    const sections = ordered.map(g => ({
+      key: String(g.id),
+      name: g.is_ungrouped ? '未分组' : g.name,
+      group: g.is_ungrouped ? null : (g as TableGroup | null),
+      rows: g.is_ungrouped
+        ? filteredTables.filter(t => t.group_id == null)
+        : filteredTables.filter(t => String(t.group_id ?? '') === String(g.id)),
+    }))
+    // 兼容旧接口 / 尚未懒创建占位行：未分组兜底追加在最后
+    if (!ordered.some(g => g.is_ungrouped)) {
+      sections.push({
+        key: 'ungrouped',
+        name: '未分组',
+        group: null as unknown as TableGroup | null,
+        rows: filteredTables.filter(t => t.group_id == null),
+      })
+    }
     return sections
   }, [groups, filteredTables])
 
@@ -517,14 +523,14 @@ export default function TablesList() {
         },
       ],
     },
-    ...(canReorder && groups.length > 0
+    ...(canReorder && hasRealGroups
       ? [
           {
             key: 'group',
             icon: <FolderOutlined />,
             label: '移动到分组',
             children: [
-              ...groups.map(g => ({
+              ...groups.filter(g => !g.is_ungrouped).map(g => ({
                 key: `group-${g.id}`,
                 label: g.name,
                 disabled: String(record.group_id ?? '') === String(g.id),
@@ -828,7 +834,7 @@ export default function TablesList() {
               size="small"
               checked={grouped}
               onChange={setGrouped}
-              disabled={groups.length === 0}
+              disabled={!hasRealGroups}
               data-testid="tables-group-toggle"
             />
             <Text type="secondary" style={{ fontSize: 'var(--cn-text-sm)' }}>分组显示</Text>
@@ -1085,13 +1091,15 @@ export default function TablesList() {
             新建分组
           </Button>
         </Space.Compact>
-        {groups.length === 0 ? (
+        {!hasRealGroups ? (
           <Empty description="还没有分组 —— 先在上方创建一个" />
         ) : (
           <div className="cn-table-group-mgr" data-testid="table-group-mgr-list">
             {groups.map((g, idx) => (
-              <div className="cn-table-group-mgr-row" key={g.id}>
-                {String(editingGroupId) === String(g.id) ? (
+              <div className="cn-table-group-mgr-row" key={g.id} data-testid={`table-group-mgr-${g.id}`}>
+                {g.is_ungrouped ? (
+                  <span className="cn-table-group-mgr-name">未分组（系统占位）</span>
+                ) : String(editingGroupId) === String(g.id) ? (
                   <Input
                     size="small"
                     value={editingGroupName}
@@ -1104,7 +1112,7 @@ export default function TablesList() {
                   <span className="cn-table-group-mgr-name">{g.name}</span>
                 )}
                 <Space size={2}>
-                  {String(editingGroupId) === String(g.id) ? (
+                  {g.is_ungrouped ? null : String(editingGroupId) === String(g.id) ? (
                     <>
                       <Button
                         size="small"
@@ -1149,6 +1157,7 @@ export default function TablesList() {
                       }}
                     />
                   </Tooltip>
+                  {!g.is_ungrouped && (
                   <Tooltip title="删除分组（组内表回到未分组）">
                     <Button
                       size="small"
@@ -1165,6 +1174,7 @@ export default function TablesList() {
                       })}
                     />
                   </Tooltip>
+                  )}
                 </Space>
               </div>
             ))}

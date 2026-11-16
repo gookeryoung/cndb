@@ -8,6 +8,8 @@ export interface TableGroup {
   workspace_id?: ID
   name: string
   order?: number
+  /** 系统「未分组」占位行：参与排序，前端显示「未分组」，不可改名 / 删除 */
+  is_ungrouped?: boolean
 }
 
 export interface TableSummary {
