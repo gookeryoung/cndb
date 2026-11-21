@@ -347,12 +347,8 @@ async function main() {
       { timeout: 30_000 },
     )
     check('工作区列表渲染', page.url().includes('/w'), page.url())
+    // 首屏读数先记下，等校准系数算出来后再按当次 runner 速度判定（见 3.5 性能基线）
     const firstInteractiveMs = await page.evaluate(() => performance.now())
-    check(
-      `首屏可交互 ≤ ${PERF_BUDGET.firstInteractiveMs}ms`,
-      firstInteractiveMs <= PERF_BUDGET.firstInteractiveMs,
-      `${firstInteractiveMs.toFixed(1)}ms`,
-    )
 
     // ── 2. 兼容层自检（C2 / C3 / C4）────────────────────────────────
     const compat = await page.evaluate(() => {
@@ -448,19 +444,39 @@ async function main() {
       notes.push(`视图切换中位数 ${JSON.stringify(viewMedians)}；样本 ${JSON.stringify(viewSamples)}`)
     }
 
+    // 主题测量也放进校准窗口：之后统一算速度系数并一次性判定（D11）
+    const themePerf = await measureThemeSwitch(page)
     const calibrationAfterMs = await measureCalibration(page)
 
     // ── 3.5 旧内核性能基线（C2 / C6；阈值唯一来源 perf-budget.mjs）───────
+    // 机器速度系数（D11）：两次校准取更保守（更小）的一次；系数只在 [1, maxFactor] 内生效。
+    // 参考值取自正常 runner（2026-11-21 CI：62.9–65.7ms）；只放大不缩小，避免快机器把阈值变严；
+    // 超过 maxFactor 说明 runner 远低于标定条件，仍按最坏预算判定，不会掩盖真实回归。
+    const calibrationBase = Math.min(calibrationMs, calibrationAfterMs)
+    const speedFactor = Math.min(
+      Math.max(calibrationBase / PERF_BUDGET.calibrationRefMs, 1),
+      PERF_BUDGET.calibrationMaxFactor,
+    )
+    const budgetOf = (baseMs) => Math.round(baseMs * speedFactor)
+    console.log(
+      `[chrome81] budget: ×${speedFactor.toFixed(2)}（calib ${calibrationBase}ms / 参考 ${PERF_BUDGET.calibrationRefMs}ms）`,
+    )
+
+    check(
+      `首屏可交互 ≤ ${budgetOf(PERF_BUDGET.firstInteractiveMs)}ms`,
+      firstInteractiveMs <= budgetOf(PERF_BUDGET.firstInteractiveMs),
+      `${firstInteractiveMs.toFixed(1)}ms`,
+    )
     const viewSwitchMs = Object.keys(viewMedians).length ? Math.max(...Object.values(viewMedians)) : null
     if (viewSwitchMs != null) {
       check(
-        `视图切换 ≤ ${PERF_BUDGET.viewSwitchMs}ms`,
-        viewSwitchMs <= PERF_BUDGET.viewSwitchMs,
+        `视图切换 ≤ ${budgetOf(PERF_BUDGET.viewSwitchMs)}ms`,
+        viewSwitchMs <= budgetOf(PERF_BUDGET.viewSwitchMs),
         `${viewSwitchMs.toFixed(1)}ms`,
       )
     }
     for (const [mode, longTaskMs] of Object.entries(viewLongTasks)) {
-      const budget = PERF_BUDGET.viewLongTaskByModeMs[mode] ?? PERF_BUDGET.viewLongTaskMs
+      const budget = budgetOf(PERF_BUDGET.viewLongTaskByModeMs[mode] ?? PERF_BUDGET.viewLongTaskMs)
       check(
         `视图切换 ${mode} 最长任务 ≤ ${budget}ms`,
         longTaskMs <= budget,
@@ -468,16 +484,15 @@ async function main() {
       )
     }
 
-    const themePerf = await measureThemeSwitch(page)
     if (themePerf.themeSwitchMs != null) {
       check(
-        `主题切换 ≤ ${PERF_BUDGET.themeSwitchMs}ms`,
-        themePerf.themeSwitchMs <= PERF_BUDGET.themeSwitchMs,
+        `主题切换 ≤ ${budgetOf(PERF_BUDGET.themeSwitchMs)}ms`,
+        themePerf.themeSwitchMs <= budgetOf(PERF_BUDGET.themeSwitchMs),
         `${themePerf.themeSwitchMs.toFixed(1)}ms`,
       )
       check(
-        `主题切换最长任务 ≤ ${PERF_BUDGET.themeLongTaskMs}ms`,
-        themePerf.longTaskMs <= PERF_BUDGET.themeLongTaskMs,
+        `主题切换最长任务 ≤ ${budgetOf(PERF_BUDGET.themeLongTaskMs)}ms`,
+        themePerf.longTaskMs <= budgetOf(PERF_BUDGET.themeLongTaskMs),
         `${themePerf.longTaskMs.toFixed(1)}ms`,
       )
     } else {
@@ -490,6 +505,7 @@ async function main() {
       viewSwitchMs: viewSwitchMs == null ? null : Math.round(viewSwitchMs),
       calibrationMs,
       calibrationAfterMs,
+      speedFactor: Number(speedFactor.toFixed(2)),
       viewLongTasksMs: Object.fromEntries(
         Object.entries(viewLongTasks).map(([mode, ms]) => [mode, Math.round(ms)]),
       ),

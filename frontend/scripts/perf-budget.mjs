@@ -13,10 +13,14 @@
 export const PERF_BUDGET = Object.freeze({
   /** 主题切换：点击主题卡片 → 下一帧（含 React 提交与全页主题变量重算） */
   themeSwitchMs: 200,
-  /** 视图切换：点击视图按钮 → 下一帧（含同步渲染，不含网络请求）；每个视图轮转采样 5 次取中位数再取最大（D10） */
-  viewSwitchMs: 800,
+  /** 机器速度校准参考值（D11）：正常 runner 上 `measureCalibration` 三次取最小的读数（2026-11-21 CI 实测 62.9–65.7ms） */
+  calibrationRefMs: 65,
+  /** 校准系数上限（D11）：runner 比参考慢超过该倍数时按最坏预算判定，避免无上限放宽 */
+  calibrationMaxFactor: 1.8,
   /** 首屏可交互：导航开始 → 应用头部与内容可交互 */
   firstInteractiveMs: 3000,
+  /** 视图切换：点击视图按钮 → 下一帧（含同步渲染，不含网络请求）；每个视图轮转采样 5 次取中位数再取最大（D10） */
+  viewSwitchMs: 800,
   /** 主题切换期间单次长任务上限 */
   themeLongTaskMs: 250,
   /** 视图切换期间单次长任务上限（未单独列出的视图） */
