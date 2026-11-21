@@ -257,6 +257,48 @@ describe('ThemeProvider', () => {
       vi.useRealTimers()
     }
   })
+
+  it('旧内核（不支持 color-mix）切换主题不挂过渡类，也不为记录旧样式强制回流', () => {
+    // 覆盖本文件前序测试的 matchMedia 桩：reduce 查询必须返回 false，否则误判跳过过渡
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string) => ({
+        matches: false,
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+      }),
+    })
+    // Chrome 81：CSS.supports(color-mix) 为 false，index.css 的过渡块不生效
+    const supports = vi.spyOn(CSS, 'supports').mockReturnValue(false)
+    let reflows = 0
+    const desc = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetHeight')
+    Object.defineProperty(document.documentElement, 'offsetHeight', {
+      configurable: true,
+      get() {
+        reflows += 1
+        return desc?.get ? desc.get.call(this) : 0
+      },
+    })
+    try {
+      render(
+        <ThemeProvider>
+          <ThemeProbe />
+        </ThemeProvider>,
+      )
+      fireEvent.click(screen.getByText('切到 oled'))
+      expect(document.body).toHaveClass('theme-oled')
+      expect(document.documentElement).not.toHaveClass('theme-switching')
+      // 过渡没有挂上时再强制回流只是白算一次全文档样式，必须跳过
+      expect(reflows).toBe(0)
+    } finally {
+      delete (document.documentElement as unknown as Record<string, unknown>).offsetHeight
+      supports.mockRestore()
+    }
+  })
 })
 
 describe('ThemeProvider 字体设置', () => {

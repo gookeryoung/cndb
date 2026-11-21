@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { App as AntApp, ConfigProvider, theme as antdTheme } from 'antd'
 import { StyleProvider, legacyLogicalPropertiesTransformer } from '@ant-design/cssinjs'
 import zhCN from 'antd/locale/zh_CN'
+import { supportsColorMix } from '@/compat/capabilities'
 import {
   getThemeConfig, themeCssVars, loadThemeMode, saveThemeMode,
   loadFontSettings, saveFontSettings,
@@ -161,16 +162,19 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   const mountedRef = useRef(false)
   useLayoutEffect(() => {
     const root = document.documentElement
-    // 切换瞬间挂载全局颜色过渡（index.css .theme-switching），让新旧主题平滑渐变；
-    // 先加类并强制回流，浏览器才能记录旧样式，变量变化才会走过渡而非瞬间跳变。
-    // 首次挂载不做过渡（避免首屏从默认色渐变）；prefers-reduced-motion 不做动画；
-    // 平时不挂载该类，避免拖慢日常交互。
     const firstMount = !mountedRef.current
     mountedRef.current = true
     const reducedMotion = typeof window.matchMedia === 'function'
       && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    // 过渡仅在支持 color-mix() 的内核生效：index.css 的 .theme-switching 块同样被
+    // @supports (color-mix) 包裹，旧内核（Chrome 81）根本不挂过渡，因此这里既不必加类，
+    // 也不必为「记录旧样式」强制回流 —— 那次全文档 style recalc + layout 纯属浪费，
+    // 实测占主题切换时延的 ~14%（ADR 0117 C3）。
+    // 首次挂载不做过渡（避免首屏从默认色渐变）；prefers-reduced-motion 不做动画；
+    // 平时不挂该类，避免拖慢日常交互。
+    const animate = !firstMount && !reducedMotion && supportsColorMix()
     let timer: number | undefined
-    if (!firstMount && !reducedMotion) {
+    if (animate) {
       root.classList.add(THEME_SWITCHING_CLASS)
       void root.offsetHeight
     }
@@ -178,7 +182,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     applyThemeVars(mode)
     // Chrome 81 没有 color-mix()：按刚挂好的主题变量重算 --cn-mix-* 兜底（现代内核直接跳过）
     applyThemeMixVars()
-    if (!firstMount && !reducedMotion) {
+    if (animate) {
       timer = window.setTimeout(() => root.classList.remove(THEME_SWITCHING_CLASS), SWITCH_MS + 80)
     }
     return () => {
