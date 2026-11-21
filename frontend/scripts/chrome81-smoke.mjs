@@ -82,6 +82,30 @@ async function resetLongTasks(page) {
   })
 }
 
+/** 等到最近 idleMs 内没有长任务（最多等 timeoutMs）——视图切换前先让页面静下来再计时.
+ *
+ * 上一视图的数据拉取 / 渲染收尾会以长任务形式拖到点击之后，点击落在忙窗口里时
+ * 「点击→两帧」会把这段无关负载算进来；固定 sleep 在慢机器上不够（本机实测收尾可达 1.5s）。
+ */
+async function waitForQuiet(page, { idleMs = 500, timeoutMs = 3000 } = {}) {
+  await page.evaluate(({ idle, timeout }) => new Promise((resolve) => {
+    const started = performance.now()
+    const step = () => {
+      const now = performance.now()
+      const last = window.__cndbPerf?.lastLongTaskEnd ?? 0
+      if (now - last >= idle || now - started >= timeout) resolve()
+      else requestAnimationFrame(step)
+    }
+    requestAnimationFrame(step)
+  }), { idle: idleMs, timeout: timeoutMs })
+}
+
+/** 中位数（偶数个取偏小一侧，避免向上取整放大读数） */
+function median(values) {
+  const sorted = [...values].sort((a, b) => a - b)
+  return sorted[Math.floor((sorted.length - 1) / 2)]
+}
+
 /** 自上次 reset 以来的最长长任务（毫秒） */
 async function maxLongTask(page) {
   return page.evaluate(() => {
@@ -283,10 +307,13 @@ async function main() {
 
     // 旧内核性能采集（ADR 0117 C2 / C6）：longtask 是唯一可用的长任务口径
     await page.evaluateOnNewDocument(() => {
-      window.__cndbPerf = { longTasks: [] }
+      window.__cndbPerf = { longTasks: [], lastLongTaskEnd: 0 }
       try {
         new PerformanceObserver((list) => {
-          for (const entry of list.getEntries()) window.__cndbPerf.longTasks.push(entry.duration)
+          for (const entry of list.getEntries()) {
+            window.__cndbPerf.longTasks.push(entry.duration)
+            window.__cndbPerf.lastLongTaskEnd = entry.startTime + entry.duration
+          }
         }).observe({ entryTypes: ['longtask'] })
       } catch {
         // 极老内核不支持 longtask 时按 0 处理，不阻断功能冒烟
@@ -361,12 +388,26 @@ async function main() {
       await clickToNextFrame(page, `[data-mode="${mode}"]`)
       await sleep(1200)
     }
-    const viewDurations = []
+    // 每个视图轮转采样 5 次取中位数（ADR 0117 D10）：单次「点击→两帧」的尾部噪声
+    // （runner 抢占、GC、上一视图收尾）会直接进旧口径的最大值，同一份代码在共享 runner 上
+    // 会在 694–1100ms 间跳动；中位数只滤掉单次毛刺，真实回归会把整组样本一起抬高。
+    const VIEW_SAMPLES = 5
+    const viewSamples = Object.fromEntries(modes.map((mode) => [mode, []]))
     const viewLongTasks = {}
+    for (let round = 0; round < VIEW_SAMPLES; round += 1) {
+      for (const mode of modes) {
+        // 只在「最近 500ms 没有长任务」时才点击，避免把上一视图的收尾算进本次切换
+        await waitForQuiet(page)
+        const latency = await clickToNextFrame(page, `[data-mode="${mode}"]`)
+        if (latency != null) viewSamples[mode].push(latency)
+        await sleep(400)
+      }
+    }
+    // 渲染断言与逐视图长任务仍按旧窗口采集（点击后 1200ms 内的最长任务），覆盖不减少
     await resetLongTasks(page)
     for (const mode of modes) {
-      const latency = await clickToNextFrame(page, `[data-mode="${mode}"]`)
-      if (latency != null) viewDurations.push(latency)
+      await waitForQuiet(page)
+      await clickToNextFrame(page, `[data-mode="${mode}"]`)
       await sleep(1200)
       const rendered = await page.evaluate(() => document.body.innerText.length > 0)
       check(`视图切换 ${mode}`, rendered)
@@ -374,9 +415,16 @@ async function main() {
       await resetLongTasks(page)
     }
     if (!modes.length) notes.push('当前表没有多视图按钮（跳过视图切换）')
+    const viewMedians = {}
+    for (const mode of modes) {
+      if (viewSamples[mode].length) viewMedians[mode] = Math.round(median(viewSamples[mode]))
+    }
+    if (modes.length) {
+      notes.push(`视图切换中位数 ${JSON.stringify(viewMedians)}；样本 ${JSON.stringify(viewSamples)}`)
+    }
 
     // ── 3.5 旧内核性能基线（C2 / C6；阈值唯一来源 perf-budget.mjs）───────
-    const viewSwitchMs = viewDurations.length ? Math.max(...viewDurations) : null
+    const viewSwitchMs = Object.keys(viewMedians).length ? Math.max(...Object.values(viewMedians)) : null
     if (viewSwitchMs != null) {
       check(
         `视图切换 ≤ ${PERF_BUDGET.viewSwitchMs}ms`,
