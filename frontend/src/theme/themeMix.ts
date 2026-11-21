@@ -248,22 +248,39 @@ export function mixColor(colorA: string, pct: number, colorB: string): string {
   }) ?? `color-mix(in srgb, ${colorA} ${pct}%, ${colorB})`
 }
 
+/** 按主题缓存的求值结果：键为调用方给的主题标识（通常是 ThemeMode）。
+ *
+ * 旧内核每次 `getComputedStyle` 都会强制一次全文档样式重算，而主题颜色只由主题决定
+ * （字号 / 偏好只改尺寸），同一主题再次切换时直接复用上次算好的字面量，整段读样式开销归零。 */
+const MIX_VALUE_CACHE = new Map<string, Array<[string, string]>>()
+
 /** 按当前主题重算全部 `--cn-mix-*` 变量（旧内核 CSS 兜底依赖它）。
  *
  * 两阶段执行：先算完全部值（只读，一次计算样式快照），再统一写入（只写），
  * 避免读写交替把每一次写入都变成后续读取的强制样式重算。
  *
  * P1（ADR 0117 C3）：写入前比对该变量当前的**内联值**（读 inline style 不触发布局），
- * 值未变则跳过 —— 切回同一主题或多主题共用同一品牌色时不会重复写样式、重复触发重算。 */
-export function applyThemeMixVars(root?: HTMLElement): void {
+ * 值未变则跳过 —— 切回同一主题或多主题共用同一品牌色时不会重复写样式、重复触发重算。
+ *
+ * D9（ADR 0117）：传 `cacheKey` 时按主题缓存整轮结果，命中后不再读计算样式 ——
+ * 旧内核换主题的两次全文档样式重算里，读样式那次可以省掉。
+ * 不传则每次现算，行为与旧版一致（测试与一次性场景用）。 */
+export function applyThemeMixVars(root?: HTMLElement, cacheKey?: string): void {
   if (typeof document === 'undefined') return
   if (supportsColorMix()) return
   const target = root ?? document.documentElement
-  const readVar = snapshotVarReader()
-  const writes: Array<[string, string]> = []
-  for (const [name, spec] of Object.entries(MIX_REGISTRY)) {
-    const value = mixToLiteral(spec, readVar)
-    if (value) writes.push([`--cn-mix-${name}`, value])
+  let writes = cacheKey ? MIX_VALUE_CACHE.get(cacheKey) : undefined
+  if (!writes) {
+    const readVar = snapshotVarReader()
+    writes = []
+    let complete = true
+    for (const [name, spec] of Object.entries(MIX_REGISTRY)) {
+      const value = mixToLiteral(spec, readVar)
+      if (value) writes.push([`--cn-mix-${name}`, value])
+      else complete = false
+    }
+    // 只要有一条算不出来（样式表未就绪 / 变量缺失）就不入缓存，避免把半成品当成该主题的定值
+    if (cacheKey && complete) MIX_VALUE_CACHE.set(cacheKey, writes)
   }
   for (const [name, value] of writes) {
     if (target.style.getPropertyValue(name) === value) continue

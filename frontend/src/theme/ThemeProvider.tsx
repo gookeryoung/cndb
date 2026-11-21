@@ -180,8 +180,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     }
     applyBodyClass(mode)
     applyThemeVars(mode)
-    // Chrome 81 没有 color-mix()：按刚挂好的主题变量重算 --cn-mix-* 兜底（现代内核直接跳过）
-    applyThemeMixVars()
+    // Chrome 81 没有 color-mix()：按刚挂好的主题变量重算 --cn-mix-* 兜底（现代内核直接跳过）。
+    // 传 mode 作缓存键：配色只由主题决定，切回已访问过的主题直接复用字面量，省掉一次
+    // getComputedStyle 触发的全文档样式重算（ADR 0117 D9）。
+    applyThemeMixVars(undefined, mode)
     if (animate) {
       timer = window.setTimeout(() => root.classList.remove(THEME_SWITCHING_CLASS), SWITCH_MS + 80)
     }

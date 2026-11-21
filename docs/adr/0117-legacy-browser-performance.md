@@ -125,6 +125,7 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 | D6 | 长列表 | 沿用现有虚拟化，只补规模断言 | 主表、看板、甘特已虚拟化，无证据表明需另建路径 | 为旧内核单独实现渲染路径（维护双路径，收益未证实） | `frontend/src/pages/grid/gridTableSection.tsx` |
 | D7 | 首次同机标定与视图分级预算 | 长任务预算拆为主题 / 视图两类；视图默认 ≤ 250ms，看板 ≤ 1000ms；视图与主题测量前各预热一轮，首次懒加载 chunk 不计入「切换（不含网络）」口径；同轮把垫片深扫改为按元素断点续扫 | Chromium 81 本地实测：看板切换长任务 367–401ms（预热后 354ms，CI run 16 为 837ms）；关闭垫片 377ms、overscan 5→2 仅 −5%、移除 55 个 `Progress` 仅 −22%，证明是引擎渲染成本而非懒加载或垫片缺陷；阈值留 20% 余量 | 维持单值 250ms（500 行看板在 Chromium 81 不可达，门禁长期红）；放宽为全局 1000ms（削弱其他视图的回归检测）；并发时间切片（需 S2 改渲染架构，Chrome 81 收益未验证） | `frontend/scripts/perf-budget.mjs`、`frontend/scripts/chrome81-smoke.mjs`、`frontend/src/compat/flexGap.ts` |
 | D8 | 旧内核主题切换跳过过渡类与强制回流 | `.theme-switching` 与 `void root.offsetHeight` 仅在 `supportsColorMix()` 为真时执行；Chromium 81 路径直接跳过 | 2026-11-21 同会话 A/B（Chromium 81 r737027，flow 视图，各 10 次取中位数）：190.9ms → 164.5ms（−26.4ms，−14%）；切换内强制回流单次计时 36–46ms；CI 自 2026-11-17 起 themeSwitch 稳定 213–215ms 越过 200ms 阈值，回退与 0137（MainLayout/TablesList/CSS +800 行）同批，该项是其中可无损移除的一段 | 保留回流（旧内核没有过渡可记录，属白算一次全文档样式）；放宽 200ms 阈值（用户明确要求不放宽） | `frontend/src/theme/ThemeProvider.tsx`、`frontend/src/theme/ThemeProvider.test.tsx` |
+| D9 | 旧内核按主题缓存 mix 求值结果 | `applyThemeMixVars(root?, cacheKey)` 增加按主题的结果缓存：命中后整轮跳过 `getComputedStyle`，只写变量；只有全部规格都解析成功才入缓存（样式表未就绪的半成品不缓存） | D8 落地后 CI run 44853809455 仍为 203.7ms（超 3.7ms），本地冒烟 184ms —— 剩余成本里仍有一次「读计算样式强制全文档重算」。按 C3 的「按主题缓存」补齐实现后，本地 Chromium 81 冒烟 themeSwitchMs 184 → 142ms；冒烟预热本就会切到被测的两个主题，测量段全部命中缓存，不依赖「只测冷启动」的口径 | 每次现读（旧内核每次换主题多一次全文档样式重算，CI 已实测压不过阈值）；构建期预生成 mix 变量（D3 已否决）；把 mix 写入推迟到下一帧（会掉一帧兜底色，视觉回退） | `frontend/src/theme/themeMix.ts`、`frontend/src/theme/ThemeProvider.tsx`、`frontend/src/theme/themeMix.test.ts` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -169,8 +170,8 @@ Related: `frontend/src/theme/themeMix.ts`、`frontend/src/index.css`、`frontend
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 全部落地；D7 首次同机标定已回填基线表，D8（旧内核主题切换去掉过渡类与强制回流）已落地，两项均待 CI 复测与人工确认 `Status` 是否改 `Implemented`
-- 已完成：冒烟性能段（longtask + 首屏 / 主题 / 视图时延，超阈值非 0 退出）；`perf-budget.mjs` 阈值单点；`applyThemeMixVars` 快照读 + 批量写 + 值未变不写；全页过渡能力门控；`capabilities.ts` 收敛能力探测；flex-gap 垫片去重 / 浅扫 / 深扫断点续扫 / 自写抑制；图表主题核实为实例复用；D7：阈值按实测拆分为主题 / 视图两类，看板单独 1000ms，测量前预热；D8：旧内核跳过过渡类与强制回流（同会话 A/B median 190.9 → 164.5ms，−14%）
-- 下一步：推送后触发 `chrome81-smoke` CI 运行，确认 0 失败；若同机读数仍超阈值，先确认 D8 已生效，再区分 runner 抖动与真实回退，按 D7 流程调整；如确需重新标定，必须写明 0137（MainLayout/TablesList/CSS +800 行）带来的整体上移与 CI 相对本地的余量，不得只用本地数字定阈值
+- 当前阶段：P0 / P1 / P2 全部落地；D7 首次同机标定已回填基线表，D8（旧内核主题切换去掉过渡类与强制回流）与 D9（按主题缓存 mix 求值结果）已落地，均待 CI 复测与人工确认 `Status` 是否改 `Implemented`
+- 已完成：冒烟性能段（longtask + 首屏 / 主题 / 视图时延，超阈值非 0 退出）；`perf-budget.mjs` 阈值单点；`applyThemeMixVars` 快照读 + 批量写 + 值未变不写；全页过渡能力门控；`capabilities.ts` 收敛能力探测；flex-gap 垫片去重 / 浅扫 / 深扫断点续扫 / 自写抑制；图表主题核实为实例复用；D7：阈值按实测拆分为主题 / 视图两类，看板单独 1000ms，测量前预热；D8：旧内核跳过过渡类与强制回流（同会话 A/B median 190.9 → 164.5ms，−14%）；D9：按主题缓存 mix 求值结果，命中后不再读计算样式（本地冒烟 themeSwitchMs 184 → 142ms）
+- 下一步：推送后触发 `chrome81-smoke` CI 运行，确认 0 失败；若同机读数仍超阈值，先确认 D8 / D9 已生效，再区分 runner 抖动与真实回退，按 D7 流程调整；如确需重新标定，必须写明 0137（MainLayout/TablesList/CSS +800 行）带来的整体上移与 CI 相对本地的余量，不得只用本地数字定阈值
 - 已知坑：Chromium 81 无 Event Timing / INP，只能用 `PerformanceObserver('longtask')` + `requestAnimationFrame` 手工计时；无头 Chromium 81 无 WebGL，设计预览走降级提示；运行后端测试前需 `unset LD_LIBRARY_PATH`；本地复现需 `CNDB_CHROME81_PATH` 指向 r737027 快照（系统 glib 冲突时用 `env -u LD_LIBRARY_PATH`）；看板切换在 Chromium 81 上是渲染热点（500 行 × 55 张卡片），预热与垫片优化都无法降到 250ms
-- 最近一次全绿：本地 Chromium 81 冒烟 + `flexGap.test.ts` + `make check-docs` @ 2026-11-08（D7 改动已提交 `1bf7de78`）；本地 Chromium 81 冒烟 + `src/theme` 107 个测试 + `eslint` @ 2026-11-21（D8 改动）
+- 最近一次全绿：本地 Chromium 81 冒烟 + `flexGap.test.ts` + `make check-docs` @ 2026-11-08（D7 改动已提交 `1bf7de78`）；本地 Chromium 81 冒烟（themeSwitchMs 142）+ `src/theme` 109 个测试 + `eslint` @ 2026-11-21（D8 / D9 改动）

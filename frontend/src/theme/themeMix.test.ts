@@ -166,4 +166,46 @@ describe('applyThemeMixVars', () => {
 
     expect(setProperty).not.toHaveBeenCalled()
   })
+
+  it('同一主题再次切换命中结果缓存，不再读计算样式（ADR 0117 D9）', () => {
+    stubColorMixSupport(false)
+    // 只有全部规格都能解析才会入缓存，因此给齐注册表引用的基础变量
+    setTokens({
+      '--cn-bg-container': '#ffffff',
+      '--cn-text-primary': '#111827',
+      '--cn-text-disabled': '#d1d5db',
+      '--cn-border': '#e5e7eb',
+      '--cn-brand-color': '#1677ff',
+      '--cn-shadow-color': '15 23 42',
+      '--cn-code-block-bg': '#f6f8fa',
+      '--cn-bg-danger-subtle': '#fff2f0',
+      '--cn-auth-bg': '#05070c',
+      '--cn-auth-accent': '#22d3ee',
+      '--cn-auth-accent-alt': '#38bdf8',
+      '--cn-auth-ink': '#e2e8f0',
+    })
+    applyThemeMixVars(undefined, 'cache-light')
+    const spy = vi.spyOn(window, 'getComputedStyle')
+
+    applyThemeMixVars(undefined, 'cache-light')
+    expect(spy).not.toHaveBeenCalled()
+
+    // 未缓存过的主题仍要现算一次，并按新主题写入
+    setTokens({ '--cn-brand-color': '#722ed1', '--cn-bg-container': '#1f1f1f' })
+    applyThemeMixVars(undefined, 'cache-dark')
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(document.documentElement.style.getPropertyValue('--cn-mix-brand-color-12-bg-container'))
+      .toBe('rgb(41, 33, 52)')
+  })
+
+  it('有规格解析不出来时不入缓存（避免把半成品当成该主题的定值）', () => {
+    stubColorMixSupport(false)
+    // 只给字面量规格用得到的变量，var(--cn-bg-container) 等解析失败 → 整轮不入缓存
+    setTokens({ '--cn-brand-color': '#1677ff' })
+    applyThemeMixVars(undefined, 'cache-partial')
+    const spy = vi.spyOn(window, 'getComputedStyle')
+
+    applyThemeMixVars(undefined, 'cache-partial')
+    expect(spy).toHaveBeenCalledTimes(1)
+  })
 })
