@@ -449,11 +449,20 @@ async function main() {
       'plate(width, height, 12)',
       '',
     ].join('\n')
-    const design = await fetchJson(`/api/v1/workspaces/${seed.workspace.id}/designs`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${seed.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: '冒烟-法兰板', description: 'Chromium 81 冒烟样例', content: DESIGN_CONTENT }),
-    })
+    const DESIGN_TITLE = '冒烟-法兰板'
+    const designUrl = `/api/v1/workspaces/${seed.workspace.id}/designs`
+    const authHeaders = { Authorization: `Bearer ${seed.token}` }
+    // 同名设计在同工作区内唯一（新建冲突返回 409）：复用已有项，便于对同一后端重复跑冒烟
+    const existingDesigns = await fetchJson(
+      `${designUrl}?q_title=${encodeURIComponent(DESIGN_TITLE)}`,
+      { headers: authHeaders },
+    )
+    const design = existingDesigns.find((it) => it.title === DESIGN_TITLE)
+      ?? await fetchJson(designUrl, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: DESIGN_TITLE, description: 'Chromium 81 冒烟样例', content: DESIGN_CONTENT }),
+      })
     await page.goto(`${baseUrl}/w/${seed.workspace.id}/design`, {
       waitUntil: 'domcontentloaded',
       timeout: 30_000,
@@ -495,25 +504,19 @@ async function main() {
     // puppeteer-core 3.x（兼容 Chromium 81 的最后一代）只有 target().createCDPSession()
     const client = await page.target().createCDPSession()
     await client.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: downloadDir })
-    // 等待表头与导出入口同时就绪，避免弹窗在表格渲染前被打开
-    await page.waitForSelector('[data-testid="import-export-btn"]', { timeout: 20_000 })
-    await page.click('[data-testid="import-export-btn"]')
+    // 等待表头与导出入口同时就绪，避免弹窗在表格渲染前被打开。
+    // 2026 拆分：导出已从「更新 / 导出」共窗剥离为独立 ExportDialog（title「导出」，无 Tab），
+    // 入口按钮随之拆为 export-btn；仍点 import-export-btn 只会打开「更新」弹窗，等不到导出面板。
+    await page.waitForSelector('[data-testid="export-btn"]', { timeout: 20_000 })
+    await page.click('[data-testid="export-btn"]')
     await page.waitForFunction(
-      () => Array.from(document.querySelectorAll('.ant-modal-title')).some((el) => el.textContent?.includes('更新 / 导出')),
-      { timeout: 20_000 },
+      () => Array.from(document.querySelectorAll('.ant-modal-title')).some((el) => el.textContent?.trim() === '导出'),
+      { timeout: 30_000 },
     )
-    // antd Tabs / Select 在 Chrome 81 上只吃原生 click 事件链：真实鼠标点击会因
-    // 顶部 Tab 的命中测试落空，故统一走 element.click() + mousedown/mouseup 三连。
+    // antd 6 移除了 .ant-select-selector，mousedown 事件需派发到 .ant-select 根节点
+    await page.waitForSelector('.ant-modal .ant-select', { timeout: 15_000 })
     await page.evaluate(() => {
-      const tabs = document.querySelectorAll('.ant-modal .ant-tabs-tab-btn')
-      if (tabs.length < 2) throw new Error('未找到导出 Tab')
-      tabs[1].click()
-    })
-    // antd 6：Tab 面板类名由 .ant-tabs-tabpane 改为 .ant-tabs-content（激活态 .ant-tabs-content-active）；
-    // 同时移除了 .ant-select-selector，mousedown 事件需派发到 .ant-select 根节点
-    await page.waitForSelector('.ant-modal .ant-tabs-content-active .ant-select', { timeout: 15_000 })
-    await page.evaluate(() => {
-      const selector = document.querySelector('.ant-modal .ant-tabs-content-active .ant-select')
+      const selector = document.querySelector('.ant-modal .ant-select')
       selector.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
       selector.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
       selector.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -529,7 +532,7 @@ async function main() {
       option.click()
     })
     await page.waitForFunction(
-      () => (document.querySelector('.ant-modal .ant-tabs-content-active .ant-select-content')?.textContent ?? '')
+      () => (document.querySelector('.ant-modal .ant-select-content')?.textContent ?? '')
         .includes('PDF'),
       { timeout: 10_000 },
     )
@@ -554,8 +557,7 @@ async function main() {
       }
     })
     await page.evaluate(() => {
-      const active = document.querySelector('.ant-modal .ant-tabs-content-active')
-      const button = Array.from(active?.querySelectorAll('button') ?? [])
+      const button = Array.from(document.querySelectorAll('.ant-modal .cn-export-actions button'))
         .find((el) => (el.textContent || '').trim() === '下载')
       if (!button) throw new Error('未找到下载按钮')
       button.click()
