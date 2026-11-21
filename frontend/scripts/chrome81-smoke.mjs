@@ -106,6 +106,26 @@ function median(values) {
   return sorted[Math.floor((sorted.length - 1) / 2)]
 }
 
+/** 机器速度校准：固定整数运算跑 3 次取最小值（近似该机满速），用于把绝对阈值换算到当次 runner.
+ *
+ * 共享 runner 会被邻居抢占：同一份代码两次运行的全部指标（含首屏）能整体相差 1.7 倍，
+ * 这不是代码回归。用一段与被测页面无关的定长 CPU 工作量做标尺，才能区分「机器慢了」与「代码慢了」。
+ */
+async function measureCalibration(page) {
+  return page.evaluate(() => {
+    const run = () => {
+      const started = performance.now()
+      let acc = 0
+      for (let i = 0; i < 60_000_000; i += 1) acc = (Math.imul(acc, 31) + (i & 1023)) | 0
+      window.__cndbCalibAcc = acc
+      return performance.now() - started
+    }
+    let best = Infinity
+    for (let i = 0; i < 3; i += 1) best = Math.min(best, run())
+    return Math.round(best * 10) / 10
+  })
+}
+
 /** 自上次 reset 以来的最长长任务（毫秒） */
 async function maxLongTask(page) {
   return page.evaluate(() => {
@@ -382,6 +402,11 @@ async function main() {
     const modes = await page.$$eval('[data-mode]', (els) =>
       els.map((el) => el.getAttribute('data-mode')).filter(Boolean),
     )
+    // 机器速度标尺（D11）：裸 CPU 工作量，与页面无关，用来把绝对阈值换算到当次 runner
+    // 放在视图测量之前取一次、主题测量之后再取一次，便于看清整轮里 runner 是否被抢占
+    const calibrationMs = await measureCalibration(page)
+    console.log(`[chrome81] calibration: ${calibrationMs}ms`)
+
     // 预热：首次进入视图会拉取懒加载 chunk（KanbanView / ChartView 等），属于一次性加载成本，
     // 不计入「视图切换（不含网络）」口径（ADR 0117 D7）
     for (const mode of modes) {
@@ -423,6 +448,8 @@ async function main() {
       notes.push(`视图切换中位数 ${JSON.stringify(viewMedians)}；样本 ${JSON.stringify(viewSamples)}`)
     }
 
+    const calibrationAfterMs = await measureCalibration(page)
+
     // ── 3.5 旧内核性能基线（C2 / C6；阈值唯一来源 perf-budget.mjs）───────
     const viewSwitchMs = Object.keys(viewMedians).length ? Math.max(...Object.values(viewMedians)) : null
     if (viewSwitchMs != null) {
@@ -461,6 +488,8 @@ async function main() {
       themeSwitchMs: themePerf.themeSwitchMs == null ? null : Math.round(themePerf.themeSwitchMs),
       themeLongTaskMs: Math.round(themePerf.longTaskMs),
       viewSwitchMs: viewSwitchMs == null ? null : Math.round(viewSwitchMs),
+      calibrationMs,
+      calibrationAfterMs,
       viewLongTasksMs: Object.fromEntries(
         Object.entries(viewLongTasks).map(([mode, ms]) => [mode, Math.round(ms)]),
       ),
