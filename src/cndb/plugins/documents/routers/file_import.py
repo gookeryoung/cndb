@@ -1,4 +1,4 @@
-"""documents 插件：通用文件导入路由（单文件 / 文件夹，md / docx / html）.
+"""documents 插件：通用文件导入路由（多文件批次，md / docx / html）.
 
 端点：
 - ``POST /{workspace_id}/documents/import/files/analyze``  只读预览（multipart 文件批次，不落库）
@@ -62,7 +62,7 @@ def _merge_skipped(result: dict[str, Any], invalid: list[dict[str, str]], key: s
 @router.post("/import/files/analyze")
 async def analyze_document_files(
     workspace_id: int,
-    files: Annotated[list[UploadFile], File(description="待导入文件（支持文件夹模式的多个文件）")],
+    files: Annotated[list[UploadFile], File(description="待导入文件（可一次选中多个文件）")],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     paths: Annotated[list[str] | None, Form(description="与 files 一一对应的批次内相对路径")] = None,
@@ -94,7 +94,7 @@ async def analyze_document_files(
 @router.post("/import/files")
 async def import_document_files(
     workspace_id: int,
-    files: Annotated[list[UploadFile], File(description="待导入文件（支持文件夹模式的多个文件）")],
+    files: Annotated[list[UploadFile], File(description="待导入文件（可一次选中多个文件）")],
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     paths: Annotated[list[str] | None, Form(description="与 files 一一对应的批次内相对路径")] = None,

@@ -66,7 +66,8 @@ class _UploadStore:
         self.bytes_written = 0
         self.asset_written = 0
         self.asset_bytes = 0
-        self._pending: list[str] = []
+        #: 已落盘但尚未登记归属的文件：(key, 字节数, 是否原件)
+        self._pending: list[tuple[str, int, bool]] = []
 
     def store(self, data: bytes, name: str) -> str | None:
         """落盘一个内嵌图片，返回站点文件 key（未启用返回 None）."""
@@ -79,12 +80,12 @@ class _UploadStore:
 
         与 `import_attachments` 开关无关：原件是文档本体，必须落盘（ADR 0025 D4）。
         """
-        key = self._write(data, name)
+        key = self._write(data, name, asset=True)
         self.asset_written += 1
         self.asset_bytes += len(data)
         return key
 
-    def _write(self, data: bytes, name: str) -> str:
+    def _write(self, data: bytes, name: str, *, asset: bool = False) -> str:
         suffix = Path(name).suffix.lower()
         key = f"{uuid.uuid4().hex}{suffix}"
         directory = Path(settings.UPLOAD_DIR) / str(self.workspace_id)
@@ -92,14 +93,14 @@ class _UploadStore:
         (directory / key).write_bytes(data)
         self.written += 1
         self.bytes_written += len(data)
-        self._pending.append(key)
+        self._pending.append((key, len(data), asset))
         return key
 
     def bind_pending(self, document_id: int) -> None:
         """把自上次绑定以来落盘的附件登记到该文档（下载按文档权限校验）."""
         if not self._pending:
             return
-        for key in self._pending:
+        for key, _, _ in self._pending:
             self.db.add(
                 FileOwner(
                     file_key=key,
@@ -110,6 +111,19 @@ class _UploadStore:
             )
         self._pending.clear()
         self.db.commit()
+
+    def discard_pending(self) -> None:
+        """丢弃本条已落盘但未登记的附件（逐条导入失败时清理，不留孤儿文件占配额）."""
+        from cndb.plugins.files.services import remove_workspace_file
+
+        for key, size, asset in self._pending:
+            remove_workspace_file(self.workspace_id, key)
+            self.written -= 1
+            self.bytes_written -= size
+            if asset:
+                self.asset_written -= 1
+                self.asset_bytes -= size
+        self._pending.clear()
 
 
 def _folder_groups(docs: Iterable[ImportedDoc]) -> set[tuple[str, ...]]:
@@ -234,6 +248,13 @@ def analyze_files(
     }
 
 
+def _record_skip(stats: dict[str, Any], path: str, reason: str) -> None:
+    """记一条跳过明细（明细上限 DETAIL_LIMIT，计数不封顶）."""
+    stats["skipped"] += 1
+    if len(stats["skipped_files"]) < DETAIL_LIMIT:
+        stats["skipped_files"].append({"path": path, "reason": reason})
+
+
 def import_files(
     db: Session,
     workspace_id: int,
@@ -327,73 +348,81 @@ def import_files(
                 docx_mode=docx_mode,
             )
         except UnsupportedImport as exc:
-            stats["skipped"] += 1
-            if len(stats["skipped_files"]) < DETAIL_LIMIT:
-                stats["skipped_files"].append({"path": item.path, "reason": str(exc)})
+            _record_skip(stats, item.path, str(exc))
             continue
 
         for message in doc.warnings:
             if len(stats["warnings"]) < DETAIL_LIMIT:
                 stats["warnings"].append({"path": item.path, "message": message})
 
-        folder = tuple(doc.path.split("/")[:-1])
-        parent = ensure_folder(folder)
-        title = doc.title
-        existing = _existing_child(siblings, parent, title)
+        # 单条落库失败（磁盘/库异常）不得中断整批：回滚本条事务、清理未登记附件，
+        # 记入 skipped_files，其余文件照常导入（多选导入的部分失败呈现）。
+        saved: Document | None = None
+        try:
+            folder = tuple(doc.path.split("/")[:-1])
+            parent = ensure_folder(folder)
+            title = doc.title
+            existing = _existing_child(siblings, parent, title)
 
-        if existing is not None and existing.is_folder:
-            title = _next_title(siblings, parent, title)
-            existing = None
-        elif existing is not None and conflict == CONFLICT_SKIP:
-            stats["skipped"] += 1
-            if len(stats["skipped_files"]) < DETAIL_LIMIT:
-                stats["skipped_files"].append({"path": item.path, "reason": "同名文档已存在"})
-            continue
-        elif existing is not None and conflict == CONFLICT_RENAME:
-            title = _next_title(siblings, parent, title)
-            existing = None
-
-        if doc.asset:
-            # 原件族：同名 Markdown 文档不被覆盖（避免把可编辑正文换成只读原件），按改名处理
-            if existing is not None and existing.content_type not in ASSET_CONTENT_TYPES:
+            if existing is not None and existing.is_folder:
                 title = _next_title(siblings, parent, title)
                 existing = None
-            saved = _save_asset(db, workspace_id, user, store, item, doc, existing, parent, title, status, siblings)
+            elif existing is not None and conflict == CONFLICT_SKIP:
+                _record_skip(stats, item.path, "同名文档已存在")
+                continue
+            elif existing is not None and conflict == CONFLICT_RENAME:
+                title = _next_title(siblings, parent, title)
+                existing = None
+
+            if doc.asset:
+                # 原件族：同名 Markdown 文档不被覆盖（避免把可编辑正文换成只读原件），按改名处理
+                if existing is not None and existing.content_type not in ASSET_CONTENT_TYPES:
+                    title = _next_title(siblings, parent, title)
+                    existing = None
+                saved = _save_asset(db, workspace_id, user, store, item, doc, existing, parent, title, status, siblings)
+                outcome = "updated" if existing is not None else "created"
+            elif existing is not None:
+                saved = content_service.update_content(
+                    db,
+                    workspace_id,
+                    existing.id,
+                    user,
+                    content=doc.body,
+                    change_summary="从文件导入覆盖",
+                    change_type=CHANGE_TYPE_IMPORT,
+                )
+                outcome = "updated"
+            else:
+                order = len(siblings.get(parent, {}))
+                saved = content_service.create_document(
+                    db,
+                    workspace_id,
+                    user,
+                    title=title,
+                    content=doc.body,
+                    parent_id=(parent or None),
+                    status=status,
+                    sort_order=order,
+                    change_type=CHANGE_TYPE_IMPORT,
+                )
+                siblings.setdefault(parent, {})[title.strip().lower()] = saved
+                outcome = "created"
+
+            store.bind_pending(saved.id)
+        except Exception as exc:  # 单条失败隔离，见上方说明
+            db.rollback()
+            if saved is None:
+                # 文档尚未落库：本条落盘的附件都没人引用，直接清理
+                store.discard_pending()
+            logger.warning("文件导入落库失败 path=%s workspace_id=%s", item.path, workspace_id, exc_info=True)
+            _record_skip(stats, item.path, f"导入失败：{str(exc) or exc.__class__.__name__}")
+            continue
+
+        stats[outcome] += 1
+        if doc.asset:
             stats["assets"] += 1
             if saved.content_type == CONTENT_TYPE_PPTX:
                 pptx_doc_ids.append(saved.id)
-            if existing is not None:
-                stats["updated"] += 1
-            else:
-                stats["created"] += 1
-        elif existing is not None:
-            saved = content_service.update_content(
-                db,
-                workspace_id,
-                existing.id,
-                user,
-                content=doc.body,
-                change_summary="从文件导入覆盖",
-                change_type=CHANGE_TYPE_IMPORT,
-            )
-            stats["updated"] += 1
-        else:
-            order = len(siblings.get(parent, {}))
-            saved = content_service.create_document(
-                db,
-                workspace_id,
-                user,
-                title=title,
-                content=doc.body,
-                parent_id=(parent or None),
-                status=status,
-                sort_order=order,
-                change_type=CHANGE_TYPE_IMPORT,
-            )
-            siblings.setdefault(parent, {})[title.strip().lower()] = saved
-            stats["created"] += 1
-
-        store.bind_pending(saved.id)
         if len(stats["documents"]) < RESULT_DOCS_LIMIT:
             stats["documents"].append(
                 {"id": saved.id, "title": saved.title, "path": item.path, "format": saved.content_type}

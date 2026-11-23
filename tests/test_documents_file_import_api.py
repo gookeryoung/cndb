@@ -12,14 +12,17 @@ import io
 import quopri
 import struct
 import zlib
+from pathlib import Path
 
 import pytest
 from docx import Document as DocxDocument
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from cndb.core.config import settings
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import Document
+from cndb.plugins.documents.services import content as content_service
 from cndb.plugins.documents.services import importers
 from cndb.plugins.documents.services.importers import reader
 from cndb.plugins.files.models import FileOwner
@@ -480,6 +483,49 @@ class TestImportFiles:
         assert "broken.docx" in reasons
         assert "note.xyz" in reasons
         assert len(_flat(_tree(client, ws.id, auth))) == 1
+
+    def test_write_failure_isolated_per_file(self, client, db, ws, auth, monkeypatch):
+        """单条落库异常不中断整批：其余文件照常导入，失败条目进跳过明细，附件不留孤儿."""
+
+        def build(document):
+            document.add_heading("崩溃文档", level=1)
+            document.add_picture(io.BytesIO(PNG_BYTES))
+
+        real_create = content_service.create_document
+
+        def flaky_create(session, workspace_id, user, **kwargs):
+            if kwargs.get("title") == "崩溃文档":
+                raise RuntimeError("模拟落库失败")
+            return real_create(session, workspace_id, user, **kwargs)
+
+        monkeypatch.setattr(content_service, "create_document", flaky_create)
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(
+                ("good.md", MD_NOTE.encode(), "text/markdown"),
+                (
+                    "boom.docx",
+                    _make_docx(build),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ),
+            ),
+            data={"paths": ["good.md", "boom.docx"], "import_attachments": "true"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["created"] == 1
+        assert stats["skipped"] == 1
+        reasons = {entry["path"]: entry["reason"] for entry in stats["skipped_files"]}
+        assert "boom.docx" in reasons
+        assert reasons["boom.docx"].startswith("导入失败：")
+        # 失败条目已落盘的图片被清理，不占配额、不登记归属
+        assert stats["attachments"] == 0
+        assert db.execute(select(FileOwner).where(FileOwner.workspace_id == ws.id)).scalars().all() == []
+        assert list((Path(settings.UPLOAD_DIR) / str(ws.id)).glob("*")) == []
+        titles = [node["title"] for node in _flat(_tree(client, ws.id, auth))]
+        assert len(titles) == 1
+        assert "崩溃文档" not in titles
 
     def test_invalid_paths_reported(self, client, ws, auth):
         r = client.post(

@@ -1,4 +1,4 @@
-/** 文档导入三入口（单文件 / 文件夹 / Obsidian 库）共用的 UI 片段.
+/** 文档导入三入口（多文件 / 压缩包 / Obsidian 库）共用的 UI 片段.
  *
  * 口径统一在这里，三种模式只传内容不各自拼样式：
  * - ``ImportDropzone``：虚线拖放区（图标徽标 + 强标题 + 次要副标题 + 主按钮 + 说明气泡 + 已选状态）；
@@ -6,7 +6,7 @@
  * - ``ImportChoice`` / ``ImportConflictOptions`` / ``ImportSwitch`` / ``ImportStatusRadio`` / ``ImportOptionsPanel``：选项区同一套排布；
  * - ``ImportTruncatedHint``：预览截断提示。
  *
- * 图标语言也统一：模式选择器、拖放区、主按钮都用同一枚图标（单文件 / 文件夹 / zip 库）。
+ * 图标语言也统一：模式选择器、拖放区、主按钮都用同一枚图标（多文件 / zip 库）。
  */
 import type { ReactNode } from 'react'
 import { Button, Popover, Radio, Segmented, Space, Switch, Tooltip, Typography } from 'antd'

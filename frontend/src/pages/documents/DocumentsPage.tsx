@@ -163,7 +163,7 @@ export default function DocumentsPage() {
   const [rowMove, setRowMove] = useState<{ id: number; title: string; parent: number } | null>(null)
   // 回收站抽屉
   const [trashOpen, setTrashOpen] = useState(false)
-  // 通用导入弹窗（单文件 / 文件夹 / Obsidian 库 zip）
+  // 通用导入弹窗（多文件 / 压缩包 / Obsidian 库 zip）
   const [fileImportOpen, setFileImportOpen] = useState(false)
   // 最近打开：读取本地历史（清空后用 version 触发重渲染）
   const [recentVersion, setRecentVersion] = useState(0)
@@ -853,7 +853,7 @@ export default function DocumentsPage() {
             <Button icon={<FolderAddOutlined />} onClick={() => openCreate('folder')}>新建文件夹</Button>
             {/* 导入导出按钮组：紧凑并排，避免两个独立按钮占用过多横向空间 */}
             <Space.Compact>
-              <Tooltip title="导入：本地文件（Markdown / Word / HTML）单文件或整个文件夹，或整个 Obsidian 库（.zip），自动转 Markdown 并清理排版">
+              <Tooltip title="导入：本地文件（Markdown / Word / HTML 等）可一次选多个，或整个 Obsidian 库（.zip），自动转 Markdown 并清理排版">
                 <Button
                   icon={<ImportOutlined />}
                   data-testid="doc-file-import"
@@ -1294,7 +1294,7 @@ export default function DocumentsPage() {
 
       <TrashDrawer open={trashOpen} onClose={() => setTrashOpen(false)} wid={workspaceId} />
 
-      {/* 通用导入：单文件 / 文件夹 / Obsidian 库 zip，默认落在当前文件夹 */}
+      {/* 通用导入：多文件 / 压缩包 / Obsidian 库 zip，默认落在当前文件夹 */}
       <DocumentImportModal
         open={fileImportOpen}
         onClose={() => setFileImportOpen(false)}

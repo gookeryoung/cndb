@@ -1,5 +1,5 @@
 /**
- * 通用文件导入弹窗 —— 单文件 / 文件夹模式，支持 md、纯文本族、docx、html、mhtml。
+ * 通用文件导入弹窗 —— 多文件模式（一次可选择多个文件），支持 md、纯文本族、docx、html、mhtml。
  *
  * 两段式与数据表/Obsidian 导入一致：
  * 1. ``POST /import/files/analyze`` 只解析（本地读取 + 转换）不写库，展示篇数 / 文件夹 / 冲突 / 跳过；
@@ -56,7 +56,7 @@ interface Props {
   parentLabel?: string
 }
 
-type ImportMode = 'single' | 'archive' | 'vault'
+type ImportMode = 'files' | 'archive' | 'vault'
 
 /** 处理方式（互斥）：把源格式转成可编辑 Markdown，或保留原件原样存档 */
 type ProcessMode = 'convert' | 'archive'
@@ -101,7 +101,7 @@ const FORMAT_LABEL: Record<string, string> = {
   '.bmp': '图片',
 }
 
-/** 把浏览器选中的文件整理为批次条目（单文件模式取文件名） */
+/** 把浏览器选中的文件整理为批次条目（多选时每个文件一条，取文件名作路径） */
 function toEntries(files: FileList | null): FileImportEntry[] {
   if (!files) return []
   return Array.from(files).map(file => ({ file, path: file.name }))
@@ -111,7 +111,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const { message } = AntApp.useApp()
   const qc = useQueryClient()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [mode, setMode] = useState<ImportMode>('single')
+  const [mode, setMode] = useState<ImportMode>('files')
   const [entries, setEntries] = useState<FileImportEntry[]>([])
   const [analysis, setAnalysis] = useState<FileImportAnalyzeResult | null>(null)
   const [result, setResult] = useState<FileImportResult | null>(null)
@@ -181,9 +181,14 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
     onSuccess: data => {
       setResult(data)
       void qc.invalidateQueries({ queryKey: ['documents', workspaceId] })
-      message.success(
-        `导入完成：新增 ${data.created} 篇、更新 ${data.updated} 篇、跳过 ${data.skipped} 篇`,
-      )
+      const imported = data.created + data.updated
+      if (imported === 0 && data.skipped > 0) {
+        message.error(`未能导入：${data.skipped} 个文件被跳过，详见结果里的跳过明细`)
+      } else if (data.skipped > 0) {
+        message.warning(`部分导入：新增 ${data.created} 篇、更新 ${data.updated} 篇、跳过 ${data.skipped} 个`)
+      } else {
+        message.success(`导入完成：新增 ${data.created} 篇、更新 ${data.updated} 篇`)
+      }
     },
     onError: (err: unknown) => {
       message.error(err instanceof Error ? err.message : '导入失败')
@@ -268,6 +273,13 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
   const busy = analyzeMut.isPending || importMut.isPending
   const targetText = parentLabel ? `「${parentLabel}」文件夹` : '根目录'
 
+  /** 导入结果里真正落库的篇数（新增 + 更新），与跳过数区分开做部分失败呈现 */
+  const importedTotal = result ? result.created + result.updated : 0
+  const partialImport = result !== null && importedTotal > 0 && result.skipped > 0
+  const nothingImported = result !== null && importedTotal === 0 && result.skipped > 0
+  /** 跳过明细最多列 10 条，其余只给数量（后端明细本身也有上限） */
+  const shownSkipped = result ? Math.min(result.skipped_files.length, 10) : 0
+
   /** 解析结果的紧凑统计：零值走次要色，避免一行里全是 0 抢注意力 */
   const summaryItems = analysis
     ? [
@@ -276,7 +288,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         { key: 'assets', label: '原样存档', value: `${analysis.assets ?? 0} 个`, zero: (analysis.assets ?? 0) === 0 },
         { key: 'folders', label: '新建文件夹', value: `${analysis.total_folders} 个`, zero: analysis.total_folders === 0 },
         { key: 'conflicts', label: '同名冲突', value: `${analysis.conflicts} 篇`, zero: analysis.conflicts === 0 },
-        { key: 'skipped', label: '跳过', value: `${analysis.skipped.length} 个`, zero: analysis.skipped.length === 0 },
+        { key: 'skipped', label: '跳过', value: `${analysis.total_files - analysis.total_documents} 个`, zero: analysis.total_files === analysis.total_documents },
         { key: 'warnings', label: '告警', value: `${analysis.warnings.length} 条`, zero: analysis.warnings.length === 0 },
       ]
     : []
@@ -308,7 +320,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         </Button>,
       ]
 
-  /** 模式选择器：单文件 / 压缩包 / Obsidian 库（压缩包与 Obsidian 库均上传 .zip，与导出对齐） */
+  /** 模式选择器：多文件 / 压缩包 / Obsidian 库（压缩包与 Obsidian 库均上传 .zip，与导出对齐） */
   const modeSelector = (
     <Space size={16} wrap>
       <Typography.Text type="secondary">导入模式</Typography.Text>
@@ -319,13 +331,13 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
         data-testid="file-import-mode"
         options={[
           {
-            value: 'single',
+            value: 'files',
             label: (
               <Space size={6}>
                 <span aria-hidden>
                   <FileTextOutlined />
                 </span>
-                单文件
+                多文件
               </Space>
             ),
           },
@@ -381,15 +393,21 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               onClose={close}
             />
           </>
-        ) : mode === 'single' && result ? (
+        ) : mode === 'files' && result ? (
           <div
             data-testid="file-import-result"
             style={{ display: 'flex', flexDirection: 'column', gap: 12 }}
           >
             <Alert
-              type="success"
+              type={nothingImported ? 'error' : partialImport ? 'warning' : 'success'}
               showIcon
-              title={`已导入到${targetText}`}
+              title={
+                nothingImported
+                  ? '没有导入任何文件'
+                  : partialImport
+                    ? `部分文件导入完成（跳过 ${result.skipped} 个）`
+                    : `已导入到${targetText}`
+              }
               description={
                 `新增 ${result.created} 篇 · 更新 ${result.updated} 篇 · 跳过 ${result.skipped} 个 · ` +
                 `新建文件夹 ${result.folders_created} 个 · 原样存档 ${result.assets ?? 0} 个 · 内嵌图片 ${result.attachments} 个`
@@ -400,7 +418,7 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
             ))}
             {result.skipped_files.length > 0 && (
               <div>
-                <Typography.Text strong>跳过明细</Typography.Text>
+                <Typography.Text strong>跳过明细（{result.skipped} 个）</Typography.Text>
                 <ul style={{ margin: '4px 0 0', paddingLeft: 18, fontSize: 'var(--cn-text-xs)' }}>
                   {result.skipped_files.slice(0, 10).map(item => (
                     <li key={item.path}>
@@ -408,6 +426,11 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
                     </li>
                   ))}
                 </ul>
+                {result.skipped > shownSkipped && (
+                  <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+                    仅列出前 {shownSkipped} 个，其余 {result.skipped - shownSkipped} 个未列出
+                  </Typography.Text>
+                )}
               </div>
             )}
             <ImportFooter>{footer}</ImportFooter>
@@ -416,10 +439,11 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
           <>
             {modeSelector}
 
-            {/* 原生 file input：单文件模式选一个；压缩包 / 库模式走 VaultImportForm 的 zip 输入 */}
+            {/* 原生 file input：多文件模式可一次选中多个；压缩包 / 库模式走 VaultImportForm 的 zip 输入 */}
             <input
               ref={inputRef}
               type="file"
+              multiple
               accept={FILE_IMPORT_ACCEPT}
               style={{ display: 'none' }}
               data-testid="file-import-input"
@@ -436,13 +460,14 @@ export default function DocumentImportModal({ open, onClose, workspaceId, parent
               helpTestId="file-import-help"
               icon={<FileTextOutlined />}
               title="选择文件导入"
-              subtitle={`导入到${targetText} · 支持 Markdown / 文本 / Word / HTML / MHTML / PDF / Excel / PPT / 图片`}
+              subtitle={`导入到${targetText} · 支持多选 · 支持 Markdown / 文本 / Word / HTML / MHTML / PDF / Excel / PPT / 图片`}
               actionLabel="选择文件"
               disabled={busy}
               onPick={() => inputRef.current?.click()}
               helpTitle="格式与处理方式"
               help={
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 'var(--cn-text-xs)', lineHeight: 1.9, maxWidth: 360 }}>
+                  <li>可一次选择多个文件批量导入；某个文件失败只跳过该条，结果里会列出被跳过的文件与原因</li>
                   <li>转 Markdown：Markdown / HTML 直接转换；文本族（txt / log / csv / json / yaml 等）按原文入库；Word、MHTML 选「转 Markdown」后转为可编辑文档</li>
                   <li>原样存档：PDF / Excel / PPT / 图片固定原样存档；Word、MHTML 选「原样存档」时保留原件，可预览、可下载，不可编辑</li>
                   <li>旧版 .xls / .ppt / .doc 无在线预览，仅可下载</li>

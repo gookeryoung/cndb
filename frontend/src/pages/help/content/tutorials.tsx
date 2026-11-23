@@ -685,7 +685,7 @@ const documents: HelpTopic = {
                     items={[
                         '整个文档树用 .zip 压缩包导入（与导出对齐）：顶部「导入」选「压缩包」，上传由「导出 → 压缩文档 / Obsidian 库」生成的包，或同结构的自建 zip。包内目录层级还原为文件夹，Markdown 按正文导入。',
                         '压缩包里的 PDF / Word / Excel / PPT / 图片 / MHTML 按原件导入为只读文档（与导出可双向回环）；站内图片随包还原为附件，正文引用保持可用。',
-                        '「单文件」导入还支持纯文本族：txt / text / log / csv / tsv / json / yaml / xml / ini / conf / properties / rst。文本按原文入库（只统一换行、去首尾空行），不解析 front-matter、不剥标题、不重排空白，标题取文件名；压缩包里的文本文件同样按文档导入。',
+                        '「多文件」导入可一次选中多个文件批量导入，单个文件失败只跳过该条并列出原因，不影响其余文件；还支持纯文本族：txt / text / log / csv / tsv / json / yaml / xml / ini / conf / properties / rst。文本按原文入库（只统一换行、去首尾空行），不解析 front-matter、不剥标题、不重排空白，标题取文件名；压缩包里的文本文件同样按文档导入。',
                         'Obsidian 库（.zip）用「Obsidian 库」模式：目录结构、front-matter 标题 / 标签、双链与 .canvas / .base 转换都按库口径还原。',
                         '导入前先预览（篇数 / 原件 / 文件夹 / 同名冲突 / 忽略条目），确认冲突处理方式后再写入；重复标题可跳过、改名或覆盖。',
                     ]}

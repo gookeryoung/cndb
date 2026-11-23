@@ -1,8 +1,8 @@
 /**
- * 通用导入弹窗测试 —— 单文件 / 文件夹 / Obsidian 库三种模式。
+ * 通用导入弹窗测试 —— 多文件 / 压缩包 / Obsidian 库三种模式。
  *
  * 覆盖：预览摘要与冲突提示 / 模式切换与相对路径 / 库模式切到 VaultImportForm /
- * 冲突策略与开关传递 / 导入结果摘要与跳过明细 / 解析失败清空 / 未选文件时禁用提交。
+ * 冲突策略与开关传递 / 多选批次 / 导入结果摘要（含部分失败与全部跳过）/ 解析失败清空 / 未选文件时禁用提交。
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -125,7 +125,7 @@ const VAULT_ANALYSIS: VaultAnalyzeResult = {
 }
 
 describe('通用导入弹窗', () => {
-  it('模式选择器与拖放区共用一套图标（单文件 / 压缩包 / Obsidian 库）', async () => {
+  it('模式选择器与拖放区共用一套图标（多文件 / 压缩包 / Obsidian 库）', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
     const modeIcons = () =>
       Array.from(
@@ -137,7 +137,7 @@ describe('通用导入弹窗', () => {
       expect.stringContaining('anticon-appstore'),
     ])
 
-    // 单文件：拖放区用文档图标
+    // 多文件：拖放区用文档图标
     expect(document.querySelector('[data-testid="file-import-dropzone"] .anticon-file-text')).toBeTruthy()
 
     // 压缩包：与「Obsidian 库」共用 zip 卡片，只是文案不同
@@ -169,12 +169,12 @@ describe('通用导入弹窗', () => {
     expect(vaultZone.querySelector('[data-testid="vault-import-picked"]')).toBeNull()
   })
 
-  it('压缩包模式的纵向节奏与单文件一致（同一 flex 容器 + 12px 间距）', async () => {
+  it('压缩包模式的纵向节奏与多文件一致（同一 flex 容器 + 12px 间距）', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
     const bodyRoot = () =>
       document.querySelector('[data-testid="file-import-modal"] .ant-modal-body > div') as HTMLElement
 
-    // 单文件：选择器与上传卡同属一个 flex column，底部动作条收尾
+    // 多文件：选择器与上传卡同属一个 flex column，底部动作条收尾
     expect(bodyRoot()).toHaveStyle({ display: 'flex', flexDirection: 'column', gap: '12px' })
     expect(bodyRoot().lastElementChild).toBe(screen.getByTestId('import-footer'))
 
@@ -191,21 +191,21 @@ describe('通用导入弹窗', () => {
     expect(vaultRoot.lastElementChild).toBe(screen.getByTestId('import-footer'))
   })
 
-  it('压缩包 / 库模式共用 zip 卡片，可切回单文件模式', async () => {
+  it('压缩包 / 库模式共用 zip 卡片，可切回多文件模式', async () => {
     vi.spyOn(documentsApi, 'vaultAnalyze').mockResolvedValue(VAULT_ANALYSIS)
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
 
     fireEvent.click(screen.getByRole('radio', { name: 'Obsidian 库' }))
     expect(await screen.findByTestId('vault-import-upload')).toBeInTheDocument()
 
-    // 切回单文件模式：zip 卡片消失，文件上传区恢复
-    fireEvent.click(screen.getByRole('radio', { name: '单文件' }))
+    // 切回多文件模式：zip 卡片消失，文件上传区恢复
+    fireEvent.click(screen.getByRole('radio', { name: '多文件' }))
     await waitFor(() => expect(screen.queryByTestId('vault-import-upload')).not.toBeInTheDocument())
     expect(screen.getByTestId('file-import-pick')).toBeInTheDocument()
   })
 
 
-  it('单文件上传后展示预览与同名冲突提示', async () => {
+  it('多文件上传后展示预览与同名冲突提示', async () => {
     renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} parentId={null} />)
     pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
 
@@ -227,6 +227,30 @@ describe('通用导入弹窗', () => {
       mhtmlMode: 'convert',
       docxMode: 'convert',
     })
+  })
+
+  it('文件选择器允许多选，一次选中的多个文件全部进入同一批次', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    expect(fileInput()).toHaveAttribute('multiple')
+
+    pick([
+      new File(['# 说明'], '说明.md', { type: 'text/markdown' }),
+      new File(['# 设计'], '设计.md', { type: 'text/markdown' }),
+      new File(['%PDF-1.4'], '报告.pdf', { type: 'application/pdf' }),
+    ])
+
+    await screen.findByTestId('file-import-summary')
+    expect(screen.getByTestId('file-import-picked')).toHaveTextContent('已选 3 个文件')
+    expect(documentsApi.fileImportAnalyze).toHaveBeenCalledWith(
+      WID,
+      expect.objectContaining({
+        entries: [
+          expect.objectContaining({ path: '说明.md' }),
+          expect.objectContaining({ path: '设计.md' }),
+          expect.objectContaining({ path: '报告.pdf' }),
+        ],
+      }),
+    )
   })
 
   it('整个上传区可点击，格式说明与选择互不干扰', async () => {
@@ -400,6 +424,66 @@ describe('通用导入弹窗', () => {
     expect(result).toHaveTextContent('bad.txt（不支持的格式：.txt）')
     // 结果态下不再展示上传区
     expect(screen.queryByTestId('file-import-summary')).not.toBeInTheDocument()
+  })
+
+  it('部分文件被跳过时结果以警告呈现，并列出跳过明细', async () => {
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    pick([new File(['# 说明'], '说明.md', { type: 'text/markdown' })])
+    await screen.findByTestId('file-import-summary')
+    fireEvent.click(screen.getByTestId('file-import-submit'))
+
+    const result = await screen.findByTestId('file-import-result')
+    expect(result.querySelector('.ant-alert-warning')).toBeTruthy()
+    expect(result.querySelector('.ant-alert-success')).toBeNull()
+    expect(result).toHaveTextContent('部分文件导入完成（跳过 1 个）')
+    expect(result).toHaveTextContent('跳过明细（1 个）')
+    expect(result).toHaveTextContent('bad.txt（不支持的格式：.txt）')
+  })
+
+  it('全部文件被跳过时结果以错误呈现，不谎报成功', async () => {
+    vi.spyOn(documentsApi, 'fileImport').mockResolvedValue({
+      ...RESULT,
+      created: 0,
+      updated: 0,
+      skipped: 2,
+      total: 2,
+      documents: [],
+      skipped_files: [
+        { path: 'a.docx', reason: '导入失败：模拟落库异常' },
+        { path: 'b.docx', reason: '导入失败：模拟落库异常' },
+      ],
+    })
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    pick([new File(['PK'], 'a.docx', { type: 'application/octet-stream' })])
+    await screen.findByTestId('file-import-summary')
+    fireEvent.click(screen.getByTestId('file-import-submit'))
+
+    const result = await screen.findByTestId('file-import-result')
+    expect(result.querySelector('.ant-alert-error')).toBeTruthy()
+    expect(result).toHaveTextContent('没有导入任何文件')
+    expect(result).toHaveTextContent('a.docx（导入失败：模拟落库异常）')
+  })
+
+  it('跳过明细超过 10 条时提示其余数量', async () => {
+    vi.spyOn(documentsApi, 'fileImport').mockResolvedValue({
+      ...RESULT,
+      created: 2,
+      updated: 0,
+      skipped: 12,
+      total: 14,
+      skipped_files: Array.from({ length: 10 }, (_, index) => ({
+        path: `f${index}.docx`,
+        reason: '文件损坏',
+      })),
+    })
+    renderProviders(<DocumentImportModal open onClose={() => {}} workspaceId={WID} />)
+    pick([new File(['PK'], 'f0.docx', { type: 'application/octet-stream' })])
+    await screen.findByTestId('file-import-summary')
+    fireEvent.click(screen.getByTestId('file-import-submit'))
+
+    const result = await screen.findByTestId('file-import-result')
+    expect(result).toHaveTextContent('跳过明细（12 个）')
+    expect(result).toHaveTextContent('仅列出前 10 个，其余 2 个未列出')
   })
 
   it('解析失败时清空已选文件并禁用提交', async () => {
