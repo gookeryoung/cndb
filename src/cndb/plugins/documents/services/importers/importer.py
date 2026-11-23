@@ -125,6 +125,13 @@ class _UploadStore:
                 self.asset_bytes -= size
         self._pending.clear()
 
+    def clear_pending(self) -> None:
+        """清空待登记队列但不删文件（文档已提交、正文仍引用这些附件时用）.
+
+        只用于「文档落库成功但登记归属失败」：文件必须保留，仅避免被后续文档误领。
+        """
+        self._pending.clear()
+
 
 def _folder_groups(docs: Iterable[ImportedDoc]) -> set[tuple[str, ...]]:
     """所有文档所在目录（去重）。"""
@@ -348,6 +355,9 @@ def import_files(
                 docx_mode=docx_mode,
             )
         except UnsupportedImport as exc:
+            # 转换中途失败前可能已落盘部分内嵌图片：本条不落库，必须一并清理，
+            # 否则会残留孤儿文件，或被后续文档的 bind_pending 误登记（需求 0138 C3）
+            store.discard_pending()
             _record_skip(stats, item.path, str(exc))
             continue
 
@@ -368,6 +378,8 @@ def import_files(
                 title = _next_title(siblings, parent, title)
                 existing = None
             elif existing is not None and conflict == CONFLICT_SKIP:
+                # 本条不落库：转换期已落盘的内嵌图片同样要清理，避免串到后续文档
+                store.discard_pending()
                 _record_skip(stats, item.path, "同名文档已存在")
                 continue
             elif existing is not None and conflict == CONFLICT_RENAME:
@@ -414,6 +426,10 @@ def import_files(
             if saved is None:
                 # 文档尚未落库：本条落盘的附件都没人引用，直接清理
                 store.discard_pending()
+            else:
+                # 文档已提交、正文仍引用这些附件：不能删文件，只清空待登记队列，
+                # 否则会被后续文档的 bind_pending 误领
+                store.clear_pending()
             logger.warning("文件导入落库失败 path=%s workspace_id=%s", item.path, workspace_id, exc_info=True)
             _record_skip(stats, item.path, f"导入失败：{str(exc) or exc.__class__.__name__}")
             continue
