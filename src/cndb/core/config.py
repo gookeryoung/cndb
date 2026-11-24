@@ -209,6 +209,9 @@ class Settings(BaseSettings):
     # 行回收站保留天数（ADR 0139 C5）：到期行由 `cndb tables purge-trash` 物理清理；
     # 0 = 永不自动清理（保留期任务关闭），负值同 0
     TRASH_RETENTION_DAYS: int = 30
+    # 单次导出的行数上限（需求 0148）：超限直接 400 并提示分批导出；
+    # 导出会把全量行载入内存再序列化，因此这是内存安全阀（0 = 不限制，不建议）
+    EXPORT_MAX_ROWS: int = 500_000
     # 审计日志 / 统一事件流保留天数（需求 0143）：由 `cndb tables purge-audit` 清理；
     # 0 = 永不自动清理。流水不进备份（ADR 0075），清理后旧记录不可恢复，默认保守 180 天
     AUDIT_RETENTION_DAYS: int = 180

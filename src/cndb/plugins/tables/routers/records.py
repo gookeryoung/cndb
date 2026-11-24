@@ -312,7 +312,9 @@ def _list_response(
     offset: int,
     trashed: str = "none",
     total: int | None = None,
-) -> RecordListResponse:
+    after: list[Any] | None = None,
+    sorts_raw: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """调用 list_rows 并统一错误映射（ValueError→400，其余→500），GET/POST 列表端点共用.
 
     ``total`` 非空时跳过内部 COUNT（ADR 0046 D3 计数缓存命中路径）.
@@ -333,6 +335,7 @@ def _list_response(
             db=db,
             user=user,
             total=total,
+            after=after,
         )
     except ValueError as exc:
         # 业务语义错误（未知操作符、非法字段等）— 客户端可修正
@@ -349,7 +352,21 @@ def _list_response(
             row["_trashed_by"] = actor_id
             row["_trashed_by_name"] = actor_name
 
-    return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
+    # keyset 游标（需求 0148）：本页最后一行的排序键 + id 编成 next_cursor
+    next_cursor: str | None = None
+    if rows and limit and len(rows) >= limit:
+        from cndb.plugins.tables.services.core.keyset import encode_cursor
+
+        last = rows[-1]
+        values: list[Any] = [last.get(str(item.get("field_name") or item.get("field"))) for item in (sorts_raw or [])]
+        values.append(last.get("id"))
+        if all(value is not None for value in values[:-1]):
+            next_cursor = encode_cursor(values)
+
+    return {
+        **RecordListResponse(rows=rows, total=total, limit=limit, offset=offset).model_dump(),
+        "next_cursor": next_cursor,
+    }
 
 
 def _query_sig(
@@ -380,8 +397,13 @@ def _cached_list(
     offset: int,
     trashed: str = "none",
     cache_sig: str,
-) -> RecordListResponse:
-    """记录列表的统一读路径（GET/POST 共用）：排序索引 → 计数缓存 → 响应缓存（ADR 0046 D2/D3）."""
+    after: list[Any] | None = None,
+    sorts_raw: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """记录列表的统一读路径（GET/POST 共用）：排序索引 → 计数缓存 → 响应缓存（ADR 0046 D2/D3）.
+
+    返回 ``RecordListResponse`` 的字典形态，额外带 ``next_cursor``（keyset 游标，需求 0148）。
+    """
     from cndb.core.cache import cache_key, list_cache
     from cndb.plugins.tables.services.core.lookups import lookup_field_names
 
@@ -452,6 +474,8 @@ def _cached_list(
         offset=offset,
         trashed=trashed,
         total=total,
+        after=after,
+        sorts_raw=sorts_raw,
     )
     list_cache.set(ck, result, RECORD_LIST_TTL_SECONDS)
     return result
@@ -503,7 +527,8 @@ def list_records_get(
     filter_logic: str = Query(default="AND", pattern="^(AND|OR)$"),
     include_trashed: bool = Query(default=False),
     trashed: str = Query(default="none", description="none / only（回收站）/ include"),
-) -> RecordListResponse:
+    after: str | None = Query(default=None, description="keyset 游标（上一页响应的 next_cursor）"),
+) -> dict[str, Any]:
     """GET /records - 前端友好的列表端点.
 
     sorts / filters 为 URL 编码的 JSON 字符串. 解析失败时降级为空列表
@@ -528,6 +553,14 @@ def list_records_get(
     parsed_filters = _parse(filters, "filters")
     parsed_sorts = _parse(sorts, "sorts")
     mode = _trash_mode(trashed, include_trashed)
+    cursor_values: list[Any] | None = None
+    if after:
+        from cndb.plugins.tables.services.core.keyset import decode_cursor
+
+        try:
+            cursor_values = decode_cursor(after)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
     # GET 与 POST /list 共用同一读路径（缓存 / 计数缓存 / 排序索引）—— 前端网格实际走 GET
     return _cached_list(
         db,
@@ -539,13 +572,16 @@ def list_records_get(
         limit=limit,
         offset=offset,
         trashed=mode,
+        after=cursor_values,
+        sorts_raw=parsed_sorts,
         cache_sig=_query_sig(
             filters=parsed_filters,
             sorts=parsed_sorts,
             filter_logic=filter_logic,
             limit=limit,
             offset=offset,
-        ),
+        )
+        + (f":after={after}" if after else ""),
     )
 
 
@@ -558,7 +594,7 @@ def list_records(
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = Query(default=False),
     trashed: str = Query(default="none", description="none / only（回收站）/ include"),
-) -> RecordListResponse:
+) -> dict[str, Any]:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
     # 记录列表是表格页最热的读路径：按（工作区/表/用户/查询体）缓存 5s。

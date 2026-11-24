@@ -96,6 +96,26 @@ def export_table(
         filter_logic = dv.filter_type or "AND"
         view_name = dv.name
 
+    # 内存安全上限（需求 0148）：先 COUNT 再取数 —— 超限时绝不能把全表载入内存。
+    from cndb.core.config import settings
+
+    export_cap = int(getattr(settings, "EXPORT_MAX_ROWS", 500_000))
+    counted = rec.count_rows(
+        db.get_bind(),
+        table,
+        db=db,
+        user=current_user,
+        filters=filters,
+        sorts=sorts,
+        filter_logic=filter_logic,
+    )
+    if export_cap > 0 and counted is not None and counted > export_cap:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"当前筛选下有 {counted} 行，超过导出上限 {export_cap} 行（EXPORT_MAX_ROWS），"
+            "请收窄筛选范围或分批导出.",
+        )
+
     rows, total = rec.list_rows(
         db.get_bind(),
         table,
@@ -106,13 +126,11 @@ def export_table(
         sorts=sorts,
         filter_logic=filter_logic,
     )
-
-    # 内存安全上限：导出函数将全量行载入 Python 内存再序列化，超过此上限拒绝服务
-    _EXPORT_ROW_CAP = 500_000
-    if total > _EXPORT_ROW_CAP:
+    if export_cap > 0 and total > export_cap:
+        # 计数带 lookup 过滤时 counted 为 None（内存求值），取出后再兜底校验一次
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"当前表有 {total} 行，超过导出上限 {_EXPORT_ROW_CAP} 行，请分批导出或联系管理员.",
+            detail=f"当前表有 {total} 行，超过导出上限 {export_cap} 行（EXPORT_MAX_ROWS），请分批导出.",
         )
 
     # 系统行 ID 仅供内部定位，不属于业务数据：所有格式都不导出该列。

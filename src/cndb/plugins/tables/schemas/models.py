@@ -298,6 +298,8 @@ class RecordListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    #: keyset 游标（需求 0148）：本页满页时给出，客户端原样回传给 ``after``；末页为 None
+    next_cursor: str | None = None
 
     @computed_field
     @property

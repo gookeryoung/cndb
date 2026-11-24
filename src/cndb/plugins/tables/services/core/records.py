@@ -756,6 +756,7 @@ def list_rows(
     db: Any = None,
     user: Any = None,
     total: int | None = None,
+    after: list[Any] | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """列表查询，返回 (rows, total_count).
 
@@ -767,6 +768,8 @@ def list_rows(
         limit / offset: 分页. limit=None 或 limit=0 表示不限制数量（谨慎使用）.
         include_trashed: 是否包含软删除行（与 ``only_trashed`` 互斥，后者优先）.
         only_trashed: 只看回收站（ADR 0139 C2）.
+        after: keyset 游标值（需求 0148；``decode_cursor`` 的结果），None 表示第一页。
+            与 ``sorts`` 绑定：长度必须等于 排序键数 + 1（末尾 id），由 ``build_keyset_where`` 校验。
         db: 元数据库会话（提供时 link 字段输出目标行摘要，否则回退 "#id"）.
         user: 当前用户（提供时按 TablePermission.hidden_fields 做字段隐藏）.
         total: 已算好的行数（ADR 0046 D3 计数缓存）；传入即跳过内部 COUNT.
@@ -807,6 +810,15 @@ def list_rows(
             query = query.where(plan.final_where[0])
         else:
             query = query.where(and_(*plan.final_where))
+
+    # keyset 分页（需求 0148）：WHERE 追加「排在游标之后」的条件；与内存过滤路径不共存
+    if after is not None:
+        if needs_post:
+            raise ValueError("含 lookup 字段的筛选 / 排序不支持 keyset 翻页，请补充普通字段筛选")
+        from cndb.plugins.tables.services.core.keyset import build_keyset_where
+
+        query = query.where(build_keyset_where(table, sa_table, sorts, after))
+        offset = 0  # 游标已定位，不再叠加 OFFSET
 
     # total count（含 lookup 条件时由内存过滤后修正）
     # 本次请求的关联表映射在 attach_links 与 lookup 解析之间复用，避免同一表重复查询

@@ -143,7 +143,7 @@ export default function ExportPanel({ wid, tid, viewId, viewName, getPdfTarget, 
           disabled={exporting}
         />
       </div>
-      <div className="cn-dialog-hint">将表中的数据导出为所选格式（最多 10000 行）</div>
+      <div className="cn-dialog-hint">将表中的数据导出为所选格式（单次上限 50 万行，超限请收窄筛选后分批导出）</div>
 
       {/* 范围：仅非 PDF 且存在激活视图时可选；PDF 走视觉快照，范围固定为当前画面 */}
       {selectedFormat === 'pdf' ? (

@@ -61,7 +61,7 @@ describe('ExportDialog 导出对话框', () => {
     renderProviders(<ExportDialog open wid={WID} tid={TID} onClose={() => { }} />)
 
     expect(document.querySelector('.ant-modal-title')).toHaveTextContent('导出')
-    expect(await screen.findByText('将表中的数据导出为所选格式（最多 10000 行）')).toBeInTheDocument()
+    expect(await screen.findByText('将表中的数据导出为所选格式（单次上限 50 万行，超限请收窄筛选后分批导出）')).toBeInTheDocument()
     expect(screen.queryByRole('tab')).not.toBeInTheDocument()
     expect(screen.queryByText('点击或拖拽文件到此处')).not.toBeInTheDocument()
   })
@@ -69,7 +69,7 @@ describe('ExportDialog 导出对话框', () => {
   it('底部动作条：关闭与下载同排，关闭回调生效', async () => {
     const onClose = vi.fn()
     renderProviders(<ExportDialog open wid={WID} tid={TID} onClose={onClose} />)
-    await screen.findByText('将表中的数据导出为所选格式（最多 10000 行）')
+    await screen.findByText('将表中的数据导出为所选格式（单次上限 50 万行，超限请收窄筛选后分批导出）')
 
     const actions = document.querySelector('.cn-export-actions')
     expect(actions).not.toBeNull()
