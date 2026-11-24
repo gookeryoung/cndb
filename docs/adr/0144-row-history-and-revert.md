@@ -134,8 +134,8 @@ Related: `src/cndb/plugins/tables/models.py`、`src/cndb/alembic/versions/ea1b2c
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/tables/models.py`、`src/cndb/alembic/versions/ea1b2c3d4e5f_add_row_revision_and_idempotency.py`、`src/cndb/plugins/tables/services/core/row_history.py`、`src/cndb/plugins/tables/services/core/records.py` | `tests/test_row_history_idempotency.py` | 待回填 |
-| P1 | 已落地 | `src/cndb/plugins/tables/routers/records.py` | `tests/test_row_history_idempotency.py` | 待回填 |
+| P0 | 已落地 | `src/cndb/plugins/tables/models.py`、`src/cndb/alembic/versions/ea1b2c3d4e5f_add_row_revision_and_idempotency.py`、`src/cndb/plugins/tables/services/core/row_history.py`、`src/cndb/plugins/tables/services/core/records.py` | `tests/test_row_history_idempotency.py` | `58a363f8` |
+| P1 | 已落地 | `src/cndb/plugins/tables/routers/records.py` | `tests/test_row_history_idempotency.py` | `58a363f8` |
 | P2 | 未开始 | `frontend/src/pages/grid/` | `frontend/src/pages/grid/*.test.tsx` | 待实现 |
 
 ## 交接（会话结束更新）
