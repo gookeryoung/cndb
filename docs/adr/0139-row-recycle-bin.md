@@ -155,7 +155,7 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/bulk_crud.py`、`src/cndb/plugins/tables/services/core/lookups.py`、`src/cndb/plugins/tables/models.py`、`src/cndb/plugins/workspaces/services/storage.py` | `tests/test_row_recycle_bin.py` | `ff4be4c7` |
 | P1 | 已落地 | `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`src/cndb/plugins/tables/services/core/audit.py` | `tests/test_row_recycle_bin.py` | `ff4be4c7` |
-| P2 | 进行中 | `src/cndb/plugins/tables/services/core/rows_retention.py`、`src/cndb/cli/tables.py`、`src/cndb/plugins/workspaces/services/{workspace_backup,backup_io}.py`、`frontend/src/pages/grid/RowRecycleBinDrawer.tsx` | `tests/test_rows_retention.py`、`frontend/src/pages/grid/RowRecycleBinDrawer.test.tsx`、`frontend/tests/e2e/critical/row-recycle-bin.spec.ts` | 待回填 |
+| P2 | 已落地 | `src/cndb/plugins/tables/services/core/rows_retention.py`、`src/cndb/cli/tables.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/pages/grid/RowRecycleBinDrawer.tsx` | `tests/test_rows_retention.py`、`frontend/src/pages/grid/RowRecycleBinDrawer.test.tsx`、`frontend/tests/e2e/critical/row-recycle-bin.spec.ts` | `91e78f8b` |
 
 ## 交接（会话结束更新）
 
