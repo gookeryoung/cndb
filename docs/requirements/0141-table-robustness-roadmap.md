@@ -24,7 +24,7 @@ ADR 0139 / 0140 置 `Implemented`；P1 剩余的「行级历史与撤销」「�
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
 | C1 | 「健壮性」 | **P0 止血期（1.5–2 周）**：① `cndb tables doctor [--fix]` 巡检孤儿 link / 失效 lookup 冗余列 / 排序索引漂移 / 回收站体积（已落地，见需求卡 0142；公式异常检测后移）；② 审计与事件流保留期（已落地，见需求卡 0143；查询端点沿用既有 `GET /tables/{id}/audit`）；③ 前端边界（未保存编辑离开拦截 + 行操作失败可重试；**大范围粘贴保护不适用** —— 网格没有多单元格粘贴入口，单元格是原生输入框）；④ 导入解析随机输入测试 + 行权限不变量矩阵（已落地，见 `tests/test_import_parsers_fuzz.py` / `tests/test_row_access_invariants.py`）；⑤ 翻页 / 内联编辑性能预算进 CI（`@perf` 旅程 + 硬上限；基线缺失只记录读数） | `cli/`、`services/core/`、`frontend/src/pages/grid/`、`tests/`、`frontend/scripts/perf-budget.mjs` | 每项独立需求卡 + 对应单测；`make check-fast` / `make test` / perf 预算全绿 |
-| C2 | 「健壮性 + 功能性」 | **P1 协作可信期（3–4 周）**：行回收站（0139）、直编并发冲突检测（0140）、行级历史与撤销、写幂等键（`Idempotency-Key`） | `tables/`、`frontend/src/pages/grid/`、`core/` | 0139 / 0140 按各自 ADR 验收；历史与幂等各出 S2/S1 卡与 ADR |
+| C2 | 「健壮性 + 功能性」 | **P1 协作可信期（3–4 周）**：行回收站（0139，已落地）、直编并发冲突检测（0140，已落地）、行级历史与撤销（0144，P0-P1 已落地，前端时间线未开始）、写幂等键（0145，已落地；当前覆盖 `POST /records`） | `tables/`、`frontend/src/pages/grid/`、`core/` | 0139 / 0140 按各自 ADR 验收；历史与幂等各出 S2/S1 卡与 ADR |
 | C3 | 「功能性」 | **P2 数据能力期（4–6 周）**：服务端聚合 / 分组端点、keyset 分页 + 可配导出上限、校验规则增强（条件必填 / 正则）、批量编辑增强（查找替换 / 粘贴校验预览 / 跨页全选）、大表 DDL dry-run | `tables/routers/`、`tables/services/`、`frontend/src/pages/grid/` | 每项独立卡；聚合计与前端本地口径对拍；深翻页纳入 perf 预算 |
 | C4 | 「最佳实践」 | **P3 按触发条件启动**：实时协同（CRDT / 广播）、字段类型对外准入、表模板 —— 触发条件与取舍见下「暂不做」表 | `tables/` | 触发条件成立再立项，不预先落码 |
 | C5 | （门禁） | 每个 S2 期先 ADR（`Proposed → Accepted` 人工评审）；新增 H 条目须人工确认后入 `docs/CONSTRAINTS.md`；每期收工按 H4 跑 `make check-fast` → `make test` → 文档回填 | 全仓 | `make adr-check` / `make constraint-check` 0 error |

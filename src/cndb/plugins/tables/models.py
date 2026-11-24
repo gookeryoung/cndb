@@ -583,6 +583,61 @@ class AuditLog(TimestampMixin, Base):
     detail: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class RecordRevision(TimestampMixin, Base):
+    """行级历史版本（ADR 0144）：一次用户写操作 = 一条版本记录.
+
+    - ``diff`` 只存**变化字段**的 ``{字段名: {"old": .., "new": ..}}``，不存整行快照
+      （避免大字段重复落库）；隐藏字段的变更也记不了值（写入方已按可见字段裁剪）。
+    - ``version`` 从 1 起严格递增（同 ``row_id`` 唯一），撤销 = 生成新的下一版，不改历史。
+    - 导入 / 数据同步等批量链路默认不写历史（``history=False``），避免写放大。
+    """
+
+    __tablename__ = "tables_recordrevision"
+    __table_args__ = (
+        UniqueConstraint("row_id", "version", name="uniq_recordrevision_row_version"),
+        {"extend_existing": True},
+    )
+
+    table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # 行 id 不加外键：物理表是动态表，行删除后历史仍需保留（可审计）
+    row_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # create / update / trash / restore / revert
+    op: Mapped[str] = mapped_column(String(16), nullable=False)
+    actor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    # 操作人快照：用户删号后历史仍可读（ADR 0144 I4）
+    actor_name: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    diff: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"RecordRevision(row={self.row_id}, v={self.version}, op={self.op!r})"
+
+
+# 幂等键（ADR 0145）：同一用户 + 同一 key + 同一路由只执行一次写，重复请求回放首个响应
+class IdempotencyKey(TimestampMixin, Base):
+    """写请求幂等登记：``(user_id, key, route)`` 唯一，命中即回放首个响应."""
+
+    __tablename__ = "tables_idempotencykey"
+    __table_args__ = (
+        UniqueConstraint("user_id", "key", "route", name="uniq_idempotency_user_key_route"),
+        {"extend_existing": True},
+    )
+
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    key: Mapped[str] = mapped_column(String(128), nullable=False)
+    route: Mapped[str] = mapped_column(String(200), nullable=False)
+    # 请求体指纹：同一 key 复用到不同请求体 → 409（避免把 A 的响应回放给 B）
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    status_code: Mapped[int] = mapped_column(Integer, nullable=False, default=200)
+    response: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
 # ImportTask
 class ImportTask(TimestampMixin, Base):
     """异步导入任务：状态机 + 进度追踪 + 校验报告.

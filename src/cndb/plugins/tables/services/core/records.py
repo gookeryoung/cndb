@@ -473,6 +473,11 @@ def create_row(
             sync_lookup_columns(engine, table, [row_id], db=db, conn=conn)
 
     row = get_row(engine, table, row_id, db=db)
+    if row is not None and db is not None:
+        # 行历史（ADR 0144）：建行落 v1（diff 为全字段 new，便于"撤销"到空）
+        from cndb.plugins.tables.services.core.row_history import OP_CREATE, record_revision
+
+        record_revision(db, table, row_id, OP_CREATE, after=row, user=user)
     if row is not None:
         try:
             log_action(
@@ -879,6 +884,8 @@ def update_row(
     user: Any = None,
     enforce_row_rules: bool = False,
     expected_rev: int | None = None,
+    history_op: str = "update",
+    record_history: bool = True,
 ) -> dict[str, Any] | None:
     """更新一行，返回更新后的完整数据；行不存在或已软删除或被行级权限拦截时返回 None.
 
@@ -912,6 +919,11 @@ def update_row(
     base_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
     if row_scope is not None:
         base_where.append(row_scope)
+
+    # 行历史（ADR 0144）：写前快照，写后与新行比对生成 diff（只含变化字段）
+    before_row: dict[str, Any] | None = None
+    if record_history and db is not None:
+        before_row = get_row(engine, table, row_id, db=db, user=read_user)
 
     rev_column = sa_table.c._rev
     check_rev = expected_rev is not None and expected_rev >= 0
@@ -950,6 +962,10 @@ def update_row(
             )
 
     row = get_row(engine, table, row_id, db=db, user=read_user)
+    if record_history and row is not None:
+        from cndb.plugins.tables.services.core.row_history import record_revision
+
+        record_revision(db, table, row_id, history_op, before=before_row, after=row, user=user)
     if row is not None:
         try:
             log_action(
@@ -1064,6 +1080,7 @@ def trash_rows(
     *,
     user: Any = None,
     enforce_row_rules: bool = False,
+    record_history: bool = True,
 ) -> int:
     """批量软删（单行即长度为 1），返回实际软删行数（ADR 0139 C1 / I1）.
 
@@ -1095,6 +1112,13 @@ def trash_rows(
         if count:
             _touch_lookup_after_visibility_change(engine, table, ids, db, conn)
 
+    if count and record_history and db is not None:
+        from cndb.plugins.tables.services.core.row_history import OP_TRASH, record_revision
+
+        for row_id in ids:
+            record_revision(
+                db, table, row_id, OP_TRASH, before={"$trashed": False}, after={"$trashed": True}, user=user
+            )
     for row_id in ids:
         try:
             log_action(db, table, ACTION_TRASH, target_id=row_id, actor_id=getattr(user, "id", None))
@@ -1133,6 +1157,7 @@ def restore_rows(
     db: Any = None,
     *,
     user: Any = None,
+    record_history: bool = True,
 ) -> int:
     """批量恢复（幂等），返回本次实际恢复行数（ADR 0139 C3）.
 
@@ -1165,6 +1190,13 @@ def restore_rows(
         if count:
             _touch_lookup_after_visibility_change(engine, table, ids, db, conn)
 
+    if count and record_history and db is not None:
+        from cndb.plugins.tables.services.core.row_history import OP_RESTORE, record_revision
+
+        for row_id in ids:
+            record_revision(
+                db, table, row_id, OP_RESTORE, before={"$trashed": True}, after={"$trashed": False}, user=user
+            )
     for row_id in ids:
         try:
             log_action(db, table, ACTION_RESTORE, target_id=row_id, actor_id=getattr(user, "id", None))

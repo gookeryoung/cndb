@@ -77,6 +77,72 @@ MAX_RECORD_OFFSET = 100_000
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
 
 
+#: 写请求幂等（ADR 0145）：提供该头时同一 key 只执行一次，重复请求回放首个响应
+IdempotencyHeader = Annotated[
+    str | None, Header(alias="Idempotency-Key", description="可选：写请求幂等键（≤128 字符）")
+]
+
+
+def _idempotency_guard(
+    db: Session,
+    user: User,
+    header: str | None,
+    route: str,
+    payload: Any,
+) -> tuple[str | None, str, JSONResponse | None]:
+    """幂等前置检查：返回 (key, 指纹, 需要直接回放的响应或 None)."""
+    from cndb.plugins.tables.services.core.idempotency import (
+        find_replay,
+        normalize_key,
+        request_fingerprint,
+    )
+
+    if header is None:
+        return None, "", None
+    key = normalize_key(header)
+    if key is None:
+        raise HTTPException(status_code=400, detail="Idempotency-Key 必须是非空且 ≤128 字符的字符串")
+    fingerprint = request_fingerprint(payload)
+    try:
+        hit, response, status_code = find_replay(
+            db,
+            user_id=getattr(user, "id", None),
+            key=key,
+            route=route,
+            fingerprint=fingerprint,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if hit and response is not None:
+        return key, fingerprint, JSONResponse(status_code=int(status_code or 200), content=response)
+    return key, fingerprint, None
+
+
+def _idempotency_store(
+    db: Session,
+    user: User,
+    key: str | None,
+    route: str,
+    fingerprint: str,
+    status_code: int,
+    response: Any,
+) -> None:
+    """登记首个成功响应（key 为空时 no-op）."""
+    if key is None or not isinstance(response, dict):
+        return
+    from cndb.plugins.tables.services.core.idempotency import store_replay
+
+    store_replay(
+        db,
+        user_id=getattr(user, "id", None),
+        key=key,
+        route=route,
+        fingerprint=fingerprint,
+        status_code=int(status_code),
+        response=response,
+    )
+
+
 #: `trashed` 查询参数取值（ADR 0139 C2）：none = 默认只看活动行；only = 只看回收站；include = 两者都看
 TRASHED_MODES = ("none", "only", "include")
 
@@ -126,6 +192,23 @@ def _ensure_all_trashed(db: Session, dt: DataTable, row_ids: list[int], user: Us
     active = [rid for rid in ids if not found[rid]]
     if active:
         raise HTTPException(status_code=400, detail=f"只能彻底删除回收站中的行（仍活动的行: {active}）")
+
+
+def revert_changes(db: Session, dt: DataTable, row_id: int, version: int) -> dict[str, Any]:
+    """取某版本"撤销时要写回的值"（修改申请轨道复用；版本不存在返回空 dict）."""
+    from cndb.plugins.tables.models import RecordRevision
+    from cndb.plugins.tables.services.core.row_history import revert_values
+
+    revision = (
+        db.query(RecordRevision)
+        .filter(
+            RecordRevision.table_id == int(dt.id),
+            RecordRevision.row_id == int(row_id),
+            RecordRevision.version == int(version),
+        )
+        .first()
+    )
+    return revert_values(revision) if revision is not None else {}
 
 
 def _trash_actors(db: Session, table_id: int, row_ids: list[int]) -> dict[int, tuple[int | None, str | None]]:
@@ -379,8 +462,14 @@ def create_record(
     payload: RecordCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    idempotency_key: IdempotencyHeader = None,
 ) -> dict[str, object] | JSONResponse:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+
+    route = f"POST /workspaces/{workspace_id}/tables/{table_id}/records"
+    key, fingerprint, replay = _idempotency_guard(db, current_user, idempotency_key, route, payload.values)
+    if replay is not None:
+        return replay
 
     if not _dispatch_or_403(db, dt, current_user):
         return _cr_response(db, dt, current_user, op=CHANGE_OP_CREATE, row_id=None, values=payload.values)
@@ -395,6 +484,7 @@ def create_record(
 
     if row is None:
         raise HTTPException(status_code=500, detail="创建失败")
+    _idempotency_store(db, current_user, key, route, fingerprint, status.HTTP_201_CREATED, row)
     return row
 
 
@@ -774,6 +864,82 @@ def restore_record(
     row = get_row(db.get_bind(), dt, record_id, db=db, user=current_user)
     if row is None:  # pragma: no cover - 防御性
         raise HTTPException(status_code=500, detail="恢复后读取失败")
+    return row
+
+
+@router.get("/{record_id}/history", response_model=None)
+def get_record_history(
+    workspace_id: int,
+    table_id: int,
+    record_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[dict[str, Any]]:
+    """行级历史（ADR 0144）：版本倒序，含操作人快照与变化字段.
+
+    可见性口径与行读取一致：调用者必须能看到该行（行级权限范围外 → 404）。
+    """
+    from cndb.plugins.tables.services.core.row_history import list_revisions
+
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    if get_row(db.get_bind(), dt, record_id, db=db, user=current_user) is None:
+        raise HTTPException(status_code=404, detail="行不存在")
+    revisions = list_revisions(db, dt, record_id, limit=limit)
+    return [
+        {
+            "id": int(item.id),
+            "row_id": int(item.row_id),
+            "version": int(item.version),
+            "op": item.op,
+            "actor_id": item.actor_id,
+            "actor_name": item.actor_name,
+            "diff": dict(item.diff or {}),
+            "created_at": item.created_at.isoformat() if item.created_at is not None else None,
+        }
+        for item in revisions
+    ]
+
+
+@router.post("/{record_id}/revert/{version}", response_model=None)
+def revert_record_version(
+    workspace_id: int,
+    table_id: int,
+    record_id: int,
+    version: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object] | JSONResponse:
+    """把行恢复到指定版本之前的值（生成新版本，不改历史；ADR 0144 D3）."""
+    from cndb.plugins.tables.services.core.row_history import revert_revision
+
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+
+    decision = _row_write_decision(db, dt, current_user, record_id)
+    if decision == ROW_WRITE_NOT_FOUND:
+        raise HTTPException(status_code=404, detail="行不存在")
+    if decision == ROW_WRITE_DENIED:
+        raise_permission_denied(db, dt.workspace, current_user, scope="表级")
+    if decision == ROW_WRITE_CHANGE_REQUEST:
+        # 撤销同样走修改申请轨道：先算出差量再提交申请
+        row = revert_revision(db, dt, record_id, version, user=current_user, enforce_row_rules=False)
+        if row is None:
+            raise HTTPException(status_code=404, detail="版本不存在")
+        return _cr_response(
+            db,
+            dt,
+            current_user,
+            op=CHANGE_OP_UPDATE,
+            row_id=record_id,
+            values=revert_changes(db, dt, record_id, version),
+        )
+
+    try:
+        row = revert_revision(db, dt, record_id, version, user=current_user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if row is None:
+        raise HTTPException(status_code=404, detail="版本不存在")
     return row
 
 
