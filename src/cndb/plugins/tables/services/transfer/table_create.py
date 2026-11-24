@@ -454,6 +454,20 @@ def create_table_from_json_data(
     return dt, ids
 
 
+def _header_only_columns(file_columns: list[str]) -> list[dict[str, Any]]:
+    """仅表头（0 数据行）文件的列定义：列名来自表头，类型一律先按 text.
+
+    「只有表头的模板文件」是合法输入（用户先建好字段的空表再填数据）：
+    列名可从表头确定，但没有样本可推断类型，因此按 text 建列，用户随后可在
+    字段管理里改类型。空列名 / 纯空白的表头列直接丢弃（与 CSV 守卫一致）。
+    """
+    return [
+        {"name": name, "field_type": "text", "sample_values": [], "null_ratio": 0.0}
+        for name in file_columns
+        if name and name.strip()
+    ]
+
+
 def _analyze_dict_rows_as_csv(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """把 list[dict] 行转为 csv 文本再调用 analyze_csv_columns，复用成熟的启发式."""
     if not rows:
@@ -493,6 +507,7 @@ def analyze_file_columns(
     format: str | None = None,
     filename: str | None = None,
     rows: list[dict[str, Any]] | None = None,
+    file_columns: list[str] | None = None,
     header_row: int | None = None,
 ) -> tuple[list[dict[str, Any]], int, str]:
     """通用列类型推断 — 自动识别格式，复用 csv / json 分析器.
@@ -512,6 +527,7 @@ def analyze_file_columns(
         format=format,
         filename=filename,
         rows=rows,
+        file_columns=file_columns,
         header_row=header_row,
     )
     return columns, total_rows, actual_fmt
@@ -523,14 +539,21 @@ def analyze_file_columns_with_detection(
     format: str | None = None,
     filename: str | None = None,
     rows: list[dict[str, Any]] | None = None,
+    file_columns: list[str] | None = None,
     header_row: int | None = None,
 ) -> tuple[list[dict[str, Any]], int, str, HeaderDetection | None]:
-    """:func:`analyze_file_columns` 的增强版：额外返回表头行识别结果."""
+    """:func:`analyze_file_columns` 的增强版：额外返回表头行识别结果.
+
+    表格类格式即使有 0 条数据行（只有表头）也能给出列定义：列名取自解析出的
+    表头，类型按 text —— 否则「导入只有表头的模板」会被误判成「文件没有有效列名」。
+    """
     detection: HeaderDetection | None = None
+    # 调用方已解析时（rows 已给）也能拿到表头列名：仅表头文件靠它建列
+    parsed_file_columns: list[str] = list(file_columns or [])
     if rows is None:
         if content is None:
             raise ValueError("必须提供 content 或 rows")
-        rows, _cols, actual_fmt, detection = parse_file_to_rows_with_detection(
+        rows, parsed_file_columns, actual_fmt, detection = parse_file_to_rows_with_detection(
             content,
             format,
             filename=filename,
@@ -539,6 +562,10 @@ def analyze_file_columns_with_detection(
     else:
         # rows 由调用方提供 —— 无法推断 format，默认 json 路径
         actual_fmt = format or "json"
+
+    if not rows:
+        # 仅表头：没有样本可推断类型，但列名仍然是确定的（JSON `[]` 无列名 → 空）
+        return _header_only_columns(parsed_file_columns), 0, actual_fmt, detection
 
     if actual_fmt in ("json", "xlsx"):
         # xlsx 解析后也是对象数组，走 JSON 推断路径（支持 Python 原生 bool/int/float 类型信息）
@@ -640,7 +667,7 @@ def create_table_from_file_with_detection(
     """:func:`create_table_from_file` 的增强版：额外返回表头行识别结果."""
     from cndb.plugins.tables.services.transfer.wps_images import make_workspace_image_saver
 
-    rows, _file_cols, actual_fmt, detection = parse_file_to_rows_with_detection(
+    rows, file_cols, actual_fmt, detection = parse_file_to_rows_with_detection(
         content,
         format,
         filename=filename,
@@ -648,6 +675,9 @@ def create_table_from_file_with_detection(
         header_row=header_row,
     )
     columns = analyze_json_columns(rows) if actual_fmt in ("json", "xlsx") else _analyze_dict_rows_as_csv(rows)
+    if not columns and not rows:
+        # 仅表头（0 数据行）：按表头建列、建空表，不当作「没有有效列」拒绝
+        columns = _header_only_columns(file_cols)
     if not columns:
         raise ValueError("文件没有有效列")
 

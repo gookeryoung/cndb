@@ -258,6 +258,61 @@ class TestImportFileAnalyzeApi:
         )
         assert r.status_code in (401, 403)
 
+    def test_analyze_csv_header_only(self, client, ws_auth):
+        """只有表头（0 数据行）的 CSV 不能报「文件没有有效列名」：列名来自表头."""
+        ws_id, auth = ws_auth
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file/analyze",
+            files={"file": ("tpl.csv", _build_csv_bytes("编号,名称,备注\n"), "text/csv")},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["total_rows"] == 0
+        assert data["sample_rows"] == []
+        assert [c["name"] for c in data["columns"]] == ["编号", "名称", "备注"]
+        # 没有样本可推断类型 → 一律 text（用户随后在字段管理里改）
+        assert {c["field_type"] for c in data["columns"]} == {"text"}
+
+    def test_analyze_tsv_header_only(self, client, ws_auth):
+        ws_id, auth = ws_auth
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file/analyze",
+            files={"file": ("tpl.tsv", _build_tsv_bytes("name\tage\n"), "text/tab-separated-values")},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        assert [c["name"] for c in r.json()["columns"]] == ["name", "age"]
+
+    def test_analyze_xlsx_header_only(self, client, ws_auth):
+        """XLSX 只有表头行（无数据行）同样要能分析出列."""
+        ws_id, auth = ws_auth
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file/analyze",
+            files={
+                "file": (
+                    "tpl.xlsx",
+                    _build_xlsx_bytes(headers=["产品", "价格"], rows=[]),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["total_rows"] == 0
+        assert [c["name"] for c in data["columns"]] == ["产品", "价格"]
+
+    def test_analyze_json_empty_still_400(self, client, ws_auth):
+        """JSON 空数组没有表头可依据 → 仍按「没有有效列名」拒绝."""
+        ws_id, auth = ws_auth
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file/analyze",
+            files={"file": ("empty.json", b"[]", "application/json")},
+            headers=auth,
+        )
+        assert r.status_code == 400
+
 
 # ── POST /import-file (create table + import) ─────────
 
@@ -367,6 +422,55 @@ class TestImportFileCreateTableApi:
         dept_col = next((c for c in cols if c["name"] == "部门"), None)
         assert dept_col is not None
         assert dept_col["field_type"] == "select"
+
+    def test_create_csv_header_only(self, client, ws_auth):
+        """只有表头的 CSV：建出字段齐全的空表（0 行），不报错."""
+        ws_id, auth = ws_auth
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file",
+            data={"table_name": "模板表"},
+            files={"file": ("模板.csv", _build_csv_bytes("编号,名称\n"), "text/csv")},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["imported_rows"] == 0
+        assert data["field_count"] == 2
+        assert [c["name"] for c in data["columns"]] == ["编号", "名称"]
+        # 表真的建出来了，能直接当空表用
+        detail = client.get(f"/api/v1/workspaces/{ws_id}/tables/{data['table_id']}", headers=auth)
+        assert detail.status_code == 200
+        assert [f["name"] for f in detail.json()["fields"]] == ["编号", "名称"]
+
+    def test_create_xlsx_header_only(self, client, ws_auth):
+        ws_id, auth = ws_auth
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file",
+            data={"table_name": "模板表X"},
+            files={
+                "file": (
+                    "模板.xlsx",
+                    _build_xlsx_bytes(headers=["产品", "价格"], rows=[]),
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            },
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()
+        assert data["imported_rows"] == 0
+        assert data["field_count"] == 2
+
+    def test_create_json_empty_still_400(self, client, ws_auth):
+        """JSON 空数组没有列可建 → 仍报「文件没有有效列」."""
+        ws_id, auth = ws_auth
+        r = client.post(
+            f"/api/v1/workspaces/{ws_id}/import-file",
+            data={"table_name": "空 JSON 表"},
+            files={"file": ("empty.json", b"[]", "application/json")},
+            headers=auth,
+        )
+        assert r.status_code == 400
 
     def test_create_empty_file_rejected(self, client, ws_auth):
         ws_id, auth = ws_auth
