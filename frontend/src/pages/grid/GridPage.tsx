@@ -59,6 +59,9 @@ const ExportDialog = lazy(() => import('@/pages/import-export/ExportDialog'))
 const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDialog'))
 // 回收站抽屉（ADR 0139 C8）：按需打开的重型弹层，lazy 到按需 chunk（H31）
 const RowRecycleBinDrawer = lazy(() => import('@/pages/grid/RowRecycleBinDrawer'))
+import GridErrorBar from './GridErrorBar'
+import type { RetryableError } from './GridErrorBar'
+import { useUnsavedGuard } from './useUnsavedGuard'
 // 按需加载：以下三类均为「用户点击后才出现」的重型面板（>400 行），静态链入会让
 // GridPage chunk 随每次功能迭代线性膨胀（见 scripts/bundle-budget.mjs 的 GridPage 预算）。
 // 走 lazy 后其代码移出 GridPage，仅在首次打开时下载独立 chunk。
@@ -332,6 +335,8 @@ export default function GridPage() {
   const [governanceOpen, setGovernanceOpen] = useState(false)
   // 行回收站抽屉（ADR 0139 C8）
   const [recycleOpen, setRecycleOpen] = useState(false)
+  // 最近一次失败的行操作（路线图 P0-3：可重试错误条，而不是只弹一次 message）
+  const [lastError, setLastError] = useState<RetryableError | null>(null)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
   const [editViewOpen, setEditViewOpen] = useState(false)
@@ -348,6 +353,8 @@ export default function GridPage() {
   const [newRowActive, setNewRowActive] = useState(false)
   /** 各编辑态行的草稿值，key 为 `row-${id}`；新增行固定用 NEW_ROW_KEY */
   const [rowDrafts, setRowDrafts] = useState<Record<string, RowValues>>({})
+  /** 有未保存的行内草稿 / 新增行正在编辑 → 离开需要确认（路线图 P0-3） */
+  const guard = useUnsavedGuard(newRowActive || Object.keys(rowDrafts).length > 0)
   /** 新增行的锁定字段集合（自动填充预填的字段名集合） */
   const [newRowLockedFields, setNewRowLockedFields] = useState<Set<string>>(new Set())
 
@@ -630,8 +637,13 @@ export default function GridPage() {
   // 依赖 mutate（React Query 保证稳定）而非 mutation 结果对象 —— 结果对象每渲染都是
   // 新引用，会导致回调每渲染重建、看板卡片 memo 全部失效并全量重渲染
   const handleDeleteCard = useCallback((r: RowResponse) => {
-    mutateDeleteRows([r.id as number | string], {
+    const ids = [r.id as number | string]
+    mutateDeleteRows(ids, {
       onSuccess: () => message.success('已删除'),
+      onError: (err: Error) => setLastError({
+        message: err.message || '删除失败',
+        retry: () => mutateDeleteRows(ids),
+      }),
     })
   }, [mutateDeleteRows, message])
 
@@ -840,15 +852,25 @@ export default function GridPage() {
     }
 
     if (isNewRow(recordId)) {
-      createRow.mutate(values)
+      createRow.mutate(values, {
+        onError: (err: Error) => setLastError({
+          message: err.message || '新增行失败',
+          retry: () => saveInline(recordId),
+        }),
+      })
     } else {
       updateRow.mutate({ rowId: recordId, values }, {
+        onError: (err: Error) => setLastError({
+          message: err.message || '保存失败',
+          retry: () => saveInline(recordId),
+        }),
         onSuccess: (data) => {
           setEditingRowId(null)
           clearDraft(rowKeyOf(recordId))
           // 202=修改申请：乐观回滚由 hook 完成，这里仅区分提示文案
           if (isChangeRequestResponse(data)) message.success('已提交修改申请，处理后生效')
           else message.success('已保存')
+          setLastError(null)
         },
       })
     }
@@ -1016,6 +1038,8 @@ export default function GridPage() {
    *  - 没有匹配类型的视图 → 仅切本地 mode（降级兜底，后端视图不变）.
    */
   const handleModeChange = (newMode: ViewMode) => {
+    // 有未保存草稿时先确认（切模式会重挂载表格，草稿会丢）
+    if (!guard.confirmLeave()) return
     // mode 与激活视图类型一致才算已就位——仅 mode 一致而视图类型不符（如 localStorage 恢复
     // matrix 但激活视图是 grid 默认视图）时继续向下查找同类型视图，避免按钮点击成为死操作
     if (mode === newMode && activeView?.view_type === newMode) return
@@ -1253,6 +1277,15 @@ export default function GridPage() {
         />
       )}
 
+      {/* 行操作失败 → 可重试错误条（P0-3）：保留最近一次失败，给显式重试入口 */}
+      {!presenting && (
+        <GridErrorBar
+          error={lastError}
+          retrying={updateRow.isPending || createRow.isPending || deleteRows.isPending}
+          onDismiss={() => setLastError(null)}
+        />
+      )}
+
       {/* 视图切换 + 操作栏（支持拖拽排序；只读展示态隐藏） */}
       {!presenting && (
         <GridViewBar
@@ -1268,7 +1301,7 @@ export default function GridPage() {
           hideSearch={isScoreMatrix}
           searchQuery={searchQuery}
           onSearchChange={(q) => { setSearchQuery(q); setOffset(0) }}
-          onSelectView={(v) => loadView(v)}
+          onSelectView={(v) => { if (guard.confirmLeave()) loadView(v) }}
           onModeChange={handleModeChange}
           onDragEnd={handleViewDragEnd}
           canManageViews={canEditViews}
@@ -1419,9 +1452,16 @@ export default function GridPage() {
           copyLoading={copyRow.isPending}
           deleteLoading={deleteRows.isPending}
           onCopy={() => copyRow.mutate(selectedRowKeys as Array<number | string>)}
-          onDelete={() => deleteRows.mutate(selectedRowKeys as Array<number | string>, {
-            onSuccess: () => { message.success('已删除'); setSelectedRowKeys([]) },
-          })}
+          onDelete={() => {
+            const ids = selectedRowKeys as Array<number | string>
+            deleteRows.mutate(ids, {
+              onSuccess: () => { message.success('已删除'); setSelectedRowKeys([]); setLastError(null) },
+              onError: (err: Error) => setLastError({
+                message: err.message || '删除失败',
+                retry: () => deleteRows.mutate(ids, { onSuccess: () => setSelectedRowKeys([]) }),
+              }),
+            })
+          }}
           onClear={() => setSelectedRowKeys([])}
         />
       )}
