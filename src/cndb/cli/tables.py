@@ -54,6 +54,57 @@ def cmd_purge_trash(args: argparse.Namespace) -> dict[str, Any]:
         db.close()
 
 
+def cmd_doctor(args: argparse.Namespace) -> dict[str, Any]:
+    """体检 / 修复历史脏数据（孤儿 link 关系、失效 lookup 冗余列、孤儿排序索引）.返回报告."""
+    from cndb.plugins.tables.services.core.table_doctor import diagnose
+
+    db = _get_session()
+    try:
+        return diagnose(
+            db,
+            workspace_id=getattr(args, "workspace_id", None),
+            table_id=getattr(args, "table_id", None),
+            fix=bool(getattr(args, "fix", False)),
+            days=getattr(args, "days", None),
+        )
+    finally:
+        db.close()
+
+
+def _print_doctor(payload: dict[str, Any]) -> None:
+    mode = "修复" if payload["fix"] else "体检（只读）"
+    print(f"[tables doctor] {mode} — 扫描数据表 {payload['tables_scanned']} 张，问题 {payload['issues']} 处")
+    sections = (
+        ("orphan_links", "孤儿关联关系"),
+        ("stale_lookup", "失效 lookup 冗余列"),
+        ("orphan_sort_indexes", "孤儿排序索引"),
+    )
+    for key, label in sections:
+        items = payload[key]
+        if not items:
+            continue
+        print(f"  - {label}：")
+        for item in items:
+            print(
+                f"    · 表 {item['table_name']}(id={item['table_id']})：{item['count']} 处"
+                + ("，已修复" if item.get("fixed") else "")
+                + f"；样例 {item['samples']}"
+            )
+    trash_items = payload["trash"]
+    if trash_items:
+        print("  - 回收站体积：")
+        for item in trash_items:
+            print(
+                f"    · 表 {item['table_name']}(id={item['table_id']})：已删 {item['trashed']} 行"
+                f"（时间未知 {item['unknown_time']}，按 {item['retention_days']} 天保留期可清理 {item['expired']}）"
+            )
+    if not payload["fix"]:
+        if payload["issues"]:
+            print("[tables doctor] 加 --fix 执行幂等修复（不删除业务行）")
+        if payload["trash"]:
+            print("[tables doctor] 回收站行清理请用 cndb tables purge-trash（ADR 0139 D4）")
+
+
 def _print_report(payload: dict[str, Any]) -> None:
     mode = "体检（dry-run，未删除）" if payload["dry_run"] else "清理"
     if payload["days"] <= 0:
@@ -92,6 +143,13 @@ def tables_command(args: argparse.Namespace) -> None:
         else:
             _print_report(payload)
         return
+    if cmd == "doctor":
+        payload = cmd_doctor(args)
+        if getattr(args, "json", False):
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            _print_doctor(payload)
+        return
     print(f"[error] 未知 tables 子命令: {cmd}", file=sys.stderr)  # pragma: no cover
     sys.exit(2)
 
@@ -120,3 +178,18 @@ def register_tables_subparser(sub: Any) -> None:
     p_purge.add_argument("--workspace", dest="workspace_id", type=int, default=None, help="限定工作区 id")
     p_purge.add_argument("--table", dest="table_id", type=int, default=None, help="限定数据表 id")
     p_purge.add_argument("--json", action="store_true", help="以 JSON 输出报告")
+
+    p_doctor = tables_sub.add_parser(
+        "doctor",
+        help="体检历史脏数据（孤儿关联关系 / 失效 lookup 冗余列 / 孤儿排序索引 / 回收站体积）",
+    )
+    p_doctor.add_argument("--fix", action="store_true", help="执行幂等修复（默认只读体检；不会删除业务行）")
+    p_doctor.add_argument("--workspace", dest="workspace_id", type=int, default=None, help="限定工作区 id")
+    p_doctor.add_argument("--table", dest="table_id", type=int, default=None, help="限定数据表 id")
+    p_doctor.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="回收站保留天数（用于统计可清理行数，默认取 TRASH_RETENTION_DAYS）",
+    )
+    p_doctor.add_argument("--json", action="store_true", help="以 JSON 输出报告")

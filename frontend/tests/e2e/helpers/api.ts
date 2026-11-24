@@ -130,9 +130,10 @@ export async function apiCall(
   method: "get" | "post" | "put" | "patch" | "delete",
   url: string,
   data?: unknown,
+  options?: { extraHeaders?: Record<string, string> },
 ): Promise<ApiResult> {
   const res = await client[method](`/api/v1${url}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, ...(options?.extraHeaders ?? {}) },
     data,
   });
   let body: unknown = null;
