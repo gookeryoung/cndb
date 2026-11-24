@@ -5216,6 +5216,17 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   flex: 0 0 auto;
 }
 
+/* 分享链接：单行省略，可选中（复制兜底失败时手动选取） */
+.cn-share-link {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--cn-text-xs);
+  user-select: text;
+}
+
 .cn-listy-plain .ant-listy-item {
   padding-block: var(--cn-space-md);
   padding-inline: 0;

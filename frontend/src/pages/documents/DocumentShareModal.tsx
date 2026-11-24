@@ -11,6 +11,7 @@ import { App } from 'antd'
 
 import CnListMeta from '@/components/CnListMeta'
 import { documentsApi, type ShareItem } from '@/api/documents'
+import { copyText } from '@/utils/clipboard'
 
 interface DocumentShareModalProps {
   open: boolean
@@ -61,13 +62,11 @@ export default function DocumentShareModal({ open, onClose, workspaceId, docId, 
     onError: (err: Error) => message.error(err.message || '撤销分享链接失败'),
   })
 
+  /** 复制分享链接：走统一剪贴板兜底（局域网 http 下没有 Clipboard API） */
   const copy = async (share: ShareItem) => {
-    try {
-      await navigator.clipboard.writeText(shareLink(share.token))
-      message.success('链接已复制')
-    } catch {
-      message.error('复制失败，请手动选择链接')
-    }
+    const ok = await copyText(shareLink(share.token))
+    if (ok) message.success('链接已复制')
+    else message.error('复制失败，请手动选择链接')
   }
 
   const shares = sharesQuery.data ?? []
@@ -137,9 +136,20 @@ export default function DocumentShareModal({ open, onClose, workspaceId, docId, 
                       </Space>
                     }
                     description={
-                      <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-                        访问 {share.view_count} 次
-                      </Typography.Text>
+                      <>
+                        <Typography.Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+                          访问 {share.view_count} 次
+                        </Typography.Text>
+                        {/* 链接可见可选中：复制兜底失败时用户能手动选取 */}
+                        <Typography.Text
+                          code
+                          className="cn-share-link"
+                          title={shareLink(share.token)}
+                          data-testid={`document-share-link-${share.id}`}
+                        >
+                          {shareLink(share.token)}
+                        </Typography.Text>
+                      </>
                     }
                   />
                 </div>
