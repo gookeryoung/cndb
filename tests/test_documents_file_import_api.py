@@ -527,6 +527,46 @@ class TestImportFiles:
         assert len(titles) == 1
         assert "崩溃文档" not in titles
 
+    def test_conflict_skip_does_not_leak_attachments(self, client, db, ws, auth):
+        """冲突跳过条目已落盘的内嵌图片必须清理，不得登记到后续文档（需求 0138 C3）."""
+
+        def build(document):
+            document.add_heading("同名文档", level=1)
+            document.add_picture(io.BytesIO(PNG_BYTES))
+
+        seed = "---\ntitle: 同名文档\n---\n\n正文\n".encode()
+        assert (
+            client.post(
+                IMPORT.format(ws=ws.id),
+                files=_files(("seed.md", seed, "text/markdown")),
+                data={"paths": "seed.md"},
+                headers=auth,
+            ).status_code
+            == 200
+        )
+
+        r = client.post(
+            IMPORT.format(ws=ws.id),
+            files=_files(
+                (
+                    "a.docx",
+                    _make_docx(build),
+                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ),
+                ("b.md", "# 另一篇\n\n正文\n".encode(), "text/markdown"),
+            ),
+            data={"paths": ["a.docx", "b.md"], "conflict": "skip"},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        stats = r.json()
+        assert stats["skipped"] == 1
+        assert stats["created"] == 1
+        # 跳过条目已落盘的图片不得串到后续文档，也不占配额
+        assert stats["attachments"] == 0
+        assert db.execute(select(FileOwner).where(FileOwner.workspace_id == ws.id)).scalars().all() == []
+        assert list((Path(settings.UPLOAD_DIR) / str(ws.id)).glob("*")) == []
+
     def test_invalid_paths_reported(self, client, ws, auth):
         r = client.post(
             IMPORT.format(ws=ws.id),

@@ -1,6 +1,6 @@
 # ADR 0140: 直编并发冲突检测（行版本 `_rev` + 可选 `If-Match`）
 
-Status: Proposed（待评审）
+Status: Implemented（2026-11-24 人工评审通过，P0-P2 全期落地）
 Date: 2026-11-24
 Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/routers/bulk_crud.py`、`src/cndb/plugins/tables/schemas/models.py`、`src/cndb/plugins/tables/services/governance/merge.py`、`src/cndb/plugins/tables/services/importing/importer.py`、`src/cndb/plugins/tables/services/transfer/exporting.py`、`src/cndb/core/errors.py`、`frontend/src/api/hooks.ts`、`frontend/src/api/records.ts`、`frontend/src/api/client.ts`、`frontend/src/pages/grid/GridPage.tsx`
 需求卡片: `docs/requirements/0140-record-concurrency-control.md`（需求原文与约束编号的唯一副本）

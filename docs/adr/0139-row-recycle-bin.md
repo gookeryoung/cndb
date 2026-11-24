@@ -1,6 +1,6 @@
 # ADR 0139: 行回收站（删除统一软删 + 列表 / 恢复 / 彻底删除 / 保留期）
 
-Status: Proposed（待评审）
+Status: Implemented（2026-11-24 人工评审通过，P0-P2 全期落地）
 Date: 2026-11-24
 Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/routers/bulk_crud.py`、`src/cndb/plugins/tables/services/core/lookup_sync.py`、`src/cndb/plugins/tables/services/core/links.py`、`src/cndb/plugins/tables/services/governance/merge.py`、`src/cndb/plugins/tables/models.py`、`src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/workspaces/services/storage.py`、`src/cndb/plugins/workspaces/services/workspace_backup.py`、`src/cndb/core/task_runner.py`、`frontend/src/api/records.ts`、`frontend/src/api/hooks.ts`、`frontend/src/pages/grid/GridPage.tsx`
 需求卡片: `docs/requirements/0139-row-recycle-bin.md`（需求原文与约束编号的唯一副本）
