@@ -59,6 +59,7 @@ const ExportDialog = lazy(() => import('@/pages/import-export/ExportDialog'))
 const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDialog'))
 // 回收站抽屉（ADR 0139 C8）：按需打开的重型弹层，lazy 到按需 chunk（H31）
 const RowRecycleBinDrawer = lazy(() => import('@/pages/grid/RowRecycleBinDrawer'))
+const BulkReplaceDialog = lazy(() => import('@/pages/grid/BulkReplaceDialog'))
 import GridErrorBar from './GridErrorBar'
 import type { RetryableError } from './GridErrorBar'
 import { useUnsavedGuard } from './useUnsavedGuard'
@@ -335,6 +336,8 @@ export default function GridPage() {
   const [governanceOpen, setGovernanceOpen] = useState(false)
   // 行回收站抽屉（ADR 0139 C8）
   const [recycleOpen, setRecycleOpen] = useState(false)
+  // 批量查找替换（需求 0149）：按需弹层，lazy 到按需 chunk（H31）
+  const [bulkReplaceOpen, setBulkReplaceOpen] = useState(false)
   // 最近一次失败的行操作（路线图 P0-3：可重试错误条，而不是只弹一次 message）
   const [lastError, setLastError] = useState<RetryableError | null>(null)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
@@ -1269,6 +1272,7 @@ export default function GridPage() {
           onOpenExport={() => setExportOpen(true)}
           onOpenGovernance={() => setGovernanceOpen(true)}
           onOpenRecycleBin={canEditRecords ? () => setRecycleOpen(true) : undefined}
+          onOpenBulkReplace={canEditRecords ? () => setBulkReplaceOpen(true) : undefined}
           activeViewName={activeView?.name}
           activeViewId={activeView?.id}
           onCopyTable={(opts) => copyTable.mutate(opts)}
@@ -1541,6 +1545,21 @@ export default function GridPage() {
             fields={table?.fields || []}
             onClose={() => setGovernanceOpen(false)}
             onDataChanged={() => {
+              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+            }}
+          />
+        )}
+        {bulkReplaceOpen && (
+          <BulkReplaceDialog
+            open={bulkReplaceOpen}
+            wid={wid!}
+            tid={tid!}
+            fields={table?.fields || []}
+            filters={viewFilters as unknown as Array<Record<string, unknown>>}
+            filterLogic={viewFilterLogic}
+            onClose={() => setBulkReplaceOpen(false)}
+            onApplied={() => {
               queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
               queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
             }}

@@ -673,3 +673,15 @@ class AggregateRequest(BaseModel):
     filter_logic: str = Field(default="AND", pattern="^(AND|OR)$")
     order_by: dict[str, Any] | None = None
     limit: int = Field(default=100, ge=1, le=1000)
+
+
+class BulkReplaceRequest(BaseModel):
+    """批量查找替换（需求 0149）：默认 dry_run 只预览，确认后才写库."""
+
+    field: str
+    find: str = Field(min_length=1)
+    replace: str = ""
+    match: str = Field(default="contains", pattern="^(contains|exact|regex)$")
+    filters: list[dict[str, Any]] = Field(default_factory=list)
+    filter_logic: str = Field(default="AND", pattern="^(AND|OR)$")
+    dry_run: bool = True

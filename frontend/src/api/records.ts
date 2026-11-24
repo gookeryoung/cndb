@@ -67,4 +67,27 @@ export const recordApi = {
     api.post<{ deleted: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-delete`, { row_ids: ids }).then(r => r.data),
   bulkUpdate: (wid: number | string, tid: number | string, ids: Array<number | string>, values: Record<string, unknown>) =>
     api.post<{ updated: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-update`, { row_ids: ids, values }).then(r => r.data),
+  /** 批量查找替换（需求 0149）：默认 dry_run 只预览，确认后带 dry_run=false 落库 */
+  bulkReplace: (wid: number | string, tid: number | string, payload: BulkReplacePayload) =>
+    api.post<BulkReplaceResult>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-replace`, payload).then(r => r.data),
+}
+
+export interface BulkReplacePayload {
+  field: string
+  find: string
+  replace?: string
+  match?: 'contains' | 'exact' | 'regex'
+  filters?: Array<Record<string, unknown>>
+  filter_logic?: 'AND' | 'OR'
+  dry_run?: boolean
+}
+
+export interface BulkReplaceResult {
+  field: string
+  match: string
+  dry_run: boolean
+  matched: number
+  updated: number
+  skipped: number
+  preview: Array<{ row_id: number; old: string; new: string }>
 }

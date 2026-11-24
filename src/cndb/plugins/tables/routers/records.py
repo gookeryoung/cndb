@@ -27,6 +27,7 @@ from cndb.plugins.tables.models import AuditLog, DataTable
 from cndb.plugins.tables.schemas import (
     AggregateRequest,
     AutoIncrementPreviewResponse,
+    BulkReplaceRequest,
     BulkRowIds,
     MatrixUpsertRequest,
     RecordCopyRequest,
@@ -767,6 +768,40 @@ def matrix_upsert(
     if row is None:
         raise HTTPException(status_code=404, detail="行不存在")
     return {"action": "updated", "row_id": row_id, "row": row}
+
+
+@router.post("/bulk-replace", response_model=None)
+def bulk_replace_field(
+    workspace_id: int,
+    table_id: int,
+    payload: BulkReplaceRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """批量查找替换（需求 0149）：默认 dry_run 只统计与预览，`dry_run=false` 才写库.
+
+    只作用于当前筛选范围（行级权限 + 软删 + 业务过滤同源），只支持文本类物理字段；
+    批量链路不记行历史（ADR 0144 D4），改动仍进审计与事件流。
+    """
+    from cndb.plugins.tables.services.core.bulk_replace import bulk_replace
+
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    try:
+        return bulk_replace(
+            db.get_bind(),
+            dt,
+            field_name=payload.field,
+            find=payload.find,
+            replace=payload.replace,
+            match=payload.match,
+            filters=payload.filters or None,
+            filter_logic=payload.filter_logic,
+            dry_run=payload.dry_run,
+            db=db,
+            user=current_user,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/aggregate", response_model=None)
