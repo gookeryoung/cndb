@@ -153,8 +153,8 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 进行中 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/bulk_crud.py`、`src/cndb/plugins/tables/services/core/lookups.py`、`src/cndb/plugins/tables/models.py`、`src/cndb/plugins/workspaces/services/storage.py` | `tests/test_row_recycle_bin.py` | 待回填 |
-| P1 | 进行中 | `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`src/cndb/plugins/tables/services/core/audit.py` | `tests/test_row_recycle_bin.py` | 待回填 |
+| P0 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/bulk_crud.py`、`src/cndb/plugins/tables/services/core/lookups.py`、`src/cndb/plugins/tables/models.py`、`src/cndb/plugins/workspaces/services/storage.py` | `tests/test_row_recycle_bin.py` | `ff4be4c7` |
+| P1 | 已落地 | `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py`、`src/cndb/plugins/tables/services/core/audit.py` | `tests/test_row_recycle_bin.py` | `ff4be4c7` |
 | P2 | 未开始 | `src/cndb/plugins/tables/services/core/rows_retention.py`、`src/cndb/cli/tables.py`、`src/cndb/plugins/workspaces/services/{workspace_backup,backup_io}.py`、`frontend/src/pages/grid/RowRecycleBinDrawer.tsx` | `tests/test_rows_retention.py`、`tests/test_workspace_backup_v16.py`、`frontend/src/pages/grid/RowRecycleBinDrawer.test.tsx`、`frontend/tests/e2e/critical/row-recycle-bin.spec.ts` | 待实现 |
 
 ## 交接（会话结束更新）

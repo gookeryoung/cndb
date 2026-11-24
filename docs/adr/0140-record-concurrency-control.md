@@ -148,8 +148,8 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 进行中 | `src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py` | `tests/test_record_concurrency.py` | 待回填 |
-| P1 | 进行中 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/governance/merge.py`、`src/cndb/plugins/tables/services/transfer/exporting.py` | `tests/test_record_concurrency.py`、`tests/test_bulk_transfer.py` | 待回填 |
+| P0 | 已落地 | `src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py` | `tests/test_record_concurrency.py` | `ff4be4c7` |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/governance/merge.py`、`src/cndb/plugins/tables/services/transfer/exporting.py` | `tests/test_record_concurrency.py`、`tests/test_bulk_transfer.py` | `ff4be4c7` |
 | P2 | 未开始 | `frontend/src/api/hooks.ts`、`frontend/src/api/records.ts`、`frontend/src/api/client.ts`、`frontend/src/pages/grid/GridPage.tsx` | `frontend/src/api/hooks.test.tsx`、`frontend/tests/e2e/critical/record-conflict.spec.ts` | 待实现 |
 
 ## 交接（会话结束更新）
