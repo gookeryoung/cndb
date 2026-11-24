@@ -8,6 +8,8 @@ export type RowValues = Record<string, unknown>
  * 例如：{ id: 1, '姓名': '张三', '薪资': 15000, created_at: '...' }
  */
 export interface RowResponse {
+  /** 行 ETag（`v1-<行 id>-<版本号>`，ADR 0140）：直编时作为 If-Match 回传 */
+  _etag?: string
   id: ID
   created_at?: string
   updated_at?: string
@@ -50,6 +52,8 @@ export interface RecordListParams {
   filters?: string | Record<string, unknown> | Array<Record<string, unknown>>
   sorts?: string | Record<string, unknown> | Array<Record<string, unknown>>
   filter_logic?: 'AND' | 'OR'
+  /** 回收站过滤：none（默认，只看活动行）/ only（只看已删行）/ include（两者都看） */
+  trashed?: 'none' | 'only' | 'include'
 }
 
 /** 视图可见性档位（对齐后端 ViewVisibility，ADR 0003）
@@ -188,8 +192,11 @@ export interface TrashedRow {
   id: ID
   original_id?: ID
   deleted_at?: string
-  /** 软删时间（后端可能返回 _trashed_at 或 deleted_at） */
+  /** 软删时间（回收站列表 trashed=only 时返回，ADR 0139 C2） */
   _trashed_at?: string
+  /** 删除操作人 id / 名称（回收站列表） */
+  _trashed_by?: number | null
+  _trashed_by_name?: string | null
   [fieldName: string]: unknown
 }
 

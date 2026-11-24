@@ -150,13 +150,13 @@ Related: `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/tables/services/core/ddl.py`、`src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables/schemas/models.py` | `tests/test_record_concurrency.py` | `ff4be4c7` |
 | P1 | 已落地 | `src/cndb/plugins/tables/services/core/records.py`、`src/cndb/plugins/tables/services/governance/merge.py`、`src/cndb/plugins/tables/services/transfer/exporting.py` | `tests/test_record_concurrency.py`、`tests/test_bulk_transfer.py` | `ff4be4c7` |
-| P2 | 未开始 | `frontend/src/api/hooks.ts`、`frontend/src/api/records.ts`、`frontend/src/api/client.ts`、`frontend/src/pages/grid/GridPage.tsx` | `frontend/src/api/hooks.test.tsx`、`frontend/tests/e2e/critical/record-conflict.spec.ts` | 待实现 |
+| P2 | 进行中 | `frontend/src/api/hooks.ts`、`frontend/src/api/records.ts`、`frontend/src/api/client.ts`、`frontend/src/pages/grid/GridPage.tsx` | `frontend/src/api/hooks.test.tsx`、`frontend/tests/e2e/critical/record-conflict.spec.ts`（未写） | 待回填 |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0/P1 已实现（后端），P2 未开始（前端冲突提示与 e2e）。
-- 已完成：`_rev` 列（新表 `build_sa_table` 建出 + 旧表 `ensure_row_version_column` 懒补）；`row_etag` / `parse_if_match`；`update_row(expected_rev=…)` 条件更新 + 409 `record_stale`；行载荷 `_etag`；各写路径 `_rev=_rev+1`（直编 / 批量 / 批量逐行 / 软删 / 恢复 / 治理合并）；导出与备份剔出 `_etag` / `_rev`。
-- 下一步：P2（`hooks.ts` 带 `If-Match` + 409 冲突提示 + e2e `critical/record-conflict.spec.ts`）。
+- 当前阶段：P0-P2 已实现（P2 的双上下文 e2e 未写）。
+- 已完成：`_rev` 列（新表 `build_sa_table` 建出 + 旧表 `ensure_row_version_column` 懒补）；`row_etag` / `parse_if_match`；`update_row(expected_rev=…)` 条件更新 + 409 `record_stale`；行载荷 `_etag`；各写路径 `_rev=_rev+1`（直编 / 批量 / 批量逐行 / 软删 / 恢复 / 治理合并）；导出与备份剔出 `_etag` / `_rev`；前端 `client.ts` 保留 `code`、`hooks.ts` 带 `If-Match` 且 409 时回滚 + 明确提示（不自动重放）。
+- 下一步：补 `critical/record-conflict.spec.ts`（两个登录上下文，A 改 → B 用旧 etag 提交 → 断言 409 提示与不覆盖）。
 - 已知坑：
   - `_rev` 已从 `_row_to_dict` 键空间排除（只露 `_etag`）；业务字段若叫 `id` 会覆盖行 id，ETag 用单独留存的主键计算。
   - 导入 upsert 的 `_rev` 自增已合进现有 `UPDATE ... SET`（`bulk_update_rows` 两个分支），无额外往返。

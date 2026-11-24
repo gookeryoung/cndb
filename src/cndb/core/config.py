@@ -206,6 +206,9 @@ class Settings(BaseSettings):
     LLM_PRIVATE_HOST_ALLOWLIST: list[str] = []
     # llm_run 调用记录保留天数（`cndb llm prune` 使用；本期不自动清理）
     LLM_RUN_RETENTION_DAYS: int = 90
+    # 行回收站保留天数（ADR 0139 C5）：到期行由 `cndb tables purge-trash` 物理清理；
+    # 0 = 永不自动清理（保留期任务关闭），负值同 0
+    TRASH_RETENTION_DAYS: int = 30
 
     # API 前缀
     API_V1_PREFIX: str = "/api/v1"

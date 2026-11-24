@@ -286,6 +286,10 @@ def _build_backup(
                     rid = int(r["id"])
                     row["__row_id"] = rid
                     idx_map[rid] = i
+                # ADR 0139 C10：已删行附带回收站状态，恢复后仍在回收站（旧包缺这两个键按活动行）
+                if r.get("_trashed"):
+                    row["__trashed"] = True
+                    row["__trashed_at"] = r.get("_trashed_at")
                 if chunk is not None:
                     chunk.write(json.dumps(row, ensure_ascii=False, default=_json_default))
                     chunk.write("\n")
@@ -782,6 +786,8 @@ def downsample_v8(backup_v9: dict[str, Any]) -> dict[str, Any]:
         tbl.pop("members", None)
         for row in tbl.get("rows", []):
             row.pop("__row_id", None)
+            row.pop("__trashed", None)
+            row.pop("__trashed_at", None)
     docs_v8 = []
     for dd in data.get("documents", []):
         if dd.get("is_deleted"):

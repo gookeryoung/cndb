@@ -57,6 +57,8 @@ const FieldManager = lazy(() => import('@/pages/fields/FieldManager'))
 const UpdateDialog = lazy(() => import('@/pages/import-export/UpdateDialog'))
 const ExportDialog = lazy(() => import('@/pages/import-export/ExportDialog'))
 const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDialog'))
+// 回收站抽屉（ADR 0139 C8）：按需打开的重型弹层，lazy 到按需 chunk（H31）
+const RowRecycleBinDrawer = lazy(() => import('@/pages/grid/RowRecycleBinDrawer'))
 // 按需加载：以下三类均为「用户点击后才出现」的重型面板（>400 行），静态链入会让
 // GridPage chunk 随每次功能迭代线性膨胀（见 scripts/bundle-budget.mjs 的 GridPage 预算）。
 // 走 lazy 后其代码移出 GridPage，仅在首次打开时下载独立 chunk。
@@ -328,6 +330,8 @@ export default function GridPage() {
   const [updateOpen, setUpdateOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [governanceOpen, setGovernanceOpen] = useState(false)
+  // 行回收站抽屉（ADR 0139 C8）
+  const [recycleOpen, setRecycleOpen] = useState(false)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
   const [createViewOpen, setCreateViewOpen] = useState(false)
   const [editViewOpen, setEditViewOpen] = useState(false)
@@ -1240,6 +1244,7 @@ export default function GridPage() {
           onOpenImportExport={() => setUpdateOpen(true)}
           onOpenExport={() => setExportOpen(true)}
           onOpenGovernance={() => setGovernanceOpen(true)}
+          onOpenRecycleBin={canEditRecords ? () => setRecycleOpen(true) : undefined}
           activeViewName={activeView?.name}
           activeViewId={activeView?.id}
           onCopyTable={(opts) => copyTable.mutate(opts)}
@@ -1496,6 +1501,19 @@ export default function GridPage() {
             fields={table?.fields || []}
             onClose={() => setGovernanceOpen(false)}
             onDataChanged={() => {
+              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+            }}
+          />
+        )}
+        {recycleOpen && (
+          <RowRecycleBinDrawer
+            open={recycleOpen}
+            wid={wid!}
+            tid={tid!}
+            tableName={table?.name}
+            onClose={() => setRecycleOpen(false)}
+            onChanged={() => {
               queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
               queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
             }}
