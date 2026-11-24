@@ -11,6 +11,8 @@ from cndb.plugins.tables.schemas.governance import (
     MergeRequest,
 )
 from cndb.plugins.tables.schemas.models import (
+    AggregateMetric,
+    AggregateRequest,
     AutoIncrementPreviewResponse,
     BulkDeleteRequest,
     BulkRowIds,
@@ -66,6 +68,8 @@ from cndb.plugins.tables.schemas.models import (
 )
 
 __all__ = [
+    "AggregateMetric",
+    "AggregateRequest",
     "AutoIncrementPreviewResponse",
     "BulkDeleteRequest",
     "BulkRowIds",

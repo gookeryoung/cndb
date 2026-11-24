@@ -646,3 +646,28 @@ __all__ = [
     "ViewVisibilityUpdate",
     "WorkspaceBrief",
 ]
+
+
+class AggregateMetric(BaseModel):
+    """单个聚合指标（需求 0147）：``field`` 留空仅合法用于 ``count``."""
+
+    field: str | None = None
+    agg: str = "count"
+    alias: str | None = None
+
+
+class AggregateRequest(BaseModel):
+    """服务端聚合 / 分组请求（需求 0147）.
+
+    - ``group_by``：字段名列表（物理列）；为空表示整表一行汇总；
+    - ``metrics``：指标列表；``count`` 可不填 ``field``（计行数）；
+    - ``filters`` / ``filter_logic``：与列表同构，行级权限与软删过滤无条件生效；
+    - ``order_by``：``{"by": "group"|"metric", "index": n, "direction": "asc"|"desc"}``。
+    """
+
+    group_by: list[str] = Field(default_factory=list)
+    metrics: list[AggregateMetric] = Field(default_factory=list)
+    filters: list[dict[str, Any]] = Field(default_factory=list)
+    filter_logic: str = Field(default="AND", pattern="^(AND|OR)$")
+    order_by: dict[str, Any] | None = None
+    limit: int = Field(default=100, ge=1, le=1000)

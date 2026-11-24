@@ -25,6 +25,7 @@ from cndb.plugins.change_requests.models import (
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import AuditLog, DataTable
 from cndb.plugins.tables.schemas import (
+    AggregateRequest,
     AutoIncrementPreviewResponse,
     BulkRowIds,
     MatrixUpsertRequest,
@@ -45,6 +46,7 @@ from cndb.plugins.tables.services.core.audit import ACTION_TRASH
 from cndb.plugins.tables.services.core.ddl import ensure_sort_index
 from cndb.plugins.tables.services.core.records import (
     _get_sa_table,
+    aggregate_rows,
     bulk_create,
     copy_row_values,
     count_rows,
@@ -729,6 +731,33 @@ def matrix_upsert(
     if row is None:
         raise HTTPException(status_code=404, detail="行不存在")
     return {"action": "updated", "row_id": row_id, "row": row}
+
+
+@router.post("/aggregate", response_model=None)
+def aggregate_records(
+    workspace_id: int,
+    table_id: int,
+    payload: AggregateRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """服务端聚合 / 分组（需求 0147）：GROUP BY 下推 SQL，行级权限与软删过滤无条件生效."""
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    try:
+        return aggregate_rows(
+            db.get_bind(),
+            dt,
+            group_by=payload.group_by,
+            metrics=[metric.model_dump() for metric in payload.metrics],
+            filters=payload.filters or None,
+            filter_logic=payload.filter_logic,
+            order_by=payload.order_by,
+            limit=payload.limit,
+            db=db,
+            user=current_user,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/copy", status_code=status.HTTP_201_CREATED, response_model=None)

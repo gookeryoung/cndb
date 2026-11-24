@@ -238,6 +238,14 @@ class RowValidator:
                 row[f.name] = []
             if f.required:
                 result.issues.append(Issue(field=f.name, level="error", message="必填字段不能为空"))
+            else:
+                # 条件必填（需求 0146）：条件命中时为空也算错误（与直编同一函数）
+                from cndb.plugins.tables.services.core.field_rules import check_required_when
+
+                try:
+                    check_required_when(f, row)
+                except ValueError as exc:
+                    result.issues.append(Issue(field=f.name, level="error", message=str(exc)))
             return
 
         try:
@@ -256,6 +264,10 @@ class RowValidator:
                 result.issues.append(Issue(field=f.name, level="error", message=f"未知字段类型: {f.field_type}"))
                 return
             normalized = ft.validate_value(raw, f.config)
+            # 字段级领域规则（需求 0146）：模式匹配，与直编同一函数
+            from cndb.plugins.tables.services.core.field_rules import check_pattern
+
+            check_pattern(f, normalized if normalized is not None else raw)
             # validation 结果为 None 时不写入 normalized（与 _normalize_values 行为一致）
             if normalized is not None:
                 result.normalized[f.db_column_name] = normalized

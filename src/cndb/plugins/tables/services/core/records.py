@@ -445,6 +445,10 @@ def create_row(
     normalized, link_values = _normalize_values(table, values)
     _apply_auto_increment_defaults(engine, table, values, normalized)
     _ensure_required_fields_provided(table, normalized)
+    # 字段级领域规则（需求 0146）：模式 + 条件必填，直编与导入同一口径
+    from cndb.plugins.tables.services.core.field_rules import validate_row_constraints
+
+    validate_row_constraints(table, _row_values_by_name(table, normalized))
 
     # 主行提交前预校验 link 目标存在，避免主行已入库但 link 写入失败返回 500
     if db is not None:
@@ -924,6 +928,13 @@ def update_row(
     before_row: dict[str, Any] | None = None
     if record_history and db is not None:
         before_row = get_row(engine, table, row_id, db=db, user=read_user)
+
+    # 字段级领域规则（需求 0146）：条件必填要看合并后的行值（补丁 + 当前值）
+    from cndb.plugins.tables.services.core.field_rules import validate_row_constraints
+
+    merged_values = dict(before_row or {})
+    merged_values.update(_row_values_by_name(table, normalized or {}))
+    validate_row_constraints(table, merged_values)
 
     rev_column = sa_table.c._rev
     check_rev = expected_rev is not None and expected_rev >= 0
@@ -1453,6 +1464,14 @@ def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = Non
 # ── 内部辅助 ─────────────────────────────────────────
 
 
+def _row_values_by_name(table: DataTable, normalized: dict[str, Any]) -> dict[str, Any]:
+    """把「物理列名 → 值」映射成「字段名 → 值」（校验函数按字段名取数）."""
+    if not normalized:
+        return {}
+    by_column = {f.db_column_name: f.name for f in table.active_fields()}
+    return {by_column.get(col, col): value for col, value in normalized.items()}
+
+
 def _row_to_dict(
     table: DataTable,
     _sa_table: Table,
@@ -1809,6 +1828,9 @@ def _invalidate_search_cache(table: Any) -> None:
 
 
 __all__ = [
+    "AGGREGATE_FUNCS",
+    "AGGREGATE_MAX_ROWS",
+    "aggregate_rows",
     "bulk_create",
     "bulk_delete",
     "bulk_update",
@@ -1830,3 +1852,165 @@ __all__ = [
     "trash_rows",
     "update_row",
 ]
+
+
+# ── AGGREGATE（需求 0147）─────────────────────────────
+
+#: 聚合扫描行数上限：超限要求调用方收窄筛选（分页 / 全表统计都走这里）
+AGGREGATE_MAX_ROWS = 500_000
+
+#: 支持的聚合算子（null 语义：sum/avg/min/max 只算非空，count 计非空值，distinct 计去重值）
+AGGREGATE_FUNCS = ("count", "sum", "avg", "min", "max", "distinct")
+
+
+def aggregate_rows(
+    engine: Any,
+    table: DataTable,
+    *,
+    group_by: list[str] | None = None,
+    metrics: list[dict[str, Any]] | None = None,
+    filters: list[dict[str, Any]] | None = None,
+    filter_logic: str = "AND",
+    order_by: dict[str, Any] | None = None,
+    limit: int = 100,
+    db: Any = None,
+    user: Any = None,
+    max_rows: int = AGGREGATE_MAX_ROWS,
+) -> dict[str, Any]:
+    """服务端聚合 / 分组（下推 SQL），返回 ``{rows, total_groups}``.
+
+    - 行级权限（读范围）与软删过滤与 ``list_rows`` 同一份 WHERE；
+    - group_by / metric 只接受**有物理列**的字段（lookup / formula 等 → ValueError）；
+    - 先 COUNT 基础命中行数，超过 ``max_rows`` → ValueError（要求收窄筛选）。
+    """
+    sa_table = _get_sa_table(engine, table)
+    fields = {f.name: f for f in table.active_fields()}
+
+    def _column_of(name: str) -> Any:
+        field = fields.get(name)
+        if field is None:
+            raise ValueError(f"聚合字段不存在: {name}")
+        ft = default_registry.get(field.field_type)
+        if ft is None or not ft.has_physical_column:
+            raise ValueError(
+                f"字段「{name}」没有物理列（lookup / formula 等），不能用于聚合；请先在字段管理里改用普通字段"
+            )
+        return sa_table.c.get(field.db_column_name)
+
+    group_columns = [(_column_of(name), name) for name in (group_by or [])]
+
+    metric_specs: list[tuple[str, Any, str]] = []
+    for raw in metrics or []:
+        spec: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        agg = str(spec.get("agg") or "count").lower()
+        if agg not in AGGREGATE_FUNCS:
+            raise ValueError(f"不支持的聚合方式: {agg}")
+        field_name = spec.get("field")
+        alias = str(spec.get("alias") or (f"{agg}_{field_name}" if field_name else agg))
+        if not field_name:
+            if agg != "count":
+                raise ValueError(f"聚合 {agg} 需要指定字段")
+            metric_specs.append((alias, func.count(), agg))
+            continue
+        column = _column_of(str(field_name))
+        if agg == "count":
+            metric_specs.append((alias, func.count(column), agg))
+        elif agg == "distinct":
+            metric_specs.append((alias, func.count(func.distinct(column)), agg))
+        else:
+            metric_specs.append((alias, getattr(func, agg)(column), agg))
+
+    if not metric_specs and not group_columns:
+        raise ValueError("至少需要一个聚合指标或分组字段")
+
+    plan = _build_query_plan(
+        table,
+        sa_table,
+        filters=filters,
+        filter_logic=filter_logic,
+        sorts=None,
+        include_trashed=False,
+        db=db,
+        user=user,
+    )
+    if plan.needs_post:
+        raise ValueError("含 lookup 字段的筛选不支持服务端聚合，请改用普通字段筛选")
+
+    with engine.connect() as conn:
+        count_stmt = select(func.count(sa_table.c.id))
+        if plan.final_where:
+            count_stmt = count_stmt.where(*plan.final_where)
+        matched = int(conn.execute(count_stmt).scalar() or 0)
+        if matched > max_rows:
+            raise ValueError(
+                f"本次聚合命中 {matched} 行，超过上限 {max_rows} 行（AGGREGATE_MAX_ROWS），"
+                "请补充普通字段筛选缩小范围后重试"
+            )
+
+        selected = [column for column, _name in group_columns] + [
+            metric_func.label(alias) for alias, metric_func, _agg in metric_specs
+        ]
+        stmt = select(*selected)
+        if plan.final_where:
+            stmt = stmt.where(*plan.final_where)
+        if group_columns:
+            stmt = stmt.group_by(*[column for column, _name in group_columns])
+
+        order_clause = _aggregate_order_clause(order_by, group_columns, metric_specs)
+        if order_clause is not None:
+            stmt = stmt.order_by(order_clause)
+        stmt = stmt.limit(max(int(limit), 1))
+        raw_rows = conn.execute(stmt).all()
+
+        groups_stmt = (
+            select(func.count()).select_from(
+                select(*[column for column, _name in group_columns])
+                .where(*plan.final_where)
+                .group_by(*[column for column, _name in group_columns])
+                .subquery()
+            )
+            if group_columns
+            else None
+        )
+        total_groups = (
+            int(conn.execute(groups_stmt).scalar() or 0) if groups_stmt is not None else (1 if matched else 0)
+        )
+
+    rows: list[dict[str, Any]] = []
+    for raw in raw_rows:
+        group_values = {name: raw[index] for index, (_column, name) in enumerate(group_columns)}
+        metric_values = {alias: raw[len(group_columns) + index] for index, (alias, _f, _agg) in enumerate(metric_specs)}
+        rows.append({"group": group_values, "metrics": metric_values})
+
+    return {
+        "rows": rows,
+        "total_groups": total_groups,
+        "matched_rows": matched,
+        "group_by": [name for _column, name in group_columns],
+        "metrics": [
+            {"alias": alias, "agg": agg, "field": spec.get("field")}
+            for (alias, _f, agg), spec in zip(metric_specs, metrics or [], strict=False)
+        ],
+    }
+
+
+def _aggregate_order_clause(
+    order_by: dict[str, Any] | None,
+    group_columns: list[tuple[Any, str]],
+    metric_specs: list[tuple[str, Any, str]],
+) -> Any | None:
+    """把 ``order_by`` 映射成 SQL 排序子句（按分组键或聚合结果）."""
+    if not isinstance(order_by, dict):
+        return None
+    by = str(order_by.get("by") or "group")
+    direction = str(order_by.get("direction") or "asc").lower()
+    index = int(order_by.get("index") or 0)
+    if by == "group":
+        if index >= len(group_columns):
+            raise ValueError("order_by.index 超出分组字段范围")
+        target: Any = group_columns[index][0]
+    else:
+        if index >= len(metric_specs):
+            raise ValueError("order_by.index 超出聚合指标范围")
+        target = metric_specs[index][1]
+    return target.desc() if direction == "desc" else target.asc()
