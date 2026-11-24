@@ -377,6 +377,42 @@ def list_fields(
     return [field_response(f, full=full) for f in query.order_by(DataField.order, DataField.id).all()]
 
 
+@router.get("/ddl-impact", response_model=None)
+def get_ddl_impact(
+    workspace_id: int,
+    table_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    action: str = "change_type",
+    field_id: int | None = None,
+    field_type: str | None = None,
+    sample: int = 200,
+) -> dict[str, Any]:
+    """大表 DDL 影响预估（需求 0150）：只读，返回行数 / 空值行数 / 抽样耗时 / 预计耗时.
+
+    仅要求 `EDIT_SCHEMA`（与真正执行 DDL 同一门槛）；不写库、不改元数据。
+    """
+    from cndb.plugins.tables.services.core.ddl_impact import estimate_ddl_impact
+
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
+    field = None
+    if field_id is not None:
+        field = db.query(DataField).filter(DataField.id == field_id, DataField.table_id == table_id).first()
+        if field is None:
+            raise HTTPException(status_code=404, detail="字段不存在")
+    try:
+        return estimate_ddl_impact(
+            db,
+            dt,
+            action=action,
+            field=field,
+            target_type=field_type,
+            sample=sample,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.patch("/{field_id}", response_model=FieldResponse)
 def update_field(
     workspace_id: int,
@@ -385,6 +421,7 @@ def update_field(
     payload: FieldUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    force: bool = False,
 ) -> DataField:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_SCHEMA)
     df = db.query(DataField).filter(DataField.id == field_id, DataField.table_id == table_id).first()
@@ -395,6 +432,22 @@ def update_field(
     update_data = payload.model_dump(exclude_unset=True)
     if "field_type" in update_data and update_data["field_type"] is not None:
         update_data["field_type"] = normalize_field_type(update_data["field_type"])
+
+    # 大表 DDL 强制确认（需求 0150）：默认阈值 0 = 关闭，行为与改造前一致。
+    # 开启后，改字段类型且行数超阈值时要求显式 force（前端应在确认弹窗里展示预估）。
+    if "field_type" in update_data and update_data["field_type"] not in (None, df.field_type):
+        from cndb.plugins.tables.services.core.ddl_impact import estimate_ddl_impact
+
+        impact = estimate_ddl_impact(db, dt, action="change_type", field=df, target_type=str(update_data["field_type"]))
+        if impact["force_required"] and not force:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"表「{dt.name}」有 {impact['row_count']} 行，修改字段类型预计需要约 "
+                    f"{max(impact['estimated_ms'] / 1000, 0.1):.1f} 秒；超过阈值 "
+                    f"{impact['threshold_rows']} 行，请确认后重试（带 force=true）"
+                ),
+            )
 
     # 备份旧状态（用于后续物理变更检测与失败回退）
     old_field_type = df.field_type

@@ -26,7 +26,7 @@ ADR 0139 / 0140 置 `Implemented`；P1 剩余的「行级历史与撤销」「�
 | C1 | 「健壮性」 | **P0 止血期（1.5–2 周）**：① `cndb tables doctor [--fix]` 巡检孤儿 link / 失效 lookup 冗余列 / 排序索引漂移 / 回收站体积（已落地，见需求卡 0142；公式异常检测后移）；② 审计与事件流保留期（已落地，见需求卡 0143；查询端点沿用既有 `GET /tables/{id}/audit`）；③ 前端边界（未保存编辑离开拦截 + 行操作失败可重试；**大范围粘贴保护不适用** —— 网格没有多单元格粘贴入口，单元格是原生输入框）；④ 导入解析随机输入测试 + 行权限不变量矩阵（已落地，见 `tests/test_import_parsers_fuzz.py` / `tests/test_row_access_invariants.py`）；⑤ 翻页 / 内联编辑性能预算进 CI（`@perf` 旅程 + 硬上限；基线缺失只记录读数） | `cli/`、`services/core/`、`frontend/src/pages/grid/`、`tests/`、`frontend/scripts/perf-budget.mjs` | 每项独立需求卡 + 对应单测；`make check-fast` / `make test` / perf 预算全绿 |
 | C2 | 「健壮性 + 功能性」 | **P1 协作可信期（3–4 周）**：行回收站（0139，已落地）、直编并发冲突检测（0140，已落地）、行级历史与撤销（0144，P0-P1 已落地，前端时间线未开始）、写幂等键（0145，已落地；当前覆盖 `POST /records`） | `tables/`、`frontend/src/pages/grid/`、`core/` | 0139 / 0140 按各自 ADR 验收；历史与幂等各出 S2/S1 卡与 ADR |
 | C3 | 「功能性」 | **P2 数据能力期（4–6 周）**：服务端聚合 / 分组端点（0147，已落地）、校验规则增强（0146，已落地，服务端强制）、
-keyset 分页 + 可配导出上限（0148，已落地，后端）、批量编辑增强（0149，查找替换已落地；粘贴校验预览 / 跨页全选未开始）、大表 DDL dry-run（**未开始**） | `tables/routers/`、`tables/services/`、`frontend/src/pages/grid/` | 每项独立卡；聚合计与前端本地口径对拍；深翻页纳入 perf 预算 |
+keyset 分页 + 可配导出上限（0148，已落地，后端）、批量编辑增强（0149，查找替换已落地；粘贴校验预览 / 跨页全选未开始）、大表 DDL dry-run（0150，已落地，后端；前端展示未开始） | `tables/routers/`、`tables/services/`、`frontend/src/pages/grid/` | 每项独立卡；聚合计与前端本地口径对拍；深翻页纳入 perf 预算 |
 | C4 | 「最佳实践」 | **P3 按触发条件启动**：实时协同（CRDT / 广播）、字段类型对外准入、表模板 —— 触发条件与取舍见下「暂不做」表 | `tables/` | 触发条件成立再立项，不预先落码 |
 | C5 | （门禁） | 每个 S2 期先 ADR（`Proposed → Accepted` 人工评审）；新增 H 条目须人工确认后入 `docs/CONSTRAINTS.md`；每期收工按 H4 跑 `make check-fast` → `make test` → 文档回填 | 全仓 | `make adr-check` / `make constraint-check` 0 error |
 | C6 | （度量） | 每期在 ADR「交接」记一行度量：409 `record_stale` 率、回收站行数与体积占比、`tables doctor` 脏数据条数、深翻页 p95、聚合扫描行数、导入失败率 | ADR 交接节 | 评审时可见趋势 |
@@ -69,7 +69,8 @@ keyset 分页 + 可配导出上限（0148，已落地，后端）、批量编辑
 - [x] ⑪ P2 首批已落地：**0146 字段校验规则**（`config.validation.pattern` + `config.required_when`，直编与导入共用 `validate_row_constraints`；update 基于合并值判定）与 **0147 服务端聚合/分组**（`POST /records/aggregate`，GROUP BY 下推、行级权限与软删过滤同源、lookup/formula 字段 400、扫描上限 50 万）。
 - [x] ⑬ P2 第二批已落地：**0148 keyset 翻页 + 可配导出上限**（`after` 游标支持多字段混向与 id 兜底、NULL 游标 400、非法游标 400、`next_cursor`；`EXPORT_MAX_ROWS` 默认 50 万且先 COUNT 再取数）。
 - [x] ⑭ P2 第三批：**0149 批量查找替换**（`POST /records/bulk-replace`，contains/exact/regex、默认 dry-run 预览、范围与列表同源、只改文本物理列、替换后仍过字段规则、2 万行上限；前端「更多 → 批量替换」对话框）。
-- [ ] ⑫ P2 剩余未开始：批量编辑的**粘贴校验预览 / 跨页全选**（前端为主）、大表 DDL dry-run。前端侧（聚合切换 / 校验规则编辑 UI / 历史时间线 / 网格切 keyset）同样未开始。
+- [x] ⑮ P2 第五批：**0150 大表 DDL 影响预估**（`GET /fields/ddl-impact` 抽样估算行数 / 空值行数 / 预计耗时；`DDL_IMPACT_FORCE_THRESHOLD_ROWS` 默认 0 关闭，开启后改类型超阈值要求 `force=true`；默认关闭保证行为不变）。
+- [ ] ⑫ P2 剩余未开始：批量编辑的**粘贴校验预览 / 跨页全选**（前端为主）、以及各功能的前端侧（历史时间线 / 聚合切换 / 校验规则编辑 / DDL 预估展示）。前端侧（聚合切换 / 校验规则编辑 UI / 历史时间线 / 网格切 keyset）同样未开始。
 - [x] ⑨ P0-3 前端边界已落地：`useUnsavedGuard`（脏草稿时 `beforeunload` 拦截 + 切视图 / 切模式前确认）、`GridErrorBar`（行操作失败保留最近一次并提供显式重试，成功自动收起）；大范围粘贴保护经核实不适用（网格无多单元格粘贴入口）。**已知限制**：侧栏直接切到另一张表属于跨页面 Link 跳转，`BrowserRouter`（非 data router）下没有全局 `useBlocker`，未纳入拦截；如需覆盖须切到 react-router data router。
 - [x] ⑩ P0-5 性能预算已落地：`@perf` 旅程新增「表格翻页」「表格内联编辑」两条，只断言「交互响应 <600ms / 单次长任务 <400ms」硬上限，基线缺失时只记录读数（`baselines.json` 目前为空，回填方式：同环境连续 3 次取中位数）。
 - [x] ⑦ P0-2 审计 / 事件流保留期已落地（需求卡 0143）：`AUDIT_RETENTION_DAYS`（默认 180，0 关闭）+ `cndb tables purge-audit`（默认 dry-run，分批 1000）；审计读接口沿用既有端点。
