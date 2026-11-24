@@ -223,6 +223,17 @@ class TestCliSession:
             session.close()
 
 
+class TestCliBoundaries:
+    def test_unknown_subcommand_exits(self, db, monkeypatch, capsys):
+        from cndb.cli import tables as cli_tables
+
+        monkeypatch.setattr(cli_tables, "_get_session", lambda: db)
+        with pytest.raises(SystemExit) as exc:
+            cli_tables.tables_command(argparse.Namespace(tables_cmd="bogus"))
+        assert exc.value.code == 2
+        assert "未知 tables 子命令" in capsys.readouterr().err
+
+
 class TestBackupKeepsTrashState:
     def test_archive_carries_trash_state(self, db, ws, owner, table):
         """ADR 0139 C10：归档对已删行附带 __trashed / __trashed_at（活动行不带）."""

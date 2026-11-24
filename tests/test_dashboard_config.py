@@ -43,6 +43,95 @@ def test_normalize_dashboard_invalid_path(case: dict[str, Any]) -> None:
     assert err.startswith(case["path"]), err
 
 
+# ── 组件级 filters / sortings 校验 ────────────────────
+
+
+def test_normalize_widget_filters_rejects_bad_shapes() -> None:
+    """filters 校验：非数组 / 非对象项 / 缺字段名 / 未知字段 / 未知算子 均报路径."""
+    from cndb.plugins.tables.services.core.dashboard_config import _normalize_filters
+
+    fields = {"金额": "number", "日期": "date"}
+    assert _normalize_filters(None, "q.filters", fields) == ([], None)
+    ok, err = _normalize_filters([{"field_name": "金额", "op": ">=", "value": 1}], "q.filters", fields)
+    assert err is None and ok == [{"field_name": "金额", "op": ">=", "value": 1}]
+
+    bad_cases = [
+        ("not-a-list", "必须是数组"),
+        ([1], "[0]: 必须是对象"),
+        ([{"op": ">="}], "[0].field_name: 必须是非空字符串"),
+        ([{"field_name": "", "op": ">="}], "[0].field_name: 必须是非空字符串"),
+        ([{"field_name": "不存在", "op": ">="}], "字段不存在"),
+        ([{"field_name": "金额", "op": "p99"}], "不支持的操作符"),
+        ([{"field_name": "金额"}], "不支持的操作符"),
+    ]
+    for raw, fragment in bad_cases:
+        config, message = _normalize_filters(raw, "q.filters", fields)
+        assert config is None
+        assert fragment in (message or ""), (raw, message)
+
+
+def test_normalize_widget_sortings_rejects_bad_shapes() -> None:
+    """sortings 校验：非数组 / 缺字段名 / 未知字段 / 非法方向 报路径，方向缺省 asc."""
+    from cndb.plugins.tables.services.core.dashboard_config import _normalize_sortings
+
+    fields = {"金额": "number"}
+    assert _normalize_sortings(None, "q.sortings", fields) == ([], None)
+    ok, err = _normalize_sortings([{"field_name": "金额"}], "q.sortings", fields)
+    assert err is None and ok == [{"field_name": "金额", "direction": "asc"}]
+
+    bad_cases = [
+        ("x", "必须是数组"),
+        (["x"], "[0]: 必须是对象"),
+        ([{"direction": "asc"}], "[0].field_name: 必须是非空字符串"),
+        ([{"field_name": "未知"}], "字段不存在"),
+        ([{"field_name": "金额", "direction": "up"}], "必须是 asc/desc"),
+    ]
+    for raw, fragment in bad_cases:
+        config, message = _normalize_sortings(raw, "q.sortings", fields)
+        assert config is None
+        assert fragment in (message or ""), (raw, message)
+
+
+def test_normalize_query_shapes_and_limits() -> None:
+    """widget.query：缺省给空规格，非对象 / 非法 logic / 越界 limit 报路径."""
+    from cndb.plugins.tables.services.core.dashboard_config import _normalize_query
+
+    fields = {"金额": "number"}
+    assert _normalize_query(None, "w.query", fields) == (
+        {"filters": [], "filter_logic": "AND", "sortings": []},
+        None,
+    )
+    ok, err = _normalize_query({"filter_logic": "OR", "limit": 5}, "w.query", fields)
+    assert err is None and ok == {"filters": [], "filter_logic": "OR", "sortings": [], "limit": 5}
+
+    bad = [
+        ("x", "必须是对象"),
+        ({"filter_logic": "XOR"}, "必须是 AND/OR"),
+        ({"limit": 0}, "必须是 1..5000 的整数"),
+        ({"limit": 5001}, "必须是 1..5000 的整数"),
+        ({"limit": "5"}, "必须是 1..5000 的整数"),
+        ({"filters": [{"field_name": "未知", "op": "="}]}, "字段不存在"),
+        ({"sortings": [{"field_name": "金额", "direction": "up"}]}, "必须是 asc/desc"),
+    ]
+    for raw, fragment in bad:
+        config, message = _normalize_query(raw, "w.query", fields)
+        assert config is None
+        assert fragment in (message or ""), (raw, message)
+
+
+def test_validate_field_ref_rejects_missing() -> None:
+    """字段引用校验：空值 / 非字符串 / 不存在字段 均给可定位文案."""
+    from cndb.plugins.tables.services.core.dashboard_config import _validate_field_ref
+
+    fields = {"金额": "number"}
+    assert _validate_field_ref("金额", "w.chart.y[0]", fields) == ("金额", None)
+    for value, expected in ((None, "必须是非空字段名"), ("", "必须是非空字段名"), (1, "必须是非空字段名")):
+        got, err = _validate_field_ref(value, "w", fields)
+        assert got is None and expected in (err or "")
+    got, err = _validate_field_ref("不存在", "w", fields)
+    assert got is None and "字段不存在" in (err or "")
+
+
 # ── API 层 ─────────────────────────────────────────────
 
 

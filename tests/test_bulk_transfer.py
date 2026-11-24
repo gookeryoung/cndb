@@ -52,6 +52,45 @@ class TestTransferPure:
         data = transfer.export_rows_to_xlsx([])
         assert isinstance(data, bytes)
 
+    def test_export_xlsx_exotic_values(self):
+        """集合 / dict / UUID / 自定义对象 走兜底序列化（openpyxl 只吃标量）."""
+        import io
+        import uuid
+
+        from openpyxl import load_workbook
+
+        class Custom:
+            def __str__(self) -> str:
+                return "custom!"
+
+        rows = [
+            {
+                "集合": {1, 2},
+                "元组": (3,),
+                "空列表": [],
+                "字典": {"a": 1},
+                "唯一码": uuid.UUID("12345678-1234-5678-1234-567812345678"),
+                "自定义": Custom(),
+                "空值": None,
+            }
+        ]
+        data = transfer.export_rows_to_xlsx(rows)
+        ws = load_workbook(io.BytesIO(data)).active
+        header = [cell.value for cell in ws[1]]
+        values = dict(zip(header, [cell.value for cell in ws[2]], strict=False))
+        assert values["字典"] == '{"a": 1}'
+        assert values["唯一码"] == "12345678-1234-5678-1234-567812345678"
+        assert values["自定义"] == "custom!"
+        # 空集合序列化为空串，openpyxl 落盘后读回为 None（单元格空）
+        assert values["空列表"] in ("", None)
+        assert set(str(values["集合"]).split(";")) == {"1", "2"} or values["集合"] in ("1;2", "2;1")
+        assert values["空值"] is None
+
+    def test_export_json_without_columns_keeps_all_keys(self):
+        """columns 缺省时按行内原顺序导出（含额外业务键，不静默丢列）."""
+        rows = [{"姓名": "A", "额外": 1}]
+        assert json.loads(transfer.export_rows_to_json(rows)) == [{"姓名": "A", "额外": 1}]
+
     def test_export_xlsx_complex_types(self):
         """multiselect(list[str]) / UUID / dict 等 openpyxl 不接受的类型应被自动序列化."""
         import uuid

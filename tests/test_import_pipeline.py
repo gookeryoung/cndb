@@ -2805,6 +2805,51 @@ class TestCoverageFill:
         count = rec.bulk_update_rows(engine, table, [{"row_id": ids[0], "values": {"name": "New"}}], db=session)
         assert count == 0
 
+    def test_bulk_update_rows_skip_invalid_skips_bad_row(self, test_session):
+        """`skip_invalid=True`：校验失败的行只跳过，其余行照常更新（数据同步语义）."""
+        from cndb.plugins.tables.services.core import records as rec
+
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        num = _add_field(session, table, "num", "number", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        ids = rec.bulk_create(engine, table, [{"code": "A", "num": 1}, {"code": "B", "num": 2}], db=session)
+
+        count = rec.bulk_update_rows(
+            engine,
+            table,
+            [
+                {"row_id": ids[0], "values": {"num": 10}},
+                {"row_id": ids[1], "values": {num.name: "不是数字"}},
+            ],
+            db=session,
+            skip_invalid=True,
+        )
+        assert count == 1
+        rows = {int(r["id"]): r for r in rec.list_rows(engine, table, db=session)[0]}
+        assert rows[ids[0]]["num"] == 10
+        assert rows[ids[1]]["num"] == 2
+
+    def test_bulk_update_rows_strict_raises_on_invalid(self, test_session):
+        """默认 `skip_invalid=False`：任一行校验失败即抛错，不部分落库."""
+        import pytest as _pytest
+
+        from cndb.plugins.tables.services.core import records as rec
+
+        engine, session = test_session
+        table = _make_table(session, engine)
+        _add_field(session, table, "code", "text", order=0)
+        num = _add_field(session, table, "num", "number", order=1)
+        session.commit()
+        ddl.create_table(engine, table)
+        ids = rec.bulk_create(engine, table, [{"code": "A", "num": 1}], db=session)
+
+        with _pytest.raises(ValueError):
+            rec.bulk_update_rows(engine, table, [{"row_id": ids[0], "values": {num.name: "坏值"}}], db=session)
+        assert rec.get_row(engine, table, ids[0], db=session)["num"] == 1
+
     def test_find_rows_by_key_trashed_field_skipped(self, test_session):
         """find_rows_by_key: key_cols 里包含 trashed 字段 → 过滤掉."""
         engine, session = test_session
