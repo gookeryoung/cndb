@@ -43,11 +43,6 @@ def generate_db_column_name() -> str:
     return f"field_{uuid.uuid4().hex[:12]}"
 
 
-def _trash_table_name(db_table_name: str) -> str:
-    """行回收站影子表名：trash_ 前缀 + 原随机段."""
-    return f"trash_{db_table_name[len('table_') :]}"
-
-
 def _link_table_name(db_column_name: str) -> str:
     """关联字段关联表名：link_ 前缀 + 列名随机段."""
     return f"link_{db_column_name[len('field_') :]}"
@@ -202,11 +197,6 @@ class DataTable(TimestampMixin, Base):
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"DataTable(id={self.id}, name={self.name!r}, db_table_name={self.db_table_name!r})"
-
-    @property
-    def trash_table_name(self) -> str:
-        """行回收站影子表名."""
-        return _trash_table_name(self.db_table_name)
 
     def active_fields(self) -> list[DataField]:
         """返回未进回收站的字段（按展示顺序），行读写与查询编译共用."""

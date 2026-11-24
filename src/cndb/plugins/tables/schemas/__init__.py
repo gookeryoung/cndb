@@ -13,6 +13,7 @@ from cndb.plugins.tables.schemas.governance import (
 from cndb.plugins.tables.schemas.models import (
     AutoIncrementPreviewResponse,
     BulkDeleteRequest,
+    BulkRowIds,
     DashboardDataErrorItem,
     DashboardDataItem,
     DashboardDataRequest,
@@ -67,6 +68,7 @@ from cndb.plugins.tables.schemas.models import (
 __all__ = [
     "AutoIncrementPreviewResponse",
     "BulkDeleteRequest",
+    "BulkRowIds",
     "CleanAction",
     "CleanRequest",
     "DashboardDataErrorItem",

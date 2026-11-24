@@ -1125,7 +1125,7 @@ def test_clone_multi_field_partial_ddl_failure_cleans_all_metadata_and_ddl(db):
     insp = inspect(engine)
     cols = {c["name"] for c in insp.get_columns(dst.db_table_name)}
     # 只有默认的 id / _trashed / _trashed_at 存在
-    extra_cols = {c for c in cols if c not in ("id", "_trashed", "_trashed_at")}
+    extra_cols = {c for c in cols if c not in ("id", "_trashed", "_trashed_at", "_rev")}
     assert not extra_cols, f"物理列残留：{extra_cols}"
 
 
@@ -1183,7 +1183,7 @@ def test_execute_field_import_multi_ddl_failure_cleans_all(db):
 
     insp = inspect(engine)
     cols = {c["name"] for c in insp.get_columns(dst.db_table_name)}
-    extra = {c for c in cols if c not in ("id", "_trashed", "_trashed_at")}
+    extra = {c for c in cols if c not in ("id", "_trashed", "_trashed_at", "_rev")}
     assert not extra, f"物理列残留：{extra}"
 
 

@@ -374,6 +374,11 @@ def main() -> None:
 
     register_views_subparser(sub)
 
+    # tables 子命令组（行回收站保留期清理 —— ADR 0139 C5）
+    from cndb.cli.tables import register_tables_subparser
+
+    register_tables_subparser(sub)
+
     # sync 子命令组（数据同步：list / run / tick / preview —— ADR 0006 M2）
     from cndb.cli.sync import register_sync_subparser
 
@@ -440,6 +445,10 @@ def main() -> None:
         from cndb.cli.views import views_command
 
         views_command(args)
+    elif args.command == "tables":
+        from cndb.cli.tables import tables_command
+
+        tables_command(args)
     elif args.command == "sync":
         from cndb.cli.sync import sync_command
 

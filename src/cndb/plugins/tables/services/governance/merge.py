@@ -22,7 +22,7 @@ from sqlalchemy import select
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core.audit import log_action
-from cndb.plugins.tables.services.core.ddl import get_reflected_table
+from cndb.plugins.tables.services.core.ddl import ensure_row_version_column, get_reflected_table
 from cndb.plugins.tables.services.core.links import (
     LINK_FIELD_TYPE,
     is_link_field,
@@ -105,6 +105,7 @@ def _merge_group(
     if survivor_id not in members:
         raise GovernanceTaskError("survivor_row_id 必须在 member_row_ids 中")
 
+    ensure_row_version_column(engine, table)
     sa_table = get_reflected_table(engine, table.db_table_name, missing_message=f"物理表 {table.db_table_name} 不存在")
     with engine.connect() as conn:
         rows = conn.execute(select(sa_table).where(sa_table.c.id.in_(members), sa_table.c._trashed.is_(False))).all()
@@ -129,11 +130,15 @@ def _merge_group(
 
     merged_ids = [m for m in members if m != survivor_id]
     member_set = set(members)
+    # 行版本自增（ADR 0140 I2）：合并改写了保留行、隐藏了成员行，两者的旧 etag 都须失效
+    bump = {"_rev": sa_table.c._rev + 1}
     with engine.begin() as conn:
         if updates:
-            conn.execute(sa_table.update().where(sa_table.c.id == survivor_id).values(**updates))
+            conn.execute(sa_table.update().where(sa_table.c.id == survivor_id).values(**{**updates, **bump}))
         conn.execute(
-            sa_table.update().where(sa_table.c.id.in_(merged_ids)).values(_trashed=True, _trashed_at=datetime.now(UTC))
+            sa_table.update()
+            .where(sa_table.c.id.in_(merged_ids))
+            .values(_trashed=True, _trashed_at=datetime.now(UTC), **bump)
         )
         for field, link_table in _inbound_link_tables(db_session, engine, table):
             # 组内自引用（源表即本表）不迁移：成员行本身进回收站，引用无意义

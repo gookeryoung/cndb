@@ -14,6 +14,7 @@ link 字段值（目标行 id 列表）不占物理列，经 _split_links 拆出
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -22,17 +23,19 @@ from typing import Any
 from sqlalchemy import Table, and_, bindparam, func, or_, select, tuple_
 
 from cndb.core.config import settings
+from cndb.core.errors import ConflictError
 from cndb.plugins.tables.field_types import default_registry
 from cndb.plugins.tables.models import DataField, DataTable
 from cndb.plugins.tables.services.core.audit import (
     ACTION_CREATE,
     ACTION_DELETE,
+    ACTION_PURGE,
     ACTION_RESTORE,
     ACTION_TRASH,
     ACTION_UPDATE,
     log_action,
 )
-from cndb.plugins.tables.services.core.ddl import get_reflected_table
+from cndb.plugins.tables.services.core.ddl import ensure_row_version_column, get_reflected_table
 from cndb.plugins.tables.services.core.links import (
     attach_links,
     clear_row_links,
@@ -58,6 +61,32 @@ logger = logging.getLogger(__name__)
 #: 生效值取配置 ``TABLES_LOOKUP_SCAN_LIMIT``，非正整数回退本常量。
 #: 彻底解法是写入时冗余 lookup 显示值（`_lk_*` 物理列）后下推 SQL，见 ADR 0131。
 POST_FILTER_SCAN_LIMIT = 20_000
+
+# ── 行版本 / ETag（ADR 0140）────────────────────────────
+
+#: 行载荷里暴露的 ETag 形状：``v1-<row_id>-<rev>``（不透明串，客户端原样回传 If-Match）
+_ETAG_RE = re.compile(r"^v1-(\d+)-(\d+)$")
+
+
+def row_etag(row_id: int, rev: int) -> str:
+    """行 ETag（读路径与写校验共用的唯一构造入口，ADR 0140）."""
+    return f"v1-{int(row_id)}-{int(rev)}"
+
+
+def parse_if_match(value: str | None) -> tuple[int, int] | None:
+    """解析 ``If-Match`` 头为 ``(row_id, rev)``；未提供返回 None，格式非法抛 ValueError.
+
+    ``*`` 表示“只要求行存在”，返回 ``(-1, -1)`` 哨兵交由调用方处理。
+    """
+    if value is None:
+        return None
+    text_value = value.strip().strip('"')
+    if text_value in {"", "*"}:
+        return (-1, -1) if text_value == "*" else None
+    match = _ETAG_RE.match(text_value)
+    if match is None:
+        raise ValueError(f"If-Match 格式非法（应形如 v1-<行 id>-<版本号>）: {value}")
+    return int(match.group(1)), int(match.group(2))
 
 
 def post_filter_scan_limit() -> int:
@@ -410,6 +439,8 @@ def create_row(
     ``user`` 为操作人（需求 0126）：写入 ``tables_auditlog.actor_id`` 供贡献统计归属；
     批量导入 / 数据同步等无用户上下文时保持 ``None``。
     """
+    # 行版本列懒补（ADR 0140）：旧库首次写入即补齐，行载荷随之带 `_etag`
+    ensure_row_version_column(engine, table)
     sa_table = _get_sa_table(engine, table)
     normalized, link_values = _normalize_values(table, values)
     _apply_auto_increment_defaults(engine, table, values, normalized)
@@ -574,6 +605,7 @@ def _build_query_plan(
     include_trashed: bool,
     db: Any,
     user: Any,
+    only_trashed: bool = False,
 ) -> _QueryPlan:
     """构建 trashed + 行级权限 + 业务过滤的 WHERE（list_rows 与 count_rows 唯一来源）."""
     from cndb.plugins.tables.services.core.lookups import lookup_field_names, split_lookup_filters
@@ -605,7 +637,10 @@ def _build_query_plan(
 
     # 基础 where（trashed 条件始终与业务过滤 AND 组合）
     base_where: list[Any] = []
-    if not include_trashed:
+    if only_trashed:
+        # 只看回收站（ADR 0139 C2）：与默认列表互斥
+        base_where.append(sa_table.c._trashed.is_(True))
+    elif not include_trashed:
         base_where.append(sa_table.c._trashed.is_(False))
 
     # 行级权限（默认档 ∪ 命中的行级规则，ADR 0004）
@@ -639,6 +674,7 @@ def count_rows(
     filter_logic: str = "AND",
     sorts: list[dict[str, str]] | None = None,
     include_trashed: bool = False,
+    only_trashed: bool = False,
     db: Any = None,
     user: Any = None,
 ) -> int | None:
@@ -648,7 +684,7 @@ def count_rows(
     此时返回 ``None``，由调用方回退到 ``list_rows`` 内部计数（ADR 0046 D3）。
 
     Args:
-        filters / filter_logic / sorts / include_trashed / db / user: 同 :func:`list_rows`.
+        filters / filter_logic / sorts / include_trashed / only_trashed / db / user: 同 :func:`list_rows`.
     """
     sa_table = _get_sa_table(engine, table)
     plan = _build_query_plan(
@@ -658,6 +694,7 @@ def count_rows(
         filter_logic=filter_logic,
         sorts=sorts,
         include_trashed=include_trashed,
+        only_trashed=only_trashed,
         db=db,
         user=user,
     )
@@ -706,6 +743,7 @@ def list_rows(
     limit: int | None = 100,
     offset: int = 0,
     include_trashed: bool = False,
+    only_trashed: bool = False,
     db: Any = None,
     user: Any = None,
     total: int | None = None,
@@ -718,7 +756,8 @@ def list_rows(
         filter_logic: "AND" 或 "OR"，多条件组合方式.
         sorts: 排序列表，每项 {field_name, direction}，direction="asc"|"desc".
         limit / offset: 分页. limit=None 或 limit=0 表示不限制数量（谨慎使用）.
-        include_trashed: 是否包含软删除行.
+        include_trashed: 是否包含软删除行（与 ``only_trashed`` 互斥，后者优先）.
+        only_trashed: 只看回收站（ADR 0139 C2）.
         db: 元数据库会话（提供时 link 字段输出目标行摘要，否则回退 "#id"）.
         user: 当前用户（提供时按 TablePermission.hidden_fields 做字段隐藏）.
         total: 已算好的行数（ADR 0046 D3 计数缓存）；传入即跳过内部 COUNT.
@@ -741,6 +780,7 @@ def list_rows(
         filter_logic=filter_logic,
         sorts=sorts,
         include_trashed=include_trashed,
+        only_trashed=only_trashed,
         db=db,
         user=user,
     )
@@ -788,7 +828,7 @@ def list_rows(
         result = attach_links(
             engine,
             table,
-            [_row_to_dict(table, sa_table, r) for r in rows],
+            [_row_to_dict(table, sa_table, r, include_trash_meta=only_trashed) for r in rows],
             db=db,
             conn=conn,
             links_cache=links_cache,
@@ -838,13 +878,19 @@ def update_row(
     *,
     user: Any = None,
     enforce_row_rules: bool = False,
+    expected_rev: int | None = None,
 ) -> dict[str, Any] | None:
     """更新一行，返回更新后的完整数据；行不存在或已软删除或被行级权限拦截时返回 None.
 
     仅传 link 字段（无物理列值）时同样生效；link 值为 None 表示显式清空关联.
     ``enforce_row_rules=True``（用户单行写路径）：行范围改为**写范围**（默认档 ∪ edit 规则，
-    ADR 0004 §3），并在写后按读范围回读；内部/合并路径保持默认档-only。
+    ADR 0004 §3），并在写后按读范围回读；内部/合并路径保持默认档-only.
+    ``expected_rev``（ADR 0140）：非空时做乐观并发校验 —— 版本不一致抛
+    :class:`~cndb.core.errors.ConflictError`（``code="record_stale"``）且不落库；
+    版本号并进 UPDATE 的 WHERE，不存在"先读后写"的竞态窗口。
     """
+    # 行版本列懒补（ADR 0140）：必须在反射表之前补齐，否则 sa_table 里没有 _rev
+    ensure_row_version_column(engine, table)
     sa_table = _get_sa_table(engine, table)
     normalized, link_values = _normalize_values(table, values, for_update=True)
 
@@ -867,15 +913,26 @@ def update_row(
     if row_scope is not None:
         base_where.append(row_scope)
 
+    rev_column = sa_table.c._rev
+    check_rev = expected_rev is not None and expected_rev >= 0
+
+    def _stale_or_missing(conn: Any) -> None:
+        """rowcount==0 时区分「版本过期」（409）与「不存在 / 超范围」（None → 404）."""
+        if not check_rev:
+            return None
+        current = conn.execute(select(rev_column).where(*base_where)).scalar()
+        if current is not None and int(current) != int(expected_rev or 0):
+            raise ConflictError("该行已被他人修改，请刷新后重试", code="record_stale")
+        return None
+
     with engine.begin() as conn:
-        if normalized:
-            result = conn.execute(sa_table.update().where(*base_where).values(**normalized))
-            if result.rowcount == 0:
-                return None
-        else:  # pragma: no cover - 只更新关联分支待补测试
-            existing = conn.execute(select(sa_table.c.id).where(*base_where)).first()
-            if existing is None:
-                return None
+        statement = sa_table.update().where(*base_where)
+        if check_rev:
+            statement = statement.where(rev_column == expected_rev)
+        values_to_write: dict[str, Any] = {**(normalized or {}), "_rev": rev_column + 1}
+        result = conn.execute(statement.values(**values_to_write))
+        if result.rowcount == 0:
+            return _stale_or_missing(conn)
 
         for field, target_ids in link_values:
             set_links(engine, field, row_id, target_ids, db=db, conn=conn)
@@ -948,6 +1005,104 @@ def delete_row(
 # ── 软删除 / 恢复 ────────────────────────────────────
 
 
+def _resolve_scope_ids(
+    engine: Any,
+    table: DataTable,
+    sa_table: Table,
+    row_ids: list[int],
+    db: Any,
+    user: Any,
+    *,
+    enforce_row_rules: bool,
+    only_trashed: bool | None = None,
+) -> list[int]:
+    """把一批行 id 收窄为「真实可操作」的 id（行范围 + 软删状态过滤，ADR 0139）.
+
+    ``only_trashed``: True 只留已删行（purge）、False 只留未删行（trash）、None 不过滤。
+    """
+    if not row_ids:
+        return []
+    scope = (
+        _build_row_write_scope_where(table, sa_table, db, user, enforce_row_rules=enforce_row_rules)
+        if enforce_row_rules
+        else _build_row_scope_where(table, sa_table, db, user)
+    )
+    where: list[Any] = [sa_table.c.id.in_([int(r) for r in row_ids])]
+    if only_trashed is True:
+        where.append(sa_table.c._trashed.is_(True))
+    elif only_trashed is False:
+        where.append(sa_table.c._trashed.is_(False))
+    if scope is not None:
+        where.append(scope)
+    with engine.connect() as conn:
+        return [int(r[0]) for r in conn.execute(select(sa_table.c.id).where(*where)).all()]
+
+
+def _touch_lookup_after_visibility_change(
+    engine: Any,
+    table: DataTable,
+    row_ids: list[int],
+    db: Any,
+    conn: Any,
+) -> None:
+    """行可见性变化（软删 / 恢复）后重算 lookup 冗余列（ADR 0139 C6 / I2）.
+
+    与硬删同口径：本行冗余列 + 作为源表时消费方的级联重算，否则消费方
+    `_lk_*` 会保留已隐藏行的值，按 lookup 过滤 / 排序 / COUNT 与可见行不一致。
+    """
+    if db is None or not row_ids:
+        return
+    sync_lookup_columns(engine, table, row_ids, db=db, conn=conn)
+    resync_lookup_consumers_for_deleted_rows(engine, table, row_ids, db=db, conn=conn)
+
+
+def trash_rows(
+    engine: Any,
+    table: DataTable,
+    row_ids: list[int],
+    db: Any = None,
+    *,
+    user: Any = None,
+    enforce_row_rules: bool = False,
+) -> int:
+    """批量软删（单行即长度为 1），返回实际软删行数（ADR 0139 C1 / I1）.
+
+    ``enforce_row_rules=True``（用户写路径）：按**写范围**过滤（默认档 ∪ edit 规则）；
+    内部/合并路径保持默认档-only。
+    """
+    ensure_row_version_column(engine, table)
+    sa_table = _get_sa_table(engine, table)
+    ids = _resolve_scope_ids(
+        engine,
+        table,
+        sa_table,
+        row_ids,
+        db,
+        user,
+        enforce_row_rules=enforce_row_rules,
+        only_trashed=False,
+    )
+    if not ids:
+        return 0
+
+    now = datetime.now(UTC)
+    rev_column = sa_table.c._rev
+    with engine.begin() as conn:
+        result = conn.execute(
+            sa_table.update().where(sa_table.c.id.in_(ids)).values(_trashed=True, _trashed_at=now, _rev=rev_column + 1)
+        )
+        count = int(result.rowcount or 0)
+        if count:
+            _touch_lookup_after_visibility_change(engine, table, ids, db, conn)
+
+    for row_id in ids:
+        try:
+            log_action(db, table, ACTION_TRASH, target_id=row_id, actor_id=getattr(user, "id", None))
+        except Exception as exc:
+            logger.debug("audit trash_rows 失败 row %s: %s", row_id, exc)
+    return count
+
+
 def trash_row(
     engine: Any,
     table: DataTable,
@@ -957,57 +1112,122 @@ def trash_row(
     user: Any = None,
     enforce_row_rules: bool = False,
 ) -> bool:
-    """软删除（标记 _trashed=True）.
+    """软删除单行（``trash_rows`` 的薄封装，保持既有布尔返回语义）."""
+    return (
+        trash_rows(
+            engine,
+            table,
+            [row_id],
+            db=db,
+            user=user,
+            enforce_row_rules=enforce_row_rules,
+        )
+        > 0
+    )
 
-    ``enforce_row_rules=True``（用户单行删路径）：按**写范围**过滤（默认档 ∪ edit 规则）；
-    内部/合并路径保持默认档-only。
+
+def restore_rows(
+    engine: Any,
+    table: DataTable,
+    row_ids: list[int],
+    db: Any = None,
+    *,
+    user: Any = None,
+) -> int:
+    """批量恢复（幂等），返回本次实际恢复行数（ADR 0139 C3）.
+
+    只处理当前在回收站里、且命中读范围的行；已恢复的行视为成功但不再计数，
+    因此调用方（单行恢复）可据此实现"重复恢复幂等返回 200"。
     """
+    ensure_row_version_column(engine, table)
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_write_scope_where(table, sa_table, db, user, enforce_row_rules=enforce_row_rules)
-    base_where: list[Any] = [sa_table.c.id == row_id]
-    if row_scope is not None:
-        base_where.append(row_scope)
+    ids = _resolve_scope_ids(
+        engine,
+        table,
+        sa_table,
+        row_ids,
+        db,
+        user,
+        enforce_row_rules=False,
+        only_trashed=True,
+    )
+    if not ids:
+        return 0
+
+    rev_column = sa_table.c._rev
     with engine.begin() as conn:
         result = conn.execute(
             sa_table.update()
-            .where(*base_where)
-            .values(
-                _trashed=True,
-                _trashed_at=datetime.now(UTC),
-            )
+            .where(sa_table.c.id.in_(ids))
+            .values(_trashed=False, _trashed_at=None, _rev=rev_column + 1)
         )
-        ok = result.rowcount > 0
-    if ok:
+        count = int(result.rowcount or 0)
+        if count:
+            _touch_lookup_after_visibility_change(engine, table, ids, db, conn)
+
+    for row_id in ids:
         try:
-            log_action(db, table, ACTION_TRASH, target_id=row_id)
+            log_action(db, table, ACTION_RESTORE, target_id=row_id, actor_id=getattr(user, "id", None))
         except Exception as exc:
-            logger.debug("audit trash_row 失败: %s", exc)
-    return ok
+            logger.debug("audit restore_rows 失败 row %s: %s", row_id, exc)
+    return count
 
 
 def restore_row(engine: Any, table: DataTable, row_id: int, db: Any = None, *, user: Any = None) -> bool:
-    """从回收站恢复."""
+    """从回收站恢复单行：命中（含已恢复）即成功，用于实现幂等接口语义（ADR 0139 C3）."""
     sa_table = _get_sa_table(engine, table)
-    row_scope = _build_row_scope_where(table, sa_table, db, user)
-    base_where: list[Any] = [sa_table.c.id == row_id]
-    if row_scope is not None:
-        base_where.append(row_scope)
+    scope = _build_row_scope_where(table, sa_table, db, user)
+    where: list[Any] = [sa_table.c.id == row_id]
+    if scope is not None:
+        where.append(scope)
+    with engine.connect() as conn:
+        exists = conn.execute(select(sa_table.c.id).where(*where)).first() is not None
+    if not exists:
+        return False
+    restore_rows(engine, table, [row_id], db=db, user=user)
+    return True
+
+
+def purge_rows(
+    engine: Any,
+    table: DataTable,
+    row_ids: list[int],
+    db: Any = None,
+    *,
+    user: Any = None,
+) -> int:
+    """彻底删除（物理 DELETE）**只处理回收站里的行**，返回删除行数（ADR 0139 C4）.
+
+    与 :func:`delete_row` 的区别：本入口拒绝未软删的行（整批由调用方先行校验），
+    并清 link 关系 + 重算消费方 lookup 冗余列（与硬删同口径）。
+    """
+    sa_table = _get_sa_table(engine, table)
+    ids = _resolve_scope_ids(
+        engine,
+        table,
+        sa_table,
+        row_ids,
+        db,
+        user,
+        enforce_row_rules=False,
+        only_trashed=True,
+    )
+    if not ids:
+        return 0
     with engine.begin() as conn:
-        result = conn.execute(
-            sa_table.update()
-            .where(*base_where)
-            .values(
-                _trashed=False,
-                _trashed_at=None,
-            )
-        )
-        ok = result.rowcount > 0
-    if ok:
+        result = conn.execute(sa_table.delete().where(sa_table.c.id.in_(ids)))
+        count = int(result.rowcount or 0)
+        if count:
+            clear_row_links(engine, table, ids, conn=conn)
+            if db is not None:
+                resync_lookup_consumers_for_deleted_rows(engine, table, ids, db=db, conn=conn)
+
+    for row_id in ids:
         try:
-            log_action(db, table, ACTION_RESTORE, target_id=row_id)
+            log_action(db, table, ACTION_PURGE, target_id=row_id, actor_id=getattr(user, "id", None))
         except Exception as exc:
-            logger.debug("audit restore_row 失败: %s", exc)
-    return ok
+            logger.debug("audit purge_rows 失败 row %s: %s", row_id, exc)
+    return count
 
 
 # ── BULK ─────────────────────────────────────────────
@@ -1127,6 +1347,7 @@ def bulk_update(
 
     被 row_filters 过滤的行不会被更新（不泄漏存在性）.
     """
+    ensure_row_version_column(engine, table)
     sa_table = _get_sa_table(engine, table)
     normalized, link_values = _normalize_values(table, values, for_update=True)
 
@@ -1156,14 +1377,16 @@ def bulk_update(
 
     # 主行 + link 字段在同一个事务内写入，link 写入失败时主行同步回滚
     with engine.begin() as conn:
-        if normalized:
+        if valid_ids:
+            # 版本自增（ADR 0140 I2）：批量写也让编辑器的旧 etag 失效
             update_where: list[Any] = [sa_table.c.id.in_(valid_ids)]
             if row_scope is not None:
                 update_where.append(row_scope)
-            result = conn.execute(sa_table.update().where(*update_where).values(**normalized))
+            bump = {"_rev": sa_table.c._rev + 1}
+            result = conn.execute(sa_table.update().where(*update_where).values(**{**(normalized or {}), **bump}))
             count = result.rowcount
         else:
-            count = len(valid_ids)
+            count = 0
 
         if valid_ids and link_values:
             for row_id in valid_ids:
@@ -1187,58 +1410,48 @@ def bulk_update(
 
 
 def bulk_delete(engine: Any, table: DataTable, row_ids: list[int], db: Any = None, *, user: Any = None) -> int:
-    """批量硬删除（同步清理关联记录），返回影响行数.
+    """批量删除 → 软删（ADR 0139 C1 / I1），返回软删行数.
 
-    被 row_filters 过滤的行不会被删除，也不会被清理关联或记 audit.
+    与单行删除（:func:`trash_row`）同一实现与行范围口径；物理删除只走
+    :func:`purge_rows`（回收站彻底删除 / 保留期任务）。
     """
-    sa_table = _get_sa_table(engine, table)
-    if not row_ids:
-        return 0
-    row_scope = _build_row_scope_where(table, sa_table, db, user)
-
-    # 先查哪些行真正符合删除条件（同时受 row_filters 约束），避免误删 links / 误记 audit
-    check_where: list[Any] = [sa_table.c.id.in_(row_ids), sa_table.c._trashed.is_(False)]
-    if row_scope is not None:
-        check_where.append(row_scope)
-    with engine.connect() as conn:
-        valid_ids = [int(r[0]) for r in conn.execute(select(sa_table.c.id).where(*check_where)).all()]
-
-    if not valid_ids:
-        return 0
-
-    del_where: list[Any] = [sa_table.c.id.in_(valid_ids)]
-    with engine.begin() as conn:
-        result = conn.execute(sa_table.delete().where(*del_where))
-        count = result.rowcount
-        # 与 delete 同事务清理关联，避免 delete commit 后 link 清理失败产生孤儿行
-        if count > 0:
-            clear_row_links(engine, table, valid_ids, conn=conn)
-            if db is not None:
-                # ADR 0131：被删目标行在消费方的 lookup 值同步失效
-                resync_lookup_consumers_for_deleted_rows(engine, table, valid_ids, db=db, conn=conn)
-
-    if count > 0:
-        for rid in valid_ids:
-            try:
-                log_action(db, table, ACTION_DELETE, target_id=rid)
-            except Exception as exc:
-                logger.debug("audit bulk_delete 失败 row %s: %s", rid, exc)
-    return count
+    return trash_rows(engine, table, row_ids, db=db, user=user)
 
 
 # ── 内部辅助 ─────────────────────────────────────────
 
 
-def _row_to_dict(table: DataTable, _sa_table: Table, row: Any) -> dict[str, Any]:
-    """把 Row 对象转为前端友好的 dict（用 field_name 作为 key，不是 db_column_name）."""
+def _row_to_dict(
+    table: DataTable,
+    _sa_table: Table,
+    row: Any,
+    *,
+    include_trash_meta: bool = False,
+) -> dict[str, Any]:
+    """把 Row 对象转为前端友好的 dict（用 field_name 作为 key，不是 db_column_name）.
+
+    - ``_rev`` 不进键空间，只以 ``_etag`` 暴露（ADR 0140 I4）；
+    - 回收站列表（``include_trash_meta=True``）才附带 ``_trashed_at``（ADR 0139 C2）。
+    """
     field_map_rev: dict[str, DataField] = {f.db_column_name: f for f in table.fields}
     result: dict[str, Any] = {}
+    rev: int | None = None
+    # 主键单独留存：业务字段可能就叫 `id`（会覆盖 result["id"]），ETag 必须用真实主键
+    row_id: int | None = None
 
     for col_name, value in row._mapping.items():
         if col_name == "id":
             result["id"] = value
+            row_id = int(value) if value is not None else None
             continue
-        if col_name in ("_trashed", "_trashed_at"):
+        if col_name == "_rev":
+            rev = int(value) if value is not None else 0
+            continue
+        if col_name == "_trashed":
+            continue
+        if col_name == "_trashed_at":
+            if include_trash_meta:
+                result["_trashed_at"] = value
             continue
         if col_name.startswith(LOOKUP_PREFIX):
             # ADR 0131：lookup 冗余列仅用于过滤 / 排序，不暴露给接口契约
@@ -1249,6 +1462,8 @@ def _row_to_dict(table: DataTable, _sa_table: Table, row: Any) -> dict[str, Any]
         else:
             result[col_name] = value
 
+    if rev is not None and row_id is not None:
+        result["_etag"] = row_etag(row_id, rev)
     return result
 
 
@@ -1433,6 +1648,7 @@ def bulk_update_rows(
     if not updates:
         return 0
 
+    ensure_row_version_column(engine, table)
     sa_table = _get_sa_table(engine, table)
     row_scope = _build_row_scope_where(table, sa_table, db, user)
     total = 0
@@ -1488,17 +1704,18 @@ def bulk_update_rows(
             row_where: list[Any] = [sa_table.c.id == row_id, sa_table.c._trashed.is_(False)]
             if row_scope is not None:
                 row_where.append(row_scope)
-            # 物理列更新
+            # 物理列更新（版本自增，ADR 0140 I2）
+            bump = {"_rev": sa_table.c._rev + 1}
             if normalized:
-                result = conn.execute(sa_table.update().where(*row_where).values(**normalized))
+                result = conn.execute(sa_table.update().where(*row_where).values(**{**normalized, **bump}))
                 if result.rowcount == 0:
                     # 行不存在、被软删或被行级权限过滤，跳过
                     continue
                 total += 1
             else:
-                # 只有 link 值
-                existing = conn.execute(select(sa_table.c.id).where(*row_where)).first()
-                if existing is None:
+                # 只有 link 值：同样要自增版本
+                result = conn.execute(sa_table.update().where(*row_where).values(**bump))
+                if result.rowcount == 0:
                     continue
                 total += 1
             # link 同步（复用外层 conn，避免嵌套 engine.begin 破坏事务隔离）
@@ -1516,12 +1733,16 @@ def bulk_update_rows(
                     statement = (
                         sa_table.update()
                         .where(sa_table.c.id == row_id, sa_table.c._trashed.is_(False), row_scope)
-                        .values({column: values[column] for column in columns})
+                        .values({**{column: values[column] for column in columns}, "_rev": sa_table.c._rev + 1})
                     )
                     total += max(int(conn.execute(statement).rowcount or 0), 0)
                 continue
             row_where = [sa_table.c.id == bindparam("_rid"), sa_table.c._trashed.is_(False)]
-            statement = sa_table.update().where(*row_where).values({column: bindparam(column) for column in columns})
+            statement = (
+                sa_table.update()
+                .where(*row_where)
+                .values({**{column: bindparam(column) for column in columns}, "_rev": sa_table.c._rev + 1})
+            )
             params = [{"_rid": row_id, **values} for row_id, values in group]
             result = conn.execute(statement, params)
             total += max(int(result.rowcount or 0), 0)
@@ -1568,7 +1789,12 @@ __all__ = [
     "get_row",
     "list_rows",
     "month_bounds",
+    "parse_if_match",
+    "purge_rows",
     "restore_row",
+    "restore_rows",
+    "row_etag",
     "trash_row",
+    "trash_rows",
     "update_row",
 ]

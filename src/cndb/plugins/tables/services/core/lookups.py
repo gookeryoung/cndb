@@ -568,8 +568,13 @@ def _read_source_values(
     col = sa_table.c.get(source_field.db_column_name)
     if col is None:
         return None
+    # 软删目标行与"不存在"同口径（ADR 0139 C6 / I2）：link 摘要与 lookup 显示值都不再指向它，
+    # 否则行进回收站后消费方仍显示旧值，与按 `_lk_*` 下推的过滤 / 排序 / COUNT 互相矛盾。
+    stmt = select(sa_table.c.id, col).where(sa_table.c.id.in_(list(target_row_ids)))
+    if hasattr(sa_table.c, "_trashed"):
+        stmt = stmt.where(sa_table.c._trashed.is_(False))
     with nullcontext(conn) if conn is not None else engine.connect() as active:
-        rows = active.execute(select(sa_table.c.id, col).where(sa_table.c.id.in_(list(target_row_ids)))).all()
+        rows = active.execute(stmt).all()
     return {int(r[0]): r[1] for r in rows}
 
 

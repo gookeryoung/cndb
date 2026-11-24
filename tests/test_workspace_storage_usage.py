@@ -90,7 +90,7 @@ class TestTableRecordsCounted:
         assert used >= sum(len(v.encode("utf-8")) for v in values)
 
     def test_row_delta_matches_stored_bytes(self, client: TestClient, auth_headers: dict[str, str], db):
-        """口径：名称按 UTF-8 字节、id 按十进制文本、_trashed 存 0 计 1 字节、_trashed_at 为 NULL 计 0."""
+        """口径：名称按 UTF-8 字节、id 按十进制文本、_trashed / _rev 存 0 各计 1 字节、_trashed_at 为 NULL 计 0."""
         ws_id = _create_workspace(client, auth_headers, "storage-delta-ws")
         tid = _create_table(client, auth_headers, ws_id)
         before = workspace_table_bytes(db, ws_id)
@@ -104,7 +104,8 @@ class TestTableRecordsCounted:
         row_id = int(r.json()["id"])
 
         delta = workspace_table_bytes(db, ws_id) - before
-        assert delta == len("中文a".encode()) + len(str(row_id)) + 1
+        # +1 为 _trashed（False）、+1 为 _rev（0，ADR 0140 新增的行版本列）
+        assert delta == len("中文a".encode()) + len(str(row_id)) + 1 + 1
 
     def test_storage_total_includes_table_bytes(self, client: TestClient, auth_headers: dict[str, str], db):
         ws_id = _create_workspace(client, auth_headers, "table-total-ws")

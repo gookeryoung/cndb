@@ -152,6 +152,9 @@ async function _responseErrorHandler(err: any) {
       )
     } catch { /* 非 JSON 内容，保持原样 */ }
   }
+  // 保留后端错误码（如 record_stale），供冲突等分支识别（ADR 0140 C2）
+  const errCode = err?.response?.data?.code
+  if (typeof errCode === 'string' && errCode) err.code = errCode
   // 将 FastAPI 的 detail（字符串或校验错误数组）归一化进 err.message
   const detail = err?.response?.data?.detail
   if (detail) {

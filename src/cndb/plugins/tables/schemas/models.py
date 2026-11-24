@@ -316,6 +316,12 @@ class BulkDeleteRequest(BaseModel):
     row_ids: list[int]
 
 
+class BulkRowIds(BaseModel):
+    """批量行操作载荷（回收站恢复 / 彻底删除，ADR 0139）：单次 ≤200 行."""
+
+    row_ids: list[int] = Field(min_length=1, max_length=200)
+
+
 class RecordCopyRequest(BaseModel):
     """复制行（需求 0092）：按源行原值批量复制，不触发字段自动填充 / 默认值."""
 

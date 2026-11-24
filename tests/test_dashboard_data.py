@@ -280,6 +280,108 @@ def test_radar_funnel_gauge_treemap_heatmap_shapes() -> None:
     assert heatmap["max"] == 130
 
 
+def test_apply_widget_query_filters_sortings_limit() -> None:
+    """组件级 query：AND / OR 过滤、空值排序、升降序、limit（ADR 0023 画布取数）."""
+    from cndb.plugins.tables.services.core.dashboard_data import apply_widget_query
+
+    rows = [
+        {"类别": "A", "销售额": 30},
+        {"类别": "B", "销售额": 10},
+        {"类别": "C", "销售额": None},
+        {"类别": "D", "销售额": 20},
+    ]
+
+    # AND
+    out = apply_widget_query(
+        rows,
+        {
+            "filters": [
+                {"field_name": "销售额", "op": ">=", "value": 20},
+                {"field_name": "类别", "op": "in", "value": ["A", "D", "C"]},
+            ]
+        },
+    )
+    assert [r["类别"] for r in out] == ["A", "D"]
+
+    # OR
+    out = apply_widget_query(
+        rows,
+        {
+            "filters": [
+                {"field_name": "类别", "op": "eq", "value": "A"},
+                {"field_name": "类别", "op": "eq", "value": "B"},
+            ],
+            "filter_logic": "OR",
+        },
+    )
+    assert [r["类别"] for r in out] == ["A", "B"]
+
+    # 升序：空值恒排最后
+    out = apply_widget_query(rows, {"sortings": [{"field_name": "销售额", "direction": "asc"}]})
+    assert [r["类别"] for r in out] == ["B", "D", "A", "C"]
+
+    # 降序
+    out = apply_widget_query(rows, {"sortings": [{"field_name": "销售额", "direction": "desc"}]})
+    assert [r["类别"] for r in out] == ["A", "D", "B", "C"]
+
+    # 多键排序 + limit
+    rows2 = [{"a": 1, "b": "y"}, {"a": 1, "b": "x"}, {"a": 2, "b": "z"}]
+    out = apply_widget_query(
+        rows2,
+        {
+            "sortings": [{"field_name": "a", "direction": "asc"}, {"field_name": "b", "direction": "desc"}],
+            "limit": 2,
+        },
+    )
+    assert out == [{"a": 1, "b": "y"}, {"a": 1, "b": "x"}]
+
+    # 不修改入参
+    assert len(rows) == 4
+
+
+def test_aggregate_all_kinds_and_empty() -> None:
+    """KPI 聚合：count / sum / avg / min / max / median，非数值与空列表的降级口径."""
+    import pytest as _pytest
+
+    from cndb.plugins.tables.services.core.dashboard_data import DashboardDataError, _aggregate
+
+    values = [10, None, 20, "30", "abc", ""]
+    assert _aggregate(values, "count") == 4  # 非空即计数（"abc" 也算，空串不算）
+    assert _aggregate(values, "sum") == 60
+    assert _aggregate(values, "avg") == 20
+    assert _aggregate(values, "min") == 10
+    assert _aggregate(values, "max") == 30
+    assert _aggregate([3, 1, 2], "median") == 2
+    assert _aggregate([1, 2, 3, 4], "median") == 2.5
+    # 全部非数值 / 空列表 → None（不抛）
+    assert _aggregate(["abc", None], "sum") is None
+    assert _aggregate([], "avg") is None
+    with _pytest.raises(DashboardDataError):
+        _aggregate(values, "p99")
+
+
+def test_matches_operators_matrix() -> None:
+    """过滤算子矩阵：字符串 / 集合 / 空值 / 区间四族口径."""
+    from cndb.plugins.tables.services.core.dashboard_data import _matches
+
+    row = {"文本": " Hello World ", "数": 5, "空": None, "列表": "a,b"}
+    # 文本按原样比较（不 strip / 不改大小写）
+    assert _matches(row, "文本", "contains", "World")
+    assert not _matches(row, "文本", "contains", "world")
+    assert not _matches(row, "文本", "starts_with", "Hello")
+    assert _matches(row, "文本", "ends_with", "World ")
+    assert _matches(row, "文本", "eq", " Hello World ")
+    assert not _matches(row, "文本", "eq", "hello world")
+    assert _matches(row, "数", ">", 4)
+    assert _matches(row, "数", "between", [1, 5])
+    assert _matches(row, "空", "is_empty", None)
+    assert not _matches(row, "空", "is_not_empty", None)
+    assert _matches(row, "列表", "contains_all", ["a", "b"])
+    assert _matches(row, "列表", "has_any", ["b", "z"])
+    # 未知算子按"不过滤"处理（不静默丢行）
+    assert _matches(row, "数", "unknown_op", 1)
+
+
 def test_resolve_query_globals_replaces_and_drops() -> None:
     """占位符解析：有值改写为日期区间，缺值丢弃并计数（ADR 0023 P3）."""
     query = {

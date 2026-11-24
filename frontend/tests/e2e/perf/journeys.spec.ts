@@ -231,4 +231,49 @@ test.describe("性能旅程基线（ADR 0116 C1）", () => {
     expect(dom.mountedRows, `挂载行数 ${dom.mountedRows}`).toBeLessThanOrEqual(100)
     expect(dom.elements, `DOM 元素 ${dom.elements}`).toBeLessThanOrEqual(8000)
   })
+
+  // 路线图 0141 P0-5：分页与内联编辑是表格页最高频的两条交互，之前没有预算。
+  // 数据集沿用 seed（5000 行规模由 ADR 0117 的 bench 覆盖），这里量与「交互响应 +
+  // 主线程长任务」两条硬上限，基线缺失时只记录读数（避免首次采集误判回归）。
+  test("表格翻页（下一页 → 行重渲染）", { tag: "@perf" }, async ({ page }, testInfo) => {
+    test.skip(ANON.includes(testInfo.project.name), "anon 项目跳过")
+    await installObservers(page)
+    await gotoGrid(page)
+
+    // 分页器：Table 的 pagination 已关，改用独立 antd Pagination（见 gridTableSection）
+    const nextPage = page.locator(".ant-pagination-next").first()
+    await expect(nextPage).toBeVisible({ timeout: 10_000 })
+    await nextPage.click()
+    await expect(page.locator("[data-row-key]").first()).toBeVisible({ timeout: 10_000 })
+
+    const metrics = await collectMetrics(page)
+    const baseline = recordJourney(testInfo, "gridPaging", metrics)
+    assertWithinBaseline("gridPaging", metrics, baseline)
+    expect(metrics.eventMax, `eventMax=${metrics.eventMax}ms`).toBeLessThan(600)
+    expect(metrics.longTaskMax, `longTaskMax=${metrics.longTaskMax}ms`).toBeLessThan(400)
+  })
+
+  test("表格内联编辑（进入编辑 → 保存）", { tag: "@perf" }, async ({ page }, testInfo) => {
+    test.skip(ANON.includes(testInfo.project.name), "anon 项目跳过")
+    await installObservers(page)
+    await gotoGrid(page)
+
+    // 行内编辑入口：操作列的 `row-edit-btn`（buildColumns 里的具名 testid）
+    const firstRow = page.locator("[data-row-key]").first()
+    await expect(firstRow).toBeVisible({ timeout: 10_000 })
+    await firstRow.hover()
+    const editButton = page.getByTestId("row-edit-btn").first()
+    await expect(editButton).toBeVisible({ timeout: 10_000 })
+    await editButton.click()
+    await expect(page.getByTestId("row-save-btn").first()).toBeVisible({ timeout: 10_000 })
+
+    const metrics = await collectMetrics(page)
+    const baseline = recordJourney(testInfo, "gridInlineEdit", metrics)
+    assertWithinBaseline("gridInlineEdit", metrics, baseline)
+    expect(metrics.eventMax, `eventMax=${metrics.eventMax}ms`).toBeLessThan(600)
+    expect(metrics.longTaskMax, `longTaskMax=${metrics.longTaskMax}ms`).toBeLessThan(400)
+
+    // 退出编辑（取消），避免污染后续用例
+    await page.getByRole("button", { name: /^取消$/ }).first().click().catch(() => {})
+  })
 })

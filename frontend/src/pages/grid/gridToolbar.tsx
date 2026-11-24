@@ -48,13 +48,15 @@ interface GridToolbarProps {
   onMove: () => void
   /** 重置列布局（列宽覆盖 + 列序）；缺省表示当前模式不可用（菜单项置灰） */
   onResetColumnLayout?: () => void
+  /** 打开行回收站（ADR 0139）；缺省表示无 EDIT_RECORDS 权限，不渲染入口 */
+  onOpenRecycleBin?: () => void
 }
 
 export default function GridToolbar({
   wid, tid, tableKey, tableName, recordCount, mode, addRowDisabled, onAddRow,
   permissionLabel, onEditRow, editRowDisabled,
   canEditSchema, canManageData, onOpenTableSettings, onOpenImportExport, onOpenExport, onOpenGovernance,
-  activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout,
+  activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout, onOpenRecycleBin,
 }: GridToolbarProps) {
   const { message, modal } = AntApp.useApp()
   const navigate = useNavigate()
@@ -158,6 +160,7 @@ export default function GridToolbar({
               { key: 'governance', icon: <ClearOutlined />, label: '数据治理', disabled: !canManageData, onClick: onOpenGovernance },
               { type: 'divider' as const },
             ] : []),
+            ...(onOpenRecycleBin ? [{ key: 'recycle-bin', icon: <DeleteOutlined />, label: '回收站', onClick: onOpenRecycleBin }] : []),
             { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
             { key: 'reset-layout', icon: <ColumnWidthOutlined />, label: '重置列宽与列序', disabled: !onResetColumnLayout, onClick: onResetColumnLayout },
             { type: 'divider' },
@@ -193,7 +196,7 @@ export default function GridToolbar({
               }),
             },
           ]
-        }} title="更多操作：编辑行、表设置、更新、导出、数据治理、刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></TooltipDropdown>
+        }} title="更多操作：编辑行、表设置、更新、导出、数据治理、回收站、刷新、复制表、移动工作区、删除表"><Button icon={<MoreOutlined />} data-testid="grid-more-menu" /></TooltipDropdown>
       </Space>
     </div>
   )

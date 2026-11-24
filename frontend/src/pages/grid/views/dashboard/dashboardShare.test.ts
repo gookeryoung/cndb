@@ -64,14 +64,20 @@ describe('resolvePresentTarget', () => {
 describe('copyDashboardShareLink', () => {
   afterEach(() => {
     vi.restoreAllMocks()
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    Reflect.deleteProperty(document, 'execCommand')
   })
+
+  function mockLocation() {
+    vi.spyOn(window, 'location', 'get').mockReturnValue({
+      ...window.location, origin: 'https://cndb.example', pathname: '/w/3/tables/9',
+    } as Location)
+  }
 
   it('把当前页面路径 + 目标视图的只读链接写入剪贴板', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
-    vi.spyOn(window, 'location', 'get').mockReturnValue({
-      ...window.location, origin: 'https://cndb.example', pathname: '/w/3/tables/9',
-    } as Location)
+    mockLocation()
 
     const url = await copyDashboardShareLink(11)
 
@@ -79,5 +85,22 @@ describe('copyDashboardShareLink', () => {
       'https://cndb.example/w/3/tables/9?view=11&mode=dashboard&present=1',
     )
     expect(url).toBe('https://cndb.example/w/3/tables/9?view=11&mode=dashboard&present=1')
+  })
+
+  it('局域网 http（无 Clipboard API）时退回 execCommand 仍算成功', async () => {
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true })
+    mockLocation()
+
+    const url = await copyDashboardShareLink(11)
+
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(url).toBe('https://cndb.example/w/3/tables/9?view=11&mode=dashboard&present=1')
+  })
+
+  it('剪贴板完全不可用时抛错，调用方不会误报已复制', async () => {
+    mockLocation()
+
+    await expect(copyDashboardShareLink(11)).rejects.toThrow('复制失败')
   })
 })

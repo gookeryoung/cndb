@@ -1210,3 +1210,56 @@ class TestLookupRedundantColumns:
         assert memory.status_code == 200, memory.text
 
         assert [r["id"] for r in pushed.json()["rows"]] == [r["id"] for r in memory.json()["rows"]]
+
+
+def test_drop_column_removes_lookup_columns(db, db_engine):
+    """删除 lookup 字段：冗余列与排序索引一并 DROP（虚拟字段无主表物理列）."""
+    from sqlalchemy import inspect
+
+    from cndb.plugins.tables.models import DataField, DataTable
+    from cndb.plugins.tables.services.core import ddl
+
+    target = DataTable(workspace_id=1, name="drop目标表")
+    target.ensure_db_name()
+    db.add(target)
+    db.commit()
+    db.refresh(target)
+    tf = DataField(table_id=target.id, name="名称", field_type="text", order=0)
+    tf.ensure_db_name()
+    db.add(tf)
+    db.commit()
+    ddl.create_table(db_engine, target)
+
+    src = DataTable(workspace_id=1, name="drop引用表")
+    src.ensure_db_name()
+    db.add(src)
+    db.commit()
+    db.refresh(src)
+    link = DataField(table_id=src.id, name="关联", field_type="link", order=0)
+    link.ensure_db_name()
+    db.add(link)
+    db.commit()
+    db.refresh(link)
+    link.config = {**(link.config or {}), "target_table_id": target.id, "display_field_id": tf.id}
+    lk = DataField(
+        table_id=src.id,
+        name="取值",
+        field_type="lookup",
+        order=1,
+        config={"via_link_field_id": link.id, "source_field_id": tf.id},
+    )
+    lk.ensure_db_name()
+    db.add(lk)
+    db.commit()
+    db.refresh(src)
+    ddl.create_table(db_engine, src)
+    ddl.ensure_lookup_columns(db_engine, src)
+    lookup_field = next(f for f in src.fields if f.field_type == "lookup")
+
+    cols_before = {c["name"] for c in inspect(db_engine).get_columns(src.db_table_name)}
+    assert any(name.startswith("_lk_") for name in cols_before)
+
+    ddl.drop_column(db_engine, src, lookup_field)
+
+    cols_after = {c["name"] for c in inspect(db_engine).get_columns(src.db_table_name)}
+    assert not any(name.startswith("_lk_") for name in cols_after)

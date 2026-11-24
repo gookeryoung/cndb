@@ -10,6 +10,7 @@
  */
 
 import type { View } from '@/api'
+import { copyText } from '@/utils/clipboard'
 
 export interface DashboardShareInput {
   origin: string
@@ -51,13 +52,19 @@ export function resolvePresentTarget(
   return { kind: 'present', view }
 }
 
-/** 复制当前 dashboard 的登录态只读链接，返回写入剪贴板的 URL. */
+/** 复制当前 dashboard 的登录态只读链接，返回写入剪贴板的 URL.
+ *
+ * 走统一剪贴板兜底（`utils/clipboard`）：局域网 http 部署没有 Clipboard API，
+ * 直调 `navigator.clipboard` 会抛 TypeError 让用户看到「复制失败」。
+ * 兜底也失败时抛出错误，由调用方给出提示。
+ */
 export async function copyDashboardShareLink(viewId: number | string): Promise<string> {
   const url = buildDashboardShareUrl({
     origin: window.location.origin,
     pathname: window.location.pathname,
     viewId,
   })
-  await navigator.clipboard.writeText(url)
+  const ok = await copyText(url)
+  if (!ok) throw new Error('复制失败，请检查浏览器剪贴板权限')
   return url
 }

@@ -56,6 +56,9 @@ def _lookup_column_type() -> Any:
 # 键用 engine 弱引用：测试中每个临时 engine 各持独立缓存，engine 回收后缓存自动释放。
 _sa_table_cache: WeakKeyDictionary[Any, dict[str, Table]] = WeakKeyDictionary()
 
+# 已确认具备 ``_rev`` 列的表（(id(engine), 物理表名)）：避免每次读写都 inspect（ADR 0140）
+_versioned_tables: set[tuple[int, str]] = set()
+
 
 def get_reflected_table(engine: Any, db_table_name: str, *, missing_message: str | None = None) -> Table:
     """反射获取物理表 sa.Table，带 engine 级缓存.
@@ -163,6 +166,8 @@ def build_sa_table(
 
     cols.append(Column("_trashed", Boolean, nullable=False, server_default="0"))
     cols.append(Column("_trashed_at", SA_DateTime(timezone=True), nullable=True))
+    # 行版本（ADR 0140）：直编并发的乐观锁载体，用户不可见（只通过 `_etag` 暴露）
+    cols.append(Column("_rev", Integer, nullable=False, server_default="0"))
 
     if extra_columns:
         cols.extend(extra_columns)
@@ -275,6 +280,28 @@ def ensure_lookup_columns(
 
 
 # ── ALTER TABLE: ADD COLUMN ─────────────────────────
+
+
+def ensure_row_version_column(engine: Any, table: DataTable) -> bool:
+    """幂等补齐行版本列 ``_rev``（ADR 0140 P0）：旧库按需懒补，新表由 ddl_create 建出.
+
+    - 同一 engine 下同一表只 inspect 一次（模块级缓存），命中后直接返回；
+    - 返回是否发生了 DDL 变更。
+    """
+    key = (id(engine), table.db_table_name)
+    if key in _versioned_tables:
+        return False
+    existing = {c["name"] for c in inspect(engine).get_columns(table.db_table_name)}
+    changed = False
+    if "_rev" not in existing:
+        sql = f'ALTER TABLE "{table.db_table_name}" ADD COLUMN "_rev" INTEGER NOT NULL DEFAULT 0'
+        with engine.begin() as active_conn:
+            active_conn.execute(text(sql))
+        invalidate_reflected_table(table.db_table_name)
+        changed = True
+        logger.info("物理表 %s 补齐行版本列 _rev（ADR 0140）", table.db_table_name)
+    _versioned_tables.add(key)
+    return changed
 
 
 def add_column(engine: Any, table: DataTable, field: DataField) -> None:
@@ -710,6 +737,7 @@ __all__ = [
     "drop_link_table",
     "drop_table",
     "drop_unique_constraint",
+    "ensure_row_version_column",
     "ensure_sort_index",
     "find_duplicate_values",
     "find_null_rows",

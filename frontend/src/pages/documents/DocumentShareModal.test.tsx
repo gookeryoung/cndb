@@ -66,6 +66,9 @@ function stubShares(initial: ShareItem[]) {
 describe('DocumentShareModal', () => {
   beforeEach(() => {
     server.resetHandlers()
+    // 默认模拟「无 Clipboard API」（局域网 http 场景）；需要时由用例自行注入
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined })
+    Reflect.deleteProperty(document, 'execCommand')
   })
 
   it('列表展示状态 / 访问次数 / 需密码，已撤销的复制与撤销禁用', async () => {
@@ -78,6 +81,10 @@ describe('DocumentShareModal', () => {
     expect(screen.getByText('需密码')).toBeInTheDocument()
     expect(screen.getByText('访问 12 次')).toBeInTheDocument()
     expect(screen.getByText('访问 3 次')).toBeInTheDocument()
+    // 链接本身可见可选中，供复制兜底失败时手动选取
+    expect(screen.getByTestId('document-share-link-1')).toHaveTextContent(
+      `${window.location.origin}/public/share/token-active`,
+    )
 
     const revoked = screen.getByTestId('document-share-item-2')
     expect(within(revoked).getByRole('button', { name: /复制链接/ })).toBeDisabled()
@@ -117,6 +124,30 @@ describe('DocumentShareModal', () => {
 
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(shareLink(ACTIVE.token)))
     expect(writeText.mock.calls[0][0]).toBe(`${window.location.origin}/public/share/token-active`)
+  })
+
+  it('局域网 http（无 Clipboard API）时退回 execCommand，仍提示已复制', async () => {
+    const execCommand = vi.fn().mockReturnValue(true)
+    Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true })
+    stubShares([ACTIVE])
+    renderModal()
+
+    fireEvent.click(await screen.findByRole('button', { name: /复制链接/ }))
+
+    expect(await screen.findByText('链接已复制')).toBeInTheDocument()
+    expect(execCommand).toHaveBeenCalledWith('copy')
+  })
+
+  it('剪贴板完全不可用时不谎报已复制', async () => {
+    const execCommand = vi.fn().mockReturnValue(false)
+    Object.defineProperty(document, 'execCommand', { value: execCommand, configurable: true })
+    stubShares([ACTIVE])
+    renderModal()
+
+    fireEvent.click(await screen.findByRole('button', { name: /复制链接/ }))
+
+    expect(await screen.findByText('复制失败，请手动选择链接')).toBeInTheDocument()
+    expect(screen.queryByText('链接已复制')).toBeNull()
   })
 
   it('撤销后列表状态更新为已撤销', async () => {

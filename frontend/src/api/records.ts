@@ -10,6 +10,8 @@ export const recordApi = {
     if (params?.filters) qp.filters = typeof params.filters === 'string' ? params.filters : JSON.stringify(params.filters)
     if (params?.sorts) qp.sorts = typeof params.sorts === 'string' ? params.sorts : JSON.stringify(params.sorts)
     if (params?.filter_logic) qp.filter_logic = params.filter_logic
+    // 回收站三态（ADR 0139 C2）：none（默认）/ only / include
+    if (params?.trashed) qp.trashed = params.trashed
     return api.get<RowListResponse>(`/v1/workspaces/${wid}/tables/${tid}/records`, { params: qp }).then(r => r.data)
   },
   /** 新建行：直编直存（201 RowResponse）；查看者/关闭直编时提交 create 修改申请（202 ChangeRequestDispatchResponse） */
@@ -29,14 +31,35 @@ export const recordApi = {
   nextIncrementPreview: (wid: number | string, tid: number | string) =>
     api.get<AutoIncrementPreview>(`/v1/workspaces/${wid}/tables/${tid}/records/auto-increment-preview`).then(r => r.data),
   /** 更新行：直编直存（200 RowResponse）；查看者/关闭直编时提交 update 修改申请（202 ChangeRequestDispatchResponse） */
-  update: (wid: number | string, tid: number | string, rid: number | string, data: RowUpdate): Promise<RowResponse | ChangeRequestBatchResponse> =>
-    api.patch<RowResponse | ChangeRequestBatchResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}`, data).then(r => r.data),
+  update: (
+    wid: number | string,
+    tid: number | string,
+    rid: number | string,
+    data: RowUpdate,
+    options?: { ifMatch?: string },
+  ): Promise<RowResponse | ChangeRequestBatchResponse> =>
+    api
+      .patch<RowResponse | ChangeRequestBatchResponse>(
+        `/v1/workspaces/${wid}/tables/${tid}/records/${rid}`,
+        data,
+        options?.ifMatch ? { headers: { 'If-Match': options.ifMatch } } : undefined,
+      )
+      .then(r => r.data),
   /** 删除行：直删返回 204 空 body（归一化为 null）；查看者/关闭直编时提交 delete 修改申请（202 修改申请载荷） */
   remove: (wid: number | string, tid: number | string, rid: number | string, soft = true): Promise<ChangeRequestBatchResponse | null> =>
     api.delete<ChangeRequestBatchResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}`, { params: { soft } })
       .then(r => (r.data && typeof r.data === 'object' ? r.data : null)),
   restore: (wid: number | string, tid: number | string, rid: number | string) =>
     api.post<RowResponse>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}/restore`).then(r => r.data),
+  /** 批量恢复回收站行（ADR 0139 C3；重复恢复幂等） */
+  restoreMany: (wid: number | string, tid: number | string, ids: Array<number | string>) =>
+    api.post<{ restored: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/restore`, { row_ids: ids }).then(r => r.data),
+  /** 彻底删除单行（仅限回收站中的行，ADR 0139 C4） */
+  purge: (wid: number | string, tid: number | string, rid: number | string) =>
+    api.post<{ id: number; purged: boolean }>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}/purge`).then(r => r.data),
+  /** 批量彻底删除（仅限回收站中的行） */
+  purgeMany: (wid: number | string, tid: number | string, ids: Array<number | string>) =>
+    api.post<{ purged: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/purge`, { row_ids: ids }).then(r => r.data),
   // 批量
   bulkCreate: (wid: number | string, tid: number | string, rows: Array<Record<string, unknown>>) =>
     api.post<{ created: number; ids: number[] }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-create`, { rows }).then(r => r.data),

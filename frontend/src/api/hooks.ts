@@ -132,10 +132,21 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
   const queryClient = useQueryClient()
   const tableKey = `${wid}/${tid}`
 
+  /** 从当前缓存里找该行的 `_etag`（ADR 0140）：作为 If-Match 告诉后端「我改的是这一版」 */
+  const findCachedEtag = (rowId: number | string): string | undefined => {
+    for (const [, data] of queryClient.getQueriesData<RowListResponse>({ queryKey: ['table-records', tableKey] })) {
+      const hit = data?.items?.find(r => String(r.id) === String(rowId))
+      if (hit?._etag) return hit._etag
+    }
+    return undefined
+  }
+
   return useMutation({
     mutationFn: async (args: { rowId: number | string; fieldName?: string; value?: unknown; values?: Record<string, unknown> }) => {
       const payload: Record<string, unknown> = args.values ?? (args.fieldName != null ? { [args.fieldName]: args.value } : {})
-      return recordApi.update(wid, tid, args.rowId, { values: payload })
+      // 带基准写入：后端版本不一致会 409 record_stale，而不是静默覆盖别人的改动。
+      // 缓存里没有 etag（旧数据 / 单行视图）时退回无基准写入，行为与改造前一致。
+      return recordApi.update(wid, tid, args.rowId, { values: payload }, { ifMatch: findCachedEtag(args.rowId) })
     },
     onMutate: async (args) => {
       // 1. 取消进行中的 table-records / row-audit 请求，避免覆盖乐观更新
@@ -180,6 +191,12 @@ export function useUpdateRowOptimistic(wid: string, tid: string) {
       // 回滚诊断日志：测试环境下跳过，避免污染 CI stderr（其余环境保留便于排查）
       if (import.meta.env.MODE !== 'test') {
         console.warn('[useUpdateRowOptimistic] optimistic rollback:', msg)
+      }
+      // ADR 0140 C5：版本冲突不自动覆盖，明确提示并让 onSettled 重取该表最新值
+      const conflictCode = (err as { code?: string } | null)?.code
+      if (conflictCode === 'record_stale') {
+        message.warning('该行已被他人修改，已载入最新值，请重新编辑')
+        return
       }
       message.error(msg)
     },

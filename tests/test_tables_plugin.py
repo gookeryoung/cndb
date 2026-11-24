@@ -24,7 +24,6 @@ from cndb.plugins.tables.models import (
     DataField,
     DataTable,
     _link_table_name,
-    _trash_table_name,
     generate_db_column_name,
     generate_db_table_name,
 )
@@ -233,9 +232,6 @@ class TestIdentifierGeneration:
         names = {generate_db_table_name() for _ in range(100)}
         assert len(names) == 100
 
-    def test_trash_table_name(self):
-        assert _trash_table_name("table_abc123def456") == "trash_abc123def456"
-
     def test_link_table_name(self):
         assert _link_table_name("field_abc123def456") == "link_abc123def456"
 
@@ -296,7 +292,8 @@ class TestDataTableHelpers:
         dt = DataTable(db_table_name="table_000000000002", workspace_id=1, name="t")
         dt.trashed = True
         dt.trashed_at = None
-        assert dt.trash_table_name == "trash_000000000002"
+        # 行回收站是原地标记，没有影子表（ADR 0139 D1 / I3）
+        assert not hasattr(dt, "trash_table_name")
 
 
 class TestDataFieldHelpers:

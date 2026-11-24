@@ -178,6 +178,51 @@ describe('useUpdateRowOptimistic', () => {
     expect(cached?.items[1]).toMatchObject({ id: 2, 姓名: '王五' })
   })
 
+  it('带基准写入：把缓存行的 _etag 作为 If-Match 头回传（ADR 0140 C5）', async () => {
+    let sentIfMatch = ''
+    server.use(
+      http.get('/api/v1/workspaces/10/tables/100/records', async () => {
+        await delay('infinite')
+        return HttpResponse.json(mockRecords)
+      }),
+      http.patch('/api/v1/workspaces/10/tables/100/records/1', ({ request }) => {
+        sentIfMatch = request.headers.get('If-Match') ?? ''
+        return HttpResponse.json({ id: 1, 姓名: '李四', _etag: 'v1-1-1' })
+      }),
+    )
+    const { qc, Wrapper } = makeMutationWrapper()
+    seedRecords(qc, [{ id: 1, 姓名: '张三', _etag: 'v1-1-0' }])
+
+    const { result } = renderHook(() => useUpdateRowOptimistic('10', '100'), { wrapper: Wrapper })
+    result.current.mutate({ rowId: 1, fieldName: '姓名', value: '李四' })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(sentIfMatch).toBe('v1-1-0')
+  })
+
+  it('版本冲突 409 record_stale：回滚乐观写入且不重放（不静默覆盖）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/tables/100/records', async () => {
+        await delay('infinite')
+        return HttpResponse.json(mockRecords)
+      }),
+      http.patch('/api/v1/workspaces/10/tables/100/records/1', () =>
+        HttpResponse.json(
+          { detail: '该行已被他人修改，请刷新后重试', code: 'record_stale' },
+          { status: 409 },
+        )),
+    )
+    const { qc, Wrapper } = makeMutationWrapper()
+    const key = seedRecords(qc, [{ id: 1, 姓名: '张三', _etag: 'v1-1-0' }])
+
+    const { result } = renderHook(() => useUpdateRowOptimistic('10', '100'), { wrapper: Wrapper })
+    result.current.mutate({ rowId: 1, fieldName: '姓名', value: '被覆盖' })
+
+    await waitFor(() => expect(result.current.isError).toBe(true))
+    const cached = qc.getQueryData<RowListResponse>(key)
+    expect(cached?.items[0]).toMatchObject({ id: 1, 姓名: '张三' })
+  })
+
   it('更新失败：cache 回滚到更新前数据', async () => {
     server.use(
       http.get('/api/v1/workspaces/10/tables/100/records', async () => {

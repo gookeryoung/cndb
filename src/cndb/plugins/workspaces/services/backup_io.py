@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,16 @@ from cndb.plugins.workspaces.schemas import WorkspaceImportResponse
 logger = logging.getLogger(__name__)
 
 # ── 工作区整体导入导出 ──────────────────────────────
+
+
+def _parse_iso_datetime(value: Any) -> Any:
+    """把归档里的 ISO 时间串还原为 datetime（失败保留原值，交由列类型兜底）."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:  # pragma: no cover - 归档被外部篡改
+        return value
 
 
 def _coerce_row_value_types(sa_table: Any, row_values: list[dict[str, Any]]) -> None:
@@ -303,6 +314,14 @@ def import_backup_into_workspace(
                                 values[f.db_column_name] = raw[f.name]
                             elif f.db_column_name in raw:
                                 values[f.db_column_name] = raw[f.db_column_name]
+                        # ADR 0139 C10：还原回收站状态（旧包无 __trashed 时按活动行）。
+                        # 每行都显式给出这两列，保证批量 INSERT 的键集合一致
+                        # （混合键会退化成"以首行键为准"并静默丢掉软删状态）。
+                        if values and "_trashed" in sa_table.columns:
+                            values["_trashed"] = bool(raw.get("__trashed"))
+                        if values and "_trashed_at" in sa_table.columns:
+                            trashed_at = raw.get("__trashed_at")
+                            values["_trashed_at"] = _parse_iso_datetime(trashed_at) if trashed_at else None
                         raw_rid = raw.get("__row_id")
                         if values:
                             row_values.append(values)

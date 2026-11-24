@@ -110,7 +110,11 @@ def _physical_table_bytes(db: Session, table_name: str) -> int:
 
 
 def workspace_table_bytes(db: Session, workspace_id: int) -> int:
-    """工作区数据表记录占用（字节）：活动物理表 + 行回收站影子表."""
+    """工作区数据表记录占用（字节）：活动物理表（含其中已软删、待保留期清理的行）.
+
+    回收站是原地 `_trashed` 标记（ADR 0139 D1 / I3），没有独立的影子表；
+    已删行仍占空间，保留期任务（`TRASH_RETENTION_DAYS`）清理后才释放。
+    """
     from cndb.plugins.tables.models import DataTable
 
     tables = (
@@ -124,7 +128,6 @@ def workspace_table_bytes(db: Session, workspace_id: int) -> int:
     total = 0
     for tbl in tables:
         total += _physical_table_bytes(db, tbl.db_table_name)
-        total += _physical_table_bytes(db, tbl.trash_table_name)
     return total
 
 
