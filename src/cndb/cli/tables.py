@@ -54,6 +54,41 @@ def cmd_purge_trash(args: argparse.Namespace) -> dict[str, Any]:
         db.close()
 
 
+def cmd_purge_audit(args: argparse.Namespace) -> dict[str, Any]:
+    """按保留期清理审计日志与统一事件流（默认 dry-run）."""
+    from cndb.plugins.tables.services.core.audit_retention import purge_old_audit
+
+    db = _get_session()
+    try:
+        return purge_old_audit(
+            db,
+            days=getattr(args, "days", None),
+            dry_run=not getattr(args, "apply", False),
+        )
+    finally:
+        db.close()
+
+
+def _print_purge_audit(payload: dict[str, Any]) -> None:
+    if payload["days"] <= 0:
+        print("[tables purge-audit] 保留期已关闭（AUDIT_RETENTION_DAYS <= 0），未做任何清理")
+        return
+    mode = "体检（dry-run，未删除）" if payload["dry_run"] else "清理"
+    print(f"[tables purge-audit] {mode} — 保留期 {payload['days']} 天，截止 {payload['cutoff']}")
+    if payload["tables"]:
+        print(f"[tables purge-audit] 涉及数据表 {len(payload['tables'])} 张：")
+        for item in payload["tables"]:
+            print(f"  - 表 id={item['table_id']}：过期审计 {item['audit_rows']} 行")
+    print(
+        f"[tables purge-audit] 审计日志 {payload['audit_deleted']} 行"
+        + ("（预计删除）" if payload["dry_run"] else "（已删除）")
+        + f"，统一事件 {payload['events_deleted']} 行"
+        + ("（预计删除）" if payload["dry_run"] else "（已删除）")
+    )
+    if payload["dry_run"] and (payload["audit_deleted"] or payload["events_deleted"]):
+        print("[tables purge-audit] 加 --apply 执行清理（清理后不可恢复）")
+
+
 def cmd_doctor(args: argparse.Namespace) -> dict[str, Any]:
     """体检 / 修复历史脏数据（孤儿 link 关系、失效 lookup 冗余列、孤儿排序索引）.返回报告."""
     from cndb.plugins.tables.services.core.table_doctor import diagnose
@@ -143,6 +178,13 @@ def tables_command(args: argparse.Namespace) -> None:
         else:
             _print_report(payload)
         return
+    if cmd == "purge-audit":
+        payload = cmd_purge_audit(args)
+        if getattr(args, "json", False):
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            _print_purge_audit(payload)
+        return
     if cmd == "doctor":
         payload = cmd_doctor(args)
         if getattr(args, "json", False):
@@ -178,6 +220,19 @@ def register_tables_subparser(sub: Any) -> None:
     p_purge.add_argument("--workspace", dest="workspace_id", type=int, default=None, help="限定工作区 id")
     p_purge.add_argument("--table", dest="table_id", type=int, default=None, help="限定数据表 id")
     p_purge.add_argument("--json", action="store_true", help="以 JSON 输出报告")
+
+    p_audit = tables_sub.add_parser(
+        "purge-audit",
+        help="按保留期清理审计日志与统一事件流（默认仅体检，--apply 才删除）",
+    )
+    p_audit.add_argument(
+        "--days",
+        type=int,
+        default=None,
+        help="保留天数（默认取 AUDIT_RETENTION_DAYS，默认 180；0 = 关闭）",
+    )
+    p_audit.add_argument("--apply", action="store_true", help="实际删除过期流水（默认 dry-run）")
+    p_audit.add_argument("--json", action="store_true", help="以 JSON 输出报告")
 
     p_doctor = tables_sub.add_parser(
         "doctor",
