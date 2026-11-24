@@ -18,6 +18,8 @@ ACTION_UPDATE = "update"
 ACTION_TRASH = "trash"
 ACTION_RESTORE = "restore"
 ACTION_DELETE = "delete"
+#: 回收站彻底删除（物理删除，ADR 0139）
+ACTION_PURGE = "purge"
 # 行级权限规则增删改（ADR 0004 §7-8）
 ACTION_ROW_RULE_CREATE = "row_rule_create"
 ACTION_ROW_RULE_UPDATE = "row_rule_update"

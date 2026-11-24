@@ -7,9 +7,10 @@ import json
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -22,9 +23,10 @@ from cndb.plugins.change_requests.models import (
     CHANGE_OP_UPDATE,
 )
 from cndb.plugins.tables.field_types import default_registry
-from cndb.plugins.tables.models import DataTable
+from cndb.plugins.tables.models import AuditLog, DataTable
 from cndb.plugins.tables.schemas import (
     AutoIncrementPreviewResponse,
+    BulkRowIds,
     MatrixUpsertRequest,
     RecordCopyRequest,
     RecordCreate,
@@ -39,6 +41,7 @@ from cndb.plugins.tables.services.core.access import (
     get_table_or_404,
     row_filters_bypass,
 )
+from cndb.plugins.tables.services.core.audit import ACTION_TRASH
 from cndb.plugins.tables.services.core.ddl import ensure_sort_index
 from cndb.plugins.tables.services.core.records import (
     _get_sa_table,
@@ -51,8 +54,11 @@ from cndb.plugins.tables.services.core.records import (
     get_row,
     list_rows,
     month_bounds,
+    parse_if_match,
     preview_auto_increment_values,
+    purge_rows,
     restore_row,
+    restore_rows,
     trash_row,
     update_row,
 )
@@ -69,6 +75,86 @@ MAX_RECORD_OFFSET = 100_000
 
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}/records", tags=["records"])
+
+
+#: `trashed` 查询参数取值（ADR 0139 C2）：none = 默认只看活动行；only = 只看回收站；include = 两者都看
+TRASHED_MODES = ("none", "only", "include")
+
+
+def _trash_mode(trashed: str, include_trashed: bool) -> str:
+    """归一化回收站过滤模式：`trashed` 显式值优先，`include_trashed` 作为旧参数别名."""
+    mode = (trashed or "none").strip().lower()
+    if mode not in TRASHED_MODES:
+        raise HTTPException(status_code=400, detail=f"trashed 取值非法（可选 none / only / include）: {trashed}")
+    if mode == "none" and include_trashed:
+        return "include"
+    return mode
+
+
+#: 回收站彻底删除单次上限（ADR 0139 边界 2）
+MAX_PURGE_ROWS = 200
+
+
+def _ensure_all_trashed(db: Session, dt: DataTable, row_ids: list[int], user: User) -> None:
+    """purge 前置校验：目标行必须全部在回收站里（ADR 0139 C4 / 边界 2）.
+
+    - 越读范围 / 不存在 → 404（不泄露存在性）；
+    - 存在但未软删 → 400（不静默物理删除活动行，整批不做部分成功）。
+    """
+    ids = [int(i) for i in row_ids]
+    if not ids:
+        raise HTTPException(status_code=400, detail="row_ids 不能为空")
+    if len(ids) > MAX_PURGE_ROWS:
+        raise HTTPException(status_code=400, detail=f"一次最多彻底删除 {MAX_PURGE_ROWS} 行")
+
+    from cndb.plugins.tables.services.core.records import _build_row_scope_where
+
+    sa_table = _get_sa_table(db.get_bind(), dt)
+    where: list[Any] = [sa_table.c.id.in_(ids)]
+    scope = _build_row_scope_where(dt, sa_table, db, user)
+    if scope is not None:
+        where.append(scope)
+    engine: Any = db.get_bind()
+    with engine.connect() as conn:
+        found = {
+            int(row[0]): bool(row[1])
+            for row in conn.execute(select(sa_table.c.id, sa_table.c._trashed).where(*where)).all()
+        }
+    missing = [rid for rid in ids if rid not in found]
+    if missing:
+        raise HTTPException(status_code=404, detail=f"行不存在: {missing}")
+    active = [rid for rid in ids if not found[rid]]
+    if active:
+        raise HTTPException(status_code=400, detail=f"只能彻底删除回收站中的行（仍活动的行: {active}）")
+
+
+def _trash_actors(db: Session, table_id: int, row_ids: list[int]) -> dict[int, tuple[int | None, str | None]]:
+    """已删行的删除操作人：取该行最近一条 ``action='trash'`` 审计的 actor（ADR 0139 C2 / D3）."""
+    if not row_ids:
+        return {}
+    entries = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.table_id == table_id,
+            AuditLog.action == ACTION_TRASH,
+            AuditLog.target_id.in_(row_ids),
+        )
+        .order_by(AuditLog.id.desc())
+        .all()
+    )
+    latest: dict[int, int | None] = {}
+    for entry in entries:
+        if entry.target_id is None:
+            continue
+        latest.setdefault(int(entry.target_id), entry.actor_id)
+    actor_ids = {aid for aid in latest.values() if aid is not None}
+    names: dict[int, str] = {}
+    if actor_ids:
+        names = {
+            int(uid): str(username)
+            for uid, username in db.query(User.id, User.username).filter(User.id.in_(actor_ids)).all()
+        }
+    return {row_id: (aid, names.get(int(aid)) if aid is not None else None) for row_id, aid in latest.items()}
 
 
 def _dispatch_or_403(
@@ -139,13 +225,15 @@ def _list_response(
     sorts: list[dict[str, Any]] | None,
     limit: int,
     offset: int,
-    include_trashed: bool,
+    trashed: str = "none",
     total: int | None = None,
 ) -> RecordListResponse:
     """调用 list_rows 并统一错误映射（ValueError→400，其余→500），GET/POST 列表端点共用.
 
     ``total`` 非空时跳过内部 COUNT（ADR 0046 D3 计数缓存命中路径）.
+    ``trashed="only"`` 时按 ADR 0139 C2 附带删除时间与操作人.
     """
+    only_trashed = trashed == "only"
     try:
         rows, total = list_rows(
             db.get_bind(),
@@ -155,7 +243,8 @@ def _list_response(
             sorts=sorts,
             limit=limit,
             offset=offset,
-            include_trashed=include_trashed,
+            include_trashed=trashed == "include",
+            only_trashed=only_trashed,
             db=db,
             user=user,
             total=total,
@@ -167,6 +256,13 @@ def _list_response(
         # SQLAlchemy / 数据库等运行时错误 — 记录日志，避免把内部结构泄漏给客户端
         logger.exception("list_rows 运行时异常")
         raise HTTPException(status_code=500, detail="服务内部错误") from exc
+
+    if only_trashed and rows:
+        actors = _trash_actors(db, int(dt.id), [int(r["id"]) for r in rows if "id" in r])
+        for row in rows:
+            actor_id, actor_name = actors.get(int(row.get("id", 0)), (None, None))
+            row["_trashed_by"] = actor_id
+            row["_trashed_by_name"] = actor_name
 
     return RecordListResponse(rows=rows, total=total, limit=limit, offset=offset)
 
@@ -197,7 +293,7 @@ def _cached_list(
     filter_logic: str,
     limit: int,
     offset: int,
-    include_trashed: bool,
+    trashed: str = "none",
     cache_sig: str,
 ) -> RecordListResponse:
     """记录列表的统一读路径（GET/POST 共用）：排序索引 → 计数缓存 → 响应缓存（ADR 0046 D2/D3）."""
@@ -216,7 +312,7 @@ def _cached_list(
     table_id = int(dt.id)
     engine_id = id(db.bind)
 
-    ck = cache_key("records", workspace_id, table_id, user.id, include_trashed, cache_sig, engine_id)
+    ck = cache_key("records", workspace_id, table_id, user.id, trashed, cache_sig, engine_id)
     cached = list_cache.get(ck)
     if cached is not None:
         return cached
@@ -237,7 +333,7 @@ def _cached_list(
             table_id,
             "count",
             user.id,
-            include_trashed,
+            trashed,
             _query_sig(filters=filters, sorts=None, filter_logic=filter_logic),
             engine_id,
         )
@@ -249,7 +345,8 @@ def _cached_list(
                     dt,
                     filters=filters,
                     filter_logic=filter_logic,
-                    include_trashed=include_trashed,
+                    include_trashed=trashed == "include",
+                    only_trashed=trashed == "only",
                     db=db,
                     user=user,
                 )
@@ -268,7 +365,7 @@ def _cached_list(
         sorts=sorts,
         limit=limit,
         offset=offset,
-        include_trashed=include_trashed,
+        trashed=trashed,
         total=total,
     )
     list_cache.set(ck, result, RECORD_LIST_TTL_SECONDS)
@@ -313,6 +410,7 @@ def list_records_get(
     sorts: str | None = Query(default=None),
     filter_logic: str = Query(default="AND", pattern="^(AND|OR)$"),
     include_trashed: bool = Query(default=False),
+    trashed: str = Query(default="none", description="none / only（回收站）/ include"),
 ) -> RecordListResponse:
     """GET /records - 前端友好的列表端点.
 
@@ -337,6 +435,7 @@ def list_records_get(
 
     parsed_filters = _parse(filters, "filters")
     parsed_sorts = _parse(sorts, "sorts")
+    mode = _trash_mode(trashed, include_trashed)
     # GET 与 POST /list 共用同一读路径（缓存 / 计数缓存 / 排序索引）—— 前端网格实际走 GET
     return _cached_list(
         db,
@@ -347,7 +446,7 @@ def list_records_get(
         filter_logic=filter_logic,
         limit=limit,
         offset=offset,
-        include_trashed=include_trashed,
+        trashed=mode,
         cache_sig=_query_sig(
             filters=parsed_filters,
             sorts=parsed_sorts,
@@ -366,6 +465,7 @@ def list_records(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     include_trashed: bool = Query(default=False),
+    trashed: str = Query(default="none", description="none / only（回收站）/ include"),
 ) -> RecordListResponse:
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
 
@@ -383,7 +483,7 @@ def list_records(
         filter_logic=payload.filter_logic,
         limit=payload.limit,
         offset=payload.offset,
-        include_trashed=include_trashed,
+        trashed=_trash_mode(trashed, include_trashed),
         cache_sig=body_sig,
     )
 
@@ -592,8 +692,16 @@ def update_record(
     payload: RecordUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
 ) -> dict[str, object] | JSONResponse:
+    """更新一行（ADR 0140）：带 `If-Match` 时做乐观并发校验，不一致返回 409 record_stale."""
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+
+    try:
+        etag = parse_if_match(if_match)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    expected_rev = etag[1] if etag is not None else None
 
     decision = _row_write_decision(db, dt, current_user, record_id)
     if decision == ROW_WRITE_NOT_FOUND:
@@ -604,7 +712,16 @@ def update_record(
         return _cr_response(db, dt, current_user, op=CHANGE_OP_UPDATE, row_id=record_id, values=payload.values)
 
     try:
-        row = update_row(db.get_bind(), dt, record_id, payload.values, db=db, user=current_user, enforce_row_rules=True)
+        row = update_row(
+            db.get_bind(),
+            dt,
+            record_id,
+            payload.values,
+            db=db,
+            user=current_user,
+            enforce_row_rules=True,
+            expected_rev=expected_rev,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -658,3 +775,49 @@ def restore_record(
     if row is None:  # pragma: no cover - 防御性
         raise HTTPException(status_code=500, detail="恢复后读取失败")
     return row
+
+
+@router.post("/restore", response_model=None)
+def restore_records(
+    workspace_id: int,
+    table_id: int,
+    payload: BulkRowIds,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    """批量恢复回收站行（ADR 0139 C3）：只处理当前已删且在读范围内的行."""
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    restored = restore_rows(db.get_bind(), dt, payload.row_ids, db=db, user=current_user)
+    return {"restored": restored}
+
+
+@router.post("/purge", response_model=None)
+def purge_records(
+    workspace_id: int,
+    table_id: int,
+    payload: BulkRowIds,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, int]:
+    """批量彻底删除回收站行（ADR 0139 C4）：非已删行一律 400，不做部分成功."""
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    _ensure_all_trashed(db, dt, payload.row_ids, current_user)
+    purged = purge_rows(db.get_bind(), dt, payload.row_ids, db=db, user=current_user)
+    return {"purged": purged}
+
+
+@router.post("/{record_id}/purge", response_model=None)
+def purge_record(
+    workspace_id: int,
+    table_id: int,
+    record_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, object]:
+    """彻底删除单行（仅限已进回收站的行，ADR 0139 C4）."""
+    dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
+    _ensure_all_trashed(db, dt, [record_id], current_user)
+    purged = purge_rows(db.get_bind(), dt, [record_id], db=db, user=current_user)
+    if purged == 0:
+        raise HTTPException(status_code=404, detail="行不存在或未在回收站中")
+    return {"id": record_id, "purged": True}

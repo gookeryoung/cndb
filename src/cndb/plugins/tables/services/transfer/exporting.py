@@ -35,6 +35,15 @@ def _serialize_link_value(value: Any, *, use_business_key: bool = False) -> Any:
     return value
 
 
+#: 导出口径排除的系统 / 派生键：并发版本与软删元数据不进导出（ADR 0140 C7 / ADR 0139）
+_EXPORT_EXCLUDED_KEYS = frozenset({"_etag", "_rev", "_trashed", "_trashed_at", "_trashed_by", "_trashed_by_name"})
+
+
+def _strip_export_excluded(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """剔出系统 / 派生键（`_etag` / `_rev` / 软删元数据），其余原样（ADR 0140 C7）."""
+    return [{k: v for k, v in row.items() if k not in _EXPORT_EXCLUDED_KEYS} for row in rows]
+
+
 def _exportable_rows(
     rows: list[dict[str, Any]],
     link_display: Mapping[str, bool] | None = None,
@@ -46,7 +55,12 @@ def _exportable_rows(
     """
     display = link_display or {}
     return [
-        {k: _serialize_link_value(v, use_business_key=bool(display.get(k))) for k, v in row.items()} for row in rows
+        {
+            k: _serialize_link_value(v, use_business_key=bool(display.get(k)))
+            for k, v in row.items()
+            if k not in _EXPORT_EXCLUDED_KEYS
+        }
+        for row in rows
     ]
 
 
@@ -125,8 +139,12 @@ def export_rows_to_json(
     link_display 指定哪些 link 列导出业务文本；缺省时保持结构化原值（[{id,value}]）。
     columns 指定导出列顺序（字段展示顺序）；缺省时保持行内原顺序。
     """
+    # 始终过滤：系统 / 派生键（`_etag` / `_rev` / 软删元数据）不进任何导出（ADR 0140 C7）；
+    # link 结构化保留原口径——只有显式要求业务文本时才压成分号串
     if link_display:
         rows = _exportable_rows(rows, link_display)
+    else:
+        rows = _strip_export_excluded(rows)
     if columns:
         rows = _ordered_rows(rows, columns)
     return json.dumps(rows, ensure_ascii=False, indent=2, default=str)
