@@ -10,6 +10,7 @@
  */
 
 import { snippet, type Completion, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
+import { stripCommentsAndStrings } from './designLexing'
 import {
   BOOLEANS,
   CONSTRAINT_ANCHORS,
@@ -20,6 +21,8 @@ import {
   STATEMENT_KEYWORDS,
   TRANSFORMS,
 } from './designLang'
+
+export { stripCommentsAndStrings } from './designLexing'
 
 /** 跨文件零件候选（由宿主页注入，`use "` 字符串位使用） */
 export interface DslPartOption {
@@ -120,60 +123,6 @@ export const dslSnippets: Completion[] = Object.entries(DSL_SNIPPET_TEMPLATES).m
   detail: KEYWORD_DETAILS[name] ?? `${name} 模板`,
   apply: snippet(template),
 }))
-
-/** 去掉注释与字符串内容（等长替换为空格，保留换行；轻量扫描与上下文判定共用） */
-export function stripCommentsAndStrings(doc: string): string {
-  const out: string[] = []
-  let state: 'code' | 'line' | 'block' | 'string' = 'code'
-  for (let i = 0; i < doc.length; i += 1) {
-    const ch = doc[i]
-    const next = doc[i + 1]
-    if (state === 'code') {
-      if (ch === '/' && next === '/') {
-        state = 'line'
-        out.push(' ', ' ')
-        i += 1
-      } else if (ch === '/' && next === '*') {
-        state = 'block'
-        out.push(' ', ' ')
-        i += 1
-      } else if (ch === '"') {
-        state = 'string'
-        out.push(' ')
-      } else {
-        out.push(ch)
-      }
-      continue
-    }
-    if (state === 'line') {
-      if (ch === '\n') {
-        state = 'code'
-        out.push('\n')
-      } else {
-        out.push(' ')
-      }
-      continue
-    }
-    if (state === 'block') {
-      if (ch === '*' && next === '/') {
-        state = 'code'
-        out.push(' ', ' ')
-        i += 1
-      } else {
-        out.push(ch === '\n' ? '\n' : ' ')
-      }
-      continue
-    }
-    // string
-    if (ch === '"') {
-      state = 'code'
-      out.push(' ')
-    } else {
-      out.push(ch === '\n' ? '\n' : ' ')
-    }
-  }
-  return out.join('')
-}
 
 /** 解析形参表（`d` / `d = 10` 混合；忽略非法名字） */
 function splitParams(raw: string): string[] {

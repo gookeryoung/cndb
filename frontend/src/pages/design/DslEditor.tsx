@@ -23,7 +23,7 @@ import type { DesignDiagnostic } from '@/api'
 import { useEditorAppearance } from '@/theme/ThemeProvider'
 import { editorAppearanceExtensions } from '@/theme/editorAppearance'
 import { cnDslLanguage } from './designLang'
-import { dslCompletionSource, type DslLibraryOption, type DslPartOption } from './designCompletion'
+import type { DslLibraryOption, DslPartOption } from './designCompletion'
 import { DSL_INDENT_UNIT, dslIndentService, insertDslNewline } from './designIndent'
 
 /** 诊断更新效果（编辑器外部把编译结果推进来） */
@@ -80,7 +80,18 @@ function makeCompletionExtension(
 ) {
   return autocompletion({
     activateOnTyping: true,
-    override: [context => dslCompletionSource(context, { fetchParts, fetchLibrary })],
+    // 补全候选表（关键字 / 片段 / 签名）体积较大，按需加载：用户实际唤起补全时才拉该 chunk，
+    // 设计编辑器首屏不再为它买单（需求 0160 体积收口）。失败按「无候选」处理，不阻断输入。
+    override: [
+      async context => {
+        try {
+          const { dslCompletionSource } = await import('./designCompletion')
+          return await dslCompletionSource(context, { fetchParts, fetchLibrary })
+        } catch {
+          return null
+        }
+      },
+    ],
   })
 }
 

@@ -7,7 +7,7 @@
 
 import type { IndentContext } from '@codemirror/language'
 import type { EditorView } from '@codemirror/view'
-import { stripCommentsAndStrings } from './designCompletion'
+import { stripCommentsAndStrings } from './designLexing'
 
 /** 缩进单位：固定 2 空格（C3） */
 export const DSL_INDENT_UNIT = '  '

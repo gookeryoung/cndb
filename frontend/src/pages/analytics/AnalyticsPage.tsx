@@ -50,9 +50,9 @@ import { AnalyticsAiPanel } from './AnalyticsAiPanel'
 import { FormulaPanel } from './FormulaPanel'
 import { ChartPanel } from './ChartPanel'
 import { SummaryPanel } from './SummaryPanel'
-import { ChartResultBox, RowsResultBox, StatsResultBox, SummaryResultBox } from './AnalyticsResultView'
+
 import { RecommendationPanel } from './RecommendationPanel'
-import { AnalyticsManagerDrawer } from './AnalyticsManagerDrawer'
+
 import { applySuggestionConfig, buildExplainPayload, suggestionName } from './analyticsAi'
 import {
   DEFAULT_CHART,
@@ -82,6 +82,17 @@ const AnalyticsAiExplainDrawer = lazy(() => import('./AnalyticsAiExplainDrawer')
 /** 复合数据源 Modal 同理：只有点开「组合数据源」才需要，lazy 挂载避免进分析页首屏 chunk */
 const CompositeSourceModal = lazy(
   () => import('./CompositeSourceModal').then(m => ({ default: m.CompositeSourceModal })),
+)
+// 结果视图（图表 / 汇总 / 描述统计 / 派生数据）只在「跑过一次」之后才出现，
+// 首次运行前用占位卡承担版面：lazy 后不进分析页首屏 chunk（需求 0160 体积收口）。
+const loadResultView = () => import('./AnalyticsResultView')
+const ChartResultBox = lazy(() => loadResultView().then(m => ({ default: m.ChartResultBox })))
+const SummaryResultBox = lazy(() => loadResultView().then(m => ({ default: m.SummaryResultBox })))
+const StatsResultBox = lazy(() => loadResultView().then(m => ({ default: m.StatsResultBox })))
+const RowsResultBox = lazy(() => loadResultView().then(m => ({ default: m.RowsResultBox })))
+// 模板列表 Drawer：只有点「打开 / 另存」才出现，同样按需加载
+const AnalyticsManagerDrawer = lazy(
+  () => import('./AnalyticsManagerDrawer').then(m => ({ default: m.AnalyticsManagerDrawer })),
 )
 
 /** 未运行时的结果占位：与对应配置同排展示，提示运行后此处出现什么 */
@@ -1303,14 +1314,16 @@ export default function AnalyticsPage() {
           </div>
           <div className="cn-an-band-result">
             {result ? (
-              <ChartResultBox
-                result={result}
-                chart={chart}
-                fields={syntheticFields}
-                title={resultTitle}
-                onAiExplain={llmConfigured ? requestExplain : undefined}
-                aiExplainLoading={explainAi.loading}
-              />
+              <Suspense fallback={<ResultPlaceholder text="正在加载结果视图…" />}>
+                <ChartResultBox
+                  result={result}
+                  chart={chart}
+                  fields={syntheticFields}
+                  title={resultTitle}
+                  onAiExplain={llmConfigured ? requestExplain : undefined}
+                  aiExplainLoading={explainAi.loading}
+                />
+              </Suspense>
             ) : (
               <ResultPlaceholder text="运行分析后，这里显示图表" />
             )}
@@ -1331,7 +1344,11 @@ export default function AnalyticsPage() {
           </div>
           <div className="cn-an-band-result">
             {result
-              ? <SummaryResultBox result={result} title={resultTitle} />
+              ? (
+                <Suspense fallback={<ResultPlaceholder text="正在加载结果视图…" />}>
+                  <SummaryResultBox result={result} title={resultTitle} />
+                </Suspense>
+              )
               : <ResultPlaceholder text="运行分析后，这里显示分组汇总表" />}
           </div>
         </section>
@@ -1354,7 +1371,7 @@ export default function AnalyticsPage() {
           </div>
           <div className="cn-an-band-result">
             {result ? (
-              <>
+              <Suspense fallback={<ResultPlaceholder text="正在加载结果视图…" />}>
                 <StatsResultBox result={result} title={resultTitle} />
                 <RowsResultBox
                   result={result}
@@ -1365,7 +1382,7 @@ export default function AnalyticsPage() {
                   }))}
                   title={resultTitle}
                 />
-              </>
+              </Suspense>
             ) : (
               <ResultPlaceholder text="运行分析后，这里显示描述统计与派生数据" />
             )}
@@ -1444,21 +1461,23 @@ export default function AnalyticsPage() {
         />
       </Suspense>
 
-      {/* ── 分析列表 Drawer：打开 / 复制 / 删除 / 新建 ── */}
-      <AnalyticsManagerDrawer
-        open={managerOpen}
-        onClose={() => setManagerOpen(false)}
-        templates={templates}
-        tables={tables}
-        activeTemplateId={activeTemplateId}
-        dirty={dirty}
-        duplicating={duplicateMutation.isPending}
-        deleting={removeMutation.isPending}
-        onOpenTemplate={tpl => requestTemplateLoad(tpl, { onApplied: () => setManagerOpen(false) })}
-        onDuplicate={tpl => duplicateMutation.mutate(tpl)}
-        onDelete={tpl => removeMutation.mutate(tpl.id)}
-        onNew={startNewAnalysis}
-      />
+      {/* ── 分析列表 Drawer：打开 / 复制 / 删除 / 新建（按需加载） ── */}
+      <Suspense fallback={null}>
+        <AnalyticsManagerDrawer
+          open={managerOpen}
+          onClose={() => setManagerOpen(false)}
+          templates={templates}
+          tables={tables}
+          activeTemplateId={activeTemplateId}
+          dirty={dirty}
+          duplicating={duplicateMutation.isPending}
+          deleting={removeMutation.isPending}
+          onOpenTemplate={tpl => requestTemplateLoad(tpl, { onApplied: () => setManagerOpen(false) })}
+          onDuplicate={tpl => duplicateMutation.mutate(tpl)}
+          onDelete={tpl => removeMutation.mutate(tpl.id)}
+          onNew={startNewAnalysis}
+        />
+      </Suspense>
     </div>
   )
 }
