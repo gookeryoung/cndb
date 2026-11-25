@@ -77,6 +77,10 @@ const ACCESS_TAG: Record<string, { color: string; label: string }> = {
   none: { color: 'default', label: '默认' },
 }
 
+/** 列表固定列宽总和（含拖拽列）：窄宽度改为横向滚动，列宽不再压缩导致换行。
+ *  各列宽度调整时同步此值（固定表格布局下 scroll.x 即最小宽度）。 */
+const TABLE_SCROLL_X = 36 + 220 + 260 + 144 + 92 + 80 + 62 + 72 + 148 + 96
+
 /** 拖拽把手的控制对象 —— 由行/卡片组件通过 context 下发，避免整行可拖与「点击进表」抢手势. */
 type DragHandleState = {
   attributes: DraggableAttributes
@@ -607,11 +611,19 @@ export default function TablesList() {
       title: '表名',
       dataIndex: 'name',
       key: 'name',
+      width: 220,
+      // 固定列宽 + 单行省略：窄宽度下名称换行会撑高整行，并让相邻单元格文字错位
+      ellipsis: { showTitle: false },
       render: (name: string, record: TableSummary) => (
-        <span>
-          <a onClick={() => navigate(`/w/${wid}/tables/${record.id}`)} style={{ fontWeight: WEIGHT.medium }}>
+        <span className="cn-table-list-name-cell">
+          <a
+            className="cn-table-list-name"
+            title={name}
+            onClick={() => navigate(`/w/${wid}/tables/${record.id}`)}
+            style={{ fontWeight: WEIGHT.medium }}
+          >
             <TableOutlined style={{ marginRight: 8, color: '#3b82f6' }} />
-            {name}
+            <span className="cn-table-list-name-text">{name}</span>
           </a>
           {/* 受限提示：普通成员看不到这张表；能让管理员知道"为什么别人说找不到" */}
           {record.is_restricted && (
@@ -621,7 +633,7 @@ export default function TablesList() {
               <Tag
                 color="orange"
                 data-testid={`table-restricted-${record.id}`}
-                style={{ marginLeft: 8, fontSize: 'var(--cn-text-2xs)', lineHeight: '16px' }}
+                className="cn-table-list-name-tag"
               >
                 受限
               </Tag>
@@ -634,7 +646,8 @@ export default function TablesList() {
       title: '描述',
       dataIndex: 'description',
       key: 'description',
-      ellipsis: true,
+      width: 260,
+      ellipsis: { showTitle: true },
       render: (d?: string) => d ? <Text type="secondary">{d}</Text> : <Text type="secondary" italic>—</Text>,
     },
     {
@@ -648,11 +661,11 @@ export default function TablesList() {
         }
         const isMe = user && String(owner.id) === String(user.id)
         return (
-          <Space size={6}>
+          <Space size={6} className="cn-table-list-owner">
             <Avatar size="small" icon={<UserOutlined />} />
-            <span>
+            <span className="cn-table-list-owner-name" title={owner.username}>
               {owner.username}
-              {isMe && <Tag color="red" style={{ marginLeft: 4, fontSize: 'var(--cn-text-2xs)', lineHeight: '16px' }}>我</Tag>}
+              {isMe && <Tag color="red" className="cn-table-list-owner-tag">我</Tag>}
             </span>
           </Space>
         )
@@ -931,7 +944,8 @@ export default function TablesList() {
                         columns={visibleColumns}
                         dataSource={section.rows}
                         pagination={false}
-                        scroll={{ x: 'max-content' }}
+                        tableLayout="fixed"
+                        scroll={{ x: TABLE_SCROLL_X }}
                         components={{ body: { row: DraggableRow } }}
                         onRow={(record) => ({
                           onClick: () => navigate(`/w/${wid}/tables/${record.id}`),
@@ -985,7 +999,8 @@ export default function TablesList() {
               columns={visibleColumns}
               dataSource={pagedTables}
               pagination={false}
-              scroll={{ x: 'max-content' }}
+              tableLayout="fixed"
+              scroll={{ x: TABLE_SCROLL_X }}
               components={{ body: { row: DraggableRow } }}
               onRow={(record) => ({
                 onClick: () => navigate(`/w/${wid}/tables/${record.id}`),

@@ -202,10 +202,12 @@
 | 顶栏切换器 / 面板 | `frontend/src/components/ScopeSwitcher.tsx`（+ `ScopeSwitcher.test.tsx` 5 例） |
 | 首页分组 / chips / 折叠持久化 / 团队预填 | `frontend/src/pages/workspace/WorkspaceList.tsx`、`frontend/src/hooks/useCreateParam.ts` |
 | 顶栏面包屑 / 移动端团队导航 | `frontend/src/layouts/MainLayout.tsx` |
+| 顶栏归属去重（补） | 团队名只出现一次：桌面完整档由面包屑「团队 / 个人」承担，切换器触发按钮仅显示工作区名（移除重复的团队 Tag）；`<1280` 紧凑档面包屑收起时，由切换器前缀补「团队 / 工作区」，个人工作区显示「个人 / 工作区」；`ScopeSwitcher` 新增 `prefix` 入参 |
 | 团队页路由化 + 分区 | `frontend/src/pages/team/TeamPage.tsx`、`TeamSections.tsx`、`teamSectionMeta.ts` |
 | 路由 / 样式 | `frontend/src/App.tsx`、`frontend/src/index.css` |
 | 测试 | `TeamPage.test.tsx`（重写为分区 / 路由驱动）、`WorkspaceList.test.tsx`（团队段改 chips + 分组；行内时间 / body 结构）、`MainLayout.test.tsx`（面包屑 + 分组 3 例）、`frontend/tests/e2e/critical/workspace-team-navigation.spec.ts`（5 条） |
 | 列表响应式（补） | 行结构 `row-body(title + meta)` + `flex-wrap`，名称 `min-width` 优先；<1200（xl）收起模块徽标、<1024 收起时间、1024–1199 用相对时间；e2e `workspace-list-responsive.spec.ts`（1440 / 1280 / 1024 / 768 / 390） |
+| 数据表列表行高（补） | `TablesList` 固定列宽 + `tableLayout="fixed"` + `scroll.x=1210`；表名 / 描述 / 拥有者单行省略，宽屏铺满、窄屏横向滚动；e2e `tables-list-layout.spec.ts`（1600 / 1200 / 1000 / 900 / 800 / 769 / 768） |
 
 ## 卡点
 

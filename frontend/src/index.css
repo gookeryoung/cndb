@@ -1887,6 +1887,64 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   line-height: 20px;
 }
 
+/* 名称 / 描述 / 拥有者：固定列宽 + 单行省略，保证任意宽度下行高恒定；
+ * 窄宽度由表格横向滚动承接，而不是压缩列宽导致换行与文字错位。 */
+/* 宽屏时表格铺满内容区；窄屏由 scroll.x 保证最小列宽并横向滚动。
+ * 表头 / 表体列宽同源（tableLayout=fixed），避免缩放过程中的列错位。 */
+.cn-table-list table {
+  min-width: 100%;
+}
+
+.cn-table-list-name-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+.cn-table-list-name {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.cn-table-list-name-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-table-list-name-tag.ant-tag {
+  flex: none;
+  margin-inline-end: 0;
+  font-size: var(--cn-text-2xs);
+  line-height: 16px;
+}
+
+.cn-table-list-owner {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.cn-table-list-owner-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-table-list-owner-tag.ant-tag {
+  margin-inline-start: var(--cn-space-xs);
+  margin-inline-end: 0;
+  font-size: var(--cn-text-2xs);
+  line-height: 16px;
+}
+
 /* 单元格内的 Tag / 徽标在紧凑行里去掉多余上下边距 */
 .cn-table-list .ant-table-tbody > tr > td .ant-tag {
   margin-inline-end: 0;
