@@ -204,7 +204,8 @@
 | 顶栏面包屑 / 移动端团队导航 | `frontend/src/layouts/MainLayout.tsx` |
 | 团队页路由化 + 分区 | `frontend/src/pages/team/TeamPage.tsx`、`TeamSections.tsx`、`teamSectionMeta.ts` |
 | 路由 / 样式 | `frontend/src/App.tsx`、`frontend/src/index.css` |
-| 测试 | `TeamPage.test.tsx`（重写为分区 / 路由驱动）、`WorkspaceList.test.tsx`（团队段改 chips + 分组）、`MainLayout.test.tsx`（面包屑 + 分组 3 例）、`frontend/tests/e2e/critical/workspace-team-navigation.spec.ts`（5 条） |
+| 测试 | `TeamPage.test.tsx`（重写为分区 / 路由驱动）、`WorkspaceList.test.tsx`（团队段改 chips + 分组；行内时间 / body 结构）、`MainLayout.test.tsx`（面包屑 + 分组 3 例）、`frontend/tests/e2e/critical/workspace-team-navigation.spec.ts`（5 条） |
+| 列表响应式（补） | 行结构 `row-body(title + meta)` + `flex-wrap`，名称 `min-width` 优先；<1200（xl）收起模块徽标、<1024 收起时间、1024–1199 用相对时间；e2e `workspace-list-responsive.spec.ts`（1440 / 1280 / 1024 / 768 / 390） |
 
 ## 卡点
 

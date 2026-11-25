@@ -236,6 +236,34 @@ describe('WorkspaceList 可折叠行列表', () => {
     expect(screen.getByTestId('star-btn-10')).toBeInTheDocument()
   })
 
+  it('收起态时间同时提供精确 / 相对两套口径，title 为完整时间', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({
+          id: 10, name: '测试工作区', updated_at: '2026-10-18T12:00:00Z',
+          current_user_role: 'owner',
+        })])),
+    )
+    renderWorkspaceList()
+
+    const row = await screen.findByTestId('workspace-row-10')
+    // 标题与次要信息同属可换行 body（宽度不足时 meta 让位）
+    expect(row.querySelector('.cn-ws-row-body')).not.toBeNull()
+    expect(row.querySelector('.cn-ws-row-body > .cn-ws-row-title')).not.toBeNull()
+
+    const time = row.querySelector('.cn-ws-row-time') as HTMLElement
+    expect(time).not.toBeNull()
+    const abs = time.querySelector('.cn-ws-row-time-abs')?.textContent ?? ''
+    const rel = time.querySelector('.cn-ws-row-time-rel')?.textContent ?? ''
+    expect(abs).not.toBe('')
+    expect(rel).not.toBe('')
+    expect(time).toHaveAttribute('title', abs)
+
+    // 模块徽标带独立 class，窄屏由 CSS 整体收起（不影响角色徽标）
+    expect(row.querySelector('.cn-ws-row-tag--module')).not.toBeNull()
+    expect(within(row).getByText('所有者')).toBeInTheDocument()
+  })
+
   it('点击展开显示描述、标签与更多操作，再次点击收起', async () => {
     server.use(
       http.get('/api/v1/workspaces', () =>

@@ -45,7 +45,7 @@ import {
   filterWorkspacesByScope, flattenGroupedOrder, groupWorkspacesByTeam, hasTeamGrouping,
   scopeOptions, type WorkspaceGroup, type WorkspaceScope,
 } from './workspaceGroups'
-import { formatDateTime } from '@/utils/datetime'
+import { formatDateTime, formatRelativeTime } from '@/utils/datetime'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
 import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
 import MyViewsPanel from './MyViewsPanel'
@@ -88,15 +88,6 @@ const MODULE_ICON: Record<WorkspaceModule, React.ReactNode> = {
 
 /** 展开后速览的数据表数量上限（超出走「查看全部」，避免展开区无限长） */
 const PREVIEW_TABLE_LIMIT = 8
-
-/** 列表时间紧凑格式：`2026-10-18 20:19`（窄屏单行，不用 toLocaleString 的秒级长串） */
-function formatListTime(value?: string): string {
-  if (!value) return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
-}
 
 export default function WorkspaceList() {
   const { message } = AntApp.useApp()
@@ -652,40 +643,47 @@ function WorkspaceRow({
 
         <span className="cn-ws-row-icon" aria-hidden>{MODULE_ICON[modules[0]]}</span>
 
-        <div className="cn-ws-row-title">
-          <span className="cn-ws-row-name" title={ws.name}>{ws.name}</span>
-          <Tooltip title={vis.label}>
-            <span className="cn-ws-row-vis" style={{ color: 'var(--cn-text-muted)' }} aria-label={vis.label}>
-              {vis.icon}
-            </span>
-          </Tooltip>
-          {/* 模块徽标只在桌面渲染：移动端 3-4 个文字徽标不可收缩，会把名称挤压为 0（模块信息由行首图标与展开详情承载） */}
-          {!isMobile && modules.map(m => (
-            <Tag key={m} color={MODULE_TAG_COLOR[m]} className="cn-ws-row-tag">
-              {WORKSPACE_MODULE_LABEL[m]}
-            </Tag>
-          ))}
-          {role && (
-            <Tag color={ROLE_BADGE_COLOR[role]} className="cn-ws-row-tag">
-              {ROLE_LABEL[role]}
-            </Tag>
-          )}
-        </div>
-
-        {!isMobile && (
-          <div className="cn-ws-row-meta">
-            <span><TableOutlined /> {ws.table_count ?? 0}</span>
-            <span><TeamOutlined /> {ws.member_count ?? 1}</span>
-            {ws.allow_edit === false && (
-              <Tooltip title="编辑已关闭：仅所有者可编辑数据">
-                <span className="cn-ws-row-locked"><LockOutlined /> 只读</span>
-              </Tooltip>
-            )}
-            {ws.updated_at && (
-              <span className="cn-ws-row-time">{formatListTime(ws.updated_at)}</span>
+        {/* 标题与次要信息同属可换行 body：宽度不足时 meta 落到第二行，而不是把名称压没（需求 0157 列表优化） */}
+        <div className="cn-ws-row-body">
+          <div className="cn-ws-row-title">
+            <span className="cn-ws-row-name" title={ws.name}>{ws.name}</span>
+            <Tooltip title={vis.label}>
+              <span className="cn-ws-row-vis" style={{ color: 'var(--cn-text-muted)' }} aria-label={vis.label}>
+                {vis.icon}
+              </span>
+            </Tooltip>
+            {/* 模块徽标只在桌面渲染（<1280 由 CSS 隐藏）：文字徽标不可收缩，会挤占名称（模块信息由行首图标与展开详情承载） */}
+            {!isMobile && modules.map(m => (
+              <Tag key={m} color={MODULE_TAG_COLOR[m]} className="cn-ws-row-tag cn-ws-row-tag--module">
+                {WORKSPACE_MODULE_LABEL[m]}
+              </Tag>
+            ))}
+            {role && (
+              <Tag color={ROLE_BADGE_COLOR[role]} className="cn-ws-row-tag">
+                {ROLE_LABEL[role]}
+              </Tag>
             )}
           </div>
-        )}
+
+          {!isMobile && (
+            <div className="cn-ws-row-meta">
+              <span><TableOutlined /> {ws.table_count ?? 0}</span>
+              <span><TeamOutlined /> {ws.member_count ?? 1}</span>
+              {ws.allow_edit === false && (
+                <Tooltip title="编辑已关闭：仅所有者可编辑数据">
+                  <span className="cn-ws-row-locked"><LockOutlined /> 只读</span>
+                </Tooltip>
+              )}
+              {ws.updated_at && (
+                <span className="cn-ws-row-time" title={formatDateTime(ws.updated_at)}>
+                  {/* 宽屏给精确时间；1024–1279 换成相对时间；<1024 由 CSS 整体隐藏 */}
+                  <span className="cn-ws-row-time-abs">{formatDateTime(ws.updated_at)}</span>
+                  <span className="cn-ws-row-time-rel">{formatRelativeTime(ws.updated_at)}</span>
+                </span>
+              )}
+            </div>
+          )}
+        </div>
 
         <div className="cn-ws-row-actions">
           <Tooltip title={ws.pinned ? '取消收藏' : '收藏'}>

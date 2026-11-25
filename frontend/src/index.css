@@ -1297,9 +1297,23 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   display: flex;
   align-items: center;
   gap: var(--cn-space-md);
+  min-width: 0;
   min-height: 44px;
   padding: var(--cn-space-sm) var(--cn-space-lg);
   cursor: pointer;
+}
+
+/* 标题 + 次要信息：宽度不足时整块 meta 换到第二行，名称永远优先占位。
+   不用 container query：Chrome 81 兼容基线不支持（ADR 0026）。 */
+.cn-ws-row-body {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-lg);
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  min-width: 0;
+  row-gap: var(--cn-space-xs);
 }
 
 .cn-ws-row-toggle.ant-btn {
@@ -1333,7 +1347,8 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   align-items: center;
   gap: var(--cn-space-sm);
   min-width: 0;
-  flex: 0 1 auto;
+  /* 基准宽度保证名称有位置；空间不足时优先压缩徽标 / 换行 meta，而不是压没名称 */
+  flex: 1 1 18rem;
 }
 
 .cn-ws-row-name {
@@ -1343,6 +1358,8 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 极窄屏（如 320px）仍保留可读名称，不允许被徽标压成 0 */
+  min-width: 6em;
 }
 
 .cn-ws-row:hover .cn-ws-row-name {
@@ -1365,11 +1382,18 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   display: flex;
   align-items: center;
   gap: var(--cn-space-lg);
-  margin-left: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   font-size: var(--cn-text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--cn-text-muted);
   white-space: nowrap;
+}
+
+/* 时间：宽屏给精确时间，中窄屏换相对时间，<1024 整体隐藏（信息仍在展开详情 / hover 提示） */
+.cn-ws-row-time-rel {
+  display: none;
 }
 
 .cn-ws-row-locked {
@@ -1505,6 +1529,28 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   margin-top: var(--cn-space-lg);
   padding-top: var(--cn-space-lg);
   border-top: 1px solid var(--cn-border);
+}
+
+/* 窄桌面 / 平板：模块徽标先让位（行首图标已表达主模块），时间换相对口径 */
+@media (max-width: 1199.98px) {
+  .cn-ws-row-tag--module {
+    display: none;
+  }
+
+  .cn-ws-row-time-abs {
+    display: none;
+  }
+
+  .cn-ws-row-time-rel {
+    display: inline;
+  }
+}
+
+/* 平板及以下：收起态不再展示时间，只保留表 / 人计数 */
+@media (max-width: 1023.98px) {
+  .cn-ws-row-time {
+    display: none;
+  }
 }
 
 /* 移动端：展开区左缩进收窄，行内只剩名称 + 收藏/展开 */
