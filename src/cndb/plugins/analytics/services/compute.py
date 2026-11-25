@@ -333,6 +333,34 @@ def compute(
     _check_filter_fields(table, filters)
     rows, total, truncated = scan_rows(db, table, user, filters=filters, filter_logic=filter_logic)
     field_names = _allowed_field_names(table, rows)
+    return compute_rows(
+        rows,
+        field_names,
+        total=total,
+        truncated=truncated,
+        formulas=formulas,
+        fields=fields,
+        limit=limit,
+        summary=summary,
+    )
+
+
+def compute_rows(
+    rows: list[dict[str, Any]],
+    field_names: list[str],
+    *,
+    total: int,
+    truncated: bool,
+    formulas: list[dict[str, Any]],
+    fields: list[str] | None = None,
+    limit: int = 1000,
+    summary: Any | None = None,
+) -> dict[str, Any]:
+    """在**已取好的行集**上做公式 / 统计 / 汇总（ADR 0159：复合数据源的复用入口）.
+
+    与 :func:`compute` 共享同一计算实现：复合源只负责产出 `(rows, field_names)`，
+    之后的行级裁剪已由取数阶段完成，这里不再触碰权限。
+    """
 
     wanted = [f for f in (fields or []) if f in field_names] or field_names
 
@@ -382,6 +410,7 @@ __all__ = [
     "AGG_ORDER",
     "MAX_SCAN_ROWS",
     "compute",
+    "compute_rows",
     "compute_summary",
     "metric_key",
     "metric_label",

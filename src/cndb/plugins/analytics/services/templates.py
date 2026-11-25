@@ -41,8 +41,18 @@ def source_field_names(
     source: Any,
     table_id: int | None,
 ) -> list[str] | None:
-    """按模板数据源取字段白名单（链接优先，否则退回本表）."""
-    if source is not None and getattr(source, "type", "table") == "link":
+    """按模板数据源取字段白名单（汇总 / 链接优先，否则退回本表）.
+
+    - `union`：逐输入解析 + 列映射校验，返回**合成列名**（ADR 0159 P0）；
+    - `link`：链接可见字段（ADR 0158 C3）；
+    - 其余：本表字段。
+    """
+    source_type = getattr(source, "type", "table") if source is not None else "table"
+    if source_type == "union":
+        from cndb.plugins.analytics.services.union_source import validate_union_source
+
+        return validate_union_source(db, user, workspace_id, source)
+    if source_type == "link":
         return link_field_names(db, user, workspace_id, getattr(source, "link_id", None))
     return table_field_names(db, workspace_id, table_id)
 
@@ -78,6 +88,16 @@ def normalize_config(
         source_payload = {"type": source.type}
         if source.type == "link":
             source_payload["link_id"] = source.link_id
+        elif source.type == "union":
+            source_payload["inputs"] = [
+                {"link_id": item.link_id, **({"alias": item.alias} if item.alias else {})}
+                for item in (source.inputs or [])
+            ]
+            # 列名与顺序固化进配置（L4：保存 / 执行 / 导出三处一致）
+            source_payload["columns"] = [
+                {"name": column.name, "type": column.type, "map": dict(column.map or {})}
+                for column in (source.columns or [])
+            ]
         elif source.id is not None:
             source_payload["id"] = source.id
     for spec in config.formulas:
@@ -210,6 +230,9 @@ def create_template(
         from cndb.plugins.workspaces.services.links import resolve_link
 
         table_id = resolve_link(db, user, workspace_id=workspace_id, link_id=source.link_id).table.id
+    elif source is not None and getattr(source, "type", "table") == "union":
+        # 汇总是多源合成，没有单一源表（table_id 留空，兼容字段只服务单表 / 单链接）
+        table_id = None
     normalized = normalize_config(config, fields)
     tpl = AnalyticsTemplate(
         workspace_id=workspace_id,

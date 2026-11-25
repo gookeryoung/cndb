@@ -52,14 +52,34 @@ class SummarySpec(BaseModel):
     top_n: int | None = Field(default=None, ge=1, le=1000, description="仅保留前 N 组（空 = 全部）")
 
 
-class AnalyticsSource(BaseModel):
-    """分析数据源（ADR 0158）：本工作区表或工作区链接（只读引用）."""
+class UnionInput(BaseModel):
+    """union 的一个输入（ADR 0159）：一个工作区链接."""
 
-    type: Literal["table", "link"] = "table"
+    link_id: int
+    alias: str | None = Field(default=None, max_length=64, description="展示名（缺省用链接别名）")
+
+
+class UnionColumn(BaseModel):
+    """union 的输出列：声明名 + 类型 + 各输入字段映射（`{link_id: 字段名}`）."""
+
+    name: str = Field(min_length=1, max_length=100)
+    #: 输出列类型（text / number / date / boolean 族），用于拼接前的兼容校验
+    type: str = Field(default="text", max_length=16)
+    map: dict[str, str] = Field(default_factory=dict, description="{输入 link_id: 该输入字段名}")
+
+
+class AnalyticsSource(BaseModel):
+    """分析数据源（ADR 0158 / 0159）：本表、工作区链接、多链接汇总（union）."""
+
+    type: Literal["table", "link", "union"] = "table"
     #: type=table 时的表 id（与 table_id 兼容字段二选一）
     id: int | None = None
     #: type=link 时的链接 id
     link_id: int | None = None
+    #: type=union 时的输入（2–5 个链接）
+    inputs: list[UnionInput] | None = None
+    #: type=union 时的输出列映射
+    columns: list[UnionColumn] | None = None
 
 
 class TemplateConfig(BaseModel):
@@ -339,6 +359,8 @@ __all__ = [
     "TemplateDuplicateRequest",
     "TemplateResponse",
     "TemplateUpdate",
+    "UnionColumn",
+    "UnionInput",
     "ValidateRequest",
     "ValidateResponse",
 ]

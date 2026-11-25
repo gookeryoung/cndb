@@ -225,7 +225,7 @@ class TestComputeWithLink:
 
         r = _compute(client, env, con_auth, self._body(link["id"]))
         assert r.status_code == 400, r.text
-        assert "字段不可用于该链接" in r.json()["detail"]
+        assert "字段不可用于该数据源" in r.json()["detail"]
 
     def test_hidden_field_in_returned_fields_rejected(self, client, db, env):
         tid, _ = _setup_source_table(client, env)

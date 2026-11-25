@@ -47,7 +47,7 @@ Related: `src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/s
 - **L5 有界**：输入 ≤5、累计扫描行 ≤ 上限、无嵌套。
 - **L6 存量不变**：单表 / 单链接行为与升级前逐条一致。
 
-> 跨需求长期生效的不变量须在 ADR `Proposed → Accepted` 前登记入 [CONSTRAINTS.md](../CONSTRAINTS.md)，来源写 `ADR 0159 L#`（H27，ADR 0119）。当前**未登记**：待评审通过后按 L1 / L2 / L3 落 H 条目。
+> 跨需求长期生效的不变量须在 ADR `Proposed → Accepted` 前登记入 [CONSTRAINTS.md](../CONSTRAINTS.md)，来源写 `ADR 0159 L#`（H27，ADR 0119）。登记状态（2026-11-25 人工确认）：L1/L2 → H61，L3 → H62，L4 → H63。
 
 ## Decision
 
@@ -212,15 +212,15 @@ compute(...) 接受「行集 + 字段清单」后，公式 / 分组 / 图表 / �
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/templates.py` | `tests/test_analytics_union_join.py` | — |
+| P0 | 已落地 | `src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/services/union_source.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/routers/run.py` | `tests/test_analytics_union_join.py` | 未提交 |
 | P1 | 未开始 | `src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/routers/run.py` | `tests/test_analytics_union_join_api.py` | — |
 | P2 | 未开始 | `frontend/src/pages/analytics/AnalyticsPage.tsx` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/tests/e2e/critical/analytics-union-join.spec.ts` | — |
 
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案（ADR `Proposed`，**未进入实现**，H5）
-- 已完成：需求卡片 0159（C1-C10）；ADR 决策记录 D1-D9、不变量 L1-L6、数据源形态、列名规则、执行链路、测试与分期
-- 下一步：人工评审 D1 / D3 / D4 / D6 / D8；通过后①把 L1 / L2 / L3 登记进 `CONSTRAINTS.md`；②开 P0（union）
+- 当前阶段：P0（union）已落地；P1（join）/ P2（前端）未开始
+- 已完成：需求卡片 0159（C1-C10）；ADR 决策记录 D1-D9、不变量 L1-L6；P0（`source.type=union`：2–5 链接、显式列映射、类型严格同族、逐输入 fail-closed、共享扫描额度、列名与列序固化、模板保存期校验；`compute_rows` 抽出供复合源复用，单源路径行为不变）；H61-H63 已登记
+- 下一步：开 P1（join：左 = 表 / 链接、右 = 链接，仅 left / inner，左表驱动）+ `tests/test_analytics_union_join_api.py`
 - 已知坑：① **join 必须由左表驱动**（`left` / `inner` 都用左表行集迭代），否则右表未匹配行会泄露存在性；② 列映射 / 关联键的可见性校验要在保存期做（执行期只兜底），否则模板存下来必然失败；③ 复合源的字段清单要固化进 `config`（L4），不要执行期重新推导；④ 扫描额度是**共享预算**，实现时先扣再取，避免 5 个输入各自取满；⑤ 单源路径不要顺手重构（0158 的既有用例是回归基线）
-- 最近一次全绿：`make check-docs` @ `142c3501`（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7611 passed，95.01%）+ `tests/test_analytics_union_join.py` 12 passed @ 未提交（2026-11-25）

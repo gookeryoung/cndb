@@ -71,6 +71,25 @@ def _resolve_compute_source(
     return resolved.table, (extra_filters or None), logic, allowed
 
 
+def _check_allowed_fields(payload: ComputeRequest, allowed_fields: set[str]) -> None:
+    """链接 / 汇总数据源：公式、返回字段、窗口分区排序字段必须都在可见字段内（H58 / ADR 0159 C3）."""
+    referenced: set[str] = set(payload.fields or [])
+    for spec in payload.formulas:
+        try:
+            referenced |= set(referenced_fields(parse(spec.expr)))
+        except FormulaError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        for ctx in (spec.partition_by, spec.order_by):
+            if ctx:
+                referenced.add(ctx)
+    unknown = sorted(f for f in referenced if f not in allowed_fields)
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"字段不可用于该数据源（不存在或被隐藏）: {', '.join(unknown)}",
+        )
+
+
 @router.post("/validate", response_model=ValidateResponse)
 def validate_formulas(
     workspace_id: int,
@@ -121,10 +140,7 @@ def compute(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    """按公式计算派生指标列并返回描述统计（数据源可为本表或工作区链接，ADR 0158）."""
-    table, extra_filters, filter_logic, allowed_fields = _resolve_compute_source(
-        workspace_id, payload, current_user, db
-    )
+    """按公式计算派生指标列并返回描述统计（数据源可为本表 / 链接 / 汇总，ADR 0158/0159）."""
     formulas = [
         {
             "key": s.key,
@@ -139,23 +155,32 @@ def compute(
     keys = [s["key"] for s in formulas]
     if len(set(keys)) != len(keys):
         raise HTTPException(status_code=400, detail="公式键重复")
-    if allowed_fields is not None:
-        # 链接数据源：只用可见字段（隐藏字段用于公式 / 返回字段一律 400，ADR 0158 C3）
-        referenced: set[str] = set(payload.fields or [])
-        for spec in payload.formulas:
-            try:
-                referenced |= set(referenced_fields(parse(spec.expr)))
-            except FormulaError as exc:
-                raise HTTPException(status_code=400, detail=str(exc)) from exc
-            for ctx in (spec.partition_by, spec.order_by):
-                if ctx:
-                    referenced.add(ctx)
-        unknown = sorted(f for f in referenced if f not in allowed_fields)
-        if unknown:
-            raise HTTPException(
-                status_code=400,
-                detail=f"字段不可用于该链接（不存在或被隐藏）: {', '.join(unknown)}",
+
+    # 复合数据源（ADR 0159 P0）：先合成行集，再走同一套计算
+    if payload.source is not None and payload.source.type == "union":
+        from cndb.plugins.analytics.services import union_source
+
+        rows, field_names, total, truncated = union_source.union_rows(db, current_user, workspace_id, payload.source)
+        _check_allowed_fields(payload, set(field_names))
+        try:
+            return services.compute.compute_rows(
+                rows,
+                field_names,
+                total=total,
+                truncated=truncated,
+                formulas=formulas,
+                fields=payload.fields,
+                limit=payload.limit,
+                summary=payload.summary,
             )
+        except FormulaError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    table, extra_filters, filter_logic, allowed_fields = _resolve_compute_source(
+        workspace_id, payload, current_user, db
+    )
+    if allowed_fields is not None:
+        _check_allowed_fields(payload, allowed_fields)
     try:
         return services.compute.compute(
             db,
