@@ -241,6 +241,6 @@ def resolve_link(db, user, link_id) -> ResolvedLink:      # 404 / 403 统一出�
 
 - 当前阶段：**全部落地**（P0 / P1 / P2 / P3.1）；P3.2（分析页把链接作为数据源 / 链接汇总 / 链接的链接）未立项，需要时另立 ADR
 - 已完成：需求卡片 0154（C1-C10）；ADR 不变量 L1-L9、决策 D1-D12；P0（`workspace_link` 迁移、申请 / 批准 / 拒绝 / 撤回、`POST /{wid}/members/batch`、`cndb link sweep`、`MANAGE_LINKS` 能力位仅所有者）；P1（`GET /{wid}/links/{id}/fields|rows|export`，复用 `list_rows` 的行级读范围与隐藏字段裁剪；H53-H56 已登记）
-- 下一步：无（本期收尾）。若要继续：P3.2 另立 ADR；或把链接接入分析页 / 文档 `{{table:}}` 引用（均属新增授权面，须先评审）
+- 下一步：无（本期收尾）。**P3.2 已立项**：[ADR 0158](0158-link-as-analytics-datasource.md)（Proposed，分析页把链接作为数据源，已明确「不新增授权面 / 不传权限」）；文档 `{{table:}}` 引用链接仍不支持。
 - 已知坑：① A 期的成员行是**真实授权**——清扫停摆时「链接入口已 404 但成员仍能直接进源工作区」，必须在验收时用 `cndb link sweep` 日志确认回收；② `created_member_ids` 必须由批准事务内记录，撤回按它删（不要按 `granted_member_ids`）；③ 缓存键必须含 link_id，否则与本工作区读串味（ADR 0046 D3 同款）；④ B′ 接入时 `resolve_capabilities` 的顺序必须写在注释与用例里（显式 > team_grant > 策略默认 > public），否则后续改动容易悄悄放宽；⑤ 迁移 `down_revision` 取最新 head（当前 `f2b3c4d5e6a7`），并行会话新增迁移后要同步
 - 最近一次全绿：`make check-fast` + `make cov`（7509 passed，95.06%）+ 本 ADR 相关用例（links-api 29 / links 取数 14 / sweep 6 / cli 7 / 迁移 4）+ 前端链接用例 9（只读页 4 / 面板 5）@ `ad0ba22e`；P3.1 `make cov`（7577 passed，95.03%）@ `9440ad8e`（2026-11-25）
