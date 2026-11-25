@@ -55,6 +55,7 @@ from cndb.plugins.documents.schemas import (
     DocumentBatchRequest,
     DocumentCreate,
     DocumentDraftSave,
+    DocumentMoveRequest,
     DocumentSubmit,
     DocumentUpdate,
     LinkRepairRequest,
@@ -114,6 +115,52 @@ def _require_member(db: Session, workspace_id: int, user: User) -> None:
     if get_member_role(user, ws, db) is None:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
         raise_permission_denied(db, ws, user)
+
+
+# ── 跨工作区移动（ADR 0155）──
+# 静态段路由必须注册在 /{doc_id} 一族之前，否则 "move-to-workspace" / "move-targets"
+# 会被当成 doc_id 解析（422）。
+
+
+@router.get("/move-targets")
+def list_move_targets(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """可移动目标工作区（有写权限 + 已启用文档模块 + 配额余量）.
+
+    前端弹窗只展示本接口返回的候选，避免前端自行猜权限（ADR 0155 D10）。
+    """
+    _require_member(db, workspace_id, current_user)
+    return {"items": services.move.move_targets(db, source_workspace_id=workspace_id, actor=current_user)}
+
+
+@router.post("/move-to-workspace")
+def move_documents_to_workspace(
+    workspace_id: int,
+    payload: DocumentMoveRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """把文档 / 多篇 / 文件夹（子树整体）移动到目标工作区（ADR 0155）.
+
+    - 源 `WRITE` + 目标 `WRITE` + 目标开启文档模块（与删除 / 新建文档同口径）；
+    - 保留文档 id 与版本链、站内文件、问题讨论、待审修改申请；访客分享链接继续有效；
+    - 目标配额不足在写盘前拦下（413，文案含差额）；
+    - 失败整体回滚，不留半移动状态。
+    """
+    result = services.move.move_nodes_to_workspace(
+        db,
+        source_workspace_id=workspace_id,
+        root_ids=[int(doc_id) for doc_id in payload.document_ids],
+        target_workspace_id=payload.target_workspace_id,
+        actor=current_user,
+        parent_id=payload.parent_id,
+    )
+    invalidate_document_tree_cache(workspace_id)
+    invalidate_document_tree_cache(payload.target_workspace_id)
+    return result.as_payload()
 
 
 # ── 文档 CRUD ──

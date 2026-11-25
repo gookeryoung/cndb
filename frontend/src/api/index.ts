@@ -199,6 +199,7 @@ export type {
 // 领域类型统一从 types/ 聚合转发（types/index.ts 按资源域拆分并 re-export）；
 // 原先是逐个具名列出的 90 个类型清单，新增类型时容易漏改。
 export type * from './types'
+export type { DocumentMovePayload, DocumentMoveResult, DocumentMoveTarget } from './documents'
 
 // 类型守卫为运行时函数，须以值形式 re-export（export type * 会在编译期擦除）
 export { isChangeRequestResponse } from './types'

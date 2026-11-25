@@ -345,6 +345,14 @@ class DocumentIssueCommentCreate(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
 
 
+class DocumentMoveRequest(BaseModel):
+    """跨工作区移动请求（ADR 0155）：1..200 个根节点（可含文件夹，按子树整体迁移）."""
+
+    document_ids: list[int] = Field(min_length=1, max_length=200)
+    target_workspace_id: int
+    parent_id: int | None = Field(default=None, description="目标工作区内的文件夹 id；空 = 根目录")
+
+
 class ExportTemplateCreate(BaseModel):
     """新建导出模板（ADR 0152）：可用内置 ``preset_key`` 另存，或直接给 ``config``."""
 
@@ -389,6 +397,7 @@ __all__ = [
     "DocumentDraftSave",
     "DocumentIssueCommentCreate",
     "DocumentIssueCreate",
+    "DocumentMoveRequest",
     "DocumentOut",
     "DocumentSubmit",
     "DocumentUpdate",

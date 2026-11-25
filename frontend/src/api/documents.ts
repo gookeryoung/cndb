@@ -165,6 +165,33 @@ export interface PurgeResult {
   detached: number
 }
 
+/** 跨工作区移动的目标工作区（ADR 0155） */
+export interface DocumentMoveTarget {
+  id: number
+  name: string
+  role: string | null
+  quota_bytes: number
+  used_bytes: number
+  remaining_bytes: number
+}
+
+export interface DocumentMovePayload {
+  document_ids: number[]
+  target_workspace_id: number
+  /** 目标工作区内的文件夹 id；空 = 根目录 */
+  parent_id?: number | null
+}
+
+export interface DocumentMoveResult {
+  document_ids: number[]
+  target_workspace_id: number
+  moved_nodes: number
+  moved_files: number
+  moved_change_requests: number
+  moved_bytes: number
+  missing_files: string[]
+}
+
 /** 文档导出格式：Markdown / Word / PDF */
 export type DocumentExportFormat = 'md' | 'docx' | 'pdf'
 
@@ -664,6 +691,16 @@ export const documentsApi = {
 
   reopenIssue: (wid: number | string, issueId: number | string) =>
     api.post<DocumentIssueDetail>(`${diBase(wid)}/${issueId}/reopen`).then(r => r.data),
+
+  // ── 跨工作区移动（ADR 0155）──
+
+  /** 可移动目标工作区（有写权限 + 已启用文档模块 + 配额余量） */
+  moveTargets: (wid: number | string) =>
+    api.get<{ items: DocumentMoveTarget[] }>(`${base(wid)}/move-targets`).then(r => r.data),
+
+  /** 把文档 / 多篇 / 文件夹（子树整体）移动到目标工作区 */
+  moveToWorkspace: (wid: number | string, payload: DocumentMovePayload) =>
+    api.post<DocumentMoveResult>(`${base(wid)}/move-to-workspace`, payload).then(r => r.data),
 
   // 导出：Markdown / Word / PDF 文件字节流（文件名由调用方拼装）
   // template（ADR 0152）：`builtin:<key>` 或模板 id，仅对 docx / pdf 生效，md 忽略

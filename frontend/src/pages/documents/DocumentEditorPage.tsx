@@ -37,6 +37,7 @@ import {
   BranchesOutlined,
   CheckCircleOutlined,
   CodeOutlined,
+  ApartmentOutlined,
   DownloadOutlined,
   EditOutlined,
   EyeOutlined,
@@ -98,6 +99,7 @@ import {
   type ChartBlockSpec,
 } from '@/components/Document/chartBlock'
 import { documentsApi } from '@/api/documents'
+import MoveDocumentModal from './MoveDocumentModal'
 import { exportTemplateApi } from '@/api'
 import { fileApi, tableApi, viewApi, workspaceApi } from '@/api'
 import { useLlmAction } from '@/hooks/useLlmAction'
@@ -205,6 +207,8 @@ export default function DocumentEditorPage() {
   const [saveError, setSaveError] = useState<string | null>(null)
   const [versionsOpen, setVersionsOpen] = useState(false)
   const [tagsOpen, setTagsOpen] = useState(false)
+  // 跨工作区移动（ADR 0155）
+  const [moveOpen, setMoveOpen] = useState(false)
   const [outlineDrawerOpen, setOutlineDrawerOpen] = useState(false)
   /** 桌面端右侧大纲栏偏好（展开态 + 宽度，存 localStorage） */
   const [outlinePrefs, setOutlinePrefs] = useState<OutlinePrefs>(() => loadOutlinePrefs())
@@ -1336,6 +1340,9 @@ export default function DocumentEditorPage() {
       : [
           { key: 'change-requests', icon: <PullRequestOutlined />, label: `修改申请${pendingCrCount > 0 ? ` (${pendingCrCount})` : ''}`, onClick: () => setCrOpen(true) },
           { key: 'versions', icon: <HistoryOutlined />, label: `版本${(doc.version_count ?? 0) > 0 ? ` (${doc.version_count})` : ''}`, onClick: () => setVersionsOpen(true) },
+          ...((myRole === 'owner' || myRole === 'editor')
+            ? [{ key: 'move-workspace', icon: <ApartmentOutlined />, label: '移动到工作区', onClick: () => setMoveOpen(true) }]
+            : []),
           { type: 'divider' as const },
           {
             key: 'export',
@@ -1674,6 +1681,15 @@ export default function DocumentEditorPage() {
               onClick={() => setVersionsOpen(true)}
             />
           )}
+          {/* 跨工作区移动（ADR 0155）：桌面端独立入口，窄屏收在「更多」菜单 */}
+          {!isAssetDoc && (myRole === 'owner' || myRole === 'editor') && (
+            <IconBtn
+              icon={<ApartmentOutlined />}
+              label="移动到工作区"
+              data-testid="doc-move-workspace"
+              onClick={() => setMoveOpen(true)}
+            />
+          )}
           {!isAssetDoc && (
           <Dropdown
             trigger={['click']}
@@ -1977,6 +1993,19 @@ export default function DocumentEditorPage() {
           />
         )}
       </div>
+
+      {/* 跨工作区移动（ADR 0155）：单篇 / 多篇 / 文件夹都走后端同一端点 */}
+      <MoveDocumentModal
+        open={moveOpen}
+        workspaceId={Number(workspaceId)}
+        documentIds={[id]}
+        summary={doc.is_folder ? '将移动该文件夹（连同其中全部文档与子文件夹）' : undefined}
+        onClose={() => setMoveOpen(false)}
+        onMoved={targetWs => {
+          qc.invalidateQueries({ queryKey: ['documents'] })
+          navigate(doc.is_folder ? `/w/${targetWs}/documents` : `/w/${targetWs}/documents/${id}`)
+        }}
+      />
 
       {/* 插入图片用的隐藏文件选择器（工具栏按钮 / 窄屏更多菜单共用） */}
       <input

@@ -361,6 +361,35 @@ describe('DocumentsPage 批量操作', () => {
         successSpy.mockRestore()
     })
 
+    it('批量跨工作区移动：入口打开弹窗并带上所选 ids（ADR 0155）', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/10/documents/move-targets', () =>
+                HttpResponse.json({
+                    items: [
+                        {
+                            id: 22,
+                            name: '研发中心',
+                            role: 'owner',
+                            quota_bytes: 104857600,
+                            used_bytes: 10485760,
+                            remaining_bytes: 94371840,
+                        },
+                    ],
+                }),
+            ),
+            http.get('/api/v1/workspaces/22/documents/tree', () => HttpResponse.json([])),
+        )
+        renderPage()
+        await screen.findByTestId('doc-select-2')
+        fireEvent.click(screen.getByTestId('doc-select-2'))
+        fireEvent.click(await screen.findByTestId('doc-batch-move-workspace'))
+
+        expect(await screen.findByTestId('move-document-modal')).toBeInTheDocument()
+        // 目标工作区候选来自后端（不猜权限）
+        expect(await screen.findByTestId('move-document-target')).toBeInTheDocument()
+        expect(screen.getByTestId('move-document-body')).toHaveTextContent('共 1 项')
+    })
+
     it('批量移动：提交 action=move 与目标 parent_id；被跳过项提示原因', async () => {
         const warnSpy = vi.spyOn(message, 'warning')
         const bodies: unknown[] = []

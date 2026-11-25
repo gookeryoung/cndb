@@ -27,6 +27,7 @@ import {
 } from 'antd'
 import type { DataNode } from 'antd/es/tree'
 import type { MenuProps } from 'antd'
+import MoveDocumentModal, { moveSummary } from './MoveDocumentModal'
 import {
   ApartmentOutlined,
   ArrowLeftOutlined,
@@ -170,6 +171,8 @@ export default function DocumentsPage() {
   // 批量操作：当前层级多选 + 批量移动弹窗
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [batchMoveOpen, setBatchMoveOpen] = useState(false)
+  // 跨工作区移动（ADR 0155）：与工作区内「移动到…」并列
+  const [moveWorkspaceOpen, setMoveWorkspaceOpen] = useState(false)
   const [batchMoveTarget, setBatchMoveTarget] = useState<number>(0)
   // 移动端筛选抽屉（第三行，默认收起）：标签 / 状态是低频筛选，收起后顶栏只留一行操作
   const [filterOpen, setFilterOpen] = useState(false)
@@ -447,6 +450,13 @@ export default function DocumentsPage() {
     // recentVersion：清空历史后强制重算（localStorage 不是响应式数据源）
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treeQuery.data, workspaceId, recentVersion])
+
+  /** 批量跨工作区移动时的「含几个文件夹」提示（ADR 0155） */
+  const selectedFolderCount = useMemo(() => {
+    const all = [...(treeQuery.data ?? []), ...(docsQuery.data?.items ?? [])]
+    const byId = new Map(all.map(item => [item.id, item]))
+    return selectedIds.filter(id => byId.get(id)?.is_folder).length
+  }, [selectedIds, treeQuery.data, docsQuery.data])
 
   /** 批量移动目标下拉：根目录 + 全部文件夹，排除所选节点及其子孙（防环） */
   const batchMoveTreeData = useMemo(() => {
@@ -935,6 +945,16 @@ export default function DocumentsPage() {
                 {!isMobile && '移动到…'}
               </Button>
             </Tooltip>
+            <Tooltip title="移动到其它工作区">
+              <Button
+                icon={<ExportOutlined />}
+                aria-label="移动到工作区"
+                data-testid="doc-batch-move-workspace"
+                onClick={() => setMoveWorkspaceOpen(true)}
+              >
+                {!isMobile && '移动到工作区'}
+              </Button>
+            </Tooltip>
             <Popconfirm
               title={`删除选中的 ${selectedIds.length} 项？`}
               description="文件夹将连同其中所有文档一起移入回收站。"
@@ -1270,6 +1290,19 @@ export default function DocumentsPage() {
           data-testid="doc-batch-move-target"
         />
       </Modal>
+
+      {/* 跨工作区移动（ADR 0155）：选中项（含文件夹子树）整体迁到目标工作区 */}
+      <MoveDocumentModal
+        open={moveWorkspaceOpen}
+        workspaceId={Number(workspaceId)}
+        documentIds={selectedIds}
+        summary={moveSummary(selectedIds.length, selectedFolderCount)}
+        onClose={() => setMoveWorkspaceOpen(false)}
+        onMoved={() => {
+          setSelectedIds([])
+          qc.invalidateQueries({ queryKey: ['documents'] })
+        }}
+      />
 
       {/* 系列移动弹窗：TreeSelect 选目标文件夹（排除自身及子孙） */}
       <Modal
