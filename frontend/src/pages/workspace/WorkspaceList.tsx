@@ -276,7 +276,7 @@ export default function WorkspaceList() {
   )
 
   return (
-    <div className="cn-home-page" style={{ padding: isMobile ? 12 : 16 }} data-testid="workspace-list">
+    <div className="cn-page cn-home-page" data-testid="workspace-list">
       {/* 左右双板块：左侧「我的工作区」卡片（标题 + 搜索 + 新建/导入 + 列表）与右侧「我的视图」卡片同高。
           内容宽度由 `.cn-home-page` 的 max-width 收口（需求 0160 C2）：超宽屏不再把行拉成两头空。 */}
       <div className="cn-home-split" data-testid="workspace-home-split">
