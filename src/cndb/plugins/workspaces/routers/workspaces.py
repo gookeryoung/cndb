@@ -94,11 +94,14 @@ def invalidate_workspace_list_cache(workspace_id: int | None = None) -> int:
     ``workspace_id`` 非空时同时失效该工作区的详情统计缓存（ADR 0046 D5）。
     """
     from cndb.core.cache import cache_key, list_cache, search_cache
+    from cndb.plugins.workspaces.services.home_summary import invalidate_home_summary
 
     cleared = list_cache.clear(cache_key("ws-list"))
     # 成员变化会改变「能搜到哪些工作区」：跨工作区 / 团队内检索一并失效（ADR 0153 P2）
     cleared += search_cache.clear(cache_key("global-search"))
     cleared += search_cache.clear(cache_key("team-search"))
+    # 可读工作区集合变化会改变主页待办口径（ADR 0160 I4）
+    cleared += invalidate_home_summary()
     if workspace_id is not None:
         cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
     return cleared

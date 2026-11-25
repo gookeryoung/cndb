@@ -7,7 +7,8 @@
  * **只承载独有信息**，不复述顶栏与右栏已有的入口：
  *  - 新建工作区：`/w?create=1`（与页内按钮同一弹窗）；
  *  - 最近访问：本地记录的 ≤5 个工作区落地路径（`utils/recentWorkspaces`，不落库）；
- *  - 全部工作区：主页锚点，带工作区计数。
+ *  - 全部工作区：主页锚点，带工作区计数与**待办徽标**（ADR 0160 P2：修改申请 / 问题 / 待审链接
+ *    的聚合计数，只读、只有总数，不含 id / 标题；失败静默隐藏徽标，不阻断主页）。
  * 明确**不放**（重复入口）：团队（顶栏 `ScopeSwitcher` 已按团队分组并带团队页入口）、
  * 收藏视图（右栏「我的视图」同一数据源）、帮助文档（顶栏常驻图标）、管理团队
  * （`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` 的 Navigate）。
@@ -23,7 +24,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Button, Menu } from 'antd'
 import type { MenuProps } from 'antd'
 import { ClockCircleOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons'
-import { workspaceApi } from '@/api'
+import { homeApi, workspaceApi } from '@/api'
 import type { Workspace } from '@/api'
 import { normalizeModules, WORKSPACE_MODULE_LABEL } from '@/utils/workspaceModules'
 import { formatRelativeTime } from '@/utils/datetime'
@@ -46,6 +47,15 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
   })
+
+  // 待办聚合（ADR 0160）：失败静默（retry:false + 无错误提示），主页其它内容不受影响
+  const { data: summary } = useQuery({
+    queryKey: ['home-summary'],
+    queryFn: homeApi.summary,
+    staleTime: 20_000,
+    retry: false,
+  })
+  const pendingTotal = summary?.pending.total ?? 0
 
   const byId = useMemo(() => new Map(workspaces.map(ws => [String(ws.id), ws])), [workspaces])
 
@@ -97,6 +107,15 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
       label: (
         <span data-testid="home-nav-all">
           全部工作区
+          {pendingTotal > 0 && (
+            <span
+              className="cn-home-nav-pending"
+              data-testid="home-nav-pending"
+              title={`待我处理：修改申请 ${summary?.pending.change_requests ?? 0} · 问题 ${summary?.pending.issues ?? 0} · 待审链接 ${summary?.pending.link_requests ?? 0}`}
+            >
+              {pendingTotal}
+            </span>
+          )}
           <span className="cn-ws-group-count" style={{ marginInlineStart: 'var(--cn-space-sm)' }}>
             {workspaces.length}
           </span>

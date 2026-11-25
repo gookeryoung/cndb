@@ -7,6 +7,7 @@ from typing import override
 from fastapi import APIRouter
 
 from cndb.plugins.base import PluginBase
+from cndb.plugins.workspaces.routers.home import router as home_router
 from cndb.plugins.workspaces.routers.links import router as links_router
 from cndb.plugins.workspaces.routers.roles import router as roles_router
 from cndb.plugins.workspaces.routers.search import global_router as search_global_router
@@ -40,6 +41,7 @@ class WorkspacesPlugin(PluginBase):
         router.include_router(roles_router)
         router.include_router(search_router)
         router.include_router(search_global_router)
+        router.include_router(home_router)
 
 
 __all__ = ["WorkspacesPlugin"]

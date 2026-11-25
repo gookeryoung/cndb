@@ -69,13 +69,16 @@ def _get_link_or_404(db: Session, link_id: int) -> WorkspaceLink:
 
 
 def _invalidate(workspace_id: int) -> None:
-    """成员 / 链接变化后失效列表与检索引擎缓存（与成员路由同口径）."""
+    """成员 / 链接变化后失效列表、检索与主页待办缓存（与成员路由同口径）."""
     from cndb.core.cache import cache_key, list_cache, search_cache
+    from cndb.plugins.workspaces.services.home_summary import invalidate_home_summary
 
     list_cache.clear(cache_key("ws-list"))
     list_cache.clear(cache_key("workspace-stats", workspace_id))
     search_cache.clear(cache_key("global-search"))
     search_cache.clear(cache_key("team-search"))
+    # ADR 0160 I4：链接申请 / 审批会改变「待审链接」计数
+    invalidate_home_summary()
 
 
 def _event(

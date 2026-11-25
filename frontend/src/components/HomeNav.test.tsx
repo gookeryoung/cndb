@@ -42,9 +42,17 @@ function menuRow(testid: string): HTMLElement | null {
   return screen.getByTestId(testid).closest('.ant-menu-item') as HTMLElement | null
 }
 
+const zeroSummary = {
+  workspace_count: 1,
+  team_count: 0,
+  pending: { change_requests: 0, issues: 0, link_requests: 0, total: 0 },
+  partial: false,
+}
+
 describe('HomeNav', () => {
   beforeEach(() => {
     window.localStorage.clear()
+    server.use(http.get('/api/v1/home/summary', () => HttpResponse.json(zeroSummary)))
   })
 
   it('只渲染新建 / 最近访问 / 全部工作区三段，不重复顶栏与右栏入口（A′）', async () => {
@@ -142,4 +150,34 @@ describe('HomeNav', () => {
     expect(screen.getByTestId('home-nav-all')).toBeVisible()
     expect(screen.queryByTestId('home-nav-team-500')).toBeNull()
   })
+  it('有待办时在「全部工作区」右侧显示聚合徽标，并带分解提示（ADR 0160 P2）', async () => {
+    server.use(http.get('/api/v1/home/summary', () => HttpResponse.json({
+      workspace_count: 1,
+      team_count: 0,
+      pending: { change_requests: 2, issues: 3, link_requests: 1, total: 6 },
+      partial: false,
+    })))
+    renderNav()
+
+    const badge = await screen.findByTestId('home-nav-pending')
+    expect(badge).toHaveTextContent('6')
+    expect(badge).toHaveAttribute('title', '待我处理：修改申请 2 · 问题 3 · 待审链接 1')
+  })
+
+  it('没有待办时不渲染徽标（不占位、不显示 0）', async () => {
+    renderNav()
+
+    expect(await screen.findByTestId('home-nav-all')).toBeVisible()
+    expect(screen.queryByTestId('home-nav-pending')).toBeNull()
+  })
+
+  it('聚合接口失败时静默隐藏徽标，主页其余入口仍可用', async () => {
+    server.use(http.get('/api/v1/home/summary', () => new HttpResponse(null, { status: 500 })))
+    renderNav()
+
+    expect(await screen.findByTestId('home-nav-all')).toBeVisible()
+    expect(screen.getByTestId('home-nav-create')).toBeVisible()
+    expect(screen.queryByTestId('home-nav-pending')).toBeNull()
+  })
+
 })

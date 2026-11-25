@@ -1664,6 +1664,17 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   color: var(--cn-text-muted);
 }
 
+/* 待办徽标（ADR 0160 P2）：只在有待办时出现，与工作区计数的中性灰底区分 */
+.cn-home-nav-pending {
+  margin-inline-start: var(--cn-space-sm);
+  padding: 0 var(--cn-space-sm);
+  border-radius: var(--cn-radius-pill);
+  font-size: var(--cn-text-2xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--cn-bg-container);
+  background: var(--cn-brand-color);
+}
+
 .cn-home-nav-mobile {
   padding-top: var(--cn-space-sm);
 }

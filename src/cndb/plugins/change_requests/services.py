@@ -49,6 +49,13 @@ WRITE_MODE_CHANGE_REQUEST = "change_request"  # 写路径自动转为修改申�
 WRITE_MODE_DENIED = "denied"  # 有直编资格但表级 EDIT_RECORDS 受限（写操作 403）
 
 
+def _invalidate_home_summary() -> None:
+    """待办计数变更后失效主页聚合缓存（ADR 0160 I4）——失败不影响主流程."""
+    from cndb.plugins.workspaces.services.home_summary import invalidate_home_summary
+
+    invalidate_home_summary()
+
+
 def can_write_directly(db: Session, table: DataTable, user: User) -> bool:
     """判定是否直编直存：owner 恒直编；editor 需工作区 allow_edit 开启；viewer 一律走修改申请."""
     ws = db.get(Workspace, table.workspace_id)
@@ -402,6 +409,7 @@ def merge_request(
     _mark_others_stale(db, cr.table_id, exclude_ids={cr.id}, row_ids=applied_row_ids)
     db.commit()
     db.refresh(cr)
+    _invalidate_home_summary()
     # 返回完整详情（含 items/actions）：前端以响应覆盖详情缓存，
     # 只回本体缺 items 会导致详情页渲染 undefined.length 崩溃
     return {"applied": applied, "skipped": skipped, "request": get_request_detail(db, cr, table)}
@@ -420,6 +428,7 @@ def close_request(db: Session, cr: ChangeRequest, user: User, role: WorkspaceRol
     db.add(ChangeRequestAction(request_id=cr.id, action=CR_ACTION_CLOSE, acted_by_id=user.id))
     db.commit()
     db.refresh(cr)
+    _invalidate_home_summary()
     return cr
 
 
@@ -431,6 +440,7 @@ def reopen_request(db: Session, cr: ChangeRequest, user: User) -> ChangeRequest:
     db.add(ChangeRequestAction(request_id=cr.id, action=CR_ACTION_REOPEN, acted_by_id=user.id))
     db.commit()
     db.refresh(cr)
+    _invalidate_home_summary()
     return cr
 
 
@@ -520,6 +530,7 @@ def _persist_request(
         )
     db.commit()
     db.refresh(cr)
+    _invalidate_home_summary()
     return cr
 
 
@@ -845,6 +856,7 @@ def merge_row_requests(
         db.add(ChangeRequestAction(request_id=cr.id, action=CR_ACTION_MERGE, comment=comment, acted_by_id=user.id))
     _mark_others_stale(db, table.id, exclude_ids=set(request_ids), row_ids=applied_row_ids)
     db.commit()
+    _invalidate_home_summary()
 
     return {
         "applied": applied,

@@ -31,6 +31,13 @@ from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
 from cndb.plugins.workspaces.permissions import get_member_role
 
 
+def _invalidate_home_summary() -> None:
+    """问题开 / 关后失效主页聚合缓存（ADR 0160 I4）——失败不影响主流程."""
+    from cndb.plugins.workspaces.services.home_summary import invalidate_home_summary
+
+    invalidate_home_summary()
+
+
 def create_issue(
     db: Session,
     table: DataTable,
@@ -68,6 +75,7 @@ def create_issue(
     )
     db.commit()
     db.refresh(issue)
+    _invalidate_home_summary()
     return issue
 
 
@@ -212,6 +220,7 @@ def close_issue(db: Session, issue: Issue, user: User) -> Issue:
     )
     db.commit()
     db.refresh(issue)
+    _invalidate_home_summary()
     return issue
 
 
@@ -230,6 +239,7 @@ def reopen_issue(db: Session, issue: Issue, user: User) -> Issue:
     )
     db.commit()
     db.refresh(issue)
+    _invalidate_home_summary()
     return issue
 
 

@@ -68,7 +68,7 @@
 |---|---|---|---|---|
 | P0 | 排版收口：`max-width` + 右栏定宽 + 行内 grid + 空态引导 | S1 | `make check-fast` + `make test` + `make check-frontend` | 已落地 |
 | P1 | 主页导航 rail（新建 / 最近 / 全部 / 团队 / 收藏视图 / 管理团队）+ 移动端抽屉 | S1 | 同上 + e2e 断点矩阵 | 已落地 |
-| P2 | `GET /api/v1/home/summary` + rail 待办徽标（修改申请 / 问题 / 链接申请） | S2（ADR 0160） | `make cov` + 接口测试 | 未开始 |
+| P2 | `GET /api/v1/home/summary` + rail 待办徽标（修改申请 / 问题 / 链接申请） | S2（ADR 0160） | `make cov` + 接口测试 | 已落地 |
 
 ## 卡点
 
@@ -76,7 +76,7 @@
 - [x] 允许主页侧栏回归，并据此修订需求 0157 的「主页导航收敛（补）」口径（2026-11-27）
 - [x] 接受 P2 新增只读聚合接口 `GET /api/v1/home/summary`（2026-11-27）
 - [x] rail 口径收口为 A′（2026-11-27 评审反馈：首版 rail 复述顶栏 / 右栏入口且折叠态只剩图标；已删团队 / 收藏视图 / 帮助 / 管理团队四段并关闭折叠）
-- [ ] ADR 0160 评审（P2 开工前）—— 已起草 `docs/adr/0160-home-summary-aggregation.md`（Proposed，2026-11-27）
+- [x] ADR 0160 评审（P2 开工前）—— 已起草 `docs/adr/0160-home-summary-aggregation.md`，2026-11-27「开工 P2」确认（Status: Accepted）
 
 ## 落地（实现完成）
 
@@ -91,3 +91,7 @@
 | P1 最近访问 | `frontend/src/utils/recentWorkspaces.ts`（`localStorage`：`wid` / `path` / `ts`，同工作区去重、上限 5、非法路径忽略；登录 / 登出清空避免串号）+ `MainLayout` 导航时记录 |
 | P1 测试 | `HomeNav.test.tsx` 8 例（只有三段且不渲染重复入口、最近访问单行 label + `title`、仍可读过滤、空最近访问不渲染分组、选中态、新建 / 最近 / 全部跳转、移动端变体）、`recentWorkspaces.test.ts` 7 例（规范化 / 去重 / 上限 / 损坏兜底）、`MainLayout.test.tsx` 改写 3 例（主页与团队页渲染主页 rail、移动端汉堡与抽屉） |
 | P1 体积 | `HomeNav` lazy 化（不进应用外壳 chunk）；`frontend/scripts/bundle-budget.json` 按实测收口「主入口 CSS」「MainLayout」基线并上调上限（理由已落盘） |
+| P2 聚合端点 | `src/cndb/plugins/workspaces/routers/home.py`（`GET /api/v1/home/summary`）、`services/home_summary.py`（`build_home_summary` / `cached_home_summary` / `invalidate_home_summary`；逐工作区复用 `readable_tables` / `can_write_directly` / `resolve_capabilities(MANAGE_LINKS)`；单块异常降级 `partial`）；插件注册 `plugin.py` |
+| P2 缓存失效 | `change_requests/services.py`（提交 / 合并 / 关 / 重开）、`issues/services.py`（新建 / 关 / 重开）、`workspaces/routers/links.py`（链接申请与审批的 `_invalidate`）、`workspaces/routers/workspaces.py`（`invalidate_workspace_list_cache`，覆盖成员 / 工作区 / 团队变更） |
+| P2 前端徽标 | `frontend/src/api/home.ts`（新增 `homeApi.summary` + 类型）、`components/HomeNav.tsx`（「全部工作区」右侧聚合徽标：0 不渲染、失败静默隐藏、`title` 给三项分解）、`index.css`（`.cn-home-nav-pending`） |
+| P2 测试 | `tests/test_home_summary.py` 12 例（登录 / 空账号 / 审批与问题口径 / 本人提交不计 / 关闭不计 / 私有工作区与非成员不可见 / 待审链接只算源 owner / 团队数 / 载荷白名单 / 缓存命中与写路径失效 / 单块降级）、`HomeNav.test.tsx` +3 例（徽标出现与分解提示、0 不渲染、接口失败静默） |
