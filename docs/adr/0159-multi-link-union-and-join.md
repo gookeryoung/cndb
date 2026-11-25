@@ -213,7 +213,7 @@ compute(...) 接受「行集 + 字段清单」后，公式 / 分组 / 图表 / �
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/services/union_source.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/routers/run.py` | `tests/test_analytics_union_join.py` | `9fdb6780` |
-| P1 | 已落地 | `src/cndb/plugins/analytics/services/join_source.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/services/templates.py` | `tests/test_analytics_union_join.py` | 未提交 |
+| P1 | 已落地 | `src/cndb/plugins/analytics/services/join_source.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/services/templates.py` | `tests/test_analytics_union_join.py` | `07808238` |
 | P2 | 未开始 | `frontend/src/pages/analytics/AnalyticsPage.tsx` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/tests/e2e/critical/analytics-union-join.spec.ts` | — |
 
 
@@ -223,4 +223,4 @@ compute(...) 接受「行集 + 字段清单」后，公式 / 分组 / 图表 / �
 - 已完成：需求卡片 0159（C1-C10）；ADR 决策记录 D1-D9、不变量 L1-L6；P0（`union`：列映射、类型严格同族、fail-closed、共享扫描额度、列名固化、模板校验；`compute_rows` 抽出复用）；P1（`join`：左 = 表 / 链接、右 = 链接，仅 `left` / `inner`，**左表驱动**，右表未匹配行不出现（H62），冲突列 `left.` / `right.`、右表关联键不重复输出，关联键必须可见（隐藏 → 400），表侧同样按字段隐藏裁剪）；H61-H63 已登记
 - 下一步：开 P2（前端：分类数据源入口 + 列映射 / 关联配置 UI + 失效逐项提示 + e2e）
 - 已知坑：① **join 必须由左表驱动**（`left` / `inner` 都用左表行集迭代），否则右表未匹配行会泄露存在性；② 列映射 / 关联键的可见性校验要在保存期做（执行期只兜底），否则模板存下来必然失败；③ 复合源的字段清单要固化进 `config`（L4），不要执行期重新推导；④ 扫描额度是**共享预算**，实现时先扣再取，避免 5 个输入各自取满；⑤ 单源路径不要顺手重构（0158 的既有用例是回归基线）
-- 最近一次全绿：`make check-fast` + `make cov`（7611 passed，95.01%）+ `tests/test_analytics_union_join.py`（P0 12 + P1 12）24 passed @ 未提交（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7611 passed，95.01%）+ `tests/test_analytics_union_join.py`（P0 12 + P1 12）24 passed @ `07808238`（2026-11-25）
