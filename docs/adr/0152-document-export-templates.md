@@ -1,6 +1,6 @@
 # ADR 0152: 文档导出模板（可配置字体 / 标题 / 段落，一套模板同时供电 Word 与 PDF）
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-11-25
 Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/services/export/theme.py`、`src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/pdf_fonts.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`frontend/src/pages/settings/SettingsModal.tsx`、`frontend/src/layouts/MainLayout.tsx`
 需求卡片: `docs/requirements/0152-document-export-templates.md`（需求原文与约束编号的唯一副本）
@@ -250,15 +250,17 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `src/cndb/plugins/documents/services/export/templates.py` | `tests/test_export_templates.py` | — |
-| P1 | 未开始 | `src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/routers/documents.py` | `tests/test_export_templates.py` | — |
-| P2 | 未开始 | `src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/pdf_fonts.py` | `tests/test_export_templates_pdf.py` | — |
-| P3 | 未开始 | `src/cndb/plugins/documents/routers/templates.py`、`frontend/src/pages/settings/TemplatePanel.tsx` | `frontend/src/pages/settings/TemplatePanel.test.tsx` | — |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/export/templates.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/alembic/versions/b7c8d9e0f1a2_add_export_templates.py` | `tests/test_export_templates.py` | `a6af67ac` |
+| P1 | 已落地 | `src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/routers/documents.py` | `tests/test_export_templates.py` | `a6af67ac` |
+| P2 | 已落地 | `src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/pdf_fonts.py` | `tests/test_export_templates.py` | `a6af67ac` |
+| P3 | 已落地 | `src/cndb/plugins/documents/routers/templates.py`、`src/cndb/plugins/documents/services/export_template_store.py`、`frontend/src/pages/settings/TemplatePanel.tsx` | `frontend/src/pages/settings/TemplatePanel.test.tsx`、`frontend/tests/e2e/critical/export-templates.spec.ts` | `a6af67ac` |
+
+> 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案评审（Proposed，等待人工确认 C3 明细与 8 套内置清单）
-- 已完成：需求卡片 0152（含澄清结论）、本 ADR、现状核对（`export/theme.py`、`docx.py`、`pdf.py`、`pdf_fonts.py`、`routers/documents.py`、`SettingsModal.tsx`、`MainLayout.tsx`、`backup_io.py`）
-- 下一步：确认后按 P0 → P3 实现；P0 先落 `templates.py` 与迁移，并用单测锁定 I2（standard == DEFAULT_THEME）
-- 已知坑：`_HEADING_SIZES` 在 `docx.py` 与 `pdf.py` 各有一份需一并收敛；备份版本升 17 要同步 `backup_io` 白名单与旧包兼容用例；PDF 字体族匹配需在无 CJK 字体环境下也保持「回落不报错」
-- 最近一次全绿：未开始实现
+- 当前阶段：P0–P3 全部落地（2026-11-25，`a6af67ac` / e2e `3ac95d87`；推送属人工卡点）
+- 已完成：配置模型 + 8 套内置预设 + 解析入口 + 迁移/备份 v17（P0）；`_render_docx` 全量改读配置（标题编号 / 题注 / 三线表 / 页眉页脚 / 页边距）+ 导出 `template` 参数 + preview（P1）；`_render_pdf` 同源配置 + `ensure_pdf_font(family)` 族匹配与回落（P2）；CRUD 路由 + 前端面板 / 页签 / 顶栏入口 / 导出子菜单 + 单测 + e2e（P3）
+- 下一步：人工验收后 `make push`（H4 / H6）；若后续要给 PDF 补字间距，从 `BodyConfig.char_spacing` 映射 `ParagraphStyle.charSpace` 入手
+- 已知坑：① `standard` 与历史 `DEFAULT_THEME` 在 docx 逐项一致，但 **PDF 表格不再强制隔行加深**（历史渲染器写死斑马纹，现由 `table.zebra` 控制且 `standard` 为 false）——这是 I2 的唯一已知偏差；② PDF 只有一个主字体，中文字体族只能「最佳匹配 + 回落」，西文字体名不参与族匹配；③ 备份版本升 17，旧包（无 `templates` 键）按空导入，`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 已同步；④ 配置字段名用 `lists`（避开 Python 内置 `list`，否则 pydantic 解析注解失败），前后端一致
+- 最近一次全绿：`make cov` 95.02%（7317 passed）、前端 `pnpm test:coverage` 双门槛达标（3378 passed）、`bundle-budget` 在预算内 @ 本地 2026-11-25
