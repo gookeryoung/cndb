@@ -196,9 +196,9 @@ def apply_repair(db, *, issues, strategy, actor) -> RepairResult      # 生成�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P2-1 | 已落地 | `src/cndb/plugins/documents/services/references.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/schemas/__init__.py` | `tests/test_document_reference_repair.py` | 见「交接」回填 |
-| P2-2 | 已落地 | `src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/models.py` | `tests/test_document_reference_repair.py` | 见「交接」回填 |
-| P2-3 | 已落地 | `frontend/src/pages/documents/MoveDocumentModal.tsx`、`frontend/src/pages/documents/ReferenceRepairModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/ReferenceRepairModal.test.tsx`、`frontend/tests/e2e/critical/document-move-workspace.spec.ts` | 见「交接」回填 |
+| P2-1 | 已落地 | `src/cndb/plugins/documents/services/references.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/schemas/__init__.py` | `tests/test_document_reference_repair.py` | `9a21c1b0` |
+| P2-2 | 已落地 | `src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/models.py` | `tests/test_document_reference_repair.py` | `9a21c1b0` |
+| P2-3 | 已落地 | `frontend/src/pages/documents/MoveDocumentModal.tsx`、`frontend/src/pages/documents/ReferenceRepairModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/ReferenceRepairModal.test.tsx`、`frontend/tests/e2e/critical/document-move-workspace.spec.ts` | `9a21c1b0` |
 
 ## 交接（会话结束更新）
 
