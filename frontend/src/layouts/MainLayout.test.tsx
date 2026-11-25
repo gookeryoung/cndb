@@ -843,6 +843,45 @@ describe('MainLayout 侧边栏工作区上下文', () => {
         expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
     })
 
+    it('主页（/w）无工作区上下文：不渲染工作区侧栏，顶栏显示「全部工作区」锚点与「选择工作区」入口', async () => {
+        renderLayout(mockUser, '/w')
+
+        await waitFor(() => expect(screen.getByTestId('home-page-stub')).toBeVisible())
+        // 侧栏内容均属工作区级：主页不渲染，双栏宽度整幅交给页面自身
+        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+        expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
+        // 顶栏层级语法：全部工作区 / [选择工作区 ▾]
+        expect(screen.getByTestId('header-all-workspaces-crumb')).toHaveTextContent('全部工作区')
+        expect(screen.getByTestId('ws-switch-btn')).toHaveTextContent('选择工作区')
+    })
+
+    it('团队页（/teams/:tid）无工作区上下文：不渲染工作区侧栏，也不显示主页「全部工作区」锚点', async () => {
+        renderLayout(mockUser, '/teams/500')
+
+        await waitFor(() => expect(screen.getByTestId('teams-page-stub')).toHaveTextContent('/teams/500'))
+        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+        expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
+        expect(screen.queryByTestId('header-all-workspaces-crumb')).toBeNull()
+    })
+
+    it('移动端主页不渲染汉堡入口（无工作区级侧栏可开），切换器图标入口保留', async () => {
+        responsiveState = {
+            deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
+            width: 375, height: 667,
+        }
+        try {
+            renderLayout(mockUser, '/w')
+            await waitFor(() => expect(screen.getByTestId('home-page-stub')).toBeVisible())
+            expect(screen.queryByTestId('mobile-nav-btn')).toBeNull()
+            expect(screen.getByTestId('ws-switch-btn')).toBeVisible()
+        } finally {
+            responsiveState = {
+                deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+                width: 1280, height: 800,
+            }
+        }
+    })
+
     it('管理台（/admin 无 wid）侧栏列出管理台分项，不渲染工作区导航', async () => {
         renderLayout(mockUser, '/admin')
 
@@ -1605,6 +1644,10 @@ describe('MainLayout 团队层级（需求 0157 C4）', () => {
         const crumb = await screen.findByTestId('header-team-crumb')
         expect(crumb).toHaveTextContent('研发部')
         expect(screen.queryByTestId('header-personal-crumb')).toBeNull()
+        // 团队名只在面包屑出现一次，切换器触发按钮只显示工作区名（不重复嵌套团队名）
+        const trigger = screen.getByTestId('ws-switch-btn')
+        expect(trigger).toHaveTextContent('测试工作区')
+        expect(trigger).not.toHaveTextContent('研发部')
 
         fireEvent.click(crumb)
         await waitFor(() => {
@@ -1618,6 +1661,9 @@ describe('MainLayout 团队层级（需求 0157 C4）', () => {
         const personal = await screen.findByTestId('header-personal-crumb')
         expect(personal).toHaveTextContent('个人')
         expect(screen.queryByTestId('header-team-crumb')).toBeNull()
+        const trigger = screen.getByTestId('ws-switch-btn')
+        expect(trigger).toHaveTextContent('测试工作区')
+        expect(trigger).not.toHaveTextContent('个人')
     })
 
     it('顶栏切换器按团队分组展示工作区', async () => {
@@ -1659,6 +1705,9 @@ describe('MainLayout 顶栏紧凑档（宽度不足）', () => {
             // 次要操作收进用户菜单，不再占用顶栏
             expect(screen.queryByTestId('llm-settings-btn')).toBeNull()
             expect(screen.queryByTestId('help-btn')).toBeNull()
+            // 面包屑收起后由切换器补「个人 / 工作区」，归属信息只出现一处
+            expect(screen.queryByTestId('header-personal-crumb')).toBeNull()
+            await waitFor(() => expect(screen.getByTestId('ws-switch-btn')).toHaveTextContent(/个人\s*\/\s*测试工作区/))
         } finally {
             responsiveState = {
                 deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,

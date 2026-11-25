@@ -18,11 +18,13 @@ function renderSwitcher({
   workspaces = [mockWorkspace],
   currentWorkspaceId = mockWorkspace.id,
   showLabel = true,
+  prefix,
 }: {
   teams?: Team[]
   workspaces?: Workspace[]
   currentWorkspaceId?: number | string
   showLabel?: boolean
+  prefix?: string
 } = {}) {
   return renderProviders(
     <Routes>
@@ -35,6 +37,7 @@ function renderSwitcher({
               workspaces={workspaces}
               currentWorkspaceId={currentWorkspaceId}
               showLabel={showLabel}
+              prefix={prefix}
             />
             <LocationProbe />
           </>
@@ -120,5 +123,30 @@ describe('ScopeSwitcher', () => {
   it('移动端可隐藏触发按钮文案（仅图标）', () => {
     renderSwitcher({ showLabel: false })
     expect(screen.getByTestId('ws-switch-btn')).not.toHaveTextContent('测试工作区')
+  })
+
+  it('无当前工作区（主页 / 团队页）时触发按钮显示「选择工作区」', () => {
+    renderProviders(
+      <Routes>
+        <Route path="*" element={<ScopeSwitcher teams={[]} workspaces={[mockWorkspace]} />} />
+      </Routes>,
+      { route: '/w' },
+    )
+    expect(screen.getByTestId('ws-switch-btn')).toHaveTextContent('选择工作区')
+  })
+
+  it('完整档只显示工作区名；紧凑档用 prefix 补「团队 / 工作区」', () => {
+    const { unmount } = renderSwitcher({
+      workspaces: [{ ...mockWorkspace, name: '数据中台' }],
+      prefix: '研发部',
+    })
+    const trigger = screen.getByTestId('ws-switch-btn')
+    expect(trigger).toHaveTextContent(/研发部\s*\/\s*数据中台/)
+    unmount()
+
+    renderSwitcher({ workspaces: [{ ...mockWorkspace, name: '数据中台' }] })
+    const plain = screen.getByTestId('ws-switch-btn')
+    expect(plain).toHaveTextContent('数据中台')
+    expect(plain).not.toHaveTextContent('研发部')
   })
 })

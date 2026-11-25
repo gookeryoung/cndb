@@ -545,6 +545,9 @@ export default function MainLayout() {
   // 2026-11-06 用户口径（ADR 0109 D8）：设计模块收敛为单一工作台，根页 /w/:wid/design
   // 与编辑器页 /w/:wid/design/:id 都渲染同一设计侧栏（产品列表 ↔ 结构树两态）；
   // 根页只负责默认选中最近更新的产品并跳转，不再隐藏侧栏。
+  // 无工作区上下文（主页 /w、团队页 /teams*）不渲染工作区级侧栏（需求 0157 补充）：
+  // 侧栏内容均属于工作区（表 / 文档 / 设置分项），此时宽度整幅交给页面自身，
+  // 移动端汉堡入口随 hidden 同步收起；管理台 /admin 有自己的侧栏，不受此收敛影响。
   type SiderMode = 'documents' | 'design' | 'tables' | 'settings' | 'stats' | 'admin' | 'hidden'
   const moduleSiderMode: 'documents' | 'design' | null =
     inDocumentsContext && wsFeatures.documents
@@ -555,12 +558,14 @@ export default function MainLayout() {
   const siderMode: SiderMode =
     inAdminConsole
       ? 'admin'
-      : activeWsTab === 'settings'
-        ? 'settings'
-        : activeWsTab === 'stats'
-          ? 'stats'
-          : moduleSiderMode
-            ?? (wsFeatures.tables ? 'tables' : 'hidden')
+      : !wid
+        ? 'hidden'
+        : activeWsTab === 'settings'
+          ? 'settings'
+          : activeWsTab === 'stats'
+            ? 'stats'
+            : moduleSiderMode
+              ?? (wsFeatures.tables ? 'tables' : 'hidden')
 
   // 路由变化后（含进入表/文档二级页）把激活页签滚入可视区：窄屏横滑时激活项可能在视口外。
   // 依赖页签计数徽标：徽标异步到达会改变页签宽度与整行可滚动范围，需再校准一次，
@@ -794,7 +799,8 @@ export default function MainLayout() {
    * collapsed 仅桌面端 Sider 折叠态使用，与既有折叠隐藏逻辑保持一致。 */
   const renderTableNav = (mobile: boolean, collapsed = false) => {
     if (!wid) {
-      // 未进入工作区：不渲染"数据表"导航，提示用户从顶部选择
+      // 兜底：正常路由下无 wid 上下文已由 siderMode='hidden' 收敛（主页 / 团队页），
+      // 此处防御未来直接调用；保留提示避免出现空导航
       return (
         <div data-testid="sider-no-workspace" className="cn-state" style={{ display: collapsed ? 'none' : 'block' }}>
           <p>请先从顶部选择一个工作区</p>
@@ -1190,14 +1196,34 @@ export default function MainLayout() {
               </span>
             )
           )}
-          {!isMobile && !compactHeader && currentWs?.team && <span className="cn-header-crumb-sep" aria-hidden>/</span>}
+          {!isMobile && !compactHeader && currentWs && <span className="cn-header-crumb-sep" aria-hidden>/</span>}
 
-          {/* 团队 / 工作区统一切换器（需求 0157 C2）：分组列出工作区，底部提供团队页入口 */}
+          {/* 主页层级锚点（需求 0157 补充）：/w 无工作区上下文时显示静态「全部工作区」，
+              与工作区内「团队 / 工作区」保持同一层级语法；团队页 / 帮助页 / 管理台不显示。 */}
+          {!isMobile && !compactHeader && !wid && location === '/w' && (
+            <>
+              <span
+                className="cn-header-team-crumb cn-header-team-crumb-personal"
+                data-testid="header-all-workspaces-crumb"
+              >
+                <FolderOpenOutlined />
+                <span>全部工作区</span>
+              </span>
+              <span className="cn-header-crumb-sep" aria-hidden>/</span>
+            </>
+          )}
+
+          {/* 团队 / 工作区统一切换器（需求 0157 C2）：分组列出工作区，底部提供团队页入口。
+              完整档的团队名由左侧面包屑承担，切换器只显示工作区名；紧凑档面包屑收起时，
+              用 prefix 以「团队 / 工作区」形式补回归属，二者只出现一处。 */}
           <ScopeSwitcher
             teams={teams}
             workspaces={workspaces}
             currentWorkspaceId={wid}
             showLabel={!isMobile}
+            prefix={compactHeader
+              ? (currentWs ? (currentWs.team?.name ?? '个人') : undefined)
+              : undefined}
             workspaceHref={w => `/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules)}`}
           />
 

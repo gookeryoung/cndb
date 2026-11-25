@@ -10328,13 +10328,26 @@ body.cn-doc-focus-view .cn-doc-stats {
   white-space: nowrap;
 }
 
-.cn-scope-trigger-team.ant-tag {
-  margin-inline-end: 0;
-  font-size: var(--cn-text-2xs);
-  line-height: 16px;
-  background: var(--cn-bg-subtle);
-  border-color: var(--cn-border);
+/* 触发按钮文案：完整档为「工作区名」，紧凑档为「团队 / 工作区」（团队名与面包屑不重复） */
+.cn-scope-trigger-prefix {
   color: var(--cn-text-secondary);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
+
+.cn-scope-trigger-sep {
+  color: var(--cn-text-muted);
+  flex: 0 0 auto;
+}
+
+.cn-scope-trigger-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
 }
 
 /* 切换面板 */

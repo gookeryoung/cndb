@@ -3,11 +3,13 @@
  * 顶栏「工作区名 ▾」与移动端导航共用：按团队分组列出工作区（团队单层、组内平铺，无树），
  * 组头提供团队页入口，底部提供「全部工作区 / 新建工作区 / 管理团队」。
  * 只消费 `GET /workspaces` 与 `GET /teams` 的既有载荷，不新增请求（C6）。
+ * 无当前工作区（主页 / 团队页）时触发按钮显示动词短语「选择工作区」，
+ * 表明这是入口而非层级标签。
  */
 
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Input, Popover, Tag, Tooltip } from 'antd'
+import { Button, Input, Popover, Tooltip } from 'antd'
 import {
   ApartmentOutlined, FolderOutlined, PlusOutlined, SearchOutlined, SettingOutlined,
   StarFilled,
@@ -24,6 +26,9 @@ export interface ScopeSwitcherProps {
   currentWorkspaceId?: string | number
   /** 触发按钮是否显示文案（移动端仅图标） */
   showLabel?: boolean
+  /** 触发按钮文案前缀（团队名 / 「个人」）：仅当顶栏团队面包屑收起时传入，
+   * 避免团队名与面包屑重复出现；桌面完整档由面包屑承担归属信息。 */
+  prefix?: string
   /** 工作区跳转地址（默认 `/w/<id>`；工作区上下文内传入“同一模块段”地址） */
   workspaceHref?: (workspace: Workspace) => string
   /** 团队页跳转（默认 `/teams/<id>`） */
@@ -194,12 +199,11 @@ export function ScopeSwitcherPanel({
 
 /** 顶栏切换器 —— 触发按钮 + 分组面板 */
 export default function ScopeSwitcher({
-  teams, workspaces, currentWorkspaceId, showLabel = true, workspaceHref, teamHref,
+  teams, workspaces, currentWorkspaceId, showLabel = true, prefix, workspaceHref, teamHref,
 }: ScopeSwitcherProps) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const current = workspaces.find(ws => String(ws.id) === String(currentWorkspaceId))
-  const currentTeam = current?.team ?? teams.find(t => String(t.id) === String(current?.team_id))
 
   // 路由变化（如从面板跳转后返回）关闭面板，避免残留
   useEffect(() => { setOpen(false) }, [currentWorkspaceId])
@@ -238,11 +242,16 @@ export default function ScopeSwitcher({
         {showLabel && (current
           ? (
             <span className="cn-scope-trigger-label">
-              {currentTeam && <Tag className="cn-scope-trigger-team">{currentTeam.name}</Tag>}
-              {current.name}
+              {prefix && (
+                <>
+                  <span className="cn-scope-trigger-prefix">{prefix}</span>
+                  <span className="cn-scope-trigger-sep" aria-hidden>/</span>
+                </>
+              )}
+              <span className="cn-scope-trigger-name">{current.name}</span>
             </span>
           )
-          : '工作区')}
+          : '选择工作区')}
       </Button>
     </Popover>
   )
