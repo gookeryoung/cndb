@@ -26,6 +26,37 @@ export function buildSeriesStats(items: DocumentItem[]): SeriesSummary[] {
     .map(seriesStatsOf)
 }
 
+/**
+ * 文件夹 → 递归状态分布（父级列表里的文件夹行状态展示用）.
+ *
+ * 文件夹本身没有"发布"这个动作，其状态语义应与其内部文档保持一致：
+ * 子孙文档已发布时，父级列表看到的文件夹也应是已发布，而不是文件夹自身行上的 draft。
+ * 空文件夹没有可聚合的文档，就不显示状态（与顶层系列卡片 `statusCounts` 空对象同口径），
+ * 避免把文件夹自身的默认 draft 误报成"里面有草稿"。
+ */
+export function buildFolderStatusCounts(items: DocumentItem[]): Map<number, Record<string, number>> {
+  const result = new Map<number, Record<string, number>>()
+
+  const collect = (node: DocTreeNode): Record<string, number> => {
+    const counts: Record<string, number> = {}
+    for (const child of node.children) {
+      if (child.is_folder) {
+        const childCounts = collect(child)
+        for (const [status, n] of Object.entries(childCounts)) {
+          counts[status] = (counts[status] ?? 0) + n
+        }
+      } else {
+        counts[child.status] = (counts[child.status] ?? 0) + 1
+      }
+    }
+    if (node.is_folder) result.set(node.id, counts)
+    return counts
+  }
+
+  for (const root of buildDocTree(items)) collect(root)
+  return result
+}
+
 /** 单个文件夹的系列聚合统计（递归子孙；系列详情头部复用） */
 export function seriesStatsOf(folder: DocTreeNode): SeriesSummary {
   const descendants: DocumentItem[] = []

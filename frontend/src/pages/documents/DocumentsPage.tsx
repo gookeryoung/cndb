@@ -57,7 +57,7 @@ import type { DocumentItem, VaultExportStyle } from '@/api/documents'
 import { useResponsive } from '@/hooks/useResponsive'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
-import { buildSeriesStats, seriesStatsOf } from './seriesStats'
+import { buildFolderStatusCounts, buildSeriesStats, seriesStatsOf } from './seriesStats'
 import { formatDate, formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
 import { formatMeta } from '@/components/Document/docFormat'
 import CnListMeta from '@/components/CnListMeta'
@@ -71,7 +71,7 @@ const { Text } = Typography
 
 
 // 测试与内部复用：系列统计的具名导出保留在本模块（实现见 ./seriesStats）
-export { buildSeriesStats, seriesStatsOf } from './seriesStats'
+export { buildFolderStatusCounts, buildSeriesStats, seriesStatsOf } from './seriesStats'
 export type { SeriesSummary } from './seriesStats'
 
 /** 内容区分块标题：文件夹 / 文档分块，附数量，便于一眼区分两类条目 */
@@ -195,6 +195,13 @@ export default function DocumentsPage() {
   const currentSeries = useMemo(
     () => (currentFolderNode ? seriesStatsOf(currentFolderNode) : null),
     [currentFolderNode],
+  )
+  // 文件夹行的状态展示：按递归子孙文档聚合，与系列卡片 / 系列详情头部同一口径。
+  // 修复：父级列表里文件夹曾直接显示自身 status（多为 draft），与进入该文件夹后看到的
+  // 「已发布」统计不一致。
+  const folderStatusCounts = useMemo(
+    () => buildFolderStatusCounts(treeQuery.data ?? []),
+    [treeQuery.data],
   )
 
   const docsQuery = useQuery({
@@ -672,7 +679,19 @@ export default function DocumentsPage() {
   }
 
   /** 单个文档 / 文件夹行（文件夹块与文档块共用；桌面单行，移动端两行） */
-  const renderDocRow = (doc: DocumentItem) => (
+  const renderDocRow = (doc: DocumentItem) => {
+    // 文件夹状态取子孙文档聚合（空文件夹无状态），文档保持自身状态
+    const statusCounts = doc.is_folder
+      ? folderStatusCounts.get(doc.id) ?? {}
+      : { [doc.status]: 1 }
+    const statusEntries = Object.entries(statusCounts)
+    const showPrivate = doc.is_folder
+      ? statusEntries.some(([st]) => st !== 'published')
+      : doc.visibility === 'private'
+    const visibilityTip = doc.is_folder
+      ? '含未发布内容：其中草稿 / 归档仅你与工作区所有者可见'
+      : '未发布：仅你与工作区所有者可见'
+    return (
               <div
                 className="cn-list-item"
                 style={{ cursor: 'pointer' }}
@@ -739,13 +758,17 @@ export default function DocumentsPage() {
                           style={{ color: 'var(--cn-brand-color)', fontSize: 'var(--cn-text-sm)' }}
                         />
                       )}
-                      <Badge
-                        status={STATUS_BADGE[doc.status] ?? 'default'}
-                        text={STATUS_LABELS[doc.status]}
-                      />
+                      {statusEntries.map(([st, n]) => (
+                        <Badge
+                          key={st}
+                          data-testid={`doc-list-status-${doc.id}-${st}`}
+                          status={STATUS_BADGE[st] ?? 'default'}
+                          text={doc.is_folder ? `${STATUS_LABELS[st] ?? st} ${n}` : STATUS_LABELS[st]}
+                        />
+                      ))}
                       {/* 可见性提示：未发布的文档同事看不到，明确告知以免误以为文档丢失 */}
-                      {doc.visibility === 'private' && (
-                        <Tooltip title="未发布：仅你与工作区所有者可见">
+                      {showPrivate && (
+                        <Tooltip title={visibilityTip}>
                           <LockOutlined
                             data-testid={`doc-list-visibility-${doc.id}`}
                             aria-label="仅自己可见"
@@ -766,14 +789,18 @@ export default function DocumentsPage() {
                     /* 移动端：状态与可见性标签收到描述行（锁标签收敛为纯图标，语义保留在 aria-label），
                        摘要行省去，保持两行紧凑行高 */
                     <Space size={6} wrap>
-                      <Tag
-                        color={STATUS_COLORS[doc.status]}
-                        style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
-                      >
-                        {STATUS_LABELS[doc.status]}
-                      </Tag>
-                      {doc.visibility === 'private' && (
-                        <Tooltip title="未发布：仅你与工作区所有者可见">
+                      {statusEntries.map(([st, n]) => (
+                        <Tag
+                          key={st}
+                          color={STATUS_COLORS[st] ?? 'default'}
+                          data-testid={`doc-list-status-${doc.id}-${st}`}
+                          style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
+                        >
+                          {doc.is_folder ? `${STATUS_LABELS[st] ?? st} ${n}` : STATUS_LABELS[st]}
+                        </Tag>
+                      ))}
+                      {showPrivate && (
+                        <Tooltip title={visibilityTip}>
                           <Tag
                             icon={<LockOutlined />}
                             data-testid={`doc-list-visibility-${doc.id}`}
@@ -808,6 +835,7 @@ export default function DocumentsPage() {
                 {renderRowActions(doc)}
               </div>
             )
+  }
 
   return (
     <div style={{ padding: isMobile ? 10 : 16 }}>

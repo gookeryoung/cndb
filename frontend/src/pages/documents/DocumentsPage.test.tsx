@@ -9,7 +9,7 @@ import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { message } from 'antd'
 import { http, HttpResponse } from 'msw'
-import DocumentsPage, { buildSeriesStats } from './DocumentsPage'
+import DocumentsPage, { buildFolderStatusCounts, buildSeriesStats } from './DocumentsPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, server } from '@/test/msw'
 import type { DocumentItem } from '@/api/documents'
@@ -59,6 +59,35 @@ describe('buildSeriesStats 纯函数', () => {
   })
 })
 
+describe('buildFolderStatusCounts 纯函数', () => {
+  it('文件夹状态按递归子孙文档聚合（子文件夹的子孙也计入）', () => {
+    const items: DocumentItem[] = [
+      { ...mockDocuments[0], id: 1, parent_id: null, is_folder: true, status: 'draft' },
+      { ...mockDocuments[0], id: 2, parent_id: 1, is_folder: true, status: 'draft' },
+      { ...mockDocuments[1], id: 3, parent_id: 2, status: 'published' },
+      { ...mockDocuments[1], id: 4, parent_id: 2, status: 'published' },
+      { ...mockDocuments[1], id: 5, parent_id: 1, status: 'draft' },
+    ]
+
+    const counts = buildFolderStatusCounts(items)
+    // 子文件夹 B：自身 draft，但内部两篇已发布 → 父级列表应显示已发布
+    expect(counts.get(2)).toEqual({ published: 2 })
+    // 父文件夹 A：汇总 B 的已发布 + 自己的草稿
+    expect(counts.get(1)).toEqual({ published: 2, draft: 1 })
+  })
+
+  it('空文件夹不回落自身 status（不误报为草稿）', () => {
+    const items: DocumentItem[] = [
+      { ...mockDocuments[0], id: 1, parent_id: null, is_folder: true, status: 'draft' },
+      { ...mockDocuments[0], id: 2, parent_id: 1, is_folder: true, status: 'published' },
+    ]
+
+    const counts = buildFolderStatusCounts(items)
+    expect(counts.get(1)).toEqual({})
+    expect(counts.get(2)).toEqual({})
+  })
+})
+
 describe('DocumentsPage 顶层系列卡片总览', () => {
   it('顶层渲染系列卡片（统计齐全），不渲染 Empty', async () => {
     renderProviders(
@@ -84,6 +113,34 @@ describe('DocumentsPage 顶层系列卡片总览', () => {
     // 文件夹与文档分块：顶层只有文件夹块（无根级散文档）
     expect(screen.getByTestId('doc-folder-block')).toBeInTheDocument()
     expect(screen.queryByTestId('doc-file-block')).toBeNull()
+  })
+
+  it('父文件夹列表中的子文件夹状态按子孙聚合，与进入该文件夹后口径一致', async () => {
+    const tree: DocumentItem[] = [
+      { ...mockDocuments[0], id: 1, title: '父文件夹', parent_id: null, is_folder: true, status: 'draft' },
+      { ...mockDocuments[0], id: 2, title: '子文件夹', parent_id: 1, is_folder: true, status: 'draft' },
+      { ...mockDocuments[1], id: 3, title: '已发布文档', parent_id: 2, status: 'published' },
+      { ...mockDocuments[1], id: 4, title: '草稿文档', parent_id: 2, status: 'draft' },
+    ]
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/tree', () => HttpResponse.json({ items: tree })),
+      http.get('/api/v1/workspaces/:wid/documents', () =>
+        HttpResponse.json({ items: tree.filter(d => d.parent_id === 1), total: 1 })),
+    )
+
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    const folderBlock = await screen.findByTestId('doc-subfolder-block')
+    // 子文件夹行显示聚合后的状态分布，而不是把文件夹自身保存的 draft 当成唯一状态
+    expect(within(folderBlock).getByTestId('doc-list-status-2-published')).toHaveTextContent('已发布 1')
+    expect(within(folderBlock).getByTestId('doc-list-status-2-draft')).toHaveTextContent('草稿 1')
+    // 含未发布内容时仍提示「仅自己可见」
+    expect(within(folderBlock).getByTestId('doc-list-visibility-2')).toBeInTheDocument()
   })
 
   it('点击系列卡片进入文件夹：列表展示子项', async () => {
@@ -520,7 +577,7 @@ describe('列表可见性提示', () => {
                 return { ...d, status: 'draft' as const, visibility: 'private' as const }
             }
             if (d.id === 3) {
-                return { ...d, status: 'draft' as const, visibility: 'private' as const }
+                return { ...d, status: 'published' as const, visibility: 'workspace' as const }
             }
             return { ...d, status: 'published' as const, visibility: 'workspace' as const }
         })
@@ -544,8 +601,8 @@ describe('列表可见性提示', () => {
         fireEvent.mouseEnter(privateTag)
         expect(await screen.findByText(/仅你与工作区所有者可见/)).toBeInTheDocument()
 
-        // 已发布文档不显示提示（成员均可见）
-        expect(screen.queryByTestId('doc-list-visibility-1')).toBeNull()
+        // 已发布子项不显示提示（成员均可见）；父文件夹含草稿时另有聚合提示
+        expect(screen.queryByTestId('doc-list-visibility-3')).toBeNull()
     })
 })
 
