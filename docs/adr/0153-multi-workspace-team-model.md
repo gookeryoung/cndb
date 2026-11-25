@@ -277,4 +277,4 @@ def require_capability(cap: str, db, user, workspace) -> None: ...   # 失败走
 - 已完成：需求卡片 0153（C1-C9）；ADR 决策记录 D1-D11 与不变量 I1-I8；H49-H52 已登记；P0 能力位抽取 + `GET /{wid}/capabilities` + 前端 `useCapabilities`；P1 团队域（`workspaces_team` / `workspaces_team_member` / `workspace.team_id` 迁移、团队 API、团队页、两平面分离、`public` 可见性、403 文案团队分支、备份 manifest 提示性 `team`、缓存扩维度失效）
 - 下一步：`P2` ① 团队策略生效面收口（`allow_member_invite` 自助加入、配额默认值下发到上传预判）；② 设计模块库新增 `visibility=team`（D8）；③ 团队内跨工作区搜索；④ 团队级审计事件；⑤ `private` 收紧方案（需人工确认迁移口径，见已知坑 ②）
 - 已知坑：① `visibility=private` 在 P1 **未收紧**（仍按成员可读）——收紧前必须先定存量迁移口径（H13 存量零迁移 vs 收紧语义），否则会让存量 private 工作区的成员静默失去读权；② 其他插件仍直接调 `get_member_role`（数据面视图，与 `resolve_capabilities().data_role` 等价），P2 若引入「可见性收紧 / 策略默认」，这些入口会与能力位不一致，须同批切换；③ 前端仍有若干 `current_user_role === 'owner'` 判断未迁移（设计模块 / 模板面板等），迁移时以 `/capabilities` 为准；④ SQLite 不支持 ADD CONSTRAINT，团队迁移用 `batch_alter_table(recreate='always')` 重建 `workspaces_workspace`，大库升级耗时随工作区表规模增长（一次性）
-- 最近一次全绿：`make check-fast` + `make test`（7362 passed）+ 前端 `vitest run`（3391 passed）@ 未提交（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7371 passed，95.02%）+ `make frontend-coverage`（3391 passed，双门槛达标）@ `2921fcc4`（2026-11-25）
