@@ -66,8 +66,8 @@
 
 | 期 | 内容 | 需求级 | 门禁 | 状态 |
 |---|---|---|---|---|
-| P0 | 排版收口：`max-width` + 右栏定宽 + 行内 grid + 空态引导 | S1 | `make check-fast` + `make test` + `make check-frontend` | 见下方落地表 |
-| P1 | 主页导航 rail（新建 / 最近 / 全部 / 团队 / 收藏视图 / 管理团队）+ 顶栏「全部工作区」下拉 + 移动端抽屉 | S1 | 同上 + e2e 断点矩阵 | 见下方落地表 |
+| P0 | 排版收口：`max-width` + 右栏定宽 + 行内 grid + 空态引导 | S1 | `make check-fast` + `make test` + `make check-frontend` | 已落地 |
+| P1 | 主页导航 rail（新建 / 最近 / 全部 / 团队 / 收藏视图 / 管理团队）+ 移动端抽屉 | S1 | 同上 + e2e 断点矩阵 | 已落地 |
 | P2 | `GET /api/v1/home/summary` + rail 待办徽标（修改申请 / 问题 / 链接申请） | S2（ADR 0160） | `make cov` + 接口测试 | 未开始 |
 
 ## 卡点
@@ -77,8 +77,16 @@
 - [x] 接受 P2 新增只读聚合接口 `GET /api/v1/home/summary`（2026-11-27）
 - [ ] ADR 0160 评审（P2 开工前）
 
-## 落地（实现中，随每期回填）
+## 落地（实现完成）
 
 | 项 | 落点 |
 |---|---|
-| （待回填） | |
+| P0 宽度节奏 | `frontend/src/index.css`（`.cn-home-page` `max-width: 1360px` 居中；`.cn-home-split` 右栏定宽 360px；<1600 堆叠）；`frontend/src/theme/tokens.ts` 新增 `BREAKPOINT.wide = 1600`（断点白名单单测登记 1599.98） |
+| P0 行内排版 | `frontend/src/index.css`（`.cn-ws-row-body` 改 `grid: minmax(0,1fr) auto`，`.cn-ws-row-meta` 右对齐；≤991 堆叠左对齐） |
+| P0 空态引导 | `frontend/src/pages/workspace/WorkspaceList.tsx`（`Empty` + 新建 / 导入备份 / 我的团队）；根容器 `cn-home-page` |
+| P0 测试 | `WorkspaceList.test.tsx` +2 例（宽度收口容器与双板块骨架、空态三入口与新建弹窗） |
+| P1 主页 rail | `frontend/src/components/HomeNav.tsx`（新建 / 最近访问 / 全部工作区 / 团队（含工作区计数）/ 收藏视图 / 管理团队 / 帮助；条目走 antd `Menu` 复用 `.cn-table-nav`，不新增一套导航样式；lazy 加载） |
+| P1 路由接线 | `frontend/src/layouts/MainLayout.tsx`：`SiderMode` 新增 `'home'`（无 `wid` 且非管理台 / 帮助→主页导航；`/w/:wid/*` 仍为工作区侧栏）；移动端汉堡恢复，抽屉顶部先给主页导航分区再接既有团队分组 |
+| P1 最近访问 | `frontend/src/utils/recentWorkspaces.ts`（`localStorage`：`wid` / `path` / `ts`，同工作区去重、上限 5、非法路径忽略；登录 / 登出清空避免串号）+ `MainLayout` 导航时记录 |
+| P1 测试 | `HomeNav.test.tsx` 7 例（分区与计数、选中态、最近访问读本地、折叠态、移动端变体、新建 / 团队 / 管理 / 帮助跳转）、`recentWorkspaces.test.ts` 7 例（规范化 / 去重 / 上限 / 损坏兜底）、`MainLayout.test.tsx` 改写 3 例（主页与团队页渲染主页 rail、移动端汉堡与抽屉） |
+| P1 体积 | `HomeNav` lazy 化（不进应用外壳 chunk）；`frontend/scripts/bundle-budget.json` 按实测收口「主入口 CSS」「MainLayout」基线并上调上限（理由已落盘） |

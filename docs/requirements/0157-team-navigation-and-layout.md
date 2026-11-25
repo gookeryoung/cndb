@@ -208,7 +208,7 @@
 | 测试 | `TeamPage.test.tsx`（重写为分区 / 路由驱动）、`WorkspaceList.test.tsx`（团队段改 chips + 分组；行内时间 / body 结构）、`MainLayout.test.tsx`（面包屑 + 分组 3 例）、`frontend/tests/e2e/critical/workspace-team-navigation.spec.ts`（5 条） |
 | 列表响应式（补） | 行结构 `row-body(title + meta)` + `flex-wrap`，名称 `min-width` 优先；<1200（xl）收起模块徽标、<1024 收起时间、1024–1199 用相对时间；e2e `workspace-list-responsive.spec.ts`（1440 / 1280 / 1024 / 768 / 390） |
 | 数据表列表行高（补） | `TablesList` 固定列宽 + `tableLayout="fixed"` + `scroll.x=1210`；表名 / 描述 / 拥有者单行省略，宽屏铺满、窄屏横向滚动；e2e `tables-list-layout.spec.ts`（1600 / 1200 / 1000 / 900 / 800 / 769 / 768） |
-| 主页导航收敛（补） | 无 `wid`（管理台除外）侧栏收敛为 `hidden`：主页 / 团队页不渲染工作区级侧栏、移动端无汉堡；主页顶栏新增静态「全部工作区」锚点；切换器空态文案「选择工作区」；`MainLayout.test.tsx` +3 例、`ScopeSwitcher.test.tsx` +1 例 |
+| 主页导航收敛（补） | 无 `wid`（管理台除外）时**不渲染工作区级侧栏**（表 / 文档 / 设置分项）；主页顶栏新增静态「全部工作区」锚点；切换器空态文案「选择工作区」；`MainLayout.test.tsx` +3 例、`ScopeSwitcher.test.tsx` +1 例。**口径已被需求 0160 C1 修订**：同一位置改为渲染「主页导航 rail」（工作区 / 团队 / 收藏视图入口），工作区级侧栏仍不在主页渲染 —— 见 [0160](0160-home-navigation-layout.md) |
 
 ## 卡点
 

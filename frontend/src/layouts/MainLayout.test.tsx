@@ -843,37 +843,46 @@ describe('MainLayout 侧边栏工作区上下文', () => {
         expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
     })
 
-    it('主页（/w）无工作区上下文：不渲染工作区侧栏，顶栏显示「全部工作区」锚点与「选择工作区」入口', async () => {
+    it('主页（/w）无工作区上下文：渲染主页导航 rail（不渲染工作区侧栏），顶栏显示「全部工作区」锚点与「选择工作区」入口', async () => {
         renderLayout(mockUser, '/w')
 
         await waitFor(() => expect(screen.getByTestId('home-page-stub')).toBeVisible())
-        // 侧栏内容均属工作区级：主页不渲染，双栏宽度整幅交给页面自身
-        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+        // 需求 0160 C1：侧栏位置复用为「主页导航」（工作区 / 团队 / 收藏视图），
+        // 工作区级导航（数据表 / 文档 / 设置分项）仍不在主页渲染
+        expect(await screen.findByTestId('sider-home')).toBeVisible()
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
         expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
+        expect(screen.getByTestId('home-nav-create')).toBeVisible()
         // 顶栏层级语法：全部工作区 / [选择工作区 ▾]
         expect(screen.getByTestId('header-all-workspaces-crumb')).toHaveTextContent('全部工作区')
         expect(screen.getByTestId('ws-switch-btn')).toHaveTextContent('选择工作区')
     })
 
-    it('团队页（/teams/:tid）无工作区上下文：不渲染工作区侧栏，也不显示主页「全部工作区」锚点', async () => {
+    it('团队页（/teams/:tid）无工作区上下文：渲染主页导航 rail，不显示主页「全部工作区」锚点', async () => {
         renderLayout(mockUser, '/teams/500')
 
         await waitFor(() => expect(screen.getByTestId('teams-page-stub')).toHaveTextContent('/teams/500'))
-        expect(document.querySelector('.ant-layout-sider')).toBeNull()
+        expect(await screen.findByTestId('sider-home')).toBeVisible()
+        expect(screen.queryByTestId('sider-tables')).toBeNull()
         expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
         expect(screen.queryByTestId('header-all-workspaces-crumb')).toBeNull()
     })
 
-    it('移动端主页不渲染汉堡入口（无工作区级侧栏可开），切换器图标入口保留', async () => {
+    it('移动端主页渲染汉堡入口，抽屉内先给主页导航分区（需求 0160 C6）', async () => {
         responsiveState = {
             deviceType: 'mobile', isMobile: true, isTablet: false, isDesktop: false,
             width: 375, height: 667,
         }
         try {
             renderLayout(mockUser, '/w')
-            await waitFor(() => expect(screen.getByTestId('home-page-stub')).toBeVisible())
-            expect(screen.queryByTestId('mobile-nav-btn')).toBeNull()
+            expect(await screen.findByTestId('home-page-stub')).toBeVisible()
+            const hamburger = screen.getByTestId('mobile-nav-btn')
+            expect(hamburger).toBeVisible()
             expect(screen.getByTestId('ws-switch-btn')).toBeVisible()
+
+            fireEvent.click(hamburger)
+            expect(await screen.findByTestId('sider-home')).toBeInTheDocument()
+            expect(screen.getByTestId('navigation-drawer')).toBeInTheDocument()
         } finally {
             responsiveState = {
                 deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,

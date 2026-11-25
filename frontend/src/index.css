@@ -1637,6 +1637,29 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   margin-inline: auto;
 }
 
+/* ─────────────── 主页导航 rail（需求 0160 C1/C6） ───────────────
+ * 条目复用 antd Menu（与设置 / 统计 / 管理台侧栏同款），这里只补两处排版：
+ * 行内「名称 + 次要信息」两行排布，以及移动端抽屉的内边距。 */
+.cn-home-nav-label {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-home-nav-hint {
+  display: block;
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cn-home-nav-mobile {
+  padding-top: var(--cn-space-sm);
+}
+
 .cn-home-split {
   display: grid;
   /* 右栏定宽 360：原来 `calc(340px + 5vw)` 会随视口膨胀，宽屏把主卡挤得比右栏还空 */

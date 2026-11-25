@@ -49,9 +49,12 @@ import {
 import { formatMeta } from '@/components/Document/docFormat'
 import { scrollActiveTabIntoViewNextFrame } from './tabScroll'
 import { readScrollTop, writeScrollTop } from './scrollMemory'
+import { recordRecentWorkspace } from '@/utils/recentWorkspaces'
 import { usePersistedState } from '@/utils/persistedState'
 import { WEIGHT } from '@/theme/tokens'
 
+// 主页导航 rail：只在无工作区上下文（主页 / 团队页）出现，lazy 化避免计入应用外壳体积
+const HomeNav = lazy(() => import('@/components/HomeNav'))
 // Modal 组件 lazy import：点击打开时才加载
 const SettingsModal = lazy(() => import('@/pages/settings/SettingsModal'))
 // 关于系统弹窗 lazy import：点击打开时才加载
@@ -551,10 +554,12 @@ export default function MainLayout() {
   // 2026-11-06 用户口径（ADR 0109 D8）：设计模块收敛为单一工作台，根页 /w/:wid/design
   // 与编辑器页 /w/:wid/design/:id 都渲染同一设计侧栏（产品列表 ↔ 结构树两态）；
   // 根页只负责默认选中最近更新的产品并跳转，不再隐藏侧栏。
-  // 无工作区上下文（主页 /w、团队页 /teams*）不渲染工作区级侧栏（需求 0157 补充）：
-  // 侧栏内容均属于工作区（表 / 文档 / 设置分项），此时宽度整幅交给页面自身，
-  // 移动端汉堡入口随 hidden 同步收起；管理台 /admin 有自己的侧栏，不受此收敛影响。
-  type SiderMode = 'documents' | 'design' | 'tables' | 'settings' | 'stats' | 'admin' | 'hidden'
+  // 无工作区上下文（主页 /w、团队页 /teams*）不渲染工作区级侧栏（需求 0157），
+  // 改为渲染「主页导航 rail」（需求 0160 C1）：侧栏位置复用但换 Scope ——
+  // 内容是工作区 / 团队 / 收藏视图入口，不是空的工作区级导航；
+  // 进入 /w/:wid/* 后同一位置换回工作区侧栏，同一时刻只有一条侧栏。
+  // 管理台 /admin 有自己的侧栏；/help 由页面自带两级侧栏（下方渲染条件排除）。
+  type SiderMode = 'documents' | 'design' | 'tables' | 'settings' | 'stats' | 'admin' | 'home' | 'hidden'
   const moduleSiderMode: 'documents' | 'design' | null =
     inDocumentsContext && wsFeatures.documents
       ? 'documents'
@@ -565,7 +570,7 @@ export default function MainLayout() {
     inAdminConsole
       ? 'admin'
       : !wid
-        ? 'hidden'
+        ? 'home'
         : activeWsTab === 'settings'
           ? 'settings'
           : activeWsTab === 'stats'
@@ -580,6 +585,13 @@ export default function MainLayout() {
     () => scrollActiveTabIntoViewNextFrame(wsTabsRef.current),
     [location, wid, isMobile, tablesReady, tables.length, docsReady, docCount?.total],
   )
+
+  // 「最近访问」记录（需求 0160 C4）：进入工作区任意页面时写一条本地记录，
+  // 供主页 rail「继续上次」使用（只存 localStorage，不落库、不进备份）。
+  useEffect(() => {
+    if (!wid) return
+    recordRecentWorkspace(location)
+  }, [wid, location])
 
   // 模块门控：当前 URL 落在该工作区未开放的功能区（如仅勾「文档」访问 /tables）时，
   // 重定向到该工作区的落地段，避免出现空页签/空白内容（ADR 0080；质量检查恒开放）。
@@ -1341,7 +1353,9 @@ export default function MainLayout() {
           >
             {siderMode === 'admin'
               ? renderAdminNav(false, collapsed)
-              : siderMode === 'documents'
+              : siderMode === 'home'
+                ? <Suspense fallback={null}><HomeNav collapsed={collapsed} /></Suspense>
+                : siderMode === 'documents'
                 ? renderDocumentNav(false, collapsed)
                 : siderMode === 'design'
                   ? renderDesignNav(false, collapsed)
@@ -1447,11 +1461,20 @@ export default function MainLayout() {
         onClose={() => setMobileNavOpen(false)}
         size={280}
         styles={{ body: { padding: 0 } }}
+        data-testid="navigation-drawer"
       >
+        {/* 主页导航（需求 0160 C6）：无工作区上下文时抽屉顶部先给入口，其后接既有团队分组 */}
+        {siderMode === 'home' && (
+          <Suspense fallback={null}>
+            <HomeNav mobile showTeams={false} onNavigate={() => setMobileNavOpen(false)} />
+          </Suspense>
+        )}
         {renderMobileTeamsNav()}
         {siderMode === 'admin'
           ? renderAdminNav(true)
-          : siderMode === 'documents'
+          : siderMode === 'home'
+            ? null
+            : siderMode === 'documents'
             ? renderDocumentNav(true)
             : siderMode === 'design'
               ? renderDesignNav(true)
