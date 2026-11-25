@@ -1,7 +1,9 @@
 /** 工作区链接 API（ADR 0154）：申请 / 审批 / 撤回 + 只读 fields / rows / export */
 
 import api from './client'
-import type { LinkField, LinkRowsResponse, WorkspaceLink, WorkspaceLinkCreate } from './types'
+import type {
+  LinkField, LinkRowsResponse, TeamAccess, TeamAccessCreate, WorkspaceLink, WorkspaceLinkCreate,
+} from './types'
 
 export const linksApi = {
   list: (wid: number | string) =>
@@ -33,6 +35,14 @@ export const linksApi = {
     api
       .get<LinkRowsResponse>(`/v1/workspaces/${wid}/links/${linkId}/rows`, { params })
       .then(r => r.data),
+  // ── 团队数据授权（B′ / P3.1） ──
+  listTeamAccess: (wid: number | string) =>
+    api.get<TeamAccess[]>(`/v1/workspaces/${wid}/team-access`).then(r => r.data),
+  createTeamAccess: (wid: number | string, data: TeamAccessCreate) =>
+    api.post<TeamAccess>(`/v1/workspaces/${wid}/team-access`, data).then(r => r.data),
+  removeTeamAccess: (wid: number | string, accessId: number | string) =>
+    api.delete(`/v1/workspaces/${wid}/team-access/${accessId}`).then(r => r.data),
+
   /** CSV 导出（只读、受同一行列裁剪与上限） */
   exportCsv: (wid: number | string, linkId: number | string) =>
     api

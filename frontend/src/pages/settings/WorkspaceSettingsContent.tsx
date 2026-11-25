@@ -39,6 +39,7 @@ import {
 } from '@/utils/workspaceModules'
 import AddMemberModal from './AddMemberModal'
 import MemberZones from './MemberZones'
+import TeamAccessCard from './TeamAccessCard'
 import TransferOwnerModal from './TransferOwnerModal'
 import { ROLE_LABEL, VISIBILITY_LABEL, getAssignableRoles } from './workspaceRoles'
 import {
@@ -323,6 +324,9 @@ export default function WorkspaceSettingsContent({
           setAddMemberOpen(true)
         }}
       />
+
+      {/* ── 团队只读授权（ADR 0154 P3.1）：仅 MANAGE_ACCESS 可见 ── */}
+      <TeamAccessCard wid={wid} canManage={can('MANAGE_ACCESS')} />
 
       {/* ── 添加成员 Modal ── */}
       <AddMemberModal

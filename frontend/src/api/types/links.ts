@@ -54,3 +54,25 @@ export interface LinkRowsResponse {
   link_id: ID
   target_type: 'table' | 'view'
 }
+
+/** 团队数据授权（ADR 0154 B′ / P3.1）：源工作区把「某团队 = 只读」授出去 */
+export interface TeamAccess {
+  id: ID
+  workspace_id: ID
+  team_id: ID
+  team_name: string
+  role: string
+  expires_at: string | null
+  /** 是否仍在有效期（后端惰性判定） */
+  active: boolean
+  note: string
+  granted_by_id: ID | null
+  created_at: string
+  updated_at: string
+}
+
+export interface TeamAccessCreate {
+  team_id: ID
+  ttl_days?: number
+  note?: string
+}
