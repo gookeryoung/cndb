@@ -4,7 +4,8 @@
 
 ## [未发布]
 
-（暂无）
+### 变更
+- **【数据表】深翻页只能一路 offset、跨页全选只能删不能改（需求 0148 / 0151 补充）**：① **网格顺序翻页接 keyset**——列表接口早已支持 `after` / `next_cursor`，但网格仍一律用 offset，深翻页要顺序跳过前 N 行。现网格记住「页号 → 游标」：顺序翻下一页时用 `next_cursor` 请求（翻页成本与页码无关），跳页 / 改页大小 / 换筛选 / 换表则清空游标栈回退 offset（游标无法反向定位）；游标已进 `table-records` 缓存 key，避免与同 offset 的 offset 页互相污染。② **批量设置值（跨页全选）**——`bulk-update` 补齐 `select_all=true` + `filters` 服务端展开（与批量删除同口径、同 1 万行上限、同「看不到的行不会被改」），前端新增「批量设置值」对话框：字段候选只列可写物理字段（link / lookup / formula 排除）、值控件按类型分派（数字 / 布尔 / 文本）、头部明确展示「将影响 N 行（跨页全选，按当前筛选展开）」；未选字段或未填值直接提示且不发请求。测试：`tests/test_bulk_select_all.py` 增 5 例（跨页改只命中行 / 无筛选改全部 / 缺 ids 或缺 values 400 / 超上限 400 / row_ids 直传仍可用）、`tests/test_keyset_and_export_cap.py` 增 2 例（游标页的 total 与相邻页不重叠、末页无游标）、`frontend/src/pages/grid/BulkUpdateDialog.test.tsx` 6 例（字段候选过滤、按选中行提交、跨页提交带 select_all+filters、数字/布尔控件、未选字段不发请求、类型白名单与后端口径一致）；后端 7208 passed，前端 3366 passed。改动：`src/cndb/plugins/tables/{schemas/models.py,schemas/__init__.py,routers/bulk_crud.py}`、`frontend/src/api/{records.ts,hooks.ts,types/records.ts}`、`frontend/src/pages/grid/{GridPage.tsx,gridToolbar.tsx,useGridData.ts,BulkUpdateDialog.tsx（新增）,BulkUpdateDialog.test.tsx（新增）}`、`tests/{test_bulk_select_all.py,test_keyset_and_export_cap.py}`、`docs/requirements/{0148-keyset-and-export-cap.md,0151-cross-page-select.md}`、`CHANGELOG.md`。
 
 ## [0.5.0] — 2026-11-25
 

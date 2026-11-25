@@ -18,7 +18,7 @@
 
 | # | 需求句（原文片段） | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 「按筛选选」 | `POST /records/bulk-delete` 支持 `select_all=true` + `filters` / `filter_logic`：目标行由**服务端**按同一份列表 WHERE 展开（行级权限 + 软删 + 业务过滤同源） | `routers/bulk_crud.py` | 接口测试：带筛选只删命中行 |
+| C1 | 「按筛选选」 | `POST /records/bulk-delete` **与 `bulk-update`** 均支持 `select_all=true` + `filters` / `filter_logic`：目标行由**服务端**按同一份列表 WHERE 展开（行级权限 + 软删 + 业务过滤同源） | `routers/bulk_crud.py` | 接口测试：带筛选只删 / 只改命中行 |
 | C2 | 「影响行数可见」 | 前端聚合条显示「已选 N 行（跨页全选，共 M 行）」，并在未全选时提供「选择全部 M 条（跨页）」入口 | `gridAggregationBar.tsx`、`GridPage.tsx` | 前端单测：入口渲染与切换文案 |
 | C3 | 「二次确认」 | 删除仍走既有确认弹窗（`modal.confirm`），跨页时标题显示总行数 | 同上 | 既有交互不变 |
 | C4 | 「有界」 | 服务端展开命中超过 `SELECT_ALL_MAX_ROWS`（1 万）→ 400 要求收窄筛选，避免一次删整表 | `routers/bulk_crud.py` | 接口测试：超限 400 |
@@ -38,7 +38,7 @@
 
 - [x] ① 展开在服务端还是前端：**服务端**（前端只传筛选条件，避免把行 id 全量拉到浏览器）。
 - [x] ② 上限：1 万行，超出要求收窄。
-- [x] ③ 批量更新是否也支持跨页：本期只做**删除**（最高频且风险最需要确认），更新后续按需。
+- [x] ③ 批量更新是否也支持跨页：**已支持**（`BulkUpdateRequest` + `select_all`），前端新增「批量设置值」对话框（值控件按字段类型分派，跨页时展示影响行数）。
 
 ## 卡点
 

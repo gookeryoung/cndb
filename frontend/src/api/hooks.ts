@@ -40,6 +40,8 @@ interface RecordsQueryParams {
   filters?: Array<Record<string, unknown>>
   sorts?: Array<Record<string, unknown>>
   filter_logic?: 'AND' | 'OR'
+  /** keyset 游标（需求 0148）：有值时后端忽略 offset，直接定位到游标之后 */
+  after?: string | null
 }
 
 /** 把 filter/sort 数组序列化为稳定字符串，避免 queryKey 因引用变化而 cache miss. */
@@ -69,6 +71,8 @@ export function tableRecordsQueryKey(
     _stableStr(filters),
     _stableStr(sorts),
     params.filter_logic ?? 'AND',
+    // 游标分页与 offset 分页可能命中同一 offset 值，必须进 key 才能各自缓存
+    params.after ?? '',
   ] as const
 }
 
@@ -94,6 +98,7 @@ export function useTableRecords(
         filters,
         sorts,
         filter_logic: params.filter_logic,
+        after: params.after ?? undefined,
       }),
     enabled: enabled && !!wid && !!tid,
     // 同表（翻页/筛选/排序/切视图）保留上一份数据，请求期间 isFetching 驱动 loading 遮罩；

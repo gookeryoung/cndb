@@ -12,6 +12,8 @@ export const recordApi = {
     if (params?.filter_logic) qp.filter_logic = params.filter_logic
     // 回收站三态（ADR 0139 C2）：none（默认）/ only / include
     if (params?.trashed) qp.trashed = params.trashed
+    // keyset 游标（需求 0148）：有游标时后端忽略 offset，直接定位
+    if (params?.after) qp.after = params.after
     return api.get<RowListResponse>(`/v1/workspaces/${wid}/tables/${tid}/records`, { params: qp }).then(r => r.data)
   },
   /** 新建行：直编直存（201 RowResponse）；查看者/关闭直编时提交 create 修改申请（202 ChangeRequestDispatchResponse） */
@@ -77,8 +79,22 @@ export const recordApi = {
           : {}),
       })
       .then(r => r.data),
-  bulkUpdate: (wid: number | string, tid: number | string, ids: Array<number | string>, values: Record<string, unknown>) =>
-    api.post<{ updated: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-update`, { row_ids: ids, values }).then(r => r.data),
+  bulkUpdate: (
+    wid: number | string,
+    tid: number | string,
+    ids: Array<number | string>,
+    values: Record<string, unknown>,
+    options?: { selectAll?: boolean; filters?: Array<Record<string, unknown>>; filterLogic?: 'AND' | 'OR' },
+  ) =>
+    api
+      .post<{ updated: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-update`, {
+        row_ids: ids,
+        values,
+        ...(options?.selectAll
+          ? { select_all: true, filters: options.filters ?? [], filter_logic: options.filterLogic }
+          : {}),
+      })
+      .then(r => r.data),
   /** 行级历史（需求 0144）：版本倒序 */
   history: (wid: number | string, tid: number | string, rid: number | string, limit = 50) =>
     api

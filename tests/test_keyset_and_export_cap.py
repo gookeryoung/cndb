@@ -265,3 +265,22 @@ class TestExportCap:
             headers=auth,
         )
         assert r.status_code == 200
+
+
+class TestKeysetCursorInList:
+    """网格翻页用到的最小保证：游标查询的 total 与 next_cursor 语义稳定（需求 0148）。"""
+
+    def test_cursor_page_reports_total_and_next_cursor(self, client, db, ws, table, auth):
+        url = f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records"
+        first = client.get(url, params={"limit": 2}, headers=auth).json()
+        assert first["next_cursor"]
+        total = first["total"]
+
+        second = client.get(url, params={"limit": 2, "after": first["next_cursor"]}, headers=auth).json()
+        assert second["total"] == total
+        assert {row["id"] for row in first["rows"]} & {row["id"] for row in second["rows"]} == set()
+
+    def test_last_cursor_page_has_no_next(self, client, db, ws, table, auth):
+        url = f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records"
+        body = client.get(url, params={"limit": 100}, headers=auth).json()
+        assert body["next_cursor"] is None

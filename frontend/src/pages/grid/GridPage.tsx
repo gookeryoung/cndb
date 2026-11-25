@@ -60,6 +60,7 @@ const GovernanceDialog = lazy(() => import('@/pages/grid/governance/GovernanceDi
 // 回收站抽屉（ADR 0139 C8）：按需打开的重型弹层，lazy 到按需 chunk（H31）
 const RowRecycleBinDrawer = lazy(() => import('@/pages/grid/RowRecycleBinDrawer'))
 const BulkReplaceDialog = lazy(() => import('@/pages/grid/BulkReplaceDialog'))
+const BulkUpdateDialog = lazy(() => import('@/pages/grid/BulkUpdateDialog'))
 import GridErrorBar from './GridErrorBar'
 import type { RetryableError } from './GridErrorBar'
 import { useUnsavedGuard } from './useUnsavedGuard'
@@ -340,6 +341,12 @@ export default function GridPage() {
   const [bulkReplaceOpen, setBulkReplaceOpen] = useState(false)
   // 跨页全选（需求 0149 C8）：只记"意图"，目标行由服务端按当前筛选展开
   const [selectAllMatching, setSelectAllMatching] = useState(false)
+  // 批量设置值（需求 0151 扩展）：按选中行或跨页全选统一赋值
+  const [bulkUpdateOpen, setBulkUpdateOpen] = useState(false)
+  // keyset 游标（需求 0148）：按页号缓存游标，顺序翻页用游标（免深 offset），
+  // 跳页 / 换筛选 / 换页大小则回退 offset（游标无法反向定位）。
+  const [cursorByOffset, setCursorByOffset] = useState<Record<number, string>>({})
+  const afterCursor = mode === 'grid' ? cursorByOffset[offset] ?? null : null
   // 最近一次失败的行操作（路线图 P0-3：可重试错误条，而不是只弹一次 message）
   const [lastError, setLastError] = useState<RetryableError | null>(null)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
@@ -588,9 +595,25 @@ export default function GridPage() {
     viewSortings,
     viewFilterLogic,
     searchQuery,
+    after: afterCursor,
     // 无快照时等落地视图参数就位再请求首帧行，避免「空筛选请求 + 视图加载后重发」（ADR 0116 C8）
     enabled: hasSnapshot || viewReady,
   })
+
+  // 筛选 / 排序 / 搜索 / 换表变化时清空游标栈：游标与「这一组查询条件」绑定，
+  // 沿用旧游标会跳到条件不匹配的位置（比 offset 更危险，故显式重置）。
+  // 依赖用序列化字符串（数组引用每渲染都变，会把游标清空得一干二净）。
+  const cursorResetKey = [
+    tableKey,
+    mode,
+    JSON.stringify(effectiveFilters ?? []),
+    JSON.stringify(sortsParam ?? []),
+    searchQuery,
+    viewFilterLogic,
+  ].join('|')
+  useEffect(() => {
+    setCursorByOffset({})
+  }, [cursorResetKey])
 
   // 当前用户在本表的权限（来自后端 current_user_actions）
   const userActions = table?.current_user_actions ?? []
@@ -1275,6 +1298,11 @@ export default function GridPage() {
           onOpenGovernance={() => setGovernanceOpen(true)}
           onOpenRecycleBin={canEditRecords ? () => setRecycleOpen(true) : undefined}
           onOpenBulkReplace={canEditRecords ? () => setBulkReplaceOpen(true) : undefined}
+          onOpenBulkUpdate={
+            canEditRecords && (selectedRowKeys.length > 0 || selectAllMatching)
+              ? () => setBulkUpdateOpen(true)
+              : undefined
+          }
           activeViewName={activeView?.name}
           activeViewId={activeView?.id}
           onCopyTable={(opts) => copyTable.mutate(opts)}
@@ -1362,7 +1390,19 @@ export default function GridPage() {
             gridAreaSize={gridAreaSize}
             offset={offset}
             limit={limit}
-            onPageChange={(p, l) => { setOffset((p - 1) * l); setLimit(l) }}
+            onPageChange={(p, l) => {
+              const targetOffset = (p - 1) * l
+              const isNextPage = l === limit && targetOffset === offset + limit
+              if (isNextPage && rowList.next_cursor) {
+                // 顺序翻下一页：记下游标，后续翻页走 keyset（翻页成本与页码无关）
+                setCursorByOffset(prev => ({ ...prev, [targetOffset]: rowList.next_cursor as string }))
+              } else if (l !== limit || targetOffset < offset || targetOffset > offset + limit) {
+                // 改页大小 / 跳页 / 回退：游标无法反向定位，清空后回退 offset
+                setCursorByOffset({})
+              }
+              setOffset(targetOffset)
+              setLimit(l)
+            }}
             prefetchNext={(nextOffset, l) => {
               // 预取下一页 —— 只有存在下一页且当前是 grid 模式（非全量拉取）时才预取
               if (mode === 'grid' && nextOffset < rowList.total) {
@@ -1569,6 +1609,24 @@ export default function GridPage() {
             fields={table?.fields || []}
             onClose={() => setGovernanceOpen(false)}
             onDataChanged={() => {
+              queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
+              queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
+            }}
+          />
+        )}
+        {bulkUpdateOpen && (
+          <BulkUpdateDialog
+            open={bulkUpdateOpen}
+            wid={wid!}
+            tid={tid!}
+            fields={table?.fields || []}
+            rowIds={selectedRowKeys as Array<number | string>}
+            selectAll={selectAllMatching}
+            total={rowList.total}
+            filters={viewFilters as unknown as Array<Record<string, unknown>>}
+            filterLogic={viewFilterLogic}
+            onClose={() => setBulkUpdateOpen(false)}
+            onApplied={() => {
               queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] })
               queryClient.invalidateQueries({ queryKey: ['table', tableKey] })
             }}

@@ -13,7 +13,7 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.change_requests import services as cr_services
-from cndb.plugins.tables.schemas import BulkDeleteRequest
+from cndb.plugins.tables.schemas import BulkDeleteRequest, BulkUpdateRequest
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.tables.services.core.access import TableAction, check_action, get_table_or_404
 from cndb.plugins.workspaces.permissions import raise_permission_denied
@@ -107,7 +107,7 @@ SELECT_ALL_MAX_ROWS = 10_000
 
 
 def _resolve_bulk_row_ids(
-    payload: BulkDeleteRequest,
+    payload: BulkDeleteRequest | BulkUpdateRequest,
     dt: Any,
     db: Session,
     current_user: User,
@@ -192,17 +192,19 @@ def bulk_delete_records(
 def bulk_update_records(
     workspace_id: int,
     table_id: int,
-    payload: dict[str, Any],
+    payload: BulkUpdateRequest,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, int]:
+    """批量改行：`select_all=True` 时按筛选条件在服务端展开目标行（跨页全选）.
+
+    上限与批量删除同口径（`SELECT_ALL_MAX_ROWS`），且展开走调用者读范围 —— 看不到的行不会被改。
+    """
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.EDIT_RECORDS)
-    row_ids = payload.get("row_ids", [])
-    values = payload.get("values", {})
-    if not row_ids:
-        raise HTTPException(status_code=400, detail="row_ids 不能为空")
+    values = payload.values or {}
     if not values:
         raise HTTPException(status_code=400, detail="values 不能为空")
+    row_ids = _resolve_bulk_row_ids(payload, dt, db, current_user)
 
     # 更新前预填充 select/multiselect options（让新值的校验能通过）
     try:

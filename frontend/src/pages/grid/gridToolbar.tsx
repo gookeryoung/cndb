@@ -52,13 +52,15 @@ interface GridToolbarProps {
   onOpenRecycleBin?: () => void
   /** 打开批量查找替换（需求 0149）；缺省表示无权限，不渲染入口 */
   onOpenBulkReplace?: () => void
+  /** 打开批量设置值（需求 0151）；缺省表示无权限或无选中行，不渲染入口 */
+  onOpenBulkUpdate?: () => void
 }
 
 export default function GridToolbar({
   wid, tid, tableKey, tableName, recordCount, mode, addRowDisabled, onAddRow,
   permissionLabel, onEditRow, editRowDisabled,
   canEditSchema, canManageData, onOpenTableSettings, onOpenImportExport, onOpenExport, onOpenGovernance,
-  activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout, onOpenRecycleBin, onOpenBulkReplace,
+  activeViewName, activeViewId, onCopyTable, onMove, onResetColumnLayout, onOpenRecycleBin, onOpenBulkReplace, onOpenBulkUpdate,
 }: GridToolbarProps) {
   const { message, modal } = AntApp.useApp()
   const navigate = useNavigate()
@@ -163,6 +165,7 @@ export default function GridToolbar({
               { type: 'divider' as const },
             ] : []),
             ...(onOpenBulkReplace ? [{ key: 'bulk-replace', icon: <SwapOutlined />, label: '批量替换', onClick: onOpenBulkReplace }] : []),
+            ...(onOpenBulkUpdate ? [{ key: 'bulk-update', icon: <EditOutlined />, label: '批量设置值', onClick: onOpenBulkUpdate }] : []),
             ...(onOpenRecycleBin ? [{ key: 'recycle-bin', icon: <DeleteOutlined />, label: '回收站', onClick: onOpenRecycleBin }] : []),
             { key: 'refresh', icon: <ReloadOutlined />, label: '刷新', onClick: () => queryClient.invalidateQueries({ queryKey: ['table-records', tableKey] }) },
             { key: 'reset-layout', icon: <ColumnWidthOutlined />, label: '重置列宽与列序', disabled: !onResetColumnLayout, onClick: onResetColumnLayout },

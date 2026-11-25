@@ -26,7 +26,14 @@ export interface RowCreate { values: RowValues }
 
 /** 更新行的请求体：values 字段承载待更新的业务值子集 */
 export interface RowUpdate { values: RowValues }
-export interface RowListResponse { items: RowResponse[]; total: number; offset: number; limit: number }
+export interface RowListResponse {
+  items: RowResponse[]
+  total: number
+  offset: number
+  limit: number
+  /** keyset 游标：本页满页时给出；末页为 null（需求 0148） */
+  next_cursor?: string | null
+}
 /** 自动编号预览：字段名 → 建行时将生成的编号值（只读，不落库） */
 export interface AutoIncrementPreview { values: Record<string, string> }
 /** 评分矩阵单元格 upsert 请求（ADR 0136） */
@@ -54,6 +61,8 @@ export interface RecordListParams {
   filter_logic?: 'AND' | 'OR'
   /** 回收站过滤：none（默认，只看活动行）/ only（只看已删行）/ include（两者都看） */
   trashed?: 'none' | 'only' | 'include'
+  /** keyset 游标（需求 0148）：上一页响应的 next_cursor；有值时后端忽略 offset */
+  after?: string
 }
 
 /** 视图可见性档位（对齐后端 ViewVisibility，ADR 0003）

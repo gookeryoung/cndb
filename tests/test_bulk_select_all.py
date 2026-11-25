@@ -157,3 +157,52 @@ class TestSelectAllDelete:
         r = client.post(_url(ws, table), json={"row_ids": ids}, headers=auth)
         assert r.status_code == 200
         assert r.json()["deleted"] == 1
+
+
+class TestSelectAllUpdate:
+    def _update(self, client, ws, table, auth, body):
+        return client.post(
+            f"/api/v1/workspaces/{ws.id}/tables/{table.id}/records/bulk-update",
+            json=body,
+            headers=auth,
+        )
+
+    def test_select_all_with_filters_updates_only_matching(self, client, db, ws, table, auth):
+        r = self._update(
+            client,
+            ws,
+            table,
+            auth,
+            {
+                "select_all": True,
+                "filters": [{"field_name": "分组", "op": "eq", "value": "A"}],
+                "values": {"分组": "A2"},
+            },
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["updated"] == 2
+        assert _groups(db, table) == ["A2", "A2", "B", "C"]
+
+    def test_select_all_without_filters_updates_all(self, client, db, ws, table, auth):
+        r = self._update(client, ws, table, auth, {"select_all": True, "values": {"分组": "X"}})
+        assert r.status_code == 200
+        assert _groups(db, table) == ["X", "X", "X", "X"]
+
+    def test_missing_ids_and_values_400(self, client, ws, table, auth):
+        assert self._update(client, ws, table, auth, {"row_ids": [], "values": {"分组": "X"}}).status_code == 400
+        assert self._update(client, ws, table, auth, {"row_ids": [1], "values": {}}).status_code == 400
+
+    def test_select_all_over_cap_rejected(self, client, ws, table, auth, monkeypatch):
+        from cndb.plugins.tables.routers import bulk_crud
+
+        monkeypatch.setattr(bulk_crud, "SELECT_ALL_MAX_ROWS", 2)
+        r = self._update(client, ws, table, auth, {"select_all": True, "values": {"分组": "X"}})
+        assert r.status_code == 400
+        assert "上限" in r.text
+
+    def test_row_ids_still_work(self, client, db, ws, table, auth):
+        rows, _ = rec.list_rows(db.get_bind(), table, limit=1, db=db)
+        rid = int(rows[0]["id"])
+        r = self._update(client, ws, table, auth, {"row_ids": [rid], "values": {"分组": "Z"}})
+        assert r.status_code == 200
+        assert _groups(db, table).count("Z") == 1

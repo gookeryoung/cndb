@@ -690,3 +690,17 @@ class BulkReplaceRequest(BaseModel):
     filters: list[dict[str, Any]] = Field(default_factory=list)
     filter_logic: str = Field(default="AND", pattern="^(AND|OR)$")
     dry_run: bool = True
+
+
+class BulkUpdateRequest(BaseModel):
+    """批量改行载荷：``row_ids`` 直传，或 ``select_all=True`` + 筛选条件（跨页全选）.
+
+    与批量删除同口径：``select_all`` 时目标行由服务端按与列表同一份 WHERE 展开，
+    上限见路由层 ``SELECT_ALL_MAX_ROWS``。
+    """
+
+    row_ids: list[int] = Field(default_factory=list)
+    values: dict[str, Any] = Field(default_factory=dict)
+    select_all: bool = False
+    filters: list[dict[str, Any]] = Field(default_factory=list)
+    filter_logic: str = Field(default="AND", pattern="^(AND|OR)$")
