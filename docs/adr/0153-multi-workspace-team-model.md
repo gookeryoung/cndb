@@ -266,7 +266,7 @@ def require_capability(cap: str, db, user, workspace) -> None: ...   # 失败走
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/deps.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`frontend/src/hooks/useCapabilities.ts`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | `tests/test_workspace_capabilities.py`、`tests/test_workspace_capabilities_api.py`、`frontend/src/hooks/useCapabilities.test.tsx` | 未提交 |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/deps.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`frontend/src/hooks/useCapabilities.ts`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | `tests/test_workspace_capabilities.py`、`tests/test_workspace_capabilities_api.py`、`frontend/src/hooks/useCapabilities.test.tsx` | `5c5bcdb6` |
 | P1 | 未开始 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/teams.py`、`src/cndb/alembic/versions/`、`frontend/src/pages/team/TeamPage.tsx` | `tests/test_teams_api.py`、`tests/test_teams_migration.py`、`frontend/src/pages/team/TeamPage.test.tsx` | — |
 | P2 | 未开始 | `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/services/files.py`、`src/cndb/plugins/workspaces/services/search.py` | `tests/test_design_library_team_scope.py`、`tests/test_workspace_backup_team.py` | — |
 | P3 | 未开始 | 另立 ADR | — | — |
@@ -277,4 +277,4 @@ def require_capability(cap: str, db, user, workspace) -> None: ...   # 失败走
 - 已完成：需求卡片 0153（C1-C9）；ADR 决策记录 D1-D11 与不变量 I1-I8；H49-H52 已登记；P0 能力位抽取（`WorkspaceCapability` / `ROLE_CAPABILITIES` / `resolve_capabilities` / `require_capability`）+ `GET /{wid}/capabilities` + 前端 `useCapabilities`；I3 等价回归用例（与旧 `get_member_role` / `has_role` 逐条对齐）
 - 下一步：`P1` 建 `workspaces_team` / `workspaces_team_member` + `workspaces_workspace.team_id` 迁移，接入团队角色与 `policy.default_workspace_role`，启用 `visibility` 三档（启用前先补 D6 行为变更用例）
 - 已知坑：① `Workspace.visibility` 目前仍无判定消费（P0 刻意未启用，避免 P0 改变行为），P1 启用必须同时补「private / public 新语义」用例并复核存量工作区；② 其他插件仍直接调 `get_member_role`（数据面视图，语义等价），P1 加团队来源后需逐个改为 `resolve_capabilities`（H51 只约束工作区级门控）；③ 前端仍有若干 `current_user_role === 'owner'` 判断未迁移（设计模块 / 模板面板等），迁移时保持与 `/capabilities` 一致
-- 最近一次全绿：`make check-fast` + `make test`（7317 passed）+ 前端 `vitest run`（3383 passed）@ 未提交（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make test`（7317 passed）+ 前端 `vitest run`（3383 passed）@ `5c5bcdb6`（2026-11-25）
