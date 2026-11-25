@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import datetime as dt
 from typing import Annotated, Any
+from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
@@ -39,7 +40,11 @@ from cndb.plugins.workspaces.schemas import (
 from cndb.plugins.workspaces.services.links import (
     grant_viewer_members,
     is_expired,
+    link_export_csv,
+    link_fields,
     link_payload,
+    link_rows,
+    resolve_link,
     revoke_created_members,
     validate_target,
 )
@@ -206,6 +211,91 @@ def list_links(
     )
     now = dt.datetime.now(dt.UTC)
     return [WorkspaceLinkResponse.model_validate(link_payload(db, link, current_user, now=now)) for link in rows]
+
+
+# ── P1：只读引用（fields / rows / export；**不挂任何写方法**，ADR 0154 C4） ──
+
+
+def _parse_json_list(raw: str | None) -> list[dict[str, Any]] | None:
+    """解析前端传来的 filters / sorts（JSON 字符串，格式错→None 而非 400，与 records 同口径）."""
+    import json
+
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(value, list):
+        return None
+    items = [item for item in value if isinstance(item, dict)]
+    return items or None
+
+
+@router.get("/{workspace_id}/links/{link_id}/fields")
+def get_link_fields(
+    workspace_id: int,
+    link_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """链接表的可读字段（按字段隐藏裁剪；不可读 → 404/403）."""
+    resolved = resolve_link(db, current_user, workspace_id=workspace_id, link_id=link_id)
+    return {
+        "link_id": resolved.link.id,
+        "table_id": resolved.table.id,
+        "table_name": resolved.table.name,
+        "target_type": resolved.link.target_type,
+        "fields": link_fields(db, current_user, resolved),
+    }
+
+
+@router.get("/{workspace_id}/links/{link_id}/rows")
+def get_link_rows(
+    workspace_id: int,
+    link_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    offset: int = 0,
+    limit: int = 50,
+    filters: str | None = None,
+    sorts: str | None = None,
+    filter_logic: str = "AND",
+) -> dict[str, Any]:
+    """链接只读行（视图默认筛选 + 调用方筛选；分页上限 5000，与网格一致）."""
+    if offset < 0 or limit < 1 or limit > 5000:
+        raise HTTPException(status_code=400, detail="offset 需 ≥0，limit 需在 1–5000 之间")
+    if filter_logic not in ("AND", "OR"):
+        raise HTTPException(status_code=400, detail="filter_logic 只能是 AND / OR")
+    resolved = resolve_link(db, current_user, workspace_id=workspace_id, link_id=link_id)
+    return link_rows(
+        db,
+        current_user,
+        resolved,
+        filters=_parse_json_list(filters),
+        sorts=_parse_json_list(sorts),
+        filter_logic=filter_logic,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get("/{workspace_id}/links/{link_id}/export")
+def export_link_csv(
+    workspace_id: int,
+    link_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> Response:
+    """把链接数据导出为 CSV（同一行 / 列裁剪 + ``EXPORT_MAX_ROWS`` 上限）."""
+    resolved = resolve_link(db, current_user, workspace_id=workspace_id, link_id=link_id)
+    csv_text = link_export_csv(db, current_user, resolved)
+    filename = f"{resolved.link.alias or resolved.table.name}.csv".replace("/", "_")
+    return Response(
+        content=csv_text.encode("utf-8-sig"),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @router.get("/{workspace_id}/links/inbox", response_model=list[WorkspaceLinkResponse])

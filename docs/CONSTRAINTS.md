@@ -74,6 +74,10 @@
 | H50 | 权限可归因与存量不变：任一有效工作区权限都能归因到一条来源记录（显式成员角色 / 团队策略默认 / 工作区可见性）并用其生成 403 文案；未挂团队、策略缺省的存量工作区判定结果与升级前逐条一致 | `make test` | ADR 0153 I3/I4 |
 | H51 | 工作区判定单一入口：列表 / 详情 / 成员 / 统计 / 备份 / 搜索 / 导入导出的工作区级门控一律经 `resolve_capabilities`，不得在路由内直查 `WorkspaceMember` 做判定 | `make test` | ADR 0153 I6 |
 | H52 | 层级与删除安全：一个工作区至多归属一个团队且团队不嵌套（判定链深度恒为 2）；删除团队只解绑工作区（`team_id` 置空）不删任何业务数据 | `make test` | ADR 0153 I5/I7 |
+| H53 | 链接不新增绕过行级规则的通路：跨工作区链接取数的有效权限恒等于用户在**源工作区**的有效角色（A 期由链接创建的 viewer 成员、B′ 期由源 owner 签署的 `team_grant`），取数必须复用行级读范围与隐藏字段裁剪（`row_read_scope_where` / `get_hidden_field_names`），禁止另写一套裁剪 | `make test` | ADR 0154 L1 |
+| H54 | 链接只读：只暴露 `GET /{wid}/links/{id}/fields`、`/rows`、`/export`，禁止为链接挂任何写路径（写方法必须 404/405） | `make test` | ADR 0154 L2 |
+| H55 | 链接到期即失效：`expires_at` 过期后所有链接读路径返回 404，与成员行是否已被 `cndb link sweep` 回收无关 | `make test` | ADR 0154 L3 |
+| H56 | 链接授权可回收不误伤：撤回 / 过期只删除 `created_member_ids` 中**仍为 viewer** 的成员行，原有成员与被提升者一律保留 | `make test` | ADR 0154 L9 |
 
 ## 发布与部署
 

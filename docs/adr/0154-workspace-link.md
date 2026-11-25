@@ -52,7 +52,8 @@ Related: `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/worksp
 - **L8 可解释**：任一链接能回答「按什么方式授权、谁批准、何时到期、我为什么读不到」。
 - **L9 授权可回收且不误伤**：A 撤回 / 过期只删「链接创建」的成员行；原本就是成员的账号不受影响。
 
-> 跨需求长期生效的不变量须在 ADR `Proposed → Accepted` 前登记入 [CONSTRAINTS.md](../CONSTRAINTS.md)，来源写 `ADR 0154 L#`（H27，ADR 0119）。当前**未登记**：待评审通过后按 L1 / L2 / L3 / L9 落 H 条目（L1 与既有 H15 同轴，需注明「链接不新增绕过行级规则的通路；B′ 的 `team_grant` 只产 `data_role`，不产管理面」）。
+> 跨需求长期生效的不变量须在 ADR `Proposed → Accepted` 前登记入 [CONSTRAINTS.md](../CONSTRAINTS.md)，来源写 `ADR 0154 L#`（H27，ADR 0119）。
+> 登记状态（2026-11-25 人工确认）：L1 → H53，L2 → H54，L3 → H55，L9 → H56。
 
 ## Decision
 
@@ -231,15 +232,15 @@ def resolve_link(db, user, link_id) -> ResolvedLink:      # 404 / 403 统一出�
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/links.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/alembic/versions/a9b8c7d6e5f4_add_workspace_links.py`、`src/cndb/cli/link.py` | `tests/test_workspace_links_api.py`、`tests/test_link_sweep.py`、`tests/test_cli_link.py`、`tests/test_teams_migration.py` | `a4b82873` |
-| P1 | 未开始 | `src/cndb/plugins/workspaces/services/links.py` | `tests/test_workspace_links.py` | — |
+| P1 | 已落地 | `src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/routers/links.py` | `tests/test_workspace_links.py` | 未提交 |
 | P2 | 未开始 | `frontend/src/pages/grid/LinkedTablePage.tsx`、`frontend/src/pages/workspace/TablesList.tsx` | `frontend/src/pages/grid/LinkedTablePage.test.tsx` | — |
 | P3.1 | 未开始 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/models.py`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | `tests/test_workspace_team_access.py` | — |
 | P3.2 | 未开始 | 另立 ADR | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地（链接生命周期 + 批量只读成员 + 到期清扫骨架）；P1 只读取数未开始
-- 已完成：需求卡片 0154（C1-C10）；ADR 不变量 L1-L9、决策 D1-D12；P0（`workspace_link` 迁移、申请 / 批准 / 拒绝 / 撤回、`POST /{wid}/members/batch`、`cndb link sweep`、`MANAGE_LINKS` 能力位仅所有者）
-- 下一步：①把 L1/L2/L3/L9 登记进 `CONSTRAINTS.md`（H27，需人工确认）；②开 P1（`fields` / `rows` / `export` 只读取数，复用行级与隐藏字段入口，补 H15/H17 回归）
+- 当前阶段：P0 / P1 已落地（生命周期 + 批量只读成员 + 到期清扫 + 只读 fields / rows / export）；P2 前端入口未开始
+- 已完成：需求卡片 0154（C1-C10）；ADR 不变量 L1-L9、决策 D1-D12；P0（`workspace_link` 迁移、申请 / 批准 / 拒绝 / 撤回、`POST /{wid}/members/batch`、`cndb link sweep`、`MANAGE_LINKS` 能力位仅所有者）；P1（`GET /{wid}/links/{id}/fields|rows|export`，复用 `list_rows` 的行级读范围与隐藏字段裁剪；H53-H56 已登记）
+- 下一步：开 P2（前端入口：侧栏「外部链接」段 + 只读网格 `/w/:wid/links/:linkId` + 源侧「待我批准」列表）
 - 已知坑：① A 期的成员行是**真实授权**——清扫停摆时「链接入口已 404 但成员仍能直接进源工作区」，必须在验收时用 `cndb link sweep` 日志确认回收；② `created_member_ids` 必须由批准事务内记录，撤回按它删（不要按 `granted_member_ids`）；③ 缓存键必须含 link_id，否则与本工作区读串味（ADR 0046 D3 同款）；④ B′ 接入时 `resolve_capabilities` 的顺序必须写在注释与用例里（显式 > team_grant > 策略默认 > public），否则后续改动容易悄悄放宽；⑤ 迁移 `down_revision` 取最新 head（当前 `f2b3c4d5e6a7`），并行会话新增迁移后要同步
-- 最近一次全绿：`make check-fast` + `make cov`（7495 passed，95.06%）+ 本 ADR 相关用例（links 29 / sweep 6 / cli 7 / 迁移 4）@ `a4b82873`（2026-11-25；覆盖率补充用例 `tests/test_workspace_search_helpers.py`、`tests/test_workspaces_teams_service.py` 随后入库）
+- 最近一次全绿：`make check-fast` + `make cov`（7509 passed，95.06%）+ 本 ADR 相关用例（links-api 29 / links 取数 14 / sweep 6 / cli 7 / 迁移 4）@ 未提交（2026-11-25）
