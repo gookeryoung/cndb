@@ -274,6 +274,6 @@ test.describe("性能旅程基线（ADR 0116 C1）", () => {
     expect(metrics.longTaskMax, `longTaskMax=${metrics.longTaskMax}ms`).toBeLessThan(400)
 
     // 退出编辑（取消），避免污染后续用例
-    await page.getByRole("button", { name: /^取消$/ }).first().click().catch(() => {})
+    await page.getByTestId("row-cancel-btn").first().click().catch(() => {})
   })
 })

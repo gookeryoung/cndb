@@ -123,7 +123,7 @@ test.describe("直编并发冲突", () => {
         expect((latest.body as { 姓名: string }).姓名).toBe("E2E-前端冲突");
         expect((latest.body as { 薪资: number }).薪资).toBe(2);
       } finally {
-        await session.context.close();
+        await session.close();
       }
     } finally {
       await apiCall(request, token, "delete", `/workspaces/${WID}/tables/${tid}/records/${row.id}`);

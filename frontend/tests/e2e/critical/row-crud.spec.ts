@@ -19,6 +19,10 @@ const ANON = ["setup", "chromium-anon"];
 const WID = 1;
 const TABLE_NAME = "员工表";
 const SEED_NAMES = new Set(["张三", "李四", "王五", "赵六", "钱七"]);
+// 员工表被多个临界用例共享且 Playwright 按文件并发；本文件只清理/计数「自己创建的行」，
+// 否则会删掉并发用例（如 record-conflict）刚建的行，造成对方 409/404 抖动。
+const OWN_NAMES = new Set(["E2E-测试行", "E2E-临时", "E2E-按钮新增"]);
+const KNOWN_NAMES = new Set([...SEED_NAMES, ...OWN_NAMES]);
 
 /** 导航到员工表 Grid 并等待数据渲染. */
 async function openEmployeeGrid(page: any) {
@@ -33,7 +37,24 @@ async function openEmployeeGrid(page: any) {
   await expect(page.getByRole("button", { name: /新增行/ })).toBeVisible();
 }
 
-/** 确保 Grid 骨架加载完成 + API 行数校验（跳过不稳定的分页文本）. */
+/** 拉取当前活动行（回收站外的行），供计数与清理共用。 */
+async function listActiveRows(request: any, tid: number): Promise<any[]> {
+  const token = await getAdminToken(request);
+  const resp: APIResponse = await request.get(
+    `/api/v1/workspaces/${WID}/tables/${tid}/records?limit=500`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const body = await resp.json();
+  return body.items || body.results || [];
+}
+
+/** 只统计 seed 行 + 本文件自己创建的行，忽略并发用例写入的其他行。 */
+async function countKnownRows(request: any, tid: number): Promise<number> {
+  const items = await listActiveRows(request, tid);
+  return items.filter((r: any) => KNOWN_NAMES.has(r["姓名"] ?? "")).length;
+}
+
+/** 确保 Grid 骨架加载完成 + 自有行数校验（跳过不稳定的分页文本）. */
 async function gotoGridAndCheckCount(
   page: any,
   request: any,
@@ -41,26 +62,14 @@ async function gotoGridAndCheckCount(
   expectedCount: number,
 ) {
   await openEmployeeGrid(page);
-  const token = await getAdminToken(request);
-  const resp: APIResponse = await request.get(
-    `/api/v1/workspaces/${WID}/tables/${tid}/records?limit=1`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  const body = await resp.json();
-  const total = body.total ?? body.count ?? 0;
-  expect(total).toBe(expectedCount);
+  expect(await countKnownRows(request, tid)).toBe(expectedCount);
 }
 
-/** 清理非 seed 行 */
+/** 清理本文件自己创建的行（不碰并发用例的行） */
 async function cleanupExtraRows(request: any, tid: number) {
   const token = await getAdminToken(request);
-  const resp: APIResponse = await request.get(
-    `/api/v1/workspaces/${WID}/tables/${tid}/records?limit=500`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  const body = await resp.json();
-  const items = body.items || body.results || [];
-  const extras = items.filter((r: any) => !SEED_NAMES.has(r["姓名"] ?? ""));
+  const items = await listActiveRows(request, tid);
+  const extras = items.filter((r: any) => OWN_NAMES.has(r["姓名"] ?? ""));
   for (const r of extras) {
     await request.delete(
       `/api/v1/workspaces/${WID}/tables/${tid}/records/${r.id}`,
@@ -93,16 +102,9 @@ async function deleteRow(request: any, tid: number, rowId: number) {
   );
 }
 
-/** 用 API 验证当前记录总数 */
+/** 用 API 验证自有行数（忽略并发用例写入的其他行） */
 async function expectRecordCount(request: any, tid: number, expected: number) {
-  const token = await getAdminToken(request);
-  const resp: APIResponse = await request.get(
-    `/api/v1/workspaces/${WID}/tables/${tid}/records?limit=1`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
-  const body = await resp.json();
-  const total = body.total ?? body.count ?? 0;
-  expect(total).toBe(expected);
+  expect(await countKnownRows(request, tid)).toBe(expected);
 }
 
 // ─────────────── 测试 ───────────────
