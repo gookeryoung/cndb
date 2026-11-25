@@ -146,8 +146,8 @@ def resolve_capabilities(user: User | None, workspace: Workspace, db: Session) -
     判定顺序（显式 > 策略默认 > 无，每步写入 ``sources`` 供 403 文案归因，I4）：
 
     1. 显式工作区成员角色 → 数据面角色（团队策略**永不覆盖**显式角色）。
-    2. 团队策略 ``default_workspace_role``（默认 ``none``，存量等价 I3）。
-    3. 工作区可见性 ``public``：团队成员只读（纯放宽，D6）。
+    2. 工作区可见性 ``private``：仅工作区所有者有数据面（D6，P2 起生效）。
+    3. 团队策略 ``default_workspace_role`` / 可见性 ``public``：团队成员只读（纯放宽）。
     4. 管理面：工作区所有者，或团队 owner / admin（D4，**不含**数据面）。
     """
     role = _member_role(user, workspace, db)
@@ -158,6 +158,10 @@ def resolve_capabilities(user: User | None, workspace: Workspace, db: Session) -
     data_role = role
     if role is not None:
         sources["data"] = f"workspace_member:{role.value}"
+        # D6（P2 起）：私有工作区只对所有者开放数据面；存量 private 已在迁移里归一为 member
+        if workspace.visibility is WorkspaceVisibility.PRIVATE and role is not WorkspaceRole.OWNER:
+            data_role = None
+            sources["data"] = f"workspace_private:{role.value}"
     elif team_role is not None:
         # D6：公开工作区对团队成员开放只读（优先于策略默认）
         if workspace.visibility is WorkspaceVisibility.PUBLIC:

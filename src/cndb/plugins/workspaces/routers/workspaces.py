@@ -143,7 +143,7 @@ def _list_workspaces_uncached(
     *,
     team_id: int | None = None,
 ) -> list[WorkspaceWithPinnedResponse]:
-    from sqlalchemy import case, func, select
+    from sqlalchemy import case, func, or_, select
 
     from cndb.plugins.tables.models import DataTable
     from cndb.plugins.workspaces.services.stats_cache import compute_content_counts
@@ -156,6 +156,10 @@ def _list_workspaces_uncached(
     )
     if team_id:
         stmt = stmt.where(Workspace.team_id == team_id)
+    # D6（P2）：私有工作区只对所有者出现在列表里（非 owner 成员的 data_role 为 None）
+    stmt = stmt.where(
+        or_(Workspace.visibility != WorkspaceVisibility.PRIVATE, WorkspaceMember.role == WorkspaceRole.OWNER)
+    )
     rows = db.execute(stmt).all()
 
     # 批量收集 workspace_id 用于统计

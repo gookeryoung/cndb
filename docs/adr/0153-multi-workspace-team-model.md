@@ -19,7 +19,7 @@ Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/
 | C6 | 按建议 | 不引入父-子工作区；跨工作区数据读取（工作区链接）不实现，留 P3 另立 ADR |
 | C7 | 多个工作区的管理 | 团队域（CRUD + 成员 + 策略 + 工作区列表）+ 前端团队页 + 工作区切换器分组 |
 | C8 | 工作区内实现权限分配 | 三档角色 + 表 `Role` + 视图三档 + 行级规则 + 文档权限**全部不变**；仅把判定收敛为 `resolve_capabilities` 并引入能力位映射 |
-| C9 | 隐含：管理员不得变成全能可见 | 两平面分离（D4）+ 工作区可见性启用 `public` 档（D6，`private` 收紧推迟到 P2） |
+| C9 | 隐含：管理员不得变成全能可见 | 两平面分离（D4）+ 工作区可见性三档全部生效（D6：`public` 团队成员只读、`private` 仅所有者） |
 
 ## Context
 
@@ -227,7 +227,7 @@ def require_capability(cap: str, db, user, workspace) -> None: ...   # 失败走
 | D3 | 工作区归属基数 | `Workspace.team_id` 单值可空，空 = 个人工作区 | C4；多对多会让权限变成并集，不确定性高 | `workspace_team` 关联表（多归属）：口径与 UI 都需「哪个团队授权了我」的二次解释 | 同上 |
 | D4 | 管理面 / 数据面 | 分离：`team_owner` / `team_admin` 管设置与成员，默认**不含**数据读 | C3；对齐 GitHub org owner / GitLab group maintainer / Notion workspace admin 的「管理权 ≠ 数据权」 | ① 团队管理员自动继承工作区 owner：等于管理员可读全部门数据；② 团队管理员完全无管理权：团队层失去意义 | `workspaces/permissions.py` |
 | D5 | 判定入口 | 唯一入口 `resolve_capabilities`，顺序「显式角色 > 团队策略默认 > 无」，每步可归因 | I4 / I6；403 文案需要来源 | 各路由保留现状分散判定：无法承载策略与归因 | `workspaces/permissions.py`、`routers/deps.py` |
-| D6 | `visibility` 死字段 | P1 先启用 `public` = **团队成员只读**（纯放宽；无团队时等价 `member`）；`member` 保持现状；`private` 的收紧（仅 owner）**推迟到 P2** | 字段已在库与备份中，删除需迁移兼容；`public` 是纯放宽，不会让任何现有用户失去权限 | ① 删除该列：需迁移 + 备份兼容，且丢掉「部门内公开」；② P1 立即收紧 `private`：会让存量 `private` 工作区的非 owner 成员**静默失去读权限**，违反 H13「存量零迁移」，须单独迁移口径 + 人工确认 | `models.py`、`permissions.py`、备份 |
+| D6 | `visibility` 死字段 | 三档全部生效：`public` = 团队成员只读（纯放宽，无团队时等价 `member`）；`member` = 工作区成员（默认）；`private` = **仅工作区所有者**可见（成员读 404、列表 / 跨工作区检索均不返回）。存量 `private` 先用迁移 `f2b3c4d5e6a7` 归一为 `member`（人工确认口径，2026-11-25） | 字段已在库与备份中；存量归一后**行为与升级前逐条一致**（旧代码从不读取该字段），因此不违反 H13「存量行为不变」；只有之后显式选 `private` 的工作区才是仅所有者可见 | ① 删除该列：需迁移 + 备份兼容，且丢掉「部门内公开」；② 不归一直接收紧：会让存量 `private` 工作区的非 owner 成员静默失去读权（本次通过「先归一、再收紧」避免） | `models.py`、`permissions.py`、`routers/workspaces.py`、`services/search.py`、`alembic/versions/f2b3c4d5e6a7_normalize_workspace_visibility.py` |
 | D7 | 配额与备份边界 | 配额按工作区（快照不变）；团队**不进**工作区备份，仅在 manifest 记提示性 `team.name/slug`；P2 才做新建默认配额 | ADR 0075 的单文件自包含承诺；H14 口径不摇摆 | 团队随备份往返：破坏跨环境可迁移性，且团队是环境级配置 | `services/backup_io.py` |
 | D8 | 跨工作区复用 | 设计模块库新增 `visibility=team`：可见 = 消费方用户 ∈ 拥有工作区所属团队；`public` / `workspace` 不变；归档仍只阻断新引用 | C5；复用 ADR 0118 已有可见性范式，不新造机制 | 允许跨团队引用私有模块：违反「权限只有拥有团队有」 | `design/models.py`、`design/services/files.py` |
 | D9 | 删除语义 | 删团队 → 工作区 `team_id` 置空降级；删工作区仅工作区 `owner` 可执行 | I5；防团队管理员误删含数据工作区 | 删团队连带删工作区：不可接受的数据丢失风险 | `routers/workspaces.py`、团队路由 |
@@ -276,5 +276,5 @@ def require_capability(cap: str, db, user, workspace) -> None: ...   # 失败走
 - 当前阶段：P0 / P1 / P2 已落地；P3（工作区链接）未立项
 - 已完成：需求卡片 0153（C1-C9）；ADR 决策记录 D1-D11 与不变量 I1-I8；H49-H52 已登记；P0 能力位抽取 + `GET /{wid}/capabilities` + 前端 `useCapabilities`；P1 团队域（迁移 / 团队 API / 团队页 / 两平面分离 / `public` 可见性 / 团队 403 文案 / 备份提示性 `team`）；P2（`allow_member_invite` 自助加入 `POST /{wid}/join`、设计库 `visibility=team`、`GET /teams/{id}/search` 团队内检索、`team.*` 事件与检索缓存失效）
 - 下一步：① `private` 收紧方案（需人工确认迁移口径，见已知坑 ①）；② P3「工作区链接」若要做需另立 ADR；③ 团队内检索前端入口已接（TeamPage「团队内搜索」），如需顶栏全局入口再评估性能
-- 已知坑：① `visibility=private` 在 P1 **未收紧**（仍按成员可读）——收紧前必须先定存量迁移口径（H13 存量零迁移 vs 收紧语义），否则会让存量 private 工作区的成员静默失去读权；② 其他插件仍直接调 `get_member_role`（数据面视图，与 `resolve_capabilities().data_role` 等价），P2 若引入「可见性收紧 / 策略默认」，这些入口会与能力位不一致，须同批切换；③ 前端仍有若干 `current_user_role === 'owner'` 判断未迁移（设计模块 / 模板面板等），迁移时以 `/capabilities` 为准；④ SQLite 不支持 ADD CONSTRAINT，团队迁移用 `batch_alter_table(recreate='always')` 重建 `workspaces_workspace`，大库升级耗时随工作区表规模增长（一次性）
+- 已知坑：① `visibility=private` 已收紧（迁移 `f2b3c4d5e6a7` 先把存量 `private` 归一为 `member`，再启用「仅所有者」语义）；downgrade 为**空操作**——旧版代码不读取该字段，回滚数据反而会篡改用户意图；② 其他插件仍直接调 `get_member_role`（数据面视图，与 `resolve_capabilities().data_role` 等价），P2 若引入「可见性收紧 / 策略默认」，这些入口会与能力位不一致，须同批切换；③ 前端仍有若干 `current_user_role === 'owner'` 判断未迁移（设计模块 / 模板面板等），迁移时以 `/capabilities` 为准；④ SQLite 不支持 ADD CONSTRAINT，团队迁移用 `batch_alter_table(recreate='always')` 重建 `workspaces_workspace`，大库升级耗时随工作区表规模增长（一次性）
 - 最近一次全绿：`make check-fast` + `make cov`（7389 passed，95.02%）+ `make frontend-coverage`（3397 passed，双门槛达标）@ `510766c9`（2026-11-25）

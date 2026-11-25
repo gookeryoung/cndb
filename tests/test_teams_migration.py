@@ -105,3 +105,74 @@ class TestTeamsMigration:
         assert TEAM not in tables
         assert TEAM_MEMBER not in tables
         assert "team_id" not in _columns(db_path, WORKSPACE)
+
+
+VISIBILITY_REVISION = "f2b3c4d5e6a7"
+TEAMS_REVISION = "e7d8c9b0a1f2"
+
+
+def _visibility_by_name(db_path: Path) -> dict[str, str]:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = conn.execute(f"SELECT name, visibility FROM {WORKSPACE}").fetchall()  # nosec B608
+        return dict(rows)
+    finally:
+        conn.close()
+
+
+def _insert_workspace_with_visibility(db_path: Path, name: str, visibility: str) -> None:
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            f"INSERT INTO {WORKSPACE} (name, description, visibility, tags, allow_edit, modules, created_at, updated_at) "  # nosec B608
+            "VALUES (?, '', ?, '[]', 1, '[\"tables\"]', datetime('now'), datetime('now'))",
+            (name, visibility),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+class TestVisibilityNormalization:
+    """D6 / P2 补充：存量 `private` 归一为 `member`（行为与升级前一致）。"""
+
+    def test_private_is_normalized_to_member(self, tmp_path: Path):
+        db_path = tmp_path / "vis.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, TEAMS_REVISION)
+        for name, visibility in (("私有一", "private"), ("成员二", "member"), ("公开三", "public")):
+            _insert_workspace_with_visibility(db_path, name, visibility)
+
+        _upgrade(url, VISIBILITY_REVISION)
+        assert _visibility_by_name(db_path) == {"私有一": "member", "成员二": "member", "公开三": "public"}
+
+    def test_normalization_is_idempotent(self, tmp_path: Path):
+        db_path = tmp_path / "vis_idem.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, TEAMS_REVISION)
+        _insert_workspace_with_visibility(db_path, "私有一", "private")
+        _upgrade(url, VISIBILITY_REVISION)
+        _upgrade(url, VISIBILITY_REVISION)
+        assert _visibility_by_name(db_path) == {"私有一": "member"}
+
+    def test_downgrade_keeps_data_and_is_noop(self, tmp_path: Path):
+        """downgrade 空操作：旧版不读 visibility，回滚数据会篡改用户意图."""
+        db_path = tmp_path / "vis_down.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, TEAMS_REVISION)
+        _insert_workspace_with_visibility(db_path, "私有一", "private")
+        _upgrade(url, VISIBILITY_REVISION)
+        _downgrade(url, TEAMS_REVISION)
+        assert _visibility_by_name(db_path) == {"私有一": "member"}
+
+    def test_skips_missing_table(self, tmp_path: Path):
+        db_path = tmp_path / "vis_missing.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, TEAMS_REVISION)
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(f"DROP TABLE {WORKSPACE}")  # nosec B608 - 测试内部常量
+            conn.commit()
+        finally:
+            conn.close()
+        _upgrade(url, VISIBILITY_REVISION)  # 不抛错

@@ -347,15 +347,22 @@ def _search_tables(
 
 
 def _member_workspaces(db: Session, user: Any) -> list[Any]:
-    """当前用户所属的工作区（pinned 优先 → id，与工作区列表口径一致）."""
-    from sqlalchemy import case
+    """当前用户**可读**的工作区（pinned 优先 → id，与工作区列表口径一致；私有仅 owner）."""
+    from sqlalchemy import case, or_
 
-    from cndb.plugins.workspaces.models import Workspace, WorkspaceMember
+    from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole, WorkspaceVisibility
 
     rows = (
         db.query(Workspace)
         .join(WorkspaceMember, WorkspaceMember.workspace_id == Workspace.id)
         .filter(WorkspaceMember.user_id == user.id)
+        # D6（P2）：私有工作区只对所有者参与跨工作区检索
+        .filter(
+            or_(
+                Workspace.visibility != WorkspaceVisibility.PRIVATE,
+                WorkspaceMember.role == WorkspaceRole.OWNER,
+            )
+        )
         .order_by(
             case((WorkspaceMember.pinned.is_(True), 0), else_=1),
             Workspace.id,

@@ -238,13 +238,34 @@ class TestPublicVisibility:
         ws = _ws("个人公开工作区", visibility=WorkspaceVisibility.PUBLIC)
         assert resolve_capabilities(outsider, ws, db).data_role is None
 
-    def test_private_keeps_member_semantics_in_p1(self, db, _user, _ws):
-        """P1 有意不收紧 `private`（H13 存量零迁移）；语法层面仍按成员可读."""
-        user = _user("p1_private_viewer")
-        ws = _ws("私有工作区", visibility=WorkspaceVisibility.PRIVATE)
-        db.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role=WorkspaceRole.VIEWER))
+    def test_private_is_owner_only_since_p2(self, db, _user, _ws):
+        """D6（P2）：`private` = 仅工作区所有者有数据面；存量 private 已由迁移归一为 member."""
+        viewer = _user("p2_private_viewer")
+        editor = _user("p2_private_editor")
+        owner = _user("p2_private_owner")
+        ws = _ws("私有工作区", visibility=WorkspaceVisibility.PRIVATE, owner=owner)
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=viewer.id, role=WorkspaceRole.VIEWER))
+        db.add(WorkspaceMember(workspace_id=ws.id, user_id=editor.id, role=WorkspaceRole.EDITOR))
         db.commit()
-        assert resolve_capabilities(user, ws, db).data_role is WorkspaceRole.VIEWER
+
+        viewer_caps = resolve_capabilities(viewer, ws, db)
+        assert viewer_caps.data_role is None
+        assert viewer_caps.capabilities == frozenset()
+        # 归因保留：说明「私有工作区不放行非所有者」
+        assert viewer_caps.sources["data"] == "workspace_private:viewer"
+
+        assert resolve_capabilities(editor, ws, db).data_role is None
+        owner_caps = resolve_capabilities(owner, ws, db)
+        assert owner_caps.data_role is WorkspaceRole.OWNER
+        assert owner_caps.allows(WorkspaceCapability.DELETE_WORKSPACE)
+
+    def test_private_does_not_grant_team_public_read(self, db, _user, _team, _team_member, _ws):
+        """`private` 与 `public` 互斥：私有工作区不因团队成员身份获得只读."""
+        team = _team("研发部")
+        member = _user("p2_private_team_member")
+        _team_member(team, member, TeamRole.MEMBER)
+        ws = _ws("私有工作区2", team=team, visibility=WorkspaceVisibility.PRIVATE)
+        assert resolve_capabilities(member, ws, db).data_role is None
 
 
 class TestLegacyEquivalenceStillHolds:

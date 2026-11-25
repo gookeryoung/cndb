@@ -15,7 +15,7 @@
 | 团队（Team） | 工作区的组织层：一个工作区至多归属一个团队（`team_id` 可空 = 个人工作区），团队单层不嵌套，团队下工作区以**平铺列表**呈现（无树） | 见 ADR 0153；团队只产「管理面权限 + 授权模板」，数据面判定仍在工作区 |
 | 管理面 / 数据面 | 管理面 = 团队 owner/admin 或工作区 owner（成员、设置、策略、备份）；数据面 = 工作区角色（owner/editor/viewer）决定的读写 | `team_admin` 默认不获得数据面（读数据仍 404）；判定唯一入口 `workspaces/permissions.py::resolve_capabilities` |
 | 权限解析（Capabilities） | 单一判定出口：显式工作区角色 > 团队策略默认角色 > 无，返回 `data_role` / `can_manage` 与来源归因 `sources` | 见 ADR 0153 D5；403 文案（ADR 0047）与前端门控 `useCapabilities` 共用同一载荷 |
-| 工作区可见性（三档） | `public` 团队成员只读（未挂团队时等价 `member`）/ `member` 工作区成员（默认）/ `private` **P1 仍按成员可读**（收紧到「仅 owner」推迟到 P2，避免存量成员静默失去读权） | 见 ADR 0153 D6；该字段此前无判定消费，P1 起 `public` 真正参与 `resolve_capabilities` |
+| 工作区可见性（三档） | `public` 团队成员只读（未挂团队时等价 `member`）/ `member` 工作区成员（默认）/ `private` **仅工作区所有者**（成员读 404，列表与跨工作区检索均不返回） | 见 ADR 0153 D6；P1 起真正参与 `resolve_capabilities`；P2 收尾时迁移 `f2b3c4d5e6a7` 先把存量 `private` 归一为 `member`（行为与升级前一致）再启用「仅所有者」语义 |
 | 三入口 | 网格编辑的三个入口：单元格双击速编、行双击 Drawer 全行编辑、操作列整行编辑按钮 | viewer 在三入口保存均转修改申请，提示「已提交修改申请 #N，处理后生效」 |
 | 编辑中标识 | 操作列中的行级修改申请状态位 | 派生自 change_requests 开放查询（status=open），按 row_id 聚合；merge 落库后同行其余 open 申请标记 stale，提交人可 update-base 刷新基准；聚合走 listGrouped（group_by=row）一次拉取行组，消除逐条 get 详情的 N+1 |
 | 文档种子 | `examples/datasets/<工作区>/documents/` 目录树：子目录 → 文档文件夹节点、`*.md` → Markdown 文档；文件头 `---` 元数据块声明 status/tags/author/summary，seed 入库前剥离 | 仅含 documents/ 的工作区注入典型文档，无 documents/ 的工作区不生成 |

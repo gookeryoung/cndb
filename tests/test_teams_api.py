@@ -388,3 +388,57 @@ class TestTeamErrorBranches:
         r = client.get(f"{TEAMS}/{empty_team.id}/workspaces", headers=_login(client, env.owner.username))
         assert r.status_code == 200, r.text
         assert r.json() == []
+
+
+class TestPrivateVisibilityEnforced:
+    """D6 收口（P2 补充）：`private` = 仅工作区所有者可见 / 可读."""
+
+    def _set_private(self, client, auth, wid: int) -> None:
+        r = client.patch(f"{WORKSPACES}/{wid}", json={"visibility": "private"}, headers=auth)
+        assert r.status_code == 200, r.text
+
+    def test_viewer_member_loses_read_but_still_owner_ok(self, client, db):
+        env = Env(db)
+        owner_auth = _login(client, env.owner.username)
+        db.add(WorkspaceMember(workspace_id=env.ws.id, user_id=env.admin.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        self._set_private(client, owner_auth, env.ws.id)
+
+        viewer_auth = _login(client, env.admin.username)
+        assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=viewer_auth).status_code == 404
+        assert client.get(f"{WORKSPACES}/{env.ws.id}/capabilities", headers=viewer_auth).status_code == 404
+        assert client.get(f"{WORKSPACES}/{env.ws.id}/members", headers=viewer_auth).status_code == 404
+        assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=owner_auth).status_code == 200
+
+    def test_private_workspace_hidden_from_viewer_list(self, client, db):
+        env = Env(db)
+        owner_auth = _login(client, env.owner.username)
+        db.add(WorkspaceMember(workspace_id=env.ws.id, user_id=env.admin.id, role=WorkspaceRole.EDITOR))
+        db.commit()
+        self._set_private(client, owner_auth, env.ws.id)
+
+        viewer_ids = {item["id"] for item in client.get(WORKSPACES, headers=_login(client, env.admin.username)).json()}
+        assert env.ws.id not in viewer_ids
+        owner_ids = {item["id"] for item in client.get(WORKSPACES, headers=owner_auth).json()}
+        assert env.ws.id in owner_ids
+
+    def test_private_workspace_excluded_from_global_search(self, client, db):
+        env = Env(db)
+        owner_auth = _login(client, env.owner.username)
+        db.add(WorkspaceMember(workspace_id=env.ws.id, user_id=env.admin.id, role=WorkspaceRole.VIEWER))
+        client.post(f"{WORKSPACES}/{env.ws.id}/documents", json={"title": "私有工作区文档"}, headers=owner_auth)
+        self._set_private(client, owner_auth, env.ws.id)
+
+        body = client.get(
+            "/api/v1/search", params={"q": "私有工作区文档"}, headers=_login(client, env.admin.username)
+        ).json()
+        assert body["documents"] == []
+        owner_body = client.get("/api/v1/search", params={"q": "私有工作区文档"}, headers=owner_auth).json()
+        assert any(doc["title"] == "私有工作区文档" for doc in owner_body["documents"])
+
+    def test_private_blocks_team_member_public_read(self, client, db):
+        """private 与 public 互斥：私有工作区不因团队成员身份获读."""
+        env = Env(db)
+        owner_auth = _login(client, env.owner.username)
+        self._set_private(client, owner_auth, env.ws.id)
+        assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=_login(client, env.admin.username)).status_code == 404

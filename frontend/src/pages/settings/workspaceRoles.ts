@@ -12,7 +12,8 @@ export const ROLE_LABEL: Record<WorkspaceRole, string> = {
 }
 
 export const VISIBILITY_LABEL: Record<WorkspaceVisibility, string> = {
-  public: '公开（任何人可读）',
+  // ADR 0153 D6：public = 团队成员只读（未挂团队时等价 member）
+  public: '公开（同团队成员可读）',
   member: '成员可见（仅工作区成员可访问）',
   private: '私有（仅所有者可见）',
 }

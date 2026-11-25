@@ -385,7 +385,7 @@ export default function WorkspaceSettingsContent({
                     <Col xs={24} md={8}>
                       <Form.Item
                         name="visibility"
-                        label={<>公开性<HelpTip title="修改后立即生效：公开=任何人可读；成员可见=仅工作区成员可访问；私有=仅所有者可见" /></>}
+                        label={<>公开性<HelpTip title="修改后立即生效：公开=同团队成员可读（未挂团队时等同成员可见）；成员可见=仅工作区成员可访问；私有=仅所有者可见，其他成员将无法打开" /></>}
                       >
                         <Select
                           options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}

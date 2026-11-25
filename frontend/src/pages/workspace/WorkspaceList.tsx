@@ -409,9 +409,9 @@ export default function WorkspaceList() {
             <Form.Item name="visibility" label="公开性">
               <Select
                 options={[
-                  { value: 'public', label: '公开（任何人可读）' },
+                  { value: 'public', label: '公开（同团队成员可读）' },
                   { value: 'member', label: '成员可见（推荐）' },
-                  { value: 'private', label: '私有（仅所有者/管理员）' },
+                  { value: 'private', label: '私有（仅所有者可见）' },
                 ]}
               />
             </Form.Item>
