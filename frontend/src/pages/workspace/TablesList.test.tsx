@@ -894,3 +894,20 @@ describe('TablesList 未分组参与排序', () => {
     expect(within(screen.getByTestId('table-group-mgr-5')).getByText('重命名')).toBeInTheDocument()
   })
 })
+
+describe('TablesList 外部链接入口', () => {
+  it('不再常驻列表顶部：点击顶栏入口后抽屉内渲染链接面板', async () => {
+    setupWorkspace()
+    renderPage()
+
+    expect(await screen.findByText('客户表')).toBeInTheDocument()
+    // 面板默认不渲染（只保留按需入口）
+    expect(screen.queryByTestId('workspace-links-panel')).not.toBeInTheDocument()
+    expect(screen.getByTestId('workspace-links-entry')).toBeVisible()
+
+    fireEvent.click(screen.getByTestId('workspace-links-entry'))
+
+    expect(await screen.findByTestId('workspace-links-panel')).toBeVisible()
+    expect(await screen.findByTestId('link-apply-btn')).toBeVisible()
+  })
+})

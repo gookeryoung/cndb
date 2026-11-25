@@ -158,7 +158,11 @@ export default function MainLayout() {
   const inAdminConsole = location.startsWith('/admin')
   const user = useAuthStore(s => s.user)
   const logout = useAuthStore(s => s.logout)
-  const { isMobile } = useResponsive()
+  const { isMobile, width: viewportWidth } = useResponsive()
+  /** 顶栏紧凑档（<1280）：收起品牌字 / 面包屑 / 导航文字，避免与搜索和操作按钮互相挤压 */
+  const compactHeader = !isMobile && viewportWidth < 1280
+  /** 窄档（<1024）：在紧凑档基础上进一步收窄搜索框 */
+  const narrowHeader = !isMobile && viewportWidth < 1024
   const queryClient = useQueryClient()
   // 侧栏折叠态：本地偏好持久化，刷新 / 重新进入后保持用户最后一次选择
   const [collapsed, setCollapsed] = usePersistedState('cndb_sider_collapsed', false)
@@ -636,8 +640,8 @@ export default function MainLayout() {
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
     { type: 'divider' },
     { key: 'settings', icon: <SettingOutlined />, label: '个人设置', onClick: () => openSettings() },
-    // 大模型设置：桌面端顶栏有常驻图标入口，移动端顶栏放不下，收进用户菜单直达页签
-    ...(isMobile
+    // 大模型设置 / 帮助：桌面端顶栏有常驻图标入口；移动端或顶栏紧凑档放不下，收进用户菜单
+    ...(isMobile || compactHeader
       ? [
         { key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') },
         { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助文档', onClick: () => navigate('/help') },
@@ -1123,7 +1127,10 @@ export default function MainLayout() {
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       {/* 留白与控件间距走 index.css（桌面基准 + 移动端收窄），不再 JS 分叉（ADR 0123 C7） */}
-      <Header className="cn-app-header" style={{
+      <Header
+        className={`cn-app-header${compactHeader ? ' cn-header-compact' : ''}${narrowHeader ? ' cn-header-narrow' : ''}`}
+        data-compact={compactHeader ? 'true' : undefined}
+        style={{
         height: 44, lineHeight: '44px', flexShrink: 0,
         display: 'flex', alignItems: 'center',
       }}>
@@ -1144,7 +1151,7 @@ export default function MainLayout() {
               data-testid="home-logo"
               onClick={() => navigate('/w')}>
               <BrandMark size={24} />
-              {!isMobile && (
+              {!isMobile && !compactHeader && (
                 <>
                   <span className="cn-brand-word">晶格协同</span>
                   {systemAbout?.app_version && (
@@ -1163,7 +1170,7 @@ export default function MainLayout() {
 
           {/* 层级面包屑（需求 0157 C4）：团队名可点回团队页；个人工作区显示「个人」。
               移动端空间不足，归属信息由切换器分组承担 */}
-          {!isMobile && currentWs && (
+          {!isMobile && !compactHeader && currentWs && (
             currentWs.team ? (
               <Tooltip title={`返回「${currentWs.team.name}」团队页`}>
                 <button
@@ -1183,7 +1190,7 @@ export default function MainLayout() {
               </span>
             )
           )}
-          {!isMobile && currentWs?.team && <span className="cn-header-crumb-sep" aria-hidden>/</span>}
+          {!isMobile && !compactHeader && currentWs?.team && <span className="cn-header-crumb-sep" aria-hidden>/</span>}
 
           {/* 团队 / 工作区统一切换器（需求 0157 C2）：分组列出工作区，底部提供团队页入口 */}
           <ScopeSwitcher
@@ -1207,13 +1214,15 @@ export default function MainLayout() {
                     key={item.key}
                     type="button"
                     aria-current={active ? 'page' : undefined}
+                    aria-label={item.label}
+                    title={compactHeader ? item.label : undefined}
                     data-testid={`ws-nav-${item.key}`}
                     className={active ? 'cn-header-nav-item cn-header-nav-item-active' : 'cn-header-nav-item'}
                     onClick={() => navigate(`/w/${wid}/${item.key}`)}
                   >
                     {item.icon}
-                    <span>{item.label}</span>
-                    {item.count !== undefined && <span className="cn-ws-tab-count">{item.count}</span>}
+                    {!compactHeader && <span className="cn-header-nav-label">{item.label}</span>}
+                    {!compactHeader && item.count !== undefined && <span className="cn-ws-tab-count">{item.count}</span>}
                   </button>
                 )
               })}
@@ -1233,7 +1242,7 @@ export default function MainLayout() {
           {isMobile ? searchNode : <div className="cn-header-search">{searchNode}</div>}
           {/* 大模型设置入口 —— 个人级连接与调用记录；桌面端常驻图标（帮助左侧），
               移动端顶栏空间紧张，入口收进用户菜单（见 userMenuItems） */}
-          {!isMobile && (
+          {!isMobile && !compactHeader && (
             <Tooltip title="大模型设置：配置连接、查看调用记录">
               <Button
                 icon={<RobotOutlined />}
@@ -1244,7 +1253,7 @@ export default function MainLayout() {
             </Tooltip>
           )}
           {/* 帮助文档入口（ADR 0029）—— 桌面端常驻图标，整页路由；移动端收进用户菜单 */}
-          {!isMobile && (
+          {!isMobile && !compactHeader && (
             <Tooltip title="帮助文档：使用说明、操作教程与新手引导">
               <Button
                 icon={<QuestionCircleOutlined />}

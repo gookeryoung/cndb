@@ -10,6 +10,7 @@
  * 3) <1200（antd xl）模块徽标收起；<1024 时间整体收起；<768 meta 不渲染；
  */
 import { expect, test } from "../fixtures/auth"
+import { getWorkspaceId } from "../helpers/api"
 
 const WIDTHS = [1440, 1280, 1024, 768, 390]
 
@@ -56,5 +57,50 @@ test.describe("工作区列表响应式", () => {
         await expect(meta).toHaveCount(1)
       }
     }
+  })
+})
+
+test.describe("顶栏与外部链接入口的响应式", () => {
+  test("顶栏窄宽度进入紧凑档且不横向溢出", async ({ page, request }) => {
+    test.skip(test.info().project.name === "chromium-anon", "anon 项目跳过")
+    const wid = await getWorkspaceId(request)
+
+    for (const width of [1440, 1200, 1100, 1024, 800]) {
+      await page.setViewportSize({ width, height: 900 })
+      await page.goto(`/w/${wid}/tables`)
+      await expect(page.getByTestId("ws-module-nav")).toBeVisible({ timeout: 20_000 })
+
+      const headerFits = await page.evaluate(() => {
+        const el = document.querySelector(".cn-app-header") as HTMLElement | null
+        return !!el && el.scrollWidth <= el.clientWidth + 1
+      })
+      expect(headerFits, `width=${width} 顶栏不应横向溢出`).toBe(true)
+
+      if (width < 1280) {
+        // 紧凑档：品牌字 / 导航文字 / 次要操作按钮收起
+        await expect(page.locator(".cn-brand-word")).toHaveCount(0)
+        await expect(page.getByTestId("ws-nav-tables").locator(".cn-header-nav-label")).toHaveCount(0)
+        await expect(page.getByTestId("llm-settings-btn")).toHaveCount(0)
+        await expect(page.getByTestId("help-btn")).toHaveCount(0)
+        await expect(page.getByTestId("ws-nav-tables")).toHaveAttribute("aria-label", "数据表")
+      } else {
+        await expect(page.locator(".cn-brand-word")).toBeVisible()
+        await expect(page.getByTestId("ws-nav-tables").locator(".cn-header-nav-label")).toBeVisible()
+        await expect(page.getByTestId("llm-settings-btn")).toBeVisible()
+      }
+    }
+  })
+
+  test("外部链接不再常驻列表顶部：入口打开抽屉", async ({ page, request }) => {
+    test.skip(test.info().project.name === "chromium-anon", "anon 项目跳过")
+    const wid = await getWorkspaceId(request)
+    await page.goto(`/w/${wid}/tables`)
+    await expect(page.getByTestId("workspace-links-entry")).toBeVisible({ timeout: 20_000 })
+    // 列表顶部不再渲染链接面板
+    await expect(page.getByTestId("workspace-links-panel")).toHaveCount(0)
+
+    await page.getByTestId("workspace-links-entry").click()
+    await expect(page.getByTestId("workspace-links-panel")).toBeVisible()
+    await expect(page.getByRole("dialog")).toContainText("外部链接")
   })
 })

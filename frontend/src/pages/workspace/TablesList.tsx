@@ -7,14 +7,14 @@
 import { Suspense, createContext, lazy, useContext, useMemo, useState } from 'react'
 import {
   Button, Modal, Form, Input, Table, Typography, Empty, App as AntApp, Space, Tag, Upload, Dropdown,
-  Avatar, Segmented, Badge, Tooltip, Pagination, Switch,
+  Avatar, Segmented, Badge, Tooltip, Pagination, Switch, Drawer,
 } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   PlusOutlined, TableOutlined, DeleteOutlined, ClockCircleOutlined, CopyOutlined, EditOutlined,
   UploadOutlined, ApiOutlined, TeamOutlined, UserOutlined,
   LoginOutlined, MoreOutlined, HolderOutlined, DatabaseOutlined, FolderOutlined,
-  ArrowUpOutlined, ArrowDownOutlined,
+  ArrowUpOutlined, ArrowDownOutlined, LinkOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -27,12 +27,13 @@ import {
   SortableContext, verticalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { tableApi, tableGroupApi, workspaceApi, importApi } from '@/api'
+import { tableApi, tableGroupApi, workspaceApi, importApi, linksApi } from '@/api'
 import type { TableSummary, TableGroup, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useTableHoverPrefetch } from './tablePrefetch'
 import WorkspaceLinksPanel from './WorkspaceLinksPanel'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useCapabilities } from '@/hooks/useCapabilities'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { WEIGHT } from '@/theme/tokens'
 
@@ -224,11 +225,31 @@ export default function TablesList() {
   useCreateParam(() => setCreateOpen(true))
   const [editOpen, setEditOpen] = useState<TableSummary | null>(null)
   const [apiImportOpen, setApiImportOpen] = useState(false)
+  /** 外部链接（只读引用）改为按需抽屉：不再常驻在数据表列表顶部 */
+  const [linksOpen, setLinksOpen] = useState(false)
   const [filter, setFilter] = useState<AccessFilter>('all')
   // 分页状态（需求 0082 C1/C2）：客户端分页，桌面表格与窄屏卡片共用同一页态；
   // 切换筛选档位时回到第一页，避免停留在他页看到空列表
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(50)
+  // 外部链接摘要：给顶栏入口提供角标（生效中 + 待我批准），列表本身在抽屉里按需加载
+  const { can } = useCapabilities(wid ?? '')
+  const canManageLinks = can('MANAGE_LINKS')
+  const { data: linkSummary = [] } = useQuery({
+    queryKey: ['workspace-links', wid],
+    queryFn: () => linksApi.list(wid as string),
+    enabled: !!wid,
+    retry: false,
+  })
+  const { data: linkInbox = [] } = useQuery({
+    queryKey: ['workspace-links-inbox', wid],
+    queryFn: () => linksApi.inbox(wid as string),
+    enabled: !!wid && canManageLinks,
+    retry: false,
+  })
+  const linkBadge = linkSummary.filter(l => l.status === 'active').length
+    + linkInbox.filter(l => l.status === 'pending').length
+
   // 文件导入预览 Modal 状态
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewFile, setPreviewFile] = useState<File | null>(null)
@@ -748,8 +769,6 @@ export default function TablesList() {
 
   return (
     <div style={{ padding: isMobile ? 12 : 16 }}>
-      {/* 外部链接（只读引用）：ADR 0154 P2 —— 消费方列表 / 发起申请 / 源侧审批 */}
-      {wid && <WorkspaceLinksPanel wid={wid} />}
       {/* Header —— 移动端标题与按钮区自动换行 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
         <div>
@@ -791,6 +810,16 @@ export default function TablesList() {
           >
             API 建表
           </Button>
+          <Badge count={linkBadge} size="small" offset={[-2, 2]}>
+            <Tooltip title="外部链接（只读引用）：查看已链接的表、申请或审批">
+              <Button
+                icon={<LinkOutlined />}
+                aria-label="外部链接"
+                onClick={() => setLinksOpen(true)}
+                data-testid="workspace-links-entry"
+              />
+            </Tooltip>
+          </Badge>
           <Button
             icon={<FolderOutlined />}
             onClick={() => setGroupMgrOpen(true)}
@@ -1220,6 +1249,19 @@ export default function TablesList() {
           }}
         />
       </Suspense>
+
+      {wid && (
+        <Drawer
+          title={<Space><LinkOutlined /> 外部链接（只读）</Space>}
+          placement="right"
+          open={linksOpen}
+          onClose={() => setLinksOpen(false)}
+          size={isMobile ? 'large' : 720}
+          styles={{ body: { padding: 16 } }}
+        >
+          <WorkspaceLinksPanel wid={wid} embedded />
+        </Drawer>
+      )}
     </div>
   )
 }

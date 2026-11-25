@@ -1635,3 +1635,35 @@ describe('MainLayout 团队层级（需求 0157 C4）', () => {
         expect(await screen.findByTestId(`scope-group-team-${mockTeam.id}`)).toHaveTextContent('研发部')
     })
 })
+
+describe('MainLayout 顶栏紧凑档（宽度不足）', () => {
+    it('宽度 <1280：收起品牌字 / 导航文字 / 大模型与帮助按钮，顶栏不横向溢出', async () => {
+        responsiveState = {
+            deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+            width: 1100, height: 800,
+        }
+        try {
+            renderLayout(mockUser)
+            await waitFor(() => expect(screen.getByTestId('tables-page-stub')).toBeVisible())
+
+            const header = document.querySelector('.cn-app-header') as HTMLElement
+            expect(header).toHaveClass('cn-header-compact')
+            // 品牌字与版本收起（logo 保留）
+            expect(header.querySelector('.cn-brand-word')).toBeNull()
+            expect(screen.queryByTestId('app-version')).toBeNull()
+            // 一级导航只留图标，标签收起但保留可访问名称
+            const tablesNav = screen.getByTestId('ws-nav-tables')
+            expect(tablesNav.querySelector('.cn-header-nav-label')).toBeNull()
+            expect(tablesNav).toHaveAttribute('aria-label', '数据表')
+            expect(tablesNav).toHaveAttribute('title', '数据表')
+            // 次要操作收进用户菜单，不再占用顶栏
+            expect(screen.queryByTestId('llm-settings-btn')).toBeNull()
+            expect(screen.queryByTestId('help-btn')).toBeNull()
+        } finally {
+            responsiveState = {
+                deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
+                width: 1280, height: 800,
+            }
+        }
+    })
+})

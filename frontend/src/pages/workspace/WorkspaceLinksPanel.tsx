@@ -43,7 +43,7 @@ function useSourceWorkspaces(currentWid: string) {
   )
 }
 
-export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
+export default function WorkspaceLinksPanel({ wid, embedded = false }: { wid: string; embedded?: boolean }) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { message } = AntApp.useApp()
@@ -150,18 +150,14 @@ export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
 
   const nothingToShow = links.length === 0 && inbox.length === 0
 
-  return (
-    <Card
-      size="small"
-      style={{ marginBottom: 12 }}
-      title={<Space><LinkOutlined /> 外部链接（只读）</Space>}
-      extra={canApply && (
-        <Button size="small" icon={<PlusOutlined />} onClick={() => setApplyOpen(true)} data-testid="link-apply-btn">
-          申请链接
-        </Button>
-      )}
-      data-testid="workspace-links-panel"
-    >
+  const applyButton = canApply && (
+    <Button size="small" icon={<PlusOutlined />} onClick={() => setApplyOpen(true)} data-testid="link-apply-btn">
+      申请链接
+    </Button>
+  )
+
+  const body = (
+    <>
       {nothingToShow && !isLoading ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -291,6 +287,11 @@ export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
         </Space>
       )}
 
+    </>
+  )
+
+  const modals = (
+    <>
       {/* 发起申请 */}
       <Modal
         open={applyOpen}
@@ -405,7 +406,33 @@ export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
             />
           </Space>
         </Space>
-      </Modal>
+      </Modal>    </>
+  )
+
+  if (embedded) {
+    return (
+      <div className="cn-links-embedded" data-testid="workspace-links-panel">
+        <div className="cn-links-embedded-head">
+          <Space><LinkOutlined /> 外部链接（只读）</Space>
+          {applyButton}
+        </div>
+        {body}
+        {modals}
+      </div>
+    )
+  }
+
+  return (
+    <Card
+      size="small"
+      style={{ marginBottom: 12 }}
+      title={<Space><LinkOutlined /> 外部链接（只读）</Space>}
+      extra={applyButton}
+      data-testid="workspace-links-panel"
+    >
+      {body}
+      {modals}
     </Card>
   )
 }
+
