@@ -29,8 +29,8 @@ import {
   UnorderedListOutlined, DatabaseOutlined, GroupOutlined, FunctionOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { tableApi, useLlmConfigured } from '@/api'
-import type { Field } from '@/api'
+import { linksApi, tableApi, useLlmConfigured } from '@/api'
+import type { Field, LinkField } from '@/api'
 import { analyticsApi } from '@/api/analytics'
 import type {
   AnalyticsAiExplainPayload,
@@ -117,6 +117,8 @@ export default function AnalyticsPage() {
 
   // ── 分析配置 ──
   const [tableId, setTableId] = useState<number | null>(null)
+  /** 链接数据源（ADR 0158）：与 tableId 二选一 */
+  const [linkId, setLinkId] = useState<number | null>(null)
   const [formulas, setFormulas] = useState<AnalyticsFormula[]>([newFormula(0)])
   const [chart, setChart] = useState<AnalyticsChart>({ ...DEFAULT_CHART })
   const [summary, setSummary] = useState<AnalyticsSummary>({ ...EMPTY_SUMMARY, metrics: [] })
@@ -157,6 +159,30 @@ export default function AnalyticsPage() {
     enabled: !!wid && !!tableId,
   })
 
+  // 可选数据源：本工作区表 + 我可见的工作区链接（ADR 0158 P2）
+  const { data: datasources } = useQuery({
+    queryKey: ['analytics-datasources', wid],
+    queryFn: () => analyticsApi.datasources(wid!),
+    enabled: !!wid,
+    staleTime: 60_000,
+  })
+
+  // 链接源的可见字段（已按隐藏字段裁剪）：用于公式 / 图表 / 汇总候选与结果渲染
+  const { data: linkFieldsData } = useQuery({
+    queryKey: ['analytics-link-fields', wid, linkId],
+    queryFn: () => linksApi.fields(wid!, linkId!),
+    enabled: !!wid && linkId != null,
+    retry: false,
+  })
+  const linkFieldList = useMemo<Field[]>(
+    () => (linkFieldsData?.fields ?? []).map((f: LinkField) => ({
+      id: f.id,
+      name: f.name,
+      field_type: f.field_type as Field['field_type'],
+    })),
+    [linkFieldsData],
+  )
+
   const { data: templates = [], isLoading: templatesLoading } = useQuery({
     queryKey: ['analytics-templates', wid],
     queryFn: () => analyticsApi.listTemplates(wid!),
@@ -169,17 +195,22 @@ export default function AnalyticsPage() {
     isLoading: recommendLoading,
     isError: recommendError,
   } = useQuery({
-    queryKey: ['analytics-recommendations', wid, tableId],
-    queryFn: () => analyticsApi.recommend(wid!, tableId!),
-    enabled: !!wid && !!tableId,
+    queryKey: ['analytics-recommendations', wid, tableId, linkId],
+    queryFn: () => analyticsApi.recommend(wid!, tableId, linkId),
+    enabled: !!wid && (tableId != null || linkId != null),
     retry: false,
     staleTime: 5 * 60_000,
   })
 
-  const tableFields = useMemo<string[]>(() => (tableDetail?.fields ?? []).map(f => f.name), [tableDetail])
+  /** 数据源字段（链接源 = 链接可见字段；本表源 = 表字段） */
+  const sourceFields = useMemo<Field[]>(
+    () => (linkId != null ? linkFieldList : (tableDetail?.fields ?? [])),
+    [linkId, linkFieldList, tableDetail],
+  )
+  const tableFields = useMemo<string[]>(() => sourceFields.map(f => f.name), [sourceFields])
   const numericFields = useMemo<string[]>(
-    () => (tableDetail?.fields ?? []).filter(f => NUMERIC_TYPES.has(f.field_type)).map(f => f.name),
-    [tableDetail],
+    () => sourceFields.filter(f => NUMERIC_TYPES.has(f.field_type)).map(f => f.name),
+    [sourceFields],
   )
 
   // ── 派生配置 ──
@@ -190,7 +221,7 @@ export default function AnalyticsPage() {
   const errors = useMemo(() => collectFormulaErrors(formulas, serverErrors), [formulas, serverErrors])
   const hasError = Object.keys(errors).length > 0
   const canRun = canRunAnalysis({
-    tableId,
+    tableId: tableId ?? linkId,
     validFormulaCount: validFormulas.length,
     chart,
     summary,
@@ -200,8 +231,8 @@ export default function AnalyticsPage() {
   const noRunnableConfig = validFormulas.length === 0 && !chartConfigured(chart) && !summaryConfigured(summary)
 
   const currentSnapshot = useMemo(
-    () => templateSnapshot({ name: templateName, description: templateDesc, tableId, formulas, chart, summary }),
-    [templateName, templateDesc, tableId, formulas, chart, summary],
+    () => templateSnapshot({ name: templateName, description: templateDesc, tableId, linkId, formulas, chart, summary }),
+    [templateName, templateDesc, tableId, linkId, formulas, chart, summary],
   )
   const dirty = activeTemplateId != null && isDirty(snapshot, currentSnapshot)
 
@@ -226,9 +257,9 @@ export default function AnalyticsPage() {
         name: f.key.trim(),
         field_type: 'number' as Field['field_type'],
       })),
-      ...(tableDetail?.fields ?? []),
+      ...sourceFields,
     ],
-    [validFormulas, tableDetail],
+    [validFormulas, sourceFields],
   )
 
   // ── 模板载入 / 快照同步 ──
@@ -238,21 +269,26 @@ export default function AnalyticsPage() {
     const nextSummary = normalizeSummary(tpl.config?.summary)
     const nextName = tpl.name
     const nextDesc = tpl.description ?? ''
-    const nextTableId = tpl.table_id ?? null
+    // 数据源（ADR 0158 D2）：config.source 为准；缺省按 table_id 解释（旧模板）
+    const nextSource = tpl.config?.source ?? null
+    const nextLinkId = nextSource?.type === 'link' ? (nextSource.link_id ?? null) : null
+    const nextTableId = nextLinkId != null ? null : (tpl.table_id ?? null)
 
     setActiveTemplateId(tpl.id)
     setTemplateName(nextName)
     setTemplateDesc(nextDesc)
+    setLinkId(nextLinkId)
     setTableId(nextTableId)
     setFormulas(nextFormulas)
     setChart(nextChart)
     setSummary(nextSummary)
     setServerErrors({})
-    setTableMissing(nextTableId == null)
+    setTableMissing(nextTableId == null && nextLinkId == null)
     setSnapshot(templateSnapshot({
       name: nextName,
       description: nextDesc,
       tableId: nextTableId,
+      linkId: nextLinkId,
       formulas: nextFormulas,
       chart: nextChart,
       summary: nextSummary,
@@ -610,7 +646,8 @@ export default function AnalyticsPage() {
   const computeMutation = useMutation({
     mutationFn: () =>
       analyticsApi.compute(wid!, {
-        table_id: tableId!,
+        // 数据源：链接源用 source（后端拒绝 source 与 table_id 同传，ADR 0158 C9）
+        ...(linkId != null ? { source: { type: 'link' as const, link_id: linkId } } : { table_id: tableId! }),
         formulas: validFormulas.map(f => ({
           key: f.key.trim(),
           label: (f.label ?? '').trim() || f.key.trim(),
@@ -693,8 +730,13 @@ export default function AnalyticsPage() {
     const payload: AnalyticsTemplateCreate = {
       name,
       description: formDesc,
-      table_id: tableId,
-      config: buildTemplateConfig({ formulas, chart, summary }),
+      table_id: linkId != null ? null : tableId,
+      config: buildTemplateConfig({
+        formulas,
+        chart,
+        summary,
+        source: linkId != null ? { type: 'link', link_id: linkId } : null,
+      }),
     }
     saveMutation.mutate({ mode: 'create', payload })
   }
@@ -709,8 +751,13 @@ export default function AnalyticsPage() {
       payload: {
         name: templateName.trim() || DEFAULT_TEMPLATE_NAME,
         description: templateDesc,
-        table_id: tableId,
-        config: buildTemplateConfig({ formulas, chart, summary }),
+        table_id: linkId != null ? null : tableId,
+        config: buildTemplateConfig({
+          formulas,
+          chart,
+          summary,
+          source: linkId != null ? { type: 'link', link_id: linkId } : null,
+        }),
       },
     })
   }
@@ -721,7 +768,8 @@ export default function AnalyticsPage() {
   )
   /** 结果盒共用的导出文件名主体：模板名优先，其次图表标题 */
   const resultTitle = templateName || chart.title || '分析结果'
-  const showTableMissing = (tableMissing || activeTemplate?.table_id == null) && tableId == null && activeTemplateId != null
+  const showTableMissing = (tableMissing || (activeTemplate?.table_id == null && !activeTemplate?.config?.source))
+    && tableId == null && linkId == null && activeTemplateId != null
 
   if (!wid) return null
 
@@ -852,11 +900,13 @@ export default function AnalyticsPage() {
               运行分析 (Ctrl+Enter)
             </Button>
           </Tooltip>
-          {!tableId && <Text type="secondary" className="cn-an-run-hint">请先选择分析表</Text>}
-          {!!tableId && noRunnableConfig && (
+          {tableId == null && linkId == null && (
+            <Text type="secondary" className="cn-an-run-hint">请先选择分析表或外部链接</Text>
+          )}
+          {(tableId != null || linkId != null) && noRunnableConfig && (
             <Text type="secondary" className="cn-an-run-hint">请填写公式，或配置图表 / 分组汇总后再运行</Text>
           )}
-          {!!tableId && hasError && (
+          {(tableId != null || linkId != null) && hasError && (
             <Text type="danger" className="cn-an-run-hint">公式存在错误，修正后可运行</Text>
           )}
         </div>
@@ -890,27 +940,56 @@ export default function AnalyticsPage() {
             >
           <div className="cn-an-grid cn-an-grid--3">
             <div className="cn-an-field cn-an-span3">
-              <span className="cn-an-label">分析表</span>
+              <span className="cn-an-label">数据源</span>
               <Select
                 data-testid="analytics-table-select"
-                placeholder="选择工作区内的数据表"
-                value={tableId ?? undefined}
-                options={tables.map(t => ({ value: Number(t.id), label: t.name }))}
-                onChange={id => {
-                  setTableId(id ?? null)
+                placeholder="选择本工作区的数据表，或外部链接（只读）"
+                value={linkId != null ? `link:${linkId}` : (tableId ?? undefined)}
+                options={[
+                  {
+                    label: '本工作区表',
+                    options: tables.map(t => ({ value: Number(t.id), label: t.name })),
+                  },
+                  ...((datasources?.links?.length ?? 0) > 0
+                    ? [{
+                      label: '外部链接（只读）',
+                      options: (datasources?.links ?? []).map(link => ({
+                        value: `link:${link.id}`,
+                        label: `${link.name} · ${link.source_workspace_name ?? '外部工作区'}`,
+                        title: link.readable
+                          ? `只读引用，到期 ${link.expires_at ?? '未设置'}`
+                          : '你在源工作区没有读取权限，请联系源工作区拥有者',
+                        disabled: !link.readable,
+                      })),
+                    }]
+                    : []),
+                ]}
+                onChange={(value) => {
+                  const isLink = typeof value === 'string' && value.startsWith('link:')
+                  setLinkId(isLink ? Number(String(value).slice('link:'.length)) : null)
+                  setTableId(isLink ? null : (value as number | null))
                   setTableMissing(false)
                   setResult(null)
                   setServerErrors({})
-                  // 换表后 AI 生成结果 / 解读都不再对应当前数据源，清空避免误用
+                  // 换数据源后 AI 生成结果 / 解读都不再对应当前数据，清空避免误用
                   setAiAppliedName(null)
                   suggestReset()
                   explainReset()
-                  // 范围字段属于旧表，换表后必须清空，否则会带着不存在的字段去过滤
+                  // 范围字段属于旧数据源，换源后必须清空，否则会带着不存在的字段去过滤
                   setScopeField(null)
                   setScopeFrom('')
                   setScopeTo('')
                 }}
               />
+              {linkId != null && (
+                <span className="cn-an-foot-hint" data-testid="analytics-link-source-hint">
+                  {(() => {
+                    const current = (datasources?.links ?? []).find(link => link.id === linkId)
+                    if (!current) return '该链接已失效或已被撤回，请重新授权后再运行分析'
+                    return `只读引用：${current.source_workspace_name ?? '外部工作区'} · 到期 ${current.expires_at ?? '未设置'}；行级规则与字段隐藏照旧生效`
+                  })()}
+                </span>
+              )}
             </div>
             {/* 分析范围：扫描前过滤（时序表用「时间 >= 起点」把扫描面压到区间内） */}
             <div className="cn-an-field">
@@ -1057,7 +1136,7 @@ export default function AnalyticsPage() {
 
       {llmConfigured && (
         <AnalyticsAiPanel
-          tableReady={tableId != null}
+          tableReady={tableId != null || linkId != null}
           loading={suggestAi.loading}
           error={suggestAi.error}
           suggestion={suggestAi.data?.result ?? null}

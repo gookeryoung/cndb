@@ -10,6 +10,7 @@ import type {
   AnalyticsFormula,
   AnalyticsRecommendationExample,
   AnalyticsRecommendationRole,
+  AnalyticsSource,
   AnalyticsSummary,
   AnalyticsSummaryMetric,
   AnalyticsTemplate,
@@ -203,11 +204,14 @@ export function buildTemplateConfig(input: {
   formulas: AnalyticsFormula[]
   chart: AnalyticsChart
   summary: AnalyticsSummary
+  /** 数据源（ADR 0158）：链接源时写入 config.source，缺省不写（兼容旧模板） */
+  source?: AnalyticsSource | null
 }): AnalyticsTemplateConfig {
   const formulas = input.formulas
     .filter(f => f.key.trim() && f.expr.trim())
     .map(f => ({ key: f.key.trim(), label: (f.label ?? '').trim(), expr: f.expr.trim() }))
   return {
+    ...(input.source ? { source: input.source } : {}),
     formulas,
     chart: { ...input.chart, aggregation: input.chart.aggregation ?? 'sum' },
     summary: input.summary.metrics.length ? input.summary : null,
@@ -303,6 +307,8 @@ export function templateSnapshot(input: {
   name: string
   description: string
   tableId: number | null
+  /** 链接数据源（ADR 0158）：与 tableId 二选一，参与「未保存修改」判定 */
+  linkId?: number | null
   formulas: AnalyticsFormula[]
   chart: AnalyticsChart
   summary: AnalyticsSummary
@@ -311,6 +317,7 @@ export function templateSnapshot(input: {
     name: input.name.trim(),
     description: input.description.trim(),
     tableId: input.tableId,
+    linkId: input.linkId ?? null,
     formulas: input.formulas.map(f => ({ key: f.key, label: f.label ?? '', expr: f.expr })),
     chart: input.chart,
     summary: input.summary,

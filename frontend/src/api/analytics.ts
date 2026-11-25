@@ -65,7 +65,18 @@ export interface AnalyticsSummary {
 }
 
 /** 模板配置 */
+/** 分析数据源（ADR 0158）：本工作区表或工作区链接（只读引用） */
+export interface AnalyticsSource {
+  type: 'table' | 'link'
+  /** type=table 时的表 id */
+  id?: number | null
+  /** type=link 时的链接 id */
+  link_id?: number | null
+}
+
 export interface AnalyticsTemplateConfig {
+  /** 数据源（缺省 = 用模板的 table_id，兼容旧模板） */
+  source?: AnalyticsSource | null
   formulas: AnalyticsFormula[]
   chart?: AnalyticsChart | null
   summary?: AnalyticsSummary | null
@@ -96,6 +107,22 @@ export interface AnalyticsTemplateCreate {
 }
 
 export type AnalyticsTemplateUpdate = Partial<AnalyticsTemplateCreate>
+
+/** 可选数据源条目（ADR 0158） */
+export interface AnalyticsDatasourceItem {
+  type: 'table' | 'link'
+  id: number
+  name: string
+  source_workspace_name?: string | null
+  expires_at?: string | null
+  readable: boolean
+  link_id?: number | null
+}
+
+export interface AnalyticsDatasources {
+  tables: AnalyticsDatasourceItem[]
+  links: AnalyticsDatasourceItem[]
+}
 
 /** 单条公式校验结果 */
 export interface FormulaCheck {
@@ -170,7 +197,9 @@ export interface AnalyticsFilter {
 }
 
 export interface AnalyticsComputeRequest {
-  table_id: number
+  /** 数据源（ADR 0158）：给 source 时以它为准；否则用兼容字段 table_id */
+  source?: AnalyticsSource | null
+  table_id?: number
   formulas: AnalyticsFormula[]
   fields?: string[]
   limit?: number
@@ -333,11 +362,20 @@ export const analyticsApi = {
       .post<AnalyticsTemplate>(`/v1/workspaces/${wid}/analytics/templates/${id}/duplicate`, data ?? {})
       .then(r => r.data),
   /** 智能推荐：字段角色 / 公式 / 图表 / 汇总 / 典型示例 */
-  recommend: (wid: number | string, tableId: number | string) =>
+  recommend: (
+    wid: number | string,
+    tableId?: number | string | null,
+    linkId?: number | string | null,
+  ) =>
     api
       .get<AnalyticsRecommendations>(`/v1/workspaces/${wid}/analytics/recommendations`, {
-        params: { table_id: tableId },
+        params: linkId != null ? { link_id: linkId } : { table_id: tableId },
       })
+      .then(r => r.data),
+  /** 可选数据源：本工作区表 + 我可见的工作区链接（ADR 0158 P2） */
+  datasources: (wid: number | string) =>
+    api
+      .get<AnalyticsDatasources>(`/v1/workspaces/${wid}/analytics/datasources`)
       .then(r => r.data),
   validate: (wid: number | string, tableId: number | null, formulas: AnalyticsFormula[]) =>
     api.post<AnalyticsValidateResponse>(`/v1/workspaces/${wid}/analytics/validate`, {

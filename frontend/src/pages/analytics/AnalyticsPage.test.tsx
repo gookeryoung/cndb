@@ -217,6 +217,11 @@ function setupHandlers() {
     http.get('/api/v1/workspaces/1/tables/20', () => HttpResponse.json(TABLE_DETAIL)),
     http.get('/api/v1/workspaces/1/analytics/templates', () =>
       HttpResponse.json(templateList)),
+    http.get('/api/v1/workspaces/1/analytics/datasources', () =>
+      HttpResponse.json({
+        tables: [{ type: 'table', id: TID, name: '产品批次', readable: true }],
+        links: [],
+      })),
     http.get('/api/v1/workspaces/1/analytics/recommendations', ({ request }) => {
       const tableId = Number(new URL(request.url).searchParams.get('table_id'))
       return HttpResponse.json({ ...RECOMMENDATIONS, table_id: tableId })
@@ -849,5 +854,98 @@ describe('AnalyticsPage 区块启用开关', () => {
     renderPage('/w/1/analytics?template=7')
     await waitTemplateLoaded()
     expect(screen.getByTestId('analytics-band-formula')).toBeInTheDocument()
+  })
+})
+
+
+describe('AnalyticsPage 链接数据源（ADR 0158 P2）', () => {
+  const LINK_FIELDS = {
+    link_id: 800,
+    table_id: 100,
+    table_name: '销售明细',
+    target_type: 'table',
+    fields: [
+      { id: 1, name: '产品', field_type: 'text', order: 0 },
+      { id: 2, name: '销售额', field_type: 'number', order: 1 },
+    ],
+  }
+
+  function setupLinkHandlers(options: { readable?: boolean } = {}) {
+    setupHandlers()
+    server.use(
+      http.get('/api/v1/workspaces/1/analytics/datasources', () =>
+        HttpResponse.json({
+          tables: [{ type: 'table', id: TID, name: '产品批次', readable: true }],
+          links: [{
+            type: 'link', id: 800, link_id: 800, name: '销售明细',
+            source_workspace_name: '源工作区', expires_at: '2026-12-25T00:00:00Z',
+            readable: options.readable ?? true,
+          }],
+        })),
+      http.get('/api/v1/workspaces/1/links/800/fields', () => HttpResponse.json(LINK_FIELDS)),
+      // 链接源的推荐（前端按 link_id 请求）
+      http.get('/api/v1/workspaces/1/analytics/recommendations', () =>
+        HttpResponse.json({ ...RECOMMENDATIONS, table_id: 100 })),
+    )
+  }
+
+  async function pickLink() {
+    fireEvent.mouseDown(screen.getByTestId('analytics-table-select'))
+    const option = await screen.findByText(/销售明细/, { selector: '.ant-select-item-option-content' })
+    fireEvent.click(option)
+  }
+
+  it('数据源下拉分组展示链接，选中后展示只读 / 到期提示', async () => {
+    setupLinkHandlers()
+    renderPage('/w/1/analytics')
+
+    fireEvent.mouseDown(screen.getByTestId('analytics-table-select'))
+    expect(await screen.findByText('外部链接（只读）')).toBeInTheDocument()
+    await pickLink()
+
+    expect(await screen.findByTestId('analytics-link-source-hint')).toHaveTextContent('只读引用')
+    expect(screen.getByTestId('analytics-link-source-hint')).toHaveTextContent('源工作区')
+  })
+
+  it('链接不可读时选项禁用', async () => {
+    setupLinkHandlers({ readable: false })
+    renderPage('/w/1/analytics')
+
+    fireEvent.mouseDown(screen.getByTestId('analytics-table-select'))
+    const option = await screen.findByText(/销售明细/, { selector: '.ant-select-item-option-content' })
+    const item = option.closest('.ant-select-item')
+    expect(item).toHaveClass('ant-select-item-option-disabled')
+  })
+
+  it('运行分析：链接源发 source.type=link，且不带 table_id', async () => {
+    setupLinkHandlers()
+    renderPage('/w/1/analytics')
+    await pickLink()
+
+    // 至少配一条公式即可运行
+    fireEvent.change(screen.getByTestId('analytics-formula-expr-0'), { target: { value: 'sum([销售额])' } })
+    const runBtn = screen.getByTestId('analytics-run-btn')
+    await waitFor(() => expect(runBtn).toBeEnabled())
+    fireEvent.click(runBtn)
+
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+    expect(computeBodies[0].source).toEqual({ type: 'link', link_id: 800 })
+    expect(computeBodies[0].table_id).toBeUndefined()
+  })
+
+  it('另存为：模板 config 带 source，table_id 传 null', async () => {
+    setupLinkHandlers()
+    renderPage('/w/1/analytics')
+    await pickLink()
+    fireEvent.change(screen.getByTestId('analytics-formula-expr-0'), { target: { value: 'sum([销售额])' } })
+
+    fireEvent.click(screen.getByTestId('analytics-saveas-btn'))
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByTestId('analytics-template-name'), { target: { value: '跨部门汇总' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /保\s*存$/ }))
+
+    await waitFor(() => expect(createBodies).toHaveLength(1))
+    expect(createBodies[0].table_id).toBeNull()
+    expect((createBodies[0].config as Record<string, unknown>).source).toEqual({ type: 'link', link_id: 800 })
   })
 })
