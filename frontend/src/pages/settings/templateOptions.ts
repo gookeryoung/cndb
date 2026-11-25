@@ -45,11 +45,12 @@ export const PAGE_NUMBER_OPTIONS: Option<TemplatePageNumber>[] = [
   { value: 'page_of_total', label: '第 X 页 共 Y 页' },
 ]
 
+/** 标题编号方案：标注推荐文体，避免「各类文件套错序数」 */
 export const NUMBERING_OPTIONS: Option<TemplateHeadingNumbering>[] = [
-  { value: 'none', label: '不编号' },
-  { value: 'arabic_multilevel', label: '1 / 1.1 / 1.1.1' },
-  { value: 'chapter_chinese', label: '第一章（子级 1.1）' },
-  { value: 'cn_ordinal', label: '一、 / （一）' },
+  { value: 'none', label: '不编号（宣传报道 / 周报 / 便函）' },
+  { value: 'arabic_multilevel', label: '1 / 1.1 / 1.1.1（研究报告 / 技术报告 / 趋势分析）' },
+  { value: 'chapter_chinese', label: '第一章 / 1.1 / 1.1.1（论文 / 专著）' },
+  { value: 'cn_ordinal', label: '一、 / （一）/ 1./（1）（公文 / GB/T 9704）' },
 ]
 
 export const TABLE_STYLE_OPTIONS: Option<TemplateTableStyle>[] = [
@@ -127,20 +128,98 @@ export const LATIN_FONTS = [
 export const CODE_FONTS = ['Courier New', 'Consolas', 'Menlo', 'Source Code Pro']
 
 /** 面板内 CSS 等比预览用：把模板配置折成一组内联样式（不追求与 Word 完全一致） */
+/** 标题编号前缀（与后端 `heading_prefix` 同口径，仅用于预览） */
+export function numberingPrefix(
+  scheme: TemplateHeadingNumbering,
+  level: number,
+  counters: number[],
+): string {
+  if (scheme === 'none') return ''
+  const numbers = counters.slice(0, level)
+  if (scheme === 'arabic_multilevel') return numbers.join('.')
+  if (scheme === 'chapter_chinese') {
+    if (level === 1) return `第${chineseNumber(counters[0])}章`
+    return numbers.join('.')
+  }
+  if (level === 1) return `${chineseNumber(counters[0])}、`
+  if (level === 2) return `（${chineseNumber(counters[1])}）`
+  if (level === 3) return `${counters[2]}.`
+  if (level === 4) return `（${counters[3]}）`
+  return numbers.join('.')
+}
+
+const CN_DIGITS = '零一二三四五六七八九'
+
+/** 1..99 中文数字（与后端一致，超出范围原样返回） */
+function chineseNumber(value: number): string {
+  if (value <= 0 || value >= 100) return String(value)
+  if (value < 10) return CN_DIGITS[value]
+  const tens = Math.floor(value / 10)
+  const ones = value % 10
+  const prefix = tens === 1 ? '十' : `${CN_DIGITS[tens]}十`
+  return ones === 0 ? prefix : `${prefix}${CN_DIGITS[ones]}`
+}
+
+/** 预览用：页脚页码文案（与导出侧 `plain / page / page_of_total` 同义） */
+export function pageNumberText(mode: string, page = 1, total = 3): string {
+  if (mode === 'none') return ''
+  if (mode === 'plain') return String(page)
+  if (mode === 'page') return `第 ${page} 页`
+  return `第 ${page} 页 共 ${total} 页`
+}
+
+/**
+ * 面板内 CSS 等比预览用：把模板配置折成一组内联样式（不追求与 Word 逐像素一致）。
+ *
+ * 覆盖模板真正控制的每一组要素：页面（纸张 / 页边距）、页眉页脚、H1–H6、正文段落、
+ * 列表、表格（全网格 / 三线表 / 斑马纹 / 表头配色）、图表题注、代码块、引用块。
+ */
 export function previewStyles(config: ExportTemplateConfig) {
-  const { body, table, headings, page } = config
+  const { body, table, headings, page, header_footer: hf, code, lists, captions } = config
   const heading = (level: number) => headings[Math.min(level, headings.length) - 1] ?? body
+  const fontStack = `${body.east_asia_font}, ${body.latin_font}, serif`
+  const threeLine = table.style === 'three_line'
+
   return {
     page: {
-      maxWidth: page.paper === 'A3' ? 640 : 560,
+      maxWidth: page.paper === 'A3' ? 660 : page.paper === 'Letter' ? 600 : 580,
+      // 页边距按 1cm ≈ 3.4px 缩放，保持「边距越大正文越窄」的相对关系
+      paddingTop: Math.max(6, page.margin_top * 3.4),
+      paddingBottom: Math.max(6, page.margin_bottom * 3.4),
+      paddingLeft: Math.max(8, page.margin_left * 3.4),
+      paddingRight: Math.max(8, page.margin_right * 3.4),
+      fontSize: body.size,
+      color: body.color,
+    },
+    header: {
+      fontFamily: fontStack,
+      fontSize: hf.font_size,
+      textAlign: 'center' as const,
+      color: 'var(--cn-text-secondary)',
+      paddingBottom: 4,
+      marginBottom: 8,
+      borderBottom: '1px solid var(--cn-border-soft)',
+      visibility: hf.header_text ? ('visible' as const) : ('hidden' as const),
+    },
+    footer: {
+      fontFamily: fontStack,
+      fontSize: hf.font_size,
+      textAlign: 'center' as const,
+      color: 'var(--cn-text-secondary)',
+      paddingTop: 4,
+      marginTop: 8,
+      borderTop: '1px solid var(--cn-border-soft)',
     },
     body: {
-      fontFamily: `${body.east_asia_font}, ${body.latin_font}, serif`,
+      fontFamily: fontStack,
       fontSize: body.size,
       fontWeight: body.bold ? 600 : 400,
       lineHeight: body.line_spacing_rule === 'fixed' ? `${body.line_spacing_pt}pt` : body.line_spacing,
+      letterSpacing: body.char_spacing ? `${body.char_spacing}pt` : undefined,
       textAlign: body.align === 'justify' ? ('justify' as const) : body.align,
       textIndent: body.first_line_indent_chars ? `${body.first_line_indent_chars}em` : undefined,
+      marginTop: body.space_before,
+      marginBottom: body.space_after,
       color: body.color,
     },
     headings: (level: number) => {
@@ -153,29 +232,83 @@ export function previewStyles(config: ExportTemplateConfig) {
         color: cfg.color,
         marginTop: cfg.space_before,
         marginBottom: cfg.space_after,
+        textIndent: cfg.first_line_indent_chars ? `${cfg.first_line_indent_chars}em` : undefined,
+        lineHeight: 1.35,
       }
+    },
+    list: {
+      fontFamily: fontStack,
+      fontSize: body.size,
+      color: body.color,
+      margin: 0,
+      paddingLeft: lists.indent_pt,
+      lineHeight: body.line_spacing_rule === 'fixed' ? `${body.line_spacing_pt}pt` : body.line_spacing,
+    },
+    listItem: {
+      marginBottom: lists.space_after,
     },
     table: {
       borderCollapse: 'collapse' as const,
       fontSize: table.size,
       color: body.color,
       width: '100%',
+      marginTop: 4,
+      marginBottom: 4,
     },
     cell: {
-      border: table.style === 'three_line' ? 'none' : '1px solid #888',
-      borderBottom: '1px solid #888',
-      padding: '4px 6px',
+      border: threeLine ? 'none' : `1px solid ${table.border_color}`,
+      borderBottom: threeLine ? 'none' : `1px solid ${table.border_color}`,
+      padding: '3px 6px',
       textAlign: 'left' as const,
+      verticalAlign: table.cell_valign === 'center' ? ('middle' as const) : ('top' as const),
     },
     headerCell: {
-      border: table.style === 'three_line' ? 'none' : '1px solid #888',
-      borderTop: '1.5px solid #000',
-      borderBottom: '1px solid #000',
-      background: table.style === 'three_line' ? 'transparent' : table.header_bg,
+      border: threeLine ? 'none' : `1px solid ${table.border_color}`,
+      borderTop: `1.5px solid ${threeLine ? table.border_color : '#000'}`,
+      borderBottom: `1px solid ${threeLine ? table.border_color : '#000'}`,
+      background: threeLine ? 'transparent' : table.header_bg,
       color: table.header_color,
       fontWeight: table.header_bold ? 600 : 400,
-      padding: '4px 6px',
+      padding: '3px 6px',
       textAlign: 'left' as const,
+      verticalAlign: table.cell_valign === 'center' ? ('middle' as const) : ('top' as const),
+    },
+    zebraRow: {
+      background: table.zebra ? 'var(--cn-bg-subtle)' : 'transparent',
+    },
+    caption: (kind: 'figure' | 'table') => {
+      const cfg = kind === 'figure' ? captions.figure : captions.table
+      return {
+        fontFamily: fontStack,
+        fontSize: cfg.size,
+        color: body.color,
+        textAlign: cfg.align,
+        marginTop: 4,
+        marginBottom: 4,
+        fontStyle: 'normal' as const,
+      }
+    },
+    code: {
+      fontFamily: `${code.latin_font}, ${code.east_asia_font}, monospace`,
+      fontSize: code.size,
+      lineHeight: 1.5,
+      margin: '6px 0',
+      padding: code.left_bar ? '6px 8px 6px 10px' : '6px 8px',
+      background: code.bg,
+      border: `1px solid ${code.border}`,
+      borderLeft: code.left_bar ? `3px solid ${code.border}` : `1px solid ${code.border}`,
+      borderRadius: 4,
+      whiteSpace: 'pre-wrap' as const,
+      color: body.color,
+    },
+    quote: {
+      fontFamily: fontStack,
+      fontSize: body.size,
+      color: 'var(--cn-text-secondary)',
+      borderLeft: '3px solid var(--cn-border)',
+      paddingLeft: 8,
+      margin: '6px 0',
+      fontStyle: 'italic' as const,
     },
   }
 }

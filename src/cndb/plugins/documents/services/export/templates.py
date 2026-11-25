@@ -716,6 +716,11 @@ def _resolved_from_row(row: Any) -> ResolvedTemplate:
 def heading_prefix(scheme: str, level: int, counters: list[int]) -> str:
     """按编号方案生成标题前缀文本（不含尾部分隔，调用方决定空白）.
 
+    方案与推荐文体一一对应（前端下拉同样标注，避免用户凭感觉选错）：
+    - ``arabic_multilevel``：``1`` / ``1.1`` / ``1.1.1`` —— 研究报告 / 技术报告 / 趋势分析 / 周报；
+    - ``chapter_chinese``：``第一章`` / ``1.1`` / ``1.1.1`` —— 论文 / 专著；
+    - ``cn_ordinal``：``一、`` / ``（一）`` / ``1.`` / ``（1）`` —— 公文 / 函件（GB/T 9704 层次序数）。
+
     ``counters`` 为长度 6 的层级计数器（调用方负责自增 / 清零）。
     """
     if scheme == "none":
@@ -728,11 +733,15 @@ def heading_prefix(scheme: str, level: int, counters: list[int]) -> str:
         if level == 1:
             return f"第{_chinese_number(numbers[0])}章"
         return ".".join(str(n) for n in numbers)
-    # cn_ordinal：一级「一、」 二级「（一）」 三级起阿拉伯数字
+    # cn_ordinal（党政机关公文 / GB/T 9704 层次序数）：一、→（一）→ 1. →（1）
     if level == 1:
         return f"{_chinese_number(numbers[0])}、"
     if level == 2:
         return f"（{_chinese_number(numbers[1])}）"
+    if level == 3:
+        return f"{numbers[2]}."
+    if level == 4:
+        return f"（{numbers[3]}）"
     return ".".join(str(n) for n in numbers)
 
 

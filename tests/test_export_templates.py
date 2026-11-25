@@ -187,6 +187,9 @@ class TestValidate:
         assert heading_prefix("chapter_chinese", 1, [3, 0, 0, 0, 0, 0]) == "第三章"
         assert heading_prefix("cn_ordinal", 1, [2, 0, 0, 0, 0, 0]) == "二、"
         assert heading_prefix("cn_ordinal", 2, [2, 5, 0, 0, 0, 0]) == "（五）"
+        # 公文层次序数（GB/T 9704）：三级「1.」 四级「（1）」
+        assert heading_prefix("cn_ordinal", 3, [2, 5, 3, 0, 0, 0]) == "3."
+        assert heading_prefix("cn_ordinal", 4, [2, 5, 3, 4, 0, 0]) == "（4）"
 
 
 class TestResolve:

@@ -9839,3 +9839,303 @@ body.cn-doc-focus-view .cn-doc-stats {
 .cn-sider-group-title:hover .cn-sider-group-grip {
   opacity: 1;
 }
+
+/* ── 文档模板页（ADR 0152）────────────────────────────────────────────
+ * 复用质量检查的双栏与行态原语（cn-page-head / cn-qc-split 同款网格 / cn-qc-row），
+ * 只补模板特有的「分组标题、两列配置网格、标题矩阵、示例预览框」。
+ * 目标：一屏同时看到「清单 + 配置 + 预览」，不出现大面积空白与超长单列表单。 */
+.cn-doc-tpl-split {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: var(--cn-space-md);
+  align-items: start;
+}
+
+/* 分组小标题：内置 / 自定义之间的一行弱化标签，比再套一个 SectionBox 省一层描边 */
+.cn-doc-tpl-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cn-space-sm);
+  width: 100%;
+  padding: var(--cn-space-sm) var(--cn-space-lg);
+  background: var(--cn-bg-subtle);
+  border: 0;
+  border-top: 1px solid var(--cn-border);
+  font-family: inherit;
+  font-size: var(--cn-text-2xs);
+  font-weight: var(--cn-weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--cn-text-secondary);
+  text-align: start;
+  cursor: pointer;
+}
+
+.cn-doc-tpl-group:hover {
+  color: var(--cn-text-primary);
+}
+
+.cn-doc-tpl-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+}
+
+.cn-doc-tpl-group:first-child {
+  border-top: 0;
+}
+
+/* 桌面端摘要单行省略：8 套内置预设一屏看完，行高不被长文案撑成两行 */
+@media (min-width: 768px) {
+  .cn-doc-tpl-split .cn-list-meta-content {
+    min-width: 0;
+  }
+
+  .cn-doc-tpl-split .cn-list-meta-description {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.cn-doc-tpl-row-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+.cn-doc-tpl-row-title .ant-tag {
+  margin-inline-end: 0;
+}
+
+/* 空分组占位：与行内边距对齐，不做成额外的大空态块 */
+.cn-doc-tpl-empty {
+  padding: var(--cn-space-lg);
+  font-size: var(--cn-text-xs);
+  line-height: 1.5;
+}
+
+/* 右栏：动作条贴标题条下方，配置区独立滚动（页头与动作始终可见） */
+.cn-doc-tpl-detail > .cn-box-body {
+  gap: var(--cn-space-md);
+}
+
+.cn-doc-tpl-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cn-space-xs);
+  padding-bottom: var(--cn-space-xs);
+  border-bottom: 1px solid var(--cn-border);
+}
+
+/* 动作条按钮带文字：图标与文案间距收一档，避免一排 5 个按钮占满整行 */
+.cn-doc-tpl-actions .ant-btn {
+  padding-inline: var(--cn-space-sm);
+  font-size: var(--cn-text-xs);
+}
+
+/* 右栏：配置方盒 + 预览方盒并列（配置 : 预览 = 6 : 4），预览收起后配置占满整行 */
+.cn-doc-tpl-detail-area {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(260px, 2fr);
+  gap: var(--cn-space-md);
+  align-items: start;
+  min-width: 0;
+}
+
+.cn-doc-tpl-detail-area--preview-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.cn-doc-tpl-config-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+/* 标题行右侧：状态标签 + 预览收起按钮（同一行，按钮在最末） */
+.cn-doc-tpl-head-extra {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+}
+
+.cn-doc-tpl-preview-box > .cn-box-body {
+  padding: var(--cn-space-xs) var(--cn-space-sm) var(--cn-space-sm);
+}
+
+.cn-doc-tpl-preview-hint {
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+}
+
+.cn-doc-tpl-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cn-space-xs);
+}
+
+.cn-doc-tpl-tags .ant-tag {
+  margin-inline-end: 0;
+  line-height: 18px;
+}
+
+.cn-doc-tpl-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--cn-space-sm) var(--cn-space-md);
+}
+
+/* 配置网格：两列（窄屏自动回落一列），每项「标签在上、控件在下」。
+ * 最小列宽 168px：右侧配置列约 380px 时仍能排两列，避免全部堆成超长单列。 */
+.cn-doc-tpl-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  gap: var(--cn-space-sm) var(--cn-space-md);
+}
+
+.cn-doc-tpl-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+  min-width: 0;
+}
+
+.cn-doc-tpl-field-label {
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-secondary);
+  line-height: 1.4;
+}
+
+.cn-doc-tpl-field-control {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--cn-space-xs);
+}
+
+.cn-doc-tpl-field-control .ant-space {
+  flex-wrap: wrap;
+}
+
+/* 一行里放多个输入框的字段（页边距 / 段前后 / 成对颜色）跨满两列，避免控件溢出重叠 */
+.cn-doc-tpl-field--wide {
+  grid-column: 1 / -1;
+}
+
+.cn-doc-tpl-field-control > .ant-select,
+.cn-doc-tpl-field-control > .ant-input,
+.cn-doc-tpl-field-control > .ant-input-number {
+  width: 100%;
+}
+
+.cn-doc-tpl-field-hint {
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-muted);
+  line-height: 1.3;
+}
+
+/* 颜色输入左侧的小色块（边框走统一中性线，不额外加重） */
+.cn-doc-tpl-color-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--cn-radius-sm);
+  border: 1px solid var(--cn-border);
+}
+
+/* 标题矩阵：6 行 × 6 列，列宽固定成表格感，避免每行控件宽度漂移 */
+.cn-doc-tpl-headings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cn-space-hairline);
+}
+
+.cn-doc-tpl-headings-head,
+.cn-doc-tpl-headings-row {
+  display: grid;
+  grid-template-columns: 40px minmax(120px, 1.4fr) 84px 110px minmax(132px, 1fr) 48px;
+  align-items: center;
+  gap: var(--cn-space-sm);
+}
+
+.cn-doc-tpl-headings-head {
+  font-size: var(--cn-text-2xs);
+  color: var(--cn-text-secondary);
+  padding-bottom: var(--cn-space-xs);
+}
+
+.cn-doc-tpl-headings-row {
+  padding: var(--cn-space-xs) 0;
+  border-top: 1px solid var(--cn-border);
+}
+
+.cn-doc-tpl-headings-level {
+  font-size: var(--cn-text-xs);
+}
+
+/* 折叠配置：ghost 让分区之间只靠标题与留白分隔，不再叠一层描边 */
+.cn-doc-tpl-config .ant-collapse-header {
+  padding: var(--cn-space-xs) 0 !important;
+  font-size: var(--cn-text-sm);
+  font-weight: var(--cn-weight-medium);
+}
+
+.cn-doc-tpl-config .ant-collapse-content-box {
+  padding: 0 0 var(--cn-space-sm) !important;
+}
+
+/* 内置模板的只读摘要：一行名称 + 说明，替代灰掉的输入框（少两行控件高度） */
+.cn-doc-tpl-readonly {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--cn-space-xs) var(--cn-space-sm);
+  font-size: var(--cn-text-xs);
+  min-width: 0;
+}
+
+.cn-doc-tpl-readonly .ant-typography {
+  font-size: var(--cn-text-xs);
+  margin: 0;
+}
+
+/* 预览本体：方盒已提供描边与内边距，这里只负责滚动与配色跟随 */
+.cn-doc-tpl-preview {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.cn-doc-tpl-note.ant-alert {
+  padding: var(--cn-space-xs) var(--cn-space-sm);
+}
+
+.cn-doc-tpl-dirty {
+  font-size: var(--cn-text-2xs);
+}
+
+@media (max-width: 767.98px) {
+  /* 窄屏：双栏纵向堆叠（与质量检查 / 修改申请一致） */
+  .cn-doc-tpl-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 配置 / 预览在窄屏纵向堆叠 */
+  .cn-doc-tpl-detail-area {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* 标题矩阵在窄屏允许横向滚动，不压缩输入框到不可用 */
+  .cn-doc-tpl-headings {
+    overflow-x: auto;
+  }
+
+  .cn-doc-tpl-headings-head,
+  .cn-doc-tpl-headings-row {
+    min-width: 560px;
+  }
+}

@@ -7,13 +7,13 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Route, Routes } from 'react-router-dom'
 import TemplatePanel from './TemplatePanel'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
-import { fontPtLabel, previewStyles } from './templateOptions'
+import { NUMBERING_OPTIONS, fontPtLabel, numberingPrefix, pageNumberText, previewStyles } from './templateOptions'
 import type { ExportTemplateConfig, ExportTemplateItem } from '@/api'
 
 /** 一份最小可用配置（结构与后端 ExportTemplateConfig 一致） */
@@ -218,13 +218,14 @@ describe('TemplatePanel', () => {
     const calls = setupHandlers()
     renderPanel()
     fireEvent.click(await screen.findByTestId('template-item-builtin:thesis'))
-    expect(await screen.findByText('内置模板只读')).toBeInTheDocument()
+    // 内置模板不再有「只读」提示条：只读能力由「无保存按钮 + 只读摘要」表达
+    expect(screen.getByText('内置模板')).toBeInTheDocument()
     expect(screen.queryByTestId('template-save-btn')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('template-save-as-btn'))
     const nameInput = await screen.findByTestId('template-save-as-name')
     fireEvent.change(nameInput, { target: { value: '论文（自定义）' } })
-    fireEvent.click(screen.getByRole('button', { name: '另存为' }))
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^另\s*存\s*为$/ }))
     await waitFor(() => expect(calls.post).toHaveLength(1))
     expect(calls.post[0].name).toBe('论文（自定义）')
     expect((calls.post[0].config as ExportTemplateConfig).body.east_asia_font).toBe('宋体')
@@ -244,8 +245,9 @@ describe('TemplatePanel', () => {
     renderPanel()
     fireEvent.click(await screen.findByTestId('template-item-7'))
     fireEvent.click(await screen.findByTestId('template-delete-btn'))
-    // 二次确认弹窗的确认按钮（antd 会给两个汉字的按钮自动插空格 → 用正则匹配）
-    fireEvent.click(await screen.findByRole('button', { name: /^删\s*除$/ }))
+    // 二次确认弹窗的确认按钮（antd 会给两个汉字的按钮自动插空格 → 用正则匹配并限定在弹窗内）
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: /^删\s*除$/ }))
     await waitFor(() => expect(calls.del).toEqual(['7']))
   })
 
@@ -268,17 +270,52 @@ describe('TemplatePanel', () => {
     setupHandlers({ role: 'viewer' })
     renderPanel()
     fireEvent.click(await screen.findByTestId('template-item-7'))
-    expect(await screen.findByText('只读浏览')).toBeInTheDocument()
+    expect((await screen.findAllByText(/只读浏览/)).length).toBeGreaterThan(0)
     expect(screen.queryByTestId('template-save-btn')).not.toBeInTheDocument()
     expect(screen.queryByTestId('template-delete-btn')).not.toBeInTheDocument()
   })
 
-  it('CSS 预览随配置变化（正文字号与标题字号）', async () => {
+  it('预览覆盖模板控制的全部要素（标题 / 正文 / 列表 / 表格 / 代码 / 引用）', async () => {
     setupHandlers()
     renderPanel()
     const preview = await screen.findByTestId('template-preview')
-    expect(preview).toHaveTextContent('第一章 概述')
+    expect(preview).toHaveTextContent('概述')
+    expect(preview).toHaveTextContent('背景与方法')
+    expect(preview).toHaveTextContent('列表项一')
     expect(preview).toHaveTextContent('覆盖率')
+    expect(screen.getByTestId('preview-code')).toHaveTextContent('hello template')
+    expect(preview).toHaveTextContent('引用块')
+    // 默认模板未启用页眉 / 页码 / 题注：对应要素不渲染
+    expect(screen.queryByTestId('preview-footer')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('preview-table-caption')).not.toBeInTheDocument()
+  })
+
+  it('预览按模板显示标题编号 / 页眉页码 / 图表题注', async () => {
+    const thesis = makeConfig({ east_asia_font: '宋体', size: 12, first_line_indent_chars: 2 })
+    setupHandlers({
+      items: [
+        BUILTIN_STANDARD,
+        {
+          ...BUILTIN_THESIS,
+          config: {
+            ...thesis,
+            header_footer: { ...thesis.header_footer, header_text: '某某公司', page_number: 'page_of_total' },
+            numbering: { heading: 'chapter_chinese' },
+            captions: {
+              figure: { enabled: true, position: 'below', numbering: 'n', size: 9, align: 'center' },
+              table: { enabled: true, position: 'above', numbering: 'n', size: 9, align: 'center' },
+            },
+          },
+        },
+      ],
+      defaultRef: 'builtin:thesis',
+    })
+    renderPanel()
+    expect(await screen.findByText('第一章 概述')).toBeInTheDocument()
+    expect(screen.getByTestId('preview-header')).toHaveTextContent('某某公司')
+    expect(screen.getByTestId('preview-footer')).toHaveTextContent('第 1 页 共 3 页')
+    expect(screen.getByTestId('preview-table-caption')).toHaveTextContent('表 1')
+    expect(screen.getByTestId('preview-figure-caption')).toHaveTextContent('图 1')
   })
 })
 
@@ -287,6 +324,26 @@ describe('templateOptions', () => {
     expect(fontPtLabel(12)).toBe('小四 12pt')
     expect(fontPtLabel(16)).toBe('三号 16pt')
     expect(fontPtLabel(13.5)).toBe('13.5pt')
+  })
+
+  it('标题编号方案按文体规范生成（公文层次序数四级）并在下拉里标注推荐文体', () => {
+    expect(numberingPrefix('none', 1, [1, 0, 0, 0, 0, 0])).toBe('')
+    expect(numberingPrefix('arabic_multilevel', 2, [1, 2, 0, 0, 0, 0])).toBe('1.2')
+    expect(numberingPrefix('chapter_chinese', 1, [3, 0, 0, 0, 0, 0])).toBe('第三章')
+    expect(numberingPrefix('cn_ordinal', 1, [2, 5, 3, 4, 0, 0])).toBe('二、')
+    expect(numberingPrefix('cn_ordinal', 2, [2, 5, 3, 4, 0, 0])).toBe('（五）')
+    expect(numberingPrefix('cn_ordinal', 3, [2, 5, 3, 4, 0, 0])).toBe('3.')
+    expect(numberingPrefix('cn_ordinal', 4, [2, 5, 3, 4, 0, 0])).toBe('（4）')
+    expect(NUMBERING_OPTIONS.find(o => o.value === 'cn_ordinal')?.label).toContain('GB/T 9704')
+    expect(NUMBERING_OPTIONS.find(o => o.value === 'chapter_chinese')?.label).toContain('论文')
+    expect(NUMBERING_OPTIONS.find(o => o.value === 'arabic_multilevel')?.label).toContain('研究报告')
+  })
+
+  it('页脚页码文案与导出侧一致', () => {
+    expect(pageNumberText('none')).toBe('')
+    expect(pageNumberText('plain')).toBe('1')
+    expect(pageNumberText('page')).toBe('第 1 页')
+    expect(pageNumberText('page_of_total')).toBe('第 1 页 共 3 页')
   })
 
   it('previewStyles 把配置折成内联样式', () => {
@@ -311,5 +368,62 @@ describe('DocumentTemplatesPage（文档区入口）', () => {
     expect(await screen.findByTestId('document-templates-page')).toBeInTheDocument()
     expect(screen.getByText('文档模板', { exact: true })).toBeInTheDocument()
     expect(await screen.findByTestId('template-list')).toBeInTheDocument()
+  })
+})
+
+describe('TemplatePanel 布局交互（分组折叠 / 新建 / 预览收起）', () => {
+  it('内置 / 自定义分组可分别展开收起', async () => {
+    setupHandlers()
+    renderPanel()
+    const group = await screen.findByTestId('template-group-builtin')
+    expect(screen.getByTestId('template-item-builtin:standard')).toBeInTheDocument()
+    expect(group).toHaveAttribute('aria-expanded', 'true')
+
+    fireEvent.click(group)
+    expect(group).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByTestId('template-item-builtin:standard')).not.toBeInTheDocument()
+    // 自定义分组不受影响（各自独立）
+    expect(screen.getByTestId('template-group-custom')).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByTestId('template-item-7')).toBeInTheDocument()
+
+    fireEvent.click(group)
+    expect(screen.getByTestId('template-item-builtin:standard')).toBeInTheDocument()
+  })
+
+  it('页头「新建模板」按内置预设创建并选中新模板', async () => {
+    const calls = setupHandlers()
+    renderPanel()
+    await waitFor(() => expect(screen.getByTestId('template-create-btn')).toBeEnabled())
+    fireEvent.click(screen.getByTestId('template-create-btn'))
+
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.change(within(dialog).getByTestId('template-create-name'), { target: { value: '新规范' } })
+    fireEvent.click(within(dialog).getByRole('button', { name: /^创\s*建$/ }))
+
+    await waitFor(() => expect(calls.post).toHaveLength(1))
+    expect(calls.post[0]).toMatchObject({ name: '新规范', preset_key: 'research' })
+  })
+
+  it('预览可收起 / 展开（默认展开，收起后不渲染预览内容）', async () => {
+    setupHandlers()
+    renderPanel()
+    expect(await screen.findByTestId('template-preview')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('template-preview-toggle'))
+    await waitFor(() => expect(screen.queryByTestId('template-preview')).not.toBeInTheDocument())
+    expect(screen.getByTestId('template-preview-toggle')).toHaveAttribute('aria-expanded', 'false')
+
+    fireEvent.click(screen.getByTestId('template-preview-toggle'))
+    expect(await screen.findByTestId('template-preview')).toBeInTheDocument()
+  })
+
+  it('动作键带文字：另存为 / 保存 / 设为默认 / 示例 Word / 示例 PDF', async () => {
+    setupHandlers()
+    renderPanel()
+    fireEvent.click(await screen.findByTestId('template-item-7'))
+    expect(await screen.findByTestId('template-save-as-btn')).toHaveTextContent('另存为')
+    expect(screen.getByTestId('template-save-btn')).toHaveTextContent('保存')
+    expect(screen.getByTestId('template-preview-btn')).toHaveTextContent('示例 Word')
+    expect(screen.getByTestId('template-preview-pdf-btn')).toHaveTextContent('示例 PDF')
   })
 })

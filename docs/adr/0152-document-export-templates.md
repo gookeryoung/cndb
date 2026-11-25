@@ -175,7 +175,7 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | 类型 | `frontend/src/store/ui.ts` | `SettingsTab` 增 `'template'` |
 | API | `frontend/src/api/exportTemplates.ts`（新增） | 列表 / 详情 / 新建 / 更新 / 删除 / preview（blob，含 `format`） |
 | API | `frontend/src/api/documents.ts` | `exportFile` 增可选 `template?: string` |
-| 面板 | `frontend/src/pages/settings/TemplatePanel.tsx`（新增） | 左列模板列表（内置分组 + 自定义分组、默认标记、新建 / 另存为 / 删除）；右侧五组配置（页面与页眉页脚 / 正文 / 标题与编号 / 表格与题注 / 列表与代码，折叠面板）+ CSS 等比预览 + 「下载示例 Word / PDF」 |
+| 面板 | `frontend/src/pages/settings/TemplatePanel.tsx`（新增） | 与「质量检查」同一套双栏原语：页头右侧「新建模板」（可选内置预设作起点）；左栏模板清单按「内置 / 自定义」分组并可分别展开收起（行内字号 / 行距 / 缩进摘要 + 默认标记）；右栏**配置与预览两个独立方盒**（6 : 4），预览方盒在配置方盒标题行最右侧用眼睛图标收起；动作键带文字（另存为 / 保存 / 设为默认 / 删除 / 示例 Word / 示例 PDF）；五组折叠配置 |
 | 字号 | `frontend/src/pages/settings/templateOptions.ts`（新增） | 中文字号↔磅值映射（小四 12pt / 四号 14pt / 三号 16pt…）、纸张与编号枚举选项，单一来源 |
 | 页签 | `SettingsModal.tsx` | 新增 `template` 页签，位置在 `llm` 之后 |
 | 顶栏 | `MainLayout.tsx` | `llm-settings-btn` 右侧新增 `template-settings-btn`（`SnippetsOutlined`），`openSettings('template')`；移动端用户菜单同项 |
@@ -236,9 +236,10 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | D10 | `template` 参数形态 | `builtin:<key>` 或正整数 id | 一个参数覆盖内置与自定义 | 两个参数（`preset` / `template_id`，校验分叉） | `routers/documents.py` |
 | D11 | 备份版本 | 16 → 17，新增 `templates[]`；旧包缺键按空 | H13 / H14：新表必须往返且旧包可导入 | 复用 v16（格式变更无标记，排查困难） | `workspace_backup.py`、`backup_io.py` |
 | D12 | 面板入口形态 | **文档区二级页签「模板」**（「质量检查」右侧）+ 独立页面 `/w/:wid/documents/templates`，面板复用 `TemplatePanel` | 模板是工作区级共享资源，与文档导出强绑定（C1 修订）；与「质量检查」「修改申请」同属文档上下文页签，切换不跳模块 | 顶栏图标 + 个人设置页签（初版实现）：个人设置里管工作区资源语义错位，且模板与文档页脱节；只留在个人设置（同上） | `MainLayout.tsx`、`frontend/src/pages/documents/DocumentTemplatesPage.tsx`、`frontend/src/App.tsx` |
-| D13 | 预览实现 | 服务端 `preview` 返回真实 docx / pdf + 面板内 CSS 等比预览 | 所见即所得需真实文件；CSS 预览保证即时反馈且不落库 | 只做 CSS（看不清真实效果）；只做下载（反馈慢） | `TemplatePanel.tsx`、`routers/templates.py` |
+| D13 | 预览实现 | 服务端 `preview` 返回真实 docx / pdf + 面板内 CSS 等比预览（**独立「预览」方盒**，占配置区 40%，可在配置方盒标题行右侧收起；内容覆盖模板控制的全部要素：页眉 / H1–H6 与编号 / 正文缩进字距 / 列表 / 三线表与表头配色 / 图表题注 / 代码块 / 引用 / 页脚页码） | 所见即所得需真实文件；CSS 预览保证即时反馈且不落库；独立方盒 + 可收起避免长配置被预览挤压 | 只做 CSS（看不清真实效果）；只做下载（反馈慢）；预览内嵌在配置底部（长表单会把预览推到屏外，且高度挤占配置区） | `TemplatePanel.tsx`、`routers/templates.py` |
 | D14 | 字号输入形态 | UI 同时显示中文号名与磅值（小四 = 12pt），存磅值 | 国内企业规范按号数沟通，存储保留数值精度 | 只存号名（不同号制口径不一，且 Word 用磅） | `templateOptions.ts` |
 | D15 | 明确非目标 | 目录 / 封面 / LOGO / 双栏 / 脚注尾注不纳入本期 | 域代码与分页成本高，收益待验证 | 一并做（P0-P3 无法收敛） | — |
+| D16 | 标题编号方案 | 固定四档并**标注推荐文体**：不编号（宣传报道 / 周报）、`1 / 1.1 / 1.1.1`（研究报告 / 技术报告 / 趋势分析）、`第一章 / 1.1 / 1.1.1`（论文 / 专著）、`一、 / （一）/ 1. / （1）`（公文，GB/T 9704 层次序数） | 各类文件的层次序数规范不同，用户凭感觉选会出现「公文用 1.1.1」「论文用一、」这类不规范编号 | 自由输入编号模板（正则 / 占位符，校验与预览成本高，本期不做）；只留单一方案（无法覆盖论文 / 公文） | `services/export/templates.py::heading_prefix`、`frontend/src/pages/settings/templateOptions.ts::numberingPrefix` |
 
 ## Consequences
 
@@ -262,5 +263,5 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 - 当前阶段：P0–P3 全部落地（2026-11-25，`a6af67ac` / e2e `3ac95d87`；入口位置按需求方修订第二版落地，推送属人工卡点）
 - 已完成：配置模型 + 8 套内置预设 + 解析入口 + 迁移/备份 v17（P0）；`_render_docx` 全量改读配置（标题编号 / 题注 / 三线表 / 页眉页脚 / 页边距）+ 导出 `template` 参数 + preview（P1）；`_render_pdf` 同源配置 + `ensure_pdf_font(family)` 族匹配与回落（P2）；CRUD 路由 + 前端面板 / 页签 / 顶栏入口 / 导出子菜单 + 单测 + e2e（P3）
 - 下一步：人工验收后 `make push`（H4 / H6）；若后续要给 PDF 补字间距，从 `BodyConfig.char_spacing` 映射 `ParagraphStyle.charSpace` 入手
-- 已知坑：⓪ 入口按需求方 2026-11-25 修订已从「个人设置 → 模板 + 顶栏图标」迁到**文档区二级页签「模板」（质量检查右侧）**，`SettingsTab` 不再有 `template`（D12 已改）；① `standard` 与历史 `DEFAULT_THEME` 在 docx 逐项一致，但 **PDF 表格不再强制隔行加深**（历史渲染器写死斑马纹，现由 `table.zebra` 控制且 `standard` 为 false）——这是 I2 的唯一已知偏差；② PDF 只有一个主字体，中文字体族只能「最佳匹配 + 回落」，西文字体名不参与族匹配；③ 备份版本升 17，旧包（无 `templates` 键）按空导入，`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 已同步；④ 配置字段名用 `lists`（避开 Python 内置 `list`，否则 pydantic 解析注解失败），前后端一致
+- 已知坑：⓪ 入口按需求方 2026-11-25 修订已从「个人设置 → 模板 + 顶栏图标」迁到**文档区二级页签「模板」（质量检查右侧）**；配置区在窄屏 / 窄列下由 `repeat(auto-fit, minmax(168px, 1fr))` 自动回落单列，多个输入框的字段用 `cn-doc-tpl-field--wide` 跨满两列，避免控件互相挤压；标题编号为**固定四档 + 推荐文体标注**（D16），不支持自定义编号模板，`SettingsTab` 不再有 `template`（D12 已改）；① `standard` 与历史 `DEFAULT_THEME` 在 docx 逐项一致，但 **PDF 表格不再强制隔行加深**（历史渲染器写死斑马纹，现由 `table.zebra` 控制且 `standard` 为 false）——这是 I2 的唯一已知偏差；② PDF 只有一个主字体，中文字体族只能「最佳匹配 + 回落」，西文字体名不参与族匹配；③ 备份版本升 17，旧包（无 `templates` 键）按空导入，`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 已同步；④ 配置字段名用 `lists`（避开 Python 内置 `list`，否则 pydantic 解析注解失败），前后端一致
 - 最近一次全绿：`make cov` 95.02%（7317 passed）、前端 `pnpm test:coverage` 双门槛达标（3378 passed）、`bundle-budget` 在预算内 @ 本地 2026-11-25
