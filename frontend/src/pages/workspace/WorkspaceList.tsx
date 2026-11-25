@@ -16,7 +16,7 @@ import {
   DownloadOutlined, SettingOutlined, GlobalOutlined, LockOutlined,
   SafetyCertificateOutlined, UploadOutlined, InboxOutlined, FileTextOutlined,
   FolderOpenOutlined, DatabaseOutlined, LoginOutlined, ArrowRightOutlined, HolderOutlined,
-  ToolOutlined, WarningOutlined, ApartmentOutlined,
+  ToolOutlined, WarningOutlined, ApartmentOutlined, UserOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -39,7 +39,12 @@ import {
 } from '@/utils/workspaceModules'
 import type { WorkspaceModule } from '@/utils/workspaceModules'
 import ModuleCheckCards from '@/components/ModuleCheckCards'
-import { flattenWorkspaceOrder, sortWorkspaces } from '@/utils/homeOrder'
+import { sortWorkspaces } from '@/utils/homeOrder'
+import { usePersistedState } from '@/utils/persistedState'
+import {
+  filterWorkspacesByScope, flattenGroupedOrder, groupWorkspacesByTeam, hasTeamGrouping,
+  scopeOptions, type WorkspaceGroup, type WorkspaceScope,
+} from './workspaceGroups'
 import { formatDateTime } from '@/utils/datetime'
 import WorkspaceSettingsModal from '@/pages/settings/WorkspaceSettingsModal'
 import WorkspaceBackupDialog from '@/pages/settings/WorkspaceBackupDialog'
@@ -99,14 +104,24 @@ export default function WorkspaceList() {
   const queryClient = useQueryClient()
   const navigate = useNavigate()
   const [createOpen, setCreateOpen] = useState(false)
-  // 命令面板「新建工作区」经 URL ?create=1 触发（0067 C3）
-  useCreateParam(() => setCreateOpen(true))
+  /** 新建弹窗预填的团队归属（团队页 / 团队 chip 进入时） */
+  const [pendingTeamId, setPendingTeamId] = useState<number | undefined>()
+  // 命令面板「新建工作区」经 URL ?create=1 触发（0067 C3）；团队页可带 ?team=<id> 预填归属
+  useCreateParam((params) => {
+    const teamId = Number(params.get('team'))
+    setPendingTeamId(Number.isFinite(teamId) && teamId > 0 ? teamId : undefined)
+    setCreateOpen(true)
+  })
   const [settingsOpen, setSettingsOpen] = useState<Workspace | null>(null)
   const [backupOpen, setBackupOpen] = useState<Workspace | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [search, setSearch] = useState('')
-  /** 团队过滤（ADR 0153 C1）：all / personal（个人工作区）/ 团队 id；不引入树 */
-  const [teamFilter, setTeamFilter] = useState<'all' | 'personal' | number>('all')
+  /** 首页团队筛选（需求 0157 C1）：全部 / 个人 / 团队 id；持久化，刷新后保持 */
+  const [scope, setScope] = usePersistedState<WorkspaceScope>('cndb_home_scope', 'all')
+  /** 折叠的团队分组 key（C8）：默认全部展开，只记用户手动收起过的组 */
+  const [collapsedGroups, setCollapsedGroups] = usePersistedState<string[]>(
+    'cndb_home_group_collapsed', [],
+  )
   /** 已展开的工作区 id 集合（允许多行同时展开，与 GitHub 文件树一致） */
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [form] = Form.useForm()
@@ -129,6 +144,13 @@ export default function WorkspaceList() {
   const workspaceDragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   )
+  /** 持久化取值可能是字符串 / 已删除团队：归一为合法 scope，避免分类空白 */
+  const effectiveScope: WorkspaceScope = useMemo(() => {
+    if (scope === 'all' || scope === 'personal') return scope
+    const id = Number(scope)
+    if (teams.some(t => Number(t.id) === id)) return id
+    return 'all'
+  }, [scope, teams])
 
   const create = useMutation({
     mutationFn: (v: {
@@ -147,6 +169,7 @@ export default function WorkspaceList() {
     onSuccess: (w) => {
       message.success(`已创建 "${w.name}"`)
       setCreateOpen(false)
+      setPendingTeamId(undefined)
       form.resetFields()
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
       navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules)}`)
@@ -170,14 +193,10 @@ export default function WorkspaceList() {
     })
   }
 
-  // 排序（pinned 分组优先 → 自定义顺序 → id）+ 搜索过滤
+  // 排序（pinned 分组优先 → 自定义顺序 → id）→ 团队筛选 → 搜索过滤
   const filteredWorkspaces = useMemo(() => {
     const ordered = sortWorkspaces(workspaces, prefs?.workspace_order)
-    const byTeam = ordered.filter((w) => {
-      if (teamFilter === 'all') return true
-      if (teamFilter === 'personal') return !w.team_id
-      return String(w.team_id) === String(teamFilter)
-    })
+    const byTeam = filterWorkspacesByScope(ordered, effectiveScope)
     const q = search.trim().toLowerCase()
     if (!q) return byTeam
     return byTeam.filter(w =>
@@ -185,14 +204,30 @@ export default function WorkspaceList() {
       (w.description ?? '').toLowerCase().includes(q) ||
       (w.tags ?? []).some(t => t.toLowerCase().includes(q)),
     )
-  }, [workspaces, search, prefs?.workspace_order, teamFilter])
+  }, [workspaces, search, prefs?.workspace_order, effectiveScope])
 
   const starred = filteredWorkspaces.filter(w => w.pinned)
-  const others = filteredWorkspaces.filter(w => !w.pinned)
-  /** 搜索过滤时禁止拖拽：保存的是当前展示顺序，只提交过滤子集会误伤未展示工作区的名次 */
-  const dragEnabled = !search.trim()
+  /** 是否展示团队层级（无团队归属时保持现状，C9） */
+  const showTeamGrouping = hasTeamGrouping(teams, workspaces)
+  /** 展示分组：有团队层级时按团队分组；否则保持原「其他工作区」单组 */
+  const groups = useMemo<Array<WorkspaceGroup<WSWithStats>>>(() => {
+    if (showTeamGrouping) return groupWorkspacesByTeam(filteredWorkspaces, teams)
+    const others = filteredWorkspaces.filter(w => !w.pinned)
+    if (others.length === 0) return []
+    return [{ key: 'others', teamId: null, title: '其他工作区', isPersonal: true, workspaces: others }]
+  }, [showTeamGrouping, filteredWorkspaces, teams])
+  /** 团队 chips（全部 / 个人 / 各团队）：默认全部，点击收窄，再次点击回到全部 */
+  const teamChips = useMemo(() => scopeOptions(teams, workspaces), [teams, workspaces])
+  /** 搜索 / 团队筛选时禁止拖拽：保存的是全量顺序，只提交可见子集会误伤未展示工作区的名次 */
+  const dragEnabled = !search.trim() && effectiveScope === 'all'
 
-  /** 组内拖拽结束：跨分组不生效；保存时按展示顺序扁平化「已收藏组 + 其他组」 */
+  const toggleGroupCollapsed = (key: string) => {
+    setCollapsedGroups(prev => (
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    ))
+  }
+
+  /** 组内拖拽结束：跨分组不生效；保存时按当前分组顺序拼接全量 id */
   const handleWorkspaceDragEnd = (event: DragEndEvent) => {
     if (!dragEnabled) return
     const { active, over } = event
@@ -200,17 +235,32 @@ export default function WorkspaceList() {
     const byId = new Map(workspaces.map(w => [String(w.id), w]))
     const activeWs = byId.get(String(active.id))
     const overWs = byId.get(String(over.id))
-    if (!activeWs || !overWs || !!activeWs.pinned !== !!overWs.pinned) return
+    if (!activeWs || !overWs) return
 
-    const group = activeWs.pinned ? starred : others
-    const groupIds = group.map(w => String(w.id))
+    const activeGroup = activeWs.pinned
+      ? null
+      : groups.find(g => g.workspaces.some(w => String(w.id) === String(active.id)))
+    const overGroup = overWs.pinned
+      ? null
+      : groups.find(g => g.workspaces.some(w => String(w.id) === String(over.id)))
+    if (!!activeWs.pinned !== !!overWs.pinned) return
+    if (!activeWs.pinned && (!activeGroup || activeGroup.key !== overGroup?.key)) return
+
+    const groupRows = activeWs.pinned ? starred : (activeGroup?.workspaces ?? [])
+    const groupIds = groupRows.map(w => String(w.id))
     const from = groupIds.indexOf(String(active.id))
     const to = groupIds.indexOf(String(over.id))
     if (from < 0 || to < 0) return
     const nextGroup = arrayMove(groupIds, from, to)
-    const starredIds = activeWs.pinned ? nextGroup : starred.map(w => String(w.id))
-    const otherIds = activeWs.pinned ? others.map(w => String(w.id)) : nextGroup
-    setWorkspaceOrder.mutate(flattenWorkspaceOrder(starredIds, otherIds), {
+    const reorder = () => nextGroup
+      .map(id => byId.get(id))
+      .filter((w): w is WSWithStats => !!w)
+    // 已收藏组内拖拽：重排 starred；未收藏组内拖拽：只重排目标组，starred 原样保留
+    const orderedStarred = activeWs.pinned ? reorder() : starred
+    const nextGroups = activeWs.pinned
+      ? groups
+      : groups.map(g => (g.key === activeGroup?.key ? { ...g, workspaces: reorder() } : g))
+    setWorkspaceOrder.mutate(flattenGroupedOrder(orderedStarred, nextGroups), {
       onError: (err) => message.error(err instanceof Error ? err.message : '保存排序失败，请重试'),
     })
   }
@@ -250,23 +300,11 @@ export default function WorkspaceList() {
           >
             <div>
               <Title level={3} style={{ margin: 0 }}><FolderOpenOutlined style={{ marginRight: 8 }} />我的工作区</Title>
-              <Text type="secondary">选择或创建一个工作区开始协作</Text>
+              <Text type="secondary">
+                {showTeamGrouping ? '按团队分组浏览；已收藏置顶，团队内工作区平铺' : '选择或创建一个工作区开始协作'}
+              </Text>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {teams.length > 0 && (
-                <Select
-                  size="middle"
-                  value={String(teamFilter)}
-                  onChange={(v) => setTeamFilter(v === 'all' || v === 'personal' ? v : Number(v))}
-                  style={{ width: isMobile ? '100%' : 160 }}
-                  data-testid="workspace-team-filter"
-                  options={[
-                    { value: 'all', label: '全部工作区' },
-                    { value: 'personal', label: '个人工作区' },
-                    ...teams.map(t => ({ value: String(t.id), label: t.name })),
-                  ]}
-                />
-              )}
               <SearchInput
                 size="middle"
                 placeholder="搜索工作区名称/标签…"
@@ -275,16 +313,12 @@ export default function WorkspaceList() {
                 onChange={e => setSearch((e.target as HTMLInputElement).value)}
               />
               <Button
-                icon={<ApartmentOutlined />}
-                onClick={() => navigate('/teams')}
-                data-testid="open-team-page-btn"
-              >
-                团队
-              </Button>
-              <Button
                 type="primary"
                 icon={<PlusOutlined />}
-                onClick={() => setCreateOpen(true)}
+                onClick={() => {
+                  setPendingTeamId(typeof effectiveScope === 'number' ? effectiveScope : undefined)
+                  setCreateOpen(true)
+                }}
                 style={isMobile ? { flex: 1 } : undefined}
                 data-testid="create-workspace-btn"
               >
@@ -300,6 +334,27 @@ export default function WorkspaceList() {
               </Button>
             </div>
           </div>
+
+          {teams.length > 0 && (
+            <div className="cn-ws-team-chips" data-testid="workspace-team-chips" role="group" aria-label="按团队筛选工作区">
+              {teamChips.map(chip => {
+                const active = String(effectiveScope) === String(chip.value)
+                return (
+                  <button
+                    key={String(chip.value)}
+                    type="button"
+                    className={active ? 'cn-ws-team-chip cn-ws-team-chip-active' : 'cn-ws-team-chip'}
+                    aria-pressed={active}
+                    data-testid={`workspace-team-chip-${chip.value}`}
+                    onClick={() => setScope(active ? 'all' : chip.value)}
+                  >
+                    {chip.label}
+                    <span className="cn-ws-team-chip-count">{chip.count}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
 
           {isLoading ? (
             /* 骨架屏占位 —— 行式布局，sr-only 文本保留给屏幕阅读器与既有测试断言 */
@@ -342,22 +397,59 @@ export default function WorkspaceList() {
                     </SortableContext>
                   </section>
                 )}
-                {others.length > 0 && (
-                  <section className="cn-ws-group" data-testid="workspace-group-others">
-                    {starred.length > 0 && (
-                      <div className="cn-ws-group-head">
-                        <span>其他工作区</span>
-                        <span className="cn-ws-group-count">{others.length}</span>
-                      </div>
-                    )}
-                    <SortableContext
-                      items={others.map(w => String(w.id))}
-                      strategy={verticalListSortingStrategy}
+                {groups.map((group) => {
+                  const collapsed = collapsedGroups.includes(group.key)
+                  // 无团队层级时沿用旧 testid 与「无收藏不显示组头」口径，存量行为不变（C9）
+                  const testid = group.key === 'others'
+                    ? 'workspace-group-others'
+                    : `workspace-group-${group.key}`
+                  const showHead = group.key !== 'others' || starred.length > 0
+                  return (
+                    <section
+                      key={group.key}
+                      className="cn-ws-group"
+                      data-testid={testid}
+                      data-collapsed={collapsed ? 'true' : undefined}
                     >
-                      <div className="cn-ws-list">{others.map(renderRow)}</div>
-                    </SortableContext>
-                  </section>
-                )}
+                      {showHead && (
+                        <div className="cn-ws-group-head">
+                          <button
+                            type="button"
+                            className="cn-ws-group-toggle"
+                            aria-expanded={!collapsed}
+                            aria-label={`${collapsed ? '展开' : '收起'}「${group.title}」`}
+                            data-testid={`workspace-group-toggle-${group.key}`}
+                            onClick={() => toggleGroupCollapsed(group.key)}
+                          >
+                            <CaretRightOutlined rotate={collapsed ? 0 : 90} />
+                          </button>
+                          {group.isPersonal ? <UserOutlined /> : <TeamOutlined />}
+                          <span className="cn-ws-group-title">{group.title}</span>
+                          <span className="cn-ws-group-count">{group.workspaces.length}</span>
+                          {!group.isPersonal && group.team && (
+                            <Button
+                              type="link"
+                              size="small"
+                              className="cn-ws-group-manage"
+                              data-testid={`workspace-group-manage-${group.team.id}`}
+                              onClick={() => navigate(`/teams/${group.team!.id}`)}
+                            >
+                              管理
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                      {!collapsed && (
+                        <SortableContext
+                          items={group.workspaces.map(w => String(w.id))}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="cn-ws-list">{group.workspaces.map(renderRow)}</div>
+                        </SortableContext>
+                      )}
+                    </section>
+                  )
+                })}
               </div>
             </DndContext>
           )}
@@ -374,7 +466,7 @@ export default function WorkspaceList() {
         <Modal
           title="新建工作区"
           open={createOpen}
-          onCancel={() => { form.resetFields(); setCreateOpen(false) }}
+          onCancel={() => { form.resetFields(); setPendingTeamId(undefined); setCreateOpen(false) }}
           onOk={() => form.submit()}
           confirmLoading={create.isPending}
           okText="创建"
@@ -384,7 +476,11 @@ export default function WorkspaceList() {
           <Form
             form={form}
             layout="vertical"
-            initialValues={{ visibility: 'member', allow_edit: true, modules: [...DEFAULT_WORKSPACE_MODULES] }}
+            initialValues={{
+              visibility: 'member', allow_edit: true,
+              modules: [...DEFAULT_WORKSPACE_MODULES],
+              team_id: pendingTeamId,
+            }}
             onFinish={(v) => {
               const tagsStr = (v.tags as string) || ''
               create.mutate({

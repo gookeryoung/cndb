@@ -9,7 +9,7 @@ import { http, HttpResponse } from 'msw'
 import { Routes, Route, useLocation } from 'react-router-dom'
 import MainLayout from './MainLayout'
 import { renderProviders } from '@/test/render-providers'
-import { mockDocuments, mockUser, mockWorkspace, server } from '@/test/msw'
+import { mockDocuments, mockTeam, mockUser, mockWorkspace, server } from '@/test/msw'
 import type { UserResponse, WorkspaceModule } from '@/api'
 import type { ResponsiveState } from '@/hooks/useResponsive'
 
@@ -39,6 +39,12 @@ function AdminStub() {
 /** 主页路由桩（/w 工作区列表，需求 0081 C3 主页搜索） */
 function HomeStub() {
     return <div data-testid="home-page-stub">主页</div>
+}
+
+/** 团队页路由桩 —— 展示当前 pathname 供团队面包屑断言 */
+function TeamStub() {
+    const loc = useLocation()
+    return <div data-testid="teams-page-stub">{loc.pathname}</div>
 }
 
 /** 帮助文档路由桩 —— 展示当前 pathname 供断言（ADR 0029：整页路由，非抽屉） */
@@ -134,6 +140,8 @@ function renderLayout(authUser: UserResponse, route = '/w/10/tables') {
                 <Route path="w/:wid/datasource" element={<WsSectionStub />} />
                 <Route path="w/:wid/pipelines" element={<WsSectionStub />} />
                 <Route path="w" element={<HomeStub />} />
+                <Route path="teams" element={<TeamStub />} />
+                <Route path="teams/:tid" element={<TeamStub />} />
                 <Route path="admin" element={<AdminStub />} />
                 <Route path="help" element={<HelpStub />} />
                 <Route path="help/:sectionKey/:topicKey" element={<HelpStub />} />
@@ -1580,5 +1588,50 @@ describe('MainLayout 侧栏分组排序与拖拽', () => {
         fireEvent.drop(target, { dataTransfer })
 
         await waitFor(() => expect(posted).toEqual([5, 9]))
+    })
+})
+
+describe('MainLayout 团队层级（需求 0157 C4）', () => {
+    it('团队工作区显示「团队名 › 工作区」面包屑，点击团队名回到团队页', async () => {
+        server.use(
+            http.get('/api/v1/workspaces', () => HttpResponse.json([{
+                ...mockWorkspace, team_id: mockTeam.id,
+                team: { id: mockTeam.id, name: mockTeam.name, slug: mockTeam.slug },
+            }])),
+            http.get('/api/v1/teams', () => HttpResponse.json([mockTeam])),
+        )
+        renderLayout(mockUser)
+
+        const crumb = await screen.findByTestId('header-team-crumb')
+        expect(crumb).toHaveTextContent('研发部')
+        expect(screen.queryByTestId('header-personal-crumb')).toBeNull()
+
+        fireEvent.click(crumb)
+        await waitFor(() => {
+            expect(screen.getByTestId('teams-page-stub')).toHaveTextContent(`/teams/${mockTeam.id}`)
+        })
+    })
+
+    it('个人工作区显示「个人」标识且不可点击', async () => {
+        renderLayout(mockUser)
+
+        const personal = await screen.findByTestId('header-personal-crumb')
+        expect(personal).toHaveTextContent('个人')
+        expect(screen.queryByTestId('header-team-crumb')).toBeNull()
+    })
+
+    it('顶栏切换器按团队分组展示工作区', async () => {
+        server.use(
+            http.get('/api/v1/workspaces', () => HttpResponse.json([{
+                ...mockWorkspace, team_id: mockTeam.id,
+                team: { id: mockTeam.id, name: mockTeam.name, slug: mockTeam.slug },
+            }])),
+            http.get('/api/v1/teams', () => HttpResponse.json([mockTeam])),
+        )
+        renderLayout(mockUser)
+
+        await waitFor(() => expect(screen.getByTestId('ws-switch-btn')).toBeVisible())
+        fireEvent.click(screen.getByTestId('ws-switch-btn'))
+        expect(await screen.findByTestId(`scope-group-team-${mockTeam.id}`)).toHaveTextContent('研发部')
     })
 })

@@ -90,6 +90,8 @@ function AuthenticatedApp() {
           <Route index element={<Navigate to="/w" replace />} />
           <Route path="w" element={<WorkspaceList />} />
           <Route path="teams" element={<TeamPage />} />
+          {/* 团队上下文（需求 0157 C3）：/teams/:tid?section= 深链，选中团队来自 URL */}
+          <Route path="teams/:tid" element={<TeamPage />} />
           <Route path="w/:wid" element={<WorkspaceLanding />} />
           <Route path="w/:wid/tables" element={<TablesList />} />
           <Route path="w/:wid/links/:linkId" element={<LinkedTablePage />} />

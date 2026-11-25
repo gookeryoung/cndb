@@ -852,10 +852,10 @@ describe('WorkspaceList 导入工作区（全量归档）', () => {
 })
 
 /**
- * 团队分组（ADR 0153 C1）：团队下工作区仍是**平铺列表**（无树），
- * 只通过「团队过滤 + 团队徽标」表达归属。
+ * 团队分组（需求 0157 C1 / C5）：团队下工作区仍是**平铺列表**（无树）；
+ * 首页默认按团队分组展示，chips 只做快速收窄。
  */
-describe('WorkspaceList 团队归属', () => {
+describe('WorkspaceList 团队归属与分组', () => {
   const teamWs = {
     id: 21, name: '研发部工作区', description: '团队工作区', visibility: 'member' as const, tags: [],
     allow_edit: true, created_by_id: 1, created_at: '', updated_at: '',
@@ -884,37 +884,66 @@ describe('WorkspaceList 团队归属', () => {
     )
   }
 
-  it('展示团队徽标与团队过滤入口，且不渲染树形层级', async () => {
+  it('默认按团队分组展示（平铺、无树），组头带计数与管理入口', async () => {
     mockList()
     renderWorkspaceList()
 
-    expect(await screen.findByTestId('workspace-team-filter')).toBeVisible()
-    // 展开团队工作区行 → 展示团队徽标
+    expect(await screen.findByTestId('workspace-team-chips')).toBeVisible()
+    const teamGroup = await screen.findByTestId('workspace-group-team-500')
+    expect(within(teamGroup).getByText('研发部工作区')).toBeVisible()
+    expect(within(teamGroup).getByText('研发部')).toBeVisible()
+    expect(within(teamGroup).getByTestId('workspace-group-manage-500')).toBeVisible()
+
+    const personalGroup = screen.getByTestId('workspace-group-personal')
+    expect(within(personalGroup).getByText('个人工作区', { selector: '.cn-ws-group-title' })).toBeVisible()
+
+    // 展开团队工作区行 → 详情展示团队徽标
     const user = userEvent.setup()
     await user.click(await screen.findByTestId('workspace-expand-21'))
-    expect(await screen.findByText('研发部')).toBeVisible()
-    // 平铺：没有树节点角色 / 展开箭头层级
+    expect(within(await screen.findByTestId('workspace-detail-21')).getByText('研发部')).toBeVisible()
+    // 平铺：没有树节点角色
     expect(screen.queryByRole('tree')).toBeNull()
     expect(screen.queryByRole('treeitem')).toBeNull()
   })
 
-  it('按团队过滤：切到「个人工作区」后只显示未归属团队的工作区', async () => {
+  it('团队 chips 收窄列表；再次点击当前 chip 回到全部', async () => {
     mockList()
     renderWorkspaceList()
 
     const user = userEvent.setup()
-    const filter = await screen.findByTestId('workspace-team-filter')
-    await user.click(filter.querySelector('.ant-select-selector') ?? filter)
-    const dropdown = await waitFor(() => {
-      const el = document.querySelector('.ant-select-dropdown')
-      if (!el) throw new Error('团队过滤下拉未展开')
-      return el as HTMLElement
-    })
-    await user.click(within(dropdown).getByText('个人工作区'))
+    await user.click(await screen.findByTestId('workspace-team-chip-personal'))
 
-    await waitFor(() => {
-      expect(screen.queryByText('研发部工作区')).toBeNull()
-    })
-    expect(await screen.findAllByText('个人工作区')).not.toHaveLength(0)
+    await waitFor(() => expect(screen.queryByText('研发部工作区')).toBeNull())
+    expect(screen.getByTestId('workspace-group-personal')).toBeInTheDocument()
+
+    await user.click(screen.getByTestId('workspace-team-chip-personal'))
+    expect(await screen.findByTestId('workspace-group-team-500')).toBeInTheDocument()
+  })
+
+  it('分组折叠隐藏组内行，组头仍保留', async () => {
+    mockList()
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    const group = await screen.findByTestId('workspace-group-team-500')
+    const toggle = within(group).getByTestId('workspace-group-toggle-team-500')
+    await user.click(toggle)
+
+    expect(within(group).queryByText('研发部工作区')).toBeNull()
+    expect(within(group).getByText('研发部')).toBeVisible()
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('无团队时保持现状：不渲染团队 chips 与团队分组', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () => HttpResponse.json([personalWs])),
+      http.get('/api/v1/teams', () => HttpResponse.json([])),
+    )
+    renderWorkspaceList()
+
+    expect(await screen.findByText('个人工作区')).toBeVisible()
+    expect(screen.queryByTestId('workspace-team-chips')).toBeNull()
+    expect(screen.queryByTestId('workspace-group-team-500')).toBeNull()
+    expect(screen.getByTestId('workspace-group-others')).toBeInTheDocument()
   })
 })

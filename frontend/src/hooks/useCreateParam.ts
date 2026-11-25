@@ -8,7 +8,7 @@ import { useSearchParams } from 'react-router-dom'
  * 幂等：命中后立即移除该参数（replace，不留历史记录），刷新 / 回退不会重复弹出；
  * 页面已挂载时再次导航带参（如重复执行命令）也会重新触发（依赖 searchParams 变化）。
  */
-export function useCreateParam(onCreate: () => void) {
+export function useCreateParam(onCreate: (params: URLSearchParams) => void) {
   const [searchParams, setSearchParams] = useSearchParams()
   // 回调经 ref 转发：避免 onCreate 身份变化引发 effect 重跑
   const onCreateRef = useRef(onCreate)
@@ -16,9 +16,11 @@ export function useCreateParam(onCreate: () => void) {
 
   useEffect(() => {
     if (searchParams.get('create') !== '1') return
-    onCreateRef.current()
+    onCreateRef.current(new URLSearchParams(searchParams))
     const next = new URLSearchParams(searchParams)
     next.delete('create')
+    // 预填参数只用一次：刷新 / 再次打开新建不沿用上一次的团队归属
+    next.delete('team')
     setSearchParams(next, { replace: true })
   }, [searchParams, setSearchParams])
 }

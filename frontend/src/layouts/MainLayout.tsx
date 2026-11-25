@@ -17,8 +17,8 @@ import {
   LockOutlined, ApartmentOutlined, HolderOutlined,
 } from '@ant-design/icons'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { designsApi, systemApi, tableApi, tableGroupApi, workspaceApi } from '@/api'
-import type { TableGroup, TableSummary } from '@/api'
+import { designsApi, systemApi, tableApi, tableGroupApi, teamApi, workspaceApi } from '@/api'
+import type { TableGroup, TableSummary, Team, Workspace } from '@/api'
 import { useTableHoverPrefetch } from '@/pages/workspace/tablePrefetch'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
@@ -37,6 +37,7 @@ import {
 import GlobalSearch from '@/components/GlobalSearch'
 import SearchInput from '@/components/SearchInput'
 import { BrandMark } from '@/components/BrandMark'
+import ScopeSwitcher from '@/components/ScopeSwitcher'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import {
@@ -143,6 +144,9 @@ function ContentFallback() {
   )
 }
 
+/** 移动端团队导航只消费工作区的跳转字段 */
+type TeamWorkspaceLike = Pick<Workspace, 'id' | 'name' | 'modules'>
+
 const { Header, Sider, Content } = Layout
 
 export default function MainLayout() {
@@ -218,6 +222,13 @@ export default function MainLayout() {
   const { data: workspaces = [], isLoading: wsLoading } = useQuery({
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
+  })
+
+  // 团队列表（需求 0157）：顶栏切换器与移动端抽屉按团队分组；失败不阻断导航
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['teams'],
+    queryFn: () => teamApi.list(),
+    retry: false,
   })
 
   // 顶栏版本小字 —— 与「关于系统」弹窗共用缓存；版本是非关键信息，失败静默不重试
@@ -620,19 +631,6 @@ export default function MainLayout() {
       },
     })
   }, [logout, navigate, queryClient, modal])
-
-  const workspaceMenuItems: MenuProps['items'] = [
-    { type: 'group', label: '工作区' },
-    ...workspaces.map(w => ({
-      key: `ws-${w.id}`,
-      icon: <FolderOutlined />,
-      label: (w.pinned ? '📌 ' : '') + w.name,
-      // 切到目标工作区的「同一一级模块」而不是一律回落地页：用户看到的是对应工作区的
-      // 对应内容；目标工作区没有该模块时，落到它有的第一个一级模块默认页
-      // （tables → documents → design，见 workspaceSwitchSegment）。
-      onClick: () => navigate(`/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules)}`),
-    })),
-  ]
 
   const userMenuItems: MenuProps['items'] = [
     { key: 'user', icon: <UserOutlined />, label: user?.username || '用户', disabled: true },
@@ -1050,6 +1048,78 @@ export default function MainLayout() {
     )
   }
 
+  /** 移动端抽屉顶部的团队 / 工作区导航（需求 0157 C7）：团队 → 工作区两级，默认收起；
+   * 平铺组内工作区，无树（ADR 0153 C1）。 */
+  const renderMobileTeamsNav = () => {
+    const personal = workspaces.filter(w => w.team_id == null)
+    const renderWs = (w: TeamWorkspaceLike) => (
+      <button
+        type="button"
+        key={w.id}
+        className="cn-mobile-team-ws"
+        data-testid={`mobile-team-ws-${w.id}`}
+        onClick={() => {
+          navigate(`/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules)}`)
+          setMobileNavOpen(false)
+        }}
+      >
+        <FolderOutlined />
+        <span className="cn-mobile-team-ws-name">{w.name}</span>
+        {String(w.id) === wid && <span className="cn-mobile-team-current">当前</span>}
+      </button>
+    )
+    return (
+      <div className="cn-mobile-team-nav" data-testid="mobile-team-nav">
+        <div className="cn-mobile-team-nav-head">
+          <span>团队</span>
+          <Button
+            type="link"
+            size="small"
+            data-testid="mobile-manage-teams"
+            onClick={() => { navigate('/teams'); setMobileNavOpen(false) }}
+          >
+            管理团队
+          </Button>
+        </div>
+        {teams.map(team => {
+          const rows = workspaces.filter(w => w.team_id != null && String(w.team_id) === String(team.id))
+          return (
+            <details key={team.id} className="cn-mobile-team-group" data-testid={`mobile-team-${team.id}`}>
+              <summary>
+                <ApartmentOutlined />
+                <span className="cn-mobile-team-name">{team.name}</span>
+                <span className="cn-ws-group-count">{rows.length}</span>
+              </summary>
+              <div className="cn-mobile-team-list">
+                {rows.length > 0
+                  ? rows.map(renderWs)
+                  : <span className="cn-mobile-team-empty">还没有工作区</span>}
+                <button
+                  type="button"
+                  className="cn-mobile-team-link"
+                  data-testid={`mobile-team-manage-${team.id}`}
+                  onClick={() => { navigate(`/teams/${team.id}`); setMobileNavOpen(false) }}
+                >
+                  打开团队页
+                </button>
+              </div>
+            </details>
+          )
+        })}
+        {personal.length > 0 && (
+          <details className="cn-mobile-team-group" data-testid="mobile-team-personal">
+            <summary>
+              <UserOutlined />
+              <span className="cn-mobile-team-name">个人工作区</span>
+              <span className="cn-ws-group-count">{personal.length}</span>
+            </summary>
+            <div className="cn-mobile-team-list">{personal.map(renderWs)}</div>
+          </details>
+        )}
+      </div>
+    )
+  }
+
   return (
     <Layout style={{ height: '100vh', minHeight: 0 }}>
       {/* 留白与控件间距走 index.css（桌面基准 + 移动端收窄），不再 JS 分叉（ADR 0123 C7） */}
@@ -1091,12 +1161,38 @@ export default function MainLayout() {
             </div>
           </Tooltip>
 
-          {/* 工作区下拉 —— 移动端仅显示图标，节省横向空间 */}
-          <Dropdown menu={{ items: workspaceMenuItems }} trigger={['click']}>
-            <Button type="text" icon={<FolderOpenOutlined />} data-testid="ws-switch-btn">
-              {!isMobile && (currentWs?.name || '工作区')}
-            </Button>
-          </Dropdown>
+          {/* 层级面包屑（需求 0157 C4）：团队名可点回团队页；个人工作区显示「个人」。
+              移动端空间不足，归属信息由切换器分组承担 */}
+          {!isMobile && currentWs && (
+            currentWs.team ? (
+              <Tooltip title={`返回「${currentWs.team.name}」团队页`}>
+                <button
+                  type="button"
+                  className="cn-header-team-crumb"
+                  data-testid="header-team-crumb"
+                  onClick={() => navigate(`/teams/${currentWs.team!.id}`)}
+                >
+                  <ApartmentOutlined />
+                  <span>{currentWs.team.name}</span>
+                </button>
+              </Tooltip>
+            ) : (
+              <span className="cn-header-team-crumb cn-header-team-crumb-personal" data-testid="header-personal-crumb">
+                <UserOutlined />
+                <span>个人</span>
+              </span>
+            )
+          )}
+          {!isMobile && currentWs?.team && <span className="cn-header-crumb-sep" aria-hidden>/</span>}
+
+          {/* 团队 / 工作区统一切换器（需求 0157 C2）：分组列出工作区，底部提供团队页入口 */}
+          <ScopeSwitcher
+            teams={teams}
+            workspaces={workspaces}
+            currentWorkspaceId={wid}
+            showLabel={!isMobile}
+            workspaceHref={w => `/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules)}`}
+          />
 
           {/* 一级模块导航（需求 0081 C4）—— 数据表 / 文档 / 设计 / 工作区设置上移顶栏；
               仅桌面端渲染（移动端一级模块维持在下方页签行，C5）。
@@ -1308,6 +1404,7 @@ export default function MainLayout() {
         size={280}
         styles={{ body: { padding: 0 } }}
       >
+        {renderMobileTeamsNav()}
         {siderMode === 'admin'
           ? renderAdminNav(true)
           : siderMode === 'documents'

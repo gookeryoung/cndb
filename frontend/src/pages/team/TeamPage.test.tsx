@@ -1,17 +1,18 @@
 /**
- * TeamPage 组件测试（ADR 0153 P1）—— 多工作区统一管理入口.
+ * TeamPage 组件测试（ADR 0153 / 需求 0157）—— 团队上下文页.
  *
  * 覆盖：
  * 1) 空态：没有团队时给出「新建团队」引导；
- * 2) 团队清单 + 选中团队的三块内容（成员 / 工作区平铺列表 / 策略）；
- * 3) 团队角色门控：非所有者看不到「删除团队」与可编辑的策略表单；
- * 4) 策略保存走 PATCH /teams/:id 并带 policy；
- * 5) 添加成员后刷新成员列表。
+ * 2) `/teams` 重定向到第一个团队，`/teams/:tid?section=` 深链直达分区；
+ * 3) 概览 / 工作区 / 成员 / 策略 / 搜索五个分区的内容；
+ * 4) 团队角色门控：非所有者看不到「删除团队」与可编辑的策略表单；
+ * 5) 策略保存走 PATCH /teams/:id 并带 policy；
+ * 6) 添加成员 / 团队内检索 / 自助加入。
  */
 
 import { describe, expect, it } from 'vitest'
 import { http, HttpResponse } from 'msw'
-import { screen, waitFor, within } from '@testing-library/react'
+import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Routes, Route } from 'react-router-dom'
 
@@ -19,12 +20,13 @@ import TeamPage from './TeamPage'
 import { renderProviders } from '@/test/render-providers'
 import { mockTeam, mockTeamMember, server } from '@/test/msw'
 
-function renderPage() {
+function renderPage(route = `/teams/${mockTeam.id}`) {
   return renderProviders(
     <Routes>
       <Route path="/teams" element={<TeamPage />} />
+      <Route path="/teams/:tid" element={<TeamPage />} />
     </Routes>,
-    { route: '/teams' },
+    { route },
   )
 }
 
@@ -38,50 +40,36 @@ describe('TeamPage 团队页', () => {
     expect(screen.getAllByRole('button', { name: /新建团队/ }).length).toBeGreaterThan(0)
   })
 
-  it('渲染团队清单、成员、工作区平铺列表与策略', async () => {
-    renderPage()
+  it('/teams 自动落到第一个团队（深链 /teams/:tid 保持）', async () => {
+    renderPage('/teams')
 
-    // 团队清单（默认选中第一个团队）
-    const teamItem = await screen.findByTestId(`team-item-${mockTeam.id}`)
-    expect(within(teamItem).getByText('研发部')).toBeVisible()
+    expect(await screen.findByTestId('team-header')).toHaveTextContent('研发部')
+    expect(screen.getByTestId('team-section-overview')).toBeInTheDocument()
+  })
 
-    // 成员表
-    expect(await screen.findByText('爱丽丝')).toBeVisible()
+  it('概览分区展示指标、最近工作区与成员摘要', async () => {
+    renderPage(`/teams/${mockTeam.id}`)
 
-    // 工作区平铺列表（无树：直接是表格行，不是可展开节点）
+    expect(await screen.findByTestId('team-section-overview')).toBeInTheDocument()
+    expect(screen.getByTestId('team-header')).toHaveTextContent('研发部')
+    expect(screen.getByTestId('team-header')).toHaveTextContent('团队所有者')
+    // 最近工作区（平铺，不是树节点）
     expect(await screen.findByText('测试工作区')).toBeVisible()
-    expect(screen.getByText('团队下的工作区（平铺列表）')).toBeVisible()
-
-    // 策略区：所有者可编辑
-    expect(screen.getByText('团队策略')).toBeVisible()
-    expect(screen.getByTestId('save-team-policy')).toBeEnabled()
+    // 成员摘要
+    expect(await screen.findByText(/爱丽丝/)).toBeVisible()
+    expect(screen.queryByRole('tree')).toBeNull()
   })
 
-  it('非团队所有者：无删除团队、无添加成员、策略表单禁用', async () => {
-    server.use(
-      http.get('/api/v1/teams', () => HttpResponse.json([{ ...mockTeam, current_user_role: 'member' }])),
-      http.get('/api/v1/teams/:tid/members', () =>
-        HttpResponse.json([{ ...mockTeamMember, role: 'member' }])),
-    )
-    renderPage()
+  it('分区页签可切换且 URL 携带 ?section=，深链直达成员分区', async () => {
+    const user = userEvent.setup()
+    renderPage(`/teams/${mockTeam.id}`)
 
-    expect(await screen.findByTestId('save-team-policy')).toBeDisabled()
-    expect(screen.queryByTestId('delete-team-btn')).toBeNull()
-    expect(screen.queryByTestId('team-add-member-input')).toBeNull()
+    await user.click(await screen.findByTestId('team-section-tab-members'))
+    expect(await screen.findByTestId('team-section-members')).toBeInTheDocument()
+    expect(screen.getByTestId('team-add-member-input')).toBeVisible()
   })
 
-  it('团队管理员可添加成员但看不到删除团队', async () => {
-    server.use(
-      http.get('/api/v1/teams', () => HttpResponse.json([{ ...mockTeam, current_user_role: 'admin' }])),
-    )
-    renderPage()
-
-    expect(await screen.findByTestId('team-add-member-input')).toBeVisible()
-    expect(screen.queryByTestId('delete-team-btn')).toBeNull()
-    expect(await screen.findByTestId('save-team-policy')).toBeDisabled()
-  })
-
-  it('保存策略提交 policy 到 PATCH /teams/:id', async () => {
+  it('策略分区：所有者可编辑并可保存，危险区提供删除团队', async () => {
     const bodies: Record<string, unknown>[] = []
     server.use(
       http.patch('/api/v1/teams/:tid', async ({ request, params }) => {
@@ -90,15 +78,50 @@ describe('TeamPage 团队页', () => {
       }),
     )
     const user = userEvent.setup()
-    renderPage()
+    renderPage(`/teams/${mockTeam.id}?section=policy`)
 
-    await screen.findByTestId('save-team-policy')
+    expect(await screen.findByTestId('save-team-policy')).toBeEnabled()
+    expect(screen.getByTestId('delete-team-btn')).toBeVisible()
     await user.click(screen.getByTestId('save-team-policy'))
 
     await waitFor(() => expect(bodies.length).toBe(1))
     expect(bodies[0]).toMatchObject({
       policy: { default_workspace_role: 'none', allow_member_invite: false, default_storage_quota_bytes: null },
     })
+  })
+
+  it('非团队所有者：无删除团队、策略表单禁用', async () => {
+    server.use(
+      http.get('/api/v1/teams', () => HttpResponse.json([{ ...mockTeam, current_user_role: 'member' }])),
+      http.get('/api/v1/teams/:tid/members', () =>
+        HttpResponse.json([{ ...mockTeamMember, role: 'member' }])),
+    )
+    renderPage(`/teams/${mockTeam.id}?section=policy`)
+
+    expect(await screen.findByTestId('save-team-policy')).toBeDisabled()
+    expect(screen.queryByTestId('delete-team-btn')).toBeNull()
+  })
+
+  it('非团队所有者：成员分区无添加入口', async () => {
+    server.use(
+      http.get('/api/v1/teams', () => HttpResponse.json([{ ...mockTeam, current_user_role: 'member' }])),
+      http.get('/api/v1/teams/:tid/members', () =>
+        HttpResponse.json([{ ...mockTeamMember, role: 'member' }])),
+    )
+    renderPage(`/teams/${mockTeam.id}?section=members`)
+
+    expect(await screen.findByTestId('team-section-members')).toBeInTheDocument()
+    expect(screen.queryByTestId('team-add-member-input')).toBeNull()
+  })
+
+  it('团队管理员可添加成员但看不到删除团队与可编辑策略', async () => {
+    server.use(
+      http.get('/api/v1/teams', () => HttpResponse.json([{ ...mockTeam, current_user_role: 'admin' }])),
+    )
+    renderPage(`/teams/${mockTeam.id}?section=members`)
+
+    expect(await screen.findByTestId('team-add-member-input')).toBeVisible()
+    expect(screen.queryByTestId('delete-team-btn')).toBeNull()
   })
 
   it('添加团队成员后刷新列表', async () => {
@@ -114,7 +137,7 @@ describe('TeamPage 团队页', () => {
       }),
     )
     const user = userEvent.setup()
-    renderPage()
+    renderPage(`/teams/${mockTeam.id}?section=members`)
 
     const input = await screen.findByTestId('team-add-member-input')
     await user.type(input, 'bob')
@@ -139,7 +162,7 @@ describe('TeamPage 团队内检索与自助加入（ADR 0153 P2）', () => {
       }),
     )
     const user = userEvent.setup()
-    renderPage()
+    renderPage(`/teams/${mockTeam.id}?section=search`)
 
     await user.type(await screen.findByTestId('team-search-input'), '晶格')
     await user.click(screen.getByTestId('team-search-btn'))
@@ -166,7 +189,7 @@ describe('TeamPage 团队内检索与自助加入（ADR 0153 P2）', () => {
       }),
     )
     const user = userEvent.setup()
-    renderPage()
+    renderPage(`/teams/${mockTeam.id}?section=workspaces`)
 
     await user.click(await screen.findByTestId('join-workspace-33'))
     await waitFor(() => expect(joined).toEqual(['33']))
@@ -179,10 +202,25 @@ describe('TeamPage 团队内检索与自助加入（ADR 0153 P2）', () => {
         modules: ['tables'], member_count: 2, is_member: false, updated_at: '2026-01-02T00:00:00Z',
       }])),
     )
-    renderPage()
+    renderPage(`/teams/${mockTeam.id}?section=workspaces`)
 
     expect(await screen.findByText('另一个工作区')).toBeVisible()
     expect(screen.queryByTestId('join-workspace-34')).toBeNull()
     expect(screen.getAllByText('未加入').length).toBeGreaterThan(0)
+  })
+})
+
+describe('TeamPage 团队切换器', () => {
+  it('切换器列出可切换团队并跳转对应团队页', async () => {
+    const second = { ...mockTeam, id: 501, name: '市场部', slug: 'mkt' }
+    server.use(http.get('/api/v1/teams', () => HttpResponse.json([mockTeam, second])))
+    const user = userEvent.setup()
+    renderPage(`/teams/${mockTeam.id}`)
+
+    await user.click(await screen.findByTestId('team-switcher-btn'))
+    const secondTeam = await screen.findByTestId('team-switch-501')
+    expect(secondTeam).toHaveTextContent('市场部')
+    await user.click(secondTeam)
+    await waitFor(() => expect(screen.getByTestId('team-header')).toHaveTextContent('市场部'))
   })
 })
