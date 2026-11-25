@@ -64,6 +64,7 @@ class TestCapabilitiesEndpoint:
             "EDIT_SETTINGS",
             "MANAGE_MEMBERS",
             "RESTORE",
+            "DELETE_WORKSPACE",
         }
         assert data["sources"]["manage"] == "workspace_member:owner"
 

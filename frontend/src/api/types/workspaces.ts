@@ -1,6 +1,7 @@
 /** 工作区、成员与工作区导出载荷. */
 
 import type { ID, WorkspaceModule, WorkspaceVisibility } from './common'
+import type { TeamBrief } from './teams'
 
 export interface Workspace {
   id: ID; name: string; description?: string; default_role?: string
@@ -10,6 +11,10 @@ export interface Workspace {
   modules?: WorkspaceModule[]
   /** 存储配额（字节），默认 100MB；由系统管理员在管理台「空间分配」调整 */
   storage_quota_bytes?: number
+  /** 所属团队（ADR 0153）：null / 缺省 = 个人工作区 */
+  team_id?: number | null
+  /** 所属团队简要信息（列表与详情同源） */
+  team?: TeamBrief | null
   current_user_role?: WorkspaceRole | null
 }
 export interface WorkspaceDetail extends Workspace {
@@ -29,11 +34,15 @@ export interface WorkspaceCreate {
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
   /** 功能模块集合，默认全三模块（ADR 0080 D8） */
   modules?: WorkspaceModule[]
+  /** 挂到指定团队（ADR 0153）：缺省 / null = 个人工作区 */
+  team_id?: number | null
 }
 export interface WorkspaceUpdate {
   name?: string; description?: string; default_role?: string
   visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean
   modules?: WorkspaceModule[]
+  /** 迁入 / 移出团队（ADR 0153 D3） */
+  team_id?: number | null
 }
 /** 工作区角色 —— 三级（owner/editor/viewer），admin 已在 P1 迁移为 editor */
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'

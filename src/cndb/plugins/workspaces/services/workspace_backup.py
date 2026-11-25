@@ -840,11 +840,21 @@ def build_workspace_backup_v8(db: Session, workspace_id: int, current_user: Any)
 # ── 归档打包 / 解包 ──────────────────────────────────────────
 
 
-def build_manifest(backup: dict[str, Any], file_count: int) -> dict[str, Any]:
-    """构建归档 manifest（协议 v1，kind 区分工作区级备份）."""
+def build_manifest(
+    backup: dict[str, Any],
+    file_count: int,
+    *,
+    team: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """构建归档 manifest（协议 v1，kind 区分工作区级备份）.
+
+    ``team`` 是**提示性元数据**（ADR 0153 D7）：只记 ``{name, slug}`` 供人工辨认，
+    导入时不会自动挂团队（跨环境错挂风险），团队配置本身不进工作区备份。
+    """
     import cndb
 
     return {
+        "team": team,
         "version": ARCHIVE_MANIFEST_VERSION,
         "kind": ARCHIVE_KIND,
         "app_version": cndb.__version__,
@@ -891,12 +901,15 @@ def pack_workspace_archive(
     backup: dict[str, Any],
     files: list[BackupFileEntry],
     output: Path,
+    *,
+    team: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """把备份数据 + 文件条目打包为 tar.gz 归档，返回写入的 manifest."""
     # stats.files 只统计附件 / 外存内容，v16 的表行分块不计入（口径与 ≤v15 一致）
     manifest = build_manifest(
         backup,
         sum(1 for entry in files if not entry.arcname.startswith(f"{ROWS_CHUNK_DIR}/")),
+        team=team,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     with tarfile.open(output, "w:gz", format=tarfile.GNU_FORMAT) as tar:

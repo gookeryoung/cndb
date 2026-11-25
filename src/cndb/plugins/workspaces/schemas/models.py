@@ -25,6 +25,7 @@ class WorkspaceCreate(BaseModel):
     tags: list[str] = []
     allow_edit: bool = True
     modules: list[str] = DEFAULT_WORKSPACE_MODULES
+    team_id: int | None = None
 
     @field_validator("modules", mode="before")
     @classmethod
@@ -43,6 +44,7 @@ class WorkspaceUpdate(BaseModel):
     tags: list[str] | None = None
     allow_edit: bool | None = None
     modules: list[str] | None = None
+    team_id: int | None = None
 
     @field_validator("modules", mode="before")
     @classmethod
@@ -66,6 +68,9 @@ class WorkspaceResponse(BaseModel):
     modules: list[str] = DEFAULT_WORKSPACE_MODULES
     # 存储配额（字节），默认 100MB；由系统管理员在管理台「空间分配」调整
     storage_quota_bytes: int = DEFAULT_STORAGE_QUOTA_BYTES
+    # 所属团队（ADR 0153 D3）：None = 个人工作区
+    team_id: int | None = None
+    team: dict[str, Any] | None = None
     created_by_id: int | None
     created_at: datetime
     updated_at: datetime
@@ -202,6 +207,87 @@ class WorkspaceMemberResponse(BaseModel):
     pinned: bool
     created_at: datetime
     user: MemberUserBrief
+
+
+# ── 团队 schemas（ADR 0153 P1） ───────────────────────
+
+
+class TeamPolicyPayload(BaseModel):
+    """团队策略载荷（缺键按默认值补齐，未知键丢弃；见 services/teams.normalize_team_policy）."""
+
+    default_workspace_role: str = "none"
+    allowed_modules: list[str] | None = None
+    default_storage_quota_bytes: int | None = None
+    allow_member_invite: bool = False
+
+
+class TeamCreate(BaseModel):
+    """创建团队请求（创建者自动成为 team_owner）."""
+
+    name: str
+    slug: str | None = None
+    description: str = ""
+
+
+class TeamUpdate(BaseModel):
+    """更新团队请求（仅 team_owner；policy 缺省表示不改）."""
+
+    name: str | None = None
+    description: str | None = None
+    policy: TeamPolicyPayload | None = None
+
+
+class TeamResponse(BaseModel):
+    """团队响应：附当前用户角色与统计（工作区数 / 成员数）."""
+
+    id: int
+    name: str
+    slug: str
+    description: str
+    policy: dict[str, Any]
+    created_by_id: int | None
+    created_at: datetime
+    updated_at: datetime
+    current_user_role: str | None = None
+    workspace_count: int = 0
+    member_count: int = 0
+
+
+class TeamMemberAddRequest(BaseModel):
+    """添加团队成员请求."""
+
+    username: str
+    role: str = "member"
+
+
+class TeamMemberUpdateRequest(BaseModel):
+    """修改团队成员角色请求."""
+
+    role: str
+
+
+class TeamMemberResponse(BaseModel):
+    """团队成员响应."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    team_id: int
+    user_id: int
+    role: str
+    user: MemberUserBrief
+
+
+class TeamWorkspaceItem(BaseModel):
+    """团队下的工作区（平铺列表，无树：ADR 0153 C1）."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    name: str
+    description: str = ""
+    visibility: WorkspaceVisibility
+    modules: list[str] = DEFAULT_WORKSPACE_MODULES
+    member_count: int = 0
+    updated_at: datetime
 
 
 class PinRequest(BaseModel):
@@ -376,6 +462,14 @@ __all__ = [
     "RoleCreate",
     "RoleResponse",
     "RoleUpdate",
+    "TeamCreate",
+    "TeamMemberAddRequest",
+    "TeamMemberResponse",
+    "TeamMemberUpdateRequest",
+    "TeamPolicyPayload",
+    "TeamResponse",
+    "TeamUpdate",
+    "TeamWorkspaceItem",
     "WorkspaceCapabilitiesResponse",
     "WorkspaceCreate",
     "WorkspaceCreateFromBackup",

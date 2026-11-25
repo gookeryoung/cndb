@@ -3,6 +3,7 @@
 export * from './common'
 export * from './accounts'
 export * from './workspaces'
+export * from './teams'
 export * from './tables'
 export * from './records'
 export * from './files'

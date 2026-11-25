@@ -18,6 +18,7 @@ const MainLayout = lazy(() => import('@/layouts/MainLayout'))
 const LoginPage = lazy(() => import('@/pages/auth/LoginPage'))
 const RegisterPage = lazy(() => import('@/pages/auth/RegisterPage'))
 const WorkspaceList = lazy(() => import('@/pages/workspace/WorkspaceList'))
+const TeamPage = lazy(() => import('@/pages/team/TeamPage'))
 const TablesList = lazy(() => import('@/pages/workspace/TablesList'))
 const GridPage = lazy(() => import('@/pages/grid/GridPage'))
 const IssuesPage = lazy(() => import('@/pages/issues/IssuesPage'))
@@ -86,6 +87,7 @@ function AuthenticatedApp() {
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
           <Route index element={<Navigate to="/w" replace />} />
           <Route path="w" element={<WorkspaceList />} />
+          <Route path="teams" element={<TeamPage />} />
           <Route path="w/:wid" element={<WorkspaceLanding />} />
           <Route path="w/:wid/tables" element={<TablesList />} />
           <Route path="w/:wid/analytics" element={

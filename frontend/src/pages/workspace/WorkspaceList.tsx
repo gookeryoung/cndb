@@ -16,7 +16,7 @@ import {
   DownloadOutlined, SettingOutlined, GlobalOutlined, LockOutlined,
   SafetyCertificateOutlined, UploadOutlined, InboxOutlined, FileTextOutlined,
   FolderOpenOutlined, DatabaseOutlined, LoginOutlined, ArrowRightOutlined, HolderOutlined,
-  ToolOutlined, WarningOutlined,
+  ToolOutlined, WarningOutlined, ApartmentOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -29,9 +29,9 @@ import { useResponsive } from '@/hooks/useResponsive'
 import SearchInput from '@/components/SearchInput'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { usePreferences, useSetWorkspaceOrder } from '@/hooks/useFavoriteViews'
-import { workspaceApi, tableApi } from '@/api'
+import { workspaceApi, tableApi, teamApi } from '@/api'
 import type {
-  Workspace, WorkspaceRole, WorkspaceVisibility, TableSummary, WorkspaceArchiveInspect,
+  Workspace, WorkspaceRole, WorkspaceVisibility, TableSummary, WorkspaceArchiveInspect, Team,
 } from '@/api'
 import {
   DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, normalizeModules,
@@ -105,6 +105,8 @@ export default function WorkspaceList() {
   const [backupOpen, setBackupOpen] = useState<Workspace | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [search, setSearch] = useState('')
+  /** 团队过滤（ADR 0153 C1）：all / personal（个人工作区）/ 团队 id；不引入树 */
+  const [teamFilter, setTeamFilter] = useState<'all' | 'personal' | number>('all')
   /** 已展开的工作区 id 集合（允许多行同时展开，与 GitHub 文件树一致） */
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [form] = Form.useForm()
@@ -112,6 +114,13 @@ export default function WorkspaceList() {
   const { data: workspaces = [], isLoading } = useQuery<WSWithStats[]>({
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
+  })
+
+  // 团队列表（ADR 0153）：用于工具栏过滤与「团队管理」入口；失败不阻断列表
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['teams'],
+    queryFn: () => teamApi.list(),
+    retry: false,
   })
 
   // 主页自定义顺序（ADR 0021）：偏好缺失 / 读取失败时按 pinned → id 兜底
@@ -125,7 +134,7 @@ export default function WorkspaceList() {
     mutationFn: (v: {
       name: string; description?: string;
       visibility?: WorkspaceVisibility; tags?: string[]; allow_edit?: boolean;
-      modules?: WorkspaceModule[];
+      modules?: WorkspaceModule[]; team_id?: number | null;
     }) => workspaceApi.create({
       name: v.name,
       description: v.description ?? '',
@@ -133,6 +142,7 @@ export default function WorkspaceList() {
       tags: v.tags ?? [],
       allow_edit: v.allow_edit ?? true,
       modules: normalizeModules(v.modules),
+      team_id: v.team_id ?? null,
     }),
     onSuccess: (w) => {
       message.success(`已创建 "${w.name}"`)
@@ -163,14 +173,19 @@ export default function WorkspaceList() {
   // 排序（pinned 分组优先 → 自定义顺序 → id）+ 搜索过滤
   const filteredWorkspaces = useMemo(() => {
     const ordered = sortWorkspaces(workspaces, prefs?.workspace_order)
+    const byTeam = ordered.filter((w) => {
+      if (teamFilter === 'all') return true
+      if (teamFilter === 'personal') return !w.team_id
+      return String(w.team_id) === String(teamFilter)
+    })
     const q = search.trim().toLowerCase()
-    if (!q) return ordered
-    return ordered.filter(w =>
+    if (!q) return byTeam
+    return byTeam.filter(w =>
       (w.name ?? '').toLowerCase().includes(q) ||
       (w.description ?? '').toLowerCase().includes(q) ||
       (w.tags ?? []).some(t => t.toLowerCase().includes(q)),
     )
-  }, [workspaces, search, prefs?.workspace_order])
+  }, [workspaces, search, prefs?.workspace_order, teamFilter])
 
   const starred = filteredWorkspaces.filter(w => w.pinned)
   const others = filteredWorkspaces.filter(w => !w.pinned)
@@ -238,6 +253,20 @@ export default function WorkspaceList() {
               <Text type="secondary">选择或创建一个工作区开始协作</Text>
             </div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {teams.length > 0 && (
+                <Select
+                  size="middle"
+                  value={String(teamFilter)}
+                  onChange={(v) => setTeamFilter(v === 'all' || v === 'personal' ? v : Number(v))}
+                  style={{ width: isMobile ? '100%' : 160 }}
+                  data-testid="workspace-team-filter"
+                  options={[
+                    { value: 'all', label: '全部工作区' },
+                    { value: 'personal', label: '个人工作区' },
+                    ...teams.map(t => ({ value: String(t.id), label: t.name })),
+                  ]}
+                />
+              )}
               <SearchInput
                 size="middle"
                 placeholder="搜索工作区名称/标签…"
@@ -245,6 +274,13 @@ export default function WorkspaceList() {
                 value={search}
                 onChange={e => setSearch((e.target as HTMLInputElement).value)}
               />
+              <Button
+                icon={<ApartmentOutlined />}
+                onClick={() => navigate('/teams')}
+                data-testid="open-team-page-btn"
+              >
+                团队
+              </Button>
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
@@ -379,6 +415,20 @@ export default function WorkspaceList() {
                 ]}
               />
             </Form.Item>
+            {teams.length > 0 && (
+              <Form.Item
+                name="team_id"
+                label="所属团队（可选）"
+                extra="挂到团队后，团队所有者/管理员可管理工作区设置；数据权限仍由工作区成员决定"
+              >
+                <Select
+                  allowClear
+                  placeholder="个人工作区（不归属团队）"
+                  data-testid="create-workspace-team"
+                  options={teams.map(t => ({ value: t.id, label: t.name }))}
+                />
+              </Form.Item>
+            )}
             <Form.Item name="tags" label="标签（逗号分隔，可选）">
               <Input placeholder="例如：研发, 产品, 核心业务" />
             </Form.Item>
@@ -601,8 +651,13 @@ function WorkspaceRowDetail({
     >
       <div className="cn-ws-detail-desc">{ws.description || '暂无描述'}</div>
 
-      {tags.length > 0 && (
+      {(tags.length > 0 || ws.team) && (
         <div className="cn-ws-detail-tags">
+          {ws.team && (
+            <Tag icon={<ApartmentOutlined />} color="geekblue" style={{ marginInlineEnd: 0 }}>
+              {ws.team.name}
+            </Tag>
+          )}
           {tags.map(t => <Tag key={t} style={{ marginInlineEnd: 0 }}>{t}</Tag>)}
         </div>
       )}

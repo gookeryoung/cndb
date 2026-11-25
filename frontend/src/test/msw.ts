@@ -38,6 +38,34 @@ export const mockWorkspace: Workspace = {
   description: 'MSW 默认工作区',
 }
 
+/** 团队 fixture（ADR 0153）：当前用户为团队所有者，策略为存量等价默认值 */
+export const mockTeam = {
+  id: 500,
+  name: '研发部',
+  slug: 'rd',
+  description: '',
+  policy: {
+    default_workspace_role: 'none',
+    allowed_modules: null,
+    default_storage_quota_bytes: null,
+    allow_member_invite: false,
+  },
+  created_by_id: 1,
+  created_at: '2026-01-01T00:00:00Z',
+  updated_at: '2026-01-02T00:00:00Z',
+  current_user_role: 'owner',
+  workspace_count: 1,
+  member_count: 1,
+}
+
+export const mockTeamMember = {
+  id: 700,
+  team_id: 500,
+  user_id: 1,
+  role: 'owner',
+  user: { id: 1, username: 'alice', nickname: '爱丽丝', email: 'alice@example.com' },
+}
+
 export const mockTable: TableSummary = {
   id: 100,
   name: '客户表',
@@ -595,6 +623,54 @@ export const handlers = [
     return HttpResponse.json({ workspace_ids: body.workspace_ids ?? [] })
   }),
 
+  // 团队（ADR 0153）：默认一个团队、当前用户是所有者；单用例 server.use 覆盖
+  http.get('/api/v1/teams', () => HttpResponse.json([mockTeam])),
+  http.post('/api/v1/teams', async ({ request }) => {
+    const body = await request.json() as { name?: string }
+    return HttpResponse.json({ ...mockTeam, id: mockTeam.id + 1, name: body.name ?? '新团队' }, { status: 201 })
+  }),
+  http.get('/api/v1/teams/:tid', ({ params }) =>
+    HttpResponse.json({ ...mockTeam, id: Number(params.tid) })),
+  http.patch('/api/v1/teams/:tid', async ({ request, params }) => {
+    const body = await request.json() as { policy?: Record<string, unknown>; name?: string }
+    return HttpResponse.json({
+      ...mockTeam,
+      id: Number(params.tid),
+      name: body.name ?? mockTeam.name,
+      policy: { ...mockTeam.policy, ...(body.policy ?? {}) },
+    })
+  }),
+  http.delete('/api/v1/teams/:tid', () => new HttpResponse(null, { status: 204 })),
+  http.get('/api/v1/teams/:tid/members', () => HttpResponse.json([mockTeamMember])),
+  http.post('/api/v1/teams/:tid/members', async ({ request }) => {
+    const body = await request.json() as { username?: string; role?: string }
+    return HttpResponse.json(
+      {
+        ...mockTeamMember,
+        id: mockTeamMember.id + 1,
+        role: body.role ?? 'member',
+        user: { ...mockTeamMember.user, username: body.username ?? 'newbie' },
+      },
+      { status: 201 },
+    )
+  }),
+  http.patch('/api/v1/teams/:tid/members/:mid', async ({ request, params }) => {
+    const body = await request.json() as { role?: string }
+    return HttpResponse.json({ ...mockTeamMember, id: Number(params.mid), role: body.role ?? 'member' })
+  }),
+  http.delete('/api/v1/teams/:tid/members/:mid', () => new HttpResponse(null, { status: 204 })),
+  http.get('/api/v1/teams/:tid/workspaces', () => HttpResponse.json([
+    {
+      id: mockWorkspace.id,
+      name: mockWorkspace.name,
+      description: '',
+      visibility: 'member',
+      modules: ['tables'],
+      member_count: 1,
+      updated_at: '2026-01-02T00:00:00Z',
+    },
+  ])),
+
   // 工作区
   http.get('/api/v1/workspaces', () => HttpResponse.json([mockWorkspace])),
   // 工作区详情（文档编辑器 / 修改申请页读取当前用户角色）
@@ -605,7 +681,7 @@ export const handlers = [
     HttpResponse.json({
       data_role: 'owner',
       team_role: null,
-      capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE'],
+      capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE', 'DELETE_WORKSPACE'],
       sources: { data: 'workspace_member:owner', manage: 'workspace_member:owner' },
     })),
   // 文档修改申请列表（默认空；单用例 server.use 覆盖）

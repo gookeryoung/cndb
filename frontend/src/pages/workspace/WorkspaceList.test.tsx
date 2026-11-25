@@ -850,3 +850,71 @@ describe('WorkspaceList 导入工作区（全量归档）', () => {
     await waitFor(() => expect(importCalls).toBe(1), { timeout: 3000 })
   })
 })
+
+/**
+ * 团队分组（ADR 0153 C1）：团队下工作区仍是**平铺列表**（无树），
+ * 只通过「团队过滤 + 团队徽标」表达归属。
+ */
+describe('WorkspaceList 团队归属', () => {
+  const teamWs = {
+    id: 21, name: '研发部工作区', description: '团队工作区', visibility: 'member' as const, tags: [],
+    allow_edit: true, created_by_id: 1, created_at: '', updated_at: '',
+    team_id: 500, team: { id: 500, name: '研发部', slug: 'rd' },
+    pinned: false, table_count: 0, member_count: 1, current_user_role: 'owner' as const,
+  }
+  const personalWs = {
+    id: 22, name: '个人工作区', description: '个人', visibility: 'member' as const, tags: [],
+    allow_edit: true, created_by_id: 1, created_at: '', updated_at: '',
+    team_id: null, team: null,
+    pinned: false, table_count: 0, member_count: 1, current_user_role: 'owner' as const,
+  }
+
+  function mockList() {
+    server.use(
+      http.get('/api/v1/workspaces', () => HttpResponse.json([teamWs, personalWs])),
+      http.get('/api/v1/teams', () => HttpResponse.json([{
+        id: 500, name: '研发部', slug: 'rd', description: '',
+        policy: {
+          default_workspace_role: 'none', allowed_modules: null,
+          default_storage_quota_bytes: null, allow_member_invite: false,
+        },
+        created_by_id: 1, created_at: '', updated_at: '',
+        current_user_role: 'owner', workspace_count: 1, member_count: 1,
+      }])),
+    )
+  }
+
+  it('展示团队徽标与团队过滤入口，且不渲染树形层级', async () => {
+    mockList()
+    renderWorkspaceList()
+
+    expect(await screen.findByTestId('workspace-team-filter')).toBeVisible()
+    // 展开团队工作区行 → 展示团队徽标
+    const user = userEvent.setup()
+    await user.click(await screen.findByTestId('workspace-expand-21'))
+    expect(await screen.findByText('研发部')).toBeVisible()
+    // 平铺：没有树节点角色 / 展开箭头层级
+    expect(screen.queryByRole('tree')).toBeNull()
+    expect(screen.queryByRole('treeitem')).toBeNull()
+  })
+
+  it('按团队过滤：切到「个人工作区」后只显示未归属团队的工作区', async () => {
+    mockList()
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    const filter = await screen.findByTestId('workspace-team-filter')
+    await user.click(filter.querySelector('.ant-select-selector') ?? filter)
+    const dropdown = await waitFor(() => {
+      const el = document.querySelector('.ant-select-dropdown')
+      if (!el) throw new Error('团队过滤下拉未展开')
+      return el as HTMLElement
+    })
+    await user.click(within(dropdown).getByText('个人工作区'))
+
+    await waitFor(() => {
+      expect(screen.queryByText('研发部工作区')).toBeNull()
+    })
+    expect(await screen.findAllByText('个人工作区')).not.toHaveLength(0)
+  })
+})

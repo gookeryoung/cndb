@@ -19,7 +19,7 @@ Related: `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/
 | C6 | 按建议 | 不引入父-子工作区；跨工作区数据读取（工作区链接）不实现，留 P3 另立 ADR |
 | C7 | 多个工作区的管理 | 团队域（CRUD + 成员 + 策略 + 工作区列表）+ 前端团队页 + 工作区切换器分组 |
 | C8 | 工作区内实现权限分配 | 三档角色 + 表 `Role` + 视图三档 + 行级规则 + 文档权限**全部不变**；仅把判定收敛为 `resolve_capabilities` 并引入能力位映射 |
-| C9 | 隐含：管理员不得变成全能可见 | 两平面分离（D4）+ 工作区 `visibility` 三档启用（D6） |
+| C9 | 隐含：管理员不得变成全能可见 | 两平面分离（D4）+ 工作区可见性启用 `public` 档（D6，`private` 收紧推迟到 P2） |
 
 ## Context
 
@@ -227,7 +227,7 @@ def require_capability(cap: str, db, user, workspace) -> None: ...   # 失败走
 | D3 | 工作区归属基数 | `Workspace.team_id` 单值可空，空 = 个人工作区 | C4；多对多会让权限变成并集，不确定性高 | `workspace_team` 关联表（多归属）：口径与 UI 都需「哪个团队授权了我」的二次解释 | 同上 |
 | D4 | 管理面 / 数据面 | 分离：`team_owner` / `team_admin` 管设置与成员，默认**不含**数据读 | C3；对齐 GitHub org owner / GitLab group maintainer / Notion workspace admin 的「管理权 ≠ 数据权」 | ① 团队管理员自动继承工作区 owner：等于管理员可读全部门数据；② 团队管理员完全无管理权：团队层失去意义 | `workspaces/permissions.py` |
 | D5 | 判定入口 | 唯一入口 `resolve_capabilities`，顺序「显式角色 > 团队策略默认 > 无」，每步可归因 | I4 / I6；403 文案需要来源 | 各路由保留现状分散判定：无法承载策略与归因 | `workspaces/permissions.py`、`routers/deps.py` |
-| D6 | `visibility` 死字段 | 启用：`private`=仅 owner（+团队管理面）、`member`=工作区成员（现状）、`public`=团队成员只读 | 字段已在库与备份中，删除需迁移兼容；启用成本更低且给出部门内「只读公开」能力 | 删除该列：需迁移 + 备份兼容处理，且丢掉「部门内公开」这一真实需求 | `models.py`、`permissions.py`、备份 |
+| D6 | `visibility` 死字段 | P1 先启用 `public` = **团队成员只读**（纯放宽；无团队时等价 `member`）；`member` 保持现状；`private` 的收紧（仅 owner）**推迟到 P2** | 字段已在库与备份中，删除需迁移兼容；`public` 是纯放宽，不会让任何现有用户失去权限 | ① 删除该列：需迁移 + 备份兼容，且丢掉「部门内公开」；② P1 立即收紧 `private`：会让存量 `private` 工作区的非 owner 成员**静默失去读权限**，违反 H13「存量零迁移」，须单独迁移口径 + 人工确认 | `models.py`、`permissions.py`、备份 |
 | D7 | 配额与备份边界 | 配额按工作区（快照不变）；团队**不进**工作区备份，仅在 manifest 记提示性 `team.name/slug`；P2 才做新建默认配额 | ADR 0075 的单文件自包含承诺；H14 口径不摇摆 | 团队随备份往返：破坏跨环境可迁移性，且团队是环境级配置 | `services/backup_io.py` |
 | D8 | 跨工作区复用 | 设计模块库新增 `visibility=team`：可见 = 消费方用户 ∈ 拥有工作区所属团队；`public` / `workspace` 不变；归档仍只阻断新引用 | C5；复用 ADR 0118 已有可见性范式，不新造机制 | 允许跨团队引用私有模块：违反「权限只有拥有团队有」 | `design/models.py`、`design/services/files.py` |
 | D9 | 删除语义 | 删团队 → 工作区 `team_id` 置空降级；删工作区仅工作区 `owner` 可执行 | I5；防团队管理员误删含数据工作区 | 删团队连带删工作区：不可接受的数据丢失风险 | `routers/workspaces.py`、团队路由 |
@@ -267,14 +267,14 @@ def require_capability(cap: str, db, user, workspace) -> None: ...   # 失败走
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/deps.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`frontend/src/hooks/useCapabilities.ts`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | `tests/test_workspace_capabilities.py`、`tests/test_workspace_capabilities_api.py`、`frontend/src/hooks/useCapabilities.test.tsx` | `5c5bcdb6` |
-| P1 | 未开始 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/teams.py`、`src/cndb/alembic/versions/`、`frontend/src/pages/team/TeamPage.tsx` | `tests/test_teams_api.py`、`tests/test_teams_migration.py`、`frontend/src/pages/team/TeamPage.test.tsx` | — |
+| P1 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/teams.py`、`src/cndb/plugins/workspaces/services/teams.py`、`src/cndb/alembic/versions/e7d8c9b0a1f2_add_teams.py`、`frontend/src/pages/team/TeamPage.tsx`、`frontend/src/pages/workspace/WorkspaceList.tsx` | `tests/test_teams_api.py`、`tests/test_teams_migration.py`、`tests/test_workspace_team_capabilities.py`、`tests/test_workspace_backup_team.py`、`frontend/src/pages/team/TeamPage.test.tsx`、`frontend/src/pages/workspace/WorkspaceList.test.tsx` | 未提交 |
 | P2 | 未开始 | `src/cndb/plugins/design/models.py`、`src/cndb/plugins/design/services/files.py`、`src/cndb/plugins/workspaces/services/search.py` | `tests/test_design_library_team_scope.py`、`tests/test_workspace_backup_team.py` | — |
 | P3 | 未开始 | 另立 ADR | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地（能力位单一入口），待人工确认 D1 / D4 / D6 / D7 后开 P1（团队域 + 迁移）
-- 已完成：需求卡片 0153（C1-C9）；ADR 决策记录 D1-D11 与不变量 I1-I8；H49-H52 已登记；P0 能力位抽取（`WorkspaceCapability` / `ROLE_CAPABILITIES` / `resolve_capabilities` / `require_capability`）+ `GET /{wid}/capabilities` + 前端 `useCapabilities`；I3 等价回归用例（与旧 `get_member_role` / `has_role` 逐条对齐）
-- 下一步：`P1` 建 `workspaces_team` / `workspaces_team_member` + `workspaces_workspace.team_id` 迁移，接入团队角色与 `policy.default_workspace_role`，启用 `visibility` 三档（启用前先补 D6 行为变更用例）
-- 已知坑：① `Workspace.visibility` 目前仍无判定消费（P0 刻意未启用，避免 P0 改变行为），P1 启用必须同时补「private / public 新语义」用例并复核存量工作区；② 其他插件仍直接调 `get_member_role`（数据面视图，语义等价），P1 加团队来源后需逐个改为 `resolve_capabilities`（H51 只约束工作区级门控）；③ 前端仍有若干 `current_user_role === 'owner'` 判断未迁移（设计模块 / 模板面板等），迁移时保持与 `/capabilities` 一致
-- 最近一次全绿：`make check-fast` + `make test`（7317 passed）+ 前端 `vitest run`（3383 passed）@ `5c5bcdb6`（2026-11-25）
+- 当前阶段：P0 / P1 已落地（能力位单一入口 + 团队域），待开始 P2（策略下发 / 设计库 team 档 / 团队内搜索 / 团队审计）
+- 已完成：需求卡片 0153（C1-C9）；ADR 决策记录 D1-D11 与不变量 I1-I8；H49-H52 已登记；P0 能力位抽取 + `GET /{wid}/capabilities` + 前端 `useCapabilities`；P1 团队域（`workspaces_team` / `workspaces_team_member` / `workspace.team_id` 迁移、团队 API、团队页、两平面分离、`public` 可见性、403 文案团队分支、备份 manifest 提示性 `team`、缓存扩维度失效）
+- 下一步：`P2` ① 团队策略生效面收口（`allow_member_invite` 自助加入、配额默认值下发到上传预判）；② 设计模块库新增 `visibility=team`（D8）；③ 团队内跨工作区搜索；④ 团队级审计事件；⑤ `private` 收紧方案（需人工确认迁移口径，见已知坑 ②）
+- 已知坑：① `visibility=private` 在 P1 **未收紧**（仍按成员可读）——收紧前必须先定存量迁移口径（H13 存量零迁移 vs 收紧语义），否则会让存量 private 工作区的成员静默失去读权；② 其他插件仍直接调 `get_member_role`（数据面视图，与 `resolve_capabilities().data_role` 等价），P2 若引入「可见性收紧 / 策略默认」，这些入口会与能力位不一致，须同批切换；③ 前端仍有若干 `current_user_role === 'owner'` 判断未迁移（设计模块 / 模板面板等），迁移时以 `/capabilities` 为准；④ SQLite 不支持 ADD CONSTRAINT，团队迁移用 `batch_alter_table(recreate='always')` 重建 `workspaces_workspace`，大库升级耗时随工作区表规模增长（一次性）
+- 最近一次全绿：`make check-fast` + `make test`（7362 passed）+ 前端 `vitest run`（3391 passed）@ 未提交（2026-11-25）

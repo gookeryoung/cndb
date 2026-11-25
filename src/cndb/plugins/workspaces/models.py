@@ -119,6 +119,111 @@ WORKSPACE_ROLE_LABELS: dict[str, str] = {
 }
 
 
+class TeamRole(enum.StrEnum):
+    """团队成员角色（ADR 0153 D4）：只决定管理面，不派生任何数据面权限.
+
+    owner = 团队所有者（团队设置 + 成员 + 删除团队）
+    admin = 团队管理员（团队内工作区的管理面：设置 / 成员 / 备份）
+    member = 团队成员（默认无工作区权限，除非被加为工作区成员或工作区公开）
+    """
+
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
+
+
+# 团队角色等级映射：数值越大权限越高（仅管理面使用）
+TEAM_ROLE_RANK: dict[TeamRole, int] = {
+    TeamRole.OWNER: 2,
+    TeamRole.ADMIN: 1,
+    TeamRole.MEMBER: 0,
+}
+
+# 团队角色中文显示名（与工作区角色文案区分：403 文案与团队页共用）
+TEAM_ROLE_LABELS: dict[str, str] = {
+    TeamRole.OWNER.value: "团队所有者",
+    TeamRole.ADMIN.value: "团队管理员",
+    TeamRole.MEMBER.value: "团队成员",
+}
+
+# 团队策略默认值（ADR 0153 §1.2；缺键按此补齐，未知键保留不解释）
+TEAM_POLICY_DEFAULTS: dict[str, object] = {
+    # 团队成员未显式加入工作区时的默认数据面角色；none = 不可见（存量等价，I3）
+    "default_workspace_role": "none",
+    # 团队内新建工作区可选的模块集合；None = 不限
+    "allowed_modules": None,
+    # 团队内新建工作区的默认配额；None = 沿用系统默认
+    "default_storage_quota_bytes": None,
+    # 团队成员能否自助加入团队工作区
+    "allow_member_invite": False,
+}
+
+# 团队策略里 default_workspace_role 的合法取值
+POLICY_DEFAULT_ROLE_VALUES: tuple[str, ...] = ("none", "viewer", "editor")
+
+
+class Team(TimestampMixin, Base):
+    """团队（ADR 0153）：工作区的组织层.
+
+    - 单层扁平：**无** ``parent_team_id``，团队不嵌套（ADR 0153 D2 / I7）；
+    - 只承载「管理面权限 + 授权模板」，数据面判定仍在工作区（D4 / D5）。
+    """
+
+    __tablename__ = "workspaces_team"
+    __table_args__ = (
+        UniqueConstraint("slug", name="uniq_team_slug"),
+        {"extend_existing": True},
+    )
+
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    slug: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # 策略：缺键按 TEAM_POLICY_DEFAULTS 补齐（见 workspaces/modules.py 同级口径）
+    policy: Mapped[dict[str, object]] = mapped_column(JSON, nullable=False, default=dict)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    members: Mapped[list[TeamMember]] = relationship(
+        back_populates="team",
+        cascade="all, delete-orphan",
+    )
+    workspaces: Mapped[list[Workspace]] = relationship(back_populates="team")
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"Team(id={self.id}, slug={self.slug!r})"
+
+
+class TeamMember(TimestampMixin, Base):
+    """团队成员：用户在团队内的角色（ADR 0153 D4）."""
+
+    __tablename__ = "workspaces_team_member"
+    __table_args__ = (
+        UniqueConstraint("team_id", "user_id", name="uniq_team_member"),
+        {"extend_existing": True},
+    )
+
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_team.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[TeamRole] = mapped_column(Enum(TeamRole), nullable=False, default=TeamRole.MEMBER)
+
+    team: Mapped[Team] = relationship(back_populates="members")
+    user: Mapped[User] = relationship("User")
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"TeamMember(team_id={self.team_id}, user_id={self.user_id}, role={self.role.value})"
+
+
 class Workspace(TimestampMixin, Base):
     """工作区：数据与权限的隔离边界."""
 
@@ -131,6 +236,13 @@ class Workspace(TimestampMixin, Base):
         ForeignKey("accounts_user.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+    # 所属团队（ADR 0153 D3）：单值可空，NULL = 个人工作区；删团队只解绑（ON DELETE SET NULL）
+    team_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspaces_team.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="所属团队（空 = 个人工作区，ADR 0153）",
     )
 
     # 工作区扩展字段
@@ -170,6 +282,7 @@ class Workspace(TimestampMixin, Base):
 
     # 关系
     created_by: Mapped[User | None] = relationship("User", foreign_keys=[created_by_id])
+    team: Mapped[Team | None] = relationship("Team", back_populates="workspaces")
     members: Mapped[list[WorkspaceMember]] = relationship(back_populates="workspace", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:  # pragma: no cover
@@ -291,10 +404,17 @@ __all__ = [
     "DEFAULT_STORAGE_QUOTA_BYTES",
     "DEFAULT_WORKSPACE_MODULES",
     "MODULE_LABELS",
+    "POLICY_DEFAULT_ROLE_VALUES",
     "ROLE_RANK",
+    "TEAM_POLICY_DEFAULTS",
+    "TEAM_ROLE_LABELS",
+    "TEAM_ROLE_RANK",
     "WORKSPACE_MODULES",
     "WORKSPACE_ROLE_LABELS",
     "Role",
+    "Team",
+    "TeamMember",
+    "TeamRole",
     "Workspace",
     "WorkspaceMember",
     "WorkspaceModule",

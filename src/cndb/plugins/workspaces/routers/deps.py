@@ -9,14 +9,38 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from cndb.core.errors import PermissionDeniedError
 from cndb.plugins.accounts.models import User
-from cndb.plugins.workspaces.models import Workspace
+from cndb.plugins.workspaces.models import Team, Workspace
 from cndb.plugins.workspaces.permissions import (
     Capabilities,
     WorkspaceCapability,
     require_capability,
     resolve_capabilities,
 )
+
+
+def _require_team_for_workspace(
+    db: Session,
+    team_id: int | None,
+    user: User,
+    *,
+    requirement: str = "",
+) -> Team | None:
+    """要求调用者是目标团队成员（工作区挂载团队时使用）；非成员 403，团队不存在 404."""
+    if team_id is None:
+        return None
+    team = db.get(Team, team_id)
+    if team is None:
+        raise HTTPException(status_code=404, detail="团队不存在")
+    from cndb.plugins.workspaces.services.teams import get_team_role
+
+    if get_team_role(db, team, user) is None:
+        detail = "你不是该团队成员，无权把工作区挂到该团队"
+        if requirement:
+            detail = f"{detail}（{requirement}）"
+        raise PermissionDeniedError(detail)
+    return team
 
 
 def _get_workspace_or_404(workspace_id: int, db: Session) -> Workspace:
@@ -51,4 +75,27 @@ def _require_owner(
     )
 
 
-__all__ = ["_get_workspace_or_404", "_require_member", "_require_owner"]
+def _require_workspace_owner(
+    workspace: Workspace,
+    user: User,
+    db: Session,
+    *,
+    requirement: str = "仅所有者可执行此操作",
+) -> Capabilities:
+    """要求工作区所有者本人（团队管理员不可代替）：删除 / 覆盖恢复属不可逆操作（ADR 0153 D9）."""
+    return require_capability(
+        WorkspaceCapability.DELETE_WORKSPACE,
+        db,
+        workspace,
+        user,
+        requirement=requirement,
+    )
+
+
+__all__ = [
+    "_get_workspace_or_404",
+    "_require_member",
+    "_require_owner",
+    "_require_team_for_workspace",
+    "_require_workspace_owner",
+]

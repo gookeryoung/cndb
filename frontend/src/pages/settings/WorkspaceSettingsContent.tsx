@@ -24,10 +24,10 @@ import {
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { workspaceApi } from '@/api'
+import { teamApi, workspaceApi } from '@/api'
 import type {
   WorkspaceDetail, WorkspaceMember, WorkspaceRole, WorkspaceVisibility,
-  MemberUserBrief,
+  MemberUserBrief, Team,
 } from '@/api'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -86,6 +86,14 @@ export default function WorkspaceSettingsContent({
   // 能力位（ADR 0153）：门控只看后端判定结果，不再本地比对角色字符串
   const { can, dataRole } = useCapabilities(wid)
 
+  // 团队列表（ADR 0153 D3）：仅用于「所属团队」下拉；读取失败不阻断设置页
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['teams'],
+    queryFn: () => teamApi.list(),
+    retry: false,
+    enabled: !!wid,
+  })
+
   // 获取成员列表
   const { data: members = [], isLoading: membersLoading } = useQuery<WorkspaceMember[]>({
     queryKey: ['workspace-members', wid],
@@ -120,6 +128,7 @@ export default function WorkspaceSettingsContent({
         visibility: detail.visibility ?? 'member',
         modules: normalizeModules(detail.modules),
         tags: (detail.tags ?? []).join(', '),
+        team_id: detail.team_id ?? undefined,
       })
     }
   }, [detail, form])
@@ -147,12 +156,16 @@ export default function WorkspaceSettingsContent({
         visibility: v.visibility as WorkspaceVisibility,
         modules: normalizeModules(v.modules),
         tags: tagsStr.split(/[,，]/).map(s => s.trim()).filter(Boolean),
+        // 迁入 / 移出团队（ADR 0153 D3）：空值 = 个人工作区
+        team_id: (v.team_id as number | undefined) ?? null,
       })
     },
     onSuccess: () => {
       message.success('设置已保存')
       queryClient.invalidateQueries({ queryKey: ['workspace-detail', wid] })
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      queryClient.invalidateQueries({ queryKey: ['workspace-capabilities', wid] })
+      queryClient.invalidateQueries({ queryKey: ['teams'] })
       onUpdated?.()
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '保存设置失败'),
@@ -388,6 +401,18 @@ export default function WorkspaceSettingsContent({
                   </Row>
                   <Form.Item name="description" label="描述（可选）">
                     <Input.TextArea rows={2} placeholder="简单介绍一下这个工作区" />
+                  </Form.Item>
+                  <Form.Item
+                    name="team_id"
+                    label={<>所属团队<HelpTip title="挂到团队后，团队所有者/管理员可以管理本工作区的设置与成员；数据权限仍由工作区成员角色决定，团队管理员默认看不到数据" /></>}
+                  >
+                    <Select
+                      allowClear
+                      placeholder="个人工作区（不归属团队）"
+                      data-testid="ws-settings-team-select"
+                      options={teams.map(t => ({ value: t.id, label: t.name }))}
+                      disabled={!canEditBasic}
+                    />
                   </Form.Item>
                   <Form.Item
                     name="modules"

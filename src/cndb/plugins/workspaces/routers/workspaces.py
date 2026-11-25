@@ -16,6 +16,8 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import (
+    DEFAULT_STORAGE_QUOTA_BYTES,
+    Team,
     Workspace,
     WorkspaceMember,
     WorkspaceRole,
@@ -27,7 +29,13 @@ from cndb.plugins.workspaces.permissions import (
     require_capability,
     resolve_capabilities,
 )
-from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
+from cndb.plugins.workspaces.routers.deps import (
+    _get_workspace_or_404,
+    _require_member,
+    _require_owner,
+    _require_team_for_workspace,
+    _require_workspace_owner,
+)
 from cndb.plugins.workspaces.routers.member_routes import router as member_router
 from cndb.plugins.workspaces.schemas import (
     PinRequest,
@@ -50,6 +58,7 @@ from cndb.plugins.workspaces.services.backup_io import (
     _coerce_row_value_types,
     import_backup_into_workspace,
 )
+from cndb.plugins.workspaces.services.teams import ensure_modules_allowed, team_policy_for
 
 # 工作区列表缓存（进程内，短 TTL；写路径主动失效）
 WORKSPACE_LIST_TTL_SECONDS = 10.0
@@ -59,6 +68,23 @@ def _list_cache() -> Any:
     from cndb.core.cache import list_cache
 
     return list_cache
+
+
+def _team_brief(db: Session, workspace: Workspace) -> dict[str, Any] | None:
+    """工作区所属团队简要信息（无团队返回 None）."""
+    if not workspace.team_id:
+        return None
+    team = db.get(Team, workspace.team_id)
+    if team is None:  # pragma: no cover - FK 保证存在（删团队会置空 team_id）
+        return None
+    return {"id": team.id, "name": team.name, "slug": team.slug}
+
+
+def _workspace_payload(db: Session, workspace: Workspace) -> dict[str, Any]:
+    """ORM → 响应载荷：列字段 + 团队简要信息（``team`` 不映射 ORM 关系，D3）."""
+    data = {c.name: getattr(workspace, c.name) for c in workspace.__table__.columns}
+    data["team"] = _team_brief(db, workspace)
+    return data
 
 
 def invalidate_workspace_list_cache(workspace_id: int | None = None) -> int:
@@ -85,21 +111,24 @@ router.include_router(member_router)
 def list_workspaces(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
+    team_id: int | None = None,
 ) -> list[WorkspaceWithPinnedResponse]:
     """列出当前用户所属的工作区，钉住的置顶，附带 table_count / member_count.
 
-    进程内短 TTL 缓存（10s，按用户隔离）：该接口每次都要做 3 次聚合统计，
-    是首页最热的读路径；写路径（新建/改名/成员变更）会主动失效，
+    ``team_id`` 可选：只返回该团队下的工作区（ADR 0153 C1 的平铺列表入口）。
+
+    进程内短 TTL 缓存（10s，按用户 + 团队过滤隔离）：该接口每次都要做数次聚合统计，
+    是首页最热的读路径；写路径（新建/改名/成员变更/团队变更）会主动失效，
     短 TTL 只是兜底 —— 单机部署下进程内缓存无需 Redis 即可生效。
     """
     from cndb.core.cache import cache_key
 
     cache = _list_cache()
-    ck = cache_key("ws-list", current_user.id, id(db.bind))
+    ck = cache_key("ws-list", current_user.id, team_id or 0, id(db.bind))
     cached = cache.get(ck)
     if cached is not None:
         return cached
-    data = _list_workspaces_uncached(db, current_user)
+    data = _list_workspaces_uncached(db, current_user, team_id=team_id)
     cache.set(ck, data, WORKSPACE_LIST_TTL_SECONDS)
     return data
 
@@ -107,6 +136,8 @@ def list_workspaces(
 def _list_workspaces_uncached(
     db: Session,
     current_user: User,
+    *,
+    team_id: int | None = None,
 ) -> list[WorkspaceWithPinnedResponse]:
     from sqlalchemy import case, func, select
 
@@ -119,6 +150,8 @@ def _list_workspaces_uncached(
         .where(WorkspaceMember.user_id == current_user.id)
         .order_by(case((WorkspaceMember.pinned.is_(True), 0), else_=1), Workspace.id)
     )
+    if team_id:
+        stmt = stmt.where(Workspace.team_id == team_id)
     rows = db.execute(stmt).all()
 
     # 批量收集 workspace_id 用于统计
@@ -147,9 +180,16 @@ def _list_workspaces_uncached(
     }
     # 文档 / 设计计数（需求 0093）：分组 COUNT，文件夹 / 回收站 / 软删不计入
     content_counts = compute_content_counts(db, ws_ids)
+    # 团队简要信息（ADR 0153）：列表按团队分组展示，一次批量取
+    team_ids = {ws.team_id for ws, _ in rows if ws.team_id}
+    team_briefs: dict[int, dict[str, Any]] = {}
+    if team_ids:
+        for team in db.query(Team).filter(Team.id.in_(team_ids)).all():
+            team_briefs[team.id] = {"id": team.id, "name": team.name, "slug": team.slug}
     result: list[WorkspaceWithPinnedResponse] = []
     for ws, member in rows:
         d = {c.name: getattr(ws, c.name) for c in ws.__table__.columns}
+        d["team"] = team_briefs.get(ws.team_id) if ws.team_id else None
         d["pinned"] = bool(member.pinned)
         # 统计字段塞进 response 扩展（WorkspaceWithPinnedResponse 继承自 WorkspaceResponse，
         # 前端列表类型声明时用 Workspace & { table_count, member_count } 接收）
@@ -168,8 +208,18 @@ def create_workspace(
     payload: WorkspaceCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> Workspace:
-    """创建工作区并把创建者登记为 OWNER."""
+) -> WorkspaceResponse:
+    """创建工作区并把创建者登记为 OWNER（可选挂到团队，ADR 0153 D3）."""
+    team: Team | None = None
+    policy: dict[str, Any] = {}
+    if payload.team_id is not None:
+        team = _require_team_for_workspace(
+            db, payload.team_id, current_user, requirement="仅团队成员可在团队下创建工作区"
+        )
+        policy = team_policy_for(team)
+        if policy.get("allowed_modules") is not None:
+            ensure_modules_allowed(policy, payload.modules)
+    quota = policy.get("default_storage_quota_bytes")
     ws = Workspace(
         name=payload.name,
         description=payload.description,
@@ -177,6 +227,8 @@ def create_workspace(
         tags=payload.tags,
         allow_edit=payload.allow_edit,
         modules=payload.modules,
+        team_id=payload.team_id,
+        storage_quota_bytes=quota if isinstance(quota, int) else DEFAULT_STORAGE_QUOTA_BYTES,
         created_by_id=current_user.id,
     )
     db.add(ws)
@@ -186,7 +238,7 @@ def create_workspace(
     db.commit()
     db.refresh(ws)
     invalidate_workspace_list_cache(ws.id)
-    return ws
+    return WorkspaceResponse.model_validate(_workspace_payload(db, ws))
 
 
 @router.get("/{workspace_id}", response_model=WorkspaceDetailResponse)
@@ -225,7 +277,7 @@ def get_workspace(
         }
 
     current_role = caps.data_role
-    d = {c.name: getattr(ws, c.name) for c in ws.__table__.columns}
+    d = _workspace_payload(db, ws)
     d.update(
         {
             "owner": owner_info,
@@ -289,17 +341,28 @@ def update_workspace(
     payload: WorkspaceUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-) -> Workspace:
+) -> WorkspaceResponse:
     """更新工作区（仅 OWNER）."""
     ws = _get_workspace_or_404(workspace_id, db)
+    # 管理面：工作区所有者或团队管理员（ADR 0153 D4）
     _require_owner(ws, current_user, db)
     update_data = payload.model_dump(exclude_unset=True)
+    if "team_id" in update_data:
+        target_team_id = update_data["team_id"]
+        if target_team_id is not None:
+            target_team = _require_team_for_workspace(
+                db, target_team_id, current_user, requirement="仅目标团队成员可把工作区迁入该团队"
+            )
+            policy = team_policy_for(target_team)
+            if policy.get("allowed_modules") is not None:
+                ensure_modules_allowed(policy, update_data.get("modules") or list(ws.modules or []))
+        # 解绑（target=None）不需额外团队校验：管理面已在上面通过（工作区所有者 / 团队管理员）
     for key, value in update_data.items():
         setattr(ws, key, value)
     db.commit()
     invalidate_workspace_list_cache(workspace_id)
     db.refresh(ws)
-    return ws
+    return WorkspaceResponse.model_validate(_workspace_payload(db, ws))
 
 
 @router.delete("/{workspace_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -310,8 +373,8 @@ def delete_workspace(
 ) -> None:
     """删除工作区（仅 OWNER 可执行）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    # ADR 0047 / ADR 0153：403 文案带角色与拥有者指引（唯一出口）
-    _require_owner(ws, current_user, db, requirement="仅所有者可删除工作区")
+    # ADR 0047 / ADR 0153 D9：删除属不可逆操作，仅工作区所有者本人（团队管理员不行）
+    _require_workspace_owner(ws, current_user, db, requirement="仅所有者可删除工作区")
     db.delete(ws)
     db.commit()
     invalidate_workspace_list_cache(workspace_id)
@@ -433,7 +496,7 @@ def create_workspace_from_backup(
         import_result.errors.append(module_warning)
 
     return WorkspaceCreateFromBackupResponse(
-        workspace=ws,
+        workspace=WorkspaceResponse.model_validate(_workspace_payload(db, ws)),
         imported_tables=import_result.imported_tables,
         imported_rows=import_result.imported_rows,
         imported_views=import_result.imported_views,
@@ -493,6 +556,13 @@ def export_workspace_archive(
         requirement="编辑者及以上权限才能导出工作区",
     )
 
+    # 团队只作 manifest 提示性元数据（ADR 0153 D7）：不随工作区备份往返，导入不自动挂
+    team_meta: dict[str, Any] | None = None
+    if ws.team_id:
+        team_row = db.get(Team, ws.team_id)
+        if team_row is not None:
+            team_meta = {"name": team_row.name, "slug": team_row.slug}
+
     # 表行按表写成 NDJSON 临时分块（ADR 0075 D8）：大工作区导出不再把全部行拼成一份巨型 JSON
     with tempfile.TemporaryDirectory(prefix="cndb-ws-export-rows-") as rows_dir:
         backup, files = build_workspace_backup_v16(
@@ -504,7 +574,7 @@ def export_workspace_archive(
 
         os.close(fd)
         try:
-            pack_workspace_archive(backup, files, tmp_path)
+            pack_workspace_archive(backup, files, tmp_path, team=team_meta)
         except Exception:
             tmp_path.unlink(missing_ok=True)
             raise
@@ -528,7 +598,8 @@ def restore_workspace(
     from cndb.plugins.workspaces.services.workspace_restore import restore_workspace_from_backup
 
     ws = _get_workspace_or_404(workspace_id, db)
-    _require_owner(ws, current_user, db)
+    # 覆盖恢复会清空业务数据：仅工作区所有者本人可执行（ADR 0153 D9）
+    _require_workspace_owner(ws, current_user, db)
 
     fd, tmp_name = tempfile.mkstemp(prefix="cndb-ws-restore-", suffix=".tar.gz")
     tmp_path = Path(tmp_name)
