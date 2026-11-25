@@ -64,14 +64,51 @@ export interface AnalyticsSummary {
   top_n?: number | null
 }
 
+/** union 的一个输入（ADR 0159）：一个工作区链接 + 展示别名 */
+export interface AnalyticsUnionInput {
+  link_id: number
+  alias?: string | null
+}
+
+/** union 的输出列：声明名 + 类型 + 各输入字段映射（`{link_id: 字段名}`） */
+export interface AnalyticsUnionColumn {
+  name: string
+  /** text / number / date / boolean 族 */
+  type: string
+  map: Record<string, string>
+}
+
+/** join 的一侧（table_id / link_id 二选一） */
+export interface AnalyticsJoinSide {
+  table_id?: number | null
+  link_id?: number | null
+}
+
+/** join 关联键：左右两侧字段名（都必须可见） */
+export interface AnalyticsJoinKey {
+  left_field: string
+  right_field: string
+}
+
 /** 模板配置 */
-/** 分析数据源（ADR 0158）：本工作区表或工作区链接（只读引用） */
+/** 分析数据源（ADR 0158 / 0159）：本表、链接、多链接汇总（union）、跨工作区关联（join） */
 export interface AnalyticsSource {
-  type: 'table' | 'link'
+  type: 'table' | 'link' | 'union' | 'join'
   /** type=table 时的表 id */
   id?: number | null
   /** type=link 时的链接 id */
   link_id?: number | null
+  /** type=union 时的输入（2–5 个链接） */
+  inputs?: AnalyticsUnionInput[] | null
+  /** type=union 时的输出列映射 */
+  columns?: AnalyticsUnionColumn[] | null
+  /** type=join 时的连接类型 */
+  join_type?: 'left' | 'inner' | null
+  /** type=join 时的左右两侧 */
+  left?: AnalyticsJoinSide | null
+  right?: AnalyticsJoinSide | null
+  /** type=join 时的关联键 */
+  on?: AnalyticsJoinKey[] | null
 }
 
 export interface AnalyticsTemplateConfig {
@@ -377,9 +414,15 @@ export const analyticsApi = {
     api
       .get<AnalyticsDatasources>(`/v1/workspaces/${wid}/analytics/datasources`)
       .then(r => r.data),
-  validate: (wid: number | string, tableId: number | null, formulas: AnalyticsFormula[]) =>
+  validate: (
+    wid: number | string,
+    tableId: number | null,
+    formulas: AnalyticsFormula[],
+    source?: AnalyticsSource | null,
+  ) =>
     api.post<AnalyticsValidateResponse>(`/v1/workspaces/${wid}/analytics/validate`, {
-      table_id: tableId, formulas,
+      ...(source ? { source } : { table_id: tableId }),
+      formulas,
     }).then(r => r.data),
   compute: (wid: number | string, data: AnalyticsComputeRequest) =>
     api.post<AnalyticsComputeResponse>(`/v1/workspaces/${wid}/analytics/compute`, data).then(r => r.data),

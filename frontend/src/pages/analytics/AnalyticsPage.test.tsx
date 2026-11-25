@@ -949,3 +949,186 @@ describe('AnalyticsPage 链接数据源（ADR 0158 P2）', () => {
     expect((createBodies[0].config as Record<string, unknown>).source).toEqual({ type: 'link', link_id: 800 })
   })
 })
+
+describe('AnalyticsPage 复合数据源（ADR 0159 P2）', () => {
+  const LINK_A = {
+    type: 'link', id: 800, link_id: 800, name: '华东销售',
+    source_workspace_name: '华东区', expires_at: '2026-12-25T00:00:00Z', readable: true,
+  }
+  const LINK_B = {
+    type: 'link', id: 801, link_id: 801, name: '华南销售',
+    source_workspace_name: '华南区', expires_at: '2026-12-25T00:00:00Z', readable: true,
+  }
+
+  const UNION_SOURCE = {
+    type: 'union' as const,
+    inputs: [
+      { link_id: 800, alias: '华东销售' },
+      { link_id: 801, alias: '华南销售' },
+    ],
+    columns: [
+      { name: '区域', type: 'text', map: { '800': '区域', '801': '区域' } },
+      { name: '销售额', type: 'number', map: { '800': '销售额', '801': '销售额' } },
+    ],
+  }
+
+  function linkFields(id: number) {
+    return {
+      link_id: id,
+      table_id: 100 + id,
+      table_name: '销售明细',
+      target_type: 'table',
+      fields: [
+        { id: 1, name: '区域', field_type: 'text', order: 0 },
+        { id: 2, name: '销售额', field_type: 'number', order: 1 },
+        // 800 与左表「产品」同名，用于验证 join 冲突列的 left. / right. 消歧
+        ...(id === 800 ? [{ id: 3, name: '产品', field_type: 'text', order: 2 }] : []),
+      ],
+    }
+  }
+
+  function setupCompositeHandlers(options: {
+    links?: Array<Record<string, unknown>>
+    templates?: AnalyticsTemplate[]
+  } = {}) {
+    setupHandlers()
+    if (options.templates) {
+      templateList = options.templates
+      server.use(http.get('/api/v1/workspaces/1/analytics/templates', () => HttpResponse.json(templateList)))
+    }
+    server.use(
+      http.get('/api/v1/workspaces/1/analytics/datasources', () => HttpResponse.json({
+        tables: [{ type: 'table', id: TID, name: '产品批次', readable: true }],
+        links: options.links ?? [LINK_A, LINK_B],
+      })),
+      http.get('/api/v1/workspaces/1/links/800/fields', () => HttpResponse.json(linkFields(800))),
+      http.get('/api/v1/workspaces/1/links/801/fields', () => HttpResponse.json(linkFields(801))),
+      http.get('/api/v1/workspaces/1/analytics/recommendations', () =>
+        HttpResponse.json({ ...RECOMMENDATIONS, table_id: 100 })),
+    )
+  }
+
+  /** 打开数据源下拉并点选指定文案（下拉是 portal，需按选项内容定位） */
+  async function pickDatasourceOption(label: RegExp) {
+    fireEvent.mouseDown(screen.getByTestId('analytics-table-select'))
+    const option = await screen.findByText(label, { selector: '.ant-select-item-option-content' })
+    fireEvent.click(option)
+  }
+
+  /** 打开某个 Select 并点选最后一个匹配选项（最近打开的浮层在最后） */
+  async function pickSelectOption(testId: string, label: RegExp) {
+    fireEvent.mouseDown(screen.getByTestId(testId))
+    const options = await screen.findAllByText(label, { selector: '.ant-select-item-option-content' })
+    fireEvent.click(options[options.length - 1])
+  }
+
+  it('多链接汇总：选 2 个链接 → 同名字段生成映射 → 运行载荷 / 保存配置为 union', async () => {
+    setupCompositeHandlers()
+    renderPage('/w/1/analytics')
+
+    await pickDatasourceOption(/多链接汇总/)
+    const modal = await screen.findByRole('dialog')
+
+    fireEvent.mouseDown(within(modal).getByTestId('analytics-union-inputs'))
+    const optionA = await screen.findByText(/华东销售/, { selector: '.ant-select-item-option-content' })
+    fireEvent.click(optionA)
+    const optionB = await screen.findByText(/华南销售/, { selector: '.ant-select-item-option-content' })
+    fireEvent.click(optionB)
+
+    // 字段加载完成后自动生成同名列，仍允许手动重算
+    await waitFor(() => expect(screen.getByTestId('analytics-union-column-name-0')).toHaveValue('区域'))
+    fireEvent.click(screen.getByTestId('analytics-union-autofill'))
+    fireEvent.click(within(modal).getByRole('button', { name: /应用数据源/ }))
+
+    expect(await screen.findByTestId('analytics-composite-source-hint')).toHaveTextContent('多链接汇总')
+    expect(screen.getByTestId('analytics-composite-input-link-800')).toHaveTextContent('可读')
+    expect(screen.getByTestId('analytics-composite-input-link-801')).toHaveTextContent('可读')
+
+    fireEvent.change(screen.getByTestId('analytics-formula-expr-0'), { target: { value: 'sum([销售额])' } })
+    const runBtn = screen.getByTestId('analytics-run-btn')
+    await waitFor(() => expect(runBtn).toBeEnabled())
+    fireEvent.click(runBtn)
+
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+    expect(computeBodies[0].table_id).toBeUndefined()
+    expect(computeBodies[0].source).toMatchObject({
+      type: 'union',
+      inputs: [{ link_id: 800 }, { link_id: 801 }],
+      columns: [
+        { name: '区域', type: 'text', map: { '800': '区域', '801': '区域' } },
+        { name: '销售额', type: 'number', map: { '800': '销售额', '801': '销售额' } },
+      ],
+    })
+    expect(computeBodies[0].filters).toEqual([])
+
+    fireEvent.click(screen.getByTestId('analytics-saveas-btn'))
+    // 复合源弹窗关闭动画期间仍留在 DOM（role=dialog 会重复），按输入框反查保存弹窗
+    const saveName = await screen.findByTestId('analytics-template-name')
+    const saveDialog = saveName.closest('[role="dialog"]') as HTMLElement
+    fireEvent.change(saveName, { target: { value: '跨区汇总' } })
+    fireEvent.click(within(saveDialog).getByRole('button', { name: /保\s*存$/ }))
+
+    await waitFor(() => expect(createBodies).toHaveLength(1))
+    expect(createBodies[0].table_id).toBeNull()
+    expect((createBodies[0].config as Record<string, unknown>).source).toMatchObject({ type: 'union' })
+  })
+
+  it('跨工作区关联：左侧本表 + 右侧链接 → 关联键 → 运行载荷为 join', async () => {
+    setupCompositeHandlers()
+    renderPage('/w/1/analytics')
+
+    await pickDatasourceOption(/跨工作区关联/)
+    const modal = await screen.findByRole('dialog')
+
+    await pickSelectOption('analytics-join-left', /产品批次/)
+    await pickSelectOption('analytics-join-right', /华东销售/)
+
+    const addKey = within(modal).getByTestId('analytics-join-add-key')
+    await waitFor(() => expect(addKey).toBeEnabled())
+    fireEvent.click(addKey)
+
+    await pickSelectOption('analytics-join-key-left-0', /^产品/)
+    await pickSelectOption('analytics-join-key-right-0', /^区域/)
+    // 右侧关联键不重复输出；同名冲突列加 left. 前缀
+    expect(screen.getByTestId('analytics-join-output-preview')).toHaveTextContent('left.产品')
+
+    fireEvent.click(within(modal).getByRole('button', { name: /应用数据源/ }))
+    fireEvent.change(screen.getByTestId('analytics-formula-expr-0'), { target: { value: 'sum([销售额])' } })
+    const runBtn = screen.getByTestId('analytics-run-btn')
+    await waitFor(() => expect(runBtn).toBeEnabled())
+    fireEvent.click(runBtn)
+
+    await waitFor(() => expect(computeBodies).toHaveLength(1))
+    expect(computeBodies[0].source).toEqual({
+      type: 'join',
+      join_type: 'left',
+      left: { table_id: TID },
+      right: { link_id: 800 },
+      on: [{ left_field: '产品', right_field: '区域' }],
+    })
+  })
+
+  it('模板输入失效：逐项标注且运行按钮禁用（fail-closed）', async () => {
+    const tpl: AnalyticsTemplate = makeTemplate({
+      id: 12,
+      name: '跨区汇总模板',
+      table_id: null,
+      config: {
+        source: UNION_SOURCE,
+        formulas: [{ key: 'total', label: '合计', expr: 'sum([销售额])' }],
+        chart: null,
+        summary: null,
+        fields: [],
+        limit: 1000,
+      },
+    })
+    // 801 已被撤回：datasources 里不再出现
+    setupCompositeHandlers({ links: [LINK_A], templates: [tpl] })
+    renderPage('/w/1/analytics?template=12')
+    await waitTemplateLoaded('跨区汇总模板')
+
+    expect(await screen.findByTestId('analytics-composite-invalid')).toHaveTextContent('整体无法运行')
+    expect(screen.getByTestId('analytics-composite-input-link-801')).toHaveTextContent('已失效')
+    expect(screen.getByTestId('analytics-run-btn')).toBeDisabled()
+  })
+})

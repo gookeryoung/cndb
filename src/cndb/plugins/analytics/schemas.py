@@ -165,8 +165,13 @@ class FormulaCheck(BaseModel):
 
 
 class ValidateRequest(BaseModel):
-    """公式校验请求."""
+    """公式校验请求.
 
+    ``source`` 与 ``table_id`` 二选一（ADR 0158 / 0159）：复合数据源（union / join）
+    传 ``source``，字段白名单取合成后的字段清单。
+    """
+
+    source: AnalyticsSource | None = None
     table_id: int | None = None
     formulas: list[FormulaSpec] = Field(default_factory=list)
 

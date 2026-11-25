@@ -27,10 +27,12 @@ if TYPE_CHECKING:
 UNION_MIN_INPUTS = 2
 UNION_MAX_INPUTS = 5
 
-#: 数值族（互认）；其余按「同族」严格比较
-NUMERIC_FAMILY = frozenset({"number", "integer", "decimal", "currency", "percent"})
-TEXT_FAMILY = frozenset({"text", "email", "url", "phone", "select", "multiselect"})
-DATE_FAMILY = frozenset({"date", "datetime"})
+#: 数值族（互认）；其余按「同族」严格比较。
+#: 必须覆盖字段 registry 的真实类型名（float 小数 / longtext / timestamp），
+#: 与前端 analyticsModel.fieldFamily 同口径，否则真实表字段会被误判为不同族。
+NUMERIC_FAMILY = frozenset({"number", "integer", "decimal", "float", "currency", "percent"})
+TEXT_FAMILY = frozenset({"text", "longtext", "email", "url", "phone", "select", "multiselect"})
+DATE_FAMILY = frozenset({"date", "datetime", "timestamp"})
 BOOL_FAMILY = frozenset({"boolean", "bool"})
 
 

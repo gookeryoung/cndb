@@ -178,6 +178,45 @@ class TestUnionCompute:
         assert r.status_code == 400
         assert "类型不兼容" in r.json()["detail"]
 
+    def test_float_source_accepts_numeric_declared_type(self, client, db, env):
+        """float（小数）是字段 registry 真实数值类型：声明 number 应视为同族（与前端 fieldFamily 同口径）."""
+        ws = env.sources[0]
+        auth = _login(client, env.owner.username)
+        tid = client.post(f"{WS}/{ws.id}/tables", json={"name": "金额明细"}, headers=auth).json()["id"]
+        for order, (name, ftype) in enumerate((("区域", "text"), ("金额", "float"))):
+            r = client.post(
+                f"{WS}/{ws.id}/tables/{tid}/fields",
+                json={"name": name, "field_type": ftype, "order": order},
+                headers=auth,
+            )
+            assert r.status_code in (200, 201), r.text
+        r = client.post(
+            f"{WS}/{ws.id}/tables/{tid}/records",
+            json={"values": {"区域": "上海", "金额": 12.5}},
+            headers=auth,
+        )
+        assert r.status_code in (200, 201), r.text
+
+        other = _make_source_table(client, env, 1, [("广州", 30)])
+        links = [_link(client, env, 0, tid), _link(client, env, 1, other)]
+        source = {
+            "type": "union",
+            "inputs": [{"link_id": link["id"]} for link in links],
+            "columns": [
+                {"name": "金额", "type": "number", "map": {str(links[0]["id"]): "金额"}},
+            ],
+        }
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/compute",
+            json={"source": source, "formulas": [{"key": "合计", "expr": "sum([金额])"}]},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        payload = r.json()
+        assert payload["table_fields"] == ["金额"]
+        # 另一输入未映射该列 → 按空值补齐（ADR 0159 C1）
+        assert payload["total"] == 2
+
     def test_hidden_field_in_mapping_rejected(self, client, db, env):
         links = self._setup_two(client, env)
         tid = db.get(WorkspaceLink, links[0]["id"]).target_table_id
@@ -499,6 +538,94 @@ class TestUnionEdgeCases:
             headers=auth,
         )
         assert r.status_code == 400
+
+
+class TestValidateCompositeSource:
+    """ADR 0159 P2：公式校验按复合源合成字段清单判定（保存期 / 编辑期同口径）."""
+
+    def _setup_union(self, client, env) -> list[dict]:
+        t1 = _make_source_table(client, env, 0, [("上海", 10)])
+        t2 = _make_source_table(client, env, 1, [("广州", 20)])
+        return [_link(client, env, 0, t1), _link(client, env, 1, t2)]
+
+    def test_union_validate_uses_composite_fields(self, client, db, env):
+        links = self._setup_union(client, env)
+        auth = _login(client, env.owner.username)
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/validate",
+            json={"source": _union_source(links), "formulas": [{"key": "x", "expr": "sum([销售额])"}]},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert body["table_fields"] == ["区域", "销售额"]
+        assert body["results"][0]["fields"] == ["销售额"]
+
+    def test_union_validate_rejects_unmapped_column(self, client, db, env):
+        links = self._setup_union(client, env)
+        source = _union_source(links)
+        source["columns"] = [source["columns"][0]]  # 只声明「区域」，销售额被丢弃
+        auth = _login(client, env.owner.username)
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/validate",
+            json={"source": source, "formulas": [{"key": "x", "expr": "sum([销售额])"}]},
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is False
+        assert "销售额" in body["results"][0]["error"]
+
+    def test_union_validate_revoked_input_404(self, client, db, env):
+        links = self._setup_union(client, env)
+        auth = _login(client, env.owner.username)
+        client.delete(f"{LINKS.format(wid=env.consumer.id)}/{links[0]['id']}", headers=auth)
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/validate",
+            json={"source": _union_source(links), "formulas": []},
+            headers=auth,
+        )
+        assert r.status_code == 404
+
+    def test_join_validate_accepts_disambiguated_columns(self, client, db, env):
+        join = TestJoinCompute()
+        ctx = join._setup(client, env)
+        auth = _login(client, env.owner.username)
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/validate",
+            json={
+                "source": join._source(ctx),
+                "formulas": [
+                    {"key": "a", "expr": "sum([left.金额])"},
+                    {"key": "b", "expr": "sum([回款])"},
+                ],
+            },
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert "left.金额" in body["table_fields"]
+        assert "right.金额" in body["table_fields"]
+        assert "客户号" not in body["table_fields"]  # 右表关联键不重复输出
+
+    def test_join_validate_rejects_right_key_reference(self, client, db, env):
+        join = TestJoinCompute()
+        ctx = join._setup(client, env)
+        auth = _login(client, env.owner.username)
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/validate",
+            json={
+                "source": join._source(ctx),
+                "formulas": [{"key": "x", "expr": "sum([客户号])"}],
+            },
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is False
+        assert "客户号" in body["results"][0]["error"]
 
 
 class TestJoinEdgeCases:

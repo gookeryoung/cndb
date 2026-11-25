@@ -122,10 +122,16 @@ def validate_formulas(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> ValidateResponse:
-    """校验公式：语法白名单 + 字段引用（给了 table_id 才做字段检查）."""
+    """校验公式：语法白名单 + 字段引用（给了 source / table_id 才做字段检查）."""
     check_workspace_permission(db, workspace_id, current_user, WorkspaceRole.VIEWER)
     field_names: list[str] | None = None
-    if payload.table_id is not None:
+    if payload.source is not None:
+        # 复合数据源（ADR 0159 P2）：字段白名单 = 合成后的字段清单（逐输入同权，L1/L2）
+        table_id = payload.source.id if payload.source.type == "table" else payload.table_id
+        if table_id is not None and payload.source.type == "table":
+            _table_for_read(workspace_id, table_id, current_user, db)
+        field_names = services.templates.source_field_names(db, current_user, workspace_id, payload.source, table_id)
+    elif payload.table_id is not None:
         _table_for_read(workspace_id, payload.table_id, current_user, db)
         field_names = services.templates.table_field_names(db, workspace_id, payload.table_id)
     known = set(field_names) if field_names is not None else None

@@ -37,8 +37,8 @@ import type {
   AnalyticsAiSuggestTemplatePayload,
   AnalyticsAiTemplateSuggestion,
   AnalyticsChart, AnalyticsComputeResponse, AnalyticsFilter, AnalyticsFormula,
-  AnalyticsRecommendationExample, AnalyticsSummary, AnalyticsTemplate, AnalyticsTemplateCreate,
-  AnalyticsTemplateUpdate,
+  AnalyticsRecommendationExample, AnalyticsSource, AnalyticsSummary, AnalyticsTemplate,
+  AnalyticsTemplateCreate, AnalyticsTemplateUpdate,
 } from '@/api/analytics'
 import { useLlmAction } from '@/hooks/useLlmAction'
 import { useAuthStore } from '@/store/auth'
@@ -53,6 +53,7 @@ import { SummaryPanel } from './SummaryPanel'
 import { ChartResultBox, RowsResultBox, StatsResultBox, SummaryResultBox } from './AnalyticsResultView'
 import { RecommendationPanel } from './RecommendationPanel'
 import { AnalyticsManagerDrawer } from './AnalyticsManagerDrawer'
+import { CompositeSourceModal } from './CompositeSourceModal'
 import { applySuggestionConfig, buildExplainPayload, suggestionName } from './analyticsAi'
 import {
   DEFAULT_CHART,
@@ -62,7 +63,9 @@ import {
   canRunAnalysis,
   chartConfigured,
   collectFormulaErrors,
+  fieldFamily,
   isDirty,
+  joinOutputFields,
   mergeFormulas,
   newFormula,
   normalizeChart,
@@ -119,6 +122,10 @@ export default function AnalyticsPage() {
   const [tableId, setTableId] = useState<number | null>(null)
   /** 链接数据源（ADR 0158）：与 tableId 二选一 */
   const [linkId, setLinkId] = useState<number | null>(null)
+  /** 复合数据源（ADR 0159 P2）：union / join；有值时 tableId / linkId 必须为空 */
+  const [compositeSource, setCompositeSource] = useState<AnalyticsSource | null>(null)
+  const [compositeOpen, setCompositeOpen] = useState(false)
+  const [compositeMode, setCompositeMode] = useState<'union' | 'join'>('union')
   const [formulas, setFormulas] = useState<AnalyticsFormula[]>([newFormula(0)])
   const [chart, setChart] = useState<AnalyticsChart>({ ...DEFAULT_CHART })
   const [summary, setSummary] = useState<AnalyticsSummary>({ ...EMPTY_SUMMARY, metrics: [] })
@@ -147,7 +154,7 @@ export default function AnalyticsPage() {
   const handledParamRef = useRef<string | null>(null)
 
   // ── 查询 ──
-  const { data: tables = [] } = useQuery({
+  const { data: tables = [], isLoading: tablesLoading } = useQuery({
     queryKey: ['workspaces', wid, 'tables'],
     queryFn: () => tableApi.list(wid!),
     enabled: !!wid,
@@ -160,7 +167,7 @@ export default function AnalyticsPage() {
   })
 
   // 可选数据源：本工作区表 + 我可见的工作区链接（ADR 0158 P2）
-  const { data: datasources } = useQuery({
+  const { data: datasources, isLoading: datasourcesLoading } = useQuery({
     queryKey: ['analytics-datasources', wid],
     queryFn: () => analyticsApi.datasources(wid!),
     enabled: !!wid,
@@ -183,6 +190,30 @@ export default function AnalyticsPage() {
     [linkFieldsData],
   )
 
+  // 复合数据源（ADR 0159 P2）：join 两侧字段用于合成输出字段清单（与后端 output_fields 同口径）
+  const joinLeftLinkId = compositeSource?.type === 'join' ? compositeSource.left?.link_id ?? null : null
+  const joinLeftTableId = compositeSource?.type === 'join' ? compositeSource.left?.table_id ?? null : null
+  const joinRightLinkId = compositeSource?.type === 'join' ? compositeSource.right?.link_id ?? null : null
+
+  const { data: joinLeftLinkFields } = useQuery({
+    queryKey: ['analytics-link-fields', wid, joinLeftLinkId],
+    queryFn: () => linksApi.fields(wid!, joinLeftLinkId!),
+    enabled: !!wid && joinLeftLinkId != null,
+    retry: false,
+  })
+  const { data: joinLeftTableDetail } = useQuery({
+    queryKey: ['table', wid, joinLeftTableId],
+    queryFn: () => tableApi.get(wid!, joinLeftTableId!),
+    enabled: !!wid && joinLeftTableId != null,
+    retry: false,
+  })
+  const { data: joinRightLinkFields } = useQuery({
+    queryKey: ['analytics-link-fields', wid, joinRightLinkId],
+    queryFn: () => linksApi.fields(wid!, joinRightLinkId!),
+    enabled: !!wid && joinRightLinkId != null,
+    retry: false,
+  })
+
   const { data: templates = [], isLoading: templatesLoading } = useQuery({
     queryKey: ['analytics-templates', wid],
     queryFn: () => analyticsApi.listTemplates(wid!),
@@ -202,10 +233,100 @@ export default function AnalyticsPage() {
     staleTime: 5 * 60_000,
   })
 
-  /** 数据源字段（链接源 = 链接可见字段；本表源 = 表字段） */
+  /** 复合数据源输出字段（ADR 0159 L4）：union 取声明列，join 按后端同口径合成冲突列名 */
+  const compositeFields = useMemo<Field[]>(() => {
+    if (!compositeSource) return []
+    if (compositeSource.type === 'union') {
+      return (compositeSource.columns ?? []).map((column, index) => ({
+        id: -(1000 + index),
+        name: column.name,
+        field_type: fieldFamily(column.type) as Field['field_type'],
+      }))
+    }
+    if (compositeSource.type !== 'join') return []
+    const left = joinLeftLinkId != null
+      ? (joinLeftLinkFields?.fields ?? []).map(field => ({ name: field.name, type: field.field_type }))
+      : (joinLeftTableDetail?.fields ?? []).map(field => ({ name: field.name, type: String(field.field_type) }))
+    const right = (joinRightLinkFields?.fields ?? []).map(field => ({
+      name: field.name, type: field.field_type,
+    }))
+    const rightKeyFields = (compositeSource.on ?? []).map(key => key.right_field)
+    const rightNames = right.map(field => field.name)
+    const conflicts = new Set(left.map(field => field.name).filter(name => rightNames.includes(name)))
+    const typeByName = new Map<string, string>()
+    for (const field of left) {
+      typeByName.set(conflicts.has(field.name) ? `left.${field.name}` : field.name, field.type)
+    }
+    for (const field of right) {
+      if (rightKeyFields.includes(field.name)) continue
+      typeByName.set(conflicts.has(field.name) ? `right.${field.name}` : field.name, field.type)
+    }
+    const names = joinOutputFields(
+      left.map(field => field.name),
+      rightNames,
+      rightKeyFields,
+    )
+    return names.map((name, index) => ({
+      id: -(2000 + index),
+      name,
+      field_type: fieldFamily(typeByName.get(name) ?? 'text') as Field['field_type'],
+    }))
+  }, [compositeSource, joinLeftLinkId, joinLeftLinkFields, joinLeftTableDetail, joinRightLinkFields])
+
+  /** 复合数据源逐项状态（C8）：可读 / 到期 / 已失效，任一不可用则不可运行 */
+  interface CompositeInputStatus {
+    key: string
+    label: string
+    state: 'ok' | 'forbidden' | 'expired' | 'missing' | 'loading'
+    detail: string
+  }
+
+  const compositeInputStatuses = useMemo<CompositeInputStatus[]>(() => {
+    if (!compositeSource) return []
+    const checkLink = (id: number, label?: string | null): CompositeInputStatus => {
+      const name = label || `链接 #${id}`
+      if (datasourcesLoading || !datasources) {
+        return { key: `link-${id}`, label: name, state: 'loading', detail: '校验中' }
+      }
+      const link = (datasources.links ?? []).find(item => Number(item.link_id ?? item.id) === id)
+      if (!link) {
+        return { key: `link-${id}`, label: name, state: 'missing', detail: '已失效或被撤回' }
+      }
+      if (!link.readable) {
+        return { key: `link-${id}`, label: name, state: 'forbidden', detail: '无读取权限，请联系源工作区拥有者' }
+      }
+      return { key: `link-${id}`, label: name, state: 'ok', detail: `可读 · 到期 ${link.expires_at ?? '未设置'}` }
+    }
+    const checkTable = (id: number): CompositeInputStatus => {
+      const name = `表 #${id}`
+      if (tablesLoading) return { key: `table-${id}`, label: name, state: 'loading', detail: '校验中' }
+      const table = tables.find(item => Number(item.id) === id)
+      if (!table) return { key: `table-${id}`, label: name, state: 'missing', detail: '表已删除或不可访问' }
+      return { key: `table-${id}`, label: table.name, state: 'ok', detail: '本工作区表' }
+    }
+
+    if (compositeSource.type === 'union') {
+      return (compositeSource.inputs ?? []).map(item => checkLink(Number(item.link_id), item.alias))
+    }
+    if (compositeSource.type === 'join') {
+      const left = compositeSource.left ?? {}
+      const right = compositeSource.right ?? {}
+      return [
+        left.link_id != null
+          ? { ...checkLink(Number(left.link_id)), key: 'join-left', label: `左侧 · ${checkLink(Number(left.link_id)).label}` }
+          : checkTable(Number(left.table_id)),
+        { ...checkLink(Number(right.link_id)), key: 'join-right', label: `右侧 · ${checkLink(Number(right.link_id)).label}` },
+      ]
+    }
+    return []
+  }, [compositeSource, datasources, datasourcesLoading, tables, tablesLoading])
+
+  const compositeInvalid = compositeInputStatuses.some(item => item.state !== 'ok' && item.state !== 'loading')
+
+  /** 数据源字段（链接源 = 链接可见字段；本表源 = 表字段；复合源 = 合成字段清单） */
   const sourceFields = useMemo<Field[]>(
-    () => (linkId != null ? linkFieldList : (tableDetail?.fields ?? [])),
-    [linkId, linkFieldList, tableDetail],
+    () => (compositeSource ? compositeFields : linkId != null ? linkFieldList : (tableDetail?.fields ?? [])),
+    [compositeSource, compositeFields, linkId, linkFieldList, tableDetail],
   )
   const tableFields = useMemo<string[]>(() => sourceFields.map(f => f.name), [sourceFields])
   const numericFields = useMemo<string[]>(
@@ -220,8 +341,10 @@ export default function AnalyticsPage() {
   )
   const errors = useMemo(() => collectFormulaErrors(formulas, serverErrors), [formulas, serverErrors])
   const hasError = Object.keys(errors).length > 0
-  const canRun = canRunAnalysis({
-    tableId: tableId ?? linkId,
+  /** 数据源是否已就绪：单表 / 链接用 id，复合源用哨兵值（配置非空即视为已选） */
+  const sourceSelected = tableId != null || linkId != null || compositeSource != null
+  const canRun = !compositeInvalid && canRunAnalysis({
+    tableId: tableId ?? linkId ?? (compositeSource ? -1 : null),
     validFormulaCount: validFormulas.length,
     chart,
     summary,
@@ -231,8 +354,17 @@ export default function AnalyticsPage() {
   const noRunnableConfig = validFormulas.length === 0 && !chartConfigured(chart) && !summaryConfigured(summary)
 
   const currentSnapshot = useMemo(
-    () => templateSnapshot({ name: templateName, description: templateDesc, tableId, linkId, formulas, chart, summary }),
-    [templateName, templateDesc, tableId, linkId, formulas, chart, summary],
+    () => templateSnapshot({
+      name: templateName,
+      description: templateDesc,
+      tableId,
+      linkId,
+      source: compositeSource,
+      formulas,
+      chart,
+      summary,
+    }),
+    [templateName, templateDesc, tableId, linkId, compositeSource, formulas, chart, summary],
   )
   const dirty = activeTemplateId != null && isDirty(snapshot, currentSnapshot)
 
@@ -269,26 +401,29 @@ export default function AnalyticsPage() {
     const nextSummary = normalizeSummary(tpl.config?.summary)
     const nextName = tpl.name
     const nextDesc = tpl.description ?? ''
-    // 数据源（ADR 0158 D2）：config.source 为准；缺省按 table_id 解释（旧模板）
+    // 数据源（ADR 0158 D2 / 0159）：config.source 为准；缺省按 table_id 解释（旧模板）
     const nextSource = tpl.config?.source ?? null
+    const nextComposite = nextSource?.type === 'union' || nextSource?.type === 'join' ? nextSource : null
     const nextLinkId = nextSource?.type === 'link' ? (nextSource.link_id ?? null) : null
-    const nextTableId = nextLinkId != null ? null : (tpl.table_id ?? null)
+    const nextTableId = nextComposite != null || nextLinkId != null ? null : (tpl.table_id ?? null)
 
     setActiveTemplateId(tpl.id)
     setTemplateName(nextName)
     setTemplateDesc(nextDesc)
+    setCompositeSource(nextComposite)
     setLinkId(nextLinkId)
     setTableId(nextTableId)
     setFormulas(nextFormulas)
     setChart(nextChart)
     setSummary(nextSummary)
     setServerErrors({})
-    setTableMissing(nextTableId == null && nextLinkId == null)
+    setTableMissing(nextTableId == null && nextLinkId == null && nextComposite == null)
     setSnapshot(templateSnapshot({
       name: nextName,
       description: nextDesc,
       tableId: nextTableId,
       linkId: nextLinkId,
+      source: nextComposite,
       formulas: nextFormulas,
       chart: nextChart,
       summary: nextSummary,
@@ -335,6 +470,8 @@ export default function AnalyticsPage() {
       setActiveTemplateId(null)
       setTemplateName('')
       setTemplateDesc('')
+      setCompositeSource(null)
+      setLinkId(null)
       setTableId(null)
       setFormulas([newFormula(0)])
       setChart({ ...DEFAULT_CHART })
@@ -436,6 +573,23 @@ export default function AnalyticsPage() {
   const suggestReset = suggestAi.reset
   const explainRun = explainAi.run
   const explainReset = explainAi.reset
+
+  /** 应用复合数据源（union / join）：切换后旧结果 / 旧范围 / AI 建议都不再对应当前配置 */
+  const applyCompositeSource = useCallback((next: AnalyticsSource) => {
+    setCompositeSource(next)
+    setLinkId(null)
+    setTableId(null)
+    setCompositeOpen(false)
+    setTableMissing(false)
+    setResult(null)
+    setServerErrors({})
+    setAiAppliedName(null)
+    suggestReset()
+    explainReset()
+    setScopeField(null)
+    setScopeFrom('')
+    setScopeTo('')
+  }, [suggestReset, explainReset])
 
   /** 覆盖风险：已保存模板的未保存修改，或（无模板时）编辑区已有用户配置 */
   const aiOverwriteRisk = useMemo(() => {
@@ -552,6 +706,7 @@ export default function AnalyticsPage() {
   const validateTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const validateSeq = useRef(0)
   const formulasKey = JSON.stringify(formulas)
+  const compositeSourceKey = JSON.stringify(compositeSource)
   useEffect(() => {
     if (!wid) return
     if (!formulas.some(f => f.expr.trim() && f.key.trim())) {
@@ -562,7 +717,7 @@ export default function AnalyticsPage() {
     validateTimer.current = setTimeout(() => {
       const seq = ++validateSeq.current
       analyticsApi
-        .validate(wid, tableId, formulas)
+        .validate(wid, tableId, formulas, compositeSource)
         .then(res => {
           if (seq !== validateSeq.current) return // 丢弃过期响应
           const next: Record<string, string> = {}
@@ -577,7 +732,7 @@ export default function AnalyticsPage() {
       if (validateTimer.current) clearTimeout(validateTimer.current)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wid, tableId, formulasKey])
+  }, [wid, tableId, compositeSourceKey, formulasKey])
 
   // ── 模板保存 / 删除 ──
   const saveMutation = useMutation({
@@ -646,8 +801,12 @@ export default function AnalyticsPage() {
   const computeMutation = useMutation({
     mutationFn: () =>
       analyticsApi.compute(wid!, {
-        // 数据源：链接源用 source（后端拒绝 source 与 table_id 同传，ADR 0158 C9）
-        ...(linkId != null ? { source: { type: 'link' as const, link_id: linkId } } : { table_id: tableId! }),
+        // 数据源：链接 / 复合源用 source（后端拒绝 source 与 table_id 同传，ADR 0158 C9 / 0159）
+        ...(compositeSource
+          ? { source: compositeSource }
+          : linkId != null
+            ? { source: { type: 'link' as const, link_id: linkId } }
+            : { table_id: tableId! }),
         formulas: validFormulas.map(f => ({
           key: f.key.trim(),
           label: (f.label ?? '').trim() || f.key.trim(),
@@ -659,7 +818,8 @@ export default function AnalyticsPage() {
         fields: [],
         limit: 1000,
         summary: summary.metrics.length ? summary : null,
-        filters: scopeFilters,
+        // 复合源暂不支持扫描范围过滤（后端合成路径不消费 filters）：不把无效配置静默发出去
+        filters: compositeSource ? [] : scopeFilters,
       }),
     onSuccess: data => {
       setResult(data)
@@ -668,6 +828,8 @@ export default function AnalyticsPage() {
     },
     onError: (error: unknown) => {
       const detail = (error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+      // fail-closed：失败时不保留上一次结果，避免把旧结果误当成本次输出（ADR 0159 L2）
+      setResult(null)
       message.error(detail ? `计算失败：${detail}` : '计算失败，请检查公式与分组汇总配置')
     },
   })
@@ -730,12 +892,12 @@ export default function AnalyticsPage() {
     const payload: AnalyticsTemplateCreate = {
       name,
       description: formDesc,
-      table_id: linkId != null ? null : tableId,
+      table_id: compositeSource != null || linkId != null ? null : tableId,
       config: buildTemplateConfig({
         formulas,
         chart,
         summary,
-        source: linkId != null ? { type: 'link', link_id: linkId } : null,
+        source: compositeSource ?? (linkId != null ? { type: 'link', link_id: linkId } : null),
       }),
     }
     saveMutation.mutate({ mode: 'create', payload })
@@ -751,12 +913,12 @@ export default function AnalyticsPage() {
       payload: {
         name: templateName.trim() || DEFAULT_TEMPLATE_NAME,
         description: templateDesc,
-        table_id: linkId != null ? null : tableId,
+        table_id: compositeSource != null || linkId != null ? null : tableId,
         config: buildTemplateConfig({
           formulas,
           chart,
           summary,
-          source: linkId != null ? { type: 'link', link_id: linkId } : null,
+          source: compositeSource ?? (linkId != null ? { type: 'link', link_id: linkId } : null),
         }),
       },
     })
@@ -769,7 +931,20 @@ export default function AnalyticsPage() {
   /** 结果盒共用的导出文件名主体：模板名优先，其次图表标题 */
   const resultTitle = templateName || chart.title || '分析结果'
   const showTableMissing = (tableMissing || (activeTemplate?.table_id == null && !activeTemplate?.config?.source))
-    && tableId == null && linkId == null && activeTemplateId != null
+    && tableId == null && linkId == null && compositeSource == null && activeTemplateId != null
+  const sourceExtra = compositeSource
+    ? compositeSource.type === 'union'
+      ? `多链接汇总 · ${compositeSource.inputs?.length ?? 0} 个链接 · ${compositeSource.columns?.length ?? 0} 列`
+      : `跨工作区关联 · ${compositeSource.join_type === 'inner' ? 'inner' : 'left'}`
+    : tableDetail
+      ? `${tableDetail.fields.length} 字段 · ${tableDetail.record_count ?? 0} 行`
+      : linkId != null
+        ? '外部链接（只读）'
+        : '未选择'
+  const compositeInvalidText = compositeInputStatuses
+    .filter(item => item.state !== 'ok' && item.state !== 'loading')
+    .map(item => `${item.label}：${item.detail}`)
+    .join('；')
 
   if (!wid) return null
 
@@ -900,13 +1075,16 @@ export default function AnalyticsPage() {
               运行分析 (Ctrl+Enter)
             </Button>
           </Tooltip>
-          {tableId == null && linkId == null && (
-            <Text type="secondary" className="cn-an-run-hint">请先选择分析表或外部链接</Text>
+          {!sourceSelected && (
+            <Text type="secondary" className="cn-an-run-hint">请先选择分析表、外部链接或组合数据源</Text>
           )}
-          {(tableId != null || linkId != null) && noRunnableConfig && (
+          {sourceSelected && compositeInvalid && (
+            <Text type="danger" className="cn-an-run-hint">复合数据源有失效项，重新配置后可运行</Text>
+          )}
+          {sourceSelected && !compositeInvalid && noRunnableConfig && (
             <Text type="secondary" className="cn-an-run-hint">请填写公式，或配置图表 / 分组汇总后再运行</Text>
           )}
-          {(tableId != null || linkId != null) && hasError && (
+          {sourceSelected && !compositeInvalid && hasError && (
             <Text type="danger" className="cn-an-run-hint">公式存在错误，修正后可运行</Text>
           )}
         </div>
@@ -921,6 +1099,16 @@ export default function AnalyticsPage() {
         />
       )}
 
+      {compositeSource && compositeInvalid && (
+        <Alert
+          type="error"
+          showIcon
+          data-testid="analytics-composite-invalid"
+          title="复合数据源的输入已失效，整体无法运行"
+          description={`${compositeInvalidText}。请重新授权或调整数据源配置（失败时不返回部分结果）。`}
+        />
+      )}
+
       <div className="cn-an-workbench">
         {/* 顶部并列：数据源 + 智能推荐（未选表时推荐收起为窄条，选表后向右展开） */}
         <div
@@ -931,9 +1119,7 @@ export default function AnalyticsPage() {
             <SectionBox
               title="数据源"
               icon={<DatabaseOutlined />}
-              extra={tableDetail
-                ? `${tableDetail.fields.length} 字段 · ${tableDetail.record_count ?? 0} 行`
-                : '未选择'}
+              extra={sourceExtra}
               footer={scopeField
                 ? <span className="cn-an-foot-hint">只统计区间内的行；全表扫描超上限时用它收窄</span>
                 : null}
@@ -946,7 +1132,9 @@ export default function AnalyticsPage() {
                 placeholder="选择本工作区的数据表，或外部链接（只读）"
                 showSearch
                 optionFilterProp="label"
-                value={linkId != null ? `link:${linkId}` : (tableId ?? undefined)}
+                value={compositeSource
+                  ? `composite:${compositeSource.type}`
+                  : linkId != null ? `link:${linkId}` : (tableId ?? undefined)}
                 options={[
                   {
                     label: '本工作区表',
@@ -965,9 +1153,23 @@ export default function AnalyticsPage() {
                       })),
                     }]
                     : []),
+                  {
+                    label: '组合数据源',
+                    options: [
+                      { value: 'composite:union', label: '多链接汇总（合并行）' },
+                      { value: 'composite:join', label: '跨工作区关联（left / inner）' },
+                    ],
+                  },
                 ]}
                 onChange={(value) => {
+                  if (typeof value === 'string' && value.startsWith('composite:')) {
+                    // 只是打开配置弹窗：应用后才真正切换数据源
+                    setCompositeMode(value.endsWith('join') ? 'join' : 'union')
+                    setCompositeOpen(true)
+                    return
+                  }
                   const isLink = typeof value === 'string' && value.startsWith('link:')
+                  setCompositeSource(null)
                   setLinkId(isLink ? Number(String(value).slice('link:'.length)) : null)
                   setTableId(isLink ? null : (value as number | null))
                   setTableMissing(false)
@@ -992,42 +1194,75 @@ export default function AnalyticsPage() {
                   })()}
                 </span>
               )}
+              {compositeSource && (
+                <div data-testid="analytics-composite-source-hint">
+                  <span className="cn-an-foot-hint">
+                    {compositeSource.type === 'union'
+                      ? `多链接汇总：${compositeSource.inputs?.length ?? 0} 个链接按声明列合并（union all）；任一失效则整体失败`
+                      : `跨工作区关联：${compositeSource.join_type === 'inner' ? 'inner' : 'left'}，右侧未匹配行不会出现`}
+                  </span>
+                  <div data-testid="analytics-composite-input-status" style={{ marginTop: 4 }}>
+                    {compositeInputStatuses.map(item => (
+                      <Tag
+                        key={item.key}
+                        color={item.state === 'ok' ? 'green'
+                          : item.state === 'forbidden' ? 'orange'
+                            : item.state === 'loading' ? 'default' : 'red'}
+                        data-testid={`analytics-composite-input-${item.key}`}
+                      >
+                        {item.label} · {item.detail}
+                      </Tag>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
             {/* 分析范围：扫描前过滤（时序表用「时间 >= 起点」把扫描面压到区间内） */}
-            <div className="cn-an-field">
-              <span className="cn-an-label">范围字段</span>
-              <Select
-                size="small"
-                allowClear
-                data-testid="analytics-scope-field"
-                placeholder="不限（全部数据）"
-                value={scopeField ?? undefined}
-                options={tableFields.map(name => ({ value: name, label: name }))}
-                onChange={value => setScopeField(value ?? null)}
-              />
-            </div>
-            <div className="cn-an-field">
-              <span className="cn-an-label">起始值（含）</span>
-              <Input
-                size="small"
-                data-testid="analytics-scope-from"
-                placeholder="如 2025-01-01"
-                disabled={!scopeField}
-                value={scopeFrom}
-                onChange={event => setScopeFrom(event.target.value)}
-              />
-            </div>
-            <div className="cn-an-field">
-              <span className="cn-an-label">结束值（含）</span>
-              <Input
-                size="small"
-                data-testid="analytics-scope-to"
-                placeholder="可选"
-                disabled={!scopeField}
-                value={scopeTo}
-                onChange={event => setScopeTo(event.target.value)}
-              />
-            </div>
+            {compositeSource ? (
+              <div className="cn-an-field cn-an-span3">
+                <span className="cn-an-label">分析范围</span>
+                <span className="cn-an-foot-hint" data-testid="analytics-scope-unsupported">
+                  复合数据源暂不支持扫描范围过滤（先合成再计算）；需要收窄时请在链接视图中过滤
+                </span>
+              </div>
+            ) : (
+              <>
+                <div className="cn-an-field">
+                  <span className="cn-an-label">范围字段</span>
+                  <Select
+                    size="small"
+                    allowClear
+                    data-testid="analytics-scope-field"
+                    placeholder="不限（全部数据）"
+                    value={scopeField ?? undefined}
+                    options={tableFields.map(name => ({ value: name, label: name }))}
+                    onChange={value => setScopeField(value ?? null)}
+                  />
+                </div>
+                <div className="cn-an-field">
+                  <span className="cn-an-label">起始值（含）</span>
+                  <Input
+                    size="small"
+                    data-testid="analytics-scope-from"
+                    placeholder="如 2025-01-01"
+                    disabled={!scopeField}
+                    value={scopeFrom}
+                    onChange={event => setScopeFrom(event.target.value)}
+                  />
+                </div>
+                <div className="cn-an-field">
+                  <span className="cn-an-label">结束值（含）</span>
+                  <Input
+                    size="small"
+                    data-testid="analytics-scope-to"
+                    placeholder="可选"
+                    disabled={!scopeField}
+                    value={scopeTo}
+                    onChange={event => setScopeTo(event.target.value)}
+                  />
+                </div>
+              </>
+            )}
           </div>
         </SectionBox>
           </div>
@@ -1191,6 +1426,18 @@ export default function AnalyticsPage() {
           />
         </Suspense>
       )}
+
+      {/* ── 复合数据源配置：多链接汇总 / 跨工作区关联（ADR 0159 P2） ── */}
+      <CompositeSourceModal
+        open={compositeOpen}
+        mode={compositeMode}
+        source={compositeSource}
+        wid={wid}
+        datasources={datasources}
+        tables={tables}
+        onCancel={() => setCompositeOpen(false)}
+        onApply={applyCompositeSource}
+      />
 
       {/* ── 分析列表 Drawer：打开 / 复制 / 删除 / 新建 ── */}
       <AnalyticsManagerDrawer

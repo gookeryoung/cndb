@@ -13,9 +13,12 @@ import {
   collectFormulaErrors,
   buildTemplateConfig,
   downloadTextFile,
+  fieldFamily,
   formatNumber,
   formatRecommendationRole,
   insertAtCursor,
+  joinOutputFields,
+  unionAutoColumns,
   isDirty,
   mergeFormulas,
   metricKey,
@@ -247,6 +250,70 @@ describe('未保存修改判定', () => {
     expect(isDirty(snapshot, templateSnapshot({ ...base, name: '改了' }))).toBe(true)
     expect(isDirty(snapshot, templateSnapshot({ ...base, tableId: 2 }))).toBe(true)
     expect(isDirty(snapshot, templateSnapshot({ ...base, formulas: [{ ...FORMULA, expr: '[x]' }] }))).toBe(true)
+    expect(isDirty(snapshot, templateSnapshot({
+      ...base,
+      source: { type: 'union', inputs: [{ link_id: 1 }, { link_id: 2 }], columns: [] },
+    }))).toBe(true)
+  })
+})
+
+describe('复合数据源字段规则（ADR 0159）', () => {
+  it('类型族与后端一致（数值族互认，文本 / 日期 / 布尔各自成族）', () => {
+    expect(fieldFamily('number')).toBe('number')
+    expect(fieldFamily('percentage')).toBe('number')
+    expect(fieldFamily('decimal')).toBe('number')
+    expect(fieldFamily('longtext')).toBe('text')
+    expect(fieldFamily('select')).toBe('text')
+    expect(fieldFamily('timestamp')).toBe('date')
+    expect(fieldFamily('bool')).toBe('boolean')
+    expect(fieldFamily('json')).toBe('json')
+  })
+
+  it('join 输出字段：冲突列双侧加前缀，右侧关联键不重复输出', () => {
+    expect(joinOutputFields(
+      ['客户编号', '客户名', '金额'],
+      ['客户号', '回款', '金额'],
+      ['客户号'],
+    )).toEqual(['客户编号', '客户名', 'left.金额', '回款', 'right.金额'])
+
+    // 无冲突且非键列：保持原名
+    expect(joinOutputFields(['a'], ['b'], ['b'])).toEqual(['a'])
+  })
+
+  it('union 自动列映射：仅取所有输入共有的同名字段，类型取兼容族', () => {
+    const fields = {
+      '1': [
+        { name: '区域', field_type: 'text' },
+        { name: '销售额', field_type: 'number' },
+      ],
+      '2': [
+        { name: '区域', field_type: 'text' },
+        { name: '销售额', field_type: 'percent' },
+        { name: '备注', field_type: 'text' },
+      ],
+    }
+    expect(unionAutoColumns([1, 2], fields)).toEqual([
+      { name: '区域', type: 'text', map: { '1': '区域', '2': '区域' } },
+      { name: '销售额', type: 'number', map: { '1': '销售额', '2': '销售额' } },
+    ])
+    // 没有共集时退回首个输入，至少能开始配置
+    const disjoint = {
+      '1': [{ name: '销售额', field_type: 'number' }],
+      '2': [{ name: '金额', field_type: 'number' }],
+    }
+    expect(unionAutoColumns([1, 2], disjoint)).toEqual([
+      { name: '销售额', type: 'number', map: { '1': '销售额' } },
+    ])
+    // 同名但不同族（lookup vs text）：只映射同族输入，避免生成必被后端拒绝的配置
+    const mixedFamily = {
+      '1': [{ name: '课题编号', field_type: 'lookup' }],
+      '2': [{ name: '课题编号', field_type: 'text' }],
+    }
+    expect(unionAutoColumns([1, 2], mixedFamily)).toEqual([
+      { name: '课题编号', type: 'lookup', map: { '1': '课题编号' } },
+    ])
+    // 字段尚未加载时返回空，避免生成半成品
+    expect(unionAutoColumns([1, 2], { '1': [{ name: 'x', field_type: 'text' }] })).toEqual([])
   })
 })
 

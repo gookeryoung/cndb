@@ -15,6 +15,7 @@ import type {
   AnalyticsSummaryMetric,
   AnalyticsTemplate,
   AnalyticsTemplateConfig,
+  AnalyticsUnionColumn,
 } from '@/api/analytics'
 import type { ChartConfig } from '@/pages/grid/views/chartBoard'
 
@@ -302,6 +303,64 @@ export function templateTableName(
   return table?.name || `表 #${tableId}`
 }
 
+/** 字段类型 → union 兼容族（与后端 union_source._family 同一口径） */
+export function fieldFamily(fieldType: string): 'text' | 'number' | 'date' | 'boolean' | string {
+  const lowered = (fieldType || '').trim().toLowerCase()
+  if (['number', 'integer', 'decimal', 'currency', 'percent', 'percentage', 'float'].includes(lowered)) return 'number'
+  if (['text', 'email', 'url', 'phone', 'select', 'multiselect', 'multi_select', 'longtext', 'long_text'].includes(lowered)) return 'text'
+  if (['date', 'datetime', 'timestamp'].includes(lowered)) return 'date'
+  if (['boolean', 'bool'].includes(lowered)) return 'boolean'
+  return lowered || 'text'
+}
+
+/**
+ * union 自动列映射（草稿）：取所有输入共有的同名字段，按首个输入顺序生成输出列。
+ * 共集为空时退回首个输入的字段，避免无法开始；用户可继续增删列 / 改映射。
+ * 只为确实拥有该字段、且与声明同族的输入写映射：缺失 / 异族的输入由后端按空值补齐（ADR 0159 C1），
+ * 避免生成「同名但类型不同族」（如 lookup vs text）而必定校验失败的配置。
+ */
+export function unionAutoColumns(
+  inputIds: number[],
+  fieldsByLink: Record<string, Array<{ name: string; field_type: string }>>,
+): AnalyticsUnionColumn[] {
+  const lists = inputIds.map(id => fieldsByLink[String(id)] ?? [])
+  if (lists.some(list => list.length === 0)) return []
+  const [first, ...rest] = lists
+  const common = first.filter(field => rest.every(list => list.some(other => other.name === field.name)))
+  const seed = common.length ? common : first
+  return seed.map(field => {
+    const type = fieldFamily(field.field_type)
+    return {
+      name: field.name,
+      type,
+      map: Object.fromEntries(
+        inputIds
+          .filter(id =>
+            (fieldsByLink[String(id)] ?? []).some(
+              other => other.name === field.name && fieldFamily(other.field_type) === type,
+            ),
+          )
+          .map(id => [String(id), field.name]),
+      ),
+    }
+  })
+}
+
+/** join 输出字段清单（与后端 join_source.output_fields 同一口径，L4） */
+export function joinOutputFields(
+  leftFields: string[],
+  rightFields: string[],
+  rightKeyFields: string[],
+): string[] {
+  const conflicts = new Set(leftFields.filter(name => rightFields.includes(name)))
+  const names = leftFields.map(name => (conflicts.has(name) ? `left.${name}` : name))
+  for (const name of rightFields) {
+    if (rightKeyFields.includes(name)) continue
+    names.push(conflicts.has(name) ? `right.${name}` : name)
+  }
+  return names
+}
+
 /** 编辑态快照：用于「未保存修改」判定（字段顺序稳定） */
 export function templateSnapshot(input: {
   name: string
@@ -309,6 +368,8 @@ export function templateSnapshot(input: {
   tableId: number | null
   /** 链接数据源（ADR 0158）：与 tableId 二选一，参与「未保存修改」判定 */
   linkId?: number | null
+  /** 复合数据源（ADR 0159）：union / join 配置参与「未保存修改」判定 */
+  source?: AnalyticsSource | null
   formulas: AnalyticsFormula[]
   chart: AnalyticsChart
   summary: AnalyticsSummary
@@ -318,6 +379,7 @@ export function templateSnapshot(input: {
     description: input.description.trim(),
     tableId: input.tableId,
     linkId: input.linkId ?? null,
+    source: input.source ?? null,
     formulas: input.formulas.map(f => ({ key: f.key, label: f.label ?? '', expr: f.expr })),
     chart: input.chart,
     summary: input.summary,

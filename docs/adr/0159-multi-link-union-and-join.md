@@ -128,7 +128,7 @@ compute(...) 接受「行集 + 字段清单」后，公式 / 分组 / 图表 / �
 ### 5. 边界与例外
 
 1. 输入不可读 / 失效：`resolve_link` 的 404/403 原样透出，文案指向**具体某个输入**（别名 + 源工作区）。
-2. union 列类型：MVP **严格同类型**（`text` / `number` / `date` / `boolean` 分组），跨族 → 400；数值族内（number / integer / currency / percent）视为兼容。
+2. union 列类型：MVP **严格同类型**（`text` / `number` / `date` / `boolean` 分组），跨族 → 400；数值族内（number / integer / float / currency / percent）视为兼容（须覆盖字段 registry 真实类型名，与前端 `fieldFamily` 同口径）。
 3. join 关联键：两侧字段必须可见（隐藏字段作键 → 400，避免以隐藏列做侧信道）；类型不兼容 → 400。
 4. 右外 / 全外连接：不支持（L3）。
 5. 嵌套：`union` 的输入只允许 `link`；`join` 的两侧只允许 `table` / `link`，不允许复合源（L5/C7）。
@@ -184,7 +184,7 @@ compute(...) 接受「行集 + 字段清单」后，公式 / 分组 / 图表 / �
 | D3 | 部分输入失效 | **整体 fail-closed** | L2；「部分结果」看起来像全量，比报错更危险 | 部分成功 + 警告：用户容易把不完整汇总当全量 | `analytics/routers/run.py` |
 | D4 | join 类型 | 仅 `left` / `inner` | L3；右外 / 全外会让「右表行是否存在」外泄（H17 同轴） | 右外 / 全外：行存在性侧信道 | `analytics/services/compute.py` |
 | D5 | 列冲突 | join 冲突列 `left.` / `right.` 前缀；union 用声明名 | L4；列名必须在保存 / 执行 / 导出三处一致 | 自动加序号（`金额_2`）：与源字段改名后无法稳定解释 | `analytics/services/templates.py` |
-| D6 | union 类型兼容 | 严格同族；数值族（number/integer/currency/percent）互认 | C5；隐式字符串化会让聚合结果不可解释 | 全量字符串化（`"1"` 与 `1` 混用后 sum 失效） | `analytics/services/compute.py` |
+| D6 | union 类型兼容 | 严格同族；数值族（number/integer/float/currency/percent）互认 | C5；隐式字符串化会让聚合结果不可解释 | 全量字符串化（`"1"` 与 `1` 混用后 sum 失效） | `analytics/services/union_source.py` |
 | D7 | 关联键字段 | 必须两侧可见；隐藏字段作键 → 400 | C3 / H17；隐藏列当键可被反推 | 允许隐藏字段作键：等于给了侧信道 | `analytics/services/templates.py` |
 | D8 | 扫描额度 | 各输入共享 `ANALYTICS_MAX_SCAN_ROWS` 预算，累计超限 400 | C6；否则 5 个输入可放大 5 倍内存 | 每输入独立额度：内存放大不可控 | `analytics/services/compute.py` |
 | D9 | 嵌套 | 禁止（输入只能是 table / link） | C7 / L5 | 允许嵌套：组合数与解释成本指数上升 | `analytics/schemas.py` |
@@ -206,7 +206,7 @@ compute(...) 接受「行集 + 字段清单」后，公式 / 分组 / 图表 / �
 | 行级权限 | `tables_rowpermission` | 每个输入先按自身读范围过滤，再合成 | ADR 0004（H15 / H17） |
 | 字段隐藏 | `hidden_fields` | 映射 / 关联键 / 输出列都只能取可见字段 | ADR 0003 / 0158 C3 |
 | 缓存 | 分析结果（若有） | 键含全部输入 id 与各自口径签名 | ADR 0158 L5 / H60 |
-| 硬约束台账 | `docs/CONSTRAINTS.md` | L1 / L2 / L3 待评审后登记 | ADR 0119（H27） |
+| 硬约束台账 | `docs/CONSTRAINTS.md` | L1/L2 → H61、L3 → H62、L4 → H63（已登记） | ADR 0119（H27） |
 
 ## 落地状态（随实现更新）
 
@@ -214,13 +214,14 @@ compute(...) 接受「行集 + 字段清单」后，公式 / 分组 / 图表 / �
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/services/union_source.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/routers/run.py` | `tests/test_analytics_union_join.py` | `9fdb6780` |
 | P1 | 已落地 | `src/cndb/plugins/analytics/services/join_source.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/services/templates.py` | `tests/test_analytics_union_join.py` | `07808238` |
-| P2 | 未开始 | `frontend/src/pages/analytics/AnalyticsPage.tsx` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/tests/e2e/critical/analytics-union-join.spec.ts` | — |
+| P2 | 已落地 | `frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/pages/analytics/CompositeSourceModal.tsx`（新增）、`frontend/src/pages/analytics/analyticsModel.ts`、`frontend/src/api/analytics.ts`、`src/cndb/plugins/analytics/routers/run.py`（validate 支持复合源）、`src/cndb/plugins/analytics/services/union_source.py`（类型族补齐 registry 真实名 float/longtext/timestamp） | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/src/pages/analytics/analyticsModel.test.ts`、`frontend/tests/e2e/critical/analytics-union-join.spec.ts`、`tests/test_analytics_union_join.py`（validate 复合源 + float 同族回归） | `（待回填）` |
+
 
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0（union）/ P1（join）已落地；P2（前端）未开始
-- 已完成：需求卡片 0159（C1-C10）；ADR 决策记录 D1-D9、不变量 L1-L6；P0（`union`：列映射、类型严格同族、fail-closed、共享扫描额度、列名固化、模板校验；`compute_rows` 抽出复用）；P1（`join`：左 = 表 / 链接、右 = 链接，仅 `left` / `inner`，**左表驱动**，右表未匹配行不出现（H62），冲突列 `left.` / `right.`、右表关联键不重复输出，关联键必须可见（隐藏 → 400），表侧同样按字段隐藏裁剪）；H61-H63 已登记
-- 下一步：开 P2（前端：分类数据源入口 + 列映射 / 关联配置 UI + 失效逐项提示 + e2e）
-- 已知坑：① **join 必须由左表驱动**（`left` / `inner` 都用左表行集迭代），否则右表未匹配行会泄露存在性；② 列映射 / 关联键的可见性校验要在保存期做（执行期只兜底），否则模板存下来必然失败；③ 复合源的字段清单要固化进 `config`（L4），不要执行期重新推导；④ 扫描额度是**共享预算**，实现时先扣再取，避免 5 个输入各自取满；⑤ 单源路径不要顺手重构（0158 的既有用例是回归基线）
-- 最近一次全绿：`make check-fast` + `make cov`（7611 passed，95.01%）+ `tests/test_analytics_union_join.py`（P0 12 + P1 12）24 passed @ `07808238`（2026-11-25）
+- 当前阶段：P0（union）/ P1（join）/ P2（前端 + e2e）全部落地；P3 明确不做
+- 已完成：需求卡片 0159（C1-C10）；ADR 决策记录 D1-D9、不变量 L1-L6；P0（`union`：列映射、类型严格同族、fail-closed、共享扫描额度、列名固化、模板校验；`compute_rows` 抽出复用）；P1（`join`：左 = 表 / 链接、右 = 链接，仅 `left` / `inner`，**左表驱动**，右表未匹配行不出现（H62），冲突列 `left.` / `right.`、右表关联键不重复输出，关联键必须可见（隐藏 → 400），表侧同样按字段隐藏裁剪）；P2（数据源下拉「组合数据源」入口；`CompositeSourceModal` 配置 union 列映射 / join 左右与关联键；`unionAutoColumns` 仅映射同名且同族输入；`compositeInputStatuses` 逐项标注可读 / 已失效并禁用运行（C8）；validate / compute / 模板保存均携带 `source`，复合源 `filters=[]`；另存模板固化 `config.source`，深链重开可还原）；H61-H63 已登记
+- 下一步：无（P3 明确不做）。验收如需全量回归：`make e2e`（含前端构建 + 隔离数据）。ADR 状态仍为 `Proposed`：如需转 `Accepted` 由人工评审后修改，自动流程不改状态
+- 已知坑：① **join 必须由左表驱动**（`left` / `inner` 都用左表行集迭代），否则右表未匹配行会泄露存在性；② 列映射 / 关联键的可见性校验要在保存期做（执行期只兜底），否则模板存下来必然失败；③ 复合源的字段清单要固化进 `config`（L4），不要执行期重新推导；④ 扫描额度是**共享预算**，实现时先扣再取，避免 5 个输入各自取满；⑤ 单源路径不要顺手重构（0158 的既有用例是回归基线）；⑥ union 类型族必须覆盖字段 registry 的**真实类型名**（`float` / `longtext` / `timestamp`），并与前端 `fieldFamily` 同口径——漏 `float` 会让真实小数表（如「预算金额」）被误判跨族 400；⑦ 自动列映射只能映射**同名且同族**的输入（如 lookup vs text 不能混映射），否则生成必然校验失败的配置；⑧ 同一张源表只允许一条生效中链接（ADR 0154 §4.2），e2e 建 union 需用**两张不同表**；e2e 走 `src/cndb/static` 静态产物，改前端后先 `pnpm build`（`make e2e` 已内置）
+- 最近一次全绿：`make check-fast`（0 error）+ `make test`（7629 passed，17 skipped）+ 前端全量 283 文件 / 3488 passed + `analytics-union-join.spec.ts`（2 passed，含 setup）@ P2（2026-11-25）
