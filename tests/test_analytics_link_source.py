@@ -305,3 +305,135 @@ class TestComputeWithLink:
         )
         assert r.status_code == 200, r.text
         assert r.json()["total"] == 3
+
+
+class TestTemplateSource:
+    """ADR 0158 P1：模板可保存链接数据源，字段白名单取链接可见字段."""
+
+    def _template_body(self, link_id: int, **extra) -> dict:
+        return {
+            "name": "跨部门汇总",
+            "config": {
+                "source": {"type": "link", "link_id": link_id},
+                "formulas": [{"key": "合计", "expr": "sum([金额])"}],
+            },
+            **extra,
+        }
+
+    def test_create_template_with_link_source(self, client, db, env):
+        tid, _ = _setup_source_table(client, env)
+        link = _approve_link(client, env, tid)
+        con_auth = _login(client, env.consumer_owner.username)
+
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/templates",
+            json=self._template_body(link["id"]),
+            headers=con_auth,
+        )
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["config"]["source"] == {"type": "link", "link_id": link["id"]}
+        # table_id 落源表 id（旧消费方展示用）
+        assert body["table_id"] == tid
+
+        listed = client.get(f"{ANALYTICS.format(wid=env.consumer.id)}/templates", headers=con_auth).json()
+        assert listed[0]["config"]["source"]["link_id"] == link["id"]
+
+    def test_template_with_link_validates_hidden_field(self, client, db, env):
+        tid, _ = _setup_source_table(client, env)
+        link = _approve_link(client, env, tid)
+        db.add(TablePermission(table_id=tid, hidden_fields={"viewer": ["金额"]}))
+        db.commit()
+        con_auth = _login(client, env.consumer_owner.username)
+
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/templates",
+            json=self._template_body(link["id"]),
+            headers=con_auth,
+        )
+        assert r.status_code == 400, r.text
+        assert "金额" in r.json()["detail"]
+
+    def test_template_with_revoked_link_rejected_at_save(self, client, db, env):
+        tid, _ = _setup_source_table(client, env)
+        link = _approve_link(client, env, tid)
+        con_auth = _login(client, env.consumer_owner.username)
+        client.delete(f"{LINKS.format(wid=env.consumer.id)}/{link['id']}", headers=con_auth)
+
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/templates",
+            json=self._template_body(link["id"]),
+            headers=con_auth,
+        )
+        assert r.status_code == 404, r.text
+
+    def test_template_legacy_table_id_config_unchanged(self, client, db, env):
+        """L6：不带 source 的旧配置行为不变（仍按 table_id 校验）。"""
+        tid, _ = _setup_source_table(client, env)
+        auth = _login(client, env.source_owner.username)
+        r = client.post(
+            f"{ANALYTICS.format(wid=env.source.id)}/templates",
+            json={
+                "name": "本表模板",
+                "table_id": tid,
+                "config": {"formulas": [{"key": "合计", "expr": "sum([金额])"}]},
+            },
+            headers=auth,
+        )
+        assert r.status_code == 201, r.text
+        assert "source" not in r.json()["config"]
+
+
+class TestRecommendationsWithLink:
+    def test_link_recommendations(self, client, db, env):
+        tid, _ = _setup_source_table(client, env)
+        link = _approve_link(client, env, tid)
+        con_auth = _login(client, env.consumer_owner.username)
+
+        r = client.get(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/recommendations",
+            params={"link_id": link["id"]},
+            headers=con_auth,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["row_count"] == 3
+        names = {f["name"] for f in body["fields"]}
+        assert {"名称", "金额", "状态"} <= names
+
+    def test_link_recommendations_hide_hidden_fields(self, client, db, env):
+        tid, _ = _setup_source_table(client, env)
+        link = _approve_link(client, env, tid)
+        db.add(TablePermission(table_id=tid, hidden_fields={"viewer": ["金额"]}))
+        db.commit()
+        con_auth = _login(client, env.consumer_owner.username)
+
+        body = client.get(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/recommendations",
+            params={"link_id": link["id"]},
+            headers=con_auth,
+        ).json()
+        assert "金额" not in {f["name"] for f in body["fields"]}
+
+    def test_link_recommendations_fail_closed(self, client, db, env):
+        tid, _ = _setup_source_table(client, env)
+        link = _approve_link(client, env, tid)
+        late = _user(db, "al_rec_late")
+        db.add(WorkspaceMember(workspace_id=env.consumer.id, user_id=late.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        r = client.get(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/recommendations",
+            params={"link_id": link["id"]},
+            headers=_login(client, late.username),
+        )
+        assert r.status_code == 403
+
+    def test_both_sources_rejected(self, client, db, env):
+        tid, _ = _setup_source_table(client, env)
+        link = _approve_link(client, env, tid)
+        r = client.get(
+            f"{ANALYTICS.format(wid=env.consumer.id)}/recommendations",
+            params={"table_id": tid, "link_id": link["id"]},
+            headers=_login(client, env.consumer_owner.username),
+        )
+        assert r.status_code == 400

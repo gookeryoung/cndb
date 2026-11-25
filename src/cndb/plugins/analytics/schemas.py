@@ -52,9 +52,21 @@ class SummarySpec(BaseModel):
     top_n: int | None = Field(default=None, ge=1, le=1000, description="仅保留前 N 组（空 = 全部）")
 
 
-class TemplateConfig(BaseModel):
-    """模板配置：公式清单 + 可视化 + 分组汇总."""
+class AnalyticsSource(BaseModel):
+    """分析数据源（ADR 0158）：本工作区表或工作区链接（只读引用）."""
 
+    type: Literal["table", "link"] = "table"
+    #: type=table 时的表 id（与 table_id 兼容字段二选一）
+    id: int | None = None
+    #: type=link 时的链接 id
+    link_id: int | None = None
+
+
+class TemplateConfig(BaseModel):
+    """模板配置：公式清单 + 可视化 + 分组汇总 + 数据源（ADR 0158）."""
+
+    #: 数据源（缺省 = 用模板的 table_id，兼容旧模板）
+    source: AnalyticsSource | None = None
     formulas: list[FormulaSpec] = Field(default_factory=list)
     chart: ChartSpec | None = None
     summary: SummarySpec | None = None
@@ -120,16 +132,6 @@ class ValidateResponse(BaseModel):
     ok: bool
     results: list[FormulaCheck] = Field(default_factory=list)
     table_fields: list[str] = Field(default_factory=list)
-
-
-class AnalyticsSource(BaseModel):
-    """分析数据源（ADR 0158）：本工作区表或工作区链接（只读引用）."""
-
-    type: Literal["table", "link"] = "table"
-    #: type=table 时的表 id（与 table_id 兼容字段二选一）
-    id: int | None = None
-    #: type=link 时的链接 id
-    link_id: int | None = None
 
 
 class AnalyticsDatasourceItem(BaseModel):

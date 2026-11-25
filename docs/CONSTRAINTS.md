@@ -79,6 +79,9 @@
 | H55 | 链接到期即失效：`expires_at` 过期后所有链接读路径返回 404，与成员行是否已被 `cndb link sweep` 回收无关 | `make test` | ADR 0154 L3 |
 | H56 | 链接授权可回收不误伤：撤回 / 过期只删除 `created_member_ids` 中**仍为 viewer** 的成员行，原有成员与被提升者一律保留 | `make test` | ADR 0154 L9 |
 | H57 | 团队数据授权只读且不产管理面：`workspace_team_access` 只产 `data_role`（MVP 固定 `viewer`），不得产出任何管理面能力位、不得放宽行级 / 字段规则、不得放宽 `visibility=private`；扩到 `editor` 或管理面须另立评审 | `make test` | ADR 0154 D11 |
+| H58 | 分析页读链接数据与只读网格**同权**：必须经 `resolve_link` + 行级读范围 + 字段隐藏，不得在 analytics 内另写取数或放宽（失效 404 / 无读权 403，不返回空数据） | `make test` | ADR 0158 L1 |
+| H59 | 分析模板只共享定义：执行按**打开者**身份解析数据源，无权一律 fail-closed，禁止回退创建者权限或降级为空结果 | `make test` | ADR 0158 L2 |
+| H60 | 分析结果缓存（若引入）：键必须含 `user_id` + 数据源 / `link_id` + 链接口径签名；链接撤回 / 过期事件必须失效相关分析缓存 | `make test` | ADR 0158 L5 |
 
 ## 发布与部署
 

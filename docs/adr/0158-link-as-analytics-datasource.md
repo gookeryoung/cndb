@@ -48,7 +48,7 @@ Related: `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/
 - **L5 缓存不串味**：缓存键含 `user_id` + `link_id` + 链接口径签名；链接事件使相关分析缓存失效。
 - **L6 存量不变**：只分析本工作区表时，行为与升级前逐条一致（含缓存命中与导出）。
 
-> 跨需求长期生效的不变量须在 ADR `Proposed → Accepted` 前登记入 [CONSTRAINTS.md](../CONSTRAINTS.md)，来源写 `ADR 0158 L#`（H27，ADR 0119）。当前**未登记**：待评审通过后按 L1 / L2 / L5 落 H 条目（L1 与 H53 同轴，需注明「分析页读数与只读网格同权」）。
+> 跨需求长期生效的不变量须在 ADR `Proposed → Accepted` 前登记入 [CONSTRAINTS.md](../CONSTRAINTS.md)，来源写 `ADR 0158 L#`（H27，ADR 0119）。登记状态（2026-11-25 人工确认）：L1 → H58，L2 → H59，L5 → H60。
 
 ## Decision
 
@@ -157,6 +157,7 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 | D4 | 失效表达 | 链接无效 404、无读权 403、多源 400 | 与 0154 D6 / C6 一致（无泄露 + 可解释） | 返回空结果：用户分不清「没数据」与「没权限」 | `analytics/routers/run.py` |
 | D5 | 模板权限 | 只存定义，执行按打开者身份；无权 fail-closed | C6；模板本质是查询定义，不是数据快照 | 把创建者权限「冻结」进模板：等于权限随模板传播，最难解释也最危险 | `analytics/services/templates.py` |
 | D6 | 缓存键 | `user_id` + `source` + `link_id` + 链接口径签名（`expires_at` 桶 + 源表 updated_at）+ 模板签名 | 防止换人 / 换链接 / 过期后命中旧结果 | 只按模板 id 缓存：共享模板会串味（别人的权限结果被复用） | `analytics`、`core/cache` |
+| D6 附注 | 现状核对（P1） | 分析链路**当前没有跨请求结果缓存**（只有公式引擎内部的单次求值缓存），因此 H60 以「若引入缓存」的约束形式登记；将来加缓存必须按本行键设计 | 不假装已实现一个不存在的缓存 | 为满足条文新增缓存：无收益、只增风险 | `analytics/services/compute.py` |
 | D7 | 单源限制 | 仅单数据源；union / join 拒绝 | C9；join 的行级叠加与列冲突口径需要独立设计 | 先上 join：口径说不清，越权风险最高 | `analytics/services/templates.py` |
 | D8 | 隐藏字段 | 保存期 + 执行期双重校验，隐藏字段不得出现在任何配置位置 | C3 / H17；只看执行期校验会让模板「保存成功但永远失败」 | 只做执行期过滤：用户无从知道为什么算不出 | `analytics/services/formula.py` |
 
@@ -184,14 +185,14 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/routers/datasources.py`、`src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/plugin.py` | `tests/test_analytics_link_source.py` | `44beda2c` |
-| P1 | 未开始 | `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/formula.py` | `tests/test_analytics_link_source_api.py` | — |
+| P1 | 已落地 | `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/recommend.py`、`src/cndb/plugins/analytics/routers/recommend.py`、`src/cndb/plugins/analytics/schemas.py` | `tests/test_analytics_link_source.py` | 未提交 |
 | P2 | 未开始 | `frontend/src/pages/analytics/AnalyticsPage.tsx` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/tests/e2e/critical/analytics-link-source.spec.ts` | — |
 | P3 | 未开始 | 另立 ADR | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已落地（`datasources` 清单 + `compute` 链接数据源 + 隐藏字段拒绝 + 单源校验）；P1 / P2 未开始
-- 已完成：需求卡片 0158（C1-C10）；ADR 决策记录 D1-D8、不变量 L1-L6；P0（数据源清单、`compute` 支持 `source.type=link`、每次执行 `resolve_link` 的 404/403、链接视图筛选并入、隐藏字段两处拒绝、`source`+`table_id` 同传 422、存量 `table_id` 行为不变）
-- 下一步：①把 L1 / L2 / L5 登记进 `CONSTRAINTS.md`（H27，需人工确认）；②开 P1（模板保存 `source`、字段白名单与 `recommendations` 适配、缓存键含 `link_id`）
+- 当前阶段：P0 / P1 已落地（数据源清单 + `compute` 链接源 + 模板保存链接源 + `recommendations` 适配 + 字段白名单）；P2（前端）未开始
+- 已完成：需求卡片 0158（C1-C10）；ADR 决策记录 D1-D8、不变量 L1-L6；P0（数据源清单、`compute` 链接源、隐藏字段拒绝、单源校验、存量兼容）；P1（模板 `config.source` 落库并按链接可见字段校验、`table_id` 落源表 id 兼容旧消费方、`recommendations?link_id=` 适配含隐藏字段裁剪、H58-H60 已登记）
+- 下一步：开 P2（前端数据源分组 / 失效提示 / 导出对齐）
 - 已知坑：① 链接分支必须走 `resolve_link` 统一出口，**不要**在 analytics 里直接 `db.get(WorkspaceLink)`（会绕开 404/403 与到期判定）；② 缓存键必须含 `user_id`，否则共享模板会把甲的权限结果喂给乙；③ 隐藏字段要在**保存期**就拒绝（否则模板存下来必然执行失败）；④ `ANALYTICS_MAX_SCAN_ROWS` 对链接数据源同样生效，超限文案要引导「用分析范围收窄」而不是「换表」
-- 最近一次全绿：`make check-fast` + `make cov`（7591 passed，95.03%）+ `tests/test_analytics_link_source.py` 14 passed @ 未提交（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7613 passed，95.0%）+ `tests/test_analytics_link_source.py` 22 passed @ 未提交（2026-11-25）

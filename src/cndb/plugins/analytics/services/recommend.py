@@ -891,6 +891,8 @@ def build_recommendations(
     user: Any,
     *,
     sample_limit: int = SAMPLE_LIMIT,
+    filters: list[dict[str, Any]] | None = None,
+    filter_logic: str = "AND",
 ) -> dict[str, Any]:
     """入口：扫描表数据（复用行级权限 / 字段隐藏），生成完整推荐响应.
 
@@ -899,11 +901,12 @@ def build_recommendations(
         table: 数据表（调用方已完成工作区与表级权限校验）.
         user: 当前用户（行级权限 / 字段隐藏口径与求值接口一致）.
         sample_limit: 画像抽样行数上限.
+        filters / filter_logic: 扫描范围（链接数据源并入其视图筛选，ADR 0158 C1）.
 
     Returns:
         可直接序列化为 ``RecommendationsResponse`` 的 dict.
     """
-    rows, total, _ = scan_rows(db, table, user)
+    rows, total, _ = scan_rows(db, table, user, filters=filters, filter_logic=filter_logic)
     sampled = rows[:sample_limit]
     fields = visible_fields(table, sampled)
     profiles = profile_fields(fields, sampled)

@@ -16,6 +16,37 @@ from cndb.plugins.analytics.services.formula import FormulaError, parse, referen
 from cndb.plugins.tables.models import DataTable
 
 
+def link_field_names(
+    db: Session,
+    user: Any,
+    workspace_id: int,
+    link_id: int | None,
+) -> list[str] | None:
+    """链接数据源的可见字段名（ADR 0158 C3）：过 `resolve_link` 后按隐藏字段裁剪.
+
+    链接无效 → 404；对源工作区无读权 → 403（与只读网格同权，不静默降级）。
+    """
+    from cndb.plugins.workspaces.services.links import link_fields, resolve_link
+
+    if link_id is None:
+        return None
+    resolved = resolve_link(db, user, workspace_id=workspace_id, link_id=link_id)
+    return [field["name"] for field in link_fields(db, user, resolved)]
+
+
+def source_field_names(
+    db: Session,
+    user: Any,
+    workspace_id: int,
+    source: Any,
+    table_id: int | None,
+) -> list[str] | None:
+    """按模板数据源取字段白名单（链接优先，否则退回本表）."""
+    if source is not None and getattr(source, "type", "table") == "link":
+        return link_field_names(db, user, workspace_id, getattr(source, "link_id", None))
+    return table_field_names(db, workspace_id, table_id)
+
+
 def table_field_names(db: Session, workspace_id: int, table_id: int | None) -> list[str] | None:
     """取表（须属于该工作区）的可见字段名；未指定表时返回 None.
 
@@ -41,6 +72,14 @@ def normalize_config(
     """
     keys: set[str] = set()
     formulas: list[dict[str, Any]] = []
+    source = getattr(config, "source", None)
+    source_payload: dict[str, Any] | None = None
+    if source is not None:
+        source_payload = {"type": source.type}
+        if source.type == "link":
+            source_payload["link_id"] = source.link_id
+        elif source.id is not None:
+            source_payload["id"] = source.id
     for spec in config.formulas:
         if spec.key in keys:
             raise HTTPException(status_code=400, detail=f"公式键重复: {spec.key}")
@@ -116,13 +155,22 @@ def normalize_config(
             raise HTTPException(status_code=400, detail=f"分组汇总排序指标不存在: {spec.sort_by}")
         summary = spec.model_dump()
 
-    return {
+    result: dict[str, Any] = {
         "formulas": formulas,
         "chart": chart,
         "summary": summary,
         "fields": list(config.fields),
         "limit": config.limit,
     }
+    if source_payload is not None:
+        result["source"] = source_payload
+    return result
+
+
+def config_source_payload(config: dict[str, Any] | None) -> dict[str, Any]:
+    """模板配置里的数据源（ADR 0158 D2）：缺省解释为「本工作区的 table 源」."""
+    source = (config or {}).get("source")
+    return source if isinstance(source, dict) else {"type": "table"}
 
 
 def get_template(db: Session, workspace_id: int, template_id: int) -> AnalyticsTemplate:
@@ -151,8 +199,18 @@ def create_template(
     table_id: int | None,
     config: TemplateConfig,
 ) -> AnalyticsTemplate:
-    """新建模板（落库前校验公式与字段引用）."""
-    normalized = normalize_config(config, table_field_names(db, workspace_id, table_id))
+    """新建模板（落库前校验公式与字段引用）.
+
+    数据源支持「本表 / 链接」（ADR 0158 P1）：链接源在保存期即校验可读（404/403），
+    字段白名单取链接可见字段；`table_id` 仍落源表 id，供旧消费方展示。
+    """
+    fields = source_field_names(db, user, workspace_id, getattr(config, "source", None), table_id)
+    source = getattr(config, "source", None)
+    if source is not None and getattr(source, "type", "table") == "link":
+        from cndb.plugins.workspaces.services.links import resolve_link
+
+        table_id = resolve_link(db, user, workspace_id=workspace_id, link_id=source.link_id).table.id
+    normalized = normalize_config(config, fields)
     tpl = AnalyticsTemplate(
         workspace_id=workspace_id,
         table_id=table_id,
@@ -186,7 +244,13 @@ def update_template(
     if table_id is not None:
         tpl.table_id = table_id
     if config is not None:
-        tpl.config = normalize_config(config, table_field_names(db, tpl.workspace_id, tpl.table_id))
+        source = getattr(config, "source", None)
+        fields = source_field_names(db, user, tpl.workspace_id, source, tpl.table_id)
+        if source is not None and getattr(source, "type", "table") == "link":
+            from cndb.plugins.workspaces.services.links import resolve_link
+
+            tpl.table_id = resolve_link(db, user, workspace_id=tpl.workspace_id, link_id=source.link_id).table.id
+        tpl.config = normalize_config(config, fields)
     tpl.updated_by_id = user.id
     db.commit()
     db.refresh(tpl)
