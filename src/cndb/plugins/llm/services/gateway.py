@@ -115,7 +115,7 @@ def invoke(
     调用方（领域路由）必须先完成权限校验与输入裁剪；``user_content`` 应已按需渲染。
 
     Raises:
-        LlmNotConfigured / LlmUpstreamError / LlmRateLimited / LlmOutputInvalid
+        LlmUpstreamError / LlmRateLimited / LlmOutputInvalid
     """
     ctx = context or LlmContext()
     started = time.perf_counter()

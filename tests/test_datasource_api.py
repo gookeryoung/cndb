@@ -434,16 +434,15 @@ class TestLlmPrompt:
         assert spec_built.request.url_template == llm_connection_config.base_url
         assert spec_built.request.llm["model"] == llm_connection_config.model
 
-    def test_create_requires_api_key(self, client, workspace_with_auth):
+    def test_create_without_api_key_allowed(self, client, workspace_with_auth):
+        """API Key 可选：本地部署无 Key 也能保存任务（运行期不带 Authorization）."""
         wid, headers = workspace_with_auth
         response = client.post(
             f"/api/v1/workspaces/{wid}/datasource/sync-jobs",
             json=_llm_payload(match_keys=[], schedule={"mode": "manual"}),
             headers=headers,
         )
-        assert response.status_code == 400
-        assert "个人设置" in response.json()["detail"]
-        assert "API Key" in response.json()["detail"]
+        assert response.status_code == 201
 
     def test_create_accepts_cron_without_match_keys(self, client, workspace_with_auth, llm_connection_config):
         """ADR 0019：幂等键由运行期自动识别，cron 不再强制手填."""

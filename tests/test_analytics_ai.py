@@ -71,6 +71,18 @@ def _patch_complete(monkeypatch: pytest.MonkeyPatch, content: str) -> dict[str, 
     return captured
 
 
+def _patch_upstream_auth_error(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """空 Key 直连上游：记录实际请求头并模拟云端 401（不触发真实网络）."""
+    captured: dict[str, Any] = {}
+
+    def fake_fetch(config):
+        captured["headers"] = config.headers
+        raise ValueError('API 返回 401: {"error": {"message": "Authentication Fails"}}')
+
+    monkeypatch.setattr(llm_client, "fetch_json", fake_fetch)
+    return captured
+
+
 @pytest.fixture
 def analytics_ctx(client, db):
     owner = _make_user(db, "an_owner")
@@ -193,10 +205,12 @@ class TestSearchRewrite:
         body = response.json()
         assert body == {"query": "流程优化 审批节点", "rewritten": True}
 
-    def test_falls_back_to_original_without_key(self, client, db, analytics_ctx):
+    def test_falls_back_to_original_on_upstream_auth_error(self, client, db, analytics_ctx, monkeypatch):
+        """API Key 可选：空 Key 直连上游，401 时仍回退原查询（搜索不阻断）."""
         ws_id, _tid, headers, owner = analytics_ctx
         db.query(LlmUserConfig).filter(LlmUserConfig.user_id == owner.id).delete()
         db.commit()
+        captured = _patch_upstream_auth_error(monkeypatch)
         response = client.post(
             REWRITE_URL.format(ws=ws_id),
             json={"query": "流程优化"},
@@ -206,4 +220,5 @@ class TestSearchRewrite:
         body = response.json()
         assert body["query"] == "流程优化"
         assert body["rewritten"] is False
-        assert "个人设置" in body["reason"]
+        assert "401" in body["reason"]
+        assert "Authorization" not in captured["headers"]

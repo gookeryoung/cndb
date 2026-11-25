@@ -227,7 +227,9 @@ export default function LlmConfigPanel() {
 
   const configuredTag = config?.has_api_key
     ? <Tag color="green" data-testid="llm-config-status">已配置</Tag>
-    : <Tag data-testid="llm-config-status">未配置 API Key</Tag>
+    : config?.configured
+      ? <Tag color="blue" data-testid="llm-config-status">已保存 · 未配置 API Key</Tag>
+      : <Tag data-testid="llm-config-status">未配置 API Key</Tag>
 
   /** 调用记录列：动作 / 状态 / 模型 / token / 耗时 / 时间（不再展示提示词与输出） */
   const runColumns = [
@@ -390,13 +392,13 @@ export default function LlmConfigPanel() {
         <Form.Item
           name="api_key"
           label="API Key"
-          tooltip="模型服务商发给你的密钥，相当于调用密码；保存后只显示「已配置」，不会再回显全文"
+          tooltip="模型服务商发给你的密钥，相当于调用密码；本地部署（如 Ollama）可留空。保存后只显示「已配置」，不会再回显全文"
           extra={(
             <Space size={SPACE.md} wrap>
               <span>
                 {config?.has_api_key
                   ? '已配置：留空保持不变，填写则整体替换，填写后可直接测试连接'
-                  : '保存后加密存储，读接口只回显是否已配置；填写后可直接测试连接'}
+                  : '本地部署（如 Ollama / vLLM）可留空；云端服务需填写，缺 Key 时连通测试会返回 401。保存后加密存储，只回显是否已配置'}
               </span>
               {config?.has_api_key && (
                 <Button

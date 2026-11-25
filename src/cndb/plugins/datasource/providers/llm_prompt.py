@@ -15,7 +15,8 @@ ADR 0020 P0 起，模型调用 / 连接解析 / JSON 解析已抽到平台插件
   对象 → 1 行，对象数组 → N 行，``{"rows": [...]}`` → 取 rows；
 - 落表：复用 ``apply_field_mapping`` + 既有 ``upsert_rows``（按 ``match_keys`` 幂等）。
 
-API Key 只从运行期模板变量 ``api_key`` 取（凭证会话或个人连接），缺失直接报错，不发出请求。
+API Key 只从运行期模板变量 ``api_key`` 取（凭证会话或个人连接）；Key 可选——为空时请求不带
+``Authorization``（本地部署无需鉴权），上游要求鉴权时返回 401。
 """
 
 from __future__ import annotations
@@ -186,7 +187,7 @@ class LlmPromptProvider:
             "Content-Type": "application/json",
             **{key: render_text(value, variables) for key, value in job.request.headers_template.items()},
         }
-        if not any(key.lower() == "authorization" for key in headers):
+        if api_key and not any(key.lower() == "authorization" for key in headers):
             headers["Authorization"] = f"Bearer {api_key}"
         # 提示词用宽松模板（ADR 0019）：用户提示词里的 JSON 裸花括号 / 未注册占位符原样保留，
         # 但 headers 等请求模板仍走严格 render_text，语义不变。
@@ -281,18 +282,12 @@ def test_llm_connection(
     session_headers: Mapping[str, str] | None = None,
     fetch: FetchFn | None = None,
 ) -> LlmConnectionResult:
-    """发一次最小模型请求验证地址 / Key / 模型；不落库、不写运行记录.
+    """发一次最小模型请求验证地址 / 模型；Key 可选（本地部署可不配）；不落库、不写运行记录.
 
     ADR 0020：连通测试只用于「个人设置 → 大模型」，接口层已迁到
     ``POST /api/v1/llm/config/test``；本函数保留给数据源侧诊断与既有测试。
     """
     started = time.perf_counter()
-    if not api_key.strip():
-        return LlmConnectionResult(
-            ok=False,
-            latency_ms=0,
-            message="未配置 api_key：请先在「大模型连接」或凭证会话中配置 API Key",
-        )
     try:
         prompt = dict(spec.prompt or {})
         prompt.setdefault("user_template", TEST_PROMPT)
@@ -308,7 +303,7 @@ def test_llm_connection(
             "Content-Type": "application/json",
             **{key: render_text(value, {"api_key": api_key}) for key, value in merged_headers.items()},
         }
-        if not any(key.lower() == "authorization" for key in headers):
+        if api_key and not any(key.lower() == "authorization" for key in headers):
             headers["Authorization"] = f"Bearer {api_key}"
         # 连通测试仍用最小请求（固定用户提示、限制 max_tokens），避免真实提示词被截断误判；
         # system / user 的求值同样走宽松模板，含 JSON 裸花括号也不会报错。
@@ -375,10 +370,8 @@ def _parse_response(
 
 
 def _api_key(job: SyncJobSpec) -> str:
-    value = str(job.extra_variables.get("api_key") or "").strip()
-    if not value:
-        raise ProviderError("llm_prompt 需要绑定包含 api_key 的凭证会话")
-    return value
+    """运行期 Key（可选）：会话 / 个人连接均未配置时返回空串，本地部署无需 Key."""
+    return str(job.extra_variables.get("api_key") or "").strip()
 
 
 def _as_bool(value: Any, default: bool) -> bool:

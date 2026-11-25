@@ -14,7 +14,11 @@ class LlmError(ValueError):
 
 
 class LlmNotConfigured(LlmError):
-    """未配置个人连接 / API Key（400）."""
+    """未配置个人连接 / API Key（400）.
+
+    保留类型：API Key 可选（本地部署可不配）后，客户端不再因缺 Key 主动抛错；
+    云端服务缺 Key 由上游 401 转为 :class:`LlmUpstreamError`。
+    """
 
     status_code = 400
     code = "llm_not_configured"

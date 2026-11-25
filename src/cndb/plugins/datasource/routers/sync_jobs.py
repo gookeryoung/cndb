@@ -17,7 +17,6 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
-from cndb.core.crypto import decrypt_secrets
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.datasource.models import DatasourceSession, DatasourceSyncJob, DatasourceSyncRun, RunTrigger
@@ -75,16 +74,6 @@ def _validate_table(db: Session, workspace_id: int, table_id: int | None) -> Dat
     return table
 
 
-def _session_api_key(session: DatasourceSession | None) -> str:
-    """读取会话里的 api_key（解密失败按未配置处理，交给上层给出配置提示）."""
-    if session is None:
-        return ""
-    try:
-        return str(decrypt_secrets(session.secrets).get("api_key") or "").strip()
-    except ValueError:
-        return ""
-
-
 def _validate_job_config(
     db: Session,
     workspace_id: int,
@@ -140,12 +129,6 @@ def _validate_job_config(
             )
     except (ProviderError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    if provider == "llm_prompt" and not _session_api_key(session) and not (connection and connection.has_api_key):
-        raise HTTPException(
-            status_code=400,
-            detail="请先在「个人设置 → 大模型」配置 API Key",
-        )
 
     table = _validate_table(db, workspace_id, table_id)
     if table is not None and match_keys:

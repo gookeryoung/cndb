@@ -129,7 +129,9 @@ const personal: HelpTopic = {
             body: (
                 <P>
                     「大模型」页签配置 base_url、模型与 API Key；配置为个人级、任务之间共用，
-                    密钥加密保存且不回显。未配置时，依赖大模型的任务在运行时会提示先完成配置。
+                    密钥加密保存且不回显。API Key 可选：本地部署（如 Ollama / vLLM）可留空，
+                    云端服务需填写（缺 Key 时连通测试会返回 401）；本地 / 内网地址需运维在
+                    <code>LLM_PRIVATE_HOST_ALLOWLIST</code> 中放行主机。
                     连接可先「测试连通」，再用于同步任务、数据填充与分析。
                 </P>
             ),

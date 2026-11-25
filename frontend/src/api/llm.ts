@@ -12,7 +12,7 @@ import api from './client'
 
 /** 当前登录用户的个人大模型配置（api_key 只写不回显） */
 export interface LlmConfig {
-  /** 是否已完成配置（API 地址 + 模型 + API Key 都可用） */
+  /** 是否已有保存记录（地址 / 模型已保存；API Key 可选，本地部署可不配） */
   configured: boolean
   base_url: string
   model: string

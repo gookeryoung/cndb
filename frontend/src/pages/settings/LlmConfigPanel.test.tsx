@@ -295,6 +295,13 @@ describe('个人设置 · 大模型', () => {
     expect(within(panel).queryByTestId('llm-config-clear-key')).not.toBeInTheDocument()
   })
 
+  it('已保存但未配置 Key（本地部署）时状态标签提示已保存', async () => {
+    setupHandlers({ config: { configured: true, has_api_key: false } })
+    const panel = await openLlmTab()
+
+    expect(within(panel).getByTestId('llm-config-status')).toHaveTextContent('已保存 · 未配置 API Key')
+  })
+
   // ── 调用记录（ADR 0020 P3） ──
 
   it('调用记录：展示最近 20 条的动作 / 状态 / 模型 / token / 耗时，请求 limit=20', async () => {

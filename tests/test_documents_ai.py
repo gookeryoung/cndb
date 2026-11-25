@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -92,6 +94,18 @@ def _patch_complete(monkeypatch: pytest.MonkeyPatch, content: str, *, usage: dic
             usage=usage or {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         ),
     )
+
+
+def _patch_upstream_auth_error(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """空 Key 直连上游：记录实际请求头并模拟云端 401（不触发真实网络）."""
+    captured: dict[str, Any] = {}
+
+    def fake_fetch(config):
+        captured["headers"] = config.headers
+        raise ValueError('API 返回 401: {"error": {"message": "Authentication Fails"}}')
+
+    monkeypatch.setattr(llm_client, "fetch_json", fake_fetch)
+    return captured
 
 
 class TestPolish:
@@ -247,14 +261,17 @@ class TestPermissionsAndErrors:
         )
         assert response.status_code == 400
 
-    def test_unconfigured_key_reports_setup_hint(self, client, db, ai_ws, ai_doc, ai_headers):
+    def test_missing_key_surfaces_upstream_auth_error(self, client, db, ai_ws, ai_doc, ai_headers, monkeypatch):
+        """API Key 可选：空 Key 不带 Authorization 照常请求，云端 401 由上游透出为 502."""
+        captured = _patch_upstream_auth_error(monkeypatch)
         response = client.post(
             AI_URL.format(ws=ai_ws.id, doc=ai_doc.id, action="summarize"),
             json={},
             headers=ai_headers,
         )
-        assert response.status_code == 400
-        assert "个人设置" in response.json()["detail"]
+        assert response.status_code == 502
+        assert "401" in response.json()["detail"]
+        assert "Authorization" not in captured["headers"]
 
     def test_viewer_can_run_read_only_action(self, client, db, ai_ws, ai_doc, monkeypatch):
         viewer = _make_user(db, "doc_ai_viewer")

@@ -18,7 +18,6 @@ from cndb.plugins.llm.services import client as llm_client
 from cndb.plugins.llm.services import gateway
 from cndb.plugins.llm.services.connection import LlmConnection
 from cndb.plugins.llm.services.errors import (
-    LlmNotConfigured,
     LlmOutputInvalid,
     LlmRateLimited,
     LlmUpstreamError,
@@ -215,14 +214,31 @@ class TestLlmClient:
         assert response.model == "model-b"
         assert response.usage["total_tokens"] == 3
 
-    def test_complete_without_key_raises(self):
-        with pytest.raises(LlmNotConfigured, match="个人设置"):
-            llm_client.complete(LlmConnection(), messages=[{"role": "user", "content": "hi"}])
+    def test_complete_without_key_sends_without_authorization(self, monkeypatch):
+        """API Key 可选：空 Key（本地部署）照常发请求，不带 Authorization."""
+        captured: dict[str, Any] = {}
 
-    def test_test_connection_without_key_hint(self):
+        def fake_fetch(config: FetchConfig):
+            captured["config"] = config
+            config.response_handler(_envelope("pong", model="model-b"), config)
+            return []
+
+        monkeypatch.setattr(llm_client, "fetch_json", fake_fetch)
+        response = llm_client.complete(LlmConnection(), messages=[{"role": "user", "content": "hi"}])
+        assert response.content == "pong"
+        assert "Authorization" not in captured["config"].headers
+
+    def test_test_connection_without_key_succeeds(self, monkeypatch):
+        """API Key 可选：本地部署空 Key 也能连通成功."""
+
+        def fake_fetch(config: FetchConfig):
+            config.response_handler(_envelope("pong", model="model-b"), config)
+            return []
+
+        monkeypatch.setattr(llm_client, "fetch_json", fake_fetch)
         result = llm_client.test_connection(LlmConnection())
-        assert result.ok is False
-        assert "个人设置" in result.message
+        assert result.ok is True
+        assert result.message == "连通成功"
 
 
 # ── gateway：schema 校验 / 留痕 / 失败零副作用 ───────────────

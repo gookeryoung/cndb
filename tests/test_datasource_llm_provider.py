@@ -100,9 +100,11 @@ class TestBuildRequests:
         plans = PROVIDER.build_requests(_job(request=spec))
         assert "response_format" not in plans[0].config.body
 
-    def test_missing_api_key_raises(self):
-        with pytest.raises(ProviderError, match="api_key"):
-            PROVIDER.build_requests(_job(extra_variables={}))
+    def test_missing_api_key_omits_authorization(self):
+        """API Key 可选：本地部署无 Key 时不带 Authorization，照常构造请求."""
+        plans = PROVIDER.build_requests(_job(extra_variables={}))
+        assert "Authorization" not in plans[0].config.headers
+        assert plans[0].config.headers["Content-Type"] == "application/json"
 
     def test_inline_authorization_header_is_kept(self):
         spec = _spec(headers_template={"Authorization": "Bearer {api_key}"})
@@ -455,11 +457,19 @@ class TestConnection:
         assert calls[0].url == "https://llm.example.com/chat/completions"
         assert calls[0].body["max_tokens"] == 64
 
-    def test_missing_key(self):
-        result = run_connection_test(_spec(), api_key="")
-        assert result.ok is False
-        assert "api_key" in result.message
-        assert "大模型连接" in result.message
+    def test_missing_key_still_sends_without_authorization(self):
+        """API Key 可选：本地部署空 Key 照常发请求，不带 Authorization."""
+        calls: list[FetchConfig] = []
+
+        def fetch(config: FetchConfig):
+            calls.append(config)
+            config.response_handler(_model_response('{"ok": true}', model="model-b"), config)
+            return []
+
+        result = run_connection_test(_spec(), api_key="", fetch=fetch)
+        assert result.ok is True
+        assert result.model == "model-b"
+        assert "Authorization" not in calls[0].headers
 
     def test_fetch_error_is_returned(self):
         def fetch(_config: FetchConfig):

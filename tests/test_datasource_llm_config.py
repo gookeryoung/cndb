@@ -223,13 +223,22 @@ class TestConnectionTest:
         assert db.query(UserLlmConfig).count() == 0
         assert find_user_llm_config(db, user.id) is None
 
-    def test_without_any_key_reports_hint(self, client, personal_user):
+    def test_without_any_key_passes_empty_key(self, client, personal_user, monkeypatch):
+        """API Key 可选：无 Key 时把空 Key 交给客户端（本地部署端点可不校 Key）."""
         _user, headers = personal_user
+        captured: dict[str, Any] = {}
+
+        def fake(connection):
+            captured["connection"] = connection
+            return LlmConnectionResult(ok=True, latency_ms=5, model="local-model", message="连通成功")
+
+        from cndb.plugins.llm.routers import config as llm_config_router
+
+        monkeypatch.setattr(llm_config_router.client, "test_connection", fake)
         response = client.post(_url() + "/test", json={}, headers=headers)
         assert response.status_code == 200
-        body = response.json()
-        assert body["ok"] is False
-        assert "个人设置" in body["message"]
+        assert response.json()["ok"] is True
+        assert captured["connection"].api_key == ""
 
     def test_rejects_bad_url(self, client, personal_user):
         _user, headers = personal_user

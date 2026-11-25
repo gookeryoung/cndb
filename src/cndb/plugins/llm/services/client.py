@@ -24,7 +24,6 @@ from cndb.core.http import DEFAULT_TIMEOUT, FetchConfig, fetch_json
 from cndb.plugins.llm.services.connection import LlmConnection
 from cndb.plugins.llm.services.errors import (
     LlmError,
-    LlmNotConfigured,
     LlmRateLimited,
     LlmUpstreamError,
 )
@@ -81,10 +80,16 @@ def _allow_hosts() -> tuple[str, ...]:
 
 
 def build_headers(connection: LlmConnection) -> dict[str, str]:
-    """请求头：缺 API Key 直接报 400（不发请求）."""
-    if not connection.api_key.strip():
-        raise LlmNotConfigured("未配置 api_key：请先在「个人设置 → 大模型」配置 API Key")
-    return {"Content-Type": "application/json", "Authorization": f"Bearer {connection.api_key}"}
+    """请求头：有 Key 时带 Bearer；空 Key 不带 Authorization（本地部署无需鉴权）.
+
+    API Key 可选：本地 / 内网 OpenAI 兼容端点通常不校验 Key，空 Key 照常发请求；
+    云端服务缺 Key 时由上游返回 401，错误信息原样透出，不在此提前拦截。
+    """
+    headers = {"Content-Type": "application/json"}
+    api_key = connection.api_key.strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
 
 
 def build_chat_body(
@@ -151,8 +156,9 @@ def complete(
 ) -> LlmResponse:
     """调用 OpenAI 兼容 ``/chat/completions`` 并返回原始 content.
 
+    API Key 可选：空 Key 时不带 ``Authorization``（本地部署）；上游要求鉴权时返回 401。
+
     Raises:
-        LlmNotConfigured: 未配置 API Key。
         LlmRateLimited: 重试后仍被限流。
         LlmUpstreamError: 上游非 2xx / 网络失败 / 响应形态不符。
         LlmOutputInvalid: 响应 JSON 无法解析（由 :mod:`parsing` 抛出）。
@@ -199,15 +205,8 @@ def complete(
 
 
 def test_connection(connection: LlmConnection, *, timeout: float | None = None) -> LlmConnectionResult:
-    """发一次最小模型请求验证地址 / Key / 模型；不落库、不写运行记录."""
+    """发一次最小模型请求验证地址 / 模型；Key 可选（本地部署可不配）；不落库、不写运行记录."""
     started = time.perf_counter()
-    if not connection.has_api_key and not connection.api_key.strip():
-        return LlmConnectionResult(
-            ok=False,
-            latency_ms=0,
-            model=connection.model,
-            message="未配置 api_key：请先在「个人设置 → 大模型」配置 API Key",
-        )
     try:
         response = complete(
             connection,

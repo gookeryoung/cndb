@@ -270,8 +270,8 @@ const guide: HelpTopic = {
             items: [
                 {
                     key: 'not-configured',
-                    label: '提示先完成大模型配置',
-                    body: <P>大模型连接是个人级的：在「个人设置 → 大模型」填 base_url、模型与 API Key，先测试连通再运行任务。</P>,
+                    label: '大模型连通失败 / 提示未配置',
+                    body: <P>大模型连接是个人级的：在「个人设置 → 大模型」填 base_url 与模型，先测试连通再运行任务。API Key 可选——本地部署（如 Ollama / vLLM）可留空；云端服务缺 Key 时上游返回 401，需补填 Key；本地 / 内网地址还需运维在 LLM_PRIVATE_HOST_ALLOWLIST 中放行主机。</P>,
                 },
                 {
                     key: 'truncated',

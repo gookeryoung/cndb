@@ -179,7 +179,8 @@ def test_connection(
 ) -> ConnectionTestResponse:
     """用当前用户连接 + 请求体未保存的覆盖项测一次模型连通性（不落库、不写运行记录）.
 
-    Key 优先级：请求体 ``api_key`` > 当前用户已保存 Key；都没有时不发请求、直接给配置提示。
+    Key 优先级：请求体 ``api_key`` > 当前用户已保存 Key；都没有时不带 ``Authorization``
+    直接发请求（本地部署无需鉴权），云端服务缺 Key 由上游返回 401。
     """
     base_url = _validated_base_url(payload.base_url)
     model = _validated_model(payload.model)

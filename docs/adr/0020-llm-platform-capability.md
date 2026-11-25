@@ -24,7 +24,7 @@ Related: `src/cndb/plugins/llm/models.py`、`src/cndb/plugins/llm/services/conne
 | C5 | 请制定方案和典型示例 | 附录 A-F 共 6 个典型示例（数据源接入、文档选区改写、文档摘要与标签、导入映射建议、表格字段填充、自然语言生成分析模板），每个含触发入口 / API 契约 / 提示词 / 输出 schema / 校验与失败 / 写回 / 前端 / 测试 |
 | C6 | （沿用 ADR 0019 口径，位置重规划） | 连接仍为个人级一人一条；`api_key` 仍 Fernet 密文、只写不回显、不进备份；仅表名改 `llm_user_config`、端点改 `/api/v1/llm/config`（新迁移搬数据后删旧表）；凭据优先级仍是「任务会话 Key > 个人 Key」 |
 | C7 | （能力复用的前提） | 新表 `llm_run`：每次调用一行，记录 `user_id / workspace_id / action / model / prompt_tokens / completion_tokens / total_tokens / latency_ms / status / error / request_id / detail`；**不存提示词与输出全文**；同时写 `core_event(action="llm.invoke")` 串联 request_id；`GET /api/v1/llm/runs` 只返回本人记录 |
-| C8 | （失败可诊断） | `llm/services/errors.py` 固定四类错误：`LlmNotConfigured`(400)、`LlmUpstreamError`(502)、`LlmOutputInvalid`(422)、`LlmRateLimited`(429)；客户端对 429/5xx/超时做 ≤2 次指数退避重试（尊重 `Retry-After`），4xx 不重试；JSON / schema 校验失败在 gateway 内完成，异常上抛前不触碰业务表 |
+| C8 | （失败可诊断） | `llm/services/errors.py` 固定四类错误：`LlmNotConfigured`(400，保留类型：API Key 可选后客户端不再因缺 Key 抛错)、`LlmUpstreamError`(502)、`LlmOutputInvalid`(422)、`LlmRateLimited`(429)；客户端对 429/5xx/超时做 ≤2 次指数退避重试（尊重 `Retry-After`），4xx 不重试；JSON / schema 校验失败在 gateway 内完成，异常上抛前不触碰业务表 |
 | C9 | （必要情况下可重构的边界） | 领域 AI 端点先走本域权限（`visibility.get_visible_document_or_404`、`check_action`、`row_access`），再调 gateway；模型输入由领域构造并已按权限裁剪；写回只复用 `PUT /{doc_id}/content` / `submit`（双轨制）与 `records._dispatch_or_403`（修改申请 202）；AI 不产生版本、不做 DDL、不直接 INSERT/UPDATE |
 | C10 | （位置重规划的隐私修正） | `sync_jobs` 保存任务时不再把解析后的 `url_template` / `llm.model` 写回 `request_spec`（删除 create `sync_jobs.py:180-199` 与 update `:284-285` 两处持久化）；运行 / 预览期解析；显式任务配置仍优先；备份导出因此不再包含个人地址 / 模型 |
 | C11 | （前端可复用） | 新增 `frontend/src/api/llm.ts`、`frontend/src/hooks/useLlmAction.ts`、`frontend/src/components/Ai/`（`AiActionButton` / `AiResultDrawer` / `AiSuggestionList`，全部 lazy）；结果统一「建议 → 预览 → 确认」；第一版同步 JSON，不引入 SSE |
@@ -178,7 +178,7 @@ def invoke(
     """校验连接 → 渲染提示词 → 调上游 → schema 校验 → 写 llm_run + core_event → 返回。"""
 ```
 
-- 连接解析：`connection.load_connection(db, user_id)`（自 datasource 迁入，语义不变）；无 Key → `LlmNotConfigured`（400，文案指向「个人设置 → 大模型」）。
+- 连接解析：`connection.load_connection(db, user_id)`（自 datasource 迁入，语义不变）；**API Key 可选**——空 Key 时请求不带 `Authorization`，供本地部署（Ollama / vLLM / LM Studio 等不校验 Key 的 OpenAI 兼容端点）直接使用；云端服务缺 Key 由上游返回 401，错误信息原样透出，不提前拦截（2026-11-25 修订，原为「无 Key → `LlmNotConfigured`」）。
 - 系统提示词三层优先级沿用 ADR 0019：**任务 / 动作显式 system > 个人连接覆盖 > 内置默认**；动作级 system 与个人覆盖按「动作 system + 个人覆盖」拼接，最后追加 JSON 指令（结构化动作）。
 - 输出校验：`output_schema is not None` 时 `Output.model_validate(parsed)`；失败 → `LlmOutputInvalid`（422），不写业务数据。
 - 留痕：无论成败都在 `finally` 写 `llm_run` 与 `core_event(action="llm.invoke", target_type="llm")`；`core/events.py` 增加 `ACTION_LLM_INVOKE` / `TARGET_LLM` 常量。
@@ -237,7 +237,7 @@ def complete(connection: LlmConnection, *, messages, model, temperature,
 1. **不提供通用动作执行端点**：`POST /llm/actions/{name}` 不存在；能力目录只读。领域数据只能从领域路由进入模型，平台不承担领域权限判定（I2/I3）。
 2. **第一版不做流式**：前端 HTTP 客户端无 SSE 通道（`frontend/src/api/client.ts:93-97`），所有动作同步 JSON；单次输入超过 `max_input_chars` 时拒绝并提示分段，不做自动长文分片。
 3. **不做多连接 / 模型档位**：一人一条连接、一个默认模型；per-action 只允许覆盖 `temperature` / `max_tokens`，不允许覆盖 `base_url` / `api_key`（数据源任务高级设置的显式 url/model 仍保留，属领域配置）。
-4. **默认不支持内网 / 本地模型**：沿用 SSRF 防护；仅当主机命中 `LLM_PRIVATE_HOST_ALLOWLIST` 才放行（运维显式配置，默认空）。被否决项见 D10。
+4. **默认不支持内网 / 本地模型**：沿用 SSRF 防护；仅当主机命中 `LLM_PRIVATE_HOST_ALLOWLIST` 才放行（运维显式配置，默认空）。本地部署的 API Key 可留空（请求不带 `Authorization`）。被否决项见 D10。
 5. **AI 不写版本 / 不落库**：文档改写只改编辑器内存态，保存仍走 `PUT /{doc_id}/content` 或 `POST /{doc_id}/submit`（双轨制）；摘要 / 标签建议只有 editor+ 可经既有 `PATCH /{doc_id}` 应用，viewer 仅预览（不在本期引入「文档元数据修改申请」）。
 6. **表格 AI 的输入必须裁剪**：字段隐藏（`field.hidden`）字段不进模型输入；行级权限外（`row_access` 拒绝）的行不进输入；单批最多 20 行、单字段，超出分片由前端顺序发起。
 7. **表格 AI 的写回只能是既有两条路**：直编用户的更新走 `records` 写路径；无直编资格走修改申请（202）；AI 不得直接 DDL / upsert 新行（自动建表豁免仍只属于 `llm_prompt`）。
@@ -383,6 +383,7 @@ def complete(connection: LlmConnection, *, messages, model, temperature,
 
 ## 交接（会话结束更新）
 
+- 追加（2026-11-25，本地部署支持无 API Key）：个人设置「大模型」连通测试在 API Key 为空时不再报「未配置 api_key」——`client.build_headers` / `test_connection`、数据源 `llm_prompt` 构造与诊断、`sync-jobs` 保存校验均改为 Key 可选；空 Key 请求不带 `Authorization`，本地部署（Ollama / vLLM 等）可直接连通与运行任务；云端服务缺 Key 由上游 401 透出。前端 API Key 字段与帮助文档补充「本地部署可留空」说明，状态标签区分「已保存 · 未配置 API Key」。测试：`test_llm_platform.py` / `test_datasource_llm_provider.py` / `test_datasource_llm_config.py` / `test_datasource_api.py` 同步改为「空 Key 不带 Authorization、可保存可连通」；`LlmNotConfigured` 保留类型定义但客户端不再主动抛错。本地 / 内网地址仍需 `LLM_PRIVATE_HOST_ALLOWLIST` 放行主机（D10 不变）。
 - 当前阶段：P3 已落地（分析 AI 生成模板 / 结论解读、搜索意图改写端点、`cndb llm` CLI、个人设置调用记录）；ADR 0020 P0-P3 全部落地
 - 已完成：现状盘点；应用地图与 6 个典型示例；P0 平台归位；P1 文档 AI；P2 表格与导入 AI；P3 分析与搜索 AI（`analytics.suggest_template` 过 `normalize_config` 后只填编辑态、`analytics.explain` 只读解读、`search.rewrite_query` 失败回退原查询；`cndb llm test/runs/prune`；个人设置调用记录）
 - 下一步：人工验收与真机联调（配置真实个人 Key 走一遍 P1-P3 入口）→ `make push` 推远端 → 视需要更新 bundle budget 基线（当前主入口 / GridPage 为 P1-P2 累计 warn，未超上限）

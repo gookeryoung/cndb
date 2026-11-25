@@ -60,6 +60,18 @@ def _patch_complete(monkeypatch: pytest.MonkeyPatch, content: str) -> dict[str, 
     return captured
 
 
+def _patch_upstream_auth_error(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    """空 Key 直连上游：记录实际请求头并模拟云端 401（不触发真实网络）."""
+    captured: dict[str, Any] = {}
+
+    def fake_fetch(config):
+        captured["headers"] = config.headers
+        raise ValueError('API 返回 401: {"error": {"message": "Authentication Fails"}}')
+
+    monkeypatch.setattr(llm_client, "fetch_json", fake_fetch)
+    return captured
+
+
 @pytest.fixture
 def mapping_ctx(client, db):
     owner = _make_user(db, "map_owner")
@@ -172,14 +184,17 @@ class TestMappingSuggestion:
         )
         assert response.status_code == 404
 
-    def test_unconfigured_key_reports_hint(self, client, db, mapping_ctx):
+    def test_missing_key_surfaces_upstream_auth_error(self, client, db, mapping_ctx, monkeypatch):
+        """API Key 可选：空 Key 不带 Authorization 照常请求，云端 401 由上游透出为 502."""
         ws_id, tid, headers, owner = mapping_ctx
         db.query(LlmUserConfig).filter(LlmUserConfig.user_id == owner.id).delete()
         db.commit()
+        captured = _patch_upstream_auth_error(monkeypatch)
         response = client.post(
             MAPPING_URL.format(ws=ws_id),
             json={"target_table_id": tid, "headers": ["日期"], "sample_rows": []},
             headers=headers,
         )
-        assert response.status_code == 400
-        assert "个人设置" in response.json()["detail"]
+        assert response.status_code == 502
+        assert "401" in response.json()["detail"]
+        assert "Authorization" not in captured["headers"]
