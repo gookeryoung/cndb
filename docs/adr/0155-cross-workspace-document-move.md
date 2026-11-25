@@ -203,8 +203,8 @@ def move_targets(db, *, source_workspace_id, actor) -> list[MoveTarget]
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/schemas/__init__.py` | `tests/test_document_cross_workspace_move.py` | 见「交接」回填 |
-| P1 | 已落地 | `frontend/src/pages/documents/MoveDocumentModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/MoveDocumentModal.test.tsx`、`frontend/src/pages/documents/DocumentsPage.test.tsx`、`frontend/tests/e2e/critical/document-move-workspace.spec.ts` | 见「交接」回填 |
+| P0 | 已落地 | `src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/schemas/__init__.py` | `tests/test_document_cross_workspace_move.py` | `7525b0c3` |
+| P1 | 已落地 | `frontend/src/pages/documents/MoveDocumentModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/MoveDocumentModal.test.tsx`、`frontend/src/pages/documents/DocumentsPage.test.tsx`、`frontend/tests/e2e/critical/document-move-workspace.spec.ts` | `7525b0c3` |
 
 ## 交接（会话结束更新）
 
