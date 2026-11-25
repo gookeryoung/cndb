@@ -115,6 +115,28 @@ class TestCoreHttpAllowHosts:
         assert validate_url("http://127.0.0.1:11434/v1/chat/completions", allow_hosts=("127.0.0.1",)) is None
         assert validate_url("http://localhost:11434", allow_hosts=("localhost",)) is None
 
+    def test_private_lan_ip_allowed_only_when_listed(self):
+        """内网网段的模型网关：只有精确列进白名单的 host 才放行（同网段其它主机仍拦）.
+
+        回归背景：用户在个人设置里把 base_url 指向 ``http://192.168.3.53:8080/v1``，
+        连通测试报「禁止访问保留 IP: 192.168.3.53」——请求根本没发出去。
+        """
+        url = "http://192.168.3.53:8080/v1/chat/completions"
+        with pytest.raises(ValueError, match="禁止访问保留 IP"):
+            validate_url(url)
+        assert validate_url(url, allow_hosts=("192.168.3.53",)) is None
+        # 白名单是精确主机名，不做网段匹配
+        with pytest.raises(ValueError, match="禁止访问"):
+            validate_url(url, allow_hosts=("192.168.3.0/24",))
+
+    def test_llm_client_reads_allowlist_from_settings(self, monkeypatch):
+        """LLM 客户端把 settings.LLM_PRIVATE_HOST_ALLOWLIST 作为放行名单."""
+        from cndb.core.config import settings
+        from cndb.plugins.llm.services.client import _allow_hosts
+
+        monkeypatch.setattr(settings, "LLM_PRIVATE_HOST_ALLOWLIST", ["192.168.3.53", " "])
+        assert _allow_hosts() == ("192.168.3.53",)
+
 
 # ── parsing：迁移后文案与截断识别保持一致 ───────────────
 

@@ -384,6 +384,8 @@ def complete(connection: LlmConnection, *, messages, model, temperature,
 
 ## 交接（会话结束更新）
 
+- 追加（部署装配补全，`LLM_PRIVATE_HOST_ALLOWLIST` 真正可用）：内网 / 自建 OpenAI 兼容网关（如 `http://192.168.3.53:8080/v1`）在个人设置里点「测试连接」报「禁止访问保留 IP: x.x.x.x」属**预期拦截**（`core/http.py::validate_url`，请求未发出；宿主机 curl 能通不代表应用能通），D10 的口径不变。缺口在装配：`docker-compose.prod.yml` 的 `app.environment` 逐项列出且无 `env_file`，该变量从未透传进容器，运维在 `.env` 里写了也不生效。已补：compose 透传行（默认 `[]`）、`deploy/.env.prod.example` 示例 + 注释（JSON 数组 / 只填主机名 / 不支持网段通配 / 只作用于 LLM）、`docs/DEPLOY_TENCENT.md` 放行步骤与边界；帮助页补「内网网关连不上」条目。测试：`tests/test_config.py`（env JSON 解析失败即 SettingsError + compose 接线）、`tests/test_llm_platform.py`（私网 IP 默认拦 / 列白名单后放行 / 网段写法无效 / `_allow_hosts()` 取自 settings）。排查顺序固定为：先看服务端日志有无 `SSRF 拦截：host=…`，有则查白名单值（是否写成了非 JSON 字符串、是否带了 scheme / 端口、是否用域名访问却写了 IP），无则属上游问题（`/chat/completions` 路径、`response_format` 是否支持）。
+
 - 追加（2026-11-25，本地部署支持无 API Key）：个人设置「大模型」连通测试在 API Key 为空时不再报「未配置 api_key」——`client.build_headers` / `test_connection`、数据源 `llm_prompt` 构造与诊断、`sync-jobs` 保存校验均改为 Key 可选；空 Key 请求不带 `Authorization`，本地部署（Ollama / vLLM 等）可直接连通与运行任务；云端服务缺 Key 由上游 401 透出。前端 API Key 字段与帮助文档补充「本地部署可留空」说明，状态标签区分「已保存 · 未配置 API Key」。测试：`test_llm_platform.py` / `test_datasource_llm_provider.py` / `test_datasource_llm_config.py` / `test_datasource_api.py` 同步改为「空 Key 不带 Authorization、可保存可连通」；`LlmNotConfigured` 保留类型定义但客户端不再主动抛错。本地 / 内网地址仍需 `LLM_PRIVATE_HOST_ALLOWLIST` 放行主机（D10 不变）。
 - 当前阶段：P3 已落地（分析 AI 生成模板 / 结论解读、搜索意图改写端点、`cndb llm` CLI、个人设置调用记录）；ADR 0020 P0-P3 全部落地
 - 已完成：现状盘点；应用地图与 6 个典型示例；P0 平台归位；P1 文档 AI；P2 表格与导入 AI；P3 分析与搜索 AI（`analytics.suggest_template` 过 `normalize_config` 后只填编辑态、`analytics.explain` 只读解读、`search.rewrite_query` 失败回退原查询；`cndb llm test/runs/prune`；个人设置调用记录）

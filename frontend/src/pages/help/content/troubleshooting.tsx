@@ -271,7 +271,12 @@ const guide: HelpTopic = {
                 {
                     key: 'not-configured',
                     label: '大模型连通失败 / 提示未配置',
-                    body: <P>大模型连接是个人级的：在「个人设置 → 大模型」填 base_url 与模型，先测试连通再运行任务。API Key 可选——本地部署（如 Ollama / vLLM）可留空；云端服务缺 Key 时上游返回 401，需补填 Key；本地 / 内网地址还需运维在 LLM_PRIVATE_HOST_ALLOWLIST 中放行主机。</P>,
+                    body: <P>大模型连接是个人级的：在「个人设置 → 大模型」填 base_url 与模型，先测试连通再运行任务。API Key 可选——本地部署（如 Ollama / vLLM）可留空；云端服务缺 Key 时上游返回 401，需补填 Key。</P>,
+                },
+                {
+                    key: 'reserved-ip',
+                    label: '报「禁止访问保留 IP」/ 内网网关连不上',
+                    body: <P>这是服务端的 SSRF 防护，不是网络故障：私网、保留网段与 localhost 默认全部拦截，请求根本没发出去（在宿主机用 curl / Invoke-RestMethod 能通也改变不了这一点）。需运维在部署的 .env 里把主机名加进 LLM_PRIVATE_HOST_ALLOWLIST（JSON 数组、只填主机名如 [&quot;192.168.3.53&quot;]、不支持网段与通配），重启容器后重测连通。白名单只作用于大模型客户端，其它通道仍拦内网。</P>,
                 },
                 {
                     key: 'truncated',

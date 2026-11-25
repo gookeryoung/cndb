@@ -48,6 +48,10 @@ services:
       # 跨域白名单。必须写成 JSON 数组字符串：CORS_ORIGINS 声明为 list[str]，
       # pydantic-settings 对复杂类型一律按 JSON 解析，写成逗号分隔会在启动时抛 SettingsError。
       - CORS_ORIGINS=${CORS_ORIGINS:-["http://localhost:8000"]}
+      # 大模型内网白名单（ADR 0020 D10）。同样是 JSON 数组字符串，默认 [] = 严格拦截：
+      # 自建 OpenAI 兼容网关在私网（如 http://192.168.3.53:8080/v1）时必须显式放行主机，
+      # 否则「测试连接」报「禁止访问保留 IP」。只放行主机名，不带 scheme / 端口 / 路径。
+      - LLM_PRIVATE_HOST_ALLOWLIST=${LLM_PRIVATE_HOST_ALLOWLIST:-[]}
 
       # ── PPTX → PDF 衍生预览（ADR 0129）──
       # 指向仅内网的 pdf-worker；地址留空 = 功能关闭，行为退回 0128 客户端预览。

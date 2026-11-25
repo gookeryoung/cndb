@@ -149,3 +149,35 @@ def test_static_dir_matches_app_serving_path() -> None:
     from cndb.app import _STATIC
 
     assert STATIC_DIR.resolve() == _STATIC.resolve()
+
+
+# ── 大模型内网白名单（ADR 0020 D10）───────────────────────────
+
+
+def test_llm_private_host_allowlist_parses_json_array(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``LLM_PRIVATE_HOST_ALLOWLIST`` 是 list[str]：环境变量必须按 JSON 数组解析.
+
+    与 ``CORS_ORIGINS`` 同一个坑：写成逗号分隔字符串会在启动时抛 SettingsError，
+    而在这里之前用户看到的只是「连通失败 / 禁止访问保留 IP」，排查方向完全跑偏。
+    """
+    monkeypatch.setenv("LLM_PRIVATE_HOST_ALLOWLIST", '["192.168.3.53"]')
+    assert Settings().LLM_PRIVATE_HOST_ALLOWLIST == ["192.168.3.53"]
+
+    monkeypatch.setenv("LLM_PRIVATE_HOST_ALLOWLIST", "192.168.3.53,10.0.0.2")
+    with pytest.raises(Exception, match="LLM_PRIVATE_HOST_ALLOWLIST"):
+        Settings()
+
+
+def test_llm_private_host_allowlist_wired_into_production_compose() -> None:
+    """容器部署必须能透传白名单，否则私网模型网关永远连不上.
+
+    ``docker-compose.prod.yml`` 的 ``app.environment`` 是逐项列出（没有 env_file），
+    漏一行就意味着「.env 里写了也不生效」——这类装配缺失在本地开发完全看不出来。
+    """
+    compose = (BASE_DIR / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    assert "LLM_PRIVATE_HOST_ALLOWLIST=${LLM_PRIVATE_HOST_ALLOWLIST:-[]}" in compose
+
+    example = (BASE_DIR / "deploy" / ".env.prod.example").read_text(encoding="utf-8")
+    # 示例必须给出可用的空数组默认值，并说明是 JSON 数组 + 只填主机名
+    assert "LLM_PRIVATE_HOST_ALLOWLIST=" in example
+    assert "JSON" in example.split("LLM_PRIVATE_HOST_ALLOWLIST=")[0][-600:]
