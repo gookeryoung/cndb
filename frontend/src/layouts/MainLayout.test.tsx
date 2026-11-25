@@ -673,7 +673,7 @@ describe('MainLayout 表级导航（2026-11-03 取消）', () => {
 })
 
 describe('MainLayout 文档区二级导航', () => {
-    it('进入文档页显示二级导航：文档结构 / 质量检查 / 修改申请 / 问题清单页签', async () => {
+    it('进入文档页显示二级导航：文档结构 / 质量检查 / 模板 / 修改申请 / 问题清单页签（ADR 0152）', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => {
@@ -681,7 +681,15 @@ describe('MainLayout 文档区二级导航', () => {
         })
         expect(screen.getByTestId('document-tab-structure')).toBeVisible()
         expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
+        expect(screen.getByTestId('document-tab-templates')).toBeVisible()
         expect(screen.getByTestId('document-tab-change-requests')).toBeVisible()
+        // 「模板」紧邻「质量检查」右侧（ADR 0152 入口位置口径）
+        const tabs = Array.from(screen.getByTestId('documents-crumb').querySelectorAll('.cn-table-tab')).map(
+            node => node.textContent ?? '',
+        )
+        expect(tabs.findIndex(text => text.includes('模板'))).toBe(
+            tabs.findIndex(text => text.includes('质量检查')) + 1,
+        )
         expect(screen.getByTestId('document-tab-issues')).toBeVisible()
         // 未进入表上下文时表级页签不渲染
         expect(screen.queryByTestId('table-crumb')).toBeNull()
@@ -738,6 +746,31 @@ describe('MainLayout 文档区二级导航', () => {
         expect(screen.queryByTestId('ws-section-stub')).toBeNull()
         expect(screen.getByTestId('documents-crumb')).toBeVisible()
         expect(screen.getByTestId('document-tab-pipelines')).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'false')
+    })
+
+    it('点击「模板」页签导航到文档模板页并激活（ADR 0152）', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        fireEvent.click(screen.getByTestId('document-tab-templates'))
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents/templates')
+        })
+        expect(screen.getByTestId('document-tab-templates')).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByTestId('document-tab-pipelines')).toHaveAttribute('aria-selected', 'false')
+    })
+
+    it('直接落在文档模板页时「模板」页签激活', async () => {
+        renderLayout(mockUser, '/w/10/documents/templates')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        expect(screen.getByTestId('document-tab-templates')).toHaveAttribute('aria-selected', 'true')
         expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'false')
     })
 

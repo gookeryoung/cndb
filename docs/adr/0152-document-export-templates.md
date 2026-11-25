@@ -11,7 +11,7 @@ Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/se
 
 | 卡片约束 # | 需求片段（引用） | 本设计的落地 |
 |---|---|---|
-| C1 | 「在大模型设置右侧」 | 顶栏「模板」图标紧接 `llm-settings-btn` 之后（`data-testid="template-settings-btn"`），移动端进用户菜单键 `template`；个人设置页签 `template` 排在 `llm` 之后 |
+| C1 | 「模板板块，在大模型设置右侧」→ 需求方 2026-11-25 修订为「工作区的文档页面，质量检查右侧」 | 文档区二级页签在「质量检查」右侧新增「模板」（`data-testid="document-tab-templates"`），路由 `/w/:wid/documents/templates` 渲染 `DocumentTemplatesPage`；个人设置页签与顶栏图标**不保留**（模板是工作区级资源，放在个人设置里语义错位） |
 | C2 | 「首先增加文档模板」 | 面板只做「导出模板」一类；`DocumentTemplate` 表不带 `kind` 列，其他品类后续立项再加 |
 | C3 | 「字体、标题、段落等可配置化」 | `ExportTemplateConfig`（pydantic 严格校验）五组：page/header_footer、body、headings(1..6)+numbering、table+captions、list+code；★ 项本期必做、☆ 项同期增强（见卡片 C3 明细） |
 | C4 | 「符合企业规范」 | 表工作区级；`is_default` 至多一条；解析链 `显式 ref → 工作区默认 → 内置 standard`；随备份 v17 `templates[]` 往返 |
@@ -235,7 +235,7 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | D9 | 默认模板数量 | 每工作区至多一条 `is_default`，未设即内置 standard | 导出缺省行为可预测 | 无默认（每次必须选，易误用）；多默认（取决顺序，不可预测） | 服务层 + 索引 |
 | D10 | `template` 参数形态 | `builtin:<key>` 或正整数 id | 一个参数覆盖内置与自定义 | 两个参数（`preset` / `template_id`，校验分叉） | `routers/documents.py` |
 | D11 | 备份版本 | 16 → 17，新增 `templates[]`；旧包缺键按空 | H13 / H14：新表必须往返且旧包可导入 | 复用 v16（格式变更无标记，排查困难） | `workspace_backup.py`、`backup_io.py` |
-| D12 | 面板入口形态 | 顶栏图标（大模型设置右侧）+ 个人设置页签双入口，同一面板 | 与「大模型设置」既有范式一致（C1） | 独立整页路由（多一层导航，与 C1 不符） | `MainLayout.tsx`、`SettingsModal.tsx` |
+| D12 | 面板入口形态 | **文档区二级页签「模板」**（「质量检查」右侧）+ 独立页面 `/w/:wid/documents/templates`，面板复用 `TemplatePanel` | 模板是工作区级共享资源，与文档导出强绑定（C1 修订）；与「质量检查」「修改申请」同属文档上下文页签，切换不跳模块 | 顶栏图标 + 个人设置页签（初版实现）：个人设置里管工作区资源语义错位，且模板与文档页脱节；只留在个人设置（同上） | `MainLayout.tsx`、`frontend/src/pages/documents/DocumentTemplatesPage.tsx`、`frontend/src/App.tsx` |
 | D13 | 预览实现 | 服务端 `preview` 返回真实 docx / pdf + 面板内 CSS 等比预览 | 所见即所得需真实文件；CSS 预览保证即时反馈且不落库 | 只做 CSS（看不清真实效果）；只做下载（反馈慢） | `TemplatePanel.tsx`、`routers/templates.py` |
 | D14 | 字号输入形态 | UI 同时显示中文号名与磅值（小四 = 12pt），存磅值 | 国内企业规范按号数沟通，存储保留数值精度 | 只存号名（不同号制口径不一，且 Word 用磅） | `templateOptions.ts` |
 | D15 | 明确非目标 | 目录 / 封面 / LOGO / 双栏 / 脚注尾注不纳入本期 | 域代码与分页成本高，收益待验证 | 一并做（P0-P3 无法收敛） | — |
@@ -253,14 +253,14 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | P0 | 已落地 | `src/cndb/plugins/documents/services/export/templates.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/alembic/versions/b7c8d9e0f1a2_add_export_templates.py` | `tests/test_export_templates.py` | `a6af67ac` |
 | P1 | 已落地 | `src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/routers/documents.py` | `tests/test_export_templates.py` | `a6af67ac` |
 | P2 | 已落地 | `src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/pdf_fonts.py` | `tests/test_export_templates.py` | `a6af67ac` |
-| P3 | 已落地 | `src/cndb/plugins/documents/routers/templates.py`、`src/cndb/plugins/documents/services/export_template_store.py`、`frontend/src/pages/settings/TemplatePanel.tsx` | `frontend/src/pages/settings/TemplatePanel.test.tsx`、`frontend/tests/e2e/critical/export-templates.spec.ts` | `a6af67ac` |
+| P3 | 已落地 | `src/cndb/plugins/documents/routers/templates.py`、`src/cndb/plugins/documents/services/export_template_store.py`、`frontend/src/pages/settings/TemplatePanel.tsx`、`frontend/src/pages/documents/DocumentTemplatesPage.tsx` | `frontend/src/pages/settings/TemplatePanel.test.tsx`、`frontend/tests/e2e/critical/export-templates.spec.ts` | `a6af67ac` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0–P3 全部落地（2026-11-25，`a6af67ac` / e2e `3ac95d87`；推送属人工卡点）
+- 当前阶段：P0–P3 全部落地（2026-11-25，`a6af67ac` / e2e `3ac95d87`；入口位置按需求方修订第二版落地，推送属人工卡点）
 - 已完成：配置模型 + 8 套内置预设 + 解析入口 + 迁移/备份 v17（P0）；`_render_docx` 全量改读配置（标题编号 / 题注 / 三线表 / 页眉页脚 / 页边距）+ 导出 `template` 参数 + preview（P1）；`_render_pdf` 同源配置 + `ensure_pdf_font(family)` 族匹配与回落（P2）；CRUD 路由 + 前端面板 / 页签 / 顶栏入口 / 导出子菜单 + 单测 + e2e（P3）
 - 下一步：人工验收后 `make push`（H4 / H6）；若后续要给 PDF 补字间距，从 `BodyConfig.char_spacing` 映射 `ParagraphStyle.charSpace` 入手
-- 已知坑：① `standard` 与历史 `DEFAULT_THEME` 在 docx 逐项一致，但 **PDF 表格不再强制隔行加深**（历史渲染器写死斑马纹，现由 `table.zebra` 控制且 `standard` 为 false）——这是 I2 的唯一已知偏差；② PDF 只有一个主字体，中文字体族只能「最佳匹配 + 回落」，西文字体名不参与族匹配；③ 备份版本升 17，旧包（无 `templates` 键）按空导入，`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 已同步；④ 配置字段名用 `lists`（避开 Python 内置 `list`，否则 pydantic 解析注解失败），前后端一致
+- 已知坑：⓪ 入口按需求方 2026-11-25 修订已从「个人设置 → 模板 + 顶栏图标」迁到**文档区二级页签「模板」（质量检查右侧）**，`SettingsTab` 不再有 `template`（D12 已改）；① `standard` 与历史 `DEFAULT_THEME` 在 docx 逐项一致，但 **PDF 表格不再强制隔行加深**（历史渲染器写死斑马纹，现由 `table.zebra` 控制且 `standard` 为 false）——这是 I2 的唯一已知偏差；② PDF 只有一个主字体，中文字体族只能「最佳匹配 + 回落」，西文字体名不参与族匹配；③ 备份版本升 17，旧包（无 `templates` 键）按空导入，`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 已同步；④ 配置字段名用 `lists`（避开 Python 内置 `list`，否则 pydantic 解析注解失败），前后端一致
 - 最近一次全绿：`make cov` 95.02%（7317 passed）、前端 `pnpm test:coverage` 双门槛达标（3378 passed）、`bundle-budget` 在预算内 @ 本地 2026-11-25

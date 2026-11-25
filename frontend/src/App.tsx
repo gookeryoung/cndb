@@ -32,6 +32,7 @@ const WorkspaceStatsPage = lazy(() => import('@/pages/workspace/WorkspaceStatsPa
 const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 const DocumentsLayout = lazy(() => import('@/pages/documents/DocumentsLayout'))
 const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
+const DocumentTemplatesPage = lazy(() => import('@/pages/documents/DocumentTemplatesPage'))
 const DocumentsChangeRequestsPage = lazy(() => import('@/pages/documents/DocumentsChangeRequestsPage'))
 const DocumentsIssuesPage = lazy(() => import('@/pages/documents/DocumentsIssuesPage'))
 const DocumentEditorPage = lazy(() => import('@/pages/documents/DocumentEditorPage'))
@@ -166,6 +167,10 @@ function AuthenticatedApp() {
             } />
             <Route path="issues" element={
               <Suspense fallback={<PageFallback />}><DocumentsIssuesPage /></Suspense>
+            } />
+            {/* 文档模板（ADR 0152）：工作区级导出模板，入口在「质量检查」右侧 */}
+            <Route path="templates" element={
+              <Suspense fallback={<PageFallback />}><DocumentTemplatesPage /></Suspense>
             } />
             <Route path=":docId" element={
               <Suspense fallback={<PageFallback />}><DocumentEditorPage /></Suspense>

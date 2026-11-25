@@ -2,8 +2,8 @@
  * Critical — 文档导出模板全链路（ADR 0152）。
  *
  * 覆盖：
- * 1) 通过 API 从内置预设「另存为」自定义模板（工作区级资源），再列出可见；
- * 2) 个人设置 → 模板页签：内置与自定义分组可见、默认标记正确；
+ * 1) 通过 API 从内置预设另存为自定义模板（工作区级资源），再列出可见；
+ * 2) 文档区二级页签「模板」（质量检查右侧）：内置与自定义分组可见；
  * 3) 文档页导出 Word：二级菜单列出模板，选自定义模板后真实下载 docx（PK 魔数）。
  *
  * 为什么必须 E2E：模板是工作区级共享资源，导出菜单是嵌套 Dropdown + 懒加载 chunk，
@@ -63,15 +63,15 @@ test.describe("文档导出模板", () => {
     const docId = (created.body as { id: number }).id;
 
     try {
-      // ── 个人设置 → 模板：内置 + 自定义分组都在 ──
-      await page.goto(`/w/${wid}/tables`);
-      await expect(page.getByRole("heading", { level: 3 })).toBeVisible({ timeout: 20_000 });
-      await page.getByTestId("template-settings-btn").click();
-      await expect(page.getByRole("tab", { name: "模板" })).toBeVisible({ timeout: 10_000 });
+      // ── 文档区二级页签「模板」（质量检查右侧）：内置 + 自定义分组都在 ──
+      await page.goto(`/w/${wid}/documents`);
+      await expect(page.getByTestId("document-tab-templates")).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByTestId("document-tab-pipelines")).toBeVisible();
+      await page.getByTestId("document-tab-templates").click();
+      await expect(page.getByTestId("document-templates-page")).toBeVisible({ timeout: 10_000 });
       await expect(page.getByTestId("template-list")).toBeVisible({ timeout: 10_000 });
       await expect(page.getByText("内置模板", { exact: true })).toBeVisible();
       await expect(page.getByText(TEMPLATE_NAME, { exact: true })).toBeVisible();
-      await page.keyboard.press("Escape");
 
       // ── 文档导出 Word：二级菜单选自定义模板 → 真实下载 ──
       await page.goto(`/w/${wid}/documents/${docId}`);

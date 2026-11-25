@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom'
 import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
 import {
   UserOutlined, BgColorsOutlined, TableOutlined, FileTextOutlined, RobotOutlined, CodeOutlined,
-  SnippetsOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '@/theme/ThemeProvider'
 import {
@@ -24,7 +23,6 @@ import { useResponsive } from '@/hooks/useResponsive'
 import '@/theme/editorFontAssets'
 import type { Density, NewRowPosition } from '@/theme/tableSettings'
 import LlmConfigPanel from './LlmConfigPanel'
-import TemplatePanel from './TemplatePanel'
 import SectionHeader from './SectionHeader'
 import { WEIGHT } from '@/theme/tokens'
 
@@ -714,12 +712,6 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
           { key: 'editor', label: <span><CodeOutlined aria-hidden />编辑器</span>, children: <EditorPanel /> },
           // 大模型入口已在顶栏常驻（桌面图标 / 移动端用户菜单），设置内排在末位，避免与高频的资料 / 主题争前排
           { key: 'llm', label: <span><RobotOutlined aria-hidden />大模型</span>, children: <LlmConfigPanel /> },
-          // 模板（ADR 0152）：紧跟「大模型」右侧，管理文档导出模板（工作区级）
-          {
-            key: 'template',
-            label: <span><SnippetsOutlined aria-hidden />模板</span>,
-            children: <TemplatePanel />,
-          },
         ]}
       />
     </Modal>

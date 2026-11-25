@@ -73,6 +73,8 @@ const TABLE_LEVEL_TAB_PATHS: Record<string, string> = {
 const DOCUMENT_SUBPAGES = [
   { key: 'structure', label: '文档结构', icon: <FolderOpenOutlined />, to: '' },
   { key: 'pipelines', label: '质量检查', icon: <SafetyCertificateOutlined />, to: 'pipelines' },
+  // 模板（ADR 0152）：工作区级导出模板，紧邻「质量检查」右侧（同属文档上下文资源）
+  { key: 'templates', label: '模板', icon: <SnippetsOutlined />, to: 'templates' },
   { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined />, to: 'change-requests' },
   { key: 'issues', label: '问题清单', icon: <ExclamationCircleOutlined />, to: 'issues' },
 ] as const
@@ -499,13 +501,15 @@ export default function MainLayout() {
   // 其余子页由 pathname 中的静态段驱动；「质量检查」指向文档上下文页 /documents/pipelines。
   const activeDocumentTab = location === `/w/${wid}/documents`
     ? 'structure'
-    : location.startsWith(`/w/${wid}/documents/pipelines`)
-      ? 'pipelines'
-      : location.includes('/change-requests')
-        ? 'change-requests'
-        : location.includes('/issues')
-          ? 'issues'
-          : ''
+    : location.startsWith(`/w/${wid}/documents/templates`)
+      ? 'templates'
+      : location.startsWith(`/w/${wid}/documents/pipelines`)
+        ? 'pipelines'
+        : location.includes('/change-requests')
+          ? 'change-requests'
+          : location.includes('/issues')
+            ? 'issues'
+            : ''
   const activeDocumentSubpage = DOCUMENT_SUBPAGES.find(p => p.key === activeDocumentTab)
 
   // 设计区二级页激活态（0083 C1 / ADR 0109 D1）：设计模块收敛为单一工作台后，
@@ -638,7 +642,6 @@ export default function MainLayout() {
     ...(isMobile
       ? [
         { key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') },
-    { key: 'template', icon: <SnippetsOutlined />, label: '模板', onClick: () => openSettings('template') },
         { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助文档', onClick: () => navigate('/help') },
       ]
       : []),
@@ -1141,17 +1144,6 @@ export default function MainLayout() {
                 aria-label="大模型设置"
                 data-testid="llm-settings-btn"
                 onClick={() => openSettings('llm')}
-              />
-            </Tooltip>
-          )}
-          {/* 模板入口（ADR 0152）—— 紧贴大模型设置右侧，打开「个人设置 → 模板」管理文档导出模板 */}
-          {!isMobile && wid && (
-            <Tooltip title="模板：管理文档导出模板（Word / PDF 字体、标题、段落）">
-              <Button
-                icon={<SnippetsOutlined />}
-                aria-label="模板"
-                data-testid="template-settings-btn"
-                onClick={() => openSettings('template')}
               />
             </Tooltip>
           )}

@@ -297,3 +297,19 @@ describe('templateOptions', () => {
     expect(styles.headings(1).fontSize).toBe(18)
   })
 })
+
+describe('DocumentTemplatesPage（文档区入口）', () => {
+  it('页面容器内渲染模板面板与说明（入口在文档区而非个人设置）', async () => {
+    setupHandlers()
+    const { default: DocumentTemplatesPage } = await import('@/pages/documents/DocumentTemplatesPage')
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents/templates" element={<DocumentTemplatesPage />} />
+      </Routes>,
+      { route: '/w/1/documents/templates' },
+    )
+    expect(await screen.findByTestId('document-templates-page')).toBeInTheDocument()
+    expect(screen.getByText('文档模板', { exact: true })).toBeInTheDocument()
+    expect(await screen.findByTestId('template-list')).toBeInTheDocument()
+  })
+})
