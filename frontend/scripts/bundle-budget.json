@@ -2,10 +2,6 @@
   "_readme": "关键 chunk 体积基线与上限（gzip 字节）。由 frontend/scripts/bundle-budget.mjs 读写，请勿手改 —— 基线统一用 `node scripts/bundle-budget.mjs --update --reason \"...\"`（只动 baseline），上限用 `--set-budget --only <chunk> --reason \"...\"`（只动 budget），理由会落盘到 reason/updatedAt/commit，让体积增长在 review 时可追溯。语义（需求卡片 0090）：baseline 是 warn 参照（超基线未超上限 = 慢涨 warn），budget 是 FAIL 硬上限 —— 小步增量只 warn，超上限才拦 CI。resolve: 'entry'=从 dist/index.html 取主入口 script；'entryCss'=主入口样式表；'fonts'=全部 woff2 传输量；{assetPattern}=在 dist/assets 内按正则匹配 chunk 文件；{moduleMarker}=按 dist/.vite/chunk-modules.json 的模块归属定位 chunk（hash 改名后仍有效，可命中多个 chunk 时求和）。tolerance=该项单独容差(%)，仅在未声明 budget 时用于「基线+容差」回退口径。",
   "tolerancePct": 5,
   "history": [
-    "2026-11-02 feat(documents): 新增 PPTX 在线预览（pptx-preview 1.0.7 + jszip/echarts 闭包），整块 lazy 为独立 chunk（431 KiB gzip，仅打开 .pptx 时下载），纳入体积预算防慢涨",
-    "2026-11-02 feat(documents): DOCX/PPTX 原件族新增 PPTX 纯前端在线预览（pptx-preview + jszip + echarts 随库打包）；由 DocumentAssetView React.lazy 按需加载，仅打开 .pptx 时下载，不进文档页首屏",
-    "2026-11-03 [set-budget] 需求卡片 0090：基线与上限语义分离 —— baseline 只作 warn 参照，budget 为 FAIL 硬上限；主入口留 3% 余量，按需 chunk 留 15-25%，新增 5 个帮助 section chunk 条目；HelpDocsPage 壳因正文按部分拆 chunk 由 38.31 降至 4.30 KiB",
-    "2026-11-03 需求卡片 0090：帮助正文按 L1 部分懒加载拆 chunk，HelpDocsPage 壳 38.31→4.30 KiB；全部条目基线按本轮实测收口并声明 budget 上限，消除小步增量触发超限的脆弱判定",
     "2026-11-05 docs: 结构设计 DSL 帮助主题补 13 个典型示例（纯文档字符串，HelpTutorials 已是懒加载 chunk，无依赖可拆）",
     "2026-11-05 [set-budget] docs: 结构设计 DSL 帮助主题补 13 个典型示例，纯文档字符串随 HelpTutorials 懒加载 chunk 增长（+5.3KiB），无依赖可拆、非 UI 组件",
     "2026-11-06 feat(perf): ADR 0116 P1 axios 改为按需加载 + rc-form 摇树优化，入口 gzip 230→198 KiB（C5）",
@@ -21,7 +17,11 @@
     "2026-11-25 feat(home): 需求 0160 主页布局收口，按本轮实测收口基线（上限已单列 --set-budget 调整）",
     "2026-11-25 feat(home): 需求 0160 主页导航入口 + 最近访问记录，按本轮实测收口基线（HomeNav 已 lazy 拆出）",
     "2026-11-25 [set-budget] fix(bundle): 设计结构导航改 lazy 后应用外壳实测 16.34 KiB，上限恢复到初始 20 KiB（不再需要 0160 期间临时上调的 23 KiB）",
-    "2026-11-25 fix(bundle): DesignStructureNav lazy 拆分后按实测收口基线（21.14→16.34 KiB）"
+    "2026-11-25 fix(bundle): DesignStructureNav lazy 拆分后按实测收口基线（21.14→16.34 KiB）",
+    "2026-11-25 [set-budget] perf(bundle): DSL 补全表按需加载后实测 12.53 KiB，上限从 14.65 收紧到 13.78 KiB（留约 10%）",
+    "2026-11-25 perf(bundle): designCompletion 拆出按需 chunk 后按实测收口基线（14.50→12.53 KiB）",
+    "2026-11-25 [set-budget] perf(bundle): 结果视图与模板 Drawer 按需加载后实测 19.84 KiB，上限从 23.44 收紧到 21.82 KiB（留约 10%）",
+    "2026-11-25 perf(bundle): AnalyticsResultView / AnalyticsManagerDrawer 拆出按需 chunk 后按实测收口基线（22.74→19.84 KiB）"
   ],
   "chunks": [
     {
@@ -210,22 +210,22 @@
       "resolve": {
         "moduleMarker": "src/pages/design/DesignEditorPage.tsx"
       },
-      "baseline": 12117,
-      "budget": 15000,
-      "reason": "feat(perf): ADR 0116 P0 新增设计编辑器页预算（首轮实测基线，C2）",
-      "updatedAt": "2026-11-06",
-      "commit": ""
+      "baseline": 12828,
+      "budget": 14112,
+      "reason": "perf(bundle): designCompletion 拆出按需 chunk 后按实测收口基线（14.50→12.53 KiB）",
+      "updatedAt": "2026-11-25",
+      "commit": "157642aa"
     },
     {
       "name": "AnalyticsPage（分析页）",
       "resolve": {
         "moduleMarker": "src/pages/analytics/AnalyticsPage.tsx"
       },
-      "baseline": 19753,
-      "budget": 24000,
-      "reason": "feat(perf): ADR 0116 P0 新增分析页预算（首轮实测基线，C2）",
-      "updatedAt": "2026-11-06",
-      "commit": ""
+      "baseline": 20312,
+      "budget": 22344,
+      "reason": "perf(bundle): AnalyticsResultView / AnalyticsManagerDrawer 拆出按需 chunk 后按实测收口基线（22.74→19.84 KiB）",
+      "updatedAt": "2026-11-25",
+      "commit": "157642aa"
     }
   ]
 }
