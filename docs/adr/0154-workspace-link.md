@@ -232,7 +232,7 @@ def resolve_link(db, user, link_id) -> ResolvedLink:      # 404 / 403 统一出�
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/links.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/alembic/versions/a9b8c7d6e5f4_add_workspace_links.py`、`src/cndb/cli/link.py` | `tests/test_workspace_links_api.py`、`tests/test_link_sweep.py`、`tests/test_cli_link.py`、`tests/test_teams_migration.py` | `a4b82873` |
-| P1 | 已落地 | `src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/routers/links.py` | `tests/test_workspace_links.py` | 未提交 |
+| P1 | 已落地 | `src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/routers/links.py` | `tests/test_workspace_links.py` | `5e781c9d` |
 | P2 | 未开始 | `frontend/src/pages/grid/LinkedTablePage.tsx`、`frontend/src/pages/workspace/TablesList.tsx` | `frontend/src/pages/grid/LinkedTablePage.test.tsx` | — |
 | P3.1 | 未开始 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/models.py`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | `tests/test_workspace_team_access.py` | — |
 | P3.2 | 未开始 | 另立 ADR | — | — |
@@ -243,4 +243,4 @@ def resolve_link(db, user, link_id) -> ResolvedLink:      # 404 / 403 统一出�
 - 已完成：需求卡片 0154（C1-C10）；ADR 不变量 L1-L9、决策 D1-D12；P0（`workspace_link` 迁移、申请 / 批准 / 拒绝 / 撤回、`POST /{wid}/members/batch`、`cndb link sweep`、`MANAGE_LINKS` 能力位仅所有者）；P1（`GET /{wid}/links/{id}/fields|rows|export`，复用 `list_rows` 的行级读范围与隐藏字段裁剪；H53-H56 已登记）
 - 下一步：开 P2（前端入口：侧栏「外部链接」段 + 只读网格 `/w/:wid/links/:linkId` + 源侧「待我批准」列表）
 - 已知坑：① A 期的成员行是**真实授权**——清扫停摆时「链接入口已 404 但成员仍能直接进源工作区」，必须在验收时用 `cndb link sweep` 日志确认回收；② `created_member_ids` 必须由批准事务内记录，撤回按它删（不要按 `granted_member_ids`）；③ 缓存键必须含 link_id，否则与本工作区读串味（ADR 0046 D3 同款）；④ B′ 接入时 `resolve_capabilities` 的顺序必须写在注释与用例里（显式 > team_grant > 策略默认 > public），否则后续改动容易悄悄放宽；⑤ 迁移 `down_revision` 取最新 head（当前 `f2b3c4d5e6a7`），并行会话新增迁移后要同步
-- 最近一次全绿：`make check-fast` + `make cov`（7509 passed，95.06%）+ 本 ADR 相关用例（links-api 29 / links 取数 14 / sweep 6 / cli 7 / 迁移 4）@ 未提交（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7509 passed，95.06%）+ 本 ADR 相关用例（links-api 29 / links 取数 14 / sweep 6 / cli 7 / 迁移 4）@ `5e781c9d`（2026-11-25）
