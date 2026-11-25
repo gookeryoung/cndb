@@ -138,12 +138,13 @@ def import_backup_into_workspace(
         "14",
         "15",
         "16",
+        "17",
     ):
         raise HTTPException(
             status_code=400,
             detail=(
                 f"不支持的导出文件版本: {version}"
-                "（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16）。"
+                "（当前支持: 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17）。"
                 "请升级程序后再导入。"
             ),
         )
@@ -154,6 +155,7 @@ def import_backup_into_workspace(
     imported_documents = 0
     imported_sync_jobs = 0
     imported_charts = 0
+    imported_templates = 0
     imported_pipelines = 0
     imported_designs = 0
     errors: list[str] = []
@@ -522,6 +524,11 @@ def import_backup_into_workspace(
         imported_charts += chart_imported
         errors.extend(chart_errors)
 
+        # ── v17（ADR 0152）：文档导出模板（旧备份无该键时按「无自定义模板」处理） ──
+        template_imported, template_errors = _import_export_templates(workspace_id, json_data, current_user, db)
+        imported_templates += template_imported
+        errors.extend(template_errors)
+
         # ── v10（ADR 0076）：流水线定义（运行 / 发现物属流水，不进备份） ──
         pipeline_imported, pipeline_errors = _import_pipelines(workspace_id, json_data, current_user, db)
         imported_pipelines += pipeline_imported
@@ -561,6 +568,7 @@ def import_backup_into_workspace(
         imported_documents=imported_documents,
         imported_sync_jobs=imported_sync_jobs,
         imported_charts=imported_charts,
+        imported_templates=imported_templates,
         imported_pipelines=imported_pipelines,
         imported_designs=imported_designs,
         errors=errors,
@@ -1128,6 +1136,68 @@ def _import_charts(
         imported += 1
     if imported:
         db.commit()
+    return imported, errors
+
+
+def _import_export_templates(
+    workspace_id: int,
+    json_data: dict[str, Any],
+    current_user: User,
+    db: Session,
+) -> tuple[int, list[str]]:
+    """还原文档导出模板（v17 起，ADR 0152），返回 (成功数, 错误明细).
+
+    - 旧备份没有 ``templates`` 键 → 0 条（导出仍走内置 standard，视觉不变）；
+    - 单条配置非法 / 名称重复 → 跳过并记错误，不阻断整体导入；
+    - 异常包出现多条 ``is_default`` 时只保留首条（D9「默认唯一」）。
+    """
+    from cndb.plugins.documents.models import ExportTemplate
+    from cndb.plugins.documents.services.export.templates import config_to_dict, validate_config
+
+    items = json_data.get("templates") or []
+    if not items:
+        return 0, []
+
+    errors: list[str] = []
+    imported = 0
+    seen_names: set[str] = set()
+    default_taken = False
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get("name") or "").strip()
+        if not name:
+            errors.append("导出模板跳过（名称为空）")
+            continue
+        if name in seen_names:
+            errors.append(f"导出模板 {name} 跳过（同工作区重复名称）")
+            continue
+        try:
+            config = validate_config(item.get("config") or {})
+        except ValueError as exc:
+            errors.append(f"导出模板 {name} 跳过（配置非法）: {exc}")
+            continue
+        seen_names.add(name)
+        is_default = bool(item.get("is_default")) and not default_taken
+        default_taken = default_taken or is_default
+        db.add(
+            ExportTemplate(
+                workspace_id=workspace_id,
+                name=name,
+                description=(item.get("description") or "")[:200],
+                config=config_to_dict(config),
+                is_default=is_default,
+                created_by_id=current_user.id,
+            )
+        )
+        imported += 1
+    if imported:
+        try:
+            db.commit()
+        except Exception as exc:  # pragma: no cover - 唯一约束兜底
+            db.rollback()
+            errors.append(f"导出模板导入失败: {exc}")
+            return 0, errors
     return imported, errors
 
 

@@ -56,7 +56,9 @@ from cndb.core.errors import BadRequestError
 BACKUP_VERSION = "15"
 # v16：表行数据外置为按表 NDJSON 分块（当前归档导出版本）；BACKUP_VERSION 仍是内联行版本，
 # 供 GET /export 的 v8 降采样与示例包使用（ADR 0075 D8）
-CHUNKED_BACKUP_VERSION = "16"
+CHUNKED_BACKUP_VERSION = "17"
+# v17：新增 ``templates[]``（文档导出模板，ADR 0152）；旧包缺该键按「无自定义模板」导入
+
 # 归档协议版本（manifest.json 的 version 字段，与 CLI 系统备份的 MANIFEST_VERSION 同轴独立演进）
 ARCHIVE_MANIFEST_VERSION = "1"
 ARCHIVE_KIND = "workspace_backup"
@@ -73,6 +75,7 @@ __all__ = [
     "build_workspace_backup_v8",
     "build_workspace_backup_v9",
     "build_workspace_backup_v16",
+    "build_workspace_backup_v17",
     "downsample_v8",
     "pack_workspace_archive",
     "parse_workspace_archive",
@@ -151,6 +154,18 @@ def build_workspace_backup_v16(
     return _build_backup(db, workspace_id, current_user, include_secrets=include_secrets, rows_dir=rows_dir)
 
 
+def build_workspace_backup_v17(
+    db: Session,
+    workspace_id: int,
+    current_user: Any,
+    *,
+    include_secrets: bool = True,
+    rows_dir: Path,
+) -> tuple[dict[str, Any], list[BackupFileEntry]]:
+    """构建 v17 全量备份数据：v16 的 NDJSON 分块 + ``templates[]``（ADR 0152）."""
+    return _build_backup(db, workspace_id, current_user, include_secrets=include_secrets, rows_dir=rows_dir)
+
+
 def _build_backup(
     db: Session,
     workspace_id: int,
@@ -174,6 +189,7 @@ def _build_backup(
         DocumentShare,
         DocumentTag,
         DocumentVersion,
+        ExportTemplate,
         Tag,
     )
     from cndb.plugins.documents.services.content import external_version_path, latest_version, load_content
@@ -617,6 +633,21 @@ def _build_backup(
     )
     charts_data = [{"title": c.title, "template_key": c.template_key, "config": c.config or {}} for c in charts_rows]
 
+    # ── 导出模板（ADR 0152）：工作区级排版配置，随备份往返（H14） ──
+    template_rows = (
+        db.query(ExportTemplate).filter(ExportTemplate.workspace_id == workspace_id).order_by(ExportTemplate.id).all()
+    )
+    templates_data = [
+        {
+            "name": t.name,
+            "description": t.description or "",
+            "config": t.config or {},
+            "is_default": bool(t.is_default),
+            "created_by": t.created_by_id,
+        }
+        for t in template_rows
+    ]
+
     # ── 流水线定义（v10，ADR 0076 D12）：只导出配置，运行 / 发现物属流水 ──
     # v13 起带版本历史（ADR 0114 C11）：只导出版本原文与备注，compiled 不导出
     from cndb.plugins.pipeline.models import PipelineWorkflow, PipelineWorkflowVersion
@@ -750,6 +781,7 @@ def _build_backup(
         "datasource_sessions": sessions_data,
         "file_owners": file_owners_data,
         "charts": charts_data,
+        "templates": templates_data,
         "pipelines": pipelines_data,
         "designs": designs_data,
         "library_refs": library_refs_data,
@@ -824,6 +856,7 @@ def build_manifest(backup: dict[str, Any], file_count: int) -> dict[str, Any]:
             "tables": len(backup.get("tables", [])),
             "documents": len(backup.get("documents", [])),
             "document_versions": len(backup.get("document_versions", [])),
+            "templates": len(backup.get("templates", [])),
             "sync_jobs": len(backup.get("sync_jobs", [])),
             "pipelines": len(backup.get("pipelines", [])),
             "designs": len(backup.get("designs", [])),

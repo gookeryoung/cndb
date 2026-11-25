@@ -439,6 +439,38 @@ class DocumentIssueEvent(Base):
     issue: Mapped[DocumentIssue] = relationship(back_populates="events")
 
 
+class ExportTemplate(TimestampMixin, Base):
+    """导出模板（ADR 0152）：工作区级的 Word / PDF 排版配置.
+
+    - ``config`` 是 ``ExportTemplateConfig`` 的规范化 dump，写入前强校验；
+    - 内置预设（``BUILTIN_TEMPLATES``）不列表，只能被引用或另存为自定义；
+    - ``is_default`` 每工作区至多一条（由服务层在同一事务内保证），
+      未设默认时导出走内置 ``standard``。
+    """
+
+    __tablename__ = "documents_exporttemplate"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "name", name="uq_documents_exporttemplate_ws_name"),
+        Index("ix_documents_exporttemplate_ws_default", "workspace_id", "is_default"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    description: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    config: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    is_default: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"), nullable=True
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"ExportTemplate(id={self.id}, name={self.name!r})"
+
+
 __all__ = [
     "ASSET_CONTENT_TYPES",
     "CHANGE_TYPES",
@@ -478,5 +510,6 @@ __all__ = [
     "DocumentShare",
     "DocumentTag",
     "DocumentVersion",
+    "ExportTemplate",
     "Tag",
 ]

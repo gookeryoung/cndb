@@ -67,7 +67,7 @@ describe('SettingsModal 个人设置', () => {
 
     // 页签顺序：修改密码已并入用户资料页签，不再单设「安全」
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
-      '用户资料', '主题', '表格', '文档', '编辑器', '大模型',
+      '用户资料', '主题', '表格', '文档', '编辑器', '大模型', '模板',
     ])
     // GitHub 风格布局：桌面端左侧竖向列表 + 右侧内容区（独立滚动由样式承担）
     const tabs = document.querySelector('.settings-modal-tabs')

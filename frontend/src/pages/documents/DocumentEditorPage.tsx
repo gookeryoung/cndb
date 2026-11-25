@@ -98,6 +98,7 @@ import {
   type ChartBlockSpec,
 } from '@/components/Document/chartBlock'
 import { documentsApi } from '@/api/documents'
+import { exportTemplateApi } from '@/api'
 import { fileApi, tableApi, viewApi, workspaceApi } from '@/api'
 import { useLlmAction } from '@/hooks/useLlmAction'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -503,8 +504,10 @@ export default function DocumentEditorPage() {
   })
 
   const exportMut = useMutation({
-    mutationFn: (format: DocumentExportFormat) => documentsApi.exportFile(workspaceId, id, format),
-    onSuccess: (blob: Blob, format: DocumentExportFormat) => {
+    mutationFn: (payload: { format: DocumentExportFormat; template?: string }) =>
+      documentsApi.exportFile(workspaceId, id, payload.format, payload.template),
+    onSuccess: (blob: Blob, payload) => {
+      const format = payload.format
       const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, '')
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -520,6 +523,29 @@ export default function DocumentEditorPage() {
     },
     onError: () => message.error('导出失败'),
   })
+
+  /** 导出模板候选：默认 + 内置 + 自定义；key 形如 `<format>::<templateRef>` */
+  const templateMenuChildren = (format: 'docx' | 'pdf') => {
+    const templates = exportTemplatesQuery.data?.items ?? []
+    const defaultRef = exportTemplatesQuery.data?.default_ref
+    const defaultName = templates.find(item => item.ref === defaultRef)?.name
+    return [
+      {
+        key: `${format}::`,
+        label: `默认模板${defaultName ? `（${defaultName}）` : ''}`,
+      },
+      ...templates.map(item => ({
+        key: `${format}::${item.ref}`,
+        label: item.source === 'builtin' ? `内置 · ${item.name}` : item.name,
+      })),
+    ]
+  }
+
+  /** 解析导出菜单 key：`<format>::<templateRef>`（模板可空 = 工作区默认模板） */
+  const runExport = (key: string) => {
+    const [format, template] = key.split('::')
+    exportMut.mutate({ format: format as DocumentExportFormat, template: template || undefined })
+  }
 
   const tagsQuery = useQuery({
     queryKey: ['documents', workspaceId, 'tags'],
@@ -1117,6 +1143,14 @@ export default function DocumentEditorPage() {
 
   // 原件族（PDF / Office / 图片，ADR 0025）：只读，正文区换成阅读器，编辑类入口全部隐藏
   const isAssetDoc = !!doc && !doc.is_folder && isAssetContentType(doc.content_type)
+
+  // 导出模板（ADR 0152）：只读列表，与「个人设置 → 模板」共用缓存；原件族不导出
+  const exportTemplatesQuery = useQuery({
+    queryKey: ['export-templates', Number(workspaceId)],
+    queryFn: () => exportTemplateApi.list(workspaceId),
+    enabled: !isAssetDoc,
+    staleTime: 60_000,
+  })
   // 并排查看只在桌面编辑态生效：窄屏沿用「编辑 / 预览」页签，查看态仍是纯预览
   const splitActive = splitOpen && viewMode === 'edit' && !isAssetDoc && isDesktop
   // 两栏作为一组同步滚动（挂在条件渲染之前，避免 hooks 顺序随视图模式变化）
@@ -1295,9 +1329,19 @@ export default function DocumentEditorPage() {
             icon: <DownloadOutlined />,
             label: '导出',
             children: [
-              { key: 'docx', icon: <FileWordOutlined />, label: '导出 Word (.docx)', onClick: () => exportMut.mutate('docx') },
-              { key: 'pdf', icon: <FilePdfOutlined />, label: '导出 PDF (.pdf)', onClick: () => exportMut.mutate('pdf') },
-              { key: 'md', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)', onClick: () => exportMut.mutate('md') },
+              {
+                key: 'docx',
+                icon: <FileWordOutlined />,
+                label: '导出 Word (.docx)',
+                children: templateMenuChildren('docx'),
+              },
+              {
+                key: 'pdf',
+                icon: <FilePdfOutlined />,
+                label: '导出 PDF (.pdf)',
+                children: templateMenuChildren('pdf'),
+              },
+              { key: 'md::', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)' },
             ],
           },
         ]),
@@ -1622,11 +1666,21 @@ export default function DocumentEditorPage() {
             trigger={['click']}
             menu={{
               items: [
-                { key: 'docx', icon: <FileWordOutlined />, label: '导出 Word (.docx)' },
-                { key: 'pdf', icon: <FilePdfOutlined />, label: '导出 PDF (.pdf)' },
-                { key: 'md', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)' },
+                {
+                  key: 'docx',
+                  icon: <FileWordOutlined />,
+                  label: '导出 Word (.docx)',
+                  children: templateMenuChildren('docx'),
+                },
+                {
+                  key: 'pdf',
+                  icon: <FilePdfOutlined />,
+                  label: '导出 PDF (.pdf)',
+                  children: templateMenuChildren('pdf'),
+                },
+                { key: 'md::', icon: <FileMarkdownOutlined />, label: '导出 Markdown (.md)' },
               ],
-              onClick: ({ key }) => exportMut.mutate(key as DocumentExportFormat),
+              onClick: ({ key }) => runExport(key),
             }}
           >
             <IconBtn icon={<DownloadOutlined />} label="导出" loading={exportMut.isPending} data-testid="doc-export-btn" />

@@ -12,7 +12,7 @@ import {
   FolderOutlined, FolderOpenOutlined,
   PullRequestOutlined, BarChartOutlined, CloudDownloadOutlined,
   SafetyCertificateOutlined, ToolOutlined,
-  RobotOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
+  RobotOutlined, SnippetsOutlined, FolderFilled, FileTextOutlined, SortAscendingOutlined,
   MenuUnfoldOutlined, MenuFoldOutlined,
   LockOutlined, ApartmentOutlined, HolderOutlined,
 } from '@ant-design/icons'
@@ -638,6 +638,7 @@ export default function MainLayout() {
     ...(isMobile
       ? [
         { key: 'llm', icon: <RobotOutlined />, label: '大模型设置', onClick: () => openSettings('llm') },
+    { key: 'template', icon: <SnippetsOutlined />, label: '模板', onClick: () => openSettings('template') },
         { key: 'help', icon: <QuestionCircleOutlined />, label: '帮助文档', onClick: () => navigate('/help') },
       ]
       : []),
@@ -1140,6 +1141,17 @@ export default function MainLayout() {
                 aria-label="大模型设置"
                 data-testid="llm-settings-btn"
                 onClick={() => openSettings('llm')}
+              />
+            </Tooltip>
+          )}
+          {/* 模板入口（ADR 0152）—— 紧贴大模型设置右侧，打开「个人设置 → 模板」管理文档导出模板 */}
+          {!isMobile && wid && (
+            <Tooltip title="模板：管理文档导出模板（Word / PDF 字体、标题、段落）">
+              <Button
+                icon={<SnippetsOutlined />}
+                aria-label="模板"
+                data-testid="template-settings-btn"
+                onClick={() => openSettings('template')}
               />
             </Tooltip>
           )}

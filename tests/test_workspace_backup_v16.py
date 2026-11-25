@@ -84,7 +84,7 @@ def _minimal_backup(rows_file: str | None) -> dict:
     else:
         table["rows_file"] = rows_file
     return {
-        "version": "16",
+        "version": "16",  # 旧包仍应可导入（v17 新增 templates 键）
         "workspace": {"name": "分块导入", "visibility": "member"},
         "tables": [table],
         "document_tags": [],
@@ -105,7 +105,7 @@ def _minimal_backup(rows_file: str | None) -> dict:
 
 def _write_archive(path: Path, backup: dict, chunks: dict[str, bytes] | None = None) -> Path:
     """按归档协议手写一个 tar.gz（manifest + backup.json + 可选分块）."""
-    manifest = {"version": "1", "kind": "workspace_backup", "backup_version": backup.get("version", "16")}
+    manifest = {"version": "1", "kind": "workspace_backup", "backup_version": backup.get("version", "17")}
     members = {
         "payload/manifest.json": json.dumps(manifest, ensure_ascii=False).encode("utf-8"),
         "payload/backup.json": json.dumps(backup, ensure_ascii=False).encode("utf-8"),
@@ -130,8 +130,8 @@ class TestChunkedExport:
         archive_file.write_bytes(_export_archive(client, auth_headers, wid))
         archive = parse_workspace_archive(archive_file)
         try:
-            assert archive.backup["version"] == "16"
-            assert archive.manifest["backup_version"] == "16"
+            assert archive.backup["version"] == "17"
+            assert archive.manifest["backup_version"] == "17"
             tables = archive.backup["tables"]
             assert [t["name"] for t in tables] == ["甲表", "乙表"]
             # backup.json 不再内联行数据，只留分块引用；每表一份分块文件

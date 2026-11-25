@@ -345,6 +345,35 @@ class DocumentIssueCommentCreate(BaseModel):
     content: str = Field(min_length=1, max_length=2000)
 
 
+class ExportTemplateCreate(BaseModel):
+    """新建导出模板（ADR 0152）：可用内置 ``preset_key`` 另存，或直接给 ``config``."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=200)
+    preset_key: str | None = Field(default=None, max_length=32)
+    config: dict[str, Any] | None = None
+
+
+class ExportTemplateUpdate(BaseModel):
+    """更新导出模板：字段均可选，未传表示保持不变."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    description: str | None = Field(default=None, max_length=200)
+    config: dict[str, Any] | None = None
+    is_default: bool | None = None
+
+
+class ExportTemplatePreview(BaseModel):
+    """示例预览：传未保存的 ``config`` 或已存在模板的 ``ref``（二选一）."""
+
+    config: dict[str, Any] | None = None
+    ref: str | None = Field(default=None, max_length=64)
+
+
 __all__ = [
     "ChartCreate",
     "ChartOut",
@@ -363,6 +392,9 @@ __all__ = [
     "DocumentOut",
     "DocumentSubmit",
     "DocumentUpdate",
+    "ExportTemplateCreate",
+    "ExportTemplatePreview",
+    "ExportTemplateUpdate",
     "LinkRepairItem",
     "LinkRepairRequest",
     "RollbackRequest",

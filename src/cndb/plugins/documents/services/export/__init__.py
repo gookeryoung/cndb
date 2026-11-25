@@ -23,6 +23,15 @@ from cndb.plugins.documents.services.export.table_refs import (
     make_table_resolver,
     rewrite_markdown_table_refs,
 )
+from cndb.plugins.documents.services.export.templates import (
+    BUILTIN_TEMPLATES,
+    DEFAULT_TEMPLATE_REF,
+    ResolvedTemplate,
+    config_to_dict,
+    normalize_ref,
+    resolve_export_template,
+    validate_config,
+)
 
 FORMAT_MARKDOWN = "md"
 FORMAT_DOCX = "docx"
@@ -43,6 +52,7 @@ def _render_markdown(
     title: str = "",
     images: ImageResolver | None = None,
     tables: TableResolver | None = None,
+    template: ResolvedTemplate | None = None,
 ) -> bytes:
     """Markdown 导出：正文落盘为 UTF-8 字节流.
 
@@ -50,7 +60,7 @@ def _render_markdown(
     数据表引用在落盘前改写为静态 GFM 表格快照（图表块由端点侧先追加
     SVG 资产相对引用，这里幂等重跑为无操作）。
     """
-    _ = (title, images)
+    _ = (title, images, template)
     if tables is not None:
         markdown_text = rewrite_markdown_table_refs(markdown_text, tables)
     return markdown_text.encode("utf-8")
@@ -122,6 +132,7 @@ def render_export(
     title: str = "",
     images: ImageResolver | None = None,
     tables: TableResolver | None = None,
+    template: ResolvedTemplate | None = None,
 ) -> bytes:
     """按格式渲染文档正文.
 
@@ -131,14 +142,20 @@ def render_export(
         title: 文档标题，用于 DOCX 属性与 PDF 页眉。
         images: 站内图片解析器。
         tables: 数据表引用解析器；提供时 ``{{table:…}}`` 渲染为真实表格。
+        template: 导出模板（ADR 0152）；``None`` 时 docx / pdf 走内置 standard。
 
     Raises:
         KeyError: 传入未注册的格式名。
     """
-    return _EXPORTERS[fmt](markdown_text, title, images, tables)
+    renderer = _EXPORTERS[fmt]
+    if fmt == FORMAT_MARKDOWN:
+        return renderer(markdown_text, title, images, tables, template)
+    return renderer(markdown_text, title, images, tables, template)
 
 
 __all__ = [
+    "BUILTIN_TEMPLATES",
+    "DEFAULT_TEMPLATE_REF",
     "FORMAT_CONTENT_TYPES",
     "FORMAT_DOCX",
     "FORMAT_EXTENSIONS",
@@ -146,11 +163,16 @@ __all__ = [
     "FORMAT_PDF",
     "SUPPORTED_FORMATS",
     "ImageResolver",
+    "ResolvedTemplate",
     "TableResolver",
+    "config_to_dict",
     "make_image_resolver",
     "make_table_resolver",
     "normalize_format",
+    "normalize_ref",
     "render_export",
     "render_markdown_archive",
+    "resolve_export_template",
     "rewrite_markdown_table_refs",
+    "validate_config",
 ]

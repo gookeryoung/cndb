@@ -740,6 +740,9 @@ describe('DocumentEditorPage 文档导出', () => {
 
         fireEvent.click(screen.getByTestId('doc-export-btn'))
         fireEvent.click(await screen.findByText('导出 Word (.docx)'))
+        // ADR 0152：Word / PDF 导出改二级菜单，先选模板（默认模板 = 工作区默认链）
+        fireEvent.mouseEnter(await screen.findByText('导出 Word (.docx)'))
+        fireEvent.click(await screen.findByText(/默认模板/))
 
         await waitFor(() => {
             expect(requestedUrl).toContain('/documents/2/export')
@@ -747,6 +750,53 @@ describe('DocumentEditorPage 文档导出', () => {
         })
         await waitFor(() => expect(createSpy).toHaveBeenCalled())
         expect(revokeSpy).toHaveBeenCalled()
+    })
+
+    it('导出时可选模板：子菜单列出内置模板并携带 template 参数', async () => {
+        let requestedUrl = ''
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/templates', () =>
+                HttpResponse.json({
+                    items: [
+                        {
+                            ref: 'builtin:standard',
+                            name: '标准',
+                            description: '',
+                            source: 'builtin',
+                            is_default: false,
+                            config: {},
+                            updated_at: null,
+                        },
+                        {
+                            ref: 'builtin:thesis',
+                            name: '论文',
+                            description: '',
+                            source: 'builtin',
+                            is_default: false,
+                            config: {},
+                            updated_at: null,
+                        },
+                    ],
+                    default_ref: 'builtin:standard',
+                }),
+            ),
+            http.get('/api/v1/workspaces/:wid/documents/:docId/export', ({ request }) => {
+                requestedUrl = request.url
+                return new HttpResponse(new Blob(['PK']), { status: 200 })
+            }),
+        )
+
+        renderEditor()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-export-btn'))
+        fireEvent.mouseEnter(await screen.findByText('导出 Word (.docx)'))
+        fireEvent.click(await screen.findByText('内置 · 论文'))
+
+        await waitFor(() => {
+            expect(requestedUrl).toContain('format=docx')
+            expect(decodeURIComponent(requestedUrl)).toContain('template=builtin:thesis')
+        })
     })
 
     it('导出 Markdown：请求 format=md', async () => {

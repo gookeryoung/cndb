@@ -649,11 +649,13 @@ def export_document(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     fmt: Annotated[str, Query(alias="format")] = "md",
+    template: Annotated[str | None, Query(description="导出模板引用：builtin:<key> 或模板 id")] = None,
 ) -> StreamingResponse:
     """导出文档正文为 Markdown / Word(.docx) / PDF 文件.
 
     ``format`` 取 ``md`` / ``docx`` / ``pdf``（兼容 ``markdown`` / ``word`` 别名）；
-    工作区成员即可导出（与文档读取权限一致），文件夹不可导出。
+    ``template``（ADR 0152）作用于 docx / pdf，缺省按「工作区默认模板 → 内置 standard」
+    解析，``md`` 忽略该参数；工作区成员即可导出，文件夹不可导出。
     """
     _require_member(db, workspace_id, current_user)
     normalized = services.export.normalize_format(fmt)
@@ -671,6 +673,12 @@ def export_document(
     # 数据表引用（``{{table:<id>|view=<vid>}}``）按当前导出用户权限解析为真实表格；
     # 图表定义已在正文内嵌块中（ADR 0052），导出无需再按实例 ID 查库
     tables = services.export.make_table_resolver(db, workspace_id, current_user)
+    resolved_template = None
+    if normalized != services.export.FORMAT_MARKDOWN:
+        try:
+            resolved_template = services.export.resolve_export_template(db, workspace_id, template)
+        except ValueError as exc:
+            raise BadRequestError(str(exc)) from exc
     chart_assets: dict[str, bytes] = {}
     if normalized == services.export.FORMAT_MARKDOWN:
         # 归档改写顺序固定：图表块追加静态 SVG → 表格改写 → render_markdown_archive
@@ -679,7 +687,9 @@ def export_document(
         content = services.export.rewrite_markdown_table_refs(content, tables)
         file_bytes = services.export.render_export(content, normalized, doc.title, images=images)
     else:
-        file_bytes = services.export.render_export(content, normalized, doc.title, images=images, tables=tables)
+        file_bytes = services.export.render_export(
+            content, normalized, doc.title, images=images, tables=tables, template=resolved_template
+        )
 
     # Markdown 带站内图片 / 图表资产时打包为 zip（<标题>.md + assets/*），否则维持单文件 .md
     media_type = services.export.FORMAT_CONTENT_TYPES[normalized]

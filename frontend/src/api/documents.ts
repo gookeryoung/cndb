@@ -666,9 +666,18 @@ export const documentsApi = {
     api.post<DocumentIssueDetail>(`${diBase(wid)}/${issueId}/reopen`).then(r => r.data),
 
   // 导出：Markdown / Word / PDF 文件字节流（文件名由调用方拼装）
-  exportFile: (wid: number | string, docId: number | string, format: DocumentExportFormat) =>
+  // template（ADR 0152）：`builtin:<key>` 或模板 id，仅对 docx / pdf 生效，md 忽略
+  exportFile: (
+    wid: number | string,
+    docId: number | string,
+    format: DocumentExportFormat,
+    template?: string,
+  ) =>
     api
-      .get<Blob>(`${base(wid)}/${docId}/export`, { params: { format }, responseType: 'blob' })
+      .get<Blob>(`${base(wid)}/${docId}/export`, {
+        params: template ? { format, template } : { format },
+        responseType: 'blob',
+      })
       .then(r => r.data),
 
   // 个人置顶（仅影响当前用户的树/列表顺序）

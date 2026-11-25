@@ -78,6 +78,32 @@ export type {
   SyncScheduleMode,
 } from './datasource'
 export { llmApi } from './llm'
+export { exportTemplateApi, BUILTIN_TEMPLATE_LABELS } from './exportTemplates'
+export type {
+  ExportTemplateConfig,
+  ExportTemplateCreatePayload,
+  ExportTemplateDeleteResult,
+  ExportTemplateItem,
+  ExportTemplateList,
+  ExportTemplatePreviewFormat,
+  ExportTemplateUpdatePayload,
+  TemplateAlign,
+  TemplateBody,
+  TemplateCaptionStyle,
+  TemplateCaptions,
+  TemplateCode,
+  TemplateHeaderFooter,
+  TemplateHeading,
+  TemplateHeadingNumbering,
+  TemplateLineRule,
+  TemplateList,
+  TemplateListMarker,
+  TemplatePage,
+  TemplatePageNumber,
+  TemplatePaper,
+  TemplateTable,
+  TemplateTableStyle,
+} from './exportTemplates'
 export { useLlmConfigured } from './useLlmConfigured'
 export type {
   LlmAction,

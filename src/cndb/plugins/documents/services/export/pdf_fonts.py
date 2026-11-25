@@ -234,27 +234,15 @@ def _cjk_font_candidates() -> list[tuple[str, str, int | None]]:
     return candidates
 
 
-def _ensure_pdf_font() -> str | None:
-    """注册 reportlab 中文字体（懒加载），返回注册名；全部失败返回 None.
-
-    注册成功后同时注册同名字体族（normal/bold/italic 均映射同一字体），
-    使 RML <b>/<i> 标签不会因缺少粗体/斜体变体而崩溃.
-
-    三态缓存:
-        None   → 未扫描过
-        ""     → 已扫描过, 系统无可用 CJK 字体
-        非空 str → 已注册成功的字体族名
-    这样在无中文字体的环境下第二次调用直接返回 None, 不再重跑 fc-match / 目录扫描.
-    """
-    if _pdf_font_state[0] is not None:
-        return _pdf_font_state[0] or None
+def _register_first(candidates: list[tuple[str, str, int | None]]) -> str | None:
+    """按顺序注册候选字体，返回第一个注册成功的名字；全失败返回 None."""
     try:
         from pathlib import Path
 
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.ttfonts import TTFont
 
-        for font_name, font_file, subfont_index in _cjk_font_candidates():
+        for font_name, font_file, subfont_index in candidates:
             if not font_file or not Path(font_file).is_file():
                 continue
             # 跳过已知 OpenType/CFF 字体文件扩展名（TTFont 只接受 TrueType 轮廓）
@@ -273,16 +261,100 @@ def _ensure_pdf_font() -> str | None:
                     italic=font_name,
                     boldItalic=font_name,
                 )
-                _pdf_font_state[0] = font_name
                 logger.info("PDF 中文字体已注册: %s (%s)", font_name, font_file)
                 return font_name
             except Exception:
                 logger.debug("候选中文字体注册失败: %s，尝试下一个", font_file, exc_info=True)
                 continue
-        # 全部候选耗尽仍未注册成功 —— 缓存空串, 避免每次 PDF 渲染都重跑 fontconfig
-        _pdf_font_state[0] = ""
-        logger.warning("reportlab 中文字体不可用，PDF 中文字符可能显示异常（已缓存扫描结果）")
     except Exception:
         logger.debug("reportlab 字体注册跳过", exc_info=True)
-        _pdf_font_state[0] = ""
     return None
+
+
+def _ensure_pdf_font() -> str | None:
+    """注册 reportlab 中文字体（懒加载），返回注册名；全部失败返回 None.
+
+    注册成功后同时注册同名字体族（normal/bold/italic 均映射同一字体），
+    使 RML <b>/<i> 标签不会因缺少粗体/斜体变体而崩溃.
+
+    三态缓存:
+        None   → 未扫描过
+        ""     → 已扫描过, 系统无可用 CJK 字体
+        非空 str → 已注册成功的字体族名
+    这样在无中文字体的环境下第二次调用直接返回 None, 不再重跑 fc-match / 目录扫描.
+    """
+    if _pdf_font_state[0] is not None:
+        return _pdf_font_state[0] or None
+    try:
+        registered = _register_first(_cjk_font_candidates())
+    except Exception:
+        # 字体发现本身异常（fc-* 缺失 / 目录不可读）同样降级为「无可用 CJK 字体」
+        logger.debug("PDF 中文字体发现失败", exc_info=True)
+        registered = None
+    _pdf_font_state[0] = registered or ""
+    if registered is None:
+        logger.warning("reportlab 中文字体不可用，PDF 中文字符可能显示异常（已缓存扫描结果）")
+    return registered
+
+
+#: 模板字体族 → 已装 CJK 字体的匹配关键词（族最佳匹配，见 ADR 0152 D6）
+_FAMILY_HINTS: dict[str, tuple[str, ...]] = {
+    "宋体": ("simsun", "song", "sung", "uming", "fandol", "serif"),
+    "simsun": ("simsun", "song", "sung", "uming", "fandol", "serif"),
+    "仿宋": ("fangsong", "simfang", "fang", "fandol"),
+    "fangsong": ("fangsong", "simfang", "fang", "fandol"),
+    "黑体": ("simhei", "hei", "yahei", "noto", "wqy", "source", "sans"),
+    "simhei": ("simhei", "hei", "yahei", "noto", "wqy", "source", "sans"),
+    "微软雅黑": ("yahei", "msyh"),
+    "楷体": ("kaiti", "kai", "ukai"),
+    "kaiti": ("kaiti", "kai", "ukai"),
+    "思源": ("sourcehan", "noto", "fandol"),
+}
+
+#: 模板字体族 → 已注册字体名缓存（键为归一后的家族名）
+_pdf_family_state: dict[str, str | None] = {}
+
+
+def family_keywords(family: str | None) -> tuple[str, ...]:
+    """模板字体名 → 候选匹配关键词；非中文字体（西文）返回空元组.
+
+    西文字体（Times New Roman / Calibri / Courier New…）在 PDF 里统一走同一个
+    CJK 字体（reportlab RML 只能有一个主字体），因此不做族匹配。
+    """
+    if not family:
+        return ()
+    lowered = family.strip().lower()
+    for canonical, hints in _FAMILY_HINTS.items():
+        if canonical in lowered or lowered in canonical:
+            return hints
+    return ()
+
+
+def ensure_pdf_font(family: str | None = None) -> str | None:
+    """按模板字体族注册（并缓存）中文字体，失败时回落到默认 CJK 字体.
+
+    - ``family`` 为空 / 西文字体 → 与 :func:`_ensure_pdf_font` 同口径；
+    - 中文族（宋体 / 仿宋 / 黑体 / 楷体…）→ 在已装 CJK 字体里按关键词最佳匹配，
+      匹配不到时回落默认字体（**不报错**，模板承诺降级而非失败）。
+    """
+    keywords = family_keywords(family)
+    if not keywords:
+        return _ensure_pdf_font()
+    cache_key = "|".join(keywords)
+    if cache_key in _pdf_family_state:
+        registered = _pdf_family_state[cache_key]
+        return registered or _ensure_pdf_font()
+    try:
+        candidates = [
+            candidate
+            for candidate in _cjk_font_candidates()
+            if any(keyword in f"{candidate[0]} {candidate[1]}".lower() for keyword in keywords)
+        ]
+    except Exception:
+        candidates: list[tuple[str, str, int | None]] = []
+    registered = _register_first(candidates) if candidates else None
+    _pdf_family_state[cache_key] = registered or ""
+    if registered is None:
+        logger.info("PDF 字体族 %s 无匹配字体，回落到默认 CJK 字体", family)
+        return _ensure_pdf_font()
+    return registered
