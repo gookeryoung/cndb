@@ -30,6 +30,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { tableApi, tableGroupApi, workspaceApi, importApi } from '@/api'
 import type { TableSummary, TableGroup, TableUpdate, FileAnalyzeResult } from '@/api'
 import { useTableHoverPrefetch } from './tablePrefetch'
+import WorkspaceLinksPanel from './WorkspaceLinksPanel'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
 import { useCreateParam } from '@/hooks/useCreateParam'
@@ -747,6 +748,8 @@ export default function TablesList() {
 
   return (
     <div style={{ padding: isMobile ? 12 : 16 }}>
+      {/* 外部链接（只读引用）：ADR 0154 P2 —— 消费方列表 / 发起申请 / 源侧审批 */}
+      {wid && <WorkspaceLinksPanel wid={wid} />}
       {/* Header —— 移动端标题与按钮区自动换行 */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12, flexWrap: 'wrap', gap: 12 }}>
         <div>
