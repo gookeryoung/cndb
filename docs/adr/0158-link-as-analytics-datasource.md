@@ -1,6 +1,6 @@
 # ADR 0158: 工作区链接作为分析数据源（跨工作区只读分析）
 
-Status: Proposed（待评审）
+Status: Implemented（P0 / P1 / P2 全部落地，P3 明确不做；2026-11-25）
 Date: 2026-11-25
 Related: `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/compute.py`、`src/cndb/plugins/analytics/services/formula.py`、`src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/workspaces/services/links.py`、`frontend/src/pages/analytics/AnalyticsPage.tsx`、`docs/CONSTRAINTS.md`
 需求卡片: `docs/requirements/0158-link-as-analytics-datasource.md`（需求原文与约束编号的唯一副本）
@@ -145,7 +145,7 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 | **P0** | `datasources` 端点 + `run` 接受链接（单源、只读、fail-closed）+ 判定层用例 | 中（权限口径，需 H15/H17 回归） |
 | **P1** | 字段白名单 / 分析范围 / recommendations 适配链接 + 缓存键与失效 | 中 |
 | **P2** | 前端数据源分组、失效提示、导出对齐 | 低 |
-| **P3**（可选，另立 ADR） | 多链接 union 汇总 / 跨工作区 join（需定义行级叠加与列冲突口径） | 高 |
+| ~~P3~~ | **不做**（2026-11-25 决策）：多链接 union / 跨工作区 join 会引入新的行级叠加口径与列冲突语义，需要另立 ADR；本期以「拆模板 / 各链接单独汇总」满足需求 | — |
 
 ## 决策记录（唯一决策台账）
 
@@ -158,7 +158,7 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 | D5 | 模板权限 | 只存定义，执行按打开者身份；无权 fail-closed | C6；模板本质是查询定义，不是数据快照 | 把创建者权限「冻结」进模板：等于权限随模板传播，最难解释也最危险 | `analytics/services/templates.py` |
 | D6 | 缓存键 | `user_id` + `source` + `link_id` + 链接口径签名（`expires_at` 桶 + 源表 updated_at）+ 模板签名 | 防止换人 / 换链接 / 过期后命中旧结果 | 只按模板 id 缓存：共享模板会串味（别人的权限结果被复用） | `analytics`、`core/cache` |
 | D6 附注 | 现状核对（P1） | 分析链路**当前没有跨请求结果缓存**（只有公式引擎内部的单次求值缓存），因此 H60 以「若引入缓存」的约束形式登记；将来加缓存必须按本行键设计 | 不假装已实现一个不存在的缓存 | 为满足条文新增缓存：无收益、只增风险 | `analytics/services/compute.py` |
-| D7 | 单源限制 | 仅单数据源；union / join 拒绝 | C9；join 的行级叠加与列冲突口径需要独立设计 | 先上 join：口径说不清，越权风险最高 | `analytics/services/templates.py` |
+| D7 | 单源限制 | 仅单数据源；union / join 拒绝（P3 明确不做，需另立 ADR） | C9；join 的行级叠加与列冲突口径需要独立设计 | 先上 join：口径说不清，越权风险最高 | `analytics/services/templates.py` |
 | D8 | 隐藏字段 | 保存期 + 执行期双重校验，隐藏字段不得出现在任何配置位置 | C3 / H17；只看执行期校验会让模板「保存成功但永远失败」 | 只做执行期过滤：用户无从知道为什么算不出 | `analytics/services/formula.py` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
@@ -187,12 +187,11 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 | P0 | 已落地 | `src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/routers/datasources.py`、`src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/plugin.py` | `tests/test_analytics_link_source.py` | `44beda2c` |
 | P1 | 已落地 | `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/recommend.py`、`src/cndb/plugins/analytics/routers/recommend.py`、`src/cndb/plugins/analytics/schemas.py` | `tests/test_analytics_link_source.py` | `7429c2cc` |
 | P2 | 已落地 | `frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/pages/analytics/analyticsModel.ts`、`frontend/src/api/analytics.ts` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx` | `0e8cbb92` |
-| P3 | 未开始 | 另立 ADR | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 已落地（后端数据源与模板 + 前端数据源分组 / 只读提示 / 链接源运行与另存为）；e2e 用例未补（P2 备注）
+- 当前阶段：**全部落地并收尾**（P0 / P1 / P2；P3 决策不做）
 - 已完成：需求卡片 0158（C1-C10）；ADR 决策记录 D1-D8、不变量 L1-L6；P0（数据源清单、`compute` 链接源、隐藏字段拒绝、单源校验、存量兼容）；P1（模板 `config.source`、字段白名单、`recommendations?link_id=`、H58-H60）；P2（前端数据源下拉分组（本表 / 外部链接）、不可读禁用 + 只读到期提示、链接源运行发 `source.type=link`、另存为写 `config.source`、模板载入按 `config.source` 回填、字段候选用链接可见字段）
-- 下一步：①补 e2e `frontend/tests/e2e/critical/analytics-link-source.spec.ts`（批准链接 → 选为数据源 → 出图 → 撤回后执行报错）；②模板载入时链接失效的「重新授权」引导目前以「分析范围 / 运行失败文案」兜底，若要专门引导再补
+- 下一步：无（本期收尾）。若要继续：P3（多链接 union / 跨工作区 join）另立 ADR，须先定义行级叠加与列冲突口径
 - 已知坑：① 链接分支必须走 `resolve_link` 统一出口，**不要**在 analytics 里直接 `db.get(WorkspaceLink)`（会绕开 404/403 与到期判定）；② 缓存键必须含 `user_id`，否则共享模板会把甲的权限结果喂给乙；③ 隐藏字段要在**保存期**就拒绝（否则模板存下来必然执行失败）；④ `ANALYTICS_MAX_SCAN_ROWS` 对链接数据源同样生效，超限文案要引导「用分析范围收窄」而不是「换表」
-- 最近一次全绿：`make check-fast` + `make cov`（7613 passed，95.0%）+ `tests/test_analytics_link_source.py` 22 passed @ `7429c2cc`；P2 前端 `AnalyticsPage.test.tsx` 36 passed @ `0e8cbb92`（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7613 passed，95.0%）+ `tests/test_analytics_link_source.py` 22 passed @ `7429c2cc`；P2 前端 `AnalyticsPage.test.tsx` 36 passed @ `0e8cbb92`；e2e `analytics-link-source.spec.ts` 1 passed（`npx playwright test`，2026-11-25）

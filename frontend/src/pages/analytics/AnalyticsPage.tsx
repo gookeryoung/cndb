@@ -944,6 +944,8 @@ export default function AnalyticsPage() {
               <Select
                 data-testid="analytics-table-select"
                 placeholder="选择本工作区的数据表，或外部链接（只读）"
+                showSearch
+                optionFilterProp="label"
                 value={linkId != null ? `link:${linkId}` : (tableId ?? undefined)}
                 options={[
                   {
