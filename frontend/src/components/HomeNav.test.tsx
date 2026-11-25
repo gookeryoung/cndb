@@ -68,7 +68,6 @@ describe('HomeNav', () => {
 
     const nav = await screen.findByTestId('sider-home')
     expect(nav).toHaveAttribute('aria-label', '主页导航')
-    expect(within(nav).getByTestId('home-nav-create')).toBeVisible()
     expect(await within(nav).findByTestId('home-nav-recent-10')).toBeVisible()
     await waitFor(() =>
       expect(within(nav).getByTestId('home-nav-all')).toHaveTextContent('全部工作区1'))
@@ -76,6 +75,9 @@ describe('HomeNav', () => {
     expect(within(nav).getByText('工作区')).toBeVisible()
 
     // 重复入口一律不渲染：团队（顶栏切换器）/ 收藏视图（右栏）/ 帮助（顶栏）/ 管理团队（= 点团队）
+    // 动作入口也不渲染：新建工作区由页内工具栏与顶栏切换器底部承担，rail 只做导航
+    expect(within(nav).queryByTestId('home-nav-create')).toBeNull()
+    expect(within(nav).queryByText('新建工作区')).toBeNull()
     expect(within(nav).queryByTestId('home-nav-help')).toBeNull()
     expect(within(nav).queryByTestId('home-nav-manage-teams')).toBeNull()
     expect(within(nav).queryByTestId('home-nav-view-7')).toBeNull()
@@ -121,12 +123,6 @@ describe('HomeNav', () => {
     renderNav({}, '/w')
 
     await waitFor(() => expect(menuRow('home-nav-all')).toHaveClass('ant-menu-item-selected'))
-  })
-
-  it('点击新建工作区跳到 /w?create=1（与页内按钮同一弹窗入口）', async () => {
-    renderNav()
-    await userEvent.click(await screen.findByTestId('home-nav-create'))
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w?create=1'))
   })
 
   it('点击最近访问跳到上次所在模块，点击全部工作区回到 /w', async () => {
@@ -224,8 +220,7 @@ describe('HomeNav', () => {
     renderNav()
 
     expect(await screen.findByTestId('home-nav-all')).toBeVisible()
-    expect(screen.getByTestId('home-nav-create')).toBeVisible()
+    expect(screen.getByTestId('location')).toHaveTextContent('/w')
     expect(screen.queryByTestId('home-nav-pending')).toBeNull()
   })
-
 })

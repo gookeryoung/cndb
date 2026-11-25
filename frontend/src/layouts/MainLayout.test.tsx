@@ -852,7 +852,7 @@ describe('MainLayout 侧边栏工作区上下文', () => {
         expect(await screen.findByTestId('sider-home')).toBeVisible()
         expect(screen.queryByTestId('sider-tables')).toBeNull()
         expect(screen.queryByTestId('sider-no-workspace')).toBeNull()
-        expect(screen.getByTestId('home-nav-create')).toBeVisible()
+        expect(screen.getByTestId('home-nav-all')).toBeVisible()
         // 顶栏层级语法：全部工作区 / [选择工作区 ▾]
         expect(screen.getByTestId('header-all-workspaces-crumb')).toHaveTextContent('全部工作区')
         expect(screen.getByTestId('ws-switch-btn')).toHaveTextContent('选择工作区')
@@ -1324,7 +1324,7 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         expect(sider).not.toHaveClass('ant-layout-sider-collapsed')
         expect(document.querySelector('.ant-layout-sider-trigger')).toBeNull()
         // 文字入口可见（不是只剩图标）
-        expect(screen.getByTestId('home-nav-create')).toHaveTextContent('新建工作区')
+        expect(screen.getByTestId('home-nav-all')).toHaveTextContent('全部工作区')
         expect(screen.getByText('最近访问')).toBeInTheDocument()
         // 持久化偏好不被主页改写（回到工作区仍是折叠态）
         expect(localStorage.getItem('cndb_sider_collapsed')).toBe('true')

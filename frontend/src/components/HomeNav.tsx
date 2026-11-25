@@ -5,7 +5,6 @@
  * 不新增第三个导航轴（需求 0157 N1 的修订口径）。
  *
  * **只承载独有信息**，不复述顶栏与右栏已有的入口：
- *  - 新建工作区：`/w?create=1`（与页内按钮同一弹窗）；
  *  - 最近访问：本地记录的 ≤5 个工作区落地路径（`utils/recentWorkspaces`，不落库）；
  *  - 已收藏：置顶（`pinned`）的工作区 ≤5 个，右侧标注所属团队（收藏是跨团队的扁平列表，
  *    不写团队就分不清归属）；
@@ -13,19 +12,21 @@
  *    的聚合计数，只读、只有总数，不含 id / 标题；失败静默隐藏徽标，不阻断主页）。
  * 明确**不放**（重复入口）：团队（顶栏 `ScopeSwitcher` 已按团队分组并带团队页入口）、
  * 收藏视图（右栏「我的视图」同一数据源）、帮助文档（顶栏常驻图标）、管理团队
- * （`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` 的 Navigate）。
+ * （`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` 的 Navigate）；
+ * **新建工作区**也不放（2026-11-27 确认）：页内工具栏与顶栏切换器底部（`ScopeSwitcher`）
+ * 已各有一处，rail 只做「去哪」的导航，不做动作入口。
  *
  * 实现口径：条目走 antd `Menu`（与设置 / 统计 / 管理台侧栏同款，复用 `.cn-table-nav`
- * 样式），不自建一套导航样式。主页 rail **不参与折叠**（只有 3 段，折叠收益为零，
+ * 样式），不自建一套导航样式。主页 rail **不参与折叠**（只有三段，折叠收益为零，
  * 且折叠态 group title 与文字全丢、只剩一排无语义图标）—— 折叠由 `MainLayout` 关闭。
  */
 
 import { useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { Button, Menu } from 'antd'
+import { Menu } from 'antd'
 import type { MenuProps } from 'antd'
-import { ClockCircleOutlined, FolderOpenOutlined, PlusOutlined, StarFilled } from '@ant-design/icons'
+import { ClockCircleOutlined, FolderOpenOutlined, StarFilled } from '@ant-design/icons'
 import { homeApi, workspaceApi } from '@/api'
 import type { Workspace } from '@/api'
 import { normalizeModules, workspaceLandingSegment, WORKSPACE_MODULE_LABEL } from '@/utils/workspaceModules'
@@ -165,17 +166,6 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
       aria-label="主页导航"
       data-testid="sider-home"
     >
-      <div style={{ padding: 'var(--cn-space-md) var(--cn-space-lg)' }}>
-        <Button
-          type="primary"
-          block
-          icon={<PlusOutlined />}
-          data-testid="home-nav-create"
-          onClick={() => go('/w?create=1')}
-        >
-          新建工作区
-        </Button>
-      </div>
       <Menu
         mode="inline"
         selectedKeys={location.pathname === '/w' ? ['/w'] : []}
