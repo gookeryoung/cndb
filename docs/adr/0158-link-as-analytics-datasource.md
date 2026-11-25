@@ -186,7 +186,7 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/routers/datasources.py`、`src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/plugin.py` | `tests/test_analytics_link_source.py` | `44beda2c` |
 | P1 | 已落地 | `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/recommend.py`、`src/cndb/plugins/analytics/routers/recommend.py`、`src/cndb/plugins/analytics/schemas.py` | `tests/test_analytics_link_source.py` | `7429c2cc` |
-| P2 | 已落地 | `frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/pages/analytics/analyticsModel.ts`、`frontend/src/api/analytics.ts` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx` | 未提交 |
+| P2 | 已落地 | `frontend/src/pages/analytics/AnalyticsPage.tsx`、`frontend/src/pages/analytics/analyticsModel.ts`、`frontend/src/api/analytics.ts` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx` | `0e8cbb92` |
 | P3 | 未开始 | 另立 ADR | — | — |
 
 ## 交接（会话结束更新）
@@ -195,4 +195,4 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 - 已完成：需求卡片 0158（C1-C10）；ADR 决策记录 D1-D8、不变量 L1-L6；P0（数据源清单、`compute` 链接源、隐藏字段拒绝、单源校验、存量兼容）；P1（模板 `config.source`、字段白名单、`recommendations?link_id=`、H58-H60）；P2（前端数据源下拉分组（本表 / 外部链接）、不可读禁用 + 只读到期提示、链接源运行发 `source.type=link`、另存为写 `config.source`、模板载入按 `config.source` 回填、字段候选用链接可见字段）
 - 下一步：①补 e2e `frontend/tests/e2e/critical/analytics-link-source.spec.ts`（批准链接 → 选为数据源 → 出图 → 撤回后执行报错）；②模板载入时链接失效的「重新授权」引导目前以「分析范围 / 运行失败文案」兜底，若要专门引导再补
 - 已知坑：① 链接分支必须走 `resolve_link` 统一出口，**不要**在 analytics 里直接 `db.get(WorkspaceLink)`（会绕开 404/403 与到期判定）；② 缓存键必须含 `user_id`，否则共享模板会把甲的权限结果喂给乙；③ 隐藏字段要在**保存期**就拒绝（否则模板存下来必然执行失败）；④ `ANALYTICS_MAX_SCAN_ROWS` 对链接数据源同样生效，超限文案要引导「用分析范围收窄」而不是「换表」
-- 最近一次全绿：`make check-fast` + `make cov`（7613 passed，95.0%）+ `tests/test_analytics_link_source.py` 22 passed @ `7429c2cc`；P2 前端 `AnalyticsPage.test.tsx` 36 passed @ 未提交（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7613 passed，95.0%）+ `tests/test_analytics_link_source.py` 22 passed @ `7429c2cc`；P2 前端 `AnalyticsPage.test.tsx` 36 passed @ `0e8cbb92`（2026-11-25）
