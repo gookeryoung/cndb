@@ -14,9 +14,12 @@ import {
   App as AntApp, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select,
   Space, Switch, Table, Tag, Typography, type FormInstance,
 } from 'antd'
-import { DeleteOutlined, PlusOutlined, TeamOutlined, UserAddOutlined } from '@ant-design/icons'
+import {
+  DeleteOutlined, FileSearchOutlined, FileTextOutlined, PlusOutlined, TableOutlined, TeamOutlined,
+  UserAddOutlined,
+} from '@ant-design/icons'
 
-import { teamApi } from '@/api'
+import { teamApi, workspaceApi } from '@/api'
 import type { Team, TeamMember, TeamPolicy, TeamRole } from '@/api'
 import HelpTip from '@/components/HelpTip'
 import { useResponsive } from '@/hooks/useResponsive'
@@ -49,6 +52,8 @@ export default function TeamPage() {
   const [createOpen, setCreateOpen] = useState(false)
   const [createForm] = Form.useForm()
   const [policyForm] = Form.useForm()
+  const [searchText, setSearchText] = useState('')
+  const [searchKeyword, setSearchKeyword] = useState('')
   const [addMemberName, setAddMemberName] = useState('')
   const [addMemberRole, setAddMemberRole] = useState<'admin' | 'member'>('member')
 
@@ -76,6 +81,24 @@ export default function TeamPage() {
     queryKey: ['team-workspaces', tid],
     queryFn: () => teamApi.workspaces(tid as number | string),
     enabled: !!tid,
+  })
+
+  const { data: searchResult, isFetching: searchLoading } = useQuery({
+    queryKey: ['team-search', tid, searchKeyword],
+    queryFn: () => teamApi.search(tid as number | string, searchKeyword),
+    enabled: !!tid && !!searchKeyword.trim(),
+    staleTime: 15_000,
+  })
+
+  const joinWorkspace = useMutation({
+    mutationFn: (wid: number | string) => workspaceApi.join(wid),
+    onSuccess: () => {
+      message.success('已加入工作区')
+      queryClient.invalidateQueries({ queryKey: ['teams'] })
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      queryClient.invalidateQueries({ queryKey: ['team-workspaces', tid] })
+    },
+    onError: (err) => message.error(err instanceof Error ? err.message : '加入工作区失败'),
   })
 
   const invalidateTeam = () => {
@@ -360,8 +383,79 @@ export default function TeamPage() {
                         ),
                       },
                       { title: '成员', dataIndex: 'member_count', width: 80 },
+                      {
+                        title: '操作',
+                        width: 120,
+                        render: (_: unknown, ws: { id: number | string; is_member?: boolean }) =>
+                          ws.is_member ? (
+                            <Text type="secondary">已加入</Text>
+                          ) : active.policy.allow_member_invite ? (
+                            <Button
+                              size="small"
+                              type="link"
+                              loading={joinWorkspace.isPending}
+                              onClick={() => joinWorkspace.mutate(ws.id)}
+                              data-testid={`join-workspace-${ws.id}`}
+                            >
+                              加入
+                            </Button>
+                          ) : (
+                            <Text type="secondary">未加入</Text>
+                          ),
+                      },
                     ]}
                   />
+                )}
+              </Card>
+
+              <Card size="small" title="团队内搜索">
+                <Space.Compact style={{ width: '100%', marginBottom: 12 }}>
+                  <Input
+                    placeholder="在团队内所有我能访问的工作区里搜索文档 / 数据表"
+                    value={searchText}
+                    onChange={e => setSearchText(e.target.value)}
+                    onPressEnter={() => setSearchKeyword(searchText.trim())}
+                    data-testid="team-search-input"
+                  />
+                  <Button
+                    onClick={() => setSearchKeyword(searchText.trim())}
+                    loading={searchLoading}
+                    data-testid="team-search-btn"
+                  >
+                    搜索
+                  </Button>
+                </Space.Compact>
+                {searchKeyword ? (
+                  <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                    {(searchResult?.documents ?? []).map(doc => (
+                      <Link key={`doc-${doc.id}`} to={`/w/${doc.workspace_id}/documents/${doc.id}`}>
+                        <FileTextOutlined /> {doc.title}
+                        <Text type="secondary"> · {doc.workspace_name}</Text>
+                      </Link>
+                    ))}
+                    {(searchResult?.tables ?? []).map(table => (
+                      <Link key={`table-${table.workspace_id}-${table.id}`} to={`/w/${table.workspace_id}/tables/${table.id}`}>
+                        <TableOutlined /> {table.name}
+                        <Text type="secondary"> · {table.workspace_name}</Text>
+                      </Link>
+                    ))}
+                    {(searchResult?.rows ?? []).map(row => (
+                      <Link
+                        key={`row-${row.workspace_id}-${row.row_id}`}
+                        to={`/w/${row.workspace_id}/tables`}
+                      >
+                        <FileSearchOutlined /> {row.title}
+                        <Text type="secondary"> · {row.workspace_name} / {row.table_name}</Text>
+                      </Link>
+                    ))}
+                    {!searchLoading &&
+                      (searchResult?.documents?.length ?? 0) +
+                        (searchResult?.tables?.length ?? 0) +
+                        (searchResult?.rows?.length ?? 0) ===
+                        0 && <Text type="secondary">没有匹配结果（只检索你有权访问的工作区）</Text>}
+                  </Space>
+                ) : (
+                  <Text type="secondary">团队管理员默认看不到数据，搜索只覆盖你本人可读的工作区</Text>
                 )}
               </Card>
 

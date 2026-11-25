@@ -200,7 +200,7 @@ export interface DesignLibraryDependencyItem {
   version_number: number
   latest_version: number
   has_update: boolean
-  visibility: 'public' | 'workspace' | string
+  visibility: 'public' | 'team' | 'workspace' | string
   is_archived: boolean
   owner_workspace_id: number | null
   bundle_hash: string
@@ -218,7 +218,7 @@ export interface LibraryModuleItem {
   module_key: string
   name: string
   description: string
-  visibility: 'public' | 'workspace' | string
+  visibility: 'public' | 'team' | 'workspace' | string
   owner_workspace_id: number | null
   is_archived: boolean
   version_count: number
@@ -385,7 +385,7 @@ export const designsApi = {
     api.get<DesignOutlineResult>(`${base(wid)}/${designId}/outline`).then(r => r.data),
   /** 发布为复用模块（仅 part；ADR 0118 P0 / P1） */
   publish: (wid: number | string, designId: number | string, data: {
-    visibility: 'public' | 'workspace'
+    visibility: 'public' | 'team' | 'workspace'
     name?: string
     description?: string
     comment?: string
@@ -406,7 +406,7 @@ export const designLibraryApi = {
   /** 浏览可见模块：公开 + 当前工作区发布 */
   list: (wid: number | string, params?: {
     q?: string
-    visibility?: 'public' | 'workspace'
+    visibility?: 'public' | 'team' | 'workspace'
     owned_only?: boolean
     include_archived?: boolean
   }) =>
@@ -438,7 +438,7 @@ export const designLibraryApi = {
   patch: (wid: number | string, moduleId: number | string, data: {
     name?: string
     description?: string
-    visibility?: 'public' | 'workspace'
+    visibility?: 'public' | 'team' | 'workspace'
     is_archived?: boolean
   }) =>
     api.patch<LibraryModuleDetail>(`${libraryBase(wid)}/modules/${moduleId}`, data).then(r => r.data),

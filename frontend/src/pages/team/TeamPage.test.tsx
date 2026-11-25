@@ -123,3 +123,66 @@ describe('TeamPage 团队页', () => {
     await waitFor(() => expect(posts).toEqual(['bob']))
   })
 })
+
+describe('TeamPage 团队内检索与自助加入（ADR 0153 P2）', () => {
+  it('提交关键词后请求团队检索并展示跨工作区命中', async () => {
+    const queries: string[] = []
+    server.use(
+      http.get('/api/v1/teams/:tid/search', ({ request }) => {
+        queries.push(new URL(request.url).searchParams.get('q') ?? '')
+        return HttpResponse.json({
+          query: '晶格',
+          documents: [{ id: 1, title: '晶格需求', workspace_id: 10, workspace_name: '测试工作区' }],
+          tables: [{ id: 100, name: '晶格表', workspace_id: 10, workspace_name: '测试工作区' }],
+          rows: [],
+        })
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.type(await screen.findByTestId('team-search-input'), '晶格')
+    await user.click(screen.getByTestId('team-search-btn'))
+
+    await waitFor(() => expect(queries).toEqual(['晶格']))
+    expect(await screen.findByText('晶格需求')).toBeVisible()
+    expect(screen.getByText('晶格表')).toBeVisible()
+  })
+
+  it('策略开放自助加入且非成员时出现「加入」按钮，点击调用 join', async () => {
+    const joined: string[] = []
+    server.use(
+      http.get('/api/v1/teams', () => HttpResponse.json([{
+        ...mockTeam,
+        policy: { ...mockTeam.policy, allow_member_invite: true },
+      }])),
+      http.get('/api/v1/teams/:tid/workspaces', () => HttpResponse.json([{
+        id: 33, name: '未加入工作区', description: '', visibility: 'member',
+        modules: ['tables'], member_count: 2, is_member: false, updated_at: '2026-01-02T00:00:00Z',
+      }])),
+      http.post('/api/v1/workspaces/:wid/join', ({ params }) => {
+        joined.push(String(params.wid))
+        return HttpResponse.json({ pinned: false })
+      }),
+    )
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByTestId('join-workspace-33'))
+    await waitFor(() => expect(joined).toEqual(['33']))
+  })
+
+  it('策略未开放时不显示加入按钮', async () => {
+    server.use(
+      http.get('/api/v1/teams/:tid/workspaces', () => HttpResponse.json([{
+        id: 34, name: '另一个工作区', description: '', visibility: 'member',
+        modules: ['tables'], member_count: 2, is_member: false, updated_at: '2026-01-02T00:00:00Z',
+      }])),
+    )
+    renderPage()
+
+    expect(await screen.findByText('另一个工作区')).toBeVisible()
+    expect(screen.queryByTestId('join-workspace-34')).toBeNull()
+    expect(screen.getAllByText('未加入').length).toBeGreaterThan(0)
+  })
+})

@@ -77,7 +77,7 @@ MVP 只允许 **`part` 文件**发布为模块，且发布时**禁止模块内�
 | `module_key` | `String(64)`，非空 | 全局唯一、创建后不可变；DSL `lib:` 引用它；字符集同 `file_key` |
 | `name` | `String(200)`，非空 | 展示名，可改 |
 | `description` | `String(500)`，非空，默认 `""` | 发布说明 |
-| `visibility` | `String(16)`，非空，默认 `workspace` | `public` / `workspace` |
+| `visibility` | `String(16)`，非空，默认 `workspace` | `public` / `workspace`；`team`（同团队成员可用，由 ADR 0153 D8 追加） |
 | `owner_workspace_id` | FK `workspaces_workspace.id`，可空，`ON DELETE SET NULL` | 发布工作区；工作区删除后模块保留（公开模块继续可用） |
 | `source_design_id` | FK `design_design.id`，可空，`ON DELETE SET NULL` | 溯源用，不参与编译 |
 | `is_archived` | `Boolean`，非空，默认 `false` | 归档后禁止新引用，已有锁定引用继续可编译 |

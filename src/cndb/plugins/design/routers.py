@@ -819,9 +819,18 @@ def restore_design_version(
     return _detail(db, design, version_number=number)
 
 
-def _library_visible(module: DesignLibraryModule, workspace_id: int) -> bool:
-    """浏览可见性：公开模块，或当前工作区自己发布的模块（归档不改变可见性，ADR 0118 §5）."""
-    return module.visibility == "public" or module.owner_workspace_id == workspace_id
+def _library_visible(module: DesignLibraryModule, workspace_id: int, db: Session | None = None) -> bool:
+    """浏览可见性：公开 / 同团队（team 档）/ 当前工作区自己发布（ADR 0118 §5 + ADR 0153 D8）.
+
+    归档不改变可见性；`team` 档在无 db（离线判定）时按不可见处理，避免漏判放行。
+    """
+    if module.visibility == "public" or module.owner_workspace_id == workspace_id:
+        return True
+    if module.visibility == "team" and db is not None and module.owner_workspace_id is not None:
+        from cndb.plugins.workspaces.services.teams import in_same_team
+
+        return in_same_team(db, workspace_id, module.owner_workspace_id)
+    return False
 
 
 def _library_granted(db: Session, workspace_id: int, design_id: int | None, module_id: int) -> bool:
@@ -851,7 +860,7 @@ def _library_module_or_404(
     """取可见模块（无权与不存在统一 404，不泄露私有 / 归档原因）."""
     module = db.query(DesignLibraryModule).filter(DesignLibraryModule.id == module_id).first()
     if module is None or not (
-        _library_visible(module, workspace_id) or _library_granted(db, workspace_id, design_id, module_id)
+        _library_visible(module, workspace_id, db) or _library_granted(db, workspace_id, design_id, module_id)
     ):
         raise NotFoundError("复用模块不存在", code="design_library_module_not_found")
     return module
@@ -925,7 +934,7 @@ def list_library(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
     q: Annotated[str | None, Query(max_length=200)] = None,
-    visibility: Annotated[Literal["public", "workspace"] | None, Query()] = None,
+    visibility: Annotated[Literal["public", "team", "workspace"] | None, Query()] = None,
     owned_only: Annotated[bool, Query()] = False,
     include_archived: Annotated[bool, Query()] = False,
 ) -> list[LibraryModuleItem]:

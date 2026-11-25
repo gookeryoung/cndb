@@ -659,6 +659,9 @@ export const handlers = [
     return HttpResponse.json({ ...mockTeamMember, id: Number(params.mid), role: body.role ?? 'member' })
   }),
   http.delete('/api/v1/teams/:tid/members/:mid', () => new HttpResponse(null, { status: 204 })),
+  // 团队内跨工作区检索（ADR 0153 P2）：默认无命中，单用例覆盖
+  http.get('/api/v1/teams/:tid/search', () =>
+    HttpResponse.json({ query: '', documents: [], tables: [], rows: [] })),
   http.get('/api/v1/teams/:tid/workspaces', () => HttpResponse.json([
     {
       id: mockWorkspace.id,
@@ -667,12 +670,15 @@ export const handlers = [
       visibility: 'member',
       modules: ['tables'],
       member_count: 1,
+      is_member: true,
       updated_at: '2026-01-02T00:00:00Z',
     },
   ])),
 
   // 工作区
   http.get('/api/v1/workspaces', () => HttpResponse.json([mockWorkspace])),
+  // 自助加入团队工作区（ADR 0153 P2）：默认成功
+  http.post('/api/v1/workspaces/:wid/join', () => HttpResponse.json({ pinned: false })),
   // 工作区详情（文档编辑器 / 修改申请页读取当前用户角色）
   http.get('/api/v1/workspaces/:wid', ({ params }) =>
     HttpResponse.json({ ...mockWorkspace, id: Number(params.wid), current_user_role: 'owner' })),

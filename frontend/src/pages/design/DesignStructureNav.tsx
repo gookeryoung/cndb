@@ -35,6 +35,7 @@ import { entryToTreeNode, type DesignTreeDataNode } from './designTree'
 import {
   DEFAULT_ASSEMBLY_CONTENT, DEFAULT_PART_CONTENT,
 } from './designDefaults'
+import { LIBRARY_VISIBILITY_META } from './libraryVisibility'
 
 const { Text } = Typography
 
@@ -455,8 +456,8 @@ export default function DesignStructureNav({
             <span className="cn-design-nav-row-version">v{item.latest_version}</span>
           </div>
           <div className="cn-design-nav-row-meta">
-            <Tag variant="filled" color={item.visibility === 'public' ? 'green' : 'default'}>
-              {item.visibility === 'public' ? '公开' : '私有'}
+            <Tag variant="filled" color={LIBRARY_VISIBILITY_META[item.visibility]?.color ?? 'default'}>
+              {LIBRARY_VISIBILITY_META[item.visibility]?.text ?? '私有'}
             </Tag>
             {item.is_archived && <Tag color="red" variant="filled">已归档</Tag>}
             <span className="cn-design-nav-row-time">{item.module_key}</span>

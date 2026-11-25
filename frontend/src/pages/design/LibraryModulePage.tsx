@@ -12,6 +12,7 @@ import { Button, Empty, InputNumber, Select, Skeleton, Space, Spin, Tag, Typogra
 import { ArrowLeftOutlined, BookOutlined } from '@ant-design/icons'
 import { designLibraryApi } from '@/api'
 import type { LibraryModuleItem } from '@/api'
+import { LIBRARY_VISIBILITY_META } from './libraryVisibility'
 
 const PreviewCanvas = lazy(() => import('./PreviewCanvas'))
 
@@ -98,8 +99,8 @@ export default function LibraryModulePage() {
         <BookOutlined />
         <Title level={5} style={{ margin: 0 }}>{module.name}</Title>
         <Text type="secondary" code>{module.module_key}</Text>
-        <Tag variant="filled" color={module.visibility === 'public' ? 'green' : 'default'}>
-          {module.visibility === 'public' ? '公开' : '私有'}
+        <Tag variant="filled" color={LIBRARY_VISIBILITY_META[module.visibility]?.color ?? 'default'}>
+          {LIBRARY_VISIBILITY_META[module.visibility]?.text ?? '私有'}
         </Tag>
         {module.is_archived && <Tag color="red" variant="filled">已归档</Tag>}
         <Space size={6}>

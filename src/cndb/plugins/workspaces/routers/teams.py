@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func
 from sqlalchemy.orm import Session, selectinload
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
+from cndb.core.events import record_event
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import (
     TEAM_POLICY_DEFAULTS,
@@ -66,6 +67,33 @@ def _invalidate_team_caches(workspace_ids: list[int] | None = None) -> int:
     for wid in workspace_ids or []:
         cleared += list_cache.clear(cache_key("workspace-stats", wid))
     return cleared
+
+
+def _event(
+    db: Session,
+    action: str,
+    *,
+    summary: str,
+    team: Team,
+    user: User,
+    target_type: str = "team",
+    target_id: int | None = None,
+    detail: dict[str, Any] | None = None,
+    workspace_id: int | None = None,
+) -> None:
+    """记录团队级事件（``core_event`` 的 ``team.*``，ADR 0153 P2；尽力而为不阻断业务）."""
+    record_event(
+        db,
+        action,
+        summary=summary,
+        target_type=target_type,
+        target_id=target_id if target_id is not None else team.id,
+        workspace_id=workspace_id,
+        actor_id=user.id,
+        actor_name=user.nickname or user.username,
+        detail=detail or {},
+        commit=False,
+    )
 
 
 def _team_payload(db: Session, team: Team, user: User) -> dict[str, Any]:
@@ -129,6 +157,7 @@ def create_team(
     db.add(team)
     db.flush()
     db.add(TeamMember(team_id=team.id, user_id=current_user.id, role=TeamRole.OWNER))
+    _event(db, "team.create", summary=f"创建团队「{team.name}」", team=team, user=current_user)
     db.commit()
     db.refresh(team)
     _invalidate_team_caches()
@@ -166,6 +195,7 @@ def update_team(
         team.description = payload.description
     if payload.policy is not None:
         team.policy = normalize_team_policy(payload.policy.model_dump())
+    _event(db, "team.update", summary=f"更新团队「{team.name}」设置", team=team, user=current_user)
     db.commit()
     db.refresh(team)
     _invalidate_team_caches()
@@ -184,6 +214,14 @@ def delete_team(
     workspace_ids = [row[0] for row in db.query(Workspace.id).filter(Workspace.team_id == team.id).all()]
     db.query(Workspace).filter(Workspace.team_id == team.id).update(
         {Workspace.team_id: None}, synchronize_session=False
+    )
+    _event(
+        db,
+        "team.delete",
+        summary=f"删除团队「{team.name}」，{len(workspace_ids)} 个工作区转为独立工作区",
+        team=team,
+        user=current_user,
+        detail={"workspace_ids": workspace_ids},
     )
     db.delete(team)
     db.commit()
@@ -232,6 +270,16 @@ def add_team_member(
         raise HTTPException(status_code=400, detail="该用户已是团队成员")
     member = TeamMember(team_id=team.id, user_id=user.id, role=TeamRole(payload.role))
     db.add(member)
+    _event(
+        db,
+        "team.member_add",
+        summary=f"向团队「{team.name}」添加成员 {user.username}",
+        team=team,
+        user=current_user,
+        target_type="user",
+        target_id=user.id,
+        detail={"role": payload.role},
+    )
     db.commit()
     db.refresh(member)
     _ = member.user
@@ -265,7 +313,18 @@ def update_team_member(
         )
         if owner_count <= 1:
             raise HTTPException(status_code=400, detail="团队至少保留一名所有者")
+    previous = member.role.value
     member.role = new_role
+    _event(
+        db,
+        "team.member_role",
+        summary=f"团队「{team.name}」成员 {member.user_id} 角色 {previous} → {new_role.value}",
+        team=team,
+        user=current_user,
+        target_type="user",
+        target_id=member.user_id,
+        detail={"before": previous, "after": new_role.value},
+    )
     db.commit()
     db.refresh(member)
     _ = member.user
@@ -298,6 +357,15 @@ def remove_team_member(
         )
         if owner_count <= 1:
             raise HTTPException(status_code=400, detail="团队至少保留一名所有者")
+    _event(
+        db,
+        "team.member_remove",
+        summary=f"从团队「{team.name}」移除成员 {member.user_id}",
+        team=team,
+        user=current_user,
+        target_type="user",
+        target_id=member.user_id,
+    )
     db.delete(member)
     db.commit()
     _invalidate_team_caches()
@@ -325,6 +393,15 @@ def list_team_workspaces(
             .all()
         )
     }
+    member_workspace_ids = {
+        int(row[0])
+        for row in db.query(WorkspaceMember.workspace_id)
+        .filter(
+            WorkspaceMember.workspace_id.in_([ws.id for ws in rows] or [0]),
+            WorkspaceMember.user_id == current_user.id,
+        )
+        .all()
+    }
     return [
         TeamWorkspaceItem.model_validate(
             {
@@ -334,11 +411,34 @@ def list_team_workspaces(
                 "visibility": ws.visibility,
                 "modules": ws.modules,
                 "member_count": int(counts.get(ws.id, 0)),
+                "is_member": ws.id in member_workspace_ids,
                 "updated_at": ws.updated_at,
             }
         )
         for ws in rows
     ]
+
+
+@router.get("/{team_id}/search")
+def search_team(
+    team_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    q: str = Query(min_length=1, max_length=200, description="关键词"),
+    limit: int = Query(default=10, ge=1, le=30, description="各组命中上限"),
+) -> dict[str, Any]:
+    """团队内跨工作区检索（ADR 0153 P2）：只扫该团队下用户**可读**的工作区.
+
+    团队管理员默认无数据面（H49），因此不会出现在结果里。
+    """
+    from cndb.plugins.workspaces.services.search import search_team_workspaces
+
+    team = _get_team_or_404(team_id, db)
+    require_team_member(db, team, current_user)
+    keyword = q.strip()
+    if not keyword:
+        return {"query": "", "documents": [], "tables": [], "rows": []}
+    return search_team_workspaces(db, current_user, team.id, keyword, limit=limit)
 
 
 __all__ = ["router"]

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 
 from cndb.plugins.design.models import (
     LIBRARY_VISIBILITY_PUBLIC,
+    LIBRARY_VISIBILITY_TEAM,
     DesignDesign,
     DesignDesignref,
     DesignDesignVersion,
@@ -162,6 +163,13 @@ def build_library_resolver(
             cache[key] = None
             return None
         visible = module.visibility == LIBRARY_VISIBILITY_PUBLIC or module.owner_workspace_id == workspace_id
+        if not visible and module.visibility == LIBRARY_VISIBILITY_TEAM:
+            # D8：team 档 = 拥有工作区所属团队的成员可用（跨团队 404，不泄露原因）
+            from cndb.plugins.workspaces.services.teams import in_same_team
+
+            visible = module.owner_workspace_id is not None and in_same_team(
+                db, workspace_id, module.owner_workspace_id
+            )
         if not (visible or granted) or (module.is_archived and not granted):
             cache[key] = None
             return None

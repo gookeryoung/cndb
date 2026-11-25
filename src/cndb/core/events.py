@@ -198,12 +198,19 @@ def invalidate_for_event(action: str, workspace_id: int | None) -> int:
     记录变更（``record.*``）等写路径都已在各自 choke point 写入统一事件，
     缓存的失效点因此天然集中、不易漏。
     """
-    if workspace_id is None or not action:
+    if not action:
         return 0
     try:
         from cndb.core.cache import cache_key, dashboard_cache, list_cache, search_cache
 
         cleared = 0
+        # 成员 / 团队变更会改变「能搜到哪些工作区」：跨工作区与团队内检索都必须失效
+        # （ADR 0153 P2；团队事件 workspace_id 为空，故在空值返回之前处理）
+        if action.startswith(("workspace.member", "team.")):
+            cleared += search_cache.clear(cache_key("global-search"))
+            cleared += search_cache.clear(cache_key("team-search"))
+        if workspace_id is None:
+            return cleared
         if action.startswith(("record.", "row_rule.", "datasource.")):
             cleared += list_cache.clear(cache_key("records", workspace_id))
             # dashboard 批量取数结果随行/规则/数据源变更失效（ADR 0023 §4）

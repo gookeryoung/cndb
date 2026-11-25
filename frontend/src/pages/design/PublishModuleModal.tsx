@@ -21,7 +21,7 @@ interface Props {
 interface FormValues {
   name: string
   description?: string
-  visibility: 'public' | 'workspace'
+  visibility: 'public' | 'team' | 'workspace'
   comment?: string
 }
 
@@ -94,6 +94,7 @@ export default function PublishModuleModal({
         <Form.Item name="visibility" label="可见范围" rules={[{ required: true }]}>
           <Radio.Group>
             <Radio value="workspace">仅本工作区</Radio>
+            <Radio value="team">同团队成员可用（ADR 0153）</Radio>
             <Radio value="public">公开（允许跨工作区引用）</Radio>
           </Radio.Group>
         </Form.Item>

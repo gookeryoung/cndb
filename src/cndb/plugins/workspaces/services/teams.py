@@ -100,6 +100,24 @@ def team_policy_for(team: Team | None) -> dict[str, object]:
     return team_policy(team)
 
 
+def workspace_team_id(db: Session, workspace_id: int) -> int | None:
+    """读取工作区所属团队 id（无团队返回 None）."""
+    from cndb.plugins.workspaces.models import Workspace
+
+    row = db.query(Workspace.team_id).filter(Workspace.id == workspace_id).first()
+    return row[0] if row else None
+
+
+def in_same_team(db: Session, workspace_id: int, other_workspace_id: int) -> bool:
+    """两个工作区是否属于同一团队（任一未挂团队 → False，ADR 0153 D3）."""
+    if not workspace_id or not other_workspace_id:
+        return False
+    team_id = workspace_team_id(db, workspace_id)
+    if team_id is None:
+        return False
+    return workspace_team_id(db, other_workspace_id) == team_id
+
+
 def get_team_role(db: Session, team: Team, user: User) -> TeamRole | None:
     """读取用户在团队内角色（非成员 None）."""
     member = db.query(TeamMember).filter(TeamMember.team_id == team.id, TeamMember.user_id == user.id).first()
@@ -149,10 +167,12 @@ __all__ = [
     "SLUG_MAX_LENGTH",
     "ensure_modules_allowed",
     "get_team_role",
+    "in_same_team",
     "normalize_team_policy",
     "require_team_member",
     "require_team_role",
     "slugify_team_name",
     "team_policy_for",
     "unique_team_slug",
+    "workspace_team_id",
 ]

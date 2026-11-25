@@ -18,6 +18,7 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import (
     DEFAULT_STORAGE_QUOTA_BYTES,
     Team,
+    TeamMember,
     Workspace,
     WorkspaceMember,
     WorkspaceRole,
@@ -92,9 +93,12 @@ def invalidate_workspace_list_cache(workspace_id: int | None = None) -> int:
 
     ``workspace_id`` 非空时同时失效该工作区的详情统计缓存（ADR 0046 D5）。
     """
-    from cndb.core.cache import cache_key, list_cache
+    from cndb.core.cache import cache_key, list_cache, search_cache
 
     cleared = list_cache.clear(cache_key("ws-list"))
+    # 成员变化会改变「能搜到哪些工作区」：跨工作区 / 团队内检索一并失效（ADR 0153 P2）
+    cleared += search_cache.clear(cache_key("global-search"))
+    cleared += search_cache.clear(cache_key("team-search"))
     if workspace_id is not None:
         cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))
     return cleared
@@ -315,6 +319,64 @@ def get_workspace_capabilities(
     if caps.data_role is None:
         raise HTTPException(status_code=404, detail="工作区不存在")
     return WorkspaceCapabilitiesResponse.model_validate(caps.to_payload())
+
+
+@router.post("/{workspace_id}/join", response_model=PinToggleResponse, status_code=status.HTTP_200_OK)
+def join_workspace(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> PinToggleResponse:
+    """团队成员自助加入团队工作区（ADR 0153 P2，需团队策略 `allow_member_invite`）.
+
+    角色 = 团队策略 `default_workspace_role`（viewer / editor），`none` 时按 viewer 加入；
+    已是成员时幂等返回当前状态，不改变既有角色。
+    """
+    from cndb.core.events import record_event
+    from cndb.plugins.workspaces.services.teams import team_policy_for
+
+    ws = _get_workspace_or_404(workspace_id, db)
+    if ws.team_id is None:
+        raise HTTPException(status_code=404, detail="工作区不存在")
+    team = db.get(Team, ws.team_id)
+    if team is None:  # pragma: no cover - FK 保证存在
+        raise HTTPException(status_code=404, detail="工作区不存在")
+    membership = (
+        db.query(TeamMember).filter(TeamMember.team_id == team.id, TeamMember.user_id == current_user.id).first()
+    )
+    if membership is None:
+        raise HTTPException(status_code=404, detail="工作区不存在")
+
+    existing = (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.workspace_id == ws.id, WorkspaceMember.user_id == current_user.id)
+        .first()
+    )
+    if existing is not None:
+        return PinToggleResponse(pinned=bool(existing.pinned))
+
+    policy = team_policy_for(team)
+    if not bool(policy.get("allow_member_invite", False)):
+        raise HTTPException(status_code=403, detail="该团队未开放自助加入，请联系团队管理员")
+    from cndb.plugins.workspaces.permissions import policy_default_role
+
+    role = policy_default_role(policy) or WorkspaceRole.VIEWER
+    db.add(WorkspaceMember(workspace_id=ws.id, user_id=current_user.id, role=role))
+    record_event(
+        db,
+        "workspace.member_join",
+        summary=f"{current_user.nickname or current_user.username} 自助加入工作区「{ws.name}」",
+        target_type="workspace",
+        target_id=ws.id,
+        workspace_id=ws.id,
+        actor_id=current_user.id,
+        actor_name=current_user.nickname or current_user.username,
+        detail={"role": role.value, "team_id": team.id},
+        commit=False,
+    )
+    db.commit()
+    invalidate_workspace_list_cache(ws.id)
+    return PinToggleResponse(pinned=False)
 
 
 @router.get(

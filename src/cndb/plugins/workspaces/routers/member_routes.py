@@ -36,9 +36,12 @@ def invalidate_workspace_list_cache(workspace_id: int | None = None) -> int:
     后者会与本模块形成循环导入（workspaces 导入 member_router），
     导致工作区插件整体加载失败、路由全部 404。
     """
-    from cndb.core.cache import cache_key, list_cache
+    from cndb.core.cache import cache_key, list_cache, search_cache
 
     cleared = list_cache.clear(cache_key("ws-list"))
+    # 成员变化会改变「能搜到哪些工作区」：跨工作区 / 团队内检索一并失效（ADR 0153 P2）
+    cleared += search_cache.clear(cache_key("global-search"))
+    cleared += search_cache.clear(cache_key("team-search"))
     # 成员增删改变工作区详情统计（member_count，ADR 0046 D5）
     if workspace_id is not None:
         cleared += list_cache.clear(cache_key("workspace-stats", workspace_id))

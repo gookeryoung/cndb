@@ -419,3 +419,53 @@ def search_all_workspaces(
     # 空结果同样缓存：关键词无命中是全表扫描的最坏情况，最需要重用
     search_cache.set(key, result, SEARCH_CACHE_TTL_SECONDS)
     return result
+
+
+def search_team_workspaces(
+    db: Session,
+    user: Any,
+    team_id: int,
+    keyword: str,
+    *,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """团队内跨工作区检索（ADR 0153 P2）.
+
+    与 ``search_all_workspaces`` 同一套逐工作区检索，但**范围 = 该团队下用户可读的工作区**：
+    判定复用 ``resolve_capabilities(...).allows(READ)`` —— 团队管理员默认无数据面，
+    因此不会出现在结果里（H49 天花板）。
+    """
+    from cndb.plugins.workspaces.models import Workspace
+    from cndb.plugins.workspaces.permissions import WorkspaceCapability, resolve_capabilities
+
+    result: dict[str, Any] = {"query": keyword, "documents": [], "tables": [], "rows": []}
+    if not keyword:
+        return result
+
+    key = cache_key("team-search", getattr(user, "id", 0), team_id, limit, keyword)
+    cached = search_cache.get(key)
+    if cached is not None:
+        return cached
+
+    workspaces = db.query(Workspace).filter(Workspace.team_id == team_id).order_by(Workspace.id).all()
+    for ws in workspaces:
+        if not resolve_capabilities(user, ws, db).allows(WorkspaceCapability.READ):
+            continue
+        if len(result["documents"]) >= limit and len(result["tables"]) >= limit and len(result["rows"]) >= limit:
+            break
+        per_ws = search_workspace(db, ws.id, user, keyword, scope="all", limit=GLOBAL_PER_WS_LIMIT)
+        for doc in per_ws["documents"][: max(0, limit - len(result["documents"]))]:
+            doc["workspace_id"] = ws.id
+            doc["workspace_name"] = ws.name
+            result["documents"].append(doc)
+        for table in per_ws["tables"][: max(0, limit - len(result["tables"]))]:
+            table["workspace_id"] = ws.id
+            table["workspace_name"] = ws.name
+            result["tables"].append(table)
+        for row in per_ws["rows"][:GLOBAL_PER_WS_ROWS][: max(0, limit - len(result["rows"]))]:
+            row["workspace_id"] = ws.id
+            row["workspace_name"] = ws.name
+            result["rows"].append(row)
+
+    search_cache.set(key, result, SEARCH_CACHE_TTL_SECONDS)
+    return result

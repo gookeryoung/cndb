@@ -11,12 +11,13 @@ import hashlib
 import json
 from collections.abc import Iterable
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from cndb.plugins.accounts.models import User
 from cndb.plugins.design.models import (
     LIBRARY_VISIBILITY_PUBLIC,
+    LIBRARY_VISIBILITY_TEAM,
     LIBRARY_VISIBILITY_VALUES,
     DesignDesign,
     DesignDesignVersion,
@@ -28,6 +29,7 @@ from cndb.plugins.design.services.dsl.nodes import FileSource
 from cndb.plugins.design.services.dsl.parse import DslSyntaxError
 from cndb.plugins.design.services.files import compile_design_file, content_hash, direct_use_calls
 from cndb.plugins.design.services.keys import generate_module_key
+from cndb.plugins.workspaces.services.teams import workspace_team_id
 
 
 class LibraryPublishError(Exception):
@@ -91,7 +93,7 @@ def publish_design(
     if design.kind != "part":
         raise LibraryPublishError("只有零件文件（part）可以发布为复用模块", 1, 1)
     if visibility not in LIBRARY_VISIBILITY_VALUES:
-        raise LibraryPublishError("可见性仅支持 public / workspace", 1, 1)
+        raise LibraryPublishError("可见性仅支持 public / team / workspace", 1, 1)
     try:
         calls = direct_use_calls(design.content)
     except DslSyntaxError as exc:
@@ -187,13 +189,23 @@ def list_library_modules(
     owned_only: bool = False,
     include_archived: bool = False,
 ) -> list[DesignLibraryModule]:
-    """浏览可见模块：公开模块 + 当前工作区发布的私有模块（ADR 0118 §5）."""
-    query = db.query(DesignLibraryModule).filter(
-        or_(
-            DesignLibraryModule.visibility == LIBRARY_VISIBILITY_PUBLIC,
-            DesignLibraryModule.owner_workspace_id == workspace_id,
+    """浏览可见模块：公开 + 同团队（team 档）+ 当前工作区发布（ADR 0118 §5 / ADR 0153 D8）."""
+    conditions = [
+        DesignLibraryModule.visibility == LIBRARY_VISIBILITY_PUBLIC,
+        DesignLibraryModule.owner_workspace_id == workspace_id,
+    ]
+    team_id = workspace_team_id(db, workspace_id)
+    if team_id is not None:
+        from cndb.plugins.workspaces.models import Workspace
+
+        team_workspace_ids = db.query(Workspace.id).filter(Workspace.team_id == team_id)
+        conditions.append(
+            and_(
+                DesignLibraryModule.visibility == LIBRARY_VISIBILITY_TEAM,
+                DesignLibraryModule.owner_workspace_id.in_(team_workspace_ids),
+            )
         )
-    )
+    query = db.query(DesignLibraryModule).filter(or_(*conditions))
     if owned_only:
         query = query.filter(DesignLibraryModule.owner_workspace_id == workspace_id)
     if visibility is not None:

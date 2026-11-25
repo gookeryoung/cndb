@@ -28,6 +28,9 @@ export const workspaceApi = {
   /** 能力位判定的唯一数据源（ADR 0153）：前端门控不再各自比对 current_user_role */
   capabilities: (wid: number | string) =>
     api.get<WorkspaceCapabilities>(`/v1/workspaces/${wid}/capabilities`).then(r => r.data),
+  /** 团队成员自助加入团队工作区（ADR 0153 P2；需团队策略 allow_member_invite） */
+  join: (wid: number | string) =>
+    api.post<{ pinned: boolean }>(`/v1/workspaces/${wid}/join`).then(r => r.data),
   /** 贡献统计：按编辑者聚合直接写活动（需求 0126） */
   contributions: (wid: number | string) =>
     api.get<WorkspaceContributions>(`/v1/workspaces/${wid}/stats/contributions`).then(r => r.data),

@@ -62,5 +62,7 @@ export interface TeamWorkspace {
   visibility: WorkspaceVisibility
   modules: WorkspaceModule[]
   member_count: number
+  /** 当前用户是否已是该工作区成员（自助加入按钮显隐，ADR 0153 P2） */
+  is_member?: boolean
   updated_at: string
 }

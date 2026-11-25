@@ -80,7 +80,9 @@ class PreviewRequest(BaseModel):
 class DesignPublishRequest(BaseModel):
     """发布为复用模块（ADR 0118 §4）：默认私有，公开需显式选择."""
 
-    visibility: Literal["public", "workspace"] = Field(default="workspace", description="可见性：public / workspace")
+    visibility: Literal["public", "team", "workspace"] = Field(
+        default="workspace", description="可见性：public / team（同团队成员）/ workspace（仅本工作区）"
+    )
     name: str | None = Field(default=None, min_length=1, max_length=200, description="模块展示名（缺省用设计标题）")
     description: str | None = Field(default=None, max_length=500, description="模块说明")
     comment: str = Field(default="", max_length=200, description="本次发布备注")
@@ -158,7 +160,7 @@ class LibraryModulePatch(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=500)
-    visibility: Literal["public", "workspace"] | None = None
+    visibility: Literal["public", "team", "workspace"] | None = None
     is_archived: bool | None = None
 
 

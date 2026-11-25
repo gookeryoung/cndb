@@ -41,6 +41,7 @@ import { collectNodeIndices, resolveOutlinePath } from './designOutline'
 import { useDesignPreview } from './useDesignPreview'
 import type { PreviewStats, ViewportApi } from './PreviewCanvas'
 import { VIEW_PRESETS, type ViewOrientation } from './viewOrient'
+import { LIBRARY_VISIBILITY_META } from './libraryVisibility'
 
 // three 渲染整块 lazy：three + three-bvh-csg 只进设计编辑器 chunk（D4 体积预算）
 const PreviewCanvas = lazy(() => import('./PreviewCanvas'))
@@ -1072,9 +1073,9 @@ export default function DesignEditorPage() {
                   <div>
                     <Text strong>{item.name}</Text>
                     <Tag variant="filled" style={{ marginLeft: 6 }}>v{item.version_number}</Tag>
-                    {item.visibility === 'public'
-                      ? <Tag variant="filled" color="green">公开</Tag>
-                      : <Tag variant="filled">私有</Tag>}
+                    <Tag variant="filled" color={LIBRARY_VISIBILITY_META[item.visibility]?.color ?? 'default'}>
+                      {LIBRARY_VISIBILITY_META[item.visibility]?.text ?? '私有'}
+                    </Tag>
                     {item.is_archived && <Tag variant="filled" color="red">已归档</Tag>}
                   </div>
                   <Text type="secondary" code>{item.module_key}</Text>

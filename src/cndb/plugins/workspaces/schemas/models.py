@@ -287,6 +287,8 @@ class TeamWorkspaceItem(BaseModel):
     visibility: WorkspaceVisibility
     modules: list[str] = DEFAULT_WORKSPACE_MODULES
     member_count: int = 0
+    #: 当前用户是否已是该工作区成员（自助加入按钮的显隐依据，ADR 0153 P2）
+    is_member: bool = False
     updated_at: datetime
 
 

@@ -20,6 +20,14 @@ export const teamApi = {
     api.patch<TeamMember>(`/v1/teams/${tid}/members/${memberId}`, { role }).then(r => r.data),
   removeMember: (tid: number | string, memberId: number | string) =>
     api.delete(`/v1/teams/${tid}/members/${memberId}`).then(r => r.data),
+  /** 团队内跨工作区检索（只返回用户可读工作区，ADR 0153 P2） */
+  search: (tid: number | string, q: string, limit = 10) =>
+    api.get<{
+      query: string
+      documents: Array<{ id: number; title: string; workspace_id: number; workspace_name: string }>
+      tables: Array<{ id: number; name: string; workspace_id: number; workspace_name: string }>
+      rows: Array<{ table_name: string; title: string; row_id: number; workspace_id: number; workspace_name: string }>
+    }>(`/v1/teams/${tid}/search`, { params: { q, limit } }).then(r => r.data),
   /** 团队下的工作区平铺列表（无树：C1） */
   workspaces: (tid: number | string) =>
     api.get<TeamWorkspace[]>(`/v1/teams/${tid}/workspaces`).then(r => r.data),
