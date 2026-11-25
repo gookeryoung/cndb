@@ -40,6 +40,8 @@ import { BrandMark } from '@/components/BrandMark'
 import ScopeSwitcher from '@/components/ScopeSwitcher'
 import { useAuthStore, useUiStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useLandingOrder } from '@/hooks/useLandingOrder'
+import { usePreferences } from '@/hooks/useFavoriteViews'
 import {
   workspaceLandingSegment, workspaceModulesFeatures, workspaceSwitchSegment,
   type WorkspaceNavSegment,
@@ -246,6 +248,10 @@ export default function MainLayout() {
   const currentWs = workspaces.find(w => String(w.id) === wid)
   /** 当前工作区按勾选模块开放的功能（模块缺失/非法时按默认全三模块兜底） */
   const wsFeatures = workspaceModulesFeatures(currentWs?.modules)
+  /** 进入工作区的默认落地页优先级（需求 0161；缺省等价 tables → documents → design） */
+  const landingOrder = useLandingOrder()
+  /** 偏好未就绪时不得先按默认序重定向（否则会落到错误段且不再纠正，需求 0161 C3） */
+  const { isPending: landingPrefsPending } = usePreferences()
 
   const { data: tables = [], isSuccess: tablesReady } = useQuery({
     queryKey: ['workspaces', wid, 'tables'],
@@ -578,7 +584,7 @@ export default function MainLayout() {
   // 模块门控：当前 URL 落在该工作区未开放的功能区（如仅勾「文档」访问 /tables）时，
   // 重定向到该工作区的落地段，避免出现空页签/空白内容（ADR 0080；质量检查恒开放）。
   useEffect(() => {
-    if (!wid || !currentWs) return
+    if (!wid || !currentWs || landingPrefsPending) return
     const feat = workspaceModulesFeatures(currentWs.modules)
     const inTables = location.startsWith(`/w/${wid}/tables`)
     const inDocuments = location.startsWith(`/w/${wid}/documents`)
@@ -592,9 +598,9 @@ export default function MainLayout() {
       (!feat.datasource && inDatasource) ||
       (!feat.design && inDesign)
     ) {
-      navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.modules)}`, { replace: true })
+      navigate(`/w/${wid}/${workspaceLandingSegment(currentWs.modules, landingOrder)}`, { replace: true })
     }
-  }, [location, wid, currentWs, navigate])
+  }, [location, wid, currentWs, navigate, landingOrder, landingPrefsPending])
 
   const isAdmin = !!user && (user.is_superuser || user.role === 'system_admin')
 
@@ -671,9 +677,12 @@ export default function MainLayout() {
     if (!location.startsWith('/w/')) {
       // 正常落到下方 return 的布局 —— Outlet 渲染子路由
     } else if (workspaces.length > 0) {
-      // 访问了需要 wid 的 URL 但没带 wid → 跳到第一个工作区
+      // 访问了需要 wid 的 URL 但没带 wid → 跳到第一个工作区（偏好未就绪时先等，避免落错段）
+      if (landingPrefsPending) {
+        return <div className="cn-state">加载中…</div>
+      }
       const first = workspaces[0]
-      return <Navigate to={`/w/${first.id}/${workspaceLandingSegment(first.modules)}`} replace />
+      return <Navigate to={`/w/${first.id}/${workspaceLandingSegment(first.modules, landingOrder)}`} replace />
     } else {
       // 空工作区 + 需要 wid 的 URL（不是 / 也不是 /w）→ 跳到 /w 让用户创建
       return <Navigate to="/w" replace />
@@ -1069,7 +1078,7 @@ export default function MainLayout() {
         className="cn-mobile-team-ws"
         data-testid={`mobile-team-ws-${w.id}`}
         onClick={() => {
-          navigate(`/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules)}`)
+          navigate(`/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules, landingOrder)}`)
           setMobileNavOpen(false)
         }}
       >
@@ -1224,7 +1233,7 @@ export default function MainLayout() {
             prefix={compactHeader
               ? (currentWs ? (currentWs.team?.name ?? '个人') : undefined)
               : undefined}
-            workspaceHref={w => `/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules)}`}
+            workspaceHref={w => `/w/${w.id}/${workspaceSwitchSegment(currentNavSegment, w.modules, landingOrder)}`}
           />
 
           {/* 一级模块导航（需求 0081 C4）—— 数据表 / 文档 / 设计 / 工作区设置上移顶栏；

@@ -612,7 +612,12 @@ export const handlers = [
 
   // 用户偏好（ADR 0021：主页自定义顺序 / 收藏视图）——默认空，单用例 server.use 覆盖
   http.get('/api/v1/accounts/preferences', () =>
-    HttpResponse.json({ active_views: {}, workspace_order: [], favorite_view_ids: [] })),
+    HttpResponse.json({
+      active_views: {},
+      workspace_order: [],
+      favorite_view_ids: [],
+      landing_order: ['tables', 'documents', 'design'],
+    })),
   http.get('/api/v1/accounts/preferences/favorite-views', () => HttpResponse.json([])),
   http.put('/api/v1/accounts/preferences/favorite-views', async ({ request }) => {
     const body = await request.json() as { view_ids?: number[] }
@@ -621,6 +626,11 @@ export const handlers = [
   http.put('/api/v1/accounts/preferences/workspace-order', async ({ request }) => {
     const body = await request.json() as { workspace_ids?: number[] }
     return HttpResponse.json({ workspace_ids: body.workspace_ids ?? [] })
+  }),
+  // 默认落地页顺序（需求 0161）
+  http.put('/api/v1/accounts/preferences/landing-order', async ({ request }) => {
+    const body = await request.json() as { landing_order?: string[] }
+    return HttpResponse.json({ landing_order: body.landing_order ?? [] })
   }),
 
   // 团队（ADR 0153）：默认一个团队、当前用户是所有者；单用例 server.use 覆盖

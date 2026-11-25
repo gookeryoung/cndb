@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom'
 import { Modal, Button, Radio, Typography, Tabs, Select, Switch, Form, Input, App } from 'antd'
 import {
   UserOutlined, BgColorsOutlined, TableOutlined, FileTextOutlined, RobotOutlined, CodeOutlined,
+  AppstoreOutlined, ArrowUpOutlined, ArrowDownOutlined,
 } from '@ant-design/icons'
 import { useTheme } from '@/theme/ThemeProvider'
 import {
@@ -25,6 +26,8 @@ import type { Density, NewRowPosition } from '@/theme/tableSettings'
 import LlmConfigPanel from './LlmConfigPanel'
 import SectionHeader from './SectionHeader'
 import { WEIGHT } from '@/theme/tokens'
+import { useLandingOrder, useSetLandingOrder } from '@/hooks/useLandingOrder'
+import { DEFAULT_LANDING_ORDER, WORKSPACE_MODULE_LABEL } from '@/utils/workspaceModules'
 
 interface Props {
   open: boolean
@@ -517,6 +520,83 @@ function EditorPanel() {
   )
 }
 
+/** 默认页分页内容 — 进入工作区时优先打开哪个模块（需求 0161）.
+ *
+ * 顺序存当前用户偏好（`landing_order`，三模块完整排列），上移 / 下移即生效；
+ * 只影响「进入工作区的默认落地」：偏好首位模块若在目标工作区未启用，自动顺延下一个。
+ */
+function LandingPanel() {
+  const { message } = App.useApp()
+  const landingOrder = useLandingOrder()
+  const setOrder = useSetLandingOrder()
+  const onError = (err: unknown) =>
+    message.error(err instanceof Error ? err.message : '保存默认页顺序失败，请重试')
+
+  const move = (index: number, delta: number) => {
+    const target = index + delta
+    if (target < 0 || target >= landingOrder.length) return
+    const next = [...landingOrder]
+    ;[next[index], next[target]] = [next[target], next[index]]
+    setOrder.mutate(next, { onError })
+  }
+
+  const isDefault = landingOrder.every((m, i) => m === DEFAULT_LANDING_ORDER[i])
+
+  return (
+    <div style={{ padding: '12px 0' }}>
+      <SectionHeader
+        title="默认页"
+        description="进入工作区时优先打开哪个模块；排在前面但目标工作区未启用的模块会自动跳过"
+      />
+      <div data-testid="landing-order-list" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {landingOrder.map((module, index) => (
+          <div
+            key={module}
+            data-testid={`landing-order-${module}`}
+            style={{ display: 'flex', alignItems: 'center', gap: 8 }}
+          >
+            <Text style={{ minWidth: 88, fontSize: 'var(--cn-text-sm)' }}>
+              {index + 1}. {WORKSPACE_MODULE_LABEL[module]}
+            </Text>
+            <Button
+              size="small"
+              icon={<ArrowUpOutlined />}
+              disabled={index === 0}
+              aria-label={`上移${WORKSPACE_MODULE_LABEL[module]}`}
+              data-testid={`landing-order-up-${module}`}
+              onClick={() => move(index, -1)}
+            />
+            <Button
+              size="small"
+              icon={<ArrowDownOutlined />}
+              disabled={index === landingOrder.length - 1}
+              aria-label={`下移${WORKSPACE_MODULE_LABEL[module]}`}
+              data-testid={`landing-order-down-${module}`}
+              onClick={() => move(index, 1)}
+            />
+          </div>
+        ))}
+      </div>
+      <Text
+        type="secondary"
+        data-testid="landing-order-preview"
+        style={{ display: 'block', fontSize: 'var(--cn-text-xs)', marginTop: 12 }}
+      >
+        进入工作区时优先打开：{landingOrder.map(m => WORKSPACE_MODULE_LABEL[m]).join(' → ')}
+      </Text>
+      <Button
+        size="small"
+        style={{ marginTop: 20 }}
+        disabled={isDefault}
+        data-testid="landing-order-reset"
+        onClick={() => setOrder.mutate([...DEFAULT_LANDING_ORDER], { onError })}
+      >
+        恢复默认
+      </Button>
+    </div>
+  )
+}
+
 /** 表格分页内容 — 显示模式（全局偏好）+ 操作风格，全部即时生效并持久化到浏览器 */
 function TablePanel() {
   const { message } = App.useApp()
@@ -705,6 +785,12 @@ export default function SettingsModal({ open, onClose, initialTab }: Props) {
             children: <ProfilePanel onClose={onClose} />,
           },
           { key: 'theme', label: <span><BgColorsOutlined aria-hidden />主题</span>, children: <ThemePanel /> },
+          // 默认页排在「主题」之后：同属「我的视图习惯」，与配色 / 字体相邻（需求 0161）
+          {
+            key: 'landing',
+            label: <span><AppstoreOutlined aria-hidden />默认页</span>,
+            children: <LandingPanel />,
+          },
           { key: 'table', label: <span><TableOutlined aria-hidden />表格</span>, children: <TablePanel /> },
           // 文档渲染配置：表格/图片对齐与默认宽度，排在「表格」之后
           { key: 'doc', label: <span><FileTextOutlined aria-hidden />文档</span>, children: <DocPanel /> },

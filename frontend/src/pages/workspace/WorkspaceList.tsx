@@ -29,6 +29,7 @@ import { useResponsive } from '@/hooks/useResponsive'
 import SearchInput from '@/components/SearchInput'
 import { useCreateParam } from '@/hooks/useCreateParam'
 import { usePreferences, useSetWorkspaceOrder } from '@/hooks/useFavoriteViews'
+import { useLandingOrder } from '@/hooks/useLandingOrder'
 import { workspaceApi, tableApi, teamApi } from '@/api'
 import type {
   Workspace, WorkspaceRole, WorkspaceVisibility, TableSummary, WorkspaceArchiveInspect, Team,
@@ -131,6 +132,8 @@ export default function WorkspaceList() {
 
   // 主页自定义顺序（ADR 0021）：偏好缺失 / 读取失败时按 pinned → id 兜底
   const { data: prefs } = usePreferences()
+  // 进入工作区的默认落地页顺序（需求 0161）：与偏好共用同一缓存
+  const landingOrder = useLandingOrder()
   const setWorkspaceOrder = useSetWorkspaceOrder()
   const workspaceDragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -163,7 +166,7 @@ export default function WorkspaceList() {
       setPendingTeamId(undefined)
       form.resetFields()
       queryClient.invalidateQueries({ queryKey: ['workspaces'] })
-      navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules)}`)
+      navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules, landingOrder)}`)
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '创建工作区失败，请重试'),
   })
@@ -268,6 +271,7 @@ export default function WorkspaceList() {
       onPin={() => pin.mutate(w)}
       onSettings={() => setSettingsOpen(w)}
       onBackup={() => setBackupOpen(w)}
+      landingOrder={landingOrder}
     />
   )
 
@@ -559,7 +563,7 @@ export default function WorkspaceList() {
           setImportOpen(false)
           queryClient.invalidateQueries({ queryKey: ['workspaces'] })
           message.success(`已导入工作区「${w.name}」`)
-          navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules)}`)
+          navigate(`/w/${w.id}/${workspaceLandingSegment(w.modules, landingOrder)}`)
         }}
         onRestored={() => {
           setImportOpen(false)
@@ -578,12 +582,14 @@ export default function WorkspaceList() {
  * 搜索过滤时 `draggable=false`，把手降级为普通图标，防止只提交过滤后的子集顺序。
  */
 function WorkspaceRow({
-  ws, expanded, draggable, isMobile, onToggle, onPin, onSettings, onBackup,
+  ws, expanded, draggable, isMobile, landingOrder, onToggle, onPin, onSettings, onBackup,
 }: {
   ws: WSWithStats
   expanded: boolean
   draggable: boolean
   isMobile: boolean
+  /** 进入本工作区的默认落地页优先级（需求 0161） */
+  landingOrder: WorkspaceModule[]
   onToggle: () => void
   onPin: () => void
   onSettings: () => void
@@ -598,7 +604,7 @@ function WorkspaceRow({
     ?? VISIBILITY_META.member
   const role = ws.current_user_role ?? null
   const modules = normalizeModules(ws.modules)
-  const landing = `/w/${ws.id}/${workspaceLandingSegment(modules)}`
+  const landing = `/w/${ws.id}/${workspaceLandingSegment(modules, landingOrder)}`
 
   return (
     <div

@@ -19,9 +19,11 @@ from cndb.plugins.accounts.services.preferences import (
     ensure_preferences,
     list_dashboard_templates,
     load_favorite_view_summaries,
+    read_landing_order,
     read_ordered_ids,
     save_dashboard_template,
     set_favorite_views,
+    set_landing_order,
     set_workspace_order,
 )
 from cndb.plugins.tables.models import DataTable, DataView
@@ -51,6 +53,10 @@ class PreferencesResponse(BaseModel):
     active_views: dict[str, int] = Field(default_factory=dict, description="每张表的激活视图映射: table_id -> view_id")
     workspace_order: list[int] = Field(default_factory=list, description="主页工作区的自定义顺序（同组内生效）")
     favorite_view_ids: list[int] = Field(default_factory=list, description="收藏视图 id，顺序即「我的视图」展示顺序")
+    landing_order: list[str] = Field(
+        default_factory=list,
+        description="进入工作区时的默认落地页优先级（tables / documents / design 的完整排列）",
+    )
 
 
 class FavoriteViewSummary(BaseModel):
@@ -96,6 +102,23 @@ class WorkspaceOrderResponse(BaseModel):
     """工作区顺序规范化后的 id 列表."""
 
     workspace_ids: list[int] = Field(default_factory=list)
+
+
+class LandingOrderReplace(BaseModel):
+    """全量替换默认落地页顺序（需求 0161）."""
+
+    model_config = ConfigDict(strict=True)
+
+    landing_order: list[str] = Field(
+        default_factory=list,
+        description="模块优先级列表；未知值 / 重复项静默丢弃，空数组合恢复默认",
+    )
+
+
+class LandingOrderResponse(BaseModel):
+    """落地顺序归一化后的完整排列."""
+
+    landing_order: list[str] = Field(default_factory=list)
 
 
 class ActiveViewResponse(BaseModel):
@@ -167,6 +190,7 @@ def get_preferences(
         "active_views": active_views,
         "workspace_order": read_ordered_ids(user, "workspace_order"),
         "favorite_view_ids": read_ordered_ids(user, "favorite_views"),
+        "landing_order": read_landing_order(user),
     }
 
 
@@ -203,6 +227,21 @@ def replace_workspace_order(
     """全量替换主页工作区顺序；非成员工作区 id 静默丢弃."""
     user = _ensure_authenticated(current_user)
     return {"workspace_ids": set_workspace_order(db, user, payload.workspace_ids)}
+
+
+@router.put("/landing-order", response_model=LandingOrderResponse)
+def replace_landing_order(
+    payload: LandingOrderReplace,
+    current_user: Annotated[object | None, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """全量替换进入工作区时的默认落地页顺序（需求 0161）.
+
+    未知模块 / 重复项静默丢弃，缺失模块按默认序补到尾部（结果恒为完整排列）；
+    空数组合视为恢复默认。
+    """
+    user = _ensure_authenticated(current_user)
+    return {"landing_order": set_landing_order(db, user, payload.landing_order)}
 
 
 @router.get("/dashboard-templates", response_model=list[DashboardTemplateItem])

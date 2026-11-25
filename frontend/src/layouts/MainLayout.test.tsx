@@ -1000,6 +1000,15 @@ async function switchToTargetWorkspace() {
     fireEvent.click(await screen.findByText('目标工作区'))
 }
 
+/** 覆盖用户偏好：指定进入工作区的默认落地页顺序（需求 0161） */
+function useLandingOrderPref(landingOrder: WorkspaceModule[]) {
+    server.use(
+        http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+            active_views: {}, workspace_order: [], favorite_view_ids: [], landing_order: landingOrder,
+        })),
+    )
+}
+
 describe('MainLayout 工作区模块门控', () => {
     it('仅勾选数据表的工作区不显示「文档/设计」一级导航，数据分析与数据同步随表开放', async () => {
         useWorkspaceModules(['tables'])
@@ -1051,6 +1060,25 @@ describe('MainLayout 工作区模块门控', () => {
             expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
         })
         expect(screen.queryByTestId('tables-page-stub')).toBeNull()
+    })
+
+    it('落在未启用模块时按用户偏好顺序回落（文档优先 → 文档页）', async () => {
+        useWorkspaceModules(['tables', 'documents'])
+        useLandingOrderPref(['documents', 'tables', 'design'])
+        renderLayout(mockUser, '/w/10/design')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents')
+        })
+    })
+
+    it('默认顺序不受影响：无偏好时仍回落到数据表页', async () => {
+        useWorkspaceModules(['tables', 'documents'])
+        renderLayout(mockUser, '/w/10/design')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
     })
 })
 
@@ -1143,6 +1171,22 @@ describe('MainLayout 工作区切换', () => {
             expect(screen.getByTestId('tables-page-stub')).toBeVisible()
         })
         expect(screen.getByTestId('ws-nav-tables')).toHaveAttribute('aria-current', 'page')
+    })
+
+    it('回落时按用户偏好顺序取首个已启用模块（设计优先 → /design）', async () => {
+        useSwitchTarget(['documents', 'design'])
+        useLandingOrderPref(['design', 'documents', 'tables'])
+        renderLayout(mockUser, '/w/10/tables')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('tables-page-stub')).toBeVisible()
+        })
+        await switchToTargetWorkspace()
+
+        await waitFor(() => {
+            expect(screen.getByTestId('designs-page-stub')).toHaveTextContent('/w/20/design')
+        })
+        expect(screen.getByTestId('ws-nav-design')).toHaveAttribute('aria-current', 'page')
     })
 })
 

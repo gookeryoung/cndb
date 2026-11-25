@@ -42,7 +42,12 @@ class TestUserPreferencesDefault:
         db.add(user)
         db.commit()
         db.refresh(user)
-        assert user.preferences == {"active_views": {}, "workspace_order": [], "favorite_views": []}
+        assert user.preferences == {
+            "active_views": {},
+            "workspace_order": [],
+            "favorite_views": [],
+            "landing_order": ["tables", "documents", "design"],
+        }
 
 
 # ── Preferences API ──
@@ -53,7 +58,12 @@ class TestPreferencesAPI:
         """首次查询应返回空映射与空的主页排序 / 收藏."""
         r = client.get("/api/v1/accounts/preferences", headers=auth_headers)
         assert r.status_code == 200
-        assert r.json() == {"active_views": {}, "workspace_order": [], "favorite_view_ids": []}
+        assert r.json() == {
+            "active_views": {},
+            "workspace_order": [],
+            "favorite_view_ids": [],
+            "landing_order": ["tables", "documents", "design"],
+        }
 
     def test_get_preferences_no_auth(self, client):
         """未认证应返回 401."""
@@ -502,3 +512,146 @@ class TestWorkspaceOrderAPI:
             headers=auth_headers,
         )
         assert client.get("/api/v1/accounts/preferences", headers=hb).json()["workspace_order"] == []
+
+
+# ── 默认落地页顺序（需求 0161） ──
+
+
+class TestLandingOrderNormalize:
+    def test_default_when_missing_or_illegal(self):
+        """缺失 / 非数组 / 空数组 → 默认顺序（存量行为不变）."""
+        from cndb.plugins.accounts.services.preferences import normalize_landing_order
+
+        default = ["tables", "documents", "design"]
+        assert normalize_landing_order(None) == default
+        assert normalize_landing_order([]) == default
+        assert normalize_landing_order("tables") == default
+        assert normalize_landing_order([123, None]) == default
+
+    def test_drops_unknown_and_duplicates_then_tail_fills(self):
+        """去重 + 丢未知项 + 缺失项按默认序补尾，结果恒为完整排列."""
+        from cndb.plugins.accounts.services.preferences import normalize_landing_order
+
+        assert normalize_landing_order(["documents", "documents", "bogus"]) == [
+            "documents",
+            "tables",
+            "design",
+        ]
+        assert normalize_landing_order(["design", "tables", "documents"]) == [
+            "design",
+            "tables",
+            "documents",
+        ]
+        assert normalize_landing_order(["documents", "design", "tables", "tables"]) == [
+            "documents",
+            "design",
+            "tables",
+        ]
+
+
+class TestLandingOrderAPI:
+    def test_roundtrip(self, client, auth_headers):
+        """PUT 后 GET 返回同一全序."""
+        r = client.put(
+            "/api/v1/accounts/preferences/landing-order",
+            json={"landing_order": ["documents", "tables", "design"]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["landing_order"] == ["documents", "tables", "design"]
+
+        r = client.get("/api/v1/accounts/preferences", headers=auth_headers)
+        assert r.json()["landing_order"] == ["documents", "tables", "design"]
+
+    def test_unknown_and_duplicates_silently_normalized(self, client, auth_headers):
+        """未知模块 / 重复项静默丢弃，缺失项补尾；不返回 422."""
+        r = client.put(
+            "/api/v1/accounts/preferences/landing-order",
+            json={"landing_order": ["documents", "documents", "bogus"]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["landing_order"] == ["documents", "tables", "design"]
+
+    def test_empty_restores_default(self, client, auth_headers):
+        """空数组 = 恢复默认顺序."""
+        client.put(
+            "/api/v1/accounts/preferences/landing-order",
+            json={"landing_order": ["design", "documents", "tables"]},
+            headers=auth_headers,
+        )
+        r = client.put(
+            "/api/v1/accounts/preferences/landing-order",
+            json={"landing_order": []},
+            headers=auth_headers,
+        )
+        assert r.status_code == 200
+        assert r.json()["landing_order"] == ["tables", "documents", "design"]
+        assert client.get("/api/v1/accounts/preferences", headers=auth_headers).json()["landing_order"] == [
+            "tables",
+            "documents",
+            "design",
+        ]
+
+    def test_does_not_touch_other_preference_keys(self, client, db, auth_headers):
+        """写落地顺序不影响激活视图 / 工作区顺序 / 收藏视图."""
+        user: User = db.query(User).filter(User.username == "testuser").first()
+        ws, dt, dv = _make_table_with_view(db, user)
+        client.put(
+            f"/api/v1/accounts/preferences/tables/{dt.id}/active-view",
+            json={"active_view_id": dv.id},
+            headers=auth_headers,
+        )
+        client.put(
+            "/api/v1/accounts/preferences/workspace-order",
+            json={"workspace_ids": [ws.id]},
+            headers=auth_headers,
+        )
+        client.put(
+            "/api/v1/accounts/preferences/favorite-views",
+            json={"view_ids": [dv.id]},
+            headers=auth_headers,
+        )
+
+        client.put(
+            "/api/v1/accounts/preferences/landing-order",
+            json={"landing_order": ["documents", "tables", "design"]},
+            headers=auth_headers,
+        )
+
+        body = client.get("/api/v1/accounts/preferences", headers=auth_headers).json()
+        assert body["active_views"] == {str(dt.id): dv.id}
+        assert body["workspace_order"] == [ws.id]
+        assert body["favorite_view_ids"] == [dv.id]
+        assert body["landing_order"] == ["documents", "tables", "design"]
+
+    def test_isolated_per_user(self, client, db, auth_headers):
+        """A 的顺序不影响 B."""
+        user_b = User(username="landing_b", email="landing_b@example.com")
+        user_b.set_password("pw")
+        db.add(user_b)
+        db.commit()
+        hb = _login(client, "landing_b")
+
+        client.put(
+            "/api/v1/accounts/preferences/landing-order",
+            json={"landing_order": ["design", "documents", "tables"]},
+            headers=auth_headers,
+        )
+        assert client.get("/api/v1/accounts/preferences", headers=hb).json()["landing_order"] == [
+            "tables",
+            "documents",
+            "design",
+        ]
+
+    def test_requires_auth(self, client):
+        assert client.put("/api/v1/accounts/preferences/landing-order", json={"landing_order": []}).status_code == 401
+
+    def test_rejects_non_string_items(self, client, auth_headers):
+        """类型错误交给 Pydantic 严格校验（400 系列），不静默吃进脏数据."""
+        r = client.put(
+            "/api/v1/accounts/preferences/landing-order",
+            json={"landing_order": [1, 2]},
+            headers=auth_headers,
+        )
+        assert r.status_code == 422

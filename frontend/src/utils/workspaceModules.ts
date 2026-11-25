@@ -78,14 +78,40 @@ export function workspaceModulesFeatures(modules?: WorkspaceModule[] | null): Wo
   }
 }
 
-/** 工作区落地页路由段：tables → documents → design 取第一个可用段（ADR 0080 D9）. */
+/** 默认落地页优先级：与后端 `DEFAULT_LANDING_ORDER`（需求 0161）逐项一致.
+ *  未设置偏好 / 值非法时即用它，等价 ADR 0080 D9 的 tables → documents → design。 */
+export const DEFAULT_LANDING_ORDER: WorkspaceModule[] = [...WORKSPACE_MODULES]
+
+/** 归一落地页顺序：去重 → 丢未知项 → 缺失模块按默认序补到尾部.
+ *  结果恒为三模块完整排列（与后端 `normalize_landing_order` 同口径）。 */
+export function normalizeLandingOrder(order?: unknown): WorkspaceModule[] {
+  const items = Array.isArray(order) ? order : []
+  const seen = new Set<WorkspaceModule>()
+  const ordered: WorkspaceModule[] = []
+  const known = new Set<string>(WORKSPACE_MODULES)
+  for (const value of items) {
+    if (typeof value !== 'string' || !known.has(value)) continue
+    const module = value as WorkspaceModule
+    if (seen.has(module)) continue
+    seen.add(module)
+    ordered.push(module)
+  }
+  ordered.push(...DEFAULT_LANDING_ORDER.filter(m => !seen.has(m)))
+  return ordered
+}
+
+/** 工作区落地页路由段：按用户偏好顺序取该工作区**已启用**的第一个模块（需求 0161）.
+ *
+ * - `landingOrder` 缺省 / 非法 → 默认 `tables → documents → design`（ADR 0080 D9，存量行为不变）；
+ * - 偏好首位模块在目标工作区未启用时顺延下一个，不会落到空页。
+ */
 export function workspaceLandingSegment(
   modules?: WorkspaceModule[] | null,
+  landingOrder?: WorkspaceModule[] | null,
 ): 'tables' | 'documents' | 'design' {
   const enabled = new Set(normalizeModules(modules))
-  if (enabled.has('tables')) return 'tables'
-  if (enabled.has('documents')) return 'documents'
-  return 'design'
+  const hit = normalizeLandingOrder(landingOrder).find(m => enabled.has(m))
+  return hit ?? 'tables'
 }
 
 /** 切换工作区时保持的一级导航段（三模块 + 恒开放的统计 / 工作区设置）. */
@@ -102,9 +128,10 @@ export type WorkspaceNavSegment = WorkspaceModule | 'stats' | 'settings'
 export function workspaceSwitchSegment(
   current: WorkspaceNavSegment | null | undefined,
   modules?: WorkspaceModule[] | null,
+  landingOrder?: WorkspaceModule[] | null,
 ): string {
   if (current === 'stats') return 'stats'
   if (current === 'settings') return 'settings'
   if (current && new Set(normalizeModules(modules)).has(current)) return current
-  return workspaceLandingSegment(modules)
+  return workspaceLandingSegment(modules, landingOrder)
 }

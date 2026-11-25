@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
 from cndb.core.errors import CndbError
-from cndb.plugins.accounts.models import User
+from cndb.plugins.accounts.models import DEFAULT_LANDING_ORDER, User
 from cndb.plugins.tables.models import DataTable, DataView
 from cndb.plugins.tables.services.core.access import TableAction, get_table_or_404
 from cndb.plugins.tables.services.core.view_access import visible_view_filter
@@ -39,6 +39,12 @@ MAX_FAVORITE_VIEWS = 50
 
 #: 偏好中需要保持有序数组结构的键
 ORDER_KEYS = ("workspace_order", "favorite_views")
+
+#: 默认落地页顺序（需求 0161）：与 ``DEFAULT_LANDING_ORDER`` 同源，前端
+#: ``workspaceModules.ts`` 的 ``DEFAULT_LANDING_ORDER`` 逐项一致。
+LANDING_ORDER_KEY = "landing_order"
+#: 落地顺序允许的模块取值（唯白名单，同时决定尾补顺序）
+LANDING_ORDER_VALUES: frozenset[str] = frozenset(DEFAULT_LANDING_ORDER)
 
 #: dashboard 模板存储键（ADR 0023 P3：per-user，复用 preferences，零迁移）
 DASHBOARD_TEMPLATES_KEY = "dashboard_templates"
@@ -79,6 +85,11 @@ def ensure_preferences(user: User) -> None:
         if not isinstance(prefs.get(key), list):
             prefs[key] = []
             changed = True
+    # 落地顺序：自愈为「去重 + 丢未知 + 尾补默认序」的完整排列（需求 0161）
+    landing = normalize_landing_order(prefs.get(LANDING_ORDER_KEY))
+    if prefs.get(LANDING_ORDER_KEY) != landing:
+        prefs[LANDING_ORDER_KEY] = landing
+        changed = True
     if not isinstance(prefs.get(DASHBOARD_TEMPLATES_KEY), list):
         empty_templates: list[Any] = []
         prefs[DASHBOARD_TEMPLATES_KEY] = empty_templates
@@ -91,6 +102,43 @@ def read_ordered_ids(user: User, key: str) -> list[int]:
     """读取偏好中的有序 id 列表（规范化后返回，不回写）."""
     ensure_preferences(user)
     return normalize_ids(user.preferences.get(key) or [])
+
+
+# ── 默认落地页顺序（需求 0161） ─────────────────────────
+
+
+def normalize_landing_order(raw: Any) -> list[str]:
+    """归一下落地页顺序：去重、丢未知项、缺失项按默认序补到尾部.
+
+    结果恒为 ``DEFAULT_LANDING_ORDER`` 的完整排列（三模块），使「首个可用模块」
+    永远唯一确定；空值 / 非法值回退默认顺序（存量行为零变化）。
+    """
+    items: list[Any] = list(raw) if isinstance(raw, (list, tuple)) else []
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in items:
+        if not isinstance(value, str) or value not in LANDING_ORDER_VALUES or value in seen:
+            continue
+        seen.add(value)
+        ordered.append(value)
+    ordered.extend(module for module in DEFAULT_LANDING_ORDER if module not in seen)
+    return ordered
+
+
+def read_landing_order(user: User) -> list[str]:
+    """读取当前用户的默认落地页顺序（已归一，不回写）."""
+    ensure_preferences(user)
+    return normalize_landing_order(user.preferences.get(LANDING_ORDER_KEY))
+
+
+def set_landing_order(db: Session, user: User, raw: Any) -> list[str]:
+    """全量替换默认落地页顺序；未知模块 / 重复项静默丢弃，空数组 = 恢复默认."""
+    stored = normalize_landing_order(raw)
+    ensure_preferences(user)
+    user.preferences[LANDING_ORDER_KEY] = stored
+    flag_modified(user, "preferences")
+    db.commit()
+    return stored
 
 
 # ── 工作区顺序 ────────────────────────────────────────
@@ -374,6 +422,8 @@ def delete_dashboard_template(db: Session, user: User, template_id: str) -> bool
 
 __all__ = [
     "DASHBOARD_TEMPLATES_KEY",
+    "LANDING_ORDER_KEY",
+    "LANDING_ORDER_VALUES",
     "MAX_DASHBOARD_TEMPLATES",
     "MAX_DASHBOARD_TEMPLATE_BYTES",
     "MAX_DASHBOARD_TEMPLATE_NAME",
@@ -384,9 +434,12 @@ __all__ = [
     "list_dashboard_templates",
     "load_favorite_view_summaries",
     "normalize_ids",
+    "normalize_landing_order",
     "prune_favorite_views",
+    "read_landing_order",
     "read_ordered_ids",
     "save_dashboard_template",
     "set_favorite_views",
+    "set_landing_order",
     "set_workspace_order",
 ]

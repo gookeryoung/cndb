@@ -6,7 +6,8 @@ import { App as AntApp } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useAuthStore } from '@/store'
 import { workspaceApi } from '@/api'
-import { workspaceLandingSegment } from '@/utils/workspaceModules'
+import { normalizeLandingOrder, workspaceLandingSegment } from '@/utils/workspaceModules'
+import { usePreferences } from '@/hooks/useFavoriteViews'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import ErrorBoundary from '@/components/ErrorBoundary'
 import AuthLayout from '@/layouts/AuthLayout'
@@ -61,19 +62,27 @@ function PageFallback() {
   )
 }
 
-/** 工作区根路由落地页 —— 按勾选模块决定落地段（tables → documents → design，ADR 0080）.
+/** 工作区根路由落地页 —— 按用户偏好顺序取该工作区已启用的第一个模块（需求 0161）.
  *
- * 复用 MainLayout 已缓存的 workspaces 列表（同一 queryKey），不额外发请求；
- * 列表未就绪时先按默认（数据表）落地，模块信息到达后自动纠正。
+ * 复用 MainLayout 已缓存的 workspaces 与 preferences（同一 queryKey），不额外发请求；
+ * 两条查询就绪后再跳转，避免「先落默认段再被纠正」的双跳闪烁。
+ * 偏好未设置 / 非法时退回默认顺序 tables → documents → design（ADR 0080 D9，存量行为不变）。
  */
 function WorkspaceLanding() {
   const { wid } = useParams<{ wid: string }>()
-  const { data: workspaces = [] } = useQuery({
+  const { data: workspaces = [], isPending: workspacesPending } = useQuery({
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
   })
+  const { data: prefs, isPending: prefsPending } = usePreferences()
+  if (workspacesPending || prefsPending) return <PageFallback />
   const ws = workspaces.find(w => String(w.id) === wid)
-  return <Navigate to={workspaceLandingSegment(ws?.modules)} replace />
+  return (
+    <Navigate
+      to={workspaceLandingSegment(ws?.modules, normalizeLandingOrder(prefs?.landing_order))}
+      replace
+    />
+  )
 }
 
 function AuthenticatedApp() {

@@ -42,12 +42,19 @@ class UserRole(StrEnum):
         }[self]
 
 
+#: 默认落地页顺序（需求 0161）：数据表 → 文档 → 设计，与 ADR 0080 D9 的落地段顺序一致。
+#: 存的是三模块的**完整排列**，读者（前端 `workspaceModules.ts`）按同一顺序解析。
+DEFAULT_LANDING_ORDER: tuple[str, ...] = ("tables", "documents", "design")
+
+
 def _default_preferences() -> dict[str, Any]:
     """用户偏好默认值：激活视图映射 + 主页自定义顺序与收藏视图（ADR 0021）."""
     return {
         "active_views": {},
         "workspace_order": [],
         "favorite_views": [],
+        # 进入工作区时的默认落地页优先级（需求 0161）
+        "landing_order": list(DEFAULT_LANDING_ORDER),
     }
 
 
@@ -174,4 +181,4 @@ class UserAuditLog(TimestampMixin, Base):
         return f"UserAuditLog(id={self.id}, action={self.action!r}, actor_id={self.actor_id}, target={self.target_user_id})"
 
 
-__all__ = ["User", "UserAuditLog", "UserRole"]
+__all__ = ["DEFAULT_LANDING_ORDER", "User", "UserAuditLog", "UserRole"]

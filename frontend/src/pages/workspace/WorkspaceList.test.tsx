@@ -606,6 +606,41 @@ describe('WorkspaceList 功能模块选型', () => {
 
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/documents'))
   })
+
+  // 需求 0161：进入工作区的默认落地页按当前用户偏好顺序取首个已启用模块
+  it('按默认页偏好顺序进入工作区（文档优先 → 文档页）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({ id: 10, name: '全模块区' })])),
+      http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+        active_views: {}, workspace_order: [], favorite_view_ids: [],
+        landing_order: ['documents', 'tables', 'design'],
+      })),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByText('全模块区'))
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/documents'))
+  })
+
+  it('偏好首位模块在该工作区未启用时顺延（文档优先但仅有数据表 → 表列表）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([makeWs({ id: 10, name: '纯数据区', modules: ['tables'] })])),
+      http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+        active_views: {}, workspace_order: [], favorite_view_ids: [],
+        landing_order: ['documents', 'tables', 'design'],
+      })),
+    )
+    renderWorkspaceList()
+
+    const user = userEvent.setup()
+    await user.click(await screen.findByText('纯数据区'))
+
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables'))
+  })
 })
 
 // ─────────────── 主页「我的视图」面板与自定义顺序（ADR 0021） ───────────────

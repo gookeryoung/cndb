@@ -29,6 +29,13 @@ export const preferencesApi = {
         workspace_ids: workspaceIds.map(Number),
       })
       .then(r => r.data),
+  /** 全量替换进入工作区时的默认落地页顺序（需求 0161）；后端归一为完整排列 */
+  setLandingOrder: (order: string[]) =>
+    api
+      .put<{ landing_order: string[] }>('/v1/accounts/preferences/landing-order', {
+        landing_order: order,
+      })
+      .then(r => r.data),
   /** dashboard 模板列表（新保存的在前；ADR 0023 P3） */
   listDashboardTemplates: () =>
     api.get<DashboardTemplate[]>('/v1/accounts/preferences/dashboard-templates').then(r => r.data),

@@ -11,8 +11,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { http, HttpResponse } from 'msw'
 import SettingsModal from './SettingsModal'
 import { renderProviders } from '@/test/render-providers'
+import { server } from '@/test/msw'
 import { useTableSettingsStore, useDocSettingsStore, useAuthStore } from '@/store'
 import { DEFAULT_TABLE_SETTINGS } from '@/theme/tableSettings'
 import { DEFAULT_DOC_SETTINGS } from '@/theme/docSettings'
@@ -62,12 +64,12 @@ describe('SettingsModal 个人设置', () => {
     useTableSettingsStore.setState({ ...rest, ...DEFAULT_TABLE_SETTINGS })
   })
 
-  it('渲染六个 Tab 与全部主题卡片（10 张），主题页含配色与字体、编辑器独立成页', () => {
+  it('渲染七个 Tab 与全部主题卡片（10 张），主题页含配色与字体、编辑器独立成页', () => {
     renderProviders(<SettingsModal open onClose={() => { }} />)
 
-    // 页签顺序：修改密码已并入用户资料页签，不再单设「安全」
+    // 页签顺序：修改密码已并入用户资料页签，不再单设「安全」；「默认页」紧跟「主题」（需求 0161）
     expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
-      '用户资料', '主题', '表格', '文档', '编辑器', '大模型',
+      '用户资料', '主题', '默认页', '表格', '文档', '编辑器', '大模型',
     ])
     // GitHub 风格布局：桌面端左侧竖向列表 + 右侧内容区（独立滚动由样式承担）
     const tabs = document.querySelector('.settings-modal-tabs')
@@ -504,5 +506,71 @@ describe('SettingsModal 移动端适配', () => {
     const tabs = document.querySelector('.settings-modal-tabs')
     expect(tabs?.classList.contains('is-top')).toBe(true)
     expect(tabs?.classList.contains('is-side')).toBe(false)
+  })
+})
+
+// ─────────────── 默认页：进入工作区的落地优先级（需求 0161） ───────────────
+
+describe('SettingsModal 默认页', () => {
+  /** 命中落地顺序用例的偏好读写（msw 默认 GET 恒返回默认序，这里改成有状态） */
+  function useLandingOrderHandlers(initial: string[] = ['tables', 'documents', 'design']) {
+    let stored = [...initial]
+    server.use(
+      http.get('/api/v1/accounts/preferences', () =>
+        HttpResponse.json({
+          active_views: {}, workspace_order: [], favorite_view_ids: [], landing_order: stored,
+        })),
+      http.put('/api/v1/accounts/preferences/landing-order', async ({ request }) => {
+        const body = await request.json() as { landing_order?: string[] }
+        stored = body.landing_order ?? []
+        return HttpResponse.json({ landing_order: stored })
+      }),
+    )
+    return () => stored
+  }
+
+  it('默认顺序时展示「数据表 → 文档 → 设计」，首/末位按钮禁用且恢复默认置灰', async () => {
+    useLandingOrderHandlers()
+    renderProviders(<SettingsModal open initialTab="landing" onClose={() => { }} />)
+
+    await waitFor(() => expect(screen.getByTestId('landing-order-tables')).toHaveTextContent('1. 数据表'))
+    expect(screen.getByTestId('landing-order-documents')).toHaveTextContent('2. 文档')
+    expect(screen.getByTestId('landing-order-design')).toHaveTextContent('3. 设计')
+    expect(screen.getByTestId('landing-order-preview')).toHaveTextContent(
+      '进入工作区时优先打开：数据表 → 文档 → 设计',
+    )
+    expect(screen.getByTestId('landing-order-up-tables')).toBeDisabled()
+    expect(screen.getByTestId('landing-order-down-design')).toBeDisabled()
+    expect(screen.getByTestId('landing-order-reset')).toBeDisabled()
+  })
+
+  it('上移 / 下移即时改写偏好并同步预览', async () => {
+    const readStored = useLandingOrderHandlers()
+    renderProviders(<SettingsModal open initialTab="landing" onClose={() => { }} />)
+
+    await waitFor(() => expect(screen.getByTestId('landing-order-tables')).toHaveTextContent('1. 数据表'))
+    // 数据表下移一位 → 文档优先
+    fireEvent.click(screen.getByTestId('landing-order-down-tables'))
+    await waitFor(() => expect(screen.getByTestId('landing-order-documents')).toHaveTextContent('1. 文档'))
+    expect(screen.getByTestId('landing-order-tables')).toHaveTextContent('2. 数据表')
+    expect(screen.getByTestId('landing-order-preview')).toHaveTextContent(
+      '进入工作区时优先打开：文档 → 数据表 → 设计',
+    )
+    await waitFor(() => expect(readStored()).toEqual(['documents', 'tables', 'design']))
+
+    // 再把文档下移 → 数据表重新排到首位
+    fireEvent.click(screen.getByTestId('landing-order-down-documents'))
+    await waitFor(() => expect(screen.getByTestId('landing-order-tables')).toHaveTextContent('1. 数据表'))
+    await waitFor(() => expect(readStored()).toEqual(['tables', 'documents', 'design']))
+  })
+
+  it('恢复默认把顺序写回 数据表 → 文档 → 设计', async () => {
+    const readStored = useLandingOrderHandlers(['design', 'documents', 'tables'])
+    renderProviders(<SettingsModal open initialTab="landing" onClose={() => { }} />)
+
+    await waitFor(() => expect(screen.getByTestId('landing-order-design')).toHaveTextContent('1. 设计'))
+    fireEvent.click(screen.getByTestId('landing-order-reset'))
+    await waitFor(() => expect(screen.getByTestId('landing-order-tables')).toHaveTextContent('1. 数据表'))
+    await waitFor(() => expect(readStored()).toEqual(['tables', 'documents', 'design']))
   })
 })

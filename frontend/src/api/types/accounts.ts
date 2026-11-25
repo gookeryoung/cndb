@@ -156,6 +156,8 @@ export interface UserPreferences {
   workspace_order: number[]
   /** 收藏视图 id，顺序即「我的视图」展示顺序 */
   favorite_view_ids: number[]
+  /** 进入工作区时的默认落地页优先级（需求 0161）：`tables` / `documents` / `design` 的完整排列 */
+  landing_order: string[]
 }
 
 /** dashboard 模板（对齐后端 DashboardTemplateItem，ADR 0023 P3）.

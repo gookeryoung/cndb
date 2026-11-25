@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, WORKSPACE_MODULES,
-  normalizeModules, workspaceLandingSegment, workspaceModulesFeatures, workspaceSwitchSegment,
+  DEFAULT_LANDING_ORDER, DEFAULT_WORKSPACE_MODULES, WORKSPACE_MODULE_LABEL, WORKSPACE_MODULES,
+  normalizeLandingOrder, normalizeModules, workspaceLandingSegment, workspaceModulesFeatures,
+  workspaceSwitchSegment,
 } from './workspaceModules'
 import type { WorkspaceModule } from './workspaceModules'
 
@@ -77,5 +78,65 @@ describe('workspaceModules 工作区功能模块元数据', () => {
     // 无当前段（主页 / 管理台等无工作区上下文）→ 等同于落地段
     expect(workspaceSwitchSegment(null, ['documents'])).toBe('documents')
     expect(workspaceSwitchSegment(undefined, ['tables'])).toBe('tables')
+  })
+})
+
+describe('workspaceModules 默认落地页顺序（需求 0161）', () => {
+  it('默认顺序与 ADR 0080 D9 一致', () => {
+    expect(DEFAULT_LANDING_ORDER).toEqual(['tables', 'documents', 'design'])
+  })
+
+  it('归一：去重 + 丢未知 + 缺失项补尾，结果恒为完整排列', () => {
+    expect(normalizeLandingOrder(undefined)).toEqual(['tables', 'documents', 'design'])
+    expect(normalizeLandingOrder(null)).toEqual(['tables', 'documents', 'design'])
+    expect(normalizeLandingOrder([])).toEqual(['tables', 'documents', 'design'])
+    expect(normalizeLandingOrder('documents')).toEqual(['tables', 'documents', 'design'])
+    expect(normalizeLandingOrder([1, 'bogus'])).toEqual(['tables', 'documents', 'design'])
+    expect(normalizeLandingOrder(['documents', 'documents', 'bogus'])).toEqual([
+      'documents', 'tables', 'design',
+    ])
+    expect(normalizeLandingOrder(['design', 'tables', 'documents'])).toEqual([
+      'design', 'tables', 'documents',
+    ])
+  })
+
+  // 偏好顺序 × 工作区模块组合矩阵 —— 只取「该工作区已启用」的第一个
+  it('按偏好顺序取已启用模块，偏好首位未启用时顺延', () => {
+    const docFirst: WorkspaceModule[] = ['documents', 'tables', 'design']
+    const designFirst: WorkspaceModule[] = ['design', 'documents', 'tables']
+
+    expect(workspaceLandingSegment(['tables', 'documents', 'design'], docFirst)).toBe('documents')
+    expect(workspaceLandingSegment(['tables', 'documents'], docFirst)).toBe('documents')
+    // 无文档模块 → 顺延到数据表
+    expect(workspaceLandingSegment(['tables', 'design'], docFirst)).toBe('tables')
+    // 只要设计 → 落到设计（即使偏好末位）
+    expect(workspaceLandingSegment(['design'], docFirst)).toBe('design')
+
+    expect(workspaceLandingSegment(['tables', 'documents', 'design'], designFirst)).toBe('design')
+    expect(workspaceLandingSegment(['tables', 'documents'], designFirst)).toBe('documents')
+    expect(workspaceLandingSegment(['tables'], designFirst)).toBe('tables')
+    expect(workspaceLandingSegment(['design'], designFirst)).toBe('design')
+  })
+
+  it('未传 / 非法偏好等价存量行为（I2 零回归）', () => {
+    for (const modules of [
+      ['tables'], ['documents'], ['design'], ['tables', 'documents'],
+      ['tables', 'design'], ['documents', 'design'], ['tables', 'documents', 'design'],
+    ] as WorkspaceModule[][]) {
+      expect(workspaceLandingSegment(modules)).toBe(
+        workspaceLandingSegment(modules, DEFAULT_LANDING_ORDER),
+      )
+      expect(workspaceLandingSegment(modules, [] as WorkspaceModule[])).toBe(
+        workspaceLandingSegment(modules),
+      )
+    }
+  })
+
+  it('切工作区回落段同样按偏好顺序', () => {
+    const docFirst: WorkspaceModule[] = ['documents', 'tables', 'design']
+    // 当前在数据表、目标工作区只有文档 + 设计 → 按偏好优先文档
+    expect(workspaceSwitchSegment('tables', ['documents', 'design'], docFirst)).toBe('documents')
+    // 目标工作区已启用当前模块 → 保持当前模块（偏好不改变该优先权）
+    expect(workspaceSwitchSegment('tables', ['tables', 'documents'], docFirst)).toBe('tables')
   })
 })
