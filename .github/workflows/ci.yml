@@ -504,7 +504,7 @@ jobs:
       - name: Run E2E (webServer 自动 seed + 起后端 :8000，不含 @perf)
         env:
           CI: "true"
-        run: cd frontend && pnpm e2e --shard=${{ matrix.shard }}/4 --grep-invert="tag:@perf"
+        run: cd frontend && pnpm e2e --shard=${{ matrix.shard }}/4 --grep-invert="@perf"
 
       # @perf 用例必须串行独占：并行 worker 抢 CPU 时 LCP 读数反映争抢而非页面性能
       - name: Run perf 冒烟（shard 1 内串行独占，观察期）
