@@ -759,8 +759,8 @@ describe('DocumentEditorPage 文档导出', () => {
                 HttpResponse.json({
                     items: [
                         {
-                            ref: 'builtin:standard',
-                            name: '标准',
+                            ref: 'builtin:research',
+                            name: '研究报告',
                             description: '',
                             source: 'builtin',
                             is_default: false,
@@ -777,7 +777,7 @@ describe('DocumentEditorPage 文档导出', () => {
                             updated_at: null,
                         },
                     ],
-                    default_ref: 'builtin:standard',
+                    default_ref: 'builtin:research',
                 }),
             ),
             http.get('/api/v1/workspaces/:wid/documents/:docId/export', ({ request }) => {

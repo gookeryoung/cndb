@@ -503,7 +503,7 @@ def _render_docx(
     - images：站内图片解析器；``![alt](file:<key>)`` 独占一行时嵌入真实图片
     - tables：数据表引用解析器；``{{table:…}}`` 独占一行时渲染为真实表格
     - 图表：正文 `` ```chart `` 内嵌块渲染为整幅图 PNG（ADR 0052）
-    - template：导出模板（``None`` = 内置 ``standard``，与历史导出视觉等价）
+    - template：导出模板（``None`` = 内置 ``research``（研究报告））
     """
     from docx import Document
     from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT

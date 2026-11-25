@@ -6,7 +6,7 @@
 - GET    /{ref}          单个模板（``builtin:<key>`` 或行 id）
 - POST   ""              新建 / 从内置预设另存为（editor+）
 - PUT    /{id}           更新名称 / 描述 / 配置 / 设为默认（editor+）
-- DELETE /{id}           删除自定义模板（editor+；默认模板删除后回落内置 standard）
+- DELETE /{id}           删除自定义模板（editor+；默认模板删除后回落内置 research）
 - POST   /preview        用未保存配置渲染示例 docx / pdf（成员，不落库）
 
 内置预设只能被引用或另存为：任何指向 ``builtin:<key>`` 的写操作都返回 400（I4）。
@@ -121,7 +121,7 @@ def delete_export_template(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    """删除自定义模板（editor+）；删除默认模板后回落内置 standard."""
+    """删除自定义模板（editor+）；删除默认模板后回落内置 research."""
     services.content.require_editor(db, workspace_id, current_user)
     return services.export_template_store.delete_template(db, workspace_id, template_id)
 

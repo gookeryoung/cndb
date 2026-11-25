@@ -246,9 +246,11 @@ class TestDocxFidelity:
         assert rule.text == ""
 
     def test_heading_sizes_cover_h4_to_h6(self) -> None:
-        document = Document(io.BytesIO(docx_export._render_docx("#### 四\n##### 五\n###### 六")))
+        """默认模板 = 研究报告（H4–H6 统一小四 12pt，不再逐级缩小）."""
+        markdown = "#" * 4 + " 四" + chr(10) + "#" * 5 + " 五" + chr(10) + "#" * 6 + " 六"
+        document = Document(io.BytesIO(docx_export._render_docx(markdown)))
         sizes = [p.runs[0].font.size for p in document.paragraphs if p.text.strip()]
-        assert sizes == [Pt(12), Pt(11), Pt(10.5)]
+        assert sizes == [Pt(12), Pt(12), Pt(12)]
 
     def test_small_image_is_not_upscaled(self) -> None:
         data = _png(20, 10)
@@ -458,7 +460,8 @@ class TestDocxTableRefEdges:
         document = Document(io.BytesIO(docx_export._render_docx("# 标题 `码`")))
         heading = next(p for p in document.paragraphs if "标题" in p.text)
         code_run = next(run for run in heading.runs if run.text == "码")
-        assert code_run.font.size == Pt(17.5)
+        # 默认模板 H1 = 16pt，行内代码再小半磅
+        assert code_run.font.size == Pt(15.5)
 
     def test_chart_block_between_text_keeps_segments(self) -> None:
         from cndb.plugins.documents.services.charts.inline import serialize_inline_chart_block

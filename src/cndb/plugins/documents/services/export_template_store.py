@@ -51,7 +51,7 @@ def _row_item(row: ExportTemplate) -> dict[str, Any]:
 
 
 def default_ref(db: Session, workspace_id: int) -> str:
-    """当前工作区实际生效的默认模板引用（未设默认即内置 standard）."""
+    """当前工作区实际生效的默认模板引用（未设默认即内置 research）."""
     row = _default_row(db, workspace_id)
     return str(row.id) if row is not None else template_cfg.DEFAULT_TEMPLATE_REF
 
@@ -217,7 +217,7 @@ def update_template(
 
 
 def delete_template(db: Session, workspace_id: int, template_id: int) -> dict[str, Any]:
-    """删除自定义模板；默认模板被删后回落内置 standard（不报错）."""
+    """删除自定义模板；默认模板被删后回落内置 research（不报错）."""
     row = _get_row(db, workspace_id, template_id)
     was_default = bool(row.is_default)
     db.delete(row)

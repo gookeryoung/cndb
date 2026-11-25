@@ -1,8 +1,8 @@
 /** 导出模板 API — `/api/v1/workspaces/{wid}/documents/templates`（ADR 0152）.
  *
- * 模板是**工作区级**资源：内置预设（standard / research / …）只读、来自代码常量，
+ * 模板是**工作区级**资源：内置预设（research / techreport / … 共 6 套）只读、来自代码常量，
  * 自定义模板落库并与工作区备份一同往返。导出 docx / pdf 时按
- * 「显式 ref → 工作区默认 → 内置 standard」解析（后端唯一入口）。
+ * 「显式 ref → 工作区默认 → 内置 research（研究报告）」解析（后端唯一入口）。
  *
  * UI 入口：个人设置 → 模板（`frontend/src/pages/settings/TemplatePanel.tsx`）与顶栏图标。
  */
@@ -140,7 +140,7 @@ export interface ExportTemplateItem {
 
 export interface ExportTemplateList {
   items: ExportTemplateItem[]
-  /** 当前工作区实际生效的默认模板引用（未设默认即 `builtin:standard`） */
+  /** 当前工作区实际生效的默认模板引用（未设默认即 `builtin:research`，研究报告） */
   default_ref: string
 }
 
@@ -196,12 +196,10 @@ export const exportTemplateApi = {
 
 /** 例：内置 key → 中文名（前端提示与快捷菜单用，真实名称由接口返回） */
 export const BUILTIN_TEMPLATE_LABELS: Record<string, string> = {
-  standard: '标准',
   research: '研究报告',
   techreport: '技术报告',
   trend: '趋势分析',
   thesis: '论文',
   official: '公文',
-  weekly: '周报',
   press: '宣传报道',
 }

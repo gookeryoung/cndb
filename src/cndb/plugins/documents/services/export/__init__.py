@@ -142,7 +142,7 @@ def render_export(
         title: 文档标题，用于 DOCX 属性与 PDF 页眉。
         images: 站内图片解析器。
         tables: 数据表引用解析器；提供时 ``{{table:…}}`` 渲染为真实表格。
-        template: 导出模板（ADR 0152）；``None`` 时 docx / pdf 走内置 standard。
+        template: 导出模板（ADR 0152）；``None`` 时 docx / pdf 走内置 research。
 
     Raises:
         KeyError: 传入未注册的格式名。

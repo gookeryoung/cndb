@@ -6,7 +6,7 @@
  * viewer 只读、未进入工作区空态；以及选项口径（字号中文号名映射、预览样式）。
  */
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Route, Routes } from 'react-router-dom'
@@ -81,13 +81,13 @@ function makeConfig(patch: Partial<ExportTemplateConfig['body']> = {}): ExportTe
   }
 }
 
-const BUILTIN_STANDARD: ExportTemplateItem = {
-  ref: 'builtin:standard',
-  name: '标准',
-  description: '系统历史默认视觉',
+const BUILTIN_RESEARCH: ExportTemplateItem = {
+  ref: 'builtin:research',
+  name: '研究报告',
+  description: '企业通用规范',
   source: 'builtin',
   is_default: false,
-  config: makeConfig(),
+  config: makeConfig({ east_asia_font: '宋体', size: 12, first_line_indent_chars: 2 }),
   updated_at: null,
 }
 
@@ -120,7 +120,7 @@ interface Calls {
 
 function setupHandlers(options: { role?: string; items?: ExportTemplateItem[]; defaultRef?: string } = {}): Calls {
   const calls: Calls = { put: [], post: [], del: [], preview: [] }
-  const items = options.items ?? [BUILTIN_STANDARD, BUILTIN_THESIS, CUSTOM_DEFAULT]
+  const items = options.items ?? [BUILTIN_RESEARCH, BUILTIN_THESIS, CUSTOM_DEFAULT]
   const defaultRef = options.defaultRef ?? CUSTOM_DEFAULT.ref
   server.use(
     http.get('/api/v1/workspaces', () =>
@@ -152,7 +152,7 @@ function setupHandlers(options: { role?: string; items?: ExportTemplateItem[]; d
     }),
     http.delete('/api/v1/workspaces/:wid/documents/templates/:id', ({ params }) => {
       calls.del.push(String(params.id))
-      return HttpResponse.json({ deleted: true, default_ref: 'builtin:standard', was_default: true })
+      return HttpResponse.json({ deleted: true, default_ref: 'builtin:research', was_default: true })
     }),
     http.post('/api/v1/workspaces/:wid/documents/templates/preview', async ({ request }) => {
       const url = new URL(request.url)
@@ -232,7 +232,7 @@ describe('TemplatePanel', () => {
   })
 
   it('设为默认走 PUT is_default', async () => {
-    const calls = setupHandlers({ items: [BUILTIN_STANDARD, { ...CUSTOM_DEFAULT, is_default: false }] })
+    const calls = setupHandlers({ items: [BUILTIN_RESEARCH, { ...CUSTOM_DEFAULT, is_default: false }] })
     renderPanel()
     fireEvent.click(await screen.findByTestId('template-item-7'))
     fireEvent.click(await screen.findByTestId('template-default-btn'))
@@ -294,7 +294,7 @@ describe('TemplatePanel', () => {
     const thesis = makeConfig({ east_asia_font: '宋体', size: 12, first_line_indent_chars: 2 })
     setupHandlers({
       items: [
-        BUILTIN_STANDARD,
+        BUILTIN_RESEARCH,
         {
           ...BUILTIN_THESIS,
           config: {
@@ -372,22 +372,28 @@ describe('DocumentTemplatesPage（文档区入口）', () => {
 })
 
 describe('TemplatePanel 布局交互（分组折叠 / 新建 / 预览收起）', () => {
-  it('内置 / 自定义分组可分别展开收起', async () => {
+  it('自定义分组在上、内置分组在下，两组可分别展开收起', async () => {
     setupHandlers()
     renderPanel()
     const group = await screen.findByTestId('template-group-builtin')
-    expect(screen.getByTestId('template-item-builtin:standard')).toBeInTheDocument()
+    expect(screen.getByTestId('template-item-builtin:research')).toBeInTheDocument()
     expect(group).toHaveAttribute('aria-expanded', 'true')
+    // 分组顺序：自定义在上，内置在下（需求方口径）
+    const groups = screen.getAllByTestId(/^template-group-/)
+    expect(groups.map(node => node.getAttribute('data-testid'))).toEqual([
+      'template-group-custom',
+      'template-group-builtin',
+    ])
 
     fireEvent.click(group)
     expect(group).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.queryByTestId('template-item-builtin:standard')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('template-item-builtin:research')).not.toBeInTheDocument()
     // 自定义分组不受影响（各自独立）
     expect(screen.getByTestId('template-group-custom')).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByTestId('template-item-7')).toBeInTheDocument()
 
     fireEvent.click(group)
-    expect(screen.getByTestId('template-item-builtin:standard')).toBeInTheDocument()
+    expect(screen.getByTestId('template-item-builtin:research')).toBeInTheDocument()
   })
 
   it('页头「新建模板」按内置预设创建并选中新模板', async () => {
@@ -425,5 +431,116 @@ describe('TemplatePanel 布局交互（分组折叠 / 新建 / 预览收起）',
     expect(screen.getByTestId('template-save-btn')).toHaveTextContent('保存')
     expect(screen.getByTestId('template-preview-btn')).toHaveTextContent('示例 Word')
     expect(screen.getByTestId('template-preview-pdf-btn')).toHaveTextContent('示例 PDF')
+  })
+})
+
+describe('templateFile（导入 / 导出文件格式）', () => {
+  it('导出文本可回读：kind / version / 配置完整', async () => {
+    const { buildTemplateFile, parseTemplateFile, templateFileText, templateFileName } = await import('./templateFile')
+    const entry = { name: '公司规范', description: '说明', config: makeConfig({ east_asia_font: '宋体' }) }
+    const parsedWhole = buildTemplateFile([entry])
+    expect(parsedWhole.kind).toBe('cndb-document-template')
+    expect(parsedWhole.version).toBe(1)
+    const back = parseTemplateFile(templateFileText([entry]))
+    expect(back).toHaveLength(1)
+    expect(back[0].name).toBe('公司规范')
+    expect(back[0].config.body.east_asia_font).toBe('宋体')
+    expect(templateFileName('报告/规范')).toBe(`文档模板-报告_规范-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.json`)
+  })
+
+  it('兼容单条（无 templates 包裹）与多条', async () => {
+    const { parseTemplateFile } = await import('./templateFile')
+    const single = JSON.stringify({ name: '单条', config: makeConfig() })
+    expect(parseTemplateFile(single).map(e => e.name)).toEqual(['单条'])
+    const multi = JSON.stringify({
+      kind: 'cndb-document-template',
+      version: 1,
+      templates: [
+        { name: 'A', config: makeConfig() },
+        { name: 'B', description: 'x', config: makeConfig() },
+      ],
+    })
+    expect(parseTemplateFile(multi).map(e => e.name)).toEqual(['A', 'B'])
+  })
+
+  it('非法文件给出中文错误', async () => {
+    const { parseTemplateFile } = await import('./templateFile')
+    expect(() => parseTemplateFile('not json')).toThrow('不是合法的 JSON 文件')
+    expect(() => parseTemplateFile(JSON.stringify({ kind: 'other' }))).toThrow('不是晶格协同的文档模板文件')
+    expect(() => parseTemplateFile(JSON.stringify({ kind: 'cndb-document-template', version: 99, templates: [] }))).toThrow(
+      '版本过新',
+    )
+    expect(() => parseTemplateFile(JSON.stringify({ config: makeConfig() }))).toThrow('缺少名称')
+    expect(() => parseTemplateFile(JSON.stringify({ name: 'x' }))).toThrow('缺少配置')
+    expect(() => parseTemplateFile(JSON.stringify({ templates: [] }))).toThrow('没有任何模板')
+  })
+
+  it('导入名称去重：同名加「（导入）」「（导入 2）」', async () => {
+    const { suggestImportName } = await import('./templateFile')
+    const existing = new Set(['模板', '模板（导入）'])
+    expect(suggestImportName('新模板', existing)).toBe('新模板')
+    expect(suggestImportName('模板', existing)).toBe('模板（导入 2）')
+  })
+})
+
+describe('TemplatePanel 导入 / 导出', () => {
+  it('导出当前模板为 JSON 文件（blob 内容含配置）', async () => {
+    setupHandlers()
+    const captured: Blob[] = []
+    const createSpy = vi.fn((blob: Blob) => {
+      captured.push(blob)
+      return 'blob:template'
+    })
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createSpy })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+
+    renderPanel()
+    fireEvent.click(await screen.findByTestId('template-item-7'))
+    fireEvent.click(await screen.findByTestId('template-export-btn'))
+
+    await waitFor(() => expect(createSpy).toHaveBeenCalled())
+    const text = await captured[0].text()
+    const parsed = JSON.parse(text) as { kind: string; templates: Array<{ name: string }> }
+    expect(parsed.kind).toBe('cndb-document-template')
+    expect(parsed.templates[0].name).toBe('公司报告')
+  })
+
+  it('导入模板文件：逐条创建并跳过重名失败项', async () => {
+    const calls = setupHandlers()
+    renderPanel()
+    await waitFor(() => expect(screen.getByTestId('template-import-btn')).toBeEnabled())
+
+    const file = new File(
+      [
+        JSON.stringify({
+          kind: 'cndb-document-template',
+          version: 1,
+          templates: [
+            { name: '公司报告', config: makeConfig() },
+            { name: '新导入模板', description: '来自文件', config: makeConfig({ size: 14 }) },
+          ],
+        }),
+      ],
+      'templates.json',
+      { type: 'application/json' },
+    )
+    const input = screen.getByTestId('template-import-input') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+
+    await waitFor(() => expect(calls.post.length).toBeGreaterThanOrEqual(2))
+    // 第一条与已有自定义模板同名 → 自动改名「公司报告（导入）」
+    expect(calls.post[0]).toMatchObject({ name: '公司报告（导入）', description: '' })
+    expect(calls.post[1]).toMatchObject({ name: '新导入模板', description: '来自文件' })
+    expect((calls.post[1].config as ExportTemplateConfig).body.size).toBeCloseTo(14, 1)
+  })
+
+  it('导入非法文件时不发请求并提示', async () => {
+    const calls = setupHandlers()
+    renderPanel()
+    await waitFor(() => expect(screen.getByTestId('template-import-btn')).toBeEnabled())
+    const file = new File(['not-json'], 'bad.json', { type: 'application/json' })
+    const input = screen.getByTestId('template-import-input') as HTMLInputElement
+    fireEvent.change(input, { target: { files: [file] } })
+    await waitFor(() => expect(calls.post).toHaveLength(0))
   })
 })

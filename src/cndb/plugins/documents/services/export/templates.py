@@ -7,9 +7,9 @@
 
 1. **配置模型与校验**：``validate_config`` 是唯一入口，越界 / 未知字段一律
    ``ValueError``（路由层转 400），不做静默夹取，避免「保存成功但效果不对」。
-2. **内置预设**：代码常量（不入库），``standard`` 与历史 ``DEFAULT_THEME`` 视觉
-   等价，保证未指定模板时导出行为逐项不变（I2）。
-3. **解析链**：``resolve_export_template`` = 显式 ref → 工作区默认 → 内置 standard。
+2. **内置预设**：代码常量（不入库），共 6 套（研究报告 / 技术报告 / 趋势分析 / 论文 /
+   公文 / 宣传报道）；未指定模板时用 ``research``（研究报告，企业报告规范的通用基线）。
+3. **解析链**：``resolve_export_template`` = 显式 ref → 工作区默认 → 内置 ``research``。
    导出器与路由都只调它（I1）。
 """
 
@@ -21,8 +21,6 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-
-from cndb.plugins.documents.services.export.theme import DEFAULT_THEME
 
 # ── 取值域 ──
 
@@ -262,34 +260,6 @@ def _pick(values: tuple[float, ...], level: int) -> float:
     return values[min(level, len(values)) - 1] if level <= len(values) else values[-1]
 
 
-def _standard_config() -> ExportTemplateConfig:
-    """标准预设：与历史 ``DEFAULT_THEME`` 视觉等价（I2）."""
-    return ExportTemplateConfig(
-        body=BodyConfig(
-            latin_font=DEFAULT_THEME.body_font,
-            east_asia_font=DEFAULT_THEME.body_font,
-            size=DEFAULT_THEME.body_size,
-        ),
-        headings=_headings(
-            latin=DEFAULT_THEME.heading_font,
-            east_asia=DEFAULT_THEME.heading_font,
-            sizes=(18.0, 15.0, 13.0, 12.0, 11.0, 10.5),
-            before=(12.0, 10.0, 8.0, 6.0, 6.0, 6.0),
-            after=(6.0, 5.0, 4.0, 3.0, 3.0, 3.0),
-        ),
-        table=TableConfig(
-            header_bg=DEFAULT_THEME.table_header_bg,
-            header_color=DEFAULT_THEME.table_header_color,
-            latin_font=DEFAULT_THEME.table_body_font,
-            east_asia_font=DEFAULT_THEME.table_body_font,
-        ),
-        code=CodeConfig(
-            latin_font=DEFAULT_THEME.code_font,
-            east_asia_font=DEFAULT_THEME.code_font,
-        ),
-    )
-
-
 def _thesis_config() -> ExportTemplateConfig:
     """学术论文：宋体 12pt / 1.5 倍行距 / 首行缩进 2 字符 / 三线表 + 题注."""
     return ExportTemplateConfig(
@@ -331,7 +301,8 @@ def _thesis_config() -> ExportTemplateConfig:
 
 
 def _research_config() -> ExportTemplateConfig:
-    """研究报告：宋体 12pt / 1.5 倍行距 / 首行缩进 2 字符 / 三线表."""
+    """研究报告（企业通用规范）：A4 + 2.54cm 边距 / 宋体小四 12pt / 1.5 倍行距 /
+    首行缩进 2 字符 / 黑体标题 16·14·12 / 三线表 / 图表题注 / 1·1.1·1.1.1 编号."""
     return ExportTemplateConfig(
         header_footer=HeaderFooterConfig(header_text="研究报告", page_number="page", font_size=9.0),
         body=BodyConfig(
@@ -350,6 +321,7 @@ def _research_config() -> ExportTemplateConfig:
             sizes=(16.0, 14.0, 12.0, 12.0, 12.0, 12.0),
             before=(16.0, 12.0, 10.0, 8.0, 8.0, 8.0),
             after=(10.0, 8.0, 6.0, 4.0, 4.0, 4.0),
+            align=("center", "left", "left", "left", "left", "left"),
         ),
         numbering=NumberingConfig(heading="arabic_multilevel"),
         table=TableConfig(
@@ -369,13 +341,14 @@ def _research_config() -> ExportTemplateConfig:
 
 
 def _techreport_config() -> ExportTemplateConfig:
-    """技术报告：宋体 11pt / 1.5 倍行距 / 黑体标题 / 浅蓝表头."""
+    """技术报告（研发交付）：正文宋体小四 12pt / 1.5 倍行距 / 首行缩进 2 字符；
+    标题黑体三号→四号→小四；浅蓝表头 + 表头跨页重复；图表题注「图 1-1」；页脚页码."""
     return ExportTemplateConfig(
         header_footer=HeaderFooterConfig(page_number="page", font_size=9.0),
         body=BodyConfig(
-            latin_font="Calibri",
+            latin_font="Times New Roman",
             east_asia_font="宋体",
-            size=11.0,
+            size=12.0,
             align="justify",
             line_spacing=1.5,
             space_before=0.0,
@@ -383,9 +356,9 @@ def _techreport_config() -> ExportTemplateConfig:
             first_line_indent_chars=2.0,
         ),
         headings=_headings(
-            latin="Calibri",
+            latin="Times New Roman",
             east_asia="黑体",
-            sizes=(18.0, 15.0, 13.0, 12.0, 11.0, 11.0),
+            sizes=(16.0, 14.0, 12.0, 12.0, 12.0, 12.0),
             before=(18.0, 14.0, 10.0, 8.0, 8.0, 8.0),
             after=(10.0, 8.0, 6.0, 4.0, 4.0, 4.0),
             align=("center", "left", "left", "left", "left", "left"),
@@ -395,30 +368,35 @@ def _techreport_config() -> ExportTemplateConfig:
             header_bg="#E6EEF5",
             header_color="#1A5276",
             east_asia_font="宋体",
-            latin_font="Calibri",
+            latin_font="Times New Roman",
             size=10.5,
             cell_valign="center",
+        ),
+        captions=CaptionsConfig(
+            figure=CaptionStyleConfig(enabled=True, position="below", numbering="n-n", align="center"),
+            table=CaptionStyleConfig(enabled=True, position="above", numbering="n-n", align="center"),
         ),
     )
 
 
 def _trend_config() -> ExportTemplateConfig:
-    """趋势分析：左对齐多级编号，图表题注在下."""
+    """趋势分析（数据简报）：正文宋体小四 12pt / 1.5 倍行距 / 首行缩进 2 字符；
+    左对齐多级编号 + 斑马纹表格便于扫读；图表题注在下."""
     return ExportTemplateConfig(
         header_footer=HeaderFooterConfig(page_number="plain", font_size=9.0),
         body=BodyConfig(
-            latin_font="Calibri",
+            latin_font="Times New Roman",
             east_asia_font="宋体",
-            size=11.0,
+            size=12.0,
             line_spacing=1.5,
             space_before=0.0,
             space_after=0.0,
             first_line_indent_chars=2.0,
         ),
         headings=_headings(
-            latin="Calibri",
+            latin="Times New Roman",
             east_asia="黑体",
-            sizes=(16.0, 14.0, 12.0, 11.0, 11.0, 11.0),
+            sizes=(16.0, 14.0, 12.0, 12.0, 12.0, 12.0),
             before=(14.0, 12.0, 10.0, 8.0, 8.0, 8.0),
             after=(8.0, 6.0, 4.0, 3.0, 3.0, 3.0),
         ),
@@ -427,8 +405,8 @@ def _trend_config() -> ExportTemplateConfig:
             header_bg="#EAF2FB",
             header_color="#1F3864",
             east_asia_font="宋体",
-            latin_font="Calibri",
-            size=10.0,
+            latin_font="Times New Roman",
+            size=10.5,
             zebra=True,
         ),
         captions=CaptionsConfig(
@@ -438,11 +416,57 @@ def _trend_config() -> ExportTemplateConfig:
     )
 
 
+def _thesis_config() -> ExportTemplateConfig:
+    """论文（学位论文编写规则 GB/T 7713 系列通行口径）：A4 / 上 2.5 下 2.5 左 3.0（装订侧）右 2.5；
+    正文宋体小四 12pt / 1.5 倍行距 / 首行缩进 2 字符；一级标题黑体三号居中（第一章）/
+    二级黑体四号 / 三级黑体小四；三线表 + 「图 1-1」题注."""
+    return ExportTemplateConfig(
+        page=PageConfig(margin_top=2.5, margin_bottom=2.5, margin_left=3.0, margin_right=2.5),
+        header_footer=HeaderFooterConfig(page_number="plain"),
+        body=BodyConfig(
+            latin_font="Times New Roman",
+            east_asia_font="宋体",
+            size=12.0,
+            align="justify",
+            line_spacing=1.5,
+            space_before=0.0,
+            space_after=0.0,
+            first_line_indent_chars=2.0,
+        ),
+        headings=_headings(
+            latin="Times New Roman",
+            east_asia="黑体",
+            sizes=(16.0, 14.0, 12.0, 12.0, 12.0, 12.0),
+            before=(18.0, 12.0, 10.0, 8.0, 8.0, 8.0),
+            after=(12.0, 8.0, 6.0, 4.0, 4.0, 4.0),
+            align=("center", "left", "left", "left", "left", "left"),
+        ),
+        numbering=NumberingConfig(heading="chapter_chinese"),
+        table=TableConfig(
+            style="three_line",
+            header_bg="#FFFFFF",
+            header_color="#000000",
+            latin_font="Times New Roman",
+            east_asia_font="宋体",
+            size=10.5,
+            border_color="#000000",
+            cell_valign="center",
+        ),
+        captions=CaptionsConfig(
+            figure=CaptionStyleConfig(enabled=True, position="below", numbering="n-n", align="center"),
+            table=CaptionStyleConfig(enabled=True, position="above", numbering="n-n", align="center"),
+        ),
+    )
+
+
 def _official_config() -> ExportTemplateConfig:
-    """公文函件：仿宋三号 / 固定行距 28pt / 一、编号 / 页脚「第 X 页 共 Y 页」."""
+    """公文（GB/T 9704-2012 党政机关公文格式）：
+    页边距 上 37mm / 下 35mm / 左 28mm / 右 26mm；正文三号仿宋（16pt）固定行距 28pt、首行缩进 2 字；
+    标题 2 号小标宋（22pt）居中；一级「一、」黑体三号、二级「（一）」楷体三号、三级「1.」仿宋三号加粗；
+    页码 4 号宋体数字（公文不写「第 X 页 共 Y 页」）."""
     return ExportTemplateConfig(
         page=PageConfig(margin_top=3.7, margin_bottom=3.5, margin_left=2.8, margin_right=2.6),
-        header_footer=HeaderFooterConfig(page_number="page_of_total", first_page_different=True, font_size=9.0),
+        header_footer=HeaderFooterConfig(page_number="plain", first_page_different=True, font_size=14.0),
         body=BodyConfig(
             latin_font="Times New Roman",
             east_asia_font="仿宋",
@@ -453,72 +477,85 @@ def _official_config() -> ExportTemplateConfig:
             space_after=0.0,
             first_line_indent_chars=2.0,
         ),
-        headings=_headings(
-            latin="Times New Roman",
-            east_asia="黑体",
-            sizes=(22.0, 16.0, 16.0, 16.0, 16.0, 16.0),
-            before=(18.0, 12.0, 10.0, 8.0, 8.0, 8.0),
-            after=(14.0, 8.0, 6.0, 4.0, 4.0, 4.0),
-            align=("center", "left", "left", "left", "left", "left"),
-        ),
+        headings=[
+            HeadingConfig(
+                latin_font="Times New Roman",
+                east_asia_font="方正小标宋简体",
+                size=22.0,
+                bold=False,
+                align="center",
+                space_before=18.0,
+                space_after=14.0,
+            ),
+            HeadingConfig(
+                latin_font="Times New Roman",
+                east_asia_font="黑体",
+                size=16.0,
+                bold=False,
+                space_before=12.0,
+                space_after=8.0,
+            ),
+            HeadingConfig(
+                latin_font="Times New Roman",
+                east_asia_font="楷体",
+                size=16.0,
+                bold=False,
+                space_before=10.0,
+                space_after=6.0,
+            ),
+            HeadingConfig(
+                latin_font="Times New Roman",
+                east_asia_font="仿宋",
+                size=16.0,
+                bold=True,
+                space_before=8.0,
+                space_after=4.0,
+            ),
+            HeadingConfig(
+                latin_font="Times New Roman",
+                east_asia_font="仿宋",
+                size=16.0,
+                bold=False,
+                space_before=8.0,
+                space_after=4.0,
+            ),
+            HeadingConfig(
+                latin_font="Times New Roman",
+                east_asia_font="仿宋",
+                size=16.0,
+                bold=False,
+                space_before=8.0,
+                space_after=4.0,
+            ),
+        ],
         numbering=NumberingConfig(heading="cn_ordinal"),
         table=TableConfig(
             header_bg="#FFFFFF",
             header_color="#000000",
             east_asia_font="仿宋",
             latin_font="Times New Roman",
-            size=14.0,
+            size=12.0,
             border_color="#000000",
             cell_valign="center",
         ),
     )
 
 
-def _weekly_config() -> ExportTemplateConfig:
-    """周报：紧凑列表 + 斑马纹表格，便于快速扫读."""
-    return ExportTemplateConfig(
-        header_footer=HeaderFooterConfig(page_number="plain"),
-        body=BodyConfig(
-            latin_font="Calibri",
-            east_asia_font="宋体",
-            size=11.0,
-            line_spacing=1.5,
-            space_before=0.0,
-            space_after=2.0,
-        ),
-        headings=_headings(
-            latin="Calibri",
-            east_asia="黑体",
-            sizes=(15.0, 13.0, 12.0, 11.0, 11.0, 11.0),
-            before=(12.0, 10.0, 8.0, 6.0, 6.0, 6.0),
-            after=(6.0, 5.0, 4.0, 3.0, 3.0, 3.0),
-        ),
-        table=TableConfig(
-            header_bg="#EFF3F8",
-            header_color="#1F3864",
-            east_asia_font="宋体",
-            latin_font="Calibri",
-            size=10.0,
-            zebra=True,
-            cell_valign="center",
-        ),
-    )
-
-
 def _press_config() -> ExportTemplateConfig:
-    """宣传报道：无首行缩进、1.75 倍行距，正文更松散易读."""
+    """宣传报道：正文宋体小四 12pt / 1.5 倍行距 / 不缩进（网媒阅读习惯）；
+    标题黑体号数递减、一级居中；浅暖色表头."""
     return ExportTemplateConfig(
         header_footer=HeaderFooterConfig(page_number="none"),
         body=BodyConfig(
-            latin_font="Calibri",
+            latin_font="Times New Roman",
             east_asia_font="宋体",
             size=12.0,
-            line_spacing=1.75,
+            line_spacing=1.5,
             space_before=0.0,
             space_after=4.0,
         ),
         headings=_headings(
-            latin="Calibri",
+            latin="Times New Roman",
             east_asia="黑体",
             sizes=(18.0, 15.0, 13.0, 12.0, 12.0, 12.0),
             before=(18.0, 14.0, 10.0, 8.0, 8.0, 8.0),
@@ -529,64 +566,52 @@ def _press_config() -> ExportTemplateConfig:
             header_bg="#FDF1EC",
             header_color="#8A3B12",
             east_asia_font="宋体",
-            latin_font="Calibri",
+            latin_font="Times New Roman",
             size=10.5,
         ),
     )
 
 
 BUILTIN_TEMPLATES: dict[str, BuiltinTemplate] = {
-    "standard": BuiltinTemplate(
-        key="standard",
-        name="标准",
-        description="系统历史默认视觉：Calibri 10.5pt、单倍行距、无首行缩进",
-        config=_standard_config(),
-    ),
     "research": BuiltinTemplate(
         key="research",
         name="研究报告",
-        description="宋体 12pt、1.5 倍行距、首行缩进 2 字符、三线表、图表题注、多级标题编号",
+        description="企业通用规范：宋体小四 12pt、1.5 倍行距、首行缩进 2 字符、三线表、图表题注、1·1.1·1.1.1 编号",
         config=_research_config(),
     ),
     "techreport": BuiltinTemplate(
         key="techreport",
         name="技术报告",
-        description="宋体 11pt、1.5 倍行距、黑体标题分级、浅蓝表头、页脚页码",
+        description="研发交付：宋体小四 12pt、黑体标题三号→四号→小四、浅蓝表头、图 1-1 题注、页脚页码",
         config=_techreport_config(),
     ),
     "trend": BuiltinTemplate(
         key="trend",
         name="趋势分析",
-        description="宋体 11pt、左对齐多级编号、斑马纹表格、图表题注在下",
+        description="数据简报：宋体小四 12pt、1·1.1·1.1.1 编号、斑马纹表格、图表题注、页脚页码",
         config=_trend_config(),
     ),
     "thesis": BuiltinTemplate(
         key="thesis",
         name="论文",
-        description="宋体 12pt、1.5 倍行距、居中一级标题（第一章）、三线表、图表题注",
+        description="学位论文通行口径（GB/T 7713 系列）：宋体小四 12pt、左侧装订边 3cm、第一章编号、三线表、图 1-1 题注",
         config=_thesis_config(),
     ),
     "official": BuiltinTemplate(
         key="official",
         name="公文",
-        description="仿宋三号、固定行距 28pt、一、二级编号、页脚「第 X 页 共 Y 页」",
+        description="GB/T 9704-2012：仿宋三号、固定行距 28pt、页边距 37/35/28/26mm、小标宋标题、一、/（一）/1./（1）层次序数、4 号页码",
         config=_official_config(),
-    ),
-    "weekly": BuiltinTemplate(
-        key="weekly",
-        name="周报",
-        description="宋体 11pt、紧凑段落、斑马纹表格，适合快速扫读",
-        config=_weekly_config(),
     ),
     "press": BuiltinTemplate(
         key="press",
         name="宣传报道",
-        description="宋体 12pt、1.75 倍行距、无首行缩进、标题居中",
+        description="网媒稿件：宋体小四 12pt、1.5 倍行距、不缩进、标题黑体居中",
         config=_press_config(),
     ),
 }
 
-DEFAULT_TEMPLATE_KEY = "standard"
+DEFAULT_TEMPLATE_KEY = "research"
 DEFAULT_TEMPLATE_REF = f"{_BUILTIN_PREFIX}{DEFAULT_TEMPLATE_KEY}"
 
 
@@ -598,7 +623,7 @@ def validate_config(raw: Mapping[str, Any] | None) -> ExportTemplateConfig:
             文案里带字段路径，路由层直接转 400。
     """
     if raw is None:
-        return _standard_config()
+        return BUILTIN_TEMPLATES[DEFAULT_TEMPLATE_KEY].config
     try:
         config = ExportTemplateConfig.model_validate(dict(raw))
     except ValidationError as exc:
@@ -672,7 +697,7 @@ def default_template() -> ResolvedTemplate:
 
 
 def resolve_export_template(db: Any, workspace_id: int, ref: str | None = None) -> ResolvedTemplate:
-    """唯一解析入口：显式 ref → 工作区默认 → 内置 standard（I1）.
+    """唯一解析入口：显式 ref → 工作区默认 → 内置 ``research``（I1）.
 
     Raises:
         ValueError: ref 格式非法。

@@ -1,9 +1,9 @@
 """文档导出模板（ADR 0152）测试.
 
 覆盖：
-- 内置 8 套预设全部通过校验；``standard`` 与历史 ``DEFAULT_THEME`` 视觉等价（I2）
+- 内置 6 套预设全部通过校验；默认锚点为 ``research``（研究报告）
 - 配置校验边界（字号 / 行距 / 缩进 / 颜色 / 枚举 / 未知字段）与引用规范
-- 解析链：显式 ref → 工作区默认 → 内置 standard；跨工作区 404（I1）
+- 解析链：显式 ref → 工作区默认 → 内置 research；跨工作区 404（I1）
 - API：成员可读、editor 才可写、内置只读、重名 400、默认唯一
 - 预览端点返回真实 docx / pdf 字节
 - 导出端点 ``template`` 参数生效（docx 字体 / 标题编号）且不带时行为不变
@@ -121,25 +121,64 @@ def _export(client: TestClient, ws: Workspace, doc_id: int, headers: dict[str, s
 
 class TestBuiltinPresets:
     def test_all_builtin_presets_validate(self):
-        assert len(BUILTIN_TEMPLATES) == 8
+        assert len(BUILTIN_TEMPLATES) == 6
+        assert set(BUILTIN_TEMPLATES) == {"research", "techreport", "trend", "thesis", "official", "press"}
         for key, builtin in BUILTIN_TEMPLATES.items():
             config = validate_config(config_to_dict(builtin.config))
             assert config.body.size > 0
             assert len(config.headings) == 6
             assert builtin.ref == f"builtin:{key}"
 
-    def test_standard_matches_legacy_theme(self):
-        """I2：标准预设与历史 DEFAULT_THEME 视觉等价."""
-        config = BUILTIN_TEMPLATES["standard"].config
-        assert config.body.latin_font == DEFAULT_THEME.body_font
-        assert config.body.east_asia_font == DEFAULT_THEME.body_font
-        assert config.body.size == DEFAULT_THEME.body_size
-        assert config.table.header_bg == DEFAULT_THEME.table_header_bg
-        assert config.table.header_color == DEFAULT_THEME.table_header_color
-        assert config.table.latin_font == DEFAULT_THEME.table_body_font
-        assert config.code.latin_font == DEFAULT_THEME.code_font
-        assert [config.heading(level).size for level in range(1, 4)] == [18.0, 15.0, 13.0]
-        assert DEFAULT_TEMPLATE_REF == "builtin:standard"
+    def test_default_preset_is_research(self):
+        """默认锚点为「研究报告」：企业报告规范的通用基线（标准 / 周报已移除）."""
+        assert DEFAULT_TEMPLATE_REF == "builtin:research"
+        config = BUILTIN_TEMPLATES["research"].config
+        assert config.body.east_asia_font == "宋体"
+        assert config.body.size == 12.0
+        # 历史 DEFAULT_THEME 仍保留给 PDF 兼容路径，但不再是导出默认
+        assert DEFAULT_THEME.body_size == 10.5
+
+    def test_official_preset_matches_gb9704(self):
+        """公文预设对齐 GB/T 9704-2012：边距 37/35/28/26mm、正文三号仿宋、标题 2 号小标宋、4 号页码."""
+        config = BUILTIN_TEMPLATES["official"].config
+        assert (config.page.margin_top, config.page.margin_bottom) == (3.7, 3.5)
+        assert (config.page.margin_left, config.page.margin_right) == (2.8, 2.6)
+        assert config.body.east_asia_font == "仿宋"
+        assert config.body.size == 16.0  # 三号
+        assert config.body.line_spacing_rule == "fixed"
+        assert config.body.line_spacing_pt == 28.0
+        assert config.heading(1).east_asia_font == "方正小标宋简体"
+        assert config.heading(1).size == 22.0  # 二号
+        assert config.heading(1).align == "center"
+        assert config.heading(2).east_asia_font == "黑体"
+        assert config.heading(3).east_asia_font == "楷体"
+        assert config.numbering.heading == "cn_ordinal"
+        # 公文页码是 4 号数字，不写「第 X 页 共 Y 页」
+        assert config.header_footer.page_number == "plain"
+        assert config.header_footer.font_size == 14.0
+
+    def test_thesis_preset_matches_thesis_norms(self):
+        """论文预设：左侧装订边 3cm、正文小四宋体 1.5 倍行距、一级标题三号黑体居中、第一章编号."""
+        config = BUILTIN_TEMPLATES["thesis"].config
+        assert config.page.margin_left == 3.0
+        assert config.body.east_asia_font == "宋体"
+        assert config.body.size == 12.0
+        assert config.body.line_spacing == 1.5
+        assert config.body.first_line_indent_chars == 2.0
+        assert config.heading(1).east_asia_font == "黑体"
+        assert config.heading(1).size == 16.0
+        assert config.heading(1).align == "center"
+        assert config.numbering.heading == "chapter_chinese"
+        assert config.table.style == "three_line"
+
+    def test_report_presets_use_standard_sizes(self):
+        """报告类预设统一小四 12pt / 1.5 倍行距（避免 11pt 这类非标准号数）."""
+        for key in ("research", "techreport", "trend", "press"):
+            body = BUILTIN_TEMPLATES[key].config.body
+            assert body.size == 12.0, key
+            assert body.east_asia_font == "宋体", key
+            if key != "press":
+                assert body.line_spacing == 1.5, key
 
     def test_builtin_presets_are_not_rows(self, db, ws):
         assert db.query(ExportTemplate).count() == 0
@@ -210,7 +249,7 @@ class TestResolve:
 
     def test_default_chain(self, db, ws):
         row = ExportTemplate(
-            workspace_id=ws.id, name="默认", config=config_to_dict(BUILTIN_TEMPLATES["weekly"].config), is_default=True
+            workspace_id=ws.id, name="默认", config=config_to_dict(BUILTIN_TEMPLATES["press"].config), is_default=True
         )
         db.add(row)
         db.commit()
@@ -218,7 +257,7 @@ class TestResolve:
         # 显式 ref 优先于默认
         assert resolve_export_template(db, ws.id, "builtin:official").name == "公文"
 
-    def test_fallback_to_standard(self, db, ws):
+    def test_fallback_to_default_preset(self, db, ws):
         assert resolve_export_template(db, ws.id, None).ref == DEFAULT_TEMPLATE_REF
 
     def test_unknown_refs(self, db, ws):
@@ -251,7 +290,7 @@ class TestApi:
         r = client.get(TEMPLATES.format(ws=ws.id), headers=owner_headers)
         assert r.status_code == 200, r.text
         body = r.json()
-        assert len(body["items"]) == 8
+        assert len(body["items"]) == 6
         assert body["default_ref"] == DEFAULT_TEMPLATE_REF
         assert all(item["source"] == "builtin" for item in body["items"])
 
@@ -270,7 +309,7 @@ class TestApi:
         assert first["source"] == "custom"
         r2 = client.post(
             TEMPLATES.format(ws=ws.id),
-            json={"name": "报告 B", "preset_key": "weekly"},
+            json={"name": "报告 B", "preset_key": "trend"},
             headers=owner_headers,
         )
         second = r2.json()
@@ -413,15 +452,17 @@ class TestExportWithTemplate:
         assert body_run.font.name == "Times New Roman"
         assert body_run.font.size.pt == 12.0
         heading = next(p for p in document.paragraphs if p.text.strip().startswith("第一章"))
-        assert heading.runs[0].font.size.pt == 18.0
+        assert heading.runs[0].font.size.pt == 16.0
 
-    def test_export_without_template_matches_legacy(self, client, ws, owner_headers):
-        doc_id = _create_doc(client, ws, owner_headers, "# 一\n\n正文\n")
+    def test_export_without_template_uses_default_preset(self, client, ws, owner_headers):
+        doc_id = _create_doc(client, ws, owner_headers, "# 一" + chr(10) + chr(10) + "正文" + chr(10))
         r = _export(client, ws, doc_id, owner_headers, format="docx")
         assert r.status_code == 200
         document = Document(io.BytesIO(r.content))
-        heading = next(p for p in document.paragraphs if p.text.strip() == "一")
-        assert heading.runs[0].font.size.pt == 18.0
+        heading = next(p for p in document.paragraphs if "一" in p.text)
+        # 默认 = 研究报告：H1 黑体 16pt，且带多级编号（前缀「1 」）
+        assert heading.runs[0].font.size.pt == 16.0
+        assert heading.text.strip().startswith("1")
 
     def test_export_pdf_with_template(self, client, ws, owner_headers):
         doc_id = _create_doc(client, ws, owner_headers, "# 一\n\n正文\n")
@@ -464,7 +505,9 @@ class TestDocxTemplateFeatures:
         assert texts[0].startswith("一、")
         assert texts[1].startswith("（一）")
         footer_xml = document.sections[0].footer.paragraphs[0]._p.xml
-        assert "PAGE" in footer_xml and "NUMPAGES" in footer_xml
+        # 公文页脚只有 4 号数字页码（GB/T 9704），不写「第 X 页 共 Y 页」
+        assert "PAGE" in footer_xml
+        assert "NUMPAGES" not in footer_xml
 
     def test_figure_caption_from_alt(self):
         from PIL import Image
@@ -547,8 +590,8 @@ class TestBackupRoundtrip:
         payload = {
             "templates": [
                 {"name": "坏配置", "config": {"body": {"size": 999}}},
-                {"name": "好配置", "config": config_to_dict(BUILTIN_TEMPLATES["weekly"].config), "is_default": True},
-                {"name": "好配置", "config": config_to_dict(BUILTIN_TEMPLATES["weekly"].config)},
+                {"name": "好配置", "config": config_to_dict(BUILTIN_TEMPLATES["press"].config), "is_default": True},
+                {"name": "好配置", "config": config_to_dict(BUILTIN_TEMPLATES["press"].config)},
             ]
         }
         imported, errors = _import_export_templates(ws.id, payload, owner, db)
@@ -605,12 +648,13 @@ class TestStoreBranches:
         r = client.post(TEMPLATES.format(ws=ws.id), json={"name": "x", "preset_key": "nope"}, headers=owner_headers)
         assert r.status_code == 400
 
-    def test_create_without_preset_uses_standard(self, client, ws, owner_headers):
+    def test_create_without_preset_uses_default(self, client, ws, owner_headers):
         created = client.post(TEMPLATES.format(ws=ws.id), json={"name": "空配置"}, headers=owner_headers).json()
-        assert created["config"]["body"]["size"] == 10.5
+        assert created["config"]["body"]["size"] == 12.0
+        assert created["config"]["body"]["east_asia_font"] == "宋体"
 
     def test_create_with_explicit_config(self, client, ws, owner_headers):
-        config = config_to_dict(BUILTIN_TEMPLATES["weekly"].config)
+        config = config_to_dict(BUILTIN_TEMPLATES["press"].config)
         config["body"]["size"] = 13.0
         created = client.post(
             TEMPLATES.format(ws=ws.id), json={"name": "自定义配置", "config": config}, headers=owner_headers

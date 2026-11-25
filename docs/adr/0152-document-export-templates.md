@@ -14,13 +14,13 @@ Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/se
 | C1 | 「模板板块，在大模型设置右侧」→ 需求方 2026-11-25 修订为「工作区的文档页面，质量检查右侧」 | 文档区二级页签在「质量检查」右侧新增「模板」（`data-testid="document-tab-templates"`），路由 `/w/:wid/documents/templates` 渲染 `DocumentTemplatesPage`；个人设置页签与顶栏图标**不保留**（模板是工作区级资源，放在个人设置里语义错位） |
 | C2 | 「首先增加文档模板」 | 面板只做「导出模板」一类；`DocumentTemplate` 表不带 `kind` 列，其他品类后续立项再加 |
 | C3 | 「字体、标题、段落等可配置化」 | `ExportTemplateConfig`（pydantic 严格校验）五组：page/header_footer、body、headings(1..6)+numbering、table+captions、list+code；★ 项本期必做、☆ 项同期增强（见卡片 C3 明细） |
-| C4 | 「符合企业规范」 | 表工作区级；`is_default` 至多一条；解析链 `显式 ref → 工作区默认 → 内置 standard`；随备份 v17 `templates[]` 往返 |
-| C5 | 「论文、报告等内置模板」 | `BUILTIN_TEMPLATES` 8 套：`standard` / `research` / `techreport` / `trend` / `thesis` / `official` / `weekly` / `press`；代码常量不入库；`POST /templates` 带 `preset_key` 即另存为 |
+| C4 | 「符合企业规范」 | 表工作区级；`is_default` 至多一条；解析链 `显式 ref → 工作区默认 → 内置 research（研究报告）`；随备份 v17 `templates[]` 往返 |
+| C5 | 「论文、报告等内置模板」 | `BUILTIN_TEMPLATES` 6 套：`research`（研究报告）/ `techreport`（技术报告）/ `trend`（趋势分析）/ `thesis`（论文）/ `official`（公文）/ `press`（宣传报道）；代码常量不入库；`POST /templates` 带 `preset_key` 即另存为。原「标准」「周报」按需求方 2026-11-25 移除（标准＝历史默认视觉、周报语体与研究报告重复），默认锚点改为 `research` |
 | C6 | 「一套模板兼顾 PDF」 | 同一 `ExportTemplateConfig` 同时喂 `_render_docx` 与 `_render_pdf`；PDF 侧字体族经 `ensure_pdf_font(family)` 最佳匹配 + 回落（D11） |
 | C7 | 「md生成的word」 | `GET /{doc_id}/export?format=docx\|pdf&template=<ref>`；`<ref>` = `builtin:<key>` 或正整数 id；缺省走默认链；`format=md` 忽略该参数 |
 | C8 | （可配置化的可见性） | `POST /templates/preview?format=docx\|pdf` 用未保存配置渲染示例件（不落库、不写审计）；面板内另有纯 CSS 等比预览 |
 | C9 | （权限与隔离） | 读 `_require_member`；写 `owner/editor`；内置 ref 写操作 400；跨工作区 id 404 |
-| C10 | （兼容） | `standard` 与现 `DEFAULT_THEME` 逐项相同且 docx / pdf 默认输出不变（I2）；备份旧包缺 `templates` 按空；原件族预览不接模板（H19） |
+| C10 | （兼容） | 模板只影响 docx / pdf，未指定模板时走默认锚点 `research`（**默认导出视觉随「标准」移除而变为研究报告规范**，见 I2 修订）；备份旧包缺 `templates` 按空；原件族预览不接模板（H19） |
 
 ## Context
 
@@ -44,7 +44,7 @@ Related: `src/cndb/plugins/documents/models.py`、`src/cndb/plugins/documents/se
 设计目标（不变量）：
 
 - **I1 单一解析入口**：`docx` / `pdf` 导出的排版配置只能来自 `resolve_export_template(...)`；导出器内部不再读取任何模块级视觉常量。
-- **I2 存量零变化**：未指定模板且工作区无默认模板时，`docx` 与 `pdf` 的导出视觉与改造前逐项一致（由内置 `standard` 承载，单测锁定 `standard` 与 `DEFAULT_THEME` 对应字段相等）。
+- **I2 单一默认锚点**：未指定模板且工作区无默认模板时，docx / pdf 一律使用内置 `research`（研究报告），保证同一工作区导出视觉可预期；`theme.py` 的 `DEFAULT_THEME` 仅保留给兼容调用与 PDF 表格构造兜底，不再是导出默认（原「标准」预设已按需求移除）。
 - **I3 一套配置两处渲染**：同一 `ExportTemplateConfig` 是 docx 与 pdf 的唯一排版来源；PDF 侧的降级只发生在字体族匹配与不支持项上，且必须静默降级、不得报错或改变可见内容。
 - **I4 内置不可变**：内置模板只能被引用或另存为，任何写操作（改 / 删 / 设为默认指向内置）都不落库。
 
@@ -92,18 +92,18 @@ list           : indent_chars(0..8) / space_after(0..12) / marker(bullet|dash|do
 code           : latin_font / east_asia_font / size(6..24) / bg / border / left_bar(bool)
 ```
 
-内置预设（`BUILTIN_TEMPLATES`，代码常量，不入库；`standard` 与现 `DEFAULT_THEME` 字段逐项相等）：
+内置预设（`BUILTIN_TEMPLATES`，代码常量，不入库，共 6 套；格式依据写在描述里，前端「新建模板」下拉直接展示）：
 
-| key | 名称 | 排版要点 |
+| key | 名称 | 规范依据与排版要点 |
 |---|---|---|
-| `standard` | 标准 | 现默认视觉（Calibri 10.5pt、单倍行距、无首行缩进），供存量口径 |
-| `research` | 研究报告 | 宋体 / Times New Roman 12pt、1.5 倍行距、首行缩进 2 字符、两端对齐；H1 黑体 16pt、H2 14pt、H3 12pt；三线表 |
-| `techreport` | 技术报告 | 宋体 / Calibri 11pt、1.5 倍行距、首行缩进 2 字符；H1 黑体 18pt 居中、H2 15pt、H3 13pt；表头浅蓝底 |
-| `trend` | 趋势分析 | 宋体 / Calibri 11pt、1.5 倍行距、首行缩进 2 字符；标题左对齐、`1 / 1.1 / 1.1.1` 编号；图表题注在下、`图 1` |
-| `thesis` | 论文 | 宋体 / Times New Roman 12pt、1.5 倍行距、首行缩进 2 字符；H1 黑体 18pt 居中；`第一章` 编号；三线表 + 题注 |
-| `official` | 公文 | 仿宋 16pt（三号）、固定行距 28pt、首行缩进 2 字符；H1 22pt 居中；`一、` 编号；页脚 `第 X 页 共 Y 页` |
-| `weekly` | 周报 | 宋体 / Calibri 11pt、1.5 倍行距；H1 15pt、H2 13pt；列表紧凑、表格斑马纹 |
-| `press` | 宣传报道 | 宋体 / Calibri 12pt、1.75 倍行距、无首行缩进、左对齐；H1 18pt 居中、H2 15pt |
+| `research` | 研究报告 | 企业通用规范：宋体 / Times New Roman **小四 12pt**、1.5 倍行距、首行缩进 2 字符、两端对齐；标题黑体 16 / 14 / 12pt（一级居中）；三线表；图表题注；`1 / 1.1 / 1.1.1` 编号；页脚「第 X 页」 |
+| `techreport` | 技术报告 | 研发交付：同上正文口径；标题黑体 16 / 14 / 12pt（一级居中）；浅蓝表头 + 表头跨页重复；题注 `图 1-1`；页脚页码 |
+| `trend` | 趋势分析 | 数据简报：正文小四宋体、1.5 倍行距；标题左对齐 + `1 / 1.1 / 1.1.1`；斑马纹表格；题注 `图 1`；页脚页码 |
+| `thesis` | 论文 | 学位论文通行口径（GB/T 7713 系列）：A4、上 2.5 / 下 2.5 / **左 3.0（装订侧）** / 右 2.5cm；正文小四宋体 1.5 倍行距 + 首行缩进 2 字符；一级标题黑体**三号 16pt 居中**、二级四号 14pt、三级小四黑体；`第一章` 编号；三线表 + `图 1-1` 题注 |
+| `official` | 公文 | **GB/T 9704-2012 党政机关公文格式**：页边距 上 37 / 下 35 / 左 28 / 右 26mm；正文三号仿宋（16pt）固定行距 28pt、首行缩进 2 字；标题 2 号小标宋（22pt）居中；层次序数 `一、`（黑体三号）/`（一）`（楷体三号）/`1.`（仿宋三号加粗）/`（1）`；表格仿宋五号；**页码 4 号宋体数字**（不写「第 X 页 共 Y 页」） |
+| `press` | 宣传报道 | 网媒稿件：正文小四宋体、1.5 倍行距、**不缩进**；标题黑体 18 / 15 / 13pt（一级居中）；浅暖色表头 |
+
+已移除：`standard`（历史默认视觉 Calibri 10.5pt，与「符合企业规范」目标无关）、`weekly`（周报语体与研究报告重复）——需求方 2026-11-25 确认删除；默认锚点改为 `research`。
 
 字体以「字体名 + 东亚映射」双写（`w:rFonts` 的 `ascii` + `eastAsia`）；PDF 侧见 D11。
 
@@ -122,7 +122,7 @@ def render_sample(fmt: str, config: ExportTemplateConfig) -> bytes   # preview �
 
 1. `ref` 非空 → `builtin:<key>` 命中内置；数字 id 命中本工作区行；否则 `NotFoundError`（跨工作区同 404）。
 2. `ref` 为空 → 本工作区 `is_default=True` 的行。
-3. 仍为空 → `BUILTIN_TEMPLATES["standard"]`。
+3. 仍为空 → `BUILTIN_TEMPLATES[DEFAULT_TEMPLATE_KEY]`（当前 `research`）。
 
 导出器签名：
 
@@ -132,7 +132,7 @@ _render_pdf(markdown, title="", images=None, tables=None, template: ResolvedTemp
 render_export(markdown, fmt, title="", images=None, tables=None, template=None) -> bytes
 ```
 
-`template=None` 时内部取 `BUILTIN_TEMPLATES["standard"]`。`theme.py` 的 `DEFAULT_THEME` 降级为**兼容基线**，仅用于单测比对（I2）与历史调用兜底，导出器不再 import 其字段做排版。
+`template=None` 时内部取 `BUILTIN_TEMPLATES[DEFAULT_TEMPLATE_KEY]`（`research`）。`theme.py` 的 `DEFAULT_THEME` 降级为**兼容基线**，仅用于历史调用与 PDF 表格兜底，导出器不再 import 其字段做排版。
 
 ### 3. API 变更清单
 
@@ -144,17 +144,17 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | `GET /documents/templates/{ref}` | 新增：单个模板（内置 key 或行 id）；跨工作区 404 |
 | `POST /documents/templates` | 新增：`{name, description?, preset_key?, config?}`（owner/editor）；`preset_key` 复制内置配置；重名 400 |
 | `PUT /documents/templates/{id}` | 新增：`{name?, description?, config?, is_default?}`；设默认时同事务清空其它默认 |
-| `DELETE /documents/templates/{id}` | 新增：删除自定义；被删的是默认模板时回落内置 standard（不报错） |
+| `DELETE /documents/templates/{id}` | 新增：删除自定义；被删的是默认模板时回落内置 research（不报错） |
 | `POST /documents/templates/preview` | 新增：`{config}` 或 `{ref}` + `format=docx\|pdf` → 示例件字节流（不落库、不写审计） |
 | `GET /documents/{doc_id}/export?format=docx\|pdf&template=<ref>` | 修改：新增 `template` 查询参数；`md` 分支忽略 |
 
 ### 4. 边界与例外
 
-1. **内置只读**：`PUT` / `DELETE` 指向内置 ref → 400（`内置模板不可修改，请另存为自定义模板`）；`is_default` 不允许指向内置（缺省即 standard）。
+1. **内置只读**：`PUT` / `DELETE` 指向内置 ref → 400（`内置模板不可修改，请另存为自定义模板`）；`is_default` 不允许指向内置（缺省即 research）。
 2. **跨工作区**：id 不属于当前工作区 → 404（不区分「不存在」与「无权限」）。
 3. **命名冲突**：同工作区重名 → 400（提示已存在）。
 4. **配置越界**：字号 / 行距 / 缩进 / 颜色 / 枚举非法 → 400 指明字段，不做静默夹取。
-5. **删除默认**：自动回落内置 standard，`default_ref` 变 `builtin:standard`。
+5. **删除默认**：自动回落内置 research，`default_ref` 变 `builtin:research`。
 6. **模板与 Markdown 显式语法的关系**：模板决定字体 / 字号 / 间距 / 对齐 / 底色 / 编号 / 题注 / 页眉页脚；正文里显式的表格对齐、列宽百分比、图片宽度、代码块内容不变。
 7. **导出参数容错**：`format=md` 带 `template` → 忽略；非法 ref → 404；空串按缺省处理。
 8. **PDF 降级**（I3）：字体族按服务器可用 CJK 字体最佳匹配，无匹配时回落默认 CJK 字体（与改造前一致），不报错；字间距 / 题注域 / 目录 / 三线表细边框等 PDF 不可表达的项静默跳过。
@@ -186,14 +186,14 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 ### 7. 测试清单
 
 **判定层（单测）**
-- 8 套内置全部通过 `validate_config`；`standard` 与 `DEFAULT_THEME` 对应字段逐项相等（I2）。
+- 6 套内置全部通过 `validate_config`；默认锚点为 `research`，公文 / 论文关键字号与页边距符合规范（I2）。
 - `normalize_ref`：`builtin:thesis` / `"3"` / `None` / `"builtin:nope"` / `"abc"` / 空串。
 - `validate_config` 边界：字号 7 / 73、行距 0.9 / 3.1、缩进 9、颜色 `#12` / `red`、未知字段、枚举外取值。
-- `resolve_export_template`：显式 > 默认 > standard；跨工作区 id 404。
+- `resolve_export_template`：显式 > 默认 > research；跨工作区 id 404。
 - 标题编号：`arabic_multilevel` / `chapter_chinese` / `cn_ordinal` 的前缀生成。
 
 **接口层**
-- 列表：未建模板时返回 8 套内置且 `default_ref == 'builtin:standard'`；viewer 可读。
+- 列表：未建模板时返回 6 套内置且 `default_ref == 'builtin:research'`；viewer 可读。
 - 写：owner/editor 建立 / 更新 / 删除 / 设默认；viewer 403；重名 400；改删内置 400；跨工作区 404。
 - preview：`format=docx` 返回 `PK\x03\x04`、`format=pdf` 返回 `%PDF`；配置生效（docx 解压 `word/styles.xml` 断言字体）。
 - 导出：`format=docx&template=builtin:thesis` 正文字体宋体、H1 18pt；`format=pdf&template=builtin:official` 200 且页数 > 0；不带 template 与改造前一致；`format=md&template=...` 忽略参数仍 200。
@@ -215,7 +215,7 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 
 | 期 | 内容 | 风险 |
 |---|---|---|
-| **P0** | `ExportTemplateConfig` + 8 套内置 + `resolve_export_template` + 迁移 + 备份 v17 | 低（纯新增，未接调用方） |
+| **P0** | `ExportTemplateConfig` + 内置预设（当前 6 套）+ `resolve_export_template` + 迁移 + 备份 v17 | 低（纯新增，未接调用方） |
 | **P1** | `_render_docx` 全量改读配置（含标题编号 / 题注 / 三线表 / 页眉页脚 / 页边距）+ 导出端点 `template` 参数 + preview 端点 | 中（排版回归，以 I2 断言兜底） |
 | **P2** | `_render_pdf` 改读同一配置 + `pdf_fonts.ensure_pdf_font(family)` 族匹配与回落 | 中（字体可用性差异，需固定降级口径） |
 | **P3** | 模板 CRUD 路由 + 前端面板 / 页签 / 顶栏入口 / 导出子菜单 + 测试 | 中（权限与默认链口径） |
@@ -232,18 +232,19 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | D6 | PDF 字体族策略 | `ensure_pdf_font(family)`：按 config 的中文字体族在已装 CJK 字体里最佳匹配，失败回落默认字体（静默、不报错）；按族缓存注册名 | PDF 只能嵌入服务器已装字体；模板改字体不应让导出失败 | 强制嵌入字体文件（需分发字体、许可风险）；忽略字体只对字号生效（模板承诺打折） | `pdf_fonts.py` |
 | D7 | PDF 不支持项处理 | 字间距 / 题注域 / 目录 / 三线表细边框：PDF 侧静默跳过或近似；docx 侧完整生效 | I3 要求降级不报错、不改可见内容 | 为 PDF 单独裁剪配置（模板语义分叉）；PDF 直接 400（导出不可用） | `pdf.py` |
 | D8 | 模板解析入口 | 唯一 `resolve_export_template` | 与仓库既有「判定唯一入口」范式一致，避免前后端各写默认链 | 前端拼默认（同工作区结果可能不同） | `templates.py` |
-| D9 | 默认模板数量 | 每工作区至多一条 `is_default`，未设即内置 standard | 导出缺省行为可预测 | 无默认（每次必须选，易误用）；多默认（取决顺序，不可预测） | 服务层 + 索引 |
+| D9 | 默认模板数量 | 每工作区至多一条 `is_default`，未设即内置 research（研究报告） | 导出缺省行为可预测 | 无默认（每次必须选，易误用）；多默认（取决顺序，不可预测） | 服务层 + 索引 |
 | D10 | `template` 参数形态 | `builtin:<key>` 或正整数 id | 一个参数覆盖内置与自定义 | 两个参数（`preset` / `template_id`，校验分叉） | `routers/documents.py` |
 | D11 | 备份版本 | 16 → 17，新增 `templates[]`；旧包缺键按空 | H13 / H14：新表必须往返且旧包可导入 | 复用 v16（格式变更无标记，排查困难） | `workspace_backup.py`、`backup_io.py` |
 | D12 | 面板入口形态 | **文档区二级页签「模板」**（「质量检查」右侧）+ 独立页面 `/w/:wid/documents/templates`，面板复用 `TemplatePanel` | 模板是工作区级共享资源，与文档导出强绑定（C1 修订）；与「质量检查」「修改申请」同属文档上下文页签，切换不跳模块 | 顶栏图标 + 个人设置页签（初版实现）：个人设置里管工作区资源语义错位，且模板与文档页脱节；只留在个人设置（同上） | `MainLayout.tsx`、`frontend/src/pages/documents/DocumentTemplatesPage.tsx`、`frontend/src/App.tsx` |
 | D13 | 预览实现 | 服务端 `preview` 返回真实 docx / pdf + 面板内 CSS 等比预览（**独立「预览」方盒**，占配置区 40%，可在配置方盒标题行右侧收起；内容覆盖模板控制的全部要素：页眉 / H1–H6 与编号 / 正文缩进字距 / 列表 / 三线表与表头配色 / 图表题注 / 代码块 / 引用 / 页脚页码） | 所见即所得需真实文件；CSS 预览保证即时反馈且不落库；独立方盒 + 可收起避免长配置被预览挤压 | 只做 CSS（看不清真实效果）；只做下载（反馈慢）；预览内嵌在配置底部（长表单会把预览推到屏外，且高度挤占配置区） | `TemplatePanel.tsx`、`routers/templates.py` |
 | D14 | 字号输入形态 | UI 同时显示中文号名与磅值（小四 = 12pt），存磅值 | 国内企业规范按号数沟通，存储保留数值精度 | 只存号名（不同号制口径不一，且 Word 用磅） | `templateOptions.ts` |
 | D15 | 明确非目标 | 目录 / 封面 / LOGO / 双栏 / 脚注尾注不纳入本期 | 域代码与分页成本高，收益待验证 | 一并做（P0-P3 无法收敛） | — |
+| D17 | 模板导入 / 导出 | 模板文件 = JSON（`kind=cndb-document-template` / `version=1` / `templates[]`），**只搬排版配置**（name / description / config），不带 id / is_default / 工作区；导出单模板即一项，导入支持一项或多项（前端逐条 `POST /templates`，同名自动加「（导入）」/「（导入 N）」），复用既有创建接口与后端强校验 | 模板要在团队 / 实例间复用，但归属与默认标记属于「导入端的工作区」，跨环境搬运会失真；复用创建接口可避免第二套校验路径 | 后端新增 import/export 端点（多一套文件协议与权限面）；直接导出 DB 行含 id（导入后 id 冲突，语义也不对） | `frontend/src/pages/settings/templateFile.ts`、`TemplatePanel.tsx` |
 | D16 | 标题编号方案 | 固定四档并**标注推荐文体**：不编号（宣传报道 / 周报）、`1 / 1.1 / 1.1.1`（研究报告 / 技术报告 / 趋势分析）、`第一章 / 1.1 / 1.1.1`（论文 / 专著）、`一、 / （一）/ 1. / （1）`（公文，GB/T 9704 层次序数） | 各类文件的层次序数规范不同，用户凭感觉选会出现「公文用 1.1.1」「论文用一、」这类不规范编号 | 自由输入编号模板（正则 / 占位符，校验与预览成本高，本期不做）；只留单一方案（无法覆盖论文 / 公文） | `services/export/templates.py::heading_prefix`、`frontend/src/pages/settings/templateOptions.ts::numberingPrefix` |
 
 ## Consequences
 
-- **正向**：Word / PDF 导出从「一种硬编码样式」变为可按企业规范配置；8 套内置覆盖论文 / 报告 / 公文 / 周报 / 宣传等常见书面语体；模板随工作区共享与备份，团队口径统一。
+- **正向**：Word / PDF 导出从「一种硬编码样式」变为可按企业规范配置；6 套内置覆盖研究报告 / 技术报告 / 趋势分析 / 论文 / 公文 / 宣传报道，公文对齐 GB/T 9704-2012、论文对齐 GB/T 7713 系列通行口径；模板可导入导出（JSON）在团队 / 实例间复用；模板随工作区共享与备份，团队口径统一。
 - **负向**：新增一张表、一套 CRUD、一份较大的配置模型；两个渲染器都要逐处替换硬编码取值，P1/P2 改动面大。
 - **风险与缓解**：字体缺失（用户填了服务器没有的字体）→ Word 端由 Word 回落、PDF 端按 D6 最佳匹配回落，面板内提示「字体需在打开文档的机器 / 服务器上可用」；配置项过多导致面板臃肿 → 五组折叠 + ★/☆ 分层，首屏只展开「正文」。
 
@@ -261,7 +262,7 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 ## 交接（会话结束更新）
 
 - 当前阶段：P0–P3 全部落地（2026-11-25，`a6af67ac` / e2e `3ac95d87`；入口位置按需求方修订第二版落地，推送属人工卡点）
-- 已完成：配置模型 + 8 套内置预设 + 解析入口 + 迁移/备份 v17（P0）；`_render_docx` 全量改读配置（标题编号 / 题注 / 三线表 / 页眉页脚 / 页边距）+ 导出 `template` 参数 + preview（P1）；`_render_pdf` 同源配置 + `ensure_pdf_font(family)` 族匹配与回落（P2）；CRUD 路由 + 前端面板 / 页签 / 顶栏入口 / 导出子菜单 + 单测 + e2e（P3）
+- 已完成：配置模型 + 内置预设（2026-11-25 由 8 套收敛为 6 套，默认锚点 research）+ 解析入口 + 迁移/备份 v17（P0）；`_render_docx` 全量改读配置（标题编号 / 题注 / 三线表 / 页眉页脚 / 页边距）+ 导出 `template` 参数 + preview（P1）；`_render_pdf` 同源配置 + `ensure_pdf_font(family)` 族匹配与回落（P2）；CRUD 路由 + 前端面板（双栏 + 独立可收起预览 + 分组折叠 + 新建 / 导入 / 导出）+ 导出子菜单 + 单测 + e2e（P3）
 - 下一步：人工验收后 `make push`（H4 / H6）；若后续要给 PDF 补字间距，从 `BodyConfig.char_spacing` 映射 `ParagraphStyle.charSpace` 入手
-- 已知坑：⓪ 入口按需求方 2026-11-25 修订已从「个人设置 → 模板 + 顶栏图标」迁到**文档区二级页签「模板」（质量检查右侧）**；配置区在窄屏 / 窄列下由 `repeat(auto-fit, minmax(168px, 1fr))` 自动回落单列，多个输入框的字段用 `cn-doc-tpl-field--wide` 跨满两列，避免控件互相挤压；标题编号为**固定四档 + 推荐文体标注**（D16），不支持自定义编号模板，`SettingsTab` 不再有 `template`（D12 已改）；① `standard` 与历史 `DEFAULT_THEME` 在 docx 逐项一致，但 **PDF 表格不再强制隔行加深**（历史渲染器写死斑马纹，现由 `table.zebra` 控制且 `standard` 为 false）——这是 I2 的唯一已知偏差；② PDF 只有一个主字体，中文字体族只能「最佳匹配 + 回落」，西文字体名不参与族匹配；③ 备份版本升 17，旧包（无 `templates` 键）按空导入，`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 已同步；④ 配置字段名用 `lists`（避开 Python 内置 `list`，否则 pydantic 解析注解失败），前后端一致
+- 已知坑：⓪ 入口按需求方 2026-11-25 修订已从「个人设置 → 模板 + 顶栏图标」迁到**文档区二级页签「模板」（质量检查右侧）**；配置区在窄屏 / 窄列下由 `repeat(auto-fit, minmax(168px, 1fr))` 自动回落单列，多个输入框的字段用 `cn-doc-tpl-field--wide` 跨满两列，避免控件互相挤压；标题编号为**固定四档 + 推荐文体标注**（D16），不支持自定义编号模板，`SettingsTab` 不再有 `template`（D12 已改）；⑤ 「标准」预设移除后，**未指定模板时的默认导出视觉变为研究报告规范**（宋体小四 12pt / 1.5 倍行距 / 首行缩进 2 字符 / 三线表），这是 I2 修订后的既定行为，不再与历史 `DEFAULT_THEME` 对齐，`DEFAULT_THEME` 仅供兼容路径兜底；⑥ 公文页码目前只做「4 号数字居中」（GB/T 9704 要求单页码居右、双页码居左的版心外侧对齐，Word 需「奇偶页不同 + 首页不同」两套页脚，当前配置模型未表达，属已知缺口）；② PDF 只有一个主字体，中文字体族只能「最佳匹配 + 回落」，西文字体名不参与族匹配；③ 备份版本升 17，旧包（无 `templates` 键）按空导入，`tests/test_migration_missing_model_columns.py` 的 `HEAD_REVISION` 已同步；④ 配置字段名用 `lists`（避开 Python 内置 `list`，否则 pydantic 解析注解失败），前后端一致
 - 最近一次全绿：`make cov` 95.02%（7317 passed）、前端 `pnpm test:coverage` 双门槛达标（3378 passed）、`bundle-budget` 在预算内 @ 本地 2026-11-25

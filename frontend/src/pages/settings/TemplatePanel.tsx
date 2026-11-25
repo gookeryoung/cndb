@@ -21,15 +21,22 @@ import {
   Segmented, Select, Space, Switch, Tag, Tooltip, Typography,
 } from 'antd'
 import {
-  CopyOutlined, DeleteOutlined, DownOutlined, EyeInvisibleOutlined, EyeOutlined, FilePdfOutlined,
-  FileTextOutlined, FileWordOutlined, PlusOutlined, RightOutlined, SaveOutlined,
-  SnippetsOutlined, StarOutlined, UnorderedListOutlined,
+  CopyOutlined, DeleteOutlined, DownloadOutlined, DownOutlined, EyeInvisibleOutlined, EyeOutlined,
+  FilePdfOutlined, FileTextOutlined, FileWordOutlined, PlusOutlined, RightOutlined, SaveOutlined,
+  SnippetsOutlined, StarOutlined, UnorderedListOutlined, UploadOutlined,
 } from '@ant-design/icons'
 import { workspaceApi, exportTemplateApi } from '@/api'
 import type { ExportTemplateConfig, ExportTemplateItem } from '@/api'
 import CnListMeta from '@/components/CnListMeta'
 import SectionBox from '@/components/SectionBox'
 import { SPACE } from '@/theme/tokens'
+import {
+  parseTemplateFile,
+  readTextFile,
+  suggestImportName,
+  templateFileName,
+  templateFileText,
+} from './templateFile'
 import {
   ALIGN_OPTIONS,
   CAPTION_NUMBERING_OPTIONS,
@@ -263,6 +270,9 @@ export default function TemplatePanel() {
   })
   // 右栏预览独立收起（避免长配置被预览挤到一屏之外）
   const [previewOpen, setPreviewOpen] = useState(true)
+  // 导入模板：隐藏 file input + 进行中态（逐条创建，失败不中断其余）
+  const importInputRef = useRef<HTMLInputElement | null>(null)
+  const [importing, setImporting] = useState(false)
 
   const items = listQuery.data?.items ?? []
   const selected: ExportTemplateItem | undefined = items.find(item => item.ref === selectedRef)
@@ -382,6 +392,59 @@ export default function TemplatePanel() {
     })
   }
 
+  /** 导出当前模板为 JSON 文件（只搬排版配置，不带 id / 默认标记） */
+  const exportSelected = () => {
+    if (!draft || !selected) return
+    const text = templateFileText([{ name, description, config: draft }])
+    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = templateFileName(selected.name)
+    document.body.appendChild(anchor)
+    anchor.click()
+    document.body.removeChild(anchor)
+    URL.revokeObjectURL(url)
+    message.success('模板文件已导出')
+  }
+
+  /** 导入模板文件（支持单条 / 多条）：同名自动加「（导入）」，单条失败不中断其余 */
+  const importTemplates = async (file: File) => {
+    setImporting(true)
+    try {
+      const entries = parseTemplateFile(await readTextFile(file))
+      const names = new Set(items.map(item => item.name))
+      const created: string[] = []
+      const failed: string[] = []
+      for (const entry of entries) {
+        const name = suggestImportName(entry.name, names)
+        try {
+          const result = await exportTemplateApi.create(workspaceId, {
+            name,
+            description: entry.description ?? '',
+            config: entry.config,
+          })
+          names.add(name)
+          created.push(result.ref)
+        } catch {
+          failed.push(entry.name)
+        }
+      }
+      await invalidate()
+      if (created.length > 0) setSelectedRef(created[created.length - 1])
+      if (created.length > 0 && failed.length === 0) {
+        message.success(`已导入 ${created.length} 个模板`)
+      } else if (created.length > 0) {
+        message.warning(`已导入 ${created.length} 个模板，${failed.length} 个失败（名称或配置不合法）`)
+      } else {
+        message.error(`导入失败：${failed.join('、') || '没有可用模板'}`)
+      }
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '模板文件导入失败')
+    } finally {
+      setImporting(false)
+    }
+  }
+
   const selectTemplate = (ref: string) => {
     if (ref === selectedRef) return
     if (!dirtyRef.current) {
@@ -408,15 +471,40 @@ export default function TemplatePanel() {
           <div className="cn-page-head-sub">
             <span
               className="cn-page-head-meta"
-              title="左侧模板清单、右侧排版配置（预览可收起）；一份模板同时作用于 Word 与 PDF。内置模板只读，可另存为自定义；未指定模板时按「工作区默认 → 标准」导出。"
+              title="左侧模板清单、右侧排版配置（预览可收起）；一份模板同时作用于 Word 与 PDF。内置模板只读，可另存为自定义或导出 JSON；未指定模板时按「工作区默认 → 研究报告」导出。"
             >
               左侧模板清单（分组可折叠）、右侧排版配置（预览可收起）；一份模板同时作用于 Word 与 PDF。
-              内置模板只读，可另存为自定义；未指定模板时按「工作区默认 → 标准」导出。
+              内置模板只读，可另存为自定义或导出 JSON；未指定模板时按「工作区默认 → 研究报告」导出。
             </span>
           </div>
         </div>
       </div>
       <div className="cn-page-head-actions">
+        <input
+          ref={importInputRef}
+          type="file"
+          accept=".json,application/json"
+          hidden
+          data-testid="template-import-input"
+          onChange={event => {
+            const file = event.target.files?.[0]
+            event.target.value = ''
+            if (file) void importTemplates(file)
+          }}
+        />
+        <Tooltip title={canEdit ? '从模板文件（JSON）导入，可一次导入多个' : '仅工作区所有者 / 编辑者可以导入模板'}>
+          <span>
+            <Button
+              icon={<UploadOutlined />}
+              data-testid="template-import-btn"
+              loading={importing}
+              disabled={!canEdit}
+              onClick={() => importInputRef.current?.click()}
+            >
+              导入
+            </Button>
+          </span>
+        </Tooltip>
         <Tooltip title={canEdit ? '从内置预设新建一份自定义模板' : '仅工作区所有者 / 编辑者可以新建模板'}>
           <span>
             <Button
@@ -504,6 +592,17 @@ export default function TemplatePanel() {
 
   const actionBar = (
     <div className="cn-doc-tpl-actions">
+      <Tooltip title="导出为模板文件（JSON，可分享 / 备份 / 带到别的工作区）">
+        <Button
+          size="small"
+          type="text"
+          icon={<DownloadOutlined />}
+          data-testid="template-export-btn"
+          onClick={exportSelected}
+        >
+          导出
+        </Button>
+      </Tooltip>
       <Tooltip title="另存为自定义模板（复制当前配置）">
         <Button
           size="small"
@@ -558,7 +657,7 @@ export default function TemplatePanel() {
             onClick={() =>
               modal.confirm({
                 title: '删除该模板？',
-                content: '删除后不影响已导出的文件；若它是默认模板，会回落为「标准」。',
+                content: '删除后不影响已导出的文件；若它是默认模板，会回落为「研究报告」。',
                 okText: '删除',
                 okButtonProps: { danger: true },
                 cancelText: '取消',
@@ -1149,20 +1248,6 @@ export default function TemplatePanel() {
           <button
             type="button"
             className="cn-doc-tpl-group"
-            aria-expanded={!collapsedGroups.builtin}
-            data-testid="template-group-builtin"
-            onClick={() => setCollapsedGroups(groups => ({ ...groups, builtin: !groups.builtin }))}
-          >
-            <span className="cn-doc-tpl-group-title">
-              {collapsedGroups.builtin ? <RightOutlined /> : <DownOutlined />}
-              内置模板
-            </span>
-            <span>{builtins.length}</span>
-          </button>
-          {!collapsedGroups.builtin && builtins.map(rowNode)}
-          <button
-            type="button"
-            className="cn-doc-tpl-group"
             aria-expanded={!collapsedGroups.custom}
             data-testid="template-group-custom"
             onClick={() => setCollapsedGroups(groups => ({ ...groups, custom: !groups.custom }))}
@@ -1176,12 +1261,26 @@ export default function TemplatePanel() {
           {!collapsedGroups.custom && (
             customs.length === 0 ? (
               <div className="cn-doc-tpl-empty">
-                <Text type="secondary">还没有自定义模板：选一个内置模板后点「另存为」即可修改。</Text>
+                <Text type="secondary">还没有自定义模板：选一个内置模板后点「另存为」，或直接用「导入」。</Text>
               </div>
             ) : (
               customs.map(rowNode)
             )
           )}
+          <button
+            type="button"
+            className="cn-doc-tpl-group"
+            aria-expanded={!collapsedGroups.builtin}
+            data-testid="template-group-builtin"
+            onClick={() => setCollapsedGroups(groups => ({ ...groups, builtin: !groups.builtin }))}
+          >
+            <span className="cn-doc-tpl-group-title">
+              {collapsedGroups.builtin ? <RightOutlined /> : <DownOutlined />}
+              内置模板
+            </span>
+            <span>{builtins.length}</span>
+          </button>
+          {!collapsedGroups.builtin && builtins.map(rowNode)}
         </SectionBox>
 
         {draft ? (

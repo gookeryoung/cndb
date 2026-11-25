@@ -445,7 +445,7 @@ class ExportTemplate(TimestampMixin, Base):
     - ``config`` 是 ``ExportTemplateConfig`` 的规范化 dump，写入前强校验；
     - 内置预设（``BUILTIN_TEMPLATES``）不列表，只能被引用或另存为自定义；
     - ``is_default`` 每工作区至多一条（由服务层在同一事务内保证），
-      未设默认时导出走内置 ``standard``。
+      未设默认时导出走内置 ``research``（研究报告）。
     """
 
     __tablename__ = "documents_exporttemplate"

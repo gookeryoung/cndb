@@ -654,7 +654,7 @@ def export_document(
     """导出文档正文为 Markdown / Word(.docx) / PDF 文件.
 
     ``format`` 取 ``md`` / ``docx`` / ``pdf``（兼容 ``markdown`` / ``word`` 别名）；
-    ``template``（ADR 0152）作用于 docx / pdf，缺省按「工作区默认模板 → 内置 standard」
+    ``template``（ADR 0152）作用于 docx / pdf，缺省按「工作区默认模板 → 内置 research（研究报告）」
     解析，``md`` 忽略该参数；工作区成员即可导出，文件夹不可导出。
     """
     _require_member(db, workspace_id, current_user)
