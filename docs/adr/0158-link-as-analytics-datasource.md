@@ -192,6 +192,6 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 
 - 当前阶段：**全部落地并收尾**（P0 / P1 / P2；P3 决策不做）
 - 已完成：需求卡片 0158（C1-C10）；ADR 决策记录 D1-D8、不变量 L1-L6；P0（数据源清单、`compute` 链接源、隐藏字段拒绝、单源校验、存量兼容）；P1（模板 `config.source`、字段白名单、`recommendations?link_id=`、H58-H60）；P2（前端数据源下拉分组（本表 / 外部链接）、不可读禁用 + 只读到期提示、链接源运行发 `source.type=link`、另存为写 `config.source`、模板载入按 `config.source` 回填、字段候选用链接可见字段）
-- 下一步：无（本期收尾）。若要继续：P3（多链接 union / 跨工作区 join）另立 ADR，须先定义行级叠加与列冲突口径
+- 下一步：无（本期收尾）。**P3 已立项**：[ADR 0159](0159-multi-link-union-and-join.md)（Proposed，union all / left·inner join，逐输入复用本 ADR 的判定口径）。
 - 已知坑：① 链接分支必须走 `resolve_link` 统一出口，**不要**在 analytics 里直接 `db.get(WorkspaceLink)`（会绕开 404/403 与到期判定）；② 缓存键必须含 `user_id`，否则共享模板会把甲的权限结果喂给乙；③ 隐藏字段要在**保存期**就拒绝（否则模板存下来必然执行失败）；④ `ANALYTICS_MAX_SCAN_ROWS` 对链接数据源同样生效，超限文案要引导「用分析范围收窄」而不是「换表」
 - 最近一次全绿：`make check-fast` + `make cov`（7613 passed，95.0%）+ `tests/test_analytics_link_source.py` 22 passed @ `7429c2cc`；P2 前端 `AnalyticsPage.test.tsx` 36 passed @ `0e8cbb92`；e2e `analytics-link-source.spec.ts` 1 passed（`npx playwright test`，2026-11-25）
