@@ -52,6 +52,10 @@ def source_field_names(
         from cndb.plugins.analytics.services.union_source import validate_union_source
 
         return validate_union_source(db, user, workspace_id, source)
+    if source_type == "join":
+        from cndb.plugins.analytics.services.join_source import validate_join_source
+
+        return validate_join_source(db, user, workspace_id, source)
     if source_type == "link":
         return link_field_names(db, user, workspace_id, getattr(source, "link_id", None))
     return table_field_names(db, workspace_id, table_id)
@@ -88,6 +92,17 @@ def normalize_config(
         source_payload = {"type": source.type}
         if source.type == "link":
             source_payload["link_id"] = source.link_id
+        elif source.type == "join":
+            source_payload["join_type"] = source.join_type or "left"
+            for node, key in ((source.left, "left"), (source.right, "right")):
+                if node is None:
+                    continue
+                source_payload[key] = (
+                    {"table_id": node.table_id} if node.table_id is not None else {"link_id": node.link_id}
+                )
+            source_payload["on"] = [
+                {"left_field": key.left_field, "right_field": key.right_field} for key in (source.on or [])
+            ]
         elif source.type == "union":
             source_payload["inputs"] = [
                 {"link_id": item.link_id, **({"alias": item.alias} if item.alias else {})}
@@ -230,8 +245,8 @@ def create_template(
         from cndb.plugins.workspaces.services.links import resolve_link
 
         table_id = resolve_link(db, user, workspace_id=workspace_id, link_id=source.link_id).table.id
-    elif source is not None and getattr(source, "type", "table") == "union":
-        # 汇总是多源合成，没有单一源表（table_id 留空，兼容字段只服务单表 / 单链接）
+    elif source is not None and getattr(source, "type", "table") in {"union", "join"}:
+        # 汇总 / 关联都是多源合成，没有单一源表（table_id 留空，兼容字段只服务单表 / 单链接）
         table_id = None
     normalized = normalize_config(config, fields)
     tpl = AnalyticsTemplate(

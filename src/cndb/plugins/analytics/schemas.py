@@ -68,10 +68,30 @@ class UnionColumn(BaseModel):
     map: dict[str, str] = Field(default_factory=dict, description="{输入 link_id: 该输入字段名}")
 
 
-class AnalyticsSource(BaseModel):
-    """分析数据源（ADR 0158 / 0159）：本表、工作区链接、多链接汇总（union）."""
+class JoinSide(BaseModel):
+    """join 的一侧（ADR 0159）：本工作区表或工作区链接，二选一。"""
 
-    type: Literal["table", "link", "union"] = "table"
+    table_id: int | None = None
+    link_id: int | None = None
+
+    @model_validator(mode="after")
+    def _check_side(self) -> JoinSide:
+        if (self.table_id is None) == (self.link_id is None):
+            raise ValueError("join 的每一侧必须且只能指定 table_id 或 link_id")
+        return self
+
+
+class JoinKey(BaseModel):
+    """关联键：左右两侧的字段名（都必须可见）。"""
+
+    left_field: str = Field(min_length=1, max_length=100)
+    right_field: str = Field(min_length=1, max_length=100)
+
+
+class AnalyticsSource(BaseModel):
+    """分析数据源（ADR 0158 / 0159）：本表、链接、多链接汇总（union）、跨工作区关联（join）."""
+
+    type: Literal["table", "link", "union", "join"] = "table"
     #: type=table 时的表 id（与 table_id 兼容字段二选一）
     id: int | None = None
     #: type=link 时的链接 id
@@ -80,6 +100,11 @@ class AnalyticsSource(BaseModel):
     inputs: list[UnionInput] | None = None
     #: type=union 时的输出列映射
     columns: list[UnionColumn] | None = None
+    #: type=join 时的左右两侧 / 关联键 / 连接类型（ADR 0159）
+    join_type: Literal["left", "inner"] | None = None
+    left: JoinSide | None = None
+    right: JoinSide | None = None
+    on: list[JoinKey] | None = None
 
 
 class TemplateConfig(BaseModel):

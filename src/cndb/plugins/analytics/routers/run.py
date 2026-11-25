@@ -71,6 +71,31 @@ def _resolve_compute_source(
     return resolved.table, (extra_filters or None), logic, allowed
 
 
+def _run_compute_rows(
+    payload: ComputeRequest,
+    formulas: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
+    field_names: list[str],
+    total: int,
+    truncated: bool,
+) -> dict[str, Any]:
+    """复合数据源的统一计算入口：字段白名单校验 + 复用 `compute_rows`."""
+    _check_allowed_fields(payload, set(field_names))
+    try:
+        return services.compute.compute_rows(
+            rows,
+            field_names,
+            total=total,
+            truncated=truncated,
+            formulas=formulas,
+            fields=payload.fields,
+            limit=payload.limit,
+            summary=payload.summary,
+        )
+    except FormulaError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _check_allowed_fields(payload: ComputeRequest, allowed_fields: set[str]) -> None:
     """链接 / 汇总数据源：公式、返回字段、窗口分区排序字段必须都在可见字段内（H58 / ADR 0159 C3）."""
     referenced: set[str] = set(payload.fields or [])
@@ -155,6 +180,13 @@ def compute(
     keys = [s["key"] for s in formulas]
     if len(set(keys)) != len(keys):
         raise HTTPException(status_code=400, detail="公式键重复")
+
+    # 复合数据源（ADR 0159 P1）：跨工作区关联，先合成行集再走同一套计算
+    if payload.source is not None and payload.source.type == "join":
+        from cndb.plugins.analytics.services import join_source
+
+        rows, field_names, total, truncated = join_source.join_rows(db, current_user, workspace_id, payload.source)
+        return _run_compute_rows(payload, formulas, rows, field_names, total, truncated)
 
     # 复合数据源（ADR 0159 P0）：先合成行集，再走同一套计算
     if payload.source is not None and payload.source.type == "union":
