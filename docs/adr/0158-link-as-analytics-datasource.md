@@ -183,7 +183,7 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已落地 | `src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/routers/datasources.py`、`src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/plugin.py` | `tests/test_analytics_link_source.py` | 未提交 |
+| P0 | 已落地 | `src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/routers/datasources.py`、`src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/plugin.py` | `tests/test_analytics_link_source.py` | `44beda2c` |
 | P1 | 未开始 | `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/formula.py` | `tests/test_analytics_link_source_api.py` | — |
 | P2 | 未开始 | `frontend/src/pages/analytics/AnalyticsPage.tsx` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/tests/e2e/critical/analytics-link-source.spec.ts` | — |
 | P3 | 未开始 | 另立 ADR | — | — |
