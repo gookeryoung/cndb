@@ -91,7 +91,7 @@
 | P1 路由接线 | `frontend/src/layouts/MainLayout.tsx`：`SiderMode` 新增 `'home'`（无 `wid` 且非管理台 / 帮助→主页导航；`/w/:wid/*` 仍为工作区侧栏）；**home 模式关闭折叠**（`collapsible={false}` + `collapsed={false}`，折叠偏好 `cndb_sider_collapsed` 仍为工作区侧栏保留、不被主页改写）；移动端汉堡恢复，抽屉顶部先给主页导航分区再接既有团队分组 |
 | P1 最近访问 | `frontend/src/utils/recentWorkspaces.ts`（`localStorage`：`wid` / `path` / `ts`，同工作区去重、上限 5、非法路径忽略；登录 / 登出清空避免串号）+ `MainLayout` 导航时记录 |
 | P1 测试 | `HomeNav.test.tsx` 8 例（只有三段且不渲染重复入口、最近访问单行 label + `title`、仍可读过滤、空最近访问不渲染分组、选中态、新建 / 最近 / 全部跳转、移动端变体）、`recentWorkspaces.test.ts` 7 例（规范化 / 去重 / 上限 / 损坏兜底）、`MainLayout.test.tsx` 改写 3 例（主页与团队页渲染主页 rail、移动端汉堡与抽屉） |
-| P1 体积 | `HomeNav` lazy 化（不进应用外壳 chunk）；`frontend/scripts/bundle-budget.json` 按实测收口「主入口 CSS」「MainLayout」基线并上调上限（理由已落盘） |
+| P1 体积 | `HomeNav` lazy 化（不进应用外壳 chunk）；设计结构导航 `DesignStructureNav` 同步 lazy 拆出（仅「设计」段侧栏需要），应用外壳 21.14 → 16.34 KiB，MainLayout 上限回撤到初始 19.53 KiB；`frontend/scripts/bundle-budget.json` 经脚本收口基线与上限（理由已落盘） |
 | P2 聚合端点 | `src/cndb/plugins/workspaces/routers/home.py`（`GET /api/v1/home/summary`）、`services/home_summary.py`（`build_home_summary` / `cached_home_summary` / `invalidate_home_summary`；逐工作区复用 `readable_tables` / `can_write_directly` / `resolve_capabilities(MANAGE_LINKS)`；单块异常降级 `partial`）；插件注册 `plugin.py` |
 | P2 缓存失效 | `change_requests/services.py`（提交 / 合并 / 关 / 重开）、`issues/services.py`（新建 / 关 / 重开）、`workspaces/routers/links.py`（链接申请与审批的 `_invalidate`）、`workspaces/routers/workspaces.py`（`invalidate_workspace_list_cache`，覆盖成员 / 工作区 / 团队变更） |
 | rail 补「已收藏」 | `components/HomeNav.tsx`（最近访问下方的「已收藏」分区：置顶工作区 ≤5，单行「名称 ……… 团队名」；星标图标与列表行同色 `#f59e0b` 且尺寸钉在 `--cn-text-md`，避免 Filled 星形比同排线性图标偏大） |

@@ -2,8 +2,6 @@
   "_readme": "关键 chunk 体积基线与上限（gzip 字节）。由 frontend/scripts/bundle-budget.mjs 读写，请勿手改 —— 基线统一用 `node scripts/bundle-budget.mjs --update --reason \"...\"`（只动 baseline），上限用 `--set-budget --only <chunk> --reason \"...\"`（只动 budget），理由会落盘到 reason/updatedAt/commit，让体积增长在 review 时可追溯。语义（需求卡片 0090）：baseline 是 warn 参照（超基线未超上限 = 慢涨 warn），budget 是 FAIL 硬上限 —— 小步增量只 warn，超上限才拦 CI。resolve: 'entry'=从 dist/index.html 取主入口 script；'entryCss'=主入口样式表；'fonts'=全部 woff2 传输量；{assetPattern}=在 dist/assets 内按正则匹配 chunk 文件；{moduleMarker}=按 dist/.vite/chunk-modules.json 的模块归属定位 chunk（hash 改名后仍有效，可命中多个 chunk 时求和）。tolerance=该项单独容差(%)，仅在未声明 budget 时用于「基线+容差」回退口径。",
   "tolerancePct": 5,
   "history": [
-    "2026-11-01 feat: 设计模块帮助主题（ADR 0079 P2）：帮助内容为静态文案数据，随 HelpDocsPage chunk 加载不可避免",
-    "2026-11-02 feat(help): 0080/0083/0085/0086 四轮功能帮助文档（功能模块门控、设计结构页签、采集策略、设计文件库与装配约束）累计正文增量；该 chunk 是 /help 独立 lazy chunk 不进首屏，正文为静态文案、无 Dialog/面板可再 lazy（2026-11-02 导航文案同步亦在此 chunk）",
     "2026-11-02 feat(documents): 新增 PPTX 在线预览（pptx-preview 1.0.7 + jszip/echarts 闭包），整块 lazy 为独立 chunk（431 KiB gzip，仅打开 .pptx 时下载），纳入体积预算防慢涨",
     "2026-11-02 feat(documents): DOCX/PPTX 原件族新增 PPTX 纯前端在线预览（pptx-preview + jszip + echarts 随库打包）；由 DocumentAssetView React.lazy 按需加载，仅打开 .pptx 时下载，不进文档页首屏",
     "2026-11-03 [set-budget] 需求卡片 0090：基线与上限语义分离 —— baseline 只作 warn 参照，budget 为 FAIL 硬上限；主入口留 3% 余量，按需 chunk 留 15-25%，新增 5 个帮助 section chunk 条目；HelpDocsPage 壳因正文按部分拆 chunk 由 38.31 降至 4.30 KiB",
@@ -21,7 +19,9 @@
     "2026-11-25 [set-budget] feat(home): 需求 0160 主页布局收口 —— 内容 max-width 容器 + 右栏定宽 360 + 行内 grid 定宽列 + 主页导航排版辅助类（净增约 1.1 KiB gzip）；全局样式表无可再拆的按需 UI 样式",
     "2026-11-25 [set-budget] feat(home): 需求 0157 顶栏归属 + 需求 0160 主页导航入口与最近访问记录（HomeNav 已 lazy，本 chunk 净增约 1.6 KiB gzip）",
     "2026-11-25 feat(home): 需求 0160 主页布局收口，按本轮实测收口基线（上限已单列 --set-budget 调整）",
-    "2026-11-25 feat(home): 需求 0160 主页导航入口 + 最近访问记录，按本轮实测收口基线（HomeNav 已 lazy 拆出）"
+    "2026-11-25 feat(home): 需求 0160 主页导航入口 + 最近访问记录，按本轮实测收口基线（HomeNav 已 lazy 拆出）",
+    "2026-11-25 [set-budget] fix(bundle): 设计结构导航改 lazy 后应用外壳实测 16.34 KiB，上限恢复到初始 20 KiB（不再需要 0160 期间临时上调的 23 KiB）",
+    "2026-11-25 fix(bundle): DesignStructureNav lazy 拆分后按实测收口基线（21.14→16.34 KiB）"
   ],
   "chunks": [
     {
@@ -188,11 +188,11 @@
       "resolve": {
         "moduleMarker": "src/layouts/MainLayout.tsx"
       },
-      "baseline": 21650,
-      "budget": 23552,
-      "reason": "feat(home): 需求 0160 主页导航入口 + 最近访问记录，按本轮实测收口基线（HomeNav 已 lazy 拆出）",
+      "baseline": 16728,
+      "budget": 20000,
+      "reason": "fix(bundle): DesignStructureNav lazy 拆分后按实测收口基线（21.14→16.34 KiB）",
       "updatedAt": "2026-11-25",
-      "commit": "ce6e2495"
+      "commit": "dc0d5bfc"
     },
     {
       "name": "WorkspaceList（工作区列表）",

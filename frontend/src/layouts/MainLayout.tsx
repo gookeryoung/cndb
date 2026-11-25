@@ -22,7 +22,6 @@ import type { TableGroup, TableSummary, Team, Workspace } from '@/api'
 import { useTableHoverPrefetch } from '@/pages/workspace/tablePrefetch'
 import { documentsApi } from '@/api/documents'
 import { ancestorChain, buildDocTree, type DocTreeNode } from '@/pages/documents/DocumentTree'
-import DesignStructureNav from '@/pages/design/DesignStructureNav'
 import {
   WORKSPACE_SETTINGS_SECTIONS, normalizeWorkspaceSettingsSection,
 } from '@/pages/settings/workspaceSettingsSections'
@@ -55,6 +54,8 @@ import { WEIGHT } from '@/theme/tokens'
 
 // 主页导航 rail：只在无工作区上下文（主页 / 团队页）出现，lazy 化避免计入应用外壳体积
 const HomeNav = lazy(() => import('@/components/HomeNav'))
+// 设计结构导航：仅「设计」段侧栏需要（产品列表 ↔ 结构树），lazy 化把它从应用外壳 chunk 拆出
+const DesignStructureNav = lazy(() => import('@/pages/design/DesignStructureNav'))
 // Modal 组件 lazy import：点击打开时才加载
 const SettingsModal = lazy(() => import('@/pages/settings/SettingsModal'))
 // 关于系统弹窗 lazy import：点击打开时才加载
@@ -964,12 +965,14 @@ export default function MainLayout() {
   const renderDesignNav = (mobile: boolean, collapsed = false) => {
     if (!wid) return null
     return (
-      <DesignStructureNav
-        workspaceId={wid}
-        mobile={mobile}
-        collapsed={collapsed}
-        onNavigate={() => setMobileNavOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <DesignStructureNav
+          workspaceId={wid}
+          mobile={mobile}
+          collapsed={collapsed}
+          onNavigate={() => setMobileNavOpen(false)}
+        />
+      </Suspense>
     )
   }
 
