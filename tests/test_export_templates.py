@@ -632,6 +632,31 @@ def test_docx_archive_contains_styles():
     assert "宋体" in styles or "Times New Roman" in styles
 
 
+class TestBrokenTemplateFallback:
+    """库里的模板配置损坏时导出必须仍能出文件（回落内置默认，不阻断主流程）."""
+
+    def test_resolve_falls_back_to_default(self, db, ws):
+        row = ExportTemplate(workspace_id=ws.id, name="坏配置", config={"body": {"size": 999}})
+        db.add(row)
+        db.commit()
+        resolved = resolve_export_template(db, ws.id, str(row.id))
+        assert resolved.ref == DEFAULT_TEMPLATE_REF
+        assert resolved.config.body.size == 12.0
+
+    def test_export_still_works_with_broken_default(self, client, db, ws, owner_headers):
+        row = ExportTemplate(workspace_id=ws.id, name="坏默认", config={"body": {"size": 999}}, is_default=True)
+        db.add(row)
+        db.commit()
+        doc_id = _create_doc(client, ws, owner_headers, "# 一" + chr(10) + chr(10) + "正文" + chr(10))
+        # 未显式指定模板 → 默认模板配置非法 → 回落内置 research，仍然 200
+        r = _export(client, ws, doc_id, owner_headers, format="docx")
+        assert r.status_code == 200, r.text
+        assert r.content[:2] == b"PK"
+        # 显式指定该模板同样回落而非报错
+        r2 = _export(client, ws, doc_id, owner_headers, format="docx", template=str(row.id))
+        assert r2.status_code == 200, r2.text
+
+
 class TestStoreBranches:
     def test_get_template_invalid_ref_is_400(self, client, ws, owner_headers):
         assert client.get(TEMPLATES.format(ws=ws.id) + "/thesis", headers=owner_headers).status_code == 400

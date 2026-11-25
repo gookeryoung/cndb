@@ -521,7 +521,19 @@ export default function DocumentEditorPage() {
       URL.revokeObjectURL(url)
       message.success('已导出')
     },
-    onError: () => message.error('导出失败'),
+    onError: (err: unknown, payload) => {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      const detail = err instanceof Error ? err.message.trim() : ''
+      // 模板已被删除 / 别的工作区 id：刷新候选并按「默认模板」重试一次，
+      // 不让用户卡在无从下手的「导出失败」（明细仍会展示给用户）
+      if (status === 404 && payload.template) {
+        void exportTemplatesQuery.refetch()
+        message.warning(`所选模板已不存在，已按默认模板重新导出${detail ? `（${detail}）` : ''}`)
+        exportMut.mutate({ format: payload.format })
+        return
+      }
+      message.error(detail ? `导出失败：${detail}` : '导出失败')
+    },
   })
 
   /** 导出模板候选：默认 + 内置 + 自定义；key 形如 `<format>::<templateRef>` */
@@ -1149,7 +1161,8 @@ export default function DocumentEditorPage() {
     queryKey: ['export-templates', Number(workspaceId)],
     queryFn: () => exportTemplateApi.list(workspaceId),
     enabled: !isAssetDoc,
-    staleTime: 60_000,
+    // 模板随时可能被增删：候选列表不做长时间缓存，避免选到已删除的模板（导出 404）
+    staleTime: 0,
   })
   // 并排查看只在桌面编辑态生效：窄屏沿用「编辑 / 预览」页签，查看态仍是纯预览
   const splitActive = splitOpen && viewMode === 'edit' && !isAssetDoc && isDesktop
@@ -1664,6 +1677,10 @@ export default function DocumentEditorPage() {
           {!isAssetDoc && (
           <Dropdown
             trigger={['click']}
+            // 展开时刷新候选：模板被删除 / 新增后不必整页刷新
+            onOpenChange={open => {
+              if (open) void exportTemplatesQuery.refetch()
+            }}
             menu={{
               items: [
                 {

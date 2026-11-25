@@ -799,6 +799,80 @@ describe('DocumentEditorPage 文档导出', () => {
         })
     })
 
+    it('导出失败时展示后端明细，不再只提示「导出失败」', async () => {
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/:docId/export', () =>
+                HttpResponse.json({ detail: '导出内容过大，请先分批导出' }, { status: 400 }),
+            ),
+        )
+        const errorSpy = vi
+            .spyOn(message, 'error')
+            .mockImplementation((() => {}) as unknown as typeof message.error)
+
+        renderEditor()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-export-btn'))
+        fireEvent.click(await screen.findByText('导出 Markdown (.md)'))
+
+        await waitFor(() =>
+            expect(errorSpy).toHaveBeenCalledWith('导出失败：导出内容过大，请先分批导出'),
+        )
+    })
+
+    it('所选模板已不存在（404）时刷新候选并按默认模板重试导出', async () => {
+        const calls: string[] = []
+        let listCalls = 0
+        server.use(
+            http.get('/api/v1/workspaces/:wid/documents/templates', () => {
+                listCalls += 1
+                return HttpResponse.json({
+                    items: [
+                        {
+                            ref: 'builtin:thesis',
+                            name: '论文',
+                            description: '',
+                            source: 'builtin',
+                            is_default: false,
+                            config: {},
+                            updated_at: null,
+                        },
+                    ],
+                    default_ref: 'builtin:thesis',
+                })
+            }),
+            http.get('/api/v1/workspaces/:wid/documents/:docId/export', ({ request }) => {
+                calls.push(request.url)
+                if (new URL(request.url).searchParams.get('template')) {
+                    return HttpResponse.json({ detail: '模板不存在' }, { status: 404 })
+                }
+                return new HttpResponse(new Blob(['PK']), { status: 200 })
+            }),
+        )
+        const createSpy = vi.fn(() => 'blob:mock-doc')
+        Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createSpy })
+        Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+        const warningSpy = vi
+            .spyOn(message, 'warning')
+            .mockImplementation((() => {}) as unknown as typeof message.warning)
+
+        renderEditor()
+        expect(await screen.findByRole('heading', { level: 4, name: '需求说明' })).toBeInTheDocument()
+
+        fireEvent.click(screen.getByTestId('doc-export-btn'))
+        fireEvent.mouseEnter(await screen.findByText('导出 Word (.docx)'))
+        fireEvent.click(await screen.findByText('内置 · 论文'))
+
+        await waitFor(() => expect(calls).toHaveLength(2))
+        expect(decodeURIComponent(calls[0])).toContain('template=builtin:thesis')
+        expect(calls[1]).not.toContain('template=')
+        // 重试成功后仍然触发下载，并提示模板已不存在
+        await waitFor(() => expect(createSpy).toHaveBeenCalled())
+        expect(warningSpy).toHaveBeenCalledWith(expect.stringContaining('所选模板已不存在'))
+        // 列表被重新拉取（打开菜单 1 次 + 404 后 refetch）
+        expect(listCalls).toBeGreaterThanOrEqual(2)
+    })
+
     it('导出 Markdown：请求 format=md', async () => {
         let requestedUrl = ''
         server.use(

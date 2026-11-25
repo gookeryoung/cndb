@@ -730,11 +730,26 @@ def resolve_export_template(db: Any, workspace_id: int, ref: str | None = None) 
 
 
 def _resolved_from_row(row: Any) -> ResolvedTemplate:
+    """库里的自定义模板 → 可渲染的解析结果.
+
+    **损坏的配置不阻断导出**：历史数据 / 手工改库 / 旧版本字段可能让 ``config`` 校验失败，
+    这时记一条告警并回落到内置默认模板（研究报告），保证「导出」这个主流程永远能出文件；
+    用户在模板面板里仍能看到该模板并自行修正或删除（面板加载走 `list_templates`，不经过这里）。
+    """
+    import logging
+
+    try:
+        config = validate_config(row.config or {})
+    except ValueError:
+        logging.getLogger(__name__).warning(
+            "导出模板配置非法，已回落默认模板: id=%s name=%r", getattr(row, "id", None), getattr(row, "name", None)
+        )
+        return default_template()
     return ResolvedTemplate(
         ref=str(row.id),
         name=row.name,
         source="custom",
-        config=validate_config(row.config or {}),
+        config=config,
     )
 
 
