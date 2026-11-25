@@ -12,6 +12,10 @@
 | 修改申请（ChangeRequest） | 数据表级变更载体：所有成员可发起（查看者编辑自动生成，owner/editor 可手动创建），含 op（create/update/delete）+ 行增量 values + 提交时基准快照 base_values；仅 owner/editor 可 merge（落库）/close/reopen | 区别于旧「变更单」：同行允许多个 open 申请并存，冲突按字段级基准漂移检测标记，处理时逐项 apply/skip 决策；列表页提供「同行合并视图」（group_by=row 按行聚合、时间倒序）与行组批量审批，冲突字段须在冲突处理页逐字段裁决（无冲突自动合并，冲突不静默覆盖） |
 | 双轨制写入 | owner/editor（且工作区 allow_edit 开启）编辑直编直存；viewer 或 allow_edit 关闭时编辑自动生成修改申请（后端返回 202 + change_request 载荷） | 分派逻辑在 records 写路径 `dispatch_change_request`；批量删除生成含多个 delete item 的单条申请 |
 | 三区布局 | 工作区与数据表权限页的成员展示形态：所有者区（含转让入口）/ 编辑者区 / 查看者区，各自独立卡片与添加成员入口 | 门控收敛为 owner（工作区设置与成员管理仅 owner 可操作）；角色三级 owner/editor/viewer |
+| 团队（Team） | 工作区的组织层：一个工作区至多归属一个团队（`team_id` 可空 = 个人工作区），团队单层不嵌套，团队下工作区以**平铺列表**呈现（无树） | 见 ADR 0153；团队只产「管理面权限 + 授权模板」，数据面判定仍在工作区 |
+| 管理面 / 数据面 | 管理面 = 团队 owner/admin 或工作区 owner（成员、设置、策略、备份）；数据面 = 工作区角色（owner/editor/viewer）决定的读写 | `team_admin` 默认不获得数据面（读数据仍 404）；判定唯一入口 `workspaces/permissions.py::resolve_capabilities` |
+| 权限解析（Capabilities） | 单一判定出口：显式工作区角色 > 团队策略默认角色 > 无，返回 `data_role` / `can_manage` 与来源归因 `sources` | 见 ADR 0153 D5；403 文案（ADR 0047）与前端门控 `useCapabilities` 共用同一载荷 |
+| 工作区可见性（三档） | `private` 仅工作区 owner（团队管理面不受影响）/ `member` 工作区成员（默认）/ `public` 团队成员只读（未挂团队时等价 `member`） | 见 ADR 0153 D6；该字段此前无判定消费，P1 起真正参与 `resolve_capabilities` |
 | 三入口 | 网格编辑的三个入口：单元格双击速编、行双击 Drawer 全行编辑、操作列整行编辑按钮 | viewer 在三入口保存均转修改申请，提示「已提交修改申请 #N，处理后生效」 |
 | 编辑中标识 | 操作列中的行级修改申请状态位 | 派生自 change_requests 开放查询（status=open），按 row_id 聚合；merge 落库后同行其余 open 申请标记 stale，提交人可 update-base 刷新基准；聚合走 listGrouped（group_by=row）一次拉取行组，消除逐条 get 详情的 N+1 |
 | 文档种子 | `examples/datasets/<工作区>/documents/` 目录树：子目录 → 文档文件夹节点、`*.md` → Markdown 文档；文件头 `---` 元数据块声明 status/tags/author/summary，seed 入库前剥离 | 仅含 documents/ 的工作区注入典型文档，无 documents/ 的工作区不生成 |

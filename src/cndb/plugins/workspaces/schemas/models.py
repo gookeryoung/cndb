@@ -147,6 +147,18 @@ class WorkspaceContributionsResponse(BaseModel):
     items: list[WorkspaceContributionItem] = []
 
 
+class WorkspaceCapabilitiesResponse(BaseModel):
+    """工作区能力位（ADR 0153 D5：前端门控唯一数据源）.
+
+    ``team_role`` 在 P0 恒为 None（团队表未落地），P1 接入后只多取值、不改形状。
+    """
+
+    data_role: str | None
+    team_role: str | None
+    capabilities: list[str]
+    sources: dict[str, str]
+
+
 # ── 成员 schemas ──────────────────────────────────────
 
 
@@ -362,6 +374,7 @@ __all__ = [
     "RoleCreate",
     "RoleResponse",
     "RoleUpdate",
+    "WorkspaceCapabilitiesResponse",
     "WorkspaceCreate",
     "WorkspaceCreateFromBackup",
     "WorkspaceCreateFromBackupResponse",

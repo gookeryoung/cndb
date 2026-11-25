@@ -38,6 +38,25 @@ export interface WorkspaceUpdate {
 /** 工作区角色 —— 三级（owner/editor/viewer），admin 已在 P1 迁移为 editor */
 export type WorkspaceRole = 'owner' | 'editor' | 'viewer'
 
+/** 工作区能力位（ADR 0153 D10；与后端 `WorkspaceCapability` 取值一致） */
+export type WorkspaceCapability =
+  | 'READ'
+  | 'WRITE'
+  | 'EXPORT'
+  | 'EDIT_SETTINGS'
+  | 'MANAGE_MEMBERS'
+  | 'RESTORE'
+
+/** 工作区能力位载荷（ADR 0153 D5：前端门控唯一数据源，对齐后端 WorkspaceCapabilitiesResponse） */
+export interface WorkspaceCapabilities {
+  data_role: WorkspaceRole | null
+  /** 团队角色（P0 恒为 null，P1 接入团队层后取值） */
+  team_role: string | null
+  capabilities: WorkspaceCapability[]
+  /** 权限来源归因：`{data: 'workspace_member:owner', manage: ...}`（ADR 0153 I4） */
+  sources: Record<string, string>
+}
+
 /** 成员中的用户简要信息（对齐后端 MemberUserBrief） */
 export interface MemberUserBrief {
   id: ID; username: string; nickname?: string; email?: string | null

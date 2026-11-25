@@ -31,6 +31,7 @@ import type {
 } from '@/api'
 import { useAuthStore } from '@/store'
 import { useResponsive } from '@/hooks/useResponsive'
+import { useCapabilities } from '@/hooks/useCapabilities'
 import HelpTip from '@/components/HelpTip'
 import ModuleCheckCards from '@/components/ModuleCheckCards'
 import {
@@ -82,6 +83,9 @@ export default function WorkspaceSettingsContent({
     enabled: !!wid,
   })
 
+  // 能力位（ADR 0153）：门控只看后端判定结果，不再本地比对角色字符串
+  const { can, dataRole } = useCapabilities(wid)
+
   // 获取成员列表
   const { data: members = [], isLoading: membersLoading } = useQuery<WorkspaceMember[]>({
     queryKey: ['workspace-members', wid],
@@ -96,7 +100,7 @@ export default function WorkspaceSettingsContent({
       const res = await workspaceApi.memberCandidates(wid, candidatesSearch)
       return res.results
     },
-    enabled: !!wid && detail?.current_user_role === 'owner',
+    enabled: !!wid && can('MANAGE_MEMBERS'),
     gcTime: 0,
   })
 
@@ -120,13 +124,13 @@ export default function WorkspaceSettingsContent({
     }
   }, [detail, form])
 
-  // 当前用户角色
-  const myRole = detail?.current_user_role ?? null
+  // 当前用户角色（展示用；能力位未到达前回退详情里的角色，避免标签闪烁）
+  const myRole = dataRole ?? detail?.current_user_role ?? null
 
-  // 权限判断 —— 三级角色：管理操作收敛为 owner
-  const canEditBasic = myRole === 'owner'
-  const canManageMembers = myRole === 'owner'
-  const canDeleteWorkspace = myRole === 'owner'
+  // 权限判断 —— 能力位单一来源：管理操作收敛为 EDIT_SETTINGS / MANAGE_MEMBERS
+  const canEditBasic = can('EDIT_SETTINGS')
+  const canManageMembers = can('MANAGE_MEMBERS')
+  const canDeleteWorkspace = can('EDIT_SETTINGS')
   const assignableRoles = useMemo(() => getAssignableRoles(myRole), [myRole])
 
   const currentMemberId = members.find(

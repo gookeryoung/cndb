@@ -15,7 +15,10 @@ from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import WorkspaceMember, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import (
+    WorkspaceCapability,
+    require_capability,
+)
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
 from cndb.plugins.workspaces.schemas import (
     MemberAddRequest,
@@ -132,10 +135,8 @@ def update_member_role(
 ) -> WorkspaceMember:
     """修改成员角色（仅 OWNER；保护最后一个 OWNER 不可降级）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    requester_role = get_member_role(current_user, ws, db)
-    if requester_role != WorkspaceRole.OWNER:
-        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
-        raise_permission_denied(db, ws, current_user, requirement="仅所有者可执行此操作")
+    # ADR 0153 P0：门控统一走能力位，失败走 ADR 0047 文案（唯一出口）
+    require_capability(WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者可执行此操作")
     member = (
         db.query(WorkspaceMember)
         .filter(
@@ -174,10 +175,7 @@ def remove_member(
 ) -> None:
     """移除成员（仅 OWNER；保护最后一个 OWNER 不可移除）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    requester_role = get_member_role(current_user, ws, db)
-    if requester_role != WorkspaceRole.OWNER:
-        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
-        raise_permission_denied(db, ws, current_user, requirement="仅所有者可执行此操作")
+    require_capability(WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者可执行此操作")
     member = (
         db.query(WorkspaceMember)
         .filter(
@@ -216,10 +214,7 @@ def transfer_owner(
 ) -> WorkspaceMember:
     """转让工作区所有权（仅当前 OWNER 可执行；目标须是工作区成员）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    requester_role = get_member_role(current_user, ws, db)
-    if requester_role != WorkspaceRole.OWNER:
-        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
-        raise_permission_denied(db, ws, current_user, requirement="仅所有者可转让所有权")
+    require_capability(WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者可转让所有权")
 
     # 目标必须是工作区成员
     target_member = (

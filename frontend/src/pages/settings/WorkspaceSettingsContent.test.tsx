@@ -138,7 +138,7 @@ const MEMBERS = [
   },
 ]
 
-/** 按角色渲染设置内容（detail.current_user_role 决定权限分支） */
+/** 按角色渲染设置内容（能力位 `/capabilities` 决定权限分支，detail 角色仅作展示回退） */
 function renderContent(
   role: 'owner' | 'editor' | 'viewer' = 'owner',
   detailOverrides: Record<string, unknown> = {},
@@ -154,6 +154,24 @@ function renderContent(
         current_user_role: role,
         ...detailOverrides,
       })),
+    // 能力位（ADR 0153）：门控唯一来源，与 detail.current_user_role 同步
+    http.get('/api/v1/workspaces/10/capabilities', () =>
+      HttpResponse.json(
+        role === 'owner'
+          ? {
+            data_role: 'owner', team_role: null, sources: { data: 'workspace_member:owner' },
+            capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE'],
+          }
+          : role === 'editor'
+            ? {
+              data_role: 'editor', team_role: null, sources: { data: 'workspace_member:editor' },
+              capabilities: ['READ', 'WRITE', 'EXPORT'],
+            }
+            : {
+              data_role: 'viewer', team_role: null, sources: { data: 'workspace_member:viewer' },
+              capabilities: ['READ'],
+            },
+      )),
     http.get('/api/v1/workspaces/10/members', () => HttpResponse.json(MEMBERS)),
     http.get('/api/v1/workspaces/10/members/candidates', () =>
       HttpResponse.json({ results: [{ id: 9, username: 'eve', email: 'eve@example.com' }] })),

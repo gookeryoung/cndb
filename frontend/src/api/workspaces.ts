@@ -2,8 +2,8 @@
 
 import api from './client'
 import type {
-  WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail, WorkspaceMember,
-  WorkspaceArchiveInspect, WorkspaceContributions,
+  WorkspaceCapabilities, WorkspaceCreate, WorkspaceUpdate, Workspace, WorkspaceDetail,
+  WorkspaceMember, WorkspaceArchiveInspect, WorkspaceContributions,
 } from './types'
 
 export const workspaceApi = {
@@ -25,6 +25,9 @@ export const workspaceApi = {
     api.post<Workspace>('/v1/workspaces', data).then(r => r.data),
   get: (wid: number | string) =>
     api.get<WorkspaceDetail>(`/v1/workspaces/${wid}`).then(r => r.data),
+  /** 能力位判定的唯一数据源（ADR 0153）：前端门控不再各自比对 current_user_role */
+  capabilities: (wid: number | string) =>
+    api.get<WorkspaceCapabilities>(`/v1/workspaces/${wid}/capabilities`).then(r => r.data),
   /** 贡献统计：按编辑者聚合直接写活动（需求 0126） */
   contributions: (wid: number | string) =>
     api.get<WorkspaceContributions>(`/v1/workspaces/${wid}/stats/contributions`).then(r => r.data),

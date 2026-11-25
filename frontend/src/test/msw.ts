@@ -600,6 +600,14 @@ export const handlers = [
   // 工作区详情（文档编辑器 / 修改申请页读取当前用户角色）
   http.get('/api/v1/workspaces/:wid', ({ params }) =>
     HttpResponse.json({ ...mockWorkspace, id: Number(params.wid), current_user_role: 'owner' })),
+  // 工作区能力位（ADR 0153）：默认按 owner 全量能力，单用例 server.use 覆盖角色
+  http.get('/api/v1/workspaces/:wid/capabilities', () =>
+    HttpResponse.json({
+      data_role: 'owner',
+      team_role: null,
+      capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE'],
+      sources: { data: 'workspace_member:owner', manage: 'workspace_member:owner' },
+    })),
   // 文档修改申请列表（默认空；单用例 server.use 覆盖）
   http.get('/api/v1/workspaces/:wid/document-change-requests', () =>
     HttpResponse.json({ items: [], total: 0 })),

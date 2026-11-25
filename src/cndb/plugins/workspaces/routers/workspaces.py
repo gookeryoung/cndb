@@ -22,7 +22,11 @@ from cndb.plugins.workspaces.models import (
     WorkspaceVisibility,
 )
 from cndb.plugins.workspaces.modules import workspace_modules_from_meta
-from cndb.plugins.workspaces.permissions import get_member_role, has_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import (
+    WorkspaceCapability,
+    require_capability,
+    resolve_capabilities,
+)
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
 from cndb.plugins.workspaces.routers.member_routes import router as member_router
 from cndb.plugins.workspaces.schemas import (
@@ -30,6 +34,7 @@ from cndb.plugins.workspaces.schemas import (
     PinToggleResponse,
     WorkspaceArchiveInspectResponse,
     WorkspaceArchiveTarget,
+    WorkspaceCapabilitiesResponse,
     WorkspaceContributionsResponse,
     WorkspaceCreate,
     WorkspaceCreateFromBackup,
@@ -195,7 +200,7 @@ def get_workspace(
     from cndb.plugins.workspaces.services.storage_snapshot import snapshot_used_bytes
 
     ws = _get_workspace_or_404(workspace_id, db)
-    _require_member(ws, current_user, db)
+    caps = _require_member(ws, current_user, db)
 
     # 统计（table/member/view/total_rows）：UNION ALL + 30s 缓存，见 ADR 0046 D5
     stats = get_workspace_stats(db, workspace_id)
@@ -219,7 +224,7 @@ def get_workspace(
             "nickname": owner_member.user.nickname,
         }
 
-    current_role = get_member_role(current_user, ws, db)
+    current_role = caps.data_role
     d = {c.name: getattr(ws, c.name) for c in ws.__table__.columns}
     d.update(
         {
@@ -236,6 +241,28 @@ def get_workspace(
         }
     )
     return WorkspaceDetailResponse.model_validate(d)
+
+
+@router.get(
+    "/{workspace_id}/capabilities",
+    response_model=WorkspaceCapabilitiesResponse,
+    summary="工作区能力位（前端门控唯一数据源，ADR 0153）",
+)
+def get_workspace_capabilities(
+    workspace_id: int,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> WorkspaceCapabilitiesResponse:
+    """返回当前用户在该工作区的能力位与来源归因（非成员统一 404）.
+
+    前端 ``useCapabilities`` 只消费本端点，替换散落的 ``current_user_role`` 判断；
+    P1 接入团队层时载荷只增 ``team_role`` / 策略默认来源，不改变形状。
+    """
+    ws = _get_workspace_or_404(workspace_id, db)
+    caps = resolve_capabilities(current_user, ws, db)
+    if caps.data_role is None:
+        raise HTTPException(status_code=404, detail="工作区不存在")
+    return WorkspaceCapabilitiesResponse.model_validate(caps.to_payload())
 
 
 @router.get(
@@ -283,10 +310,8 @@ def delete_workspace(
 ) -> None:
     """删除工作区（仅 OWNER 可执行）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    role = get_member_role(current_user, ws, db)
-    if role != WorkspaceRole.OWNER:
-        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
-        raise_permission_denied(db, ws, current_user, requirement="仅所有者可删除工作区")
+    # ADR 0047 / ADR 0153：403 文案带角色与拥有者指引（唯一出口）
+    _require_owner(ws, current_user, db, requirement="仅所有者可删除工作区")
     db.delete(ws)
     db.commit()
     invalidate_workspace_list_cache(workspace_id)
@@ -343,9 +368,13 @@ def export_workspace(
     ws = _get_workspace_or_404(workspace_id, db)
     # 全量导出是备份/恢复的一侧，与 import_workspace 对称要求 EDITOR+：
     # 此前仅校验成员身份，任何 viewer 都能把所有表（含受限表）连数据行一起导出。
-    if not has_role(current_user, ws, WorkspaceRole.EDITOR, db):
-        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
-        raise_permission_denied(db, ws, current_user, requirement="编辑者及以上权限才能导出工作区")
+    require_capability(
+        WorkspaceCapability.EXPORT,
+        db,
+        ws,
+        current_user,
+        requirement="编辑者及以上权限才能导出工作区",
+    )
 
     return build_workspace_backup_v8(db, workspace_id, current_user)
 
@@ -424,9 +453,13 @@ def import_workspace(
 ) -> WorkspaceImportResponse:
     """从 JSON 数据导入表结构、视图和数据行到指定工作区（EDITOR+）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    if not has_role(current_user, ws, WorkspaceRole.EDITOR, db):
-        # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
-        raise_permission_denied(db, ws, current_user, requirement="编辑者及以上权限才能导入工作区")
+    require_capability(
+        WorkspaceCapability.EXPORT,
+        db,
+        ws,
+        current_user,
+        requirement="编辑者及以上权限才能导入工作区",
+    )
     data = payload.json_data
     if not isinstance(data, dict) or "tables" not in data:
         raise HTTPException(status_code=400, detail="无效的导入数据格式")
@@ -452,8 +485,13 @@ def export_workspace_archive(
     )
 
     ws = _get_workspace_or_404(workspace_id, db)
-    if not has_role(current_user, ws, WorkspaceRole.EDITOR, db):
-        raise_permission_denied(db, ws, current_user, requirement="编辑者及以上权限才能导出工作区")
+    require_capability(
+        WorkspaceCapability.EXPORT,
+        db,
+        ws,
+        current_user,
+        requirement="编辑者及以上权限才能导出工作区",
+    )
 
     # 表行按表写成 NDJSON 临时分块（ADR 0075 D8）：大工作区导出不再把全部行拼成一份巨型 JSON
     with tempfile.TemporaryDirectory(prefix="cndb-ws-export-rows-") as rows_dir:
