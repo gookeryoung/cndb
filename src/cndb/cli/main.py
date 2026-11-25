@@ -394,6 +394,11 @@ def main() -> None:
 
     register_pipeline_subparser(sub)
 
+    # link 子命令组（工作区链接到期回收：sweep —— ADR 0154 D10）
+    from cndb.cli.link import register_link_subparser
+
+    register_link_subparser(sub)
+
     # design-refactor 子命令（旧设计拆分重构：ADR 0086 P1）
     from cndb.cli.design import register_design_subparser
 
@@ -461,6 +466,10 @@ def main() -> None:
         from cndb.cli.pipeline import pipeline_command
 
         pipeline_command(args)
+    elif args.command == "link":
+        from cndb.cli.link import link_command
+
+        link_command(args)
     elif args.command == "design-refactor":
         from cndb.cli.design import design_command
 

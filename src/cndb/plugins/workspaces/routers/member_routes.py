@@ -22,6 +22,8 @@ from cndb.plugins.workspaces.permissions import (
 from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
 from cndb.plugins.workspaces.schemas import (
     MemberAddRequest,
+    MemberBatchRequest,
+    MemberBatchResponse,
     MemberUpdateRequest,
     MemberUserBrief,
     WorkspaceMemberResponse,
@@ -126,6 +128,72 @@ def list_member_candidates(
         query = query.filter((User.username.ilike(keyword)) | (User.nickname.ilike(keyword)))
     users = query.order_by(User.username).all()
     return {"results": [MemberUserBrief.model_validate(u) for u in users]}
+
+
+@router.post("/{workspace_id}/members/batch", response_model=MemberBatchResponse)
+def add_members_batch(
+    workspace_id: int,
+    payload: MemberBatchRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> MemberBatchResponse:
+    """批量添加成员（ADR 0154 D12：链接批准时一次授予一组人只读）.
+
+    - 仅 `MANAGE_MEMBERS`（工作区所有者 / 团队管理员）；
+    - 上限 200 条；角色不得为 `owner`（与单端点一致）；
+    - 逐项返回结果：`added` / `skipped`（已是成员）/ `errors`（用户不存在等），
+      不因单项失败整体回滚（批量授权场景更需要「尽力而为 + 可读结果」）。
+    """
+    from cndb.plugins.workspaces.models import LINK_MAX_GRANTEES
+    from cndb.plugins.workspaces.permissions import WorkspaceCapability, require_capability
+
+    ws = _get_workspace_or_404(workspace_id, db)
+    require_capability(
+        WorkspaceCapability.MANAGE_MEMBERS, db, ws, current_user, requirement="仅所有者或团队管理员可添加成员"
+    )
+    if len(payload.items) > LINK_MAX_GRANTEES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"单次最多添加 {LINK_MAX_GRANTEES} 名成员",
+        )
+
+    result = MemberBatchResponse()
+    seen: set[str] = set()
+    for item in payload.items:  # MemberBatchItem
+        username = item.username.strip()
+        if not username:
+            continue
+        if username in seen:
+            result.skipped.append(username)
+            continue
+        seen.add(username)
+        if item.role == WorkspaceRole.OWNER:
+            result.errors.append({"username": username, "detail": "不允许批量添加为所有者"})
+            continue
+        user = db.query(User).filter(User.username == username).first()
+        if user is None:
+            result.errors.append({"username": username, "detail": "用户不存在"})
+            continue
+        exists = (
+            db.query(WorkspaceMember)
+            .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user.id)
+            .first()
+        )
+        if exists is not None:
+            result.skipped.append(username)
+            continue
+        db.add(
+            WorkspaceMember(
+                workspace_id=workspace_id,
+                user_id=user.id,
+                role=item.role,  # type: ignore[arg-type]
+            )
+        )
+        result.added.append(username)
+    db.commit()
+    if result.added:
+        invalidate_workspace_list_cache(workspace_id)
+    return result
 
 
 @router.patch("/{workspace_id}/members/{member_id}", response_model=WorkspaceMemberResponse)

@@ -5,11 +5,13 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from cndb.plugins.workspaces.models import (
     DEFAULT_STORAGE_QUOTA_BYTES,
     DEFAULT_WORKSPACE_MODULES,
+    LINK_DEFAULT_TTL_DAYS,
+    LINK_MAX_TTL_DAYS,
     WorkspaceRole,
     WorkspaceVisibility,
 )
@@ -174,6 +176,27 @@ class MemberAddRequest(BaseModel):
     role: WorkspaceRole
 
 
+class MemberBatchItem(BaseModel):
+    """批量加成员的单项（ADR 0154 D12；角色不得为 owner）."""
+
+    username: str
+    role: WorkspaceRole = WorkspaceRole.VIEWER
+
+
+class MemberBatchRequest(BaseModel):
+    """批量加成员请求（上限 200，由服务层校验）."""
+
+    items: list[MemberBatchItem]
+
+
+class MemberBatchResponse(BaseModel):
+    """批量加成员结果（逐项成败，便于前端提示）."""
+
+    added: list[str] = []
+    skipped: list[str] = []
+    errors: list[dict[str, str]] = []
+
+
 class MemberUpdateRequest(BaseModel):
     """修改成员角色请求."""
 
@@ -289,6 +312,51 @@ class TeamWorkspaceItem(BaseModel):
     member_count: int = 0
     #: 当前用户是否已是该工作区成员（自助加入按钮的显隐依据，ADR 0153 P2）
     is_member: bool = False
+    updated_at: datetime
+
+
+# ── 工作区链接 schemas（ADR 0154 P0） ───────────────
+
+
+class WorkspaceLinkCreate(BaseModel):
+    """发起链接申请（消费方）。"""
+
+    source_workspace_id: int
+    target_table_id: int
+    target_view_id: int | None = None
+    alias: str | None = Field(default=None, max_length=64)
+    ttl_days: int = Field(default=LINK_DEFAULT_TTL_DAYS, ge=1, le=LINK_MAX_TTL_DAYS)
+    note: str = Field(default="", max_length=200)
+
+
+class WorkspaceLinkApprove(BaseModel):
+    """批准链接（源工作区所有者）；可覆盖有效期。"""
+
+    ttl_days: int | None = Field(default=None, ge=1, le=LINK_MAX_TTL_DAYS)
+
+
+class WorkspaceLinkResponse(BaseModel):
+    """链接响应（含来源 / 批准人与当前用户是否可读）。"""
+
+    id: int
+    workspace_id: int
+    source_workspace_id: int
+    source_workspace_name: str = ""
+    target_type: str
+    target_table_id: int
+    target_table_name: str = ""
+    target_view_id: int | None = None
+    alias: str
+    status: str
+    ttl_days: int
+    expires_at: datetime | None = None
+    created_by_id: int | None = None
+    approved_by_name: str | None = None
+    approved_at: datetime | None = None
+    note: str = ""
+    #: 当前用户能否读到源表数据（A 期 = 是否在源工作区有 READ）
+    readable: bool = False
+    created_at: datetime
     updated_at: datetime
 
 
@@ -457,6 +525,9 @@ class RoleResponse(BaseModel):
 
 __all__ = [
     "MemberAddRequest",
+    "MemberBatchItem",
+    "MemberBatchRequest",
+    "MemberBatchResponse",
     "MemberUpdateRequest",
     "MemberUserBrief",
     "PinRequest",

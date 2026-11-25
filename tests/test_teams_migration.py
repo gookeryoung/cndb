@@ -176,3 +176,44 @@ class TestVisibilityNormalization:
         finally:
             conn.close()
         _upgrade(url, VISIBILITY_REVISION)  # 不抛错
+
+
+LINKS_REVISION = "a9b8c7d6e5f4"
+LINK_TABLE = "workspaces_workspacelink"
+
+
+class TestWorkspaceLinksMigration:
+    """ADR 0154 P0：链接表迁移（幂等 / 存量零迁移 / downgrade 可还原）."""
+
+    def test_upgrade_creates_table(self, tmp_path: Path):
+        db_path = tmp_path / "links.db"
+        _upgrade(f"sqlite:///{db_path}", LINKS_REVISION)
+        assert LINK_TABLE in _tables(db_path)
+        cols = _columns(db_path, LINK_TABLE)
+        assert {"workspace_id", "source_workspace_id", "target_table_id", "alias", "status"} <= cols
+        # 链接不引入新的工作区层级列
+        assert "parent_workspace_id" not in _columns(db_path, WORKSPACE)
+
+    def test_existing_workspaces_untouched(self, tmp_path: Path):
+        db_path = tmp_path / "links_backfill.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, VISIBILITY_REVISION)
+        _insert_workspace(db_path, "存量工作区")
+        before = _team_ids(db_path)
+        _upgrade(url, LINKS_REVISION)
+        assert _team_ids(db_path) == before == {"存量工作区": None}
+
+    def test_upgrade_is_idempotent(self, tmp_path: Path):
+        db_path = tmp_path / "links_idem.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, LINKS_REVISION)
+        _upgrade(url, LINKS_REVISION)
+        assert LINK_TABLE in _tables(db_path)
+
+    def test_downgrade_drops_table(self, tmp_path: Path):
+        db_path = tmp_path / "links_down.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, LINKS_REVISION)
+        _downgrade(url, VISIBILITY_REVISION)
+        assert LINK_TABLE not in _tables(db_path)
+        assert "team_id" in _columns(db_path, WORKSPACE)  # 只回滚链接表

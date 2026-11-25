@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from cndb.plugins.workspaces.schemas.models import (
     MemberAddRequest,
+    MemberBatchItem,
+    MemberBatchRequest,
+    MemberBatchResponse,
     MemberUpdateRequest,
     MemberUserBrief,
     PinRequest,
@@ -32,6 +35,9 @@ from cndb.plugins.workspaces.schemas.models import (
     WorkspaceExportResponse,
     WorkspaceImportRequest,
     WorkspaceImportResponse,
+    WorkspaceLinkApprove,
+    WorkspaceLinkCreate,
+    WorkspaceLinkResponse,
     WorkspaceMemberResponse,
     WorkspaceOwnerTransferRequest,
     WorkspaceResponse,
@@ -41,6 +47,9 @@ from cndb.plugins.workspaces.schemas.models import (
 
 __all__ = [
     "MemberAddRequest",
+    "MemberBatchItem",
+    "MemberBatchRequest",
+    "MemberBatchResponse",
     "MemberUpdateRequest",
     "MemberUserBrief",
     "PinRequest",
@@ -69,6 +78,9 @@ __all__ = [
     "WorkspaceExportResponse",
     "WorkspaceImportRequest",
     "WorkspaceImportResponse",
+    "WorkspaceLinkApprove",
+    "WorkspaceLinkCreate",
+    "WorkspaceLinkResponse",
     "WorkspaceMemberResponse",
     "WorkspaceOwnerTransferRequest",
     "WorkspaceResponse",

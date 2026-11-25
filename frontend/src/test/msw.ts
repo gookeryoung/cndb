@@ -687,7 +687,7 @@ export const handlers = [
     HttpResponse.json({
       data_role: 'owner',
       team_role: null,
-      capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE', 'DELETE_WORKSPACE'],
+      capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE', 'DELETE_WORKSPACE', 'MANAGE_LINKS'],
       sources: { data: 'workspace_member:owner', manage: 'workspace_member:owner' },
     })),
   // 文档修改申请列表（默认空；单用例 server.use 覆盖）

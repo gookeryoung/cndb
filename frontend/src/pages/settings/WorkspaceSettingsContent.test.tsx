@@ -160,7 +160,7 @@ function renderContent(
         role === 'owner'
           ? {
             data_role: 'owner', team_role: null, sources: { data: 'workspace_member:owner' },
-            capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE', 'DELETE_WORKSPACE'],
+            capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE', 'DELETE_WORKSPACE', 'MANAGE_LINKS'],
           }
           : role === 'editor'
             ? {

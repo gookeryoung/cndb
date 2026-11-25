@@ -44,6 +44,7 @@ class WorkspaceCapability(enum.StrEnum):
     - ``EXPORT``：编辑者及以上（工作区导出 / 导入，含归档备份导出）
     - ``EDIT_SETTINGS`` / ``MANAGE_MEMBERS`` / ``RESTORE``：管理面，所有者或团队管理员
     - ``DELETE_WORKSPACE``：仅工作区所有者（团队管理员不可删，ADR 0153 D9）
+    - ``MANAGE_LINKS``：仅工作区所有者（批准 / 拒绝 / 撤回跨工作区链接，ADR 0154 C2）
     """
 
     READ = "READ"
@@ -53,6 +54,7 @@ class WorkspaceCapability(enum.StrEnum):
     MANAGE_MEMBERS = "MANAGE_MEMBERS"
     RESTORE = "RESTORE"
     DELETE_WORKSPACE = "DELETE_WORKSPACE"
+    MANAGE_LINKS = "MANAGE_LINKS"
 
 
 # 内置三档角色的能力位集合（唯一来源；自定义角色在 P2 复用同一映射口径）

@@ -230,7 +230,7 @@ def resolve_link(db, user, link_id) -> ResolvedLink:      # 404 / 403 统一出�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/links.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/cli/link.py` | `tests/test_workspace_links_api.py`、`tests/test_link_sweep.py` | — |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/links.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/alembic/versions/a9b8c7d6e5f4_add_workspace_links.py`、`src/cndb/cli/link.py` | `tests/test_workspace_links_api.py`、`tests/test_link_sweep.py`、`tests/test_cli_link.py`、`tests/test_teams_migration.py` | 未提交 |
 | P1 | 未开始 | `src/cndb/plugins/workspaces/services/links.py` | `tests/test_workspace_links.py` | — |
 | P2 | 未开始 | `frontend/src/pages/grid/LinkedTablePage.tsx`、`frontend/src/pages/workspace/TablesList.tsx` | `frontend/src/pages/grid/LinkedTablePage.test.tsx` | — |
 | P3.1 | 未开始 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/models.py`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | `tests/test_workspace_team_access.py` | — |
@@ -238,8 +238,8 @@ def resolve_link(db, user, link_id) -> ResolvedLink:      # 404 / 403 统一出�
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案（ADR `Proposed`，**未进入实现**，H5）
-- 已完成：需求卡片 0154（C1-C10）；ADR 不变量 L1-L9、决策 D1-D12、两级授权（A / B′）的数据模型、判定、API、边界与测试计划
-- 下一步：人工评审 D3（A + B′ 两级）、D9/D10（成员归属与回收）、D11（B′ 只授 viewer 且不产管理面）；通过后①把 L1/L2/L3/L9 登记进 `CONSTRAINTS.md`；②开 P0（链接表 + 批量成员 + 申请 / 批准 / 撤回 + 清扫骨架）
+- 当前阶段：P0 已落地（链接生命周期 + 批量只读成员 + 到期清扫骨架）；P1 只读取数未开始
+- 已完成：需求卡片 0154（C1-C10）；ADR 不变量 L1-L9、决策 D1-D12；P0（`workspace_link` 迁移、申请 / 批准 / 拒绝 / 撤回、`POST /{wid}/members/batch`、`cndb link sweep`、`MANAGE_LINKS` 能力位仅所有者）
+- 下一步：①把 L1/L2/L3/L9 登记进 `CONSTRAINTS.md`（H27，需人工确认）；②开 P1（`fields` / `rows` / `export` 只读取数，复用行级与隐藏字段入口，补 H15/H17 回归）
 - 已知坑：① A 期的成员行是**真实授权**——清扫停摆时「链接入口已 404 但成员仍能直接进源工作区」，必须在验收时用 `cndb link sweep` 日志确认回收；② `created_member_ids` 必须由批准事务内记录，撤回按它删（不要按 `granted_member_ids`）；③ 缓存键必须含 link_id，否则与本工作区读串味（ADR 0046 D3 同款）；④ B′ 接入时 `resolve_capabilities` 的顺序必须写在注释与用例里（显式 > team_grant > 策略默认 > public），否则后续改动容易悄悄放宽；⑤ 迁移 `down_revision` 取最新 head（当前 `f2b3c4d5e6a7`），并行会话新增迁移后要同步
-- 最近一次全绿：`make check-docs` @ `a4e09e70`（2026-11-25）
+- 最近一次全绿：`make check-fast` + 本 ADR 相关用例（`tests/test_workspace_links_api.py` 29 + `tests/test_link_sweep.py` 6 + `tests/test_cli_link.py` 7）@ 未提交（2026-11-25）

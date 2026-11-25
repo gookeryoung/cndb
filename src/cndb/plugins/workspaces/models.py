@@ -119,6 +119,28 @@ WORKSPACE_ROLE_LABELS: dict[str, str] = {
 }
 
 
+class WorkspaceLinkStatus(enum.StrEnum):
+    """工作区链接状态（ADR 0154）：消费方发起 → 源 owner 批准 / 拒绝 → 到期。"""
+
+    PENDING = "pending"
+    ACTIVE = "active"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+#: 链接目标类型（ADR 0154 D5）
+LINK_TARGET_TABLE = "table"
+LINK_TARGET_VIEW = "view"
+LINK_TARGET_VALUES: tuple[str, ...] = (LINK_TARGET_TABLE, LINK_TARGET_VIEW)
+
+#: 链接默认 / 最长有效期（天，ADR 0154 §4.1）
+LINK_DEFAULT_TTL_DAYS = 30
+LINK_MAX_TTL_DAYS = 365
+
+#: 单条链接一次最多授予的成员数（超出要求改用团队授权，ADR 0154 D12）
+LINK_MAX_GRANTEES = 200
+
+
 class TeamRole(enum.StrEnum):
     """团队成员角色（ADR 0153 D4）：只决定管理面，不派生任何数据面权限.
 
@@ -222,6 +244,70 @@ class TeamMember(TimestampMixin, Base):
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"TeamMember(team_id={self.team_id}, user_id={self.user_id}, role={self.role.value})"
+
+
+class WorkspaceLink(TimestampMixin, Base):
+    """工作区链接（ADR 0154）：跨工作区**只读引用**的申请 / 批准 / 到期载体.
+
+    权限口径（L1）：链接本身**不授予**任何权限；A 期在批准时把受众批量加为源工作区的
+    真实 ``WorkspaceMember(viewer)``，因此有效权限恒等于「用户在源工作区的既有角色」。
+    """
+
+    __tablename__ = "workspaces_workspacelink"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "alias", name="uniq_workspace_link_alias"),
+        {"extend_existing": True},
+    )
+
+    #: 消费方工作区
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    #: 源工作区（授权方）
+    source_workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    target_type: Mapped[str] = mapped_column(String(16), nullable=False, default=LINK_TARGET_TABLE)
+    target_table_id: Mapped[int] = mapped_column(
+        ForeignKey("tables_datatable.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    target_view_id: Mapped[int | None] = mapped_column(
+        ForeignKey("tables_dataview.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    alias: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[WorkspaceLinkStatus] = mapped_column(
+        Enum(WorkspaceLinkStatus),
+        nullable=False,
+        default=WorkspaceLinkStatus.PENDING,
+        index=True,
+    )
+    #: 请求的有效期（天）；批准时可覆盖
+    ttl_days: Mapped[int] = mapped_column(Integer, nullable=False, default=LINK_DEFAULT_TTL_DAYS)
+    #: 本次授予的全部受众（审计依据）
+    granted_member_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    #: 其中「由链接创建」的成员：撤回 / 过期只删这些，不动原有成员（L9）
+    created_member_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    approved_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    approved_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    note: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"WorkspaceLink(id={self.id}, alias={self.alias!r}, status={self.status.value})"
 
 
 class Workspace(TimestampMixin, Base):
@@ -403,6 +489,12 @@ __all__ = [
     "BUILTIN_ROLE_CODES",
     "DEFAULT_STORAGE_QUOTA_BYTES",
     "DEFAULT_WORKSPACE_MODULES",
+    "LINK_DEFAULT_TTL_DAYS",
+    "LINK_MAX_GRANTEES",
+    "LINK_MAX_TTL_DAYS",
+    "LINK_TARGET_TABLE",
+    "LINK_TARGET_VALUES",
+    "LINK_TARGET_VIEW",
     "MODULE_LABELS",
     "POLICY_DEFAULT_ROLE_VALUES",
     "ROLE_RANK",
@@ -416,6 +508,8 @@ __all__ = [
     "TeamMember",
     "TeamRole",
     "Workspace",
+    "WorkspaceLink",
+    "WorkspaceLinkStatus",
     "WorkspaceMember",
     "WorkspaceModule",
     "WorkspaceRole",
