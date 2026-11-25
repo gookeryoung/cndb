@@ -117,7 +117,7 @@ Related: `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P2 | 已落地 | `src/cndb/plugins/workspaces/routers/home.py`（新增）、`src/cndb/plugins/workspaces/services/home_summary.py`（新增）、`src/cndb/plugins/workspaces/plugin.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/links.py`、`src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/issues/services.py`、`frontend/src/api/home.ts`（新增）、`frontend/src/components/HomeNav.tsx`、`frontend/src/index.css` | `tests/test_home_summary.py`（新增，12 例）、`frontend/src/components/HomeNav.test.tsx` | `（待回填）` |
+| P2 | 已落地 | `src/cndb/plugins/workspaces/routers/home.py`（新增）、`src/cndb/plugins/workspaces/services/home_summary.py`（新增）、`src/cndb/plugins/workspaces/plugin.py`、`src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/links.py`、`src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/issues/services.py`、`frontend/src/api/home.ts`（新增）、`frontend/src/components/HomeNav.tsx`、`frontend/src/index.css` | `tests/test_home_summary.py`（新增，12 例）、`frontend/src/components/HomeNav.test.tsx` | `ba4e1b70` |
 
 ## 交接（会话结束更新）
 
