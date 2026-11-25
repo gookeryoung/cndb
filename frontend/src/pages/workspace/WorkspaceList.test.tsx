@@ -400,6 +400,32 @@ describe('WorkspaceList 可折叠行列表', () => {
     expect(screen.getByTestId('star-btn-11')).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByTestId('star-btn-10')).toHaveAttribute('aria-pressed', 'false')
   })
+
+  it('「已收藏」组跨团队扁平展示时补团队归属，普通团队分组内不重复（需求 0160 补充）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () =>
+        HttpResponse.json([
+          makeWs({ id: 10, name: '研发工作区', pinned: true, team_id: 500, team: { id: 500, name: '研发部', slug: 'rd' } }),
+          makeWs({ id: 11, name: '个人收藏区', pinned: true }),
+        ])),
+      http.get('/api/v1/teams', () => HttpResponse.json([{
+        id: 500, name: '研发部', slug: 'rd', description: '',
+        policy: {
+          default_workspace_role: 'none', allowed_modules: null,
+          default_storage_quota_bytes: null, allow_member_invite: false,
+        },
+        created_by_id: 1, created_at: '', updated_at: '',
+        current_user_role: 'owner', workspace_count: 1, member_count: 1,
+      }])),
+    )
+    renderWorkspaceList()
+
+    const starred = await screen.findByTestId('workspace-group-starred')
+    // 有团队的收藏行补团队徽标
+    expect(within(starred).getByTestId('workspace-team-tag-10')).toHaveTextContent('研发部')
+    // 个人工作区没有团队徽标
+    expect(within(starred).queryByTestId('workspace-team-tag-11')).toBeNull()
+  })
 })
 
 describe('WorkspaceList 创建弹窗校验与失败分支', () => {
@@ -699,8 +725,25 @@ describe('WorkspaceList 我的视图面板', () => {
 
     const row = await screen.findByTestId('my-view-row-300')
     expect(row).toHaveTextContent('本月进行中')
-    expect(row).toHaveTextContent('测试工作区 › 客户表')
+    // 无团队的工作区显示「个人 / 工作区 › 数据表」，不再只有工作区名（看不出归属）
+    expect(row).toHaveTextContent('个人 / 测试工作区 › 客户表')
     expect(screen.getByTestId('my-views-count')).toHaveTextContent('1')
+  })
+
+  it('收藏视图路径带所属团队（团队 / 工作区 › 数据表）', async () => {
+    server.use(
+      http.get('/api/v1/accounts/preferences', () => HttpResponse.json({
+        active_views: {}, workspace_order: [], favorite_view_ids: [300],
+      })),
+      http.get('/api/v1/accounts/preferences/favorite-views', () => HttpResponse.json([FAVORITE_VIEW])),
+      http.get('/api/v1/workspaces', () => HttpResponse.json([
+        makeWs({ id: 10, name: '测试工作区', team_id: 500, team: { id: 500, name: '研发部', slug: 'rd' } }),
+      ])),
+    )
+    renderWorkspaceList()
+
+    const row = await screen.findByTestId('my-view-row-300')
+    await waitFor(() => expect(row).toHaveTextContent('研发部 / 测试工作区 › 客户表'))
   })
 
   it('无收藏时展示引导空态（指向视图栏星标）', async () => {

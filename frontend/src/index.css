@@ -1565,7 +1565,8 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 
 /* 窄桌面 / 平板：模块徽标先让位（行首图标已表达主模块），时间换相对口径 */
 @media (max-width: 1199.98px) {
-  .cn-ws-row-tag--module {
+  .cn-ws-row-tag--module,
+  .cn-ws-row-tag--team {
     display: none;
   }
 
@@ -1643,14 +1644,14 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
  * 条目复用 antd Menu（与设置 / 统计 / 管理台侧栏同款），这里只补两处：
  * 「名称 ……… 相对时间」单行排布（antd inline Menu 行高固定 40px，双行会被裁掉），
  * 以及移动端抽屉的顶部内边距。 */
-.cn-home-nav-recent {
+.cn-home-nav-row {
   display: flex;
   align-items: center;
   gap: var(--cn-space-sm);
   min-width: 0;
 }
 
-.cn-home-nav-recent-name {
+.cn-home-nav-row-name {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -1658,8 +1659,20 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   white-space: nowrap;
 }
 
-.cn-home-nav-recent-time {
-  flex: none;
+/* 「已收藏」条目图标：颜色（琥珀）由行内 style 给，这里只把尺寸钉在 Menu 图标档，
+ * 避免 Filled 星形比同排线性图标显得更大（需求 0160 补充） */
+.cn-home-nav-star.anticon {
+  font-size: var(--cn-text-md);
+  vertical-align: 0;
+}
+
+/* 右侧次要信息：最近访问=相对时间、已收藏=所属团队 */
+.cn-home-nav-row-hint {
+  flex: 0 1 auto;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--cn-text-2xs);
   color: var(--cn-text-muted);
 }

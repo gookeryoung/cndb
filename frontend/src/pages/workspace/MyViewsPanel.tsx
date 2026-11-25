@@ -58,12 +58,17 @@ const VISIBILITY_COLOR: Record<string, string> = {
   table: 'default', shared: 'cyan', private: 'purple',
 }
 
-/** 单个收藏视图行 —— 拖拽监听只挂在把手上，行点击只做展开 / 收起 */
+/** 单个收藏视图行 —— 拖拽监听只挂在把手上，行点击只做展开 / 收起.
+ *
+ * `location`：`团队 / 工作区 / 数据表` 的归属串。收藏视图是跨工作区聚合列表，
+ * 只写「工作区 › 数据表」看不出所属团队（需求 0160 补充）。
+ */
 function MyViewRow({
-  view, expanded, onToggle, onOpen, onUnfavorite,
+  view, expanded, location, onToggle, onOpen, onUnfavorite,
 }: {
   view: FavoriteViewSummary
   expanded: boolean
+  location: string
   onToggle: () => void
   onOpen: () => void
   onUnfavorite: () => void
@@ -117,8 +122,8 @@ function MyViewRow({
 
         <div className="cn-myviews-text">
           <span className="cn-myviews-name" title={view.name}>{view.name}</span>
-          <span className="cn-myviews-path" title={`${view.workspace_name} › ${view.table_name}`}>
-            {view.workspace_name} › {view.table_name}
+          <span className="cn-myviews-path" title={location}>
+            {location}
           </span>
         </div>
 
@@ -153,7 +158,7 @@ function MyViewRow({
           </div>
           <div className="cn-myviews-detail-row">
             <span className="cn-myviews-detail-label">位置</span>
-            <span className="cn-myviews-detail-value">{view.workspace_name} › {view.table_name}</span>
+            <span className="cn-myviews-detail-value" data-testid={`my-view-location-${view.view_id}`}>{location}</span>
           </div>
           <div className="cn-myviews-detail-row">
             <span className="cn-myviews-detail-label">规则</span>
@@ -180,7 +185,12 @@ function MyViewRow({
   )
 }
 
-export default function MyViewsPanel() {
+export default function MyViewsPanel({
+  teamByWorkspaceId,
+}: {
+  /** 工作区 id → 团队名；缺省视为个人工作区（无团队） */
+  teamByWorkspaceId?: Map<string, string>
+} = {}) {
   const navigate = useNavigate()
   const { message } = AntApp.useApp()
   const { data: views = [], isLoading } = useFavoriteViews()
@@ -194,6 +204,12 @@ export default function MyViewsPanel() {
   )
 
   const ids = useMemo(() => views.map(v => String(v.view_id)), [views])
+
+  /** 收藏视图的归属串：`团队 / 工作区 › 数据表`；个人工作区显示「个人」 */
+  const locationOf = (view: FavoriteViewSummary): string => {
+    const team = teamByWorkspaceId?.get(String(view.workspace_id))
+    return `${team ?? '个人'} / ${view.workspace_name} › ${view.table_name}`
+  }
 
   const toggleExpand = (viewId: number | string) => {
     const key = String(viewId)
@@ -262,6 +278,7 @@ export default function MyViewsPanel() {
                   key={view.view_id}
                   view={view}
                   expanded={expandedIds.has(String(view.view_id))}
+                  location={locationOf(view)}
                   onToggle={() => toggleExpand(view.view_id)}
                   onOpen={() => handleOpen(view)}
                   onUnfavorite={() => handleUnfavorite(view)}

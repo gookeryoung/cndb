@@ -92,9 +92,9 @@ describe('HomeNav', () => {
 
     const item = await screen.findByTestId('home-nav-recent-10')
     // 单行结构：名称与相对时间同层（不再嵌套 block 双行，避免被 40px 行高裁掉）
-    expect(item).toHaveClass('cn-home-nav-recent')
-    expect(item.querySelector('.cn-home-nav-recent-name')).toHaveTextContent('测试工作区')
-    expect(item.querySelector('.cn-home-nav-recent-time')).not.toBeEmptyDOMElement()
+    expect(item).toHaveClass('cn-home-nav-row')
+    expect(item.querySelector('.cn-home-nav-row-name')).toHaveTextContent('测试工作区')
+    expect(item.querySelector('.cn-home-nav-row-hint')).not.toBeEmptyDOMElement()
     expect(item).toHaveAttribute('title')
     expect(item.getAttribute('title')).toContain('测试工作区')
   })
@@ -150,6 +150,54 @@ describe('HomeNav', () => {
     expect(screen.getByTestId('home-nav-all')).toBeVisible()
     expect(screen.queryByTestId('home-nav-team-500')).toBeNull()
   })
+  it('「已收藏」分区排在最近访问下方，并标注所属团队（需求 0160 补充）', async () => {
+    server.use(http.get('/api/v1/workspaces', () => HttpResponse.json([
+      {
+        id: 10, name: '研发工作区', description: '', visibility: 'member', tags: [],
+        allow_edit: true, created_at: '', updated_at: '',
+        pinned: true, team_id: 500, team: { id: 500, name: '研发部', slug: 'rd' },
+      },
+      {
+        id: 11, name: '个人收藏区', description: '', visibility: 'member', tags: [],
+        allow_edit: true, created_at: '', updated_at: '', pinned: true,
+      },
+      {
+        id: 12, name: '未收藏区', description: '', visibility: 'member', tags: [],
+        allow_edit: true, created_at: '', updated_at: '', pinned: false,
+      },
+    ])))
+    window.localStorage.setItem(RECENT_WORKSPACES_KEY, JSON.stringify([
+      { wid: '12', path: '/w/12/tables', ts: Date.now() - 60_000 },
+    ]))
+    renderNav()
+
+    const pinned = await screen.findByTestId('home-nav-pinned-10')
+    expect(pinned).toHaveTextContent('研发工作区')
+    // 收藏行右侧标注团队；个人工作区显示「个人」
+    expect(pinned.querySelector('.cn-home-nav-row-hint')).toHaveTextContent('研发部')
+    expect(screen.getByTestId('home-nav-pinned-11').querySelector('.cn-home-nav-row-hint'))
+      .toHaveTextContent('个人')
+    // 未收藏的工作区不进「已收藏」分区
+    expect(screen.queryByTestId('home-nav-pinned-12')).toBeNull()
+
+    // 收藏图标与列表星标同色（琥珀），且尺寸钉在 Menu 图标档
+    const star = pinned.closest('.ant-menu-item')?.querySelector('.cn-home-nav-star')
+    expect(star).not.toBeNull()
+    expect(star).toHaveStyle({ color: '#f59e0b' })
+
+    // 分区顺序：最近访问 → 已收藏 → 工作区
+    const nav = screen.getByTestId('sider-home')
+    const order = Array.from(nav.querySelectorAll('.ant-menu-item-group-title')).map(el => el.textContent)
+    expect(order.slice(0, 3)).toEqual(['最近访问', '已收藏', '工作区'])
+  })
+
+  it('没有收藏工作区时不渲染「已收藏」分区', async () => {
+    renderNav()
+
+    expect(await screen.findByTestId('home-nav-all')).toBeVisible()
+    expect(screen.queryByText('已收藏')).toBeNull()
+  })
+
   it('有待办时在「全部工作区」右侧显示聚合徽标，并带分解提示（ADR 0160 P2）', async () => {
     server.use(http.get('/api/v1/home/summary', () => HttpResponse.json({
       workspace_count: 1,

@@ -7,6 +7,8 @@
  * **只承载独有信息**，不复述顶栏与右栏已有的入口：
  *  - 新建工作区：`/w?create=1`（与页内按钮同一弹窗）；
  *  - 最近访问：本地记录的 ≤5 个工作区落地路径（`utils/recentWorkspaces`，不落库）；
+ *  - 已收藏：置顶（`pinned`）的工作区 ≤5 个，右侧标注所属团队（收藏是跨团队的扁平列表，
+ *    不写团队就分不清归属）；
  *  - 全部工作区：主页锚点，带工作区计数与**待办徽标**（ADR 0160 P2：修改申请 / 问题 / 待审链接
  *    的聚合计数，只读、只有总数，不含 id / 标题；失败静默隐藏徽标，不阻断主页）。
  * 明确**不放**（重复入口）：团队（顶栏 `ScopeSwitcher` 已按团队分组并带团队页入口）、
@@ -23,10 +25,10 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Menu } from 'antd'
 import type { MenuProps } from 'antd'
-import { ClockCircleOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons'
+import { ClockCircleOutlined, FolderOpenOutlined, PlusOutlined, StarFilled } from '@ant-design/icons'
 import { homeApi, workspaceApi } from '@/api'
 import type { Workspace } from '@/api'
-import { normalizeModules, WORKSPACE_MODULE_LABEL } from '@/utils/workspaceModules'
+import { normalizeModules, workspaceLandingSegment, WORKSPACE_MODULE_LABEL } from '@/utils/workspaceModules'
 import { formatRelativeTime } from '@/utils/datetime'
 import { readRecentWorkspaces } from '@/utils/recentWorkspaces'
 import type { RecentWorkspaceEntry } from '@/utils/recentWorkspaces'
@@ -85,12 +87,40 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
           // 单行 label：antd inline Menu 行高固定 40px 且单行 ellipsis，双行会被裁掉
           label: (
             <span
-              className="cn-home-nav-recent"
+              className="cn-home-nav-row"
               data-testid={`home-nav-recent-${ws.id}`}
               title={`${ws.name}${moduleLabel ? ` · ${moduleLabel}` : ''}${relative ? ` · ${relative}` : ''}`}
             >
-              <span className="cn-home-nav-recent-name">{ws.name}</span>
-              <span className="cn-home-nav-recent-time">{relative}</span>
+              <span className="cn-home-nav-row-name">{ws.name}</span>
+              <span className="cn-home-nav-row-hint">{relative}</span>
+            </span>
+          ),
+        }
+      }),
+    })
+  }
+
+  const pinnedItems = workspaces.filter(ws => ws.pinned).slice(0, 5)
+  if (pinnedItems.length > 0) {
+    items.push({
+      type: 'group',
+      label: '已收藏',
+      children: pinnedItems.map(ws => {
+        const modules = normalizeModules(ws.modules)
+        const teamName = ws.team?.name ?? '个人'
+        return {
+          key: `/w/${ws.id}/${workspaceLandingSegment(modules)}`,
+          // 与列表行内的收藏星标同色（琥珀）且显式对齐 Menu 图标字号：
+          // Filled 星形比同排线性图标视觉偏大，不固定尺寸会与「最近访问 / 全部工作区」不齐（需求 0160 补充）
+          icon: <StarFilled className="cn-home-nav-star" style={{ color: '#f59e0b' }} />,
+          label: (
+            <span
+              className="cn-home-nav-row"
+              data-testid={`home-nav-pinned-${ws.id}`}
+              title={`${ws.name} · ${teamName}`}
+            >
+              <span className="cn-home-nav-row-name">{ws.name}</span>
+              <span className="cn-home-nav-row-hint">{teamName}</span>
             </span>
           ),
         }

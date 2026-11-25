@@ -200,6 +200,13 @@ export default function WorkspaceList() {
     )
   }, [workspaces, search, prefs?.workspace_order, effectiveScope])
 
+  /** 工作区 → 团队名（「我的视图」面板的收藏项要显示所属团队，避免只看到工作区名） */
+  const teamByWorkspaceId = useMemo(() => new Map(
+    workspaces
+      .filter(ws => ws.team)
+      .map(ws => [String(ws.id), ws.team!.name] as const),
+  ), [workspaces])
+
   const starred = filteredWorkspaces.filter(w => w.pinned)
   /** 是否展示团队层级（无团队归属时保持现状，C9） */
   const showTeamGrouping = hasTeamGrouping(teams, workspaces)
@@ -259,11 +266,15 @@ export default function WorkspaceList() {
     })
   }
 
-  /** 行渲染：拖拽把手 + 收起态图标 + 展开详情（拖拽只在把手生效） */
-  const renderRow = (w: WSWithStats) => (
+  /** 行渲染：拖拽把手 + 收起态图标 + 展开详情（拖拽只在把手生效）。
+   *
+   * `showTeam`：仅「已收藏」组传 true —— 该组是跨团队的扁平列表（收藏置顶后脱离了团队分组），
+   * 行内补团队归属才不会让人看不出收藏的工作区属于哪个团队。 */
+  const renderRow = (w: WSWithStats, showTeam = false) => (
     <WorkspaceRow
       key={w.id}
       ws={w}
+      showTeam={showTeam}
       expanded={expandedIds.has(String(w.id))}
       draggable={dragEnabled}
       isMobile={isMobile}
@@ -418,7 +429,7 @@ export default function WorkspaceList() {
                       items={starred.map(w => String(w.id))}
                       strategy={verticalListSortingStrategy}
                     >
-                      <div className="cn-ws-list">{starred.map(renderRow)}</div>
+                      <div className="cn-ws-list">{starred.map(w => renderRow(w, true))}</div>
                     </SortableContext>
                   </section>
                 )}
@@ -469,7 +480,7 @@ export default function WorkspaceList() {
                           items={group.workspaces.map(w => String(w.id))}
                           strategy={verticalListSortingStrategy}
                         >
-                          <div className="cn-ws-list">{group.workspaces.map(renderRow)}</div>
+                          <div className="cn-ws-list">{group.workspaces.map(w => renderRow(w))}</div>
                         </SortableContext>
                       )}
                     </section>
@@ -482,7 +493,7 @@ export default function WorkspaceList() {
 
         {/* 右侧「我的视图」：桌面固定宽分栏，<992px 由 CSS 堆叠到工作区下方 */}
         <aside className="cn-home-aside" data-testid="workspace-home-aside">
-          <MyViewsPanel />
+          <MyViewsPanel teamByWorkspaceId={teamByWorkspaceId} />
         </aside>
       </div>
 
@@ -612,12 +623,15 @@ export default function WorkspaceList() {
  * 搜索过滤时 `draggable=false`，把手降级为普通图标，防止只提交过滤后的子集顺序。
  */
 function WorkspaceRow({
-  ws, expanded, draggable, isMobile, landingOrder, onToggle, onPin, onSettings, onBackup,
+  ws, expanded, draggable, isMobile, landingOrder, showTeam = false,
+  onToggle, onPin, onSettings, onBackup,
 }: {
   ws: WSWithStats
   expanded: boolean
   draggable: boolean
   isMobile: boolean
+  /** 是否在行内展示所属团队（「已收藏」组用：该组跨团队扁平，缺归属就分不清） */
+  showTeam?: boolean
   /** 进入本工作区的默认落地页优先级（需求 0161） */
   landingOrder: WorkspaceModule[]
   onToggle: () => void
@@ -683,6 +697,16 @@ function WorkspaceRow({
         <div className="cn-ws-row-body">
           <div className="cn-ws-row-title">
             <span className="cn-ws-row-name" title={ws.name}>{ws.name}</span>
+            {showTeam && ws.team && (
+              <Tag
+                icon={<ApartmentOutlined />}
+                className="cn-ws-row-tag cn-ws-row-tag--team"
+                /* 与模块徽标同口径：窄桌面收起文字徽标，团队名仍在展开详情与 hover 提示里 */
+                data-testid={`workspace-team-tag-${ws.id}`}
+              >
+                {ws.team.name}
+              </Tag>
+            )}
             <Tooltip title={vis.label}>
               <span className="cn-ws-row-vis" style={{ color: 'var(--cn-text-muted)' }} aria-label={vis.label}>
                 {vis.icon}

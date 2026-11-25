@@ -25,7 +25,7 @@
 
 | # | 需求片段 | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 「导航优化」 | **同一导航轴、两种 Scope**：`/w`、`/teams*`（无 `wid` 且非管理台 / 非帮助）渲染「主页导航 rail」；`/w/:wid/*` 沿用现有工作区侧栏；`/admin` 管理台侧栏、`/help` 自带两级侧栏不变。同一时刻最多一条侧栏，不新增第三个导航轴。**rail 只承载独有信息**（A′ 口径，2026-11-27 评审确认）：新建工作区 / 最近访问 / 全部工作区；明确不放入**团队**（顶栏 `ScopeSwitcher` 已分组并带团队页入口）、**收藏视图**（右栏「我的视图」同一数据源）、**帮助文档**（顶栏常驻图标）、**管理团队**（`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` Navigate）。rail **不参与折叠** | `layouts/MainLayout.tsx`、`components/HomeNav.tsx` | 单测：四种上下文各断言侧栏 testid 唯一；无 `sider-no-workspace`；rail 不渲染团队 / 收藏视图 / 帮助 / 管理团队条目；曾折叠过侧栏时主页仍完整展开且无折叠触发器 |
+| C1 | 「导航优化」 | **同一导航轴、两种 Scope**：`/w`、`/teams*`（无 `wid` 且非管理台 / 非帮助）渲染「主页导航 rail」；`/w/:wid/*` 沿用现有工作区侧栏；`/admin` 管理台侧栏、`/help` 自带两级侧栏不变。同一时刻最多一条侧栏，不新增第三个导航轴。**rail 只承载独有信息**（A′ 口径，2026-11-27 评审确认）：新建工作区 / 最近访问 / 全部工作区；**已收藏**（置顶工作区 ≤5，右侧标注所属团队，补足「收藏后脱离团队分组就分不清归属」）；明确不放入**团队**（顶栏 `ScopeSwitcher` 已分组并带团队页入口）、**收藏视图**（右栏「我的视图」同一数据源）、**帮助文档**（顶栏常驻图标）、**管理团队**（`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` Navigate）。rail **不参与折叠** | `layouts/MainLayout.tsx`、`components/HomeNav.tsx` | 单测：四种上下文各断言侧栏 testid 唯一；无 `sider-no-workspace`；rail 不渲染团队 / 收藏视图 / 帮助 / 管理团队条目；曾折叠过侧栏时主页仍完整展开且无折叠触发器 |
 | C2 | 「显得很空」 | **宽度节奏**：主页容器 `max-width: 1440px` 居中；「我的视图」右栏定宽 360px（不再 `340px + 5vw` 随视口膨胀）；1600+ 三栏（rail / 主区 / 右栏）、1280–1599 两栏、<992 右栏下移；任何断点不出现横向滚动 | `index.css`、`pages/workspace/WorkspaceList.tsx` | 单测：容器类与栅格；e2e 断点矩阵断言 `scrollWidth <= clientWidth` |
 | C3 | 「显得很空」 | **行内排版成表格化对齐**：`.cn-ws-row-body` 由 `flex + space-between` 改为 `grid`（标题 `minmax(0,1fr)` + meta `auto` 右对齐），名称与计数 / 时间按列对齐、不再被拉到两端；断点行为零回归（<1200 收模块徽标、<1024 收时间、<768 不渲染 meta、名称始终可读） | `index.css` | 既有 e2e `workspace-list-responsive.spec.ts` 全绿（1440/1280/1024/768/390） |
 | C4 | 「默认页面」 | **继续上次**：主页主区首屏顶部横向卡片列出最近打开的 ≤5 个工作区（名称 + 落地模块 + 相对时间），点击直达 `最近落地路径`；数据只存本地 `usePersistedState`（`wid` / `path` / `ts`），不建表、不进备份、不上传、不区分设备 | `pages/workspace/recentWorkspaces.ts`（新增）、`WorkspaceList.tsx` | 纯函数单测：写入去重 / 上限 5 / 非法路径过滤 / 相对时间；组件单测：空态不渲染 |
@@ -93,5 +93,7 @@
 | P1 体积 | `HomeNav` lazy 化（不进应用外壳 chunk）；`frontend/scripts/bundle-budget.json` 按实测收口「主入口 CSS」「MainLayout」基线并上调上限（理由已落盘） |
 | P2 聚合端点 | `src/cndb/plugins/workspaces/routers/home.py`（`GET /api/v1/home/summary`）、`services/home_summary.py`（`build_home_summary` / `cached_home_summary` / `invalidate_home_summary`；逐工作区复用 `readable_tables` / `can_write_directly` / `resolve_capabilities(MANAGE_LINKS)`；单块异常降级 `partial`）；插件注册 `plugin.py` |
 | P2 缓存失效 | `change_requests/services.py`（提交 / 合并 / 关 / 重开）、`issues/services.py`（新建 / 关 / 重开）、`workspaces/routers/links.py`（链接申请与审批的 `_invalidate`）、`workspaces/routers/workspaces.py`（`invalidate_workspace_list_cache`，覆盖成员 / 工作区 / 团队变更） |
+| rail 补「已收藏」 | `components/HomeNav.tsx`（最近访问下方的「已收藏」分区：置顶工作区 ≤5，单行「名称 ……… 团队名」；星标图标与列表行同色 `#f59e0b` 且尺寸钉在 `--cn-text-md`，避免 Filled 星形比同排线性图标偏大） |
+| 收藏项补团队归属 | `pages/workspace/WorkspaceList.tsx`（「已收藏」组跨团队扁平展示时，行内补团队 Tag；`<1280` 与模块徽标同口径收起）、`pages/workspace/MyViewsPanel.tsx`（收藏视图路径改「团队 / 工作区 › 数据表」，个人工作区显示「个人」） |
 | P2 前端徽标 | `frontend/src/api/home.ts`（新增 `homeApi.summary` + 类型）、`components/HomeNav.tsx`（「全部工作区」右侧聚合徽标：0 不渲染、失败静默隐藏、`title` 给三项分解）、`index.css`（`.cn-home-nav-pending`） |
 | P2 测试 | `tests/test_home_summary.py` 12 例（登录 / 空账号 / 审批与问题口径 / 本人提交不计 / 关闭不计 / 私有工作区与非成员不可见 / 待审链接只算源 owner / 团队数 / 载荷白名单 / 缓存命中与写路径失效 / 单块降级）、`HomeNav.test.tsx` +3 例（徽标出现与分解提示、0 不渲染、接口失败静默） |
