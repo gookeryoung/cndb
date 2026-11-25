@@ -23,6 +23,7 @@ export default function LinksDrawer({
   onRepair,
   repairing,
   onOpenDoc,
+  onRepairCrossWorkspace,
 }: {
   open: boolean
   onClose: () => void
@@ -36,6 +37,8 @@ export default function LinksDrawer({
   onRepair: () => void
   repairing: boolean
   onOpenDoc: (docId: number) => void
+  /** 打开「跨工作区引用修复」弹窗（ADR 0156）；不传则不显示入口 */
+  onRepairCrossWorkspace?: () => void
 }) {
   return (
     <Drawer title="文档链接" size={460} open={open} onClose={onClose} data-testid="doc-links-drawer">
@@ -52,6 +55,13 @@ export default function LinksDrawer({
               style={{ marginBottom: 12 }}
               title={`${brokenCount} 条断链`}
               description="选择目标文档后点击「修复断链」，正文将改写为新标题并生成新版本。"
+              action={
+                onRepairCrossWorkspace ? (
+                  <Button size="small" data-testid="doc-repair-cross-workspace" onClick={onRepairCrossWorkspace}>
+                    跨工作区引用修复
+                  </Button>
+                ) : undefined
+              }
             />
           )}
           {links.map((item: OutgoingLinkItem) => (

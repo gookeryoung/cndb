@@ -15,6 +15,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { App, Alert, Modal, Select, Spin, Tag, TreeSelect, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { documentsApi, type DocumentMoveTarget } from '@/api/documents'
+import { REPAIR_STRATEGY_OPTIONS } from './referenceRepairOptions'
 
 
 const { Text } = Typography
@@ -69,6 +70,8 @@ export default function MoveDocumentModal({
   const { message } = App.useApp()
   const [targetId, setTargetId] = useState<number | null>(null)
   const [targetParentId, setTargetParentId] = useState<number | null>(null)
+  // 移动后的引用修复策略（ADR 0156）：默认不处理
+  const [repairStrategy, setRepairStrategy] = useState<'none' | 'annotate' | 'snapshot'>('none')
   const [submitting, setSubmitting] = useState(false)
 
   const targetsQuery = useQuery({
@@ -95,6 +98,7 @@ export default function MoveDocumentModal({
     if (!open) return
     setTargetId(null)
     setTargetParentId(null)
+    setRepairStrategy('none')
   }, [open, workspaceId])
 
   const submit = async () => {
@@ -108,10 +112,14 @@ export default function MoveDocumentModal({
         document_ids: documentIds,
         target_workspace_id: targetId,
         parent_id: targetParentId,
+        repair_strategy: repairStrategy,
       })
       const parts = [`已移动 ${result.moved_nodes} 个文档`]
       if (result.moved_files > 0) parts.push(`${result.moved_files} 个文件`)
       if (result.missing_files.length > 0) parts.push(`${result.missing_files.length} 个文件缺失`)
+      if (result.reference_repair && result.reference_repair.changed_references > 0) {
+        parts.push(`修复 ${result.reference_repair.changed_references} 条引用`)
+      }
       message.success(parts.join('、'))
       onMoved?.(result.target_workspace_id)
       onClose()
@@ -184,6 +192,17 @@ export default function MoveDocumentModal({
           </>
         )}
 
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--cn-space-sm)', flexWrap: 'wrap' }}>
+          <Text style={{ fontSize: 'var(--cn-text-sm)' }}>引用修复</Text>
+          <Select
+            data-testid="move-document-repair-strategy"
+            style={{ minWidth: 240 }}
+            value={repairStrategy}
+            onChange={value => setRepairStrategy(value)}
+            options={REPAIR_STRATEGY_OPTIONS}
+          />
+        </div>
+
         <Alert
           type="warning"
           showIcon
@@ -194,7 +213,10 @@ export default function MoveDocumentModal({
               <li>源工作区成员将不再能访问这些文档（含目录树、检索、版本与导出）。</li>
               <li>版本历史、站内图片、文档问题讨论、待审修改申请一并迁移。</li>
               <li>访客分享链接<Text strong>继续有效</Text>，仍按文档的发布状态与可见性判定。</li>
-              <li><code>[[双链]]</code> 与 <code>{'{{table:…}}'}</code> 引用属于工作区语义，移动后<Text strong>不会自动修复</Text>。</li>
+              <li>
+                <code>[[双链]]</code> 与 <code>{'{{table:…}}'}</code> 引用属于工作区语义；选择「引用修复」策略后，
+                会在移动完成后改写失效引用（默认不处理）。
+              </li>
             </ul>
           )}
         />

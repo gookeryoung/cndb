@@ -351,6 +351,16 @@ class DocumentMoveRequest(BaseModel):
     document_ids: list[int] = Field(min_length=1, max_length=200)
     target_workspace_id: int
     parent_id: int | None = Field(default=None, description="目标工作区内的文件夹 id；空 = 根目录")
+    #: 移动后是否顺带修复跨工作区失效引用（ADR 0156）：none / annotate / snapshot
+    repair_strategy: Literal["none", "annotate", "snapshot"] = "none"
+
+
+class ReferenceRepairRequest(BaseModel):
+    """跨工作区移动后的引用修复请求（ADR 0156）."""
+
+    document_ids: list[int] = Field(min_length=1, max_length=200)
+    target_workspace_id: int
+    strategy: Literal["none", "annotate", "snapshot"] = "none"
 
 
 class ExportTemplateCreate(BaseModel):
@@ -406,6 +416,7 @@ __all__ = [
     "ExportTemplateUpdate",
     "LinkRepairItem",
     "LinkRepairRequest",
+    "ReferenceRepairRequest",
     "RollbackRequest",
     "SearchHit",
     "SearchResponse",

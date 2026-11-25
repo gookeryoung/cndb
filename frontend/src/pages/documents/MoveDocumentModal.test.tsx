@@ -89,12 +89,13 @@ describe('MoveDocumentModal', () => {
     expect(screen.getByRole('button', { name: /^移\s*动$/ })).toBeDisabled()
   })
 
-  it('影响说明覆盖「分享继续有效 / 申请随行 / 引用不自动修复」', async () => {
+  it('影响说明覆盖「分享继续有效 / 申请随行 / 引用按策略修复」', async () => {
     renderModal()
     const impact = await screen.findByTestId('move-document-impact')
     expect(impact).toHaveTextContent('分享链接')
     expect(impact).toHaveTextContent('修改申请')
-    expect(impact).toHaveTextContent('不会自动修复')
+    expect(impact).toHaveTextContent('引用修复')
+    expect(impact).toHaveTextContent('默认不处理')
   })
 
   it('选目标工作区 + 子文件夹后提交，载荷含 document_ids / target / parent', async () => {
@@ -124,6 +125,8 @@ describe('MoveDocumentModal', () => {
         document_ids: [5, 6],
         target_workspace_id: 22,
         parent_id: 102,
+        // 默认不修复引用（ADR 0156）
+        repair_strategy: 'none',
       }),
     )
     await waitFor(() => expect(onMoved).toHaveBeenCalledWith(22))
@@ -143,6 +146,48 @@ describe('MoveDocumentModal', () => {
     await waitFor(() => expect(moveToWorkspace).toHaveBeenCalled())
     expect(onMoved).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('选择「表格快照」后移动载荷带 repair_strategy，并提示修复条数', async () => {
+    moveToWorkspace.mockResolvedValue({
+      document_ids: [5],
+      target_workspace_id: 22,
+      moved_nodes: 1,
+      moved_files: 0,
+      moved_change_requests: 0,
+      moved_bytes: 0,
+      missing_files: [],
+      reference_repair: {
+        changed_documents: 1,
+        changed_references: 2,
+        skipped_documents: 0,
+        truncated: false,
+        recomputed: false,
+        issues: [],
+        previews: [],
+      },
+    })
+    const { onMoved } = renderModal()
+
+    const targetInput = (await screen.findByTestId('move-document-target')).querySelector('input') as HTMLInputElement
+    fireEvent.mouseDown(targetInput)
+    fireEvent.click(await screen.findByText(/研发中心（剩余 80\.0 MB）/))
+
+    const strategy = (await screen.findByTestId('move-document-repair-strategy')).querySelector('input') as HTMLInputElement
+    fireEvent.mouseDown(strategy)
+    fireEvent.click(await screen.findByText('表格快照（数据表落为静态表格）'))
+
+    await waitFor(() =>
+      expect(screen.getByTestId('move-document-repair-strategy')).toHaveTextContent('表格快照'),
+    )
+    fireEvent.click(screen.getByRole('button', { name: /^移\s*动$/ }))
+    await waitFor(() =>
+      expect(moveToWorkspace).toHaveBeenCalledWith(
+        11,
+        expect.objectContaining({ repair_strategy: 'snapshot' }),
+      ),
+    )
+    expect(onMoved).toHaveBeenCalledWith(22)
   })
 
   it('未选目标工作区时提交被拦下（不发请求）', async () => {

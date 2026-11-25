@@ -100,6 +100,7 @@ import {
 } from '@/components/Document/chartBlock'
 import { documentsApi } from '@/api/documents'
 import MoveDocumentModal from './MoveDocumentModal'
+import ReferenceRepairModal from './ReferenceRepairModal'
 import { exportTemplateApi } from '@/api'
 import { fileApi, tableApi, viewApi, workspaceApi } from '@/api'
 import { useLlmAction } from '@/hooks/useLlmAction'
@@ -209,6 +210,8 @@ export default function DocumentEditorPage() {
   const [tagsOpen, setTagsOpen] = useState(false)
   // 跨工作区移动（ADR 0155）
   const [moveOpen, setMoveOpen] = useState(false)
+  // 跨工作区移动后的引用修复（ADR 0156）
+  const [repairRefsOpen, setRepairRefsOpen] = useState(false)
   const [outlineDrawerOpen, setOutlineDrawerOpen] = useState(false)
   /** 桌面端右侧大纲栏偏好（展开态 + 宽度，存 localStorage） */
   const [outlinePrefs, setOutlinePrefs] = useState<OutlinePrefs>(() => loadOutlinePrefs())
@@ -2007,6 +2010,17 @@ export default function DocumentEditorPage() {
         }}
       />
 
+      {/* 跨工作区引用修复（ADR 0156）：预览 → 确认，生成 move_repair 版本 */}
+      <ReferenceRepairModal
+        open={repairRefsOpen}
+        workspaceId={Number(workspaceId)}
+        documentIds={[id]}
+        onClose={() => setRepairRefsOpen(false)}
+        onRepaired={() => {
+          qc.invalidateQueries({ queryKey: ['documents', workspaceId, id] })
+        }}
+      />
+
       {/* 插入图片用的隐藏文件选择器（工具栏按钮 / 窄屏更多菜单共用） */}
       <input
         ref={imageInputRef}
@@ -2053,6 +2067,11 @@ export default function DocumentEditorPage() {
         onTargetChange={(title, targetId) => setRepairTargets(prev => ({ ...prev, [title]: targetId }))}
         onRepair={() => repairMut.mutate()}
         repairing={repairMut.isPending}
+        onRepairCrossWorkspace={
+          (myRole === 'owner' || myRole === 'editor') && !isAssetDoc
+            ? () => setRepairRefsOpen(true)
+            : undefined
+        }
         onOpenDoc={docId => {
           setLinksOpen(false)
           navigate(`/w/${workspaceId}/documents/${docId}`)

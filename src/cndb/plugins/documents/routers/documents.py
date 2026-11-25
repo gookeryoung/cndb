@@ -31,6 +31,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import re
 from pathlib import Path
 from typing import Annotated, Any
@@ -59,6 +60,7 @@ from cndb.plugins.documents.schemas import (
     DocumentSubmit,
     DocumentUpdate,
     LinkRepairRequest,
+    ReferenceRepairRequest,
     RollbackRequest,
     TagIdsRequest,
 )
@@ -136,6 +138,56 @@ def list_move_targets(
     return {"items": services.move.move_targets(db, source_workspace_id=workspace_id, actor=current_user)}
 
 
+@router.post("/references/preview")
+def preview_reference_repair(
+    workspace_id: int,
+    payload: ReferenceRepairRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """预览跨工作区移动后的引用修复（ADR 0156）：只返回「原文 → 新文」，不落库."""
+    _require_member(db, workspace_id, current_user)
+    services.content.require_editor(db, workspace_id, current_user)
+    try:
+        issues = services.references.diagnose_move_references(
+            db,
+            source_workspace_id=workspace_id,
+            target_workspace_id=payload.target_workspace_id,
+            moved_doc_ids=[int(doc_id) for doc_id in payload.document_ids],
+        )
+        previews = services.references.preview_repair(db, issues=issues, strategy=payload.strategy, actor=current_user)
+    except ValueError as exc:
+        raise BadRequestError(str(exc)) from exc
+    return {
+        "strategy": payload.strategy,
+        "issues": [issue.as_payload() for issue in issues],
+        "previews": [preview.as_payload() for preview in previews],
+        "affected_documents": sorted({preview.document_id for preview in previews}),
+    }
+
+
+@router.post("/references/repair")
+def repair_references(
+    workspace_id: int,
+    payload: ReferenceRepairRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """执行引用修复（ADR 0156）：按最新版本重算并生成新版本（可回滚）。"""
+    _require_member(db, workspace_id, current_user)
+    services.content.require_editor(db, workspace_id, current_user)
+    result = services.references.apply_repair(
+        db,
+        source_workspace_id=workspace_id,
+        target_workspace_id=payload.target_workspace_id,
+        moved_doc_ids=[int(doc_id) for doc_id in payload.document_ids],
+        strategy=payload.strategy,
+        actor=current_user,
+        confirm=True,
+    )
+    return result.as_payload()
+
+
 @router.post("/move-to-workspace")
 def move_documents_to_workspace(
     workspace_id: int,
@@ -160,7 +212,27 @@ def move_documents_to_workspace(
     )
     invalidate_document_tree_cache(workspace_id)
     invalidate_document_tree_cache(payload.target_workspace_id)
-    return result.as_payload()
+    payload_out = result.as_payload()
+    # 引用修复（ADR 0156）：发生在移动提交之后；失败不回滚移动（用户可再点一次「修复引用」，幂等）
+    if payload.repair_strategy != "none":
+        try:
+            repair = services.references.apply_repair(
+                db,
+                source_workspace_id=workspace_id,
+                target_workspace_id=payload.target_workspace_id,
+                moved_doc_ids=result.document_ids,
+                strategy=payload.repair_strategy,
+                actor=current_user,
+                confirm=True,
+            )
+        except Exception:  # pragma: no cover - 修复异常不阻断移动结果
+            logging.getLogger(__name__).warning("移动后的引用修复失败", exc_info=True)
+            payload_out["reference_repair"] = None
+        else:
+            payload_out["reference_repair"] = repair.as_payload()
+            invalidate_document_tree_cache(workspace_id)
+            invalidate_document_tree_cache(payload.target_workspace_id)
+    return payload_out
 
 
 # ── 文档 CRUD ──

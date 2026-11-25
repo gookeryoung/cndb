@@ -1,6 +1,6 @@
 # ADR 0156: 跨工作区移动后的引用修复（诊断 + 三策略 + 版本化改写）
 
-Status: Proposed（待评审）
+Status: Accepted
 Date: 2026-11-25
 Related: `src/cndb/plugins/documents/services/content.py`、`src/cndb/plugins/documents/services/parse.py`、`src/cndb/plugins/documents/services/export/table_refs.py`、`src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/models.py`、`frontend/src/pages/documents/MoveDocumentModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`
 需求卡片: `docs/requirements/0156-cross-workspace-reference-repair.md`（需求原文与约束编号的唯一副本）
@@ -196,14 +196,14 @@ def apply_repair(db, *, issues, strategy, actor) -> RepairResult      # 生成�
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P2-1 | 未开始 | `src/cndb/plugins/documents/services/references.py`、`src/cndb/plugins/documents/routers/documents.py` | `tests/test_document_reference_repair.py` | — |
-| P2-2 | 未开始 | `src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/models.py` | `tests/test_document_reference_repair.py` | — |
-| P2-3 | 未开始 | `frontend/src/pages/documents/{MoveDocumentModal.tsx,ReferenceRepairModal.tsx,DocumentEditorPage.tsx}` | `frontend/src/pages/documents/ReferenceRepairModal.test.tsx` | — |
+| P2-1 | 已落地 | `src/cndb/plugins/documents/services/references.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/documents/schemas/__init__.py` | `tests/test_document_reference_repair.py` | 见「交接」回填 |
+| P2-2 | 已落地 | `src/cndb/plugins/documents/services/move.py`、`src/cndb/plugins/documents/models.py` | `tests/test_document_reference_repair.py` | 见「交接」回填 |
+| P2-3 | 已落地 | `frontend/src/pages/documents/MoveDocumentModal.tsx`、`frontend/src/pages/documents/ReferenceRepairModal.tsx`、`frontend/src/pages/documents/DocumentEditorPage.tsx`、`frontend/src/api/documents.ts` | `frontend/src/pages/documents/ReferenceRepairModal.test.tsx`、`frontend/tests/e2e/critical/document-move-workspace.spec.ts` | 见「交接」回填 |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案评审（Proposed，等待确认 D6 并发口径、D7 反向引用是否同批处理、P2 拆分）
+- 当前阶段：P2-1 / P2-2 / P2-3 全部落地（2026-11-25；D6 采用「重新诊断修复最新版本」，D7 反向引用同批 annotate）
 - 已完成：需求卡片 0156、本 ADR、现状核对（双链解析 / 断链改指 / 反链 / 词法 / 数据表引用快照 / 版本写入 / 移动链路 / 变更类型枚举 / 文档页断链抽屉）
-- 下一步：确认后按 P2-1（诊断 + 预览 + 两策略）→ P2-2（移动接入 + 反向 annotate）→ P2-3（前端）实现
+- 下一步：人工验收后 `make push`（H4 / H6）；P2-4（跨工作区活引用）待 ADR 0154 链接能力就绪后单独立项
 - 已知坑：① 必须复用 `iter_wikilinks` / `parse_table_ref_line`，否则代码围栏内文本会被误改；② `snapshot` 的 `width` 参数对静态表格无效，替换时要丢弃；③ 反向引用改写源工作区他人文档需要源 `WRITE`，缺失时只能跳过并说明；④ 与 ADR 0155 的原子顺序耦合：修复发生在移动提交之后，若修复失败不回滚移动（用户可再次执行修复，幂等）
-- 最近一次全绿：未开始实现
+- 最近一次全绿：后端 7559 passed（新增 12 例引用修复 + 20 例移动回归）、前端 `ReferenceRepairModal` 6 例 + `MoveDocumentModal` 8 例 + `DocumentsPage`/`DocumentEditorPage` 回归 144 passed、e2e `document-move-workspace.spec.ts` 4 passed、`bundle-budget` 在预算内 @ 本地 2026-11-25

@@ -180,6 +180,61 @@ export interface DocumentMovePayload {
   target_workspace_id: number
   /** 目标工作区内的文件夹 id；空 = 根目录 */
   parent_id?: number | null
+  /** 移动后是否顺带修复跨工作区失效引用（ADR 0156） */
+  repair_strategy?: ReferenceRepairStrategy
+}
+
+/** 引用修复策略（ADR 0156）：默认 none，显式选择才改正文 */
+export type ReferenceRepairStrategy = 'none' | 'annotate' | 'snapshot'
+
+/** 一条失效引用（诊断结果） */
+export interface ReferenceIssue {
+  document_id: number
+  workspace_id: number
+  kind: 'wikilink' | 'table_ref'
+  raw: string
+  reason:
+    | 'target_left_behind'
+    | 'target_moved'
+    | 'target_not_found'
+    | 'table_in_other_workspace'
+    | 'table_deleted'
+  target_workspace_id: number | null
+  target_workspace_name: string | null
+  target_title: string | null
+  target_table_id: number | null
+}
+
+/** 一条引用的修复预览（原文 → 新文） */
+export interface ReferenceRepairPreview {
+  document_id: number
+  raw: string
+  next: string
+  kind: 'wikilink' | 'table_ref'
+  reason: ReferenceIssue['reason']
+}
+
+export interface ReferenceRepairPreviewResult {
+  strategy: ReferenceRepairStrategy
+  issues: ReferenceIssue[]
+  previews: ReferenceRepairPreview[]
+  affected_documents: number[]
+}
+
+export interface ReferenceRepairPayload {
+  document_ids: number[]
+  target_workspace_id: number
+  strategy: ReferenceRepairStrategy
+}
+
+export interface ReferenceRepairResult {
+  changed_documents: number
+  changed_references: number
+  skipped_documents: number
+  truncated: boolean
+  recomputed: boolean
+  issues: ReferenceIssue[]
+  previews: ReferenceRepairPreview[]
 }
 
 export interface DocumentMoveResult {
@@ -190,6 +245,8 @@ export interface DocumentMoveResult {
   moved_change_requests: number
   moved_bytes: number
   missing_files: string[]
+  /** 携带 repair_strategy 时返回修复结果（ADR 0156） */
+  reference_repair?: ReferenceRepairResult | null
 }
 
 /** 文档导出格式：Markdown / Word / PDF */
@@ -701,6 +758,14 @@ export const documentsApi = {
   /** 把文档 / 多篇 / 文件夹（子树整体）移动到目标工作区 */
   moveToWorkspace: (wid: number | string, payload: DocumentMovePayload) =>
     api.post<DocumentMoveResult>(`${base(wid)}/move-to-workspace`, payload).then(r => r.data),
+
+  /** 预览跨工作区移动后的引用修复（ADR 0156，不落库） */
+  previewReferenceRepair: (wid: number | string, payload: ReferenceRepairPayload) =>
+    api.post<ReferenceRepairPreviewResult>(`${base(wid)}/references/preview`, payload).then(r => r.data),
+
+  /** 执行引用修复：按最新版本重算并生成新版本（可回滚） */
+  repairReferences: (wid: number | string, payload: ReferenceRepairPayload) =>
+    api.post<ReferenceRepairResult>(`${base(wid)}/references/repair`, payload).then(r => r.data),
 
   // 导出：Markdown / Word / PDF 文件字节流（文件名由调用方拼装）
   // template（ADR 0152）：`builtin:<key>` 或模板 id，仅对 docx / pdf 生效，md 忽略
