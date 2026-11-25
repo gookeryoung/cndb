@@ -53,7 +53,6 @@ import { SummaryPanel } from './SummaryPanel'
 import { ChartResultBox, RowsResultBox, StatsResultBox, SummaryResultBox } from './AnalyticsResultView'
 import { RecommendationPanel } from './RecommendationPanel'
 import { AnalyticsManagerDrawer } from './AnalyticsManagerDrawer'
-import { CompositeSourceModal } from './CompositeSourceModal'
 import { applySuggestionConfig, buildExplainPayload, suggestionName } from './analyticsAi'
 import {
   DEFAULT_CHART,
@@ -80,6 +79,10 @@ const { Text } = Typography
 
 /** AI 解读抽屉只在点击「AI 解读」后才需要，lazy 挂载避免进入分析页首屏 chunk */
 const AnalyticsAiExplainDrawer = lazy(() => import('./AnalyticsAiExplainDrawer'))
+/** 复合数据源 Modal 同理：只有点开「组合数据源」才需要，lazy 挂载避免进分析页首屏 chunk */
+const CompositeSourceModal = lazy(
+  () => import('./CompositeSourceModal').then(m => ({ default: m.CompositeSourceModal })),
+)
 
 /** 未运行时的结果占位：与对应配置同排展示，提示运行后此处出现什么 */
 function ResultPlaceholder({ text }: { text: string }) {
@@ -1428,16 +1431,18 @@ export default function AnalyticsPage() {
       )}
 
       {/* ── 复合数据源配置：多链接汇总 / 跨工作区关联（ADR 0159 P2） ── */}
-      <CompositeSourceModal
-        open={compositeOpen}
-        mode={compositeMode}
-        source={compositeSource}
-        wid={wid}
-        datasources={datasources}
-        tables={tables}
-        onCancel={() => setCompositeOpen(false)}
-        onApply={applyCompositeSource}
-      />
+      <Suspense fallback={null}>
+        <CompositeSourceModal
+          open={compositeOpen}
+          mode={compositeMode}
+          source={compositeSource}
+          wid={wid}
+          datasources={datasources}
+          tables={tables}
+          onCancel={() => setCompositeOpen(false)}
+          onApply={applyCompositeSource}
+        />
+      </Suspense>
 
       {/* ── 分析列表 Drawer：打开 / 复制 / 删除 / 新建 ── */}
       <AnalyticsManagerDrawer
