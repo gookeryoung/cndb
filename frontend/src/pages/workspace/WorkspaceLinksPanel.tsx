@@ -12,13 +12,13 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import {
-  App as AntApp, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space,
+  App as AntApp, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm, Radio, Select, Space,
   Table, Tag, Tooltip, Typography,
 } from 'antd'
 import { ApartmentOutlined, LinkOutlined, PlusOutlined } from '@ant-design/icons'
 
-import { linksApi, tableApi, workspaceApi } from '@/api'
-import type { TableSummary, Workspace, WorkspaceLink } from '@/api'
+import { linksApi, tableApi, teamApi, workspaceApi } from '@/api'
+import type { TableSummary, Team, Workspace, WorkspaceLink } from '@/api'
 import { useCapabilities } from '@/hooks/useCapabilities'
 import { formatDateTime } from '@/utils/datetime'
 
@@ -54,6 +54,8 @@ export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
   const [applyOpen, setApplyOpen] = useState(false)
   const [form] = Form.useForm()
   const [sourceWid, setSourceWid] = useState<string | null>(null)
+  /** 受众：members（批量只读成员）/ team（团队数据授权，B′） */
+  const [audience, setAudience] = useState<'members' | 'team'>('members')
   const [approveTarget, setApproveTarget] = useState<WorkspaceLink | null>(null)
   const [approveTtl, setApproveTtl] = useState<number>(30)
 
@@ -70,6 +72,14 @@ export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
     queryKey: ['workspace-links-inbox', wid],
     queryFn: () => linksApi.inbox(wid),
     enabled: !!wid && canManageLinks,
+    retry: false,
+  })
+
+  // 我所在的团队（audience=team 时可选；后端要求「只能授给你所在团队」）
+  const { data: myTeams = [] } = useQuery<Team[]>({
+    queryKey: ['teams'],
+    queryFn: () => teamApi.list(),
+    enabled: applyOpen,
     retry: false,
   })
 
@@ -92,12 +102,18 @@ export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
       alias?: string
       ttl_days?: number
       note?: string
-    }) => linksApi.create(wid, values),
+      audience?: 'members' | 'team'
+      team_id?: number
+    }) => linksApi.create(wid, {
+      ...values,
+      team_id: values.audience === 'team' ? values.team_id : null,
+    }),
     onSuccess: () => {
       message.success('已提交链接申请，等待源工作区批准')
       setApplyOpen(false)
       form.resetFields()
       setSourceWid(null)
+      setAudience('members')
       refresh()
     },
     onError: (err) => message.error(err instanceof Error ? err.message : '提交申请失败'),
@@ -288,7 +304,7 @@ export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ ttl_days: 30 }}
+          initialValues={{ ttl_days: 30, audience: 'members' }}
           onFinish={(values) => create.mutate(values)}
         >
           <Form.Item
@@ -320,6 +336,34 @@ export default function WorkspaceLinksPanel({ wid }: { wid: string }) {
               options={sourceTables.map(t => ({ value: t.id, label: t.name }))}
             />
           </Form.Item>
+          <Form.Item
+            name="audience"
+            label="授权给"
+            initialValue="members"
+            extra="批量成员：把当前工作区成员逐个加为源工作区只读；团队授权：只写一条「团队 = 只读」，不新增成员"
+          >
+            <Radio.Group
+              data-testid="link-apply-audience"
+              onChange={(e) => setAudience(e.target.value as 'members' | 'team')}
+            >
+              <Radio value="members">批量只读成员（逐个加入）</Radio>
+              <Radio value="team">团队只读授权（一条授权行）</Radio>
+            </Radio.Group>
+          </Form.Item>
+          {audience === 'team' && (
+            <Form.Item
+              name="team_id"
+              label="被授团队"
+              rules={[{ required: true, message: '请选择被授团队' }]}
+              extra="只能授给你所在的团队；批准后该团队成员可只读源工作区（不含管理权）"
+            >
+              <Select
+                placeholder="选择团队"
+                data-testid="link-apply-team"
+                options={myTeams.map(team => ({ value: team.id, label: team.name }))}
+              />
+            </Form.Item>
+          )}
           <Form.Item name="alias" label="显示别名（可选，默认用表名）">
             <Input maxLength={64} placeholder="例如：各部门销售汇总" />
           </Form.Item>

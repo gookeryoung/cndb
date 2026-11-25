@@ -96,6 +96,38 @@ describe('WorkspaceLinksPanel 外部链接面板', () => {
     expect(bodies[0]).toMatchObject({ source_workspace_id: '11', target_table_id: 100, ttl_days: 30 })
   })
 
+  it('申请链接：选「团队只读授权」后提交 audience=team 与团队 id', async () => {
+    mockWorkspaces()
+    const bodies: Record<string, unknown>[] = []
+    server.use(
+      http.get('/api/v1/teams', () =>
+        HttpResponse.json([{ id: 500, name: '分析部', slug: 'rd', description: '', policy: {},
+          created_by_id: 1, created_at: '', updated_at: '', current_user_role: 'owner',
+          workspace_count: 0, member_count: 1 }])),
+      http.post('/api/v1/workspaces/:wid/links', async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json({ ...mockWorkspaceLink, audience: 'team' }, { status: 201 })
+      }),
+    )
+    const user = userEvent.setup()
+    renderPanel()
+
+    await user.click(await screen.findByTestId('link-apply-btn'))
+    await user.click(await screen.findByTestId('link-apply-source'))
+    await user.click(await screen.findByText('源工作区', { selector: '.ant-select-item-option-content' }))
+    await user.click(await screen.findByTestId('link-apply-table'))
+    await user.click(await screen.findByText('销售明细', { selector: '.ant-select-item-option-content' }))
+
+    // 切到「团队只读授权」→ 出现团队下拉
+    await user.click(screen.getByRole('radio', { name: /团队只读授权/ }))
+    await user.click(await screen.findByTestId('link-apply-team'))
+    await user.click(await screen.findByText('分析部', { selector: '.ant-select-item-option-content' }))
+
+    await user.click(screen.getByRole('button', { name: /提交申请/ }))
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]).toMatchObject({ audience: 'team', team_id: 500 })
+  })
+
   it('撤回链接调用 DELETE', async () => {
     mockWorkspaces()
     const deleted: string[] = []

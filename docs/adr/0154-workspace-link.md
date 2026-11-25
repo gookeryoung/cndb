@@ -1,6 +1,6 @@
 # ADR 0154: 工作区链接（跨工作区只读引用，两级授权）
 
-Status: Proposed（待评审）
+Status: Implemented（P0 / P1 / P2 / P3.1 全部落地，2026-11-25）
 Date: 2026-11-25
 Related: `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/services/backup_io.py`、`src/cndb/plugins/tables/services/core/row_access.py`、`src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/tables/routers/records.py`、`frontend/src/pages/workspace/TablesList.tsx`、`docs/CONSTRAINTS.md`
 需求卡片: `docs/requirements/0154-workspace-link.md`（需求原文与约束编号的唯一副本）
@@ -234,14 +234,13 @@ def resolve_link(db, user, link_id) -> ResolvedLink:      # 404 / 403 统一出�
 | P0 | 已落地 | `src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/links.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/schemas/models.py`、`src/cndb/alembic/versions/a9b8c7d6e5f4_add_workspace_links.py`、`src/cndb/cli/link.py` | `tests/test_workspace_links_api.py`、`tests/test_link_sweep.py`、`tests/test_cli_link.py`、`tests/test_teams_migration.py` | `a4b82873` |
 | P1 | 已落地 | `src/cndb/plugins/workspaces/services/links.py`、`src/cndb/plugins/workspaces/routers/links.py` | `tests/test_workspace_links.py` | `5e781c9d` |
 | P2 | 已落地 | `frontend/src/pages/grid/LinkedTablePage.tsx`、`frontend/src/pages/workspace/WorkspaceLinksPanel.tsx`、`frontend/src/api/links.ts` | `frontend/src/pages/grid/LinkedTablePage.test.tsx`、`frontend/src/pages/workspace/WorkspaceLinksPanel.test.tsx` | `ad0ba22e` |
-| P2 | 已落地 | `frontend/src/pages/grid/LinkedTablePage.tsx`、`frontend/src/pages/workspace/WorkspaceLinksPanel.tsx`、`frontend/src/pages/workspace/TablesList.tsx`、`frontend/src/api/links.ts` | `frontend/src/pages/grid/LinkedTablePage.test.tsx`、`frontend/src/pages/workspace/WorkspaceLinksPanel.test.tsx` | 未提交 |
-| P3.1 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/team_access.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/alembic/versions/b8c7d6e5f4a3_add_workspace_team_access.py`、`frontend/src/pages/settings/TeamAccessCard.tsx`、`frontend/src/api/links.ts` | `tests/test_workspace_team_access.py`、`tests/test_teams_migration.py`、`frontend/src/pages/settings/TeamAccessCard.test.tsx` | `9440ad8e`；前端入口 `dab5dd2f` |
-| P3.2 | 未开始 | 另立 ADR | — | — |
+| P3.1 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/models.py`、`src/cndb/plugins/workspaces/routers/team_access.py`、`src/cndb/plugins/workspaces/services/links.py`、`src/cndb/alembic/versions/b8c7d6e5f4a3_add_workspace_team_access.py`、`frontend/src/pages/settings/TeamAccessCard.tsx`、`frontend/src/api/links.ts` | `tests/test_workspace_team_access.py`、`tests/test_teams_migration.py`、`frontend/src/pages/settings/TeamAccessCard.test.tsx` | `9440ad8e` |
+| P3.1 前端收口 | 已落地 | `frontend/src/pages/workspace/WorkspaceLinksPanel.tsx`、`frontend/src/pages/settings/TeamAccessCard.tsx`、`frontend/src/api/links.ts`、`frontend/src/api/types/links.ts` | `frontend/src/pages/workspace/WorkspaceLinksPanel.test.tsx`、`frontend/src/pages/settings/TeamAccessCard.test.tsx` | `dab5dd2f` |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 / P1 / P2 / **P3.1 已落地**（含团队数据授权 `team_grant`）；P3.2（分析数据源 / 链接汇总 / 链接的链接）未立项
+- 当前阶段：**全部落地**（P0 / P1 / P2 / P3.1）；P3.2（分析页把链接作为数据源 / 链接汇总 / 链接的链接）未立项，需要时另立 ADR
 - 已完成：需求卡片 0154（C1-C10）；ADR 不变量 L1-L9、决策 D1-D12；P0（`workspace_link` 迁移、申请 / 批准 / 拒绝 / 撤回、`POST /{wid}/members/batch`、`cndb link sweep`、`MANAGE_LINKS` 能力位仅所有者）；P1（`GET /{wid}/links/{id}/fields|rows|export`，复用 `list_rows` 的行级读范围与隐藏字段裁剪；H53-H56 已登记）
-- 下一步：①P3.2 若要做需另立 ADR（分析页把链接作为数据源 / 链接汇总 / 链接的链接）；②「链接申请选团队受众」在业务面板暂未暴露（后端已支持 `audience=team`，如需在申请弹窗里选团队再加）
+- 下一步：无（本期收尾）。若要继续：P3.2 另立 ADR；或把链接接入分析页 / 文档 `{{table:}}` 引用（均属新增授权面，须先评审）
 - 已知坑：① A 期的成员行是**真实授权**——清扫停摆时「链接入口已 404 但成员仍能直接进源工作区」，必须在验收时用 `cndb link sweep` 日志确认回收；② `created_member_ids` 必须由批准事务内记录，撤回按它删（不要按 `granted_member_ids`）；③ 缓存键必须含 link_id，否则与本工作区读串味（ADR 0046 D3 同款）；④ B′ 接入时 `resolve_capabilities` 的顺序必须写在注释与用例里（显式 > team_grant > 策略默认 > public），否则后续改动容易悄悄放宽；⑤ 迁移 `down_revision` 取最新 head（当前 `f2b3c4d5e6a7`），并行会话新增迁移后要同步
 - 最近一次全绿：`make check-fast` + `make cov`（7509 passed，95.06%）+ 本 ADR 相关用例（links-api 29 / links 取数 14 / sweep 6 / cli 7 / 迁移 4）+ 前端链接用例 9（只读页 4 / 面板 5）@ `ad0ba22e`；P3.1 `make cov`（7577 passed，95.03%）@ `9440ad8e`（2026-11-25）

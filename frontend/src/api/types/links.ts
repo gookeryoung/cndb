@@ -16,6 +16,10 @@ export interface WorkspaceLink {
   target_view_id: ID | null
   alias: string
   status: WorkspaceLinkStatus
+  /** 受众与（B′ 时）被授团队 */
+  audience?: 'members' | 'team'
+  granted_team_id?: ID | null
+  granted_team_name?: string | null
   ttl_days: number
   expires_at: string | null
   created_by_id: ID | null
@@ -35,6 +39,10 @@ export interface WorkspaceLinkCreate {
   alias?: string | null
   ttl_days?: number
   note?: string
+  /** 受众：members = 批量只读成员（默认）/ team = 团队数据授权（ADR 0154 B′） */
+  audience?: 'members' | 'team'
+  /** audience=team 时必填：被授团队（只能选自己所在团队） */
+  team_id?: number | null
 }
 
 /** 链接可读字段（对齐后端 field_response 的必要字段） */
