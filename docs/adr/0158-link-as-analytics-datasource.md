@@ -185,7 +185,7 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
 | P0 | 已落地 | `src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/routers/datasources.py`、`src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/plugin.py` | `tests/test_analytics_link_source.py` | `44beda2c` |
-| P1 | 已落地 | `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/recommend.py`、`src/cndb/plugins/analytics/routers/recommend.py`、`src/cndb/plugins/analytics/schemas.py` | `tests/test_analytics_link_source.py` | 未提交 |
+| P1 | 已落地 | `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/recommend.py`、`src/cndb/plugins/analytics/routers/recommend.py`、`src/cndb/plugins/analytics/schemas.py` | `tests/test_analytics_link_source.py` | `7429c2cc` |
 | P2 | 未开始 | `frontend/src/pages/analytics/AnalyticsPage.tsx` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/tests/e2e/critical/analytics-link-source.spec.ts` | — |
 | P3 | 未开始 | 另立 ADR | — | — |
 
@@ -195,4 +195,4 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 - 已完成：需求卡片 0158（C1-C10）；ADR 决策记录 D1-D8、不变量 L1-L6；P0（数据源清单、`compute` 链接源、隐藏字段拒绝、单源校验、存量兼容）；P1（模板 `config.source` 落库并按链接可见字段校验、`table_id` 落源表 id 兼容旧消费方、`recommendations?link_id=` 适配含隐藏字段裁剪、H58-H60 已登记）
 - 下一步：开 P2（前端数据源分组 / 失效提示 / 导出对齐）
 - 已知坑：① 链接分支必须走 `resolve_link` 统一出口，**不要**在 analytics 里直接 `db.get(WorkspaceLink)`（会绕开 404/403 与到期判定）；② 缓存键必须含 `user_id`，否则共享模板会把甲的权限结果喂给乙；③ 隐藏字段要在**保存期**就拒绝（否则模板存下来必然执行失败）；④ `ANALYTICS_MAX_SCAN_ROWS` 对链接数据源同样生效，超限文案要引导「用分析范围收窄」而不是「换表」
-- 最近一次全绿：`make check-fast` + `make cov`（7613 passed，95.0%）+ `tests/test_analytics_link_source.py` 22 passed @ 未提交（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7613 passed，95.0%）+ `tests/test_analytics_link_source.py` 22 passed @ `7429c2cc`（2026-11-25）
