@@ -105,7 +105,7 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 |---|---|---|
 | 201 | 新建评分行 | `{"action":"created","row_id":123,"row":{...}}` |
 | 200 | 更新已有行 | `{"action":"updated","row_id":123,"row":{...}}` |
-| 202 | 进入修改申请 | `{"action":"change_request","change_request":{...}}` |
+| 202 | 进入修改申请 | `{"change_request":{...}}`（与其它记录写接口一致，无 `action` 字段；前端用 `isChangeRequestResponse` 判定） |
 | 204 | 空值且无行（no-op） | 空 |
 | 400 | 字段类型不符 / 月份非法 / 其他必填字段缺失 | `{"detail":"..."}` |
 | 403 | 表级权限 / 行级规则 / 隐藏字段 | `{"detail":"..."}` |
@@ -231,5 +231,5 @@ Related: `src/cndb/plugins/tables/routers/records.py`、`src/cndb/plugins/tables
 - 当前阶段：P0-P2 已落地（2026-11-15 人工评审通过并确认实现）
 - 已完成：视图配置校验、`matrix-upsert`（创建 / 更新 / 置空 / 重复 409）、行级权限与隐藏字段闸门、`row_rules_active`、矩阵固定行列与单元格录入、只读降级、搜索入口隐藏、帮助文案、单测与 e2e 用例
 - 下一步：CI 跑 `make cov` / `make e2e`；本地 `make cov` 为 94.84%，HEAD 基线为 94.81%（均低于 95%，非本 ADR 引入）；e2e 未在本地执行（pnpm/bun shim 损坏），用例已提交
-- 已知坑：可编辑矩阵必须用专用查询（不能套视图 filters / search）；行级权限表非豁免用户只读；月份按 [当月1日, 次月1日) 匹配历史数据；同一单元格并发首次写入仍可能产生重复行，加载与写入端点会检测并拒绝
+- 已知坑：可编辑矩阵必须用专用查询（不能套视图 filters / search）；行级权限表非豁免用户只读；月份按 [当月1日, 次月1日) 匹配历史数据；同一单元格并发首次写入仍可能产生重复行，加载与写入端点会检测并拒绝；202 载荷无 `action` 字段（与其它记录写接口一致），前端只能用 `isChangeRequestResponse` 判定，不能读 `res.action`
 - 最近一次全绿：`make test` 6968 passed / 17 skipped（2026-11-15）；前端 `npx vitest run` 3279 passed（2026-11-15）

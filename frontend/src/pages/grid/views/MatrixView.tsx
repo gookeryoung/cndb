@@ -19,7 +19,7 @@
 import { useMemo, useState } from 'react'
 import { App as AntApp, Empty, InputNumber, Spin, Tooltip } from 'antd'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { fieldApi, recordApi } from '@/api'
+import { fieldApi, recordApi, isChangeRequestResponse } from '@/api'
 import type { RowListResponse, RowResponse, Field, View } from '@/api'
 import type { Density } from '@/theme/tableSettings'
 import { resolveOpts, MATRIX_OPTIONS } from '../view-config/viewOptionSchema'
@@ -318,7 +318,7 @@ export default function MatrixView({
         value: next,
       })
       .then((res) => {
-        if (res.action === 'change_request') {
+        if (isChangeRequestResponse(res)) {
           message.info('已提交修改申请，审批通过后生效')
         } else {
           message.success('已保存')
