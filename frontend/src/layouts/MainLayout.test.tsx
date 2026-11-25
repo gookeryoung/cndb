@@ -1310,6 +1310,26 @@ describe('MainLayout 侧边栏随功能段切换（需求 0065）', () => {
         await waitFor(() => expect(localStorage.getItem('cndb_sider_collapsed')).toBe('false'))
     })
 
+    it('主页 rail 不参与折叠：曾折叠过侧栏时仍完整展开且无折叠触发器（需求 0160 A′）', async () => {
+        // 回归背景：collapsed 是跳模式持久的，若主页继承它，rail 会被渲染成 60px 图标条
+        // （group title 与文字全丢、只剩一排无语义图标）
+        localStorage.setItem('cndb_sider_collapsed', 'true')
+        localStorage.setItem('cn:recent-workspaces', JSON.stringify([
+            { wid: '10', path: '/w/10/tables', ts: Date.now() - 60_000 },
+        ]))
+        renderLayout(mockUser, '/w')
+
+        await waitFor(() => expect(screen.getByTestId('sider-home')).toBeVisible())
+        const sider = document.querySelector('.ant-layout-sider')
+        expect(sider).not.toHaveClass('ant-layout-sider-collapsed')
+        expect(document.querySelector('.ant-layout-sider-trigger')).toBeNull()
+        // 文字入口可见（不是只剩图标）
+        expect(screen.getByTestId('home-nav-create')).toHaveTextContent('新建工作区')
+        expect(screen.getByText('最近访问')).toBeInTheDocument()
+        // 持久化偏好不被主页改写（回到工作区仍是折叠态）
+        expect(localStorage.getItem('cndb_sider_collapsed')).toBe('true')
+    })
+
     it('文档树展开态会话记忆：刷新后保持收起，点击展开写回会话', async () => {
         sessionStorage.setItem(
             'cndb_doc_tree_state_v1:10',

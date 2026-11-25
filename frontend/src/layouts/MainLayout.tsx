@@ -1347,14 +1347,19 @@ export default function MainLayout() {
             数据表 / 分析 / 同步段=表导航保持展开，无 tables 能力的类型不渲染侧栏 */}
         {!isMobile && !inHelpDocs && siderMode !== 'hidden' && (
           <Sider
-            collapsible collapsed={collapsed} onCollapse={setCollapsed}
+            /* 主页 rail 不参与折叠（需求 0160 A′）：只有 3 段，折叠后 group title 与文字全丢、
+               只剩一排无语义图标；`collapsed` 是跳模式持久的，若不显式关闭，
+               用户曾在工作区里折叠过侧栏就会把主页 rail 渲染成 60px 图标条。 */
+            collapsible={siderMode !== 'home'}
+            collapsed={siderMode === 'home' ? false : collapsed}
+            onCollapse={setCollapsed}
             width={240} collapsedWidth={60}
             style={{ background: 'var(--cn-bg-container)', borderRight: '1px solid var(--cn-border)', flexShrink: 0, overflow: 'auto' }}
           >
             {siderMode === 'admin'
               ? renderAdminNav(false, collapsed)
               : siderMode === 'home'
-                ? <Suspense fallback={null}><HomeNav collapsed={collapsed} /></Suspense>
+                ? <Suspense fallback={null}><HomeNav /></Suspense>
                 : siderMode === 'documents'
                 ? renderDocumentNav(false, collapsed)
                 : siderMode === 'design'
@@ -1466,7 +1471,7 @@ export default function MainLayout() {
         {/* 主页导航（需求 0160 C6）：无工作区上下文时抽屉顶部先给入口，其后接既有团队分组 */}
         {siderMode === 'home' && (
           <Suspense fallback={null}>
-            <HomeNav mobile showTeams={false} onNavigate={() => setMobileNavOpen(false)} />
+            <HomeNav mobile onNavigate={() => setMobileNavOpen(false)} />
           </Suspense>
         )}
         {renderMobileTeamsNav()}

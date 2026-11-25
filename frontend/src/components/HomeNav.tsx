@@ -1,19 +1,20 @@
-/** 主页导航 rail（需求 0160 C1/C4/C6/C9）.
+/** 主页导航 rail（需求 0160 C1/C4/C9，A′ 口径）.
  *
  * 定位：`/w`、`/teams*` 等**无工作区上下文**的页面左侧导航；进入 `/w/:wid/*` 后
  * 同一位置换回工作区级侧栏（表 / 文档 / 设计 / 设置 / 统计）。同一时刻只有一条侧栏，
  * 不新增第三个导航轴（需求 0157 N1 的修订口径）。
  *
- * 内容口径（与 GitHub 首页「Top repositories + 快捷新建」同一思路）：
- *  - 主操作：新建工作区（`/w?create=1`，与页内按钮同一弹窗）；
+ * **只承载独有信息**，不复述顶栏与右栏已有的入口：
+ *  - 新建工作区：`/w?create=1`（与页内按钮同一弹窗）；
  *  - 最近访问：本地记录的 ≤5 个工作区落地路径（`utils/recentWorkspaces`，不落库）；
- *  - 全部工作区 / 团队（含计数）/ 收藏视图（复用 `favorite_views`）；
- *  - 底部：管理团队 / 帮助文档。
+ *  - 全部工作区：主页锚点，带工作区计数。
+ * 明确**不放**（重复入口）：团队（顶栏 `ScopeSwitcher` 已按团队分组并带团队页入口）、
+ * 收藏视图（右栏「我的视图」同一数据源）、帮助文档（顶栏常驻图标）、管理团队
+ * （`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` 的 Navigate）。
  *
- * 实现口径：条目走 antd `Menu`（与工作区设置 / 统计 / 管理台侧栏同款，复用 `.cn-table-nav`
- * 样式与折叠态行为），不自建一套导航样式 —— 少一套 CSS 就少一份与主题漂移的风险。
- * 折叠态（60px）只保留图标入口：新建 / 全部工作区 / 团队 / 更多；最近访问与收藏视图
- * 属于主页内容本身，折叠时不渲染。
+ * 实现口径：条目走 antd `Menu`（与设置 / 统计 / 管理台侧栏同款，复用 `.cn-table-nav`
+ * 样式），不自建一套导航样式。主页 rail **不参与折叠**（只有 3 段，折叠收益为零，
+ * 且折叠态 group title 与文字全丢、只剩一排无语义图标）—— 折叠由 `MainLayout` 关闭。
  */
 
 import { useMemo } from 'react'
@@ -21,49 +22,30 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Button, Menu } from 'antd'
 import type { MenuProps } from 'antd'
-import {
-  ApartmentOutlined, ClockCircleOutlined, FolderOpenOutlined, PlusOutlined,
-  QuestionCircleOutlined, SettingOutlined, StarFilled,
-} from '@ant-design/icons'
-import { teamApi, workspaceApi } from '@/api'
-import type { Team, Workspace } from '@/api'
-import { useFavoriteViews } from '@/hooks/useFavoriteViews'
-import {
-  normalizeModules, workspaceLandingSegment, WORKSPACE_MODULE_LABEL,
-} from '@/utils/workspaceModules'
+import { ClockCircleOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons'
+import { workspaceApi } from '@/api'
+import type { Workspace } from '@/api'
+import { normalizeModules, WORKSPACE_MODULE_LABEL } from '@/utils/workspaceModules'
 import { formatRelativeTime } from '@/utils/datetime'
 import { readRecentWorkspaces } from '@/utils/recentWorkspaces'
 import type { RecentWorkspaceEntry } from '@/utils/recentWorkspaces'
 
 export interface HomeNavProps {
-  /** 桌面端 Sider 折叠态：隐藏文字，只留图标 */
-  collapsed?: boolean
-  /** 移动端抽屉：不折叠、点击后由调用方收起抽屉 */
+  /** 移动端抽屉：额外的上内边距，点击后由调用方收起抽屉 */
   mobile?: boolean
-  /** 是否渲染「团队」分区（移动端抽屉由既有团队分组承担时传 false） */
-  showTeams?: boolean
   /** 命中任一条目后的回调（移动端用来关闭抽屉） */
   onNavigate?: () => void
 }
 
-export default function HomeNav({
-  collapsed = false, mobile = false, showTeams = true, onNavigate,
-}: HomeNavProps) {
+export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
   const navigate = useNavigate()
   const location = useLocation()
-  const flat = collapsed && !mobile
 
-  // 与 WorkspaceList / TeamPage 共用同一 queryKey：主页与团队页同时挂载时不会重复请求
+  // 与 WorkspaceList 共用同一 queryKey：主页与会话内已加载的列表不会重复请求
   const { data: workspaces = [] } = useQuery<Workspace[]>({
     queryKey: ['workspaces'],
     queryFn: () => workspaceApi.list(),
   })
-  const { data: teams = [] } = useQuery<Team[]>({
-    queryKey: ['teams'],
-    queryFn: () => teamApi.list(),
-    retry: false,
-  })
-  const { data: favoriteViews = [] } = useFavoriteViews()
 
   const byId = useMemo(() => new Map(workspaces.map(ws => [String(ws.id), ws])), [workspaces])
 
@@ -77,37 +59,28 @@ export default function HomeNav({
     return rows.slice(0, 5)
   }, [byId])
 
-  const teamWorkspaceCounts = useMemo(() => new Map(
-    teams.map(team => [
-      String(team.id),
-      workspaces.filter(ws => String(ws.team_id) === String(team.id)).length,
-    ]),
-  ), [teams, workspaces])
-
-  const countBadge = (count: number) => (
-    <span className="cn-ws-group-count" style={{ marginInlineStart: 'var(--cn-space-sm)' }}>{count}</span>
-  )
-
   const items: MenuProps['items'] = []
 
-  if (!flat && recentItems.length > 0) {
+  if (recentItems.length > 0) {
     items.push({
       type: 'group',
       label: '最近访问',
       children: recentItems.map(({ entry, ws }) => {
         const modules = normalizeModules(ws.modules)
-        const landing = `/w/${ws.id}/${workspaceLandingSegment(modules)}`
+        const moduleLabel = WORKSPACE_MODULE_LABEL[modules[0]] ?? ''
+        const relative = formatRelativeTime(new Date(entry.ts).toISOString())
         return {
           key: entry.path,
           icon: <ClockCircleOutlined />,
+          // 单行 label：antd inline Menu 行高固定 40px 且单行 ellipsis，双行会被裁掉
           label: (
-            <span data-testid={`home-nav-recent-${ws.id}`}>
-              <span className="cn-home-nav-label" title={ws.name}>{ws.name}</span>
-              <span className="cn-home-nav-hint">
-                {WORKSPACE_MODULE_LABEL[modules[0]] ?? ''} · {formatRelativeTime(new Date(entry.ts).toISOString())}
-              </span>
-              {/* 记录路径与当前工作区落地段不一致时，点击直接回到上次所在模块 */}
-              <span hidden data-testid={`home-nav-recent-landing-${ws.id}`}>{landing}</span>
+            <span
+              className="cn-home-nav-recent"
+              data-testid={`home-nav-recent-${ws.id}`}
+              title={`${ws.name}${moduleLabel ? ` · ${moduleLabel}` : ''}${relative ? ` · ${relative}` : ''}`}
+            >
+              <span className="cn-home-nav-recent-name">{ws.name}</span>
+              <span className="cn-home-nav-recent-time">{relative}</span>
             </span>
           ),
         }
@@ -123,64 +96,14 @@ export default function HomeNav({
       icon: <FolderOpenOutlined />,
       label: (
         <span data-testid="home-nav-all">
-          全部工作区{countBadge(workspaces.length)}
+          全部工作区
+          <span className="cn-ws-group-count" style={{ marginInlineStart: 'var(--cn-space-sm)' }}>
+            {workspaces.length}
+          </span>
         </span>
       ),
     }],
   })
-
-  if (showTeams && teams.length > 0) {
-    items.push({
-      type: 'group',
-      label: '团队',
-      children: teams.map(team => ({
-        key: `/teams/${team.id}`,
-        icon: <ApartmentOutlined />,
-        label: (
-          <span data-testid={`home-nav-team-${team.id}`}>
-            {team.name}{countBadge(teamWorkspaceCounts.get(String(team.id)) ?? 0)}
-          </span>
-        ),
-      })),
-    })
-  }
-
-  if (!flat && favoriteViews.length > 0) {
-    items.push({
-      type: 'group',
-      label: '收藏视图',
-      children: favoriteViews.slice(0, 5).map(view => ({
-        key: `/w/${view.workspace_id}/tables/${view.table_id}?view=${view.view_id}`,
-        icon: <StarFilled />,
-        label: (
-          <span data-testid={`home-nav-view-${view.view_id}`}>
-            <span className="cn-home-nav-label" title={view.name}>{view.name}</span>
-            <span className="cn-home-nav-hint">{view.workspace_name}</span>
-          </span>
-        ),
-      })),
-    })
-  }
-
-  items.push(
-    {
-      key: '/teams',
-      icon: <SettingOutlined />,
-      label: <span data-testid="home-nav-manage-teams">管理团队</span>,
-    },
-    {
-      key: '/help',
-      icon: <QuestionCircleOutlined />,
-      label: <span data-testid="home-nav-help">帮助文档</span>,
-    },
-  )
-
-  // 选中态：主页高亮「全部工作区」，团队页高亮对应团队，/teams 列表页高亮「管理团队」
-  const selectedKeys = location.pathname === '/w'
-    ? ['/w']
-    : location.pathname.startsWith('/teams')
-      ? [location.pathname]
-      : []
 
   const go = (path: string) => {
     navigate(path)
@@ -193,21 +116,20 @@ export default function HomeNav({
       aria-label="主页导航"
       data-testid="sider-home"
     >
-      <div style={{ padding: flat ? 'var(--cn-space-md) var(--cn-space-xs)' : 'var(--cn-space-md) var(--cn-space-lg)' }}>
+      <div style={{ padding: 'var(--cn-space-md) var(--cn-space-lg)' }}>
         <Button
           type="primary"
           block
           icon={<PlusOutlined />}
-          aria-label="新建工作区"
           data-testid="home-nav-create"
           onClick={() => go('/w?create=1')}
         >
-          {flat ? null : '新建工作区'}
+          新建工作区
         </Button>
       </div>
       <Menu
         mode="inline"
-        selectedKeys={selectedKeys}
+        selectedKeys={location.pathname === '/w' ? ['/w'] : []}
         items={items}
         onClick={({ key }) => go(key)}
       />

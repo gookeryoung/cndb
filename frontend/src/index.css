@@ -1639,23 +1639,29 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   margin-inline: auto;
 }
 
-/* ─────────────── 主页导航 rail（需求 0160 C1/C6） ───────────────
- * 条目复用 antd Menu（与设置 / 统计 / 管理台侧栏同款），这里只补两处排版：
- * 行内「名称 + 次要信息」两行排布，以及移动端抽屉的内边距。 */
-.cn-home-nav-label {
-  display: block;
+/* ─────────────── 主页导航 rail（需求 0160 C1/C6，A′ 口径） ───────────────
+ * 条目复用 antd Menu（与设置 / 统计 / 管理台侧栏同款），这里只补两处：
+ * 「名称 ……… 相对时间」单行排布（antd inline Menu 行高固定 40px，双行会被裁掉），
+ * 以及移动端抽屉的顶部内边距。 */
+.cn-home-nav-recent {
+  display: flex;
+  align-items: center;
+  gap: var(--cn-space-sm);
+  min-width: 0;
+}
+
+.cn-home-nav-recent-name {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.cn-home-nav-hint {
-  display: block;
+.cn-home-nav-recent-time {
+  flex: none;
   font-size: var(--cn-text-2xs);
   color: var(--cn-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .cn-home-nav-mobile {

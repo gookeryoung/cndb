@@ -25,12 +25,12 @@
 
 | # | 需求片段 | 可实施约束 | 涉及模块 | 验收方式 |
 |---|---|---|---|---|
-| C1 | 「导航优化」 | **同一导航轴、两种 Scope**：`/w`、`/teams*`（无 `wid` 且非管理台 / 非帮助）渲染「主页导航 rail」；`/w/:wid/*` 沿用现有工作区侧栏；`/admin` 管理台侧栏、`/help` 自带两级侧栏不变。同一时刻最多一条侧栏，不新增第三个导航轴 | `layouts/MainLayout.tsx`、`components/HomeNav.tsx`（新增） | 单测：四种上下文各断言侧栏 testid 唯一；无 `sider-no-workspace` |
+| C1 | 「导航优化」 | **同一导航轴、两种 Scope**：`/w`、`/teams*`（无 `wid` 且非管理台 / 非帮助）渲染「主页导航 rail」；`/w/:wid/*` 沿用现有工作区侧栏；`/admin` 管理台侧栏、`/help` 自带两级侧栏不变。同一时刻最多一条侧栏，不新增第三个导航轴。**rail 只承载独有信息**（A′ 口径，2026-11-27 评审确认）：新建工作区 / 最近访问 / 全部工作区；明确不放入**团队**（顶栏 `ScopeSwitcher` 已分组并带团队页入口）、**收藏视图**（右栏「我的视图」同一数据源）、**帮助文档**（顶栏常驻图标）、**管理团队**（`/teams` 等价于「点第一个团队」，见 `TeamPage.tsx` Navigate）。rail **不参与折叠** | `layouts/MainLayout.tsx`、`components/HomeNav.tsx` | 单测：四种上下文各断言侧栏 testid 唯一；无 `sider-no-workspace`；rail 不渲染团队 / 收藏视图 / 帮助 / 管理团队条目；曾折叠过侧栏时主页仍完整展开且无折叠触发器 |
 | C2 | 「显得很空」 | **宽度节奏**：主页容器 `max-width: 1440px` 居中；「我的视图」右栏定宽 360px（不再 `340px + 5vw` 随视口膨胀）；1600+ 三栏（rail / 主区 / 右栏）、1280–1599 两栏、<992 右栏下移；任何断点不出现横向滚动 | `index.css`、`pages/workspace/WorkspaceList.tsx` | 单测：容器类与栅格；e2e 断点矩阵断言 `scrollWidth <= clientWidth` |
 | C3 | 「显得很空」 | **行内排版成表格化对齐**：`.cn-ws-row-body` 由 `flex + space-between` 改为 `grid`（标题 `minmax(0,1fr)` + meta `auto` 右对齐），名称与计数 / 时间按列对齐、不再被拉到两端；断点行为零回归（<1200 收模块徽标、<1024 收时间、<768 不渲染 meta、名称始终可读） | `index.css` | 既有 e2e `workspace-list-responsive.spec.ts` 全绿（1440/1280/1024/768/390） |
 | C4 | 「默认页面」 | **继续上次**：主页主区首屏顶部横向卡片列出最近打开的 ≤5 个工作区（名称 + 落地模块 + 相对时间），点击直达 `最近落地路径`；数据只存本地 `usePersistedState`（`wid` / `path` / `ts`），不建表、不进备份、不上传、不区分设备 | `pages/workspace/recentWorkspaces.ts`（新增）、`WorkspaceList.tsx` | 纯函数单测：写入去重 / 上限 5 / 非法路径过滤 / 相对时间；组件单测：空态不渲染 |
 | C5 | 「默认页面」 | **空态即引导**：无工作区时主区首屏是引导卡（新建工作区 / 导入备份 / 加入团队），搜索无结果仍用 `Empty`；有工作区但无收藏视图时右栏显示说明而非空面板 | `WorkspaceList.tsx`、`MyViewsPanel.tsx` | 单测：三种空态分支文案与按钮可达 |
-| C6 | （移动端） | <1024 rail 收进抽屉（汉堡恢复），抽屉顶部为「主页导航」分区，其后保留既有「团队 → 工作区」分组；触控目标 ≥32px，不横向溢出 | `MainLayout.tsx`、`index.css` | 单测：移动端汉堡存在且抽屉含主页导航；e2e 390 宽度 |
+| C6 | （移动端） | <1024 rail 收进抽屉（汉堡恢复），抽屉顶部为「主页导航」分区（新建 / 最近访问 / 全部工作区），其后保留既有「团队 → 工作区」分组（团队入口在移动端由此承担）；触控目标 ≥32px，不横向溢出 | `MainLayout.tsx`、`index.css` | 单测：移动端汉堡存在且抽屉含主页导航；e2e 390 宽度 |
 | C7 | （存量兼容） | 团队 chips / 收藏分组 / 拖拽排序 / 展开详情 / 搜索 / 收藏视图拖拽 / 新建与导入流程行为不回归；`GET /workspaces`、`GET /teams`、`preferences` 载荷不变 | 前端为主 | 现有单测全绿 + 0157 相关 e2e 全绿 |
 | C8 | （P2 聚合口径） | `GET /api/v1/home/summary` **只读**：返回最近访问（若有）之外的「待我处理」计数（修改申请 / 问题 / 链接申请）与团队 / 工作区计数；**逐工作区同权过滤**，无读权的条目计 0 且不暴露存在性（不返回 id / 名称）；载荷不含提示词、密钥、行数据；按用户隔离，缓存 TTL ≤ 30s | `plugins/workspaces/routers/home.py`（新增） | 接口测试：跨用户不可见、无读权计 0、载荷字段白名单、缓存随写失效 |
 | C9 | （可访问性） | rail 用 `<nav aria-label="主页导航">`，当前项 `aria-current="page"`；分组标题为语义标题；键盘可 Tab 达全部条目 | `HomeNav.tsx` | 单测：role / aria 断言 |
@@ -75,6 +75,7 @@
 - [x] 选型确认：A + B（2026-11-27）
 - [x] 允许主页侧栏回归，并据此修订需求 0157 的「主页导航收敛（补）」口径（2026-11-27）
 - [x] 接受 P2 新增只读聚合接口 `GET /api/v1/home/summary`（2026-11-27）
+- [x] rail 口径收口为 A′（2026-11-27 评审反馈：首版 rail 复述顶栏 / 右栏入口且折叠态只剩图标；已删团队 / 收藏视图 / 帮助 / 管理团队四段并关闭折叠）
 - [ ] ADR 0160 评审（P2 开工前）—— 已起草 `docs/adr/0160-home-summary-aggregation.md`（Proposed，2026-11-27）
 
 ## 落地（实现完成）
@@ -85,8 +86,8 @@
 | P0 行内排版 | `frontend/src/index.css`（`.cn-ws-row-body` 改 `grid: minmax(0,1fr) auto`，`.cn-ws-row-meta` 右对齐；≤991 堆叠左对齐） |
 | P0 空态引导 | `frontend/src/pages/workspace/WorkspaceList.tsx`（`Empty` + 新建 / 导入备份 / 我的团队）；根容器 `cn-home-page` |
 | P0 测试 | `WorkspaceList.test.tsx` +2 例（宽度收口容器与双板块骨架、空态三入口与新建弹窗） |
-| P1 主页 rail | `frontend/src/components/HomeNav.tsx`（新建 / 最近访问 / 全部工作区 / 团队（含工作区计数）/ 收藏视图 / 管理团队 / 帮助；条目走 antd `Menu` 复用 `.cn-table-nav`，不新增一套导航样式；lazy 加载） |
-| P1 路由接线 | `frontend/src/layouts/MainLayout.tsx`：`SiderMode` 新增 `'home'`（无 `wid` 且非管理台 / 帮助→主页导航；`/w/:wid/*` 仍为工作区侧栏）；移动端汉堡恢复，抽屉顶部先给主页导航分区再接既有团队分组 |
+| P1 主页 rail | `frontend/src/components/HomeNav.tsx`（**A′ 口径**：只放新建 / 最近访问 / 全部工作区三段，条目走 antd `Menu` 复用 `.cn-table-nav`；最近访问为单行「名称 ……… 相对时间」+ `title` 提示，避免 antd 40px 行高裁掉双行；lazy 加载） |
+| P1 路由接线 | `frontend/src/layouts/MainLayout.tsx`：`SiderMode` 新增 `'home'`（无 `wid` 且非管理台 / 帮助→主页导航；`/w/:wid/*` 仍为工作区侧栏）；**home 模式关闭折叠**（`collapsible={false}` + `collapsed={false}`，折叠偏好 `cndb_sider_collapsed` 仍为工作区侧栏保留、不被主页改写）；移动端汉堡恢复，抽屉顶部先给主页导航分区再接既有团队分组 |
 | P1 最近访问 | `frontend/src/utils/recentWorkspaces.ts`（`localStorage`：`wid` / `path` / `ts`，同工作区去重、上限 5、非法路径忽略；登录 / 登出清空避免串号）+ `MainLayout` 导航时记录 |
-| P1 测试 | `HomeNav.test.tsx` 7 例（分区与计数、选中态、最近访问读本地、折叠态、移动端变体、新建 / 团队 / 管理 / 帮助跳转）、`recentWorkspaces.test.ts` 7 例（规范化 / 去重 / 上限 / 损坏兜底）、`MainLayout.test.tsx` 改写 3 例（主页与团队页渲染主页 rail、移动端汉堡与抽屉） |
+| P1 测试 | `HomeNav.test.tsx` 8 例（只有三段且不渲染重复入口、最近访问单行 label + `title`、仍可读过滤、空最近访问不渲染分组、选中态、新建 / 最近 / 全部跳转、移动端变体）、`recentWorkspaces.test.ts` 7 例（规范化 / 去重 / 上限 / 损坏兜底）、`MainLayout.test.tsx` 改写 3 例（主页与团队页渲染主页 rail、移动端汉堡与抽屉） |
 | P1 体积 | `HomeNav` lazy 化（不进应用外壳 chunk）；`frontend/scripts/bundle-budget.json` 按实测收口「主入口 CSS」「MainLayout」基线并上调上限（理由已落盘） |
