@@ -134,7 +134,11 @@ describe('断点口径', () => {
     // 991.98 = tablet(992) - 0.02，对应「窄屏单列堆叠」；575.98 为 antd xs 例外；
     // 1023.98 = 数据分析带状工作台的双列下限（<1024 堆叠，与 useResponsive BREAKPOINTS.tablet 对齐）；
     // 1199.98 = xl(1200) - 0.02，对应跨端布局收为双栏的下限
-    const allowed = [BREAKPOINT.mobile - 0.02, BREAKPOINT.tablet - 0.02, 575.98, 1023.98, BREAKPOINT.xl - 0.02]
+    // 1599.98 = wide(1600) - 0.02，对应主页「导航 rail + 主区 + 我的视图」三栏收为两栏的下限
+    const allowed = [
+      BREAKPOINT.mobile - 0.02, BREAKPOINT.tablet - 0.02, 575.98, 1023.98,
+      BREAKPOINT.xl - 0.02, BREAKPOINT.wide - 0.02,
+    ]
     for (const w of widths) {
       expect(allowed, `出现未登记断点 ${w}px`).toContain(w)
     }

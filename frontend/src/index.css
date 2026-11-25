@@ -1332,17 +1332,18 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   cursor: pointer;
 }
 
-/* 标题 + 次要信息：宽度不足时整块 meta 换到第二行，名称永远优先占位。
-   不用 container query：Chrome 81 兼容基线不支持（ADR 0026）。 */
+/* 标题 + 次要信息：表格式对齐（需求 0160 C3）。
+ * 旧实现是 flex + space-between：行宽翻倍后名称贴左、计数与时间贴右，中间一片空。
+ * 改为 grid 两列（标题 1fr / meta 定宽列右对齐），行与行的列对齐，视觉上读成一张表。
+ * 不用 container query：Chrome 81 兼容基线不支持（ADR 0026）。 */
 .cn-ws-row-body {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: var(--cn-space-lg);
-  flex: 1 1 auto;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  min-width: 0;
+  column-gap: var(--cn-space-lg);
   row-gap: var(--cn-space-xs);
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .cn-ws-row-toggle.ant-btn {
@@ -1410,6 +1411,8 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
 .cn-ws-row-meta {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
+  justify-self: end;
   gap: var(--cn-space-lg);
   flex: 0 1 auto;
   min-width: 0;
@@ -1575,6 +1578,18 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   }
 }
 
+/* 平板及以下：meta 换到名称下一行并左对齐（宽度不够时宁可增高，也不压没名称） */
+@media (max-width: 991.98px) {
+  .cn-ws-row-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .cn-ws-row-meta {
+    justify-self: start;
+    justify-content: flex-start;
+  }
+}
+
 /* 平板及以下：收起态不再展示时间，只保留表 / 人计数 */
 @media (max-width: 1023.98px) {
   .cn-ws-row-time {
@@ -1613,11 +1628,19 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   }
 }
 
-/* ─────────────── 主页双列：「我的工作区」+「我的视图」（ADR 0021） ─────────────── */
+/* ─────────────── 主页：内容宽度收口 + 双列（需求 0160 C2） ───────────────
+ * 顶栏 44px、无工作区级侧栏时，内容区若铺满会显得“空”（行内文字被拉成两头）；
+ * 统一用一个居中容器 + 定宽右栏，超宽屏不再随视口膨胀。 */
+.cn-home-page {
+  width: 100%;
+  max-width: 1360px;
+  margin-inline: auto;
+}
 
 .cn-home-split {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) calc(340px + 5vw);
+  /* 右栏定宽 360：原来 `calc(340px + 5vw)` 会随视口膨胀，宽屏把主卡挤得比右栏还空 */
+  grid-template-columns: minmax(0, 1fr) 360px;
   gap: var(--cn-space-xl);
   /* stretch：左右两板块（我的工作区 / 我的视图）高度一致，取二者较高者 */
   align-items: stretch;
@@ -1641,8 +1664,8 @@ button.ant-btn-primary:not([disabled]):not(.ant-btn-dangerous):active {
   height: 100%;
 }
 
-/* 窄屏 / 平板：右侧面板堆叠到工作区下方，避免 340px 固定栏挤压行列表 */
-@media (max-width: 991.98px) {
+/* 窄于 1600：内容区已不足「主页 rail(240) + 主卡(≈940) + 右栏(360)」，右栏堆叠到主卡下方 */
+@media (max-width: 1599.98px) {
   .cn-home-split {
     grid-template-columns: minmax(0, 1fr);
   }

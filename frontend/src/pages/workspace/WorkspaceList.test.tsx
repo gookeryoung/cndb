@@ -149,6 +149,32 @@ describe('WorkspaceList 列表渲染与交互', () => {
     expect(await screen.findByText('还没有工作区，创建一个吧！')).toBeInTheDocument()
   })
 
+  it('主页使用宽度收口容器与双板块骨架（需求 0160 C2）', async () => {
+    server.use(http.get('/api/v1/workspaces', () => HttpResponse.json([makeWs({ id: 10, name: '产品研发' })])))
+    renderWorkspaceList()
+
+    const page = await screen.findByTestId('workspace-list')
+    expect(page).toHaveClass('cn-home-page')
+    expect(screen.getByTestId('workspace-home-split')).toHaveClass('cn-home-split')
+    expect(screen.getByTestId('workspace-home-aside')).toHaveClass('cn-home-aside')
+  })
+
+  it('空态即引导：给出新建 / 导入 / 团队三个真实入口（需求 0160 C5）', async () => {
+    server.use(
+      http.get('/api/v1/workspaces', () => HttpResponse.json([])),
+      http.get('/api/v1/teams', () => HttpResponse.json([{ id: 500, name: '研发团队', slug: 'rd' }])),
+    )
+    renderWorkspaceList()
+
+    expect(await screen.findByTestId('empty-create-workspace')).toBeVisible()
+    expect(screen.getByTestId('empty-import-workspace')).toBeVisible()
+    expect(await screen.findByRole('button', { name: /我的团队/ })).toBeVisible()
+
+    // 引导入口与工具栏入口行为一致：打开同一个新建弹窗
+    fireEvent.click(screen.getByTestId('empty-create-workspace'))
+    expect(await screen.findByTestId('create-workspace-modal')).toBeVisible()
+  })
+
   it('搜索关键字过滤行，无匹配时显示搜索空态', async () => {
     server.use(
       http.get('/api/v1/workspaces', () =>

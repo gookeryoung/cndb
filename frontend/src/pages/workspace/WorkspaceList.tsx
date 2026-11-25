@@ -276,8 +276,9 @@ export default function WorkspaceList() {
   )
 
   return (
-    <div style={{ padding: isMobile ? 12 : 16 }} data-testid="workspace-list">
-      {/* 左右双板块：左侧「我的工作区」卡片（标题 + 搜索 + 新建/导入 + 列表）与右侧「我的视图」卡片同高 */}
+    <div className="cn-home-page" style={{ padding: isMobile ? 12 : 16 }} data-testid="workspace-list">
+      {/* 左右双板块：左侧「我的工作区」卡片（标题 + 搜索 + 新建/导入 + 列表）与右侧「我的视图」卡片同高。
+          内容宽度由 `.cn-home-page` 的 max-width 收口（需求 0160 C2）：超宽屏不再把行拉成两头空。 */}
       <div className="cn-home-split" data-testid="workspace-home-split">
         <div className="cn-home-main">
           {/* 工具栏 —— 移动端纵向堆叠：标题整行、搜索框占满、按钮均分，避免固定宽度导致横向溢出 */}
@@ -369,7 +370,36 @@ export default function WorkspaceList() {
               </div>
             </div>
           ) : filteredWorkspaces.length === 0 ? (
-            <Empty description={search ? `没有匹配「${search}」的工作区` : '还没有工作区，创建一个吧！'} />
+            <Empty description={search ? `没有匹配「${search}」的工作区` : '还没有工作区，创建一个吧！'}>
+              {/* 空态即引导（需求 0160 C5）：首屏直接给出三个真实入口，而不是只有一行说明文字 */}
+              {!search && (
+                <Space wrap style={{ marginTop: 16, justifyContent: 'center' }}>
+                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    data-testid="empty-create-workspace"
+                    onClick={() => {
+                      setPendingTeamId(typeof effectiveScope === 'number' ? effectiveScope : undefined)
+                      setCreateOpen(true)
+                    }}
+                  >
+                    新建工作区
+                  </Button>
+                  <Button
+                    icon={<UploadOutlined />}
+                    data-testid="empty-import-workspace"
+                    onClick={() => setImportOpen(true)}
+                  >
+                    导入备份
+                  </Button>
+                  {teams.length > 0 && (
+                    <Button icon={<TeamOutlined />} onClick={() => navigate('/teams')}>
+                      我的团队
+                    </Button>
+                  )}
+                </Space>
+              )}
+            </Empty>
           ) : (
             <DndContext
               sensors={workspaceDragSensors}
