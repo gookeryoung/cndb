@@ -102,6 +102,46 @@ def bulk_create_records(
     return {"created": len(ids), "ids": ids}
 
 
+#: 跨页全选单次最多处理的命中行数（超出要求收窄筛选，避免一次删掉整表）
+SELECT_ALL_MAX_ROWS = 10_000
+
+
+def _resolve_bulk_row_ids(
+    payload: BulkDeleteRequest,
+    dt: Any,
+    db: Session,
+    current_user: User,
+) -> list[int]:
+    """解析批量操作的 row_ids：直传，或按筛选条件（跨页全选）在服务端展开.
+
+    - `select_all=False` → 直接用 `row_ids`（缺省即 400）；
+    - `select_all=True` → 按 `filters` / `filter_logic` 走列表读路径（行级权限 + 软删同源）
+      取出命中行 id；命中超过 `SELECT_ALL_MAX_ROWS` → 400 要求收窄。
+    """
+    from cndb.plugins.tables.services.core import records as rec
+
+    if not payload.select_all:
+        if not payload.row_ids:
+            raise HTTPException(status_code=400, detail="row_ids 不能为空（或改用 select_all + filters）")
+        return [int(rid) for rid in payload.row_ids]
+
+    rows, total = rec.list_rows(
+        db.get_bind(),
+        dt,
+        filters=payload.filters or None,
+        filter_logic=payload.filter_logic,
+        limit=0,
+        db=db,
+        user=current_user,
+    )
+    if total > SELECT_ALL_MAX_ROWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"当前筛选命中 {total} 行，超过单次批量操作上限 {SELECT_ALL_MAX_ROWS} 行，请收窄筛选后重试",
+        )
+    return [int(row["id"]) for row in rows if row.get("id") is not None]
+
+
 # ── 批量删行 ───────────────────────────────────────────
 
 
@@ -113,11 +153,15 @@ def bulk_delete_records(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any] | JSONResponse:
-    """批量删行：可直编者直接删除；否则生成含多个 delete item 的修改申请（202）."""
+    """批量删行：可直编者直接删除；否则生成含多个 delete item 的修改申请（202）.
+
+    `select_all=True` 时按筛选条件在服务端展开目标行（跨页全选），上限见 `SELECT_ALL_MAX_ROWS`。
+    """
     dt = get_table_or_404(table_id, workspace_id, db, user=current_user, action=TableAction.READ)
+    row_ids = _resolve_bulk_row_ids(payload, dt, db, current_user)
 
     if not cr_services.can_write_directly(db, dt, current_user):
-        cr = cr_services.create_batch_delete_request(db, dt, current_user, payload.row_ids)
+        cr = cr_services.create_batch_delete_request(db, dt, current_user, row_ids)
         return JSONResponse(
             status_code=status.HTTP_202_ACCEPTED,
             content={
@@ -129,13 +173,13 @@ def bulk_delete_records(
     if not check_action(db, dt, current_user, TableAction.EDIT_RECORDS):
         raise_permission_denied(db, dt.workspace, current_user, scope="表级")
 
-    deleted = rec.bulk_delete(db.get_bind(), dt, payload.row_ids, db=db, user=current_user)
+    deleted = rec.bulk_delete(db.get_bind(), dt, row_ids, db=db, user=current_user)
     if deleted:
         _dispatch_record_updated(
             db,
             dt,
             action="deleted",
-            row_ids=list(payload.row_ids),
+            row_ids=list(row_ids),
             count=deleted,
         )
     return {"deleted": deleted}

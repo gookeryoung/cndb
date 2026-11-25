@@ -213,15 +213,27 @@ export function useDeleteRowsOptimistic(wid: string, tid: string) {
   const tableKey = `${wid}/${tid}`
 
   return useMutation({
-    mutationFn: (ids: Array<number | string>) =>
-      recordApi.bulkDelete(wid, tid, ids),
-    onMutate: async (ids) => {
+    mutationFn: (args: Array<number | string> | { ids: Array<number | string>; selectAll?: boolean; filters?: Array<Record<string, unknown>>; filterLogic?: 'AND' | 'OR' }) => {
+      // 跨页全选（需求 0149 C8）：目标行由服务端按筛选展开，前端只传条件
+      if (Array.isArray(args)) return recordApi.bulkDelete(wid, tid, args)
+      return recordApi.bulkDelete(wid, tid, args.ids, {
+        selectAll: args.selectAll,
+        filters: args.filters,
+        filterLogic: args.filterLogic,
+      })
+    },
+    onMutate: async (args) => {
+      const ids = Array.isArray(args) ? args : args.ids
       await queryClient.cancelQueries({ queryKey: ['table-records', tableKey] })
 
       const previousRecordsQueries = queryClient.getQueriesData<RowListResponse>({
         queryKey: ['table-records', tableKey],
       })
 
+      if (!Array.isArray(args) && args.selectAll) {
+        // 跨页全选：无法逐行剔除（目标行在服务端），交给 onSettled 的 invalidate 刷新
+        return { previousRecordsQueries }
+      }
       const idSet = new Set(ids)
       previousRecordsQueries.forEach(([queryKey, data]) => {
         if (!data) return

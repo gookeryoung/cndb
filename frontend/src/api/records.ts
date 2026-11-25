@@ -63,8 +63,20 @@ export const recordApi = {
   // 批量
   bulkCreate: (wid: number | string, tid: number | string, rows: Array<Record<string, unknown>>) =>
     api.post<{ created: number; ids: number[] }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-create`, { rows }).then(r => r.data),
-  bulkDelete: (wid: number | string, tid: number | string, ids: Array<number | string>) =>
-    api.post<{ deleted: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-delete`, { row_ids: ids }).then(r => r.data),
+  bulkDelete: (
+    wid: number | string,
+    tid: number | string,
+    ids: Array<number | string>,
+    options?: { selectAll?: boolean; filters?: Array<Record<string, unknown>>; filterLogic?: 'AND' | 'OR' },
+  ) =>
+    api
+      .post<{ deleted: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-delete`, {
+        row_ids: ids,
+        ...(options?.selectAll
+          ? { select_all: true, filters: options.filters ?? [], filter_logic: options.filterLogic }
+          : {}),
+      })
+      .then(r => r.data),
   bulkUpdate: (wid: number | string, tid: number | string, ids: Array<number | string>, values: Record<string, unknown>) =>
     api.post<{ updated: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-update`, { row_ids: ids, values }).then(r => r.data),
   /** 行级历史（需求 0144）：版本倒序 */

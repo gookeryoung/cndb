@@ -338,6 +338,8 @@ export default function GridPage() {
   const [recycleOpen, setRecycleOpen] = useState(false)
   // 批量查找替换（需求 0149）：按需弹层，lazy 到按需 chunk（H31）
   const [bulkReplaceOpen, setBulkReplaceOpen] = useState(false)
+  // 跨页全选（需求 0149 C8）：只记"意图"，目标行由服务端按当前筛选展开
+  const [selectAllMatching, setSelectAllMatching] = useState(false)
   // 最近一次失败的行操作（路线图 P0-3：可重试错误条，而不是只弹一次 message）
   const [lastError, setLastError] = useState<RetryableError | null>(null)
   const [viewConfigOpen, setViewConfigOpen] = useState(false)
@@ -1458,20 +1460,37 @@ export default function GridPage() {
           rows={rowList.items || []}
           filters={viewFilters as unknown as Array<Record<string, unknown>>}
           filterLogic={viewFilterLogic}
+          total={rowList.total}
+          selectAll={selectAllMatching}
+          onSelectAll={() => setSelectAllMatching(true)}
           copyLoading={copyRow.isPending}
           deleteLoading={deleteRows.isPending}
           onCopy={() => copyRow.mutate(selectedRowKeys as Array<number | string>)}
           onDelete={() => {
             const ids = selectedRowKeys as Array<number | string>
-            deleteRows.mutate(ids, {
-              onSuccess: () => { message.success('已删除'); setSelectedRowKeys([]); setLastError(null) },
+            // 跨页全选：只把"筛选条件 + 意图"交给服务端展开目标行（上限 1 万，超限 400）
+            const args = selectAllMatching
+              ? {
+                  ids,
+                  selectAll: true,
+                  filters: viewFilters as unknown as Array<Record<string, unknown>>,
+                  filterLogic: viewFilterLogic,
+                }
+              : ids
+            deleteRows.mutate(args, {
+              onSuccess: () => {
+                message.success(selectAllMatching ? '已按筛选删除' : '已删除')
+                setSelectedRowKeys([])
+                setSelectAllMatching(false)
+                setLastError(null)
+              },
               onError: (err: Error) => setLastError({
                 message: err.message || '删除失败',
-                retry: () => deleteRows.mutate(ids, { onSuccess: () => setSelectedRowKeys([]) }),
+                retry: () => deleteRows.mutate(args),
               }),
             })
           }}
-          onClear={() => setSelectedRowKeys([])}
+          onClear={() => { setSelectedRowKeys([]); setSelectAllMatching(false) }}
         />
       )}
 

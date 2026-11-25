@@ -315,7 +315,12 @@ class AutoIncrementPreviewResponse(BaseModel):
 
 
 class BulkDeleteRequest(BaseModel):
-    row_ids: list[int]
+    """批量删除载荷：``row_ids`` 直传，或 ``select_all=True`` + 筛选条件（跨页全选）."""
+
+    row_ids: list[int] = Field(default_factory=list)
+    select_all: bool = False
+    filters: list[dict[str, Any]] = Field(default_factory=list)
+    filter_logic: str = Field(default="AND", pattern="^(AND|OR)$")
 
 
 class BulkRowIds(BaseModel):

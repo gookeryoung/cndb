@@ -36,6 +36,12 @@ interface GridAggregationBarProps {
   rows?: RowResponse[]
   filters?: Array<Record<string, unknown>>
   filterLogic?: 'AND' | 'OR'
+  /** 当前筛选命中的总行数（用于「选择全部 N 条（跨页）」提示） */
+  total?: number
+  /** 是否已切到跨页全选 */
+  selectAll?: boolean
+  /** 切到跨页全选（目标行由服务端按筛选展开，需求 0149 C8） */
+  onSelectAll?: () => void
 }
 
 /** 本地聚合：对一组行的某个字段算 count / sum / avg（非数值忽略） */
@@ -55,7 +61,7 @@ export function computeLocalAggregate(rows: RowResponse[], fieldName: string): A
 
 export default function GridAggregationBar({
   selectedCount, aggregates, copyLoading, deleteLoading, onCopy, onDelete, onClear,
-  wid, tid, rows = [], filters, filterLogic,
+  wid, tid, rows = [], filters, filterLogic, total, selectAll = false, onSelectAll,
 }: GridAggregationBarProps) {
   const { modal } = AntApp.useApp()
   const [scope, setScope] = useState<AggregateScope>('selected')
@@ -111,7 +117,14 @@ export default function GridAggregationBar({
 
   return (
     <div className="cn-agg-bar" style={{ padding: '6px 12px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-      <span className="cn-agg-count">已选 {selectedCount} 行</span>
+      <span className="cn-agg-count" data-testid="grid-agg-count">
+        已选 {selectedCount} 行{selectAll && total != null ? `（跨页全选，共 ${total} 行）` : ''}
+      </span>
+      {onSelectAll && !selectAll && total != null && total > selectedCount && (
+        <Button size="small" type="link" data-testid="grid-agg-select-all" onClick={onSelectAll}>
+          选择全部 {total} 条（跨页）
+        </Button>
+      )}
       {canSwitch && (
         <Tooltip title={scopeHint}>
           <Segmented<AggregateScope>
