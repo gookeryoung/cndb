@@ -100,8 +100,30 @@ export const fieldApi = {
         api.get<Field[]>(`/v1/workspaces/${wid}/tables/${tid}/fields`, { params: { include_trashed: includeTrashed, full } }).then(r => r.data),
     create: (wid: number | string, tid: number | string, data: FieldCreate) =>
         api.post<Field>(`/v1/workspaces/${wid}/tables/${tid}/fields`, data).then(r => r.data),
-    update: (wid: number | string, tid: number | string, fid: number | string, data: FieldUpdate) =>
-        api.patch<Field>(`/v1/workspaces/${wid}/tables/${tid}/fields/${fid}`, data).then(r => r.data),
+    /** 大表 DDL 影响预估（需求 0150）：只读，返回行数 / 空值行数 / 抽样耗时 / 预计耗时 */
+  ddlImpact: (
+    wid: number | string,
+    tid: number | string,
+    params: { action: 'change_type' | 'add_field' | 'add_index'; fieldId?: number | string; fieldType?: string; sample?: number },
+  ) =>
+    api
+      .get<DdlImpact>(`/v1/workspaces/${wid}/tables/${tid}/fields/ddl-impact`, {
+        params: {
+          action: params.action,
+          field_id: params.fieldId,
+          field_type: params.fieldType,
+          sample: params.sample,
+        },
+      })
+      .then(r => r.data),
+    update: (wid: number | string, tid: number | string, fid: number | string, data: FieldUpdate, force = false) =>
+        api
+            .patch<Field>(
+                `/v1/workspaces/${wid}/tables/${tid}/fields/${fid}`,
+                data,
+                force ? { params: { force: true } } : undefined,
+            )
+            .then(r => r.data),
     remove: (wid: number | string, tid: number | string, fid: number | string) =>
         api.delete(`/v1/workspaces/${wid}/tables/${tid}/fields/${fid}`).then(r => r.data),
     /** 从其他表引入字段 schema 到当前表 */
@@ -164,4 +186,22 @@ export const rowPermissionApi = {
     /** 规则命中行 dry-run 预览 */
     preview: (wid: number | string, tid: number | string, data: { filters: Array<{ field_name: string; op: string; value?: unknown }>; filter_type: 'AND' | 'OR' }) =>
         api.post<RowRulePreviewResponse>(`/v1/workspaces/${wid}/tables/${tid}/row-permissions/preview`, data).then(r => r.data),
+}
+
+/** 大表 DDL 影响预估（需求 0150） */
+export interface DdlImpact {
+  action: 'change_type' | 'add_field' | 'add_index'
+  table_id: number
+  table_name: string
+  field: string | null
+  target_type: string | null
+  row_count: number
+  field_null_count: number | null
+  sampled_rows: number
+  sample_size: number
+  sample_ms: number
+  factor: number
+  estimated_ms: number
+  threshold_rows: number
+  force_required: boolean
 }

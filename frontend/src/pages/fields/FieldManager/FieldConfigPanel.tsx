@@ -7,7 +7,7 @@
  */
 import { useEffect } from 'react'
 import { Form, Input, InputNumber, Radio, Select, Switch, DatePicker, Checkbox, Tooltip } from 'antd'
-import { SlidersOutlined, NumberOutlined } from '@ant-design/icons'
+import { NumberOutlined, SafetyCertificateOutlined, SlidersOutlined } from '@ant-design/icons'
 import type { Field, FieldType, TableSummary } from '@/api'
 import dayjs from 'dayjs'
 import { getFieldTypeLabel } from '@/utils/fieldTypeMeta'
@@ -40,6 +40,137 @@ function Section({ title, icon, children, extra }: { title: string; icon: React.
       </div>
       {children}
     </section>
+  )
+}
+
+/** 条件必填支持的算子（与后端 field_rules.REQUIRED_WHEN_OPS 对齐） */
+export const REQUIRED_WHEN_OPS = [
+  { value: 'eq', label: '等于' },
+  { value: 'neq', label: '不等于' },
+  { value: 'in', label: '属于（逗号分隔）' },
+  { value: 'not_in', label: '不属于（逗号分隔）' },
+] as const
+
+/** 从字段 config 里取出校验规则（缺省返回空对象，便于表单渲染） */
+export function readValidation(config: Record<string, unknown> | undefined | null): {
+  pattern: string
+  message: string
+  watchField: string
+  op: string
+  value: string
+} {
+  const cfg = config ?? {}
+  const validation = (cfg.validation as Record<string, unknown> | undefined) ?? {}
+  const requiredWhen = (cfg.required_when as Record<string, unknown> | undefined) ?? {}
+  const rawValue = requiredWhen.value
+  return {
+    pattern: typeof validation.pattern === 'string' ? validation.pattern : '',
+    message: typeof validation.message === 'string' ? validation.message : '',
+    watchField: typeof requiredWhen.field === 'string' ? requiredWhen.field : '',
+    op: typeof requiredWhen.op === 'string' ? requiredWhen.op : 'eq',
+    value: Array.isArray(rawValue) ? rawValue.join(',') : rawValue == null ? '' : String(rawValue),
+  }
+}
+
+/** 把表单值写回字段 config（空值自动清理，避免留下 `{}` 噪声配置） */
+export function writeValidation(
+  config: Record<string, unknown> | undefined | null,
+  form: { pattern: string; message: string; watchField: string; op: string; value: string },
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...(config ?? {}) }
+  if (form.pattern.trim()) {
+    next.validation = {
+      pattern: form.pattern.trim(),
+      ...(form.message.trim() ? { message: form.message.trim() } : {}),
+    }
+  } else {
+    delete next.validation
+  }
+  if (form.watchField.trim()) {
+    const rawValue = form.value.trim()
+    const value =
+      form.op === 'in' || form.op === 'not_in'
+        ? rawValue
+            .split(',')
+            .map(part => part.trim())
+            .filter(Boolean)
+        : rawValue
+    next.required_when = { field: form.watchField.trim(), op: form.op, value }
+  } else {
+    delete next.required_when
+  }
+  return next
+}
+
+/** 校验规则编辑区：正则 + 自定义文案 + 条件必填（写入 config，不新增字段列） */
+function ValidationRulesSection({
+  form,
+  fields,
+  editTargetId,
+}: {
+  form: FieldConfigPanelProps['form']
+  fields: FieldConfigPanelProps['fields']
+  editTargetId: number | string | null
+}) {
+  const config = Form.useWatch('config', form) as Record<string, unknown> | undefined
+  const current = readValidation(config)
+  const patch = (next: Partial<typeof current>) => {
+    const merged = { ...current, ...next }
+    form.setFieldValue('config', writeValidation(config, merged))
+  }
+  const otherFields = (fields ?? []).filter(f => !f.trashed && String(f.id) !== String(editTargetId ?? ''))
+
+  return (
+    <Section title="校验规则（可选）" icon={<SafetyCertificateOutlined />}>
+      <div className="fm-attr-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <Form.Item label="正则" style={{ marginBottom: 8, flex: '1 1 260px' }}>
+          <Input
+            data-testid="field-validation-pattern"
+            value={current.pattern}
+            placeholder="例如 ^[A-Z]{2}\d{4}$（留空不校验）"
+            onChange={e => patch({ pattern: e.target.value })}
+          />
+        </Form.Item>
+        <Form.Item label="不匹配时的提示" style={{ marginBottom: 8, flex: '1 1 260px' }}>
+          <Input
+            data-testid="field-validation-message"
+            value={current.message}
+            placeholder="留空使用默认文案"
+            onChange={e => patch({ message: e.target.value })}
+          />
+        </Form.Item>
+      </div>
+      <div className="fm-attr-row" style={{ gap: 8, flexWrap: 'wrap' }}>
+        <Form.Item label="条件必填：当字段" style={{ marginBottom: 8, flex: '1 1 180px' }}>
+          <Select
+            allowClear
+            showSearch
+            data-testid="field-required-when-field"
+            value={current.watchField || undefined}
+            placeholder="选择依赖字段（留空不启用）"
+            options={otherFields.map(f => ({ value: f.name, label: f.name }))}
+            onChange={value => patch({ watchField: value ?? '' })}
+          />
+        </Form.Item>
+        <Form.Item label="满足" style={{ marginBottom: 8, width: 150 }}>
+          <Select
+            data-testid="field-required-when-op"
+            value={current.op}
+            options={[...REQUIRED_WHEN_OPS]}
+            onChange={value => patch({ op: value })}
+          />
+        </Form.Item>
+        <Form.Item label="值" style={{ marginBottom: 8, flex: '1 1 160px' }}>
+          <Input
+            data-testid="field-required-when-value"
+            value={current.value}
+            placeholder="多值用逗号分隔"
+            onChange={e => patch({ value: e.target.value })}
+          />
+        </Form.Item>
+      </div>
+      <HelpTip title="「条件必填」表示只有当依赖字段满足条件时本字段才必填；服务端在创建、修改、导入时统一校验。" />
+    </Section>
   )
 }
 
@@ -82,6 +213,9 @@ export default function FieldConfigPanel({ fieldType, form, wid, tid, tables, fi
           <DefaultValueInput fieldType={fieldType} form={form} />
         </Form.Item>
       </section>
+
+      {/* ── 分区 2.5：校验规则（可选，需求 0146 / 0147） ── */}
+      <ValidationRulesSection form={form} fields={fields} editTargetId={editTargetId} />
 
       {/* ── 分区 3：类型专属配置（ConfigEditor 自带卡片与标题） ── */}
       {fieldType && (

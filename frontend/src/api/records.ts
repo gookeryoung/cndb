@@ -67,9 +67,58 @@ export const recordApi = {
     api.post<{ deleted: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-delete`, { row_ids: ids }).then(r => r.data),
   bulkUpdate: (wid: number | string, tid: number | string, ids: Array<number | string>, values: Record<string, unknown>) =>
     api.post<{ updated: number }>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-update`, { row_ids: ids, values }).then(r => r.data),
+  /** 行级历史（需求 0144）：版本倒序 */
+  history: (wid: number | string, tid: number | string, rid: number | string, limit = 50) =>
+    api
+      .get<RowRevision[]>(`/v1/workspaces/${wid}/tables/${tid}/records/${rid}/history`, { params: { limit } })
+      .then(r => r.data),
+  /** 撤销到某版本之前的值（生成新版本；写权限与双轨分派由后端判定） */
+  revert: (wid: number | string, tid: number | string, rid: number | string, version: number) =>
+    api
+      .post<RowResponse | ChangeRequestBatchResponse>(
+        `/v1/workspaces/${wid}/tables/${tid}/records/${rid}/revert/${version}`,
+      )
+      .then(r => r.data),
+  /** 服务端聚合 / 分组（需求 0147）：默认按筛选范围全表统计 */
+  aggregate: (wid: number | string, tid: number | string, payload: AggregatePayload) =>
+    api.post<AggregateResult>(`/v1/workspaces/${wid}/tables/${tid}/records/aggregate`, payload).then(r => r.data),
   /** 批量查找替换（需求 0149）：默认 dry_run 只预览，确认后带 dry_run=false 落库 */
   bulkReplace: (wid: number | string, tid: number | string, payload: BulkReplacePayload) =>
     api.post<BulkReplaceResult>(`/v1/workspaces/${wid}/tables/${tid}/records/bulk-replace`, payload).then(r => r.data),
+}
+
+export interface RowRevision {
+  id: number
+  row_id: number
+  version: number
+  op: string
+  actor_id: number | null
+  actor_name: string | null
+  diff: Record<string, { old?: unknown; new?: unknown }>
+  created_at: string | null
+}
+
+export interface AggregateMetricPayload {
+  field?: string
+  agg: 'count' | 'sum' | 'avg' | 'min' | 'max' | 'distinct'
+  alias?: string
+}
+
+export interface AggregatePayload {
+  group_by?: string[]
+  metrics: AggregateMetricPayload[]
+  filters?: Array<Record<string, unknown>>
+  filter_logic?: 'AND' | 'OR'
+  order_by?: { by: 'group' | 'metric'; index: number; direction: 'asc' | 'desc' }
+  limit?: number
+}
+
+export interface AggregateResult {
+  rows: Array<{ group: Record<string, unknown>; metrics: Record<string, number | null> }>
+  total_groups: number
+  matched_rows: number
+  group_by: string[]
+  metrics: Array<{ alias: string; agg: string; field: string | null }>
 }
 
 export interface BulkReplacePayload {

@@ -70,7 +70,8 @@ keyset 分页 + 可配导出上限（0148，已落地，后端）、批量编辑
 - [x] ⑬ P2 第二批已落地：**0148 keyset 翻页 + 可配导出上限**（`after` 游标支持多字段混向与 id 兜底、NULL 游标 400、非法游标 400、`next_cursor`；`EXPORT_MAX_ROWS` 默认 50 万且先 COUNT 再取数）。
 - [x] ⑭ P2 第三批：**0149 批量查找替换**（`POST /records/bulk-replace`，contains/exact/regex、默认 dry-run 预览、范围与列表同源、只改文本物理列、替换后仍过字段规则、2 万行上限；前端「更多 → 批量替换」对话框）。
 - [x] ⑮ P2 第五批：**0150 大表 DDL 影响预估**（`GET /fields/ddl-impact` 抽样估算行数 / 空值行数 / 预计耗时；`DDL_IMPACT_FORCE_THRESHOLD_ROWS` 默认 0 关闭，开启后改类型超阈值要求 `force=true`；默认关闭保证行为不变）。
-- [ ] ⑫ P2 剩余未开始：批量编辑的**粘贴校验预览 / 跨页全选**（前端为主）、以及各功能的前端侧（历史时间线 / 聚合切换 / 校验规则编辑 / DDL 预估展示）。前端侧（聚合切换 / 校验规则编辑 UI / 历史时间线 / 网格切 keyset）同样未开始。
+- [x] ⑯ 前端收尾四项已落地：① 行详情**字段变更历史**（时间线 + 按版本「恢复到此版本前」，走 `/history` `/revert`）；② 聚合条**选中 / 本页 / 全表**口径切换（全表走 `/records/aggregate`，与视图筛选同源）；③ 字段管理**校验规则编辑**（正则 + 自定义文案 + 条件必填，写入 `config.validation` / `config.required_when`）；④ 字段改类型前**DDL 影响预估确认**（展示影响行数 / 空值行数 / 预计耗时，`force_required` 时提示并带 `force` 提交）。
+- [ ] ⑫ P2 剩余未开始：批量编辑的**粘贴校验预览 / 跨页全选**（前端为主）；网格翻页切 keyset（后端已支持 `after` / `next_cursor`）。前端侧（聚合切换 / 校验规则编辑 UI / 历史时间线 / 网格切 keyset）同样未开始。
 - [x] ⑨ P0-3 前端边界已落地：`useUnsavedGuard`（脏草稿时 `beforeunload` 拦截 + 切视图 / 切模式前确认）、`GridErrorBar`（行操作失败保留最近一次并提供显式重试，成功自动收起）；大范围粘贴保护经核实不适用（网格无多单元格粘贴入口）。**已知限制**：侧栏直接切到另一张表属于跨页面 Link 跳转，`BrowserRouter`（非 data router）下没有全局 `useBlocker`，未纳入拦截；如需覆盖须切到 react-router data router。
 - [x] ⑩ P0-5 性能预算已落地：`@perf` 旅程新增「表格翻页」「表格内联编辑」两条，只断言「交互响应 <600ms / 单次长任务 <400ms」硬上限，基线缺失时只记录读数（`baselines.json` 目前为空，回填方式：同环境连续 3 次取中位数）。
 - [x] ⑦ P0-2 审计 / 事件流保留期已落地（需求卡 0143）：`AUDIT_RETENTION_DAYS`（默认 180，0 关闭）+ `cndb tables purge-audit`（默认 dry-run，分批 1000）；审计读接口沿用既有端点。

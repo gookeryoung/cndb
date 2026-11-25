@@ -1453,6 +1453,11 @@ export default function GridPage() {
         <GridAggregationBar
           selectedCount={selectedRowKeys.length}
           aggregates={aggregates}
+          wid={wid}
+          tid={tid}
+          rows={rowList.items || []}
+          filters={viewFilters as unknown as Array<Record<string, unknown>>}
+          filterLogic={viewFilterLogic}
           copyLoading={copyRow.isPending}
           deleteLoading={deleteRows.isPending}
           onCopy={() => copyRow.mutate(selectedRowKeys as Array<number | string>)}

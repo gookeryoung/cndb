@@ -34,7 +34,7 @@ interface Props {
 }
 
 export default function FieldManager({ open, wid, tid, fields, onClose, onChanged, embedded }: Props) {
-  const { message } = AntApp.useApp()
+  const { message, modal } = AntApp.useApp()
   const [innerOpen, setInnerOpen] = useState(false)
   const [editTarget, setEditTarget] = useState<Field | null>(null)
   const [form] = Form.useForm()
@@ -184,7 +184,8 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     onError: (err) => message.error(err instanceof Error ? err.message : '创建字段失败'),
   })
   const update = useMutation({
-    mutationFn: (args: { fid: number | string; data: Partial<Field> }) => fieldApi.update(wid, tid, args.fid, args.data),
+    mutationFn: (args: { fid: number | string; data: Partial<Field>; force?: boolean }) =>
+      fieldApi.update(wid, tid, args.fid, args.data, args.force),
     onSuccess: () => { message.success('已更新'); closeDialog(); onChanged() },
     onError: (err) => message.error(err instanceof Error ? err.message : '更新字段失败'),
   })
@@ -333,6 +334,44 @@ export default function FieldManager({ open, wid, tid, fields, onClose, onChange
     }
 
     if (editTarget) {
+      const typeChanged = String(payload.field_type) !== editTarget.field_type
+      if (typeChanged) {
+        // 大表改类型前展示影响预估（需求 0150）：行数 / 预计耗时 / 是否需强制确认
+        void fieldApi
+          .ddlImpact(wid, tid, {
+            action: 'change_type',
+            fieldId: editTarget.id,
+            fieldType: String(payload.field_type),
+          })
+          .then((impact) => {
+            modal.confirm({
+              title: `把「${editTarget.name}」从 ${editTarget.field_type} 改为 ${payload.field_type}？`,
+              content: (
+                <div style={{ fontSize: 'var(--cn-text-sm)' }}>
+                  <div>影响行数：{impact.row_count} 行（其中空值 {impact.field_null_count ?? '—'} 行）</div>
+                  <div>
+                    预计耗时：约 {Math.max(impact.estimated_ms / 1000, 0.1).toFixed(1)} 秒
+                    （抽样 {impact.sampled_rows} 行测算，仅供估算）
+                  </div>
+                  {impact.force_required && (
+                    <div style={{ color: 'var(--cn-warning-text, #b45309)' }}>
+                      该表超过强制确认阈值（{impact.threshold_rows} 行），确认后将直接执行
+                    </div>
+                  )}
+                </div>
+              ),
+              okText: '确认修改',
+              cancelText: '取消',
+              onOk: () =>
+                update.mutate({ fid: editTarget.id, data: payload as Partial<Field>, force: impact.force_required }),
+            })
+          })
+          .catch(() => {
+            // 预估失败不阻断：直接按原路径提交（后端仍会做数据预检与原子回退）
+            update.mutate({ fid: editTarget.id, data: payload as Partial<Field> })
+          })
+        return
+      }
       update.mutate({ fid: editTarget.id, data: payload as Partial<Field> })
     } else {
       create.mutate(payload as unknown as FieldCreate)

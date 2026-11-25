@@ -1,7 +1,7 @@
 /** 行详情抽屉 — 编辑字段值 / 历史 / 反向引用. */
 
 import React from 'react'
-import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, Select, DatePicker, InputNumber, Switch, Upload, Tooltip } from 'antd'
+import { Drawer, Form, Input, Button, Typography, Timeline, Tag, App as AntApp, Select, DatePicker, InputNumber, Switch, Upload, Tooltip, Space, Popconfirm } from 'antd'
 import { SaveOutlined, PlusOutlined, HistoryOutlined, LinkOutlined, DeleteOutlined, InboxOutlined, LockOutlined, EditOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -21,6 +21,29 @@ const { Title, Text } = Typography
  * 无物理列的只读虚拟字段类型：值由后端实时解析，不参与写入。
  * 整行表单提交时必须剔除，否则后端写入会因缺少物理列报错。
  */
+/** 版本操作的中文文案（ADR 0144 的 op 取值） */
+export function revisionOpLabel(op: string): string {
+  const map: Record<string, string> = {
+    create: '新建',
+    update: '修改',
+    trash: '删除到回收站',
+    restore: '从回收站恢复',
+    revert: '撤销',
+  }
+  return map[op] ?? op
+}
+
+/** 把 diff 折成「字段：旧 → 新」的可读行（最多 5 行，其余折叠） */
+export function diffSummary(diff: Record<string, { old?: unknown; new?: unknown }>, limit = 5): string[] {
+  const entries = Object.entries(diff ?? {})
+  const fmt = (value: unknown) => (value === null || value === undefined || value === '' ? '空' : String(value))
+  const lines = entries
+    .slice(0, limit)
+    .map(([field, change]) => `${field}：${fmt(change?.old)} → ${fmt(change?.new)}`)
+  if (entries.length > limit) lines.push(`…另有 ${entries.length - limit} 个字段变更`)
+  return lines
+}
+
 const READONLY_VIRTUAL_FIELD_TYPES = new Set(['lookup', 'formula'])
 
 /**
@@ -98,6 +121,27 @@ export default function RowDetailDrawer({ open, row, fields: fieldsProp, wid, ti
 
   // 行特定的审计日志 / 反向引用 —— 新建模式下不请求
   const { data: audit = [] } = useRowAudit(wid, tid, row?.id, open && !!row)
+  // 字段级历史（需求 0144）：与审计互补——审计是「谁做了什么」，这里是「哪个字段从什么变成什么」
+  const { data: revisions = [] } = useQuery({
+    queryKey: ['row-history', wid, tid, row?.id],
+    queryFn: () => recordApi.history(wid, tid, row!.id, 30),
+    enabled: open && !!row?.id && !isCreate,
+  })
+  const revertMutation = useMutation({
+    mutationFn: (version: number) => recordApi.revert(wid, tid, row!.id, version),
+    onSuccess: (data) => {
+      if (isChangeRequestResponse(data)) {
+        message.success('已提交修改申请，处理后生效')
+        queryClient.invalidateQueries({ queryKey: ['pending-changes', `${wid}/${tid}`] })
+      } else {
+        message.success('已恢复到该版本之前的值')
+      }
+      queryClient.invalidateQueries({ queryKey: ['table-records', `${wid}/${tid}`] })
+      queryClient.invalidateQueries({ queryKey: ['row-audit', wid, tid, row?.id] })
+      queryClient.invalidateQueries({ queryKey: ['row-history', wid, tid, row?.id] })
+    },
+    onError: (err: Error) => message.error(err.message || '恢复失败'),
+  })
   const { data: references = [] } = useRowReferences(wid, tid, row?.id, open && !!row)
 
   /** 自动编号预览 —— 新建模式下只读展示「即将生成的编号」（与网格新增行同源） */
@@ -276,6 +320,50 @@ export default function RowDetailDrawer({ open, row, fields: fieldsProp, wid, ti
                 ))}
               </div>
             </>
+          )}
+
+          {/* 字段级变更历史（需求 0144）：可逐版本恢复 */}
+          <hr style={{ border: 'none', borderTop: '1px solid #f1f5f9', margin: '16px 0' }} />
+          <Title level={5}><HistoryOutlined /> 字段变更历史</Title>
+          {revisions.length === 0 ? (
+            <Text type="secondary" italic>暂无字段级历史</Text>
+          ) : (
+            <div data-testid="row-history">
+              <Timeline
+                items={revisions.map((rev) => ({
+                  color: rev.op === 'trash' ? 'red' : rev.op === 'create' ? 'green' : 'blue',
+                  content: (
+                    <div>
+                      <Space size={6} wrap>
+                        <Tag>{revisionOpLabel(rev.op)}</Tag>
+                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
+                          v{rev.version} · {rev.actor_name || '系统'} · {rev.created_at || ''}
+                        </Text>
+                        {rev.version > 1 && !readOnly && (
+                          <Popconfirm
+                            title="把该字段恢复到这个版本之前的值？（生成新版本，不改历史）"
+                            okText="恢复"
+                            cancelText="取消"
+                            onConfirm={() => revertMutation.mutate(rev.version)}
+                          >
+                            <Button size="small" type="link" data-testid={`row-history-revert-${rev.version}`}>
+                              恢复到此版本前
+                            </Button>
+                          </Popconfirm>
+                        )}
+                      </Space>
+                      <div style={{ marginTop: 2 }}>
+                        {diffSummary(rev.diff).map(line => (
+                          <div key={line} style={{ fontSize: 'var(--cn-text-xs)', color: 'var(--cn-text-secondary)' }}>
+                            {line}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ),
+                }))}
+              />
+            </div>
           )}
 
           {/* 操作历史 */}

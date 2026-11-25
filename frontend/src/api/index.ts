@@ -27,8 +27,16 @@ export type {
   ChartTemplatesPayload,
 } from './charts'
 export { tableApi, tableGroupApi, fieldApi, auditApi, permissionApi, tableMembersApi, rowPermissionApi } from './tables'
+export type { DdlImpact } from './tables'
 export { recordApi } from './records'
-export type { BulkReplacePayload, BulkReplaceResult } from './records'
+export type {
+  AggregateMetricPayload,
+  AggregatePayload,
+  AggregateResult,
+  BulkReplacePayload,
+  BulkReplaceResult,
+  RowRevision,
+} from './records'
 export { viewApi } from './views'
 export { importApi, exportApi, fileApi } from './importExport'
 export { issuesApi } from './issues'
