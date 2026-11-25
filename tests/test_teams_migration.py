@@ -179,6 +179,8 @@ class TestVisibilityNormalization:
 
 
 LINKS_REVISION = "a9b8c7d6e5f4"
+TEAM_ACCESS_REVISION = "b8c7d6e5f4a3"
+TEAM_ACCESS_TABLE = "workspaces_teamaccess"
 LINK_TABLE = "workspaces_workspacelink"
 
 
@@ -217,3 +219,63 @@ class TestWorkspaceLinksMigration:
         _downgrade(url, VISIBILITY_REVISION)
         assert LINK_TABLE not in _tables(db_path)
         assert "team_id" in _columns(db_path, WORKSPACE)  # 只回滚链接表
+
+
+class TestTeamAccessMigration:
+    """ADR 0154 B′/P3.1：团队数据授权表 + 链接受众列（存量零迁移）。"""
+
+    def test_upgrade_creates_table_and_link_columns(self, tmp_path: Path):
+        db_path = tmp_path / "team_access.db"
+        _upgrade(f"sqlite:///{db_path}", TEAM_ACCESS_REVISION)
+        assert TEAM_ACCESS_TABLE in _tables(db_path)
+        cols = _columns(db_path, TEAM_ACCESS_TABLE)
+        assert {"workspace_id", "team_id", "role", "expires_at"} <= cols
+        link_cols = _columns(db_path, LINK_TABLE)
+        assert {"audience", "granted_team_id"} <= link_cols
+
+    def test_existing_links_default_to_members_audience(self, tmp_path: Path):
+        db_path = tmp_path / "team_access_links.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, LINKS_REVISION)
+        conn = sqlite3.connect(str(db_path))
+        try:
+            conn.execute(
+                f"INSERT INTO {WORKSPACE} (name, description, visibility, tags, allow_edit, modules, created_at, updated_at) "  # nosec B608
+                "VALUES ('A', '', 'member', '[]', 1, '[\"tables\"]', datetime('now'), datetime('now'))"
+            )
+            conn.execute(
+                f"INSERT INTO {WORKSPACE} (name, description, visibility, tags, allow_edit, modules, created_at, updated_at) "  # nosec B608
+                "VALUES ('B', '', 'member', '[]', 1, '[\"tables\"]', datetime('now'), datetime('now'))"
+            )
+            conn.execute(
+                f"INSERT INTO {LINK_TABLE} (workspace_id, source_workspace_id, target_type, target_table_id, alias, status, ttl_days, granted_member_ids, created_member_ids, note, created_at, updated_at) "  # nosec B608
+                "VALUES (1, 2, 'table', 1, 'legacy', 'ACTIVE', 30, '[]', '[]', '', datetime('now'), datetime('now'))"
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        _upgrade(url, TEAM_ACCESS_REVISION)
+        conn = sqlite3.connect(str(db_path))
+        try:
+            row = conn.execute(f"SELECT audience, granted_team_id FROM {LINK_TABLE}").fetchone()  # nosec B608
+        finally:
+            conn.close()
+        assert row == ("members", None)
+
+    def test_upgrade_is_idempotent(self, tmp_path: Path):
+        db_path = tmp_path / "team_access_idem.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, TEAM_ACCESS_REVISION)
+        _upgrade(url, TEAM_ACCESS_REVISION)
+        assert TEAM_ACCESS_TABLE in _tables(db_path)
+
+    def test_downgrade_removes_table_and_columns(self, tmp_path: Path):
+        db_path = tmp_path / "team_access_down.db"
+        url = f"sqlite:///{db_path}"
+        _upgrade(url, TEAM_ACCESS_REVISION)
+        _downgrade(url, LINKS_REVISION)
+        assert TEAM_ACCESS_TABLE not in _tables(db_path)
+        link_cols = _columns(db_path, LINK_TABLE)
+        assert "audience" not in link_cols and "granted_team_id" not in link_cols
+        assert LINK_TABLE in _tables(db_path)

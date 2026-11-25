@@ -78,6 +78,7 @@
 | H54 | 链接只读：只暴露 `GET /{wid}/links/{id}/fields`、`/rows`、`/export`，禁止为链接挂任何写路径（写方法必须 404/405） | `make test` | ADR 0154 L2 |
 | H55 | 链接到期即失效：`expires_at` 过期后所有链接读路径返回 404，与成员行是否已被 `cndb link sweep` 回收无关 | `make test` | ADR 0154 L3 |
 | H56 | 链接授权可回收不误伤：撤回 / 过期只删除 `created_member_ids` 中**仍为 viewer** 的成员行，原有成员与被提升者一律保留 | `make test` | ADR 0154 L9 |
+| H57 | 团队数据授权只读且不产管理面：`workspace_team_access` 只产 `data_role`（MVP 固定 `viewer`），不得产出任何管理面能力位、不得放宽行级 / 字段规则、不得放宽 `visibility=private`；扩到 `editor` 或管理面须另立评审 | `make test` | ADR 0154 D11 |
 
 ## 发布与部署
 

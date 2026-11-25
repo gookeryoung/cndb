@@ -558,6 +558,25 @@ class TestBatchMembers:
         assert env.consumer_member.username in body["skipped"]
         assert {e["username"] for e in body["errors"]} == {"no_such_user", "link_src_owner"}
 
+    def test_batch_dedupes_and_skips_blank(self, client, db, env):
+        auth = _login(client, env.consumer_owner.username)
+        newbie = _make_user(db, "link_dedupe_newbie")
+        r = client.post(
+            f"{WS}/{env.consumer.id}/members/batch",
+            json={
+                "items": [
+                    {"username": newbie.username, "role": "viewer"},
+                    {"username": newbie.username, "role": "viewer"},  # 重复 → skipped
+                    {"username": "   "},  # 空白 → 忽略
+                ]
+            },
+            headers=auth,
+        )
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["added"] == [newbie.username]
+        assert newbie.username in body["skipped"]
+
     def test_batch_requires_manage_members(self, client, db, env):
         r = client.post(
             f"{WS}/{env.consumer.id}/members/batch",

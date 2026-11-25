@@ -11,6 +11,7 @@ from cndb.plugins.workspaces.routers.links import router as links_router
 from cndb.plugins.workspaces.routers.roles import router as roles_router
 from cndb.plugins.workspaces.routers.search import global_router as search_global_router
 from cndb.plugins.workspaces.routers.search import router as search_router
+from cndb.plugins.workspaces.routers.team_access import router as team_access_router
 from cndb.plugins.workspaces.routers.teams import router as teams_router
 from cndb.plugins.workspaces.routers.workspaces import router as workspaces_router
 
@@ -35,6 +36,7 @@ class WorkspacesPlugin(PluginBase):
         router.include_router(workspaces_router)
         router.include_router(teams_router)
         router.include_router(links_router)
+        router.include_router(team_access_router)
         router.include_router(roles_router)
         router.include_router(search_router)
         router.include_router(search_global_router)

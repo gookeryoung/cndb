@@ -57,6 +57,7 @@ export type WorkspaceCapability =
   | 'RESTORE'
   | 'DELETE_WORKSPACE'
   | 'MANAGE_LINKS'
+  | 'MANAGE_ACCESS'
 
 /** 工作区能力位载荷（ADR 0153 D5：前端门控唯一数据源，对齐后端 WorkspaceCapabilitiesResponse） */
 export interface WorkspaceCapabilities {

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -327,6 +327,34 @@ class WorkspaceLinkCreate(BaseModel):
     alias: str | None = Field(default=None, max_length=64)
     ttl_days: int = Field(default=LINK_DEFAULT_TTL_DAYS, ge=1, le=LINK_MAX_TTL_DAYS)
     note: str = Field(default="", max_length=200)
+    #: 受众：members = 批量只读成员（A 期默认）/ team = 团队数据授权（B′）
+    audience: Literal["members", "team"] = "members"
+    #: audience=team 时必填：被授团队
+    team_id: int | None = None
+
+
+class TeamAccessCreate(BaseModel):
+    """授「团队 = 只读」（ADR 0154 B′）：只允许 viewer，有效期 1–365 天。"""
+
+    team_id: int
+    ttl_days: int = Field(default=LINK_DEFAULT_TTL_DAYS, ge=1, le=LINK_MAX_TTL_DAYS)
+    note: str = Field(default="", max_length=200)
+
+
+class TeamAccessResponse(BaseModel):
+    """团队数据授权响应."""
+
+    id: int
+    workspace_id: int
+    team_id: int
+    team_name: str = ""
+    role: str
+    expires_at: datetime | None = None
+    active: bool = True
+    note: str = ""
+    granted_by_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class WorkspaceLinkApprove(BaseModel):
@@ -354,6 +382,10 @@ class WorkspaceLinkResponse(BaseModel):
     approved_by_name: str | None = None
     approved_at: datetime | None = None
     note: str = ""
+    #: 受众与（B′ 时）被授团队
+    audience: str = "members"
+    granted_team_id: int | None = None
+    granted_team_name: str | None = None
     #: 当前用户能否读到源表数据（A 期 = 是否在源工作区有 READ）
     readable: bool = False
     created_at: datetime
@@ -535,6 +567,8 @@ __all__ = [
     "RoleCreate",
     "RoleResponse",
     "RoleUpdate",
+    "TeamAccessCreate",
+    "TeamAccessResponse",
     "TeamCreate",
     "TeamMemberAddRequest",
     "TeamMemberResponse",

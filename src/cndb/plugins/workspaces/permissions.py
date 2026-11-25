@@ -8,6 +8,7 @@ ADR 0153 D5 / I6：工作区级判定统一收敛到 :func:`resolve_capabilities
 
 from __future__ import annotations
 
+import datetime as dt
 import enum
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NoReturn
@@ -27,6 +28,7 @@ from cndb.plugins.workspaces.models import (
     Workspace,
     WorkspaceMember,
     WorkspaceRole,
+    WorkspaceTeamAccess,
     WorkspaceVisibility,
 )
 
@@ -45,6 +47,7 @@ class WorkspaceCapability(enum.StrEnum):
     - ``EDIT_SETTINGS`` / ``MANAGE_MEMBERS`` / ``RESTORE``：管理面，所有者或团队管理员
     - ``DELETE_WORKSPACE``：仅工作区所有者（团队管理员不可删，ADR 0153 D9）
     - ``MANAGE_LINKS``：仅工作区所有者（批准 / 拒绝 / 撤回跨工作区链接，ADR 0154 C2）
+    - ``MANAGE_ACCESS``：仅工作区所有者（授 / 撤团队数据授权，ADR 0154 B′ / D11）
     """
 
     READ = "READ"
@@ -55,6 +58,7 @@ class WorkspaceCapability(enum.StrEnum):
     RESTORE = "RESTORE"
     DELETE_WORKSPACE = "DELETE_WORKSPACE"
     MANAGE_LINKS = "MANAGE_LINKS"
+    MANAGE_ACCESS = "MANAGE_ACCESS"
 
 
 # 内置三档角色的能力位集合（唯一来源；自定义角色在 P2 复用同一映射口径）
@@ -126,6 +130,48 @@ def _team_role(user: User | None, team: Team | None, db: Session) -> TeamRole | 
     return member.role if member else None
 
 
+def active_team_access(
+    db: Session,
+    workspace: Workspace,
+    user: User | None,
+    *,
+    now: dt.datetime | None = None,
+) -> WorkspaceTeamAccess | None:
+    """读取该工作区对**用户所在团队**的生效中数据授权（ADR 0154 B′）.
+
+    与「工作区所属团队」无关：源工作区可以把只读授给任意团队（含未挂团队的源工作区），
+    因此按用户的 ``TeamMember`` 集合匹配。过期即不生效（惰性判定，无需清扫）；
+    多条命中取角色最高的一条（当前只有 viewer，保留扩展口）。
+    """
+    if user is None:  # pragma: no cover - user 由 Depends 保证非 None
+        return None
+    team_ids = [int(row[0]) for row in db.query(TeamMember.team_id).filter(TeamMember.user_id == user.id).all()]
+    if not team_ids:
+        return None
+    rows = (
+        db.query(WorkspaceTeamAccess)
+        .filter(
+            WorkspaceTeamAccess.workspace_id == workspace.id,
+            WorkspaceTeamAccess.team_id.in_(team_ids),
+        )
+        .all()
+    )
+    moment = now or dt.datetime.now(dt.UTC)
+    best: WorkspaceTeamAccess | None = None
+    for row in rows:
+        expires_at = row.expires_at
+        if expires_at is not None:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=dt.UTC)
+            if moment >= expires_at:
+                continue
+        if row.role not in {WorkspaceRole.VIEWER.value, WorkspaceRole.EDITOR.value}:
+            continue
+        if best is None or ROLE_RANK[WorkspaceRole(row.role)] > ROLE_RANK[WorkspaceRole(best.role)]:
+            best = row
+    return best
+
+
 def team_policy(team: Team | None) -> dict[str, object]:
     """团队策略（缺键按 ``TEAM_POLICY_DEFAULTS`` 补齐；未知键原样保留）."""
     merged: dict[str, object] = dict(TEAM_POLICY_DEFAULTS)
@@ -164,6 +210,15 @@ def resolve_capabilities(user: User | None, workspace: Workspace, db: Session) -
         if workspace.visibility is WorkspaceVisibility.PRIVATE and role is not WorkspaceRole.OWNER:
             data_role = None
             sources["data"] = f"workspace_private:{role.value}"
+    elif (grant := active_team_access(db, workspace, user)) is not None:
+        # B′（ADR 0154 D11）：源 owner 签署的团队数据授权 → 只产 data_role，不产管理面。
+        # 与 team_role（工作区所属团队）无关：授权可以给任意团队。
+        data_role = WorkspaceRole(grant.role)
+        sources["data"] = f"team_grant:{grant.role}"
+        if workspace.visibility is WorkspaceVisibility.PRIVATE and data_role is not WorkspaceRole.OWNER:
+            # 私有工作区仍然只对所有者开放；team_grant 不放宽 D6
+            data_role = None
+            sources["data"] = f"workspace_private:team_grant:{grant.role}"
     elif team_role is not None:
         # D6：公开工作区对团队成员开放只读（优先于策略默认）
         if workspace.visibility is WorkspaceVisibility.PUBLIC:
@@ -291,6 +346,7 @@ __all__ = [
     "TEAM_MANAGE_CAPABILITIES",
     "Capabilities",
     "WorkspaceCapability",
+    "active_team_access",
     "get_member_role",
     "get_workspace_owner_display_name",
     "has_role",

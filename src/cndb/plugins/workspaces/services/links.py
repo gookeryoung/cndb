@@ -24,6 +24,7 @@ from cndb.plugins.workspaces.models import (
     WorkspaceLinkStatus,
     WorkspaceMember,
     WorkspaceRole,
+    WorkspaceTeamAccess,
 )
 
 if TYPE_CHECKING:
@@ -158,6 +159,88 @@ def revoke_created_members(db: Session, link: WorkspaceLink) -> int:
     return len(rows)
 
 
+#: 由链接创建的团队授权用 note 打标（撤回时只删自己创建的那条，不影响独立授权）
+TEAM_ACCESS_LINK_NOTE_PREFIX = "link:"
+
+
+def link_note_marker(link_id: int) -> str:
+    """团队授权的「由某条链接创建」标记（撤回 / 到期只删带此标记的行）."""
+    return f"{TEAM_ACCESS_LINK_NOTE_PREFIX}{link_id}"
+
+
+def grant_team_access(
+    db: Session,
+    *,
+    workspace_id: int,
+    team_id: int,
+    expires_at: dt.datetime | None,
+    granted_by_id: int | None,
+    note: str = "",
+) -> WorkspaceTeamAccess:
+    """授 / 改「团队 = viewer」（同 (工作区, 团队) 覆盖，不重复插行）."""
+    row = (
+        db.query(WorkspaceTeamAccess)
+        .filter(WorkspaceTeamAccess.workspace_id == workspace_id, WorkspaceTeamAccess.team_id == team_id)
+        .first()
+    )
+    if row is None:
+        row = WorkspaceTeamAccess(
+            workspace_id=workspace_id,
+            team_id=team_id,
+            role="viewer",
+            expires_at=expires_at,
+            granted_by_id=granted_by_id,
+            note=note,
+        )
+        db.add(row)
+    else:
+        row.expires_at = expires_at
+        row.granted_by_id = granted_by_id
+        row.note = note
+    return row
+
+
+def revoke_link_team_access(db: Session, link: WorkspaceLink) -> int:
+    """撤回链接时回收**它创建**的团队授权（按 note 标记，不误删独立授权）."""
+    if link.granted_team_id is None:
+        return 0
+    row = (
+        db.query(WorkspaceTeamAccess)
+        .filter(
+            WorkspaceTeamAccess.workspace_id == link.source_workspace_id,
+            WorkspaceTeamAccess.team_id == link.granted_team_id,
+            WorkspaceTeamAccess.note == link_note_marker(link.id),
+        )
+        .first()
+    )
+    if row is None:
+        return 0
+    db.delete(row)
+    return 1
+
+
+def team_access_payload(db: Session, row: WorkspaceTeamAccess) -> dict[str, Any]:
+    """团队授权响应载荷（带团队名与生效状态）."""
+    from cndb.plugins.workspaces.models import Team
+
+    team = db.get(Team, row.team_id)
+    expires_at = _as_utc(row.expires_at)
+    active = expires_at is None or expires_at > _now()
+    return {
+        "id": row.id,
+        "workspace_id": row.workspace_id,
+        "team_id": row.team_id,
+        "team_name": team.name if team is not None else "",
+        "role": row.role,
+        "expires_at": expires_at,
+        "active": active,
+        "note": row.note or "",
+        "granted_by_id": row.granted_by_id,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
 def link_payload(
     db: Session,
     link: WorkspaceLink,
@@ -167,10 +250,12 @@ def link_payload(
 ) -> dict[str, Any]:
     """组装链接响应载荷（可解释性 L8）."""
     from cndb.plugins.tables.models import DataTable
+    from cndb.plugins.workspaces.models import Team
     from cndb.plugins.workspaces.permissions import WorkspaceCapability, resolve_capabilities
 
     source = db.get(Workspace, link.source_workspace_id)
     table = db.get(DataTable, link.target_table_id)
+    granted_team = db.get(Team, link.granted_team_id) if link.granted_team_id else None
     approver = db.get(type(user), link.approved_by_id) if link.approved_by_id else None
     source_caps = resolve_capabilities(user, source, db) if source is not None else None
     return {
@@ -184,6 +269,9 @@ def link_payload(
         "target_view_id": link.target_view_id,
         "alias": link.alias,
         "status": link.status.value,
+        "audience": link.audience or "members",
+        "granted_team_id": link.granted_team_id,
+        "granted_team_name": granted_team.name if granted_team is not None else None,
         "ttl_days": link.ttl_days,
         "expires_at": _as_utc(link.expires_at),
         "created_by_id": link.created_by_id,
@@ -415,18 +503,23 @@ __all__ = [
     "LINK_TARGET_TABLE",
     "LINK_TARGET_VALUES",
     "LINK_TARGET_VIEW",
+    "TEAM_ACCESS_LINK_NOTE_PREFIX",
     "ResolvedLink",
     "expand_audience",
+    "grant_team_access",
     "grant_viewer_members",
     "is_expired",
     "link_export_csv",
     "link_fields",
     "link_is_readable",
+    "link_note_marker",
     "link_payload",
     "link_query",
     "link_rows",
     "resolve_link",
     "revoke_created_members",
+    "revoke_link_team_access",
     "sweep_expired_links",
+    "team_access_payload",
     "validate_target",
 ]

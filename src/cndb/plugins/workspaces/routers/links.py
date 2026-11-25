@@ -23,10 +23,13 @@ from cndb.core.database import get_db
 from cndb.core.events import record_event
 from cndb.plugins.accounts.models import User
 from cndb.plugins.workspaces.models import (
+    LINK_AUDIENCE_TEAM,
     LINK_DEFAULT_TTL_DAYS,
     LINK_MAX_TTL_DAYS,
     LINK_TARGET_TABLE,
     LINK_TARGET_VIEW,
+    Team,
+    TeamMember,
     WorkspaceLink,
     WorkspaceLinkStatus,
 )
@@ -38,14 +41,17 @@ from cndb.plugins.workspaces.schemas import (
     WorkspaceLinkResponse,
 )
 from cndb.plugins.workspaces.services.links import (
+    grant_team_access,
     grant_viewer_members,
     is_expired,
     link_export_csv,
     link_fields,
+    link_note_marker,
     link_payload,
     link_rows,
     resolve_link,
     revoke_created_members,
+    revoke_link_team_access,
     validate_target,
 )
 
@@ -156,6 +162,22 @@ def create_link(
     if duplicate is not None and not is_expired(duplicate):
         raise HTTPException(status_code=400, detail=_ACTIVE_DUPLICATE_DETAIL)
 
+    granted_team: Team | None = None
+    if payload.audience == LINK_AUDIENCE_TEAM:
+        if payload.team_id is None:
+            raise HTTPException(status_code=400, detail="授给团队时必须指定 team_id")
+        granted_team = db.get(Team, payload.team_id)
+        if granted_team is None:
+            raise HTTPException(status_code=404, detail="团队不存在")
+        # 只能把你所在团队列为受众（避免替别人团队申请数据权）
+        if (
+            db.query(TeamMember.id)
+            .filter(TeamMember.team_id == granted_team.id, TeamMember.user_id == current_user.id)
+            .first()
+            is None
+        ):
+            raise HTTPException(status_code=403, detail="只能把链接授给你所在的团队")
+
     alias = (payload.alias or "").strip() or _default_alias(db, workspace_id, table.name)
     if (
         db.query(WorkspaceLink.id)
@@ -172,6 +194,8 @@ def create_link(
         target_table_id=table.id,
         target_view_id=view.id if view is not None else None,
         alias=alias,
+        audience=payload.audience,
+        granted_team_id=granted_team.id if granted_team is not None else None,
         status=WorkspaceLinkStatus.PENDING,
         ttl_days=payload.ttl_days,
         granted_member_ids=[],
@@ -340,8 +364,24 @@ def approve_link(
     if not 1 <= ttl_days <= LINK_MAX_TTL_DAYS:
         raise HTTPException(status_code=400, detail=f"有效期需在 1–{LINK_MAX_TTL_DAYS} 天之间")
 
-    granted, created = grant_viewer_members(db, link)
     now = dt.datetime.now(dt.UTC)
+    if link.audience == LINK_AUDIENCE_TEAM and link.granted_team_id is not None:
+        # B′：只写一条团队授权行（不产管理面、不改行级，D11）
+        team = db.get(Team, link.granted_team_id)
+        if team is None:
+            raise HTTPException(status_code=400, detail="被授团队已不存在")
+        grant_team_access(
+            db,
+            workspace_id=workspace_id,
+            team_id=team.id,
+            expires_at=now + dt.timedelta(days=ttl_days),
+            granted_by_id=current_user.id,
+            note=link_note_marker(link.id),
+        )
+        granted: list[int] = []
+        created: list[int] = []
+    else:
+        granted, created = grant_viewer_members(db, link)
     link.granted_member_ids = granted
     link.created_member_ids = created
     link.ttl_days = ttl_days
@@ -352,7 +392,11 @@ def approve_link(
     _event(
         db,
         "workspace.link_approve",
-        summary=f"批准只读链接「{link.alias}」：授予 {len(granted)} 人只读（新增 {len(created)} 人）",
+        summary=(
+            f"批准只读链接「{link.alias}」：授予团队「{link.granted_team_id}」只读"
+            if link.audience == LINK_AUDIENCE_TEAM
+            else f"批准只读链接「{link.alias}」：授予 {len(granted)} 人只读（新增 {len(created)} 人）"
+        ),
         workspace_id=workspace_id,
         user=current_user,
         detail={
@@ -424,6 +468,7 @@ def revoke_link(
         require_capability(WorkspaceCapability.MANAGE_LINKS, db, ws, current_user, requirement="仅所有者可撤回链接")
 
     removed = revoke_created_members(db, link)
+    removed += revoke_link_team_access(db, link)
     _event(
         db,
         "workspace.link_revoke",

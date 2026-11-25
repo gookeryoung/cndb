@@ -140,6 +140,14 @@ LINK_MAX_TTL_DAYS = 365
 #: 单条链接一次最多授予的成员数（超出要求改用团队授权，ADR 0154 D12）
 LINK_MAX_GRANTEES = 200
 
+#: 链接受众类型（ADR 0154 A / B′）：members = 批量只读成员；team = 团队数据授权
+LINK_AUDIENCE_MEMBERS = "members"
+LINK_AUDIENCE_TEAM = "team"
+LINK_AUDIENCE_VALUES: tuple[str, ...] = (LINK_AUDIENCE_MEMBERS, LINK_AUDIENCE_TEAM)
+
+#: 团队数据授权只允许 viewer（ADR 0154 D11：不允许跨工作区写）
+TEAM_ACCESS_ROLE = "viewer"
+
 
 class TeamRole(enum.StrEnum):
     """团队成员角色（ADR 0153 D4）：只决定管理面，不派生任何数据面权限.
@@ -288,6 +296,13 @@ class WorkspaceLink(TimestampMixin, Base):
         default=WorkspaceLinkStatus.PENDING,
         index=True,
     )
+    #: 受众类型：members（批量只读成员）/ team（团队数据授权，B′）
+    audience: Mapped[str] = mapped_column(String(16), nullable=False, default=LINK_AUDIENCE_MEMBERS)
+    #: audience=team 时的被授团队
+    granted_team_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workspaces_team.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     #: 请求的有效期（天）；批准时可覆盖
     ttl_days: Mapped[int] = mapped_column(Integer, nullable=False, default=LINK_DEFAULT_TTL_DAYS)
     #: 本次授予的全部受众（审计依据）
@@ -308,6 +323,43 @@ class WorkspaceLink(TimestampMixin, Base):
 
     def __repr__(self) -> str:  # pragma: no cover - 调试辅助
         return f"WorkspaceLink(id={self.id}, alias={self.alias!r}, status={self.status.value})"
+
+
+class WorkspaceTeamAccess(TimestampMixin, Base):
+    """团队数据授权（ADR 0154 B′ / D11）：源工作区把「某团队 = 只读」授出去.
+
+    只产 ``data_role=viewer``，**不产任何管理面能力位**，也不改变行级 / 字段规则；
+    与团队角色（`TeamMember`）互相独立：团队角色不放行数据（H49），放行数据的是这里。
+    """
+
+    __tablename__ = "workspaces_teamaccess"
+    __table_args__ = (
+        UniqueConstraint("workspace_id", "team_id", name="uniq_workspace_team_access"),
+        {"extend_existing": True},
+    )
+
+    workspace_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_workspace.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    team_id: Mapped[int] = mapped_column(
+        ForeignKey("workspaces_team.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    #: 固定 viewer（D11：不允许 editor，避免「只读汇总」变成跨工作区写）
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default=TEAM_ACCESS_ROLE)
+    #: 到期时间；NULL = 长期（仍可随时撤销）
+    expires_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    granted_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts_user.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    note: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+
+    def __repr__(self) -> str:  # pragma: no cover - 调试辅助
+        return f"WorkspaceTeamAccess(workspace_id={self.workspace_id}, team_id={self.team_id})"
 
 
 class Workspace(TimestampMixin, Base):
@@ -489,6 +541,9 @@ __all__ = [
     "BUILTIN_ROLE_CODES",
     "DEFAULT_STORAGE_QUOTA_BYTES",
     "DEFAULT_WORKSPACE_MODULES",
+    "LINK_AUDIENCE_MEMBERS",
+    "LINK_AUDIENCE_TEAM",
+    "LINK_AUDIENCE_VALUES",
     "LINK_DEFAULT_TTL_DAYS",
     "LINK_MAX_GRANTEES",
     "LINK_MAX_TTL_DAYS",
@@ -498,6 +553,7 @@ __all__ = [
     "MODULE_LABELS",
     "POLICY_DEFAULT_ROLE_VALUES",
     "ROLE_RANK",
+    "TEAM_ACCESS_ROLE",
     "TEAM_POLICY_DEFAULTS",
     "TEAM_ROLE_LABELS",
     "TEAM_ROLE_RANK",
@@ -514,6 +570,7 @@ __all__ = [
     "WorkspaceModule",
     "WorkspaceRole",
     "WorkspaceStorageSnapshot",
+    "WorkspaceTeamAccess",
     "WorkspaceVisibility",
     "default_workspace_modules",
 ]
