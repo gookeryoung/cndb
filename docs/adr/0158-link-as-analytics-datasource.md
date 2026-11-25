@@ -183,15 +183,15 @@ MVP 选**内存聚合**：链接数据源先按模板筛选取行（受 `ANALYTI
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 未开始 | `src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/services/compute.py` | `tests/test_analytics_link_source.py` | — |
+| P0 | 已落地 | `src/cndb/plugins/analytics/routers/run.py`、`src/cndb/plugins/analytics/routers/datasources.py`、`src/cndb/plugins/analytics/schemas.py`、`src/cndb/plugins/analytics/plugin.py` | `tests/test_analytics_link_source.py` | 未提交 |
 | P1 | 未开始 | `src/cndb/plugins/analytics/services/templates.py`、`src/cndb/plugins/analytics/services/formula.py` | `tests/test_analytics_link_source_api.py` | — |
 | P2 | 未开始 | `frontend/src/pages/analytics/AnalyticsPage.tsx` | `frontend/src/pages/analytics/AnalyticsPage.test.tsx`、`frontend/tests/e2e/critical/analytics-link-source.spec.ts` | — |
 | P3 | 未开始 | 另立 ADR | — | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：方案（ADR `Proposed`，**未进入实现**，H5）
-- 已完成：需求卡片 0158（C1-C10）；ADR 决策记录 D1-D8、不变量 L1-L6、数据源形态与执行链路、测试与分期
-- 下一步：人工评审 D1（不新增授权面）/ D3（内存聚合）/ D5（模板不传权限）/ D7（单源）；通过后①把 L1/L2/L5 登记进 `CONSTRAINTS.md`；②开 P0
+- 当前阶段：P0 已落地（`datasources` 清单 + `compute` 链接数据源 + 隐藏字段拒绝 + 单源校验）；P1 / P2 未开始
+- 已完成：需求卡片 0158（C1-C10）；ADR 决策记录 D1-D8、不变量 L1-L6；P0（数据源清单、`compute` 支持 `source.type=link`、每次执行 `resolve_link` 的 404/403、链接视图筛选并入、隐藏字段两处拒绝、`source`+`table_id` 同传 422、存量 `table_id` 行为不变）
+- 下一步：①把 L1 / L2 / L5 登记进 `CONSTRAINTS.md`（H27，需人工确认）；②开 P1（模板保存 `source`、字段白名单与 `recommendations` 适配、缓存键含 `link_id`）
 - 已知坑：① 链接分支必须走 `resolve_link` 统一出口，**不要**在 analytics 里直接 `db.get(WorkspaceLink)`（会绕开 404/403 与到期判定）；② 缓存键必须含 `user_id`，否则共享模板会把甲的权限结果喂给乙；③ 隐藏字段要在**保存期**就拒绝（否则模板存下来必然执行失败）；④ `ANALYTICS_MAX_SCAN_ROWS` 对链接数据源同样生效，超限文案要引导「用分析范围收窄」而不是「换表」
-- 最近一次全绿：`make check-docs` @ `99f1dc18`（2026-11-25）
+- 最近一次全绿：`make check-fast` + `make cov`（7591 passed，95.03%）+ `tests/test_analytics_link_source.py` 14 passed @ 未提交（2026-11-25）

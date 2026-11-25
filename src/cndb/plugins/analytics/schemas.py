@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # 图表/分组汇总共用的聚合方式白名单（服务层校验，保持 400 语义）
 AGG_KINDS: tuple[str, ...] = ("sum", "avg", "count", "min", "max")
@@ -121,10 +122,43 @@ class ValidateResponse(BaseModel):
     table_fields: list[str] = Field(default_factory=list)
 
 
+class AnalyticsSource(BaseModel):
+    """分析数据源（ADR 0158）：本工作区表或工作区链接（只读引用）."""
+
+    type: Literal["table", "link"] = "table"
+    #: type=table 时的表 id（与 table_id 兼容字段二选一）
+    id: int | None = None
+    #: type=link 时的链接 id
+    link_id: int | None = None
+
+
+class AnalyticsDatasourceItem(BaseModel):
+    """可选数据源条目（数据源下拉用）."""
+
+    type: Literal["table", "link"]
+    id: int
+    name: str
+    #: type=link 时携带来源工作区与到期（本表为 None）
+    source_workspace_name: str | None = None
+    expires_at: _dt.datetime | None = None
+    #: 当前用户此刻能否取数（链接 = 源工作区 READ 且生效中；本表恒 True）
+    readable: bool = True
+    link_id: int | None = None
+
+
+class AnalyticsDatasourcesResponse(BaseModel):
+    """可选数据源清单：本工作区表 + 我可见的工作区链接."""
+
+    tables: list[AnalyticsDatasourceItem] = Field(default_factory=list)
+    links: list[AnalyticsDatasourceItem] = Field(default_factory=list)
+
+
 class ComputeRequest(BaseModel):
     """求值请求：按公式计算派生指标列，可选分组汇总."""
 
-    table_id: int
+    #: 数据源（ADR 0158）：给 source 时以其为准；否则回退兼容字段 table_id
+    source: AnalyticsSource | None = None
+    table_id: int | None = None
     formulas: list[FormulaSpec] = Field(default_factory=list)
     fields: list[str] = Field(default_factory=list, description="需要返回的原始字段；空 = 全部")
     limit: int = Field(default=1000, ge=1, le=10000)
@@ -137,6 +171,22 @@ class ComputeRequest(BaseModel):
         ),
     )
     filter_logic: str = Field(default="AND", pattern="^(?i)(and|or)$", description="多条件组合方式")
+
+    @model_validator(mode="after")
+    def _check_source(self) -> ComputeRequest:
+        """数据源必须唯一（ADR 0158 C9）：要么 source，要么兼容字段 table_id."""
+        has_source = self.source is not None
+        has_table_id = self.table_id is not None
+        if has_source and has_table_id:
+            raise ValueError("只允许单一数据源：不要同时传 source 与 table_id")
+        if not has_source and not has_table_id:
+            raise ValueError("请指定数据源（source 或 table_id）")
+        if self.source is not None:
+            if self.source.type == "link" and self.source.link_id is None:
+                raise ValueError("source.type=link 时必须给 link_id")
+            if self.source.type == "table" and self.source.id is None and self.table_id is None:
+                raise ValueError("source.type=table 时必须给 id")
+        return self
 
 
 class ColumnStat(BaseModel):
@@ -262,6 +312,9 @@ class TemplateDuplicateRequest(BaseModel):
 
 __all__ = [
     "AGG_KINDS",
+    "AnalyticsDatasourceItem",
+    "AnalyticsDatasourcesResponse",
+    "AnalyticsSource",
     "ChartRecommendation",
     "ChartSpec",
     "ColumnStat",

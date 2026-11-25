@@ -40,6 +40,37 @@ def _table_for_read(workspace_id: int, table_id: int, user: User, db: Session) -
     return get_table_or_404(table_id, workspace_id, db, user=user, action=TableAction.READ)
 
 
+def _resolve_compute_source(
+    workspace_id: int,
+    payload: ComputeRequest,
+    user: User,
+    db: Session,
+) -> tuple[DataTable, list[dict[str, Any]] | None, str, set[str] | None]:
+    """解析求值数据源（ADR 0158 D1/D4）：返回 (表, 附加筛选, 逻辑, 允许字段集合).
+
+    - `source.type=table` / 兼容字段 `table_id`：现状不变（允许字段 = None，交由 compute 判定）；
+    - `source.type=link`：**每次**都过 `resolve_link`（失效 404 / 无读权 403），
+      并把链接视图筛选并入扫描范围；允许字段 = 链接可见字段（已裁剪隐藏字段）。
+    """
+    source = payload.source
+    if source is None or source.type == "table":
+        table_id = source.id if source is not None else payload.table_id
+        if table_id is None:  # pragma: no cover - schema 已校验
+            raise HTTPException(status_code=400, detail="请指定数据源")
+        return _table_for_read(workspace_id, table_id, user, db), None, payload.filter_logic.upper(), None
+
+    from cndb.plugins.workspaces.services.links import link_fields, link_query, resolve_link
+
+    if source.link_id is None:  # pragma: no cover - schema 已校验
+        raise HTTPException(status_code=400, detail="source.type=link 时必须给 link_id")
+    resolved = resolve_link(db, user, workspace_id=workspace_id, link_id=source.link_id)
+    view_filters, _view_sorts, view_logic = link_query(resolved)
+    extra_filters = list(view_filters or []) + list(payload.filters or [])
+    logic = payload.filter_logic.upper() if payload.filters else view_logic
+    allowed = {field["name"] for field in link_fields(db, user, resolved)}
+    return resolved.table, (extra_filters or None), logic, allowed
+
+
 @router.post("/validate", response_model=ValidateResponse)
 def validate_formulas(
     workspace_id: int,
@@ -90,8 +121,10 @@ def compute(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
-    """按公式计算派生指标列并返回描述统计."""
-    table = _table_for_read(workspace_id, payload.table_id, current_user, db)
+    """按公式计算派生指标列并返回描述统计（数据源可为本表或工作区链接，ADR 0158）."""
+    table, extra_filters, filter_logic, allowed_fields = _resolve_compute_source(
+        workspace_id, payload, current_user, db
+    )
     formulas = [
         {
             "key": s.key,
@@ -106,6 +139,23 @@ def compute(
     keys = [s["key"] for s in formulas]
     if len(set(keys)) != len(keys):
         raise HTTPException(status_code=400, detail="公式键重复")
+    if allowed_fields is not None:
+        # 链接数据源：只用可见字段（隐藏字段用于公式 / 返回字段一律 400，ADR 0158 C3）
+        referenced: set[str] = set(payload.fields or [])
+        for spec in payload.formulas:
+            try:
+                referenced |= set(referenced_fields(parse(spec.expr)))
+            except FormulaError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            for ctx in (spec.partition_by, spec.order_by):
+                if ctx:
+                    referenced.add(ctx)
+        unknown = sorted(f for f in referenced if f not in allowed_fields)
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"字段不可用于该链接（不存在或被隐藏）: {', '.join(unknown)}",
+            )
     try:
         return services.compute.compute(
             db,
@@ -115,8 +165,8 @@ def compute(
             fields=payload.fields,
             limit=payload.limit,
             summary=payload.summary,
-            filters=payload.filters,
-            filter_logic=payload.filter_logic.upper(),
+            filters=extra_filters if extra_filters is not None else payload.filters,
+            filter_logic=filter_logic,
         )
     except FormulaError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
