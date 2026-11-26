@@ -218,6 +218,13 @@ describe('HomeNav', () => {
     // 未收藏的工作区不进「已收藏」分区
     expect(screen.queryByTestId('home-nav-pinned-12')).toBeNull()
 
+    // 「我的工作区」分组平铺未收藏工作区（12），已收藏的（10/11）不重复出现
+    const wsRow = screen.getByTestId('home-nav-ws-12')
+    expect(wsRow).toHaveTextContent('未收藏区')
+    expect(wsRow.querySelector('.cn-home-nav-row-hint')).toHaveTextContent('个人')
+    expect(screen.queryByTestId('home-nav-ws-10')).toBeNull()
+    expect(screen.queryByTestId('home-nav-ws-11')).toBeNull()
+
     // 收藏图标与列表星标同色（琥珀），且尺寸钉在 Menu 图标档
     const star = pinned.closest('.ant-menu-item')?.querySelector('.cn-home-nav-star')
     expect(star).not.toBeNull()
@@ -234,6 +241,13 @@ describe('HomeNav', () => {
 
     expect(await screen.findByTestId('home-nav-all')).toBeVisible()
     expect(screen.queryByText('已收藏')).toBeNull()
+  })
+
+  it('点击「我的工作区」分组内的工作区行直达落地页（2026-11-26 新增）', async () => {
+    renderNav({}, '/teams/500')
+
+    await userEvent.click(await screen.findByTestId('home-nav-ws-10'))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/w/10/tables'))
   })
 
   it('有待办时在「全部工作区」右侧显示聚合徽标，并带分解提示（ADR 0160 P2）', async () => {

@@ -10,6 +10,9 @@
  *    不写团队就分不清归属）；
  *  - 全部工作区：主页锚点，带工作区计数与**待办徽标**（ADR 0160 P2：修改申请 / 问题 / 待审链接
  *    的聚合计数，只读、只有总数，不含 id / 标题；失败静默隐藏徽标，不阻断主页）。
+ *  - 我的工作区：分组内平铺**未收藏**的工作区行（已收藏的已在「已收藏」分区，不重复出现；
+ *    2026-11-26 用户确认与其它分区对齐——分组不只放一个锚点），行首图标按首个模块区分，
+ *    右侧标注所属团队（个人工作区标注「个人」）；「全部工作区」保留为分组尾部的锚点。
  *  - 我的团队：用户所在团队列表，点击进入 `/teams/:tid`（2026-11-26 用户确认新增侧栏入口；
  *    此前口径是「团队入口只由顶栏 `ScopeSwitcher` 承担」，现修订为顶栏切换器与 rail 并存，
  *    切换器仍提供跨团队分组视图，rail 提供常驻直达入口）。团队接口失败时静默隐藏该分组。
@@ -32,11 +35,12 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { Menu } from 'antd'
 import type { MenuProps } from 'antd'
-import { ClockCircleOutlined, ApartmentOutlined, FolderOpenOutlined, StarFilled, EyeOutlined } from '@ant-design/icons'
+import { ClockCircleOutlined, ApartmentOutlined, FolderOpenOutlined, StarFilled, EyeOutlined, DatabaseOutlined, FileTextOutlined, ToolOutlined } from '@ant-design/icons'
 import { homeApi, teamApi, workspaceApi } from '@/api'
 import { useFavoriteViews } from '@/hooks/useFavoriteViews'
 import type { Team, Workspace } from '@/api'
 import { normalizeModules, workspaceLandingSegment, WORKSPACE_MODULE_LABEL } from '@/utils/workspaceModules'
+import type { WorkspaceModule } from '@/utils/workspaceModules'
 import { teamRoleLabel } from '@/utils/roleLabels'
 import { formatRelativeTime } from '@/utils/datetime'
 import { readRecentWorkspaces } from '@/utils/recentWorkspaces'
@@ -109,7 +113,9 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
         const moduleLabel = WORKSPACE_MODULE_LABEL[modules[0]] ?? ''
         const relative = formatRelativeTime(new Date(entry.ts).toISOString())
         return {
-          key: entry.path,
+          // 命名空间键：最近访问路径可能与「我的工作区」工作区行的落地路径相同，
+          // 直接用 path 做 Menu key 会撞 antd 的 Duplicated key 告警（路径在 onClick 里还原）
+          key: `recent:${entry.wid}`,
           icon: <ClockCircleOutlined />,
           // 单行 label：antd inline Menu 行高固定 40px 且单行 ellipsis，双行会被裁掉
           label: (
@@ -195,30 +201,59 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
     })
   }
 
+  /** 未收藏工作区行首图标（与 WorkspaceList 行首 MODULE_ICON 同口径） */
+  const MODULE_ICON: Record<WorkspaceModule, React.ReactNode> = {
+    tables: <DatabaseOutlined />,
+    documents: <FileTextOutlined />,
+    design: <ToolOutlined />,
+  }
+  // 已收藏的已在「已收藏」分区，这里只平铺未收藏的，避免同屏重复
+  const unstarred = useMemo(() => workspaces.filter(ws => !ws.pinned), [workspaces])
+
   items.push({
     type: 'group',
     label: '我的工作区',
-    children: [{
-      key: '/w',
-      icon: <FolderOpenOutlined />,
-      label: (
-        <span data-testid="home-nav-all">
-          全部工作区
-          {pendingTotal > 0 && (
+    children: [
+      ...unstarred.map(ws => {
+        const modules = normalizeModules(ws.modules)
+        const teamName = ws.team?.name ?? '个人'
+        return {
+          key: `/w/${ws.id}/${workspaceLandingSegment(modules)}`,
+          icon: MODULE_ICON[modules[0]],
+          label: (
             <span
-              className="cn-home-nav-pending"
-              data-testid="home-nav-pending"
-              title={`待我处理：修改申请 ${summary?.pending.change_requests ?? 0} · 问题 ${summary?.pending.issues ?? 0} · 待审链接 ${summary?.pending.link_requests ?? 0}`}
+              className="cn-home-nav-row"
+              data-testid={`home-nav-ws-${ws.id}`}
+              title={`${ws.name} · ${teamName}`}
             >
-              {pendingTotal}
+              <span className="cn-home-nav-row-name">{ws.name}</span>
+              <span className="cn-home-nav-row-hint">{teamName}</span>
             </span>
-          )}
-          <span className="cn-ws-group-count" style={{ marginInlineStart: 'var(--cn-space-sm)' }}>
-            {workspaces.length}
+          ),
+        }
+      }),
+      {
+        key: '/w',
+        icon: <FolderOpenOutlined />,
+        label: (
+          <span data-testid="home-nav-all">
+            全部工作区
+            {pendingTotal > 0 && (
+              <span
+                className="cn-home-nav-pending"
+                data-testid="home-nav-pending"
+                title={`待我处理：修改申请 ${summary?.pending.change_requests ?? 0} · 问题 ${summary?.pending.issues ?? 0} · 待审链接 ${summary?.pending.link_requests ?? 0}`}
+              >
+                {pendingTotal}
+              </span>
+            )}
+            <span className="cn-ws-group-count" style={{ marginInlineStart: 'var(--cn-space-sm)' }}>
+              {workspaces.length}
+            </span>
           </span>
-        </span>
-      ),
-    }],
+        ),
+      },
+    ],
   })
 
   const go = (path: string) => {
@@ -236,7 +271,14 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
         mode="inline"
         selectedKeys={selectedKey(location.pathname)}
         items={items}
-        onClick={({ key }) => go(key)}
+        onClick={({ key }) => {
+          // `recent:` 前缀键还原为记录的落地路径（见最近访问分组的键说明）
+          if (key.startsWith('recent:')) {
+            const row = recentItems.find(r => `recent:${r.entry.wid}` === key)
+            if (row) { go(row.entry.path); return }
+          }
+          go(key)
+        }}
       />
     </nav>
   )
