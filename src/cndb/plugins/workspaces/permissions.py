@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as dt
 import enum
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, NoReturn
 
@@ -34,6 +35,8 @@ from cndb.plugins.workspaces.models import (
 
 if TYPE_CHECKING:
     from cndb.plugins.accounts.models import User
+
+logger = logging.getLogger("cndb.audit")
 
 
 class WorkspaceCapability(enum.StrEnum):
@@ -218,6 +221,7 @@ def resolve_capabilities(user: User | None, workspace: Workspace, db: Session) -
 
     # D7（ADR 0161）：系统管理员按该工作区 owner 处理，统一走本入口，避免与资源层两套判定。
     if user is not None and getattr(user, "is_superuser", False):
+        logger.info("workspace.superuser_access workspace_id=%s user_id=%s", workspace.id, user.id)
         return Capabilities(
             data_role=WorkspaceRole.OWNER,
             team_role=team_role.value if team_role is not None else None,
