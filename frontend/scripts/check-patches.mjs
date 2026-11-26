@@ -25,12 +25,16 @@
  * 46 KB 原始体积。补丁移除属性赋值、保留 named export 与默认导出，并给 package.json
  * 补 `sideEffects: false`；行为不变，仅让未被引用的成员可被 tree-shaking 去掉。
  *
- * `pptx-preview@1.0.7` 的补丁（需求 0162 放映文字错位）：库解析了
- * `<a:bodyPr wrap="none">`（不换行，文本框可溢出显示）却从未使用该属性，所有文本框
- * 都按固定宽度 `word-break: break-word` 折行——PPT 里靠 `wrap="none"` 保持单行的
- * 标签（如「火工依赖度」）被折成两行并与下方文字重叠。补丁在文本渲染处按
- * `props.wrap === 'none'` 追加 `white-space: nowrap`（宽度与居中不变，溢出可见），
- * 其余文本框行为零变化；上游支持该属性后可撤补丁。
+ * `pptx-preview@1.0.7` 的补丁（需求 0128 PPTX 在线预览 / 放映）：
+ * 1) 库解析了 `<a:bodyPr wrap="none">`（不换行，文本框可溢出显示）却从未使用该属性，
+ *    所有文本框都按固定宽度 `word-break: break-word` 折行——PPT 里靠 `wrap="none"`
+ *    保持单行的标签（如「火工依赖度」）被折成两行并与下方文字重叠。补丁在文本渲染处按
+ *    `props.wrap === 'none'` 追加 `white-space: nowrap`（宽度与居中不变，溢出可见）。
+ * 2) 库把 `a:off` / `a:ext` 换算后的几何值 `Math.round` 成整数 pt，再整体按视口缩放：
+ *    每个元素的左/上坐标与宽/高各被独立取整（误差 ≤0.5pt，缩放后约 1px），相邻元素
+ *    因此出现「上下高度 / 左右宽度」的细微错位；段落顶边距 `floor(0.2em)` 又按字号
+ *    产生不同下移。补丁去掉这两类整数取整，保留 EMU 换算后的精确小数。
+ * 其余文本框与形状行为不变；上游修复后可撤补丁。
  *
  * 依赖解析注意：pnpm 严格 node_modules 下项目无法直接解析 @rc-component/util，
  * 必须从 antd 的包位置解析。
@@ -110,11 +114,19 @@ const CHECKS = [
         return [`${entry} 不存在（pptx-preview 版本是否已变？补丁需重新评估）`]
       }
       const source = fs.readFileSync(entry, 'utf8')
-      // 补丁要点：仅对 wrap="none" 的文本框关闭折行，其他文本框行为不变
+      const errors = []
+      // 补丁要点 1：仅对 wrap="none" 的文本框关闭折行，其他文本框行为不变
       if (!/"none"===s\.wrap&&h\.style\.setProperty\("white-space","nowrap"\)/.test(source)) {
-        return [`${entry}\n    缺少 wrap=none 的 white-space 补丁（放映/预览文字会折行重叠）`]
+        errors.push(`${entry}\n    缺少 wrap=none 的 white-space 补丁（放映/预览文字会折行重叠）`)
       }
-      return []
+      // 补丁要点 2：形状几何不再取整，段落顶边距不再 floor
+      if (/x:Math\.round\(h\(parseInt\(/.test(source)) {
+        errors.push(`${entry}\n    形状坐标/尺寸仍被 Math.round 取整（元素会出现 ±1px 的细微错位）`)
+      }
+      if (!source.includes('.2*u()')) {
+        errors.push(`${entry}\n    段落顶边距仍按字号向下取整（文字会整体偏下）`)
+      }
+      return errors
     },
   },
   {
