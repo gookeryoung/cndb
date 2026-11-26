@@ -1,6 +1,8 @@
 # 0162 文档页列表化布局改造（S1）
 
 Status: 已确认（2026-11-26 人工确认方向：列表为主、复用 antd Table、侧栏可拖拽）
+
+> 后续修订：C6 的移动端「两行列表」口径由需求 [0166](0166-mobile-document-list-single-row.md) P0 改为单行（2026-11-26 用户确认）；本卡原文保留历史。
 Related: `frontend/src/pages/documents/DocumentsPage.tsx`、`frontend/src/pages/documents/DocumentTable.tsx`、`frontend/src/layouts/MainLayout.tsx`、`frontend/src/index.css`
 
 ## 需求原句

@@ -5,11 +5,12 @@
  */
 
 import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
-import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { Routes, Route } from 'react-router-dom'
 import { message } from 'antd'
 import { http, HttpResponse } from 'msw'
 import DocumentsPage, { buildFolderStatusCounts, buildSeriesStats } from './DocumentsPage'
+import { setDocTitleFilter } from './docTreeSort'
 import { buildFolderSummaries } from './seriesStats'
 import { renderProviders } from '@/test/render-providers'
 import { mockDocuments, mockUser, server } from '@/test/msw'
@@ -649,13 +650,15 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
   })
 
   afterEach(() => {
+    // 标题过滤是模块级缓存（useDocTitleFilter），storage.clear() 不会复位
+    act(() => setDocTitleFilter(''))
     responsiveState = {
       deviceType: 'desktop', isMobile: false, isTablet: false, isDesktop: true,
       width: 1280, height: 800,
     }
   })
 
-  it('默认两行：排序 / 搜索 / 筛选 / 新建单行，标签与状态按需展开', async () => {
+  it('默认单行：搜索收为图标，排序 / 筛选 / 新建 / 更多同行，筛选进底部抽屉', async () => {
     renderProviders(
       <Routes>
         <Route path="/w/:wid/documents" element={<DocumentsPage />} />
@@ -668,31 +671,39 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     // 桌面常显的次级按钮不再直接渲染
     expect(screen.queryByTestId('doc-trash-open')).toBeNull()
     expect(screen.queryByTestId('doc-file-import')).toBeNull()
-    // 默认只有导航行 + 操作行；标签 / 状态筛选行收起，避免顶栏折成三行
-    expect(toolbar.children).toHaveLength(2)
     expect(screen.queryByTestId('doc-order-select')).toBeNull()
     expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
-    // 排序、搜索、筛选入口、新建都在同一行常驻
+    // 0167 C1：工具栏只有一个 flex 行，不再有第二 / 第三行
+    expect(toolbar.style.flexDirection).toBe('')
     expect(within(toolbar).getByTestId('doc-content-sort')).toBeVisible()
-    expect(within(toolbar).getByPlaceholderText('过滤标题')).toBeVisible()
+    expect(within(toolbar).getByTestId('doc-toolbar-search')).toBeVisible()
+    expect(within(toolbar).queryByPlaceholderText('过滤标题')).toBeNull()
     const filterButton = within(toolbar).getByTestId('doc-toolbar-filter')
     expect(filterButton).toHaveAttribute('aria-expanded', 'false')
-    expect(within(toolbar).getByRole('button', { name: /新建/ })).toBeVisible()
+    expect(within(toolbar).getByTestId('doc-toolbar-create')).toBeVisible()
 
-    // 展开筛选行后，标签 / 状态控件原位可见；再次点击收起
+    // 0167 C2：搜索图标点击后原地展开，关闭后恢复图标
+    fireEvent.click(within(toolbar).getByTestId('doc-toolbar-search'))
+    expect(within(toolbar).getByPlaceholderText('过滤标题')).toBeVisible()
+    fireEvent.click(within(toolbar).getByTestId('doc-toolbar-search-close'))
+    expect(within(toolbar).queryByPlaceholderText('过滤标题')).toBeNull()
+
+    // 0167 C4：筛选走底部抽屉，关闭后控件随之卸载
     fireEvent.click(filterButton)
-    expect(await screen.findByTestId('doc-toolbar-filters')).toBeVisible()
-    expect(within(toolbar).getByTestId('doc-tag-filter')).toBeVisible()
-    expect(within(toolbar).getByTestId('doc-status-filter')).toBeVisible()
+    const drawer = await screen.findByTestId('doc-toolbar-filters')
+    expect(drawer).toBeVisible()
+    expect(within(drawer).getByTestId('doc-tag-filter')).toBeVisible()
+    expect(within(drawer).getByTestId('doc-status-filter')).toBeVisible()
     expect(filterButton).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.click(filterButton)
-    expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull()
+    fireEvent.click(within(drawer).getByRole('button', { name: /完\s*成/ }))
+    await waitFor(() => expect(screen.queryByTestId('doc-toolbar-filters')).toBeNull())
 
-    // 「更多」菜单承载回收站与导入入口
+    // 「更多」菜单承载回收站、导入与视图切换入口
     fireEvent.click(within(toolbar).getByTestId('doc-toolbar-more'))
     expect(await screen.findByText('回收站')).toBeInTheDocument()
     expect(screen.getByText('导入')).toBeInTheDocument()
     expect(screen.getByText('新建文件夹')).toBeInTheDocument()
+    expect(screen.getByTestId('doc-view-toggle')).toBeInTheDocument()
   })
 
   it('?tag= 深链：筛选入口显示已应用数量，展开后回显标签', async () => {
@@ -711,9 +722,10 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     const filterButton = within(toolbar).getByTestId('doc-toolbar-filter')
     expect(filterButton).toHaveAttribute('aria-label', '筛选（已应用 1 项）')
     fireEvent.click(filterButton)
-    expect(await screen.findByTestId('doc-toolbar-filters')).toBeVisible()
-    // 标签下拉回显 URL 里的标签名
-    expect(within(toolbar).getByTestId('doc-tag-filter').textContent).toContain('需求')
+    const drawer = await screen.findByTestId('doc-toolbar-filters')
+    expect(drawer).toBeVisible()
+    // 标签下拉在底部抽屉里回显 URL 里的标签名
+    expect(within(drawer).getByTestId('doc-tag-filter').textContent).toContain('需求')
   })
 
   it('?status= 深链：list 请求携带 status 参数（状态筛选写 URL，控件在侧栏）', async () => {
@@ -735,7 +747,7 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     await waitFor(() => expect(statuses[statuses.length - 1]).toBe('draft'))
   })
 
-  it('移动端列表行：长文件名单行省略，状态/锁标签移入描述行', async () => {
+  it('移动端列表行：长文件名单行省略，状态/锁图标在行内且无描述行', async () => {
     const longTitle = '这是一个非常长的文档标题用于验证手机端列表单行省略显示不再折行错位'
     server.use(
       http.get('/api/v1/workspaces/10/documents', () =>
@@ -760,16 +772,64 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
     const title = strongNode.closest('.cn-doc-title-ellipsis')
     expect(title).not.toBeNull()
     expect(title).toHaveAttribute('title', longTitle)
-    // 状态标签不消失，移到描述行；锁标签收敛为纯图标（语义保留在 aria-label）
-    // 注：Space 的 item 包装层与标签文本相同，用 getAllByText 断言存在即可
-    expect(within(list).getAllByText('草稿').length).toBeGreaterThan(0)
+    // 需求 0166 C1/C2/C4：描述行不再渲染；状态与可见性收敛为行内图标，语义在 aria-label
+    expect(list.querySelector('.cn-list-meta-description')).toBeNull()
+    expect(within(list).getByTestId('doc-list-status-2-draft')).toHaveAttribute('aria-label', '状态：草稿')
     expect(within(list).getByTestId('doc-list-visibility-2')).toHaveAttribute('aria-label', '仅自己可见')
+    const time = within(list).getByText('2026-01-02')
+    expect(time.getAttribute('title')).toContain('2026')
     // 行尾四枚操作收进单枚「更多」，展开后四项能力全部保留
     fireEvent.click(within(list).getByTestId('doc-row-more-2'))
     expect(await screen.findByTestId('doc-row-rename-2')).toBeInTheDocument()
     expect(screen.getByTestId('doc-row-move-2')).toBeInTheDocument()
     expect(screen.getByTestId('doc-row-pin-2')).toBeInTheDocument()
     expect(screen.getByTestId('doc-row-delete-2')).toBeInTheDocument()
+  })
+
+  it('移动端「⋯ → 详情」：大小 / 版本 / 完整时间不占列表行', async () => {
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    await screen.findByTestId('doc-series-detail')
+    fireEvent.click(await screen.findByTestId('doc-row-more-2'))
+    fireEvent.click(await screen.findByTestId('doc-row-detail-2'))
+    const detail = await screen.findByTestId('doc-row-detail-modal')
+    expect(detail.textContent).toContain('128 B')
+    expect(detail.textContent).toContain('版本：v1')
+    expect(detail.textContent).toContain('2026/1/2')
+  })
+
+  it('移动端多选模式：勾选框按需出现，整行点击只切换选中', async () => {
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    // 0167 C5：移动端默认列表视图，先切到网格再验证卡片多选
+    fireEvent.click(screen.getByTestId('doc-toolbar-more'))
+    fireEvent.click(await screen.findByTestId('doc-view-toggle'))
+    await screen.findByTestId('doc-series-grid')
+    expect(screen.queryByTestId('doc-select-1')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('doc-toolbar-more'))
+    fireEvent.click(await screen.findByTestId('doc-toolbar-select-mode'))
+    // antd 勾选框的真实 input 视觉隐藏，包裹层可见即可
+    expect(await screen.findByTestId('doc-select-1')).toBeInTheDocument()
+    // 多选态点整卡只选中，不下钻文件夹
+    fireEvent.click(screen.getByTestId('doc-series-card-1'))
+    expect(await screen.findByTestId('doc-batch-bar')).toBeVisible()
+    expect(screen.queryByTestId('doc-series-detail')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('doc-toolbar-more'))
+    fireEvent.click(await screen.findByText('退出多选'))
+    await waitFor(() => expect(screen.queryByTestId('doc-select-1')).toBeNull())
+    expect(screen.queryByTestId('doc-batch-bar')).toBeNull()
   })
 
   it('移动端行尾「更多」：删除走二次确认后调用 DELETE', async () => {
@@ -803,8 +863,108 @@ describe('DocumentsPage 移动端顶部工具栏', () => {
       { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
     )
 
+    // 0167 C5：默认列表视图；切到网格后卡片仍保持 150px 最小宽度
+    expect(await screen.findByTestId('doc-folder-block')).toBeVisible()
+    expect(screen.queryByTestId('doc-series-grid')).toBeNull()
+    fireEvent.click(await screen.findByTestId('doc-toolbar-more'))
+    fireEvent.click(await screen.findByTestId('doc-view-toggle'))
     const grid = await screen.findByTestId('doc-series-grid')
     expect(grid.getAttribute('style')).toContain('minmax(150px, 1fr)')
+  })
+
+  it('移动端列表 / 网格切换：复用同一份 docView 偏好，切回列表后行表出现', async () => {
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    await screen.findByTestId('doc-folder-block')
+    expect(screen.queryByTestId('doc-series-grid')).toBeNull()
+    fireEvent.click(screen.getByTestId('doc-toolbar-more'))
+    fireEvent.click(await screen.findByTestId('doc-view-toggle'))
+    await screen.findByTestId('doc-series-grid')
+    // 两种视图共用 doc-folder-block 外壳，用内部表格 / 网格区分
+    expect(screen.queryByTestId('doc-folder-table')).toBeNull()
+    fireEvent.click(screen.getByTestId('doc-toolbar-more'))
+    fireEvent.click(await screen.findByTestId('doc-view-toggle'))
+    expect(await screen.findByTestId('doc-folder-block')).toBeVisible()
+  })
+
+  it('移动端长按行：弹出与 ⋯ 同源的快捷菜单，点击后关闭', async () => {
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    await screen.findByTestId('doc-series-detail')
+    const row = within(screen.getByTestId('doc-list')).getByText(mockDocuments[1].title).closest('.cn-list-item')
+    expect(row).not.toBeNull()
+    // 0167 C6：touchstart + 500ms 后弹底部菜单，touchend 不取消
+    fireEvent.touchStart(row!, { touches: [{ clientX: 10, clientY: 10 }] })
+    await waitFor(() => expect(screen.getByTestId('doc-quick-actions')).toBeVisible(), { timeout: 1500 })
+    expect(screen.getByTestId('doc-row-rename-2')).toBeInTheDocument()
+    expect(screen.getByTestId('doc-row-delete-2')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('doc-row-rename-2'))
+    await waitFor(() => expect(screen.queryByTestId('doc-quick-actions')).toBeNull())
+  })
+
+  it('移动端按时间分组：置顶 / 今天 / 更早分组头可见，桌面不分组', async () => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12, 0, 0).toISOString()
+    const old = new Date(now.getFullYear(), now.getMonth() - 3, 1, 12, 0, 0).toISOString()
+    server.use(
+      http.get('/api/v1/workspaces/10/documents', () =>
+        HttpResponse.json({
+          items: [
+            { ...mockDocuments[1], id: 21, title: '置顶文档', pinned: true, updated_at: old },
+            { ...mockDocuments[1], id: 22, title: '今日文档', pinned: false, updated_at: today },
+            { ...mockDocuments[1], id: 23, title: '旧文档', pinned: false, updated_at: old },
+          ],
+          total: 3,
+        }),
+      ),
+    )
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    await screen.findByTestId('doc-series-detail')
+    expect(screen.getByTestId('doc-time-group-pinned')).toBeVisible()
+    expect(screen.getByTestId('doc-time-group-today')).toBeVisible()
+    expect(screen.getByTestId('doc-time-group-earlier')).toBeVisible()
+    expect(screen.queryByTestId('doc-time-group-week')).toBeNull()
+  })
+
+  it('移动端搜索命中标题片段高亮，完整标题仍在 title', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/10/documents', () =>
+        HttpResponse.json({
+          items: [{ ...mockDocuments[1], id: 2, title: '需求说明文档' }],
+          total: 1,
+        }),
+      ),
+    )
+    renderProviders(
+      <Routes>
+        <Route path="/w/:wid/documents" element={<DocumentsPage />} />
+      </Routes>,
+      { route: '/w/10/documents?parent=1', initialAuth: { user: mockUser, token: 'fake-token' } },
+    )
+
+    await screen.findByTestId('doc-series-detail')
+    const toolbar = screen.getByTestId('doc-toolbar-mobile')
+    fireEvent.click(within(toolbar).getByTestId('doc-toolbar-search'))
+    fireEvent.change(within(toolbar).getByPlaceholderText('过滤标题'), { target: { value: '需求' } })
+    const mark = await screen.findByText('需求')
+    expect(mark.tagName).toBe('MARK')
+    expect(mark.closest('.cn-doc-title-ellipsis')).toHaveAttribute('title', '需求说明文档')
   })
 
   it('移动端系列详情：操作按钮图标化并保留无障碍名称', async () => {

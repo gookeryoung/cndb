@@ -93,4 +93,23 @@ describe('移动端适配口径（ADR 0123）', () => {
     expect(ruleBody(globalBlock, '.ant-layout-header.cn-app-header')).toContain('gap: var(--cn-space-xs)')
     expect(ruleBody(globalBlock, '.ant-layout-header.cn-app-header')).toContain('padding: 0 var(--cn-space-md) !important')
   })
+
+  it('需求 0166 C1：文档列表移动端单行紧凑化（行内边距 / 标题下间距 / 行尾元信息）', () => {
+    const block = mobileBlocks.find(b => b.includes('.cn-doc-list .ant-listy-item')) ?? ''
+    expect(block, '缺少移动端文档列表紧凑规则').not.toBe('')
+    expect(ruleBody(block, '.cn-doc-list .ant-listy-item')).toContain('padding: var(--cn-space-xs) var(--cn-space-md)')
+    expect(ruleBody(block, '.cn-doc-list .cn-list-meta-title')).toContain('margin-block-end: 0')
+    expect(ruleBody(block, '.cn-doc-row-time, .cn-doc-row-count')).toContain('font-size: var(--cn-text-2xs)')
+  })
+
+  it('需求 0167 C7/C11：时间分组头 sticky 且只用 --cn-* token', () => {
+    const block = mobileBlocks.find(b => b.includes('.cn-doc-time-group-title')) ?? ''
+    expect(block, '缺少移动端时间分组规则').not.toBe('')
+    const header = ruleBody(block, '.cn-doc-time-group-title')
+    expect(header).toContain('position: sticky')
+    expect(header).toContain('top: 0')
+    expect(header).toContain('background: var(--cn-bg-subtle)')
+    expect(header).toContain('border-block-start: 1px solid var(--cn-border)')
+    expect(ruleBody(block, '.cn-doc-hit')).toContain('background: var(--cn-bg-selected)')
+  })
 })

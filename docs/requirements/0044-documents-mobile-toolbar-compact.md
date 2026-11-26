@@ -6,6 +6,7 @@
 - 关联 ADR：`docs/adr/0044-documents-mobile-toolbar-compact.md`
 
 > 本卡片是**需求原文与约束编号的唯一副本**：ADR 只引用 C1..Cn，不复制原文；需求澄清后先改这里，再同步 ADR「口径」表。
+> 后续修订：C9/C10 的移动端「两行」口径由需求 [0166](0166-mobile-document-list-single-row.md) P0 改为单行（2026-11-26 用户确认）；本卡原文保留历史。
 
 ## 需求原句（逐字）
 

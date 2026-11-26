@@ -1,6 +1,6 @@
 /** 文档管理页 — 顶层系列卡片总览 + 文件夹列表 / 树 / 搜索入口. */
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Alert,
@@ -9,10 +9,12 @@ import {
   Button,
   Card,
   Checkbox,
+  Drawer,
   Dropdown,
   Empty,
   Input,
   Listy,
+  Menu,
   Modal,
   Popconfirm,
   Popover,
@@ -34,7 +36,9 @@ import {
   ApartmentOutlined,
   AppstoreOutlined,
   ArrowLeftOutlined,
+  CheckSquareOutlined,
   ClockCircleOutlined,
+  CloseOutlined,
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
@@ -43,6 +47,7 @@ import {
   FolderAddOutlined,
   FolderOutlined,
   ImportOutlined,
+  InfoCircleOutlined,
   LockOutlined,
   MoreOutlined,
   PushpinOutlined,
@@ -51,6 +56,7 @@ import {
   UnorderedListOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import dayjs from 'dayjs'
 import {
   describeSort, DOC_SORT_OPTIONS, setDocTitleFilter, sortFlatByDocSort, sortToValue,
   useDocSortPref, useDocTitleFilter, valueToSort,
@@ -64,16 +70,45 @@ import { buildDocTree, descendantIds, findNodeById } from './DocumentTree'
 import { buildFolderStatusCounts, buildFolderSummaries, buildSeriesStats, seriesStatsOf } from './seriesStats'
 import DocumentTable from './DocumentTable'
 import { usePersistedState } from '@/utils/persistedState'
-import { formatDate, formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
+import { DOC_STATUS_META, formatDate, formatTime, STATUS_COLORS, STATUS_LABELS } from './documentDisplay'
 import { formatMeta } from '@/components/Document/docFormat'
 import CnListMeta from '@/components/CnListMeta'
 import TrashDrawer from './TrashDrawer'
 import DocumentImportModal from './DocumentImportModal'
 import type { DocTreeNode } from './DocumentTree'
 import { formatSize } from '@/utils/formatSize'
+import { formatRelativeTime } from '@/utils/datetime'
 import { createPptxPrefetcher, prefetchPptxPreview } from './pptxPrefetch'
 
 const { Text } = Typography
+
+/** 移动端时间分组（需求 0167 C7）：仅展示层分组，不改变 docSort 偏好与权限过滤 */
+type DocTimeGroupKey = 'pinned' | 'today' | 'week' | 'earlier'
+const DOC_TIME_GROUPS: { key: DocTimeGroupKey; label: string }[] = [
+  { key: 'pinned', label: '置顶' },
+  { key: 'today', label: '今天' },
+  { key: 'week', label: '本周' },
+  { key: 'earlier', label: '更早' },
+]
+
+function groupDocsByTime(items: DocumentItem[]): Record<DocTimeGroupKey, DocumentItem[]> {
+  const groups: Record<DocTimeGroupKey, DocumentItem[]> = { pinned: [], today: [], week: [], earlier: [] }
+  const todayStart = dayjs().startOf('day').valueOf()
+  // 周一为一周起点（不依赖 dayjs locale 设置）
+  const weekStart = dayjs().startOf('day').subtract((dayjs().day() + 6) % 7, 'day').valueOf()
+  for (const doc of items) {
+    if (doc.pinned) {
+      groups.pinned.push(doc)
+      continue
+    }
+    const updated = dayjs(doc.updated_at)
+    const ts = updated.isValid() ? updated.valueOf() : Number.NaN
+    if (Number.isFinite(ts) && ts >= todayStart) groups.today.push(doc)
+    else if (Number.isFinite(ts) && ts >= weekStart) groups.week.push(doc)
+    else groups.earlier.push(doc)
+  }
+  return groups
+}
 
 
 // 测试与内部复用：系列统计的具名导出保留在本模块（实现见 ./seriesStats）
@@ -186,6 +221,30 @@ export default function DocumentsPage() {
   const [batchMoveTarget, setBatchMoveTarget] = useState<number>(0)
   // 移动端筛选抽屉（第三行，默认收起）：标签 / 状态是低频筛选，收起后顶栏只留一行操作
   const [filterOpen, setFilterOpen] = useState(false)
+  // 移动端多选模式（需求 0166 C6）：勾选框按需出现，退出时清空选择
+  const [selectMode, setSelectMode] = useState(false)
+  // 移动端行详情（需求 0166 C3）：大小 / 版本 / 状态分布等低频信息不占列表行
+  const [detailDoc, setDetailDoc] = useState<DocumentItem | null>(null)
+  // 移动端搜索默认收起为图标，点击后原地展开（需求 0167 C2）
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false)
+  // 移动端长按行的快捷菜单（需求 0167 C6）；⋯ 菜单仍是常规路径
+  const [quickDoc, setQuickDoc] = useState<DocumentItem | null>(null)
+  const longPressTimer = useRef<number | null>(null)
+  const suppressRowClick = useRef(false)
+  const startLongPress = (doc: DocumentItem) => {
+    if (longPressTimer.current !== null) window.clearTimeout(longPressTimer.current)
+    longPressTimer.current = window.setTimeout(() => {
+      suppressRowClick.current = true
+      setQuickDoc(doc)
+    }, 500)
+  }
+  const cancelLongPress = () => {
+    if (longPressTimer.current !== null) {
+      window.clearTimeout(longPressTimer.current)
+      longPressTimer.current = null
+    }
+  }
+  useEffect(() => cancelLongPress, [])
   // hook 版 Modal：确认框走当前 ConfigProvider 主题（静态 Modal.confirm 读不到动态主题）
   const [modal, modalContextHolder] = Modal.useModal()
 
@@ -378,6 +437,10 @@ export default function DocumentsPage() {
   const toggleSelected = (docId: number) => {
     setSelectedIds(prev => (prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]))
   }
+  const toggleSelectMode = () => {
+    if (selectMode) setSelectedIds([])
+    setSelectMode(v => !v)
+  }
 
   const seriesList = useMemo(() => {
     const all = buildSeriesStats(treeQuery.data ?? [])
@@ -563,6 +626,16 @@ export default function DocumentsPage() {
       ]}
     />
   )
+  /** 移动端面包屑（需求 0167 C3）：层级过深时中间折叠为「…」，首尾始终可见 */
+  const mobileBreadcrumbNode = (
+    <Breadcrumb
+      items={[
+        { title: <a onClick={() => setParentId(null)}>文档</a> },
+        ...(breadcrumbItems.length > 2 ? [{ title: '…' }] : []),
+        ...(breadcrumbItems.length > 2 ? breadcrumbItems.slice(-2) : breadcrumbItems).map(b => ({ title: b.title })),
+      ]}
+    />
+  )
   const renderSearchInput = (style: CSSProperties) => (
     <Input
       allowClear
@@ -622,6 +695,26 @@ export default function DocumentsPage() {
   )
   /** 窄屏次级操作：收录进「更多」菜单，避免顶栏折成三行 */
   const mobileToolbarMenu: MenuProps['items'] = [
+    {
+      key: 'select',
+      icon: <CheckSquareOutlined />,
+      label: <span data-testid="doc-toolbar-select-mode">{selectMode ? '退出多选' : '多选'}</span>,
+      onClick: toggleSelectMode,
+    },
+    {
+      key: 'view',
+      icon: docView === 'list' ? <AppstoreOutlined /> : <UnorderedListOutlined />,
+      label: (
+        <span
+          data-testid="doc-view-toggle"
+          aria-label={docView === 'list' ? '切换为网格视图' : '切换为列表视图'}
+        >
+          {docView === 'list' ? '网格视图' : '列表视图'}
+        </span>
+      ),
+      onClick: () => setDocView(docView === 'list' ? 'grid' : 'list'),
+    },
+    { type: 'divider' },
     { key: 'folder', icon: <FolderAddOutlined />, label: '新建文件夹', onClick: () => openCreate('folder') },
     { key: 'import', icon: <ImportOutlined />, label: '导入', onClick: () => setFileImportOpen(true) },
     { key: 'export', icon: <ExportOutlined />, label: '导出', onClick: () => setExportOpen(true) },
@@ -649,9 +742,23 @@ export default function DocumentsPage() {
   const activeFilterCount = (tagFilter !== undefined ? 1 : 0) + (statusFilter ? 1 : 0)
   const mobileFilterLabel = activeFilterCount > 0 ? `筛选（已应用 ${activeFilterCount} 项）` : '筛选'
 
-  /** 行尾操作：桌面 / 移动端统一收进单枚「更多」下拉，给标题与右侧 meta 列让出横向空间 */
-  const renderRowActions = (doc: DocumentItem) => {
+  /** 行菜单项：行尾 ⋯ 与移动端长按快捷菜单共用同一份能力（需求 0167 C6） */
+  const rowActionItems = (doc: DocumentItem): MenuProps['items'] => {
+    // 移动端详情承载从行内移出的低频元信息（需求 0166 C3）；桌面表格不需要
+    const detailItems: MenuProps['items'] = isMobile ? [
+      {
+        key: 'detail',
+        icon: <InfoCircleOutlined />,
+        label: <span data-testid={`doc-row-detail-${doc.id}`}>详情</span>,
+        onClick: ({ domEvent }) => {
+          domEvent.stopPropagation()
+          setDetailDoc(doc)
+        },
+      },
+      { type: 'divider' },
+    ] : []
     const items: MenuProps['items'] = [
+      ...detailItems,
       {
         key: 'rename',
         icon: <EditOutlined />,
@@ -699,23 +806,75 @@ export default function DocumentsPage() {
         },
       },
     ]
+    return items
+  }
+
+  /** 行尾操作：桌面 / 移动端统一收进单枚「更多」下拉，给标题与右侧 meta 列让出横向空间 */
+  const renderRowActions = (doc: DocumentItem) => (
+    <div className="cn-list-item-actions">
+      <Dropdown menu={{ items: rowActionItems(doc) }} trigger={['click']} placement="bottomRight">
+        <Button
+          type="text"
+          size="small"
+          icon={<MoreOutlined />}
+          aria-label={`更多操作 ${doc.title}`}
+          data-testid={`doc-row-more-${doc.id}`}
+          onClick={e => e.stopPropagation()}
+        />
+      </Dropdown>
+    </div>
+  )
+
+  /** 移动端搜索命中高亮（需求 0167 C8）：完整标题仍在 title，桌面表格不改动 */
+  const renderDocTitle = (title: string) => {
+    const kw = titleKeyword.trim()
+    if (!isMobile || !kw) return title
+    const idx = title.toLowerCase().indexOf(kw.toLowerCase())
+    if (idx < 0) return title
     return (
-      <div className="cn-list-item-actions">
-        <Dropdown menu={{ items }} trigger={['click']} placement="bottomRight">
-          <Button
-            type="text"
-            size="small"
-            icon={<MoreOutlined />}
-            aria-label={`更多操作 ${doc.title}`}
-            data-testid={`doc-row-more-${doc.id}`}
-            onClick={e => e.stopPropagation()}
-          />
-        </Dropdown>
+      <>
+        {title.slice(0, idx)}
+        <mark className="cn-doc-hit">{title.slice(idx, idx + kw.length)}</mark>
+        {title.slice(idx + kw.length)}
+      </>
+    )
+  }
+
+  /** 文档块：移动端按置顶 / 今天 / 本周 / 更早分组（0167 C7），桌面沿用列对齐表格 */
+  const renderFileBlock = (items: DocumentItem[]) => {
+    if (!isMobile) {
+      return (
+        <DocumentTable
+          testId="doc-file-table"
+          items={items}
+          folderStatusCounts={folderStatusCounts}
+          folderSummaries={folderSummaries}
+          selectedIds={selectedIds}
+          onToggleSelected={toggleSelected}
+          onOpen={openDoc}
+          renderRowActions={renderRowActions}
+        />
+      )
+    }
+    const groups = groupDocsByTime(items)
+    return (
+      <div className="cn-doc-time-groups">
+        {DOC_TIME_GROUPS.map(g => groups[g.key].length > 0 && (
+          <section key={g.key} className="cn-doc-time-group" data-testid={`doc-time-group-${g.key}`}>
+            <div className="cn-doc-time-group-title">{g.label}</div>
+            <Listy
+              className="cn-doc-list"
+              items={groups[g.key]}
+              rowKey={doc => doc.id}
+              itemRender={renderDocRow}
+            />
+          </section>
+        ))}
       </div>
     )
   }
 
-  /** 单个文档 / 文件夹行（文件夹块与文档块共用；桌面单行，移动端两行） */
+  /** 单个文档 / 文件夹行（文件夹块与文档块共用；桌面与移动端均为单行，移动端紧凑化见需求 0166） */
   const renderDocRow = (doc: DocumentItem) => {
     // 文件夹状态取子孙文档聚合（空文件夹无状态），文档保持自身状态
     const statusCounts = doc.is_folder
@@ -728,29 +887,51 @@ export default function DocumentsPage() {
     const visibilityTip = doc.is_folder
       ? '含未发布内容：其中草稿 / 归档仅你与工作区所有者可见'
       : '未发布：仅你与工作区所有者可见'
+    // 单行只放一枚主状态图标：未发布优先提醒，其次归档，最后已发布（需求 0166 C2）
+    const primaryStatus = doc.is_folder
+      ? ['draft', 'archived', 'published'].find(st => statusCounts[st]) ?? null
+      : doc.status
+    const statusMeta = primaryStatus ? DOC_STATUS_META[primaryStatus] : undefined
+    const StatusIcon = statusMeta?.Icon
+    const statusTip = statusEntries
+      .map(([st, n]) => `${STATUS_LABELS[st] ?? st}${doc.is_folder ? ` ${n}` : ''}`)
+      .join(' · ')
     return (
               <div
                 className="cn-list-item"
                 style={{ cursor: 'pointer' }}
                 onMouseEnter={isMobile ? undefined : () => pptxPrefetcher.schedule(doc)}
                 onMouseLeave={isMobile ? undefined : pptxPrefetcher.cancel}
-                onClick={() =>
-                  doc.is_folder
-                    ? setParentId(doc.id)
-                    : navigate(`/w/${workspaceId}/documents/${doc.id}`)
-                }
+                onClick={() => {
+                  // 长按结束后的 click 不再触发跳转（需求 0167 C6）
+                  if (suppressRowClick.current) {
+                    suppressRowClick.current = false
+                    return
+                  }
+                  // 多选模式下整行点击切换选中，避免误跳转（需求 0166 C6）
+                  if (isMobile && selectMode) {
+                    toggleSelected(doc.id)
+                    return
+                  }
+                  openDoc(doc)
+                }}
+                onTouchStart={isMobile ? () => startLongPress(doc) : undefined}
+                onTouchEnd={isMobile ? cancelLongPress : undefined}
+                onTouchMove={isMobile ? cancelLongPress : undefined}
               >
                 <CnListMeta
                   avatar={
                     <Space size={4}>
-                      <span onClick={e => e.stopPropagation()}>
-                        <Checkbox
-                          checked={selectedIds.includes(doc.id)}
-                          data-testid={`doc-select-${doc.id}`}
-                          aria-label={`选择 ${doc.title}`}
-                          onChange={() => toggleSelected(doc.id)}
-                        />
-                      </span>
+                      {(!isMobile || selectMode) && (
+                        <span onClick={e => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.includes(doc.id)}
+                            data-testid={`doc-select-${doc.id}`}
+                            aria-label={`选择 ${doc.title}`}
+                            onChange={() => toggleSelected(doc.id)}
+                          />
+                        </span>
+                      )}
                       {doc.is_folder ? (
                         <FolderOutlined style={{ fontSize: isMobile ? 18 : 22, color: '#faad14' }} />
                       ) : (
@@ -770,19 +951,43 @@ export default function DocumentsPage() {
                   }
                   title={
                   isMobile ? (
-                    /* 移动端：长文件名单行省略（完整名在 title 悬停提示），状态/锁标签移入描述行，
-                       给标题让出横向空间（需求：手机端长文件名列表显示异常） */
+                    /* 移动端单行（需求 0166）：标题占满剩余宽度省略；状态 / 置顶 / 私有图标与相对时间收在行尾，
+                       低频元信息（大小 / 版本 / 多状态分布）移入「⋯ → 详情」 */
                     <div className="cn-doc-row-title-line">
-                      <Text strong className="cn-doc-title-ellipsis" title={doc.title}>{doc.title}</Text>
-                      {doc.pinned && (
-                        <Tag
-                          color="blue"
-                          data-testid={`doc-pinned-tag-${doc.id}`}
-                          style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
-                        >
-                          置顶
-                        </Tag>
+                      <Text strong className="cn-doc-title-ellipsis" title={doc.title}>{renderDocTitle(doc.title)}</Text>
+                      {doc.is_folder && (
+                        <Text type="secondary" className="cn-doc-row-count">
+                          {Object.values(statusCounts).reduce((sum, n) => sum + n, 0)} 项
+                        </Text>
                       )}
+                      {StatusIcon && statusMeta && (
+                        <Tooltip title={statusTip}>
+                          <StatusIcon
+                            aria-label={`状态：${statusMeta.label}`}
+                            data-testid={`doc-list-status-${doc.id}-${primaryStatus}`}
+                            style={{ color: statusMeta.color, fontSize: 'var(--cn-text-sm)', flexShrink: 0 }}
+                          />
+                        </Tooltip>
+                      )}
+                      {doc.pinned && (
+                        <PushpinOutlined
+                          aria-label="置顶"
+                          data-testid={`doc-pinned-tag-${doc.id}`}
+                          style={{ color: 'var(--cn-brand-color)', fontSize: 'var(--cn-text-sm)', flexShrink: 0 }}
+                        />
+                      )}
+                      {showPrivate && (
+                        <Tooltip title={visibilityTip}>
+                          <LockOutlined
+                            data-testid={`doc-list-visibility-${doc.id}`}
+                            aria-label="仅自己可见"
+                            style={{ color: 'var(--cn-text-muted)', fontSize: 'var(--cn-text-sm)', flexShrink: 0 }}
+                          />
+                        </Tooltip>
+                      )}
+                      <Text type="secondary" className="cn-doc-row-time" title={formatTime(doc.updated_at)}>
+                        {formatRelativeTime(doc.updated_at)}
+                      </Text>
                     </div>
                   ) : (
                     /* 桌面端单行：标题按内容宽度、超长才省略；置顶 / 状态 / 可见性 / 标签计数降噪为图标与计数 */
@@ -821,43 +1026,8 @@ export default function DocumentsPage() {
                     </div>
                   )
                 }
-                description={
-                  isMobile ? (
-                    /* 移动端：状态与可见性标签收到描述行（锁标签收敛为纯图标，语义保留在 aria-label），
-                       摘要行省去，保持两行紧凑行高 */
-                    <Space size={6} wrap>
-                      {statusEntries.map(([st, n]) => (
-                        <Tag
-                          key={st}
-                          color={STATUS_COLORS[st] ?? 'default'}
-                          data-testid={`doc-list-status-${doc.id}-${st}`}
-                          style={{ marginInlineEnd: 0, fontSize: 'var(--cn-text-3xs)', lineHeight: '16px', paddingInline: 4 }}
-                        >
-                          {doc.is_folder ? `${STATUS_LABELS[st] ?? st} ${n}` : STATUS_LABELS[st]}
-                        </Tag>
-                      ))}
-                      {showPrivate && (
-                        <Tooltip title={visibilityTip}>
-                          <Tag
-                            icon={<LockOutlined />}
-                            data-testid={`doc-list-visibility-${doc.id}`}
-                            aria-label="仅自己可见"
-                            style={{ fontSize: 'var(--cn-text-2xs)', lineHeight: '16px', paddingInline: 4, marginInlineEnd: 0 }}
-                          />
-                        </Tooltip>
-                      )}
-                      <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>
-                        更新于 {formatTime(doc.updated_at)}
-                      </Text>
-                      {!doc.is_folder && (
-                        <Text type="secondary" style={{ fontSize: 'var(--cn-text-2xs)' }}>
-                          {formatSize(doc.content_size)} · v{doc.version_count}
-                        </Text>
-                      )}
-                    </Space>
-                  ) : undefined
-                }
                 />
+
                 {!isMobile && (
                   /* 桌面端右侧 meta 列：大小 / 更新时间右对齐，文件夹大小留空占位保证跨行对齐 */
                   <div className="cn-doc-row-meta" data-testid={`doc-row-meta-${doc.id}`}>
@@ -874,41 +1044,75 @@ export default function DocumentsPage() {
             )
   }
 
+  // 行详情弹窗的派生展示（需求 0166 C3）；文件夹沿用子孙聚合状态口径
+  const detailCounts = detailDoc
+    ? (detailDoc.is_folder ? folderStatusCounts.get(detailDoc.id) ?? {} : { [detailDoc.status]: 1 })
+    : {}
+  const detailStatusText = Object.entries(detailCounts)
+    .map(([st, n]) => `${STATUS_LABELS[st] ?? st} ${n}`)
+    .join(' · ') || '—'
+  const detailPrivate = detailDoc
+    ? (detailDoc.is_folder
+      ? Object.keys(detailCounts).some(st => st !== 'published')
+      : detailDoc.visibility === 'private')
+    : false
+
   return (
     <div style={{ padding: isMobile ? 10 : 16 }}>
       {/* 工具栏 */}
       {isMobile ? (
-        <div data-testid="doc-toolbar-mobile" style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
-          {/* 第一行：返回 + 面包屑 + 更多（导航行常驻） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            {mobileUpButton}
-            <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>{breadcrumbNode}</div>
-            <Dropdown menu={{ items: mobileToolbarMenu }} trigger={['click']} placement="bottomRight">
-              <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
-            </Dropdown>
-          </div>
-          {/* 第二行：排序 + 搜索 + 筛选 + 新建 —— 单行不折行；标签 / 状态收进筛选行（默认收起） */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-            {renderSortButton('doc-content-sort')}
-            {renderSearchInput({ flex: 1, minWidth: 0 })}
-            <Badge count={activeFilterCount} size="small">
+        /* 移动端工具栏（需求 0167 C1）：只保留一行；搜索按需展开，筛选进底部 Drawer */
+        <div
+          data-testid="doc-toolbar-mobile"
+          className="cn-doc-toolbar-mobile"
+          style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8, minWidth: 0 }}
+        >
+          {mobileUpButton}
+          {mobileSearchOpen ? (
+            <div style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: 0, gap: 2 }}>
+              {renderSearchInput({ flex: 1, minWidth: 0 })}
               <Button
-                icon={<FilterOutlined />}
-                aria-label={mobileFilterLabel}
-                aria-expanded={filterOpen}
-                data-testid="doc-toolbar-filter"
-                onClick={() => setFilterOpen(v => !v)}
+                type="text"
+                icon={<CloseOutlined />}
+                aria-label="关闭搜索"
+                data-testid="doc-toolbar-search-close"
+                onClick={() => {
+                  setMobileSearchOpen(false)
+                  setDocTitleFilter('')
+                }}
               />
-            </Badge>
-            <Button type="primary" icon={<FileAddOutlined />} onClick={() => openCreate('doc')}>新建</Button>
-          </div>
-          {/* 第三行：仅在展开筛选时出现，防止低频筛选常驻占高 */}
-          {filterOpen && (
-            <div data-testid="doc-toolbar-filters" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              {renderTagSelect({ flex: 1, minWidth: 0 })}
-              {renderStatusSelect({ flex: 1, minWidth: 0 })}
             </div>
+          ) : (
+            <>
+              <div style={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>{mobileBreadcrumbNode}</div>
+              <Button
+                icon={<SearchOutlined />}
+                aria-label="搜索文档"
+                data-testid="doc-toolbar-search"
+                onClick={() => setMobileSearchOpen(true)}
+              />
+            </>
           )}
+          {renderSortButton('doc-content-sort')}
+          <Badge count={activeFilterCount} size="small">
+            <Button
+              icon={<FilterOutlined />}
+              aria-label={mobileFilterLabel}
+              aria-expanded={filterOpen}
+              data-testid="doc-toolbar-filter"
+              onClick={() => setFilterOpen(true)}
+            />
+          </Badge>
+          <Button
+            type="primary"
+            icon={<FileAddOutlined />}
+            aria-label="新建文档"
+            data-testid="doc-toolbar-create"
+            onClick={() => openCreate('doc')}
+          />
+          <Dropdown menu={{ items: mobileToolbarMenu }} trigger={['click']} placement="bottomRight">
+            <Button icon={<MoreOutlined />} aria-label="更多文档操作" data-testid="doc-toolbar-more" />
+          </Dropdown>
         </div>
       ) : (
         <div className="cn-doc-head" data-testid="doc-toolbar-desktop">
@@ -1079,7 +1283,7 @@ export default function DocumentsPage() {
       )}
 
       {/* 顶层网格视图：桌面仅在切到网格时渲染；移动端沿用卡片（需求 0162 C1/C6） */}
-      {parentId === null && (isMobile || docView === 'grid') && tagFilter === undefined && seriesList.length > 0 && (
+      {parentId === null && docView === 'grid' && tagFilter === undefined && seriesList.length > 0 && (
         <section data-testid="doc-folder-block" style={{ marginBottom: isMobile ? 10 : 16 }}>
         <SectionTitle label="文件夹" count={seriesList.length} compact={isMobile} />
         <div
@@ -1100,19 +1304,24 @@ export default function DocumentsPage() {
               data-testid={`doc-series-card-${s.folder.id}`}
               className="cn-folder-card"
               styles={{ body: { padding: isMobile ? 10 : 12 } }}
-              onClick={() => setParentId(s.folder.id)}
+              onClick={() => {
+                if (isMobile && selectMode) toggleSelected(s.folder.id)
+                else setParentId(s.folder.id)
+              }}
             >
               {/* 文件夹卡片压成两行：标题行（勾选 / 图标 / 名称 / 置顶）+ 元信息行（计数 / 状态 / 更新日期） */}
               <div className="cn-doc-row-title-line" style={{ marginBottom: 'var(--cn-space-xs)' }}>
-                {/* 外层 span 阻止冒泡：点击勾选框不会触发卡片跳转，同时保留 Checkbox 自身交互 */}
-                <span onClick={e => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selectedIds.includes(s.folder.id)}
-                    data-testid={`doc-select-${s.folder.id}`}
-                    aria-label={`选择 ${s.folder.title}`}
-                    onChange={() => toggleSelected(s.folder.id)}
-                  />
-                </span>
+                {/* 移动端默认不渲染勾选框（需求 0166 C6）；外层 span 阻止冒泡，点勾选不触发卡片跳转 */}
+                {(!isMobile || selectMode) && (
+                  <span onClick={e => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.includes(s.folder.id)}
+                      data-testid={`doc-select-${s.folder.id}`}
+                      aria-label={`选择 ${s.folder.title}`}
+                      onChange={() => toggleSelected(s.folder.id)}
+                    />
+                  </span>
+                )}
                 <FolderOutlined style={{ fontSize: 'var(--cn-text-lg)', color: 'var(--cn-warning, #faad14)', flexShrink: 0 }} />
                 <Text strong className="cn-doc-title-single" title={s.folder.title} style={{ fontSize: 'var(--cn-text-md)' }}>
                   {s.folder.title}
@@ -1223,35 +1432,20 @@ export default function DocumentsPage() {
           {parentId === null ? (
             <>
               {/* 根层：文件夹行在前（列表视图；网格视图由上方卡片承载） */}
-              {!isMobile && docView === 'list' && tagFilter === undefined && seriesList.length > 0 && (
+              {docView === 'list' && tagFilter === undefined && seriesList.length > 0 && (
                 <section data-testid="doc-folder-block" className="cn-doc-section">
-                  <SectionTitle label="文件夹" count={seriesList.length} />
-                  <DocumentTable
-                    testId="doc-folder-table"
-                    items={seriesList.map(series => series.folder)}
-                    folderStatusCounts={folderStatusCounts}
-                    folderSummaries={folderSummaries}
-                    selectedIds={selectedIds}
-                    onToggleSelected={toggleSelected}
-                    onOpen={openDoc}
-                    renderRowActions={renderRowActions}
-                  />
-                </section>
-              )}
-              {fileItems.length > 0 && (
-                <section data-testid="doc-file-block">
-                  <SectionTitle label="文档" count={fileItems.length} compact={isMobile} />
+                  <SectionTitle label="文件夹" count={seriesList.length} compact={isMobile} />
                   {isMobile ? (
                     <Listy
                       className="cn-doc-list"
-                      items={fileItems}
+                      items={seriesList.map(series => series.folder)}
                       rowKey={doc => doc.id}
                       itemRender={renderDocRow}
                     />
                   ) : (
                     <DocumentTable
-                      testId="doc-file-table"
-                      items={fileItems}
+                      testId="doc-folder-table"
+                      items={seriesList.map(series => series.folder)}
                       folderStatusCounts={folderStatusCounts}
                       folderSummaries={folderSummaries}
                       selectedIds={selectedIds}
@@ -1260,6 +1454,12 @@ export default function DocumentsPage() {
                       renderRowActions={renderRowActions}
                     />
                   )}
+                </section>
+              )}
+              {fileItems.length > 0 && (
+                <section data-testid="doc-file-block">
+                  <SectionTitle label="文档" count={fileItems.length} compact={isMobile} />
+                  {renderFileBlock(fileItems)}
                 </section>
               )}
             </>
@@ -1293,30 +1493,77 @@ export default function DocumentsPage() {
               {fileItems.length > 0 && (
                 <section data-testid="doc-file-block">
                   <SectionTitle label="文档" count={fileItems.length} compact={isMobile} />
-                  {isMobile ? (
-                    <Listy
-                      className="cn-doc-list"
-                      items={fileItems}
-                      rowKey={doc => doc.id}
-                      itemRender={renderDocRow}
-                    />
-                  ) : (
-                    <DocumentTable
-                      testId="doc-file-table"
-                      items={fileItems}
-                      folderStatusCounts={folderStatusCounts}
-                      folderSummaries={folderSummaries}
-                      selectedIds={selectedIds}
-                      onToggleSelected={toggleSelected}
-                      onOpen={openDoc}
-                      renderRowActions={renderRowActions}
-                    />
-                  )}
+                  {renderFileBlock(fileItems)}
                 </section>
               )}
             </>
           )}
         </div>
+      )}
+
+      {/* 移动端行详情（需求 0166 C3）：低频元信息不占列表行，完整时间在这里保留 */}
+      <Modal
+        title={detailDoc?.title}
+        open={detailDoc !== null}
+        onCancel={() => setDetailDoc(null)}
+        footer={null}
+        destroyOnHidden
+      >
+        <Space orientation="vertical" size={4} style={{ width: '100%' }} data-testid="doc-row-detail-modal">
+          <div>状态：{detailStatusText}</div>
+          <div>可见性：{detailPrivate ? '私有（仅创建者与工作区所有者可见）' : '工作区可见'}</div>
+          <div>更新时间：{detailDoc ? formatTime(detailDoc.updated_at) : ''}</div>
+          {detailDoc && !detailDoc.is_folder && (
+            <>
+              <div>大小：{formatSize(detailDoc.content_size)}</div>
+              <div>版本：v{detailDoc.version_count}</div>
+              <div>标签：{detailDoc.tag_ids.length} 个</div>
+            </>
+          )}
+          {detailDoc?.is_folder && (
+            <div>
+              内容：{folderSummaries.get(detailDoc.id)?.docCount ?? 0} 篇文档 ·{' '}
+              {folderSummaries.get(detailDoc.id)?.subFolderCount ?? 0} 个子文件夹
+            </div>
+          )}
+        </Space>
+      </Modal>
+
+      {/* 移动端筛选抽屉（需求 0167 C4）：标签 / 状态低频筛选不占顶栏高度 */}
+      {isMobile && (
+        <Drawer
+          title="筛选"
+          placement="bottom"
+          size="auto"
+          open={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          data-testid="doc-toolbar-filters"
+          destroyOnHidden
+        >
+          <div className="cn-doc-filter-sheet">
+            {renderTagSelect({ width: '100%' })}
+            {renderStatusSelect({ width: '100%' })}
+            <div className="cn-doc-filter-sheet-actions">
+              <Button onClick={() => updateParams({ tag: null, status: null })}>重置</Button>
+              <Button type="primary" onClick={() => setFilterOpen(false)}>完成</Button>
+            </div>
+          </div>
+        </Drawer>
+      )}
+
+      {/* 移动端长按快捷菜单（需求 0167 C6）：与行尾 ⋯ 共用菜单项，不替换常规路径 */}
+      {isMobile && (
+        <Drawer
+          title={quickDoc?.title}
+          placement="bottom"
+          size="auto"
+          open={quickDoc !== null}
+          onClose={() => setQuickDoc(null)}
+          data-testid="doc-quick-actions"
+          destroyOnHidden
+        >
+          {quickDoc && <Menu mode="inline" items={rowActionItems(quickDoc)} onClick={() => setQuickDoc(null)} />}
+        </Drawer>
       )}
 
       {/* 新建弹窗 */}

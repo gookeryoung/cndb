@@ -5900,12 +5900,59 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   }
 }
 
-/* ── 窄屏（< 768px）：文档列表行紧凑化 ──
- * 操作图标收进单枚「更多」后，行内留白再收紧一档，把宽度让给单行省略标题，
- * 同时保持 24px 的图标点击区。 */
+/* ── 窄屏（< 768px）：文档列表行紧凑化（需求 0166） ──
+ * 移动端行内只留「图标 + 标题 + 状态 + 相对时间 + ⋯」单行；描述行不渲染，
+ * 纵向留白再收紧一档，把宽度让给单行省略标题，同时保持 24px 的图标点击区。 */
 @media (max-width: 767.98px) {
+  /* 0167 C1/C4：工具栏压为单行，低频筛选项进底部抽屉 */
+  .cn-doc-toolbar-mobile {
+    min-height: 32px;
+  }
+
+  .cn-doc-toolbar-mobile .ant-btn {
+    flex: 0 0 auto;
+  }
+
+  .cn-doc-filter-sheet {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cn-space-sm);
+  }
+
+  .cn-doc-filter-sheet-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--cn-space-sm);
+    margin-block-start: var(--cn-space-sm);
+  }
+
+  /* 0167 C7/C8：sticky 时间分组头 + 搜索命中片段（颜色只作辅助） */
+  .cn-doc-time-groups {
+    display: flex;
+    flex-direction: column;
+    gap: var(--cn-space-sm);
+  }
+
+  .cn-doc-time-group-title {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: var(--cn-space-xs) var(--cn-space-sm);
+    background: var(--cn-bg-subtle);
+    border-block-start: 1px solid var(--cn-border);
+    color: var(--cn-text-muted);
+    font-size: var(--cn-text-xs);
+  }
+
+  .cn-doc-hit {
+    background: var(--cn-bg-selected);
+    color: inherit;
+    border-radius: var(--cn-radius-sm);
+    padding-inline: var(--cn-space-hairline);
+  }
+
   .cn-doc-list .ant-listy-item {
-    padding: var(--cn-space-sm) var(--cn-space-md);
+    padding: var(--cn-space-xs) var(--cn-space-md);
     padding-inline-start: var(--cn-space-md);
   }
 
@@ -5914,9 +5961,17 @@ body.theme-dark [style*="color:'#94a3b8'"] {
     margin-inline-end: var(--cn-space-xs);
   }
 
-  /* 移动端保留两行结构：标题与描述行之间仍保留一档间距 */
+  /* 单行无描述行：标题下不留额外间距；行尾元信息不参与标题截断 */
   .cn-doc-list .cn-list-meta-title {
-    margin-block-end: var(--cn-space-hairline);
+    margin-block-end: 0;
+  }
+
+  .cn-doc-row-time,
+  .cn-doc-row-count {
+    flex: 0 0 auto;
+    font-size: var(--cn-text-2xs);
+    color: var(--cn-text-muted);
+    white-space: nowrap;
   }
 
   .cn-doc-list .cn-list-item-actions {

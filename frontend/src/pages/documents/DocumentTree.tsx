@@ -9,11 +9,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import {
   Tooltip, App as AntApp, Button, Dropdown, Empty, Input, Modal, Tree, TreeSelect } from 'antd'
 import type { DataNode } from 'antd/es/tree'
-import type { ComponentType, ChangeEvent } from 'react'
+import type { ChangeEvent } from 'react'
 import {
-  CheckCircleOutlined,
-  EditOutlined,
-  InboxOutlined,
   LockOutlined,
   ApartmentOutlined,
   DeleteOutlined,
@@ -43,6 +40,7 @@ import {
   writeDocSort,
 } from './docTreeSort'
 import type { DocSort } from './docTreeSort'
+import { DOC_STATUS_META as STATUS_META } from './documentDisplay'
 
 /** 树节点：文档/文件夹 + 子节点 */
 export interface DocTreeNode extends DocumentItem {
@@ -144,19 +142,6 @@ export function planDropMove(
     if (n.sort_order !== idx) ops.push({ id: n.id, sort_order: idx })
   })
   return ops
-}
-
-/** 状态标记：草稿 / 已发布 / 归档 各用不同图标区分，颜色沿用既有状态色（灰 / 绿 / 橙） */
-interface StatusMeta {
-  Icon: ComponentType<{ style?: React.CSSProperties; 'aria-label'?: string; 'data-testid'?: string }>
-  color: string
-  label: string
-}
-
-const STATUS_META: Record<string, StatusMeta> = {
-  draft: { Icon: EditOutlined, color: 'var(--cn-text-muted, #999)', label: '草稿' },
-  published: { Icon: CheckCircleOutlined, color: 'var(--cn-success, #52c41a)', label: '已发布' },
-  archived: { Icon: InboxOutlined, color: 'var(--cn-warning, #faad14)', label: '归档' },
 }
 
 /** 右键菜单触达的节点上下文 */
