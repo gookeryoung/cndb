@@ -8,10 +8,12 @@
 
 import { Modal, Button, Popconfirm, Space, Table, Tag, Typography, Empty, App as AntApp } from 'antd'
 import { RedoOutlined, DeleteOutlined } from '@ant-design/icons'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { recordApi } from '@/api'
 import type { TrashedRow } from '@/api'
+import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
 
 interface Props {
   open: boolean
@@ -99,7 +101,8 @@ export default function RowRecycleBinDrawer({ open, wid, tid, tableName, onClose
     >
       <Typography.Paragraph type="secondary" style={{ marginTop: 0 }}>
         删除的行保留在这里，可恢复到原位置；「彻底删除」不可恢复。
-        超过保留期的行由运维任务自动清理。
+        超过保留期的行由运维任务自动清理。恢复方法与注意事项见
+        <Link className="cn-help-inline-link" to={helpLink('tutorials', 'record-lifecycle', subsectionAnchor('row-recycle-bin'))}>帮助文档</Link>。
       </Typography.Paragraph>
       {listQuery.isLoading ? (
         <div className="cn-state">加载中…</div>

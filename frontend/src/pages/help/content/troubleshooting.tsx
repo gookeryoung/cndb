@@ -194,6 +194,28 @@ const guide: HelpTopic = {
                     label: '行数比同事少',
                     body: <P>行级权限按主体合成读范围：同一张表不同角色看到的行数可以不同；导出与统计沿用同一范围。</P>,
                 },
+                {
+                    key: 'team-grant',
+                    label: '工作区来自团队授权，但没有管理权限',
+                    body: (
+                        <P>
+                            团队数据授权只给数据面角色（只读 / 可编辑），不会给成员管理、工作区设置与所有权。
+                            需要管理权限时，请工作区拥有者把你显式加为成员并分配角色；口径见
+                            <HelpLink section="tutorials" topic="teams-and-access" anchor="team-grant"> 团队与工作区访问 · 团队数据授权 </HelpLink>。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'link-expired',
+                    label: '链接表或分析数据源突然不能读了',
+                    body: (
+                        <P>
+                            多半是工作区链接到期、被源拥有者撤销或源表被删。到链接详情看失效原因，
+                            联系源工作区拥有者重新授权；已保存的分析模板配置会保留。见
+                            <HelpLink section="tutorials" topic="workspace-links" anchor="link-lifecycle"> 工作区链接 · 链接的生命周期 </HelpLink>。
+                        </P>
+                    ),
+                },
             ],
         },
         {
@@ -235,6 +257,56 @@ const guide: HelpTopic = {
                     key: 'import-lost-image',
                     label: '导入文档库后图片丢失',
                     body: <P>相对链接的图片需要一并导入为资产：导入时勾选包含附件，并保持原目录结构。</P>,
+                },
+                {
+                    key: 'pdf-preview',
+                    label: 'PPTX 一直显示客户端预览，没切到高清',
+                    body: (
+                        <P>
+                            高清预览由服务端转换容器在空闲时生成；桌面端或未部署转换服务时会一直保留客户端逐页预览，
+                            属正常降级。已部署时可在右下角点「重试高清预览」；动画、音视频与嵌入对象不保证还原。见
+                            <HelpLink section="tutorials" topic="documents" anchor="pptx-pdf-preview"> 文档 · PPTX 高清预览 </HelpLink>。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'rotation',
+                    label: 'PDF / 图片方向不对',
+                    body: (
+                        <P>
+                            在阅读区右侧点「自动旋转」；若仍不对，用「旋转 90°」与「水平镜像」手动纠偏。
+                            这些操作只改显示副本，不会改原件与下载内容。见
+                            <HelpLink section="tutorials" topic="documents" anchor="export-view--rotation"> 文档 · PDF / 图片方向与镜像 </HelpLink>。
+                        </P>
+                    ),
+                },
+            ],
+        },
+        {
+            key: 'records',
+            label: '记录删除与保存冲突',
+            items: [
+                {
+                    key: 'deleted-row',
+                    label: '误删了一行',
+                    body: (
+                        <P>
+                            先到表的行回收站找回来并点「恢复」；恢复需要编辑权限。已从回收站彻底删除的行不可恢复，
+                            可从最近的系统备份恢复整库。见
+                            <HelpLink section="tutorials" topic="record-lifecycle" anchor="row-recycle-bin"> 记录生命周期 · 行回收站 </HelpLink>。
+                        </P>
+                    ),
+                },
+                {
+                    key: 'save-conflict',
+                    label: '保存时提示「数据已被其他人更新」',
+                    body: (
+                        <P>
+                            有人在你打开后改了同一行。先刷新查看最新值，再决定覆盖还是放弃本地修改；
+                            系统不会静默覆盖同事的改动。见
+                            <HelpLink section="tutorials" topic="record-lifecycle" anchor="concurrency"> 记录生命周期 · 并发冲突与写入幂等 </HelpLink>。
+                        </P>
+                    ),
                 },
             ],
         },

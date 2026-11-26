@@ -12,19 +12,33 @@
 > 构建目标、静态门禁与老内核冒烟共用同一常量（`frontend/scripts/browser-baseline.mjs`），口径见 [ADR 0026](docs/adr/0026-chrome81-compat.md)。
 > 注意：前端栈为 React 19 + antd 6（[ADR 0074](docs/adr/0074-react19-antd6-upgrade.md)），两者官方仅承诺现代浏览器；Chrome 81 兼容由本仓库自有兼容层（`StyleProvider` 降级 / polyfill / flex-gap shim）+ 定时真机冒烟保障，antd 6 小版本升级须重跑冒烟。
 
+## 用户入口
+
+| 想做什么 | 去哪看 |
+|---|---|
+| 首次使用 / 十分钟上手 | 登录后顶栏「? → 快速入门 → 十分钟上手」，或应用内 `/help/quick-start/workflow` |
+| 按功能查操作 | 应用内「帮助文档」`/help`（侧栏 + 页内目录可定位到任意小节）；功能 → 帮助深链见 [用户文档地图](docs/USER_DOC_MAP.md) |
+| 看现成例子 | `examples/datasets/` 下的销售管理 / 科研项目管理示例工作区；导入方式见 `/help/tutorials/import-export` |
+| 部署 / 升级 / 离线安装 | [docs/DEPLOY_TENCENT.md](docs/DEPLOY_TENCENT.md) |
+| 术语与权限口径 | [CONTEXT.md](CONTEXT.md)（维护者口径）；面向用户的白话说明以应用内帮助为准 |
+
 ## 特性
 
 - **插件化架构**：accounts / workspaces / tables / documents / issues / change_requests / analytics / files / pipeline，可独立部署
 - **动态数据表**：SQLAlchemy Core 运行时建表 / 改字段，运行中即可扩 schema
 - **19 种字段类型**：text / longtext / email / url / phone / json / number / float / percentage / boolean / date / datetime / timestamp / select / multiselect / link（跨表关联）/ lookup（跨表引用）/ attachment / image
 - **9 种视图**：表格（Grid）/ 树形（Tree）/ 看板 / 日历 / 甘特图 / WBS / 矩阵 / 图表 / 流程（Flow），视图级筛选、排序、字段显隐与配置持久化
-- **文档管理**：工作区 Markdown 文档树、双向链接 `[[标题]]`、数据表动态引用 `{{table:表名}}`、版本历史与全文检索、回收站与恢复、断链检测与修复、**Obsidian 文档库导入 / 导出**（目录层级 + front-matter 标签 + 附件互转 + 双链锚点/别名保真 + Canvas/Base 转文档）
+- **文档管理**：工作区 Markdown 文档树、双向链接 `[[标题]]`、数据表动态引用 `{{table:表名}}`、版本历史与全文检索、回收站与恢复、断链检测与修复、**Obsidian 文档库导入 / 导出**（目录层级 + front-matter 标签 + 附件互转 + 双链锚点/别名保真 + Canvas/Base 转文档）；多文件 / 纯文本导入、导出模板、PPTX 异步高清预览与 PDF / 图片方向纠偏
+- **团队与多工作区**：团队层统一管理成员与授权模板，工作区仍是唯一权限与数据边界；可将多个团队以只读 / 编辑方式授权到同一工作区
+- **跨工作区只读引用**：工作区链接（申请 → 批准 → 到期失效）与链接表只读网格；链接可作为分析数据源做跨工作区汇总与关联
+- **记录生命周期**：行回收站、行历史与回滚、并发保存冲突提示与写入幂等；表分组、矩阵评分录入、批量编辑与 DDL 变更影响预估
 - **行级协作**：编辑评论 / 审计日志 / 回收站
 - **link 字段关系图**：`GET /workspaces/{id}/tables/graph` 返回所有表间依赖
 - **异步导入**：CSV / JSON / XLSX / API 抓取异步导入 + 进度轮询
 - **数据分析**：工作区级分析模板（公式引擎 + 图表 + 分组汇总/透视）与字段智能推荐，一键生成典型分析示例
 - **权限体系**：工作区三级角色 owner / editor / viewer，叠加全局角色（system_admin / security_admin / audit_admin / 超级管理员），表级 + 工作区级双重校验
 - **工作区类型**：新增与修改时可选 数据 + 文档（默认）/ 数据 / 文档 三类，按类型开放数据表、数据分析与文档功能（仅数据隐藏文档、仅文档隐藏数据表与数据分析）
+- **主页导航**：「我的工作区 / 我的团队 / 我的视图」分组与深链定位，收藏与拖拽排序按用户保存；全站窄屏适配
 - **流水线质量检查**：工作区级声明式 YAML DSL（DAG jobs + 检查动作注册表 + `${{ }}` 白名单表达式），支持手动 / 事件（记录变更、文档保存、同步完成）/ 定时触发，发现物可一键转问题；用法见 [docs/PIPELINE_DSL.md](docs/PIPELINE_DSL.md)
 - **备份恢复**：`cndb backup` / `cndb restore` 全库归档（.tar.gz），跨机器迁移（工作区备份 v15 含流水线定义，运行 / 发现物 / 设计草稿不入备份）
 - **桌面 GUI**：`cndbw` 启动 Tkinter 管理面板（启动服务 / 备份恢复 / Windows 后台服务管理）

@@ -8,6 +8,7 @@
  */
 
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   App as AntApp, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space,
@@ -17,6 +18,7 @@ import { ApartmentOutlined, PlusOutlined } from '@ant-design/icons'
 
 import { linksApi, teamApi } from '@/api'
 import type { Team, TeamAccess } from '@/api'
+import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
 import { formatDateTime } from '@/utils/datetime'
 
 const { Text } = Typography
@@ -95,6 +97,7 @@ export default function TeamAccessCard({
       <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
         被授团队的成员可以**只读或可编辑**本工作区的数据（含行级规则与字段隐藏约束），不获得管理权；到期自动失效。
         这只是「授权」，不会把团队成员加进上方成员列表。
+        角色与有效期见 <Link className="cn-help-inline-link" to={helpLink('tutorials', 'teams-and-access', subsectionAnchor('team-grant'))}>帮助文档</Link>。
       </Text>
 
       {grants.length === 0 && !isLoading ? (

@@ -343,6 +343,19 @@ const admin: HelpTopic = {
                     排查页面异常时，可先按时间与动作定位一次请求。
                 </P>
             ),
+            items: [
+                {
+                    key: 'retention',
+                    label: '审计留存与清理',
+                    body: (
+                        <P>
+                            行审计与统一事件默认按 180 天留存（环境变量 <code>AUDIT_RETENTION_DAYS</code> 可改，0 为关闭清理）。
+                            运维清理走 <code>cndb tables purge-audit</code>：默认只演练并报告过期条数，加 <code>--apply</code> 才真删，
+                            分批执行、可重复运行。清理只按时间不按条数，删除后不可恢复，执行前先做系统备份。
+                        </P>
+                    ),
+                },
+            ],
         },
         {
             key: 'backup',

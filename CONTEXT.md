@@ -1,5 +1,7 @@
 # Context
 
+> 面向用户的白话说明与「功能 → 帮助深链」映射见 [docs/USER_DOC_MAP.md](docs/USER_DOC_MAP.md)；本文件是维护者术语口径，不在正文复制用户文档。
+
 ## Glossary
 
 | Term | Meaning | Notes |

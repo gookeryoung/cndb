@@ -377,7 +377,7 @@ const uiTour: HelpTopic = {
         {
             key: 'entries',
             label: '常用入口速查',
-            summary: '六个高频动作各自的位置，找不到入口时先看这里。',
+            summary: '九个高频动作各自的位置，找不到入口时先看这里。',
             items: [
                 { key: 'new-table', label: '新建数据表 / 导入数据', body: <P>「数据表」页签右上角：「新建表」「导入数据表」。</P> },
                 {
@@ -387,6 +387,21 @@ const uiTour: HelpTopic = {
                 },
                 { key: 'search', label: '搜索', body: <P>顶栏右侧搜索框（操作按钮左侧），也可在任意页面用键盘唤起；范围与结果见 <HelpLink section="tutorials" topic="search" anchor="global">搜索与收藏 · 全局搜索范围</HelpLink>。</P> },
                 { key: 'invite', label: '邀请成员', body: <P>「工作区设置 → 成员管理 → 邀请成员」，选择角色后发送。</P> },
+                {
+                    key: 'home',
+                    label: '我的工作区',
+                    body: <P>主页首屏按「我的工作区 / 全部工作区」分组平铺，点条目直达工作区；收藏与拖拽排序见 <HelpLink section="tutorials" topic="search" anchor="order"> 搜索与收藏 · 自定义排序 </HelpLink>。</P>,
+                },
+                {
+                    key: 'team',
+                    label: '我的团队',
+                    body: <P>主页「我的团队」入口列出你所在的团队；团队与工作区的授权关系见 <HelpLink section="tutorials" topic="teams-and-access" anchor="team-model"> 团队与工作区访问 · 团队与工作区的关系 </HelpLink>。</P>,
+                },
+                {
+                    key: 'views',
+                    label: '我的视图',
+                    body: <P>主页「我的视图」面板汇总收藏的表视图，点条目带深链定位到对应视图；收藏方法见 <HelpLink section="tutorials" topic="search" anchor="favorite"> 搜索与收藏 · 我的视图收藏 </HelpLink>。</P>,
+                },
                 { key: 'help', label: '帮助文档', body: <P>桌面顶栏问号图标；窄屏在用户菜单里。本页即帮助文档，可从任意主题复制地址分享。</P> },
                 { key: 'personal', label: '个人设置', body: <P>右上角头像 →「个人设置」；大模型连接、调用记录与偏好都在这里。</P> },
             ],

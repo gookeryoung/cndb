@@ -10,7 +10,7 @@
 
 import { useMemo, useState } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import {
   Alert, App as AntApp, Button, Empty, Skeleton, Space, Table, Tag, Typography,
 } from 'antd'
@@ -19,6 +19,7 @@ import { ArrowLeftOutlined, DownloadOutlined, LinkOutlined, ReloadOutlined } fro
 import { linksApi } from '@/api'
 import type { LinkField, WorkspaceLink } from '@/api'
 import { useResponsive } from '@/hooks/useResponsive'
+import { helpLink, subsectionAnchor } from '@/pages/help/helpNav'
 import { formatDateTime } from '@/utils/datetime'
 
 const { Text, Title } = Typography
@@ -133,6 +134,9 @@ export default function LinkedTablePage() {
               {link?.expires_at ? formatDateTime(link.expires_at) : '—'}
             </Text>
             <Tag color="blue">只读</Tag>
+            <Link className="cn-help-inline-link" to={helpLink('tutorials', 'workspace-links', subsectionAnchor('link-lifecycle'))}>
+              链接状态说明
+            </Link>
           </Space>
         </div>
 
