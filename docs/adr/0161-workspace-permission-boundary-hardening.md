@@ -199,7 +199,7 @@ def require_workspace_write(user, workspace, db) -> Capabilities: ...
 | P0 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/routers/teams.py`、`src/cndb/plugins/workspaces/routers/workspaces.py` | `tests/test_workspace_permission_hardening.py`（21 例） | 330b644 |
 | P1 | 已落地 | `src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/workspaces/permissions.py` | `tests/test_workspace_permission_hardening.py`（34 例） | 22453ac |
 | P2 | 已落地 | `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/issues/services.py`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | `frontend/src/pages/settings/WorkspaceSettingsContent.test.tsx`、`frontend/tests/e2e/critical/workspace-permissions.spec.ts` | 8604dea |
-| P2 补充 | 已落地 | `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`frontend/src/pages/team/TeamSections.tsx` | `tests/test_teams_api.py` | 见 CHANGELOG |
+| P2 补充 | 已落地 | `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`frontend/src/pages/team/TeamSections.tsx` | `tests/test_teams_api.py` | f4e860e |
 
 ## 交接（会话结束更新）
 
