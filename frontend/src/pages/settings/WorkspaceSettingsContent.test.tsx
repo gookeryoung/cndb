@@ -140,7 +140,7 @@ const MEMBERS = [
 
 /** 按角色渲染设置内容（能力位 `/capabilities` 决定权限分支，detail 角色仅作展示回退） */
 function renderContent(
-  role: 'owner' | 'editor' | 'viewer' = 'owner',
+  role: 'owner' | 'editor' | 'viewer' | 'team_admin' = 'owner',
   detailOverrides: Record<string, unknown> = {},
 ) {
   server.use(
@@ -151,7 +151,7 @@ function renderContent(
         owner: { id: 1, username: 'alice', nickname: null },
         table_count: 3, member_count: 2, view_count: 2, total_rows: 120,
         document_count: 8, design_count: 2,
-        current_user_role: role,
+        current_user_role: role === 'team_admin' ? null : role,
         ...detailOverrides,
       })),
     // 能力位（ADR 0153）：门控唯一来源，与 detail.current_user_role 同步
@@ -160,8 +160,13 @@ function renderContent(
         role === 'owner'
           ? {
             data_role: 'owner', team_role: null, sources: { data: 'workspace_member:owner' },
-            capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE', 'DELETE_WORKSPACE', 'MANAGE_LINKS', 'MANAGE_ACCESS'],
+            capabilities: ['READ', 'WRITE', 'EXPORT', 'EDIT_SETTINGS', 'MANAGE_MEMBERS', 'RESTORE', 'DELETE_WORKSPACE', 'MANAGE_LINKS', 'MANAGE_ACCESS', 'TRANSFER_OWNERSHIP', 'WIDEN_ACCESS'],
           }
+          : role === 'team_admin'
+            ? {
+              data_role: null, team_role: 'admin', sources: { manage: 'team_admin' },
+              capabilities: ['EDIT_SETTINGS', 'MANAGE_MEMBERS'],
+            }
           : role === 'editor'
             ? {
               data_role: 'editor', team_role: null, sources: { data: 'workspace_member:editor' },
@@ -287,6 +292,21 @@ describe('WorkspaceSettingsContent 常规设置信息区', () => {
     // 转让入口复用所有权转让弹窗
     fireEvent.click(within(danger as HTMLElement).getByRole('button', { name: /转让所有权/ }))
     expect(await screen.findByText('转让工作区所有权')).toBeInTheDocument()
+  })
+
+  it('团队管理员（有管理面无数据面）不见危险操作区，不能放宽可见性 / 开启编辑', async () => {
+    renderContent('team_admin', { visibility: 'private', allow_edit: false })
+    await waitDetailLoaded()
+
+    // D3：放宽可见性 / 变更团队 / 转让 / 删除均需 owner 能力位
+    expect(screen.queryByText('危险操作')).not.toBeInTheDocument()
+    expect(screen.getByTestId('ws-settings-team-select')).toHaveClass('ant-select-disabled')
+
+    // 切到权限页：编辑权限由关到开需 WIDEN_ACCESS；成员管理能力仍保留（D4 不推翻）
+    fireEvent.click(screen.getByText('权限管理'))
+    expect(await screen.findByRole('switch')).toBeDisabled()
+    expect(screen.getAllByRole('button', { name: /添加成员/ }).length).toBeGreaterThan(0)
+    expect(screen.queryByText('仅所有者可管理成员与权限')).not.toBeInTheDocument()
   })
 })
 

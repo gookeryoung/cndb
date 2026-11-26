@@ -39,7 +39,7 @@ from cndb.plugins.change_requests.models import (
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.tables.services.core import records as rec
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 # ── 双轨写入分派（records.py / bulk.py 调用） ──────────
 
@@ -61,7 +61,7 @@ def can_write_directly(db: Session, table: DataTable, user: User) -> bool:
     ws = db.get(Workspace, table.workspace_id)
     if ws is None:  # pragma: no cover - 表必然挂在有效工作区下
         return False
-    role = get_member_role(user, ws, db)
+    role = workspace_data_role(user, ws, db)
     if role is None:
         return False
     if role == WorkspaceRole.OWNER:
@@ -477,12 +477,12 @@ def require_reviewer_role(db: Session, table: DataTable, user: User) -> Workspac
     ws = db.get(Workspace, table.workspace_id)
     if ws is None:  # pragma: no cover
         return None
-    return get_member_role(user, ws, db)
+    return workspace_data_role(user, ws, db)
 
 
 def _require_reviewer(db: Session, cr: ChangeRequest, user: User) -> None:
     """merge 仅 owner/editor 可操作."""
-    role = get_member_role(user, _cr_workspace(db, cr), db)
+    role = workspace_data_role(user, _cr_workspace(db, cr), db)
     if role not in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
         raise_permission_denied(db, _cr_workspace(db, cr), user, requirement="仅 owner/editor 可合并修改申请")

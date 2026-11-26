@@ -28,7 +28,7 @@ from cndb.plugins.issues.models import (
 )
 from cndb.plugins.tables.models import DataTable
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import workspace_data_role
 
 
 def _invalidate_home_summary() -> None:
@@ -248,7 +248,7 @@ def require_issue_actor_role(db: Session, table: DataTable, user: User) -> Works
     ws = db.get(Workspace, table.workspace_id)
     if ws is None:  # pragma: no cover - 表必然挂在有效工作区下
         return None
-    return get_member_role(user, ws, db)
+    return workspace_data_role(user, ws, db)
 
 
 def _serialize_issue(issue: Issue, *, comment_count: int) -> dict[str, Any]:

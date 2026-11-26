@@ -107,7 +107,8 @@ export default function WorkspaceSettingsContent({
     queryKey: ['workspace-member-candidates', wid, candidatesSearch],
     queryFn: async () => {
       const res = await workspaceApi.memberCandidates(wid, candidatesSearch)
-      return res.results
+      // ADR 0161 D2：禁止把自己加入所辖工作区（后端 403，前端先过滤）
+      return res.results.filter(u => u.username !== currentUser?.username)
     },
     enabled: !!wid && can('MANAGE_MEMBERS'),
     gcTime: 0,
@@ -140,8 +141,18 @@ export default function WorkspaceSettingsContent({
   // 权限判断 —— 能力位单一来源：管理操作收敛为 EDIT_SETTINGS / MANAGE_MEMBERS
   const canEditBasic = can('EDIT_SETTINGS')
   const canManageMembers = can('MANAGE_MEMBERS')
-  const canDeleteWorkspace = can('EDIT_SETTINGS')
-  const assignableRoles = useMemo(() => getAssignableRoles(myRole), [myRole])
+  // ADR 0161 D1/D3：owner 层与「放宽数据暴露」是独立能力位，团队管理员不具备
+  const canTransferOwnership = can('TRANSFER_OWNERSHIP')
+  const canDeleteWorkspace = can('DELETE_WORKSPACE')
+  const canWidenAccess = can('WIDEN_ACCESS')
+  const canChangeTeam = can('DELETE_WORKSPACE')
+  // 成员角色只允许 editor/viewer；团队管理员同样可管理成员（不能再授 owner）
+  const assignableRoles = useMemo<Array<{ value: WorkspaceRole; label: string }>>(
+    () => (canManageMembers ? getAssignableRoles('owner') : []),
+    [canManageMembers],
+  )
+  const visibilityRank: Record<WorkspaceVisibility, number> = { private: 0, member: 1, public: 2 }
+  const currentVisibility = (detail?.visibility ?? 'member') as WorkspaceVisibility
 
   const currentMemberId = members.find(
     m => m.user?.username === currentUser?.username,
@@ -290,7 +301,7 @@ export default function WorkspaceSettingsContent({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <Switch
             checked={detail?.allow_edit ?? true}
-            disabled={!canEditBasic}
+            disabled={!canEditBasic || (!(detail?.allow_edit ?? true) && !canWidenAccess)}
             onChange={(checked) => toggleAllowEdit.mutate(checked)}
             loading={toggleAllowEdit.isPending}
           />
@@ -392,7 +403,13 @@ export default function WorkspaceSettingsContent({
                         label={<>公开性<HelpTip title="修改后立即生效：公开=同团队成员可读（未挂团队时等同成员可见）；成员可见=仅工作区成员可访问；私有=仅所有者可见，其他成员将无法打开" /></>}
                       >
                         <Select
-                          options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({ value: v, label: l }))}
+                          data-testid="ws-settings-visibility-select"
+                          options={Object.entries(VISIBILITY_LABEL).map(([v, l]) => ({
+                            value: v,
+                            label: l,
+                            // ADR 0161 D3：放宽可见性（等级变高）仅 owner 可选
+                            disabled: !canWidenAccess && visibilityRank[v as WorkspaceVisibility] > visibilityRank[currentVisibility],
+                          }))}
                           disabled={!canEditBasic}
                         />
                       </Form.Item>
@@ -415,7 +432,7 @@ export default function WorkspaceSettingsContent({
                       placeholder="个人工作区（不归属团队）"
                       data-testid="ws-settings-team-select"
                       options={teams.map(t => ({ value: t.id, label: t.name }))}
-                      disabled={!canEditBasic}
+                      disabled={!canEditBasic || !canChangeTeam}
                     />
                   </Form.Item>
                   <Form.Item
@@ -446,11 +463,12 @@ export default function WorkspaceSettingsContent({
 
           {/* 危险操作区：参考 GitHub 设置页置于底部，仅 owner 可见。
            * 「转让所有权」与「删除工作区」都是不可逆操作，集中放在同一区域并用危险色提示。 */}
-          {canDeleteWorkspace && (
+          {(canTransferOwnership || canDeleteWorkspace) && (
             <div className="cn-ws-settings-danger" style={dangerBoxStyle}>
               <div className="cn-ws-settings-danger-title">
                 <ExclamationCircleOutlined /> 危险操作
               </div>
+              {canTransferOwnership && (
               <div className="cn-ws-settings-danger-row">
                 <div>
                   <div className="cn-ws-settings-danger-row-title">转让所有权</div>
@@ -466,6 +484,8 @@ export default function WorkspaceSettingsContent({
                   转让所有权
                 </Button>
               </div>
+              )}
+              {canDeleteWorkspace && (
               <div className="cn-ws-settings-danger-row">
                 <div>
                   <div className="cn-ws-settings-danger-row-title">删除此工作区</div>
@@ -486,6 +506,7 @@ export default function WorkspaceSettingsContent({
                   </Button>
                 </Popconfirm>
               </div>
+              )}
             </div>
           )}
         </div>
