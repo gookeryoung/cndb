@@ -43,7 +43,7 @@ from cndb.plugins.workspaces.models import (
     WorkspaceMember,
     WorkspaceRole,
 )
-from cndb.plugins.workspaces.permissions import get_member_role
+from cndb.plugins.workspaces.permissions import workspace_data_role
 
 router = APIRouter(prefix="/{workspace_id}/tables", tags=["tables"])
 
@@ -461,7 +461,7 @@ def get_table(
 
     # 4) 工作区 + 当前用户角色 + owner（复用 check_workspace_permission 已查过的 ws）
     ws = db.get(Workspace, workspace_id)
-    member_role = get_member_role(current_user, ws, db) if ws else None
+    member_role = workspace_data_role(current_user, ws, db) if ws else None
     actions: list[str] = []
     for action in TableAction:
         if check_action(db, dt, current_user, action, member_role=member_role):

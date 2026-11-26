@@ -25,7 +25,7 @@ from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.routers.documents import invalidate_document_tree_cache, invalidate_tree_on_write
 from cndb.plugins.documents.services import obsidian
 from cndb.plugins.workspaces.models import Workspace
-from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 router = APIRouter(
     prefix="/{workspace_id}/documents",
@@ -52,7 +52,7 @@ def _require_member(db: Session, workspace_id: int, user: User) -> Workspace:
     workspace = db.get(Workspace, workspace_id)
     if workspace is None:
         raise NotFoundError("工作区不存在")
-    if get_member_role(user, workspace, db) is None:
+    if workspace_data_role(user, workspace, db) is None:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
         raise_permission_denied(db, workspace, user)
     return workspace

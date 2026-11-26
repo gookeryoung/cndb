@@ -75,12 +75,12 @@ def is_table_admin(db: Session, table: DataTable, user: User) -> bool:
 def _workspace_role_value(db: Session, workspace_id: int, user: User) -> str | None:
     """当前用户在指定工作区的角色值（``owner``/``editor``/``viewer``/``None``）."""
     from cndb.plugins.workspaces.models import Workspace
-    from cndb.plugins.workspaces.permissions import get_member_role
+    from cndb.plugins.workspaces.permissions import workspace_data_role
 
     ws = db.get(Workspace, workspace_id)
     if ws is None:
         return None
-    role = get_member_role(user, ws, db)
+    role = workspace_data_role(user, ws, db)
     return role.value if role is not None else None
 
 

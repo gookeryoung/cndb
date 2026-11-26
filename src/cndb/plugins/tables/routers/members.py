@@ -14,7 +14,7 @@ from cndb.plugins.tables.models import AuditLog, DataTable, TableMember
 from cndb.plugins.tables.schemas import MemberCreate, MemberOut, MemberUpdate, OwnerTransfer
 from cndb.plugins.tables.services.core.access import check_workspace_permission, get_table_or_404
 from cndb.plugins.workspaces.models import Role, WorkspaceMember, WorkspaceRole
-from cndb.plugins.workspaces.permissions import raise_permission_denied
+from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 router = APIRouter(prefix="/{workspace_id}/tables/{table_id}", tags=["table-members"])
 
@@ -33,18 +33,8 @@ def _require_table_admin(
     """
     if table.owner_id is not None and table.owner_id == current_user.id:
         return
-    wm = (
-        db.query(WorkspaceMember)
-        .filter(
-            WorkspaceMember.workspace_id == table.workspace_id,
-            WorkspaceMember.user_id == current_user.id,
-        )
-        .first()
-    )
-    if wm is None:
-        # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
-        raise_permission_denied(db, table.workspace, current_user)
-    if wm.role != WorkspaceRole.OWNER:
+    # ADR 0161 D4 / H64：工作区 owner 统一按数据面判定，private 下非 owner 不放行
+    if workspace_data_role(current_user, table.workspace, db) != WorkspaceRole.OWNER:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
         raise_permission_denied(db, table.workspace, current_user, requirement="仅表所有者或工作区所有者可执行此操作")
 
@@ -282,15 +272,7 @@ def transfer_owner(
 
     # 调用方必须是当前 owner 或工作区 OWNER
     is_owner = table.owner_id is not None and table.owner_id == current_user.id
-    ws = (
-        db.query(WorkspaceMember)
-        .filter(
-            WorkspaceMember.workspace_id == workspace_id,
-            WorkspaceMember.user_id == current_user.id,
-        )
-        .first()
-    )
-    ws_role = ws.role if ws else None
+    ws_role = workspace_data_role(current_user, table.workspace, db)
     if not is_owner and ws_role != WorkspaceRole.OWNER:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
         raise_permission_denied(db, table.workspace, current_user, requirement="仅表所有者或工作区所有者可转让所有权")

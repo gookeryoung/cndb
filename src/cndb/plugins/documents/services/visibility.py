@@ -36,7 +36,8 @@ from sqlalchemy.orm import Session
 from cndb.core.errors import NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import DOC_STATUS_PUBLISHED, Document
-from cndb.plugins.workspaces.models import Workspace, WorkspaceMember, WorkspaceRole
+from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
+from cndb.plugins.workspaces.permissions import workspace_data_role
 
 # 全员可见的状态（其余状态仅创建者/管理员可见）
 PUBLIC_STATUSES: tuple[str, ...] = (DOC_STATUS_PUBLISHED,)
@@ -48,12 +49,11 @@ def is_document_admin(db: Session, workspace_id: int, user: User | None) -> bool
         return False
     if getattr(user, "is_superuser", False):
         return True
-    member = (
-        db.query(WorkspaceMember)
-        .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user.id)
-        .first()
-    )
-    return member is not None and member.role == WorkspaceRole.OWNER
+    ws = db.get(Workspace, workspace_id)
+    if ws is None:
+        return False
+    # ADR 0161 D4 / H64：统一走 resolve_capabilities，private 下非 owner 不得进入管理员视角
+    return workspace_data_role(user, ws, db) == WorkspaceRole.OWNER
 
 
 def visible_condition(
@@ -167,14 +167,10 @@ def is_workspace_owner(db: Session, workspace_id: int, user: User | None) -> boo
     """工作区所有者（不含超级用户）：用于"仅所有者可发布/下线"等场景."""
     if user is None:  # pragma: no cover
         return False
-    if db.get(Workspace, workspace_id) is None:
+    ws = db.get(Workspace, workspace_id)
+    if ws is None:
         return False
-    member = (
-        db.query(WorkspaceMember)
-        .filter(WorkspaceMember.workspace_id == workspace_id, WorkspaceMember.user_id == user.id)
-        .first()
-    )
-    return member is not None and member.role == WorkspaceRole.OWNER
+    return workspace_data_role(user, ws, db) == WorkspaceRole.OWNER
 
 
 __all__ = [

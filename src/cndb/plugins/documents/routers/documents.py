@@ -67,7 +67,7 @@ from cndb.plugins.documents.schemas import (
 from cndb.plugins.llm.services import gateway as llm_gateway
 from cndb.plugins.llm.services.errors import LlmError
 from cndb.plugins.llm.services.gateway import LlmContext
-from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 # 文档树缓存 TTL（秒）
 DOC_TREE_TTL_SECONDS = 10.0
@@ -114,7 +114,7 @@ def _require_member(db: Session, workspace_id: int, user: User) -> None:
     ws = db.get(Workspace, workspace_id)
     if ws is None:
         raise NotFoundError("工作区不存在")
-    if get_member_role(user, ws, db) is None:
+    if workspace_data_role(user, ws, db) is None:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
         raise_permission_denied(db, ws, user)
 

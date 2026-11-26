@@ -195,14 +195,14 @@ def require_workspace_write(user, workspace, db) -> Capabilities: ...
 
 | 期 | 状态 | 代码落点 | 测试 | 提交 |
 |---|---|---|---|---|
-| P0 | 已完成（2026-11-26） | `src/cndb/plugins/workspaces/{permissions.py,routers/member_routes.py,routers/teams.py,routers/workspaces.py}` | `tests/test_workspace_permission_hardening.py`（21 例） | 330b644 |
-| P1 | 未开始 | `src/cndb/plugins/tables/services/core/access.py`、`documents/`、`design/`、`files/`、`workspaces/routers/search.py` | `tests/test_workspace_permission_hardening.py`、`tests/test_workspace_team_capabilities.py` | — |
+| P0 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/routers/teams.py`、`src/cndb/plugins/workspaces/routers/workspaces.py` | `tests/test_workspace_permission_hardening.py`（21 例） | 330b644 |
+| P1 | 已落地 | `src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/workspaces/permissions.py` | `tests/test_workspace_permission_hardening.py`（34 例） | 见 CHANGELOG |
 | P2 | 未开始 | `analytics/`、`datasource/`、`issues/`、`change_requests/`、`pipeline/`、`frontend/src/` | 同上 + `frontend/tests/e2e/critical/workspace-permissions.spec.ts` | — |
 
 ## 交接（会话结束更新）
 
-- 当前阶段：P0 已完成，下一步 P1
-- 已完成：权限审计（结论见 Context 表）；ADR 评审通过；H64-H67 登记；P0（能力位 + 成员 / 所有权 / 可见性 / 团队等级 + `/capabilities` 载荷 + 超管判定 + `workspace_data_role` 入口）
-- 下一步：P1 —— 表 / 文档 / 设计 / 文件 / 搜索接入 `workspace_data_role`，修复 `private` 泄漏与授权少给；先补失败用例再改实现
-- 已知坑：资源层调用点分散在 22 个文件（`check_workspace_permission` 58 处、`get_member_role` / `has_role` 27 处），迁移时注意 `check_workspace_permission` 被复用于「表 / 设计 / 分析 / 数据源」，改签名会波及大量路由；P0 已把 `/capabilities` 从 404 改为「有管理面即 200」，前端按新契约渲染时需以 `data_role` 区分数据面
-- 最近一次全绿：2026-11-26 `make check-fast`、`make test`（7676 passed / 17 skipped）、`make cov` 95.04%
+- 当前阶段：P1 已完成，下一步 P2（剩余模块 + 前端门控 + e2e）
+- 已完成：权限审计；ADR 评审；H64-H67；P0（能力位 / 成员 / 所有权 / 可见性 / 团队等级 / `/capabilities` / 超管）；P1（表 / 文档 / 设计 / 文件 / 搜索统一到 `workspace_data_role`，private 泄漏与 team_grant / policy / public 少给一并修复）
+- 下一步：P2 —— 分析 / 数据源 / 议题 / 修改申请 / 流水线接入统一判定；前端按能力位门控（成员角色下拉、可见性放宽、owner 转让只对 owner 显示）；补 e2e `workspace-permissions.spec.ts`
+- 已知坑：`change_requests` / `issues` 顶层插件仍用原始角色（P2 范围），其服务与文档侧同名服务是两套实现，改时勿只改一处；`check_workspace_permission` 同时服务表 / 设计 / 分析 / 数据源，签名虽未变但语义已切到数据面，403 文案对 team_grant 用户仍显示「非成员」属已知文案偏差
+- 最近一次全绿：2026-11-26 `make check-fast`、`make test`（7688 passed / 17 skipped）、`make cov` 95.04%

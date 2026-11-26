@@ -29,7 +29,7 @@ from cndb.plugins.documents.schemas import (
     ExportTemplatePreview,
     ExportTemplateUpdate,
 )
-from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 router = APIRouter(prefix="/{workspace_id}/documents/templates", tags=["documents"])
 
@@ -46,7 +46,7 @@ def _require_member(db: Session, workspace_id: int, user: User) -> None:
     ws = db.get(Workspace, workspace_id)
     if ws is None:
         raise NotFoundError("工作区不存在")
-    if get_member_role(user, ws, db) is None:
+    if workspace_data_role(user, ws, db) is None:
         raise_permission_denied(db, ws, user)
 
 

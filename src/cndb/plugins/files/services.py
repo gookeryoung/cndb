@@ -136,7 +136,7 @@ def assert_can_attach_document(db: Session, *, document_id: int, workspace_id: i
     """
     from cndb.plugins.documents.services import visibility
     from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-    from cndb.plugins.workspaces.permissions import has_role
+    from cndb.plugins.workspaces.permissions import workspace_data_role
 
     doc = visibility.get_visible_document_or_404(db, workspace_id, document_id, user)
     if doc.created_by_id == user.id:
@@ -144,7 +144,7 @@ def assert_can_attach_document(db: Session, *, document_id: int, workspace_id: i
     if visibility.is_document_admin(db, workspace_id, user):
         return doc
     ws = db.get(Workspace, workspace_id)
-    if ws is not None and has_role(user, ws, WorkspaceRole.EDITOR, db):
+    if ws is not None and workspace_data_role(user, ws, db) in (WorkspaceRole.OWNER, WorkspaceRole.EDITOR):
         return doc
     raise PermissionDeniedError("无权向该文档上传附件（只读或需走修改申请）")
 

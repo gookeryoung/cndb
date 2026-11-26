@@ -32,7 +32,7 @@ from cndb.plugins.documents.models import (
 from cndb.plugins.documents.services import content as content_service
 from cndb.plugins.documents.services import parse as parse_service
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 # 写模式三态：与数据表双轨分派（change_requests.services.resolve_write_mode）语义一致
 WRITE_MODE_DIRECT = "direct"
@@ -56,7 +56,7 @@ def _get_workspace(db: Session, workspace_id: int) -> Workspace:
 def _require_member(db: Session, workspace_id: int, user: User) -> WorkspaceRole:
     """校验用户是工作区成员（任何成员都可提交/查看修改申请）."""
     ws = _get_workspace(db, workspace_id)
-    role = get_member_role(user, ws, db)
+    role = workspace_data_role(user, ws, db)
     if role is None:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
         raise_permission_denied(db, ws, user)
@@ -87,7 +87,7 @@ def resolve_write_mode(db: Session, workspace_id: int, user: User) -> str:
         ``denied``：非工作区成员（写操作 403）。
     """
     ws = _get_workspace(db, workspace_id)
-    role = get_member_role(user, ws, db)
+    role = workspace_data_role(user, ws, db)
     if role is None:
         return WRITE_MODE_DENIED
     if role == WorkspaceRole.OWNER:

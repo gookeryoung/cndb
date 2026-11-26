@@ -46,7 +46,7 @@ from cndb.plugins.documents.models import (
 )
 from cndb.plugins.documents.services import parse
 from cndb.plugins.workspaces.models import WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 if TYPE_CHECKING:
     from cndb.plugins.accounts.models import User
@@ -132,7 +132,7 @@ def get_document_any_state_or_404(db: Session, workspace_id: int, doc_id: int) -
 def require_editor(db: Session, workspace_id: int, user: User) -> WorkspaceRole:
     """校验用户是工作区 editor/owner（viewer 或非成员拒绝写操作）."""
     ws = _get_workspace(db, workspace_id)
-    role = get_member_role(user, ws, db)
+    role = workspace_data_role(user, ws, db)
     if role is None or role == WorkspaceRole.VIEWER:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
         raise_permission_denied(db, ws, user, requirement="仅编辑者及以上角色可执行此操作")

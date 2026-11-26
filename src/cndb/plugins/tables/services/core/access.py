@@ -128,12 +128,12 @@ def preload_table_access(db: Session, tables: Sequence[DataTable], user: User) -
         return TableAccessPreload(member_role=None, members=members, perms=perms)
 
     from cndb.plugins.workspaces.models import Workspace
-    from cndb.plugins.workspaces.permissions import get_member_role
+    from cndb.plugins.workspaces.permissions import workspace_data_role
 
     workspace_id = tables[0].workspace_id
     ws = db.get(Workspace, workspace_id)
     if ws is not None:
-        member_role = get_member_role(user, ws, db)
+        member_role = workspace_data_role(user, ws, db)
 
     for m in db.query(TableMember).filter(TableMember.table_id.in_(ids), TableMember.user_id == user.id).all():
         members[int(m.table_id)] = m
@@ -156,9 +156,9 @@ def readable_tables(db: Session, workspace_id: int, user: User) -> list[DataTabl
 
 
 def _get_member_role_by_workspace(db: Session, workspace: Workspace, user: User) -> WorkspaceRole | None:
-    from cndb.plugins.workspaces.permissions import get_member_role
+    from cndb.plugins.workspaces.permissions import workspace_data_role
 
-    return get_member_role(user, workspace, db)
+    return workspace_data_role(user, workspace, db)
 
 
 def check_action(
@@ -242,12 +242,12 @@ def check_workspace_permission(
     工作区不存在 → HTTPException 404；角色缺失或低于 min_role → HTTPException 403；
     通过则返回该 Workspace（部分调用点需要 workspace 对象）.
     """
-    from cndb.plugins.workspaces.permissions import get_member_role
+    from cndb.plugins.workspaces.permissions import workspace_data_role
 
     ws = db.query(Workspace).filter(Workspace.id == workspace_id).first()
     if ws is None:
         raise HTTPException(status_code=404, detail="工作区不存在")
-    role = get_member_role(user, ws, db)
+    role = workspace_data_role(user, ws, db)
     if role is None or ROLE_RANK[role] < ROLE_RANK[min_role]:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口）
         raise_permission_denied(db, ws, user)
@@ -358,12 +358,12 @@ def apply_field_hiding_rows(
 def _get_member_role(db: Session, table: DataTable, user: User) -> WorkspaceRole | None:
     """查询用户在表所属工作区的角色."""
     from cndb.plugins.workspaces.models import Workspace
-    from cndb.plugins.workspaces.permissions import get_member_role as _gmr
+    from cndb.plugins.workspaces.permissions import workspace_data_role
 
     ws = db.get(Workspace, table.workspace_id)
     if ws is None:
         return None
-    return _gmr(user, ws, db)
+    return workspace_data_role(user, ws, db)
 
 
 def row_filters_bypass(db: Session, table: DataTable, user: User | None) -> bool:

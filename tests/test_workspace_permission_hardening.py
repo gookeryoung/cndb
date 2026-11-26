@@ -25,6 +25,7 @@ from cndb.plugins.workspaces.models import (
     Workspace,
     WorkspaceMember,
     WorkspaceRole,
+    WorkspaceTeamAccess,
     WorkspaceVisibility,
 )
 from cndb.plugins.workspaces.permissions import (
@@ -331,6 +332,145 @@ class TestUnifiedDataRole:
     def test_member_editor_keeps_data_role(self, db):
         env = _env(db)
         assert workspace_data_role(env.viewer, env.ws, db) is WorkspaceRole.VIEWER
+
+    def test_private_owner_keeps_data_role(self, db):
+        env = _env(db, visibility=WorkspaceVisibility.PRIVATE)
+        assert workspace_data_role(env.owner, env.ws, db) is WorkspaceRole.OWNER
+
+    def test_private_team_grant_does_not_override(self, db):
+        """I3：private 下 team_grant 也不得放宽（只有 owner 有数据面）."""
+        env = _env(db, visibility=WorkspaceVisibility.PRIVATE)
+        db.add(
+            WorkspaceTeamAccess(workspace_id=env.ws.id, team_id=env.team.id, role="viewer", granted_by_id=env.owner.id)
+        )
+        db.commit()
+        assert workspace_data_role(env.admin, env.ws, db) is None
+
+    def test_team_grant_viewer_is_consumed(self, db):
+        """D4 反向：team_grant 的合法只读在统一入口生效（资源层 P1 开始消费）."""
+        env = _env(db)
+        db.add(
+            WorkspaceTeamAccess(workspace_id=env.ws.id, team_id=env.team.id, role="viewer", granted_by_id=env.owner.id)
+        )
+        db.commit()
+        assert workspace_data_role(env.admin, env.ws, db) is WorkspaceRole.VIEWER
+
+    def test_policy_default_viewer_is_consumed(self, db):
+        env = _env(db)
+        env.team.policy = {"default_workspace_role": "viewer"}
+        db.commit()
+        assert workspace_data_role(env.admin, env.ws, db) is WorkspaceRole.VIEWER
+
+    def test_public_grants_team_member_viewer(self, db):
+        env = _env(db, visibility=WorkspaceVisibility.PUBLIC)
+        assert workspace_data_role(env.admin, env.ws, db) is WorkspaceRole.VIEWER
+
+
+class TestResourceLayerPrivate:
+    """P1：private 工作区在资源层同样不生效（表 / 文档 / 设计 / 搜索）."""
+
+    @staticmethod
+    def _endpoints(ws_id: int) -> list[str]:
+        return [
+            f"{WORKSPACES}/{ws_id}/tables",
+            f"{WORKSPACES}/{ws_id}/documents",
+            f"{WORKSPACES}/{ws_id}/designs",
+            f"{WORKSPACES}/{ws_id}/search?q=x",
+            f"{WORKSPACES}/{ws_id}/document-issues",
+            f"{WORKSPACES}/{ws_id}/document-change-requests",
+        ]
+
+    def test_private_editor_denied_everywhere(self, client, db):
+        env = _env(db, visibility=WorkspaceVisibility.PRIVATE)
+        editor = _make_user(db, "p1_private_editor")
+        db.add(WorkspaceMember(workspace_id=env.ws.id, user_id=editor.id, role=WorkspaceRole.EDITOR))
+        db.commit()
+        auth = _login(client, editor.username)
+        for path in self._endpoints(env.ws.id):
+            r = client.get(path, headers=auth)
+            assert r.status_code in (403, 404), f"{path} -> {r.status_code}: {r.text}"
+
+    def test_private_owner_allowed(self, client, db):
+        env = _env(db, visibility=WorkspaceVisibility.PRIVATE)
+        auth = _login(client, env.owner.username)
+        for path in self._endpoints(env.ws.id):
+            r = client.get(path, headers=auth)
+            assert r.status_code == 200, f"{path} -> {r.status_code}: {r.text}"
+
+    def test_member_workspace_editor_allowed(self, client, db):
+        env = _env(db)
+        editor = _make_user(db, "p1_member_editor")
+        db.add(WorkspaceMember(workspace_id=env.ws.id, user_id=editor.id, role=WorkspaceRole.EDITOR))
+        db.commit()
+        auth = _login(client, editor.username)
+        for path in self._endpoints(env.ws.id):
+            r = client.get(path, headers=auth)
+            assert r.status_code == 200, f"{path} -> {r.status_code}: {r.text}"
+
+
+class TestResourceLayerTeamAccess:
+    """P1 反向：team_grant / policy / public 的合法只读在资源层被正确消费（不再 403）."""
+
+    @staticmethod
+    def _endpoints(ws_id: int) -> list[str]:
+        return [
+            f"{WORKSPACES}/{ws_id}/tables",
+            f"{WORKSPACES}/{ws_id}/documents",
+            f"{WORKSPACES}/{ws_id}/designs",
+            f"{WORKSPACES}/{ws_id}/search?q=x",
+        ]
+
+    def _plain_team_member(self, db: Session, env: Env) -> User:
+        user = _make_user(db, "p1_team_member")
+        db.add(TeamMember(team_id=env.team.id, user_id=user.id, role=TeamRole.MEMBER))
+        db.commit()
+        return user
+
+    def test_team_grant_viewer_reads(self, client, db):
+        env = _env(db)
+        user = self._plain_team_member(db, env)
+        db.add(
+            WorkspaceTeamAccess(workspace_id=env.ws.id, team_id=env.team.id, role="viewer", granted_by_id=env.owner.id)
+        )
+        db.commit()
+        auth = _login(client, user.username)
+        for path in self._endpoints(env.ws.id):
+            r = client.get(path, headers=auth)
+            assert r.status_code == 200, f"{path} -> {r.status_code}: {r.text}"
+
+    def test_policy_default_viewer_reads(self, client, db):
+        env = _env(db)
+        env.team.policy = {"default_workspace_role": "viewer"}
+        db.commit()
+        user = self._plain_team_member(db, env)
+        auth = _login(client, user.username)
+        for path in self._endpoints(env.ws.id):
+            r = client.get(path, headers=auth)
+            assert r.status_code == 200, f"{path} -> {r.status_code}: {r.text}"
+
+    def test_public_workspace_reads(self, client, db):
+        env = _env(db, visibility=WorkspaceVisibility.PUBLIC)
+        user = self._plain_team_member(db, env)
+        auth = _login(client, user.username)
+        for path in self._endpoints(env.ws.id):
+            r = client.get(path, headers=auth)
+            assert r.status_code == 200, f"{path} -> {r.status_code}: {r.text}"
+
+    def test_team_grant_does_not_write(self, client, db):
+        """team_grant 只产 viewer：写入口仍 403（D11 不变）."""
+        env = _env(db)
+        user = self._plain_team_member(db, env)
+        db.add(
+            WorkspaceTeamAccess(workspace_id=env.ws.id, team_id=env.team.id, role="viewer", granted_by_id=env.owner.id)
+        )
+        db.commit()
+        auth = _login(client, user.username)
+        r = client.post(f"{WORKSPACES}/{env.ws.id}/tables", json={"name": "新表"}, headers=auth)
+        assert r.status_code == 403, r.text
+
+
+class TestSuperuserDataRole:
+    """D7：系统管理员在统一入口按 owner 处理."""
 
     def test_superuser_is_workspace_owner(self, db):
         env = _env(db)

@@ -26,7 +26,7 @@ from cndb.plugins.documents.models import (
 from cndb.plugins.documents.services import visibility
 from cndb.plugins.issues.models import ISSUE_CATEGORIES, ISSUE_STATUS_CLOSED, ISSUE_STATUS_OPEN
 from cndb.plugins.workspaces.models import Workspace, WorkspaceRole
-from cndb.plugins.workspaces.permissions import get_member_role, raise_permission_denied
+from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
 
 STATUS_FILTERS = ("open", "closed", "all")
 
@@ -43,7 +43,7 @@ def require_member(db: Session, workspace_id: int, user: User) -> WorkspaceRole:
     ws = db.get(Workspace, workspace_id)
     if ws is None:
         raise NotFoundError("工作区不存在")
-    role = get_member_role(user, ws, db)
+    role = workspace_data_role(user, ws, db)
     if role is None:
         # ADR 0047：403 文案带角色与拥有者指引（唯一出口，非成员走「申请加入」分支）
         raise_permission_denied(db, ws, user)
