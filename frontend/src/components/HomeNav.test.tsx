@@ -88,14 +88,14 @@ describe('HomeNav', () => {
     expect(within(nav).getByTestId('home-nav-team-500')).toHaveTextContent('研发部')
   })
 
-  it('「我的团队」分区排在已收藏下方、工作区上方，行内标注角色', async () => {
+  it('「我的工作区」分区置顶，「我的团队」分区排在其后，行内标注角色', async () => {
     renderNav()
 
     const nav = await screen.findByTestId('sider-home')
     // 等团队条目渲染完成再取分组标题，避免查询未返回时分组缺失
     await within(nav).findByTestId('home-nav-team-500')
     const order = Array.from(nav.querySelectorAll('.ant-menu-item-group-title')).map(el => el.textContent)
-    expect(order).toEqual(['我的团队', '我的工作区'])
+    expect(order).toEqual(['我的工作区', '我的团队'])
 
     const row = within(nav).getByTestId('home-nav-team-500')
     expect(row.querySelector('.cn-home-nav-row-hint')).toHaveTextContent('团队所有者')
@@ -188,7 +188,7 @@ describe('HomeNav', () => {
     // 内容与桌面一致：我的团队同样渲染
     expect(await screen.findByTestId('home-nav-team-500')).toBeVisible()
   })
-  it('「已收藏」分区排在最近访问下方，并标注所属团队（需求 0160 补充）', async () => {
+  it('「收藏工作区」分区排在最近访问下方，并标注所属团队（需求 0160 补充）', async () => {
     server.use(http.get('/api/v1/workspaces', () => HttpResponse.json([
       {
         id: 10, name: '研发工作区', description: '', visibility: 'member', tags: [],
@@ -215,7 +215,7 @@ describe('HomeNav', () => {
     expect(pinned.querySelector('.cn-home-nav-row-hint')).toHaveTextContent('研发部')
     expect(screen.getByTestId('home-nav-pinned-11').querySelector('.cn-home-nav-row-hint'))
       .toHaveTextContent('个人')
-    // 未收藏的工作区不进「已收藏」分区
+    // 未收藏的工作区不进「收藏工作区」分区
     expect(screen.queryByTestId('home-nav-pinned-12')).toBeNull()
 
     // 「我的工作区」分组平铺未收藏工作区（12），已收藏的（10/11）不重复出现
@@ -225,22 +225,29 @@ describe('HomeNav', () => {
     expect(screen.queryByTestId('home-nav-ws-10')).toBeNull()
     expect(screen.queryByTestId('home-nav-ws-11')).toBeNull()
 
+    // 「全部工作区」为「我的工作区」分组第一项（2026-11-26 用户要求）
+    const wsGroup = screen.getByTestId('home-nav-all').closest('.ant-menu-item-group')
+    const groupRows = wsGroup ? Array.from(wsGroup.querySelectorAll('.ant-menu-item')) : []
+    expect(groupRows[0]).toHaveTextContent('全部工作区')
+
     // 收藏图标与列表星标同色（琥珀），且尺寸钉在 Menu 图标档
     const star = pinned.closest('.ant-menu-item')?.querySelector('.cn-home-nav-star')
     expect(star).not.toBeNull()
     expect(star).toHaveStyle({ color: '#f59e0b' })
 
-    // 分区顺序：最近访问 → 已收藏 → 我的团队 → 我的工作区
+    // 分区顺序：我的工作区（含全部工作区）置顶 → 最近访问 → 收藏工作区 → 我的团队
     const nav = screen.getByTestId('sider-home')
     const order = Array.from(nav.querySelectorAll('.ant-menu-item-group-title')).map(el => el.textContent)
-    expect(order).toEqual(['最近访问', '已收藏', '我的团队', '我的工作区'])
+    expect(order).toEqual(['我的工作区', '最近访问', '收藏工作区', '我的团队'])
+    // 分区之间有分隔线（3 个分区边界各一条）
+    expect(nav.querySelectorAll('.ant-menu-item-divider')).toHaveLength(3)
   })
 
-  it('没有收藏工作区时不渲染「已收藏」分区', async () => {
+  it('没有收藏工作区时不渲染「收藏工作区」分区', async () => {
     renderNav()
 
     expect(await screen.findByTestId('home-nav-all')).toBeVisible()
-    expect(screen.queryByText('已收藏')).toBeNull()
+    expect(screen.queryByText('收藏工作区')).toBeNull()
   })
 
   it('点击「我的工作区」分组内的工作区行直达落地页（2026-11-26 新增）', async () => {

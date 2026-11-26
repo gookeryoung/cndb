@@ -4,15 +4,18 @@
  * 同一位置换回工作区级侧栏（表 / 文档 / 设计 / 设置 / 统计）。同一时刻只有一条侧栏，
  * 不新增第三个导航轴（需求 0157 N1 的修订口径）。
  *
+ * **分区顺序**（2026-11-26 用户要求）：「我的工作区」（含「全部工作区」锚点）置顶，其后
+ * 依次为最近访问 → 收藏工作区 → 我的视图 → 我的团队。
+ *
  * **只承载独有信息**，不复述顶栏与右栏已有的入口：
  *  - 最近访问：本地记录的 ≤5 个工作区落地路径（`utils/recentWorkspaces`，不落库）；
- *  - 已收藏：置顶（`pinned`）的工作区 ≤5 个，右侧标注所属团队（收藏是跨团队的扁平列表，
+ *  - 收藏工作区：置顶（`pinned`）的工作区 ≤5 个，右侧标注所属团队（收藏是跨团队的扁平列表，
  *    不写团队就分不清归属）；
  *  - 全部工作区：主页锚点，带工作区计数与**待办徽标**（ADR 0160 P2：修改申请 / 问题 / 待审链接
  *    的聚合计数，只读、只有总数，不含 id / 标题；失败静默隐藏徽标，不阻断主页）。
- *  - 我的工作区：分组内平铺**未收藏**的工作区行（已收藏的已在「已收藏」分区，不重复出现；
+ *  - 我的工作区：分组内平铺**未收藏**的工作区行（已收藏的已在「收藏工作区」分区，不重复出现；
  *    2026-11-26 用户确认与其它分区对齐——分组不只放一个锚点），行首图标按首个模块区分，
- *    右侧标注所属团队（个人工作区标注「个人」）；「全部工作区」保留为分组尾部的锚点。
+ *    右侧标注所属团队（个人工作区标注「个人」）；「全部工作区」为分组内第一项的锚点。
  *  - 我的团队：用户所在团队列表，点击进入 `/teams/:tid`（2026-11-26 用户确认新增侧栏入口；
  *    此前口径是「团队入口只由顶栏 `ScopeSwitcher` 承担」，现修订为顶栏切换器与 rail 并存，
  *    切换器仍提供跨团队分组视图，rail 提供常驻直达入口）。团队接口失败时静默隐藏该分组。
@@ -104,8 +107,71 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
 
   const items: MenuProps['items'] = []
 
+  /** 各分区之间插入分隔线（仅当前面已有分区时） */
+  const pushWithDivider = (group: NonNullable<MenuProps['items']>[number]) => {
+    if (items.length > 0) items.push({ type: 'divider' })
+    items.push(group)
+  }
+
+  /** 未收藏工作区行首图标（与 WorkspaceList 行首 MODULE_ICON 同口径） */
+  const MODULE_ICON: Record<WorkspaceModule, React.ReactNode> = {
+    tables: <DatabaseOutlined />,
+    documents: <FileTextOutlined />,
+    design: <ToolOutlined />,
+  }
+  // 已收藏的已在「收藏工作区」分区，这里只平铺未收藏的，避免同屏重复
+  const unstarred = useMemo(() => workspaces.filter(ws => !ws.pinned), [workspaces])
+
+  // 「我的工作区」（含「全部工作区」锚点）置顶（2026-11-26 用户要求：放在侧栏最前面），
+  // 且「全部工作区」为分组内第一项
+  pushWithDivider({
+    type: 'group',
+    label: '我的工作区',
+    children: [
+      {
+        key: '/w',
+        icon: <FolderOpenOutlined />,
+        label: (
+          <span data-testid="home-nav-all">
+            全部工作区
+            {pendingTotal > 0 && (
+              <span
+                className="cn-home-nav-pending"
+                data-testid="home-nav-pending"
+                title={`待我处理：修改申请 ${summary?.pending.change_requests ?? 0} · 问题 ${summary?.pending.issues ?? 0} · 待审链接 ${summary?.pending.link_requests ?? 0}`}
+              >
+                {pendingTotal}
+              </span>
+            )}
+            <span className="cn-ws-group-count" style={{ marginInlineStart: 'var(--cn-space-sm)' }}>
+              {workspaces.length}
+            </span>
+          </span>
+        ),
+      },
+      ...unstarred.map(ws => {
+        const modules = normalizeModules(ws.modules)
+        const teamName = ws.team?.name ?? '个人'
+        return {
+          key: `/w/${ws.id}/${workspaceLandingSegment(modules)}`,
+          icon: MODULE_ICON[modules[0]],
+          label: (
+            <span
+              className="cn-home-nav-row"
+              data-testid={`home-nav-ws-${ws.id}`}
+              title={`${ws.name} · ${teamName}`}
+            >
+              <span className="cn-home-nav-row-name">{ws.name}</span>
+              <span className="cn-home-nav-row-hint">{teamName}</span>
+            </span>
+          ),
+        }
+      }),
+    ],
+  })
+
   if (recentItems.length > 0) {
-    items.push({
+    pushWithDivider({
       type: 'group',
       label: '最近访问',
       children: recentItems.map(({ entry, ws }) => {
@@ -135,9 +201,9 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
 
   const pinnedItems = workspaces.filter(ws => ws.pinned).slice(0, 5)
   if (pinnedItems.length > 0) {
-    items.push({
+    pushWithDivider({
       type: 'group',
-      label: '已收藏',
+      label: '收藏工作区',
       children: pinnedItems.map(ws => {
         const modules = normalizeModules(ws.modules)
         const teamName = ws.team?.name ?? '个人'
@@ -162,7 +228,7 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
   }
 
   if (favoriteViews.length > 0) {
-    items.push({
+    pushWithDivider({
       type: 'group',
       label: '我的视图',
       children: [{
@@ -181,7 +247,7 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
   }
 
   if (teams.length > 0) {
-    items.push({
+    pushWithDivider({
       type: 'group',
       label: '我的团队',
       children: teams.map(team => ({
@@ -200,61 +266,6 @@ export default function HomeNav({ mobile = false, onNavigate }: HomeNavProps) {
       })),
     })
   }
-
-  /** 未收藏工作区行首图标（与 WorkspaceList 行首 MODULE_ICON 同口径） */
-  const MODULE_ICON: Record<WorkspaceModule, React.ReactNode> = {
-    tables: <DatabaseOutlined />,
-    documents: <FileTextOutlined />,
-    design: <ToolOutlined />,
-  }
-  // 已收藏的已在「已收藏」分区，这里只平铺未收藏的，避免同屏重复
-  const unstarred = useMemo(() => workspaces.filter(ws => !ws.pinned), [workspaces])
-
-  items.push({
-    type: 'group',
-    label: '我的工作区',
-    children: [
-      ...unstarred.map(ws => {
-        const modules = normalizeModules(ws.modules)
-        const teamName = ws.team?.name ?? '个人'
-        return {
-          key: `/w/${ws.id}/${workspaceLandingSegment(modules)}`,
-          icon: MODULE_ICON[modules[0]],
-          label: (
-            <span
-              className="cn-home-nav-row"
-              data-testid={`home-nav-ws-${ws.id}`}
-              title={`${ws.name} · ${teamName}`}
-            >
-              <span className="cn-home-nav-row-name">{ws.name}</span>
-              <span className="cn-home-nav-row-hint">{teamName}</span>
-            </span>
-          ),
-        }
-      }),
-      {
-        key: '/w',
-        icon: <FolderOpenOutlined />,
-        label: (
-          <span data-testid="home-nav-all">
-            全部工作区
-            {pendingTotal > 0 && (
-              <span
-                className="cn-home-nav-pending"
-                data-testid="home-nav-pending"
-                title={`待我处理：修改申请 ${summary?.pending.change_requests ?? 0} · 问题 ${summary?.pending.issues ?? 0} · 待审链接 ${summary?.pending.link_requests ?? 0}`}
-              >
-                {pendingTotal}
-              </span>
-            )}
-            <span className="cn-ws-group-count" style={{ marginInlineStart: 'var(--cn-space-sm)' }}>
-              {workspaces.length}
-            </span>
-          </span>
-        ),
-      },
-    ],
-  })
 
   const go = (path: string) => {
     navigate(path)
