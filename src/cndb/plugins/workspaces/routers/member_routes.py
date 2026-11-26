@@ -19,8 +19,9 @@ from cndb.plugins.workspaces.permissions import (
     WorkspaceCapability,
     raise_permission_denied,
     require_capability,
+    resolve_capabilities,
 )
-from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_member, _require_owner
+from cndb.plugins.workspaces.routers.deps import _get_workspace_or_404, _require_owner
 from cndb.plugins.workspaces.schemas import (
     MemberAddRequest,
     MemberBatchRequest,
@@ -62,9 +63,11 @@ def list_members(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> list[WorkspaceMember]:
-    """列出当前工作区全部成员（需是成员）."""
+    """列出当前工作区全部成员（成员，或仅管理面的团队 owner / admin，ADR 0161 D6 延伸）."""
     ws = _get_workspace_or_404(workspace_id, db)
-    _require_member(ws, current_user, db)
+    caps = resolve_capabilities(current_user, ws, db)
+    if caps.data_role is None and not caps.allows(WorkspaceCapability.MANAGE_MEMBERS):
+        raise HTTPException(status_code=404, detail="工作区不存在")
     # inner join 用户表：剔除用户已删除的孤儿成员行，与 member_count 口径一致
     return (
         db.query(WorkspaceMember)

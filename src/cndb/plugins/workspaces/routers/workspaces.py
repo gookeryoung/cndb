@@ -266,17 +266,37 @@ def get_workspace(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> WorkspaceDetailResponse:
-    """获取工作区详情（需是成员），附带拥有者信息和统计."""
+    """获取工作区详情（成员，或仅管理面的团队 owner / admin），附带拥有者信息和统计.
+
+    ADR 0161 D6 延伸：有管理面无数据面的团队管理员也需要读到工作区配置才能进入设置页；
+    此时数据类统计（表 / 行 / 文档 / 设计 / 存储）一律归零，只保留成员数与拥有者信息。
+    """
     from cndb.plugins.workspaces.services.stats_cache import compute_content_stats, get_workspace_stats
     from cndb.plugins.workspaces.services.storage_snapshot import snapshot_used_bytes
 
     ws = _get_workspace_or_404(workspace_id, db)
-    caps = _require_member(ws, current_user, db)
+    caps = resolve_capabilities(current_user, ws, db)
+    if caps.data_role is None and not caps.capabilities:
+        raise HTTPException(status_code=404, detail="工作区不存在")
 
-    # 统计（table/member/view/total_rows）：UNION ALL + 30s 缓存，见 ADR 0046 D5
-    stats = get_workspace_stats(db, workspace_id)
-    # 文档 / 设计计数实时计算（写路径无统一缓存事件，避免设置页显示旧值）
-    content_stats = compute_content_stats(db, workspace_id)
+    if caps.data_role is None:
+        # 管理面视角：只给配置与成员信息，不暴露任何数据量
+        member_count = (
+            db.query(WorkspaceMember)
+            .join(User, User.id == WorkspaceMember.user_id)
+            .filter(WorkspaceMember.workspace_id == workspace_id)
+            .count()
+        )
+        stats = {"table_count": 0, "member_count": member_count, "view_count": 0, "total_rows": 0}
+        content_stats = {"document_count": 0, "design_count": 0}
+        storage_bytes = 0
+    else:
+        # 统计（table/member/view/total_rows）：UNION ALL + 30s 缓存，见 ADR 0046 D5
+        stats = get_workspace_stats(db, workspace_id)
+        # 文档 / 设计计数实时计算（写路径无统一缓存事件，避免设置页显示旧值）
+        content_stats = compute_content_stats(db, workspace_id)
+        # 读用量快照（ADR 0024），缺失时懒计算一次并落库
+        storage_bytes = snapshot_used_bytes(db, workspace_id, lazy=True) or 0
 
     # 拥有者信息
     owner_member = (
@@ -306,8 +326,7 @@ def get_workspace(
             "total_rows": stats["total_rows"],
             "document_count": content_stats["document_count"],
             "design_count": content_stats["design_count"],
-            # 读用量快照（ADR 0024），缺失时懒计算一次并落库
-            "storage_bytes": snapshot_used_bytes(db, workspace_id, lazy=True) or 0,
+            "storage_bytes": storage_bytes,
             "current_user_role": current_role.value if current_role else None,
         }
     )

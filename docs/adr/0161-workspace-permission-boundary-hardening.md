@@ -171,6 +171,7 @@ def require_workspace_write(user, workspace, db) -> Capabilities: ...
 | D5 | 团队成员等级校验 | 操作者角色等级必须 ≥ 目标；owner 不可被 admin 移除 | C5；消除下级操作上级 | 仅保护最后一个 owner：≥2 owner 时仍可被 admin 移除 | `routers/teams.py` |
 | D6 | `/capabilities` 对「有管理面无数据面」的返回 | 返回 200，`data_role=null`；完全无能力仍 404 | C6；前端门控与真实能力一致 | 保持 404：前端 fail-closed，团队管理员无法进入其本应可管理的设置页 | `routers/workspaces.py` |
 | D7 | 系统管理员在统一入口的口径 | 视为该工作区 owner（全能力位），写审计事件，403 文案标注 | ADR 0153 §4.7；消除两套判定 | 维持现状（不识别 superuser）：与 ADR 0153 不一致，且管理台跨工作区操作会 404 | `permissions.py` |
+| D8 | 管理面无数据面的团队管理员能否读工作区配置 / 成员列表 | 可以：详情与成员列表对有管理能力位者返回 200，但数据类统计归零、数据端点仍 403/404；团队页为 owner/admin 提供「管理」入口 | D4/I1：设置页与成员管理必须可用，同时不得泄露数据面 | 仍返回 404：设置页与成员管理不可用，D4 的管理能力形同虚设；返回完整统计：团队管理员可推断数据量，违反 I1 | `routers/workspaces.py`、`routers/member_routes.py`、`frontend/src/pages/team/TeamSections.tsx` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。
 
@@ -198,11 +199,12 @@ def require_workspace_write(user, workspace, db) -> Capabilities: ...
 | P0 | 已落地 | `src/cndb/plugins/workspaces/permissions.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`src/cndb/plugins/workspaces/routers/teams.py`、`src/cndb/plugins/workspaces/routers/workspaces.py` | `tests/test_workspace_permission_hardening.py`（21 例） | 330b644 |
 | P1 | 已落地 | `src/cndb/plugins/tables/services/core/access.py`、`src/cndb/plugins/documents/routers/documents.py`、`src/cndb/plugins/files/services.py`、`src/cndb/plugins/workspaces/permissions.py` | `tests/test_workspace_permission_hardening.py`（34 例） | 22453ac |
 | P2 | 已落地 | `src/cndb/plugins/change_requests/services.py`、`src/cndb/plugins/issues/services.py`、`frontend/src/pages/settings/WorkspaceSettingsContent.tsx` | `frontend/src/pages/settings/WorkspaceSettingsContent.test.tsx`、`frontend/tests/e2e/critical/workspace-permissions.spec.ts` | 8604dea |
+| P2 补充 | 已落地 | `src/cndb/plugins/workspaces/routers/workspaces.py`、`src/cndb/plugins/workspaces/routers/member_routes.py`、`frontend/src/pages/team/TeamSections.tsx` | `tests/test_teams_api.py` | 见 CHANGELOG |
 
 ## 交接（会话结束更新）
 
 - 当前阶段：全部阶段已落地（P0 / P1 / P2）
 - 已完成：权限审计；ADR 评审；H64-H67；P0（能力位 / 成员 / 所有权 / 可见性 / 团队等级 / `/capabilities` / 超管）；P1（表 / 文档 / 设计 / 文件 / 搜索统一到 `workspace_data_role`）；P2（修改申请 / 议题接入；前端能力位门控；e2e）
 - 下一步：无（观察线上是否出现团队管理员 / private 相关回归；如需继续收紧，另立 ADR）
-- 已知坑：① `/workspaces/{wid}` 详情对「有管理面无数据面」的团队管理员仍 404，前端无法直接进入该工作区设置页，团队管理员目前只能用 API 管理，UI 入口属产品待定；② `check_workspace_permission` 语义已切到数据面，403 文案对 team_grant 用户仍显示「非成员」；③ 资源层已无直接 `WorkspaceMember.role` 数据面判定，新增模块必须走 `workspace_data_role` / `require_capability`（H64）；④ e2e 依赖 `pnpm build` 同步 `src/cndb/static`，只改前端源码不重建会跑旧包
+- 已知坑：① 「有管理面无数据面」的团队管理员现在可读工作区配置与成员（数据统计归零），团队页有「管理」入口；但工作区切换器列表仍只含显式成员，团队管理员需从团队页进入；② `check_workspace_permission` 语义已切到数据面，403 文案对 team_grant 用户仍显示「非成员」；③ 资源层已无直接 `WorkspaceMember.role` 数据面判定，新增模块必须走 `workspace_data_role` / `require_capability`（H64）；④ e2e 依赖 `pnpm build` 同步 `src/cndb/static`，只改前端源码不重建会跑旧包
 - 最近一次全绿：2026-11-26 `make check-fast`、`make cov`（7688 passed / 17 skipped，95.04%）、前端 `pnpm test`（3534 passed）、e2e `workspace-permissions.spec.ts`（通过）

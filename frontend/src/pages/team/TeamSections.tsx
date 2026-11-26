@@ -212,23 +212,36 @@ export function TeamWorkspacesSection({
             { title: '成员', dataIndex: 'member_count', width: 80 },
             {
               title: '操作',
-              width: 120,
-              render: (_: unknown, ws: TeamWorkspace) =>
-                ws.is_member ? (
-                  <Text type="secondary">已加入</Text>
-                ) : team.policy.allow_member_invite ? (
-                  <Button
-                    size="small"
-                    type="link"
-                    loading={joining}
-                    onClick={() => onJoin(ws.id)}
-                    data-testid={`join-workspace-${ws.id}`}
-                  >
-                    加入
-                  </Button>
-                ) : (
-                  <Text type="secondary">未加入</Text>
-                ),
+              width: 150,
+              render: (_: unknown, ws: TeamWorkspace) => {
+                // ADR 0161：团队 owner / admin 能管理工作区设置，但默认不是工作区成员
+                const canManage = team.current_user_role === 'owner' || team.current_user_role === 'admin'
+                const joinable = !ws.is_member && team.policy.allow_member_invite
+                return (
+                  <Space size={8}>
+                    {canManage && (
+                      <Link to={`/w/${ws.id}/settings`} data-testid={`manage-workspace-${ws.id}`}>
+                        管理
+                      </Link>
+                    )}
+                    {ws.is_member ? (
+                      <Text type="secondary">已加入</Text>
+                    ) : joinable ? (
+                      <Button
+                        size="small"
+                        type="link"
+                        loading={joining}
+                        onClick={() => onJoin(ws.id)}
+                        data-testid={`join-workspace-${ws.id}`}
+                      >
+                        加入
+                      </Button>
+                    ) : (
+                      <Text type="secondary">未加入</Text>
+                    )}
+                  </Space>
+                )
+              },
             },
           ]}
         />

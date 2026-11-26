@@ -180,11 +180,21 @@ class TestTeamMembers:
 class TestTwoPlaneSeparation:
     """H49：团队管理员默认读不到数据，但能管理工作区设置."""
 
-    def test_team_admin_cannot_read_workspace(self, client, db):
+    def test_team_admin_gets_settings_metadata_but_no_data(self, client, db):
         env = Env(db)
         auth = _login(client, env.admin.username)
-        assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=auth).status_code == 404
-        assert client.get(f"{WORKSPACES}/{env.ws.id}/members", headers=auth).status_code == 404
+        # ADR 0161 D6 延伸：管理面可读工作区配置与成员，但数据类统计归零、数据端点仍拒绝
+        detail = client.get(f"{WORKSPACES}/{env.ws.id}", headers=auth)
+        assert detail.status_code == 200, detail.text
+        body = detail.json()
+        assert body["current_user_role"] is None
+        assert body["table_count"] == 0
+        assert body["document_count"] == 0
+        assert body["design_count"] == 0
+        assert body["total_rows"] == 0
+        assert client.get(f"{WORKSPACES}/{env.ws.id}/members", headers=auth).status_code == 200
+        for path in ("tables", "documents", "designs", "search?q=x"):
+            assert client.get(f"{WORKSPACES}/{env.ws.id}/{path}", headers=auth).status_code in (403, 404)
         # ADR 0161 D6：有管理面无数据面时能力位端点返回 200，便于前端渲染管理入口
         r = client.get(f"{WORKSPACES}/{env.ws.id}/capabilities", headers=auth)
         assert r.status_code == 200, r.text
@@ -409,13 +419,23 @@ class TestPrivateVisibilityEnforced:
         db.commit()
         self._set_private(client, owner_auth, env.ws.id)
 
+        # 纯 viewer（非团队成员）：数据面与管理面都没有
+        pure = _make_user(db, "p1_pure_viewer")
+        db.add(WorkspaceMember(workspace_id=env.ws.id, user_id=pure.id, role=WorkspaceRole.VIEWER))
+        db.commit()
+        pure_auth = _login(client, pure.username)
+        assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=pure_auth).status_code == 404
+        assert client.get(f"{WORKSPACES}/{env.ws.id}/members", headers=pure_auth).status_code == 404
+        assert client.get(f"{WORKSPACES}/{env.ws.id}/capabilities", headers=pure_auth).status_code == 404
+
+        # 同时是团队管理员的用户：配置与成员可读，数据面仍为 None（ADR 0161 D6 / I3）
         viewer_auth = _login(client, env.admin.username)
-        assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=viewer_auth).status_code == 404
-        # 该用户同时是团队管理员：能力位端点 200，但数据面仍为 None（ADR 0161 D6 / I3）
+        assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=viewer_auth).status_code == 200
         r = client.get(f"{WORKSPACES}/{env.ws.id}/capabilities", headers=viewer_auth)
         assert r.status_code == 200, r.text
         assert r.json()["data_role"] is None
-        assert client.get(f"{WORKSPACES}/{env.ws.id}/members", headers=viewer_auth).status_code == 404
+        assert client.get(f"{WORKSPACES}/{env.ws.id}/members", headers=viewer_auth).status_code == 200
+        assert client.get(f"{WORKSPACES}/{env.ws.id}/tables", headers=viewer_auth).status_code in (403, 404)
         assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=owner_auth).status_code == 200
 
     def test_private_workspace_hidden_from_viewer_list(self, client, db):
@@ -449,4 +469,10 @@ class TestPrivateVisibilityEnforced:
         env = Env(db)
         owner_auth = _login(client, env.owner.username)
         self._set_private(client, owner_auth, env.ws.id)
-        assert client.get(f"{WORKSPACES}/{env.ws.id}", headers=_login(client, env.admin.username)).status_code == 404
+        admin_auth = _login(client, env.admin.username)
+        # 团队管理员可读配置（管理面），但不因团队成员身份获得数据面
+        detail = client.get(f"{WORKSPACES}/{env.ws.id}", headers=admin_auth)
+        assert detail.status_code == 200
+        assert detail.json()["current_user_role"] is None
+        assert detail.json()["table_count"] == 0
+        assert client.get(f"{WORKSPACES}/{env.ws.id}/tables", headers=admin_auth).status_code in (403, 404)
