@@ -76,7 +76,7 @@ def create_team_access(
     current_user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
 ) -> TeamAccessResponse:
-    """授「团队 = 只读」（仅所有者；同团队重复授权覆盖有效期，不新增行）."""
+    """授「团队 = 只读 / 可编辑」（仅所有者；同团队重复授权覆盖有效期与角色，不新增行）."""
     ws = _require_owner(db, workspace_id, current_user, "仅所有者可授团队授权")
     team = db.get(Team, payload.team_id)
     if team is None:
@@ -88,6 +88,7 @@ def create_team_access(
     if not 1 <= ttl_days <= LINK_MAX_TTL_DAYS:
         raise HTTPException(status_code=400, detail=f"有效期需在 1–{LINK_MAX_TTL_DAYS} 天之间")
 
+    role_label = "编辑" if payload.role == "editor" else "只读"
     row = grant_team_access(
         db,
         workspace_id=ws.id,
@@ -95,18 +96,19 @@ def create_team_access(
         expires_at=dt.datetime.now(dt.UTC) + dt.timedelta(days=ttl_days),
         granted_by_id=current_user.id,
         note=payload.note or "",
+        role=payload.role,
     )
     db.flush()
     record_event(
         db,
         "workspace.team_access_grant",
-        summary=f"授权团队「{team.name}」只读工作区「{ws.name}」（{ttl_days} 天）",
+        summary=f"授权团队「{team.name}」{role_label}访问工作区「{ws.name}」（{ttl_days} 天）",
         target_type="workspace",
         target_id=ws.id,
         workspace_id=ws.id,
         actor_id=current_user.id,
         actor_name=current_user.nickname or current_user.username,
-        detail={"team_id": team.id, "ttl_days": ttl_days},
+        detail={"team_id": team.id, "ttl_days": ttl_days, "role": payload.role},
         commit=False,
     )
     db.commit()
@@ -128,10 +130,11 @@ def delete_team_access(
     if row is None or row.workspace_id != ws.id:
         raise HTTPException(status_code=404, detail="授权不存在")
     team = db.get(Team, row.team_id)
+    role_label = "编辑" if row.role == "editor" else "只读"
     record_event(
         db,
         "workspace.team_access_revoke",
-        summary=f"撤销团队「{team.name if team else row.team_id}」对工作区「{ws.name}」的只读授权",
+        summary=f"撤销团队「{team.name if team else row.team_id}」对工作区「{ws.name}」的{role_label}授权",
         target_type="workspace",
         target_id=ws.id,
         workspace_id=ws.id,

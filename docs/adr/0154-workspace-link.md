@@ -202,7 +202,7 @@ def resolve_link(db, user, link_id) -> ResolvedLink:      # 404 / 403 统一出�
 | D8 | 生态接入 | MVP 不接分析 / 流水线 / lookup / 检索 / 文档引用 | C7；每接一个面都要重新证明不越权 | 直接全接：权限链式推断无法在单期验证 | 无（列 P3.2） |
 | D9 | A 的成员归属 | 链接只删 `created_member_ids` 的成员；`granted_member_ids` 里原本就是成员的不动 | L9：撤回不能误伤既有协作关系 | 按 `granted_member_ids` 全删：会把源工作区原有成员踢出去 | `routers/links.py`、`services/links.py` |
 | D10 | A 的到期回收 | `cndb link sweep`（复用 cron，默认 5 分钟）+ 读路径惰性检查 | 权限来自成员行本身，必须有人回收；惰性检查保证清扫停摆也不放行（L3） | 只靠惰性检查：成员行残留会出现在成员列表里 | `cli/link.py`、`deploy/sync.sh` |
-| D11 | B′ 的能力位边界 | `role` 固定 `viewer`；只写 `data_role`，不写管理面、不并 `TEAM_MANAGE_CAPABILITIES` | H49 不被放宽：团队角色仍不放行数据，放行的是源 owner 签署的授权行 | 允许 `editor` / 允许管理面：等于跨工作区写 / 跨团队管，须另立期 | `permissions.py` |
+| D11 | B′ 的能力位边界 | `role` 固定 `viewer`；只写 `data_role`，不写管理面、不并 `TEAM_MANAGE_CAPABILITIES`（经 ADR 0163 D2 修订：role 扩为 viewer / editor，仍只产数据面） | H49 不被放宽：团队角色仍不放行数据，放行的是源 owner 签署的授权行 | 允许 `editor` / 允许管理面：等于跨工作区写 / 跨团队管，须另立期 | `permissions.py` |
 | D12 | 批量成员端点 | `POST /{wid}/members/batch`，上限 200，禁止 `owner` | A 需要一次性给一组人只读；现有单端点无法支撑 | 逐个调用单端点：N 次事务 + N 次审计，失败半途难回滚 | `routers/member_routes.py` |
 
 门禁：`Proposed` → `Accepted` 前本表不得有「待定」；结论只在本书出现，别处只引用编号。

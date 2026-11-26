@@ -63,7 +63,7 @@ export interface LinkRowsResponse {
   target_type: 'table' | 'view'
 }
 
-/** 团队数据授权（ADR 0154 B′ / P3.1）：源工作区把「某团队 = 只读」授出去 */
+/** 团队数据授权（ADR 0154 B′ / ADR 0163 D2）：源工作区把「某团队 = 只读 / 可编辑」授出去 */
 export interface TeamAccess {
   id: ID
   workspace_id: ID
@@ -81,6 +81,8 @@ export interface TeamAccess {
 
 export interface TeamAccessCreate {
   team_id: ID
+  /** ADR 0163 D2：viewer（默认）或 editor，均只产数据面、不产管理面 */
+  role?: 'viewer' | 'editor'
   ttl_days?: number
   note?: string
 }

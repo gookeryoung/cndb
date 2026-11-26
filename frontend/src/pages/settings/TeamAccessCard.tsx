@@ -1,9 +1,9 @@
-/** 团队只读授权卡片（ADR 0154 P3.1 / B′）—— 工作区设置「权限管理」分区的最后一块.
+/** 团队数据授权卡片（ADR 0154 P3.1 / B′，ADR 0163 扩展角色）—— 工作区设置「权限管理」分区.
  *
  * 口径（与后端一致）：
  * - 仅源工作区所有者（`MANAGE_ACCESS`）可见 / 可操作；
- * - 授权只产 `data_role=viewer`：被授团队的成员可**只读**该工作区，**不获得管理面**，
- *   行级规则与字段隐藏照旧（H57）；到期惰性失效，可随时撤销；
+ * - 授权只产 `data_role`（viewer / editor，ADR 0163 D2）：被授团队的成员按角色只读或可编辑，
+ *   **不获得管理面**，行级规则与字段隐藏照旧（H57）；到期惰性失效，可随时撤销；
  * - 与「成员」独立：这条授权不会在工作区成员列表里新增任何人。
  */
 
@@ -55,10 +55,10 @@ export default function TeamAccessCard({
   }
 
   const create = useMutation({
-    mutationFn: (values: { team_id: number; ttl_days?: number; note?: string }) =>
+    mutationFn: (values: { team_id: number; role?: 'viewer' | 'editor'; ttl_days?: number; note?: string }) =>
       linksApi.createTeamAccess(wid, values),
     onSuccess: () => {
-      message.success('已授予以团队只读（到期自动失效，可随时撤销）')
+      message.success('已授予以团队访问（到期自动失效，可随时撤销）')
       setOpen(false)
       form.resetFields()
       refresh()
@@ -77,10 +77,13 @@ export default function TeamAccessCard({
 
   if (!canManage) return null
 
+  const roleTag = (role: string) =>
+    role === 'editor' ? <Tag color="orange">可编辑</Tag> : <Tag color="blue">只读</Tag>
+
   return (
     <Card
       size="small"
-      title={<Space><ApartmentOutlined /> 团队只读授权</Space>}
+      title={<Space><ApartmentOutlined /> 团队数据授权</Space>}
       style={{ marginTop: 12 }}
       extra={(
         <Button size="small" icon={<PlusOutlined />} onClick={() => setOpen(true)} data-testid="team-access-add-btn">
@@ -90,7 +93,7 @@ export default function TeamAccessCard({
       data-testid="team-access-card"
     >
       <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-        被授团队的成员可以**只读**本工作区的数据（含行级规则与字段隐藏约束），不获得管理权；到期自动失效。
+        被授团队的成员可以**只读或可编辑**本工作区的数据（含行级规则与字段隐藏约束），不获得管理权；到期自动失效。
         这只是「授权」，不会把团队成员加进上方成员列表。
       </Text>
 
@@ -110,7 +113,7 @@ export default function TeamAccessCard({
               title: '角色',
               dataIndex: 'role',
               width: 100,
-              render: () => <Tag color="blue">只读</Tag>,
+              render: (role: string) => roleTag(role),
             },
             {
               title: '到期',
@@ -133,7 +136,7 @@ export default function TeamAccessCard({
               render: (_, row) => (
                 <Popconfirm
                   title="撤销该团队授权？"
-                  description="撤销后该团队成员将不再能读取本工作区数据。"
+                  description={`撤销后该团队成员将不再能${row.role === 'editor' ? '编辑' : '读取'}本工作区数据。`}
                   onConfirm={() => revoke.mutate(row)}
                   okText="撤销"
                   cancelText="取消"
@@ -150,24 +153,33 @@ export default function TeamAccessCard({
 
       <Modal
         open={open}
-        title="授予以团队只读"
+        title="授予以团队访问"
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={create.isPending}
         okText="授予"
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" initialValues={{ ttl_days: 30 }} onFinish={(values) => create.mutate(values)}>
+        <Form form={form} layout="vertical" initialValues={{ role: 'viewer', ttl_days: 30 }} onFinish={(values) => create.mutate(values)}>
           <Form.Item
             name="team_id"
             label="团队"
             rules={[{ required: true, message: '请选择团队' }]}
-            extra="被授团队的成员获得本工作区的只读权限（不含管理权）"
+            extra="被授团队的成员按所选角色访问本工作区（不含管理权）"
           >
             <Select
               placeholder="选择团队"
               data-testid="team-access-team-select"
               options={teams.map(team => ({ value: team.id, label: team.name }))}
+            />
+          </Form.Item>
+          <Form.Item name="role" label="访问角色" extra="可编辑 = 可写表数据；均不含管理权，且受行级规则约束">
+            <Select
+              data-testid="team-access-role-select"
+              options={[
+                { value: 'viewer', label: '只读' },
+                { value: 'editor', label: '可编辑' },
+              ]}
             />
           </Form.Item>
           <Form.Item name="ttl_days" label="有效期（天）" extra="到期自动失效，可随时撤销">

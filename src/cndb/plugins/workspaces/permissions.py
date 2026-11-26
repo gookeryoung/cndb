@@ -341,8 +341,15 @@ def permission_denied_detail(
     if team is not None and team_role is not None and role is not WorkspaceRole.OWNER:
         team_label = TEAM_ROLE_LABELS.get(team_role.value, team_role.value)
         team_part = f"（你在团队【{team.name}】的角色为【{team_label}】，管理面权限不含数据读写）"
+    # 团队授权归因（ADR 0163 D6）：非成员但持有团队授权时说清「授权来自哪个团队、是什么角色」
+    grant_part = ""
+    if role is None and (grant := active_team_access(db, workspace, user)) is not None:
+        grant_label = "编辑" if grant.role == "editor" else "只读"
+        grant_team = db.get(Team, grant.team_id)
+        grant_team_name = grant_team.name if grant_team is not None else "其他团队"
+        grant_part = f"（你对本工作区的数据访问来自团队【{grant_team_name}】的{grant_label}授权，不含管理权限）"
     if role is None:
-        detail = f"你不是该工作区成员{team_part}，{scope_part}{contact}"
+        detail = f"你不是该工作区成员{grant_part}{team_part}，{scope_part}{contact}"
     else:
         label = WORKSPACE_ROLE_LABELS.get(role.value, role.value)
         detail = f"当前用户在此工作区的角色为【{label}】{team_part}，{scope_part}{contact}"

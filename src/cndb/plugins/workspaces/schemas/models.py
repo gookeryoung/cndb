@@ -334,9 +334,10 @@ class WorkspaceLinkCreate(BaseModel):
 
 
 class TeamAccessCreate(BaseModel):
-    """授「团队 = 只读」（ADR 0154 B′）：只允许 viewer，有效期 1–365 天。"""
+    """授「团队 = viewer / editor」（ADR 0163 D2）：仍只产数据面，有效期 1–365 天。"""
 
     team_id: int
+    role: Literal["viewer", "editor"] = "viewer"
     ttl_days: int = Field(default=LINK_DEFAULT_TTL_DAYS, ge=1, le=LINK_MAX_TTL_DAYS)
     note: str = Field(default="", max_length=200)
 

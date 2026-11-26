@@ -19,6 +19,7 @@ from cndb.plugins.workspaces.models import (
     LINK_TARGET_TABLE,
     LINK_TARGET_VALUES,
     LINK_TARGET_VIEW,
+    TEAM_ACCESS_ROLE,
     Workspace,
     WorkspaceLink,
     WorkspaceLinkStatus,
@@ -176,8 +177,14 @@ def grant_team_access(
     expires_at: dt.datetime | None,
     granted_by_id: int | None,
     note: str = "",
+    role: str | None = None,
 ) -> WorkspaceTeamAccess:
-    """授 / 改「团队 = viewer」（同 (工作区, 团队) 覆盖，不重复插行）."""
+    """授 / 改「团队 = viewer / editor」（同 (工作区, 团队) 覆盖，不重复插行）（ADR 0163 D2）.
+
+    ``role`` 为 ``None`` 时：新建行用默认 viewer，覆盖已有行**保持原 role 不变**——
+    链接路径不传 role，避免把 owner 手工授的 editor 静默降级成 viewer（D3）。
+    显式传 role（如路由层）则两分支都写入该值。
+    """
     row = (
         db.query(WorkspaceTeamAccess)
         .filter(WorkspaceTeamAccess.workspace_id == workspace_id, WorkspaceTeamAccess.team_id == team_id)
@@ -187,7 +194,7 @@ def grant_team_access(
         row = WorkspaceTeamAccess(
             workspace_id=workspace_id,
             team_id=team_id,
-            role="viewer",
+            role=role or TEAM_ACCESS_ROLE,
             expires_at=expires_at,
             granted_by_id=granted_by_id,
             note=note,
@@ -197,6 +204,8 @@ def grant_team_access(
         row.expires_at = expires_at
         row.granted_by_id = granted_by_id
         row.note = note
+        if role is not None:
+            row.role = role
     return row
 
 
