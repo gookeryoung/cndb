@@ -35,7 +35,6 @@ const AdminPanel = lazy(() => import('@/pages/admin/AdminPanel'))
 const DocumentsLayout = lazy(() => import('@/pages/documents/DocumentsLayout'))
 const DocumentsPage = lazy(() => import('@/pages/documents/DocumentsPage'))
 const DocumentTemplatesPage = lazy(() => import('@/pages/documents/DocumentTemplatesPage'))
-const DocumentContentTemplatesPage = lazy(() => import('@/pages/documents/DocumentContentTemplatesPage'))
 const DocumentGraphPage = lazy(() => import('@/pages/documents/DocumentGraphPage'))
 const DocumentAttachmentsPage = lazy(() => import('@/pages/documents/DocumentAttachmentsPage'))
 const DocumentsChangeRequestsPage = lazy(() => import('@/pages/documents/DocumentsChangeRequestsPage'))
@@ -184,14 +183,13 @@ function AuthenticatedApp() {
             <Route path="issues" element={
               <Suspense fallback={<PageFallback />}><DocumentsIssuesPage /></Suspense>
             } />
-            {/* 文档模板（ADR 0152）：工作区级导出模板，入口在「质量检查」右侧 */}
+            {/* 导出模板（ADR 0152）：工作区级 Word / PDF 排版模板，入口在文档区「质量检查」右侧 */}
             <Route path="templates" element={
               <Suspense fallback={<PageFallback />}><DocumentTemplatesPage /></Suspense>
             } />
-            {/* 内容模板（需求 0169）：从模板新建文档用的 Markdown 正文骨架 */}
-            <Route path="content-templates" element={
-              <Suspense fallback={<PageFallback />}><DocumentContentTemplatesPage /></Suspense>
-            } />
+            {/* 内容模板（需求 0169）：从模板新建文档的正文骨架；ADR 0177 C3 起由模板页按 ?kind=content 渲染.
+                旧路径保留为重定向，深链 / 历史书签不断。 */}
+            <Route path="content-templates" element={<Navigate to="../templates?kind=content" replace />} />
             {/* 附件（需求 0174）：工作区上传文件与孤儿回收 */}
             <Route path="attachments" element={
               <Suspense fallback={<PageFallback />}><DocumentAttachmentsPage /></Suspense>

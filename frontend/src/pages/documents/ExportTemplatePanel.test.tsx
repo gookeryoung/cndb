@@ -1,5 +1,5 @@
 /**
- * 个人设置「模板」页签测试（ADR 0152）.
+ * 导出模板面板测试（ADR 0152 / 0177；已从个人设置迁入文档区）.
  *
  * 覆盖：内置 / 自定义分组与默认标记、修改配置后保存（PUT config）、
  * 内置模板只能另存为、设为默认、删除、示例预览按当前配置请求、
@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { http, HttpResponse } from 'msw'
 import { Route, Routes } from 'react-router-dom'
-import TemplatePanel from './TemplatePanel'
+import ExportTemplatePanel from './ExportTemplatePanel'
 import { renderProviders } from '@/test/render-providers'
 import { server } from '@/test/msw'
 import { NUMBERING_OPTIONS, fontPtLabel, numberingPrefix, pageNumberText, previewStyles } from './templateOptions'
@@ -134,7 +134,7 @@ function setupHandlers(options: { role?: string; items?: ExportTemplateItem[]; d
       ]),
     ),
     http.get('/api/v1/workspaces/:wid/documents/templates', () =>
-      HttpResponse.json({ items, default_ref: defaultRef }),
+      HttpResponse.json({ items, total: items.length, default_ref: defaultRef }),
     ),
     http.put('/api/v1/workspaces/:wid/documents/templates/:id', async ({ request, params }) => {
       const body = (await request.json()) as Record<string, unknown>
@@ -176,14 +176,14 @@ function renderPanel(route = '/w/1/documents') {
   // useParams 需要真实路由结构；无匹配的路径同时给一个兜底路由（模拟「无工作区」场景）
   return renderProviders(
     <Routes>
-      <Route path="/w/:wid/*" element={<TemplatePanel />} />
-      <Route path="*" element={<TemplatePanel />} />
+      <Route path="/w/:wid/*" element={<ExportTemplatePanel />} />
+      <Route path="*" element={<ExportTemplatePanel />} />
     </Routes>,
     { route },
   )
 }
 
-describe('TemplatePanel', () => {
+describe('ExportTemplatePanel', () => {
   it('未进入工作区时提示先进入工作区', async () => {
     renderPanel('/settings')
     expect(await screen.findByText('模板属于工作区')).toBeInTheDocument()
@@ -366,12 +366,12 @@ describe('DocumentTemplatesPage（文档区入口）', () => {
       { route: '/w/1/documents/templates' },
     )
     expect(await screen.findByTestId('document-templates-page')).toBeInTheDocument()
-    expect(screen.getByText('文档模板', { exact: true })).toBeInTheDocument()
+    expect(screen.getByText('导出模板', { exact: true })).toBeInTheDocument()
     expect(await screen.findByTestId('template-list')).toBeInTheDocument()
   })
 })
 
-describe('TemplatePanel 布局交互（分组折叠 / 新建 / 预览收起）', () => {
+describe('ExportTemplatePanel 布局交互（分组折叠 / 新建 / 预览收起）', () => {
   it('自定义分组在上、内置分组在下，两组可分别展开收起', async () => {
     setupHandlers()
     renderPanel()
@@ -483,7 +483,7 @@ describe('templateFile（导入 / 导出文件格式）', () => {
   })
 })
 
-describe('TemplatePanel 导入 / 导出', () => {
+describe('ExportTemplatePanel 导入 / 导出', () => {
   it('导出当前模板为 JSON 文件（blob 内容含配置）', async () => {
     setupHandlers()
     const captured: Blob[] = []

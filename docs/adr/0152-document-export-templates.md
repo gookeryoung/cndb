@@ -175,7 +175,7 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | 类型 | `frontend/src/store/ui.ts` | `SettingsTab` 增 `'template'` |
 | API | `frontend/src/api/exportTemplates.ts`（新增） | 列表 / 详情 / 新建 / 更新 / 删除 / preview（blob，含 `format`） |
 | API | `frontend/src/api/documents.ts` | `exportFile` 增可选 `template?: string` |
-| 面板 | `frontend/src/pages/settings/TemplatePanel.tsx`（新增） | 与「质量检查」同一套双栏原语：页头右侧「新建模板」（可选内置预设作起点）；左栏模板清单按「内置 / 自定义」分组并可分别展开收起（行内字号 / 行距 / 缩进摘要 + 默认标记）；右栏**配置与预览两个独立方盒**（6 : 4），预览方盒在配置方盒标题行最右侧用眼睛图标收起；动作键带文字（另存为 / 保存 / 设为默认 / 删除 / 示例 Word / 示例 PDF）；五组折叠配置 |
+| 面板 | `frontend/src/pages/documents/ExportTemplatePanel.tsx`（ADR 0177 P1 从 `pages/settings/TemplatePanel.tsx` 迁入） | 与「质量检查」同一套双栏原语：页头右侧「新建模板」（可选内置预设作起点）；左栏模板清单按「内置 / 自定义」分组并可分别展开收起（行内字号 / 行距 / 缩进摘要 + 默认标记）；右栏**配置与预览两个独立方盒**（6 : 4），预览方盒在配置方盒标题行最右侧用眼睛图标收起；动作键带文字（另存为 / 保存 / 设为默认 / 删除 / 示例 Word / 示例 PDF）；五组折叠配置 |
 | 字号 | `frontend/src/pages/settings/templateOptions.ts`（新增） | 中文字号↔磅值映射（小四 12pt / 四号 14pt / 三号 16pt…）、纸张与编号枚举选项，单一来源 |
 | 页签 | `SettingsModal.tsx` | 新增 `template` 页签，位置在 `llm` 之后 |
 | 顶栏 | `MainLayout.tsx` | `llm-settings-btn` 右侧新增 `template-settings-btn`（`SnippetsOutlined`），`openSettings('template')`；移动端用户菜单同项 |
@@ -239,7 +239,7 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | D13 | 预览实现 | 服务端 `preview` 返回真实 docx / pdf + 面板内 CSS 等比预览（**独立「预览」方盒**，占配置区 40%，可在配置方盒标题行右侧收起；内容覆盖模板控制的全部要素：页眉 / H1–H6 与编号 / 正文缩进字距 / 列表 / 三线表与表头配色 / 图表题注 / 代码块 / 引用 / 页脚页码） | 所见即所得需真实文件；CSS 预览保证即时反馈且不落库；独立方盒 + 可收起避免长配置被预览挤压 | 只做 CSS（看不清真实效果）；只做下载（反馈慢）；预览内嵌在配置底部（长表单会把预览推到屏外，且高度挤占配置区） | `TemplatePanel.tsx`、`routers/templates.py` |
 | D14 | 字号输入形态 | UI 同时显示中文号名与磅值（小四 = 12pt），存磅值 | 国内企业规范按号数沟通，存储保留数值精度 | 只存号名（不同号制口径不一，且 Word 用磅） | `templateOptions.ts` |
 | D15 | 明确非目标 | 目录 / 封面 / LOGO / 双栏 / 脚注尾注不纳入本期 | 域代码与分页成本高，收益待验证 | 一并做（P0-P3 无法收敛） | — |
-| D17 | 模板导入 / 导出 | 模板文件 = JSON（`kind=cndb-document-template` / `version=1` / `templates[]`），**只搬排版配置**（name / description / config），不带 id / is_default / 工作区；导出单模板即一项，导入支持一项或多项（前端逐条 `POST /templates`，同名自动加「（导入）」/「（导入 N）」），复用既有创建接口与后端强校验 | 模板要在团队 / 实例间复用，但归属与默认标记属于「导入端的工作区」，跨环境搬运会失真；复用创建接口可避免第二套校验路径 | 后端新增 import/export 端点（多一套文件协议与权限面）；直接导出 DB 行含 id（导入后 id 冲突，语义也不对） | `frontend/src/pages/settings/templateFile.ts`、`TemplatePanel.tsx` |
+| D17 | 模板导入 / 导出 | 模板文件 = JSON（`kind=cndb-document-template` / `version=1` / `templates[]`），**只搬排版配置**（name / description / config），不带 id / is_default / 工作区；导出单模板即一项，导入支持一项或多项（前端逐条 `POST /templates`，同名自动加「（导入）」/「（导入 N）」），复用既有创建接口与后端强校验 | 模板要在团队 / 实例间复用，但归属与默认标记属于「导入端的工作区」，跨环境搬运会失真；复用创建接口可避免第二套校验路径 | 后端新增 import/export 端点（多一套文件协议与权限面）；直接导出 DB 行含 id（导入后 id 冲突，语义也不对） | `frontend/src/pages/documents/templateFile.ts`、`ExportTemplatePanel.tsx` |
 | D16 | 标题编号方案 | 固定四档并**标注推荐文体**：不编号（宣传报道 / 周报）、`1 / 1.1 / 1.1.1`（研究报告 / 技术报告 / 趋势分析）、`第一章 / 1.1 / 1.1.1`（论文 / 专著）、`一、 / （一）/ 1. / （1）`（公文，GB/T 9704 层次序数） | 各类文件的层次序数规范不同，用户凭感觉选会出现「公文用 1.1.1」「论文用一、」这类不规范编号 | 自由输入编号模板（正则 / 占位符，校验与预览成本高，本期不做）；只留单一方案（无法覆盖论文 / 公文） | `services/export/templates.py::heading_prefix`、`frontend/src/pages/settings/templateOptions.ts::numberingPrefix` |
 
 ## Consequences
@@ -255,7 +255,7 @@ render_export(markdown, fmt, title="", images=None, tables=None, template=None) 
 | P0 | 已落地 | `src/cndb/plugins/documents/services/export/templates.py`、`src/cndb/plugins/documents/models.py`、`src/cndb/alembic/versions/b7c8d9e0f1a2_add_export_templates.py` | `tests/test_export_templates.py` | `a6af67ac` |
 | P1 | 已落地 | `src/cndb/plugins/documents/services/export/docx.py`、`src/cndb/plugins/documents/routers/documents.py` | `tests/test_export_templates.py` | `a6af67ac` |
 | P2 | 已落地 | `src/cndb/plugins/documents/services/export/pdf.py`、`src/cndb/plugins/documents/services/export/pdf_fonts.py` | `tests/test_export_templates.py` | `a6af67ac` |
-| P3 | 已落地 | `src/cndb/plugins/documents/routers/templates.py`、`src/cndb/plugins/documents/services/export_template_store.py`、`frontend/src/pages/settings/TemplatePanel.tsx`、`frontend/src/pages/documents/DocumentTemplatesPage.tsx` | `frontend/src/pages/settings/TemplatePanel.test.tsx`、`frontend/tests/e2e/critical/export-templates.spec.ts` | `a6af67ac` |
+| P3 | 已落地 | `src/cndb/plugins/documents/routers/templates.py`、`src/cndb/plugins/documents/services/export_template_store.py`、`frontend/src/pages/documents/ExportTemplatePanel.tsx`、`frontend/src/pages/documents/DocumentTemplatesPage.tsx` | `frontend/src/pages/documents/ExportTemplatePanel.test.tsx`、`frontend/tests/e2e/critical/export-templates.spec.ts` | `a6af67ac` |
 
 > 状态只取「未开始 / 进行中 / 已落地」。标「已落地」的期必须有代码落点与测试文件；全期落地后由人确认 `Status` 是否改 `Accepted` / `Implemented`。`make adr-check` 会校验本表与代码、测试、CHANGELOG 的对应关系。
 

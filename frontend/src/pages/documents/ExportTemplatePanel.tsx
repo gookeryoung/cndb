@@ -1,14 +1,16 @@
-/** 文档导出模板面板（ADR 0152）—— 视觉与交互对齐「质量检查」页.
+/** 导出模板面板（ADR 0152 / ADR 0177）—— 视觉与交互对齐「质量检查」页.
+ *
+ * 面板由 `DocumentTemplatesPage` 按 `?kind=export|content` 切换，自身保留页头
+ * （图标 / 标题 / 单行口径说明），因为两类模板的口径说明不同。
  *
  * 布局（与 `PipelinesPage` 同一套原语）：
- * - `cn-page` + `cn-page-head`：页头（图标 / 标题 / 单行口径说明）由 `DocumentTemplatesPage` 提供；
  * - 左栏 `SectionBox flush`：模板清单（内置分组 + 自定义分组，`cn-qc-row` 行态、选中左边条、
  *   默认标记与字体字号摘要），只做选择，行内不放动作按钮，避免一行三个图标按钮；
  * - 右栏 `SectionBox`：排版配置（名称 / 说明 + 动作条 + CSS 预览 + 五组折叠配置），
  *   动作全部收敛到方盒标题条右侧，一排小图标按钮，点开即改、保存即生效。
  *
  * 后端接口（工作区级，`/api/v1/workspaces/{wid}/documents/templates`）：
- * - `GET ""` / `POST ""` / `PUT /{id}` / `DELETE /{id}` / `POST /preview`
+ * - `GET ""` / `POST ""` / `PUT|PATCH /{id}` / `DELETE /{id}` / `POST /preview`（ADR 0177 D6）
  * - 内置预设只读：改配置后只能「另存为」
  * - 一份配置同时供电 Word 与 PDF（PDF 侧字体族最佳匹配并降级）
  */
@@ -29,6 +31,7 @@ import { workspaceApi, exportTemplateApi } from '@/api'
 import type { ExportTemplateConfig, ExportTemplateItem } from '@/api'
 import CnListMeta from '@/components/CnListMeta'
 import SectionBox from '@/components/SectionBox'
+import TemplateListBox from '@/components/Template/TemplateListBox'
 import { SPACE } from '@/theme/tokens'
 import {
   parseTemplateFile,
@@ -236,7 +239,7 @@ function TemplatePreview({ config }: { config: ExportTemplateConfig }) {
   )
 }
 
-export default function TemplatePanel() {
+export default function ExportTemplatePanel() {
   const { wid = '' } = useParams<{ wid: string }>()
   const workspaceId = Number(wid)
   const hasWorkspace = Number.isFinite(workspaceId) && workspaceId > 0
@@ -467,7 +470,7 @@ export default function TemplatePanel() {
           <SnippetsOutlined />
         </span>
         <div className="cn-page-head-text">
-          <h1 className="cn-page-head-title">文档模板</h1>
+          <h1 className="cn-page-head-title">导出模板</h1>
           <div className="cn-page-head-sub">
             <span
               className="cn-page-head-meta"
@@ -534,7 +537,7 @@ export default function TemplatePanel() {
           type="info"
           showIcon
           message="模板属于工作区"
-          description="请先进入一个工作区，再在「模板」页签管理该工作区的文档导出模板。"
+          description="请先进入一个工作区，再在「导出模板」页签管理该工作区的文档导出模板。"
         />
       </>
     )
@@ -1238,13 +1241,7 @@ export default function TemplatePanel() {
       {pageHead}
 
       <div className="cn-doc-tpl-split" data-testid="template-panel">
-        <SectionBox
-          title="模板清单"
-          icon={<UnorderedListOutlined />}
-          extra={<span>{items.length} 个</span>}
-          flush
-          testId="template-list"
-        >
+        <TemplateListBox icon={<UnorderedListOutlined />} count={items.length} testId="template-list">
           <button
             type="button"
             className="cn-doc-tpl-group"
@@ -1281,7 +1278,7 @@ export default function TemplatePanel() {
             <span>{builtins.length}</span>
           </button>
           {!collapsedGroups.builtin && builtins.map(rowNode)}
-        </SectionBox>
+        </TemplateListBox>
 
         {draft ? (
           <div

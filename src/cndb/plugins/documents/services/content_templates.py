@@ -9,15 +9,18 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from cndb.core.errors import BadRequestError, NotFoundError
+from cndb.core.errors import BadRequestError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import ContentTemplate
+from cndb.plugins.documents.services import templates_common
+
+_TABLE = ContentTemplate
 
 
-def list_content_templates(db: Session, workspace_id: int) -> list[dict[str, Any]]:
+def list_content_templates(db: Session, workspace_id: int) -> dict[str, Any]:
+    """列表载荷统一为 `{items, total}`（ADR 0177 C4）."""
     rows = (
         db.execute(
             select(ContentTemplate)
@@ -27,7 +30,7 @@ def list_content_templates(db: Session, workspace_id: int) -> list[dict[str, Any
         .scalars()
         .all()
     )
-    return [_serialize(row) for row in rows]
+    return templates_common.list_envelope([_serialize(row) for row in rows])
 
 
 def get_content_template(db: Session, workspace_id: int, template_id: int) -> dict[str, Any]:
@@ -49,13 +52,7 @@ def create_content_template(
     name = name.strip()
     if not name:
         raise BadRequestError("模板名称不能为空")
-    if db.execute(
-        select(ContentTemplate.id).where(
-            ContentTemplate.workspace_id == workspace_id,
-            ContentTemplate.name == name,
-        )
-    ).first():
-        raise BadRequestError(f"模板名称「{name}」已存在")
+    templates_common.ensure_name_free(db, _TABLE, workspace_id, name)
     row = ContentTemplate(
         workspace_id=workspace_id,
         name=name,
@@ -66,7 +63,7 @@ def create_content_template(
         created_by_id=user.id,
     )
     db.add(row)
-    _commit_or_conflict(db, name)
+    templates_common.commit_or_conflict(db, name)
     db.refresh(row)
     return _serialize(row)
 
@@ -87,15 +84,7 @@ def update_content_template(
         name = name.strip()
         if not name:
             raise BadRequestError("模板名称不能为空")
-        duplicate = db.execute(
-            select(ContentTemplate.id).where(
-                ContentTemplate.workspace_id == workspace_id,
-                ContentTemplate.name == name,
-                ContentTemplate.id != template_id,
-            )
-        ).first()
-        if duplicate:
-            raise BadRequestError(f"模板名称「{name}」已存在")
+        templates_common.ensure_name_free(db, _TABLE, workspace_id, name, exclude_id=template_id)
         row.name = name
     if content_markdown is not None:
         row.content_markdown = content_markdown
@@ -105,7 +94,7 @@ def update_content_template(
         row.icon = icon.strip()
     if sort_order is not None:
         row.sort_order = sort_order
-    _commit_or_conflict(db, row.name)
+    templates_common.commit_or_conflict(db, row.name)
     db.refresh(row)
     return _serialize(row)
 
@@ -121,20 +110,37 @@ def resolve_template_content(db: Session, workspace_id: int, template_id: int) -
     return _get(db, workspace_id, template_id).content_markdown
 
 
-def _commit_or_conflict(db: Session, name: str) -> None:
-    """并发创建 / 改名撞 ``(workspace_id, name)`` 唯一约束时转 400 而非 500."""
-    try:
-        db.commit()
-    except IntegrityError as exc:
-        db.rollback()
-        raise BadRequestError(f"模板名称「{name}」已存在") from exc
+def duplicate_content_template(db: Session, workspace_id: int, user: User, template_id: int) -> dict[str, Any]:
+    """创建副本（ADR 0177 C5）：名称 `原名 副本`，重名递增（与需求 0172 同口径）。"""
+    source = _get(db, workspace_id, template_id)
+    base = f"{source.name} 副本"
+    name = base
+    serial = 2
+    while db.execute(
+        select(ContentTemplate.id).where(
+            ContentTemplate.workspace_id == workspace_id,
+            ContentTemplate.name == name,
+        )
+    ).first():
+        name = f"{base} {serial}"
+        serial += 1
+    row = ContentTemplate(
+        workspace_id=workspace_id,
+        name=name,
+        content_markdown=source.content_markdown,
+        description=source.description,
+        icon=source.icon,
+        sort_order=source.sort_order,
+        created_by_id=user.id,
+    )
+    db.add(row)
+    templates_common.commit_or_conflict(db, name)
+    db.refresh(row)
+    return _serialize(row)
 
 
 def _get(db: Session, workspace_id: int, template_id: int) -> ContentTemplate:
-    row = db.get(ContentTemplate, template_id)
-    if row is None or row.workspace_id != workspace_id:
-        raise NotFoundError("内容模板不存在")
-    return row
+    return templates_common.get_or_404(db, _TABLE, workspace_id, template_id, message="内容模板不存在")
 
 
 def _serialize(row: ContentTemplate) -> dict[str, Any]:
@@ -155,6 +161,7 @@ def _serialize(row: ContentTemplate) -> dict[str, Any]:
 __all__ = [
     "create_content_template",
     "delete_content_template",
+    "duplicate_content_template",
     "get_content_template",
     "list_content_templates",
     "resolve_template_content",

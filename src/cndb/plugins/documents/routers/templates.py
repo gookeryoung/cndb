@@ -6,6 +6,7 @@
 - GET    /{ref}          单个模板（``builtin:<key>`` 或行 id）
 - POST   ""              新建 / 从内置预设另存为（editor+）
 - PUT    /{id}           更新名称 / 描述 / 配置 / 设为默认（editor+）
+- PATCH  /{id}           同上（ADR 0177 D6：与内容模板保持同一套动词）
 - DELETE /{id}           删除自定义模板（editor+；默认模板删除后回落内置 research）
 - POST   /preview        用未保存配置渲染示例 docx / pdf（成员，不落库）
 
@@ -21,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from cndb.api.deps import get_current_user
 from cndb.core.database import get_db
-from cndb.core.errors import BadRequestError, NotFoundError
+from cndb.core.errors import BadRequestError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents import services
 from cndb.plugins.documents.schemas import (
@@ -29,7 +30,7 @@ from cndb.plugins.documents.schemas import (
     ExportTemplatePreview,
     ExportTemplateUpdate,
 )
-from cndb.plugins.workspaces.permissions import raise_permission_denied, workspace_data_role
+from cndb.plugins.documents.services import templates_common
 
 router = APIRouter(prefix="/{workspace_id}/documents/templates", tags=["documents"])
 
@@ -40,14 +41,8 @@ _PREVIEW_CONTENT_TYPES = {
 
 
 def _require_member(db: Session, workspace_id: int, user: User) -> None:
-    """读权限：工作区成员（与文档读取同口径）."""
-    from cndb.plugins.workspaces.models import Workspace
-
-    ws = db.get(Workspace, workspace_id)
-    if ws is None:
-        raise NotFoundError("工作区不存在")
-    if workspace_data_role(user, ws, db) is None:
-        raise_permission_denied(db, ws, user)
+    """读权限：工作区成员（与文档读取同口径，H64）."""
+    templates_common.require_member(db, workspace_id, user)
 
 
 @router.get("")
@@ -103,6 +98,28 @@ def update_export_template(
 ) -> dict[str, Any]:
     """更新模板 / 设为默认（editor+）."""
     services.content.require_editor(db, workspace_id, current_user)
+    return _apply_update(db, workspace_id, template_id, payload)
+
+
+@router.patch("/{template_id}")
+def patch_export_template(
+    workspace_id: int,
+    template_id: int,
+    payload: ExportTemplateUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """与 PUT 等价的别名（ADR 0177 D6）."""
+    services.content.require_editor(db, workspace_id, current_user)
+    return _apply_update(db, workspace_id, template_id, payload)
+
+
+def _apply_update(
+    db: Session,
+    workspace_id: int,
+    template_id: int,
+    payload: ExportTemplateUpdate,
+) -> dict[str, Any]:
     return services.export_template_store.update_template(
         db,
         workspace_id,

@@ -681,7 +681,7 @@ describe('MainLayout 表级导航（2026-11-03 取消）', () => {
 })
 
 describe('MainLayout 文档区二级导航', () => {
-    it('进入文档页显示二级导航：文档结构 / 质量检查 / 模板 / 修改申请 / 问题清单页签（ADR 0152）', async () => {
+    it('进入文档页显示二级导航：文档结构 / 导出模板 / 修改申请 / 问题清单页签（ADR 0152 / 0177）', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => {
@@ -691,13 +691,15 @@ describe('MainLayout 文档区二级导航', () => {
         expect(screen.getByTestId('document-tab-pipelines')).toBeVisible()
         expect(screen.getByTestId('document-tab-templates')).toBeVisible()
         expect(screen.getByTestId('document-tab-change-requests')).toBeVisible()
-        // 「模板」紧邻「质量检查」右侧（ADR 0152 入口位置口径）
+        // 「导出模板」紧邻「质量检查」右侧（ADR 0152 入口位置口径）；命名取直白一套（ADR 0177 C2）
         const tabs = Array.from(screen.getByTestId('documents-crumb').querySelectorAll('.cn-table-tab')).map(
             node => node.textContent ?? '',
         )
-        expect(tabs.findIndex(text => text.includes('模板'))).toBe(
+        expect(tabs.findIndex(text => text.includes('导出模板'))).toBe(
             tabs.findIndex(text => text.includes('质量检查')) + 1,
         )
+        // 「模板」不能作为泛称单独出现在页签上（ADR 0177 C2）
+        expect(tabs.some(text => text.trim() === '模板')).toBe(false)
         expect(screen.getByTestId('document-tab-issues')).toBeVisible()
         // 未进入表上下文时表级页签不渲染
         expect(screen.queryByTestId('table-crumb')).toBeNull()
@@ -757,7 +759,7 @@ describe('MainLayout 文档区二级导航', () => {
         expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'false')
     })
 
-    it('点击「模板」页签导航到文档模板页并激活（ADR 0152）', async () => {
+    it('点击「导出模板」页签导航到文档导出模板页并激活（ADR 0152 / 0177）', async () => {
         renderLayout(mockUser, '/w/10/documents')
 
         await waitFor(() => {
@@ -772,7 +774,7 @@ describe('MainLayout 文档区二级导航', () => {
         expect(screen.getByTestId('document-tab-pipelines')).toHaveAttribute('aria-selected', 'false')
     })
 
-    it('直接落在文档模板页时「模板」页签激活', async () => {
+    it('直接落在文档导出模板页时「导出模板」页签激活', async () => {
         renderLayout(mockUser, '/w/10/documents/templates')
 
         await waitFor(() => {
@@ -780,6 +782,29 @@ describe('MainLayout 文档区二级导航', () => {
         })
         expect(screen.getByTestId('document-tab-templates')).toHaveAttribute('aria-selected', 'true')
         expect(screen.getByTestId('document-tab-structure')).toHaveAttribute('aria-selected', 'false')
+    })
+
+    it('点击「内容模板」页签跳到同一模板页的 content 分区并激活（ADR 0177 C3 / D4）', async () => {
+        renderLayout(mockUser, '/w/10/documents')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        fireEvent.click(screen.getByTestId('document-tab-content-templates'))
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-page-stub')).toHaveTextContent('/w/10/documents/templates?kind=content')
+        })
+    })
+
+    it('落在 ?kind=content 时「内容模板」页签激活、「导出模板」不激活', async () => {
+        renderLayout(mockUser, '/w/10/documents/templates?kind=content')
+
+        await waitFor(() => {
+            expect(screen.getByTestId('documents-crumb')).toBeVisible()
+        })
+        expect(screen.getByTestId('document-tab-content-templates')).toHaveAttribute('aria-selected', 'true')
+        expect(screen.getByTestId('document-tab-templates')).toHaveAttribute('aria-selected', 'false')
     })
 
     it('直接落在文档质量检查页时「质量检查」页签激活', async () => {

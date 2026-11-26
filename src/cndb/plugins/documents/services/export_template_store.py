@@ -11,12 +11,12 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cndb.core.errors import BadRequestError, NotFoundError
 from cndb.plugins.accounts.models import User
 from cndb.plugins.documents.models import ExportTemplate
+from cndb.plugins.documents.services import templates_common
 from cndb.plugins.documents.services.export import templates as template_cfg
 
 BUILTIN_SOURCE = "builtin"
@@ -81,7 +81,7 @@ def list_templates(db: Session, workspace_id: int) -> dict[str, Any]:
     )
     items = _builtin_items()
     items.extend(_row_item(row) for row in rows)
-    return {"items": items, "default_ref": default_ref(db, workspace_id)}
+    return templates_common.list_envelope(items, default_ref=default_ref(db, workspace_id))
 
 
 def get_template(db: Session, workspace_id: int, ref: str) -> dict[str, Any]:
@@ -110,22 +110,11 @@ def get_template(db: Session, workspace_id: int, ref: str) -> dict[str, Any]:
 
 
 def _get_row(db: Session, workspace_id: int, template_id: int) -> ExportTemplate:
-    row = db.get(ExportTemplate, template_id)
-    if row is None or row.workspace_id != workspace_id:
-        raise NotFoundError("模板不存在")
-    return row
+    return templates_common.get_or_404(db, ExportTemplate, workspace_id, template_id)
 
 
 def _ensure_name_free(db: Session, workspace_id: int, name: str, *, exclude_id: int | None = None) -> None:
-    exist = (
-        db.execute(
-            select(ExportTemplate).where(ExportTemplate.workspace_id == workspace_id, ExportTemplate.name == name)
-        )
-        .scalars()
-        .first()
-    )
-    if exist is not None and exist.id != exclude_id:
-        raise BadRequestError(f"同工作区已存在同名模板：{name}")
+    templates_common.ensure_name_free(db, ExportTemplate, workspace_id, name, exclude_id=exclude_id)
 
 
 def _set_default(db: Session, workspace_id: int, row: ExportTemplate) -> None:
@@ -233,11 +222,7 @@ def _validated(config: dict[str, Any]) -> template_cfg.ExportTemplateConfig:
 
 
 def _commit(db: Session, name: str) -> None:
-    try:
-        db.commit()
-    except IntegrityError as exc:  # pragma: no cover - 并发同名，唯一约束兜底
-        db.rollback()
-        raise BadRequestError(f"同工作区已存在同名模板：{name}") from exc
+    templates_common.commit_or_conflict(db, name)
 
 
 def render_preview(

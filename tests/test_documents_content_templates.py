@@ -59,6 +59,47 @@ class TestContentTemplatesApi:
         r = client.post(API.format(wid=wid), json={"name": "周报", "content_markdown": ""}, headers=auth_headers)
         assert r.status_code == 400, r.text
 
+    def test_put_alias_matches_patch(self, client, auth_headers):
+        """ADR 0177 D6：内容模板同时接受 PUT 与 PATCH，语义一致."""
+        wid = _ws(client, auth_headers, "内容模板动词")
+        base = API.format(wid=wid)
+        created = _create(client, wid, auth_headers, "会议纪要")
+
+        r = client.put(f"{base}/{created['id']}", json={"name": "会议纪要 PUT"}, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["name"] == "会议纪要 PUT"
+        # 未传字段保持（PUT 与 PATCH 同口径，不做全量替换语义）
+        assert r.json()["content_markdown"] == "# 标题\n\n正文"
+
+        r = client.patch(f"{base}/{created['id']}", json={"sort_order": 7}, headers=auth_headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["sort_order"] == 7
+
+    def test_list_envelope_has_total(self, client, auth_headers):
+        """ADR 0177 C4：列表载荷统一为 {items, total}."""
+        wid = _ws(client, auth_headers, "内容模板清单")
+        _create(client, wid, auth_headers, "周报")
+        _create(client, wid, auth_headers, "月报")
+        body = client.get(API.format(wid=wid), headers=auth_headers).json()
+        assert body["total"] == 2
+        assert len(body["items"]) == 2
+
+    def test_duplicate_endpoint_increments_name(self, client, auth_headers):
+        """ADR 0177 C5：副本名称「原名 副本」并递增，正文 / 说明一并复制."""
+        wid = _ws(client, auth_headers, "内容模板副本")
+        base = API.format(wid=wid)
+        source = _create(client, wid, auth_headers, "周报", content_markdown="# 周报", description="周会骨架")
+
+        first = client.post(f"{base}/{source['id']}/duplicate", headers=auth_headers)
+        assert first.status_code == 201, first.text
+        assert first.json()["name"] == "周报 副本"
+        assert first.json()["content_markdown"] == "# 周报"
+        assert first.json()["description"] == "周会骨架"
+
+        second = client.post(f"{base}/{source['id']}/duplicate", headers=auth_headers)
+        assert second.status_code == 201, second.text
+        assert second.json()["name"] == "周报 副本 2"
+
     def test_cross_workspace_is_404(self, client, auth_headers):
         wid = _ws(client, auth_headers, "模板本区")
         other = _ws(client, auth_headers, "模板他区")

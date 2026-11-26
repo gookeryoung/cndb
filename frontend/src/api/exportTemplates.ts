@@ -4,7 +4,7 @@
  * 自定义模板落库并与工作区备份一同往返。导出 docx / pdf 时按
  * 「显式 ref → 工作区默认 → 内置 research（研究报告）」解析（后端唯一入口）。
  *
- * UI 入口：个人设置 → 模板（`frontend/src/pages/settings/TemplatePanel.tsx`）与顶栏图标。
+ * UI 入口：文档区二级页签「导出模板」（`frontend/src/pages/settings/TemplatePanel.tsx`，ADR 0152 / 0177）。
  */
 
 import api from './client'
@@ -140,6 +140,8 @@ export interface ExportTemplateItem {
 
 export interface ExportTemplateList {
   items: ExportTemplateItem[]
+  /** 条数（ADR 0177 C4：与内容模板统一的 `{items, total}` 载荷） */
+  total: number
   /** 当前工作区实际生效的默认模板引用（未设默认即 `builtin:research`，研究报告） */
   default_ref: string
 }

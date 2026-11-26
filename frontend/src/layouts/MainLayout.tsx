@@ -91,10 +91,11 @@ const DOCUMENT_SUBPAGES = [
   { key: 'structure', label: '文档结构', icon: <FolderOpenOutlined />, to: '' },
   { key: 'graph', label: '图谱', icon: <ApartmentOutlined />, to: 'graph' },
   { key: 'pipelines', label: '质量检查', icon: <SafetyCertificateOutlined />, to: 'pipelines' },
-  // 模板（ADR 0152）：工作区级导出模板，紧邻「质量检查」右侧（同属文档上下文资源）
-  { key: 'templates', label: '模板', icon: <SnippetsOutlined />, to: 'templates' },
-  // 内容模板（需求 0169）：从模板新建文档的正文骨架，与导出模板独立
-  { key: 'content-templates', label: '内容模板', icon: <FileTextOutlined />, to: 'content-templates' },
+  // 导出模板（ADR 0152 / 0177）：工作区级 Word / PDF 排版模板，紧邻「质量检查」右侧
+  // 命名取直白一套（ADR 0177 C2 / D3）：「导出模板」/「内容模板」，不再用泛称「模板」
+  { key: 'templates', label: '导出模板', icon: <SnippetsOutlined />, to: 'templates' },
+  // 内容模板（需求 0169 / ADR 0177 C3）：从模板新建文档的正文骨架，与导出模板同一页的不同分区
+  { key: 'content-templates', label: '内容模板', icon: <FileTextOutlined />, to: 'templates?kind=content' },
   // 附件（需求 0174）：工作区上传文件与孤儿回收
   { key: 'attachments', label: '附件', icon: <PaperClipOutlined />, to: 'attachments' },
   { key: 'change-requests', label: '修改申请', icon: <PullRequestOutlined />, to: 'change-requests' },
@@ -174,7 +175,10 @@ export default function MainLayout() {
   const navigate = useNavigate()
   const { modal, message } = AntApp.useApp()
   const { wid, tid, docId } = useParams<{ wid: string; tid?: string; docId?: string }>()
-  const location = useLocation().pathname
+  const routerLocation = useLocation()
+  const location = routerLocation.pathname
+  /** 查询串：模板页用 `?kind=export|content` 分区（ADR 0177 C3 / D4） */
+  const locationSearch = routerLocation.search
   /** 管理台上下文（/admin）：无工作区语义，侧栏改列管理台分项 */
   const inAdminConsole = location.startsWith('/admin')
   const user = useAuthStore(s => s.user)
@@ -565,7 +569,7 @@ export default function MainLayout() {
   const activeDocumentTab = location === `/w/${wid}/documents`
     ? 'structure'
     : location.startsWith(`/w/${wid}/documents/templates`)
-      ? 'templates'
+      ? (new URLSearchParams(locationSearch).get('kind') === 'content' ? 'content-templates' : 'templates')
       : location.startsWith(`/w/${wid}/documents/graph`)
         ? 'graph'
       : location.startsWith(`/w/${wid}/documents/content-templates`)

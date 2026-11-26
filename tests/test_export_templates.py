@@ -291,8 +291,22 @@ class TestApi:
         assert r.status_code == 200, r.text
         body = r.json()
         assert len(body["items"]) == 6
+        assert body["total"] == 6  # ADR 0177 C4：与内容模板统一的 {items, total} 载荷
         assert body["default_ref"] == DEFAULT_TEMPLATE_REF
         assert all(item["source"] == "builtin" for item in body["items"])
+
+    def test_patch_alias_matches_put(self, client, ws, owner_headers):
+        """ADR 0177 D6：导出模板同样接受 PATCH，与 PUT 等价."""
+        created = client.post(
+            TEMPLATES.format(ws=ws.id), json={"name": "动词等价", "preset_key": "press"}, headers=owner_headers
+        ).json()
+        r = client.patch(
+            f"{TEMPLATES.format(ws=ws.id)}/{created['ref']}",
+            json={"name": "动词等价 PATCH"},
+            headers=owner_headers,
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["name"] == "动词等价 PATCH"
 
     def test_viewer_can_read(self, client, ws, viewer_headers):
         r = client.get(TEMPLATES.format(ws=ws.id), headers=viewer_headers)

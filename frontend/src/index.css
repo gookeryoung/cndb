@@ -7162,6 +7162,37 @@ body.theme-dark [style*="color:'#94a3b8'"] {
   color: var(--cn-brand-color);
 }
 
+/* 可拖拽排序的清单行（ADR 0177 C5：内容模板拖拽排序）。
+ * 抓手与 Meta 同排：行改 flex，Meta 占满剩余宽度。 */
+.cn-qc-row--draggable {
+  display: flex;
+  align-items: center;
+}
+
+.cn-qc-row--draggable .cn-list-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+ * 抓手用弱色文案色，hover 行时提到正文色；落点提示用品牌色上边线，
+ * 所有取值走 --cn-* token 与 1px 口径（H25 / H29）。 */
+.cn-qc-row-handle {
+  display: inline-flex;
+  align-items: center;
+  margin-inline-end: var(--cn-space-sm);
+  color: var(--cn-text-muted);
+  cursor: grab;
+}
+
+.cn-qc-row--selectable:hover .cn-qc-row-handle {
+  color: var(--cn-text-primary);
+}
+
+.cn-qc-row--drop {
+  border-top-color: var(--cn-brand-color);
+  box-shadow: inset 0 1px 0 var(--cn-brand-color);
+}
+
 /* 空态：flush 盒体没有内边距，用自己的留白保持与其他盒子一致的视觉节奏 */
 .cn-qc-empty {
   padding: var(--cn-space-3xl) var(--cn-space-lg);
