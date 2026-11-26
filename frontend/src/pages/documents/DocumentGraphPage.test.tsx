@@ -119,6 +119,43 @@ describe('知识图谱页（需求 0168）', () => {
     expect(screen.getByTestId('loc')).toHaveTextContent('/w/10/documents?parent=3')
   })
 
+  it('节点标签 formatter 可靠读到标题：series.data 保留 title，标题缺失不抛异常', async () => {
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    await waitFor(() => expect(echartsMock.init).toHaveBeenCalledTimes(1))
+
+    const option = echartsMock.setOption.mock.calls[0][0]
+    const series = option.series[0]
+    // echarts 的 label/tooltip formatter 收到的 params.data 就是这条原始项：
+    // 只写 name 时 p.data.title 为 undefined，会以 undefined.length 崩掉整页。
+    expect(series.data.map((d: { title?: string }) => d.title)).toEqual(['甲', '乙', '资料夹', '断链目标'])
+
+    const labelFormatter = series.label.formatter as (p: { data?: { title?: string } }) => string
+    expect(labelFormatter({ data: series.data[0] })).toBe('甲')
+    // 异常响应 / 空标题文档：不能抛错，也不能渲染出 undefined
+    expect(labelFormatter({ data: { title: undefined } })).toBe('未命名文档')
+    expect(labelFormatter({ data: undefined })).toBe('未命名文档')
+    const longTitle = '一个特别特别特别长的文档标题需要被截断掉'
+    const truncated = labelFormatter({ data: { title: longTitle } })
+    expect(truncated).toBe(`${longTitle.slice(0, 17)}…`)
+    expect(truncated).toHaveLength(18)
+  })
+
+  it('接口返回缺 nodes/edges 时不崩溃，统计按 0 展示', async () => {
+    server.use(
+      http.get('/api/v1/workspaces/:wid/documents/links/graph', () =>
+        HttpResponse.json({ truncated: false, total: 0 }),
+      ),
+    )
+    renderPage()
+    expect(await screen.findByTestId('document-graph-canvas')).toBeInTheDocument()
+    expect(screen.getByText(/节点 0 · 关系 0/)).toBeInTheDocument()
+    await waitFor(() => expect(echartsMock.setOption).toHaveBeenCalled())
+    const option = echartsMock.setOption.mock.calls.at(-1)?.[0]
+    expect(option.series[0].data).toEqual([])
+    expect(option.series[0].links).toEqual([])
+  })
+
   it('超出节点上限时显示截断提示', async () => {
     server.use(
       http.get('/api/v1/workspaces/:wid/documents/links/graph', () =>

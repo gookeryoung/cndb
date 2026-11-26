@@ -27,8 +27,10 @@ echarts.use([GraphChart, TooltipComponent, SVGRenderer])
 const { Text } = Typography
 
 /** 节点标题过长时省略，避免力导向图标签互相压盖 */
-function nodeLabel(title: string): string {
-  return title.length > 18 ? `${title.slice(0, 17)}…` : title
+// 标题可能缺失（异常响应 / 空标题文档）：先兜底再取长度，否则 undefined.length 会整页崩溃。
+function nodeLabel(title: string | null | undefined): string {
+  const text = typeof title === 'string' && title ? title : '未命名文档'
+  return text.length > 18 ? `${text.slice(0, 17)}…` : text
 }
 
 /** echarts 的 SVG 属性不解析 CSS 变量：与 ChartView 同口径，先读计算值再注入 option. */
@@ -78,7 +80,7 @@ function buildOption(nodes: GraphNode[], edges: GraphEdge[], colors: ThemeColors
         }
         const node = data as GraphNode
         const suffix = node.broken ? '（断链目标）' : node.is_folder ? '（文件夹）' : ''
-        return `${node.title}${suffix}`
+        return `${nodeLabel(node.title)}${suffix}`
       },
     },
     series: [
@@ -88,10 +90,13 @@ function buildOption(nodes: GraphNode[], edges: GraphEdge[], colors: ThemeColors
         roam: true,
         draggable: true,
         force: { repulsion: 260, edgeLength: 110, gravity: 0.12 },
-        label: { show: true, formatter: (p: { data: GraphNode }) => nodeLabel(p.data.title), fontSize: 12 },
+        // formatter 的 params.data 是写进 series.data 的原始项：必须带 title，
+        // 只写 name 时 p.data.title 为 undefined（曾经的整页崩溃点）。
+        label: { show: true, formatter: (p: { data: GraphNode }) => nodeLabel(p.data?.title), fontSize: 12 },
         data: nodes.map(node => ({
           id: String(node.id),
           name: node.title,
+          title: node.title,
           value: node.id,
           is_folder: node.is_folder,
           itemStyle: { color: formatColor(node, colors), borderColor: colors.border, borderWidth: 1 },
@@ -207,7 +212,7 @@ export default function DocumentGraphPage() {
         }}
       />
       <Text type="secondary" style={{ fontSize: 'var(--cn-text-xs)' }}>
-        节点 {graph?.nodes.length ?? 0} · 关系 {graph?.edges.length ?? 0}（拖拽平移，滚轮缩放）
+        节点 {graph?.nodes?.length ?? 0} · 关系 {graph?.edges?.length ?? 0}（拖拽平移，滚轮缩放）
       </Text>
     </div>
   )
